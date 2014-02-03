@@ -1,0 +1,30 @@
+QFORCE resolution list (D.I.L.):
+===============================
+UNSOLVED:
+ 2013/01/09: Put explicit kind parameters on all numeric constants (_kind, E0_real_kind).
+             All variables and arrays should be declared using C types.
+ 2014/01/04: Add concurrent kernel execution into tensor_block_contract_dlf_r4_ for input tensor transposes.
+ 2013/11/24: When more than one process is launched per node, GPUs must be reassigned
+             such that only C-processes get them (global and local roots do not require GPU).
+             Alternatively, GR and LRs can start using GPUs.
+             Also, QF_GPUS_PER_PROCESS is not used now at all.
+
+SOLVED:
+ 2014/01/02: gpu_tensor_block_copy_dlf_r4__ kernel does too many divisions/modulo. Solved via tables.
+ 2013/12/30: No overlap observed between two tensor contractions set to different CUDA streams:
+             cudaEventRecord() calls lead to a serialization of the streams execution!
+ 2013/12/26: Seems like device pointers must be 64-bit aligned in order to get DMA work.
+ 2013/12/23: cudaHostAlloc() must use cudaHostAllocPortable flag!
+ 2013/12/19: GPU tensor transpose kernel still uses <int> instead of <size_t> for offsets. Fixed.
+ 2013/12/19: gpu_tensor_block_contract:
+             (a) the inversed destination tensor transpose must have inversed dimension order!
+             (b) cudaMemcpyToSymbolAsync will fail for permutations because they have local scope!
+                 The permutation must be allocated in the packet and incorporated into tensBlck_t.
+ 2013/12/04: I need to create a CUDA task pool (cuda_task_create, cuda_task_destroy).
+ 2013/10/31: Efficient tensor transpose on GPU: Definition of the minor index set:
+             (a) Minor input volume >= warpSize; (b) Minor output volume >= warpSize;
+             (c) Minor volume <= shared memory buffer size (but as close as possible).
+ 2013/07/17: If minor index sets differ && the last minor dimension(s) is(are) very long, split it(them).
+             Write a short paper on my algorithm for cache-efficient tensor transposes.
+ 2013/07/16: What should %scalar_value reflect when the tensor rank is higher than zero?
+             How to make the %data_real consistent with %data_cmplx8? Complex --> Real conversion done!
