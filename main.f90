@@ -1,6 +1,6 @@
-!PROGRAM: Q-FORCE: Massively-Parallel Quantum Many-Body Methods on Heterogeneous HPC systems.
+!PROGRAM: Q-FORCE: Massively-Parallel Quantum Many-Body Methodology on Heterogeneous HPC systems.
 !AUTHOR: Dmitry I. Lyakh (Dmytro I. Liakh): quant4me@gmail.com
-!REVISION: 2014/01/31
+!REVISION: 2014/02/11
 !Compilation notes:
 ! - Fortran 2003 at least.
 ! - MPI 2.0 at least.
@@ -46,7 +46,11 @@
         mpi_thread_provided=0; max_threads=1
 #else
         call MPI_INIT_THREAD(MPI_THREAD_FUNNELED,mpi_thread_provided,ierr); if(ierr.ne.0) call quit(ierr,'#ERROR(main): MPI_INIT_THREAD error!')
-        max_threads=omp_get_max_threads()
+        if(mpi_thread_provided.gt.MPI_THREAD_SINGLE) then
+         max_threads=omp_get_max_threads()
+        else
+         max_threads=1
+        endif
 #endif
         time_begin=MPI_WTIME() !walltime begin
         call MPI_COMM_SIZE(MPI_COMM_WORLD,impis,ierr); if(ierr.ne.0) call quit(ierr,'#ERROR(main): MPI_COMM_SIZE error!')
