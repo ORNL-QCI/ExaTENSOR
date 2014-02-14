@@ -1,6 +1,6 @@
 !TENSOR ALGEBRA IN PARALLEL (TAP) for SHARED-MEMORY SYSTEMS (OpenMP based)
 !AUTHOR: Dmitry I. Lyakh (Dmytro I. Liakh): quant4me@gmail.com
-!REVISION: 2014/01/17
+!REVISION: 2014/02/14
        module tensor_algebra
         use, intrinsic:: ISO_C_BINDING
         use STSUBS
@@ -54,19 +54,19 @@
 !DERIVED DATA TYPES:
  !Tensor shape (storage layout specification for a tensor block):
 	type tensor_shape_t
-	 integer:: num_dim=-1                  !total number of dimensions (num_dim=0 defines a scalar tensor).
-	 integer, allocatable:: dim_extent(:)  !extent of each dimension (if num_dim>0): [0..extent-1].
-	 integer, allocatable:: dim_divider(:) !divider for each dimension, i.e. the <Lm_segment_size> (ordered dimensions must have the same divider!): %dim_divider(1)=0 means that an alternative (neither dimension-led nor bricked) storage layout is used.
-	 integer, allocatable:: dim_group(:)   !dimension grouping (default group 0 means no symmetry restrictions): if %dim_divider(1)=0, then %dim_group(1) regulates the alternative storage layout kind.
+	 integer:: num_dim=-1                      !total number of dimensions (num_dim=0 defines a scalar tensor).
+	 integer, pointer:: dim_extent(:)=>NULL()  !extent of each dimension (if num_dim>0): [0..extent-1].
+	 integer, pointer:: dim_divider(:)=>NULL() !divider for each dimension, i.e. the <Lm_segment_size> (ordered dimensions must have the same divider!): %dim_divider(1)=0 means that an alternative (neither dimension-led nor bricked) storage layout is used.
+	 integer, pointer:: dim_group(:)=>NULL()   !dimension grouping (default group 0 means no symmetry restrictions): if %dim_divider(1)=0, then %dim_group(1) regulates the alternative storage layout kind.
 	end type tensor_shape_t
  !Tensor block:
 	type tensor_block_t
-	 integer(8):: tensor_block_size=0_8         !total number of elements in the tensor block (informal, set after creation)
-	 type(tensor_shape_t):: tensor_shape        !shape of the tensor block (see above)
-	 complex(8):: scalar_value=cmplx(0d0,0d0,8) !scalar value if the rank is zero, otherwise can be used for storing the norm of the tensor block
-	 real(4), allocatable:: data_real4(:)       !tensor block data (float)
-	 real(8), allocatable:: data_real8(:)       !tensor block data (double)
-	 complex(8), allocatable:: data_cmplx8(:)   !tensor block data (complex)
+	 integer(8):: tensor_block_size=0_8           !total number of elements in the tensor block (informal, set after creation)
+	 type(tensor_shape_t):: tensor_shape          !shape of the tensor block (see above)
+	 complex(8):: scalar_value=cmplx(0d0,0d0,8)   !scalar value if the rank is zero, otherwise can be used for storing the norm of the tensor block
+	 real(4), pointer:: data_real4(:)=>NULL()     !tensor block data (float)
+	 real(8), pointer:: data_real8(:)=>NULL()     !tensor block data (double)
+	 complex(8), pointer:: data_cmplx8(:)=>NULL() !tensor block data (complex)
 	end type tensor_block_t
 !GENERIC INTERFACES:
 	interface divide_segment
@@ -137,7 +137,7 @@
 	public tensor_block_create         !creates a tensor block based on the shape specification string (SSS)
 	public tensor_block_init           !initializes a tensor block with either a predefined value or random numbers
 	public tensor_block_destroy        !destroys a tensor block
-	public tensor_block_sync           !allocated and/or synchronizes different data kinds in a tensor block
+	public tensor_block_sync           !allocates and/or synchronizes different data kinds in a tensor block
 	public tensor_block_scale          !multiplies all elements of a tensor block by some factor
 	public tensor_block_norm1          !determines the 1-norm of a tensor block (the sum of moduli of all elements)
 	public tensor_block_norm2          !determines the squared Euclidean (Frobenius) 2-norm of a tensor block
@@ -269,8 +269,8 @@
 	if(present(check_shape)) then
 	 if(check_shape) then; ierr=tensor_shape_ok(tens%tensor_shape); if(ierr.ne.0) return; endif
 	endif
-	if(tens%tensor_shape%num_dim.gt.0.and.allocated(tens%tensor_shape%dim_extent).and. &
-	   allocated(tens%tensor_shape%dim_divider).and.allocated(tens%tensor_shape%dim_group)) then !true tensor
+	if(tens%tensor_shape%num_dim.gt.0.and.associated(tens%tensor_shape%dim_extent).and. &
+	   associated(tens%tensor_shape%dim_divider).and.associated(tens%tensor_shape%dim_group)) then !true tensor
 	 if(tens%tensor_shape%dim_divider(1).gt.0) then !dimension-led or bricked
 	  tensor_block_layout=dimension_led
 	  do i=1,tens%tensor_shape%num_dim
@@ -347,9 +347,9 @@
 	if(tens%tensor_shape%num_dim.eq.0) then
 	 tensor_master_data_kind='c8'
 	elseif(tens%tensor_shape%num_dim.gt.0) then
-	 if(allocated(tens%data_real4)) tensor_master_data_kind='r4'
-	 if(allocated(tens%data_real8)) tensor_master_data_kind='r8'
-	 if(allocated(tens%data_cmplx8)) tensor_master_data_kind='c8'
+	 if(associated(tens%data_real4)) tensor_master_data_kind='r4'
+	 if(associated(tens%data_real8)) tensor_master_data_kind='r8'
+	 if(associated(tens%data_cmplx8)) tensor_master_data_kind='c8'
 	endif
 	return
 	end function tensor_master_data_kind
@@ -369,9 +369,9 @@
 	if(tens1%tensor_shape%num_dim.eq.0.and.tens2%tensor_shape%num_dim.eq.0) then
 	 tensor_common_data_kind='c8'
 	elseif(tens1%tensor_shape%num_dim.gt.0.and.tens2%tensor_shape%num_dim.gt.0) then
-	 if(allocated(tens1%data_real4).and.allocated(tens2%data_real4)) tensor_common_data_kind='r4'
-	 if(allocated(tens1%data_real8).and.allocated(tens2%data_real8)) tensor_common_data_kind='r8'
-	 if(allocated(tens1%data_cmplx8).and.allocated(tens2%data_cmplx8)) tensor_common_data_kind='c8'
+	 if(associated(tens1%data_real4).and.associated(tens2%data_real4)) tensor_common_data_kind='r4'
+	 if(associated(tens1%data_real8).and.associated(tens2%data_real8)) tensor_common_data_kind='r8'
+	 if(associated(tens1%data_cmplx8).and.associated(tens2%data_cmplx8)) tensor_common_data_kind='c8'
 	endif
 	return
 	end function tensor_common_data_kind
@@ -405,8 +405,8 @@
 	 n=tens_in%tensor_shape%num_dim
 	 if(n.gt.0) then
 !Check tensor shapes:
-	  if(allocated(tens_in%tensor_shape%dim_extent).and.allocated(tens_in%tensor_shape%dim_divider).and.allocated(tens_in%tensor_shape%dim_group).and. &
-	     allocated(tens_out%tensor_shape%dim_extent).and.allocated(tens_out%tensor_shape%dim_divider).and.allocated(tens_out%tensor_shape%dim_group)) then
+	  if(associated(tens_in%tensor_shape%dim_extent).and.associated(tens_in%tensor_shape%dim_divider).and.associated(tens_in%tensor_shape%dim_group).and. &
+	     associated(tens_out%tensor_shape%dim_extent).and.associated(tens_out%tensor_shape%dim_divider).and.associated(tens_out%tensor_shape%dim_group)) then
 	   if(present(transp)) then; trn(0:n)=transp(0:n); else; trn(0:n)=(/+1,(j,j=1,n)/); endif
 	   do i=1,n
 	    if(tens_out%tensor_shape%dim_extent(trn(i)).ne.tens_in%tensor_shape%dim_extent(i).or. &
@@ -423,29 +423,29 @@
 	    else
 	     if(present(no_check_data_kinds)) then; chdtk=no_check_data_kinds; else; chdtk=.false.; endif
 	     if(.not.chdtk) then
-	      if((allocated(tens_in%data_real4).and.(.not.allocated(tens_out%data_real4))).or. &
-	        ((.not.allocated(tens_in%data_real4)).and.allocated(tens_out%data_real4))) then
+	      if((associated(tens_in%data_real4).and.(.not.associated(tens_out%data_real4))).or. &
+	        ((.not.associated(tens_in%data_real4)).and.associated(tens_out%data_real4))) then
 	       tensor_block_compatible=.false.; return
 	      else
-	       if(allocated(tens_in%data_real4)) then
+	       if(associated(tens_in%data_real4)) then
 	        ls=size(tens_in%data_real4)
 	        if(size(tens_out%data_real4).ne.ls.or.tens_out%tensor_block_size.ne.ls) then; tensor_block_compatible=.false.; ierr=3; return; endif
 	       endif
 	      endif
-	      if((allocated(tens_in%data_real8).and.(.not.allocated(tens_out%data_real8))).or. &
-	        ((.not.allocated(tens_in%data_real8)).and.allocated(tens_out%data_real8))) then
+	      if((associated(tens_in%data_real8).and.(.not.associated(tens_out%data_real8))).or. &
+	        ((.not.associated(tens_in%data_real8)).and.associated(tens_out%data_real8))) then
 	       tensor_block_compatible=.false.; return
 	      else
-	       if(allocated(tens_in%data_real8)) then
+	       if(associated(tens_in%data_real8)) then
 	        ls=size(tens_in%data_real8)
 	        if(size(tens_out%data_real8).ne.ls.or.tens_out%tensor_block_size.ne.ls) then; tensor_block_compatible=.false.; ierr=4; return; endif
 	       endif
 	      endif
-	      if((allocated(tens_in%data_cmplx8).and.(.not.allocated(tens_out%data_cmplx8))).or. &
-	        ((.not.allocated(tens_in%data_cmplx8)).and.allocated(tens_out%data_cmplx8))) then
+	      if((associated(tens_in%data_cmplx8).and.(.not.associated(tens_out%data_cmplx8))).or. &
+	        ((.not.associated(tens_in%data_cmplx8)).and.associated(tens_out%data_cmplx8))) then
 	       tensor_block_compatible=.false.; return
 	      else
-	       if(allocated(tens_in%data_cmplx8)) then
+	       if(associated(tens_in%data_cmplx8)) then
 	        ls=size(tens_in%data_cmplx8)
 	        if(size(tens_out%data_cmplx8).ne.ls.or.tens_out%tensor_block_size.ne.ls) then; tensor_block_compatible=.false.; ierr=5; return; endif
 	       endif
@@ -486,7 +486,7 @@
 	tens_out%tensor_shape%num_dim=n
 	tens_out%tensor_block_size=tens_in%tensor_block_size
 	if(n.gt.0) then
-	 if(allocated(tens_in%tensor_shape%dim_extent).and.allocated(tens_in%tensor_shape%dim_divider).and.allocated(tens_in%tensor_shape%dim_group)) then
+	 if(associated(tens_in%tensor_shape%dim_extent).and.associated(tens_in%tensor_shape%dim_divider).and.associated(tens_in%tensor_shape%dim_group)) then
 	  if(size(tens_in%tensor_shape%dim_extent).eq.n.and.size(tens_in%tensor_shape%dim_divider).eq.n.and.size(tens_in%tensor_shape%dim_group).eq.n) then
  !Allocate tensor shape:
 	   allocate(tens_out%tensor_shape%dim_extent(1:n),STAT=ierr); if(ierr.ne.0) return
@@ -499,7 +499,7 @@
 	   endif
  !Allocate data arrays:
   !REAL4:
-	   if(allocated(tens_in%data_real4)) then
+	   if(associated(tens_in%data_real4)) then
 	    if(size(tens_in%data_real4).eq.tens_in%tensor_block_size) then
 	     allocate(tens_out%data_real4(0:tens_in%tensor_block_size-1),STAT=ierr); if(ierr.ne.0) return
 	    else
@@ -507,7 +507,7 @@
 	    endif
 	   endif
   !REAL8:
-	   if(allocated(tens_in%data_real8)) then
+	   if(associated(tens_in%data_real8)) then
 	    if(size(tens_in%data_real8).eq.tens_in%tensor_block_size) then
 	     allocate(tens_out%data_real8(0:tens_in%tensor_block_size-1),STAT=ierr); if(ierr.ne.0) return
 	    else
@@ -515,7 +515,7 @@
 	    endif
 	   endif
   !CMPLX8:
-	   if(allocated(tens_in%data_cmplx8)) then
+	   if(associated(tens_in%data_cmplx8)) then
 	    if(size(tens_in%data_cmplx8).eq.tens_in%tensor_block_size) then
 	     allocate(tens_out%data_cmplx8(0:tens_in%tensor_block_size-1),STAT=ierr); if(ierr.ne.0) return
 	    else
@@ -653,17 +653,17 @@
 	ierr=0; tens_block%tensor_block_size=tensor_shape_size(tens_block,ierr); if(ierr.ne.0) return
 	if(tens_block%tensor_block_size.le.0_8) then; ierr=-2; return; endif
 	if(tens_block%tensor_shape%num_dim.eq.0) then !scalar tensor
-	 if(allocated(tens_block%data_real4)) deallocate(tens_block%data_real4)
-	 if(allocated(tens_block%data_real8)) deallocate(tens_block%data_real8)
-	 if(allocated(tens_block%data_cmplx8)) deallocate(tens_block%data_cmplx8)
+	 if(associated(tens_block%data_real4)) then; deallocate(tens_block%data_real4,STAT=i); if(i.ne.0) nullify(tens_block%data_real4); endif
+	 if(associated(tens_block%data_real8)) then; deallocate(tens_block%data_real8,STAT=i); if(i.ne.0) nullify(tens_block%data_real8); endif
+	 if(associated(tens_block%data_cmplx8)) then; deallocate(tens_block%data_cmplx8,STAT=i); if(i.ne.0) nullify(tens_block%data_cmplx8); endif
 	 if(tens_block%tensor_block_size.ne.1_8) then; ierr=-3; return; endif
 	endif
 	select case(data_kind)
 	case('r4')
 	 if(tens_block%tensor_shape%num_dim.gt.0) then !true tensor
-	  if(allocated(tens_block%data_real4)) then
+	  if(associated(tens_block%data_real4)) then
 	   if(size(tens_block%data_real4).ne.tens_block%tensor_block_size) then
-	    deallocate(tens_block%data_real4)
+	    deallocate(tens_block%data_real4,STAT=i); if(i.ne.0) nullify(tens_block%data_real4)
 	    allocate(tens_block%data_real4(0:tens_block%tensor_block_size-1),STAT=ierr); if(ierr.ne.0) then; ierr=667; return; endif
 	   endif
 	  else
@@ -723,9 +723,9 @@
 	 endif
 	case('r8')
 	 if(tens_block%tensor_shape%num_dim.gt.0) then !true tensor
-	  if(allocated(tens_block%data_real8)) then
+	  if(associated(tens_block%data_real8)) then
 	   if(size(tens_block%data_real8).ne.tens_block%tensor_block_size) then
-	    deallocate(tens_block%data_real8)
+	    deallocate(tens_block%data_real8,STAT=i); if(i.ne.0) nullify(tens_block%data_real8)
 	    allocate(tens_block%data_real8(0:tens_block%tensor_block_size-1),STAT=ierr); if(ierr.ne.0) then; ierr=667; return; endif
 	   endif
 	  else
@@ -785,9 +785,9 @@
 	 endif
 	case('c8')
 	 if(tens_block%tensor_shape%num_dim.gt.0) then !true tensor
-	  if(allocated(tens_block%data_cmplx8)) then
+	  if(associated(tens_block%data_cmplx8)) then
 	   if(size(tens_block%data_cmplx8).ne.tens_block%tensor_block_size) then
-	    deallocate(tens_block%data_cmplx8)
+	    deallocate(tens_block%data_cmplx8,STAT=i); if(i.ne.0) nullify(tens_block%data_cmplx8)
 	    allocate(tens_block%data_cmplx8(0:tens_block%tensor_block_size-1),STAT=ierr); if(ierr.ne.0) then; ierr=667; return; endif
 	   endif
 	  else
@@ -857,19 +857,20 @@
 	integer, intent(inout):: ierr
 	integer i,j,k,l,m,n
 	ierr=0; tens_block%tensor_block_size=0_8
-	if(allocated(tens_block%data_real4)) deallocate(tens_block%data_real4)
-	if(allocated(tens_block%data_real8)) deallocate(tens_block%data_real8)
-	if(allocated(tens_block%data_cmplx8)) deallocate(tens_block%data_cmplx8)
+	if(associated(tens_block%data_real4))then; deallocate(tens_block%data_real4,STAT=i); if(i.ne.0) nullify(tens_block%data_real4); endif
+	if(associated(tens_block%data_real8))then; deallocate(tens_block%data_real8,STAT=i); if(i.ne.0) nullify(tens_block%data_real8); endif
+	if(associated(tens_block%data_cmplx8))then; deallocate(tens_block%data_cmplx8,STAT=i); if(i.ne.0) nullify(tens_block%data_cmplx8); endif
 	tens_block%scalar_value=cmplx(0d0,0d0,8)
 	call destroy_tensor_shape(tens_block%tensor_shape)
 	return
 	contains
 	 subroutine destroy_tensor_shape(tens_shape)
 	 type(tensor_shape_t), intent(inout):: tens_shape
+	 integer je
 	 tens_shape%num_dim=-1
-	 if(allocated(tens_shape%dim_extent)) deallocate(tens_shape%dim_extent)
-	 if(allocated(tens_shape%dim_divider)) deallocate(tens_shape%dim_divider)
-	 if(allocated(tens_shape%dim_group)) deallocate(tens_shape%dim_group)
+	 if(associated(tens_shape%dim_extent)) then; deallocate(tens_shape%dim_extent,STAT=je); if(je.ne.0) nullify(tens_shape%dim_extent); endif
+	 if(associated(tens_shape%dim_divider)) then; deallocate(tens_shape%dim_divider,STAT=je); if(je.ne.0) nullify(tens_shape%dim_divider); endif
+	 if(associated(tens_shape%dim_group)) then; deallocate(tens_shape%dim_group,STAT=je); if(je.ne.0) nullify(tens_shape%dim_group); endif
 	 return
 	 end subroutine destroy_tensor_shape
 	end subroutine tensor_block_destroy
@@ -907,27 +908,27 @@
 	if(mast_kind.ne.'r4'.and.mast_kind.ne.'r8'.and.mast_kind.ne.'c8') then; ierr=1; return; endif
 	if(present(slave_kind)) then; slk=slave_kind; else; slk='  '; endif
 	if(tens%tensor_shape%num_dim.gt.0) then !true tensor
-	 if((mast_kind.eq.'r4'.and.allocated(tens%data_real4)).or. &
-	    (mast_kind.eq.'r8'.and.allocated(tens%data_real8)).or. &
-	    (mast_kind.eq.'c8'.and.allocated(tens%data_cmplx8))) then
+	 if((mast_kind.eq.'r4'.and.associated(tens%data_real4)).or. &
+	    (mast_kind.eq.'r8'.and.associated(tens%data_real8)).or. &
+	    (mast_kind.eq.'c8'.and.associated(tens%data_cmplx8))) then
 	  ls=tens%tensor_block_size
 	  if(slk.eq.'--') then !destroy master data kind
 	   select case(mast_kind)
 	   case('r4')
-	    if(allocated(tens%data_real8).or.allocated(tens%data_cmplx8)) then
-	     deallocate(tens%data_real4)
+	    if(associated(tens%data_real8).or.associated(tens%data_cmplx8)) then
+	     deallocate(tens%data_real4,STAT=j); if(j.ne.0) nullify(tens%data_real4)
 	    else
 	     ierr=7; return
 	    endif
 	   case('r8')
-	    if(allocated(tens%data_real4).or.allocated(tens%data_cmplx8)) then
-	     deallocate(tens%data_real8)
+	    if(associated(tens%data_real4).or.associated(tens%data_cmplx8)) then
+	     deallocate(tens%data_real8,STAT=j); if(j.ne.0) nullify(tens%data_real8)
 	    else
 	     ierr=8; return
 	    endif
 	   case('c8')
-	    if(allocated(tens%data_real4).or.allocated(tens%data_real8)) then
-	     deallocate(tens%data_cmplx8)
+	    if(associated(tens%data_real4).or.associated(tens%data_real8)) then
+	     deallocate(tens%data_cmplx8,STAT=j); if(j.ne.0) nullify(tens%data_cmplx8)
 	    else
 	     ierr=9; return
 	    endif
@@ -939,8 +940,8 @@
 !Proceed:
 	   if(slk.ne.mast_kind) then
  !REAL4:
-	    if(slk.eq.'r4'.or.(mast_kind.ne.'r4'.and.slk.eq.'  '.and.allocated(tens%data_real4))) then
-	     if(slk.ne.'  '.and.(.not.allocated(tens%data_real4))) then; allocate(tens%data_real4(0:ls-1),STAT=ierr); if(ierr.ne.0) return; endif
+	    if(slk.eq.'r4'.or.(mast_kind.ne.'r4'.and.slk.eq.'  '.and.associated(tens%data_real4))) then
+	     if(slk.ne.'  '.and.(.not.associated(tens%data_real4))) then; allocate(tens%data_real4(0:ls-1),STAT=ierr); if(ierr.ne.0) return; endif
 	     if(size(tens%data_real4).eq.ls) then
 	      select case(mast_kind)
 	      case('r8')
@@ -957,8 +958,8 @@
 	     endif
 	    endif
  !REAL8:
-	    if(slk.eq.'r8'.or.(mast_kind.ne.'r8'.and.slk.eq.'  '.and.allocated(tens%data_real8))) then
-	     if(slk.ne.'  '.and.(.not.allocated(tens%data_real8))) then; allocate(tens%data_real8(0:ls-1),STAT=ierr); if(ierr.ne.0) return; endif
+	    if(slk.eq.'r8'.or.(mast_kind.ne.'r8'.and.slk.eq.'  '.and.associated(tens%data_real8))) then
+	     if(slk.ne.'  '.and.(.not.associated(tens%data_real8))) then; allocate(tens%data_real8(0:ls-1),STAT=ierr); if(ierr.ne.0) return; endif
 	     if(size(tens%data_real8).eq.ls) then
 	      select case(mast_kind)
 	      case('r4')
@@ -975,8 +976,8 @@
 	     endif
 	    endif
  !COMPLEX8:
-	    if(slk.eq.'c8'.or.(mast_kind.ne.'c8'.and.slk.eq.'  '.and.allocated(tens%data_cmplx8))) then
-	     if(slk.ne.'  '.and.(.not.allocated(tens%data_cmplx8))) then; allocate(tens%data_cmplx8(0:ls-1),STAT=ierr); if(ierr.ne.0) return; endif
+	    if(slk.eq.'c8'.or.(mast_kind.ne.'c8'.and.slk.eq.'  '.and.associated(tens%data_cmplx8))) then
+	     if(slk.ne.'  '.and.(.not.associated(tens%data_cmplx8))) then; allocate(tens%data_cmplx8(0:ls-1),STAT=ierr); if(ierr.ne.0) return; endif
 	     if(size(tens%data_cmplx8).eq.ls) then
 	      select case(mast_kind)
 	      case('r4')
@@ -1026,7 +1027,7 @@
 	ierr=0; ls=tens%tensor_block_size
 	if(ls.gt.0_8) then
 !REAL4:
-	 if(allocated(tens%data_real4)) then
+	 if(associated(tens%data_real4)) then
 	  if(size(tens%data_real4).eq.ls) then
 	   fac_r4=real(cmplx8_to_real8(scale_fac),4)
 !$OMP PARALLEL DO DEFAULT(SHARED) PRIVATE(l0) FIRSTPRIVATE(fac_r4) SCHEDULE(GUIDED)
@@ -1037,7 +1038,7 @@
 	  endif
 	 endif
 !REAL8:
-	 if(allocated(tens%data_real8)) then
+	 if(associated(tens%data_real8)) then
 	  if(size(tens%data_real8).eq.ls) then
 	   fac_r8=cmplx8_to_real8(scale_fac)
 !$OMP PARALLEL DO DEFAULT(SHARED) PRIVATE(l0) FIRSTPRIVATE(fac_r8) SCHEDULE(GUIDED)
@@ -1048,7 +1049,7 @@
 	  endif
 	 endif
 !CMPLX8:
-	 if(allocated(tens%data_cmplx8)) then
+	 if(associated(tens%data_cmplx8)) then
 	  if(size(tens%data_cmplx8).eq.ls) then
 	   fac_c8=scale_fac
 !$OMP PARALLEL DO DEFAULT(SHARED) PRIVATE(l0) FIRSTPRIVATE(fac_c8) SCHEDULE(GUIDED)
@@ -1092,7 +1093,7 @@
 	 if(ls.gt.0_8) then
 	  select case(datk)
 	  case('r4')
-	   if(allocated(tens%data_real4)) then
+	   if(associated(tens%data_real4)) then
 	    if(size(tens%data_real4).eq.ls) then
 	     val_r4=0.0
 !$OMP PARALLEL DO DEFAULT(SHARED) PRIVATE(l0) SCHEDULE(GUIDED) REDUCTION(+:val_r4)
@@ -1106,7 +1107,7 @@
 	    ierr=3
 	   endif
 	  case('r8')
-	   if(allocated(tens%data_real8)) then
+	   if(associated(tens%data_real8)) then
 	    if(size(tens%data_real8).eq.ls) then
 	     val_r8=0d0
 !$OMP PARALLEL DO DEFAULT(SHARED) PRIVATE(l0) SCHEDULE(GUIDED) REDUCTION(+:val_r8)
@@ -1120,7 +1121,7 @@
 	    ierr=5
 	   endif
 	  case('c8')
-	   if(allocated(tens%data_cmplx8)) then
+	   if(associated(tens%data_cmplx8)) then
 	    if(size(tens%data_cmplx8).eq.ls) then
 	     val_r8=0d0
 !$OMP PARALLEL DO DEFAULT(SHARED) PRIVATE(l0) SCHEDULE(GUIDED) REDUCTION(+:val_r8)
@@ -1177,7 +1178,7 @@
 	 if(ls.gt.0_8) then
 	  select case(datk)
 	  case('r4')
-	   if(allocated(tens%data_real4)) then
+	   if(associated(tens%data_real4)) then
 	    if(size(tens%data_real4).eq.ls) then
 	     val_r4=0.0
 !$OMP PARALLEL DO DEFAULT(SHARED) PRIVATE(l0) SCHEDULE(GUIDED) REDUCTION(+:val_r4)
@@ -1191,7 +1192,7 @@
 	    ierr=3
 	   endif
 	  case('r8')
-	   if(allocated(tens%data_real8)) then
+	   if(associated(tens%data_real8)) then
 	    if(size(tens%data_real8).eq.ls) then
 	     val_r8=0d0
 !$OMP PARALLEL DO DEFAULT(SHARED) PRIVATE(l0) SCHEDULE(GUIDED) REDUCTION(+:val_r8)
@@ -1205,7 +1206,7 @@
 	    ierr=5
 	   endif
 	  case('c8')
-	   if(allocated(tens%data_cmplx8)) then
+	   if(associated(tens%data_cmplx8)) then
 	    if(size(tens%data_cmplx8).eq.ls) then
 	     val_r8=0d0
 !$OMP PARALLEL DO DEFAULT(SHARED) PRIVATE(l0) SCHEDULE(GUIDED) REDUCTION(+:val_r8)
@@ -1254,7 +1255,7 @@
 	 if(dtk.ne.'r4'.and.dtk.ne.'r8'.and.dtk.ne.'c8') then; ierr=1; return; endif
 	 select case(dtk)
 	 case('r4')
-	  if(allocated(tens%data_real4)) then
+	  if(associated(tens%data_real4)) then
 	   if(size(tens%data_real4).eq.tens%tensor_block_size) then
 	    val=0d0
 !$OMP PARALLEL DO DEFAULT(SHARED) PRIVATE(l0) SCHEDULE(GUIDED) REDUCTION(max:val)
@@ -1268,7 +1269,7 @@
 	   ierr=3
 	  endif
 	 case('r8')
-	  if(allocated(tens%data_real8)) then
+	  if(associated(tens%data_real8)) then
 	   if(size(tens%data_real8).eq.tens%tensor_block_size) then
 	    val=0d0
 !$OMP PARALLEL DO DEFAULT(SHARED) PRIVATE(l0) SCHEDULE(GUIDED) REDUCTION(max:val)
@@ -1282,7 +1283,7 @@
 	   ierr=5
 	  endif
 	 case('c8')
-	  if(allocated(tens%data_cmplx8)) then
+	  if(associated(tens%data_cmplx8)) then
 	   if(size(tens%data_cmplx8).eq.tens%tensor_block_size) then
 	    val=0d0
 !$OMP PARALLEL DO DEFAULT(SHARED) PRIVATE(l0) SCHEDULE(GUIDED) REDUCTION(max:val)
@@ -1326,7 +1327,7 @@
 	 if(dtk.ne.'r4'.and.dtk.ne.'r8'.and.dtk.ne.'c8') then; ierr=1; return; endif
 	 select case(dtk)
 	 case('r4')
-	  if(allocated(tens%data_real4)) then
+	  if(associated(tens%data_real4)) then
 	   if(size(tens%data_real4).eq.tens%tensor_block_size) then
 	    val=real(tens%data_real4(0),8)
 !$OMP PARALLEL DO DEFAULT(SHARED) PRIVATE(l0) SCHEDULE(GUIDED) REDUCTION(min:val)
@@ -1340,7 +1341,7 @@
 	   ierr=3
 	  endif
 	 case('r8')
-	  if(allocated(tens%data_real8)) then
+	  if(associated(tens%data_real8)) then
 	   if(size(tens%data_real8).eq.tens%tensor_block_size) then
 	    val=tens%data_real8(0)
 !$OMP PARALLEL DO DEFAULT(SHARED) PRIVATE(l0) SCHEDULE(GUIDED) REDUCTION(min:val)
@@ -1354,7 +1355,7 @@
 	   ierr=5
 	  endif
 	 case('c8')
-	  if(allocated(tens%data_cmplx8)) then
+	  if(associated(tens%data_cmplx8)) then
 	   if(size(tens%data_cmplx8).eq.tens%tensor_block_size) then
 	    val=abs(tens%data_cmplx8(0))
 !$OMP PARALLEL DO DEFAULT(SHARED) PRIVATE(l0) SCHEDULE(GUIDED) REDUCTION(min:val)
@@ -1411,14 +1412,14 @@
 	  if(present(data_kind)) then; dtk=data_kind; else; dtk=tensor_master_data_kind(tens,ierr); if(ierr.ne.0) return; endif
 	  select case(dtk)
 	  case('r4')
-	   if(.not.allocated(tens%data_real4)) then; ierr=7; return; endif
-	   if(.not.allocated(slice%data_real4)) then; allocate(slice%data_real4(0:ls-1),STAT=ierr); if(ierr.ne.0) return; endif
+	   if(.not.associated(tens%data_real4)) then; ierr=7; return; endif
+	   if(.not.associated(slice%data_real4)) then; allocate(slice%data_real4(0:ls-1),STAT=ierr); if(ierr.ne.0) return; endif
 	  case('r8')
-	   if(.not.allocated(tens%data_real8)) then; ierr=8; return; endif
-	   if(.not.allocated(slice%data_real8)) then; allocate(slice%data_real8(0:ls-1),STAT=ierr); if(ierr.ne.0) return; endif
+	   if(.not.associated(tens%data_real8)) then; ierr=8; return; endif
+	   if(.not.associated(slice%data_real8)) then; allocate(slice%data_real8(0:ls-1),STAT=ierr); if(ierr.ne.0) return; endif
 	  case('c8')
-	   if(.not.allocated(tens%data_cmplx8)) then; ierr=9; return; endif
-	   if(.not.allocated(slice%data_cmplx8)) then; allocate(slice%data_cmplx8(0:ls-1),STAT=ierr); if(ierr.ne.0) return; endif
+	   if(.not.associated(tens%data_cmplx8)) then; ierr=9; return; endif
+	   if(.not.associated(slice%data_cmplx8)) then; allocate(slice%data_cmplx8(0:ls-1),STAT=ierr); if(ierr.ne.0) return; endif
 	  case default
 	   ierr=5; return !invalid data kind
 	  end select
@@ -1508,23 +1509,23 @@
 	  if(present(data_kind)) then; dtk=data_kind; else; dtk=tensor_common_data_kind(tens,slice,ierr); if(ierr.ne.0) return; endif
 	  select case(dtk)
 	  case('r4')
-	   if(.not.allocated(tens%data_real4)) then; ierr=7; return; endif
-	   if(.not.allocated(slice%data_real4)) then; call tensor_block_sync(slice,stk,ierr,'r4'); if(ierr.ne.0) return; endif
+	   if(.not.associated(tens%data_real4)) then; ierr=7; return; endif
+	   if(.not.associated(slice%data_real4)) then; call tensor_block_sync(slice,stk,ierr,'r4'); if(ierr.ne.0) return; endif
 	  case('r8')
-	   if(.not.allocated(tens%data_real8)) then; ierr=8; return; endif
-	   if(.not.allocated(slice%data_real8)) then; call tensor_block_sync(slice,stk,ierr,'r8'); if(ierr.ne.0) return; endif
+	   if(.not.associated(tens%data_real8)) then; ierr=8; return; endif
+	   if(.not.associated(slice%data_real8)) then; call tensor_block_sync(slice,stk,ierr,'r8'); if(ierr.ne.0) return; endif
 	  case('c8')
-	   if(.not.allocated(tens%data_cmplx8)) then; ierr=9; return; endif
-	   if(.not.allocated(slice%data_cmplx8)) then; call tensor_block_sync(slice,stk,ierr,'c8'); if(ierr.ne.0) return; endif
+	   if(.not.associated(tens%data_cmplx8)) then; ierr=9; return; endif
+	   if(.not.associated(slice%data_cmplx8)) then; call tensor_block_sync(slice,stk,ierr,'c8'); if(ierr.ne.0) return; endif
 	  case('--')
 	   dtk=tensor_master_data_kind(tens,ierr); if(ierr.ne.0) return
 	   select case(dtk)
 	   case('r4')
-	    if(.not.allocated(slice%data_real4)) then; call tensor_block_sync(slice,stk,ierr,'r4'); if(ierr.ne.0) return; endif
+	    if(.not.associated(slice%data_real4)) then; call tensor_block_sync(slice,stk,ierr,'r4'); if(ierr.ne.0) return; endif
 	   case('r8')
-	    if(.not.allocated(slice%data_real8)) then; call tensor_block_sync(slice,stk,ierr,'r8'); if(ierr.ne.0) return; endif
+	    if(.not.associated(slice%data_real8)) then; call tensor_block_sync(slice,stk,ierr,'r8'); if(ierr.ne.0) return; endif
 	   case('c8')
-	    if(.not.allocated(slice%data_cmplx8)) then; call tensor_block_sync(slice,stk,ierr,'c8'); if(ierr.ne.0) return; endif
+	    if(.not.associated(slice%data_cmplx8)) then; call tensor_block_sync(slice,stk,ierr,'c8'); if(ierr.ne.0) return; endif
 	   case default
 	    ierr=10; return !no master data kind found in <tens>
 	   end select
@@ -1711,8 +1712,8 @@
 	   case('r4')
 	    !`Enable
 	   case('r8')
-	    if(allocated(tens_in%data_real8)) then
-	     if(rank_out.gt.0.and.(.not.allocated(tens_out%data_real8))) then
+	    if(associated(tens_in%data_real8)) then
+	     if(rank_out.gt.0.and.(.not.associated(tens_out%data_real8))) then
 	      slk=tensor_master_data_kind(tens_out,ierr); if(ierr.ne.0) return
 	      if(slk.eq.'--') then; ierr=5; return; endif
 	      dlt='r8'; call tensor_block_sync(tens_out,slk,ierr,dlt); if(ierr.ne.0) return
@@ -1845,7 +1846,7 @@
 	   tensor_block_cmp=.false.
 	  case('r4')
 	   cmp_thr4=real(cmp_thr8,4)
-	   if(allocated(tens1%data_real4).and.allocated(tens2%data_real4)) then
+	   if(associated(tens1%data_real4).and.associated(tens2%data_real4)) then
 	    l1=size(tens1%data_real4); l2=size(tens2%data_real4)
 	    if(l1.eq.l2.and.l1.eq.tens1%tensor_block_size.and.l1.eq.tens2%tensor_block_size.and.l1.gt.0) then
 !$OMP PARALLEL DEFAULT(SHARED) PRIVATE(l0,l2) FIRSTPRIVATE(cmp_thr4) REDUCTION(+:diffc)
@@ -1879,7 +1880,7 @@
 	    tensor_block_cmp=.false.; ierr=8
 	   endif
 	  case('r8')
-	   if(allocated(tens1%data_real8).and.allocated(tens2%data_real8)) then
+	   if(associated(tens1%data_real8).and.associated(tens2%data_real8)) then
 	    l1=size(tens1%data_real8); l2=size(tens2%data_real8)
 	    if(l1.eq.l2.and.l1.eq.tens1%tensor_block_size.and.l1.eq.tens2%tensor_block_size.and.l1.gt.0) then
 !$OMP PARALLEL DEFAULT(SHARED) PRIVATE(l0,l2) FIRSTPRIVATE(cmp_thr8) REDUCTION(+:diffc)
@@ -1913,7 +1914,7 @@
 	    tensor_block_cmp=.false.; ierr=10
 	   endif
 	  case('c8')
-	   if(allocated(tens1%data_cmplx8).and.allocated(tens2%data_cmplx8)) then
+	   if(associated(tens1%data_cmplx8).and.associated(tens2%data_cmplx8)) then
 	    l1=size(tens1%data_cmplx8); l2=size(tens2%data_cmplx8)
 	    if(l1.eq.l2.and.l1.eq.tens1%tensor_block_size.and.l1.eq.tens2%tensor_block_size.and.l1.gt.0) then
 !$OMP PARALLEL DEFAULT(SHARED) PRIVATE(l0,l2) FIRSTPRIVATE(cmp_thr8)
@@ -2016,7 +2017,7 @@
 	 case(dimension_led)
 !Data:
  !REAL4:
-	  if(allocated(tens_in%data_real4)) then
+	  if(associated(tens_in%data_real4)) then
 	   if(tens_in%tensor_block_size.gt.1_8) then
 	    if(trans_shmem) then
 	     call tensor_block_copy_dlf(n,tens_in%tensor_shape%dim_extent,trn,tens_in%data_real4,tens_out%data_real4,ierr); if(ierr.ne.0) return
@@ -2030,7 +2031,7 @@
 	   endif
 	  endif
  !REAL8:
-	  if(allocated(tens_in%data_real8)) then
+	  if(associated(tens_in%data_real8)) then
 	   if(tens_in%tensor_block_size.gt.1_8) then
 	    if(trans_shmem) then
 	     call tensor_block_copy_dlf(n,tens_in%tensor_shape%dim_extent,trn,tens_in%data_real8,tens_out%data_real8,ierr); if(ierr.ne.0) return
@@ -2108,8 +2109,8 @@
 	   if(ls.gt.0_8) then
  !REAL4:
 	    if(dtk.eq.'r4'.or.dtk.eq.'  ') then
-	     if(allocated(tens0%data_real4)) then
-	      if(.not.allocated(tens1%data_real4)) then
+	     if(associated(tens0%data_real4)) then
+	      if(.not.associated(tens1%data_real4)) then
 	       slk=tensor_master_data_kind(tens1,ierr); if(ierr.ne.0) return
 	       if(slk.eq.'--') then; ierr=2; return; endif
 	       dlt='r4'; call tensor_block_sync(tens1,slk,ierr,dlt); if(ierr.ne.0) return
@@ -2137,8 +2138,8 @@
 	    endif
  !REAL8:
 	    if(dtk.eq.'r8'.or.dtk.eq.'  ') then
-	     if(allocated(tens0%data_real8)) then
-	      if(.not.allocated(tens1%data_real8)) then
+	     if(associated(tens0%data_real8)) then
+	      if(.not.associated(tens1%data_real8)) then
 	       slk=tensor_master_data_kind(tens1,ierr); if(ierr.ne.0) return
 	       if(slk.eq.'--') then; ierr=5; return; endif
 	       dlt='r8'; call tensor_block_sync(tens1,slk,ierr,dlt); if(ierr.ne.0) return
@@ -2166,8 +2167,8 @@
 	    endif
  !COMPLEX8:
 	    if(dtk.eq.'c8'.or.dtk.eq.'  ') then
-	     if(allocated(tens0%data_cmplx8)) then
-	      if(.not.allocated(tens1%data_cmplx8)) then
+	     if(associated(tens0%data_cmplx8)) then
+	      if(.not.associated(tens1%data_cmplx8)) then
 	       slk=tensor_master_data_kind(tens1,ierr); if(ierr.ne.0) return
 	       if(slk.eq.'--') then; ierr=8; return; endif
 	       dlt='c8'; call tensor_block_sync(tens1,slk,ierr,dlt); if(ierr.ne.0) return
@@ -2506,13 +2507,13 @@
 	 ier=0
 	 select case(contr_case)
 	 case(partial_contraction)
-	  if(allocated(ltens%data_cmplx8).and.allocated(rtens%data_cmplx8).and.allocated(dtens%data_cmplx8)) then
+	  if(associated(ltens%data_cmplx8).and.associated(rtens%data_cmplx8).and.associated(dtens%data_cmplx8)) then
 	   dtkd='c8'
 	  else
-	   if(allocated(ltens%data_real8).and.allocated(rtens%data_real8).and.allocated(dtens%data_real8)) then
+	   if(associated(ltens%data_real8).and.associated(rtens%data_real8).and.associated(dtens%data_real8)) then
 	    dtkd='r8'
 	   else
-	    if(allocated(ltens%data_real4).and.allocated(rtens%data_real4).and.allocated(dtens%data_real4)) then
+	    if(associated(ltens%data_real4).and.associated(rtens%data_real4).and.associated(dtens%data_real4)) then
 	     dtkd='r4'
 	    else
 	     ier=101
@@ -2520,13 +2521,13 @@
 	   endif
 	  endif
 	 case(full_contraction)
-	  if(allocated(ltens%data_cmplx8).and.allocated(rtens%data_cmplx8)) then
+	  if(associated(ltens%data_cmplx8).and.associated(rtens%data_cmplx8)) then
 	   dtkd='c8'
 	  else
-	   if(allocated(ltens%data_real8).and.allocated(rtens%data_real8)) then
+	   if(associated(ltens%data_real8).and.associated(rtens%data_real8)) then
 	    dtkd='r8'
 	   else
-	    if(allocated(ltens%data_real4).and.allocated(rtens%data_real4)) then
+	    if(associated(ltens%data_real4).and.associated(rtens%data_real4)) then
 	     dtkd='r4'
 	    else
 	     ier=102
@@ -2534,13 +2535,13 @@
 	   endif
 	  endif
 	 case(add_tensor)
-	  if(allocated(ltens%data_cmplx8).or.allocated(rtens%data_cmplx8)) then
+	  if(associated(ltens%data_cmplx8).or.associated(rtens%data_cmplx8)) then
 	   dtkd='c8'
 	  else
-	   if(allocated(ltens%data_real8).or.allocated(rtens%data_real8)) then
+	   if(associated(ltens%data_real8).or.associated(rtens%data_real8)) then
 	    dtkd='r8'
 	   else
-	    if(allocated(ltens%data_real4).or.allocated(rtens%data_real4)) then
+	    if(associated(ltens%data_real4).or.associated(rtens%data_real4)) then
 	     dtkd='r4'
 	    else
 	     ier=103
@@ -3112,10 +3113,11 @@
 
 	 subroutine destroy_tensor_shape(tens_shape)
 	 type(tensor_shape_t), intent(inout):: tens_shape
+	 integer je
 	 tens_shape%num_dim=-1
-	 if(allocated(tens_shape%dim_extent)) deallocate(tens_shape%dim_extent)
-	 if(allocated(tens_shape%dim_divider)) deallocate(tens_shape%dim_divider)
-	 if(allocated(tens_shape%dim_group)) deallocate(tens_shape%dim_group)
+	 if(associated(tens_shape%dim_extent)) then; deallocate(tens_shape%dim_extent,STAT=je); if(je.ne.0) nullify(tens_shape%dim_extent); endif
+	 if(associated(tens_shape%dim_divider)) then; deallocate(tens_shape%dim_divider,STAT=je); if(je.ne.0) nullify(tens_shape%dim_divider); endif
+	 if(associated(tens_shape%dim_group)) then; deallocate(tens_shape%dim_group,STAT=je); if(je.ne.0) nullify(tens_shape%dim_group); endif
 	 return
 	 end subroutine destroy_tensor_shape
 
@@ -3151,15 +3153,15 @@
 
 	tensor_shape_ok=0
 	if(tens_shape%num_dim.eq.0) then !scalar (rank-0) tensor
-	 if(allocated(tens_shape%dim_extent)) deallocate(tens_shape%dim_extent)
-	 if(allocated(tens_shape%dim_divider)) deallocate(tens_shape%dim_divider)
-	 if(allocated(tens_shape%dim_group)) deallocate(tens_shape%dim_group)
+	 if(associated(tens_shape%dim_extent)) then; deallocate(tens_shape%dim_extent,STAT=i); if(i.ne.0) nullify(tens_shape%dim_extent); endif
+	 if(associated(tens_shape%dim_divider)) then; deallocate(tens_shape%dim_divider,STAT=i); if(i.ne.0) nullify(tens_shape%dim_divider); endif
+	 if(associated(tens_shape%dim_group)) then; deallocate(tens_shape%dim_group,STAT=i); if(i.ne.0) nullify(tens_shape%dim_group); endif
 	elseif(tens_shape%num_dim.gt.0) then !true tensor (rank>0)
 	 n=tens_shape%num_dim
 	 if(n.le.max_tensor_rank) then
-	  if(.not.allocated(tens_shape%dim_extent)) then; tensor_shape_ok=2; return; endif
-	  if(.not.allocated(tens_shape%dim_divider)) then; tensor_shape_ok=3; return; endif
-	  if(.not.allocated(tens_shape%dim_group)) then; tensor_shape_ok=4; return; endif
+	  if(.not.associated(tens_shape%dim_extent)) then; tensor_shape_ok=2; return; endif
+	  if(.not.associated(tens_shape%dim_divider)) then; tensor_shape_ok=3; return; endif
+	  if(.not.associated(tens_shape%dim_group)) then; tensor_shape_ok=4; return; endif
 	  if(size(tens_shape%dim_extent).ne.n) then; ierr=11; return; endif
 	  if(size(tens_shape%dim_divider).ne.n) then; ierr=12; return; endif
 	  if(size(tens_shape%dim_group).ne.n) then; ierr=13; return; endif

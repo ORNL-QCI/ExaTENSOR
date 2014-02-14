@@ -1,6 +1,6 @@
 !This module provides functionality for a QFORCE Computing Process (C-PROCESS).
 !AUTHOR: Dmitry I. Lyakh (Dmytro I. Liakh): quant4me@gmail.com
-!REVISION: 2014/01/29
+!REVISION: 2014/02/14
        module c_process
         use, intrinsic:: ISO_C_BINDING
         use qforce
@@ -307,7 +307,7 @@
         type(tensor_block_t), intent(inout):: tens
         type(C_PTR), intent(in):: pptr
         integer, intent(inout):: ierr
-        integer i,base(1:max_tensor_rank)
+        integer i,j,base(1:max_tensor_rank)
         integer(C_SIZE_T) s0
         integer(C_INT) err_code
         type(C_PTR) c_addr
@@ -338,21 +338,21 @@
         call c_f_pointer(c_addr,ptr_trank); trank=ptr_trank; nullify(ptr_trank)
         tens%tensor_shape%num_dim=trank; if(trank.lt.0) then; ierr=1; return; endif
         tens%tensor_block_size=elems_count; if(elems_count.le.0.or.(trank.eq.0.and.elems_count.ne.1)) then; ierr=2; return; endif
-        if(allocated(tens%tensor_shape%dim_extent)) deallocate(tens%tensor_shape%dim_extent)
-        if(trank.gt.0) allocate(tens%tensor_shape%dim_extent(1:trank),STAT=ierr); if(ierr.ne.0) then; ierr=3; return; endif
-        if(allocated(tens%tensor_shape%dim_divider)) deallocate(tens%tensor_shape%dim_divider)
-        if(trank.gt.0) allocate(tens%tensor_shape%dim_divider(1:trank),STAT=ierr); if(ierr.ne.0) then; ierr=4; return; endif
-        if(allocated(tens%tensor_shape%dim_group)) deallocate(tens%tensor_shape%dim_group)
-        if(trank.gt.0) allocate(tens%tensor_shape%dim_group(1:trank),STAT=ierr); if(ierr.ne.0) then; ierr=5; return; endif
+        if(associated(tens%tensor_shape%dim_extent)) then; deallocate(tens%tensor_shape%dim_extent,STAT=j); if(j.ne.0) nullify(tens%tensor_shape%dim_extent); endif
+        if(trank.gt.0) then; allocate(tens%tensor_shape%dim_extent(1:trank),STAT=ierr); if(ierr.ne.0) then; ierr=3; return; endif; endif
+        if(associated(tens%tensor_shape%dim_divider)) then; deallocate(tens%tensor_shape%dim_divider,STAT=j); if(j.ne.0) nullify(tens%tensor_shape%dim_divider); endif
+        if(trank.gt.0) then; allocate(tens%tensor_shape%dim_divider(1:trank),STAT=ierr); if(ierr.ne.0) then; ierr=4; return; endif; endif
+        if(associated(tens%tensor_shape%dim_group)) then; deallocate(tens%tensor_shape%dim_group,STAT=j); if(j.ne.0) nullify(tens%tensor_shape%dim_group); endif
+        if(trank.gt.0) then; allocate(tens%tensor_shape%dim_group(1:trank),STAT=ierr); if(ierr.ne.0) then; ierr=5; return; endif; endif
         select case(data_kind)
         case(R4)
-         if(allocated(tens%data_real4)) deallocate(tens%data_real4)
+         if(associated(tens%data_real4)) then; deallocate(tens%data_real4,STAT=j); if(j.ne.0) nullify(tens%data_real4); endif
          if(trank.gt.0) then; allocate(tens%data_real4(0:elems_count-1),STAT=ierr); if(ierr.ne.0) then; ierr=6; return; endif; endif
         case(R8)
-         if(allocated(tens%data_real8)) deallocate(tens%data_real8)
+         if(associated(tens%data_real8)) then; deallocate(tens%data_real8,STAT=j); if(j.ne.0) nullify(tens%data_real8); endif
          if(trank.gt.0) then; allocate(tens%data_real8(0:elems_count-1),STAT=ierr); if(ierr.ne.0) then; ierr=7; return; endif; endif
         case(C8)
-         if(allocated(tens%data_cmplx8)) deallocate(tens%data_cmplx8)
+         if(associated(tens%data_cmplx8)) then; deallocate(tens%data_cmplx8,STAT=j); if(j.ne.0) nullify(tens%data_cmplx8); endif
          if(trank.gt.0) then; allocate(tens%data_cmplx8(0:elems_count-1),STAT=ierr); if(ierr.ne.0) then; ierr=8; return; endif; endif
         case default
          ierr=9; return
