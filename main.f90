@@ -1,7 +1,7 @@
 !PROGRAM: Q-FORCE: Massively-Parallel Quantum Many-Body Methodology on Heterogeneous HPC systems.
 !AUTHOR: Dmitry I. Lyakh (Dmytro I. Liakh): quant4me@gmail.com
-!REVISION: 2014/02/11
-!Compilation notes:
+!REVISION: 2014/02/25
+!COMPILATION:
 ! - Fortran 2003 at least.
 ! - MPI 2.0 at least.
 ! - OpenMP 3.0 at least.
@@ -9,22 +9,22 @@
 ! - GNU compiling flags: -c -O3 --free-line-length-none -x f95-cpp-input -fopenmp
 !   GNU linking flags: -lgomp
 !   GNU BLAS/LAPACK: -lblas -llapack
-! - Intel compiling flags: -c -O3 -fpp -vec-threshold4 -vec-report2 -openmp -openmp-report2 -fPIC -DUSE_MKL
-!   Intel linking flags: -fPIC -Bdynamic
+! - Intel compiling flags: -c -O3 -fpp -vec-threshold4 -vec-report2 -openmp -openmp-report2 -DUSE_MKL
+!   Intel linking flags: -Bdynamic
 !   Intel MKL: -lmkl_core -lmkl_intel_thread -lmkl_intel_lp64 -lmkl_blas95_lp64 -lmkl_lapack95_lp64 -liomp5
 !MPI launch notes:
 ! - MPI processes launched on the same node MUST have consecutive numbers!
-! - Environment variable QF_PROCS_PER_NODE MUST be defined when using accelerators!
+! - Environment variable QF_PROCS_PER_NODE MUST be defined when using accelerators (number of processes per node)!
 !FPP directives:
-! - NO_GPU - do not use GPU;
+! - NO_GPU - do not use (Nvidia) GPU;
 ! - NO_OMP - do not use OpenMP (single-threaded processes);
 ! - NO_BLAS - BLAS/LAPACK calls will be replaced by my own routines (D.I.L.);
 ! - USE_MKL - use Intel MKL library for BLAS/LAPACK;
-! - NO_GNU - Fortran compiler is not GNU (affects Fortran timer);
+! - NO_GNU - Fortran compiler is not GNU (affects Fortran timers);
 !OUTPUT DEVICE:
-! - jo (service.mod) - generic output;
-!Devices numeration:
-! - device_id = 0: Host (multi-core);
+! - jo (@service.mod) - generic output device handle;
+!ENUMERATION OF DEVICES ON A NODE:
+! - device_id = 0: Host (SMP CPUs node, NUMA or not);
 ! - device_id = [1:MAX_GPUS_PER_NODE]: Nvidia GPUs (GPU#=device_id-1);
 ! - device_id = [MAX_GPUS_PER_NODE+1:MAX_GPUS_PER_NODE+MAX_MICS_PER_NODE]: Intel MICs (MIC#=device_id-1-MAX_GPUS_PER_NODE);
         program main !PARALLEL

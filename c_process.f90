@@ -1,6 +1,10 @@
 !This module provides functionality for a QFORCE Computing Process (C-PROCESS).
 !AUTHOR: Dmitry I. Lyakh (Dmytro I. Liakh): quant4me@gmail.com
-!REVISION: 2014/02/14
+!REVISION: 2014/02/25
+!NOTES:
+! - Data synchronization in an instance of <tensor_block_t> (Fortran)
+!   associated with a Host Argument Buffer entry can allocate regular CPU memory
+!   (the one outside the pinned Host Argument buffer).
        module c_process
         use, intrinsic:: ISO_C_BINDING
         use qforce
@@ -131,11 +135,11 @@
 ! - packet in the argument buffer space at [pptr..pptr+packet_size-1];
 ! - ierr - error code (0:success).
 !NOTES:
-! - Packet structure:
+! - Tensor block packet structure:
 !   C_SIZE_T: tensor packet size (bytes);
 !   C_INT: data kind (4:float; 8:double; 16:double_complex);
-!   C_SIZE_T: tensor block size (number of elements stored);
-!   C_INT: tensor block rank;
+!   C_SIZE_T: tensor block size (number of tensor elements stored);
+!   C_INT: tensor block rank (number of dimensions);
 !   C_INT(0:rank-1): dimension extents;
 !   C_INT(0:rank-1): dimension dividers;
 !   C_INT(0:rank-1): dimension groups;
@@ -288,7 +292,7 @@
 !	write(jo,'("#DEBUG(c_process:tens_blck_pack): packet created (size/entry): ",i12,1x,i7)') packet_size,entry_num !debug
         return
         end subroutine tens_blck_pack
-!-----------------------------------------------------------------------
+!-----------------------------------------------------------------------------
         subroutine tens_blck_unpack(tens,pptr,ierr)
 !This subroutine creates an instance of tensor_block_t (F) <tens> by unpacking
 !a tensor block packet pointed to by a C pointer <pptr>:
@@ -296,7 +300,7 @@
 !Note that the packet will still reside in the Host argument buffer after returning from this subroutine.
 !INPUT:
 ! - tens - an allocated (uninitialized) instance of tensor_block_t;
-! - pptr - C pointer to the tensor block packet (located in the Host argument buffer);
+! - pptr - C pointer to the tensor block packet located in the Host argument buffer;
 !OUTPUT:
 ! - tens - a filled instance of tensor_block_t;
 ! - ierr - error code (0:success).
@@ -428,14 +432,14 @@
 !DEBUG end.
         return
         end subroutine tens_blck_unpack
-!-----------------------------------------------------------------------
+!---------------------------------------------------------------
         subroutine tens_blck_assoc(pptr,ierr,tens,ctens,gpu_num)
 !Based on the packet located at <pptr>, this subroutine fills in an instance of
 !either tensBlck_t (C/C++) <ctens> or tensor_block_t (Fortran) <tens>:
-! {tensor_block_t|tensBlck_t} => PACKET (Host Argument Buffer)
-!Note that the fields of {tensor_block_t|tensBlck_t} will simply point
+! {tensor_block_t|tensBlck_t} => PACKET (Host Argument Buffer entry)
+!Note that the pointer fields of {tensor_block_t|tensBlck_t} will simply point
 !to the corresponding locations in the Host Argument Buffer. Hence the corresponding entry
-!of the Host Argument Buffer cannot be freed during the life time of {tensor_block_t|tensBlck_t}.
+!of the Host Argument Buffer cannot be freed during the lifetime of {tensor_block_t|tensBlck_t}.
 !INPUT:
 ! - pptr - C pointer to a tensor block packet located in the Host argument buffer;
 ! - tens - an allocated (uninitialized) instance of tensor_block_t (F);
@@ -446,8 +450,11 @@
 ! - tens - a filled instance of tensor_block_t;
 ! - ierr - error code (0:success).
 !NOTES:
+! - Either <tens> or a pair {<ctens>,<gpu_num>} must be supplied, and they are mutually exclusive.
 ! - This subroutine sets all the fields of tensBlck_t, like elems_h, elems_d, const_args_entry, etc.
-!   And, apparently, it sets all the fields of tensor_block_t.
+!   Apparently it also sets all the fields of tensor_block_t.
+! - The opposite function <tens_blck_dissoc> can be used only with tensBlck_t (C).
+!   For tensor_block_t (Fortran) one should still invoke <tensor_block_destroy>.
         implicit none
         type(C_PTR), intent(in):: pptr
         integer, intent(inout):: ierr
@@ -473,46 +480,48 @@
         integer(C_SIZE_T) off_elems_c8; complex(8) elems_c8
 
         ierr=0
+!Extract all components from the tensor block packet:
+        off_packet_size=0; c_addr=ptr_offset(pptr,off_packet_size)
+        call c_f_pointer(c_addr,ptr_packet_size); packet_size=ptr_packet_size; nullify(ptr_packet_size)
+        off_data_kind=off_packet_size+sizeof(packet_size); c_addr=ptr_offset(pptr,off_data_kind)
+        call c_f_pointer(c_addr,ptr_data_kind); data_kind=ptr_data_kind; nullify(ptr_data_kind)
+        off_elems_count=off_data_kind+sizeof(data_kind); c_addr=ptr_offset(pptr,off_elems_count)
+        call c_f_pointer(c_addr,ptr_elems_count); elems_count=ptr_elems_count; nullify(ptr_elems_count)
+        off_trank=off_elems_count+sizeof(elems_count); c_addr=ptr_offset(pptr,off_trank)
+        call c_f_pointer(c_addr,ptr_trank); trank=ptr_trank; nullify(ptr_trank)
+        if(trank.lt.0.or.(trank.eq.0.and.elems_count.ne.1).or.(trank.gt.0.and.elems_count.lt.1)) then; ierr=1; return; endif
+        off_dims=off_trank+sizeof(trank); addr_dims=ptr_offset(pptr,off_dims)
+        off_divs=off_dims+sizeof(err_code)*trank; addr_divs=ptr_offset(pptr,off_divs)
+        off_grps=off_divs+sizeof(err_code)*trank; addr_grps=ptr_offset(pptr,off_grps)
+        off_base=off_grps+sizeof(err_code)*trank; addr_base=ptr_offset(pptr,off_base)
+        off_prmn=off_base+sizeof(err_code)*trank; addr_prmn=ptr_offset(pptr,off_prmn)
+        off_sclr=off_prmn+sizeof(err_code)*trank;
+        select case(data_kind)
+        case(R4)
+         off_elems_r4=off_sclr+sizeof(elems_c8); addr_host=ptr_offset(pptr,off_elems_r4); s0=sizeof(elems_r4)*elems_count
+        case(R8)
+         off_elems_r8=off_sclr+sizeof(elems_c8); addr_host=ptr_offset(pptr,off_elems_r8); s0=sizeof(elems_r8)*elems_count
+        case(C8)
+         off_elems_c8=off_sclr+sizeof(elems_c8); addr_host=ptr_offset(pptr,off_elems_c8); s0=sizeof(elems_c8)*elems_count
+        case default
+         ierr=2; return; !invalid data kind
+        end select
+!Associate:
         if(present(ctens).and.(.not.present(tens)).and.present(gpu_num)) then
 #ifndef NO_GPU
-!tensBlck_t (C)
-         off_packet_size=0; c_addr=ptr_offset(pptr,off_packet_size)
-         call c_f_pointer(c_addr,ptr_packet_size); packet_size=ptr_packet_size; nullify(ptr_packet_size)
-         off_data_kind=off_packet_size+sizeof(packet_size); c_addr=ptr_offset(pptr,off_data_kind)
-         call c_f_pointer(c_addr,ptr_data_kind); data_kind=ptr_data_kind; nullify(ptr_data_kind)
-         off_elems_count=off_data_kind+sizeof(data_kind); c_addr=ptr_offset(pptr,off_elems_count)
-         call c_f_pointer(c_addr,ptr_elems_count); elems_count=ptr_elems_count; nullify(ptr_elems_count)
-         off_trank=off_elems_count+sizeof(elems_count); c_addr=ptr_offset(pptr,off_trank)
-         call c_f_pointer(c_addr,ptr_trank); trank=ptr_trank; nullify(ptr_trank)
-         if(trank.lt.0.or.(trank.eq.0.and.elems_count.ne.1).or.(trank.gt.0.and.elems_count.lt.1)) then; ierr=1; return; endif
-         off_dims=off_trank+sizeof(trank); addr_dims=ptr_offset(pptr,off_dims)
-         off_divs=off_dims+sizeof(err_code)*trank; addr_divs=ptr_offset(pptr,off_divs)
-         off_grps=off_divs+sizeof(err_code)*trank; addr_grps=ptr_offset(pptr,off_grps)
-         off_base=off_grps+sizeof(err_code)*trank; addr_base=ptr_offset(pptr,off_base)
-         off_prmn=off_base+sizeof(err_code)*trank; addr_prmn=ptr_offset(pptr,off_prmn)
-         off_sclr=off_prmn+sizeof(err_code)*trank;
-         select case(data_kind)
-         case(R4)
-          off_elems_r4=off_sclr+sizeof(elems_c8); addr_host=ptr_offset(pptr,off_elems_r4); s0=sizeof(elems_r4)*elems_count
-         case(R8)
-          off_elems_r8=off_sclr+sizeof(elems_c8); addr_host=ptr_offset(pptr,off_elems_r8); s0=sizeof(elems_r8)*elems_count
-         case(C8)
-          off_elems_c8=off_sclr+sizeof(elems_c8); addr_host=ptr_offset(pptr,off_elems_c8); s0=sizeof(elems_c8)*elems_count
-         case default
-          ierr=2; return; !invalid data kind
-         end select
+ !Create an instance of tensBlck_t (C):
          err_code=get_buf_entry_gpu(gpu_num,s0,addr_gpu,entry_gpu); if(err_code.ne.0.or.entry_gpu.lt.0) then; ierr=3; return; endif
          err_code=const_args_entry_get(gpu_num,entry_const); if(err_code.ne.0.or.entry_const.lt.0) then; ierr=4; return; endif
          err_code=tensBlck_create(ctens); if(err_code.ne.0) then; ctens=C_NULL_PTR; ierr=5; return; endif
          err_code=tensBlck_construct(ctens,DEV_NVIDIA_GPU,gpu_num,data_kind,trank,addr_dims,addr_divs,addr_grps,addr_prmn,addr_host,addr_gpu,entry_gpu,entry_const)
          if(err_code.ne.0) then; ierr=6; return; endif
 #else
-         write(jo,'("#FATAL(c_process:tens_blck_assoc): attempt to initialize a GPU-resident tensor block in GPU-free compilation!")') !trap
-         ierr=-1; return !attempt to initialize tensBlck_t in a GPU-free compilation
+         write(jo,'("#FATAL(c_process:tens_blck_assoc): attempt to initialize a GPU-resident tensor block in GPU-free code compilation!")') !trap
+         ierr=-1; return !attempt to initialize tensBlck_t in a GPU-free code compilation
 #endif
         elseif(present(tens).and.(.not.present(ctens)).and.(.not.present(gpu_num))) then
-!tensor_block_t (F)
-         !`Write
+ !Create an instance of tensor_block_t (Fortran):
+         
         else
          ierr=99 !both <ctens> and <tens> cannot be absent/present simultaneously
         endif
@@ -520,10 +529,10 @@
         end subroutine tens_blck_assoc
 !--------------------------------------------------------------------------
         subroutine tens_blck_dissoc(ctens,ierr)
-!This subroutine dissociates an object of type tensBlck_t from
+!This subroutine dissociates an object of type tensBlck_t (C tensor block) from
 !GPU argument buffers (Global & Constant memory), frees the corresponding
 !GPU argument buffer entries, and destroys the tensBlck_t object.
-!Note however that the corresponding Host argument buffer entry stays unaffected!
+!Note that the corresponding Host argument buffer entry (with its content) is not freed!
 !INPUT:
 ! - ctens - tensBlck_t;
 !OUTPUT:
@@ -539,11 +548,13 @@
         if(dev_kind.eq.DEV_NVIDIA_GPU.and.gn.ge.0.and.entry_gpu.ge.0.and.entry_const.ge.0) then
          err_code=free_buf_entry_gpu(gn,entry_gpu); if(err_code.ne.0) ierr=ierr+10
          err_code=const_args_entry_free(gn,entry_const); if(err_code.ne.0) ierr=ierr+100
+        else
+         ierr=ierr+1
         endif
         err_code=tensBlck_destroy(ctens); if(err_code.ne.0) ierr=ierr+1000
 #else
-        write(jo,'("#FATAL(c_process:tens_blck_dissoc): attempt to dissociate a GPU-resident tensor block in GPU-free compilation!")') !trap
-        ierr=-1; return !attempt to initialize tensBlck_t in a GPU-free compilation
+        write(jo,'("#FATAL(c_process:tens_blck_dissoc): attempt to dissociate a GPU-resident tensor block in GPU-free code compilation!")') !trap
+        ierr=-1; return !attempt to initialize tensBlck_t in a GPU-free code compilation
 #endif
         return
         end subroutine tens_blck_dissoc
@@ -569,7 +580,6 @@
         type(tensor_block_t) ftens(0:test_args_lim)
 
         ierr=0; write(jo,'("#MSG(c_process:c_proc_test): Testing C-process functionality ... ")',advance='no')
-!	return !debug
 !TEST 1 (CPU: tensor_block_contract):
         write(jo,'("1 ")',advance='no')
         call tensor_block_create('(20,30,20,30)','r8',ftens(0),ierr,val_r8=0d0); if(ierr.ne.0) then; ierr=1; goto 999; endif
@@ -725,7 +735,7 @@
         if(ierr.eq.0) then; write(jo,'("Ok")'); else; write(jo,'("Failed: ERROR #",i4)') ierr; endif
         return
         end subroutine c_proc_test
-!--------------------------------------------------------------------------------------------
+!--------------------------------------------------------------------------------------------------------
         subroutine run_benchmarks(ierr)
 !This subroutine runs computationally intensive (single-process) benchmarks of tensor algebra on CPU/GPU.
         implicit none
@@ -860,7 +870,7 @@
         endif
         return
         end subroutine run_benchmarks
-!--------------------------------------------------------------------------------------------
+!---------------------------------------------------------------------------------------------
 #ifndef NO_GPU
         subroutine print_gpu_debug_dump(ifh) !prints the current GPU debug dump to output #ifh
         implicit none
