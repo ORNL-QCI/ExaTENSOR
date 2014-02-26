@@ -160,19 +160,19 @@
         integer(C_SIZE_T) s0
         integer(C_INT) err_code
         type(C_PTR) c_addr
-        integer(C_SIZE_T) off_packet_size; integer(C_SIZE_T), pointer:: ptr_packet_size
-        integer(C_INT) data_kind; integer(C_SIZE_T) off_data_kind; integer(C_INT), pointer:: ptr_data_kind
-        integer(C_SIZE_T) elems_count; integer(C_SIZE_T) off_elems_count; integer(C_SIZE_T), pointer:: ptr_elems_count
-        integer(C_INT) trank; integer(C_SIZE_T) off_trank; integer(C_INT), pointer:: ptr_trank
-        integer(C_INT) dims(1:max_tensor_rank); integer(C_SIZE_T) off_dims; integer(C_INT), pointer:: ptr_dims(:)
-        integer(C_INT) divs(1:max_tensor_rank); integer(C_SIZE_T) off_divs; integer(C_INT), pointer:: ptr_divs(:)
-        integer(C_INT) grps(1:max_tensor_rank); integer(C_SIZE_T) off_grps; integer(C_INT), pointer:: ptr_grps(:)
-        integer(C_INT) base(1:max_tensor_rank); integer(C_SIZE_T) off_base; integer(C_INT), pointer:: ptr_base(:)
+        integer(C_SIZE_T) off_packet_size; integer(C_SIZE_T), pointer:: ptr_packet_size=>NULL()
+        integer(C_INT) data_kind; integer(C_SIZE_T) off_data_kind; integer(C_INT), pointer:: ptr_data_kind=>NULL()
+        integer(C_SIZE_T) elems_count; integer(C_SIZE_T) off_elems_count; integer(C_SIZE_T), pointer:: ptr_elems_count=>NULL()
+        integer(C_INT) trank; integer(C_SIZE_T) off_trank; integer(C_INT), pointer:: ptr_trank=>NULL()
+        integer(C_INT) dims(1:max_tensor_rank); integer(C_SIZE_T) off_dims; integer(C_INT), pointer:: ptr_dims(:)=>NULL()
+        integer(C_INT) divs(1:max_tensor_rank); integer(C_SIZE_T) off_divs; integer(C_INT), pointer:: ptr_divs(:)=>NULL()
+        integer(C_INT) grps(1:max_tensor_rank); integer(C_SIZE_T) off_grps; integer(C_INT), pointer:: ptr_grps(:)=>NULL()
+        integer(C_INT) base(1:max_tensor_rank); integer(C_SIZE_T) off_base; integer(C_INT), pointer:: ptr_base(:)=>NULL()
         integer(C_SIZE_T) off_prmn;
-        complex(8) sclr; integer(C_SIZE_T) off_sclr; complex(8), pointer:: ptr_sclr;
-        real(4) elems_r4; integer(C_SIZE_T) off_elems_r4; real(4), pointer:: ptr_elems_r4(:)
-        real(8) elems_r8; integer(C_SIZE_T) off_elems_r8; real(8), pointer:: ptr_elems_r8(:)
-        complex(8) elems_c8; integer(C_SIZE_T) off_elems_c8; complex(8), pointer:: ptr_elems_c8(:)
+        complex(8) sclr; integer(C_SIZE_T) off_sclr; complex(8), pointer:: ptr_sclr=>NULL()
+        real(4) elems_r4; integer(C_SIZE_T) off_elems_r4; real(4), pointer:: ptr_elems_r4(:)=>NULL()
+        real(8) elems_r8; integer(C_SIZE_T) off_elems_r8; real(8), pointer:: ptr_elems_r8(:)=>NULL()
+        complex(8) elems_c8; integer(C_SIZE_T) off_elems_c8; complex(8), pointer:: ptr_elems_c8(:)=>NULL()
 
         ierr=0
 !	write(jo,'("#DEBUG(c_process:tens_blck_pack): Creating a tensor block packet:")') !debug
@@ -315,19 +315,19 @@
         integer(C_SIZE_T) s0
         integer(C_INT) err_code
         type(C_PTR) c_addr
-        integer(C_SIZE_T) off_packet_size; integer(C_SIZE_T), pointer:: ptr_packet_size; integer(C_SIZE_T) packet_size
-        integer(C_SIZE_T) off_data_kind; integer(C_INT), pointer:: ptr_data_kind; integer(C_INT) data_kind
-        integer(C_SIZE_T) off_elems_count; integer(C_SIZE_T), pointer:: ptr_elems_count; integer(C_SIZE_T) elems_count
-        integer(C_SIZE_T) off_trank; integer(C_INT), pointer:: ptr_trank; integer(C_INT) trank
-        integer(C_SIZE_T) off_dims; integer(C_INT), pointer:: ptr_dims(:)
-        integer(C_SIZE_T) off_divs; integer(C_INT), pointer:: ptr_divs(:)
-        integer(C_SIZE_T) off_grps; integer(C_INT), pointer:: ptr_grps(:)
-        integer(C_SIZE_T) off_base; integer(C_INT), pointer:: ptr_base(:)
+        integer(C_SIZE_T) off_packet_size; integer(C_SIZE_T), pointer:: ptr_packet_size=>NULL(); integer(C_SIZE_T) packet_size
+        integer(C_SIZE_T) off_data_kind; integer(C_INT), pointer:: ptr_data_kind=>NULL(); integer(C_INT) data_kind
+        integer(C_SIZE_T) off_elems_count; integer(C_SIZE_T), pointer:: ptr_elems_count=>NULL(); integer(C_SIZE_T) elems_count
+        integer(C_SIZE_T) off_trank; integer(C_INT), pointer:: ptr_trank=>NULL(); integer(C_INT) trank
+        integer(C_SIZE_T) off_dims; integer(C_INT), pointer:: ptr_dims(:)=>NULL()
+        integer(C_SIZE_T) off_divs; integer(C_INT), pointer:: ptr_divs(:)=>NULL()
+        integer(C_SIZE_T) off_grps; integer(C_INT), pointer:: ptr_grps(:)=>NULL()
+        integer(C_SIZE_T) off_base; integer(C_INT), pointer:: ptr_base(:)=>NULL()
         integer(C_SIZE_T) off_prmn
-        integer(C_SIZE_T) off_sclr; complex(8), pointer:: ptr_sclr
-        integer(C_SIZE_T) off_elems_r4; real(4), pointer:: ptr_elems_r4(:); real(4) elems_r4
-        integer(C_SIZE_T) off_elems_r8; real(8), pointer:: ptr_elems_r8(:); real(8) elems_r8
-        integer(C_SIZE_T) off_elems_c8; complex(8), pointer:: ptr_elems_c8(:); complex(8) elems_c8
+        integer(C_SIZE_T) off_sclr; complex(8), pointer:: ptr_sclr=>NULL()
+        integer(C_SIZE_T) off_elems_r4; real(4), pointer:: ptr_elems_r4(:)=>NULL(); real(4) elems_r4
+        integer(C_SIZE_T) off_elems_r8; real(8), pointer:: ptr_elems_r8(:)=>NULL(); real(8) elems_r8
+        integer(C_SIZE_T) off_elems_c8; complex(8), pointer:: ptr_elems_c8(:)=>NULL(); complex(8) elems_c8
 
         ierr=0; err_code=0
 !	write(jo,'("#DEBUG(c_process:tens_blck_upack): Unpacking a tensor block packet:")') !debug
@@ -463,21 +463,21 @@
         integer(C_INT), optional, intent(in):: gpu_num
         integer i
         integer(C_SIZE_T) s0
-        integer(C_INT) entry_gpu,entry_const,err_code
+        integer(C_INT) entry_gpu,entry_const,err_code !err_code must be C_INT=integer(4)
         type(C_PTR) c_addr,addr_dims,addr_divs,addr_grps,addr_base,addr_prmn,addr_host,addr_gpu
-        integer(C_SIZE_T) off_packet_size; integer(C_SIZE_T), pointer:: ptr_packet_size; integer(C_SIZE_T) packet_size
-        integer(C_SIZE_T) off_data_kind; integer(C_INT), pointer:: ptr_data_kind; integer(C_INT) data_kind
-        integer(C_SIZE_T) off_elems_count; integer(C_SIZE_T), pointer:: ptr_elems_count; integer(C_SIZE_T) elems_count
-        integer(C_SIZE_T) off_trank; integer(C_INT), pointer:: ptr_trank; integer(C_INT) trank
+        integer(C_SIZE_T) off_packet_size; integer(C_SIZE_T), pointer:: ptr_packet_size=>NULL(); integer(C_SIZE_T) packet_size
+        integer(C_SIZE_T) off_data_kind; integer(C_INT), pointer:: ptr_data_kind=>NULL(); integer(C_INT) data_kind
+        integer(C_SIZE_T) off_elems_count; integer(C_SIZE_T), pointer:: ptr_elems_count=>NULL(); integer(C_SIZE_T) elems_count
+        integer(C_SIZE_T) off_trank; integer(C_INT), pointer:: ptr_trank=>NULL(); integer(C_INT) trank
         integer(C_SIZE_T) off_dims
         integer(C_SIZE_T) off_divs
         integer(C_SIZE_T) off_grps
         integer(C_SIZE_T) off_base
         integer(C_SIZE_T) off_prmn
-        integer(C_SIZE_T) off_sclr; complex(8), pointer:: ptr_sclr
-        integer(C_SIZE_T) off_elems_r4; real(4) elems_r4
-        integer(C_SIZE_T) off_elems_r8; real(8) elems_r8
-        integer(C_SIZE_T) off_elems_c8; complex(8) elems_c8
+        integer(C_SIZE_T) off_sclr; complex(8), pointer:: ptr_sclr=>NULL()
+        integer(C_SIZE_T) off_elems_r4; real(4), pointer:: ptr_elems_r4(:)=>NULL(); real(4) elems_r4
+        integer(C_SIZE_T) off_elems_r8; real(8), pointer:: ptr_elems_r8(:)=>NULL(); real(8) elems_r8
+        integer(C_SIZE_T) off_elems_c8; complex(8), pointer:: ptr_elems_c8(:)=>NULL(); complex(8) elems_c8
 
         ierr=0
 !Extract all components from the tensor block packet:
@@ -495,7 +495,8 @@
         off_grps=off_divs+sizeof(err_code)*trank; addr_grps=ptr_offset(pptr,off_grps)
         off_base=off_grps+sizeof(err_code)*trank; addr_base=ptr_offset(pptr,off_base)
         off_prmn=off_base+sizeof(err_code)*trank; addr_prmn=ptr_offset(pptr,off_prmn)
-        off_sclr=off_prmn+sizeof(err_code)*trank;
+        off_sclr=off_prmn+sizeof(err_code)*trank; c_addr=ptr_offset(pptr,off_sclr)
+        call c_f_pointer(c_addr,ptr_sclr); elems_c8=ptr_sclr; nullify(ptr_sclr)
         select case(data_kind)
         case(R4)
          off_elems_r4=off_sclr+sizeof(elems_c8); addr_host=ptr_offset(pptr,off_elems_r4); s0=sizeof(elems_r4)*elems_count
@@ -521,7 +522,23 @@
 #endif
         elseif(present(tens).and.(.not.present(ctens)).and.(.not.present(gpu_num))) then
  !Create an instance of tensor_block_t (Fortran):
-         
+         tens%tensor_block_size=elems_count
+         tens%tensor_shape%num_dim=trank
+         nullify(tens%tensor_shape%dim_extent); call c_f_pointer(addr_dims,tens%tensor_shape%dim_extent,shape=[trank])
+         nullify(tens%tensor_shape%dim_divider); call c_f_pointer(addr_divs,tens%tensor_shape%dim_divider,shape=[trank])
+         nullify(tens%tensor_shape%dim_group); call c_f_pointer(addr_grps,tens%tensor_shape%dim_group,shape=[trank])
+         tens%scalar_value=elems_c8
+         select case(data_kind)
+         case(R4)
+          call c_f_pointer(addr_host,ptr_elems_r4,shape=[elems_count])
+          tens%data_real4(0:)=>ptr_elems_r4; nullify(ptr_elems_r4) !Is this portable?`
+         case(R8)
+          call c_f_pointer(addr_host,ptr_elems_r8,shape=[elems_count])
+          tens%data_real8(0:)=>ptr_elems_r8; nullify(ptr_elems_r8) !Is this portable?`
+         case(C8)
+          call c_f_pointer(addr_host,ptr_elems_c8,shape=[elems_count])
+          tens%data_cmplx8(0:)=>ptr_elems_c8; nullify(ptr_elems_c8) !Is this portable?`
+         end select
         else
          ierr=99 !both <ctens> and <tens> cannot be absent/present simultaneously
         endif
