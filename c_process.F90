@@ -78,7 +78,7 @@
 #endif
 !Test C-process functionality:
         call c_proc_test(ierr); if(ierr.ne.0) then; write(jo,'("#ERROR(c_process:c_proc_life): C-process functionality test failed: ",i7)') ierr; call c_proc_quit(6); return; endif
-!        call run_benchmarks(ierr); if(ierr.ne.0) then; write(jo,'("#ERROR(c_process:c_proc_life): C-process benchmarking failed: ",i7)') ierr; call c_proc_quit(7); return; endif
+        call run_benchmarks(ierr); if(ierr.ne.0) then; write(jo,'("#ERROR(c_process:c_proc_life): C-process benchmarking failed: ",i7)') ierr; call c_proc_quit(7); return; endif
 !Report to work to the local host:
 
 !Receive the next batch of tensor instructions:
@@ -600,16 +600,16 @@
 
         ierr=0; write(jo,'("#MSG(c_process:c_proc_test): Testing C-process functionality ... ")',advance='no')
 !TEST 0: Random contraction patterns:
-        write(jo,*)''
-        do i=1,16
-         call contr_pattern_rnd(8,100000000,shape0,shape1,shape2,cptrn,ierr)
-         if(ierr.ne.0) then; write(jo,*)'ERROR(c_process:c_proc_test): contr_pattern_rnd error ',ierr; return; endif
-         l=index(shape0,')'); k=index(shape1,')'); j=index(shape2,')')
-         call printl(jo,shape0(1:l)//'+='//shape1(1:k)//'*'//shape2(1:j)) !debug
-         m=tensor_shape_rank(shape1(1:k),ierr)+tensor_shape_rank(shape2(1:j),ierr)
+!        write(jo,*)''
+!        do i=1,16
+!         call contr_pattern_rnd(8,100000000,shape0,shape1,shape2,cptrn,ierr)
+!         if(ierr.ne.0) then; write(jo,*)'ERROR(c_process:c_proc_test): contr_pattern_rnd error ',ierr; return; endif
+!         l=index(shape0,')'); k=index(shape1,')'); j=index(shape2,')')
+!         call printl(jo,shape0(1:l)//'+='//shape1(1:k)//'*'//shape2(1:j)) !debug
+!         m=tensor_shape_rank(shape1(1:k),ierr)+tensor_shape_rank(shape2(1:j),ierr)
 !         write(jo,'("CPTRN:",64(1x,i2))') cptrn(1:m) !debug
-        enddo
-        return
+!        enddo
+!        return
 !TEST 1 (CPU: tensor_block_contract):
         write(jo,'("1 ")',advance='no')
         call tensor_block_create('(20,30,20,30)','r8',ftens(0),ierr,val_r8=0d0); if(ierr.ne.0) then; ierr=1; goto 999; endif
