@@ -1,10 +1,11 @@
 !This module provides functionality for a QFORCE Computing Process (C-PROCESS).
 !AUTHOR: Dmitry I. Lyakh (Dmytro I. Liakh): quant4me@gmail.com
-!REVISION: 2014/02/25
+!REVISION: 2014/04/07
 !NOTES:
 ! - Data synchronization in an instance of <tensor_block_t> (Fortran)
-!   associated with a Host Argument Buffer entry can allocate regular CPU memory
-!   (the one outside the pinned Host Argument buffer).
+!   associated with a Host Argument Buffer entry can allocate only regular CPU memory
+!   (the one outside the pinned Host Argument buffer). Hence that newly allocated
+!   memory cannot be used with GPU.
        module c_process
         use, intrinsic:: ISO_C_BINDING
         use qforce
@@ -77,7 +78,7 @@
 #endif
 !Test C-process functionality:
         call c_proc_test(ierr); if(ierr.ne.0) then; write(jo,'("#ERROR(c_process:c_proc_life): C-process functionality test failed: ",i7)') ierr; call c_proc_quit(6); return; endif
-        call run_benchmarks(ierr); if(ierr.ne.0) then; write(jo,'("#ERROR(c_process:c_proc_life): C-process benchmarking failed: ",i7)') ierr; call c_proc_quit(7); return; endif
+!        call run_benchmarks(ierr); if(ierr.ne.0) then; write(jo,'("#ERROR(c_process:c_proc_life): C-process benchmarking failed: ",i7)') ierr; call c_proc_quit(7); return; endif
 !Report to work to the local host:
 
 !Receive the next batch of tensor instructions:
@@ -86,13 +87,13 @@
 
 !If no new remote arguments have arrived, schedule some local instructions for execution (local hedge):
 
-!Put MPI requests for some remote arguments:
+!Put MPI requests for remote arguments:
 
-!Schedule those tensor instructions which have all their (remote) arguments delivered:
+!Schedule those tensor instructions which have all their remote arguments delivered:
 
 !Check the status of previously scheduled non-blocking instructions:
 
-!Post MPI sends if some remote result tensor blocks have been computed:
+!Post MPI sends if remote tensor blocks have been computed:
 
         write(jo,'("#MSG(c_process:c_proc_life): Cleaning ... ")',advance='no')
         call c_proc_quit(0); if(ierr.eq.0) write(jo,'("Ok")')
@@ -575,7 +576,7 @@
 #endif
         return
         end subroutine tens_blck_dissoc
-!--------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------------------------
         subroutine c_proc_test(ierr)
 !This subroutine tests the basic computing functionality of a C-process by running some tensor algebra tests.
 	use tensor_dil_omp !debug
@@ -595,8 +596,20 @@
         type(C_PTR):: cuda_task(1:3)=C_NULL_PTR
         type(C_PTR):: ctens(0:test_args_lim)=C_NULL_PTR
         type(tensor_block_t) ftens(0:test_args_lim)
+        character(256) shape0,shape1,shape2
 
         ierr=0; write(jo,'("#MSG(c_process:c_proc_test): Testing C-process functionality ... ")',advance='no')
+!TEST 0: Random contraction patterns:
+        write(jo,*)''
+        do i=1,16
+         call contr_pattern_rnd(8,100000000,shape0,shape1,shape2,cptrn,ierr)
+         if(ierr.ne.0) then; write(jo,*)'ERROR(c_process:c_proc_test): contr_pattern_rnd error ',ierr; return; endif
+         l=index(shape0,')'); k=index(shape1,')'); j=index(shape2,')')
+         call printl(jo,shape0(1:l)//'+='//shape1(1:k)//'*'//shape2(1:j)) !debug
+         m=tensor_shape_rank(shape1(1:k),ierr)+tensor_shape_rank(shape2(1:j),ierr)
+!         write(jo,'("CPTRN:",64(1x,i2))') cptrn(1:m) !debug
+        enddo
+        return
 !TEST 1 (CPU: tensor_block_contract):
         write(jo,'("1 ")',advance='no')
         call tensor_block_create('(20,30,20,30)','r8',ftens(0),ierr,val_r8=0d0); if(ierr.ne.0) then; ierr=1; goto 999; endif
