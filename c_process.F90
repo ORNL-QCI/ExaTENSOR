@@ -1,6 +1,7 @@
 !This module provides functionality for a QFORCE Computing Process (C-PROCESS).
+!In essence, this is a (single-node) elementary tensor instruction scheduler (ETIS).
 !AUTHOR: Dmitry I. Lyakh (Dmytro I. Liakh): quant4me@gmail.com
-!REVISION: 2014/04/07
+!REVISION: 2014/04/08
 !NOTES:
 ! - Data synchronization in an instance of <tensor_block_t> (Fortran)
 !   associated with a Host Argument Buffer entry can allocate only regular CPU memory
@@ -8,12 +9,57 @@
 !   memory cannot be used with GPU.
        module c_process
         use, intrinsic:: ISO_C_BINDING
-        use qforce
+        use tensor_algebra
+        use service !`dependency to be removed
+        use extern_names !`dependency to be removed
 !PARAMETERS:
         integer, parameter:: CZ=C_SIZE_T
         integer(C_SIZE_T), parameter, private:: max_arg_buf_size=1024_CZ*1024_CZ*1024_CZ !max size in bytes of the Host argument buffer
         integer(C_SIZE_T), parameter, private:: min_arg_buf_size=32*1024*1024 !min size in bytes of the Host argument buffer
         integer(C_INT), parameter, private:: max_blck_buf_levels=256 !max number of argument buffer levels (KEEP BOUNDS CONSISTENT with C!)
+ !Tensor instruction status (any negative value will correspond to failure, designating the error code):
+        integer, parameter:: instr_null=0          !uninitialized instruction
+        integer, parameter:: instr_data_wait=1     !instruction is waiting for data to arrive
+        integer, parameter:: instr_ready_to_exec=2 !instruction is ready to be executed (data has arrived)
+        integer, parameter:: instr_scheduled=3     !instruction is being executed
+        integer, parameter:: instr_complete=4      !instruction has completed
+ !Tensor instruction code:
+        integer, parameter:: instr_tensor_init=1
+        integer, parameter:: instr_tensor_norm1=2
+        integer, parameter:: instr_tensor_norm2=3
+        integer, parameter:: instr_tensor_min=4
+        integer, parameter:: instr_tensor_max=5
+        integer, parameter:: instr_tensor_scale=6
+        integer, parameter:: instr_tensor_slice=7
+        integer, parameter:: instr_tensor_insert=8
+        integer, parameter:: instr_tensor_trace=9
+        integer, parameter:: instr_tensor_copy=10
+        integer, parameter:: instr_tensor_add=11
+        integer, parameter:: instr_tensor_cmp=12
+        integer, parameter:: instr_tensor_contract=13
+!TYPES:
+ !Locally present tensor argument (negative buf_entry_xxx means that no argument buffer space is used by the argument):
+        type tens_arg_t
+         type(tensor_block_t):: tens_blck_f !tensor_block (QFORCE Fortran)
+         integer(C_INT):: buf_entry_host !host argument buffer entry number where the tensor block resides as a packet (n
+         type(C_PTR):: tens_blck_c       !C pointer to tensBlck_t (QFORCE C), see "tensor_algebra_gpu_nvidia.h"
+        end type tens_arg_t
+ !Dispatched tensor instruction:
+        type tensor_instruction_t
+         integer:: instr_status                        !instruction status (see above)
+         integer:: instr_code                          !instruction code (see above)
+         integer:: instr_priority                      !instruction priority
+         real(8):: instr_cost                          !approx. instruction computational cost (FLOPs)
+         real(8):: instr_size                          !approx. instruction memory demands (Bytes)
+         real(4):: instr_time_beg                      !time when the instruction scheduled
+         real(4):: instr_time_end                      !time when the instruction completed
+         integer:: args_ready                          !a bit of this word is set to 1 when the corresponding argument is
+         type(tens_arg_t), pointer:: tens_arg0=>NULL() !pointer to the tensor block argument #0
+         type(tens_arg_t), pointer:: tens_arg1=>NULL() !pointer to the tensor block argument #1
+         type(tens_arg_t), pointer:: tens_arg2=>NULL() !pointer to the tensor block argument #2
+         type(tens_arg_t), pointer:: tens_arg3=>NULL() !pointer to the tensor block argument #3
+         type(C_PTR):: cuda_task                       !pointer to the CUDA task associated with this tensor instruction
+        end type tensor_instruction_t
 !DATA:
         integer, private:: tens_instr_que_lim=0 !current limit of the tensor instruction queue
         type(tensor_instruction_t), allocatable, private:: tens_instr_que(:) !tensor instruction queue
@@ -579,7 +625,6 @@
 !------------------------------------------------------------------------------------------------------------
         subroutine c_proc_test(ierr)
 !This subroutine tests the basic computing functionality of a C-process by running some tensor algebra tests.
-	use tensor_dil_omp !debug
         implicit none
         integer, intent(inout):: ierr
         integer, parameter:: test_args_lim=15

@@ -1,6 +1,7 @@
 !This module provides general services for parallel programs.
        module service
         use, intrinsic:: ISO_C_BINDING
+        use STSUBS
 !If a function contains MPI calls it is classified as PARALLEL (PARALLEL: YES).
 !FUNCTIONS:
 ! - subroutine file_handle(ch*:command,i:ifh,i:ierr): SERIAL: file handle manager.
@@ -43,7 +44,7 @@
 	integer:: log_file                         !log-file handle (set during run-time)
 	integer:: impis                            !MPI communicator size (set during run-time)
 	integer:: impir                            !MPI rank of the process [0..impis-1] (set during run-time)
-	integer:: max_threads=1                    !number of threads per process (set during run-time)
+	integer:: max_threads=1                    !max number of threads per process (set during run-time)
 	integer:: mpi_procs_per_node=0             !number of MPI processes per node (set by ENVIRONMENT)
 	integer:: mpi_proc_id_on_node=0            !internal process ID within a node: [0..mpi_procs_per_node-1]
 	integer(C_INT):: gpus_found=0              !total number of GPUs found on the node (set during run-time)
@@ -76,7 +77,6 @@
 !PARALLEL: NO.
 !NOTES:
 ! - only the first 4 characters of the COMMAND really matter.
-	use STSUBS
 	implicit none
 	character(*), intent(in):: command
 	integer, intent(inout):: ifh
@@ -119,7 +119,6 @@
 !OUTPUT:
 ! - error information printed by EACH process.
 !PARALLEL: YES.
-	use STSUBS
 	implicit none
 	integer i,j,k,l,m,n,k0,k1,k2,k3,k4,k5,k6,k7,ks,kf,ierr
 	integer, intent(in):: error_code       !error code

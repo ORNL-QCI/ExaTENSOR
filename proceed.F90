@@ -8,9 +8,8 @@
 !   The number of computing processes per local root is determined
 !   by qforce::c_procs_per_local_root. Thus, each computing group initially
 !   contains (1+c_procs_per_local_root) processes. This number, as well
-!   as process roles may change during run-time for load balancing purposes.
+!   as process roles may change during the run time for load balancing purposes.
         use qforce
-        use c_process
         implicit none
         integer, intent(inout):: ierr
         integer i,j,k,l,m,n,k0,k1,k2,k3
@@ -19,22 +18,24 @@
 
         call mpi_barrier(MPI_COMM_WORLD,ierr); if(ierr.ne.0) call quit(ierr,'#ERROR(proceed): MPI_BARRIER error (1)!')
 
+!DEBUG begin:
 	my_role=c_process_private
 	call c_proc_life(ierr); if(ierr.ne.0) call quit(ierr,'#ERROR(proceed): C_PROCESS failed!')
 	call mpi_barrier(MPI_COMM_WORLD,ierr); if(ierr.ne.0) call quit(ierr,'#ERROR(proceed): MPI_BARRIER error (2)!')
 	return
+!DEBUG end.
 
         if(impir.eq.0) then !MPI root --> Global Root
          my_role=global_root; my_group=-1
-!        call global_root_life(ierr); if(ierr.ne.0) call quit(ierr,'#ERROR(proceed): GLOBAL ROOT failed!')
+!        call global_root_life(ierr); if(ierr.ne.0) then; write(jo,'("#ERROR(proceed): GLOBAL ROOT failed!")'); ierr=1; endif
         else !MPI slave --> Local Root OR Computing Process (C-process)
          i=impir-1; my_group=i/(1+c_procs_per_local_root)
          if(mod(i,(1+c_procs_per_local_root)).eq.0) then
           my_role=local_root
-!         call local_root_life(ierr); if(ierr.ne.0) call quit(ierr,'#ERROR(proceed): LOCAL ROOT failed!')
+!         call local_root_life(ierr); if(ierr.ne.0) then; write(jo,'("#ERROR(proceed): LOCAL ROOT failed!")'); ierr=2; endif
          else
           my_role=c_process_private
-          call c_proc_life(ierr); if(ierr.ne.0) call quit(ierr,'#ERROR(proceed): C_PROCESS failed!')
+          call c_proc_life(ierr); if(ierr.ne.0) then; write(jo,'("#ERROR(proceed): C_PROCESS failed!")'); ierr=3; endif
          endif
         endif
         call mpi_barrier(MPI_COMM_WORLD,ierr); if(ierr.ne.0) call quit(ierr,'#ERROR(proceed): MPI_BARRIER error (2)!')
@@ -42,9 +43,9 @@
         end subroutine proceed
 
 !--------------------------------------!DEBUG (everything below)
+!--------------------------------------!DEBUG (everything below)
 	subroutine test_stuff(ierr)
 	use qforce
-	use, intrinsic:: ISO_C_BINDING
 	implicit none
 	integer, intent(inout):: ierr
 	integer i,j,k,l,m,n

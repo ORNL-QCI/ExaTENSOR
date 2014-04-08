@@ -12,8 +12,8 @@ C_FLAGS = -c -O3
 FFLAGS = -c -O3 --free-line-length-none -x f95-cpp-input -fopenmp
 LFLAGS = -lgomp
 
-OBJS = cuda2fortran.o extern_names.o stsubs.o service.o combinatoric.o tensor_algebra.o qforce.o \
-	tensor_dil_omp.o tensor_algebra_gpu_nvidia.o c_process.o c_proc_bufs.o \
+OBJS = cuda2fortran.o extern_names.o stsubs.o service.o combinatoric.o tensor_algebra.o \
+	tensor_dil_omp.o c_process.o qforce.o tensor_algebra_gpu_nvidia.o c_proc_bufs.o \
 	main.o proceed.o \
 
 $(NAME): $(OBJS)
@@ -26,9 +26,13 @@ tensor_dil_omp.mod: tensor_dil_omp.o
 tensor_dil_omp.o: tensor_dil_omp.F90
 	$(FC) -I$(MPI_INC) -I$(CUDA_INC) $(FFLAGS) tensor_dil_omp.F90
 
-qforce.mod: qforce.o extern_names.mod service.mod stsubs.mod combinatoric.mod tensor_algebra.mod
+qforce.mod: qforce.o extern_names.mod service.mod stsubs.mod combinatoric.mod tensor_algebra.mod c_process.mod
 qforce.o: qforce.F90
 	$(FC) -I$(MPI_INC) -I$(CUDA_INC) $(FFLAGS) qforce.F90
+
+c_process.mod: c_process.o tensor_algebra.mod
+c_process.o: c_process.F90
+	$(FC) -I$(MPI_INC) -I$(CUDA_INC) $(FFLAGS) c_process.F90
 
 tensor_algebra.mod: tensor_algebra.o stsubs.mod combinatoric.mod
 tensor_algebra.o: tensor_algebra.F90

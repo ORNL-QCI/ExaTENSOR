@@ -1,6 +1,6 @@
 !PROGRAM: Q-FORCE: Massively-Parallel Quantum Many-Body Methodology on Heterogeneous HPC systems.
 !AUTHOR: Dmitry I. Lyakh (Dmytro I. Liakh): quant4me@gmail.com
-!REVISION: 2014/02/25
+!REVISION: 2014/04/08
 !COMPILATION:
 ! - Fortran 2003 at least.
 ! - MPI 2.0 at least.
@@ -59,7 +59,7 @@
 !       write(*,*) impis,impir,max_threads,jo,log_file; call quit(-1,'Test') !debug
         call numchar(impir,k0,str0); open(log_file,file='qforce.'//str0(1:k0)//'.log',form='FORMATTED',status='UNKNOWN',err=2000) !open the log file for each process
         if(impir.ne.0) jo=log_file !redirect the standard output for slave processes to their log-files
-        write(jo,'("   *** Q-FORCE v.13.10.31 by Dmitry I. Lyakh ***")')
+        write(jo,'("   *** Q-FORCE v.14.04.08 by Dmitry I. Lyakh ***")')
         write(jo,'("MPI number of processes            : ",i10)') impis
         write(jo,'("Current process rank               : ",i10)') impir
 #ifndef NO_OMP
@@ -90,8 +90,8 @@
         call MPI_BARRIER(MPI_COMM_WORLD,ierr); if(ierr.ne.0) call quit(ierr,'#ERROR(main): MPI_BARRIER error (trap 1)')
 
 !Run the process life:
-        call proceed(ierr); if(ierr.ne.0) then; exec_status=ierr; write(jo,'("#ERROR(main): process life dirty!")'); endif
-        call qforce_free_memory(ierr); if(exec_status.eq.0.and.ierr.ne.0) then; exec_status=ierr; write(jo,'("#ERROR(main): unable to free QFORCE data structures!")'); endif
+        call proceed(ierr); if(ierr.ne.0) then; exec_status=ierr; write(jo,'("#ERROR(main): Process life dirty!")'); endif
+        call qforce_free_memory(ierr); if(exec_status.eq.0.and.ierr.ne.0) then; exec_status=ierr; write(jo,'("#ERROR(main): Unable to free QFORCE data structures!")'); endif
         if(exec_status.eq.0) then; call MPI_BARRIER(MPI_COMM_WORLD,ierr); if(ierr.ne.0) call quit(ierr,'#ERROR(main): MPI_BARRIER error (trap 2)'); endif
 !Terminate the process:
 999     call quit(exec_status,'Program terminated. Enjoy the results! Bye!')
@@ -205,7 +205,7 @@
         contains
 
          subroutine restrict_gpu_amount(ierr) !SERIAL (Affects service::gpu_start, service::gpu_count)
-!This subroutine distributes GPUs available on a node among MPI processes residing on that node.
+!This subroutine distributes GPUs available on a node among the MPI processes residing on that node.
 !It assumes that MPI processes are launched on each node consecutively!
          integer, intent(inout):: ierr
          integer j0

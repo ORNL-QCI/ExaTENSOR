@@ -35,7 +35,7 @@
 	integer, parameter, public:: max_shape_str_len=1024 !max allowed length for a tensor shape specification string (TSSS)
 	integer, parameter, private:: max_threads=1024      !max allowed number of threads
 	logical, private:: data_kind_sync=.true. !if .true., each tensor operation will syncronize all existing data kinds
-	logical, private:: trans_shmem=.true.    !shared-memory based (true) VS scatter (false) tensor transpose algorithm
+	logical, private:: trans_shmem=.true.    !cache-efficient (true) VS scatter (false) tensor transpose algorithm
 	logical, private:: disable_blas=.false.  !if .true. and BLAS is accessible, BLAS calls will be replaced by my own routines
  !Numerical:
 	real(8), parameter:: abs_cmp_thresh=1d-13 !default absolute error threshold for numerical comparisons
