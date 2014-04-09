@@ -10,7 +10,7 @@
        module c_process
         use, intrinsic:: ISO_C_BINDING
         use tensor_algebra
-        use service !`dependency to be removed
+        use service
         use extern_names !`dependency to be removed
 !PARAMETERS:
         integer, parameter:: CZ=C_SIZE_T
@@ -38,7 +38,7 @@
         integer, parameter:: instr_tensor_cmp=12
         integer, parameter:: instr_tensor_contract=13
 !TYPES:
- !Locally present tensor argument (negative buf_entry_xxx means that no argument buffer space is used by the argument):
+ !Locally present tensor argument (negative buf_entry_host means that no argument buffer space is in use):
         type tens_arg_t
          type(tensor_block_t):: tens_blck_f !tensor_block (QFORCE Fortran)
          integer(C_INT):: buf_entry_host !host argument buffer entry number where the tensor block resides as a packet (n

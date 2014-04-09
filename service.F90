@@ -1,4 +1,4 @@
-!This module provides general services for parallel programs.
+!This module provides general services for MPI parallel programs on heterogeneous nodes.
        module service
         use, intrinsic:: ISO_C_BINDING
         use STSUBS
@@ -11,7 +11,6 @@
 !Parallel environment:
 	include 'mpif.h'    !MPI Fortran interface
 !Parameters:
-!	integer, parameter:: max_gpus_per_proc=4    !max number of GPUs assigned to an MPI process
 	integer, parameter:: max_open_files=1024-16 !maximal amount of open files per process (first 16 file handles [0..15] are reserved)
 !Types:
  !GPU info:
@@ -53,7 +52,7 @@
 	type(gpu_info_t),allocatable:: gpu_info(:) !information about available GPUs (set during run-time)
 	integer:: my_group=-1                      !group the process belongs to (set during run-time)
 	integer:: my_role=-1                       !the role of the process (set during run-time)
-	real(8):: time_begin,time_end              !wall time
+	real(8):: time_begin,time_end              !wall time for the MPI process
 	integer:: exec_status=0                    !current execution status (0 - success)
 	character(MPI_MAX_PROCESSOR_NAME):: proc_name=' ' !current processor name (set during run-time)
 	integer:: proc_name_len                    !the length of the processor name

@@ -1,6 +1,6 @@
 !TENSOR ALGEBRA IN PARALLEL (TAP) for SHARED-MEMORY SYSTEMS (OpenMP based)
 !AUTHOR: Dmitry I. Lyakh (Dmytro I. Liakh): quant4me@gmail.com
-!REVISION: 2014/04/07
+!REVISION: 2014/04/09
        module tensor_algebra
         use, intrinsic:: ISO_C_BINDING
         use STSUBS
@@ -2981,7 +2981,7 @@
 ! - nlu - number of left uncontracted indices;
 ! - nru - number of right uncontracted indices;
 ! - ierr - error code (0:success).
-	use, intrinsic:: ISO_C_BINDING
+!	use, intrinsic:: ISO_C_BINDING
 	implicit none
 !------------------------------------------------
 	logical, parameter:: check_pattern=.true.

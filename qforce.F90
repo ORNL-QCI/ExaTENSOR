@@ -1,8 +1,8 @@
        module qforce !PROGRAM SPECIFIC MODULE
         use, intrinsic:: ISO_C_BINDING
-        use service
         use STSUBS
         use combinatoric
+        use service
         use extern_names
         use c_process
 !PARAMETERS:

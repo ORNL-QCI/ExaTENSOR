@@ -20,7 +20,7 @@
 
 !DEBUG begin:
 	my_role=c_process_private
-	call c_proc_life(ierr); if(ierr.ne.0) call quit(ierr,'#ERROR(proceed): C_PROCESS failed!')
+	call c_proc_life(ierr); if(ierr.ne.0)  then; write(jo,'("#ERROR(proceed): C_PROCESS failed!")'); ierr=3; endif
 	call mpi_barrier(MPI_COMM_WORLD,ierr); if(ierr.ne.0) call quit(ierr,'#ERROR(proceed): MPI_BARRIER error (2)!')
 	return
 !DEBUG end.

@@ -1,7 +1,7 @@
        module tensor_dil_omp
 !Multithreaded tensor algebra kernels tailored for ACESIII/ACESIV.
 !AUTHOR: Dmitry I. Lyakh: quant4me@gmail.com
-!Revision: 2014/01/17
+!Revision: 2014/04/09
 !-------------------------------------------
 !COMPILE:
 ! # GFORTRAN flags: -O3 --free-line-length-none -fopenmp -x f95-cpp-input
@@ -44,6 +44,11 @@
 ! # void tensor_block_contract__(int&, int*, double*, int&, int*, double*, int&, int*, double*, int&, int*, int&);
 !----------------------------------------------------------------------------------------------------------------
 	use, intrinsic:: ISO_C_BINDING
+#ifdef USE_MKL
+        use mkl95_blas
+        use mkl95_lapack
+        use mkl95_precision
+#endif
 !MODULE PARAMETERS:
         integer, parameter:: max_tensor_rank=32 !max allowed tensor rank
         integer, parameter:: max_threads=1024   !max allowed number of OMP threads
@@ -682,11 +687,6 @@
 !OUTPUT:
 ! - dtens - modified destination tensor block;
 ! - ierr - error code (0: success);
-#ifdef USE_MKL
-        use mkl95_blas
-        use mkl95_lapack
-        use mkl95_precision
-#endif
 	implicit none
 !-----------------------------------------------
 	logical, parameter:: disable_blas=.false. !if .true. && BLAS is accessible, BLAS calls will be replaced by my own routines

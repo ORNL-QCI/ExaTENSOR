@@ -1,6 +1,6 @@
 !PROGRAM: Q-FORCE: Massively-Parallel Quantum Many-Body Methodology on Heterogeneous HPC systems.
 !AUTHOR: Dmitry I. Lyakh (Dmytro I. Liakh): quant4me@gmail.com
-!REVISION: 2014/04/08
+!REVISION: 2014/04/09
 !COMPILATION:
 ! - Fortran 2003 at least.
 ! - MPI 2.0 at least.
