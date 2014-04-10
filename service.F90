@@ -11,7 +11,8 @@
 !Parallel environment:
 	include 'mpif.h'    !MPI Fortran interface
 !Parameters:
-	integer, parameter:: max_open_files=1024-16 !maximal amount of open files per process (first 16 file handles [0..15] are reserved)
+ !File management:
+	integer, parameter, private:: max_open_files=1024-16 !maximal amount of open files per process (first 16 file handles [0..15] are reserved)
 !Types:
  !GPU info:
 	type gpu_info_t
