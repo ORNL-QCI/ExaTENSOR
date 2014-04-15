@@ -1,18 +1,18 @@
-!This module provides functionality for a QFORCE Computing Process (C-PROCESS).
-!In essence, this is a (single-node) elementary tensor instruction scheduler (ETIS).
+!This module provides functionality for a Computing Process (C-PROCESS, CP).
+!In essence, this is a (single-node) elementary tensor instruction scheduler (SETIS).
 !AUTHOR: Dmitry I. Lyakh (Dmytro I. Liakh): quant4me@gmail.com
-!REVISION: 2014/04/10
+!REVISION: 2014/04/15
 !NOTES:
 ! - Data synchronization in an instance of <tensor_block_t> (Fortran)
 !   associated with a Host Argument Buffer entry can allocate only regular CPU memory
 !   (the one outside the pinned Host Argument buffer). Hence that newly allocated
 !   memory cannot be used with GPU.
 !Acronyms:
-! - ETI - Elementary Tensor Instruction, or simply TI.
+! - ETI - Elementary Tensor Instruction (or simply TI);
 ! - HAB - Host Argument Buffer;
-! - TIS - Tensor Instruction Scheduler;
+! - TIS - Tensor Instruction Scheduler (SETIS, LETIS, GETIS);
 ! - TIQ - Tensor Instruction Queue;
-! - LTBB - Local Tensor Block Bank;
+! - TBB - Tensor Block Bank;
 ! - AAL - Active Argument List;
 ! - TAL - Tensor Algebra Library;
        module c_process
@@ -24,17 +24,19 @@
  !General:
         integer, parameter:: CZ=C_SIZE_T
  !Host Argument Buffer (HAB):
-        integer(C_SIZE_T), parameter, private:: max_arg_buf_size=1024_CZ*1024_CZ*1024_CZ !max size in bytes of the HAB
-        integer(C_SIZE_T), parameter, private:: min_arg_buf_size=32_CZ*1024_CZ*1024_CZ   !min size in bytes of the HAB
+        integer(C_SIZE_T), parameter, private:: max_hab_size=1024_CZ*1024_CZ*1024_CZ !max size in bytes of the HAB
+        integer(C_SIZE_T), parameter, private:: min_hab_size=32_CZ*1024_CZ*1024_CZ   !min size in bytes of the HAB
  !Tensor Instruction Scheduler (TIS):
+  !Tensor instruction queue:
+        integer(C_INT), parameter, private:: max_tiq_size=4096 !max number of ETI simultaneously scheduled
   !Tensor naming:
         integer(C_INT), parameter:: tensor_name_len=32 !max number of characters used for tensor names
   !Tensor instruction status (any negative value will correspond to a failure, designating the error code):
-        integer, parameter:: instr_null=0          !uninitialized instruction
-        integer, parameter:: instr_data_wait=1     !instruction is waiting for data to arrive
-        integer, parameter:: instr_ready_to_exec=2 !instruction is ready to be executed (data has arrived)
-        integer, parameter:: instr_issued=3        !instruction is being executed
-        integer, parameter:: instr_completed=4     !instruction has completed
+        integer, parameter:: instr_null=0              !uninitialized instruction
+        integer, parameter:: instr_data_wait=1         !instruction is waiting for data to arrive
+        integer, parameter:: instr_ready_to_exec=2     !instruction is ready to be executed (data has arrived)
+        integer, parameter:: instr_issued=3            !instruction is being executed
+        integer, parameter:: instr_completed=4         !instruction has completed
   !Tensor instruction code:
         integer, parameter:: instr_tensor_init=1
         integer, parameter:: instr_tensor_norm1=2
@@ -51,20 +53,25 @@
         integer, parameter:: instr_tensor_contract=13
 !TYPES:
  !Tensor Instruction Scheduler (TIS):
-  !Locally present tensor argument that can reside either in HAB {tens_blck_c+buf_entry_host} or in LTBB {tens_blck_f}:
+  !Tensor block identifier:
+        type tens_blck_id_t
+         character(LEN=tensor_name_len):: tens_name      !tensor name
+         integer(C_INT), pointer:: tens_mlndx(:)=>NULL() !tensor block multiindex (bases)
+        end type tens_blck_id_t
+  !Locally present tensor argument that can reside either in HAB {tens_blck_c+buf_entry_host} or in TBB {tens_blck_f}:
         type tens_arg_t
-         type(tensor_block_t), pointer:: tens_blck_f=>NULL() !pointer to a tensor_block in LTBB
+         type(tens_blck_id_t):: tens_blck_id !tensor block identifier
+         type(tensor_block_t), pointer:: tens_blck_f=>NULL() !pointer to a tensor_block in TBB
          type(C_PTR):: tens_blck_c       !C pointer to tensBlck_t in HAB (see "tensor_algebra_gpu_nvidia.h")
-         integer(C_INT):: buf_entry_host !HAB entry number where the tensor block resides as a packet (-1: not there)
+         integer(C_INT):: buf_entry_host !HAB entry number where the tensor block resides as a packet (-1: not in HAB)
         end type tens_arg_t
-  !Tensor operand:
+  !Tensor operand type:
         type tens_operand_t
-         character(LEN=tensor_name_len):: tens_name    !tensor name
-         integer(C_INT), pointer:: tens_mlndx(:)       !tensor block multiindex
-         integer(C_SIZE_T):: tens_size                 !size of the tensor operand in bytes
-         integer(C_INT):: tens_host                    !MPI process # where the tensor operand resides
-         integer(C_INT):: tens_price                   !current price of the tensor operand (tensor block)
-         type(tens_arg_t), pointer:: arg_entry=>NULL() !pointer to AAL entry (active tensor argument list)
+         integer(C_INT):: op_host         !MPI process rank where the tensor operand resides
+         integer(C_SIZE_T):: op_pack_size !packed size of the tensor operand in bytes
+         integer(C_INT):: op_tag          !MPI message tag by which the tensor operand is to be delivered (-1: local)
+         integer(C_INT):: op_price        !current price of the tensor operand (tensor block)
+         type(tens_arg_t), pointer:: op_arg_entry=>NULL() !AAL entry assigned to the tensor operand
         end type tens_operand_t
   !Dispatched elementary tensor instruction:
         type tens_instr_t
@@ -76,25 +83,25 @@
          real(4):: instr_time_beg                      !time the instruction scheduled
          real(4):: instr_time_end                      !time the instruction completed
          integer:: args_ready                          !each bit is set to 1 when the corresponding operand is in AAL
-         type(tens_operand_t), pointer:: tens_op0=>NULL() !pointer to the tensor block operand #0
-         type(tens_operand_t), pointer:: tens_op1=>NULL() !pointer to the tensor block operand #1
-         type(tens_operand_t), pointer:: tens_op2=>NULL() !pointer to the tensor block operand #2
-         type(tens_operand_t), pointer:: tens_op3=>NULL() !pointer to the tensor block opearnd #3
+         type(tens_operand_t), pointer:: tens_op0=>NULL() !pointer to tensor block operand #0
+         type(tens_operand_t), pointer:: tens_op1=>NULL() !pointer to tensor block operand #1
+         type(tens_operand_t), pointer:: tens_op2=>NULL() !pointer to tensor block operand #2
+         type(tens_operand_t), pointer:: tens_op3=>NULL() !pointer to tensor block opearnd #3
          type(C_PTR):: cuda_task                       !CUDA task handle associated with this tensor instruction (if any)
         end type tens_instr_t
 !DATA:
  !Host Argument Buffer (HAB):
-        integer(C_SIZE_T), private:: arg_buf_size_host=0 !actual size in bytes of the Host argument buffer
-        integer(C_INT), private:: max_args_host=0 !max number of arguments (of lowest-size level) that can fit in HAB
+        integer(C_SIZE_T), private:: hab_size=0  !actual size in bytes of the Host argument buffer (HAB)
+        integer(C_INT), private:: max_hab_args=0 !max number of arguments (of lowest-size level) that can fit in HAB
  !Tensor Instruction Scheduler (TIS):
   !Tensor Instruction Queue (TIQ):
-        integer(C_INT), private:: tens_instr_que_size=0 !actual size of the tensor instruction queue (TIQ), set by LR
-        integer(C_INT), private:: tens_instr_que_lim=0  !current limit in the tensor instruction queue (TIQ)
-        type(tens_instr_t), allocatable, private:: tens_instr_que(:) !tensor instruction queue
+        integer(C_INT), private:: tiq_size=0 !actual size of the tensor instruction queue (TIQ)
+        integer(C_INT), private:: tiq_lim=0  !current limit in the tensor instruction queue (TIQ)
+        type(tens_instr_t), allocatable, private:: tiq(:) !tensor instruction queue (FIFO)
   !Active Tensor Argument List (AAL):
-        integer(C_INT), private:: act_args_size=0 !actual size of the active tensor argument list (AAL), set by LR
-        integer(C_INT), private:: act_args_lim=0  !current number of active (locally present) tensor arguments
-        type(tens_arg_t), allocatable, private:: act_args(:) !list of active (locally present) tensor arguments
+        integer(C_INT), private:: aal_size=0 !actual size of the active tensor argument list (AAL)
+        integer(C_INT), private:: aal_num=0  !current number of active (locally present) tensor arguments
+        type(tens_arg_t), allocatable, private:: aal(:) !list of active (locally present) tensor arguments
 !--------------------------------------------------------------------------------------------------------------
        contains
 !CODE:
@@ -118,17 +125,17 @@
         integer(C_SIZE_T) blck_sizes(0:max_arg_buf_levels-1)
         real(8) tm
 
-        ierr=0; write(jo,'("#MSG(c_process:c_proc_life): I am a C-process (Computing MPI Process), rank = ",i7)') impir
+        ierr=0; write(jo,'("#MSG(c_process:c_proc_life): I am a C-process (Computing MPI Process): MPI rank = ",i7)') impir
 !Initialization:
-        write(jo,'("#MSG(c_process:c_proc_life): Initialization:")')
+!        write(jo,'("#MSG(c_process:c_proc_life): Initialization:")')
  !Init TAL infrastructure (TAL buffers, cuBLAS, etc.):
         write(jo,'("#MSG(c_process:c_proc_life): Allocating TAL argument buffers ... ")',advance='no')
         tm=thread_wtime()
-        arg_buf_size_host=max_arg_buf_size !desired (max) HAB size
-        i=arg_buf_allocate(arg_buf_size_host,max_args_host,gpu_start,gpu_start+gpu_count-1); if(i.ne.0) then; write(jo,'("Failed!")'); call c_proc_quit(1); return; endif
-        tm=thread_wtime()-tm; write(jo,'("Ok(",F4.1," sec): Host argument buffer size (B) = ",i11)') tm,arg_buf_size_host
-        if(arg_buf_size_host.lt.min_arg_buf_size) then
-         write(jo,'("#FATAL(c_process:c_proc_life): Host argument buffer size is lower than minimally allowed: ",i11)') min_arg_buf_size
+        hab_size=max_hab_size !desired (max) HAB size
+        i=arg_buf_allocate(hab_size,max_hab_args,gpu_start,gpu_start+gpu_count-1); if(i.ne.0) then; write(jo,'("Failed!")'); call c_proc_quit(1); return; endif
+        tm=thread_wtime()-tm; write(jo,'("Ok(",F4.1," sec): Host argument buffer size (B) = ",i11)') tm,hab_size
+        if(hab_size.lt.min_hab_size) then
+         write(jo,'("#FATAL(c_process:c_proc_life): Host argument buffer size is lower than minimally allowed: ",i11,1x,i11)') min_hab_size,hab_size
          call c_proc_quit(2); return
         endif
   !Check Host argument buffer levels:
@@ -142,7 +149,7 @@
           write(jo,'("#MSG(c_process:c_proc_life): Level ",i4,": Size (B) = ",i11)') j,blck_sizes(j)
          enddo
         endif
-        write(jo,'("#MSG(c_process:c_proc_life): Max number of arguments in the Host argument buffer = ",i7)') max_args_host
+        write(jo,'("#MSG(c_process:c_proc_life): Max number of arguments in the Host argument buffer = ",i6)') max_hab_args
   !Check GPU argument buffer levels:
 #ifndef NO_GPU
         do j=gpu_start,gpu_start+gpu_count-1
@@ -163,15 +170,21 @@
  !Init AAL:
         write(jo,'("#MSG(c_process:c_proc_life): Allocating Active Argument List (AAL) ... ")',advance='no')
         tm=thread_wtime()
-        act_args_size=max_args_host
-        allocate(act_args(1:act_args_size),STAT=ierr); if(ierr.ne.0) then; write(jo,'("#ERROR(c_process:c_proc_life): Active argument list allocation failed!")'); call c_proc_quit(5); return; endif
-        act_args_lim=0
-        tm=thread_wtime()-tm; write(jo,'("Ok(",F4.1," sec):  AAL size = ",i7)') tm,act_args_size
+        aal_size=max_hab_args
+        allocate(aal(1:aal_size),STAT=ierr); if(ierr.ne.0) then; write(jo,'("#ERROR(c_process:c_proc_life): Active argument list allocation failed!")'); call c_proc_quit(5); return; endif
+        aal_num=0
+        tm=thread_wtime()-tm; write(jo,'("Ok(",F4.1," sec):  AAL size = ",i7)') tm,aal_size
  !Init TIQ:
+        write(jo,'("#MSG(c_process:c_proc_life): Allocating Tensor Instruction Queue (TIQ) ... ")',advance='no')
+        tm=thread_wtime()
+        tiq_size=max_tiq_size
+        allocate(tiq(1:tiq_size),STAT=ierr); if(ierr.ne.0) then; write(jo,'("#ERROR(c_process:c_proc_life): Active argument list allocation failed!")'); call c_proc_quit(6); return; endif
+        tiq_lim=0
+        tm=thread_wtime()-tm; write(jo,'("Ok(",F4.1," sec):  TIQ size = ",i7)') tm,tiq_size
 
 !Test C-process functionality:
-        call c_proc_test(ierr); if(ierr.ne.0) then; write(jo,'("#ERROR(c_process:c_proc_life): C-process functionality test failed: ",i7)') ierr; call c_proc_quit(6); return; endif
-        call run_benchmarks(ierr); if(ierr.ne.0) then; write(jo,'("#ERROR(c_process:c_proc_life): C-process benchmarking failed: ",i7)') ierr; call c_proc_quit(7); return; endif
+        call c_proc_test(ierr); if(ierr.ne.0) then; write(jo,'("#ERROR(c_process:c_proc_life): C-process functionality test failed: ",i7)') ierr; call c_proc_quit(7); return; endif
+        call run_benchmarks(ierr); if(ierr.ne.0) then; write(jo,'("#ERROR(c_process:c_proc_life): C-process benchmarking failed: ",i7)') ierr; call c_proc_quit(8); return; endif
 !Report to work to the local host:
 
 !Receive the next batch of tensor instructions:
@@ -206,10 +219,10 @@
           endif
          enddo
 #endif
-         j0=arg_buf_deallocate(gpu_start,gpu_start+gpu_count-1); arg_buf_size_host=0; max_args_host=0
+         j0=arg_buf_deallocate(gpu_start,gpu_start+gpu_count-1); hab_size=0_CZ; max_hab_args=0
          if(j0.ne.0) then; write(j0,'("#ERROR(c_process:c_proc_life:c_proc_quit): Deallocation of argument buffers failed!")'); ierr=ierr+10000; endif
-         if(allocated(act_args)) deallocate(act_args); act_args_lim=0; act_args_size=0
-         if(allocated(tens_instr_que)) deallocate(tens_instr_que); tens_instr_que_lim=0; tens_instr_que_size=0
+         if(allocated(aal)) deallocate(aal); aal_num=0; aal_size=0
+         if(allocated(tiq)) deallocate(tiq); tiq_lim=0; tiq_size=0
          return
          end subroutine c_proc_quit
 
@@ -548,7 +561,7 @@
 ! - This subroutine sets all the fields of tensBlck_t, like elems_h, elems_d, const_args_entry, etc.
 !   Apparently it also sets all the fields of tensor_block_t.
 ! - The opposite function <tens_blck_dissoc> can be used only with tensBlck_t (C).
-!   For tensor_block_t (Fortran) one should still invoke <tensor_block_destroy>.
+!   For tensor_block_t (Fortran) one should invoke <tensor_block_destroy>.
         implicit none
         type(C_PTR), intent(in):: pptr
         integer, intent(inout):: ierr
