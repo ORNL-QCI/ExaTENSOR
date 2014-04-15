@@ -1,6 +1,6 @@
 !TENSOR ALGEBRA IN PARALLEL (TAP) for SHARED-MEMORY SYSTEMS (OpenMP based)
 !AUTHOR: Dmitry I. Lyakh (Dmytro I. Liakh): quant4me@gmail.com
-!REVISION: 2014/04/09
+!REVISION: 2014/04/15
        module tensor_algebra
         use, intrinsic:: ISO_C_BINDING
         use STSUBS
@@ -2264,8 +2264,8 @@
 	integer(8) l0,l1,l2,l3,lld,lrd,lcd
 	integer ltb,rtb,dtb,lrank,rrank,drank,nlu,nru,ncd,tst,contr_case,dn2o(0:max_tensor_rank)
 	integer, target:: lo2n(0:max_tensor_rank),ro2n(0:max_tensor_rank),do2n(0:max_tensor_rank)
-	integer, pointer:: trn(:)
-	type(tensor_block_t), pointer:: tens_in,tens_out,ltp,rtp,dtp
+	integer, pointer:: trn(:)=>NULL()
+	type(tensor_block_t), pointer:: tens_in=>NULL(),tens_out=>NULL(),ltp=>NULL(),rtp=>NULL(),dtp=>NULL()
 	type(tensor_block_t), target:: lta,rta,dta
 	character(2) dtk
 	real(4) d_r4,start_dgemm
