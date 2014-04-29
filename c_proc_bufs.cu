@@ -1,7 +1,7 @@
 /** This file provides infrastructure for managing Host/GPU
 argument buffers inside a computing process (C-process).
 AUTHOR: Dmitry I. Lyakh (Dmytro I. Liakh): quant4me@gmail.com
-REVISION: 2014/01/16
+REVISION: 2014/04/29
 **/
 
 #include <stdio.h>
@@ -19,6 +19,8 @@ REVISION: 2014/01/16
 #define BLCK_BUF_DEPTH_GPU 2    //number of distinct tensor block buffer levels on GPU
 #define BLCK_BUF_TOP_GPU 12     //number of argument buffer entries of the largest size (level 0) on GPU: multiple of 3
 #define BLCK_BUF_BRANCH_GPU 2   //branching factor for each subsequent buffer level on GPU: multiple of 3
+
+static int verbose=0; //verbosity of debug printing
 
 //DERIVED TYPES:
 // Argument buffer configuration:
@@ -180,7 +182,7 @@ OUTPUT:
    hsize-=mem_alloc_dec;
   }else{
    *arg_buf_size=hsize; arg_buf_host_size=hsize; err_code=0;
-   printf("\n#DEBUG(c_proc_bufs.cu:arg_buf_allocate): Pinned Host argument buffer address/size: %p %lld\n",arg_buf_host,(long long)hsize); //debug
+   if(verbose!=0) printf("\n#DEBUG(c_proc_bufs.cu:arg_buf_allocate): Pinned Host argument buffer address/size: %p %lld\n",arg_buf_host,(long long)hsize); //debug
    break;
   }
 #else
@@ -189,7 +191,7 @@ OUTPUT:
    hsize-=mem_alloc_dec;
   }else{
    *arg_buf_size=hsize; arg_buf_host_size=hsize; err_code=0;
-   printf("\n#DEBUG(c_proc_bufs.cu:arg_buf_allocate): Host buffer address/size: %p %lld\n",arg_buf_host,(long long)hsize); //debug
+   if(verbose!=0) printf("\n#DEBUG(c_proc_bufs.cu:arg_buf_allocate): Host buffer address/size: %p %lld\n",arg_buf_host,(long long)hsize); //debug
    break;
   }
 #endif
@@ -227,7 +229,7 @@ OUTPUT:
         hsize-=mem_alloc_dec;
        }else{
         arg_buf_gpu_size[i]=hsize; err_code=0;
-        printf("\n#DEBUG(c_proc_bufs.cu:arg_buf_allocate): GPU#%d argument buffer address/size: %p %lld\n",i,arg_buf_gpu[i],(long long)hsize); //debug
+        if(verbose!=0) printf("\n#DEBUG(c_proc_bufs.cu:arg_buf_allocate): GPU#%d argument buffer address/size: %p %lld\n",i,arg_buf_gpu[i],(long long)hsize); //debug
         break;
        }
       }

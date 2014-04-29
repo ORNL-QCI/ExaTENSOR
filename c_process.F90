@@ -1,7 +1,7 @@
 !This module provides functionality for a Computing Process (C-PROCESS, CP).
 !In essence, this is a (single-node) elementary tensor instruction scheduler (SETIS).
 !AUTHOR: Dmitry I. Lyakh (Dmytro I. Liakh): quant4me@gmail.com
-!REVISION: 2014/04/15
+!REVISION: 2014/04/29
 !NOTES:
 ! - Data synchronization in an instance of <tensor_block_t> (Fortran)
 !   associated with a Host Argument Buffer entry can allocate only regular CPU memory
@@ -21,9 +21,12 @@
         use service
         use extern_names !`dependency to be removed
 !PARAMETERS:
+ !Output:
+        integer, private:: jo_cp=6 !default output
+        logical, private:: verbose=.true.
  !General:
         integer, parameter:: CZ=C_SIZE_T
- !Tensor block bank:
+ !Tensor Block Bank (TBB):
         integer(C_INT), parameter, private:: max_tbb_size=2**16 !max number of tensor blocks in TBB
  !Tensor Instruction Scheduler (TIS):
   !Host Argument Buffer (HAB):
@@ -55,12 +58,18 @@
         integer, parameter:: instr_tensor_cmp=12
         integer, parameter:: instr_tensor_contract=13
 !TYPES:
- !Tensor Instruction Scheduler (TIS):
-  !Tensor block identifier:
+ !Tensor block identifier:
         type tens_blck_id_t
          character(LEN=tensor_name_len):: tens_name      !tensor name
          integer(C_INT), pointer:: tens_mlndx(:)=>NULL() !tensor block multiindex (bases)
         end type tens_blck_id_t
+ !Tensor Block Bank:
+  !Entry of TBB (named tensor block):
+        type tbb_entry_t
+         type(tens_blck_id_t), private:: tens_blck_id !tensor block id
+         type(tensor_block_t), private:: tens_blck    !tensor block (Fortran)
+        end type tbb_entry_t
+ !Tensor Instruction Scheduler (TIS):
   !Locally present tensor argument that can reside either in HAB {tens_blck_c+buf_entry_host} or in TBB {tens_blck_f}:
         type tens_arg_t
          type(tens_blck_id_t):: tens_blck_id !tensor block identifier
@@ -97,9 +106,9 @@
         end type tens_instr_t
 !DATA:
  !Tensor block bank (TBB):
-        integer(C_INT), private:: tbb_size=0                !total number of TBB entries
-        integer(C_INT), private:: tbb_ffe=0                 !FFE for TBB
-        type(tensor_block_t), allocatable, private:: tbb(:) !tensor block bank (TBB)
+        integer(C_INT), private:: tbb_size=0             !total number of TBB entries
+        integer(C_INT), private:: tbb_ffe=0              !FFE for TBB
+        type(tbb_entry_t), allocatable, private:: tbb(:) !tensor block bank (TBB)
  !Tensor Instruction Scheduler (TIS):
   !Host Argument Buffer (HAB):
         integer(C_SIZE_T), private:: hab_size=0  !actual size in bytes of the Host argument buffer (HAB)
@@ -138,75 +147,76 @@
         integer(C_SIZE_T) blck_sizes(0:max_arg_buf_levels-1)
         real(8) tm
 
-        ierr=0; write(jo,'("#MSG(c_process:c_proc_life): I am a C-process (Computing MPI Process): MPI rank = ",i7)') impir
+        ierr=0; jo_cp=jo
+        write(jo_cp,'("#MSG(c_process:c_proc_life): I am a C-process (Computing MPI Process): MPI rank = ",i7)') impir
 !Initialization:
-!        write(jo,'("#MSG(c_process:c_proc_life): Initialization:")')
+!        write(jo_cp,'("#MSG(c_process:c_proc_life): Initialization:")')
  !Init TBB:
-        write(jo,'("#MSG(c_process:c_proc_life): Initializing Tensor Block Bank ... ")',advance='no')
+        write(jo_cp,'("#MSG(c_process:c_proc_life): Initializing Tensor Block Bank ... ")',advance='no')
         tm=thread_wtime()
         tbb_size=max_tbb_size
-        allocate(tbb(1:tbb_size),STAT=ierr); if(ierr.ne.0) then; write(jo,'("#ERROR(c_process:c_proc_life): Tensor block bank allocation failed!")'); call c_proc_quit(1); return; endif
+        allocate(tbb(1:tbb_size),STAT=ierr); if(ierr.ne.0) then; write(jo_cp,'("#ERROR(c_process:c_proc_life): Tensor block bank allocation failed!")'); call c_proc_quit(1); return; endif
         tbb_ffe=0
-        tm=thread_wtime()-tm; write(jo,'("Ok(",F4.1," sec): Total number of entries = ",i11)') tm,tbb_size
+        tm=thread_wtime()-tm; write(jo_cp,'("Ok(",F4.1," sec): Total number of entries = ",i11)') tm,tbb_size
  !Init TAL infrastructure (TAL buffers, cuBLAS, etc.):
-        write(jo,'("#MSG(c_process:c_proc_life): Allocating argument buffers ... ")',advance='no')
+        write(jo_cp,'("#MSG(c_process:c_proc_life): Allocating argument buffers ... ")',advance='no')
         tm=thread_wtime()
         hab_size=max_hab_size !desired (max) HAB size
-        i=arg_buf_allocate(hab_size,max_hab_args,gpu_start,gpu_start+gpu_count-1); if(i.ne.0) then; write(jo,'("Failed!")'); call c_proc_quit(2); return; endif
-        tm=thread_wtime()-tm; write(jo,'("Ok(",F4.1," sec): Host argument buffer size (B) = ",i11)') tm,hab_size
+        i=arg_buf_allocate(hab_size,max_hab_args,gpu_start,gpu_start+gpu_count-1); if(i.ne.0) then; write(jo_cp,'("Failed!")'); call c_proc_quit(2); return; endif
+        tm=thread_wtime()-tm; write(jo_cp,'("Ok(",F4.1," sec): Host argument buffer size (B) = ",i11)') tm,hab_size
         if(hab_size.lt.min_hab_size.or.max_hab_args.le.6) then
-         write(jo,'("#FATAL(c_process:c_proc_life): Host argument buffer size is lower than minimally allowed: ",i11,1x,i11)') min_hab_size,hab_size
+         write(jo_cp,'("#FATAL(c_process:c_proc_life): Host argument buffer size is lower than minimally allowed: ",i11,1x,i11)') min_hab_size,hab_size
          call c_proc_quit(3); return
         endif
   !Check Host argument buffer levels:
         i=get_blck_buf_sizes_host(blck_sizes)
         if(i.le.0.or.i.gt.max_arg_buf_levels) then
-         write(jo,'("#ERROR(c_process:c_proc_life): Invalid number of Host argument buffer levels: ",i9,1x,i9)') max_arg_buf_levels,i
+         write(jo_cp,'("#ERROR(c_process:c_proc_life): Invalid number of Host argument buffer levels: ",i9,1x,i9)') max_arg_buf_levels,i
          call c_proc_quit(4); return
         else
-         write(jo,'("#MSG(c_process:c_proc_life): Number of Host argument buffer levels = ",i4,":")') i
+         write(jo_cp,'("#MSG(c_process:c_proc_life): Number of Host argument buffer levels = ",i4,":")') i
          do j=0,i-1
-          write(jo,'("#MSG(c_process:c_proc_life): Level ",i4,": Size (B) = ",i11)') j,blck_sizes(j)
+          write(jo_cp,'("#MSG(c_process:c_proc_life): Level ",i4,": Size (B) = ",i11)') j,blck_sizes(j)
          enddo
         endif
-        write(jo,'("#MSG(c_process:c_proc_life): Max number of arguments in the Host argument buffer = ",i6)') max_hab_args
+        write(jo_cp,'("#MSG(c_process:c_proc_life): Max number of arguments in the Host argument buffer = ",i6)') max_hab_args
   !Check GPU argument buffer levels:
 #ifndef NO_GPU
         do j=gpu_start,gpu_start+gpu_count-1
          if(gpu_is_mine(j).ne.NOT_REALLY) then
           i=get_blck_buf_sizes_gpu(j,blck_sizes)
           if(i.le.0.or.i.gt.max_arg_buf_levels) then
-           write(jo,'("#ERROR(c_process:c_proc_life): Invalid number of GPU argument buffer levels: ",i9,1x,i9)') max_arg_buf_levels,i
+           write(jo_cp,'("#ERROR(c_process:c_proc_life): Invalid number of GPU argument buffer levels: ",i9,1x,i9)') max_arg_buf_levels,i
            call c_proc_quit(5); return
           else
-           write(jo,'("#MSG(c_process:c_proc_life): Number of GPU#",i2," argument buffer levels = ",i4,":")') j,i
+           write(jo_cp,'("#MSG(c_process:c_proc_life): Number of GPU#",i2," argument buffer levels = ",i4,":")') j,i
            do k=0,i-1
-            write(jo,'("#MSG(c_process:c_proc_life): Level ",i4,": Size (B) = ",i11)') k,blck_sizes(k)
+            write(jo_cp,'("#MSG(c_process:c_proc_life): Level ",i4,": Size (B) = ",i11)') k,blck_sizes(k)
            enddo
           endif
          endif
         enddo
 #endif
  !Init AAL:
-        write(jo,'("#MSG(c_process:c_proc_life): Allocating Active Argument List (AAL) ... ")',advance='no')
+        write(jo_cp,'("#MSG(c_process:c_proc_life): Allocating Active Argument List (AAL) ... ")',advance='no')
         tm=thread_wtime()
         aal_size=max_hab_args
-        allocate(aal(1:aal_size),STAT=ierr); if(ierr.ne.0) then; write(jo,'("#ERROR(c_process:c_proc_life): Active argument list allocation failed!")'); call c_proc_quit(6); return; endif
+        allocate(aal(1:aal_size),STAT=ierr); if(ierr.ne.0) then; write(jo_cp,'("#ERROR(c_process:c_proc_life): Active argument list allocation failed!")'); call c_proc_quit(6); return; endif
         aal_ffe=1; do i=1,aal_size-1; aal(i)%next=i+1; enddo; aal(aal_size)%next=0 !linked list
         aal_num=0
-        tm=thread_wtime()-tm; write(jo,'("Ok(",F4.1," sec):  AAL size = ",i7)') tm,aal_size
+        tm=thread_wtime()-tm; write(jo_cp,'("Ok(",F4.1," sec):  AAL size = ",i7)') tm,aal_size
  !Init TIQ:
-        write(jo,'("#MSG(c_process:c_proc_life): Allocating Tensor Instruction Queue (TIQ) ... ")',advance='no')
+        write(jo_cp,'("#MSG(c_process:c_proc_life): Allocating Tensor Instruction Queue (TIQ) ... ")',advance='no')
         tm=thread_wtime()
         tiq_size=max_tiq_size
-        allocate(tiq(1:tiq_size),STAT=ierr); if(ierr.ne.0) then; write(jo,'("#ERROR(c_process:c_proc_life): Active argument list allocation failed!")'); call c_proc_quit(7); return; endif
+        allocate(tiq(1:tiq_size),STAT=ierr); if(ierr.ne.0) then; write(jo_cp,'("#ERROR(c_process:c_proc_life): Active argument list allocation failed!")'); call c_proc_quit(7); return; endif
         tiq_ffe=1; do i=1,tiq_size-1; tiq(i)%next=i+1; enddo; tiq(tiq_size)%next=0 !linked list
         tiq_ip(:)=0; tiq_ic(:)=0
-        tm=thread_wtime()-tm; write(jo,'("Ok(",F4.1," sec):  TIQ size = ",i7)') tm,tiq_size
+        tm=thread_wtime()-tm; write(jo_cp,'("Ok(",F4.1," sec):  TIQ size = ",i7)') tm,tiq_size
 
 !Test C-process functionality:
-        call c_proc_test(ierr); if(ierr.ne.0) then; write(jo,'("#ERROR(c_process:c_proc_life): C-process functionality test failed: ",i7)') ierr; call c_proc_quit(8); return; endif
-        call run_benchmarks(ierr); if(ierr.ne.0) then; write(jo,'("#ERROR(c_process:c_proc_life): C-process benchmarking failed: ",i7)') ierr; call c_proc_quit(9); return; endif
+        call c_proc_test(ierr); if(ierr.ne.0) then; write(jo_cp,'("#ERROR(c_process:c_proc_life): C-process functionality test failed: ",i7)') ierr; call c_proc_quit(8); return; endif
+        call run_benchmarks(ierr); if(ierr.ne.0) then; write(jo_cp,'("#ERROR(c_process:c_proc_life): C-process benchmarking failed: ",i7)') ierr; call c_proc_quit(9); return; endif
 !Report to work to the local host:
 
 !Receive the next batch of tensor instructions:
@@ -223,8 +233,8 @@
 
 !Post MPI sends if remote tensor blocks have been computed:
 
-        write(jo,'("#MSG(c_process:c_proc_life): Cleaning ... ")',advance='no')
-        call c_proc_quit(0); if(ierr.eq.0) write(jo,'("Ok")')
+        write(jo_cp,'("#MSG(c_process:c_proc_life): Cleaning ... ")',advance='no')
+        call c_proc_quit(0); if(ierr.eq.0) write(jo_cp,'("Ok")')
         return
 
         contains
@@ -234,11 +244,11 @@
          integer(C_INT) j0,j1
          integer ier
          ierr=errc
-         j0=arg_buf_clean_host(); if(j0.ne.0) then; write(jo,'("#WARNING(c_process:c_proc_life:c_proc_quit): Host Argument buffer is not clean!")'); ierr=ierr+100; endif
+         j0=arg_buf_clean_host(); if(j0.ne.0) then; write(jo_cp,'("#WARNING(c_process:c_proc_life:c_proc_quit): Host Argument buffer is not clean!")'); ierr=ierr+100; endif
 #ifndef NO_GPU
          do j1=gpu_start,gpu_start+gpu_count-1
           if(gpu_is_mine(j1).ne.NOT_REALLY) then
-           j0=arg_buf_clean_gpu(j1); if(j0.ne.0) then; write(jo,'("#WARNING(c_process:c_proc_life:c_proc_quit): GPU#",i2," Argument buffer is not clean!")') j1; ierr=ierr+100*(2+j1); endif
+           j0=arg_buf_clean_gpu(j1); if(j0.ne.0) then; write(jo_cp,'("#WARNING(c_process:c_proc_life:c_proc_quit): GPU#",i2," Argument buffer is not clean!")') j1; ierr=ierr+100*(2+j1); endif
           endif
          enddo
 #endif
@@ -257,7 +267,7 @@
          ier=0
          if(allocated(tbb)) then
           do j0=1,tbb_size
-           call tensor_block_destroy(tbb(j0),ierc); if(ierc.ne.0) ier=ier+1
+           call tensor_block_destroy(tbb(j0)%tens_blck,ierc); if(ierc.ne.0) ier=ier+1
           enddo
           deallocate(tbb)
          endif
@@ -321,7 +331,7 @@
         complex(8) elems_c8; integer(C_SIZE_T) off_elems_c8; complex(8), pointer:: ptr_elems_c8(:)=>NULL()
 
         ierr=0
-!	write(jo,'("#DEBUG(c_process:tens_blck_pack): Creating a tensor block packet:")') !debug
+!	write(jo_cp,'("#DEBUG(c_process:tens_blck_pack): Creating a tensor block packet:")') !debug
 !Compute the size (in bytes) of the tensor block packet (linearized tensor_block_t):
         off_packet_size=0; packet_size=0
         off_data_kind=off_packet_size+sizeof(packet_size)
@@ -353,24 +363,24 @@
         case('c8'); off_elems_c8=off_sclr+sizeof(sclr); packet_size=off_elems_c8+sizeof(elems_c8)*elems_count
         end select
 !DEBUG begin:
-!	write(jo,'(" Data kind    : ",i9,1x,i9)') off_data_kind,data_kind
-!	write(jo,'(" Element count: ",i9,1x,i9)') off_elems_count,elems_count
-!	write(jo,'(" Tensor rank  : ",i9,1x,i9)') off_trank,trank
-!	write(jo,'(" Dims         :",i9,3x,32(1x,i4))') off_dims,dims(1:trank)
-!	write(jo,'(" Divs         :",i9,3x,32(1x,i4))') off_divs,divs(1:trank)
-!	write(jo,'(" Grps         :",i9,3x,32(1x,i4))') off_grps,grps(1:trank)
-!	write(jo,'(" Base         :",i9,3x,32(1x,i4))') off_base,base(1:trank)
-!	write(jo,'(" Scalar       : ",i9,3x,D25.14,1x,D25.14)') off_sclr,sclr
+!	write(jo_cp,'(" Data kind    : ",i9,1x,i9)') off_data_kind,data_kind
+!	write(jo_cp,'(" Element count: ",i9,1x,i9)') off_elems_count,elems_count
+!	write(jo_cp,'(" Tensor rank  : ",i9,1x,i9)') off_trank,trank
+!	write(jo_cp,'(" Dims         :",i9,3x,32(1x,i4))') off_dims,dims(1:trank)
+!	write(jo_cp,'(" Divs         :",i9,3x,32(1x,i4))') off_divs,divs(1:trank)
+!	write(jo_cp,'(" Grps         :",i9,3x,32(1x,i4))') off_grps,grps(1:trank)
+!	write(jo_cp,'(" Base         :",i9,3x,32(1x,i4))') off_base,base(1:trank)
+!	write(jo_cp,'(" Scalar       : ",i9,3x,D25.14,1x,D25.14)') off_sclr,sclr
 !	select case(dtk)
-!	case('r4'); write(jo,'(" Elements(r4) : ",i9,1x,i9)') off_elems_r4
-!	case('r8'); write(jo,'(" Elements(r8) : ",i9,1x,i9)') off_elems_r8
-!	case('c8'); write(jo,'(" Elements(c8) : ",i9,1x,i9)') off_elems_c8
+!	case('r4'); write(jo_cp,'(" Elements(r4) : ",i9,1x,i9)') off_elems_r4
+!	case('r8'); write(jo_cp,'(" Elements(r8) : ",i9,1x,i9)') off_elems_r8
+!	case('c8'); write(jo_cp,'(" Elements(c8) : ",i9,1x,i9)') off_elems_c8
 !	end select
-!	write(jo,'(" Packet size  : ",i9,1x,i9)') off_packet_size,packet_size
+!	write(jo_cp,'(" Packet size  : ",i9,1x,i9)') off_packet_size,packet_size
 !DEBUG end.
 !Allocate an argument buffer space on Host:
         err_code=get_buf_entry_host(packet_size,pptr,entry_num); if(err_code.ne.0) then; ierr=5; return; endif
-!	write(jo,'("#DEBUG(c_process:tens_blck_pack): Host argument buffer entry obtained: ",i7)') entry_num !debug
+!	write(jo_cp,'("#DEBUG(c_process:tens_blck_pack): Host argument buffer entry obtained: ",i7)') entry_num !debug
         if(entry_num.lt.0) then; ierr=6; return; endif
 !Transfer the data into the Host argument buffer:
         c_addr=ptr_offset(pptr,off_packet_size)
@@ -435,7 +445,7 @@
         else
          ierr=7; return
         endif
-!	write(jo,'("#DEBUG(c_process:tens_blck_pack): packet created (size/entry): ",i12,1x,i7)') packet_size,entry_num !debug
+!	write(jo_cp,'("#DEBUG(c_process:tens_blck_pack): packet created (size/entry): ",i12,1x,i7)') packet_size,entry_num !debug
         return
         end subroutine tens_blck_pack
 !-----------------------------------------------------------------------------
@@ -474,9 +484,10 @@
         integer(C_SIZE_T) off_elems_r4; real(4), pointer:: ptr_elems_r4(:)=>NULL(); real(4) elems_r4
         integer(C_SIZE_T) off_elems_r8; real(8), pointer:: ptr_elems_r8(:)=>NULL(); real(8) elems_r8
         integer(C_SIZE_T) off_elems_c8; complex(8), pointer:: ptr_elems_c8(:)=>NULL(); complex(8) elems_c8
+        logical res
 
         ierr=0; err_code=0
-!	write(jo,'("#DEBUG(c_process:tens_blck_upack): Unpacking a tensor block packet:")') !debug
+!	write(jo_cp,'("#DEBUG(c_process:tens_blck_upack): Unpacking a tensor block packet:")') !debug
 !Read the tensor block packet and form an instance of tensor_block_t:
         off_packet_size=0; c_addr=ptr_offset(pptr,off_packet_size)
         call c_f_pointer(c_addr,ptr_packet_size); packet_size=ptr_packet_size; nullify(ptr_packet_size)
@@ -488,24 +499,72 @@
         call c_f_pointer(c_addr,ptr_trank); trank=ptr_trank; nullify(ptr_trank)
         tens%tensor_shape%num_dim=trank; if(trank.lt.0) then; ierr=1; return; endif
         tens%tensor_block_size=elems_count; if(elems_count.le.0.or.(trank.eq.0.and.elems_count.ne.1)) then; ierr=2; return; endif
-        if(associated(tens%tensor_shape%dim_extent)) then; deallocate(tens%tensor_shape%dim_extent,STAT=j); if(j.ne.0) nullify(tens%tensor_shape%dim_extent); endif
-        if(trank.gt.0) then; allocate(tens%tensor_shape%dim_extent(1:trank),STAT=ierr); if(ierr.ne.0) then; ierr=3; return; endif; endif
-        if(associated(tens%tensor_shape%dim_divider)) then; deallocate(tens%tensor_shape%dim_divider,STAT=j); if(j.ne.0) nullify(tens%tensor_shape%dim_divider); endif
-        if(trank.gt.0) then; allocate(tens%tensor_shape%dim_divider(1:trank),STAT=ierr); if(ierr.ne.0) then; ierr=4; return; endif; endif
-        if(associated(tens%tensor_shape%dim_group)) then; deallocate(tens%tensor_shape%dim_group,STAT=j); if(j.ne.0) nullify(tens%tensor_shape%dim_group); endif
-        if(trank.gt.0) then; allocate(tens%tensor_shape%dim_group(1:trank),STAT=ierr); if(ierr.ne.0) then; ierr=5; return; endif; endif
+        if(tensor_block_alloc(tens,'sp',ierr)) then
+         if(ierr.ne.0) then; ierr=3; return; endif
+         deallocate(tens%tensor_shape%dim_extent,STAT=ierr); if(ierr.ne.0) then; ierr=4; return; endif
+         deallocate(tens%tensor_shape%dim_divider,STAT=ierr); if(ierr.ne.0) then; ierr=5; return; endif
+         deallocate(tens%tensor_shape%dim_group,STAT=ierr); if(ierr.ne.0) then; ierr=6; return; endif
+         res=tensor_block_alloc(tens,'sp',ierr,.false.); if(ierr.ne.0) then; ierr=7; return; endif
+        else
+         if(ierr.ne.0) then; ierr=8; return; endif
+         nullify(tens%tensor_shape%dim_extent)
+         nullify(tens%tensor_shape%dim_divider)
+         nullify(tens%tensor_shape%dim_group)
+        endif        
+        if(trank.gt.0) then
+         allocate(tens%tensor_shape%dim_extent(1:trank),STAT=ierr); if(ierr.ne.0) then; ierr=9; return; endif
+         allocate(tens%tensor_shape%dim_divider(1:trank),STAT=ierr); if(ierr.ne.0) then; ierr=10; return; endif
+         allocate(tens%tensor_shape%dim_group(1:trank),STAT=ierr); if(ierr.ne.0) then; ierr=11; return; endif
+         res=tensor_block_alloc(tens,'sp',j,.true.); if(j.ne.0) then; ierr=12; return; endif
+        endif
         select case(data_kind)
         case(R4)
-         if(associated(tens%data_real4)) then; deallocate(tens%data_real4,STAT=j); if(j.ne.0) nullify(tens%data_real4); endif
-         if(trank.gt.0) then; allocate(tens%data_real4(0:elems_count-1),STAT=ierr); if(ierr.ne.0) then; ierr=6; return; endif; endif
+         if(associated(tens%data_real4)) then
+          if(tensor_block_alloc(tens,'r4',j)) then
+           if(j.ne.0) then; ierr=13; return; endif
+           deallocate(tens%data_real4,STAT=j); if(j.ne.0) then; ierr=14; return; endif
+          else
+           if(j.ne.0) then; ierr=15; return; endif
+           nullify(tens%data_real4)
+          endif
+          res=tensor_block_alloc(tens,'r4',j,.false.); if(j.ne.0) then; ierr=16; return; endif
+         endif
+         if(trank.gt.0) then
+          allocate(tens%data_real4(0:elems_count-1),STAT=ierr); if(ierr.ne.0) then; ierr=17; return; endif
+          res=tensor_block_alloc(tens,'r4',j,.true.); if(j.ne.0) then; ierr=18; return; endif
+         endif
         case(R8)
-         if(associated(tens%data_real8)) then; deallocate(tens%data_real8,STAT=j); if(j.ne.0) nullify(tens%data_real8); endif
-         if(trank.gt.0) then; allocate(tens%data_real8(0:elems_count-1),STAT=ierr); if(ierr.ne.0) then; ierr=7; return; endif; endif
+         if(associated(tens%data_real8)) then
+          if(tensor_block_alloc(tens,'r8',j)) then
+           if(j.ne.0) then; ierr=19; return; endif
+           deallocate(tens%data_real8,STAT=j); if(j.ne.0) then; ierr=20; return; endif
+          else
+           if(j.ne.0) then; ierr=21; return; endif
+           nullify(tens%data_real8)
+          endif
+          res=tensor_block_alloc(tens,'r8',j,.false.); if(j.ne.0) then; ierr=22; return; endif
+         endif
+         if(trank.gt.0) then
+          allocate(tens%data_real8(0:elems_count-1),STAT=ierr); if(ierr.ne.0) then; ierr=23; return; endif
+          res=tensor_block_alloc(tens,'r8',j,.true.); if(j.ne.0) then; ierr=24; return; endif
+         endif
         case(C8)
-         if(associated(tens%data_cmplx8)) then; deallocate(tens%data_cmplx8,STAT=j); if(j.ne.0) nullify(tens%data_cmplx8); endif
-         if(trank.gt.0) then; allocate(tens%data_cmplx8(0:elems_count-1),STAT=ierr); if(ierr.ne.0) then; ierr=8; return; endif; endif
+         if(associated(tens%data_cmplx8)) then
+          if(tensor_block_alloc(tens,'c8',j)) then
+           if(j.ne.0) then; ierr=25; return; endif
+           deallocate(tens%data_cmplx8,STAT=j); if(j.ne.0) then; ierr=26; return; endif
+          else
+           if(j.ne.0) then; ierr=27; return; endif
+           nullify(tens%data_cmplx8)
+          endif
+          res=tensor_block_alloc(tens,'c8',j,.false.); if(j.ne.0) then; ierr=28; return; endif
+         endif
+         if(trank.gt.0) then
+          allocate(tens%data_cmplx8(0:elems_count-1),STAT=ierr); if(ierr.ne.0) then; ierr=29; return; endif
+          res=tensor_block_alloc(tens,'c8',j,.true.); if(j.ne.0) then; ierr=30; return; endif
+         endif
         case default
-         ierr=9; return
+         ierr=31; return
         end select
         off_dims=off_trank+sizeof(trank)
         if(trank.gt.0) then
@@ -535,7 +594,7 @@
          off_elems_r4=off_sclr+sizeof(elems_c8)
          if(trank.gt.0) then
           c_addr=ptr_offset(pptr,off_elems_r4)
-          if(off_elems_r4+elems_count*sizeof(elems_r4).ne.packet_size) then; ierr=10; return; endif
+          if(off_elems_r4+elems_count*sizeof(elems_r4).ne.packet_size) then; ierr=32; return; endif
           call c_f_pointer(c_addr,ptr_elems_r4,shape=[elems_count])
           do s0=0,elems_count-1; tens%data_real4(s0)=ptr_elems_r4(1+s0); enddo
           nullify(ptr_elems_r4)
@@ -544,7 +603,7 @@
          off_elems_r8=off_sclr+sizeof(elems_c8)
          if(trank.gt.0) then
           c_addr=ptr_offset(pptr,off_elems_r8)
-          if(off_elems_r8+elems_count*sizeof(elems_r8).ne.packet_size) then; ierr=11; return; endif
+          if(off_elems_r8+elems_count*sizeof(elems_r8).ne.packet_size) then; ierr=33; return; endif
           call c_f_pointer(c_addr,ptr_elems_r8,shape=[elems_count])
           do s0=0,elems_count-1; tens%data_real8(s0)=ptr_elems_r8(1+s0); enddo
           nullify(ptr_elems_r8)
@@ -553,28 +612,28 @@
          off_elems_c8=off_sclr+sizeof(elems_c8)
          if(trank.gt.0) then
           c_addr=ptr_offset(pptr,off_elems_c8)
-          if(off_elems_c8+elems_count*sizeof(elems_c8).ne.packet_size) then; ierr=12; return; endif
+          if(off_elems_c8+elems_count*sizeof(elems_c8).ne.packet_size) then; ierr=34; return; endif
           call c_f_pointer(c_addr,ptr_elems_c8,shape=[elems_count])
           do s0=0,elems_count-1; tens%data_cmplx8(s0)=ptr_elems_c8(1+s0); enddo
           nullify(ptr_elems_c8)
          endif
         end select
 !DEBUG begin:
-!	write(jo,'(" Packet size  : ",i9,1x,i9)') off_packet_size,packet_size
-!	write(jo,'(" Data kind    : ",i9,1x,i9)') off_data_kind,data_kind
-!	write(jo,'(" Element count: ",i9,1x,i9)') off_elems_count,elems_count
-!	write(jo,'(" Tensor rank  : ",i9,1x,i9)') off_trank,trank
-!	write(jo,'(" Dims         :",i9,3x,32(1x,i4))') off_dims,tens%tensor_shape%dim_extent(1:trank)
-!	write(jo,'(" Divs         :",i9,3x,32(1x,i4))') off_divs,tens%tensor_shape%dim_divider(1:trank)
-!	write(jo,'(" Grps         :",i9,3x,32(1x,i4))') off_grps,tens%tensor_shape%dim_group(1:trank)
-!	write(jo,'(" Base         :",i9,3x,32(1x,i4))') off_base,base(1:trank)
-!	write(jo,'(" Scalar       : ",i9,3x,D25.14,1x,D25.14)') off_sclr,tens%scalar_value
+!	write(jo_cp,'(" Packet size  : ",i9,1x,i9)') off_packet_size,packet_size
+!	write(jo_cp,'(" Data kind    : ",i9,1x,i9)') off_data_kind,data_kind
+!	write(jo_cp,'(" Element count: ",i9,1x,i9)') off_elems_count,elems_count
+!	write(jo_cp,'(" Tensor rank  : ",i9,1x,i9)') off_trank,trank
+!	write(jo_cp,'(" Dims         :",i9,3x,32(1x,i4))') off_dims,tens%tensor_shape%dim_extent(1:trank)
+!	write(jo_cp,'(" Divs         :",i9,3x,32(1x,i4))') off_divs,tens%tensor_shape%dim_divider(1:trank)
+!	write(jo_cp,'(" Grps         :",i9,3x,32(1x,i4))') off_grps,tens%tensor_shape%dim_group(1:trank)
+!	write(jo_cp,'(" Base         :",i9,3x,32(1x,i4))') off_base,base(1:trank)
+!	write(jo_cp,'(" Scalar       : ",i9,3x,D25.14,1x,D25.14)') off_sclr,tens%scalar_value
 !	select case(data_kind)
-!	case(R4); write(jo,'(" Elements(r4) : ",i9,1x,i9)') off_elems_r4
-!	case(R8); write(jo,'(" Elements(r8) : ",i9,1x,i9)') off_elems_r8
-!	case(C8); write(jo,'(" Elements(c8) : ",i9,1x,i9)') off_elems_c8
+!	case(R4); write(jo_cp,'(" Elements(r4) : ",i9,1x,i9)') off_elems_r4
+!	case(R8); write(jo_cp,'(" Elements(r8) : ",i9,1x,i9)') off_elems_r8
+!	case(C8); write(jo_cp,'(" Elements(c8) : ",i9,1x,i9)') off_elems_c8
 !	end select
-!	write(jo,'("#DEBUG(c_process:tens_blck_unpack): packet unpacked (size): ",i12)') packet_size !debug
+!	write(jo_cp,'("#DEBUG(c_process:tens_blck_unpack): packet unpacked (size): ",i12)') packet_size !debug
 !DEBUG end.
         return
         end subroutine tens_blck_unpack
@@ -585,11 +644,11 @@
 ! {tensor_block_t|tensBlck_t} => PACKET (Host Argument Buffer entry)
 !Note that the pointer fields of {tensor_block_t|tensBlck_t} will simply point
 !to the corresponding locations in the Host Argument Buffer. Hence the corresponding entry
-!of the Host Argument Buffer cannot be freed during the lifetime of {tensor_block_t|tensBlck_t}.
+!of the Host Argument Buffer shall not be freed during the lifetime of {tensor_block_t|tensBlck_t}.
 !INPUT:
 ! - pptr - C pointer to a tensor block packet located in the Host argument buffer;
-! - tens - an allocated (uninitialized) instance of tensor_block_t (F);
-! - ctens - an allocated (uninitialized) instance of tensBlck_t (C);
+! - tens - an instance of tensor_block_t (F);
+! - ctens - an instance of tensBlck_t (C);
 ! - gpu_num - GPU# on which the tensor block will be used (-1 means Host);
 !OUTPUT:
 ! - ctens - a filled instance of tensBlck_t;
@@ -663,30 +722,33 @@
          err_code=tensBlck_construct(ctens,DEV_NVIDIA_GPU,gpu_num,data_kind,trank,addr_dims,addr_divs,addr_grps,addr_prmn,addr_host,addr_gpu,entry_gpu,entry_const)
          if(err_code.ne.0) then; ierr=6; return; endif
 #else
-         write(jo,'("#FATAL(c_process:tens_blck_assoc): attempt to initialize a GPU-resident tensor block in GPU-free code compilation!")') !trap
+         write(jo_cp,'("#FATAL(c_process:tens_blck_assoc): attempt to initialize a GPU-resident tensor block in GPU-free code compilation!")') !trap
          ierr=-1; return !attempt to initialize tensBlck_t in a GPU-free code compilation
 #endif
         elseif(present(tens).and.(.not.present(ctens)).and.(.not.present(gpu_num))) then
  !Create an instance of tensor_block_t (Fortran):
+         call tensor_block_destroy(tens,ierr); if(ierr.ne.0) then; ierr=7; return; endif
          tens%tensor_block_size=elems_count
          tens%tensor_shape%num_dim=trank
-         nullify(tens%tensor_shape%dim_extent); call c_f_pointer(addr_dims,tens%tensor_shape%dim_extent,shape=[trank])
-         nullify(tens%tensor_shape%dim_divider); call c_f_pointer(addr_divs,tens%tensor_shape%dim_divider,shape=[trank])
-         nullify(tens%tensor_shape%dim_group); call c_f_pointer(addr_grps,tens%tensor_shape%dim_group,shape=[trank])
+         if(trank.gt.0) then
+          call c_f_pointer(addr_dims,tens%tensor_shape%dim_extent,shape=[trank])
+          call c_f_pointer(addr_divs,tens%tensor_shape%dim_divider,shape=[trank])
+          call c_f_pointer(addr_grps,tens%tensor_shape%dim_group,shape=[trank])
+         endif
          tens%scalar_value=elems_c8
          select case(data_kind)
          case(R4)
           call c_f_pointer(addr_host,ptr_elems_r4,shape=[elems_count])
-          tens%data_real4(0:)=>ptr_elems_r4; nullify(ptr_elems_r4) !Is this portable?`
+          tens%data_real4(0:)=>ptr_elems_r4; nullify(ptr_elems_r4) !Hope this is portable`
          case(R8)
           call c_f_pointer(addr_host,ptr_elems_r8,shape=[elems_count])
-          tens%data_real8(0:)=>ptr_elems_r8; nullify(ptr_elems_r8) !Is this portable?`
+          tens%data_real8(0:)=>ptr_elems_r8; nullify(ptr_elems_r8) !Hope this is portable`
          case(C8)
           call c_f_pointer(addr_host,ptr_elems_c8,shape=[elems_count])
-          tens%data_cmplx8(0:)=>ptr_elems_c8; nullify(ptr_elems_c8) !Is this portable?`
+          tens%data_cmplx8(0:)=>ptr_elems_c8; nullify(ptr_elems_c8) !Hope this is portable`
          end select
         else
-         ierr=99 !both <ctens> and <tens> cannot be absent/present simultaneously
+         ierr=8 !both <ctens> and <tens> cannot be absent/present simultaneously
         endif
         return
         end subroutine tens_blck_assoc
@@ -716,7 +778,7 @@
         endif
         err_code=tensBlck_destroy(ctens); if(err_code.ne.0) ierr=ierr+1000
 #else
-        write(jo,'("#FATAL(c_process:tens_blck_dissoc): attempt to dissociate a GPU-resident tensor block in GPU-free code compilation!")') !trap
+        write(jo_cp,'("#FATAL(c_process:tens_blck_dissoc): attempt to dissociate a GPU-resident tensor block in GPU-free code compilation!")') !trap
         ierr=-1; return !attempt to initialize tensBlck_t in a GPU-free code compilation
 #endif
         return
@@ -742,20 +804,20 @@
         type(tensor_block_t) ftens(0:test_args_lim)
         character(256) shape0,shape1,shape2
 
-        ierr=0; write(jo,'("#MSG(c_process:c_proc_test): Testing C-process functionality ... ")',advance='no')
+        ierr=0; write(jo_cp,'("#MSG(c_process:c_proc_test): Testing C-process functionality ... ")',advance='no')
 !TEST 0: Random contraction patterns:
-!        write(jo,*)''
+!        write(jo_cp,*)''
 !        do i=1,16
 !         call contr_pattern_rnd(8,100000000,shape0,shape1,shape2,cptrn,ierr)
-!         if(ierr.ne.0) then; write(jo,*)'ERROR(c_process:c_proc_test): contr_pattern_rnd error ',ierr; return; endif
+!         if(ierr.ne.0) then; write(jo_cp,*)'ERROR(c_process:c_proc_test): contr_pattern_rnd error ',ierr; return; endif
 !         l=index(shape0,')'); k=index(shape1,')'); j=index(shape2,')')
-!         call printl(jo,shape0(1:l)//'+='//shape1(1:k)//'*'//shape2(1:j)) !debug
+!         call printl(jo_cp,shape0(1:l)//'+='//shape1(1:k)//'*'//shape2(1:j)) !debug
 !         m=tensor_shape_rank(shape1(1:k),ierr)+tensor_shape_rank(shape2(1:j),ierr)
-!         write(jo,'("CPTRN:",64(1x,i2))') cptrn(1:m) !debug
+!         write(jo_cp,'("CPTRN:",64(1x,i2))') cptrn(1:m) !debug
 !        enddo
 !        return
 !TEST 1 (CPU: tensor_block_contract):
-        write(jo,'("1 ")',advance='no')
+        write(jo_cp,'("1 ")',advance='no')
         call tensor_block_create('(20,30,20,30)','r8',ftens(0),ierr,val_r8=0d0); if(ierr.ne.0) then; ierr=1; goto 999; endif
         call tensor_block_create('(15,20,25,30)','r8',ftens(1),ierr,val_r8=1d0); if(ierr.ne.0) then; ierr=2; goto 999; endif
         call tensor_block_create('(30,20,15,25)','r8',ftens(2),ierr,val_r8=1d0); if(ierr.ne.0) then; ierr=3; goto 999; endif
@@ -766,147 +828,147 @@
         call tensor_block_destroy(ftens(1),ierr); if(ierr.ne.0) then; ierr=8; goto 999; endif
         call tensor_block_destroy(ftens(2),ierr); if(ierr.ne.0) then; ierr=9; goto 999; endif
 #ifndef NO_GPU
-        gpu_id=gpu_busy_least(); call cudaSetDevice(gpu_id,err_code); if(err_code.ne.0) then; ierr=666; goto 999; endif
+        gpu_id=gpu_busy_least(); call cudaSetDevice(gpu_id,err_code); if(err_code.ne.0) then; ierr=10; goto 999; endif
         call gpu_set_event_policy(EVENTS_ON)
 !TEST 2 (GPU: matrix multiplication):
-        write(jo,'("2 ")',advance='no')
+        write(jo_cp,'("2 ")',advance='no')
         n=2; ext_beg(1:n)=1
-        call tensor_block_create('(345,697)','r8',ftens(0),ierr,val_r8=0d0); if(ierr.ne.0) then; ierr=10; goto 999; endif
-        call tensor_block_create('(37,345)','r8',ftens(1),ierr); if(ierr.ne.0) then; ierr=11; goto 999; endif
-        call tensor_block_create('(37,697)','r8',ftens(2),ierr); if(ierr.ne.0) then; ierr=12; goto 999; endif
-        call tensor_block_create('(345,697)','r4',ftens(3),ierr,val_r4=0.0); if(ierr.ne.0) then; ierr=13; goto 999; endif
-        call tensor_block_contract((/-1,1,-1,2/),ftens(1),ftens(2),ftens(0),ierr,'r8'); if(ierr.ne.0) then; ierr=14; goto 999; endif
-        call tensor_block_sync(ftens(0),'r8',ierr,'r4'); if(ierr.ne.0) then; ierr=15; goto 999; endif
-        call tensor_block_sync(ftens(1),'r8',ierr,'r4'); if(ierr.ne.0) then; ierr=16; goto 999; endif
-        call tensor_block_sync(ftens(2),'r8',ierr,'r4'); if(ierr.ne.0) then; ierr=17; goto 999; endif
-!        call tensor_block_print(jo,'Matrix0:',ext_beg,ftens(0),ierr,'r4') !debug
-        err_code=gpu_matrix_multiply_tn_r4(345_CZ,697_CZ,37_CZ,ftens(1)%data_real4,ftens(2)%data_real4,ftens(3)%data_real4); if(err_code.ne.0) then; write(jo,*)'GPU ERROR ',err_code; ierr=18; goto 999; endif
-        i1=gpu_get_error_count(); if(i1.ne.0) then; write(jo,*)'GPU error count = ',i1; ierr=19; goto 999; endif
-!        call tensor_block_print(jo,'Matrix3:',ext_beg,ftens(3),ierr,'r4') !debug
-        cmp=tensor_block_cmp(ftens(0),ftens(3),ierr,'r4',cmp_thresh=1d-5); if(ierr.ne.0) then; ierr=20; goto 999; endif
-        if(.not.cmp) then; ierr=21; goto 999; endif
-        call tensor_block_destroy(ftens(3),ierr); if(ierr.ne.0) then; ierr=22; goto 999; endif
-        call tensor_block_destroy(ftens(2),ierr); if(ierr.ne.0) then; ierr=23; goto 999; endif
-        call tensor_block_destroy(ftens(1),ierr); if(ierr.ne.0) then; ierr=24; goto 999; endif
-        call tensor_block_destroy(ftens(0),ierr); if(ierr.ne.0) then; ierr=25; goto 999; endif
+        call tensor_block_create('(345,697)','r8',ftens(0),ierr,val_r8=0d0); if(ierr.ne.0) then; ierr=11; goto 999; endif
+        call tensor_block_create('(37,345)','r8',ftens(1),ierr); if(ierr.ne.0) then; ierr=12; goto 999; endif
+        call tensor_block_create('(37,697)','r8',ftens(2),ierr); if(ierr.ne.0) then; ierr=13; goto 999; endif
+        call tensor_block_create('(345,697)','r4',ftens(3),ierr,val_r4=0.0); if(ierr.ne.0) then; ierr=14; goto 999; endif
+        call tensor_block_contract((/-1,1,-1,2/),ftens(1),ftens(2),ftens(0),ierr,'r8'); if(ierr.ne.0) then; ierr=15; goto 999; endif
+        call tensor_block_sync(ftens(0),'r8',ierr,'r4'); if(ierr.ne.0) then; ierr=16; goto 999; endif
+        call tensor_block_sync(ftens(1),'r8',ierr,'r4'); if(ierr.ne.0) then; ierr=17; goto 999; endif
+        call tensor_block_sync(ftens(2),'r8',ierr,'r4'); if(ierr.ne.0) then; ierr=18; goto 999; endif
+!        call tensor_block_print(jo_cp,'Matrix0:',ext_beg,ftens(0),ierr,'r4') !debug
+        err_code=gpu_matrix_multiply_tn_r4(345_CZ,697_CZ,37_CZ,ftens(1)%data_real4,ftens(2)%data_real4,ftens(3)%data_real4); if(err_code.ne.0) then; write(jo_cp,*)'GPU ERROR ',err_code; ierr=19; goto 999; endif
+        i1=gpu_get_error_count(); if(i1.ne.0) then; write(jo_cp,*)'GPU error count = ',i1; ierr=20; goto 999; endif
+!        call tensor_block_print(jo_cp,'Matrix3:',ext_beg,ftens(3),ierr,'r4') !debug
+        cmp=tensor_block_cmp(ftens(0),ftens(3),ierr,'r4',cmp_thresh=1d-5); if(ierr.ne.0) then; ierr=21; goto 999; endif
+        if(.not.cmp) then; ierr=22; goto 999; endif
+        call tensor_block_destroy(ftens(3),ierr); if(ierr.ne.0) then; ierr=23; goto 999; endif
+        call tensor_block_destroy(ftens(2),ierr); if(ierr.ne.0) then; ierr=24; goto 999; endif
+        call tensor_block_destroy(ftens(1),ierr); if(ierr.ne.0) then; ierr=25; goto 999; endif
+        call tensor_block_destroy(ftens(0),ierr); if(ierr.ne.0) then; ierr=26; goto 999; endif
 !TEST 3 (GPU: tensor packing/unpacking/association, gpu_tensor_transpose):
-        write(jo,'("3 ")',advance='no')
+        write(jo_cp,'("3 ")',advance='no')
         n=4; ext_beg(1:n)=1; o2n(0:n)=(/+1,(j,j=1,n)/); ctrl=1
         do i=1,ifcl(n)
-         call trng(ctrl,n,o2n,ngt); !write(jo,'(32(1x,i2))') o2n(0:n)
-         call permutation_converter(.false.,n,n2o,o2n); !write(jo,'(32(1x,i2))') n2o(0:n)
-         call tensor_block_create('(17,27,33,44)','r8',ftens(0),ierr); if(ierr.ne.0) then; ierr=26; goto 999; endif
-         call tensor_block_create('(44,33,27,17)','r8',ftens(1),ierr,val_r8=0d0); if(ierr.ne.0) then; ierr=27; goto 999; endif
+         call trng(ctrl,n,o2n,ngt); !write(jo_cp,'(32(1x,i2))') o2n(0:n)
+         call permutation_converter(.false.,n,n2o,o2n); !write(jo_cp,'(32(1x,i2))') n2o(0:n)
+         call tensor_block_create('(17,27,33,44)','r8',ftens(0),ierr); if(ierr.ne.0) then; ierr=27; goto 999; endif
+         call tensor_block_create('(44,33,27,17)','r8',ftens(1),ierr,val_r8=0d0); if(ierr.ne.0) then; ierr=28; goto 999; endif
          tm0=thread_wtime()
-         call tensor_block_copy(ftens(0),ftens(1),ierr,o2n); if(ierr.ne.0) then; ierr=28; goto 999; endif
-!         write(jo,'("#DEBUG(c_process:c_proc_test): CPU tensor transpose time = ",F10.4)') thread_wtime()-tm0 !debug
-         call tensor_block_sync(ftens(0),'r8',ierr,'r4'); if(ierr.ne.0) then; ierr=29; goto 999; endif
-         call tensor_block_sync(ftens(1),'r8',ierr,'r4'); if(ierr.ne.0) then; ierr=30; goto 999; endif
-         call tens_blck_pack(ftens(1),'r4',pack_size(1),entry_ptr(1),entry_num(1),ierr); if(ierr.ne.0) then; ierr=31; goto 999; endif
-         call tens_blck_unpack(ftens(2),entry_ptr(1),ierr); if(ierr.ne.0) then; ierr=32; goto 999; endif
-         cmp=tensor_block_cmp(ftens(1),ftens(2),ierr,'r4',cmp_thresh=1d-6); if(ierr.ne.0) then; ierr=33; goto 999; endif
-         if(.not.cmp) then; ierr=34; goto 999; endif
-         call tensor_block_destroy(ftens(2),ierr); if(ierr.ne.0) then; ierr=35; goto 999; endif
-         call tensor_block_create('(17,27,33,44)','r4',ftens(2),ierr,val_r4=0.0); if(ierr.ne.0) then; ierr=36; goto 999; endif
-         call tens_blck_pack(ftens(2),'r4',pack_size(2),entry_ptr(2),entry_num(2),ierr); if(ierr.ne.0) then; ierr=37; goto 999; endif
-         call tens_blck_assoc(entry_ptr(1),ierr,ctens=ctens(1),gpu_num=gpu_id); if(ierr.ne.0) then; ierr=38; goto 999; endif
-         call tens_blck_assoc(entry_ptr(2),ierr,ctens=ctens(2),gpu_num=gpu_id); if(ierr.ne.0) then; ierr=39; goto 999; endif
+         call tensor_block_copy(ftens(0),ftens(1),ierr,o2n); if(ierr.ne.0) then; ierr=29; goto 999; endif
+!         write(jo_cp,'("#DEBUG(c_process:c_proc_test): CPU tensor transpose time = ",F10.4)') thread_wtime()-tm0 !debug
+         call tensor_block_sync(ftens(0),'r8',ierr,'r4'); if(ierr.ne.0) then; ierr=30; goto 999; endif
+         call tensor_block_sync(ftens(1),'r8',ierr,'r4'); if(ierr.ne.0) then; ierr=31; goto 999; endif
+         call tens_blck_pack(ftens(1),'r4',pack_size(1),entry_ptr(1),entry_num(1),ierr); if(ierr.ne.0) then; ierr=32; goto 999; endif
+         call tens_blck_unpack(ftens(2),entry_ptr(1),ierr); if(ierr.ne.0) then; ierr=33; goto 999; endif
+         cmp=tensor_block_cmp(ftens(1),ftens(2),ierr,'r4',cmp_thresh=1d-6); if(ierr.ne.0) then; ierr=34; goto 999; endif
+         if(.not.cmp) then; ierr=35; goto 999; endif
+         call tensor_block_destroy(ftens(2),ierr); if(ierr.ne.0) then; ierr=36; goto 999; endif
+         call tensor_block_create('(17,27,33,44)','r4',ftens(2),ierr,val_r4=0.0); if(ierr.ne.0) then; ierr=37; goto 999; endif
+         call tens_blck_pack(ftens(2),'r4',pack_size(2),entry_ptr(2),entry_num(2),ierr); if(ierr.ne.0) then; ierr=38; goto 999; endif
+         call tens_blck_assoc(entry_ptr(1),ierr,ctens=ctens(1),gpu_num=gpu_id); if(ierr.ne.0) then; ierr=39; goto 999; endif
+         call tens_blck_assoc(entry_ptr(2),ierr,ctens=ctens(2),gpu_num=gpu_id); if(ierr.ne.0) then; ierr=40; goto 999; endif
          tm0=thread_wtime()
-         err_code=gpu_tensor_block_copy_dlf(n2o,ctens(1),ctens(2)); if(err_code.ne.0) then; write(jo,*)'GPU ERROR ',err_code; ierr=40; goto 999; endif
-!         write(jo,'("#DEBUG(c_process:c_proc_test): GPU tensor transpose time = ",F10.4)') thread_wtime()-tm0 !debug
-         i1=gpu_get_error_count(); if(i1.ne.0) then; write(jo,*)'GPU error count = ',i1; ierr=41; goto 999; endif
-!         call print_gpu_debug_dump(jo) !debug
-         if(tensor_block_norm2(ftens(2),ierr,'r4').ne.0d0) then; ierr=42; goto 999; endif
-         call tens_blck_unpack(ftens(2),entry_ptr(2),ierr); if(ierr.ne.0) then; ierr=43; goto 999; endif
-!         write(jo,*) tensor_block_norm2(ftens(0),ierr,'r4'),tensor_block_norm2(ftens(2),ierr,'r4') !debug
-!         call tensor_block_print(jo,'Tensor0:',ext_beg,ftens(0),ierr,'r4') !debug
-!         call tensor_block_print(jo,'Tensor1:',ext_beg,ftens(1),ierr,'r4') !debug
-!         call tensor_block_print(jo,'Tensor2:',ext_beg,ftens(2),ierr,'r4') !debug
-         cmp=tensor_block_cmp(ftens(0),ftens(2),ierr,'r4',cmp_thresh=1d-5,diff_count=diffc); if(ierr.ne.0) then; ierr=44; goto 999; endif
-         if(.not.cmp) then; write(jo,*)'DIFF COUNT = ',diffc; ierr=45; goto 999; endif
-         call tens_blck_dissoc(ctens(2),ierr); if(ierr.ne.0) then; ierr=46; goto 999; endif
-         call tens_blck_dissoc(ctens(1),ierr); if(ierr.ne.0) then; ierr=47; goto 999; endif
-         err_code=free_buf_entry_host(entry_num(2)); if(err_code.ne.0) then; ierr=48; goto 999; endif
-         err_code=free_buf_entry_host(entry_num(1)); if(err_code.ne.0) then; ierr=49; goto 999; endif
-         call tensor_block_destroy(ftens(2),ierr); if(ierr.ne.0) then; ierr=50; goto 999; endif
-         call tensor_block_destroy(ftens(1),ierr); if(ierr.ne.0) then; ierr=51; goto 999; endif
-         call tensor_block_destroy(ftens(0),ierr); if(ierr.ne.0) then; ierr=52; goto 999; endif
+         err_code=gpu_tensor_block_copy_dlf(n2o,ctens(1),ctens(2)); if(err_code.ne.0) then; write(jo_cp,*)'GPU ERROR ',err_code; ierr=41; goto 999; endif
+!         write(jo_cp,'("#DEBUG(c_process:c_proc_test): GPU tensor transpose time = ",F10.4)') thread_wtime()-tm0 !debug
+         i1=gpu_get_error_count(); if(i1.ne.0) then; write(jo_cp,*)'GPU error count = ',i1; ierr=42; goto 999; endif
+!         call print_gpu_debug_dump(jo_cp) !debug
+         if(tensor_block_norm2(ftens(2),ierr,'r4').ne.0d0) then; ierr=43; goto 999; endif
+         call tens_blck_unpack(ftens(2),entry_ptr(2),ierr); if(ierr.ne.0) then; ierr=44; goto 999; endif
+!         write(jo_cp,*) tensor_block_norm2(ftens(0),ierr,'r4'),tensor_block_norm2(ftens(2),ierr,'r4') !debug
+!         call tensor_block_print(jo_cp,'Tensor0:',ext_beg,ftens(0),ierr,'r4') !debug
+!         call tensor_block_print(jo_cp,'Tensor1:',ext_beg,ftens(1),ierr,'r4') !debug
+!         call tensor_block_print(jo_cp,'Tensor2:',ext_beg,ftens(2),ierr,'r4') !debug
+         cmp=tensor_block_cmp(ftens(0),ftens(2),ierr,'r4',cmp_thresh=1d-5,diff_count=diffc); if(ierr.ne.0) then; ierr=45; goto 999; endif
+         if(.not.cmp) then; write(jo_cp,*)'DIFF COUNT = ',diffc; ierr=46; goto 999; endif
+         call tens_blck_dissoc(ctens(2),ierr); if(ierr.ne.0) then; ierr=47; goto 999; endif
+         call tens_blck_dissoc(ctens(1),ierr); if(ierr.ne.0) then; ierr=48; goto 999; endif
+         err_code=free_buf_entry_host(entry_num(2)); if(err_code.ne.0) then; ierr=49; goto 999; endif
+         err_code=free_buf_entry_host(entry_num(1)); if(err_code.ne.0) then; ierr=50; goto 999; endif
+         call tensor_block_destroy(ftens(2),ierr); if(ierr.ne.0) then; ierr=51; goto 999; endif
+         call tensor_block_destroy(ftens(1),ierr); if(ierr.ne.0) then; ierr=52; goto 999; endif
+         call tensor_block_destroy(ftens(0),ierr); if(ierr.ne.0) then; ierr=53; goto 999; endif
         enddo
 !TEST 4 (GPU: gpu_tensor_contraction):
-        write(jo,'("4 ")',advance='no')
-        call tensor_block_create('(3,4,31,2,37,8)','r4',ftens(0),ierr,val_r4=0.0); if(ierr.ne.0) then; ierr=53; goto 999; endif
-        call tensor_block_create('(2,31,7,8,11,29)','r4',ftens(1),ierr,val_r4=1.0); if(ierr.ne.0) then; ierr=54; goto 999; endif
-        call tensor_block_create('(11,37,4,7,29,3)','r4',ftens(2),ierr,val_r4=1.0); if(ierr.ne.0) then; ierr=55; goto 999; endif
-        call tensor_block_create('(3,4,31,2,37,8)','r4',ftens(3),ierr,val_r4=0.0); if(ierr.ne.0) then; ierr=56; goto 999; endif
-        call tensor_block_create('(2,31,7,8,11,29)','r4',ftens(4),ierr,val_r4=0.0); if(ierr.ne.0) then; ierr=57; goto 999; endif
-        call tensor_block_create('(11,37,4,7,29,3)','r4',ftens(5),ierr,val_r4=0.0); if(ierr.ne.0) then; ierr=58; goto 999; endif
-        call tensor_block_create('(3,4,31,2,37,8)','r4',ftens(6),ierr,val_r4=0.0); if(ierr.ne.0) then; ierr=59; goto 999; endif
+        write(jo_cp,'("4 ")',advance='no')
+        call tensor_block_create('(3,4,31,2,37,8)','r4',ftens(0),ierr,val_r4=0.0); if(ierr.ne.0) then; ierr=54; goto 999; endif
+        call tensor_block_create('(2,31,7,8,11,29)','r4',ftens(1),ierr,val_r4=1.0); if(ierr.ne.0) then; ierr=55; goto 999; endif
+        call tensor_block_create('(11,37,4,7,29,3)','r4',ftens(2),ierr,val_r4=1.0); if(ierr.ne.0) then; ierr=56; goto 999; endif
+        call tensor_block_create('(3,4,31,2,37,8)','r4',ftens(3),ierr,val_r4=0.0); if(ierr.ne.0) then; ierr=57; goto 999; endif
+        call tensor_block_create('(2,31,7,8,11,29)','r4',ftens(4),ierr,val_r4=0.0); if(ierr.ne.0) then; ierr=58; goto 999; endif
+        call tensor_block_create('(11,37,4,7,29,3)','r4',ftens(5),ierr,val_r4=0.0); if(ierr.ne.0) then; ierr=59; goto 999; endif
+        call tensor_block_create('(3,4,31,2,37,8)','r4',ftens(6),ierr,val_r4=0.0); if(ierr.ne.0) then; ierr=60; goto 999; endif
         cptrn(1:12)=(/4,3,-4,6,-1,-5,-5,5,2,-3,-6,1/)
         tm0=thread_wtime()
-        call tensor_block_contract(cptrn,ftens(1),ftens(2),ftens(3),ierr,'r4'); if(ierr.ne.0) then; ierr=62; goto 999; endif
-!       write(jo,'("#DEBUG(c_process:c_proc_test): CPU tensor contraction time = ",F10.4)') thread_wtime()-tm0 !debug
-        call tens_blck_pack(ftens(0),'r4',pack_size(0),entry_ptr(0),entry_num(0),ierr); if(ierr.ne.0) then; ierr=64; goto 999; endif
-        call tens_blck_pack(ftens(1),'r4',pack_size(1),entry_ptr(1),entry_num(1),ierr); if(ierr.ne.0) then; ierr=65; goto 999; endif
-        call tens_blck_pack(ftens(2),'r4',pack_size(2),entry_ptr(2),entry_num(2),ierr); if(ierr.ne.0) then; ierr=66; goto 999; endif
-        call tens_blck_pack(ftens(4),'r4',pack_size(4),entry_ptr(4),entry_num(4),ierr); if(ierr.ne.0) then; ierr=67; goto 999; endif
-        call tens_blck_pack(ftens(5),'r4',pack_size(5),entry_ptr(5),entry_num(5),ierr); if(ierr.ne.0) then; ierr=68; goto 999; endif
-        call tens_blck_pack(ftens(6),'r4',pack_size(6),entry_ptr(6),entry_num(6),ierr); if(ierr.ne.0) then; ierr=69; goto 999; endif
-        call tens_blck_assoc(entry_ptr(0),ierr,ctens=ctens(0),gpu_num=gpu_id); if(ierr.ne.0) then; ierr=70; goto 999; endif
-        call tens_blck_assoc(entry_ptr(1),ierr,ctens=ctens(1),gpu_num=gpu_id); if(ierr.ne.0) then; ierr=71; goto 999; endif
-        call tens_blck_assoc(entry_ptr(2),ierr,ctens=ctens(2),gpu_num=gpu_id); if(ierr.ne.0) then; ierr=72; goto 999; endif
-        call tens_blck_assoc(entry_ptr(4),ierr,ctens=ctens(4),gpu_num=gpu_id); if(ierr.ne.0) then; ierr=73; goto 999; endif
-        call tens_blck_assoc(entry_ptr(5),ierr,ctens=ctens(5),gpu_num=gpu_id); if(ierr.ne.0) then; ierr=74; goto 999; endif
-        call tens_blck_assoc(entry_ptr(6),ierr,ctens=ctens(6),gpu_num=gpu_id); if(ierr.ne.0) then; ierr=75; goto 999; endif
+        call tensor_block_contract(cptrn,ftens(1),ftens(2),ftens(3),ierr,'r4'); if(ierr.ne.0) then; ierr=61; goto 999; endif
+!       write(jo_cp,'("#DEBUG(c_process:c_proc_test): CPU tensor contraction time = ",F10.4)') thread_wtime()-tm0 !debug
+        call tens_blck_pack(ftens(0),'r4',pack_size(0),entry_ptr(0),entry_num(0),ierr); if(ierr.ne.0) then; ierr=62; goto 999; endif
+        call tens_blck_pack(ftens(1),'r4',pack_size(1),entry_ptr(1),entry_num(1),ierr); if(ierr.ne.0) then; ierr=63; goto 999; endif
+        call tens_blck_pack(ftens(2),'r4',pack_size(2),entry_ptr(2),entry_num(2),ierr); if(ierr.ne.0) then; ierr=64; goto 999; endif
+        call tens_blck_pack(ftens(4),'r4',pack_size(4),entry_ptr(4),entry_num(4),ierr); if(ierr.ne.0) then; ierr=65; goto 999; endif
+        call tens_blck_pack(ftens(5),'r4',pack_size(5),entry_ptr(5),entry_num(5),ierr); if(ierr.ne.0) then; ierr=66; goto 999; endif
+        call tens_blck_pack(ftens(6),'r4',pack_size(6),entry_ptr(6),entry_num(6),ierr); if(ierr.ne.0) then; ierr=67; goto 999; endif
+        call tens_blck_assoc(entry_ptr(0),ierr,ctens=ctens(0),gpu_num=gpu_id); if(ierr.ne.0) then; ierr=68; goto 999; endif
+        call tens_blck_assoc(entry_ptr(1),ierr,ctens=ctens(1),gpu_num=gpu_id); if(ierr.ne.0) then; ierr=69; goto 999; endif
+        call tens_blck_assoc(entry_ptr(2),ierr,ctens=ctens(2),gpu_num=gpu_id); if(ierr.ne.0) then; ierr=70; goto 999; endif
+        call tens_blck_assoc(entry_ptr(4),ierr,ctens=ctens(4),gpu_num=gpu_id); if(ierr.ne.0) then; ierr=71; goto 999; endif
+        call tens_blck_assoc(entry_ptr(5),ierr,ctens=ctens(5),gpu_num=gpu_id); if(ierr.ne.0) then; ierr=72; goto 999; endif
+        call tens_blck_assoc(entry_ptr(6),ierr,ctens=ctens(6),gpu_num=gpu_id); if(ierr.ne.0) then; ierr=73; goto 999; endif
         o2n(0:6)=(/+1,1,2,3,4,5,6/);
-        err_code=gpu_tensor_block_copy_dlf(o2n,ctens(1),ctens(4)); if(err_code.ne.0) then; ierr=76; goto 999; endif
-        err_code=gpu_tensor_block_copy_dlf(o2n,ctens(2),ctens(5)); if(err_code.ne.0) then; ierr=77; goto 999; endif
-        err_code=cuda_task_create(cuda_task(1)); if(err_code.ne.0) then; ierr=78; goto 999; endif
-        err_code=cuda_task_create(cuda_task(2)); if(err_code.ne.0) then; ierr=79; goto 999; endif
+        err_code=gpu_tensor_block_copy_dlf(o2n,ctens(1),ctens(4)); if(err_code.ne.0) then; ierr=74; goto 999; endif
+        err_code=gpu_tensor_block_copy_dlf(o2n,ctens(2),ctens(5)); if(err_code.ne.0) then; ierr=75; goto 999; endif
+        err_code=cuda_task_create(cuda_task(1)); if(err_code.ne.0) then; ierr=76; goto 999; endif
+        err_code=cuda_task_create(cuda_task(2)); if(err_code.ne.0) then; ierr=77; goto 999; endif
         tm0=thread_wtime()
         call gpu_set_matmult_algorithm(BLAS_OFF)
-        err_code=gpu_tensor_block_contract_dlf_(cptrn,ctens(1),ctens(2),ctens(0),COPY_BACK,cuda_task(1)); if(err_code.ne.0) then; write(jo,*)'GPU ERROR = ',err_code; ierr=80; goto 999; endif
+        err_code=gpu_tensor_block_contract_dlf_(cptrn,ctens(1),ctens(2),ctens(0),COPY_BACK,cuda_task(1)); if(err_code.ne.0) then; write(jo_cp,*)'GPU ERROR = ',err_code; ierr=78; goto 999; endif
         call gpu_set_matmult_algorithm(BLAS_ON)
-        err_code=gpu_tensor_block_contract_dlf_(cptrn,ctens(4),ctens(5),ctens(6),COPY_BACK,cuda_task(2)); if(err_code.ne.0) then; write(jo,*)'GPU ERROR = ',err_code; ierr=81; goto 999; endif
+        err_code=gpu_tensor_block_contract_dlf_(cptrn,ctens(4),ctens(5),ctens(6),COPY_BACK,cuda_task(2)); if(err_code.ne.0) then; write(jo_cp,*)'GPU ERROR = ',err_code; ierr=79; goto 999; endif
         i1=0
         do while(i1.ne.3)
          if(cuda_task_complete(cuda_task(1)).ne.cuda_task_scheduled.and.(i1.eq.0.or.i1.eq.2)) then; tm1=thread_wtime()-tm0; i1=i1+1; endif
          if(cuda_task_complete(cuda_task(2)).ne.cuda_task_scheduled.and.(i1.eq.0.or.i1.eq.1)) then; tm2=thread_wtime()-tm0; i1=i1+2; endif
         enddo
-!       write(jo,*)'GPU Times/Status = ',tm1,tm2,cuda_task_complete(cuda_task(1)),cuda_task_complete(cuda_task(2)) !debug
-        err_code=cuda_task_destroy(cuda_task(2)); if(err_code.ne.0) then; ierr=82; goto 999; endif
-        err_code=cuda_task_destroy(cuda_task(1)); if(err_code.ne.0) then; ierr=83; goto 999; endif
-        call tens_blck_unpack(ftens(0),entry_ptr(0),ierr); if(ierr.ne.0) then; ierr=84; goto 999; endif
-        call tens_blck_unpack(ftens(6),entry_ptr(6),ierr); if(ierr.ne.0) then; ierr=85; goto 999; endif
-!        write(jo,*)'1-NORMS:',tensor_block_norm1(ftens(0),ierr,'r4'),tensor_block_norm1(ftens(3),ierr,'r4'),tensor_block_norm1(ftens(6),ierr,'r4') !debug
-!        write(jo,*) ftens(0)%data_real4(0:5); write(jo,*) ftens(3)%data_real4(0:5); write(jo,*) ftens(6)%data_real4(0:5) !debug
-        cmp=tensor_block_cmp(ftens(0),ftens(3),ierr,'r4',.true.,1d-3,diffc); if(ierr.ne.0) then; ierr=86; goto 999; endif
-        if(.not.cmp) then; write(jo,*)'DIFF(1) COUNT = ',diffc; ierr=87; goto 999; endif
-        cmp=tensor_block_cmp(ftens(6),ftens(3),ierr,'r4',.true.,1d-3,diffc); if(ierr.ne.0) then; ierr=88; goto 999; endif
-        if(.not.cmp) then; write(jo,*)'DIFF(2) COUNT = ',diffc; ierr=89; goto 999; endif
-        call tens_blck_dissoc(ctens(6),ierr); if(ierr.ne.0) then; ierr=90; goto 999; endif
-        call tens_blck_dissoc(ctens(5),ierr); if(ierr.ne.0) then; ierr=91; goto 999; endif
-        call tens_blck_dissoc(ctens(4),ierr); if(ierr.ne.0) then; ierr=92; goto 999; endif
-        call tens_blck_dissoc(ctens(2),ierr); if(ierr.ne.0) then; ierr=93; goto 999; endif
-        call tens_blck_dissoc(ctens(1),ierr); if(ierr.ne.0) then; ierr=94; goto 999; endif
-        call tens_blck_dissoc(ctens(0),ierr); if(ierr.ne.0) then; ierr=95; goto 999; endif
-        err_code=free_buf_entry_host(entry_num(6)); if(err_code.ne.0) then; ierr=96; goto 999; endif
-        err_code=free_buf_entry_host(entry_num(5)); if(err_code.ne.0) then; ierr=97; goto 999; endif
-        err_code=free_buf_entry_host(entry_num(4)); if(err_code.ne.0) then; ierr=98; goto 999; endif
-        err_code=free_buf_entry_host(entry_num(2)); if(err_code.ne.0) then; ierr=99; goto 999; endif
-        err_code=free_buf_entry_host(entry_num(1)); if(err_code.ne.0) then; ierr=100; goto 999; endif
-        err_code=free_buf_entry_host(entry_num(0)); if(err_code.ne.0) then; ierr=101; goto 999; endif
-        call tensor_block_destroy(ftens(6),ierr); if(ierr.ne.0) then; ierr=102; goto 999; endif
-        call tensor_block_destroy(ftens(5),ierr); if(ierr.ne.0) then; ierr=103; goto 999; endif
-        call tensor_block_destroy(ftens(4),ierr); if(ierr.ne.0) then; ierr=104; goto 999; endif
-        call tensor_block_destroy(ftens(3),ierr); if(ierr.ne.0) then; ierr=105; goto 999; endif
-        call tensor_block_destroy(ftens(2),ierr); if(ierr.ne.0) then; ierr=106; goto 999; endif
-        call tensor_block_destroy(ftens(1),ierr); if(ierr.ne.0) then; ierr=107; goto 999; endif
-        call tensor_block_destroy(ftens(0),ierr); if(ierr.ne.0) then; ierr=108; goto 999; endif
+!       write(jo_cp,*)'GPU Times/Status = ',tm1,tm2,cuda_task_complete(cuda_task(1)),cuda_task_complete(cuda_task(2)) !debug
+        err_code=cuda_task_destroy(cuda_task(2)); if(err_code.ne.0) then; ierr=80; goto 999; endif
+        err_code=cuda_task_destroy(cuda_task(1)); if(err_code.ne.0) then; ierr=81; goto 999; endif
+        call tens_blck_unpack(ftens(0),entry_ptr(0),ierr); if(ierr.ne.0) then; ierr=82; goto 999; endif
+        call tens_blck_unpack(ftens(6),entry_ptr(6),ierr); if(ierr.ne.0) then; ierr=83; goto 999; endif
+!        write(jo_cp,*)'1-NORMS:',tensor_block_norm1(ftens(0),ierr,'r4'),tensor_block_norm1(ftens(3),ierr,'r4'),tensor_block_norm1(ftens(6),ierr,'r4') !debug
+!        write(jo_cp,*) ftens(0)%data_real4(0:5); write(jo_cp,*) ftens(3)%data_real4(0:5); write(jo_cp,*) ftens(6)%data_real4(0:5) !debug
+        cmp=tensor_block_cmp(ftens(0),ftens(3),ierr,'r4',.true.,1d-3,diffc); if(ierr.ne.0) then; ierr=84; goto 999; endif
+        if(.not.cmp) then; write(jo_cp,*)'DIFF(1) COUNT = ',diffc; ierr=85; goto 999; endif
+        cmp=tensor_block_cmp(ftens(6),ftens(3),ierr,'r4',.true.,1d-3,diffc); if(ierr.ne.0) then; ierr=86; goto 999; endif
+        if(.not.cmp) then; write(jo_cp,*)'DIFF(2) COUNT = ',diffc; ierr=87; goto 999; endif
+        call tens_blck_dissoc(ctens(6),ierr); if(ierr.ne.0) then; ierr=88; goto 999; endif
+        call tens_blck_dissoc(ctens(5),ierr); if(ierr.ne.0) then; ierr=89; goto 999; endif
+        call tens_blck_dissoc(ctens(4),ierr); if(ierr.ne.0) then; ierr=90; goto 999; endif
+        call tens_blck_dissoc(ctens(2),ierr); if(ierr.ne.0) then; ierr=91; goto 999; endif
+        call tens_blck_dissoc(ctens(1),ierr); if(ierr.ne.0) then; ierr=92; goto 999; endif
+        call tens_blck_dissoc(ctens(0),ierr); if(ierr.ne.0) then; ierr=93; goto 999; endif
+        err_code=free_buf_entry_host(entry_num(6)); if(err_code.ne.0) then; ierr=94; goto 999; endif
+        err_code=free_buf_entry_host(entry_num(5)); if(err_code.ne.0) then; ierr=95; goto 999; endif
+        err_code=free_buf_entry_host(entry_num(4)); if(err_code.ne.0) then; ierr=96; goto 999; endif
+        err_code=free_buf_entry_host(entry_num(2)); if(err_code.ne.0) then; ierr=97; goto 999; endif
+        err_code=free_buf_entry_host(entry_num(1)); if(err_code.ne.0) then; ierr=98; goto 999; endif
+        err_code=free_buf_entry_host(entry_num(0)); if(err_code.ne.0) then; ierr=99; goto 999; endif
+        call tensor_block_destroy(ftens(6),ierr); if(ierr.ne.0) then; ierr=100; goto 999; endif
+        call tensor_block_destroy(ftens(5),ierr); if(ierr.ne.0) then; ierr=101; goto 999; endif
+        call tensor_block_destroy(ftens(4),ierr); if(ierr.ne.0) then; ierr=102; goto 999; endif
+        call tensor_block_destroy(ftens(3),ierr); if(ierr.ne.0) then; ierr=103; goto 999; endif
+        call tensor_block_destroy(ftens(2),ierr); if(ierr.ne.0) then; ierr=104; goto 999; endif
+        call tensor_block_destroy(ftens(1),ierr); if(ierr.ne.0) then; ierr=105; goto 999; endif
+        call tensor_block_destroy(ftens(0),ierr); if(ierr.ne.0) then; ierr=106; goto 999; endif
 #endif
 !Clean:
 999     do i=0,test_args_lim; err_code=free_buf_entry_host(entry_num(i)); enddo
         do i=0,test_args_lim; call tensor_block_destroy(ftens(i),j); enddo
-        if(ierr.eq.0) then; write(jo,'("Ok")'); else; write(jo,'("Failed: ERROR #",i4)') ierr; endif
+        if(ierr.eq.0) then; write(jo_cp,'("Ok")'); else; write(jo_cp,'("Failed: ERROR #",i4)') ierr; endif
         return
         end subroutine c_proc_test
 !--------------------------------------------------------------------------------------------------------
@@ -933,13 +995,13 @@
         type(C_PTR):: ctens(0:test_args_lim)=C_NULL_PTR
         type(tensor_block_t) ftens(0:test_args_lim)
 
-        ierr=0; write(jo,'("#MSG(c_process:c_proc_test): Tensor algebra benchmarks:")')
+        ierr=0; write(jo_cp,'("#MSG(c_process:c_proc_test): Tensor algebra benchmarks:")')
 #ifndef NO_GPU
         gpu_id=gpu_busy_least(); call cudaSetDevice(gpu_id,err_code); if(err_code.ne.0) then; ierr=666; goto 999; endif
         call gpu_set_event_policy(EVENTS_ON)
 #endif
 !TENSOR TRANSPOSE:
-        write(jo,'(" TENSOR TRANSPOSE:")')
+        write(jo_cp,'(" TENSOR TRANSPOSE:")')
         nfail=0 !will be the total number of failed transposes
         do m=1,num_tens_sizes
          tens_size=tens_sizes(m)
@@ -950,41 +1012,41 @@
            call tensor_shape_rnd(tshape,tsl,ierr,tens_size,tens_rank,dim_spread); if(ierr.ne.0) then; ierr=1; goto 999; endif
 !           tens_rank=3; tsl=11; tshape(1:tsl)='(61,60,61)' !debug
            call tensor_block_create(tshape(1:tsl),'r4',ftens(1),ierr); if(ierr.ne.0) then; ierr=2; goto 999; endif
-           call printl(jo,'  New Tensor Shape: '//tshape(1:tsl)//': ',.false.)
-           write(jo,'(i10,1x,F16.4)') ftens(1)%tensor_block_size,tensor_block_norm1(ftens(1),ierr,'r4')
-           write(jo,'(3x)',advance='no')
+           call printl(jo_cp,'  New Tensor Shape: '//tshape(1:tsl)//': ',.false.)
+           write(jo_cp,'(i10,1x,F16.4)') ftens(1)%tensor_block_size,tensor_block_norm1(ftens(1),ierr,'r4')
+           write(jo_cp,'(3x)',advance='no')
            tm=thread_wtime()
            call tensor_block_copy(ftens(1),ftens(0),ierr); if(ierr.ne.0) then; ierr=3; goto 999; endif
-           write(jo,'("#DEBUG(tensor_algebra:tensor_block_copy_dlf): Direct time ",F10.6)') thread_wtime()-tm !debug
+           write(jo_cp,'("#DEBUG(tensor_algebra:tensor_block_copy_dlf): Direct time ",F10.6)') thread_wtime()-tm !debug
            call random_permutation(tens_rank,o2n)
 !           o2n(1:tens_rank)=(/3,2,1/) !debug
            call permutation_converter(.false.,tens_rank,n2o,o2n)
-           write(jo,'(3x,"Permutation:",32(1x,i2))') o2n(1:tens_rank)
-           write(jo,'(3x,"Permutation:",32(1x,i2))') n2o(1:tens_rank)
+           write(jo_cp,'(3x,"Permutation:",32(1x,i2))') o2n(1:tens_rank)
+           write(jo_cp,'(3x,"Permutation:",32(1x,i2))') n2o(1:tens_rank)
            call set_transpose_algorithm(EFF_TRN_OFF) !scatter
-           write(jo,'(3x)',advance='no')
+           write(jo_cp,'(3x)',advance='no')
            tm=thread_wtime()
            call tensor_block_copy(ftens(1),ftens(0),ierr,o2n); if(ierr.ne.0) then; ierr=4; goto 999; endif
-           write(jo,'("#DEBUG(tensor_algebra:tensor_block_copy_scatter_dlf): Time ",F10.6)') thread_wtime()-tm !debug
-           write(jo,'(3x)',advance='no')
+           write(jo_cp,'("#DEBUG(tensor_algebra:tensor_block_copy_scatter_dlf): Time ",F10.6)') thread_wtime()-tm !debug
+           write(jo_cp,'(3x)',advance='no')
            tm=thread_wtime()
            call tensor_block_copy(ftens(0),ftens(2),ierr,n2o); if(ierr.ne.0) then; ierr=5; goto 999; endif
-           write(jo,'("#DEBUG(tensor_algebra:tensor_block_copy_scatter_dlf): Time ",F10.6)') thread_wtime()-tm !debug
+           write(jo_cp,'("#DEBUG(tensor_algebra:tensor_block_copy_scatter_dlf): Time ",F10.6)') thread_wtime()-tm !debug
            cmp=tensor_block_cmp(ftens(1),ftens(2),ierr,'r4',.true.,1d-4,diffc); if(ierr.ne.0) then; ierr=6; goto 999; endif
-           write(jo,'(3x,l1,1x,i9,1x,F16.4)') cmp,diffc,tensor_block_norm1(ftens(2),ierr,'r4')
-           if(.not.cmp) then; nfail=nfail+1; write(jo,'(3x,"Comparison Failed!")'); endif
+           write(jo_cp,'(3x,l1,1x,i9,1x,F16.4)') cmp,diffc,tensor_block_norm1(ftens(2),ierr,'r4')
+           if(.not.cmp) then; nfail=nfail+1; write(jo_cp,'(3x,"Comparison Failed!")'); endif
            call set_transpose_algorithm(EFF_TRN_ON) !cache-efficient
-           write(jo,'(3x)',advance='no')
+           write(jo_cp,'(3x)',advance='no')
            tm=thread_wtime()
            call tensor_block_copy(ftens(1),ftens(0),ierr,o2n); if(ierr.ne.0) then; ierr=7; goto 999; endif
-           write(jo,'("#DEBUG(tensor_algebra:tensor_block_copy_dlf): Time ",F10.6)') thread_wtime()-tm !debug
-           write(jo,'(3x)',advance='no')
+           write(jo_cp,'("#DEBUG(tensor_algebra:tensor_block_copy_dlf): Time ",F10.6)') thread_wtime()-tm !debug
+           write(jo_cp,'(3x)',advance='no')
            tm=thread_wtime()
            call tensor_block_copy(ftens(0),ftens(2),ierr,n2o); if(ierr.ne.0) then; ierr=8; goto 999; endif
-           write(jo,'("#DEBUG(tensor_algebra:tensor_block_copy_dlf): Time ",F10.6)') thread_wtime()-tm !debug
+           write(jo_cp,'("#DEBUG(tensor_algebra:tensor_block_copy_dlf): Time ",F10.6)') thread_wtime()-tm !debug
            cmp=tensor_block_cmp(ftens(1),ftens(2),ierr,'r4',.true.,1d-4,diffc); if(ierr.ne.0) then; ierr=9; goto 999; endif
-           write(jo,'(3x,l1,1x,i9,1x,F16.4)') cmp,diffc,tensor_block_norm1(ftens(2),ierr,'r4')
-           if(.not.cmp) then; nfail=nfail+1; write(jo,'(3x,"Comparison Failed!")'); endif
+           write(jo_cp,'(3x,l1,1x,i9,1x,F16.4)') cmp,diffc,tensor_block_norm1(ftens(2),ierr,'r4')
+           if(.not.cmp) then; nfail=nfail+1; write(jo_cp,'(3x,"Comparison Failed!")'); endif
 #ifndef NO_GPU
            call tensor_block_init('r4',ftens(0),ierr,val_r4=0.0); if(ierr.ne.0) then; ierr=10; goto 999; endif
            call tensor_block_init('r4',ftens(2),ierr,val_r4=0.0); if(ierr.ne.0) then; ierr=11; goto 999; endif
@@ -995,29 +1057,29 @@
            call tens_blck_assoc(entry_ptr(1),ierr,ctens=ctens(1),gpu_num=gpu_id); if(ierr.ne.0) then; ierr=16; goto 999; endif
            call tens_blck_assoc(entry_ptr(2),ierr,ctens=ctens(2),gpu_num=gpu_id); if(ierr.ne.0) then; ierr=17; goto 999; endif
            call gpu_set_transpose_algorithm(EFF_TRN_OFF) !scatter on GPU
-           write(jo,'(3x)',advance='no')
-           err_code=gpu_tensor_block_copy_dlf(o2n,ctens(1),ctens(0)); if(err_code.ne.0) then; write(jo,*)'GPU error ',err_code; call print_gpu_debug_dump(jo); ierr=18; goto 999; endif
-           write(jo,'(3x)',advance='no')
-           err_code=gpu_tensor_block_copy_dlf(n2o,ctens(0),ctens(2)); if(err_code.ne.0) then; write(jo,*)'GPU error ',err_code; call print_gpu_debug_dump(jo); ierr=19; goto 999; endif
+           write(jo_cp,'(3x)',advance='no')
+           err_code=gpu_tensor_block_copy_dlf(o2n,ctens(1),ctens(0)); if(err_code.ne.0) then; write(jo_cp,*)'GPU error ',err_code; call print_gpu_debug_dump(jo_cp); ierr=18; goto 999; endif
+           write(jo_cp,'(3x)',advance='no')
+           err_code=gpu_tensor_block_copy_dlf(n2o,ctens(0),ctens(2)); if(err_code.ne.0) then; write(jo_cp,*)'GPU error ',err_code; call print_gpu_debug_dump(jo_cp); ierr=19; goto 999; endif
            call tens_blck_unpack(ftens(2),entry_ptr(2),ierr); if(ierr.ne.0) then; ierr=20; goto 999; endif
            cmp=tensor_block_cmp(ftens(1),ftens(2),ierr,'r4',.true.,1d-4,diffc); if(ierr.ne.0) then; ierr=21; goto 999; endif
-           write(jo,'(3x,l1,1x,i9,1x,F16.4)') cmp,diffc,tensor_block_norm1(ftens(2),ierr,'r4')
-           if(.not.cmp) then; nfail=nfail+1; write(jo,'(3x,"Comparison Failed!")'); endif
+           write(jo_cp,'(3x,l1,1x,i9,1x,F16.4)') cmp,diffc,tensor_block_norm1(ftens(2),ierr,'r4')
+           if(.not.cmp) then; nfail=nfail+1; write(jo_cp,'(3x,"Comparison Failed!")'); endif
            call gpu_set_transpose_algorithm(EFF_TRN_ON) !shared-memory on GPU
            err_code=cuda_task_create(cuda_task(1)); if(err_code.ne.0) then; ierr=22; goto 999; endif
-           write(jo,'(3x)',advance='no')
+           write(jo_cp,'(3x)',advance='no')
            tm=thread_wtime()
-           err_code=gpu_tensor_block_copy_dlf_(o2n,ctens(1),ctens(0),COPY_BACK,cuda_task(1)); if(err_code.ne.0) then; write(jo,*)'GPU error ',err_code; call print_gpu_debug_dump(jo); ierr=23; goto 999; endif
+           err_code=gpu_tensor_block_copy_dlf_(o2n,ctens(1),ctens(0),COPY_BACK,cuda_task(1)); if(err_code.ne.0) then; write(jo_cp,*)'GPU error ',err_code; call print_gpu_debug_dump(jo_cp); ierr=23; goto 999; endif
            err_code=cuda_task_wait(cuda_task(1)); if(err_code.ne.cuda_task_completed) then; ierr=24; goto 999; endif
-           write(jo,'("#DEBUG(tensor_algebra_gpu_nvidia:gpu_tensor_block_copy_dlf_): Time ",F10.6)') thread_wtime()-tm
-           write(jo,'(3x)',advance='no')
-           err_code=gpu_tensor_block_copy_dlf(n2o,ctens(0),ctens(2)); if(err_code.ne.0) then; write(jo,*)'GPU error ',err_code; call print_gpu_debug_dump(jo); ierr=25; goto 999; endif
+           write(jo_cp,'("#DEBUG(tensor_algebra_gpu_nvidia:gpu_tensor_block_copy_dlf_): Time ",F10.6)') thread_wtime()-tm
+           write(jo_cp,'(3x)',advance='no')
+           err_code=gpu_tensor_block_copy_dlf(n2o,ctens(0),ctens(2)); if(err_code.ne.0) then; write(jo_cp,*)'GPU error ',err_code; call print_gpu_debug_dump(jo_cp); ierr=25; goto 999; endif
            err_code=cuda_task_destroy(cuda_task(1)); if(err_code.ne.0) then; ierr=26; goto 999; endif
            call tens_blck_unpack(ftens(2),entry_ptr(2),ierr); if(ierr.ne.0) then; ierr=27; goto 999; endif
            cmp=tensor_block_cmp(ftens(1),ftens(2),ierr,'r4',.true.,1d-4,diffc); if(ierr.ne.0) then; ierr=28; goto 999; endif
-           write(jo,'(3x,l1,1x,i9,1x,F16.4)') cmp,diffc,tensor_block_norm1(ftens(2),ierr,'r4')
-           if(.not.cmp) then; nfail=nfail+1; write(jo,'(3x,"Comparison Failed!")'); endif
-           write(jo,'(3x)',advance='no')
+           write(jo_cp,'(3x,l1,1x,i9,1x,F16.4)') cmp,diffc,tensor_block_norm1(ftens(2),ierr,'r4')
+           if(.not.cmp) then; nfail=nfail+1; write(jo_cp,'(3x,"Comparison Failed!")'); endif
+           write(jo_cp,'(3x)',advance='no')
            n2o(1:tens_rank)=(/(i,i=1,tens_rank)/)
            err_code=gpu_tensor_block_copy_dlf(n2o,ctens(1),ctens(2)); if(err_code.ne.0) then; ierr=29; goto 999; endif
            call tens_blck_dissoc(ctens(2),ierr); if(ierr.ne.0) then; ierr=30; goto 999; endif
@@ -1035,9 +1097,9 @@
         enddo !tens_size
 
 999     if(ierr.eq.0) then
-         write(jo,'("Done: ",i6," failed transposes.")') nfail
+         write(jo_cp,'("Done: ",i6," failed transposes.")') nfail
         else
-         write(jo,'("Failed: Error #",i7)') ierr
+         write(jo_cp,'("Failed: Error #",i7)') ierr
          call tensor_block_destroy(ftens(0),i)
          call tensor_block_destroy(ftens(1),i)
          call tensor_block_destroy(ftens(2),i)

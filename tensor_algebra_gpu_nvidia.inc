@@ -10,6 +10,17 @@
         integer(C_INT), parameter:: R8=8  !double data kind
         integer(C_INT), parameter:: C8=16 !double complex data kind
 
+!Tensor block storage layout:
+        integer(C_INT), parameter:: not_allocated=0   !tensor block has not been initialized
+        integer(C_INT), parameter:: scalar_tensor=1   !scalar (rank-0 tensor)
+        integer(C_INT), parameter:: dimension_led=2   !dense tensor block (column-major storage by default): no symmetry re
+        integer(C_INT), parameter:: bricked_dense=3   !dense tensor block (bricked storage): no symmetry restrictions, %dim
+        integer(C_INT), parameter:: bricked_ordered=4 !symmetrically packed tensor block (bricked storage): symmetry restri
+        integer(C_INT), parameter:: sparse_list=5     !sparse tensor block: symmetry restrictions do not apply!
+        integer(C_INT), parameter:: compressed=6      !compressed tensor block: symmetry restrictions do not apply!
+        logical, parameter:: fortran_like=.true.
+        logical, parameter:: c_like=.false.
+
 !DEVICE KINDS (keep consistent with tensor_algebra_gpu_nvidia.h):
         integer(C_INT), parameter:: DEV_HOST=0
         integer(C_INT), parameter:: DEV_NVIDIA_GPU=1

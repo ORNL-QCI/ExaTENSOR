@@ -1,7 +1,7 @@
        module tensor_dil_omp
 !Multithreaded tensor algebra kernels tailored for ACESIII/ACESIV.
 !AUTHOR: Dmitry I. Lyakh: quant4me@gmail.com
-!Revision: 2014/04/09
+!Revision: 2014/04/29
 !-------------------------------------------
 !COMPILE:
 ! # GFORTRAN flags: -O3 --free-line-length-none -fopenmp -x f95-cpp-input
@@ -350,7 +350,7 @@
 	implicit none
 	integer(int_kind), intent(in):: nthreads,dim_num,tens_ext(1:dim_num),slice_ext(1:dim_num),ext_beg(1:dim_num)
 	real(real8_kind), intent(in):: slice(0:*)
-	real(real8_kind), intent(out):: tens(0:*)
+	real(real8_kind), intent(inout):: tens(0:*)
 	integer(int_kind), intent(inout):: ierr
 	integer(int_kind):: i,j,k,l,m,n,ks,kf,im(1:dim_num)
 	integer(int8_kind):: bases_in(1:dim_num),bases_out(1:dim_num),lts,lss,l_in,l_out,segs(0:max_threads)
