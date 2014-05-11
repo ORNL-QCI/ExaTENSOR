@@ -13,7 +13,7 @@ FFLAGS = -c -O3 --free-line-length-none -x f95-cpp-input -fopenmp
 LFLAGS = -lgomp
 
 OBJS = stsubs.o combinatoric.o service.o extern_names.o tensor_algebra.o tensor_dil_omp.o \
-	cuda2fortran.o c_process.o qforce.o tensor_algebra_gpu_nvidia.o c_proc_bufs.o \
+	dictionary.o cuda2fortran.o c_process.o qforce.o tensor_algebra_gpu_nvidia.o c_proc_bufs.o \
 	main.o proceed.o \
 
 $(NAME): $(OBJS)
