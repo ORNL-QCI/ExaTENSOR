@@ -1,19 +1,47 @@
 !This module provides functionality for a Computing Process (C-PROCESS, CP).
-!In essence, this is a (single-node) elementary tensor instruction scheduler (SETIS).
+!In essence, this is a single-node elementary tensor instruction scheduler (SETIS).
 !AUTHOR: Dmitry I. Lyakh (Dmytro I. Liakh): quant4me@gmail.com
-!REVISION: 2014/05/11
+!REVISION: 2014/05/12
+!CONCEPTS (CP workflow):
+! - Each CP stores its own tensor blocks in TBB, with a possibility of disk dump.
+! - LR sends a batch of ETI to be executed on this CP unit (CP MPI Process).
+!   The location of each tensor-block operand in ETI is already given there,
+!   as well as some other characteristics (approx. operation cost, memory requirements, etc.).
+! - CP places the ETI received into 4 queues, based on the number of remote operands.
+! - Each non-trivial ETI operand (tensor block) is assigned an AAR entry that points to
+!   either a <tensor_block_t> entity (to be used on CPU or Intel Xeon Phi)
+!   or a <tensBlck_t> entity (to be used on Nvidia GPU). Once the corresponding
+!   data (tensor block) is in local memory of CP (either in TBB, or HAB, or DEB),
+!   a new AAR entry is defined and all ETI operands, referring to it, are ready.
+!   Data (tensor blocks) registered in AAR can be reused while locally present.
+!   AAR is the only way to access a tensor block for ETI (the tensor block itself
+!   can reside in either TBB, or HAB, or DEB).
+! - ETI with all operands ready are issued for execution on an appropriate device:
+!    - Issuing an ETI is asynchronous;
+!    - Different ETI (with ready input arguments) can be prioritized;
+!    - Each particular type of instruction has its own issuing workflow for each device kind;
+!      The device is chosen based on the ETI cost, ETI cost/size ratio, and device availability;
+!    - Once issued successfully, the ETI obtains a query handle that can be used for completion checks.
+!    - AAR entries (together with associated data) used by active ETI must not be freed.
+!    - If the ETI result is remote, its destination must be updated before
+!      reporting to LR that the ETI has been completed.
 !NOTES:
 ! - Data synchronization in an instance of <tensor_block_t> (Fortran)
 !   associated with a Host Argument Buffer entry can allocate only regular CPU memory
 !   (the one outside the pinned Host Argument buffer). Hence that newly allocated
 !   memory cannot be used with Nvidia GPU.
 !Acronyms:
-! - ETI - Elementary Tensor Instruction (or simply TI);
+! - CP - Computing MPI Process;
+! - MT - Master Thread;
+! - STCU - Slave Threads Computing Unit;
+! - ETI - Elementary Tensor Instruction;
+! - ETIS - Elementary Tensor Instruction Scheduler (SETIS, LETIS, GETIS);
+! - ETIQ - Elementary Tensor Instruction Queue;
 ! - HAB - Host Argument Buffer;
-! - TIS - Tensor Instruction Scheduler (SETIS, LETIS, GETIS);
-! - TIQ - Tensor Instruction Queue;
+! - GAB - GPU Argument Buffer;
+! - DEB - Data Exchange Buffer (additional buffer for temporary present tensor blocks);
 ! - TBB - Tensor Block Bank (storage);
-! - AAL - Active Argument List;
+! - AAR - Active Argument Register;
 ! - TAL - Tensor Algebra Library;
        module c_process
         use, intrinsic:: ISO_C_BINDING
@@ -21,19 +49,23 @@
         use dictionary
         use service
         use extern_names !`dependency to be removed
+        implicit none
+#ifndef NO_OMP
+        integer, external, private:: omp_get_max_threads,omp_get_num_threads,omp_get_thread_num
+#endif
 !PARAMETERS:
  !Output:
         integer, private:: jo_cp=6 !default output
         logical, private:: verbose=.true.
  !General:
         integer, parameter, private:: CZ=C_SIZE_T
- !Tensor Instruction Scheduler (TIS):
+ !Elementary Tensor Instruction Scheduler (ETIS):
   !Host Argument Buffer (HAB):
         integer(C_SIZE_T), parameter, private:: max_hab_size=1024_CZ*1024_CZ*1024_CZ !max size in bytes of the HAB
         integer(C_SIZE_T), parameter, private:: min_hab_size=64_CZ*1024_CZ*1024_CZ   !min size in bytes of the HAB
-  !Tensor instruction queue (TIQ):
-        integer(C_INT), parameter, private:: max_tiq_size=4096 !max number of simultaneously scheduled ETI
-        integer(C_INT), parameter, private:: tiq_levels=4      !number of locality levels in TIQ
+  !Elementary Tensor Instruction Queue (ETIQ):
+        integer(C_INT), parameter, private:: max_etiq_depth=4096 !max number of simultaneously scheduled ETI at this CP
+        integer(C_INT), parameter, private:: etiq_levels=4       !number of locality levels in ETIQ
   !Tensor naming:
         integer(C_INT), parameter:: tensor_name_len=32 !max number of characters used for tensor names
   !Tensor instruction status (any negative value will correspond to a failure, designating the error code):
@@ -57,79 +89,89 @@
         integer, parameter:: instr_tensor_cmp=12
         integer, parameter:: instr_tensor_contract=13
 !TYPES:
- !Tensor block identifier:
+ !Tensor block identifier (key):
         type tens_blck_id_t
          character(LEN=tensor_name_len):: tens_name  !tensor name
          integer(C_INT), allocatable:: tens_mlndx(:) !tensor block multiindex (bases)
         end type tens_blck_id_t
- !Tensor Block Bank:
+ !Tensor Block Bank (TBB):
   !Entry of TBB (named tensor block):
         type, private:: tbb_entry_t
          type(tensor_block_t), private:: tens_blck !fortran tensor block
-         integer, private:: file_handle=0          !file handle (0: stored in memory)
+         integer, private:: file_handle=0          !file handle (0: stored in RAM)
+         integer(8), private:: file_offset         !file offset where the corresponding packet is stored (if on disk)
         end type tbb_entry_t
- !Tensor Instruction Scheduler (TIS):
-  !Locally present tensor argument that can reside either in HAB {tens_blck_c+buf_entry_host} or in TBB {tens_blck_f}:
+ !Elementary Tensor Instruction Scheduler (ETIS):
+  !Locally present tensor argument:
         type, private:: tens_arg_t
-         type(tensor_block_t), pointer, private:: tens_blck_f=>NULL() !pointer to a tensor_block in TBB
-         type(C_PTR), private:: tens_blck_c !C pointer to tensBlck_t in HAB (see "tensor_algebra_gpu_nvidia.h")
-         integer(C_INT), private:: buf_entry_host !HAB entry number where the tensor block resides as a packet (-1: not in HAB)
+         type(tensor_block_t), pointer, private:: tens_blck_f=>NULL() !pointer to a tensor_block in TBB, or HAB, or DEB
+         type(C_PTR), private:: tens_blck_c=C_NULL_PTR !C pointer to tensBlck_t in HAB (see "tensor_algebra_gpu_nvidia.h")
+         integer(C_INT), private:: buf_entry_host !HAB entry number where the tensor block resides as a packet (-1: undefined)
+         logical, private:: in_use                !.true. if this AAR entry is currently in use by some issued ETI
+         integer, private:: times_used            !total number of times this AAR entry have been used since creation
         end type tens_arg_t
   !Tensor operand type (component of ETI):
         type tens_operand_t
-         type(tens_blck_id_t):: tens_blck_id !tensor block identifier (key)
-         integer(C_INT):: op_host            !MPI process rank where the tensor operand resides
-         integer(C_SIZE_T):: op_pack_size    !packed size of the tensor operand in bytes
-         integer(C_INT):: op_tag             !MPI message tag by which the tensor operand is to be delivered (-1: local)
-         integer(C_INT):: op_price           !current price of the tensor operand (tensor block)
-         type(tens_arg_t), pointer:: op_arg_entry=>NULL() !AAL entry assigned to the tensor operand
+         type(tens_blck_id_t):: tens_blck_id !tensor block identifier (key): set by LR
+         integer(C_INT):: op_host            !MPI process rank where the tensor operand resides: set by LR
+         integer(C_SIZE_T):: op_pack_size    !packed size of the tensor operand in bytes: computed by LR
+         integer(C_INT):: op_tag             !MPI message tag by which the tensor operand is to be delivered (-1: local): set by LR
+         integer(C_INT):: op_price           !current price of the tensor operand (tensor block): set by LR
+         type(tens_arg_t), pointer, private:: op_aar_entry=>NULL() !AAR entry assigned to the tensor operand: set by CP
         end type tens_operand_t
   !Dispatched elementary tensor instruction (ETI):
         type tens_instr_t
-         integer:: instr_status                        !tensor instruction status (see above)
-         integer:: instr_code                          !tensor instruction code (see above)
-         integer:: instr_priority                      !tensor instruction priority
-         real(8):: instr_cost                          !approx. instruction computational cost (FLOPs)
-         real(8):: instr_size                          !approx. instruction memory demands (Bytes)
-         real(4):: instr_time_beg                      !time the instruction scheduled
-         real(4):: instr_time_end                      !time the instruction completed
-         integer:: instr_handle                        !instruction handle to query its status
-         integer:: args_ready                          !each bit is set to 1 when the corresponding operand is in AAL
-         type(tens_operand_t), pointer:: tens_op0=>NULL() !pointer to tensor block operand #0
-         type(tens_operand_t), pointer:: tens_op1=>NULL() !pointer to tensor block operand #1
-         type(tens_operand_t), pointer:: tens_op2=>NULL() !pointer to tensor block operand #2
-         type(tens_operand_t), pointer:: tens_op3=>NULL() !pointer to tensor block opearnd #3
-         integer(C_INT), private:: next                !linked list (grouped by locality level)
+         integer:: instr_code            !tensor instruction code (see above): set by GR
+         integer:: instr_status          !tensor instruction status (see above): set by CP
+         integer:: instr_priority        !tensor instruction priority: set by LR
+         real(8):: instr_cost            !approx. instruction computational cost (FLOPs): set by LR
+         real(8):: instr_size            !approx. instruction memory demands (Bytes): set by LR
+         real(4):: instr_time_beg        !time the instruction was scheduled: set by CP
+         real(4):: instr_time_end        !time the instruction was completed: set by CP
+         integer, private:: instr_handle !instruction handle to query its status: set by CP
+         integer, private:: args_ready   !each bit is set to 1 when the corresponding operand is in AAR: set by CP
+         type(tens_operand_t):: tens_op0 !tensor-block operand #0
+         type(tens_operand_t):: tens_op1 !tensor-block operand #1
+         type(tens_operand_t):: tens_op2 !tensor-block operand #2
+         type(tens_operand_t):: tens_op3 !tensor-block opearnd #3
         end type tens_instr_t
+  !Elementary tensor instruction queue:
+        type, private:: etiq_t
+         integer(C_INT), private:: depth=0                   !total number of ETIQ entries
+         integer(C_INT), private:: scheduled=0               !total number of active ETIQ entries
+         integer(C_INT), private:: ffe_sp=0                  !ETIQ FFE stack pointer
+         integer(C_INT), private:: last(0:etiq_levels-1)=0   !last scheduled instruction for each locality level
+         integer(C_INT), private:: ip(0:etiq_levels-1)=0     !instruction pointers for each locality level
+         integer(C_INT), private:: ic(0:etiq_levels-1)=0     !instruction counters for each locality level
+         integer(C_INT), allocatable, private:: ffe_stack(:) !ETIQ FFE stack
+         integer(C_INT), allocatable, private:: next(:)      !ETIQ next linking
+         type(tens_instr_t), allocatable, private:: eti(:)   !elementary tensor instructions
+        end type etiq_t
 !DATA:
  !Tensor Block Bank (TBB):
         type(dict_t), private:: tbb
- !Tensor Instruction Scheduler (TIS):
+ !Elementary Tensor Instruction Scheduler (ETIS):
+  !Active Argument Register (AAR):
+        type(dict_t), private:: aar
+  !Elementary Tensor Instruction Queue (ETIQ):
+        type(etiq_t), private:: etiq
   !Host Argument Buffer (HAB):
         integer(C_SIZE_T), private:: hab_size=0  !actual size in bytes of the Host argument buffer (HAB)
         integer(C_INT), private:: max_hab_args=0 !max number of arguments (of lowest-size level) that can fit in HAB
-  !Active Tensor Argument List (AAL):
-        type(dict_t), private:: aal
-  !Tensor Instruction Queue (TIQ):
-        integer(C_INT), private:: tiq_size=0               !actual size of the tensor instruction queue (TIQ)
-        integer(C_INT), private:: tiq_ffe=0                !FFE for TIQ
-        integer(C_INT), private:: tiq_ip(0:tiq_levels-1)=0 !instruction pointers for each locality level of TIQ
-        integer(C_INT), private:: tiq_ic(0:tiq_levels-1)=0 !instruction counter for each locality level of TIQ
-        type(tens_instr_t), allocatable, private:: tiq(:)  !tensor instruction queue (FIFO)
-!--------------------------------------------------------------------------------------------------------------
+!----------------------------------------------------------------
        contains
 !CODE:
         subroutine c_proc_life(ierr)
 !This subroutine implements C-PROCESS life cycle.
 !INPUT (external):
-! - jo - output device (service.mod);
+! - jo - global output device (service.mod);
 ! - impir - MPI rank of the process (service.mod);
 ! - impis - global MPI comminicator size (service.mod);
 ! - max_threads - max number of threads available to the current MPI process (service.mod);
-! - {gpu_start:gpu_start+gpu_count-1} - range of Nvidia GPUs assigned to the current process (service.mod);
+! - {gpu_start:gpu_start+gpu_count-1} - range of Nvidia GPUs assigned to the current MPI process (service.mod);
 !OUTPUT:
 ! - ierr - error code (0:success);
-! - output of elementary tensor instructions executed.
+! - Executed elementary tensor instructions.
         implicit none
         integer, intent(inout):: ierr
 !------------------------------------
@@ -137,80 +179,116 @@
 !------------------------------------------
         integer(C_INT) i,j,k,l,m,n,err_code
         integer(C_SIZE_T) blck_sizes(0:max_arg_buf_levels-1)
+        integer thread_num
         real(8) tm
 
         ierr=0; jo_cp=jo
-        write(jo_cp,'("#MSG(c_process:c_proc_life): I am a C-process (Computing MPI Process): MPI rank = ",i7)') impir
+        write(jo_cp,'("#MSG(c_process::c_proc_life): I am a C-process (Computing MPI Process): MPI rank = ",i7)') impir
 !Initialization:
-!       write(jo_cp,'("#MSG(c_process:c_proc_life): Initialization:")')
+!       write(jo_cp,'("#MSG(c_process::c_proc_life): Initialization:")')
  !Init TAL infrastructure (TAL buffers, cuBLAS, etc.):
-        write(jo_cp,'("#MSG(c_process:c_proc_life): Allocating argument buffers ... ")',advance='no')
+        write(jo_cp,'("#MSG(c_process::c_proc_life): Allocating argument buffers ... ")',advance='no')
         tm=thread_wtime()
         hab_size=max_hab_size !desired (max) HAB size
         i=arg_buf_allocate(hab_size,max_hab_args,gpu_start,gpu_start+gpu_count-1); if(i.ne.0) then; write(jo_cp,'("Failed!")'); call c_proc_quit(1); return; endif
         tm=thread_wtime()-tm; write(jo_cp,'("Ok(",F4.1," sec): Host argument buffer size (B) = ",i11)') tm,hab_size
         if(hab_size.lt.min_hab_size.or.max_hab_args.lt.6) then
-         write(jo_cp,'("#FATAL(c_process:c_proc_life): Host argument buffer size is lower than minimally allowed: ",i11,1x,i11,1x,i11)') min_hab_size,hab_size,max_hab_args
+         write(jo_cp,'("#FATAL(c_process::c_proc_life): Host argument buffer size is lower than minimally allowed: ",i11,1x,i11,1x,i11)') min_hab_size,hab_size,max_hab_args
          call c_proc_quit(2); return
         endif
-  !Check Host argument buffer levels:
+  !Check Host argument buffer (HAB) levels:
         i=get_blck_buf_sizes_host(blck_sizes)
         if(i.le.0.or.i.gt.max_arg_buf_levels) then
-         write(jo_cp,'("#ERROR(c_process:c_proc_life): Invalid number of Host argument buffer levels: ",i11,1x,i11)') max_arg_buf_levels,i
+         write(jo_cp,'("#ERROR(c_process::c_proc_life): Invalid number of Host argument buffer levels: ",i11,1x,i11)') max_arg_buf_levels,i
          call c_proc_quit(3); return
         else
-         write(jo_cp,'("#MSG(c_process:c_proc_life): Number of Host argument buffer levels = ",i4,":")') i
+         write(jo_cp,'("#MSG(c_process::c_proc_life): Number of Host argument buffer levels = ",i4,":")') i
          do j=0,i-1
-          write(jo_cp,'("#MSG(c_process:c_proc_life): Level ",i4,": Size (B) = ",i11)') j,blck_sizes(j)
+          write(jo_cp,'("#MSG(c_process::c_proc_life): Level ",i4,": Size (B) = ",i11)') j,blck_sizes(j)
          enddo
         endif
-        write(jo_cp,'("#MSG(c_process:c_proc_life): Max number of arguments in the Host argument buffer = ",i6)') max_hab_args
-  !Check GPU argument buffer levels:
+        write(jo_cp,'("#MSG(c_process::c_proc_life): Max number of arguments in the Host argument buffer = ",i6)') max_hab_args
 #ifndef NO_GPU
+  !Check GPU argument buffer (GAB) levels:
         do j=gpu_start,gpu_start+gpu_count-1
          if(gpu_is_mine(j).ne.NOT_REALLY) then
           i=get_blck_buf_sizes_gpu(j,blck_sizes)
           if(i.le.0.or.i.gt.max_arg_buf_levels) then
-           write(jo_cp,'("#ERROR(c_process:c_proc_life): Invalid number of GPU argument buffer levels: ",i11,1x,i11)') max_arg_buf_levels,i
+           write(jo_cp,'("#ERROR(c_process::c_proc_life): Invalid number of GPU argument buffer levels: ",i11,1x,i11)') max_arg_buf_levels,i
            call c_proc_quit(4); return
           else
-           write(jo_cp,'("#MSG(c_process:c_proc_life): Number of GPU#",i2," argument buffer levels = ",i4,":")') j,i
+           write(jo_cp,'("#MSG(c_process::c_proc_life): Number of GPU#",i2," argument buffer levels = ",i4,":")') j,i
            do k=0,i-1
-            write(jo_cp,'("#MSG(c_process:c_proc_life): Level ",i4,": Size (B) = ",i11)') k,blck_sizes(k)
+            write(jo_cp,'("#MSG(c_process::c_proc_life): Level ",i4,": Size (B) = ",i11)') k,blck_sizes(k)
            enddo
           endif
          endif
         enddo
 #endif
- !Init TIQ:
-        write(jo_cp,'("#MSG(c_process:c_proc_life): Allocating Tensor Instruction Queue (TIQ) ... ")',advance='no')
+ !Init ETIQ:
+        write(jo_cp,'("#MSG(c_process::c_proc_life): Allocating Tensor Instruction Queue (ETIQ) ... ")',advance='no')
         tm=thread_wtime()
-        tiq_size=max_tiq_size
-        allocate(tiq(1:tiq_size),STAT=ierr); if(ierr.ne.0) then; write(jo_cp,'("#ERROR(c_process:c_proc_life): TIQ allocation failed!")'); call c_proc_quit(6); return; endif
-        tiq_ffe=1; do i=1,tiq_size-1; tiq(i)%next=i+1; enddo; tiq(tiq_size)%next=0 !linked list
-        tiq_ip(:)=0; tiq_ic(:)=0
-        tm=thread_wtime()-tm; write(jo_cp,'("Ok(",F4.1," sec):  TIQ depth = ",i7)') tm,tiq_size
+        allocate(etiq%eti(1:max_etiq_depth),etiq%next(1:max_etiq_depth),etiq%ffe_stack(1:max_etiq_depth),STAT=ierr)
+        if(ierr.ne.0) then; write(jo_cp,'("#ERROR(c_process::c_proc_life): ETIQ allocation failed!")'); call c_proc_quit(5); return; endif
+        etiq%depth=max_etiq_depth; etiq%scheduled=0; etiq%last(:)=0; etiq%ip(:)=0; etiq%ic(:)=0
+        do i=1,max_etiq_depth; etiq%ffe_stack(i)=i; enddo; etiq%ffe_sp=1
+        tm=thread_wtime()-tm; write(jo_cp,'("Ok(",F4.1," sec): ETIQ max depth = ",i7)') tm,max_etiq_depth
+!Test C-process functionality (debug):
+        call c_proc_test(ierr); if(ierr.ne.0) then; write(jo_cp,'("#ERROR(c_process::c_proc_life): C-process functionality test failed: ",i7)') ierr; call c_proc_quit(6); return; endif
+        call run_benchmarks(ierr); if(ierr.ne.0) then; write(jo_cp,'("#ERROR(c_process::c_proc_life): C-process benchmarking failed: ",i7)') ierr; call c_proc_quit(7); return; endif
+!------------------------------
+!LIFE:
+        ierr=0
+#ifndef NO_OMP
+        n=omp_get_max_threads()
+        if(n.ge.2.and.n.eq.max_threads) then
+!$OMP PARALLEL DEFAULT(SHARED) NUM_THREADS(2)
+         n=omp_get_num_threads()
+         if(n.eq.2) then
+          thread_num=omp_get_thread_num()
+!Life: Master thread:
+          if(thread_num.eq.0) then
+ !Set the initial CPU slaves configuration to "one computing unit":
+           
+ !Report to work to the local host:
 
-!Test C-process functionality:
-        call c_proc_test(ierr); if(ierr.ne.0) then; write(jo_cp,'("#ERROR(c_process:c_proc_life): C-process functionality test failed: ",i7)') ierr; call c_proc_quit(7); return; endif
-        call run_benchmarks(ierr); if(ierr.ne.0) then; write(jo_cp,'("#ERROR(c_process:c_proc_life): C-process benchmarking failed: ",i7)') ierr; call c_proc_quit(8); return; endif
-!Report to work to the local host:
+ !Receive the next batch of tensor instructions:
 
-!Receive the next batch of tensor instructions:
+ !Prioritize/reprioritize tensor instructions in the queue:
 
-!Prioritize/reprioritize tensor instructions in the queue:
+ !If no new remote arguments have arrived, schedule some local instructions for execution (local hedge):
 
-!If no new remote arguments have arrived, schedule some local instructions for execution (local hedge):
+ !Put MPI requests for remote arguments:
 
-!Put MPI requests for remote arguments:
+ !Schedule those tensor instructions which have all their remote arguments delivered:
 
-!Schedule those tensor instructions which have all their remote arguments delivered:
+ !Check the status of previously scheduled non-blocking instructions:
 
-!Check the status of previously scheduled non-blocking instructions:
+ !Post MPI sends if remote tensor blocks have been computed:
 
-!Post MPI sends if remote tensor blocks have been computed:
-
-        write(jo_cp,'("#MSG(c_process:c_proc_life): Cleaning ... ")',advance='no')
+!Life: Slave threads:
+          elseif(thread_num.eq.1) then
+           life_slaves: do
+            
+            exit life_slaves
+           enddo life_slaves
+          endif
+         else
+          write(jo_cp,'("#ERROR(c_process::c_proc_life): invalid initial number of threads: ",i6)') n
+          ierr=-2
+         endif
+!$OMP END PARALLEL
+        else
+         write(jo_cp,'("#ERROR(c_process::c_proc_life): invalid max number of threads: ",i6,1x,i6)') n,max_threads
+         ierr=-1
+        endif
+        if(ierr.ne.0) then; call c_proc_quit(999); return; endif
+#else
+        write(jo_cp,'("#FATAL(c_process::c_proc_life): cannot function without OpenMP!")')
+        call c_proc_quit(8); return
+#endif
+!-------------------
+        write(jo_cp,'("#MSG(c_process::c_proc_life): Cleaning ... ")',advance='no')
         call c_proc_quit(0); if(ierr.eq.0) write(jo_cp,'("Ok")')
         return
 
@@ -220,21 +298,32 @@
          integer, intent(in):: errc
          integer(C_INT) j0,j1
          ierr=errc
-         j0=arg_buf_clean_host(); if(j0.ne.0) then; write(jo_cp,'("#WARNING(c_process:c_proc_life:c_proc_quit): Host Argument buffer is not clean!")'); ierr=ierr+100; endif
+!HAB clean up:
+         j0=arg_buf_clean_host(); if(j0.ne.0) then; write(jo_cp,'("#WARNING(c_process::c_proc_life:c_proc_quit): Host Argument buffer is not clean!")'); ierr=ierr+100; endif
 #ifndef NO_GPU
+!GAB clean up:
          do j1=gpu_start,gpu_start+gpu_count-1
           if(gpu_is_mine(j1).ne.NOT_REALLY) then
-           j0=arg_buf_clean_gpu(j1); if(j0.ne.0) then; write(jo_cp,'("#WARNING(c_process:c_proc_life:c_proc_quit): GPU#",i2," Argument buffer is not clean!")') j1; ierr=ierr+100*(2+j1); endif
+           j0=arg_buf_clean_gpu(j1); if(j0.ne.0) then; write(jo_cp,'("#WARNING(c_process::c_proc_life:c_proc_quit): GPU#",i2," Argument buffer is not clean!")') j1; ierr=ierr+100*(2+j1); endif
           endif
          enddo
 #endif
+!HAB/GAB deallocation:
          j0=arg_buf_deallocate(gpu_start,gpu_start+gpu_count-1); hab_size=0_CZ; max_hab_args=0
-         if(j0.ne.0) then; write(j0,'("#ERROR(c_process:c_proc_life:c_proc_quit): Deallocation of argument buffers failed!")'); ierr=ierr+10000; endif
-         if(allocated(tiq)) deallocate(tiq); tiq_ip(:)=0; tiq_ic(:)=0; tiq_ffe=0; tiq_size=0
-         j0=aal%destroy(destruct_key_func=destructor)
-         if(j0.ne.0) then; write(j0,'("#ERROR(c_process:c_proc_life:c_proc_quit): AAL destruction failed!")'); ierr=ierr+100000; endif
+         if(j0.ne.0) then; write(jo_cp,'("#ERROR(c_process::c_proc_life:c_proc_quit): Deallocation of argument buffers failed!")'); ierr=ierr+10000; endif
+!ETIQ:
+         j1=0
+         if(allocated(etiq%ffe_stack)) deallocate(etiq%ffe_stack,STAT=j0); if(j0.ne.0) j1=j1+1
+         if(allocated(etiq%next)) deallocate(etiq%next,STAT=j0); if(j0.ne.0) j1=j1+1
+         if(allocated(etiq%eti)) deallocate(etiq%eti,STAT=j0); if(j0.ne.0) j1=j1+1
+         etiq%depth=0; etiq%scheduled=0; etiq%ffe_sp=0; etiq%last(:)=0; etiq%ip(:)=0; etiq%ic(:)=0
+         if(j1.ne.0) then;  write(jo_cp,'("#ERROR(c_process::c_proc_life:c_proc_quit): ETIQ deallocation failed!")'); ierr=ierr+50000; endif
+!AAR:
+         j0=aar%destroy(destruct_key_func=destructor)
+         if(j0.ne.0) then; write(jo_cp,'("#ERROR(c_process::c_proc_life:c_proc_quit): AAR destruction failed!")'); ierr=ierr+100000; endif
+!TBB:
          j0=tbb%destroy(destruct_key_func=destructor,destruct_val_func=destructor)
-         if(j0.ne.0) then; write(j0,'("#ERROR(c_process:c_proc_life:c_proc_quit): TBB destruction failed!")'); ierr=ierr+1000000; endif
+         if(j0.ne.0) then; write(jo_cp,'("#ERROR(c_process::c_proc_life:c_proc_quit): TBB destruction failed!")'); ierr=ierr+200000; endif
          return
          end subroutine c_proc_quit
 
@@ -310,7 +399,7 @@
         complex(8) elems_c8; integer(C_SIZE_T) off_elems_c8; complex(8), pointer:: ptr_elems_c8(:)=>NULL()
 
         ierr=0
-!	write(jo_cp,'("#DEBUG(c_process:tens_blck_pack): Creating a tensor block packet:")') !debug
+!	write(jo_cp,'("#DEBUG(c_process::tens_blck_pack): Creating a tensor block packet:")') !debug
 !Compute the size (in bytes) of the tensor block packet (linearized tensor_block_t):
         off_packet_size=0; packet_size=0
         off_data_kind=off_packet_size+sizeof(packet_size)
@@ -359,7 +448,7 @@
 !DEBUG end.
 !Allocate an argument buffer space on Host:
         err_code=get_buf_entry_host(packet_size,pptr,entry_num); if(err_code.ne.0) then; ierr=5; return; endif
-!	write(jo_cp,'("#DEBUG(c_process:tens_blck_pack): Host argument buffer entry obtained: ",i7)') entry_num !debug
+!	write(jo_cp,'("#DEBUG(c_process::tens_blck_pack): Host argument buffer entry obtained: ",i7)') entry_num !debug
         if(entry_num.lt.0) then; ierr=6; return; endif
 !Transfer the data into the Host argument buffer:
         c_addr=ptr_offset(pptr,off_packet_size)
@@ -424,7 +513,7 @@
         else
          ierr=7; return
         endif
-!	write(jo_cp,'("#DEBUG(c_process:tens_blck_pack): packet created (size/entry): ",i12,1x,i7)') packet_size,entry_num !debug
+!	write(jo_cp,'("#DEBUG(c_process::tens_blck_pack): packet created (size/entry): ",i12,1x,i7)') packet_size,entry_num !debug
         return
         end subroutine tens_blck_pack
 !-----------------------------------------------------------------------------
@@ -466,7 +555,7 @@
         logical res
 
         ierr=0; err_code=0
-!	write(jo_cp,'("#DEBUG(c_process:tens_blck_upack): Unpacking a tensor block packet:")') !debug
+!	write(jo_cp,'("#DEBUG(c_process::tens_blck_upack): Unpacking a tensor block packet:")') !debug
 !Read the tensor block packet and form an instance of tensor_block_t:
         off_packet_size=0; c_addr=ptr_offset(pptr,off_packet_size)
         call c_f_pointer(c_addr,ptr_packet_size); packet_size=ptr_packet_size; nullify(ptr_packet_size)
@@ -612,7 +701,7 @@
 !	case(R8); write(jo_cp,'(" Elements(r8) : ",i9,1x,i9)') off_elems_r8
 !	case(C8); write(jo_cp,'(" Elements(c8) : ",i9,1x,i9)') off_elems_c8
 !	end select
-!	write(jo_cp,'("#DEBUG(c_process:tens_blck_unpack): packet unpacked (size): ",i12)') packet_size !debug
+!	write(jo_cp,'("#DEBUG(c_process::tens_blck_unpack): packet unpacked (size): ",i12)') packet_size !debug
 !DEBUG end.
         return
         end subroutine tens_blck_unpack
@@ -701,7 +790,7 @@
          err_code=tensBlck_construct(ctens,DEV_NVIDIA_GPU,gpu_num,data_kind,trank,addr_dims,addr_divs,addr_grps,addr_prmn,addr_host,addr_gpu,entry_gpu,entry_const)
          if(err_code.ne.0) then; ierr=6; return; endif
 #else
-         write(jo_cp,'("#FATAL(c_process:tens_blck_assoc): attempt to initialize a GPU-resident tensor block in GPU-free code compilation!")') !trap
+         write(jo_cp,'("#FATAL(c_process::tens_blck_assoc): attempt to initialize a GPU-resident tensor block in GPU-free code compilation!")') !trap
          ierr=-1; return !attempt to initialize tensBlck_t in a GPU-free code compilation
 #endif
         elseif(present(tens).and.(.not.present(ctens)).and.(.not.present(gpu_num))) then
@@ -757,7 +846,7 @@
         endif
         err_code=tensBlck_destroy(ctens); if(err_code.ne.0) ierr=ierr+1000
 #else
-        write(jo_cp,'("#FATAL(c_process:tens_blck_dissoc): attempt to dissociate a GPU-resident tensor block in GPU-free code compilation!")') !trap
+        write(jo_cp,'("#FATAL(c_process::tens_blck_dissoc): attempt to dissociate a GPU-resident tensor block in GPU-free code compilation!")') !trap
         ierr=-1; return !attempt to initialize tensBlck_t in a GPU-free code compilation
 #endif
         return
@@ -783,12 +872,12 @@
         type(tensor_block_t) ftens(0:test_args_lim)
         character(256) shape0,shape1,shape2
 
-        ierr=0; write(jo_cp,'("#MSG(c_process:c_proc_test): Testing C-process functionality ... ")',advance='no')
+        ierr=0; write(jo_cp,'("#MSG(c_process::c_proc_test): Testing C-process functionality ... ")',advance='no')
 !TEST 0: Random contraction patterns:
 !        write(jo_cp,*)''
 !        do i=1,16
 !         call contr_pattern_rnd(8,100000000,shape0,shape1,shape2,cptrn,ierr)
-!         if(ierr.ne.0) then; write(jo_cp,*)'ERROR(c_process:c_proc_test): contr_pattern_rnd error ',ierr; return; endif
+!         if(ierr.ne.0) then; write(jo_cp,*)'ERROR(c_process::c_proc_test): contr_pattern_rnd error ',ierr; return; endif
 !         l=index(shape0,')'); k=index(shape1,')'); j=index(shape2,')')
 !         call printl(jo_cp,shape0(1:l)//'+='//shape1(1:k)//'*'//shape2(1:j)) !debug
 !         m=tensor_shape_rank(shape1(1:k),ierr)+tensor_shape_rank(shape2(1:j),ierr)
@@ -840,7 +929,7 @@
          call tensor_block_create('(44,33,27,17)','r8',ftens(1),ierr,val_r8=0d0); if(ierr.ne.0) then; ierr=28; goto 999; endif
          tm0=thread_wtime()
          call tensor_block_copy(ftens(0),ftens(1),ierr,o2n); if(ierr.ne.0) then; ierr=29; goto 999; endif
-!         write(jo_cp,'("#DEBUG(c_process:c_proc_test): CPU tensor transpose time = ",F10.4)') thread_wtime()-tm0 !debug
+!         write(jo_cp,'("#DEBUG(c_process::c_proc_test): CPU tensor transpose time = ",F10.4)') thread_wtime()-tm0 !debug
          call tensor_block_sync(ftens(0),'r8',ierr,'r4'); if(ierr.ne.0) then; ierr=30; goto 999; endif
          call tensor_block_sync(ftens(1),'r8',ierr,'r4'); if(ierr.ne.0) then; ierr=31; goto 999; endif
          call tens_blck_pack(ftens(1),'r4',pack_size(1),entry_ptr(1),entry_num(1),ierr); if(ierr.ne.0) then; ierr=32; goto 999; endif
@@ -854,7 +943,7 @@
          call tens_blck_assoc(entry_ptr(2),ierr,ctens=ctens(2),gpu_num=gpu_id); if(ierr.ne.0) then; ierr=40; goto 999; endif
          tm0=thread_wtime()
          err_code=gpu_tensor_block_copy_dlf(n2o,ctens(1),ctens(2)); if(err_code.ne.0) then; write(jo_cp,*)'GPU ERROR ',err_code; ierr=41; goto 999; endif
-!         write(jo_cp,'("#DEBUG(c_process:c_proc_test): GPU tensor transpose time = ",F10.4)') thread_wtime()-tm0 !debug
+!         write(jo_cp,'("#DEBUG(c_process::c_proc_test): GPU tensor transpose time = ",F10.4)') thread_wtime()-tm0 !debug
          i1=gpu_get_error_count(); if(i1.ne.0) then; write(jo_cp,*)'GPU error count = ',i1; ierr=42; goto 999; endif
 !         call print_gpu_debug_dump(jo_cp) !debug
          if(tensor_block_norm2(ftens(2),ierr,'r4').ne.0d0) then; ierr=43; goto 999; endif
@@ -885,7 +974,7 @@
         cptrn(1:12)=(/4,3,-4,6,-1,-5,-5,5,2,-3,-6,1/)
         tm0=thread_wtime()
         call tensor_block_contract(cptrn,ftens(1),ftens(2),ftens(3),ierr,'r4'); if(ierr.ne.0) then; ierr=61; goto 999; endif
-!       write(jo_cp,'("#DEBUG(c_process:c_proc_test): CPU tensor contraction time = ",F10.4)') thread_wtime()-tm0 !debug
+!       write(jo_cp,'("#DEBUG(c_process::c_proc_test): CPU tensor contraction time = ",F10.4)') thread_wtime()-tm0 !debug
         call tens_blck_pack(ftens(0),'r4',pack_size(0),entry_ptr(0),entry_num(0),ierr); if(ierr.ne.0) then; ierr=62; goto 999; endif
         call tens_blck_pack(ftens(1),'r4',pack_size(1),entry_ptr(1),entry_num(1),ierr); if(ierr.ne.0) then; ierr=63; goto 999; endif
         call tens_blck_pack(ftens(2),'r4',pack_size(2),entry_ptr(2),entry_num(2),ierr); if(ierr.ne.0) then; ierr=64; goto 999; endif
@@ -974,7 +1063,7 @@
         type(C_PTR):: ctens(0:test_args_lim)=C_NULL_PTR
         type(tensor_block_t) ftens(0:test_args_lim)
 
-        ierr=0; write(jo_cp,'("#MSG(c_process:c_proc_test): Tensor algebra benchmarks:")')
+        ierr=0; write(jo_cp,'("#MSG(c_process::c_proc_test): Tensor algebra benchmarks:")')
 #ifndef NO_GPU
         gpu_id=gpu_busy_least(); call cudaSetDevice(gpu_id,err_code); if(err_code.ne.0) then; ierr=666; goto 999; endif
         call gpu_set_event_policy(EVENTS_ON)
@@ -1092,7 +1181,7 @@
         integer, intent(in):: ifh
         integer(C_INT), parameter:: max_dump_size=1024
         integer(C_INT) i,dump_size,dump(1:max_dump_size)
-        write(ifh,*)' '; write(ifh,'("#DEBUG(c_process:print_gpu_debug_dump): GPU DEBUG DUMP:")')
+        write(ifh,*)' '; write(ifh,'("#DEBUG(c_process::print_gpu_debug_dump): GPU DEBUG DUMP:")')
         dump_size=gpu_get_debug_dump(dump)
         do i=1,dump_size,10; write(ifh,'(10(1x,i9))') dump(i:min(dump_size,i+9)); enddo
         return

@@ -16,17 +16,17 @@
 !  <values> can be of different classes/types.
 !#Key comparison function:
 !  The key comparison function must be supplied to <search> (see cmp_key_func_i interface below).
-!  The key comparison function must operate on unlimited polymorphic pointers (<keys>).
+!  The key comparison function must operate on unlimited polymorphic entities (<keys>).
 !#Item destructor function:
 !  If <key> or <value> is of derived type with pointer/allocatable components,
 !  a destructor function may be needed (see destruct_func_i interface below).
-!  The destructor function must operate on an unlimited polymorphic pointer.
+!  The destructor function must operate on an unlimited polymorphic entity.
 !  The destructor function must free all dynamic components of <key> or <value>,
-!  but not the <key> or <value> themselves (if it does, that should not be a problem).
+!  but not the <key> or <value> themselves (even if it does, that should not cause a problem).
 !#Printing dictionary items:
 !  If one wants to print dictionary items, the item printing function
 !  must be supplied (see print_func_i interface below). The item printing
-!  function must operate on an unlimited polymorphic pointer (item).
+!  function must operate on an unlimited polymorphic entity (item).
         implicit none
 !PARAMETERS:
  !General:

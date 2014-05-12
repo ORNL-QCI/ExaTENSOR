@@ -1,6 +1,7 @@
 QFORCE resolution list (D.I.L.):
 ===============================
 UNSOLVED:
+ 2014/05/12: Add "Deallocation free capability" to the dictionary (reuse of entries memory).
  2014/01/04: Add concurrent kernel execution into tensor_block_contract_dlf_r4_ for input tensor transposes.
  2013/11/24: When more than one process is launched per node, GPUs must be reassigned
              such that only C-processes get them (global and local roots do not require GPU).

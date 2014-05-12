@@ -1,7 +1,7 @@
        module tensor_dil_omp
 !Multithreaded tensor algebra kernels tailored for ACESIII/ACESIV.
 !AUTHOR: Dmitry I. Lyakh: quant4me@gmail.com
-!Revision: 2014/04/29
+!Revision: 2014/05/12
 !-------------------------------------------
 !COMPILE:
 ! # GFORTRAN flags: -O3 --free-line-length-none -fopenmp -x f95-cpp-input
@@ -58,7 +58,9 @@
         integer, parameter:: real4_kind=C_FLOAT
         integer, parameter:: real8_kind=C_DOUBLE
 !OpenMP functions (or include omp_lib.h instead):
-	integer, external:: omp_get_thread_num,omp_get_num_threads,omp_get_max_threads
+#ifndef NO_OMP
+	integer, external, private:: omp_get_thread_num,omp_get_num_threads,omp_get_max_threads
+#endif
 	contains
 !-----------------------------------------
 !PUBLIC SUBROUTINES (callable from C/C++):

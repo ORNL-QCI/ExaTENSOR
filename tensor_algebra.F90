@@ -1,6 +1,6 @@
 !TENSOR ALGEBRA IN PARALLEL (TAP) for SHARED-MEMORY SYSTEMS (OpenMP based)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2014/04/29
+!REVISION: 2014/05/12
 !GNU FORTRAN compiling options: -c -O3 --free-line-length-none -x f95-cpp-input -fopenmp
 !GNU linking options: -lgomp -blas -llapack
 !ACRONYMS:
@@ -25,6 +25,9 @@
         use mkl95_precision
 #endif
         implicit none
+#ifndef NO_OMP
+        integer, external, private:: omp_get_max_threads,omp_get_num_threads,omp_get_thread_num
+#endif
 !PARAMETERS:
         include 'tensor_algebra_gpu_nvidia.inc'
  !Default output for the module procedures and functions:
@@ -3715,7 +3718,7 @@
 	integer i,j,k,l,m,n,ks,kf,im(1:dim_num)
 	integer(LONGINT) bases_in(1:dim_num),bases_out(1:dim_num),segs(0:max_threads),lts,lss,l_in,l_out
 	real(4) time_beg
-	integer, external:: omp_get_thread_num,omp_get_num_threads
+!	integer, external:: omp_get_thread_num,omp_get_num_threads
 
 	ierr=0
 !	time_beg=secnds(0.) !debug
@@ -3779,7 +3782,7 @@
 	integer i,j,k,l,m,n,ks,kf,im(1:dim_num)
 	integer(LONGINT) bases_in(1:dim_num),bases_out(1:dim_num),segs(0:max_threads),lts,lss,l_in,l_out
 	real(4) time_beg
-	integer, external:: omp_get_thread_num,omp_get_num_threads
+!	integer, external:: omp_get_thread_num,omp_get_num_threads
 
 	ierr=0
 !	time_beg=secnds(0.) !debug
@@ -3851,7 +3854,7 @@
 	integer dim_beg(1:dim_num),dim_end(1:dim_num)
 	logical trivial,in_out_dif
 	real(4) time_beg
-	integer, external:: omp_get_thread_num,omp_get_num_threads
+!	integer, external:: omp_get_thread_num,omp_get_num_threads
 
 	ierr=0
 !	time_beg=secnds(0.) !debug
@@ -4075,7 +4078,7 @@
 	integer dim_beg(1:dim_num),dim_end(1:dim_num)
 	logical trivial,in_out_dif
 	real(4) time_beg
-	integer, external:: omp_get_thread_num,omp_get_num_threads
+!	integer, external:: omp_get_thread_num,omp_get_num_threads
 
 	ierr=0
 !	time_beg=secnds(0.) !debug
@@ -4467,7 +4470,7 @@
 	integer(LONGINT) l0,l1,l2,ll,lr,ld,ls,lf,b0,b1,b2,e0,e1,e2,cl,cr,cc,chunk
 	real(real_kind) val,redm(0:red_mat_size-1,0:red_mat_size-1)
 	real(4) time_beg
-	integer, external:: omp_get_max_threads
+!	integer, external:: omp_get_max_threads
 
 	ierr=0
 !	time_beg=secnds(0.) !debug
@@ -4710,7 +4713,7 @@
 	integer(LONGINT) l0,l1,l2,ll,lr,ld,ls,lf,b0,b1,b2,e0,e1,e2,cl,cr,cc,chunk
 	real(real_kind) val,redm(0:red_mat_size-1,0:red_mat_size-1)
 	real(4) time_beg
-	integer, external:: omp_get_max_threads
+!	integer, external:: omp_get_max_threads
 
 	ierr=0
 !	time_beg=secnds(0.) !debug
@@ -4953,7 +4956,7 @@
 	integer(LONGINT) bases_in(1:rank_in),bases_tr(1:rank_in),segs(0:max_threads),ls,lc,l_in,l0
 	real(real_kind) val_tr
 	real(4) time_beg
-	integer, external:: omp_get_thread_num,omp_get_num_threads
+!	integer, external:: omp_get_thread_num,omp_get_num_threads
 
 	ierr=0
 !	time_beg=secnds(0.) !debug
@@ -5051,7 +5054,7 @@
 	integer(LONGINT) li,lo,lc,l_in,l_out,l0
 	real(real_kind) val_tr
 	real(4) time_beg
-	integer, external:: omp_get_thread_num,omp_get_num_threads
+!	integer, external:: omp_get_thread_num,omp_get_num_threads
 
 	ierr=0
 !	time_beg=secnds(0.) !debug
