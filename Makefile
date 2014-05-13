@@ -9,7 +9,7 @@ CUDA_LINK = -lcublas -lcudart
 CUDA_FLAGS = --compile -O3 -arch=sm_11 -DDEBUG
 LA_LINK = -lblas -llapack
 C_FLAGS = -c -O3
-FFLAGS = -c -O3 --free-line-length-none -x f95-cpp-input -fopenmp
+FFLAGS = -c -O3 --free-line-length-none -x f95-cpp-input -fopenmp -DNO_PHI
 LFLAGS = -lgomp
 
 OBJS = stsubs.o combinatoric.o service.o extern_names.o tensor_algebra.o tensor_dil_omp.o \

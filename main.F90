@@ -1,10 +1,10 @@
 !PROGRAM: Q-FORCE: Massively-Parallel Quantum Many-Body Methodology on Heterogeneous HPC systems.
 !AUTHOR: Dmitry I. Lyakh (Dmytro I. Liakh): quant4me@gmail.com
-!REVISION: 2014/04/09
+!REVISION: 2014/05/13
 !COMPILATION:
 ! - Fortran 2003 at least.
 ! - MPI 2.0 at least.
-! - OpenMP 3.0 at least.
+! - OpenMP 4.0 at least.
 ! - CUDA 5.0 at least.
 ! - GNU compiling flags: -c -O3 --free-line-length-none -x f95-cpp-input -fopenmp
 !   GNU linking flags: -lgomp
@@ -16,15 +16,16 @@
 ! - MPI processes launched on the same node MUST have consecutive numbers!
 ! - Environment variable QF_PROCS_PER_NODE MUST be defined when using accelerators (number of processes per node)!
 !FPP directives:
-! - NO_GPU - do not use (Nvidia) GPU;
-! - NO_OMP - do not use OpenMP (single-threaded processes);
+! - NO_GNU - Fortran compiler is not GNU (affects Fortran timers);
+! - NO_PHI - do not use Intel Xeon Phi (MIC);
+! - NO_GPU - do not use Nvidia GPU;
 ! - NO_BLAS - BLAS/LAPACK calls will be replaced by my own routines (D.I.L.);
 ! - USE_MKL - use Intel MKL library for BLAS/LAPACK;
-! - NO_GNU - Fortran compiler is not GNU (affects Fortran timers);
+! - NO_OMP - do not use OpenMP (single-threaded processes);`currently will not work
 !OUTPUT DEVICE:
 ! - jo (@service.mod) - generic output device handle;
 !ENUMERATION OF DEVICES ON A NODE:
-! - device_id = 0: Host (SMP CPUs node, NUMA or not);
+! - device_id = 0: Host (SMP CPU node, may be NUMA);
 ! - device_id = [1:MAX_GPUS_PER_NODE]: Nvidia GPUs (GPU#=device_id-1);
 ! - device_id = [MAX_GPUS_PER_NODE+1:MAX_GPUS_PER_NODE+MAX_MICS_PER_NODE]: Intel MICs (MIC#=device_id-1-MAX_GPUS_PER_NODE);
         program main !PARALLEL
@@ -59,7 +60,7 @@
 !       write(*,*) impis,impir,max_threads,jo,log_file; call quit(-1,'Test') !debug
         call numchar(impir,k0,str0); open(log_file,file='qforce.'//str0(1:k0)//'.log',form='FORMATTED',status='UNKNOWN',err=2000) !open the log file for each process
         if(impir.ne.0) jo=log_file !redirect the standard output for slave processes to their log-files
-        write(jo,'("   *** Q-FORCE v.14.04.08 by Dmitry I. Lyakh ***")')
+        write(jo,'("   *** Q-FORCE v.14.05.13 by Dmitry I. Lyakh ***")')
         write(jo,'("MPI number of processes            : ",i10)') impis
         write(jo,'("Current process rank               : ",i10)') impir
 #ifndef NO_OMP
