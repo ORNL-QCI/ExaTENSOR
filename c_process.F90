@@ -1,28 +1,28 @@
 !This module provides functionality for a Computing Process (C-PROCESS, CP).
 !In essence, this is a single-node elementary tensor instruction scheduler (SETIS).
 !AUTHOR: Dmitry I. Lyakh (Dmytro I. Liakh): quant4me@gmail.com
-!REVISION: 2014/05/13
+!REVISION: 2014/05/14
 !CONCEPTS (CP workflow):
 ! - Each CP stores its own tensor blocks in TBB, with a possibility of disk dump.
 ! - LR sends a batch of ETI to be executed on this CP unit (CP MPI Process).
 !   The location of each tensor-block operand in ETI is already given there,
 !   as well as some other characteristics (approx. operation cost, memory requirements, etc.).
-! - CP places the ETI received into 4 queues, based on the number of remote operands.
+! - CP places the ETI received into multiple queues, based on the number of remote operands and ETI cost.
 ! - Each non-trivial ETI operand (tensor block) is assigned an AAR entry that points to
 !   either a <tensor_block_t> entity (to be used on CPU or Intel Xeon Phi)
 !   or a <tensBlck_t> entity (to be used on Nvidia GPU). Once the corresponding
 !   data (tensor block) is in local memory of CP (either in TBB, or HAB, or DEB),
-!   a new AAR entry is defined and all ETI operands, referring to it, are ready.
+!   a new AAR entry is defined and all ETI operands, referring to it, become ready.
 !   Data (tensor blocks) registered in AAR can be reused while locally present.
 !   AAR is the only way to access a tensor block for ETI (the tensor block itself
-!   can reside in either TBB, or HAB, or DEB).
+!   can physically reside in either TBB, or HAB, or DEB).
 ! - ETI with all operands ready are issued for execution on an appropriate device:
-!    - Issuing an ETI is asynchronous;
-!    - Different ETI (with ready input arguments) can be prioritized;
-!    - Each particular type of instruction has its own issuing workflow for each device kind;
-!      The device is chosen based on the ETI cost, ETI cost/size ratio, and device availability;
+!    - All ETI are issued asynchronously;
+!    - ETI with ready input arguments can be further prioritized;
+!    - Each particular type of instruction has its own issuing workflow for each device kind.
+!      The device is chosen based on the ETI cost, ETI cost/size ratio, and device availability.
 !    - Once issued successfully, the ETI obtains a query handle that can be used for completion checks.
-!    - AAR entries (together with associated data) used by active ETI must not be freed.
+!    - AAR entries and associated data used by active ETI must not be freed.
 !    - If the ETI result is remote, its destination must be updated before
 !      reporting to LR that the ETI has been completed.
 !NOTES:
@@ -31,7 +31,7 @@
 !   (the one outside the pinned Host Argument buffer). Hence that newly allocated
 !   memory cannot be used with Nvidia GPU.
 !Acronyms:
-! - CP - Computing MPI Process;
+! - CP - Computing (MPI) Process;
 ! - MT - Master Thread;
 ! - STCU - Slave Threads Computing Unit;
 ! - NVCU - Nvidia GPU Computing Unit;
@@ -70,20 +70,22 @@
         integer(C_INT), parameter, private:: etiq_max_depth=65536 !max number of simultaneously scheduled ETI at this CP
         integer(C_INT), parameter, private:: etiq_loc_levels=4    !number of locality levels in ETIQ (senior)
         integer(C_INT), parameter, private:: etiq_cost_levels=5   !number of cost levels in ETIQ (minor)
-        integer(C_INT), parameter, private:: etiq_levels=etiq_cost_levels*etiq_loc_levels !total number of levels in ETIQ
+        integer(C_INT), parameter, private:: etiq_channels=etiq_cost_levels*etiq_loc_levels !total number of levels in ETIQ
         integer(C_INT), parameter, private:: etiq_stcu_max_depth=1024 !max number of simultaneously scheduled ETI on STCU
         integer(C_INT), parameter, private:: etiq_nvcu_max_depth=16 !max number of simultaneously scheduled ETI on NVCU
         integer(C_INT), parameter, private:: etiq_xpcu_max_depth=32 !max number of simultaneously scheduled ETI on XPCU
-        integer(C_INT), parameter, private:: stcu_max_units=64 !max number of STCU units
+        integer(C_INT), parameter, public:: eti_buf_size=32768 !ETI buffer size (for communications with LR)
+        integer(C_INT), parameter, private:: stcu_max_units=4  !max number of STCU units
   !Tensor naming:
         integer(C_INT), parameter:: tensor_name_len=32 !max number of characters used for tensor names
   !Tensor instruction status (any negative value will correspond to a failure, designating the error code):
         integer, parameter:: instr_null=0              !uninitialized instruction
         integer, parameter:: instr_data_wait=1         !instruction is waiting for input data to arrive
         integer, parameter:: instr_ready_to_exec=2     !instruction is ready to be executed (input data has arrived)
-        integer, parameter:: instr_issued=3            !instruction is issued for execution on some computing unit
-        integer, parameter:: instr_completed=4         !instruction has completed (but the result may need to be remotely uploaded)
-        integer, parameter:: instr_dead=5              !instruction can be safely removed from the queue
+        integer, parameter:: instr_scheduled=3         !instruction is placed into an execution queue of a specific CU
+        integer, parameter:: instr_issued=4            !instruction is issued for execution on some computing unit
+        integer, parameter:: instr_completed=5         !instruction has completed (but the result may still need to be remotely uploaded)
+        integer, parameter:: instr_dead=6              !instruction can safely be removed from the queue
   !Tensor instruction code:
         integer, parameter:: instr_tensor_init=1
         integer, parameter:: instr_tensor_norm1=2
@@ -102,8 +104,15 @@
  !Computing unit (CU) identifier:
         type cu_t
          integer(C_INT):: device_type  !device type: see tensor_algebra_gpu_nvidia.inc
-         integer(C_INT):: unit_number  !logical number of the device of the above type (0..max)
+         integer(C_INT):: unit_number  !logical number of the device within its type (0..max)
         end type cu_t
+ !Task execution configuration:
+        type te_conf_t
+         type(cu_t):: cu_id            !computing unit
+         integer(C_INT):: num_gangs    !coarse grain parallelism: CUDA blocks
+         integer(C_INT):: num_workers  !fine grain parallelism: OMP threads, CUDA warps
+         integer(C_INT):: vec_width    !vector width
+        end type te_conf_t
  !Tensor block identifier (key):
         type tens_blck_id_t
          character(LEN=tensor_name_len):: tens_name  !tensor name
@@ -136,39 +145,40 @@
         end type tens_operand_t
   !Dispatched elementary tensor instruction (ETI):
         type tens_instr_t
-         integer:: instr_code            !tensor instruction code (see above): set by GR
-         integer:: instr_status          !tensor instruction status (see above): set by CP
-         integer:: instr_priority        !tensor instruction priority: set by LR
-         real(8):: instr_cost            !approx. instruction computational cost (FLOPs): set by LR
-         real(8):: instr_size            !approx. instruction memory demands (Bytes): set by LR
-         real(4):: instr_time_beg        !time the instruction was scheduled: set by CP
-         real(4):: instr_time_end        !time the instruction was completed: set by CP
-         integer, private:: instr_handle !instruction handle to query its status: set by CP
-         integer, private:: args_ready   !each bit is set to 1 when the corresponding operand is in AAR: set by CP
-         type(tens_operand_t):: tens_op0 !tensor-block operand #0
-         type(tens_operand_t):: tens_op1 !tensor-block operand #1
-         type(tens_operand_t):: tens_op2 !tensor-block operand #2
-         type(tens_operand_t):: tens_op3 !tensor-block opearnd #3
+         integer:: instr_code                !tensor instruction code (see above): set by GR
+         integer:: instr_status              !tensor instruction status (see above): set by CP
+         integer, allocatable:: instr_aux(:) !auxiliary instruction info (contraction pattern, permutation, etc.): set by LR
+         integer:: instr_priority            !tensor instruction priority: set by LR
+         real(8):: instr_cost                !approx. instruction computational cost (FLOPs): set by LR
+         real(8):: instr_size                !approx. instruction memory demands (Bytes): set by LR
+         real(4):: instr_time_beg            !time the instruction was scheduled: set by CP
+         real(4):: instr_time_end            !time the instruction was completed: set by CP
+         integer, private:: instr_handle     !instruction handle to query its status: set by CP
+         integer, private:: args_ready       !each bit is set to 1 when the corresponding operand is in AAR: set by CP
+         type(tens_operand_t):: tens_op0     !tensor-block operand #0
+         type(tens_operand_t):: tens_op1     !tensor-block operand #1
+         type(tens_operand_t):: tens_op2     !tensor-block operand #2
+         type(tens_operand_t):: tens_op3     !tensor-block opearnd #3
         end type tens_instr_t
   !Elementary tensor instruction queue (ETIQ):
         type, private:: etiq_t
          integer(C_INT), private:: depth=0                   !total number of ETIQ entries
          integer(C_INT), private:: scheduled=0               !total number of active ETIQ entries
          integer(C_INT), private:: ffe_sp=0                  !ETIQ FFE stack pointer
-         integer(C_INT), private:: last(0:etiq_levels-1)=0   !last scheduled instruction for each ETIQ level
-         integer(C_INT), private:: ip(0:etiq_levels-1)=0     !instruction pointers for each ETIQ level
-         integer(C_INT), private:: ic(0:etiq_levels-1)=0     !instruction counters for each ETIQ level
+         integer(C_INT), private:: last(0:etiq_channels-1)=0 !last scheduled instruction for each ETIQ channel
+         integer(C_INT), private:: ip(0:etiq_channels-1)=0   !instruction pointers for each ETIQ channel
+         integer(C_INT), private:: ic(0:etiq_channels-1)=0   !instruction counters for each ETIQ channel
          integer(C_INT), allocatable, private:: ffe_stack(:) !ETIQ FFE stack
          integer(C_INT), allocatable, private:: next(:)      !ETIQ next linking
          type(tens_instr_t), allocatable, private:: eti(:)   !elementary tensor instructions
         end type etiq_t
   !In-order elementary tensor instruction queue for specific computing units:
         type, private:: etiq_cu_t
-         integer(C_INT), private:: depth=0                    !total number of entries of the queue
-         integer(C_INT), private:: scheduled=0                !total number of active entries (occupied)
-         integer(C_INT), private:: ip=0                       !instruction pointer
+         integer(C_INT), private:: depth=0                    !total number of entries in the queue
+         integer(C_INT), private:: scheduled=0                !total number of active entries in the queue
+         integer(C_INT), private:: ip=0                       !instruction pointer (current instruction)
          integer(C_INT), allocatable, private:: etiq_entry(:) !number of the ETIQ entry where the ETI is located
-         integer(C_INT), allocatable, private:: cu_id(:)      !computing unit # (within its type) which ETI is issued to
+         type(te_conf_t), allocatable, private:: te_conf(:)   !computing unit configuration on which ETI will be executed
         end type etiq_cu_t
  !STCU unit:
         type, private:: stcu_unit_t
@@ -192,11 +202,14 @@
   !Host Argument Buffer (HAB):
         integer(C_SIZE_T), private:: hab_size=0  !actual size in bytes of the Host argument buffer (HAB)
         integer(C_INT), private:: max_hab_args=0 !max number of arguments (of lowest-size level) that can fit in HAB
+  !ETI communication buffers:
+        integer(4), private:: eti_buf_in(0:eti_buf_size-1)  !ETI input buffer (incoming ETI from LR)
+        integer(4), private:: eti_buf_out(0:eti_buf_size-1) !ETI output buffer (outgoing done ETI to LR)
  !CP runtime:
         integer, private:: mt_error              !master thread error (if != 0)
-        integer, private:: stcu_error            !slave threads computing unit error (if != 0)
+        integer, private:: stcu_error            !slave threads computing unit (STCU) error (if != 0)
         integer, private:: stcu_num_units        !current number of STCU units
-        type(stcu_unit_t), private:: stcu_units(0:stcu_max_units-1) !configuration of STCU units
+        type(stcu_unit_t), private:: stcu_units(0:stcu_max_units-1) !current STCU configuration
 !------------------------------------------------------------------
        contains
 !CODE:
@@ -218,7 +231,7 @@
 !------------------------------------------
         integer(C_INT) i,j,k,l,m,n,err_code
         integer(C_SIZE_T) blck_sizes(0:max_arg_buf_levels-1)
-        integer thread_num,stcu_num_units
+        integer thread_num,stcu_base_ip,stcu_my_ip,stcu_my_eti !thread private
         real(8) tm
 
         ierr=0; jo_cp=jo
@@ -270,9 +283,9 @@
         allocate(etiq%eti(1:etiq_max_depth),etiq%next(1:etiq_max_depth),etiq%ffe_stack(1:etiq_max_depth),STAT=ierr)
         if(ierr.ne.0) then; write(jo_cp,'("#ERROR(c_process::c_proc_life): ETIQ allocation failed!")'); call c_proc_quit(5); return; endif
         etiq%depth=etiq_max_depth; etiq%scheduled=0; etiq%last(:)=0; etiq%ip(:)=0; etiq%ic(:)=0
-        do i=1,etiq_max_depth; etiq%ffe_stack(i)=i; enddo; etiq%ffe_sp=1
-        tm=thread_wtime()-tm; write(jo_cp,'("Ok(",F4.1," sec): ETIQ total depth = ",i7)') tm,etiq_max_depth
-        write(jo_cp,'("#MSG(c_process::c_proc_life): Number of ETIQ channels = ",i3)') etiq_levels
+        do i=1,etiq%depth; etiq%ffe_stack(i)=i; enddo; etiq%ffe_sp=1
+        tm=thread_wtime()-tm; write(jo_cp,'("Ok(",F4.1," sec): ETIQ total depth = ",i7)') tm,etiq%depth
+        write(jo_cp,'("#MSG(c_process::c_proc_life): Number of ETIQ channels = ",i3)') etiq_channels
 !Test C-process functionality (debug):
 !        call c_proc_test(ierr); if(ierr.ne.0) then; write(jo_cp,'("#ERROR(c_process::c_proc_life): C-process functionality test failed: ",i7)') ierr; call c_proc_quit(6); return; endif
 !        call run_benchmarks(ierr); if(ierr.ne.0) then; write(jo_cp,'("#ERROR(c_process::c_proc_life): C-process benchmarking failed: ",i7)') ierr; call c_proc_quit(7); return; endif
@@ -281,60 +294,105 @@
         ierr=0
 #ifndef NO_OMP
         call omp_set_dynamic(.false.); call omp_set_nested(.true.)
+!Init ETI queues for all computing units present on the node:
         n=omp_get_max_threads()
         if(n.ge.2.and.n.eq.max_threads) then
-!Init STCU ETIQ:
+ !Init STCU ETIQ (slave CPU threads):
          write(jo_cp,'("#MSG(c_process::c_proc_life): Allocating STCU ETIQ ... ")',advance='no')
          tm=thread_wtime()
-         allocate(etiq_stcu%etiq_entry(1:etiq_stcu_max_depth),etiq_stcu%cu_id(1:etiq_stcu_max_depth),STAT=ierr)
+         allocate(etiq_stcu%etiq_entry(0:etiq_stcu_max_depth-1),etiq_stcu%te_conf(0:etiq_stcu_max_depth-1),STAT=ierr)
          if(ierr.ne.0) then; write(jo_cp,'("#ERROR(c_process::c_proc_life): ETIQ_STCU allocation failed!")'); call c_proc_quit(8); return; endif
-         do i=1,etiq_stcu_max_depth; etiq_stcu%etiq_entry(i)=0; enddo
-         do i=1,etiq_stcu_max_depth; etiq_stcu%cu_id(i)=0; enddo
-         etiq_stcu%depth=etiq_stcu_max_depth; etiq_stcu%scheduled=0; etiq_stcu%ip=0; stcu_num_units=0
+         do i=0,etiq_stcu_max_depth-1; etiq_stcu%etiq_entry(i)=0; enddo
+         do i=0,etiq_stcu_max_depth-1; etiq_stcu%te_conf(i)%cu_id=cu_t(-1,-1); enddo
+         etiq_stcu%depth=etiq_stcu_max_depth; etiq_stcu%scheduled=0; etiq_stcu%ip=0
+         stcu_num_units=-1
          tm=thread_wtime()-tm; write(jo_cp,'("Ok(",F4.1," sec): STCU ETIQ depth = ",i6)') tm,etiq_stcu%depth
          write(jo_cp,'("#MSG(c_process::c_proc_life): Max number of STCU MIMD units = ",i5)') min(max_threads-1,stcu_max_units)
-!Init NVCU ETIQ:
+ !Init NVCU ETIQ (Nvidia GPU's):
 #ifndef NO_GPU
          write(jo_cp,'("#MSG(c_process::c_proc_life): Allocating NVCU ETIQ ... ")',advance='no')
          tm=thread_wtime()
-         allocate(etiq_nvcu%etiq_entry(1:etiq_nvcu_max_depth),etiq_nvcu%cu_id(1:etiq_nvcu_max_depth),STAT=ierr)
+         allocate(etiq_nvcu%etiq_entry(0:etiq_nvcu_max_depth-1),etiq_nvcu%te_conf(0:etiq_nvcu_max_depth-1),STAT=ierr)
          if(ierr.ne.0) then; write(jo_cp,'("#ERROR(c_process::c_proc_life): ETIQ_NVCU allocation failed!")'); call c_proc_quit(9); return; endif
-         do i=1,etiq_nvcu_max_depth; etiq_nvcu%etiq_entry(i)=0; enddo
-         do i=1,etiq_nvcu_max_depth; etiq_nvcu%cu_id(i)=0; enddo
+         do i=0,etiq_nvcu_max_depth-1; etiq_nvcu%etiq_entry(i)=0; enddo
+         do i=0,etiq_nvcu_max_depth-1; etiq_nvcu%te_conf(i)%cu_id=cu_t(-1,-1); enddo
          etiq_nvcu%depth=etiq_nvcu_max_depth; etiq_nvcu%scheduled=0; etiq_nvcu%ip=0
          tm=thread_wtime()-tm; write(jo_cp,'("Ok(",F4.1," sec): NVCU ETIQ depth = ",i6)') tm,etiq_nvcu%depth
 #else
          etiq_nvcu%depth=0; etiq_nvcu%scheduled=0; etiq_nvcu%ip=0
 #endif
-!Init XPCU ETIQ:
+ !Init XPCU ETIQ (Intel Xeon Phi's):
 #ifndef NO_PHI
          write(jo_cp,'("#MSG(c_process::c_proc_life): Allocating XPCU ETIQ ... ")',advance='no')
          tm=thread_wtime()
-         allocate(etiq_xpcu%etiq_entry(1:etiq_xpcu_max_depth),etiq_xpcu%cu_id(1:etiq_xpcu_max_depth),STAT=ierr)
+         allocate(etiq_xpcu%etiq_entry(0:etiq_xpcu_max_depth-1),etiq_xpcu%te_conf(0:etiq_xpcu_max_depth-1),STAT=ierr)
          if(ierr.ne.0) then; write(jo_cp,'("#ERROR(c_process::c_proc_life): ETIQ_XPCU allocation failed!")'); call c_proc_quit(10); return; endif
-         do i=1,etiq_xpcu_max_depth; etiq_xpcu%etiq_entry(i)=0; enddo
-         do i=1,etiq_xpcu_max_depth; etiq_xpcu%cu_id(i)=0; enddo
+         do i=0,etiq_xpcu_max_depth-1; etiq_xpcu%etiq_entry(i)=0; enddo
+         do i=0,etiq_xpcu_max_depth-1; etiq_xpcu%te_conf(i)%cu_id=cu_t(-1,-1); enddo
          etiq_xpcu%depth=etiq_xpcu_max_depth; etiq_xpcu%scheduled=0; etiq_xpcu%ip=0
          tm=thread_wtime()-tm; write(jo_cp,'("Ok(",F4.1," sec): XPCU ETIQ depth = ",i6)') tm,etiq_xpcu%depth
 #else
          etiq_xpcu%depth=0; etiq_xpcu%scheduled=0; etiq_xpcu%ip=0
 #endif
-!Begin active life:
-!$OMP PARALLEL DEFAULT(SHARED) NUM_THREADS(2)
+!Begin active life (master thread + leading slave thread):
+!$OMP PARALLEL NUM_THREADS(2) DEFAULT(SHARED) &
+!$OMP          PRIVATE(thread_num,stcu_base_ip,stcu_my_ip,stcu_my_eti,i,j,k,l,m,n,err_code)
          n=omp_get_num_threads()
          if(n.eq.2) then
           thread_num=omp_get_thread_num()
 !Master thread:
           if(thread_num.eq.0) then
-           mt_error=0           
-
-!Slave threads:
-          else !thread_num=1
-           stcu_error=0
-           life_slaves: do
+           mt_error=0 !only set by MT
+           master_life: do !MT life cycle
             
-            exit life_slaves
-           enddo life_slaves
+            exit master_life
+           enddo master_life
+ !Exit:
+!$OMP ATOMIC WRITE
+           etiq_stcu%scheduled=-1 !this will make the slave threads exit
+!Slave threads:
+          else !thread_num=1: leading slave thread (LST)
+           stcu_error=0 !only set by LST
+           slave_life: do !LST life cycle
+            if(stcu_error.eq.0) then
+!$OMP ATOMIC READ
+             n=etiq_stcu%scheduled
+             if(n.lt.0) exit slave_life !negative etiq_stcu%scheduled causes STCU life termination
+ !Retrieve the next ETI from ETIQ_STCU (if present):
+             stcu_base_ip=etiq_stcu%ip !current instruction (if any)
+             l=etiq_stcu%etiq_entry(stcu_base_ip) !ETIQ entry (if >0)
+             if(l.gt.0.and.l.le.etiq%depth) then !instruction is there
+              if(etiq%eti(l)%instr_status.eq.instr_scheduled) then !instruction has not been processed before
+               stcu_num_units=etiq_stcu%te_conf(stcu_base_ip)%cu_id%unit_number+1 !LST configures STCU
+               err_code=0
+               if(stcu_num_units.eq.1) then
+                stcu_my_ip=stcu_base_ip; stcu_my_eti=l
+                call omp_set_num_threads(etiq_stcu%te_conf(stcu_my_ip)%num_workers)
+                err_code=stcu_execute_eti(stcu_my_eti)
+                etiq_stcu%ip=etiq_stcu%ip+1
+                if(etiq_stcu%ip.ge.etiq_stcu%depth) etiq_stcu%ip=etiq_stcu%ip-etiq_stcu%depth
+               elseif(stcu_num_units.gt.1.and.stcu_num_units.le.stcu_max_units) then
+!$OMP PARALLEL NUM_THREADS(stcu_num_units) FIRSTPRIVATE(stcu_base_ip,err_code) &
+!$OMP          PRIVATE(thread_num,stcu_my_ip,stcu_my_eti)
+                thread_num=omp_get_thread_num()
+                stcu_my_ip=stcu_base_ip+thread_num; if(stcu_my_ip.ge.etiq_stcu%depth) stcu_my_ip=stcu_my_ip-etiq_stcu%depth
+                stcu_my_eti=etiq_stcu%etiq_entry(stcu_my_ip)
+                call omp_set_num_threads(etiq_stcu%te_conf(stcu_my_ip)%num_workers)
+                err_code=stcu_execute_eti(stcu_my_eti)
+!$OMP END PARALLEL
+                etiq_stcu%ip=etiq_stcu%ip+stcu_num_units
+                if(etiq_stcu%ip.ge.etiq_stcu%depth) etiq_stcu%ip=etiq_stcu%ip-etiq_stcu%depth
+               else
+!$OMP ATOMIC WRITE
+                stcu_error=1 !invalid number of STCU units
+               endif
+              endif
+             endif
+            else
+             !`do not exit: handle the STCU error by the leading slave thread
+             exit slave_life
+            endif
+           enddo slave_life
           endif
          else
           write(jo_cp,'("#ERROR(c_process::c_proc_life): invalid initial number of threads: ",i6)') n
@@ -347,7 +405,7 @@
         endif
         if(ierr.ne.0) then; call c_proc_quit(998); return; endif
 #else
-        write(jo_cp,'("#FATAL(c_process::c_proc_life): cannot function without OpenMP!")')
+        write(jo_cp,'("#FATAL(c_process::c_proc_life): CP cannot function without OpenMP!")')
         call c_proc_quit(999); return
 #endif
 !-------------------
@@ -384,14 +442,14 @@
  !ETIQ_STCU:
          j1=0
          if(allocated(etiq_stcu%etiq_entry)) deallocate(etiq_stcu%etiq_entry,STAT=j0); if(j0.ne.0) j1=j1+1
-         if(allocated(etiq_stcu%cu_id)) deallocate(etiq_stcu%cu_id,STAT=j0); if(j0.ne.0) j1=j1+1
+         if(allocated(etiq_stcu%te_conf)) deallocate(etiq_stcu%te_conf,STAT=j0); if(j0.ne.0) j1=j1+1
          if(j1.ne.0) then;  write(jo_cp,'("#ERROR(c_process::c_proc_life:c_proc_quit): ETIQ_STCU deallocation failed!")'); ierr=ierr+50000; endif
-         etiq_stcu%depth=0; etiq_stcu%scheduled=0; etiq_stcu%ip=0; stcu_num_units=0
+         etiq_stcu%depth=0; etiq_stcu%scheduled=0; etiq_stcu%ip=0; stcu_num_units=-1
  !ETIQ_NVCU:
 #ifndef NO_GPU
          j1=0
          if(allocated(etiq_nvcu%etiq_entry)) deallocate(etiq_nvcu%etiq_entry,STAT=j0); if(j0.ne.0) j1=j1+1
-         if(allocated(etiq_nvcu%cu_id)) deallocate(etiq_nvcu%cu_id,STAT=j0); if(j0.ne.0) j1=j1+1
+         if(allocated(etiq_nvcu%te_conf)) deallocate(etiq_nvcu%te_conf,STAT=j0); if(j0.ne.0) j1=j1+1
          if(j1.ne.0) then;  write(jo_cp,'("#ERROR(c_process::c_proc_life:c_proc_quit): ETIQ_NVCU deallocation failed!")'); ierr=ierr+100000; endif
 #endif
          etiq_nvcu%depth=0; etiq_nvcu%scheduled=0; etiq_nvcu%ip=0
@@ -399,7 +457,7 @@
 #ifndef NO_PHI
          j1=0
          if(allocated(etiq_xpcu%etiq_entry)) deallocate(etiq_xpcu%etiq_entry,STAT=j0); if(j0.ne.0) j1=j1+1
-         if(allocated(etiq_xpcu%cu_id)) deallocate(etiq_xpcu%cu_id,STAT=j0); if(j0.ne.0) j1=j1+1
+         if(allocated(etiq_xpcu%te_conf)) deallocate(etiq_xpcu%te_conf,STAT=j0); if(j0.ne.0) j1=j1+1
          if(j1.ne.0) then;  write(jo_cp,'("#ERROR(c_process::c_proc_life:c_proc_quit): ETIQ_XPCU deallocation failed!")'); ierr=ierr+300000; endif
 #endif
          etiq_xpcu%depth=0; etiq_xpcu%scheduled=0; etiq_xpcu%ip=0
@@ -411,6 +469,13 @@
          if(j0.ne.0) then; write(jo_cp,'("#ERROR(c_process::c_proc_life:c_proc_quit): TBB destruction failed!")'); ierr=ierr+1000000; endif
          return
          end subroutine c_proc_quit
+
+         integer(C_INT) function stcu_execute_eti(eti_loc) !STCU ETI execution workflow
+         integer(C_INT), intent(in):: eti_loc
+         stcu_execute_eti=0
+         
+         return
+         end function stcu_execute_eti
 
         end subroutine c_proc_life
 !----------------------------------------
