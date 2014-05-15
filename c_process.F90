@@ -637,12 +637,12 @@
          if(l.ge.0) then
           if(allocated(this%tens_mlndx)) then
            if(this%tens_mlndx(0).ne.l) then
-            deallocate(this%tens_mlndx); allocate(this%tens_mlndx(1+l),STAT=i)
+            deallocate(this%tens_mlndx); allocate(this%tens_mlndx(0:l),STAT=i)
            else
             i=0
            endif
           else
-           allocate(this%tens_mlndx(1+l),STAT=i)
+           allocate(this%tens_mlndx(0:l),STAT=i)
           endif
           if(i.eq.0) then
            this%tens_mlndx(0)=l; do i=1,l; this%tens_mlndx(i)=t_mlndx(i); enddo
