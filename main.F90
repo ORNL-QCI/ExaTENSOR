@@ -1,6 +1,6 @@
 !PROGRAM: Q-FORCE: Massively-Parallel Quantum Many-Body Methodology on Heterogeneous HPC systems.
 !AUTHOR: Dmitry I. Lyakh (Dmytro I. Liakh): quant4me@gmail.com
-!REVISION: 2014/05/13
+!REVISION: 2014/05/15
 !COMPILATION:
 ! - Fortran 2003 at least.
 ! - MPI 2.0 at least.
@@ -14,14 +14,14 @@
 !   Intel MKL: -lmkl_core -lmkl_intel_thread -lmkl_intel_lp64 -lmkl_blas95_lp64 -lmkl_lapack95_lp64 -liomp5
 !MPI launch notes:
 ! - MPI processes launched on the same node MUST have consecutive numbers!
-! - Environment variable QF_PROCS_PER_NODE MUST be defined when using accelerators (number of processes per node)!
+! - Environment variable <QF_PROCS_PER_NODE> MUST be defined when using accelerators (number of processes per node)!
 !FPP directives:
-! - NO_GNU - Fortran compiler is not GNU (affects Fortran timers);
 ! - NO_PHI - do not use Intel Xeon Phi (MIC);
-! - NO_GPU - do not use Nvidia GPU;
+! - NO_GPU - do not use Nvidia GPU (CUDA);
 ! - NO_BLAS - BLAS/LAPACK calls will be replaced by my own routines (D.I.L.);
 ! - USE_MKL - use Intel MKL library for BLAS/LAPACK;
 ! - NO_OMP - do not use OpenMP (single-threaded processes);`currently will not work
+! - NO_GNU - Fortran compiler is not GNU (affects Fortran timers);
 !OUTPUT DEVICE:
 ! - jo (@service.mod) - generic output device handle;
 !ENUMERATION OF DEVICES ON A NODE:
@@ -108,12 +108,19 @@
          ier=0; mpi_procs_per_node=0; mpi_proc_id_on_node=0
 !QF_PROCS_PER_NODE:
          qppn=' '; call get_environment_variable("QF_PROCS_PER_NODE",qppn)
-         j0=len_trim(qppn); mpi_procs_per_node=icharnum(j0,qppn(1:j0))
-         if(j0.gt.0.and.mpi_procs_per_node.gt.0) then
-          mpi_proc_id_on_node=mod(impir,mpi_procs_per_node)
+         j0=len_trim(qppn)
+         if(j0.gt.0) then
+          mpi_procs_per_node=icharnum(j0,qppn(1:j0))
+          if(j0.gt.0) then
+           mpi_proc_id_on_node=mod(impir,mpi_procs_per_node)
+          else
+           mpi_procs_per_node=0
+           write(jo,'("#ERROR(main:get_environment): Environment variable QF_PROCS_PER_NODE is not a number!")')
+           ier=1; return
+          endif
          else
-          call printl(jo,'#ERROR(main:get_environment): Environment variable QF_PROCS_PER_NODE is not set or invalid: '//qppn(1:len_trim(qppn)))
-          ier=1; return
+          write(jo,'("#ERROR(main:get_environment): Environment variable QF_PROCS_PER_NODE is not set!")')
+          ier=2; return
          endif
          return
          end subroutine get_environment

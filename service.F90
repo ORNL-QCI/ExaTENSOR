@@ -41,23 +41,23 @@
 	integer, private:: j_
  !General:
 	integer:: jo=6                             !default output device (6 is the screen)
-	integer:: log_file                         !log-file handle (set during run-time)
-	integer:: impis                            !MPI communicator size (set during run-time)
-	integer:: impir                            !MPI rank of the process [0..impis-1] (set during run-time)
-	integer:: max_threads=1                    !max number of threads per process (set during run-time)
+	integer:: log_file                         !log-file handle (set by runtime)
+	integer:: impis                            !MPI communicator size (set by runtime)
+	integer:: impir                            !MPI rank of the process [0..impis-1] (set by runtime)
+	integer:: max_threads=1                    !max number of threads per process (set by runtime)
 	integer:: mpi_procs_per_node=0             !number of MPI processes per node (set by ENVIRONMENT)
-	integer:: mpi_proc_id_on_node=0            !internal process ID within a node: [0..mpi_procs_per_node-1]
-	integer(C_INT):: gpus_found=0              !total number of GPUs found on the node (set during run-time)
-	integer(C_INT):: gpu_count=0               !number of GPUs assigned to the current process (set during run-time)
-	integer(C_INT):: gpu_start=0               !the number of the 1st GPU assigned to the current process: [gpu_start...gpu_start+gpu_count-1] (set during run-time)
-	type(gpu_info_t),allocatable:: gpu_info(:) !information about available GPUs (set during run-time)
-	integer:: my_group=-1                      !group the process belongs to (set during run-time)
-	integer:: my_role=-1                       !the role of the process (set during run-time)
+	integer:: mpi_proc_id_on_node=0            !internal process ID within a node: [0..mpi_procs_per_node-1] (set by runtime)
+	integer(C_INT):: gpus_found=0              !total number of GPUs found on the node (set by runtime)
+	integer(C_INT):: gpu_count=0               !number of GPUs assigned to the current process (set by runtime)
+	integer(C_INT):: gpu_start=0               !the number of the 1st GPU assigned to the current process: [gpu_start...gpu_start+gpu_count-1] (set by runtime)
+	type(gpu_info_t),allocatable:: gpu_info(:) !information about available GPUs (set by runtime)
+	integer:: my_role=-1                       !the role of the process (set by runtime)
+	integer:: my_group=-1                      !group the process belongs to (set by runtime)
 	real(8):: time_begin,time_end              !wall time for the MPI process
-	integer:: exec_status=0                    !current execution status (0 - success)
-	character(MPI_MAX_PROCESSOR_NAME):: proc_name=' ' !current processor name (set during run-time)
+	integer:: exec_status=0                    !current execution status (0: success)
+	character(MPI_MAX_PROCESSOR_NAME):: proc_name=' ' !processor name (set by runtime)
 	integer:: proc_name_len                    !the length of the processor name
-	integer:: mpi_thread_provided              !the level of multithreaded MPI service provided (set during run-time)
+	integer:: mpi_thread_provided              !the level of multithreaded MPI service provided (set by runtime)
  !File Management:
 	integer:: nof=0                          !current number of open files (local to each process)
 	integer:: fhot(16:16+max_open_files-1)=0 !file handle occupancy table (first 16 file handles [0..15] are reserved)
