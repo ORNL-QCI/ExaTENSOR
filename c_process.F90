@@ -247,13 +247,13 @@
         integer(C_SIZE_T) blck_sizes(0:max_arg_buf_levels-1)
         integer tree_height
         integer(8) tree_volume
-        type(tens_blck_id_t):: key0
-        type(tensor_block_t):: tens0
-        type(tensor_block_t), pointer:: tens0_p
-        type(tbb_entry_t):: tbb_entry0
-        type(tbb_entry_t), pointer:: tbb_entry0_p
-        type(tens_arg_t), pointer:: targ0_p
-        class(*), pointer:: ptr0
+        type(tens_blck_id_t):: key0,key1
+        type(tensor_block_t):: tens0,tens1
+        type(tensor_block_t), pointer:: tens0_p,tens1_p
+        type(tbb_entry_t):: tbb_entry0,tbb_entry1
+        type(tbb_entry_t), pointer:: tbb_entry0_p,tbb_entry1_p
+        type(tens_arg_t), pointer:: targ0_p,targ1_p
+        class(*), pointer:: ptr0,ptr1
         real(8) tm
 
         ierr=0; jo_cp=jo
@@ -370,41 +370,81 @@
 !DEBUG begin:
  !Create a key (tensor block id):
             err_code=key0%create('T0',(/5,0,0,0,0,0/)); write(jo_cp,*) 'Key creation: ',err_code
+            err_code=key1%create('T1',(/5,0,0,0,0,0/)); write(jo_cp,*) 'Key creation: ',err_code
  !Nullify tensor block:
             call tensor_block_destroy(tbb_entry0%tens_blck,i); write(jo_cp,*) 'Tensor block destruction: ',i
+            call tensor_block_destroy(tbb_entry1%tens_blck,i); write(jo_cp,*) 'Tensor block destruction: ',i
  !Save tensor block in TBB:
-            err_code=tbb%search(dict_add_if_not_found,tens_key_cmp,key0,tbb_entry0,value_out=ptr0); write(jo_cp,*) 'TBB entry creation: ',err_code
+            err_code=tbb%search(dict_add_if_not_found,tens_key_cmp,key0,tbb_entry0,value_out=ptr0); write(jo_cp,*) 'TBB entry search: ',err_code
+            err_code=tbb%search(dict_add_if_not_found,tens_key_cmp,key1,tbb_entry1,value_out=ptr1); write(jo_cp,*) 'TBB entry search: ',err_code
  !Create AAR entry for the tensor block in TBB:
             select type (ptr0)
             type is (tbb_entry_t)
              err_code=aar_register(targ0_p,key0,ptr0%tens_blck); write(jo_cp,*) 'AAR entry created: ',err_code
             end select
+            select type (ptr1)
+            type is (tbb_entry_t)
+             err_code=aar_register(targ1_p,key1,ptr1%tens_blck); write(jo_cp,*) 'AAR entry created: ',err_code
+            end select
  !Create a tensor instruction in ETIQ:
-  !ETIQ:
-            etiq%eti(1)%instr_code=instr_tensor_init
-            etiq%eti(1)%data_kind='r8'
-            allocate(etiq%eti(1)%instr_aux(0:15))
-            etiq%eti(1)%instr_aux(0:15)=(/5, 5,10,15,20,25, 5,10,15,20,25, 0,0,0,0,0/)
-            etiq%eti(1)%instr_cu=cu_t(0,0)
-            etiq%eti(1)%args_ready=255
-            etiq%eti(1)%tens_op0%tens_blck_id=key0
-            etiq%eti(1)%tens_op0%op_aar_entry=>targ0_p
-            etiq%eti(1)%instr_status=instr_ready_to_exec
-  !ETIQ_STCU:
-            etiq_stcu%etiq_entry(0)=1
-            etiq_stcu%te_conf(0)=te_conf_t(cu_t(0,0),1,1,1)
+  !ETIQ(2):
+            k=2
+            etiq%eti(k)%instr_code=instr_tensor_init
+            etiq%eti(k)%data_kind='r8'
+            allocate(etiq%eti(k)%instr_aux(0:15))
+            etiq%eti(k)%instr_aux(0:15)=(/5, 5,10,15,20,25, 5,10,15,20,25, 0,0,0,0,0/)
+            etiq%eti(k)%instr_cu=cu_t(DEV_HOST,0)
+            etiq%eti(k)%args_ready=255
+            etiq%eti(k)%tens_op0%tens_blck_id=key1
+            etiq%eti(k)%tens_op0%op_aar_entry=>targ1_p
+            etiq%eti(k)%instr_status=instr_ready_to_exec
+  !ETIQ(1):
+            k=1
+            etiq%eti(k)%instr_code=instr_tensor_init
+            etiq%eti(k)%data_kind='r8'
+            allocate(etiq%eti(k)%instr_aux(0:15))
+            etiq%eti(k)%instr_aux(0:15)=(/5, 5,10,15,20,25, 5,10,15,20,25, 0,0,0,0,0/)
+            etiq%eti(k)%instr_cu=cu_t(DEV_HOST,1)
+            etiq%eti(k)%args_ready=255
+            etiq%eti(k)%tens_op0%tens_blck_id=key0
+            etiq%eti(k)%tens_op0%op_aar_entry=>targ0_p
+            etiq%eti(k)%instr_status=instr_ready_to_exec
+ !Enqueue tensor instructions to STCU:
+  !ETIQ_STCU(1):
+            k=1
+            etiq_stcu%etiq_entry(k)=2
+            etiq_stcu%te_conf(k)=te_conf_t(etiq%eti(etiq_stcu%etiq_entry(k))%instr_cu,1,2,1)
             etiq_stcu%scheduled=etiq_stcu%scheduled+1
-            etiq%eti(1)%instr_status=instr_scheduled
+            etiq%eti(etiq_stcu%etiq_entry(k))%instr_status=instr_scheduled
+  !ETIQ_STCU(0):
+            k=0
+            etiq_stcu%etiq_entry(k)=1
+            etiq_stcu%te_conf(k)=te_conf_t(etiq%eti(etiq_stcu%etiq_entry(k))%instr_cu,1,2,1)
+            etiq_stcu%scheduled=etiq_stcu%scheduled+1
+            etiq%eti(etiq_stcu%etiq_entry(k))%instr_status=instr_scheduled
 !$OMP FLUSH
-            write(jo_cp,*)'Instruction scheduled!'
-            i=instr_scheduled
-            do while(i.ne.instr_completed)
+            write(jo_cp,*)'Instruction(s) scheduled!'
+ !Wait for completion:
+            i=2
+            do while(i.ne.0)
 !$OMP ATOMIC READ
-             i=etiq%eti(1)%instr_status; if(i.le.0) exit
+             j=etiq%eti(1)%instr_status
+             if(j.eq.instr_completed) then
+              print *,'First instruction completed succefully!'
+              i=i-1; etiq%eti(1)%instr_status=instr_dead
+             elseif(j.le.0) then
+              exit
+             endif
+!$OMP ATOMIC READ
+             j=etiq%eti(2)%instr_status
+             if(j.eq.instr_completed) then
+              print *,'Second instruction completed succefully!'
+              i=i-1; etiq%eti(2)%instr_status=instr_dead
+             elseif(j.le.0) then
+              exit
+             endif
             enddo
-            write(jo_cp,*)'Instruction completed: ',i
- !Create a new entry in ETIQ_STCU:
-            
+            write(jo_cp,*)'Instruction(s) completed: ',i
  !Destroy key:
             err_code=aar_delete(key0)
             print *,'AAR entry deleted: ',err_code

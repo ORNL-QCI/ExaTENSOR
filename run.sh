@@ -5,8 +5,11 @@ export QF_NUM_PROCS=1          #mandatory
 export QF_PROCS_PER_NODE=1     #mandatory
 export QF_GPUS_PER_PROCESS=1   #optional
 export QF_MICS_PER_PROCESS=0   #optional
+export MIC_ENV_PREFIX=MIC_     #mandatory when using MIC
 export MIC_OMP_PREFIX=MIC_     #mandatory when using MIC
-export MIC_OMP_NUM_THREADS=64  #mandatory when using MIC
+export MIC_OMP_NUM_THREADS=224 #mandatory when using MIC
+export MIC_KMP_PLACETHREADS="56c,4t" #optional
+export MIC_KMP_AFFINITY="granularity=fine,compact" #optional
 export OFFLOAD_REPORT=2        #optional
 export QFORCE_PATH=/home/dima/Projects/QFORCE
 export KMP_AFFINITY=verbose,compact
