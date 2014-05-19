@@ -1,7 +1,7 @@
 !This module provides functionality for a Computing Process (C-PROCESS, CP).
 !In essence, this is a single-node elementary tensor instruction scheduler (SETIS).
 !AUTHOR: Dmitry I. Lyakh (Dmytro I. Liakh): quant4me@gmail.com
-!REVISION: 2014/05/16
+!REVISION: 2014/05/19
 !CONCEPTS (CP workflow):
 ! - Each CP stores its own tensor blocks in TBB, with a possibility of disk dump.
 ! - LR sends a batch of ETI to be executed on this CP unit (CP MPI Process).
@@ -500,6 +500,7 @@
 !$OMP FLUSH(stcu_error)
                 endif
                elseif(stcu_num_units.gt.1.and.stcu_num_units.le.stcu_max_units) then !multiple STCU: MIMD execution
+                print *,'LST thread is ',omp_get_thread_num() !debug
 !$OMP PARALLEL NUM_THREADS(stcu_num_units) FIRSTPRIVATE(stcu_base_ip,err_code) &
 !$OMP          PRIVATE(thread_num,stcu_my_ip,stcu_my_eti)
                 thread_num=omp_get_thread_num()

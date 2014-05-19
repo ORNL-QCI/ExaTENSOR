@@ -1,7 +1,7 @@
        module dictionary
 !General-purpose dictionary implementation (OO Fortran 2003) based on AVL BST.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2014/05/16
+!REVISION: 2014/05/19
 !DESCRIPTION:
 !#Dictionary items:
 !  In order to save an item ({key;value}) in the dictionary,
@@ -215,7 +215,7 @@
          implicit none
          class(dict_t):: this
          logical, intent(in):: succ !switches between successor (.true.) and predecessor (.false.)
-         class(dict_entry_t), pointer:: curr=>NULL()
+         class(dict_entry_t), pointer:: curr
 
          dict_next_in_order=dict_success
          if(associated(this%curr_entry)) then
@@ -274,9 +274,11 @@
          integer(LONGINT), intent(inout):: subtree_size
          integer, intent(inout):: max_height
          class(dict_entry_t), pointer, optional:: iter
-         integer, save:: drct,lev_p,left !`threadprivate
+         integer, save:: drct,lev_p,left
          class(dict_entry_t), pointer, save:: curr=>NULL()
          logical:: no_iter,no_go
+
+!$OMP THREADPRIVATE(drct,lev_p,left,curr)
 
 !        if(debug) write(jo_dict,'("Entered traverse:")') !debug
          dict_traverse=dict_success; if(present(iter)) then; no_iter=.false.; else; no_iter=.true.; endif
@@ -288,6 +290,7 @@
            curr=>NULL(); max_height=0; no_go=.true.
           endif
          else
+          if(.not.associated(curr)) then; dict_traverse=dict_unknown_request; return; endif
           no_go=.false.
          endif
          if(.not.no_go) then
@@ -363,13 +366,13 @@
          implicit none
          class(dict_t):: this
          procedure(destruct_func_i), optional:: destruct_key_func,destruct_val_func
-         class(dict_entry_t), pointer:: iter=>NULL()
+         class(dict_entry_t), pointer:: iter
          integer(LONGINT):: subtree_size
          integer i,max_height
 
          dict_destroy=dict_success
          if(associated(this%root)) then
-          i=this%reset(); subtree_size=0_LONGINT
+          i=this%reset(); subtree_size=0_LONGINT; iter=>NULL()
           do while(this%traverse_subtree(subtree_size,max_height,iter).eq.dict_success)
            if(associated(iter)) then
             if(present(destruct_key_func)) then
@@ -422,14 +425,14 @@
          class(dict_t):: this
          integer, intent(in):: dev_id
          procedure(print_func_i):: print_func
-         class(dict_entry_t), pointer:: iter=>NULL()
+         class(dict_entry_t), pointer:: iter
          integer(LONGINT):: subtree_size
          integer i,max_height
 
          dict_print=dict_success
          write(dev_id,'("#PRINTING DICTIONARY SUBTREE:")')
          if(associated(this%curr_entry)) then
-          subtree_size=0_LONGINT
+          subtree_size=0_LONGINT; iter=>NULL()
           do while(this%traverse_subtree(subtree_size,max_height,iter).eq.dict_success)
            write(dev_id,'("<item>")')
            if(debug) then !debug begin
@@ -535,7 +538,7 @@
          class(*), optional:: value_in
          class(*), pointer, optional:: value_out
          procedure(destruct_func_i), optional:: destruct_key_func,destruct_val_func
-         class(dict_entry_t), pointer:: curr=>NULL(),old_cdp=>NULL(),leave=>NULL(),term=>NULL()
+         class(dict_entry_t), pointer:: curr,old_cdp,leave,term
          integer:: i,j,act,lev_p,grow,ierr
 
          dict_search=dict_key_not_found; if(present(value_out)) value_out=>NULL()
