@@ -1,6 +1,6 @@
 !TENSOR ALGEBRA IN PARALLEL (TAP) for SHARED-MEMORY SYSTEMS (OpenMP based)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2014/05/12
+!REVISION: 2014/05/19
 !GNU FORTRAN compiling options: -c -O3 --free-line-length-none -x f95-cpp-input -fopenmp
 !GNU linking options: -lgomp -blas -llapack
 !ACRONYMS:
@@ -2464,8 +2464,8 @@
 	integer(LONGINT) l0,l1,l2,l3,lld,lrd,lcd
 	integer ltb,rtb,dtb,lrank,rrank,drank,nlu,nru,ncd,tst,contr_case,dn2o(0:max_tensor_rank)
 	integer, target:: lo2n(0:max_tensor_rank),ro2n(0:max_tensor_rank),do2n(0:max_tensor_rank)
-	integer, pointer:: trn(:)=>NULL()
-	type(tensor_block_t), pointer:: tens_in=>NULL(),tens_out=>NULL(),ltp=>NULL(),rtp=>NULL(),dtp=>NULL()
+	integer, pointer:: trn(:)
+	type(tensor_block_t), pointer:: tens_in,tens_out,ltp,rtp,dtp
 	type(tensor_block_t), target:: lta,rta,dta
 	character(2) dtk
 	real(4) d_r4,start_dgemm
@@ -2513,6 +2513,7 @@
 !	 write(cons_out,'("DEBUG(tensor_algebra::tensor_block_contract): right index permutation (O2N) :",128(1x,i2))') ro2n(1:rrank) !debug
 !	 write(cons_out,'("DEBUG(tensor_algebra::tensor_block_contract): result index permutation (O2N):",128(1x,i2))') do2n(1:drank) !debug
  !Transpose the tensor arguments, if needed:
+         nullify(ltp); nullify(rtp); nullify(dtp)
 	 do k=1,2 !left/right switch
 	  if(k.eq.1) then; tst=ltb; transp=ltransp; tens_in=>ltens; else; tst=rtb; transp=rtransp; tens_in=>rtens; endif
 	  if(tens_in%tensor_shape%num_dim.gt.0.and.transp) then !true tensor which requires a transpose
@@ -2631,17 +2632,16 @@
 	  call tensor_block_sync(dtens,dtk,ierr); if(ierr.ne.0) then; ierr=28; goto 999; endif
 	 endif
  !Destroy temporary tensor blocks:
-999	 if(associated(ltp)) nullify(ltp); if(associated(rtp)) nullify(rtp); if(associated(dtp)) nullify(dtp)
-	 if(associated(tens_in)) nullify(tens_in); if(associated(tens_out)) nullify(tens_out); if(associated(trn)) nullify(trn)
-	 select case(contr_case)
+999	 nullify(ltp); nullify(rtp); nullify(dtp)
+         select case(contr_case)
 	 case(partial_contraction)
-	  if(ltransp) then; call tensor_block_destroy(lta,j); if(j.ne.0.and.ierr.eq.0) then; ierr=100+j; return; endif; endif
-	  if(rtransp) then; call tensor_block_destroy(rta,j); if(j.ne.0.and.ierr.eq.0) then; ierr=100+j; return; endif; endif
-	  if(dtransp) then; call tensor_block_destroy(dta,j); if(j.ne.0.and.ierr.eq.0) then; ierr=100+j; return; endif; endif
+	  if(ltransp) then; call tensor_block_destroy(lta,j); if(j.ne.0) ierr=ierr+100+j; endif
+	  if(rtransp) then; call tensor_block_destroy(rta,j); if(j.ne.0) ierr=ierr+200+j; endif
+	  if(dtransp) then; call tensor_block_destroy(dta,j); if(j.ne.0) ierr=ierr+500+j; endif
 	 case(full_contraction)
-	  if(ltransp) then; call tensor_block_destroy(lta,j); if(j.ne.0.and.ierr.eq.0) then; ierr=100+j; return; endif; endif
+	  if(ltransp) then; call tensor_block_destroy(lta,j); if(j.ne.0) ierr=ierr+1000+j; endif
 	 case(add_tensor)
-	  if(dtransp) then; call tensor_block_destroy(dta,j); if(j.ne.0.and.ierr.eq.0) then; ierr=100+j; return; endif; endif
+	  if(dtransp) then; call tensor_block_destroy(dta,j); if(j.ne.0) ierr=ierr+2000+j; endif
 	 case(multiply_scalars)
 	 end select
 	else
@@ -3716,7 +3716,7 @@
 	real(real_kind), intent(out):: slice(0:*)
 	integer, intent(inout):: ierr
 	integer i,j,k,l,m,n,ks,kf,im(1:dim_num)
-	integer(LONGINT) bases_in(1:dim_num),bases_out(1:dim_num),segs(0:max_threads),lts,lss,l_in,l_out
+	integer(LONGINT):: bases_in(1:dim_num),bases_out(1:dim_num),segs(0:max_threads),lts,lss,l_in,l_out
 	real(4) time_beg
 !	integer, external:: omp_get_thread_num,omp_get_num_threads
 
@@ -3780,7 +3780,7 @@
 	real(real_kind), intent(inout):: tens(0:*)
 	integer, intent(inout):: ierr
 	integer i,j,k,l,m,n,ks,kf,im(1:dim_num)
-	integer(LONGINT) bases_in(1:dim_num),bases_out(1:dim_num),segs(0:max_threads),lts,lss,l_in,l_out
+	integer(LONGINT):: bases_in(1:dim_num),bases_out(1:dim_num),segs(0:max_threads),lts,lss,l_in,l_out
 	real(4) time_beg
 !	integer, external:: omp_get_thread_num,omp_get_num_threads
 
@@ -4468,7 +4468,7 @@
 	integer, intent(inout):: ierr !error code
 	integer i,j,k,l,m,n,nthr
 	integer(LONGINT) l0,l1,l2,ll,lr,ld,ls,lf,b0,b1,b2,e0,e1,e2,cl,cr,cc,chunk
-	real(real_kind) val,redm(0:red_mat_size-1,0:red_mat_size-1)
+	real(real_kind) val,redm(0:red_mat_size-1,0:red_mat_size-1) !`thread private (redm)?
 	real(4) time_beg
 !	integer, external:: omp_get_max_threads
 
@@ -4711,7 +4711,7 @@
 	integer, intent(inout):: ierr !error code
 	integer i,j,k,l,m,n,nthr
 	integer(LONGINT) l0,l1,l2,ll,lr,ld,ls,lf,b0,b1,b2,e0,e1,e2,cl,cr,cc,chunk
-	real(real_kind) val,redm(0:red_mat_size-1,0:red_mat_size-1)
+	real(real_kind) val,redm(0:red_mat_size-1,0:red_mat_size-1) !`thread private (redm)?
 	real(4) time_beg
 !	integer, external:: omp_get_max_threads
 

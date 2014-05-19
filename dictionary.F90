@@ -1,7 +1,7 @@
        module dictionary
 !General-purpose dictionary implementation (OO Fortran 2003) based on AVL BST.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2014/05/09
+!REVISION: 2014/05/16
 !DESCRIPTION:
 !#Dictionary items:
 !  In order to save an item ({key;value}) in the dictionary,
@@ -122,9 +122,13 @@
           class(*):: item              !item to print
          end function print_func_i
  !Generic destructor:
-         integer function destruct_func_i(item)
+         recursive function destruct_func_i(item) result(ierr)
           class(*):: item
+          integer:: ierr
          end function destruct_func_i
+!         integer function destruct_func_i(item)
+!          class(*):: item
+!         end function destruct_func_i
         end interface
 !-------------------------------------------
        contains

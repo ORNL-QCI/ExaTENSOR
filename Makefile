@@ -6,10 +6,10 @@ MPI_INC = -I/usr/include/mpich2
 CUDA_INC = -I/usr/local/cuda-5.5/include
 CUDA_LIB = -L/usr/local/cuda-5.5/lib
 CUDA_LINK = -lcublas -lcudart
-CUDA_FLAGS = --compile -O3 -arch=sm_11 -DDEBUG
+CUDA_FLAGS = --compile -O3 -arch=sm_11 -DDEBUG -g -G
 LA_LINK = -lblas -llapack
-C_FLAGS = -c -O3
-FFLAGS = -c -O3 --free-line-length-none -x f95-cpp-input -fopenmp -DNO_PHI
+C_FLAGS = -c -O3 -g
+FFLAGS = -c -O3 --free-line-length-none -x f95-cpp-input -fopenmp -DNO_PHI -g
 LFLAGS = -lgomp
 
 OBJS = stsubs.o combinatoric.o service.o extern_names.o tensor_algebra.o tensor_dil_omp.o \
