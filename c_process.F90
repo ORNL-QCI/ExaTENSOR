@@ -305,6 +305,7 @@
         allocate(etiq%eti(1:etiq_max_depth),etiq%next(1:etiq_max_depth),etiq%ffe_stack(1:etiq_max_depth),STAT=ierr)
         if(ierr.ne.0) then; write(jo_cp,'("#ERROR(c_process::c_proc_life): ETIQ allocation failed!")'); call c_proc_quit(5); return; endif
         etiq%depth=etiq_max_depth; etiq%scheduled=0; etiq%last(:)=0; etiq%ip(:)=0; etiq%ic(:)=0
+        do i=1,etiq%depth; etiq%eti(i)%instr_status=instr_null; enddo
         do i=1,etiq%depth; etiq%ffe_stack(i)=i; enddo; etiq%ffe_sp=1
         tm=thread_wtime()-tm; write(jo_cp,'("Ok(",F4.1," sec): ETIQ total depth = ",i7)') tm,etiq%depth
         write(jo_cp,'("#MSG(c_process::c_proc_life): Number of ETIQ channels = ",i3)') etiq_channels
@@ -364,7 +365,7 @@
           thread_num=omp_get_thread_num()
 !Master thread:
           if(thread_num.eq.0) then
-           mt_error=0 !only set by MT
+           mt_error=0 !set/used only by MT
            master_life: do !MT life cycle
             !`Write
 !DEBUG begin:
@@ -431,7 +432,9 @@
              j=etiq%eti(1)%instr_status
              if(j.eq.instr_completed) then
               print *,'First instruction completed succefully!'
-              i=i-1; etiq%eti(1)%instr_status=instr_dead
+!$OMP ATOMIC WRITE
+              etiq%eti(1)%instr_status=instr_dead
+              i=i-1
              elseif(j.le.0) then
               exit
              endif
@@ -439,7 +442,9 @@
              j=etiq%eti(2)%instr_status
              if(j.eq.instr_completed) then
               print *,'Second instruction completed succefully!'
-              i=i-1; etiq%eti(2)%instr_status=instr_dead
+!$OMP ATOMIC WRITE
+              etiq%eti(2)%instr_status=instr_dead
+              i=i-1
              elseif(j.le.0) then
               exit
              endif
@@ -471,11 +476,11 @@
 !Slave threads:
           else !thread_num=1: leading slave thread (LST)
 !$OMP ATOMIC WRITE
-           stcu_error=0 !only set by LST
+           stcu_error=0 !set by LST, can be used by MT
 !$OMP FLUSH(stcu_error)
            slave_life: do !LST life cycle
-            if(stcu_error.eq.0) then
 !$OMP FLUSH
+            if(stcu_error.eq.0) then
 !$OMP ATOMIC READ
              n=etiq_stcu%scheduled
              if(n.lt.0) exit slave_life !negative etiq_stcu%scheduled causes STCU life termination
@@ -485,6 +490,7 @@
              if(l.gt.0.and.l.le.etiq%depth) then !instruction is there
               if(etiq%eti(l)%instr_status.eq.instr_scheduled) then !instruction has not been processed before
                stcu_num_units=etiq_stcu%te_conf(stcu_base_ip)%cu_id%unit_number+1 !LST configures STCU
+!$OMP FLUSH(stcu_num_units)
                err_code=0
                if(stcu_num_units.eq.1) then !only one STCU: SIMD execution
                 stcu_my_ip=stcu_base_ip; stcu_my_eti=l
@@ -500,28 +506,55 @@
 !$OMP FLUSH(stcu_error)
                 endif
                elseif(stcu_num_units.gt.1.and.stcu_num_units.le.stcu_max_units) then !multiple STCU: MIMD execution
-                print *,'LST thread is ',omp_get_thread_num() !debug
 !$OMP PARALLEL NUM_THREADS(stcu_num_units) FIRSTPRIVATE(stcu_base_ip,err_code) &
-!$OMP          PRIVATE(thread_num,stcu_my_ip,stcu_my_eti)
+!$OMP          PRIVATE(thread_num,stcu_my_ip,stcu_my_eti,i,j,k) DEFAULT(SHARED)
                 thread_num=omp_get_thread_num()
                 if(omp_get_num_threads().eq.stcu_num_units) then
-                 stcu_my_ip=stcu_base_ip+thread_num; if(stcu_my_ip.ge.etiq_stcu%depth) stcu_my_ip=stcu_my_ip-etiq_stcu%depth
-                 stcu_my_eti=etiq_stcu%etiq_entry(stcu_my_ip)
-                 write(jo_cp,'("#DEBUG: STCU ",i2,": Executing tensor instruction #",i6,": thread_count=",i5)') thread_num,stcu_my_eti,etiq_stcu%te_conf(stcu_my_ip)%num_workers !debug
-                 call omp_set_num_threads(etiq_stcu%te_conf(stcu_my_ip)%num_workers)
-                 err_code=stcu_execute_eti(stcu_my_eti)
-                 if(err_code.ne.0) then
+                 mimd_loop: do
+                  stcu_my_ip=stcu_base_ip+thread_num; if(stcu_my_ip.ge.etiq_stcu%depth) stcu_my_ip=stcu_my_ip-etiq_stcu%depth
+                  stcu_my_eti=etiq_stcu%etiq_entry(stcu_my_ip)
+                  write(jo_cp,'("#DEBUG: STCU ",i2,": Executing tensor instruction #",i6,": thread_count=",i5)') thread_num,stcu_my_eti,etiq_stcu%te_conf(stcu_my_ip)%num_workers !debug
+                  call omp_set_num_threads(etiq_stcu%te_conf(stcu_my_ip)%num_workers)
+                  err_code=stcu_execute_eti(stcu_my_eti)
+                  if(err_code.ne.0) then
+                   write(jo_cp,'("#ERROR(c_process::c_proc_life): STCU ",i2,": execution error ",i11," for ETI #",i7)') thread_num,err_code,stcu_my_eti
 !$OMP ATOMIC WRITE
-                  stcu_error=2
-                 endif
+                   stcu_error=2 !error during ETI execution in one or more STCU
+                  endif
+!$OMP FLUSH(stcu_error)
+                  if(stcu_error.eq.0) then !check whether the next ETIs are MIMD of the same width
+                   stcu_base_ip=stcu_base_ip+stcu_num_units
+                   if(stcu_base_ip.ge.etiq_stcu%depth) stcu_base_ip=stcu_base_ip-etiq_stcu%depth
+                   j=0
+                   wait_next_mimd: do while(j.ge.0)
+!$OMP FLUSH
+                    k=etiq_stcu%etiq_entry(stcu_base_ip)
+                    if(k.gt.0.and.k.le.etiq%depth) then !valid ETIQ entry
+                     if(etiq%eti(k)%instr_status.eq.instr_scheduled) then !new instruction scheduled
+                      if(etiq_stcu%te_conf(stcu_base_ip)%cu_id%unit_number+1.ne.stcu_num_units) j=-1 !STCU conf. changed
+                      exit wait_next_mimd
+                     endif
+                    endif
+!$OMP ATOMIC READ
+                    j=etiq_stcu%scheduled
+                   enddo wait_next_mimd
+                   if(j.lt.0) exit mimd_loop
+                  else
+                   exit mimd_loop
+                  endif
+                 enddo mimd_loop
                 else
 !$OMP ATOMIC WRITE
                  stcu_error=3 !invalid number of STCU units created
                 endif
 !$OMP END PARALLEL
-                if(stcu_error.eq.0) then
+                if(stcu_error.eq.0) then !LST only
+!$ATOMIC UPDATE
                  etiq_stcu%ip=etiq_stcu%ip+stcu_num_units
-                 if(etiq_stcu%ip.ge.etiq_stcu%depth) etiq_stcu%ip=etiq_stcu%ip-etiq_stcu%depth
+                 if(etiq_stcu%ip.ge.etiq_stcu%depth) then
+!$ATOMIC UPDATE
+                  etiq_stcu%ip=etiq_stcu%ip-etiq_stcu%depth
+                 endif
                 endif
                else
 !$OMP ATOMIC WRITE
@@ -531,12 +564,14 @@
               endif
              endif
             else
-             write(jo_cp,'("#ERROR(c_process::c_proc_life): STCU error ",i11)') stcu_error
-             !`do not exit: handle the STCU error by the leading slave thread
+             write(jo_cp,'("#ERROR(c_process::c_proc_life): LST life: STCU error ",i11)') stcu_error
+             !`do not exit: handle the STCU error by the LST
+!DEBUG begin:
 !$OMP ATOMIC WRITE
              ierr=1 !STCU error occured
 !$OMP FLUSH(ierr)
              exit slave_life
+!DEBUG end.
             endif
            enddo slave_life
           endif
