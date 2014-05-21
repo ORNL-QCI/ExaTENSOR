@@ -1,7 +1,7 @@
 !This module provides functionality for a Computing Process (C-PROCESS, CP).
 !In essence, this is a single-node elementary tensor instruction scheduler (SETIS).
 !AUTHOR: Dmitry I. Lyakh (Dmytro I. Liakh): quant4me@gmail.com
-!REVISION: 2014/05/19
+!REVISION: 2014/05/21
 !CONCEPTS (CP workflow):
 ! - Each CP stores its own tensor blocks in TBB, with a possibility of disk dump.
 ! - LR sends a batch of ETI to be executed on this CP unit (CP MPI Process).
@@ -494,26 +494,31 @@
                err_code=0
                if(stcu_num_units.eq.1) then !only one STCU: SIMD execution
                 stcu_my_ip=stcu_base_ip; stcu_my_eti=l
-                write(jo_cp,'("#DEBUG: STCU 0: Executing tensor instruction #",i6,": thread_count=",i5)') stcu_my_eti,etiq_stcu%te_conf(stcu_my_ip)%num_workers !debug
+                if(verbose) write(jo_cp,'("#DEBUG: STCU 0: Executing tensor instruction #",i6,": thread_count=",i5)') stcu_my_eti,etiq_stcu%te_conf(stcu_my_ip)%num_workers !debug
                 call omp_set_num_threads(etiq_stcu%te_conf(stcu_my_ip)%num_workers)
                 err_code=stcu_execute_eti(stcu_my_eti)
                 if(err_code.eq.0) then
                  etiq_stcu%ip=etiq_stcu%ip+1
                  if(etiq_stcu%ip.ge.etiq_stcu%depth) etiq_stcu%ip=etiq_stcu%ip-etiq_stcu%depth
                 else
+                 write(jo_cp,'("#ERROR(c_process::c_proc_life): STCU 0: execution error ",i11," for ETI #",i7)') err_code,stcu_my_eti
 !$OMP ATOMIC WRITE
-                 stcu_error=1
+                 stcu_error=1 !error during ETI execution in one or more STCU
 !$OMP FLUSH(stcu_error)
                 endif
                elseif(stcu_num_units.gt.1.and.stcu_num_units.le.stcu_max_units) then !multiple STCU: MIMD execution
 !$OMP PARALLEL NUM_THREADS(stcu_num_units) FIRSTPRIVATE(stcu_base_ip,err_code) &
 !$OMP          PRIVATE(thread_num,stcu_my_ip,stcu_my_eti,i,j,k) DEFAULT(SHARED)
                 thread_num=omp_get_thread_num()
+                if(thread_num.eq.0) then
+                 if(verbose) write(jo_cp,'("#DEBUG(c_process::c_proc_life): STCU: ",i3," units created.")') stcu_num_units !debug
+                endif
+!$OMP BARRIER
                 if(omp_get_num_threads().eq.stcu_num_units) then
                  mimd_loop: do
                   stcu_my_ip=stcu_base_ip+thread_num; if(stcu_my_ip.ge.etiq_stcu%depth) stcu_my_ip=stcu_my_ip-etiq_stcu%depth
                   stcu_my_eti=etiq_stcu%etiq_entry(stcu_my_ip)
-                  write(jo_cp,'("#DEBUG: STCU ",i2,": Executing tensor instruction #",i6,": thread_count=",i5)') thread_num,stcu_my_eti,etiq_stcu%te_conf(stcu_my_ip)%num_workers !debug
+                  if(verbose) write(jo_cp,'("#DEBUG: STCU ",i2,": Executing tensor instruction #",i6,": thread_count=",i5)') thread_num,stcu_my_eti,etiq_stcu%te_conf(stcu_my_ip)%num_workers !debug
                   call omp_set_num_threads(etiq_stcu%te_conf(stcu_my_ip)%num_workers)
                   err_code=stcu_execute_eti(stcu_my_eti)
                   if(err_code.ne.0) then
@@ -574,7 +579,8 @@
 !DEBUG end.
             endif
            enddo slave_life
-          endif
+           if(verbose) write(jo_cp,'("#DEBUG(c_process::c_proc_life): STCU life is over: ",i11)') stcu_error !debug
+          endif !MT/LST
          else
 !$OMP MASTER
           write(jo_cp,'("#ERROR(c_process::c_proc_life): invalid initial number of threads: ",i6)') n
@@ -894,7 +900,7 @@
          item%depth=0; item%scheduled=0; item%ffe_sp=0
          item%last(:)=0; item%ip(:)=0; item%ic(:)=0
         class default
-         if(verbose) write(jo_cp,'("#ERROR(c_process::cp_destructor): unknown type/class!")')
+         write(jo_cp,'("#ERROR(c_process::cp_destructor): unknown type/class!")')
          ierr=-1
         end select
         return
@@ -995,6 +1001,41 @@
         endif
         return
         end function tens_key_cmp
+!---------------------------------------------------------------
+        integer(8) function tens_blck_packet_size(tens,dtk,ierr)
+!Given an instance of tensor_block_t <tens> and required data kind <dtk>,
+!this function returns the size (in bytes) of the corresponding packet.
+        implicit none
+        type(tensor_block_t), intent(in):: tens
+        character(2), intent(in):: dtk
+        integer:: ierr
+        integer(C_INT), parameter:: i=0
+        integer(C_SIZE_T), parameter:: s=0
+        real(4), parameter:: spn=0.0
+        real(8), parameter:: dpn=0d0
+        complex(8), parameter:: cdpn=cmplx(0d0,0d0,8)
+        integer(8):: trank,i_size,s_size,cdpn_size
+        ierr=0; tens_blck_packet_size=0_8
+        if(tens%tensor_shape%num_dim.ge.0) then
+         trank=int(tens%tensor_shape%num_dim,8)
+         if(trank.eq.0_8.and.tens%tensor_block_size.ne.1_8) then; ierr=1; return; endif !trap
+         if(trank.gt.0_8.and.tens%tensor_block_size.le.0_8) then; ierr=2; return; endif !trap
+         i_size=sizeof(i); s_size=sizeof(s); cdpn_size=sizeof(cdpn)
+         select case(dtk)
+         case('r4')
+          tens_blck_packet_size=cdpn_size+s_size*2_8+i_size*(2_8+trank*5_8)+sizeof(spn)*tens%tensor_block_size
+         case('r8')
+          tens_blck_packet_size=cdpn_size+s_size*2_8+i_size*(2_8+trank*5_8)+sizeof(dpn)*tens%tensor_block_size
+         case('c8')
+          tens_blck_packet_size=cdpn_size+s_size*2_8+i_size*(2_8+trank*5_8)+cdpn_size*tens%tensor_block_size
+         case default
+          ierr=3
+         end select
+        else
+         ierr=4
+        endif
+        return
+        end function tens_blck_packet_size
 !--------------------------------------------------------------------------
         subroutine tens_blck_pack(tens,dtk,packet_size,pptr,entry_num,ierr)
 !This subroutine packs a tensor block <tens> (tensor_block_t) into a linear packet

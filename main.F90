@@ -1,6 +1,6 @@
 !PROGRAM: Q-FORCE: Massively-Parallel Quantum Many-Body Methodology on Heterogeneous HPC systems.
 !AUTHOR: Dmitry I. Lyakh (Dmytro I. Liakh): quant4me@gmail.com
-!REVISION: 2014/05/15
+!REVISION: 2014/05/20
 !COMPILATION:
 ! - Fortran 2003 at least.
 ! - MPI 2.0 at least.
@@ -28,6 +28,7 @@
 ! - device_id = 0: Host (SMP CPU node, may be NUMA);
 ! - device_id = [1:MAX_GPUS_PER_NODE]: Nvidia GPUs (GPU#=device_id-1);
 ! - device_id = [MAX_GPUS_PER_NODE+1:MAX_GPUS_PER_NODE+MAX_MICS_PER_NODE]: Intel MICs (MIC#=device_id-1-MAX_GPUS_PER_NODE);
+! - device_id = [MAX_GPUS_PER_NODE+MAX_MICS_PER_NODE+1:MAX_GPUS_PER_NODE+MAX_MICS_PER_NODE+MAX_AMDS_PER_NODE]: AMD GPUs
         program main !PARALLEL
         use qforce
         implicit none

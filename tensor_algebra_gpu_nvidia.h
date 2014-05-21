@@ -27,7 +27,8 @@
 #define MAX_GPUS_PER_NODE 16       //max number of Nvidia GPUs on a node
 #define MAX_GPU_ARGS 128           //max total number of tensor arguments simultaneously residing on a GPU device
 #define MAX_SCR_ENTRY_COUNT 3      //max allowed number of additional GPU argument entries allocated per tensor operation
-#define MAX_MICS_PER_NODE 4        //max number of Intel MICs on a node
+#define MAX_MICS_PER_NODE 8        //max number of Intel MICs on a node
+#define MAX_AMDS_PER_NODE 8        //max number of AMD GPUs on a node
 
 //KERNEL PARAMETERS:
 #define GPU_CACHE_LINE_LEN 128     //cache line length in bytes
@@ -52,7 +53,8 @@
 #define DEV_HOST 0
 #define DEV_NVIDIA_GPU 1
 #define DEV_INTEL_MIC 2
-#define DEV_MAX 1+MAX_GPUS_PER_NODE+MAX_MICS_PER_NODE
+#define DEV_AMD_GPU 3
+#define DEV_MAX 1+MAX_GPUS_PER_NODE+MAX_MICS_PER_NODE+MAX_AMDS_PER_NODE
 
 //CUDA TASK STATUS (must be consistent with qforce.f90!):
 #define CUDA_TASK_ERROR -1

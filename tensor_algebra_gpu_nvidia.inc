@@ -3,7 +3,8 @@
 !GLOBAL (keep consistent with tensor_algebra_gpu_nvidia.h):
         integer(C_INT), parameter:: max_tensor_rank=32   !max allowed tensor rank (max number of indices in a tensor)
         integer(C_INT), parameter:: MAX_GPUS_PER_NODE=16 !max number of Nvidia GPUs on a node
-        integer(C_INT), parameter:: MAX_MICS_PER_NODE=4  !max number of Intel MICs on a node
+        integer(C_INT), parameter:: MAX_MICS_PER_NODE=8  !max number of Intel MICs on a node
+        integer(C_INT), parameter:: MAX_AMDS_PER_NODE=8  !max number of AMD GPUs on a node
 
 !DATA KINDS (keep consistent with tensor_algebra_gpu_nvidia.h):
         integer(C_INT), parameter:: R4=4  !float data kind
@@ -25,7 +26,8 @@
         integer(C_INT), parameter:: DEV_HOST=0
         integer(C_INT), parameter:: DEV_NVIDIA_GPU=1
         integer(C_INT), parameter:: DEV_INTEL_MIC=2
-        integer(C_INT), parameter:: DEV_MAX=1+MAX_GPUS_PER_NODE+MAX_MICS_PER_NODE
+        integer(C_INT), parameter:: DEV_AMD_GPU=3
+        integer(C_INT), parameter:: DEV_MAX=1+MAX_GPUS_PER_NODE+MAX_MICS_PER_NODE+MAX_AMDS_PER_NODE
 
 !CUDA task status (keep consistent with tensor_algebra_gpu_nvidia.h):
         integer(C_INT), parameter:: cuda_task_error=-1
