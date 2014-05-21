@@ -83,13 +83,14 @@
   !Tensor naming:
         integer(C_INT), parameter:: tensor_name_len=32 !max number of characters used for tensor names
   !Tensor instruction status (any negative value will correspond to a failure, designating the error code):
-        integer, parameter:: instr_null=0              !uninitialized instruction
-        integer, parameter:: instr_data_wait=1         !instruction is waiting for input data to arrive
-        integer, parameter:: instr_ready_to_exec=2     !instruction is ready to be executed (input data has arrived)
-        integer, parameter:: instr_scheduled=3         !instruction is placed into an execution queue of a specific CU
-        integer, parameter:: instr_issued=4            !instruction is issued for execution on some computing unit
-        integer, parameter:: instr_completed=5         !instruction has completed (but the result may still need to be remotely uploaded)
-        integer, parameter:: instr_dead=6              !instruction can safely be removed from the queue
+        integer, parameter:: instr_null=0              !uninitialized instruction (empty)
+        integer, parameter:: instr_fresh=1             !instruction has not been seen before (new instruction)
+        integer, parameter:: instr_data_wait=2         !instruction is waiting for input data to arrive
+        integer, parameter:: instr_ready_to_exec=3     !instruction is ready to be executed (input data has arrived)
+        integer, parameter:: instr_scheduled=4         !instruction is placed into an execution queue of a specific CU
+        integer, parameter:: instr_issued=5            !instruction is issued for execution on some computing unit (CU)
+        integer, parameter:: instr_completed=6         !instruction has completed (but the result may still need to be remotely uploaded)
+        integer, parameter:: instr_dead=7              !instruction can safely be removed from the queue
   !Tensor instruction code:
         integer, parameter:: instr_tensor_init=1
         integer, parameter:: instr_tensor_norm1=2
@@ -138,9 +139,11 @@
         type, private:: tens_arg_t
          type(tensor_block_t), pointer, private:: tens_blck_f=>NULL() !pointer to a tensor_block in TBB, or HAB, or DEB
          type(C_PTR), private:: tens_blck_c=C_NULL_PTR !C pointer to tensBlck_t in HAB (see "tensor_algebra_gpu_nvidia.h")
-         integer(C_INT), private:: buf_entry_host !HAB entry number where the tensor block resides as a packet (-1: undefined)
-         logical, private:: in_use                !.true. if this AAR entry is currently in use by some issued ETI
-         integer, private:: times_used            !total number of times this AAR entry have been used since creation
+         integer(C_INT), private:: buf_entry_host=-1 !HAB entry number where the tensor block resides as a packet (-1: undefined)
+         integer, private:: mpi_tag               !>0: MPI_TAG for a pending MPI_IRECV; =0: MPI delivered; <0: local
+         integer, private:: mpi_process           !>=0: host process mpi rank; <0: local
+         integer, private:: times_needed          !number of times the argument has been referred to in ETIQ
+         integer, private:: times_used            !number of times this AAR entry (argument) has been used since creation
         end type tens_arg_t
   !Tensor operand type (component of ETI):
         type tens_operand_t
@@ -162,8 +165,11 @@
          integer, private:: instr_status     !tensor instruction status (see above): set by CP:{MT|LST}
          type(cu_t), private:: instr_cu      !computing unit which the instruction is issued to: set by CP:MT
          integer, private:: instr_handle     !instruction handle to query its status: set by CP:MT (accelerators only)
-         real(4), private:: instr_time_beg   !time the instruction was issued for execution: set by CP:{MT:ST}
-         real(4), private:: instr_time_end   !time the instruction was completed: set by CP:{MT:ST}
+         real(4), private:: time_touched     !time the instruction was touched for the first time: set by MT
+         real(4), private:: time_data_ready  !time the instruction has all needed input data arrived: set by MT
+         real(4), private:: time_issued      !time the instruction was issued for execution: set by CP:{MT:ST}
+         real(4), private:: time_completed   !time the instruction was completed: set by CP:{MT:ST}
+         real(4), private:: time_uploaded    !time the remote result uploading completed: set by MT
          integer, private:: args_ready       !each bit is set to 1 when the corresponding operand is in AAR: set by CP:MT
          type(tens_operand_t):: tens_op0     !tensor-block operand #0
          type(tens_operand_t):: tens_op1     !tensor-block operand #1
@@ -254,7 +260,7 @@
         type(tbb_entry_t), pointer:: tbb_entry0_p,tbb_entry1_p
         type(tens_arg_t), pointer:: targ0_p,targ1_p
         class(*), pointer:: ptr0,ptr1
-        real(8) tm
+        real(8) tm,tm0,tm1
 
         ierr=0; jo_cp=jo
         write(jo_cp,'("#MSG(c_process::c_proc_life): I am a C-process (Computing MPI Process): MPI rank = ",i7)') impir
@@ -381,11 +387,13 @@
  !Create AAR entry for the tensor block in TBB:
             select type (ptr0)
             type is (tbb_entry_t)
-             err_code=aar_register(targ0_p,key0,ptr0%tens_blck); write(jo_cp,*) 'AAR entry created: ',err_code
+             err_code=aar_register(key0,targ0_p); write(jo_cp,*) 'AAR entry created: ',err_code
+             targ0_p%tens_blck_f=>ptr0%tens_blck
             end select
             select type (ptr1)
             type is (tbb_entry_t)
-             err_code=aar_register(targ1_p,key1,ptr1%tens_blck); write(jo_cp,*) 'AAR entry created: ',err_code
+             err_code=aar_register(key1,targ1_p); write(jo_cp,*) 'AAR entry created: ',err_code
+             targ1_p%tens_blck_f=>ptr1%tens_blck
             end select
  !Create a tensor instruction in ETIQ:
   !ETIQ(2):
@@ -431,7 +439,11 @@
 !$OMP ATOMIC READ
              j=etiq%eti(1)%instr_status
              if(j.eq.instr_completed) then
-              print *,'First instruction completed succefully!'
+!$OMP ATOMIC READ
+              tm0=etiq%eti(1)%time_issued
+!$OMP ATOMIC READ
+              tm1=etiq%eti(1)%time_completed
+              print *,'First instruction completed succefully: ',tm1-tm0
 !$OMP ATOMIC WRITE
               etiq%eti(1)%instr_status=instr_dead
               i=i-1
@@ -441,7 +453,11 @@
 !$OMP ATOMIC READ
              j=etiq%eti(2)%instr_status
              if(j.eq.instr_completed) then
-              print *,'Second instruction completed succefully!'
+!$OMP ATOMIC READ
+              tm0=etiq%eti(2)%time_issued
+!$OMP ATOMIC READ
+              tm1=etiq%eti(2)%time_completed
+              print *,'Second instruction completed succefully: ',tm1-tm0
 !$OMP ATOMIC WRITE
               etiq%eti(2)%instr_status=instr_dead
               i=i-1
@@ -618,7 +634,7 @@
 !$OMP ATOMIC WRITE
            my_eti%instr_status=instr_issued
 !$OMP ATOMIC WRITE
-           my_eti%instr_time_beg=thread_wtime()
+           my_eti%time_issued=thread_wtime()
  !Associate arguments:
            if(associated(my_eti%tens_op0%op_aar_entry)) then
             if(associated(my_eti%tens_op0%op_aar_entry%tens_blck_f)) then
@@ -749,7 +765,7 @@
             stcu_execute_eti=997
            end select
 !$OMP ATOMIC WRITE
-           my_eti%instr_time_end=thread_wtime()
+           my_eti%time_completed=thread_wtime()
           else
            stcu_execute_eti=998
           endif
@@ -767,34 +783,29 @@
          return
          end function stcu_execute_eti
 
-         integer function aar_register(aar_p,tkey,tbf,tbc,haben) !Registers a present tensor block in AAR: MT only
+         integer function aar_register(tkey,aar_p) !MT only
+!Registers an argument in AAR. If the tensor block argument
+!is already registered, increaments the %times_needed field.
+!INPUT:
+! # tkey: tensor block identifier (key);
+!OUTPUT:
+! # aar_p: pointer to AAR entry.
          implicit none
-         type(tens_arg_t), pointer:: aar_p
          type(tens_blck_id_t), intent(in):: tkey
-         type(tensor_block_t), target, optional:: tbf
-         type(C_PTR), optional:: tbc
-         integer(C_INT), optional:: haben
+         type(tens_arg_t), pointer, intent(out):: aar_p
          type(tens_arg_t):: jtarg
          class(*), pointer:: jptr
-         integer:: ier
-         aar_register=0; jtarg%in_use=.false.; jtarg%times_used=0
-         if(present(tbf).and.(.not.(present(tbc).or.present(haben)))) then !tensor_block_t
-          jtarg%tens_blck_f=>tbf; jtarg%tens_blck_c=C_NULL_PTR; jtarg%buf_entry_host=-1
-         elseif(.not.present(tbf).and.(present(tbc).and.present(haben))) then !tensBlck_t
-          jtarg%tens_blck_f=>NULL(); jtarg%tens_blck_c=tbc; jtarg%buf_entry_host=haben
-         else
-          aar_register=1; return
-         endif
-         ier=aar%search(dict_add_or_modify,tens_key_cmp,tkey,jtarg,value_out=jptr)
-         if(ier.eq.dict_key_found.or.ier.eq.dict_key_not_found) then
+         jtarg%mpi_tag=-1; jtarg%mpi_process=-1; jtarg%times_needed=0; jtarg%times_used=0
+         jtarg%tens_blck_f=>NULL(); jtarg%tens_blck_c=C_NULL_PTR; jtarg%buf_entry_host=-1
+         aar_register=aar%search(dict_add_if_not_found,tens_key_cmp,tkey,jtarg,value_out=jptr)
+         if(aar_register.eq.dict_key_found.or.aar_register.eq.dict_key_not_found) then
           select type (jptr)
           type is (tens_arg_t)
-           aar_p=>jptr
+           aar_p=>jptr; aar_p%times_needed=aar_p%times_needed+1
+           aar_register=0
           class default
-           aar_register=2
+           aar_register=1
           end select
-         else
-          aar_register=3
          endif
          return
          end function aar_register
@@ -868,7 +879,7 @@
 !         if(verbose) write(jo_cp,'("#DEBUG(c_process::cp_destructor): tens_arg_t")') !debug
          nullify(item%tens_blck_f)
          item%tens_blck_c=C_NULL_PTR; item%buf_entry_host=-1
-         item%in_use=.false.; item%times_used=0
+         item%mpi_tag=-1; item%mpi_process=-1; item%times_needed=0; item%times_used=0
         type is (tens_operand_t)
 !         if(verbose) write(jo_cp,'("#DEBUG(c_process::cp_destructor): tens_operand_t")') !debug
          i=cp_destructor(item%tens_blck_id); if(i.ne.0) ierr=3
@@ -884,7 +895,7 @@
          item%instr_code=instr_null; item%data_kind='  '; item%instr_priority=0
          item%instr_cost=0.0; item%instr_size=0.0; item%instr_status=instr_null
          item%instr_cu=cu_t(-1,-1); item%instr_handle=-1; item%args_ready=0
-         item%instr_time_beg=0.0; item%instr_time_end=0.0
+         item%time_touched=0.; item%time_data_ready=0.; item%time_issued=0.; item%time_completed=0.; item%time_uploaded=0.
         type is (etiq_cu_t)
 !         if(verbose) write(jo_cp,'("#DEBUG(c_process::cp_destructor): etiq_cu_t")') !debug
          if(allocated(item%etiq_entry)) then; deallocate(item%etiq_entry,STAT=i); if(i.ne.0) ierr=5; endif
