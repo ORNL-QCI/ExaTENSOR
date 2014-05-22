@@ -1,9 +1,10 @@
 !Standard subroutines often used by me.
 !AUTHOR: Dmitry I. Lyakh (Dmytro I. Liakh): quant4me@gmail.com
-!REVISON: 2013/10/18
+!REVISON: 2014/05/22
 	MODULE STSUBS
 
 !Parameters:
+        logical, private:: verbose=.false.
 	real(8), parameter:: pi=3.14159265358979d0
 	real(8), parameter:: BOHR=0.529177249d0    !Bohrs to Angstroms conversion factor
 
@@ -215,7 +216,7 @@
 	  enddo
 	  l=l+3
 	 case default
-	  write(*,*)'ERROR(STSUBS:CREATE_LINE): invalid control command in ctrls:',ctrls(l),l
+	  write(*,*)'ERROR(STSUBS::CREATE_LINE): invalid control command in ctrls:',ctrls(l),l
 	  stop
 	 end select
 	enddo
@@ -241,14 +242,14 @@
 	   if(N.ge.0.and.N.le.9) then
 	    ICHARNUM=ICHARNUM*10 + N
 	   else
-	    write(*,*)'ERROR(STSUBS:ICHARNUM): invalid string-number: '//OS(1:L)
+	    if(verbose) write(*,*)'ERROR(STSUBS::ICHARNUM): invalid string-number: '//OS(1:L)
 	    L=0 !error
 	    return
 	   endif
 	  enddo
 	  if(M.eq.-2) ICHARNUM=-ICHARNUM
 	 else
-	  write(*,*)'ERROR(STSUBS:ICHARNUM): string of non-positive length: ',L
+	  if(verbose) write(*,*)'ERROR(STSUBS::ICHARNUM): string of non-positive length: ',L
 	  L=0 !error
 	  return
 	 endif

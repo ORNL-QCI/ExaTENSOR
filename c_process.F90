@@ -1,7 +1,7 @@
 !This module provides functionality for a Computing Process (C-PROCESS, CP).
 !In essence, this is a single-node elementary tensor instruction scheduler (SETIS).
 !AUTHOR: Dmitry I. Lyakh (Dmytro I. Liakh): quant4me@gmail.com
-!REVISION: 2014/05/21
+!REVISION: 2014/05/22
 !CONCEPTS (CP workflow):
 ! - Each CP stores its own tensor blocks in TBB, with a possibility of disk dump.
 ! - LR sends a batch of ETI to be executed on this CP unit (CP MPI Process).
@@ -79,7 +79,7 @@
         integer(C_INT), parameter, private:: etiq_nvcu_max_depth=16 !max number of simultaneously scheduled ETI on NVCU
         integer(C_INT), parameter, private:: etiq_xpcu_max_depth=32 !max number of simultaneously scheduled ETI on XPCU
         integer(C_INT), parameter, public:: eti_buf_size=32768 !ETI buffer size (for communications with LR)
-        integer(C_INT), parameter, private:: stcu_max_units=4  !max number of STCU units
+        integer(C_INT), parameter, private:: stcu_max_units=64 !max number of STCU units
   !Tensor naming:
         integer(C_INT), parameter:: tensor_name_len=32 !max number of characters used for tensor names
   !Tensor instruction status (any negative value will correspond to a failure, designating the error code):
@@ -228,8 +228,7 @@
         integer, private:: mt_error              !master thread error (if != 0)
         integer, private:: stcu_error            !slave threads computing unit (STCU) error (if != 0)
         integer, private:: stcu_num_units        !current number of STCU units
-        type(stcu_unit_t), private:: stcu_units(0:stcu_max_units-1) !current STCU configuration
-!------------------------------------------------------------------
+!------------------------------------------------
        contains
 !CODE:
         subroutine c_proc_life(ierr)
@@ -251,15 +250,15 @@
         integer(C_INT) i,j,k,l,m,n,err_code,thread_num !general purpose: thread private
         integer stcu_base_ip,stcu_my_ip,stcu_my_eti !STCU specific (slaves): thread private
         integer(C_SIZE_T) blck_sizes(0:max_arg_buf_levels-1)
-        integer tree_height
+        integer tree_height,stcu_mimd_my_pass,stcu_mimd_max_pass
         integer(8) tree_volume
-        type(tens_blck_id_t):: key0,key1
-        type(tensor_block_t):: tens0,tens1
-        type(tensor_block_t), pointer:: tens0_p,tens1_p
-        type(tbb_entry_t):: tbb_entry0,tbb_entry1
-        type(tbb_entry_t), pointer:: tbb_entry0_p,tbb_entry1_p
-        type(tens_arg_t), pointer:: targ0_p,targ1_p
-        class(*), pointer:: ptr0,ptr1
+        type(tens_blck_id_t):: key(0:15)
+        type(tensor_block_t):: tens
+        type(tensor_block_t), pointer:: tens_p
+        type(tbb_entry_t):: tbb_entry
+        type(tbb_entry_t), pointer:: tbb_entry_p
+        type(tens_arg_t), pointer:: targ_p
+        class(*), pointer:: uptr
         real(8) tm,tm0,tm1
 
         ierr=0; jo_cp=jo
@@ -365,7 +364,7 @@
 #endif
 !Begin active life (master thread + leading slave thread):
 !$OMP PARALLEL NUM_THREADS(2) DEFAULT(SHARED) &
-!$OMP          PRIVATE(thread_num,stcu_base_ip,stcu_my_ip,stcu_my_eti,i,j,k,l,m,n,err_code)
+!$OMP          PRIVATE(thread_num,stcu_base_ip,stcu_my_ip,stcu_my_eti,stcu_mimd_my_pass,i,j,k,l,m,n,err_code)
          n=omp_get_num_threads()
          if(n.eq.2) then
           thread_num=omp_get_thread_num()
@@ -375,102 +374,163 @@
            master_life: do !MT life cycle
             !`Write
 !DEBUG begin:
- !Create a key (tensor block id):
-            err_code=key0%create('T0',(/5,0,0,0,0,0/)); write(jo_cp,*) 'Key creation: ',err_code
-            err_code=key1%create('T1',(/5,0,0,0,0,0/)); write(jo_cp,*) 'Key creation: ',err_code
- !Nullify tensor block:
-            call tensor_block_destroy(tbb_entry0%tens_blck,i); write(jo_cp,*) 'Tensor block destruction: ',i
-            call tensor_block_destroy(tbb_entry1%tens_blck,i); write(jo_cp,*) 'Tensor block destruction: ',i
- !Save tensor block in TBB:
-            err_code=tbb%search(dict_add_if_not_found,tens_key_cmp,key0,tbb_entry0,value_out=ptr0); write(jo_cp,*) 'TBB entry search: ',err_code
-            err_code=tbb%search(dict_add_if_not_found,tens_key_cmp,key1,tbb_entry1,value_out=ptr1); write(jo_cp,*) 'TBB entry search: ',err_code
- !Create AAR entry for the tensor block in TBB:
-            select type (ptr0)
+ !Create keys (tensor block id):
+            err_code=key(0)%create('O',(/0/)); write(jo_cp,*) 'Key creation: ',err_code
+            err_code=key(1)%create('I',(/0/)); write(jo_cp,*) 'Key creation: ',err_code
+            err_code=key(2)%create('A',(/2,0,0/)); write(jo_cp,*) 'Key creation: ',err_code
+            err_code=key(3)%create('B',(/2,0,0/)); write(jo_cp,*) 'Key creation: ',err_code
+            err_code=key(4)%create('C',(/2,0,0/)); write(jo_cp,*) 'Key creation: ',err_code
+            err_code=key(5)%create('D',(/5,0,0,0,0,0/)); write(jo_cp,*) 'Key creation: ',err_code
+            err_code=key(6)%create('E',(/5,0,0,0,0,0/)); write(jo_cp,*) 'Key creation: ',err_code
+            err_code=key(7)%create('F',(/5,0,0,0,0,0/)); write(jo_cp,*) 'Key creation: ',err_code
+            err_code=key(8)%create('G',(/5,0,0,0,0,0/)); write(jo_cp,*) 'Key creation: ',err_code
+            err_code=key(9)%create('H',(/5,0,0,0,0,0/)); write(jo_cp,*) 'Key creation: ',err_code
+            err_code=key(10)%create('J',(/5,0,0,0,0,0/)); write(jo_cp,*) 'Key creation: ',err_code
+ !Register tensor blocks in TBB:
+  !Zero scalar:
+            call tensor_block_create('()','r4',tbb_entry%tens_blck,i,val_r4=0.0); write(jo_cp,*) 'Tensor block creation: ',i
+            err_code=tbb%search(dict_add_if_not_found,tens_key_cmp,key(0),tbb_entry,value_out=uptr); write(jo_cp,*) 'TBB entry search: ',err_code
+            select type (uptr)
             type is (tbb_entry_t)
-             err_code=aar_register(key0,targ0_p); write(jo_cp,*) 'AAR entry created: ',err_code
-             targ0_p%tens_blck_f=>ptr0%tens_blck
+             err_code=aar_register(key(0),targ_p); write(jo_cp,*) 'AAR entry created: ',err_code
+             targ_p%tens_blck_f=>uptr%tens_blck
             end select
-            select type (ptr1)
+  !Unity scalar:
+            call tensor_block_init('r4',tbb_entry%tens_blck,i,val_r4=1e-3); write(jo_cp,*) 'Tensor block unity init: ',i
+            err_code=tbb%search(dict_add_if_not_found,tens_key_cmp,key(1),tbb_entry,value_out=uptr); write(jo_cp,*) 'TBB entry search: ',err_code
+            select type (uptr)
             type is (tbb_entry_t)
-             err_code=aar_register(key1,targ1_p); write(jo_cp,*) 'AAR entry created: ',err_code
-             targ1_p%tens_blck_f=>ptr1%tens_blck
+             err_code=aar_register(key(1),targ_p); write(jo_cp,*) 'AAR entry created: ',err_code
+             targ_p%tens_blck_f=>uptr%tens_blck
             end select
- !Create a tensor instruction in ETIQ:
-  !ETIQ(2):
-            k=2
-            etiq%eti(k)%instr_code=instr_tensor_init
-            etiq%eti(k)%data_kind='r8'
-            allocate(etiq%eti(k)%instr_aux(0:15))
-            etiq%eti(k)%instr_aux(0:15)=(/5, 5,10,15,20,25, 5,10,15,20,25, 0,0,0,0,0/)
-            etiq%eti(k)%instr_cu=cu_t(DEV_HOST,0)
-            etiq%eti(k)%args_ready=255
-            etiq%eti(k)%tens_op0%tens_blck_id=key1
-            etiq%eti(k)%tens_op0%op_aar_entry=>targ1_p
-            etiq%eti(k)%instr_status=instr_ready_to_exec
+  !Non-trivial tensors:
+            do j=2,10
+             call tensor_block_destroy(tbb_entry%tens_blck,i); write(jo_cp,*) 'Tensor block destruction: ',i
+             err_code=tbb%search(dict_add_if_not_found,tens_key_cmp,key(j),tbb_entry,value_out=uptr); write(jo_cp,*) 'TBB entry search: ',err_code
+             select type (uptr)
+             type is (tbb_entry_t)
+              err_code=aar_register(key(j),targ_p); write(jo_cp,*) 'AAR entry created: ',err_code
+              targ_p%tens_blck_f=>uptr%tens_blck
+             end select
+            enddo
+ !Fill in tensor instructions in ETIQ:
+            etiq%scheduled=0
   !ETIQ(1):
             k=1
-            etiq%eti(k)%instr_code=instr_tensor_init
-            etiq%eti(k)%data_kind='r8'
-            allocate(etiq%eti(k)%instr_aux(0:15))
-            etiq%eti(k)%instr_aux(0:15)=(/5, 5,10,15,20,25, 5,10,15,20,25, 0,0,0,0,0/)
+            etiq%eti(k)%instr_code=instr_tensor_init; etiq%eti(k)%data_kind='r4'
+            allocate(etiq%eti(k)%instr_aux(0:3*2))
+            etiq%eti(k)%instr_aux(0:3*2)=(/2, 5,10, 5,10, 0,0/)
             etiq%eti(k)%instr_cu=cu_t(DEV_HOST,1)
-            etiq%eti(k)%args_ready=255
-            etiq%eti(k)%tens_op0%tens_blck_id=key0
-            etiq%eti(k)%tens_op0%op_aar_entry=>targ0_p
+            etiq%eti(k)%args_ready=B'1111111111111111111111111111111'
+            etiq%eti(k)%tens_op0%tens_blck_id=key(2)
+            err_code=aar_register(etiq%eti(k)%tens_op0%tens_blck_id,targ_p); write(jo_cp,*) 'AAR entry search: ',err_code
+            etiq%eti(k)%tens_op0%op_aar_entry=>targ_p
+            etiq%eti(k)%tens_op3%tens_blck_id=key(0)
+            err_code=aar_register(etiq%eti(k)%tens_op3%tens_blck_id,targ_p); write(jo_cp,*) 'AAR entry search: ',err_code
+            etiq%eti(k)%tens_op3%op_aar_entry=>targ_p
             etiq%eti(k)%instr_status=instr_ready_to_exec
+            etiq%scheduled=etiq%scheduled+1
+  !ETIQ(2):
+            k=2
+            etiq%eti(k)%instr_code=instr_tensor_init; etiq%eti(k)%data_kind='r4'
+            allocate(etiq%eti(k)%instr_aux(0:3*2))
+            etiq%eti(k)%instr_aux(0:3*2)=(/2, 5,10, 5,10, 0,0/)
+            etiq%eti(k)%instr_cu=cu_t(DEV_HOST,0)
+            etiq%eti(k)%args_ready=B'1111111111111111111111111111111'
+            etiq%eti(k)%tens_op0%tens_blck_id=key(3)
+            err_code=aar_register(etiq%eti(k)%tens_op0%tens_blck_id,targ_p); write(jo_cp,*) 'AAR entry search: ',err_code
+            etiq%eti(k)%tens_op0%op_aar_entry=>targ_p
+            etiq%eti(k)%tens_op3%tens_blck_id=key(0)
+            err_code=aar_register(etiq%eti(k)%tens_op3%tens_blck_id,targ_p); write(jo_cp,*) 'AAR entry search: ',err_code
+            etiq%eti(k)%tens_op3%op_aar_entry=>targ_p
+            etiq%eti(k)%instr_status=instr_ready_to_exec
+            etiq%scheduled=etiq%scheduled+1
+  !ETIQ(3):
+            k=3
+            etiq%eti(k)%instr_code=instr_tensor_init; etiq%eti(k)%data_kind='r4'
+            allocate(etiq%eti(k)%instr_aux(0:3*5))
+            etiq%eti(k)%instr_aux(0:3*5)=(/5, 5,10,15,20,25, 5,10,15,20,25, 0,0,0,0,0/)
+            etiq%eti(k)%instr_cu=cu_t(DEV_HOST,1)
+            etiq%eti(k)%args_ready=B'1111111111111111111111111111111'
+            etiq%eti(k)%tens_op0%tens_blck_id=key(4)
+            err_code=aar_register(etiq%eti(k)%tens_op0%tens_blck_id,targ_p); write(jo_cp,*) 'AAR entry search: ',err_code
+            etiq%eti(k)%tens_op0%op_aar_entry=>targ_p
+            etiq%eti(k)%tens_op3%tens_blck_id=key(0)
+            err_code=aar_register(etiq%eti(k)%tens_op3%tens_blck_id,targ_p); write(jo_cp,*) 'AAR entry search: ',err_code
+            etiq%eti(k)%tens_op3%op_aar_entry=>targ_p
+            etiq%eti(k)%instr_status=instr_ready_to_exec
+            etiq%scheduled=etiq%scheduled+1
+  !ETIQ(4):
+            k=4
+            etiq%eti(k)%instr_code=instr_tensor_init; etiq%eti(k)%data_kind='r4'
+            allocate(etiq%eti(k)%instr_aux(0:3*5))
+            etiq%eti(k)%instr_aux(0:3*5)=(/5, 5,10,15,20,25, 5,10,15,20,25, 0,0,0,0,0/)
+            etiq%eti(k)%instr_cu=cu_t(DEV_HOST,0)
+            etiq%eti(k)%args_ready=B'1111111111111111111111111111111'
+            etiq%eti(k)%tens_op0%tens_blck_id=key(5)
+            err_code=aar_register(etiq%eti(k)%tens_op0%tens_blck_id,targ_p); write(jo_cp,*) 'AAR entry search: ',err_code
+            etiq%eti(k)%tens_op0%op_aar_entry=>targ_p
+            etiq%eti(k)%tens_op3%tens_blck_id=key(1)
+            err_code=aar_register(etiq%eti(k)%tens_op3%tens_blck_id,targ_p); write(jo_cp,*) 'AAR entry search: ',err_code
+            etiq%eti(k)%tens_op3%op_aar_entry=>targ_p
+            etiq%eti(k)%instr_status=instr_ready_to_exec
+            etiq%scheduled=etiq%scheduled+1
+  !ETIQ(5):
+            k=5
+            etiq%eti(k)%instr_code=instr_tensor_init; etiq%eti(k)%data_kind='r4'
+            allocate(etiq%eti(k)%instr_aux(0:3*5))
+            etiq%eti(k)%instr_aux(0:3*5)=(/5, 5,10,15,20,25, 5,10,15,20,25, 0,0,0,0,0/)
+            etiq%eti(k)%instr_cu=cu_t(DEV_HOST,0)
+            etiq%eti(k)%args_ready=B'1111111111111111111111111111111'
+            etiq%eti(k)%tens_op0%tens_blck_id=key(6)
+            err_code=aar_register(etiq%eti(k)%tens_op0%tens_blck_id,targ_p); write(jo_cp,*) 'AAR entry search: ',err_code
+            etiq%eti(k)%tens_op0%op_aar_entry=>targ_p
+            etiq%eti(k)%tens_op3%tens_blck_id=key(1)
+            err_code=aar_register(etiq%eti(k)%tens_op3%tens_blck_id,targ_p); write(jo_cp,*) 'AAR entry search: ',err_code
+            etiq%eti(k)%tens_op3%op_aar_entry=>targ_p
+            etiq%eti(k)%instr_status=instr_ready_to_exec
+            etiq%scheduled=etiq%scheduled+1
+
  !Enqueue tensor instructions to STCU:
-  !ETIQ_STCU(1):
-            k=1
-            etiq_stcu%etiq_entry(k)=2
-            etiq_stcu%te_conf(k)=te_conf_t(etiq%eti(etiq_stcu%etiq_entry(k))%instr_cu,1,2,1)
-            etiq_stcu%scheduled=etiq_stcu%scheduled+1
-            etiq%eti(etiq_stcu%etiq_entry(k))%instr_status=instr_scheduled
-  !ETIQ_STCU(0):
-            k=0
-            etiq_stcu%etiq_entry(k)=1
-            etiq_stcu%te_conf(k)=te_conf_t(etiq%eti(etiq_stcu%etiq_entry(k))%instr_cu,1,2,1)
-            etiq_stcu%scheduled=etiq_stcu%scheduled+1
-            etiq%eti(etiq_stcu%etiq_entry(k))%instr_status=instr_scheduled
+  !Inits:
+            do k=4,0,-1
+             etiq_stcu%etiq_entry(k)=1+k
+             etiq_stcu%te_conf(k)=te_conf_t(etiq%eti(etiq_stcu%etiq_entry(k))%instr_cu,1,2,1)
+             etiq_stcu%scheduled=etiq_stcu%scheduled+1
+             etiq%eti(etiq_stcu%etiq_entry(k))%instr_status=instr_scheduled
+            enddo
+  !Copies:
+            
+  !Contractions:
+            
 !$OMP FLUSH
             write(jo_cp,*)'Instruction(s) scheduled!'
  !Wait for completion:
-            i=2
-            do while(i.ne.0)
+            i=etiq%scheduled
+            do while(i.gt.0)
+             do k=1,etiq%scheduled
 !$OMP ATOMIC READ
-             j=etiq%eti(1)%instr_status
-             if(j.eq.instr_completed) then
+              j=etiq%eti(k)%instr_status
+              if(j.eq.instr_completed) then
 !$OMP ATOMIC READ
-              tm0=etiq%eti(1)%time_issued
+               tm0=etiq%eti(k)%time_issued
 !$OMP ATOMIC READ
-              tm1=etiq%eti(1)%time_completed
-              print *,'First instruction completed succefully: ',tm1-tm0
+               tm1=etiq%eti(k)%time_completed
+               write(jo_cp,'("Instruction ",i2," completed succefully: ",D25.15)') k,tm1-tm0
 !$OMP ATOMIC WRITE
-              etiq%eti(1)%instr_status=instr_dead
-              i=i-1
-             elseif(j.le.0) then
-              exit
-             endif
-!$OMP ATOMIC READ
-             j=etiq%eti(2)%instr_status
-             if(j.eq.instr_completed) then
-!$OMP ATOMIC READ
-              tm0=etiq%eti(2)%time_issued
-!$OMP ATOMIC READ
-              tm1=etiq%eti(2)%time_completed
-              print *,'Second instruction completed succefully: ',tm1-tm0
+               etiq%eti(k)%instr_status=instr_dead
+               i=i-1
+              elseif(j.le.0) then
+               write(jo_cp,'("Instruction ",i2," failed: ",i11)') k,j
 !$OMP ATOMIC WRITE
-              etiq%eti(2)%instr_status=instr_dead
-              i=i-1
-             elseif(j.le.0) then
-              exit
-             endif
+               etiq%eti(k)%instr_status=instr_dead
+               i=i-1
+              endif
+             enddo
             enddo
             write(jo_cp,*)'Instruction(s) completed: ',i
- !Destroy key:
-            err_code=aar_delete(key0)
-            print *,'AAR entry deleted: ',err_code
-            err_code=key0%destroy()
-            print *,'Key destroyed: ',err_code
+ !Destroy keys:
+            do j=0,10; err_code=key(j)%destroy(); enddo
  !Destroy AAR:
             err_code=aar%reset()
             err_code=aar%traverse_subtree(tree_volume,tree_height); write(jo_cp,*) tree_volume,tree_height
@@ -510,20 +570,21 @@
                err_code=0
                if(stcu_num_units.eq.1) then !only one STCU: SIMD execution
                 stcu_my_ip=stcu_base_ip; stcu_my_eti=l
-                if(verbose) write(jo_cp,'("#DEBUG: STCU 0: Executing tensor instruction #",i6,": thread_count=",i5)') stcu_my_eti,etiq_stcu%te_conf(stcu_my_ip)%num_workers !debug
+                if(verbose) write(jo_cp,'("#DEBUG(c_process::c_proc_life): STCU 0",": IP ",i5,": ETI #",i7,": thread_count=",i3)') stcu_my_ip,stcu_my_eti,etiq_stcu%te_conf(stcu_my_ip)%num_workers !debug
                 call omp_set_num_threads(etiq_stcu%te_conf(stcu_my_ip)%num_workers)
                 err_code=stcu_execute_eti(stcu_my_eti)
                 if(err_code.eq.0) then
                  etiq_stcu%ip=etiq_stcu%ip+1
                  if(etiq_stcu%ip.ge.etiq_stcu%depth) etiq_stcu%ip=etiq_stcu%ip-etiq_stcu%depth
                 else
-                 write(jo_cp,'("#ERROR(c_process::c_proc_life): STCU 0: execution error ",i11," for ETI #",i7)') err_code,stcu_my_eti
+                 write(jo_cp,'("#ERROR(c_process::c_proc_life): STCU 0/0: execution error ",i11," for ETI #",i7)') err_code,stcu_my_eti
 !$OMP ATOMIC WRITE
                  stcu_error=1 !error during ETI execution in one or more STCU
 !$OMP FLUSH(stcu_error)
                 endif
                elseif(stcu_num_units.gt.1.and.stcu_num_units.le.stcu_max_units) then !multiple STCU: MIMD execution
-!$OMP PARALLEL NUM_THREADS(stcu_num_units) FIRSTPRIVATE(stcu_base_ip,err_code) &
+                stcu_mimd_my_pass=0; stcu_mimd_max_pass=1
+!$OMP PARALLEL NUM_THREADS(stcu_num_units) FIRSTPRIVATE(stcu_base_ip,stcu_mimd_my_pass,err_code) &
 !$OMP          PRIVATE(thread_num,stcu_my_ip,stcu_my_eti,i,j,k) DEFAULT(SHARED)
                 thread_num=omp_get_thread_num()
                 if(thread_num.eq.0) then
@@ -532,9 +593,11 @@
 !$OMP BARRIER
                 if(omp_get_num_threads().eq.stcu_num_units) then
                  mimd_loop: do
+                  stcu_mimd_my_pass=stcu_mimd_my_pass+1
                   stcu_my_ip=stcu_base_ip+thread_num; if(stcu_my_ip.ge.etiq_stcu%depth) stcu_my_ip=stcu_my_ip-etiq_stcu%depth
                   stcu_my_eti=etiq_stcu%etiq_entry(stcu_my_ip)
-                  if(verbose) write(jo_cp,'("#DEBUG: STCU ",i2,": Executing tensor instruction #",i6,": thread_count=",i5)') thread_num,stcu_my_eti,etiq_stcu%te_conf(stcu_my_ip)%num_workers !debug
+                  if(verbose) write(jo_cp,'("#DEBUG(c_process::c_proc_life): STCU ",i2,"/",i2,": Pass ",i5,": IP ",i5,": ETI #",i7,": thread_count=",i3)') &
+                   thread_num,stcu_num_units,stcu_mimd_my_pass,stcu_my_ip,stcu_my_eti,etiq_stcu%te_conf(stcu_my_ip)%num_workers !debug
                   call omp_set_num_threads(etiq_stcu%te_conf(stcu_my_ip)%num_workers)
                   err_code=stcu_execute_eti(stcu_my_eti)
                   if(err_code.ne.0) then
@@ -547,17 +610,38 @@
                    stcu_base_ip=stcu_base_ip+stcu_num_units
                    if(stcu_base_ip.ge.etiq_stcu%depth) stcu_base_ip=stcu_base_ip-etiq_stcu%depth
                    j=0
-                   wait_next_mimd: do while(j.ge.0)
+                   wait_next_mimd: do while(j.ge.0) !check if the next ETI(s) are configured for the same MIMD execution
 !$OMP FLUSH
-                    k=etiq_stcu%etiq_entry(stcu_base_ip)
-                    if(k.gt.0.and.k.le.etiq%depth) then !valid ETIQ entry
-                     if(etiq%eti(k)%instr_status.eq.instr_scheduled) then !new instruction scheduled
-                      if(etiq_stcu%te_conf(stcu_base_ip)%cu_id%unit_number+1.ne.stcu_num_units) j=-1 !STCU conf. changed
-                      exit wait_next_mimd
+!$OMP CRITICAL(test_next_mimd)
+                    if(stcu_mimd_my_pass.lt.iabs(stcu_mimd_max_pass)) then
+                     stcu_mimd_my_pass=-stcu_mimd_my_pass
+                    else
+                     if(stcu_mimd_max_pass.gt.0) then !I am the first here: check next MIMD batch
+                      k=etiq_stcu%etiq_entry(stcu_base_ip)
+                      if(k.gt.0.and.k.le.etiq%depth) then !valid ETIQ entry
+                       if(etiq%eti(k)%instr_status.eq.instr_scheduled) then !new instruction scheduled
+                        if(etiq_stcu%te_conf(stcu_base_ip)%cu_id%unit_number+1.eq.stcu_num_units) then
+                         stcu_mimd_max_pass=stcu_mimd_max_pass+1
+                         stcu_mimd_my_pass=-stcu_mimd_my_pass
+                        else
+                         stcu_mimd_max_pass=-stcu_mimd_max_pass; j=-2 !STCU conf. changed
+                        endif
+                       endif
+                      endif
+                     else !I am not the first here and MIMD batches are over
+                      j=-3
                      endif
                     endif
+!$OMP END CRITICAL(test_next_mimd)
+                    if(j.ge.0) then
+                     if(stcu_mimd_my_pass.lt.0) then
+                      stcu_mimd_my_pass=-stcu_mimd_my_pass
+                      exit wait_next_mimd
+                     else
 !$OMP ATOMIC READ
-                    j=etiq_stcu%scheduled
+                      j=etiq_stcu%scheduled
+                     endif
+                    endif
                    enddo wait_next_mimd
                    if(j.lt.0) exit mimd_loop
                   else
@@ -565,19 +649,17 @@
                   endif
                  enddo mimd_loop
                 else
+                 write(jo_cp,'("#ERROR(c_process::c_proc_life): STCU: Invalid number of units created: ",i11,1x,i11)') omp_get_num_threads(),stcu_num_units
 !$OMP ATOMIC WRITE
                  stcu_error=3 !invalid number of STCU units created
                 endif
 !$OMP END PARALLEL
                 if(stcu_error.eq.0) then !LST only
 !$ATOMIC UPDATE
-                 etiq_stcu%ip=etiq_stcu%ip+stcu_num_units
-                 if(etiq_stcu%ip.ge.etiq_stcu%depth) then
-!$ATOMIC UPDATE
-                  etiq_stcu%ip=etiq_stcu%ip-etiq_stcu%depth
-                 endif
+                 etiq_stcu%ip=mod(etiq_stcu%ip+stcu_num_units*iabs(stcu_mimd_max_pass),etiq_stcu%depth)
                 endif
                else
+                write(jo_cp,'("#ERROR(c_process::c_proc_life): STCU: Invalid number of units requested: ",i11)') stcu_num_units
 !$OMP ATOMIC WRITE
                 stcu_error=4 !invalid number of STCU units requested
 !$OMP FLUSH(stcu_error)
@@ -625,6 +707,7 @@
          integer(C_INT), intent(in):: eti_loc
          type(tens_instr_t), pointer:: my_eti
          type(tensor_block_t), pointer:: dtens_,ltens_,rtens_,stens_
+         character(max_shape_str_len):: jtsss
          integer:: j0,j1,ier
          logical:: jres
          stcu_execute_eti=0
@@ -676,66 +759,53 @@
            select case(my_eti%instr_code)
   !Create/initialize a tensor block:
            case(instr_tensor_init)
-            if(associated(dtens_)) then
-             if(dtens_%tensor_shape%num_dim.lt.0) then !create the tensor block first (using %instr_aux)
+            if(associated(dtens_).and..not.(associated(ltens_).or.associated(rtens_))) then
+             if(tensor_block_layout(dtens_,ier).eq.not_allocated) then !create & init
               if(allocated(my_eti%instr_aux)) then
-               j0=my_eti%instr_aux(0) !tensor rank
-               if(j0.ge.0) then
-                dtens_%tensor_shape%num_dim=j0
-                if(tensor_block_alloc(dtens_,'sp',ier)) then
-                 deallocate(dtens_%tensor_shape%dim_extent)
-                 deallocate(dtens_%tensor_shape%dim_divider)
-                 deallocate(dtens_%tensor_shape%dim_group)
-                 jres=tensor_block_alloc(dtens_,'sp',ier,.false.)
-                else
-                 nullify(dtens_%tensor_shape%dim_extent)
-                 nullify(dtens_%tensor_shape%dim_divider)
-                 nullify(dtens_%tensor_shape%dim_group)
-                endif
-                if(j0.gt.0) then !true tensor
-                 if(ubound(my_eti%instr_aux,1).ge.3*j0) then !{extent,divider,group} trio
-                  ier=0
-                  allocate(dtens_%tensor_shape%dim_extent(1:j0),STAT=j1); if(j1.ne.0) ier=ier+1
-                  allocate(dtens_%tensor_shape%dim_divider(1:j0),STAT=j1); if(j1.ne.0) ier=ier+1
-                  allocate(dtens_%tensor_shape%dim_group(1:j0),STAT=j1); if(j1.ne.0) ier=ier+1
-                  jres=tensor_block_alloc(dtens_,'sp',j1,.true.); if(j1.ne.0) ier=ier+1
-                  if(ier.eq.0) then
-                   do j1=1,j0; dtens_%tensor_shape%dim_extent(j1)=my_eti%instr_aux(j1); enddo     !extents
-                   do j1=1,j0; dtens_%tensor_shape%dim_divider(j1)=my_eti%instr_aux(j0+j1); enddo !dividers
-                   do j1=1,j0; dtens_%tensor_shape%dim_group(j1)=my_eti%instr_aux(2*j0+j1); enddo !groups
-                   dtens_%tensor_block_size=tensor_shape_size(dtens_,j1); if(j1.ne.0) ier=ier+1
-                   dtens_%ptr_alloc=0
+               if(lbound(my_eti%instr_aux,1).eq.0) then
+                j0=my_eti%instr_aux(0) !tensor block rank
+                if(ubound(my_eti%instr_aux,1).ge.j0*3) then
+                 call tensor_shape_str_create(j0,my_eti%instr_aux(1:j0),jtsss,j1,ier, &
+                       divs=my_eti%instr_aux(j0+1:j0*2),grps=my_eti%instr_aux(j0*2+1:j0*3))
+                 if(ier.eq.0) then
+                  if(associated(stens_)) then
+                   if(stens_%tensor_shape%num_dim.eq.0) then !must be a scalar
+                    call tensor_block_create(jtsss(1:j1),my_eti%data_kind,dtens_,ier,val_c8=stens_%scalar_value)
+                    if(ier.ne.0) stcu_execute_eti=1
+                   else
+                    stcu_execute_eti=2
+                   endif
                   else
-                   stcu_execute_eti=1
+                   call tensor_block_create(jtsss(1:j1),my_eti%data_kind,dtens_,ier)
+                   if(ier.ne.0) stcu_execute_eti=3
                   endif
                  else
-                  stcu_execute_eti=2
+                  stcu_execute_eti=4
                  endif
-                else !scalar tensor
-                 dtens_%tensor_block_size=1_8
+                else
+                 stcu_execute_eti=5
                 endif
-               else
-                stcu_execute_eti=3
-               endif
-              else
-               stcu_execute_eti=4
-              endif
-             endif
-             if(stcu_execute_eti.eq.0) then
-              if(associated(stens_)) then
-               if(stens_%tensor_shape%num_dim.eq.0) then !must be a scalar
-                call tensor_block_init(my_eti%data_kind,dtens_,ier,val_c8=stens_%scalar_value)
-                if(ier.ne.0) stcu_execute_eti=5
                else
                 stcu_execute_eti=6
                endif
               else
+               stcu_execute_eti=7
+              endif
+             else !only init
+              if(associated(stens_)) then
+               if(stens_%tensor_shape%num_dim.eq.0) then !must be a scalar
+                call tensor_block_init(my_eti%data_kind,dtens_,ier,val_c8=stens_%scalar_value)
+                if(ier.ne.0) stcu_execute_eti=8
+               else
+                stcu_execute_eti=9
+               endif
+              else
                call tensor_block_init(my_eti%data_kind,dtens_,ier)
-               if(ier.ne.0) stcu_execute_eti=7
+               if(ier.ne.0) stcu_execute_eti=10
               endif
              endif
             else
-             stcu_execute_eti=8
+             stcu_execute_eti=11
             endif
   !Compute 1-norm of a tensor block:
            case(instr_tensor_norm1)
@@ -755,6 +825,30 @@
            case(instr_tensor_trace)
   !Copy/permute a tensor block into another tensor block:
            case(instr_tensor_copy)
+            if(associated(dtens_).and.associated(ltens_).and.(.not.associated(rtens_))) then
+             if(tensor_block_layout(ltens_,ier).ne.not_allocated) then
+              if(allocated(my_eti%instr_aux)) then
+               if(lbound(my_eti%instr_aux,1).eq.0) then
+                j0=my_eti%instr_aux(0) !tensor block rank
+                if(ubound(my_eti%instr_aux,1).ge.j0) then
+                 call tensor_block_copy(ltens_,dtens_,ier,my_eti%instr_aux) !instr_aux(0) will be ignored
+                 if(ier.ne.0) stcu_execute_eti=12
+                else
+                 stcu_execute_eti=13
+                endif
+               else
+                stcu_execute_eti=14
+               endif
+              else
+               call tensor_block_copy(ltens_,dtens_,ier)
+               if(ier.ne.0) stcu_execute_eti=15
+              endif
+             else
+              stcu_execute_eti=16
+             endif
+            else
+             stcu_execute_eti=17
+            endif
   !Add a tensor block to another tensor block:
            case(instr_tensor_add)
   !Compare two tensor blocks:
