@@ -1,6 +1,6 @@
 !TENSOR ALGEBRA IN PARALLEL (TAP) for SHARED-MEMORY SYSTEMS (OpenMP based)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2014/05/22
+!REVISION: 2014/05/23
 !GNU FORTRAN compiling options: -c -O3 --free-line-length-none -x f95-cpp-input -fopenmp
 !GNU linking options: -lgomp -blas -llapack
 !ACRONYMS:
@@ -2469,7 +2469,7 @@
 	type(tensor_block_t), pointer:: tens_in,tens_out,ltp,rtp,dtp
 	type(tensor_block_t), target:: lta,rta,dta
 	character(2) dtk
-	real(4) d_r4,start_dgemm
+	real(4) d_r4,start_gemm
 	real(8) d_r8
 	complex(8) d_c8
 	logical contr_ok,ltransp,rtransp,dtransp,transp
@@ -2562,7 +2562,7 @@
 !	 write(cons_out,'("DEBUG(tensor_algebra::tensor_block_contract): matrix dimensions (left,right,contr): ",i10,1x,i10,1x,i10)') lld,lrd,lcd !debug
 	 if(l0.ne.lld.or.l1.ne.lcd.or.l2.ne.lrd) then; ierr=15; goto 999; endif
  !Multiply two matrices (ltp & rtp):
-!	 start_dgemm=secnds(0.) !debug
+	 start_gemm=secnds(0.) !debug
 	 select case(contr_case)
 	 case(partial_contraction) !destination is an array
 	  select case(dtk)
@@ -2623,7 +2623,7 @@
 	 case(multiply_scalars)
 	  dtp%scalar_value=dtp%scalar_value+ltp%scalar_value*rtp%scalar_value
 	 end select
-!	 write(cons_out,'("DEBUG(tensor_algebra::tensor_block_contract): DGEMM time: ",F10.4)') secnds(start_dgemm) !debug
+	 write(cons_out,'("DEBUG(tensor_algebra::tensor_block_contract): GEMM time: ",F10.4)') secnds(start_gemm) !debug
  !Transpose the matrix-result into the output tensor:
 	 if(dtransp) then
 !	  write(cons_out,'("DEBUG(tensor_algebra::tensor_block_contract): permutation to be performed for ",i2)') 0 !debug
@@ -3122,6 +3122,7 @@
            ierr=3; return
           endif
          enddo
+         if(tsss(tsl:tsl).eq.'(') tsl=tsl+1
          tsss(tsl:tsl)=')'
         else
          ierr=4
