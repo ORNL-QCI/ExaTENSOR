@@ -1,7 +1,7 @@
 !This module provides functionality for a Computing Process (C-PROCESS, CP).
 !In essence, this is a single-node elementary tensor instruction scheduler (SETIS).
 !AUTHOR: Dmitry I. Lyakh (Dmytro I. Liakh): quant4me@gmail.com
-!REVISION: 2014/05/23
+!REVISION: 2014/06/23
 !CONCEPTS (CP workflow):
 ! - Each CP stores its own tensor blocks in TBB, with a possibility of disk dump.
 ! - LR sends a batch of ETI to be executed on this CP unit (CP MPI Process).
@@ -16,20 +16,20 @@
 !   Data (tensor blocks) registered in AAR can be reused while locally present.
 !   AAR is the only way to access a tensor block for ETI (the tensor block itself
 !   can physically reside in either TBB, or HAB, or DEB).
-! - ETI with all operands ready are issued for execution on an appropriate device:
-!    - All ETI are issued asynchronously;
+! - ETI with all operands ready can be scheduled for execution on an appropriate device:
+!    - On each distinct device, ETI are issued in-order but executed asynchronously;
 !    - ETI with ready input arguments can be further prioritized;
 !    - Each particular type of instruction has its own issuing workflow for each device kind.
 !      The device is chosen based on the ETI cost, ETI cost/size ratio, and device availability.
 !    - Once issued successfully, the ETI obtains a query handle that can be used for completion checks.
-!    - AAR entries and associated data used by active ETI must not be freed.
+!    - AAR entries and associated data used by active ETI must not be freed before completion of the ETI.
 !    - If the ETI result is remote, its destination must be updated before
 !      reporting to LR that the ETI has been completed.
 !NOTES:
 ! - Data synchronization in an instance of <tensor_block_t> (Fortran)
 !   associated with a Host Argument Buffer entry can allocate only regular CPU memory
-!   (the one outside the pinned Host Argument buffer). Hence that newly allocated
-!   memory cannot be used with Nvidia GPU.
+!   (the one outside the pinned Host Argument buffer). Hence the newly allocated
+!   memory is not in HAB, thus cannot be used with Nvidia GPUs.
 !Acronyms:
 ! - CP - Computing (MPI) Process;
 ! - MT - Master Thread;
@@ -40,13 +40,13 @@
 ! - AMCU - AMD GPU Computing Unit;
 ! - ETI - Elementary Tensor Instruction;
 ! - ETIS - Elementary Tensor Instruction Scheduler (SETIS, LETIS, GETIS);
-! - ETIQ - Elementary Tensor Instruction Queue;
+! - ETIQ - Elementary Tensor Instruction Queue (out-of-order issuance);
 ! - HAB - Host Argument Buffer;
 ! - GAB - GPU Argument Buffer;
 ! - DEB - Data Exchange Buffer (additional buffer for temporary present tensor blocks);
 ! - TBB - Tensor Block Bank (storage);
 ! - AAR - Active Argument Register;
-! - TAL - Tensor Algebra Library;
+! - TAL - Tensor Algebra Library (CPU, GPU, MIC, etc.);
        module c_process
         use, intrinsic:: ISO_C_BINDING
         use tensor_algebra
@@ -62,21 +62,21 @@
         integer, private:: jo_cp=6 !default output
         logical, private:: verbose=.true.
  !Debugging:
-        integer, private:: debug_level=0 !debug level (0: normal execution)
-        integer, private:: step_pause=1  !pause (sec) before advancing MT to the next instruction while debugging
+        integer, private:: debug_level=0          !debug level (0: normal execution)
+        integer, private:: debug_step_pause=1000  !pause (msec) before advancing MT to the next instruction while debugging
  !General:
         integer, parameter, private:: CZ=C_SIZE_T
  !Elementary Tensor Instruction Scheduler (ETIS):
   !Host Argument Buffer (HAB):
-        integer(C_SIZE_T), parameter, private:: max_hab_size=256_CZ*1024_CZ*1024_CZ !max size in bytes of the HAB
-        integer(C_SIZE_T), parameter, private:: min_hab_size=64_CZ*1024_CZ*1024_CZ   !min size in bytes of the HAB
+        integer(C_SIZE_T), parameter, private:: max_hab_size=4096_CZ*(1024_CZ*1024_CZ) !max size in bytes of the HAB
+        integer(C_SIZE_T), parameter, private:: min_hab_size=64_CZ*(1024_CZ*1024_CZ)   !min size in bytes of the HAB
   !Elementary Tensor Instruction Queue (ETIQ):
         integer(C_INT), parameter, private:: etiq_max_depth=65536 !max number of simultaneously scheduled ETI at this CP
         integer(C_INT), parameter, private:: etiq_loc_levels=4    !number of locality levels in ETIQ (senior)
         integer(C_INT), parameter, private:: etiq_cost_levels=5   !number of cost levels in ETIQ (minor)
         integer(C_INT), parameter, private:: etiq_channels=etiq_cost_levels*etiq_loc_levels !total number of levels in ETIQ
         integer(C_INT), parameter, private:: etiq_stcu_max_depth=4096 !max number of simultaneously scheduled ETI on STCU
-        integer(C_INT), parameter, private:: etiq_nvcu_max_depth=512  !max number of simultaneously scheduled ETI on NVCU
+        integer(C_INT), parameter, private:: etiq_nvcu_max_depth=256  !max number of simultaneously scheduled ETI on NVCU
         integer(C_INT), parameter, private:: etiq_xpcu_max_depth=512  !max number of simultaneously scheduled ETI on XPCU
         integer(C_INT), parameter, public:: eti_buf_size=32768 !ETI buffer size (for communications with LR)
         integer(C_INT), parameter, private:: stcu_max_units=64 !max number of STCU units
@@ -85,9 +85,9 @@
   !Tensor instruction status (any negative value will correspond to a failure, designating the error code):
         integer, parameter:: instr_null=0              !uninitialized instruction (empty)
         integer, parameter:: instr_fresh=1             !instruction has not been seen before (new instruction)
-        integer, parameter:: instr_data_wait=2         !instruction is waiting for input data to arrive
+        integer, parameter:: instr_data_wait=2         !instruction is waiting for the input data to arrive
         integer, parameter:: instr_ready_to_exec=3     !instruction is ready to be executed (input data has arrived)
-        integer, parameter:: instr_scheduled=4         !instruction is placed into an execution queue of a specific CU
+        integer, parameter:: instr_scheduled=4         !instruction is placed into an execution queue on a specific CU
         integer, parameter:: instr_issued=5            !instruction is issued for execution on some computing unit (CU)
         integer, parameter:: instr_completed=6         !instruction has completed (but the result may still need to be remotely uploaded)
         integer, parameter:: instr_dead=7              !instruction can safely be removed from the queue
@@ -108,20 +108,20 @@
 !TYPES:
  !Computing unit (CU) identifier:
         type cu_t
-         integer(C_INT):: device_type  !device type: see tensor_algebra_gpu_nvidia.inc
+         integer(C_INT):: device_type  !device type: see tensor_algebra_gpu_nvidia.inc/tensor_algebra_gpu_nvidia.h
          integer(C_INT):: unit_number  !logical number of the device within its type (0..max)
         end type cu_t
  !Task execution configuration:
         type te_conf_t
          type(cu_t):: cu_id            !computing unit
-         integer(C_INT):: num_gangs    !coarse grain parallelism: CUDA blocks
-         integer(C_INT):: num_workers  !fine grain parallelism: OMP threads, CUDA warps
-         integer(C_INT):: vec_width    !vector width
+         integer(C_INT):: num_gangs    !coarse grain parallelism (e.g., CUDA blocks)
+         integer(C_INT):: num_workers  !fine grain parallelism (e.g., OMP threads, CUDA warps)
+         integer(C_INT):: vec_width    !vector width (e.g., SSE, AVX, CUDA threads in a warp)
         end type te_conf_t
  !Tensor block identifier (key):
         type tens_blck_id_t
          character(LEN=tensor_name_len):: tens_name  !tensor name
-         integer(C_INT), allocatable:: tens_mlndx(:) !tensor block multiindex (bases): 0th element is the length!
+         integer(C_INT), allocatable:: tens_mlndx(:) !tensor block multi-index (0th element is the length of the multi-index)
          contains
           procedure, public:: create=>tens_blck_id_create
           procedure, public:: destroy=>tens_blck_id_destroy
@@ -132,7 +132,7 @@
          type(tensor_block_t), private:: tens_blck !fortran tensor block
          integer, private:: file_handle=0          !file handle (0: stored in RAM)
          integer(8), private:: file_offset=0_8     !file offset where the corresponding packet is stored (if on disk)
-         integer(8), private:: stored_size=0_8     !stored size of the tensor block (packet) in bytes
+         integer(8), private:: stored_size=0_8     !stored (disk) size of the tensor block (packet) in bytes
         end type tbb_entry_t
  !Elementary Tensor Instruction Scheduler (ETIS):
   !Locally present tensor argument:
@@ -140,10 +140,10 @@
          type(tensor_block_t), pointer, private:: tens_blck_f=>NULL() !pointer to a tensor_block in TBB, or HAB, or DEB
          type(C_PTR), private:: tens_blck_c=C_NULL_PTR !C pointer to tensBlck_t in HAB (see "tensor_algebra_gpu_nvidia.h")
          integer(C_INT), private:: buf_entry_host=-1 !HAB entry number where the tensor block resides as a packet (-1: undefined)
-         integer, private:: mpi_tag               !>0: MPI_TAG for a pending MPI_IRECV; =0: MPI delivered; <0: local
-         integer, private:: mpi_process           !>=0: host process mpi rank; <0: local
-         integer, private:: times_needed          !number of times the argument has been referred to in ETIQ
-         integer, private:: times_used            !number of times this AAR entry (argument) has been used since creation
+         integer, private:: mpi_tag                  !>0: MPI_TAG for a pending MPI_IRECV; =0: MPI delivered; <0: local
+         integer, private:: mpi_process              !>=0: mpi rank of the host; <0: local
+         integer, private:: times_needed             !number of times the argument has been referred to in ETIQ
+         integer, private:: times_used               !number of times this AAR entry (argument) has been used since creation
         end type tens_arg_t
   !Tensor operand type (component of ETI):
         type tens_operand_t
@@ -166,10 +166,10 @@
          type(cu_t), private:: instr_cu      !computing unit which the instruction is issued to: set by CP:MT
          integer, private:: instr_handle     !instruction handle to query its status: set by CP:MT (accelerators only)
          real(4), private:: time_touched     !time the instruction was touched for the first time: set by MT
-         real(4), private:: time_data_ready  !time the instruction has all needed input data arrived: set by MT
+         real(4), private:: time_data_ready  !time the instruction has all input data arrived: set by MT
          real(4), private:: time_issued      !time the instruction was issued for execution: set by CP:{MT:ST}
          real(4), private:: time_completed   !time the instruction was completed: set by CP:{MT:ST}
-         real(4), private:: time_uploaded    !time the remote result uploading completed: set by MT
+         real(4), private:: time_uploaded    !time the remote result upload completed: set by MT
          integer, private:: args_ready       !each bit is set to 1 when the corresponding operand is in AAR: set by CP:MT
          type(tens_operand_t):: tens_op0     !tensor-block operand #0
          type(tens_operand_t):: tens_op1     !tensor-block operand #1
@@ -194,29 +194,34 @@
          integer(C_INT), private:: scheduled=0                !total number of active entries in the queue
          integer(C_INT), private:: ip=0                       !instruction pointer (current instruction)
          integer(C_INT), allocatable, private:: etiq_entry(:) !number of the ETIQ entry where the ETI is located
-         type(te_conf_t), allocatable, private:: te_conf(:)   !computing unit configuration on which ETI will be executed
+         type(te_conf_t), allocatable, private:: te_conf(:)   !computing unit configuration which ETI will be executed on
         end type etiq_cu_t
  !NVCU task:
         type, private:: nvcu_task_t
-         type(C_PTR), private:: cuda_task_handle
+         type(C_PTR), private:: cuda_task_handle !CUDA task handle that can be used for querying the CUDA task status
         end type nvcu_task_t
+ !XPCU task:
+        type, private:: xpcu_task_t !MIC task handle that can be used for querying the MIC task status
+         integer, private:: mic_id
+         integer, private:: mic_task_handle
+        end type xpcu_task_t
 !PROCEDURE VISIBILITY:
         private tens_blck_id_create
         private tens_blck_id_destroy
 !DATA:
  !Tensor Block Bank (TBB):
-        type(dict_t), private:: tbb
+        type(dict_t), private:: tbb !permanent storage of local tensor blocks
  !Elementary Tensor Instruction Scheduler (ETIS):
   !Active Argument Register (AAR):
-        type(dict_t), private:: aar
+        type(dict_t), private:: aar !register for locally present (TBB, HAB, DEB) tensor blocks participating in current ETIs
   !Elementary Tensor Instruction Queue (ETIQ):
-        type(etiq_t), target, private:: etiq
+        type(etiq_t), target, private:: etiq     !multi-channel out-of-order ETI queue (linear numeration starts from 1)
   !STCU ETI queue (ETIQ_STCU):
-        type(etiq_cu_t), private:: etiq_stcu
+        type(etiq_cu_t), private:: etiq_stcu     !circular in-order ETI queue for STCU (numeration starts from 0)
   !NVCU ETI queue (ETIQ_NVCU:
-        type(etiq_cu_t), private:: etiq_nvcu
+        type(etiq_cu_t), private:: etiq_nvcu     !circular in-order ETI queue for NVCU (numeration starts from 0)
   !XPCU ETI queue (ETIQ_XPCU):
-        type(etiq_cu_t), private:: etiq_xpcu
+        type(etiq_cu_t), private:: etiq_xpcu     !circular in-order ETI queue for XPCU (numeration starts from 0)
   !Host Argument Buffer (HAB):
         integer(C_SIZE_T), private:: hab_size=0  !actual size in bytes of the Host argument buffer (HAB)
         integer(C_INT), private:: max_hab_args=0 !max number of arguments (of lowest-size level) that can fit in HAB
@@ -247,7 +252,8 @@
         integer(C_INT), parameter:: max_arg_buf_levels=256 !max number of argument buffer levels (do not exceed C values)
 !---------------------------------------------------------
         integer(C_INT) i,j,k,l,m,n,err_code,thread_num !general purpose: thread private
-        type(nvcu_task_t):: nvcu_tasks(0:etiq_nvcu_max_depth-1) !parallel to etiq_nvcu
+        type(nvcu_task_t), allocatable:: nvcu_tasks(:) !parallel to etiq_nvcu
+        type(xpcu_task_t), allocatable:: xpcu_tasks(:) !parallel to etiq_xpcu
         integer:: stcu_base_ip,stcu_my_ip,stcu_my_eti !STCU specific (slaves): thread private
         integer(C_SIZE_T):: blck_sizes(0:max_arg_buf_levels-1)
         integer:: tree_height,stcu_mimd_my_pass,stcu_mimd_max_pass
@@ -340,7 +346,8 @@
 #ifndef NO_GPU
          write(jo_cp,'("#MSG(c_process::c_proc_life): Allocating NVCU ETIQ ... ")',advance='no')
          tm=thread_wtime()
-         allocate(etiq_nvcu%etiq_entry(0:etiq_nvcu_max_depth-1),etiq_nvcu%te_conf(0:etiq_nvcu_max_depth-1),STAT=ierr)
+         allocate(etiq_nvcu%etiq_entry(0:etiq_nvcu_max_depth-1),etiq_nvcu%te_conf(0:etiq_nvcu_max_depth-1), &
+                  nvcu_tasks(0:etiq_nvcu_max_depth-1),STAT=ierr)
          if(ierr.ne.0) then; write(jo_cp,'("#ERROR(c_process::c_proc_life): ETIQ_NVCU allocation failed!")'); call c_proc_quit(9); return; endif
          do i=0,etiq_nvcu_max_depth-1; etiq_nvcu%etiq_entry(i)=0; enddo
          do i=0,etiq_nvcu_max_depth-1; etiq_nvcu%te_conf(i)%cu_id=cu_t(-1,-1); enddo
@@ -353,7 +360,8 @@
 #ifndef NO_PHI
          write(jo_cp,'("#MSG(c_process::c_proc_life): Allocating XPCU ETIQ ... ")',advance='no')
          tm=thread_wtime()
-         allocate(etiq_xpcu%etiq_entry(0:etiq_xpcu_max_depth-1),etiq_xpcu%te_conf(0:etiq_xpcu_max_depth-1),STAT=ierr)
+         allocate(etiq_xpcu%etiq_entry(0:etiq_xpcu_max_depth-1),etiq_xpcu%te_conf(0:etiq_xpcu_max_depth-1), &
+                  xpcu_tasks(0:etiq_xpcu_max_depth-1),STAT=ierr)
          if(ierr.ne.0) then; write(jo_cp,'("#ERROR(c_process::c_proc_life): ETIQ_XPCU allocation failed!")'); call c_proc_quit(10); return; endif
          do i=0,etiq_xpcu_max_depth-1; etiq_xpcu%etiq_entry(i)=0; enddo
          do i=0,etiq_xpcu_max_depth-1; etiq_xpcu%te_conf(i)%cu_id=cu_t(-1,-1); enddo
@@ -377,9 +385,9 @@
  !Create keys (tensor block id):
             err_code=key(0)%create('O',(/0/)); write(jo_cp,*) 'Key creation: ',err_code
             err_code=key(1)%create('I',(/0/)); write(jo_cp,*) 'Key creation: ',err_code
-            err_code=key(2)%create('A',(/2,0,0/)); write(jo_cp,*) 'Key creation: ',err_code
-            err_code=key(3)%create('B',(/2,0,0/)); write(jo_cp,*) 'Key creation: ',err_code
-            err_code=key(4)%create('C',(/2,0,0/)); write(jo_cp,*) 'Key creation: ',err_code
+            err_code=key(2)%create('A',(/4,0,0,0,0/)); write(jo_cp,*) 'Key creation: ',err_code
+            err_code=key(3)%create('B',(/4,0,0,0,0/)); write(jo_cp,*) 'Key creation: ',err_code
+            err_code=key(4)%create('C',(/4,0,0,0,0/)); write(jo_cp,*) 'Key creation: ',err_code
             err_code=key(5)%create('D',(/5,0,0,0,0,0/)); write(jo_cp,*) 'Key creation: ',err_code
             err_code=key(6)%create('E',(/5,0,0,0,0,0/)); write(jo_cp,*) 'Key creation: ',err_code
             err_code=key(7)%create('F',(/5,0,0,0,0,0/)); write(jo_cp,*) 'Key creation: ',err_code
@@ -388,7 +396,7 @@
             err_code=key(10)%create('J',(/5,0,0,0,0,0/)); write(jo_cp,*) 'Key creation: ',err_code
  !Register tensor blocks in TBB:
   !Zero scalar:
-            call tensor_block_create('()','r4',tbb_entry%tens_blck,i,val_r4=0.0); write(jo_cp,*) 'Tensor block creation: ',i
+            call tensor_block_create('()','r8',tbb_entry%tens_blck,i,val_r8=0d0); write(jo_cp,*) 'Tensor block creation: ',i
             err_code=tbb%search(dict_add_if_not_found,tens_key_cmp,key(0),tbb_entry,value_out=uptr); write(jo_cp,*) 'TBB entry search: ',err_code
             select type (uptr)
             type is (tbb_entry_t)
@@ -396,7 +404,7 @@
              targ_p%tens_blck_f=>uptr%tens_blck
             end select
   !Unity scalar:
-            call tensor_block_init('r4',tbb_entry%tens_blck,i,val_r4=1e-3); write(jo_cp,*) 'Tensor block unity init: ',i
+            call tensor_block_init('r8',tbb_entry%tens_blck,i,val_r8=1d-3); write(jo_cp,*) 'Tensor block unity init: ',i
             err_code=tbb%search(dict_add_if_not_found,tens_key_cmp,key(1),tbb_entry,value_out=uptr); write(jo_cp,*) 'TBB entry search: ',err_code
             select type (uptr)
             type is (tbb_entry_t)
@@ -417,7 +425,7 @@
             etiq%scheduled=0
   !ETIQ(1):
             k=1
-            etiq%eti(k)%instr_code=instr_tensor_init; etiq%eti(k)%data_kind='r4'
+            etiq%eti(k)%instr_code=instr_tensor_init; etiq%eti(k)%data_kind='r8'
             allocate(etiq%eti(k)%instr_aux(0:3*4))
             etiq%eti(k)%instr_aux(0:3*4)=(/4, 5,15,5,15, 5,15,5,15, 0,0,0,0/)
             etiq%eti(k)%instr_cu=cu_t(DEV_HOST,1)
@@ -433,7 +441,7 @@
             etiq%scheduled=etiq%scheduled+1
   !ETIQ(2):
             k=2
-            etiq%eti(k)%instr_code=instr_tensor_init; etiq%eti(k)%data_kind='r4'
+            etiq%eti(k)%instr_code=instr_tensor_init; etiq%eti(k)%data_kind='r8'
             allocate(etiq%eti(k)%instr_aux(0:3*4))
             etiq%eti(k)%instr_aux(0:3*4)=(/4, 5,15,5,15, 5,15,5,15, 0,0,0,0/)
             etiq%eti(k)%instr_cu=cu_t(DEV_HOST,0)
@@ -449,7 +457,7 @@
             etiq%scheduled=etiq%scheduled+1
   !ETIQ(3):
             k=3
-            etiq%eti(k)%instr_code=instr_tensor_init; etiq%eti(k)%data_kind='r4'
+            etiq%eti(k)%instr_code=instr_tensor_init; etiq%eti(k)%data_kind='r8'
             allocate(etiq%eti(k)%instr_aux(0:3*4))
             etiq%eti(k)%instr_aux(0:3*4)=(/4, 5,15,5,15, 5,15,5,15, 0,0,0,0/)
             etiq%eti(k)%instr_cu=cu_t(DEV_HOST,1)
@@ -465,7 +473,7 @@
             etiq%scheduled=etiq%scheduled+1
   !ETIQ(4):
             k=4
-            etiq%eti(k)%instr_code=instr_tensor_init; etiq%eti(k)%data_kind='r4'
+            etiq%eti(k)%instr_code=instr_tensor_init; etiq%eti(k)%data_kind='r8'
             allocate(etiq%eti(k)%instr_aux(0:3*5))
             etiq%eti(k)%instr_aux(0:3*5)=(/5, 5,10,15,221,25, 5,10,15,221,25, 0,0,0,0,0/)
             etiq%eti(k)%instr_cu=cu_t(DEV_HOST,0)
@@ -481,7 +489,7 @@
             etiq%scheduled=etiq%scheduled+1
   !ETIQ(5):
             k=5
-            etiq%eti(k)%instr_code=instr_tensor_init; etiq%eti(k)%data_kind='r4'
+            etiq%eti(k)%instr_code=instr_tensor_init; etiq%eti(k)%data_kind='r8'
             allocate(etiq%eti(k)%instr_aux(0:3*5))
             etiq%eti(k)%instr_aux(0:3*5)=(/5, 5,10,15,221,25, 5,10,15,221,25, 0,0,0,0,0/)
             etiq%eti(k)%instr_cu=cu_t(DEV_HOST,0)
@@ -497,7 +505,7 @@
             etiq%scheduled=etiq%scheduled+1
   !ETIQ(6):
             k=6
-            etiq%eti(k)%instr_code=instr_tensor_copy; etiq%eti(k)%data_kind='r4'
+            etiq%eti(k)%instr_code=instr_tensor_copy; etiq%eti(k)%data_kind='r8'
             allocate(etiq%eti(k)%instr_aux(0:5))
             etiq%eti(k)%instr_aux(0:5)=(/5, 5,4,3,2,1/)
             etiq%eti(k)%instr_cu=cu_t(DEV_HOST,1)
@@ -513,7 +521,7 @@
             etiq%scheduled=etiq%scheduled+1
   !ETIQ(7):
             k=7
-            etiq%eti(k)%instr_code=instr_tensor_copy; etiq%eti(k)%data_kind='r4'
+            etiq%eti(k)%instr_code=instr_tensor_copy; etiq%eti(k)%data_kind='r8'
             allocate(etiq%eti(k)%instr_aux(0:5))
             etiq%eti(k)%instr_aux(0:5)=(/5, 3,1,5,2,4/)
             etiq%eti(k)%instr_cu=cu_t(DEV_HOST,0)
@@ -529,7 +537,7 @@
             etiq%scheduled=etiq%scheduled+1
   !ETIQ(8):
             k=8
-            etiq%eti(k)%instr_code=instr_tensor_copy; etiq%eti(k)%data_kind='r4'
+            etiq%eti(k)%instr_code=instr_tensor_copy; etiq%eti(k)%data_kind='r8'
             allocate(etiq%eti(k)%instr_aux(0:5))
             etiq%eti(k)%instr_aux(0:5)=(/5, 5,4,3,2,1/)
             etiq%eti(k)%instr_cu=cu_t(DEV_HOST,1)
@@ -545,7 +553,7 @@
             etiq%scheduled=etiq%scheduled+1
   !ETIQ(9):
             k=9
-            etiq%eti(k)%instr_code=instr_tensor_copy; etiq%eti(k)%data_kind='r4'
+            etiq%eti(k)%instr_code=instr_tensor_copy; etiq%eti(k)%data_kind='r8'
             allocate(etiq%eti(k)%instr_aux(0:5))
             etiq%eti(k)%instr_aux(0:5)=(/5, 3,1,5,2,4/)
             etiq%eti(k)%instr_cu=cu_t(DEV_HOST,0)
@@ -561,7 +569,7 @@
             etiq%scheduled=etiq%scheduled+1
   !ETIQ(10):
             k=10
-            etiq%eti(k)%instr_code=instr_tensor_contract; etiq%eti(k)%data_kind='r4'
+            etiq%eti(k)%instr_code=instr_tensor_contract; etiq%eti(k)%data_kind='r8'
             allocate(etiq%eti(k)%instr_aux(0:10))
             etiq%eti(k)%instr_aux(0:10)=(/10, 3,-2,2,-4,-5, 1,-2,4,-4,-5/)
             etiq%eti(k)%instr_cu=cu_t(DEV_HOST,0)
@@ -579,16 +587,23 @@
             etiq%eti(k)%instr_status=instr_ready_to_exec
             etiq%scheduled=etiq%scheduled+1
 
+!$OMP FLUSH
+            call set_transpose_algorithm(EFF_TRN_ON)
+            call set_matmult_algorithm(BLAS_ON)
+!$OMP FLUSH
  !Enqueue tensor instructions to STCU:
   !Inits:
-            do k=9,0,-1
+            etiq_stcu%etiq_entry(9)=10
+             etiq_stcu%te_conf(9)=te_conf_t(etiq%eti(etiq_stcu%etiq_entry(9))%instr_cu,1,4,1)
+             etiq_stcu%scheduled=etiq_stcu%scheduled+1
+             etiq%eti(etiq_stcu%etiq_entry(9))%instr_status=instr_scheduled
+            do k=8,0,-1
              etiq_stcu%etiq_entry(k)=1+k
-             etiq_stcu%te_conf(k)=te_conf_t(etiq%eti(etiq_stcu%etiq_entry(k))%instr_cu,1,2,1)
+             etiq_stcu%te_conf(k)=te_conf_t(etiq%eti(etiq_stcu%etiq_entry(k))%instr_cu,1,4,1)
              etiq_stcu%scheduled=etiq_stcu%scheduled+1
              etiq%eti(etiq_stcu%etiq_entry(k))%instr_status=instr_scheduled
             enddo
-            call set_transpose_algorithm(1)
-            call set_matmult_algorithm(0)
+            
   !Copies:
             
   !Contractions:
@@ -1034,10 +1049,10 @@
                  nvcu_execute_eti=-1
                 endif
                else
-                nvcu_execute_eti=1 !unable to pack this tensor block: not an error
+                nvcu_execute_eti=1 !unable to pack this tensor block: not necessarily an error, maybe no free HAB entries
                endif
               else
-               nvcu_execute_eti=-1
+               nvcu_execute_eti=-2
               endif
              endif
             else
@@ -1055,13 +1070,13 @@
                  my_eti%tens_op1%op_aar_entry%tens_blck_c=ltens_
                  my_eti%tens_op1%op_aar_entry%buf_entry_host=l_hab_entry
                 else
-                 nvcu_execute_eti=-1
+                 nvcu_execute_eti=-3
                 endif
                else
-                nvcu_execute_eti=1 !unable to pack this tensor block: not an error
+                nvcu_execute_eti=2 !unable to pack this tensor block: not necessarily an error, maybe no free HAB entries
                endif
               else
-               nvcu_execute_eti=-1
+               nvcu_execute_eti=-4
               endif
              endif
             else
@@ -1079,13 +1094,13 @@
                  my_eti%tens_op2%op_aar_entry%tens_blck_c=rtens_
                  my_eti%tens_op2%op_aar_entry%buf_entry_host=r_hab_entry
                 else
-                 nvcu_execute_eti=-1
+                 nvcu_execute_eti=-5
                 endif
                else
-                nvcu_execute_eti=1 !unable to pack this tensor block: not an error
+                nvcu_execute_eti=3 !unable to pack this tensor block: not necessarily an error, maybe no free HAB entries
                endif
               else
-               nvcu_execute_eti=-1
+               nvcu_execute_eti=-6
               endif
              endif
             else
@@ -1107,7 +1122,7 @@
               if(d_hab_entry.ge.0.and.l_hab_entry.ge.0.and.r_hab_entry.ge.0) then
                if(allocated(my_eti%instr_aux)) then
                 if(lbound(my_eti%instr_aux,1).eq.0) then
-                 j0=my_eti%instr_aux(0)
+                 j0=my_eti%instr_aux(0) !instr_aux(0): length; instr_aux(1:length): contr. ptrn.; instr_aux(length+1:): reuse flags
                  if(ubound(my_eti%instr_aux,1).ge.j0) then
                   ier=cuda_task_create(nvcu_tasks(etiq_nvcu_loc)%cuda_task_handle)
                   if(ier.eq.0) then
@@ -1128,25 +1143,25 @@
                    endif
                    if(ier.ne.0) then
                     ier=cuda_task_destroy(nvcu_tasks(etiq_nvcu_loc)%cuda_task_handle)
-                    nvcu_execute_eti=-1
+                    nvcu_execute_eti=-7
                    endif
                   else
-                   nvcu_execute_eti=-1
+                   nvcu_execute_eti=-8
                   endif
                  else
-                  nvcu_execute_eti=-1
+                  nvcu_execute_eti=-9
                  endif
                 else
-                 nvcu_execute_eti=-1
+                 nvcu_execute_eti=-10
                 endif
                else
-                nvcu_execute_eti=-1
+                nvcu_execute_eti=-11
                endif
               else
-               nvcu_execute_eti=-1
+               nvcu_execute_eti=-12
               endif
              case default
-              nvcu_execute_eti=-1
+              nvcu_execute_eti=-13
              end select
             endif
            else
@@ -1167,6 +1182,32 @@
          endif
          return
          end function nvcu_execute_eti
+
+         integer(C_INT) function nvcu_task_status(nvcu_task_num) !query the status of a CUDA task
+         implicit none
+         integer(C_INT), intent(in):: nvcu_task_num
+         integer j0
+         if(nvcu_task_num.ge.0.and.nvcu_task_num.lt.etiq_nvcu%depth) then
+!$OMP ATOMIC READ
+          nvcu_task_status=etiq%eti(etiq_nvcu%etiq_entry(nvcu_task_num))%instr_status
+          if(nvcu_task_status.eq.instr_issued) then
+           j0=cuda_task_complete(nvcu_tasks(nvcu_task_num)%cuda_task_handle)
+           if(j0.eq.cuda_task_completed) then
+!$OMP ATOMIC WRITE
+            etiq%eti(etiq_nvcu%etiq_entry(nvcu_task_num))%instr_status=instr_completed
+            nvcu_task_status=instr_completed
+           elseif(j0.eq.cuda_task_error.or.j0.eq.cuda_task_empty) then
+!$OMP ATOMIC WRITE
+            etiq%eti(etiq_nvcu%etiq_entry(nvcu_task_num))%instr_status=-2
+            nvcu_task_status=-2
+           endif
+          endif
+         else
+          write(jo_cp,'("#ERROR(c_process::c_proc_life:nvcu_task_status): invalid NVCU task number: ",i12)') nvcu_task_num
+          nvcu_task_status=-666
+         endif
+         return
+         end function nvcu_task_status
 #endif
 
 #ifndef NO_PHI
@@ -1202,7 +1243,7 @@
 
          integer function aar_register(tkey,aar_p) !MT only
 !Registers an argument in AAR. If the tensor block argument
-!is already registered, increaments the %times_needed field.
+!is already registered, the %times_needed field is increamented.
 !INPUT:
 ! # tkey: tensor block identifier (key);
 !OUTPUT:
@@ -1227,7 +1268,7 @@
          return
          end function aar_register
 
-         integer function aar_delete(tkey) !Free AAR entry: MT only
+         integer function aar_delete(tkey) !free AAR entry: MT only
          implicit none
          type(tens_blck_id_t), intent(in):: tkey
          integer:: ier
@@ -1261,11 +1302,11 @@
          if(j0.ne.0) then;  write(jo_cp,'("#ERROR(c_process::c_proc_life:c_proc_quit): ETIQ_STCU destruction failed!")'); ierr=ierr+50000; endif
          stcu_num_units=-1
  !ETIQ_NVCU:
-         j0=cp_destructor(etiq_nvcu)
-         if(j0.ne.0) then;  write(jo_cp,'("#ERROR(c_process::c_proc_life:c_proc_quit): ETIQ_NVCU destruction failed!")'); ierr=ierr+100000; endif
+         j0=cp_destructor(etiq_nvcu); j1=0; if(allocated(nvcu_tasks)) deallocate(nvcu_tasks,STAT=j1)
+         if(j0.ne.0.or.j1.ne.0) then;  write(jo_cp,'("#ERROR(c_process::c_proc_life:c_proc_quit): ETIQ_NVCU destruction failed!")'); ierr=ierr+100000; endif
  !ETIQ_XPCU:
-         j0=cp_destructor(etiq_xpcu)
-         if(j0.ne.0) then;  write(jo_cp,'("#ERROR(c_process::c_proc_life:c_proc_quit): ETIQ_XPCU destruction failed!")'); ierr=ierr+300000; endif
+         j0=cp_destructor(etiq_xpcu); j1=0; if(allocated(xpcu_tasks)) deallocate(xpcu_tasks,STAT=j1)
+         if(j0.ne.0.or.j1.ne.0) then;  write(jo_cp,'("#ERROR(c_process::c_proc_life:c_proc_quit): ETIQ_XPCU destruction failed!")'); ierr=ierr+300000; endif
 !AAR:
          j0=aar%destroy(destruct_key_func=cp_destructor)
          if(j0.ne.0) then; write(jo_cp,'("#ERROR(c_process::c_proc_life:c_proc_quit): AAR destruction failed!")'); ierr=ierr+500000; endif

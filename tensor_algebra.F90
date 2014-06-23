@@ -1,8 +1,8 @@
 !TENSOR ALGEBRA IN PARALLEL (TAP) for SHARED-MEMORY SYSTEMS (OpenMP based)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2014/05/23
+!REVISION: 2014/06/23
 !GNU FORTRAN compiling options: -c -O3 --free-line-length-none -x f95-cpp-input -fopenmp
-!GNU linking options: -lgomp -blas -llapack
+!GNU linking options: -lgomp -lblas -llapack
 !ACRONYMS:
 ! - mlndx - multiindex;
 ! - Lm - Level-min segment size (the lowest level segment size for bricked storage);
@@ -171,21 +171,39 @@
 	subroutine set_data_kind_sync(alg) !SERIAL
 	implicit none
 	integer, intent(in):: alg
-	if(alg.eq.0) then; data_kind_sync=.false.; else; data_kind_sync=.true.; endif
+	if(alg.eq.0) then
+!$OMP ATOMIC WRITE
+	 data_kind_sync=.false.
+	else
+!$OMP ATOMIC WRITE
+	 data_kind_sync=.true.
+	endif
 	return
 	end subroutine set_data_kind_sync
 !----------------------------------------------
 	subroutine set_transpose_algorithm(alg) !SERIAL
 	implicit none
 	integer, intent(in):: alg
-	if(alg.eq.0) then; trans_shmem=.false.; else; trans_shmem=.true.; endif
+	if(alg.eq.0) then
+!$OMP ATOMIC WRITE
+	 trans_shmem=.false.
+	else
+!$OMP ATOMIC WRITE
+	 trans_shmem=.true.
+	endif
 	return
 	end subroutine set_transpose_algorithm
 !--------------------------------------------
 	subroutine set_matmult_algorithm(alg) !SERIAL
 	implicit none
 	integer, intent(in):: alg
-	if(alg.eq.0) then; disable_blas=.false.; else; disable_blas=.true.; endif
+	if(alg.eq.0) then
+!$OMP ATOMIC WRITE
+	 disable_blas=.false.
+	else
+!$OMP ATOMIC WRITE
+	 disable_blas=.true.
+	endif
 	return
 	end subroutine set_matmult_algorithm
 !--------------------------------------------------
@@ -3902,15 +3920,13 @@
 	logical, parameter:: cache_efficiency=.true.
 	integer(LONGINT), parameter:: cache_line_lim=2**5   !approx. number of simultaneously open cache lines per thread
 	integer(LONGINT), parameter:: small_tens_size=2**12 !up to this size (of a tensor block) it is useless to apply cache efficiency
-	integer(LONGINT), parameter:: ave_thread_num=32     !average number of executing threads (approx.)
-	integer(LONGINT), parameter:: max_dim_ext=cache_line_lim*ave_thread_num !boundary dimensions which have a larger extent will be split
 	integer(LONGINT), parameter:: vec_size=2**4         !loop reorganization parameter
 !--------------------------------------------------
 	integer, intent(in):: dim_num,dim_extents(1:*),dim_transp(0:*)
 	real(real_kind), intent(in):: tens_in(0:*)
 	real(real_kind), intent(out):: tens_out(0:*)
 	integer, intent(inout):: ierr
-	integer i,j,k,l,m,n,k0,k1,k2,k3,ks,kf,split_in,split_out,ac1(1:max_tensor_rank+1)
+	integer i,j,k,l,m,n,k0,k1,k2,k3,ks,kf,max_dim_ext,split_in,split_out,ac1(1:max_tensor_rank+1)
 	integer im(1:max_tensor_rank),n2o(0:max_tensor_rank+1),ipr(1:max_tensor_rank+1)
 	integer(LONGINT) bases_in(1:max_tensor_rank+1),bases_out(1:max_tensor_rank+1),bases_pri(1:max_tensor_rank+1)
 	integer(LONGINT) bs,l0,l1,l2,l3,l_in,l_out,segs(0:max_threads)
@@ -3920,7 +3936,12 @@
 
 	ierr=0
 !	time_beg=secnds(0.) !debug
-	if(dim_num.lt.0) then; ierr=dim_num; return; elseif(dim_num.eq.0) then; tens_out(0)=tens_in(0); return; endif
+	if(dim_num.lt.0) then; ierr=dim_num; return; elseif(dim_num.eq.0) then; tens_out(0)=tens_in(0); return; endif	
+#ifndef NO_OMP
+        max_dim_ext=cache_line_lim*omp_get_num_threads()
+#else
+        max_dim_ext=cache_line_lim
+#endif
 !Check the index permutation:
 	trivial=.true.; do i=1,dim_num; if(dim_transp(i).ne.i) then; trivial=.false.; exit; endif; enddo
 	trivial=trivial.and.cache_efficiency
@@ -4051,7 +4072,7 @@
 	  elseif(split_in.gt.0.and.split_out.gt.0) then !split the last dimensions from both the input and output minor sets
 	   dim_beg(1:dim_num)=0; dim_end(1:dim_num)=dim_extents(1:dim_num)-1; im(1:dim_num)=dim_beg(1:dim_num)
            l2=dim_end(split_in); l3=dim_end(split_out)
-!$OMP DO SCHEDULE(GUIDED) COLLAPSE(1)
+!$OMP DO SCHEDULE(GUIDED) COLLAPSE(2)
 	   do l0=0_LONGINT,l2,cache_line_lim !input dimension
 	    do l1=0_LONGINT,l3,cache_line_lim !output dimension
 	     dim_beg(split_in)=int(l0,4); dim_end(split_in)=int(min(l0+cache_line_lim-1_LONGINT,l2),4)
@@ -4125,15 +4146,13 @@
 	logical, parameter:: cache_efficiency=.true.
 	integer(LONGINT), parameter:: cache_line_lim=2**5   !approx. number of simultaneously open cache lines per thread
 	integer(LONGINT), parameter:: small_tens_size=2**12 !up to this size (of a tensor block) it is useless to apply cache efficiency
-	integer(LONGINT), parameter:: ave_thread_num=32     !average number of executing threads (approx.)
-	integer(LONGINT), parameter:: max_dim_ext=cache_line_lim*ave_thread_num !boundary dimensions which have a larger extent will be split
 	integer(LONGINT), parameter:: vec_size=2**4         !loop reorganization parameter
 !--------------------------------------------------
 	integer, intent(in):: dim_num,dim_extents(1:*),dim_transp(0:*)
 	real(real_kind), intent(in):: tens_in(0:*)
 	real(real_kind), intent(out):: tens_out(0:*)
 	integer, intent(inout):: ierr
-	integer i,j,k,l,m,n,k0,k1,k2,k3,ks,kf,split_in,split_out,ac1(1:max_tensor_rank+1)
+	integer i,j,k,l,m,n,k0,k1,k2,k3,ks,kf,max_dim_ext,split_in,split_out,ac1(1:max_tensor_rank+1)
 	integer im(1:max_tensor_rank),n2o(0:max_tensor_rank+1),ipr(1:max_tensor_rank+1)
 	integer(LONGINT) bases_in(1:max_tensor_rank+1),bases_out(1:max_tensor_rank+1),bases_pri(1:max_tensor_rank+1)
 	integer(LONGINT) bs,l0,l1,l2,l3,l_in,l_out,segs(0:max_threads)
@@ -4144,6 +4163,11 @@
 	ierr=0
 !	time_beg=secnds(0.) !debug
 	if(dim_num.lt.0) then; ierr=dim_num; return; elseif(dim_num.eq.0) then; tens_out(0)=tens_in(0); return; endif
+#ifndef NO_OMP
+        max_dim_ext=cache_line_lim*omp_get_num_threads()
+#else
+        max_dim_ext=cache_line_lim
+#endif
 !Check the index permutation:
 	trivial=.true.; do i=1,dim_num; if(dim_transp(i).ne.i) then; trivial=.false.; exit; endif; enddo
 	trivial=trivial.and.cache_efficiency
@@ -4274,7 +4298,7 @@
 	  elseif(split_in.gt.0.and.split_out.gt.0) then !split the last dimensions from both the input and output minor sets
 	   dim_beg(1:dim_num)=0; dim_end(1:dim_num)=dim_extents(1:dim_num)-1; im(1:dim_num)=dim_beg(1:dim_num)
            l2=dim_end(split_in); l3=dim_end(split_out)
-!$OMP DO SCHEDULE(GUIDED) COLLAPSE(1)
+!$OMP DO SCHEDULE(GUIDED) COLLAPSE(2)
 	   do l0=0_LONGINT,l2,cache_line_lim !input dimension
 	    do l1=0_LONGINT,l3,cache_line_lim !output dimension
 	     dim_beg(split_in)=int(l0,4); dim_end(split_in)=int(min(l0+cache_line_lim-1_LONGINT,l2),4)
