@@ -1,13 +1,13 @@
 NAME = qforce.v13.01.x
-FC = ftn
-CC = cc
-CUDA_C = nvcc
-MPI_INC = -I.
-CUDA_INC = -I.
-CUDA_LIB = -L.
+FC = mpif90
+CC = gcc
+CUDA_C = /usr/local/cuda-5.5/bin/nvcc
+MPI_INC = -I/usr/include/mpich2
+CUDA_INC = -I/usr/local/cuda-5.5/include
+CUDA_LIB = -L/usr/local/cuda-5.5/lib
 CUDA_LINK = -lcublas -lcudart
-CUDA_FLAGS = --compile -O3 -arch=sm_35 -DDEBUG -g -G
-LA_LINK = -lacml
+CUDA_FLAGS = --compile -O3 -arch=sm_11 -DDEBUG -g -G
+LA_LINK = -lblas -llapack
 C_FLAGS = -c -O3 -g
 FFLAGS = -c -O3 --free-line-length-none -x f95-cpp-input -fopenmp -DNO_PHI \
          -g -fbacktrace -fcheck=bounds -fcheck=array-temps -fcheck=pointer
