@@ -1,7 +1,7 @@
 !This module provides functionality for a Computing Process (C-PROCESS, CP).
 !In essence, this is a single-node elementary tensor instruction scheduler (SETIS).
 !AUTHOR: Dmitry I. Lyakh (Dmytro I. Liakh): quant4me@gmail.com
-!REVISION: 2014/06/23
+!REVISION: 2014/06/24
 !CONCEPTS (CP workflow):
 ! - Each CP stores its own tensor blocks in TBB, with a possibility of disk dump.
 ! - LR sends a batch of ETI to be executed on this CP unit (CP MPI Process).
@@ -383,16 +383,16 @@
             !`Write
 !DEBUG begin:
  !Create keys (tensor block id):
-            err_code=key(0)%create('O',(/0/)); write(jo_cp,*) 'Key creation: ',err_code
-            err_code=key(1)%create('I',(/0/)); write(jo_cp,*) 'Key creation: ',err_code
-            err_code=key(2)%create('A',(/4,0,0,0,0/)); write(jo_cp,*) 'Key creation: ',err_code
-            err_code=key(3)%create('B',(/4,0,0,0,0/)); write(jo_cp,*) 'Key creation: ',err_code
-            err_code=key(4)%create('C',(/4,0,0,0,0/)); write(jo_cp,*) 'Key creation: ',err_code
-            err_code=key(5)%create('D',(/5,0,0,0,0,0/)); write(jo_cp,*) 'Key creation: ',err_code
-            err_code=key(6)%create('E',(/5,0,0,0,0,0/)); write(jo_cp,*) 'Key creation: ',err_code
-            err_code=key(7)%create('F',(/5,0,0,0,0,0/)); write(jo_cp,*) 'Key creation: ',err_code
-            err_code=key(8)%create('G',(/5,0,0,0,0,0/)); write(jo_cp,*) 'Key creation: ',err_code
-            err_code=key(9)%create('H',(/5,0,0,0,0,0/)); write(jo_cp,*) 'Key creation: ',err_code
+            err_code=key( 0)%create('O',(/0/)); write(jo_cp,*) 'Key creation: ',err_code
+            err_code=key( 1)%create('I',(/0/)); write(jo_cp,*) 'Key creation: ',err_code
+            err_code=key( 2)%create('A',(/4,0,0,0,0/)); write(jo_cp,*) 'Key creation: ',err_code
+            err_code=key( 3)%create('B',(/4,0,0,0,0/)); write(jo_cp,*) 'Key creation: ',err_code
+            err_code=key( 4)%create('C',(/4,0,0,0,0/)); write(jo_cp,*) 'Key creation: ',err_code
+            err_code=key( 5)%create('D',(/5,0,0,0,0,0/)); write(jo_cp,*) 'Key creation: ',err_code
+            err_code=key( 6)%create('E',(/5,0,0,0,0,0/)); write(jo_cp,*) 'Key creation: ',err_code
+            err_code=key( 7)%create('F',(/5,0,0,0,0,0/)); write(jo_cp,*) 'Key creation: ',err_code
+            err_code=key( 8)%create('G',(/5,0,0,0,0,0/)); write(jo_cp,*) 'Key creation: ',err_code
+            err_code=key( 9)%create('H',(/5,0,0,0,0,0/)); write(jo_cp,*) 'Key creation: ',err_code
             err_code=key(10)%create('J',(/5,0,0,0,0,0/)); write(jo_cp,*) 'Key creation: ',err_code
  !Register tensor blocks in TBB:
   !Zero scalar:
@@ -586,34 +586,54 @@
             etiq%eti(k)%instr_handle=-1
             etiq%eti(k)%instr_status=instr_ready_to_exec
             etiq%scheduled=etiq%scheduled+1
+  !ETIQ(11):
+            k=11
+            etiq%eti(k)%instr_code=instr_tensor_contract; etiq%eti(k)%data_kind='r8'
+            allocate(etiq%eti(k)%instr_aux(0:11))
+            etiq%eti(k)%instr_aux(0:11)=(/10, -4,-2,4,-1,1,-4,-2,3,-1,2, COPY_BACK/)
+            etiq%eti(k)%instr_cu=cu_t(DEV_NVIDIA_GPU,0)
+            etiq%eti(k)%args_ready=B'1111111111111111111111111111111'
+            etiq%eti(k)%tens_op0%tens_blck_id=key(3)
+            err_code=aar_register(etiq%eti(k)%tens_op0%tens_blck_id,targ_p); write(jo_cp,*) 'AAR entry search: ',err_code
+            etiq%eti(k)%tens_op0%op_aar_entry=>targ_p
+            etiq%eti(k)%tens_op1%tens_blck_id=key(7)
+            err_code=aar_register(etiq%eti(k)%tens_op1%tens_blck_id,targ_p); write(jo_cp,*) 'AAR entry search: ',err_code
+            etiq%eti(k)%tens_op1%op_aar_entry=>targ_p
+            etiq%eti(k)%tens_op2%tens_blck_id=key(8)
+            err_code=aar_register(etiq%eti(k)%tens_op2%tens_blck_id,targ_p); write(jo_cp,*) 'AAR entry search: ',err_code
+            etiq%eti(k)%tens_op2%op_aar_entry=>targ_p
+            etiq%eti(k)%instr_handle=-1
+            etiq%eti(k)%instr_status=instr_ready_to_exec
+            etiq%scheduled=etiq%scheduled+1
 
 !$OMP FLUSH
             call set_transpose_algorithm(EFF_TRN_ON)
             call set_matmult_algorithm(BLAS_ON)
 !$OMP FLUSH
+ !Enqueue tensor instructions to NVCU:
+            etiq_nvcu%etiq_entry(0)=11
+            etiq_nvcu%te_conf(0)=te_conf_t(etiq%eti(etiq_nvcu%etiq_entry(0))%instr_cu,16,16,1)
+            etiq_nvcu%scheduled=etiq_nvcu%scheduled+1
+            etiq%eti(etiq_nvcu%etiq_entry(9))%instr_status=instr_scheduled
  !Enqueue tensor instructions to STCU:
-  !Inits:
             etiq_stcu%etiq_entry(9)=10
-             etiq_stcu%te_conf(9)=te_conf_t(etiq%eti(etiq_stcu%etiq_entry(9))%instr_cu,1,4,1)
-             etiq_stcu%scheduled=etiq_stcu%scheduled+1
-             etiq%eti(etiq_stcu%etiq_entry(9))%instr_status=instr_scheduled
+            etiq_stcu%te_conf(9)=te_conf_t(etiq%eti(etiq_stcu%etiq_entry(9))%instr_cu,1,4,1)
+            etiq_stcu%scheduled=etiq_stcu%scheduled+1
+            etiq%eti(etiq_stcu%etiq_entry(9))%instr_status=instr_scheduled
             do k=8,0,-1
              etiq_stcu%etiq_entry(k)=1+k
              etiq_stcu%te_conf(k)=te_conf_t(etiq%eti(etiq_stcu%etiq_entry(k))%instr_cu,1,4,1)
              etiq_stcu%scheduled=etiq_stcu%scheduled+1
              etiq%eti(etiq_stcu%etiq_entry(k))%instr_status=instr_scheduled
             enddo
-            
-  !Copies:
-            
-  !Contractions:
-            
+
 !$OMP FLUSH
             write(jo_cp,*)'Instruction(s) scheduled!'
  !Wait for completion:
-            i=etiq%scheduled
+            i=etiq%scheduled; j=0
             do while(i.gt.0)
              do k=1,etiq%scheduled
+              if(j.ge.3) m=nvcu_task_status(0)
 !$OMP ATOMIC READ
               j=etiq%eti(k)%instr_status
               if(j.eq.instr_completed) then
@@ -625,6 +645,10 @@
 !$OMP ATOMIC WRITE
                etiq%eti(k)%instr_status=instr_dead
                i=i-1
+               if(k.eq.6.or.k.eq.7) j=j+1
+               if(j.eq.2) then
+                m=nvcu_execute_eti(0); j=j+1; write(jo_cp,'("Instr#11 went to GPU: ",i12)') m
+               endif
               elseif(j.le.0) then
                write(jo_cp,'("Instruction ",i2," failed: ",i11)') k,j
 !$OMP ATOMIC WRITE
@@ -634,6 +658,8 @@
              enddo
             enddo
             write(jo_cp,*)'Instruction(s) completed: ',i
+ !Clean up GPU stuff:
+            
  !Destroy keys:
             do j=0,10; err_code=key(j)%destroy(); enddo
  !Destroy AAR:
@@ -809,7 +835,7 @@
 
          integer(C_INT) function stcu_execute_eti(eti_loc) !STCU ETI execution workflow: ST only (thread private)
          implicit none
-         integer(C_INT), intent(in):: eti_loc
+         integer(C_INT), intent(in):: eti_loc !entry number in <etiq>
          type(tens_instr_t), pointer:: my_eti
          type(tensor_block_t), pointer:: dtens_,ltens_,rtens_,stens_
          character(max_shape_str_len):: jtsss
@@ -1017,7 +1043,7 @@
 #ifndef NO_GPU
          integer(C_INT) function nvcu_execute_eti(etiq_nvcu_loc) !NVCU ETI execution workflow: MT only
          implicit none
-         integer(C_INT), intent(in):: etiq_nvcu_loc
+         integer(C_INT), intent(in):: etiq_nvcu_loc !entry number in <etiq_nvcu>
          type(tens_instr_t), pointer:: my_eti
          type(C_PTR):: dtens_,ltens_,rtens_,pptr
          integer(C_INT):: d_hab_entry,l_hab_entry,r_hab_entry
@@ -1172,6 +1198,8 @@
             my_eti%instr_status=nvcu_execute_eti !error
            elseif(nvcu_execute_eti.gt.0) then
             my_eti%instr_status=instr_scheduled  !insufficient resources (not an error)
+           else !success
+            my_eti%instr_handle=etiq_nvcu_loc    !CUDA task handle can be retrieved from <nvcu_tasks>
            endif
            my_eti=>NULL()
           else
@@ -1183,9 +1211,9 @@
          return
          end function nvcu_execute_eti
 
-         integer(C_INT) function nvcu_task_status(nvcu_task_num) !query the status of a CUDA task
+         integer(C_INT) function nvcu_task_status(nvcu_task_num) !query the status of a CUDA task: MT only
          implicit none
-         integer(C_INT), intent(in):: nvcu_task_num
+         integer(C_INT), intent(in):: nvcu_task_num !entry number in <nvcu_tasks>||<etiq_nvcu>
          integer j0
          if(nvcu_task_num.ge.0.and.nvcu_task_num.lt.etiq_nvcu%depth) then
 !$OMP ATOMIC READ
@@ -1208,6 +1236,14 @@
          endif
          return
          end function nvcu_task_status
+
+         integer(C_INT) function nvcu_task_clean(nvcu_task_num,gab_free,hab_free) !clean up after a CUDA task
+         implicit none
+         integer(C_INT), intent(in):: nvcu_task_num
+         integer(C_INT), intent(in), optional:: gab_free,hab_free
+         
+         return
+         end function nvcu_task_clean
 #endif
 
 #ifndef NO_PHI
