@@ -248,7 +248,7 @@
 !---------------------------------------------------------
         integer(C_INT), parameter:: max_arg_buf_levels=256 !max number of argument buffer levels (do not exceed C values)
 !---------------------------------------------------------
-        integer(C_INT) i,j,k,l,m,n,err_code,thread_num !general purpose: thread private
+        integer(C_INT) i,j,k,l,m,n,ks,kf,err_code,thread_num !general purpose: thread private
         type(nvcu_task_t), allocatable:: nvcu_tasks(:) !parallel to etiq_nvcu
         type(xpcu_task_t), allocatable:: xpcu_tasks(:) !parallel to etiq_xpcu
         integer:: stcu_base_ip,stcu_my_ip,stcu_my_eti !STCU specific (slaves): thread private
@@ -611,7 +611,7 @@
             etiq_nvcu%etiq_entry(0)=11
             etiq_nvcu%te_conf(0)=te_conf_t(etiq%eti(etiq_nvcu%etiq_entry(0))%instr_cu,16,16,1)
             etiq_nvcu%scheduled=etiq_nvcu%scheduled+1
-            etiq%eti(etiq_nvcu%etiq_entry(9))%instr_status=instr_scheduled
+            etiq%eti(etiq_nvcu%etiq_entry(0))%instr_status=instr_scheduled
  !Enqueue tensor instructions to STCU:
             etiq_stcu%etiq_entry(9)=10
             etiq_stcu%te_conf(9)=te_conf_t(etiq%eti(etiq_stcu%etiq_entry(9))%instr_cu,1,4,1)
@@ -627,10 +627,10 @@
 !$OMP FLUSH
             write(jo_cp,*)'Instruction(s) scheduled!'
  !Wait for completion:
-            i=etiq%scheduled; j=0
+            i=etiq%scheduled; kf=0
             do while(i.gt.0)
              do k=1,etiq%scheduled
-              if(j.ge.3) m=nvcu_task_status(0)
+              if(kf.ge.3) j=nvcu_task_status(0)
 !$OMP ATOMIC READ
               j=etiq%eti(k)%instr_status
               if(j.eq.instr_completed) then
@@ -642,9 +642,9 @@
 !$OMP ATOMIC WRITE
                etiq%eti(k)%instr_status=instr_dead
                i=i-1
-               if(k.eq.6.or.k.eq.7) j=j+1
-               if(j.eq.2) then
-                m=nvcu_execute_eti(0); j=j+1; write(jo_cp,'("Instr#11 went to GPU: ",i12)') m
+               if(k.eq.6.or.k.eq.7) kf=kf+1
+               if(kf.eq.2) then
+                j=nvcu_execute_eti(0); kf=kf+1; write(jo_cp,'("Instr#11 went to GPU: ",i12)') j
                endif
               elseif(j.le.0) then
                write(jo_cp,'("Instruction ",i2," failed: ",i11)') k,j
