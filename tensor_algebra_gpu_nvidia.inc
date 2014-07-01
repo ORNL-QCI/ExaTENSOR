@@ -1,10 +1,11 @@
 !This is a Fortran alias of tensor_algebra_gpu_nvidia.h (KEEP CONSISTENT!):
 
 !GLOBAL (keep consistent with tensor_algebra_gpu_nvidia.h):
-        integer(C_INT), parameter:: max_tensor_rank=32   !max allowed tensor rank (max number of indices in a tensor)
-        integer(C_INT), parameter:: MAX_GPUS_PER_NODE=16 !max number of Nvidia GPUs on a node
-        integer(C_INT), parameter:: MAX_MICS_PER_NODE=8  !max number of Intel MICs on a node
-        integer(C_INT), parameter:: MAX_AMDS_PER_NODE=8  !max number of AMD GPUs on a node
+        integer(C_INT), parameter:: max_tensor_rank=32    !max allowed tensor rank (max number of indices in a tensor)
+        integer(C_INT), parameter:: max_tensor_operands=4 !max number of tensor operands in a tensor operation
+        integer(C_INT), parameter:: MAX_GPUS_PER_NODE=16  !max number of Nvidia GPUs on a node
+        integer(C_INT), parameter:: MAX_MICS_PER_NODE=8   !max number of Intel MICs on a node
+        integer(C_INT), parameter:: MAX_AMDS_PER_NODE=8   !max number of AMD GPUs on a node
 
 !DATA KINDS (keep consistent with tensor_algebra_gpu_nvidia.h):
         integer(C_INT), parameter:: R4=4  !float data kind
@@ -28,15 +29,19 @@
         integer(C_INT), parameter:: cuda_task_completed=5
 
 !ALIASES (keep consistent with tensor_algebra_gpu_nvidia.h):
-        integer(C_INT), parameter:: NOT_REALLY=0
-        integer(C_INT), parameter:: NO_COPY_BACK=0
-        integer(C_INT), parameter:: COPY_BACK=1
-        integer(C_INT), parameter:: EVENTS_OFF=0
-        integer(C_INT), parameter:: EVENTS_ON=1
-        integer(C_INT), parameter:: BLAS_ON=0
-        integer(C_INT), parameter:: BLAS_OFF=1
-        integer(C_INT), parameter:: EFF_TRN_OFF=0
-        integer(C_INT), parameter:: EFF_TRN_ON=1
+        integer(C_INT), parameter:: NOT_REALLY=0           !"NO" answer
+        integer(C_INT), parameter:: NO_COPY_BACK=0         !Keeps the tensor-result on a GPU without updating HAB
+        integer(C_INT), parameter:: COPY_BACK=1            !tensor-result will be copied back from a GPU to HAB
+        integer(C_INT), parameter:: EVENTS_OFF=0           !disables CUDA event recording
+        integer(C_INT), parameter:: EVENTS_ON=1            !enables CUDA event recording
+        integer(C_INT), parameter:: BLAS_ON=0              !enables BLAS
+        integer(C_INT), parameter:: BLAS_OFF=1             !disables BLAS
+        integer(C_INT), parameter:: EFF_TRN_OFF=0          !disables efficient tensor transpose algorithm
+        integer(C_INT), parameter:: EFF_TRN_ON=1           !enables efficient tensor transpose algorithm
+        integer(C_INT), parameter:: KEEP_NO_DATA=0         !CUDA task cleanup flag: delete all the data for the tensor argument
+        integer(C_INT), parameter:: KEEP_HAB_DATA=1        !CUDA task cleanup flag: keeps HAB entry for the tensor argument
+        integer(C_INT), parameter:: KEEP_GPU_DATA=2        !CUDA task cleanup flag: keeps GPU data for the tensor argument
+        integer(C_INT), parameter:: KEEP_ALL_DATA=KEEP_GPU_DATA+KEEP_HAB_DATA !CUDA task cleanup flag: keeps everything
 
 !Tensor block storage layout:
         integer(C_INT), parameter:: not_allocated=0   !tensor block has not been initialized

@@ -1,7 +1,7 @@
 !This module provides functionality for a Computing Process (C-PROCESS, CP).
 !In essence, this is a single-node elementary tensor instruction scheduler (SETIS).
 !AUTHOR: Dmitry I. Lyakh (Dmytro I. Liakh): quant4me@gmail.com
-!REVISION: 2014/06/24
+!REVISION: 2014/07/01
 !CONCEPTS (CP workflow):
 ! - Each CP stores its own tensor blocks in TBB, with a possibility of disk dump.
 ! - LR sends a batch of ETI to be executed on this CP unit (CP MPI Process).
@@ -171,10 +171,7 @@
          real(4), private:: time_completed   !time the instruction was completed: set by CP:{MT:ST}
          real(4), private:: time_uploaded    !time the remote result upload completed: set by MT
          integer, private:: args_ready       !each bit is set to 1 when the corresponding operand is in AAR: set by CP:MT
-         type(tens_operand_t):: tens_op0     !tensor-block operand #0
-         type(tens_operand_t):: tens_op1     !tensor-block operand #1
-         type(tens_operand_t):: tens_op2     !tensor-block operand #2
-         type(tens_operand_t):: tens_op3     !tensor-block opearnd #3
+         type(tens_operand_t):: tens_op(0:max_tensor_operands-1) !tensor-block operands
         end type tens_instr_t
   !Elementary tensor instruction queue (ETIQ), out-of-order (linked list):
         type, private:: etiq_t
@@ -430,12 +427,12 @@
             etiq%eti(k)%instr_aux(0:3*4)=(/4, 5,15,5,15, 5,15,5,15, 0,0,0,0/)
             etiq%eti(k)%instr_cu=cu_t(DEV_HOST,1)
             etiq%eti(k)%args_ready=B'1111111111111111111111111111111'
-            etiq%eti(k)%tens_op0%tens_blck_id=key(2)
-            err_code=aar_register(etiq%eti(k)%tens_op0%tens_blck_id,targ_p); write(jo_cp,*) 'AAR entry search: ',err_code
-            etiq%eti(k)%tens_op0%op_aar_entry=>targ_p
-            etiq%eti(k)%tens_op3%tens_blck_id=key(0)
-            err_code=aar_register(etiq%eti(k)%tens_op3%tens_blck_id,targ_p); write(jo_cp,*) 'AAR entry search: ',err_code
-            etiq%eti(k)%tens_op3%op_aar_entry=>targ_p
+            etiq%eti(k)%tens_op(0)%tens_blck_id=key(2)
+            err_code=aar_register(etiq%eti(k)%tens_op(0)%tens_blck_id,targ_p); write(jo_cp,*) 'AAR entry search: ',err_code
+            etiq%eti(k)%tens_op(0)%op_aar_entry=>targ_p
+            etiq%eti(k)%tens_op(3)%tens_blck_id=key(0)
+            err_code=aar_register(etiq%eti(k)%tens_op(3)%tens_blck_id,targ_p); write(jo_cp,*) 'AAR entry search: ',err_code
+            etiq%eti(k)%tens_op(3)%op_aar_entry=>targ_p
             etiq%eti(k)%instr_handle=-1
             etiq%eti(k)%instr_status=instr_ready_to_exec
             etiq%scheduled=etiq%scheduled+1
@@ -446,12 +443,12 @@
             etiq%eti(k)%instr_aux(0:3*4)=(/4, 5,15,5,15, 5,15,5,15, 0,0,0,0/)
             etiq%eti(k)%instr_cu=cu_t(DEV_HOST,0)
             etiq%eti(k)%args_ready=B'1111111111111111111111111111111'
-            etiq%eti(k)%tens_op0%tens_blck_id=key(3)
-            err_code=aar_register(etiq%eti(k)%tens_op0%tens_blck_id,targ_p); write(jo_cp,*) 'AAR entry search: ',err_code
-            etiq%eti(k)%tens_op0%op_aar_entry=>targ_p
-            etiq%eti(k)%tens_op3%tens_blck_id=key(0)
-            err_code=aar_register(etiq%eti(k)%tens_op3%tens_blck_id,targ_p); write(jo_cp,*) 'AAR entry search: ',err_code
-            etiq%eti(k)%tens_op3%op_aar_entry=>targ_p
+            etiq%eti(k)%tens_op(0)%tens_blck_id=key(3)
+            err_code=aar_register(etiq%eti(k)%tens_op(0)%tens_blck_id,targ_p); write(jo_cp,*) 'AAR entry search: ',err_code
+            etiq%eti(k)%tens_op(0)%op_aar_entry=>targ_p
+            etiq%eti(k)%tens_op(3)%tens_blck_id=key(0)
+            err_code=aar_register(etiq%eti(k)%tens_op(3)%tens_blck_id,targ_p); write(jo_cp,*) 'AAR entry search: ',err_code
+            etiq%eti(k)%tens_op(3)%op_aar_entry=>targ_p
             etiq%eti(k)%instr_handle=-1
             etiq%eti(k)%instr_status=instr_ready_to_exec
             etiq%scheduled=etiq%scheduled+1
@@ -462,12 +459,12 @@
             etiq%eti(k)%instr_aux(0:3*4)=(/4, 5,15,5,15, 5,15,5,15, 0,0,0,0/)
             etiq%eti(k)%instr_cu=cu_t(DEV_HOST,1)
             etiq%eti(k)%args_ready=B'1111111111111111111111111111111'
-            etiq%eti(k)%tens_op0%tens_blck_id=key(4)
-            err_code=aar_register(etiq%eti(k)%tens_op0%tens_blck_id,targ_p); write(jo_cp,*) 'AAR entry search: ',err_code
-            etiq%eti(k)%tens_op0%op_aar_entry=>targ_p
-            etiq%eti(k)%tens_op3%tens_blck_id=key(0)
-            err_code=aar_register(etiq%eti(k)%tens_op3%tens_blck_id,targ_p); write(jo_cp,*) 'AAR entry search: ',err_code
-            etiq%eti(k)%tens_op3%op_aar_entry=>targ_p
+            etiq%eti(k)%tens_op(0)%tens_blck_id=key(4)
+            err_code=aar_register(etiq%eti(k)%tens_op(0)%tens_blck_id,targ_p); write(jo_cp,*) 'AAR entry search: ',err_code
+            etiq%eti(k)%tens_op(0)%op_aar_entry=>targ_p
+            etiq%eti(k)%tens_op(3)%tens_blck_id=key(0)
+            err_code=aar_register(etiq%eti(k)%tens_op(3)%tens_blck_id,targ_p); write(jo_cp,*) 'AAR entry search: ',err_code
+            etiq%eti(k)%tens_op(3)%op_aar_entry=>targ_p
             etiq%eti(k)%instr_handle=-1
             etiq%eti(k)%instr_status=instr_ready_to_exec
             etiq%scheduled=etiq%scheduled+1
@@ -478,12 +475,12 @@
             etiq%eti(k)%instr_aux(0:3*5)=(/5, 5,10,15,221,25, 5,10,15,221,25, 0,0,0,0,0/)
             etiq%eti(k)%instr_cu=cu_t(DEV_HOST,0)
             etiq%eti(k)%args_ready=B'1111111111111111111111111111111'
-            etiq%eti(k)%tens_op0%tens_blck_id=key(5)
-            err_code=aar_register(etiq%eti(k)%tens_op0%tens_blck_id,targ_p); write(jo_cp,*) 'AAR entry search: ',err_code
-            etiq%eti(k)%tens_op0%op_aar_entry=>targ_p
-            etiq%eti(k)%tens_op3%tens_blck_id=key(1)
-            err_code=aar_register(etiq%eti(k)%tens_op3%tens_blck_id,targ_p); write(jo_cp,*) 'AAR entry search: ',err_code
-            etiq%eti(k)%tens_op3%op_aar_entry=>targ_p
+            etiq%eti(k)%tens_op(0)%tens_blck_id=key(5)
+            err_code=aar_register(etiq%eti(k)%tens_op(0)%tens_blck_id,targ_p); write(jo_cp,*) 'AAR entry search: ',err_code
+            etiq%eti(k)%tens_op(0)%op_aar_entry=>targ_p
+            etiq%eti(k)%tens_op(3)%tens_blck_id=key(1)
+            err_code=aar_register(etiq%eti(k)%tens_op(3)%tens_blck_id,targ_p); write(jo_cp,*) 'AAR entry search: ',err_code
+            etiq%eti(k)%tens_op(3)%op_aar_entry=>targ_p
             etiq%eti(k)%instr_handle=-1
             etiq%eti(k)%instr_status=instr_ready_to_exec
             etiq%scheduled=etiq%scheduled+1
@@ -494,12 +491,12 @@
             etiq%eti(k)%instr_aux(0:3*5)=(/5, 5,10,15,221,25, 5,10,15,221,25, 0,0,0,0,0/)
             etiq%eti(k)%instr_cu=cu_t(DEV_HOST,0)
             etiq%eti(k)%args_ready=B'1111111111111111111111111111111'
-            etiq%eti(k)%tens_op0%tens_blck_id=key(6)
-            err_code=aar_register(etiq%eti(k)%tens_op0%tens_blck_id,targ_p); write(jo_cp,*) 'AAR entry search: ',err_code
-            etiq%eti(k)%tens_op0%op_aar_entry=>targ_p
-            etiq%eti(k)%tens_op3%tens_blck_id=key(1)
-            err_code=aar_register(etiq%eti(k)%tens_op3%tens_blck_id,targ_p); write(jo_cp,*) 'AAR entry search: ',err_code
-            etiq%eti(k)%tens_op3%op_aar_entry=>targ_p
+            etiq%eti(k)%tens_op(0)%tens_blck_id=key(6)
+            err_code=aar_register(etiq%eti(k)%tens_op(0)%tens_blck_id,targ_p); write(jo_cp,*) 'AAR entry search: ',err_code
+            etiq%eti(k)%tens_op(0)%op_aar_entry=>targ_p
+            etiq%eti(k)%tens_op(3)%tens_blck_id=key(1)
+            err_code=aar_register(etiq%eti(k)%tens_op(3)%tens_blck_id,targ_p); write(jo_cp,*) 'AAR entry search: ',err_code
+            etiq%eti(k)%tens_op(3)%op_aar_entry=>targ_p
             etiq%eti(k)%instr_handle=-1
             etiq%eti(k)%instr_status=instr_ready_to_exec
             etiq%scheduled=etiq%scheduled+1
@@ -510,12 +507,12 @@
             etiq%eti(k)%instr_aux(0:5)=(/5, 5,4,3,2,1/)
             etiq%eti(k)%instr_cu=cu_t(DEV_HOST,1)
             etiq%eti(k)%args_ready=B'1111111111111111111111111111111'
-            etiq%eti(k)%tens_op0%tens_blck_id=key(7)
-            err_code=aar_register(etiq%eti(k)%tens_op0%tens_blck_id,targ_p); write(jo_cp,*) 'AAR entry search: ',err_code
-            etiq%eti(k)%tens_op0%op_aar_entry=>targ_p
-            etiq%eti(k)%tens_op1%tens_blck_id=key(5)
-            err_code=aar_register(etiq%eti(k)%tens_op1%tens_blck_id,targ_p); write(jo_cp,*) 'AAR entry search: ',err_code
-            etiq%eti(k)%tens_op1%op_aar_entry=>targ_p
+            etiq%eti(k)%tens_op(0)%tens_blck_id=key(7)
+            err_code=aar_register(etiq%eti(k)%tens_op(0)%tens_blck_id,targ_p); write(jo_cp,*) 'AAR entry search: ',err_code
+            etiq%eti(k)%tens_op(0)%op_aar_entry=>targ_p
+            etiq%eti(k)%tens_op(1)%tens_blck_id=key(5)
+            err_code=aar_register(etiq%eti(k)%tens_op(1)%tens_blck_id,targ_p); write(jo_cp,*) 'AAR entry search: ',err_code
+            etiq%eti(k)%tens_op(1)%op_aar_entry=>targ_p
             etiq%eti(k)%instr_handle=-1
             etiq%eti(k)%instr_status=instr_ready_to_exec
             etiq%scheduled=etiq%scheduled+1
@@ -526,12 +523,12 @@
             etiq%eti(k)%instr_aux(0:5)=(/5, 3,1,5,2,4/)
             etiq%eti(k)%instr_cu=cu_t(DEV_HOST,0)
             etiq%eti(k)%args_ready=B'1111111111111111111111111111111'
-            etiq%eti(k)%tens_op0%tens_blck_id=key(8)
-            err_code=aar_register(etiq%eti(k)%tens_op0%tens_blck_id,targ_p); write(jo_cp,*) 'AAR entry search: ',err_code
-            etiq%eti(k)%tens_op0%op_aar_entry=>targ_p
-            etiq%eti(k)%tens_op1%tens_blck_id=key(6)
-            err_code=aar_register(etiq%eti(k)%tens_op1%tens_blck_id,targ_p); write(jo_cp,*) 'AAR entry search: ',err_code
-            etiq%eti(k)%tens_op1%op_aar_entry=>targ_p
+            etiq%eti(k)%tens_op(0)%tens_blck_id=key(8)
+            err_code=aar_register(etiq%eti(k)%tens_op(0)%tens_blck_id,targ_p); write(jo_cp,*) 'AAR entry search: ',err_code
+            etiq%eti(k)%tens_op(0)%op_aar_entry=>targ_p
+            etiq%eti(k)%tens_op(1)%tens_blck_id=key(6)
+            err_code=aar_register(etiq%eti(k)%tens_op(1)%tens_blck_id,targ_p); write(jo_cp,*) 'AAR entry search: ',err_code
+            etiq%eti(k)%tens_op(1)%op_aar_entry=>targ_p
             etiq%eti(k)%instr_handle=-1
             etiq%eti(k)%instr_status=instr_ready_to_exec
             etiq%scheduled=etiq%scheduled+1
@@ -542,12 +539,12 @@
             etiq%eti(k)%instr_aux(0:5)=(/5, 5,4,3,2,1/)
             etiq%eti(k)%instr_cu=cu_t(DEV_HOST,1)
             etiq%eti(k)%args_ready=B'1111111111111111111111111111111'
-            etiq%eti(k)%tens_op0%tens_blck_id=key(9)
-            err_code=aar_register(etiq%eti(k)%tens_op0%tens_blck_id,targ_p); write(jo_cp,*) 'AAR entry search: ',err_code
-            etiq%eti(k)%tens_op0%op_aar_entry=>targ_p
-            etiq%eti(k)%tens_op1%tens_blck_id=key(5)
-            err_code=aar_register(etiq%eti(k)%tens_op1%tens_blck_id,targ_p); write(jo_cp,*) 'AAR entry search: ',err_code
-            etiq%eti(k)%tens_op1%op_aar_entry=>targ_p
+            etiq%eti(k)%tens_op(0)%tens_blck_id=key(9)
+            err_code=aar_register(etiq%eti(k)%tens_op(0)%tens_blck_id,targ_p); write(jo_cp,*) 'AAR entry search: ',err_code
+            etiq%eti(k)%tens_op(0)%op_aar_entry=>targ_p
+            etiq%eti(k)%tens_op(1)%tens_blck_id=key(5)
+            err_code=aar_register(etiq%eti(k)%tens_op(1)%tens_blck_id,targ_p); write(jo_cp,*) 'AAR entry search: ',err_code
+            etiq%eti(k)%tens_op(1)%op_aar_entry=>targ_p
             etiq%eti(k)%instr_handle=-1
             etiq%eti(k)%instr_status=instr_ready_to_exec
             etiq%scheduled=etiq%scheduled+1
@@ -558,12 +555,12 @@
             etiq%eti(k)%instr_aux(0:5)=(/5, 3,1,5,2,4/)
             etiq%eti(k)%instr_cu=cu_t(DEV_HOST,0)
             etiq%eti(k)%args_ready=B'1111111111111111111111111111111'
-            etiq%eti(k)%tens_op0%tens_blck_id=key(10)
-            err_code=aar_register(etiq%eti(k)%tens_op0%tens_blck_id,targ_p); write(jo_cp,*) 'AAR entry search: ',err_code
-            etiq%eti(k)%tens_op0%op_aar_entry=>targ_p
-            etiq%eti(k)%tens_op1%tens_blck_id=key(6)
-            err_code=aar_register(etiq%eti(k)%tens_op1%tens_blck_id,targ_p); write(jo_cp,*) 'AAR entry search: ',err_code
-            etiq%eti(k)%tens_op1%op_aar_entry=>targ_p
+            etiq%eti(k)%tens_op(0)%tens_blck_id=key(10)
+            err_code=aar_register(etiq%eti(k)%tens_op(0)%tens_blck_id,targ_p); write(jo_cp,*) 'AAR entry search: ',err_code
+            etiq%eti(k)%tens_op(0)%op_aar_entry=>targ_p
+            etiq%eti(k)%tens_op(1)%tens_blck_id=key(6)
+            err_code=aar_register(etiq%eti(k)%tens_op(1)%tens_blck_id,targ_p); write(jo_cp,*) 'AAR entry search: ',err_code
+            etiq%eti(k)%tens_op(1)%op_aar_entry=>targ_p
             etiq%eti(k)%instr_handle=-1
             etiq%eti(k)%instr_status=instr_ready_to_exec
             etiq%scheduled=etiq%scheduled+1
@@ -574,15 +571,15 @@
             etiq%eti(k)%instr_aux(0:10)=(/10, 3,-2,2,-4,-5, 1,-2,4,-4,-5/)
             etiq%eti(k)%instr_cu=cu_t(DEV_HOST,0)
             etiq%eti(k)%args_ready=B'1111111111111111111111111111111'
-            etiq%eti(k)%tens_op0%tens_blck_id=key(2)
-            err_code=aar_register(etiq%eti(k)%tens_op0%tens_blck_id,targ_p); write(jo_cp,*) 'AAR entry search: ',err_code
-            etiq%eti(k)%tens_op0%op_aar_entry=>targ_p
-            etiq%eti(k)%tens_op1%tens_blck_id=key(5)
-            err_code=aar_register(etiq%eti(k)%tens_op1%tens_blck_id,targ_p); write(jo_cp,*) 'AAR entry search: ',err_code
-            etiq%eti(k)%tens_op1%op_aar_entry=>targ_p
-            etiq%eti(k)%tens_op2%tens_blck_id=key(6)
-            err_code=aar_register(etiq%eti(k)%tens_op2%tens_blck_id,targ_p); write(jo_cp,*) 'AAR entry search: ',err_code
-            etiq%eti(k)%tens_op2%op_aar_entry=>targ_p
+            etiq%eti(k)%tens_op(0)%tens_blck_id=key(2)
+            err_code=aar_register(etiq%eti(k)%tens_op(0)%tens_blck_id,targ_p); write(jo_cp,*) 'AAR entry search: ',err_code
+            etiq%eti(k)%tens_op(0)%op_aar_entry=>targ_p
+            etiq%eti(k)%tens_op(1)%tens_blck_id=key(5)
+            err_code=aar_register(etiq%eti(k)%tens_op(1)%tens_blck_id,targ_p); write(jo_cp,*) 'AAR entry search: ',err_code
+            etiq%eti(k)%tens_op(1)%op_aar_entry=>targ_p
+            etiq%eti(k)%tens_op(2)%tens_blck_id=key(6)
+            err_code=aar_register(etiq%eti(k)%tens_op(2)%tens_blck_id,targ_p); write(jo_cp,*) 'AAR entry search: ',err_code
+            etiq%eti(k)%tens_op(2)%op_aar_entry=>targ_p
             etiq%eti(k)%instr_handle=-1
             etiq%eti(k)%instr_status=instr_ready_to_exec
             etiq%scheduled=etiq%scheduled+1
@@ -593,15 +590,15 @@
             etiq%eti(k)%instr_aux(0:11)=(/10, -4,-2,4,-1,1,-4,-2,3,-1,2, COPY_BACK/)
             etiq%eti(k)%instr_cu=cu_t(DEV_NVIDIA_GPU,0)
             etiq%eti(k)%args_ready=B'1111111111111111111111111111111'
-            etiq%eti(k)%tens_op0%tens_blck_id=key(3)
-            err_code=aar_register(etiq%eti(k)%tens_op0%tens_blck_id,targ_p); write(jo_cp,*) 'AAR entry search: ',err_code
-            etiq%eti(k)%tens_op0%op_aar_entry=>targ_p
-            etiq%eti(k)%tens_op1%tens_blck_id=key(7)
-            err_code=aar_register(etiq%eti(k)%tens_op1%tens_blck_id,targ_p); write(jo_cp,*) 'AAR entry search: ',err_code
-            etiq%eti(k)%tens_op1%op_aar_entry=>targ_p
-            etiq%eti(k)%tens_op2%tens_blck_id=key(8)
-            err_code=aar_register(etiq%eti(k)%tens_op2%tens_blck_id,targ_p); write(jo_cp,*) 'AAR entry search: ',err_code
-            etiq%eti(k)%tens_op2%op_aar_entry=>targ_p
+            etiq%eti(k)%tens_op(0)%tens_blck_id=key(3)
+            err_code=aar_register(etiq%eti(k)%tens_op(0)%tens_blck_id,targ_p); write(jo_cp,*) 'AAR entry search: ',err_code
+            etiq%eti(k)%tens_op(0)%op_aar_entry=>targ_p
+            etiq%eti(k)%tens_op(1)%tens_blck_id=key(7)
+            err_code=aar_register(etiq%eti(k)%tens_op(1)%tens_blck_id,targ_p); write(jo_cp,*) 'AAR entry search: ',err_code
+            etiq%eti(k)%tens_op(1)%op_aar_entry=>targ_p
+            etiq%eti(k)%tens_op(2)%tens_blck_id=key(8)
+            err_code=aar_register(etiq%eti(k)%tens_op(2)%tens_blck_id,targ_p); write(jo_cp,*) 'AAR entry search: ',err_code
+            etiq%eti(k)%tens_op(2)%op_aar_entry=>targ_p
             etiq%eti(k)%instr_handle=-1
             etiq%eti(k)%instr_status=instr_ready_to_exec
             etiq%scheduled=etiq%scheduled+1
@@ -659,7 +656,7 @@
             enddo
             write(jo_cp,*)'Instruction(s) completed: ',i
  !Clean up GPU stuff:
-            
+            j=nvcu_task_cleanup(0); write(jo_cp,'("Instr#11 cleanup status: ",i12)') j
  !Destroy keys:
             do j=0,10; err_code=key(j)%destroy(); enddo
  !Destroy AAR:
@@ -834,6 +831,8 @@
         contains
 
          integer(C_INT) function stcu_execute_eti(eti_loc) !STCU ETI execution workflow: ST only (thread private)
+!STCU execution is blocking, but multiple ETI can be run in parallel (MIMD);
+!Once each issued ETI has completed (or failed), its status (time) is updated in ETIQ.
          implicit none
          integer(C_INT), intent(in):: eti_loc !entry number in <etiq>
          type(tens_instr_t), pointer:: my_eti
@@ -850,36 +849,36 @@
 !$OMP ATOMIC WRITE
            my_eti%time_issued=thread_wtime()
  !Associate arguments:
-           if(associated(my_eti%tens_op0%op_aar_entry)) then
-            if(associated(my_eti%tens_op0%op_aar_entry%tens_blck_f)) then
-             dtens_=>my_eti%tens_op0%op_aar_entry%tens_blck_f
+           if(associated(my_eti%tens_op(0)%op_aar_entry)) then
+            if(associated(my_eti%tens_op(0)%op_aar_entry%tens_blck_f)) then
+             dtens_=>my_eti%tens_op(0)%op_aar_entry%tens_blck_f
             else
              dtens_=>NULL()
             endif
            else
             dtens_=>NULL()
            endif
-           if(associated(my_eti%tens_op1%op_aar_entry)) then
-            if(associated(my_eti%tens_op1%op_aar_entry%tens_blck_f)) then
-             ltens_=>my_eti%tens_op1%op_aar_entry%tens_blck_f
+           if(associated(my_eti%tens_op(1)%op_aar_entry)) then
+            if(associated(my_eti%tens_op(1)%op_aar_entry%tens_blck_f)) then
+             ltens_=>my_eti%tens_op(1)%op_aar_entry%tens_blck_f
             else
              ltens_=>NULL()
             endif
            else
             ltens_=>NULL()
            endif
-           if(associated(my_eti%tens_op2%op_aar_entry)) then
-            if(associated(my_eti%tens_op2%op_aar_entry%tens_blck_f)) then
-             rtens_=>my_eti%tens_op2%op_aar_entry%tens_blck_f
+           if(associated(my_eti%tens_op(2)%op_aar_entry)) then
+            if(associated(my_eti%tens_op(2)%op_aar_entry%tens_blck_f)) then
+             rtens_=>my_eti%tens_op(2)%op_aar_entry%tens_blck_f
             else
              rtens_=>NULL()
             endif
            else
             rtens_=>NULL()
            endif
-           if(associated(my_eti%tens_op3%op_aar_entry)) then
-            if(associated(my_eti%tens_op3%op_aar_entry%tens_blck_f)) then
-             stens_=>my_eti%tens_op3%op_aar_entry%tens_blck_f
+           if(associated(my_eti%tens_op(3)%op_aar_entry)) then
+            if(associated(my_eti%tens_op(3)%op_aar_entry%tens_blck_f)) then
+             stens_=>my_eti%tens_op(3)%op_aar_entry%tens_blck_f
             else
              stens_=>NULL()
             endif
@@ -1042,6 +1041,10 @@
 
 #ifndef NO_GPU
          integer(C_INT) function nvcu_execute_eti(etiq_nvcu_loc) !NVCU ETI execution workflow: MT only
+!NVCU is non-blocking and multiple ETI can be issued one right after another;
+!If the ETI issue was unsuccessful, its status in ETIQ is either kept <scheduled> or changed to <error>;
+!The only case when the status is kept <scheduled> is when the HAB packing fails (unable to pack into HAB).
+!In the case of <error>, sometimes it may be necessary to free GPU/HAB buffers explicitly.
          implicit none
          integer(C_INT), intent(in):: etiq_nvcu_loc !entry number in <etiq_nvcu>
          type(tens_instr_t), pointer:: my_eti
@@ -1060,17 +1063,17 @@
             my_eti%instr_status=instr_issued
 !$OMP ATOMIC WRITE
             my_eti%time_issued=thread_wtime()
-            if(associated(my_eti%tens_op0%op_aar_entry)) then
-             dtens_=my_eti%tens_op0%op_aar_entry%tens_blck_c
-             d_hab_entry=my_eti%tens_op0%op_aar_entry%buf_entry_host
+            if(associated(my_eti%tens_op(0)%op_aar_entry)) then
+             dtens_=my_eti%tens_op(0)%op_aar_entry%tens_blck_c
+             d_hab_entry=my_eti%tens_op(0)%op_aar_entry%buf_entry_host
              if(d_hab_entry.lt.0) then !tensor block is not in HAB yet
-              if(associated(my_eti%tens_op0%op_aar_entry%tens_blck_f)) then
-               call tens_blck_pack(my_eti%tens_op0%op_aar_entry%tens_blck_f,my_eti%data_kind,pack_size,pptr,d_hab_entry,ier)
+              if(associated(my_eti%tens_op(0)%op_aar_entry%tens_blck_f)) then
+               call tens_blck_pack(my_eti%tens_op(0)%op_aar_entry%tens_blck_f,my_eti%data_kind,pack_size,pptr,d_hab_entry,ier)
                if(ier.eq.0) then
                 call tens_blck_assoc(pptr,ier,ctens=dtens_,gpu_num=etiq_nvcu%te_conf(etiq_nvcu_loc)%cu_id%unit_number)
                 if(ier.eq.0) then
-                 my_eti%tens_op0%op_aar_entry%tens_blck_c=dtens_
-                 my_eti%tens_op0%op_aar_entry%buf_entry_host=d_hab_entry
+                 my_eti%tens_op(0)%op_aar_entry%tens_blck_c=dtens_
+                 my_eti%tens_op(0)%op_aar_entry%buf_entry_host=d_hab_entry
                 else
                  nvcu_execute_eti=-1
                 endif
@@ -1084,17 +1087,17 @@
             else
              dtens_=C_NULL_PTR; d_hab_entry=-1
             endif
-            if(nvcu_execute_eti.eq.0.and.associated(my_eti%tens_op1%op_aar_entry)) then
-             ltens_=my_eti%tens_op1%op_aar_entry%tens_blck_c
-             l_hab_entry=my_eti%tens_op1%op_aar_entry%buf_entry_host
+            if(nvcu_execute_eti.eq.0.and.associated(my_eti%tens_op(1)%op_aar_entry)) then
+             ltens_=my_eti%tens_op(1)%op_aar_entry%tens_blck_c
+             l_hab_entry=my_eti%tens_op(1)%op_aar_entry%buf_entry_host
              if(l_hab_entry.lt.0) then !tensor block is not in HAB yet
-              if(associated(my_eti%tens_op1%op_aar_entry%tens_blck_f)) then
-               call tens_blck_pack(my_eti%tens_op1%op_aar_entry%tens_blck_f,my_eti%data_kind,pack_size,pptr,l_hab_entry,ier)
+              if(associated(my_eti%tens_op(1)%op_aar_entry%tens_blck_f)) then
+               call tens_blck_pack(my_eti%tens_op(1)%op_aar_entry%tens_blck_f,my_eti%data_kind,pack_size,pptr,l_hab_entry,ier)
                if(ier.eq.0) then
                 call tens_blck_assoc(pptr,ier,ctens=ltens_,gpu_num=etiq_nvcu%te_conf(etiq_nvcu_loc)%cu_id%unit_number)
                 if(ier.eq.0) then
-                 my_eti%tens_op1%op_aar_entry%tens_blck_c=ltens_
-                 my_eti%tens_op1%op_aar_entry%buf_entry_host=l_hab_entry
+                 my_eti%tens_op(1)%op_aar_entry%tens_blck_c=ltens_
+                 my_eti%tens_op(1)%op_aar_entry%buf_entry_host=l_hab_entry
                 else
                  nvcu_execute_eti=-3
                 endif
@@ -1108,17 +1111,17 @@
             else
              ltens_=C_NULL_PTR; l_hab_entry=-1
             endif
-            if(nvcu_execute_eti.eq.0.and.associated(my_eti%tens_op2%op_aar_entry)) then
-             rtens_=my_eti%tens_op2%op_aar_entry%tens_blck_c
-             r_hab_entry=my_eti%tens_op2%op_aar_entry%buf_entry_host
+            if(nvcu_execute_eti.eq.0.and.associated(my_eti%tens_op(2)%op_aar_entry)) then
+             rtens_=my_eti%tens_op(2)%op_aar_entry%tens_blck_c
+             r_hab_entry=my_eti%tens_op(2)%op_aar_entry%buf_entry_host
              if(r_hab_entry.lt.0) then !tensor block is not in HAB yet
-              if(associated(my_eti%tens_op2%op_aar_entry%tens_blck_f)) then
-               call tens_blck_pack(my_eti%tens_op2%op_aar_entry%tens_blck_f,my_eti%data_kind,pack_size,pptr,r_hab_entry,ier)
+              if(associated(my_eti%tens_op(2)%op_aar_entry%tens_blck_f)) then
+               call tens_blck_pack(my_eti%tens_op(2)%op_aar_entry%tens_blck_f,my_eti%data_kind,pack_size,pptr,r_hab_entry,ier)
                if(ier.eq.0) then
                 call tens_blck_assoc(pptr,ier,ctens=rtens_,gpu_num=etiq_nvcu%te_conf(etiq_nvcu_loc)%cu_id%unit_number)
                 if(ier.eq.0) then
-                 my_eti%tens_op2%op_aar_entry%tens_blck_c=rtens_
-                 my_eti%tens_op2%op_aar_entry%buf_entry_host=r_hab_entry
+                 my_eti%tens_op(2)%op_aar_entry%tens_blck_c=rtens_
+                 my_eti%tens_op(2)%op_aar_entry%buf_entry_host=r_hab_entry
                 else
                  nvcu_execute_eti=-5
                 endif
@@ -1133,9 +1136,9 @@
              rtens_=C_NULL_PTR; r_hab_entry=-1
             endif
             if(nvcu_execute_eti.eq.0) then
-             if(associated(my_eti%tens_op3%op_aar_entry)) then
-              if(associated(my_eti%tens_op3%op_aar_entry%tens_blck_f)) then
-               stens_=>my_eti%tens_op3%op_aar_entry%tens_blck_f
+             if(associated(my_eti%tens_op(3)%op_aar_entry)) then
+              if(associated(my_eti%tens_op(3)%op_aar_entry%tens_blck_f)) then
+               stens_=>my_eti%tens_op(3)%op_aar_entry%tens_blck_f
               else
                stens_=>NULL()
               endif
@@ -1155,16 +1158,16 @@
                    if(ubound(my_eti%instr_aux,1).gt.j0) then; j1=my_eti%instr_aux(j0+1); else; j1=COPY_BACK; endif
                    if(j0.gt.0) then !at least one tensor is not a scalar
                     ier=gpu_tensor_block_contract_dlf_(my_eti%instr_aux(1:), &
-                                                       my_eti%tens_op1%op_aar_entry%tens_blck_c, &
-                                                       my_eti%tens_op2%op_aar_entry%tens_blck_c, &
-                                                       my_eti%tens_op0%op_aar_entry%tens_blck_c, &
+                                                       my_eti%tens_op(1)%op_aar_entry%tens_blck_c, &
+                                                       my_eti%tens_op(2)%op_aar_entry%tens_blck_c, &
+                                                       my_eti%tens_op(0)%op_aar_entry%tens_blck_c, &
                                                        j1,nvcu_tasks(etiq_nvcu_loc)%cuda_task_handle)
                     
                    else !all three tensor are scalars
                     ier=gpu_tensor_block_contract_dlf_(my_eti%instr_aux(0:), & !%instr_aux will be ignored
-                                                       my_eti%tens_op1%op_aar_entry%tens_blck_c, &
-                                                       my_eti%tens_op2%op_aar_entry%tens_blck_c, &
-                                                       my_eti%tens_op0%op_aar_entry%tens_blck_c, &
+                                                       my_eti%tens_op(1)%op_aar_entry%tens_blck_c, &
+                                                       my_eti%tens_op(2)%op_aar_entry%tens_blck_c, &
+                                                       my_eti%tens_op(0)%op_aar_entry%tens_blck_c, &
                                                        j1,nvcu_tasks(etiq_nvcu_loc)%cuda_task_handle)
                    endif
                    if(ier.ne.0) then
@@ -1193,13 +1196,15 @@
            else
             nvcu_execute_eti=-997
            endif
-           if(nvcu_execute_eti.lt.0) then
+           if(nvcu_execute_eti.lt.0) then !error
 !$OMP ATOMIC WRITE
-            my_eti%instr_status=nvcu_execute_eti !error
-           elseif(nvcu_execute_eti.gt.0) then
-            my_eti%instr_status=instr_scheduled  !insufficient resources (not an error)
-           else !success
-            my_eti%instr_handle=etiq_nvcu_loc    !CUDA task handle can be retrieved from <nvcu_tasks>
+            my_eti%instr_status=nvcu_execute_eti !error code (negative)
+           elseif(nvcu_execute_eti.gt.0) then !packing into HAB was impossible at this time
+!$OMP ATOMIC WRITE
+            my_eti%instr_status=instr_scheduled  !insufficient resources (not an error): revert to status <scheduled>
+           else !ETI has been issued successfully
+!$OMP ATOMIC WRITE
+            my_eti%instr_handle=etiq_nvcu_loc    !CUDA task handle can be retrieved from nvcu_tasks(my_eti%instr_handle)
            endif
            my_eti=>NULL()
           else
@@ -1211,39 +1216,119 @@
          return
          end function nvcu_execute_eti
 
-         integer(C_INT) function nvcu_task_status(nvcu_task_num) !query the status of a CUDA task: MT only
+         integer(C_INT) function nvcu_task_status(nvcu_task_num) !queries the status of a CUDA task: MT only
          implicit none
          integer(C_INT), intent(in):: nvcu_task_num !entry number in <nvcu_tasks>||<etiq_nvcu>
+         real(C_FLOAT):: in_copy,out_copy,comp_time
+         real(4):: ttm,tti
+         type(tens_instr_t), pointer:: my_eti
          integer j0
          if(nvcu_task_num.ge.0.and.nvcu_task_num.lt.etiq_nvcu%depth) then
+          j0=etiq_nvcu%etiq_entry(nvcu_task_num) !ETIQ entry number
+          if(j0.gt.0.and.j0.le.etiq%depth) then
+           my_eti=>etiq%eti(j0)
 !$OMP ATOMIC READ
-          nvcu_task_status=etiq%eti(etiq_nvcu%etiq_entry(nvcu_task_num))%instr_status
-          if(nvcu_task_status.eq.instr_issued) then
-           j0=cuda_task_complete(nvcu_tasks(nvcu_task_num)%cuda_task_handle)
-           if(j0.eq.cuda_task_completed) then
+           nvcu_task_status=my_eti%instr_status
+           if(nvcu_task_status.eq.instr_issued) then
+            j0=cuda_task_complete(nvcu_tasks(nvcu_task_num)%cuda_task_handle)
+            if(j0.eq.cuda_task_completed) then
+             nvcu_task_status=instr_completed
+            elseif(j0.eq.cuda_task_error.or.j0.eq.cuda_task_empty) then
+             nvcu_task_status=-1 !error
+            endif
 !$OMP ATOMIC WRITE
-            etiq%eti(etiq_nvcu%etiq_entry(nvcu_task_num))%instr_status=instr_completed
-            nvcu_task_status=instr_completed
-           elseif(j0.eq.cuda_task_error.or.j0.eq.cuda_task_empty) then
+            my_eti%instr_status=nvcu_task_status
+            ttm=cuda_task_time(nvcu_tasks(nvcu_task_num)%cuda_task_handle,in_copy,out_copy,comp_time)
+!$OMP ATOMIC READ
+            tti=my_eti%time_issued
 !$OMP ATOMIC WRITE
-            etiq%eti(etiq_nvcu%etiq_entry(nvcu_task_num))%instr_status=-2
-            nvcu_task_status=-2
+            my_eti%time_completed=tti+ttm
            endif
+           my_eti=>NULL()
+          else
+           if(verbose) write(jo_cp,'("#ERROR(c_process::c_proc_life:nvcu_task_status): invalid ETIQ entry number: ",i12)') j0
+           nvcu_task_status=-998
           endif
          else
-          write(jo_cp,'("#ERROR(c_process::c_proc_life:nvcu_task_status): invalid NVCU task number: ",i12)') nvcu_task_num
-          nvcu_task_status=-666
+          if(verbose) write(jo_cp,'("#ERROR(c_process::c_proc_life:nvcu_task_status): invalid NVCU task number: ",i12)') nvcu_task_num
+          nvcu_task_status=-999
          endif
          return
          end function nvcu_task_status
 
-         integer(C_INT) function nvcu_task_clean(nvcu_task_num,gab_free,hab_free) !clean up after a CUDA task
+         integer(C_INT) function nvcu_task_set_flags(free_flags,tens_op_num,flag_to_add) !sets flags for <nvcu_task_cleanup>: MT only
          implicit none
-         integer(C_INT), intent(in):: nvcu_task_num
-         integer(C_INT), intent(in), optional:: gab_free,hab_free
-         
+         integer, intent(inout):: free_flags           !cumulative flags (for all tensor operands)
+         integer, intent(in):: tens_op_num,flag_to_add !tensor operand number and a particular flag to add (replace)
+         integer:: j0
+         nvcu_task_set_flags=0
+         if(tens_op_num.ge.0.and.tens_op_num.lt.max_tensor_operands) then
+          if(flag_to_add.ge.0.and.flag_to_add.lt.4) then
+           j0=0; if(btest(free_flags,tens_op_num*2+1)) j0=j0+2; if(btest(free_flags,tens_op_num*2)) j0=j0+1
+           free_flags=free_flags+(flag_to_add-j0)*(2**(2*tens_op_num))
+          else
+           nvcu_task_set_flags=2
+          endif
+         else
+          nvcu_task_set_flags=1
+         endif
          return
-         end function nvcu_task_clean
+         end function nvcu_task_set_flags
+
+         integer(C_INT) function nvcu_task_cleanup(nvcu_task_num,free_flags) !cleans up after a CUDA task: MT only
+!This function destroyes the CUDA task handle, frees GPU buffers, frees HAB buffers, and destroys all tensBlck_t.
+!The optional argument <free_flags> can be used to prevent freeing GPU/HAB buffers for some or all ETI operands,
+!such that the corresponding tensor blocks will still occupy those buffers. Only the CUDA task handle is destroyed mandatory.
+!Note that KEEP_NO_DATA flag will also result in the destruction of the AAR entry for the tensor operand.
+!INPUT:
+! # nvcu_task_num - NVCU task number (entry number in <etiq_nvcu>||<nvcu_tasks>);
+! # free_flags - (optional) flags: 2 bits per tensor operand: {00,11,22,33},
+!                see subroutine <nvcu_task_set_flags>.
+         implicit none
+         integer, intent(in):: nvcu_task_num !NVCU task number (entry # in <nvcu_tasks>||<etiq_nvcu>)
+         integer, intent(in), optional:: free_flags !controls for partial cleanup (bit flags)
+         type(tens_instr_t), pointer:: my_eti=>NULL()
+         type(tens_arg_t), pointer:: curr_arg=>NULL()
+         integer:: j0,jt,jfi,jfc,je
+         nvcu_task_cleanup=0
+         if(nvcu_task_num.ge.0.and.nvcu_task_num.lt.etiq_nvcu%depth) then
+          j0=etiq_nvcu%etiq_entry(nvcu_task_num)
+          if(j0.gt.0.and.j0.le.etiq%depth) then
+           my_eti=>etiq%eti(j0)
+           if(present(free_flags)) then; jfi=free_flags; else; jfi=KEEP_NO_DATA; endif
+           je=cuda_task_destroy(nvcu_tasks(nvcu_task_num)%cuda_task_handle); if(je.ne.0) nvcu_task_cleanup=nvcu_task_cleanup+1
+           do jt=0,max_tensor_operands-1
+            if(associated(my_eti%tens_op(jt)%op_aar_entry)) then
+             curr_arg=>my_eti%tens_op(jt)%op_aar_entry
+             jfc=0; if(btest(jfi,jt*2+1)) jfc=jfc+2; if(btest(jfi,jt*2)) jfc=jfc+1
+             if(jfc.ne.KEEP_ALL_DATA) then
+              if(jfc.ne.KEEP_GPU_DATA) then !destroy GPU data for the tensor argument
+               if(c_associated(curr_arg%tens_blck_c)) then
+                call tens_blck_dissoc(curr_arg%tens_blck_c,je); if(je.ne.0) nvcu_task_cleanup=nvcu_task_cleanup+2
+               endif
+              endif
+              if(jfc.ne.KEEP_HAB_DATA) then !free HAB entry of the tensor argument
+               if(curr_arg%buf_entry_host.ge.0) then
+                je=free_buf_entry_host(curr_arg%buf_entry_host); if(je.ne.0) nvcu_task_cleanup=nvcu_task_cleanup+4
+                if(associated(curr_arg%tens_blck_f)) nullify(curr_arg%tens_blck_f)
+               endif
+              endif
+              if(jfc.eq.KEEP_NO_DATA) then !delete AAR entry
+               je=aar_delete(my_eti%tens_op(jt)%tens_blck_id); if(je.ne.0) nvcu_task_cleanup=nvcu_task_cleanup+8
+               my_eti%tens_op(jt)%op_aar_entry=>NULL()
+              endif
+             endif
+            endif
+           enddo
+           curr_arg=>NULL(); my_eti=>NULL()
+          else
+           nvcu_task_cleanup=-998
+          endif
+         else
+          nvcu_task_cleanup=-999
+         endif
+         return
+         end function nvcu_task_cleanup
 #endif
 
 #ifndef NO_PHI
@@ -1382,10 +1467,7 @@
         type is (tens_instr_t)
 !         if(verbose) write(jo_cp,'("#DEBUG(c_process::cp_destructor): tens_instr_t")') !debug
          if(allocated(item%instr_aux)) then; deallocate(item%instr_aux,STAT=i); if(i.ne.0) ierr=4; endif
-         i=cp_destructor(item%tens_op0); if(i.ne.0) ierr=4
-         i=cp_destructor(item%tens_op1); if(i.ne.0) ierr=4
-         i=cp_destructor(item%tens_op2); if(i.ne.0) ierr=4
-         i=cp_destructor(item%tens_op3); if(i.ne.0) ierr=4
+         do j=0,max_tensor_operands-1; i=cp_destructor(item%tens_op(j)); if(i.ne.0) ierr=4; enddo
          item%instr_code=instr_null; item%data_kind='  '; item%instr_priority=0
          item%instr_cost=0.0; item%instr_size=0.0; item%instr_status=instr_null
          item%instr_cu=cu_t(-1,-1); item%instr_handle=-1; item%args_ready=0
