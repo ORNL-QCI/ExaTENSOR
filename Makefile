@@ -1,17 +1,26 @@
 NAME = qforce.v13.01.x
-FC = ftn
-CC = cc
+FC  = ftn
+CC  = cc
+CPP = CC
 CUDA_C = nvcc
 MPI_INC = -I.
 CUDA_INC = -I.
 CUDA_LIB = -L.
-CUDA_LINK = -lcublas -lcudart
-CUDA_FLAGS = --compile -O3 -arch=sm_35 -DDEBUG -g -G
-LA_LINK = -lacml
-C_FLAGS = -c -O3 -g
-FFLAGS = -c -O3 --free-line-length-none -x f95-cpp-input -fopenmp -DNO_PHI \
-         -g -fbacktrace -fcheck=bounds -fcheck=array-temps -fcheck=pointer
-LFLAGS = -lgomp
+CUDA_LINK = -lcudart -lcublas
+CUDA_FLAGS_DEV = --compile -O3 -arch=sm_35 -DDEBUG -g -G
+CUDA_FLAGS_OPT = --compile -O3 -arch=sm_35
+CUDA_FLAGS = $(CUDA_FLAGS_DEV)
+LA_LINK_CRAY = -lacml
+LA_LINK = $(LA_LINK_CRAY)
+CFLAGS_DEV = -c -O3 -g
+CFLAGS_OPT = -c -O3
+CFLAGS = $(CFLAGS_DEV)
+FFLAGS_DEV = -c -O3 --free-line-length-none -x f95-cpp-input -fopenmp -DNO_PHI \
+             -g -fbacktrace -fcheck=bounds -fcheck=array-temps -fcheck=pointer
+FFLAGS_OPT = -c -O3 --free-line-length-none -x f95-cpp-input -fopenmp -DNO_PHI
+FFLAGS = $(FFLAGS_DEV)
+LFLAGS_GNU = -lgomp
+LFLAGS = $(LFLAGS_GNU)
 
 OBJS = stsubs.o combinatoric.o service.o extern_names.o tensor_algebra.o tensor_dil_omp.o \
 	dictionary.o cuda2fortran.o c_process.o qforce.o tensor_algebra_gpu_nvidia.o c_proc_bufs.o \
@@ -56,15 +65,15 @@ stsubs.o: stsubs.F90
 	$(FC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) stsubs.F90
 
 c_proc_bufs.o: c_proc_bufs.cu tensor_algebra_gpu_nvidia.h
-	$(CUDA_C) $(CUDA_FLAGS) c_proc_bufs.cu
+	$(CUDA_C) $(MPI_INC) $(CUDA_INC) $(CUDA_FLAGS) c_proc_bufs.cu
 
 cuda2fortran.o: cuda2fortran.cu
-	$(CUDA_C) $(CUDA_FLAGS) -ptx cuda2fortran.cu
-	$(CUDA_C) $(CUDA_FLAGS) cuda2fortran.cu
+	$(CUDA_C) $(MPI_INC) $(CUDA_INC) $(CUDA_FLAGS) -ptx cuda2fortran.cu
+	$(CUDA_C) $(MPI_INC) $(CUDA_INC) $(CUDA_FLAGS) cuda2fortran.cu
 
 tensor_algebra_gpu_nvidia.o: tensor_algebra_gpu_nvidia.cu tensor_algebra_gpu_nvidia.h
-	$(CUDA_C) $(CUDA_FLAGS) -ptx tensor_algebra_gpu_nvidia.cu
-	$(CUDA_C) $(CUDA_FLAGS) tensor_algebra_gpu_nvidia.cu
+	$(CUDA_C) $(MPI_INC) $(CUDA_INC) $(CUDA_FLAGS) -ptx tensor_algebra_gpu_nvidia.cu
+	$(CUDA_C) $(MPI_INC) $(CUDA_INC) $(CUDA_FLAGS) tensor_algebra_gpu_nvidia.cu
 
 clean:
 	rm *.o *.mod *.x *.ptx
