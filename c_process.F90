@@ -424,7 +424,7 @@
             k=1
             etiq%eti(k)%instr_code=instr_tensor_init; etiq%eti(k)%data_kind='r8'
             allocate(etiq%eti(k)%instr_aux(0:3*4))
-            etiq%eti(k)%instr_aux(0:3*4)=(/4, 5,15,5,15, 5,15,5,15, 0,0,0,0/)
+            etiq%eti(k)%instr_aux(0:3*4)=(/4, 15,55,15,55, 15,55,15,55, 0,0,0,0/)
             etiq%eti(k)%instr_cu=cu_t(DEV_HOST,1)
             etiq%eti(k)%args_ready=B'1111111111111111111111111111111'
             etiq%eti(k)%tens_op(0)%tens_blck_id=key(2)
@@ -440,7 +440,7 @@
             k=2
             etiq%eti(k)%instr_code=instr_tensor_init; etiq%eti(k)%data_kind='r8'
             allocate(etiq%eti(k)%instr_aux(0:3*4))
-            etiq%eti(k)%instr_aux(0:3*4)=(/4, 5,15,5,15, 5,15,5,15, 0,0,0,0/)
+            etiq%eti(k)%instr_aux(0:3*4)=(/4, 15,55,15,55, 15,55,15,55, 0,0,0,0/)
             etiq%eti(k)%instr_cu=cu_t(DEV_HOST,0)
             etiq%eti(k)%args_ready=B'1111111111111111111111111111111'
             etiq%eti(k)%tens_op(0)%tens_blck_id=key(3)
@@ -456,7 +456,7 @@
             k=3
             etiq%eti(k)%instr_code=instr_tensor_init; etiq%eti(k)%data_kind='r8'
             allocate(etiq%eti(k)%instr_aux(0:3*4))
-            etiq%eti(k)%instr_aux(0:3*4)=(/4, 5,15,5,15, 5,15,5,15, 0,0,0,0/)
+            etiq%eti(k)%instr_aux(0:3*4)=(/4, 15,55,15,55, 15,55,15,55, 0,0,0,0/)
             etiq%eti(k)%instr_cu=cu_t(DEV_HOST,1)
             etiq%eti(k)%args_ready=B'1111111111111111111111111111111'
             etiq%eti(k)%tens_op(0)%tens_blck_id=key(4)
@@ -472,7 +472,7 @@
             k=4
             etiq%eti(k)%instr_code=instr_tensor_init; etiq%eti(k)%data_kind='r8'
             allocate(etiq%eti(k)%instr_aux(0:3*5))
-            etiq%eti(k)%instr_aux(0:3*5)=(/5, 5,10,15,221,25, 5,10,15,221,25, 0,0,0,0,0/)
+            etiq%eti(k)%instr_aux(0:3*5)=(/5, 15,10,55,45,25, 15,10,55,45,25, 0,0,0,0,0/)
             etiq%eti(k)%instr_cu=cu_t(DEV_HOST,0)
             etiq%eti(k)%args_ready=B'1111111111111111111111111111111'
             etiq%eti(k)%tens_op(0)%tens_blck_id=key(5)
@@ -488,7 +488,7 @@
             k=5
             etiq%eti(k)%instr_code=instr_tensor_init; etiq%eti(k)%data_kind='r8'
             allocate(etiq%eti(k)%instr_aux(0:3*5))
-            etiq%eti(k)%instr_aux(0:3*5)=(/5, 5,10,15,221,25, 5,10,15,221,25, 0,0,0,0,0/)
+            etiq%eti(k)%instr_aux(0:3*5)=(/5, 15,10,55,45,25, 15,10,55,45,25, 0,0,0,0,0/)
             etiq%eti(k)%instr_cu=cu_t(DEV_HOST,0)
             etiq%eti(k)%args_ready=B'1111111111111111111111111111111'
             etiq%eti(k)%tens_op(0)%tens_blck_id=key(6)
