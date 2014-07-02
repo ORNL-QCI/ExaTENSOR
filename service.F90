@@ -146,9 +146,6 @@
 	implicit none
 	real(8) tm
 	real(8), external:: omp_get_wtime
-#ifndef NO_MPI
-        thread_wtime=MPI_WTIME()
-#else
 #ifndef NO_OMP
 	thread_wtime=omp_get_wtime()
 #else
@@ -156,7 +153,6 @@
 	thread_wtime=real(secnds(0.),8)
 #else
 	call cpu_time(tm); thread_wtime=tm
-#endif
 #endif
 #endif
 	return
