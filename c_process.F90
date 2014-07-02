@@ -1,7 +1,7 @@
 !This module provides functionality for a Computing Process (C-PROCESS, CP).
 !In essence, this is a single-node elementary tensor instruction scheduler (SETIS).
 !AUTHOR: Dmitry I. Lyakh (Dmytro I. Liakh): quant4me@gmail.com
-!REVISION: 2014/07/01
+!REVISION: 2014/07/02
 !CONCEPTS (CP workflow):
 ! - Each CP stores its own tensor blocks in TBB, with a possibility of disk dump.
 ! - LR sends a batch of ETI to be executed on this CP unit (CP MPI Process).
@@ -614,7 +614,7 @@
             etiq%eti(etiq_nvcu%etiq_entry(0))%instr_status=instr_scheduled
  !Enqueue tensor instructions to STCU:
             etiq_stcu%etiq_entry(9)=10
-            etiq_stcu%te_conf(9)=te_conf_t(etiq%eti(etiq_stcu%etiq_entry(9))%instr_cu,1,4,1)
+            etiq_stcu%te_conf(9)=te_conf_t(etiq%eti(etiq_stcu%etiq_entry(9))%instr_cu,1,8,1)
             etiq_stcu%scheduled=etiq_stcu%scheduled+1
             etiq%eti(etiq_stcu%etiq_entry(9))%instr_status=instr_scheduled
             do k=8,0,-1
