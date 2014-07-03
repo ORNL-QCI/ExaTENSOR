@@ -340,7 +340,7 @@
 	  type(C_PTR), value:: ctens
 	 end function tensBlck_set_absence
  !Nullify the Host memory pointer in tensBlck_t:
-         integer(C_INT) function tensBlck_hab_null(ctens) bind(c,name='tenBlck_hab_null')
+         integer(C_INT) function tensBlck_hab_null(ctens) bind(c,name='tensBlck_hab_null')
           use, intrinsic:: ISO_C_BINDING
           implicit none
           type(C_PTR), value:: ctens
