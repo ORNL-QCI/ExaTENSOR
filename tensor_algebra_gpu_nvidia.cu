@@ -3364,7 +3364,7 @@ NOTES:
 }
 //-----------------------------------------------------------------------------------------------------------
 // MATRIX MULTIPLICATION (R8) (shared-memory version):
-__global__ void gpu_matrix_multiply_tn_r4__(size_t ll, size_t lr, size_t lc, const double* __restrict__ arg1,
+__global__ void gpu_matrix_multiply_tn_r8__(size_t ll, size_t lr, size_t lc, const double* __restrict__ arg1,
                                             const double* __restrict__ arg2, double* __restrict__ arg0)
 /** arg0(0:ll-1,0:lr-1)+=arg1(0:lc-1,0:ll-1)*arg2(0:lc-1,0:lr-1)
 NOTES:
