@@ -606,7 +606,7 @@
 !$OMP FLUSH
             call set_transpose_algorithm(EFF_TRN_ON)
             call set_matmult_algorithm(BLAS_OFF)
-            call gpu_set_matmult_algoruthm(BLAS_OFF)
+            call gpu_set_matmult_algorithm(BLAS_OFF)
 !$OMP FLUSH
  !Enqueue tensor instructions to NVCU:
             etiq_nvcu%etiq_entry(0)=11
