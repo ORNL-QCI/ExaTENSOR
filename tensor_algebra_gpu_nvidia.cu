@@ -105,24 +105,27 @@ __global__ void gpu_array_init_r4__(size_t tsize, float *arr, float val);
 __global__ void gpu_array_init_r8__(size_t tsize, double *arr, double val);
 __global__ void gpu_array_scale_r4__(size_t tsize, float *arr, float val);
 __global__ void gpu_array_scale_r8__(size_t tsize, double *arr, double val);
-__global__ void gpu_array_add_r4__(size_t tsize, float *arr0, const float *arr1, float val);
-__global__ void gpu_array_add_r8__(size_t tsize, double *arr0, const double *arr1, double val);
+__global__ void gpu_array_add_r4__(size_t tsize, float* __restrict__ arr0, const float* __restrict__ arr1, float val);
+__global__ void gpu_array_add_r8__(size_t tsize, double* __restrict__ arr0, const double* __restrict__ arr1, double val);
 __global__ void gpu_array_dot_product_r4__(size_t tsize, const float *arr1, const float *arr2, float *dprod);
 __global__ void gpu_array_dot_product_r8__(size_t tsize, const double *arr1, const double *arr2, double *dprod);
-__global__ void gpu_array_product_r4__(size_t tsize1, const float *arr1, size_t tsize2, const float *arr2, float *arr0);
-__global__ void gpu_array_product_r8__(size_t tsize1, const double *arr1, size_t tsize2, const double *arr2, double *arr0);
+__global__ void gpu_array_product_r4__(size_t tsize1, const float* __restrict__ arr1, size_t tsize2,
+                                       const float* __restrict__ arr2, float* __restrict__ arr0);
+__global__ void gpu_array_product_r8__(size_t tsize1, const double* __restrict__ arr1, size_t tsize2,
+                                       const double* __restrict__ arr2, double* __restrict__ arr0);
 __global__ void gpu_tensor_block_copy_dlf_r4__(int dmo, int drc, int dim_num, int const_args_pos,
-                                               const float *tens_in, float *tens_out);
+                                               const float* __restrict__ tens_in, float* __restrict__ tens_out);
 __global__ void gpu_tensor_block_copy_dlf_r8__(int dmo, int drc, int dim_num, int const_args_pos,
-                                               const double *tens_in, double *tens_out);
+                                               const double* __restrict__ tens_in, double* __restrict__ tens_out);
 __global__ void gpu_tensor_block_copy_scatter_dlf_r4__(int dmo, int drc, int dim_num, int const_args_pos,
-                                                       const float *tens_in, float *tens_out);
+                                                       const float* __restrict__ tens_in, float* __restrict__ tens_out);
 __global__ void gpu_tensor_block_copy_scatter_dlf_r8__(int dmo, int drc, int dim_num, int const_args_pos,
-                                                       const double *tens_in, double *tens_out);
-__global__ void gpu_matrix_multiply_tn_r4__(size_t ll, size_t lr, size_t lc,
-                                            const float *arg1, const float *arg2, float *arg0);
-
-//-------------------------------------------------------------------------------------------------
+                                                       const double* __restrict__ tens_in, double* __restrict__ tens_out);
+__global__ void gpu_matrix_multiply_tn_r4__(size_t ll, size_t lr, size_t lc, const float* __restrict__ arg1,
+                                            const float* __restrict__ arg2, float* __restrict__ arg0);
+__global__ void gpu_matrix_multiply_tn_r8__(size_t ll, size_t lr, size_t lc, const double* __restrict__ arg1,
+                                            const double* __restrict__ arg2, double* __restrict__ arg0);
+//------------------------------------------------------------------------------------------------------
 //GLOBAL DATA:
 // GPU availability to the current MPI process:
 static int gpu_up[MAX_GPUS_PER_NODE]; //0: GPU is disabled; 1: GPU is enabled; 2: GPU is BLAS enabled.
@@ -2178,7 +2181,7 @@ NOTES:
         gpu_matrix_multiply_tn_r4__<<<blcks,thrds,0,cuda_stream>>>(ll,lr,lc,(float*)larg,(float*)rarg,(float*)darg);
         break;
        case R8:
-//`     gpu_matrix_multiply_tn_r8__<<<blcks,thrds,0,cuda_stream>>>(ll,lr,lc,(double*)larg,(double*)rarg,(double*)darg);
+        gpu_matrix_multiply_tn_r8__<<<blcks,thrds,0,cuda_stream>>>(ll,lr,lc,(double*)larg,(double*)rarg,(double*)darg);
         break;
        default:
         i=cuda_task_record(cuda_task,65,dev_num,cuda_stream,cuda_start,cuda_comput,cuda_output,cuda_finish,scr_entry_cnt,scr_entries);
@@ -2361,9 +2364,9 @@ __global__ void gpu_array_scale_r8__(size_t tsize, double *arr, double val)
  for(size_t l=_ti;l<tsize;l+=_gd){arr[l]*=val;}
  return;
 }
-//-----------------------------------------------------------------------------------------
+//-------------------------------------------------------------------------------------------------------------------
 // ARRAY ADDITION (R4):
-__global__ void gpu_array_add_r4__(size_t tsize, float *arr0, const float *arr1, float val)
+__global__ void gpu_array_add_r4__(size_t tsize, float* __restrict__ arr0, const float* __restrict__ arr1, float val)
 /** arr0(:)+=arr1(:)*val **/
 {
  size_t _ti = blockIdx.x*blockDim.x + threadIdx.x;
@@ -2371,9 +2374,9 @@ __global__ void gpu_array_add_r4__(size_t tsize, float *arr0, const float *arr1,
  for(size_t l=_ti;l<tsize;l+=_gd){arr0[l]+=(arr1[l]*val);}
  return;
 }
-//--------------------------------------------------------------------------------------------
+//----------------------------------------------------------------------------------------------------------------------
 // ARRAY ADDITION (R8):
-__global__ void gpu_array_add_r8__(size_t tsize, double *arr0, const double *arr1, double val)
+__global__ void gpu_array_add_r8__(size_t tsize, double* __restrict__ arr0, const double* __restrict__ arr1, double val)
 /** arr0(:)+=arr1(:)*val **/
 {
  size_t _ti = blockIdx.x*blockDim.x + threadIdx.x;
@@ -2421,9 +2424,10 @@ __global__ void gpu_array_dot_product_r8__(size_t tsize, const double *arr1, con
  __syncthreads();
  return;
 }
-//---------------------------------------------------------------------------------------------------------------------
+//-------------------------------------------------------------------------------------------------------------
 // ARRAY PRODUCT (R4):
-__global__ void gpu_array_product_r4__(size_t tsize1, const float *arr1, size_t tsize2, const float *arr2, float *arr0)
+__global__ void gpu_array_product_r4__(size_t tsize1, const float* __restrict__ arr1, size_t tsize2,
+                                                      const float* __restrict__ arr2, float* __restrict__ arr0)
 /** arr0[0:tsize2-1][0:tsize1-1]+=arr1[0:tsize1-1]*arr2[0:tsize2-1] **/
 {
  __shared__ float lbuf[THRDS_ARRAY_PRODUCT+1],rbuf[THRDS_ARRAY_PRODUCT];
@@ -2446,9 +2450,10 @@ __global__ void gpu_array_product_r4__(size_t tsize1, const float *arr1, size_t 
 // }
  return;
 }
-//---------------------------------------------------------------------------------------------------------------------
+//---------------------------------------------------------------------------------------------------------------
 // ARRAY PRODUCT (R8):
-__global__ void gpu_array_product_r8__(size_t tsize1, const double *arr1, size_t tsize2, const double *arr2, double *arr0)
+__global__ void gpu_array_product_r8__(size_t tsize1, const double* __restrict__ arr1, size_t tsize2,
+                                                      const double* __restrict__ arr2, double* __restrict__ arr0)
 /** arr0[0:tsize2-1][0:tsize1-1]+=arr1[0:tsize1-1]*arr2[0:tsize2-1] **/
 {
  __shared__ double lbuf[THRDS_ARRAY_PRODUCT+1],rbuf[THRDS_ARRAY_PRODUCT];
@@ -2471,10 +2476,10 @@ __global__ void gpu_array_product_r8__(size_t tsize1, const double *arr1, size_t
 // }
  return;
 }
-//-----------------------------------------------------------------------------------------------
+//-------------------------------------------------------------------------------------------------------------
 // TENSOR TRANSPOSE (R4) (shared-memory version):
 __global__ void gpu_tensor_block_copy_dlf_r4__(int dmo, int drc, int dim_num, int const_args_pos,
-                                               const float *tens_in, float *tens_out)
+                                               const float* __restrict__ tens_in, float* __restrict__ tens_out)
 /**
 Shared-memory version of tensor transpose: tens_out=TRN(tens_in):
 INPUT:
@@ -2796,10 +2801,10 @@ NOTES:
  if(threadIdx.x == 0){if(err_code != 0) i=atomicAdd(&gpu_error_count,1);}
  return;
 }
-//-----------------------------------------------------------------------------------------------
+//---------------------------------------------------------------------------------------------------------------
 // TENSOR TRANSPOSE (R8) (shared-memory version):
 __global__ void gpu_tensor_block_copy_dlf_r8__(int dmo, int drc, int dim_num, int const_args_pos,
-                                               const double *tens_in, double *tens_out)
+                                               const double* __restrict__ tens_in, double* __restrict__ tens_out)
 /**
 Shared-memory version of tensor transpose: tens_out=TRN(tens_in):
 INPUT:
@@ -3122,10 +3127,10 @@ NOTES:
  if(threadIdx.x == 0){if(err_code != 0) i=atomicAdd(&gpu_error_count,1);}
  return;
 }
-//-------------------------------------------------------------------------------------------------------
+//---------------------------------------------------------------------------------------------------------------------
 // TENSOR TRANSPOSE (R4) (scatter version):
 __global__ void gpu_tensor_block_copy_scatter_dlf_r4__(int dmo, int drc, int dim_num, int const_args_pos,
-                                                       const float *tens_in, float *tens_out)
+                                                       const float* __restrict__ tens_in, float* __restrict__ tens_out)
 /**
 Scattering version of tensor transpose: tens_out=TRN(tens_in):
 INPUT:
@@ -3212,10 +3217,10 @@ OUTPUT:
  }
  return;
 }
-//-------------------------------------------------------------------------------------------------------
+//-----------------------------------------------------------------------------------------------------------------------
 // TENSOR TRANSPOSE (R8) (scatter version):
 __global__ void gpu_tensor_block_copy_scatter_dlf_r8__(int dmo, int drc, int dim_num, int const_args_pos,
-                                                       const double *tens_in, double *tens_out)
+                                                       const double* __restrict__ tens_in, double* __restrict__ tens_out)
 /**
 Scattering version of tensor transpose: tens_out=TRN(tens_in):
 INPUT:
@@ -3302,10 +3307,10 @@ OUTPUT:
  }
  return;
 }
-//--------------------------------------------------------------------------------------------
-// MATRIX MULTIPLICATION (shared-memory version):
-__global__ void gpu_matrix_multiply_tn_r4__(size_t ll, size_t lr, size_t lc,
-                                            const float *arg1, const float *arg2, float *arg0)
+//----------------------------------------------------------------------------------------------------------
+// MATRIX MULTIPLICATION (R4) (shared-memory version):
+__global__ void gpu_matrix_multiply_tn_r4__(size_t ll, size_t lr, size_t lc, const float* __restrict__ arg1,
+                                            const float* __restrict__ arg2, float* __restrict__ arg0)
 /** arg0(0:ll-1,0:lr-1)+=arg1(0:lc-1,0:ll-1)*arg2(0:lc-1,0:lr-1)
 NOTES:
  # Thread block dimensions (.x and .y) must be equal to MAT_MULT_TILE_DIM.
@@ -3344,6 +3349,61 @@ NOTES:
        _col=_col*ll+_row;
        for(l=0;l<m;l++){_val+=buf1[i][l]*buf2[j][l];}
        arg0[_col]+=_val; _val=0.0f;
+      }
+     }
+     __syncthreads();
+    }
+    _row_base+=gridDim.x*MAT_MULT_TILE_DIM;
+   }
+   _col_base+=gridDim.y*MAT_MULT_TILE_DIM;
+  }
+ }else{
+  if(threadIdx.x == 0) i=atomicAdd(&gpu_error_count,1); //record an error (for each thread block)
+ }
+ return;
+}
+//-----------------------------------------------------------------------------------------------------------
+// MATRIX MULTIPLICATION (R8) (shared-memory version):
+__global__ void gpu_matrix_multiply_tn_r4__(size_t ll, size_t lr, size_t lc, const double* __restrict__ arg1,
+                                            const double* __restrict__ arg2, double* __restrict__ arg0)
+/** arg0(0:ll-1,0:lr-1)+=arg1(0:lc-1,0:ll-1)*arg2(0:lc-1,0:lr-1)
+NOTES:
+ # Thread block dimensions (.x and .y) must be equal to MAT_MULT_TILE_DIM.
+**/
+{
+ __shared__ double buf1[MAT_MULT_TILE_DIM+1][MAT_MULT_TILE_DIM+1],buf2[MAT_MULT_TILE_DIM+1][MAT_MULT_TILE_DIM+1];
+ size_t k,_col,_row,_col_base,_row_base;
+ int i,j,l,m;
+ double _val;
+
+ if(lc > 0 && ll > 0 && lr > 0 && blockDim.x == MAT_MULT_TILE_DIM && blockDim.y == MAT_MULT_TILE_DIM){
+  _val=0.0; j=threadIdx.y; i=threadIdx.x;
+  _col_base=blockIdx.y*MAT_MULT_TILE_DIM;
+  while(_col_base < lr){
+   _row_base=blockIdx.x*MAT_MULT_TILE_DIM;
+   while(_row_base < ll){
+    for(k=0;k<lc;k+=MAT_MULT_TILE_DIM){
+     _col=_col_base+j; _row=_row_base+j;
+// Load two blocks into shared memory:
+     if(k+MAT_MULT_TILE_DIM > lc){
+      m=lc-k;
+      if(i < m){ //(k+i)<lc
+       if(_row < ll){buf1[j][i]=arg1[_row*lc+(k+i)];} // Load a block of the 1st argument into the shared memory
+       if(_col < lr){buf2[j][i]=arg2[_col*lc+(k+i)];} // Load a block of the 2nd argument into the shared memory
+      }
+     }else{
+      m=MAT_MULT_TILE_DIM;
+      if(_row < ll){buf1[j][i]=arg1[_row*lc+(k+i)];} // Load a block of the 1st argument into the shared memory
+      if(_col < lr){buf2[j][i]=arg2[_col*lc+(k+i)];} // Load a block of the 2nd argument into the shared memory
+     }
+     __syncthreads();
+// Multiply the two blocks:
+     _row=_row_base+i;
+     if(_col < lr){
+      if(_row < ll){
+       _col=_col*ll+_row;
+       for(l=0;l<m;l++){_val+=buf1[i][l]*buf2[j][l];}
+       arg0[_col]+=_val; _val=0.0;
       }
      }
      __syncthreads();
