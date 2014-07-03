@@ -1,6 +1,6 @@
 /** GPU functions for Tensor Algebra in Parallel for NVidia GPUs (CUDA).
 AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-REVISION: 2014/06/30
+REVISION: 2014/07/03
 NOTES:
  # Functions without underscores at the end of their names are blocking (Host) functions;
    Functions with one underscore at the end of their names are external non-blocking functions;
@@ -52,6 +52,7 @@ extern "C" {
  int tensBlck_acc_id(const tensBlck_t *ctens, int *dev_kind, int *entry_gpu, int *entry_const, int *data_kind, int *there);
  int tensBlck_set_presence(tensBlck_t *ctens);
  int tensBlck_set_absence(tensBlck_t *ctens);
+ int tensBlck_hab_null(tensBlck_t *ctens);
  size_t tensBlck_volume(const tensBlck_t *ctens);
  int cuda_task_create(cudaTask_t **cuda_task);
  int cuda_task_destroy(cudaTask_t *cuda_task);
@@ -300,6 +301,9 @@ __host__ int tensBlck_set_presence(tensBlck_t *ctens) // Marks tensor block data
 
 __host__ int tensBlck_set_absence(tensBlck_t *ctens) // Unmarks tensor block data as residing on GPU
 {if(ctens != NULL){if(ctens->device_id > 0) ctens->device_id=-(ctens->device_id); return 0;}else{return 1;}}
+
+__host__ int tensBlck_hab_null(tensBlck_t *ctens) //Nullifies the HAB pointer (Host memory) in tensBlck
+{if(ctens != NULL){if(ctens->device_id > 0){ctens->elems_h=NULL;}else{return 2;}}else{return 1;}}
 
 __host__ size_t tensBlck_volume(const tensBlck_t *ctens) //Number of elements in a tensor block
 {size_t tsize=1; for(int i=0;i<ctens->rank;i++){tsize*=(ctens->dims_h[i]);}; return tsize;}

@@ -83,7 +83,7 @@
 //DERIVED TYPES:
 // Tensor block:
 typedef struct{
- int device_id;        //device on which the block already resides (+) or will reside (-) (device_id=0 means Host)
+ int device_id;        //device on which the tensor block already resides (+) or will reside (-) (device_id=0 means Host)
  int data_kind;        //tensor element size in bytes: float (4), double (8), or double complex (16)
  int rank;             //tensor block rank (>=0)
  int *dims_h;          //tensor block dimension extents (0th index is the most minor one): HOST memory

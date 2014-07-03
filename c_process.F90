@@ -1,7 +1,7 @@
 !This module provides functionality for a Computing Process (C-PROCESS, CP).
 !In essence, this is a single-node elementary tensor instruction scheduler (SETIS).
 !AUTHOR: Dmitry I. Lyakh (Dmytro I. Liakh): quant4me@gmail.com
-!REVISION: 2014/07/02
+!REVISION: 2014/07/03
 !CONCEPTS (CP workflow):
 ! - Each CP stores its own tensor blocks in TBB, with a possibility of disk dump.
 ! - LR sends a batch of ETI to be executed on this CP unit (CP MPI Process).
@@ -805,7 +805,7 @@
 !DEBUG end.
             endif
            enddo slave_life
-           if(verbose) write(jo_cp,'("#DEBUG(c_process::c_proc_life): STCU life is over: ",i11)') stcu_error !debug
+           if(verbose) write(jo_cp,'("#DEBUG(c_process::c_proc_life): STCU life is over with status: ",i11)') stcu_error !debug
           endif !MT/LST
          else
 !$OMP MASTER
@@ -1256,71 +1256,28 @@
          return
          end function nvcu_task_status
 
-         integer(C_INT) function nvcu_task_set_flags(free_flags,tens_op_num,flag_to_add) !sets flags for <nvcu_task_cleanup>: MT only
-         implicit none
-         integer, intent(inout):: free_flags           !cumulative flags (for all tensor operands)
-         integer, intent(in):: tens_op_num,flag_to_add !tensor operand number and a particular flag to add (replace)
-         integer:: j0
-         nvcu_task_set_flags=0
-         if(tens_op_num.ge.0.and.tens_op_num.lt.max_tensor_operands) then
-          if(flag_to_add.ge.0.and.flag_to_add.lt.4) then
-           j0=0; if(btest(free_flags,tens_op_num*2+1)) j0=j0+2; if(btest(free_flags,tens_op_num*2)) j0=j0+1
-           free_flags=free_flags+(flag_to_add-j0)*(2**(2*tens_op_num))
-          else
-           nvcu_task_set_flags=2
-          endif
-         else
-          nvcu_task_set_flags=1
-         endif
-         return
-         end function nvcu_task_set_flags
-
          integer(C_INT) function nvcu_task_cleanup(nvcu_task_num,free_flags) !cleans up after a CUDA task: MT only
 !This function destroyes the CUDA task handle, frees GPU buffers, frees HAB buffers, and destroys all tensBlck_t.
 !The optional argument <free_flags> can be used to prevent freeing GPU/HAB buffers for some or all ETI operands,
 !such that the corresponding tensor blocks will still occupy those buffers. Only the CUDA task handle is destroyed mandatory.
-!Note that KEEP_NO_DATA flag will also result in the destruction of the AAR entry for the tensor operand.
 !INPUT:
 ! # nvcu_task_num - NVCU task number (entry number in <etiq_nvcu>||<nvcu_tasks>);
-! # free_flags - (optional) flags: 2 bits per tensor operand: {00,11,22,33},
-!                see subroutine <nvcu_task_set_flags>.
+! # free_flags - (optional) flags: 3 bits per tensor operand starting from 0 (see subroutine <set_cleanup_flags>).
          implicit none
          integer, intent(in):: nvcu_task_num !NVCU task number (entry # in <nvcu_tasks>||<etiq_nvcu>)
          integer, intent(in), optional:: free_flags !controls for partial cleanup (bit flags)
-         type(tens_instr_t), pointer:: my_eti=>NULL()
-         type(tens_arg_t), pointer:: curr_arg=>NULL()
-         integer:: j0,jt,jfi,jfc,je
+         integer:: j0,je
          nvcu_task_cleanup=0
          if(nvcu_task_num.ge.0.and.nvcu_task_num.lt.etiq_nvcu%depth) then
           j0=etiq_nvcu%etiq_entry(nvcu_task_num)
           if(j0.gt.0.and.j0.le.etiq%depth) then
-           my_eti=>etiq%eti(j0)
-           if(present(free_flags)) then; jfi=free_flags; else; jfi=KEEP_NO_DATA; endif
            je=cuda_task_destroy(nvcu_tasks(nvcu_task_num)%cuda_task_handle); if(je.ne.0) nvcu_task_cleanup=nvcu_task_cleanup+1
-           do jt=0,max_tensor_operands-1
-            if(associated(my_eti%tens_op(jt)%op_aar_entry)) then
-             curr_arg=>my_eti%tens_op(jt)%op_aar_entry
-             jfc=0; if(btest(jfi,jt*2+1)) jfc=jfc+2; if(btest(jfi,jt*2)) jfc=jfc+1
-             if(jfc.ne.KEEP_ALL_DATA) then
-              if(jfc.ne.KEEP_GPU_DATA) then !destroy GPU data for the tensor argument
-               if(c_associated(curr_arg%tens_blck_c)) then
-                call tens_blck_dissoc(curr_arg%tens_blck_c,je); if(je.ne.0) nvcu_task_cleanup=nvcu_task_cleanup+2
-               endif
-              endif
-              if(jfc.ne.KEEP_HAB_DATA) then !free HAB entry of the tensor argument
-               if(curr_arg%buf_entry_host.ge.0) then
-                je=free_buf_entry_host(curr_arg%buf_entry_host); if(je.ne.0) nvcu_task_cleanup=nvcu_task_cleanup+4
-                if(associated(curr_arg%tens_blck_f)) nullify(curr_arg%tens_blck_f)
-               endif
-              endif
-              if(jfc.eq.KEEP_NO_DATA) then !delete AAR entry
-               je=aar_delete(my_eti%tens_op(jt)%tens_blck_id); if(je.ne.0) nvcu_task_cleanup=nvcu_task_cleanup+8
-               my_eti%tens_op(jt)%op_aar_entry=>NULL()
-              endif
-             endif
-            endif
-           enddo
-           curr_arg=>NULL(); my_eti=>NULL()
+           if(present(free_flags) then
+            je=eti_task_cleanup(j0,free_flags)
+           else
+            je=eti_task_cleanup(j0)
+           endif
+           if(je.ne.0) nvcu_task_cleanup=nvcu_task_cleanup+2
           else
            nvcu_task_cleanup=-998
           endif
@@ -1361,6 +1318,82 @@
          return
          end function xpcu_execute_eti
 #endif
+
+         integer function set_cleanup_flags(free_flags,tens_op_num,flag_to_add) !sets flags for <eti_task_cleanup>: MT only
+         implicit none
+         integer, intent(inout):: free_flags           !cumulative flags (for all tensor operands): 3 bits per tensor operand
+         integer, intent(in):: tens_op_num,flag_to_add !tensor operand number and a specific flag to set
+         integer:: j0,j1
+         set_cleanup_flags=0
+         if(tens_op_num.ge.0.and.tens_op_num.lt.max_tensor_operands) then
+          if(flag_to_add.ge.0.and.flag_to_add.lt.8) then
+           j1=tens_op_num*3; j0=0
+           if(btest(free_flags,j1+2)) j0=j0+4
+           if(btest(free_flags,j1+1)) j0=j0+2
+           if(btest(free_flags,j1)) j0=j0+1
+           free_flags=free_flags+(flag_to_add-j0)*(2**j1)
+          else
+           set_cleanup_flags=1
+          endif
+         else
+          set_cleanup_flags=2
+         endif
+         return
+         end function set_cleanup_flags
+
+         integer function eti_task_cleanup(eti_num,free_flags) !cleans up after an ETI: MT only
+!This function completely or partially destroys tensor arguments for a specific (dead) ETI.
+!One can choose to keep some or all tensor operands in HAB/GAB/etc. For each tensor operand,
+!one can keep the data in HAB (if any), or the data in GAB (if any), or both, or none.
+!If for some tensor operand a flag is set to KEEP_NO_DATA, its AAR entry will be destroyed.
+         implicit none
+         integer, intent(in):: eti_num              !location of ETI in ETIQ (1..)
+         integer, intent(in), optional:: free_flags !cumulative flags: 3 bits per tensor operand
+         type(tens_instr_t), pointer:: my_eti=>NULL()
+         type(tens_arg_t), pointer:: curr_arg=>NULL()
+         integer jt,je,jf
+         logical k_tbb,k_hab,k_gpu
+         eti_task_cleanup=0
+         if(eti_num.gt.0.and.eti_num.le.etiq%depth) then
+          my_eti=>etiq%eti(eti_num)
+          do jt=0,max_tensor_operands-1
+           if(associated(my_eti%tens_op(jt)%op_aar_entry)) then
+            curr_arg=>my_eti%tens_op(jt)%op_aar_entry
+            if(present(free_flags)) then; jf=free_flags; else; jf=0; endif
+            if(jf.ge.KEEP_GPU_DATA) then; jf=jf-KEEP_GPU_DATA; k_gpu=.true.; else; k_gpu=.false.; endif
+            if(jf.ge.KEEP_HAB_DATA) then; jf=jf-KEEP_HAB_DATA; k_hab=.true.; else; k_hab=.false.; endif
+            if(jf.ge.KEEP_TBB_DATA) then; jf=jf-KEEP_TBB_DATA; k_tbb=.true.; else; k_tbb=.false.; endif
+            if(.not.k_hab) then !free the HAB entry of the tensor argument (if any)
+             if(curr_arg%buf_entry_host.ge.0) then
+              je=free_buf_entry_host(curr_arg%buf_entry_host); if(je.ne.0) eti_task_cleanup=eti_task_cleanup+1 !free HAB entry
+              if(c_associated(curr_arg%tens_blck_c) then
+               if(associated(curr_arg%tens_blck_f) then
+                if(c_associated(curr_arg%tens_blck_c,c_loc(curr_arg%tens_blck_f))) nullify(curr_arg%tens_blck_f) !free F only if F->HAB
+               endif
+               je=tensBlck_hab_null(curr_arg%tens_blck_c); if(je.ne.0) eti_task_cleanup=eti_task_cleanup+2 !nullify HAB pointer
+              else
+               nullify(curr_arg%tens_blck_f)
+              endif
+             endif
+            endif
+            if(.not.k_gpu) then !destroy GPU data for the tensor argument (if any)
+             if(c_associated(curr_arg%tens_blck_c)) then
+              call tens_blck_dissoc(curr_arg%tens_blck_c,je); if(je.ne.0) eti_task_cleanup=eti_task_cleanup+4 !destroy tensBlck_t
+             endif
+            endif
+            if(.not.(k_tbb.or.k_hab.or.k_gpu)) then
+             nullify(curr_arg%tens_blck_f)
+             je=aar_delete(my_eti%tens_op(jt)%tens_blck_id); if(je.ne.0) eti_task_cleanup=eti_task_cleanup+8 !delete AA entry
+             my_eti%tens_op(jt)%op_aar_entry=>NULL()
+            endif
+           endif
+          enddo
+          curr_arg=>NULL()
+         else
+          eti_task_cleanup=-999
+         endif
+         return
+         end function eti_task_cleanup
 
          integer function aar_register(tkey,aar_p) !MT only
 !Registers an argument in AAR. If the tensor block argument
