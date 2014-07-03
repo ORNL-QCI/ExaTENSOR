@@ -303,7 +303,7 @@ __host__ int tensBlck_set_absence(tensBlck_t *ctens) // Unmarks tensor block dat
 {if(ctens != NULL){if(ctens->device_id > 0) ctens->device_id=-(ctens->device_id); return 0;}else{return 1;}}
 
 __host__ int tensBlck_hab_null(tensBlck_t *ctens) //Nullifies the HAB pointer (Host memory) in tensBlck
-{if(ctens != NULL){if(ctens->device_id > 0){ctens->elems_h=NULL;}else{return 2;}}else{return 1;}}
+{if(ctens != NULL){if(ctens->device_id > 0){ctens->elems_h=NULL; return 0;}else{return 2;}}else{return 1;}}
 
 __host__ size_t tensBlck_volume(const tensBlck_t *ctens) //Number of elements in a tensor block
 {size_t tsize=1; for(int i=0;i<ctens->rank;i++){tsize*=(ctens->dims_h[i]);}; return tsize;}
