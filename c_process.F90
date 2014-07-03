@@ -1272,7 +1272,7 @@
           j0=etiq_nvcu%etiq_entry(nvcu_task_num)
           if(j0.gt.0.and.j0.le.etiq%depth) then
            je=cuda_task_destroy(nvcu_tasks(nvcu_task_num)%cuda_task_handle); if(je.ne.0) nvcu_task_cleanup=nvcu_task_cleanup+1
-           if(present(free_flags) then
+           if(present(free_flags)) then
             je=eti_task_cleanup(j0,free_flags)
            else
             je=eti_task_cleanup(j0)
@@ -1366,8 +1366,8 @@
             if(.not.k_hab) then !free the HAB entry of the tensor argument (if any)
              if(curr_arg%buf_entry_host.ge.0) then
               je=free_buf_entry_host(curr_arg%buf_entry_host); if(je.ne.0) eti_task_cleanup=eti_task_cleanup+1 !free HAB entry
-              if(c_associated(curr_arg%tens_blck_c) then
-               if(associated(curr_arg%tens_blck_f) then
+              if(c_associated(curr_arg%tens_blck_c)) then
+               if(associated(curr_arg%tens_blck_f)) then
                 if(c_associated(curr_arg%tens_blck_c,c_loc(curr_arg%tens_blck_f))) nullify(curr_arg%tens_blck_f) !free F only if F->HAB
                endif
                je=tensBlck_hab_null(curr_arg%tens_blck_c); if(je.ne.0) eti_task_cleanup=eti_task_cleanup+2 !nullify HAB pointer
