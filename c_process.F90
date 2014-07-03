@@ -830,11 +830,11 @@
 
         contains
 
-         integer(C_INT) function stcu_execute_eti(eti_loc) !STCU ETI execution workflow: ST only (thread private)
+         integer function stcu_execute_eti(eti_loc) !STCU ETI execution workflow: ST only (thread private)
 !STCU execution is blocking, but multiple ETI can be run in parallel (MIMD);
 !Once each issued ETI has completed (or failed), its status (time) is updated in ETIQ.
          implicit none
-         integer(C_INT), intent(in):: eti_loc !entry number in <etiq>
+         integer, intent(in):: eti_loc !entry number in <etiq>
          type(tens_instr_t), pointer:: my_eti
          type(tensor_block_t), pointer:: dtens_,ltens_,rtens_,stens_
          character(max_shape_str_len):: jtsss
@@ -1026,6 +1026,7 @@
            stcu_execute_eti=998
           endif
           if(stcu_execute_eti.eq.0) then
+           j0=eti_mark_aar_used(eti_loc) !mark all tensor arguments as used
 !$OMP ATOMIC WRITE
            my_eti%instr_status=instr_completed
           else
@@ -1222,7 +1223,7 @@
          real(C_FLOAT):: in_copy,out_copy,comp_time
          real(4):: ttm,tti
          type(tens_instr_t), pointer:: my_eti
-         integer j0
+         integer j0,j1
          if(nvcu_task_num.ge.0.and.nvcu_task_num.lt.etiq_nvcu%depth) then
           j0=etiq_nvcu%etiq_entry(nvcu_task_num) !ETIQ entry number
           if(j0.gt.0.and.j0.le.etiq%depth) then
@@ -1230,10 +1231,10 @@
 !$OMP ATOMIC READ
            nvcu_task_status=my_eti%instr_status
            if(nvcu_task_status.eq.instr_issued) then
-            j0=cuda_task_complete(nvcu_tasks(nvcu_task_num)%cuda_task_handle)
-            if(j0.eq.cuda_task_completed) then
-             nvcu_task_status=instr_completed
-            elseif(j0.eq.cuda_task_error.or.j0.eq.cuda_task_empty) then
+            j1=cuda_task_complete(nvcu_tasks(nvcu_task_num)%cuda_task_handle)
+            if(j1.eq.cuda_task_completed) then
+             j1=eti_mark_aar_used(j0); nvcu_task_status=instr_completed
+            elseif(j1.eq.cuda_task_error.or.j1.eq.cuda_task_empty) then
              nvcu_task_status=-1 !error
             endif
 !$OMP ATOMIC WRITE
@@ -1429,6 +1430,27 @@
          aar_delete=aar%search(dict_delete_if_found,tens_key_cmp,tkey,destruct_key_func=cp_destructor)
          return
          end function aar_delete
+
+         integer function eti_mark_aar_used(eti_num) !mark all tensor arguments of an ETI as used: MT only
+         implicit none
+         integer, intent(in):: eti_num !location of ETI in ETIQ
+         type(tens_instr_t), pointer:: my_eti=>NULL()
+         integer jt
+         eti_mark_aar_used=0
+         if(eti_num.gt.0.and.eti_num.le.etiq%depth) then
+          my_eti=>etiq%eti(eti_num)
+          do jt=0,max_tensor_operands-1
+           if(associated(my_eti%tens_op(jt)%op_aar_entry)) then
+!$OMP ATOMIC UPDATE
+            my_eti%tens_op(jt)%op_aar_entry%times_used=my_eti%tens_op(jt)%op_aar_entry%times_used+1
+           endif
+          enddo
+          my_eti=>NULL()
+         else
+          eti_mark_aar_used=-999
+         endif
+         return
+         end function eti_mark_aar_used
 
          subroutine c_proc_quit(errc) !quit c_process
          implicit none
