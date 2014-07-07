@@ -1376,7 +1376,7 @@
                 if(c_associated(curr_arg%tens_blck_c,c_loc(curr_arg%tens_blck_f))) nullify(curr_arg%tens_blck_f) !free F only if F->HAB
                endif
                je=tensBlck_acc_id(curr_arg%tens_blck_c,j0,j1,j2,j3,j4) !debug
-               if(verbose) write(jo_cp,'("DEBUG(c_process::c_proc_life:eti_task_cleanup):",6(1x,i4)') je,j0,j1,j2,j3,j4 !debug
+               if(verbose) write(jo_cp,'("DEBUG(c_process::c_proc_life:eti_task_cleanup):",6(1x,i4))') je,j0,j1,j2,j3,j4 !debug
                je=tensBlck_hab_null(curr_arg%tens_blck_c); if(je.ne.0) eti_task_cleanup=eti_task_cleanup+10 !nullify HAB pointer
                if(je.ne.0.and.verbose) write(jo_cp,'("ERROR(c_process::c_proc_life:eti_task_cleanup): tensBlck_hab_null error: ",i6)') je !debug
               else
