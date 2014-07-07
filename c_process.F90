@@ -1224,7 +1224,7 @@
          real(C_FLOAT):: in_copy,out_copy,comp_time
          real(4):: ttm,tti
          type(tens_instr_t), pointer:: my_eti
-         integer j0,j1
+         integer j0,j1,j2
          if(nvcu_task_num.ge.0.and.nvcu_task_num.lt.etiq_nvcu%depth) then
           j0=etiq_nvcu%etiq_entry(nvcu_task_num) !ETIQ entry number
           if(j0.gt.0.and.j0.le.etiq%depth) then
@@ -1234,6 +1234,14 @@
            if(nvcu_task_status.eq.instr_issued) then
             j1=cuda_task_complete(nvcu_tasks(nvcu_task_num)%cuda_task_handle)
             if(j1.eq.cuda_task_completed) then
+             do j1=0,max_tensor_operands-1 !mark all tensor arguments as present on the GPU because the ETI has completed
+              if(associated(my_eti%op_aar_entry)) then
+               if(c_associated(my_eti%op_aar_entry%tens_blck_c) then
+                j2=tensBlck_set_presence(my_eti%op_aar_entry%tens_blck_c) !mark tensBlck_t as present on the GPU
+                if(j2.ne.0) write(jo_cp,'("ERROR(c_process::c_proc_life:nvcu_task_status): tensBlck_set_presence failed: ",i10)') j2
+               endif
+              endif
+             enddo
              j1=eti_mark_aar_used(j0); nvcu_task_status=instr_completed
             elseif(j1.eq.cuda_task_error.or.j1.eq.cuda_task_empty) then
              nvcu_task_status=-1 !error
