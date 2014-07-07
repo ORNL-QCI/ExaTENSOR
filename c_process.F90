@@ -1665,16 +1665,52 @@
         endif
         return
         end function tens_key_cmp
+!---------------------------------------------------------
+        integer function tens_operand_pack(this,tens_data)
+!This function packs the public part of <this> into a plain byte packet <tens_data>.
+        implicit none
+        class(tens_operand_t):: this
+        type(C_PTR):: tens_data
+
+        tens_operand_pack=0
+
+        return
+        end function tens_operand_pack
+!-----------------------------------------------------------
+        integer function tens_operand_unpack(this,tens_data)
+!This function unpacks the public part of <this> from a plain byte packet <tens_data>.
+        implicit none
+        class(tens_operand_t):: this
+        type(C_PTR):: tens_data
+
+        tens_operand_unpack=0
+
+        return
+        end function tens_operand_unpack
 !------------------------------------------------
         integer function eti_pack(this,eti_data)
 !This function packs an ETI <this> into a plain byte packet <eti_data>.
 !Only the public content of the ETI is packed.
         implicit none
-        class(tens_instr_t),
-        
+        class(tens_instr_t):: this
+        type(C_PTR):: eti_data
+
+        eti_pack=0
         
         return
         end function eti_pack
+!-------------------------------------------------
+        integer function eti_unpack(this,eti_data)
+!This function unpacks a plain byte packet <eti_data> into <this>.
+!Only the public content of the ETI is unpacked.
+        implicit none
+        class(tens_instr_t):: this
+        type(C_PTR):: eti_data
+
+        eti_unpack=0
+        
+        return
+        end function eti_unpack
 !---------------------------------------------------------------
         integer(8) function tens_blck_packet_size(tens,dtk,ierr)
 !Given an instance of tensor_block_t <tens> and required data kind <dtk>,
