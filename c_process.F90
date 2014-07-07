@@ -1,7 +1,7 @@
 !This module provides functionality for a Computing Process (C-PROCESS, CP).
 !In essence, this is a single-node elementary tensor instruction scheduler (SETIS).
 !AUTHOR: Dmitry I. Lyakh (Dmytro I. Liakh): quant4me@gmail.com
-!REVISION: 2014/07/03
+!REVISION: 2014/07/07
 !CONCEPTS (CP workflow):
 ! - Each CP stores its own tensor blocks in TBB, with a possibility of disk dump.
 ! - LR sends a batch of ETI to be executed on this CP unit (CP MPI Process).
@@ -153,6 +153,9 @@
          integer(C_INT):: op_tag             !MPI message tag by which the tensor operand is to be delivered (-1: local): set by LR
          integer(C_INT):: op_price           !current price of the tensor operand (tensor block): set by LR
          type(tens_arg_t), pointer, private:: op_aar_entry=>NULL() !AAR entry assigned to tensor operand: set by CP:MT
+         contains
+          procedure, public:: pack=>tens_operand_pack
+          procedure, public:: unpack=>tens_operand_unpack
         end type tens_operand_t
   !Dispatched elementary tensor instruction (ETI):
         type tens_instr_t
@@ -172,6 +175,9 @@
          real(4), private:: time_uploaded    !time the remote result upload completed: set by MT
          integer, private:: args_ready       !each bit is set to 1 when the corresponding operand is in AAR: set by CP:MT
          type(tens_operand_t):: tens_op(0:max_tensor_operands-1) !tensor-block operands
+         contains
+          procedure, public:: pack=>eti_pack
+          procedure, public:: unpack=>eti_unpack
         end type tens_instr_t
   !Elementary tensor instruction queue (ETIQ), out-of-order (linked list):
         type, private:: etiq_t
@@ -1289,7 +1295,7 @@
            endif
            if(je.ne.0) then
             nvcu_task_cleanup=nvcu_task_cleanup+2
-            if(verbose) write(jo_cp,'("ERROR(c_process::c_proc_life:nvcu_task_cleanup): eti_task_cleanup error: ",i6)') je !debug
+            if(verbose) write(jo_cp,'("ERROR(c_process::c_proc_life:nvcu_task_cleanup): eti_task_cleanup error: ",i6)') je
            endif
           else
            nvcu_task_cleanup=-998
@@ -1364,8 +1370,9 @@
          integer, intent(in), optional:: free_flags !cumulative flags: 3 bits per tensor operand
          type(tens_instr_t), pointer:: my_eti=>NULL()
          type(tens_arg_t), pointer:: curr_arg=>NULL()
-         integer jt,je,jf,j0,j1,j2,j3,j4
+         integer jt,je,jf
          logical k_tbb,k_hab,k_gpu
+!        integer(C_INT):: j0,j1,j2,j3,j4 !debug
          eti_task_cleanup=0
          if(eti_num.gt.0.and.eti_num.le.etiq%depth) then
           my_eti=>etiq%eti(eti_num)
@@ -1383,10 +1390,10 @@
                if(associated(curr_arg%tens_blck_f)) then
                 if(c_associated(curr_arg%tens_blck_c,c_loc(curr_arg%tens_blck_f))) nullify(curr_arg%tens_blck_f) !free F only if F->HAB
                endif
-               je=tensBlck_acc_id(curr_arg%tens_blck_c,j0,j1,j2,j3,j4) !debug
-               if(verbose) write(jo_cp,'("DEBUG(c_process::c_proc_life:eti_task_cleanup):",6(1x,i4))') je,j0,j1,j2,j3,j4 !debug
+!               je=tensBlck_acc_id(curr_arg%tens_blck_c,j0,j1,j2,j3,j4) !debug
+!               if(verbose) write(jo_cp,'("DEBUG(c_process::c_proc_life:eti_task_cleanup):",6(1x,i4))') je,j0,j1,j2,j3,j4 !debug
                je=tensBlck_hab_null(curr_arg%tens_blck_c); if(je.ne.0) eti_task_cleanup=eti_task_cleanup+10 !nullify HAB pointer
-               if(je.ne.0.and.verbose) write(jo_cp,'("ERROR(c_process::c_proc_life:eti_task_cleanup): tensBlck_hab_null error: ",i6)') je !debug
+!               if(je.ne.0.and.verbose) write(jo_cp,'("ERROR(c_process::c_proc_life:eti_task_cleanup): tensBlck_hab_null error: ",i6)') je !debug
               else
                nullify(curr_arg%tens_blck_f)
               endif
@@ -1658,6 +1665,16 @@
         endif
         return
         end function tens_key_cmp
+!------------------------------------------------
+        integer function eti_pack(this,eti_data)
+!This function packs an ETI <this> into a plain byte packet <eti_data>.
+!Only the public content of the ETI is packed.
+        implicit none
+        class(tens_instr_t),
+        
+        
+        return
+        end function eti_pack
 !---------------------------------------------------------------
         integer(8) function tens_blck_packet_size(tens,dtk,ierr)
 !Given an instance of tensor_block_t <tens> and required data kind <dtk>,
@@ -1694,7 +1711,7 @@
         return
         end function tens_blck_packet_size
 !--------------------------------------------------------------------------
-        subroutine tens_blck_pack(tens,dtk,packet_size,pptr,entry_num,ierr)
+        subroutine tens_blck_pack(tens,dtk,packet_size,pptr,entry_num,ierr) !SERIAL
 !This subroutine packs a tensor block <tens> (tensor_block_t) into a linear packet
 !and places it in the Host argument buffer, if there is enough free space there:
 ! TENSOR_BLOCK_T --> PACKET (entry in the Host Argument Buffer)
@@ -1866,7 +1883,7 @@
         return
         end subroutine tens_blck_pack
 !--------------------------------------------------
-        subroutine tens_blck_unpack(tens,pptr,ierr)
+        subroutine tens_blck_unpack(tens,pptr,ierr) !SERIAL
 !This subroutine creates an instance of tensor_block_t (F) <tens> by unpacking
 !a tensor block packet pointed to by a C pointer <pptr>:
 ! PACKET (Host Argument Buffer entry) --> TENSOR_BLOCK_T

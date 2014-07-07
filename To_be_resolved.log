@@ -1,7 +1,9 @@
 QFORCE resolution list (D.I.L.):
 ===============================
 UNSOLVED:
- 2014/05/13: Use "restricted" pointers in .cu files.
+ 2014/07/07: Add a scalar scaling factor to <tensor_block_contract> and <gpu_tensor_block_contract>.
+ 2014/07/07: Add a new argument to all CUDA TA functions that will control the execution configuration.
+ 2014/07/07: Check GPU_UP before switching GPUs.
  2014/05/12: Add "Deallocation free capability" to the dictionary (reuse of entries memory).
  2014/01/04: Add concurrent kernel execution into tensor_block_contract_dlf_r4_ for input tensor transposes.
  2013/11/24: When more than one process is launched per node, GPUs must be reassigned
@@ -11,6 +13,7 @@ UNSOLVED:
              Also, QF_GPUS_PER_PROCESS is not used now at all.
 
 SOLVED:
+ 2014/05/13: Use "restricted" pointers in .cu files.
  2014/01/02: gpu_tensor_block_copy_dlf_r4__ kernel does too many divisions/modulo. Solved via tables.
  2013/12/30: No overlap observed between two tensor contractions set to different CUDA streams:
              cudaEventRecord() calls lead to a serialization of the streams execution!
