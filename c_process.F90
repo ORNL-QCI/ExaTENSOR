@@ -1279,7 +1279,10 @@
            else
             je=eti_task_cleanup(j0)
            endif
-           if(je.ne.0) nvcu_task_cleanup=nvcu_task_cleanup+2
+           if(je.ne.0) then
+            nvcu_task_cleanup=nvcu_task_cleanup+2
+            if(verbose) write(jo_cp,'("ERROR(c_process::c_proc_life:nvcu_task_cleanup): eti_task_cleanup error: ",i6)') je !debug
+           endif
           else
            nvcu_task_cleanup=-998
           endif
@@ -1353,7 +1356,7 @@
          integer, intent(in), optional:: free_flags !cumulative flags: 3 bits per tensor operand
          type(tens_instr_t), pointer:: my_eti=>NULL()
          type(tens_arg_t), pointer:: curr_arg=>NULL()
-         integer jt,je,jf
+         integer jt,je,jf,j0,j1,j2,j3,j4
          logical k_tbb,k_hab,k_gpu
          eti_task_cleanup=0
          if(eti_num.gt.0.and.eti_num.le.etiq%depth) then
@@ -1372,7 +1375,10 @@
                if(associated(curr_arg%tens_blck_f)) then
                 if(c_associated(curr_arg%tens_blck_c,c_loc(curr_arg%tens_blck_f))) nullify(curr_arg%tens_blck_f) !free F only if F->HAB
                endif
-               je=tensBlck_hab_null(curr_arg%tens_blck_c); if(je.ne.0) eti_task_cleanup=eti_task_cleanup+2 !nullify HAB pointer
+               je=tensBlck_acc_id(curr_arg%tens_blck_c,j0,j1,j2,j3,j4) !debug
+               if(verbose) write(jo_cp,'("DEBUG(c_process::c_proc_life:eti_task_cleanup):",6(1x,i4)') je,j0,j1,j2,j3,j4 !debug
+               je=tensBlck_hab_null(curr_arg%tens_blck_c); if(je.ne.0) eti_task_cleanup=eti_task_cleanup+10 !nullify HAB pointer
+               if(je.ne.0.and.verbose) write(jo_cp,'("ERROR(c_process::c_proc_life:eti_task_cleanup): tensBlck_hab_null error: ",i6)') je !debug
               else
                nullify(curr_arg%tens_blck_f)
               endif
@@ -1380,12 +1386,12 @@
             endif
             if(.not.k_gpu) then !destroy GPU data for the tensor argument (if any)
              if(c_associated(curr_arg%tens_blck_c)) then
-              call tens_blck_dissoc(curr_arg%tens_blck_c,je); if(je.ne.0) eti_task_cleanup=eti_task_cleanup+4 !destroy tensBlck_t
+              call tens_blck_dissoc(curr_arg%tens_blck_c,je); if(je.ne.0) eti_task_cleanup=eti_task_cleanup+100 !destroy tensBlck_t
              endif
             endif
             if(.not.(k_tbb.or.k_hab.or.k_gpu)) then
              nullify(curr_arg%tens_blck_f)
-             je=aar_delete(my_eti%tens_op(jt)%tens_blck_id); if(je.ne.0) eti_task_cleanup=eti_task_cleanup+8 !delete AA entry
+             je=aar_delete(my_eti%tens_op(jt)%tens_blck_id); if(je.ne.0) eti_task_cleanup=eti_task_cleanup+1000 !delete AA entry
              my_eti%tens_op(jt)%op_aar_entry=>NULL()
             endif
            endif
