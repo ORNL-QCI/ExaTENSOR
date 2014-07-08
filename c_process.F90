@@ -1721,7 +1721,7 @@
         implicit none
         class(tens_blck_id_t):: this
         character(*), intent(in), optional:: t_name
-        integer, intent(in), optional:: t_mlndx(0:*)
+        integer, intent(in), optional:: t_mlndx(0:*) !0th element is the length of the multiindex [1:length]
         integer:: i,l
         tens_blck_id_create=0
         if(present(t_name)) then
@@ -1814,33 +1814,141 @@
         end function tens_key_cmp
 !---------------------------------------------------------
         integer function tens_operand_pack(this,tens_data)
-!This function packs the public part of <this> into a plain byte packet <tens_data>.
+!This function packs the public part of <this> (tens_operand_t) into a plain byte packet <tens_data>.
+!Format of the output packet:
+! INTEGER(C_SIZE_T): packet size (in bytes);
+! INTEGER(C_INT): length of the tensor name;
+! INTEGER(1), DIMENSION(:): tensor name;
+! INTEGER(C_INT): length of the tensor block key multiindex;
+! INTEGER(C_INT), DIMENSION(:): tensor block key multiindex;
+! INTEGER(C_INT): host MPI process of the tensor block (operand);
+! INTEGER(C_SIZE_T): packed size of the tensor block (see <tens_blck_packet_size>);
+! INTEGER(C_INT): MPI delivery tag;
+! INTEGER(C_INT): price of the tensor block;
         implicit none
         class(tens_operand_t):: this
-        type(C_PTR):: tens_data
+        type(C_PTR):: tens_data,c_addr
+        integer(C_INT):: i
+        integer(C_SIZE_T):: pack_size,i_s,i1_s
+        integer(C_SIZE_T), pointer:: cz_p
+        integer(C_INT), pointer:: i_p
+        integer(C_INT), pointer:: id1_p(:)
+        integer(1):: i1
+        integer(1), pointer:: i1d1_p(:)
 
         tens_operand_pack=0
-
+        if(tens_data.ne.c_null_ptr) then
+         i=0; i1=0; i_s=sizeof(i); i1_s=sizeof(i1)
+         pack_size=0; pack_size=sizeof(pack_size)
+!Tensor name:
+         c_addr=ptr_offset(tens_data,pack_size); call c_f_pointer(c_addr,i_p)
+         i_p=len_trim(this%tens_blck_id%tens_name); pack_size=pack_size+i_s !length
+         if(i_p.gt.0) then
+          c_addr=ptr_offset(tens_data,pack_size); call c_f_pointer(c_addr,i1d1_p,shape=[i_p])
+          do i=1,i_p; i1d1_p(i)=iachar(this%tens_blck_id%tens_name(i:i)); enddo !tensor name
+          pack_size=pack_size+i1_s*i_p
+         else
+          tens_operand_pack=1; return
+         endif
+!Tensor block key multiindex:
+         c_addr=ptr_offset(tens_data,pack_size); call c_f_pointer(c_addr,i_p)
+         if(allocated(this%tens_blck_id%tens_mlndx)) then
+          if(lbound(this%tens_blck_id%tens_mlndx).eq.0) then
+           if(ubound(this%tens_blck_id%tens_mlndx).eq.this%tens_blck_id%tens_mlndx(0)) then
+            i_p=this%tens_blck_id%tens_mlndx(0); pack_size=pack_size+i_s
+            c_addr=ptr_offset(tens_data,pack_size); call c_f_pointer(c_addr,id1_p,shape=[i_p])
+            id1_p(1:i_p)=this%tens_blck_id%tens_mlndx(1:i_p); pack_size=pack_size+i_s*i_p
+           else
+            tens_operand_pack=2; return
+           endif
+          else
+           tens_operand_pack=3; return
+          endif
+         else
+          i_p=0; pack_size=pack_size+i_s
+         endif
+!Host MPI process:
+         c_addr=ptr_offset(tens_data,pack_size); call c_f_pointer(c_addr,i_p)
+         i_p=this%op_host; pack_size=pack_size+i_s
+!Packed size of the tensor block:
+         c_addr=ptr_offset(tens_data,pack_size); call c_f_pointer(c_addr,cz_p)
+         cz_p=this%op_pack_size; pack_size=pack_size+sizeof(pack_size)
+!MPI delivery tag:
+         c_addr=ptr_offset(tens_data,pack_size); call c_f_pointer(c_addr,i_p)
+         i_p=this%op_tag; pack_size=pack_size+i_s
+!Price of the tensor block:
+         c_addr=ptr_offset(tens_data,pack_size); call c_f_pointer(c_addr,i_p)
+         i_p=this%op_price; pack_size=pack_size+i_s
+!Packet size:
+         call c_f_pointer(tens_data,cz_p); cz_p=pack_size
+        else
+         tens_operand_pack=999
+        endif
         return
         end function tens_operand_pack
 !-----------------------------------------------------------
         integer function tens_operand_unpack(this,tens_data)
-!This function unpacks the public part of <this> from a plain byte packet <tens_data>.
+!This function unpacks the public part of <this> (tens_operand_t) from a plain byte packet <tens_data>.
         implicit none
         class(tens_operand_t):: this
-        type(C_PTR):: tens_data
+        type(C_PTR):: tens_data,c_addr
+        integer(C_INT):: i
+        integer(C_SIZE_T):: pack_size,s,i_s,i1_s
+        integer(C_SIZE_T), pointer:: cz_p
+        integer(C_INT), pointer:: i_p
+        integer(C_INT), pointer:: id1_p(:)
+        integer(1):: i1
+        integer(1), pointer:: i1d1_p(:)
 
         tens_operand_unpack=0
-
+        if(tens_data.ne.c_null_ptr) then
+         i=0; i1=0; i_s=sizeof(i); i1_s=sizeof(i1)
+!Packet size:
+         call c_f_pointer(tens_data,cz_p); pack_size=cz_p; s=sizeof(pack_size)
+         if(pack_size.le.0) then; tens_operand_unpack=1; return; endif
+!Tensor name:
+         c_addr=ptr_offset(tens_data,s); call c_f_pointer(c_addr,i_p); s=s+i_s
+         if(i_p.le.0.or.i_p.gt.tensor_name_len) then; tens_operand_unpack=2; return; endif
+         c_addr=ptr_offset(tens_data,s); call c_f_pointer(c_addr,i1d1_p,shape=[i_p])
+         do i=1,i_p; this%tens_blck_id%tens_name(i:i)=achar(i1d1_p(i)); enddo; s=s+i1_s*i_p
+!Tensor block key multiindex:
+         c_addr=ptr_offset(tens_data,s); call c_f_pointer(c_addr,i_p); s=s+i_s
+         if(i_p.lt.0.or.i_p.gt.max_tensor_rank) then; tens_operand_unpack=3; return; endif
+         c_addr=ptr_offset(tens_data,s); call c_f_pointer(c_addr,id1_p,shape=[i_p])
+         if(.not.allocated(this%tens_blck_id%tens_mlndx)) then
+          allocate(this%tens_blck_id%tens_mlndx(0:i_p),STAT=i); if(i.ne.0) then; tens_operand_unpack=4; return; endif
+         endif
+         if(size(this%tens_blck_id%tens_mlndx).ne.1+i_p) then
+          deallocate(this%tens_blck_id%tens_mlndx,STAT=i); if(i.ne.0) then; tens_operand_unpack=5; return; endif
+          allocate(this%tens_blck_id%tens_mlndx(0:i_p),STAT=i); if(i.ne.0) then; tens_operand_unpack=6; return; endif
+         endif
+         this%tens_blck_id%tens_mlndx(0)=i_p; this%tens_blck_id%tens_mlndx(1:i_p)=id1_p(1:i_p); s=s+i_s*i_p
+!Host MPI process:
+         c_addr=ptr_offset(tens_data,s); call c_f_pointer(c_addr,i_p); this%op_host=i_p; s=s+i_s
+!Packed size of the tensor block:
+         c_addr=ptr_offset(tens_data,s); call c_f_pointer(c_addr,cz_p); this%op_pack_size=cz_p; s=s+sizeof(pack_size)
+!MPI delivery tag:
+         c_addr=ptr_offset(tens_data,s); call c_f_pointer(c_addr,i_p); this%op_tag=i_p; s=s+i_s
+!Price of the tensor block:
+         c_addr=ptr_offset(tens_data,s); call c_f_pointer(c_addr,i_p); this%op_price=i_p; s=s+i_s
+         if(s.ne.pack_size) tens_operand_unpack=7
+        else
+         tens_operand_unpack=999
+        endif
         return
         end function tens_operand_unpack
-!------------------------------------------------
+!-----------------------------------------------
         integer function eti_pack(this,eti_data)
 !This function packs an ETI <this> into a plain byte packet <eti_data>.
 !Only the public content of the ETI is packed.
         implicit none
         class(tens_instr_t):: this
-        type(C_PTR):: eti_data
+        type(C_PTR):: eti_data,c_addr
+        integer:: i,pack_size
+        integer, pointer:: i_p
+        integer(C_SIZE_T):: s,i_s
+        real(4):: r4
+        real(4), pointer:: r4_p
 
         eti_pack=0
         
@@ -1862,6 +1970,7 @@
         integer(8) function tens_blck_packet_size(tens,dtk,ierr)
 !Given an instance of tensor_block_t <tens> and required data kind <dtk>,
 !this function returns the size (in bytes) of the corresponding packet.
+!`Note that currently only the dense (DLF) tensor data layout is supported.
         implicit none
         type(tensor_block_t), intent(in):: tens
         character(2), intent(in):: dtk
