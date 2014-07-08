@@ -1,6 +1,6 @@
 !TENSOR ALGEBRA IN PARALLEL (TAP) for SHARED-MEMORY SYSTEMS (OpenMP based)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2014/06/23
+!REVISION: 2014/07/08
 !GNU FORTRAN compiling options: -c -O3 --free-line-length-none -x f95-cpp-input -fopenmp
 !GNU linking options: -lgomp -lblas -llapack
 !ACRONYMS:
@@ -35,8 +35,8 @@
 	logical, private:: verbose=.true.
  !Global:
 	integer, parameter, public:: max_shape_str_len=1024 !max allowed length for a tensor shape specification string (TSSS)
+	integer, parameter, public:: LONGINT=8              !long integer size in bytes
 	integer, parameter, private:: max_threads=1024      !max allowed number of threads in this module
-	integer, parameter, private:: LONGINT=8
 	logical, private:: data_kind_sync=.true. !if .true., each tensor operation will syncronize all existing data kinds
 	logical, private:: trans_shmem=.true.    !cache-efficient (true) VS scatter (false) tensor transpose algorithm
 	logical, private:: disable_blas=.false.  !if .true. and BLAS is accessible, BLAS calls will be replaced by my own routines
@@ -2000,7 +2000,7 @@
 !INPUT:
 ! - tens1, tens2 - two tensor blocks to compare;
 ! - data_kind - (optional) requested data kind, one of {'r4','r8','c8'};
-! - rel - if .true., a relative comparison will be invoked: DIFF(a,b)/ABSMAX(a,b), (default=.false.,absolute comparison);
+! - rel - if .true., a relative comparison will be invoked: DIFF(a,b)/ABSMAX(a,b), (default=.false.:absolute comparison);
 ! - cmp_thresh - (optional) numerical comparison threshold (real8);
 !OUTPUT:
 ! - tensor_block_cmp = .true. if tens1 = tens2 to within the given tolerance, .false. otherwise;

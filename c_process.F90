@@ -1,7 +1,7 @@
 !This module provides functionality for a Computing Process (C-PROCESS, CP).
 !In essence, this is a single-node elementary tensor instruction scheduler (SETIS).
 !AUTHOR: Dmitry I. Lyakh (Dmytro I. Liakh): quant4me@gmail.com
-!REVISION: 2014/07/07
+!REVISION: 2014/07/08
 !CONCEPTS (CP workflow):
 ! - Each CP stores its own tensor blocks in TBB, with a possibility of disk dump.
 ! - LR sends a batch of ETI to be executed on this CP unit (CP MPI Process).
@@ -141,7 +141,7 @@
          type(C_PTR), private:: tens_blck_c=C_NULL_PTR !C pointer to tensBlck_t in HAB (see "tensor_algebra_gpu_nvidia.h")
          integer(C_INT), private:: buf_entry_host=-1 !HAB entry number where the tensor block resides as a packet (-1: undefined)
          integer, private:: mpi_tag                  !>0: MPI_TAG for a pending MPI_IRECV; =0: MPI delivered; <0: local
-         integer, private:: mpi_process              !>=0: mpi rank of the host; <0: local
+         integer, private:: mpi_process              !>=0: mpi rank of the host process; <0: local
          integer, private:: times_needed             !number of times the argument has been referred to in ETIQ
          integer, private:: times_used               !number of times this AAR entry (argument) has been used since creation
         end type tens_arg_t
@@ -429,8 +429,8 @@
   !ETIQ(1):
             k=1
             etiq%eti(k)%instr_code=instr_tensor_init; etiq%eti(k)%data_kind='r8'
-            allocate(etiq%eti(k)%instr_aux(0:3*4))
-            etiq%eti(k)%instr_aux(0:3*4)=(/4, 15,55,15,55, 15,55,15,55, 0,0,0,0/)
+            allocate(etiq%eti(k)%instr_aux(0:1+3*4))
+            etiq%eti(k)%instr_aux(0:1+3*4)=(/14,  12, 15,55,15,55, 15,55,15,55, 0,0,0,0/)
             etiq%eti(k)%instr_cu=cu_t(DEV_HOST,1)
             etiq%eti(k)%args_ready=B'1111111111111111111111111111111'
             etiq%eti(k)%tens_op(0)%tens_blck_id=key(2)
@@ -445,8 +445,8 @@
   !ETIQ(2):
             k=2
             etiq%eti(k)%instr_code=instr_tensor_init; etiq%eti(k)%data_kind='r8'
-            allocate(etiq%eti(k)%instr_aux(0:3*4))
-            etiq%eti(k)%instr_aux(0:3*4)=(/4, 15,55,15,55, 15,55,15,55, 0,0,0,0/)
+            allocate(etiq%eti(k)%instr_aux(0:1+3*4))
+            etiq%eti(k)%instr_aux(0:1+3*4)=(/14,  12, 15,55,15,55, 15,55,15,55, 0,0,0,0/)
             etiq%eti(k)%instr_cu=cu_t(DEV_HOST,0)
             etiq%eti(k)%args_ready=B'1111111111111111111111111111111'
             etiq%eti(k)%tens_op(0)%tens_blck_id=key(3)
@@ -461,8 +461,8 @@
   !ETIQ(3):
             k=3
             etiq%eti(k)%instr_code=instr_tensor_init; etiq%eti(k)%data_kind='r8'
-            allocate(etiq%eti(k)%instr_aux(0:3*4))
-            etiq%eti(k)%instr_aux(0:3*4)=(/4, 15,55,15,55, 15,55,15,55, 0,0,0,0/)
+            allocate(etiq%eti(k)%instr_aux(0:1+3*4))
+            etiq%eti(k)%instr_aux(0:1+3*4)=(/14,  12, 15,55,15,55, 15,55,15,55, 0,0,0,0/)
             etiq%eti(k)%instr_cu=cu_t(DEV_HOST,1)
             etiq%eti(k)%args_ready=B'1111111111111111111111111111111'
             etiq%eti(k)%tens_op(0)%tens_blck_id=key(4)
@@ -477,8 +477,8 @@
   !ETIQ(4):
             k=4
             etiq%eti(k)%instr_code=instr_tensor_init; etiq%eti(k)%data_kind='r8'
-            allocate(etiq%eti(k)%instr_aux(0:3*5))
-            etiq%eti(k)%instr_aux(0:3*5)=(/5, 15,10,55,45,25, 15,10,55,45,25, 0,0,0,0,0/)
+            allocate(etiq%eti(k)%instr_aux(0:1+3*5))
+            etiq%eti(k)%instr_aux(0:1+3*5)=(/17,  15, 15,10,55,45,25, 15,10,55,45,25, 0,0,0,0,0/)
             etiq%eti(k)%instr_cu=cu_t(DEV_HOST,0)
             etiq%eti(k)%args_ready=B'1111111111111111111111111111111'
             etiq%eti(k)%tens_op(0)%tens_blck_id=key(5)
@@ -493,8 +493,8 @@
   !ETIQ(5):
             k=5
             etiq%eti(k)%instr_code=instr_tensor_init; etiq%eti(k)%data_kind='r8'
-            allocate(etiq%eti(k)%instr_aux(0:3*5))
-            etiq%eti(k)%instr_aux(0:3*5)=(/5, 15,10,55,45,25, 15,10,55,45,25, 0,0,0,0,0/)
+            allocate(etiq%eti(k)%instr_aux(0:1+3*5))
+            etiq%eti(k)%instr_aux(0:1+3*5)=(/17,  15, 15,10,55,45,25, 15,10,55,45,25, 0,0,0,0,0/)
             etiq%eti(k)%instr_cu=cu_t(DEV_HOST,0)
             etiq%eti(k)%args_ready=B'1111111111111111111111111111111'
             etiq%eti(k)%tens_op(0)%tens_blck_id=key(6)
@@ -509,8 +509,8 @@
   !ETIQ(6):
             k=6
             etiq%eti(k)%instr_code=instr_tensor_copy; etiq%eti(k)%data_kind='r8'
-            allocate(etiq%eti(k)%instr_aux(0:5))
-            etiq%eti(k)%instr_aux(0:5)=(/5, 5,4,3,2,1/)
+            allocate(etiq%eti(k)%instr_aux(0:1+5))
+            etiq%eti(k)%instr_aux(0:1+5)=(/7,  5, 5,4,3,2,1/)
             etiq%eti(k)%instr_cu=cu_t(DEV_HOST,1)
             etiq%eti(k)%args_ready=B'1111111111111111111111111111111'
             etiq%eti(k)%tens_op(0)%tens_blck_id=key(7)
@@ -525,8 +525,8 @@
   !ETIQ(7):
             k=7
             etiq%eti(k)%instr_code=instr_tensor_copy; etiq%eti(k)%data_kind='r8'
-            allocate(etiq%eti(k)%instr_aux(0:5))
-            etiq%eti(k)%instr_aux(0:5)=(/5, 3,1,5,2,4/)
+            allocate(etiq%eti(k)%instr_aux(0:1+5))
+            etiq%eti(k)%instr_aux(0:1+5)=(/7,  5, 3,1,5,2,4/)
             etiq%eti(k)%instr_cu=cu_t(DEV_HOST,0)
             etiq%eti(k)%args_ready=B'1111111111111111111111111111111'
             etiq%eti(k)%tens_op(0)%tens_blck_id=key(8)
@@ -541,8 +541,8 @@
   !ETIQ(8):
             k=8
             etiq%eti(k)%instr_code=instr_tensor_copy; etiq%eti(k)%data_kind='r8'
-            allocate(etiq%eti(k)%instr_aux(0:5))
-            etiq%eti(k)%instr_aux(0:5)=(/5, 5,4,3,2,1/)
+            allocate(etiq%eti(k)%instr_aux(0:1+5))
+            etiq%eti(k)%instr_aux(0:1+5)=(/7,  5, 5,4,3,2,1/)
             etiq%eti(k)%instr_cu=cu_t(DEV_HOST,1)
             etiq%eti(k)%args_ready=B'1111111111111111111111111111111'
             etiq%eti(k)%tens_op(0)%tens_blck_id=key(9)
@@ -557,8 +557,8 @@
   !ETIQ(9):
             k=9
             etiq%eti(k)%instr_code=instr_tensor_copy; etiq%eti(k)%data_kind='r8'
-            allocate(etiq%eti(k)%instr_aux(0:5))
-            etiq%eti(k)%instr_aux(0:5)=(/5, 3,1,5,2,4/)
+            allocate(etiq%eti(k)%instr_aux(0:1+5))
+            etiq%eti(k)%instr_aux(0:1+5)=(/7,  5, 3,1,5,2,4/)
             etiq%eti(k)%instr_cu=cu_t(DEV_HOST,0)
             etiq%eti(k)%args_ready=B'1111111111111111111111111111111'
             etiq%eti(k)%tens_op(0)%tens_blck_id=key(10)
@@ -573,8 +573,8 @@
   !ETIQ(10):
             k=10
             etiq%eti(k)%instr_code=instr_tensor_contract; etiq%eti(k)%data_kind='r8'
-            allocate(etiq%eti(k)%instr_aux(0:10))
-            etiq%eti(k)%instr_aux(0:10)=(/10, 3,-2,2,-4,-5, 1,-2,4,-4,-5/)
+            allocate(etiq%eti(k)%instr_aux(0:1+10))
+            etiq%eti(k)%instr_aux(0:1+10)=(/12,  10, 3,-2,2,-4,-5, 1,-2,4,-4,-5/)
             etiq%eti(k)%instr_cu=cu_t(DEV_HOST,0)
             etiq%eti(k)%args_ready=B'1111111111111111111111111111111'
             etiq%eti(k)%tens_op(0)%tens_blck_id=key(2)
@@ -592,8 +592,8 @@
   !ETIQ(11):
             k=11
             etiq%eti(k)%instr_code=instr_tensor_contract; etiq%eti(k)%data_kind='r8'
-            allocate(etiq%eti(k)%instr_aux(0:11))
-            etiq%eti(k)%instr_aux(0:11)=(/10, -4,-2,4,-1,1,-4,-2,3,-1,2, COPY_BACK/)
+            allocate(etiq%eti(k)%instr_aux(0:1+10+1+1))
+            etiq%eti(k)%instr_aux(0:1+10+1+1)=(/14,  10, -4,-2,4,-1,1,-4,-2,3,-1,2,  1, COPY_BACK/)
             etiq%eti(k)%instr_cu=cu_t(DEV_NVIDIA_GPU,0)
             etiq%eti(k)%args_ready=B'1111111111111111111111111111111'
             etiq%eti(k)%tens_op(0)%tens_blck_id=key(3)
@@ -608,12 +608,13 @@
             etiq%eti(k)%instr_handle=-1
             etiq%eti(k)%instr_status=instr_ready_to_exec
             etiq%scheduled=etiq%scheduled+1
-
 !$OMP FLUSH
+
             call set_transpose_algorithm(EFF_TRN_ON)
             call set_matmult_algorithm(BLAS_OFF)
             call gpu_set_matmult_algorithm(BLAS_OFF)
 !$OMP FLUSH
+
  !Enqueue tensor instructions to NVCU:
             etiq_nvcu%etiq_entry(0)=11
             etiq_nvcu%te_conf(0)=te_conf_t(etiq%eti(etiq_nvcu%etiq_entry(0))%instr_cu,16,16,1)
@@ -838,14 +839,23 @@
         contains
 
          integer function stcu_execute_eti(eti_loc) !STCU ETI execution workflow: ST only (thread private)
-!STCU execution is blocking, but multiple ETI can be run in parallel (MIMD);
+!STCU execution is blocking, but multiple ETI can be executed in parallel (MIMD);
 !Once each issued ETI has completed (or failed), its status (time) is updated in ETIQ.
+!Format of the %instr_aux() array from <tens_instr_t> is given below:
+! * Total number of elements in %instr_aux();
+!  * Number of elements in the 1st field of %instr_aux();
+!   * 1st field of %instr_aux();
+!  * Number of elements in the 2nd field of %instr_aux();
+!   * 2nd field of %instr_aux();
+!  etc.
          implicit none
-         integer, intent(in):: eti_loc !entry number in <etiq>
+         integer, intent(in):: eti_loc !entry number in <etiq> (ETI location in ETIQ)
          type(tens_instr_t), pointer:: my_eti
          type(tensor_block_t), pointer:: dtens_,ltens_,rtens_,stens_
          character(max_shape_str_len):: jtsss
-         integer:: j0,j1,ier
+         integer:: j0,j1,jl,ju,ier
+         integer(LONGINT):: jdiff
+         real(8):: jval
          logical:: jres
          stcu_execute_eti=0
          if(eti_loc.gt.0.and.eti_loc.le.etiq%depth) then
@@ -899,14 +909,16 @@
             if(associated(dtens_).and..not.(associated(ltens_).or.associated(rtens_))) then
              if(tensor_block_layout(dtens_,ier).eq.not_allocated) then !create & init
               if(allocated(my_eti%instr_aux)) then
-               if(lbound(my_eti%instr_aux,1).eq.0) then
-                j0=my_eti%instr_aux(0) !0: tensor block rank; {[1:rank],[1:rank],[1:rank]}: {dims,divs,grps}
-                if(j0.ge.0.and.ubound(my_eti%instr_aux,1).ge.j0*3) then
+               jl=lbound(my_eti%instr_aux,1); ju=ubound(my_eti%instr_aux,1)
+               if(ju.ge.jl+1.and.ju-jl+1.eq.my_eti%instr_aux(jl)) then !total number of elements in <instr_aux>
+                jl=jl+1; j0=my_eti%instr_aux(jl) !Field#1: {dims[1:rank],divs[1:rank],grps[1:rank]}
+                if(j0.ge.0.and.mod(j0,3).eq.0.and.jl+j0.le.ju) then !j0 equals tensor_rank*3
                  if(j0.gt.0) then !true tensor
-                  call tensor_shape_str_create(j0,my_eti%instr_aux(1:j0),jtsss,j1,ier, &
-                        divs=my_eti%instr_aux(j0+1:j0*2),grps=my_eti%instr_aux(j0*2+1:j0*3))
+                  j0=j0/3 !now j0 = tensor rank
+                  call tensor_shape_str_create(j0,my_eti%instr_aux(jl+1:jl+j0),jtsss,j1,ier, &
+                        divs=my_eti%instr_aux(jl+j0+1:jl+j0*2),grps=my_eti%instr_aux(jl+j0*2+1:jl+j0*3))
                  else !scalar
-                  call tensor_shape_str_create(j0,my_eti%instr_aux,jtsss,j1,ier)
+                  call tensor_shape_str_create(j0,my_eti%instr_aux(jl:),jtsss,j1,ier)
                  endif
                  if(ier.eq.0) then
                   if(associated(stens_)) then
@@ -949,69 +961,53 @@
              stcu_execute_eti=11
             endif
            case(instr_tensor_norm1)
-  !Compute 1-norm of a tensor block:
-           case(instr_tensor_norm2)
-  !Compute 2-norm of a tensor block:
-           case(instr_tensor_min)
-  !Return the min by absolute value element of a tensor block:
-           case(instr_tensor_max)
-  !Return the max by absolute value element of a tensor block:
-           case(instr_tensor_scale)
-  !Multiply a tensor block by a scalar:
-           case(instr_tensor_slice)
-  !Return a slice of a tensor block:
-           case(instr_tensor_insert)
-  !Insert a slice in a tensor block:
-           case(instr_tensor_trace)
-  !Partial/full trace in a tensor block:
-           case(instr_tensor_copy)
-  !Copy/permute a tensor block into another tensor block:
+  !Compute the 1-norm of a tensor block:
             if(associated(dtens_).and.associated(ltens_).and.(.not.associated(rtens_))) then
              if(tensor_block_layout(ltens_,ier).ne.not_allocated) then
-              if(allocated(my_eti%instr_aux)) then
-               if(lbound(my_eti%instr_aux,1).eq.0) then
-                j0=my_eti%instr_aux(0) !0: tensor block rank; [1:rank]: required permutation
-                if(j0.ge.0.and.ubound(my_eti%instr_aux,1).ge.j0) then
-                 call tensor_block_copy(ltens_,dtens_,ier,my_eti%instr_aux) !instr_aux(0) will be ignored
-                 if(ier.ne.0) stcu_execute_eti=12
-                else
-                 stcu_execute_eti=13
-                endif
+              if(dtens_%tensor_shape%num_dim.eq.0) then !must be a scalar
+               jval=tensor_block_norm1(ltens_,ier,my_eti%data_kind)
+               if(ier.eq.0) then
+                dtens_%scalar_value=cmplx(jval,0d0,8)
                else
-                stcu_execute_eti=14
+                stcu_execute_eti=12
                endif
               else
-               call tensor_block_copy(ltens_,dtens_,ier)
-               if(ier.ne.0) stcu_execute_eti=15
+               stcu_execute_eti=13
               endif
              else
-              stcu_execute_eti=16
+              stcu_execute_eti=14
              endif
             else
-             stcu_execute_eti=17
+             stcu_execute_eti=15
             endif
-           case(instr_tensor_add)
-  !Add a tensor block to another tensor block:
-           case(instr_tensor_cmp)
-  !Compare two tensor blocks:
-           case(instr_tensor_contract)
-  !Contract two tensor blocks and accumulate the result into another tensor block:
-            if(associated(dtens_).and.associated(ltens_).and.associated(rtens_)) then
-             if(tensor_block_layout(dtens_,ier).ne.not_allocated.and. &
-                tensor_block_layout(ltens_,ier).ne.not_allocated.and.tensor_block_layout(rtens_,ier).ne.not_allocated) then
-              if(allocated(my_eti%instr_aux)) then !
-               if(lbound(my_eti%instr_aux,1).eq.0) then
-                j0=my_eti%instr_aux(0) !0: contraction pattern length; [1:length]: contraction pattern
-                if(j0.ge.0.and.ubound(my_eti%instr_aux,1).ge.j0) then
-                 if(j0.gt.0) then !at least one true tensor present
-                  call tensor_block_contract(my_eti%instr_aux(1:j0),ltens_,rtens_,dtens_,ier,my_eti%data_kind)
-                 else !all three tensors are scalars
-                  call tensor_block_contract(my_eti%instr_aux,ltens_,rtens_,dtens_,ier)
-                 endif
-                 if(ier.ne.0) stcu_execute_eti=18
-                else
-                 stcu_execute_eti=19
-                endif
+           case(instr_tensor_norm2)
+  !Compute the 2-norm of a tensor block:
+            if(associated(dtens_).and.associated(ltens_).and.(.not.associated(rtens_))) then
+             if(tensor_block_layout(ltens_,ier).ne.not_allocated) then
+              if(dtens_%tensor_shape%num_dim.eq.0) then !must be a scalar
+               jval=tensor_block_norm2(ltens_,ier,my_eti%data_kind) !squared 2-norm
+               if(ier.eq.0) then
+                dtens_%scalar_value=cmplx(dsqrt(jval),0d0,8)
+               else
+                stcu_execute_eti=16
+               endif
+              else
+               stcu_execute_eti=17
+              endif
+             else
+              stcu_execute_eti=18
+             endif
+            else
+             stcu_execute_eti=19
+            endif
+           case(instr_tensor_min)
+  !Return the min by absolute value element of a tensor block:
+            if(associated(dtens_).and.associated(ltens_).and.(.not.associated(rtens_))) then
+             if(tensor_block_layout(ltens_,ier).ne.not_allocated) then
+              if(dtens_%tensor_shape%num_dim.eq.0) then !must be a scalar
+               jval=tensor_block_min(ltens_,ier,my_eti%data_kind)
+               if(ier.eq.0) then
+                dtens_%scalar_value=cmplx(jval,0d0,8)
                else
                 stcu_execute_eti=20
                endif
@@ -1023,6 +1019,147 @@
              endif
             else
              stcu_execute_eti=23
+            endif
+           case(instr_tensor_max)
+  !Return the max by absolute value element of a tensor block:
+            if(associated(dtens_).and.associated(ltens_).and.(.not.associated(rtens_))) then
+             if(tensor_block_layout(ltens_,ier).ne.not_allocated) then
+              if(dtens_%tensor_shape%num_dim.eq.0) then !must be a scalar
+               jval=tensor_block_max(ltens_,ier,my_eti%data_kind)
+               if(ier.eq.0) then
+                dtens_%scalar_value=cmplx(jval,0d0,8)
+               else
+                stcu_execute_eti=24
+               endif
+              else
+               stcu_execute_eti=25
+              endif
+             else
+              stcu_execute_eti=26
+             endif
+            else
+             stcu_execute_eti=27
+            endif
+           case(instr_tensor_scale)
+  !Multiply a tensor block by a scalar:
+            if(associated(dtens_).and.(.not.associated(ltens_)).and.(.not.associated(rtens_)).and.associated(stens_)) then
+             if(tensor_block_layout(dtens_,ier).ne.not_allocated) then
+              if(dtens_%tensor_shape%num_dim.ge.0) then
+               call tensor_block_scale(dtens_,stens_%scalar_value,ier)
+               if(ier.ne.0) stcu_execute_eti=28
+              else
+               stcu_execute_eti=29
+              endif
+             else
+              stcu_execute_eti=30
+             endif
+            else
+             stcu_execute_eti=31
+            endif
+           case(instr_tensor_slice)
+  !Return a slice of a tensor block:
+           case(instr_tensor_insert)
+  !Insert a slice in a tensor block:
+           case(instr_tensor_trace)
+  !Partial/full trace in a tensor block:
+           case(instr_tensor_copy)
+  !Copy/permute a tensor block into another tensor block:
+            if(associated(dtens_).and.associated(ltens_).and.(.not.associated(rtens_))) then
+             if(tensor_block_layout(ltens_,ier).ne.not_allocated) then
+              if(allocated(my_eti%instr_aux)) then
+               jl=lbound(my_eti%instr_aux,1); ju=ubound(my_eti%instr_aux,1)
+               if(ju.ge.jl+1.and.ju-jl+1.eq.my_eti%instr_aux(jl)) then
+                jl=jl+1; j0=my_eti%instr_aux(jl) !tensor block rank: Field#1: trn[1:rank] is the required permutation
+                if(j0.ge.0.and.jl+j0.le.ju) then
+                 call tensor_block_copy(ltens_,dtens_,ier,my_eti%instr_aux(jl:)) !instr_aux(jl) will be ignored
+                 if(ier.ne.0) stcu_execute_eti=32
+                else
+                 stcu_execute_eti=33
+                endif
+               else
+                stcu_execute_eti=34
+               endif
+              else
+               call tensor_block_copy(ltens_,dtens_,ier)
+               if(ier.ne.0) stcu_execute_eti=35
+              endif
+             else
+              stcu_execute_eti=36
+             endif
+            else
+             stcu_execute_eti=37
+            endif
+           case(instr_tensor_add)
+  !Add a tensor block to another tensor block:
+            if(associated(dtens_).and.associated(ltens_).and.(.not.associated(rtens_))) then
+             if(tensor_block_layout(dtens_,ier).ne.not_allocated.and.tensor_block_layout(ltens_,ier).ne.not_allocated) then
+              if(associated(stens_)) then !scaling factor
+               call tensor_block_add(dtens_,ltens_,ier,stens_%scalar_value,my_eti%data_kind)
+               if(ier.ne.0) stcu_execute_eti=38
+              else
+               call tensor_block_add(dtens_,ltens_,ier,data_kind=my_eti%data_kind)
+               if(ier.ne.0) stcu_execute_eti=39
+              endif
+             else
+              stcu_execute_eti=40
+             endif
+            else
+             stcu_execute_eti=41
+            endif
+           case(instr_tensor_cmp)
+  !Compare two tensor blocks (scalar dtens_ will contain the number of elements that differ):
+            if(associated(dtens_).and.associated(ltens_).and.associated(rtens_)) then
+             if(tensor_block_layout(dtens_,ier).ne.not_allocated.and. &
+                tensor_block_layout(ltens_,ier).ne.not_allocated.and.tensor_block_layout(rtens_,ier).ne.not_allocated) then
+              if(dtens_%tensor_shape%num_dim.eq.0) then
+               jdiff=0
+               if(associated(stens_)) then !real part is the comparison threshold
+                jres=tensor_block_cmp(ltens_,rtens_,ier,my_eti%data_kind,.true.,real(stens_%scalar_value,8),jdiff)
+                if(ier.ne.0) stcu_execute_eti=42
+               else
+                jres=tensor_block_cmp(ltens_,rtens_,ier,my_eti%data_kind,rel=.true.,diff_count=jdiff)
+                if(ier.ne.0) stcu_execute_eti=43
+               endif
+               dtens_%scalar_value=cmplx(real(jdiff,8),0d0,8)
+              else
+               stcu_execute_eti=44
+              endif
+             else
+              stcu_execute_eti=45
+             endif
+            else
+             stcu_execute_eti=46
+            endif
+           case(instr_tensor_contract)
+  !Contract two tensor blocks and accumulate the result into another tensor block:
+            if(associated(dtens_).and.associated(ltens_).and.associated(rtens_)) then
+             if(tensor_block_layout(dtens_,ier).ne.not_allocated.and. &
+                tensor_block_layout(ltens_,ier).ne.not_allocated.and.tensor_block_layout(rtens_,ier).ne.not_allocated) then
+              if(allocated(my_eti%instr_aux)) then
+               jl=lbound(my_eti%instr_aux,1); ju=ubound(my_eti%instr_aux,1)
+               if(ju.ge.jl+1.and.ju-jl+1.eq.my_eti%instr_aux(jl)) then
+                jl=jl+1; j0=my_eti%instr_aux(jl) !contraction pattern length: Field#1: cptrn[1:length] is the contraction pattern
+                if(j0.ge.0.and.jl+j0.le.ju) then
+                 if(j0.gt.0) then !at least one true tensor present
+                  call tensor_block_contract(my_eti%instr_aux(jl+1:jl+j0),ltens_,rtens_,dtens_,ier,my_eti%data_kind)
+                 else !all three tensors are scalars
+                  call tensor_block_contract(my_eti%instr_aux(jl:),ltens_,rtens_,dtens_,ier)
+                 endif
+                 if(ier.ne.0) stcu_execute_eti=47
+                else
+                 stcu_execute_eti=48
+                endif
+               else
+                stcu_execute_eti=49
+               endif
+              else
+               stcu_execute_eti=50
+              endif
+             else
+              stcu_execute_eti=51
+             endif
+            else
+             stcu_execute_eti=52
             endif
            case default
             stcu_execute_eti=997
@@ -1052,7 +1189,6 @@
 !NVCU is non-blocking and multiple ETI can be issued one right after another;
 !If the ETI issue was unsuccessful, its status in ETIQ is either kept <scheduled> or changed to <error>;
 !The only case when the status is kept <scheduled> is when the HAB packing fails (unable to pack into HAB).
-!In the case of <error>, sometimes it may be necessary to free GPU/HAB buffers explicitly.
          implicit none
          integer(C_INT), intent(in):: etiq_nvcu_loc !entry number in <etiq_nvcu>
          type(tens_instr_t), pointer:: my_eti
@@ -1060,7 +1196,7 @@
          integer(C_INT):: d_hab_entry,l_hab_entry,r_hab_entry
          type(tensor_block_t), pointer:: stens_
          integer(C_SIZE_T):: pack_size
-         integer(C_INT) j0,j1,ier
+         integer(C_INT) j0,j1,j2,ier
          nvcu_execute_eti=0
          if(etiq_nvcu_loc.ge.0.and.etiq_nvcu_loc.lt.etiq_nvcu%depth) then
           j0=etiq_nvcu%etiq_entry(etiq_nvcu_loc)
@@ -1158,29 +1294,40 @@
  !Tensor contraction:
               if(d_hab_entry.ge.0.and.l_hab_entry.ge.0.and.r_hab_entry.ge.0) then
                if(allocated(my_eti%instr_aux)) then
-                if(lbound(my_eti%instr_aux,1).eq.0) then
-                 j0=my_eti%instr_aux(0) !instr_aux(0): length; instr_aux(1:length): contr. ptrn.; instr_aux(length+1:): reuse flags
-                 if(ubound(my_eti%instr_aux,1).ge.j0) then
+                jl=lbound(my_eti%instr_aux,1); ju=ubound(my_eti%instr_aux,1)
+                if(ju.ge.jl+1.and.ju-jl+1.eq.my_eti%instr_aux(jl)) then
+                 jl=jl+1; j0=my_eti%instr_aux(jl) !Field#1: contraction pattern (mandatory)
+                 if(j0.ge.0.and.jl+j0.le.ju) then
                   ier=cuda_task_create(nvcu_tasks(etiq_nvcu_loc)%cuda_task_handle)
                   if(ier.eq.0) then
-                   if(ubound(my_eti%instr_aux,1).gt.j0) then; j1=my_eti%instr_aux(j0+1); else; j1=COPY_BACK; endif
-                   if(j0.gt.0) then !at least one tensor is not a scalar
-                    ier=gpu_tensor_block_contract_dlf_(my_eti%instr_aux(1:), &
-                                                       my_eti%tens_op(1)%op_aar_entry%tens_blck_c, &
-                                                       my_eti%tens_op(2)%op_aar_entry%tens_blck_c, &
-                                                       my_eti%tens_op(0)%op_aar_entry%tens_blck_c, &
-                                                       j1,nvcu_tasks(etiq_nvcu_loc)%cuda_task_handle)
-                    
-                   else !all three tensor are scalars
-                    ier=gpu_tensor_block_contract_dlf_(my_eti%instr_aux(0:), & !%instr_aux will be ignored
-                                                       my_eti%tens_op(1)%op_aar_entry%tens_blck_c, &
-                                                       my_eti%tens_op(2)%op_aar_entry%tens_blck_c, &
-                                                       my_eti%tens_op(0)%op_aar_entry%tens_blck_c, &
-                                                       j1,nvcu_tasks(etiq_nvcu_loc)%cuda_task_handle)
+                   j2=jl+j0+1
+                   if(j2.le.ju) then !Field#2 present: reuse flags
+                    if(my_eti%instr_aux(j2).eq.1.and.j2.lt.ju) then
+                     j1=my_eti%instr_aux(j2+1)
+                    else
+                     nvcu_execute_eti=-7
+                    endif
+                   else
+                    j1=COPY_BACK
                    endif
-                   if(ier.ne.0) then
-                    ier=cuda_task_destroy(nvcu_tasks(etiq_nvcu_loc)%cuda_task_handle)
-                    nvcu_execute_eti=-7
+                   if(nvcu_execute_eti.eq.0) then
+                    if(j0.gt.0) then !at least one tensor is not a scalar
+                     ier=gpu_tensor_block_contract_dlf_(my_eti%instr_aux(jl+1:), &
+                                                        my_eti%tens_op(1)%op_aar_entry%tens_blck_c, &
+                                                        my_eti%tens_op(2)%op_aar_entry%tens_blck_c, &
+                                                        my_eti%tens_op(0)%op_aar_entry%tens_blck_c, &
+                                                        j1,nvcu_tasks(etiq_nvcu_loc)%cuda_task_handle)
+                    else !all three tensor are scalars
+                     ier=gpu_tensor_block_contract_dlf_(my_eti%instr_aux(jl:), & !%instr_aux will be ignored
+                                                        my_eti%tens_op(1)%op_aar_entry%tens_blck_c, &
+                                                        my_eti%tens_op(2)%op_aar_entry%tens_blck_c, &
+                                                        my_eti%tens_op(0)%op_aar_entry%tens_blck_c, &
+                                                        j1,nvcu_tasks(etiq_nvcu_loc)%cuda_task_handle)
+                    endif
+                    if(ier.ne.0) then
+                     ier=cuda_task_destroy(nvcu_tasks(etiq_nvcu_loc)%cuda_task_handle)
+                     nvcu_execute_eti=-7
+                    endif
                    endif
                   else
                    nvcu_execute_eti=-8
