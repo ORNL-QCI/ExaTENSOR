@@ -1,7 +1,7 @@
 !This module provides functionality for a Computing Process (C-PROCESS, CP).
 !In essence, this is a single-node elementary tensor instruction scheduler (SETIS).
 !AUTHOR: Dmitry I. Lyakh (Dmytro I. Liakh): quant4me@gmail.com
-!REVISION: 2014/07/09
+!REVISION: 2014/07/10
 !CONCEPTS (CP workflow):
 ! - Each CP stores its own tensor blocks in TBB, with a possibility of disk dump.
 ! - LR sends a batch of ETI to be executed on this CP unit (CP MPI Process).
@@ -1196,7 +1196,7 @@
          integer(C_INT):: d_hab_entry,l_hab_entry,r_hab_entry
          type(tensor_block_t), pointer:: stens_
          integer(C_SIZE_T):: pack_size
-         integer(C_INT) j0,j1,j2,ier
+         integer(C_INT) j0,j1,j2,jl,ju,ier
          nvcu_execute_eti=0
          if(etiq_nvcu_loc.ge.0.and.etiq_nvcu_loc.lt.etiq_nvcu%depth) then
           j0=etiq_nvcu%etiq_entry(etiq_nvcu_loc)
@@ -1837,7 +1837,7 @@
         integer(1), pointer:: i1d1_p(:)
 
         tens_operand_pack=0
-        if(tens_data.ne.c_null_ptr) then
+        if(c_associated(tens_data)) then
          i=0; i1=0; i_s=sizeof(i); i1_s=sizeof(i1)
          pack_size=0; pack_size=sizeof(pack_size)
 !Tensor name:
@@ -1902,7 +1902,7 @@
         integer(1), pointer:: i1d1_p(:)
 
         tens_operand_unpack=0
-        if(tens_data.ne.c_null_ptr) then
+        if(c_associated(tens_data)) then
          i=0; i1=0; i_s=sizeof(i); i1_s=sizeof(i1)
 !Packet size:
          call c_f_pointer(tens_data,cz_p); pack_size=cz_p; s=sizeof(pack_size)
@@ -1966,7 +1966,7 @@
         integer(C_INT):: op_present(0:max_tensor_operands-1)
 
         eti_pack=0
-        if(eti_data.ne.c_null_ptr) then
+        if(c_associated(eti_data)) then
          i=0; rval4=0.0; i_s=sizeof(i); r4_s=sizeof(rval4)
          pack_size=0; pack_size=sizeof(pack_size)
 !Tensor instruction code:
@@ -2052,7 +2052,7 @@
         integer(C_INT):: op_present(0:max_tensor_operands-1)
 
         eti_unpack=0
-        if(eti_data.ne.c_null_ptr) then
+        if(c_associated(eti_data)) then
          i=0; rval4=0.0; i_s=sizeof(i); r4_s=sizeof(rval4)
 !Total size of the packet:
          call c_f_pointer(eti_data,cz_p); pack_size=cz_p; s=sizeof(pack_size)
