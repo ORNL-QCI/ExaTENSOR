@@ -1853,8 +1853,8 @@
 !Tensor block key multiindex:
          c_addr=ptr_offset(tens_data,pack_size); call c_f_pointer(c_addr,i_p)
          if(allocated(this%tens_blck_id%tens_mlndx)) then
-          if(lbound(this%tens_blck_id%tens_mlndx).eq.0) then
-           if(ubound(this%tens_blck_id%tens_mlndx).eq.this%tens_blck_id%tens_mlndx(0)) then
+          if(lbound(this%tens_blck_id%tens_mlndx,1).eq.0) then
+           if(ubound(this%tens_blck_id%tens_mlndx,1).eq.this%tens_blck_id%tens_mlndx(0)) then
             i_p=this%tens_blck_id%tens_mlndx(0); pack_size=pack_size+i_s
             c_addr=ptr_offset(tens_data,pack_size); call c_f_pointer(c_addr,id1_p,shape=[i_p])
             id1_p(1:i_p)=this%tens_blck_id%tens_mlndx(1:i_p); pack_size=pack_size+i_s*i_p
@@ -1961,13 +1961,13 @@
         integer(C_INT), pointer:: i_p,id1_p(:)
         integer(C_SIZE_T):: pack_size,i_s,r4_s
         integer(C_SIZE_T), pointer:: cz_p
-        real(4):: r4
+        real(4):: rval4
         real(4), pointer:: r4_p
         integer(C_INT):: op_present(0:max_tensor_operands-1)
 
         eti_pack=0
         if(eti_data.ne.c_null_ptr) then
-         i=0; r4=0.0; i_s=sizeof(i); r4_s=sizeof(r4)
+         i=0; rval4=0.0; i_s=sizeof(i); r4_s=sizeof(rval4)
          pack_size=0; pack_size=sizeof(pack_size)
 !Tensor instruction code:
          c_addr=ptr_offset(eti_data,pack_size); call c_f_pointer(c_addr,i_p)
@@ -1990,7 +1990,7 @@
          if(allocated(this%instr_aux)) then
           i_p=size(this%instr_aux); pack_size=pack_size+i_s
           c_addr=ptr_offset(eti_data,pack_size); call c_f_pointer(c_addr,id1_p,shape=[i_p])
-          id1_p(1:i_p)=this%instr_aux(lbound(this%instr_aux):ubound(this%instr_aux))
+          id1_p(1:i_p)=this%instr_aux(lbound(this%instr_aux,1):ubound(this%instr_aux,1))
           pack_size=pack_size+i_s*i_p
          else
           i_p=0; pack_size=pack_size+i_s
@@ -2047,12 +2047,13 @@
         integer(C_INT), pointer:: i_p,id1_p(:)
         integer(C_SIZE_T):: pack_size,s,i_s,r4_s
         integer(C_SIZE_T), pointer:: cz_p
-        real(4):: r4
+        real(4):: rval4
         real(4), pointer:: r4_p
         integer(C_INT):: op_present(0:max_tensor_operands-1)
 
         eti_unpack=0
         if(eti_data.ne.c_null_ptr) then
+         i=0; rval4=0.0; i_s=sizeof(i); r4_s=sizeof(rval4)
 !Total size of the packet:
          call c_f_pointer(eti_data,cz_p); pack_size=cz_p; s=sizeof(pack_size)
 !Tensor instruction code:
@@ -2082,7 +2083,7 @@
            deallocate(this%instr_aux,STAT=i); if(i.ne.0) then; eti_unpack=3; return; endif
            allocate(this%instr_aux(0:i_p-1),STAT=i); if(i.ne.0) then; eti_unpack=4; return; endif
           endif
-          this%instr_aux(lbound(this%instr_aux):ubound(this%instr_aux))=id1_p(1:i_p)
+          this%instr_aux(lbound(this%instr_aux,1):ubound(this%instr_aux,1))=id1_p(1:i_p)
           s=s+i_s*i_p
          elseif(i_p.lt.0) then
           eti_unpack=5; return
