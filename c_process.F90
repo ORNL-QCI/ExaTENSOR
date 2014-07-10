@@ -190,14 +190,19 @@
          integer(C_INT), allocatable, private:: ffe_stack(:)  !ETIQ FFE stack
          integer(C_INT), allocatable, private:: next(:)       !ETIQ next linking
          type(tens_instr_t), allocatable, private:: eti(:)    !elementary tensor instructions
+         contains
+          procedure, private:: init=>etiq_init
         end type etiq_t
   !In-order elementary tensor instruction queue for a specific computing unit:
         type, private:: etiq_cu_t
          integer(C_INT), private:: depth=0                    !total number of entries in the queue
          integer(C_INT), private:: scheduled=0                !total number of active entries in the queue
-         integer(C_INT), private:: ip=0                       !instruction pointer (current instruction)
+         integer(C_INT), private:: bp=0                       !base instruction pointer (first issued unfinished instruction): async units only
+         integer(C_INT), private:: ip=0                       !current instruction pointer (current instruction)
          integer(C_INT), allocatable, private:: etiq_entry(:) !number of the ETIQ entry where the ETI is located
          type(te_conf_t), allocatable, private:: te_conf(:)   !computing unit configuration which ETI will be executed on
+         contains
+          procedure, private:: init=>etiq_cu_init
         end type etiq_cu_t
  !NVCU task:
         type, private:: nvcu_task_t
@@ -211,6 +216,8 @@
 !PROCEDURE VISIBILITY:
         private tens_blck_id_create
         private tens_blck_id_destroy
+        private etiq_init
+        private etiq_cu_init
 !DATA:
  !Tensor Block Bank (TBB):
         type(dict_t), private:: tbb !permanent storage of local tensor blocks
@@ -316,11 +323,8 @@
  !Init ETIQ:
         write(jo_cp,'("#MSG(c_process::c_proc_life): Allocating Tensor Instruction Queue (ETIQ) ... ")',advance='no')
         tm=thread_wtime()
-        allocate(etiq%eti(1:etiq_max_depth),etiq%next(1:etiq_max_depth),etiq%ffe_stack(1:etiq_max_depth),STAT=ierr)
+        ierr=etiq%init(etiq_max_depth)
         if(ierr.ne.0) then; write(jo_cp,'("#ERROR(c_process::c_proc_life): ETIQ allocation failed!")'); call c_proc_quit(5); return; endif
-        etiq%depth=etiq_max_depth; etiq%scheduled=0; etiq%last(:)=0; etiq%ip(:)=0; etiq%ic(:)=0
-        do i=1,etiq%depth; etiq%eti(i)%instr_status=instr_null; enddo
-        do i=1,etiq%depth; etiq%ffe_stack(i)=i; enddo; etiq%ffe_sp=1
         tm=thread_wtime()-tm; write(jo_cp,'("Ok(",F4.1," sec): ETIQ total depth = ",i7)') tm,etiq%depth
         write(jo_cp,'("#MSG(c_process::c_proc_life): Number of ETIQ channels = ",i3)') etiq_channels
 !Test C-process functionality (debug):
@@ -337,11 +341,8 @@
  !Init STCU ETIQ (slave CPU threads):
          write(jo_cp,'("#MSG(c_process::c_proc_life): Allocating STCU ETIQ ... ")',advance='no')
          tm=thread_wtime()
-         allocate(etiq_stcu%etiq_entry(0:etiq_stcu_max_depth-1),etiq_stcu%te_conf(0:etiq_stcu_max_depth-1),STAT=ierr)
+         ierr=etiq_stcu%init(etiq_stcu_max_depth)
          if(ierr.ne.0) then; write(jo_cp,'("#ERROR(c_process::c_proc_life): ETIQ_STCU allocation failed!")'); call c_proc_quit(8); return; endif
-         do i=0,etiq_stcu_max_depth-1; etiq_stcu%etiq_entry(i)=0; enddo
-         do i=0,etiq_stcu_max_depth-1; etiq_stcu%te_conf(i)%cu_id=cu_t(-1,-1); enddo
-         etiq_stcu%depth=etiq_stcu_max_depth; etiq_stcu%scheduled=0; etiq_stcu%ip=0
          stcu_num_units=-1
          tm=thread_wtime()-tm; write(jo_cp,'("Ok(",F4.1," sec): STCU ETIQ depth = ",i6)') tm,etiq_stcu%depth
          write(jo_cp,'("#MSG(c_process::c_proc_life): Max number of STCU MIMD units = ",i5)') min(max_threads-1,stcu_max_units)
@@ -349,29 +350,21 @@
 #ifndef NO_GPU
          write(jo_cp,'("#MSG(c_process::c_proc_life): Allocating NVCU ETIQ ... ")',advance='no')
          tm=thread_wtime()
-         allocate(etiq_nvcu%etiq_entry(0:etiq_nvcu_max_depth-1),etiq_nvcu%te_conf(0:etiq_nvcu_max_depth-1), &
-                  nvcu_tasks(0:etiq_nvcu_max_depth-1),STAT=ierr)
+         ierr=etiq_nvcu%init(etiq_nvcu_max_depth)
          if(ierr.ne.0) then; write(jo_cp,'("#ERROR(c_process::c_proc_life): ETIQ_NVCU allocation failed!")'); call c_proc_quit(9); return; endif
-         do i=0,etiq_nvcu_max_depth-1; etiq_nvcu%etiq_entry(i)=0; enddo
-         do i=0,etiq_nvcu_max_depth-1; etiq_nvcu%te_conf(i)%cu_id=cu_t(-1,-1); enddo
-         etiq_nvcu%depth=etiq_nvcu_max_depth; etiq_nvcu%scheduled=0; etiq_nvcu%ip=0
+         allocate(nvcu_tasks(0:etiq_nvcu_max_depth-1),STAT=ierr) !table for active CUDA tasks
+         if(ierr.ne.0) then; write(jo_cp,'("#ERROR(c_process::c_proc_life): ETIQ_NVCU task table allocation failed!")'); call c_proc_quit(10); return; endif
          tm=thread_wtime()-tm; write(jo_cp,'("Ok(",F4.1," sec): NVCU ETIQ depth = ",i6)') tm,etiq_nvcu%depth
-#else
-         etiq_nvcu%depth=0; etiq_nvcu%scheduled=0; etiq_nvcu%ip=0
 #endif
  !Init XPCU ETIQ (Intel Xeon Phi's):
 #ifndef NO_PHI
          write(jo_cp,'("#MSG(c_process::c_proc_life): Allocating XPCU ETIQ ... ")',advance='no')
          tm=thread_wtime()
-         allocate(etiq_xpcu%etiq_entry(0:etiq_xpcu_max_depth-1),etiq_xpcu%te_conf(0:etiq_xpcu_max_depth-1), &
-                  xpcu_tasks(0:etiq_xpcu_max_depth-1),STAT=ierr)
-         if(ierr.ne.0) then; write(jo_cp,'("#ERROR(c_process::c_proc_life): ETIQ_XPCU allocation failed!")'); call c_proc_quit(10); return; endif
-         do i=0,etiq_xpcu_max_depth-1; etiq_xpcu%etiq_entry(i)=0; enddo
-         do i=0,etiq_xpcu_max_depth-1; etiq_xpcu%te_conf(i)%cu_id=cu_t(-1,-1); enddo
-         etiq_xpcu%depth=etiq_xpcu_max_depth; etiq_xpcu%scheduled=0; etiq_xpcu%ip=0
+         ierr=etiq_xpcu%init(etiq_xpcu_max_depth)
+         if(ierr.ne.0) then; write(jo_cp,'("#ERROR(c_process::c_proc_life): ETIQ_XPCU allocation failed!")'); call c_proc_quit(11); return; endif
+         allocate(xpcu_tasks(0:etiq_xpcu_max_depth-1),STAT=ierr)
+         if(ierr.ne.0) then; write(jo_cp,'("#ERROR(c_process::c_proc_life): ETIQ_XPCU task table allocation failed!")'); call c_proc_quit(12); return; endif
          tm=thread_wtime()-tm; write(jo_cp,'("Ok(",F4.1," sec): XPCU ETIQ depth = ",i6)') tm,etiq_xpcu%depth
-#else
-         etiq_xpcu%depth=0; etiq_xpcu%scheduled=0; etiq_xpcu%ip=0
 #endif
 !Begin active life (master thread + leading slave thread):
 !$OMP PARALLEL NUM_THREADS(2) DEFAULT(SHARED) &
@@ -1700,14 +1693,17 @@
 !         if(verbose) write(jo_cp,'("#DEBUG(c_process::cp_destructor): etiq_cu_t")') !debug
          if(allocated(item%etiq_entry)) then; deallocate(item%etiq_entry,STAT=i); if(i.ne.0) ierr=5; endif
          if(allocated(item%te_conf)) then; deallocate(item%te_conf,STAT=i); if(i.ne.0) ierr=5; endif
-         item%depth=0; item%scheduled=0; item%ip=0
+         item%depth=0; item%scheduled=0; item%bp=0; item%ip=0
         type is (etiq_t)
 !         if(verbose) write(jo_cp,'("#DEBUG(c_process::cp_destructor): etiq_t")') !debug
          if(allocated(item%ffe_stack)) then; deallocate(item%ffe_stack,STAT=i); if(i.ne.0) ierr=6; endif
          if(allocated(item%next)) then; deallocate(item%next,STAT=i); if(i.ne.0) ierr=6; endif
-         do j=lbound(item%eti,1),ubound(item%eti,1)
-          i=cp_destructor(item%eti(j)); if(i.ne.0) ierr=6
-         enddo
+         if(allocated(item%eti)) then
+          do j=lbound(item%eti,1),ubound(item%eti,1)
+           i=cp_destructor(item%eti(j)); if(i.ne.0) ierr=6
+          enddo
+          deallocate(item%eti,STAT=i); if(i.ne.0) ierr=6
+         endif
          item%depth=0; item%scheduled=0; item%ffe_sp=0
          item%last(:)=0; item%ip(:)=0; item%ic(:)=0
         class default
@@ -1812,6 +1808,50 @@
         endif
         return
         end function tens_key_cmp
+!----------------------------------------------------
+        integer function etiq_init(this,queue_length) !SERIAL: MT only
+!This function initializes an <etiq_t> object.
+        implicit none
+        class(etiq_t):: this
+        integer(C_INT), intent(in):: queue_length
+        integer(C_INT):: i
+        etiq_init=0
+        if(queue_length.gt.0) then
+         allocate(this%eti(1:queue_length),this%next(1:queue_length),this%ffe_stack(1:queue_length),STAT=ierr)
+         if(ierr.eq.0) then
+          this%depth=queue_length; this%scheduled=0; this%last(:)=0; this%ip(:)=0; this%ic(:)=0
+          do i=1,queue_length; this%eti(i)%instr_status=instr_null; enddo
+          do i=1,queue_length; this%ffe_stack(i)=i; enddo; this%ffe_sp=1
+         else
+          etiq_init=1
+         endif
+        else
+         etiq_init=2
+        endif
+        return
+        end function etiq_init
+!-------------------------------------------------------
+        integer function etiq_cu_init(this,queue_length) !SERIAL: MT only
+!This function initializes an <etiq_cu_t> object.
+        implicit none
+        class(etiq_cu_t):: this
+        integer(C_INT), intent(in):: queue_length
+        integer(C_INT):: i
+        etiq_cu_init=0
+        if(queue_length.gt.0) then
+         allocate(this%etiq_entry(0:queue_length-1),this%te_conf(0:queue_length-1),STAT=ierr)
+         if(ierr.eq.0) then
+          do i=0,queue_length-1; this%etiq_entry(i)=0; enddo
+          do i=0,queue_length-1; this%te_conf(i)%cu_id=cu_t(-1,-1); enddo
+          this%depth=queue_length; this%scheduled=0; this%bp=0; this%ip=0
+         else
+          etiq_cu_init=1
+         endif
+        else
+         etiq_cu_init=2
+        endif
+        return
+        end function etiq_cu_init
 !---------------------------------------------------------
         integer function tens_operand_pack(this,tens_data)
 !This function packs the public part of <this> (tens_operand_t) into a plain byte packet <tens_data>.
