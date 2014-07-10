@@ -1,7 +1,7 @@
 !This module provides functionality for a Computing Process (C-PROCESS, CP).
 !In essence, this is a single-node elementary tensor instruction scheduler (SETIS).
 !AUTHOR: Dmitry I. Lyakh (Dmytro I. Liakh): quant4me@gmail.com
-!REVISION: 2014/07/08
+!REVISION: 2014/07/09
 !CONCEPTS (CP workflow):
 ! - Each CP stores its own tensor blocks in TBB, with a possibility of disk dump.
 ! - LR sends a batch of ETI to be executed on this CP unit (CP MPI Process).
@@ -1889,6 +1889,7 @@
 !-----------------------------------------------------------
         integer function tens_operand_unpack(this,tens_data)
 !This function unpacks the public part of <this> (tens_operand_t) from a plain byte packet <tens_data>.
+!The format of the packet is given in <tens_operand_pack>.
         implicit none
         class(tens_operand_t):: this
         type(C_PTR):: tens_data,c_addr
@@ -1939,31 +1940,188 @@
         end function tens_operand_unpack
 !-----------------------------------------------
         integer function eti_pack(this,eti_data)
-!This function packs an ETI <this> into a plain byte packet <eti_data>.
-!Only the public content of the ETI is packed.
+!This function packs the public part of an ETI <this> (tens_instr_t) into a plain byte packet <eti_data>.
+!Format of the output packet:
+! INTEGER(C_SIZE_T): packet size (in bytes);
+! INTEGER(C_INT): tensor instruction code;
+! INTEGER(C_INT): data kind;
+! INTEGER(C_INT): length of the auxiliary instruction info;
+! INTEGER(C_INT), DIMENSION(:): auxiliary instruction info;
+! INTEGER(C_INT): tensor instruction priority;
+! REAL(4): computational cost of the tensor instruction (Flops);
+! REAL(4): total size of all tensor operands (Words of data kind);
+! INTEGER: total number of tensor operands present in this packet;
+! PACKET(tens_operand_t): operand number (C_INT) + packed tensor operand;
+! PACKET(tens_operand_t): operand number (C_INT) + packed tensor operand;
+! ...
         implicit none
         class(tens_instr_t):: this
         type(C_PTR):: eti_data,c_addr
-        integer:: i,pack_size
-        integer, pointer:: i_p
-        integer(C_SIZE_T):: s,i_s
+        integer(C_INT):: i,ier
+        integer(C_INT), pointer:: i_p,id1_p(:)
+        integer(C_SIZE_T):: pack_size,i_s,r4_s
+        integer(C_SIZE_T), pointer:: cz_p
         real(4):: r4
         real(4), pointer:: r4_p
+        integer(C_INT):: op_present(0:max_tensor_operands-1)
 
         eti_pack=0
-        
+        if(eti_data.ne.c_null_ptr) then
+         i=0; r4=0.0; i_s=sizeof(i); r4_s=sizeof(r4)
+         pack_size=0; pack_size=sizeof(pack_size)
+!Tensor instruction code:
+         c_addr=ptr_offset(eti_data,pack_size); call c_f_pointer(c_addr,i_p)
+         i_p=int(this%instr_code,C_INT); pack_size=pack_size+i_s
+!Data kind:
+         c_addr=ptr_offset(eti_data,pack_size); call c_f_pointer(c_addr,i_p)
+         select case(this%data_kind)
+         case('r4','R4')
+          i_p=R4
+         case('r8','R8')
+          i_p=R8
+         case('c8','C8')
+          i_p=C8
+         case default
+          eti_pack=1; return !unknown data kind
+         end select
+         pack_size=pack_size+i_s
+!Auxiliary instruction info:
+         c_addr=ptr_offset(eti_data,pack_size); call c_f_pointer(c_addr,i_p)
+         if(allocated(this%instr_aux)) then
+          i_p=size(this%instr_aux); pack_size=pack_size+i_s
+          c_addr=ptr_offset(eti_data,pack_size); call c_f_pointer(c_addr,id1_p,shape=[i_p])
+          id1_p(1:i_p)=this%instr_aux(lbound(this%instr_aux):ubound(this%instr_aux))
+          pack_size=pack_size+i_s*i_p
+         else
+          i_p=0; pack_size=pack_size+i_s
+         endif
+!Tensor instruction priority:
+         c_addr=ptr_offset(eti_data,pack_size); call c_f_pointer(c_addr,i_p)
+         i_p=this%instr_priority; pack_size=pack_size+i_s
+!Computational cost:
+         c_addr=ptr_offset(eti_data,pack_size); call c_f_pointer(c_addr,r4_p)
+         r4_p=this%instr_cost; pack_size=pack_size+r4_s
+!Memory demands:
+         c_addr=ptr_offset(eti_data,pack_size); call c_f_pointer(c_addr,r4_p)
+         r4_p=this%instr_size; pack_size=pack_size+r4_s
+!Number of tensor operands:
+         c_addr=ptr_offset(eti_data,pack_size); call c_f_pointer(c_addr,i_p); i_p=0
+         do i=0,max_tensor_operands-1
+          if(len_trim(this%tens_op(i)%tens_blck_id%tens_name).gt.0) then !tensor operand #i present
+           i_p=i_p+1; op_present(i)=1
+          else !tensor operand #i absent
+           op_present(i)=0
+          endif
+         enddo
+         pack_size=pack_size+i_s
+!Packets for all present tensor operands:
+         do i=0,max_tensor_operands-1
+          if(op_present(i).ne.0) then
+ !Operand number:
+           c_addr=ptr_offset(eti_data,pack_size); call c_f_pointer(c_addr,i_p)
+           i_p=i; pack_size=pack_size+i_s
+ !Operand packet:
+           c_addr=ptr_offset(eti_data,pack_size); ier=this%tens_op(i)%pack(c_addr)
+           if(ier.eq.0) then
+            call c_f_pointer(c_addr,cz_p); pack_size=pack_size+cz_p !cz_p now contains the size of the operand packet
+           else
+            eti_pack=2+i; return
+           endif
+          endif
+         enddo
+!Total packet size:
+         call c_f_pointer(eti_data,cz_p); cz_p=pack_size
+        else
+         eti_pack=999
+        endif
         return
         end function eti_pack
 !-------------------------------------------------
         integer function eti_unpack(this,eti_data)
-!This function unpacks a plain byte packet <eti_data> into <this>.
-!Only the public content of the ETI is unpacked.
+!This function unpacks a plain byte packet <eti_data> into <this> (tens_instr_t).
+!The format of the packet is given in <eti_pack>.
         implicit none
         class(tens_instr_t):: this
-        type(C_PTR):: eti_data
+        type(C_PTR):: eti_data,c_addr
+        integer(C_INT):: i,n,ier
+        integer(C_INT), pointer:: i_p,id1_p(:)
+        integer(C_SIZE_T):: pack_size,s,i_s,r4_s
+        integer(C_SIZE_T), pointer:: cz_p
+        real(4):: r4
+        real(4), pointer:: r4_p
+        integer(C_INT):: op_present(0:max_tensor_operands-1)
 
         eti_unpack=0
-        
+        if(eti_data.ne.c_null_ptr) then
+!Total size of the packet:
+         call c_f_pointer(eti_data,cz_p); pack_size=cz_p; s=sizeof(pack_size)
+!Tensor instruction code:
+         c_addr=ptr_offset(eti_data,s); call c_f_pointer(c_addr,i_p)
+         this%instr_code=int(i_p,2); s=s+i_s
+!Data kind:
+         c_addr=ptr_offset(eti_data,s); call c_f_pointer(c_addr,i_p)
+         select case(i_p)
+         case(R4)
+          this%data_kind='r4'
+         case(R8)
+          this%data_kind='r8'
+         case(C8)
+          this%data_kind='c8'
+         case default
+          eti_unpack=1; return !unknown data kind
+         end select
+         s=s+i_s
+!Auxiliary instruction info:
+         c_addr=ptr_offset(eti_data,s); call c_f_pointer(c_addr,i_p); s=s+i_s
+         if(i_p.gt.0) then
+          c_addr=ptr_offset(eti_data,s); call c_f_pointer(c_addr,id1_p,shape=[i_p])
+          if(.not.allocated(this%instr_aux)) then
+           allocate(this%instr_aux(0:i_p-1),STAT=i); if(i.ne.0) then; eti_unpack=2; return; endif
+          endif
+          if(size(this%instr_aux).ne.i_p) then
+           deallocate(this%instr_aux,STAT=i); if(i.ne.0) then; eti_unpack=3; return; endif
+           allocate(this%instr_aux(0:i_p-1),STAT=i); if(i.ne.0) then; eti_unpack=4; return; endif
+          endif
+          this%instr_aux(lbound(this%instr_aux):ubound(this%instr_aux))=id1_p(1:i_p)
+          s=s+i_s*i_p
+         elseif(i_p.lt.0) then
+          eti_unpack=5; return
+         endif
+!Tensor instruction priority:
+         c_addr=ptr_offset(eti_data,s); call c_f_pointer(c_addr,i_p)
+         this%instr_priority=i_p; s=s+i_s
+!Instruction cost:
+         c_addr=ptr_offset(eti_data,s); call c_f_pointer(c_addr,r4_p)
+         this%instr_cost=r4_p; s=s+r4_s
+!Memory demands:
+         c_addr=ptr_offset(eti_data,s); call c_f_pointer(c_addr,r4_p)
+         this%instr_size=r4_p; s=s+r4_s
+!Number of tensor operands:
+         c_addr=ptr_offset(eti_data,s); call c_f_pointer(c_addr,i_p); n=i_p; s=s+i_s
+         if(n.lt.0.or.n.gt.max_tensor_operands) then; eti_unpack=6; return; endif
+         if(n.gt.0) then
+          op_present(0:max_tensor_operands-1)=0
+!Tensor operands:
+          do i=1,n
+           c_addr=ptr_offset(eti_data,s); call c_f_pointer(c_addr,i_p); s=s+i_s
+           if(i_p.ge.0.and.i_p.lt.max_tensor_operands) then
+            if(op_present(i_p).eq.0) then
+             op_present(i_p)=i
+             c_addr=ptr_offset(eti_data,s); call c_f_pointer(c_addr,cz_p); s=s+cz_p
+             ier=this%tens_op(i_p)%unpack(c_addr); if(ier.ne.0) then; eti_unpack=10+i; return; endif
+            else
+             eti_unpack=100+i; return
+            endif
+           else
+            eti_unpack=200+i; return
+           endif
+          enddo
+         endif
+!Check the total packet size:
+         if(s.ne.pack_size) eti_unpack=7
+        else
+         eti_unpack=999
+        endif
         return
         end function eti_unpack
 !---------------------------------------------------------------
