@@ -1817,8 +1817,8 @@
         integer(C_INT):: i
         etiq_init=0
         if(queue_length.gt.0) then
-         allocate(this%eti(1:queue_length),this%next(1:queue_length),this%ffe_stack(1:queue_length),STAT=ierr)
-         if(ierr.eq.0) then
+         allocate(this%eti(1:queue_length),this%next(1:queue_length),this%ffe_stack(1:queue_length),STAT=i)
+         if(i.eq.0) then
           this%depth=queue_length; this%scheduled=0; this%last(:)=0; this%ip(:)=0; this%ic(:)=0
           do i=1,queue_length; this%eti(i)%instr_status=instr_null; enddo
           do i=1,queue_length; this%ffe_stack(i)=i; enddo; this%ffe_sp=1
@@ -1839,8 +1839,8 @@
         integer(C_INT):: i
         etiq_cu_init=0
         if(queue_length.gt.0) then
-         allocate(this%etiq_entry(0:queue_length-1),this%te_conf(0:queue_length-1),STAT=ierr)
-         if(ierr.eq.0) then
+         allocate(this%etiq_entry(0:queue_length-1),this%te_conf(0:queue_length-1),STAT=i)
+         if(i.eq.0) then
           do i=0,queue_length-1; this%etiq_entry(i)=0; enddo
           do i=0,queue_length-1; this%te_conf(i)%cu_id=cu_t(-1,-1); enddo
           this%depth=queue_length; this%scheduled=0; this%bp=0; this%ip=0
