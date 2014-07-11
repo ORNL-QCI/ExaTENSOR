@@ -163,6 +163,7 @@
          character(2):: data_kind            !data kind {R4|R8|C8}: set by {GR|LR}
          integer, allocatable:: instr_aux(:) !auxiliary instruction info (contraction pattern, permutation, etc.): set by GR
          integer:: instr_priority            !tensor instruction priority: set by LR
+         integer:: no_upload                 !if not zero, the destination tensor block will not be uploaded but kept locally present: set by LR or CP
          real(4):: instr_cost                !approx. instruction computational cost (FLOPs): set by LR
          real(4):: instr_size                !approx. instruction memory demands (Bytes): set by LR
          integer, private:: instr_status     !tensor instruction status (see above): set by CP:{MT|LST}
@@ -217,13 +218,13 @@
 !PROCEDURE VISIBILITY:
         private tens_blck_id_create
         private tens_blck_id_destroy
-        private etiq_init
-        private etiq_cu_init
+        private tens_operand_pack
+        private tens_operand_unpack
         private eti_mark_aar_used
         private eti_pack
         private eti_unpack
-        private tens_operand_pack
-        private tens_operand_unpack
+        private etiq_init
+        private etiq_cu_init
 !DATA:
  !Tensor Block Bank (TBB):
         type(dict_t), private:: tbb !permanent storage of local tensor blocks
@@ -1515,8 +1516,8 @@
          end function set_cleanup_flags
 
          integer function eti_task_cleanup(eti_num,free_flags) !cleans up after an ETI: MT only
-!This function completely or partially destroys tensor arguments for a specific (dead) ETI.
-!One can choose to keep some or all tensor operands in HAB/GAB/etc. For each tensor operand,
+!This function completely or partially destroys tensor arguments for a specific (completed/dead) ETI.
+!One can choose to keep some or all tensor operands in local HAB/GAB/etc. For each tensor operand,
 !one can keep the data in HAB (if any), or the data in GAB (if any), or both, or none.
 !If for some tensor operand a flag is set to KEEP_NO_DATA, its AAR entry will be destroyed.
          implicit none
@@ -1578,7 +1579,7 @@
 !INPUT:
 ! # tkey: tensor block identifier (key);
 !OUTPUT:
-! # aar_p: pointer to AAR entry.
+! # aar_p: pointer to the AAR entry.
          implicit none
          type(tens_blck_id_t), intent(in):: tkey
          type(tens_arg_t), pointer, intent(out):: aar_p
@@ -1678,7 +1679,7 @@
 !         if(verbose) write(jo_cp,'("#DEBUG(c_process::cp_destructor): tens_instr_t")') !debug
          if(allocated(item%instr_aux)) then; deallocate(item%instr_aux,STAT=i); if(i.ne.0) ierr=4; endif
          do j=0,max_tensor_operands-1; i=cp_destructor(item%tens_op(j)); if(i.ne.0) ierr=4; enddo
-         item%instr_code=instr_null; item%data_kind='  '; item%instr_priority=0
+         item%instr_code=instr_null; item%data_kind='  '; item%instr_priority=0; item%no_upload=0
          item%instr_cost=0.0; item%instr_size=0.0; item%instr_status=instr_null
          item%instr_cu=cu_t(-1,-1); item%instr_handle=-1; item%args_ready=0
          item%time_touched=0.; item%time_data_ready=0.; item%time_issued=0.; item%time_completed=0.; item%time_uploaded=0.
@@ -1993,6 +1994,7 @@
 ! INTEGER(C_INT): length of the auxiliary instruction info;
 ! INTEGER(C_INT), DIMENSION(:): auxiliary instruction info;
 ! INTEGER(C_INT): tensor instruction priority;
+! INTEGER(C_INT): no_upload flag;
 ! REAL(4): computational cost of the tensor instruction (Flops);
 ! REAL(4): total size of all tensor operands (Words of data kind);
 ! INTEGER: total number of tensor operands present in this packet;
@@ -2043,6 +2045,9 @@
 !Tensor instruction priority:
          c_addr=ptr_offset(eti_data,pack_size); call c_f_pointer(c_addr,i_p)
          i_p=this%instr_priority; pack_size=pack_size+i_s
+!NO_UPLOAD flag:
+         c_addr=ptr_offset(eti_data,pack_size); call c_f_pointer(c_addr,i_p)
+         i_p=this%no_upload; pack_size=pack_size+i_s
 !Computational cost:
          c_addr=ptr_offset(eti_data,pack_size); call c_f_pointer(c_addr,r4_p)
          r4_p=this%instr_cost; pack_size=pack_size+r4_s
@@ -2136,6 +2141,9 @@
 !Tensor instruction priority:
          c_addr=ptr_offset(eti_data,s); call c_f_pointer(c_addr,i_p)
          this%instr_priority=i_p; s=s+i_s
+!NO_UPLOAD flag:
+         c_addr=ptr_offset(eti_data,s); call c_f_pointer(c_addr,i_p)
+         this%no_upload=i_p; s=s+i_s
 !Instruction cost:
          c_addr=ptr_offset(eti_data,s); call c_f_pointer(c_addr,r4_p)
          this%instr_cost=r4_p; s=s+r4_s
