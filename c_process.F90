@@ -1,7 +1,7 @@
 !This module provides functionality for a Computing Process (C-PROCESS, CP).
 !In essence, this is a single-node elementary tensor instruction scheduler (SETIS).
 !AUTHOR: Dmitry I. Lyakh (Dmytro I. Liakh): quant4me@gmail.com
-!REVISION: 2014/07/10
+!REVISION: 2014/07/11
 !CONCEPTS (CP workflow):
 ! - Each CP stores its own tensor blocks in TBB, with a possibility of disk dump.
 ! - LR sends a batch of ETI to be executed on this CP unit (CP MPI Process).
@@ -178,6 +178,7 @@
          contains
           procedure, public:: pack=>eti_pack
           procedure, public:: unpack=>eti_unpack
+          procedure, private:: mark_used=>eti_mark_aar_used
         end type tens_instr_t
   !Elementary tensor instruction queue (ETIQ), out-of-order (linked list):
         type, private:: etiq_t
@@ -218,6 +219,11 @@
         private tens_blck_id_destroy
         private etiq_init
         private etiq_cu_init
+        private eti_mark_aar_used
+        private eti_pack
+        private eti_unpack
+        private tens_operand_pack
+        private tens_operand_unpack
 !DATA:
  !Tensor Block Bank (TBB):
         type(dict_t), private:: tbb !permanent storage of local tensor blocks
@@ -1163,7 +1169,7 @@
            stcu_execute_eti=998
           endif
           if(stcu_execute_eti.eq.0) then
-           j0=eti_mark_aar_used(eti_loc) !mark all tensor arguments as used
+           j0=my_eti%mark_used() !mark all tensor arguments as used (increase the number of times used)
 !$OMP ATOMIC WRITE
            my_eti%instr_status=instr_completed
           else
@@ -1388,7 +1394,7 @@
                endif
               endif
              enddo
-             j1=eti_mark_aar_used(j0); nvcu_task_status=instr_completed
+             j1=my_eti%mark_used(); nvcu_task_status=instr_completed
             elseif(j1.eq.cuda_task_error.or.j1.eq.cuda_task_empty) then
              nvcu_task_status=-1 !error
             endif
@@ -1481,7 +1487,7 @@
          integer function set_cleanup_flags(free_flags,tens_op_num,flag_to_add) !sets flags for <eti_task_cleanup>: MT only
          implicit none
          integer, intent(inout):: free_flags           !cumulative flags (for all tensor operands): 3 bits per tensor operand
-         integer, intent(in):: tens_op_num,flag_to_add !tensor operand number and a specific flag to set
+         integer, intent(in):: tens_op_num,flag_to_add !tensor operand number and a specific flag to set (see tensor_algebra.inc)
          integer:: j0,j1
          set_cleanup_flags=0
          if(tens_op_num.ge.0.and.tens_op_num.lt.max_tensor_operands) then
@@ -1559,8 +1565,8 @@
          end function eti_task_cleanup
 
          integer function aar_register(tkey,aar_p) !MT only
-!Registers an argument in AAR. If the tensor block argument
-!is already registered, the %times_needed field is increamented.
+!Registers an argument in AAR. If the tensor argument (tensor block)
+!is already registered, the %times_needed value is increased by one.
 !INPUT:
 ! # tkey: tensor block identifier (key);
 !OUTPUT:
@@ -1592,27 +1598,6 @@
          aar_delete=aar%search(dict_delete_if_found,tens_key_cmp,tkey,destruct_key_func=cp_destructor)
          return
          end function aar_delete
-
-         integer function eti_mark_aar_used(eti_num) !mark all tensor arguments of an ETI as used: MT only
-         implicit none
-         integer, intent(in):: eti_num !location of ETI in ETIQ
-         type(tens_instr_t), pointer:: my_eti=>NULL()
-         integer jt
-         eti_mark_aar_used=0
-         if(eti_num.gt.0.and.eti_num.le.etiq%depth) then
-          my_eti=>etiq%eti(eti_num)
-          do jt=0,max_tensor_operands-1
-           if(associated(my_eti%tens_op(jt)%op_aar_entry)) then
-!$OMP ATOMIC UPDATE
-            my_eti%tens_op(jt)%op_aar_entry%times_used=my_eti%tens_op(jt)%op_aar_entry%times_used+1
-           endif
-          enddo
-          my_eti=>NULL()
-         else
-          eti_mark_aar_used=-999
-         endif
-         return
-         end function eti_mark_aar_used
 
          subroutine c_proc_quit(errc) !quit c_process
          implicit none
@@ -1852,6 +1837,18 @@
         endif
         return
         end function etiq_cu_init
+!-----------------------------------------------
+        integer function eti_mark_aar_used(this) !Mark all tensor arguments of an ETI as used: MT only
+        implicit none
+        class(tens_instr_t):: this
+        integer jt
+        eti_mark_aar_used=0
+        do jt=0,max_tensor_operands-1
+         if(associated(this%tens_op(jt)%op_aar_entry)) &
+          this%tens_op(jt)%op_aar_entry%times_used=this%tens_op(jt)%op_aar_entry%times_used+1
+        enddo
+        return
+        end function eti_mark_aar_used
 !---------------------------------------------------------
         integer function tens_operand_pack(this,tens_data)
 !This function packs the public part of <this> (tens_operand_t) into a plain byte packet <tens_data>.
