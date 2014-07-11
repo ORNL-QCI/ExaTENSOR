@@ -855,6 +855,7 @@
          integer:: j0,j1,jl,ju,ier
          integer(LONGINT):: jdiff
          real(8):: jval
+         real(4):: jtm
          logical:: jres
          stcu_execute_eti=0
          if(eti_loc.gt.0.and.eti_loc.le.etiq%depth) then
@@ -862,8 +863,9 @@
           if(my_eti%instr_status.eq.instr_scheduled) then
 !$OMP ATOMIC WRITE
            my_eti%instr_status=instr_issued
+           jtm=real(thread_wtime(),4)
 !$OMP ATOMIC WRITE
-           my_eti%time_issued=thread_wtime()
+           my_eti%time_issued=jtm
  !Associate arguments:
            if(associated(my_eti%tens_op(0)%op_aar_entry)) then
             if(associated(my_eti%tens_op(0)%op_aar_entry%tens_blck_f)) then
@@ -1163,8 +1165,9 @@
            case default
             stcu_execute_eti=997
            end select
+           jtm=real(thread_wtime(),4)
 !$OMP ATOMIC WRITE
-           my_eti%time_completed=thread_wtime()
+           my_eti%time_completed=jtm
           else
            stcu_execute_eti=998
           endif
@@ -1196,6 +1199,7 @@
          type(tensor_block_t), pointer:: stens_
          integer(C_SIZE_T):: pack_size
          integer(C_INT) j0,j1,j2,jl,ju,ier
+         real(4):: jtm
          nvcu_execute_eti=0
          if(etiq_nvcu_loc.ge.0.and.etiq_nvcu_loc.lt.etiq_nvcu%depth) then
           j0=etiq_nvcu%etiq_entry(etiq_nvcu_loc)
@@ -1204,8 +1208,9 @@
            if(my_eti%instr_status.eq.instr_scheduled) then
 !$OMP ATOMIC WRITE
             my_eti%instr_status=instr_issued
+            jtm=real(thread_wtime(),4)
 !$OMP ATOMIC WRITE
-            my_eti%time_issued=thread_wtime()
+            my_eti%time_issued=jtm
             if(associated(my_eti%tens_op(0)%op_aar_entry)) then
              dtens_=my_eti%tens_op(0)%op_aar_entry%tens_blck_c
              d_hab_entry=my_eti%tens_op(0)%op_aar_entry%buf_entry_host
@@ -1458,14 +1463,16 @@
          implicit none
          integer(C_INT), intent(in):: eti_loc
          type(tens_instr_t), pointer:: my_eti
+         real(4):: jtm
          xpcu_execute_eti=0
          if(eti_loc.gt.0.and.eti_loc.le.etiq%depth) then
           my_eti=>etiq%eti(eti_loc)
           if(my_eti%instr_status.eq.instr_scheduled) then
 !$OMP ATOMIC WRITE
            my_eti%instr_status=instr_issued
+           jtm=real(thread_wtime(),4)
 !$OMP ATOMIC WRITE
-           my_eti%time_issued=thread_wtime()
+           my_eti%time_issued=jtm
            
           else
            xpcu_execute_eti=-998
@@ -1486,8 +1493,9 @@
 
          integer function set_cleanup_flags(free_flags,tens_op_num,flag_to_add) !sets flags for <eti_task_cleanup>: MT only
          implicit none
-         integer, intent(inout):: free_flags           !cumulative flags (for all tensor operands): 3 bits per tensor operand
-         integer, intent(in):: tens_op_num,flag_to_add !tensor operand number and a specific flag to set (see tensor_algebra.inc)
+         integer, intent(inout):: free_flags !cumulative flags (for all tensor operands): 3 bits per tensor operand
+         integer, intent(in):: tens_op_num   !tensor operand number for which a flag should be set
+         integer, intent(in):: flag_to_add   !specific flag to set for the chosen tensor operand (see tensor_algebra_gpu_nvidia.inc)
          integer:: j0,j1
          set_cleanup_flags=0
          if(tens_op_num.ge.0.and.tens_op_num.lt.max_tensor_operands) then
@@ -2767,8 +2775,7 @@
         integer(8) diffc
         integer(C_INT) i1,err_code,ext_beg(1:max_tensor_rank),cptrn(1:max_tensor_rank*2),gpu_id
         integer(C_INT) o2n(0:max_tensor_rank),n2o(0:max_tensor_rank),ngt(0:max_tensor_rank)
-        real(8) norm2
-        real(C_FLOAT) tm0,tm1,tm2
+        real(8) norm2,tm0,tm1,tm2
         logical cmp
         integer(C_INT):: entry_num(0:test_args_lim)=-1
         type(C_PTR):: entry_ptr(0:test_args_lim)=C_NULL_PTR
