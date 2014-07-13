@@ -29,20 +29,24 @@
         integer(C_INT), parameter:: cuda_task_completed=5
 
 !ALIASES (keep consistent with tensor_algebra_gpu_nvidia.h):
-        integer(C_INT), parameter:: NOT_REALLY=0                !"NO" answer
-        integer(C_INT), parameter:: NO_COPY_BACK=0              !keeps the tensor-result on a GPU without updating HAB
-        integer(C_INT), parameter:: COPY_BACK=1                 !tensor-result will be copied back from a GPU to HAB
-        integer(C_INT), parameter:: EVENTS_OFF=0                !disables CUDA event recording
-        integer(C_INT), parameter:: EVENTS_ON=1                 !enables CUDA event recording
-        integer(C_INT), parameter:: BLAS_ON=0                   !enables BLAS
-        integer(C_INT), parameter:: BLAS_OFF=1                  !disables BLAS
-        integer(C_INT), parameter:: EFF_TRN_OFF=0               !disables efficient tensor transpose algorithm
-        integer(C_INT), parameter:: EFF_TRN_ON=1                !enables efficient tensor transpose algorithm
-        integer(C_INT), parameter:: KEEP_NO_DATA=0              !ETI task cleanup flag: delete all data for the tensor argument
-        integer(C_INT), parameter:: KEEP_TBB_DATA=1             !ETI task cleanup flag: keep the TBB Fortran pointer (if any)
-        integer(C_INT), parameter:: KEEP_HAB_DATA=2             !ETI task cleanup flag: keep the HAB data (if any)
-        integer(C_INT), parameter:: KEEP_GPU_DATA=4             !ETI task cleanup flag: keep the GPU data (if any)
-        integer(C_INT), parameter:: KEEP_ALL_DATA=7             !ETI task cleanup flag: keep everything
+        integer(C_INT), parameter:: NOT_REALLY=0                  !"NO" answer
+        integer(C_INT), parameter:: NO_COPY_BACK=0                !keeps the tensor-result on a GPU without updating HAB
+        integer(C_INT), parameter:: COPY_BACK=1                   !tensor-result will be copied back from a GPU to HAB
+        integer(C_INT), parameter:: EVENTS_OFF=0                  !disables CUDA event recording
+        integer(C_INT), parameter:: EVENTS_ON=1                   !enables CUDA event recording
+        integer(C_INT), parameter:: BLAS_ON=0                     !enables BLAS
+        integer(C_INT), parameter:: BLAS_OFF=1                    !disables BLAS
+        integer(C_INT), parameter:: EFF_TRN_OFF=0                 !disables efficient tensor transpose algorithm
+        integer(C_INT), parameter:: EFF_TRN_ON=1                  !enables efficient tensor transpose algorithm
+        integer(C_INT), parameter:: KEEP_NO_DATA=0                !ETI task cleanup flag: delete all data for the tensor argument
+        integer(C_INT), parameter:: KEEP_TBB_DATA=1               !ETI task cleanup flag: keep the TBB Fortran pointer (if any)
+        integer(C_INT), parameter:: KEEP_HAB_DATA=2               !ETI task cleanup flag: keep the HAB data (if any)
+        integer(C_INT), parameter:: KEEP_GPU_DATA=4               !ETI task cleanup flag: keep the GPU data (if any)
+        integer(C_INT), parameter:: KEEP_ALL_DATA=7               !ETI task cleanup flag: keep everything
+        integer(C_INT), parameter:: ERR_INVALID_ETI_SUPERPACKET=1 !ETIQ error: an invalid superpacket received from LR
+        integer(C_INT), parameter:: ERR_ETIQ_IS_FULL=2            !ETIQ error: ETIQ is full
+        integer(C_INT), parameter:: ERR_ETIQ_ETI_UNPACK_FAILED=3  !ETIQ error: ETI unpacking failed
+        integer(C_INT), parameter:: ERR_ETIQ_CHANNEL_FAILED=4     !ETIQ error: was unable to obtain an ETIQ channel number
 
 !Tensor block storage layout:
         integer(C_INT), parameter:: not_allocated=0   !tensor block has not been initialized

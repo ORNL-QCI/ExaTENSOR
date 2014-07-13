@@ -52,6 +52,7 @@
         use tensor_algebra
         use dictionary
         use service
+        use timers
         use extern_names !`dependency to be removed
         implicit none
 #ifndef NO_OMP
@@ -91,6 +92,7 @@
         integer, parameter:: instr_issued=5            !instruction is issued for execution on some computing unit (CU)
         integer, parameter:: instr_completed=6         !instruction has completed (but the result may still need to be remotely uploaded)
         integer, parameter:: instr_dead=7              !instruction can safely be removed from the queue
+        integer, parameter:: instr_statuses=8          !total number of instruction statuses
   !Tensor instruction code:
         integer, parameter:: instr_tensor_init=1
         integer, parameter:: instr_tensor_norm1=2
@@ -154,8 +156,8 @@
          integer(C_INT):: op_price           !current price of the tensor operand (tensor block): set by LR
          type(tens_arg_t), pointer, private:: op_aar_entry=>NULL() !AAR entry assigned to tensor operand: set by CP:MT
          contains
-          procedure, public:: pack=>tens_operand_pack
-          procedure, public:: unpack=>tens_operand_unpack
+          procedure, public:: pack=>tens_operand_pack     !pack the tensor operand (w/o tensor block data) into a plain byte packet
+          procedure, public:: unpack=>tens_operand_unpack !unpack a tensor operand from the plain byte packet
         end type tens_operand_t
   !Dispatched elementary tensor instruction (ETI):
         type tens_instr_t
@@ -177,23 +179,31 @@
          integer, private:: args_ready       !each bit is set to 1 when the corresponding operand is in AAR: set by CP:MT
          type(tens_operand_t):: tens_op(0:max_tensor_operands-1) !tensor-block operands
          contains
-          procedure, public:: pack=>eti_pack
-          procedure, public:: unpack=>eti_unpack
-          procedure, private:: mark_used=>eti_mark_aar_used
+          procedure, public:: pack=>eti_pack                  !pack the tensor instruction into a plain byte packet
+          procedure, public:: unpack=>eti_unpack              !unpack a tensor instruction from the plain byte packet
+          procedure, private:: mark_used=>eti_mark_aar_used   !mark in AAR that the tensor operands of this ETI were used
+          procedure, private:: get_channel=>eti_get_channel   !obtain the ETIQ channel number where the ETI should go
         end type tens_instr_t
   !Elementary tensor instruction queue (ETIQ), out-of-order (linked list):
         type, private:: etiq_t
          integer(C_INT), private:: depth=0                    !total number of ETIQ entries
          integer(C_INT), private:: scheduled=0                !total number of active ETIQ entries
          integer(C_INT), private:: ffe_sp=0                   !ETIQ FFE stack pointer
-         integer(C_INT), private:: last(0:etiq_channels-1)=0  !last scheduled instruction for each ETIQ channel
-         integer(C_INT), private:: ip(0:etiq_channels-1)=0    !instruction pointers for each ETIQ channel
-         integer(C_INT), private:: ic(0:etiq_channels-1)=0    !instruction counters for each ETIQ channel
+         integer(C_INT), private:: last(0:etiq_channels-1)=0  !last enqueued ETI number for each ETIQ channel
+         integer(C_INT), private:: bp(0:etiq_channels-1)=0    !base pointers for each ETIQ channel (the oldest alive ETI)
+         integer(C_INT), private:: ip(0:etiq_channels-1)=0    !instruction pointers for each ETIQ channel (current ETI)
+         integer(C_INT), private:: ic(0:etiq_channels-1)=0    !instruction counters for each ETIQ channel (number of ETI in each channel)
          integer(C_INT), allocatable, private:: ffe_stack(:)  !ETIQ FFE stack
          integer(C_INT), allocatable, private:: next(:)       !ETIQ next linking
          type(tens_instr_t), allocatable, private:: eti(:)    !elementary tensor instructions
          contains
-          procedure, private:: init=>etiq_init
+          procedure, private:: init=>etiq_init                      !initialize empty ETIQ
+          procedure, private:: add_new=>etiq_add_new                !add new set of ETI to ETIQ (extracting ETI from packets)
+          procedure, private:: prefetch_data=>etiq_prefetch_data    !prefetch data (tensor blocks)
+          procedure, private:: dispatch_ready=>etiq_dispatch_ready  !dispatch ready ETI into appropriate CU queues
+          procedure, private:: test_completion=etiq_test_completion !test completion for issued ETI
+          procedure, private:: upload_results=>etiq_upload_results  !upload results (output tensor blocks) for completed ETI
+          procedure, private:: remove_dead=>etiq_remove_dead        !remove all dead ETI from ETIQ (packing ETI into packets)
         end type etiq_t
   !In-order elementary tensor instruction queue for a specific computing unit:
         type, private:: etiq_cu_t
@@ -221,9 +231,16 @@
         private tens_operand_pack
         private tens_operand_unpack
         private eti_mark_aar_used
+        private eti_get_channel
         private eti_pack
         private eti_unpack
         private etiq_init
+        private etiq_add_new
+        private etiq_remove_dead
+        private etiq_dispatch_ready
+        private etiq_prefetch_data
+        private etiq_test_completion
+        private etiq_upload_results
         private etiq_cu_init
 !DATA:
  !Tensor Block Bank (TBB):
@@ -246,10 +263,12 @@
         integer(4), private:: eti_buf_in(0:eti_buf_size-1)  !ETI input buffer (incoming ETI from LR)
         integer(4), private:: eti_buf_out(0:eti_buf_size-1) !ETI output buffer (outgoing done ETI to LR)
  !CP runtime:
-        integer, private:: mt_error              !master thread error (if != 0)
-        integer, private:: stcu_error            !slave threads computing unit (STCU) error (if != 0)
-        integer, private:: stcu_num_units        !current number of STCU units
-!------------------------------------------------
+        integer, private:: mt_error                         !master thread error (if != 0)
+        integer, private:: stcu_error                       !slave threads computing unit (STCU) error (if != 0)
+        integer, private:: stcu_num_units                   !current number of STCU units
+        real(8), private:: nvcu_busy(0:MAX_GPUS_PER_NODE-1) !occupancy indicators for Nvidia GPUs (scheduled Flops)
+        real(8), private:: xpcu_busy(0:MAX_MICS_PER_NODE-1) !occupancy indicators for Intel MICs (scheduled Flops)
+!----------------------------------------------------------
        contains
 !CODE:
         subroutine c_proc_life(ierr)
@@ -271,10 +290,10 @@
         integer(C_INT) i,j,k,l,m,n,ks,kf,err_code,thread_num !general purpose: thread private
         type(nvcu_task_t), allocatable:: nvcu_tasks(:) !parallel to etiq_nvcu
         type(xpcu_task_t), allocatable:: xpcu_tasks(:) !parallel to etiq_xpcu
-        integer:: stcu_base_ip,stcu_my_ip,stcu_my_eti !STCU specific (slaves): thread private
+        integer:: stcu_base_ip,stcu_my_ip,stcu_my_eti !STCU variables (slaves): thread private
+        integer:: stcu_mimd_my_pass,stcu_mimd_max_pass
         integer(C_SIZE_T):: blck_sizes(0:max_arg_buf_levels-1)
-        integer:: tree_height,stcu_mimd_my_pass,stcu_mimd_max_pass
-        integer(8):: tree_volume
+        integer:: tree_height; integer(8):: tree_volume
         type(tens_blck_id_t):: key(0:15)
         type(tensor_block_t):: tens
         type(tensor_block_t), pointer:: tens_p
@@ -1363,6 +1382,7 @@
 !$OMP ATOMIC WRITE
             my_eti%instr_status=instr_scheduled  !insufficient resources (not an error): revert to status <scheduled>
            else !ETI has been issued successfully
+            j1=my_eti%instr_cu%unit_number; nvcu_busy(j1)=nvcu_busy(j1)+real(my_eti%instr_cost,8)
 !$OMP ATOMIC WRITE
             my_eti%instr_handle=etiq_nvcu_loc    !CUDA task handle can be retrieved from nvcu_tasks(my_eti%instr_handle)
            endif
@@ -1401,16 +1421,18 @@
               endif
              enddo
              j1=my_eti%mark_used(); nvcu_task_status=instr_completed
+             j2=my_eti%instr_cu%unit_number; nvcu_busy(j2)=nvcu_busy(j2)-real(my_eti%instr_cost,8)
+             ttm=cuda_task_time(nvcu_tasks(nvcu_task_num)%cuda_task_handle,in_copy,out_copy,comp_time)
+!$OMP ATOMIC READ
+             tti=my_eti%time_issued
+!$OMP ATOMIC WRITE
+             my_eti%time_completed=tti+ttm
             elseif(j1.eq.cuda_task_error.or.j1.eq.cuda_task_empty) then
              nvcu_task_status=-1 !error
+             j2=my_eti%instr_cu%unit_number; nvcu_busy(j2)=nvcu_busy(j2)-real(my_eti%instr_cost,8)
             endif
 !$OMP ATOMIC WRITE
             my_eti%instr_status=nvcu_task_status
-            ttm=cuda_task_time(nvcu_tasks(nvcu_task_num)%cuda_task_handle,in_copy,out_copy,comp_time)
-!$OMP ATOMIC READ
-            tti=my_eti%time_issued
-!$OMP ATOMIC WRITE
-            my_eti%time_completed=tti+ttm
            endif
            my_eti=>NULL()
           else
@@ -1699,7 +1721,7 @@
           deallocate(item%eti,STAT=i); if(i.ne.0) ierr=6
          endif
          item%depth=0; item%scheduled=0; item%ffe_sp=0
-         item%last(:)=0; item%ip(:)=0; item%ic(:)=0
+         item%last(:)=0; item%bp(:)=0; item%ip(:)=0; item%ic(:)=0
         class default
          write(jo_cp,'("#ERROR(c_process::cp_destructor): unknown type/class!")')
          ierr=-1
@@ -1813,7 +1835,7 @@
         if(queue_length.gt.0) then
          allocate(this%eti(1:queue_length),this%next(1:queue_length),this%ffe_stack(1:queue_length),STAT=i)
          if(i.eq.0) then
-          this%depth=queue_length; this%scheduled=0; this%last(:)=0; this%ip(:)=0; this%ic(:)=0
+          this%depth=queue_length; this%scheduled=0; this%last(:)=0; this%bp(:)=0; this%ip(:)=0; this%ic(:)=0
           do i=1,queue_length; this%eti(i)%instr_status=instr_null; enddo
           do i=1,queue_length; this%ffe_stack(i)=i; enddo; this%ffe_sp=1
          else
@@ -1824,6 +1846,45 @@
         endif
         return
         end function etiq_init
+!--------------------------------------------------------
+        integer function etiq_add_new(this,eti_superpack) !SERIAL: MT only
+!This function unpacks packed tensor instructions from <eti_superpack> and enqueues them into ETIQ <this>.
+!Format of the super-packet <eti_superpack>:
+! INTEGER(C_INT): number of ETI packets in <eti_superpack>;
+! PACKET(ETI): ETI packet #0;
+! PACKET(ETI): ETI packet #1;
+! etc.
+        implicit none
+        class(etiq_t):: this
+        type(C_PTR):: eti_superpack,c_addr
+        integer:: channel
+        integer(C_INT):: i,j,l,n,ier
+        integer(C_INT), pointer:: i_p
+        integer(C_SIZE_T):: s
+        integer(C_SIZE_T), pointer:: cz_p
+        etiq_add_new=0
+        if(c_associated(eti_superpack)) then
+         call c_f_pointer(eti_superpack,i_p); n=i_p; s=sizeof(n)
+         if(n.ge.0) then !number of ETI packets stored in the superpacket
+          do j=1,n !individual tensor instructions (ETI)
+           c_addr=ptr_offset(eti_superpack,s); call c_f_pointer(c_addr,cz_p); s=s+cz_p
+           if(etiq%ffe_sp.le.etiq%depth) then
+            i=etiq%ffe_stack(etiq%ffe_sp); etiq%ffe_sp=etiq%ffe_sp+1
+            ier=etiq%eti(i)%unpack(c_addr); if(ier.ne.0) then; etiq_add_new=ERR_ETI_UNPACK_FAILED; return; endif
+            ier=etiq%eti(i)%get_channel(channel); if(ier.ne.0) then; etiq_add_new=ERR_ETIQ_CHANNEL_FAILED; return; endif
+            l=etiq%last(channel); etiq%next(l)=i; etiq%last(channel)=i
+           else
+            etiq_add_new=ERR_ETIQ_IS_FULL; return
+           endif
+          enddo
+         else
+          etiq_add_new=ERR_INVALID_ETI_SUPERPACKET
+         endif
+        else
+         etiq_add_new=ERR_INVALID_ETI_SUPERPACKET
+        endif
+        return
+        end function etiq_add_new
 !-------------------------------------------------------
         integer function etiq_cu_init(this,queue_length) !SERIAL: MT only
 !This function initializes an <etiq_cu_t> object.
@@ -1858,6 +1919,15 @@
         enddo
         return
         end function eti_mark_aar_used
+!-----------------------------------------------------
+        integer function eti_get_channel(this,channel) !Obtain the ETIQ channel number where the ETI should go: MT only
+        implicit none
+        class(tens_instr_t):: this
+        integer, intent(out):: channel
+        channel=-1
+        ``
+        return
+        end function eti_get_channel
 !---------------------------------------------------------
         integer function tens_operand_pack(this,tens_data)
 !This function packs the public part of <this> (tens_operand_t) into a plain byte packet <tens_data>.
