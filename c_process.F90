@@ -52,8 +52,8 @@
         use tensor_algebra
         use dictionary
         use lists
-        use service
         use timers
+        use service
         use extern_names !`dependency to be removed
         implicit none
 #ifndef NO_OMP
