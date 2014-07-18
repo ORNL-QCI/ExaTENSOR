@@ -320,18 +320,26 @@
         integer(int_kind) function list_add_item_two_way(this,new_entry_num,add_before)
 !This function adds a new entry in the linked list. The new entry is linked either
 !right after the current list entry or right before, depending on the <add_before>
-!logical value. The current list pointer is moved to the new entry.
+!logical value. The current list pointer is moved to the new entry. Rules:
+!If <new_entry_num> is within the valid range, it is considered as an explicit input,
+!that is, an entry number to be added to the current linked list. If <new_entry_num>
+!is outside the valid range, than the first free entry will be the entry to add.
+!Its number will be returned in <new_entry_num>.
         implicit none
         class(list_two_way_t):: this
-        integer(int_kind), intent(in):: new_entry_num !new entry number
+        integer(int_kind), intent(inout):: new_entry_num !new entry number (input or output)
         logical, intent(in), optional:: add_before !where to add (.true.: before; .false.: after)
         integer(int_kind):: i,j,k
         logical res
         list_add_item_two_way=0
         if(this%list_max_length.ge.0) then !initialized list
          if(this%list_length.lt.this%list_max_length) then !list is not full
-          if(new_entry_num.ge.this%base_offset.and.new_entry_num.lt.this%base_offset+this%list_max_length) then !bounds ok
-           i=new_entry_num-this%base_offset+1
+          if(new_entry_num.ge.this%base_offset.and.new_entry_num.lt.this%base_offset+this%list_max_length) then
+           i=new_entry_num-this%base_offset+1 !an explicit free entry number was specified by user: use it
+          else
+           i=this%free_ffe !user did not specify an explicit entry number: use the first free entry
+          endif
+          if(i.gt.0.and.i.le.this%list_max_length) then !bounds ok
            if(this%next(i).lt.0.and.this%prev(i).lt.0) then !the entry was not in the linked list
             j=-this%prev(i); k=-this%next(i)
             if(k.le.this%list_max_length) then; this%prev(k)=-j; if(i.eq.this%free_ffe) this%free_ffe=k; endif
@@ -364,7 +372,7 @@
             list_add_item_two_way=list_err_entry_busy
            endif
           else
-           list_add_item_two_way=list_err_invalid_arg
+           list_add_item_two_way=list_err_list_corrupted
           endif
          else
           list_add_item_two_way=list_full
