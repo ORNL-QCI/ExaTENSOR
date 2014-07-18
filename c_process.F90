@@ -1,7 +1,7 @@
 !This module provides functionality for a Computing Process (C-PROCESS, CP).
 !In essence, this is a single-node elementary tensor instruction scheduler (SETIS).
 !AUTHOR: Dmitry I. Lyakh (Dmytro I. Liakh): quant4me@gmail.com
-!REVISION: 2014/07/15
+!REVISION: 2014/07/18
 !CONCEPTS (CP workflow):
 ! - Each CP stores its own tensor blocks in TBB, with a possibility of disk dump.
 ! - LR sends a batch of ETI to be executed on this CP unit (CP MPI Process).
@@ -73,11 +73,11 @@
         integer(C_SIZE_T), parameter, private:: max_hab_size=4096_CZ*(1024_CZ*1024_CZ) !max size in bytes of the HAB
         integer(C_SIZE_T), parameter, private:: min_hab_size=64_CZ*(1024_CZ*1024_CZ)   !min size in bytes of the HAB
   !Elementary Tensor Instruction Queue (ETIQ):
-        integer(C_INT), parameter, private:: etiq_max_depth=65536 !max number of simultaneously scheduled ETI at this CP
+        integer(C_INT), parameter, private:: etiq_max_depth=16384 !max number of simultaneously scheduled ETI at this CP
         integer(C_INT), parameter, private:: etiq_loc_levels=4    !number of locality levels in ETIQ (senior)
         integer(C_INT), parameter, private:: etiq_cost_levels=5   !number of cost levels in ETIQ (minor)
         integer(C_INT), parameter, private:: etiq_channels=etiq_cost_levels*etiq_loc_levels !total number of levels in ETIQ
-        integer(C_INT), parameter, private:: etiq_stcu_max_depth=4096 !max number of simultaneously scheduled ETI on STCU
+        integer(C_INT), parameter, private:: etiq_stcu_max_depth=2048 !max number of simultaneously scheduled ETI on STCU
         integer(C_INT), parameter, private:: etiq_nvcu_max_depth=256  !max number of simultaneously scheduled ETI on NVCU
         integer(C_INT), parameter, private:: etiq_xpcu_max_depth=512  !max number of simultaneously scheduled ETI on XPCU
         integer(C_INT), parameter, public:: eti_buf_size=32768 !ETI buffer size (for communications with LR)
@@ -162,11 +162,12 @@
         end type tens_operand_t
   !Dispatched elementary tensor instruction (ETI):
         type tens_instr_t
+         integer(8):: instr_id               !unique instruction ID: set by GR
          integer(2):: instr_code             !tensor instruction code (see above): set by GR
          character(2):: data_kind            !data kind {R4|R8|C8}: set by {GR|LR}
          integer, allocatable:: instr_aux(:) !auxiliary instruction info (contraction pattern, permutation, etc.): set by GR
          integer:: instr_priority            !tensor instruction priority: set by LR
-         integer:: no_upload                 !if not zero, the destination tensor block will not be uploaded but kept locally present: set by LR or CP
+         integer:: no_upload                 !if not zero, the destination tensor block will not be uploaded but kept locally present: set by LR (or CP)
          real(4):: instr_cost                !approx. instruction computational cost (FLOPs): set by LR
          real(4):: instr_size                !approx. instruction memory demands (Bytes): set by LR
          integer, private:: instr_status     !tensor instruction status (see above): set by CP:{MT|LST}
@@ -185,33 +186,31 @@
           procedure, private:: mark_used=>eti_mark_aar_used   !mark in AAR that the tensor operands of this ETI were used
           procedure, private:: get_channel=>eti_get_channel   !obtain the ETIQ channel number where the ETI should go
         end type tens_instr_t
-  !Elementary tensor instruction queue (ETIQ), out-of-order (linked list):
+  !Elementary tensor instruction queue (ETIQ), out-of-order:
         type, private:: etiq_t
-         integer(C_INT), private:: depth=0                    !total number of ETIQ entries
-         integer(C_INT), private:: scheduled=0                !total number of active ETIQ entries
-         integer(C_INT), private:: ffe_sp=0                   !ETIQ FFE stack pointer
-         integer(C_INT), private:: last(0:etiq_channels-1)=0  !last enqueued ETI number for each ETIQ channel
-         integer(C_INT), private:: bp(0:etiq_channels-1)=0    !base pointers for each ETIQ channel (the oldest alive ETI)
-         integer(C_INT), private:: ip(0:etiq_channels-1)=0    !instruction pointers for each ETIQ channel (current ETI)
-         integer(C_INT), private:: ic(0:etiq_channels-1)=0    !instruction counters for each ETIQ channel (number of ETI in each channel)
-         integer(C_INT), allocatable, private:: ffe_stack(:)  !ETIQ FFE stack
-         integer(C_INT), allocatable, private:: next(:)       !ETIQ next linking
-         type(tens_instr_t), allocatable, private:: eti(:)    !elementary tensor instructions
+         integer(C_INT), private:: depth=0                             !total number of ETIQ entries
+         integer(C_INT), private:: scheduled=0                         !total number of active ETIQ entries
+         type(tens_instr_t), allocatable, private:: eti(:)             !elementary tensor instructions storage
+         type(list_two_way_t), private:: etiq_channel(1:etiq_channels) !ETIQ channels (individual instruction queues)
+         type(list_two_way_t), private:: list_data_wait                !list of ETI waiting for data
+         type(list_two_way_t), private:: list_ready_to_exec            !list of ETI ready to be executed
+         type(list_two_way_t), private:: list_scheduled                !list of ETI scheduled to computing units
+         type(list_two_way_t), private:: list_completed                !list of completed ETI
          contains
           procedure, private:: init=>etiq_init                      !initialize empty ETIQ
-          procedure, private:: add_new=>etiq_add_new                !add new set of ETI to ETIQ (extracting ETI from packets)
+          procedure, private:: add_new=>etiq_add_new                !add new set of ETI to ETIQ (extracting ETI from superpackets)
           procedure, private:: prefetch_data=>etiq_prefetch_data    !prefetch data (tensor blocks)
           procedure, private:: dispatch_ready=>etiq_dispatch_ready  !dispatch ready ETI into appropriate CU queues
           procedure, private:: test_completion=etiq_test_completion !test completion for issued ETI
           procedure, private:: upload_results=>etiq_upload_results  !upload results (output tensor blocks) for completed ETI
-          procedure, private:: remove_dead=>etiq_remove_dead        !remove all dead ETI from ETIQ (packing ETI into packets)
+          procedure, private:: remove_dead=>etiq_remove_dead        !remove all dead ETI from ETIQ (packing ETI into superpackets)
         end type etiq_t
   !In-order elementary tensor instruction queue for a specific computing unit:
         type, private:: etiq_cu_t
          integer(C_INT), private:: depth=0                    !total number of entries in the queue
          integer(C_INT), private:: scheduled=0                !total number of active entries in the queue
-         integer(C_INT), private:: bp=0                       !base instruction pointer (first issued unfinished instruction): async units only
-         integer(C_INT), private:: ip=0                       !current instruction pointer (current instruction)
+         integer(C_INT), private:: bp=0                       !base instruction pointer (the oldest issued unfinished instruction): async units only
+         integer(C_INT), private:: ip=0                       !current instruction pointer (currently considered instruction)
          integer(C_INT), allocatable, private:: etiq_entry(:) !number of the ETIQ entry where the ETI is located
          type(te_conf_t), allocatable, private:: te_conf(:)   !computing unit configuration which ETI will be executed on
          contains
@@ -231,17 +230,17 @@
         private tens_blck_id_destroy
         private tens_operand_pack
         private tens_operand_unpack
-        private eti_mark_aar_used
-        private eti_get_channel
         private eti_pack
         private eti_unpack
+        private eti_mark_aar_used
+        private eti_get_channel
         private etiq_init
         private etiq_add_new
-        private etiq_remove_dead
-        private etiq_dispatch_ready
         private etiq_prefetch_data
+        private etiq_dispatch_ready
         private etiq_test_completion
         private etiq_upload_results
+        private etiq_remove_dead
         private etiq_cu_init
 !DATA:
  !Tensor Block Bank (TBB):
@@ -1713,16 +1712,18 @@
          item%depth=0; item%scheduled=0; item%bp=0; item%ip=0
         type is (etiq_t)
 !         if(verbose) write(jo_cp,'("#DEBUG(c_process::cp_destructor): etiq_t")') !debug
-         if(allocated(item%ffe_stack)) then; deallocate(item%ffe_stack,STAT=i); if(i.ne.0) ierr=6; endif
-         if(allocated(item%next)) then; deallocate(item%next,STAT=i); if(i.ne.0) ierr=6; endif
          if(allocated(item%eti)) then
           do j=lbound(item%eti,1),ubound(item%eti,1)
            i=cp_destructor(item%eti(j)); if(i.ne.0) ierr=6
           enddo
           deallocate(item%eti,STAT=i); if(i.ne.0) ierr=6
          endif
-         item%depth=0; item%scheduled=0; item%ffe_sp=0
-         item%last(:)=0; item%bp(:)=0; item%ip(:)=0; item%ic(:)=0
+         do j=1,etiq_channels; i=item%etiq_channel(j)%destroy(); if(i.ne.0) ierr=6; enddo
+         i=item%list_data_wait%destroy(); if(i.ne.0) ierr=6
+         i=item%list_ready_to_exec%destroy(); if(i.ne.0) ierr=6
+         i=item%list_scheduled%destroy(); if(i.ne.0) ierr=6
+         i=item%list_completed%destroy(); if(i.ne.0) ierr=6
+         item%depth=0; item%scheduled=0
         class default
          write(jo_cp,'("#ERROR(c_process::cp_destructor): unknown type/class!")')
          ierr=-1
@@ -1778,7 +1779,7 @@
         implicit none
         class(tens_blck_id_t):: this
         integer:: i
-        tens_blck_id_destroy=0
+        tens_blck_id_destroy=0; this%tens_name=' '
         if(allocated(this%tens_mlndx)) then
          deallocate(this%tens_mlndx,STAT=i); if(i.ne.0) tens_blck_id_destroy=1
         endif
@@ -1831,19 +1832,25 @@
         implicit none
         class(etiq_t):: this
         integer(C_INT), intent(in):: queue_length
-        integer(C_INT):: i
+        integer(C_INT):: i,j
         etiq_init=0
         if(queue_length.gt.0) then
-         allocate(this%eti(1:queue_length),this%next(1:queue_length),this%ffe_stack(1:queue_length),STAT=i)
+         allocate(this%eti(1:queue_length),STAT=i)
          if(i.eq.0) then
-          this%depth=queue_length; this%scheduled=0; this%last(:)=0; this%bp(:)=0; this%ip(:)=0; this%ic(:)=0
+          this%depth=queue_length; this%scheduled=0
           do i=1,queue_length; this%eti(i)%instr_status=instr_null; enddo
-          do i=1,queue_length; this%ffe_stack(i)=i; enddo; this%ffe_sp=1
+          do i=1,etiq_channels
+           j=this%etiq_channel(i)%create(queue_length,1); if(j.ne.0) then; etiq_init=1; return; endif
+          enddo
+          j=this%list_data_wait%create(queue_length,1); if(j.ne.0) then; etiq_init=2; return; endif
+          j=this%list_ready_to_exec%create(queue_length,1); if(j.ne.0) then; etiq_init=3; return; endif
+          j=this%list_scheduled%create(queue_length,1); if(j.ne.0) then; etiq_init=4; return; endif
+          j=this%list_completed%create(queue_length,1); if(j.ne.0) then; etiq_init=5; return; endif
          else
-          etiq_init=1
+          etiq_init=6
          endif
         else
-         etiq_init=2
+         etiq_init=7
         endif
         return
         end function etiq_init
@@ -1869,14 +1876,7 @@
          if(n.ge.0) then !number of ETI packets stored in the superpacket
           do j=1,n !individual tensor instructions (ETI)
            c_addr=ptr_offset(eti_superpack,s); call c_f_pointer(c_addr,cz_p); s=s+cz_p
-           if(etiq%ffe_sp.le.etiq%depth) then
-            i=etiq%ffe_stack(etiq%ffe_sp); etiq%ffe_sp=etiq%ffe_sp+1
-            ier=etiq%eti(i)%unpack(c_addr); if(ier.ne.0) then; etiq_add_new=ERR_ETI_UNPACK_FAILED; return; endif
-            ier=etiq%eti(i)%get_channel(channel); if(ier.ne.0) then; etiq_add_new=ERR_ETIQ_CHANNEL_FAILED; return; endif
-            l=etiq%last(channel); etiq%next(l)=i; etiq%last(channel)=i
-           else
-            etiq_add_new=ERR_ETIQ_IS_FULL; return
-           endif
+           !`Unpack ETI#j
           enddo
          else
           etiq_add_new=ERR_INVALID_ETI_SUPERPACKET
@@ -1886,6 +1886,56 @@
         endif
         return
         end function etiq_add_new
+!------------------------------------------------------------
+        integer function etiq_prefetch_data(this,new_mpi_receives)
+!This function prefetches data for ETI in ETIQ.
+        implicit none
+        class(etiq_t):: this
+        integer, intent(out), optional:: new_mpi_receives
+        etiq_prefetch_data=0
+        !`Write
+        return
+        end function etiq_prefetch_data
+!----------------------------------------------------------------
+        integer function etiq_dispatch_ready(this,new_dispatched)
+!This function dispatches readt ETI to computing units.
+        implicit none
+        class(etiq_t):: this
+        integer, intent(out), optional:: new_dispatched
+        etiq_dispatch_ready=0
+        !`Write
+        return
+        end function etiq_dispatch_ready
+!----------------------------------------------------------------
+        integer function etiq_test_completion(this,new_completed)
+!This function tests completion of ETI in ETIQ.
+        implicit none
+        class(etiq_t):: this
+        integer, intent(out), optional:: new_completed
+        etiq_test_completion=0
+        !`Write
+        return
+        end function etiq_test_completion
+!----------------------------------------------------------------
+        integer function etiq_upload_results(this,new_uploads)
+!This function uploads results (tensor blocks) for completed ETI in ETIQ.
+        implicit none
+        class(etiq_t):: this
+        integer, intent(out), optional:: new_uploads
+        etiq_upload_results=0
+        !`Write
+        return
+        end function etiq_upload_results
+!----------------------------------------------------------
+        integer function etiq_remove_dead(this,new_removed)
+!This function removes dead or completed (with no upload) ETI from ETIQ.
+        implicit none
+        class(etiq_t):: this
+        integer, intent(out), optional:: new_removed
+        etiq_remove_dead=0
+        !`Write
+        return
+        end function etiq_remove_dead
 !-------------------------------------------------------
         integer function etiq_cu_init(this,queue_length) !SERIAL: MT only
 !This function initializes an <etiq_cu_t> object.
@@ -1926,7 +1976,7 @@
         class(tens_instr_t):: this
         integer, intent(out):: channel
         channel=-1
-        ``
+        !`Write
         return
         end function eti_get_channel
 !---------------------------------------------------------
@@ -2060,6 +2110,7 @@
 !This function packs the public part of an ETI <this> (tens_instr_t) into a plain byte packet <eti_data>.
 !Format of the output packet:
 ! INTEGER(C_SIZE_T): packet size (in bytes);
+! INTEGER(8): tensor instructon id;
 ! INTEGER(C_INT): tensor instruction code;
 ! INTEGER(C_INT): data kind;
 ! INTEGER(C_INT): length of the auxiliary instruction info;
@@ -2079,14 +2130,19 @@
         integer(C_INT), pointer:: i_p,id1_p(:)
         integer(C_SIZE_T):: pack_size,i_s,r4_s
         integer(C_SIZE_T), pointer:: cz_p
+        integer(8):: i8
+        integer(8), pointer:: i8_p
         real(4):: rval4
         real(4), pointer:: r4_p
         integer(C_INT):: op_present(0:max_tensor_operands-1)
 
         eti_pack=0
         if(c_associated(eti_data)) then
-         i=0; rval4=0.0; i_s=sizeof(i); r4_s=sizeof(rval4)
+         i=0; i8=0_8; rval4=0.0; i_s=sizeof(i); r4_s=sizeof(rval4)
          pack_size=0; pack_size=sizeof(pack_size)
+!Tensor instruction id:
+         c_addr=ptr_offset(eti_data,pack_size); call c_f_pointer(c_addr,i8_p)
+         i8_p=this%instr_id; pack_size=pack_size+sizeof(i8)
 !Tensor instruction code:
          c_addr=ptr_offset(eti_data,pack_size); call c_f_pointer(c_addr,i_p)
          i_p=int(this%instr_code,C_INT); pack_size=pack_size+i_s
@@ -2168,15 +2224,20 @@
         integer(C_INT), pointer:: i_p,id1_p(:)
         integer(C_SIZE_T):: pack_size,s,i_s,r4_s
         integer(C_SIZE_T), pointer:: cz_p
+        integer(8):: i8
+        integer(8), pointer:: i8_p
         real(4):: rval4
         real(4), pointer:: r4_p
         integer(C_INT):: op_present(0:max_tensor_operands-1)
 
         eti_unpack=0
         if(c_associated(eti_data)) then
-         i=0; rval4=0.0; i_s=sizeof(i); r4_s=sizeof(rval4)
+         i=0; i8=0_8; rval4=0.0; i_s=sizeof(i); r4_s=sizeof(rval4)
 !Total size of the packet:
          call c_f_pointer(eti_data,cz_p); pack_size=cz_p; s=sizeof(pack_size)
+!Tensor instruction id:
+         c_addr=ptr_offset(eti_data,s); call c_f_pointer(c_addr,i8_p)
+         this%instr_id=i8_p; s=s+sizeof(i8)
 !Tensor instruction code:
          c_addr=ptr_offset(eti_data,s); call c_f_pointer(c_addr,i_p)
          this%instr_code=int(i_p,2); s=s+i_s
