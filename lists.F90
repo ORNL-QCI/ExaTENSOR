@@ -1,7 +1,7 @@
        module lists
 !Realizations of linked lists.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2014/07/17
+!REVISION: 2014/07/18
 !DESCRIPTION:
 ! CLASS(list_two_way_t):
 !  NOTES:
@@ -14,13 +14,10 @@
 !    set/reset/retrieved, an entry can be deleted from the linked list, etc.
 !    Thus, this class does not deal with the actual data stored at all. It only helps to
 !    organize an existing 1D array into a linked bidirectional list. Moreover, for each
-!    existing 1D array multiple linked lists can be created, reflecting an ordering
-!    of the array entries needed for a specific purpose.
+!    existing 1D array multiple linked lists can be created, reflecting different
+!    orderings of the array entries needed for specific purposes.
 !  # Maximal length of a linked list can be zero (always empty list).
 !    A negative max length means an uninitialized list.
-!  FUNCTIONALITY:
-!  #
-!  #
         use, intrinsic:: ISO_C_BINDING, only: C_INT
 !PARAMETERS:
         integer, parameter, private:: int_kind=C_INT                       !default integer in this module
@@ -30,8 +27,8 @@
         integer(int_kind), parameter, public:: list_err_list_null=4        !list has not been initialized yet
         integer(int_kind), parameter, public:: list_err_list_exists=5      !list has already been initialized
         integer(int_kind), parameter, public:: list_err_list_corrupted=6   !list linking corrupted
-        integer(int_kind), parameter, public:: list_err_list_entry_dead=7  !attempt to use a free (dead) entry
-        integer(int_kind), parameter, public:: list_err_list_entry_busy=8  !attempt to add to the list an already present entry
+        integer(int_kind), parameter, public:: list_err_entry_dead=7       !attempt to use a free (dead) entry (the one not in the list)
+        integer(int_kind), parameter, public:: list_err_entry_busy=8       !attempt to add an entry which is already in the list
         integer(int_kind), parameter, public:: list_empty=9                !initialized list is empty
         integer(int_kind), parameter, public:: list_full=10                !initialized list is full
         integer(int_kind), parameter, public:: list_end=11                 !end of an initialized list (in any direction)
@@ -49,12 +46,12 @@
          integer(int_kind), private:: last                 !last entry number in the list (can be any from the above range)
          integer(int_kind), private:: current              !current entry number in the list
          integer(int_kind), private:: free_ffe             !first free entry
-         integer(int_kind), allocatable, private:: next(:) !next entry
-         integer(int_kind), allocatable, private:: prev(:) !previous entry
+         integer(int_kind), allocatable, private:: next(:) !next entry (negative: dead entry; positive: active entry)
+         integer(int_kind), allocatable, private:: prev(:) !previous entry (negative: dead entry; positive: active entry)
          contains
           procedure, public:: create=>list_create_two_way      !create a bidirectional linked list
           procedure, public:: destroy=>list_destroy_two_way    !destroy a bidirectional linked list
-          procedure, public:: max_length=>list_get_max_length  !get the max length of the list
+          procedure, public:: max_length=>list_get_max_length  !get the max length of the list (length of the array served)
           procedure, public:: length=>list_get_length          !get the current length of the list
           procedure, public:: reset=>list_reset                !reset the current position in the list
           procedure, public:: test_first=>list_test_first      !test whether current == first
@@ -65,6 +62,7 @@
           procedure, public:: go_previous=>list_move_to_prev   !move to the previous entry in the linked list
           procedure, public:: add=>list_add_item_two_way       !add a new entry in the linked list
           procedure, public:: delete=>list_delete_item_two_way !delete an entry from the linked list
+          procedure, public:: test_list=>list_test_two_way     !test the correctness of the linked list
         end type list_two_way_t
 !MODULE PROCEDURES:
         private list_create_two_way
@@ -80,6 +78,7 @@
         private list_move_to_prev
         private list_add_item_two_way
         private list_delete_item_two_way
+        private list_test_two_way
 
        contains
 !---------------------------------------------------------------------------------
@@ -232,7 +231,7 @@
            if(this%next(i).gt.0) then !active list entry (belongs to this linked list)
             this%current=i
            else !dead entry (does not belong to this linked list)
-            list_set_position=list_err_list_entry_dead
+            list_set_position=list_err_entry_dead
            endif
           else
            list_set_position=list_err_invalid_arg
@@ -280,7 +279,7 @@
           elseif(i.gt.this%list_max_length) then !end of the list reached
            list_move_to_next=list_end
           else !error: this%current pointed to a dead list entry
-           list_move_to_next=list_err_list_entry_dead
+           list_move_to_next=list_err_entry_dead
           endif
          else !empty initialized list
           list_move_to_next=list_empty
@@ -307,7 +306,7 @@
           elseif(i.gt.this%list_max_length) then !end of the list reached
            list_move_to_prev=list_end
           else !error: this%current points to a dead list entry
-           list_move_to_prev=list_err_list_entry_dead
+           list_move_to_prev=list_err_entry_dead
           endif
          else !empty initialized list
           list_move_to_prev=list_empty
@@ -335,8 +334,8 @@
            i=new_entry_num-this%base_offset+1
            if(this%next(i).lt.0.and.this%prev(i).lt.0) then !the entry was not in the linked list
             j=-this%prev(i); k=-this%next(i)
-            if(k.gt.0.and.k.le.this%list_max_length) then; this%prev(k)=-j; if(i.eq.this%free_ffe) free_ffe=k; endif
-            if(j.gt.0.and.j.le.this%list_max_length) this%next(j)=-k
+            if(k.le.this%list_max_length) then; this%prev(k)=-j; if(i.eq.this%free_ffe) this%free_ffe=k; endif
+            if(j.le.this%list_max_length) this%next(j)=-k
             if(this%list_length.gt.0) then !list already had at least one element
              if(this%current.gt.0.and.this%current.le.this%list_max_length) then
               j=this%prev(this%current); k=this%next(this%current)
@@ -362,7 +361,7 @@
             endif
             this%list_length=this%list_length+1
            else !the entry is already in the list: cannot be added again
-            list_add_item_two_way=list_err_list_entry_busy
+            list_add_item_two_way=list_err_entry_busy
            endif
           else
            list_add_item_two_way=list_err_invalid_arg
@@ -377,7 +376,7 @@
         end function list_add_item_two_way
 !--------------------------------------------------------------------------
         integer(int_kind) function list_delete_item_two_way(this,entry_num)
-!This function deletes the current list entry (or the entry specified by user in <entry_num>).
+!This function deletes the current list entry or the entry specified by user in <entry_num>.
 !In the first case, if the previous linked entry exists, it becomes the current list entry;
 !otherwise, if the next linked entry exists, it becomes the current list entry;
 !otherwise the list will become empty after this deletion. In the second case (<entry_num>),
@@ -389,24 +388,31 @@
         list_delete_item_two_way=0
         if(this%list_max_length.ge.0) then !initialized list
          if(this%list_length.gt.0) then !non-empty list
-          l=this%current; if(present(entry_num)) l=entry_num-this%base_offset+1
+          l=this%current
+          if(present(entry_num)) then
+           if(entry_num.ge.this%base_offset.and.entry_num.lt.this%base_offset+this%list_max_length) then
+            l=entry_num-this%base_offset+1
+           else
+            list_delete_item_two_way=list_err_invalid_arg; return
+           endif
+          endif
           if(l.gt.0.and.l.le.this%list_max_length) then !bounds
            if(this%next(l).gt.0.and.this%prev(l).gt.0) then !active entry
             j=this%prev(l); k=this%next(l)
             if(j.le.this%list_max_length) then
              this%next(j)=k; if(l.eq.this%current) this%current=j
             else
-             if(k.le.this%list_max_length) then; this%first=k; else; this%first=-1; this%last=-1; endif
+             if(k.le.this%list_max_length) then; this%first=k; else; this%first=-1; this%last=-1; this%current=-1; endif
             endif
             if(k.le.this%list_max_length) then
              this%prev(k)=j; if(l.eq.this%current) this%current=k
             else
-             if(j.le.this%list_max_length) then; this%last=j; else; this%first=-1; this%last=-1; endif
+             if(j.le.this%list_max_length) then; this%last=j; else; this%first=-1; this%last=-1; this%current=-1; endif
             endif
             this%prev(l)=-(this%list_max_length+1); this%next(l)=-(this%free_ffe); this%prev(this%free_ffe)=-l
             this%free_ffe=l; this%list_length=this%list_length-1
            else !entry already dead
-            list_delete_item_two_way=list_err_list_entry_dead
+            list_delete_item_two_way=list_err_entry_dead
            endif
           else
            list_delete_item_two_way=list_err_list_corrupted
@@ -419,5 +425,59 @@
         endif
         return
         end function list_delete_item_two_way
+!--------------------------------------------------------------------
+        integer(int_kind) function list_test_two_way(this)
+!The function checks the correctness of a linked list.
+        implicit none
+        class(list_two_way_t):: this
+        integer(int_kind):: i,m,n
+        list_test_two_way=0
+        if(this%list_max_length.ge.0) then
+         if(this%list_length.gt.0) then
+          if(this%first.gt.0.and.this%first.le.this%list_max_length.and. &
+             this%last.gt.0.and.this%last.le.this%list_max_length.and. &
+             this%current.gt.0.and.this%current.le.this%list_max_length.and. &
+             this%free_ffe.gt.0.and.this%free_ffe.le.this%list_max_length+1) then
+ !Test forward:
+           i=this%first; m=this%list_max_length+1; n=0
+           do while(i.gt.0.and.i.le.this%list_max_length)
+            if(this%prev(i).ne.m) then; list_test_two_way=list_err_list_corrupted; return; endif
+            m=i; i=this%next(i); n=n+1
+            if(n.gt.this%list_length) then; list_test_two_way=list_err_list_corrupted; return; endif
+           enddo
+           if(m.ne.this%last.or.i.ne.this%list_max_length+1.or.n.ne.this%list_length) then
+            list_test_two_way=list_err_list_corrupted; return
+           endif
+ !Test backward:
+           i=this%last; m=this%list_max_length+1; n=0
+           do while(i.gt.0.and.i.le.this%list_max_length)
+            if(this%next(i).ne.m) then; list_test_two_way=list_err_list_corrupted; return; endif
+            m=i; i=this%prev(i); n=n+1
+            if(n.gt.this%list_length) then; list_test_two_way=list_err_list_corrupted; return; endif
+           enddo
+           if(m.ne.this%first.or.i.ne.this%list_max_length+1.or.n.ne.this%list_length) then
+            list_test_two_way=list_err_list_corrupted; return
+           endif
+ !Test free:
+           i=this%free_ffe; m=this%list_max_length+1; n=0
+           do while(i.gt.0.and.i.le.this%list_max_length)
+            if(-this%prev(i).ne.m) then; list_test_two_way=list_err_list_corrupted; return; endif
+            m=i; i=-this%next(i); n=n+1
+            if(n.gt.this%list_max_length-this%list_length) then; list_test_two_way=list_err_list_corrupted; return; endif
+           enddo
+           if(i.ne.this%list_max_length+1.or.n.ne.this%list_max_length-this%list_length) then
+            list_test_two_way=list_err_list_corrupted; return
+           endif
+          else
+           list_test_two_way=list_err_list_corrupted
+          endif
+         else
+          list_test_two_way=list_empty
+         endif
+        else
+         list_test_two_way=list_err_list_null
+        endif
+        return
+        end function list_test_two_way
 
        end module lists
