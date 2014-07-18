@@ -197,13 +197,13 @@
          type(list_two_way_t), private:: list_scheduled                !list of ETI scheduled to computing units
          type(list_two_way_t), private:: list_completed                !list of completed ETI
          contains
-          procedure, private:: init=>etiq_init                      !initialize empty ETIQ
-          procedure, private:: add_new=>etiq_add_new                !add new set of ETI to ETIQ (extracting ETI from superpackets)
-          procedure, private:: prefetch_data=>etiq_prefetch_data    !prefetch data (tensor blocks)
-          procedure, private:: dispatch_ready=>etiq_dispatch_ready  !dispatch ready ETI into appropriate CU queues
-          procedure, private:: test_completion=etiq_test_completion !test completion for issued ETI
-          procedure, private:: upload_results=>etiq_upload_results  !upload results (output tensor blocks) for completed ETI
-          procedure, private:: remove_dead=>etiq_remove_dead        !remove all dead ETI from ETIQ (packing ETI into superpackets)
+          procedure, private:: init=>etiq_init                       !initialize empty ETIQ
+          procedure, private:: add_new=>etiq_add_new                 !add new set of ETI to ETIQ (extracting ETI from superpackets)
+          procedure, private:: prefetch_data=>etiq_prefetch_data     !prefetch data (tensor blocks)
+          procedure, private:: dispatch_ready=>etiq_dispatch_ready   !dispatch ready ETI into appropriate CU queues
+          procedure, private:: test_completion=>etiq_test_completion !test completion for issued ETI
+          procedure, private:: upload_results=>etiq_upload_results   !upload results (output tensor blocks) for completed ETI
+          procedure, private:: remove_dead=>etiq_remove_dead         !remove all dead ETI from ETIQ (packing ETI into superpackets)
         end type etiq_t
   !In-order elementary tensor instruction queue for a specific computing unit:
         type, private:: etiq_cu_t
