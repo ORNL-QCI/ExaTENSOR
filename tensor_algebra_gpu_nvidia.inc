@@ -43,10 +43,11 @@
         integer(C_INT), parameter:: KEEP_HAB_DATA=2               !ETI task cleanup flag: keep the HAB data (if any)
         integer(C_INT), parameter:: KEEP_GPU_DATA=4               !ETI task cleanup flag: keep the GPU data (if any)
         integer(C_INT), parameter:: KEEP_ALL_DATA=7               !ETI task cleanup flag: keep everything
-        integer(C_INT), parameter:: ERR_INVALID_ETI_SUPERPACKET=1 !ETIQ error: an invalid superpacket received from LR
+        integer(C_INT), parameter:: ERR_ETIQ_INVALID_SUPERPACK=1  !ETIQ error: an invalid ETI superpacket received from LR
         integer(C_INT), parameter:: ERR_ETIQ_IS_FULL=2            !ETIQ error: ETIQ is full
-        integer(C_INT), parameter:: ERR_ETIQ_ETI_UNPACK_FAILED=3  !ETIQ error: ETI unpacking failed
-        integer(C_INT), parameter:: ERR_ETIQ_CHANNEL_FAILED=4     !ETIQ error: was unable to obtain an ETIQ channel number
+        integer(C_INT), parameter:: ERR_ETIQ_UNPACK_FAILED=3      !ETIQ error: ETI unpacking failed
+        integer(C_INT), parameter:: ERR_ETIQ_ENTRY_UNAVAIL=4      !ETIQ error: unable to obtain a free ETIQ entry
+        integer(C_INT), parameter:: ERR_ETIQ_CHANNEL_FAILED=5     !ETIQ error: unable to register an ETIQ entry in an ETIQ channel
 
 !Tensor block storage layout:
         integer(C_INT), parameter:: not_allocated=0   !tensor block has not been initialized

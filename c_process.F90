@@ -1,18 +1,18 @@
 !This module provides functionality for a Computing Process (C-PROCESS, CP).
 !In essence, this is a single-node elementary tensor instruction scheduler (SETIS).
-!AUTHOR: Dmitry I. Lyakh (Dmytro I. Liakh): quant4me@gmail.com
-!REVISION: 2014/07/18
+!AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
+!REVISION: 2014/07/21
 !CONCEPTS (CP workflow):
 ! - Each CP stores its own tensor blocks in TBB, with a possibility of disk dump.
 ! - LR sends a batch of ETI to be executed on this CP unit (CP MPI Process).
-!   The location of each tensor-block operand in ETI is already given there,
+!   The location of each tensor-block operand of ETI is already given there,
 !   as well as some other characteristics (approx. operation cost, memory requirements, etc.).
 ! - CP places the ETI received into multiple queues, based on the number of remote operands and ETI cost.
 ! - Each non-trivial ETI operand (tensor block) is assigned an AAR entry that points to
 !   either a <tensor_block_t> entity (to be used on CPU or Intel Xeon Phi)
 !   or a <tensBlck_t> entity (to be used on Nvidia GPU). Once the corresponding
 !   data (tensor block) is in local memory of CP (either in TBB, or HAB, or DEB),
-!   a new AAR entry is defined and all ETI operands, referring to it, become ready.
+!   the new AAR entry is defined and all ETI operands, referring to it, become ready.
 !   Data (tensor blocks) registered in AAR can be reused while locally present.
 !   AAR is the only way to access a tensor block for ETI (the tensor block itself
 !   can physically reside in either TBB, or HAB, or DEB).
@@ -23,8 +23,7 @@
 !      The device is chosen based on the ETI cost, ETI cost/size ratio, and device availability.
 !    - Once issued successfully, the ETI obtains a query handle that can be used for completion checks.
 !    - AAR entries and associated data used by active ETI must not be freed before completion of the ETI.
-!    - If the ETI result is remote, its destination must be updated before
-!      reporting to LR that the ETI has been completed.
+!    - If the ETI result is remote, its destination must be updated before reporting to LR.
 !NOTES:
 ! - Data synchronization in an instance of <tensor_block_t> (Fortran)
 !   associated with a Host Argument Buffer entry can allocate only regular CPU memory
@@ -68,6 +67,10 @@
         integer, private:: debug_step_pause=1000  !pause (msec) before advancing MT to the next instruction while debugging
  !General:
         integer, parameter, private:: CZ=C_SIZE_T
+ !ETI granularity:
+        real(4), parameter:: flops_medium=1d9     !minimal number of Flops to consider the operation as medium-cost
+        real(4), parameter:: flops_large=1d10     !minimal number of Flops to consider the operation as large-cost
+        real(4), parameter:: cost_to_size=1d1     !minimal cost to size ratio to consider the operation cost-efficient
  !Elementary Tensor Instruction Scheduler (ETIS):
   !Host Argument Buffer (HAB):
         integer(C_SIZE_T), parameter, private:: max_hab_size=4096_CZ*(1024_CZ*1024_CZ) !max size in bytes of the HAB
@@ -151,7 +154,7 @@
   !Tensor operand type (component of ETI):
         type tens_operand_t
          type(tens_blck_id_t):: tens_blck_id !tensor block identifier (key): set by LR
-         integer(C_INT):: op_host            !MPI process rank where the tensor operand resides: set by LR
+         integer(C_INT):: op_host            !MPI process rank where the tensor operand resides (-1: null operand): set by LR
          integer(8):: op_pack_size           !packed size of the tensor operand in bytes: computed by LR
          integer(C_INT):: op_tag             !MPI message tag by which the tensor operand is to be delivered (-1: local): set by LR
          integer(C_INT):: op_price           !current price of the tensor operand (tensor block): set by LR
@@ -1672,58 +1675,58 @@
 
         end subroutine c_proc_life
 !----------------------------------------------------------
-        recursive function cp_destructor(item) result(ierr) !universal destructor: destroys all allocated components
+        recursive function cp_destructor(this) result(ierr) !universal destructor: destroys all allocated components
         implicit none
-        class(*):: item !<item> itself is not destroyed, only its allocated components!
+        class(*):: this !<this> itself is not destroyed, only its allocated components!
         integer:: ierr
         integer:: i,j
         ierr=0
-        select type (item)
+        select type (this)
         type is (tens_blck_id_t)
 !         if(verbose) write(jo_cp,'("#DEBUG(c_process::cp_destructor): tens_blck_id_t")') !debug
-         if(allocated(item%tens_mlndx)) then; deallocate(item%tens_mlndx,STAT=i); if(i.ne.0) ierr=1; endif
-         item%tens_name=' '
+         if(allocated(this%tens_mlndx)) then; deallocate(this%tens_mlndx,STAT=i); if(i.ne.0) ierr=1; endif
+         this%tens_name=' '
         type is (tbb_entry_t)
 !         if(verbose) write(jo_cp,'("#DEBUG(c_process::cp_destructor): tbb_entry_t")') !debug
-         call tensor_block_destroy(item%tens_blck,i); if(i.ne.0) ierr=2
-         item%file_handle=0; item%file_offset=0_8; item%stored_size=0_8
+         call tensor_block_destroy(this%tens_blck,i); if(i.ne.0) ierr=2
+         this%file_handle=0; this%file_offset=0_8; this%stored_size=0_8
         type is (tens_arg_t)
 !         if(verbose) write(jo_cp,'("#DEBUG(c_process::cp_destructor): tens_arg_t")') !debug
-         nullify(item%tens_blck_f)
-         item%tens_blck_c=C_NULL_PTR; item%buf_entry_host=-1
-         item%mpi_tag=-1; item%mpi_process=-1; item%times_needed=0; item%times_used=0
+         nullify(this%tens_blck_f)
+         this%tens_blck_c=C_NULL_PTR; this%buf_entry_host=-1
+         this%mpi_tag=-1; this%mpi_process=-1; this%times_needed=0; this%times_used=0
         type is (tens_operand_t)
 !         if(verbose) write(jo_cp,'("#DEBUG(c_process::cp_destructor): tens_operand_t")') !debug
-         i=cp_destructor(item%tens_blck_id); if(i.ne.0) ierr=3
-         item%op_host=-1; item%op_pack_size=0_8; item%op_tag=0; item%op_price=0
-         nullify(item%op_aar_entry)
+         i=cp_destructor(this%tens_blck_id); if(i.ne.0) ierr=3
+         this%op_host=-1; this%op_pack_size=0_8; this%op_tag=0; this%op_price=0
+         nullify(this%op_aar_entry)
         type is (tens_instr_t)
 !         if(verbose) write(jo_cp,'("#DEBUG(c_process::cp_destructor): tens_instr_t")') !debug
-         if(allocated(item%instr_aux)) then; deallocate(item%instr_aux,STAT=i); if(i.ne.0) ierr=4; endif
-         do j=0,max_tensor_operands-1; i=cp_destructor(item%tens_op(j)); if(i.ne.0) ierr=4; enddo
-         item%instr_code=instr_null; item%data_kind='  '; item%instr_priority=0; item%no_upload=0
-         item%instr_cost=0.0; item%instr_size=0.0; item%instr_status=instr_null
-         item%instr_cu=cu_t(-1,-1); item%instr_handle=-1; item%args_ready=0
-         item%time_touched=0.; item%time_data_ready=0.; item%time_issued=0.; item%time_completed=0.; item%time_uploaded=0.
+         if(allocated(this%instr_aux)) then; deallocate(this%instr_aux,STAT=i); if(i.ne.0) ierr=4; endif
+         do j=0,max_tensor_operands-1; i=cp_destructor(this%tens_op(j)); if(i.ne.0) ierr=4; enddo
+         this%instr_code=instr_null; this%data_kind='  '; this%instr_priority=0; this%no_upload=0
+         this%instr_cost=0.0; this%instr_size=0.0; this%instr_status=instr_null
+         this%instr_cu=cu_t(-1,-1); this%instr_handle=-1; this%args_ready=0
+         this%time_touched=0.; this%time_data_ready=0.; this%time_issued=0.; this%time_completed=0.; this%time_uploaded=0.
         type is (etiq_cu_t)
 !         if(verbose) write(jo_cp,'("#DEBUG(c_process::cp_destructor): etiq_cu_t")') !debug
-         if(allocated(item%etiq_entry)) then; deallocate(item%etiq_entry,STAT=i); if(i.ne.0) ierr=5; endif
-         if(allocated(item%te_conf)) then; deallocate(item%te_conf,STAT=i); if(i.ne.0) ierr=5; endif
-         item%depth=0; item%scheduled=0; item%bp=0; item%ip=0
+         if(allocated(this%etiq_entry)) then; deallocate(this%etiq_entry,STAT=i); if(i.ne.0) ierr=5; endif
+         if(allocated(this%te_conf)) then; deallocate(this%te_conf,STAT=i); if(i.ne.0) ierr=5; endif
+         this%depth=0; this%scheduled=0; this%bp=0; this%ip=0
         type is (etiq_t)
 !         if(verbose) write(jo_cp,'("#DEBUG(c_process::cp_destructor): etiq_t")') !debug
-         if(allocated(item%eti)) then
-          do j=lbound(item%eti,1),ubound(item%eti,1)
-           i=cp_destructor(item%eti(j)); if(i.ne.0) ierr=6
+         if(allocated(this%eti)) then
+          do j=lbound(this%eti,1),ubound(this%eti,1)
+           i=cp_destructor(this%eti(j)); if(i.ne.0) ierr=6
           enddo
-          deallocate(item%eti,STAT=i); if(i.ne.0) ierr=6
+          deallocate(this%eti,STAT=i); if(i.ne.0) ierr=6
          endif
-         do j=1,etiq_channels; i=item%etiq_channel(j)%destroy(); if(i.ne.0) ierr=6; enddo
-         i=item%list_data_wait%destroy(); if(i.ne.0) ierr=6
-         i=item%list_ready_to_exec%destroy(); if(i.ne.0) ierr=6
-         i=item%list_scheduled%destroy(); if(i.ne.0) ierr=6
-         i=item%list_completed%destroy(); if(i.ne.0) ierr=6
-         item%depth=0; item%scheduled=0
+         do j=1,etiq_channels; i=this%etiq_channel(j)%destroy(); if(i.ne.0) ierr=6; enddo
+         i=this%list_data_wait%destroy(); if(i.ne.0) ierr=6
+         i=this%list_ready_to_exec%destroy(); if(i.ne.0) ierr=6
+         i=this%list_scheduled%destroy(); if(i.ne.0) ierr=6
+         i=this%list_completed%destroy(); if(i.ne.0) ierr=6
+         this%depth=0; this%scheduled=0
         class default
          write(jo_cp,'("#ERROR(c_process::cp_destructor): unknown type/class!")')
          ierr=-1
@@ -1854,9 +1857,10 @@
         endif
         return
         end function etiq_init
-!--------------------------------------------------------
-        integer function etiq_add_new(this,eti_superpack) !SERIAL: MT only
+!------------------------------------------------------------------
+        integer function etiq_add_new(this,eti_superpack,new_added) !SERIAL: MT only
 !This function unpacks packed tensor instructions from <eti_superpack> and enqueues them into ETIQ <this>.
+!<new_added> will return the actual number of ETI added to ETIQ.
 !Format of the super-packet <eti_superpack>:
 ! INTEGER(C_INT): number of ETI packets in <eti_superpack>;
 ! PACKET(ETI): ETI packet #0;
@@ -1865,25 +1869,50 @@
         implicit none
         class(etiq_t):: this
         type(C_PTR):: eti_superpack,c_addr
-        integer:: channel
-        integer(C_INT):: i,j,l,n,ier
+        integer(C_INT), intent(out), optional:: new_added
+        integer(C_INT):: i,j,n,nadd,channel,ier
         integer(C_INT), pointer:: i_p
         integer(C_SIZE_T):: s
         integer(C_SIZE_T), pointer:: cz_p
-        etiq_add_new=0
+        etiq_add_new=0; nadd=0
         if(c_associated(eti_superpack)) then
          call c_f_pointer(eti_superpack,i_p); n=i_p; s=sizeof(n)
-         if(n.ge.0) then !number of ETI packets stored in the superpacket
-          do j=1,n !individual tensor instructions (ETI)
-           c_addr=ptr_offset(eti_superpack,s); call c_f_pointer(c_addr,cz_p); s=s+cz_p
-           !`Unpack ETI#j
+         if(n.gt.0) then !number of ETI packets stored in the superpacket
+          do i=1,n !individual packed tensor instructions (ETI packets)
+           c_addr=ptr_offset(eti_superpack,s); call c_f_pointer(c_addr,cz_p); s=s+cz_p !packet length
+           j=lbound(this%eti,1)-1; ier=this%list_data_wait%add(j) !j will be the new ETIQ entry number
+           if(ier.eq.0) then
+            ier=this%eti(j)%unpack(c_addr)
+            if(ier.eq.0) then
+             channel=this%eti(j)%get_channel()
+             ier=this%etiq_channel(channel)%add(j)
+             if(ier.eq.0) then
+              nadd=nadd+1; this%scheduled=this%scheduled+1
+             else
+              etiq_add_new=ERR_ETIQ_CHANNEL_FAILED
+              ier=this%list_data_wait%delete(j)
+              if(present(new_added)) new_added=nadd; return
+             endif
+            else
+             etiq_add_new=ERR_ETIQ_UNPACK_FAILED
+             ier=this%list_data_wait%delete(j)
+             if(present(new_added)) new_added=nadd; return
+            endif
+           elseif(ier.eq.list_full) then
+            etiq_add_new=ERR_ETIQ_IS_FULL
+            if(present(new_added)) new_added=nadd; return
+           else
+            etiq_add_new=ERR_ETIQ_ENTRY_UNAVAIL
+            if(present(new_added)) new_added=nadd; return
+           endif
           enddo
          else
-          etiq_add_new=ERR_INVALID_ETI_SUPERPACKET
+          etiq_add_new=ERR_ETIQ_INVALID_SUPERPACK
          endif
         else
-         etiq_add_new=ERR_INVALID_ETI_SUPERPACKET
+         etiq_add_new=ERR_ETIQ_INVALID_SUPERPACK
         endif
+        if(present(new_added)) new_added=nadd
         return
         end function etiq_add_new
 !------------------------------------------------------------
@@ -1971,12 +2000,34 @@
         return
         end function eti_mark_aar_used
 !-----------------------------------------------------
-        integer function eti_get_channel(this,channel) !Obtain the ETIQ channel number where the ETI should go: MT only
+        integer function eti_get_channel(this) !Obtain the ETIQ channel number where the ETI should go: MT only
         implicit none
         class(tens_instr_t):: this
-        integer, intent(out):: channel
-        channel=-1
-        !`Write
+        integer i,m,n
+        m=0; n=0
+        do i=1,max_tensor_operands
+         if(this%tens_op(i)%op_host.ge.0) then !operand present
+          n=n+1; if(this%tens_op(i)%op_host.ne.impir) m=m+1 !remote operand
+         endif
+        enddo
+        if(this%instr_cost.ge.flops_medium) then
+         if(this%instr_cost.ge.flops_large) then !large operation
+          if(this%instr_cost.ge.this%instr_size*cost_to_size) then !cost-efficient
+           i=5
+          else !cost-inefficient
+           i=4
+          endif
+         else !medium operation
+          if(this%instr_cost.ge.this%instr_size*cost_to_size) then !cost-efficient
+           i=3
+          else !cost-inefficient
+           i=2
+          endif
+         endif
+        else !small operation
+         i=1
+        endif
+        eti_get_channel=m*etiq_cost_levels+i
         return
         end function eti_get_channel
 !---------------------------------------------------------
