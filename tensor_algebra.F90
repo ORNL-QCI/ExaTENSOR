@@ -1,7 +1,7 @@
-!TENSOR ALGEBRA IN PARALLEL (TAP) for SHARED-MEMORY SYSTEMS (OpenMP based)
+!Tensor Algebra Library for multi-core CPUs (OpenMP based)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2014/07/08
-!GNU FORTRAN compiling options: -c -O3 --free-line-length-none -x f95-cpp-input -fopenmp
+!REVISION: 2014/07/25
+!GNU FORTRAN compiling options: -c -O3 -fopenmp --free-line-length-none -x f95-cpp-input
 !GNU linking options: -lgomp -lblas -llapack
 !ACRONYMS:
 ! - mlndx - multiindex;
@@ -30,9 +30,11 @@
 #endif
 !PARAMETERS:
         include 'tensor_algebra_gpu_nvidia.inc'
- !Default output for the module procedures and functions:
-	integer, private:: cons_out=6 !default output device for this module
-	logical, private:: verbose=.true.
+ !Default output for the module procedures:
+	integer, private:: cons_out=6     !default output device for this module (also used for INTEL MIC TAL)
+	logical, private:: verbose=.true. !verbosity (also used for INTEL MIC TAL)
+!DIR$ ATTRIBUTES OFFLOAD:mic:: cons_out,verbose
+!DIR$ ATTRIBUTES ALIGN:128:: cons_out,verbose
  !Global:
 	integer, parameter, public:: max_shape_str_len=1024 !max allowed length for a tensor shape specification string (TSSS)
 	integer, parameter, public:: LONGINT=8              !long integer size in bytes
@@ -40,9 +42,14 @@
 	logical, private:: data_kind_sync=.true. !if .true., each tensor operation will syncronize all existing data kinds
 	logical, private:: trans_shmem=.true.    !cache-efficient (true) VS scatter (false) tensor transpose algorithm
 	logical, private:: disable_blas=.false.  !if .true. and BLAS is accessible, BLAS calls will be replaced by my own routines
+!DIR$ ATTRIBUTES OFFLOAD:mic:: max_shape_str_len,LONGINT,max_threads,data_kind_sync,trans_shmem,disable_blas
+!DIR$ ATTRIBUTES ALIGN:128:: max_shape_str_len,LONGINT,max_threads,data_kind_sync,trans_shmem,disable_blas
  !Numerical:
 	real(8), parameter, private:: abs_cmp_thresh=1d-13 !default absolute error threshold for numerical comparisons
 	real(8), parameter, private:: rel_cmp_thresh=1d-2  !default relative error threshold for numerical comparisons
+!DIR$ ATTRIBUTES OFFLOAD:mic:: abs_cmp_thresh,rel_cmp_thresh
+!DIR$ ATTRIBUTES ALIGN:128:: abs_cmp_thresh,rel_cmp_thresh
+
 !DERIVED DATA TYPES:
  !Tensor shape (storage layout specification for a tensor block):
 	type, public:: tensor_shape_t
@@ -61,6 +68,7 @@
 	 real(8), pointer, contiguous:: data_real8(:)=>NULL()     !tensor block data (double)
 	 complex(8), pointer, contiguous:: data_cmplx8(:)=>NULL() !tensor block data (complex)
 	end type tensor_block_t
+
 !GENERIC INTERFACES:
 	interface divide_segment
 	 module procedure divide_segment_i4
@@ -207,6 +215,7 @@
 	return
 	end subroutine set_matmult_algorithm
 !--------------------------------------------------
+!DIR$ ATTRIBUTES OFFLOAD:mic:: cmplx8_to_real8
 	real(8) function cmplx8_to_real8(cmplx_num) !SERIAL
 !This function returns a real approximant for a complex number with the following properties:
 ! 1) The Euclidean (Frobenius) norm (modulus) is preserved;
@@ -223,6 +232,7 @@
 	return
 	end function cmplx8_to_real8
 !---------------------------------------------------------------------------
+!DIR$ ATTRIBUTES OFFLOAD:mic:: divide_segment_i4
 	subroutine divide_segment_i4(seg_range,subseg_num,subseg_sizes,ierr) !SERIAL
 !A segment of range <seg_range> will be divided into <subseg_num> subsegments maximally uniformly.
 !The length of each subsegment will be returned in the array <subseg_sizes(1:subseg_num)>.
@@ -243,6 +253,7 @@
 	return
 	end subroutine divide_segment_i4
 !---------------------------------------------------------------------------
+!DIR$ ATTRIBUTES OFFLOAD:mic:: divide_segment_i8
 	subroutine divide_segment_i8(seg_range,subseg_num,subseg_sizes,ierr) !SERIAL
 !A segment of range <seg_range> will be divided into <subseg_num> subsegments maximally uniformly.
 !The length of each subsegment will be returned in the array <subseg_sizes(1:subseg_num)>.
@@ -3056,7 +3067,7 @@
 	return
 	end subroutine tensor_shape_rnd
 !----------------------------------------------------
-        integer function tensor_shape_rank(tsss,ierr)
+        integer function tensor_shape_rank(tsss,ierr) !SERIAL
 !This function returns the number of dimensions in a tensor shape specification string (TSSS).
         implicit none
         character(*), intent(in):: tsss
@@ -3903,6 +3914,7 @@
 	return
 	end subroutine tensor_block_insert_dlf_r8
 !------------------------------------------------------------------------------------------------
+!DIR$ ATTRIBUTES OFFLOAD:mic:: tensor_block_copy_dlf_r4
 	subroutine tensor_block_copy_dlf_r4(dim_num,dim_extents,dim_transp,tens_in,tens_out,ierr) !PARALLEL
 !Given a dense tensor block, this subroutine makes a copy of it, permuting the indices according to the <dim_transp>.
 !The algorithm is cache-efficient (Author: Dmitry I. Lyakh (Liakh): quant4me@gmail.com)
@@ -3921,6 +3933,8 @@
 	integer(LONGINT), parameter:: cache_line_lim=2**5   !approx. number of simultaneously open cache lines per thread
 	integer(LONGINT), parameter:: small_tens_size=2**12 !up to this size (of a tensor block) it is useless to apply cache efficiency
 	integer(LONGINT), parameter:: vec_size=2**4         !loop reorganization parameter
+!DIR$ ATTRIBUTES OFFLOAD:mic:: real_kind,cache_efficiency,cache_line_lim,small_tens_size,vec_size
+!DIR$ ATTRIBUTES ALIGN:128:: real_kind,cache_efficiency,cache_line_lim,small_tens_size,vec_size
 !--------------------------------------------------
 	integer, intent(in):: dim_num,dim_extents(1:*),dim_transp(0:*)
 	real(real_kind), intent(in):: tens_in(0:*)
@@ -3933,6 +3947,7 @@
 	integer dim_beg(1:dim_num),dim_end(1:dim_num)
 	logical trivial,in_out_dif
 	real(4) time_beg
+!DIR$ ATTRIBUTES ALIGN:128:: ac1,im,n2o,ipr,bases_in,bases_out,bases_pri,segs,dim_beg,dim_end
 
 	ierr=0
 !	time_beg=secnds(0.) !debug
@@ -4129,6 +4144,7 @@
 	return
 	end subroutine tensor_block_copy_dlf_r4
 !------------------------------------------------------------------------------------------------
+!DIR$ ATTRIBUTES OFFLOAD:mic:: tensor_block_copy_dlf_r8
 	subroutine tensor_block_copy_dlf_r8(dim_num,dim_extents,dim_transp,tens_in,tens_out,ierr) !PARALLEL
 !Given a dense tensor block, this subroutine makes a copy of it, permuting the indices according to the <dim_transp>.
 !The algorithm is cache-efficient (Author: Dmitry I. Lyakh (Liakh): quant4me@gmail.com)
@@ -4147,6 +4163,8 @@
 	integer(LONGINT), parameter:: cache_line_lim=2**5   !approx. number of simultaneously open cache lines per thread
 	integer(LONGINT), parameter:: small_tens_size=2**12 !up to this size (of a tensor block) it is useless to apply cache efficiency
 	integer(LONGINT), parameter:: vec_size=2**4         !loop reorganization parameter
+!DIR$ ATTRIBUTES OFFLOAD:mic:: real_kind,cache_efficiency,cache_line_lim,small_tens_size,vec_size
+!DIR$ ATTRIBUTES ALIGN:128:: real_kind,cache_efficiency,cache_line_lim,small_tens_size,vec_size
 !--------------------------------------------------
 	integer, intent(in):: dim_num,dim_extents(1:*),dim_transp(0:*)
 	real(real_kind), intent(in):: tens_in(0:*)
@@ -4159,6 +4177,7 @@
 	integer dim_beg(1:dim_num),dim_end(1:dim_num)
 	logical trivial,in_out_dif
 	real(4) time_beg
+!DIR$ ATTRIBUTES ALIGN:128:: ac1,im,n2o,ipr,bases_in,bases_out,bases_pri,segs,dim_beg,dim_end
 
 	ierr=0
 !	time_beg=secnds(0.) !debug

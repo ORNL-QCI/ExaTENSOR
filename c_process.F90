@@ -1,7 +1,7 @@
 !This module provides functionality for a Computing Process (C-PROCESS, CP).
 !In essence, this is a single-node elementary tensor instruction scheduler (SETIS).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2014/07/21
+!REVISION: 2014/07/28
 !CONCEPTS (CP workflow):
 ! - Each CP stores its own tensor blocks in TBB, with a possibility of disk dump.
 ! - LR sends a batch of ETI to be executed on this CP unit (CP MPI Process).
@@ -48,6 +48,7 @@
 ! - TAL - Tensor Algebra Library (CPU, GPU, MIC, etc.);
        module c_process
         use, intrinsic:: ISO_C_BINDING
+        use tensor_algebra_intel_phi
         use tensor_algebra
         use dictionary
         use lists
@@ -146,6 +147,7 @@
          type(tensor_block_t), pointer, private:: tens_blck_f=>NULL() !pointer to a tensor_block in TBB, or HAB, or DEB
          type(C_PTR), private:: tens_blck_c=C_NULL_PTR !C pointer to tensBlck_t in HAB (see "tensor_algebra_gpu_nvidia.h")
          integer(C_INT), private:: buf_entry_host=-1 !HAB entry number where the tensor block resides as a packet (-1: undefined)
+         integer(C_INT), private:: present_on_mic=-1 !MIC number where the data of <tens_blck_f> resides (-1: absent on any MIC)
          integer, private:: mpi_tag                  !>0: MPI_TAG for a pending MPI_IRECV; =0: MPI delivered; <0: local
          integer, private:: mpi_process              !>=0: mpi rank of the host process; <0: local
          integer, private:: times_needed             !number of times the argument has been referred to in ETIQ
@@ -212,7 +214,7 @@
         type, private:: etiq_cu_t
          integer(C_INT), private:: depth=0                    !total number of entries in the queue
          integer(C_INT), private:: scheduled=0                !total number of active entries in the queue
-         integer(C_INT), private:: bp=0                       !base instruction pointer (the oldest issued unfinished instruction): async units only
+         integer(C_INT), private:: bp=0                       !base instruction pointer (oldest issued unfinished instruction): async units only
          integer(C_INT), private:: ip=0                       !current instruction pointer (currently considered instruction)
          integer(C_INT), allocatable, private:: etiq_entry(:) !number of the ETIQ entry where the ETI is located
          type(te_conf_t), allocatable, private:: te_conf(:)   !computing unit configuration which ETI will be executed on
@@ -291,10 +293,10 @@
         integer(C_INT), parameter:: max_arg_buf_levels=256 !max number of argument buffer levels (do not exceed C values)
 !---------------------------------------------------------
         integer(C_INT) i,j,k,l,m,n,ks,kf,err_code,thread_num !general purpose: thread private
+        integer:: stcu_base_ip,stcu_my_ip,stcu_my_eti  !STCU variables: thread private
+        integer:: stcu_mimd_my_pass,stcu_mimd_max_pass !STCU variables
         type(nvcu_task_t), allocatable:: nvcu_tasks(:) !parallel to etiq_nvcu
         type(xpcu_task_t), allocatable:: xpcu_tasks(:) !parallel to etiq_xpcu
-        integer:: stcu_base_ip,stcu_my_ip,stcu_my_eti !STCU variables (slaves): thread private
-        integer:: stcu_mimd_my_pass,stcu_mimd_max_pass
         integer(C_SIZE_T):: blck_sizes(0:max_arg_buf_levels-1)
         integer:: tree_height; integer(8):: tree_volume
         type(tens_blck_id_t):: key(0:15)
@@ -639,7 +641,7 @@
 
  !Enqueue tensor instructions to NVCU:
             etiq_nvcu%etiq_entry(0)=11
-            etiq_nvcu%te_conf(0)=te_conf_t(etiq%eti(etiq_nvcu%etiq_entry(0))%instr_cu,16,16,1)
+            etiq_nvcu%te_conf(0)=te_conf_t(etiq%eti(etiq_nvcu%etiq_entry(0))%instr_cu,64,16,32)
             etiq_nvcu%scheduled=etiq_nvcu%scheduled+1
             etiq%eti(etiq_nvcu%etiq_entry(0))%instr_status=instr_scheduled
  !Enqueue tensor instructions to STCU:
@@ -1611,7 +1613,7 @@
          type(tens_arg_t):: jtarg
          class(*), pointer:: jptr
          jtarg%mpi_tag=-1; jtarg%mpi_process=-1; jtarg%times_needed=0; jtarg%times_used=0
-         jtarg%tens_blck_f=>NULL(); jtarg%tens_blck_c=C_NULL_PTR; jtarg%buf_entry_host=-1
+         jtarg%tens_blck_f=>NULL(); jtarg%tens_blck_c=C_NULL_PTR; jtarg%buf_entry_host=-1; jtarg%present_on_mic=-1
          aar_register=aar%search(dict_add_if_not_found,tens_key_cmp,tkey,jtarg,value_out=jptr)
          if(aar_register.eq.dict_key_found.or.aar_register.eq.dict_key_not_found) then
           select type (jptr)
@@ -1692,8 +1694,7 @@
          this%file_handle=0; this%file_offset=0_8; this%stored_size=0_8
         type is (tens_arg_t)
 !         if(verbose) write(jo_cp,'("#DEBUG(c_process::cp_destructor): tens_arg_t")') !debug
-         nullify(this%tens_blck_f)
-         this%tens_blck_c=C_NULL_PTR; this%buf_entry_host=-1
+         nullify(this%tens_blck_f); this%tens_blck_c=C_NULL_PTR; this%buf_entry_host=-1; this%present_on_mic=-1
          this%mpi_tag=-1; this%mpi_process=-1; this%times_needed=0; this%times_used=0
         type is (tens_operand_t)
 !         if(verbose) write(jo_cp,'("#DEBUG(c_process::cp_destructor): tens_operand_t")') !debug
@@ -1874,6 +1875,7 @@
         integer(C_INT), pointer:: i_p
         integer(C_SIZE_T):: s
         integer(C_SIZE_T), pointer:: cz_p
+
         etiq_add_new=0; nadd=0
         if(c_associated(eti_superpack)) then
          call c_f_pointer(eti_superpack,i_p); n=i_p; s=sizeof(n)
@@ -1915,14 +1917,24 @@
         if(present(new_added)) new_added=nadd
         return
         end function etiq_add_new
-!------------------------------------------------------------
+!-----------------------------------------------------------------
         integer function etiq_prefetch_data(this,new_mpi_receives)
 !This function prefetches data for ETI in ETIQ.
         implicit none
         class(etiq_t):: this
-        integer, intent(out), optional:: new_mpi_receives
-        etiq_prefetch_data=0
-        !`Write
+        integer(C_INT), intent(out), optional:: new_mpi_receives
+        !-----------------------------------
+        real(8), parameter:: time_frame=5d-1
+        !-----------------------------------
+        integer(C_INT):: i,nrecv,tmr,ier
+
+        etiq_prefetch_data=0; nrecv=0
+        ier=timer_start(time_frame,tmr); if(ier.ne.0) then; etiq_prefetch_data=ERR_TIMER_FAILED; return; endif
+        wloop: do while(time_is_off(tmr,ier,.true.))
+         if(ier.ne.0) then; etiq_prefetch_data=ERR_TIMER_FAILED; return; endif
+         !``
+        enddo wloop
+        if(present(new_mpi_receives)) new_mpi_receives=nrecv
         return
         end function etiq_prefetch_data
 !----------------------------------------------------------------

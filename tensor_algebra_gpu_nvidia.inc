@@ -1,4 +1,4 @@
-!This is a Fortran alias of tensor_algebra_gpu_nvidia.h (KEEP CONSISTENT!):
+!This is a Fortran alias of tensor_algebra_gpu_nvidia.h:
 
 !GLOBAL (keep consistent with tensor_algebra_gpu_nvidia.h):
         integer(C_INT), parameter:: max_tensor_rank=32    !max allowed tensor rank (max number of indices in a tensor)
@@ -6,11 +6,15 @@
         integer(C_INT), parameter:: MAX_GPUS_PER_NODE=16  !max number of Nvidia GPUs on a node
         integer(C_INT), parameter:: MAX_MICS_PER_NODE=8   !max number of Intel MICs on a node
         integer(C_INT), parameter:: MAX_AMDS_PER_NODE=8   !max number of AMD GPUs on a node
+!DIR$ ATTRIBUTES OFFLOAD:mic:: max_tensor_rank,max_tensor_operands
+!DIR$ ATTRIBUTES ALIGN:128:: max_tensor_rank,max_tensor_operands
 
 !DATA KINDS (keep consistent with tensor_algebra_gpu_nvidia.h):
         integer(C_INT), parameter:: R4=4  !float data kind
         integer(C_INT), parameter:: R8=8  !double data kind
         integer(C_INT), parameter:: C8=16 !double complex data kind
+!DIR$ ATTRIBUTES OFFLOAD:mic:: R4,R8,C8
+!DIR$ ATTRIBUTES ALIGN:128:: R4,R8,C8
 
 !DEVICE KINDS (keep consistent with tensor_algebra_gpu_nvidia.h):
         integer(C_INT), parameter:: DEV_HOST=0
@@ -19,7 +23,7 @@
         integer(C_INT), parameter:: DEV_AMD_GPU=3
         integer(C_INT), parameter:: DEV_MAX=1+MAX_GPUS_PER_NODE+MAX_MICS_PER_NODE+MAX_AMDS_PER_NODE
 
-!CUDA task status (keep consistent with tensor_algebra_gpu_nvidia.h):
+!CUDA TASK STATUS (keep consistent with tensor_algebra_gpu_nvidia.h):
         integer(C_INT), parameter:: cuda_task_error=-1
         integer(C_INT), parameter:: cuda_task_empty=0
         integer(C_INT), parameter:: cuda_task_scheduled=1
@@ -48,6 +52,7 @@
         integer(C_INT), parameter:: ERR_ETIQ_UNPACK_FAILED=3      !ETIQ error: ETI unpacking failed
         integer(C_INT), parameter:: ERR_ETIQ_ENTRY_UNAVAIL=4      !ETIQ error: unable to obtain a free ETIQ entry
         integer(C_INT), parameter:: ERR_ETIQ_CHANNEL_FAILED=5     !ETIQ error: unable to register an ETIQ entry in an ETIQ channel
+        integer(C_INT), parameter:: ERR_TIMER_FAILED=6            !failure of timing services (timers.F90)
 
 !Tensor block storage layout:
         integer(C_INT), parameter:: not_allocated=0   !tensor block has not been initialized
@@ -59,3 +64,7 @@
         integer(C_INT), parameter:: compressed=6      !compressed tensor block: symmetry restrictions do not apply!
         logical, parameter:: fortran_like=.true.
         logical, parameter:: c_like=.false.
+!DIR$ ATTRIBUTES OFFLOAD:mic:: not_allocated,scalar_tensor,dimension_led,bricked_dense,bricked_ordered,sparse_list,compressed
+!DIR$ ATTRIBUTES OFFLOAD:mic:: fortran_like,c_like
+!DIR$ ATTRIBUTES ALIGN:128:: not_allocated,scalar_tensor,dimension_led,bricked_dense,bricked_ordered,sparse_list,compressed
+!DIR$ ATTRIBUTES ALIGN:128:: fortran_like,c_like

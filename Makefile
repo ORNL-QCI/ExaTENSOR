@@ -23,8 +23,8 @@ LFLAGS_GNU = -lgomp
 LFLAGS = $(LFLAGS_GNU)
 
 OBJS = stsubs.o combinatoric.o service.o extern_names.o tensor_algebra.o tensor_dil_omp.o \
-	dictionary.o lists.o timers.o cuda2fortran.o tensor_algebra_gpu_nvidia.o c_proc_bufs.o \
-	c_process.o qforce.o main.o proceed.o
+	dictionary.o lists.o timers.o cuda2fortran.o tensor_algebra_intel_phi.o \
+	tensor_algebra_gpu_nvidia.o c_proc_bufs.o c_process.o qforce.o main.o proceed.o
 
 $(NAME): $(OBJS)
 	$(FC) $(OBJS) $(MPI_INC) $(CUDA_INC) $(CUDA_LIB) $(CUDA_LINK) $(LA_LINK) $(LFLAGS) -o $(NAME)
@@ -36,9 +36,13 @@ qforce.mod: qforce.o stsubs.mod combinatoric.mod service.mod extern_names.mod c_
 qforce.o: qforce.F90
 	$(FC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) qforce.F90
 
-c_process.mod: c_process.o tensor_algebra.mod dictionary.mod lists.mod service.mod timers.mod extern_names.mod
+c_process.mod: c_process.o tensor_algebra_intel_phi.mod tensor_algebra.mod dictionary.mod lists.mod service.mod timers.mod extern_names.mod
 c_process.o: c_process.F90
 	$(FC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) c_process.F90
+
+tensor_algebra_intel_phi.mod: tensor_algebra_intel_phi.o tensor_algebra.mod
+tensor_algebra_intel_phi.o: tensor_algebra_intel_phi.F90
+	$(FC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) tensor_algebra_intel_phi.F90
 
 tensor_algebra.mod: tensor_algebra.o stsubs.mod combinatoric.mod tensor_algebra_gpu_nvidia.inc
 tensor_algebra.o: tensor_algebra.F90
