@@ -1,6 +1,6 @@
 !Tensor Algebra Library for multi-core CPUs (OpenMP based)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2014/07/25
+!REVISION: 2014/07/29
 !GNU FORTRAN compiling options: -c -O3 -fopenmp --free-line-length-none -x f95-cpp-input
 !GNU linking options: -lgomp -lblas -llapack
 !ACRONYMS:
@@ -19,6 +19,7 @@
         use, intrinsic:: ISO_C_BINDING
         use STSUBS
         use combinatoric
+        use symm_index
 #ifdef USE_MKL
         use mkl95_blas
         use mkl95_lapack

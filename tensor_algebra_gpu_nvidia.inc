@@ -3,11 +3,18 @@
 !GLOBAL (keep consistent with tensor_algebra_gpu_nvidia.h):
         integer(C_INT), parameter:: max_tensor_rank=32    !max allowed tensor rank (max number of indices in a tensor)
         integer(C_INT), parameter:: max_tensor_operands=4 !max number of tensor operands in a tensor operation
+!DIR$ ATTRIBUTES OFFLOAD:mic:: max_tensor_rank,max_tensor_operands
+!DIR$ ATTRIBUTES ALIGN:128:: max_tensor_rank,max_tensor_operands
+
+!DEVICE KINDS (keep consistent with tensor_algebra_gpu_nvidia.h):
         integer(C_INT), parameter:: MAX_GPUS_PER_NODE=16  !max number of Nvidia GPUs on a node
         integer(C_INT), parameter:: MAX_MICS_PER_NODE=8   !max number of Intel MICs on a node
         integer(C_INT), parameter:: MAX_AMDS_PER_NODE=8   !max number of AMD GPUs on a node
-!DIR$ ATTRIBUTES OFFLOAD:mic:: max_tensor_rank,max_tensor_operands
-!DIR$ ATTRIBUTES ALIGN:128:: max_tensor_rank,max_tensor_operands
+        integer(C_INT), parameter:: DEV_HOST=0
+        integer(C_INT), parameter:: DEV_NVIDIA_GPU=1
+        integer(C_INT), parameter:: DEV_INTEL_MIC=2
+        integer(C_INT), parameter:: DEV_AMD_GPU=3
+        integer(C_INT), parameter:: DEV_MAX=1+MAX_GPUS_PER_NODE+MAX_MICS_PER_NODE+MAX_AMDS_PER_NODE
 
 !DATA KINDS (keep consistent with tensor_algebra_gpu_nvidia.h):
         integer(C_INT), parameter:: R4=4  !float data kind
@@ -15,13 +22,6 @@
         integer(C_INT), parameter:: C8=16 !double complex data kind
 !DIR$ ATTRIBUTES OFFLOAD:mic:: R4,R8,C8
 !DIR$ ATTRIBUTES ALIGN:128:: R4,R8,C8
-
-!DEVICE KINDS (keep consistent with tensor_algebra_gpu_nvidia.h):
-        integer(C_INT), parameter:: DEV_HOST=0
-        integer(C_INT), parameter:: DEV_NVIDIA_GPU=1
-        integer(C_INT), parameter:: DEV_INTEL_MIC=2
-        integer(C_INT), parameter:: DEV_AMD_GPU=3
-        integer(C_INT), parameter:: DEV_MAX=1+MAX_GPUS_PER_NODE+MAX_MICS_PER_NODE+MAX_AMDS_PER_NODE
 
 !CUDA TASK STATUS (keep consistent with tensor_algebra_gpu_nvidia.h):
         integer(C_INT), parameter:: cuda_task_error=-1
@@ -33,26 +33,15 @@
         integer(C_INT), parameter:: cuda_task_completed=5
 
 !ALIASES (keep consistent with tensor_algebra_gpu_nvidia.h):
-        integer(C_INT), parameter:: NOT_REALLY=0                  !"NO" answer
-        integer(C_INT), parameter:: NO_COPY_BACK=0                !keeps the tensor-result on a GPU without updating HAB
-        integer(C_INT), parameter:: COPY_BACK=1                   !tensor-result will be copied back from a GPU to HAB
-        integer(C_INT), parameter:: EVENTS_OFF=0                  !disables CUDA event recording
-        integer(C_INT), parameter:: EVENTS_ON=1                   !enables CUDA event recording
-        integer(C_INT), parameter:: BLAS_ON=0                     !enables BLAS
-        integer(C_INT), parameter:: BLAS_OFF=1                    !disables BLAS
-        integer(C_INT), parameter:: EFF_TRN_OFF=0                 !disables efficient tensor transpose algorithm
-        integer(C_INT), parameter:: EFF_TRN_ON=1                  !enables efficient tensor transpose algorithm
-        integer(C_INT), parameter:: KEEP_NO_DATA=0                !ETI task cleanup flag: delete all data for the tensor argument
-        integer(C_INT), parameter:: KEEP_TBB_DATA=1               !ETI task cleanup flag: keep the TBB Fortran pointer (if any)
-        integer(C_INT), parameter:: KEEP_HAB_DATA=2               !ETI task cleanup flag: keep the HAB data (if any)
-        integer(C_INT), parameter:: KEEP_GPU_DATA=4               !ETI task cleanup flag: keep the GPU data (if any)
-        integer(C_INT), parameter:: KEEP_ALL_DATA=7               !ETI task cleanup flag: keep everything
-        integer(C_INT), parameter:: ERR_ETIQ_INVALID_SUPERPACK=1  !ETIQ error: an invalid ETI superpacket received from LR
-        integer(C_INT), parameter:: ERR_ETIQ_IS_FULL=2            !ETIQ error: ETIQ is full
-        integer(C_INT), parameter:: ERR_ETIQ_UNPACK_FAILED=3      !ETIQ error: ETI unpacking failed
-        integer(C_INT), parameter:: ERR_ETIQ_ENTRY_UNAVAIL=4      !ETIQ error: unable to obtain a free ETIQ entry
-        integer(C_INT), parameter:: ERR_ETIQ_CHANNEL_FAILED=5     !ETIQ error: unable to register an ETIQ entry in an ETIQ channel
-        integer(C_INT), parameter:: ERR_TIMER_FAILED=6            !failure of timing services (timers.F90)
+        integer(C_INT), parameter:: NOT_REALLY=0               !"NO" answer
+        integer(C_INT), parameter:: NO_COPY_BACK=0             !keeps the tensor-result on GPU without updating HAB
+        integer(C_INT), parameter:: COPY_BACK=1                !tensor-result will be copied back from GPU to HAB (default)
+        integer(C_INT), parameter:: EVENTS_OFF=0               !disables CUDA event recording
+        integer(C_INT), parameter:: EVENTS_ON=1                !enables CUDA event recording
+        integer(C_INT), parameter:: BLAS_ON=0                  !enables BLAS
+        integer(C_INT), parameter:: BLAS_OFF=1                 !disables BLAS
+        integer(C_INT), parameter:: EFF_TRN_OFF=0              !disables efficient tensor transpose algorithm
+        integer(C_INT), parameter:: EFF_TRN_ON=1               !enables efficient tensor transpose algorithm
 
 !Tensor block storage layout:
         integer(C_INT), parameter:: not_allocated=0   !tensor block has not been initialized
