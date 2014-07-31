@@ -1,6 +1,6 @@
 !This module provides infrastructure for symmetric multi-indices.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2014/07/29
+!REVISION: 2014/07/31
 !FUNCTIONALITY:
 ! # i:get_address_table(ndim,lb,ub,ord,handle,iba): obtain the address table;
 ! # i:multiindex(ndim,mlndx,iba): get a linear offset for a given multiindex;
@@ -22,9 +22,10 @@
 !TYPES:
  !Address table:
         type, private:: address_table_t
+         integer, private:: ordering=SYMM_INDEX_EMPTY !type of ordering
+         integer, private:: max_repeats               !max allowed number of indices having the same value
          integer, allocatable, private:: lbounds(:)   !lower index bounds
          integer, allocatable, private:: ubounds(:)   !upper index bounds
-         integer, private:: ordering=SYMM_INDEX_EMPTY !type of ordering
          integer, allocatable, private:: incr(:,:)    !table of addressing increaments
         end type address_table_t
  !Bank of address tables:
@@ -46,6 +47,7 @@
         public address_tables_clean
         public delete_address_table
         public get_address_table
+        public test_address_table
        contains
 !----------------------------------------
         subroutine address_tables_clean()
@@ -78,6 +80,7 @@
            deallocate(address_tables%tab_bank(n)%addr_tab(i)%incr)
           endif
           address_tables%tab_bank(n)%addr_tab(i)%ordering=SYMM_INDEX_EMPTY
+          address_tables%tab_bank(n)%addr_tab(i)%max_repeats=-1
           address_tables%tables_in_use=address_tables%tables_in_use-1
           address_tables%tab_bank(n)%free_tab(address_tables%tab_bank(n)%num_tables)=i
           address_tables%tab_bank(n)%num_tables=address_tables%tab_bank(n)%num_tables-1
@@ -94,15 +97,16 @@
         endif
         return
         end function delete_address_table
-!------------------------------------------------------------------------
-        integer function get_address_table(handle,iba,ndim,lbnd,ubnd,ord)
+!-----------------------------------------------------------------------------
+        integer function get_address_table(handle,iba,ord,mrpt,ndim,lbnd,ubnd)
         implicit none
         integer, intent(inout):: handle            !address table handle (0: empty: to be returned)
         integer, pointer, intent(out):: iba(:,:)   !address table
+        integer, intent(in), optional:: ord        !requested index ordering
+        integer, intent(in), optional:: mrpt       !max allowed number of indices having the same value
         integer, intent(in), optional:: ndim       !length of the multi-index
         integer, intent(in), optional:: lbnd(1:*)  !lower bounds of index ranges
-        integer, intent(in), optional:: ubnd(1:*)  !upper bounds of index ranges
-        integer, intent(in), optional:: ord        !index ordering pattern
+        integer, intent(in), optional:: ubnd(1:*)  !upper bounds of index ranges        
         integer i,j,k,l,m,n,ierr
         integer lb(1:max_mlndx_length),ub(1:max_mlndx_length),bank,tab
 
@@ -194,6 +198,7 @@
                     address_tables%tab_bank(jb)%addr_tab(jt)%incr(0:max_range-1,1:ndim),STAT=je)
            if(je.eq.0) then
             address_tables%tab_bank(jb)%addr_tab(jt)%ordering=ord
+            address_tables%tab_bank(jb)%addr_tab(jt)%max_repeats=mrpt
             address_tables%tab_bank(jb)%addr_tab(jt)%lbounds(1:ndim)=lb(1:ndim)
             address_tables%tab_bank(jb)%addr_tab(jt)%ubounds(1:ndim)=ub(1:ndim)
             address_tables%tables_in_use=address_tables%tables_in_use+1
@@ -217,5 +222,54 @@
          end function get_free_table
 
         end function get_address_table
+!-------------------------------------------------------------------
+        integer function test_address_table(iba,ord,mrpt,ndim,lb,ub)
+        implicit none
+        integer, intent(in):: ord        !ordering
+        integer, intent(in):: mrpt       !max number of repeats
+        integer, intent(in):: ndim       !length of the multi-index
+        integer, intent(in):: lb(1:*)    !index lower bounds
+        integer, intent(in):: ub(1:*)    !index upper bounds
+        integer, intent(in):: iba(:,:)   !addressing table (increaments)
+        integer i,j,k,l,im(0:max_mlndx_length+1)
+
+        test_address_table=0
+        if(ndim.gt.0.and.ndim.le.max_mlndx_length) then
+         if(lbound(iba,1).eq.0.and.lbound(iba,2).eq.1) then
+          select case(ord)
+          case(SYMM_INDEX_NO_ORDER)
+           
+          case(SYMM_INDEX_LE_ORDER)
+           im(1:ndim)=lb(1:ndim); im(0)=lb(1); im(ndim+1)=ub(ndim); l=0
+           k=0; do i=1,ndim; k=k+iba(im(i)-lb(i),i); enddo
+           tloop: do
+            if(k.ne.l) then; test_address_table=1; return; endif
+            do i=1,ndim 
+             k=k-iba(im(i)-lb(i),i)
+             if(im(i).lt.min(im(i+1),ub(i)) then
+              im(i)=im(i)+1; k=k+iba(im(i)-lb(i),i)
+              l=l+1; cycle tloop
+             endif
+             im(i)=lb(i); k=k+iba(im(i)-lb(i),i)
+            enddo
+            exit tloop
+           enddo tloop
+          case(SYMM_INDEX_GE_ORDER)
+           
+          case(SYMM_INDEX_LT_ORDER)
+           
+          case(SYMM_INDEX_GT_ORDER)
+           
+          case default
+           test_address_table=1
+          end select
+         else
+          test_address_table=1
+         endif
+        else
+         test_address_table=1
+        endif
+        return
+        end function test_address_table
 
        end module symm_index
