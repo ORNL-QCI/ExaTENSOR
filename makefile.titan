@@ -7,15 +7,15 @@ MPI_INC = -I.
 CUDA_INC = -I.
 CUDA_LIB = -L.
 CUDA_LINK = -lcudart -lcublas
-CUDA_FLAGS_DEV = --compile -O3 -arch=sm_35 -DDEBUG -g -G
+CUDA_FLAGS_DEV = --compile -arch=sm_35 -DDEBUG -g -G
 CUDA_FLAGS_OPT = --compile -O3 -arch=sm_35
 CUDA_FLAGS = $(CUDA_FLAGS_DEV)
 LA_LINK_CRAY = -lacml
 LA_LINK = $(LA_LINK_CRAY)
-CFLAGS_DEV = -c -O3 -g
+CFLAGS_DEV = -c -g
 CFLAGS_OPT = -c -O3
 CFLAGS = $(CFLAGS_DEV)
-FFLAGS_DEV = -c -O3 --free-line-length-none -x f95-cpp-input -fopenmp -DNO_PHI \
+FFLAGS_DEV = -c --free-line-length-none -x f95-cpp-input -fopenmp -DNO_PHI \
              -g -fbacktrace -fcheck=bounds -fcheck=array-temps -fcheck=pointer
 FFLAGS_OPT = -c -O3 --free-line-length-none -x f95-cpp-input -fopenmp -DNO_PHI
 FFLAGS = $(FFLAGS_DEV)
