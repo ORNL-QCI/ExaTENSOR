@@ -34,7 +34,7 @@
          integer, private:: max_repeats                    !max allowed number of indices having the same value in an ordered multi-index
          integer, allocatable, private:: lbounds(:)        !lower index bounds in a multi-index
          integer, allocatable, private:: ubounds(:)        !upper index bounds in a multi-index
-         integer, allocatable, target, private:: incr(:,:) !table of addressing increments (addressing table)
+         integer, allocatable, private:: incr(:,:)         !table of addressing increments (addressing table)
         end type address_table_t
  !Bank of addressing tables:
         type, private:: tables_bank_t
@@ -50,7 +50,7 @@
          type(tables_bank_t), private:: tab_bank(1:max_banks) !table banks
         end type address_tables_t
 !DATA:
-        type(address_tables_t), private:: address_tables !addressing tables storage
+        type(address_tables_t), target, private:: address_tables !addressing tables storage
 !FUNCTIONS:
         public info_address_tables
         public clean_address_tables
