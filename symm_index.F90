@@ -68,8 +68,8 @@
         implicit none
         integer i
         do i=1,max_banks
-         if(allocated(address_tables%tab_bank(i)%free_tab) deallocate(address_tables%tab_bank(i)%free_tab)
-         if(allocated(address_tables%tab_bank(i)%addr_tab) deallocate(address_tables%tab_bank(i)%addr_tab) !hierarchical deallocation!
+         if(allocated(address_tables%tab_bank(i)%free_tab)) deallocate(address_tables%tab_bank(i)%free_tab)
+         if(allocated(address_tables%tab_bank(i)%addr_tab)) deallocate(address_tables%tab_bank(i)%addr_tab) !hierarchical deallocation!
          address_tables%tab_bank(i)%num_tables=0
         enddo
         address_tables%banks_in_use=0; address_tables%tables_in_use=0; address_tables%total_tables_size=0
@@ -105,9 +105,9 @@
         get_address_table=0
         if(handle.gt.0.and.handle.le.max_addr_tables) then !handle --> existing table
          bank=((handle-1)/tables_per_bank)+1 !bank number
-         if(allocated(address_tables%tab_bank(bank)%addr_tab) then
+         if(allocated(address_tables%tab_bank(bank)%addr_tab)) then
           i=handle-(bank-1)*tables_per_bank !entry number
-          if(allocated(address_tables%tab_bank(bank)%addr_tab(i)%incr) then
+          if(allocated(address_tables%tab_bank(bank)%addr_tab(i)%incr)) then
            iba=>address_tables%tab_bank(bank)%addr_tab(i)%incr
           else
            get_address_table=-1
@@ -183,7 +183,7 @@
          if(address_tables%tables_in_use.lt.max_addr_tables) then
           jb=0; jt=0; hndl=0
           do j0=1,max_banks
-           if(allocated(address_tables%tab_bank(j0)%addr_tab) then
+           if(allocated(address_tables%tab_bank(j0)%addr_tab)) then
             if(address_tables%tab_bank(j0)%num_tables.lt.tables_per_bank) then
              address_tables%tab_bank(j0)%num_tables=address_tables%tab_bank(j0)%num_tables+1
              jt=address_tables%tab_bank(j0)%free_tab(address_tables%tab_bank(j0)%num_tables); jb=j0
@@ -200,7 +200,7 @@
             exit
            endif
           enddo
-          if(jb.gt.0.and.gt.0) then
+          if(jb.gt.0.and.jt.gt.0) then
            allocate(address_tables%tab_bank(jb)%addr_tab(jt)%lbounds(1:ndim), &
                     address_tables%tab_bank(jb)%addr_tab(jt)%ubounds(1:ndim), &
                     address_tables%tab_bank(jb)%addr_tab(jt)%incr(0:top_val,1:ndim),STAT=je)
@@ -240,12 +240,12 @@
         if(handle.gt.0.and.handle.le.max_addr_tables) then
          n=((handle-1)/tables_per_bank)+1; i=handle-(n-1)*tables_per_bank
          if(allocated(address_tables%tab_bank(n)%addr_tab.and. &
-            allocated(address_tables%tab_bank(n)%free_tab) then
-          if(allocated(address_tables%tab_bank(n)%addr_tab(i)%lbounds) &
+            allocated(address_tables%tab_bank(n)%free_tab)) then
+          if(allocated(address_tables%tab_bank(n)%addr_tab(i)%lbounds)) &
            deallocate(address_tables%tab_bank(n)%addr_tab(i)%lbounds)
-          if(allocated(address_tables%tab_bank(n)%addr_tab(i)%ubounds) &
+          if(allocated(address_tables%tab_bank(n)%addr_tab(i)%ubounds)) &
            deallocate(address_tables%tab_bank(n)%addr_tab(i)%ubounds)
-          if(allocated(address_tables%tab_bank(n)%addr_tab(i)%incr) then
+          if(allocated(address_tables%tab_bank(n)%addr_tab(i)%incr)) then
            address_tables%total_tables_size=address_tables%total_tables_size-size(address_tables%tab_bank(n)%addr_tab(i)%incr)
            deallocate(address_tables%tab_bank(n)%addr_tab(i)%incr)
           endif
@@ -302,9 +302,9 @@
              if(k.ne.l) then; test_address_table=1; return; endif !addressing table is invalid
              iloop: do i=1,ndim
               k=k-iba(im(i),i)
-              if(im(i).lt.min(ub(i),im(i+1)) then
+              if(im(i).lt.min(ub(i),im(i+1))) then
                im(i)=im(i)+1
-               if(im(i).eq.im(i+1) then
+               if(im(i).eq.im(i+1)) then
                 ir(i)=ir(i+1)+1; if(ir(i).gt.mrpt) cycle iloop
                else
                 ir(i)=1
