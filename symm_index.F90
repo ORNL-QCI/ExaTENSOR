@@ -30,11 +30,11 @@
 !TYPES:
  !Address table:
         type, private:: address_table_t
-         integer, private:: ordering=SYMM_INDEX_EMPTY !type of ordering in a multi-index
-         integer, private:: max_repeats               !max allowed number of indices having the same value in an ordered multi-index
-         integer, allocatable, private:: lbounds(:)   !lower index bounds in a multi-index
-         integer, allocatable, private:: ubounds(:)   !upper index bounds in a multi-index
-         integer, allocatable, private:: incr(:,:)    !table of addressing increments (addressing table)
+         integer, private:: ordering=SYMM_INDEX_EMPTY      !type of ordering in a multi-index
+         integer, private:: max_repeats                    !max allowed number of indices having the same value in an ordered multi-index
+         integer, allocatable, private:: lbounds(:)        !lower index bounds in a multi-index
+         integer, allocatable, private:: ubounds(:)        !upper index bounds in a multi-index
+         integer, allocatable, target, private:: incr(:,:) !table of addressing increments (addressing table)
         end type address_table_t
  !Bank of addressing tables:
         type, private:: tables_bank_t
@@ -116,7 +116,7 @@
           get_address_table=-2
          endif
         elseif(handle.le.0) then !empty handle: create a new table
-         if(present(ndim).and.present(ord).and.present(mrpt).and.present(lb).and.present(ub)) then
+         if(present(ndim).and.present(ord).and.present(mrpt).and.present(lbnd).and.present(ubnd)) then
           if(ndim.gt.0.and.ndim.le.max_mlndx_length.and.mrpt.ge.0) then
            do i=1,ndim; if(lbnd(i).gt.ubnd(i)) then; get_address_table=-3; return; endif; enddo !check
            do i=1,ndim; lb(i)=lbnd(i)-lbnd(1); enddo; do i=1,ndim; ub(i)=ubnd(i)-lbnd(1); enddo !normalize
@@ -239,7 +239,7 @@
         delete_address_table=0
         if(handle.gt.0.and.handle.le.max_addr_tables) then
          n=((handle-1)/tables_per_bank)+1; i=handle-(n-1)*tables_per_bank
-         if(allocated(address_tables%tab_bank(n)%addr_tab.and. &
+         if(allocated(address_tables%tab_bank(n)%addr_tab).and. &
             allocated(address_tables%tab_bank(n)%free_tab)) then
           if(allocated(address_tables%tab_bank(n)%addr_tab(i)%lbounds)) &
            deallocate(address_tables%tab_bank(n)%addr_tab(i)%lbounds)
