@@ -1,7 +1,7 @@
 !This module provides functionality for a Computing Process (C-PROCESS, CP).
 !In essence, this is a single-node elementary tensor instruction scheduler (SETIS).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2014/08/08
+!REVISION: 2014/08/11
 !CONCEPTS (CP workflow):
 ! - Each CP stores its own tensor blocks in TBB, with a possibility of disk dump.
 ! - LR sends a batch of ETI to be executed on this CP unit (CP MPI Process).
@@ -328,16 +328,19 @@
         write(jo_cp,'("#MSG(c_process::c_proc_life): Allocating argument buffers ... ")',advance='no')
         tm=thread_wtime()
         hab_size=max_hab_size !desired (max) HAB size
-        i=arg_buf_allocate(hab_size,max_hab_args,gpu_start,gpu_start+gpu_count-1); if(i.ne.0) then; write(jo_cp,'("Failed!")'); call c_proc_quit(1); return; endif
+        i=arg_buf_allocate(hab_size,max_hab_args,gpu_start,gpu_start+gpu_count-1)
+        if(i.ne.0) then; write(jo_cp,'("Failed!")'); call c_proc_quit(1); return; endif
         tm=thread_wtime()-tm; write(jo_cp,'("Ok(",F4.1," sec): Host argument buffer size (B) = ",i11)') tm,hab_size
         if(hab_size.lt.min_hab_size.or.max_hab_args.lt.6) then
-         write(jo_cp,'("#FATAL(c_process::c_proc_life): Host argument buffer size is lower than minimally allowed: ",i11,1x,i11,1x,i11)') min_hab_size,hab_size,max_hab_args
+         write(jo_cp,'("#FATAL(c_process::c_proc_life): Host argument buffer is too small: ",i11,1x,i11,1x,i11)') &
+          min_hab_size,hab_size,max_hab_args
          call c_proc_quit(2); return
         endif
   !Check Host argument buffer (HAB) levels:
         i=get_blck_buf_sizes_host(blck_sizes)
         if(i.le.0.or.i.gt.max_arg_buf_levels) then
-         write(jo_cp,'("#ERROR(c_process::c_proc_life): Invalid number of Host argument buffer levels: ",i11,1x,i11)') max_arg_buf_levels,i
+         write(jo_cp,'("#ERROR(c_process::c_proc_life): Invalid number of Host argument buffer levels: ",i11,1x,i11)') &
+          max_arg_buf_levels,i
          call c_proc_quit(3); return
         else
          write(jo_cp,'("#MSG(c_process::c_proc_life): Number of Host argument buffer levels = ",i4,":")') i
@@ -352,7 +355,8 @@
          if(gpu_is_mine(j).ne.NOT_REALLY) then
           i=get_blck_buf_sizes_gpu(j,blck_sizes)
           if(i.le.0.or.i.gt.max_arg_buf_levels) then
-           write(jo_cp,'("#ERROR(c_process::c_proc_life): Invalid number of GPU argument buffer levels: ",i11,1x,i11)') max_arg_buf_levels,i
+           write(jo_cp,'("#ERROR(c_process::c_proc_life): Invalid number of GPU argument buffer levels: ",i11,1x,i11)') &
+            max_arg_buf_levels,i
            call c_proc_quit(4); return
           else
            write(jo_cp,'("#MSG(c_process::c_proc_life): Number of GPU#",i2," argument buffer levels = ",i4,":")') j,i
@@ -367,13 +371,24 @@
         write(jo_cp,'("#MSG(c_process::c_proc_life): Allocating Tensor Instruction Queue (ETIQ) ... ")',advance='no')
         tm=thread_wtime()
         ierr=etiq%init(etiq_max_depth)
-        if(ierr.ne.0) then; write(jo_cp,'("#ERROR(c_process::c_proc_life): ETIQ allocation failed!")'); call c_proc_quit(5); return; endif
+        if(ierr.ne.0) then
+         write(jo_cp,'("#ERROR(c_process::c_proc_life): ETIQ allocation failed!")')
+         call c_proc_quit(5); return
+        endif
         tm=thread_wtime()-tm; write(jo_cp,'("Ok(",F4.1," sec): ETIQ total depth = ",i7)') tm,etiq%depth
         write(jo_cp,'("#MSG(c_process::c_proc_life): Number of ETIQ channels = ",i3)') etiq_channels
 !Test C-process functionality (debug):
-!        call c_proc_test(ierr); if(ierr.ne.0) then; write(jo_cp,'("#ERROR(c_process::c_proc_life): C-process functionality test failed: ",i7)') ierr; call c_proc_quit(6); return; endif
-!        call run_benchmarks(ierr); if(ierr.ne.0) then; write(jo_cp,'("#ERROR(c_process::c_proc_life): C-process benchmarking failed: ",i7)') ierr; call c_proc_quit(7); return; endif
-!---------------------------------
+!        call c_proc_test(ierr)
+!        if(ierr.ne.0) then
+!         write(jo_cp,'("#ERROR(c_process::c_proc_life): C-process functionality test failed: ",i7)') ierr
+!         call c_proc_quit(6); return
+!        endif
+!        call run_benchmarks(ierr)
+!        if(ierr.ne.0) then
+!         write(jo_cp,'("#ERROR(c_process::c_proc_life): C-process benchmarking failed: ",i7)') ierr
+!         call c_proc_quit(7); return
+!        endif
+!------------------------------------
 !LIFE:
         ierr=0
 #ifndef NO_OMP
@@ -385,7 +400,10 @@
          write(jo_cp,'("#MSG(c_process::c_proc_life): Allocating STCU ETIQ ... ")',advance='no')
          tm=thread_wtime()
          ierr=etiq_stcu%init(etiq_stcu_max_depth)
-         if(ierr.ne.0) then; write(jo_cp,'("#ERROR(c_process::c_proc_life): ETIQ_STCU allocation failed!")'); call c_proc_quit(8); return; endif
+         if(ierr.ne.0) then
+          write(jo_cp,'("#ERROR(c_process::c_proc_life): ETIQ_STCU allocation failed!")')
+          call c_proc_quit(8); return
+         endif
          stcu_num_units=-1
          tm=thread_wtime()-tm; write(jo_cp,'("Ok(",F4.1," sec): STCU ETIQ depth = ",i6)') tm,etiq_stcu%depth
          write(jo_cp,'("#MSG(c_process::c_proc_life): Max number of STCU MIMD units = ",i5)') min(max_threads-1,stcu_max_units)
@@ -394,9 +412,15 @@
          write(jo_cp,'("#MSG(c_process::c_proc_life): Allocating NVCU ETIQ ... ")',advance='no')
          tm=thread_wtime()
          ierr=etiq_nvcu%init(etiq_nvcu_max_depth)
-         if(ierr.ne.0) then; write(jo_cp,'("#ERROR(c_process::c_proc_life): ETIQ_NVCU allocation failed!")'); call c_proc_quit(9); return; endif
+         if(ierr.ne.0) then
+          write(jo_cp,'("#ERROR(c_process::c_proc_life): ETIQ_NVCU allocation failed!")')
+          call c_proc_quit(9); return
+         endif
          allocate(nvcu_tasks(0:etiq_nvcu_max_depth-1),STAT=ierr) !table for active CUDA tasks
-         if(ierr.ne.0) then; write(jo_cp,'("#ERROR(c_process::c_proc_life): ETIQ_NVCU task table allocation failed!")'); call c_proc_quit(10); return; endif
+         if(ierr.ne.0) then
+          write(jo_cp,'("#ERROR(c_process::c_proc_life): ETIQ_NVCU task table allocation failed!")')
+          call c_proc_quit(10); return
+         endif
          tm=thread_wtime()-tm; write(jo_cp,'("Ok(",F4.1," sec): NVCU ETIQ depth = ",i6)') tm,etiq_nvcu%depth
 #endif
  !Init XPCU ETIQ (Intel Xeon Phi's):
@@ -404,9 +428,15 @@
          write(jo_cp,'("#MSG(c_process::c_proc_life): Allocating XPCU ETIQ ... ")',advance='no')
          tm=thread_wtime()
          ierr=etiq_xpcu%init(etiq_xpcu_max_depth)
-         if(ierr.ne.0) then; write(jo_cp,'("#ERROR(c_process::c_proc_life): ETIQ_XPCU allocation failed!")'); call c_proc_quit(11); return; endif
+         if(ierr.ne.0) then
+          write(jo_cp,'("#ERROR(c_process::c_proc_life): ETIQ_XPCU allocation failed!")')
+          call c_proc_quit(11); return
+         endif
          allocate(xpcu_tasks(0:etiq_xpcu_max_depth-1),STAT=ierr)
-         if(ierr.ne.0) then; write(jo_cp,'("#ERROR(c_process::c_proc_life): ETIQ_XPCU task table allocation failed!")'); call c_proc_quit(12); return; endif
+         if(ierr.ne.0) then
+          write(jo_cp,'("#ERROR(c_process::c_proc_life): ETIQ_XPCU task table allocation failed!")')
+          call c_proc_quit(12); return
+         endif
          tm=thread_wtime()-tm; write(jo_cp,'("Ok(",F4.1," sec): XPCU ETIQ depth = ",i6)') tm,etiq_xpcu%depth
 #endif
 !Begin active life (master thread + leading slave thread):
@@ -436,7 +466,8 @@
  !Register tensor blocks in TBB:
   !Zero scalar:
             call tensor_block_create('()','r8',tbb_entry%tens_blck,i,val_r8=0d0); write(jo_cp,*) 'Tensor block creation: ',i
-            err_code=tbb%search(dict_add_if_not_found,tens_key_cmp,key(0),tbb_entry,value_out=uptr); write(jo_cp,*) 'TBB entry search: ',err_code
+            err_code=tbb%search(dict_add_if_not_found,tens_key_cmp,key(0),tbb_entry,value_out=uptr)
+            write(jo_cp,*) 'TBB entry search: ',err_code
             select type (uptr)
             type is (tbb_entry_t)
              err_code=aar_register(key(0),targ_p); write(jo_cp,*) 'AAR entry created: ',err_code
@@ -444,7 +475,8 @@
             end select
   !Unity scalar:
             call tensor_block_init('r8',tbb_entry%tens_blck,i,val_r8=1d-3); write(jo_cp,*) 'Tensor block unity init: ',i
-            err_code=tbb%search(dict_add_if_not_found,tens_key_cmp,key(1),tbb_entry,value_out=uptr); write(jo_cp,*) 'TBB entry search: ',err_code
+            err_code=tbb%search(dict_add_if_not_found,tens_key_cmp,key(1),tbb_entry,value_out=uptr)
+            write(jo_cp,*) 'TBB entry search: ',err_code
             select type (uptr)
             type is (tbb_entry_t)
              err_code=aar_register(key(1),targ_p); write(jo_cp,*) 'AAR entry created: ',err_code
@@ -453,7 +485,8 @@
   !Non-trivial tensors:
             do j=2,10
              call tensor_block_destroy(tbb_entry%tens_blck,i); write(jo_cp,*) 'Tensor block destruction: ',i
-             err_code=tbb%search(dict_add_if_not_found,tens_key_cmp,key(j),tbb_entry,value_out=uptr); write(jo_cp,*) 'TBB entry search: ',err_code
+             err_code=tbb%search(dict_add_if_not_found,tens_key_cmp,key(j),tbb_entry,value_out=uptr)
+             write(jo_cp,*) 'TBB entry search: ',err_code
              select type (uptr)
              type is (tbb_entry_t)
               err_code=aar_register(key(j),targ_p); write(jo_cp,*) 'AAR entry created: ',err_code
@@ -742,14 +775,16 @@
                err_code=0
                if(stcu_num_units.eq.1) then !only one STCU: SIMD execution
                 stcu_my_ip=stcu_base_ip; stcu_my_eti=l
-                if(verbose) write(jo_cp,'("#DEBUG(c_process::c_proc_life): STCU 0",": IP ",i5,": ETI #",i7,": thread_count=",i3)') stcu_my_ip,stcu_my_eti,etiq_stcu%te_conf(stcu_my_ip)%num_workers !debug
+                if(verbose) write(jo_cp,'("#DEBUG(c_process::c_proc_life): STCU 0",": IP ",i5,": ETI #",i7,": thread_count=",i3)') &
+                 stcu_my_ip,stcu_my_eti,etiq_stcu%te_conf(stcu_my_ip)%num_workers !debug
                 call omp_set_num_threads(etiq_stcu%te_conf(stcu_my_ip)%num_workers)
                 err_code=stcu_execute_eti(stcu_my_eti)
                 if(err_code.eq.0) then
                  etiq_stcu%ip=etiq_stcu%ip+1
                  if(etiq_stcu%ip.ge.etiq_stcu%depth) etiq_stcu%ip=etiq_stcu%ip-etiq_stcu%depth
                 else
-                 write(jo_cp,'("#ERROR(c_process::c_proc_life): STCU 0/0: execution error ",i11," for ETI #",i7)') err_code,stcu_my_eti
+                 write(jo_cp,'("#ERROR(c_process::c_proc_life): STCU 0/0: execution error ",i11," for ETI #",i7)') &
+                  err_code,stcu_my_eti
 !$OMP ATOMIC WRITE
                  stcu_error=1 !error during ETI execution in one or more STCU
 !$OMP FLUSH(stcu_error)
@@ -768,12 +803,14 @@
                   stcu_mimd_my_pass=stcu_mimd_my_pass+1
                   stcu_my_ip=stcu_base_ip+thread_num; if(stcu_my_ip.ge.etiq_stcu%depth) stcu_my_ip=stcu_my_ip-etiq_stcu%depth
                   stcu_my_eti=etiq_stcu%etiq_entry(stcu_my_ip)
-                  if(verbose) write(jo_cp,'("#DEBUG(c_process::c_proc_life): STCU ",i2,"/",i2,": Pass ",i5,": IP ",i5,": ETI #",i7,": thread_count=",i3)') &
+                  if(verbose) write(jo_cp,'("#DEBUG(c_process::c_proc_life): STCU ",i2,&
+                   &"/",i2,": Pass ",i5,": IP ",i5,": ETI #",i7,": thread_count=",i3)') &
                    thread_num,stcu_num_units,stcu_mimd_my_pass,stcu_my_ip,stcu_my_eti,etiq_stcu%te_conf(stcu_my_ip)%num_workers !debug
                   call omp_set_num_threads(etiq_stcu%te_conf(stcu_my_ip)%num_workers)
                   err_code=stcu_execute_eti(stcu_my_eti)
                   if(err_code.ne.0) then
-                   write(jo_cp,'("#ERROR(c_process::c_proc_life): STCU ",i2,": execution error ",i11," for ETI #",i7)') thread_num,err_code,stcu_my_eti
+                   write(jo_cp,'("#ERROR(c_process::c_proc_life): STCU ",i2,": execution error ",i11," for ETI #",i7)') &
+                    thread_num,err_code,stcu_my_eti
 !$OMP ATOMIC WRITE
                    stcu_error=2 !error during ETI execution in one or more STCU
                   endif
@@ -821,7 +858,8 @@
                   endif
                  enddo mimd_loop
                 else
-                 write(jo_cp,'("#ERROR(c_process::c_proc_life): STCU: Invalid number of units created: ",i11,1x,i11)') omp_get_num_threads(),stcu_num_units
+                 write(jo_cp,'("#ERROR(c_process::c_proc_life): STCU: Invalid number of units created: ",i11,1x,i11)') &
+                  omp_get_num_threads(),stcu_num_units
 !$OMP ATOMIC WRITE
                  stcu_error=3 !invalid number of STCU units created
                 endif
@@ -1457,7 +1495,8 @@
            nvcu_task_status=-998
           endif
          else
-          if(verbose) write(jo_cp,'("#ERROR(c_process::c_proc_life:nvcu_task_status): invalid NVCU task number: ",i12)') nvcu_task_num
+          if(verbose) write(jo_cp,'("#ERROR(c_process::c_proc_life:nvcu_task_status): invalid NVCU task number: ",i12)') &
+           nvcu_task_num
           nvcu_task_status=-999
          endif
          return
@@ -1587,7 +1626,8 @@
 !               je=tensBlck_acc_id(curr_arg%tens_blck_c,j0,j1,j2,j3,j4) !debug
 !               if(verbose) write(jo_cp,'("DEBUG(c_process::c_proc_life:eti_task_cleanup):",6(1x,i4))') je,j0,j1,j2,j3,j4 !debug
                je=tensBlck_hab_null(curr_arg%tens_blck_c); if(je.ne.0) eti_task_cleanup=eti_task_cleanup+10 !nullify HAB pointer
-!               if(je.ne.0.and.verbose) write(jo_cp,'("ERROR(c_process::c_proc_life:eti_task_cleanup): tensBlck_hab_null error: ",i6)') je !debug
+!               if(je.ne.0.and.verbose) &
+!                write(jo_cp,'("ERROR(c_process::c_proc_life:eti_task_cleanup): tensBlck_hab_null error: ",i6)') je !debug
               else
                nullify(curr_arg%tens_blck_f)
               endif
@@ -1653,37 +1693,66 @@
          integer(C_INT) j0,j1
          ierr=errc
 !HAB clean up:
-         j0=arg_buf_clean_host(); if(j0.ne.0) then; write(jo_cp,'("#WARNING(c_process::c_proc_life:c_proc_quit): Host Argument buffer is not clean!")'); ierr=ierr+100; endif
+         j0=arg_buf_clean_host()
+         if(j0.ne.0) then
+          write(jo_cp,'("#WARNING(c_process::c_proc_life:c_proc_quit): Host Argument buffer is not clean!")')
+          ierr=ierr+100
+         endif
 #ifndef NO_GPU
 !GAB clean up:
          do j1=gpu_start,gpu_start+gpu_count-1
           if(gpu_is_mine(j1).ne.NOT_REALLY) then
-           j0=arg_buf_clean_gpu(j1); if(j0.ne.0) then; write(jo_cp,'("#WARNING(c_process::c_proc_life:c_proc_quit): GPU#",i2," Argument buffer is not clean!")') j1; ierr=ierr+100*(2+j1); endif
+           j0=arg_buf_clean_gpu(j1)
+           if(j0.ne.0) then
+            write(jo_cp,'("#WARNING(c_process::c_proc_life:c_proc_quit): GPU#",i2," Argument buffer is not clean!")') j1
+            ierr=ierr+100*(2+j1)
+           endif
           endif
          enddo
 #endif
 !HAB/GAB deallocation:
          j0=arg_buf_deallocate(gpu_start,gpu_start+gpu_count-1); hab_size=0_CZ; max_hab_args=0
-         if(j0.ne.0) then; write(jo_cp,'("#ERROR(c_process::c_proc_life:c_proc_quit): Deallocation of argument buffers failed!")'); ierr=ierr+7000; endif
+         if(j0.ne.0) then
+          write(jo_cp,'("#ERROR(c_process::c_proc_life:c_proc_quit): Deallocation of argument buffers failed!")')
+          ierr=ierr+7000
+         endif
 !ETIQ:
          j0=cp_destructor(etiq)
-         if(j0.ne.0) then;  write(jo_cp,'("#ERROR(c_process::c_proc_life:c_proc_quit): ETIQ destruction failed!")'); ierr=ierr+20000; endif
+         if(j0.ne.0) then
+          write(jo_cp,'("#ERROR(c_process::c_proc_life:c_proc_quit): ETIQ destruction failed!")')
+          ierr=ierr+20000
+         endif
  !ETIQ_STCU:
          j0=cp_destructor(etiq_stcu)
-         if(j0.ne.0) then;  write(jo_cp,'("#ERROR(c_process::c_proc_life:c_proc_quit): ETIQ_STCU destruction failed!")'); ierr=ierr+50000; endif
+         if(j0.ne.0) then
+          write(jo_cp,'("#ERROR(c_process::c_proc_life:c_proc_quit): ETIQ_STCU destruction failed!")')
+          ierr=ierr+50000
+         endif
          stcu_num_units=-1
  !ETIQ_NVCU:
          j0=cp_destructor(etiq_nvcu); j1=0; if(allocated(nvcu_tasks)) deallocate(nvcu_tasks,STAT=j1)
-         if(j0.ne.0.or.j1.ne.0) then;  write(jo_cp,'("#ERROR(c_process::c_proc_life:c_proc_quit): ETIQ_NVCU destruction failed!")'); ierr=ierr+100000; endif
+         if(j0.ne.0.or.j1.ne.0) then;
+          write(jo_cp,'("#ERROR(c_process::c_proc_life:c_proc_quit): ETIQ_NVCU destruction failed!")')
+          ierr=ierr+100000
+         endif
  !ETIQ_XPCU:
          j0=cp_destructor(etiq_xpcu); j1=0; if(allocated(xpcu_tasks)) deallocate(xpcu_tasks,STAT=j1)
-         if(j0.ne.0.or.j1.ne.0) then;  write(jo_cp,'("#ERROR(c_process::c_proc_life:c_proc_quit): ETIQ_XPCU destruction failed!")'); ierr=ierr+300000; endif
+         if(j0.ne.0.or.j1.ne.0) then
+          write(jo_cp,'("#ERROR(c_process::c_proc_life:c_proc_quit): ETIQ_XPCU destruction failed!")')
+          ierr=ierr+300000
+         endif
 !AAR:
          j0=aar%destroy(destruct_key_func=cp_destructor)
-         if(j0.ne.0) then; write(jo_cp,'("#ERROR(c_process::c_proc_life:c_proc_quit): AAR destruction failed!")'); ierr=ierr+500000; endif
+         if(j0.ne.0) then
+          write(jo_cp,'("#ERROR(c_process::c_proc_life:c_proc_quit): AAR destruction failed!")')
+          ierr=ierr+500000
+         endif
 !TBB:
          j0=tbb%destroy(destruct_key_func=cp_destructor,destruct_val_func=cp_destructor)
-         if(j0.ne.0) then; write(jo_cp,'("#ERROR(c_process::c_proc_life:c_proc_quit): TBB destruction failed!")'); ierr=ierr+1000000; endif
+         if(j0.ne.0) then
+          write(jo_cp,'("#ERROR(c_process::c_proc_life:c_proc_quit): TBB destruction failed!")')
+          ierr=ierr+1000000
+         endif
          return
          end subroutine c_proc_quit
 
@@ -2490,7 +2559,8 @@
         elems_count=int(tensor_shape_size(tens,i),C_SIZE_T); if(i.ne.0) then; ierr=2; return; endif !unable to get tensor block size (elements)
         if(elems_count.ne.tens%tensor_block_size.or.elems_count.lt.0) then; ierr=3; return; endif
         off_trank=off_elems_count+sizeof(elems_count)
-        trank=tens%tensor_shape%num_dim; if(trank.lt.0.or.(trank.eq.0.and.elems_count.ne.1).or.(trank.gt.0.and.elems_count.lt.1)) then; ierr=4; return; endif
+        trank=tens%tensor_shape%num_dim
+        if(trank.lt.0.or.(trank.eq.0.and.elems_count.ne.1).or.(trank.gt.0.and.elems_count.lt.1)) then; ierr=4; return; endif
         off_dims=off_trank+sizeof(trank)
         if(trank.gt.0) dims(1:trank)=tens%tensor_shape%dim_extent(1:trank)
         off_divs=off_dims+sizeof(dims(1))*trank
@@ -2915,10 +2985,12 @@
          err_code=get_buf_entry_gpu(gpu_num,s0,addr_gpu,entry_gpu); if(err_code.ne.0.or.entry_gpu.lt.0) then; ierr=3; return; endif
          err_code=const_args_entry_get(gpu_num,entry_const); if(err_code.ne.0.or.entry_const.lt.0) then; ierr=4; return; endif
          err_code=tensBlck_create(ctens); if(err_code.ne.0) then; ctens=C_NULL_PTR; ierr=5; return; endif
-         err_code=tensBlck_construct(ctens,DEV_NVIDIA_GPU,gpu_num,data_kind,trank,addr_dims,addr_divs,addr_grps,addr_prmn,addr_host,addr_gpu,entry_gpu,entry_const)
+         err_code=tensBlck_construct(ctens,DEV_NVIDIA_GPU,gpu_num,data_kind,trank, &
+                                     addr_dims,addr_divs,addr_grps,addr_prmn,addr_host,addr_gpu,entry_gpu,entry_const)
          if(err_code.ne.0) then; ierr=6; return; endif
 #else
-         write(jo_cp,'("#FATAL(c_process::tens_blck_assoc): attempt to initialize a GPU-resident tensor block in GPU-free code compilation!")') !trap
+         write(jo_cp,'("#FATAL(c_process::tens_blck_assoc):&
+          & attempt to initialize a GPU-resident tensor block in GPU-free code compilation!")') !trap
          ierr=-1; return !attempt to initialize tensBlck_t in a GPU-free code compilation
 #endif
         elseif(present(tens).and.(.not.present(ctens)).and.(.not.present(gpu_num))) then
@@ -2974,7 +3046,8 @@
         endif
         err_code=tensBlck_destroy(ctens); if(err_code.ne.0) ierr=ierr+1000
 #else
-        write(jo_cp,'("#FATAL(c_process::tens_blck_dissoc): attempt to dissociate a GPU-resident tensor block in GPU-free code compilation!")') !trap
+        write(jo_cp,'("#FATAL(c_process::tens_blck_dissoc):&
+         & attempt to dissociate a GPU-resident tensor block in GPU-free code compilation!")') !trap
         ierr=-1; return !attempt to initialize tensBlck_t in a GPU-free code compilation
 #endif
         return
@@ -3017,7 +3090,8 @@
         call tensor_block_create('(20,30,20,30)','r8',ftens(0),ierr,val_r8=0d0); if(ierr.ne.0) then; ierr=1; goto 999; endif
         call tensor_block_create('(15,20,25,30)','r8',ftens(1),ierr,val_r8=1d0); if(ierr.ne.0) then; ierr=2; goto 999; endif
         call tensor_block_create('(30,20,15,25)','r8',ftens(2),ierr,val_r8=1d0); if(ierr.ne.0) then; ierr=3; goto 999; endif
-        call tensor_block_contract((/-3,3,-4,2,4,1,-1,-3/),ftens(1),ftens(2),ftens(0),ierr,'r8'); if(ierr.ne.0) then; ierr=4; goto 999; endif
+        call tensor_block_contract((/-3,3,-4,2,4,1,-1,-3/),ftens(1),ftens(2),ftens(0),ierr,'r8')
+        if(ierr.ne.0) then; ierr=4; goto 999; endif
         norm2=tensor_block_norm2(ftens(0),ierr,'r8'); if(ierr.ne.0) then; ierr=5; goto 999; endif
         if(int(norm2,8).ne.ftens(0)%tensor_block_size*(15_8*25_8)**2) then; ierr=6; goto 999; endif
         call tensor_block_destroy(ftens(0),ierr); if(ierr.ne.0) then; ierr=7; goto 999; endif
@@ -3038,7 +3112,8 @@
         call tensor_block_sync(ftens(1),'r8',ierr,'r4'); if(ierr.ne.0) then; ierr=17; goto 999; endif
         call tensor_block_sync(ftens(2),'r8',ierr,'r4'); if(ierr.ne.0) then; ierr=18; goto 999; endif
 !        call tensor_block_print(jo_cp,'Matrix0:',ext_beg,ftens(0),ierr,'r4') !debug
-        err_code=gpu_matrix_multiply_tn_r4(345_CZ,697_CZ,37_CZ,ftens(1)%data_real4,ftens(2)%data_real4,ftens(3)%data_real4); if(err_code.ne.0) then; write(jo_cp,*)'GPU ERROR ',err_code; ierr=19; goto 999; endif
+        err_code=gpu_matrix_multiply_tn_r4(345_CZ,697_CZ,37_CZ,ftens(1)%data_real4,ftens(2)%data_real4,ftens(3)%data_real4)
+        if(err_code.ne.0) then; write(jo_cp,*)'GPU ERROR ',err_code; ierr=19; goto 999; endif
         i1=gpu_get_error_count(); if(i1.ne.0) then; write(jo_cp,*)'GPU error count = ',i1; ierr=20; goto 999; endif
 !        call tensor_block_print(jo_cp,'Matrix3:',ext_beg,ftens(3),ierr,'r4') !debug
         cmp=tensor_block_cmp(ftens(0),ftens(3),ierr,'r4',cmp_thresh=1d-5); if(ierr.ne.0) then; ierr=21; goto 999; endif
@@ -3060,17 +3135,20 @@
 !         write(jo_cp,'("#DEBUG(c_process::c_proc_test): CPU tensor transpose time = ",F10.4)') thread_wtime()-tm0 !debug
          call tensor_block_sync(ftens(0),'r8',ierr,'r4'); if(ierr.ne.0) then; ierr=30; goto 999; endif
          call tensor_block_sync(ftens(1),'r8',ierr,'r4'); if(ierr.ne.0) then; ierr=31; goto 999; endif
-         call tens_blck_pack(ftens(1),'r4',pack_size(1),entry_ptr(1),entry_num(1),ierr); if(ierr.ne.0) then; ierr=32; goto 999; endif
+         call tens_blck_pack(ftens(1),'r4',pack_size(1),entry_ptr(1),entry_num(1),ierr)
+         if(ierr.ne.0) then; ierr=32; goto 999; endif
          call tens_blck_unpack(ftens(2),entry_ptr(1),ierr); if(ierr.ne.0) then; ierr=33; goto 999; endif
          cmp=tensor_block_cmp(ftens(1),ftens(2),ierr,'r4',cmp_thresh=1d-6); if(ierr.ne.0) then; ierr=34; goto 999; endif
          if(.not.cmp) then; ierr=35; goto 999; endif
          call tensor_block_destroy(ftens(2),ierr); if(ierr.ne.0) then; ierr=36; goto 999; endif
          call tensor_block_create('(17,27,33,44)','r4',ftens(2),ierr,val_r4=0.0); if(ierr.ne.0) then; ierr=37; goto 999; endif
-         call tens_blck_pack(ftens(2),'r4',pack_size(2),entry_ptr(2),entry_num(2),ierr); if(ierr.ne.0) then; ierr=38; goto 999; endif
+         call tens_blck_pack(ftens(2),'r4',pack_size(2),entry_ptr(2),entry_num(2),ierr)
+         if(ierr.ne.0) then; ierr=38; goto 999; endif
          call tens_blck_assoc(entry_ptr(1),ierr,ctens=ctens(1),gpu_num=gpu_id); if(ierr.ne.0) then; ierr=39; goto 999; endif
          call tens_blck_assoc(entry_ptr(2),ierr,ctens=ctens(2),gpu_num=gpu_id); if(ierr.ne.0) then; ierr=40; goto 999; endif
          tm0=thread_wtime()
-         err_code=gpu_tensor_block_copy_dlf(n2o,ctens(1),ctens(2)); if(err_code.ne.0) then; write(jo_cp,*)'GPU ERROR ',err_code; ierr=41; goto 999; endif
+         err_code=gpu_tensor_block_copy_dlf(n2o,ctens(1),ctens(2))
+         if(err_code.ne.0) then; write(jo_cp,*)'GPU ERROR ',err_code; ierr=41; goto 999; endif
 !         write(jo_cp,'("#DEBUG(c_process::c_proc_test): GPU tensor transpose time = ",F10.4)') thread_wtime()-tm0 !debug
          i1=gpu_get_error_count(); if(i1.ne.0) then; write(jo_cp,*)'GPU error count = ',i1; ierr=42; goto 999; endif
 !         call print_gpu_debug_dump(jo_cp) !debug
@@ -3080,7 +3158,8 @@
 !         call tensor_block_print(jo_cp,'Tensor0:',ext_beg,ftens(0),ierr,'r4') !debug
 !         call tensor_block_print(jo_cp,'Tensor1:',ext_beg,ftens(1),ierr,'r4') !debug
 !         call tensor_block_print(jo_cp,'Tensor2:',ext_beg,ftens(2),ierr,'r4') !debug
-         cmp=tensor_block_cmp(ftens(0),ftens(2),ierr,'r4',cmp_thresh=1d-5,diff_count=diffc); if(ierr.ne.0) then; ierr=45; goto 999; endif
+         cmp=tensor_block_cmp(ftens(0),ftens(2),ierr,'r4',cmp_thresh=1d-5,diff_count=diffc)
+         if(ierr.ne.0) then; ierr=45; goto 999; endif
          if(.not.cmp) then; write(jo_cp,*)'DIFF COUNT = ',diffc; ierr=46; goto 999; endif
          call tens_blck_dissoc(ctens(2),ierr); if(ierr.ne.0) then; ierr=47; goto 999; endif
          call tens_blck_dissoc(ctens(1),ierr); if(ierr.ne.0) then; ierr=48; goto 999; endif
@@ -3122,21 +3201,29 @@
         err_code=cuda_task_create(cuda_task(2)); if(err_code.ne.0) then; ierr=77; goto 999; endif
         tm0=thread_wtime()
         call gpu_set_matmult_algorithm(BLAS_OFF)
-        err_code=gpu_tensor_block_contract_dlf_(cptrn,ctens(1),ctens(2),ctens(0),COPY_BACK,cuda_task(1)); if(err_code.ne.0) then; write(jo_cp,*)'GPU ERROR = ',err_code; ierr=78; goto 999; endif
+        err_code=gpu_tensor_block_contract_dlf_(cptrn,ctens(1),ctens(2),ctens(0),COPY_BACK,cuda_task(1))
+        if(err_code.ne.0) then; write(jo_cp,*)'GPU ERROR = ',err_code; ierr=78; goto 999; endif
         call gpu_set_matmult_algorithm(BLAS_ON)
-        err_code=gpu_tensor_block_contract_dlf_(cptrn,ctens(4),ctens(5),ctens(6),COPY_BACK,cuda_task(2)); if(err_code.ne.0) then; write(jo_cp,*)'GPU ERROR = ',err_code; ierr=79; goto 999; endif
+        err_code=gpu_tensor_block_contract_dlf_(cptrn,ctens(4),ctens(5),ctens(6),COPY_BACK,cuda_task(2))
+        if(err_code.ne.0) then; write(jo_cp,*)'GPU ERROR = ',err_code; ierr=79; goto 999; endif
         i1=0
         do while(i1.ne.3)
-         if(cuda_task_complete(cuda_task(1)).ne.cuda_task_scheduled.and.(i1.eq.0.or.i1.eq.2)) then; tm1=thread_wtime()-tm0; i1=i1+1; endif
-         if(cuda_task_complete(cuda_task(2)).ne.cuda_task_scheduled.and.(i1.eq.0.or.i1.eq.1)) then; tm2=thread_wtime()-tm0; i1=i1+2; endif
+         if(cuda_task_complete(cuda_task(1)).ne.cuda_task_scheduled.and.(i1.eq.0.or.i1.eq.2)) then
+          tm1=thread_wtime()-tm0; i1=i1+1
+         endif
+         if(cuda_task_complete(cuda_task(2)).ne.cuda_task_scheduled.and.(i1.eq.0.or.i1.eq.1)) then
+          tm2=thread_wtime()-tm0; i1=i1+2
+         endif
         enddo
 !       write(jo_cp,*)'GPU Times/Status = ',tm1,tm2,cuda_task_complete(cuda_task(1)),cuda_task_complete(cuda_task(2)) !debug
         err_code=cuda_task_destroy(cuda_task(2)); if(err_code.ne.0) then; ierr=80; goto 999; endif
         err_code=cuda_task_destroy(cuda_task(1)); if(err_code.ne.0) then; ierr=81; goto 999; endif
         call tens_blck_unpack(ftens(0),entry_ptr(0),ierr); if(ierr.ne.0) then; ierr=82; goto 999; endif
         call tens_blck_unpack(ftens(6),entry_ptr(6),ierr); if(ierr.ne.0) then; ierr=83; goto 999; endif
-!        write(jo_cp,*)'1-NORMS:',tensor_block_norm1(ftens(0),ierr,'r4'),tensor_block_norm1(ftens(3),ierr,'r4'),tensor_block_norm1(ftens(6),ierr,'r4') !debug
-!        write(jo_cp,*) ftens(0)%data_real4(0:5); write(jo_cp,*) ftens(3)%data_real4(0:5); write(jo_cp,*) ftens(6)%data_real4(0:5) !debug
+!        write(jo_cp,*)'1-NORMS:',tensor_block_norm1(ftens(0),ierr,'r4'),tensor_block_norm1(ftens(3),ierr,'r4'), &
+!                      tensor_block_norm1(ftens(6),ierr,'r4') !debug
+!        write(jo_cp,*) ftens(0)%data_real4(0:5); write(jo_cp,*) ftens(3)%data_real4(0:5)
+!        write(jo_cp,*) ftens(6)%data_real4(0:5) !debug
         cmp=tensor_block_cmp(ftens(0),ftens(3),ierr,'r4',.true.,1d-3,diffc); if(ierr.ne.0) then; ierr=84; goto 999; endif
         if(.not.cmp) then; write(jo_cp,*)'DIFF(1) COUNT = ',diffc; ierr=85; goto 999; endif
         cmp=tensor_block_cmp(ftens(6),ftens(3),ierr,'r4',.true.,1d-3,diffc); if(ierr.ne.0) then; ierr=86; goto 999; endif
@@ -3167,7 +3254,7 @@
         if(ierr.eq.0) then; write(jo_cp,'("Ok")'); else; write(jo_cp,'("Failed: ERROR #",i4)') ierr; endif
         return
         end subroutine c_proc_test
-!-------------------------------------------------------------------------------------------------------
+!--------------------------------------
         subroutine run_benchmarks(ierr)
 !This subroutine runs computationally intensive (single-process) benchmarks of tensor algebra on CPU/GPU.
         implicit none
@@ -3246,17 +3333,22 @@
 #ifndef NO_GPU
            call tensor_block_init('r4',ftens(0),ierr,val_r4=0.0); if(ierr.ne.0) then; ierr=10; goto 999; endif
            call tensor_block_init('r4',ftens(2),ierr,val_r4=0.0); if(ierr.ne.0) then; ierr=11; goto 999; endif
-           call tens_blck_pack(ftens(0),'r4',pack_size(0),entry_ptr(0),entry_num(0),ierr); if(ierr.ne.0) then; ierr=12; goto 999; endif
-           call tens_blck_pack(ftens(1),'r4',pack_size(1),entry_ptr(1),entry_num(1),ierr); if(ierr.ne.0) then; ierr=13; goto 999; endif
-           call tens_blck_pack(ftens(2),'r4',pack_size(2),entry_ptr(2),entry_num(2),ierr); if(ierr.ne.0) then; ierr=14; goto 999; endif
+           call tens_blck_pack(ftens(0),'r4',pack_size(0),entry_ptr(0),entry_num(0),ierr)
+           if(ierr.ne.0) then; ierr=12; goto 999; endif
+           call tens_blck_pack(ftens(1),'r4',pack_size(1),entry_ptr(1),entry_num(1),ierr)
+           if(ierr.ne.0) then; ierr=13; goto 999; endif
+           call tens_blck_pack(ftens(2),'r4',pack_size(2),entry_ptr(2),entry_num(2),ierr)
+           if(ierr.ne.0) then; ierr=14; goto 999; endif
            call tens_blck_assoc(entry_ptr(0),ierr,ctens=ctens(0),gpu_num=gpu_id); if(ierr.ne.0) then; ierr=15; goto 999; endif
            call tens_blck_assoc(entry_ptr(1),ierr,ctens=ctens(1),gpu_num=gpu_id); if(ierr.ne.0) then; ierr=16; goto 999; endif
            call tens_blck_assoc(entry_ptr(2),ierr,ctens=ctens(2),gpu_num=gpu_id); if(ierr.ne.0) then; ierr=17; goto 999; endif
            call gpu_set_transpose_algorithm(EFF_TRN_OFF) !scatter on GPU
            write(jo_cp,'(3x)',advance='no')
-           err_code=gpu_tensor_block_copy_dlf(o2n,ctens(1),ctens(0)); if(err_code.ne.0) then; write(jo_cp,*)'GPU error ',err_code; call print_gpu_debug_dump(jo_cp); ierr=18; goto 999; endif
+           err_code=gpu_tensor_block_copy_dlf(o2n,ctens(1),ctens(0))
+           if(err_code.ne.0) then; write(jo_cp,*)'GPU error ',err_code; call print_gpu_debug_dump(jo_cp); ierr=18; goto 999; endif
            write(jo_cp,'(3x)',advance='no')
-           err_code=gpu_tensor_block_copy_dlf(n2o,ctens(0),ctens(2)); if(err_code.ne.0) then; write(jo_cp,*)'GPU error ',err_code; call print_gpu_debug_dump(jo_cp); ierr=19; goto 999; endif
+           err_code=gpu_tensor_block_copy_dlf(n2o,ctens(0),ctens(2))
+           if(err_code.ne.0) then; write(jo_cp,*)'GPU error ',err_code; call print_gpu_debug_dump(jo_cp); ierr=19; goto 999; endif
            call tens_blck_unpack(ftens(2),entry_ptr(2),ierr); if(ierr.ne.0) then; ierr=20; goto 999; endif
            cmp=tensor_block_cmp(ftens(1),ftens(2),ierr,'r4',.true.,1d-4,diffc); if(ierr.ne.0) then; ierr=21; goto 999; endif
            write(jo_cp,'(3x,l1,1x,i9,1x,F16.4)') cmp,diffc,tensor_block_norm1(ftens(2),ierr,'r4')
@@ -3265,11 +3357,13 @@
            err_code=cuda_task_create(cuda_task(1)); if(err_code.ne.0) then; ierr=22; goto 999; endif
            write(jo_cp,'(3x)',advance='no')
            tm=thread_wtime()
-           err_code=gpu_tensor_block_copy_dlf_(o2n,ctens(1),ctens(0),COPY_BACK,cuda_task(1)); if(err_code.ne.0) then; write(jo_cp,*)'GPU error ',err_code; call print_gpu_debug_dump(jo_cp); ierr=23; goto 999; endif
+           err_code=gpu_tensor_block_copy_dlf_(o2n,ctens(1),ctens(0),COPY_BACK,cuda_task(1))
+           if(err_code.ne.0) then; write(jo_cp,*)'GPU error ',err_code; call print_gpu_debug_dump(jo_cp); ierr=23; goto 999; endif
            err_code=cuda_task_wait(cuda_task(1)); if(err_code.ne.cuda_task_completed) then; ierr=24; goto 999; endif
            write(jo_cp,'("#DEBUG(tensor_algebra_gpu_nvidia:gpu_tensor_block_copy_dlf_): Time ",F10.6)') thread_wtime()-tm
            write(jo_cp,'(3x)',advance='no')
-           err_code=gpu_tensor_block_copy_dlf(n2o,ctens(0),ctens(2)); if(err_code.ne.0) then; write(jo_cp,*)'GPU error ',err_code; call print_gpu_debug_dump(jo_cp); ierr=25; goto 999; endif
+           err_code=gpu_tensor_block_copy_dlf(n2o,ctens(0),ctens(2))
+           if(err_code.ne.0) then; write(jo_cp,*)'GPU error ',err_code; call print_gpu_debug_dump(jo_cp); ierr=25; goto 999; endif
            err_code=cuda_task_destroy(cuda_task(1)); if(err_code.ne.0) then; ierr=26; goto 999; endif
            call tens_blck_unpack(ftens(2),entry_ptr(2),ierr); if(ierr.ne.0) then; ierr=27; goto 999; endif
            cmp=tensor_block_cmp(ftens(1),ftens(2),ierr,'r4',.true.,1d-4,diffc); if(ierr.ne.0) then; ierr=28; goto 999; endif

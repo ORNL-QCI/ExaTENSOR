@@ -64,7 +64,7 @@
 	integer:: ffhs(0:max_open_files-1)=(/(j_,j_=16,16+max_open_files-1)/) !a stack of free file handles
 
        contains
-!----------------------------------------------------------------------------
+!-----------------------------------------------
 	subroutine file_handle(command,ifh,ierr)
 !This subroutine provides the management of file handles.
 !The subroutine and corrresponding tables are local to each process.
@@ -88,13 +88,25 @@
 	if(l.gt.0) then
 !GET FILE HANDLE:
 	 if(l.eq.3.and.command(1:3).eq.'get') then
-	  if(nof.ge.max_open_files) then; call printl(jo,'#ERROR(service:file_handle): max amount of open files exceeded!'); ierr=1; goto 999; endif
+	  if(nof.ge.max_open_files) then
+	   call printl(jo,'#ERROR(service:file_handle): max amount of open files exceeded!')
+	   ierr=1; goto 999
+	  endif
 	  ifh=ffhs(nof); fhot(ifh)=1; nof=nof+1
 !FREE FILE HANDLE:
 	 elseif(l.eq.4.and.command(1:4).eq.'free') then
-	  if(nof.le.0) then; call printl(jo,'#ERROR(service:file_handle): attempt to free a file handle when no file handle is used!'); ierr=2; goto 999; endif
-	  if(ifh.lt.16.or.ifh.ge.16+max_open_files) then; call printl(jo,'#ERROR(service:file_handle): invalid file handle!'); ierr=3; goto 999; endif
-	  if(fhot(ifh).eq.0) then; call printl(jo,'#ERROR(service:file_handle): attempt to free an idle file handle!'); ierr=4; goto 999; endif
+	  if(nof.le.0) then
+	   call printl(jo,'#ERROR(service:file_handle): attempt to free a file handle when no file handle is used!')
+	   ierr=2; goto 999
+	  endif
+	  if(ifh.lt.16.or.ifh.ge.16+max_open_files) then
+	   call printl(jo,'#ERROR(service:file_handle): invalid file handle!')
+	   ierr=3; goto 999
+	  endif
+	  if(fhot(ifh).eq.0) then
+	   call printl(jo,'#ERROR(service:file_handle): attempt to free an idle file handle!')
+	   ierr=4; goto 999
+	  endif
 	  fhot(ifh)=0; nof=nof-1; ffhs(nof)=ifh
 !CLOSE ALL OPENED FILES:
 	 elseif(l.eq.4.and.command(1:4).eq.'stop') then
@@ -110,7 +122,7 @@
 	endif
 999	return
 	end subroutine file_handle
-!----------------------------------------------------------------
+!--------------------------------------------
 	subroutine quit(error_code,error_msg)
 !This subroutine prints the error message and safely terminates the parallel code execution.
 !INPUT:
@@ -133,14 +145,16 @@
 	 write(jo,'(''###Process '',i8,'': Error '',i12,'': Wall Time (sec): '',f12.2)') impir,error_code,time_end-time_begin
 	endif
 !Close all local files opened by the process:
-	l=0; call file_handle('stop',l,ierr); if(ierr.ne.0) write(*,'(''Process # '',i8,'': Not all local files have been closed!'')') impir
+	l=0; call file_handle('stop',l,ierr)
+	if(ierr.ne.0) write(*,'(''Process # '',i8,'': Not all local files have been closed!'')') impir
 	if(error_code.ne.0) then
-	 l=0; call MPI_ABORT(MPI_COMM_WORLD,l,ierr); if(ierr.ne.0) write(*,'(''Process # '',i8,'': MPI ABORT CODE: '',i12)') impir,ierr
+	 l=0; call MPI_ABORT(MPI_COMM_WORLD,l,ierr)
+	 if(ierr.ne.0) write(*,'(''Process # '',i8,'': MPI ABORT CODE: '',i12)') impir,ierr
 	endif
 	call MPI_FINALIZE(ierr)
 	stop
 	end subroutine quit
-!----------------------------------------------------------------
+!--------------------------------------
 	real(8) function thread_wtime()
 !This function returns the current wall clock time in seconds.
 	implicit none

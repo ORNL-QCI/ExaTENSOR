@@ -1,7 +1,7 @@
 !This module provides infrastructure for symmetric multi-indexing
 !for higher rank tensor algebra.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2014/08/08
+!REVISION: 2014/08/11
 !DESCRIPTION:
 ! # Given a symmetric multi-index {I1<=I2<=...<=In}, each subsequent value
 !   of the multi-index is assigned an integer from the range [0..max] via

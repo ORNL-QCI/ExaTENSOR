@@ -15,10 +15,11 @@ LA_LINK = $(LA_LINK_CRAY)
 CFLAGS_DEV = -c -g
 CFLAGS_OPT = -c -O3
 CFLAGS = $(CFLAGS_DEV)
-FFLAGS_DEV = -c --free-line-length-none -x f95-cpp-input -fopenmp -DNO_PHI \
-             -g -fbacktrace -fcheck=bounds -fcheck=array-temps -fcheck=pointer
-FFLAGS_OPT = -c -O3 --free-line-length-none -x f95-cpp-input -fopenmp -DNO_PHI
-FFLAGS = $(FFLAGS_DEV)
+FFLAGS_DEV = -c -g
+FFLAGS_OPT = -c -O3
+FFLAGS_DEV_GNU = -c -g -fopenmp -fbacktrace -fcheck=bounds -fcheck=array-temps -fcheck=pointer
+FFLAGS_OPT_GNU = -c -O3 -fopenmp
+FFLAGS = $(FFLAGS_DEV_GNU)
 LFLAGS_GNU = -lgomp
 LFLAGS = $(LFLAGS_GNU)
 

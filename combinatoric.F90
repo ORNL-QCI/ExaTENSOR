@@ -1,7 +1,7 @@
 	module combinatoric
 !Combinatoric Procedures by Dmitry I. Lyakh (Dmytro I. Liakh): quant4me@gmail.com
 !All rights reserved! No single part can be taken or reproduced!
-!Revision: 2013/12/26
+!Revision: 2014/08/11
 !PROCEDURES:
 ! - TRNG(i:ctrl,i:ni,i[1]:trn,i[1]:ngt): permutation generator which returns each new permutation.
 ! - TRSIGN(i:n,i[1]:itr): reorders indices in an ascending order and determines the sign of the corresponding permutation (Bubble). Use MERGE_SORT for fast.
@@ -253,7 +253,10 @@
 	integer, intent(inout):: ctrl,trn(0:ni),cil(0:1,0:ni)
 
 	if(ni.gt.0) then
-	 if(ni.gt.max_item) then; write(*,*)'ERROR(gpgen): legnth of the permutation exceeds the maximal value: ',max_item,ni; stop; endif
+	 if(ni.gt.max_item) then
+	  write(*,*)'ERROR(gpgen): legnth of the permutation exceeds the maximal value: ',max_item,ni
+	  stop
+	 endif
 	 if(ctrl.ne.0) then
 	  call first_call
 	 else
@@ -268,7 +271,8 @@
 	   ks=-1
 	   do while(n.gt.0)
 !	    write(*,'(''DEBUG1: '',128(i1,1x))') trn(1:n) !debug
-!	    write(*,'(4x,128(i2,1x))') (k6,k6=0,ni); write(*,'(4x,128(i2,1x))') cil(0,0:ni); write(*,'(4x,128(i2,1x))') cil(1,0:ni) !debug
+!	    write(*,'(4x,128(i2,1x))') (k6,k6=0,ni); write(*,'(4x,128(i2,1x))') cil(0,0:ni) !debug
+!           write(*,'(4x,128(i2,1x))') cil(1,0:ni) !debug
 	    if(ks.lt.0) then
 	     i=trn(n); call free_item(i); j=cil(1,i)
 	     if(j.gt.0) then
@@ -287,7 +291,8 @@
 	     endif
 	    endif
 !	    write(*,'(''DEBUG2: '',128(i1,1x))') trn(1:n) !debug
-!	    write(*,'(4x,128(i2,1x))') (k6,k6=0,ni); write(*,'(4x,128(i2,1x))') cil(0,0:ni); write(*,'(4x,128(i2,1x))') cil(1,0:ni) !debug
+!	    write(*,'(4x,128(i2,1x))') (k6,k6=0,ni); write(*,'(4x,128(i2,1x))') cil(0,0:ni) !debug
+!           write(*,'(4x,128(i2,1x))') cil(1,0:ni) !debug
 	    n=n+ks
 	    if(n.gt.ni) then !success
 	     call determine_trn_sign
@@ -761,7 +766,8 @@
 	 else !ml1=ml2
 	  cmp_arrays_int=0
 	  if(preorder) then
-	   allocate(prm1(0:ml1),prm2(0:ml2),STAT=ierr); if(ierr.ne.0) then; write(*,*)'ERROR(combinatoric:cmp_arrays_int): memory allocation failed!'; stop; endif
+	   allocate(prm1(0:ml1),prm2(0:ml2),STAT=ierr)
+	   if(ierr.ne.0) then; write(*,*)'ERROR(combinatoric:cmp_arrays_int): memory allocation failed!'; stop; endif
 	   prm1(0)=+1; do i=1,ml1; prm1(i)=i; enddo
 	   prm2(0)=+1; do i=1,ml2; prm2(i)=i; enddo
 	   call merge_sort_key_int(ml1,m1,prm1) !prm1 is N2O
@@ -820,7 +826,8 @@
 	 else !ml1=ml2
 	  cmp_arrays_int8=0; ml=int(ml1,8)
 	  if(preorder) then
-	   allocate(prm1(0:ml),prm2(0:ml),STAT=ierr); if(ierr.ne.0) then; write(*,*)'ERROR(combinatoric:cmp_arrays_int8): memory allocation failed!'; stop; endif
+	   allocate(prm1(0:ml),prm2(0:ml),STAT=ierr)
+	   if(ierr.ne.0) then; write(*,*)'ERROR(combinatoric:cmp_arrays_int8): memory allocation failed!'; stop; endif
 	   prm1(0)=+1_8; do i=1,ml1; prm1(i)=int(i,8); enddo
 	   prm2(0)=+1_8; do i=1,ml2; prm2(i)=int(i,8); enddo
 	   call merge_sort_key_int8(ml,m1,prm1) !prm1 is N2O
@@ -1042,7 +1049,8 @@
 	    stop
 	   endif
 	  else
-	   allocate(prm(0:ni),STAT=ierr); if(ierr.ne.0) then; write(*,*)'ERROR(combinatoric:random_composition): allocation failed!'; stop; endif
+	   allocate(prm(0:ni),STAT=ierr)
+	   if(ierr.ne.0) then; write(*,*)'ERROR(combinatoric:random_composition): allocation failed!'; stop; endif
 	   prm(0)=+1; do i=1,ni; prm(i)=i; enddo
 	   call random_permutation(ni,prm)
 	   k=irange; l=ni; k0=0; n=0
@@ -1428,7 +1436,8 @@
 	    elseif(k1.ge.k2) then !left block is over
 	     prm(i+l:i+kf-1)=trn(k3:k4-1); l=kf
 	    else
-	     if(dble(trn(k1))-dble(trn(k3)).gt.0d0.or.(dble(trn(k1)).eq.dble(trn(k3)).and.dimag(trn(k1))-dimag(trn(k3)).gt.0d0)) then
+	     if(dble(trn(k1))-dble(trn(k3)).gt.0d0.or. &
+	        (dble(trn(k1)).eq.dble(trn(k3)).and.dimag(trn(k1))-dimag(trn(k3)).gt.0d0)) then
 	      prm(i+l)=trn(k3); k3=k3+1; sgn=ds(mod(k2-k1,2))*sgn
 	     else
 	      prm(i+l)=trn(k1); k1=k1+1
@@ -1485,7 +1494,8 @@
 	    elseif(k1.ge.k2) then !left block is over
 	     prm(i+l:i+kf-1)=trn(k3:k4-1); l=kf
 	    else
-	     if(dble(key(trn(k1)))-dble(key(trn(k3))).gt.0d0.or.(dble(key(trn(k1))).eq.dble(key(trn(k3))).and.dimag(key(trn(k1)))-dimag(key(trn(k3))).gt.0d0)) then
+	     if(dble(key(trn(k1)))-dble(key(trn(k3))).gt.0d0.or. &
+	        (dble(key(trn(k1))).eq.dble(key(trn(k3))).and.dimag(key(trn(k1)))-dimag(key(trn(k3))).gt.0d0)) then
 	      prm(i+l)=trn(k3); k3=k3+1; trn(0)=(1-2*mod(k2-k1,2))*trn(0)
 	     else
 	      prm(i+l)=trn(k1); k1=k1+1
@@ -1619,28 +1629,32 @@
 	grd%gcard=grs%gcard; grd%graph_typ=grs%graph_typ; grd%descr_allocated=grs%descr_allocated
 	if(n.gt.0) then
 	 if(.not.allocated(grd%vertices)) then
-	  allocate(grd%vertices(1:n),STAT=ierr); if(ierr.ne.0) then; write(*,*)'ERROR(combinatoric:copy_sparse_graph): allocation 1 failed!'; stop; endif
+	  allocate(grd%vertices(1:n),STAT=ierr)
+	  if(ierr.ne.0) then; write(*,*)'ERROR(combinatoric:copy_sparse_graph): allocation 1 failed!'; stop; endif
 	 endif
 	 do i=1,n
 	  grd%vertices(i)%color=grs%vertices(i)%color
 	  m=grs%vertices(i)%conn_num; grd%vertices(i)%conn_num=m
 	  if(m.gt.0) then
 	   if(.not.allocated(grd%vertices(i)%slots)) then
-	    allocate(grd%vertices(i)%slots(1:m),STAT=ierr); if(ierr.ne.0) then; write(*,*)'ERROR(combinatoric:copy_sparse_graph): allocation 2 failed!'; stop; endif
+	    allocate(grd%vertices(i)%slots(1:m),STAT=ierr)
+	    if(ierr.ne.0) then; write(*,*)'ERROR(combinatoric:copy_sparse_graph): allocation 2 failed!'; stop; endif
 	   endif
 	   grd%vertices(i)%slots(1:m)=grs%vertices(i)%slots(1:m)
 	  endif
 	 enddo
 	 if(grd%descr_allocated) then
 	  if(.not.allocated(grd%descr)) then
-	   allocate(grd%descr(1:n),STAT=ierr); if(ierr.ne.0) then; write(*,*)'ERROR(combinatoric:copy_sparse_graph): allocation 3 failed!'; stop; endif
+	   allocate(grd%descr(1:n),STAT=ierr)
+	   if(ierr.ne.0) then; write(*,*)'ERROR(combinatoric:copy_sparse_graph): allocation 3 failed!'; stop; endif
 	  endif
 	  do i=1,n
 	   grd%descr(i)%vertex_class=grs%descr(i)%vertex_class
 	   m=grs%descr(i)%conn_num; grd%descr(i)%conn_num=m
 	   if(m.gt.0) then
 	    if(.not.allocated(grd%descr(i)%slots)) then
-	     allocate(grd%descr(i)%slots(1:m),STAT=ierr); if(ierr.ne.0) then; write(*,*)'ERROR(combinatoric:copy_sparse_graph): allocation 4 failed!'; stop; endif
+	     allocate(grd%descr(i)%slots(1:m),STAT=ierr)
+	     if(ierr.ne.0) then; write(*,*)'ERROR(combinatoric:copy_sparse_graph): allocation 4 failed!'; stop; endif
 	    endif
 	    grd%descr(i)%slots(1:m)=grs%descr(i)%slots(1:m)
 	   endif
@@ -1916,7 +1930,10 @@
 	       exit cloop !to the class reduction procedure (initiate by a mutation of not the last vertex of a degenerate class)
 	      endif
 	     else !entering a new (degenerate) class (starting from the last element of the class); context_restored=.true. on entrance
-	      if(.not.context_restored) then; write(*,*)'ERROR(combinatoric:graph_standard): context not properly restored (1): ',checking_stability; stop; endif !trap
+	      if(.not.context_restored) then !trap
+	       write(*,*)'ERROR(combinatoric:graph_standard): context not properly restored (1): ',checking_stability
+	       stop
+	      endif
 	      if(checking_stability.gt.1) then
 	       if(save_vc(save_trn(checking_stability)).eq.save_vc(save_trn(checking_stability-1))) then !the last element of a degenerate class
 	        class_checked=-save_vc(save_trn(checking_stability)) !set negative class_checked
@@ -1934,7 +1951,10 @@
 	   endif
   !Split classes for unstable classifications or add perturbation for stable irreducible classifications with degeneracy:
 	   if(checking_stability.eq.0.and.ncl.lt.ni) then
-	    if(.not.context_restored) then; write(*,*)'ERROR(combinatoric:graph_standard): context not properly restored (2): ',checking_stability; stop; endif !trap
+	    if(.not.context_restored) then !trap
+	     write(*,*)'ERROR(combinatoric:graph_standard): context not properly restored (2): ',checking_stability
+	     stop
+	    endif
 !	    write(*,'(" Stability analysis 1:")') !debug
 !	    write(*,'("  Item IDs: ",i2,2x,32(1x,i2))') trn(0:ni) !debug
 !	    write(*,'("  Classes : ",i2,2x,32(1x,i2))') save_vc(0),save_vc(trn(1:ni)) !debug
@@ -2012,11 +2032,14 @@
 	else
 	 ierr=-1; goto 999 !empty graph
 	endif
-999	if(associated(ii)) nullify(ii); if(associated(sl)) nullify(sl); if(associated(vc)) nullify(vc); if(associated(vcl)) nullify(vcl)
-	if(allocated(iia)) deallocate(iia); if(allocated(sla)) deallocate(sla); if(allocated(vca)) deallocate(vca); if(allocated(vcla)) deallocate(vcla)
+999	if(associated(ii)) nullify(ii); if(associated(sl)) nullify(sl)
+        if(associated(vc)) nullify(vc); if(associated(vcl)) nullify(vcl)
+	if(allocated(iia)) deallocate(iia); if(allocated(sla)) deallocate(sla)
+	if(allocated(vca)) deallocate(vca); if(allocated(vcla)) deallocate(vcla)
 	if(add_alloc) then
 	 if(associated(save_vc)) nullify(save_vc); if(associated(save_trn)) nullify(save_trn); if(associated(trnp)) nullify(trnp)
-	 if(allocated(save_vca)) deallocate(save_vca); if(allocated(save_trna)) deallocate(save_trna); if(allocated(trnpa)) deallocate(trnpa)
+	 if(allocated(save_vca)) deallocate(save_vca); if(allocated(save_trna)) deallocate(save_trna)
+	 if(allocated(trnpa)) deallocate(trnpa)
 	endif
 !	write(*,'("Exited GRAPH_STANDARD.")') !debug
 	return
@@ -2133,9 +2156,11 @@
 	implicit none
 	type(graph_sparse), intent(in):: gr
 	integer i,j,k,l,m,n,k0,k1,k2,k3,ierr
-	n=gr%gcard; write(*,'(" Printing the status of a graph of cardinality ",i4,1x,l1,l1":")') n,allocated(gr%vertices),allocated(gr%descr)
+	n=gr%gcard
+	write(*,'(" Printing the status of a graph of cardinality ",i4,1x,l1,l1":")') n,allocated(gr%vertices),allocated(gr%descr)
 	if(n.gt.0) then
-	 write(*,'(1x,256(1x,i4,1x,l1,1x,l1,1x))') (gr%vertices(j)%conn_num,allocated(gr%vertices(j)%slots),allocated(gr%descr(j)%slots),j=1,n)
+	 write(*,'(1x,256(1x,i4,1x,l1,1x,l1,1x))') &
+	  (gr%vertices(j)%conn_num,allocated(gr%vertices(j)%slots),allocated(gr%descr(j)%slots),j=1,n)
 	endif
 	return
 	end subroutine print_graph_status
@@ -2190,7 +2215,9 @@
 	    m=g1%vertices(trn1(i))%conn_num
 	    if(g2%vertices(trn2(i))%conn_num.eq.m.and.g1%vertices(trn1(i))%color.eq.g2%vertices(trn2(i))%color) then
 	     do j=1,m
-	      if(compare_descr_slots(g1%descr(trn1(i))%slots(j),g2%descr(trn2(i))%slots(j)).ne.0) then; graph_isomorphic=.false.; exit vloop; endif
+	      if(compare_descr_slots(g1%descr(trn1(i))%slots(j),g2%descr(trn2(i))%slots(j)).ne.0) then
+	       graph_isomorphic=.false.; exit vloop
+	      endif
 	     enddo
 	    else
 	     graph_isomorphic=.false.
@@ -2301,7 +2328,9 @@
 
 	if(allocated(adj)) deallocate(adj)
 	if(gr%gcard.gt.0) then
-	 nv=gr%gcard; allocate(adj(1:nv,1:nv),STAT=ierr); if(ierr.ne.0) then; write(*,*)'ERROR(combinatoric:graph2matrix): allocation failed: ',nv; stop; endif
+	 nv=gr%gcard
+	 allocate(adj(1:nv,1:nv),STAT=ierr)
+	 if(ierr.ne.0) then; write(*,*)'ERROR(combinatoric:graph2matrix): allocation failed: ',nv; stop; endif
 	 adj(:,:)=(0d0,0d0)
 	 do i=1,nv !vertex numbers [1..nv]
 	  cl=abs(gr%vertices(i)%color)
@@ -2326,15 +2355,18 @@
 	         endif
 	         cf=dint2frac(ct,dp_codon_len) !set vertex loops: convert a pure integer into a pure fractional
 	        else
-	         write(*,*)'ERROR(combinatoric:graph2matrix): negative loop attribute detected: ',gr%vertices(i)%slots(j)%conn_typ,ct,i,j
+	         write(*,*)'ERROR(combinatoric:graph2matrix): negative loop attribute detected: ', &
+	          gr%vertices(i)%slots(j)%conn_typ,ct,i,j
 	         stop
 	        endif
 	       else
-	        write(*,*)'ERROR(combinatoric:graph2matrix): repeated self-connection (loop) detected: ',cf,i,j,gr%vertices(i)%slots(j)%conn_typ
+	        write(*,*)'ERROR(combinatoric:graph2matrix): repeated self-connection (loop) detected: ', &
+	         cf,i,j,gr%vertices(i)%slots(j)%conn_typ
 	        stop
 	       endif
 	      else
-	       write(*,*)'ERROR(combinatoric:graph2matrix): unable to process non-integer self-connection attribute (loop): ',gr%vertices(i)%slots(j)%conn_typ,i,j
+	       write(*,*)'ERROR(combinatoric:graph2matrix): unable to process non-integer self-connection attribute (loop): ', &
+	        gr%vertices(i)%slots(j)%conn_typ,i,j
 	       stop
 	      endif
 	     endif
@@ -2349,7 +2381,11 @@
 	   stop
 	  endif
 	 enddo !i
-	 diff=check_hermiticity(nv,adj,.true.); if(diff.gt.herm_thresh) then; write(*,*)'ERROR(combinatoric:graph2matrix): hermiticity check failed: ',diff; stop; endif !trap
+	 diff=check_hermiticity(nv,adj,.true.)
+	 if(diff.gt.herm_thresh) then !trap
+	  write(*,*)'ERROR(combinatoric:graph2matrix): hermiticity check failed: ',diff
+	  stop
+	 endif
 	else
 	 nv=0 !no allocation is done if there were no vertices
 	endif

@@ -1,7 +1,7 @@
        module timers
 !Timing services (OpenMP omp_get_wtime() based).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2014/07/16
+!REVISION: 2014/08/11
 !FUNCTIONS:
 ! # integer timer_start(real8:time_set, integer:time_handle);
 ! # logical time_is_off(integer:time_handle, integer:ierr[, logical:destroy]);

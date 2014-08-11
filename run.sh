@@ -11,6 +11,7 @@ export MIC_PREFIX=MIC                               #mandatory when using MIC
 export MIC_ENV_PREFIX=MIC                           #mandatory when using MIC
 export MIC_OMP_PREFIX=MIC                           #mandatory when using MIC
 export MIC_OMP_NUM_THREADS=224                      #mandatory when using MIC
+export MIC_MKL_NUM_THREADS=$MIC_OMP_NUM_THREADS     #mandatory when using MIC
 export MIC_KMP_PLACE_THREADS="56c,4t"               #optional (MIC only)
 export MIC_KMP_AFFINITY="granularity=fine,compact"  #optional (MIC only)
 export MKL_MIC_ENABLE=1                             #optional (MIC only)

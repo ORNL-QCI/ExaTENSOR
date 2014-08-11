@@ -60,7 +60,8 @@
 !	   do mnii=0,id2
 !	    do ia1=max(id2-mnii-1,0),id1
 !	     print *,'A:',id2,id1,mnii,ia1
-!	     ierr=1; call get_mlndx_addressing(2,id1,id2,mnii,ia1,ivol(1:id2),iba(0:id1,1:id2),ierr); if(ierr.ne.0) call quit(-1,'I_FUCK!!!!!!!!')
+!	     ierr=1; call get_mlndx_addressing(2,id1,id2,mnii,ia1,ivol(1:id2),iba(0:id1,1:id2),ierr)
+!            if(ierr.ne.0) call quit(-1,'I_BAD!!!!!!!!')
 !	    enddo
 !	   enddo
 !	  enddo
@@ -70,7 +71,8 @@
 !	   do mnii=0,id2
 !	    do ia1=min(id1-(id2-mnii)+1,id1),0,-1
 !	     print *,'I:',id2,id1,mnii,ia1
-!	     ierr=1; call get_mlndx_addressing(1,id1,id2,mnii,ia1,ivol(1:id2),iba(0:id1,1:id2),ierr); if(ierr.ne.0) call quit(-1,'A_FUCK!!!!!!!!')
+!	     ierr=1; call get_mlndx_addressing(1,id1,id2,mnii,ia1,ivol(1:id2),iba(0:id1,1:id2),ierr)
+!            if(ierr.ne.0) call quit(-1,'A_BAD!!!!!!!!')
 !	    enddo
 !	   enddo
 !	  enddo

@@ -1,6 +1,6 @@
 !PROGRAM: Q-FORCE: Massively-Parallel Quantum Many-Body Methodology on Heterogeneous HPC systems.
 !AUTHOR: Dmitry I. Lyakh (Dmytro I. Liakh): quant4me@gmail.com
-!REVISION: 2014/05/20
+!REVISION: 2014/08/11
 !COMPILATION:
 ! - Fortran 2003 at least.
 ! - MPI 2.0 at least.
@@ -47,7 +47,8 @@
         call MPI_INIT(ierr); if(ierr.ne.0) call quit(ierr,'#ERROR(main): MPI_INIT error!')
         mpi_thread_provided=0; max_threads=1
 #else
-        call MPI_INIT_THREAD(MPI_THREAD_FUNNELED,mpi_thread_provided,ierr); if(ierr.ne.0) call quit(ierr,'#ERROR(main): MPI_INIT_THREAD error!')
+        call MPI_INIT_THREAD(MPI_THREAD_FUNNELED,mpi_thread_provided,ierr)
+        if(ierr.ne.0) call quit(ierr,'#ERROR(main): MPI_INIT_THREAD error!')
         if(mpi_thread_provided.gt.MPI_THREAD_SINGLE) then
          max_threads=omp_get_max_threads()
         else
@@ -61,7 +62,7 @@
 !       write(*,*) impis,impir,max_threads,jo,log_file; call quit(-1,'Test') !debug
         call numchar(impir,k0,str0); open(log_file,file='qforce.'//str0(1:k0)//'.log',form='FORMATTED',status='UNKNOWN',err=2000) !open the log file for each process
         if(impir.ne.0) jo=log_file !redirect the standard output for slave processes to their log-files
-        write(jo,'("   *** Q-FORCE v.14.05.13 by Dmitry I. Lyakh ***")')
+        write(jo,'("   *** Q-FORCE v.14.08.11 by Dmitry I. Lyakh ***")')
         write(jo,'("MPI number of processes            : ",i10)') impis
         write(jo,'("Current process rank               : ",i10)') impir
 #ifndef NO_OMP
@@ -84,20 +85,31 @@
 #else
         write(jo,'("BLAS/LAPACK is disabled.")')
 #endif
-        call MPI_GET_PROCESSOR_NAME(proc_name,proc_name_len,ierr); if(ierr.ne.0) call quit(ierr,'#ERROR(main): MPI_GET_PROCESSOR_NAME error!')
+        call MPI_GET_PROCESSOR_NAME(proc_name,proc_name_len,ierr)
+        if(ierr.ne.0) call quit(ierr,'#ERROR(main): MPI_GET_PROCESSOR_NAME error!')
         call printl(jo,'My processor name                  : '//proc_name(1:proc_name_len))
-        call get_environment(ierr); if(ierr.ne.0) then; ierr=0; write(jo,'("#ERROR(main): Unable to read environment variables! Ignored.")'); endif
+        call get_environment(ierr)
+        if(ierr.ne.0) then; ierr=0; write(jo,'("#ERROR(main): Unable to read environment variables! Ignored.")'); endif
         if(mpi_procs_per_node.gt.0) write(jo,'("Number of MPI processes per node   :       ",i4)') mpi_procs_per_node
-        call gpu_nvidia_init(ierr); if(ierr.ne.0) then; ierr=0; write(jo,'("#ERROR(main): GPU(Nvidia) initialization failed! No GPU in use for this process! Ignored.")'); endif
+        call gpu_nvidia_init(ierr)
+        if(ierr.ne.0) then
+         ierr=0; write(jo,'("#ERROR(main): GPU(Nvidia) initialization failed! No GPU in use for this process! Ignored.")')
+        endif
         call MPI_BARRIER(MPI_COMM_WORLD,ierr); if(ierr.ne.0) call quit(ierr,'#ERROR(main): MPI_BARRIER error (trap 1)')
 
 !Run the process life:
         call proceed(ierr); if(ierr.ne.0) then; exec_status=ierr; write(jo,'("#ERROR(main): Process life dirty!")'); endif
-        call qforce_free_memory(ierr); if(exec_status.eq.0.and.ierr.ne.0) then; exec_status=ierr; write(jo,'("#ERROR(main): Unable to free QFORCE data structures!")'); endif
-        if(exec_status.eq.0) then; call MPI_BARRIER(MPI_COMM_WORLD,ierr); if(ierr.ne.0) call quit(ierr,'#ERROR(main): MPI_BARRIER error (trap 2)'); endif
+        call qforce_free_memory(ierr)
+        if(exec_status.eq.0.and.ierr.ne.0) then
+         exec_status=ierr; write(jo,'("#ERROR(main): Unable to free QFORCE data structures!")')
+        endif
+        if(exec_status.eq.0) then
+         call MPI_BARRIER(MPI_COMM_WORLD,ierr)
+         if(ierr.ne.0) call quit(ierr,'#ERROR(main): MPI_BARRIER error (trap 2)')
+        endif
 !Terminate the process:
 999     call quit(exec_status,'Program terminated. Enjoy the results! Bye!')
-!---------------------------------------------------------------
+!-----------------------------------------------------------------
 2000    call quit(-1,'#ERROR(main): unable to open the log-file!')
 
         contains
@@ -155,24 +167,31 @@
 #ifndef NO_GPU
  !Init GPU/GPUs:
         call cudaGetDeviceCount(gpus_found,err_code)
-        if(err_code.ne.0) then; ierr=1; write(jo,'("#ERROR(gpu_nvidia_init): unable to get the GPU device count!")'); gpus_found=0; return; endif
+        if(err_code.ne.0) then
+         ierr=1; write(jo,'("#ERROR(gpu_nvidia_init): unable to get the GPU device count!")')
+         gpus_found=0; return
+        endif
         write(jo,'("Total amount of GPUs found on node : ",i10)') gpus_found
         if(gpus_found.gt.0) then
          if(allocated(gpu_info)) deallocate(gpu_info); allocate(gpu_info(0:gpus_found-1),STAT=ierr)
-         if(ierr.ne.0) then; ierr=2; write(jo,'("#ERROR(gpu_nvidia_init): unable to allocate GPU_INFO!")'); gpu_count=0; return; endif
+         if(ierr.ne.0) then
+          ierr=2; write(jo,'("#ERROR(gpu_nvidia_init): unable to allocate GPU_INFO!")')
+          gpu_count=0; return
+         endif
          do active_gpu=0,gpus_found-1
           call cudaSetDevice(active_gpu,err_code)
           if(err_code.eq.0) then
            write(jo,'("Info on GPU device                 : ",i10,":")') active_gpu
            call cudaGetDeviceProperties(active_gpu,gpu_info(active_gpu)%totalGlobalMem,gpu_info(active_gpu)%sharedMemPerBlock, &
                                         gpu_info(active_gpu)%regsPerBlock,gpu_info(active_gpu)%warpSize, &
-                                        gpu_info(active_gpu)%maxThreadsPerBlock,gpu_info(active_gpu)%maxThreadsDim,gpu_info(active_gpu)%maxGridSize, &
-                                        gpu_info(active_gpu)%clockRate,gpu_info(active_gpu)%totalConstMem, &
-                                        gpu_info(active_gpu)%major,gpu_info(active_gpu)%minor, &
+                                        gpu_info(active_gpu)%maxThreadsPerBlock,gpu_info(active_gpu)%maxThreadsDim, &
+                                        gpu_info(active_gpu)%maxGridSize,gpu_info(active_gpu)%clockRate, &
+                                        gpu_info(active_gpu)%totalConstMem,gpu_info(active_gpu)%major,gpu_info(active_gpu)%minor, &
                                         gpu_info(active_gpu)%deviceOverlap,gpu_info(active_gpu)%multiProcessorCount, &
                                         gpu_info(active_gpu)%concurrentKernels,gpu_info(active_gpu)%ECCEnabled, &
                                         gpu_info(active_gpu)%asyncEngineCount,gpu_info(active_gpu)%memoryClockRate, &
-                                        gpu_info(active_gpu)%memoryBusWidth,gpu_info(active_gpu)%maxThreadsPerMultiProcessor,err_code)
+                                        gpu_info(active_gpu)%memoryBusWidth,gpu_info(active_gpu)%maxThreadsPerMultiProcessor, &
+                                        err_code)
            if(err_code.eq.0) then
             write(jo,'(1x,"GPU major revision number         : ",i10)') gpu_info(active_gpu)%major
             write(jo,'(1x,"GPU minor revision number         : ",i10)') gpu_info(active_gpu)%minor
@@ -201,7 +220,10 @@
           endif
          enddo
          call restrict_gpu_amount(ierr) !restrict usable GPUs range when multiple MPI processes run on a node
-         if(ierr.ne.0) then; ierr=5; write(jo,'("#ERROR(gpu_nvidia_init): unable to restrict the amount of GPUs per MPI process!")'); gpu_count=0; gpu_start=0; endif
+         if(ierr.ne.0) then
+          ierr=5; write(jo,'("#ERROR(gpu_nvidia_init): unable to restrict the amount of GPUs per MPI process!")')
+          gpu_count=0; gpu_start=0
+         endif
          write(jo,'("Range of GPUs assigned to process  : ",i4,"-",i4)') gpu_start,gpu_start+gpu_count-1
          write(jo,'("Ok")')
         elseif(gpus_found.lt.0) then !invalid (negative) number of GPUs found

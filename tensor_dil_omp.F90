@@ -1,7 +1,7 @@
        module tensor_dil_omp
 !Multithreaded tensor algebra kernels tailored for ACESIII/ACESIV.
 !AUTHOR: Dmitry I. Lyakh: quant4me@gmail.com
-!Revision: 2014/05/12
+!Revision: 2014/08/11
 !-------------------------------------------
 !COMPILE:
 ! # GFORTRAN flags: -O3 --free-line-length-none -fopenmp -x f95-cpp-input
@@ -190,7 +190,8 @@
 	else
 	 ierr=-1
 	endif
-!	write(*,'("DEBUG(tensor_algebra_dil::tensor_block_init_): exit code / kernel time = ",i5,1x,F10.4)') ierr,secnds(time_beg) !debug
+!	write(*,'("DEBUG(tensor_algebra_dil::tensor_block_init_): exit code / kernel time = ",i5,1x,F10.4)') &
+!        ierr,secnds(time_beg) !debug
 	return
 	end subroutine tensor_block_init_
 !----------------------------------------------------------------------------------------------
@@ -228,10 +229,11 @@
 	else
 	 ierr=-1
 	endif
-!	write(*,'("DEBUG(tensor_algebra_dil::tensor_block_scale_): exit code / kernel time = ",i5,1x,F10.4)') ierr,secnds(time_beg) !debug
+!	write(*,'("DEBUG(tensor_algebra_dil::tensor_block_scale_): exit code / kernel time = ",i5,1x,F10.4)') &
+!        ierr,secnds(time_beg) !debug
 	return
 	end subroutine tensor_block_scale_
-!------------------------------------------------------------------------------------------
+!---------------------------------------------------------------------------------------------------
 	real(real8_kind) function tensor_block_norm2_(nthreads,tens,tens_rank,tens_dim_extents,ierr) &
                                                       bind(c,name='tensor_block_norm2__') !PARALLEL
 !This function computes the squared Euclidean (Frobenius) norm of a tensor block.
@@ -270,7 +272,8 @@
 	else
 	 ierr=-1
 	endif
-!	write(*,'("DEBUG(tensor_algebra_dil::tensor_block_norm2_): exit code / kernel time = ",i5,1x,F10.4)') ierr,secnds(time_beg) !debug
+!	write(*,'("DEBUG(tensor_algebra_dil::tensor_block_norm2_): exit code / kernel time = ",i5,1x,F10.4)') &
+!        ierr,secnds(time_beg) !debug
 	return
 	end function tensor_block_norm2_
 !--------------------------------------------------------------------------------------------------
@@ -332,7 +335,8 @@
 	else
 	 ierr=1 !invalid number of dimensions
 	endif
-!	write(cons_out,'("DEBUG(tensor_algebra_dil::tensor_block_slice_): exit code / kernel time: ",i5,1x,F10.4)') ierr,secnds(time_beg) !debug
+!	write(cons_out,'("DEBUG(tensor_algebra_dil::tensor_block_slice_): exit code / kernel time: ",i5,1x,F10.4)') &
+!        ierr,secnds(time_beg) !debug
 	return
 	end subroutine tensor_block_slice_
 !---------------------------------------------------------------------------------------------------
@@ -394,7 +398,8 @@
 	else
 	 ierr=1 !invalid number of dimensions
 	endif
-!	write(cons_out,'("DEBUG(tensor_algebra_dil::tensor_block_insert_): exit code / kernel time: ",i5,1x,F10.4)') ierr,secnds(time_beg) !debug
+!	write(cons_out,'("DEBUG(tensor_algebra_dil::tensor_block_insert_): exit code / kernel time: ",i5,1x,F10.4)') &
+!        ierr,secnds(time_beg) !debug
 	return
 	end subroutine tensor_block_insert_
 !--------------------------------------------------------------------------------------------
@@ -439,7 +444,8 @@
 	else
 	 ierr=-1
 	endif
-!	write(*,'("DEBUG(tensor_algebra_dil::tensor_block_add_): exit code / kernel time = ",i5,1x,F10.4)') ierr,secnds(time_beg) !debug
+!	write(*,'("DEBUG(tensor_algebra_dil::tensor_block_add_): exit code / kernel time = ",i5,1x,F10.4)') &
+!        ierr,secnds(time_beg) !debug
 	return
 	end subroutine tensor_block_add_
 !---------------------------------------------------------------------------------------------------
@@ -526,10 +532,14 @@
 	  ipr(dim_num+1)=dim_num+1 !special setting
 	 endif
 	 do i=1,dim_num; ac1(i)=n2o(dim_transp(i)+1); enddo !accelerator array
-!	 write(*,'("DEBUG(tensor_algebra_dil::tensor_block_copy_): block size, split dims = ",i10,3x,i2,1x,i2)') bs,split_in,split_out !debug
-!	 write(*,'("DEBUG(tensor_algebra_dil::tensor_block_copy_): index extents =",128(1x,i2))') dim_extents(1:dim_num) !debug
-!	 write(*,'("DEBUG(tensor_algebra_dil::tensor_block_copy_): index permutation =",128(1x,i2))') dim_transp(1:dim_num) !debug
-!	 write(*,'("DEBUG(tensor_algebra_dil::tensor_block_copy_): index priorities = ",i3,1x,l1,128(1x,i2))') kf,in_out_dif,ipr(1:dim_num) !debug
+!	 write(*,'("DEBUG(tensor_algebra_dil::tensor_block_copy_): block size, split dims = ",i10,3x,i2,1x,i2)') &
+!         bs,split_in,split_out !debug
+!	 write(*,'("DEBUG(tensor_algebra_dil::tensor_block_copy_): index extents =",128(1x,i2))') &
+!         dim_extents(1:dim_num) !debug
+!	 write(*,'("DEBUG(tensor_algebra_dil::tensor_block_copy_): index permutation =",128(1x,i2))') &
+!         dim_transp(1:dim_num) !debug
+!	 write(*,'("DEBUG(tensor_algebra_dil::tensor_block_copy_): index priorities = ",i3,1x,l1,128(1x,i2))') &
+!         kf,in_out_dif,ipr(1:dim_num) !debug
  !Transpose loop:
 !$OMP PARALLEL DEFAULT(SHARED) PRIVATE(i,j,m,n,im,l_in,l_out,l0,l1,l2,l3,dim_beg,dim_end) NUM_THREADS(nthreads)
 #ifndef NO_OMP
@@ -664,7 +674,8 @@
 	 endif
 !$OMP END PARALLEL
 	endif !trivial or not
-!	write(*,'("DEBUG(tensor_algebra_dil::tensor_block_copy_): exit code / kernel time = ",i5,1x,F10.4)') ierr,secnds(time_beg) !debug
+!	write(*,'("DEBUG(tensor_algebra_dil::tensor_block_copy_): exit code / kernel time = ",i5,1x,F10.4)') &
+!        ierr,secnds(time_beg) !debug
 	return
 	end subroutine tensor_block_copy_
 !-------------------------------------------------------------------------------------------------------
@@ -717,19 +728,30 @@
 	   dtens_num_dim.ge.0.and.dtens_num_dim.le.max_tensor_rank) then
 	 ltransp=.false.; rtransp=.false.; dtransp=.false.
 !Check the requested contraction pattern:
-	 contr_ok=contr_ptrn_ok(contr_ptrn,ltens_num_dim,rtens_num_dim,dtens_num_dim); if(.not.contr_ok) then; ierr=1; goto 999; endif
-!	 write(*,'("DEBUG(tensor_algebra_dil::tensor_block_contract_): contraction pattern accepted:",128(1x,i2))') contr_ptrn(1:ltens_num_dim+rtens_num_dim) !debug
-!	 write(*,'("DEBUG(tensor_algebra_dil::tensor_block_contract_): left index extents  :",128(1x,i4))') ltens_dim_extent(1:ltens_num_dim) !debug
-!	 write(*,'("DEBUG(tensor_algebra_dil::tensor_block_contract_): right index extents :",128(1x,i4))') rtens_dim_extent(1:rtens_num_dim) !debug
-!	 write(*,'("DEBUG(tensor_algebra_dil::tensor_block_contract_): result index extents:",128(1x,i4))') dtens_dim_extent(1:dtens_num_dim) !debug
+	 contr_ok=contr_ptrn_ok(contr_ptrn,ltens_num_dim,rtens_num_dim,dtens_num_dim)
+	 if(.not.contr_ok) then; ierr=1; goto 999; endif
+!	 write(*,'("DEBUG(tensor_algebra_dil::tensor_block_contract_): contraction pattern accepted:",128(1x,i2))') &
+!         contr_ptrn(1:ltens_num_dim+rtens_num_dim) !debug
+!	 write(*,'("DEBUG(tensor_algebra_dil::tensor_block_contract_): left index extents  :",128(1x,i4))') &
+!         ltens_dim_extent(1:ltens_num_dim) !debug
+!	 write(*,'("DEBUG(tensor_algebra_dil::tensor_block_contract_): right index extents :",128(1x,i4))') &
+!         rtens_dim_extent(1:rtens_num_dim) !debug
+!	 write(*,'("DEBUG(tensor_algebra_dil::tensor_block_contract_): result index extents:",128(1x,i4))') &
+!         dtens_dim_extent(1:dtens_num_dim) !debug
 !Determine index permutations for all tensor operands together with the numbers of contracted/uncontraced indices (ncd/{nlu,nru}):
 	 call determine_index_permutations !sets {dtransp,ltransp,rtransp},{do2n,lo2n,ro2n},{lsize,rsize,dsize},{ncd,nlu,nru},{lld,lrd,lcd}
-!	 write(*,'("DEBUG(tensor_algebra_dil::tensor_block_contract_): left uncontr, right uncontr, contr dims: ",i2,1x,i2,1x,i2)') nlu,nru,ncd !debug
-!	 write(*,'("DEBUG(tensor_algebra_dil::tensor_block_contract_): left index permutation (O2N)           :",128(1x,i2))') lo2n(1:ltens_num_dim) !debug
-!	 write(*,'("DEBUG(tensor_algebra_dil::tensor_block_contract_): right index permutation (O2N)          :",128(1x,i2))') ro2n(1:rtens_num_dim) !debug
-!	 write(*,'("DEBUG(tensor_algebra_dil::tensor_block_contract_): destination index permutation (O2N)    :",128(1x,i2))') do2n(1:dtens_num_dim) !debug
-!	 write(*,'("DEBUG(tensor_algebra_dil::tensor_block_contract_): sizes of the matrices(left,right,dest) : ",i10,1x,i10,1x,i10)') lsize,rsize,dsize !debug
-!	 write(*,'("DEBUG(tensor_algebra_dil::tensor_block_contract_): matrix dimensions (left,right,contr)   : ",i10,1x,i10,1x,i10)') lld,lrd,lcd !debug
+!	 write(*,'("DEBUG(tensor_algebra_dil::tensor_block_contract_): left uncontr, right uncontr, contr dims: ",i2,1x,i2,1x,i2)')&
+!         nlu,nru,ncd !debug
+!	 write(*,'("DEBUG(tensor_algebra_dil::tensor_block_contract_): left index permutation (O2N)           :",128(1x,i2))') &
+!         lo2n(1:ltens_num_dim) !debug
+!	 write(*,'("DEBUG(tensor_algebra_dil::tensor_block_contract_): right index permutation (O2N)          :",128(1x,i2))') &
+!         ro2n(1:rtens_num_dim) !debug
+!	 write(*,'("DEBUG(tensor_algebra_dil::tensor_block_contract_): destination index permutation (O2N)    :",128(1x,i2))') &
+!         do2n(1:dtens_num_dim) !debug
+!	 write(*,'("DEBUG(tensor_algebra_dil::tensor_block_contract_): sizes of the matrices(left,right,dest) : "&
+!         &,i10,1x,i10,1x,i10)') lsize,rsize,dsize !debug
+!	 write(*,'("DEBUG(tensor_algebra_dil::tensor_block_contract_): matrix dimensions (left,right,contr)   : "&
+!         &,i10,1x,i10,1x,i10)') lld,lrd,lcd !debug
 !Transpose tensor arguments, if needed:
 !	 time_p=secnds(0.) !debug
  !Left tensor argument:
@@ -796,7 +818,8 @@
 	else
 	 ierr=-1 !invalid tensor ranks
 	endif
-!	write(*,'("DEBUG(tensor_algebra_dil::tensor_block_contract_): exit error code / timings: ",i5,3(1x,F10.6))') ierr,secnds(time_beg),time_perm,time_mult !debug
+!	write(*,'("DEBUG(tensor_algebra_dil::tensor_block_contract_): exit error code / timings: ",i5,3(1x,F10.6))') &
+!        ierr,secnds(time_beg),time_perm,time_mult !debug
 	return
 	contains
 
@@ -937,7 +960,8 @@
 	else
 	 ierr=1
 	endif
-!	write(*,'("DEBUG(tensor_algebra_dil::tensor_block_fcontract): exit code / kernel time: ",i5,1x,F10.4)') ierr,secnds(time_beg) !debug
+!	write(*,'("DEBUG(tensor_algebra_dil::tensor_block_fcontract): exit code / kernel time: ",i5,1x,F10.4)') &
+!        ierr,secnds(time_beg) !debug
 	return
 	end subroutine tensor_block_fcontract
 !----------------------------------------------------------------------------------
@@ -1178,7 +1202,8 @@
 	else
 	 ierr=1
 	endif
-!	write(*,'("DEBUG(tensor_algebra_dil::tensor_block_pcontract): exit code / kernel time: ",i5,1x,F10.4)') ierr,secnds(time_beg) !debug
+!	write(*,'("DEBUG(tensor_algebra_dil::tensor_block_pcontract): exit code / kernel time: ",i5,1x,F10.4)') &
+!        ierr,secnds(time_beg) !debug
 	return
 	end subroutine tensor_block_pcontract
 !--------------------------------------------
