@@ -1,6 +1,6 @@
 !Tensor Algebra Library for Intel MIC.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2014/07/28
+!REVISION: 2014/08/11
 !NOTES:
 ! # This library is not thread-safe. All functions of this library are
 !   supposed to be called by the same single thread (due to the way
@@ -53,7 +53,7 @@
          phi_get_task_handle=-1
         endif
         return
-        end function phi_get_taks_handle
+        end function phi_get_task_handle
 !---------------------------------------------------------
         integer function phi_free_task_handle(task_handle) !SERIAL: Host
 !Returns a task handle back to the free storage.
