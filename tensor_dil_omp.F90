@@ -1,7 +1,7 @@
        module tensor_dil_omp
 !Multithreaded tensor algebra kernels tailored for ACESIII/ACESIV.
 !AUTHOR: Dmitry I. Lyakh: quant4me@gmail.com
-!Revision: 2014/08/11
+!Revision: 2014/08/12
 !-------------------------------------------
 !COMPILE:
 ! # GFORTRAN flags: -O3 --free-line-length-none -fopenmp -x f95-cpp-input
@@ -44,6 +44,7 @@
 ! # void tensor_block_contract__(int&, int*, double*, int&, int*, double*, int&, int*, double*, int&, int*, int&);
 !----------------------------------------------------------------------------------------------------------------
 	use, intrinsic:: ISO_C_BINDING
+	use timers
 #ifdef USE_MKL
         use mkl95_blas
         use mkl95_lapack
@@ -168,10 +169,10 @@
 	integer(int_kind):: i,j,k,l,m,n,ks,kf
 	integer(int8_kind):: tens_size,l0,l1,l2
 	real(real8_kind):: vec(0:vec_size-1),val
-	real(real4_kind):: time_beg
+	real(real8_kind):: time_beg
 
 	ierr=0
-!	time_beg=secnds(0.) !debug
+!	time_beg=thread_wtime() !debug
 	if(tens_rank.eq.0) then !scalar
 	 tens(0)=sval
 	elseif(tens_rank.gt.0) then !tensor
@@ -191,7 +192,7 @@
 	 ierr=-1
 	endif
 !	write(*,'("DEBUG(tensor_algebra_dil::tensor_block_init_): exit code / kernel time = ",i5,1x,F10.4)') &
-!        ierr,secnds(time_beg) !debug
+!        ierr,thread_wtime(time_beg) !debug
 	return
 	end subroutine tensor_block_init_
 !----------------------------------------------------------------------------------------------
@@ -215,10 +216,10 @@
 	integer(int_kind), intent(inout):: ierr
 	integer(int_kind):: i,j,k,l,m,n
 	integer(int8_kind):: l0,tens_size
-	real(real4_kind):: time_beg
+	real(real8_kind):: time_beg
 
 	ierr=0
-!	time_beg=secnds(0.) !debug
+!	time_beg=thread_wtime() !debug
 	if(tens_rank.eq.0) then !scalar
 	 tens(0)=tens(0)*scale_fac
 	elseif(tens_rank.gt.0) then !tensor
@@ -230,7 +231,7 @@
 	 ierr=-1
 	endif
 !	write(*,'("DEBUG(tensor_algebra_dil::tensor_block_scale_): exit code / kernel time = ",i5,1x,F10.4)') &
-!        ierr,secnds(time_beg) !debug
+!        ierr,thread_wtime(time_beg) !debug
 	return
 	end subroutine tensor_block_scale_
 !---------------------------------------------------------------------------------------------------
@@ -253,10 +254,10 @@
 	integer(int_kind):: i,j,k,l,m,n
 	integer(int8_kind):: l0,tens_size
 	real(real8_kind):: val
-	real(real4_kind):: time_beg
+	real(real8_kind):: time_beg
 
 	ierr=0
-!	time_beg=secnds(0.) !debug
+!	time_beg=thread_wtime() !debug
 	tensor_block_norm2_=0d0
 	if(tens_rank.eq.0) then !scalar
 	 tensor_block_norm2_=tens(0)**2
@@ -273,7 +274,7 @@
 	 ierr=-1
 	endif
 !	write(*,'("DEBUG(tensor_algebra_dil::tensor_block_norm2_): exit code / kernel time = ",i5,1x,F10.4)') &
-!        ierr,secnds(time_beg) !debug
+!        ierr,thread_wtime(time_beg) !debug
 	return
 	end function tensor_block_norm2_
 !--------------------------------------------------------------------------------------------------
@@ -297,10 +298,10 @@
 	integer(int_kind), intent(inout):: ierr
 	integer(int_kind):: i,j,k,l,m,n,ks,kf,im(1:dim_num)
 	integer(int8_kind):: bases_in(1:dim_num),bases_out(1:dim_num),lts,lss,l_in,l_out,segs(0:max_threads)
-	real(real4_kind):: time_beg
+	real(real8_kind):: time_beg
 
 	ierr=0
-!	time_beg=secnds(0.) !debug
+!	time_beg=thread_wtime() !debug
 	if(dim_num.gt.0) then !true tensor
 	 lts=1_8; do i=1,dim_num; bases_in(i)=lts; lts=lts*tens_ext(i); enddo   !tensor block indexing bases
 	 lss=1_8; do i=1,dim_num; bases_out(i)=lss; lss=lss*slice_ext(i); enddo !slice indexing bases
@@ -336,7 +337,7 @@
 	 ierr=1 !invalid number of dimensions
 	endif
 !	write(cons_out,'("DEBUG(tensor_algebra_dil::tensor_block_slice_): exit code / kernel time: ",i5,1x,F10.4)') &
-!        ierr,secnds(time_beg) !debug
+!        ierr,thread_wtime(time_beg) !debug
 	return
 	end subroutine tensor_block_slice_
 !---------------------------------------------------------------------------------------------------
@@ -360,10 +361,10 @@
 	integer(int_kind), intent(inout):: ierr
 	integer(int_kind):: i,j,k,l,m,n,ks,kf,im(1:dim_num)
 	integer(int8_kind):: bases_in(1:dim_num),bases_out(1:dim_num),lts,lss,l_in,l_out,segs(0:max_threads)
-	real(real4_kind):: time_beg
+	real(real8_kind):: time_beg
 
 	ierr=0
-!	time_beg=secnds(0.) !debug
+!	time_beg=thread_wtime() !debug
 	if(dim_num.gt.0) then !true tensor
 	 lts=1_8; do i=1,dim_num; bases_out(i)=lts; lts=lts*tens_ext(i); enddo !tensor block indexing bases
 	 lss=1_8; do i=1,dim_num; bases_in(i)=lss; lss=lss*slice_ext(i); enddo !slice indexing bases
@@ -399,7 +400,7 @@
 	 ierr=1 !invalid number of dimensions
 	endif
 !	write(cons_out,'("DEBUG(tensor_algebra_dil::tensor_block_insert_): exit code / kernel time: ",i5,1x,F10.4)') &
-!        ierr,secnds(time_beg) !debug
+!        ierr,thread_wtime(time_beg) !debug
 	return
 	end subroutine tensor_block_insert_
 !--------------------------------------------------------------------------------------------
@@ -424,10 +425,10 @@
 	integer(int_kind), intent(inout):: ierr
 	integer(int_kind):: i,j,k,l,m,n,ks,kf
 	integer(int8_kind):: l0,l1,tens_size
-	real(real4_kind):: time_beg
+	real(real8_kind):: time_beg
 
 	ierr=0
-!	time_beg=secnds(0.) !debug
+!	time_beg=thread_wtime() !debug
 	if(dim_num.eq.0) then !scalar
 	 tens0(0)=tens0(0)+tens1(0)*scale_fac
 	elseif(dim_num.gt.0) then !tensor
@@ -445,7 +446,7 @@
 	 ierr=-1
 	endif
 !	write(*,'("DEBUG(tensor_algebra_dil::tensor_block_add_): exit code / kernel time = ",i5,1x,F10.4)') &
-!        ierr,secnds(time_beg) !debug
+!        ierr,thread_wtime(time_beg) !debug
 	return
 	end subroutine tensor_block_add_
 !---------------------------------------------------------------------------------------------------
@@ -484,10 +485,10 @@
 	integer(int8_kind):: bs,l0,l1,l2,l3,l_in,l_out,segs(0:max_threads)
 	integer(int_kind):: dim_beg(1:dim_num),dim_end(1:dim_num),ac1(1:max_tensor_rank+1),split_in,split_out
 	logical:: trivial,in_out_dif
-	real(real4_kind):: time_beg
+	real(real8_kind):: time_beg
 
 	ierr=0
-!	time_beg=secnds(0.) !debug
+!	time_beg=thread_wtime() !debug
 	if(dim_num.lt.0) then; ierr=dim_num; return; elseif(dim_num.eq.0) then; tens_out(0)=tens_in(0); return; endif
 !Check the index permutation:
 	trivial=.true.; do i=1,dim_num; if(dim_transp(i).ne.i) then; trivial=.false.; exit; endif; enddo
@@ -675,7 +676,7 @@
 !$OMP END PARALLEL
 	endif !trivial or not
 !	write(*,'("DEBUG(tensor_algebra_dil::tensor_block_copy_): exit code / kernel time = ",i5,1x,F10.4)') &
-!        ierr,secnds(time_beg) !debug
+!        ierr,thread_wtime(time_beg) !debug
 	return
 	end subroutine tensor_block_copy_
 !-------------------------------------------------------------------------------------------------------
@@ -719,10 +720,10 @@
 	real(real8_kind), pointer:: ltp(:),rtp(:),dtp(:)
 	real(real8_kind):: d_scalar
 	logical:: contr_ok,ltransp,rtransp,dtransp
-	real(real4_kind):: time_beg,time_p,time_perm,time_mult,start_dgemm
+	real(real8_kind):: time_beg,time_p,time_perm,time_mult,start_dgemm
 
 	ierr=0
-!	time_beg=secnds(0.); time_perm=0.0; time_mult=0.0 !debug
+!	time_beg=thread_wtime(); time_perm=0d0; time_mult=0d0 !debug
 	if(ltens_num_dim.ge.0.and.ltens_num_dim.le.max_tensor_rank.and. &
 	   rtens_num_dim.ge.0.and.rtens_num_dim.le.max_tensor_rank.and. &
 	   dtens_num_dim.ge.0.and.dtens_num_dim.le.max_tensor_rank) then
@@ -753,7 +754,7 @@
 !	 write(*,'("DEBUG(tensor_algebra_dil::tensor_block_contract_): matrix dimensions (left,right,contr)   : "&
 !         &,i10,1x,i10,1x,i10)') lld,lrd,lcd !debug
 !Transpose tensor arguments, if needed:
-!	 time_p=secnds(0.) !debug
+!	 time_p=thread_wtime() !debug
  !Left tensor argument:
 	 if(ltransp) then
 	  allocate(ltp(1:lsize),STAT=ierr); if(ierr.ne.0) goto 999
@@ -777,17 +778,17 @@
 	  dtp=>dtens(0:dsize-1) !dtp(1:dsize)
 	 endif
 	 do k=1,dsize; dtp(k)=0d0; enddo !remove this if accumulation is desired, uncomment call tensor_block_copy_ above!
-!	 time_perm=time_perm+secnds(time_p) !debug
+!	 time_perm=time_perm+thread_wtime(time_p) !debug
 !Multiply two matrices (dtp+=ltp*rtp):
-!	 time_p=secnds(0.) !debug
+!	 time_p=thread_wtime() !debug
 	 if(dtens_num_dim.gt.0.and.ltens_num_dim.gt.0.and.rtens_num_dim.gt.0) then !partial contraction
 #ifdef NO_BLAS
 	  call tensor_block_pcontract(nthreads,lld,lrd,lcd,ltp,rtp,dtp,ierr); if(ierr.ne.0) goto 999
 #else
 	  if(.not.disable_blas) then
-!	   start_dgemm=secnds(0.) !debug
+!	   start_dgemm=thread_wtime() !debug
 	   call dgemm('T','N',int(lld,4),int(lrd,4),int(lcd,4),1d0,ltp,int(lcd,4),rtp,int(lcd,4),1d0,dtp,int(lld,4))
-!	   write(*,'("DEBUG(tensor_algebra_dil::tensor_block_contract_): DGEMM time: ",F10.6)') secnds(start_dgemm) !debug
+!	   write(*,'("DEBUG(tensor_algebra_dil::tensor_block_contract_): DGEMM time: ",F10.6)') thread_wtime(start_dgemm) !debug
 	  else
 	   call tensor_block_pcontract(nthreads,lld,lrd,lcd,ltp,rtp,dtp,ierr); if(ierr.ne.0) goto 999
 	  endif
@@ -803,14 +804,14 @@
 !	  dtp(1)=dtp(1)+ltp(1)*rtp(1)
           dtp(1)=ltp(1)*rtp(1) !remove this if accumulation is desired, uncomment above!
 	 endif
-!	 time_mult=time_mult+secnds(time_p) !debug
+!	 time_mult=time_mult+thread_wtime(time_p) !debug
 !Transpose the matrix-result into the output tensor:
-!	 time_p=secnds(0.) !debug
+!	 time_p=thread_wtime() !debug
 	 if(dtransp) then
 	  call tensor_block_copy_(nthreads,dtens_num_dim,dtens_dim_extent(do2n(1:dtens_num_dim)),do2n,dtp,dtens,ierr)
 	  if(ierr.ne.0) goto 999
 	 endif
-!	 time_perm=time_perm+secnds(time_p) !debug
+!	 time_perm=time_perm+thread_wtime(time_p) !debug
 !Destroy temporary arrays and pointers:
 999	 if(ltransp) then; deallocate(ltp); else; if(associated(ltp)) nullify(ltp); endif
 	 if(rtransp) then; deallocate(rtp); else; if(associated(rtp)) nullify(rtp); endif
@@ -819,7 +820,7 @@
 	 ierr=-1 !invalid tensor ranks
 	endif
 !	write(*,'("DEBUG(tensor_algebra_dil::tensor_block_contract_): exit error code / timings: ",i5,3(1x,F10.6))') &
-!        ierr,secnds(time_beg),time_perm,time_mult !debug
+!        ierr,thread_wtime(time_beg),time_perm,time_mult !debug
 	return
 	contains
 
@@ -946,10 +947,10 @@
 	integer(int_kind):: i,j,k,l,m,n
 	integer(int8_kind):: l0
 	real(real8_kind):: val
-	real(real4_kind):: time_beg
+	real(real8_kind):: time_beg
 
 	ierr=0
-!	time_beg=secnds(0.) !debug
+!	time_beg=thread_wtime() !debug
 !	write(*,'("DEBUG(tensor_algebra_dil::tensor_block_fcontract): dc: ",i9)') dc !debug
 	if(dc.gt.0_8) then
 	 val=0d0
@@ -961,7 +962,7 @@
 	 ierr=1
 	endif
 !	write(*,'("DEBUG(tensor_algebra_dil::tensor_block_fcontract): exit code / kernel time: ",i5,1x,F10.4)') &
-!        ierr,secnds(time_beg) !debug
+!        ierr,thread_wtime(time_beg) !debug
 	return
 	end subroutine tensor_block_fcontract
 !----------------------------------------------------------------------------------
@@ -993,10 +994,10 @@
 	integer(int_kind):: i,j,k,l,m,n,nthr
 	integer(int8_kind):: l0,l1,l2,ll,lr,ld,ls,lf,b0,b1,b2,e0,e1,e2,cl,cr,cc,chunk
 	real(real8_kind):: val,redm(0:red_mat_size-1,0:red_mat_size-1)
-	real(real4_kind):: time_beg
+	real(real8_kind):: time_beg
 
 	ierr=0
-!	time_beg=secnds(0.) !debug
+!	time_beg=thread_wtime() !debug
 	if(dl.gt.0_8.and.dr.gt.0_8.and.dc.gt.0_8) then
 #ifndef NO_OMP
 	 nthr=min(omp_get_max_threads(),nthreads)
@@ -1203,7 +1204,7 @@
 	 ierr=1
 	endif
 !	write(*,'("DEBUG(tensor_algebra_dil::tensor_block_pcontract): exit code / kernel time: ",i5,1x,F10.4)') &
-!        ierr,secnds(time_beg) !debug
+!        ierr,thread_wtime(time_beg) !debug
 	return
 	end subroutine tensor_block_pcontract
 !--------------------------------------------

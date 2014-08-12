@@ -1,12 +1,13 @@
        module timers
 !Timing services (OpenMP omp_get_wtime() based).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2014/08/11
+!REVISION: 2014/08/12
 !FUNCTIONS:
 ! # integer timer_start(real8:time_set, integer:time_handle);
 ! # logical time_is_off(integer:time_handle, integer:ierr[, logical:destroy]);
 ! # integer timer_destroy(integer:time_handle);
 ! # real8 timer_tick_sec();
+! # real8 thread_wtime([real8:tbase]);
 
 !PARAMETERS:
         integer, parameter, private:: max_timers=8192
@@ -100,5 +101,24 @@
         timer_tick_sec=timer_tick
         return
         end function timer_tick_sec
+!-------------------------------------------
+        real(8) function thread_wtime(tbase)
+!This function returns the current wall clock time in seconds.
+        implicit none
+        real(8), intent(in), optional:: tbase
+        real(8) tm
+        real(8), external:: omp_get_wtime
+#ifndef NO_OMP
+        thread_wtime=omp_get_wtime()
+#else
+#ifdef USE_GNU
+        thread_wtime=real(secnds(0.),8)
+#else
+        call cpu_time(tm); thread_wtime=tm
+#endif
+#endif
+        if(present(tbase)) thread_wtime=thread_wtime-tbase
+        return
+        end function thread_wtime
 
        end module timers

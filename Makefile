@@ -10,6 +10,7 @@ CUDA_LINK = -lcudart -lcublas
 CUDA_FLAGS_DEV = --compile -arch=sm_35 -g -G -DDEBUG
 CUDA_FLAGS_OPT = --compile -O3 -arch=sm_35
 CUDA_FLAGS = $(CUDA_FLAGS_DEV)
+LA_LINK_INTEL = -lmkl_core -lmkl_intel_thread -lmkl_intel_lp64 -lmkl_blas95_lp64 -lmkl_lapack95_lp64 -liomp5
 LA_LINK_CRAY = -lacml
 LA_LINK = $(LA_LINK_CRAY)
 CFLAGS_DEV = -c -g
@@ -19,11 +20,11 @@ FFLAGS_DEV = -c -g
 FFLAGS_OPT = -c -O3
 FFLAGS_DEV_GNU = -c -g -fopenmp -fbacktrace -fcheck=bounds -fcheck=array-temps -fcheck=pointer
 FFLAGS_OPT_GNU = -c -O3 -fopenmp
-FFLAGS_DEV_INTEL = -c -g -openmp -CB
-FFLAGS_OPT_INTEL = -c -O3
+FFLAGS_DEV_INTEL = -c -g -fpp -vec-threshold4 -vec-report2 -openmp -openmp-report2 -DUSE_MKL
+FFLAGS_OPT_INTEL = -c -O3 -fpp -vec-threshold4 -vec-report2 -openmp -openmp-report2 -DUSE_MKL
 FFLAGS = $(FFLAGS_DEV)
 LFLAGS_GNU = -lgomp
-LFLAGS = -o
+LFLAGS = $(LA_LINK) -o
 
 OBJS = stsubs.o combinatoric.o extern_names.o service.o lists.o dictionary.o timers.o \
 	symm_index.o tensor_algebra.o tensor_dil_omp.o tensor_algebra_intel_phi.o \
@@ -31,7 +32,7 @@ OBJS = stsubs.o combinatoric.o extern_names.o service.o lists.o dictionary.o tim
 	main.o proceed.o
 
 $(NAME): $(OBJS)
-	$(FC) $(OBJS) $(MPI_INC) $(CUDA_INC) $(CUDA_LIB) $(CUDA_LINK) $(LA_LINK) $(LFLAGS) $(NAME)
+	$(FC) $(OBJS) $(MPI_INC) $(CUDA_INC) $(CUDA_LIB) $(CUDA_LINK) $(LFLAGS) $(NAME)
 
 %.o: %.F90
 	$(FC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) $?
@@ -49,11 +50,11 @@ tensor_algebra_intel_phi.o: tensor_algebra_intel_phi.F90 tensor_algebra.mod
 	$(FC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) tensor_algebra_intel_phi.F90
 
 tensor_algebra.mod: tensor_algebra.o
-tensor_algebra.o: tensor_algebra.F90 stsubs.mod combinatoric.mod symm_index.mod tensor_algebra_gpu_nvidia.inc
+tensor_algebra.o: tensor_algebra.F90 stsubs.mod combinatoric.mod symm_index.mod timers.mod tensor_algebra_gpu_nvidia.inc
 	$(FC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) tensor_algebra.F90
 
 tensor_dil_omp.mod: tensor_dil_omp.o
-tensor_dil_omp.o: tensor_dil_omp.F90
+tensor_dil_omp.o: tensor_dil_omp.F90 timers.mod
 	$(FC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) tensor_dil_omp.F90
 
 service.mod: service.o

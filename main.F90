@@ -1,12 +1,12 @@
 !PROGRAM: Q-FORCE: Massively-Parallel Quantum Many-Body Methodology on Heterogeneous HPC systems.
-!AUTHOR: Dmitry I. Lyakh (Dmytro I. Liakh): quant4me@gmail.com
-!REVISION: 2014/08/11
+!AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
+!REVISION: 2014/08/12
 !COMPILATION:
 ! - Fortran 2003 at least.
 ! - MPI 2.0 at least.
-! - OpenMP 4.0 at least.
+! - OpenMP 3.0 at least.
 ! - CUDA 5.0 at least.
-! - GNU compiling flags: -c -O3 --free-line-length-none -x f95-cpp-input -fopenmp
+! - GNU compiling flags: -c -O3 -fopenmp
 !   GNU linking flags: -lgomp
 !   GNU BLAS/LAPACK: -lblas -llapack
 ! - Intel compiling flags: -c -O3 -fpp -vec-threshold4 -vec-report2 -openmp -openmp-report2 -DUSE_MKL
@@ -16,12 +16,13 @@
 ! - MPI processes launched on the same node MUST have consecutive numbers!
 ! - Environment variable <QF_PROCS_PER_NODE> MUST be defined when using accelerators (number of processes per node)!
 !FPP directives:
+! - NO_AMD - do not use AMD GPU;
 ! - NO_PHI - do not use Intel Xeon Phi (MIC);
-! - NO_GPU - do not use Nvidia GPU (CUDA);
+! - NO_GPU - do not use NVidia GPU (CUDA);
 ! - NO_BLAS - BLAS/LAPACK calls will be replaced by my own routines (D.I.L.);
 ! - USE_MKL - use Intel MKL library for BLAS/LAPACK;
-! - NO_OMP - do not use OpenMP (single-threaded processes);`currently will not work
-! - NO_GNU - Fortran compiler is not GNU (affects Fortran timers);
+! - NO_OMP - do not use OpenMP (single-threaded processes);`currently does not work
+! - USE_GNU - Fortran compiler is GNU (affects Fortran timers);
 !OUTPUT DEVICE:
 ! - jo (@service.mod) - generic output device handle;
 !ENUMERATION OF DEVICES ON A NODE:

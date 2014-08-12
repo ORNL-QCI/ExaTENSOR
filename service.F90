@@ -6,7 +6,6 @@
 !FUNCTIONS:
 ! - subroutine file_handle(ch*:command,i:ifh,i:ierr): SERIAL: file handle manager.
 ! - subroutine quit(i:error_code,ch*:error_msg): PARALLEL: safe global exit.
-! - real(8) function thread_wtime(): SERIAL: current wall time in seconds.
 !--------------------------------------------------------------------------------
 !Parallel environment:
 	include 'mpif.h'    !MPI Fortran interface
@@ -154,22 +153,5 @@
 	call MPI_FINALIZE(ierr)
 	stop
 	end subroutine quit
-!--------------------------------------
-	real(8) function thread_wtime()
-!This function returns the current wall clock time in seconds.
-	implicit none
-	real(8) tm
-	real(8), external:: omp_get_wtime
-#ifndef NO_OMP
-	thread_wtime=omp_get_wtime()
-#else
-#ifndef NO_GNU
-	thread_wtime=real(secnds(0.),8)
-#else
-	call cpu_time(tm); thread_wtime=tm
-#endif
-#endif
-	return
-	end function thread_wtime
 
        end module service
