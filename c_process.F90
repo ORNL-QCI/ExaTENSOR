@@ -1,7 +1,7 @@
 !This module provides functionality for a Computing Process (C-PROCESS, CP).
 !In essence, this is a single-node elementary tensor instruction scheduler (SETIS).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2014/08/11
+!REVISION: 2014/08/12
 !CONCEPTS (CP workflow):
 ! - Each CP stores its own tensor blocks in TBB, with a possibility of disk dump.
 ! - LR sends a batch of ETI to be executed on this CP unit (CP MPI Process).
@@ -306,7 +306,7 @@
 !---------------------------------------------------------
         integer(C_INT) i,j,k,l,m,n,ks,kf,err_code,thread_num !general purpose: thread private
         integer:: stcu_base_ip,stcu_my_ip,stcu_my_eti  !STCU variables: thread private
-        integer:: stcu_mimd_my_pass,stcu_mimd_max_pass !STCU variables
+        integer:: stcu_simd_my_pass,stcu_mimd_my_pass,stcu_mimd_max_pass !STCU variables
         type(nvcu_task_t), allocatable:: nvcu_tasks(:) !parallel to etiq_nvcu
         type(xpcu_task_t), allocatable:: xpcu_tasks(:) !parallel to etiq_xpcu
         integer(C_SIZE_T):: blck_sizes(0:max_arg_buf_levels-1)
@@ -441,7 +441,7 @@
 #endif
 !Begin active life (master thread + leading slave thread):
 !$OMP PARALLEL NUM_THREADS(2) DEFAULT(SHARED) &
-!$OMP          PRIVATE(thread_num,stcu_base_ip,stcu_my_ip,stcu_my_eti,stcu_mimd_my_pass,i,j,k,l,m,n,err_code)
+!$OMP          PRIVATE(thread_num,stcu_base_ip,stcu_my_ip,stcu_my_eti,stcu_simd_my_pass,stcu_mimd_my_pass,i,j,k,l,m,n,err_code)
          n=omp_get_num_threads()
          if(n.eq.2) then
           thread_num=omp_get_thread_num()
@@ -758,6 +758,7 @@
           else !thread_num=1: leading slave thread (LST)
 !$OMP ATOMIC WRITE
            stcu_error=0 !set by LST, can be used by MT
+           stcu_simd_my_pass=0
 !$OMP FLUSH(stcu_error)
            slave_life: do !LST life cycle
 !$OMP FLUSH
@@ -774,9 +775,10 @@
 !$OMP FLUSH(stcu_num_units)
                err_code=0
                if(stcu_num_units.eq.1) then !only one STCU: SIMD execution
+                stcu_simd_my_pass=stcu_simd_my_pass+1
                 stcu_my_ip=stcu_base_ip; stcu_my_eti=l
-                if(verbose) write(jo_cp,'("#DEBUG(c_process::c_proc_life): STCU 0",": IP ",i5,": ETI #",i7,": thread_count=",i3)') &
-                 stcu_my_ip,stcu_my_eti,etiq_stcu%te_conf(stcu_my_ip)%num_workers !debug
+                if(verbose) write(jo_cp,'("#DEBUG(c_process::c_proc_life): STCU 0/ 1",": Pass ",i5,": IP ",i5,": ETI #",i7,&
+                 &": thread_count=",i3)') stcu_simd_my_pass,stcu_my_ip,stcu_my_eti,etiq_stcu%te_conf(stcu_my_ip)%num_workers !debug
                 call omp_set_num_threads(etiq_stcu%te_conf(stcu_my_ip)%num_workers)
                 err_code=stcu_execute_eti(stcu_my_eti)
                 if(err_code.eq.0) then
@@ -790,7 +792,7 @@
 !$OMP FLUSH(stcu_error)
                 endif
                elseif(stcu_num_units.gt.1.and.stcu_num_units.le.stcu_max_units) then !multiple STCU: MIMD execution
-                stcu_mimd_my_pass=0; stcu_mimd_max_pass=1
+                stcu_simd_my_pass=0; stcu_mimd_my_pass=0; stcu_mimd_max_pass=1
 !$OMP PARALLEL NUM_THREADS(stcu_num_units) FIRSTPRIVATE(stcu_base_ip,stcu_mimd_my_pass,err_code) &
 !$OMP          PRIVATE(thread_num,stcu_my_ip,stcu_my_eti,i,j,k) DEFAULT(SHARED)
                 thread_num=omp_get_thread_num()
