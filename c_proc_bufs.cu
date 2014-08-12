@@ -1,6 +1,6 @@
 /** This file provides infrastructure for managing Host/GPU
 argument buffers inside a computing process (C-process).
-AUTHOR: Dmitry I. Lyakh (Dmytro I. Liakh): quant4me@gmail.com
+AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
 REVISION: 2014/04/29
 **/
 

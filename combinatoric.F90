@@ -1,7 +1,8 @@
 	module combinatoric
-!Combinatoric Procedures by Dmitry I. Lyakh (Dmytro I. Liakh): quant4me@gmail.com
+!Combinatoric Procedures.
+!AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
+!Revision: 2014/08/12
 !All rights reserved! No single part can be taken or reproduced!
-!Revision: 2014/08/11
 !PROCEDURES:
 ! - TRNG(i:ctrl,i:ni,i[1]:trn,i[1]:ngt): permutation generator which returns each new permutation.
 ! - TRSIGN(i:n,i[1]:itr): reorders indices in an ascending order and determines the sign of the corresponding permutation (Bubble). Use MERGE_SORT for fast.

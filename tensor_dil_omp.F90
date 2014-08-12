@@ -305,7 +305,7 @@
 	if(dim_num.gt.0) then !true tensor
 	 lts=1_8; do i=1,dim_num; bases_in(i)=lts; lts=lts*tens_ext(i); enddo   !tensor block indexing bases
 	 lss=1_8; do i=1,dim_num; bases_out(i)=lss; lss=lss*slice_ext(i); enddo !slice indexing bases
-!$OMP PARALLEL DEFAULT(SHARED) PRIVATE(i,m,n,im,l_in,l_out)
+!$OMP PARALLEL DEFAULT(SHARED) PRIVATE(i,m,n,kf,im,l_in,l_out)
 #ifndef NO_OMP
 	 n=omp_get_thread_num(); m=omp_get_num_threads()
 #else
@@ -317,18 +317,18 @@
 !$OMP BARRIER
 !$OMP FLUSH(segs)
 	 l_out=segs(n); do i=dim_num,1,-1; im(i)=l_out/bases_out(i); l_out=mod(l_out,bases_out(i)); enddo
-	 l_in=ext_beg(1)+im(1); do i=2,dim_num; l_in=l_in+(ext_beg(i)+im(i))*bases_in(i); enddo
+	 l_in=ext_beg(1)+im(1); do i=2,dim_num; l_in=l_in+(ext_beg(i)+im(i))*bases_in(i); enddo; kf=0
 	 sloop: do l_out=segs(n),segs(n+1)-1_8
 	  slice(l_out)=tens(l_in)
 	  do i=1,dim_num
 	   if(im(i)+1.lt.slice_ext(i)) then
 	    im(i)=im(i)+1; l_in=l_in+bases_in(i)
-	    cycle sloop
+	    kf=kf+1; exit
 	   else
 	    l_in=l_in-im(i)*bases_in(i); im(i)=0
 	   endif
 	  enddo
-	  exit sloop
+	  kf=kf-1; if(kf.lt.0) exit sloop
 	 enddo sloop
 !$OMP END PARALLEL
 	elseif(dim_num.eq.0) then !scalar
@@ -368,7 +368,7 @@
 	if(dim_num.gt.0) then !true tensor
 	 lts=1_8; do i=1,dim_num; bases_out(i)=lts; lts=lts*tens_ext(i); enddo !tensor block indexing bases
 	 lss=1_8; do i=1,dim_num; bases_in(i)=lss; lss=lss*slice_ext(i); enddo !slice indexing bases
-!$OMP PARALLEL DEFAULT(SHARED) PRIVATE(i,m,n,im,l_in,l_out)
+!$OMP PARALLEL DEFAULT(SHARED) PRIVATE(i,m,n,kf,im,l_in,l_out)
 #ifndef NO_OMP
 	 n=omp_get_thread_num(); m=omp_get_num_threads()
 #else
@@ -380,18 +380,18 @@
 !$OMP BARRIER
 !$OMP FLUSH(segs)
 	 l_in=segs(n); do i=dim_num,1,-1; im(i)=l_in/bases_in(i); l_in=mod(l_in,bases_in(i)); enddo
-	 l_out=ext_beg(1)+im(1); do i=2,dim_num; l_out=l_out+(ext_beg(i)+im(i))*bases_out(i); enddo
+	 l_out=ext_beg(1)+im(1); do i=2,dim_num; l_out=l_out+(ext_beg(i)+im(i))*bases_out(i); enddo; kf=0
 	 sloop: do l_in=segs(n),segs(n+1)-1_8
 	  tens(l_out)=slice(l_in)
 	  do i=1,dim_num
 	   if(im(i)+1.lt.slice_ext(i)) then
 	    im(i)=im(i)+1; l_out=l_out+bases_out(i)
-	    cycle sloop
+	    kf=kf+1; exit
 	   else
 	    l_out=l_out-im(i)*bases_out(i); im(i)=0
 	   endif
 	  enddo
-	  exit sloop
+	  kf=kf-1; if(kf.lt.0) exit sloop
 	 enddo sloop
 !$OMP END PARALLEL
 	elseif(dim_num.eq.0) then !scalar
@@ -542,7 +542,7 @@
 !	 write(*,'("DEBUG(tensor_algebra_dil::tensor_block_copy_): index priorities = ",i3,1x,l1,128(1x,i2))') &
 !         kf,in_out_dif,ipr(1:dim_num) !debug
  !Transpose loop:
-!$OMP PARALLEL DEFAULT(SHARED) PRIVATE(i,j,m,n,im,l_in,l_out,l0,l1,l2,l3,dim_beg,dim_end) NUM_THREADS(nthreads)
+!$OMP PARALLEL DEFAULT(SHARED) PRIVATE(i,j,m,n,ks,im,l_in,l_out,l0,l1,l2,l3,dim_beg,dim_end) NUM_THREADS(nthreads)
 #ifndef NO_OMP
 	 n=omp_get_thread_num(); m=omp_get_num_threads() !multi-threaded execution: m is the real number of threads running in parallel
 #else
@@ -569,7 +569,7 @@
 	      l_in=l_in+bases_in(j)-bases_in(j+1); l_out=l_out+bases_out(j)-bases_out(ac1(j)); im(j)=0
 	     else
 	      im(j)=im(j)+1; l_in=l_in+bases_in(j); l_out=l_out+bases_out(j)
-	      cycle loop0
+	      exit
 	     endif
 	    enddo !i
 	   enddo loop0 !l1
@@ -580,7 +580,7 @@
 	   l1=dim_extents(split_in)-1_8
 !$OMP DO SCHEDULE(GUIDED)
 	   do l0=0_8,l1,cache_line_lim
-	    dim_beg(split_in)=int(l0,4); dim_end(split_in)=int(min(l0+cache_line_lim-1_8,l1),4)
+	    dim_beg(split_in)=int(l0,4); dim_end(split_in)=int(min(l0+cache_line_lim-1_8,l1),4); ks=0
 	    im(split_in)=dim_beg(split_in); l_in=im(split_in)*bases_in(split_in); l_out=im(split_in)*bases_out(split_in)
 	    loop2: do
 	     tens_out(l_out)=tens_in(l_in)
@@ -588,12 +588,12 @@
 	      j=ipr(i) !old index number
 	      if(im(j).lt.dim_end(j)) then
 	       im(j)=im(j)+1; l_in=l_in+bases_in(j); l_out=l_out+bases_out(j)
-	       cycle loop2
+	       ks=ks+1; exit
 	      else
 	       l_in=l_in-(im(j)-dim_beg(j))*bases_in(j); l_out=l_out-(im(j)-dim_beg(j))*bases_out(j); im(j)=dim_beg(j)
 	      endif
 	     enddo !i
-	     exit loop2
+	     ks=ks-1; if(ks.lt.0) exit loop2
 	    enddo loop2
 	   enddo !l0
 !$OMP END DO
@@ -602,7 +602,7 @@
            l1=dim_extents(split_out)-1_8
 !$OMP DO SCHEDULE(GUIDED)
 	   do l0=0_8,l1,cache_line_lim
-	    dim_beg(split_out)=int(l0,4); dim_end(split_out)=int(min(l0+cache_line_lim-1_8,l1),4)
+	    dim_beg(split_out)=int(l0,4); dim_end(split_out)=int(min(l0+cache_line_lim-1_8,l1),4); ks=0
 	    im(split_out)=dim_beg(split_out); l_in=im(split_out)*bases_in(split_out); l_out=im(split_out)*bases_out(split_out)
 	    loop3: do
 	     tens_out(l_out)=tens_in(l_in)
@@ -610,12 +610,12 @@
 	      j=ipr(i) !old index number
 	      if(im(j).lt.dim_end(j)) then
 	       im(j)=im(j)+1; l_in=l_in+bases_in(j); l_out=l_out+bases_out(j)
-	       cycle loop3
+	       ks=ks+1; exit
 	      else
 	       l_in=l_in-(im(j)-dim_beg(j))*bases_in(j); l_out=l_out-(im(j)-dim_beg(j))*bases_out(j); im(j)=dim_beg(j)
 	      endif
 	     enddo !i
-	     exit loop3
+	     ks=ks-1; if(ks.lt.0) exit loop3
 	    enddo loop3
 	   enddo !l0
 !$OMP END DO
@@ -629,19 +629,19 @@
 	     dim_beg(split_out)=int(l1,4); dim_end(split_out)=int(min(l1+cache_line_lim-1_8,l3),4)
 	     im(split_in)=dim_beg(split_in); im(split_out)=dim_beg(split_out)
 	     l_in=im(split_in)*bases_in(split_in)+im(split_out)*bases_in(split_out)
-	     l_out=im(split_in)*bases_out(split_in)+im(split_out)*bases_out(split_out)
+	     l_out=im(split_in)*bases_out(split_in)+im(split_out)*bases_out(split_out); ks=0
 	     loop4: do
 	      tens_out(l_out)=tens_in(l_in)
 	      do i=1,dim_num
 	       j=ipr(i) !old index number
 	       if(im(j).lt.dim_end(j)) then
 	        im(j)=im(j)+1; l_in=l_in+bases_in(j); l_out=l_out+bases_out(j)
-	        cycle loop4
+	        ks=ks+1; exit
 	       else
 	        l_in=l_in-(im(j)-dim_beg(j))*bases_in(j); l_out=l_out-(im(j)-dim_beg(j))*bases_out(j); im(j)=dim_beg(j)
 	       endif
 	      enddo !i
-	      exit loop4
+	      ks=ks-1; if(ks.lt.0) exit loop4
 	     enddo loop4
 	    enddo !l1
 	   enddo !l0
@@ -664,7 +664,7 @@
 	      j=ipr(i) !old index number
 	      if(im(j)+1.lt.dim_extents(j)) then
 	       im(j)=im(j)+1; l_in=l_in+bases_in(j); l_out=l_out+bases_out(j)
-	       cycle loop1
+	       exit
 	      else
 	       l_in=l_in-im(j)*bases_in(j); l_out=l_out-im(j)*bases_out(j); im(j)=0
 	      endif
