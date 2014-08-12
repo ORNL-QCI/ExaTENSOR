@@ -22,9 +22,9 @@ FFLAGS_DEV_GNU = -c -g -fopenmp -fbacktrace -fcheck=bounds -fcheck=array-temps -
 FFLAGS_OPT_GNU = -c -O3 -fopenmp
 FFLAGS_DEV_INTEL = -c -g -fpp -vec-threshold4 -vec-report2 -openmp -openmp-report2
 FFLAGS_OPT_INTEL = -c -O3 -fpp -vec-threshold4 -vec-report2 -openmp -openmp-report2
-FFLAGS = $(FFLAGS_DEV_INTEL) -DNO_PHI
+FFLAGS = $(FFLAGS_DEV_GNU) -DNO_PHI
 LFLAGS_GNU = -lgomp
-LFLAGS = $(LA_LINK) -o
+LFLAGS = $(LFLAGS_GNU) $(LA_LINK) -o
 
 OBJS = stsubs.o combinatoric.o extern_names.o service.o lists.o dictionary.o timers.o \
 	symm_index.o tensor_algebra.o tensor_dil_omp.o tensor_algebra_intel_phi.o \
