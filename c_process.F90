@@ -777,7 +777,7 @@
                if(stcu_num_units.eq.1) then !only one STCU: SIMD execution
                 stcu_simd_my_pass=stcu_simd_my_pass+1
                 stcu_my_ip=stcu_base_ip; stcu_my_eti=l
-                if(verbose) write(jo_cp,'("#DEBUG(c_process::c_proc_life): STCU 0/ 1",": Pass ",i5,": IP ",i5,": ETI #",i7,&
+                if(verbose) write(jo_cp,'("#DEBUG(c_process::c_proc_life): STCU  0/ 1",": Pass ",i5,": IP ",i5,": ETI #",i7,&
                  &": thread_count=",i3)') stcu_simd_my_pass,stcu_my_ip,stcu_my_eti,etiq_stcu%te_conf(stcu_my_ip)%num_workers !debug
                 call omp_set_num_threads(etiq_stcu%te_conf(stcu_my_ip)%num_workers)
                 err_code=stcu_execute_eti(stcu_my_eti)
