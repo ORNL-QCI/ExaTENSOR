@@ -35,8 +35,10 @@
  !Default output for the module procedures:
 	integer, private:: cons_out=6     !default output device for this module (also used for INTEL MIC TAL)
 	logical, private:: verbose=.true. !verbosity (also used for INTEL MIC TAL)
+#ifndef NO_PHI
 !DIR$ ATTRIBUTES OFFLOAD:mic:: cons_out,verbose
 !DIR$ ATTRIBUTES ALIGN:128:: cons_out,verbose
+#endif
  !Global:
 	integer, parameter, public:: max_shape_str_len=1024 !max allowed length for a tensor shape specification string (TSSS)
 	integer, parameter, public:: LONGINT=8              !long integer size in bytes
@@ -44,14 +46,17 @@
 	logical, private:: data_kind_sync=.true. !if .true., each tensor operation will syncronize all existing data kinds
 	logical, private:: trans_shmem=.true.    !cache-efficient (true) VS scatter (false) tensor transpose algorithm
 	logical, private:: disable_blas=.false.  !if .true. and BLAS is accessible, BLAS calls will be replaced by my own routines
+#ifndef NO_PHI
 !DIR$ ATTRIBUTES OFFLOAD:mic:: max_shape_str_len,LONGINT,max_threads,data_kind_sync,trans_shmem,disable_blas
 !DIR$ ATTRIBUTES ALIGN:128:: max_shape_str_len,LONGINT,max_threads,data_kind_sync,trans_shmem,disable_blas
+#endif
  !Numerical:
 	real(8), parameter, private:: abs_cmp_thresh=1d-13 !default absolute error threshold for numerical comparisons
 	real(8), parameter, private:: rel_cmp_thresh=1d-2  !default relative error threshold for numerical comparisons
+#ifndef NO_PHI
 !DIR$ ATTRIBUTES OFFLOAD:mic:: abs_cmp_thresh,rel_cmp_thresh
 !DIR$ ATTRIBUTES ALIGN:128:: abs_cmp_thresh,rel_cmp_thresh
-
+#endif
 !DERIVED DATA TYPES:
  !Tensor shape (storage layout specification for a tensor block):
 	type, public:: tensor_shape_t
@@ -217,7 +222,9 @@
 	return
 	end subroutine set_matmult_algorithm
 !--------------------------------------------------
+#ifndef NO_PHI
 !DIR$ ATTRIBUTES OFFLOAD:mic:: cmplx8_to_real8
+#endif
 	real(8) function cmplx8_to_real8(cmplx_num) !SERIAL
 !This function returns a real approximant for a complex number with the following properties:
 ! 1) The Euclidean (Frobenius) norm (modulus) is preserved;
@@ -234,7 +241,9 @@
 	return
 	end function cmplx8_to_real8
 !---------------------------------------------------------------------------
+#ifndef NO_PHI
 !DIR$ ATTRIBUTES OFFLOAD:mic:: divide_segment_i4
+#endif
 	subroutine divide_segment_i4(seg_range,subseg_num,subseg_sizes,ierr) !SERIAL
 !A segment of range <seg_range> will be divided into <subseg_num> subsegments maximally uniformly.
 !The length of each subsegment will be returned in the array <subseg_sizes(1:subseg_num)>.
@@ -255,7 +264,9 @@
 	return
 	end subroutine divide_segment_i4
 !---------------------------------------------------------------------------
+#ifndef NO_PHI
 !DIR$ ATTRIBUTES OFFLOAD:mic:: divide_segment_i8
+#endif
 	subroutine divide_segment_i8(seg_range,subseg_num,subseg_sizes,ierr) !SERIAL
 !A segment of range <seg_range> will be divided into <subseg_num> subsegments maximally uniformly.
 !The length of each subsegment will be returned in the array <subseg_sizes(1:subseg_num)>.
@@ -3898,7 +3909,7 @@
 	if(dim_num.gt.0) then
 	 lts=1_LONGINT; do i=1,dim_num; bases_in(i)=lts; lts=lts*tens_ext(i); enddo   !tensor block indexing bases
 	 lss=1_LONGINT; do i=1,dim_num; bases_out(i)=lss; lss=lss*slice_ext(i); enddo !slice indexing bases
-!$OMP PARALLEL DEFAULT(SHARED) PRIVATE(i,m,n,im,l_in,l_out)
+!$OMP PARALLEL DEFAULT(SHARED) PRIVATE(i,m,n,kf,im,l_in,l_out)
 #ifndef NO_OMP
 	 n=omp_get_thread_num(); m=omp_get_num_threads()
 #else
@@ -3910,18 +3921,18 @@
 !$OMP BARRIER
 !$OMP FLUSH(segs)
 	 l_out=segs(n); do i=dim_num,1,-1; im(i)=l_out/bases_out(i); l_out=mod(l_out,bases_out(i)); enddo
-	 l_in=ext_beg(1)+im(1); do i=2,dim_num; l_in=l_in+(ext_beg(i)+im(i))*bases_in(i); enddo
+	 l_in=ext_beg(1)+im(1); do i=2,dim_num; l_in=l_in+(ext_beg(i)+im(i))*bases_in(i); enddo; kf=0
 	 sloop: do l_out=segs(n),segs(n+1)-1_LONGINT
 	  slice(l_out)=tens(l_in)
 	  do i=1,dim_num
 	   if(im(i)+1.lt.slice_ext(i)) then
 	    im(i)=im(i)+1; l_in=l_in+bases_in(i)
-	    cycle sloop
+	    kf=kf+1; exit !cycle sloop
 	   else
 	    l_in=l_in-im(i)*bases_in(i); im(i)=0
 	   endif
 	  enddo
-	  exit sloop
+	  kf=kf-1; if(kf.lt.0) exit sloop
 	 enddo sloop
 !$OMP END PARALLEL
 	else
@@ -3996,7 +4007,9 @@
 	return
 	end subroutine tensor_block_insert_dlf_r8
 !------------------------------------------------------------------------------------------------
+#ifndef NO_PHI
 !DIR$ ATTRIBUTES OFFLOAD:mic:: tensor_block_copy_dlf_r4
+#endif
 	subroutine tensor_block_copy_dlf_r4(dim_num,dim_extents,dim_transp,tens_in,tens_out,ierr) !PARALLEL
 !Given a dense tensor block, this subroutine makes a copy of it, permuting the indices according to the <dim_transp>.
 !The algorithm is cache-efficient (Author: Dmitry I. Lyakh (Liakh): quant4me@gmail.com)
@@ -4015,8 +4028,10 @@
 	integer(LONGINT), parameter:: cache_line_lim=2**5   !approx. number of simultaneously open cache lines per thread
 	integer(LONGINT), parameter:: small_tens_size=2**12 !up to this size (of a tensor block) it is useless to apply cache efficiency
 	integer(LONGINT), parameter:: vec_size=2**4         !loop reorganization parameter
+#ifndef NO_PHI
 !DIR$ ATTRIBUTES OFFLOAD:mic:: real_kind,cache_efficiency,cache_line_lim,small_tens_size,vec_size
 !DIR$ ATTRIBUTES ALIGN:128:: real_kind,cache_efficiency,cache_line_lim,small_tens_size,vec_size
+#endif
 !--------------------------------------------------
 	integer, intent(in):: dim_num,dim_extents(1:*),dim_transp(0:*)
 	real(real_kind), intent(in):: tens_in(0:*)
@@ -4029,8 +4044,9 @@
 	integer dim_beg(1:dim_num),dim_end(1:dim_num)
 	logical trivial,in_out_dif
 	real(8) time_beg
+#ifndef NO_PHI
 !DIR$ ATTRIBUTES ALIGN:128:: ac1,im,n2o,ipr,bases_in,bases_out,bases_pri,segs,dim_beg,dim_end
-
+#endif
 	ierr=0
 !	time_beg=thread_wtime() !debug
 	if(dim_num.lt.0) then; ierr=dim_num; return; elseif(dim_num.eq.0) then; tens_out(0)=tens_in(0); return; endif	
@@ -4231,7 +4247,9 @@
 	return
 	end subroutine tensor_block_copy_dlf_r4
 !------------------------------------------------------------------------------------------------
+#ifndef NO_PHI
 !DIR$ ATTRIBUTES OFFLOAD:mic:: tensor_block_copy_dlf_r8
+#endif
 	subroutine tensor_block_copy_dlf_r8(dim_num,dim_extents,dim_transp,tens_in,tens_out,ierr) !PARALLEL
 !Given a dense tensor block, this subroutine makes a copy of it, permuting the indices according to the <dim_transp>.
 !The algorithm is cache-efficient (Author: Dmitry I. Lyakh (Liakh): quant4me@gmail.com)
@@ -4250,8 +4268,10 @@
 	integer(LONGINT), parameter:: cache_line_lim=2**5   !approx. number of simultaneously open cache lines per thread
 	integer(LONGINT), parameter:: small_tens_size=2**12 !up to this size (of a tensor block) it is useless to apply cache efficiency
 	integer(LONGINT), parameter:: vec_size=2**4         !loop reorganization parameter
+#ifndef NO_PHI
 !DIR$ ATTRIBUTES OFFLOAD:mic:: real_kind,cache_efficiency,cache_line_lim,small_tens_size,vec_size
 !DIR$ ATTRIBUTES ALIGN:128:: real_kind,cache_efficiency,cache_line_lim,small_tens_size,vec_size
+#endif
 !--------------------------------------------------
 	integer, intent(in):: dim_num,dim_extents(1:*),dim_transp(0:*)
 	real(real_kind), intent(in):: tens_in(0:*)
@@ -4264,8 +4284,9 @@
 	integer dim_beg(1:dim_num),dim_end(1:dim_num)
 	logical trivial,in_out_dif
 	real(8) time_beg
+#ifndef NO_PHI
 !DIR$ ATTRIBUTES ALIGN:128:: ac1,im,n2o,ipr,bases_in,bases_out,bases_pri,segs,dim_beg,dim_end
-
+#endif
 	ierr=0
 !	time_beg=thread_wtime() !debug
 	if(dim_num.lt.0) then; ierr=dim_num; return; elseif(dim_num.eq.0) then; tens_out(0)=tens_in(0); return; endif

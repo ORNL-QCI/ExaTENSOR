@@ -22,7 +22,7 @@ FFLAGS_DEV_GNU = -c -g -fopenmp -fbacktrace -fcheck=bounds -fcheck=array-temps -
 FFLAGS_OPT_GNU = -c -O3 -fopenmp
 FFLAGS_DEV_INTEL = -c -g -fpp -vec-threshold4 -vec-report2 -openmp -openmp-report2 -DUSE_MKL
 FFLAGS_OPT_INTEL = -c -O3 -fpp -vec-threshold4 -vec-report2 -openmp -openmp-report2 -DUSE_MKL
-FFLAGS = $(FFLAGS_DEV)
+FFLAGS = $(FFLAGS_DEV) -DNO_PHI
 LFLAGS_GNU = -lgomp
 LFLAGS = $(LA_LINK) -o
 
