@@ -1,6 +1,6 @@
-!Standard subroutines often used by me.
-!AUTHOR: Dmitry I. Lyakh (Dmytro I. Liakh): quant4me@gmail.com
-!REVISON: 2014/05/22
+!Standard subroutines/functions.
+!AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
+!REVISON: 2014/08/12
 	MODULE STSUBS
 
 !Parameters:
@@ -836,10 +836,10 @@
 	implicit none
 	real(4), intent(in):: sec
 	real(4) sec0,sec1
-	sec0=secnds(0.0)
-	sec1=secnds(sec0)
-	do while(sec1.lt.sec)
-	 sec1=secnds(sec0)
+	call cpu_time(sec0)
+	call cpu_time(sec1)
+	do while(sec1.lt.sec0+sec)
+	 call cpu_time(sec1)
 	enddo
 	return
 	end subroutine WAIT_DELAY
