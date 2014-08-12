@@ -7,7 +7,7 @@ MPI_INC = -I.
 CUDA_INC = -I.
 CUDA_LIB = -L.
 CUDA_LINK = -lcudart -lcublas
-CUDA_FLAGS_DEV = --compile -arch=sm_35 -DDEBUG -g -G
+CUDA_FLAGS_DEV = --compile -arch=sm_35 -g -G -DDEBUG
 CUDA_FLAGS_OPT = --compile -O3 -arch=sm_35
 CUDA_FLAGS = $(CUDA_FLAGS_DEV)
 LA_LINK_CRAY = -lacml
@@ -19,9 +19,11 @@ FFLAGS_DEV = -c -g
 FFLAGS_OPT = -c -O3
 FFLAGS_DEV_GNU = -c -g -fopenmp -fbacktrace -fcheck=bounds -fcheck=array-temps -fcheck=pointer
 FFLAGS_OPT_GNU = -c -O3 -fopenmp
-FFLAGS = $(FFLAGS_DEV_GNU)
+FFLAGS_DEV_INTEL = -c -g -openmp -CB
+FFLAGS_OPT_INTEL = -c -O3
+FFLAGS = $(FFLAGS_DEV)
 LFLAGS_GNU = -lgomp
-LFLAGS = $(LFLAGS_GNU)
+LFLAGS = -o
 
 OBJS = stsubs.o combinatoric.o extern_names.o service.o lists.o dictionary.o timers.o \
 	symm_index.o tensor_algebra.o tensor_dil_omp.o tensor_algebra_intel_phi.o \
@@ -29,7 +31,7 @@ OBJS = stsubs.o combinatoric.o extern_names.o service.o lists.o dictionary.o tim
 	main.o proceed.o
 
 $(NAME): $(OBJS)
-	$(FC) $(OBJS) $(MPI_INC) $(CUDA_INC) $(CUDA_LIB) $(CUDA_LINK) $(LA_LINK) $(LFLAGS) -o $(NAME)
+	$(FC) $(OBJS) $(MPI_INC) $(CUDA_INC) $(CUDA_LIB) $(CUDA_LINK) $(LA_LINK) $(LFLAGS) $(NAME)
 
 %.o: %.F90
 	$(FC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) $?
