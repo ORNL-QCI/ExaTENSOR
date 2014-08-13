@@ -3,10 +3,9 @@
 !GLOBAL (keep consistent with tensor_algebra_gpu_nvidia.h):
         integer(C_INT), parameter:: max_tensor_rank=32    !max allowed tensor rank (max number of indices in a tensor)
         integer(C_INT), parameter:: max_tensor_operands=4 !max number of tensor operands in a tensor operation
-#ifndef NO_PHI
 !DIR$ ATTRIBUTES OFFLOAD:mic:: max_tensor_rank,max_tensor_operands
 !DIR$ ATTRIBUTES ALIGN:128:: max_tensor_rank,max_tensor_operands
-#endif
+
 !DEVICE KINDS (keep consistent with tensor_algebra_gpu_nvidia.h):
         integer(C_INT), parameter:: MAX_GPUS_PER_NODE=16  !max number of Nvidia GPUs on a node
         integer(C_INT), parameter:: MAX_MICS_PER_NODE=8   !max number of Intel MICs on a node
@@ -21,10 +20,9 @@
         integer(C_INT), parameter:: R4=4  !float data kind
         integer(C_INT), parameter:: R8=8  !double data kind
         integer(C_INT), parameter:: C8=16 !double complex data kind
-#ifndef NO_PHI
 !DIR$ ATTRIBUTES OFFLOAD:mic:: R4,R8,C8
 !DIR$ ATTRIBUTES ALIGN:128:: R4,R8,C8
-#endif
+
 !CUDA TASK STATUS (keep consistent with tensor_algebra_gpu_nvidia.h):
         integer(C_INT), parameter:: cuda_task_error=-1
         integer(C_INT), parameter:: cuda_task_empty=0
@@ -55,9 +53,7 @@
         integer(C_INT), parameter:: compressed=6      !compressed tensor block: symmetry restrictions do not apply!
         logical, parameter:: fortran_like=.true.
         logical, parameter:: c_like=.false.
-#ifndef NO_PHI
 !DIR$ ATTRIBUTES OFFLOAD:mic:: not_allocated,scalar_tensor,dimension_led,bricked_dense,bricked_ordered,sparse_list,compressed
 !DIR$ ATTRIBUTES OFFLOAD:mic:: fortran_like,c_like
 !DIR$ ATTRIBUTES ALIGN:128:: not_allocated,scalar_tensor,dimension_led,bricked_dense,bricked_ordered,sparse_list,compressed
 !DIR$ ATTRIBUTES ALIGN:128:: fortran_like,c_like
-#endif

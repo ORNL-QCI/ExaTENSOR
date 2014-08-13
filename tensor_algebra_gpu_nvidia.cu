@@ -1,6 +1,6 @@
 /** GPU functions for Tensor Algebra in Parallel for NVidia GPUs (CUDA).
 AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-REVISION: 2014/07/03
+REVISION: 2014/08/13
 NOTES:
  # Functions without underscores at the end of their names are blocking (Host) functions;
    Functions with one underscore at the end of their names are external non-blocking functions;
@@ -1852,7 +1852,9 @@ NOTES:
     if(EVENT_RECORD != 0){
      err=cudaEventRecord(cuda_start,cuda_stream); if(err != cudaSuccess){
       i=cuda_task_record(cuda_task,31,dev_num,cuda_stream,cuda_start,cuda_comput,cuda_output,cuda_finish,scr_entry_cnt,scr_entries);
-      err_msg=cudaGetErrorString(err); err=cudaSetDevice(gpu_num); return 31;
+      err_msg=cudaGetErrorString(err);
+      printf("\n#ERROR(tensor_algebra_gpu_nvidia:gpu_tensor_block_contract_dlf_): Unable to record the start event: %s\n",err_msg);
+      err=cudaSetDevice(gpu_num); return 31;
      }
     }
 // Copy the arguments into GPU memory, unless they are already there:

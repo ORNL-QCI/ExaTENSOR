@@ -10,7 +10,7 @@ CUDA_LINK = -lcudart -lcublas
 CUDA_FLAGS_DEV = --compile -arch=sm_35 -g -G -DDEBUG
 CUDA_FLAGS_OPT = --compile -O3 -arch=sm_35
 CUDA_FLAGS = $(CUDA_FLAGS_DEV)
-LA_LINK_INTEL = -lmkl_core -lmkl_intel_thread -lmkl_intel_lp64 -lmkl_blas95_lp64 -lmkl_lapack95_lp64 -liomp5
+LA_LINK_INTEL = -lmkl_core -lmkl_intel_thread -lmkl_intel_lp64 -lmkl_blas95_lp64 -lmkl_lapack95_lp64 -lrt
 LA_LINK_CRAY = -lacml
 LA_LINK = $(LA_LINK_CRAY)
 CFLAGS_DEV = -c -g
@@ -20,10 +20,13 @@ FFLAGS_DEV = -c -g
 FFLAGS_OPT = -c -O3
 FFLAGS_DEV_GNU = -c -g -fopenmp -fbacktrace -fcheck=bounds -fcheck=array-temps -fcheck=pointer
 FFLAGS_OPT_GNU = -c -O3 -fopenmp
+FFLAGS_DEV_PGI = -c -g -mp
+FFLAGS_OPT_PGI = -c -O3 -mp
 FFLAGS_DEV_INTEL = -c -g -fpp -vec-threshold4 -vec-report2 -openmp -openmp-report2
 FFLAGS_OPT_INTEL = -c -O3 -fpp -vec-threshold4 -vec-report2 -openmp -openmp-report2
 FFLAGS = $(FFLAGS_DEV_GNU) -DNO_PHI
 LFLAGS_GNU = -lgomp
+LFLAGS_PGI = -lpthread
 LFLAGS = $(LFLAGS_GNU) $(LA_LINK) -o
 
 OBJS = stsubs.o combinatoric.o extern_names.o service.o lists.o dictionary.o timers.o \
@@ -34,7 +37,7 @@ OBJS = stsubs.o combinatoric.o extern_names.o service.o lists.o dictionary.o tim
 $(NAME): $(OBJS)
 	$(FC) $(OBJS) $(MPI_INC) $(CUDA_INC) $(CUDA_LIB) $(CUDA_LINK) $(LFLAGS) $(NAME)
 
-%.o: %.F90
+%.o: %.F90 qforce.mod
 	$(FC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) $?
 
 qforce.mod: qforce.o
