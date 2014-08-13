@@ -319,6 +319,7 @@
         type(tens_arg_t), pointer:: targ_p
         class(*), pointer:: uptr
         real(8) tm,tm0,tm1
+        integer, external:: tens_key_cmp
 
         ierr=0; jo_cp=jo
         write(jo_cp,'("#MSG(c_process::c_proc_life): I am a C-process (Computing MPI Process): MPI rank = ",i7)') impir
