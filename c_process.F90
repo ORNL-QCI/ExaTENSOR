@@ -378,17 +378,17 @@
         tm=thread_wtime()-tm; write(jo_cp,'("Ok(",F4.1," sec): ETIQ total depth = ",i7)') tm,etiq%depth
         write(jo_cp,'("#MSG(c_process::c_proc_life): Number of ETIQ channels = ",i3)') etiq_channels
 !Test C-process functionality (debug):
-!        call c_proc_test(ierr)
-!        if(ierr.ne.0) then
-!         write(jo_cp,'("#ERROR(c_process::c_proc_life): C-process functionality test failed: ",i7)') ierr
-!         call c_proc_quit(6); return
-!        endif
-!        call run_benchmarks(ierr)
-!        if(ierr.ne.0) then
-!         write(jo_cp,'("#ERROR(c_process::c_proc_life): C-process benchmarking failed: ",i7)') ierr
-!         call c_proc_quit(7); return
-!        endif
-!------------------------------------
+        call c_proc_test(ierr)
+        if(ierr.ne.0) then
+         write(jo_cp,'("#ERROR(c_process::c_proc_life): C-process functionality test failed: ",i7)') ierr
+         call c_proc_quit(6); return
+        endif
+        call run_benchmarks(ierr)
+        if(ierr.ne.0) then
+         write(jo_cp,'("#ERROR(c_process::c_proc_life): C-process benchmarking failed: ",i7)') ierr
+         call c_proc_quit(7); return
+        endif
+!-----------------------------------
 !LIFE:
         ierr=0
 #ifndef NO_OMP
