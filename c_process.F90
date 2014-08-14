@@ -1,7 +1,7 @@
 !This module provides functionality for a Computing Process (C-PROCESS, CP).
 !In essence, this is a single-node elementary tensor instruction scheduler (SETIS).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2014/08/13
+!REVISION: 2014/08/14
 !CONCEPTS (CP workflow):
 ! - Each CP stores its own tensor blocks in TBB, with a possibility of disk dump.
 ! - LR sends a batch of ETI to be executed on this CP unit (CP MPI Process).
@@ -240,7 +240,7 @@
  !XPCU task:
         type, private:: xpcu_task_t !MIC task handle that can be used for querying the MIC task status
          integer, private:: mic_id
-         integer, private:: mic_task_handle
+         integer, private:: mic_task
         end type xpcu_task_t
 !PROCEDURE VISIBILITY:
         private tens_blck_id_create
@@ -319,7 +319,6 @@
         type(tens_arg_t), pointer:: targ_p
         class(*), pointer:: uptr
         real(8) tm,tm0,tm1
-        integer, external:: tens_key_cmp
 
         ierr=0; jo_cp=jo
         write(jo_cp,'("#MSG(c_process::c_proc_life): I am a C-process (Computing MPI Process): MPI rank = ",i7)') impir
@@ -905,7 +904,7 @@
         endif
         if(ierr.ne.0) then; call c_proc_quit(998); return; endif
 #else
-        write(jo_cp,'("#FATAL(c_process::c_proc_life): CP cannot function without OpenMP!")')
+        write(jo_cp,'("#FATAL(c_process::c_proc_life): Computing Process cannot function without OpenMP!")')
         call c_proc_quit(999); return
 #endif
 !-------------------
@@ -1876,42 +1875,52 @@
 !-----------------------------------------------
         integer function tens_key_cmp(key1,key2)
         implicit none
-        class(tens_blck_id_t):: key1,key2
+!       class(tens_blck_id_t):: key1,key2
+        class(*):: key1,key2 !must comply with the abstract interface used in "dictionary.F90"
         integer:: i,l1,l2
         tens_key_cmp=dict_key_eq
-        do i=1,tensor_name_len
-         l1=iachar(key1%tens_name(i:i)); l2=iachar(key2%tens_name(i:i))
-         if(l1.le.32.and.l2.le.32) exit !special symbols (including spaces) terminate the string
-         if(l1.lt.l2) then
-          tens_key_cmp=dict_key_lt; exit
-         elseif(l1.gt.l2) then
-          tens_key_cmp=dict_key_gt; exit
-         endif
-        enddo
-        if(tens_key_cmp.eq.dict_key_eq) then
-         if(allocated(key1%tens_mlndx)) then
-          if(allocated(key2%tens_mlndx)) then
-           l1=key1%tens_mlndx(0); l2=key2%tens_mlndx(0)
+        select type (key1)
+        class is (tens_blck_id_t)
+         if(same_type_as(key1,key2)) then
+          do i=1,tensor_name_len
+           l1=iachar(key1%tens_name(i:i)); l2=iachar(key2%tens_name(i:i))
+           if(l1.le.32.and.l2.le.32) exit !special symbols (including spaces) terminate the string
            if(l1.lt.l2) then
-            tens_key_cmp=dict_key_lt
+            tens_key_cmp=dict_key_lt; exit
            elseif(l1.gt.l2) then
-            tens_key_cmp=dict_key_gt
-           else
-            do i=1,l1
-             if(key1%tens_mlndx(i).lt.key2%tens_mlndx(i)) then
-              tens_key_cmp=dict_key_lt; exit
-             elseif(key1%tens_mlndx(i).gt.key2%tens_mlndx(i)) then
-              tens_key_cmp=dict_key_gt; exit
-             endif
-            enddo
+            tens_key_cmp=dict_key_gt; exit
            endif
-          else
-           tens_key_cmp=dict_key_gt
+          enddo
+          if(tens_key_cmp.eq.dict_key_eq) then
+           if(allocated(key1%tens_mlndx)) then
+            if(allocated(key2%tens_mlndx)) then
+             l1=key1%tens_mlndx(0); l2=key2%tens_mlndx(0) !length of the multi-indices
+             if(l1.lt.l2) then
+              tens_key_cmp=dict_key_lt
+             elseif(l1.gt.l2) then
+              tens_key_cmp=dict_key_gt
+             else
+              do i=1,l1
+               if(key1%tens_mlndx(i).lt.key2%tens_mlndx(i)) then
+                tens_key_cmp=dict_key_lt; exit
+               elseif(key1%tens_mlndx(i).gt.key2%tens_mlndx(i)) then
+                tens_key_cmp=dict_key_gt; exit
+               endif
+              enddo
+             endif
+            else
+             tens_key_cmp=dict_key_gt
+            endif
+           else
+            if(allocated(key2%tens_mlndx)) tens_key_cmp=dict_key_lt
+           endif
           endif
          else
-          if(allocated(key2%tens_mlndx)) tens_key_cmp=dict_key_lt
+          tens_key_cmp=dict_key_err
          endif
-        endif
+        class default
+         tens_key_cmp=dict_key_err
+        end select
         return
         end function tens_key_cmp
 !----------------------------------------------------
