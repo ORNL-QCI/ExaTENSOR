@@ -1881,7 +1881,8 @@
         tens_key_cmp=dict_key_eq
         select type (key1)
         class is (tens_blck_id_t)
-         if(same_type_as(key1,key2)) then
+         select type (key2)
+         class is (tens_blck_id_t)
           do i=1,tensor_name_len
            l1=iachar(key1%tens_name(i:i)); l2=iachar(key2%tens_name(i:i))
            if(l1.le.32.and.l2.le.32) exit !special symbols (including spaces) terminate the string
@@ -1915,9 +1916,9 @@
             if(allocated(key2%tens_mlndx)) tens_key_cmp=dict_key_lt
            endif
           endif
-         else
+         class default
           tens_key_cmp=dict_key_err
-         endif
+         end select
         class default
          tens_key_cmp=dict_key_err
         end select
