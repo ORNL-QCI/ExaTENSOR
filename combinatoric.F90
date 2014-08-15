@@ -1,7 +1,7 @@
 	module combinatoric
 !Combinatoric Procedures.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!Revision: 2014/08/12
+!Revision: 2014/08/15
 !All rights reserved! No single part can be taken or reproduced!
 !PROCEDURES:
 ! - TRNG(i:ctrl,i:ni,i[1]:trn,i[1]:ngt): permutation generator which returns each new permutation.
@@ -75,8 +75,8 @@
 !DATA TYPES:
         type slot !describes a particular (possbily multiple, possibly directed) connection of a certain vertex
          integer:: vert_attr=0           !attribute of the connected vertex (can be either VERTEX_ID or VERTEX_CLASS, depending on the purpose)
-	 complex(8):: conn_typ=(0d0,0d0) !connection type: off-diag: real=x.y: where x is the amount of undirected edges, y is the amount of directed compensated edge-pairs; imag=+/-v.w: where v is the amount of uncompensated directed edges (the sign shows which), w is reserved
-	end type slot                    !                     diag: real=0.y: where y is the amount of loops (color is taken out); imag=0.0
+	 complex(8):: conn_typ=(0d0,0d0) !connection type: off-diag: real=x.y: x is the amount of undirected edges, y is the amount of directed compensated edge-pairs; imag=+/-v.w: v is the amount of uncompensated directed edges (sign shows which), w is reserved
+	end type slot                    !                     diag: real=0.y: y is the amount of loops (color is taken out); imag=0.0
 
 	type vertex                         !describes a vertex (color + connections to other vertices)
          real(8):: color=0d0                !vertex color (should be integer, except some special cases)
