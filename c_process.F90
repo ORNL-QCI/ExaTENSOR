@@ -1,7 +1,7 @@
 !This module provides functionality for a Computing Process (C-PROCESS, CP).
 !In essence, this is a single-node elementary tensor instruction scheduler (SETIS).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2014/08/14
+!REVISION: 2014/08/20
 !CONCEPTS (CP workflow):
 ! - Each CP stores its own tensor blocks in TBB, with a possibility of disk dump.
 ! - LR sends a batch of ETI to be executed on this CP unit (CP MPI Process).
@@ -152,6 +152,8 @@
          integer, private:: file_handle=0          !file handle (0: stored in RAM)
          integer(8), private:: file_offset=0_8     !file offset where the corresponding packet is stored (if on disk)
          integer(8), private:: stored_size=0_8     !stored (disk) size of the tensor block (packet) in bytes
+         contains
+          procedure, private:: clear=>tbb_entry_clear
         end type tbb_entry_t
  !Elementary Tensor Instruction Scheduler (ETIS):
   !Locally present tensor argument:
@@ -164,6 +166,8 @@
          integer, private:: mpi_process              !>=0: mpi rank of the host process; <0: local
          integer, private:: times_needed             !number of times the argument has been referred to in ETIQ
          integer, private:: times_used               !number of times this AAR entry (argument) has been used since creation
+         contains
+          procedure, private:: clear=>tens_arg_clear !clears a tens_arg_t object
         end type tens_arg_t
   !Tensor operand type (component of ETI):
         type tens_operand_t
@@ -174,6 +178,7 @@
          integer(C_INT):: op_price           !current price of the tensor operand (tensor block): set by LR
          type(tens_arg_t), pointer, private:: op_aar_entry=>NULL() !AAR entry assigned to tensor operand: set by CP:MT
          contains
+          procedure, public:: clear=>tens_operand_clear   !clears a tens_operand_t object
           procedure, public:: pack=>tens_operand_pack     !pack the tensor operand (w/o tensor block data) into a plain byte packet
           procedure, public:: unpack=>tens_operand_unpack !unpack a tensor operand from the plain byte packet
         end type tens_operand_t
@@ -198,6 +203,7 @@
          integer, private:: args_ready       !each bit is set to 1 when the corresponding operand is in AAR: set by CP:MT
          type(tens_operand_t):: tens_op(0:max_tensor_operands-1) !tensor-block operands
          contains
+          procedure, public:: clear=>eti_clear                !clears a tens_instr_t object
           procedure, public:: pack=>eti_pack                  !pack the tensor instruction into a plain byte packet
           procedure, public:: unpack=>eti_unpack              !unpack a tensor instruction from the plain byte packet
           procedure, private:: mark_used=>eti_mark_aar_used   !mark in AAR that the tensor operands of this ETI were used
@@ -214,13 +220,14 @@
          type(list_two_way_t), private:: list_scheduled                !list of ETI scheduled to computing units
          type(list_two_way_t), private:: list_completed                !list of completed ETI
          contains
-          procedure, private:: init=>etiq_init                       !initialize empty ETIQ
+          procedure, private:: init=>etiq_init                       !initialize an empty ETIQ queue
           procedure, private:: add_new=>etiq_add_new                 !add new set of ETI to ETIQ (extracting ETI from superpackets)
           procedure, private:: prefetch_data=>etiq_prefetch_data     !prefetch data (tensor blocks)
           procedure, private:: dispatch_ready=>etiq_dispatch_ready   !dispatch ready ETI into appropriate CU queues
           procedure, private:: test_completion=>etiq_test_completion !test completion for issued ETI
           procedure, private:: upload_results=>etiq_upload_results   !upload results (output tensor blocks) for completed ETI
           procedure, private:: remove_dead=>etiq_remove_dead         !remove all dead ETI from ETIQ (packing ETI into superpackets)
+          procedure, private:: destroy=>etiq_destroy                 !destroy an ETIQ queue
         end type etiq_t
   !In-order elementary tensor instruction queue for a specific computing unit:
         type, private:: etiq_cu_t
@@ -231,7 +238,8 @@
          integer(C_INT), allocatable, private:: etiq_entry(:) !number of the ETIQ entry where the ETI is located
          type(te_conf_t), allocatable, private:: te_conf(:)   !computing unit configuration which ETI will be executed on
          contains
-          procedure, private:: init=>etiq_cu_init
+          procedure, private:: init=>etiq_cu_init             !intializes an empty ETIQ_CU queue
+          procedure, private:: destroy=>etiq_cu_destroy       !destroys an ETIQ_CU queue
         end type etiq_cu_t
  !NVCU task:
         type, private:: nvcu_task_t
@@ -243,14 +251,12 @@
          integer, private:: mic_task
         end type xpcu_task_t
 !PROCEDURE VISIBILITY:
+        public cp_destructor
+        public tens_key_cmp
         private tens_blck_id_create
         private tens_blck_id_destroy
-        private tens_operand_pack
-        private tens_operand_unpack
-        private eti_pack
-        private eti_unpack
-        private eti_mark_aar_used
-        private eti_get_channel
+        private tbb_entry_clear
+        private tens_arg_clear
         private etiq_init
         private etiq_add_new
         private etiq_prefetch_data
@@ -258,7 +264,25 @@
         private etiq_test_completion
         private etiq_upload_results
         private etiq_remove_dead
+        private etiq_destroy
         private etiq_cu_init
+        private etiq_cu_destroy
+        private eti_clear
+        private eti_mark_aar_used
+        private eti_get_channel
+        private eti_pack
+        private eti_unpack
+        private tens_operand_clear
+        private tens_operand_pack
+        private tens_operand_unpack
+        public tens_blck_packet_size
+        public tens_blck_pack
+        public tens_blck_unpack
+        public tens_blck_update
+        public tens_blck_assoc
+        public tens_blck_dissoc
+        private c_proc_test
+        private run_benchmarks
 !DATA:
  !Tensor Block Bank (TBB):
         type(dict_t), private:: tbb !permanent storage of local tensor blocks
@@ -467,30 +491,30 @@
   !Zero scalar:
             call tensor_block_create('()','r8',tbb_entry%tens_blck,i,val_r8=0d0); write(jo_cp,*) 'Tensor block creation: ',i
             err_code=tbb%search(dict_add_if_not_found,tens_key_cmp,key(0),tbb_entry,value_out=uptr)
-            write(jo_cp,*) 'TBB entry search: ',err_code
+            write(jo_cp,*) 'TBB entry search: ',err_code,associated(uptr)
             select type (uptr)
             type is (tbb_entry_t)
              err_code=aar_register(key(0),targ_p); write(jo_cp,*) 'AAR entry created: ',err_code
-             targ_p%tens_blck_f=>uptr%tens_blck
+             targ_p%tens_blck_f=>uptr%tens_blck; write(jo_cp,*) 'Pointer status: ',associated(targ_p%tens_blck_f)
             end select
   !Unity scalar:
             call tensor_block_init('r8',tbb_entry%tens_blck,i,val_r8=1d-3); write(jo_cp,*) 'Tensor block unity init: ',i
             err_code=tbb%search(dict_add_if_not_found,tens_key_cmp,key(1),tbb_entry,value_out=uptr)
-            write(jo_cp,*) 'TBB entry search: ',err_code
+            write(jo_cp,*) 'TBB entry search: ',err_code,associated(uptr)
             select type (uptr)
             type is (tbb_entry_t)
              err_code=aar_register(key(1),targ_p); write(jo_cp,*) 'AAR entry created: ',err_code
-             targ_p%tens_blck_f=>uptr%tens_blck
+             targ_p%tens_blck_f=>uptr%tens_blck; write(jo_cp,*) 'Pointer status: ',associated(targ_p%tens_blck_f)
             end select
   !Non-trivial tensors:
             do j=2,10
              call tensor_block_destroy(tbb_entry%tens_blck,i); write(jo_cp,*) 'Tensor block destruction: ',i
              err_code=tbb%search(dict_add_if_not_found,tens_key_cmp,key(j),tbb_entry,value_out=uptr)
-             write(jo_cp,*) 'TBB entry search: ',err_code
+             write(jo_cp,*) 'TBB entry search: ',err_code,associated(uptr)
              select type (uptr)
              type is (tbb_entry_t)
               err_code=aar_register(key(j),targ_p); write(jo_cp,*) 'AAR entry created: ',err_code
-              targ_p%tens_blck_f=>uptr%tens_blck
+              targ_p%tens_blck_f=>uptr%tens_blck; write(jo_cp,*) 'Pointer status: ',associated(targ_p%tens_blck_f)
              end select
             enddo
  !Fill in tensor instructions in ETIQ:
@@ -1666,8 +1690,8 @@
          type(tens_arg_t), pointer, intent(out):: aar_p
          type(tens_arg_t):: jtarg
          class(*), pointer:: jptr
-         jtarg%mpi_tag=-1; jtarg%mpi_process=-1; jtarg%times_needed=0; jtarg%times_used=0
-         jtarg%tens_blck_f=>NULL(); jtarg%tens_blck_c=C_NULL_PTR; jtarg%buf_entry_host=-1; jtarg%present_on_mic=-1
+         integer je
+         je=jtarg%clear()
          aar_register=aar%search(dict_add_if_not_found,tens_key_cmp,tkey,jtarg,value_out=jptr)
          if(aar_register.eq.dict_key_found.or.aar_register.eq.dict_key_not_found) then
           select type (jptr)
@@ -1769,54 +1793,83 @@
         select type (this)
         type is (tens_blck_id_t)
 !         if(verbose) write(jo_cp,'("#DEBUG(c_process::cp_destructor): tens_blck_id_t")') !debug
-         if(allocated(this%tens_mlndx)) then; deallocate(this%tens_mlndx,STAT=i); if(i.ne.0) ierr=1; endif
-         this%tens_name=' '
+         i=this%destroy(); if(i.ne.0) ierr=1
         type is (tbb_entry_t)
 !         if(verbose) write(jo_cp,'("#DEBUG(c_process::cp_destructor): tbb_entry_t")') !debug
-         call tensor_block_destroy(this%tens_blck,i); if(i.ne.0) ierr=2
-         this%file_handle=0; this%file_offset=0_8; this%stored_size=0_8
+         i=this%clear(); if(i.ne.0) ierr=2
         type is (tens_arg_t)
 !         if(verbose) write(jo_cp,'("#DEBUG(c_process::cp_destructor): tens_arg_t")') !debug
-         nullify(this%tens_blck_f); this%tens_blck_c=C_NULL_PTR; this%buf_entry_host=-1; this%present_on_mic=-1
-         this%mpi_tag=-1; this%mpi_process=-1; this%times_needed=0; this%times_used=0
+         i=this%clear(); if(i.ne.0) ierr=3
         type is (tens_operand_t)
 !         if(verbose) write(jo_cp,'("#DEBUG(c_process::cp_destructor): tens_operand_t")') !debug
-         i=cp_destructor(this%tens_blck_id); if(i.ne.0) ierr=3
-         this%op_host=-1; this%op_pack_size=0_8; this%op_tag=0; this%op_price=0
-         nullify(this%op_aar_entry)
+         i=this%clear(); if(i.ne.0) ierr=4
         type is (tens_instr_t)
 !         if(verbose) write(jo_cp,'("#DEBUG(c_process::cp_destructor): tens_instr_t")') !debug
-         if(allocated(this%instr_aux)) then; deallocate(this%instr_aux,STAT=i); if(i.ne.0) ierr=4; endif
-         do j=0,max_tensor_operands-1; i=cp_destructor(this%tens_op(j)); if(i.ne.0) ierr=4; enddo
-         this%instr_code=instr_null; this%data_kind='  '; this%instr_priority=0; this%no_upload=0
-         this%instr_cost=0.0; this%instr_size=0.0; this%instr_status=instr_null
-         this%instr_cu=cu_t(-1,-1); this%instr_handle=-1; this%args_ready=0
-         this%time_touched=0.; this%time_data_ready=0.; this%time_issued=0.; this%time_completed=0.; this%time_uploaded=0.
+         i=this%clear(); if(i.ne.0) ierr=5
         type is (etiq_cu_t)
 !         if(verbose) write(jo_cp,'("#DEBUG(c_process::cp_destructor): etiq_cu_t")') !debug
-         if(allocated(this%etiq_entry)) then; deallocate(this%etiq_entry,STAT=i); if(i.ne.0) ierr=5; endif
-         if(allocated(this%te_conf)) then; deallocate(this%te_conf,STAT=i); if(i.ne.0) ierr=5; endif
-         this%depth=0; this%scheduled=0; this%bp=0; this%ip=0
+         i=this%destroy(); if(i.ne.0) ierr=6
         type is (etiq_t)
 !         if(verbose) write(jo_cp,'("#DEBUG(c_process::cp_destructor): etiq_t")') !debug
-         if(allocated(this%eti)) then
-          do j=lbound(this%eti,1),ubound(this%eti,1)
-           i=cp_destructor(this%eti(j)); if(i.ne.0) ierr=6
-          enddo
-          deallocate(this%eti,STAT=i); if(i.ne.0) ierr=6
-         endif
-         do j=1,etiq_channels; i=this%etiq_channel(j)%destroy(); if(i.ne.0) ierr=6; enddo
-         i=this%list_data_wait%destroy(); if(i.ne.0) ierr=6
-         i=this%list_ready_to_exec%destroy(); if(i.ne.0) ierr=6
-         i=this%list_scheduled%destroy(); if(i.ne.0) ierr=6
-         i=this%list_completed%destroy(); if(i.ne.0) ierr=6
-         this%depth=0; this%scheduled=0
+         i=this%destroy(); if(i.ne.0) ierr=7
         class default
          write(jo_cp,'("#ERROR(c_process::cp_destructor): unknown type/class!")')
          ierr=-1
         end select
         return
         end function cp_destructor
+!-----------------------------------------------
+        integer function tens_key_cmp(key1,key2) !SERIAL
+        implicit none
+!       class(tens_blck_id_t):: key1,key2
+        class(*):: key1,key2 !must comply with the abstract interface used in "dictionary.F90"
+        integer:: i,l1,l2
+        tens_key_cmp=dict_key_eq
+        select type (key1)
+        class is (tens_blck_id_t)
+         select type (key2)
+         class is (tens_blck_id_t)
+          do i=1,tensor_name_len
+           l1=iachar(key1%tens_name(i:i)); l2=iachar(key2%tens_name(i:i))
+           if(l1.le.32.and.l2.le.32) exit !special symbols (including spaces) terminate the string
+           if(l1.lt.l2) then
+            tens_key_cmp=dict_key_lt; exit
+           elseif(l1.gt.l2) then
+            tens_key_cmp=dict_key_gt; exit
+           endif
+          enddo
+          if(tens_key_cmp.eq.dict_key_eq) then
+           if(allocated(key1%tens_mlndx)) then
+            if(allocated(key2%tens_mlndx)) then
+             l1=key1%tens_mlndx(0); l2=key2%tens_mlndx(0) !length of the multi-indices
+             if(l1.lt.l2) then
+              tens_key_cmp=dict_key_lt
+             elseif(l1.gt.l2) then
+              tens_key_cmp=dict_key_gt
+             else
+              do i=1,l1
+               if(key1%tens_mlndx(i).lt.key2%tens_mlndx(i)) then
+                tens_key_cmp=dict_key_lt; exit
+               elseif(key1%tens_mlndx(i).gt.key2%tens_mlndx(i)) then
+                tens_key_cmp=dict_key_gt; exit
+               endif
+              enddo
+             endif
+            else
+             tens_key_cmp=dict_key_gt
+            endif
+           else
+            if(allocated(key2%tens_mlndx)) tens_key_cmp=dict_key_lt
+           endif
+          endif
+         class default
+          tens_key_cmp=dict_key_err
+         end select
+        class default
+         tens_key_cmp=dict_key_err
+        end select
+        return
+        end function tens_key_cmp
 !----------------------------------------------------------------
         integer function tens_blck_id_create(this,t_name,t_mlndx)
         implicit none
@@ -1872,58 +1925,25 @@
         endif
         return
         end function tens_blck_id_destroy
-!-----------------------------------------------
-        integer function tens_key_cmp(key1,key2)
+!---------------------------------------------
+        integer function tbb_entry_clear(this)
         implicit none
-!       class(tens_blck_id_t):: key1,key2
-        class(*):: key1,key2 !must comply with the abstract interface used in "dictionary.F90"
-        integer:: i,l1,l2
-        tens_key_cmp=dict_key_eq
-        select type (key1)
-        class is (tens_blck_id_t)
-         select type (key2)
-         class is (tens_blck_id_t)
-          do i=1,tensor_name_len
-           l1=iachar(key1%tens_name(i:i)); l2=iachar(key2%tens_name(i:i))
-           if(l1.le.32.and.l2.le.32) exit !special symbols (including spaces) terminate the string
-           if(l1.lt.l2) then
-            tens_key_cmp=dict_key_lt; exit
-           elseif(l1.gt.l2) then
-            tens_key_cmp=dict_key_gt; exit
-           endif
-          enddo
-          if(tens_key_cmp.eq.dict_key_eq) then
-           if(allocated(key1%tens_mlndx)) then
-            if(allocated(key2%tens_mlndx)) then
-             l1=key1%tens_mlndx(0); l2=key2%tens_mlndx(0) !length of the multi-indices
-             if(l1.lt.l2) then
-              tens_key_cmp=dict_key_lt
-             elseif(l1.gt.l2) then
-              tens_key_cmp=dict_key_gt
-             else
-              do i=1,l1
-               if(key1%tens_mlndx(i).lt.key2%tens_mlndx(i)) then
-                tens_key_cmp=dict_key_lt; exit
-               elseif(key1%tens_mlndx(i).gt.key2%tens_mlndx(i)) then
-                tens_key_cmp=dict_key_gt; exit
-               endif
-              enddo
-             endif
-            else
-             tens_key_cmp=dict_key_gt
-            endif
-           else
-            if(allocated(key2%tens_mlndx)) tens_key_cmp=dict_key_lt
-           endif
-          endif
-         class default
-          tens_key_cmp=dict_key_err
-         end select
-        class default
-         tens_key_cmp=dict_key_err
-        end select
+        type(tbb_entry_t):: this
+        integer ierr
+        tbb_entry_clear=0
+        call tensor_block_destroy(this%tens_blck,ierr); if(ierr.ne.0) tbb_entry_clear=tbb_entry_clear+1
+        this%file_handle=0; this%file_offset=0_8; this%stored_size=0_8
         return
-        end function tens_key_cmp
+        end function tbb_entry_clear
+!---------------------------------------------
+        integer function tens_arg_clear(this)
+        implicit none
+        type(tens_arg_t):: this
+        tens_arg_clear=0
+        this%mpi_tag=-1; this%mpi_process=-1; this%times_needed=0; this%times_used=0
+        this%tens_blck_f=>NULL(); this%tens_blck_c=C_NULL_PTR; this%buf_entry_host=-1; this%present_on_mic=-1
+        return
+        end function tens_arg_clear
 !----------------------------------------------------
         integer function etiq_init(this,queue_length) !SERIAL: MT only
 !This function initializes an <etiq_t> object.
@@ -2051,7 +2071,7 @@
         !`Write
         return
         end function etiq_test_completion
-!----------------------------------------------------------------
+!-------------------------------------------------------------
         integer function etiq_upload_results(this,new_uploads)
 !This function uploads results (tensor blocks) for completed ETI in ETIQ.
         implicit none
@@ -2071,6 +2091,28 @@
         !`Write
         return
         end function etiq_remove_dead
+!------------------------------------------
+        integer function etiq_destroy(this)
+        implicit none
+        type(etiq_t):: this
+        integer j,ierr
+        etiq_destroy=0
+        if(allocated(this%eti)) then
+         do j=lbound(this%eti,1),ubound(this%eti,1)
+          ierr=this%eti(j)%clear(); if(ierr.ne.0) etiq_destroy=1
+         enddo
+         deallocate(this%eti,STAT=ierr); if(ierr.ne.0) etiq_destroy=2
+        endif
+        do j=1,etiq_channels
+         ierr=this%etiq_channel(j)%destroy(); if(ierr.ne.0) etiq_destroy=3
+        enddo
+        ierr=this%list_data_wait%destroy(); if(ierr.ne.0) etiq_destroy=4
+        ierr=this%list_ready_to_exec%destroy(); if(ierr.ne.0) etiq_destroy=5
+        ierr=this%list_scheduled%destroy(); if(ierr.ne.0) etiq_destroy=6
+        ierr=this%list_completed%destroy(); if(ierr.ne.0) etiq_destroy=7
+        this%depth=0; this%scheduled=0
+        return
+        end function etiq_destroy
 !-------------------------------------------------------
         integer function etiq_cu_init(this,queue_length) !SERIAL: MT only
 !This function initializes an <etiq_cu_t> object.
@@ -2093,6 +2135,39 @@
         endif
         return
         end function etiq_cu_init
+!---------------------------------------------
+        integer function etiq_cu_destroy(this)
+        implicit none
+        type(etiq_cu_t):: this
+        integer ierr
+        etiq_cu_destroy=0
+        if(allocated(this%etiq_entry)) then
+         deallocate(this%etiq_entry,STAT=ierr); if(ierr.ne.0) etiq_cu_destroy=etiq_cu_destroy+1
+        endif
+        if(allocated(this%te_conf)) then
+         deallocate(this%te_conf,STAT=ierr); if(ierr.ne.0) etiq_cu_destroy=etiq_cu_destroy+10
+        endif
+        this%depth=0; this%scheduled=0; this%bp=0; this%ip=0
+        return
+        end function etiq_cu_destroy
+!--------------------------------------
+        integer function eti_clear(this)
+        implicit none
+        type(tens_instr_t):: this
+        integer j,ierr
+        eti_clear=0
+        if(allocated(this%instr_aux)) then
+         deallocate(this%instr_aux,STAT=ierr); if(ierr.ne.0) eti_clear=eti_clear+1
+        endif
+        do j=0,max_tensor_operands-1
+         ierr=this%tens_op(j)%clear; if(ierr.ne.0) eti_clear=eti_clear+10
+        enddo
+        this%instr_id=0_8; this%instr_code=instr_null; this%data_kind='  '
+        this%instr_priority=0; this%no_upload=0; this%instr_cost=0.0; this%instr_size=0.0
+        this%instr_status=instr_null; this%instr_cu=cu_t(-1,-1); this%instr_handle=-1; this%args_ready=0
+        this%time_touched=0.; this%time_data_ready=0.; this%time_issued=0.; this%time_completed=0.; this%time_uploaded=0.
+        return
+        end function eti_clear
 !-----------------------------------------------
         integer function eti_mark_aar_used(this) !Mark all tensor arguments of an ETI as used: MT only
         implicit none
@@ -2105,7 +2180,7 @@
         enddo
         return
         end function eti_mark_aar_used
-!-----------------------------------------------------
+!---------------------------------------------
         integer function eti_get_channel(this) !Obtain the ETIQ channel number where the ETI should go: MT only
         implicit none
         class(tens_instr_t):: this
@@ -2136,132 +2211,6 @@
         eti_get_channel=m*etiq_cost_levels+i
         return
         end function eti_get_channel
-!---------------------------------------------------------
-        integer function tens_operand_pack(this,tens_data)
-!This function packs the public part of <this> (tens_operand_t) into a plain byte packet <tens_data>.
-!Format of the output packet:
-! INTEGER(C_SIZE_T): packet size (in bytes);
-! INTEGER(C_INT): length of the tensor name;
-! INTEGER(1), DIMENSION(:): tensor name;
-! INTEGER(C_INT): length of the tensor block key multiindex;
-! INTEGER(C_INT), DIMENSION(:): tensor block key multiindex;
-! INTEGER(C_INT): host MPI process of the tensor block (operand);
-! INTEGER(C_SIZE_T): packed size of the tensor block (see <tens_blck_packet_size>);
-! INTEGER(C_INT): MPI delivery tag;
-! INTEGER(C_INT): price of the tensor block;
-        implicit none
-        class(tens_operand_t):: this
-        type(C_PTR):: tens_data,c_addr
-        integer(C_INT):: i
-        integer(C_SIZE_T):: pack_size,i_s,i1_s
-        integer(C_SIZE_T), pointer:: cz_p
-        integer(C_INT), pointer:: i_p
-        integer(C_INT), pointer:: id1_p(:)
-        integer(1):: i1
-        integer(1), pointer:: i1d1_p(:)
-
-        tens_operand_pack=0
-        if(c_associated(tens_data)) then
-         i=0; i1=0; i_s=sizeof(i); i1_s=sizeof(i1)
-         pack_size=0; pack_size=sizeof(pack_size)
-!Tensor name:
-         c_addr=ptr_offset(tens_data,pack_size); call c_f_pointer(c_addr,i_p)
-         i_p=len_trim(this%tens_blck_id%tens_name); pack_size=pack_size+i_s !length
-         if(i_p.gt.0) then
-          c_addr=ptr_offset(tens_data,pack_size); call c_f_pointer(c_addr,i1d1_p,shape=[i_p])
-          do i=1,i_p; i1d1_p(i)=iachar(this%tens_blck_id%tens_name(i:i)); enddo !tensor name
-          pack_size=pack_size+i1_s*i_p
-         else
-          tens_operand_pack=1; return
-         endif
-!Tensor block key multiindex:
-         c_addr=ptr_offset(tens_data,pack_size); call c_f_pointer(c_addr,i_p)
-         if(allocated(this%tens_blck_id%tens_mlndx)) then
-          if(lbound(this%tens_blck_id%tens_mlndx,1).eq.0) then
-           if(ubound(this%tens_blck_id%tens_mlndx,1).eq.this%tens_blck_id%tens_mlndx(0)) then
-            i_p=this%tens_blck_id%tens_mlndx(0); pack_size=pack_size+i_s
-            c_addr=ptr_offset(tens_data,pack_size); call c_f_pointer(c_addr,id1_p,shape=[i_p])
-            id1_p(1:i_p)=this%tens_blck_id%tens_mlndx(1:i_p); pack_size=pack_size+i_s*i_p
-           else
-            tens_operand_pack=2; return
-           endif
-          else
-           tens_operand_pack=3; return
-          endif
-         else
-          i_p=0; pack_size=pack_size+i_s
-         endif
-!Host MPI process:
-         c_addr=ptr_offset(tens_data,pack_size); call c_f_pointer(c_addr,i_p)
-         i_p=this%op_host; pack_size=pack_size+i_s
-!Packed size of the tensor block:
-         c_addr=ptr_offset(tens_data,pack_size); call c_f_pointer(c_addr,cz_p)
-         cz_p=this%op_pack_size; pack_size=pack_size+sizeof(pack_size)
-!MPI delivery tag:
-         c_addr=ptr_offset(tens_data,pack_size); call c_f_pointer(c_addr,i_p)
-         i_p=this%op_tag; pack_size=pack_size+i_s
-!Price of the tensor block:
-         c_addr=ptr_offset(tens_data,pack_size); call c_f_pointer(c_addr,i_p)
-         i_p=this%op_price; pack_size=pack_size+i_s
-!Packet size:
-         call c_f_pointer(tens_data,cz_p); cz_p=pack_size
-        else
-         tens_operand_pack=999
-        endif
-        return
-        end function tens_operand_pack
-!-----------------------------------------------------------
-        integer function tens_operand_unpack(this,tens_data)
-!This function unpacks the public part of <this> (tens_operand_t) from a plain byte packet <tens_data>.
-!The format of the packet is given in <tens_operand_pack>.
-        implicit none
-        class(tens_operand_t):: this
-        type(C_PTR):: tens_data,c_addr
-        integer(C_INT):: i
-        integer(C_SIZE_T):: pack_size,s,i_s,i1_s
-        integer(C_SIZE_T), pointer:: cz_p
-        integer(C_INT), pointer:: i_p
-        integer(C_INT), pointer:: id1_p(:)
-        integer(1):: i1
-        integer(1), pointer:: i1d1_p(:)
-
-        tens_operand_unpack=0
-        if(c_associated(tens_data)) then
-         i=0; i1=0; i_s=sizeof(i); i1_s=sizeof(i1)
-!Packet size:
-         call c_f_pointer(tens_data,cz_p); pack_size=cz_p; s=sizeof(pack_size)
-         if(pack_size.le.0) then; tens_operand_unpack=1; return; endif
-!Tensor name:
-         c_addr=ptr_offset(tens_data,s); call c_f_pointer(c_addr,i_p); s=s+i_s
-         if(i_p.le.0.or.i_p.gt.tensor_name_len) then; tens_operand_unpack=2; return; endif
-         c_addr=ptr_offset(tens_data,s); call c_f_pointer(c_addr,i1d1_p,shape=[i_p])
-         do i=1,i_p; this%tens_blck_id%tens_name(i:i)=achar(i1d1_p(i)); enddo; s=s+i1_s*i_p
-!Tensor block key multiindex:
-         c_addr=ptr_offset(tens_data,s); call c_f_pointer(c_addr,i_p); s=s+i_s
-         if(i_p.lt.0.or.i_p.gt.max_tensor_rank) then; tens_operand_unpack=3; return; endif
-         c_addr=ptr_offset(tens_data,s); call c_f_pointer(c_addr,id1_p,shape=[i_p])
-         if(.not.allocated(this%tens_blck_id%tens_mlndx)) then
-          allocate(this%tens_blck_id%tens_mlndx(0:i_p),STAT=i); if(i.ne.0) then; tens_operand_unpack=4; return; endif
-         endif
-         if(size(this%tens_blck_id%tens_mlndx).ne.1+i_p) then
-          deallocate(this%tens_blck_id%tens_mlndx,STAT=i); if(i.ne.0) then; tens_operand_unpack=5; return; endif
-          allocate(this%tens_blck_id%tens_mlndx(0:i_p),STAT=i); if(i.ne.0) then; tens_operand_unpack=6; return; endif
-         endif
-         this%tens_blck_id%tens_mlndx(0)=i_p; this%tens_blck_id%tens_mlndx(1:i_p)=id1_p(1:i_p); s=s+i_s*i_p
-!Host MPI process:
-         c_addr=ptr_offset(tens_data,s); call c_f_pointer(c_addr,i_p); this%op_host=i_p; s=s+i_s
-!Packed size of the tensor block:
-         c_addr=ptr_offset(tens_data,s); call c_f_pointer(c_addr,cz_p); this%op_pack_size=cz_p; s=s+sizeof(pack_size)
-!MPI delivery tag:
-         c_addr=ptr_offset(tens_data,s); call c_f_pointer(c_addr,i_p); this%op_tag=i_p; s=s+i_s
-!Price of the tensor block:
-         c_addr=ptr_offset(tens_data,s); call c_f_pointer(c_addr,i_p); this%op_price=i_p; s=s+i_s
-         if(s.ne.pack_size) tens_operand_unpack=7
-        else
-         tens_operand_unpack=999
-        endif
-        return
-        end function tens_operand_unpack
 !-----------------------------------------------
         integer function eti_pack(this,eti_data)
 !This function packs the public part of an ETI <this> (tens_instr_t) into a plain byte packet <eti_data>.
@@ -2467,6 +2416,143 @@
         endif
         return
         end function eti_unpack
+!-----------------------------------------------
+        integer function tens_operand_clear(this)
+        implicit none
+        type(tens_operand_t):: this
+        integer ierr
+        tens_operand_clear=0
+        this%op_host=-1; this%op_pack_size=0_8; this%op_tag=0; this%op_price=0
+        nullify(this%op_aar_entry); ierr=this%tens_blck_id%destroy()
+        if(ierr.ne.0) tens_operand_clear=1
+        return
+        end function tens_operand_clear
+!---------------------------------------------------------
+        integer function tens_operand_pack(this,tens_data)
+!This function packs the public part of <this> (tens_operand_t) into a plain byte packet <tens_data>.
+!Format of the output packet:
+! INTEGER(C_SIZE_T): packet size (in bytes);
+! INTEGER(C_INT): length of the tensor name;
+! INTEGER(1), DIMENSION(:): tensor name;
+! INTEGER(C_INT): length of the tensor block key multiindex;
+! INTEGER(C_INT), DIMENSION(:): tensor block key multiindex;
+! INTEGER(C_INT): host MPI process of the tensor block (operand);
+! INTEGER(C_SIZE_T): packed size of the tensor block (see <tens_blck_packet_size>);
+! INTEGER(C_INT): MPI delivery tag;
+! INTEGER(C_INT): price of the tensor block;
+        implicit none
+        class(tens_operand_t):: this
+        type(C_PTR):: tens_data,c_addr
+        integer(C_INT):: i
+        integer(C_SIZE_T):: pack_size,i_s,i1_s
+        integer(C_SIZE_T), pointer:: cz_p
+        integer(C_INT), pointer:: i_p
+        integer(C_INT), pointer:: id1_p(:)
+        integer(1):: i1
+        integer(1), pointer:: i1d1_p(:)
+
+        tens_operand_pack=0
+        if(c_associated(tens_data)) then
+         i=0; i1=0; i_s=sizeof(i); i1_s=sizeof(i1)
+         pack_size=0; pack_size=sizeof(pack_size)
+!Tensor name:
+         c_addr=ptr_offset(tens_data,pack_size); call c_f_pointer(c_addr,i_p)
+         i_p=len_trim(this%tens_blck_id%tens_name); pack_size=pack_size+i_s !length
+         if(i_p.gt.0) then
+          c_addr=ptr_offset(tens_data,pack_size); call c_f_pointer(c_addr,i1d1_p,shape=[i_p])
+          do i=1,i_p; i1d1_p(i)=iachar(this%tens_blck_id%tens_name(i:i)); enddo !tensor name
+          pack_size=pack_size+i1_s*i_p
+         else
+          tens_operand_pack=1; return
+         endif
+!Tensor block key multiindex:
+         c_addr=ptr_offset(tens_data,pack_size); call c_f_pointer(c_addr,i_p)
+         if(allocated(this%tens_blck_id%tens_mlndx)) then
+          if(lbound(this%tens_blck_id%tens_mlndx,1).eq.0) then
+           if(ubound(this%tens_blck_id%tens_mlndx,1).eq.this%tens_blck_id%tens_mlndx(0)) then
+            i_p=this%tens_blck_id%tens_mlndx(0); pack_size=pack_size+i_s
+            c_addr=ptr_offset(tens_data,pack_size); call c_f_pointer(c_addr,id1_p,shape=[i_p])
+            id1_p(1:i_p)=this%tens_blck_id%tens_mlndx(1:i_p); pack_size=pack_size+i_s*i_p
+           else
+            tens_operand_pack=2; return
+           endif
+          else
+           tens_operand_pack=3; return
+          endif
+         else
+          i_p=0; pack_size=pack_size+i_s
+         endif
+!Host MPI process:
+         c_addr=ptr_offset(tens_data,pack_size); call c_f_pointer(c_addr,i_p)
+         i_p=this%op_host; pack_size=pack_size+i_s
+!Packed size of the tensor block:
+         c_addr=ptr_offset(tens_data,pack_size); call c_f_pointer(c_addr,cz_p)
+         cz_p=this%op_pack_size; pack_size=pack_size+sizeof(pack_size)
+!MPI delivery tag:
+         c_addr=ptr_offset(tens_data,pack_size); call c_f_pointer(c_addr,i_p)
+         i_p=this%op_tag; pack_size=pack_size+i_s
+!Price of the tensor block:
+         c_addr=ptr_offset(tens_data,pack_size); call c_f_pointer(c_addr,i_p)
+         i_p=this%op_price; pack_size=pack_size+i_s
+!Packet size:
+         call c_f_pointer(tens_data,cz_p); cz_p=pack_size
+        else
+         tens_operand_pack=999
+        endif
+        return
+        end function tens_operand_pack
+!-----------------------------------------------------------
+        integer function tens_operand_unpack(this,tens_data)
+!This function unpacks the public part of <this> (tens_operand_t) from a plain byte packet <tens_data>.
+!The format of the packet is given in <tens_operand_pack>.
+        implicit none
+        class(tens_operand_t):: this
+        type(C_PTR):: tens_data,c_addr
+        integer(C_INT):: i
+        integer(C_SIZE_T):: pack_size,s,i_s,i1_s
+        integer(C_SIZE_T), pointer:: cz_p
+        integer(C_INT), pointer:: i_p
+        integer(C_INT), pointer:: id1_p(:)
+        integer(1):: i1
+        integer(1), pointer:: i1d1_p(:)
+
+        tens_operand_unpack=0
+        if(c_associated(tens_data)) then
+         i=0; i1=0; i_s=sizeof(i); i1_s=sizeof(i1)
+!Packet size:
+         call c_f_pointer(tens_data,cz_p); pack_size=cz_p; s=sizeof(pack_size)
+         if(pack_size.le.0) then; tens_operand_unpack=1; return; endif
+!Tensor name:
+         c_addr=ptr_offset(tens_data,s); call c_f_pointer(c_addr,i_p); s=s+i_s
+         if(i_p.le.0.or.i_p.gt.tensor_name_len) then; tens_operand_unpack=2; return; endif
+         c_addr=ptr_offset(tens_data,s); call c_f_pointer(c_addr,i1d1_p,shape=[i_p])
+         do i=1,i_p; this%tens_blck_id%tens_name(i:i)=achar(i1d1_p(i)); enddo; s=s+i1_s*i_p
+!Tensor block key multiindex:
+         c_addr=ptr_offset(tens_data,s); call c_f_pointer(c_addr,i_p); s=s+i_s
+         if(i_p.lt.0.or.i_p.gt.max_tensor_rank) then; tens_operand_unpack=3; return; endif
+         c_addr=ptr_offset(tens_data,s); call c_f_pointer(c_addr,id1_p,shape=[i_p])
+         if(.not.allocated(this%tens_blck_id%tens_mlndx)) then
+          allocate(this%tens_blck_id%tens_mlndx(0:i_p),STAT=i); if(i.ne.0) then; tens_operand_unpack=4; return; endif
+         endif
+         if(size(this%tens_blck_id%tens_mlndx).ne.1+i_p) then
+          deallocate(this%tens_blck_id%tens_mlndx,STAT=i); if(i.ne.0) then; tens_operand_unpack=5; return; endif
+          allocate(this%tens_blck_id%tens_mlndx(0:i_p),STAT=i); if(i.ne.0) then; tens_operand_unpack=6; return; endif
+         endif
+         this%tens_blck_id%tens_mlndx(0)=i_p; this%tens_blck_id%tens_mlndx(1:i_p)=id1_p(1:i_p); s=s+i_s*i_p
+!Host MPI process:
+         c_addr=ptr_offset(tens_data,s); call c_f_pointer(c_addr,i_p); this%op_host=i_p; s=s+i_s
+!Packed size of the tensor block:
+         c_addr=ptr_offset(tens_data,s); call c_f_pointer(c_addr,cz_p); this%op_pack_size=cz_p; s=s+sizeof(pack_size)
+!MPI delivery tag:
+         c_addr=ptr_offset(tens_data,s); call c_f_pointer(c_addr,i_p); this%op_tag=i_p; s=s+i_s
+!Price of the tensor block:
+         c_addr=ptr_offset(tens_data,s); call c_f_pointer(c_addr,i_p); this%op_price=i_p; s=s+i_s
+         if(s.ne.pack_size) tens_operand_unpack=7
+        else
+         tens_operand_unpack=999
+        endif
+        return
+        end function tens_operand_unpack
 !---------------------------------------------------------------
         integer(8) function tens_blck_packet_size(tens,dtk,ierr)
 !Given an instance of tensor_block_t <tens> and required data kind <dtk>,
@@ -3066,6 +3152,7 @@
         return
         end subroutine tens_blck_dissoc
 !------------------------------------------------------------------------------------------------------------
+!TEMPORARY TESTING:
 !------------------------------------------------------------------------------------------------------------
         subroutine c_proc_test(ierr)
 !This subroutine tests the basic computing functionality of a C-process by running some tensor algebra tests.

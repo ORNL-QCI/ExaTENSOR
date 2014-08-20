@@ -1,6 +1,6 @@
 !PROGRAM: Q-FORCE: Massively-Parallel Quantum Many-Body Methodology on Heterogeneous HPC systems.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2014/08/12
+!REVISION: 2014/08/18
 !COMPILATION:
 ! - Fortran 2003 at least.
 ! - MPI 2.0 at least.
@@ -56,6 +56,7 @@
          max_threads=1
         endif
 #endif
+        call MPI_BARRIER(MPI_COMM_WORLD,ierr); if(ierr.ne.0) call quit(ierr,'#ERROR(main): MPI_BARRIER error (trap 1)')
         time_begin=MPI_WTIME() !walltime begin
         call MPI_COMM_SIZE(MPI_COMM_WORLD,impis,ierr); if(ierr.ne.0) call quit(ierr,'#ERROR(main): MPI_COMM_SIZE error!')
         call MPI_COMM_RANK(MPI_COMM_WORLD,impir,ierr); if(ierr.ne.0) call quit(ierr,'#ERROR(main): MPI_COMM_RANK error!')
@@ -96,7 +97,7 @@
         if(ierr.ne.0) then
          ierr=0; write(jo,'("#ERROR(main): GPU(Nvidia) initialization failed! No GPU in use for this process! Ignored.")')
         endif
-        call MPI_BARRIER(MPI_COMM_WORLD,ierr); if(ierr.ne.0) call quit(ierr,'#ERROR(main): MPI_BARRIER error (trap 1)')
+        call MPI_BARRIER(MPI_COMM_WORLD,ierr); if(ierr.ne.0) call quit(ierr,'#ERROR(main): MPI_BARRIER error (trap 2)')
 
 !Run the process life:
         call proceed(ierr); if(ierr.ne.0) then; exec_status=ierr; write(jo,'("#ERROR(main): Process life dirty!")'); endif
@@ -106,7 +107,7 @@
         endif
         if(exec_status.eq.0) then
          call MPI_BARRIER(MPI_COMM_WORLD,ierr)
-         if(ierr.ne.0) call quit(ierr,'#ERROR(main): MPI_BARRIER error (trap 2)')
+         if(ierr.ne.0) call quit(ierr,'#ERROR(main): MPI_BARRIER error (trap 3)')
         endif
 !Terminate the process:
 999     call quit(exec_status,'Program terminated. Enjoy the results! Bye!')
