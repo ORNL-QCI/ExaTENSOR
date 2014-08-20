@@ -1928,7 +1928,7 @@
 !---------------------------------------------
         integer function tbb_entry_clear(this)
         implicit none
-        type(tbb_entry_t):: this
+        class(tbb_entry_t):: this
         integer ierr
         tbb_entry_clear=0
         call tensor_block_destroy(this%tens_blck,ierr); if(ierr.ne.0) tbb_entry_clear=tbb_entry_clear+1
@@ -1938,7 +1938,7 @@
 !---------------------------------------------
         integer function tens_arg_clear(this)
         implicit none
-        type(tens_arg_t):: this
+        class(tens_arg_t):: this
         tens_arg_clear=0
         this%mpi_tag=-1; this%mpi_process=-1; this%times_needed=0; this%times_used=0
         this%tens_blck_f=>NULL(); this%tens_blck_c=C_NULL_PTR; this%buf_entry_host=-1; this%present_on_mic=-1
@@ -2094,7 +2094,7 @@
 !------------------------------------------
         integer function etiq_destroy(this)
         implicit none
-        type(etiq_t):: this
+        class(etiq_t):: this
         integer j,ierr
         etiq_destroy=0
         if(allocated(this%eti)) then
@@ -2138,7 +2138,7 @@
 !---------------------------------------------
         integer function etiq_cu_destroy(this)
         implicit none
-        type(etiq_cu_t):: this
+        class(etiq_cu_t):: this
         integer ierr
         etiq_cu_destroy=0
         if(allocated(this%etiq_entry)) then
@@ -2153,7 +2153,7 @@
 !--------------------------------------
         integer function eti_clear(this)
         implicit none
-        type(tens_instr_t):: this
+        class(tens_instr_t):: this
         integer j,ierr
         eti_clear=0
         if(allocated(this%instr_aux)) then
@@ -2419,7 +2419,7 @@
 !-----------------------------------------------
         integer function tens_operand_clear(this)
         implicit none
-        type(tens_operand_t):: this
+        class(tens_operand_t):: this
         integer ierr
         tens_operand_clear=0
         this%op_host=-1; this%op_pack_size=0_8; this%op_tag=0; this%op_price=0
