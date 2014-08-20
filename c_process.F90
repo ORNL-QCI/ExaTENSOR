@@ -153,7 +153,7 @@
          integer(8), private:: file_offset=0_8     !file offset where the corresponding packet is stored (if on disk)
          integer(8), private:: stored_size=0_8     !stored (disk) size of the tensor block (packet) in bytes
          contains
-          procedure, private:: clear=>tbb_entry_clear
+          procedure, private:: clear=>tbb_entry_clear !clear a tbb_entry_t object
         end type tbb_entry_t
  !Elementary Tensor Instruction Scheduler (ETIS):
   !Locally present tensor argument:
@@ -2160,7 +2160,7 @@
          deallocate(this%instr_aux,STAT=ierr); if(ierr.ne.0) eti_clear=eti_clear+1
         endif
         do j=0,max_tensor_operands-1
-         ierr=this%tens_op(j)%clear; if(ierr.ne.0) eti_clear=eti_clear+10
+         ierr=this%tens_op(j)%clear(); if(ierr.ne.0) eti_clear=eti_clear+10
         enddo
         this%instr_id=0_8; this%instr_code=instr_null; this%data_kind='  '
         this%instr_priority=0; this%no_upload=0; this%instr_cost=0.0; this%instr_size=0.0
