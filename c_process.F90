@@ -58,6 +58,7 @@
         implicit none
 #ifndef NO_OMP
         integer, external, private:: omp_get_max_threads,omp_get_num_threads,omp_get_thread_num
+        logical, external, private:: omp_get_nested
 #endif
 !PARAMETERS:
  !Output:
