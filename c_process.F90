@@ -417,6 +417,10 @@
         ierr=0
 #ifndef NO_OMP
         call omp_set_dynamic(.false.); call omp_set_nested(.true.)
+        if(omp_get_nested().ne..true.) then
+         write(jo_cp,'("#FATAL(c_process::c_proc_life): Unable to activate nested OpenMP parallelism!")')
+         call c_proc_quit(8); return
+        endif
 !Init ETI queues for all computing units present on the node:
         n=omp_get_max_threads()
         if(n.ge.2.and.n.eq.max_threads) then !At least 1 master + 1 slave threads
@@ -426,7 +430,7 @@
          ierr=etiq_stcu%init(etiq_stcu_max_depth)
          if(ierr.ne.0) then
           write(jo_cp,'("#ERROR(c_process::c_proc_life): ETIQ_STCU allocation failed!")')
-          call c_proc_quit(8); return
+          call c_proc_quit(9); return
          endif
          stcu_num_units=-1
          tm=thread_wtime()-tm; write(jo_cp,'("Ok(",F4.1," sec): STCU ETIQ depth = ",i6)') tm,etiq_stcu%depth
@@ -438,12 +442,12 @@
          ierr=etiq_nvcu%init(etiq_nvcu_max_depth)
          if(ierr.ne.0) then
           write(jo_cp,'("#ERROR(c_process::c_proc_life): ETIQ_NVCU allocation failed!")')
-          call c_proc_quit(9); return
+          call c_proc_quit(10); return
          endif
          allocate(nvcu_tasks(0:etiq_nvcu_max_depth-1),STAT=ierr) !table for active CUDA tasks
          if(ierr.ne.0) then
           write(jo_cp,'("#ERROR(c_process::c_proc_life): ETIQ_NVCU task table allocation failed!")')
-          call c_proc_quit(10); return
+          call c_proc_quit(11); return
          endif
          tm=thread_wtime()-tm; write(jo_cp,'("Ok(",F4.1," sec): NVCU ETIQ depth = ",i6)') tm,etiq_nvcu%depth
 #endif
@@ -454,12 +458,12 @@
          ierr=etiq_xpcu%init(etiq_xpcu_max_depth)
          if(ierr.ne.0) then
           write(jo_cp,'("#ERROR(c_process::c_proc_life): ETIQ_XPCU allocation failed!")')
-          call c_proc_quit(11); return
+          call c_proc_quit(12); return
          endif
          allocate(xpcu_tasks(0:etiq_xpcu_max_depth-1),STAT=ierr)
          if(ierr.ne.0) then
           write(jo_cp,'("#ERROR(c_process::c_proc_life): ETIQ_XPCU task table allocation failed!")')
-          call c_proc_quit(12); return
+          call c_proc_quit(13); return
          endif
          tm=thread_wtime()-tm; write(jo_cp,'("Ok(",F4.1," sec): XPCU ETIQ depth = ",i6)') tm,etiq_xpcu%depth
 #endif
@@ -828,7 +832,7 @@
 !$OMP          PRIVATE(thread_num,stcu_my_ip,stcu_my_eti,i,j,k) DEFAULT(SHARED)
                 thread_num=omp_get_thread_num()
                 if(thread_num.eq.0) then
-                 if(verbose) write(jo_cp,'("#DEBUG(c_process::c_proc_life): STCU: ",i3," units created.")') omp_get_num_threads() !debug
+                 if(verbose) write(jo_cp,'("#DEBUG(c_process::c_proc_life): STCU: ",i3," unit(s) created.")') omp_get_num_threads() !debug
                 endif
 !$OMP BARRIER
                 if(omp_get_num_threads().eq.stcu_num_units) then
