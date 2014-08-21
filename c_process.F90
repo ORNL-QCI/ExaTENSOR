@@ -1,7 +1,7 @@
 !This module provides functionality for a Computing Process (C-PROCESS, CP).
 !In essence, this is a single-node elementary tensor instruction scheduler (SETIS).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2014/08/20
+!REVISION: 2014/08/21
 !CONCEPTS (CP workflow):
 ! - Each CP stores its own tensor blocks in TBB, with a possibility of disk dump.
 ! - LR sends a batch of ETI to be executed on this CP unit (CP MPI Process).
@@ -738,12 +738,12 @@
             do while(i.gt.0)
              do k=1,etiq%scheduled
               if(kf.ge.3) j=nvcu_task_status(0)
-!$OMP ATOMIC READ
+!ATOMIC READ
               j=etiq%eti(k)%instr_status
               if(j.eq.instr_completed) then
-!$OMP ATOMIC READ
+!ATOMIC READ
                tm0=etiq%eti(k)%time_issued
-!$OMP ATOMIC READ
+!ATOMIC READ
                tm1=etiq%eti(k)%time_completed
                write(jo_cp,'("Instruction ",i2," completed succefully: ",D25.15)') k,tm1-tm0
 !$OMP ATOMIC WRITE
@@ -793,7 +793,7 @@
            slave_life: do !LST life cycle
 !$OMP FLUSH
             if(stcu_error.eq.0) then
-!$OMP ATOMIC READ
+!ATOMIC READ
              n=etiq_stcu%scheduled
              if(n.lt.0) exit slave_life !negative etiq_stcu%scheduled causes STCU life termination
  !Retrieve the next ETI from ETIQ_STCU (if present):
@@ -879,7 +879,7 @@
                       stcu_mimd_my_pass=-stcu_mimd_my_pass
                       exit wait_next_mimd
                      else
-!$OMP ATOMIC READ
+!ATOMIC READ
                       j=etiq_stcu%scheduled
                      endif
                     endif
@@ -1494,7 +1494,7 @@
           j0=etiq_nvcu%etiq_entry(nvcu_task_num) !ETIQ entry number
           if(j0.gt.0.and.j0.le.etiq%depth) then
            my_eti=>etiq%eti(j0)
-!$OMP ATOMIC READ
+!ATOMIC READ
            nvcu_task_status=my_eti%instr_status
            if(nvcu_task_status.eq.instr_issued) then
             j1=cuda_task_complete(nvcu_tasks(nvcu_task_num)%cuda_task_handle)
@@ -1510,7 +1510,7 @@
              j1=my_eti%mark_used(); nvcu_task_status=instr_completed
              j2=my_eti%instr_cu%unit_number; nvcu_busy(j2)=nvcu_busy(j2)-real(my_eti%instr_cost,8)
              ttm=cuda_task_time(nvcu_tasks(nvcu_task_num)%cuda_task_handle,in_copy,out_copy,comp_time)
-!$OMP ATOMIC READ
+!ATOMIC READ
              tti=my_eti%time_issued
 !$OMP ATOMIC WRITE
              my_eti%time_completed=tti+ttm
