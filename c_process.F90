@@ -418,7 +418,7 @@
         ierr=0
 #ifndef NO_OMP
         call omp_set_dynamic(.false.); call omp_set_nested(.true.)
-        if(omp_get_nested().ne..true.) then
+        if(.not.omp_get_nested()) then
          write(jo_cp,'("#FATAL(c_process::c_proc_life): Unable to activate nested OpenMP parallelism!")')
          call c_proc_quit(8); return
         endif
