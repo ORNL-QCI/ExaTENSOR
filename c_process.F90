@@ -495,7 +495,7 @@
             select type (uptr)
             type is (tbb_entry_t)
              err_code=aar_register(key(0),targ_p); write(jo_cp,*) 'AAR entry created: ',err_code
-             targ_p%tens_blck_f=>uptr%tens_blck; write(jo_cp,*) 'Pointer status: ',associated(targ_p%tens_blck_f)
+             targ_p%tens_blck_f=>uptr%tens_blck; write(jo_cp,*) 'Pointer stat: ',associated(targ_p),associated(targ_p%tens_blck_f)
             end select
   !Unity scalar:
             call tensor_block_init('r8',tbb_entry%tens_blck,i,val_r8=1d-3); write(jo_cp,*) 'Tensor block unity init: ',i
@@ -504,7 +504,7 @@
             select type (uptr)
             type is (tbb_entry_t)
              err_code=aar_register(key(1),targ_p); write(jo_cp,*) 'AAR entry created: ',err_code
-             targ_p%tens_blck_f=>uptr%tens_blck; write(jo_cp,*) 'Pointer status: ',associated(targ_p%tens_blck_f)
+             targ_p%tens_blck_f=>uptr%tens_blck; write(jo_cp,*) 'Pointer stat: ',associated(targ_p),associated(targ_p%tens_blck_f)
             end select
   !Non-trivial tensors:
             do j=2,10
@@ -514,7 +514,7 @@
              select type (uptr)
              type is (tbb_entry_t)
               err_code=aar_register(key(j),targ_p); write(jo_cp,*) 'AAR entry created: ',err_code
-              targ_p%tens_blck_f=>uptr%tens_blck; write(jo_cp,*) 'Pointer status: ',associated(targ_p%tens_blck_f)
+              targ_p%tens_blck_f=>uptr%tens_blck; write(jo_cp,*) 'Pointer stat: ',associated(targ_p),associated(targ_p%tens_blck_f)
              end select
             enddo
  !Fill in tensor instructions in ETIQ:
