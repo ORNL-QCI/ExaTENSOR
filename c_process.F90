@@ -828,12 +828,14 @@
                 endif
                elseif(stcu_num_units.gt.1.and.stcu_num_units.le.stcu_max_units) then !multiple STCU: MIMD execution
                 stcu_simd_my_pass=0; stcu_mimd_my_pass=0; stcu_mimd_max_pass=1
-                if(verbose) write(jo_cp,'("#DEBUG(c_process::c_proc_life): requested number of STCU units = ",i3)') stcu_num_units !debug
+                if(verbose) write(jo_cp,'("#DEBUG(c_process::c_proc_life): STCU MIMD: requested number of STCU units = ",i3)') &
+                 stcu_num_units !debug
 !$OMP PARALLEL NUM_THREADS(stcu_num_units) FIRSTPRIVATE(stcu_base_ip,stcu_mimd_my_pass,err_code) &
 !$OMP          PRIVATE(thread_num,stcu_my_ip,stcu_my_eti,i,j,k) DEFAULT(SHARED)
                 thread_num=omp_get_thread_num()
                 if(thread_num.eq.0) then
-                 if(verbose) write(jo_cp,'("#DEBUG(c_process::c_proc_life): STCU: ",i3," unit(s) created.")') omp_get_num_threads() !debug
+                 if(verbose) write(jo_cp,'("#DEBUG(c_process::c_proc_life): STCU MIMD: ",i3," unit(s) created.")') &
+                  omp_get_num_threads() !debug
                 endif
 !$OMP BARRIER
                 if(omp_get_num_threads().eq.stcu_num_units) then
