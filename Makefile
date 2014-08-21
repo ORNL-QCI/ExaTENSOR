@@ -11,8 +11,9 @@ CUDA_FLAGS_DEV = --compile -arch=sm_35 -g -G -DDEBUG
 CUDA_FLAGS_OPT = --compile -O3 -arch=sm_35
 CUDA_FLAGS = $(CUDA_FLAGS_DEV)
 LA_LINK_INTEL = -lmkl_core -lmkl_intel_thread -lmkl_intel_lp64 -lmkl_blas95_lp64 -lmkl_lapack95_lp64 -lrt
-LA_LINK_CRAY = -lacml
-LA_LINK = $(LA_LINK_CRAY)
+LA_LINK_AMD = -lacml
+LA_LINK_CRAY = " "
+LA_LINK = $(LA_LINK_AMD)
 CFLAGS_DEV = -c -g
 CFLAGS_OPT = -c -O3
 CFLAGS = $(CFLAGS_DEV)
