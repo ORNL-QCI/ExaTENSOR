@@ -285,18 +285,18 @@
         private run_benchmarks
 !DATA:
  !Tensor Block Bank (TBB):
-        type(dict_t), private:: tbb !permanent storage of local tensor blocks
+        type(dict_t), target, private:: tbb !permanent storage of local tensor blocks
  !Elementary Tensor Instruction Scheduler (ETIS):
   !Active Argument Register (AAR):
-        type(dict_t), private:: aar !register for locally present (TBB, HAB, DEB) tensor blocks participating in current ETIs
+        type(dict_t), target, private:: aar !register for locally present (TBB, HAB, DEB) tensor blocks participating in current ETIs
   !Elementary Tensor Instruction Queue (ETIQ):
-        type(etiq_t), target, private:: etiq     !multi-channel out-of-order ETI queue (linear numeration starts from 1)
+        type(etiq_t), target, private:: etiq         !multi-channel out-of-order ETI queue (linear numeration starts from 1)
   !STCU ETI queue (ETIQ_STCU):
-        type(etiq_cu_t), private:: etiq_stcu     !circular in-order ETI queue for STCU (numeration starts from 0)
+        type(etiq_cu_t), target, private:: etiq_stcu !circular in-order ETI queue for STCU (numeration starts from 0)
   !NVCU ETI queue (ETIQ_NVCU:
-        type(etiq_cu_t), private:: etiq_nvcu     !circular in-order ETI queue for NVCU (numeration starts from 0)
+        type(etiq_cu_t), target, private:: etiq_nvcu !circular in-order ETI queue for NVCU (numeration starts from 0)
   !XPCU ETI queue (ETIQ_XPCU):
-        type(etiq_cu_t), private:: etiq_xpcu     !circular in-order ETI queue for XPCU (numeration starts from 0)
+        type(etiq_cu_t), target, private:: etiq_xpcu !circular in-order ETI queue for XPCU (numeration starts from 0)
   !Host Argument Buffer (HAB):
         integer(C_SIZE_T), private:: hab_size=0  !actual size in bytes of the Host argument buffer (HAB)
         integer(C_INT), private:: max_hab_args=0 !max number of arguments (of lowest-size level) that can fit in HAB
