@@ -473,7 +473,7 @@
 !$OMP          PRIVATE(thread_num,stcu_base_ip,stcu_my_ip,stcu_my_eti,stcu_simd_my_pass,stcu_mimd_my_pass,i,j,k,l,m,n,err_code)
          n=omp_get_num_threads(); thread_num=omp_get_thread_num()
          if(thread_num.eq.0) write(jo_cp,'("#MSG(c_process::c_proc_life): ",i6," main OMP threads created.")') n
-         if(n.eq.2) then
+         if(n.eq.2.and.omp_get_nested()) then
 !Master thread:
           if(thread_num.eq.0) then
            mt_error=0 !set/used only by MT
@@ -931,7 +931,7 @@
           endif !MT/LST
          else
 !$OMP MASTER
-          write(jo_cp,'("#ERROR(c_process::c_proc_life): invalid initial number of threads: ",i6)') n
+          write(jo_cp,'("#ERROR(c_process::c_proc_life): invalid initial number of threads or nested: ",i6,l1)') n,omp_get_nested()
           ierr=-2
 !$OMP END MASTER
          endif
