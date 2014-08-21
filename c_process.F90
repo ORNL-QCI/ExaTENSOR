@@ -466,9 +466,9 @@
 !Begin active life (master thread + leading slave thread):
 !$OMP PARALLEL NUM_THREADS(2) DEFAULT(SHARED) &
 !$OMP          PRIVATE(thread_num,stcu_base_ip,stcu_my_ip,stcu_my_eti,stcu_simd_my_pass,stcu_mimd_my_pass,i,j,k,l,m,n,err_code)
-         n=omp_get_num_threads()
+         n=omp_get_num_threads(); thread_num=omp_get_thread_num()
+         if(thread_num.eq.0) write(jo_cp,'("#MSG(c_process::c_proc_life): ",i6," main OMP threads created when needing 2")') n
          if(n.eq.2) then
-          thread_num=omp_get_thread_num()
 !Master thread:
           if(thread_num.eq.0) then
            mt_error=0 !set/used only by MT
@@ -1494,7 +1494,6 @@
           j0=etiq_nvcu%etiq_entry(nvcu_task_num) !ETIQ entry number
           if(j0.gt.0.and.j0.le.etiq%depth) then
            my_eti=>etiq%eti(j0)
-!ATOMIC READ
            nvcu_task_status=my_eti%instr_status
            if(nvcu_task_status.eq.instr_issued) then
             j1=cuda_task_complete(nvcu_tasks(nvcu_task_num)%cuda_task_handle)
@@ -1510,7 +1509,6 @@
              j1=my_eti%mark_used(); nvcu_task_status=instr_completed
              j2=my_eti%instr_cu%unit_number; nvcu_busy(j2)=nvcu_busy(j2)-real(my_eti%instr_cost,8)
              ttm=cuda_task_time(nvcu_tasks(nvcu_task_num)%cuda_task_handle,in_copy,out_copy,comp_time)
-!ATOMIC READ
              tti=my_eti%time_issued
 !$OMP ATOMIC WRITE
              my_eti%time_completed=tti+ttm
