@@ -531,7 +531,7 @@
 ! # value_out: when fetching, <value_out> poly-pointer will point to the value found by the key (NULL otherwise);
 ! # this: possibly modified dictionary.
          implicit none
-         class(dict_t):: this
+         class(dict_t), target:: this
          integer, intent(in):: action
          procedure(cmp_key_func_i):: cmp_key_func
          class(*):: item_key
