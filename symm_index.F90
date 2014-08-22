@@ -18,6 +18,7 @@
 !PARAMETERS:
         integer, private:: cons_out=6
         logical, private:: verbose=.true.
+        logical, private:: debug=.true.
         integer, parameter, private:: max_mlndx_length=256                      !max allowed multi-index length
         integer, parameter, private:: max_banks=16                              !max number of table banks
         integer, parameter, private:: tables_per_bank=16384                     !max number of tables per bank
@@ -108,7 +109,7 @@
          if(allocated(address_tables%tab_bank(bank)%addr_tab)) then
           i=handle-(bank-1)*tables_per_bank !entry number
           if(allocated(address_tables%tab_bank(bank)%addr_tab(i)%incr)) then
-           iba=>address_tables%tab_bank(bank)%addr_tab(i)%incr
+           iba(0:,1:)=>address_tables%tab_bank(bank)%addr_tab(i)%incr
           else
            get_address_table=-1
           endif
@@ -128,7 +129,7 @@
             do i=1,ndim-1; if(lb(i).gt.lb(i+1)) then; get_address_table=-4; return; endif; enddo !check
             do i=1,ndim-1; if(ub(i).gt.ub(i+1)) then; get_address_table=-5; return; endif; enddo !check
             ierr=get_free_table(bank,tab,handle); if(ierr.ne.0) then; get_address_table=-6; return; endif
-            iba=>address_tables%tab_bank(bank)%addr_tab(tab)%incr
+            iba(0:,1:)=>address_tables%tab_bank(bank)%addr_tab(tab)%incr
  !1st (minor) position:
             im(0)=lb(1)-1; im(ndim+1)=ub(ndim)+1
             do i=lb(1),ub(1); iba(i,1)=i; enddo !lb(1)=0
@@ -143,10 +144,13 @@
               endif
              enddo
              if(n.lt.0) then; get_address_table=1; return; endif !multi-index range is empty under these restrictions
+	     if(debug) then
+	      write(cons_out,'("#DEBUG(symm_index::get_address_table): min: ",64(1x,i4))') im(1:m)
+	     endif
   !Compute increments for position m:
              l=0
-             do i=im(m),ub(m) !index value
-              iba(i,m)=l
+             do while(im(m).le.ub(m)) !index value
+              iba(im(m),m)=l
    !Construct the max multi-index of length (m-1):
               n=1
               do j=m-1,1,-1
@@ -155,6 +159,7 @@
               enddo
    !Get the offset for the next index value:
               do j=1,m-1; l=l+iba(im(j),j); enddo; l=l+1
+              im(m)=im(m)+1
              enddo
             enddo
            case(SYMM_INDEX_GE_ORDER)
@@ -271,7 +276,7 @@
         integer function test_address_table(iba,ndim,ord,mrpt,lb,ub)
 !This function tests addressing tables.
         implicit none
-        integer, intent(in):: iba(:,:)   !addressing table (increments)
+        integer, intent(in):: iba(0:,1:) !addressing table (increments)
         integer, intent(in):: ndim       !length of the multi-index
         integer, intent(in):: ord        !multi-index ordering
         integer, intent(in):: mrpt       !max allowed number of index repeats in an ordered multi-index
@@ -297,9 +302,22 @@
            ir(ndim)=1; do i=ndim-1,1,-1; if(im(i).eq.im(i+1)) then; ir(i)=ir(i+1)+1; else; ir(i)=1; endif; enddo
  !Test all multi-indices:
            if(n.ge.0) then
-            l=0; k=0; do i=1,ndim; k=k+iba(im(i),i); enddo
+            l=-1; k=0; do i=1,ndim; k=k+iba(im(i),i); enddo
+            if(debug) then
+             write(cons_out,'("#DEBUG(symm_index::test_address_table): ndim, mrpt: ",i4,1x,i4)') ndim,mrpt
+             write(cons_out,'("#DEBUG(symm_index::test_address_table): min: ",i10,":",64(1x,i4))') k,im(1:ndim)
+             write(cons_out,'("#DEBUG(symm_index::test_address_table): min: ",i10,":",64(1x,i4))') l,ir(1:ndim)
+            endif
             tloop: do
-             if(k.ne.l) then; test_address_table=1; return; endif !addressing table is invalid
+             l=l+1
+             if(debug) then
+              write(cons_out,'("#DEBUG(symm_index::test_address_table):",i10,":",64(1x,i4))') k,im(1:ndim)
+!              write(cons_out,'("#DEBUG(symm_index::test_address_table):",i10,":",64(1x,i4))') l,ir(1:ndim)
+             endif
+             if(k.ne.l) then
+              if(verbose) write(cons_out,'("#ERROR(symm_index::test_address_table): mismatch: ",i11,1x,i11)') l,k
+              test_address_table=1; return !addressing table is invalid
+             endif
              iloop: do i=1,ndim
               k=k-iba(im(i),i)
               if(im(i).lt.min(ub(i),im(i+1))) then
@@ -309,6 +327,7 @@
                else
                 ir(i)=1
                endif
+               k=k+iba(im(i),i)
                n=1
                do j=1,i-1
                 im(j)=max(lb(j),im(j-1))
@@ -324,6 +343,7 @@
              exit tloop
             enddo tloop
            else
+            if(verbose) write(cons_out,'("#ERROR(symm_index::test_address_table): No minimal multi-index exists!")')
             test_address_table=2
            endif
           case(SYMM_INDEX_GE_ORDER)
@@ -332,6 +352,8 @@
            test_address_table=3
           end select
          else
+          if(verbose) write(cons_out,'("#ERROR(symm_index::test_address_table): invalid bounds: ",i6,1x,i6,1x,i6)') &
+           lbound(iba,1),lbound(iba,2),lb(1)
           test_address_table=4
          endif
         else
