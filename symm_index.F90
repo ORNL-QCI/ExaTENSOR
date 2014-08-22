@@ -1,7 +1,7 @@
 !This module provides infrastructure for symmetric multi-indexing
 !for higher rank tensor algebra.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2014/08/11
+!REVISION: 2014/08/22
 !DESCRIPTION:
 ! # Given a symmetric multi-index {I1<=I2<=...<=In}, each subsequent value
 !   of the multi-index is assigned an integer from the range [0..max] via
@@ -52,8 +52,8 @@
 !DATA:
         type(address_tables_t), target, private:: address_tables !addressing tables storage
 !FUNCTIONS:
-        public info_address_tables
         public clean_address_tables
+        public info_address_tables
         public get_address_table
         public delete_address_table
         public test_address_table
@@ -92,7 +92,7 @@
 !This function either returns an existing addressing table (by handle) or
 !creates a new addressing table and returns it together with its handle.
         implicit none
-        integer, intent(inout):: handle            !addressing table handle (<=0: empty)
+        integer, intent(inout):: handle            !addressing table handle (<=0: empty, new table will be created)
         integer, pointer, intent(out):: iba(:,:)   !addressing table
         integer, intent(in), optional:: ndim       !length of the multi-index
         integer, intent(in), optional:: ord        !requested index ordering
