@@ -1,13 +1,19 @@
 !This module provides infrastructure for symmetric multi-indexing
 !for higher rank tensor algebra.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2014/08/22
+!REVISION: 2014/08/26
 !DESCRIPTION:
 ! # Given a symmetric multi-index {I1<=I2<=...<=In}, each subsequent value
 !   of the multi-index is assigned an integer from the range [0..max] via
 !   a special addressing table. The lower bound of I1 is always 0.
 !   The lower bound of Ik is no less than the lower bound of I(k-1).
 !   The upper bound of Ik is no less than the upper bound of I(k-1).
+! # For ascending ordered multi-indices, the index numeration is normalized
+!   by shifting each index by the lower bound of the first (smallest) index,
+!   the latter having the lower bound of zero afterwards.
+!   For unordered multi-indices, the index numeration is normalized by shifting
+!   each index by its own lower bound, thus having each index start from zero.
+!   Only the normalized index values can be used with addressing tables!
 !FUNCTIONALITY:
 ! # v:clean_address_tables();
 ! # v:info_address_tables(i:num_tables,i:num_elems,i:tables_left);
@@ -120,14 +126,22 @@
          if(present(ndim).and.present(ord).and.present(mrpt).and.present(lbnd).and.present(ubnd)) then
           if(ndim.gt.0.and.ndim.le.max_mlndx_length.and.mrpt.ge.0) then
            do i=1,ndim; if(lbnd(i).gt.ubnd(i)) then; get_address_table=-3; return; endif; enddo !check
-           do i=1,ndim; lb(i)=lbnd(i)-lbnd(1); enddo; do i=1,ndim; ub(i)=ubnd(i)-lbnd(1); enddo !normalize
-           top_val=0; do i=1,ndim; top_val=max(top_val,ub(i)); enddo !get the max index range
            select case(ord)
            case(SYMM_INDEX_NO_ORDER)
-            !`Write
+            do i=1,ndim; lb(i)=0; enddo; do i=1,ndim; ub(i)=ubnd(i)-lbnd(i); enddo !normalize
+            top_val=0; do i=1,ndim; top_val=max(top_val,ub(i)); enddo !get the max index range
+            ierr=get_free_table(bank,tab,handle); if(ierr.ne.0) then; get_address_table=-6; return; endif
+            iba(0:,1:)=>address_tables%tab_bank(bank)%addr_tab(tab)%incr
+            l=1
+            do m=1,ndim
+             do i=0,ub(m); iba(i,m)=i*l; enddo
+             l=l*(ub(m)+1)
+            enddo
            case(SYMM_INDEX_LE_ORDER)
+            do i=1,ndim; lb(i)=lbnd(i)-lbnd(1); enddo; do i=1,ndim; ub(i)=ubnd(i)-lbnd(1); enddo !normalize
             do i=1,ndim-1; if(lb(i).gt.lb(i+1)) then; get_address_table=-4; return; endif; enddo !check
             do i=1,ndim-1; if(ub(i).gt.ub(i+1)) then; get_address_table=-5; return; endif; enddo !check
+            top_val=0; do i=1,ndim; top_val=max(top_val,ub(i)); enddo !get the max index range
             ierr=get_free_table(bank,tab,handle); if(ierr.ne.0) then; get_address_table=-6; return; endif
             iba(0:,1:)=>address_tables%tab_bank(bank)%addr_tab(tab)%incr
  !1st (minor) position:
