@@ -3380,6 +3380,7 @@
         integer tsl,tens_rank,dim_spread,o2n(0:max_tensor_rank),n2o(0:max_tensor_rank),nfail
         integer(8) tens_size,diffc
         character(256) tshape
+        character(2) dtk
         real(8) tm
         logical cmp
         integer(C_INT) i0,i1,gpu_id,err_code
@@ -3397,6 +3398,7 @@
 #endif
 !TENSOR TRANSPOSE:
         write(jo_cp,'(" TENSOR TRANSPOSE:")')
+        dtk='r4' !real data kind
         nfail=0 !will be the total number of failed transposes
         do m=1,num_tens_sizes
          tens_size=tens_sizes(m)
@@ -3405,11 +3407,11 @@
           do k=1,num_dim_spreads
            dim_spread=dim_spreads(k)
            call tensor_shape_rnd(tshape,tsl,ierr,tens_size,tens_rank,dim_spread); if(ierr.ne.0) then; ierr=1; goto 999; endif
-!          tens_rank=3; tsl=11; tshape(1:tsl)='(61,60,61)' !debug
-           do l=1,2
-            call tensor_block_create(tshape(1:tsl),'r4',ftens(1),ierr); if(ierr.ne.0) then; ierr=2; goto 999; endif
+           tens_rank=5; tsl=16; tshape(1:tsl)='(35,35,36,35,36)' !debug
+           do l=1,2 !repetition
+            call tensor_block_create(tshape(1:tsl),dtk,ftens(1),ierr); if(ierr.ne.0) then; ierr=2; goto 999; endif
             call printl(jo_cp,'  New Tensor Shape: '//tshape(1:tsl)//': ',.false.)
-            write(jo_cp,'(i10,1x,F16.4)') ftens(1)%tensor_block_size,tensor_block_norm1(ftens(1),ierr,'r4')
+            write(jo_cp,'(i10,1x,F16.4)') ftens(1)%tensor_block_size,tensor_block_norm1(ftens(1),ierr,dtk)
             write(jo_cp,'(3x)',advance='no')
             call tensor_block_copy(ftens(1),ftens(0),ierr); if(ierr.ne.0) then; ierr=3; goto 999; endif
             tm=thread_wtime()
@@ -3431,8 +3433,8 @@
             tm=thread_wtime()
             call tensor_block_copy(ftens(0),ftens(2),ierr,n2o); if(ierr.ne.0) then; ierr=5; goto 999; endif
             write(jo_cp,'("#DEBUG(tensor_algebra:tensor_block_copy_scatter_dlf): Time ",F10.6)') thread_wtime()-tm !debug
-            cmp=tensor_block_cmp(ftens(1),ftens(2),ierr,'r4',.true.,1d-4,diffc); if(ierr.ne.0) then; ierr=6; goto 999; endif
-            write(jo_cp,'(3x,l1,1x,i9,1x,F16.4)') cmp,diffc,tensor_block_norm1(ftens(2),ierr,'r4')
+            cmp=tensor_block_cmp(ftens(1),ftens(2),ierr,dtk,.true.,1d-4,diffc); if(ierr.ne.0) then; ierr=6; goto 999; endif
+            write(jo_cp,'(3x,l1,1x,i9,1x,F16.4)') cmp,diffc,tensor_block_norm1(ftens(2),ierr,dtk)
             if(.not.cmp) then; nfail=nfail+1; write(jo_cp,'(3x,"Comparison Failed!")'); endif
             call set_transpose_algorithm(EFF_TRN_ON) !cache-efficient
             write(jo_cp,'(3x)',advance='no')
@@ -3445,17 +3447,17 @@
             tm=thread_wtime()
             call tensor_block_copy(ftens(0),ftens(2),ierr,n2o); if(ierr.ne.0) then; ierr=8; goto 999; endif
             write(jo_cp,'("#DEBUG(tensor_algebra:tensor_block_copy_dlf): Time ",F10.6)') thread_wtime()-tm !debug
-            cmp=tensor_block_cmp(ftens(1),ftens(2),ierr,'r4',.true.,1d-4,diffc); if(ierr.ne.0) then; ierr=9; goto 999; endif
-            write(jo_cp,'(3x,l1,1x,i9,1x,F16.4)') cmp,diffc,tensor_block_norm1(ftens(2),ierr,'r4')
+            cmp=tensor_block_cmp(ftens(1),ftens(2),ierr,dtk,.true.,1d-4,diffc); if(ierr.ne.0) then; ierr=9; goto 999; endif
+            write(jo_cp,'(3x,l1,1x,i9,1x,F16.4)') cmp,diffc,tensor_block_norm1(ftens(2),ierr,dtk)
             if(.not.cmp) then; nfail=nfail+1; write(jo_cp,'(3x,"Comparison Failed!")'); endif
 #ifndef NO_GPU
-            call tensor_block_init('r4',ftens(0),ierr,val_r4=0.0); if(ierr.ne.0) then; ierr=10; goto 999; endif
-            call tensor_block_init('r4',ftens(2),ierr,val_r4=0.0); if(ierr.ne.0) then; ierr=11; goto 999; endif
-            call tens_blck_pack(ftens(0),'r4',pack_size(0),entry_ptr(0),entry_num(0),ierr)
+            call tensor_block_init(dtk,ftens(0),ierr,val_r8=0d0); if(ierr.ne.0) then; ierr=10; goto 999; endif
+            call tensor_block_init(dtk,ftens(2),ierr,val_r8=0d0); if(ierr.ne.0) then; ierr=11; goto 999; endif
+            call tens_blck_pack(ftens(0),dtk,pack_size(0),entry_ptr(0),entry_num(0),ierr)
             if(ierr.ne.0) then; ierr=12; goto 999; endif
-            call tens_blck_pack(ftens(1),'r4',pack_size(1),entry_ptr(1),entry_num(1),ierr)
+            call tens_blck_pack(ftens(1),dtk,pack_size(1),entry_ptr(1),entry_num(1),ierr)
             if(ierr.ne.0) then; ierr=13; goto 999; endif
-            call tens_blck_pack(ftens(2),'r4',pack_size(2),entry_ptr(2),entry_num(2),ierr)
+            call tens_blck_pack(ftens(2),dtk,pack_size(2),entry_ptr(2),entry_num(2),ierr)
             if(ierr.ne.0) then; ierr=14; goto 999; endif
             call tens_blck_assoc(entry_ptr(0),ierr,ctens=ctens(0),gpu_num=gpu_id); if(ierr.ne.0) then; ierr=15; goto 999; endif
             call tens_blck_assoc(entry_ptr(1),ierr,ctens=ctens(1),gpu_num=gpu_id); if(ierr.ne.0) then; ierr=16; goto 999; endif
@@ -3468,8 +3470,8 @@
             err_code=gpu_tensor_block_copy_dlf(n2o,ctens(0),ctens(2))
             if(err_code.ne.0) then; write(jo_cp,*)'GPU error ',err_code; call print_gpu_debug_dump(jo_cp); ierr=19; goto 999; endif
             call tens_blck_unpack(ftens(2),entry_ptr(2),ierr); if(ierr.ne.0) then; ierr=20; goto 999; endif
-            cmp=tensor_block_cmp(ftens(1),ftens(2),ierr,'r4',.true.,1d-4,diffc); if(ierr.ne.0) then; ierr=21; goto 999; endif
-            write(jo_cp,'(3x,l1,1x,i9,1x,F16.4)') cmp,diffc,tensor_block_norm1(ftens(2),ierr,'r4')
+            cmp=tensor_block_cmp(ftens(1),ftens(2),ierr,dtk,.true.,1d-4,diffc); if(ierr.ne.0) then; ierr=21; goto 999; endif
+            write(jo_cp,'(3x,l1,1x,i9,1x,F16.4)') cmp,diffc,tensor_block_norm1(ftens(2),ierr,dtk)
             if(.not.cmp) then; nfail=nfail+1; write(jo_cp,'(3x,"Comparison Failed!")'); endif
             call gpu_set_transpose_algorithm(EFF_TRN_ON) !shared-memory on GPU
             err_code=cuda_task_create(cuda_task(1)); if(err_code.ne.0) then; ierr=22; goto 999; endif
@@ -3484,8 +3486,8 @@
             if(err_code.ne.0) then; write(jo_cp,*)'GPU error ',err_code; call print_gpu_debug_dump(jo_cp); ierr=25; goto 999; endif
             err_code=cuda_task_destroy(cuda_task(1)); if(err_code.ne.0) then; ierr=26; goto 999; endif
             call tens_blck_unpack(ftens(2),entry_ptr(2),ierr); if(ierr.ne.0) then; ierr=27; goto 999; endif
-            cmp=tensor_block_cmp(ftens(1),ftens(2),ierr,'r4',.true.,1d-4,diffc); if(ierr.ne.0) then; ierr=28; goto 999; endif
-            write(jo_cp,'(3x,l1,1x,i9,1x,F16.4)') cmp,diffc,tensor_block_norm1(ftens(2),ierr,'r4')
+            cmp=tensor_block_cmp(ftens(1),ftens(2),ierr,dtk,.true.,1d-4,diffc); if(ierr.ne.0) then; ierr=28; goto 999; endif
+            write(jo_cp,'(3x,l1,1x,i9,1x,F16.4)') cmp,diffc,tensor_block_norm1(ftens(2),ierr,dtk)
             if(.not.cmp) then; nfail=nfail+1; write(jo_cp,'(3x,"Comparison Failed!")'); endif
             write(jo_cp,'(3x)',advance='no')
             n2o(1:tens_rank)=(/(i,i=1,tens_rank)/)
@@ -3500,6 +3502,7 @@
             call tensor_block_destroy(ftens(2),ierr)
             call tensor_block_destroy(ftens(1),ierr)
             call tensor_block_destroy(ftens(0),ierr)
+            call particular_trn; goto 999 !debug
            enddo !repetition
           enddo !dim_spread
          enddo !tens_rank
@@ -3514,6 +3517,35 @@
          call tensor_block_destroy(ftens(2),i)
         endif
         return
+
+        contains
+
+         subroutine particular_trn
+         integer:: j1,j2,j3,j4,j5
+         real(4), allocatable:: arr0(:,:,:,:,:),arr1(:,:,:,:,:),tmr
+         allocate(arr0(35,35,36,35,36),arr1(36,35,36,35,35))
+         call random_number(arr0)
+         tmr=thread_wtime()
+!$OMP PARALLEL DEFAULT(SHARED) PRIVATE(j1,j2,j3,j4,j5)
+!$OMP DO SCHEDULE(GUIDED)
+         do j5=1,36
+          do j4=1,35
+           do j3=1,36
+            do j2=1,35
+             do j1=1,35
+              arr1(j5,j4,j3,j2,j1)=arr0(j1,j2,j3,j4,j5)
+             enddo
+            enddo
+           enddo
+          enddo
+         enddo
+!$OMP END DO
+!$OMP END PARALLEL
+         write(jo_cp,'("DEBUG PARTICULAR: time = ",F10.6,1x,F5.1)') thread_wtime()-tmr,arr1(13)
+         deallocate(arr1); deallocate(arr0)
+         return
+         end subroutine particular_trn
+
         end subroutine run_benchmarks
 !---------------------------------------------------------------------------------------------
 #ifndef NO_GPU

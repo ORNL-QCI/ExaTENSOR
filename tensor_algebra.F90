@@ -4048,7 +4048,7 @@
 !DIR$ ATTRIBUTES ALIGN:128:: ac1,im,n2o,ipr,bases_in,bases_out,bases_pri,segs,dim_beg,dim_end
 #endif
 	ierr=0
-!	time_beg=thread_wtime() !debug
+	time_beg=thread_wtime() !debug
 	if(dim_num.lt.0) then; ierr=dim_num; return; elseif(dim_num.eq.0) then; tens_out(0)=tens_in(0); return; endif	
 #ifndef NO_OMP
         max_dim_ext=cache_line_lim*omp_get_num_threads()
@@ -4242,8 +4242,8 @@
 	 endif
 !$OMP END PARALLEL
 	endif !trivial or not
-!	write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r4): kernel time/error code = ",F10.4,1x,i3)') &
-!        thread_wtime(time_beg),ierr !debug
+	write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r4): kernel time/error code = ",F10.4,1x,i3)') &
+         thread_wtime(time_beg),ierr !debug
 	return
 	end subroutine tensor_block_copy_dlf_r4
 !------------------------------------------------------------------------------------------------
@@ -4288,7 +4288,7 @@
 !DIR$ ATTRIBUTES ALIGN:128:: ac1,im,n2o,ipr,bases_in,bases_out,bases_pri,segs,dim_beg,dim_end
 #endif
 	ierr=0
-!	time_beg=thread_wtime() !debug
+	time_beg=thread_wtime() !debug
 	if(dim_num.lt.0) then; ierr=dim_num; return; elseif(dim_num.eq.0) then; tens_out(0)=tens_in(0); return; endif
 #ifndef NO_OMP
         max_dim_ext=cache_line_lim*omp_get_num_threads()
@@ -4482,8 +4482,8 @@
 	 endif
 !$OMP END PARALLEL
 	endif !trivial or not
-!	write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r8): kernel time/error code = ",F10.4,1x,i3)') &
-!        thread_wtime(time_beg),ierr !debug
+	write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r8): kernel time/error code = ",F10.4,1x,i3)') &
+         thread_wtime(time_beg),ierr !debug
 	return
 	end subroutine tensor_block_copy_dlf_r8
 !--------------------------------------------------------------------------------------------------------
@@ -4512,7 +4512,7 @@
 	real(8) time_beg
 
 	ierr=0
-!	time_beg=thread_wtime() !debug
+	time_beg=thread_wtime() !debug
 	if(dim_num.eq.0) then !scalar tensor
 	 tens_out(0)=tens_in(0)
 	elseif(dim_num.gt.0) then
@@ -4536,8 +4536,8 @@
 	else
 	 ierr=1
 	endif
-!	write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_scatter_dlf_r4): kernel time/error code = ",F10.4,1x,i3)') &
-!        thread_wtime(time_beg),ierr !debug
+	write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_scatter_dlf_r4): kernel time/error code = ",F10.4,1x,i3)') &
+         thread_wtime(time_beg),ierr !debug
 	return
 	end subroutine tensor_block_copy_scatter_dlf_r4
 !--------------------------------------------------------------------------------------------------------
@@ -4566,7 +4566,7 @@
 	real(8) time_beg
 
 	ierr=0
-!	time_beg=thread_wtime() !debug
+	time_beg=thread_wtime() !debug
 	if(dim_num.eq.0) then !scalar tensor
 	 tens_out(0)=tens_in(0)
 	elseif(dim_num.gt.0) then
@@ -4590,8 +4590,8 @@
 	else
 	 ierr=1
 	endif
-!	write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_scatter_dlf_r8): kernel time/error code = ",F10.4,1x,i3)') &
-!        thread_wtime(time_beg),ierr !debug
+	write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_scatter_dlf_r8): kernel time/error code = ",F10.4,1x,i3)') &
+         thread_wtime(time_beg),ierr !debug
 	return
 	end subroutine tensor_block_copy_scatter_dlf_r8
 !--------------------------------------------------------------------------
