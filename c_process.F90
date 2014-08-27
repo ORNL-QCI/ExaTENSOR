@@ -3541,7 +3541,7 @@
          enddo
 !$OMP END DO
 !$OMP END PARALLEL
-         write(jo_cp,'("DEBUG PARTICULAR: time = ",F10.6,1x,F5.1)') thread_wtime()-tmr,arr1(13)
+         write(jo_cp,'("DEBUG PARTICULAR: time = ",F10.6,1x,F5.1)') thread_wtime()-tmr,arr1(13,13,13,13,13)
          deallocate(arr1); deallocate(arr0)
          return
          end subroutine particular_trn
