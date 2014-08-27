@@ -3521,8 +3521,9 @@
         contains
 
          subroutine particular_trn
-         integer:: j1,j2,j3,j4,j5
-         real(4), allocatable:: arr0(:,:,:,:,:),arr1(:,:,:,:,:),tmr
+         integer:: j1,j2,j3,j4,j5,jsi,jso
+         real(4), allocatable:: arr0(:,:,:,:,:),arr1(:,:,:,:,:)
+         real(8):: tmr
          allocate(arr0(35,35,36,35,36),arr1(36,35,36,35,35))
          call random_number(arr0)
          tmr=thread_wtime()
@@ -3541,7 +3542,28 @@
          enddo
 !$OMP END DO
 !$OMP END PARALLEL
-         write(jo_cp,'("DEBUG PARTICULAR: time = ",F10.6,1x,F5.1)') thread_wtime()-tmr,arr1(13,13,13,13,13)
+         write(jo_cp,'("DEBUG PARTICULAR: time 0 = ",F10.6,1x,F5.1)') thread_wtime(tmr),arr1(13,13,13,13,13)
+         tmr=thread_wtime()
+!$OMP PARALLEL DEFAULT(SHARED) PRIVATE(j1,j2,j3,j4,j5,jsi,jso)
+!$OMP DO SCHEDULE(GUIDED) COLLAPSE(2)
+         do jso=1,35,8
+          do jsi=1,35,8
+           do j4=1,35
+            do j3=1,36
+             do j2=1,35
+              do j5=jso,min(35,jso+7)
+               do j1=jsi,min(35,jsi+7)
+                arr1(j5,j4,j3,j2,j1)=arr0(j1,j2,j3,j4,j5)
+               enddo
+              enddo
+             enddo
+            enddo
+           enddo
+          enddo
+         enddo
+!$OMP END DO
+!$OMP END PARALLEL
+         write(jo_cp,'("DEBUG PARTICULAR: time 1 = ",F10.6,1x,F5.1)') thread_wtime(tmr),arr1(13,13,13,13,13)
          deallocate(arr1); deallocate(arr0)
          return
          end subroutine particular_trn
