@@ -4342,8 +4342,8 @@
 !         dim_extents(1:dim_num) !debug
 !	 write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r8): index permutation =",128(1x,i2))') &
 !         dim_transp(1:dim_num) !debug
-!	 write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r8): index priorities = ",i3,1x,l1,128(1x,i2))') &
-!         kf,in_out_dif,ipr(1:dim_num) !debug
+	 write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r8): index priorities = ",i3,1x,l1,128(1x,i2))') &
+          kf,in_out_dif,ipr(1:dim_num) !debug
  !Transpose loop:
 !$OMP PARALLEL DEFAULT(SHARED) PRIVATE(i,j,m,n,ks,im,l_in,l_out,l0,l1,l2,l3,ll,lb,le,ls,dim_beg,dim_end)
 #ifndef NO_OMP
@@ -4353,7 +4353,7 @@
 #endif
 !	 if(n.eq.0) write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r8): total number of threads = ",i4)') m !debug
 	 if(.not.in_out_dif) then !input minor set coincides with the output minor set: no splitting
-	  write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r8): Case 0.")') !debug
+	  if(n.eq.0) write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r8): Case 0.")') !debug
 !$OMP MASTER
 !	  write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r8): total number of threads = ",i4)') m !debug
 	  segs(0)=0_LONGINT; call divide_segment(bs,int(m,LONGINT),segs(1:),ierr); do j=2,m; segs(j)=segs(j)+segs(j-1); enddo
@@ -4369,7 +4369,7 @@
 	   do l1=0,le-lb
 	    tens_out(l_out+l1*ls)=tens_in(l_in+l1)
 	   enddo
-	   l0=l0+(le-lb+1); lb=0_LONGINT
+	   l0=l0+(le-lb+1_LONGINT); lb=0_LONGINT
   !increment of the multi-index (scheme 1):
 	   do i=2,dim_num
 	    j=ipr(i)
@@ -4383,7 +4383,7 @@
 	  enddo !l0
 	 else !input and output minor sets differ: range splitting possible
 	  if(split_in.gt.0.and.split_out.eq.0) then !split the last dimension from the input minor set
-	   write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r8): Case 1.")') !debug
+	   if(n.eq.0) write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r8): Case 1.")') !debug
 	   dim_beg(1:dim_num)=0; dim_end(1:dim_num)=dim_extents(1:dim_num)-1; im(1:dim_num)=dim_beg(1:dim_num)
 	   l1=dim_extents(split_in)-1_LONGINT
 !$OMP DO SCHEDULE(DYNAMIC)
@@ -4406,7 +4406,7 @@
 	   enddo !l0
 !$OMP END DO
 	  elseif(split_in.eq.0.and.split_out.gt.0) then !split the last dimension from the output minor set
-	   write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r8): Case 2.")') !debug
+	   if(n.eq.0) write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r8): Case 2.")') !debug
 	   dim_beg(1:dim_num)=0; dim_end(1:dim_num)=dim_extents(1:dim_num)-1; im(1:dim_num)=dim_beg(1:dim_num)
            l1=dim_extents(split_out)-1_LONGINT
 !$OMP DO SCHEDULE(DYNAMIC)
@@ -4429,7 +4429,7 @@
 	   enddo !l0
 !$OMP END DO
 	  elseif(split_in.gt.0.and.split_out.gt.0) then !split the last dimensions from both the input and output minor sets
-	   write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r8): Case 3.")') !debug
+	   if(n.eq.0) write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r8): Case 3.")') !debug
 	   dim_beg(1:dim_num)=0; dim_end(1:dim_num)=dim_extents(1:dim_num)-1; im(1:dim_num)=dim_beg(1:dim_num)
            l2=dim_end(split_in); l3=dim_end(split_out)
 !$OMP DO SCHEDULE(DYNAMIC) COLLAPSE(2)
@@ -4460,7 +4460,7 @@
 	   enddo !l0
 !$OMP END DO
 	  else !no range splitting
-	   write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r8): Case 4.")') !debug
+	   if(n.eq.0) write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r8): Case 4.")') !debug
 !$OMP MASTER
 	   segs(0)=0_LONGINT; call divide_segment(bs,int(m,LONGINT),segs(1:),ierr); do j=2,m; segs(j)=segs(j)+segs(j-1); enddo
 	   l0=1_LONGINT; do i=1,dim_num; bases_pri(ipr(i))=l0; l0=l0*dim_extents(ipr(i)); enddo !priority bases
@@ -4475,7 +4475,7 @@
 	    do l1=0,le-lb
 	     tens_out(l_out+l1*ls)=tens_in(l_in+l1)
 	    enddo
-	    l0=l0+(le-lb+1); lb=0_LONGINT
+	    l0=l0+(le-lb+1_LONGINT); lb=0_LONGINT
   !increment of the multi-index (scheme 2):
 	    do i=2,dim_num
 	     j=ipr(i) !old index number
