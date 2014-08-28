@@ -75,7 +75,7 @@
         real(4), parameter:: cost_to_size=1d1     !minimal cost to size ratio to consider the operation cost-efficient
  !Elementary Tensor Instruction Scheduler (ETIS):
   !Host Argument Buffer (HAB):
-        integer(C_SIZE_T), parameter, private:: max_hab_size=4096_CZ*(1024_CZ*1024_CZ) !max size in bytes of the HAB
+        integer(C_SIZE_T), parameter, private:: max_hab_size=8192_CZ*(1024_CZ*1024_CZ) !max size in bytes of the HAB
         integer(C_SIZE_T), parameter, private:: min_hab_size=64_CZ*(1024_CZ*1024_CZ)   !min size in bytes of the HAB
   !Elementary Tensor Instruction Queue (ETIQ):
         integer(C_INT), parameter, private:: etiq_max_depth=16384 !max number of simultaneously scheduled ETI at this CP
@@ -3398,7 +3398,7 @@
 #endif
 !TENSOR TRANSPOSE:
         write(jo_cp,'(" TENSOR TRANSPOSE:")')
-        dtk='r4' !real data kind
+        dtk='r8' !real data kind
         nfail=0 !will be the total number of failed transposes
         do m=1,num_tens_sizes
          tens_size=tens_sizes(m)
@@ -3407,7 +3407,7 @@
           do k=1,num_dim_spreads
            dim_spread=dim_spreads(k)
            call tensor_shape_rnd(tshape,tsl,ierr,tens_size,tens_rank,dim_spread); if(ierr.ne.0) then; ierr=1; goto 999; endif
-           tens_rank=5; tsl=16; tshape(1:tsl)='(35,35,36,35,36)' !debug
+           tens_rank=5; tsl=16; tshape(1:tsl)='(36,36,36,36,36)' !debug
            do l=1,2 !repetition
             call tensor_block_create(tshape(1:tsl),dtk,ftens(1),ierr); if(ierr.ne.0) then; ierr=2; goto 999; endif
             call printl(jo_cp,'  New Tensor Shape: '//tshape(1:tsl)//': ',.false.)

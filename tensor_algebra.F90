@@ -1,6 +1,6 @@
 !Tensor Algebra Library for multi-core CPUs (OpenMP based)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2014/08/12
+!REVISION: 2014/08/28
 !GNU FORTRAN compiling options: -c -O3 -fopenmp --free-line-length-none -x f95-cpp-input
 !GNU linking options: -lgomp -lblas -llapack
 !ACRONYMS:
@@ -4265,9 +4265,9 @@
 !---------------------------------------
 	integer, parameter:: real_kind=8
 	logical, parameter:: cache_efficiency=.true.
-	integer(LONGINT), parameter:: cache_line_lim=2**5   !approx. number of simultaneously open cache lines per thread
+	integer(LONGINT), parameter:: cache_line_lim=2**4   !approx. number of simultaneously open cache lines per thread
 	integer(LONGINT), parameter:: small_tens_size=2**12 !up to this size (of a tensor block) it is useless to apply cache efficiency
-	integer(LONGINT), parameter:: vec_size=2**4         !loop reorganization parameter
+	integer(LONGINT), parameter:: vec_size=2**4         !loop reorganization parameter for direct copy
 #ifndef NO_PHI
 !DIR$ ATTRIBUTES OFFLOAD:mic:: real_kind,cache_efficiency,cache_line_lim,small_tens_size,vec_size
 !DIR$ ATTRIBUTES ALIGN:128:: real_kind,cache_efficiency,cache_line_lim,small_tens_size,vec_size
@@ -4277,9 +4277,9 @@
 	real(real_kind), intent(in):: tens_in(0:*)
 	real(real_kind), intent(out):: tens_out(0:*)
 	integer, intent(inout):: ierr
-	integer i,j,k,l,m,n,k0,k1,k2,k3,ks,kf,max_dim_ext,split_in,split_out,ac1(1:max_tensor_rank+1)
-	integer im(1:max_tensor_rank),n2o(0:max_tensor_rank+1),ipr(1:max_tensor_rank+1)
-	integer(LONGINT) bases_in(1:max_tensor_rank+1),bases_out(1:max_tensor_rank+1),bases_pri(1:max_tensor_rank+1)
+	integer i,j,k,l,m,n,k0,k1,k2,k3,ks,kf,max_dim_ext,split_in,split_out,ac1(1:dim_num+1)
+	integer im(1:dim_num),n2o(0:dim_num+1),ipr(1:dim_num+1)
+	integer(LONGINT) bases_in(1:dim_num+1),bases_out(1:dim_num+1),bases_pri(1:dim_num+1)
 	integer(LONGINT) bs,l0,l1,l2,l3,l_in,l_out,segs(0:max_threads)
 	integer dim_beg(1:dim_num),dim_end(1:dim_num)
 	logical trivial,in_out_dif
@@ -4291,14 +4291,14 @@
 	time_beg=thread_wtime() !debug
 	if(dim_num.lt.0) then; ierr=dim_num; return; elseif(dim_num.eq.0) then; tens_out(0)=tens_in(0); return; endif
 #ifndef NO_OMP
-        max_dim_ext=cache_line_lim*omp_get_num_threads()
+        max_dim_ext=cache_line_lim
 #else
         max_dim_ext=cache_line_lim
 #endif
 !Check the index permutation:
 	trivial=.true.; do i=1,dim_num; if(dim_transp(i).ne.i) then; trivial=.false.; exit; endif; enddo
 	trivial=trivial.and.cache_efficiency
-	if(trivial) then !trivial index permutation
+	if(trivial) then !trivial index permutation (no permutation)
  !Compute indexing bases:
 	 n2o(0:dim_num+1)=(/+1,dim_transp(1:dim_num),dim_num+1/)
 	 bs=1_LONGINT; do i=1,dim_num; bases_in(i)=bs; bs=bs*dim_extents(i); enddo
@@ -4320,7 +4320,7 @@
 	 bases_in(dim_num+1)=bs; bases_out(dim_num+1)=bs
  !Determine index looping priorities:
 	 in_out_dif=.false.; split_in=0; split_out=0
-	 if(bs.le.small_tens_size.or.(.not.cache_efficiency)) then !tensor block is too small
+	 if(bs.le.small_tens_size.or.(.not.cache_efficiency)) then !tensor block is too small to think hard about it
 	  ipr(1:dim_num+1)=(/(j,j=1,dim_num+1)/); kf=dim_num !trivial priorities
 	 else
 	  do k1=2,dim_num; if(bases_in(k1).ge.cache_line_lim) exit; enddo; k1=k1-1 !first k1 input dimensions form the input minor set
@@ -4366,26 +4366,24 @@
 	  l0=segs(n); do i=dim_num,1,-1; j=ipr(i); im(j)=l0/bases_pri(j); l0=mod(l0,bases_pri(j)); enddo !initial multiindex for each thread
 	  l_in=0_LONGINT; do j=1,dim_num; l_in=l_in+im(j)*bases_in(j); enddo !initital input address
 	  l_out=0_LONGINT; do j=1,dim_num; l_out=l_out+im(j)*bases_out(j); enddo !initial output address
-	  do l0=segs(n),segs(n+1)-1_LONGINT,cache_line_lim
-	   loop0: do l1=l0,min(l0+cache_line_lim-1_LONGINT,segs(n+1)-1_LONGINT)
-	    tens_out(l_out)=tens_in(l_in)
+	  do l0=segs(n),segs(n+1)-1_LONGINT
+	   tens_out(l_out)=tens_in(l_in)
   !Increament of the multi-index (scheme 1):
-	    do i=1,dim_num
-	     j=ipr(i)
-	     if(im(j)+1.eq.dim_extents(j)) then
-	      l_in=l_in+bases_in(j)-bases_in(j+1); l_out=l_out+bases_out(j)-bases_out(ac1(j)); im(j)=0
-	     else
-	      im(j)=im(j)+1; l_in=l_in+bases_in(j); l_out=l_out+bases_out(j)
-	      exit
-	     endif
-	    enddo !i
-	   enddo loop0 !l1
+	   do i=1,dim_num
+	    j=ipr(i)
+	    if(im(j)+1.eq.dim_extents(j)) then
+	     l_in=l_in+bases_in(j)-bases_in(j+1); l_out=l_out+bases_out(j)-bases_out(ac1(j)); im(j)=0
+	    else
+	     im(j)=im(j)+1; l_in=l_in+bases_in(j); l_out=l_out+bases_out(j)
+	     exit
+	    endif
+	   enddo !i
 	  enddo !l0
 	 else !input and output minor sets differ: range splitting possible
 	  if(split_in.gt.0.and.split_out.eq.0) then !split the last dimension from the input minor set
 	   dim_beg(1:dim_num)=0; dim_end(1:dim_num)=dim_extents(1:dim_num)-1; im(1:dim_num)=dim_beg(1:dim_num)
 	   l1=dim_extents(split_in)-1_LONGINT
-!$OMP DO SCHEDULE(GUIDED)
+!$OMP DO SCHEDULE(DYNAMIC)
 	   do l0=0_LONGINT,l1,cache_line_lim
 	    dim_beg(split_in)=int(l0,4); dim_end(split_in)=int(min(l0+cache_line_lim-1_LONGINT,l1),4); ks=0
 	    im(split_in)=dim_beg(split_in); l_in=im(split_in)*bases_in(split_in); l_out=im(split_in)*bases_out(split_in)
@@ -4407,7 +4405,7 @@
 	  elseif(split_in.eq.0.and.split_out.gt.0) then !split the last dimension from the output minor set
 	   dim_beg(1:dim_num)=0; dim_end(1:dim_num)=dim_extents(1:dim_num)-1; im(1:dim_num)=dim_beg(1:dim_num)
            l1=dim_extents(split_out)-1_LONGINT
-!$OMP DO SCHEDULE(GUIDED)
+!$OMP DO SCHEDULE(DYNAMIC)
 	   do l0=0_LONGINT,l1,cache_line_lim
 	    dim_beg(split_out)=int(l0,4); dim_end(split_out)=int(min(l0+cache_line_lim-1_LONGINT,l1),4); ks=0
 	    im(split_out)=dim_beg(split_out); l_in=im(split_out)*bases_in(split_out); l_out=im(split_out)*bases_out(split_out)
@@ -4429,7 +4427,7 @@
 	  elseif(split_in.gt.0.and.split_out.gt.0) then !split the last dimensions from both the input and output minor sets
 	   dim_beg(1:dim_num)=0; dim_end(1:dim_num)=dim_extents(1:dim_num)-1; im(1:dim_num)=dim_beg(1:dim_num)
            l2=dim_end(split_in); l3=dim_end(split_out)
-!$OMP DO SCHEDULE(GUIDED) COLLAPSE(2)
+!$OMP DO SCHEDULE(DYNAMIC) COLLAPSE(2)
 	   do l0=0_LONGINT,l2,cache_line_lim !input dimension
 	    do l1=0_LONGINT,l3,cache_line_lim !output dimension
 	     dim_beg(split_in)=int(l0,4); dim_end(split_in)=int(min(l0+cache_line_lim-1_LONGINT,l2),4)
@@ -4463,20 +4461,18 @@
 	   l0=segs(n); do i=dim_num,1,-1; j=ipr(i); im(j)=l0/bases_pri(j); l0=mod(l0,bases_pri(j)); enddo
 	   l_in=0_LONGINT; do j=1,dim_num; l_in=l_in+im(j)*bases_in(j); enddo
 	   l_out=0_LONGINT; do j=1,dim_num; l_out=l_out+im(j)*bases_out(j); enddo
-	   do l0=segs(n),segs(n+1)-1_LONGINT,cache_line_lim
-	    loop1: do l1=l0,min(l0+cache_line_lim-1_LONGINT,segs(n+1)-1_LONGINT)
-	     tens_out(l_out)=tens_in(l_in)
+	   do l0=segs(n),segs(n+1)-1_LONGINT
+	    tens_out(l_out)=tens_in(l_in)
   !Increament of the multi-index (scheme 2):
-	     do i=1,dim_num
-	      j=ipr(i) !old index number
-	      if(im(j)+1.lt.dim_extents(j)) then
-	       im(j)=im(j)+1; l_in=l_in+bases_in(j); l_out=l_out+bases_out(j)
-	       exit
-	      else
-	       l_in=l_in-im(j)*bases_in(j); l_out=l_out-im(j)*bases_out(j); im(j)=0
-	      endif
-	     enddo !i
-	    enddo loop1 !l1
+	    do i=1,dim_num
+	     j=ipr(i) !old index number
+	     if(im(j)+1.lt.dim_extents(j)) then
+	      im(j)=im(j)+1; l_in=l_in+bases_in(j); l_out=l_out+bases_out(j)
+	      exit
+	     else
+	      l_in=l_in-im(j)*bases_in(j); l_out=l_out-im(j)*bases_out(j); im(j)=0
+	     endif
+	    enddo !i
 	   enddo !l0
 	  endif
 	 endif
