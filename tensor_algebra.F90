@@ -4342,8 +4342,8 @@
 !         dim_extents(1:dim_num) !debug
 !	 write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r8): index permutation =",128(1x,i2))') &
 !         dim_transp(1:dim_num) !debug
-	 write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r8): index priorities = ",i3,1x,l1,128(1x,i2))') &
-          kf,in_out_dif,ipr(1:dim_num) !debug
+!	 write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r8): index priorities = ",i3,1x,l1,128(1x,i2))') &
+!         kf,in_out_dif,ipr(1:dim_num) !debug
  !Transpose loop:
 !$OMP PARALLEL DEFAULT(SHARED) PRIVATE(i,j,m,n,ks,im,l_in,l_out,l0,l1,l2,l3,ll,lb,le,ls,dim_beg,dim_end)
 #ifndef NO_OMP
@@ -4362,11 +4362,11 @@
 !$OMP BARRIER
 !$OMP FLUSH(segs,bases_pri)
 	  l0=segs(n); do i=dim_num,1,-1; j=ipr(i); im(j)=l0/bases_pri(j); l0=l0-im(j)*bases_pri(j); enddo !initial multiindex for each thread
-	  l_in=0_LONGINT; do j=1,dim_num; l_in=l_in+im(j)*bases_in(j); enddo !initital input address
-	  l_out=0_LONGINT; do j=1,dim_num; l_out=l_out+im(j)*bases_out(j); enddo !initial output address
+	  l_in=0_LONGINT; do j=2,dim_num; l_in=l_in+im(j)*bases_in(j); enddo !initital input address
+	  l_out=0_LONGINT; do j=2,dim_num; l_out=l_out+im(j)*bases_out(j); enddo !initial output address
 	  lb=int(im(1),LONGINT); le=int(dim_extents(1)-1,LONGINT); ls=bases_out(1); l0=segs(n)
 	  do while (l0.lt.segs(n+1))
-	   do l1=0,le-lb
+	   do l1=lb,le
 	    tens_out(l_out+l1*ls)=tens_in(l_in+l1)
 	   enddo
 	   l0=l0+(le-lb+1_LONGINT); lb=0_LONGINT
@@ -4442,7 +4442,7 @@
 	     l_out=im(split_in)*bases_out(split_in)+im(split_out)*bases_out(split_out)
 	     lb=int(dim_beg(1),LONGINT); le=int(dim_end(1),LONGINT); ls=bases_out(1); ks=0
 	     loop4: do
-	      do ll=0,le-lb
+	      do ll=0_LONGINT,le-lb
 	       tens_out(l_out+ll*ls)=tens_in(l_in+ll)
 	      enddo
 	      do i=2,dim_num
@@ -4468,11 +4468,11 @@
 !$OMP BARRIER
 !$OMP FLUSH(segs,bases_pri)
 	   l0=segs(n); do i=dim_num,1,-1; j=ipr(i); im(j)=l0/bases_pri(j); l0=l0-im(j)*bases_pri(j); enddo
-	   l_in=0_LONGINT; do j=1,dim_num; l_in=l_in+im(j)*bases_in(j); enddo
-	   l_out=0_LONGINT; do j=1,dim_num; l_out=l_out+im(j)*bases_out(j); enddo
+	   l_in=0_LONGINT; do j=2,dim_num; l_in=l_in+im(j)*bases_in(j); enddo
+	   l_out=0_LONGINT; do j=2,dim_num; l_out=l_out+im(j)*bases_out(j); enddo
 	   lb=int(im(1),LONGINT); le=int(dim_extents(1)-1,LONGINT); ls=bases_out(1); l0=segs(n)
 	   do while (l0.lt.segs(n+1))
-	    do l1=0,le-lb
+	    do l1=lb,le
 	     tens_out(l_out+l1*ls)=tens_in(l_in+l1)
 	    enddo
 	    l0=l0+(le-lb+1_LONGINT); lb=0_LONGINT
