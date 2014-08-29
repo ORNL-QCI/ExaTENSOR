@@ -3420,7 +3420,7 @@
             call tensor_block_copy(ftens(1),ftens(0),ierr); if(ierr.ne.0) then; ierr=3; goto 999; endif
             tm=thread_wtime()-tm; tmd=tmd+tm; gtd=gtd+dble(ftens(1)%tensor_block_size)/tm
             write(jo_cp,'("#DEBUG(tensor_algebra:tensor_block_copy_dlf): Direct time ",F10.6)') tm  !debug
-            call random_permutation(tens_rank,o2n)
+            call random_permutation(tens_rank,o2n,.true.)
 !            o2n(1:tens_rank)=(/(j,j=tens_rank,1,-1)/) !debug
             call permutation_converter(.false.,tens_rank,n2o,o2n)
             write(jo_cp,'(3x,"Permutation:",32(1x,i2))') o2n(1:tens_rank)

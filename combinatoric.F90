@@ -1,7 +1,7 @@
 	module combinatoric
 !Combinatoric Procedures.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!Revision: 2014/08/15
+!Revision: 2014/08/29
 !All rights reserved! No single part can be taken or reproduced!
 !PROCEDURES:
 ! - TRNG(i:ctrl,i:ni,i[1]:trn,i[1]:ngt): permutation generator which returns each new permutation.
@@ -23,8 +23,8 @@
 ! - i:CMP_ARRAYS_INT(l:preorder,i:ml1,i[1]:m1,i:ml2,i[1]:m2,i[1]:trn): compares two integer arrays with an optional preodering.
 ! - i:CMP_ARRAYS_INT8(l:preorder,i:ml1,i8[1]:m1,i:ml2,i8[1]:m2,i[1]:trn): compares two integer(8) arrays with an optional preodering.
 ! - CLANAL(i:nt,r8:ctol,r8[1]:dta,i:ncl,i[1]:cdta,r8[1]:cmv): cluster analysis of a one-dimensional set of points.
-! - RANDOM_PERMUTATION(i:ni,i[1]:trn): returns a random permutation (default integer).
-! - RANDOM_PERMUTATION_INT8(i8:ni,i8[1]:trn): returns a random permutation (integer*8 variant).
+! - RANDOM_PERMUTATION(i:ni,i[1]:trn,l:no_trivial): returns a random permutation (default integer).
+! - RANDOM_PERMUTATION_INT8(i8:ni,i8[1]:trn,l:no_trivial): returns a random permutation (integer*8 variant).
 ! - RANDOM_COMPOSITION(l:ordered,i:irange,i:ni,i[1]:trn): returns a random sequence of ni natural numbers from the range [1..irange] without repeats.
 ! - MERGE_SORT_INT(i:ni,i[1]:trn): fast sorting algorithm for an integer array (default integer).
 ! - MERGE_SORT_KEY_INT(i:ni,i[1]:key,i[1]:trn): fast sorting algorithm for an integer array, based on integer keys (default integer).
@@ -938,8 +938,8 @@
 	 end function dist
 
 	end subroutine clanal
-!--------------------------------------------
-	subroutine random_permutation(ni,trn)
+!-------------------------------------------------------
+	subroutine random_permutation(ni,trn,no_trivial)
 !This subroutine returns a random permutation of NI items [1..NI].
 !INPUT:
 ! - ni - number of items, range [1:ni], if ni<=0 nothing will be done;
@@ -948,34 +948,46 @@
 	implicit none
 	integer, intent(in):: ni
 	integer, intent(out):: trn(0:ni)
+	logical, intent(in), optional:: no_trivial
 !----------------------------------------------
-	integer, parameter:: random_chunk=2**12 !size of the chunk of random numbers generated in one call
+	integer, parameter:: random_chunk=2**10 !size of the chunk of random numbers generated in one call
 !----------------------------------------------
 	integer i,j,k,l,m,n,k0,k1,k2,k3,ks,kf,ierr
 	real(8):: ra(1:random_chunk)
 
 	if(ni.gt.0) then
-	 trn(0)=+1; do i=1,ni; trn(i)=i; enddo !initial permutation
-	 do i=1,ni,random_chunk
-	  j=min(i+random_chunk-1,ni); l=j-i+1
-	  call random_number(ra(1:l))
-	  ra(1:l)=ra(1:l)*2d0
-	  do k=1,l
-	   k1=i+k-1
-	   if(ra(k).lt.1d0) then
-	    n=int(ra(k)*dble(ni))+1; if(n.gt.ni) n=ni
-	    if(n.ne.k1) then; m=trn(k1); trn(k1)=trn(n); trn(n)=m; trn(0)=-trn(0); endif
-	   endif
+	 ploop: do
+	  trn(0)=+1; do i=1,ni; trn(i)=i; enddo !initial permutation
+	  do i=1,ni,random_chunk
+	   j=min(i+random_chunk-1,ni); l=j-i+1
+	   call random_number(ra(1:l))
+	   ra(1:l)=ra(1:l)*2d0
+	   do k=1,l
+	    k1=i+k-1
+	    if(ra(k).lt.1d0) then
+	     n=int(ra(k)*dble(ni))+1; if(n.gt.ni) n=ni
+	     if(n.ne.k1) then; m=trn(k1); trn(k1)=trn(n); trn(n)=m; trn(0)=-trn(0); endif
+	    endif
+	   enddo
 	  enddo
-	 enddo
+	  if(present(no_trivial)) then
+	   if(no_trivial) then
+	    if(.not.perm_trivial(ni,trn)) exit ploop
+	   else
+	    exit ploop
+	   endif
+	  else
+	   exit ploop
+	  endif
+	 enddo ploop
 !	else
 !	 write(*,*)'ERROR(random_permutation): negative or zero number of items: ',ni
 !	 stop
 	endif
 	return
 	end subroutine random_permutation
-!-------------------------------------------------
-	subroutine random_permutation_int8(ni,trn)
+!------------------------------------------------------------
+	subroutine random_permutation_int8(ni,trn,no_trivial)
 !This subroutine returns a random permutation of NI items [1..NI].
 !INPUT:
 ! - ni - number of items, range [1:ni], if ni<=0 nothing will be done;
@@ -984,26 +996,38 @@
 	implicit none
 	integer(8), intent(in):: ni
 	integer(8), intent(out):: trn(0:ni)
-!----------------------------------------------
-	integer(8), parameter:: random_chunk=2**12 !size of the chunk of random numbers generated in one call
-!----------------------------------------------
+	logical, intent(in), optional:: no_trivial
+!-------------------------------------------------
+	integer(8), parameter:: random_chunk=2**10 !size of the chunk of random numbers generated in one call
+!-------------------------------------------------
 	integer(8) i,j,k,l,m,n,k0,k1,k2,k3,ks,kf,ierr
 	real(8):: ra(1:random_chunk)
 
 	if(ni.gt.0) then
-	 trn(0)=+1; do i=1,ni; trn(i)=i; enddo !initial permutation
-	 do i=1,ni,random_chunk
-	  j=min(i+random_chunk-1,ni); l=j-i+1
-	  call random_number(ra(1:l))
-	  ra(1:l)=ra(1:l)*2d0
-	  do k=1,l
-	   k1=i+k-1
-	   if(ra(k).lt.1d0) then
-	    n=int(ra(k)*dble(ni),8)+1; if(n.gt.ni) n=ni
-	    if(n.ne.k1) then; m=trn(k1); trn(k1)=trn(n); trn(n)=m; trn(0)=-trn(0); endif
-	   endif
+	 ploop: do
+	  trn(0)=+1; do i=1,ni; trn(i)=i; enddo !initial permutation
+	  do i=1,ni,random_chunk
+	   j=min(i+random_chunk-1,ni); l=j-i+1
+	   call random_number(ra(1:l))
+	   ra(1:l)=ra(1:l)*2d0
+	   do k=1,l
+	    k1=i+k-1
+	    if(ra(k).lt.1d0) then
+	     n=int(ra(k)*dble(ni),8)+1; if(n.gt.ni) n=ni
+	     if(n.ne.k1) then; m=trn(k1); trn(k1)=trn(n); trn(n)=m; trn(0)=-trn(0); endif
+	    endif
+	   enddo
 	  enddo
-	 enddo
+	  if(present(no_trivial)) then
+	   if(no_trivial) then
+	    if(.not.perm_trivial(ni,trn)) exit ploop
+	   else
+	    exit ploop
+	   endif
+	  else
+	   exit ploop
+	  endif
+	 enddo ploop
 !	else
 !	 write(*,*)'ERROR(random_permutation_int8): negative or zero number of items: ',ni
 !	 stop
