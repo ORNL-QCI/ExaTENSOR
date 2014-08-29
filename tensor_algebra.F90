@@ -4265,29 +4265,27 @@
 !---------------------------------------
 	integer, parameter:: real_kind=8
 	logical, parameter:: cache_efficiency=.true.
-	integer, parameter:: cache_line_len=8               !cache line length (words)
-	integer, parameter:: max_dim_ext=cache_line_len*4   !max dimension extent before splitting
-	integer(LONGINT), parameter:: cache_line_lim=32     !approx. number of simultaneously open cache lines per thread
+	integer(LONGINT), parameter:: cache_line_len=8 !cache line length (words)
+	integer(LONGINT), parameter:: cache_line_lim=cache_line_len*3 !approx. number of simultaneously open cache lines per thread
 	integer(LONGINT), parameter:: small_tens_size=2**10 !up to this size (of a tensor block) it is useless to apply cache efficiency
-	integer(LONGINT), parameter:: vec_size=2**8         !loop reorganization parameter for direct copy
+	integer(LONGINT), parameter:: vec_size=2**8 !loop reorganization parameter for direct copy
 #ifndef NO_PHI
-!DIR$ ATTRIBUTES OFFLOAD:mic:: real_kind,cache_efficiency,cache_line_len,max_dim_ext,cache_line_lim,small_tens_size,vec_size
-!DIR$ ATTRIBUTES ALIGN:128:: real_kind,cache_efficiency,cache_line_len,max_dim_ext,cache_line_lim,small_tens_size,vec_size
+!DIR$ ATTRIBUTES OFFLOAD:mic:: real_kind,cache_efficiency,cache_line_len,cache_line_lim,small_tens_size,vec_size
+!DIR$ ATTRIBUTES ALIGN:128:: real_kind,cache_efficiency,cache_line_len,cache_line_lim,small_tens_size,vec_size
 #endif
-!--------------------------------------------------
+!---------------------------------------------------------------------
 	integer, intent(in):: dim_num,dim_extents(1:*),dim_transp(0:*)
 	real(real_kind), intent(in):: tens_in(0:*)
 	real(real_kind), intent(out):: tens_out(0:*)
 	integer, intent(inout):: ierr
-	integer i,j,k,l,m,n,k0,k1,k2,k3,ks,kf,split_in,split_out,ac1(1:dim_num+1)
-	integer im(1:dim_num),n2o(0:dim_num+1),ipr(1:dim_num+1)
-	integer(LONGINT) bases_in(1:dim_num+1),bases_out(1:dim_num+1),bases_pri(1:dim_num+1)
-	integer(LONGINT) bs,l0,l1,l2,l3,ll,lb,le,ls,l_in,l_out,segs(0:max_threads)
-	integer dim_beg(1:dim_num),dim_end(1:dim_num)
+	integer i,j,k,l,m,n,k0,k1,k2,k3,ks,kf,split_in,split_out
+	integer im(1:dim_num),n2o(0:dim_num+1),ipr(1:dim_num+1),dim_beg(1:dim_num),dim_end(1:dim_num),ac1(1:dim_num)
+	integer(LONGINT) bases_in(1:dim_num+1),bases_out(1:dim_num+1),bases_pri(1:dim_num+1),segs(0:max_threads) !`Is segs(:) threadsafe?
+	integer(LONGINT) bs,l0,l1,l2,l3,ll,lb,le,ls,l_in,l_out,seg_in,seg_out
 	logical trivial,in_out_dif
 	real(8) time_beg
 #ifndef NO_PHI
-!DIR$ ATTRIBUTES ALIGN:128:: ac1,im,n2o,ipr,bases_in,bases_out,bases_pri,segs,dim_beg,dim_end
+!DIR$ ATTRIBUTES ALIGN:128:: im,n2o,ipr,dim_beg,dim_end,ac1,bases_in,bases_out,bases_pri,segs
 #endif
 	ierr=0
 	time_beg=thread_wtime() !debug
@@ -4312,27 +4310,40 @@
 	else !non-trivial index permutation
  !Compute indexing bases:
 	 do i=1,dim_num; n2o(dim_transp(i))=i; enddo; n2o(dim_num+1)=dim_num+1 !get the N2O
-	 bs=1_LONGINT; do i=1,dim_num; bases_in(i)=bs; bs=bs*dim_extents(i); enddo
-	 bs=1_LONGINT; do i=1,dim_num; bases_out(n2o(i))=bs; bs=bs*dim_extents(n2o(i)); enddo
-	 bases_in(dim_num+1)=bs; bases_out(dim_num+1)=bs
+	 bs=1_LONGINT; do i=1,dim_num; bases_in(i)=bs; bs=bs*dim_extents(i); enddo; bases_in(dim_num+1)=bs
+	 bs=1_LONGINT; do i=1,dim_num; bases_out(n2o(i))=bs; bs=bs*dim_extents(n2o(i)); enddo; bases_out(dim_num+1)=bs
  !Determine index looping priorities:
 	 in_out_dif=.false.; split_in=0; split_out=0
 	 if(bs.le.small_tens_size.or.(.not.cache_efficiency)) then !tensor block is too small to think hard about it
-	  ipr(1:dim_num+1)=(/(j,j=1,dim_num+1)/); kf=dim_num !trivial priorities
+	  ipr(1:dim_num+1)=(/(j,j=1,dim_num+1)/); kf=dim_num !trivial priorities, all indices are minor
 	 else
-	  do k1=2,dim_num; if(bases_in(k1).gt.cache_line_lim) exit; enddo; k1=k1-1 !first k1 input dimensions form the input minor set
-	  ipr(1:k1)=(/(j,j=1,k1)/); n=k1 !first k1 input dimensions form the input minor set
+#ifndef NO_OMP
+          m=omp_get_max_threads()
+#else
+          m=1
+#endif
+	  do k1=1,dim_num; if(bases_in(k1+1).gt.cache_line_lim) exit; enddo !first k1 input dimensions form the input minor set
+	  ipr(1:k1)=(/(j,j=1,k1)/) !first k1 input dimensions form the input minor set
 	  do j=1,k1; if(dim_transp(j).gt.k1) then; in_out_dif=.true.; exit; endif; enddo !if .true., the output minor set differs from the input one
 	  if(in_out_dif) then !check whether I need to split long ranges
-	   if(dim_extents(k1).gt.max_dim_ext) split_in=k1 !input dimension which will be split
-	   do k2=2,dim_num; if(bases_out(n2o(k2)).gt.cache_line_lim) exit; enddo; k2=k2-1 !first k2 output dimensions form the output minor set
-	   if(dim_extents(n2o(k2)).gt.max_dim_ext) split_out=n2o(k2) !output dimension which will be split
-	   if(split_out.eq.split_in) split_out=0 !input and output split dimensions coincide
+	   do k2=1,dim_num; if(bases_out(n2o(k2)).gt.cache_line_lim) exit; enddo !first k2 output dimensions form the output minor set
+	   if(k1.eq.n2o(k2)) then !the last minor input and output indices are the same
+	    if(dim_extents(k1).ge.m) then
+	     j=(((cache_line_lim-1_LONGINT)/bases_in(k1)+1_LONGINT)+((cache_line_lim-1_LONGINT)/bases_out(k1)+1_LONGINT))/2
+	     if(j*m.le.dim_extents(k1)) then; split_in=k1; seg_in=int(j,LONGINT); endif
+	    endif
+	   else !the last minor input and output indices are different
+	    j=(cache_line_lim-1_LONGINT)/bases_in(k1)+1_LONGINT
+	    l=(cache_line_lim-1_LONGINT)/bases_out(n2o(k2))+1_LONGINT
+	    if(dim_extents(k1)*dim_extents(n2o(k2)).ge.j*l*m) then
+	     split_in=k1; split_out=n2o(k2); seg_in=int(j,LONGINT); seg_out=int(l,LONGINT)
+	    endif
+	   endif
+	   kf=k1; do j=1,k2; if(n2o(j).gt.k1) then; kf=kf+1; ipr(kf)=n2o(j); endif; enddo !ipr(priority) = old_num: dimension looping priorities
 	  else
-	   k2=k1
+	   k2=k1; kf=k1
 	  endif
-	  kf=k1; do j=1,k2; if(n2o(j).gt.k1) then; n=n+1; ipr(n)=n2o(j); kf=kf+1; endif; enddo !ipr(priority) = old_num: dimension looping priorities
-	  do j=k2+1,dim_num; if(n2o(j).gt.k1) then; n=n+1; ipr(n)=n2o(j); endif; enddo !kf is the length of the combined minor set
+	  l=kf; do j=k2+1,dim_num; if(n2o(j).gt.k1) then; l=l+1; ipr(l)=n2o(j); endif; enddo !kf is the length of the combined minor set
 	  ipr(dim_num+1)=dim_num+1 !special setting
 	 endif
 	 do i=1,dim_num; ac1(i)=n2o(dim_transp(i)+1); enddo !accelerator array
@@ -4345,7 +4356,7 @@
 !	 write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r8): index priorities = ",i3,1x,l1,128(1x,i2))') &
 !         kf,in_out_dif,ipr(1:dim_num) !debug
  !Transpose loop:
-!$OMP PARALLEL DEFAULT(SHARED) PRIVATE(i,j,m,n,ks,im,l_in,l_out,l0,l1,l2,l3,ll,lb,le,ls,dim_beg,dim_end)
+!$OMP PARALLEL DEFAULT(SHARED) PRIVATE(i,j,m,n,ks,l_in,l_out,l0,l1,l2,l3,ll,lb,le,ls,im,dim_beg,dim_end)
 #ifndef NO_OMP
 	 n=omp_get_thread_num(); m=omp_get_num_threads() !multi-threaded execution
 #else
@@ -4387,8 +4398,8 @@
 	   dim_beg(1:dim_num)=0; dim_end(1:dim_num)=dim_extents(1:dim_num)-1; im(1:dim_num)=dim_beg(1:dim_num)
 	   l1=dim_extents(split_in)-1_LONGINT
 !$OMP DO SCHEDULE(DYNAMIC)
-	   do l0=0_LONGINT,l1,cache_line_len
-	    dim_beg(split_in)=int(l0,4); dim_end(split_in)=int(min(l0+cache_line_len-1_LONGINT,l1),4); ks=0
+	   do l0=0_LONGINT,l1,seg_in
+	    dim_beg(split_in)=int(l0,4); dim_end(split_in)=int(min(l0+seg_in-1_LONGINT,l1),4); ks=0
 	    im(split_in)=dim_beg(split_in); l_in=im(split_in)*bases_in(split_in); l_out=im(split_in)*bases_out(split_in)
 	    loop2: do
 	     tens_out(l_out)=tens_in(l_in)
@@ -4410,8 +4421,8 @@
 	   dim_beg(1:dim_num)=0; dim_end(1:dim_num)=dim_extents(1:dim_num)-1; im(1:dim_num)=dim_beg(1:dim_num)
            l1=dim_extents(split_out)-1_LONGINT
 !$OMP DO SCHEDULE(DYNAMIC)
-	   do l0=0_LONGINT,l1,cache_line_len
-	    dim_beg(split_out)=int(l0,4); dim_end(split_out)=int(min(l0+cache_line_len-1_LONGINT,l1),4); ks=0
+	   do l0=0_LONGINT,l1,seg_out
+	    dim_beg(split_out)=int(l0,4); dim_end(split_out)=int(min(l0+seg_out-1_LONGINT,l1),4); ks=0
 	    im(split_out)=dim_beg(split_out); l_in=im(split_out)*bases_in(split_out); l_out=im(split_out)*bases_out(split_out)
 	    loop3: do
 	     tens_out(l_out)=tens_in(l_in)
@@ -4433,10 +4444,10 @@
 	   dim_beg(1:dim_num)=0; dim_end(1:dim_num)=dim_extents(1:dim_num)-1; im(1:dim_num)=dim_beg(1:dim_num)
            l2=dim_end(split_in); l3=dim_end(split_out)
 !$OMP DO SCHEDULE(DYNAMIC) COLLAPSE(2)
-	   do l0=0_LONGINT,l2,cache_line_len !input dimension
-	    do l1=0_LONGINT,l3,cache_line_len !output dimension
-	     dim_beg(split_in)=int(l0,4); dim_end(split_in)=int(min(l0+cache_line_len-1_LONGINT,l2),4)
-	     dim_beg(split_out)=int(l1,4); dim_end(split_out)=int(min(l1+cache_line_len-1_LONGINT,l3),4)
+	   do l0=0_LONGINT,l2,seg_in !input dimension
+	    do l1=0_LONGINT,l3,seg_out !output dimension
+	     dim_beg(split_in)=int(l0,4); dim_end(split_in)=int(min(l0+seg_in-1_LONGINT,l2),4)
+	     dim_beg(split_out)=int(l1,4); dim_end(split_out)=int(min(l1+seg_out-1_LONGINT,l3),4)
 	     im(split_in)=dim_beg(split_in); im(split_out)=dim_beg(split_out)
 	     l_in=im(split_in)*bases_in(split_in)+im(split_out)*bases_in(split_out)
 	     l_out=im(split_in)*bases_out(split_in)+im(split_out)*bases_out(split_out)
