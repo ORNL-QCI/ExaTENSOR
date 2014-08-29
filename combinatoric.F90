@@ -12,6 +12,7 @@
 ! - GPGEN(i:ctrl,i:ni,i[1]:vh,i[1]:trn,i[2]:cil): permutation generator with partial-ordering restrictions, returns each new permutation.
 ! - TR_CYCLE(i:ni,i[1]:trn,i:nc,i[2]:cyc): decomposes a permutation into permutation cycles and determines the sign of the permutation.
 ! - l:PERM_TRIVIAL(i:ni,i[1]:trn): checks whether the given permutation is trivial or not.
+! - l:PERM_TRIVIAL_INT8(i8:ni,i8[1]:trn): checks whether the given permutation is trivial or not.
 ! - l:PERM_OK(i:ni,i[1]:trn): checks whether the given permutation is legitimate or not.
 ! - PERM2TRANS(i:ni,i[1]:trn1,i[1]:trn2,i:ntrp,i[2]:trp): creates a list of elementary transpositions relating one permutation to another.
 ! - PERMUTATION_CONVERTER(l:seq2pos,i:ni,i[1]:n2o,i[1]:o2n): converts between two permutation representations (N2O and O2N).
@@ -460,6 +461,16 @@
 	do i=1,ni; if(trn(i).ne.i) then; perm_trivial=.false.; exit; endif; enddo
 	return
 	end function perm_trivial
+!-------------------------------------------------
+	logical function perm_trivial_int8(ni,trn)
+!Checks whether the given permutation trn(0:ni) is trivial or not.
+	implicit none
+	integer(8), intent(in):: ni,trn(0:*)
+	integer(8) i
+	perm_trivial=.true.
+	do i=1,ni; if(trn(i).ne.i) then; perm_trivial=.false.; exit; endif; enddo
+	return
+	end function perm_trivial_int8
 !---------------------------------------
 	logical function perm_ok(ni,trn)
 !Checks whether the given permutation trn(0:ni) is legitimate or not.
@@ -1020,7 +1031,7 @@
 	  enddo
 	  if(present(no_trivial)) then
 	   if(no_trivial) then
-	    if(.not.perm_trivial(ni,trn)) exit ploop
+	    if(.not.perm_trivial_int8(ni,trn)) exit ploop
 	   else
 	    exit ploop
 	   endif
