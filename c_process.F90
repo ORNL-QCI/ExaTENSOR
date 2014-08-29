@@ -3375,13 +3375,14 @@
         integer(8), parameter:: tens_sizes(1:num_tens_sizes)=(/55555555/)
         integer, parameter:: tens_ranks(1:num_tens_ranks)=(/2,3,4,5,6,7,8,15/)
         integer, parameter:: dim_spreads(1:num_dim_spreads)=(/1,5,15/)
+        integer, parameter:: num_repet=5
         integer, parameter:: test_args_lim=15
         integer i,j,k,l,m,n
-        integer tsl,tens_rank,dim_spread,o2n(0:max_tensor_rank),n2o(0:max_tensor_rank),nfail
+        integer tsl,tens_rank,dim_spread,o2n(0:max_tensor_rank),n2o(0:max_tensor_rank),nfail,ntotal
         integer(8) tens_size,diffc
         character(256) tshape
         character(2) dtk
-        real(8) tm
+        real(8) tm,tmd,tms,tme,gtd,gts,gte
         logical cmp
         integer(C_INT) i0,i1,gpu_id,err_code
         integer(C_INT):: entry_num(0:test_args_lim)=-1
@@ -3399,16 +3400,17 @@
 !TENSOR TRANSPOSE:
         write(jo_cp,'(" TENSOR TRANSPOSE:")')
         dtk='r8' !real data kind
-        nfail=0 !will be the total number of failed transposes
+        ntotal=0; nfail=0 !will be the total number of failed transposes
+        tmd=0d0; tms=0d0; tme=0d0; gtd=0d0; gts=0d0; gte=0d0
         do m=1,num_tens_sizes
          tens_size=tens_sizes(m)
          do n=1,num_tens_ranks
           tens_rank=tens_ranks(n)
           do k=1,num_dim_spreads
            dim_spread=dim_spreads(k)
-           call tensor_shape_rnd(tshape,tsl,ierr,tens_size,tens_rank,dim_spread); if(ierr.ne.0) then; ierr=1; goto 999; endif
-           tens_rank=5; tsl=16; tshape(1:tsl)='(36,36,36,36,36)' !debug
-           do l=1,2 !repetition
+           do l=1,num_repet !repetition
+            call tensor_shape_rnd(tshape,tsl,ierr,tens_size,tens_rank,dim_spread); if(ierr.ne.0) then; ierr=1; goto 999; endif
+!            tens_rank=5; tsl=16; tshape(1:tsl)='(36,36,36,36,36)' !debug
             call tensor_block_create(tshape(1:tsl),dtk,ftens(1),ierr); if(ierr.ne.0) then; ierr=2; goto 999; endif
             call printl(jo_cp,'  New Tensor Shape: '//tshape(1:tsl)//': ',.false.)
             write(jo_cp,'(i10,1x,F16.4)') ftens(1)%tensor_block_size,tensor_block_norm1(ftens(1),ierr,dtk)
@@ -3416,9 +3418,10 @@
             call tensor_block_copy(ftens(1),ftens(0),ierr); if(ierr.ne.0) then; ierr=3; goto 999; endif
             tm=thread_wtime()
             call tensor_block_copy(ftens(1),ftens(0),ierr); if(ierr.ne.0) then; ierr=3; goto 999; endif
-            write(jo_cp,'("#DEBUG(tensor_algebra:tensor_block_copy_dlf): Direct time ",F10.6)') thread_wtime()-tm !debug
+            tm=thread_wtime()-tm; tmd=tmd+tm; gtd=gtd+dble(ftens(1)%tensor_block_size)/tm
+            write(jo_cp,'("#DEBUG(tensor_algebra:tensor_block_copy_dlf): Direct time ",F10.6)') tm  !debug
             call random_permutation(tens_rank,o2n)
-            o2n(1:tens_rank)=(/(j,j=tens_rank,1,-1)/) !debug
+!            o2n(1:tens_rank)=(/(j,j=tens_rank,1,-1)/) !debug
             call permutation_converter(.false.,tens_rank,n2o,o2n)
             write(jo_cp,'(3x,"Permutation:",32(1x,i2))') o2n(1:tens_rank)
             write(jo_cp,'(3x,"Permutation:",32(1x,i2))') n2o(1:tens_rank)
@@ -3427,12 +3430,14 @@
             call tensor_block_copy(ftens(1),ftens(0),ierr,o2n); if(ierr.ne.0) then; ierr=4; goto 999; endif
             tm=thread_wtime()
             call tensor_block_copy(ftens(1),ftens(0),ierr,o2n); if(ierr.ne.0) then; ierr=4; goto 999; endif
-            write(jo_cp,'("#DEBUG(tensor_algebra:tensor_block_copy_scatter_dlf): Time ",F10.6)') thread_wtime()-tm !debug
+            tm=thread_wtime()-tm; tms=tms+tm; gts=gts+dble(ftens(1)%tensor_block_size)/tm
+            write(jo_cp,'("#DEBUG(tensor_algebra:tensor_block_copy_scatter_dlf): Time ",F10.6)') tm !debug
             write(jo_cp,'(3x)',advance='no')
             call tensor_block_copy(ftens(0),ftens(2),ierr,n2o); if(ierr.ne.0) then; ierr=5; goto 999; endif
             tm=thread_wtime()
             call tensor_block_copy(ftens(0),ftens(2),ierr,n2o); if(ierr.ne.0) then; ierr=5; goto 999; endif
-            write(jo_cp,'("#DEBUG(tensor_algebra:tensor_block_copy_scatter_dlf): Time ",F10.6)') thread_wtime()-tm !debug
+            tm=thread_wtime()-tm; tms=tms+tm; gts=gts+dble(ftens(0)%tensor_block_size)/tm
+            write(jo_cp,'("#DEBUG(tensor_algebra:tensor_block_copy_scatter_dlf): Time ",F10.6)') tm !debug
             cmp=tensor_block_cmp(ftens(1),ftens(2),ierr,dtk,.true.,1d-4,diffc); if(ierr.ne.0) then; ierr=6; goto 999; endif
             write(jo_cp,'(3x,l1,1x,i9,1x,F16.4)') cmp,diffc,tensor_block_norm1(ftens(2),ierr,dtk)
             if(.not.cmp) then; nfail=nfail+1; write(jo_cp,'(3x,"Comparison Failed!")'); endif
@@ -3441,12 +3446,14 @@
             call tensor_block_copy(ftens(1),ftens(0),ierr,o2n); if(ierr.ne.0) then; ierr=7; goto 999; endif
             tm=thread_wtime()
             call tensor_block_copy(ftens(1),ftens(0),ierr,o2n); if(ierr.ne.0) then; ierr=7; goto 999; endif
-            write(jo_cp,'("#DEBUG(tensor_algebra:tensor_block_copy_dlf): Time ",F10.6)') thread_wtime()-tm !debug
+            tm=thread_wtime()-tm; tme=tme+tm; gte=gte+dble(ftens(1)%tensor_block_size)/tm
+            write(jo_cp,'("#DEBUG(tensor_algebra:tensor_block_copy_dlf): Time ",F10.6)') tm !debug
             write(jo_cp,'(3x)',advance='no')
             call tensor_block_copy(ftens(0),ftens(2),ierr,n2o); if(ierr.ne.0) then; ierr=8; goto 999; endif
             tm=thread_wtime()
             call tensor_block_copy(ftens(0),ftens(2),ierr,n2o); if(ierr.ne.0) then; ierr=8; goto 999; endif
-            write(jo_cp,'("#DEBUG(tensor_algebra:tensor_block_copy_dlf): Time ",F10.6)') thread_wtime()-tm !debug
+            tm=thread_wtime()-tm; tme=tme+tm; gte=gte+dble(ftens(0)%tensor_block_size)/tm
+            write(jo_cp,'("#DEBUG(tensor_algebra:tensor_block_copy_dlf): Time ",F10.6)') tm !debug
             cmp=tensor_block_cmp(ftens(1),ftens(2),ierr,dtk,.true.,1d-4,diffc); if(ierr.ne.0) then; ierr=9; goto 999; endif
             write(jo_cp,'(3x,l1,1x,i9,1x,F16.4)') cmp,diffc,tensor_block_norm1(ftens(2),ierr,dtk)
             if(.not.cmp) then; nfail=nfail+1; write(jo_cp,'(3x,"Comparison Failed!")'); endif
@@ -3502,7 +3509,10 @@
             call tensor_block_destroy(ftens(2),ierr)
             call tensor_block_destroy(ftens(1),ierr)
             call tensor_block_destroy(ftens(0),ierr)
-            call particular_trn; goto 999 !debug
+            ntotal=ntotal+1
+            write(jo_cp,'("#STATISTICS (direct,scat,opt):",3(1x,F10.6),2x,3(1x,F14.2))') &
+             tmd/dble(ntotal),tms/dble(ntotal),tme/dble(ntotal),gtd/dble(ntotal),gts/dble(ntotal),gte/dble(ntotal)
+!            call particular_trn; goto 999 !debug
            enddo !repetition
           enddo !dim_spread
          enddo !tens_rank
@@ -3520,7 +3530,7 @@
 
         contains
 
-         subroutine particular_trn
+         subroutine particular_trn !debug
          integer:: j1,j2,j3,j4,j5,jsi,jso
          real(4), allocatable:: arr0(:,:,:,:,:),arr1(:,:,:,:,:)
          real(8):: tmr
