@@ -3423,8 +3423,8 @@
             call random_permutation(tens_rank,o2n,.true.)
 !            o2n(1:tens_rank)=(/(j,j=tens_rank,1,-1)/) !debug
             call permutation_converter(.false.,tens_rank,n2o,o2n)
-            write(jo_cp,'(3x,"Permutation:",32(1x,i2))') o2n(1:tens_rank)
-            write(jo_cp,'(3x,"Permutation:",32(1x,i2))') n2o(1:tens_rank)
+            write(jo_cp,'(3x,"Permutation(o2n):",32(1x,i2))') o2n(1:tens_rank)
+            write(jo_cp,'(3x,"Permutation(n2o):",32(1x,i2))') n2o(1:tens_rank)
             call set_transpose_algorithm(EFF_TRN_OFF) !scatter
             write(jo_cp,'(3x)',advance='no')
             call tensor_block_copy(ftens(1),ftens(0),ierr,o2n); if(ierr.ne.0) then; ierr=4; goto 999; endif
