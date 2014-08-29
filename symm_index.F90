@@ -95,8 +95,9 @@
         tables_left=max_addr_tables-max(num_tables,0)
         return
         end subroutine info_address_tables
-!-------------------------------------------------------------
-        integer find_address_table(handle,ndim,ord,mrpt,lb,ub)
+!----------------------------------------------------------------------
+        integer function find_address_table(handle,ndim,ord,mrpt,lb,ub)
+!This function looks up a necessary address table in the local storage.
         implicit none
         integer, intent(out):: handle
         integer, intent(in):: ndim
@@ -105,6 +106,7 @@
         integer, intent(in):: lb(1:*)
         integer, intent(in):: ub(1:*)
         integer i,j,k,l,m,n
+
         find_address_table=0; handle=0
         
         return
