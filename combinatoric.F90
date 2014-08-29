@@ -467,8 +467,8 @@
 	implicit none
 	integer(8), intent(in):: ni,trn(0:*)
 	integer(8) i
-	perm_trivial=.true.
-	do i=1,ni; if(trn(i).ne.i) then; perm_trivial=.false.; exit; endif; enddo
+	perm_trivial_int8=.true.
+	do i=1,ni; if(trn(i).ne.i) then; perm_trivial_int8=.false.; exit; endif; enddo
 	return
 	end function perm_trivial_int8
 !---------------------------------------
