@@ -3511,7 +3511,7 @@
             call tensor_block_destroy(ftens(0),ierr)
             ntotal=ntotal+1
             write(jo_cp,'("#STATISTICS (direct,scat,opt):",3(1x,F10.6),2x,3(1x,F14.2))') &
-             tmd/dble(ntotal),tms/dble(ntotal),tme/dble(ntotal),gtd/dble(ntotal),gts/dble(ntotal),gte/dble(ntotal)
+             tmd/dble(ntotal),tms/dble(ntotal*2),tme/dble(ntotal*2),gtd/dble(ntotal),gts/dble(ntotal*2),gte/dble(ntotal*2)
 !            call particular_trn; goto 999 !debug
            enddo !repetition
           enddo !dim_spread
