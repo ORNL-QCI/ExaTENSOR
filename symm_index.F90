@@ -1,11 +1,11 @@
 !This module provides infrastructure for symmetric multi-indexing
 !for higher rank tensor algebra.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2014/08/26
+!REVISION: 2014/08/29
 !DESCRIPTION:
 ! # Given a symmetric multi-index {I1<=I2<=...<=In}, each subsequent value
-!   of the multi-index is assigned an integer from the range [0..max] via
-!   a special addressing table. The lower bound of I1 is always 0.
+!   of the multi-index is consecutively assigned an integer from the range [0..max]
+!   via the special addressing table. The lower bound of I1 is always 0.
 !   The lower bound of Ik is no less than the lower bound of I(k-1).
 !   The upper bound of Ik is no less than the upper bound of I(k-1).
 ! # For ascending ordered multi-indices, the index numeration is normalized
@@ -17,6 +17,7 @@
 !FUNCTIONALITY:
 ! # v:clean_address_tables();
 ! # v:info_address_tables(i:num_tables,i:num_elems,i:tables_left);
+! # i:find_address_table(i:handle,i:ndim,i:ord,i:mrpt,i[1]:lb,i[1]:ub);
 ! # i:get_address_table(i:handle,i_p[2]:iba,i_o:ndim,i_o:ord,i_o:mrpt,i_o[1]:lbnd,i_o[1]:ubnd);
 ! # i:delete_address_table(i:handle);
 ! # i:test_address_table(i[2]:iba,i:ndim,i:ord,i:mrpt,i[1]:lb,i[1]:ub);
@@ -94,6 +95,20 @@
         tables_left=max_addr_tables-max(num_tables,0)
         return
         end subroutine info_address_tables
+!-------------------------------------------------------------
+        integer find_address_table(handle,ndim,ord,mrpt,lb,ub)
+        implicit none
+        integer, intent(out):: handle
+        integer, intent(in):: ndim
+        integer, intent(in):: ord
+        integer, intent(in):: mrpt
+        integer, intent(in):: lb(1:*)
+        integer, intent(in):: ub(1:*)
+        integer i,j,k,l,m,n
+        find_address_table=0; handle=0
+        
+        return
+        end function find_address_table
 !-----------------------------------------------------------------------------
         integer function get_address_table(handle,iba,ndim,ord,mrpt,lbnd,ubnd)
 !This function either returns an existing addressing table (by handle) or
