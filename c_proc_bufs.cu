@@ -1,7 +1,7 @@
 /** This file provides infrastructure for managing Host/GPU
 argument buffers inside a computing process (C-process).
 AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-REVISION: 2014/04/29
+REVISION: 2014/09/04
 **/
 
 #include <stdio.h>
@@ -9,7 +9,7 @@ REVISION: 2014/04/29
 #include <time.h>
 #include <cuda.h>
 #include <cuda_runtime.h>
-#include "tensor_algebra_gpu_nvidia.h"
+#include "tensor_algebra.h"
 
 #define GPU_MEM_PART_USED 90    //percentage of free GPU global memory to be actually allocated for GPU argument buffers
 #define MEM_ALIGN 16            //memory alignment (in bytes) for argument buffers

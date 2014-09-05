@@ -1,6 +1,6 @@
 /** GPU functions for Tensor Algebra in Parallel for NVidia GPUs (CUDA).
 AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-REVISION: 2014/08/13
+REVISION: 2014/09/04
 NOTES:
  # Functions without underscores at the end of their names are blocking (Host) functions;
    Functions with one underscore at the end of their names are external non-blocking functions;
@@ -24,7 +24,7 @@ NOTES:
 #include <time.h>
 #include <cuda.h>
 #include <cuda_runtime.h>
-#include "tensor_algebra_gpu_nvidia.h"
+#include "tensor_algebra.h"
 
 #ifndef NO_BLAS
 #include <cublas_v2.h>

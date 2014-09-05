@@ -1,7 +1,6 @@
-!Tensor Algebra Library for multi-core CPUs (OpenMP based)
+!Tensor Algebra for Multi-Core CPUs (OpenMP based).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2014/08/29
-!GNU FORTRAN compiling options: -c -O3 -fopenmp --free-line-length-none -x f95-cpp-input
+!REVISION: 2014/09/05
 !GNU linking options: -lgomp -lblas -llapack
 !ACRONYMS:
 ! - mlndx - multiindex;
@@ -31,7 +30,7 @@
         integer, external, private:: omp_get_max_threads,omp_get_num_threads,omp_get_thread_num
 #endif
 !PARAMETERS:
-        include 'tensor_algebra_gpu_nvidia.inc'
+        include 'tensor_algebra.inc'
  !Default output for the module procedures:
 	integer, private:: cons_out=6     !default output device for this module (also used for INTEL MIC TAL)
 	logical, private:: verbose=.true. !verbosity (also used for INTEL MIC TAL)
@@ -83,15 +82,15 @@
 	end interface divide_segment
 
 	interface tensor_block_slice_dlf
-!	 module procedure tensor_block_slice_dlf_r4 !`Enable
+	 module procedure tensor_block_slice_dlf_r4
 	 module procedure tensor_block_slice_dlf_r8
-!	 module procedure tensor_block_slice_dlf_c8 !`Enable
+	 module procedure tensor_block_slice_dlf_c8
 	end interface tensor_block_slice_dlf
 
 	interface tensor_block_insert_dlf
-!	 module procedure tensor_block_insert_dlf_r4 !`Enable
+	 module procedure tensor_block_insert_dlf_r4
 	 module procedure tensor_block_insert_dlf_r8
-!	 module procedure tensor_block_insert_dlf_c8 !`Enable
+	 module procedure tensor_block_insert_dlf_c8
 	end interface tensor_block_insert_dlf
 
 	interface tensor_block_copy_dlf
@@ -117,6 +116,12 @@
 	 module procedure tensor_block_pcontract_dlf_r8
 !	 module procedure tensor_block_pcontract_dlf_c8 !`Enable
 	end interface tensor_block_pcontract_dlf
+
+        interface matrix_multiply_tn
+!         module procedure matrix_multiply_tn_dlf_r4 !`Enable
+         module procedure matrix_multiply_tn_dlf_r8
+!         module procedure matrix_multiply_tn_dlf_c8 !`Enable
+        end interface matrix_multiply_tn
 
 	interface tensor_block_ftrace_dlf
 	 module procedure tensor_block_ftrace_dlf_r4
@@ -176,6 +181,7 @@
 	private tensor_block_copy_scatter_dlf !tensor transpose for dimension-led (Fortran-like-stored) dense tensor blocks (scattering variant)
 	private tensor_block_fcontract_dlf !multiplies two matrices derived from tensors to produce a scalar
 	private tensor_block_pcontract_dlf !multiplies two matrices derived from tensors to produce a third matrix
+	private matrix_multiply_tn         !multiplies two matrices (left is transposed, right is normal)
 	private tensor_block_ftrace_dlf    !takes a full trace of a tensor block
 	private tensor_block_ptrace_dlf    !takes a partial trace of a tensor block
 
@@ -298,6 +304,12 @@
 !NOTES:
 ! - %dim_divider(1)=0 means that an alternative (neither dimension-led nor bricked) storage layout is used,
 !                     whose kind is regulated by the %dim_group(1) then.
+! - For dimension_led, bricked_dense and bricked_ordered tensor blocks,
+!   index group 0 does not imply any index ordering restrictions.
+!   The presence of group 1,2,etc...(up to the tensor rank) assumes
+!   that the bricked_ordered storage layout is in use. It is illegal
+!   to assign non-zero group numbers to indices for dimension_led
+!   and bricked_dense tensor blocks.
 	implicit none
 	type(tensor_block_t), intent(inout):: tens !(out) because of <tensor_shape_ok>
 	logical, intent(in), optional:: check_shape
@@ -320,7 +332,7 @@
 	  if(tensor_block_layout.eq.bricked_dense) then
 	   ibus(0:tens%tensor_shape%num_dim)=0
 	   do i=1,tens%tensor_shape%num_dim
-	    j=tens%tensor_shape%dim_group(i)
+	    j=tens%tensor_shape%dim_group(i); if(j.lt.0.or.j.gt.tens%tensor_shape%num_dim) then; ierr=1000; return; endif
 	    if(j.gt.0.and.ibus(j).gt.0) then; tensor_block_layout=bricked_ordered; exit; endif
 	    ibus(j)=ibus(j)+1
 	   enddo
@@ -361,7 +373,7 @@
 	  endif
 	 enddo
 	case(bricked_ordered)
-	 !`Future
+	 !`Future: Compute volumes of all ordered multi-indices and multiply them.
 	case(sparse_list)
 	 !`Future
 	case(compressed)
@@ -1575,19 +1587,21 @@
 	end function tensor_block_min
 !-----------------------------------------------------------------------
 	subroutine tensor_block_slice(tens,slice,ext_beg,ierr,data_kind) !PARALLEL
-!This subroutine extracts a slice from a tensor block (<slice> must be preallocated).
+!This subroutine extracts a slice from a tensor block.
+!Tensor block <slice> must have its shape defined on input!
 !INPUT:
 ! - tens - tensor block;
 ! - slice - tensor block which will contain the slice (its shape specifies the slice dimensions);
-! - ext_beg(:) - beginning offset of each tensor dimension (numeration starts at 0);
-! - data_kind - requested data_kind, one of {'r4','r8','c8'};
+! - ext_beg(1:) - beginning offset of each tensor dimension (numeration starts at 0) to slice from;
+! - data_kind - (optional) requested data_kind, one of {'r4','r8','c8'};
 !OUTPUT:
-! - slice - tensor block slice;
+! - slice - filled tensor block slice;
 ! - ierr - error code (0:success).
 !NOTES:
-! - <slice> must have the same layout as <tens>!
+! - <slice> must have its shape defined and the same layout as <tens>!
+!   <slice> data does not have to be allocated and initialized.
 ! - For scalar tensors, slicing reduces to copying the scalar value.
-! - If no <data_kind> is specified, the highest possible will be used from <tens>.
+! - If no <data_kind> is specified, the highest possible data kind will be used from <tens>.
 ! - <slice> is syncronized at the end.
 	implicit none
 	type(tensor_block_t), intent(inout):: tens !(out) because of <tensor_block_copy> because of <tensor_block_layout> because of <tensor_shape_ok>
@@ -1641,7 +1655,7 @@
 	      ext_beg(i)+slice%tensor_shape%dim_extent(i)-1.ge.tens%tensor_shape%dim_extent(i)) then
 	    ierr=14; return
 	   endif
-	   if(slice%tensor_shape%dim_extent(i).ne.tens%tensor_shape%dim_extent(i)) kf=1
+	   if(slice%tensor_shape%dim_extent(i).ne.tens%tensor_shape%dim_extent(i)) kf=1 !non-trivial
 	  enddo
 !Slicing:
 	  if(kf.eq.0) then !one-to-one copy
@@ -1649,17 +1663,19 @@
 	  else !true slicing
 	   tlt=tensor_block_layout(tens,ierr); if(ierr.ne.0) then; ierr=16; return; endif
 	   slt=tensor_block_layout(slice,ierr,.true.); if(ierr.ne.0) then; ierr=17; return; endif
-	   if(slt.eq.tlt) then
+	   if(slt.eq.tlt) then !layouts coinside
 	    select case(tlt)
 	    case(dimension_led)
 	     select case(dtk)
 	     case('r4')
-	      !`Enable
+	      call tensor_block_slice_dlf(n,tens%data_real4,tens%tensor_shape%dim_extent, &
+	            slice%data_real4,slice%tensor_shape%dim_extent,ext_beg,ierr); if(ierr.ne.0) then; ierr=18; return; endif
 	     case('r8')
 	      call tensor_block_slice_dlf(n,tens%data_real8,tens%tensor_shape%dim_extent, &
-	            slice%data_real8,slice%tensor_shape%dim_extent,ext_beg,ierr); if(ierr.ne.0) then; ierr=18; return; endif
+	            slice%data_real8,slice%tensor_shape%dim_extent,ext_beg,ierr); if(ierr.ne.0) then; ierr=19; return; endif
 	     case('c8')
-	      !`Enable
+	      call tensor_block_slice_dlf(n,tens%data_cmplx8,tens%tensor_shape%dim_extent, &
+	            slice%data_cmplx8,slice%tensor_shape%dim_extent,ext_beg,ierr); if(ierr.ne.0) then; ierr=20; return; endif
 	     end select
 	    case(bricked_dense,bricked_ordered)
 	     !`Future
@@ -1668,20 +1684,22 @@
 	    case(compressed)
 	     !`Future
 	    case default
-	     ierr=19; return !invalid tensor layout
+	     ierr=21; return !invalid tensor layout
 	    end select
 	    if(data_kind_sync) then
-	     call tensor_block_sync(slice,dtk,ierr); if(ierr.ne.0) then; ierr=20; return; endif
+	     call tensor_block_sync(slice,dtk,ierr); if(ierr.ne.0) then; ierr=22; return; endif
 	    endif
 	   else
-	    ierr=21 !tensor layouts differ
+	    ierr=23 !tensor layouts differ
 	   endif
 	  endif
 	 elseif(n.eq.0) then !scalar
 	  slice%scalar_value=tens%scalar_value
+	 else !empty tensors
+	  ierr=24
 	 endif
 	else
-	 ierr=22 !tensor block and its slice have different ranks
+	 ierr=25 !tensor block and its slice have different ranks
 	endif
 	return
 	end subroutine tensor_block_slice
@@ -1691,8 +1709,8 @@
 !INPUT:
 ! - tens - tensor block;
 ! - slice - slice to be inserted;
-! - ext_beg(:) - beginning offset of each tensor dimension (numeration starts at 0);
-! - data_kind - requested data_kind, one of {'r4','r8','c8'};
+! - ext_beg(1:) - beginning offset of each tensor dimension (numeration starts at 0) where to insert;
+! - data_kind - (optional) requested data_kind, one of {'r4','r8','c8'};
 !OUTPUT:
 ! - tens - modified tensor block;
 ! - ierr - error code (0:success).
@@ -1769,7 +1787,7 @@
 	      ext_beg(i)+slice%tensor_shape%dim_extent(i)-1.ge.tens%tensor_shape%dim_extent(i)) then
 	    ierr=18; return
 	   endif
-	   if(slice%tensor_shape%dim_extent(i).ne.tens%tensor_shape%dim_extent(i)) kf=1
+	   if(slice%tensor_shape%dim_extent(i).ne.tens%tensor_shape%dim_extent(i)) kf=1 !non-trivial
 	  enddo
 !Insertion:
 	  if(kf.eq.0) then !one-to-one copy
@@ -1782,12 +1800,14 @@
 	    case(dimension_led)
 	     select case(dtk)
 	     case('r4')
-	      !`Enable
+	      call tensor_block_insert_dlf(n,tens%data_real4,tens%tensor_shape%dim_extent, &
+	            slice%data_real4,slice%tensor_shape%dim_extent,ext_beg,ierr); if(ierr.ne.0) then; ierr=22; return; endif
 	     case('r8')
 	      call tensor_block_insert_dlf(n,tens%data_real8,tens%tensor_shape%dim_extent, &
-	            slice%data_real8,slice%tensor_shape%dim_extent,ext_beg,ierr); if(ierr.ne.0) then; ierr=22; return; endif
+	            slice%data_real8,slice%tensor_shape%dim_extent,ext_beg,ierr); if(ierr.ne.0) then; ierr=23; return; endif
 	     case('c8')
-	      !`Enable
+	      call tensor_block_insert_dlf(n,tens%data_cmplx8,tens%tensor_shape%dim_extent, &
+	            slice%data_cmplx8,slice%tensor_shape%dim_extent,ext_beg,ierr); if(ierr.ne.0) then; ierr=24; return; endif
 	     end select
 	    case(bricked_dense,bricked_ordered)
 	     !`Future
@@ -1796,20 +1816,22 @@
 	    case(compressed)
 	     !`Future
 	    case default
-	     ierr=23; return !invalid tensor layout
+	     ierr=25; return !invalid tensor layout
 	    end select
 	    if(data_kind_sync) then
-	     call tensor_block_sync(tens,dtk,ierr); if(ierr.ne.0) then; ierr=24; return; endif
+	     call tensor_block_sync(tens,dtk,ierr); if(ierr.ne.0) then; ierr=26; return; endif
 	    endif
 	   else
-	    ierr=25 !tensor layouts differ
+	    ierr=27 !tensor layouts differ
 	   endif
 	  endif
 	 elseif(n.eq.0) then !scalar
 	  tens%scalar_value=slice%scalar_value
+	 else !empty tensors
+	  ierr=28
 	 endif
 	else
-	 ierr=26 !tensor block and its slice have different ranks
+	 ierr=29 !tensor block and the slice have different ranks
 	endif
 	return
 	end subroutine tensor_block_insert
@@ -3957,7 +3979,7 @@
 	real(real_kind), intent(out):: slice(0:*)
 	integer, intent(inout):: ierr
 	integer i,j,k,l,m,n,ks,kf,im(1:dim_num)
-	integer(LONGINT):: bases_in(1:dim_num),bases_out(1:dim_num),segs(0:max_threads),lts,lss,l_in,l_out
+	integer(LONGINT):: lts,lss,l_in,l_out,lb,le,ll,bases_in(1:dim_num),bases_out(1:dim_num),segs(0:max_threads) !`Is segs(:) threadsafe?
 	real(8) time_beg
 
 	ierr=0
@@ -3965,7 +3987,7 @@
 	if(dim_num.gt.0) then
 	 lts=1_LONGINT; do i=1,dim_num; bases_in(i)=lts; lts=lts*tens_ext(i); enddo   !tensor block indexing bases
 	 lss=1_LONGINT; do i=1,dim_num; bases_out(i)=lss; lss=lss*slice_ext(i); enddo !slice indexing bases
-!$OMP PARALLEL DEFAULT(SHARED) PRIVATE(i,m,n,kf,im,l_in,l_out)
+!$OMP PARALLEL DEFAULT(SHARED) PRIVATE(i,m,n,im,l_in,l_out,lb,le,ll)
 #ifndef NO_OMP
 	 n=omp_get_thread_num(); m=omp_get_num_threads()
 #else
@@ -3976,19 +3998,20 @@
 !$OMP END MASTER
 !$OMP BARRIER
 !$OMP FLUSH(segs)
-	 l_out=segs(n); do i=dim_num,1,-1; im(i)=l_out/bases_out(i); l_out=mod(l_out,bases_out(i)); enddo
-	 l_in=ext_beg(1)+im(1); do i=2,dim_num; l_in=l_in+(ext_beg(i)+im(i))*bases_in(i); enddo; kf=0
-	 sloop: do l_out=segs(n),segs(n+1)-1_LONGINT
-	  slice(l_out)=tens(l_in)
-	  do i=1,dim_num
+	 l_out=segs(n); do i=dim_num,1,-1; im(i)=l_out/bases_out(i); l_out=l_out-im(i)*bases_out(i); enddo
+	 l_in=ext_beg(1); do i=2,dim_num; l_in=l_in+(ext_beg(i)+im(i))*bases_in(i); enddo
+	 lb=int(im(1),LONGINT); l_out=segs(n)-lb
+	 sloop: do while(l_out+lb.lt.segs(n+1))
+	  le=min(le,segs(n+1)-1_LONGINT-l_out) !to avoid different threads doing the same work
+	  do ll=lb,le; slice(l_out+ll)=tens(l_in+ll); enddo
+	  l_out=l_out+le+1_LONGINT; lb=0_LONGINT
+	  do i=2,dim_num
 	   if(im(i)+1.lt.slice_ext(i)) then
-	    im(i)=im(i)+1; l_in=l_in+bases_in(i)
-	    kf=kf+1; exit
+	    im(i)=im(i)+1; l_in=l_in+bases_in(i); exit
 	   else
 	    l_in=l_in-im(i)*bases_in(i); im(i)=0
 	   endif
 	  enddo
-	  kf=kf-1; if(kf.lt.0) exit sloop
 	 enddo sloop
 !$OMP END PARALLEL
 	else
@@ -4021,7 +4044,7 @@
 	real(real_kind), intent(inout):: tens(0:*)
 	integer, intent(inout):: ierr
 	integer i,j,k,l,m,n,ks,kf,im(1:dim_num)
-	integer(LONGINT):: bases_in(1:dim_num),bases_out(1:dim_num),segs(0:max_threads),lts,lss,l_in,l_out
+	integer(LONGINT):: lts,lss,l_in,l_out,lb,le,ll,bases_in(1:dim_num),bases_out(1:dim_num),segs(0:max_threads) !`Is segs(:) threadsafe?
 	real(8) time_beg
 
 	ierr=0
@@ -4029,7 +4052,7 @@
 	if(dim_num.gt.0) then
 	 lts=1_LONGINT; do i=1,dim_num; bases_out(i)=lts; lts=lts*tens_ext(i); enddo !tensor block indexing bases
 	 lss=1_LONGINT; do i=1,dim_num; bases_in(i)=lss; lss=lss*slice_ext(i); enddo !slice indexing bases
-!$OMP PARALLEL DEFAULT(SHARED) PRIVATE(i,m,n,kf,im,l_in,l_out)
+!$OMP PARALLEL DEFAULT(SHARED) PRIVATE(i,m,n,im,l_in,l_out,lb,le,ll)
 #ifndef NO_OMP
 	 n=omp_get_thread_num(); m=omp_get_num_threads()
 #else
@@ -4040,19 +4063,20 @@
 !$OMP END MASTER
 !$OMP BARRIER
 !$OMP FLUSH(segs)
-	 l_in=segs(n); do i=dim_num,1,-1; im(i)=l_in/bases_in(i); l_in=mod(l_in,bases_in(i)); enddo
-	 l_out=ext_beg(1)+im(1); do i=2,dim_num; l_out=l_out+(ext_beg(i)+im(i))*bases_out(i); enddo; kf=0
-	 sloop: do l_in=segs(n),segs(n+1)-1_LONGINT
-	  tens(l_out)=slice(l_in)
-	  do i=1,dim_num
+	 l_in=segs(n); do i=dim_num,1,-1; im(i)=l_in/bases_in(i); l_in=l_in-im(i)*bases_in(i); enddo
+	 l_out=ext_beg(1); do i=2,dim_num; l_out=l_out+(ext_beg(i)+im(i))*bases_out(i); enddo
+	 lb=int(im(1),LONGINT); l_in=segs(n)-lb
+	 sloop: do while(l_in+lb.lt.segs(n+1))
+	  le=min(le,segs(n+1)-1_LONGINT-l_in) !to avoid different threads doing the same work
+	  do ll=lb,le; tens(l_out+ll)=slice(l_in+ll); enddo
+	  l_in=l_in+le+1_LONGINT; lb=0_LONGINT
+	  do i=2,dim_num
 	   if(im(i)+1.lt.slice_ext(i)) then
 	    im(i)=im(i)+1; l_out=l_out+bases_out(i)
-	    kf=kf+1; exit
 	   else
 	    l_out=l_out-im(i)*bases_out(i); im(i)=0
 	   endif
 	  enddo
-	  kf=kf-1; if(kf.lt.0) exit sloop
 	 enddo sloop
 !$OMP END PARALLEL
 	else
@@ -4189,14 +4213,14 @@
 !$OMP BARRIER
 !$OMP FLUSH(segs,bases_pri)
 	  l0=segs(n); do i=dim_num,1,-1; j=ipr(i); im(j)=l0/bases_pri(j); l0=l0-im(j)*bases_pri(j); enddo !initial multiindex for each thread
-	  l_in=0_LONGINT; do j=2,dim_num; l_in=l_in+im(j)*bases_in(j); enddo !initital input address
+	  l_in=0_LONGINT; do j=2,dim_num; l_in=l_in+im(j)*bases_in(j); enddo !initial input address
 	  l_out=0_LONGINT; do j=2,dim_num; l_out=l_out+im(j)*bases_out(j); enddo !initial output address
-	  lb=int(im(1),LONGINT); le=int(dim_extents(1)-1,LONGINT); ls=bases_out(1); l0=segs(n)
+	  ls=bases_out(1); l0=segs(n); lb=int(im(1),LONGINT)
+	  le=min(int(dim_extents(1)-1,LONGINT),segs(n+1)-1_LONGINT-l0+lb)
 	  do while (l0.lt.segs(n+1))
-	   do l1=lb,le
-	    tens_out(l_out+l1*ls)=tens_in(l_in+l1)
-	   enddo
+	   do l1=lb,le; tens_out(l_out+l1*ls)=tens_in(l_in+l1); enddo
 	   l0=l0+(le-lb+1_LONGINT); lb=0_LONGINT
+	   le=min(le,segs(n+1)-1_LONGINT-l0) !to avoid multiple threads doing the same work
   !increment of the multi-index (scheme 1):
 	   do i=2,dim_num
 	    j=ipr(i)
@@ -4269,9 +4293,7 @@
 	     l_out=im(split_in)*bases_out(split_in)+im(split_out)*bases_out(split_out)
 	     lb=int(dim_beg(1),LONGINT); le=int(dim_end(1),LONGINT); ls=bases_out(1); ks=0
 	     loop4: do
-	      do ll=0_LONGINT,le-lb
-	       tens_out(l_out+ll*ls)=tens_in(l_in+ll)
-	      enddo
+	      do ll=0_LONGINT,le-lb; tens_out(l_out+ll*ls)=tens_in(l_in+ll); enddo
 	      do i=2,dim_num
 	       j=ipr(i) !old index number
 	       if(im(j).lt.dim_end(j)) then
@@ -4297,12 +4319,12 @@
 	   l0=segs(n); do i=dim_num,1,-1; j=ipr(i); im(j)=l0/bases_pri(j); l0=l0-im(j)*bases_pri(j); enddo
 	   l_in=0_LONGINT; do j=2,dim_num; l_in=l_in+im(j)*bases_in(j); enddo
 	   l_out=0_LONGINT; do j=2,dim_num; l_out=l_out+im(j)*bases_out(j); enddo
-	   lb=int(im(1),LONGINT); le=int(dim_extents(1)-1,LONGINT); ls=bases_out(1); l0=segs(n)
+	   ls=bases_out(1); l0=segs(n); lb=int(im(1),LONGINT)
+	   le=min(int(dim_extents(1)-1,LONGINT),segs(n+1)-1_LONGINT-l0+lb)
 	   do while (l0.lt.segs(n+1))
-	    do l1=lb,le
-	     tens_out(l_out+l1*ls)=tens_in(l_in+l1)
-	    enddo
+	    do l1=lb,le; tens_out(l_out+l1*ls)=tens_in(l_in+l1); enddo
 	    l0=l0+(le-lb+1_LONGINT); lb=0_LONGINT
+	    le=min(le,segs(n+1)-1_LONGINT-l0) !to avoid multiple threads doing the same work
   !increment of the multi-index (scheme 2):
 	    do i=2,dim_num
 	     j=ipr(i) !old index number
@@ -4449,14 +4471,14 @@
 !$OMP BARRIER
 !$OMP FLUSH(segs,bases_pri)
 	  l0=segs(n); do i=dim_num,1,-1; j=ipr(i); im(j)=l0/bases_pri(j); l0=l0-im(j)*bases_pri(j); enddo !initial multiindex for each thread
-	  l_in=0_LONGINT; do j=2,dim_num; l_in=l_in+im(j)*bases_in(j); enddo !initital input address
-	  l_out=0_LONGINT; do j=2,dim_num; l_out=l_out+im(j)*bases_out(j); enddo !initial output address
-	  lb=int(im(1),LONGINT); le=int(dim_extents(1)-1,LONGINT); ls=bases_out(1); l0=segs(n)
+	  l_in=0_LONGINT; do j=2,dim_num; l_in=l_in+im(j)*bases_in(j); enddo !initial input address
+	  l_out=0_LONGINT; do j=2,dim_num; l_out=l_out+im(j)*bases_out(j); enddo !initial output address	  
+	  ls=bases_out(1); l0=segs(n); lb=int(im(1),LONGINT)
+	  le=min(int(dim_extents(1)-1,LONGINT),segs(n+1)-1_LONGINT-l0+lb)
 	  do while (l0.lt.segs(n+1))
-	   do l1=lb,le
-	    tens_out(l_out+l1*ls)=tens_in(l_in+l1)
-	   enddo
+	   do l1=lb,le; tens_out(l_out+l1*ls)=tens_in(l_in+l1); enddo
 	   l0=l0+(le-lb+1_LONGINT); lb=0_LONGINT
+	   le=min(le,segs(n+1)-1_LONGINT-l0) !to avoid multiple threads doing the same work
   !increment of the multi-index (scheme 1):
 	   do i=2,dim_num
 	    j=ipr(i)
@@ -4529,9 +4551,7 @@
 	     l_out=im(split_in)*bases_out(split_in)+im(split_out)*bases_out(split_out)
 	     lb=int(dim_beg(1),LONGINT); le=int(dim_end(1),LONGINT); ls=bases_out(1); ks=0
 	     loop4: do
-	      do ll=0_LONGINT,le-lb
-	       tens_out(l_out+ll*ls)=tens_in(l_in+ll)
-	      enddo
+	      do ll=0_LONGINT,le-lb; tens_out(l_out+ll*ls)=tens_in(l_in+ll); enddo
 	      do i=2,dim_num
 	       j=ipr(i) !old index number
 	       if(im(j).lt.dim_end(j)) then
@@ -4557,12 +4577,12 @@
 	   l0=segs(n); do i=dim_num,1,-1; j=ipr(i); im(j)=l0/bases_pri(j); l0=l0-im(j)*bases_pri(j); enddo
 	   l_in=0_LONGINT; do j=2,dim_num; l_in=l_in+im(j)*bases_in(j); enddo
 	   l_out=0_LONGINT; do j=2,dim_num; l_out=l_out+im(j)*bases_out(j); enddo
-	   lb=int(im(1),LONGINT); le=int(dim_extents(1)-1,LONGINT); ls=bases_out(1); l0=segs(n)
+	   ls=bases_out(1); l0=segs(n); lb=int(im(1),LONGINT)
+	   le=min(int(dim_extents(1)-1,LONGINT),segs(n+1)-1_LONGINT-l0+lb)
 	   do while (l0.lt.segs(n+1))
-	    do l1=lb,le
-	     tens_out(l_out+l1*ls)=tens_in(l_in+l1)
-	    enddo
+	    do l1=lb,le; tens_out(l_out+l1*ls)=tens_in(l_in+l1); enddo
 	    l0=l0+(le-lb+1_LONGINT); lb=0_LONGINT
+	    le=min(le,segs(n+1)-1_LONGINT-l0) !to avoid multiple threads doing the same work
   !increment of the multi-index (scheme 2):
 	    do i=2,dim_num
 	     j=ipr(i) !old index number
@@ -4709,14 +4729,14 @@
 !$OMP BARRIER
 !$OMP FLUSH(segs,bases_pri)
 	  l0=segs(n); do i=dim_num,1,-1; j=ipr(i); im(j)=l0/bases_pri(j); l0=l0-im(j)*bases_pri(j); enddo !initial multiindex for each thread
-	  l_in=0_LONGINT; do j=2,dim_num; l_in=l_in+im(j)*bases_in(j); enddo !initital input address
+	  l_in=0_LONGINT; do j=2,dim_num; l_in=l_in+im(j)*bases_in(j); enddo !initial input address
 	  l_out=0_LONGINT; do j=2,dim_num; l_out=l_out+im(j)*bases_out(j); enddo !initial output address
-	  lb=int(im(1),LONGINT); le=int(dim_extents(1)-1,LONGINT); ls=bases_out(1); l0=segs(n)
+	  ls=bases_out(1); l0=segs(n); lb=int(im(1),LONGINT)
+	  le=min(int(dim_extents(1)-1,LONGINT),segs(n+1)-1_LONGINT-l0+lb)
 	  do while (l0.lt.segs(n+1))
-	   do l1=lb,le
-	    tens_out(l_out+l1*ls)=tens_in(l_in+l1)
-	   enddo
+	   do l1=lb,le; tens_out(l_out+l1*ls)=tens_in(l_in+l1); enddo
 	   l0=l0+(le-lb+1_LONGINT); lb=0_LONGINT
+	   le=min(le,segs(n+1)-1_LONGINT-l0) !to avoid multiple threads doing the same work
   !increment of the multi-index (scheme 1):
 	   do i=2,dim_num
 	    j=ipr(i)
@@ -4817,12 +4837,12 @@
 	   l0=segs(n); do i=dim_num,1,-1; j=ipr(i); im(j)=l0/bases_pri(j); l0=l0-im(j)*bases_pri(j); enddo
 	   l_in=0_LONGINT; do j=2,dim_num; l_in=l_in+im(j)*bases_in(j); enddo
 	   l_out=0_LONGINT; do j=2,dim_num; l_out=l_out+im(j)*bases_out(j); enddo
-	   lb=int(im(1),LONGINT); le=int(dim_extents(1)-1,LONGINT); ls=bases_out(1); l0=segs(n)
+	   ls=bases_out(1); l0=segs(n); lb=int(im(1),LONGINT)
+	   le=min(int(dim_extents(1)-1,LONGINT),segs(n+1)-1_LONGINT-l0+lb)
 	   do while (l0.lt.segs(n+1))
-	    do l1=lb,le
-	     tens_out(l_out+l1*ls)=tens_in(l_in+l1)
-	    enddo
+	    do l1=lb,le; tens_out(l_out+l1*ls)=tens_in(l_in+l1); enddo
 	    l0=l0+(le-lb+1_LONGINT); lb=0_LONGINT
+	    le=min(le,segs(n+1)-1_LONGINT-l0) !to avoid multiple threads doing the same work
   !increment of the multi-index (scheme 2):
 	    do i=2,dim_num
 	     j=ipr(i) !old index number
@@ -5593,6 +5613,25 @@
 !        thread_wtime(time_beg),ierr !debug
 	return
 	end subroutine tensor_block_pcontract_dlf_r8
+!----------------------------------------------------------------------------
+	subroutine matrix_multiply_tn_dlf_r8(dl,dr,dc,ltens,rtens,dtens,ierr) !PARALLEL
+!This subroutine multiplies two matrices derived from the corresponding tensors by index permutations:
+!dtens(0:dl-1,0:dr-1)+=ltens(0:dc-1,0:dl-1)*rtens(0:dc-1,0:dr-1)
+!The result is a matrix as well (cannot be a scalar, see tensor_block_fcontract).
+	implicit none
+	integer(LONGINT), intent(in):: dl,dr,dc !matrix dimensions
+	real(real_kind), intent(in):: ltens(0:*),rtens(0:*) !input arguments
+	real(real_kind), intent(inout):: dtens(0:*) !output argument
+	integer, intent(inout):: ierr !error code
+!---------------------------------------
+	integer, parameter:: real_kind=8                                     !real data kind
+	integer, parameter:: num_cache_levels=3                              !number of cache levels (L1,L2,...)
+	integer, parameter:: cache_size(1:num_cache_levels)=(/28,1024,4096/) !cache size in KBytes
+!---------------------------------------------------------------------------
+	integer i,j,k,l,m,n,nthr
+
+	return
+        end subroutine matrix_multiply_tn_dlf_r8
 !------------------------------------------------------------------------------------------------------
 	subroutine tensor_block_ftrace_dlf_r4(contr_ptrn,ord_rest,tens_in,rank_in,dims_in,val_out,ierr) !PARALLEL
 !This subroutine takes a full trace in a tensor block and accumulates it into a scalar.
