@@ -54,7 +54,7 @@ tensor_algebra_intel_phi.o: tensor_algebra_intel_phi.F90 tensor_algebra.mod
 	$(FC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) tensor_algebra_intel_phi.F90
 
 tensor_algebra.mod: tensor_algebra.o
-tensor_algebra.o: tensor_algebra.F90 stsubs.mod combinatoric.mod symm_index.mod timers.mod tensor_algebra_gpu_nvidia.inc
+tensor_algebra.o: tensor_algebra.F90 stsubs.mod combinatoric.mod symm_index.mod timers.mod tensor_algebra.inc
 	$(FC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) tensor_algebra.F90
 
 tensor_dil_omp.mod: tensor_dil_omp.o
@@ -93,14 +93,14 @@ extern_names.mod: extern_names.o
 extern_names.o: extern_names.F90
 	$(FC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) extern_names.F90
 
-c_proc_bufs.o: c_proc_bufs.cu tensor_algebra_gpu_nvidia.h
+c_proc_bufs.o: c_proc_bufs.cu tensor_algebra.h
 	$(CUDA_C) $(MPI_INC) $(CUDA_INC) $(CUDA_FLAGS) c_proc_bufs.cu
 
 cuda2fortran.o: cuda2fortran.cu
 	$(CUDA_C) $(MPI_INC) $(CUDA_INC) $(CUDA_FLAGS) -ptx cuda2fortran.cu
 	$(CUDA_C) $(MPI_INC) $(CUDA_INC) $(CUDA_FLAGS) cuda2fortran.cu
 
-tensor_algebra_gpu_nvidia.o: tensor_algebra_gpu_nvidia.cu tensor_algebra_gpu_nvidia.h
+tensor_algebra_gpu_nvidia.o: tensor_algebra_gpu_nvidia.cu tensor_algebra.h
 	$(CUDA_C) $(MPI_INC) $(CUDA_INC) $(CUDA_FLAGS) -ptx tensor_algebra_gpu_nvidia.cu
 	$(CUDA_C) $(MPI_INC) $(CUDA_INC) $(CUDA_FLAGS) tensor_algebra_gpu_nvidia.cu
 
