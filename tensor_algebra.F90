@@ -3957,6 +3957,71 @@
         return
         end function tensor_block_alloc
 !-----------------------------------------------------------------------------------------------
+	subroutine tensor_block_slice_dlf_r4(dim_num,tens,tens_ext,slice,slice_ext,ext_beg,ierr) !PARALLEL
+!This subroutine extracts a slice from a tensor block.
+!INPUT:
+! - dim_num - number of tensor dimensions;
+! - tens(0:) - tensor block (array);
+! - tens_ext(1:dim_num) - dimension extents for <tens>;
+! - slice_ext(1:dim_num) - dimension extents for <slice>;
+! - ext_beg(1:dim_num) - beginning dimension offsets for <tens> (numeration starts at 0);
+!OUTPUT:
+! - slice(0:) - slice (array);
+! - ierr - error code (0:success).
+!NOTES:
+! - No argument validity checks.
+	implicit none
+!---------------------------------------
+	integer, parameter:: real_kind=4
+!---------------------------------------
+	integer, intent(in):: dim_num,tens_ext(1:dim_num),slice_ext(1:dim_num),ext_beg(1:dim_num)
+	real(real_kind), intent(in):: tens(0:*)
+	real(real_kind), intent(out):: slice(0:*)
+	integer, intent(inout):: ierr
+	integer i,j,k,l,m,n,ks,kf,im(1:dim_num)
+	integer(LONGINT):: lts,lss,l_in,l_out,lb,le,ll,bases_in(1:dim_num),bases_out(1:dim_num),segs(0:max_threads) !`Is segs(:) threadsafe?
+	real(8) time_beg
+
+	ierr=0
+!	time_beg=thread_wtime() !debug
+	if(dim_num.gt.0) then
+	 lts=1_LONGINT; do i=1,dim_num; bases_in(i)=lts; lts=lts*tens_ext(i); enddo   !tensor block indexing bases
+	 lss=1_LONGINT; do i=1,dim_num; bases_out(i)=lss; lss=lss*slice_ext(i); enddo !slice indexing bases
+!$OMP PARALLEL DEFAULT(SHARED) PRIVATE(i,m,n,im,l_in,l_out,lb,le,ll)
+#ifndef NO_OMP
+	 n=omp_get_thread_num(); m=omp_get_num_threads()
+#else
+	 n=0; m=1
+#endif
+!$OMP MASTER
+	 segs(0)=0_LONGINT; call divide_segment(lss,int(m,LONGINT),segs(1:),ierr); do i=2,m; segs(i)=segs(i)+segs(i-1); enddo
+!$OMP END MASTER
+!$OMP BARRIER
+!$OMP FLUSH(segs)
+	 l_out=segs(n); do i=dim_num,1,-1; im(i)=l_out/bases_out(i); l_out=l_out-im(i)*bases_out(i); enddo
+	 l_in=ext_beg(1); do i=2,dim_num; l_in=l_in+(ext_beg(i)+im(i))*bases_in(i); enddo
+	 lb=int(im(1),LONGINT); l_out=segs(n)-lb
+	 sloop: do while(l_out+lb.lt.segs(n+1))
+	  le=min(le,segs(n+1)-1_LONGINT-l_out) !to avoid different threads doing the same work
+	  do ll=lb,le; slice(l_out+ll)=tens(l_in+ll); enddo
+	  l_out=l_out+le+1_LONGINT; lb=0_LONGINT
+	  do i=2,dim_num
+	   if(im(i)+1.lt.slice_ext(i)) then
+	    im(i)=im(i)+1; l_in=l_in+bases_in(i); exit
+	   else
+	    l_in=l_in-im(i)*bases_in(i); im(i)=0
+	   endif
+	  enddo
+	 enddo sloop
+!$OMP END PARALLEL
+	else
+	 ierr=1 !zero-rank tensor
+	endif
+!	write(cons_out,'("DEBUG(tensor_algebra::tensor_block_slice_dlf_r4): kernel time/error code: ",F10.4,1x,i3)') &
+!        thread_wtime(time_beg),ierr !debug
+	return
+	end subroutine tensor_block_slice_dlf_r4
+!-----------------------------------------------------------------------------------------------
 	subroutine tensor_block_slice_dlf_r8(dim_num,tens,tens_ext,slice,slice_ext,ext_beg,ierr) !PARALLEL
 !This subroutine extracts a slice from a tensor block.
 !INPUT:
@@ -4021,6 +4086,136 @@
 !        thread_wtime(time_beg),ierr !debug
 	return
 	end subroutine tensor_block_slice_dlf_r8
+!-----------------------------------------------------------------------------------------------
+	subroutine tensor_block_slice_dlf_c8(dim_num,tens,tens_ext,slice,slice_ext,ext_beg,ierr) !PARALLEL
+!This subroutine extracts a slice from a tensor block.
+!INPUT:
+! - dim_num - number of tensor dimensions;
+! - tens(0:) - tensor block (array);
+! - tens_ext(1:dim_num) - dimension extents for <tens>;
+! - slice_ext(1:dim_num) - dimension extents for <slice>;
+! - ext_beg(1:dim_num) - beginning dimension offsets for <tens> (numeration starts at 0);
+!OUTPUT:
+! - slice(0:) - slice (array);
+! - ierr - error code (0:success).
+!NOTES:
+! - No argument validity checks.
+	implicit none
+!---------------------------------------
+	integer, parameter:: real_kind=8
+!---------------------------------------
+	integer, intent(in):: dim_num,tens_ext(1:dim_num),slice_ext(1:dim_num),ext_beg(1:dim_num)
+	complex(real_kind), intent(in):: tens(0:*)
+	complex(real_kind), intent(out):: slice(0:*)
+	integer, intent(inout):: ierr
+	integer i,j,k,l,m,n,ks,kf,im(1:dim_num)
+	integer(LONGINT):: lts,lss,l_in,l_out,lb,le,ll,bases_in(1:dim_num),bases_out(1:dim_num),segs(0:max_threads) !`Is segs(:) threadsafe?
+	real(8) time_beg
+
+	ierr=0
+!	time_beg=thread_wtime() !debug
+	if(dim_num.gt.0) then
+	 lts=1_LONGINT; do i=1,dim_num; bases_in(i)=lts; lts=lts*tens_ext(i); enddo   !tensor block indexing bases
+	 lss=1_LONGINT; do i=1,dim_num; bases_out(i)=lss; lss=lss*slice_ext(i); enddo !slice indexing bases
+!$OMP PARALLEL DEFAULT(SHARED) PRIVATE(i,m,n,im,l_in,l_out,lb,le,ll)
+#ifndef NO_OMP
+	 n=omp_get_thread_num(); m=omp_get_num_threads()
+#else
+	 n=0; m=1
+#endif
+!$OMP MASTER
+	 segs(0)=0_LONGINT; call divide_segment(lss,int(m,LONGINT),segs(1:),ierr); do i=2,m; segs(i)=segs(i)+segs(i-1); enddo
+!$OMP END MASTER
+!$OMP BARRIER
+!$OMP FLUSH(segs)
+	 l_out=segs(n); do i=dim_num,1,-1; im(i)=l_out/bases_out(i); l_out=l_out-im(i)*bases_out(i); enddo
+	 l_in=ext_beg(1); do i=2,dim_num; l_in=l_in+(ext_beg(i)+im(i))*bases_in(i); enddo
+	 lb=int(im(1),LONGINT); l_out=segs(n)-lb
+	 sloop: do while(l_out+lb.lt.segs(n+1))
+	  le=min(le,segs(n+1)-1_LONGINT-l_out) !to avoid different threads doing the same work
+	  do ll=lb,le; slice(l_out+ll)=tens(l_in+ll); enddo
+	  l_out=l_out+le+1_LONGINT; lb=0_LONGINT
+	  do i=2,dim_num
+	   if(im(i)+1.lt.slice_ext(i)) then
+	    im(i)=im(i)+1; l_in=l_in+bases_in(i); exit
+	   else
+	    l_in=l_in-im(i)*bases_in(i); im(i)=0
+	   endif
+	  enddo
+	 enddo sloop
+!$OMP END PARALLEL
+	else
+	 ierr=1 !zero-rank tensor
+	endif
+!	write(cons_out,'("DEBUG(tensor_algebra::tensor_block_slice_dlf_c8): kernel time/error code: ",F10.4,1x,i3)') &
+!        thread_wtime(time_beg),ierr !debug
+	return
+	end subroutine tensor_block_slice_dlf_c8
+!------------------------------------------------------------------------------------------------
+	subroutine tensor_block_insert_dlf_r4(dim_num,tens,tens_ext,slice,slice_ext,ext_beg,ierr) !PARALLEL
+!This subroutine inserts a slice into a tensor block.
+!INPUT:
+! - dim_num - number of tensor dimensions;
+! - tens_ext(1:dim_num) - dimension extents for <tens>;
+! - slice(0:) - slice (array);
+! - slice_ext(1:dim_num) - dimension extents for <slice>;
+! - ext_beg(1:dim_num) - beginning dimension offsets for <tens> (numeration starts at 0);
+!OUTPUT:
+! - tens(0:) - tensor block (array);
+! - ierr - error code (0:success).
+!NOTES:
+! - No argument validity checks.
+	implicit none
+!---------------------------------------
+	integer, parameter:: real_kind=4
+!---------------------------------------
+	integer, intent(in):: dim_num,tens_ext(1:dim_num),slice_ext(1:dim_num),ext_beg(1:dim_num)
+	real(real_kind), intent(in):: slice(0:*)
+	real(real_kind), intent(inout):: tens(0:*)
+	integer, intent(inout):: ierr
+	integer i,j,k,l,m,n,ks,kf,im(1:dim_num)
+	integer(LONGINT):: lts,lss,l_in,l_out,lb,le,ll,bases_in(1:dim_num),bases_out(1:dim_num),segs(0:max_threads) !`Is segs(:) threadsafe?
+	real(8) time_beg
+
+	ierr=0
+!	time_beg=thread_wtime() !debug
+	if(dim_num.gt.0) then
+	 lts=1_LONGINT; do i=1,dim_num; bases_out(i)=lts; lts=lts*tens_ext(i); enddo !tensor block indexing bases
+	 lss=1_LONGINT; do i=1,dim_num; bases_in(i)=lss; lss=lss*slice_ext(i); enddo !slice indexing bases
+!$OMP PARALLEL DEFAULT(SHARED) PRIVATE(i,m,n,im,l_in,l_out,lb,le,ll)
+#ifndef NO_OMP
+	 n=omp_get_thread_num(); m=omp_get_num_threads()
+#else
+	 n=0; m=1
+#endif
+!$OMP MASTER
+	 segs(0)=0_LONGINT; call divide_segment(lss,int(m,LONGINT),segs(1:),ierr); do i=2,m; segs(i)=segs(i)+segs(i-1); enddo
+!$OMP END MASTER
+!$OMP BARRIER
+!$OMP FLUSH(segs)
+	 l_in=segs(n); do i=dim_num,1,-1; im(i)=l_in/bases_in(i); l_in=l_in-im(i)*bases_in(i); enddo
+	 l_out=ext_beg(1); do i=2,dim_num; l_out=l_out+(ext_beg(i)+im(i))*bases_out(i); enddo
+	 lb=int(im(1),LONGINT); l_in=segs(n)-lb
+	 sloop: do while(l_in+lb.lt.segs(n+1))
+	  le=min(le,segs(n+1)-1_LONGINT-l_in) !to avoid different threads doing the same work
+	  do ll=lb,le; tens(l_out+ll)=slice(l_in+ll); enddo
+	  l_in=l_in+le+1_LONGINT; lb=0_LONGINT
+	  do i=2,dim_num
+	   if(im(i)+1.lt.slice_ext(i)) then
+	    im(i)=im(i)+1; l_out=l_out+bases_out(i)
+	   else
+	    l_out=l_out-im(i)*bases_out(i); im(i)=0
+	   endif
+	  enddo
+	 enddo sloop
+!$OMP END PARALLEL
+	else
+	 ierr=1 !zero-rank tensor
+	endif
+!	write(cons_out,'("DEBUG(tensor_algebra::tensor_block_insert_dlf_r4): kernel time/error code: ",F10.4,1x,i3)') &
+!        thread_wtime(time_beg),ierr !debug
+	return
+	end subroutine tensor_block_insert_dlf_r4
 !------------------------------------------------------------------------------------------------
 	subroutine tensor_block_insert_dlf_r8(dim_num,tens,tens_ext,slice,slice_ext,ext_beg,ierr) !PARALLEL
 !This subroutine inserts a slice into a tensor block.
@@ -4086,6 +4281,71 @@
 !        thread_wtime(time_beg),ierr !debug
 	return
 	end subroutine tensor_block_insert_dlf_r8
+!------------------------------------------------------------------------------------------------
+	subroutine tensor_block_insert_dlf_c8(dim_num,tens,tens_ext,slice,slice_ext,ext_beg,ierr) !PARALLEL
+!This subroutine inserts a slice into a tensor block.
+!INPUT:
+! - dim_num - number of tensor dimensions;
+! - tens_ext(1:dim_num) - dimension extents for <tens>;
+! - slice(0:) - slice (array);
+! - slice_ext(1:dim_num) - dimension extents for <slice>;
+! - ext_beg(1:dim_num) - beginning dimension offsets for <tens> (numeration starts at 0);
+!OUTPUT:
+! - tens(0:) - tensor block (array);
+! - ierr - error code (0:success).
+!NOTES:
+! - No argument validity checks.
+	implicit none
+!---------------------------------------
+	integer, parameter:: real_kind=8
+!---------------------------------------
+	integer, intent(in):: dim_num,tens_ext(1:dim_num),slice_ext(1:dim_num),ext_beg(1:dim_num)
+	complex(real_kind), intent(in):: slice(0:*)
+	complex(real_kind), intent(inout):: tens(0:*)
+	integer, intent(inout):: ierr
+	integer i,j,k,l,m,n,ks,kf,im(1:dim_num)
+	integer(LONGINT):: lts,lss,l_in,l_out,lb,le,ll,bases_in(1:dim_num),bases_out(1:dim_num),segs(0:max_threads) !`Is segs(:) threadsafe?
+	real(8) time_beg
+
+	ierr=0
+!	time_beg=thread_wtime() !debug
+	if(dim_num.gt.0) then
+	 lts=1_LONGINT; do i=1,dim_num; bases_out(i)=lts; lts=lts*tens_ext(i); enddo !tensor block indexing bases
+	 lss=1_LONGINT; do i=1,dim_num; bases_in(i)=lss; lss=lss*slice_ext(i); enddo !slice indexing bases
+!$OMP PARALLEL DEFAULT(SHARED) PRIVATE(i,m,n,im,l_in,l_out,lb,le,ll)
+#ifndef NO_OMP
+	 n=omp_get_thread_num(); m=omp_get_num_threads()
+#else
+	 n=0; m=1
+#endif
+!$OMP MASTER
+	 segs(0)=0_LONGINT; call divide_segment(lss,int(m,LONGINT),segs(1:),ierr); do i=2,m; segs(i)=segs(i)+segs(i-1); enddo
+!$OMP END MASTER
+!$OMP BARRIER
+!$OMP FLUSH(segs)
+	 l_in=segs(n); do i=dim_num,1,-1; im(i)=l_in/bases_in(i); l_in=l_in-im(i)*bases_in(i); enddo
+	 l_out=ext_beg(1); do i=2,dim_num; l_out=l_out+(ext_beg(i)+im(i))*bases_out(i); enddo
+	 lb=int(im(1),LONGINT); l_in=segs(n)-lb
+	 sloop: do while(l_in+lb.lt.segs(n+1))
+	  le=min(le,segs(n+1)-1_LONGINT-l_in) !to avoid different threads doing the same work
+	  do ll=lb,le; tens(l_out+ll)=slice(l_in+ll); enddo
+	  l_in=l_in+le+1_LONGINT; lb=0_LONGINT
+	  do i=2,dim_num
+	   if(im(i)+1.lt.slice_ext(i)) then
+	    im(i)=im(i)+1; l_out=l_out+bases_out(i)
+	   else
+	    l_out=l_out-im(i)*bases_out(i); im(i)=0
+	   endif
+	  enddo
+	 enddo sloop
+!$OMP END PARALLEL
+	else
+	 ierr=1 !zero-rank tensor
+	endif
+!	write(cons_out,'("DEBUG(tensor_algebra::tensor_block_insert_dlf_c8): kernel time/error code: ",F10.4,1x,i3)') &
+!        thread_wtime(time_beg),ierr !debug
+	return
+	end subroutine tensor_block_insert_dlf_c8
 !------------------------------------------------------------------------------------------------
 #ifndef NO_PHI
 !DIR$ ATTRIBUTES OFFLOAD:mic:: tensor_block_copy_dlf_r4
@@ -5619,16 +5879,18 @@
 !dtens(0:dl-1,0:dr-1)+=ltens(0:dc-1,0:dl-1)*rtens(0:dc-1,0:dr-1)
 !The result is a matrix as well (cannot be a scalar, see tensor_block_fcontract).
 	implicit none
-	integer(LONGINT), intent(in):: dl,dr,dc !matrix dimensions
-	real(real_kind), intent(in):: ltens(0:*),rtens(0:*) !input arguments
-	real(real_kind), intent(inout):: dtens(0:*) !output argument
-	integer, intent(inout):: ierr !error code
 !---------------------------------------
 	integer, parameter:: real_kind=8                                     !real data kind
 	integer, parameter:: num_cache_levels=3                              !number of cache levels (L1,L2,...)
 	integer, parameter:: cache_size(1:num_cache_levels)=(/28,1024,4096/) !cache size in KBytes
 !---------------------------------------------------------------------------
+	integer(LONGINT), intent(in):: dl,dr,dc !matrix dimensions
+	real(real_kind), intent(in):: ltens(0:*),rtens(0:*) !input arguments
+	real(real_kind), intent(inout):: dtens(0:*) !output argument
+	integer, intent(inout):: ierr !error code
 	integer i,j,k,l,m,n,nthr
+
+        ierr=0
 
 	return
         end subroutine matrix_multiply_tn_dlf_r8
