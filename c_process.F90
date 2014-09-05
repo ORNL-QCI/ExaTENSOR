@@ -3412,6 +3412,7 @@
             call tensor_shape_rnd(tshape,tsl,ierr,tens_size,tens_rank,dim_spread); if(ierr.ne.0) then; ierr=1; goto 999; endif
 !            tens_rank=5; tsl=16; tshape(1:tsl)='(36,36,36,36,36)' !debug
             call tensor_block_create(tshape(1:tsl),dtk,ftens(1),ierr); if(ierr.ne.0) then; ierr=2; goto 999; endif
+            tens_size=ftens(1)%tensor_block_size
             call printl(jo_cp,'  New Tensor Shape: '//tshape(1:tsl)//': ',.false.)
             write(jo_cp,'(i10,1x,F16.4)') ftens(1)%tensor_block_size,tensor_block_norm1(ftens(1),ierr,dtk)
             write(jo_cp,'(3x)',advance='no')
@@ -3510,7 +3511,7 @@
             call tensor_block_destroy(ftens(1),ierr)
             call tensor_block_destroy(ftens(0),ierr)
             ntotal=ntotal+1
-            write(jo_cp,'("#STATISTICS (direct,scat,opt):",3(1x,F10.6),2x,3(1x,F14.2))') &
+            write(jo_cp,'("#STATISTICS (dir,sct,opt):",i10,1x,3(1x,F10.6),2x,3(1x,F14.2))') tens_size,&
              tmd/dble(ntotal),tms/dble(ntotal*2),tme/dble(ntotal*2),gtd/dble(ntotal),gts/dble(ntotal*2),gte/dble(ntotal*2)
 !            call particular_trn; goto 999 !debug
            enddo !repetition
