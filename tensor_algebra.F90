@@ -5889,9 +5889,14 @@
 	real(real_kind), intent(inout):: dtens(0:*) !output argument
 	integer, intent(inout):: ierr !error code
 	integer i,j,k,l,m,n,nthr
+	integer(LONGINT):: l1,r1,c1,l2,r2,c2,l3,r3,c3
 
         ierr=0
-
+        if(dl.gt.0_LONGINT.and.dr.gt.0_LONGINT.and.dc.gt.0_LONGINT) then
+         
+        else !invalid dimensions
+         ierr=1
+        endif
 	return
         end subroutine matrix_multiply_tn_dlf_r8
 !------------------------------------------------------------------------------------------------------

@@ -3372,7 +3372,7 @@
         implicit none
         integer, intent(inout):: ierr
         integer, parameter:: num_tens_sizes=1,num_tens_ranks=8,num_dim_spreads=3
-        integer(8), parameter:: tens_sizes(1:num_tens_sizes)=(/99999999/)
+        integer(8), parameter:: tens_sizes(1:num_tens_sizes)=(/77654321/)
         integer, parameter:: tens_ranks(1:num_tens_ranks)=(/2,3,4,5,6,7,8,15/)
         integer, parameter:: dim_spreads(1:num_dim_spreads)=(/1,5,15/)
         integer, parameter:: num_repet=5
@@ -3403,13 +3403,12 @@
         ntotal=0; nfail=0 !will be the total number of failed transposes
         tmd=0d0; tms=0d0; tme=0d0; gtd=0d0; gts=0d0; gte=0d0
         do m=1,num_tens_sizes
-         tens_size=tens_sizes(m)
          do n=1,num_tens_ranks
           tens_rank=tens_ranks(n)
           do k=1,num_dim_spreads
            dim_spread=dim_spreads(k)
            do l=1,num_repet !repetition
-            call tensor_shape_rnd(tshape,tsl,ierr,tens_size,tens_rank,dim_spread); if(ierr.ne.0) then; ierr=1; goto 999; endif
+            call tensor_shape_rnd(tshape,tsl,ierr,tens_sizes(m),tens_rank,dim_spread); if(ierr.ne.0) then; ierr=1; goto 999; endif
 !            tens_rank=5; tsl=16; tshape(1:tsl)='(36,36,36,36,36)' !debug
             call tensor_block_create(tshape(1:tsl),dtk,ftens(1),ierr); if(ierr.ne.0) then; ierr=2; goto 999; endif
             tens_size=ftens(1)%tensor_block_size
