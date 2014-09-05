@@ -3372,7 +3372,7 @@
         implicit none
         integer, intent(inout):: ierr
         integer, parameter:: num_tens_sizes=1,num_tens_ranks=8,num_dim_spreads=3
-        integer(8), parameter:: tens_sizes(1:num_tens_sizes)=(/55555555/)
+        integer(8), parameter:: tens_sizes(1:num_tens_sizes)=(/99999999/)
         integer, parameter:: tens_ranks(1:num_tens_ranks)=(/2,3,4,5,6,7,8,15/)
         integer, parameter:: dim_spreads(1:num_dim_spreads)=(/1,5,15/)
         integer, parameter:: num_repet=5
