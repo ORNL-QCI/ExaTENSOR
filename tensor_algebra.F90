@@ -5941,7 +5941,7 @@
                   l1u=min(l1+s1l-1_LONGINT,l2u)
                   do c1=c2,c2u,s1c
                    c1u=min(c1+s1c-1_LONGINT,c2u)
-                   c1e=mod(c1u-c1+1_LONGINT)/4_LONGINT
+                   c1e=mod(c1u-c1+1_LONGINT,4_LONGINT)
    !Three blocks are in L1 at this point.
                    do r0=r1,r1u
                     rp=r0*dc
