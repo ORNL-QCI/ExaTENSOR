@@ -5885,7 +5885,7 @@
 	integer, parameter:: min_cache_lines_contr=8                         !minimal number of contracted cache lines per thread
 	integer, parameter:: buf_cache_lines=512                             !number of cache lines in the buffer
 	integer, parameter:: num_cache_levels=3                              !number of cache levels (L1,L2,...)
-	integer, parameter:: cache_size(1:num_cache_levels)=(/32,256,8192/)  !cache size in KBytes on each level
+	integer, parameter:: cache_size(1:num_cache_levels)=(/32,256,16384/) !cache size in KBytes on each level
 	real(8), parameter:: cache_part=0.8d0                                !cache part to utilize
 	integer(LONGINT), parameter:: vec_size=8_LONGINT                     !vector size (words)
 !-------------------------------------------------------
@@ -5928,12 +5928,12 @@
             do c3=0_LONGINT,dc-1_LONGINT,s3
              c3u=min(c3+s3-1_LONGINT,dc-1_LONGINT)
  !Three blocks are in L3 at this point.
-!$OMP DO SCHEDULE(GUIDED) COLLAPSE(3)
+!$OMP DO SCHEDULE(GUIDED) COLLAPSE(2)
              do r2=r3,r3u,s2
               do l2=l3,l3u,s2
+               r2u=min(r2+s2-1_LONGINT,r3u)
+               l2u=min(l2+s2-1_LONGINT,l3u)
                do c2=c3,c3u,s2
-                r2u=min(r2+s2-1_LONGINT,r3u)
-                l2u=min(l2+s2-1_LONGINT,l3u)
                 c2u=min(c2+s2-1_LONGINT,c3u)
   !Three blocks are in L2 at this point.
                 do r1=r2,r2u,s1r
@@ -5959,8 +5959,8 @@
                       val(7)=val(7)+ltens(lp+c0+6_LONGINT)*rtens(rp+c0+6_LONGINT)
                       val(8)=val(8)+ltens(lp+c0+7_LONGINT)*rtens(rp+c0+7_LONGINT)
                      enddo
-                     do c0=c1u-c1e+1_LONGINT,c1u
-                      val(1)=val(1)+ltens(lp+c0)*rtens(rp+c0)
+                     do c0=1_LONGINT,c1e
+                      val(c0)=val(c0)+ltens(lp+c1u-c1e+c0)*rtens(rp+c1u-c1e+c0)
                      enddo
                      dtens(r0*dl+l0)=dtens(r0*dl+l0)+val(1)+val(2)+val(3)+val(4)+val(5)+val(6)+val(7)+val(8)
                     enddo
