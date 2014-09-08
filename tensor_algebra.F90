@@ -5926,7 +5926,7 @@
             do c3=0_LONGINT,dc-1_LONGINT,s3
              c3u=min(c3+s3-1_LONGINT,dc-1_LONGINT)
  !Three blocks are in L3 at this point.
-!$OMP DO SCHEDULE(GUIDED) COLLAPSE(3)
+!$OMP DO SCHEDULE(DYNAMIC) COLLAPSE(3)
              do r2=r3,r3u,s2
               do l2=l3,l3u,s2
                do c2=c3,c3u,s2
