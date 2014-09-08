@@ -5885,7 +5885,7 @@
 	integer, parameter:: min_cache_lines_contr=4                         !minimal number of contracted cache lines per thread
 	integer, parameter:: buf_cache_lines=512                             !number of cache lines in the buffer
 	integer, parameter:: num_cache_levels=3                              !number of cache levels (L1,L2,...)
-	integer, parameter:: cache_size(1:num_cache_levels)=(/32,256,1024/)  !cache size in KBytes on each level
+	integer, parameter:: cache_size(1:num_cache_levels)=(/32,256,8192/)  !cache size in KBytes on each level
 	real(8), parameter:: cache_part=0.8d0                                !cache part to utilize
 !----------------------------------------------
 	integer(LONGINT), intent(in):: dl,dr,dc !matrix dimensions
