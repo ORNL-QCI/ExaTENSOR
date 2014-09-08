@@ -5930,11 +5930,11 @@
  !Three blocks are in L3 at this point.
 !$OMP DO SCHEDULE(GUIDED) COLLAPSE(2)
              do r2=r3,r3u,s2
-              do l2=l3,l3u,s2
+              do l2=l3,l3u,s2/2
                r2u=min(r2+s2-1_LONGINT,r3u)
-               l2u=min(l2+s2-1_LONGINT,l3u)
-               do c2=c3,c3u,s2
-                c2u=min(c2+s2-1_LONGINT,c3u)
+               l2u=min(l2+s2/2-1_LONGINT,l3u)
+               do c2=c3,c3u,s2*2
+                c2u=min(c2+s2*2-1_LONGINT,c3u)
   !Three blocks are in L2 at this point.
                 do r1=r2,r2u,s1r
                  r1u=min(r1+s1r-1_LONGINT,r2u)
