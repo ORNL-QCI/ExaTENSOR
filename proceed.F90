@@ -14,11 +14,18 @@
         integer, intent(inout):: ierr
         integer i,j,k,l,m,n,k0,k1,k2,k3
 
+!DEBUG begin:
+        real(8):: a(1238*1423),b(1238*1111),c(1423*1111)
+!DEBUG end.
+
         ierr=0; write(jo,'("###LAUNCHED PROCESS ",i9)') impir
 
         call mpi_barrier(MPI_COMM_WORLD,ierr); if(ierr.ne.0) call quit(ierr,'#ERROR(proceed): MPI_BARRIER error (1)!')
 
 !DEBUG begin:
+        call random_number(a); call random_number(b); call random_number(c)
+        call matrix_multiply_tn(1423_8,1111_8,1238_8,a,b,c,i) !debug
+        call quit(ierr,'#ERROR(proceed): Stopped by hand!') !debug
 	my_role=c_process_private
 	call c_proc_life(ierr); if(ierr.ne.0)  then; write(jo,'("#ERROR(proceed): C_PROCESS failed!")'); ierr=3; endif
 	call mpi_barrier(MPI_COMM_WORLD,ierr); if(ierr.ne.0) call quit(ierr,'#ERROR(proceed): MPI_BARRIER error (2)!')

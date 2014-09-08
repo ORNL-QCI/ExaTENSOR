@@ -1,6 +1,6 @@
 !Tensor Algebra for Multi-Core CPUs (OpenMP based).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2014/09/05
+!REVISION: 2014/09/08
 !GNU linking options: -lgomp -lblas -llapack
 !ACRONYMS:
 ! - mlndx - multiindex;
@@ -181,7 +181,7 @@
 	private tensor_block_copy_scatter_dlf !tensor transpose for dimension-led (Fortran-like-stored) dense tensor blocks (scattering variant)
 	private tensor_block_fcontract_dlf !multiplies two matrices derived from tensors to produce a scalar
 	private tensor_block_pcontract_dlf !multiplies two matrices derived from tensors to produce a third matrix
-	private matrix_multiply_tn         !multiplies two matrices (left is transposed, right is normal)
+	public  matrix_multiply_tn         !multiplies two matrices (left is transposed, right is normal)
 	private tensor_block_ftrace_dlf    !takes a full trace of a tensor block
 	private tensor_block_ptrace_dlf    !takes a partial trace of a tensor block
 
@@ -5877,26 +5877,99 @@
 	subroutine matrix_multiply_tn_dlf_r8(dl,dr,dc,ltens,rtens,dtens,ierr) !PARALLEL
 !This subroutine multiplies two matrices derived from the corresponding tensors by index permutations:
 !dtens(0:dl-1,0:dr-1)+=ltens(0:dc-1,0:dl-1)*rtens(0:dc-1,0:dr-1)
-!The result is a matrix as well (cannot be a scalar, see tensor_block_fcontract).
 	implicit none
 !---------------------------------------
-	integer, parameter:: real_kind=8                                     !real data kind
+	integer, parameter:: real_kind=8                                     !real data kind (bytes per word)
+	integer, parameter:: cache_line_len=64/real_kind                     !cache line length in words
+	integer, parameter:: min_cache_lines_dest=5                          !minimal number of destination cache lines per thread
+	integer, parameter:: min_cache_lines_contr=4                         !minimal number of contracted cache lines per thread
+	integer, parameter:: buf_cache_lines=512                             !number of cache lines in the buffer
 	integer, parameter:: num_cache_levels=3                              !number of cache levels (L1,L2,...)
-	integer, parameter:: cache_size(1:num_cache_levels)=(/28,1024,4096/) !cache size in KBytes
-!---------------------------------------------------------------------------
+	integer, parameter:: cache_size(1:num_cache_levels)=(/32,512,2048/)  !cache size in KBytes on each level
+	real(8), parameter:: cache_part=0.8d0                                !cache part to utilize
+!----------------------------------------------
 	integer(LONGINT), intent(in):: dl,dr,dc !matrix dimensions
 	real(real_kind), intent(in):: ltens(0:*),rtens(0:*) !input arguments
 	real(real_kind), intent(inout):: dtens(0:*) !output argument
 	integer, intent(inout):: ierr !error code
-	integer i,j,k,l,m,n,nthr
-	integer(LONGINT):: l1,r1,c1,l2,r2,c2,l3,r3,c3
+	integer i,j,k,l,m,n
+	integer(LONGINT):: lp,rp,l0,r0,c0,s1l,s1r,s1c,l1,r1,c1,l1u,r1u,c1u,s2,l2,r2,c2,l2u,r2u,c2u,s3,l3,r3,c3,l3u,r3u,c3u,nflops
+	real(real_kind):: val,dbuf(cache_line_len*buf_cache_lines)
+	real(8) time_beg,tm
 
         ierr=0
+        time_beg=thread_wtime()
+        nflops=dr*dl*dc !total number of floating point operations to perform
         if(dl.gt.0_LONGINT.and.dr.gt.0_LONGINT.and.dc.gt.0_LONGINT) then
-         
-        else !invalid dimensions
+#ifndef NO_OMP
+         m=omp_get_max_threads()
+#else
+         m=1
+#endif
+         s3=int(dsqrt(dble(cache_size(3)*1024/real_kind)*cache_part*0.3d0),LONGINT)
+         s2=int(dsqrt(dble(cache_size(2)*1024/real_kind)*cache_part*0.3d0),LONGINT)
+         if(dr*dl.ge.int(cache_line_len*min_cache_lines_dest*m,LONGINT)) then !destination matrix is big enough: Algorithm 1
+          s1l=int(cache_line_len*min_cache_lines_dest,LONGINT)
+          s1c=int(cache_line_len*min_cache_lines_contr,LONGINT)
+          s1r=(int(dble(cache_size(1)*1024/real_kind)*cache_part,LONGINT)-s1l*s1c)/(s1l+s1c)
+          s1r=min(s1r,(min(dr,s2)*min(dl,s2))/(m*min(dl,s1l))); s1r=max(s1r,1_LONGINT)
+!$OMP PARALLEL DEFAULT(SHARED) PRIVATE(val,lp,rp,l0,r0,c0,l1,r1,c1,l1u,r1u,c1u,l2,r2,c2,l2u,r2u,c2u,l3,r3,c3,l3u,r3u,c3u)
+#ifndef NO_OMP
+          n=omp_get_thread_num(); m=omp_get_num_threads()
+#else
+          n=0; m=1
+#endif
+          do r3=0_LONGINT,dr-1_LONGINT,s3
+           r3u=min(r3+s3-1_LONGINT,dr-1_LONGINT)
+           do l3=0_LONGINT,dl-1_LONGINT,s3
+            l3u=min(l3+s3-1_LONGINT,dl-1_LONGINT)
+            do c3=0_LONGINT,dc-1_LONGINT,s3
+             c3u=min(c3+s3-1_LONGINT,dc-1_LONGINT)
+ !Three blocks are in L3 at this point.
+             do r2=r3,r3u,s2
+              r2u=min(r2+s2-1_LONGINT,r3u)
+              do l2=l3,l3u,s2
+               l2u=min(l2+s2-1_LONGINT,l3u)
+               do c2=c3,c3u,s2
+                c2u=min(c2+s2-1_LONGINT,c3u)
+!$OMP DO SCHEDULE(GUIDED) COLLAPSE(3)
+                do r1=r2,r2u,s1r
+                 do l1=l2,l2u,s1l
+                  do c1=c2,c2u,s1c
+                   r1u=min(r1+s1r-1_LONGINT,r2u)
+                   l1u=min(l1+s1l-1_LONGINT,l2u)
+                   c1u=min(c1+s1c-1_LONGINT,c2u)
+                   do r0=r1,r1u
+                    rp=r0*dc
+                    do l0=l1,l1u
+                     lp=l0*dc
+                     val=dtens(r0*dl+l0)
+                     do c0=c1,c1u
+                      val=val+ltens(lp+c0)*rtens(rp+c0)
+                     enddo
+                     dtens(r0*dl+l0)=val
+                    enddo
+                   enddo
+                  enddo
+                 enddo
+                enddo
+!$OMP END DO NOWAIT
+               enddo
+              enddo
+             enddo
+            enddo !c3
+           enddo !l3
+          enddo !r3
+!$OMP END PARALLEL
+         else !destination matrix is small: Algorithm 2
+          
+         endif
+        else !invalid matrix dimension extents
          ierr=1
         endif
+        tm=thread_wtime(time_beg)
+	write(cons_out,'("DEBUG(tensor_algebra::matrix_multiply_tn_dlf_r8): time/GFlops/status:",2(1x,F10.4),1x,i3)') &
+         tm,dble(nflops)/(tm*dble(1024*1024*1024)),ierr !debug
 	return
         end subroutine matrix_multiply_tn_dlf_r8
 !------------------------------------------------------------------------------------------------------
