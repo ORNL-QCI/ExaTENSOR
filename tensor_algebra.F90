@@ -5885,7 +5885,7 @@
 	integer, parameter:: min_cache_lines_contr=4                         !minimal number of contracted cache lines per thread
 	integer, parameter:: buf_cache_lines=512                             !number of cache lines in the buffer
 	integer, parameter:: num_cache_levels=3                              !number of cache levels (L1,L2,...)
-	integer, parameter:: cache_size(1:num_cache_levels)=(/32,512,2048/)  !cache size in KBytes on each level
+	integer, parameter:: cache_size(1:num_cache_levels)=(/32,256,1024/)  !cache size in KBytes on each level
 	real(8), parameter:: cache_part=0.8d0                                !cache part to utilize
 !----------------------------------------------
 	integer(LONGINT), intent(in):: dl,dr,dc !matrix dimensions
@@ -5912,7 +5912,7 @@
           s1l=int(cache_line_len*min_cache_lines_dest,LONGINT)
           s1c=int(cache_line_len*min_cache_lines_contr,LONGINT)
           s1r=(int(dble(cache_size(1)*1024/real_kind)*cache_part,LONGINT)-s1l*s1c)/(s1l+s1c)
-          s1r=min(s1r,(min(dr,s2)*min(dl,s2))/(m*min(dl,s1l))); s1r=max(s1r,1_LONGINT)
+          write(cons_out,'("DEBUG(tensor_algebra::matrix_multiply_tn_dlf_r8): segments:",5(1x,i5))') s1l,s1r,s1c,s2,s3 !debug
 !$OMP PARALLEL DEFAULT(SHARED) PRIVATE(val,lp,rp,l0,r0,c0,l1,r1,c1,l1u,r1u,c1u,l2,r2,c2,l2u,r2u,c2u,l3,r3,c3,l3u,r3u,c3u)
 #ifndef NO_OMP
           n=omp_get_thread_num(); m=omp_get_num_threads()
@@ -5930,14 +5930,14 @@
              do r2=r3,r3u,s2
               do l2=l3,l3u,s2
                do c2=c3,c3u,s2
-                l2u=min(l2+s2-1_LONGINT,l3u)
                 r2u=min(r2+s2-1_LONGINT,r3u)
+                l2u=min(l2+s2-1_LONGINT,l3u)
                 c2u=min(c2+s2-1_LONGINT,c3u)
                 do r1=r2,r2u,s1r
+                 r1u=min(r1+s1r-1_LONGINT,r2u)
                  do l1=l2,l2u,s1l
+                  l1u=min(l1+s1l-1_LONGINT,l2u)
                   do c1=c2,c2u,s1c
-                   r1u=min(r1+s1r-1_LONGINT,r2u)
-                   l1u=min(l1+s1l-1_LONGINT,l2u)
                    c1u=min(c1+s1c-1_LONGINT,c2u)
                    do r0=r1,r1u
                     rp=r0*dc
