@@ -5953,10 +5953,10 @@
                   enddo
                  enddo
                 enddo
-!$OMP END DO NOWAIT
                enddo
               enddo
              enddo
+!$OMP END DO NOWAIT
             enddo !c3
            enddo !l3
           enddo !r3
