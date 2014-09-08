@@ -5887,7 +5887,8 @@
 	integer, parameter:: num_cache_levels=3                              !number of cache levels (L1,L2,...)
 	integer, parameter:: cache_size(1:num_cache_levels)=(/32,256,8192/)  !cache size in KBytes on each level
 	real(8), parameter:: cache_part=0.8d0                                !cache part to utilize
-!----------------------------------------------
+	integer(LONGINT), parameter:: vec_size=8_LONGINT                     !vector size (words)
+!-------------------------------------------------------
 	integer(LONGINT), intent(in):: dl,dr,dc !matrix dimensions
 	real(real_kind), intent(in):: ltens(0:*),rtens(0:*) !input arguments
 	real(real_kind), intent(inout):: dtens(0:*) !output argument
@@ -5895,7 +5896,7 @@
 	integer i,j,k,l,m,n
 	integer(LONGINT):: lp,rp,l0,r0,c0,l1,r1,c1,l1u,r1u,c1u,l2,r2,c2,l2u,r2u,c2u,l3,r3,c3,l3u,r3u,c3u,c1e
 	integer(LONGINT):: nflops,s1l,s1r,s1c,s2,s3
-	real(real_kind):: val(1:4),dbuf(cache_line_len*buf_cache_lines)
+	real(real_kind):: val(vec_size),dbuf(cache_line_len*buf_cache_lines)
 	real(8) time_beg,tm
 
         ierr=0
@@ -5941,23 +5942,27 @@
                   l1u=min(l1+s1l-1_LONGINT,l2u)
                   do c1=c2,c2u,s1c
                    c1u=min(c1+s1c-1_LONGINT,c2u)
-                   c1e=mod(c1u-c1+1_LONGINT,4_LONGINT)
+                   c1e=mod(c1u-c1+1_LONGINT,vec_size)
    !Three blocks are in L1 at this point.
                    do r0=r1,r1u
                     rp=r0*dc
                     do l0=l1,l1u
                      lp=l0*dc
-                     val(1:4)=(/dtens(r0*dl+l0),0d0,0d0,0d0/)
-                     do c0=c1,c1u-c1e,4
+                     val(1:vec_size)=0d0
+                     do c0=c1,c1u-c1e,vec_size
                       val(1)=val(1)+ltens(lp+c0)*rtens(rp+c0)
                       val(2)=val(2)+ltens(lp+c0+1_LONGINT)*rtens(rp+c0+1_LONGINT)
                       val(3)=val(3)+ltens(lp+c0+2_LONGINT)*rtens(rp+c0+2_LONGINT)
                       val(4)=val(4)+ltens(lp+c0+3_LONGINT)*rtens(rp+c0+3_LONGINT)
+                      val(5)=val(5)+ltens(lp+c0+4_LONGINT)*rtens(rp+c0+4_LONGINT)
+                      val(6)=val(6)+ltens(lp+c0+5_LONGINT)*rtens(rp+c0+5_LONGINT)
+                      val(7)=val(7)+ltens(lp+c0+6_LONGINT)*rtens(rp+c0+6_LONGINT)
+                      val(8)=val(8)+ltens(lp+c0+7_LONGINT)*rtens(rp+c0+7_LONGINT)
                      enddo
                      do c0=c1u-c1e+1_LONGINT,c1u
                       val(1)=val(1)+ltens(lp+c0)*rtens(rp+c0)
                      enddo
-                     dtens(r0*dl+l0)=val(1)+val(2)+val(3)+val(4)
+                     dtens(r0*dl+l0)=dtens(r0*dl+l0)+val(1)+val(2)+val(3)+val(4)+val(5)+val(6)+val(7)+val(8)
                     enddo
                    enddo
                   enddo
