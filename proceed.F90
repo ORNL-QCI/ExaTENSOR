@@ -15,7 +15,7 @@
         integer i,j,k,l,m,n,k0,k1,k2,k3
 
 !DEBUG begin:
-        real(8):: a(1238*1423),b(1238*1111),c(1423*1111)
+        real(8):: a(1238*1423),b(1238*1111),c(1423*1111),tm
 !DEBUG end.
 
         ierr=0; write(jo,'("###LAUNCHED PROCESS ",i9)') impir
@@ -25,6 +25,9 @@
 !DEBUG begin:
         call random_number(a); call random_number(b); call random_number(c)
         call matrix_multiply_tn(1423_8,1111_8,1238_8,a,b,c,i) !debug
+        tm=thread_wtime()
+        call dgemm('T','N',1423,1111,1238,1d0,a,1238,b,1238,1d0,c,1423)
+        tm=thread_wtime(tm); print *,'DGEMM:',tm
         call quit(ierr,'#ERROR(proceed): Stopped by hand!') !debug
 	my_role=c_process_private
 	call c_proc_life(ierr); if(ierr.ne.0)  then; write(jo,'("#ERROR(proceed): C_PROCESS failed!")'); ierr=3; endif
