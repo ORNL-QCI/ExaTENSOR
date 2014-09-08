@@ -5926,13 +5926,13 @@
             do c3=0_LONGINT,dc-1_LONGINT,s3
              c3u=min(c3+s3-1_LONGINT,dc-1_LONGINT)
  !Three blocks are in L3 at this point.
-             do r2=r3,r3u,s2
-              r2u=min(r2+s2-1_LONGINT,r3u)
-              do l2=l3,l3u,s2
-               l2u=min(l2+s2-1_LONGINT,l3u)
-               do c2=c3,c3u,s2
-                c2u=min(c2+s2-1_LONGINT,c3u)
 !$OMP DO SCHEDULE(GUIDED) COLLAPSE(3)
+             do r2=r3,r3u,s2
+              do l2=l3,l3u,s2
+               do c2=c3,c3u,s2
+                l2u=min(l2+s2-1_LONGINT,l3u)
+                r2u=min(r2+s2-1_LONGINT,r3u)
+                c2u=min(c2+s2-1_LONGINT,c3u)
                 do r1=r2,r2u,s1r
                  do l1=l2,l2u,s1l
                   do c1=c2,c2u,s1c

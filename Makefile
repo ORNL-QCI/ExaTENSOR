@@ -5,13 +5,12 @@ CPP = CC
 CUDA_C = nvcc
 MPI_INC = -I.
 CUDA_INC = -I.
-CUDA_LIB = -L.
-CUDA_LINK = -lcudart -lcublas
+CUDA_LINK = -lcudart -lcublas -L.
 CUDA_FLAGS_DEV = --compile -arch=sm_35 -g -G -DDEBUG
 CUDA_FLAGS_OPT = --compile -O3 -arch=sm_35
 CUDA_FLAGS = $(CUDA_FLAGS_DEV)
 LA_LINK_INTEL = -lmkl_core -lmkl_intel_thread -lmkl_intel_lp64 -lmkl_blas95_lp64 -lmkl_lapack95_lp64 -lrt
-LA_LINK_AMD = -lacml
+LA_LINK_AMD = -lacml_mp -L.
 LA_LINK_CRAY = " "
 LA_LINK = $(LA_LINK_AMD)
 CFLAGS_DEV = -c -g
@@ -36,7 +35,7 @@ OBJS = stsubs.o combinatoric.o extern_names.o service.o lists.o dictionary.o tim
 	main.o proceed.o
 
 $(NAME): $(OBJS)
-	$(FC) $(OBJS) $(MPI_INC) $(CUDA_INC) $(CUDA_LIB) $(CUDA_LINK) $(LFLAGS) $(NAME)
+	$(FC) $(OBJS) $(MPI_INC) $(CUDA_INC) $(CUDA_LINK) $(LFLAGS) $(NAME)
 
 %.o: %.F90 qforce.mod
 	$(FC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) $?
