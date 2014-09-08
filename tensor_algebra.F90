@@ -5882,7 +5882,7 @@
 	integer, parameter:: real_kind=8                                     !real data kind (bytes per word)
 	integer, parameter:: cache_line_len=64/real_kind                     !cache line length in words
 	integer, parameter:: min_cache_lines_dest=5                          !minimal number of destination cache lines per thread
-	integer, parameter:: min_cache_lines_contr=4                         !minimal number of contracted cache lines per thread
+	integer, parameter:: min_cache_lines_contr=8                         !minimal number of contracted cache lines per thread
 	integer, parameter:: buf_cache_lines=512                             !number of cache lines in the buffer
 	integer, parameter:: num_cache_levels=3                              !number of cache levels (L1,L2,...)
 	integer, parameter:: cache_size(1:num_cache_levels)=(/32,256,8192/)  !cache size in KBytes on each level
