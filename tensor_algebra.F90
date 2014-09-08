@@ -5893,8 +5893,9 @@
 	real(real_kind), intent(inout):: dtens(0:*) !output argument
 	integer, intent(inout):: ierr !error code
 	integer i,j,k,l,m,n
-	integer(LONGINT):: lp,rp,l0,r0,c0,s1l,s1r,s1c,l1,r1,c1,l1u,r1u,c1u,s2,l2,r2,c2,l2u,r2u,c2u,s3,l3,r3,c3,l3u,r3u,c3u,nflops
-	real(real_kind):: val,dbuf(cache_line_len*buf_cache_lines)
+	integer(LONGINT):: lp,rp,l0,r0,c0,l1,r1,c1,l1u,r1u,c1u,l2,r2,c2,l2u,r2u,c2u,l3,r3,c3,l3u,r3u,c3u,c1e
+	integer(LONGINT):: nflops,s1l,s1r,s1c,s2,s3
+	real(real_kind):: val(1:4),dbuf(cache_line_len*buf_cache_lines)
 	real(8) time_beg,tm
 
         ierr=0
@@ -5913,7 +5914,7 @@
           s1c=int(cache_line_len*min_cache_lines_contr,LONGINT)
           s1r=(int(dble(cache_size(1)*1024/real_kind)*cache_part,LONGINT)-s1l*s1c)/(s1l+s1c)
           write(cons_out,'("DEBUG(tensor_algebra::matrix_multiply_tn_dlf_r8): segments:",5(1x,i5))') s1l,s1r,s1c,s2,s3 !debug
-!$OMP PARALLEL DEFAULT(SHARED) PRIVATE(val,lp,rp,l0,r0,c0,l1,r1,c1,l1u,r1u,c1u,l2,r2,c2,l2u,r2u,c2u,l3,r3,c3,l3u,r3u,c3u)
+!$OMP PARALLEL DEFAULT(SHARED) PRIVATE(val,lp,rp,l0,r0,c0,l1,r1,c1,l1u,r1u,c1u,l2,r2,c2,l2u,r2u,c2u,l3,r3,c3,l3u,r3u,c3u,c1e)
 #ifndef NO_OMP
           n=omp_get_thread_num(); m=omp_get_num_threads()
 #else
@@ -5926,28 +5927,37 @@
             do c3=0_LONGINT,dc-1_LONGINT,s3
              c3u=min(c3+s3-1_LONGINT,dc-1_LONGINT)
  !Three blocks are in L3 at this point.
-!$OMP DO SCHEDULE(DYNAMIC) COLLAPSE(3)
+!$OMP DO SCHEDULE(GUIDED) COLLAPSE(3)
              do r2=r3,r3u,s2
               do l2=l3,l3u,s2
                do c2=c3,c3u,s2
                 r2u=min(r2+s2-1_LONGINT,r3u)
                 l2u=min(l2+s2-1_LONGINT,l3u)
                 c2u=min(c2+s2-1_LONGINT,c3u)
+  !Three blocks are in L2 at this point.
                 do r1=r2,r2u,s1r
                  r1u=min(r1+s1r-1_LONGINT,r2u)
                  do l1=l2,l2u,s1l
                   l1u=min(l1+s1l-1_LONGINT,l2u)
                   do c1=c2,c2u,s1c
                    c1u=min(c1+s1c-1_LONGINT,c2u)
+                   c1e=mod(c1u-c1+1_LONGINT)/4_LONGINT
+   !Three blocks are in L1 at this point.
                    do r0=r1,r1u
                     rp=r0*dc
                     do l0=l1,l1u
                      lp=l0*dc
-                     val=dtens(r0*dl+l0)
-                     do c0=c1,c1u
-                      val=val+ltens(lp+c0)*rtens(rp+c0)
+                     val(1:4)=(/dtens(r0*dl+l0),0d0,0d0,0d0/)
+                     do c0=c1,c1u-c1e,4
+                      val(1)=val(1)+ltens(lp+c0)*rtens(rp+c0)
+                      val(2)=val(2)+ltens(lp+c0+1_LONGINT)*rtens(rp+c0+1_LONGINT)
+                      val(3)=val(3)+ltens(lp+c0+2_LONGINT)*rtens(rp+c0+2_LONGINT)
+                      val(4)=val(4)+ltens(lp+c0+3_LONGINT)*rtens(rp+c0+3_LONGINT)
                      enddo
-                     dtens(r0*dl+l0)=val
+                     do c0=c1u-c1e+1_LONGINT,c1u
+                      val(1)=val(1)+ltens(lp+c0)*rtens(rp+c0)
+                     enddo
+                     dtens(r0*dl+l0)=val(1)+val(2)+val(3)+val(4)
                     enddo
                    enddo
                   enddo
