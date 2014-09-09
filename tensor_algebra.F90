@@ -5656,8 +5656,8 @@
 	real(real_kind), intent(inout):: dtens(0:*) !output argument
 	integer, intent(inout):: ierr !error code
 	integer i,j,k,l,m,n,nthr
-	integer(LONGINT) l0,l1,l2,ll,lr,ld,ls,lf,b0,b1,b2,e0,e1,e2,cl,cr,cc,chunk
-	real(real_kind) val,redm(0:red_mat_size-1,0:red_mat_size-1) !`thread private (redm)?
+	integer(LONGINT) l0,l1,l2,ll,lr,ld,ls,lf,b0,b1,b2,e0r,e0,e1,e2,cl,cr,cc,chunk
+	real(real_kind) vec(0:7),redm(0:red_mat_size-1,0:red_mat_size-1),val !`thread private (redm)?
 	real(8) time_beg
 
 	ierr=0
@@ -5678,9 +5678,10 @@
 	   cl=min(dl,min(max(arg_cache_size/cc,1_LONGINT),max(arg_cache_size/cr,1_LONGINT)))
 !	   write(cons_out,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_r8): cl,cr,cc,dl,dr,dc:",6(1x,i9))') &
 !           cl,cr,cc,dl,dr,dc !debug
-!$OMP PARALLEL DEFAULT(SHARED) PRIVATE(b0,b1,b2,e0,e1,e2,l0,l1,l2,ll,lr,ld,val)
+!$OMP PARALLEL DEFAULT(SHARED) PRIVATE(b0,b1,b2,e0r,e0,e1,e2,l0,l1,l2,ll,lr,ld,val,vec)
 	   do b0=0_LONGINT,dc-1_LONGINT,cc
 	    e0=min(b0+cc-1_LONGINT,dc-1_LONGINT)
+	    e0r=mod(e0-b0+1_LONGINT,8_LONGINT)
 	    do b1=0_LONGINT,dl-1_LONGINT,cl
 	     e1=min(b1+cl-1_LONGINT,dl-1_LONGINT)
 	     do b2=0_LONGINT,dr-1_LONGINT,cr
@@ -5690,9 +5691,25 @@
 	       lr=l2*dc; ld=l2*dl
 	       do l1=b1,e1
 	        ll=l1*dc
-	        val=dtens(ld+l1)
-	        do l0=b0,e0; val=val+ltens(ll+l0)*rtens(lr+l0); enddo
-	        dtens(ld+l1)=val
+	        vec(:)=0d0
+	        do l0=b0,e0-e0r,8_LONGINT
+	         vec(0)=vec(0)+ltens(ll+l0)*rtens(lr+l0)
+	         vec(1)=vec(1)+ltens(ll+l0+1_LONGINT)*rtens(lr+l0+1_LONGINT)
+	         vec(2)=vec(2)+ltens(ll+l0+2_LONGINT)*rtens(lr+l0+2_LONGINT)
+	         vec(3)=vec(3)+ltens(ll+l0+3_LONGINT)*rtens(lr+l0+3_LONGINT)
+	         vec(4)=vec(4)+ltens(ll+l0+4_LONGINT)*rtens(lr+l0+4_LONGINT)
+	         vec(5)=vec(5)+ltens(ll+l0+5_LONGINT)*rtens(lr+l0+5_LONGINT)
+	         vec(6)=vec(6)+ltens(ll+l0+6_LONGINT)*rtens(lr+l0+6_LONGINT)
+	         vec(7)=vec(7)+ltens(ll+l0+7_LONGINT)*rtens(lr+l0+7_LONGINT)
+	        enddo
+	        do l0=1_LONGINT,e0r
+	         vec(l0)=vec(l0)+ltens(ll+e0-e0r+l0)*rtens(lr+e0-e0r+l0)
+	        enddo
+	        vec(0)=vec(0)+vec(1)
+	        vec(2)=vec(2)+vec(3)
+	        vec(4)=vec(4)+vec(5)
+	        vec(6)=vec(6)+vec(7)
+	        dtens(ld+l1)=dtens(ld+l1)+vec(0)+vec(2)+vec(4)+vec(6)
 	       enddo
 	      enddo
 !$OMP END DO NOWAIT
@@ -5962,15 +5979,16 @@
                     rp=r0*dc
                     do l0=l1,l1u
                      lp=l0*dc
+                     val(:)=0d0
                      do c0=c1,c1u-c1e,vec_size
-                      val(1)=ltens(lp+c0)*rtens(rp+c0)
-                      val(2)=ltens(lp+c0+1_LONGINT)*rtens(rp+c0+1_LONGINT)
-                      val(3)=ltens(lp+c0+2_LONGINT)*rtens(rp+c0+2_LONGINT)
-                      val(4)=ltens(lp+c0+3_LONGINT)*rtens(rp+c0+3_LONGINT)
-                      val(5)=ltens(lp+c0+4_LONGINT)*rtens(rp+c0+4_LONGINT)
-                      val(6)=ltens(lp+c0+5_LONGINT)*rtens(rp+c0+5_LONGINT)
-                      val(7)=ltens(lp+c0+6_LONGINT)*rtens(rp+c0+6_LONGINT)
-                      val(8)=ltens(lp+c0+7_LONGINT)*rtens(rp+c0+7_LONGINT)
+                      val(1)=val(1)+ltens(lp+c0)*rtens(rp+c0)
+                      val(2)=val(2)+ltens(lp+c0+1_LONGINT)*rtens(rp+c0+1_LONGINT)
+                      val(3)=val(3)+ltens(lp+c0+2_LONGINT)*rtens(rp+c0+2_LONGINT)
+                      val(4)=val(4)+ltens(lp+c0+3_LONGINT)*rtens(rp+c0+3_LONGINT)
+                      val(5)=val(5)+ltens(lp+c0+4_LONGINT)*rtens(rp+c0+4_LONGINT)
+                      val(6)=val(6)+ltens(lp+c0+5_LONGINT)*rtens(rp+c0+5_LONGINT)
+                      val(7)=val(7)+ltens(lp+c0+6_LONGINT)*rtens(rp+c0+6_LONGINT)
+                      val(8)=val(8)+ltens(lp+c0+7_LONGINT)*rtens(rp+c0+7_LONGINT)
                      enddo
                      do c0=1_LONGINT,c1e
                       val(c0)=val(c0)+ltens(lp+c1u-c1e+c0)*rtens(rp+c1u-c1e+c0)
