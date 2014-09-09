@@ -5920,6 +5920,8 @@
            s2r=dr; s2l=min(c2*(c2/dr),dl)
           elseif(c2.le.dr.and.c2.gt.dl) then
            s2l=dl; s2r=min(c2*(c2/dl),dr)
+          else
+           s2r=c2; s2l=c2
           endif
           s2r=max(s2r,s1r); s2l=max(s2l,s1l)
           s2c=min(max((int(dble(cache_size(2)*1024/real_kind)*cache_part,LONGINT)-s2r*s2l)/(s2r+s2l),s1c),dc)
