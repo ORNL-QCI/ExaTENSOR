@@ -5388,7 +5388,6 @@
 !This subroutine multiplies two matrices derived from the corresponding tensors by index permutations:
 !dtens(0:dl-1,0:dr-1)+=ltens(0:dc-1,0:dl-1)*rtens(0:dc-1,0:dr-1)
 !The result is a matrix as well (cannot be a scalar, see tensor_block_fcontract).
-!The algorithm is cache-efficient (Author: Dmitry I. Lyakh (Liakh): quant4me@gmail.com).
 	implicit none
 !---------------------------------------
 	integer, parameter:: real_kind=4             !real data kind
@@ -5633,7 +5632,6 @@
 !This subroutine multiplies two matrices derived from the corresponding tensors by index permutations:
 !dtens(0:dl-1,0:dr-1)+=ltens(0:dc-1,0:dl-1)*rtens(0:dc-1,0:dr-1)
 !The result is a matrix as well (cannot be a scalar, see tensor_block_fcontract).
-!The algorithm is cache-efficient (Author: Dmitry I. Lyakh (Liakh): quant4me@gmail.com).
 	implicit none
 !---------------------------------------
 	integer, parameter:: real_kind=8                   !real data kind
@@ -5656,7 +5654,7 @@
 	real(real_kind), intent(inout):: dtens(0:*) !output argument
 	integer, intent(inout):: ierr !error code
 	integer i,j,k,l,m,n,nthr
-	integer(LONGINT) l0,l1,l2,ll,lr,ld,ls,lf,b0,b1,b2,e0r,e0,e1,e2,cl,cr,cc,chunk
+	integer(LONGINT) ll,lr,ld,l0,l1,l2,b0,b1,b2,e0r,e0,e1,e2,ls,lf,cl,cr,cc,chunk
 	real(real_kind) vec(0:7),redm(0:red_mat_size-1,0:red_mat_size-1),val !`thread private (redm)?
 	real(8) time_beg
 
@@ -5678,7 +5676,7 @@
 	   cl=min(dl,min(max(arg_cache_size/cc,1_LONGINT),max(arg_cache_size/cr,1_LONGINT)))
 !	   write(cons_out,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_r8): cl,cr,cc,dl,dr,dc:",6(1x,i9))') &
 !           cl,cr,cc,dl,dr,dc !debug
-!$OMP PARALLEL DEFAULT(SHARED) PRIVATE(b0,b1,b2,e0r,e0,e1,e2,l0,l1,l2,ll,lr,ld,val,vec)
+!$OMP PARALLEL DEFAULT(SHARED) PRIVATE(b0,b1,b2,e0r,e0,e1,e2,l0,l1,l2,ll,lr,ld,vec)
 	   do b0=0_LONGINT,dc-1_LONGINT,cc
 	    e0=min(b0+cc-1_LONGINT,dc-1_LONGINT)
 	    e0r=mod(e0-b0+1_LONGINT,8_LONGINT)
@@ -5688,22 +5686,22 @@
 	      e2=min(b2+cr-1_LONGINT,dr-1_LONGINT)
 !$OMP DO SCHEDULE(GUIDED)
 	      do l2=b2,e2
-	       lr=l2*dc; ld=l2*dl
+	       ld=l2*dl
 	       do l1=b1,e1
-	        ll=l1*dc
-	        vec(:)=0d0
+	        ll=l1*dc+b0; lr=l2*dc+b0; vec(:)=0d0
 	        do l0=b0,e0-e0r,8_LONGINT
-	         vec(0)=vec(0)+ltens(ll+l0)*rtens(lr+l0)
-	         vec(1)=vec(1)+ltens(ll+l0+1_LONGINT)*rtens(lr+l0+1_LONGINT)
-	         vec(2)=vec(2)+ltens(ll+l0+2_LONGINT)*rtens(lr+l0+2_LONGINT)
-	         vec(3)=vec(3)+ltens(ll+l0+3_LONGINT)*rtens(lr+l0+3_LONGINT)
-	         vec(4)=vec(4)+ltens(ll+l0+4_LONGINT)*rtens(lr+l0+4_LONGINT)
-	         vec(5)=vec(5)+ltens(ll+l0+5_LONGINT)*rtens(lr+l0+5_LONGINT)
-	         vec(6)=vec(6)+ltens(ll+l0+6_LONGINT)*rtens(lr+l0+6_LONGINT)
-	         vec(7)=vec(7)+ltens(ll+l0+7_LONGINT)*rtens(lr+l0+7_LONGINT)
+	         vec(0)=vec(0)+ltens(ll)*rtens(lr)
+	         vec(1)=vec(1)+ltens(ll+1_LONGINT)*rtens(lr+1_LONGINT)
+	         vec(2)=vec(2)+ltens(ll+2_LONGINT)*rtens(lr+2_LONGINT)
+	         vec(3)=vec(3)+ltens(ll+3_LONGINT)*rtens(lr+3_LONGINT)
+	         vec(4)=vec(4)+ltens(ll+4_LONGINT)*rtens(lr+4_LONGINT)
+	         vec(5)=vec(5)+ltens(ll+5_LONGINT)*rtens(lr+5_LONGINT)
+	         vec(6)=vec(6)+ltens(ll+6_LONGINT)*rtens(lr+6_LONGINT)
+	         vec(7)=vec(7)+ltens(ll+7_LONGINT)*rtens(lr+7_LONGINT)
+	         ll=ll+8_LONGINT; lr=lr+8_LONGINT
 	        enddo
-	        do l0=1_LONGINT,e0r
-	         vec(l0)=vec(l0)+ltens(ll+e0-e0r+l0)*rtens(lr+e0-e0r+l0)
+	        do l0=0_LONGINT,e0r-1_LONGINT
+	         vec(l0)=vec(l0)+ltens(ll+l0)*rtens(lr+l0)
 	        enddo
 	        vec(0)=vec(0)+vec(1)
 	        vec(2)=vec(2)+vec(3)
@@ -5784,15 +5782,32 @@
 	   case(0)
 !SCHEME 0:
 !            write(cons_out,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_r8): dl,dr,dc:",3(1x,i9))') dl,dr,dc !debug
-!$OMP PARALLEL DEFAULT(SHARED) PRIVATE(l0,l1,l2,ll,lr,ld,val)
+!$OMP PARALLEL DEFAULT(SHARED) PRIVATE(l0,l1,l2,b2,ll,lr,ld,e0r,vec)
+            e0r=mod(dc,8_LONGINT)
 	    do l2=0_LONGINT,dr-1_LONGINT
-	     lr=l2*dc; ld=l2*dl
+	     b2=l2*dc; ld=l2*dl
 !$OMP DO SCHEDULE(GUIDED)
 	     do l1=0_LONGINT,dl-1_LONGINT
-	      ll=l1*dc
-	      val=dtens(ld+l1)
-	      do l0=0_LONGINT,dc-1_LONGINT; val=val+ltens(ll+l0)*rtens(lr+l0); enddo
-	      dtens(ld+l1)=val
+	      ll=l1*dc; lr=b2; vec(:)=0d0
+	      do l0=0_LONGINT,dc-1_LONGINT-e0r,8_LONGINT
+	       vec(0)=vec(0)+ltens(ll)*rtens(lr+l0)
+	       vec(1)=vec(1)+ltens(ll+1_LONGINT)*rtens(lr+1_LONGINT)
+	       vec(2)=vec(2)+ltens(ll+2_LONGINT)*rtens(lr+2_LONGINT)
+	       vec(3)=vec(3)+ltens(ll+3_LONGINT)*rtens(lr+3_LONGINT)
+	       vec(4)=vec(4)+ltens(ll+4_LONGINT)*rtens(lr+4_LONGINT)
+	       vec(5)=vec(5)+ltens(ll+5_LONGINT)*rtens(lr+5_LONGINT)
+	       vec(6)=vec(6)+ltens(ll+6_LONGINT)*rtens(lr+6_LONGINT)
+	       vec(7)=vec(7)+ltens(ll+7_LONGINT)*rtens(lr+7_LONGINT)
+	       ll=ll+8_LONGINT; lr=lr+8_LONGINT
+	      enddo
+	      do l0=0_LONGINT,e0r-1_LONGINT
+	       vec(l0)=vec(l0)+ltens(ll+l0)*rtens(lr+l0)
+	      enddo
+	      vec(0)=vec(0)+vec(1)
+	      vec(2)=vec(2)+vec(3)
+	      vec(4)=vec(4)+vec(5)
+	      vec(6)=vec(6)+vec(7)
+	      dtens(ld+l1)=dtens(ld+l1)+vec(0)+vec(2)+vec(4)+vec(6)
 	     enddo
 !$OMP END DO NOWAIT
 	    enddo
