@@ -179,8 +179,8 @@
 	private tensor_block_insert_dlf    !inserts a slice into a tensor block (Fortran-like dimension-led storage layout)
 	private tensor_block_copy_dlf      !tensor transpose for dimension-led (Fortran-like-stored) dense tensor blocks
 	private tensor_block_copy_scatter_dlf !tensor transpose for dimension-led (Fortran-like-stored) dense tensor blocks (scattering variant)
-	private tensor_block_fcontract_dlf !multiplies two matrices derived from tensors to produce a scalar
-	public tensor_block_pcontract_dlf  !multiplies two matrices derived from tensors to produce a third matrix
+	public tensor_block_fcontract_dlf  !multiplies two matrices derived from tensors to produce a scalar (left is transposed, right is normal)
+	public tensor_block_pcontract_dlf  !multiplies two matrices derived from tensors to produce a third matrix (left is transposed, right is normal)
 	public  matrix_multiply_tn         !multiplies two matrices (left is transposed, right is normal)
 	private tensor_block_ftrace_dlf    !takes a full trace of a tensor block
 	private tensor_block_ptrace_dlf    !takes a partial trace of a tensor block
@@ -5923,9 +5923,10 @@
           else
            s2r=c2; s2l=c2
           endif
-          s2r=max(s2r,s1r); s2l=max(s2l,s1l)
-          s2c=min(max((int(dble(cache_size(2)*1024/real_kind)*cache_part,LONGINT)-s2r*s2l)/(s2r+s2l),s1c),dc)
-          s3=max(s3,max(s2r,max(s2l,s2c)))
+          s2r=max(s2r-mod(s2r,cache_line_len),s1r); s2l=max(s2l-mod(s2l,cache_line_len),s1l)
+          s2c=(int(dble(cache_size(2)*1024/real_kind)*cache_part,LONGINT)-s2r*s2l)/(s2r+s2l)
+          s2c=min(max(s2c-mod(s2c,cache_line_len),s1c),dc)
+          s3=max(s3-mod(s3,cache_line_len),max(s2r,max(s2l,s2c)))
           write(cons_out,'("DEBUG(tensor_algebra::matrix_multiply_tn_dlf_r8): segments:",7(1x,i5))') &
            s1l,s1r,s1c,s2l,s2r,s2c,s3 !debug
 !$OMP PARALLEL DEFAULT(SHARED) PRIVATE(val,lp,rp,l0,r0,c0,l1,r1,c1,l1u,r1u,c1u,l2,r2,c2,l2u,r2u,c2u,l3,r3,c3,l3u,r3u,c3u,c1e)
