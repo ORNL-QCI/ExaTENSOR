@@ -5879,15 +5879,15 @@
 !dtens(0:dl-1,0:dr-1)+=ltens(0:dc-1,0:dl-1)*rtens(0:dc-1,0:dr-1)
 	implicit none
 !---------------------------------------
-	integer, parameter:: real_kind=8                                     !real data kind (bytes per word)
-	integer, parameter:: cache_line_len=64/real_kind                     !cache line length in words
-	integer, parameter:: min_cache_lines_dest=2                          !minimal number of destination cache lines per thread
-	integer, parameter:: min_cache_lines_contr=12                        !minimal number of contracted cache lines per thread
-	integer, parameter:: buf_cache_lines=512                             !number of cache lines in the buffer
-	integer, parameter:: num_cache_levels=3                              !number of cache levels (L1,L2,...)
-	integer, parameter:: cache_size(1:num_cache_levels)=(/32,384,16384/) !cache size in KBytes on each level
-	real(8), parameter:: cache_part=0.8d0                                !cache part to utilize
-	integer(LONGINT), parameter:: vec_size=8_LONGINT                     !vector size (words)
+	integer, parameter:: real_kind=8                                      !real data kind (bytes per word)
+	integer, parameter:: cache_line_len=64/real_kind                      !cache line length in words
+	integer, parameter:: min_cache_lines_dest=2                           !minimal number of destination cache lines per thread
+	integer, parameter:: min_cache_lines_contr=8                          !minimal number of contracted cache lines per thread
+	integer, parameter:: buf_cache_lines=512                              !number of cache lines in the buffer
+	integer, parameter:: num_cache_levels=3                               !number of cache levels (L1,L2,...)
+	integer, parameter:: cache_size(1:num_cache_levels)=(/16,1024,16384/) !cache size in KBytes on each level
+	real(8), parameter:: cache_part=0.8d0                                 !cache part to utilize
+	integer(LONGINT), parameter:: vec_size=8_LONGINT                      !vector size (words)
 !-------------------------------------------------------
 	integer(LONGINT), intent(in):: dl,dr,dc !matrix dimensions
 	real(real_kind), intent(in):: ltens(0:*),rtens(0:*) !input arguments
@@ -5895,7 +5895,7 @@
 	integer, intent(inout):: ierr !error code
 	integer i,j,k,l,m,n
 	integer(LONGINT):: lp,rp,l0,r0,c0,l1,r1,c1,l1u,r1u,c1u,l2,r2,c2,l2u,r2u,c2u,l3,r3,c3,l3u,r3u,c3u,c1e
-	integer(LONGINT):: nflops,s1l,s1r,s1c,s2,s3
+	integer(LONGINT):: nflops,s1l,s1r,s1c,s2l,s2r,s2c,s3
 	real(real_kind):: val(vec_size),dbuf(cache_line_len*buf_cache_lines)
 	real(8) time_beg,tm
 
@@ -5908,9 +5908,9 @@
 #else
          m=1
 #endif
-         s3=int(dsqrt(dble(cache_size(3)*1024/real_kind)*cache_part*0.3d0),LONGINT)
-         s2=int(dsqrt(dble(cache_size(2)*1024/real_kind)*cache_part*0.3d0),LONGINT)
+         s3=int(dsqrt(dble(cache_size(3)*1024/real_kind)*cache_part*0.3d0),LONGINT) !L3 segment size
          if(dr*dl.ge.int(cache_line_len*min_cache_lines_dest*m,LONGINT)) then !destination matrix is big enough: Algorithm 1
+          s2=int(dsqrt(dble(cache_size(2)*1024/real_kind)*cache_part*0.3d0),LONGINT)
           s1l=int(cache_line_len*min_cache_lines_dest,LONGINT)
           s1c=int(cache_line_len*min_cache_lines_contr,LONGINT)
           s1r=(int(dble(cache_size(1)*1024/real_kind)*cache_part,LONGINT)-s1l*s1c)/(s1l+s1c)
