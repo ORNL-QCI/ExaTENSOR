@@ -5919,8 +5919,7 @@
 	integer, parameter:: num_cache_levels=3                               !number of cache levels (L1,L2,...)
 	integer, parameter:: cache_size(1:num_cache_levels)=(/16,256,8192/)   !cache size in KBytes on each level
 	real(8), parameter:: cache_part=0.9d0                                 !cache part to utilize
-	integer(LONGINT), parameter:: vec_size=8_LONGINT                      !vector size (words)
-!-------------------------------------------------------
+!--------------------------------------------
 	integer(LONGINT), intent(in):: dl,dr,dc !matrix dimensions
 	real(real_kind), intent(in):: ltens(0:*),rtens(0:*) !input arguments
 	real(real_kind), intent(inout):: dtens(0:*) !output argument
@@ -5928,45 +5927,42 @@
 	integer i,j,k,l,m,n
 	integer(LONGINT):: lp,rp,l0,r0,c0,l1,r1,c1,l1u,r1u,c1u,l2,r2,c2,l2u,r2u,c2u,l3,r3,c3,l3u,r3u,c3u,c1e
 	integer(LONGINT):: nflops,s1l,s1r,s1c,s2l,s2r,s2c,s3
-	real(real_kind):: val(vec_size),dbuf(cache_line_len*buf_cache_lines)
+	real(real_kind):: vec(0:7),dbuf(cache_line_len*buf_cache_lines)
 	real(8) time_beg,tm
 
         ierr=0
         time_beg=thread_wtime()
         nflops=dr*dl*dc !total number of floating point operations to perform
         if(dl.gt.0_LONGINT.and.dr.gt.0_LONGINT.and.dc.gt.0_LONGINT) then
+!Determine blocking granularity:
 #ifndef NO_OMP
          m=omp_get_max_threads()
 #else
          m=1
 #endif
          s3=int(dsqrt(dble(cache_size(3)*1024/real_kind)*cache_part*0.3d0),LONGINT) !L3 segment size (uniform for simplicity)
-         if(dr*dl.ge.int(cache_line_len*min_cache_lines_dest*m,LONGINT)) then !destination matrix is big enough: Algorithm 1
-          s1l=min(int(cache_line_len*min_cache_lines_dest,LONGINT),dl)
-          s1c=min(int(cache_line_len*min_cache_lines_contr,LONGINT),dc)
-          s1r=min(max((int(dble(cache_size(1)*1024/real_kind)*cache_part,LONGINT)-s1l*s1c)/(s1l+s1c),1_LONGINT),dr)
-          c2=int(dsqrt(dble(cache_size(2)*1024/real_kind)*cache_part*0.3d0),LONGINT)
-          if(c2.gt.dr.and.c2.gt.dl) then
-           s2r=dr; s2l=dl
-          elseif(c2.gt.dr.and.c2.le.dl) then
-           s2r=dr; s2l=min(c2*(c2/dr),dl)
-          elseif(c2.le.dr.and.c2.gt.dl) then
-           s2l=dl; s2r=min(c2*(c2/dl),dr)
-          else
-           s2r=c2; s2l=c2
-          endif
-          s2r=max(s2r-mod(s2r,cache_line_len),s1r); s2l=max(s2l-mod(s2l,cache_line_len),s1l)
-          s2c=(int(dble(cache_size(2)*1024/real_kind)*cache_part,LONGINT)-s2r*s2l)/(s2r+s2l)
-          s2c=min(max(s2c-mod(s2c,cache_line_len),s1c),dc)
-          s3=max(s3-mod(s3,cache_line_len),max(s2r,max(s2l,s2c)))
-          write(cons_out,'("DEBUG(tensor_algebra::matrix_multiply_tn_dlf_r8): segments:",7(1x,i5))') &
-           s1l,s1r,s1c,s2l,s2r,s2c,s3 !debug
-!$OMP PARALLEL DEFAULT(SHARED) PRIVATE(val,lp,rp,l0,r0,c0,l1,r1,c1,l1u,r1u,c1u,l2,r2,c2,l2u,r2u,c2u,l3,r3,c3,l3u,r3u,c3u,c1e)
-#ifndef NO_OMP
-          n=omp_get_thread_num(); m=omp_get_num_threads()
-#else
-          n=0; m=1
-#endif
+         s1l=min(int(cache_line_len*min_cache_lines_dest,LONGINT),dl)
+         s1c=min(int(cache_line_len*min_cache_lines_contr,LONGINT),dc)
+         s1r=min(max((int(dble(cache_size(1)*1024/real_kind)*cache_part,LONGINT)-s1l*s1c)/(s1l+s1c),1_LONGINT),dr)
+         c2=int(dsqrt(dble(cache_size(2)*1024/real_kind)*cache_part*0.3d0),LONGINT)
+         if(c2.gt.dr.and.c2.gt.dl) then
+          s2r=dr; s2l=dl
+         elseif(c2.gt.dr.and.c2.le.dl) then
+          s2r=dr; s2l=min(c2*(c2/dr),dl)
+         elseif(c2.le.dr.and.c2.gt.dl) then
+          s2l=dl; s2r=min(c2*(c2/dl),dr)
+         else
+          s2r=c2; s2l=c2
+         endif
+         s2r=max(s2r-mod(s2r,cache_line_len),s1r); s2l=max(s2l-mod(s2l,cache_line_len),s1l)
+         s2c=(int(dble(cache_size(2)*1024/real_kind)*cache_part,LONGINT)-s2r*s2l)/(s2r+s2l)
+         s2c=min(max(s2c-mod(s2c,cache_line_len),s1c),dc)
+         s3=max(s3-mod(s3,cache_line_len),max(s2r,max(s2l,s2c)))
+         write(cons_out,'("DEBUG(tensor_algebra::matrix_multiply_tn_dlf_r8): segments:",7(1x,i5))') &
+          s1l,s1r,s1c,s2l,s2r,s2c,s3 !debug
+!Execute matrix multiplication:
+         if(min(s3,dl)*min(s3,dr).ge.s2l*s2r*m) then !destination matrix is big enough for m threads: Algorithm 1
+!$OMP PARALLEL DEFAULT(SHARED) PRIVATE(vec,lp,rp,l0,r0,c0,l1,r1,c1,l1u,r1u,c1u,l2,r2,c2,l2u,r2u,c2u,l3,r3,c3,l3u,r3u,c3u,c1e)
           do r3=0_LONGINT,dr-1_LONGINT,s3
            r3u=min(r3+s3-1_LONGINT,dr-1_LONGINT)
            do l3=0_LONGINT,dl-1_LONGINT,s3
@@ -5981,38 +5977,37 @@
                l2u=min(l2+s2l-1_LONGINT,l3u)
                do c2=c3,c3u,s2c
                 c2u=min(c2+s2c-1_LONGINT,c3u)
-  !Three blocks are in L2 at this point.
+  !Three blocks for each thread are in L2 at this point.
                 do r1=r2,r2u,s1r
                  r1u=min(r1+s1r-1_LONGINT,r2u)
                  do l1=l2,l2u,s1l
                   l1u=min(l1+s1l-1_LONGINT,l2u)
                   do c1=c2,c2u,s1c
                    c1u=min(c1+s1c-1_LONGINT,c2u)
-                   c1e=mod(c1u-c1+1_LONGINT,vec_size)
-   !Three blocks are in L1 at this point.
+                   c1e=mod(c1u-c1+1_LONGINT,8_LONGINT)
+   !Three blocks for each thread are in L1 at this point.
                    do r0=r1,r1u
-                    rp=r0*dc
                     do l0=l1,l1u
-                     lp=l0*dc
-                     val(:)=0d0
-                     do c0=c1,c1u-c1e,vec_size
-                      val(1)=val(1)+ltens(lp+c0)*rtens(rp+c0)
-                      val(2)=val(2)+ltens(lp+c0+1_LONGINT)*rtens(rp+c0+1_LONGINT)
-                      val(3)=val(3)+ltens(lp+c0+2_LONGINT)*rtens(rp+c0+2_LONGINT)
-                      val(4)=val(4)+ltens(lp+c0+3_LONGINT)*rtens(rp+c0+3_LONGINT)
-                      val(5)=val(5)+ltens(lp+c0+4_LONGINT)*rtens(rp+c0+4_LONGINT)
-                      val(6)=val(6)+ltens(lp+c0+5_LONGINT)*rtens(rp+c0+5_LONGINT)
-                      val(7)=val(7)+ltens(lp+c0+6_LONGINT)*rtens(rp+c0+6_LONGINT)
-                      val(8)=val(8)+ltens(lp+c0+7_LONGINT)*rtens(rp+c0+7_LONGINT)
+                     lp=l0*dc+c1; rp=r0*dc+c1; vec(:)=0d0
+                     do c0=c1,c1u-c1e,8_LONGINT
+                      vec(0)=vec(0)+ltens(lp)*rtens(rp)
+                      vec(1)=vec(1)+ltens(lp+1_LONGINT)*rtens(rp+1_LONGINT)
+                      vec(2)=vec(2)+ltens(lp+2_LONGINT)*rtens(rp+2_LONGINT)
+                      vec(3)=vec(3)+ltens(lp+3_LONGINT)*rtens(rp+3_LONGINT)
+                      vec(4)=vec(4)+ltens(lp+4_LONGINT)*rtens(rp+4_LONGINT)
+                      vec(5)=vec(5)+ltens(lp+5_LONGINT)*rtens(rp+5_LONGINT)
+                      vec(6)=vec(6)+ltens(lp+6_LONGINT)*rtens(rp+6_LONGINT)
+                      vec(7)=vec(7)+ltens(lp+7_LONGINT)*rtens(rp+7_LONGINT)
+                      lp=lp+8_LONGINT; rp=rp+8_LONGINT
                      enddo
-                     do c0=1_LONGINT,c1e
-                      val(c0)=val(c0)+ltens(lp+c1u-c1e+c0)*rtens(rp+c1u-c1e+c0)
+                     do c0=0_LONGINT,c1e-1_LONGINT
+                      vec(c0)=vec(c0)+ltens(lp+c0)*rtens(rp+c0)
                      enddo
-                     val(1)=val(1)+val(2)
-                     val(3)=val(3)+val(4)
-                     val(5)=val(5)+val(6)
-                     val(7)=val(7)+val(8)
-                     dtens(r0*dl+l0)=dtens(r0*dl+l0)+val(1)+val(3)+val(5)+val(7)
+                     vec(0)=vec(0)+vec(4)
+                     vec(1)=vec(1)+vec(5)
+                     vec(2)=vec(2)+vec(6)
+                     vec(3)=vec(3)+vec(7)
+                     dtens(r0*dl+l0)=dtens(r0*dl+l0)+vec(0)+vec(1)+vec(2)+vec(3)
                     enddo
                    enddo
                   enddo
