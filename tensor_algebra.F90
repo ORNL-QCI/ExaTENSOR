@@ -5886,7 +5886,7 @@
 	integer, parameter:: buf_cache_lines=512                              !number of cache lines in the buffer
 	integer, parameter:: num_cache_levels=3                               !number of cache levels (L1,L2,...)
 	integer, parameter:: cache_size(1:num_cache_levels)=(/16,1024,16384/) !cache size in KBytes on each level
-	real(8), parameter:: cache_part=0.8d0                                 !cache part to utilize
+	real(8), parameter:: cache_part=0.9d0                                 !cache part to utilize
 	integer(LONGINT), parameter:: vec_size=8_LONGINT                      !vector size (words)
 !-------------------------------------------------------
 	integer(LONGINT), intent(in):: dl,dr,dc !matrix dimensions
@@ -5908,13 +5908,22 @@
 #else
          m=1
 #endif
-         s3=int(dsqrt(dble(cache_size(3)*1024/real_kind)*cache_part*0.3d0),LONGINT) !L3 segment size
+         s3=int(dsqrt(dble(cache_size(3)*1024/real_kind)*cache_part*0.3d0),LONGINT) !L3 segment size (uniform for simplicity)
          if(dr*dl.ge.int(cache_line_len*min_cache_lines_dest*m,LONGINT)) then !destination matrix is big enough: Algorithm 1
-          s2r=int(dsqrt(dble(cache_size(2)*1024/real_kind)*cache_part*0.3d0),LONGINT)
-          s2l=s2r; s2c=s2r
-          s1l=int(cache_line_len*min_cache_lines_dest,LONGINT)
-          s1c=int(cache_line_len*min_cache_lines_contr,LONGINT)
-          s1r=(int(dble(cache_size(1)*1024/real_kind)*cache_part,LONGINT)-s1l*s1c)/(s1l+s1c)
+          s1l=min(int(cache_line_len*min_cache_lines_dest,LONGINT),dl)
+          s1c=min(int(cache_line_len*min_cache_lines_contr,LONGINT),dc)
+          s1r=min(max((int(dble(cache_size(1)*1024/real_kind)*cache_part,LONGINT)-s1l*s1c)/(s1l+s1c),1_LONGINT),dr)
+          c2=int(dsqrt(dble(cache_size(2)*1024/real_kind)*cache_part*0.3d0),LONGINT)
+          if(c2.gt.dr.and.c2.gt.dl) then
+           s2r=dr; s2l=dl
+          elseif(c2.gt.dr.and.c2.le.dl) then
+           s2r=dr; s2l=min(c2*(c2/dr),dl)
+          elseif(c2.le.dr.and.c2.gt.dl) then
+           s2l=dl; s2r=min(c2*(c2/dl),dr)
+          endif
+          s2r=max(s2r,s1r); s2l=max(s2l,s1l)
+          s2c=min(max((int(dble(cache_size(2)*1024/real_kind)*cache_part,LONGINT)-s2r*s2l)/(s2r+s2l),s1c),dc)
+          s3=max(s3,max(s2r,max(s2l,s2c)))
           write(cons_out,'("DEBUG(tensor_algebra::matrix_multiply_tn_dlf_r8): segments:",7(1x,i5))') &
            s1l,s1r,s1c,s2l,s2r,s2c,s3 !debug
 !$OMP PARALLEL DEFAULT(SHARED) PRIVATE(val,lp,rp,l0,r0,c0,l1,r1,c1,l1u,r1u,c1u,l2,r2,c2,l2u,r2u,c2u,l3,r3,c3,l3u,r3u,c3u,c1e)
@@ -5950,21 +5959,24 @@
                     rp=r0*dc
                     do l0=l1,l1u
                      lp=l0*dc
-                     val(1:vec_size)=0d0
                      do c0=c1,c1u-c1e,vec_size
-                      val(1)=val(1)+ltens(lp+c0)*rtens(rp+c0)
-                      val(2)=val(2)+ltens(lp+c0+1_LONGINT)*rtens(rp+c0+1_LONGINT)
-                      val(3)=val(3)+ltens(lp+c0+2_LONGINT)*rtens(rp+c0+2_LONGINT)
-                      val(4)=val(4)+ltens(lp+c0+3_LONGINT)*rtens(rp+c0+3_LONGINT)
-                      val(5)=val(5)+ltens(lp+c0+4_LONGINT)*rtens(rp+c0+4_LONGINT)
-                      val(6)=val(6)+ltens(lp+c0+5_LONGINT)*rtens(rp+c0+5_LONGINT)
-                      val(7)=val(7)+ltens(lp+c0+6_LONGINT)*rtens(rp+c0+6_LONGINT)
-                      val(8)=val(8)+ltens(lp+c0+7_LONGINT)*rtens(rp+c0+7_LONGINT)
+                      val(1)=ltens(lp+c0)*rtens(rp+c0)
+                      val(2)=ltens(lp+c0+1_LONGINT)*rtens(rp+c0+1_LONGINT)
+                      val(3)=ltens(lp+c0+2_LONGINT)*rtens(rp+c0+2_LONGINT)
+                      val(4)=ltens(lp+c0+3_LONGINT)*rtens(rp+c0+3_LONGINT)
+                      val(5)=ltens(lp+c0+4_LONGINT)*rtens(rp+c0+4_LONGINT)
+                      val(6)=ltens(lp+c0+5_LONGINT)*rtens(rp+c0+5_LONGINT)
+                      val(7)=ltens(lp+c0+6_LONGINT)*rtens(rp+c0+6_LONGINT)
+                      val(8)=ltens(lp+c0+7_LONGINT)*rtens(rp+c0+7_LONGINT)
                      enddo
                      do c0=1_LONGINT,c1e
                       val(c0)=val(c0)+ltens(lp+c1u-c1e+c0)*rtens(rp+c1u-c1e+c0)
                      enddo
-                     dtens(r0*dl+l0)=dtens(r0*dl+l0)+val(1)+val(2)+val(3)+val(4)+val(5)+val(6)+val(7)+val(8)
+                     val(1)=val(1)+val(2)
+                     val(3)=val(3)+val(4)
+                     val(5)=val(5)+val(6)
+                     val(7)=val(7)+val(8)
+                     dtens(r0*dl+l0)=dtens(r0*dl+l0)+val(1)+val(3)+val(5)+val(7)
                     enddo
                    enddo
                   enddo
@@ -5979,7 +5991,7 @@
           enddo !r3
 !$OMP END PARALLEL
          else !destination matrix is small: Algorithm 2
-          
+          !`Write
          endif
         else !invalid matrix dimension extents
          ierr=1
