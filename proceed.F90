@@ -24,6 +24,7 @@
 
 !DEBUG begin:
         call random_number(a); call random_number(b); call random_number(c)
+        call tensor_block_pcontract_dlf(1423_8,1111_8,1238_8,a,b,c,i) !debug
         call matrix_multiply_tn(1423_8,1111_8,1238_8,a,b,c,i) !debug
         tm=thread_wtime()
         call dgemm('T','N',1423,1111,1238,1d0,a,1238,b,1238,1d0,c,1423)

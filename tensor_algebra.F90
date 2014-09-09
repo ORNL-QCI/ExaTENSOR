@@ -1,6 +1,6 @@
 !Tensor Algebra for Multi-Core CPUs (OpenMP based).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2014/09/08
+!REVISION: 2014/09/09
 !GNU linking options: -lgomp -lblas -llapack
 !ACRONYMS:
 ! - mlndx - multiindex;
@@ -180,7 +180,7 @@
 	private tensor_block_copy_dlf      !tensor transpose for dimension-led (Fortran-like-stored) dense tensor blocks
 	private tensor_block_copy_scatter_dlf !tensor transpose for dimension-led (Fortran-like-stored) dense tensor blocks (scattering variant)
 	private tensor_block_fcontract_dlf !multiplies two matrices derived from tensors to produce a scalar
-	private tensor_block_pcontract_dlf !multiplies two matrices derived from tensors to produce a third matrix
+	public tensor_block_pcontract_dlf  !multiplies two matrices derived from tensors to produce a third matrix
 	public  matrix_multiply_tn         !multiplies two matrices (left is transposed, right is normal)
 	private tensor_block_ftrace_dlf    !takes a full trace of a tensor block
 	private tensor_block_ptrace_dlf    !takes a partial trace of a tensor block
@@ -5661,7 +5661,7 @@
 	real(8) time_beg
 
 	ierr=0
-!	time_beg=thread_wtime() !debug
+	time_beg=thread_wtime() !debug
 	if(dl.gt.0_LONGINT.and.dr.gt.0_LONGINT.and.dc.gt.0_LONGINT) then
 #ifndef NO_OMP
 	 nthr=omp_get_max_threads()
@@ -5869,8 +5869,8 @@
 	else
 	 ierr=4
 	endif
-!	write(cons_out,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_r8): kernel time/error code: ",F10.4,1x,i3)') &
-!        thread_wtime(time_beg),ierr !debug
+	write(cons_out,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_r8): kernel time/error code: ",F10.4,1x,i3)') &
+         thread_wtime(time_beg),ierr !debug
 	return
 	end subroutine tensor_block_pcontract_dlf_r8
 !----------------------------------------------------------------------------
@@ -5885,7 +5885,7 @@
 	integer, parameter:: min_cache_lines_contr=8                          !minimal number of contracted cache lines per thread
 	integer, parameter:: buf_cache_lines=512                              !number of cache lines in the buffer
 	integer, parameter:: num_cache_levels=3                               !number of cache levels (L1,L2,...)
-	integer, parameter:: cache_size(1:num_cache_levels)=(/16,1024,16384/) !cache size in KBytes on each level
+	integer, parameter:: cache_size(1:num_cache_levels)=(/16,256,8192/)   !cache size in KBytes on each level
 	real(8), parameter:: cache_part=0.9d0                                 !cache part to utilize
 	integer(LONGINT), parameter:: vec_size=8_LONGINT                      !vector size (words)
 !-------------------------------------------------------
