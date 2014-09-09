@@ -5910,11 +5910,13 @@
 #endif
          s3=int(dsqrt(dble(cache_size(3)*1024/real_kind)*cache_part*0.3d0),LONGINT) !L3 segment size
          if(dr*dl.ge.int(cache_line_len*min_cache_lines_dest*m,LONGINT)) then !destination matrix is big enough: Algorithm 1
-          s2=int(dsqrt(dble(cache_size(2)*1024/real_kind)*cache_part*0.3d0),LONGINT)
+          s2r=int(dsqrt(dble(cache_size(2)*1024/real_kind)*cache_part*0.3d0),LONGINT)
+          s2l=s2r; s2c=s2r
           s1l=int(cache_line_len*min_cache_lines_dest,LONGINT)
           s1c=int(cache_line_len*min_cache_lines_contr,LONGINT)
           s1r=(int(dble(cache_size(1)*1024/real_kind)*cache_part,LONGINT)-s1l*s1c)/(s1l+s1c)
-          write(cons_out,'("DEBUG(tensor_algebra::matrix_multiply_tn_dlf_r8): segments:",5(1x,i5))') s1l,s1r,s1c,s2,s3 !debug
+          write(cons_out,'("DEBUG(tensor_algebra::matrix_multiply_tn_dlf_r8): segments:",7(1x,i5))') &
+           s1l,s1r,s1c,s2l,s2r,s2c,s3 !debug
 !$OMP PARALLEL DEFAULT(SHARED) PRIVATE(val,lp,rp,l0,r0,c0,l1,r1,c1,l1u,r1u,c1u,l2,r2,c2,l2u,r2u,c2u,l3,r3,c3,l3u,r3u,c3u,c1e)
 #ifndef NO_OMP
           n=omp_get_thread_num(); m=omp_get_num_threads()
@@ -5929,12 +5931,12 @@
              c3u=min(c3+s3-1_LONGINT,dc-1_LONGINT)
  !Three blocks are in L3 at this point.
 !$OMP DO SCHEDULE(GUIDED) COLLAPSE(2)
-             do r2=r3,r3u,s2
-              do l2=l3,l3u,s2/2
-               r2u=min(r2+s2-1_LONGINT,r3u)
-               l2u=min(l2+s2/2-1_LONGINT,l3u)
-               do c2=c3,c3u,s2*2
-                c2u=min(c2+s2*2-1_LONGINT,c3u)
+             do r2=r3,r3u,s2r
+              do l2=l3,l3u,s2l
+               r2u=min(r2+s2r-1_LONGINT,r3u)
+               l2u=min(l2+s2l-1_LONGINT,l3u)
+               do c2=c3,c3u,s2c
+                c2u=min(c2+s2c-1_LONGINT,c3u)
   !Three blocks are in L2 at this point.
                 do r1=r2,r2u,s1r
                  r1u=min(r1+s1r-1_LONGINT,r2u)
