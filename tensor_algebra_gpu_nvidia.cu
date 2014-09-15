@@ -986,7 +986,7 @@ All matrices are in Host memory. Executed on the currently set GPU device. **/
   bx=1+(ll-1)/MAT_MULT_TILE_DIM; by=1+(lr-1)/MAT_MULT_TILE_DIM; limit_cuda_blocks2d(MAX_CUDA_BLOCKS,&bx,&by);
   dim3 blcks(bx,by); dim3 thrds(MAT_MULT_TILE_DIM,MAT_MULT_TILE_DIM);
 //printf("\n#DEBUG(tensor_algebra_gpu_nvidia:gpu_matrix_multiply_tn_r8): Running GPU kernel ..."); //debug
-  gpu_matrix_multiply_tn_r4__<<<blcks,thrds>>>(ll,lr,lc,lptr,rptr,dptr);
+  gpu_matrix_multiply_tn_r8__<<<blcks,thrds>>>(ll,lr,lc,lptr,rptr,dptr);
   err=cudaDeviceSynchronize(); if(err != cudaSuccess) return 7;
   err=cudaGetLastError(); if(err!=cudaSuccess){err_msg=cudaGetErrorString(err); printf("\n#ERROR(tensor_algebra_gpu_nvidia:gpu_matrix_multiply_tn_r8): Kernel error: %s\n",err_msg); return 8;}
   if(gpu_get_error_count() > err_code) return 9;
@@ -2244,7 +2244,7 @@ NOTES:
        gpu_matrix_multiply_tn_r4__<<<blcks,thrds,0,cuda_stream>>>(ll,lr,lc,(float*)larg,(float*)rarg,(float*)darg);
        break;
       case R8:
-//`    gpu_matrix_multiply_tn_r8__<<<blcks,thrds,0,cuda_stream>>>(ll,lr,lc,(double*)larg,(double*)rarg,(double*)darg);
+       gpu_matrix_multiply_tn_r8__<<<blcks,thrds,0,cuda_stream>>>(ll,lr,lc,(double*)larg,(double*)rarg,(double*)darg);
        break;
       default:
        i=cuda_task_record(cuda_task,66,dev_num,cuda_stream,cuda_start,cuda_comput,cuda_output,cuda_finish,scr_entry_cnt,scr_entries);
