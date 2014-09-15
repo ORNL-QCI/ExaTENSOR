@@ -1,6 +1,9 @@
-/** GPU functions for Tensor Algebra in Parallel for NVidia GPUs (CUDA).
+/** Parallel Tensor Algebra Library for NVidia GPUs (CUDA).
 AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-REVISION: 2014/09/04
+This open-source code was developed by the author while
+at the National Center for Computational Sciences
+at the Oak Ridge National Laboratory, Oak Ridge TN.
+REVISION: 2014/09/15
 NOTES:
  # Functions without underscores at the end of their names are blocking (Host) functions;
    Functions with one underscore at the end of their names are external non-blocking functions;
@@ -14,7 +17,7 @@ NOTES:
    a GPU argument entry has to be explictly fetched by Host (by user).
  # Seems like cudaEventRecord() issued in different streams can serialize stream execution!
    Thus, by default, event time recording should be disabled (EVENT_RECORD=0).
- # Use CUDA compiler flag -DDEBUG to allow collecting run-time debug information.
+ # Use CUDA preprocessor flag -DDEBUG to allow collecting run-time debug information.
 **/
 
 #ifndef NO_GPU
@@ -73,6 +76,7 @@ extern "C" {
  int gpu_array_2norm2_r4(size_t size, const float *arr, float *norm2);
  int gpu_array_2norm2_r8(size_t size, const double *arr, double *norm2);
  int gpu_matrix_multiply_tn_r4(size_t ll, size_t lr, size_t lc, const float *lmat, const float *rmat, float *dmat);
+ int gpu_matrix_multiply_tn_r8(size_t ll, size_t lr, size_t lc, const double *lmat, const double *rmat, double *dmat);
  int gpu_tensor_block_init_(tensBlck_t *ctens, double val, int copy_back, cudaTask_t *cuda_task);
  int gpu_tensor_block_scale_(tensBlck_t *ctens, double val, int copy_back, cudaTask_t *cuda_task);
  int gpu_tensor_block_add_dlf_(tensBlck_t *ctens0, tensBlck_t *ctens1, double val, int copy_back, cudaTask_t *cuda_task);
@@ -944,6 +948,47 @@ All matrices are in Host memory. Executed on the currently set GPU device. **/
   gpu_matrix_multiply_tn_r4__<<<blcks,thrds>>>(ll,lr,lc,lptr,rptr,dptr);
   err=cudaDeviceSynchronize(); if(err != cudaSuccess) return 7;
   err=cudaGetLastError(); if(err!=cudaSuccess){err_msg=cudaGetErrorString(err); printf("\n#ERROR(tensor_algebra_gpu_nvidia:gpu_matrix_multiply_tn_r4): Kernel error: %s\n",err_msg); return 8;}
+  if(gpu_get_error_count() > err_code) return 9;
+//printf("Done: %d",err); //debug
+  err=cudaMemcpy((void*)dmat,(void*)dptr,dsize,cudaMemcpyDeviceToHost); if(err != cudaSuccess) return 10;
+  err=cudaDeviceSynchronize(); if(err != cudaSuccess) return 11;
+  err_code=free_gpu_ptr((void*)rptr); if(err_code != 0) return 12;
+  err_code=free_gpu_ptr((void*)lptr); if(err_code != 0) return 13;
+  err_code=free_gpu_ptr((void*)dptr); if(err_code != 0) return 14;
+  err=cudaDeviceSynchronize(); if(err != cudaSuccess) return 15;
+ }else{
+  return 16;
+ }
+ return 0;
+}
+//------------------------------------------------------------------------------------------
+// MATRIX MULTIPLICATION 'TN' (R8) (blocking):
+__host__ int gpu_matrix_multiply_tn_r8(size_t ll, size_t lr, size_t lc,
+                                       const double *lmat, const double *rmat, double *dmat)
+/** dmat(0:ll-1,0:lr-1)+=lmat(0:lc-1,0:ll-1)*rmat(0:lc-1,0:lr-1)
+All matrices are in Host memory. Executed on the currently set GPU device. **/
+{
+ size_t dsize,lsize,rsize;
+ double *dptr,*lptr,*rptr;
+ int bx,by,err_code;
+ const char *err_msg;
+ cudaError_t err;
+ if(lc > 0 && ll > 0 && lr > 0 && lmat != NULL && rmat != NULL && dmat != NULL){
+  err=cudaGetLastError(); err=cudaSuccess;
+  dsize=ll*lr*sizeof(double); lsize=lc*ll*sizeof(double); rsize=lc*lr*sizeof(double);
+  err_code=get_gpu_ptr((void**)&dptr,dsize); if(err_code != 0) return 1;
+  err_code=get_gpu_ptr((void**)&lptr,lsize); if(err_code != 0) return 2;
+  err_code=get_gpu_ptr((void**)&rptr,rsize); if(err_code != 0) return 3;
+  err=cudaMemcpy((void*)dptr,(void*)dmat,dsize,cudaMemcpyHostToDevice); if(err != cudaSuccess) return 4;
+  err=cudaMemcpy((void*)lptr,(void*)lmat,lsize,cudaMemcpyHostToDevice); if(err != cudaSuccess) return 5;
+  err=cudaMemcpy((void*)rptr,(void*)rmat,rsize,cudaMemcpyHostToDevice); if(err != cudaSuccess) return 6;
+  err_code=gpu_get_error_count();
+  bx=1+(ll-1)/MAT_MULT_TILE_DIM; by=1+(lr-1)/MAT_MULT_TILE_DIM; limit_cuda_blocks2d(MAX_CUDA_BLOCKS,&bx,&by);
+  dim3 blcks(bx,by); dim3 thrds(MAT_MULT_TILE_DIM,MAT_MULT_TILE_DIM);
+//printf("\n#DEBUG(tensor_algebra_gpu_nvidia:gpu_matrix_multiply_tn_r8): Running GPU kernel ..."); //debug
+  gpu_matrix_multiply_tn_r4__<<<blcks,thrds>>>(ll,lr,lc,lptr,rptr,dptr);
+  err=cudaDeviceSynchronize(); if(err != cudaSuccess) return 7;
+  err=cudaGetLastError(); if(err!=cudaSuccess){err_msg=cudaGetErrorString(err); printf("\n#ERROR(tensor_algebra_gpu_nvidia:gpu_matrix_multiply_tn_r8): Kernel error: %s\n",err_msg); return 8;}
   if(gpu_get_error_count() > err_code) return 9;
 //printf("Done: %d",err); //debug
   err=cudaMemcpy((void*)dmat,(void*)dptr,dsize,cudaMemcpyDeviceToHost); if(err != cudaSuccess) return 10;

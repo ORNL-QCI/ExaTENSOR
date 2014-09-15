@@ -1,10 +1,10 @@
        module dictionary
-!General-purpose dictionary implementation (OO Fortran 2003) based on AVL BST.
+!General-purpose dictionary implementation (OO Fortran 2008) based on AVL BST.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2014/05/19
+!REVISION: 2014/09/10
 !DESCRIPTION:
 !#Dictionary items:
-!  In order to save an item ({key;value}) in the dictionary,
+!  In order to store an item ({key;value}) in the dictionary,
 !  one must call <search> with the corresponding action parameter
 !  and provide the <key> and <value>. If the <value> is of derived data type,
 !  its components may stay uninitialized because <search> can return
@@ -16,17 +16,17 @@
 !  <values> can be of different classes/types.
 !#Key comparison function:
 !  The key comparison function must be supplied to <search> (see cmp_key_func_i interface below).
-!  The key comparison function must operate on unlimited polymorphic entities (<keys>).
+!  The key comparison function must operate on unlimited polymorphic entities (<keys>)!
 !#Item destructor function:
 !  If <key> or <value> is of derived type with pointer/allocatable components,
-!  a destructor function may be needed (see destruct_func_i interface below).
-!  The destructor function must operate on an unlimited polymorphic entity.
+!  a destructor function may need to be supplied (see destruct_func_i interface below).
+!  The destructor function must operate on an unlimited polymorphic entity!
 !  The destructor function must free all dynamic components of <key> or <value>,
-!  but not the <key> or <value> themselves (even if it does, that should not cause a problem).
+!  but not the <key> or <value> themselves (but if it does, that should not cause a problem).
 !#Printing dictionary items:
 !  If one wants to print dictionary items, the item printing function
 !  must be supplied (see print_func_i interface below). The item printing
-!  function must operate on an unlimited polymorphic entity (item).
+!  function must operate on an unlimited polymorphic entity (item)!
         implicit none
 !PARAMETERS:
  !General:

@@ -1,7 +1,7 @@
        module lists
 !Realizations of linked lists.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2014/07/18
+!REVISION: 2014/09/10
 !DESCRIPTION:
 ! CLASS(list_two_way_t):
 !  NOTES:
@@ -10,11 +10,11 @@
 !    The class itself only supplies the infrastructure needed to organize the entries of that
 !    1D array into a linked bidirectional list. Namely, it manipulates solely the entry numbers,
 !    not the data stored in those entries. That is, an entry can be added to the linked list,
-!    the next/previous linked entry can be retrieved, the current entry can be
-!    set/reset/retrieved, an entry can be deleted from the linked list, etc.
+!    the next/previous linked entry number can be retrieved, the current entry can be
+!    set/reset/retrieved, an entry number can be excluded from the linked list, etc.
 !    Thus, this class does not deal with the actual data stored at all. It only helps to
 !    organize an existing 1D array into a linked bidirectional list. Moreover, for each
-!    existing 1D array multiple linked lists can be created, reflecting different
+!    existing 1D array multiple linked lists can be imposed on it, reflecting different
 !    orderings of the array entries needed for specific purposes.
 !  # Maximal length of a linked list can be zero (always empty list).
 !    A negative max length means an uninitialized list.

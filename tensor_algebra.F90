@@ -1,6 +1,6 @@
 !Tensor Algebra for Multi-Core CPUs (OpenMP based).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2014/09/09
+!REVISION: 2014/09/15
 !GNU linking options: -lgomp -lblas -llapack
 !ACRONYMS:
 ! - mlndx - multiindex;
@@ -114,14 +114,8 @@
 	interface tensor_block_pcontract_dlf
 	 module procedure tensor_block_pcontract_dlf_r4
 	 module procedure tensor_block_pcontract_dlf_r8
-!	 module procedure tensor_block_pcontract_dlf_c8 !`Enable
+	 module procedure tensor_block_pcontract_dlf_c8
 	end interface tensor_block_pcontract_dlf
-
-        interface matrix_multiply_tn
-!         module procedure matrix_multiply_tn_dlf_r4 !`Enable
-         module procedure matrix_multiply_tn_dlf_r8
-!         module procedure matrix_multiply_tn_dlf_c8 !`Enable
-        end interface matrix_multiply_tn
 
 	interface tensor_block_ftrace_dlf
 	 module procedure tensor_block_ftrace_dlf_r4
@@ -179,9 +173,8 @@
 	private tensor_block_insert_dlf    !inserts a slice into a tensor block (Fortran-like dimension-led storage layout)
 	private tensor_block_copy_dlf      !tensor transpose for dimension-led (Fortran-like-stored) dense tensor blocks
 	private tensor_block_copy_scatter_dlf !tensor transpose for dimension-led (Fortran-like-stored) dense tensor blocks (scattering variant)
-	public tensor_block_fcontract_dlf  !multiplies two matrices derived from tensors to produce a scalar (left is transposed, right is normal)
-	public tensor_block_pcontract_dlf  !multiplies two matrices derived from tensors to produce a third matrix (left is transposed, right is normal)
-	public  matrix_multiply_tn         !multiplies two matrices (left is transposed, right is normal)
+	private tensor_block_fcontract_dlf !multiplies two matrices derived from tensors to produce a scalar (left is transposed, right is normal)
+	private tensor_block_pcontract_dlf !multiplies two matrices derived from tensors to produce a third matrix (left is transposed, right is normal)
 	private tensor_block_ftrace_dlf    !takes a full trace of a tensor block
 	private tensor_block_ptrace_dlf    !takes a partial trace of a tensor block
 
@@ -2755,34 +2748,44 @@
 	   endif
 #endif
 	  case('c8')
-!	   call tensor_block_pcontract_dlf(lld,lrd,lcd,ltp%data_cmplx8,rtp%data_cmplx8,dtp%data_cmplx8,ierr) !`Enable
-!          if(ierr.ne.0) then; ierr=20; goto 999; endif
+#ifdef NO_BLAS
+	   call tensor_block_pcontract_dlf(lld,lrd,lcd,ltp%data_cmplx8,rtp%data_cmplx8,dtp%data_cmplx8,ierr)
+	   if(ierr.ne.0) then; ierr=20; goto 999; endif
+#else
+	   if(.not.disable_blas) then
+	    call zgemm('T','N',int(lld,4),int(lrd,4),int(lcd,4),1d0,ltp%data_cmplx8,int(lcd,4),rtp%data_cmplx8,int(lcd,4),1d0, &
+	               dtp%data_cmplx8,int(lld,4))
+	   else
+	    call tensor_block_pcontract_dlf(lld,lrd,lcd,ltp%data_cmplx8,rtp%data_cmplx8,dtp%data_cmplx8,ierr)
+	    if(ierr.ne.0) then; ierr=21; goto 999; endif
+	   endif
+#endif
 	  end select
 	 case(full_contraction) !destination is a scalar variable
 	  select case(dtk)
 	  case('r4')
 	   d_r4=0.0
 	   call tensor_block_fcontract_dlf(lcd,ltp%data_real4,rtp%data_real4,d_r4,ierr)
-	   if(ierr.ne.0) then; ierr=21; goto 999; endif
+	   if(ierr.ne.0) then; ierr=22; goto 999; endif
 	   dtp%scalar_value=dtp%scalar_value+cmplx(d_r4,0d0,8)
 	  case('r8')
 	   d_r8=0d0
 	   call tensor_block_fcontract_dlf(lcd,ltp%data_real8,rtp%data_real8,d_r8,ierr)
-	   if(ierr.ne.0) then; ierr=22; goto 999; endif
+	   if(ierr.ne.0) then; ierr=23; goto 999; endif
 	   dtp%scalar_value=dtp%scalar_value+cmplx(d_r8,0d0,8)
 	  case('c8')
 	   d_c8=cmplx(0d0,0d0,8)
 	   call tensor_block_fcontract_dlf(lcd,ltp%data_cmplx8,rtp%data_cmplx8,d_c8,ierr)
-           if(ierr.ne.0) then; ierr=23; goto 999; endif
+           if(ierr.ne.0) then; ierr=24; goto 999; endif
 	   dtp%scalar_value=dtp%scalar_value+d_c8
 	  end select
 	 case(add_tensor)
 	  if(ltb.ne.scalar_tensor.and.rtb.eq.scalar_tensor) then
-	   call tensor_block_add(dtp,ltp,ierr,rtp%scalar_value,dtk); if(ierr.ne.0) then; ierr=24; goto 999; endif
+	   call tensor_block_add(dtp,ltp,ierr,rtp%scalar_value,dtk); if(ierr.ne.0) then; ierr=25; goto 999; endif
 	  elseif(ltb.eq.scalar_tensor.and.rtb.ne.scalar_tensor) then
-	   call tensor_block_add(dtp,rtp,ierr,ltp%scalar_value,dtk); if(ierr.ne.0) then; ierr=25; goto 999; endif
+	   call tensor_block_add(dtp,rtp,ierr,ltp%scalar_value,dtk); if(ierr.ne.0) then; ierr=26; goto 999; endif
 	  else
-	   ierr=26; goto 999
+	   ierr=27; goto 999
 	  endif
 	 case(multiply_scalars)
 	  dtp%scalar_value=dtp%scalar_value+ltp%scalar_value*rtp%scalar_value
@@ -2791,10 +2794,10 @@
  !Transpose the matrix-result into the output tensor:
 	 if(dtransp) then
 !	  write(cons_out,'("DEBUG(tensor_algebra::tensor_block_contract): permutation to be performed for ",i2)') 0 !debug
-	  call tensor_block_copy(dtp,dtens,ierr,do2n); if(ierr.ne.0) then; ierr=27; goto 999; endif
+	  call tensor_block_copy(dtp,dtens,ierr,do2n); if(ierr.ne.0) then; ierr=28; goto 999; endif
 	 endif
 	 if(data_kind_sync) then
-	  call tensor_block_sync(dtens,dtk,ierr); if(ierr.ne.0) then; ierr=28; goto 999; endif
+	  call tensor_block_sync(dtens,dtk,ierr); if(ierr.ne.0) then; ierr=29; goto 999; endif
 	 endif
  !Destroy temporary tensor blocks:
 999	 nullify(ltp); nullify(rtp); nullify(dtp)
@@ -2810,7 +2813,7 @@
 	 case(multiply_scalars)
 	 end select
 	else
-	 ierr=29
+	 ierr=30
 	endif
 !	write(cons_out,'("DEBUG(tensor_algebra::tensor_block_contract): exit error code: ",i5)') ierr !debug
 	return
@@ -5390,7 +5393,7 @@
 !The result is a matrix as well (cannot be a scalar, see tensor_block_fcontract).
 	implicit none
 !---------------------------------------
-	integer, parameter:: real_kind=4             !real data kind
+	integer, parameter:: real_kind=4                   !real data kind
 	integer(LONGINT), parameter:: red_mat_size=32      !the size of the local reduction matrix
 	integer(LONGINT), parameter:: arg_cache_size=2**15 !cache-size dependent parameter (increase it as there are more cores per node)
 	integer, parameter:: min_distr_seg_size=128  !min segment size of an omp distributed dimension
@@ -5410,12 +5413,12 @@
 	real(real_kind), intent(inout):: dtens(0:*) !output argument
 	integer, intent(inout):: ierr !error code
 	integer i,j,k,l,m,n,nthr
-	integer(LONGINT) l0,l1,l2,ll,lr,ld,ls,lf,b0,b1,b2,e0,e1,e2,cl,cr,cc,chunk
-	real(real_kind) val,redm(0:red_mat_size-1,0:red_mat_size-1) !`thread private (redm)?
+	integer(LONGINT) ll,lr,ld,l0,l1,l2,b0,b1,b2,e0r,e0,e1,e2,ls,lf,cl,cr,cc,chunk
+	real(real_kind) vec(0:7),redm(0:red_mat_size-1,0:red_mat_size-1),val !`thread private (redm)?
 	real(8) time_beg
 
 	ierr=0
-!	time_beg=thread_wtime() !debug
+	time_beg=thread_wtime() !debug
 	if(dl.gt.0_LONGINT.and.dr.gt.0_LONGINT.and.dc.gt.0_LONGINT) then
 #ifndef NO_OMP
 	 nthr=omp_get_max_threads()
@@ -5432,21 +5435,38 @@
 	   cl=min(dl,min(max(arg_cache_size/cc,1_LONGINT),max(arg_cache_size/cr,1_LONGINT)))
 !	   write(cons_out,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_r4): cl,cr,cc,dl,dr,dc:",6(1x,i9))') &
 !           cl,cr,cc,dl,dr,dc !debug
-!$OMP PARALLEL DEFAULT(SHARED) PRIVATE(b0,b1,b2,e0,e1,e2,l0,l1,l2,ll,lr,ld,val)
+!$OMP PARALLEL DEFAULT(SHARED) PRIVATE(b0,b1,b2,e0r,e0,e1,e2,l0,l1,l2,ll,lr,ld,vec)
 	   do b0=0_LONGINT,dc-1_LONGINT,cc
 	    e0=min(b0+cc-1_LONGINT,dc-1_LONGINT)
+	    e0r=mod(e0-b0+1_LONGINT,8_LONGINT)
 	    do b1=0_LONGINT,dl-1_LONGINT,cl
 	     e1=min(b1+cl-1_LONGINT,dl-1_LONGINT)
 	     do b2=0_LONGINT,dr-1_LONGINT,cr
 	      e2=min(b2+cr-1_LONGINT,dr-1_LONGINT)
 !$OMP DO SCHEDULE(GUIDED)
 	      do l2=b2,e2
-	       lr=l2*dc; ld=l2*dl
+	       ld=l2*dl
 	       do l1=b1,e1
-	        ll=l1*dc
-	        val=dtens(ld+l1)
-	        do l0=b0,e0; val=val+ltens(ll+l0)*rtens(lr+l0); enddo
-	        dtens(ld+l1)=val
+	        ll=l1*dc+b0; lr=l2*dc+b0; vec(:)=0E0_real_kind
+	        do l0=b0,e0-e0r,8_LONGINT
+	         vec(0)=vec(0)+ltens(ll)*rtens(lr)
+	         vec(1)=vec(1)+ltens(ll+1_LONGINT)*rtens(lr+1_LONGINT)
+	         vec(2)=vec(2)+ltens(ll+2_LONGINT)*rtens(lr+2_LONGINT)
+	         vec(3)=vec(3)+ltens(ll+3_LONGINT)*rtens(lr+3_LONGINT)
+	         vec(4)=vec(4)+ltens(ll+4_LONGINT)*rtens(lr+4_LONGINT)
+	         vec(5)=vec(5)+ltens(ll+5_LONGINT)*rtens(lr+5_LONGINT)
+	         vec(6)=vec(6)+ltens(ll+6_LONGINT)*rtens(lr+6_LONGINT)
+	         vec(7)=vec(7)+ltens(ll+7_LONGINT)*rtens(lr+7_LONGINT)
+	         ll=ll+8_LONGINT; lr=lr+8_LONGINT
+	        enddo
+	        do l0=0_LONGINT,e0r-1_LONGINT
+	         vec(l0)=vec(l0)+ltens(ll+l0)*rtens(lr+l0)
+	        enddo
+	        vec(0)=vec(0)+vec(4)
+	        vec(1)=vec(1)+vec(5)
+	        vec(2)=vec(2)+vec(6)
+	        vec(3)=vec(3)+vec(7)
+	        dtens(ld+l1)=dtens(ld+l1)+vec(0)+vec(1)+vec(2)+vec(3)
 	       enddo
 	      enddo
 !$OMP END DO NOWAIT
@@ -5521,15 +5541,32 @@
 	   case(0)
 !SCHEME 0:
 !            write(cons_out,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_r4): dl,dr,dc:",3(1x,i9))') dl,dr,dc !debug
-!$OMP PARALLEL DEFAULT(SHARED) PRIVATE(l0,l1,l2,ll,lr,ld,val)
+!$OMP PARALLEL DEFAULT(SHARED) PRIVATE(l0,l1,l2,b2,ll,lr,ld,e0r,vec)
+            e0r=mod(dc,8_LONGINT)
 	    do l2=0_LONGINT,dr-1_LONGINT
-	     lr=l2*dc; ld=l2*dl
+	     b2=l2*dc; ld=l2*dl
 !$OMP DO SCHEDULE(GUIDED)
 	     do l1=0_LONGINT,dl-1_LONGINT
-	      ll=l1*dc
-	      val=dtens(ld+l1)
-	      do l0=0_LONGINT,dc-1_LONGINT; val=val+ltens(ll+l0)*rtens(lr+l0); enddo
-	      dtens(ld+l1)=val
+	      ll=l1*dc; lr=b2; vec(:)=0E0_real_kind
+	      do l0=0_LONGINT,dc-1_LONGINT-e0r,8_LONGINT
+	       vec(0)=vec(0)+ltens(ll)*rtens(lr)
+	       vec(1)=vec(1)+ltens(ll+1_LONGINT)*rtens(lr+1_LONGINT)
+	       vec(2)=vec(2)+ltens(ll+2_LONGINT)*rtens(lr+2_LONGINT)
+	       vec(3)=vec(3)+ltens(ll+3_LONGINT)*rtens(lr+3_LONGINT)
+	       vec(4)=vec(4)+ltens(ll+4_LONGINT)*rtens(lr+4_LONGINT)
+	       vec(5)=vec(5)+ltens(ll+5_LONGINT)*rtens(lr+5_LONGINT)
+	       vec(6)=vec(6)+ltens(ll+6_LONGINT)*rtens(lr+6_LONGINT)
+	       vec(7)=vec(7)+ltens(ll+7_LONGINT)*rtens(lr+7_LONGINT)
+	       ll=ll+8_LONGINT; lr=lr+8_LONGINT
+	      enddo
+	      do l0=0_LONGINT,e0r-1_LONGINT
+	       vec(l0)=vec(l0)+ltens(ll+l0)*rtens(lr+l0)
+	      enddo
+	      vec(0)=vec(0)+vec(4)
+	      vec(1)=vec(1)+vec(5)
+	      vec(2)=vec(2)+vec(6)
+	      vec(3)=vec(3)+vec(7)
+	      dtens(ld+l1)=dtens(ld+l1)+vec(0)+vec(1)+vec(2)+vec(3)
 	     enddo
 !$OMP END DO NOWAIT
 	    enddo
@@ -5556,7 +5593,7 @@
 	    case(0)
 !SCHEME 0:
 !             write(cons_out,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_r4): dl,dr,dc:",3(1x,i9))') dl,dr,dc !debug
-             redm(:,:)=0.0
+             redm(:,:)=0E0_real_kind
              do b2=0_LONGINT,dr-1_LONGINT,red_mat_size
               e2=min(red_mat_size-1_LONGINT,dr-1_LONGINT-b2)
               do b1=0_LONGINT,dl-1_LONGINT,red_mat_size
@@ -5567,7 +5604,7 @@
 	        do l1=0_LONGINT,e1
 	         ll=(b1+l1)*dc
 !$OMP MASTER
-	         val=0.0
+	         val=0E0_real_kind
 !$OMP END MASTER
 !$OMP BARRIER
 !$OMP DO SCHEDULE(GUIDED) REDUCTION(+:val)
@@ -5623,8 +5660,8 @@
 	else
 	 ierr=4
 	endif
-!	write(cons_out,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_r4): kernel time/error code: ",F10.4,1x,i3)') &
-!        thread_wtime(time_beg),ierr !debug
+	write(cons_out,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_r4): kernel time/error code: ",F10.4,1x,i3)') &
+         thread_wtime(time_beg),ierr !debug
 	return
 	end subroutine tensor_block_pcontract_dlf_r4
 !--------------------------------------------------------------------------------
@@ -5688,7 +5725,7 @@
 	      do l2=b2,e2
 	       ld=l2*dl
 	       do l1=b1,e1
-	        ll=l1*dc+b0; lr=l2*dc+b0; vec(:)=0d0
+	        ll=l1*dc+b0; lr=l2*dc+b0; vec(:)=0E0_real_kind
 	        do l0=b0,e0-e0r,8_LONGINT
 	         vec(0)=vec(0)+ltens(ll)*rtens(lr)
 	         vec(1)=vec(1)+ltens(ll+1_LONGINT)*rtens(lr+1_LONGINT)
@@ -5703,11 +5740,11 @@
 	        do l0=0_LONGINT,e0r-1_LONGINT
 	         vec(l0)=vec(l0)+ltens(ll+l0)*rtens(lr+l0)
 	        enddo
-	        vec(0)=vec(0)+vec(1)
-	        vec(2)=vec(2)+vec(3)
-	        vec(4)=vec(4)+vec(5)
-	        vec(6)=vec(6)+vec(7)
-	        dtens(ld+l1)=dtens(ld+l1)+vec(0)+vec(2)+vec(4)+vec(6)
+	        vec(0)=vec(0)+vec(4)
+	        vec(1)=vec(1)+vec(5)
+	        vec(2)=vec(2)+vec(6)
+	        vec(3)=vec(3)+vec(7)
+	        dtens(ld+l1)=dtens(ld+l1)+vec(0)+vec(1)+vec(2)+vec(3)
 	       enddo
 	      enddo
 !$OMP END DO NOWAIT
@@ -5788,9 +5825,9 @@
 	     b2=l2*dc; ld=l2*dl
 !$OMP DO SCHEDULE(GUIDED)
 	     do l1=0_LONGINT,dl-1_LONGINT
-	      ll=l1*dc; lr=b2; vec(:)=0d0
+	      ll=l1*dc; lr=b2; vec(:)=0E0_real_kind
 	      do l0=0_LONGINT,dc-1_LONGINT-e0r,8_LONGINT
-	       vec(0)=vec(0)+ltens(ll)*rtens(lr+l0)
+	       vec(0)=vec(0)+ltens(ll)*rtens(lr)
 	       vec(1)=vec(1)+ltens(ll+1_LONGINT)*rtens(lr+1_LONGINT)
 	       vec(2)=vec(2)+ltens(ll+2_LONGINT)*rtens(lr+2_LONGINT)
 	       vec(3)=vec(3)+ltens(ll+3_LONGINT)*rtens(lr+3_LONGINT)
@@ -5803,11 +5840,11 @@
 	      do l0=0_LONGINT,e0r-1_LONGINT
 	       vec(l0)=vec(l0)+ltens(ll+l0)*rtens(lr+l0)
 	      enddo
-	      vec(0)=vec(0)+vec(1)
-	      vec(2)=vec(2)+vec(3)
-	      vec(4)=vec(4)+vec(5)
-	      vec(6)=vec(6)+vec(7)
-	      dtens(ld+l1)=dtens(ld+l1)+vec(0)+vec(2)+vec(4)+vec(6)
+	      vec(0)=vec(0)+vec(4)
+	      vec(1)=vec(1)+vec(5)
+	      vec(2)=vec(2)+vec(6)
+	      vec(3)=vec(3)+vec(7)
+	      dtens(ld+l1)=dtens(ld+l1)+vec(0)+vec(1)+vec(2)+vec(3)
 	     enddo
 !$OMP END DO NOWAIT
 	    enddo
@@ -5834,7 +5871,7 @@
 	    case(0)
 !SCHEME 0:
 !             write(cons_out,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_r8): dl,dr,dc:",3(1x,i9))') dl,dr,dc !debug
-             redm(:,:)=0d0
+             redm(:,:)=0E0_real_kind
              do b2=0_LONGINT,dr-1_LONGINT,red_mat_size
               e2=min(red_mat_size-1_LONGINT,dr-1_LONGINT-b2)
               do b1=0_LONGINT,dl-1_LONGINT,red_mat_size
@@ -5845,7 +5882,7 @@
 	        do l1=0_LONGINT,e1
 	         ll=(b1+l1)*dc
 !$OMP MASTER
-	         val=0d0
+	         val=0E0_real_kind
 !$OMP END MASTER
 !$OMP BARRIER
 !$OMP DO SCHEDULE(GUIDED) REDUCTION(+:val)
@@ -5905,133 +5942,284 @@
          thread_wtime(time_beg),ierr !debug
 	return
 	end subroutine tensor_block_pcontract_dlf_r8
-!----------------------------------------------------------------------------
-	subroutine matrix_multiply_tn_dlf_r8(dl,dr,dc,ltens,rtens,dtens,ierr) !PARALLEL
+!--------------------------------------------------------------------------------
+	subroutine tensor_block_pcontract_dlf_c8(dl,dr,dc,ltens,rtens,dtens,ierr) !PARALLEL
 !This subroutine multiplies two matrices derived from the corresponding tensors by index permutations:
 !dtens(0:dl-1,0:dr-1)+=ltens(0:dc-1,0:dl-1)*rtens(0:dc-1,0:dr-1)
+!The result is a matrix as well (cannot be a scalar, see tensor_block_fcontract).
 	implicit none
 !---------------------------------------
-	integer, parameter:: real_kind=8                                      !real data kind (bytes per word)
-	integer, parameter:: cache_line_len=64/real_kind                      !cache line length in words
-	integer, parameter:: min_cache_lines_dest=2                           !minimal number of destination cache lines per thread
-	integer, parameter:: min_cache_lines_contr=8                          !minimal number of contracted cache lines per thread
-	integer, parameter:: buf_cache_lines=512                              !number of cache lines in the buffer
-	integer, parameter:: num_cache_levels=3                               !number of cache levels (L1,L2,...)
-	integer, parameter:: cache_size(1:num_cache_levels)=(/16,256,8192/)   !cache size in KBytes on each level
-	real(8), parameter:: cache_part=0.9d0                                 !cache part to utilize
-!--------------------------------------------
+	integer, parameter:: real_kind=8                   !real data kind
+	integer(LONGINT), parameter:: red_mat_size=32      !the size of the local reduction matrix
+	integer(LONGINT), parameter:: arg_cache_size=2**15 !cache-size dependent parameter (increase it as there are more cores per node)
+	integer, parameter:: min_distr_seg_size=128  !min segment size of an omp distributed dimension
+	integer, parameter:: cdim_stretch=2          !makes the segmentation of the contracted dimension coarser
+	integer, parameter:: core_slope=16           !regulates the slope of the segment size of the distributed dimension w.r.t. the number of cores
+	integer, parameter:: ker1=0                  !kernel 1 scheme #
+	integer, parameter:: ker2=0                  !kernel 2 scheme #
+	integer, parameter:: ker3=0                  !kernel 3 scheme #
+!----------------------------------
+	logical, parameter:: no_case1=.false.
+	logical, parameter:: no_case2=.false.
+	logical, parameter:: no_case3=.false.
+	logical, parameter:: no_case4=.false.
+!----------------------------------------------
 	integer(LONGINT), intent(in):: dl,dr,dc !matrix dimensions
-	real(real_kind), intent(in):: ltens(0:*),rtens(0:*) !input arguments
-	real(real_kind), intent(inout):: dtens(0:*) !output argument
+	complex(real_kind), intent(in):: ltens(0:*),rtens(0:*) !input arguments
+	complex(real_kind), intent(inout):: dtens(0:*) !output argument
 	integer, intent(inout):: ierr !error code
-	integer i,j,k,l,m,n
-	integer(LONGINT):: lp,rp,l0,r0,c0,l1,r1,c1,l1u,r1u,c1u,l2,r2,c2,l2u,r2u,c2u,l3,r3,c3,l3u,r3u,c3u,c1e
-	integer(LONGINT):: nflops,s1l,s1r,s1c,s2l,s2r,s2c,s3
-	real(real_kind):: vec(0:7),dbuf(cache_line_len*buf_cache_lines)
-	real(8) time_beg,tm
+	integer i,j,k,l,m,n,nthr
+	integer(LONGINT) ll,lr,ld,l0,l1,l2,b0,b1,b2,e0r,e0,e1,e2,ls,lf,cl,cr,cc,chunk
+	complex(real_kind) vec(0:7),redm(0:red_mat_size-1,0:red_mat_size-1),val !`thread private (redm)?
+	real(8) time_beg
 
-        ierr=0
-        time_beg=thread_wtime()
-        nflops=dr*dl*dc !total number of floating point operations to perform
-        if(dl.gt.0_LONGINT.and.dr.gt.0_LONGINT.and.dc.gt.0_LONGINT) then
-!Determine blocking granularity:
+	ierr=0
+	time_beg=thread_wtime() !debug
+	if(dl.gt.0_LONGINT.and.dr.gt.0_LONGINT.and.dc.gt.0_LONGINT) then
 #ifndef NO_OMP
-         m=omp_get_max_threads()
+	 nthr=omp_get_max_threads()
 #else
-         m=1
+	 nthr=1
 #endif
-         s3=int(dsqrt(dble(cache_size(3)*1024/real_kind)*cache_part*0.3d0),LONGINT) !L3 segment size (uniform for simplicity)
-         s1l=min(int(cache_line_len*min_cache_lines_dest,LONGINT),dl)
-         s1c=min(int(cache_line_len*min_cache_lines_contr,LONGINT),dc)
-         s1r=min(max((int(dble(cache_size(1)*1024/real_kind)*cache_part,LONGINT)-s1l*s1c)/(s1l+s1c),1_LONGINT),dr)
-         c2=int(dsqrt(dble(cache_size(2)*1024/real_kind)*cache_part*0.3d0),LONGINT)
-         if(c2.gt.dr.and.c2.gt.dl) then
-          s2r=dr; s2l=dl
-         elseif(c2.gt.dr.and.c2.le.dl) then
-          s2r=dr; s2l=min(c2*(c2/dr),dl)
-         elseif(c2.le.dr.and.c2.gt.dl) then
-          s2l=dl; s2r=min(c2*(c2/dl),dr)
-         else
-          s2r=c2; s2l=c2
-         endif
-         s2r=max(s2r-mod(s2r,cache_line_len),s1r); s2l=max(s2l-mod(s2l,cache_line_len),s1l)
-         s2c=(int(dble(cache_size(2)*1024/real_kind)*cache_part,LONGINT)-s2r*s2l)/(s2r+s2l)
-         s2c=min(max(s2c-mod(s2c,cache_line_len),s1c),dc)
-         s3=max(s3-mod(s3,cache_line_len),max(s2r,max(s2l,s2c)))
-         write(cons_out,'("DEBUG(tensor_algebra::matrix_multiply_tn_dlf_r8): segments:",7(1x,i5))') &
-          s1l,s1r,s1c,s2l,s2r,s2c,s3 !debug
-!Execute matrix multiplication:
-         if(min(s3,dl)*min(s3,dr).ge.s2l*s2r*m) then !destination matrix is big enough for m threads: Algorithm 1
-!$OMP PARALLEL DEFAULT(SHARED) PRIVATE(vec,lp,rp,l0,r0,c0,l1,r1,c1,l1u,r1u,c1u,l2,r2,c2,l2u,r2u,c2u,l3,r3,c3,l3u,r3u,c3u,c1e)
-          do r3=0_LONGINT,dr-1_LONGINT,s3
-           r3u=min(r3+s3-1_LONGINT,dr-1_LONGINT)
-           do l3=0_LONGINT,dl-1_LONGINT,s3
-            l3u=min(l3+s3-1_LONGINT,dl-1_LONGINT)
-            do c3=0_LONGINT,dc-1_LONGINT,s3
-             c3u=min(c3+s3-1_LONGINT,dc-1_LONGINT)
- !Three blocks are in L3 at this point.
-!$OMP DO SCHEDULE(GUIDED) COLLAPSE(2)
-             do r2=r3,r3u,s2r
-              do l2=l3,l3u,s2l
-               r2u=min(r2+s2r-1_LONGINT,r3u)
-               l2u=min(l2+s2l-1_LONGINT,l3u)
-               do c2=c3,c3u,s2c
-                c2u=min(c2+s2c-1_LONGINT,c3u)
-  !Three blocks for each thread are in L2 at this point.
-                do r1=r2,r2u,s1r
-                 r1u=min(r1+s1r-1_LONGINT,r2u)
-                 do l1=l2,l2u,s1l
-                  l1u=min(l1+s1l-1_LONGINT,l2u)
-                  do c1=c2,c2u,s1c
-                   c1u=min(c1+s1c-1_LONGINT,c2u)
-                   c1e=mod(c1u-c1+1_LONGINT,8_LONGINT)
-   !Three blocks for each thread are in L1 at this point.
-                   do r0=r1,r1u
-                    do l0=l1,l1u
-                     lp=l0*dc+c1; rp=r0*dc+c1; vec(:)=0d0
-                     do c0=c1,c1u-c1e,8_LONGINT
-                      vec(0)=vec(0)+ltens(lp)*rtens(rp)
-                      vec(1)=vec(1)+ltens(lp+1_LONGINT)*rtens(rp+1_LONGINT)
-                      vec(2)=vec(2)+ltens(lp+2_LONGINT)*rtens(rp+2_LONGINT)
-                      vec(3)=vec(3)+ltens(lp+3_LONGINT)*rtens(rp+3_LONGINT)
-                      vec(4)=vec(4)+ltens(lp+4_LONGINT)*rtens(rp+4_LONGINT)
-                      vec(5)=vec(5)+ltens(lp+5_LONGINT)*rtens(rp+5_LONGINT)
-                      vec(6)=vec(6)+ltens(lp+6_LONGINT)*rtens(rp+6_LONGINT)
-                      vec(7)=vec(7)+ltens(lp+7_LONGINT)*rtens(rp+7_LONGINT)
-                      lp=lp+8_LONGINT; rp=rp+8_LONGINT
-                     enddo
-                     do c0=0_LONGINT,c1e-1_LONGINT
-                      vec(c0)=vec(c0)+ltens(lp+c0)*rtens(rp+c0)
-                     enddo
-                     vec(0)=vec(0)+vec(4)
-                     vec(1)=vec(1)+vec(5)
-                     vec(2)=vec(2)+vec(6)
-                     vec(3)=vec(3)+vec(7)
-                     dtens(r0*dl+l0)=dtens(r0*dl+l0)+vec(0)+vec(1)+vec(2)+vec(3)
-                    enddo
-                   enddo
-                  enddo
-                 enddo
-                enddo
-               enddo
-              enddo
-             enddo
+	 if(dr.ge.core_slope*nthr.and.(.not.no_case1)) then !the right dimension is large enough to be distributed
+!	  write(cons_out,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_c8): kernel case/scheme: 1/",i1)') ker1 !debug
+	  select case(ker1)
+	  case(0)
+!SCHEME 0:
+	   cr=min(dr,max(core_slope*nthr,min_distr_seg_size))
+	   cc=min(dc,max(arg_cache_size*cdim_stretch/cr,1_LONGINT))
+	   cl=min(dl,min(max(arg_cache_size/cc,1_LONGINT),max(arg_cache_size/cr,1_LONGINT)))
+!	   write(cons_out,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_c8): cl,cr,cc,dl,dr,dc:",6(1x,i9))') &
+!           cl,cr,cc,dl,dr,dc !debug
+!$OMP PARALLEL DEFAULT(SHARED) PRIVATE(b0,b1,b2,e0r,e0,e1,e2,l0,l1,l2,ll,lr,ld,vec)
+	   do b0=0_LONGINT,dc-1_LONGINT,cc
+	    e0=min(b0+cc-1_LONGINT,dc-1_LONGINT)
+	    e0r=mod(e0-b0+1_LONGINT,8_LONGINT)
+	    do b1=0_LONGINT,dl-1_LONGINT,cl
+	     e1=min(b1+cl-1_LONGINT,dl-1_LONGINT)
+	     do b2=0_LONGINT,dr-1_LONGINT,cr
+	      e2=min(b2+cr-1_LONGINT,dr-1_LONGINT)
+!$OMP DO SCHEDULE(GUIDED)
+	      do l2=b2,e2
+	       ld=l2*dl
+	       do l1=b1,e1
+	        ll=l1*dc+b0; lr=l2*dc+b0; vec(:)=cmplx(0E0_real_kind,0E0_real_kind,real_kind)
+	        do l0=b0,e0-e0r,8_LONGINT
+	         vec(0)=vec(0)+ltens(ll)*rtens(lr)
+	         vec(1)=vec(1)+ltens(ll+1_LONGINT)*rtens(lr+1_LONGINT)
+	         vec(2)=vec(2)+ltens(ll+2_LONGINT)*rtens(lr+2_LONGINT)
+	         vec(3)=vec(3)+ltens(ll+3_LONGINT)*rtens(lr+3_LONGINT)
+	         vec(4)=vec(4)+ltens(ll+4_LONGINT)*rtens(lr+4_LONGINT)
+	         vec(5)=vec(5)+ltens(ll+5_LONGINT)*rtens(lr+5_LONGINT)
+	         vec(6)=vec(6)+ltens(ll+6_LONGINT)*rtens(lr+6_LONGINT)
+	         vec(7)=vec(7)+ltens(ll+7_LONGINT)*rtens(lr+7_LONGINT)
+	         ll=ll+8_LONGINT; lr=lr+8_LONGINT
+	        enddo
+	        do l0=0_LONGINT,e0r-1_LONGINT
+	         vec(l0)=vec(l0)+ltens(ll+l0)*rtens(lr+l0)
+	        enddo
+	        vec(0)=vec(0)+vec(4)
+	        vec(1)=vec(1)+vec(5)
+	        vec(2)=vec(2)+vec(6)
+	        vec(3)=vec(3)+vec(7)
+	        dtens(ld+l1)=dtens(ld+l1)+vec(0)+vec(1)+vec(2)+vec(3)
+	       enddo
+	      enddo
 !$OMP END DO NOWAIT
-            enddo !c3
-           enddo !l3
-          enddo !r3
+	     enddo
+	    enddo
+!$OMP BARRIER
+	   enddo
 !$OMP END PARALLEL
-         else !destination matrix is small: Algorithm 2
-          !`Write
-         endif
-        else !invalid matrix dimension extents
-         ierr=1
-        endif
-        tm=thread_wtime(time_beg)
-	write(cons_out,'("DEBUG(tensor_algebra::matrix_multiply_tn_dlf_r8): time/GFlops/status:",2(1x,F10.4),1x,i3)') &
-         tm,dble(nflops)/(tm*dble(1024*1024*1024)),ierr !debug
+	  case(1)
+!SCHEME 1:
+	   chunk=max(arg_cache_size/dc,1_LONGINT)
+!           write(cons_out,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_c8): chunk,dl,dr,dc:",4(1x,i9))') chunk,dl,dr,dc !debug
+!$OMP PARALLEL DEFAULT(SHARED) PRIVATE(l0,l1,l2,ll,lr,ld,ls,lf,val)
+	   do ls=0_LONGINT,dl-1_LONGINT,chunk
+	    lf=min(ls+chunk-1_LONGINT,dl-1_LONGINT)
+!!$OMP DO SCHEDULE(DYNAMIC,chunk)
+!$OMP DO SCHEDULE(GUIDED)
+	    do l2=0_LONGINT,dr-1_LONGINT
+	     lr=l2*dc; ld=l2*dl
+	     do l1=ls,lf
+	      ll=l1*dc
+	      val=dtens(ld+l1)
+	      do l0=0_LONGINT,dc-1_LONGINT; val=val+ltens(ll+l0)*rtens(lr+l0); enddo
+	      dtens(ld+l1)=val
+	     enddo
+	    enddo
+!$OMP END DO NOWAIT
+	   enddo
+!$OMP END PARALLEL
+	  case(2)
+!SCHEME 2:
+	   chunk=max(arg_cache_size/dc,1_LONGINT)
+	   if(mod(dl,chunk).ne.0) then; ls=dl/chunk+1_LONGINT; else; ls=dl/chunk; endif
+	   if(mod(dr,chunk).ne.0) then; lf=dr/chunk+1_LONGINT; else; lf=dr/chunk; endif
+!	   write(cons_out,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_c8): chunk,ls,lf,dl,dr,dc:",6(1x,i9))') &
+!           chunk,ls,lf,dl,dr,dc !debug
+!$OMP PARALLEL DO DEFAULT(SHARED) PRIVATE(b0,b1,b2,l0,l1,l2,ll,lr,ld,val) SCHEDULE(GUIDED)
+	   do b0=0_LONGINT,lf*ls-1_LONGINT
+	    b2=b0/ls*chunk; b1=mod(b0,ls)*chunk
+	    do l2=b2,min(b2+chunk-1_LONGINT,dr-1_LONGINT)
+	     lr=l2*dc; ld=l2*dl
+	     do l1=b1,min(b1+chunk-1_LONGINT,dl-1_LONGINT)
+	      ll=l1*dc
+	      val=dtens(ld+l1)
+	      do l0=0_LONGINT,dc-1_LONGINT; val=val+ltens(ll+l0)*rtens(lr+l0); enddo
+	      dtens(ld+l1)=val
+	     enddo
+	    enddo
+	   enddo
+!$OMP END PARALLEL DO
+	  case(3)
+!SCHEME 3:
+!	   write(cons_out,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_c8): dl,dr,dc:",3(1x,i9))') dl,dr,dc !debug
+!$OMP PARALLEL DO DEFAULT(SHARED) PRIVATE(l0,l1,l2,ll,lr,ld,val) SCHEDULE(DYNAMIC)
+	   do l2=0_LONGINT,dr-1_LONGINT
+	    lr=l2*dc; ld=l2*dl
+	    do l1=0_LONGINT,dl-1_LONGINT
+	     ll=l1*dc
+	     val=dtens(ld+l1)
+	     do l0=0_LONGINT,dc-1_LONGINT; val=val+ltens(ll+l0)*rtens(lr+l0); enddo
+	     dtens(ld+l1)=val
+	    enddo
+	   enddo
+!$OMP END PARALLEL DO
+	  case default
+	   ierr=1
+	  end select
+	 else !dr is small
+	  if(dl.ge.core_slope*nthr.and.(.not.no_case2)) then !the left dimension is large enough to be distributed
+!	   write(cons_out,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_c8): kernel case/scheme: 2/",i1)') ker2 !debug
+	   select case(ker2)
+	   case(0)
+!SCHEME 0:
+!            write(cons_out,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_c8): dl,dr,dc:",3(1x,i9))') dl,dr,dc !debug
+!$OMP PARALLEL DEFAULT(SHARED) PRIVATE(l0,l1,l2,b2,ll,lr,ld,e0r,vec)
+            e0r=mod(dc,8_LONGINT)
+	    do l2=0_LONGINT,dr-1_LONGINT
+	     b2=l2*dc; ld=l2*dl
+!$OMP DO SCHEDULE(GUIDED)
+	     do l1=0_LONGINT,dl-1_LONGINT
+	      ll=l1*dc; lr=b2; vec(:)=cmplx(0E0_real_kind,0E0_real_kind,real_kind)
+	      do l0=0_LONGINT,dc-1_LONGINT-e0r,8_LONGINT
+	       vec(0)=vec(0)+ltens(ll)*rtens(lr)
+	       vec(1)=vec(1)+ltens(ll+1_LONGINT)*rtens(lr+1_LONGINT)
+	       vec(2)=vec(2)+ltens(ll+2_LONGINT)*rtens(lr+2_LONGINT)
+	       vec(3)=vec(3)+ltens(ll+3_LONGINT)*rtens(lr+3_LONGINT)
+	       vec(4)=vec(4)+ltens(ll+4_LONGINT)*rtens(lr+4_LONGINT)
+	       vec(5)=vec(5)+ltens(ll+5_LONGINT)*rtens(lr+5_LONGINT)
+	       vec(6)=vec(6)+ltens(ll+6_LONGINT)*rtens(lr+6_LONGINT)
+	       vec(7)=vec(7)+ltens(ll+7_LONGINT)*rtens(lr+7_LONGINT)
+	       ll=ll+8_LONGINT; lr=lr+8_LONGINT
+	      enddo
+	      do l0=0_LONGINT,e0r-1_LONGINT
+	       vec(l0)=vec(l0)+ltens(ll+l0)*rtens(lr+l0)
+	      enddo
+	      vec(0)=vec(0)+vec(4)
+	      vec(1)=vec(1)+vec(5)
+	      vec(2)=vec(2)+vec(6)
+	      vec(3)=vec(3)+vec(7)
+	      dtens(ld+l1)=dtens(ld+l1)+vec(0)+vec(1)+vec(2)+vec(3)
+	     enddo
+!$OMP END DO NOWAIT
+	    enddo
+!$OMP END PARALLEL
+	   case(1)
+!SCHEME 1:
+!$OMP PARALLEL DO DEFAULT(SHARED) PRIVATE(l0,l1,l2,ll,lr,val) SCHEDULE(GUIDED) COLLAPSE(2)
+	    do l2=0_LONGINT,dr-1_LONGINT
+	     do l1=0_LONGINT,dl-1_LONGINT
+	      ll=l1*dc; lr=l2*dc
+	      val=dtens(l2*dl+l1)
+	      do l0=0_LONGINT,dc-1_LONGINT; val=val+ltens(ll+l0)*rtens(lr+l0); enddo
+	      dtens(l2*dl+l1)=val
+	     enddo
+	    enddo
+!$OMP END PARALLEL DO
+	   case default
+	    ierr=2
+	   end select
+	  else !dr & dl are both small
+	   if(dc.ge.core_slope*nthr.and.(.not.no_case3)) then !the contraction dimension is large enough to be distributed
+!	    write(cons_out,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_c8): kernel case/scheme: 3/",i1)') ker3 !debug
+	    select case(ker3)
+	    case(0)
+!SCHEME 0:
+!             write(cons_out,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_c8): dl,dr,dc:",3(1x,i9))') dl,dr,dc !debug
+             redm(:,:)=cmplx(0E0_real_kind,0E0_real_kind,real_kind)
+             do b2=0_LONGINT,dr-1_LONGINT,red_mat_size
+              e2=min(red_mat_size-1_LONGINT,dr-1_LONGINT-b2)
+              do b1=0_LONGINT,dl-1_LONGINT,red_mat_size
+               e1=min(red_mat_size-1_LONGINT,dl-1_LONGINT-b1)
+!$OMP PARALLEL DEFAULT(SHARED) PRIVATE(l0,l1,l2,ll,lr)
+	       do l2=0_LONGINT,e2
+	        lr=(b2+l2)*dc
+	        do l1=0_LONGINT,e1
+	         ll=(b1+l1)*dc
+!$OMP MASTER
+	         val=cmplx(0E0_real_kind,0E0_real_kind,real_kind)
+!$OMP END MASTER
+!$OMP BARRIER
+!$OMP DO SCHEDULE(GUIDED) REDUCTION(+:val)
+	         do l0=0_LONGINT,dc-1_LONGINT; val=val+ltens(ll+l0)*rtens(lr+l0); enddo
+!$OMP END DO
+!$OMP MASTER
+		 redm(l1,l2)=val
+!$OMP END MASTER
+	        enddo
+	       enddo
+!$OMP END PARALLEL
+	       do l2=0_LONGINT,e2
+	        ld=(b2+l2)*dl
+	        do l1=0_LONGINT,e1
+	         dtens(ld+b1+l1)=dtens(ld+b1+l1)+redm(l1,l2)
+	        enddo
+	       enddo
+	      enddo
+	     enddo
+	    case default
+	     ierr=3
+	    end select
+	   else !dr & dl & dc are all small
+	    if(dr*dl.ge.core_slope*nthr.and.(.not.no_case4)) then !the destination matrix is large enough to be distributed
+!	     write(cons_out,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_c8): kernel case: 4")') !debug
+!	     write(cons_out,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_c8): dl,dr,dc:",3(1x,i9))') dl,dr,dc !debug
+!$OMP PARALLEL DO DEFAULT(SHARED) PRIVATE(l0,l1,l2,ll,lr,val) SCHEDULE(GUIDED) COLLAPSE(2)
+	     do l2=0_LONGINT,dr-1_LONGINT
+	      do l1=0_LONGINT,dl-1_LONGINT
+	       ll=l1*dc; lr=l2*dc
+	       val=dtens(l2*dl+l1)
+	       do l0=0_LONGINT,dc-1_LONGINT; val=val+ltens(ll+l0)*rtens(lr+l0); enddo
+	       dtens(l2*dl+l1)=val
+	      enddo
+	     enddo
+!$OMP END PARALLEL DO
+	    else !all matrices are very small (serial execution)
+!	     write(cons_out,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_c8): kernel case: 5 (serial)")') !debug
+!	     write(cons_out,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_c8): dl,dr,dc:",3(1x,i9))') dl,dr,dc !debug
+	     do l2=0_LONGINT,dr-1_LONGINT
+	      lr=l2*dc; ld=l2*dl
+	      do l1=0_LONGINT,dl-1_LONGINT
+	       ll=l1*dc
+	       val=dtens(ld+l1)
+	       do l0=0_LONGINT,dc-1_LONGINT; val=val+ltens(ll+l0)*rtens(lr+l0); enddo
+	       dtens(ld+l1)=val
+	      enddo
+	     enddo
+	    endif
+	   endif
+	  endif
+	 endif
+	else
+	 ierr=4
+	endif
+	write(cons_out,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_c8): kernel time/error code: ",F10.4,1x,i3)') &
+         thread_wtime(time_beg),ierr !debug
 	return
-        end subroutine matrix_multiply_tn_dlf_r8
+	end subroutine tensor_block_pcontract_dlf_c8
 !------------------------------------------------------------------------------------------------------
 	subroutine tensor_block_ftrace_dlf_r4(contr_ptrn,ord_rest,tens_in,rank_in,dims_in,val_out,ierr) !PARALLEL
 !This subroutine takes a full trace in a tensor block and accumulates it into a scalar.
