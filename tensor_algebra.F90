@@ -1,6 +1,6 @@
 !Tensor Algebra for Multi-Core CPUs (OpenMP based).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2014/09/15
+!REVISION: 2014/09/16
 !GNU linking options: -lgomp -lblas -llapack
 !ACRONYMS:
 ! - mlndx - multiindex;
@@ -4386,7 +4386,7 @@
 	integer(LONGINT) bases_in(1:dim_num+1),bases_out(1:dim_num+1),bases_pri(1:dim_num+1),segs(0:max_threads) !`Is segs(:) threadsafe?
 	integer(LONGINT) bs,l0,l1,l2,l3,ll,lb,le,ls,l_in,l_out,seg_in,seg_out
 	logical trivial,in_out_dif
-	real(8) time_beg
+	real(8) time_beg,tm
 #ifndef NO_PHI
 !DIR$ ATTRIBUTES ALIGN:128:: im,n2o,ipr,dim_beg,dim_end,ac1,bases_in,bases_out,bases_pri,segs
 #endif
@@ -4603,8 +4603,9 @@
 	 endif
 !$OMP END PARALLEL
 	endif !trivial or not
-!	write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r4): kernel time/error code = ",F10.4,1x,i3)') &
-!         thread_wtime(time_beg),ierr !debug
+!       tm=thread_wtime(time_beg) !debug
+!	write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r4): time/speed/error = ",2(F10.4,1x),i3)') &
+!        tm,dble(bs*real_kind)/(tm*1024d0*1024d0*1024d0),ierr !debug
 	return
 	end subroutine tensor_block_copy_dlf_r4
 !------------------------------------------------------------------------------------------------
@@ -4644,7 +4645,7 @@
 	integer(LONGINT) bases_in(1:dim_num+1),bases_out(1:dim_num+1),bases_pri(1:dim_num+1),segs(0:max_threads) !`Is segs(:) threadsafe?
 	integer(LONGINT) bs,l0,l1,l2,l3,ll,lb,le,ls,l_in,l_out,seg_in,seg_out
 	logical trivial,in_out_dif
-	real(8) time_beg
+	real(8) time_beg,tm
 #ifndef NO_PHI
 !DIR$ ATTRIBUTES ALIGN:128:: im,n2o,ipr,dim_beg,dim_end,ac1,bases_in,bases_out,bases_pri,segs
 #endif
@@ -4861,8 +4862,9 @@
 	 endif
 !$OMP END PARALLEL
 	endif !trivial or not
-!	write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r8): kernel time/error code = ",F10.4,1x,i3)') &
-!         thread_wtime(time_beg),ierr !debug
+!       tm=thread_wtime(time_beg) !debug
+!	write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r8): time/speed/error = ",2(F10.4,1x),i3)') &
+!        tm,dble(bs*real_kind)/(tm*1024d0*1024d0*1024d0),ierr !debug
 	return
 	end subroutine tensor_block_copy_dlf_r8
 !------------------------------------------------------------------------------------------------
@@ -4902,7 +4904,7 @@
 	integer(LONGINT) bases_in(1:dim_num+1),bases_out(1:dim_num+1),bases_pri(1:dim_num+1),segs(0:max_threads) !`Is segs(:) threadsafe?
 	integer(LONGINT) bs,l0,l1,l2,l3,ll,lb,le,ls,l_in,l_out,seg_in,seg_out
 	logical trivial,in_out_dif
-	real(8) time_beg
+	real(8) time_beg,tm
 #ifndef NO_PHI
 !DIR$ ATTRIBUTES ALIGN:128:: im,n2o,ipr,dim_beg,dim_end,ac1,bases_in,bases_out,bases_pri,segs
 #endif
@@ -5121,8 +5123,9 @@
 	 endif
 !$OMP END PARALLEL
 	endif !trivial or not
-!	write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_c8): kernel time/error code = ",F10.4,1x,i3)') &
-!         thread_wtime(time_beg),ierr !debug
+!       tm=thread_wtime(time_beg) !debug
+!	write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_c8): time/speed/error = ",2(F10.4,1x),i3)') &
+!        tm,dble(bs*2*real_kind)/(tm*1024d0*1024d0*1024d0),ierr !debug
 	return
 	end subroutine tensor_block_copy_dlf_c8
 !--------------------------------------------------------------------------------------------------------
@@ -5284,7 +5287,7 @@
 	 ierr=1
 	endif
 !	write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_scatter_dlf_c8): kernel time/error code = ",F10.4,1x,i3)') &
-!         thread_wtime(time_beg),ierr !debug
+!        thread_wtime(time_beg),ierr !debug
 	return
 	end subroutine tensor_block_copy_scatter_dlf_c8
 !--------------------------------------------------------------------------
@@ -5302,7 +5305,7 @@
 	integer i,j,k,l,m,n
 	real(real_kind) val
 	integer(LONGINT) l0
-	real(8) time_beg
+	real(8) time_beg,tm
 
 	ierr=0
 !	time_beg=thread_wtime() !debug
@@ -5316,8 +5319,9 @@
 	else
 	 ierr=1
 	endif
-!	write(cons_out,'("DEBUG(tensor_algebra::tensor_block_fcontract_dlf_r4): kernel time/error code: ",F10.4,1x,i3)') &
-!        thread_wtime(time_beg),ierr !debug
+!       tm=thread_wtime(time_beg) !debug
+!	write(cons_out,'("DEBUG(tensor_algebra::tensor_block_fcontract_dlf_r4): time/speed/error = ",2(F10.4,1x),i3)') &
+!        tm,dble(dc)/(tm*1024d0*1024d0*1024d0),ierr !debug
 	return
 	end subroutine tensor_block_fcontract_dlf_r4
 !--------------------------------------------------------------------------
@@ -5335,7 +5339,7 @@
 	integer i,j,k,l,m,n
 	real(real_kind) val
 	integer(LONGINT) l0
-	real(8) time_beg
+	real(8) time_beg,tm
 
 	ierr=0
 !	time_beg=thread_wtime() !debug
@@ -5349,8 +5353,9 @@
 	else
 	 ierr=1
 	endif
-!	write(cons_out,'("DEBUG(tensor_algebra::tensor_block_fcontract_dlf_r8): kernel time/error code: ",F10.4,1x,i3)') &
-!        thread_wtime(time_beg),ierr !debug
+!       tm=thread_wtime(time_beg) !debug
+!	write(cons_out,'("DEBUG(tensor_algebra::tensor_block_fcontract_dlf_r8): time/speed/error = ",2(F10.4,1x),i3)') &
+!        tm,dble(dc)/(tm*1024d0*1024d0*1024d0),ierr !debug
 	return
 	end subroutine tensor_block_fcontract_dlf_r8
 !--------------------------------------------------------------------------
@@ -5368,7 +5373,7 @@
 	integer i,j,k,l,m,n
 	complex(real_kind) val
 	integer(LONGINT) l0
-	real(8) time_beg
+	real(8) time_beg,tm
 
 	ierr=0
 !	time_beg=thread_wtime() !debug
@@ -5382,8 +5387,9 @@
 	else
 	 ierr=1
 	endif
-!	write(cons_out,'("DEBUG(tensor_algebra::tensor_block_fcontract_dlf_c8): kernel time/error code: ",F10.4,1x,i3)') &
-!        thread_wtime(time_beg),ierr !debug
+!       tm=thread_wtime(time_beg) !debug
+!	write(cons_out,'("DEBUG(tensor_algebra::tensor_block_fcontract_dlf_c8): time/speed/error = ",2(F10.4,1x),i3)') &
+!        tm,dble(dc)/(tm*1024d0*1024d0*1024d0),ierr !debug
 	return
 	end subroutine tensor_block_fcontract_dlf_c8
 !--------------------------------------------------------------------------------
@@ -5415,7 +5421,7 @@
 	integer i,j,k,l,m,n,nthr
 	integer(LONGINT) ll,lr,ld,l0,l1,l2,b0,b1,b2,e0r,e0,e1,e2,ls,lf,cl,cr,cc,chunk
 	real(real_kind) vec(0:7),redm(0:red_mat_size-1,0:red_mat_size-1),val !`thread private (redm)?
-	real(8) time_beg
+	real(8) time_beg,tm
 
 	ierr=0
 	time_beg=thread_wtime() !debug
@@ -5660,8 +5666,9 @@
 	else
 	 ierr=4
 	endif
-	write(cons_out,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_r4): kernel time/error code: ",F10.4,1x,i3)') &
-         thread_wtime(time_beg),ierr !debug
+	tm=thread_wtime(time_beg) !debug
+	write(cons_out,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_r4): time/speed/error = ",2(F10.4,1x),i3)') &
+         tm,dble(dr*dl*dc)/(tm*1024d0*1024d0*1024d0),ierr !debug
 	return
 	end subroutine tensor_block_pcontract_dlf_r4
 !--------------------------------------------------------------------------------
@@ -5693,7 +5700,7 @@
 	integer i,j,k,l,m,n,nthr
 	integer(LONGINT) ll,lr,ld,l0,l1,l2,b0,b1,b2,e0r,e0,e1,e2,ls,lf,cl,cr,cc,chunk
 	real(real_kind) vec(0:7),redm(0:red_mat_size-1,0:red_mat_size-1),val !`thread private (redm)?
-	real(8) time_beg
+	real(8) time_beg,tm
 
 	ierr=0
 	time_beg=thread_wtime() !debug
@@ -5938,8 +5945,9 @@
 	else
 	 ierr=4
 	endif
-	write(cons_out,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_r8): kernel time/error code: ",F10.4,1x,i3)') &
-         thread_wtime(time_beg),ierr !debug
+	tm=thread_wtime(time_beg) !debug
+	write(cons_out,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_r8): time/speed/error = ",2(F10.4,1x),i3)') &
+         tm,dble(dr*dl*dc)/(tm*1024d0*1024d0*1024d0),ierr !debug
 	return
 	end subroutine tensor_block_pcontract_dlf_r8
 !--------------------------------------------------------------------------------
@@ -5971,7 +5979,7 @@
 	integer i,j,k,l,m,n,nthr
 	integer(LONGINT) ll,lr,ld,l0,l1,l2,b0,b1,b2,e0r,e0,e1,e2,ls,lf,cl,cr,cc,chunk
 	complex(real_kind) vec(0:7),redm(0:red_mat_size-1,0:red_mat_size-1),val !`thread private (redm)?
-	real(8) time_beg
+	real(8) time_beg,tm
 
 	ierr=0
 	time_beg=thread_wtime() !debug
@@ -6216,8 +6224,9 @@
 	else
 	 ierr=4
 	endif
-	write(cons_out,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_c8): kernel time/error code: ",F10.4,1x,i3)') &
-         thread_wtime(time_beg),ierr !debug
+	tm=thread_wtime(time_beg) !debug
+	write(cons_out,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_c8): time/speed/error = ",2(F10.4,1x),i3)') &
+         tm,dble(dr*dl*dc)/(tm*1024d0*1024d0*1024d0),ierr !debug
 	return
 	end subroutine tensor_block_pcontract_dlf_c8
 !------------------------------------------------------------------------------------------------------
