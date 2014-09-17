@@ -4429,7 +4429,7 @@
 	  ipr(1:k1)=(/(j,j=1,k1)/) !first k1 input dimensions form the input minor set
 	  do j=1,k1; if(dim_transp(j).gt.k1) then; in_out_dif=.true.; exit; endif; enddo !if .true., the output minor set differs from the input one
 	  if(in_out_dif) then !check whether I need to split long ranges
-	   do k2=1,dim_num; if(bases_out(n2o(k2)).gt.cache_line_lim) exit; enddo !first k2 output dimensions form the output minor set
+	   do k2=1,dim_num; if(bases_out(n2o(k2+1)).gt.cache_line_lim) exit; enddo !first k2 output dimensions form the output minor set
 	   if(k1.eq.n2o(k2)) then !the last minor input and output indices are the same
 	    if(dim_extents(k1).ge.m) then
 	     j=(((cache_line_lim-1_LONGINT)/bases_in(k1)+1_LONGINT)+((cache_line_lim-1_LONGINT)/bases_out(k1)+1_LONGINT))/2
@@ -4688,7 +4688,7 @@
 	  ipr(1:k1)=(/(j,j=1,k1)/) !first k1 input dimensions form the input minor set
 	  do j=1,k1; if(dim_transp(j).gt.k1) then; in_out_dif=.true.; exit; endif; enddo !if .true., the output minor set differs from the input one
 	  if(in_out_dif) then !check whether I need to split long ranges
-	   do k2=1,dim_num; if(bases_out(n2o(k2)).gt.cache_line_lim) exit; enddo !first k2 output dimensions form the output minor set
+	   do k2=1,dim_num; if(bases_out(n2o(k2+1)).gt.cache_line_lim) exit; enddo !first k2 output dimensions form the output minor set
 	   if(k1.eq.n2o(k2)) then !the last minor input and output indices are the same
 	    if(dim_extents(k1).ge.m) then
 	     j=(((cache_line_lim-1_LONGINT)/bases_in(k1)+1_LONGINT)+((cache_line_lim-1_LONGINT)/bases_out(k1)+1_LONGINT))/2
@@ -4947,7 +4947,7 @@
 	  ipr(1:k1)=(/(j,j=1,k1)/) !first k1 input dimensions form the input minor set
 	  do j=1,k1; if(dim_transp(j).gt.k1) then; in_out_dif=.true.; exit; endif; enddo !if .true., the output minor set differs from the input one
 	  if(in_out_dif) then !check whether I need to split long ranges
-	   do k2=1,dim_num; if(bases_out(n2o(k2)).gt.cache_line_lim) exit; enddo !first k2 output dimensions form the output minor set
+	   do k2=1,dim_num; if(bases_out(n2o(k2+1)).gt.cache_line_lim) exit; enddo !first k2 output dimensions form the output minor set
 	   if(k1.eq.n2o(k2)) then !the last minor input and output indices are the same
 	    if(dim_extents(k1).ge.m) then
 	     j=(((cache_line_lim-1_LONGINT)/bases_in(k1)+1_LONGINT)+((cache_line_lim-1_LONGINT)/bases_out(k1)+1_LONGINT))/2
