@@ -7,6 +7,7 @@ export OMP_MAX_ACTIVE_LEVELS=3                      #mandatory
 export OMP_THREAD_LIMIT=64                          #optional
 export OMP_DYNAMIC=FALSE                            #mandatory
 export OMP_NESTED=TRUE                              #mandatory
+export OMP_WAIT_POLICY=PASSIVE                      #optional (idle thread behavior)
 #export KMP_AFFINITY=compact                        #optional (Intel CPU only)
 export QF_NUM_PROCS=1                               #mandatory
 export QF_PROCS_PER_NODE=1                          #mandatory
@@ -22,6 +23,7 @@ export MIC_KMP_PLACE_THREADS="56c,4t"               #optional (MIC only)
 export MIC_KMP_AFFINITY="granularity=fine,compact"  #optional (MIC only)
 export MKL_MIC_ENABLE=1                             #optional (MIC only: MKL MIC auto-offloading)
 export OFFLOAD_REPORT=2                             #optional (MIC only)
+export CRAY_OMP_CHECK_AFFINITY=TRUE                 #optional (CRAY only: shows thread placement)
 
 rm *.tmp *.log *.out *.x
 cp $QFORCE_PATH/qforce.v13.01.x ./
