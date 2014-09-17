@@ -1,7 +1,7 @@
        module timers
 !Timing services (OpenMP omp_get_wtime() based).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2014/08/12
+!REVISION: 2014/09/16
 !FUNCTIONS:
 ! # integer timer_start(real8:time_set, integer:time_handle);
 ! # logical time_is_off(integer:time_handle, integer:ierr[, logical:destroy]);
@@ -102,12 +102,12 @@
         return
         end function timer_tick_sec
 !-------------------------------------------
+!DIR$ ATTRIBUTES OFFLOAD:mic:: thread_wtime
         real(8) function thread_wtime(tbase)
 !This function returns the current wall clock time in seconds.
         implicit none
         real(8), intent(in), optional:: tbase
         real(8) tm
-        real(8), external:: omp_get_wtime
 #ifndef NO_OMP
         thread_wtime=omp_get_wtime()
 #else
