@@ -1,7 +1,7 @@
 !This module provides functionality for a Computing Process (C-PROCESS, CP).
 !In essence, this is a single-node elementary tensor instruction scheduler (SETIS).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2014/08/21
+!REVISION: 2014/09/17
 !CONCEPTS (CP workflow):
 ! - Each CP stores its own tensor blocks in TBB, with a possibility of disk dump.
 ! - LR sends a batch of ETI to be executed on this CP unit (CP MPI Process).
@@ -377,7 +377,7 @@
 #ifndef NO_GPU
   !Check GPU argument buffer (GAB) levels:
         do j=gpu_start,gpu_start+gpu_count-1
-         if(gpu_is_mine(j).ne.NOT_REALLY) then
+         if(gpu_is_mine(j).ne.NOPE) then
           i=get_blck_buf_sizes_gpu(j,blck_sizes)
           if(i.le.0.or.i.gt.max_arg_buf_levels) then
            write(jo_cp,'("#ERROR(c_process::c_proc_life): Invalid number of GPU argument buffer levels: ",i11,1x,i11)') &
@@ -1739,7 +1739,7 @@
 #ifndef NO_GPU
 !GAB clean up:
          do j1=gpu_start,gpu_start+gpu_count-1
-          if(gpu_is_mine(j1).ne.NOT_REALLY) then
+          if(gpu_is_mine(j1).ne.NOPE) then
            j0=arg_buf_clean_gpu(j1)
            if(j0.ne.0) then
             write(jo_cp,'("#WARNING(c_process::c_proc_life:c_proc_quit): GPU#",i2," Argument buffer is not clean!")') j1

@@ -70,7 +70,8 @@
 #define CUDA_TASK_COMPLETED 5
 
 //ALIASES:
-#define NOT_REALLY 0
+#define NOPE 0
+#define YEP 1
 #define GPU_MINE 1
 #define GPU_MINE_CUBLAS 2
 #define NO_COPY_BACK 0

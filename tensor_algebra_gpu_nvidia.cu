@@ -3,7 +3,7 @@ AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
 This open-source code was developed by the author while
 at the National Center for Computational Sciences
 at the Oak Ridge National Laboratory, Oak Ridge TN.
-REVISION: 2014/09/15
+REVISION: 2014/09/17
 NOTES:
  # Functions without underscores at the end of their names are blocking (Host) functions;
    Functions with one underscore at the end of their names are external non-blocking functions;
@@ -542,16 +542,16 @@ The first enabled GPU will be left active at the end. **/
 #ifndef NO_BLAS
  cublasStatus_t err_cublas;
 #endif
- n=0; for(i=0;i<MAX_GPUS_PER_NODE;i++) gpu_up[i]=NOT_REALLY;
+ n=0; for(i=0;i<MAX_GPUS_PER_NODE;i++) gpu_up[i]=NOPE;
  if(gpu_beg >= 0 && gpu_end >= gpu_beg){
   err=cudaGetDeviceCount(&i); if(err != cudaSuccess) return -1;
   if(gpu_end >= MAX_GPUS_PER_NODE || gpu_end >= i) return -2;
   for(i=gpu_end;i>=gpu_beg;i--){
    err=cudaSetDevice(i);
    if(err == cudaSuccess){
-    gpu_up[i]=GPU_MINE; err=cudaGetDeviceProperties(&(gpu_prop[i]),i); if(err != cudaSuccess) gpu_up[i]=NOT_REALLY;
+    gpu_up[i]=GPU_MINE; err=cudaGetDeviceProperties(&(gpu_prop[i]),i); if(err != cudaSuccess) gpu_up[i]=NOPE;
 #ifndef NO_BLAS
-    if(gpu_up[i] > NOT_REALLY){
+    if(gpu_up[i] > NOPE){
      err_cublas=cublasCreate(&(cublas_handle[i]));
      if(err_cublas == CUBLAS_STATUS_SUCCESS){
       gpu_up[i]=GPU_MINE_CUBLAS;
@@ -560,7 +560,7 @@ The first enabled GPU will be left active at the end. **/
      }
     }
 #endif
-    if(gpu_up[i] > NOT_REALLY) n++;
+    if(gpu_up[i] > NOPE) n++;
    }
   }
  }
@@ -581,7 +581,7 @@ A positive value returned is the number of failed GPUs; a negative one is an err
   err=cudaGetDeviceCount(&i); if(err != cudaSuccess) return -1;
   if(gpu_end >= MAX_GPUS_PER_NODE || gpu_end >= i) return -2;
   for(i=gpu_beg;i<=gpu_end;i++){
-   if(gpu_up[i] > NOT_REALLY){
+   if(gpu_up[i] > NOPE){
     n++; err=cudaSetDevice(i);
     if(err == cudaSuccess){
 #ifndef NO_BLAS
@@ -589,7 +589,7 @@ A positive value returned is the number of failed GPUs; a negative one is an err
 #endif
      n--; err=cudaDeviceReset();
     }
-    gpu_up[i]=NOT_REALLY; //GPU is taken out of use regardless of its status!
+    gpu_up[i]=NOPE; //GPU is taken out of use regardless of its status!
    }
   }
  }
@@ -602,7 +602,7 @@ __host__ int gpu_is_mine(int gpu_num) //Positive: GPU is mine; 0: GPU is not min
 __host__ int gpu_busy_least() //Returns the ID of the least busy GPU (non-negative) or -1 (error)
 {
  int i;
- for(i=0;i<MAX_GPUS_PER_NODE;i++){if(gpu_up[i] > NOT_REALLY) return i;}
+ for(i=0;i<MAX_GPUS_PER_NODE;i++){if(gpu_up[i] > NOPE) return i;}
  return -1; //no enabled GPU found
 }
 
@@ -610,7 +610,7 @@ __host__ int gpu_activate(int gpu_num) //If GPU is enabled (mine), does cudaSetD
 {
  cudaError_t err;
  if(gpu_num >= 0 && gpu_num < MAX_GPUS_PER_NODE){
-  if(gpu_up[gpu_num] > NOT_REALLY){err=cudaSetDevice(gpu_num); if(err != cudaSuccess) return 3;}else{return 2;}
+  if(gpu_up[gpu_num] > NOPE){err=cudaSetDevice(gpu_num); if(err != cudaSuccess) return 3;}else{return 2;}
  }else{
   return 1;
  }

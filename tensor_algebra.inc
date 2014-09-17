@@ -33,7 +33,8 @@
         integer(C_INT), parameter:: cuda_task_completed=5
 
 !ALIASES (keep consistent with tensor_algebra_gpu_nvidia.h):
-        integer(C_INT), parameter:: NOT_REALLY=0               !"NO" answer
+        integer(C_INT), parameter:: NOPE=0                     !"NO" answer
+        integer(C_INT), parameter:: YEP=1                      !"YES" answer
         integer(C_INT), parameter:: NO_COPY_BACK=0             !keeps the tensor-result on GPU without updating HAB
         integer(C_INT), parameter:: COPY_BACK=1                !tensor-result will be copied back from GPU to HAB (default)
         integer(C_INT), parameter:: EVENTS_OFF=0               !disables CUDA event recording
@@ -42,6 +43,8 @@
         integer(C_INT), parameter:: BLAS_OFF=1                 !disables BLAS
         integer(C_INT), parameter:: EFF_TRN_OFF=0              !disables efficient tensor transpose algorithm
         integer(C_INT), parameter:: EFF_TRN_ON=1               !enables efficient tensor transpose algorithm
+!DIR$ ATTRIBUTES OFFLOAD:mic:: NOPE,YEP,NO_COPY_BACK,COPY_BACK
+!DIR$ ATTRIBUTES ALIGN:128:: NOPE,YEP,NO_COPY_BACK,COPY_BACK
 
 !Tensor block storage layout:
         integer(C_INT), parameter:: not_allocated=0   !tensor block has not been initialized
