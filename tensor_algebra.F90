@@ -1,6 +1,6 @@
 !Tensor Algebra for Multi-Core CPUs (OpenMP based).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2014/09/16
+!REVISION: 2014/09/23
 !GNU linking options: -lgomp -lblas -llapack
 !ACRONYMS:
 ! - mlndx - multiindex;
@@ -3960,6 +3960,9 @@
         return
         end function tensor_block_alloc
 !-----------------------------------------------------------------------------------------------
+#ifndef NO_PHI
+!DIR$ ATTRIBUTES OFFLOAD:mic:: tensor_block_slice_dlf_r4
+#endif
 	subroutine tensor_block_slice_dlf_r4(dim_num,tens,tens_ext,slice,slice_ext,ext_beg,ierr) !PARALLEL
 !This subroutine extracts a slice from a tensor block.
 !INPUT:
@@ -3984,6 +3987,10 @@
 	integer i,j,k,l,m,n,ks,kf,im(1:dim_num)
 	integer(LONGINT):: lts,lss,l_in,l_out,lb,le,ll,bases_in(1:dim_num),bases_out(1:dim_num),segs(0:max_threads) !`Is segs(:) threadsafe?
 	real(8) time_beg
+#ifndef NO_PHI
+!DIR$ ATTRIBUTES OFFLOAD:mic:: real_kind
+!DIR$ ATTRIBUTES ALIGN:128:: real_kind,im,bases_in,bases_out,segs
+#endif
 
 	ierr=0
 !	time_beg=thread_wtime() !debug
@@ -4025,6 +4032,9 @@
 	return
 	end subroutine tensor_block_slice_dlf_r4
 !-----------------------------------------------------------------------------------------------
+#ifndef NO_PHI
+!DIR$ ATTRIBUTES OFFLOAD:mic:: tensor_block_slice_dlf_r8
+#endif
 	subroutine tensor_block_slice_dlf_r8(dim_num,tens,tens_ext,slice,slice_ext,ext_beg,ierr) !PARALLEL
 !This subroutine extracts a slice from a tensor block.
 !INPUT:
@@ -4049,6 +4059,10 @@
 	integer i,j,k,l,m,n,ks,kf,im(1:dim_num)
 	integer(LONGINT):: lts,lss,l_in,l_out,lb,le,ll,bases_in(1:dim_num),bases_out(1:dim_num),segs(0:max_threads) !`Is segs(:) threadsafe?
 	real(8) time_beg
+#ifndef NO_PHI
+!DIR$ ATTRIBUTES OFFLOAD:mic:: real_kind
+!DIR$ ATTRIBUTES ALIGN:128:: real_kind,im,bases_in,bases_out,segs
+#endif
 
 	ierr=0
 !	time_beg=thread_wtime() !debug
@@ -4090,6 +4104,9 @@
 	return
 	end subroutine tensor_block_slice_dlf_r8
 !-----------------------------------------------------------------------------------------------
+#ifndef NO_PHI
+!DIR$ ATTRIBUTES OFFLOAD:mic:: tensor_block_slice_dlf_c8
+#endif
 	subroutine tensor_block_slice_dlf_c8(dim_num,tens,tens_ext,slice,slice_ext,ext_beg,ierr) !PARALLEL
 !This subroutine extracts a slice from a tensor block.
 !INPUT:
@@ -4114,6 +4131,10 @@
 	integer i,j,k,l,m,n,ks,kf,im(1:dim_num)
 	integer(LONGINT):: lts,lss,l_in,l_out,lb,le,ll,bases_in(1:dim_num),bases_out(1:dim_num),segs(0:max_threads) !`Is segs(:) threadsafe?
 	real(8) time_beg
+#ifndef NO_PHI
+!DIR$ ATTRIBUTES OFFLOAD:mic:: real_kind
+!DIR$ ATTRIBUTES ALIGN:128:: real_kind,im,bases_in,bases_out,segs
+#endif
 
 	ierr=0
 !	time_beg=thread_wtime() !debug
@@ -4155,6 +4176,9 @@
 	return
 	end subroutine tensor_block_slice_dlf_c8
 !------------------------------------------------------------------------------------------------
+#ifndef NO_PHI
+!DIR$ ATTRIBUTES OFFLOAD:mic:: tensor_block_insert_dlf_r4
+#endif
 	subroutine tensor_block_insert_dlf_r4(dim_num,tens,tens_ext,slice,slice_ext,ext_beg,ierr) !PARALLEL
 !This subroutine inserts a slice into a tensor block.
 !INPUT:
@@ -4179,6 +4203,10 @@
 	integer i,j,k,l,m,n,ks,kf,im(1:dim_num)
 	integer(LONGINT):: lts,lss,l_in,l_out,lb,le,ll,bases_in(1:dim_num),bases_out(1:dim_num),segs(0:max_threads) !`Is segs(:) threadsafe?
 	real(8) time_beg
+#ifndef NO_PHI
+!DIR$ ATTRIBUTES OFFLOAD:mic:: real_kind
+!DIR$ ATTRIBUTES ALIGN:128:: real_kind,im,bases_in,bases_out,segs
+#endif
 
 	ierr=0
 !	time_beg=thread_wtime() !debug
@@ -4220,6 +4248,9 @@
 	return
 	end subroutine tensor_block_insert_dlf_r4
 !------------------------------------------------------------------------------------------------
+#ifndef NO_PHI
+!DIR$ ATTRIBUTES OFFLOAD:mic:: tensor_block_insert_dlf_r8
+#endif
 	subroutine tensor_block_insert_dlf_r8(dim_num,tens,tens_ext,slice,slice_ext,ext_beg,ierr) !PARALLEL
 !This subroutine inserts a slice into a tensor block.
 !INPUT:
@@ -4244,6 +4275,10 @@
 	integer i,j,k,l,m,n,ks,kf,im(1:dim_num)
 	integer(LONGINT):: lts,lss,l_in,l_out,lb,le,ll,bases_in(1:dim_num),bases_out(1:dim_num),segs(0:max_threads) !`Is segs(:) threadsafe?
 	real(8) time_beg
+#ifndef NO_PHI
+!DIR$ ATTRIBUTES OFFLOAD:mic:: real_kind
+!DIR$ ATTRIBUTES ALIGN:128:: real_kind,im,bases_in,bases_out,segs
+#endif
 
 	ierr=0
 !	time_beg=thread_wtime() !debug
@@ -4285,6 +4320,9 @@
 	return
 	end subroutine tensor_block_insert_dlf_r8
 !------------------------------------------------------------------------------------------------
+#ifndef NO_PHI
+!DIR$ ATTRIBUTES OFFLOAD:mic:: tensor_block_insert_dlf_c8
+#endif
 	subroutine tensor_block_insert_dlf_c8(dim_num,tens,tens_ext,slice,slice_ext,ext_beg,ierr) !PARALLEL
 !This subroutine inserts a slice into a tensor block.
 !INPUT:
@@ -4309,6 +4347,10 @@
 	integer i,j,k,l,m,n,ks,kf,im(1:dim_num)
 	integer(LONGINT):: lts,lss,l_in,l_out,lb,le,ll,bases_in(1:dim_num),bases_out(1:dim_num),segs(0:max_threads) !`Is segs(:) threadsafe?
 	real(8) time_beg
+#ifndef NO_PHI
+!DIR$ ATTRIBUTES OFFLOAD:mic:: real_kind
+!DIR$ ATTRIBUTES ALIGN:128:: real_kind,im,bases_in,bases_out,segs
+#endif
 
 	ierr=0
 !	time_beg=thread_wtime() !debug
@@ -5132,6 +5174,9 @@
 	return
 	end subroutine tensor_block_copy_dlf_c8
 !--------------------------------------------------------------------------------------------------------
+#ifndef NO_PHI
+!DIR$ ATTRIBUTES OFFLOAD:mic:: tensor_block_copy_scatter_dlf_r4
+#endif
 	subroutine tensor_block_copy_scatter_dlf_r4(dim_num,dim_extents,dim_transp,tens_in,tens_out,ierr) !PARALLEL
 !Given a dense tensor block, this subroutine makes a copy of it, permuting the indices according to the <dim_transp>.
 !INPUT:
@@ -5155,6 +5200,10 @@
 	integer(LONGINT) j,l,m,n,base_in(dim_num),base_out(dim_num)
 	logical trivial
 	real(8) time_beg
+#ifndef NO_PHI
+!DIR$ ATTRIBUTES OFFLOAD:mic:: real_kind
+!DIR$ ATTRIBUTES ALIGN:128:: real_kind,n2o,base_in,base_out
+#endif
 
 	ierr=0
 !	time_beg=thread_wtime() !debug
@@ -5186,6 +5235,9 @@
 	return
 	end subroutine tensor_block_copy_scatter_dlf_r4
 !--------------------------------------------------------------------------------------------------------
+#ifndef NO_PHI
+!DIR$ ATTRIBUTES OFFLOAD:mic:: tensor_block_copy_scatter_dlf_r8
+#endif
 	subroutine tensor_block_copy_scatter_dlf_r8(dim_num,dim_extents,dim_transp,tens_in,tens_out,ierr) !PARALLEL
 !Given a dense tensor block, this subroutine makes a copy of it, permuting the indices according to the <dim_transp>.
 !INPUT:
@@ -5209,6 +5261,10 @@
 	integer(LONGINT) j,l,m,n,base_in(dim_num),base_out(dim_num)
 	logical trivial
 	real(8) time_beg
+#ifndef NO_PHI
+!DIR$ ATTRIBUTES OFFLOAD:mic:: real_kind
+!DIR$ ATTRIBUTES ALIGN:128:: real_kind,n2o,base_in,base_out
+#endif
 
 	ierr=0
 !	time_beg=thread_wtime() !debug
@@ -5240,6 +5296,9 @@
 	return
 	end subroutine tensor_block_copy_scatter_dlf_r8
 !--------------------------------------------------------------------------------------------------------
+#ifndef NO_PHI
+!DIR$ ATTRIBUTES OFFLOAD:mic:: tensor_block_copy_scatter_dlf_c8
+#endif
 	subroutine tensor_block_copy_scatter_dlf_c8(dim_num,dim_extents,dim_transp,tens_in,tens_out,ierr) !PARALLEL
 !Given a dense tensor block, this subroutine makes a copy of it, permuting the indices according to the <dim_transp>.
 !INPUT:
@@ -5263,6 +5322,10 @@
 	integer(LONGINT) j,l,m,n,base_in(dim_num),base_out(dim_num)
 	logical trivial
 	real(8) time_beg
+#ifndef NO_PHI
+!DIR$ ATTRIBUTES OFFLOAD:mic:: real_kind
+!DIR$ ATTRIBUTES ALIGN:128:: real_kind,n2o,base_in,base_out
+#endif
 
 	ierr=0
 !	time_beg=thread_wtime() !debug
@@ -5294,6 +5357,9 @@
 	return
 	end subroutine tensor_block_copy_scatter_dlf_c8
 !--------------------------------------------------------------------------
+#ifndef NO_PHI
+!DIR$ ATTRIBUTES OFFLOAD:mic:: tensor_block_fcontract_dlf_r4
+#endif
 	subroutine tensor_block_fcontract_dlf_r4(dc,ltens,rtens,dtens,ierr) !PARALLEL
 !This subroutine fully reduces two vectors derived from the corresponding tensors by index permutations:
 !dtens+=ltens(0:dc-1)*rtens(0:dc-1), where dtens is a scalar.
@@ -5309,6 +5375,10 @@
 	real(real_kind) val
 	integer(LONGINT) l0
 	real(8) time_beg,tm
+#ifndef NO_PHI
+!DIR$ ATTRIBUTES OFFLOAD:mic:: real_kind
+!DIR$ ATTRIBUTES ALIGN:128:: real_kind
+#endif
 
 	ierr=0
 !	time_beg=thread_wtime() !debug
@@ -5328,6 +5398,9 @@
 	return
 	end subroutine tensor_block_fcontract_dlf_r4
 !--------------------------------------------------------------------------
+#ifndef NO_PHI
+!DIR$ ATTRIBUTES OFFLOAD:mic:: tensor_block_fcontract_dlf_r8
+#endif
 	subroutine tensor_block_fcontract_dlf_r8(dc,ltens,rtens,dtens,ierr) !PARALLEL
 !This subroutine fully reduces two vectors derived from the corresponding tensors by index permutations:
 !dtens+=ltens(0:dc-1)*rtens(0:dc-1), where dtens is a scalar.
@@ -5343,6 +5416,10 @@
 	real(real_kind) val
 	integer(LONGINT) l0
 	real(8) time_beg,tm
+#ifndef NO_PHI
+!DIR$ ATTRIBUTES OFFLOAD:mic:: real_kind
+!DIR$ ATTRIBUTES ALIGN:128:: real_kind
+#endif
 
 	ierr=0
 !	time_beg=thread_wtime() !debug
@@ -5362,6 +5439,9 @@
 	return
 	end subroutine tensor_block_fcontract_dlf_r8
 !--------------------------------------------------------------------------
+#ifndef NO_PHI
+!DIR$ ATTRIBUTES OFFLOAD:mic:: tensor_block_fcontract_dlf_c8
+#endif
 	subroutine tensor_block_fcontract_dlf_c8(dc,ltens,rtens,dtens,ierr) !PARALLEL
 !This subroutine fully reduces two vectors derived from the corresponding tensors by index permutations:
 !dtens+=ltens(0:dc-1)*rtens(0:dc-1), where dtens is a scalar.
@@ -5377,6 +5457,10 @@
 	complex(real_kind) val
 	integer(LONGINT) l0
 	real(8) time_beg,tm
+#ifndef NO_PHI
+!DIR$ ATTRIBUTES OFFLOAD:mic:: real_kind
+!DIR$ ATTRIBUTES ALIGN:128:: real_kind
+#endif
 
 	ierr=0
 !	time_beg=thread_wtime() !debug
@@ -5396,6 +5480,9 @@
 	return
 	end subroutine tensor_block_fcontract_dlf_c8
 !--------------------------------------------------------------------------------
+#ifndef NO_PHI
+!DIR$ ATTRIBUTES OFFLOAD:mic:: tensor_block_pcontract_dlf_r4
+#endif
 	subroutine tensor_block_pcontract_dlf_r4(dl,dr,dc,ltens,rtens,dtens,ierr) !PARALLEL
 !This subroutine multiplies two matrices derived from the corresponding tensors by index permutations:
 !dtens(0:dl-1,0:dr-1)+=ltens(0:dc-1,0:dl-1)*rtens(0:dc-1,0:dr-1)
@@ -5425,6 +5512,12 @@
 	integer(LONGINT) ll,lr,ld,l0,l1,l2,b0,b1,b2,e0r,e0,e1,e2,ls,lf,cl,cr,cc,chunk
 	real(real_kind) vec(0:7),redm(0:red_mat_size-1,0:red_mat_size-1),val !`thread private (redm)?
 	real(8) time_beg,tm
+#ifndef NO_PHI
+!DIR$ ATTRIBUTES OFFLOAD:mic:: real_kind,red_mat_size,arg_cache_size,min_distr_seg_size,cdim_stretch,core_slope,ker1,ker2,ker3
+!DIR$ ATTRIBUTES OFFLOAD:mic:: no_case1,no_case2,no_case3,no_case4
+!DIR$ ATTRIBUTES ALIGN:128:: real_kind,red_mat_size,arg_cache_size,min_distr_seg_size,cdim_stretch,core_slope,ker1,ker2,ker3
+!DIR$ ATTRIBUTES ALIGN:128:: no_case1,no_case2,no_case3,no_case4,vec,redm
+#endif
 
 	ierr=0
 	time_beg=thread_wtime() !debug
@@ -5675,6 +5768,9 @@
 	return
 	end subroutine tensor_block_pcontract_dlf_r4
 !--------------------------------------------------------------------------------
+#ifndef NO_PHI
+!DIR$ ATTRIBUTES OFFLOAD:mic:: tensor_block_pcontract_dlf_r8
+#endif
 	subroutine tensor_block_pcontract_dlf_r8(dl,dr,dc,ltens,rtens,dtens,ierr) !PARALLEL
 !This subroutine multiplies two matrices derived from the corresponding tensors by index permutations:
 !dtens(0:dl-1,0:dr-1)+=ltens(0:dc-1,0:dl-1)*rtens(0:dc-1,0:dr-1)
@@ -5704,6 +5800,12 @@
 	integer(LONGINT) ll,lr,ld,l0,l1,l2,b0,b1,b2,e0r,e0,e1,e2,ls,lf,cl,cr,cc,chunk
 	real(real_kind) vec(0:7),redm(0:red_mat_size-1,0:red_mat_size-1),val !`thread private (redm)?
 	real(8) time_beg,tm
+#ifndef NO_PHI
+!DIR$ ATTRIBUTES OFFLOAD:mic:: real_kind,red_mat_size,arg_cache_size,min_distr_seg_size,cdim_stretch,core_slope,ker1,ker2,ker3
+!DIR$ ATTRIBUTES OFFLOAD:mic:: no_case1,no_case2,no_case3,no_case4
+!DIR$ ATTRIBUTES ALIGN:128:: real_kind,red_mat_size,arg_cache_size,min_distr_seg_size,cdim_stretch,core_slope,ker1,ker2,ker3
+!DIR$ ATTRIBUTES ALIGN:128:: no_case1,no_case2,no_case3,no_case4,vec,redm
+#endif
 
 	ierr=0
 	time_beg=thread_wtime() !debug
@@ -5954,6 +6056,9 @@
 	return
 	end subroutine tensor_block_pcontract_dlf_r8
 !--------------------------------------------------------------------------------
+#ifndef NO_PHI
+!DIR$ ATTRIBUTES OFFLOAD:mic:: tensor_block_pcontract_dlf_c8
+#endif
 	subroutine tensor_block_pcontract_dlf_c8(dl,dr,dc,ltens,rtens,dtens,ierr) !PARALLEL
 !This subroutine multiplies two matrices derived from the corresponding tensors by index permutations:
 !dtens(0:dl-1,0:dr-1)+=ltens(0:dc-1,0:dl-1)*rtens(0:dc-1,0:dr-1)
@@ -5983,6 +6088,12 @@
 	integer(LONGINT) ll,lr,ld,l0,l1,l2,b0,b1,b2,e0r,e0,e1,e2,ls,lf,cl,cr,cc,chunk
 	complex(real_kind) vec(0:7),redm(0:red_mat_size-1,0:red_mat_size-1),val !`thread private (redm)?
 	real(8) time_beg,tm
+#ifndef NO_PHI
+!DIR$ ATTRIBUTES OFFLOAD:mic:: real_kind,red_mat_size,arg_cache_size,min_distr_seg_size,cdim_stretch,core_slope,ker1,ker2,ker3
+!DIR$ ATTRIBUTES OFFLOAD:mic:: no_case1,no_case2,no_case3,no_case4
+!DIR$ ATTRIBUTES ALIGN:128:: real_kind,red_mat_size,arg_cache_size,min_distr_seg_size,cdim_stretch,core_slope,ker1,ker2,ker3
+!DIR$ ATTRIBUTES ALIGN:128:: no_case1,no_case2,no_case3,no_case4,vec,redm
+#endif
 
 	ierr=0
 	time_beg=thread_wtime() !debug
@@ -6233,6 +6344,9 @@
 	return
 	end subroutine tensor_block_pcontract_dlf_c8
 !------------------------------------------------------------------------------------------------------
+#ifndef NO_PHI
+!DIR$ ATTRIBUTES OFFLOAD:mic:: tensor_block_ftrace_dlf_r4
+#endif
 	subroutine tensor_block_ftrace_dlf_r4(contr_ptrn,ord_rest,tens_in,rank_in,dims_in,val_out,ierr) !PARALLEL
 !This subroutine takes a full trace in a tensor block and accumulates it into a scalar.
 !A full trace consists of one or more pairwise index contractions such that no single index is left uncontracted.
@@ -6263,6 +6377,10 @@
 	integer(LONGINT) bases_in(1:rank_in),bases_tr(1:rank_in),segs(0:max_threads),ls,lc,l_in,l0 !`Is segs(:) threadsafe?
 	real(real_kind) val_tr
 	real(8) time_beg
+#ifndef NO_PHI
+!DIR$ ATTRIBUTES OFFLOAD:mic:: real_kind
+!DIR$ ATTRIBUTES ALIGN:128:: real_kind,im,ic,bases_in,bases_tr,segs
+#endif
 
 	ierr=0
 !	time_beg=thread_wtime() !debug
@@ -6335,6 +6453,9 @@
 	return
 	end subroutine tensor_block_ftrace_dlf_r4
 !------------------------------------------------------------------------------------------------------
+#ifndef NO_PHI
+!DIR$ ATTRIBUTES OFFLOAD:mic:: tensor_block_ftrace_dlf_r8
+#endif
 	subroutine tensor_block_ftrace_dlf_r8(contr_ptrn,ord_rest,tens_in,rank_in,dims_in,val_out,ierr) !PARALLEL
 !This subroutine takes a full trace in a tensor block and accumulates it into a scalar.
 !A full trace consists of one or more pairwise index contractions such that no single index is left uncontracted.
@@ -6365,6 +6486,10 @@
 	integer(LONGINT) bases_in(1:rank_in),bases_tr(1:rank_in),segs(0:max_threads),ls,lc,l_in,l0  !`Is segs(:) threadsafe?
 	real(real_kind) val_tr
 	real(8) time_beg
+#ifndef NO_PHI
+!DIR$ ATTRIBUTES OFFLOAD:mic:: real_kind
+!DIR$ ATTRIBUTES ALIGN:128:: real_kind,im,ic,bases_in,bases_tr,segs
+#endif
 
 	ierr=0
 !	time_beg=thread_wtime() !debug
@@ -6437,6 +6562,9 @@
 	return
 	end subroutine tensor_block_ftrace_dlf_r8
 !------------------------------------------------------------------------------------------------------
+#ifndef NO_PHI
+!DIR$ ATTRIBUTES OFFLOAD:mic:: tensor_block_ftrace_dlf_c8
+#endif
 	subroutine tensor_block_ftrace_dlf_c8(contr_ptrn,ord_rest,tens_in,rank_in,dims_in,val_out,ierr) !PARALLEL
 !This subroutine takes a full trace in a tensor block and accumulates it into a scalar.
 !A full trace consists of one or more pairwise index contractions such that no single index is left uncontracted.
@@ -6467,6 +6595,10 @@
 	integer(LONGINT) bases_in(1:rank_in),bases_tr(1:rank_in),segs(0:max_threads),ls,lc,l_in,l0  !`Is segs(:) threadsafe?
 	complex(real_kind) val_tr
 	real(8) time_beg
+#ifndef NO_PHI
+!DIR$ ATTRIBUTES OFFLOAD:mic:: real_kind
+!DIR$ ATTRIBUTES ALIGN:128:: real_kind,im,ic,bases_in,bases_tr,segs
+#endif
 
 	ierr=0
 !	time_beg=thread_wtime() !debug
@@ -6539,6 +6671,9 @@
 	return
 	end subroutine tensor_block_ftrace_dlf_c8
 !-------------------------------------------------------------------------------------------------------------------------
+#ifndef NO_PHI
+!DIR$ ATTRIBUTES OFFLOAD:mic:: tensor_block_ptrace_dlf_r4
+#endif
 	subroutine tensor_block_ptrace_dlf_r4(contr_ptrn,ord_rest,tens_in,rank_in,dims_in,tens_out,rank_out,dims_out,ierr) !PARALLEL
 !This subroutine takes a partial trace in a tensor block and accumulates it into the destination tensor block.
 !A partial trace consists of one or more pairwise index contractions such that at least one index is left uncontracted.
@@ -6571,6 +6706,10 @@
 	integer(LONGINT) li,lo,lc,l_in,l_out,l0
 	real(real_kind) val_tr
 	real(8) time_beg
+#ifndef NO_PHI
+!DIR$ ATTRIBUTES OFFLOAD:mic:: real_kind
+!DIR$ ATTRIBUTES ALIGN:128:: real_kind,im,ic,ip,bases_in,bases_out,bases_tr,segs
+#endif
 
 	ierr=0
 !	time_beg=thread_wtime() !debug
@@ -6691,6 +6830,9 @@
 	return
 	end subroutine tensor_block_ptrace_dlf_r4
 !-------------------------------------------------------------------------------------------------------------------------
+#ifndef NO_PHI
+!DIR$ ATTRIBUTES OFFLOAD:mic:: tensor_block_ptrace_dlf_r8
+#endif
 	subroutine tensor_block_ptrace_dlf_r8(contr_ptrn,ord_rest,tens_in,rank_in,dims_in,tens_out,rank_out,dims_out,ierr) !PARALLEL
 !This subroutine takes a partial trace in a tensor block and accumulates it into the destination tensor block.
 !A partial trace consists of one or more pairwise index contractions such that at least one index is left uncontracted.
@@ -6723,6 +6865,10 @@
 	integer(LONGINT) li,lo,lc,l_in,l_out,l0
 	real(real_kind) val_tr
 	real(8) time_beg
+#ifndef NO_PHI
+!DIR$ ATTRIBUTES OFFLOAD:mic:: real_kind
+!DIR$ ATTRIBUTES ALIGN:128:: real_kind,im,ic,ip,bases_in,bases_out,bases_tr,segs
+#endif
 
 	ierr=0
 !	time_beg=thread_wtime() !debug
@@ -6843,6 +6989,9 @@
 	return
 	end subroutine tensor_block_ptrace_dlf_r8
 !-------------------------------------------------------------------------------------------------------------------------
+#ifndef NO_PHI
+!DIR$ ATTRIBUTES OFFLOAD:mic:: tensor_block_ptrace_dlf_c8
+#endif
 	subroutine tensor_block_ptrace_dlf_c8(contr_ptrn,ord_rest,tens_in,rank_in,dims_in,tens_out,rank_out,dims_out,ierr) !PARALLEL
 !This subroutine takes a partial trace in a tensor block and accumulates it into the destination tensor block.
 !A partial trace consists of one or more pairwise index contractions such that at least one index is left uncontracted.
@@ -6875,6 +7024,10 @@
 	integer(LONGINT) li,lo,lc,l_in,l_out,l0
         complex(real_kind) val_tr
 	real(8) time_beg
+#ifndef NO_PHI
+!DIR$ ATTRIBUTES OFFLOAD:mic:: real_kind
+!DIR$ ATTRIBUTES ALIGN:128:: real_kind,im,ic,ip,bases_in,bases_out,bases_tr,segs
+#endif
 
 	ierr=0
 !	time_beg=thread_wtime() !debug
