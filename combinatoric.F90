@@ -962,7 +962,7 @@
 	logical, intent(in), optional:: no_trivial
 !----------------------------------------------
 	integer, parameter:: random_chunk=2**10 !size of the chunk of random numbers generated in one call
-	integer, parameter:: num_repeats=3      !the bigger the number, the better the generator quality (more expensive)
+	integer, parameter:: num_repeats=5      !the bigger the number, the better the generator quality (more expensive)
 !----------------------------------------------
 	integer i,j,k,l,m,n,nr,ierr
 	real(8):: ra(1:random_chunk)
@@ -1013,7 +1013,7 @@
 	logical, intent(in), optional:: no_trivial
 !-------------------------------------------------
 	integer(8), parameter:: random_chunk=2**10 !size of the chunk of random numbers generated in one call
-	integer(8), parameter:: num_repeats=3      !the bigger the number, the better the generator quality (more expensive)
+	integer(8), parameter:: num_repeats=5_8    !the bigger the number, the better the generator quality (more expensive)
 !-------------------------------------------------
 	integer(8) i,j,k,l,m,n,nr,ierr
 	real(8):: ra(1:random_chunk)
