@@ -4677,7 +4677,7 @@
 	integer, parameter:: real_kind=8
 	logical, parameter:: cache_efficiency=.true.
 	integer(LONGINT), parameter:: cache_line_len=8 !cache line length (words)
-	integer(LONGINT), parameter:: cache_line_lim=cache_line_len*3 !approx. number of simultaneously open cache lines per thread
+	integer(LONGINT), parameter:: cache_line_lim=cache_line_len*2 !approx. number of simultaneously open cache lines per thread
 	integer(LONGINT), parameter:: small_tens_size=2**10 !up to this size (of a tensor block) it is useless to apply cache efficiency
 	integer(LONGINT), parameter:: vec_size=2**8 !loop reorganization parameter for direct copy
 	integer, parameter:: max_mem_channels=16 !max number of memory channels on the node
