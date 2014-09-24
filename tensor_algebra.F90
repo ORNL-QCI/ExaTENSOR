@@ -4744,7 +4744,7 @@
 	  if(k1.ne.k2) then
 	   in_out_dif=.true.
 	  else
-	   do j=1,k2; if(n2o(j).gt.k1) then; in_ouf_dif=.true.; exit; endif; enddo
+	   do j=1,k2; if(n2o(j).gt.k1) then; in_out_dif=.true.; exit; endif; enddo
 	  endif
 !	  m=min(m,max_mem_channels)
 	  if(in_out_dif) then !minor input is different from the minor output
