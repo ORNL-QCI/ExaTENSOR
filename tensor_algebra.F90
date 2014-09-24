@@ -4506,7 +4506,7 @@
 !         dim_transp(1:dim_num) !debug
 !	 write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r4): index priorities = ",i3,1x,l1,128(1x,i2))') &
 !         kf,in_out_dif,ipr(1:dim_num) !debug
-         write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r4): segments:",4(1x,i3))') split_in,split_out,seg_in,seg_out !debug
+!        write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r4): segments:",4(1x,i3))') split_in,split_out,seg_in,seg_out !debug
  !Transpose loop:
 !$OMP PARALLEL DEFAULT(SHARED) PRIVATE(i,j,m,n,ks,l_in,l_out,l0,l1,l2,l3,ll,lb,le,ls,im,dim_beg,dim_end)
 #ifndef NO_OMP
@@ -4699,7 +4699,7 @@
 !DIR$ ATTRIBUTES ALIGN:128:: im,n2o,ipr,dim_beg,dim_end,ac1,bases_in,bases_out,bases_pri,segs
 #endif
 	ierr=0
-!	time_beg=thread_wtime() !debug
+	time_beg=thread_wtime() !debug
 	if(dim_num.lt.0) then; ierr=dim_num; return; elseif(dim_num.eq.0) then; tens_out(0)=tens_in(0); return; endif
 !Check the index permutation:
 	trivial=.true.; do i=1,dim_num; if(dim_transp(i).ne.i) then; trivial=.false.; exit; endif; enddo
@@ -4912,9 +4912,9 @@
 	 endif
 !$OMP END PARALLEL
 	endif !trivial or not
-!       tm=thread_wtime(time_beg) !debug
-!	write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r8): time/speed/error = ",2(F10.4,1x),i3)') &
-!        tm,dble(bs*real_kind)/(tm*1024d0*1024d0*1024d0),ierr !debug
+        tm=thread_wtime(time_beg) !debug
+	write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r8): time/speed/error = ",2(F10.4,1x),i3)') &
+         tm,dble(bs*real_kind)/(tm*1024d0*1024d0*1024d0),ierr !debug
 	return
 	end subroutine tensor_block_copy_dlf_r8
 !------------------------------------------------------------------------------------------------
@@ -5026,7 +5026,7 @@
 !         dim_transp(1:dim_num) !debug
 !	 write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_c8): index priorities = ",i3,1x,l1,128(1x,i2))') &
 !         kf,in_out_dif,ipr(1:dim_num) !debug
-         write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_c8): segments:",4(1x,i3))') split_in,split_out,seg_in,seg_out !debug
+!        write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_c8): segments:",4(1x,i3))') split_in,split_out,seg_in,seg_out !debug
  !Transpose loop:
 !$OMP PARALLEL DEFAULT(SHARED) PRIVATE(i,j,m,n,ks,l_in,l_out,l0,l1,l2,l3,ll,lb,le,ls,im,dim_beg,dim_end)
 #ifndef NO_OMP
@@ -5526,7 +5526,7 @@
 #endif
 
 	ierr=0
-	time_beg=thread_wtime() !debug
+!	time_beg=thread_wtime() !debug
 	if(dl.gt.0_LONGINT.and.dr.gt.0_LONGINT.and.dc.gt.0_LONGINT) then
 #ifndef NO_OMP
 	 nthr=omp_get_max_threads()
@@ -5768,9 +5768,9 @@
 	else
 	 ierr=4
 	endif
-	tm=thread_wtime(time_beg) !debug
-	write(cons_out,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_r4): time/speed/error = ",2(F10.4,1x),i3)') &
-         tm,dble(dr*dl*dc)/(tm*1024d0*1024d0*1024d0),ierr !debug
+!	tm=thread_wtime(time_beg) !debug
+!	write(cons_out,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_r4): time/speed/error = ",2(F10.4,1x),i3)') &
+!         tm,dble(dr*dl*dc)/(tm*1024d0*1024d0*1024d0),ierr !debug
 	return
 	end subroutine tensor_block_pcontract_dlf_r4
 !--------------------------------------------------------------------------------
@@ -6102,7 +6102,7 @@
 #endif
 
 	ierr=0
-	time_beg=thread_wtime() !debug
+!	time_beg=thread_wtime() !debug
 	if(dl.gt.0_LONGINT.and.dr.gt.0_LONGINT.and.dc.gt.0_LONGINT) then
 #ifndef NO_OMP
 	 nthr=omp_get_max_threads()
@@ -6344,9 +6344,9 @@
 	else
 	 ierr=4
 	endif
-	tm=thread_wtime(time_beg) !debug
-	write(cons_out,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_c8): time/speed/error = ",2(F10.4,1x),i3)') &
-         tm,dble(dr*dl*dc)/(tm*1024d0*1024d0*1024d0),ierr !debug
+!	tm=thread_wtime(time_beg) !debug
+!	write(cons_out,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_c8): time/speed/error = ",2(F10.4,1x),i3)') &
+!         tm,dble(dr*dl*dc)/(tm*1024d0*1024d0*1024d0),ierr !debug
 	return
 	end subroutine tensor_block_pcontract_dlf_c8
 !------------------------------------------------------------------------------------------------------
