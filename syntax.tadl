@@ -17,4 +17,4 @@ Z2(a0,a1,i0,i1)=V(i0,k0,a0,c0)*T2(c0,a1,k0,i1): [i0<i1],[a0<a1],sparse(scheme1)
 
 write Z2(a0,a1,i0,i1),V
 
-destroy V,T2
+destroy V,T2,Z2(a0,a1,i0,i1)

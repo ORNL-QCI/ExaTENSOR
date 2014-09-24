@@ -1,7 +1,7 @@
 	module combinatoric
 !Combinatoric Procedures.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!Revision: 2014/08/29
+!Revision: 2014/09/24
 !All rights reserved! No single part can be taken or reproduced!
 !PROCEDURES:
 ! - TRNG(i:ctrl,i:ni,i[1]:trn,i[1]:ngt): permutation generator which returns each new permutation.
@@ -955,30 +955,33 @@
 !INPUT:
 ! - ni - number of items, range [1:ni], if ni<=0 nothing will be done;
 !OUTPUT:
-! - trn(0:ni) - permutation (trn(0) - sign of the permutation generated);
+! - trn(0:ni) - generated permutation (trn(0) - sign of the permutation);
 	implicit none
 	integer, intent(in):: ni
 	integer, intent(out):: trn(0:ni)
 	logical, intent(in), optional:: no_trivial
 !----------------------------------------------
 	integer, parameter:: random_chunk=2**10 !size of the chunk of random numbers generated in one call
+	integer, parameter:: num_repeats=3      !the bigger the number, the better the generator quality (more expensive)
 !----------------------------------------------
-	integer i,j,k,l,m,n,k0,k1,k2,k3,ks,kf,ierr
+	integer i,j,k,l,m,n,nr,ierr
 	real(8):: ra(1:random_chunk)
 
 	if(ni.gt.0) then
+	 trn(0)=+1; do i=1,ni; trn(i)=i; enddo !initial permutation
 	 ploop: do
-	  trn(0)=+1; do i=1,ni; trn(i)=i; enddo !initial permutation
-	  do i=1,ni,random_chunk
-	   j=min(i+random_chunk-1,ni); l=j-i+1
-	   call random_number(ra(1:l))
-	   ra(1:l)=ra(1:l)*2d0
-	   do k=1,l
-	    k1=i+k-1
-	    if(ra(k).lt.1d0) then
-	     n=int(ra(k)*dble(ni))+1; if(n.gt.ni) n=ni
-	     if(n.ne.k1) then; m=trn(k1); trn(k1)=trn(n); trn(n)=m; trn(0)=-trn(0); endif
-	    endif
+	  do nr=1,num_repeats
+	   do i=1,ni,random_chunk
+	    l=min(i+random_chunk-1,ni)-i+1
+	    call random_number(ra(1:l))
+	    ra(1:l)=ra(1:l)*2d0
+	    do k=1,l
+	     if(ra(k).lt.1d0) then
+	      j=i+k-1
+	      n=int(ra(k)*dble(ni))+1; if(n.gt.ni) n=ni
+	      if(n.ne.j) then; m=trn(j); trn(j)=trn(n); trn(n)=m; trn(0)=-trn(0); endif
+	     endif
+	    enddo
 	   enddo
 	  enddo
 	  if(present(no_trivial)) then
@@ -1003,30 +1006,33 @@
 !INPUT:
 ! - ni - number of items, range [1:ni], if ni<=0 nothing will be done;
 !OUTPUT:
-! - trn(0:ni) - permutation (trn(0) - sign of the permutation generated);
+! - trn(0:ni) - generated permutation (trn(0) - sign of the permutation);
 	implicit none
 	integer(8), intent(in):: ni
 	integer(8), intent(out):: trn(0:ni)
 	logical, intent(in), optional:: no_trivial
 !-------------------------------------------------
 	integer(8), parameter:: random_chunk=2**10 !size of the chunk of random numbers generated in one call
+	integer(8), parameter:: num_repeats=3      !the bigger the number, the better the generator quality (more expensive)
 !-------------------------------------------------
-	integer(8) i,j,k,l,m,n,k0,k1,k2,k3,ks,kf,ierr
+	integer(8) i,j,k,l,m,n,nr,ierr
 	real(8):: ra(1:random_chunk)
 
-	if(ni.gt.0) then
+	if(ni.gt.0_8) then
+	 trn(0)=+1_8; do i=1_8,ni; trn(i)=i; enddo !initial permutation
 	 ploop: do
-	  trn(0)=+1; do i=1,ni; trn(i)=i; enddo !initial permutation
-	  do i=1,ni,random_chunk
-	   j=min(i+random_chunk-1,ni); l=j-i+1
-	   call random_number(ra(1:l))
-	   ra(1:l)=ra(1:l)*2d0
-	   do k=1,l
-	    k1=i+k-1
-	    if(ra(k).lt.1d0) then
-	     n=int(ra(k)*dble(ni),8)+1; if(n.gt.ni) n=ni
-	     if(n.ne.k1) then; m=trn(k1); trn(k1)=trn(n); trn(n)=m; trn(0)=-trn(0); endif
-	    endif
+	  do nr=1_8,num_repeats
+	   do i=1_8,ni,random_chunk
+	    l=min(i+random_chunk-1_8,ni)-i+1_8
+	    call random_number(ra(1_8:l))
+	    ra(1_8:l)=ra(1_8:l)*2d0
+	    do k=1_8,l
+	     if(ra(k).lt.1d0) then
+	      j=i+k-1_8
+	      n=int(ra(k)*dble(ni),8)+1_8; if(n.gt.ni) n=ni
+	      if(n.ne.j) then; m=trn(j); trn(j)=trn(n); trn(n)=m; trn(0)=-trn(0); endif
+	     endif
+	    enddo
 	   enddo
 	  enddo
 	  if(present(no_trivial)) then

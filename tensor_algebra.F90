@@ -1,6 +1,6 @@
 !Tensor Algebra for Multi-Core CPUs (OpenMP based).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2014/09/23
+!REVISION: 2014/09/24
 !GNU linking options: -lgomp -lblas -llapack
 !ACRONYMS:
 ! - mlndx - multiindex;
@@ -3167,8 +3167,7 @@
 	integer, intent(in), optional:: tdim
 	integer, intent(in), optional:: spread
 	integer, intent(inout):: ierr
-!-----------------------------------------------
-	integer, parameter:: max_dim_extent=4096         !max dimension extent
+!-------------------------------------------------------
 	integer(LONGINT), parameter:: max_blk_size=2**30 !max tensor block size (default)
 !-------------------------------------------------------
 	integer i,j,m,n,tdm,spr
@@ -3177,16 +3176,23 @@
 
 	ierr=0; tsl=0
 	if(present(tdim)) then
-	 if(tdim.ge.0) then; tdm=tdim; else; ierr=1; return; endif
+	 if(present(tsize)) then; if(tdim.eq.0.and.tsize.ne.1_LONGINT) then; ierr=1; return; endif; endif
+	 if(tdim.ge.0) then; tdm=tdim; else; ierr=2; return; endif
 	else
 	 call random_number(val); tdm=nint(dble(max_tensor_rank)*val)
 	endif
 	if(present(tsize)) then
-	 if(tsize.gt.0_LONGINT) then; tsz=tsize; if(tdm.eq.0.and.tsize.gt.1_LONGINT) tdm=1; else; ierr=2; return; endif
+	 if(tsize.gt.0_LONGINT) then; tsz=tsize; if(tdm.eq.0.and.tsize.gt.1_LONGINT) tdm=1; else; ierr=3; return; endif
 	else
 	 if(tdm.gt.0) then; call random_number(val); tsz=int(dble(max_blk_size)*val,LONGINT)+1_LONGINT; else; tsz=1_LONGINT; endif
 	endif
-	spr=0; if(present(spread)) then; if(spread.gt.0) then; spr=spread; else; ierr=3; return; endif; endif
+	if(present(spread)) then
+	 if(spread.ge.1) then; spr=spread; else; ierr=4; return; endif
+	 if(present(tsize)) then; if(tsize.lt.int(spread,LONGINT)) then; ierr=5; return; endif; endif
+	 tsz=max(tsz,int(spr,8))
+	else
+	 spr=0
+	endif
 	if(tdm.gt.0) then
 	 tsss(1:1)='('; tsl=1
 	 call random_number(dme(1:tdm))
@@ -3201,16 +3207,16 @@
 	 do i=1,tdm
 	  val=dme(i)*stretch
 	  if(val.ge.1d0) then
-	   m=min(nint(val),max_dim_extent); if(i.lt.tdm) stretch=stretch*((val/dble(m))**(1d0/dble(tdm-i)))
+	   m=nint(val); if(i.lt.tdm) stretch=stretch*((val/dble(m))**(1d0/dble(tdm-i)))
 	  else
 	   m=1; if(i.lt.tdm) stretch=stretch*(val**(1d0/dble(tdm-i)))
 	  endif
-	  if(m.lt.1) then; ierr=4; return; endif
+	  if(m.lt.1) then; ierr=6; return; endif
 	  call numchar(m,j,tsss(tsl+1:)); tsl=tsl+j+1; tsss(tsl:tsl)=','
 	 enddo
 	 tsss(tsl:tsl)=')'
 	else
-	 tsss(1:2)='()'; tsl=2
+	 tsl=len_trim('()'); tsss(1:tsl)='()'
 	endif
 	return
 	end subroutine tensor_shape_rnd
