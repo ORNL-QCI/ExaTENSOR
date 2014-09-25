@@ -3,7 +3,7 @@ AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
 This open-source code was developed by the author while
 at the National Center for Computational Sciences
 at the Oak Ridge National Laboratory, Oak Ridge TN.
-REVISION: 2014/09/24
+REVISION: 2014/09/25
 NOTES:
  # Functions without underscores at the end of their names are blocking (Host) functions;
    Functions with one underscore at the end of their names are external non-blocking functions;
@@ -2879,6 +2879,15 @@ NOTES:
  __shared__ size_t vol,vol_ext;
  size_t _vol,_addr_in,_addr_out,_addr,_work_piece;
  int i,j,k,l,m,n,_vol_minor,_vol_in,_vol_out,_s1,_s2;
+/*
+SHARED MEMORY USE =
+ + TENS_TRANSP_BUF_SIZE*8
+ + MAX_TENSOR_RANK*(8+8+4+4+4+4+4+4)
+ + TENS_TRANSP_TAB_SIZE*(8+8+4+4)
+ + 4*15 + 8*2
+REGISTER USE =
+ + 4*4 + 4*11 + 8*5 = 100 Bytes
+*/
 
 //Determine the minor index set (only the master thread in each thread block):
  if(threadIdx.x == 0){
