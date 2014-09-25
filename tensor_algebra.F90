@@ -4016,7 +4016,7 @@
 !$OMP FLUSH(segs)
 	 l_out=segs(n); do i=dim_num,1,-1; im(i)=l_out/bases_out(i); l_out=l_out-im(i)*bases_out(i); enddo
 	 l_in=ext_beg(1); do i=2,dim_num; l_in=l_in+(ext_beg(i)+im(i))*bases_in(i); enddo
-	 lb=int(im(1),LONGINT); l_out=segs(n)-lb
+	 lb=int(im(1),LONGINT); le=int(slice_ext(1)-1,LONGINT); l_out=segs(n)-lb
 	 sloop: do while(l_out+lb.lt.segs(n+1))
 	  le=min(le,segs(n+1)-1_LONGINT-l_out) !to avoid different threads doing the same work
 	  do ll=lb,le; slice(l_out+ll)=tens(l_in+ll); enddo
@@ -4088,7 +4088,7 @@
 !$OMP FLUSH(segs)
 	 l_out=segs(n); do i=dim_num,1,-1; im(i)=l_out/bases_out(i); l_out=l_out-im(i)*bases_out(i); enddo
 	 l_in=ext_beg(1); do i=2,dim_num; l_in=l_in+(ext_beg(i)+im(i))*bases_in(i); enddo
-	 lb=int(im(1),LONGINT); l_out=segs(n)-lb
+	 lb=int(im(1),LONGINT); le=int(slice_ext(1)-1,LONGINT); l_out=segs(n)-lb
 	 sloop: do while(l_out+lb.lt.segs(n+1))
 	  le=min(le,segs(n+1)-1_LONGINT-l_out) !to avoid different threads doing the same work
 	  do ll=lb,le; slice(l_out+ll)=tens(l_in+ll); enddo
@@ -4160,7 +4160,7 @@
 !$OMP FLUSH(segs)
 	 l_out=segs(n); do i=dim_num,1,-1; im(i)=l_out/bases_out(i); l_out=l_out-im(i)*bases_out(i); enddo
 	 l_in=ext_beg(1); do i=2,dim_num; l_in=l_in+(ext_beg(i)+im(i))*bases_in(i); enddo
-	 lb=int(im(1),LONGINT); l_out=segs(n)-lb
+	 lb=int(im(1),LONGINT); le=int(slice_ext(1)-1,LONGINT); l_out=segs(n)-lb
 	 sloop: do while(l_out+lb.lt.segs(n+1))
 	  le=min(le,segs(n+1)-1_LONGINT-l_out) !to avoid different threads doing the same work
 	  do ll=lb,le; slice(l_out+ll)=tens(l_in+ll); enddo
@@ -4232,7 +4232,7 @@
 !$OMP FLUSH(segs)
 	 l_in=segs(n); do i=dim_num,1,-1; im(i)=l_in/bases_in(i); l_in=l_in-im(i)*bases_in(i); enddo
 	 l_out=ext_beg(1); do i=2,dim_num; l_out=l_out+(ext_beg(i)+im(i))*bases_out(i); enddo
-	 lb=int(im(1),LONGINT); l_in=segs(n)-lb
+	 lb=int(im(1),LONGINT); le=int(slice_ext(1)-1,LONGINT); l_in=segs(n)-lb
 	 sloop: do while(l_in+lb.lt.segs(n+1))
 	  le=min(le,segs(n+1)-1_LONGINT-l_in) !to avoid different threads doing the same work
 	  do ll=lb,le; tens(l_out+ll)=slice(l_in+ll); enddo
@@ -4304,7 +4304,7 @@
 !$OMP FLUSH(segs)
 	 l_in=segs(n); do i=dim_num,1,-1; im(i)=l_in/bases_in(i); l_in=l_in-im(i)*bases_in(i); enddo
 	 l_out=ext_beg(1); do i=2,dim_num; l_out=l_out+(ext_beg(i)+im(i))*bases_out(i); enddo
-	 lb=int(im(1),LONGINT); l_in=segs(n)-lb
+	 lb=int(im(1),LONGINT); le=int(slice_ext(1)-1,LONGINT); l_in=segs(n)-lb
 	 sloop: do while(l_in+lb.lt.segs(n+1))
 	  le=min(le,segs(n+1)-1_LONGINT-l_in) !to avoid different threads doing the same work
 	  do ll=lb,le; tens(l_out+ll)=slice(l_in+ll); enddo
@@ -4376,7 +4376,7 @@
 !$OMP FLUSH(segs)
 	 l_in=segs(n); do i=dim_num,1,-1; im(i)=l_in/bases_in(i); l_in=l_in-im(i)*bases_in(i); enddo
 	 l_out=ext_beg(1); do i=2,dim_num; l_out=l_out+(ext_beg(i)+im(i))*bases_out(i); enddo
-	 lb=int(im(1),LONGINT); l_in=segs(n)-lb
+	 lb=int(im(1),LONGINT); le=int(slice_ext(1)-1,LONGINT); l_in=segs(n)-lb
 	 sloop: do while(l_in+lb.lt.segs(n+1))
 	  le=min(le,segs(n+1)-1_LONGINT-l_in) !to avoid different threads doing the same work
 	  do ll=lb,le; tens(l_out+ll)=slice(l_in+ll); enddo
