@@ -4729,8 +4729,8 @@
 	  ipr(1:dim_num+1)=(/(j,j=1,dim_num+1)/); kf=dim_num !trivial priorities, all indices are minor
 	  split_in=kf; seg_in=dim_extents(split_in); split_out=kf; seg_out=dim_extents(split_out)
 	 else
-	  do k1=1,dim_num; if(bases_in(k1+1).ge.cache_line_min) exit; enddo; k1=k1-1
-	  do k2=1,dim_num; if(bases_out(n2o(k2+1)).ge.cache_line_min) exit; enddo; k2=k2-1
+	  do k1=1,dim_num; if(bases_in(k1+1).ge.cache_line_lim) exit; enddo; k1=k1-1
+	  do k2=1,dim_num; if(bases_out(n2o(k2+1)).ge.cache_line_lim) exit; enddo; k2=k2-1
 	  do j=k1+1,dim_num; if(dim_transp(j).le.k2) then; k1=k1+1; else; exit; endif; enddo
 	  do j=k2+1,dim_num; if(n2o(j).le.k1) then; k2=k2+1; else; exit; endif; enddo
 	  if(bases_in(k1+1).lt.cache_line_min.and.bases_out(n2o(k2+1)).ge.cache_line_min) then !split the last minor input dim
@@ -4789,7 +4789,7 @@
 	   l_in=0_LONGINT; do j=1,dim_num; l_in=l_in+im(j)*bases_in(j); enddo
 	   l_out=0_LONGINT; do j=1,dim_num; l_out=l_out+im(j)*bases_out(j); enddo
 	   le=dim_end(1)-dim_beg(1); lb=(segs(n+1)-segs(n))*vol_min; ks=0
-	   loop1: do while(lb.gt.0)
+	   loop1: do while(lb.gt.0_LONGINT)
 	    do ll=0_LONGINT,le
 	     tens_out(l_out+ll*ls)=tens_in(l_in+ll)
 	    enddo
