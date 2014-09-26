@@ -44,7 +44,7 @@
 //KERNEL PARAMETERS:
 #define GPU_CACHE_LINE_LEN 128     //cache line length in bytes
 #define MAX_CUDA_BLOCKS 1024       //max number of CUDA thread blocks per kernel
-#define TENS_TRANSP_BUF_SIZE 1536  //buffer size (elements) for <gpu_tensor_block_copy_dlf_XX__>
+#define TENS_TRANSP_BUF_SIZE 2560  //buffer size (elements) for <gpu_tensor_block_copy_dlf_XX__>
 #define TENS_TRANSP_TAB_SIZE 69    //look up table size (integers) for <gpu_tensor_block_copy_dlf_XX__>
 #define MAT_MULT_TILE_DIM 16       //tile dimension size for <gpu_matrix_multiply_tn_XX__>
 #define THRDS_ARRAY_PRODUCT 256    //threads per block for <gpu_array_product_XX__>
@@ -52,7 +52,7 @@
 #define THRDS_ARRAY_INIT 256       //threads per block for <gpu_array_init_XX__>
 #define THRDS_ARRAY_SCALE 256      //threads per block for <gpu_array_scale_XX__> and <gpu_array_dot_product_XX__>
 #define THRDS_ARRAY_ADD 256        //threads per block for <gpu_array_add_XX__>
-#define THRDS_TENSOR_COPY 192      //threads per block for <gpu_tensor_block_copy_dlf_XX__>
+#define THRDS_TENSOR_COPY 256      //threads per block for <gpu_tensor_block_copy_dlf_XX__>
 #define THRDS_TENSOR_COPY_SCAT 256 //threads per block for <gpu_tensor_block_copy_scatter_dlf_XX__>
 
 //DATA KINDS:
