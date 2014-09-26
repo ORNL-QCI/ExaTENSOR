@@ -4765,7 +4765,7 @@
          write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r8): vol_ext ",i11,": segs:",4(1x,i5))') &
           vol_ext,split_in,split_out,seg_in,seg_out !debug
  !Transpose loop:
-!$OMP PARALLEL DEFAULT(SHARED) PRIVATE(i,j,m,n,ks,l0,l1,l2,l3,ll,lb,le,ls,l_in,l_out,im,dim_beg,dim_end)
+!$OMP PARALLEL DEFAULT(SHARED) PRIVATE(i,j,m,n,ks,l0,l1,l2,l3,ll,lb,le,ls,l_in,l_out,vol_min,im,dim_beg,dim_end)
 #ifndef NO_OMP
 	 n=omp_get_thread_num(); m=omp_get_num_threads() !multi-threaded execution
 #else
