@@ -3442,6 +3442,7 @@
             write(jo_cp,'(3x,l1,1x,i9,1x,F16.4)') cmp,diffc,tensor_block_norm1(ftens(2),ierr,dtk)
             if(.not.cmp) then; nfail=nfail+1; write(jo_cp,'(3x,"Comparison Failed!")'); endif
             call set_transpose_algorithm(EFF_TRN_ON) !cache-efficient
+            call tensor_block_init('r8',ftens(2),ierr,val_r8=0d0)
             write(jo_cp,'(3x)',advance='no')
             call tensor_block_copy(ftens(1),ftens(0),ierr,o2n); if(ierr.ne.0) then; ierr=7; goto 999; endif
             tm=thread_wtime()

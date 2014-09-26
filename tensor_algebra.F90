@@ -4774,7 +4774,7 @@
 !	 if(n.eq.0) write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r8): number of threads = ",i5)') m !debug
 !$OMP MASTER
 	 segs(0)=0_LONGINT; call divide_segment(vol_ext,int(m,LONGINT),segs(1:),i); do j=2,m; segs(j)=segs(j)+segs(j-1); enddo
-	 l0=1_LONGINT; do i=1,dim_num; bases_pri(ipr(i))=l0; l0=l0*dim_extents(ipr(i)); enddo !priority bases
+	 l0=1_LONGINT; do i=kf+1,dim_num; bases_pri(ipr(i))=l0; l0=l0*dim_extents(ipr(i)); enddo !priority bases
 !$OMP END MASTER
 !$OMP BARRIER
 !$OMP FLUSH(segs,bases_pri)
@@ -4785,7 +4785,7 @@
 	  do l0=0_LONGINT,l2,seg_in !input dimension
 	   dim_beg(split_in)=l0; dim_end(split_in)=min(l0+seg_in-1_LONGINT,l2)
 	   ll=segs(n); do i=dim_num,kf+1,-1; j=ipr(i); im(j)=ll/bases_pri(j); ll=ll-im(j)*bases_pri(j); enddo
-           vol_min=1_LONGINT; do i=1,kf; j=ipr(i); vol_min=vol_min*(dim_end(j)-dim_beg(j)+1); im(j)=dim_beg(j); enddo
+	   vol_min=1_LONGINT; do i=1,kf; j=ipr(i); vol_min=vol_min*(dim_end(j)-dim_beg(j)+1); im(j)=dim_beg(j); enddo
 	   l_in=0_LONGINT; do j=1,dim_num; l_in=l_in+im(j)*bases_in(j); enddo
 	   l_out=0_LONGINT; do j=1,dim_num; l_out=l_out+im(j)*bases_out(j); enddo
 	   le=dim_end(1)-dim_beg(1); lb=(segs(n+1)-segs(n))*vol_min; ks=0
