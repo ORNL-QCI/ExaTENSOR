@@ -4749,8 +4749,8 @@
 	    split_out=n2o(k2); seg_out=(cache_line_lim-1_LONGINT)/bases_out(split_out)+1_LONGINT
 	   endif
 	  else !split none
-	   split_in=kf; seg_in=dim_extents(split_in)
-	   split_out=kf; seg_out=dim_extents(split_out)
+	   split_in=k1; seg_in=dim_extents(split_in)
+	   split_out=n2o(k2); seg_out=dim_extents(split_out)
 	  endif
 	  ipr(1:k1)=(/(j,j=1,k1)/) !minor input set (old numeration)
 	  kf=k1; do j=1,k2; if(n2o(j).gt.k1) then; kf=kf+1; ipr(kf)=n2o(j); endif; enddo !minor output set (old numeration)
