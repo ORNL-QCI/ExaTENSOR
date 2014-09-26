@@ -4772,47 +4772,85 @@
 	 n=0; m=1 !serial execution
 #endif
 !	 if(n.eq.0) write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r8): number of threads = ",i5)') m !debug
+         if(kf.lt.dim_num) then !external indices present
 !$OMP MASTER
-	 segs(0)=0_LONGINT; call divide_segment(vol_ext,int(m,LONGINT),segs(1:),i); do j=2,m; segs(j)=segs(j)+segs(j-1); enddo
-	 l0=1_LONGINT; do i=kf+1,dim_num; bases_pri(ipr(i))=l0; l0=l0*dim_extents(ipr(i)); enddo !priority bases
+	  segs(0)=0_LONGINT; call divide_segment(vol_ext,int(m,LONGINT),segs(1:),i); do j=2,m; segs(j)=segs(j)+segs(j-1); enddo
+	  l0=1_LONGINT; do i=kf+1,dim_num; bases_pri(ipr(i))=l0; l0=l0*dim_extents(ipr(i)); enddo !priority bases
 !$OMP END MASTER
 !$OMP BARRIER
 !$OMP FLUSH(segs,bases_pri)
-	 dim_beg(1:dim_num)=0; dim_end(1:dim_num)=dim_extents(1:dim_num)-1
-         l2=dim_end(split_in); l3=dim_end(split_out); ls=bases_out(1)
-	 loop0: do l1=0_LONGINT,l3,seg_out !output dimension
-	  dim_beg(split_out)=l1; dim_end(split_out)=min(l1+seg_out-1_LONGINT,l3)
-	  do l0=0_LONGINT,l2,seg_in !input dimension
-	   dim_beg(split_in)=l0; dim_end(split_in)=min(l0+seg_in-1_LONGINT,l2)
-	   ll=segs(n); do i=dim_num,kf+1,-1; j=ipr(i); im(j)=ll/bases_pri(j); ll=ll-im(j)*bases_pri(j); enddo
-	   vol_min=1_LONGINT; do i=1,kf; j=ipr(i); vol_min=vol_min*(dim_end(j)-dim_beg(j)+1); im(j)=dim_beg(j); enddo
-	   l_in=0_LONGINT; do j=1,dim_num; l_in=l_in+im(j)*bases_in(j); enddo
-	   l_out=0_LONGINT; do j=1,dim_num; l_out=l_out+im(j)*bases_out(j); enddo
-	   le=dim_end(1)-dim_beg(1); lb=(segs(n+1)-segs(n))*vol_min; ks=0
-	   loop1: do while(lb.gt.0_LONGINT)
-	    do ll=0_LONGINT,le
-	     tens_out(l_out+ll*ls)=tens_in(l_in+ll)
-	    enddo
-	    lb=lb-(le+1_LONGINT)
-	    do i=2,dim_num
-	     j=ipr(i) !old index number
-	     if(im(j).lt.dim_end(j)) then
-	      im(j)=im(j)+1; l_in=l_in+bases_in(j); l_out=l_out+bases_out(j)
-	      ks=ks+1; exit
-	     else
-	      l_in=l_in-(im(j)-dim_beg(j))*bases_in(j); l_out=l_out-(im(j)-dim_beg(j))*bases_out(j); im(j)=dim_beg(j)
-	     endif
-	    enddo !i
-	    ks=ks-1; if(ks.lt.0) exit loop1
-	   enddo loop1
-	   if(lb.ne.0_LONGINT) then
-	    if(verbose) write(cons_out,'("ERROR(tensor_algebra::tensor_block_copy_dlf_r8): invalid remainder: ",i11,1x,i4)') lb,n
+	  dim_beg(1:dim_num)=0; dim_end(1:dim_num)=dim_extents(1:dim_num)-1
+          l2=dim_end(split_in); l3=dim_end(split_out); ls=bases_out(1)
+	  loop0: do l1=0_LONGINT,l3,seg_out !output dimension
+	   dim_beg(split_out)=l1; dim_end(split_out)=min(l1+seg_out-1_LONGINT,l3)
+	   do l0=0_LONGINT,l2,seg_in !input dimension
+	    dim_beg(split_in)=l0; dim_end(split_in)=min(l0+seg_in-1_LONGINT,l2)
+	    ll=segs(n); do i=dim_num,kf+1,-1; j=ipr(i); im(j)=ll/bases_pri(j); ll=ll-im(j)*bases_pri(j); enddo
+	    vol_min=1_LONGINT; do i=1,kf; j=ipr(i); vol_min=vol_min*(dim_end(j)-dim_beg(j)+1); im(j)=dim_beg(j); enddo
+	    l_in=0_LONGINT; do j=1,dim_num; l_in=l_in+im(j)*bases_in(j); enddo
+	    l_out=0_LONGINT; do j=1,dim_num; l_out=l_out+im(j)*bases_out(j); enddo
+	    le=dim_end(1)-dim_beg(1); lb=(segs(n+1)-segs(n))*vol_min; ks=0
+	    loop1: do while(lb.gt.0_LONGINT)
+	     do ll=0_LONGINT,le
+	      tens_out(l_out+ll*ls)=tens_in(l_in+ll)
+	     enddo
+	     lb=lb-(le+1_LONGINT)
+	     do i=2,dim_num
+	      j=ipr(i) !old index number
+	      if(im(j).lt.dim_end(j)) then
+	       im(j)=im(j)+1; l_in=l_in+bases_in(j); l_out=l_out+bases_out(j)
+	       ks=ks+1; exit
+	      else
+	       l_in=l_in-(im(j)-dim_beg(j))*bases_in(j); l_out=l_out-(im(j)-dim_beg(j))*bases_out(j); im(j)=dim_beg(j)
+	      endif
+	     enddo !i
+	     ks=ks-1; if(ks.lt.0) exit loop1
+	    enddo loop1
+	    if(lb.ne.0_LONGINT) then
+	     if(verbose) write(cons_out,'("ERROR(tensor_algebra::tensor_block_copy_dlf_r8): invalid remainder: ",i11,1x,i4)') lb,n
 !$OMP ATOMIC WRITE
-	    ierr=2
-	    exit loop0
-	   endif
-	  enddo !l0
-         enddo loop0 !l1
+	     ierr=2
+	     exit loop0
+	    endif
+	   enddo !l0
+          enddo loop0 !l1
+         else !external indices absent
+!$OMP MASTER
+	  l0=1_LONGINT; do i=kf+1,dim_num; bases_pri(ipr(i))=l0; l0=l0*dim_extents(ipr(i)); enddo !priority bases
+!$OMP END MASTER
+!$OMP BARRIER
+!$OMP FLUSH(bases_pri)
+	  dim_beg(1:dim_num)=0; dim_end(1:dim_num)=dim_extents(1:dim_num)-1
+          l2=dim_end(split_in); l3=dim_end(split_out); ls=bases_out(1)
+!$OMP DO SCHEDULE(DYNAMIC) COLLAPSE(2)
+	  do l1=0_LONGINT,l3,seg_out !output dimension
+	   do l0=0_LONGINT,l2,seg_in !input dimension
+	    dim_beg(split_out)=l1; dim_end(split_out)=min(l1+seg_out-1_LONGINT,l3)
+	    dim_beg(split_in)=l0; dim_end(split_in)=min(l0+seg_in-1_LONGINT,l2)
+	    vol_min=1_LONGINT; do i=1,kf; j=ipr(i); vol_min=vol_min*(dim_end(j)-dim_beg(j)+1); im(j)=dim_beg(j); enddo
+	    l_in=0_LONGINT; do j=1,dim_num; l_in=l_in+im(j)*bases_in(j); enddo
+	    l_out=0_LONGINT; do j=1,dim_num; l_out=l_out+im(j)*bases_out(j); enddo
+	    le=dim_end(1)-dim_beg(1); lb=vol_min; ks=0
+	    loop2: do while(lb.gt.0_LONGINT)
+	     do ll=0_LONGINT,le
+	      tens_out(l_out+ll*ls)=tens_in(l_in+ll)
+	     enddo
+	     lb=lb-(le+1_LONGINT)
+	     do i=2,dim_num
+	      j=ipr(i) !old index number
+	      if(im(j).lt.dim_end(j)) then
+	       im(j)=im(j)+1; l_in=l_in+bases_in(j); l_out=l_out+bases_out(j)
+	       ks=ks+1; exit
+	      else
+	       l_in=l_in-(im(j)-dim_beg(j))*bases_in(j); l_out=l_out-(im(j)-dim_beg(j))*bases_out(j); im(j)=dim_beg(j)
+	      endif
+	     enddo !i
+	     ks=ks-1; if(ks.lt.0) exit loop2
+	    enddo loop2
+	   enddo !l0
+          enddo !l1
+!$OMP END DO
+         endif
 !$OMP END PARALLEL
 	endif !trivial or not
         tm=thread_wtime(time_beg) !debug
