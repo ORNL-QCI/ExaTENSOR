@@ -4758,11 +4758,11 @@
 	  ipr(dim_num+1)=dim_num+1 !special setting
 	 endif
 	 vol_ext=1_LONGINT; do j=kf+1,dim_num; vol_ext=vol_ext*dim_extents(ipr(j)); enddo !external volume
-	 write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r8): extents:",99(1x,i4))') dim_extents(1:dim_num) !debug
+	 write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r8): extents:",99(1x,i5))') dim_extents(1:dim_num) !debug
 	 write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r8): permutation:",99(1x,i2))') dim_transp(1:dim_num) !debug
 	 write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r8): minor ",i3,": priority:",99(1x,i2))') &
           kf,ipr(1:dim_num) !debug
-         write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r8): vol_ext ",i11,": segs:",4(1x,i2))') &
+         write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r8): vol_ext ",i11,": segs:",4(1x,i5))') &
           vol_ext,split_in,split_out,seg_in,seg_out !debug
  !Transpose loop:
 !$OMP PARALLEL DEFAULT(SHARED) PRIVATE(i,j,m,n,ks,l0,l1,l2,l3,ll,lb,le,ls,l_in,l_out,im,dim_beg,dim_end)
