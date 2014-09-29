@@ -4753,6 +4753,32 @@
 	   split_in=k1; seg_in=dim_extents(split_in)
 	   split_out=n2o(k2); seg_out=dim_extents(split_out)
 	  endif
+	  vol_min=1_LONGINT
+	  if(seg_in.lt.dim_extents(split_in)) vol_min=vol_min*seg_in
+	  if(seg_out.lt.dim_extents(split_out)) vol_min=vol_min*seg_out
+	  if(vol_min.gt.1_LONGINT) then
+	   do j=1,k1
+	    if(j.ne.split_in.and.j.ne.split_out) vol_min=vol_min*dim_extents(j)
+	   enddo
+	   do j=1,k2
+	    l=n2o(j)
+	    if(l.gt.k1.and.l.ne.split_in.and.l.ne.split_out) vol_min=vol_min*dim_extents(l)
+	   enddo
+	   l=int((cache_line_lim*cache_line_lim)/vol_min,4)
+	   if(l.ge.2) then
+	    if(split_in.eq.split_out) then
+	     seg_in=seg_in*l
+	    else
+	     if(l.gt.4) then
+	      l=int(sqrt(float(l)),4)
+	      seg_in=min(seg_in*l,int(dim_extents(split_in),LONGINT))
+	      seg_out=min(seg_out*l,int(dim_extents(split_out),LONGINT))
+	     else
+	      seg_in=min(seg_in*l,int(dim_extents(split_in),LONGINT))
+	     endif
+	    endif
+	   endif
+	  endif
 	  l=0
 	  do while(l.lt.k1)
 	   l=l+1; ipr(l)=l; if(bases_in(l+1).ge.cache_line_min) exit
