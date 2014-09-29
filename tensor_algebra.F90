@@ -4708,6 +4708,7 @@
 !Trivial index permutation (no permutation):
  !Compute indexing bases:
 	 bs=1_LONGINT; do i=1,dim_num; bases_in(i)=bs; bs=bs*dim_extents(i); enddo
+ !Copy input to output:
 !$OMP PARALLEL DEFAULT(SHARED) PRIVATE(l0,l1)
 !$OMP DO SCHEDULE(GUIDED)
 	 do l0=0_LONGINT,bs-1_LONGINT-mod(bs,vec_size),vec_size
@@ -4752,9 +4753,22 @@
 	   split_in=k1; seg_in=dim_extents(split_in)
 	   split_out=n2o(k2); seg_out=dim_extents(split_out)
 	  endif
-	  ipr(1:k1)=(/(j,j=1,k1)/) !minor input set (old numeration)
-	  kf=k1; do j=1,k2; if(n2o(j).gt.k1) then; kf=kf+1; ipr(kf)=n2o(j); endif; enddo !minor output set (old numeration)
-	  l=kf; do j=k2+1,dim_num; if(n2o(j).gt.k1) then; l=l+1; ipr(l)=n2o(j); endif; enddo !kf is the length of the combined minor set
+	  l=0
+	  do while(l.lt.k1)
+	   l=l+1; ipr(l)=l; if(bases_in(l+1).ge.cache_line_min) exit
+	  enddo
+	  m=l+1
+	  j=0
+	  do while(j.lt.k2)
+	   j=j+1; n=n2o(j)
+	   if(n.ge.m) then; l=l+1; ipr(l)=n; endif
+	   if(bases_out(n2o(j+1)).ge.cache_line_min) exit
+	  enddo
+	  n=j+1
+	  do j=m,k1; if(dim_transp(j).ge.n) then; l=l+1; ipr(l)=j; endif; enddo
+	  do j=n,k2; if(n2o(j).gt.k1) then; l=l+1; ipr(l)=n2o(j); endif; enddo
+	  kf=l
+	  do j=k2+1,dim_num; if(n2o(j).gt.k1) then; l=l+1; ipr(l)=n2o(j); endif; enddo !kf is the length of the combined minor set
 	  ipr(dim_num+1)=dim_num+1 !special setting
 	 endif
 	 vol_ext=1_LONGINT; do j=kf+1,dim_num; vol_ext=vol_ext*dim_extents(ipr(j)); enddo !external volume
@@ -4764,7 +4778,7 @@
           kf,ipr(1:dim_num) !debug
          write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r8): vol_ext ",i11,": segs:",4(1x,i5))') &
           vol_ext,split_in,split_out,seg_in,seg_out !debug
- !Transpose loop:
+ !Transpose:
 !$OMP PARALLEL DEFAULT(SHARED) PRIVATE(i,j,m,n,ks,l0,l1,l2,l3,ll,lb,le,ls,l_in,l_out,vol_min,im,dim_beg,dim_end)
 #ifndef NO_OMP
 	 n=omp_get_thread_num(); m=omp_get_num_threads() !multi-threaded execution
