@@ -1,6 +1,6 @@
 !Tensor Algebra for Multi-Core CPUs (OpenMP based).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2014/09/26
+!REVISION: 2014/09/29
 !GNU linking options: -lgomp -lblas -llapack
 !ACRONYMS:
 ! - mlndx - multiindex;
@@ -4403,267 +4403,7 @@
 #endif
 	subroutine tensor_block_copy_dlf_r4(dim_num,dim_extents,dim_transp,tens_in,tens_out,ierr) !PARALLEL
 !Given a dense tensor block, this subroutine makes a copy of it, permuting the indices according to the <dim_transp>.
-!The algorithm is cache-efficient (Author: Dmitry I. Lyakh (Liakh): quant4me@gmail.com)
-!INPUT:
-! - dim_num - number of dimensions (>0);
-! - dim_extents(1:dim_num) - dimension extents;
-! - dim_transp(0:dim_num) - index permutation (O2N);
-! - tens_in(0:) - input tensor data;
-!OUTPUT:
-! - tens_out(0:) - output (possibly transposed) tensor data;
-! - ierr - error code (0:success).
-	implicit none
-!---------------------------------------
-	integer, parameter:: real_kind=4
-	logical, parameter:: cache_efficiency=.true.
-	integer(LONGINT), parameter:: cache_line_len=8 !cache line length (words)
-	integer(LONGINT), parameter:: cache_line_lim=cache_line_len*3 !approx. number of simultaneously open cache lines per thread
-	integer(LONGINT), parameter:: small_tens_size=2**10 !up to this size (of a tensor block) it is useless to apply cache efficiency
-	integer(LONGINT), parameter:: vec_size=2**8 !loop reorganization parameter for direct copy
-#ifndef NO_PHI
-!DIR$ ATTRIBUTES OFFLOAD:mic:: real_kind,cache_efficiency,cache_line_len,cache_line_lim,small_tens_size,vec_size
-!DIR$ ATTRIBUTES ALIGN:128:: real_kind,cache_efficiency,cache_line_len,cache_line_lim,small_tens_size,vec_size
-#endif
-!---------------------------------------------------------------------
-	integer, intent(in):: dim_num,dim_extents(1:*),dim_transp(0:*)
-	real(real_kind), intent(in):: tens_in(0:*)
-	real(real_kind), intent(out):: tens_out(0:*)
-	integer, intent(inout):: ierr
-	integer i,j,k,l,m,n,k0,k1,k2,k3,ks,kf,split_in,split_out
-	integer im(1:dim_num),n2o(0:dim_num+1),ipr(1:dim_num+1),dim_beg(1:dim_num),dim_end(1:dim_num),ac1(1:dim_num)
-	integer(LONGINT) bases_in(1:dim_num+1),bases_out(1:dim_num+1),bases_pri(1:dim_num+1),segs(0:max_threads) !`Is segs(:) threadsafe?
-	integer(LONGINT) bs,l0,l1,l2,l3,ll,lb,le,ls,l_in,l_out,seg_in,seg_out
-	logical trivial,in_out_dif
-	real(8) time_beg,tm
-#ifndef NO_PHI
-!DIR$ ATTRIBUTES ALIGN:128:: im,n2o,ipr,dim_beg,dim_end,ac1,bases_in,bases_out,bases_pri,segs
-#endif
-	ierr=0
-!	time_beg=thread_wtime() !debug
-	if(dim_num.lt.0) then; ierr=dim_num; return; elseif(dim_num.eq.0) then; tens_out(0)=tens_in(0); return; endif
-!Check the index permutation:
-	trivial=.true.; do i=1,dim_num; if(dim_transp(i).ne.i) then; trivial=.false.; exit; endif; enddo
-	trivial=trivial.and.cache_efficiency
-	if(trivial) then !trivial index permutation (no permutation)
- !Compute indexing bases:
-	 n2o(0:dim_num+1)=(/+1,dim_transp(1:dim_num),dim_num+1/)
-	 bs=1_LONGINT; do i=1,dim_num; bases_in(i)=bs; bs=bs*dim_extents(i); enddo
-!$OMP PARALLEL DEFAULT(SHARED) PRIVATE(l0,l1)
-!$OMP DO SCHEDULE(GUIDED)
-	 do l0=0_LONGINT,bs-1_LONGINT-mod(bs,vec_size),vec_size
-	  do l1=0_LONGINT,vec_size-1_LONGINT; tens_out(l0+l1)=tens_in(l0+l1); enddo
-	 enddo
-!$OMP END DO NOWAIT
-!$OMP MASTER
-	 do l0=bs-mod(bs,vec_size),bs-1_LONGINT; tens_out(l0)=tens_in(l0); enddo
-!$OMP END MASTER
-!$OMP END PARALLEL
-	else !non-trivial index permutation
- !Compute indexing bases:
-	 do i=1,dim_num; n2o(dim_transp(i))=i; enddo; n2o(dim_num+1)=dim_num+1 !get the N2O
-	 bs=1_LONGINT; do i=1,dim_num; bases_in(i)=bs; bs=bs*dim_extents(i); enddo; bases_in(dim_num+1)=bs
-	 bs=1_LONGINT; do i=1,dim_num; bases_out(n2o(i))=bs; bs=bs*dim_extents(n2o(i)); enddo; bases_out(dim_num+1)=bs
- !Determine index looping priorities:
-	 in_out_dif=.false.; split_in=0; split_out=0; seg_in=0; seg_out=0
-	 if(bs.le.small_tens_size.or.(.not.cache_efficiency)) then !tensor block is too small to think hard about it
-	  ipr(1:dim_num+1)=(/(j,j=1,dim_num+1)/); kf=dim_num !trivial priorities, all indices are minor
-	 else
-#ifndef NO_OMP
-          m=omp_get_max_threads()
-#else
-          m=1
-#endif
-	  do k1=1,dim_num; if(bases_in(k1+1).gt.cache_line_lim) exit; enddo !first k1 input dimensions form the input minor set
-	  ipr(1:k1)=(/(j,j=1,k1)/) !first k1 input dimensions form the input minor set
-	  do j=1,k1; if(dim_transp(j).gt.k1) then; in_out_dif=.true.; exit; endif; enddo !if .true., the output minor set differs from the input one
-	  if(in_out_dif) then !check whether I need to split long ranges
-	   do k2=1,dim_num; if(bases_out(n2o(k2+1)).gt.cache_line_lim) exit; enddo !first k2 output dimensions form the output minor set
-	   if(k1.eq.n2o(k2)) then !the last minor input and output indices are the same
-	    if(dim_extents(k1).ge.m) then
-	     j=(((cache_line_lim-1_LONGINT)/bases_in(k1)+1_LONGINT)+((cache_line_lim-1_LONGINT)/bases_out(k1)+1_LONGINT))/2
-	     if(j*m.le.dim_extents(k1)) then; split_in=k1; seg_in=int(j,LONGINT); endif
-	    endif
-	   else !the last minor input and output indices are different
-	    j=(cache_line_lim-1_LONGINT)/bases_in(k1)+1_LONGINT
-	    l=(cache_line_lim-1_LONGINT)/bases_out(n2o(k2))+1_LONGINT
-	    if(dim_extents(k1)*dim_extents(n2o(k2)).ge.j*l*m) then
-	     split_in=k1; split_out=n2o(k2); seg_in=int(j,LONGINT); seg_out=int(l,LONGINT)
-	    endif
-	   endif
-	   kf=k1; do j=1,k2; if(n2o(j).gt.k1) then; kf=kf+1; ipr(kf)=n2o(j); endif; enddo !ipr(priority) = old_num: dimension looping priorities
-	  else
-	   k2=k1; kf=k1
-	  endif
-	  l=kf; do j=k2+1,dim_num; if(n2o(j).gt.k1) then; l=l+1; ipr(l)=n2o(j); endif; enddo !kf is the length of the combined minor set
-	  ipr(dim_num+1)=dim_num+1 !special setting
-	 endif
-	 do i=1,dim_num; ac1(i)=n2o(dim_transp(i)+1); enddo !accelerator array
-!	 write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r4): block size, split dims = ",i10,3x,i2,1x,i2)') &
-!         bs,split_in,split_out !debug
-!	 write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r4): index extents =",128(1x,i2))') &
-!         dim_extents(1:dim_num) !debug
-!	 write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r4): index permutation =",128(1x,i2))') &
-!         dim_transp(1:dim_num) !debug
-!	 write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r4): index priorities = ",i3,1x,l1,128(1x,i2))') &
-!         kf,in_out_dif,ipr(1:dim_num) !debug
-!        write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r4): segments:",4(1x,i3))') split_in,split_out,seg_in,seg_out !debug
- !Transpose loop:
-!$OMP PARALLEL DEFAULT(SHARED) PRIVATE(i,j,m,n,ks,l_in,l_out,l0,l1,l2,l3,ll,lb,le,ls,im,dim_beg,dim_end)
-#ifndef NO_OMP
-	 n=omp_get_thread_num(); m=omp_get_num_threads() !multi-threaded execution
-#else
-	 n=0; m=1 !serial execution
-#endif
-!	 if(n.eq.0) write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r4): total number of threads = ",i4)') m !debug
-	 if(.not.in_out_dif) then !input minor set coincides with the output minor set: no splitting
-!	  if(n.eq.0) write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r4): Case 0.")') !debug
-!$OMP MASTER
-!	  write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r4): total number of threads = ",i4)') m !debug
-	  segs(0)=0_LONGINT; call divide_segment(bs,int(m,LONGINT),segs(1:),ierr); do j=2,m; segs(j)=segs(j)+segs(j-1); enddo
-	  l0=1_LONGINT; do i=1,dim_num; bases_pri(ipr(i))=l0; l0=l0*dim_extents(ipr(i)); enddo !priority bases
-!$OMP END MASTER
-!$OMP BARRIER
-!$OMP FLUSH(segs,bases_pri)
-	  l0=segs(n); do i=dim_num,1,-1; j=ipr(i); im(j)=l0/bases_pri(j); l0=l0-im(j)*bases_pri(j); enddo !initial multiindex for each thread
-	  l_in=0_LONGINT; do j=2,dim_num; l_in=l_in+im(j)*bases_in(j); enddo !initial input address
-	  l_out=0_LONGINT; do j=2,dim_num; l_out=l_out+im(j)*bases_out(j); enddo !initial output address
-	  ls=bases_out(1); l0=segs(n); lb=int(im(1),LONGINT)
-	  le=min(int(dim_extents(1)-1,LONGINT),segs(n+1)-1_LONGINT-l0+lb)
-	  do while (l0.lt.segs(n+1))
-	   do l1=lb,le; tens_out(l_out+l1*ls)=tens_in(l_in+l1); enddo
-	   l0=l0+(le-lb+1_LONGINT); lb=0_LONGINT
-	   le=min(le,segs(n+1)-1_LONGINT-l0) !to avoid multiple threads doing the same work
-  !increment of the multi-index (scheme 1):
-	   do i=2,dim_num
-	    j=ipr(i)
-	    if(im(j)+1.eq.dim_extents(j)) then
-	     l_in=l_in+bases_in(j)-bases_in(j+1); l_out=l_out+bases_out(j)-bases_out(ac1(j)); im(j)=0
-	    else
-	     im(j)=im(j)+1; l_in=l_in+bases_in(j); l_out=l_out+bases_out(j)
-	     exit
-	    endif
-	   enddo !i
-	  enddo !l0
-	 else !input and output minor sets differ: range splitting possible
-	  if(split_in.gt.0.and.split_out.eq.0) then !split the last dimension from the input minor set
-!	   if(n.eq.0) write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r4): Case 1.")') !debug
-	   dim_beg(1:dim_num)=0; dim_end(1:dim_num)=dim_extents(1:dim_num)-1; im(1:dim_num)=dim_beg(1:dim_num)
-	   l1=dim_extents(split_in)-1_LONGINT
-!$OMP DO SCHEDULE(DYNAMIC)
-	   do l0=0_LONGINT,l1,seg_in
-	    dim_beg(split_in)=int(l0,4); dim_end(split_in)=int(min(l0+seg_in-1_LONGINT,l1),4); ks=0
-	    im(split_in)=dim_beg(split_in); l_in=im(split_in)*bases_in(split_in); l_out=im(split_in)*bases_out(split_in)
-	    loop2: do
-	     tens_out(l_out)=tens_in(l_in)
-	     do i=1,dim_num
-	      j=ipr(i) !old index number
-	      if(im(j).lt.dim_end(j)) then
-	       im(j)=im(j)+1; l_in=l_in+bases_in(j); l_out=l_out+bases_out(j)
-	       ks=ks+1; exit
-	      else
-	       l_in=l_in-(im(j)-dim_beg(j))*bases_in(j); l_out=l_out-(im(j)-dim_beg(j))*bases_out(j); im(j)=dim_beg(j)
-	      endif
-	     enddo !i
-	     ks=ks-1; if(ks.lt.0) exit loop2
-	    enddo loop2
-	   enddo !l0
-!$OMP END DO
-	  elseif(split_in.eq.0.and.split_out.gt.0) then !split the last dimension from the output minor set
-!	   if(n.eq.0) write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r4): Case 2.")') !debug
-	   dim_beg(1:dim_num)=0; dim_end(1:dim_num)=dim_extents(1:dim_num)-1; im(1:dim_num)=dim_beg(1:dim_num)
-           l1=dim_extents(split_out)-1_LONGINT
-!$OMP DO SCHEDULE(DYNAMIC)
-	   do l0=0_LONGINT,l1,seg_out
-	    dim_beg(split_out)=int(l0,4); dim_end(split_out)=int(min(l0+seg_out-1_LONGINT,l1),4); ks=0
-	    im(split_out)=dim_beg(split_out); l_in=im(split_out)*bases_in(split_out); l_out=im(split_out)*bases_out(split_out)
-	    loop3: do
-	     tens_out(l_out)=tens_in(l_in)
-	     do i=1,dim_num
-	      j=ipr(i) !old index number
-	      if(im(j).lt.dim_end(j)) then
-	       im(j)=im(j)+1; l_in=l_in+bases_in(j); l_out=l_out+bases_out(j)
-	       ks=ks+1; exit
-	      else
-	       l_in=l_in-(im(j)-dim_beg(j))*bases_in(j); l_out=l_out-(im(j)-dim_beg(j))*bases_out(j); im(j)=dim_beg(j)
-	      endif
-	     enddo !i
-	     ks=ks-1; if(ks.lt.0) exit loop3
-	    enddo loop3
-	   enddo !l0
-!$OMP END DO
-	  elseif(split_in.gt.0.and.split_out.gt.0) then !split the last dimensions from both the input and output minor sets
-!	   if(n.eq.0) write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r4): Case 3.")') !debug
-	   dim_beg(1:dim_num)=0; dim_end(1:dim_num)=dim_extents(1:dim_num)-1; im(1:dim_num)=dim_beg(1:dim_num)
-           l2=dim_end(split_in); l3=dim_end(split_out)
-!$OMP DO SCHEDULE(DYNAMIC) COLLAPSE(2)
-	   do l0=0_LONGINT,l2,seg_in !input dimension
-	    do l1=0_LONGINT,l3,seg_out !output dimension
-	     dim_beg(split_in)=int(l0,4); dim_end(split_in)=int(min(l0+seg_in-1_LONGINT,l2),4)
-	     dim_beg(split_out)=int(l1,4); dim_end(split_out)=int(min(l1+seg_out-1_LONGINT,l3),4)
-	     im(split_in)=dim_beg(split_in); im(split_out)=dim_beg(split_out)
-	     l_in=im(split_in)*bases_in(split_in)+im(split_out)*bases_in(split_out)
-	     l_out=im(split_in)*bases_out(split_in)+im(split_out)*bases_out(split_out)
-	     lb=int(dim_beg(1),LONGINT); le=int(dim_end(1),LONGINT); ls=bases_out(1); ks=0
-	     loop4: do
-	      do ll=0_LONGINT,le-lb; tens_out(l_out+ll*ls)=tens_in(l_in+ll); enddo
-	      do i=2,dim_num
-	       j=ipr(i) !old index number
-	       if(im(j).lt.dim_end(j)) then
-	        im(j)=im(j)+1; l_in=l_in+bases_in(j); l_out=l_out+bases_out(j)
-	        ks=ks+1; exit
-	       else
-	        l_in=l_in-(im(j)-dim_beg(j))*bases_in(j); l_out=l_out-(im(j)-dim_beg(j))*bases_out(j); im(j)=dim_beg(j)
-	       endif
-	      enddo !i
-	      ks=ks-1; if(ks.lt.0) exit loop4
-	     enddo loop4
-	    enddo !l1
-	   enddo !l0
-!$OMP END DO
-	  else !no range splitting
-!	   if(n.eq.0) write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r4): Case 4.")') !debug
-!$OMP MASTER
-	   segs(0)=0_LONGINT; call divide_segment(bs,int(m,LONGINT),segs(1:),ierr); do j=2,m; segs(j)=segs(j)+segs(j-1); enddo
-	   l0=1_LONGINT; do i=1,dim_num; bases_pri(ipr(i))=l0; l0=l0*dim_extents(ipr(i)); enddo !priority bases
-!$OMP END MASTER
-!$OMP BARRIER
-!$OMP FLUSH(segs,bases_pri)
-	   l0=segs(n); do i=dim_num,1,-1; j=ipr(i); im(j)=l0/bases_pri(j); l0=l0-im(j)*bases_pri(j); enddo
-	   l_in=0_LONGINT; do j=2,dim_num; l_in=l_in+im(j)*bases_in(j); enddo
-	   l_out=0_LONGINT; do j=2,dim_num; l_out=l_out+im(j)*bases_out(j); enddo
-	   ls=bases_out(1); l0=segs(n); lb=int(im(1),LONGINT)
-	   le=min(int(dim_extents(1)-1,LONGINT),segs(n+1)-1_LONGINT-l0+lb)
-	   do while (l0.lt.segs(n+1))
-	    do l1=lb,le; tens_out(l_out+l1*ls)=tens_in(l_in+l1); enddo
-	    l0=l0+(le-lb+1_LONGINT); lb=0_LONGINT
-	    le=min(le,segs(n+1)-1_LONGINT-l0) !to avoid multiple threads doing the same work
-  !increment of the multi-index (scheme 2):
-	    do i=2,dim_num
-	     j=ipr(i) !old index number
-	     if(im(j)+1.lt.dim_extents(j)) then
-	      im(j)=im(j)+1; l_in=l_in+bases_in(j); l_out=l_out+bases_out(j)
-	      exit
-	     else
-	      l_in=l_in-im(j)*bases_in(j); l_out=l_out-im(j)*bases_out(j); im(j)=0
-	     endif
-	    enddo !i
-	   enddo !l0
-	  endif
-	 endif
-!$OMP END PARALLEL
-	endif !trivial or not
-!       tm=thread_wtime(time_beg) !debug
-!	write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r4): time/speed/error = ",2(F10.4,1x),i3)') &
-!        tm,dble(bs*real_kind)/(tm*1024d0*1024d0*1024d0),ierr !debug
-	return
-	end subroutine tensor_block_copy_dlf_r4
-!------------------------------------------------------------------------------------------------
-#ifndef NO_PHI
-!DIR$ ATTRIBUTES OFFLOAD:mic:: tensor_block_copy_dlf_r8
-#endif
-	subroutine tensor_block_copy_dlf_r8(dim_num,dim_extents,dim_transp,tens_in,tens_out,ierr) !PARALLEL
-!Given a dense tensor block, this subroutine makes a copy of it, permuting the indices according to the <dim_transp>.
-!The algorithm is cache-efficient (Author: Dmitry I. Lyakh (Liakh): quant4me@gmail.com), 2013.
+!The algorithm is cache-efficient (Author: Dmitry I. Lyakh (Liakh): quant4me@gmail.com) (C) 2014.
 !INPUT:
 ! - dim_num - number of dimensions (>0);
 ! - dim_extents(1:dim_num) - dimension extents;
@@ -4674,12 +4414,12 @@
 ! - ierr - error code (0:success).
 	implicit none
 !---------------------------------------
-	integer, parameter:: real_kind=8
+	integer, parameter:: real_kind=4
 	logical, parameter:: cache_efficiency=.true.
 	integer(LONGINT), parameter:: cache_line_len=64/real_kind     !cache line length (words)
-	integer(LONGINT), parameter:: cache_line_min=cache_line_len*2 !lower bound for the input/output minor volume
-	integer(LONGINT), parameter:: cache_line_lim=cache_line_len*4 !upper bound for the input/output minor volume
-	integer(LONGINT), parameter:: small_tens_size=2**10 !up to this size it is useless to apply cache efficiency (fits in L1)
+	integer(LONGINT), parameter:: cache_line_min=cache_line_len*2 !lower bound for the input/output minor volume: => L1_cache_line*2
+	integer(LONGINT), parameter:: cache_line_lim=cache_line_len*4 !upper bound for the input/output minor volume: <= SQRT(L1_size)
+	integer(LONGINT), parameter:: small_tens_size=2**10 !up to this size it is useless to apply cache efficiency (fully fits in L1)
 	integer(LONGINT), parameter:: vec_size=2**8 !loop reorganization parameter for direct copy
 #ifndef NO_PHI
 !DIR$ ATTRIBUTES OFFLOAD:mic:: real_kind,cache_efficiency,cache_line_len,cache_line_min,cache_line_lim,small_tens_size,vec_size
@@ -4719,7 +4459,7 @@
 	 do l0=bs-mod(bs,vec_size),bs-1_LONGINT; tens_out(l0)=tens_in(l0); enddo
 !$OMP END SINGLE
 !$OMP END PARALLEL
-	else !non-trivial index permutation
+	else
 !Non-trivial index permutation:
  !Compute indexing bases:
 	 do i=1,dim_num; n2o(dim_transp(i))=i; enddo; n2o(dim_num+1)=dim_num+1 !get the N2O
@@ -4798,12 +4538,253 @@
 	  ipr(dim_num+1)=dim_num+1 !special setting
 	 endif
 	 vol_ext=1_LONGINT; do j=kf+1,dim_num; vol_ext=vol_ext*dim_extents(ipr(j)); enddo !external volume
-	 write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r8): extents:",99(1x,i5))') dim_extents(1:dim_num) !debug
-	 write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r8): permutation:",99(1x,i2))') dim_transp(1:dim_num) !debug
-	 write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r8): minor ",i3,": priority:",99(1x,i2))') &
-          kf,ipr(1:dim_num) !debug
-         write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r8): vol_ext ",i11,": segs:",4(1x,i5))') &
-          vol_ext,split_in,split_out,seg_in,seg_out !debug
+!	 write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r4): extents:",99(1x,i5))') dim_extents(1:dim_num) !debug
+!	 write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r4): permutation:",99(1x,i2))') dim_transp(1:dim_num) !debug
+!	 write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r4): minor ",i3,": priority:",99(1x,i2))') &
+!          kf,ipr(1:dim_num) !debug
+!         write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r4): vol_ext ",i11,": segs:",4(1x,i5))') &
+!          vol_ext,split_in,split_out,seg_in,seg_out !debug
+ !Transpose:
+!$OMP PARALLEL DEFAULT(SHARED) PRIVATE(i,j,m,n,ks,l0,l1,l2,l3,ll,lb,le,ls,l_in,l_out,vol_min,im,dim_beg,dim_end)
+#ifndef NO_OMP
+	 n=omp_get_thread_num(); m=omp_get_num_threads() !multi-threaded execution
+#else
+	 n=0; m=1 !serial execution
+#endif
+!	 if(n.eq.0) write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r4): number of threads = ",i5)') m !debug
+         if(kf.lt.dim_num) then !external indices present
+!$OMP MASTER
+	  segs(0)=0_LONGINT; call divide_segment(vol_ext,int(m,LONGINT),segs(1:),i); do j=2,m; segs(j)=segs(j)+segs(j-1); enddo
+	  l0=1_LONGINT; do i=kf+1,dim_num; bases_pri(ipr(i))=l0; l0=l0*dim_extents(ipr(i)); enddo !priority bases
+!$OMP END MASTER
+!$OMP BARRIER
+!$OMP FLUSH(segs,bases_pri)
+	  dim_beg(1:dim_num)=0; dim_end(1:dim_num)=dim_extents(1:dim_num)-1
+          l2=dim_end(split_in); l3=dim_end(split_out); ls=bases_out(1)
+	  loop0: do l1=0_LONGINT,l3,seg_out !output dimension
+	   dim_beg(split_out)=l1; dim_end(split_out)=min(l1+seg_out-1_LONGINT,l3)
+	   do l0=0_LONGINT,l2,seg_in !input dimension
+	    dim_beg(split_in)=l0; dim_end(split_in)=min(l0+seg_in-1_LONGINT,l2)
+	    ll=segs(n); do i=dim_num,kf+1,-1; j=ipr(i); im(j)=ll/bases_pri(j); ll=ll-im(j)*bases_pri(j); enddo
+	    vol_min=1_LONGINT; do i=1,kf; j=ipr(i); vol_min=vol_min*(dim_end(j)-dim_beg(j)+1); im(j)=dim_beg(j); enddo
+	    l_in=0_LONGINT; do j=1,dim_num; l_in=l_in+im(j)*bases_in(j); enddo
+	    l_out=0_LONGINT; do j=1,dim_num; l_out=l_out+im(j)*bases_out(j); enddo
+	    le=dim_end(1)-dim_beg(1); lb=(segs(n+1)-segs(n))*vol_min; ks=0
+	    loop1: do while(lb.gt.0_LONGINT)
+	     do ll=0_LONGINT,le
+	      tens_out(l_out+ll*ls)=tens_in(l_in+ll)
+	     enddo
+	     lb=lb-(le+1_LONGINT)
+	     do i=2,dim_num
+	      j=ipr(i) !old index number
+	      if(im(j).lt.dim_end(j)) then
+	       im(j)=im(j)+1; l_in=l_in+bases_in(j); l_out=l_out+bases_out(j)
+	       ks=ks+1; exit
+	      else
+	       l_in=l_in-(im(j)-dim_beg(j))*bases_in(j); l_out=l_out-(im(j)-dim_beg(j))*bases_out(j); im(j)=dim_beg(j)
+	      endif
+	     enddo !i
+	     ks=ks-1; if(ks.lt.0) exit loop1
+	    enddo loop1
+	    if(lb.ne.0_LONGINT) then
+	     if(verbose) write(cons_out,'("ERROR(tensor_algebra::tensor_block_copy_dlf_r4): invalid remainder: ",i11,1x,i4)') lb,n
+!$OMP ATOMIC WRITE
+	     ierr=2
+	     exit loop0
+	    endif
+	   enddo !l0
+          enddo loop0 !l1
+         else !external indices absent
+!$OMP MASTER
+	  l0=1_LONGINT; do i=kf+1,dim_num; bases_pri(ipr(i))=l0; l0=l0*dim_extents(ipr(i)); enddo !priority bases
+!$OMP END MASTER
+!$OMP BARRIER
+!$OMP FLUSH(bases_pri)
+	  dim_beg(1:dim_num)=0; dim_end(1:dim_num)=dim_extents(1:dim_num)-1
+          l2=dim_end(split_in); l3=dim_end(split_out); ls=bases_out(1)
+!$OMP DO SCHEDULE(DYNAMIC) COLLAPSE(2)
+	  do l1=0_LONGINT,l3,seg_out !output dimension
+	   do l0=0_LONGINT,l2,seg_in !input dimension
+	    dim_beg(split_out)=l1; dim_end(split_out)=min(l1+seg_out-1_LONGINT,l3)
+	    dim_beg(split_in)=l0; dim_end(split_in)=min(l0+seg_in-1_LONGINT,l2)
+	    vol_min=1_LONGINT; do i=1,kf; j=ipr(i); vol_min=vol_min*(dim_end(j)-dim_beg(j)+1); im(j)=dim_beg(j); enddo
+	    l_in=0_LONGINT; do j=1,dim_num; l_in=l_in+im(j)*bases_in(j); enddo
+	    l_out=0_LONGINT; do j=1,dim_num; l_out=l_out+im(j)*bases_out(j); enddo
+	    le=dim_end(1)-dim_beg(1); lb=vol_min; ks=0
+	    loop2: do while(lb.gt.0_LONGINT)
+	     do ll=0_LONGINT,le
+	      tens_out(l_out+ll*ls)=tens_in(l_in+ll)
+	     enddo
+	     lb=lb-(le+1_LONGINT)
+	     do i=2,dim_num
+	      j=ipr(i) !old index number
+	      if(im(j).lt.dim_end(j)) then
+	       im(j)=im(j)+1; l_in=l_in+bases_in(j); l_out=l_out+bases_out(j)
+	       ks=ks+1; exit
+	      else
+	       l_in=l_in-(im(j)-dim_beg(j))*bases_in(j); l_out=l_out-(im(j)-dim_beg(j))*bases_out(j); im(j)=dim_beg(j)
+	      endif
+	     enddo !i
+	     ks=ks-1; if(ks.lt.0) exit loop2
+	    enddo loop2
+	   enddo !l0
+          enddo !l1
+!$OMP END DO
+         endif
+!$OMP END PARALLEL
+	endif !trivial or not
+        tm=thread_wtime(time_beg) !debug
+	write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r4): Done: ",F10.4," sec, ",F10.4," GB/s, error ",i3)') &
+         tm,dble(2_LONGINT*bs*real_kind)/(tm*1024d0*1024d0*1024d0),ierr !debug
+	return
+	end subroutine tensor_block_copy_dlf_r4
+!------------------------------------------------------------------------------------------------
+#ifndef NO_PHI
+!DIR$ ATTRIBUTES OFFLOAD:mic:: tensor_block_copy_dlf_r8
+#endif
+	subroutine tensor_block_copy_dlf_r8(dim_num,dim_extents,dim_transp,tens_in,tens_out,ierr) !PARALLEL
+!Given a dense tensor block, this subroutine makes a copy of it, permuting the indices according to the <dim_transp>.
+!The algorithm is cache-efficient (Author: Dmitry I. Lyakh (Liakh): quant4me@gmail.com) (C) 2014.
+!INPUT:
+! - dim_num - number of dimensions (>0);
+! - dim_extents(1:dim_num) - dimension extents;
+! - dim_transp(0:dim_num) - index permutation (O2N), dim_transp(0) is the sign of the permutation;
+! - tens_in(0:) - input tensor data;
+!OUTPUT:
+! - tens_out(0:) - output (possibly transposed) tensor data;
+! - ierr - error code (0:success).
+	implicit none
+!---------------------------------------
+	integer, parameter:: real_kind=8
+	logical, parameter:: cache_efficiency=.true.
+	integer(LONGINT), parameter:: cache_line_len=64/real_kind     !cache line length (words)
+	integer(LONGINT), parameter:: cache_line_min=cache_line_len*2 !lower bound for the input/output minor volume: => L1_cache_line*2
+	integer(LONGINT), parameter:: cache_line_lim=cache_line_len*4 !upper bound for the input/output minor volume: <= SQRT(L1_size)
+	integer(LONGINT), parameter:: small_tens_size=2**10 !up to this size it is useless to apply cache efficiency (fully fits in L1)
+	integer(LONGINT), parameter:: vec_size=2**8 !loop reorganization parameter for direct copy
+#ifndef NO_PHI
+!DIR$ ATTRIBUTES OFFLOAD:mic:: real_kind,cache_efficiency,cache_line_len,cache_line_min,cache_line_lim,small_tens_size,vec_size
+!DIR$ ATTRIBUTES ALIGN:128:: real_kind,cache_efficiency,cache_line_len,cache_line_min,cache_line_lim,small_tens_size,vec_size
+#endif
+!---------------------------------------------------------------------
+	integer, intent(in):: dim_num,dim_extents(1:*),dim_transp(0:*)
+	real(real_kind), intent(in):: tens_in(0:*)
+	real(real_kind), intent(out):: tens_out(0:*)
+	integer, intent(inout):: ierr
+	integer i,j,k,l,m,n,k1,k2,ks,kf,split_in,split_out
+	integer im(1:dim_num),n2o(0:dim_num+1),ipr(1:dim_num+1),dim_beg(1:dim_num),dim_end(1:dim_num)
+	integer(LONGINT) bases_in(1:dim_num+1),bases_out(1:dim_num+1),bases_pri(1:dim_num+1),segs(0:max_threads) !`Is segs(:) threadsafe?
+	integer(LONGINT) bs,l0,l1,l2,l3,ll,lb,le,ls,l_in,l_out,seg_in,seg_out,vol_min,vol_ext
+	logical trivial
+	real(8) time_beg,tm
+#ifndef NO_PHI
+!DIR$ ATTRIBUTES ALIGN:128:: im,n2o,ipr,dim_beg,dim_end,bases_in,bases_out,bases_pri,segs
+#endif
+	ierr=0
+	time_beg=thread_wtime() !debug
+	if(dim_num.lt.0) then; ierr=1; return; elseif(dim_num.eq.0) then; tens_out(0)=tens_in(0); return; endif
+!Check the index permutation:
+	trivial=.true.; do i=1,dim_num; if(dim_transp(i).ne.i) then; trivial=.false.; exit; endif; enddo
+	if(trivial.and.cache_efficiency) then
+!Trivial index permutation (no permutation):
+ !Compute indexing bases:
+	 bs=1_LONGINT; do i=1,dim_num; bases_in(i)=bs; bs=bs*dim_extents(i); enddo
+ !Copy input to output:
+!$OMP PARALLEL DEFAULT(SHARED) PRIVATE(l0,l1)
+!$OMP DO SCHEDULE(GUIDED)
+	 do l0=0_LONGINT,bs-1_LONGINT-mod(bs,vec_size),vec_size
+	  do l1=0_LONGINT,vec_size-1_LONGINT; tens_out(l0+l1)=tens_in(l0+l1); enddo
+	 enddo
+!$OMP END DO NOWAIT
+!$OMP SINGLE
+	 do l0=bs-mod(bs,vec_size),bs-1_LONGINT; tens_out(l0)=tens_in(l0); enddo
+!$OMP END SINGLE
+!$OMP END PARALLEL
+	else
+!Non-trivial index permutation:
+ !Compute indexing bases:
+	 do i=1,dim_num; n2o(dim_transp(i))=i; enddo; n2o(dim_num+1)=dim_num+1 !get the N2O
+	 bs=1_LONGINT; do i=1,dim_num; bases_in(i)=bs; bs=bs*dim_extents(i); enddo; bases_in(dim_num+1)=bs
+	 bs=1_LONGINT; do i=1,dim_num; bases_out(n2o(i))=bs; bs=bs*dim_extents(n2o(i)); enddo; bases_out(dim_num+1)=bs
+ !Configure cache-efficient algorithm:
+	 if(bs.le.small_tens_size.or.(.not.cache_efficiency)) then !tensor block is too small to think hard about it
+	  ipr(1:dim_num+1)=(/(j,j=1,dim_num+1)/); kf=dim_num !trivial priorities, all indices are minor
+	  split_in=kf; seg_in=dim_extents(split_in); split_out=kf; seg_out=dim_extents(split_out)
+	 else
+	  do k1=1,dim_num; if(bases_in(k1+1).ge.cache_line_lim) exit; enddo; k1=k1-1
+	  do k2=1,dim_num; if(bases_out(n2o(k2+1)).ge.cache_line_lim) exit; enddo; k2=k2-1
+	  do j=k1+1,dim_num; if(dim_transp(j).le.k2) then; k1=k1+1; else; exit; endif; enddo
+	  do j=k2+1,dim_num; if(n2o(j).le.k1) then; k2=k2+1; else; exit; endif; enddo
+	  if(bases_in(k1+1).lt.cache_line_min.and.bases_out(n2o(k2+1)).ge.cache_line_min) then !split the last minor input dim
+	   k1=k1+1; split_in=k1; seg_in=(cache_line_lim-1_LONGINT)/bases_in(split_in)+1_LONGINT
+	   split_out=n2o(k2); seg_out=dim_extents(split_out)
+	  elseif(bases_in(k1+1).ge.cache_line_min.and.bases_out(n2o(k2+1)).lt.cache_line_min) then !split the last minor output dim
+	   k2=k2+1; split_in=n2o(k2); seg_in=(cache_line_lim-1_LONGINT)/bases_out(split_in)+1_LONGINT
+	   split_out=k1; seg_out=dim_extents(split_out)
+	  elseif(bases_in(k1+1).lt.cache_line_min.and.bases_out(n2o(k2+1)).lt.cache_line_min) then !split both
+	   k1=k1+1; k2=k2+1
+	   if(k1.eq.n2o(k2)) then
+	    split_in=k1; seg_in=(cache_line_lim-1_LONGINT)/min(bases_in(split_in),bases_out(split_in))+1_LONGINT
+	    split_out=k1; seg_out=dim_extents(split_out)
+	   else
+	    split_in=k1; seg_in=(cache_line_lim-1_LONGINT)/bases_in(split_in)+1_LONGINT
+	    split_out=n2o(k2); seg_out=(cache_line_lim-1_LONGINT)/bases_out(split_out)+1_LONGINT
+	   endif
+	  else !split none
+	   split_in=k1; seg_in=dim_extents(split_in)
+	   split_out=n2o(k2); seg_out=dim_extents(split_out)
+	  endif
+	  vol_min=1_LONGINT
+	  if(seg_in.lt.dim_extents(split_in)) vol_min=vol_min*seg_in
+	  if(seg_out.lt.dim_extents(split_out)) vol_min=vol_min*seg_out
+	  if(vol_min.gt.1_LONGINT) then
+	   do j=1,k1
+	    if(j.ne.split_in.and.j.ne.split_out) vol_min=vol_min*dim_extents(j)
+	   enddo
+	   do j=1,k2
+	    l=n2o(j)
+	    if(l.gt.k1.and.l.ne.split_in.and.l.ne.split_out) vol_min=vol_min*dim_extents(l)
+	   enddo
+	   l=int((cache_line_lim*cache_line_lim)/vol_min,4)
+	   if(l.ge.2) then
+	    if(split_in.eq.split_out) then
+	     seg_in=seg_in*l
+	    else
+	     if(l.gt.4) then
+	      l=int(sqrt(float(l)),4)
+	      seg_in=min(seg_in*l,int(dim_extents(split_in),LONGINT))
+	      seg_out=min(seg_out*l,int(dim_extents(split_out),LONGINT))
+	     else
+	      seg_in=min(seg_in*l,int(dim_extents(split_in),LONGINT))
+	     endif
+	    endif
+	   endif
+	  endif
+	  l=0
+	  do while(l.lt.k1)
+	   l=l+1; ipr(l)=l; if(bases_in(l+1).ge.cache_line_min) exit
+	  enddo
+	  m=l+1
+	  j=0
+	  do while(j.lt.k2)
+	   j=j+1; n=n2o(j)
+	   if(n.ge.m) then; l=l+1; ipr(l)=n; endif
+	   if(bases_out(n2o(j+1)).ge.cache_line_min) exit
+	  enddo
+	  n=j+1
+	  do j=m,k1; if(dim_transp(j).ge.n) then; l=l+1; ipr(l)=j; endif; enddo
+	  do j=n,k2; if(n2o(j).gt.k1) then; l=l+1; ipr(l)=n2o(j); endif; enddo
+	  kf=l
+	  do j=k2+1,dim_num; if(n2o(j).gt.k1) then; l=l+1; ipr(l)=n2o(j); endif; enddo !kf is the length of the combined minor set
+	  ipr(dim_num+1)=dim_num+1 !special setting
+	 endif
+	 vol_ext=1_LONGINT; do j=kf+1,dim_num; vol_ext=vol_ext*dim_extents(ipr(j)); enddo !external volume
+!	 write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r8): extents:",99(1x,i5))') dim_extents(1:dim_num) !debug
+!	 write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r8): permutation:",99(1x,i2))') dim_transp(1:dim_num) !debug
+!	 write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r8): minor ",i3,": priority:",99(1x,i2))') &
+!          kf,ipr(1:dim_num) !debug
+!         write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r8): vol_ext ",i11,": segs:",4(1x,i5))') &
+!          vol_ext,split_in,split_out,seg_in,seg_out !debug
  !Transpose:
 !$OMP PARALLEL DEFAULT(SHARED) PRIVATE(i,j,m,n,ks,l0,l1,l2,l3,ll,lb,le,ls,l_in,l_out,vol_min,im,dim_beg,dim_end)
 #ifndef NO_OMP
@@ -4904,11 +4885,11 @@
 #endif
 	subroutine tensor_block_copy_dlf_c8(dim_num,dim_extents,dim_transp,tens_in,tens_out,ierr) !PARALLEL
 !Given a dense tensor block, this subroutine makes a copy of it, permuting the indices according to the <dim_transp>.
-!The algorithm is cache-efficient (Author: Dmitry I. Lyakh (Liakh): quant4me@gmail.com)
+!The algorithm is cache-efficient (Author: Dmitry I. Lyakh (Liakh): quant4me@gmail.com) (C) 2014.
 !INPUT:
 ! - dim_num - number of dimensions (>0);
 ! - dim_extents(1:dim_num) - dimension extents;
-! - dim_transp(0:dim_num) - index permutation (O2N);
+! - dim_transp(0:dim_num) - index permutation (O2N), dim_transp(0) is the sign of the permutation;
 ! - tens_in(0:) - input tensor data;
 !OUTPUT:
 ! - tens_out(0:) - output (possibly transposed) tensor data;
@@ -4917,146 +4898,207 @@
 !---------------------------------------
 	integer, parameter:: real_kind=8
 	logical, parameter:: cache_efficiency=.true.
-	integer(LONGINT), parameter:: cache_line_len=8 !cache line length (words)
-	integer(LONGINT), parameter:: cache_line_lim=cache_line_len*3 !approx. number of simultaneously open cache lines per thread
-	integer(LONGINT), parameter:: small_tens_size=2**10 !up to this size (of a tensor block) it is useless to apply cache efficiency
+	integer(LONGINT), parameter:: cache_line_len=64/(real_kind*2) !cache line length (words)
+	integer(LONGINT), parameter:: cache_line_min=cache_line_len*2 !lower bound for the input/output minor volume: => L1_cache_line*2
+	integer(LONGINT), parameter:: cache_line_lim=cache_line_len*4 !upper bound for the input/output minor volume: <= SQRT(L1_size)
+	integer(LONGINT), parameter:: small_tens_size=2**10 !up to this size it is useless to apply cache efficiency (fully fits in L1)
 	integer(LONGINT), parameter:: vec_size=2**8 !loop reorganization parameter for direct copy
 #ifndef NO_PHI
-!DIR$ ATTRIBUTES OFFLOAD:mic:: real_kind,cache_efficiency,cache_line_len,cache_line_lim,small_tens_size,vec_size
-!DIR$ ATTRIBUTES ALIGN:128:: real_kind,cache_efficiency,cache_line_len,cache_line_lim,small_tens_size,vec_size
+!DIR$ ATTRIBUTES OFFLOAD:mic:: real_kind,cache_efficiency,cache_line_len,cache_line_min,cache_line_lim,small_tens_size,vec_size
+!DIR$ ATTRIBUTES ALIGN:128:: real_kind,cache_efficiency,cache_line_len,cache_line_min,cache_line_lim,small_tens_size,vec_size
 #endif
 !---------------------------------------------------------------------
 	integer, intent(in):: dim_num,dim_extents(1:*),dim_transp(0:*)
 	complex(real_kind), intent(in):: tens_in(0:*)
 	complex(real_kind), intent(out):: tens_out(0:*)
 	integer, intent(inout):: ierr
-	integer i,j,k,l,m,n,k0,k1,k2,k3,ks,kf,split_in,split_out
-	integer im(1:dim_num),n2o(0:dim_num+1),ipr(1:dim_num+1),dim_beg(1:dim_num),dim_end(1:dim_num),ac1(1:dim_num)
+	integer i,j,k,l,m,n,k1,k2,ks,kf,split_in,split_out
+	integer im(1:dim_num),n2o(0:dim_num+1),ipr(1:dim_num+1),dim_beg(1:dim_num),dim_end(1:dim_num)
 	integer(LONGINT) bases_in(1:dim_num+1),bases_out(1:dim_num+1),bases_pri(1:dim_num+1),segs(0:max_threads) !`Is segs(:) threadsafe?
-	integer(LONGINT) bs,l0,l1,l2,l3,ll,lb,le,ls,l_in,l_out,seg_in,seg_out
-	logical trivial,in_out_dif
+	integer(LONGINT) bs,l0,l1,l2,l3,ll,lb,le,ls,l_in,l_out,seg_in,seg_out,vol_min,vol_ext
+	logical trivial
 	real(8) time_beg,tm
 #ifndef NO_PHI
-!DIR$ ATTRIBUTES ALIGN:128:: im,n2o,ipr,dim_beg,dim_end,ac1,bases_in,bases_out,bases_pri,segs
+!DIR$ ATTRIBUTES ALIGN:128:: im,n2o,ipr,dim_beg,dim_end,bases_in,bases_out,bases_pri,segs
 #endif
 	ierr=0
-!	time_beg=thread_wtime() !debug
-	if(dim_num.lt.0) then; ierr=dim_num; return; elseif(dim_num.eq.0) then; tens_out(0)=tens_in(0); return; endif
+	time_beg=thread_wtime() !debug
+	if(dim_num.lt.0) then; ierr=1; return; elseif(dim_num.eq.0) then; tens_out(0)=tens_in(0); return; endif
 !Check the index permutation:
 	trivial=.true.; do i=1,dim_num; if(dim_transp(i).ne.i) then; trivial=.false.; exit; endif; enddo
-	trivial=trivial.and.cache_efficiency
-	if(trivial) then !trivial index permutation (no permutation)
+	if(trivial.and.cache_efficiency) then
+!Trivial index permutation (no permutation):
  !Compute indexing bases:
-	 n2o(0:dim_num+1)=(/+1,dim_transp(1:dim_num),dim_num+1/)
 	 bs=1_LONGINT; do i=1,dim_num; bases_in(i)=bs; bs=bs*dim_extents(i); enddo
+ !Copy input to output:
 !$OMP PARALLEL DEFAULT(SHARED) PRIVATE(l0,l1)
 !$OMP DO SCHEDULE(GUIDED)
 	 do l0=0_LONGINT,bs-1_LONGINT-mod(bs,vec_size),vec_size
 	  do l1=0_LONGINT,vec_size-1_LONGINT; tens_out(l0+l1)=tens_in(l0+l1); enddo
 	 enddo
 !$OMP END DO NOWAIT
-!$OMP MASTER
+!$OMP SINGLE
 	 do l0=bs-mod(bs,vec_size),bs-1_LONGINT; tens_out(l0)=tens_in(l0); enddo
-!$OMP END MASTER
+!$OMP END SINGLE
 !$OMP END PARALLEL
-	else !non-trivial index permutation
+	else
+!Non-trivial index permutation:
  !Compute indexing bases:
 	 do i=1,dim_num; n2o(dim_transp(i))=i; enddo; n2o(dim_num+1)=dim_num+1 !get the N2O
 	 bs=1_LONGINT; do i=1,dim_num; bases_in(i)=bs; bs=bs*dim_extents(i); enddo; bases_in(dim_num+1)=bs
 	 bs=1_LONGINT; do i=1,dim_num; bases_out(n2o(i))=bs; bs=bs*dim_extents(n2o(i)); enddo; bases_out(dim_num+1)=bs
- !Determine index looping priorities:
-	 in_out_dif=.false.; split_in=0; split_out=0; seg_in=0; seg_out=0
+ !Configure cache-efficient algorithm:
 	 if(bs.le.small_tens_size.or.(.not.cache_efficiency)) then !tensor block is too small to think hard about it
 	  ipr(1:dim_num+1)=(/(j,j=1,dim_num+1)/); kf=dim_num !trivial priorities, all indices are minor
+	  split_in=kf; seg_in=dim_extents(split_in); split_out=kf; seg_out=dim_extents(split_out)
 	 else
-#ifndef NO_OMP
-          m=omp_get_max_threads()
-#else
-          m=1
-#endif
-	  do k1=1,dim_num; if(bases_in(k1+1).gt.cache_line_lim) exit; enddo !first k1 input dimensions form the input minor set
-	  ipr(1:k1)=(/(j,j=1,k1)/) !first k1 input dimensions form the input minor set
-	  do j=1,k1; if(dim_transp(j).gt.k1) then; in_out_dif=.true.; exit; endif; enddo !if .true., the output minor set differs from the input one
-	  if(in_out_dif) then !check whether I need to split long ranges
-	   do k2=1,dim_num; if(bases_out(n2o(k2+1)).gt.cache_line_lim) exit; enddo !first k2 output dimensions form the output minor set
-	   if(k1.eq.n2o(k2)) then !the last minor input and output indices are the same
-	    if(dim_extents(k1).ge.m) then
-	     j=(((cache_line_lim-1_LONGINT)/bases_in(k1)+1_LONGINT)+((cache_line_lim-1_LONGINT)/bases_out(k1)+1_LONGINT))/2
-	     if(j*m.le.dim_extents(k1)) then; split_in=k1; seg_in=int(j,LONGINT); endif
-	    endif
-	   else !the last minor input and output indices are different
-	    j=(cache_line_lim-1_LONGINT)/bases_in(k1)+1_LONGINT
-	    l=(cache_line_lim-1_LONGINT)/bases_out(n2o(k2))+1_LONGINT
-	    if(dim_extents(k1)*dim_extents(n2o(k2)).ge.j*l*m) then
-	     split_in=k1; split_out=n2o(k2); seg_in=int(j,LONGINT); seg_out=int(l,LONGINT)
+	  do k1=1,dim_num; if(bases_in(k1+1).ge.cache_line_lim) exit; enddo; k1=k1-1
+	  do k2=1,dim_num; if(bases_out(n2o(k2+1)).ge.cache_line_lim) exit; enddo; k2=k2-1
+	  do j=k1+1,dim_num; if(dim_transp(j).le.k2) then; k1=k1+1; else; exit; endif; enddo
+	  do j=k2+1,dim_num; if(n2o(j).le.k1) then; k2=k2+1; else; exit; endif; enddo
+	  if(bases_in(k1+1).lt.cache_line_min.and.bases_out(n2o(k2+1)).ge.cache_line_min) then !split the last minor input dim
+	   k1=k1+1; split_in=k1; seg_in=(cache_line_lim-1_LONGINT)/bases_in(split_in)+1_LONGINT
+	   split_out=n2o(k2); seg_out=dim_extents(split_out)
+	  elseif(bases_in(k1+1).ge.cache_line_min.and.bases_out(n2o(k2+1)).lt.cache_line_min) then !split the last minor output dim
+	   k2=k2+1; split_in=n2o(k2); seg_in=(cache_line_lim-1_LONGINT)/bases_out(split_in)+1_LONGINT
+	   split_out=k1; seg_out=dim_extents(split_out)
+	  elseif(bases_in(k1+1).lt.cache_line_min.and.bases_out(n2o(k2+1)).lt.cache_line_min) then !split both
+	   k1=k1+1; k2=k2+1
+	   if(k1.eq.n2o(k2)) then
+	    split_in=k1; seg_in=(cache_line_lim-1_LONGINT)/min(bases_in(split_in),bases_out(split_in))+1_LONGINT
+	    split_out=k1; seg_out=dim_extents(split_out)
+	   else
+	    split_in=k1; seg_in=(cache_line_lim-1_LONGINT)/bases_in(split_in)+1_LONGINT
+	    split_out=n2o(k2); seg_out=(cache_line_lim-1_LONGINT)/bases_out(split_out)+1_LONGINT
+	   endif
+	  else !split none
+	   split_in=k1; seg_in=dim_extents(split_in)
+	   split_out=n2o(k2); seg_out=dim_extents(split_out)
+	  endif
+	  vol_min=1_LONGINT
+	  if(seg_in.lt.dim_extents(split_in)) vol_min=vol_min*seg_in
+	  if(seg_out.lt.dim_extents(split_out)) vol_min=vol_min*seg_out
+	  if(vol_min.gt.1_LONGINT) then
+	   do j=1,k1
+	    if(j.ne.split_in.and.j.ne.split_out) vol_min=vol_min*dim_extents(j)
+	   enddo
+	   do j=1,k2
+	    l=n2o(j)
+	    if(l.gt.k1.and.l.ne.split_in.and.l.ne.split_out) vol_min=vol_min*dim_extents(l)
+	   enddo
+	   l=int((cache_line_lim*cache_line_lim)/vol_min,4)
+	   if(l.ge.2) then
+	    if(split_in.eq.split_out) then
+	     seg_in=seg_in*l
+	    else
+	     if(l.gt.4) then
+	      l=int(sqrt(float(l)),4)
+	      seg_in=min(seg_in*l,int(dim_extents(split_in),LONGINT))
+	      seg_out=min(seg_out*l,int(dim_extents(split_out),LONGINT))
+	     else
+	      seg_in=min(seg_in*l,int(dim_extents(split_in),LONGINT))
+	     endif
 	    endif
 	   endif
-	   kf=k1; do j=1,k2; if(n2o(j).gt.k1) then; kf=kf+1; ipr(kf)=n2o(j); endif; enddo !ipr(priority) = old_num: dimension looping priorities
-	  else
-	   k2=k1; kf=k1
 	  endif
-	  l=kf; do j=k2+1,dim_num; if(n2o(j).gt.k1) then; l=l+1; ipr(l)=n2o(j); endif; enddo !kf is the length of the combined minor set
+	  l=0
+	  do while(l.lt.k1)
+	   l=l+1; ipr(l)=l; if(bases_in(l+1).ge.cache_line_min) exit
+	  enddo
+	  m=l+1
+	  j=0
+	  do while(j.lt.k2)
+	   j=j+1; n=n2o(j)
+	   if(n.ge.m) then; l=l+1; ipr(l)=n; endif
+	   if(bases_out(n2o(j+1)).ge.cache_line_min) exit
+	  enddo
+	  n=j+1
+	  do j=m,k1; if(dim_transp(j).ge.n) then; l=l+1; ipr(l)=j; endif; enddo
+	  do j=n,k2; if(n2o(j).gt.k1) then; l=l+1; ipr(l)=n2o(j); endif; enddo
+	  kf=l
+	  do j=k2+1,dim_num; if(n2o(j).gt.k1) then; l=l+1; ipr(l)=n2o(j); endif; enddo !kf is the length of the combined minor set
 	  ipr(dim_num+1)=dim_num+1 !special setting
 	 endif
-	 do i=1,dim_num; ac1(i)=n2o(dim_transp(i)+1); enddo !accelerator array
-!	 write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_c8): block size, split dims = ",i10,3x,i2,1x,i2)') &
-!         bs,split_in,split_out !debug
-!	 write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_c8): index extents =",128(1x,i2))') &
-!         dim_extents(1:dim_num) !debug
-!	 write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_c8): index permutation =",128(1x,i2))') &
-!         dim_transp(1:dim_num) !debug
-!	 write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_c8): index priorities = ",i3,1x,l1,128(1x,i2))') &
-!         kf,in_out_dif,ipr(1:dim_num) !debug
-!        write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_c8): segments:",4(1x,i3))') split_in,split_out,seg_in,seg_out !debug
- !Transpose loop:
-!$OMP PARALLEL DEFAULT(SHARED) PRIVATE(i,j,m,n,ks,l_in,l_out,l0,l1,l2,l3,ll,lb,le,ls,im,dim_beg,dim_end)
+	 vol_ext=1_LONGINT; do j=kf+1,dim_num; vol_ext=vol_ext*dim_extents(ipr(j)); enddo !external volume
+!	 write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_c8): extents:",99(1x,i5))') dim_extents(1:dim_num) !debug
+!	 write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_c8): permutation:",99(1x,i2))') dim_transp(1:dim_num) !debug
+!	 write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_c8): minor ",i3,": priority:",99(1x,i2))') &
+!          kf,ipr(1:dim_num) !debug
+!         write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_c8): vol_ext ",i11,": segs:",4(1x,i5))') &
+!          vol_ext,split_in,split_out,seg_in,seg_out !debug
+ !Transpose:
+!$OMP PARALLEL DEFAULT(SHARED) PRIVATE(i,j,m,n,ks,l0,l1,l2,l3,ll,lb,le,ls,l_in,l_out,vol_min,im,dim_beg,dim_end)
 #ifndef NO_OMP
 	 n=omp_get_thread_num(); m=omp_get_num_threads() !multi-threaded execution
 #else
 	 n=0; m=1 !serial execution
 #endif
-!	 if(n.eq.0) write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_c8): total number of threads = ",i4)') m !debug
-	 if(.not.in_out_dif) then !input minor set coincides with the output minor set: no splitting
-!	  if(n.eq.0) write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_c8): Case 0.")') !debug
+!	 if(n.eq.0) write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_c8): number of threads = ",i5)') m !debug
+         if(kf.lt.dim_num) then !external indices present
 !$OMP MASTER
-!	  write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_c8): total number of threads = ",i4)') m !debug
-	  segs(0)=0_LONGINT; call divide_segment(bs,int(m,LONGINT),segs(1:),ierr); do j=2,m; segs(j)=segs(j)+segs(j-1); enddo
-	  l0=1_LONGINT; do i=1,dim_num; bases_pri(ipr(i))=l0; l0=l0*dim_extents(ipr(i)); enddo !priority bases
+	  segs(0)=0_LONGINT; call divide_segment(vol_ext,int(m,LONGINT),segs(1:),i); do j=2,m; segs(j)=segs(j)+segs(j-1); enddo
+	  l0=1_LONGINT; do i=kf+1,dim_num; bases_pri(ipr(i))=l0; l0=l0*dim_extents(ipr(i)); enddo !priority bases
 !$OMP END MASTER
 !$OMP BARRIER
 !$OMP FLUSH(segs,bases_pri)
-	  l0=segs(n); do i=dim_num,1,-1; j=ipr(i); im(j)=l0/bases_pri(j); l0=l0-im(j)*bases_pri(j); enddo !initial multiindex for each thread
-	  l_in=0_LONGINT; do j=2,dim_num; l_in=l_in+im(j)*bases_in(j); enddo !initial input address
-	  l_out=0_LONGINT; do j=2,dim_num; l_out=l_out+im(j)*bases_out(j); enddo !initial output address
-	  ls=bases_out(1); l0=segs(n); lb=int(im(1),LONGINT)
-	  le=min(int(dim_extents(1)-1,LONGINT),segs(n+1)-1_LONGINT-l0+lb)
-	  do while (l0.lt.segs(n+1))
-	   do l1=lb,le; tens_out(l_out+l1*ls)=tens_in(l_in+l1); enddo
-	   l0=l0+(le-lb+1_LONGINT); lb=0_LONGINT
-	   le=min(le,segs(n+1)-1_LONGINT-l0) !to avoid multiple threads doing the same work
-  !increment of the multi-index (scheme 1):
-	   do i=2,dim_num
-	    j=ipr(i)
-	    if(im(j)+1.eq.dim_extents(j)) then
-	     l_in=l_in+bases_in(j)-bases_in(j+1); l_out=l_out+bases_out(j)-bases_out(ac1(j)); im(j)=0
-	    else
-	     im(j)=im(j)+1; l_in=l_in+bases_in(j); l_out=l_out+bases_out(j)
-	     exit
+	  dim_beg(1:dim_num)=0; dim_end(1:dim_num)=dim_extents(1:dim_num)-1
+          l2=dim_end(split_in); l3=dim_end(split_out); ls=bases_out(1)
+	  loop0: do l1=0_LONGINT,l3,seg_out !output dimension
+	   dim_beg(split_out)=l1; dim_end(split_out)=min(l1+seg_out-1_LONGINT,l3)
+	   do l0=0_LONGINT,l2,seg_in !input dimension
+	    dim_beg(split_in)=l0; dim_end(split_in)=min(l0+seg_in-1_LONGINT,l2)
+	    ll=segs(n); do i=dim_num,kf+1,-1; j=ipr(i); im(j)=ll/bases_pri(j); ll=ll-im(j)*bases_pri(j); enddo
+	    vol_min=1_LONGINT; do i=1,kf; j=ipr(i); vol_min=vol_min*(dim_end(j)-dim_beg(j)+1); im(j)=dim_beg(j); enddo
+	    l_in=0_LONGINT; do j=1,dim_num; l_in=l_in+im(j)*bases_in(j); enddo
+	    l_out=0_LONGINT; do j=1,dim_num; l_out=l_out+im(j)*bases_out(j); enddo
+	    le=dim_end(1)-dim_beg(1); lb=(segs(n+1)-segs(n))*vol_min; ks=0
+	    loop1: do while(lb.gt.0_LONGINT)
+	     do ll=0_LONGINT,le
+	      tens_out(l_out+ll*ls)=tens_in(l_in+ll)
+	     enddo
+	     lb=lb-(le+1_LONGINT)
+	     do i=2,dim_num
+	      j=ipr(i) !old index number
+	      if(im(j).lt.dim_end(j)) then
+	       im(j)=im(j)+1; l_in=l_in+bases_in(j); l_out=l_out+bases_out(j)
+	       ks=ks+1; exit
+	      else
+	       l_in=l_in-(im(j)-dim_beg(j))*bases_in(j); l_out=l_out-(im(j)-dim_beg(j))*bases_out(j); im(j)=dim_beg(j)
+	      endif
+	     enddo !i
+	     ks=ks-1; if(ks.lt.0) exit loop1
+	    enddo loop1
+	    if(lb.ne.0_LONGINT) then
+	     if(verbose) write(cons_out,'("ERROR(tensor_algebra::tensor_block_copy_dlf_c8): invalid remainder: ",i11,1x,i4)') lb,n
+!$OMP ATOMIC WRITE
+	     ierr=2
+	     exit loop0
 	    endif
-	   enddo !i
-	  enddo !l0
-	 else !input and output minor sets differ: range splitting possible
-	  if(split_in.gt.0.and.split_out.eq.0) then !split the last dimension from the input minor set
-!	   if(n.eq.0) write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_c8): Case 1.")') !debug
-	   dim_beg(1:dim_num)=0; dim_end(1:dim_num)=dim_extents(1:dim_num)-1; im(1:dim_num)=dim_beg(1:dim_num)
-	   l1=dim_extents(split_in)-1_LONGINT
-!$OMP DO SCHEDULE(DYNAMIC)
-	   do l0=0_LONGINT,l1,seg_in
-	    dim_beg(split_in)=int(l0,4); dim_end(split_in)=int(min(l0+seg_in-1_LONGINT,l1),4); ks=0
-	    im(split_in)=dim_beg(split_in); l_in=im(split_in)*bases_in(split_in); l_out=im(split_in)*bases_out(split_in)
-	    loop2: do
-	     tens_out(l_out)=tens_in(l_in)
-	     do i=1,dim_num
+	   enddo !l0
+          enddo loop0 !l1
+         else !external indices absent
+!$OMP MASTER
+	  l0=1_LONGINT; do i=kf+1,dim_num; bases_pri(ipr(i))=l0; l0=l0*dim_extents(ipr(i)); enddo !priority bases
+!$OMP END MASTER
+!$OMP BARRIER
+!$OMP FLUSH(bases_pri)
+	  dim_beg(1:dim_num)=0; dim_end(1:dim_num)=dim_extents(1:dim_num)-1
+          l2=dim_end(split_in); l3=dim_end(split_out); ls=bases_out(1)
+!$OMP DO SCHEDULE(DYNAMIC) COLLAPSE(2)
+	  do l1=0_LONGINT,l3,seg_out !output dimension
+	   do l0=0_LONGINT,l2,seg_in !input dimension
+	    dim_beg(split_out)=l1; dim_end(split_out)=min(l1+seg_out-1_LONGINT,l3)
+	    dim_beg(split_in)=l0; dim_end(split_in)=min(l0+seg_in-1_LONGINT,l2)
+	    vol_min=1_LONGINT; do i=1,kf; j=ipr(i); vol_min=vol_min*(dim_end(j)-dim_beg(j)+1); im(j)=dim_beg(j); enddo
+	    l_in=0_LONGINT; do j=1,dim_num; l_in=l_in+im(j)*bases_in(j); enddo
+	    l_out=0_LONGINT; do j=1,dim_num; l_out=l_out+im(j)*bases_out(j); enddo
+	    le=dim_end(1)-dim_beg(1); lb=vol_min; ks=0
+	    loop2: do while(lb.gt.0_LONGINT)
+	     do ll=0_LONGINT,le
+	      tens_out(l_out+ll*ls)=tens_in(l_in+ll)
+	     enddo
+	     lb=lb-(le+1_LONGINT)
+	     do i=2,dim_num
 	      j=ipr(i) !old index number
 	      if(im(j).lt.dim_end(j)) then
 	       im(j)=im(j)+1; l_in=l_in+bases_in(j); l_out=l_out+bases_out(j)
@@ -5068,96 +5110,14 @@
 	     ks=ks-1; if(ks.lt.0) exit loop2
 	    enddo loop2
 	   enddo !l0
+          enddo !l1
 !$OMP END DO
-	  elseif(split_in.eq.0.and.split_out.gt.0) then !split the last dimension from the output minor set
-!	   if(n.eq.0) write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_c8): Case 2.")') !debug
-	   dim_beg(1:dim_num)=0; dim_end(1:dim_num)=dim_extents(1:dim_num)-1; im(1:dim_num)=dim_beg(1:dim_num)
-           l1=dim_extents(split_out)-1_LONGINT
-!$OMP DO SCHEDULE(DYNAMIC)
-	   do l0=0_LONGINT,l1,seg_out
-	    dim_beg(split_out)=int(l0,4); dim_end(split_out)=int(min(l0+seg_out-1_LONGINT,l1),4); ks=0
-	    im(split_out)=dim_beg(split_out); l_in=im(split_out)*bases_in(split_out); l_out=im(split_out)*bases_out(split_out)
-	    loop3: do
-	     tens_out(l_out)=tens_in(l_in)
-	     do i=1,dim_num
-	      j=ipr(i) !old index number
-	      if(im(j).lt.dim_end(j)) then
-	       im(j)=im(j)+1; l_in=l_in+bases_in(j); l_out=l_out+bases_out(j)
-	       ks=ks+1; exit
-	      else
-	       l_in=l_in-(im(j)-dim_beg(j))*bases_in(j); l_out=l_out-(im(j)-dim_beg(j))*bases_out(j); im(j)=dim_beg(j)
-	      endif
-	     enddo !i
-	     ks=ks-1; if(ks.lt.0) exit loop3
-	    enddo loop3
-	   enddo !l0
-!$OMP END DO
-	  elseif(split_in.gt.0.and.split_out.gt.0) then !split the last dimensions from both the input and output minor sets
-!	   if(n.eq.0) write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_c8): Case 3.")') !debug
-	   dim_beg(1:dim_num)=0; dim_end(1:dim_num)=dim_extents(1:dim_num)-1; im(1:dim_num)=dim_beg(1:dim_num)
-           l2=dim_end(split_in); l3=dim_end(split_out)
-!$OMP DO SCHEDULE(DYNAMIC) COLLAPSE(2)
-	   do l0=0_LONGINT,l2,seg_in !input dimension
-	    do l1=0_LONGINT,l3,seg_out !output dimension
-	     dim_beg(split_in)=int(l0,4); dim_end(split_in)=int(min(l0+seg_in-1_LONGINT,l2),4)
-	     dim_beg(split_out)=int(l1,4); dim_end(split_out)=int(min(l1+seg_out-1_LONGINT,l3),4)
-	     im(split_in)=dim_beg(split_in); im(split_out)=dim_beg(split_out)
-	     l_in=im(split_in)*bases_in(split_in)+im(split_out)*bases_in(split_out)
-	     l_out=im(split_in)*bases_out(split_in)+im(split_out)*bases_out(split_out)
-	     lb=int(dim_beg(1),LONGINT); le=int(dim_end(1),LONGINT); ls=bases_out(1); ks=0
-	     loop4: do
-	      do ll=0_LONGINT,le-lb
-	       tens_out(l_out+ll*ls)=tens_in(l_in+ll)
-	      enddo
-	      do i=2,dim_num
-	       j=ipr(i) !old index number
-	       if(im(j).lt.dim_end(j)) then
-	        im(j)=im(j)+1; l_in=l_in+bases_in(j); l_out=l_out+bases_out(j)
-	        ks=ks+1; exit
-	       else
-	        l_in=l_in-(im(j)-dim_beg(j))*bases_in(j); l_out=l_out-(im(j)-dim_beg(j))*bases_out(j); im(j)=dim_beg(j)
-	       endif
-	      enddo !i
-	      ks=ks-1; if(ks.lt.0) exit loop4
-	     enddo loop4
-	    enddo !l1
-	   enddo !l0
-!$OMP END DO
-	  else !no range splitting
-!	   if(n.eq.0) write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_c8): Case 4.")') !debug
-!$OMP MASTER
-	   segs(0)=0_LONGINT; call divide_segment(bs,int(m,LONGINT),segs(1:),ierr); do j=2,m; segs(j)=segs(j)+segs(j-1); enddo
-	   l0=1_LONGINT; do i=1,dim_num; bases_pri(ipr(i))=l0; l0=l0*dim_extents(ipr(i)); enddo !priority bases
-!$OMP END MASTER
-!$OMP BARRIER
-!$OMP FLUSH(segs,bases_pri)
-	   l0=segs(n); do i=dim_num,1,-1; j=ipr(i); im(j)=l0/bases_pri(j); l0=l0-im(j)*bases_pri(j); enddo
-	   l_in=0_LONGINT; do j=2,dim_num; l_in=l_in+im(j)*bases_in(j); enddo
-	   l_out=0_LONGINT; do j=2,dim_num; l_out=l_out+im(j)*bases_out(j); enddo
-	   ls=bases_out(1); l0=segs(n); lb=int(im(1),LONGINT)
-	   le=min(int(dim_extents(1)-1,LONGINT),segs(n+1)-1_LONGINT-l0+lb)
-	   do while (l0.lt.segs(n+1))
-	    do l1=lb,le; tens_out(l_out+l1*ls)=tens_in(l_in+l1); enddo
-	    l0=l0+(le-lb+1_LONGINT); lb=0_LONGINT
-	    le=min(le,segs(n+1)-1_LONGINT-l0) !to avoid multiple threads doing the same work
-  !increment of the multi-index (scheme 2):
-	    do i=2,dim_num
-	     j=ipr(i) !old index number
-	     if(im(j)+1.lt.dim_extents(j)) then
-	      im(j)=im(j)+1; l_in=l_in+bases_in(j); l_out=l_out+bases_out(j)
-	      exit
-	     else
-	      l_in=l_in-im(j)*bases_in(j); l_out=l_out-im(j)*bases_out(j); im(j)=0
-	     endif
-	    enddo !i
-	   enddo !l0
-	  endif
-	 endif
+         endif
 !$OMP END PARALLEL
 	endif !trivial or not
-!       tm=thread_wtime(time_beg) !debug
-!	write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_c8): time/speed/error = ",2(F10.4,1x),i3)') &
-!        tm,dble(bs*2*real_kind)/(tm*1024d0*1024d0*1024d0),ierr !debug
+        tm=thread_wtime(time_beg) !debug
+	write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_c8): Done: ",F10.4," sec, ",F10.4," GB/s, error ",i3)') &
+         tm,dble(2_LONGINT*bs*real_kind*2_LONGINT)/(tm*1024d0*1024d0*1024d0),ierr !debug
 	return
 	end subroutine tensor_block_copy_dlf_c8
 !--------------------------------------------------------------------------------------------------------
