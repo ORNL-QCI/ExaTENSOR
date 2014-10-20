@@ -3,7 +3,7 @@ AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
 This open-source code was developed by the author while
 at the National Center for Computational Sciences
 at the Oak Ridge National Laboratory, Oak Ridge TN.
-REVISION: 2014/09/25
+REVISION: 2014/10/20
 NOTES:
  # Functions without underscores at the end of their names are blocking (Host) functions;
    Functions with one underscore at the end of their names are external non-blocking functions;
@@ -1433,7 +1433,7 @@ NOTES:
     if(EVENT_RECORD != 0){err=cudaEventElapsedTime(&time_ms,time_beg,time_end); if(err!=cudaSuccess){err_msg=cudaGetErrorString(err); err=cudaSetDevice(gpu_num); return 24;}}
     err=cudaGetLastError(); if(err!=cudaSuccess){err_msg=cudaGetErrorString(err); printf("\n#ERROR(tensor_algebra_gpu_nvidia:gpu_tensor_block_copy_dlf): Kernel error: %s\n",err_msg); err=cudaSetDevice(gpu_num); return 25;}
     if(gpu_get_error_count() > j){err=cudaSetDevice(gpu_num); return 26;}
-    if(PRINT_TIME != 0) printf("#DEBUG(tensor_algebra_gpu_nvidia:gpu_tensor_block_copy_dlf): Kernel (%d) time %f KT/s %f \n",TRANS_SHMEM,time_ms/1000.0f,(float)tsize/time_ms);
+    if(PRINT_TIME != 0) printf("#DEBUG(tensor_algebra_gpu_nvidia:gpu_tensor_block_copy_dlf): Kernel (%d): Time %f: KT/s=%f \n",TRANS_SHMEM,time_ms/1000.0f,((float)(tsize*2))/time_ms);
     i=tensBlck_set_presence(tens_out);
 // Copy the output tensor block back into the Host argument buffer:
 //  printf("\n#DEBUG(tensor_algebra_gpu_nvidia:gpu_tensor_block_copy_dlf): DeviceToHost copy: %p %p %d\n",tens_out->elems_h,tens_out->elems_d,tsize); //debug
