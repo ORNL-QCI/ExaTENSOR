@@ -557,7 +557,7 @@
  !REAL4:
 	 if(associated(tens_in%data_real4)) then
 	  if(size(tens_in%data_real4).eq.tens_in%tensor_block_size) then
-	   if(.not.associated(tens_out%data_real4) then
+	   if(.not.associated(tens_out%data_real4)) then
 	    allocate(tens_out%data_real4(0:tens_in%tensor_block_size-1),STAT=ierr); if(ierr.ne.0) then; ierr=6; return; endif
 	    res=tensor_block_alloc(tens_out,'r4',ierr,.true.); if(ierr.ne.0) then; ierr=7; return; endif
 	   endif
@@ -568,7 +568,7 @@
  !REAL8:
 	 if(associated(tens_in%data_real8)) then
 	  if(size(tens_in%data_real8).eq.tens_in%tensor_block_size) then
-	   if(.not.associated(tens_out%data_real8) then
+	   if(.not.associated(tens_out%data_real8)) then
 	    allocate(tens_out%data_real8(0:tens_in%tensor_block_size-1),STAT=ierr); if(ierr.ne.0) then; ierr=9; return; endif
 	    res=tensor_block_alloc(tens_out,'r8',ierr,.true.); if(ierr.ne.0) then; ierr=10; return; endif
 	   endif
@@ -579,7 +579,7 @@
  !CMPLX8:
 	 if(associated(tens_in%data_cmplx8)) then
 	  if(size(tens_in%data_cmplx8).eq.tens_in%tensor_block_size) then
-	   if(.not.associated(tens_out%data_cmplx8) then
+	   if(.not.associated(tens_out%data_cmplx8)) then
 	    allocate(tens_out%data_cmplx8(0:tens_in%tensor_block_size-1),STAT=ierr); if(ierr.ne.0) then; ierr=12; return; endif
 	    res=tensor_block_alloc(tens_out,'c8',ierr,.true.); if(ierr.ne.0) then; ierr=13; return; endif
 	   endif
