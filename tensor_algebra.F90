@@ -1,6 +1,6 @@
 !Tensor Algebra for Multi-Core CPUs (OpenMP based).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2014/09/29
+!REVISION: 2014/10/20
 !GNU linking options: -lgomp -lblas -llapack
 !ACRONYMS:
 ! - mlndx - multiindex;
@@ -534,57 +534,58 @@
 	integer i,j,k,l,m,n,k0,k1,k2,k3,ks,kf
 	logical res
 
-	ierr=0; call tensor_block_destroy(tens_out,ierr); if(ierr.ne.0) then; ierr=1; return; endif
+	ierr=0
 	n=tens_in%tensor_shape%num_dim
-	tens_out%tensor_shape%num_dim=n; tens_out%tensor_block_size=tens_in%tensor_block_size
+	if(tens_out%tensor_shape%num_dim.ne.n.or.tens_out%tensor_block_size.ne.tens_in%tensor_block_size) then
+	 call tensor_block_destroy(tens_out,ierr); if(ierr.ne.0) then; ierr=1; return; endif
+!Allocate tensor shape:
+         if(n.gt.0) then
+	  allocate(tens_out%tensor_shape%dim_extent(1:n),STAT=ierr); if(ierr.ne.0) then; ierr=2; return; endif
+	  allocate(tens_out%tensor_shape%dim_divider(1:n),STAT=ierr); if(ierr.ne.0) then; ierr=3; return; endif
+	  allocate(tens_out%tensor_shape%dim_group(1:n),STAT=ierr); if(ierr.ne.0) then; ierr=4; return; endif
+	  res=tensor_block_alloc(tens_out,'sp',ierr,.true.); if(ierr.ne.0) then; ierr=5; return; endif
+	 endif
+	 tens_out%tensor_shape%num_dim=n; tens_out%tensor_block_size=tens_in%tensor_block_size
+	endif
 	if(n.gt.0) then
-	 if(associated(tens_in%tensor_shape%dim_extent).and.associated(tens_in%tensor_shape%dim_divider).and. &
-	    associated(tens_in%tensor_shape%dim_group)) then
-	  if(size(tens_in%tensor_shape%dim_extent).eq.n.and.size(tens_in%tensor_shape%dim_divider).eq.n.and. &
-	     size(tens_in%tensor_shape%dim_group).eq.n) then
- !Allocate tensor shape:
-	   allocate(tens_out%tensor_shape%dim_extent(1:n),STAT=ierr); if(ierr.ne.0) then; ierr=2; return; endif
-	   allocate(tens_out%tensor_shape%dim_divider(1:n),STAT=ierr); if(ierr.ne.0) then; ierr=3; return; endif
-	   allocate(tens_out%tensor_shape%dim_group(1:n),STAT=ierr); if(ierr.ne.0) then; ierr=4; return; endif
-	   res=tensor_block_alloc(tens_out,'sp',ierr,.true.); if(ierr.ne.0) then; ierr=5; return; endif
-	   if(present(transp)) then !adopt the tensor shape in full according to the given permutation (O2N)
-	    tens_out%tensor_shape%dim_extent(transp(1:n))=tens_in%tensor_shape%dim_extent(1:n)
-	    tens_out%tensor_shape%dim_divider(transp(1:n))=tens_in%tensor_shape%dim_divider(1:n)
-	    tens_out%tensor_shape%dim_group(transp(1:n))=tens_in%tensor_shape%dim_group(1:n)
-	   endif
- !Allocate data arrays:
-  !REAL4:
-	   if(associated(tens_in%data_real4)) then
-	    if(size(tens_in%data_real4).eq.tens_in%tensor_block_size) then
-	     allocate(tens_out%data_real4(0:tens_in%tensor_block_size-1),STAT=ierr); if(ierr.ne.0) then; ierr=6; return; endif
-	     res=tensor_block_alloc(tens_out,'r4',ierr,.true.); if(ierr.ne.0) then; ierr=7; return; endif
-	    else
-	     ierr=8; return
-	    endif
-	   endif
-  !REAL8:
-	   if(associated(tens_in%data_real8)) then
-	    if(size(tens_in%data_real8).eq.tens_in%tensor_block_size) then
-	     allocate(tens_out%data_real8(0:tens_in%tensor_block_size-1),STAT=ierr); if(ierr.ne.0) then; ierr=9; return; endif
-	     res=tensor_block_alloc(tens_out,'r8',ierr,.true.); if(ierr.ne.0) then; ierr=10; return; endif
-	    else
-	     ierr=11; return
-	    endif
-	   endif
-  !CMPLX8:
-	   if(associated(tens_in%data_cmplx8)) then
-	    if(size(tens_in%data_cmplx8).eq.tens_in%tensor_block_size) then
-	     allocate(tens_out%data_cmplx8(0:tens_in%tensor_block_size-1),STAT=ierr); if(ierr.ne.0) then; ierr=12; return; endif
-	     res=tensor_block_alloc(tens_out,'c8',ierr,.true.); if(ierr.ne.0) then; ierr=13; return; endif
-	    else
-	     ierr=14; return
-	    endif
+	 if(present(transp)) then !adopt the tensor shape in full according to the given permutation (O2N)
+	  tens_out%tensor_shape%dim_extent(transp(1:n))=tens_in%tensor_shape%dim_extent(1:n)
+	  tens_out%tensor_shape%dim_divider(transp(1:n))=tens_in%tensor_shape%dim_divider(1:n)
+	  tens_out%tensor_shape%dim_group(transp(1:n))=tens_in%tensor_shape%dim_group(1:n)
+	 endif
+!Allocate data arrays, if needed:
+ !REAL4:
+	 if(associated(tens_in%data_real4)) then
+	  if(size(tens_in%data_real4).eq.tens_in%tensor_block_size) then
+	   if(.not.associated(tens_out%data_real4) then
+	    allocate(tens_out%data_real4(0:tens_in%tensor_block_size-1),STAT=ierr); if(ierr.ne.0) then; ierr=6; return; endif
+	    res=tensor_block_alloc(tens_out,'r4',ierr,.true.); if(ierr.ne.0) then; ierr=7; return; endif
 	   endif
 	  else
-	   ierr=15
+	   ierr=8; return
 	  endif
-	 else
-	  ierr=16
+	 endif
+ !REAL8:
+	 if(associated(tens_in%data_real8)) then
+	  if(size(tens_in%data_real8).eq.tens_in%tensor_block_size) then
+	   if(.not.associated(tens_out%data_real8) then
+	    allocate(tens_out%data_real8(0:tens_in%tensor_block_size-1),STAT=ierr); if(ierr.ne.0) then; ierr=9; return; endif
+	    res=tensor_block_alloc(tens_out,'r8',ierr,.true.); if(ierr.ne.0) then; ierr=10; return; endif
+	   endif
+	  else
+	   ierr=11; return
+	  endif
+	 endif
+ !CMPLX8:
+	 if(associated(tens_in%data_cmplx8)) then
+	  if(size(tens_in%data_cmplx8).eq.tens_in%tensor_block_size) then
+	   if(.not.associated(tens_out%data_cmplx8) then
+	    allocate(tens_out%data_cmplx8(0:tens_in%tensor_block_size-1),STAT=ierr); if(ierr.ne.0) then; ierr=12; return; endif
+	    res=tensor_block_alloc(tens_out,'c8',ierr,.true.); if(ierr.ne.0) then; ierr=13; return; endif
+	   endif
+	  else
+	   ierr=14; return
+	  endif
 	 endif
 	endif
 	return
