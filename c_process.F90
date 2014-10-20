@@ -3404,8 +3404,6 @@
         dtk='r8' !real data kind
         ntotal=0; nfail=0 !nfail will be the total number of failed transposes (all possible algorithms)
         tmd=0d0; tms=0d0; tme=0d0; gtd=0d0; gts=0d0; gte=0d0
-        call tensor_block_create('(50,50,50,50)',dtk,ftens(14),ierr)
-        call tensor_block_copy(ftens(14),ftens(15),ierr)
         do m=1,num_tens_sizes
          do n=1,num_tens_ranks
           tens_rank=tens_ranks(n)
@@ -3414,33 +3412,31 @@
            do l=1,num_repet !repetition
             call tensor_shape_rnd(tshape,tsl,ierr,tens_sizes(m),tens_rank,dim_spread); if(ierr.ne.0) then; ierr=1; goto 999; endif
 !            tens_rank=5; tsl=16; tshape(1:tsl)='(36,36,36,36,36)' !debug
+            call random_permutation(tens_rank,o2n,.true.)
+!            o2n(1:tens_rank)=(/(j,j=tens_rank,1,-1)/) !debug
+            call permutation_converter(.false.,tens_rank,n2o,o2n)            
             call tensor_block_create(tshape(1:tsl),dtk,ftens(1),ierr); if(ierr.ne.0) then; ierr=2; goto 999; endif
             tens_size=ftens(1)%tensor_block_size
             call printl(jo_cp,'  New Tensor Shape: '//tshape(1:tsl)//': ',.false.)
             write(jo_cp,'(i10,1x,F16.4)') ftens(1)%tensor_block_size,tensor_block_norm1(ftens(1),ierr,dtk)
             write(jo_cp,'(3x)',advance='no')
-            call tensor_block_copy(ftens(1),ftens(0),ierr); if(ierr.ne.0) then; ierr=3; goto 999; endif
-            call tensor_block_copy(ftens(14),ftens(15),ierr)
+            call tensor_block_copy(ftens(1),ftens(0),ierr,(/+1,(j,j=tens_rank,1,-1)/)); if(ierr.ne.0) then; ierr=3; goto 999; endif
+            call tensor_block_copy(ftens(0),ftens(2),ierr,(/+1,(j,j=tens_rank,1,-1)/)); if(ierr.ne.0) then; ierr=3; goto 999; endif
             tm=thread_wtime()
             call tensor_block_copy(ftens(1),ftens(0),ierr); if(ierr.ne.0) then; ierr=3; goto 999; endif
             tm=thread_wtime()-tm; tmd=tmd+tm; gtd=gtd+dble(ftens(1)%tensor_block_size*2)/tm
             write(jo_cp,'("#DEBUG(tensor_algebra:tensor_block_copy_dlf): Direct time ",F10.6)') tm  !debug
-            call random_permutation(tens_rank,o2n,.true.)
-!            o2n(1:tens_rank)=(/(j,j=tens_rank,1,-1)/) !debug
-            call permutation_converter(.false.,tens_rank,n2o,o2n)
             write(jo_cp,'(3x,"Permutation(o2n):",32(1x,i2))') o2n(1:tens_rank)
             write(jo_cp,'(3x,"Permutation(n2o):",32(1x,i2))') n2o(1:tens_rank)
             call set_transpose_algorithm(EFF_TRN_OFF) !scatter
             write(jo_cp,'(3x)',advance='no')
-            call tensor_block_copy(ftens(1),ftens(0),ierr,o2n); if(ierr.ne.0) then; ierr=4; goto 999; endif
-            call tensor_block_copy(ftens(14),ftens(15),ierr)
+!            call tensor_block_copy(ftens(1),ftens(0),ierr,o2n); if(ierr.ne.0) then; ierr=4; goto 999; endif
             tm=thread_wtime()
             call tensor_block_copy(ftens(1),ftens(0),ierr,o2n); if(ierr.ne.0) then; ierr=4; goto 999; endif
             tm=thread_wtime()-tm; tms=tms+tm; gts=gts+dble(ftens(1)%tensor_block_size*2)/tm
             write(jo_cp,'("#DEBUG(tensor_algebra:tensor_block_copy_scatter_dlf): Time ",F10.6)') tm !debug
             write(jo_cp,'(3x)',advance='no')
-            call tensor_block_copy(ftens(0),ftens(2),ierr,n2o); if(ierr.ne.0) then; ierr=5; goto 999; endif
-            call tensor_block_copy(ftens(14),ftens(15),ierr)
+!            call tensor_block_copy(ftens(0),ftens(2),ierr,n2o); if(ierr.ne.0) then; ierr=5; goto 999; endif
             tm=thread_wtime()
             call tensor_block_copy(ftens(0),ftens(2),ierr,n2o); if(ierr.ne.0) then; ierr=5; goto 999; endif
             tm=thread_wtime()-tm; tms=tms+tm; gts=gts+dble(ftens(0)%tensor_block_size*2)/tm
@@ -3451,15 +3447,13 @@
             call set_transpose_algorithm(EFF_TRN_ON) !cache-efficient
             call tensor_block_init(dtk,ftens(2),ierr,val_r8=0d0)
             write(jo_cp,'(3x)',advance='no')
-            call tensor_block_copy(ftens(1),ftens(0),ierr,o2n); if(ierr.ne.0) then; ierr=7; goto 999; endif
-            call tensor_block_copy(ftens(14),ftens(15),ierr)
+!            call tensor_block_copy(ftens(1),ftens(0),ierr,o2n); if(ierr.ne.0) then; ierr=7; goto 999; endif
             tm=thread_wtime()
             call tensor_block_copy(ftens(1),ftens(0),ierr,o2n); if(ierr.ne.0) then; ierr=7; goto 999; endif
             tm=thread_wtime()-tm; tme=tme+tm; gte=gte+dble(ftens(1)%tensor_block_size*2)/tm
             write(jo_cp,'("#DEBUG(tensor_algebra:tensor_block_copy_dlf): Time ",F10.6)') tm !debug
             write(jo_cp,'(3x)',advance='no')
-            call tensor_block_copy(ftens(0),ftens(2),ierr,n2o); if(ierr.ne.0) then; ierr=8; goto 999; endif
-            call tensor_block_copy(ftens(14),ftens(15),ierr)
+!            call tensor_block_copy(ftens(0),ftens(2),ierr,n2o); if(ierr.ne.0) then; ierr=8; goto 999; endif
             tm=thread_wtime()
             call tensor_block_copy(ftens(0),ftens(2),ierr,n2o); if(ierr.ne.0) then; ierr=8; goto 999; endif
             tm=thread_wtime()-tm; tme=tme+tm; gte=gte+dble(ftens(0)%tensor_block_size*2)/tm
@@ -3528,9 +3522,7 @@
          enddo !tens_rank
         enddo !tens_size
 
-999     call tensor_block_destroy(ftens(14),i)
-        call tensor_block_destroy(ftens(15),i)
-        if(ierr.eq.0) then
+999     if(ierr.eq.0) then
          write(jo_cp,'("Done: ",i6," failed transposes.")') nfail
         else
          write(jo_cp,'("Failed: Error #",i7)') ierr

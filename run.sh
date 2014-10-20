@@ -21,13 +21,14 @@ export MIC_OMP_NUM_THREADS=224                      #mandatory when using MIC
 export MIC_MKL_NUM_THREADS=$MIC_OMP_NUM_THREADS     #mandatory when using MIC (Intel MIC MKL)
 export MIC_KMP_PLACE_THREADS="56c,4t"               #optional (MIC only)
 export MIC_KMP_AFFINITY="granularity=fine,compact"  #optional (MIC only)
+export MIC_USE_2MB_BUFFERS=64K                      #optional (MIC only)
 export MKL_MIC_ENABLE=1                             #optional (MIC only: MKL MIC auto-offloading)
 export OFFLOAD_REPORT=2                             #optional (MIC only)
 export CRAY_OMP_CHECK_AFFINITY=TRUE                 #optional (CRAY only: shows thread placement)
 
 rm *.tmp *.log *.out *.x
 cp $QFORCE_PATH/qforce.v13.01.x ./
-aprun -n $QF_NUM_PROCS -N $QF_PROCS_PER_NODE -d $OMP_NUM_THREADS -m 16384 ./qforce.v13.01.x
+aprun -n $QF_NUM_PROCS -N $QF_PROCS_PER_NODE -d $OMP_NUM_THREADS -m 16384 ./qforce.v13.01.x > qforce.log
 #nvprof --log-file nv_profile.log --print-gpu-trace ./qforce.v13.01.x # &> qforce.log &
 #nvprof --log-file nv_profile.log --print-gpu-trace --metrics branch_efficiency,gld_efficiency,gst_efficiency ./qforce.v13.01.x # &> qforce.log &
 #gprof ./qforce.v13.01.x gmon.out > profile.log
