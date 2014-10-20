@@ -3371,12 +3371,14 @@
 !This subroutine runs computationally intensive (single-process) benchmarks of tensor algebra on CPU/GPU.
         implicit none
         integer, intent(inout):: ierr
+!------------------------------------
         integer, parameter:: num_tens_sizes=1,num_tens_ranks=8,num_dim_spreads=3
         integer(8), parameter:: tens_sizes(1:num_tens_sizes)=(/77654321/)
         integer, parameter:: tens_ranks(1:num_tens_ranks)=(/2,3,4,5,6,7,8,15/)
         integer, parameter:: dim_spreads(1:num_dim_spreads)=(/1,5,15/)
         integer, parameter:: num_repet=5
         integer, parameter:: test_args_lim=15
+!--------------------------------------------
         integer i,j,k,l,m,n
         integer tsl,tens_rank,dim_spread,o2n(0:max_tensor_rank),n2o(0:max_tensor_rank),nfail,ntotal
         integer(8) tens_size,diffc
@@ -3402,6 +3404,8 @@
         dtk='r8' !real data kind
         ntotal=0; nfail=0 !nfail will be the total number of failed transposes (all possible algorithms)
         tmd=0d0; tms=0d0; tme=0d0; gtd=0d0; gts=0d0; gte=0d0
+        call tensor_block_create('(50,50,50,50)',dtk,ftens(14),ierr)
+        call tensor_block_copy(ftens(14),ftens(15),ierr)
         do m=1,num_tens_sizes
          do n=1,num_tens_ranks
           tens_rank=tens_ranks(n)
@@ -3416,6 +3420,7 @@
             write(jo_cp,'(i10,1x,F16.4)') ftens(1)%tensor_block_size,tensor_block_norm1(ftens(1),ierr,dtk)
             write(jo_cp,'(3x)',advance='no')
             call tensor_block_copy(ftens(1),ftens(0),ierr); if(ierr.ne.0) then; ierr=3; goto 999; endif
+            call tensor_block_copy(ftens(14),ftens(15),ierr)
             tm=thread_wtime()
             call tensor_block_copy(ftens(1),ftens(0),ierr); if(ierr.ne.0) then; ierr=3; goto 999; endif
             tm=thread_wtime()-tm; tmd=tmd+tm; gtd=gtd+dble(ftens(1)%tensor_block_size*2)/tm
@@ -3428,12 +3433,14 @@
             call set_transpose_algorithm(EFF_TRN_OFF) !scatter
             write(jo_cp,'(3x)',advance='no')
             call tensor_block_copy(ftens(1),ftens(0),ierr,o2n); if(ierr.ne.0) then; ierr=4; goto 999; endif
+            call tensor_block_copy(ftens(14),ftens(15),ierr)
             tm=thread_wtime()
             call tensor_block_copy(ftens(1),ftens(0),ierr,o2n); if(ierr.ne.0) then; ierr=4; goto 999; endif
             tm=thread_wtime()-tm; tms=tms+tm; gts=gts+dble(ftens(1)%tensor_block_size*2)/tm
             write(jo_cp,'("#DEBUG(tensor_algebra:tensor_block_copy_scatter_dlf): Time ",F10.6)') tm !debug
             write(jo_cp,'(3x)',advance='no')
             call tensor_block_copy(ftens(0),ftens(2),ierr,n2o); if(ierr.ne.0) then; ierr=5; goto 999; endif
+            call tensor_block_copy(ftens(14),ftens(15),ierr)
             tm=thread_wtime()
             call tensor_block_copy(ftens(0),ftens(2),ierr,n2o); if(ierr.ne.0) then; ierr=5; goto 999; endif
             tm=thread_wtime()-tm; tms=tms+tm; gts=gts+dble(ftens(0)%tensor_block_size*2)/tm
@@ -3445,12 +3452,14 @@
             call tensor_block_init(dtk,ftens(2),ierr,val_r8=0d0)
             write(jo_cp,'(3x)',advance='no')
             call tensor_block_copy(ftens(1),ftens(0),ierr,o2n); if(ierr.ne.0) then; ierr=7; goto 999; endif
+            call tensor_block_copy(ftens(14),ftens(15),ierr)
             tm=thread_wtime()
             call tensor_block_copy(ftens(1),ftens(0),ierr,o2n); if(ierr.ne.0) then; ierr=7; goto 999; endif
             tm=thread_wtime()-tm; tme=tme+tm; gte=gte+dble(ftens(1)%tensor_block_size*2)/tm
             write(jo_cp,'("#DEBUG(tensor_algebra:tensor_block_copy_dlf): Time ",F10.6)') tm !debug
             write(jo_cp,'(3x)',advance='no')
             call tensor_block_copy(ftens(0),ftens(2),ierr,n2o); if(ierr.ne.0) then; ierr=8; goto 999; endif
+            call tensor_block_copy(ftens(14),ftens(15),ierr)
             tm=thread_wtime()
             call tensor_block_copy(ftens(0),ftens(2),ierr,n2o); if(ierr.ne.0) then; ierr=8; goto 999; endif
             tm=thread_wtime()-tm; tme=tme+tm; gte=gte+dble(ftens(0)%tensor_block_size*2)/tm
@@ -3519,7 +3528,9 @@
          enddo !tens_rank
         enddo !tens_size
 
-999     if(ierr.eq.0) then
+999     call tensor_block_destroy(ftens(14),i)
+        call tensor_block_destroy(ftens(15),i)
+        if(ierr.eq.0) then
          write(jo_cp,'("Done: ",i6," failed transposes.")') nfail
         else
          write(jo_cp,'("Failed: Error #",i7)') ierr
