@@ -3,7 +3,7 @@ Author: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
 Organization: National Center for Computational Sciences,
               Oak Ridge National Laboratory,
               Oak Ridge, TN 37831, USA
-Revision: 2014-11-19 (started 2013-12-16).
+Revision: 2014-11-20 (started 2013-12-16).
 Language: CUDA C, C.
 
 
@@ -212,3 +212,57 @@ later be used for querying the task completion and timings.
       int copy_back: IN: whether or not to copy the result back to Host;
       cudaTask_t *cuda_task: OUT: CUDA task handle;
      )
+
+*** IV. Host/Device memory management API functions ***
+
+(1) Allocate argument buffers on Host and NVidia GPUs:
+    int arg_buf_allocate(
+     size_t *arg_buf_size: INOUT: total size of the argument buffers on Host;
+     int *arg_max: OUT: max number of arguments in the Host buffer;
+     int gpu_beg: IN: first GPU in the range;
+     int gpu_end: IN: last GPU in the range;
+    ): returns an error code.
+
+(2) Deallocate argument buffers on Host and NVidia GPUs:
+    int arg_buf_deallocate(
+     int gpu_beg: IN: first GPU in the range;
+     int gpu_end: IN: last GPU in the range;
+    ): returns an error code;
+
+(3) Get a Host argument buffer entry:
+    int get_buf_entry_host(
+     size_t bsize: IN: requested buffer entry size in bytes;
+     char **entry_ptr: OUT: pointer to the buffer entry;
+     int *entry_num: OUT: buffer entry number;
+    ): returns an error code.
+
+(4) Free a Host argument buffer entry:
+    int free_buf_entry_host(
+     int entry_num: IN: buffer entry number;
+    ): returns an error code.
+
+(5) Get a GPU argument buffer entry:
+    int get_buf_entry_gpu(
+     int gpu_num: IN: GPU id;
+     size_t bsize: IN: requested buffer entry size in bytes;
+     char **entry_ptr: OUT: pointer to the buffer entry;
+     int *entry_num: OUT: buffer entry number;
+    ): returns an error code.
+
+(6) Free a GPU argument buffer entry:
+    int free_buf_entry_gpu(
+     int gpu_num: IN: GPU id;
+     int entry_num: IN: buffer entry number;
+    ): returns an error code.
+
+(7) Get a constant memory entry on GPU:
+    int const_args_entry_get(
+     int gpu_num: IN: GPU id;
+     int *entry_num: OUT: constant memory entry number;
+    ): returns an error code.
+
+(8) Free a constant memory entry on GPU:
+    int const_args_entry_free(
+     int gpu_num: IN: GPU id;
+     int entry_num: IN: constant memory entry number;
+    ): returns an error code.
