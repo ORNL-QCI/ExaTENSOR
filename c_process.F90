@@ -3372,11 +3372,11 @@
         implicit none
         integer, intent(inout):: ierr
 !------------------------------------
-        integer, parameter:: num_tens_sizes=1,num_tens_ranks=8,num_dim_spreads=3
-        integer(8), parameter:: tens_sizes(1:num_tens_sizes)=(/77654321/)
+        integer, parameter:: num_tens_sizes=3,num_tens_ranks=8,num_dim_spreads=3
+        integer(8), parameter:: tens_sizes(1:num_tens_sizes)=(/37123967,77654321,141039271/)
         integer, parameter:: tens_ranks(1:num_tens_ranks)=(/2,3,4,5,6,7,8,15/)
         integer, parameter:: dim_spreads(1:num_dim_spreads)=(/1,5,15/)
-        integer, parameter:: num_repet=5
+        integer, parameter:: num_repet=7
         integer, parameter:: test_args_lim=15
 !--------------------------------------------
         integer i,j,k,l,m,n
@@ -3421,94 +3421,96 @@
             write(jo_cp,'(i10,1x,F16.4)') ftens(1)%tensor_block_size,tensor_block_norm1(ftens(1),ierr,dtk)
             write(jo_cp,'(3x)',advance='no')
             call tensor_block_copy(ftens(1),ftens(0),ierr,(/+1,(j,j=tens_rank,1,-1)/)); if(ierr.ne.0) then; ierr=3; goto 999; endif
-            call tensor_block_copy(ftens(0),ftens(2),ierr,(/+1,(j,j=tens_rank,1,-1)/)); if(ierr.ne.0) then; ierr=3; goto 999; endif
+            call tensor_block_copy(ftens(0),ftens(2),ierr,(/+1,(j,j=tens_rank,1,-1)/)); if(ierr.ne.0) then; ierr=4; goto 999; endif
             tm=thread_wtime()
-            call tensor_block_copy(ftens(1),ftens(0),ierr); if(ierr.ne.0) then; ierr=3; goto 999; endif
+            call tensor_block_copy(ftens(1),ftens(0),ierr); if(ierr.ne.0) then; ierr=5; goto 999; endif
             tm=thread_wtime()-tm; tmd=tmd+tm; gtd=gtd+dble(ftens(1)%tensor_block_size*2)/tm
             write(jo_cp,'("#DEBUG(tensor_algebra:tensor_block_copy_dlf): Direct time ",F10.6)') tm  !debug
             write(jo_cp,'(3x,"Permutation(o2n):",32(1x,i2))') o2n(1:tens_rank)
             write(jo_cp,'(3x,"Permutation(n2o):",32(1x,i2))') n2o(1:tens_rank)
             call set_transpose_algorithm(EFF_TRN_OFF) !scatter
             write(jo_cp,'(3x)',advance='no')
-!            call tensor_block_copy(ftens(1),ftens(0),ierr,o2n); if(ierr.ne.0) then; ierr=4; goto 999; endif
+!            call tensor_block_copy(ftens(1),ftens(0),ierr,o2n); if(ierr.ne.0) then; ierr=6; goto 999; endif
             tm=thread_wtime()
-            call tensor_block_copy(ftens(1),ftens(0),ierr,o2n); if(ierr.ne.0) then; ierr=4; goto 999; endif
+            call tensor_block_copy(ftens(1),ftens(0),ierr,o2n); if(ierr.ne.0) then; ierr=7; goto 999; endif
             tm=thread_wtime()-tm; tms=tms+tm; gts=gts+dble(ftens(1)%tensor_block_size*2)/tm
             write(jo_cp,'("#DEBUG(tensor_algebra:tensor_block_copy_scatter_dlf): Time ",F10.6)') tm !debug
             write(jo_cp,'(3x)',advance='no')
-!            call tensor_block_copy(ftens(0),ftens(2),ierr,n2o); if(ierr.ne.0) then; ierr=5; goto 999; endif
+!            call tensor_block_copy(ftens(0),ftens(2),ierr,n2o); if(ierr.ne.0) then; ierr=8; goto 999; endif
             tm=thread_wtime()
-            call tensor_block_copy(ftens(0),ftens(2),ierr,n2o); if(ierr.ne.0) then; ierr=5; goto 999; endif
+            call tensor_block_copy(ftens(0),ftens(2),ierr,n2o); if(ierr.ne.0) then; ierr=9; goto 999; endif
             tm=thread_wtime()-tm; tms=tms+tm; gts=gts+dble(ftens(0)%tensor_block_size*2)/tm
             write(jo_cp,'("#DEBUG(tensor_algebra:tensor_block_copy_scatter_dlf): Time ",F10.6)') tm !debug
-            cmp=tensor_block_cmp(ftens(1),ftens(2),ierr,dtk,.true.,1d-4,diffc); if(ierr.ne.0) then; ierr=6; goto 999; endif
+            cmp=tensor_block_cmp(ftens(1),ftens(2),ierr,dtk,.true.,1d-4,diffc); if(ierr.ne.0) then; ierr=10; goto 999; endif
             write(jo_cp,'(3x,l1,1x,i9,1x,F16.4)') cmp,diffc,tensor_block_norm1(ftens(2),ierr,dtk)
             if(.not.cmp) then; nfail=nfail+1; write(jo_cp,'(3x,"Comparison Failed!")'); endif
             call set_transpose_algorithm(EFF_TRN_ON) !cache-efficient
             call tensor_block_init(dtk,ftens(2),ierr,val_r8=0d0)
             write(jo_cp,'(3x)',advance='no')
-!            call tensor_block_copy(ftens(1),ftens(0),ierr,o2n); if(ierr.ne.0) then; ierr=7; goto 999; endif
+!            call tensor_block_copy(ftens(1),ftens(0),ierr,o2n); if(ierr.ne.0) then; ierr=11; goto 999; endif
             tm=thread_wtime()
-            call tensor_block_copy(ftens(1),ftens(0),ierr,o2n); if(ierr.ne.0) then; ierr=7; goto 999; endif
+            call tensor_block_copy(ftens(1),ftens(0),ierr,o2n); if(ierr.ne.0) then; ierr=12; goto 999; endif
             tm=thread_wtime()-tm; tme=tme+tm; gte=gte+dble(ftens(1)%tensor_block_size*2)/tm
             write(jo_cp,'("#DEBUG(tensor_algebra:tensor_block_copy_dlf): Time ",F10.6)') tm !debug
             write(jo_cp,'(3x)',advance='no')
-!            call tensor_block_copy(ftens(0),ftens(2),ierr,n2o); if(ierr.ne.0) then; ierr=8; goto 999; endif
+!            call tensor_block_copy(ftens(0),ftens(2),ierr,n2o); if(ierr.ne.0) then; ierr=13; goto 999; endif
             tm=thread_wtime()
-            call tensor_block_copy(ftens(0),ftens(2),ierr,n2o); if(ierr.ne.0) then; ierr=8; goto 999; endif
+            call tensor_block_copy(ftens(0),ftens(2),ierr,n2o); if(ierr.ne.0) then; ierr=14; goto 999; endif
             tm=thread_wtime()-tm; tme=tme+tm; gte=gte+dble(ftens(0)%tensor_block_size*2)/tm
             write(jo_cp,'("#DEBUG(tensor_algebra:tensor_block_copy_dlf): Time ",F10.6)') tm !debug
-            cmp=tensor_block_cmp(ftens(1),ftens(2),ierr,dtk,.true.,1d-4,diffc); if(ierr.ne.0) then; ierr=9; goto 999; endif
+            cmp=tensor_block_cmp(ftens(1),ftens(2),ierr,dtk,.true.,1d-4,diffc); if(ierr.ne.0) then; ierr=15; goto 999; endif
             write(jo_cp,'(3x,l1,1x,i9,1x,F16.4)') cmp,diffc,tensor_block_norm1(ftens(2),ierr,dtk)
             if(.not.cmp) then; nfail=nfail+1; write(jo_cp,'(3x,"Comparison Failed!")'); endif
 #ifndef NO_GPU
-            call tensor_block_init(dtk,ftens(0),ierr,val_r8=0d0); if(ierr.ne.0) then; ierr=10; goto 999; endif
-            call tensor_block_init(dtk,ftens(2),ierr,val_r8=0d0); if(ierr.ne.0) then; ierr=11; goto 999; endif
+            call tensor_block_init(dtk,ftens(0),ierr,val_r8=0d0); if(ierr.ne.0) then; ierr=16; goto 999; endif
+            call tensor_block_init(dtk,ftens(2),ierr,val_r8=0d0); if(ierr.ne.0) then; ierr=17; goto 999; endif
             call tens_blck_pack(ftens(0),dtk,pack_size(0),entry_ptr(0),entry_num(0),ierr)
-            if(ierr.ne.0) then; ierr=12; goto 999; endif
+            if(ierr.ne.0) then; ierr=18; goto 999; endif
             call tens_blck_pack(ftens(1),dtk,pack_size(1),entry_ptr(1),entry_num(1),ierr)
-            if(ierr.ne.0) then; ierr=13; goto 999; endif
+            if(ierr.ne.0) then; ierr=19; goto 999; endif
             call tens_blck_pack(ftens(2),dtk,pack_size(2),entry_ptr(2),entry_num(2),ierr)
-            if(ierr.ne.0) then; ierr=14; goto 999; endif
-            call tens_blck_assoc(entry_ptr(0),ierr,ctens=ctens(0),gpu_num=gpu_id); if(ierr.ne.0) then; ierr=15; goto 999; endif
-            call tens_blck_assoc(entry_ptr(1),ierr,ctens=ctens(1),gpu_num=gpu_id); if(ierr.ne.0) then; ierr=16; goto 999; endif
-            call tens_blck_assoc(entry_ptr(2),ierr,ctens=ctens(2),gpu_num=gpu_id); if(ierr.ne.0) then; ierr=17; goto 999; endif
+            if(ierr.ne.0) then; ierr=20; goto 999; endif
+            call tens_blck_assoc(entry_ptr(0),ierr,ctens=ctens(0),gpu_num=gpu_id); if(ierr.ne.0) then; ierr=21; goto 999; endif
+            call tens_blck_assoc(entry_ptr(1),ierr,ctens=ctens(1),gpu_num=gpu_id); if(ierr.ne.0) then; ierr=22; goto 999; endif
+            call tens_blck_assoc(entry_ptr(2),ierr,ctens=ctens(2),gpu_num=gpu_id); if(ierr.ne.0) then; ierr=23; goto 999; endif
             call gpu_set_transpose_algorithm(EFF_TRN_OFF) !scatter on GPU
             write(jo_cp,'(3x)',advance='no')
             err_code=gpu_tensor_block_copy_dlf(o2n,ctens(1),ctens(0))
-            if(err_code.ne.0) then; write(jo_cp,*)'GPU error ',err_code; call print_gpu_debug_dump(jo_cp); ierr=18; goto 999; endif
-            write(jo_cp,'(3x)',advance='no')
-            err_code=gpu_tensor_block_copy_dlf(n2o,ctens(0),ctens(2))
-            if(err_code.ne.0) then; write(jo_cp,*)'GPU error ',err_code; call print_gpu_debug_dump(jo_cp); ierr=19; goto 999; endif
-            call tens_blck_unpack(ftens(2),entry_ptr(2),ierr); if(ierr.ne.0) then; ierr=20; goto 999; endif
-            cmp=tensor_block_cmp(ftens(1),ftens(2),ierr,dtk,.true.,1d-4,diffc); if(ierr.ne.0) then; ierr=21; goto 999; endif
-            write(jo_cp,'(3x,l1,1x,i9,1x,F16.4)') cmp,diffc,tensor_block_norm1(ftens(2),ierr,dtk)
-            if(.not.cmp) then; nfail=nfail+1; write(jo_cp,'(3x,"Comparison Failed!")'); endif
-            call gpu_set_transpose_algorithm(EFF_TRN_ON) !shared-memory on GPU
-            err_code=cuda_task_create(cuda_task(1)); if(err_code.ne.0) then; ierr=22; goto 999; endif
-            write(jo_cp,'(3x)',advance='no')
-            tm=thread_wtime()
-            err_code=gpu_tensor_block_copy_dlf_(o2n,ctens(1),ctens(0),COPY_BACK,cuda_task(1))
-            if(err_code.ne.0) then; write(jo_cp,*)'GPU error ',err_code; call print_gpu_debug_dump(jo_cp); ierr=23; goto 999; endif
-            err_code=cuda_task_wait(cuda_task(1)); if(err_code.ne.cuda_task_completed) then; ierr=24; goto 999; endif
-            write(jo_cp,'("#DEBUG(tensor_algebra_gpu_nvidia:gpu_tensor_block_copy_dlf_): Time ",F10.6)') thread_wtime()-tm
+            if(err_code.ne.0) then; write(jo_cp,*)'GPU error ',err_code; call print_gpu_debug_dump(jo_cp); ierr=24; goto 999; endif
             write(jo_cp,'(3x)',advance='no')
             err_code=gpu_tensor_block_copy_dlf(n2o,ctens(0),ctens(2))
             if(err_code.ne.0) then; write(jo_cp,*)'GPU error ',err_code; call print_gpu_debug_dump(jo_cp); ierr=25; goto 999; endif
-            err_code=cuda_task_destroy(cuda_task(1)); if(err_code.ne.0) then; ierr=26; goto 999; endif
-            call tens_blck_unpack(ftens(2),entry_ptr(2),ierr); if(ierr.ne.0) then; ierr=27; goto 999; endif
-            cmp=tensor_block_cmp(ftens(1),ftens(2),ierr,dtk,.true.,1d-4,diffc); if(ierr.ne.0) then; ierr=28; goto 999; endif
+            call tens_blck_unpack(ftens(2),entry_ptr(2),ierr); if(ierr.ne.0) then; ierr=26; goto 999; endif
+            cmp=tensor_block_cmp(ftens(1),ftens(2),ierr,dtk,.true.,1d-4,diffc); if(ierr.ne.0) then; ierr=27; goto 999; endif
+            write(jo_cp,'(3x,l1,1x,i9,1x,F16.4)') cmp,diffc,tensor_block_norm1(ftens(2),ierr,dtk)
+            if(.not.cmp) then; nfail=nfail+1; write(jo_cp,'(3x,"Comparison Failed!")'); endif
+            call gpu_set_transpose_algorithm(EFF_TRN_ON) !shared-memory on GPU
+            err_code=cuda_task_create(cuda_task(1)); if(err_code.ne.0) then; ierr=28; goto 999; endif
+            write(jo_cp,'(3x)',advance='no')
+!            tm=thread_wtime()
+!            err_code=gpu_tensor_block_copy_dlf_(o2n,ctens(1),ctens(0),COPY_BACK,cuda_task(1))
+!            err_code=cuda_task_wait(cuda_task(1)); if(err_code.ne.cuda_task_completed) then; ierr=29; goto 999; endif
+!            write(jo_cp,'("#DEBUG(tensor_algebra_gpu_nvidia:gpu_tensor_block_copy_dlf_): Time ",F10.6)') thread_wtime()-tm
+            err_code=gpu_tensor_block_copy_dlf(o2n,ctens(1),ctens(0))
+            if(err_code.ne.0) then; write(jo_cp,*)'GPU error ',err_code; call print_gpu_debug_dump(jo_cp); ierr=30; goto 999; endif
+            write(jo_cp,'(3x)',advance='no')
+            err_code=gpu_tensor_block_copy_dlf(n2o,ctens(0),ctens(2))
+            if(err_code.ne.0) then; write(jo_cp,*)'GPU error ',err_code; call print_gpu_debug_dump(jo_cp); ierr=31; goto 999; endif
+            err_code=cuda_task_destroy(cuda_task(1)); if(err_code.ne.0) then; ierr=32; goto 999; endif
+            call tens_blck_unpack(ftens(2),entry_ptr(2),ierr); if(ierr.ne.0) then; ierr=33; goto 999; endif
+            cmp=tensor_block_cmp(ftens(1),ftens(2),ierr,dtk,.true.,1d-4,diffc); if(ierr.ne.0) then; ierr=34; goto 999; endif
             write(jo_cp,'(3x,l1,1x,i9,1x,F16.4)') cmp,diffc,tensor_block_norm1(ftens(2),ierr,dtk)
             if(.not.cmp) then; nfail=nfail+1; write(jo_cp,'(3x,"Comparison Failed!")'); endif
             write(jo_cp,'(3x)',advance='no')
             n2o(1:tens_rank)=(/(i,i=1,tens_rank)/)
-            err_code=gpu_tensor_block_copy_dlf(n2o,ctens(1),ctens(2)); if(err_code.ne.0) then; ierr=29; goto 999; endif
-            call tens_blck_dissoc(ctens(2),ierr); if(ierr.ne.0) then; ierr=30; goto 999; endif
-            call tens_blck_dissoc(ctens(1),ierr); if(ierr.ne.0) then; ierr=31; goto 999; endif
-            call tens_blck_dissoc(ctens(0),ierr); if(ierr.ne.0) then; ierr=32; goto 999; endif
-            err_code=free_buf_entry_host(entry_num(2)); if(err_code.ne.0) then; ierr=33; goto 999; endif
-            err_code=free_buf_entry_host(entry_num(1)); if(err_code.ne.0) then; ierr=34; goto 999; endif
-            err_code=free_buf_entry_host(entry_num(0)); if(err_code.ne.0) then; ierr=35; goto 999; endif
+            err_code=gpu_tensor_block_copy_dlf(n2o,ctens(1),ctens(2)); if(err_code.ne.0) then; ierr=35; goto 999; endif
+            if(err_code.ne.0) then; write(jo_cp,*)'GPU error ',err_code; call print_gpu_debug_dump(jo_cp); ierr=36; goto 999; endif
+            call tens_blck_dissoc(ctens(2),ierr); if(ierr.ne.0) then; ierr=37; goto 999; endif
+            call tens_blck_dissoc(ctens(1),ierr); if(ierr.ne.0) then; ierr=38; goto 999; endif
+            call tens_blck_dissoc(ctens(0),ierr); if(ierr.ne.0) then; ierr=39; goto 999; endif
+            err_code=free_buf_entry_host(entry_num(2)); if(err_code.ne.0) then; ierr=40; goto 999; endif
+            err_code=free_buf_entry_host(entry_num(1)); if(err_code.ne.0) then; ierr=41; goto 999; endif
+            err_code=free_buf_entry_host(entry_num(0)); if(err_code.ne.0) then; ierr=42; goto 999; endif
 #endif
             call tensor_block_destroy(ftens(2),ierr)
             call tensor_block_destroy(ftens(1),ierr)
