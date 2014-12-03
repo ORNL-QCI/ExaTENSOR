@@ -43,8 +43,8 @@
         integer(C_INT), parameter:: BLAS_OFF=1                 !disables BLAS
         integer(C_INT), parameter:: EFF_TRN_OFF=0              !disables efficient tensor transpose algorithm
         integer(C_INT), parameter:: EFF_TRN_ON=1               !enables efficient tensor transpose algorithm
-!DIR$ ATTRIBUTES OFFLOAD:mic:: NOPE,YEP,NO_COPY_BACK,COPY_BACK
-!DIR$ ATTRIBUTES ALIGN:128:: NOPE,YEP,NO_COPY_BACK,COPY_BACK
+!DIR$ ATTRIBUTES OFFLOAD:mic:: NOPE,YEP,NO_COPY_BACK,COPY_BACK,BLAS_ON,BLAS_OFF,EFF_TRN_OFF,EFF_TRN_ON
+!DIR$ ATTRIBUTES ALIGN:128:: NOPE,YEP,NO_COPY_BACK,COPY_BACK,BLAS_ON,BLAS_OFF,EFF_TRN_OFF,EFF_TRN_ON
 
 !Tensor block storage layout:
         integer(C_INT), parameter:: not_allocated=0   !tensor block has not been initialized

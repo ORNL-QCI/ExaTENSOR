@@ -1,6 +1,6 @@
 !Tensor Algebra for Multi-Core CPUs (OpenMP based).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2014/10/20
+!REVISION: 2014/12/03
 !GNU linking options: -lgomp -lblas -llapack
 !ACRONYMS:
 ! - mlndx - multiindex;
@@ -182,6 +182,9 @@
 !-----------------
 !PUBLIC FUNCTIONS:
 !-----------------------------------------
+#ifndef NO_PHI
+!DIR$ ATTRIBUTES OFFLOAD:mic:: set_data_kind_sync
+#endif
 	subroutine set_data_kind_sync(alg) !SERIAL
 	implicit none
 	integer, intent(in):: alg
@@ -195,6 +198,9 @@
 	return
 	end subroutine set_data_kind_sync
 !----------------------------------------------
+#ifndef NO_PHI
+!DIR$ ATTRIBUTES OFFLOAD:mic:: set_transpose_algorithm
+#endif
 	subroutine set_transpose_algorithm(alg) !SERIAL
 	implicit none
 	integer, intent(in):: alg
@@ -208,6 +214,9 @@
 	return
 	end subroutine set_transpose_algorithm
 !--------------------------------------------
+#ifndef NO_PHI
+!DIR$ ATTRIBUTES OFFLOAD:mic:: set_matmult_algorithm
+#endif
 	subroutine set_matmult_algorithm(alg) !SERIAL
 	implicit none
 	integer, intent(in):: alg
