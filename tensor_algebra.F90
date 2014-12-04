@@ -1,6 +1,6 @@
 !Tensor Algebra for Multi-Core CPUs (OpenMP based).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2014/12/03
+!REVISION: 2014/12/04
 !GNU linking options: -lgomp -lblas -llapack
 !ACRONYMS:
 ! - mlndx - multiindex;
@@ -5217,14 +5217,14 @@
 	integer i,k,n2o(dim_num)
 	integer(LONGINT) j,l,m,n,base_in(dim_num),base_out(dim_num)
 	logical trivial
-	real(8) time_beg
+	real(8) time_beg,tm
 #ifndef NO_PHI
 !DIR$ ATTRIBUTES OFFLOAD:mic:: real_kind
 !DIR$ ATTRIBUTES ALIGN:128:: real_kind,n2o,base_in,base_out
 #endif
 
 	ierr=0
-!	time_beg=thread_wtime() !debug
+	time_beg=thread_wtime() !debug
 	if(dim_num.eq.0) then !scalar tensor
 	 tens_out(0)=tens_in(0)
 	elseif(dim_num.gt.0) then
@@ -5248,8 +5248,9 @@
 	else
 	 ierr=1
 	endif
-!	write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_scatter_dlf_r8): kernel time/error code = ",F10.4,1x,i3)') &
-!         thread_wtime(time_beg),ierr !debug
+        tm=thread_wtime(time_beg)
+        write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_scatter_dlf_r8): Done: ",F10.4," sec, ",F10.4," GB/s, error ",i3)'&
+        &) tm,dble(2_LONGINT*n*real_kind)/(tm*1024d0*1024d0*1024d0),ierr !debug
 	return
 	end subroutine tensor_block_copy_scatter_dlf_r8
 !--------------------------------------------------------------------------------------------------------
