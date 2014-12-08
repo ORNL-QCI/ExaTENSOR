@@ -1,7 +1,7 @@
-/** This file provides infrastructure for managing Host/GPU
-argument buffers inside a computing process (C-process).
+/** Explicit memory management for the GPU-enabled
+implementation of the tensor algebra library.
 AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-REVISION: 2014/09/24
+REVISION: 2014/12/08
 **/
 
 #include <stdio.h>
@@ -14,7 +14,7 @@ REVISION: 2014/09/24
 #define GPU_MEM_PART_USED 90    //percentage of free GPU global memory to be actually allocated for GPU argument buffers
 #define MEM_ALIGN 16            //memory alignment (in bytes) for argument buffers
 #define BLCK_BUF_DEPTH_HOST 4   //number of distinct tensor block buffer levels on Host
-#define BLCK_BUF_TOP_HOST 9     //number of argument buffer entries of the largest size (level 0) on Host: multiple of 3
+#define BLCK_BUF_TOP_HOST 3     //number of argument buffer entries of the largest size (level 0) on Host: multiple of 3
 #define BLCK_BUF_BRANCH_HOST 3  //branching factor for each subsequent buffer level on Host: multiple of 3
 #define BLCK_BUF_DEPTH_GPU 3    //number of distinct tensor block buffer levels on GPU
 #define BLCK_BUF_TOP_GPU 3      //number of argument buffer entries of the largest size (level 0) on GPU: multiple of 3
