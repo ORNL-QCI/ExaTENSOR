@@ -1,6 +1,6 @@
 !Tensor Algebra for Multi-Core CPUs (OpenMP based).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2014/12/04
+!REVISION: 2014/12/10
 !GNU linking options: -lgomp -lblas -llapack
 !ACRONYMS:
 ! - mlndx - multiindex;
@@ -5249,8 +5249,8 @@
 	 ierr=1
 	endif
         tm=thread_wtime(time_beg)
-        write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_scatter_dlf_r8): Done: ",F10.4," sec, ",F10.4," GB/s, error ",i3)'&
-        &) tm,dble(2_LONGINT*n*real_kind)/(tm*1024d0*1024d0*1024d0),ierr !debug
+        write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_scatter_dlf_r8): Done: ",F10.4," sec, ",F10.4," GB/s, error ",'&
+        &//'i3)') tm,dble(2_LONGINT*n*real_kind)/(tm*1024d0*1024d0*1024d0),ierr !debug
 	return
 	end subroutine tensor_block_copy_scatter_dlf_r8
 !--------------------------------------------------------------------------------------------------------
