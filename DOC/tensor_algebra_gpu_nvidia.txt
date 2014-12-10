@@ -3,8 +3,9 @@ Author: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
 Organization: National Center for Computational Sciences,
               Oak Ridge National Laboratory,
               Oak Ridge, TN 37831, USA
-Revision: 2014-11-20 (started 2013-12-16).
-Language: CUDA C, C.
+Revision: 2014-12-09 (started 2013-12-16).
+Language: At least CUDA 5.0 C and C99.
+Libraries: BLAS and CUDA 5.0 BLAS v.2.
 
 
 *** I. General ***

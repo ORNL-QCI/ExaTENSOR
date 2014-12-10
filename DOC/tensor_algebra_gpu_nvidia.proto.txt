@@ -1,6 +1,7 @@
-*** Tensor algebra library for NVidia GPUs ***
+*** Tensor algebra library for NVidia GPU ***
+Appendix: Data types and function prototypes.
 AUTHOR: Dmitry I. Lyakh: quant4me@gmail.com
-REVISION: 2014/09/15
+REVISION: 2014/12/09
 DESCRIPTION:
  # Functions with no underscores at the end are blocking.
  # Functions with one underscore at the end are non-blocking.
