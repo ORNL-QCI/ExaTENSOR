@@ -7,15 +7,15 @@ MPI_INC = -I.
 CUDA_INC = -I.
 CUDA_LINK = -lcudart -lcublas -L.
 CUDA_FLAGS_DEV = --compile -arch=sm_35 -g -G -DDEBUG
-CUDA_FLAGS_OPT = --compile -O3 -arch=sm_35
-CUDA_FLAGS = $(CUDA_FLAGS_DEV)
+CUDA_FLAGS_OPT = --compile -arch=sm_35 -O3
+CUDA_FLAGS = $(CUDA_FLAGS_OPT)
 LA_LINK_INTEL = -lmkl_core -lmkl_intel_thread -lmkl_intel_lp64 -lmkl_blas95_lp64 -lmkl_lapack95_lp64 -lrt
-LA_LINK_AMD = -lacml_mp -L.
+LA_LINK_AMD = -lacml_mp -L/opt/acml/5.3.1/gfortran64_mp/lib
 LA_LINK_CRAY = " "
 LA_LINK = $(LA_LINK_AMD)
 CFLAGS_DEV = -c -g
 CFLAGS_OPT = -c -O3
-CFLAGS = $(CFLAGS_DEV)
+CFLAGS = $(CFLAGS_OPT)
 FFLAGS_DEV = -c -g
 FFLAGS_OPT = -c -O3
 FFLAGS_DEV_GNU = -c -g -fopenmp -fbacktrace -fcheck=bounds -fcheck=array-temps -fcheck=pointer
@@ -24,18 +24,18 @@ FFLAGS_DEV_PGI = -c -g -mp -Mcache_align -Mbounds -Mchkptr
 FFLAGS_OPT_PGI = -c -O3 -mp -Mcache_align
 FFLAGS_DEV_INTEL = -c -g -fpp -vec-threshold4 -vec-report2 -openmp -openmp-report2 -DUSE_MKL
 FFLAGS_OPT_INTEL = -c -O3 -fpp -vec-threshold4 -vec-report2 -openmp -openmp-report2 -DUSE_MKL
-FFLAGS = $(FFLAGS_DEV_GNU) -DNO_PHI
+FFLAGS = $(FFLAGS_OPT_GNU) -DNO_PHI
 LFLAGS_GNU = -lgomp
 LFLAGS_PGI = -lpthread
-LFLAGS = $(LFLAGS_GNU) $(LA_LINK) -o
+LFLAGS = $(LFLAGS_GNU) $(LA_LINK) $(CUDA_LINK) -o
 
 OBJS = stsubs.o combinatoric.o extern_names.o service.o lists.o dictionary.o timers.o \
 	symm_index.o tensor_algebra.o tensor_dil_omp.o tensor_algebra_intel_phi.o \
-	cuda2fortran.o c_proc_bufs.o tensor_algebra_gpu_nvidia.o c_process.o qforce.o \
-	main.o proceed.o
+	cuda2fortran.o c_proc_bufs.o tensor_algebra_gpu_nvidia.o sys_service.o \
+	c_process.o qforce.o main.o proceed.o
 
 $(NAME): $(OBJS)
-	$(FC) $(OBJS) $(MPI_INC) $(CUDA_INC) $(CUDA_LINK) $(LFLAGS) $(NAME)
+	$(FC) $(OBJS) $(MPI_INC) $(CUDA_INC) $(LFLAGS) $(NAME)
 
 %.o: %.F90 qforce.mod
 	$(FC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) $?
@@ -103,5 +103,8 @@ tensor_algebra_gpu_nvidia.o: tensor_algebra_gpu_nvidia.cu tensor_algebra.h
 	$(CUDA_C) $(MPI_INC) $(CUDA_INC) $(CUDA_FLAGS) -ptx tensor_algebra_gpu_nvidia.cu
 	$(CUDA_C) $(MPI_INC) $(CUDA_INC) $(CUDA_FLAGS) tensor_algebra_gpu_nvidia.cu
 
+sys_service.o: sys_service.c
+	$(CC) $(CFLAGS) sys_service.c
+
 clean:
-	rm *.o *.mod *.x *.ptx
+	rm *.o *.mod *.modmic *.ptx *.x
