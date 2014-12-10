@@ -1,7 +1,7 @@
 !This module provides functionality for a Computing Process (C-PROCESS, CP).
 !In essence, this is a single-node elementary tensor instruction scheduler (SETIS).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2014/10/20
+!REVISION: 2014/12/10
 !CONCEPTS (CP workflow):
 ! - Each CP stores its own tensor blocks in TBB, with a possibility of disk dump.
 ! - LR sends a batch of ETI to be executed on this CP unit (CP MPI Process).
@@ -334,7 +334,7 @@
         integer:: stcu_simd_my_pass,stcu_mimd_my_pass,stcu_mimd_max_pass !STCU variables
         type(nvcu_task_t), allocatable:: nvcu_tasks(:) !parallel to etiq_nvcu
         type(xpcu_task_t), allocatable:: xpcu_tasks(:) !parallel to etiq_xpcu
-        integer(C_SIZE_T):: blck_sizes(0:max_arg_buf_levels-1)
+        integer(C_SIZE_T):: blck_sizes(0:max_arg_buf_levels-1),total_mem,free_mem,used_swap
         integer:: tree_height; integer(8):: tree_volume
         type(tens_blck_id_t):: key(0:15)
         type(tensor_block_t):: tens
@@ -349,6 +349,13 @@
         write(jo_cp,'("#MSG(c_process::c_proc_life): I am a C-process (Computing MPI Process): MPI rank = ",i7)') impir
 !Initialization:
 !       write(jo_cp,'("#MSG(c_process::c_proc_life): Initialization:")')
+!Memory status on node:
+        call get_memory_status(total_mem,free_mem,used_swap,i)
+        if(i.eq.0) then
+         write(jo_cp,'("#MSG(c_process::c_proc_life): Total usable memory (bytes) = ",i13)') total_mem
+         write(jo_cp,'("#MSG(c_process::c_proc_life): Free usable memory (bytes)  = ",i13)') free_mem
+         write(jo_cp,'("#MSG(c_process::c_proc_life): Used swap memory (bytes)    = ",i13)') used_swap
+        endif
  !Init TAL infrastructure (TAL buffers, cuBLAS, etc.):
         write(jo_cp,'("#MSG(c_process::c_proc_life): Allocating argument buffers ... ")',advance='no')
         tm=thread_wtime()
