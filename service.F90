@@ -153,5 +153,25 @@
 	call MPI_FINALIZE(ierr)
 	stop
 	end subroutine quit
+!----------------------------------------------------------------------
+        subroutine get_memory_status(total_ram,free_ram,used_swap,ierr)
+!This subroutine returns:
+! - total_ram - total usable RAM available on the node in bytes;
+! - free_ram - free usable RAM available on the node in bytes;
+! - used_swap - current swap size in bytes;
+        implicit none
+        interface
+         integer(C_INT) function get_memory_stat(total_ram,free_ram,used_swap) bind(C)
+          use, intrinsic:: ISO_C_BINDING
+          integer(C_SIZE_T), intent(out):: total_ram
+          integer(C_SIZE_T), intent(out):: free_ram
+          integer(C_SIZE_T), intent(out):: used_swap
+         end function get_memory_stat
+        end interface
+        integer(C_SIZE_T), intent(out):: total_ram,free_ram,used_swap
+        integer, intent(inout):: ierr
+        ierr=get_memory_stat(total_ram,free_ram,used_swap)
+        return
+        end subroutine get_memory_status
 
        end module service
