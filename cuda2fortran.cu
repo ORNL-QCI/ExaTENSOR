@@ -5,7 +5,9 @@
 
 #ifndef NO_GPU
 //Protect the C function names from name mangling:
+#ifdef __cplusplus
 extern "C"{
+#endif
  void cudagetdevicecount(int* count, int* err_code);
  void cudasetdevice(int device, int* err_code);
  void cudagetdeviceproperties(int device, size_t *totalGlobalMem_, size_t *sharedMemPerBlock_,
@@ -14,11 +16,17 @@ extern "C"{
        int *multiProcessorCount_, int *concurrentKernels_, int *ECCEnabled_, int *asyncEngineCount_,
        int *memoryClockRate_, int *memoryBusWidth_, int *maxThreadsPerMultiProcessor_, int* err_code);
  void cudadevicesynchronize(int *err_code);
+#ifdef __cplusplus
 }
 #endif
+#endif
+#ifdef __cplusplus
 extern "C"{
+#endif
  void print_c_ptr(void *c_ptr);
+#ifdef __cplusplus
 }
+#endif
 //-------------------------------------------------------------------
 #ifndef NO_GPU
 //C Wrappers (called from Fortran to invoke CUDA run-time functions):

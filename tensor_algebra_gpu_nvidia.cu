@@ -3,7 +3,7 @@ AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
 This open-source code was developed by the author while
 at the National Center for Computational Sciences
 at the Oak Ridge National Laboratory, Oak Ridge TN.
-REVISION: 2014/10/20
+REVISION: 2014/12/22
 NOTES:
  # Functions without underscores at the end of their names are blocking (Host) functions;
    Functions with one underscore at the end of their names are external non-blocking functions;
@@ -38,7 +38,9 @@ NOTES:
 
 //----------------------------------------------------------------------
 //FUNCTION PROTOTYPES (exported/imported functions):
+#ifdef __cplusplus
 extern "C" {
+#endif
 // Exported (public):
  int gpu_get_error_count();
  int gpu_get_debug_dump(int *dump);
@@ -94,7 +96,9 @@ extern "C" {
  int free_gpu_ptr(void *dev_ptr);
  void get_contr_permutations(int lrank, int rrank, const int *cptrn, int *dprm, int *lprm, int *rprm,
                              int *ncd, int *nlu, int *nru, int *ierr);
+#ifdef __cplusplus
 }
+#endif
 // Local (private):
  int prmn_convert(int n, const int *o2n, int *n2o);
  int non_trivial_prmn(int n, const int *prm);

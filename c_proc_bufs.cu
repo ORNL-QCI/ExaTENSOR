@@ -1,7 +1,7 @@
 /** Explicit memory management for the GPU-enabled
 implementation of the tensor algebra library.
 AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-REVISION: 2014/12/08
+REVISION: 2014/12/22
 **/
 
 #include <stdio.h>
@@ -48,7 +48,9 @@ static size_t abg_occ_size[MAX_GPUS_PER_NODE]; //total numbers of entries in the
 
 //-------------------------------------------------------
 //FUNCTION PROTOTYPES:
+#ifdef __cplusplus
 extern "C"{
+#endif
 // EXPORT:
  char* ptr_offset(char *byte_ptr, size_t byte_offset);
  int arg_buf_allocate(size_t *arg_buf_size, int *arg_max, int gpu_beg, int gpu_end);
@@ -71,7 +73,9 @@ extern "C"{
  int free_gpus(int gpu_beg, int gpu_end);
  int gpu_is_mine(int gpu_num);
 #endif
+#ifdef __cplusplus
 }
+#endif
 // LOCAL:
  int const_args_link_init(int gpu_beg, int gpu_end);
  int ab_get_2d_pos(ab_conf_t ab_conf, int entry_num, int *level, int *offset);
