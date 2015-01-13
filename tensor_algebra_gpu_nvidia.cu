@@ -3,7 +3,7 @@ AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
 This open-source code was developed by the author while
 at the National Center for Computational Sciences
 at the Oak Ridge National Laboratory, Oak Ridge TN.
-REVISION: 2014/12/22
+REVISION: 2015/01/13
 NOTES:
  # Functions without underscores at the end of their names are blocking (Host) functions;
    Functions with one underscore at the end of their names are external non-blocking functions;
@@ -142,7 +142,7 @@ static cudaDeviceProp gpu_prop[MAX_GPUS_PER_NODE]; //properties of all GPUs pres
 __device__ __constant__ int const_args_dims[MAX_GPU_ARGS][MAX_TENSOR_RANK]; //storage for device constant memory arguments: dimension extents
 __device__ __constant__ int const_args_prmn[MAX_GPU_ARGS][MAX_TENSOR_RANK]; //storage for device constant memory arguments: permutation
 // GPU error control and debugging for each GPU:
-__device__ int gpu_error_count=0; //total number of CUDA errors registered on device till the current moment
+__device__ volatile int gpu_error_count=0; //total number of CUDA errors registered on device till the current moment
 __device__ int gpu_debug_dump[GPU_DEBUG_DUMP_SIZE];
 // Global CUDA event recording policy (for timing only):
 static int EVENT_RECORD=1; //non-zero value enables cudaEventRecord() timing calls
@@ -156,12 +156,12 @@ __device__ __constant__ float sgemm_beta=1.0f;  //beta constant SGEMM
 __device__ __constant__ double dgemm_alpha=1.0; //alpha constant for DGEMM
 __device__ __constant__ double dgemm_beta=1.0;  //beta constant DGEMM
 // Infrastructure for functions <gpu_array_2norm2_XX> (blocking):
-__device__ float gpu_blck_norms2_r4[MAX_CUDA_BLOCKS];
-__device__ double gpu_blck_norms2_r8[MAX_CUDA_BLOCKS];
+__device__ volatile float gpu_blck_norms2_r4[MAX_CUDA_BLOCKS];
+__device__ volatile double gpu_blck_norms2_r8[MAX_CUDA_BLOCKS];
 static float blck_norms2_r4[MAX_CUDA_BLOCKS];
 static double blck_norms2_r8[MAX_CUDA_BLOCKS];
 // Infrastructure for kernels <gpu_array_dot_product_XX__>:
-__device__ int dot_product_wr_lock=0; //write lock for all simultaneously running kernels <gpu_array_dot_product_XX__>
+__device__ volatile int dot_product_wr_lock=0; //write lock for all simultaneously running kernels <gpu_array_dot_product_XX__>
 #ifndef NO_BLAS
 // Infrastructure for CUBLAS:
 static cublasHandle_t cublas_handle[MAX_GPUS_PER_NODE]; //each GPU present on a node obtains its own context handle
