@@ -1,25 +1,45 @@
-/** Parameters and derived types used in tensor_algebra_gpu_nvidia.cu and related modules. **/
+/** Parameters and derived types used in tensor_algebra_gpu_nvidia.cu (NV-TAL)
+    and related modules (buffer memory management).
+REVISION: 2015/01/21
+Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
+Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
 
-/** NOTES:
- # GPU_ID is the unique CUDA GPU ID given to a specific Nvidia GPU present on the Host node:
+This source file is free software; you can redistribute it and/or
+modify it under the terms of the GNU General Public License
+as published by the Free Software Foundation; either version 2
+of the License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+-------------------------------------------------------------------------------
+OPTIONS:
+ # -DNO_GPU: disables GPU usage (CPU structures only).
+NOTES:
+ # GPU_ID is a unique CUDA GPU ID given to a specific NVidia GPU present on the Host node:
     0<=GPU_ID<MAX_GPUS_PER_NODE; GPU_ID=-1 will refer to the (multi-)CPU Host.
     All MPI processes running on the same node will have a flat numeration of all present GPUs,
-    each process either having its own subrange of GPUs or sharing all of them.
+    each process either having its own subrange of GPUs or sharing all of them with others.
  # MIC_ID, AMD_ID, etc. are defined completely analogously to GPU_ID.
    In general, ACC_ID (Accelerator ID) is its ID within its class (0,1,2,...).
  # DEVICE_ID can refer either to the (multi-)CPU Host (=0), OR
-    to a specific Nvidia GPU: gpu_id=abs(DEVICE_ID)-1, OR
+    to a specific NVidia GPU: gpu_id=abs(DEVICE_ID)-1, OR
     to a specific Intel Xeon Phi: mic_id=abs(DEVICE_ID)-1-MAX_GPUS_PER_NODE, OR
     to a specific AMD GPU: amd_id=abs(DEVICE_ID)-1-MAX_GPUS_PER_NODE-MAX_MICS_PER_NODE, etc.
     Device numeration:
      Host: {0};
-     Nvidia GPU: {1..MAX_GPUS_PER_NODE};
+     NVidia GPU: {1..MAX_GPUS_PER_NODE};
      Intel Xeon Phi: {MAX_GPUS_PER_NODE+1:MAX_GPUS_PER_NODE+MAX_MICS_PER_NODE};
      AMD GPU: {MAX_GPUS_PER_NODE+MAX_MICS_PER_NODE+1:MAX_GPUS_PER_NODE+MAX_MICS_PER_NODE+MAX_AMDS_PER_NODE}, etc.
     DEVICE_ID is used in tensBlck_t: If tensor elements are already on the Device it is positive, otherwise negative.
  # MAX_SCR_ENTRY_COUNT regulates the maximal amount of additional device argument-buffer entries
     allocated per tensor operation (it is no more than 3 for tensor contractions).
- # MAX_GPU_ARGS regulates the maximal allowed amount of occupied device argument-buffer entries.
+ # MAX_GPU_ARGS regulates the maximal allowed amount of device argument-buffer entries.
  # CUDA_TASK is considered completed successfully if the value of the .task_error field equals zero.
     Negative .task_error means that either the CUDA task is empty or it is in progress.
     In the former case, .gpu_id=-1 and .task_stream is undefined.
@@ -99,8 +119,8 @@ typedef struct{
 #ifndef NO_GPU
 // CUDA task information (returned by non-blocking CUDA calling functions):
 typedef struct{
- int task_error;                     //error code (<0: Task is either empty or in progress; 0: Success; >0: Launch error code)
- int gpu_id;                         //Nvidia GPU ID on which the task was scheduled (-1 means CPU Host)
+ int task_error;                     //error code (<0: Task is either empty or in progress; 0: Success; >0: Error code)
+ int gpu_id;                         //NVidia GPU ID on which the task was scheduled (-1 means CPU Host)
  cudaStream_t task_stream;           //CUDA stream the task went into
  cudaEvent_t task_start;             //CUDA event recorded at the beginning of the task
  cudaEvent_t task_comput;            //CUDA event recorded before the computing kernels start (all input data is on Device)

@@ -1,10 +1,31 @@
-/** Parallel Tensor Algebra Library for NVidia GPUs (CUDA).
-AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-This open-source code was developed by the author while
-at the National Center for Computational Sciences
-at the Oak Ridge National Laboratory, Oak Ridge TN.
-REVISION: 2015/01/13
+/** Tensor Algebra Library for NVidia GPUs (CUDA).
+REVISION: 2015/01/21
+Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
+Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
+
+This source file is free software; you can redistribute it and/or
+modify it under the terms of the GNU General Public License
+as published by the Free Software Foundation; either version 2
+of the License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+-------------------------------------------------------------------------------
+OPTIONS:
+ # -DNO_GPU: disables GPU usage (this source file will become empty);
+ # -DNO_BLAS: disables cuBLAS calls, they will be replaced by in-house routines;
+ # -DDIL_DEBUG_GPU: collection of debugging information will be activated;
 NOTES:
+ # Although the minimal required CUDA device compute capability is 1.1,
+   some parameters in "tensor_algebra.h" might be tuned for Kepler architecture,
+   thus a readjustment may be requried for lower than 3.5 compute capabilities;
+ # cuBLAS.v2 is used when BLAS is enabled;
  # Functions without underscores at the end of their names are blocking (Host) functions;
    Functions with one underscore at the end of their names are external non-blocking functions;
    Functions with two underscores at the end of their names are (non-blocking) CUDA kernels.
@@ -12,12 +33,12 @@ NOTES:
  # External non-blocking tensor algebra functions carry an additional input argument <copy_back>
    which, when set to zero, prevents the output data from being copied back from GPU to Host.
    Passing zero to <copy_back> must be done with care since the Host copy
-   of the tensor data will become outdated, that cannot be checked!
-   To restore coherency between the Host and GPU argument buffers,
-   a GPU argument entry has to be explictly fetched by Host (by user).
+   of the tensor data will become outdated that cannot be checked!
+   To restore coherence between the Host and GPU argument buffers,
+   a GPU argument entry has to be explictly fetched by Host (user responsibility).
  # Seems like cudaEventRecord() issued in different streams can serialize stream execution!
-   Thus, by default, event time recording should be disabled (EVENT_RECORD=0).
- # Use CUDA preprocessor flag -DDEBUG to allow collecting run-time debug information.
+   Thus, by default, event recording should be disabled (EVENT_RECORD=0).
+   If timing is needed, event recording has to be reenabled (EVENT_RECORD=1).
 **/
 
 #ifndef NO_GPU
@@ -2707,7 +2728,7 @@ NOTES:
    err_code=1+2*blockDim.x%warpSize;
   }
  } //endif: Master thread.
-#ifdef DEBUG
+#ifdef DIL_DEBUG_GPU
 //DEBUG RECORD begin:
  if(blockIdx.x == 0 && threadIdx.x == 0){
   j=0; gpu_debug_dump[j++]=dim_num;
@@ -3042,7 +3063,7 @@ REGISTER USE =
    err_code=1+2*blockDim.x%warpSize;
   }
  } //endif: Master thread.
-#ifdef DEBUG
+#ifdef DIL_DEBUG_GPU
 //DEBUG RECORD begin:
  if(blockIdx.x == 0 && threadIdx.x == 0){
   j=0; gpu_debug_dump[j++]=dim_num;
@@ -3248,7 +3269,7 @@ OUTPUT:
     }
    }
   }
-#ifdef DEBUG
+#ifdef DIL_DEBUG_GPU
 //DEBUG RECORD begin:
   if(blockIdx.x == 0 && threadIdx.x ==0){
    j=0; gpu_debug_dump[j++]=dim_num;
@@ -3338,7 +3359,7 @@ OUTPUT:
     }
    }
   }
-#ifdef DEBUG
+#ifdef DIL_DEBUG_GPU
 //DEBUG RECORD begin:
   if(blockIdx.x == 0 && threadIdx.x ==0){
    j=0; gpu_debug_dump[j++]=dim_num;
