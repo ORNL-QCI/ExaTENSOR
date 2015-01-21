@@ -296,7 +296,7 @@ int arg_buf_deallocate(int gpu_beg, int gpu_end)
  for(i=0;i<MAX_GPUS_PER_NODE;i++){if(abg_occ[i] != NULL) free(abg_occ[i]); abg_occ_size[i]=0; max_args_gpu[i]=0;}
  arg_buf_host_size=0;
 #ifndef NO_GPU
- err=cudaFreeHost(arg_buf_host)
+ err=cudaFreeHost(arg_buf_host);
  if(err != cudaSuccess){
   if(verbose!=0) printf("\n#ERROR(c_proc_bufs.cu:arg_buf_deallocate): Host argument buffer deallocation failed!");
   err_code=1;
