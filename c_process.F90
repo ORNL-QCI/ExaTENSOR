@@ -50,9 +50,9 @@
         use, intrinsic:: ISO_C_BINDING
         use extern_names !`dependency to be removed
         use service !contains reference to stsubs.mod and mpif.h
-        use timers
         use lists
         use dictionary
+        use timers
 !       use tensor_algebra
         use tensor_algebra_intel_phi !contains reference to tensor_algebra.mod
         implicit none
