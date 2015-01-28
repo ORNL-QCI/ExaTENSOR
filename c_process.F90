@@ -1,7 +1,7 @@
 !This module provides functionality for a Computing Process (C-PROCESS, CP).
 !In essence, this is a single-node elementary tensor instruction scheduler (SETIS).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2014/12/10
+!REVISION: 2015/01/28
 !CONCEPTS (CP workflow):
 ! - Each CP stores its own tensor blocks in TBB, with a possibility of disk dump.
 ! - LR sends a batch of ETI to be executed on this CP unit (CP MPI Process).
@@ -415,11 +415,11 @@
          write(jo_cp,'("#ERROR(c_process::c_proc_life): C-process functionality test failed: ",i7)') ierr
          call c_proc_quit(6); return
         endif
-        call run_benchmarks(ierr)
-        if(ierr.ne.0) then
-         write(jo_cp,'("#ERROR(c_process::c_proc_life): C-process benchmarking failed: ",i7)') ierr
-         call c_proc_quit(7); return
-        endif
+!        call run_benchmarks(ierr)
+!        if(ierr.ne.0) then
+!         write(jo_cp,'("#ERROR(c_process::c_proc_life): C-process benchmarking failed: ",i7)') ierr
+!         call c_proc_quit(7); return
+!        endif
 !-----------------------------------
 !LIFE:
         ierr=0
