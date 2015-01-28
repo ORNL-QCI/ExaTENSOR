@@ -1,5 +1,5 @@
 /** Tensor Algebra Library for NVidia GPUs (CUDA).
-REVISION: 2015/01/27
+REVISION: 2015/01/28
 Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
 Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
 
@@ -2472,7 +2472,7 @@ __global__ void gpu_array_dot_product_r4__(size_t tsize, const float *arr1, cons
  if(threadIdx.x == 0){
   i=1; while(i == 1){i=atomicMax(&dot_product_wr_lock,1);} //waiting for a lock to unlock, then lock
   *dprod+=dprs_r4[0];
-  __thread_fence();
+  __threadfence();
   i=atomicExch(&dot_product_wr_lock,0); //unlock
  }
  __syncthreads();
@@ -2494,7 +2494,7 @@ __global__ void gpu_array_dot_product_r8__(size_t tsize, const double *arr1, con
  if(threadIdx.x == 0){
   i=1; while(i == 1){i=atomicMax(&dot_product_wr_lock,1);} //waiting for a lock to unlock, then lock
   *dprod+=dprs_r8[0];
-  __thread_fence();
+  __threadfence();
   i=atomicExch(&dot_product_wr_lock,0); //unlock
  }
  __syncthreads();
