@@ -136,8 +136,8 @@ __global__ void gpu_array_scale_r4__(size_t tsize, float *arr, float val);
 __global__ void gpu_array_scale_r8__(size_t tsize, double *arr, double val);
 __global__ void gpu_array_add_r4__(size_t tsize, float* __restrict__ arr0, const float* __restrict__ arr1, float val);
 __global__ void gpu_array_add_r8__(size_t tsize, double* __restrict__ arr0, const double* __restrict__ arr1, double val);
-__global__ void gpu_array_dot_product_r4__(size_t tsize, const float *arr1, const float *arr2, float *dprod);
-__global__ void gpu_array_dot_product_r8__(size_t tsize, const double *arr1, const double *arr2, double *dprod);
+__global__ void gpu_array_dot_product_r4__(size_t tsize, const float *arr1, const float *arr2, volatile float *dprod);
+__global__ void gpu_array_dot_product_r8__(size_t tsize, const double *arr1, const double *arr2, volatile double *dprod);
 __global__ void gpu_array_product_r4__(size_t tsize1, const float* __restrict__ arr1, size_t tsize2,
                                        const float* __restrict__ arr2, float* __restrict__ arr0);
 __global__ void gpu_array_product_r8__(size_t tsize1, const double* __restrict__ arr1, size_t tsize2,
