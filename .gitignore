@@ -1,6 +1,14 @@
 *.o
 *.mod
+*.modmic
 *.ptx
+*.i
+*.ii
+*.cudafe*
+*.fatbin*
+*.cubin
+*.module_id
+*.hash
 *.x
 /Archive
 /Compress
