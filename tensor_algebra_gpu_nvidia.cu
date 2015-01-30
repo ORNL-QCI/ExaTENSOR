@@ -113,8 +113,8 @@ extern "C" {
  int free_buf_entry_host(int entry_num);
  int get_buf_entry_gpu(int gpu_num, size_t bsize, char **entry_ptr, int *entry_num);
  int free_buf_entry_gpu(int gpu_num, int entry_num);
- int get_gpu_ptr(void **dev_ptr, size_t tsize);
- int free_gpu_ptr(void *dev_ptr);
+ int gpu_mem_alloc(void **dev_ptr, size_t tsize);
+ int gpu_mem_free(void *dev_ptr);
  void get_contr_permutations(int lrank, int rrank, const int *cptrn, int *dprm, int *lprm, int *rprm,
                              int *ncd, int *nlu, int *nru, int *ierr);
 #ifdef __cplusplus
@@ -976,9 +976,9 @@ All matrices are in Host memory. Executed on the currently set GPU device. **/
  if(lc > 0 && ll > 0 && lr > 0 && lmat != NULL && rmat != NULL && dmat != NULL){
   err=cudaGetLastError(); err=cudaSuccess;
   dsize=ll*lr*sizeof(float); lsize=lc*ll*sizeof(float); rsize=lc*lr*sizeof(float);
-  err_code=get_gpu_ptr((void**)&dptr,dsize); if(err_code != 0) return 1;
-  err_code=get_gpu_ptr((void**)&lptr,lsize); if(err_code != 0) return 2;
-  err_code=get_gpu_ptr((void**)&rptr,rsize); if(err_code != 0) return 3;
+  err_code=gpu_mem_alloc((void**)&dptr,dsize); if(err_code != 0) return 1;
+  err_code=gpu_mem_alloc((void**)&lptr,lsize); if(err_code != 0) return 2;
+  err_code=gpu_mem_alloc((void**)&rptr,rsize); if(err_code != 0) return 3;
   err=cudaMemcpy((void*)dptr,(void*)dmat,dsize,cudaMemcpyHostToDevice); if(err != cudaSuccess) return 4;
   err=cudaMemcpy((void*)lptr,(void*)lmat,lsize,cudaMemcpyHostToDevice); if(err != cudaSuccess) return 5;
   err=cudaMemcpy((void*)rptr,(void*)rmat,rsize,cudaMemcpyHostToDevice); if(err != cudaSuccess) return 6;
@@ -998,9 +998,9 @@ All matrices are in Host memory. Executed on the currently set GPU device. **/
 //printf("Done: %d",err); //debug
   err=cudaMemcpy((void*)dmat,(void*)dptr,dsize,cudaMemcpyDeviceToHost); if(err != cudaSuccess) return 10;
   err=cudaDeviceSynchronize(); if(err != cudaSuccess) return 11;
-  err_code=free_gpu_ptr((void*)rptr); if(err_code != 0) return 12;
-  err_code=free_gpu_ptr((void*)lptr); if(err_code != 0) return 13;
-  err_code=free_gpu_ptr((void*)dptr); if(err_code != 0) return 14;
+  err_code=gpu_mem_free((void*)rptr); if(err_code != 0) return 12;
+  err_code=gpu_mem_free((void*)lptr); if(err_code != 0) return 13;
+  err_code=gpu_mem_free((void*)dptr); if(err_code != 0) return 14;
   err=cudaDeviceSynchronize(); if(err != cudaSuccess) return 15;
  }else{
   return 16;
@@ -1022,9 +1022,9 @@ All matrices are in Host memory. Executed on the currently set GPU device. **/
  if(lc > 0 && ll > 0 && lr > 0 && lmat != NULL && rmat != NULL && dmat != NULL){
   err=cudaGetLastError(); err=cudaSuccess;
   dsize=ll*lr*sizeof(double); lsize=lc*ll*sizeof(double); rsize=lc*lr*sizeof(double);
-  err_code=get_gpu_ptr((void**)&dptr,dsize); if(err_code != 0) return 1;
-  err_code=get_gpu_ptr((void**)&lptr,lsize); if(err_code != 0) return 2;
-  err_code=get_gpu_ptr((void**)&rptr,rsize); if(err_code != 0) return 3;
+  err_code=gpu_mem_alloc((void**)&dptr,dsize); if(err_code != 0) return 1;
+  err_code=gpu_mem_alloc((void**)&lptr,lsize); if(err_code != 0) return 2;
+  err_code=gpu_mem_alloc((void**)&rptr,rsize); if(err_code != 0) return 3;
   err=cudaMemcpy((void*)dptr,(void*)dmat,dsize,cudaMemcpyHostToDevice); if(err != cudaSuccess) return 4;
   err=cudaMemcpy((void*)lptr,(void*)lmat,lsize,cudaMemcpyHostToDevice); if(err != cudaSuccess) return 5;
   err=cudaMemcpy((void*)rptr,(void*)rmat,rsize,cudaMemcpyHostToDevice); if(err != cudaSuccess) return 6;
@@ -1044,9 +1044,9 @@ All matrices are in Host memory. Executed on the currently set GPU device. **/
 //printf("Done: %d",err); //debug
   err=cudaMemcpy((void*)dmat,(void*)dptr,dsize,cudaMemcpyDeviceToHost); if(err != cudaSuccess) return 10;
   err=cudaDeviceSynchronize(); if(err != cudaSuccess) return 11;
-  err_code=free_gpu_ptr((void*)rptr); if(err_code != 0) return 12;
-  err_code=free_gpu_ptr((void*)lptr); if(err_code != 0) return 13;
-  err_code=free_gpu_ptr((void*)dptr); if(err_code != 0) return 14;
+  err_code=gpu_mem_free((void*)rptr); if(err_code != 0) return 12;
+  err_code=gpu_mem_free((void*)lptr); if(err_code != 0) return 13;
+  err_code=gpu_mem_free((void*)dptr); if(err_code != 0) return 14;
   err=cudaDeviceSynchronize(); if(err != cudaSuccess) return 15;
  }else{
   return 16;

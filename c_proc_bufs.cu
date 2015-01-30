@@ -85,8 +85,12 @@ extern "C"{
  int const_args_entry_get(int gpu_num, int *entry_num);
  int const_args_entry_free(int gpu_num, int entry_num);
 #ifndef NO_GPU
- int get_gpu_ptr(void **dev_ptr, size_t tsize);
- int free_gpu_ptr(void *dev_ptr);
+ int host_mem_alloc_pin(void **host_ptr, const size_t tsize);
+ int host_mem_free_pin(void *host_ptr);
+ int host_mem_register(void *host_ptr, const size_t tsize);
+ int host_mem_unregister(void *host_ptr);
+ int gpu_mem_alloc(void **dev_ptr, const size_t tsize);
+ int gpu_mem_free(void *dev_ptr);
 // IMPORT:
  int init_gpus(int gpu_beg, int gpu_end);
  int free_gpus(int gpu_beg, int gpu_end);
@@ -538,13 +542,37 @@ int const_args_entry_free(int gpu_num, int entry_num)
 }
 
 #ifndef NO_GPU
-__host__ int get_gpu_ptr(void **dev_ptr, size_t tsize)
+__host__ int host_mem_alloc_pin(void **host_ptr, const size_t tsize){
+ cudaError_t err=cudaHostAlloc(host_ptr,tsize,cudaHostAllocPortable);
+ if(err != cudaSuccess) return 1;
+ return 0;
+}
+
+__host__ int host_mem_free_pin(void *host_ptr){
+ cudaError_t err=cudaFreeHost(host_ptr);
+ if(err != cudaSuccess) return 1;
+ return 0;
+}
+
+__host__ int host_mem_register(void *host_ptr, const size_t tsize){
+ cudaError_t err=cudaHostRegister(host_ptr,tsize,cudaHostAllocPortable);
+ if(err != cudaSuccess) return 1;
+ return 0;
+}
+
+__host__ int host_mem_unregister(void *host_ptr){
+ cudaError_t err=cudaHostUnregister(host_ptr);
+ if(err != cudaSuccess) return 1;
+ return 0;
+}
+
+__host__ int gpu_mem_alloc(void **dev_ptr, const size_t tsize)
 {
  cudaError_t err=cudaMalloc(dev_ptr,tsize); if(err != cudaSuccess) return 1;
  return 0;
 }
 
-__host__ int free_gpu_ptr(void *dev_ptr)
+__host__ int gpu_mem_free(void *dev_ptr)
 {
  cudaError_t err=cudaFree(dev_ptr); if(err != cudaSuccess) return 1;
  return 0;
