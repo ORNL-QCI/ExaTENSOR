@@ -1,5 +1,5 @@
 /** Tensor Algebra Library for NVidia GPUs (CUDA).
-REVISION: 2015/01/28
+REVISION: 2015/01/30
 Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
 Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
 
@@ -155,6 +155,8 @@ __global__ void gpu_matrix_multiply_tn_r4__(size_t ll, size_t lr, size_t lc, con
 __global__ void gpu_matrix_multiply_tn_r8__(size_t ll, size_t lr, size_t lc, const double* __restrict__ arg1,
                                             const double* __restrict__ arg2, double* __restrict__ arg0);
 //------------------------------------------------------------------------------------------------------
+//PARAMETERS:
+static int VERBOSE=1 //verbosity for error messages
 //GLOBAL DATA:
 // GPU availability to the current MPI process:
 static int gpu_up[MAX_GPUS_PER_NODE]; //0: GPU is disabled; 1: GPU is enabled; 2: GPU is BLAS enabled.
@@ -167,7 +169,7 @@ __device__ int gpu_error_count=0; //total number of CUDA errors registered on de
 __device__ int gpu_debug_dump[GPU_DEBUG_DUMP_SIZE];
 // Global CUDA event recording policy (for timing only):
 static int EVENT_RECORD=1; //non-zero value enables cudaEventRecord() timing calls
-static int PRINT_TIME=1; //non-zero value enables time printing statements
+static int PRINT_TIMING=1; //non-zero value enables time printing statements
 // Infrastructure for function <gpu_tensor_block_copy_dlf> (blocking and non-blocking):
 static int TRANS_SHMEM=1; //switch between shared-memory tensor transpose (1) and scatter tensor transpose (0)
 // Infrastructure for <gpu_tensor_block_contract_dlf_> (non-blocking):
@@ -884,17 +886,20 @@ Executed on the currently set GPU device. **/
    gpu_array_2norm2_r4__<<<bx,THRDS_ARRAY_NORM2,THRDS_ARRAY_NORM2*sizeof(float)>>>(sz,&arr[l],bnorm2);
    err=cudaDeviceSynchronize();
    if(err != cudaSuccess){
-    err_msg=cudaGetErrorString(err); printf("\n#ERROR(tensor_algebra_gpu_nvidia:gpu_array_2norm2_r4): Kernel sync error: %s\n",err_msg);
+    err_msg=cudaGetErrorString(err);
+    if(VERBOSE) printf("\n#ERROR(tensor_algebra_gpu_nvidia:gpu_array_2norm2_r4): Kernel sync error: %s\n",err_msg);
     return 2;
    }
    err=cudaGetLastError();
    if(err != cudaSuccess){
-    err_msg=cudaGetErrorString(err); printf("\n#ERROR(tensor_algebra_gpu_nvidia:gpu_array_2norm2_r4): Kernel error: %s\n",err_msg);
+    err_msg=cudaGetErrorString(err);
+    if(VERBOSE) printf("\n#ERROR(tensor_algebra_gpu_nvidia:gpu_array_2norm2_r4): Kernel error: %s\n",err_msg);
     return 3;
    }
    err=cudaMemcpyFromSymbol((void*)blck_norms2_r4,gpu_blck_norms2_r4,bx*sizeof(float),0,cudaMemcpyDeviceToHost);
    if(err != cudaSuccess){
-    err_msg=cudaGetErrorString(err); printf("\n#ERROR(tensor_algebra_gpu_nvidia:gpu_array_2norm2_r4): Copy error: %s\n",err_msg);
+    err_msg=cudaGetErrorString(err);
+    if(VERBOSE) printf("\n#ERROR(tensor_algebra_gpu_nvidia:gpu_array_2norm2_r4): Copy error: %s\n",err_msg);
     return 4;
    }
    for(i=0;i<bx;i++) *norm2+=blck_norms2_r4[i];
@@ -925,17 +930,20 @@ Executed on the currently set GPU device. **/
    gpu_array_2norm2_r8__<<<bx,THRDS_ARRAY_NORM2,THRDS_ARRAY_NORM2*sizeof(double)>>>(sz,&arr[l],bnorm2);
    err=cudaDeviceSynchronize();
    if(err != cudaSuccess){
-    err_msg=cudaGetErrorString(err); printf("\n#ERROR(tensor_algebra_gpu_nvidia:gpu_array_2norm2_r8): Kernel sync error: %s\n",err_msg);
+    err_msg=cudaGetErrorString(err);
+    if(VERBOSE) printf("\n#ERROR(tensor_algebra_gpu_nvidia:gpu_array_2norm2_r8): Kernel sync error: %s\n",err_msg);
     return 2;
    }
    err=cudaGetLastError();
    if(err != cudaSuccess){
-    err_msg=cudaGetErrorString(err); printf("\n#ERROR(tensor_algebra_gpu_nvidia:gpu_array_2norm2_r8): Kernel error: %s\n",err_msg);
+    err_msg=cudaGetErrorString(err);
+    if(VERBOSE) printf("\n#ERROR(tensor_algebra_gpu_nvidia:gpu_array_2norm2_r8): Kernel error: %s\n",err_msg);
     return 3;
    }
    err=cudaMemcpyFromSymbol((void*)blck_norms2_r8,gpu_blck_norms2_r8,bx*sizeof(double),0,cudaMemcpyDeviceToHost);
    if(err != cudaSuccess){
-    err_msg=cudaGetErrorString(err); printf("\n#ERROR(tensor_algebra_gpu_nvidia:gpu_array_2norm2_r8): Copy error: %s\n",err_msg);
+    err_msg=cudaGetErrorString(err);
+    if(VERBOSE) printf("\n#ERROR(tensor_algebra_gpu_nvidia:gpu_array_2norm2_r8): Copy error: %s\n",err_msg);
     return 4;
    }
    for(i=0;i<bx;i++) *norm2+=blck_norms2_r8[i];
@@ -972,7 +980,12 @@ All matrices are in Host memory. Executed on the currently set GPU device. **/
 //printf("\n#DEBUG(tensor_algebra_gpu_nvidia:gpu_matrix_multiply_tn_r4): Running GPU kernel ..."); //debug
   gpu_matrix_multiply_tn_r4__<<<blcks,thrds>>>(ll,lr,lc,lptr,rptr,dptr);
   err=cudaDeviceSynchronize(); if(err != cudaSuccess) return 7;
-  err=cudaGetLastError(); if(err!=cudaSuccess){err_msg=cudaGetErrorString(err); printf("\n#ERROR(tensor_algebra_gpu_nvidia:gpu_matrix_multiply_tn_r4): Kernel error: %s\n",err_msg); return 8;}
+  err=cudaGetLastError();
+  if(err!=cudaSuccess){
+   err_msg=cudaGetErrorString(err);
+   if(VERBOSE) printf("\n#ERROR(tensor_algebra_gpu_nvidia:gpu_matrix_multiply_tn_r4): Kernel error: %s\n",err_msg);
+   return 8;
+  }
   if(gpu_get_error_count() > err_code) return 9;
 //printf("Done: %d",err); //debug
   err=cudaMemcpy((void*)dmat,(void*)dptr,dsize,cudaMemcpyDeviceToHost); if(err != cudaSuccess) return 10;
@@ -1013,7 +1026,12 @@ All matrices are in Host memory. Executed on the currently set GPU device. **/
 //printf("\n#DEBUG(tensor_algebra_gpu_nvidia:gpu_matrix_multiply_tn_r8): Running GPU kernel ..."); //debug
   gpu_matrix_multiply_tn_r8__<<<blcks,thrds>>>(ll,lr,lc,lptr,rptr,dptr);
   err=cudaDeviceSynchronize(); if(err != cudaSuccess) return 7;
-  err=cudaGetLastError(); if(err!=cudaSuccess){err_msg=cudaGetErrorString(err); printf("\n#ERROR(tensor_algebra_gpu_nvidia:gpu_matrix_multiply_tn_r8): Kernel error: %s\n",err_msg); return 8;}
+  err=cudaGetLastError();
+  if(err!=cudaSuccess){
+   err_msg=cudaGetErrorString(err);
+   if(VERBOSE) printf("\n#ERROR(tensor_algebra_gpu_nvidia:gpu_matrix_multiply_tn_r8): Kernel error: %s\n",err_msg);
+   return 8;
+  }
   if(gpu_get_error_count() > err_code) return 9;
 //printf("Done: %d",err); //debug
   err=cudaMemcpy((void*)dmat,(void*)dptr,dsize,cudaMemcpyDeviceToHost); if(err != cudaSuccess) return 10;
@@ -1454,11 +1472,23 @@ NOTES:
      }
     }
     if(EVENT_RECORD != 0){err=cudaEventRecord(time_end); if(err!=cudaSuccess){err_msg=cudaGetErrorString(err); err=cudaSetDevice(gpu_num); return 22;}}
-    err=cudaDeviceSynchronize(); if(err!=cudaSuccess){err_msg=cudaGetErrorString(err); printf("\n#ERROR(tensor_algebra_gpu_nvidia:gpu_tensor_block_copy_dlf): Sync error: %s\n",err_msg); err=cudaSetDevice(gpu_num); return 23;}
+    err=cudaDeviceSynchronize();
+    if(err!=cudaSuccess){
+     err_msg=cudaGetErrorString(err);
+     if(VERBOSE) printf("\n#ERROR(tensor_algebra_gpu_nvidia:gpu_tensor_block_copy_dlf): Sync error: %s\n",err_msg);
+     err=cudaSetDevice(gpu_num);
+     return 23;
+    }
     if(EVENT_RECORD != 0){err=cudaEventElapsedTime(&time_ms,time_beg,time_end); if(err!=cudaSuccess){err_msg=cudaGetErrorString(err); err=cudaSetDevice(gpu_num); return 24;}}
-    err=cudaGetLastError(); if(err!=cudaSuccess){err_msg=cudaGetErrorString(err); printf("\n#ERROR(tensor_algebra_gpu_nvidia:gpu_tensor_block_copy_dlf): Kernel error: %s\n",err_msg); err=cudaSetDevice(gpu_num); return 25;}
+    err=cudaGetLastError();
+    if(err!=cudaSuccess){
+     err_msg=cudaGetErrorString(err);
+     if(VERBOSE) printf("\n#ERROR(tensor_algebra_gpu_nvidia:gpu_tensor_block_copy_dlf): Kernel error: %s\n",err_msg);
+     err=cudaSetDevice(gpu_num);
+     return 25;
+    }
     if(gpu_get_error_count() > j){err=cudaSetDevice(gpu_num); return 26;}
-    if(PRINT_TIME != 0) printf("#DEBUG(tensor_algebra_gpu_nvidia:gpu_tensor_block_copy_dlf): Kernel (%d): Time %f: KT/s=%f \n",TRANS_SHMEM,time_ms/1000.0f,((float)(tsize*2))/time_ms);
+    if(PRINT_TIMING) printf("#DEBUG(tensor_algebra_gpu_nvidia:gpu_tensor_block_copy_dlf): Kernel (%d): Time %f: KT/s=%f \n",TRANS_SHMEM,time_ms/1000.0f,((float)(tsize*2))/time_ms);
     i=tensBlck_set_presence(tens_out);
 // Copy the output tensor block back into the Host argument buffer:
 //  printf("\n#DEBUG(tensor_algebra_gpu_nvidia:gpu_tensor_block_copy_dlf): DeviceToHost copy: %p %p %d\n",tens_out->elems_h,tens_out->elems_d,tsize); //debug
@@ -1472,7 +1502,12 @@ NOTES:
      default:
       err=cudaSetDevice(gpu_num); return 27;
     }
-    if(err!=cudaSuccess){err_msg=cudaGetErrorString(err); printf("\n#ERROR(tensor_algebra_gpu_nvidia:gpu_tensor_block_copy_dlf): Copy back: %s\n",err_msg); err=cudaSetDevice(gpu_num); return 28;}
+    if(err!=cudaSuccess){
+     err_msg=cudaGetErrorString(err);
+     if(VERBOSE) printf("\n#ERROR(tensor_algebra_gpu_nvidia:gpu_tensor_block_copy_dlf): Copy back: %s\n",err_msg);
+     err=cudaSetDevice(gpu_num);
+     return 28;
+    }
     err=cudaDeviceSynchronize(); if(err!=cudaSuccess){err_msg=cudaGetErrorString(err); err=cudaSetDevice(gpu_num); return 29;}
     if(EVENT_RECORD != 0){err=cudaEventDestroy(time_beg); err=cudaEventDestroy(time_end);} //destroy CUDA events
     err=cudaSetDevice(gpu_num); if(err!=cudaSuccess){err_msg=cudaGetErrorString(err); return 30;} //restore old GPU
@@ -1748,7 +1783,8 @@ NOTES:
        err=cudaSetDevice(gpu_num); return 42;
      }
      if(err != cudaSuccess){
-      err_msg=cudaGetErrorString(err); printf("\n#ERROR(tensor_algebra_gpu_nvidia:gpu_tensor_block_copy_dlf_): Copy back: %s\n",err_msg);
+      err_msg=cudaGetErrorString(err);
+      if(VERBOSE) printf("\n#ERROR(tensor_algebra_gpu_nvidia:gpu_tensor_block_copy_dlf_): Copy back: %s\n",err_msg);
       i=cuda_task_record(cuda_task,43,dev_in,cuda_stream,time_beg,time_comput,time_output,time_end,0,NULL);
       err=cudaSetDevice(gpu_num); return 43;
      }
@@ -1923,7 +1959,7 @@ NOTES:
      err=cudaEventRecord(cuda_start,cuda_stream); if(err != cudaSuccess){
       i=cuda_task_record(cuda_task,31,dev_num,cuda_stream,cuda_start,cuda_comput,cuda_output,cuda_finish,scr_entry_cnt,scr_entries);
       err_msg=cudaGetErrorString(err);
-      printf("\n#ERROR(tensor_algebra_gpu_nvidia:gpu_tensor_block_contract_dlf_): Unable to record the start event: %s\n",err_msg);
+      if(VERBOSE) printf("\n#ERROR(tensor_algebra_gpu_nvidia:gpu_tensor_block_contract_dlf_): Unable to record the start event: %s\n",err_msg);
       err=cudaSetDevice(gpu_num); return 31;
      }
     }
@@ -3275,7 +3311,7 @@ OUTPUT:
   }
 #ifdef DIL_DEBUG_GPU
 //DEBUG RECORD begin:
-  if(blockIdx.x == 0 && threadIdx.x ==0){
+  if(blockIdx.x == 0 && threadIdx.x == 0){
    j=0; gpu_debug_dump[j++]=dim_num;
    for(i=0;i<dim_num;i++) gpu_debug_dump[j++]=const_args_dims[const_args_pos][i];
    for(i=0;i<dim_num;i++) gpu_debug_dump[j++]=const_args_prmn[const_args_pos][i];
@@ -3365,7 +3401,7 @@ OUTPUT:
   }
 #ifdef DIL_DEBUG_GPU
 //DEBUG RECORD begin:
-  if(blockIdx.x == 0 && threadIdx.x ==0){
+  if(blockIdx.x == 0 && threadIdx.x == 0){
    j=0; gpu_debug_dump[j++]=dim_num;
    for(i=0;i<dim_num;i++) gpu_debug_dump[j++]=const_args_dims[const_args_pos][i];
    for(i=0;i<dim_num;i++) gpu_debug_dump[j++]=const_args_prmn[const_args_pos][i];
