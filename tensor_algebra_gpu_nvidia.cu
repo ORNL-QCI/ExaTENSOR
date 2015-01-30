@@ -173,7 +173,11 @@ static int PRINT_TIMING=1; //non-zero value enables time printing statements
 // Infrastructure for function <gpu_tensor_block_copy_dlf> (blocking and non-blocking):
 static int TRANS_SHMEM=1; //switch between shared-memory tensor transpose (1) and scatter tensor transpose (0)
 // Infrastructure for <gpu_tensor_block_contract_dlf_> (non-blocking):
+#ifndef NO_BLAS
 static int DISABLE_BLAS=0; //non-zero value will disable cuBLAS usage (if it had been cuBLAS compiled/linked)
+#else
+static int DISABLE_BLAS=1; //non-zero value will disable cuBLAS usage (if it had been cuBLAS compiled/linked)
+#endif
 __device__ __constant__ float sgemm_alpha=1.0f; //alpha constant for SGEMM
 __device__ __constant__ float sgemm_beta=1.0f;  //beta constant SGEMM
 __device__ __constant__ double dgemm_alpha=1.0; //alpha constant for DGEMM
@@ -230,8 +234,12 @@ __host__ void gpu_set_event_policy(int alg) //turn on/off timing CUDA events (1/
 __host__ void gpu_set_transpose_algorithm(int alg) //activate scatter (0) or shared-memory (1) tensor transpose algorithm
 {if(alg == 0){TRANS_SHMEM=0;}else{TRANS_SHMEM=1;}; return;} //on current GPU
 
-__host__ void gpu_set_matmult_algorithm(int alg) //activate cuBLAS (0) or my own BLAS CUDA kernels (1) on current GPU
-{if(alg == 0){DISABLE_BLAS=0;}else{DISABLE_BLAS=1;}; return;}
+__host__ void gpu_set_matmult_algorithm(int alg){ //activate cuBLAS (0) or my own BLAS CUDA kernels (1) on current GPU
+#ifndef NO_BLAS
+ if(alg == 0){DISABLE_BLAS=0;}else{DISABLE_BLAS=1;};
+#endif
+ return;
+}
 
 __host__ int encode_device_id(int dev_kind, int dev_num)
 /** Given a device ID <dev_num> within its kind <dev_kind>, get the flat device ID. **/
