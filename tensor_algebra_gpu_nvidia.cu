@@ -156,7 +156,7 @@ __global__ void gpu_matrix_multiply_tn_r8__(size_t ll, size_t lr, size_t lc, con
                                             const double* __restrict__ arg2, double* __restrict__ arg0);
 //------------------------------------------------------------------------------------------------------
 //PARAMETERS:
-static int VERBOSE=1 //verbosity for error messages
+static int VERBOSE=1; //verbosity for error messages
 //GLOBAL DATA:
 // GPU availability to the current MPI process:
 static int gpu_up[MAX_GPUS_PER_NODE]; //0: GPU is disabled; 1: GPU is enabled; 2: GPU is BLAS enabled.
