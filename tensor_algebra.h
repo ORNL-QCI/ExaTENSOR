@@ -1,6 +1,6 @@
 /** Parameters and derived types used in tensor_algebra_gpu_nvidia.cu (NV-TAL)
     and related modules (buffer memory management).
-REVISION: 2015/01/21
+REVISION: 2015/01/30
 Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
 Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
 
@@ -45,6 +45,9 @@ NOTES:
     In the former case, .gpu_id=-1 and .task_stream is undefined.
     Positive .task_error means that an error occured during the task scheduling/execution process.
 **/
+
+#ifndef TENSOR_ALGEBRA_H
+#define TENSOR_ALGEBRA_H
 
 //GLOBAL PARAMETERS:
 #define MAX_TENSOR_RANK 32         //max allowed tensor rank
@@ -116,6 +119,7 @@ typedef struct{
  int buf_entry_gpu;    //GPU argument buffer entry pointed to by *elems_d: GPU global memory
  int const_args_entry; //entry number in const_args[]: GPU constant memory (dims[] and prmn[] arrays are stored there)
 } tensBlck_t;
+
 #ifndef NO_GPU
 // CUDA task information (returned by non-blocking CUDA calling functions):
 typedef struct{
@@ -129,4 +133,6 @@ typedef struct{
  int scr_entry_count;                //number of additional GPU argument-buffer entries allocated by the task
  int scr_entry[MAX_SCR_ENTRY_COUNT]; //additional GPU argument-buffer entries allocated by the task
 } cudaTask_t;
+#endif
+
 #endif
