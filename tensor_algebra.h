@@ -1,6 +1,6 @@
 /** Parameters and derived types used in tensor_algebra_gpu_nvidia.cu (NV-TAL)
     and related modules (buffer memory management).
-REVISION: 2015/01/30
+REVISION: 2015/02/02
 Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
 Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
 
@@ -67,7 +67,11 @@ NOTES:
 //KERNEL PARAMETERS:
 #define GPU_CACHE_LINE_LEN 128     //cache line length in bytes
 #define MAX_CUDA_BLOCKS 1024       //max number of CUDA thread blocks per kernel
+#if __CUDA_ARCH__ >= 300
 #define TENS_TRANSP_BUF_SIZE 2560  //buffer size (elements) for <gpu_tensor_block_copy_dlf_XX__>
+#else
+#define TENS_TRANSP_BUF_SIZE 1536  //buffer size (elements) for <gpu_tensor_block_copy_dlf_XX__>
+#endif
 #define TENS_TRANSP_TAB_SIZE 69    //look up table size (integers) for <gpu_tensor_block_copy_dlf_XX__>
 #define MAT_MULT_TILE_DIM 16       //tile dimension size for <gpu_matrix_multiply_tn_XX__>
 #define THRDS_ARRAY_PRODUCT 256    //threads per block for <gpu_array_product_XX__>
