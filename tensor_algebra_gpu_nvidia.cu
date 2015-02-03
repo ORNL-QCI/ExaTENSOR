@@ -1,5 +1,5 @@
 /** Tensor Algebra Library for NVidia GPUs (CUDA).
-REVISION: 2015/01/30
+REVISION: 2015/02/03
 Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
 Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
 
@@ -23,7 +23,7 @@ OPTIONS:
  # -DDIL_DEBUG_GPU: collection of debugging information will be activated;
 NOTES:
  # Although the minimal required CUDA device compute capability is 1.1,
-   some parameters in "tensor_algebra.h" might be tuned for Kepler architecture,
+   some parameters in "tensor_algebra.h" may be tuned for Kepler architecture,
    thus a readjustment may be requried for lower than 3.5 compute capabilities;
  # cuBLAS.v2 is used when BLAS is enabled;
  # Functions without underscores at the end of their names are blocking (Host) functions;
@@ -36,9 +36,9 @@ NOTES:
    of the tensor data will become outdated that cannot be checked!
    To restore coherence between the Host and GPU argument buffers,
    a GPU argument entry has to be explictly fetched by Host (user responsibility).
- # Seems like cudaEventRecord() issued in different streams can serialize stream execution!
-   Thus, by default, event recording should be disabled (EVENT_RECORD=0).
-   If timing is needed, event recording has to be reenabled (EVENT_RECORD=1).
+ # Seems like cudaEventRecord() issued in different streams can serialize the stream
+   execution for some compute capabilities. EVENT_RECORD=0 will disable even recording.
+   If GPU timing is needed, event recording has to be enabled (EVENT_RECORD=1).
 **/
 
 #ifndef NO_GPU
@@ -73,8 +73,9 @@ extern "C" {
  int tensBlck_create(tensBlck_t **ctens);
  int tensBlck_destroy(tensBlck_t *ctens);
  int tensBlck_construct(tensBlck_t *ctens, int dev_kind, int dev_num, int data_kind, int trank,
-                        int *dims, int *divs, int *grps, int *prmn, void *addr_host, void *addr_gpu,
-                        int entry_gpu, int entry_const);
+                        const int *dims, const int *divs, const int *grps, const int *prmn,
+                        void *addr_host, void *addr_gpu, int entry_host, int entry_gpu, int entry_const);
+ int tensBlck_alloc(tensBlck_t *ctens, int dev_kind, int dev_num, int data_kind, int trank, const int *dims);
  int tensBlck_acc_id(const tensBlck_t *ctens, int *dev_kind, int *entry_gpu, int *entry_const, int *data_kind, int *there);
  int tensBlck_set_presence(tensBlck_t *ctens);
  int tensBlck_set_absence(tensBlck_t *ctens);
@@ -113,6 +114,12 @@ extern "C" {
  int free_buf_entry_host(int entry_num);
  int get_buf_entry_gpu(int gpu_num, size_t bsize, char **entry_ptr, int *entry_num);
  int free_buf_entry_gpu(int gpu_num, int entry_num);
+ int const_args_entry_get(int gpu_num, int *entry_num);
+ int const_args_entry_free(int gpu_num, int entry_num);
+ int host_mem_alloc_pin(void **host_ptr, size_t tsize);
+ int host_mem_free_pin(void *host_ptr);
+ int host_mem_register(void *host_ptr, size_t tsize);
+ int host_mem_unregister(void *host_ptr);
  int gpu_mem_alloc(void **dev_ptr, size_t tsize);
  int gpu_mem_free(void *dev_ptr);
  void get_contr_permutations(int lrank, int rrank, const int *cptrn, int *dprm, int *lprm, int *rprm,
@@ -224,19 +231,20 @@ __host__ int prmn_convert(int n, const int *o2n, int *n2o) //converts o2n into n
 __host__ int non_trivial_prmn(int n, const int *prm) //returns 0 if the permutation is trivial, 1 otherwise
 /** The permutation is sign-free but numeration starts from 1. **/
 {
- int f=0; for(int i=0;i<n;i++){if(prm[i] != i+1){f=1; break;}}
+ int f=0;
+ for(int i=0;i<n;i++){if(prm[i] != i+1){f=1; break;}}
  return f;
 }
 
 __host__ void gpu_set_event_policy(int alg) //turn on/off timing CUDA events (1/0) on current GPU
-{if(alg == 0){EVENT_RECORD=0;}else{EVENT_RECORD=1;}; return;}
+{if(alg == EVENTS_OFF){EVENT_RECORD=EVENTS_OFF;}else{EVENT_RECORD=EVENTS_ON;}; return;}
 
 __host__ void gpu_set_transpose_algorithm(int alg) //activate scatter (0) or shared-memory (1) tensor transpose algorithm
-{if(alg == 0){TRANS_SHMEM=0;}else{TRANS_SHMEM=1;}; return;} //on current GPU
+{if(alg == EFF_TRN_OFF){TRANS_SHMEM=EFF_TRN_OFF;}else{TRANS_SHMEM=EFF_TRN_ON;}; return;} //on current GPU
 
 __host__ void gpu_set_matmult_algorithm(int alg){ //activate cuBLAS (0) or my own BLAS CUDA kernels (1) on current GPU
 #ifndef NO_BLAS
- if(alg == 0){DISABLE_BLAS=0;}else{DISABLE_BLAS=1;};
+ if(alg == BLAS_ON){DISABLE_BLAS=BLAS_ON;}else{DISABLE_BLAS=BLAS_OFF;};
 #endif
  return;
 }
@@ -249,6 +257,7 @@ __host__ int encode_device_id(int dev_kind, int dev_num)
   case DEV_HOST: if(dev_num == 0) dev_id=0; break;
   case DEV_NVIDIA_GPU: if(dev_num >= 0 && dev_num < MAX_GPUS_PER_NODE) dev_id=1+dev_num; break;
   case DEV_INTEL_MIC: if(dev_num >= 0 && dev_num < MAX_MICS_PER_NODE) dev_id=1+MAX_GPUS_PER_NODE+dev_num; break;
+  case DEV_AMD_GPU: if(dev_num >= 0 && dev_num < MAX_AMDS_PER_NODE) dev_id=1+MAX_GPUS_PER_NODE+MAX_MICS_PER_NODE+dev_num; break;
   default: return DEV_MAX;
  }
  return dev_id;
@@ -263,20 +272,22 @@ __host__ int decode_device_id(int dev_id, int *dev_kind)
   *dev_kind=DEV_HOST; dvn=0;
  }else if(dvid >= 1 && dvid <= MAX_GPUS_PER_NODE){ //Nvidia GPU
   *dev_kind=DEV_NVIDIA_GPU; dvn=dvid-1;
- }else if(dvid >= MAX_GPUS_PER_NODE+1 && dvid <= MAX_GPUS_PER_NODE+MAX_MICS_PER_NODE){ //Intel MIC
+ }else if(dvid >= 1+MAX_GPUS_PER_NODE && dvid <= MAX_GPUS_PER_NODE+MAX_MICS_PER_NODE){ //Intel MIC
   *dev_kind=DEV_INTEL_MIC; dvn=dvid-1-MAX_GPUS_PER_NODE;
+ }else if(dvid >= 1+MAX_GPUS_PER_NODE+MAX_MICS_PER_NODE && dvid <= MAX_GPUS_PER_NODE+MAX_MICS_PER_NODE+MAX_AMDS_PER_NODE){ //AMD GPU
+  *dev_kind=DEV_AMD_GPU; dvn=dvid-1-MAX_GPUS_PER_NODE-MAX_MICS_PER_NODE;
  }
  return dvn; //ID of the device within its kind
 }
 
 __host__ int tensBlck_create(tensBlck_t **ctens)
-/** Creates an instance of tensBlck_t **/
+/** Creates an empty instance of tensBlck_t **/
 {
  *ctens=(tensBlck_t*)malloc(sizeof(tensBlck_t)); if(*ctens == NULL) return 1;
  (*ctens)->device_id=encode_device_id(DEV_HOST,0); (*ctens)->data_kind=0; (*ctens)->rank=-1;
  (*ctens)->dims_h=NULL; (*ctens)->divs_h=NULL; (*ctens)->grps_h=NULL; (*ctens)->prmn_h=NULL;
  (*ctens)->elems_h=NULL; (*ctens)->elems_d=NULL;
- (*ctens)->buf_entry_gpu=-1; (*ctens)->const_args_entry=-1;
+ (*ctens)->buf_entry_host=-1; (*ctens)->buf_entry_gpu=-1; (*ctens)->const_args_entry=-1;
  return 0;
 }
 
@@ -285,18 +296,19 @@ __host__ int tensBlck_destroy(tensBlck_t *ctens)
 {if(ctens != NULL){free(ctens); return 0;}else{return 1;}}
 
 __host__ int tensBlck_construct(tensBlck_t *ctens, int dev_kind, int dev_num, int data_kind, int trank,
-                                int *dims, int *divs, int *grps, int *prmn, void *addr_host, void *addr_gpu,
-                                int entry_gpu, int entry_const)
-/** Constructor for tensBlck_t (tensor block which is to be processed by an Accelerator)
+                                const int *dims, const int *divs, const int *grps, const int *prmn,
+                                void *addr_host, void *addr_gpu, int entry_host, int entry_gpu, int entry_const)
+/** Full constructor for tensBlck_t (tensor block to be processed on an accelerator) based
+on the custom memory allocator which uses Host and GPU argument buffers (see c_proc_bufs.cu).
 Note that .device_id field reflects the general device number (0: CPU; 1..N: GPUs; N+1..M: MICs; etc). **/
 {
  int i;
  if(ctens != NULL){
-  if(trank >= 0 && data_kind >= 0 && entry_gpu >= 0 && entry_const >= 0){
+  if(trank >= 0 && data_kind >= 0 && entry_host >= 0 && entry_gpu >= 0 && entry_const >= 0){
    ctens->device_id=encode_device_id(dev_kind,dev_num); if(ctens->device_id >= DEV_MAX) return 5;
    ctens->data_kind=data_kind; ctens->rank=trank; if(trank > MAX_TENSOR_RANK) return 4;
    ctens->dims_h=dims; ctens->divs_h=divs; ctens->grps_h=grps; ctens->prmn_h=prmn;
-   ctens->elems_h=addr_host; ctens->elems_d=addr_gpu;
+   ctens->elems_h=addr_host; ctens->elems_d=addr_gpu; ctens->buf_entry_host=entry_host;
    ctens->buf_entry_gpu=entry_gpu; ctens->const_args_entry=entry_const;
    i=tensBlck_set_absence(ctens); if(i != 0) return 3;
   }else{
@@ -304,6 +316,58 @@ Note that .device_id field reflects the general device number (0: CPU; 1..N: GPU
   }
  }else{
   return 1;
+ }
+ return 0;
+}
+
+__host__ int tensBlck_alloc(tensBlck_t *ctens, int dev_kind, int dev_num, int data_kind, int trank, const int *dims){
+/** Simplified tensBlck constructor + Host initialization to zero (for NVidia GPU only) **/
+ int i;
+ size_t tvol,l;
+ cudaError_t errc;
+
+ if(ctens != NULL){
+  if(trank >= 0 && trank <= MAX_TENSOR_RANK && (data_kind == R4 || data_kind == R8 || data_kind == C8)){
+   if(dev_kind != DEV_NVIDIA_GPU) return 1;
+//Set tensBlck fields:
+   ctens->device_id=encode_device_id(dev_kind,dev_num); if(ctens->device_id >= DEV_MAX) return 2;
+   ctens->data_kind=data_kind; ctens->rank=trank;
+   if(trank > 0){
+    if(dims != NULL){ctens->dims_h=dims;}else{return 3;}
+    i=host_mem_alloc_pin((void**)&(ctens->divs_h),sizeof(int)*(size_t)trank); if(i) return 4;
+    i=host_mem_alloc_pin((void**)&(ctens->grps_h),sizeof(int)*(size_t)trank); if(i) return 5;
+    i=host_mem_alloc_pin((void**)&(ctens->prmn_h),sizeof(int)*(size_t)trank); if(i) return 6;
+   }else{
+    ctens->dims_h=NULL; ctens->divs_h=NULL;
+    ctens->grps_h=NULL; ctens->prmn_h=NULL;
+   }
+   tvol=tensBlck_volume(ctens); //tensor block volume (number of elements)
+   i=host_mem_alloc_pin((void**)&(ctens->elems_h),tvol*(size_t)data_kind); if(i) return 7;
+   i=gpu_mem_alloc((void**)&(ctens->elems_d),tvol*(size_t)data_kind); if(i) return 8;
+   i=const_args_entry_get(dev_num,&(ctens->const_args_entry)); if(i) return 9;
+   ctens->buf_entry_host=-1; ctens->buf_entry_gpu=-1; //Host and GPU argument buffers are not used here
+//Initialize the Host copy to zero:
+   switch(data_kind){
+    case R4:
+#pragma omp parallel for
+     for(l=0;l<tvol;l++){((float*)(ctens->elems_h))[l]=0.0f;}
+     break;
+    case R8:
+#pragma omp parallel for
+     for(l=0;l<tvol;l++){((double*)(ctens->elems_h))[l]=0.0;}
+     break;
+    case C8:
+#pragma omp parallel for
+     for(l=0;l<tvol*2;l++){((double*)(ctens->elems_h))[l]=0.0;}
+     break;
+   }
+//Set GPU absence:
+   i=tensBlck_set_absence(ctens); if(i) return 10;
+  }else{
+   return 11;
+  }
+ }else{
+  return 12;
  }
  return 0;
 }

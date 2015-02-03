@@ -298,7 +298,7 @@
  !Construct tensBlck_t:
 	 integer(C_INT) function tensBlck_construct(ctens,dev_kind,dev_num,data_kind,trank, &
                                   addr_dims,addr_divs,addr_grps,addr_prmn,addr_host,addr_gpu, &
-                                  entry_gpu,entry_const) bind(c,name='tensBlck_construct')
+                                  entry_host,entry_gpu,entry_const) bind(c,name='tensBlck_construct')
 	  use, intrinsic:: ISO_C_BINDING
 	  implicit none
 	  type(C_PTR), value:: ctens
@@ -312,6 +312,7 @@
 	  type(C_PTR), value, intent(in):: addr_prmn
 	  type(C_PTR), value, intent(in):: addr_host
 	  type(C_PTR), value, intent(in):: addr_gpu
+	  integer(C_INT), value, intent(in):: entry_host
 	  integer(C_INT), value, intent(in):: entry_gpu
 	  integer(C_INT), value, intent(in):: entry_const
 	 end function tensBlck_construct

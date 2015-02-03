@@ -1,6 +1,6 @@
 /** Parameters and derived types used in tensor_algebra_gpu_nvidia.cu (NV-TAL)
     and related modules (buffer memory management).
-REVISION: 2015/02/02
+REVISION: 2015/02/03
 Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
 Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
 
@@ -55,9 +55,9 @@ NOTES:
 #define MAX_SCR_ENTRY_COUNT 3      //max allowed number of additional GPU argument entries allocated per tensor operation
 
 //DEVICE KINDS:
-#define MAX_GPUS_PER_NODE 16       //max number of Nvidia GPUs on a node
-#define MAX_MICS_PER_NODE 8        //max number of Intel MICs on a node
-#define MAX_AMDS_PER_NODE 8        //max number of AMD GPUs on a node
+#define MAX_GPUS_PER_NODE 8        //max allowed number of NVidia GPUs on a node
+#define MAX_MICS_PER_NODE 8        //max allowed number of Intel MICs on a node
+#define MAX_AMDS_PER_NODE 8        //max allowed number of AMD GPUs on a node
 #define DEV_HOST 0
 #define DEV_NVIDIA_GPU 1
 #define DEV_INTEL_MIC 2
@@ -103,6 +103,12 @@ NOTES:
 #define GPU_MINE_CUBLAS 2
 #define NO_COPY_BACK 0
 #define COPY_BACK 1
+#define EVENTS_OFF 0
+#define EVENTS_ON 1
+#define BLAS_ON 0
+#define BLAS_OFF 1
+#define EFF_TRN_OFF 0
+#define EFF_TRN_ON 1
 
 //MACRO FUNCTIONS:
 #define MIN(a,b) (((a)<(b))?(a):(b))
@@ -120,6 +126,7 @@ typedef struct{
  int *prmn_h;          //tensor block dimension permutation (not to be set by user!): HOST memory
  void *elems_h;        //tensor block elements (dlf): HOST memory (only one element for scalars)
  void *elems_d;        //tensor block elements (dlf): DEVICE global memory (only one element for scalars)
+ int buf_entry_host;   //Host argument buffer entry pointed to by *elems_h: Host pinned memory
  int buf_entry_gpu;    //GPU argument buffer entry pointed to by *elems_d: GPU global memory
  int const_args_entry; //entry number in const_args[]: GPU constant memory (dims[] and prmn[] arrays are stored there)
 } tensBlck_t;

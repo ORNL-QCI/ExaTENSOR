@@ -1,7 +1,7 @@
 !This module provides functionality for a Computing Process (C-PROCESS, CP).
 !In essence, this is a single-node elementary tensor instruction scheduler (SETIS).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2015/01/28
+!REVISION: 2015/02/03
 !CONCEPTS (CP workflow):
 ! - Each CP stores its own tensor blocks in TBB, with a possibility of disk dump.
 ! - LR sends a batch of ETI to be executed on this CP unit (CP MPI Process).
@@ -1340,7 +1340,7 @@
               if(associated(my_eti%tens_op(0)%op_aar_entry%tens_blck_f)) then
                call tens_blck_pack(my_eti%tens_op(0)%op_aar_entry%tens_blck_f,my_eti%data_kind,pack_size,pptr,d_hab_entry,ier)
                if(ier.eq.0) then
-                call tens_blck_assoc(pptr,ier,ctens=dtens_,gpu_num=etiq_nvcu%te_conf(etiq_nvcu_loc)%cu_id%unit_number)
+                call tens_blck_assoc(pptr,d_hab_entry,ier,ctens=dtens_,gpu_num=etiq_nvcu%te_conf(etiq_nvcu_loc)%cu_id%unit_number)
                 if(ier.eq.0) then
                  my_eti%tens_op(0)%op_aar_entry%tens_blck_c=dtens_
                  my_eti%tens_op(0)%op_aar_entry%buf_entry_host=d_hab_entry
@@ -1364,7 +1364,7 @@
               if(associated(my_eti%tens_op(1)%op_aar_entry%tens_blck_f)) then
                call tens_blck_pack(my_eti%tens_op(1)%op_aar_entry%tens_blck_f,my_eti%data_kind,pack_size,pptr,l_hab_entry,ier)
                if(ier.eq.0) then
-                call tens_blck_assoc(pptr,ier,ctens=ltens_,gpu_num=etiq_nvcu%te_conf(etiq_nvcu_loc)%cu_id%unit_number)
+                call tens_blck_assoc(pptr,l_hab_entry,ier,ctens=ltens_,gpu_num=etiq_nvcu%te_conf(etiq_nvcu_loc)%cu_id%unit_number)
                 if(ier.eq.0) then
                  my_eti%tens_op(1)%op_aar_entry%tens_blck_c=ltens_
                  my_eti%tens_op(1)%op_aar_entry%buf_entry_host=l_hab_entry
@@ -1388,7 +1388,7 @@
               if(associated(my_eti%tens_op(2)%op_aar_entry%tens_blck_f)) then
                call tens_blck_pack(my_eti%tens_op(2)%op_aar_entry%tens_blck_f,my_eti%data_kind,pack_size,pptr,r_hab_entry,ier)
                if(ier.eq.0) then
-                call tens_blck_assoc(pptr,ier,ctens=rtens_,gpu_num=etiq_nvcu%te_conf(etiq_nvcu_loc)%cu_id%unit_number)
+                call tens_blck_assoc(pptr,r_hab_entry,ier,ctens=rtens_,gpu_num=etiq_nvcu%te_conf(etiq_nvcu_loc)%cu_id%unit_number)
                 if(ier.eq.0) then
                  my_eti%tens_op(2)%op_aar_entry%tens_blck_c=rtens_
                  my_eti%tens_op(2)%op_aar_entry%buf_entry_host=r_hab_entry
@@ -3021,16 +3021,17 @@
         endif
         return
         end subroutine tens_blck_update
-!---------------------------------------------------------------
-        subroutine tens_blck_assoc(pptr,ierr,tens,ctens,gpu_num)
-!Based on the packet located at <pptr>, this subroutine fills in an instance of
-!either tensBlck_t (C/C++) <ctens> or tensor_block_t (Fortran) <tens>:
+!-------------------------------------------------------------------------
+        subroutine tens_blck_assoc(pptr,hab_entry,ierr,tens,ctens,gpu_num)
+!Based on the packet located in HAB entry <hab_entry> at <pptr>, this subroutine
+!fills in an instance of either tensBlck_t (C/C++) <ctens> or tensor_block_t (Fortran) <tens>:
 ! {tensor_block_t|tensBlck_t} => PACKET (Host Argument Buffer entry)
 !Note that the pointer fields of {tensor_block_t|tensBlck_t} will simply point
 !to the corresponding locations in the Host Argument Buffer. Hence the corresponding entry
 !of the Host Argument Buffer shall not be freed during the lifetime of {tensor_block_t|tensBlck_t}.
 !INPUT:
 ! - pptr - C pointer to a tensor block packet located in the Host argument buffer;
+! - hab_entry - HAB entry number (>=0);
 ! - tens - an instance of tensor_block_t (F);
 ! - ctens - an instance of tensBlck_t (C);
 ! - gpu_num - GPU# on which the tensor block will be used (-1 means Host);
@@ -3046,6 +3047,7 @@
 !   For tensor_block_t (Fortran) one should invoke <tensor_block_destroy>.
         implicit none
         type(C_PTR), intent(in):: pptr
+        integer(C_INT), intent(in):: hab_entry
         integer, intent(inout):: ierr
         type(tensor_block_t), optional, intent(inout):: tens
         type(C_PTR), optional, intent(inout):: ctens
@@ -3104,11 +3106,11 @@
          err_code=const_args_entry_get(gpu_num,entry_const); if(err_code.ne.0.or.entry_const.lt.0) then; ierr=4; return; endif
          err_code=tensBlck_create(ctens); if(err_code.ne.0) then; ctens=C_NULL_PTR; ierr=5; return; endif
          err_code=tensBlck_construct(ctens,DEV_NVIDIA_GPU,gpu_num,data_kind,trank, &
-                                     addr_dims,addr_divs,addr_grps,addr_prmn,addr_host,addr_gpu,entry_gpu,entry_const)
+                                     addr_dims,addr_divs,addr_grps,addr_prmn,addr_host,addr_gpu,hab_entry,entry_gpu,entry_const)
          if(err_code.ne.0) then; ierr=6; return; endif
 #else
          write(jo_cp,'("#FATAL(c_process::tens_blck_assoc):&
-          & attempt to initialize a GPU-resident tensor block in GPU-free code compilation!")') !trap
+          &attempt to initialize a GPU-resident tensor block in GPU-free code compilation!")') !trap
          ierr=-1; return !attempt to initialize tensBlck_t in a GPU-free code compilation
 #endif
         elseif(present(tens).and.(.not.present(ctens)).and.(.not.present(gpu_num))) then
@@ -3263,8 +3265,10 @@
          call tensor_block_create('(17,27,33,44)','r4',ftens(2),ierr,val_r4=0.0); if(ierr.ne.0) then; ierr=37; goto 999; endif
          call tens_blck_pack(ftens(2),'r4',pack_size(2),entry_ptr(2),entry_num(2),ierr)
          if(ierr.ne.0) then; ierr=38; goto 999; endif
-         call tens_blck_assoc(entry_ptr(1),ierr,ctens=ctens(1),gpu_num=gpu_id); if(ierr.ne.0) then; ierr=39; goto 999; endif
-         call tens_blck_assoc(entry_ptr(2),ierr,ctens=ctens(2),gpu_num=gpu_id); if(ierr.ne.0) then; ierr=40; goto 999; endif
+         call tens_blck_assoc(entry_ptr(1),entry_num(1),ierr,ctens=ctens(1),gpu_num=gpu_id)
+         if(ierr.ne.0) then; ierr=39; goto 999; endif
+         call tens_blck_assoc(entry_ptr(2),entry_num(2),ierr,ctens=ctens(2),gpu_num=gpu_id)
+         if(ierr.ne.0) then; ierr=40; goto 999; endif
          tm0=thread_wtime()
          err_code=gpu_tensor_block_copy_dlf(n2o,ctens(1),ctens(2))
          if(err_code.ne.0) then; write(jo_cp,*)'GPU ERROR ',err_code; ierr=41; goto 999; endif
@@ -3307,12 +3311,18 @@
         call tens_blck_pack(ftens(4),'r4',pack_size(4),entry_ptr(4),entry_num(4),ierr); if(ierr.ne.0) then; ierr=65; goto 999; endif
         call tens_blck_pack(ftens(5),'r4',pack_size(5),entry_ptr(5),entry_num(5),ierr); if(ierr.ne.0) then; ierr=66; goto 999; endif
         call tens_blck_pack(ftens(6),'r4',pack_size(6),entry_ptr(6),entry_num(6),ierr); if(ierr.ne.0) then; ierr=67; goto 999; endif
-        call tens_blck_assoc(entry_ptr(0),ierr,ctens=ctens(0),gpu_num=gpu_id); if(ierr.ne.0) then; ierr=68; goto 999; endif
-        call tens_blck_assoc(entry_ptr(1),ierr,ctens=ctens(1),gpu_num=gpu_id); if(ierr.ne.0) then; ierr=69; goto 999; endif
-        call tens_blck_assoc(entry_ptr(2),ierr,ctens=ctens(2),gpu_num=gpu_id); if(ierr.ne.0) then; ierr=70; goto 999; endif
-        call tens_blck_assoc(entry_ptr(4),ierr,ctens=ctens(4),gpu_num=gpu_id); if(ierr.ne.0) then; ierr=71; goto 999; endif
-        call tens_blck_assoc(entry_ptr(5),ierr,ctens=ctens(5),gpu_num=gpu_id); if(ierr.ne.0) then; ierr=72; goto 999; endif
-        call tens_blck_assoc(entry_ptr(6),ierr,ctens=ctens(6),gpu_num=gpu_id); if(ierr.ne.0) then; ierr=73; goto 999; endif
+        call tens_blck_assoc(entry_ptr(0),entry_num(0),ierr,ctens=ctens(0),gpu_num=gpu_id)
+        if(ierr.ne.0) then; ierr=68; goto 999; endif
+        call tens_blck_assoc(entry_ptr(1),entry_num(1),ierr,ctens=ctens(1),gpu_num=gpu_id)
+        if(ierr.ne.0) then; ierr=69; goto 999; endif
+        call tens_blck_assoc(entry_ptr(2),entry_num(2),ierr,ctens=ctens(2),gpu_num=gpu_id)
+        if(ierr.ne.0) then; ierr=70; goto 999; endif
+        call tens_blck_assoc(entry_ptr(4),entry_num(4),ierr,ctens=ctens(4),gpu_num=gpu_id)
+        if(ierr.ne.0) then; ierr=71; goto 999; endif
+        call tens_blck_assoc(entry_ptr(5),entry_num(5),ierr,ctens=ctens(5),gpu_num=gpu_id)
+        if(ierr.ne.0) then; ierr=72; goto 999; endif
+        call tens_blck_assoc(entry_ptr(6),entry_num(6),ierr,ctens=ctens(6),gpu_num=gpu_id)
+        if(ierr.ne.0) then; ierr=73; goto 999; endif
         o2n(0:6)=(/+1,1,2,3,4,5,6/);
         err_code=gpu_tensor_block_copy_dlf(o2n,ctens(1),ctens(4)); if(err_code.ne.0) then; ierr=74; goto 999; endif
         err_code=gpu_tensor_block_copy_dlf(o2n,ctens(2),ctens(5)); if(err_code.ne.0) then; ierr=75; goto 999; endif
@@ -3477,9 +3487,12 @@
             if(ierr.ne.0) then; ierr=19; goto 999; endif
             call tens_blck_pack(ftens(2),dtk,pack_size(2),entry_ptr(2),entry_num(2),ierr)
             if(ierr.ne.0) then; ierr=20; goto 999; endif
-            call tens_blck_assoc(entry_ptr(0),ierr,ctens=ctens(0),gpu_num=gpu_id); if(ierr.ne.0) then; ierr=21; goto 999; endif
-            call tens_blck_assoc(entry_ptr(1),ierr,ctens=ctens(1),gpu_num=gpu_id); if(ierr.ne.0) then; ierr=22; goto 999; endif
-            call tens_blck_assoc(entry_ptr(2),ierr,ctens=ctens(2),gpu_num=gpu_id); if(ierr.ne.0) then; ierr=23; goto 999; endif
+            call tens_blck_assoc(entry_ptr(0),entry_num(0),ierr,ctens=ctens(0),gpu_num=gpu_id)
+            if(ierr.ne.0) then; ierr=21; goto 999; endif
+            call tens_blck_assoc(entry_ptr(1),entry_num(1),ierr,ctens=ctens(1),gpu_num=gpu_id)
+            if(ierr.ne.0) then; ierr=22; goto 999; endif
+            call tens_blck_assoc(entry_ptr(2),entry_num(2),ierr,ctens=ctens(2),gpu_num=gpu_id)
+            if(ierr.ne.0) then; ierr=23; goto 999; endif
             call gpu_set_transpose_algorithm(EFF_TRN_OFF) !scatter on GPU
             write(jo_cp,'(3x)',advance='no')
             err_code=gpu_tensor_block_copy_dlf(o2n,ctens(1),ctens(0))
