@@ -1,5 +1,5 @@
 /** Tensor Algebra Library for NVidia GPUs (CUDA).
-REVISION: 2015/02/03
+REVISION: 2015/02/04
 Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
 Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
 
@@ -75,10 +75,12 @@ extern "C" {
  int tensBlck_construct(tensBlck_t *ctens, int dev_kind, int dev_num, int data_kind, int trank,
                         const int *dims, const int *divs, const int *grps, const int *prmn,
                         void *addr_host, void *addr_gpu, int entry_host, int entry_gpu, int entry_const);
- int tensBlck_alloc(tensBlck_t *ctens, int dev_kind, int dev_num, int data_kind, int trank, const int *dims);
+ int tensBlck_alloc(tensBlck_t *ctens, int dev_num, int data_kind, int trank, const int *dims);
+ int tensBlck_free(tensBlck_t *ctens);
  int tensBlck_acc_id(const tensBlck_t *ctens, int *dev_kind, int *entry_gpu, int *entry_const, int *data_kind, int *there);
  int tensBlck_set_presence(tensBlck_t *ctens);
  int tensBlck_set_absence(tensBlck_t *ctens);
+ int tensBlck_present(const tensBlck_t *ctens);
  int tensBlck_hab_null(tensBlck_t *ctens);
  size_t tensBlck_volume(const tensBlck_t *ctens);
  int cuda_task_create(cudaTask_t **cuda_task);
@@ -299,8 +301,11 @@ __host__ int tensBlck_construct(tensBlck_t *ctens, int dev_kind, int dev_num, in
                                 const int *dims, const int *divs, const int *grps, const int *prmn,
                                 void *addr_host, void *addr_gpu, int entry_host, int entry_gpu, int entry_const)
 /** Full constructor for tensBlck_t (tensor block to be processed on an accelerator) based
-on the custom memory allocator which uses Host and GPU argument buffers (see c_proc_bufs.cu).
-Note that .device_id field reflects the general device number (0: CPU; 1..N: GPUs; N+1..M: MICs; etc). **/
+on the custom memory allocator which uses Host and Device argument buffers (see c_proc_bufs.cu).
+Note that .device_id field reflects the general device number (0: CPU; 1..N: GPUs; N+1..M: MICs; etc).
+If this tensBlck will participate in asynchronous Device operations,
+dims, divs, grps, prmn, elems_h must reside in the pinned Host memory and
+dims, divs, grps, prmn, elems_h, elems_d must be properly aligned! **/
 {
  int i;
  if(ctens != NULL){
@@ -320,56 +325,103 @@ Note that .device_id field reflects the general device number (0: CPU; 1..N: GPU
  return 0;
 }
 
-__host__ int tensBlck_alloc(tensBlck_t *ctens, int dev_kind, int dev_num, int data_kind, int trank, const int *dims){
-/** Simplified tensBlck constructor + Host initialization to zero (for NVidia GPU only) **/
+__host__ int tensBlck_alloc(tensBlck_t *ctens, int dev_num, int data_kind, int trank, const int *dims){
+/** Simplified tensBlck constructor + initialization to zero on the Host.
+The tensBlck_t instance is prepared for the use on NVidia GPU #dev_num.
+The pinned Host memory is allocated explicitly.
+The GPU memory is taken from the GPU argument buffer. **/
  int i;
  size_t tvol,l;
- cudaError_t errc;
 
  if(ctens != NULL){
-  if(trank >= 0 && trank <= MAX_TENSOR_RANK && (data_kind == R4 || data_kind == R8 || data_kind == C8)){
-   if(dev_kind != DEV_NVIDIA_GPU) return 1;
+  if(trank >= 0 && trank <= MAX_TENSOR_RANK){
 //Set tensBlck fields:
-   ctens->device_id=encode_device_id(dev_kind,dev_num); if(ctens->device_id >= DEV_MAX) return 2;
+   ctens->device_id=encode_device_id(DEV_NVIDIA_GPU,dev_num); if(ctens->device_id >= DEV_MAX) return 1;
    ctens->data_kind=data_kind; ctens->rank=trank;
    if(trank > 0){
-    if(dims != NULL){ctens->dims_h=dims;}else{return 3;}
+    if(dims != NULL){ctens->dims_h=dims;}else{return 2;}
+    i=host_mem_alloc_pin((void**)&(ctens->dims_h),sizeof(int)*(size_t)trank); if(i) return 4;
     i=host_mem_alloc_pin((void**)&(ctens->divs_h),sizeof(int)*(size_t)trank); if(i) return 4;
     i=host_mem_alloc_pin((void**)&(ctens->grps_h),sizeof(int)*(size_t)trank); if(i) return 5;
     i=host_mem_alloc_pin((void**)&(ctens->prmn_h),sizeof(int)*(size_t)trank); if(i) return 6;
+    for(i=0;i<trank;i++){ctens->dims_h[i]=dims[i];} //copy dimension extents
    }else{
     ctens->dims_h=NULL; ctens->divs_h=NULL;
     ctens->grps_h=NULL; ctens->prmn_h=NULL;
    }
    tvol=tensBlck_volume(ctens); //tensor block volume (number of elements)
-   i=host_mem_alloc_pin((void**)&(ctens->elems_h),tvol*(size_t)data_kind); if(i) return 7;
-   i=gpu_mem_alloc((void**)&(ctens->elems_d),tvol*(size_t)data_kind); if(i) return 8;
-   i=const_args_entry_get(dev_num,&(ctens->const_args_entry)); if(i) return 9;
-   ctens->buf_entry_host=-1; ctens->buf_entry_gpu=-1; //Host and GPU argument buffers are not used here
+   i=const_args_entry_get(dev_num,&(ctens->const_args_entry)); if(i) return 7;
+   ctens->buf_entry_host=-1; //Host argument buffer is not used here
 //Initialize the Host copy to zero:
    switch(data_kind){
     case R4:
+     i=get_buf_entry_gpu(dev_num,tvol*(size_t)data_kind,&(ctens->elems_d),&(ctens->buf_entry_gpu)); if(i) return 8;
+     i=host_mem_alloc_pin((void**)&(ctens->elems_h),tvol*(size_t)data_kind); if(i) return 9;
 #pragma omp parallel for
      for(l=0;l<tvol;l++){((float*)(ctens->elems_h))[l]=0.0f;}
      break;
     case R8:
+     i=get_buf_entry_gpu(dev_num,tvol*(size_t)data_kind,&(ctens->elems_d),&(ctens->buf_entry_gpu)); if(i) return 10;
+     i=host_mem_alloc_pin((void**)&(ctens->elems_h),tvol*(size_t)data_kind); if(i) return 11;
 #pragma omp parallel for
      for(l=0;l<tvol;l++){((double*)(ctens->elems_h))[l]=0.0;}
      break;
     case C8:
+     i=get_buf_entry_gpu(dev_num,tvol*(size_t)data_kind,&(ctens->elems_d),&(ctens->buf_entry_gpu)); if(i) return 12;
+     i=host_mem_alloc_pin((void**)&(ctens->elems_h),tvol*(size_t)data_kind); if(i) return 13;
 #pragma omp parallel for
      for(l=0;l<tvol*2;l++){((double*)(ctens->elems_h))[l]=0.0;}
      break;
+    default:
+     return 14;
    }
 //Set GPU absence:
-   i=tensBlck_set_absence(ctens); if(i) return 10;
+   i=tensBlck_set_absence(ctens); if(i) return 15;
   }else{
-   return 11;
+   return 16;
   }
  }else{
-  return 12;
+  return 17;
  }
  return 0;
+}
+
+__host__ int tensBlck_free(tensBlck_t *ctens){
+/** Frees Host memory occupied by a tensBlck_t instance, frees
+the GPU argument buffer entry. tensBlck itself is not destroyed. **/
+ int i,dev_kind,gpu_num,errc;
+
+ errc=0;
+ if(ctens != NULL){
+  if(ctens->buf_entry_host >= 0){
+   i=free_buf_entry_host(ctens->buf_entry_host); errc+=i;
+  }else{
+   i=host_mem_free_pin(ctens->elems_h); errc+=i;
+  }
+  if(ctens->dims_h != NULL){i=host_mem_free_pin(ctens->dims_h); errc+=i;}
+  if(ctens->divs_h != NULL){i=host_mem_free_pin(ctens->divs_h); errc+=i;}
+  if(ctens->grps_h != NULL){i=host_mem_free_pin(ctens->grps_h); errc+=i;}
+  if(ctens->prmn_h != NULL){i=host_mem_free_pin(ctens->prmn_h); errc+=i;}
+  ctens->dims_h=NULL; ctens->divs_h=NULL; ctens->grps_h=NULL; ctens->prmn_h=NULL;
+  ctens->elems_h=NULL; ctens->buf_entry_host=-1;
+  gpu_num=decode_device_id(ctens->device_id,&dev_kind);
+  if(dev_kind == DEV_NVIDIA_GPU){
+   if(gpu_num >= 0 && gpu_num < MAX_GPUS_PER_NODE){
+    if(ctens->buf_entry_gpu >= 0){i=free_buf_entry_gpu(gpu_num,ctens->buf_entry_gpu); errc+=i;}
+    if(ctens->const_args_entry >= 0){i=const_args_entry_free(gpu_num,ctens->const_args_entry); errc+=i;}
+    ctens->elems_d=NULL; ctens->buf_entry_gpu=-1; ctens->const_args_entry=-1;
+   }else{
+    errc+=777;
+   }
+  }else{
+   if(dev_kind != DEV_HOST) errc+=888;
+  }
+  ctens->device_id=encode_device_id(DEV_HOST,0);
+  ctens->data_kind=0; ctens->rank=-1;
+ }else{
+  errc+=999;
+ }
+ return errc;
 }
 
 __host__ int tensBlck_acc_id(const tensBlck_t *ctens, int *dev_kind, int *entry_gpu, int *entry_const, int *data_kind,
@@ -380,24 +432,24 @@ INPUT:
 OUTPUT:
  # tensBlck_acc_id - ACC ID (non-negative) OR -1 (Host residence of the tensor block);
  # dev_kind - device (accelerator) kind (GPU, MIC, etc.);
- # entry_gpu - GPU global memory argument-buffer entry number;
+ # entry_gpu - device global memory argument-buffer entry number;
  # entry_const - GPU constant memory entry number;
  # data_kind - 4:float, 8:double, 16:double_complex;
- # there - 0 means that tensor block elements are not in the ACC memory yet, otherwise opposite.
+ # there - 0 means that tensor block elements are not in the ACC memory yet, 1 means opposite.
 **/
 {
  int dev_num;
  if(ctens != NULL){
   *data_kind=ctens->data_kind;
   *dev_kind=DEV_HOST; dev_num=decode_device_id(ctens->device_id,dev_kind);
+  *there=tensBlck_present(ctens);
   if(*dev_kind != DEV_HOST){
-   if(ctens->device_id > 0){*there=1;}else{*there=0;}
    *entry_gpu=ctens->buf_entry_gpu; *entry_const=ctens->const_args_entry;
   }else{ //Host residence
-   dev_num=-1; *entry_gpu=-1; *entry_const=-1; *there=0; //Host residence (no GPU associated with this tensor block)
+   dev_num=-1; *entry_gpu=-1; *entry_const=-1; //Host residence
   }
  }else{
-  dev_num=-1; *dev_kind=-1; *entry_gpu=-1; *entry_const=-1; *there=0; //ERROR: Null pointer passed
+  dev_num=-1; *dev_kind=-1; *entry_gpu=-1; *entry_const=-1; *data_kind=0; *there=0;
  }
  return dev_num;
 }
@@ -408,11 +460,36 @@ __host__ int tensBlck_set_presence(tensBlck_t *ctens) // Marks tensor block data
 __host__ int tensBlck_set_absence(tensBlck_t *ctens) // Unmarks tensor block data as residing on GPU
 {if(ctens != NULL){if(ctens->device_id > 0) ctens->device_id=-(ctens->device_id); return 0;}else{return 1;}}
 
-__host__ int tensBlck_hab_null(tensBlck_t *ctens) //Nullifies the HAB pointer (Host memory) in tensBlck
-{if(ctens != NULL){if(ctens->device_id > 0){ctens->elems_h=NULL; return 0;}else{return 2;}}else{return 1;}}
+__host__ int tensBlck_present(const tensBlck_t *ctens) //Check presence of the block data on Device (or Host)
+{if(ctens != NULL){if(ctens->device_id >= 0){return 1;}else{return 0;}}else{return -1;}}
+
+__host__ int tensBlck_hab_null(tensBlck_t *ctens){ //Nullifies the HAB pointer (Host memory) in tensBlck
+ int i,dev_kind,dev_num,errc;
+ errc=0;
+ if(ctens != NULL){
+  dev_num=decode_device_id(ctens->device_id,&dev_kind);
+  if(dev_kind != DEV_HOST){
+   if(ctens->elems_h != NULL){
+    if(ctens->buf_entry_host >= 0){
+     i=free_buf_entry_host(ctens->buf_entry_host); errc+=i;
+    }else{
+     i=host_mem_free_pin(ctens->elems_h); errc+=i;
+    }
+    ctens->buf_entry_host=-1; ctens->elems_h=NULL;
+   }else{
+    errc+=555;
+   }
+  }else{
+   errc+=777;
+  }
+ }else{
+  errc+=999;
+ }
+ return errc;
+}
 
 __host__ size_t tensBlck_volume(const tensBlck_t *ctens) //Number of elements in a tensor block
-{size_t tsize=1; for(int i=0;i<ctens->rank;i++){tsize*=(ctens->dims_h[i]);}; return tsize;}
+{size_t tvol=1; for(int i=0;i<ctens->rank;i++){tvol*=(ctens->dims_h[i]);}; return tvol;}
 
 __host__ int cuda_task_create(cudaTask_t **cuda_task)
 /** Creates an instance of cudaTask_t **/
