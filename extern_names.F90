@@ -396,7 +396,7 @@
 	  type(C_PTR), value:: ctens
 	 end function tensBlck_set_absence
  !Check presence of tensBlck_t data on GPU:
-         integer(C_INT) function tensBlck_present(ctens) bins(c,name='tensBlck_present')
+         integer(C_INT) function tensBlck_present(ctens) bind(c,name='tensBlck_present')
           use, intrinsic:: ISO_C_BINDING
           implicit none
           type(C_PTR), value, intent(in):: ctens
