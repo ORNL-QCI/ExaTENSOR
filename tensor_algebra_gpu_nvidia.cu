@@ -312,7 +312,7 @@ dims, divs, grps, prmn, elems_h, elems_d must be properly aligned! **/
   if(trank >= 0 && data_kind >= 0 && entry_host >= 0 && entry_gpu >= 0 && entry_const >= 0){
    ctens->device_id=encode_device_id(dev_kind,dev_num); if(ctens->device_id >= DEV_MAX) return 5;
    ctens->data_kind=data_kind; ctens->rank=trank; if(trank > MAX_TENSOR_RANK) return 4;
-   ctens->dims_h=dims; ctens->divs_h=divs; ctens->grps_h=grps; ctens->prmn_h=prmn;
+   ctens->dims_h=(int*)dims; ctens->divs_h=(int*)divs; ctens->grps_h=(int*)grps; ctens->prmn_h=(int*)prmn;
    ctens->elems_h=addr_host; ctens->elems_d=addr_gpu; ctens->buf_entry_host=entry_host;
    ctens->buf_entry_gpu=entry_gpu; ctens->const_args_entry=entry_const;
    i=tensBlck_set_absence(ctens); if(i != 0) return 3;
@@ -339,7 +339,7 @@ The GPU memory is taken from the GPU argument buffer. **/
    ctens->device_id=encode_device_id(DEV_NVIDIA_GPU,dev_num); if(ctens->device_id >= DEV_MAX) return 1;
    ctens->data_kind=data_kind; ctens->rank=trank;
    if(trank > 0){
-    if(dims != NULL){ctens->dims_h=dims;}else{return 2;}
+    if(dims != NULL){ctens->dims_h=(int*)dims;}else{return 2;}
     i=host_mem_alloc_pin((void**)&(ctens->dims_h),sizeof(int)*(size_t)trank); if(i) return 4;
     i=host_mem_alloc_pin((void**)&(ctens->divs_h),sizeof(int)*(size_t)trank); if(i) return 4;
     i=host_mem_alloc_pin((void**)&(ctens->grps_h),sizeof(int)*(size_t)trank); if(i) return 5;
@@ -355,19 +355,19 @@ The GPU memory is taken from the GPU argument buffer. **/
 //Initialize the Host copy to zero:
    switch(data_kind){
     case R4:
-     i=get_buf_entry_gpu(dev_num,tvol*(size_t)data_kind,&(ctens->elems_d),&(ctens->buf_entry_gpu)); if(i) return 8;
+     i=get_buf_entry_gpu(dev_num,tvol*(size_t)data_kind,(char**)&(ctens->elems_d),&(ctens->buf_entry_gpu)); if(i) return 8;
      i=host_mem_alloc_pin((void**)&(ctens->elems_h),tvol*(size_t)data_kind); if(i) return 9;
 #pragma omp parallel for
      for(l=0;l<tvol;l++){((float*)(ctens->elems_h))[l]=0.0f;}
      break;
     case R8:
-     i=get_buf_entry_gpu(dev_num,tvol*(size_t)data_kind,&(ctens->elems_d),&(ctens->buf_entry_gpu)); if(i) return 10;
+     i=get_buf_entry_gpu(dev_num,tvol*(size_t)data_kind,(char**)&(ctens->elems_d),&(ctens->buf_entry_gpu)); if(i) return 10;
      i=host_mem_alloc_pin((void**)&(ctens->elems_h),tvol*(size_t)data_kind); if(i) return 11;
 #pragma omp parallel for
      for(l=0;l<tvol;l++){((double*)(ctens->elems_h))[l]=0.0;}
      break;
     case C8:
-     i=get_buf_entry_gpu(dev_num,tvol*(size_t)data_kind,&(ctens->elems_d),&(ctens->buf_entry_gpu)); if(i) return 12;
+     i=get_buf_entry_gpu(dev_num,tvol*(size_t)data_kind,(char**)&(ctens->elems_d),&(ctens->buf_entry_gpu)); if(i) return 12;
      i=host_mem_alloc_pin((void**)&(ctens->elems_h),tvol*(size_t)data_kind); if(i) return 13;
 #pragma omp parallel for
      for(l=0;l<tvol*2;l++){((double*)(ctens->elems_h))[l]=0.0;}
@@ -467,7 +467,7 @@ __host__ int tensBlck_hab_null(tensBlck_t *ctens){ //Nullifies the HAB pointer (
  int i,dev_kind,dev_num,errc;
  errc=0;
  if(ctens != NULL){
-  dev_num=decode_device_id(ctens->device_id,&dev_kind);
+  dev_num=decode_device_id(ctens->device_id,&dev_kind); if(dev_num < 0) errc+=333;
   if(dev_kind != DEV_HOST){
    if(ctens->elems_h != NULL){
     if(ctens->buf_entry_host >= 0){
