@@ -1,6 +1,6 @@
 /** Explicit memory management for the GPU-enabled
 implementation of the tensor algebra library.
-REVISION: 2015/02/02
+REVISION: 2015/02/05
 Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
 Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
 

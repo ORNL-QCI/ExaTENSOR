@@ -3,7 +3,7 @@
 
         interface
 #ifndef NO_GPU
-!C/C++ wrappers for CUDA Run-Time functions:
+!C/C++ wrappers for CUDA run-time functions:
  !Get the total number of available GPU(Nvidia) devices on a node:
 	 subroutine cudaGetDeviceCount(count,err_code) bind(c,name='cudagetdevicecount')
 	  use, intrinsic:: ISO_C_BINDING
@@ -57,7 +57,7 @@
 #endif
 
 #ifndef NO_GPU
-!C/C++ wrappers for GPU(Nvidia) tensor algebra:
+!C/C++ wrappers for GPU(NVidia) tensor algebra:
  !Array 2-norm squared (R4):
 	 integer(C_INT) function gpu_array_2norm2_r4(asize,arr,norm2) bind(c,name='gpu_array_2norm2_r4')
 	  use, intrinsic:: ISO_C_BINDING
@@ -204,6 +204,45 @@
 	  implicit none
 	  integer(C_INT), intent(out):: dump(*)
 	 end function gpu_get_debug_dump
+ !Allocate pinned memory on Host:
+         integer(C_INT) function host_mem_alloc_pin(cptr,bsize) bind(c,name='host_mem_alloc_pin')
+          use, intrinsic:: ISO_C_BINDING
+          implicit none
+          type(C_PTR), intent(out):: cptr
+          integer(C_SIZE_T), value, intent(in):: bsize !bytes
+         end function host_mem_alloc_pin
+ !Free pinned memory on Host:
+         integer(C_INT) function host_mem_free_pin(cptr) bind(c,name='host_mem_free_pin')
+          use, intrinsic:: ISO_C_BINDING
+          implicit none
+          type(C_PTR), value:: cptr
+         end function host_mem_free_pin
+ !Register Host memory:
+         integer(C_INT) function host_mem_register(cptr,bsize) bind(c,name='host_mem_register')
+          use, intrinsic:: ISO_C_BINDING
+          implicit none
+          type(C_PTR), value:: cptr
+          integer(C_SIZE_T), value, intent(in):: bsize !bytes
+         end function host_mem_register
+ !Unregister Host memory:
+         integer(C_INT) function host_mem_unregister(cptr) bind(c,name='host_mem_unregister')
+          use, intrinsic:: ISO_C_BINDING
+          implicit none
+          type(C_PTR), value:: cptr
+         end function host_mem_unregister
+ !Allocate memory on current GPU:
+         integer(C_INT) function gpu_mem_alloc(cptr,bsize) bind(c,name='gpu_mem_alloc')
+          use, intrinsic:: ISO_C_BINDING
+          implicit none
+          type(C_PTR), intent(out):: cptr
+          integer(C_SIZE_T), value, intent(in):: bsize !bytes
+         end function gpu_mem_alloc
+ !Free memory on current GPU:
+         integer(C_INT) function gpu_mem_free(cptr) bind(c,name='gpu_mem_free')
+          use, intrinsic:: ISO_C_BINDING
+          implicit none
+          type(C_PTR), value:: cptr
+         end function gpu_mem_free
 #endif
  !Get buffered block sizes for each level of the Host argument buffer:
 	 integer(C_INT) function get_blck_buf_sizes_host(blck_sizes) bind(c,name='get_blck_buf_sizes_host')
@@ -295,7 +334,7 @@
 	  implicit none
 	  type(C_PTR), value:: ctens
 	 end function tensBlck_destroy
- !Construct tensBlck_t:
+ !Construct tensBlck_t using externally provided memory pointers (custom allocation):
 	 integer(C_INT) function tensBlck_construct(ctens,dev_kind,dev_num,data_kind,trank, &
                                   addr_dims,addr_divs,addr_grps,addr_prmn,addr_host,addr_gpu, &
                                   entry_host,entry_gpu,entry_const) bind(c,name='tensBlck_construct')
@@ -316,6 +355,22 @@
 	  integer(C_INT), value, intent(in):: entry_gpu
 	  integer(C_INT), value, intent(in):: entry_const
 	 end function tensBlck_construct
+ !Allocate a space for tensBlck_t in Host and GPU memory:
+         integer(C_INT) function tensBlck_alloc(ctens,dev_num,data_kind,trank,dims) bind(c,name='tensBlck_alloc')
+          use, intrinsic:: ISO_C_BINDING
+          implicit none
+          type(C_PTR), value:: ctens
+          integer(C_INT), value, intent(in):: dev_num
+          integer(C_INT), value, intent(in):: data_kind
+          integer(C_INT), value, intent(in):: trank
+          type(C_PTR), value, intent(in):: dims
+         end function tensBlck_alloc
+ !Free space occupied by tensBlck_t fields:
+         integer(C_INT) function tensBlck_free(ctens) bind(c,name='tensBlck_free')
+          use, intrinsic:: ISO_C_BINDING
+          implicit none
+          type(C_PTR), value:: ctens
+         end function tensBlck_free
  !Get the Accelerator ID and other information from tensBlck_t:
 	 integer(C_INT) function tensBlck_acc_id(ctens,dev_kind,entry_gpu,entry_const,data_kind,there) &
                                                  bind(c,name='tensBlck_acc_id')
@@ -340,12 +395,18 @@
 	  implicit none
 	  type(C_PTR), value:: ctens
 	 end function tensBlck_set_absence
- !Nullify the Host memory pointer in tensBlck_t:
-         integer(C_INT) function tensBlck_hab_null(ctens) bind(c,name='tensBlck_hab_null')
+ !Check presence of tensBlck_t data on GPU:
+         integer(C_INT) function tensBlck_present(ctens) bins(c,name='tensBlck_present')
+          use, intrinsic:: ISO_C_BINDING
+          implicit none
+          type(C_PTR), value, intent(in):: ctens
+         end function tensBlck_present
+ !Free the HAB entry occupied by tensBlck_t:
+         integer(C_INT) function tensBlck_hab_free(ctens) bind(c,name='tensBlck_hab_free')
           use, intrinsic:: ISO_C_BINDING
           implicit none
           type(C_PTR), value:: ctens
-         end function tensBlck_hab_null
+         end function tensBlck_hab_free
  !Number of tensor elements (volume) in tensBlck_t:
 	 integer(C_SIZE_T) function tensBlck_volume(ctens) bind(c,name='tensBlck_volume')
 	  use, intrinsic:: ISO_C_BINDING

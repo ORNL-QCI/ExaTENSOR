@@ -1,7 +1,7 @@
 !This module provides functionality for a Computing Process (C-PROCESS, CP).
 !In essence, this is a single-node elementary tensor instruction scheduler (SETIS).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2015/02/03
+!REVISION: 2015/02/05
 !CONCEPTS (CP workflow):
 ! - Each CP stores its own tensor blocks in TBB, with a possibility of disk dump.
 ! - LR sends a batch of ETI to be executed on this CP unit (CP MPI Process).
@@ -1650,7 +1650,6 @@
          type(tens_arg_t), pointer:: curr_arg=>NULL()
          integer jt,je,jf
          logical k_tbb,k_hab,k_gpu
-!        integer(C_INT):: j0,j1,j2,j3,j4 !debug
          eti_task_cleanup=0
          if(eti_num.gt.0.and.eti_num.le.etiq%depth) then
           my_eti=>etiq%eti(eti_num)
@@ -1662,20 +1661,14 @@
             if(jf.ge.KEEP_HAB_DATA) then; jf=jf-KEEP_HAB_DATA; k_hab=.true.; else; k_hab=.false.; endif
             if(jf.ge.KEEP_TBB_DATA) then; jf=jf-KEEP_TBB_DATA; k_tbb=.true.; else; k_tbb=.false.; endif
             if(.not.k_hab) then !free the HAB entry of the tensor argument (if any)
-             if(curr_arg%buf_entry_host.ge.0) then
-              je=free_buf_entry_host(curr_arg%buf_entry_host); if(je.ne.0) eti_task_cleanup=eti_task_cleanup+1 !free HAB entry
+             if(curr_arg%buf_entry_host.ge.0) then              
               if(c_associated(curr_arg%tens_blck_c)) then
-               if(associated(curr_arg%tens_blck_f)) then
-                if(c_associated(curr_arg%tens_blck_c,c_loc(curr_arg%tens_blck_f))) nullify(curr_arg%tens_blck_f) !free F only if F->HAB
-               endif
-!               je=tensBlck_acc_id(curr_arg%tens_blck_c,j0,j1,j2,j3,j4) !debug
-!               if(verbose) write(jo_cp,'("DEBUG(c_process::c_proc_life:eti_task_cleanup):",6(1x,i4))') je,j0,j1,j2,j3,j4 !debug
-               je=tensBlck_hab_null(curr_arg%tens_blck_c); if(je.ne.0) eti_task_cleanup=eti_task_cleanup+10 !nullify HAB pointer
-!               if(je.ne.0.and.verbose) &
-!                write(jo_cp,'("ERROR(c_process::c_proc_life:eti_task_cleanup): tensBlck_hab_null error: ",i6)') je !debug
+               je=tensBlck_hab_free(curr_arg%tens_blck_c); if(je.ne.0) eti_task_cleanup=eti_task_cleanup+1 !free HAB entry
               else
-               nullify(curr_arg%tens_blck_f)
+               je=free_buf_entry_host(curr_arg%buf_entry_host); if(je.ne.0) eti_task_cleanup=eti_task_cleanup+10 !free HAB entry 
               endif
+              curr_arg%buf_entry_host=-1
+              nullify(curr_arg%tens_blck_f)
              endif
             endif
             if(.not.k_gpu) then !destroy GPU data for the tensor argument (if any)
