@@ -339,12 +339,15 @@ The GPU memory is taken from the GPU argument buffer. **/
    ctens->device_id=encode_device_id(DEV_NVIDIA_GPU,dev_num); if(ctens->device_id >= DEV_MAX) return 1;
    ctens->data_kind=data_kind; ctens->rank=trank;
    if(trank > 0){
-    if(dims != NULL){ctens->dims_h=(int*)dims;}else{return 2;}
-    i=host_mem_alloc_pin((void**)&(ctens->dims_h),sizeof(int)*(size_t)trank); if(i) return 4;
-    i=host_mem_alloc_pin((void**)&(ctens->divs_h),sizeof(int)*(size_t)trank); if(i) return 4;
-    i=host_mem_alloc_pin((void**)&(ctens->grps_h),sizeof(int)*(size_t)trank); if(i) return 5;
-    i=host_mem_alloc_pin((void**)&(ctens->prmn_h),sizeof(int)*(size_t)trank); if(i) return 6;
-    for(i=0;i<trank;i++){ctens->dims_h[i]=dims[i];} //copy dimension extents
+    if(dims != NULL){
+     i=host_mem_alloc_pin((void**)&(ctens->dims_h),sizeof(int)*(size_t)trank); if(i) return 2;
+     i=host_mem_alloc_pin((void**)&(ctens->divs_h),sizeof(int)*(size_t)trank); if(i) return 3;
+     i=host_mem_alloc_pin((void**)&(ctens->grps_h),sizeof(int)*(size_t)trank); if(i) return 4;
+     i=host_mem_alloc_pin((void**)&(ctens->prmn_h),sizeof(int)*(size_t)trank); if(i) return 5;
+     for(i=0;i<trank;i++){ctens->dims_h[i]=dims[i];} //copy dimension extents
+    }else{
+     return 6;
+    }
    }else{
     ctens->dims_h=NULL; ctens->divs_h=NULL;
     ctens->grps_h=NULL; ctens->prmn_h=NULL;
