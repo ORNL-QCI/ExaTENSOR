@@ -66,13 +66,13 @@ extern "C" {
 }
 #endif
 // LOCAL (PRIVATE):
-int prmn_convert(int n, const int *o2n, int *n2o);
-int non_trivial_prmn(int n, const int *prm);
-int cuda_task_finalize(cudaTask_t *cuda_task, int err_code, int gpu_num);
-int cuda_task_record(cudaTask_t *cuda_task, int err_code, int gpu_num, cudaStream_t cuda_stream,
-     cudaEvent_t cuda_start, cudaEvent_t cuda_comput, cudaEvent_t cuda_output, cudaEvent_t cuda_finish,
-     int scr_entry_cnt, int *scr_entries);
-void limit_cuda_blocks2d(int max_blocks, int *bx, int *by);
+static int prmn_convert(int n, const int *o2n, int *n2o);
+static int non_trivial_prmn(int n, const int *prm);
+static int cuda_task_finalize(cudaTask_t *cuda_task, int err_code, int gpu_num);
+static int cuda_task_record(cudaTask_t *cuda_task, int err_code, int gpu_num, cudaStream_t cuda_stream,
+            cudaEvent_t cuda_start, cudaEvent_t cuda_comput, cudaEvent_t cuda_output, cudaEvent_t cuda_finish,
+            int scr_entry_cnt, int *scr_entries);
+static void limit_cuda_blocks2d(int max_blocks, int *bx, int *by);
 // CUDA KERNELS:
 __global__ void gpu_array_2norm2_r4__(size_t arr_size, const float *arr, float *bnorm2);
 __global__ void gpu_array_2norm2_r8__(size_t arr_size, const double *arr, double *bnorm2);

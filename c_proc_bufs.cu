@@ -66,17 +66,17 @@ static size_t abh_occ_size=0; //total number of entries in the multi-level Host 
 static size_t abg_occ_size[MAX_GPUS_PER_NODE]; //total numbers of entries in the multi-level GPUs argument buffer occupancy tables
 
 //LOCAL (PRIVATE) FUNCTION PROTOTYPES:
-int const_args_link_init(int gpu_beg, int gpu_end);
-int ab_get_2d_pos(ab_conf_t ab_conf, int entry_num, int *level, int *offset);
-int ab_get_1d_pos(ab_conf_t ab_conf, int level, int offset);
-int ab_get_parent(ab_conf_t ab_conf, int level, int offset);
-int ab_get_1st_child(ab_conf_t ab_conf, int level, int offset);
-size_t ab_get_offset(ab_conf_t ab_conf, int level, int offset, const size_t *blck_sizes);
-int get_buf_entry(ab_conf_t ab_conf, size_t bsize, void *arg_buf_ptr, size_t *ab_occ, size_t ab_occ_size,
-                  const size_t *blck_sizes, char **entry_ptr, int *entry_num);
-int free_buf_entry(ab_conf_t ab_conf, size_t *ab_occ, size_t ab_occ_size, const size_t *blck_sizes, int entry_num);
+static int const_args_link_init(int gpu_beg, int gpu_end);
+static int ab_get_2d_pos(ab_conf_t ab_conf, int entry_num, int *level, int *offset);
+static int ab_get_1d_pos(ab_conf_t ab_conf, int level, int offset);
+static int ab_get_parent(ab_conf_t ab_conf, int level, int offset);
+static int ab_get_1st_child(ab_conf_t ab_conf, int level, int offset);
+static size_t ab_get_offset(ab_conf_t ab_conf, int level, int offset, const size_t *blck_sizes);
+static int get_buf_entry(ab_conf_t ab_conf, size_t bsize, void *arg_buf_ptr, size_t *ab_occ, size_t ab_occ_size,
+                         const size_t *blck_sizes, char **entry_ptr, int *entry_num);
+static int free_buf_entry(ab_conf_t ab_conf, size_t *ab_occ, size_t ab_occ_size, const size_t *blck_sizes, int entry_num);
+//------------------------------------------------------------------------------------------------------------------------
 
-//-----------------------------------------------------------------------------------------------------------------
 //FUNCTION DEFINITIONS:
 char* ptr_offset(char *byte_ptr, size_t byte_offset){char *addr=&byte_ptr[byte_offset]; return addr;}
 
