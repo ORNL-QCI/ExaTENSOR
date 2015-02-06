@@ -1,5 +1,5 @@
 /** Tensor Algebra Library for NVidia GPUs (CUDA).
-REVISION: 2015/02/05
+REVISION: 2015/02/06
 Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
 Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
 
@@ -22,10 +22,8 @@ OPTIONS:
  # -DNO_BLAS: disables cuBLAS calls, they will be replaced by in-house routines;
  # -DDIL_DEBUG_GPU: collection of debugging information will be activated;
 NOTES:
- # Although the minimal required CUDA device compute capability is 1.1,
-   some parameters in "tensor_algebra.h" may be tuned for Kepler architecture,
-   thus a readjustment may be requried for lower than 3.5 compute capabilities;
- # cuBLAS.v2 is used when BLAS is enabled;
+ # Minimal required compute capability is 1.1;
+ # cuBLAS.v2 is required when BLAS is enabled;
  # Functions without underscores at the end of their names are blocking (Host) functions;
    Functions with one underscore at the end of their names are external non-blocking functions;
    Functions with two underscores at the end of their names are (non-blocking) CUDA kernels.
@@ -56,87 +54,26 @@ NOTES:
 
 //PARAMETERS:
 #define GPU_DEBUG_DUMP_SIZE 128 //size of the GPU debug dump (int array)
-
 //----------------------------------------------------------------------
-//FUNCTION PROTOTYPES (exported/imported functions):
+//FUNCTION PROTOTYPES:
+// IMPORTED:
 #ifdef __cplusplus
 extern "C" {
 #endif
-// Exported (public):
- int gpu_get_error_count();
- int gpu_get_debug_dump(int *dump);
- void gpu_set_event_policy(int alg);
- void gpu_set_transpose_algorithm(int alg);
- void gpu_set_matmult_algorithm(int alg);
- int encode_device_id(int dev_kind, int dev_num);
- int decode_device_id(int dev_id, int *dev_kind);
- int tensBlck_create(tensBlck_t **ctens);
- int tensBlck_destroy(tensBlck_t *ctens);
- int tensBlck_construct(tensBlck_t *ctens, int dev_kind, int dev_num, int data_kind, int trank,
-                        const int *dims, const int *divs, const int *grps, const int *prmn,
-                        void *addr_host, void *addr_gpu, int entry_host, int entry_gpu, int entry_const);
- int tensBlck_alloc(tensBlck_t *ctens, int dev_num, int data_kind, int trank, const int *dims);
- int tensBlck_free(tensBlck_t *ctens);
- int tensBlck_acc_id(const tensBlck_t *ctens, int *dev_kind, int *entry_gpu, int *entry_const, int *data_kind, int *there);
- int tensBlck_set_presence(tensBlck_t *ctens);
- int tensBlck_set_absence(tensBlck_t *ctens);
- int tensBlck_present(const tensBlck_t *ctens);
- int tensBlck_hab_free(tensBlck_t *ctens);
- size_t tensBlck_volume(const tensBlck_t *ctens);
- int cuda_task_create(cudaTask_t **cuda_task);
- int cuda_task_destroy(cudaTask_t *cuda_task);
- int cuda_task_gpu_id(const cudaTask_t *cuda_task);
- int cuda_task_status(cudaTask_t *cuda_task);
- int cuda_task_complete(cudaTask_t *cuda_task);
- int cuda_task_wait(cudaTask_t *cuda_task);
- float cuda_task_time(const cudaTask_t *cuda_task, float *in_copy, float *out_copy, float *comp);
- int init_gpus(int gpu_beg, int gpu_end);
- int free_gpus(int gpu_beg, int gpu_end);
- int gpu_is_mine(int gpu_num);
- int gpu_busy_least();
- int gpu_activate(int gpu_num);
- int gpu_put_arg(tensBlck_t *ctens);
- int gpu_get_arg(tensBlck_t *ctens);
- int gpu_put_arg_(tensBlck_t *ctens, cudaTask_t *cuda_task);
- int gpu_get_arg_(tensBlck_t *ctens, cudaTask_t *cuda_task);
- int gpu_array_2norm2_r4(size_t size, const float *arr, float *norm2);
- int gpu_array_2norm2_r8(size_t size, const double *arr, double *norm2);
- int gpu_matrix_multiply_tn_r4(size_t ll, size_t lr, size_t lc, const float *lmat, const float *rmat, float *dmat);
- int gpu_matrix_multiply_tn_r8(size_t ll, size_t lr, size_t lc, const double *lmat, const double *rmat, double *dmat);
- int gpu_tensor_block_init_(tensBlck_t *ctens, double val, int copy_back, cudaTask_t *cuda_task);
- int gpu_tensor_block_scale_(tensBlck_t *ctens, double val, int copy_back, cudaTask_t *cuda_task);
- int gpu_tensor_block_add_dlf_(tensBlck_t *ctens0, tensBlck_t *ctens1, double val, int copy_back, cudaTask_t *cuda_task);
- int gpu_tensor_block_copy_dlf(const int *dim_trn, tensBlck_t *tens_in, tensBlck_t *tens_out);
- int gpu_tensor_block_copy_dlf_(const int *dim_trn, tensBlck_t *tens_in, tensBlck_t *tens_out,
-                                int copy_back, cudaTask_t *cuda_task);
- int gpu_tensor_block_contract_dlf_(const int *cptrn, const tensBlck_t *ltens, const tensBlck_t *rtens,
-                                    tensBlck_t *dtens, int copy_back, cudaTask_t *cuda_task);
-// Imported:
- int get_buf_entry_host(size_t bsize, char **entry_ptr, int *entry_num);
- int free_buf_entry_host(int entry_num);
- int get_buf_entry_gpu(int gpu_num, size_t bsize, char **entry_ptr, int *entry_num);
- int free_buf_entry_gpu(int gpu_num, int entry_num);
- int const_args_entry_get(int gpu_num, int *entry_num);
- int const_args_entry_free(int gpu_num, int entry_num);
- int host_mem_alloc_pin(void **host_ptr, size_t tsize);
- int host_mem_free_pin(void *host_ptr);
- int host_mem_register(void *host_ptr, size_t tsize);
- int host_mem_unregister(void *host_ptr);
- int gpu_mem_alloc(void **dev_ptr, size_t tsize);
- int gpu_mem_free(void *dev_ptr);
  void get_contr_permutations(int lrank, int rrank, const int *cptrn, int *dprm, int *lprm, int *rprm,
                              int *ncd, int *nlu, int *nru, int *ierr);
 #ifdef __cplusplus
 }
 #endif
-// Local (private):
- int prmn_convert(int n, const int *o2n, int *n2o);
- int non_trivial_prmn(int n, const int *prm);
- int cuda_task_finalize(cudaTask_t *cuda_task, int err_code, int gpu_num);
- int cuda_task_record(cudaTask_t *cuda_task, int err_code, int gpu_num, cudaStream_t cuda_stream,
-          cudaEvent_t cuda_start, cudaEvent_t cuda_comput, cudaEvent_t cuda_output, cudaEvent_t cuda_finish,
-          int scr_entry_cnt, int *scr_entries);
- void limit_cuda_blocks2d(int max_blocks, int *bx, int *by);
+// LOCAL (PRIVATE):
+int prmn_convert(int n, const int *o2n, int *n2o);
+int non_trivial_prmn(int n, const int *prm);
+int cuda_task_finalize(cudaTask_t *cuda_task, int err_code, int gpu_num);
+int cuda_task_record(cudaTask_t *cuda_task, int err_code, int gpu_num, cudaStream_t cuda_stream,
+     cudaEvent_t cuda_start, cudaEvent_t cuda_comput, cudaEvent_t cuda_output, cudaEvent_t cuda_finish,
+     int scr_entry_cnt, int *scr_entries);
+void limit_cuda_blocks2d(int max_blocks, int *bx, int *by);
+// CUDA KERNELS:
 __global__ void gpu_array_2norm2_r4__(size_t arr_size, const float *arr, float *bnorm2);
 __global__ void gpu_array_2norm2_r8__(size_t arr_size, const double *arr, double *bnorm2);
 __global__ void gpu_array_init_r4__(size_t tsize, float *arr, float val);
@@ -218,7 +155,7 @@ __host__ int gpu_get_debug_dump(int *dump) //returns the debug dump content from
  if(err == cudaSuccess){return GPU_DEBUG_DUMP_SIZE;}else{return -1;}
 }
 
-__host__ int prmn_convert(int n, const int *o2n, int *n2o) //converts o2n into n2o
+__host__ static int prmn_convert(int n, const int *o2n, int *n2o) //converts o2n into n2o
 /** Both permutations are sign-free but numeration starts from 1. **/
 {
  int i,j;
@@ -230,7 +167,7 @@ __host__ int prmn_convert(int n, const int *o2n, int *n2o) //converts o2n into n
  return 0;
 }
 
-__host__ int non_trivial_prmn(int n, const int *prm) //returns 0 if the permutation is trivial, 1 otherwise
+__host__ static int non_trivial_prmn(int n, const int *prm) //returns 0 if the permutation is trivial, 1 otherwise
 /** The permutation is sign-free but numeration starts from 1. **/
 {
  int f=0;
@@ -563,13 +500,13 @@ __host__ int cuda_task_destroy(cudaTask_t *cuda_task)
  return err_code;
 }
 
-__host__ int cuda_task_finalize(cudaTask_t *cuda_task, int err_code, int gpu_num=-1)
+__host__ static int cuda_task_finalize(cudaTask_t *cuda_task, int err_code, int gpu_num=-1)
 /** Finalizes a CUDA task: gpu_num=-1: on Host; gpu_num>=0: on GPU#gpu_num. **/
 {if(cuda_task != NULL){cuda_task->task_error=err_code; cuda_task->gpu_id=gpu_num; return 0;}else{return 1;}}
 
-__host__ int cuda_task_record(cudaTask_t *cuda_task, int err_code, int gpu_num, cudaStream_t cuda_stream,
-                  cudaEvent_t cuda_start, cudaEvent_t cuda_comput, cudaEvent_t cuda_output, cudaEvent_t cuda_finish,
-                  int scr_entry_cnt, int *scr_entries)
+__host__ static int cuda_task_record(cudaTask_t *cuda_task, int err_code, int gpu_num, cudaStream_t cuda_stream,
+                     cudaEvent_t cuda_start, cudaEvent_t cuda_comput, cudaEvent_t cuda_output, cudaEvent_t cuda_finish,
+                     int scr_entry_cnt, int *scr_entries)
 /** Registers a CUDA task: Launch-error-free tasks are recorded with .task_error=-1 (in normal progress). **/
 {
  int i;
@@ -710,7 +647,7 @@ Also, in_copy is input copying time, out_copy is output copying time, and comp i
  }
 }
 
-__host__ void limit_cuda_blocks2d(int max_blocks, int *bx, int *by)
+__host__ static void limit_cuda_blocks2d(int max_blocks, int *bx, int *by)
 {
  double rdc = (double)max_blocks/((double)((*bx)*(*by)));
  if(rdc < 1.0){

@@ -1,6 +1,6 @@
 /** Explicit memory management for the GPU-enabled
-implementation of the tensor algebra library.
-REVISION: 2015/02/05
+implementation of the tensor algebra library (NV-TAL).
+REVISION: 2015/02/06
 Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
 Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
 
@@ -30,7 +30,7 @@ OPTIONS:
 #include "tensor_algebra.h"
 
 #define GPU_MEM_PART_USED 90    //percentage of free GPU global memory to be actually allocated for GPU argument buffers
-#define MEM_ALIGN 16            //memory alignment (in bytes) for argument buffers
+#define MEM_ALIGN 16            //memory alignment (in bytes) for argument buffers (>=16)
 #define BLCK_BUF_DEPTH_HOST 4   //number of distinct tensor block buffer levels on Host
 #define BLCK_BUF_TOP_HOST 3     //number of argument buffer entries of the largest size (level 0) on Host: multiple of 3
 #define BLCK_BUF_BRANCH_HOST 3  //branching factor for each subsequent buffer level on Host
@@ -65,56 +65,22 @@ static size_t *abg_occ[MAX_GPUS_PER_NODE]; //occupation status for each buffer e
 static size_t abh_occ_size=0; //total number of entries in the multi-level Host argument buffer occupancy table
 static size_t abg_occ_size[MAX_GPUS_PER_NODE]; //total numbers of entries in the multi-level GPUs argument buffer occupancy tables
 
-//--------------------------------------------
-//FUNCTION PROTOTYPES:
-#ifdef __cplusplus
-extern "C"{
-#endif
-// EXPORT:
- char* ptr_offset(char *byte_ptr, size_t byte_offset);
- int arg_buf_allocate(size_t *arg_buf_size, int *arg_max, int gpu_beg, int gpu_end);
- int arg_buf_deallocate(int gpu_beg, int gpu_end);
- int arg_buf_clean_host();
- int arg_buf_clean_gpu(int gpu_num);
- int get_blck_buf_sizes_host(size_t *blck_sizes);
- int get_blck_buf_sizes_gpu(int gpu_num, size_t *blck_sizes);
- int get_buf_entry_host(size_t bsize, char **entry_ptr, int *entry_num);
- int free_buf_entry_host(int entry_num);
- int get_buf_entry_gpu(int gpu_num, size_t bsize, char **entry_ptr, int *entry_num);
- int free_buf_entry_gpu(int gpu_num, int entry_num);
- int const_args_entry_get(int gpu_num, int *entry_num);
- int const_args_entry_free(int gpu_num, int entry_num);
-#ifndef NO_GPU
- int host_mem_alloc_pin(void **host_ptr, size_t tsize);
- int host_mem_free_pin(void *host_ptr);
- int host_mem_register(void *host_ptr, size_t tsize);
- int host_mem_unregister(void *host_ptr);
- int gpu_mem_alloc(void **dev_ptr, size_t tsize);
- int gpu_mem_free(void *dev_ptr);
-// IMPORT:
- int init_gpus(int gpu_beg, int gpu_end);
- int free_gpus(int gpu_beg, int gpu_end);
- int gpu_is_mine(int gpu_num);
-#endif
-#ifdef __cplusplus
-}
-#endif
-// LOCAL:
- int const_args_link_init(int gpu_beg, int gpu_end);
- int ab_get_2d_pos(ab_conf_t ab_conf, int entry_num, int *level, int *offset);
- int ab_get_1d_pos(ab_conf_t ab_conf, int level, int offset);
- int ab_get_parent(ab_conf_t ab_conf, int level, int offset);
- int ab_get_1st_child(ab_conf_t ab_conf, int level, int offset);
- size_t ab_get_offset(ab_conf_t ab_conf, int level, int offset, const size_t *blck_sizes);
- int get_buf_entry(ab_conf_t ab_conf, size_t bsize, void *arg_buf_ptr, size_t *ab_occ, size_t ab_occ_size,
-                   const size_t *blck_sizes, char **entry_ptr, int *entry_num);
- int free_buf_entry(ab_conf_t ab_conf, size_t *ab_occ, size_t ab_occ_size, const size_t *blck_sizes, int entry_num);
+//LOCAL (PRIVATE) FUNCTION PROTOTYPES:
+int const_args_link_init(int gpu_beg, int gpu_end);
+int ab_get_2d_pos(ab_conf_t ab_conf, int entry_num, int *level, int *offset);
+int ab_get_1d_pos(ab_conf_t ab_conf, int level, int offset);
+int ab_get_parent(ab_conf_t ab_conf, int level, int offset);
+int ab_get_1st_child(ab_conf_t ab_conf, int level, int offset);
+size_t ab_get_offset(ab_conf_t ab_conf, int level, int offset, const size_t *blck_sizes);
+int get_buf_entry(ab_conf_t ab_conf, size_t bsize, void *arg_buf_ptr, size_t *ab_occ, size_t ab_occ_size,
+                  const size_t *blck_sizes, char **entry_ptr, int *entry_num);
+int free_buf_entry(ab_conf_t ab_conf, size_t *ab_occ, size_t ab_occ_size, const size_t *blck_sizes, int entry_num);
 
-//--------------------------------------------------------------------------
-//FUNCTIONS:
+//-----------------------------------------------------------------------------------------------------------------
+//FUNCTION DEFINITIONS:
 char* ptr_offset(char *byte_ptr, size_t byte_offset){char *addr=&byte_ptr[byte_offset]; return addr;}
 
-int ab_get_2d_pos(ab_conf_t ab_conf, int entry_num, int *level, int *offset)
+static int ab_get_2d_pos(ab_conf_t ab_conf, int entry_num, int *level, int *offset)
 /** Given an argument buffer entry number, this function returns the
 corresponding buffer level and offset within that level **/
 {
@@ -131,7 +97,7 @@ corresponding buffer level and offset within that level **/
  }
 }
 
-int ab_get_1d_pos(ab_conf_t ab_conf, int level, int offset)
+static int ab_get_1d_pos(ab_conf_t ab_conf, int level, int offset)
 /** Given a buffer level and offset within it,
 this function returns the plain buffer entry number **/
 {
@@ -145,7 +111,7 @@ this function returns the plain buffer entry number **/
  }
 }
 
-int ab_get_parent(ab_conf_t ab_conf, int level, int offset)
+static int ab_get_parent(ab_conf_t ab_conf, int level, int offset)
 /** This function returns the offset of the parent of a given buffer entry {level, offset} **/
 {
  if(level >= 0 && level < ab_conf.buf_depth && offset >= 0 && ab_conf.buf_branch > 0){
@@ -155,7 +121,7 @@ int ab_get_parent(ab_conf_t ab_conf, int level, int offset)
  }
 }
 
-int ab_get_1st_child(ab_conf_t ab_conf, int level, int offset)
+static int ab_get_1st_child(ab_conf_t ab_conf, int level, int offset)
 {
 /** This function returns the offset of the 1st child for a given buffer entry {level, offset} **/
  if(level >= 0 && level < ab_conf.buf_depth && offset >= 0 && ab_conf.buf_branch > 0){
@@ -165,7 +131,7 @@ int ab_get_1st_child(ab_conf_t ab_conf, int level, int offset)
  }
 }
 
-size_t ab_get_offset(ab_conf_t ab_conf, int level, int offset, const size_t *blck_sizes)
+static size_t ab_get_offset(ab_conf_t ab_conf, int level, int offset, const size_t *blck_sizes)
 /** This function returns a byte offset in the argument buffer space
 corresponding to a given buffer entry {level, offset}.
 Note that the base address of the argument buffer must be added a posteriori!
@@ -365,8 +331,8 @@ int get_blck_buf_sizes_gpu(int gpu_num, size_t *blck_sizes)
  return BLCK_BUF_DEPTH_GPU;
 }
 
-int get_buf_entry(ab_conf_t ab_conf, size_t bsize, void *arg_buf_ptr, size_t *ab_occ, size_t ab_occ_size,
-                  const size_t *blck_sizes, char **entry_ptr, int *entry_num)
+static int get_buf_entry(ab_conf_t ab_conf, size_t bsize, void *arg_buf_ptr, size_t *ab_occ, size_t ab_occ_size,
+                         const size_t *blck_sizes, char **entry_ptr, int *entry_num)
 /** This function finds an appropriate argument buffer entry in any given argument buffer **/
 {
  int i,j,k,l,m,n;
@@ -417,7 +383,7 @@ int get_buf_entry(ab_conf_t ab_conf, size_t bsize, void *arg_buf_ptr, size_t *ab
  return 0;
 }
 
-int free_buf_entry(ab_conf_t ab_conf, size_t *ab_occ, size_t ab_occ_size, const size_t *blck_sizes, int entry_num)
+static int free_buf_entry(ab_conf_t ab_conf, size_t *ab_occ, size_t ab_occ_size, const size_t *blck_sizes, int entry_num)
 /** This function releases an argument buffer entry in any given argument buffer **/
 {
  int i,j,k,m;
@@ -498,7 +464,7 @@ INPUT:
  return err_code;
 }
 
-int const_args_link_init(int gpu_beg, int gpu_end)
+static int const_args_link_init(int gpu_beg, int gpu_end)
 /** This function initializes the linked list const_args_link[]
 for GPU constant memory buffers (for each GPU in the range [gpu_beg..gpu_end]) **/
 {
