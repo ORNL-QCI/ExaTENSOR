@@ -202,6 +202,7 @@ extern "C"{
  int cuda_task_status(cudaTask_t *cuda_task);
  int cuda_task_complete(cudaTask_t *cuda_task);
  int cuda_task_wait(cudaTask_t *cuda_task);
+ int cuda_tasks_wait(int num_tasks, cudaTask_t **cuda_tasks, int* task_stats);
  float cuda_task_time(const cudaTask_t *cuda_task, float *in_copy, float *out_copy, float *comp);
  int init_gpus(int gpu_beg, int gpu_end);
  int free_gpus(int gpu_beg, int gpu_end);

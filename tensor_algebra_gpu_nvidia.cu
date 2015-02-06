@@ -615,8 +615,49 @@ Other possible outputs: CUDA_TASK_EMPTY, CUDA_TASK_SCHEDULED, CUDA_TASK_COMPLETE
 }
 
 __host__ int cuda_task_wait(cudaTask_t *cuda_task)
-/** Waits on accomplishment of a CUDA task: Returns the output of cuda_task_complete(). **/
-{int i=CUDA_TASK_SCHEDULED; while(i == CUDA_TASK_SCHEDULED){i=cuda_task_complete(cuda_task);}; return i;}
+/** Waits on accomplishment of a CUDA task: Returns the output of cuda_task_complete().
+Possible values are CUDA_TASK_COMPLETED, CUDA_TASK_ERROR, CUDA_TASK_EMPTY. **/
+{
+ int i,j;
+ i=CUDA_TASK_EMPTY; j=1;
+ while(j>0){
+  i=cuda_task_complete(cuda_task);
+  if(i == CUDA_TASK_COMPLETED || i == CUDA_TASK_ERROR || i == CUDA_TASK_EMPTY) j--;
+ }
+ return i;
+}
+
+__host__ int cuda_tasks_wait(int num_tasks, cudaTask_t **cuda_tasks, int* task_stats)
+/** Waits upon completion of a series of CUDA tasks. Returns 0 on success. **/
+{
+ int i,j,n;
+ if(num_tasks >= 0){
+  if(num_tasks > 0){
+   if(cuda_tasks != NULL && task_stats != NULL){
+    for(i=0;i<num_tasks;i++){task_stats[i]=CUDA_TASK_EMPTY;}
+    n=num_tasks;
+    while(n>0){
+     for(i=0;i<num_tasks;i++){
+      j=task_stats[i];
+      if(j != CUDA_TASK_COMPLETED && j != CUDA_TASK_ERROR && j != CUDA_TASK_EMPTY){
+       if(cuda_tasks[i] != NULL){
+        j=cuda_task_complete(cuda_tasks[i]); task_stats[i]=j;
+        if(j == CUDA_TASK_COMPLETED || j == CUDA_TASK_ERROR || j == CUDA_TASK_EMPTY) n--;
+       }else{
+        return 1;
+       }
+      }
+     }
+    }
+   }else{
+    return 2;
+   }
+  }
+ }else{
+  return 3;
+ }
+ return 0;
+}
 
 __host__ float cuda_task_time(const cudaTask_t *cuda_task, float *in_copy, float *out_copy, float *comp)
 /** Returns the time (in seconds) the CUDA task took to complete (only when EVENT_RECORD != 0).
