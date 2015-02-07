@@ -619,7 +619,7 @@ __host__ int cuda_task_wait(cudaTask_t *cuda_task)
 Possible values are CUDA_TASK_COMPLETED, CUDA_TASK_ERROR, CUDA_TASK_EMPTY. **/
 {
  int i,j;
- i=CUDA_TASK_EMPTY; j=1;
+ i=CUDA_TASK_SCHEDULED; j=1;
  while(j>0){
   i=cuda_task_complete(cuda_task);
   if(i == CUDA_TASK_COMPLETED || i == CUDA_TASK_ERROR || i == CUDA_TASK_EMPTY) j--;
@@ -634,7 +634,7 @@ __host__ int cuda_tasks_wait(int num_tasks, cudaTask_t **cuda_tasks, int* task_s
  if(num_tasks >= 0){
   if(num_tasks > 0){
    if(cuda_tasks != NULL && task_stats != NULL){
-    for(i=0;i<num_tasks;i++){task_stats[i]=CUDA_TASK_EMPTY;}
+    for(i=0;i<num_tasks;i++){task_stats[i]=CUDA_TASK_SCHEDULED;}
     n=num_tasks;
     while(n>0){
      for(i=0;i<num_tasks;i++){
