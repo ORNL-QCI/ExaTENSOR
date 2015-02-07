@@ -1,5 +1,5 @@
 /** Tensor Algebra Library for NVidia GPUs (CUDA).
-REVISION: 2015/02/06
+REVISION: 2015/02/07
 Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
 Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
 
@@ -542,7 +542,7 @@ __host__ int cuda_task_gpu_id(const cudaTask_t *cuda_task){return cuda_task->gpu
 
 __host__ int cuda_task_status(cudaTask_t *cuda_task)
 /** Checks the status of a CUDA task. Possible status values are listed in
-tensor_algebra_gpu_nvidia.h and tensor_algebra_gpu_nvidia.inc: Keep them consistent! **/
+tensor_algebra.h and tensor_algebra.inc: Keep them consistent! **/
 {
  int task_stat,cur_gpu;
  cudaError_t err;
