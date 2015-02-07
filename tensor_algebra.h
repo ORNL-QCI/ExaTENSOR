@@ -52,8 +52,8 @@ NOTES:
 #define TENSOR_ALGEBRA_H
 
 //GLOBAL PARAMETERS:
-#define MAX_TENSOR_RANK 32         //max allowed tensor rank
-#define MAX_GPU_ARGS 128           //max total number of tensor arguments simultaneously residing on a GPU device
+#define MAX_TENSOR_RANK 32         //max allowed tensor rank: Must be multiple of 4
+#define MAX_GPU_ARGS 128           //max allowed number of tensor arguments simultaneously residing on a GPU: Must be multiple of 8
 #define MAX_SCR_ENTRY_COUNT 3      //max allowed number of additional GPU argument entries allocated per tensor operation
 
 //DEVICE KINDS:
