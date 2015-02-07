@@ -456,11 +456,12 @@ __host__ int cuda_task_create(cudaTask_t **cuda_task)
  return 0;
 }
 
-__host__ int cuda_task_destroy(cudaTask_t *cuda_task)
-/** Destroys an instance of cudaTask_t if the CUDA task has completed or empty. **/
+__host__ int cuda_task_clean(cudaTask_t *cuda_task)
+/** Cleans an existing cudaTask_t for reuse. **/
 {
  int i,j,cur_gpu,err_code;
  cudaError_t err;
+
  err_code=0;
  if(cuda_task != NULL){
   i=cuda_task_complete(cuda_task);
@@ -475,16 +476,61 @@ __host__ int cuda_task_destroy(cudaTask_t *cuda_task)
      err=cudaEventDestroy(cuda_task->task_start);
      err=cudaStreamDestroy(cuda_task->task_stream); if(err != cudaSuccess) err_code+=5;
     }else{
-     err_code+=7;
+     err_code+=20;
     }
     if(cuda_task->scr_entry_count <= MAX_SCR_ENTRY_COUNT){
      for(i=cuda_task->scr_entry_count-1;i>=0;i--){
-      j=free_buf_entry_gpu(cuda_task->gpu_id,cuda_task->scr_entry[i]); err_code+=j*10;
+      j=free_buf_entry_gpu(cuda_task->gpu_id,cuda_task->scr_entry[i]); err_code+=j*100;
      }
     }else{
      err_code+=10000;
     }
-    if(cur_gpu >= 0 && cur_gpu != cuda_task->gpu_id){err=cudaSetDevice(cur_gpu); if(err != cudaSuccess) err_code+=20000;}
+    if(cur_gpu >= 0 && cur_gpu != cuda_task->gpu_id){err=cudaSetDevice(cur_gpu); if(err != cudaSuccess) err_code+=30000;}
+   }else{
+    err_code+=50000;
+   }
+   cuda_task->task_error=-1; cuda_task->gpu_id=-1; cuda_task->scr_entry_count=0;
+  }else if(i == CUDA_TASK_EMPTY || i == CUDA_TASK_ERROR){ //empty task or cuda_task_complete() failed
+   cuda_task->task_error=-1; cuda_task->gpu_id=-1; cuda_task->scr_entry_count=0;
+  }else{ //task has not completed yet, thus cannot be destroyed
+   err_code+=100000;
+  }
+ }else{
+  err_code+=300000;
+ }
+ return err_code;
+}
+
+__host__ int cuda_task_destroy(cudaTask_t *cuda_task)
+/** Destroys an instance of cudaTask_t if the CUDA task has completed or empty. **/
+{
+ int i,j,cur_gpu,err_code;
+ cudaError_t err;
+
+ err_code=0;
+ if(cuda_task != NULL){
+  i=cuda_task_complete(cuda_task);
+  if(i == CUDA_TASK_COMPLETED){ //task has completed (successfully or not)
+   if(cuda_task->gpu_id >= 0 && cuda_task->gpu_id < MAX_GPUS_PER_NODE){
+    cur_gpu=-1; err=cudaGetDevice(&cur_gpu); if(err != cudaSuccess){cur_gpu=-1; err_code+=1;}
+    err=cudaSuccess; if(cur_gpu != cuda_task->gpu_id) err=cudaSetDevice(cuda_task->gpu_id);
+    if(err == cudaSuccess){
+     err=cudaEventDestroy(cuda_task->task_finish);
+     err=cudaEventDestroy(cuda_task->task_output);
+     err=cudaEventDestroy(cuda_task->task_comput);
+     err=cudaEventDestroy(cuda_task->task_start);
+     err=cudaStreamDestroy(cuda_task->task_stream); if(err != cudaSuccess) err_code+=5;
+    }else{
+     err_code+=20;
+    }
+    if(cuda_task->scr_entry_count <= MAX_SCR_ENTRY_COUNT){
+     for(i=cuda_task->scr_entry_count-1;i>=0;i--){
+      j=free_buf_entry_gpu(cuda_task->gpu_id,cuda_task->scr_entry[i]); err_code+=j*100;
+     }
+    }else{
+     err_code+=10000;
+    }
+    if(cur_gpu >= 0 && cur_gpu != cuda_task->gpu_id){err=cudaSetDevice(cur_gpu); if(err != cudaSuccess) err_code+=30000;}
    }else{
     err_code+=50000;
    }

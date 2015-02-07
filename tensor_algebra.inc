@@ -7,7 +7,7 @@
 !DIR$ ATTRIBUTES ALIGN:128:: max_tensor_rank,max_tensor_operands
 
 !DEVICE KINDS (keep consistent with tensor_algebra_gpu_nvidia.h):
-        integer(C_INT), parameter:: MAX_GPUS_PER_NODE=16  !max number of Nvidia GPUs on a node
+        integer(C_INT), parameter:: MAX_GPUS_PER_NODE=8   !max number of NVidia GPUs on a node
         integer(C_INT), parameter:: MAX_MICS_PER_NODE=8   !max number of Intel MICs on a node
         integer(C_INT), parameter:: MAX_AMDS_PER_NODE=8   !max number of AMD GPUs on a node
         integer(C_INT), parameter:: DEV_HOST=0

@@ -197,6 +197,7 @@ extern "C"{
  int tensBlck_hab_free(tensBlck_t *ctens);
  size_t tensBlck_volume(const tensBlck_t *ctens);
  int cuda_task_create(cudaTask_t **cuda_task);
+ int cuda_task_clean(cudaTask_t *cuda_task);
  int cuda_task_destroy(cudaTask_t *cuda_task);
  int cuda_task_gpu_id(const cudaTask_t *cuda_task);
  int cuda_task_status(cudaTask_t *cuda_task);
