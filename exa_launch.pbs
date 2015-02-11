@@ -38,4 +38,4 @@ export CRAY_OMP_CHECK_AFFINITY=TRUE                 #optional (CRAY only: shows 
 cd $PBS_O_WORKDIR
 rm *.tmp *.log *.out *.x
 cp $QFORCE_PATH/qforce.v13.01.x ./
-aprun -n $QF_NUM_PROCS -N $QF_PROCS_PER_NODE -d QF_CORES_PER_PROC -cc 0,2,4,6,8,10,12,14,1,3,5,7,9,11,13,15 ./qforce.v13.01.x > qforce.log
+aprun -n $QF_NUM_PROCS -N $QF_PROCS_PER_NODE -d $QF_CORES_PER_PROC -cc 0,2,4,6,8,10,12,14,1,3,5,7,9,11,13,15 ./qforce.v13.01.x > qforce.log
