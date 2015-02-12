@@ -1,5 +1,5 @@
 /** Tensor Algebra Library for NVidia GPUs (CUDA).
-REVISION: 2015/02/07
+REVISION: 2015/02/12
 Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
 Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
 
@@ -1167,8 +1167,8 @@ All matrices are in Host memory. Executed on the currently set GPU device. **/
   err=cudaMemcpy((void*)lptr,(void*)lmat,lsize,cudaMemcpyHostToDevice); if(err != cudaSuccess) return 5;
   err=cudaMemcpy((void*)rptr,(void*)rmat,rsize,cudaMemcpyHostToDevice); if(err != cudaSuccess) return 6;
   err_code=gpu_get_error_count();
-  bx=1+(ll-1)/MAT_MULT_TILE_DIM; by=1+(lr-1)/MAT_MULT_TILE_DIM; limit_cuda_blocks2d(MAX_CUDA_BLOCKS,&bx,&by);
-  dim3 blcks(bx,by); dim3 thrds(MAT_MULT_TILE_DIM,MAT_MULT_TILE_DIM);
+  bx=1+(ll-1)/MAT_MULT_TILE_DIMX; by=1+(lr-1)/MAT_MULT_TILE_DIMY; limit_cuda_blocks2d(MAX_CUDA_BLOCKS,&bx,&by);
+  dim3 blcks(bx,by); dim3 thrds(MAT_MULT_TILE_DIMX,MAT_MULT_TILE_DIMY);
 //printf("\n#DEBUG(tensor_algebra_gpu_nvidia:gpu_matrix_multiply_tn_r4): Running GPU kernel ..."); //debug
   gpu_matrix_multiply_tn_r4__<<<blcks,thrds>>>(ll,lr,lc,lptr,rptr,dptr);
   err=cudaDeviceSynchronize(); if(err != cudaSuccess) return 7;
@@ -1213,8 +1213,8 @@ All matrices are in Host memory. Executed on the currently set GPU device. **/
   err=cudaMemcpy((void*)lptr,(void*)lmat,lsize,cudaMemcpyHostToDevice); if(err != cudaSuccess) return 5;
   err=cudaMemcpy((void*)rptr,(void*)rmat,rsize,cudaMemcpyHostToDevice); if(err != cudaSuccess) return 6;
   err_code=gpu_get_error_count();
-  bx=1+(ll-1)/MAT_MULT_TILE_DIM; by=1+(lr-1)/MAT_MULT_TILE_DIM; limit_cuda_blocks2d(MAX_CUDA_BLOCKS,&bx,&by);
-  dim3 blcks(bx,by); dim3 thrds(MAT_MULT_TILE_DIM,MAT_MULT_TILE_DIM);
+  bx=1+(ll-1)/MAT_MULT_TILE_DIMX; by=1+(lr-1)/MAT_MULT_TILE_DIMY; limit_cuda_blocks2d(MAX_CUDA_BLOCKS,&bx,&by);
+  dim3 blcks(bx,by); dim3 thrds(MAT_MULT_TILE_DIMX,MAT_MULT_TILE_DIMY);
 //printf("\n#DEBUG(tensor_algebra_gpu_nvidia:gpu_matrix_multiply_tn_r8): Running GPU kernel ..."); //debug
   gpu_matrix_multiply_tn_r8__<<<blcks,thrds>>>(ll,lr,lc,lptr,rptr,dptr);
   err=cudaDeviceSynchronize(); if(err != cudaSuccess) return 7;
@@ -2473,9 +2473,9 @@ NOTES:
        err=cudaSetDevice(gpu_num); return 64;
       }
      }else{
-      bx=1+(ll-1)/MAT_MULT_TILE_DIM; by=1+(lr-1)/MAT_MULT_TILE_DIM; limit_cuda_blocks2d(MAX_CUDA_BLOCKS,&bx,&by);
-//    printf("\n#DEBUG(): CUDA exec conf: %d %d %d %d\n",bx,by,MAT_MULT_TILE_DIM,MAT_MULT_TILE_DIM); //debug
-      dim3 blcks(bx,by); dim3 thrds(MAT_MULT_TILE_DIM,MAT_MULT_TILE_DIM);
+      bx=1+(ll-1)/MAT_MULT_TILE_DIMX; by=1+(lr-1)/MAT_MULT_TILE_DIMY; limit_cuda_blocks2d(MAX_CUDA_BLOCKS,&bx,&by);
+//    printf("\n#DEBUG(): CUDA exec conf: %d %d %d %d\n",bx,by,MAT_MULT_TILE_DIMX,MAT_MULT_TILE_DIMY); //debug
+      dim3 blcks(bx,by); dim3 thrds(MAT_MULT_TILE_DIMX,MAT_MULT_TILE_DIMY);
       switch(dtens->data_kind){
        case R4:
         gpu_matrix_multiply_tn_r4__<<<blcks,thrds,0,cuda_stream>>>(ll,lr,lc,(float*)larg,(float*)rarg,(float*)darg);
@@ -2489,9 +2489,9 @@ NOTES:
       }
      }
 #else
-     bx=1+(ll-1)/MAT_MULT_TILE_DIM; by=1+(lr-1)/MAT_MULT_TILE_DIM; limit_cuda_blocks2d(MAX_CUDA_BLOCKS,&bx,&by);
-//   printf("\n#DEBUG(): CUDA exec conf: %d %d %d %d\n",bx,by,MAT_MULT_TILE_DIM,MAT_MULT_TILE_DIM); //debug
-     dim3 blcks(bx,by); dim3 thrds(MAT_MULT_TILE_DIM,MAT_MULT_TILE_DIM);
+     bx=1+(ll-1)/MAT_MULT_TILE_DIMX; by=1+(lr-1)/MAT_MULT_TILE_DIMY; limit_cuda_blocks2d(MAX_CUDA_BLOCKS,&bx,&by);
+//   printf("\n#DEBUG(): CUDA exec conf: %d %d %d %d\n",bx,by,MAT_MULT_TILE_DIMX,MAT_MULT_TILE_DIMY); //debug
+     dim3 blcks(bx,by); dim3 thrds(MAT_MULT_TILE_DIMX,MAT_MULT_TILE_DIMY);
      switch(dtens->data_kind){
       case R4:
        gpu_matrix_multiply_tn_r4__<<<blcks,thrds,0,cuda_stream>>>(ll,lr,lc,(float*)larg,(float*)rarg,(float*)darg);
@@ -3626,31 +3626,31 @@ __global__ void gpu_matrix_multiply_tn_r4__(size_t ll, size_t lr, size_t lc, con
                                             const float* __restrict__ arg2, float* __restrict__ arg0)
 /** arg0(0:ll-1,0:lr-1)+=arg1(0:lc-1,0:ll-1)*arg2(0:lc-1,0:lr-1)
 NOTES:
- # Thread block dimensions (.x and .y) must be equal to MAT_MULT_TILE_DIM.
+ # Thread block dimensions (.x and .y) must be equal to MAT_MULT_TILE_DIM(X,Y), respectively.
 **/
 {
- __shared__ float buf1[MAT_MULT_TILE_DIM+1][MAT_MULT_TILE_DIM+1],buf2[MAT_MULT_TILE_DIM+1][MAT_MULT_TILE_DIM+1];
+ __shared__ float buf1[MAT_MULT_TILE_DIMY+1][MAT_MULT_TILE_DIMY+1],buf2[MAT_MULT_TILE_DIMY+1][MAT_MULT_TILE_DIMY+1];
  size_t k,_col,_row,_col_base,_row_base;
  int i,j,l,m;
  float _val;
 
- if(lc > 0 && ll > 0 && lr > 0 && blockDim.x == MAT_MULT_TILE_DIM && blockDim.y == MAT_MULT_TILE_DIM){
+ if(lc > 0 && ll > 0 && lr > 0 && blockDim.x == MAT_MULT_TILE_DIMY && blockDim.y == MAT_MULT_TILE_DIMY){
   _val=0.0f; j=threadIdx.y; i=threadIdx.x;
-  _col_base=blockIdx.y*MAT_MULT_TILE_DIM;
+  _col_base=blockIdx.y*MAT_MULT_TILE_DIMY;
   while(_col_base < lr){
-   _row_base=blockIdx.x*MAT_MULT_TILE_DIM;
+   _row_base=blockIdx.x*MAT_MULT_TILE_DIMY;
    while(_row_base < ll){
-    for(k=0;k<lc;k+=MAT_MULT_TILE_DIM){
+    for(k=0;k<lc;k+=MAT_MULT_TILE_DIMY){
      _col=_col_base+j; _row=_row_base+j;
 // Load two blocks into shared memory:
-     if(k+MAT_MULT_TILE_DIM > lc){
+     if(k+MAT_MULT_TILE_DIMY > lc){
       m=lc-k;
       if(i < m){ //(k+i)<lc
        if(_row < ll){buf1[j][i]=arg1[_row*lc+(k+i)];} // Load a block of the 1st argument into the shared memory
        if(_col < lr){buf2[j][i]=arg2[_col*lc+(k+i)];} // Load a block of the 2nd argument into the shared memory
       }
      }else{
-      m=MAT_MULT_TILE_DIM;
+      m=MAT_MULT_TILE_DIMY;
       if(_row < ll){buf1[j][i]=arg1[_row*lc+(k+i)];} // Load a block of the 1st argument into the shared memory
       if(_col < lr){buf2[j][i]=arg2[_col*lc+(k+i)];} // Load a block of the 2nd argument into the shared memory
      }
@@ -3666,9 +3666,9 @@ NOTES:
      }
      __syncthreads();
     }
-    _row_base+=gridDim.x*MAT_MULT_TILE_DIM;
+    _row_base+=gridDim.x*MAT_MULT_TILE_DIMY;
    }
-   _col_base+=gridDim.y*MAT_MULT_TILE_DIM;
+   _col_base+=gridDim.y*MAT_MULT_TILE_DIMY;
   }
  }else{
   if(threadIdx.x == 0) i=atomicAdd(&gpu_error_count,1); //record an error (for each thread block)
@@ -3681,32 +3681,29 @@ __global__ void gpu_matrix_multiply_tn_r8__(size_t ll, size_t lr, size_t lc, con
                                             const double* __restrict__ arg2, double* __restrict__ arg0)
 /** arg0(0:ll-1,0:lr-1)+=arg1(0:lc-1,0:ll-1)*arg2(0:lc-1,0:lr-1)
 NOTES:
- # Thread block dimensions (.x and .y) must be equal to MAT_MULT_TILE_DIM.
+ # Thread block dimensions (.x and .y) must be equal to MAT_MULT_TILE_DIM(X,Y), respectively.
 **/
 {
- __shared__ double buf1[MAT_MULT_TILE_DIM+1][MAT_MULT_TILE_DIM+1],buf2[MAT_MULT_TILE_DIM+1][MAT_MULT_TILE_DIM+1];
+ __shared__ double buf1[MAT_MULT_TILE_DIMX+1][MAT_MULT_TILE_DIMX+1],buf2[MAT_MULT_TILE_DIMY+1][MAT_MULT_TILE_DIMX+1];
  size_t k,_col,_row,_col_base,_row_base;
  int i,j,l,m;
  double _val;
 
- if(lc > 0 && ll > 0 && lr > 0 && blockDim.x == MAT_MULT_TILE_DIM && blockDim.y == MAT_MULT_TILE_DIM){
+ if(lc > 0 && ll > 0 && lr > 0 && blockDim.x == MAT_MULT_TILE_DIMX && blockDim.y == MAT_MULT_TILE_DIMY){
   _val=0.0; j=threadIdx.y; i=threadIdx.x;
-  _col_base=blockIdx.y*MAT_MULT_TILE_DIM;
+  _col_base=blockIdx.y*MAT_MULT_TILE_DIMY;
   while(_col_base < lr){
-   _row_base=blockIdx.x*MAT_MULT_TILE_DIM;
+   _row_base=blockIdx.x*MAT_MULT_TILE_DIMX;
    while(_row_base < ll){
-    for(k=0;k<lc;k+=MAT_MULT_TILE_DIM){
+    for(k=0;k<lc;k+=MAT_MULT_TILE_DIMX){
      _col=_col_base+j; _row=_row_base+j;
 // Load two blocks into shared memory:
-     if(k+MAT_MULT_TILE_DIM > lc){
-      m=lc-k;
-      if(i < m){ //(k+i)<lc
+     if(k+MAT_MULT_TILE_DIMX > lc){m=lc-k;}else{m=MAT_MULT_TILE_DIMX;}
+     if(i < m){ //(k+i)<lc
+      for(l=0;l<MAT_MULT_TILE_DIMX;l+=MAT_MULT_TILE_DIMY){
        if(_row < ll){buf1[j][i]=arg1[_row*lc+(k+i)];} // Load a block of the 1st argument into the shared memory
-       if(_col < lr){buf2[j][i]=arg2[_col*lc+(k+i)];} // Load a block of the 2nd argument into the shared memory
+       _row+=MAT_MULT_TILE_DIMY;
       }
-     }else{
-      m=MAT_MULT_TILE_DIM;
-      if(_row < ll){buf1[j][i]=arg1[_row*lc+(k+i)];} // Load a block of the 1st argument into the shared memory
       if(_col < lr){buf2[j][i]=arg2[_col*lc+(k+i)];} // Load a block of the 2nd argument into the shared memory
      }
      __syncthreads();
@@ -3721,9 +3718,9 @@ NOTES:
      }
      __syncthreads();
     }
-    _row_base+=gridDim.x*MAT_MULT_TILE_DIM;
+    _row_base+=gridDim.x*MAT_MULT_TILE_DIMX;
    }
-   _col_base+=gridDim.y*MAT_MULT_TILE_DIM;
+   _col_base+=gridDim.y*MAT_MULT_TILE_DIMY;
   }
  }else{
   if(threadIdx.x == 0) i=atomicAdd(&gpu_error_count,1); //record an error (for each thread block)

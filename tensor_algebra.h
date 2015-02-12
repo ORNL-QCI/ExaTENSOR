@@ -1,6 +1,6 @@
 /** Parameters, derived types, and function prototypes used
     in tensor_algebra_gpu_nvidia.cu, c_proc_bufs.cu (NV-TAL).
-REVISION: 2015/02/06
+REVISION: 2015/02/11
 Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
 Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
 
@@ -75,7 +75,12 @@ NOTES:
 #define TENS_TRANSP_BUF_SIZE 1536  //buffer size (elements) for <gpu_tensor_block_copy_dlf_XX__>
 #endif
 #define TENS_TRANSP_TAB_SIZE 69    //look up table size (integers) for <gpu_tensor_block_copy_dlf_XX__>
-#define MAT_MULT_TILE_DIM 16       //tile dimension size for <gpu_matrix_multiply_tn_XX__>
+#define MAT_MULT_TILE_DIMY 16      //Y tile dimension size for <gpu_matrix_multiply_tn_XX__>
+#if __CUDA_ARCH__ >= 200
+#define MAT_MULT_TILE_DIMX 32      //X tile dimension size for <gpu_matrix_multiply_tn_XX__>
+#else
+#define MAT_MULT_TILE_DIMX 16      //X tile dimension size for <gpu_matrix_multiply_tn_XX__>
+#endif
 #define THRDS_ARRAY_PRODUCT 256    //threads per block for <gpu_array_product_XX__>
 #define THRDS_ARRAY_NORM2 256      //threads per block for <gpu_array_2norm2_XX__>
 #define THRDS_ARRAY_INIT 256       //threads per block for <gpu_array_init_XX__>
