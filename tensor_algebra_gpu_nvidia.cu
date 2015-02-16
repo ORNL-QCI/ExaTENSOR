@@ -1,5 +1,5 @@
 /** Tensor Algebra Library for NVidia GPUs (CUDA).
-REVISION: 2015/02/12
+REVISION: 2015/02/16
 Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
 Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
 
@@ -3671,7 +3671,7 @@ NOTES:
    _col_base+=gridDim.y*MAT_MULT_TILE_DIMY;
   }
  }else{
-  if(threadIdx.x == 0) i=atomicAdd(&gpu_error_count,1); //record an error (for each thread block)
+  if(threadIdx.x == 0 && threadIdx.y == 0) i=atomicAdd(&gpu_error_count,1); //record an error (for each thread block)
  }
  return;
 }
@@ -3701,7 +3701,7 @@ NOTES:
      if(k+MAT_MULT_TILE_DIMX > lc){m=lc-k;}else{m=MAT_MULT_TILE_DIMX;}
      if(i < m){ //(k+i)<lc
       for(l=0;l<MAT_MULT_TILE_DIMX;l+=MAT_MULT_TILE_DIMY){
-       if(_row < ll){buf1[j][i]=arg1[_row*lc+(k+i)];} // Load a block of the 1st argument into the shared memory
+       if(_row < ll){buf1[l+j][i]=arg1[_row*lc+(k+i)];} // Load a block of the 1st argument into the shared memory
        _row+=MAT_MULT_TILE_DIMY;
       }
       if(_col < lr){buf2[j][i]=arg2[_col*lc+(k+i)];} // Load a block of the 2nd argument into the shared memory
@@ -3723,7 +3723,7 @@ NOTES:
    _col_base+=gridDim.y*MAT_MULT_TILE_DIMY;
   }
  }else{
-  if(threadIdx.x == 0) i=atomicAdd(&gpu_error_count,1); //record an error (for each thread block)
+  if(threadIdx.x == 0 && threadIdx.y == 0) i=atomicAdd(&gpu_error_count,1); //record an error (for each thread block)
  }
  return;
 }
