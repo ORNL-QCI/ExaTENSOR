@@ -1,13 +1,14 @@
-#####################PBS VARIABLES########
+#########PBS VARIABLES########
 #PBS -S /bin/bash
 #PBS -A STF006
-#PBS -l walltime=00:20:00,nodes=1
+#PBS -l walltime=00:20:00
+#PBS -l nodes=1
 #PBS -N ExaTensor
 #PBS -q debug
-##########################################
+##############################
 source $MODULESHOME/init/bash
 module load craype-hugepages2M
-##########################################
+##############################
 export QFORCE_PATH=/autofs/na3_home1/div/src/ExaTensor #mandatory
 export QF_NUM_PROCS=1                               #mandatory
 export QF_PROCS_PER_NODE=1                          #mandatory
