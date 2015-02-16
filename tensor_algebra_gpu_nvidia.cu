@@ -3685,7 +3685,7 @@ NOTES:
  # Thread block dimensions (.x and .y) must be equal to MAT_MULT_TILE_DIM(X,Y), respectively.
 **/
 {
- __shared__ double buf1[MAT_MULT_TILE_DIMX][MAT_MULT_TILE_DIMX],buf2[MAT_MULT_TILE_DIMY][MAT_MULT_TILE_DIMX];
+ __shared__ double buf1[MAT_MULT_TILE_DIMX+1][MAT_MULT_TILE_DIMX+1],buf2[MAT_MULT_TILE_DIMY+1][MAT_MULT_TILE_DIMX+1];
  size_t k,_col,_row,_col_base,_row_base;
  int i,j,l,m;
  double _val;
