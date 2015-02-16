@@ -18,9 +18,10 @@ along with this program; if not, write to the Free Software
 Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 -------------------------------------------------------------------------------
 OPTIONS:
- # -DNO_GPU: disables GPU usage (this source file will become empty);
- # -DNO_BLAS: disables cuBLAS calls, they will be replaced by in-house routines;
- # -DDIL_DEBUG_GPU: collection of debugging information will be activated;
+ # -D CUDA_ARCH=350: target device compute capability (default is 130);
+ # -D NO_GPU: disables GPU usage (this source file will become empty);
+ # -D NO_BLAS: disables cuBLAS calls, they will be replaced by in-house routines;
+ # -D DEBUG_GPU: collection of debugging information will be activated;
 NOTES:
  # Minimal required compute capability is 1.1;
  # cuBLAS.v2 is required when BLAS is enabled;
@@ -2960,7 +2961,7 @@ NOTES:
    err_code=1+2*blockDim.x%warpSize;
   }
  } //endif: Master thread.
-#ifdef DIL_DEBUG_GPU
+#ifdef DEBUG_GPU
 //DEBUG RECORD begin:
  if(blockIdx.x == 0 && threadIdx.x == 0){
   j=0; gpu_debug_dump[j++]=dim_num;
@@ -3295,7 +3296,7 @@ REGISTER USE =
    err_code=1+2*blockDim.x%warpSize;
   }
  } //endif: Master thread.
-#ifdef DIL_DEBUG_GPU
+#ifdef DEBUG_GPU
 //DEBUG RECORD begin:
  if(blockIdx.x == 0 && threadIdx.x == 0){
   j=0; gpu_debug_dump[j++]=dim_num;
@@ -3501,7 +3502,7 @@ OUTPUT:
     }
    }
   }
-#ifdef DIL_DEBUG_GPU
+#ifdef DEBUG_GPU
 //DEBUG RECORD begin:
   if(blockIdx.x == 0 && threadIdx.x == 0){
    j=0; gpu_debug_dump[j++]=dim_num;
@@ -3591,7 +3592,7 @@ OUTPUT:
     }
    }
   }
-#ifdef DIL_DEBUG_GPU
+#ifdef DEBUG_GPU
 //DEBUG RECORD begin:
   if(blockIdx.x == 0 && threadIdx.x == 0){
    j=0; gpu_debug_dump[j++]=dim_num;
@@ -3684,7 +3685,7 @@ NOTES:
  # Thread block dimensions (.x and .y) must be equal to MAT_MULT_TILE_DIM(X,Y), respectively.
 **/
 {
- __shared__ double buf1[MAT_MULT_TILE_DIMX+1][MAT_MULT_TILE_DIMX+1],buf2[MAT_MULT_TILE_DIMY+1][MAT_MULT_TILE_DIMX+1];
+ __shared__ double buf1[MAT_MULT_TILE_DIMX][MAT_MULT_TILE_DIMX],buf2[MAT_MULT_TILE_DIMY][MAT_MULT_TILE_DIMX];
  size_t k,_col,_row,_col_base,_row_base;
  int i,j,l,m;
  double _val;

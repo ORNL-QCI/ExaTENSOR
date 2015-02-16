@@ -19,9 +19,10 @@ along with this program; if not, write to the Free Software
 Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 -------------------------------------------------------------------------------
 PREPROCESSOR OPTIONS:
- # -DNO_GPU: disables GPU usage (CPU structures only).
- # -DNO_BLAS: cuBLAS calls will be replaced by in-house routines.
- # -DDIL_DEBUG_GPU: collection of debugging information will be activated.
+ # -D CUDA_ARCH=350: target device compute capability (default is 130);
+ # -D NO_GPU: disables GPU usage (CPU structures only).
+ # -D NO_BLAS: cuBLAS calls will be replaced by in-house routines.
+ # -D DEBUG_GPU: collection of debugging information will be activated.
 NOTES:
  # GPU_ID is a unique CUDA GPU ID given to a specific NVidia GPU present on the Host node:
     0<=GPU_ID<MAX_GPUS_PER_NODE; GPU_ID=-1 will refer to the (multi-)CPU Host.
@@ -82,9 +83,9 @@ NOTES:
 #define TENS_TRANSP_TAB_SIZE 69    //look up table size (integers) for <gpu_tensor_block_copy_dlf_XX__>
 #define MAT_MULT_TILE_DIMY 16      //Y tile dimension size for <gpu_matrix_multiply_tn_XX__>
 #if CUDA_ARCH >= 200
-#define MAT_MULT_TILE_DIMX 32      //X tile dimension size for <gpu_matrix_multiply_tn_XX__>
+#define MAT_MULT_TILE_DIMX 32      //X tile dimension size for <gpu_matrix_multiply_tn_XX__>: Must be multiple of MAT_MULT_TILE_DIMY
 #else
-#define MAT_MULT_TILE_DIMX 16      //X tile dimension size for <gpu_matrix_multiply_tn_XX__>
+#define MAT_MULT_TILE_DIMX 16      //X tile dimension size for <gpu_matrix_multiply_tn_XX__>: Must be multiple of MAT_MULT_TILE_DIMY
 #endif
 #define THRDS_ARRAY_PRODUCT 256    //threads per block for <gpu_array_product_XX__>
 #define THRDS_ARRAY_NORM2 256      //threads per block for <gpu_array_2norm2_XX__>

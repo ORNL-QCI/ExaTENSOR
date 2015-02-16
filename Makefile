@@ -6,28 +6,28 @@ CUDA_C = nvcc
 MPI_INC = -I.
 CUDA_INC = -I.
 CUDA_LINK = -lcudart -lcublas -L.
-CUDA_FLAGS_DEV = --compile -arch=sm_35 -g -G -DDEBUG
-CUDA_FLAGS_OPT = --compile -arch=sm_35 -O3
+CUDA_FLAGS_DEV = --compile -arch=sm_35 -D CUDA_ARCH=350 -g -G -D DEBUG_GPU
+CUDA_FLAGS_OPT = --compile -arch=sm_35 -D CUDA_ARCH=350 -O3
 CUDA_FLAGS = $(CUDA_FLAGS_OPT)
 LA_LINK_INTEL = -lmkl_core -lmkl_intel_thread -lmkl_intel_lp64 -lmkl_blas95_lp64 -lmkl_lapack95_lp64 -lrt
 LA_LINK_AMD = -lacml_mp -L/opt/acml/5.3.1/gfortran64_mp/lib
 LA_LINK_CRAY = " "
-LA_LINK = $(LA_LINK_AMD)
-CFLAGS_DEV = -c -g
-CFLAGS_OPT = -c -O3
+LA_LINK = $(LA_LINK_CRAY)
+CFLAGS_DEV = -c -D CUDA_ARCH=350 -g
+CFLAGS_OPT = -c -D CUDA_ARCH=350 -O3
 CFLAGS = $(CFLAGS_OPT)
-FFLAGS_DEV = -c -g
-FFLAGS_OPT = -c -O3
-FFLAGS_DEV_GNU = -c -g -fopenmp -fbacktrace -fcheck=bounds -fcheck=array-temps -fcheck=pointer
-FFLAGS_OPT_GNU = -c -O3 -fopenmp
-FFLAGS_DEV_PGI = -c -g -mp -Mcache_align -Mbounds -Mchkptr
-FFLAGS_OPT_PGI = -c -O3 -mp -Mcache_align
-FFLAGS_DEV_INTEL = -c -g -fpp -vec-threshold4 -vec-report2 -openmp -openmp-report2 -DUSE_MKL
-FFLAGS_OPT_INTEL = -c -O3 -fpp -vec-threshold4 -vec-report2 -openmp -openmp-report2 -DUSE_MKL
-FFLAGS = $(FFLAGS_OPT_GNU) -DNO_PHI
+FFLAGS_DEV = -c -D CUDA_ARCH=350 -g
+FFLAGS_OPT = -c -D CUDA_ARCH=350 -O3
+FFLAGS_DEV_GNU = $(FFLAGS_DEV) -fopenmp -fbacktrace -fcheck=bounds -fcheck=array-temps -fcheck=pointer -pg
+FFLAGS_OPT_GNU = $(FFLAGS_OPT) -fopenmp
+FFLAGS_DEV_PGI = $(FFLAGS_DEV) -mp -Mcache_align -Mbounds -Mchkptr
+FFLAGS_OPT_PGI = $(FFLAGS_OPT) -mp -Mcache_align
+FFLAGS_DEV_INTEL = $(FFLAGS_DEV) -fpp -vec-threshold4 -vec-report2 -openmp -openmp-report2 -D USE_MKL
+FFLAGS_OPT_INTEL = $(FFLAGS_OPT) -fpp -vec-threshold4 -vec-report2 -openmp -openmp-report2 -D USE_MKL
+FFLAGS = $(FFLAGS_OPT) -D NO_PHI
 LFLAGS_GNU = -lgomp
 LFLAGS_PGI = -lpthread
-LFLAGS = $(LFLAGS_GNU) $(LA_LINK) $(CUDA_LINK) -o
+LFLAGS = $(LA_LINK) $(CUDA_LINK) -o
 
 OBJS = stsubs.o combinatoric.o extern_names.o service.o lists.o dictionary.o timers.o \
 	symm_index.o tensor_algebra.o tensor_dil_omp.o tensor_algebra_intel_phi.o \
