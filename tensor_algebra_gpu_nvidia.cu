@@ -1,5 +1,5 @@
 /** Tensor Algebra Library for NVidia GPUs (CUDA).
-REVISION: 2015/02/16
+REVISION: 2015/03/15
 Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
 Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
 
@@ -23,7 +23,7 @@ OPTIONS:
  # -D NO_BLAS: disables cuBLAS calls, they will be replaced by in-house routines;
  # -D DEBUG_GPU: collection of debugging information will be activated;
 NOTES:
- # Minimal required compute capability is 1.1;
+ # Minimal required compute capability is 1.1 (1.3 for double precision);
  # cuBLAS.v2 is required when BLAS is enabled;
  # Functions without underscores at the end of their names are blocking (Host) functions;
    Functions with one underscore at the end of their names are external non-blocking functions;
@@ -33,10 +33,10 @@ NOTES:
    which, when set to zero, prevents the output data from being copied back from GPU to Host.
    Passing zero to <copy_back> must be done with care since the Host copy
    of the tensor data will become outdated that cannot be checked!
-   To restore coherence between the Host and GPU argument buffers,
+   To restore consistency between the Host and GPU argument buffers,
    a GPU argument entry has to be explictly fetched by Host (user responsibility).
  # Seems like cudaEventRecord() issued in different streams can serialize the stream
-   execution for some compute capabilities. EVENT_RECORD=0 will disable even recording.
+   execution for some compute capabilities. EVENT_RECORD=0 will disable event recording.
    If GPU timing is needed, event recording has to be enabled (EVENT_RECORD=1).
 **/
 
@@ -174,6 +174,19 @@ __host__ static int non_trivial_prmn(int n, const int *prm) //returns 0 if the p
  int f=0;
  for(int i=0;i<n;i++){if(prm[i] != i+1){f=1; break;}}
  return f;
+}
+
+__host__ int gpu_set_shmem_width(int width){
+//This function sets the GPU shared memory bank width (4 or 8 bytes).
+ cudaError_t cerr;
+ if(width == R8){
+  cerr=cudaDeviceSetSharedMemConfig(cudaSharedMemBankSizeEightByte);
+ }else if(width == R4){
+  cerr=cudaDeviceSetSharedMemConfig(cudaSharedMemBankSizeFourByte);
+ }else{
+  return 1;
+ }
+ return 0;
 }
 
 __host__ void gpu_set_event_policy(int alg) //turn on/off timing CUDA events (1/0) on current GPU
@@ -3728,5 +3741,5 @@ NOTES:
  }
  return;
 }
-
+//-D NO_GPU
 #endif

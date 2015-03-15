@@ -1,6 +1,6 @@
 /** Parameters, derived types, and function prototypes used
     in tensor_algebra_gpu_nvidia.cu, c_proc_bufs.cu (NV-TAL).
-REVISION: 2015/02/16
+REVISION: 2015/03/15
 Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
 Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
 
@@ -20,9 +20,9 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 -------------------------------------------------------------------------------
 PREPROCESSOR OPTIONS:
  # -D CUDA_ARCH=350: target device compute capability (default is 130);
- # -D NO_GPU: disables GPU usage (CPU structures only).
- # -D NO_BLAS: cuBLAS calls will be replaced by in-house routines.
- # -D DEBUG_GPU: collection of debugging information will be activated.
+ # -D NO_GPU: disables GPU usage (CPU structures only);
+ # -D NO_BLAS: cuBLAS calls will be replaced by in-house routines;
+ # -D DEBUG_GPU: collection of debugging information will be activated;
 NOTES:
  # GPU_ID is a unique CUDA GPU ID given to a specific NVidia GPU present on the Host node:
     0<=GPU_ID<MAX_GPUS_PER_NODE; GPU_ID=-1 will refer to the (multi-)CPU Host.
@@ -189,6 +189,7 @@ extern "C"{
  int gpu_mem_free(void *dev_ptr);
  int gpu_get_error_count();
  int gpu_get_debug_dump(int *dump);
+ int gpu_set_shmem_width(int width);
  void gpu_set_event_policy(int alg);
  void gpu_set_transpose_algorithm(int alg);
  void gpu_set_matmult_algorithm(int alg);
