@@ -3220,17 +3220,17 @@
         call tensor_block_create('(345,697)','r8',ftens(0),ierr,val_r8=0d0); if(ierr.ne.0) then; ierr=11; goto 999; endif
         call tensor_block_create('(37,345)','r8',ftens(1),ierr); if(ierr.ne.0) then; ierr=12; goto 999; endif
         call tensor_block_create('(37,697)','r8',ftens(2),ierr); if(ierr.ne.0) then; ierr=13; goto 999; endif
-        call tensor_block_create('(345,697)','r4',ftens(3),ierr,val_r4=0.0); if(ierr.ne.0) then; ierr=14; goto 999; endif
+        call tensor_block_create('(345,697)','r8',ftens(3),ierr,val_r8=0d0); if(ierr.ne.0) then; ierr=14; goto 999; endif
         call tensor_block_contract((/-1,1,-1,2/),ftens(1),ftens(2),ftens(0),ierr,'r8'); if(ierr.ne.0) then; ierr=15; goto 999; endif
-        call tensor_block_sync(ftens(0),'r8',ierr,'r4'); if(ierr.ne.0) then; ierr=16; goto 999; endif
-        call tensor_block_sync(ftens(1),'r8',ierr,'r4'); if(ierr.ne.0) then; ierr=17; goto 999; endif
-        call tensor_block_sync(ftens(2),'r8',ierr,'r4'); if(ierr.ne.0) then; ierr=18; goto 999; endif
-!        call tensor_block_print(jo_cp,'Matrix0:',ext_beg,ftens(0),ierr,'r4') !debug
-        err_code=gpu_matrix_multiply_tn_r4(345_CZ,697_CZ,37_CZ,ftens(1)%data_real4,ftens(2)%data_real4,ftens(3)%data_real4)
+        call tensor_block_sync(ftens(0),'r8',ierr,'r8'); if(ierr.ne.0) then; ierr=16; goto 999; endif
+        call tensor_block_sync(ftens(1),'r8',ierr,'r8'); if(ierr.ne.0) then; ierr=17; goto 999; endif
+        call tensor_block_sync(ftens(2),'r8',ierr,'r8'); if(ierr.ne.0) then; ierr=18; goto 999; endif
+!        call tensor_block_print(jo_cp,'Matrix0:',ext_beg,ftens(0),ierr,'r8') !debug
+        err_code=gpu_matrix_multiply_tn_r8(345_CZ,697_CZ,37_CZ,ftens(1)%data_real8,ftens(2)%data_real8,ftens(3)%data_real8)
         if(err_code.ne.0) then; write(jo_cp,*)'GPU ERROR ',err_code; ierr=19; goto 999; endif
         i1=gpu_get_error_count(); if(i1.ne.0) then; write(jo_cp,*)'GPU error count = ',i1; ierr=20; goto 999; endif
-!        call tensor_block_print(jo_cp,'Matrix3:',ext_beg,ftens(3),ierr,'r4') !debug
-        cmp=tensor_block_cmp(ftens(0),ftens(3),ierr,'r4',cmp_thresh=1d-5); if(ierr.ne.0) then; ierr=21; goto 999; endif
+!        call tensor_block_print(jo_cp,'Matrix3:',ext_beg,ftens(3),ierr,'r8') !debug
+        cmp=tensor_block_cmp(ftens(0),ftens(3),ierr,'r8',cmp_thresh=1d-5); if(ierr.ne.0) then; ierr=21; goto 999; endif
         if(.not.cmp) then; ierr=22; goto 999; endif
         call tensor_block_destroy(ftens(3),ierr); if(ierr.ne.0) then; ierr=23; goto 999; endif
         call tensor_block_destroy(ftens(2),ierr); if(ierr.ne.0) then; ierr=24; goto 999; endif
@@ -3247,16 +3247,16 @@
          tm0=thread_wtime()
          call tensor_block_copy(ftens(0),ftens(1),ierr,o2n); if(ierr.ne.0) then; ierr=29; goto 999; endif
 !         write(jo_cp,'("#DEBUG(c_process::c_proc_test): CPU tensor transpose time = ",F10.4)') thread_wtime()-tm0 !debug
-         call tensor_block_sync(ftens(0),'r8',ierr,'r4'); if(ierr.ne.0) then; ierr=30; goto 999; endif
-         call tensor_block_sync(ftens(1),'r8',ierr,'r4'); if(ierr.ne.0) then; ierr=31; goto 999; endif
-         call tens_blck_pack(ftens(1),'r4',pack_size(1),entry_ptr(1),entry_num(1),ierr)
+         call tensor_block_sync(ftens(0),'r8',ierr,'r8'); if(ierr.ne.0) then; ierr=30; goto 999; endif
+         call tensor_block_sync(ftens(1),'r8',ierr,'r8'); if(ierr.ne.0) then; ierr=31; goto 999; endif
+         call tens_blck_pack(ftens(1),'r8',pack_size(1),entry_ptr(1),entry_num(1),ierr)
          if(ierr.ne.0) then; ierr=32; goto 999; endif
          call tens_blck_unpack(ftens(2),entry_ptr(1),ierr); if(ierr.ne.0) then; ierr=33; goto 999; endif
-         cmp=tensor_block_cmp(ftens(1),ftens(2),ierr,'r4',cmp_thresh=1d-6); if(ierr.ne.0) then; ierr=34; goto 999; endif
+         cmp=tensor_block_cmp(ftens(1),ftens(2),ierr,'r8',cmp_thresh=1d-6); if(ierr.ne.0) then; ierr=34; goto 999; endif
          if(.not.cmp) then; ierr=35; goto 999; endif
          call tensor_block_destroy(ftens(2),ierr); if(ierr.ne.0) then; ierr=36; goto 999; endif
-         call tensor_block_create('(17,27,33,44)','r4',ftens(2),ierr,val_r4=0.0); if(ierr.ne.0) then; ierr=37; goto 999; endif
-         call tens_blck_pack(ftens(2),'r4',pack_size(2),entry_ptr(2),entry_num(2),ierr)
+         call tensor_block_create('(17,27,33,44)','r8',ftens(2),ierr,val_r8=0d0); if(ierr.ne.0) then; ierr=37; goto 999; endif
+         call tens_blck_pack(ftens(2),'r8',pack_size(2),entry_ptr(2),entry_num(2),ierr)
          if(ierr.ne.0) then; ierr=38; goto 999; endif
          call tens_blck_assoc(entry_ptr(1),entry_num(1),ierr,ctens=ctens(1),gpu_num=gpu_id)
          if(ierr.ne.0) then; ierr=39; goto 999; endif
@@ -3268,13 +3268,13 @@
 !         write(jo_cp,'("#DEBUG(c_process::c_proc_test): GPU tensor transpose time = ",F10.4)') thread_wtime()-tm0 !debug
          i1=gpu_get_error_count(); if(i1.ne.0) then; write(jo_cp,*)'GPU error count = ',i1; ierr=42; goto 999; endif
 !         call print_gpu_debug_dump(jo_cp) !debug
-         if(tensor_block_norm2(ftens(2),ierr,'r4').ne.0d0) then; ierr=43; goto 999; endif
+         if(tensor_block_norm2(ftens(2),ierr,'r8').ne.0d0) then; ierr=43; goto 999; endif
          call tens_blck_unpack(ftens(2),entry_ptr(2),ierr); if(ierr.ne.0) then; ierr=44; goto 999; endif
-!         write(jo_cp,*) tensor_block_norm2(ftens(0),ierr,'r4'),tensor_block_norm2(ftens(2),ierr,'r4') !debug
-!         call tensor_block_print(jo_cp,'Tensor0:',ext_beg,ftens(0),ierr,'r4') !debug
-!         call tensor_block_print(jo_cp,'Tensor1:',ext_beg,ftens(1),ierr,'r4') !debug
-!         call tensor_block_print(jo_cp,'Tensor2:',ext_beg,ftens(2),ierr,'r4') !debug
-         cmp=tensor_block_cmp(ftens(0),ftens(2),ierr,'r4',cmp_thresh=1d-5,diff_count=diffc)
+!         write(jo_cp,*) tensor_block_norm2(ftens(0),ierr,'r8'),tensor_block_norm2(ftens(2),ierr,'r8') !debug
+!         call tensor_block_print(jo_cp,'Tensor0:',ext_beg,ftens(0),ierr,'r8') !debug
+!         call tensor_block_print(jo_cp,'Tensor1:',ext_beg,ftens(1),ierr,'r8') !debug
+!         call tensor_block_print(jo_cp,'Tensor2:',ext_beg,ftens(2),ierr,'r8') !debug
+         cmp=tensor_block_cmp(ftens(0),ftens(2),ierr,'r8',cmp_thresh=1d-5,diff_count=diffc)
          if(ierr.ne.0) then; ierr=45; goto 999; endif
          if(.not.cmp) then; write(jo_cp,*)'DIFF COUNT = ',diffc; ierr=46; goto 999; endif
          call tens_blck_dissoc(ctens(2),ierr); if(ierr.ne.0) then; ierr=47; goto 999; endif
@@ -3287,23 +3287,23 @@
         enddo
 !TEST 4 (GPU: gpu_tensor_contraction):
         write(jo_cp,'("4 ")',advance='no')
-        call tensor_block_create('(3,4,31,2,37,8)','r4',ftens(0),ierr,val_r4=0.0); if(ierr.ne.0) then; ierr=54; goto 999; endif
-        call tensor_block_create('(2,31,7,8,11,29)','r4',ftens(1),ierr,val_r4=1.0); if(ierr.ne.0) then; ierr=55; goto 999; endif
-        call tensor_block_create('(11,37,4,7,29,3)','r4',ftens(2),ierr,val_r4=1.0); if(ierr.ne.0) then; ierr=56; goto 999; endif
-        call tensor_block_create('(3,4,31,2,37,8)','r4',ftens(3),ierr,val_r4=0.0); if(ierr.ne.0) then; ierr=57; goto 999; endif
-        call tensor_block_create('(2,31,7,8,11,29)','r4',ftens(4),ierr,val_r4=0.0); if(ierr.ne.0) then; ierr=58; goto 999; endif
-        call tensor_block_create('(11,37,4,7,29,3)','r4',ftens(5),ierr,val_r4=0.0); if(ierr.ne.0) then; ierr=59; goto 999; endif
-        call tensor_block_create('(3,4,31,2,37,8)','r4',ftens(6),ierr,val_r4=0.0); if(ierr.ne.0) then; ierr=60; goto 999; endif
+        call tensor_block_create('(3,4,31,2,37,8)','r8',ftens(0),ierr,val_r8=0d0); if(ierr.ne.0) then; ierr=54; goto 999; endif
+        call tensor_block_create('(2,31,7,8,11,29)','r8',ftens(1),ierr,val_r8=1d0); if(ierr.ne.0) then; ierr=55; goto 999; endif
+        call tensor_block_create('(11,37,4,7,29,3)','r8',ftens(2),ierr,val_r8=1d0); if(ierr.ne.0) then; ierr=56; goto 999; endif
+        call tensor_block_create('(3,4,31,2,37,8)','r8',ftens(3),ierr,val_r8=0d0); if(ierr.ne.0) then; ierr=57; goto 999; endif
+        call tensor_block_create('(2,31,7,8,11,29)','r8',ftens(4),ierr,val_r8=0d0); if(ierr.ne.0) then; ierr=58; goto 999; endif
+        call tensor_block_create('(11,37,4,7,29,3)','r8',ftens(5),ierr,val_r8=0d0); if(ierr.ne.0) then; ierr=59; goto 999; endif
+        call tensor_block_create('(3,4,31,2,37,8)','r8',ftens(6),ierr,val_r8=0d0); if(ierr.ne.0) then; ierr=60; goto 999; endif
         cptrn(1:12)=(/4,3,-4,6,-1,-5,-5,5,2,-3,-6,1/)
         tm0=thread_wtime()
-        call tensor_block_contract(cptrn,ftens(1),ftens(2),ftens(3),ierr,'r4'); if(ierr.ne.0) then; ierr=61; goto 999; endif
+        call tensor_block_contract(cptrn,ftens(1),ftens(2),ftens(3),ierr,'r8'); if(ierr.ne.0) then; ierr=61; goto 999; endif
 !       write(jo_cp,'("#DEBUG(c_process::c_proc_test): CPU tensor contraction time = ",F10.4)') thread_wtime()-tm0 !debug
-        call tens_blck_pack(ftens(0),'r4',pack_size(0),entry_ptr(0),entry_num(0),ierr); if(ierr.ne.0) then; ierr=62; goto 999; endif
-        call tens_blck_pack(ftens(1),'r4',pack_size(1),entry_ptr(1),entry_num(1),ierr); if(ierr.ne.0) then; ierr=63; goto 999; endif
-        call tens_blck_pack(ftens(2),'r4',pack_size(2),entry_ptr(2),entry_num(2),ierr); if(ierr.ne.0) then; ierr=64; goto 999; endif
-        call tens_blck_pack(ftens(4),'r4',pack_size(4),entry_ptr(4),entry_num(4),ierr); if(ierr.ne.0) then; ierr=65; goto 999; endif
-        call tens_blck_pack(ftens(5),'r4',pack_size(5),entry_ptr(5),entry_num(5),ierr); if(ierr.ne.0) then; ierr=66; goto 999; endif
-        call tens_blck_pack(ftens(6),'r4',pack_size(6),entry_ptr(6),entry_num(6),ierr); if(ierr.ne.0) then; ierr=67; goto 999; endif
+        call tens_blck_pack(ftens(0),'r8',pack_size(0),entry_ptr(0),entry_num(0),ierr); if(ierr.ne.0) then; ierr=62; goto 999; endif
+        call tens_blck_pack(ftens(1),'r8',pack_size(1),entry_ptr(1),entry_num(1),ierr); if(ierr.ne.0) then; ierr=63; goto 999; endif
+        call tens_blck_pack(ftens(2),'r8',pack_size(2),entry_ptr(2),entry_num(2),ierr); if(ierr.ne.0) then; ierr=64; goto 999; endif
+        call tens_blck_pack(ftens(4),'r8',pack_size(4),entry_ptr(4),entry_num(4),ierr); if(ierr.ne.0) then; ierr=65; goto 999; endif
+        call tens_blck_pack(ftens(5),'r8',pack_size(5),entry_ptr(5),entry_num(5),ierr); if(ierr.ne.0) then; ierr=66; goto 999; endif
+        call tens_blck_pack(ftens(6),'r8',pack_size(6),entry_ptr(6),entry_num(6),ierr); if(ierr.ne.0) then; ierr=67; goto 999; endif
         call tens_blck_assoc(entry_ptr(0),entry_num(0),ierr,ctens=ctens(0),gpu_num=gpu_id)
         if(ierr.ne.0) then; ierr=68; goto 999; endif
         call tens_blck_assoc(entry_ptr(1),entry_num(1),ierr,ctens=ctens(1),gpu_num=gpu_id)
@@ -3342,13 +3342,13 @@
         err_code=cuda_task_destroy(cuda_task(1)); if(err_code.ne.0) then; ierr=81; goto 999; endif
         call tens_blck_unpack(ftens(0),entry_ptr(0),ierr); if(ierr.ne.0) then; ierr=82; goto 999; endif
         call tens_blck_unpack(ftens(6),entry_ptr(6),ierr); if(ierr.ne.0) then; ierr=83; goto 999; endif
-!        write(jo_cp,*)'1-NORMS:',tensor_block_norm1(ftens(0),ierr,'r4'),tensor_block_norm1(ftens(3),ierr,'r4'), &
-!                      tensor_block_norm1(ftens(6),ierr,'r4') !debug
-!        write(jo_cp,*) ftens(0)%data_real4(0:5); write(jo_cp,*) ftens(3)%data_real4(0:5)
-!        write(jo_cp,*) ftens(6)%data_real4(0:5) !debug
-        cmp=tensor_block_cmp(ftens(0),ftens(3),ierr,'r4',.true.,1d-3,diffc); if(ierr.ne.0) then; ierr=84; goto 999; endif
+!        write(jo_cp,*)'1-NORMS:',tensor_block_norm1(ftens(0),ierr,'r8'),tensor_block_norm1(ftens(3),ierr,'r8'), &
+!                      tensor_block_norm1(ftens(6),ierr,'r8') !debug
+!        write(jo_cp,*) ftens(0)%data_real8(0:5); write(jo_cp,*) ftens(3)%data_real8(0:5)
+!        write(jo_cp,*) ftens(6)%data_real8(0:5) !debug
+        cmp=tensor_block_cmp(ftens(0),ftens(3),ierr,'r8',.true.,1d-3,diffc); if(ierr.ne.0) then; ierr=84; goto 999; endif
         if(.not.cmp) then; write(jo_cp,*)'DIFF(1) COUNT = ',diffc; ierr=85; goto 999; endif
-        cmp=tensor_block_cmp(ftens(6),ftens(3),ierr,'r4',.true.,1d-3,diffc); if(ierr.ne.0) then; ierr=86; goto 999; endif
+        cmp=tensor_block_cmp(ftens(6),ftens(3),ierr,'r8',.true.,1d-3,diffc); if(ierr.ne.0) then; ierr=86; goto 999; endif
         if(.not.cmp) then; write(jo_cp,*)'DIFF(2) COUNT = ',diffc; ierr=87; goto 999; endif
         call tens_blck_dissoc(ctens(6),ierr); if(ierr.ne.0) then; ierr=88; goto 999; endif
         call tens_blck_dissoc(ctens(5),ierr); if(ierr.ne.0) then; ierr=89; goto 999; endif
