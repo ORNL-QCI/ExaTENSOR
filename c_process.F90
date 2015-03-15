@@ -1,7 +1,7 @@
 !This module provides functionality for a Computing Process (C-PROCESS, CP).
 !In essence, this is a single-node elementary tensor instruction scheduler (SETIS).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2015/02/05
+!REVISION: 2015/03/15
 !CONCEPTS (CP workflow):
 ! - Each CP stores its own tensor blocks in TBB, with a possibility of disk dump.
 ! - LR sends a batch of ETI to be executed on this CP unit (CP MPI Process).
@@ -53,8 +53,8 @@
         use lists
         use dictionary
         use timers
-!       use tensor_algebra
-        use tensor_algebra_intel_phi !contains reference to tensor_algebra.mod
+!       use tensor_algebra_cpu
+        use tensor_algebra_intel_phi !contains reference to tensor_algebra_cpu.mod
         implicit none
 #ifndef NO_OMP
         integer, external, private:: omp_get_max_threads,omp_get_num_threads,omp_get_thread_num

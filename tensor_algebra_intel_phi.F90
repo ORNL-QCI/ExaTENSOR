@@ -1,13 +1,13 @@
 !Tensor Algebra Library for Intel MIC.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2014/08/11
+!REVISION: 2015/03/15
 !NOTES:
 ! # This library is not thread-safe. All functions of this library are
 !   supposed to be called by the same single thread (due to the way
 !   the task handle management is implemented).
        module tensor_algebra_intel_phi
         use, intrinsic:: ISO_C_BINDING
-        use tensor_algebra !certain procedures and globals are imported from this module
+        use tensor_algebra_cpu !certain procedures and globals are imported from this module
         implicit none
 #ifndef NO_OMP
         integer, external, private:: omp_get_max_threads,omp_get_num_threads,omp_get_thread_num

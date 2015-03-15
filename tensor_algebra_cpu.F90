@@ -1,6 +1,6 @@
 !Tensor Algebra for Multi-Core CPUs (OpenMP based).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2015/01/28
+!REVISION: 2015/03/15
 !GNU linking options: -lgomp -lblas -llapack
 !ACRONYMS:
 ! - mlndx - multiindex;
@@ -14,7 +14,7 @@
 ! - r4 - real(4);
 ! - r8 - real(8);
 ! - c8 - complex(8);
-       module tensor_algebra
+       module tensor_algebra_cpu
         use, intrinsic:: ISO_C_BINDING
         use STSUBS
         use combinatoric
@@ -7117,4 +7117,4 @@
 	return
 	end subroutine tensor_block_ptrace_dlf_c8
 
-       end module tensor_algebra
+       end module tensor_algebra_cpu
