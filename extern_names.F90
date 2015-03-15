@@ -86,6 +86,18 @@
 	  real(C_FLOAT), intent(in):: rmat(*)
 	  real(C_FLOAT), intent(inout):: dmat(*)
 	 end function gpu_matrix_multiply_tn_r4
+ !Blocking matrix multiplication (TN variant, R8):
+	 integer(C_INT) function gpu_matrix_multiply_tn_r8(ll,lr,lc,lmat,rmat,dmat) &
+	                                                   bind(c,name='gpu_matrix_multiply_tn_r8')
+	  use, intrinsic:: ISO_C_BINDING
+	  implicit none
+	  integer(C_SIZE_T), value, intent(in):: ll
+	  integer(C_SIZE_T), value, intent(in):: lr
+	  integer(C_SIZE_T), value, intent(in):: lc
+	  real(C_DOUBLE), intent(in):: lmat(*)
+	  real(C_DOUBLE), intent(in):: rmat(*)
+	  real(C_DOUBLE), intent(inout):: dmat(*)
+	 end function gpu_matrix_multiply_tn_r8
  !Tensor block initialization:
 	 integer(C_INT) function gpu_tensor_block_init_(ctens,val,copy_back,cuda_task) &
 	                                               bind(c,name='gpu_tensor_block_init_')
