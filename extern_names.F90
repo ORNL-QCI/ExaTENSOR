@@ -316,6 +316,12 @@
 	  integer(C_INT), value, intent(in):: gpu_num
 	  integer(C_INT), value, intent(in):: entry_num
 	 end function const_args_entry_free
+ !Set the width of the shared memory bank:
+         integer(C_INT) function gpu_set_shmem_width(width) bind(c,name='gpu_set_shmem_width')
+          use, intrinsic:: ISO_C_BINDING
+          implicit none
+          integer(C_INT), value, intent(in):: width
+         end function gpu_set_shmem_width
  !Turn on/off CUDA timing events:
 	 subroutine gpu_set_event_policy(alg) bind(c,name='gpu_set_event_policy')
 	  use, intrinsic:: ISO_C_BINDING
