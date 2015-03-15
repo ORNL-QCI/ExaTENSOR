@@ -186,6 +186,7 @@ __host__ int gpu_set_shmem_width(int width){
  }else{
   return 1;
  }
+ if(cerr != cudaSuccess) return 2;
  return 0;
 }
 
