@@ -8,7 +8,11 @@
 ! - subroutine quit(i:error_code,ch*:error_msg): PARALLEL: safe global exit.
 !--------------------------------------------------------------------------------
 !Parallel environment:
-	include 'mpif.h'    !MPI Fortran interface
+#ifdef USE_MPI_MOD
+        use mpi          !MPI Fortran interface
+#else
+	include 'mpif.h' !MPI Fortran interface
+#endif
 !Parameters:
  !File management:
 	integer, parameter, private:: max_open_files=1024-16 !maximal amount of open files per process (first 16 file handles [0..15] are reserved)

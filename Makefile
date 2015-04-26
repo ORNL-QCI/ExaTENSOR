@@ -32,7 +32,7 @@ LFLAGS = $(LA_LINK) $(CUDA_LINK) -o
 OBJS = stsubs.o combinatoric.o extern_names.o service.o lists.o dictionary.o timers.o \
 	symm_index.o tensor_algebra_cpu.o tensor_dil_omp.o tensor_algebra_intel_phi.o \
 	cuda2fortran.o c_proc_bufs.o tensor_algebra_gpu_nvidia.o sys_service.o \
-	c_process.o qforce.o main.o proceed.o
+	c_process.o qforce.o main.o proceed.o distributed.o subspaces.o
 
 $(NAME): $(OBJS)
 	$(FC) $(OBJS) $(MPI_INC) $(CUDA_INC) $(LFLAGS) $(NAME)
