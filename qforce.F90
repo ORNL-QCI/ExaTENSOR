@@ -1,23 +1,18 @@
        module qforce !PROGRAM SPECIFIC MODULE
-        use, intrinsic:: ISO_C_BINDING
-        use extern_names
-!       use STSUBS
-        use combinatoric
-        use service
         use c_process
 !PARAMETERS:
  !Numeric:
-        real(4), parameter:: eps4=epsilon(1.0)     !single precision epsilon
-        real(8), parameter:: eps8=epsilon(1d0)     !double precision epsilon
-        real(8), parameter:: zero_thresh=1d-11     !numerical comparison threshold: should account for possible round-off errors
+        real(4), parameter, public:: eps4=epsilon(1.0) !single precision epsilon
+        real(8), parameter, public:: eps8=epsilon(1d0) !double precision epsilon
+        real(8), parameter, public:: zero_thresh=1d-11 !numerical comparison threshold: should account for possible round-off errors
  !Kinds of MPI processes (process roles):
-        integer, parameter:: global_root=1             !global root
-        integer, parameter:: local_root=2              !local root
-        integer, parameter:: c_process_private=3       !computing process private to a unit cell
-        integer, parameter:: c_process_shared=4        !computing process shared by multiple unit cells
-        integer, parameter:: d_process=5               !I/O operating process
-        integer, parameter:: a_process=6               !accelerating process
-        integer, parameter:: c_procs_per_local_root=32 !number of C-processes per local root
+        integer, parameter, public:: global_root=1             !global root
+        integer, parameter, public:: local_root=2              !local root
+        integer, parameter, public:: c_process_private=3       !computing process private to a unit cell
+        integer, parameter, public:: c_process_shared=4        !computing process shared by multiple unit cells
+        integer, parameter, public:: d_process=5               !I/O operating process
+        integer, parameter, public:: a_process=6               !accelerating process
+        integer, parameter, public:: c_procs_per_local_root=32 !number of C-processes per local root
 !TYPES:
  !Nuclei vibration descriptor:
         type vibration_t

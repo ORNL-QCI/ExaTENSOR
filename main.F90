@@ -1,15 +1,16 @@
-!PROGRAM: Q-FORCE: Massively-Parallel Quantum Many-Body Methodology on Heterogeneous HPC systems.
+!PROJECT: Q-FORCE: Massively Parallel Quantum Many-Body Methodology on Heterogeneous HPC systems.
+!BASE: ExaTensor: Massively Parallel Tensor Algebra Virtual Processor for Heterogeneous HPC systems.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2014/08/18
+!REVISION: 2015/04/27
 !COMPILATION:
 ! - Fortran 2003 at least.
-! - MPI 2.0 at least.
+! - MPI 3.0 at least.
 ! - OpenMP 3.0 at least.
 ! - CUDA 5.0 at least.
 ! - GNU compiling flags: -c -O3 -fopenmp
 !   GNU linking flags: -lgomp
 !   GNU BLAS/LAPACK: -lblas -llapack
-! - Intel compiling flags: -c -O3 -fpp -vec-threshold4 -vec-report2 -openmp -openmp-report2 -DUSE_MKL
+! - Intel compiling flags: -c -O3 -fpp -vec-threshold4 -vec-report2 -openmp -openmp-report2 -D USE_MKL
 !   Intel linking flags: -Bdynamic
 !   Intel MKL: -lmkl_core -lmkl_intel_thread -lmkl_intel_lp64 -lmkl_blas95_lp64 -lmkl_lapack95_lp64 -liomp5
 !MPI launch notes:
@@ -20,16 +21,16 @@
 ! - NO_PHI - do not use Intel Xeon Phi (MIC);
 ! - NO_GPU - do not use NVidia GPU (CUDA);
 ! - NO_BLAS - BLAS/LAPACK calls will be replaced by my own routines (D.I.L.);
+! - USE_OMP_MOD - use OpenMP module;
+! - USE_MPI_MOD - use MPI module instead of mpif.h;
 ! - USE_MKL - use Intel MKL library for BLAS/LAPACK;
-! - NO_OMP - do not use OpenMP (single-threaded processes);`currently does not work
-! - USE_GNU - Fortran compiler is GNU (affects Fortran timers);
 !OUTPUT DEVICE:
-! - jo (@service.mod) - generic output device handle;
+! - jo (@service.mod) - default output device handle;
 !ENUMERATION OF DEVICES ON A NODE:
-! - device_id = 0: Host (SMP CPU node, may be NUMA);
-! - device_id = [1:MAX_GPUS_PER_NODE]: Nvidia GPUs (GPU#=device_id-1);
+! - device_id = 0: Host (SMP CPU node, can be NUMA);
+! - device_id = [1:MAX_GPUS_PER_NODE]: NVidia GPUs (GPU#=device_id-1);
 ! - device_id = [MAX_GPUS_PER_NODE+1:MAX_GPUS_PER_NODE+MAX_MICS_PER_NODE]: Intel MICs (MIC#=device_id-1-MAX_GPUS_PER_NODE);
-! - device_id = [MAX_GPUS_PER_NODE+MAX_MICS_PER_NODE+1:MAX_GPUS_PER_NODE+MAX_MICS_PER_NODE+MAX_AMDS_PER_NODE]: AMD GPUs
+! - device_id = [MAX_GPUS_PER_NODE+MAX_MICS_PER_NODE+1:MAX_GPUS_PER_NODE+MAX_MICS_PER_NODE+MAX_AMDS_PER_NODE]: AMD GPUs;
         program main !PARALLEL
         use qforce
         implicit none
@@ -64,7 +65,7 @@
 !       write(*,*) impis,impir,max_threads,jo,log_file; call quit(-1,'Test') !debug
         call numchar(impir,k0,str0); open(log_file,file='qforce.'//str0(1:k0)//'.log',form='FORMATTED',status='UNKNOWN',err=2000) !open the log file for each process
         if(impir.ne.0) jo=log_file !redirect the standard output for slave processes to their log-files
-        write(jo,'("   *** Q-FORCE v.14.08.11 by Dmitry I. Lyakh ***")')
+        write(jo,'("   *** Q-FORCE v.15.04.27 by Dmitry I. Lyakh ***")')
         write(jo,'("MPI number of processes            : ",i10)') impis
         write(jo,'("Current process rank               : ",i10)') impir
 #ifndef NO_OMP

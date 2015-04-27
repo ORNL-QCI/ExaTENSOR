@@ -1,6 +1,6 @@
 !Tensor Algebra for Multi-Core CPUs (OpenMP based).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2015/03/15
+!REVISION: 2015/04/27
 !GNU linking options: -lgomp -lblas -llapack
 !ACRONYMS:
 ! - mlndx - multiindex;
@@ -14,23 +14,34 @@
 ! - r4 - real(4);
 ! - r8 - real(8);
 ! - c8 - complex(8);
+!PREPROCESSOR:
+! -D NO_OMP: Do not use OpenMP (serial);
+! -D USE_OMP_MOD: Use OpenMP Fortran module;
+! -D NO_BLAS: Replace BLAS calls with in-house routines;
+! -D USE_MKL: USE Intel MKL library for BLAS;
+! -D NO_PHI: Ignore Intel MIC;
        module tensor_algebra_cpu
-        use, intrinsic:: ISO_C_BINDING
+!       use, intrinsic:: ISO_C_BINDING
+        use tensor_algebra !includes ISO_C_BINDING
         use STSUBS
         use combinatoric
-        use symm_index
         use timers
+        use symm_index
 #ifdef USE_MKL
         use mkl95_blas
         use mkl95_lapack
         use mkl95_precision
 #endif
-        implicit none
 #ifndef NO_OMP
+#ifdef USE_OMP_MOD
+        use omp_lib
+        implicit none
+#else
+        implicit none
         integer, external, private:: omp_get_max_threads,omp_get_num_threads,omp_get_thread_num
 #endif
+#endif
 !PARAMETERS:
-        include 'tensor_algebra.inc'
  !Default output for the module procedures:
 	integer, private:: cons_out=6     !default output device for this module (also used for INTEL MIC TAL)
 	logical, private:: verbose=.true. !verbosity (also used for INTEL MIC TAL)
@@ -40,11 +51,15 @@
 #endif
  !Global:
 	integer, parameter, public:: max_shape_str_len=1024 !max allowed length for a tensor shape specification string (TSSS)
-	integer, parameter, public:: LONGINT=8              !long integer size in bytes
+	integer, parameter, public:: LONGINT=INTL           !long integer size in bytes
 	integer, parameter, private:: max_threads=1024      !max allowed number of threads in this module
 	logical, private:: data_kind_sync=.true. !if .true., each tensor operation will syncronize all existing data kinds
 	logical, private:: trans_shmem=.true.    !cache-efficient (true) VS scatter (false) tensor transpose algorithm
+#ifndef NO_BLAS
 	logical, private:: disable_blas=.false.  !if .true. and BLAS is accessible, BLAS calls will be replaced by my own routines
+#else
+        logical, private:: disable_blas=.true.   !if .true. and BLAS is accessible, BLAS calls will be replaced by my own routines
+#endif
 #ifndef NO_PHI
 !DIR$ ATTRIBUTES OFFLOAD:mic:: max_shape_str_len,LONGINT,max_threads,data_kind_sync,trans_shmem,disable_blas
 !DIR$ ATTRIBUTES ALIGN:128:: max_shape_str_len,LONGINT,max_threads,data_kind_sync,trans_shmem,disable_blas
@@ -220,6 +235,7 @@
 	subroutine set_matmult_algorithm(alg) !SERIAL
 	implicit none
 	integer, intent(in):: alg
+#ifndef NO_BLAS
 	if(alg.eq.0) then
 !$OMP ATOMIC WRITE
 	 disable_blas=.false.
@@ -227,6 +243,7 @@
 !$OMP ATOMIC WRITE
 	 disable_blas=.true.
 	endif
+#endif
 	return
 	end subroutine set_matmult_algorithm
 !--------------------------------------------------

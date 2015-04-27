@@ -1,14 +1,29 @@
        module timers
-!Timing services (OpenMP omp_get_wtime() based).
+!Timing services.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2014/09/23
-!FUNCTIONS:
+!REVISION: 2015/04/27
+!PUBLIC FUNCTIONS:
 ! # integer timer_start(real8:time_set, integer:time_handle);
 ! # logical time_is_off(integer:time_handle, integer:ierr[, logical:destroy]);
 ! # integer timer_destroy(integer:time_handle);
 ! # real8 timer_tick_sec();
 ! # real8 thread_wtime([real8:tbase]);
-
+!PREPROCESSOR:
+! # -D NO_OMP: Disable OpenMP (switch to Fortran cpu_time);
+! # -D USE_OMP_MOD: Use OpenMP Fortran module;
+! # -D USE_GNU: Switch to the GNU Fortran timing (secnds);
+! # -D NO_PHI: Ignore Intel MIC;
+#ifndef NO_OMP
+#ifdef USE_OMP_MOD
+        use omp_lib
+        implicit none
+        private
+#else
+        implicit none
+        private
+        real(8), external, private:: omp_get_wtime,omp_get_wtick
+#endif
+#endif
 !PARAMETERS:
         integer, parameter, private:: max_timers=8192
         integer, parameter, public:: timers_err_invalid_arg=1
@@ -24,8 +39,13 @@
         type(timer_t), private:: timer(0:max_timers-1)=(/(timer_t(-1d0,-1d0),j_=0,max_timers-1)/)
         integer, private:: handle_stack(0:max_timers-1)=(/(j_,j_=0,max_timers-1)/)
         integer, private:: handle_sp=0
-        real(8), private:: timer_tick=-1d0
-        real(8), external, private:: omp_get_wtime,omp_get_wtick
+        real(8), private:: timer_tick=-1d0 !must be negative
+!FUNCTION VISIBILITY:
+        public timer_start
+        public time_is_off
+        public timer_destroy
+        public timer_tick_sec
+        public thread_wtime
 
        contains
 !---------------------------------------------------------
@@ -38,7 +58,12 @@
         if(time_set.ge.0d0) then
          if(handle_sp.ge.0.and.handle_sp.lt.max_timers) then
           time_handle=handle_stack(handle_sp); handle_sp=handle_sp+1
-          val=omp_get_wtime(); timer(time_handle)=timer_t(val,time_set)
+#ifndef NO_OMP
+          val=omp_get_wtime()
+#else
+          call cpu_time(val)
+#endif
+          timer(time_handle)=timer_t(val,time_set)
           timer_start=0
          else
           timer_start=timers_err_no_timers_left
@@ -60,7 +85,12 @@
         time_is_off=.false.
         if(time_handle.ge.0.and.time_handle.lt.max_timers) then !valid range
          if(timer(time_handle)%time_interval.ge.0d0) then !valid handle
-          ierr=0; tm=omp_get_wtime()
+          ierr=0
+#ifndef NO_OMP
+          tm=omp_get_wtime()
+#else
+          call cpu_time(tm)
+#endif
           if(tm.ge.timer(time_handle)%beg_time+timer(time_handle)%time_interval) time_is_off=.true.
           if(time_is_off.and.present(destroy)) then
            if(destroy) then
@@ -97,7 +127,10 @@
 !----------------------------------------
         real(8) function timer_tick_sec()
 !This function returns the wall clock tick length in seconds.
+        implicit none
+#ifndef NO_OMP
         if(timer_tick.le.0d0) timer_tick=omp_get_wtick()
+#endif
         timer_tick_sec=timer_tick
         return
         end function timer_tick_sec

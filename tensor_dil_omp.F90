@@ -1,7 +1,7 @@
        module tensor_dil_omp
 !Multithreaded tensor algebra kernels tailored for ACESIII/ACESIV.
 !AUTHOR: Dmitry I. Lyakh: quant4me@gmail.com
-!Revision: 2014/08/12
+!Revision: 2015/04/27
 !-------------------------------------------
 !COMPILE:
 ! # GFORTRAN flags: -O3 --free-line-length-none -fopenmp -x f95-cpp-input
@@ -10,8 +10,8 @@
 ! # GCC flags: -lgfortran -lgomp
 !-------------------------------
 !PREPROCESSOR DIRECTIVES:
-! # NO_OMP - a serialized version will be compiled;
-! # NO_BLAS - BLAS calls will be replaced by my own routines;
+! # NO_OMP - a serialized version will be compiled (no OpenMP);
+! # NO_BLAS - BLAS calls will be replaced by my own routines (DIL);
 ! # USE_MKL - use MKL BLAS;
 !----------------------------------------------------------------------------------------------------
 !PUBLIC SUBROUTINES CONVENTIONS:
@@ -50,6 +50,7 @@
         use mkl95_lapack
         use mkl95_precision
 #endif
+        implicit none
 !MODULE PARAMETERS:
         integer, parameter:: max_tensor_rank=32 !max allowed tensor rank
         integer, parameter:: max_threads=1024   !max allowed number of OMP threads

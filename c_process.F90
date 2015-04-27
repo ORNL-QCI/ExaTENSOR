@@ -1,7 +1,9 @@
 !This module provides functionality for a Computing Process (C-PROCESS, CP).
-!In essence, this is a single-node elementary tensor instruction scheduler (SETIS).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2015/04/26
+!REVISION: 2015/04/27
+!PREPROCESSOR:
+! -D NO_GPU: No NVidia GPU;
+! -D NO_PHI: No Intel Xeon Phi;
 !CONCEPTS (CP workflow):
 ! - Each CP stores its own tensor blocks in TBB, with a possibility of disk dump.
 ! - LR sends a batch of ETI to be executed on this CP unit (CP MPI Process).
@@ -47,23 +49,18 @@
 ! - AAR - Active Argument Register;
 ! - TAL - Tensor Algebra Library (CPU, GPU, MIC, etc.);
        module c_process
-        use, intrinsic:: ISO_C_BINDING
-        use extern_names !`dependency to be removed
-        use service !contains reference to stsubs.mod and mpif.h
-        use lists
-        use dictionary
-        use timers
-!       use tensor_algebra_cpu
-        use tensor_algebra_intel_phi !includes tensor_algebra_cpu.mod
+!       use, intrinsic:: ISO_C_BINDING
+        use subspaces
+        use extern_names
         implicit none
-#ifndef NO_OMP
+#ifndef USE_OMP_MOD
         integer, external, private:: omp_get_max_threads,omp_get_num_threads,omp_get_thread_num
         logical, external, private:: omp_get_nested
 #endif
 !PARAMETERS:
  !Output:
-        integer, private:: jo_cp=6 !default output
-        logical, private:: verbose=.true.
+        integer, private:: jo_cp=6        !default output for this module
+        logical, private:: verbose=.true. !verbosity for errors
  !Debugging:
         integer, private:: debug_level=0          !debug level (0: normal execution)
         integer, private:: debug_step_pause=1000  !pause (msec) before advancing MT to the next instruction while debugging
@@ -423,7 +420,6 @@
 !-----------------------------------
 !LIFE:
         ierr=0
-#ifndef NO_OMP
         call omp_set_dynamic(.false.); call omp_set_nested(.true.)
         if(.not.omp_get_nested()) then
          write(jo_cp,'("#FATAL(c_process::c_proc_life): Unable to activate nested OpenMP parallelism!")')
@@ -948,10 +944,6 @@
          ierr=-1
         endif
         if(ierr.ne.0) then; call c_proc_quit(998); return; endif
-#else
-        write(jo_cp,'("#FATAL(c_process::c_proc_life): Computing Process cannot function without OpenMP!")')
-        call c_proc_quit(999); return
-#endif
 !-------------------
         write(jo_cp,'("#MSG(c_process::c_proc_life): Cleaning ... ")',advance='no')
         call c_proc_quit(0); if(ierr.eq.0) write(jo_cp,'("Ok")')

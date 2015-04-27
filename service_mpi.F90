@@ -1,19 +1,26 @@
-!This module provides general services for MPI parallel programs on heterogeneous nodes.
-       module service
-        use, intrinsic:: ISO_C_BINDING
-        use STSUBS
+!This module provides general services for MPI parallel programs.
+       module service_mpi
+        use, intrinsic:: ISO_C_BINDING, only: C_INT,C_SIZE_T
 !If a function contains MPI calls it is classified as PARALLEL (PARALLEL: YES).
 !FUNCTIONS:
 ! - subroutine file_handle(ch*:command,i:ifh,i:ierr): SERIAL: file handle manager.
 ! - subroutine quit(i:error_code,ch*:error_msg): PARALLEL: safe global exit.
+! - get_memory_status(total_ram,free_ram,used_swap,ierr): SERIAL: Host RAM status.
 !--------------------------------------------------------------------------------
 !Parallel environment:
 #ifdef USE_MPI_MOD
         use mpi          !MPI Fortran interface
+        implicit none
+        public
 #else
+        implicit none
+        public
 	include 'mpif.h' !MPI Fortran interface
 #endif
 !Parameters:
+ !MPI kinds:
+        integer(C_INT), parameter, public:: INT_MPI=4                 !default MPI integer kind
+        integer(C_INT), parameter, public:: INT_ADDR=MPI_ADDRESS_KIND !default MPI address/size kind
  !File management:
 	integer, parameter, private:: max_open_files=1024-16 !maximal amount of open files per process (first 16 file handles [0..15] are reserved)
 !Types:
@@ -62,9 +69,9 @@
 	integer:: proc_name_len                    !the length of the processor name
 	integer:: mpi_thread_provided              !the level of multithreaded MPI service provided (set by runtime)
  !File Management:
-	integer:: nof=0                          !current number of open files (local to each process)
-	integer:: fhot(16:16+max_open_files-1)=0 !file handle occupancy table (first 16 file handles [0..15] are reserved)
-	integer:: ffhs(0:max_open_files-1)=(/(j_,j_=16,16+max_open_files-1)/) !a stack of free file handles
+	integer, private:: nof=0                          !current number of open files (local to each process)
+	integer, private:: fhot(16:16+max_open_files-1)=0 !file handle occupancy table (first 16 file handles [0..15] are reserved)
+	integer, private:: ffhs(0:max_open_files-1)=(/(j_,j_=16,16+max_open_files-1)/) !a stack of free file handles
 
        contains
 !-----------------------------------------------
@@ -80,6 +87,7 @@
 !PARALLEL: NO.
 !NOTES:
 ! - only the first 4 characters of the COMMAND really matter.
+        use STSUBS
 	implicit none
 	character(*), intent(in):: command
 	integer, intent(inout):: ifh
@@ -92,22 +100,22 @@
 !GET FILE HANDLE:
 	 if(l.eq.3.and.command(1:3).eq.'get') then
 	  if(nof.ge.max_open_files) then
-	   call printl(jo,'#ERROR(service:file_handle): max amount of open files exceeded!')
+	   call printl(jo,'#ERROR(service_mpi:file_handle): max amount of open files exceeded!')
 	   ierr=1; goto 999
 	  endif
 	  ifh=ffhs(nof); fhot(ifh)=1; nof=nof+1
 !FREE FILE HANDLE:
 	 elseif(l.eq.4.and.command(1:4).eq.'free') then
 	  if(nof.le.0) then
-	   call printl(jo,'#ERROR(service:file_handle): attempt to free a file handle when no file handle is used!')
+	   call printl(jo,'#ERROR(service_mpi:file_handle): attempt to free a file handle when no file handle is used!')
 	   ierr=2; goto 999
 	  endif
 	  if(ifh.lt.16.or.ifh.ge.16+max_open_files) then
-	   call printl(jo,'#ERROR(service:file_handle): invalid file handle!')
+	   call printl(jo,'#ERROR(service_mpi:file_handle): invalid file handle!')
 	   ierr=3; goto 999
 	  endif
 	  if(fhot(ifh).eq.0) then
-	   call printl(jo,'#ERROR(service:file_handle): attempt to free an idle file handle!')
+	   call printl(jo,'#ERROR(service_mpi:file_handle): attempt to free an idle file handle!')
 	   ierr=4; goto 999
 	  endif
 	  fhot(ifh)=0; nof=nof-1; ffhs(nof)=ifh
@@ -118,10 +126,10 @@
 	   if(fhot(n).ne.0) then; close(n); fhot(n)=0; nof=nof-1; ffhs(nof)=n; endif
 	  enddo
 	 else
-	  call printl(jo,'#ERROR(service:file_handle): invalid command'//command(1:l)); ierr=5
+	  call printl(jo,'#ERROR(service_mpi:file_handle): invalid command'//command(1:l)); ierr=5
 	 endif
 	else
-	 call printl(jo,'#ERROR(service:file_handle): empty command passed!'); ierr=6
+	 call printl(jo,'#ERROR(service_mpi:file_handle): empty command passed!'); ierr=6
 	endif
 999	return
 	end subroutine file_handle
@@ -134,6 +142,7 @@
 !OUTPUT:
 ! - error information printed by EACH process.
 !PARALLEL: YES.
+        use STSUBS
 	implicit none
 	integer i,j,k,l,m,n,k0,k1,k2,k3,k4,k5,k6,k7,ks,kf,ierr
 	integer, intent(in):: error_code       !error code
@@ -162,7 +171,7 @@
 !This subroutine returns:
 ! - total_ram - total usable RAM available on the node in bytes;
 ! - free_ram - free usable RAM available on the node in bytes;
-! - used_swap - current swap size in bytes;
+! - used_swap - current swap size in bytes;        
         implicit none
         interface
          integer(C_INT) function get_memory_stat(total_ram,free_ram,used_swap) bind(C)
@@ -178,4 +187,4 @@
         return
         end subroutine get_memory_status
 
-       end module service
+       end module service_mpi
