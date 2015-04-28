@@ -8,9 +8,9 @@
         implicit none
 !PARAMETERS:
  !Output:
-        integer(INTD), private:: CONS_OUT=6 !default output for this module
-        logical, private:: VERBOSE=.true.   !verbosity for errors
-        logical, private:: DEBUG=.true.     !debugging mode
+        integer, private:: CONS_OUT=6     !default output for this module
+        logical, private:: VERBOSE=.true. !verbosity for errors
+        logical, private:: DEBUG=.true.   !debugging mode
 !TYPES:
  !Global data location descriptor:
         type, public:: DataLoc_t
@@ -36,13 +36,13 @@
         subroutine DataLocInit(this,process_rank,mpi_window,offset,volume,ierr)
 !DataLoc constructor.
         implicit none
-        class(DataLoc_t), intent(out):: this          !out: DataLoc object
-        integer(INT_MPI), intent(in):: process_rank   !in: process rank where the data resides
-        integer(INT_MPI), intent(in):: mpi_window     !in: MPI window the data is exposed with
-        integer(INT_ADDR), intent(in):: offset        !in: Offset in the MPI window (in displacement units)
-        integer(INT_ADDR), intent(in):: volume        !in: Number of elements (each element byte size = displacement unit)
-        integer(INTD), intent(inout), optional:: ierr !out: error code (0:success)
-        integer(INTD):: errc
+        class(DataLoc_t), intent(out):: this           !out: DataLoc object
+        integer(INT_MPI), intent(in):: process_rank    !in: process rank where the data resides
+        integer(INT_MPI), intent(in):: mpi_window      !in: MPI window the data is exposed with
+        integer(INT_ADDR), intent(in):: offset         !in: Offset in the MPI window (in displacement units)
+        integer(INT_ADDR), intent(in):: volume         !in: Number of elements (each element byte size = displacement unit)
+        integer(C_INT), intent(inout), optional:: ierr !out: error code (0:success)
+        integer(C_INT):: errc
 
         errc=0
         if(process_rank.ge.0) then
@@ -65,9 +65,9 @@
         subroutine DataLocClean(this,ierr)
 !DataLoc cleaner.
         implicit none
-        class(DataLoc_t), intent(out):: this          !out: DataLoc object
-        integer(INTD), intent(inout), optional:: ierr !out: error code (0:success)
-        integer(INTD):: errc
+        class(DataLoc_t), intent(out):: this           !out: DataLoc object
+        integer(C_INT), intent(inout), optional:: ierr !out: error code (0:success)
+        integer(C_INT):: errc
 
         errc=0
         this%PrRank=-1
