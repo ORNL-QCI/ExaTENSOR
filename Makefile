@@ -31,7 +31,7 @@ LFLAGS = $(LA_LINK) $(CUDA_LINK) -o
 
 OBJS =  stsubs.o combinatoric.o timers.o extern_names.o lists.o dictionary.o symm_index.o \
 	tensor_algebra.o tensor_algebra_cpu.o tensor_algebra_cpu_phi.o tensor_dil_omp.o \
-	service.o cuda2fortran.o c_proc_bufs.o tensor_algebra_gpu_nvidia.o sys_service.o \
+	service_mpi.o cuda2fortran.o c_proc_bufs.o tensor_algebra_gpu_nvidia.o sys_service.o \
 	distributed.o subspaces.o c_process.o qforce.o proceed.o main.o
 
 $(NAME): $(OBJS)
