@@ -12,6 +12,7 @@
 !        use g_process
 !        use l_process
         use c_process
+        use exatensor
         implicit none
         integer, intent(inout):: ierr
         integer i,j,k,l,m,n,k0,k1,k2,k3
