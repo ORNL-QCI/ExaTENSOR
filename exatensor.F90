@@ -9,6 +9,7 @@
         use dictionary
         use extern_names
         implicit none
+        public
 !PARAMETERS:
  !Output:
         integer, private:: CONS_OUT=6     !default output for this module

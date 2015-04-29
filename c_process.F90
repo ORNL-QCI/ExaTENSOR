@@ -52,6 +52,7 @@
 !       use, intrinsic:: ISO_C_BINDING
         use exatensor
         implicit none
+        private
 #ifndef USE_OMP_MOD
         integer, external, private:: omp_get_max_threads,omp_get_num_threads,omp_get_thread_num
         logical, external, private:: omp_get_nested

@@ -101,7 +101,7 @@ c_process.o: c_process.F90 exatensor.o
 qforce.o: qforce.F90 exatensor.o
 	$(FC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) qforce.F90
 
-proceed.o: proceed.F90 exatensor.o
+proceed.o: proceed.F90 c_process.o
 	$(FC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) proceed.F90
 
 main.o: main.F90 exatensor.o qforce.o
