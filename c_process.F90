@@ -249,6 +249,7 @@
          integer, private:: mic_task
         end type xpcu_task_t
 !PROCEDURE VISIBILITY:
+        public c_proc_life
         public cp_destructor
         public tens_key_cmp
         private tens_blck_id_create
