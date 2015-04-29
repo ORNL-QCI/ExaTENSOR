@@ -1,5 +1,6 @@
        module qforce !PROGRAM SPECIFIC MODULE
-        use c_process
+        use exatensor
+        implicit none
 !PARAMETERS:
  !Numeric:
         real(4), parameter, public:: eps4=epsilon(1.0) !single precision epsilon

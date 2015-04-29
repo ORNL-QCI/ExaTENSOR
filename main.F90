@@ -160,7 +160,7 @@
 ! - gpu_start - first GPU ID assigned to the current MPI process;
 ! - gpu_count - number of consecutive GPU IDs assigned to the current MPI process;
 ! - ierr - error code (0:Success).
-        use qforce
+        use exatensor
         implicit none
         integer, intent(inout):: ierr
         integer i,j,k,l,m,n

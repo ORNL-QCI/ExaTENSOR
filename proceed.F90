@@ -9,7 +9,7 @@
 !   by qforce::c_procs_per_local_root. Thus, each computing group initially
 !   contains (1+c_procs_per_local_root) processes. This number, as well
 !   as process roles may change during the run time for load balancing purposes.
-        use qforce
+        use exatensor
         implicit none
         integer, intent(inout):: ierr
         integer i,j,k,l,m,n,k0,k1,k2,k3

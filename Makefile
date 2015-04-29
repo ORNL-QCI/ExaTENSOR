@@ -32,7 +32,7 @@ LFLAGS = $(LA_LINK) $(CUDA_LINK) -o
 OBJS =  stsubs.o combinatoric.o timers.o extern_names.o lists.o dictionary.o symm_index.o \
 	tensor_algebra.o tensor_algebra_cpu.o tensor_algebra_cpu_phi.o tensor_dil_omp.o \
 	service_mpi.o cuda2fortran.o c_proc_bufs.o tensor_algebra_gpu_nvidia.o sys_service.o \
-	distributed.o subspaces.o c_process.o qforce.o proceed.o main.o
+	distributed.o subspaces.o exatensor.o c_process.o qforce.o proceed.o main.o
 
 $(NAME): $(OBJS)
 	$(FC) $(OBJS) $(LFLAGS) $(NAME)
@@ -89,19 +89,22 @@ sys_service.o: sys_service.c
 distributed.o: distributed.F90 service_mpi.o
 	$(FC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) distributed.F90
 
-subspaces.o: subspaces.F90 tensor_algebra_cpu_phi.o distributed.o lists.o dictionary.o
+subspaces.o: subspaces.F90 tensor_algebra.o
 	$(FC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) subspaces.F90
 
-c_process.o: c_process.F90 subspaces.o extern_names.o
+exatensor.o: exatensor.F90 tensor_algebra_cpu_phi.o distributed.o subspaces.o lists.o dictionary.o extern_names.o
+	$(FC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) exatensor.F90
+
+c_process.o: c_process.F90 exatensor.o
 	$(FC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) c_process.F90
 
-qforce.o: qforce.F90 c_process.o
+qforce.o: qforce.F90 exatensor.o
 	$(FC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) qforce.F90
 
-proceed.o: proceed.F90 qforce.o
+proceed.o: proceed.F90 exatensor.o
 	$(FC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) proceed.F90
 
-main.o: main.F90 qforce.o
+main.o: main.F90 exatensor.o qforce.o
 	$(FC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) main.F90
 
 #%.o: %.F90

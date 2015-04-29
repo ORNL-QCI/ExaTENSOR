@@ -1,18 +1,16 @@
 !Infrastructure for adaptive Hilbert space decompositions.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2015/04/27 (started 2015/03/18)
+!REVISION: 2015/04/28
 !All rights reserved!
         module subspaces
-        use tensor_algebra_cpu_phi
-        use distributed
-        use lists
-        use dictionary
+        use tensor_algebra
         implicit none
+        private
 !PARAMETERS:
  !Output:
-        integer(INTD), private:: CONS_OUT=6 !default output for this module
-        logical, private:: VERBOSE=.true.   !verbosity for errors
-        logical, private:: DEBUG=.true.     !debugging mode
+        integer, private:: CONS_OUT=6     !default output for this module
+        logical, private:: VERBOSE=.true. !verbosity for errors
+        logical, private:: DEBUG=.true.   !debugging mode
 !TYPES:
  !Hierarchical index:
         type, public:: HierIndex_t
