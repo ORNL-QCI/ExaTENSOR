@@ -39,9 +39,9 @@
         subroutine DataDescrClean(this,ierr)
 !Data descriptor cleaner.
         implicit none
-        class(DataDescr_t), intent(out):: this        !out: empty data descriptor
-        integer(INTD), intent(inout), optional:: ierr !out: error code (0:success)
-        integer(INTD):: errc
+        class(DataDescr_t), intent(out):: this           !out: empty data descriptor
+        integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
+        integer(INT_MPI):: errc
 
         errc=0
         this%PrRank=-1
@@ -52,17 +52,17 @@
         subroutine DataDescrInit(this,process_rank,mpi_window,offset,volume,ierr,comm_mpi,check_thorough)
 !Data descriptor constructor.
         implicit none
-        class(DataDescr_t), intent(inout):: this             !inout: data descriptor
-        integer(INT_MPI), intent(in):: process_rank          !in: process rank where the data resides
-        integer(INT_MPI), intent(in):: mpi_window            !in: MPI window the data is exposed with
-        integer(INT_ADDR), intent(in):: offset               !in: Offset in the MPI window (in displacement units)
-        integer(INT_ADDR), intent(in):: volume               !in: Number of elements (each element byte size = displacement unit)
-        integer(INTD), intent(inout), optional:: ierr        !out: error code (0:success)
-        integer(INT_MPI), intent(in), optional:: comm_mpi    !in: MPI communicator (default: MPI_COMM_WORLD)
-        logical(INTD), intent(in), optional:: check_thorough !in: if .true., enables the process order check (expensive): default=.false.
+        class(DataDescr_t), intent(inout):: this                !inout: data descriptor
+        integer(INT_MPI), intent(in):: process_rank             !in: process rank where the data resides
+        integer(INT_MPI), intent(in):: mpi_window               !in: MPI window the data is exposed with
+        integer(INT_ADDR), intent(in):: offset                  !in: Offset in the MPI window (in displacement units)
+        integer(INT_ADDR), intent(in):: volume                  !in: Number of elements (each element byte size = displacement unit)
+        integer(INT_MPI), intent(inout), optional:: ierr        !out: error code (0:success)
+        integer(INT_MPI), intent(in), optional:: comm_mpi       !in: MPI communicator (default: MPI_COMM_WORLD)
+        logical(INT_MPI), intent(in), optional:: check_thorough !in: if .true., enables the process order check (expensive): default=.false.
         integer(INT_MPI):: comm,my_group,win_group,res,errc
         integer(INT_ADDR):: attr
-        logical(INTD):: flag
+        logical(INT_MPI):: flag
 
         errc=0
         if(process_rank.ge.0) then
@@ -80,7 +80,7 @@
              if(present(check_thorough)) then; flag=check_thorough; else; flag=.false.; endif
              res=MPI_UNEQUAL
              if(flag) then
-              call MPI_WIN_GROUP_COMPARE(my_group,win_group,res,errc)
+              call MPI_GROUP_COMPARE(my_group,win_group,res,errc)
              else
               if(my_group.eq.win_group) res=MPI_IDENT
              endif
@@ -109,7 +109,7 @@
         else
          errc=7
         endif
-        if(errc.ne.0) this%clean()
+        if(errc.ne.0) call this%clean()
         if(present(ierr)) ierr=errc
         return
         end subroutine DataDescrInit
