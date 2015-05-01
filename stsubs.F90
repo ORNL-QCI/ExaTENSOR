@@ -1,6 +1,6 @@
-!Standard subroutines/functions.
+!Standard subroutines/functions often used by me.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISON: 2014/08/12
+!REVISON: 2015/05/01
 	MODULE STSUBS
 
 !Parameters:
@@ -921,7 +921,7 @@
 !The elements of matrix are of double complex type.
 	 implicit none
 	 integer m,n,i,j
-	 double complex a(1:m,1:n)
+	 complex(8) a(1:m,1:n)
 	 do i=1,m
 	  do j=1,n
 	   write(*,'(("(",D22.14,",",D22.14,")"))',advance='no') a(i,j)
