@@ -3,31 +3,39 @@ FC  = ftn
 CC  = cc
 CPP = CC
 CUDA_C = nvcc
+TOOLKIT = CRAY
 MPI_INC = -I.
 CUDA_INC = -I.
 CUDA_LINK = -lcudart -lcublas -L.
+
 CUDA_FLAGS_DEV = --compile -arch=sm_35 -D CUDA_ARCH=350 -g -G -D DEBUG_GPU
 CUDA_FLAGS_OPT = --compile -arch=sm_35 -D CUDA_ARCH=350 -O3
 CUDA_FLAGS = $(CUDA_FLAGS_OPT)
-LA_LINK_INTEL = -lmkl_core -lmkl_intel_thread -lmkl_intel_lp64 -lmkl_blas95_lp64 -lmkl_lapack95_lp64 -lrt
-LA_LINK_AMD = -lacml_mp -L/opt/acml/5.3.1/gfortran64_mp/lib
-LA_LINK_CRAY = " "
-LA_LINK = $(LA_LINK_CRAY)
+LA_LINK_MKL = -lmkl_core -lmkl_intel_thread -lmkl_intel_lp64 -lmkl_blas95_lp64 -lmkl_lapack95_lp64 -lrt
+LA_LINK_ACML = -lacml_mp -L/opt/acml/5.3.1/gfortran64_fma4_mp/lib
+LA_LINK_INTEL = -L.
+LA_LINK_CRAY = -L.
+LA_LINK_GNU = -L.
+LA_LINK_PGI = -L.
+LA_LINK = $(LA_LINK_$(TOOLKIT))
 CFLAGS_DEV = -c -D CUDA_ARCH=350 -g
 CFLAGS_OPT = -c -D CUDA_ARCH=350 -O3
 CFLAGS = $(CFLAGS_OPT)
-FFLAGS_DEV = -c -D CUDA_ARCH=350 -g
-FFLAGS_OPT = -c -D CUDA_ARCH=350 -O3
-FFLAGS_DEV_GNU = $(FFLAGS_DEV) -fopenmp -fbacktrace -fcheck=bounds -fcheck=array-temps -fcheck=pointer -pg
-FFLAGS_OPT_GNU = $(FFLAGS_OPT) -fopenmp
-FFLAGS_DEV_PGI = $(FFLAGS_DEV) -mp -Mcache_align -Mbounds -Mchkptr
-FFLAGS_OPT_PGI = $(FFLAGS_OPT) -mp -Mcache_align
-FFLAGS_DEV_INTEL = $(FFLAGS_DEV) -fpp -vec-threshold4 -vec-report2 -openmp -openmp-report2 -D USE_MKL
-FFLAGS_OPT_INTEL = $(FFLAGS_OPT) -fpp -vec-threshold4 -vec-report2 -openmp -openmp-report2 -D USE_MKL
-FFLAGS = $(FFLAGS_OPT) -D NO_PHI -D NO_AMD
-LFLAGS_GNU = -lgomp
-LFLAGS_PGI = -lpthread
-LFLAGS = $(LA_LINK) $(CUDA_LINK) -o
+FFLAGS_DEV_CRAY = -c -D CUDA_ARCH=350 -g
+FFLAGS_OPT_CRAY = -c -D CUDA_ARCH=350 -O3
+FFLAGS_DEV_GNU = -c -fopenmp -fbacktrace -fcheck=bounds -fcheck=array-temps -fcheck=pointer -pg
+FFLAGS_OPT_GNU = -c -fopenmp -O3
+FFLAGS_DEV_PGI = -c -mp -Mcache_align -Mbounds -Mchkptr -Mstandard -pg
+FFLAGS_OPT_PGI = -c -mp -Mcache_align -Mstandard -O3
+FFLAGS_DEV_INTEL = -c -g -fpp -vec-threshold4 -openmp
+FFLAGS_OPT_INTEL = -c -O3 -fpp -vec-threshold4 -openmp
+FFLAGS = $(FFLAGS_OPT_$(TOOLKIT)) -D NO_PHI -D NO_AMD
+LTHREAD_GNU   = -lgomp
+LTHREAD_PGI   = -lpthread
+LTHREAD_CRAY  = -L.
+LTHREAD_INTEL = -liomp5
+LTHREAD = $(LTHREAD_$(TOOLKIT))
+LFLAGS = $(LTHREAD) $(LA_LINK) $(CUDA_LINK) -o
 
 OBJS =  stsubs.o combinatoric.o timers.o extern_names.o lists.o dictionary.o symm_index.o \
 	tensor_algebra.o tensor_algebra_cpu.o tensor_algebra_cpu_phi.o tensor_dil_omp.o \

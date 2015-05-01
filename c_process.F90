@@ -1,6 +1,6 @@
 !This module provides functionality for a Computing Process (C-PROCESS, CP).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2015/04/28
+!REVISION: 2015/05/01
 !PREPROCESSOR:
 ! -D NO_GPU: No NVidia GPU;
 ! -D NO_PHI: No Intel Xeon Phi;
@@ -803,8 +803,8 @@
                 endif
                elseif(stcu_num_units.gt.1.and.stcu_num_units.le.stcu_max_units) then !multiple STCU: MIMD execution
                 stcu_simd_my_pass=0; stcu_mimd_my_pass=0; stcu_mimd_max_pass=1
-                if(VERBOSE) write(CONS_OUT,'("#DEBUG(c_process::c_proc_life): STCU MIMD: requested number of STCU units = ",i3)') &
-                 stcu_num_units !debug
+                if(VERBOSE) write(CONS_OUT,'("#DEBUG(c_process::c_proc_life): STCU MIMD: requested number of STCU units = ",i3)')&
+                &stcu_num_units !debug
 !$OMP PARALLEL NUM_THREADS(stcu_num_units) FIRSTPRIVATE(stcu_base_ip,stcu_mimd_my_pass,err_code) &
 !$OMP          PRIVATE(thread_num,stcu_my_ip,stcu_my_eti,i,j,k) DEFAULT(SHARED)
                 thread_num=omp_get_thread_num()
@@ -906,7 +906,8 @@
           endif !MT/LST
          else
 !$OMP MASTER
-          write(CONS_OUT,'("#ERROR(c_process::c_proc_life): invalid initial number of threads or nested: ",i6,l1)') n,omp_get_nested()
+          write(CONS_OUT,'("#ERROR(c_process::c_proc_life): invalid initial number of threads or nested: ",i6,l1)')&
+          &n,omp_get_nested()
           ierr=-2
 !$OMP END MASTER
          endif
@@ -1481,7 +1482,8 @@
               if(associated(my_eti%tens_op(j1)%op_aar_entry)) then
                if(c_associated(my_eti%tens_op(j1)%op_aar_entry%tens_blck_c)) then
                 j2=tensBlck_set_presence(my_eti%tens_op(j1)%op_aar_entry%tens_blck_c) !mark tensBlck_t as present on the GPU
-                if(j2.ne.0) write(CONS_OUT,'("ERROR(c_process::c_proc_life:nvcu_task_status): tensBlck_set_presence failed: ",i10)') j2
+                if(j2.ne.0)&
+                &write(CONS_OUT,'("ERROR(c_process::c_proc_life:nvcu_task_status): tensBlck_set_presence failed: ",i10)') j2
                endif
               endif
              enddo
@@ -3453,10 +3455,16 @@
             call gpu_set_transpose_algorithm(EFF_TRN_OFF) !scatter on GPU
             write(CONS_OUT,'(3x)',advance='no')
             err_code=gpu_tensor_block_copy_dlf(o2n,ctens(1),ctens(0))
-            if(err_code.ne.0) then; write(CONS_OUT,*)'GPU error ',err_code; call print_gpu_debug_dump(CONS_OUT); ierr=24; goto 999; endif
+            if(err_code.ne.0) then
+             write(CONS_OUT,*)'GPU error ',err_code; call print_gpu_debug_dump(CONS_OUT)
+             ierr=24; goto 999
+            endif
             write(CONS_OUT,'(3x)',advance='no')
             err_code=gpu_tensor_block_copy_dlf(n2o,ctens(0),ctens(2))
-            if(err_code.ne.0) then; write(CONS_OUT,*)'GPU error ',err_code; call print_gpu_debug_dump(CONS_OUT); ierr=25; goto 999; endif
+            if(err_code.ne.0) then
+             write(CONS_OUT,*)'GPU error ',err_code; call print_gpu_debug_dump(CONS_OUT)
+             ierr=25; goto 999
+            endif
             call tens_blck_unpack(ftens(2),entry_ptr(2),ierr); if(ierr.ne.0) then; ierr=26; goto 999; endif
             cmp=tensor_block_cmp(ftens(1),ftens(2),ierr,dtk,.true.,1d-4,diffc); if(ierr.ne.0) then; ierr=27; goto 999; endif
             write(CONS_OUT,'(3x,l1,1x,i9,1x,F16.4)') cmp,diffc,tensor_block_norm1(ftens(2),ierr,dtk)
@@ -3469,10 +3477,16 @@
 !            err_code=cuda_task_wait(cuda_task(1)); if(err_code.ne.cuda_task_completed) then; ierr=29; goto 999; endif
 !            write(CONS_OUT,'("#DEBUG(tensor_algebra_gpu_nvidia:gpu_tensor_block_copy_dlf_): Time ",F10.6)') thread_wtime()-tm
             err_code=gpu_tensor_block_copy_dlf(o2n,ctens(1),ctens(0))
-            if(err_code.ne.0) then; write(CONS_OUT,*)'GPU error ',err_code; call print_gpu_debug_dump(CONS_OUT); ierr=30; goto 999; endif
+            if(err_code.ne.0) then
+             write(CONS_OUT,*)'GPU error ',err_code; call print_gpu_debug_dump(CONS_OUT)
+             ierr=30; goto 999
+            endif
             write(CONS_OUT,'(3x)',advance='no')
             err_code=gpu_tensor_block_copy_dlf(n2o,ctens(0),ctens(2))
-            if(err_code.ne.0) then; write(CONS_OUT,*)'GPU error ',err_code; call print_gpu_debug_dump(CONS_OUT); ierr=31; goto 999; endif
+            if(err_code.ne.0) then
+             write(CONS_OUT,*)'GPU error ',err_code; call print_gpu_debug_dump(CONS_OUT)
+             ierr=31; goto 999
+            endif
             err_code=cuda_task_destroy(cuda_task(1)); if(err_code.ne.0) then; ierr=32; goto 999; endif
             call tens_blck_unpack(ftens(2),entry_ptr(2),ierr); if(ierr.ne.0) then; ierr=33; goto 999; endif
             cmp=tensor_block_cmp(ftens(1),ftens(2),ierr,dtk,.true.,1d-4,diffc); if(ierr.ne.0) then; ierr=34; goto 999; endif
@@ -3481,7 +3495,10 @@
             write(CONS_OUT,'(3x)',advance='no')
             n2o(1:tens_rank)=(/(i,i=1,tens_rank)/)
             err_code=gpu_tensor_block_copy_dlf(n2o,ctens(1),ctens(2)); if(err_code.ne.0) then; ierr=35; goto 999; endif
-            if(err_code.ne.0) then; write(CONS_OUT,*)'GPU error ',err_code; call print_gpu_debug_dump(CONS_OUT); ierr=36; goto 999; endif
+            if(err_code.ne.0) then
+             write(CONS_OUT,*)'GPU error ',err_code; call print_gpu_debug_dump(CONS_OUT)
+             ierr=36; goto 999
+            endif
             call tens_blck_dissoc(ctens(2),ierr); if(ierr.ne.0) then; ierr=37; goto 999; endif
             call tens_blck_dissoc(ctens(1),ierr); if(ierr.ne.0) then; ierr=38; goto 999; endif
             call tens_blck_dissoc(ctens(0),ierr); if(ierr.ne.0) then; ierr=39; goto 999; endif
