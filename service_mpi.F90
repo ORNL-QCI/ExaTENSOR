@@ -1,6 +1,6 @@
 !This module provides general services for MPI parallel programs.
        module service_mpi
-        use, intrinsic:: ISO_C_BINDING, only: C_INT,C_SIZE_T
+        use, intrinsic:: ISO_C_BINDING
 !If a function contains MPI calls it is classified as PARALLEL (PARALLEL: YES).
 !FUNCTIONS:
 ! - subroutine file_handle(ch*:command,i:ifh,i:ierr): SERIAL: file handle manager.
