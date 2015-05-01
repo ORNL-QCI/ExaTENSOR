@@ -1,6 +1,6 @@
 !Distributed data storage primitives.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2015/04/30 (started 2015/03/18)
+!REVISION: 2015/05/01 (started 2015/03/18)
 !All rights reserved!
         module distributed
 !       use, intrinsic:: ISO_C_BINDING
@@ -24,7 +24,7 @@
          contains
           procedure, public:: clean=>DataDescrClean      !clean a data descriptor
           procedure, public:: init=>DataDescrInit        !set up a data descriptor
-!          procedure, public:: get_data=>DataDescrGetData !load data referred to by a data descriptor into a local buffer
+          procedure, public:: get_data=>DataDescrGetData !load data referred to by a data descriptor into a local buffer
 !          procedure, public:: put_data=>DataDescrPutData !store data from a local buffer in the location specified by a data descriptor
         end type DataDescr_t
 !DATA:
@@ -32,6 +32,8 @@
 !FUNCTION VISIBILITY:
         private DataDescrClean
         private DataDescrInit
+        private DataDescrGetData
+!        private DataDescrPutData
 
         contains
 !METHODS:
@@ -52,17 +54,17 @@
         subroutine DataDescrInit(this,process_rank,mpi_window,offset,volume,ierr,comm_mpi,check_thorough)
 !Data descriptor constructor.
         implicit none
-        class(DataDescr_t), intent(inout):: this                !inout: data descriptor
-        integer(INT_MPI), intent(in):: process_rank             !in: process rank where the data resides
-        integer(INT_MPI), intent(in):: mpi_window               !in: MPI window the data is exposed with
-        integer(INT_ADDR), intent(in):: offset                  !in: Offset in the MPI window (in displacement units)
-        integer(INT_ADDR), intent(in):: volume                  !in: Number of elements (each element byte size = displacement unit)
-        integer(INT_MPI), intent(inout), optional:: ierr        !out: error code (0:success)
-        integer(INT_MPI), intent(in), optional:: comm_mpi       !in: MPI communicator (default: MPI_COMM_WORLD)
-        logical(INT_MPI), intent(in), optional:: check_thorough !in: if .true., enables the process order check (expensive): default=.false.
+        class(DataDescr_t), intent(inout):: this          !inout: data descriptor
+        integer(INT_MPI), intent(in):: process_rank       !in: process rank where the data resides
+        integer(INT_MPI), intent(in):: mpi_window         !in: MPI window the data is exposed with
+        integer(INT_ADDR), intent(in):: offset            !in: Offset in the MPI window (in displacement units)
+        integer(INT_ADDR), intent(in):: volume            !in: Number of elements (each element byte size = displacement unit)
+        integer(INT_MPI), intent(inout), optional:: ierr  !out: error code (0:success)
+        integer(INT_MPI), intent(in), optional:: comm_mpi !in: MPI communicator (default: MPI_COMM_WORLD)
+        logical, intent(in), optional:: check_thorough    !in: if .true., enables the process order check (expensive): default=.false.
         integer(INT_MPI):: comm,my_group,win_group,res,errc
         integer(INT_ADDR):: attr
-        logical(INT_MPI):: flag
+        logical:: flag
 
         errc=0
         if(process_rank.ge.0) then
@@ -113,6 +115,23 @@
         if(present(ierr)) ierr=errc
         return
         end subroutine DataDescrInit
-!-------------------------------------------------------------------
+!-----------------------------------------------------
+        subroutine DataDescrGetData(this,loc_ptr,ierr)
+        implicit none
+        class(DataDescr_t), intent(in):: this            !in: data descriptor
+        type(C_PTR), intent(in):: loc_ptr                !in: pointer to a local buffer
+        integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
+        integer(INT_MPI):: errc
+        character(1), pointer:: char_ptr(:)
+
+        errc=0
+        if(.not.c_associated(loc_ptr,C_NULL_PTR)) then
+         
+        else
+         errc=1
+        endif
+        if(present(ierr)) ierr=errc
+        return
+        end subroutine DataDescrGetData
 
         end module distributed
