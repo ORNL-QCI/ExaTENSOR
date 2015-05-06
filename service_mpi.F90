@@ -19,8 +19,10 @@
 #endif
 !Parameters:
  !MPI kinds:
-        integer(C_INT), parameter, public:: INT_MPI=4                 !default MPI integer kind
-        integer(C_INT), parameter, public:: INT_ADDR=MPI_ADDRESS_KIND !default MPI address/size kind
+        integer(C_INT), parameter, public:: INT_MPI=MPI_INTEGER_KIND   !default MPI integer kind
+        integer(C_INT), parameter, public:: INT_ADDR=MPI_ADDRESS_KIND  !default MPI address/size kind
+        integer(C_INT), parameter, public:: INT_OFFSET=MPI_OFFSET_KIND !default MPI offset kind
+        integer(C_INT), parameter, public:: INT_COUNT=MPI_COUNT_KIND   !default MPI element count kind
  !File management:
 	integer, parameter, private:: max_open_files=1024-16 !maximal amount of open files per process (first 16 file handles [0..15] are reserved)
 !Types:
@@ -72,6 +74,17 @@
 	integer, private:: nof=0                          !current number of open files (local to each process)
 	integer, private:: fhot(16:16+max_open_files-1)=0 !file handle occupancy table (first 16 file handles [0..15] are reserved)
 	integer, private:: ffhs(0:max_open_files-1)=(/(j_,j_=16,16+max_open_files-1)/) !a stack of free file handles
+!Interfaces to Fortran wrappers to some MPI functions:
+        interface
+ !MPI_Get_address: Get the absolute MPI displacement of a local object (for remote accesses):
+         subroutine MPI_Get_Displacement(location,disp,ierr) bind(c,name='MPI_Get_Displacement')
+          import
+          type(C_PTR), value, intent(in):: location !in: pointer to the local object
+          integer(MPI_ADDRESS_KIND):: disp          !out: absolute MPI displacement
+          integer(C_INT):: ierr                     !out: error code (0:success)
+         end subroutine MPI_Get_Displacement
+
+        end interface
 
        contains
 !-----------------------------------------------
@@ -92,7 +105,7 @@
 	character(*), intent(in):: command
 	integer, intent(inout):: ifh
 	integer, intent(out):: ierr
-	integer i,j,k,l,m,n,k0,k1,k2,k3,k4,k5,k6,k7,ks,kf
+	integer i,j,k,l,m,n
 
 	ierr=0
 	l=len_trim(command)
@@ -144,7 +157,7 @@
 !PARALLEL: YES.
         use STSUBS
 	implicit none
-	integer i,j,k,l,m,n,k0,k1,k2,k3,k4,k5,k6,k7,ks,kf,ierr
+	integer i,j,k,l,m,n,ierr
 	integer, intent(in):: error_code       !error code
 	character(*), intent(in):: error_msg  !error message
 !Time:

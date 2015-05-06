@@ -30,12 +30,13 @@
         integer(C_INT), parameter, public:: DEV_MAX=1+MAX_GPUS_PER_NODE+MAX_MICS_PER_NODE+MAX_AMDS_PER_NODE
 
 !TENSOR DATA KINDS (keep consistent with tensor_algebra.h):
-        integer(C_INT), parameter, public:: R4=4  !float data kind
-        integer(C_INT), parameter, public:: R8=8  !double data kind
-        integer(C_INT), parameter, public:: C8=16 !double complex data kind
+        integer(C_INT), parameter, public:: NO_TYPE=0 !no type/kind
+        integer(C_INT), parameter, public:: R4=4      !float data kind
+        integer(C_INT), parameter, public:: R8=8      !double data kind
+        integer(C_INT), parameter, public:: C8=16     !double complex data kind
 #ifndef NO_PHI
-!DIR$ ATTRIBUTES OFFLOAD:mic:: R4,R8,C8
-!DIR$ ATTRIBUTES ALIGN:128:: R4,R8,C8
+!DIR$ ATTRIBUTES OFFLOAD:mic:: NO_TYPE,R4,R8,C8
+!DIR$ ATTRIBUTES ALIGN:128:: NO_TYPE,R4,R8,C8
 #endif
 
 !ALIASES (keep consistent with tensor_algebra.h):

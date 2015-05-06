@@ -1,3 +1,5 @@
+/** This file contains Linux OS wrapped calls. **/
+
 #include <stdlib.h>
 #include <sys/sysinfo.h>
 

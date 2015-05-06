@@ -43,7 +43,7 @@ LFLAGS = $(LTHREAD) $(LA_LINK) $(CUDA_LINK) -o
 OBJS =  stsubs.o combinatoric.o timers.o extern_names.o lists.o dictionary.o symm_index.o \
 	tensor_algebra.o tensor_algebra_cpu.o tensor_algebra_cpu_phi.o tensor_dil_omp.o \
 	service_mpi.o cuda2fortran.o c_proc_bufs.o tensor_algebra_gpu_nvidia.o sys_service.o \
-	distributed.o subspaces.o exatensor.o c_process.o qforce.o proceed.o main.o
+	mpi_fort.o distributed.o subspaces.o exatensor.o c_process.o qforce.o proceed.o main.o
 
 $(NAME): $(OBJS)
 	$(FC) $(OBJS) $(LFLAGS) $(NAME)
@@ -97,7 +97,10 @@ tensor_algebra_gpu_nvidia.o: tensor_algebra_gpu_nvidia.cu tensor_algebra.h
 sys_service.o: sys_service.c
 	$(CC) $(CFLAGS) sys_service.c
 
-distributed.o: distributed.F90 service_mpi.o
+mpi_fort.o: mpi_fort.c
+	$(CC) $(CFLAGS) mpi_fort.c
+
+distributed.o: distributed.F90 service_mpi.o tensor_algebra.o
 	$(FC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) distributed.F90
 
 subspaces.o: subspaces.F90 tensor_algebra.o
