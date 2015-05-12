@@ -1,16 +1,16 @@
 !Distributed data storage infrastructure.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2015/05/07 (started 2015/03/18)
-!All rights reserved!
+!REVISION: 2015/05/12 (started 2015/03/18)
 !CONCEPTS:
-! * Each MPI process can participate in one or more distributed spaces,
-!   where each distributed space is defined within a specific MPI communicator.
-! * Within each distributed space, each MPI process opens a number of dynamic MPI windows.
+! * Each MPI process can participate in one or more distributed memory spaces,
+!   where each distributed memory space is defined within a specific MPI communicator.
+!   Within each distributed memory space, each MPI process opens a number
+!   of dynamic MPI windows, which are opaque to the user.
 ! * Whenever a new (persistent) tensor block is allocated on the MPI process,
-!   it is attached to one of the dynamic MPI windows of a specified distributed space
+!   it is attached to one of the dynamic MPI windows of a specified distributed memory space
 !   and the corresponding data descriptor will be sent to the manager for registration.
-! * Upon a request from the manager, a tensor block can be detached
-!   from an MPI window and destroyed.
+! * Upon a request from the manager, a tensor block can be detached from
+!   an MPI window of the corresponding distributed memory space and destroyed.
         module distributed
 !       use, intrinsic:: ISO_C_BINDING
         use service_mpi !includes ISO_C_BINDING & MPI (must stay public)
@@ -43,47 +43,51 @@
         integer(INT_MPI), parameter, public:: MPI_STAT_COMPLETED_ORIG=3 !data request has completed at the origin
         integer(INT_MPI), parameter, public:: MPI_STAT_COMPLETED=4      !data request has completed both at the origin and target
 !TYPES:
- !MPI window:
+ !MPI window info:
         type, private:: WinMPI_t
-         integer(INT_MPI), private:: Window           !MPI window handle
-         integer(INT_MPI), private:: DispUnit=0       !displacement unit size in bytes
-         integer(INT_MPI), private:: CommMPI          !MPI communicator the window is associated with
-         logical, private:: Dynamic                   !.true. if the MPI window is dynamic, .false. otherwise
+         integer(INT_MPI), private:: Window            !MPI window handle
+         integer(INT_MPI), private:: DispUnit=0        !displacement unit size in bytes
+         integer(INT_MPI), private:: CommMPI           !MPI communicator the window is associated with
+         logical, private:: Dynamic                    !.true. if the MPI window is dynamic, .false. otherwise
          contains
-          procedure, private:: clean=>WinMPIClean     !clean MPI window info
+          procedure, private:: clean=>WinMPIClean      !clean MPI window info
         end type WinMPI_t
  !Local MPI window descriptor:
-        type, public:: DataWin_t
-         integer(INT_ADDR), private:: WinSize=-1      !current size (in bytes) of the local part of the MPI window
-         type(WinMPI_t), private:: WinMPI             !MPI window info
+        type, private:: DataWin_t
+         integer(INT_ADDR), private:: WinSize=-1       !current size (in bytes) of the local part of the MPI window
+         type(WinMPI_t), private:: WinMPI              !MPI window info
          contains
-          procedure, public:: create=>DataWinCreate   !create an MPI window (collective)
-          procedure, public:: destroy=>DataWinDestroy !destroy an MPI window (collective)
-          procedure, public:: attach=>DataWinAttach   !attach a data segment to the (dynamic) MPI window
-          procedure, public:: detach=>DataWinDetach   !detach a data segment from the (dynamic) MPI window
-          procedure, public:: sync=>DataWinSync       !synchronize the private copy of the MPI window with its public copy
+          procedure, private:: clean=>DataWinClean     !clean MPI data window info (for uninitialized windows only)
+          procedure, private:: create=>DataWinCreate   !create an MPI window (collective)
+          procedure, private:: destroy=>DataWinDestroy !destroy an MPI window (collective)
+          procedure, private:: attach=>DataWinAttach   !attach a data segment to the (dynamic) MPI window
+          procedure, private:: detach=>DataWinDetach   !detach a data segment from the (dynamic) MPI window
+          procedure, private:: sync=>DataWinSync       !synchronize the private copy of the MPI window with its public copy
         end type DataWin_t
- !Distributed space descriptor:
+ !Distributed memory space descriptor:
         type, public:: DistrSpace_t
          integer(INT_MPI), private:: NumWins=0                !number of data windows in the distributed space
          integer(INT_MPI), private:: CommMPI                  !MPI communicator
-         type(DataWin_t), allocatable, private:: DataWins(:)  !local data windows
+         type(DataWin_t), allocatable, private:: DataWins(:)  !local data (MPI) windows
          character(DISTR_SPACE_NAME_LEN), private:: SpaceName !distributed space name
          contains
           procedure, public:: create=>DistrSpaceCreate        !create a distributed space (collective)
-          procedure, public:: destroy=>DistrSpaceDestroy      !destroy a distributed space (collecive)
-          procedure, public:: local_size=>DistrSpaceLocalSize !get the local size of the distributed space
+          procedure, public:: destroy=>DistrSpaceDestroy      !destroy a distributed space (collective)
+          procedure, public:: local_size=>DistrSpaceLocalSize !get the local size (bytes) of the distributed memory space
+          procedure, public:: attach=>DistrSpaceAttach        !attach a local buffer to the distributed memory space
+          procedure, public:: detach=>DistrSpaceDetach        !detach a local buffer from the distributed memory space
         end type DistrSpace_t
  !Global data location descriptor:
         type, public:: DataDescr_t
          integer(INT_MPI), private:: RankMPI=-1 !MPI rank on which the data resides
          type(WinMPI_t), private:: WinMPI       !MPI window the data is exposed with
          integer(INT_ADDR), private:: Offset    !offset in the MPI window (in displacement units)
-         integer(INT_COUNT), private:: DataVol  !number of entries (data volume)
-         integer(INT_MPI), private:: DataType   !data type of each entry: {R4,R8,C8}
+         integer(INT_COUNT), private:: DataVol  !data volume (number of typed elements)
+         integer(INT_MPI), private:: DataType   !data type of each element: {R4,R8,C8,...}
          integer(INT_MPI), private:: Locked     !lock type set on the data: {NO_LOCK, SHARED_LOCK, EXCLUSIVE_LOCK}
          integer(INT_MPI), private:: StatMPI    !status of the data request (see parameters above)
          integer(INT_MPI), private:: ReqHandle  !MPI request handle (for communications with a request handle)
+         type(C_PTR), private:: LocPtr          !local C pointer to the data buffer (internal use only)
          contains
           procedure, public:: clean=>DataDescrClean            !clean a data descriptor
           procedure, public:: init=>DataDescrInit              !set up a data descriptor
@@ -96,13 +100,18 @@
 !         procedure, public:: put_data=>DataDescrPutData       !store data from a local buffer to the location specified by a data descriptor
           procedure, public:: get_data=>DataDescrGetData       !load data referred to by a data descriptor into a local buffer
           procedure, public:: acc_data=>DataDescrAccData       !accumulate data from a local buffer to the location specified by a data descriptor
+          procedure, public:: pack=>DataDescrPack              !pack the DataDescr_t object into a plain-byte packet
+          procedure, public:: unpack=>DataDescrUnpack          !unpack the DataDescr_t object from a plain-byte packet
         end type DataDescr_t
 !GLOBAL DATA:
 !       ...
 !FUNCTION VISIBILITY:
+ !Global:
+        public data_type_size
  !WinMPI_t:
         private WinMPIClean
  !DataWin_t:
+        private DataWinClean
         private DataWinCreate
         private DataWinDestroy
         private DataWinAttach
@@ -112,6 +121,8 @@
         private DistrSpaceCreate
         private DistrSpaceDestroy
         private DistrSpaceLocalSize
+        private DistrSpaceAttach
+        private DistrSpaceDetach
  !DataDescr_t:
         private DataDescrClean
         private DataDescrInit
@@ -124,9 +135,36 @@
 !       private DataDescrPutData !`Do I really need put?
         private DataDescrGetData
         private DataDescrAccData
+        private DataDescrPack
+        private DataDescrUnpack
 
         contains
 !METHODS:
+!===============================================================
+        integer(INT_MPI) function data_type_size(data_type,ierr)
+        implicit none
+        integer(INT_MPI), intent(in):: data_type         !in: data type handle: {R4,R8,C8,...}
+        integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
+        real(4), parameter:: r4_(1)=0.0
+        real(8), parameter:: r8_(1)=0d0
+        complex(8), parameter:: c8_(1)=(0d0,0d0)
+        integer(INT_MPI):: errc
+
+        errc=0; data_type_size=0
+        select case(data_type)
+        case(R4)
+         data_type_size=storage_size(r4_,kind=INT_MPI)
+        case(R8)
+         data_type_size=storage_size(r8_,kind=INT_MPI)
+        case(C8)
+         data_type_size=storage_size(c8_,kind=INT_MPI)
+        case default
+         if(VERBOSE) write(CONS_OUT,'("#ERROR(distributed::data_type_size): Unknown data type: ",i11)') data_type
+         errc=1
+        end select
+        if(present(ierr)) ierr=errc
+        return
+        end function data_type_size
 !========================================
         subroutine WinMPIClean(this,ierr)
 !Cleans an MPI window info.
@@ -140,20 +178,35 @@
         if(present(ierr)) ierr=errc
         return
         end subroutine WinMPIClean
-!===================================================
+!=========================================
+        subroutine DataWinClean(this,ierr)
+!Cleans an uninitialized MPI data window. Should be used
+!after an allocation of a DataWin_t object, just in case.
+        implicit none
+        class(DataWin_t), intent(inout):: this           !inout: MPI data window
+        integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
+        integer(INT_MPI):: errc
+
+        errc=0
+        this%WinSize=-1
+        call this%WinMPI%clean(errc)
+        if(present(ierr)) ierr=errc
+        return
+        end subroutine DataWinClean
+!---------------------------------------------------
         subroutine DataWinCreate(this,comm_mpi,ierr) !COLLECTIVE
 !This (collective) subroutine creates a dynamic MPI data window.
         implicit none
-        class(DataWin_t), intent(inout):: this             !out: data window
-        integer(INT_MPI), intent(in):: comm_mpi            !in: MPI communicator the data window is created over
-        integer(INT_MPI), intent(inout), optional:: ierr   !out: error code (0:success)
+        class(DataWin_t), intent(inout):: this           !inout: MPI data window
+        integer(INT_MPI), intent(in):: comm_mpi          !in: MPI communicator the data window to be created over
+        integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
         integer(INT_MPI):: errc
         integer(INT_ADDR):: attr
         logical:: flag
 
-        call MPI_BARRIER(comm_mpi,errc)
+        call MPI_BARRIER(comm_mpi,errc) !test the validity of the MPI communicator
         if(errc.eq.0) then
-         if(this%WinSize.lt.0) then
+         if(this%WinSize.lt.0) then !uninitialized window
           call MPI_WIN_CREATE_DYNAMIC(MPI_INFO_NULL,comm_mpi,this%WinMPI%Window,errc)
           if(errc.eq.0) then
            call MPI_WIN_GET_ATTR(this%WinMPI%Window,MPI_WIN_DISP_UNIT,attr,flag,errc)
@@ -180,14 +233,15 @@
 !-------------------------------------------
         subroutine DataWinDestroy(this,ierr) !COLLECTIVE
 !This (collective) subroutine destroys a dynamic MPI data window.
+!The MPI data window must be empty at this point.
         implicit none
-        class(DataWin_t), intent(inout):: this             !inout: data window
-        integer(INT_MPI), intent(inout), optional:: ierr   !out: error code (0:success)
+        class(DataWin_t), intent(inout):: this           !inout: data window
+        integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
         integer(INT_MPI):: errc
 
-        call MPI_BARRIER(this%WinMPI%CommMPI,errc)
+        call MPI_BARRIER(this%WinMPI%CommMPI,errc) !test the validity of the MPI communicator
         if(errc.eq.0) then
-         if(this%WinSize.eq.0) then
+         if(this%WinSize.eq.0) then !MPI window must be empty
           call MPI_WIN_FREE(this%WinMPI%Window,errc)
           if(errc.eq.0) then
            call this%WinMPI%clean(errc)
@@ -206,11 +260,12 @@
         end subroutine DataWinDestroy
 !-----------------------------------------------------------
         subroutine DataWinAttach(this,loc_ptr,loc_size,ierr)
-!Attaches a chunk of memory to the MPI data window.
+!Attaches a local (contiguous) data buffer to the MPI data window.
+!Allowed data types: {R4,R8,C8,...}: Must be at least 4-byte long!
         implicit none
         class(DataWin_t), intent(inout):: this           !inout: data window
-        type(C_PTR), intent(in):: loc_ptr                !in: C pointer to the local buffer
-        integer(INT_ADDR), intent(in):: loc_size         !in: size of the local buffer in bytes
+        type(C_PTR), intent(in):: loc_ptr                !in: C pointer to the local data buffer
+        integer(INT_ADDR), intent(in):: loc_size         !in: size of the local data buffer in bytes: Must be multiple of 4
         integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
         integer(INT_MPI):: errc
         integer(INT_ADDR):: vol
@@ -220,7 +275,7 @@
         if(.not.c_associated(loc_ptr,C_NULL_PTR)) then
          if(loc_size.gt.0.and.mod(loc_size,4).eq.0) then
           vol=loc_size/4 !volume in 4-byte words
-          if(this%WinSize.ge.0) then !data window is active
+          if(this%WinSize.ge.0) then !data window has been initialized
            call c_f_pointer(loc_ptr,r4_ptr,(/vol/))
            call attach_buffer(r4_ptr,loc_size,errc)
            if(errc.eq.0) then
@@ -254,11 +309,12 @@
         end subroutine DataWinAttach
 !-----------------------------------------------------------
         subroutine DataWinDetach(this,loc_ptr,loc_size,ierr)
-!Detaches a chunk of memory from the MPI data window.
+!Detaches a previously attached local (contiguous) data buffer from the MPI data window.
+!The size of the data buffer in bytes must be a multiple of 4.
         implicit none
         class(DataWin_t), intent(inout):: this           !inout: data window
-        type(C_PTR), intent(in):: loc_ptr                !in: C pointer to the local buffer
-        integer(INT_ADDR), intent(in):: loc_size         !in: size of the local buffer in bytes
+        type(C_PTR), intent(in):: loc_ptr                !in: C pointer to the local data buffer to be detached
+        integer(INT_ADDR), intent(in):: loc_size         !in: size of the local data buffer in bytes: Must be multiple of 4
         integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
         integer(INT_MPI):: errc
         integer(INT_ADDR):: vol
@@ -268,22 +324,22 @@
         if(.not.c_associated(loc_ptr,C_NULL_PTR)) then
          if(loc_size.gt.0.and.mod(loc_size,4).eq.0) then
           vol=loc_size/4 !volume in 4-byte words
-          if(this%WinSize.ge.0) then !data window is active
+          if(this%WinSize.ge.loc_size) then !data window is active
            call c_f_pointer(loc_ptr,r4_ptr,(/vol/))
            call detach_buffer(r4_ptr,errc)
            if(errc.eq.0) then
-            this%WinSize=this%WinSize+loc_size
+            this%WinSize=this%WinSize-loc_size
            else
             errc=1
            endif
           else
-           errc=1
+           errc=2
           endif
          else
-          errc=1
+          errc=3
          endif
         else
-         errc=1
+         errc=4
         endif
         if(present(ierr)) ierr=errc
         return
@@ -299,7 +355,7 @@
          end subroutine detach_buffer
 
         end subroutine DataWinDetach
-!------------------------------------------------------
+!----------------------------------------
         subroutine DataWinSync(this,ierr)
 !Synchronizes the private and public copy of the MPI data window.
         implicit none
@@ -308,7 +364,7 @@
         integer(INT_MPI):: errc
 
         errc=0
-        if(this%WinSize.ge.0) then !data window is active
+        if(this%WinSize.ge.0) then !data window is initialized
          call MPI_WIN_SYNC(this%WinMPI%Window,errc); if(errc.ne.0) errc=1
         else
          errc=2
@@ -318,66 +374,105 @@
         end subroutine DataWinSync
 !==========================================================================
         subroutine DistrSpaceCreate(this,comm_mpi,num_wins,space_name,ierr) !COLLECTIVE
-!Creates a distributed space with <num_wins> windows.
-!This is a collective call. Every MPI process must receive the same <num_wins>!
+!Creates a distributed space with <num_wins> dynamic windows.
+!This is a collective call and every MPI process must receive the same <num_wins>!
         implicit none
-        class(DistrSpace_t), intent(inout):: this              !out: distributed space
-        integer(INT_MPI), intent(in):: comm_mpi                !in: MPI communicator the space is created over
-        integer(INT_MPI), intent(in):: num_wins                !in: number of data windows in the distributed space
-        character(*), intent(in):: space_name                  !in: distributed space name
-        integer(INT_MPI), intent(inout), optional:: ierr       !out: error code (0:success)
+        class(DistrSpace_t), intent(inout):: this        !inout: distributed memory space
+        integer(INT_MPI), intent(in):: comm_mpi          !in: MPI communicator the space to be created over
+        integer(INT_MPI), intent(in):: num_wins          !in: number of data windows in the distributed memory space
+        character(*), intent(in):: space_name            !in: distributed memory space name
+        integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
         integer(INT_MPI):: i,errc
 
-        call MPI_BARRIER(comm_mpi,errc)
+        call MPI_BARRIER(comm_mpi,errc) !test the validity of the MPI communicator
         if(errc.eq.0) then
          if(num_wins.gt.0) then
           allocate(this%DataWins(1:num_wins),STAT=errc)
           if(errc.eq.0) then
            do i=1,num_wins
-            call this%DataWins(i)%create(...,errc)
-            if(errc.ne.0) exit
+            call this%DataWins(i)%clean(errc); if(errc.ne.0) exit
            enddo
            if(errc.eq.0) then
-            this%NumWins=num_wins
-            this%CommMPI=comm_mpi
-            this%SpaceName=space_name(1:min(len_trim(space_name),DISTR_SPACE_NAME_LEN))
-           else
-            do i=num_wins,1,-1
-             call this%DataWins(i)%destroy(errc)
+            do i=1,num_wins
+             call this%DataWins(i)%create(comm_mpi,errc); if(errc.ne.0) exit
             enddo
-            errc=1
+            if(errc.eq.0) then
+             this%NumWins=num_wins
+             this%CommMPI=comm_mpi
+             this%SpaceName=space_name(1:min(len_trim(space_name),DISTR_SPACE_NAME_LEN)) !alphabetic name for convenience
+            else
+             do i=num_wins,1,-1
+              call this%DataWins(i)%destroy()
+             enddo
+             deallocate(this%DataWins)
+             errc=1
+            endif
+           else
+            deallocate(this%DataWins)
+            errc=2
            endif
           else
-           errc=2
+           errc=3
           endif
          else
-          errc=3
+          errc=4
          endif
         else
-         errc=4
+         errc=5
         endif
         if(present(ierr)) ierr=errc
         return
         end subroutine DistrSpaceCreate
-!------------------------------------------
-        subroutine DistrSpaceDestroy() !COLLECTIVE
-!Destroys a distributed space. This is a collective call.
+!----------------------------------------------
+        subroutine DistrSpaceDestroy(this,ierr) !COLLECTIVE
+!Destroys a distributed memory space. This is a collective call.
+!The distributed memory space descriptor passed here must be valid!
         implicit none
-        class(DistrSpace_t), intent(inout):: this        !inout: distributed space
+        class(DistrSpace_t), intent(inout):: this        !inout: distributed memory space
         integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
-        integer(INT_MPI):: i,errc
+        integer(INT_MPI):: i,j,errc
 
-        errc=0
-        
+        call MPI_BARRIER(this%CommMPI,errc) !test the validity of the MPI communicator
+        if(errc.eq.0) then
+         if(this%NumWins.gt.0) then !initialized distributed memory space
+          if(this%local_size(errc).eq.0) then !distributed memory space must be empty
+           if(errc.eq.0) then
+            do i=this%NumWins,1,-1
+             call this%DataWins(i)%destroy(j); if(j.ne.0) errc=1
+            enddo
+            if(errc.eq.0) then
+             deallocate(this%DataWins,STAT=errc)
+             if(errc.eq.0) then
+              this%NumWins=0
+              this%CommMPI=MPI_COMM_NULL
+              this%SpaceName=' '
+             else
+              errc=1
+             endif
+            else
+             errc=2
+            endif
+           else
+            errc=3
+           endif
+          else
+           errc=4
+          endif
+         else
+          errc=5
+         endif
+        else
+         errc=6
+        endif
         if(present(ierr)) ierr=errc
         return
         end subroutine DistrSpaceDestroy
 !----------------------------------------------------------------
         integer(INT_ADDR) function DistrSpaceLocalSize(this,ierr)
-!Returns the total occupied size (bytes) of all local data windows
+!Returns the total size of all local MPI data windows (in bytes)
 !belonging to the distributed space.
         implicit none
-        class(DistrSpace_t), intent(in):: this           !in: distributed space
+        class(DistrSpace_t), intent(in):: this           !in: distributed memory space
         integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
         integer(INT_MPI):: i,errc
         integer(INT_ADDR):: loc_size
@@ -400,6 +495,102 @@
         if(present(ierr)) ierr=errc
         return
         end subroutine DistrSpaceLocalSize
+!-----------------------------------------------------------------------------------
+        subroutine DistrSpaceAttach(this,loc_ptr,data_type,data_vol,data_descr,ierr)
+!Attaches a local (contiguous) buffer to the initialized distributed memory space.
+!On success, returns a valid data descriptor that can be used for remote/local accesses.
+        implicit none
+        class(DistrSpace_t), intent(inout):: this        !inout: distributed memory space
+        type(C_PTR), intent(in):: loc_ptr                !in: C pointer to the local data buffer
+        integer(INT_MPI), intent(in):: data_type         !in: pre-existing data type: {R4,R8,C8,...}
+        integer(INT_COUNT), intent(in):: data_vol        !in: positive data volume (number of typed elements)
+        class(DataDescr_t), intent(out):: data_descr     !out: filled data descriptor
+        integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
+        integer(INT_MPI):: i,m,my_rank,errc
+        integer(INT_ADDR):: min_mem,loc_size
+
+        errc=0
+        if(this%NumWins.gt.0) then !initialized distributed memory space
+         m=1; min_mem=this%DataWins(m)%WinSize
+         do i=2,this%NumWins !select the least occupied MPI data window
+          if(this%DataWins(i)%WinSize.lt.min_mem) then
+           min_mem=this%DataWins(i)%WinSize; m=i
+          endif
+         enddo
+         loc_size=data_vol*data_type_size(data_type,errc) !data buffer size in bytes
+         if(errc.eq.0.and.loc_size.gt.0) then
+          call this%DataWins(m)%attach(loc_ptr,loc_size,errc)
+          if(errc.eq.0) then
+           call MPI_COMM_RANK(this%CommMPI,my_rank,errc)
+           if(errc.eq.0) then
+            call data_descr%init(my_rank,this%DataWins(m)%WinMPI,loc_ptr,data_type,data_vol,errc)
+            if(errc.ne.0) then
+             call this%DataWins(m)%detach(loc_ptr,loc_size)
+             errc=1
+            endif
+           else
+            call this%DataWins(m)%detach(loc_ptr,loc_size)
+            errc=2
+           endif
+          else
+           errc=3
+          endif
+         else
+          errc=4
+         endif
+        else
+         errc=5
+        endif
+        if(present(ierr)) ierr=errc
+        return
+        end subroutine DistrSpaceAttach
+!--------------------------------------------------------
+        subroutine DistrSpaceDetach(this,data_descr,ierr)
+!Detaches a previously attached local (contiguous) data buffer from the distributed memory space.
+!The data buffer is specified via a data descriptor.
+        implicit none
+        class(DistrSpace_t), intent(inout):: this        !inout: distributed memory space
+        class(DataDescr_t), intent(inout):: data_descr   !inout: valid data descriptor
+        integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
+        integer(INT_MPI):: i,m,my_rank,errc
+        integer(INT_ADDR):: loc_size
+
+        errc=0
+        if(this%NumWins.gt.0) then !initialized distributed memory space
+         call MPI_COMM_RANK(this%CommMPI,my_rank,errc)
+         if(errc.eq.0) then
+          if(data_descr%RankMPI.eq.my_rank) then
+           loc_size=data_descr%DataVol*data_type_size(data_descr%DataType,errc) !data buffer size in bytes
+           if(errc.eq.0.and.loc_size.gt.0) then
+            m=0
+            do i=1,this%NumWins
+             if(this%DataWins(i)%WinMPI%Window.eq.data_descr%WinMPI%Window) then; m=i; exit; endif
+            enddo
+            if(m.gt.0) then
+             call this%DataWins(m)%detach(data_descr%LocPtr,loc_size,errc)
+             if(errc.eq.0) then
+              call data_descr%clean()
+             else
+              errc=1
+             endif
+            else
+             errc=2
+            endif
+           else
+            errc=3
+           endif
+          else
+           errc=4
+          endif
+         else
+          errc=5
+         endif
+        else
+         errc=6
+        endif
+        if(present(ierr)) ierr=errc
+        return
+        end subroutine DistrSpaceDetach
 !===========================================
         subroutine DataDescrClean(this,ierr)
 !Cleans a data descriptor.
@@ -414,26 +605,35 @@
         if(present(ierr)) ierr=errc
         return
         end subroutine DataDescrClean
-!-----------------------------------------------------------------------------------
-        subroutine DataDescrInit(this,process_rank,win_mpi,win_offset,data_vol,ierr)
-!Data descriptor constructor.
+!------------------------------------------------------------------------------------------
+        subroutine DataDescrInit(this,process_rank,win_mpi,loc_ptr,data_type,data_vol,ierr)
+!Data descriptor constructor: Data is typed and its volume must be positive.
         implicit none
         class(DataDescr_t), intent(inout):: this         !out: filled data descriptor
         integer(INT_MPI), intent(in):: process_rank      !in: MPI process rank where the data resides
         type(WinMPI_t), intent(in):: win_mpi             !in: MPI window descriptor the data is exposed with
-        integer(INT_ADDR), intent(in):: win_offset       !in: offset in the MPI window (in displacement units)
-        integer(INT_COUNT), intent(in):: data_vol        !in: data volume (number of elements)
+        type(C_PTR), intent(in):: loc_ptr                !in: C pointer to the local data buffer
+        integer(INT_MPI), intent(in):: data_type         !in: data type: {R4,R8,C8,...}
+        integer(INT_COUNT), intent(in):: data_vol        !in: positive data volume (number of elements)
         integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
+        integer(INT_MPI):: errc,elem_size
 
         errc=0
         if(process_rank.ge.0) then
-         if(data_vol.ge.0) then
-          this%RankMPI=process_rank
-          this%WinMPI=win_mpi
-          this%Offset=win_offset
-          this%DataVol=data_vol
-          this%Locked=NO_LOCK !initial state is always NOT_LOCKED
-          this%StatMPI=MPI_STAT_NONE
+         if(data_vol.gt.0) then
+          elem_size=data_type_size(data_type,errc)
+          if(errc.eq.0.and.elem_size.gt.0) then
+           this%RankMPI=process_rank
+           this%WinMPI=win_mpi
+           this%DataVol=data_vol
+           this%DataType=data_type
+           this%Locked=NO_LOCK !initial state is always NOT LOCKED
+           this%StatMPI=MPI_STAT_NONE
+           this%LocPtr=loc_ptr
+           call MPI_Get_Displacement(loc_ptr,this%Offset,errc)
+          else
+           errc=1
+          endif
          else
           errc=1
          endif
@@ -446,7 +646,7 @@
         end subroutine DataDescrInit
 !------------------------------------------------------
         subroutine DataDescrLocked(this,lock_type,ierr)
-!Locally marks the distributed data as locked/unlocked when it is locked/unlocked explicitly.
+!Locally marks the distributed data as locked/unlocked when it is locked/unlocked outside.
         implicit none
         class(DataDescr_t), intent(inout):: this         !inout: distributed data descriptor
         integer(INT_MPI), intent(in):: lock_type         !in: current data lock status: {NO_LOCK, SHARED_LOCK, EXCLUSIVE_LOCK}
