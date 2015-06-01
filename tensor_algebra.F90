@@ -3,9 +3,9 @@
         use, intrinsic:: ISO_C_BINDING
         implicit none
 !BASIC TYPE SIZES:
-        integer(C_INT), parameter, public:: INTD=4            !default integer size
-        integer(C_INT), parameter, public:: INTL=8            !long integer size
-        integer(C_INT), parameter, public:: REALD=8           !default real size
+        integer(C_INT), parameter, public:: INTD=4  !default integer size
+        integer(C_INT), parameter, public:: INTL=8  !long integer size
+        integer(C_INT), parameter, public:: REALD=8 !default real size
 #ifndef NO_PHI
 !DIR$ ATTRIBUTES OFFLOAD:mic:: INTD,INTL,REALD
 !DIR$ ATTRIBUTES ALIGN:128:: INTD,INTL,REALD
@@ -34,9 +34,12 @@
         integer(C_INT), parameter, public:: R4=4      !float data kind
         integer(C_INT), parameter, public:: R8=8      !double data kind
         integer(C_INT), parameter, public:: C8=16     !double complex data kind
+        real(4), parameter, public:: R4_=0.0
+        real(8), parameter, public:: R8_=0d0
+        complex(8), parameter, public:: C8_=(0d0,0d0)
 #ifndef NO_PHI
-!DIR$ ATTRIBUTES OFFLOAD:mic:: NO_TYPE,R4,R8,C8
-!DIR$ ATTRIBUTES ALIGN:128:: NO_TYPE,R4,R8,C8
+!DIR$ ATTRIBUTES OFFLOAD:mic:: NO_TYPE,R4,R8,C8,R4_,R8_,C8_
+!DIR$ ATTRIBUTES ALIGN:128:: NO_TYPE,R4,R8,C8,R4_,R8_,C8_
 #endif
 
 !ALIASES (keep consistent with tensor_algebra.h):

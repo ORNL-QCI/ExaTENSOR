@@ -1,48 +1,45 @@
 !Distributed data storage infrastructure (DDSI).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2015/05/17 (started 2015/03/18)
+!REVISION: 2015/06/01 (started 2015/03/18)
 !CONCEPTS:
-! * Each MPI process can participate in one or more distributed memory spaces,
+! * Each MPI process can participate in one or more distributed memory spaces (DMS),
 !   where each distributed memory space is defined within a specific MPI communicator.
 !   Within each distributed memory space, each MPI process opens a number
 !   of dynamic MPI windows for data storage, which are opaque to the user.
-! * Whenever new persistent data (a tensor block) is allocated by the MPI process,
+! * Whenever new persistent data (e.g., a tensor block) is allocated by the MPI process,
 !   it is attached to one of the dynamic MPI windows in a specific distributed memory space
-!   and the corresponding data descriptor will be sent to the manager for registration.
-!   The registered data descriptor can be used by other MPI processes for remote data accesses.
-! * Upon a request from the manager, data (a tensor block) can be detached from
+!   and the corresponding data descriptor (DD) will be sent to the manager for registration.
+!   The registered data descriptor can later be used by other MPI processes for the remote data access.
+! * Upon a request from the manager, data (e.g., a tensor block) can be detached from
 !   the corresponding distributed memory space and subsequently destroyed (if needed).
-! * Within each MPI process, all data transfers are enumerated sequentially.
+! * Data communication is accomplished via data transfer requests (DTR) and
+!   data transfer completion requests (DTCR), using data descriptors. On each MPI process,
+!   all data transfer requests are enumerated sequentially in the order they were issued.
         module distributed
 !       use, intrinsic:: ISO_C_BINDING
         use service_mpi !includes ISO_C_BINDING & MPI (must stay public)
         use:: tensor_algebra, only: NO_TYPE,R4,R8,C8 !tensor data kinds
         implicit none
-        public !because of mpi.mod (or mpif.h)
+        public !because of mpi.mod (or mpif.h) contained in service_mpi.mod
 !PARAMETERS:
  !Output:
         integer, private:: CONS_OUT=6     !default output for this module
         logical, private:: VERBOSE=.true. !verbosity for errors
         logical, private:: DEBUG=.true.   !debugging mode
  !Distributed data storage:
-        integer(INT_MPI), parameter, public:: DISTR_SPACE_NAME_LEN=128 !max length of a distributed space name
+        integer(INT_MPI), parameter, public:: DISTR_SPACE_NAME_LEN=128 !max length of a distributed space name (keep multiple of 8)
  !Data transfers:
   !Messaging:
         integer(INT_MPI), parameter, private:: MAX_MPI_MSG_VOL=2**23  !max number of elements in a single MPI message (larger to be split)
         integer(INT_MPI), parameter, private:: MAX_ONESIDED_REQS=4096 !max number of outstanding one-sided data transfer requests per process
   !Lock types:
-        integer(INT_MPI), parameter, public:: NO_LOCK=0        !No MPI lock
-        integer(INT_MPI), parameter, public:: SHARED_LOCK=1    !Shared MPI lock
-        integer(INT_MPI), parameter, public:: EXCLUSIVE_LOCK=2 !Exclusive MPI lock
-  !Locking status:
-        integer(INT_MPI), parameter, private:: UNLOCKED_CLEAN=0 !MPI lock is unset, no pending data descriptors bound to it
-        integer(INT_MPI), parameter, private:: LOCKED_CLEAN=1   !MPI lock is set, no pending data transfers
-        integer(INT_MPI), parameter, private:: LOCKED_DIRTY=2   !MPI lock is set, data transfers are in progress
-        integer(INT_MPI), parameter, private:: UNLOCKED_DIRTY=3 !MPI lock is unset, pending data descriptors are still bound to it
+        integer(INT_MPI), parameter, public:: NO_LOCK=0        !no MPI lock (must be zero)
+        integer(INT_MPI), parameter, public:: SHARED_LOCK=1    !shared MPI lock (must be positive)
+        integer(INT_MPI), parameter, public:: EXCLUSIVE_LOCK=2 !exclusive MPI lock (must be positive)
   !Asynchronous data requests:
-        integer(INT_MPI), parameter, public:: MPI_ASYNC_NOT=0 !blocking data request (default)
-        integer(INT_MPI), parameter, public:: MPI_ASYNC_NRM=1 !non-blocking data request without a request handle
-        integer(INT_MPI), parameter, public:: MPI_ASYNC_REQ=2 !non-blocking data request with a request handle
+        integer(INT_MPI), parameter, public:: MPI_ASYNC_NOT=0  !blocking data transfer request (default)
+        integer(INT_MPI), parameter, public:: MPI_ASYNC_NRM=1  !non-blocking data transfer request without a request handle
+        integer(INT_MPI), parameter, public:: MPI_ASYNC_REQ=2  !non-blocking data transfer request with a request handle
   !Data request status:
         integer(INT_MPI), parameter, public:: MPI_STAT_ONESIDED_ERR=-1  !one-sided communication error occurred
         integer(INT_MPI), parameter, public:: MPI_STAT_NONE=0           !data request has not been processed by MPI yet
@@ -55,39 +52,39 @@
   !Rank/window descriptor:
         type, private:: RankWin_t
          integer(INT_MPI), private:: Rank     !MPI rank: >=0
-         integer(INT_MPI), private:: Window   !MPI window
+         integer(INT_MPI), private:: Window   !MPI window handle
          integer(INT_MPI), private:: LockType !current lock type: {NO_LOCK,SHARED_LOCK,EXCLUSIVE_LOCK} * sign (transfer direction)
          integer(INT_MPI), private:: RefCount !data transfer reference count (number of bound data descriptors): >=0
          integer(8), private:: LastSync       !data transfer ID for which the last unlock/flush was performed
         end type RankWin_t
   !Rank/window linked list (active one-sided comms at origin):
         type, private:: RankWinList_t
-         integer(8), protected:: TransCount=0                    !total number of posted data transfers
-         real(8), protected:: TransSize=0d0                      !total size of all posted data transfers in bytes
+         integer(8), private:: TransCount=0                      !total number of posted data transfer requests
+         real(8), private:: TransSize=0d0                        !total size of all posted data transfers in bytes
          integer(INT_MPI), private:: NumEntries=0                !number of active entries
          integer(INT_MPI), private:: FirstEntry=-1               !first active entry
          type(RankWin_t), private:: RankWins(MAX_ONESIDED_REQS)  !(rank,window) entries
-         integer(INT_MPI), private:: NextWin(MAX_ONESIDED_REQS)  !next entry by MPI window
-         integer(INT_MPI), private:: NextRank(MAX_ONESIDED_REQS) !next entry by MPI rank
+         integer(INT_MPI), private:: NextWin(MAX_ONESIDED_REQS)  !next entry by MPI window (linked list)
+         integer(INT_MPI), private:: NextRank(MAX_ONESIDED_REQS) !next entry by MPI rank (linked list)
          contains
           procedure, private:: clean=>RankWinListClean !clean the (rank,window) list (initialization)
           procedure, private:: test=>RankWinListTest   !test a given (rank,window) entry with an optional action (add,delete)
         end type RankWinList_t
- !MPI window info:
+ !Basic MPI window info:
         type, private:: WinMPI_t
          integer(INT_MPI), private:: Window            !MPI window handle
-         integer(INT_MPI), private:: DispUnit=0        !displacement unit size in bytes
-         integer(INT_MPI), private:: CommMPI           !MPI communicator the window is associated with
+         integer(INT_MPI), private:: DispUnit=0        !MPI window displacement unit size in bytes
+         integer(INT_MPI), private:: CommMPI           !MPI communicator the MPI window is associated with
          logical, private:: Dynamic                    !.true. if the MPI window is dynamic, .false. otherwise
          contains
           procedure, private:: clean=>WinMPIClean      !clean MPI window info
         end type WinMPI_t
- !Local MPI window descriptor:
+ !Local MPI data window descriptor:
         type, private:: DataWin_t
          integer(INT_ADDR), private:: WinSize=-1       !current size (in bytes) of the local part of the MPI window
          type(WinMPI_t), private:: WinMPI              !MPI window info
          contains
-          procedure, private:: clean=>DataWinClean     !clean MPI data window info (for uninitialized windows only)
+          procedure, private:: clean=>DataWinClean     !clean the MPI data window descriptor
           procedure, private:: create=>DataWinCreate   !create an MPI window (collective)
           procedure, private:: destroy=>DataWinDestroy !destroy an MPI window (collective)
           procedure, private:: attach=>DataWinAttach   !attach a data segment to the (dynamic) MPI window
@@ -96,13 +93,13 @@
         end type DataWin_t
  !Distributed memory space descriptor:
         type, public:: DistrSpace_t
-         integer(INT_MPI), private:: NumWins=0                !number of data windows in the distributed space
-         integer(INT_MPI), private:: CommMPI                  !MPI communicator
-         type(DataWin_t), allocatable, private:: DataWins(:)  !local data (MPI) windows
-         character(DISTR_SPACE_NAME_LEN), private:: SpaceName !distributed space name
+         integer(INT_MPI), private:: NumWins=0                !number of MPI windows in the distributed space
+         integer(INT_MPI), private:: CommMPI                  !MPI communicator the distributed memory space is created over
+         type(DataWin_t), allocatable, private:: DataWins(:)  !local MPI data windows
+         character(DISTR_SPACE_NAME_LEN), private:: SpaceName !distributed memory space name
          contains
-          procedure, public:: create=>DistrSpaceCreate        !create a distributed space (collective)
-          procedure, public:: destroy=>DistrSpaceDestroy      !destroy a distributed space (collective)
+          procedure, public:: create=>DistrSpaceCreate        !create a distributed memory space (collective)
+          procedure, public:: destroy=>DistrSpaceDestroy      !destroy a distributed memory space (collective)
           procedure, public:: local_size=>DistrSpaceLocalSize !get the local size (bytes) of the distributed memory space
           procedure, public:: attach=>DistrSpaceAttach        !attach a local buffer to the distributed memory space
           procedure, public:: detach=>DistrSpaceDetach        !detach a local buffer from the distributed memory space
@@ -111,21 +108,19 @@
         type, public:: DataDescr_t
          type(C_PTR), private:: LocPtr          !local C pointer to the data buffer (internal use only)
          integer(INT_MPI), private:: RankMPI=-1 !MPI rank on which the data resides
-         type(WinMPI_t), private:: WinMPI       !MPI window the data is exposed with
+         type(WinMPI_t), private:: WinMPI       !info on the MPI window the data is exposed with
          integer(INT_ADDR), private:: Offset    !offset in the MPI window (in displacement units)
          integer(INT_COUNT), private:: DataVol  !data volume (number of typed elements)
          integer(INT_MPI), private:: DataType   !data type of each element: {R4,R8,C8,...}
-         integer(INT_MPI), private:: Locked     !lock type set on the data: {NO_LOCK, SHARED_LOCK, EXCLUSIVE_LOCK}
-         integer(INT_MPI), private:: StatMPI    !status of the data request (see MPI_STAT_XXX parameters above)
+         integer(8), private:: TransID          !data transfer request ID (sequential data transfer number within this process)
+         integer(INT_MPI), private:: StatMPI    !status of the data transfer request (see MPI_STAT_XXX parameters above)
          integer(INT_MPI), private:: ReqHandle  !MPI request handle (for communications with a request handle)
-         integer(8), private:: TransID          !data transfer ID (sequential data transfer number within this process)
          contains
           procedure, public:: clean=>DataDescrClean             !clean a data descriptor
           procedure, public:: init=>DataDescrInit               !set up a data descriptor
-          procedure, public:: flush_data=>DataDescrFlushData    !complete an outstanding passive target communication without unlocking
+          procedure, public:: flush_data=>DataDescrFlushData    !complete an outstanding data transfer request
           procedure, public:: test_data=>DataDescrTestData      !test whether the data has been transferred to/from the origin (request)
           procedure, public:: wait_data=>DataDescrWaitData      !wait until the data has been transferred to/from the origin (request)
-!         procedure, public:: put_data=>DataDescrPutData        !store data from a local buffer to the location specified by a data descriptor
           procedure, public:: get_data=>DataDescrGetData        !load data referred to by a data descriptor into a local buffer
           procedure, public:: acc_data=>DataDescrAccData        !accumulate data from a local buffer to the location specified by a data descriptor
           procedure, public:: pack=>DataDescrPack               !pack the DataDescr_t object into a plain-byte packet
@@ -133,7 +128,7 @@
         end type DataDescr_t
 !GLOBAL DATA:
  !MPI one-sided data transfer bookkeeping (master thread only):
-        type(RankWinList_t), private:: OneSideRefs !container for active one-sided communications at origin
+        type(RankWinList_t), private:: RankWinRefs !container for active one-sided communications initiated at the local origin
 !FUNCTION VISIBILITY:
  !Global:
         public data_type_size
@@ -161,7 +156,6 @@
         private DataDescrFlushData
         private DataDescrTestData
         private DataDescrWaitData
-!       private DataDescrPutData !`Do I really need put?
         private DataDescrGetData
         private DataDescrAccData
         private DataDescrPack
@@ -170,30 +164,36 @@
         contains
 !METHODS:
 !===============================================================
-        integer(INT_MPI) function data_type_size(data_type,ierr) !Fortran 2008 (storage_size)
+        integer(INT_MPI) function data_type_size(data_type,ierr) !Fortran2008: storage_size()
 !Returns the size of a given (pre-registered) data type in bytes.
         implicit none
-        integer(INT_MPI), intent(in):: data_type         !in: data type handle: {NO_TYPE,R4,R8,C8,...}
+        integer(INT_MPI), intent(in):: data_type         !in: pre-registered data type handle: {NO_TYPE,R4,R8,C8,...}
         integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
-        real(4), parameter:: r4_(1)=0.0
-        real(8), parameter:: r8_(1)=0d0
-        complex(8), parameter:: c8_(1)=(0d0,0d0)
+        integer(INT_MPI), parameter:: BYTE_BITS=8
         integer(INT_MPI):: errc
 
         errc=0; data_type_size=0
         select case(data_type)
         case(R4)
-         data_type_size=storage_size(r4_,kind=INT_MPI)
+         data_type_size=storage_size(R4_,kind=INT_MPI)
         case(R8)
-         data_type_size=storage_size(r8_,kind=INT_MPI)
+         data_type_size=storage_size(R8_,kind=INT_MPI)
         case(C8)
-         data_type_size=storage_size(c8_,kind=INT_MPI)
+         data_type_size=storage_size(C8_,kind=INT_MPI)
         case(NO_TYPE)
-         dta_type_size=0
+         data_type_size=0
         case default
          if(VERBOSE) write(CONS_OUT,'("#ERROR(distributed::data_type_size): Unknown data type: ",i11)') data_type
          errc=1; data_type_size=-1
         end select
+        if(errc.eq.0) then
+         if(mod(data_type_size,BYTE_BITS).eq.0) then
+          data_type_size=data_type_size/BYTE_BITS !convert bits to bytes
+         else
+          if(VERBOSE) write(CONS_OUT,'("#ERROR(distributed::data_type_size): Fractional type size detected: ",i11)') data_type_size
+          errc=2 !fractional data type size is not allowed
+         endif
+        endif
         if(present(ierr)) ierr=errc
         return
         end function data_type_size
@@ -210,22 +210,17 @@
         return
         end subroutine RankWinListClean
 !-------------------------------------------------------------------------------------
-        integer(INT_MPI) function RankWinListTest(this,rank,win,ierr,action,lock_type)
+        integer(INT_MPI) function RankWinListTest(this,rank,win,ierr,action,lock_stat)
 !Looks up a given pair (rank,window) in the active (rank,window) list.
-!If not found, returns the lock status NO_LOCK, meaning that this (rank,window) is not currently used.
-!If found, returns one of {SHARED_LOCK,EXCLUSIVE_LOCK,BLOCKED_LOCK}, where
-!BLOCKED_LOCK will mean that the MPI lock is actually unlocked but there are
-!still references to this (rank,window), that is, there are still locked data
-!descriptors referring to this (rank,window) that need to be explicitly marked unlocked
-!before the entry can be safely released from the active (rank,window) list.
-!Additionally, an action can be performed: Add entry if not found OR Delete entry if found.
+!If not found, returns the lock status lock_stat=NO_LOCK, meaning that this (rank,window) is not currently used.
+!If found, returns the signed lock status, where the sign refers to the current direction of transfer.
         implicit none
         class(RankWinList_t), intent(inout):: this         !inout: (rank,window) list
         integer(INT_MPI), intent(in):: rank                !in: MPI rank
-        integer(INT_MPI), intent(in):: win                 !in: MPI Window
+        integer(INT_MPI), intent(in):: win                 !in: MPI window handle
         integer(INT_MPI), intent(inout), optional:: ierr   !out: error code (0:success)
-        logical, intent(in), optional:: action             !in: if .true., the entry will be deleted if found, or added if not found
-        integer(INT_MPI), intent(in), optional:: lock_type !in: if the action is to Add, provides the lock type {SHARED_LOCK,EXCLUSIVE_LOCK}
+        integer(INT_MPI), intent(in), optional:: action    !in: action: {}
+        integer(INT_MPI), intent(in), optional:: lock_stat !{NO_LOCK,SHARED_LOCK,EXCLUSIVE_LOCK}*direction
         integer(INT_MPI):: k,l,m,n,lck,errc
         logical:: actn
 
