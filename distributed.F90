@@ -1,20 +1,23 @@
 !Distributed data storage infrastructure (DDSI).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2015/06/01 (started 2015/03/18)
+!REVISION: 2015/06/02 (started 2015/03/18)
 !CONCEPTS:
 ! * Each MPI process can participate in one or more distributed memory spaces (DMS),
 !   where each distributed memory space is defined within a specific MPI communicator.
-!   Within each distributed memory space, each MPI process opens a number
+!   Internally, within each distributed memory space, each MPI process opens a number
 !   of dynamic MPI windows for data storage, which are opaque to the user.
 ! * Whenever new persistent data (e.g., a tensor block) is allocated by the MPI process,
-!   it is attached to one of the dynamic MPI windows in a specific distributed memory space
-!   and the corresponding data descriptor (DD) will be sent to the manager for registration.
-!   The registered data descriptor can later be used by other MPI processes for the remote data access.
+!   it can be attached to one of the dynamic MPI windows in a specific distributed memory space
+!   and the corresponding data descriptor (DD) should be sent to the manager for registration.
+!   The registered data descriptor can be used by other MPI processes for the remote access to the data.
 ! * Upon a request from the manager, data (e.g., a tensor block) can be detached from
 !   the corresponding distributed memory space and subsequently destroyed (if needed).
 ! * Data communication is accomplished via data transfer requests (DTR) and
-!   data transfer completion requests (DTCR), using data descriptors. On each MPI process,
-!   all data transfer requests are enumerated sequentially in the order they were issued.
+!   data transfer completion requests (DTCR), using registered data descriptors. On each MPI process,
+!   all data transfer requests are enumerated sequentially in the order they were issued (starting at 1).
+! * All procedures return error codes, but special return statuses must be distinguished
+!   (see "Special return statuses" below). Normally, error codes are smaller by absolute value integers.
+!   Contrary, special return statuses should be closer to the HUGE by their absolute values.
         module distributed
 !       use, intrinsic:: ISO_C_BINDING
         use service_mpi !includes ISO_C_BINDING & MPI (must stay public)
@@ -26,9 +29,15 @@
         integer, private:: CONS_OUT=6     !default output for this module
         logical, private:: VERBOSE=.true. !verbosity for errors
         logical, private:: DEBUG=.true.   !debugging mode
- !Distributed data storage:
-        integer(INT_MPI), parameter, public:: DISTR_SPACE_NAME_LEN=128 !max length of a distributed space name (keep multiple of 8)
+ !Special return statuses:
+        integer(INT_MPI), parameter, public:: TRY_LATER=918273645 !try the action later (resources are busy): Keep it unique!
+ !Distributed memory spaces:
+        integer(INT_MPI), parameter, public:: DISTR_SPACE_NAME_LEN=128 !max length of a distributed space name (multiple of 8)
  !Data transfers:
+  !Active (rank,window) management:
+        integer(INT_MPI), parameter, private:: HASH_BITS=8        !number of hash bits for (rank,window) searches
+        integer(INT_MPI), parameter, private:: READ_SIGN=+1       !incoming traffic sign (reading direction)
+        integer(INT_MPI), parameter, private:: WRITE_SIGN=-1      !outgoing traffic sign (writing direction)
   !Messaging:
         integer(INT_MPI), parameter, private:: MAX_MPI_MSG_VOL=2**23  !max number of elements in a single MPI message (larger to be split)
         integer(INT_MPI), parameter, private:: MAX_ONESIDED_REQS=4096 !max number of outstanding one-sided data transfer requests per process
@@ -36,7 +45,7 @@
         integer(INT_MPI), parameter, public:: NO_LOCK=0        !no MPI lock (must be zero)
         integer(INT_MPI), parameter, public:: SHARED_LOCK=1    !shared MPI lock (must be positive)
         integer(INT_MPI), parameter, public:: EXCLUSIVE_LOCK=2 !exclusive MPI lock (must be positive)
-  !Asynchronous data requests:
+  !Asynchronous data transfer requests:
         integer(INT_MPI), parameter, public:: MPI_ASYNC_NOT=0  !blocking data transfer request (default)
         integer(INT_MPI), parameter, public:: MPI_ASYNC_NRM=1  !non-blocking data transfer request without a request handle
         integer(INT_MPI), parameter, public:: MPI_ASYNC_REQ=2  !non-blocking data transfer request with a request handle
@@ -53,22 +62,26 @@
         type, private:: RankWin_t
          integer(INT_MPI), private:: Rank     !MPI rank: >=0
          integer(INT_MPI), private:: Window   !MPI window handle
-         integer(INT_MPI), private:: LockType !current lock type: {NO_LOCK,SHARED_LOCK,EXCLUSIVE_LOCK} * sign (transfer direction)
+         integer(INT_MPI), private:: LockType !current lock type: {NO_LOCK,SHARED_LOCK,EXCLUSIVE_LOCK} * sign{READ_SIGN,WRITE_SIGN}
          integer(INT_MPI), private:: RefCount !data transfer reference count (number of bound data descriptors): >=0
-         integer(8), private:: LastSync       !data transfer ID for which the last unlock/flush was performed
+         integer(8), private:: LastSync       !data transfer ID for which the last unlock/flush was performed (>0|0:never_sync)
+         contains
+          procedure, private:: init=>RankWinInit !initialize/clean a (rank,window) descriptor
         end type RankWin_t
   !Rank/window linked list (active one-sided comms at origin):
         type, private:: RankWinList_t
-         integer(8), private:: TransCount=0                      !total number of posted data transfer requests
-         real(8), private:: TransSize=0d0                        !total size of all posted data transfers in bytes
-         integer(INT_MPI), private:: NumEntries=0                !number of active entries
-         integer(INT_MPI), private:: FirstEntry=-1               !first active entry
-         type(RankWin_t), private:: RankWins(MAX_ONESIDED_REQS)  !(rank,window) entries
-         integer(INT_MPI), private:: NextWin(MAX_ONESIDED_REQS)  !next entry by MPI window (linked list)
-         integer(INT_MPI), private:: NextRank(MAX_ONESIDED_REQS) !next entry by MPI rank (linked list)
+         integer(8), private:: TransCount=0                         !total number of posted data transfer requests
+         real(8), private:: TransSize=0d0                           !total size of all posted data transfers in bytes
+         integer(INT_MPI), private:: NumEntries=0                   !number of active entries in the list
+         integer(INT_MPI), private:: FirstFree=1                    !first free (inactive) entry
+         type(RankWin_t), private:: RankWins(1:MAX_ONESIDED_REQS)   !(rank,window) entries
+         integer(INT_MPI), private:: NextEntry(1:MAX_ONESIDED_REQS) !next entry within a bin (linked list)
+         integer(INT_MPI), private:: PrevEntry(1:MAX_ONESIDED_REQS) !previous entry within a bin (linked list)
+         integer(INT_MPI), private:: HashBin(0:2**HASH_BITS-1)=0    !first element in each hash bin
          contains
           procedure, private:: clean=>RankWinListClean !clean the (rank,window) list (initialization)
-          procedure, private:: test=>RankWinListTest   !test a given (rank,window) entry with an optional action (add,delete)
+          procedure, private:: test=>RankWinListTest   !test whether a given (rank,window) entry is in the list (with an optional append)
+          procedure, private:: delete=>RankWinListDel  !delete a given active (rank,window) entry
         end type RankWinList_t
  !Basic MPI window info:
         type, private:: WinMPI_t
@@ -132,9 +145,12 @@
 !FUNCTION VISIBILITY:
  !Global:
         public data_type_size
+ !RankWin_t:
+        private RankWinInit
  !RankWinList_t:
         private RankWinListClean
         private RankWinListTest
+        private RankWinListDel
  !WinMPI_t:
         private WinMPIClean
  !DataWin_t:
@@ -165,21 +181,21 @@
 !METHODS:
 !===============================================================
         integer(INT_MPI) function data_type_size(data_type,ierr) !Fortran2008: storage_size()
-!Returns the size of a given (pre-registered) data type in bytes.
+!Returns the local storage size of a given (pre-registered) data type in bytes.
         implicit none
         integer(INT_MPI), intent(in):: data_type         !in: pre-registered data type handle: {NO_TYPE,R4,R8,C8,...}
         integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
-        integer(INT_MPI), parameter:: BYTE_BITS=8
+        integer(INT_MPI), parameter:: BYTE_BITS=8        !byte = 8 bits
         integer(INT_MPI):: errc
 
         errc=0; data_type_size=0
         select case(data_type)
         case(R4)
-         data_type_size=storage_size(R4_,kind=INT_MPI)
+         data_type_size=storage_size(R4_,kind=INT_MPI) !bits
         case(R8)
-         data_type_size=storage_size(R8_,kind=INT_MPI)
+         data_type_size=storage_size(R8_,kind=INT_MPI) !bits
         case(C8)
-         data_type_size=storage_size(C8_,kind=INT_MPI)
+         data_type_size=storage_size(C8_,kind=INT_MPI) !bits
         case(NO_TYPE)
          data_type_size=0
         case default
@@ -197,96 +213,150 @@
         if(present(ierr)) ierr=errc
         return
         end function data_type_size
+!=================================================
+        subroutine RankWinInit(this,rank,win,ierr)
+!Initializes a (rank,window) descriptor.
+        implicit none
+        class(RankWin_t), intent(inout):: this           !inout: (rank,window) descriptor
+        integer(INT_MPI), intent(in), optional:: rank    !in: MPI rank (>=0)
+        integer(INT_MPI), intent(in), optional:: win     !in: MPI window handle
+        integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
+        integer(INT_MPI):: errc
+
+        errc=0
+        if(present(rank)) then
+         if(present(window)) then !active descriptor
+          this%Rank=rank
+          this%Window=win
+          this%LockType=NO_LOCK
+          this%RefCount=0
+          this%LastSync=0 !0 means "never sync"
+         else
+          errc=1
+         endif
+        else
+         if(present(window)) then
+          errc=2
+         else !empty descriptor
+          this%Rank=-1
+          this%Window=0
+          this%LockType=NO_LOCK
+          this%RefCount=0
+          this%LastSync=0
+         endif
+        endif
+        if(present(ierr)) ierr=errc
+        return
+        end subroutine RankWinInit
 !=============================================
         subroutine RankWinListClean(this,ierr)
 !Cleans the (rank,window) list.
         implicit none
         class(RankWinList_t), intent(inout):: this       !inout: (rank,window) list
         integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
+        integer(INT_MPI):: i
 
         this%TransCount=0; this%TransSize=0d0
-        this%NumEntries=0; this%FirstEntry=-1
+        this%NumEntries=0; this%HashBin(:)=0
+        this%FirstFree=1
+        this%PrevEntry(1)=0; do i=2,MAX_ONESIDED_REQS; this%PrevEntry(i)=i-1; enddo
+        do i=1,MAX_ONESIDED_REQS-1; this%NextEntry(i)=i+1; enddo; this%NextEntry(MAX_ONESIDED_REQS)=0
+        do i=1,MAX_ONESIDED_REQS; call this%RankWins(i)%init(); enddo !init all entries to null
         if(present(ierr)) ierr=0
         return
         end subroutine RankWinListClean
-!-------------------------------------------------------------------------------------
-        integer(INT_MPI) function RankWinListTest(this,rank,win,ierr,action,lock_stat)
-!Looks up a given pair (rank,window) in the active (rank,window) list.
-!If not found, returns the lock status lock_stat=NO_LOCK, meaning that this (rank,window) is not currently used.
-!If found, returns the signed lock status, where the sign refers to the current direction of transfer.
+!---------------------------------------------------------------------------
+        integer(INT_MPI) function RankWinListTest(this,rank,win,ierr,append)
+!Looks up a given pair (rank,window) in the active (rank,window) list and
+!returns the corresponding entry number (>0), if found. If not found, returns 0.
+!If <append> is present and TRUE, a new entry will be created (if not found only)
+!and its number will be returned. In case there are no free entries in the table,
+!a special return status TRY_LATER will be returned to postpone the request for later.
         implicit none
-        class(RankWinList_t), intent(inout):: this         !inout: (rank,window) list
-        integer(INT_MPI), intent(in):: rank                !in: MPI rank
-        integer(INT_MPI), intent(in):: win                 !in: MPI window handle
-        integer(INT_MPI), intent(inout), optional:: ierr   !out: error code (0:success)
-        integer(INT_MPI), intent(in), optional:: action    !in: action: {}
-        integer(INT_MPI), intent(in), optional:: lock_stat !{NO_LOCK,SHARED_LOCK,EXCLUSIVE_LOCK}*direction
-        integer(INT_MPI):: k,l,m,n,lck,errc
-        logical:: actn
+        class(RankWinList_t), intent(inout):: this       !inout: (rank,window) list
+        integer(INT_MPI), intent(in):: rank              !in: MPI rank
+        integer(INT_MPI), intent(in):: win               !in: MPI window handle
+        integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
+        logical, intent(in), optional:: append           !in: if .true., a new entry will be appended if not found
+        integer(INT_MPI), parameter:: HSH_MOD=2**HASH_BITS
+        integer(INT_MPI):: i,j,m,n,errc
+        logical:: apnd
 
-        errc=0; RankWinListTest=NO_LOCK !NO_LOCK means that the corresponding (rank,window) is not active at this process at this time
-        if(present(action)) then; actn=action; else; actn=.false.; endif
-        if(present(lock_type)) then; lck=lock_type; else; lck=NO_LOCK; endif
-        if(this%NumEntries.gt.0) then !non-emtry (rank,window) list: search
-         n=rwc%first_entry; m=-1
-         do while(n.gt.0)
-          l=rwc%rw_entry(n)%window
-          if(nwin.le.l) exit
-          m=n; n=rwc%next_win(n)
-         enddo
-         if(nwin.eq.l) then
-          m=-1
-          do while(n.gt.0)
-           k=rwc%rw_entry(n)%rank
-           if(nrank.le.k) exit
-           m=n; n=rwc%next_rank(n)
-          enddo
-          if(nrank.eq.k) then !entry already exists (return .false.)
-           return
-          else !nrank<k or end of sublist: append
-           if(rwc%num_entries.ge.MAX_TILES_PER_PART) then
-            if(VERBOSE) write(CONS_OUT,'("#ERROR(tensor_algebra_dil::dil_rank_window_clean): MAX_TILES_PER_PART exceeded: ",i9)')&
-            &MAX_TILES_PER_PART
-            errc=1; return
-           endif
-           rwc%num_entries=rwc%num_entries+1
-           rwc%rw_entry(rwc%num_entries)%rank=nrank; rwc%rw_entry(rwc%num_entries)%window=nwin
-           if(m.gt.0) then
-            rwc%next_rank(m)=rwc%num_entries; rwc%next_win(rwc%num_entries)=rwc%next_win(m)
+        errc=0; RankWinListTest=0
+        if(present(append)) then; apnd=append; else; apnd=.false.; endif
+        if(rank.ge.0) then
+         n=mod(rank,HSH_MOD); i=this%HashBin(n); m=0
+         do while(i.ge.1.and.i.le.MAX_ONESIDED_REQS)
+          m=i
+          if(this%RankWins(i)%Rank.lt.rank) then
+           i=this%NextEntry(i)
+          elseif(this%RankWins(i)%Rank.eq.rank) then
+           if(this%RankWins(i)%Window.lt.win) then
+            i=this%NextEntry(i)
+           elseif(this%RankWins(i)%Window.eq.win) then !match found
+            RankWinListTest=i
+            exit
            else
-            rwc%first_entry=rwc%num_entries; rwc%next_win(rwc%num_entries)=rwc%next_win(n)
+            exit
            endif
-           rwc%next_rank(rwc%num_entries)=n
-           dil_rank_window_new=.true.
-          endif
-         else !nwin<l or end of list: append
-          if(rwc%num_entries.ge.MAX_TILES_PER_PART) then
-           if(VERBOSE) write(CONS_OUT,'("#ERROR(tensor_algebra_dil::dil_rank_window_clean): MAX_TILES_PER_PART exceeded: ",i9)')&
-           &MAX_TILES_PER_PART
-           errc=2; return
-          endif
-          rwc%num_entries=rwc%num_entries+1
-          rwc%rw_entry(rwc%num_entries)%rank=nrank; rwc%rw_entry(rwc%num_entries)%window=nwin
-          if(m.gt.0) then; rwc%next_win(m)=rwc%num_entries; else; rwc%first_entry=rwc%num_entries; endif
-          rwc%next_win(rwc%num_entries)=n; rwc%next_rank(rwc%num_entries)=-1
-          dil_rank_window_new=.true.
-         endif
-        else !empty (rank,window) list
-         RankWinListTest=NO_LOCK !(rank,window) entry does not exist
-         if(actn) then !add an entry
-          if(lck.eq.SHARED_LOCK.or.lck.eq.EXCLUSIVE_LOCK) then !loct type must have been provided
-           this%NumEntries=1; this%FirstEntry=1
-           this%RankWins(1)%Rank=rank; this%RankWins(1)%Window=win
-           this%RankWins(1)%LocType=lck; this%RankWins(1)%RefCount=1
-           this%NextWin(1)=-1; this%NextRank(1)=-1
           else
-           errc=1
+           exit
+          endif
+         enddo
+         if(RankWinListTest.le.0.and.apnd) then !append if not found
+          if(this%NumEntries.lt.MAX_ONESIDED_REQS) then
+           j=this%FirstEntry; this%FirstEntry=this%NextEntry(j)
+           this%PrevEntry(this%FirstEntry)=0
+           this%NumEntries=this%NumEntries+1
+           if(m.gt.0.and.m.ne.i) then
+            this%NextEntry(m)=j; this%PrevEntry(j)=m
+           else
+            this%HashBin(n)=j; this%PrevEntry(j)=0
+           endif
+           this%NextEntry(j)=i
+           if(i.gt.0) this%PrevEntry(i)=j
+           call this%RankWins(j)%init(rank,win,errc)
+           if(errc.ne.0) then; call this%delete(j); errc=1; endif
+          else
+           errc=TRY_LATER !no more free entries, try later (not an error)
           endif
          endif
+        else
+         errc=2
         endif
         if(present(ierr)) ierr=errc
         return
         end function RankWinListTest
+!-----------------------------------------------------
+        subroutine RankWinListDel(this,entry_num,ierr)
+!Deletes entry <entry_num> from the active (rank,window) list.
+        implicit none
+        class(RankWinList_t), intent(inout):: this       !inout: (rank,window) list
+        integer(INT_MPI), intent(in):: entry_num         !in: number of the entry to be deleted
+        integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
+        integer(INT_MPI), parameter:: HSH_MOD=2**HASH_BITS
+        integer(INT_MPI):: i,j,m,errc
+
+        errc=0
+        if(entry_num.ge.1.and.entry_num.le.MAX_ONDESIDED_REQS) then
+         if(this%RankWins(entry_num)%Rank.ge.0) then !active entry
+          m=mod(this%RankWins(entry_num)%Rank,HSH_MOD)
+          i=this%PrevEntry(entry_num); if(i.gt.0) this%NextEntry(i)=j
+          j=this%NextEntry(entry_num); if(j.gt.0) this%PrevEntry(j)=i
+          if(this%HashBin(m).eq.entry_num) this%HashBin(m)=j
+          this%NextEntry(entry_num)=this%FirstFree
+          if(this%FirstFree.gt.0) this%PrevEntry(this%FirstFree)=entry_num
+          this%FirstFree=entry_num; this%NumEntries=this%NumEntries-1
+          call this%RankWins(entry_num)%init() !clean entry
+         else
+          errc=1 !empty entries cannot be deleted
+         endif
+        else
+         errc=2
+        endif
+        if(present(ierr)) ierr=errc
+        return
+        end subroutine RankWinListDel
 !========================================
         subroutine WinMPIClean(this,ierr)
 !Cleans an MPI window info.
@@ -745,13 +815,13 @@
          if(data_vol.gt.0) then
           elem_size=data_type_size(data_type,errc)
           if(errc.eq.0.and.elem_size.gt.0) then
+           this%LocPtr=loc_ptr
            this%RankMPI=process_rank
            this%WinMPI=win_mpi
            this%DataVol=data_vol
            this%DataType=data_type
-           this%Locked=NO_LOCK !initial state is always NOT LOCKED
+           this%TransID=0
            this%StatMPI=MPI_STAT_NONE
-           this%LocPtr=loc_ptr
            call MPI_Get_Displacement(loc_ptr,this%Offset,errc); if(errc.ne.0) errc=1
           else
            errc=2
