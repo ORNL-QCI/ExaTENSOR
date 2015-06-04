@@ -1,6 +1,6 @@
 !This module provides functionality for a Computing Process (C-PROCESS, CP).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2015/05/01
+!REVISION: 2015/06/04
 !PREPROCESSOR:
 ! -D NO_GPU: No NVidia GPU;
 ! -D NO_PHI: No Intel Xeon Phi;
@@ -727,7 +727,7 @@
                tm1=etiq%eti(k)%time_completed
                write(CONS_OUT,'("Instruction ",i2," completed succefully: ",D25.15)') k,tm1-tm0
 !$OMP ATOMIC WRITE
-               etiq%eti(k)%instr_status=INSTR_DEAD
+               etiq%eti(k)%instr_status=INSTR_RETIRED
                i=i-1
                if(k.eq.6.or.k.eq.7) kf=kf+1
                if(kf.eq.2) then
@@ -736,7 +736,7 @@
               elseif(j.le.0) then
                write(CONS_OUT,'("Instruction ",i2," failed: ",i11)') k,j
 !$OMP ATOMIC WRITE
-               etiq%eti(k)%instr_status=INSTR_DEAD
+               etiq%eti(k)%instr_status=INSTR_RETIRED
                i=i-1
               endif
              enddo

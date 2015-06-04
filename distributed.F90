@@ -1,6 +1,6 @@
 !Distributed data storage infrastructure (DDSI).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2015/06/02 (started 2015/03/18)
+!REVISION: 2015/06/04 (started 2015/03/18)
 !CONCEPTS:
 ! * Each MPI process can participate in one or more distributed memory spaces (DMS),
 !   where each distributed memory space is defined within a specific MPI communicator.
@@ -13,7 +13,7 @@
 ! * Upon a request from the manager, data (e.g., a tensor block) can be detached from
 !   the corresponding distributed memory space and subsequently destroyed (if needed).
 ! * Data communication is accomplished via data transfer requests (DTR) and
-!   data transfer completion requests (DTCR), using registered data descriptors. On each MPI process,
+!   data transfer completion requests (DTCR), using data descriptors. On each MPI process,
 !   all data transfer requests are enumerated sequentially in the order they were issued (starting at 1).
 ! * All procedures return error codes, but special return statuses must be distinguished
 !   (see "Special return statuses" below). Normally, error codes are smaller by absolute value integers.
@@ -29,15 +29,15 @@
         integer, private:: CONS_OUT=6     !default output for this module
         logical, private:: VERBOSE=.true. !verbosity for errors
         logical, private:: DEBUG=.true.   !debugging mode
- !Special return statuses:
-        integer(INT_MPI), parameter, public:: TRY_LATER=918273645 !try the action later (resources are busy): Keep it unique!
+ !Special return statuses (use unique very large integers):
+        integer(INT_MPI), parameter, public:: TRY_LATER=918273645 !try the action later (resources are currently busy)
  !Distributed memory spaces:
         integer(INT_MPI), parameter, public:: DISTR_SPACE_NAME_LEN=128 !max length of a distributed space name (multiple of 8)
  !Data transfers:
   !Active (rank,window) management:
-        integer(INT_MPI), parameter, private:: HASH_BITS=8        !number of hash bits for (rank,window) searches
-        integer(INT_MPI), parameter, private:: READ_SIGN=+1       !incoming traffic sign (reading direction)
-        integer(INT_MPI), parameter, private:: WRITE_SIGN=-1      !outgoing traffic sign (writing direction)
+        integer(INT_MPI), parameter, private:: HASH_MOD=256  !number of hash bins for (rank,window) searches
+        integer(INT_MPI), parameter, private:: READ_SIGN=+1  !incoming traffic sign (reading direction)
+        integer(INT_MPI), parameter, private:: WRITE_SIGN=-1 !outgoing traffic sign (writing direction)
   !Messaging:
         integer(INT_MPI), parameter, private:: MAX_MPI_MSG_VOL=2**23  !max number of elements in a single MPI message (larger to be split)
         integer(INT_MPI), parameter, private:: MAX_ONESIDED_REQS=4096 !max number of outstanding one-sided data transfer requests per process
@@ -77,7 +77,7 @@
          type(RankWin_t), private:: RankWins(1:MAX_ONESIDED_REQS)   !(rank,window) entries
          integer(INT_MPI), private:: NextEntry(1:MAX_ONESIDED_REQS) !next entry within a bin (linked list)
          integer(INT_MPI), private:: PrevEntry(1:MAX_ONESIDED_REQS) !previous entry within a bin (linked list)
-         integer(INT_MPI), private:: HashBin(0:2**HASH_BITS-1)=0    !first element in each hash bin
+         integer(INT_MPI), private:: HashBin(0:HASH_MOD-1)=0        !first element in each hash bin
          contains
           procedure, private:: clean=>RankWinListClean !clean the (rank,window) list (initialization)
           procedure, private:: test=>RankWinListTest   !test whether a given (rank,window) entry is in the list (with an optional append)
@@ -119,18 +119,18 @@
         end type DistrSpace_t
  !Global data location descriptor:
         type, public:: DataDescr_t
-         type(C_PTR), private:: LocPtr          !local C pointer to the data buffer (internal use only)
+         type(C_PTR), private:: LocPtr          !local C pointer to the original data buffer (internal use only)
          integer(INT_MPI), private:: RankMPI=-1 !MPI rank on which the data resides
          type(WinMPI_t), private:: WinMPI       !info on the MPI window the data is exposed with
          integer(INT_ADDR), private:: Offset    !offset in the MPI window (in displacement units)
          integer(INT_COUNT), private:: DataVol  !data volume (number of typed elements)
-         integer(INT_MPI), private:: DataType   !data type of each element: {R4,R8,C8,...}
+         integer(INT_MPI), private:: DataType   !data type of each element: {R4,R8,C8,...}, see <tensor_algebra.F90>
          integer(8), private:: TransID          !data transfer request ID (sequential data transfer number within this process)
          integer(INT_MPI), private:: StatMPI    !status of the data transfer request (see MPI_STAT_XXX parameters above)
-         integer(INT_MPI), private:: ReqHandle  !MPI request handle (for communications with a request handle)
+         integer(INT_MPI), private:: ReqHandle  !MPI request handle (for MPI communications with a request handle)
          contains
-          procedure, public:: clean=>DataDescrClean             !clean a data descriptor
-          procedure, public:: init=>DataDescrInit               !set up a data descriptor
+          procedure, private:: clean=>DataDescrClean            !clean a data descriptor
+          procedure, private:: init=>DataDescrInit              !set up a data descriptor (initialization)
           procedure, public:: flush_data=>DataDescrFlushData    !complete an outstanding data transfer request
           procedure, public:: test_data=>DataDescrTestData      !test whether the data has been transferred to/from the origin (request)
           procedure, public:: wait_data=>DataDescrWaitData      !wait until the data has been transferred to/from the origin (request)
@@ -185,7 +185,6 @@
         implicit none
         integer(INT_MPI), intent(in):: data_type         !in: pre-registered data type handle: {NO_TYPE,R4,R8,C8,...}
         integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
-        integer(INT_MPI), parameter:: BYTE_BITS=8        !byte = 8 bits
         integer(INT_MPI):: errc
 
         errc=0; data_type_size=0
@@ -203,8 +202,8 @@
          errc=1; data_type_size=-1
         end select
         if(errc.eq.0) then
-         if(mod(data_type_size,BYTE_BITS).eq.0) then
-          data_type_size=data_type_size/BYTE_BITS !convert bits to bytes
+         if(mod(data_type_size,8).eq.0) then
+          data_type_size=data_type_size/8 !convert bits to bytes
          else
           if(VERBOSE) write(CONS_OUT,'("#ERROR(distributed::data_type_size): Fractional type size detected: ",i11)') data_type_size
           errc=2 !fractional data type size is not allowed
@@ -215,7 +214,8 @@
         end function data_type_size
 !=================================================
         subroutine RankWinInit(this,rank,win,ierr)
-!Initializes a (rank,window) descriptor.
+!Initializes a (rank,window) descriptor (both <rank> and <win> must be present) OR
+!cleans a (rank,window) descriptor (neither <rank> nor <win> should appear here).
         implicit none
         class(RankWin_t), intent(inout):: this           !inout: (rank,window) descriptor
         integer(INT_MPI), intent(in), optional:: rank    !in: MPI rank (>=0)
@@ -230,7 +230,7 @@
           this%Window=win
           this%LockType=NO_LOCK
           this%RefCount=0
-          this%LastSync=0 !0 means "never sync"
+          this%LastSync=0 !0 means "never synced"
          else
           errc=1
          endif
@@ -250,7 +250,7 @@
         end subroutine RankWinInit
 !=============================================
         subroutine RankWinListClean(this,ierr)
-!Cleans the (rank,window) list.
+!Cleans the (rank,window) list (must be called before use).
         implicit none
         class(RankWinList_t), intent(inout):: this       !inout: (rank,window) list
         integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
@@ -269,7 +269,7 @@
         integer(INT_MPI) function RankWinListTest(this,rank,win,ierr,append)
 !Looks up a given pair (rank,window) in the active (rank,window) list and
 !returns the corresponding entry number (>0), if found. If not found, returns 0.
-!If <append> is present and TRUE, a new entry will be created (if not found only)
+!If <append> is present and TRUE, a new entry will be created (only if not found)
 !and its number will be returned. In case there are no free entries in the table,
 !a special return status TRY_LATER will be returned to postpone the request for later.
         implicit none
@@ -278,21 +278,19 @@
         integer(INT_MPI), intent(in):: win               !in: MPI window handle
         integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
         logical, intent(in), optional:: append           !in: if .true., a new entry will be appended if not found
-        integer(INT_MPI), parameter:: HSH_MOD=2**HASH_BITS
         integer(INT_MPI):: i,j,m,n,errc
         logical:: apnd
 
         errc=0; RankWinListTest=0
         if(present(append)) then; apnd=append; else; apnd=.false.; endif
         if(rank.ge.0) then
-         n=mod(rank,HSH_MOD); i=this%HashBin(n); m=0
+         n=mod(rank,HASH_MOD); i=this%HashBin(n); m=0
          do while(i.ge.1.and.i.le.MAX_ONESIDED_REQS)
-          m=i
           if(this%RankWins(i)%Rank.lt.rank) then
-           i=this%NextEntry(i)
+           m=i; i=this%NextEntry(i)
           elseif(this%RankWins(i)%Rank.eq.rank) then
            if(this%RankWins(i)%Window.lt.win) then
-            i=this%NextEntry(i)
+            m=i; i=this%NextEntry(i)
            elseif(this%RankWins(i)%Window.eq.win) then !match found
             RankWinListTest=i
             exit
@@ -305,15 +303,15 @@
          enddo
          if(RankWinListTest.le.0.and.apnd) then !append if not found
           if(this%NumEntries.lt.MAX_ONESIDED_REQS) then
-           j=this%FirstEntry; this%FirstEntry=this%NextEntry(j)
-           this%PrevEntry(this%FirstEntry)=0
+           j=this%FirstFree; this%FirstFree=this%NextEntry(j)
+           this%PrevEntry(this%FirstFree)=0
            this%NumEntries=this%NumEntries+1
-           if(m.gt.0.and.m.ne.i) then
-            this%NextEntry(m)=j; this%PrevEntry(j)=m
-           else
-            this%HashBin(n)=j; this%PrevEntry(j)=0
+           if(m.gt.0) then !previous entry exists
+            this%NextEntry(m)=j
+           else !no previous entry
+            this%HashBin(n)=j
            endif
-           this%NextEntry(j)=i
+           this%PrevEntry(j)=m; this%NextEntry(j)=i
            if(i.gt.0) this%PrevEntry(i)=j
            call this%RankWins(j)%init(rank,win,errc)
            if(errc.ne.0) then; call this%delete(j); errc=1; endif
@@ -334,13 +332,12 @@
         class(RankWinList_t), intent(inout):: this       !inout: (rank,window) list
         integer(INT_MPI), intent(in):: entry_num         !in: number of the entry to be deleted
         integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
-        integer(INT_MPI), parameter:: HSH_MOD=2**HASH_BITS
         integer(INT_MPI):: i,j,m,errc
 
         errc=0
         if(entry_num.ge.1.and.entry_num.le.MAX_ONDESIDED_REQS) then
          if(this%RankWins(entry_num)%Rank.ge.0) then !active entry
-          m=mod(this%RankWins(entry_num)%Rank,HSH_MOD)
+          m=mod(this%RankWins(entry_num)%Rank,HASH_MOD)
           i=this%PrevEntry(entry_num); if(i.gt.0) this%NextEntry(i)=j
           j=this%NextEntry(entry_num); if(j.gt.0) this%PrevEntry(j)=i
           if(this%HashBin(m).eq.entry_num) this%HashBin(m)=j
@@ -516,7 +513,7 @@
         if(.not.c_associated(loc_ptr,C_NULL_PTR)) then
          if(loc_size.gt.0.and.mod(loc_size,4).eq.0) then
           vol=loc_size/4 !volume in 4-byte words
-          if(this%WinSize.ge.loc_size) then !data window is active
+          if(this%WinSize.ge.loc_size) then
            call c_f_pointer(loc_ptr,r4_ptr,(/vol/))
            call detach_buffer(r4_ptr,errc)
            if(errc.eq.0) then
@@ -549,7 +546,7 @@
         end subroutine DataWinDetach
 !----------------------------------------
         subroutine DataWinSync(this,ierr)
-!Synchronizes the private and public copy of the MPI data window.
+!Synchronizes the local private and public copy of the MPI data window.
         implicit none
         class(DataWin_t), intent(in):: this              !in: data window
         integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
@@ -619,6 +616,7 @@
         subroutine DistrSpaceDestroy(this,ierr) !COLLECTIVE
 !Destroys a distributed memory space. This is a collective call.
 !The distributed memory space descriptor passed here must be valid!
+!Also the distributed memory space itself must be empty!
         implicit none
         class(DistrSpace_t), intent(inout):: this        !inout: distributed memory space
         integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
@@ -662,14 +660,14 @@
 !----------------------------------------------------------------
         integer(INT_ADDR) function DistrSpaceLocalSize(this,ierr)
 !Returns the total size of all local MPI data windows (in bytes)
-!belonging to the distributed space.
+!belonging to a given distributed space.
         implicit none
         class(DistrSpace_t), intent(in):: this           !in: distributed memory space
         integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
         integer(INT_MPI):: i,errc
         integer(INT_ADDR):: loc_size
 
-        errc=0; DistrSpaceLocalSize=0
+        errc=0; DistrSpaceLocalSize=-1
         if(this%NumWins.gt.0) then
          loc_size=0
          do i=1,this%NumWins
@@ -679,11 +677,11 @@
            errc=1
            exit
           endif
-         enddo
-         if(errc.eq.0) DistrSpaceLocalSize=loc_size
+         enddo 
         else
          errc=2
         endif
+        if(errc.eq.0) DistrSpaceLocalSize=loc_size
         if(present(ierr)) ierr=errc
         return
         end subroutine DistrSpaceLocalSize
@@ -738,7 +736,7 @@
         end subroutine DistrSpaceAttach
 !--------------------------------------------------------
         subroutine DistrSpaceDetach(this,data_descr,ierr)
-!Detaches a previously attached local (contiguous) data buffer from the distributed memory space.
+!Detaches a previously attached local (contiguous) data buffer from a distributed memory space.
 !The data buffer is specified via a data descriptor.
         implicit none
         class(DistrSpace_t), intent(inout):: this        !inout: distributed memory space
@@ -755,7 +753,7 @@
            loc_size=data_descr%DataVol*data_type_size(data_descr%DataType,errc) !data buffer size in bytes
            if(errc.eq.0.and.loc_size.gt.0) then
             m=0
-            do i=1,this%NumWins
+            do i=1,this%NumWins !find the MPI window
              if(this%DataWins(i)%WinMPI%Window.eq.data_descr%WinMPI%Window) then; m=i; exit; endif
             enddo
             if(m.gt.0) then
@@ -812,149 +810,39 @@
 
         errc=0
         if(process_rank.ge.0) then
-         if(data_vol.gt.0) then
-          elem_size=data_type_size(data_type,errc)
-          if(errc.eq.0.and.elem_size.gt.0) then
-           this%LocPtr=loc_ptr
-           this%RankMPI=process_rank
-           this%WinMPI=win_mpi
-           this%DataVol=data_vol
-           this%DataType=data_type
-           this%TransID=0
-           this%StatMPI=MPI_STAT_NONE
-           call MPI_Get_Displacement(loc_ptr,this%Offset,errc); if(errc.ne.0) errc=1
+         if(.not.c_associated(loc_ptr,C_NULL_PTR)) then
+          if(data_vol.gt.0) then
+           elem_size=data_type_size(data_type,errc)
+           if(errc.eq.0.and.elem_size.gt.0) then
+            this%LocPtr=loc_ptr
+            this%RankMPI=process_rank
+            this%WinMPI=win_mpi
+            this%DataVol=data_vol
+            this%DataType=data_type
+            this%TransID=0 !0 means "never assigned a Transfer ID"
+            this%StatMPI=MPI_STAT_NONE
+            call MPI_Get_Displacement(loc_ptr,this%Offset,errc); if(errc.ne.0) errc=1
+           else
+            errc=2
+           endif
           else
-           errc=2
+           errc=3
           endif
          else
-          errc=3
+          errc=4
          endif
         else
-         errc=4
+         errc=5
         endif
         if(errc.ne.0) call this%clean()
         if(present(ierr)) ierr=errc
         return
         end subroutine DataDescrInit
-!------------------------------------------------------
-        subroutine DataDescrLocked(this,lock_type,ierr)
-!Locally marks the distributed data as locked/unlocked when it is locked/unlocked outside.
-        implicit none
-        class(DataDescr_t), intent(inout):: this         !inout: distributed data descriptor
-        integer(INT_MPI), intent(in):: lock_type         !in: current data lock status: {NO_LOCK, SHARED_LOCK, EXCLUSIVE_LOCK}
-        integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
-        integer(INT_MPI):: errc
-
-        errc=0
-        if(this%RankMPI.ge.0) then !non-empty data descriptor
-         if(lock_type.eq.NO_LOCK.or.lock_type.eq.SHARED_LOCK.or.lock_type.eq.EXCLUSIVE_LOCK) then
-          this%Locked=lock_type
-         else
-          errc=1
-         endif
-        else
-         errc=2
-        endif
-        if(present(ierr)) ierr=errc
-        return
-        end subroutine DataDescrLocked
-!--------------------------------------------------------
-        subroutine DataDescrLockData(this,lock_type,ierr)
-!Locks the data referred to by a data descriptor, unless
-!the corresponding (window,rank) has already been locked.
-!<lock_type> can only be {SHARED_LOCK, EXCLUSIVE_LOCK}.
-        implicit none
-        class(DataDescr_t), intent(inout):: this         !inout: distributed data descriptor
-        integer(INT_MPI), intent(in):: lock_type         !in: lock type: {SHARED_LOCK, EXCLUSIVE_LOCK}
-        integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
-        integer(INT_MPI):: errc
-        integer(INT_MPI):: lock_set
-
-        errc=0
-        if(this%RankMPI.ge.0) then
-         if(this%Locked.eq.NO_LOCK) then
-          lock_set=current_lock_set(this,errc) !Check whether this (win,rank) is already locked
-          if(errc.eq.0)
-           if(lock_set.ne.BLOCKED_LOCK) then
-            if(lock_type.eq.SHARED_LOCK) then
-             if(lock_set.eq.NO_LOCK) then
-              call MPI_WIN_LOCK(MPI_LOCK_SHARED,this%RankMPI,0,this%WinMPI%Window,errc)
-              if(errc.eq.0) then
-               !`Update the local (win,rank) lock table
-              else
-               this%StatMPI=MPI_STAT_ONESIDED_ERR; errc=1
-              endif
-             elseif(lock_set.eq.EXCLUSIVE_LOCK) then !conflicting lock set
-              errc=2
-             endif
-             if(errc.eq.0) this%Locked=lock_type
-            elseif(lock_type.eq.EXCLUSIVE_LOCK) then
-             if(lock_set.eq.NO_LOCK) then
-              call MPI_WIN_LOCK(MPI_LOCK_EXCLUSIVE,this%RankMPI,0,this%WinMPI%Window,errc)
-              if(errc.eq.0) then
-               !`Update the local (win,rank) lock table
-              else
-               this%StatMPI=MPI_STAT_ONESIDED_ERR; errc=3
-              endif
-             else !any other lock is conflicting
-              errc=4
-             endif
-             if(errc.eq.0) this%Locked=lock_type
-            else
-             errc=5
-            endif
-           else
-            errc=6 !`Actually this is not an error: Release all waiting data descriptors
-           endif
-          else
-           errc=7
-          endif
-         else
-          errc=8
-         endif
-        else
-         errc=9
-        endif
-        if(present(ierr)) ierr=errc
-        return
-        end subroutine DataDescrLockData
-!------------------------------------------------
-        subroutine DataDescrUnlockData(this,ierr)
-!Unlocks the data referred to by a data descriptor.
-!Since the unlock operation is done on the (win,rank) level,
-!other data descriptors may also need to be unlocked.
-        implicit none
-        class(DataDescr_t), intent(inout):: this         !inout: distributed data descriptor
-        integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
-        integer(INT_MPI):: errc
-        integer(INT_MPI):: lock_set
-
-        errc=0
-        if(this%RankMPI.ge.0) then
-         if(this%Locked.ne.NO_LOCK) then
-          locked=.true. !`Check whether this (win,rank) is actually locked
-          if(locked) call MPI_WIN_UNLOCK(this%RankMPI,this%WinMPI%Window,errc)
-          if(errc.eq.0) then
-           this%Locked=NO_LOCK
-           this%StatMPI=MPI_STAT_COMPLETED
-          else
-           this%StatMPI=MPI_STAT_ONESIDED_ERR
-           errc=1
-          endif
-         else
-          errc=2
-         endif
-        else
-         errc=3
-        endif
-        if(present(ierr)) ierr=errc
-        return
-        end subroutine DataDescrUnlockData
 !-----------------------------------------------------
         subroutine DataDescrFlushData(this,ierr,local)
-!Flushes the MPI passive target communication referred to by a data descriptor.
+!Flushes the MPI passive target communication referred to by the data descriptor.
         implicit none
-        class(DataDescr_t), intent(inout):: this         !inout: distributed data descriptor
+        class(DataDescr_t), intent(inout):: this         !inout: data descriptor
         integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
         logical, intent(in), optional:: local            !in: if .true., the data is flushed only at the origin
         integer(INT_MPI):: errc
