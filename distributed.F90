@@ -1,6 +1,6 @@
 !Distributed data storage infrastructure (DDSI).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2015/06/04 (started 2015/03/18)
+!REVISION: 2015/06/05 (started 2015/03/18)
 !CONCEPTS:
 ! * Each MPI process can participate in one or more distributed memory spaces (DMS),
 !   where each distributed memory space is defined within a specific MPI communicator.
@@ -39,8 +39,8 @@
         integer(INT_MPI), parameter, private:: READ_SIGN=+1  !incoming traffic sign (reading direction)
         integer(INT_MPI), parameter, private:: WRITE_SIGN=-1 !outgoing traffic sign (writing direction)
   !Messaging:
-        integer(INT_MPI), parameter, private:: MAX_MPI_MSG_VOL=2**23  !max number of elements in a single MPI message (larger to be split)
-        integer(INT_MPI), parameter, private:: MAX_ONESIDED_REQS=4096 !max number of outstanding one-sided data transfer requests per process
+        integer(INT_COUNT), parameter, private:: MAX_MPI_MSG_VOL=2**23 !max number of elements in a single MPI message (larger to be split)
+        integer(INT_MPI), parameter, private:: MAX_ONESIDED_REQS=4096  !max number of outstanding one-sided data transfer requests per process
   !Lock types:
         integer(INT_MPI), parameter, public:: NO_LOCK=0        !no MPI lock (must be zero)
         integer(INT_MPI), parameter, public:: SHARED_LOCK=1    !shared MPI lock (must be positive)
@@ -82,6 +82,7 @@
           procedure, private:: clean=>RankWinListClean !clean the (rank,window) list (initialization)
           procedure, private:: test=>RankWinListTest   !test whether a given (rank,window) entry is in the list (with an optional append)
           procedure, private:: delete=>RankWinListDel  !delete a given active (rank,window) entry
+          procedure, private:: new_transfer=>RankWinNewTrans !register a new data transfer (increment the global transfer ID)
         end type RankWinList_t
  !Basic MPI window info:
         type, private:: WinMPI_t
@@ -151,6 +152,7 @@
         private RankWinListClean
         private RankWinListTest
         private RankWinListDel
+        private RankWinNewTrans
  !WinMPI_t:
         private WinMPIClean
  !DataWin_t:
@@ -182,6 +184,7 @@
 !===============================================================
         integer(INT_MPI) function data_type_size(data_type,ierr) !Fortran2008: storage_size()
 !Returns the local storage size of a given (pre-registered) data type in bytes.
+!All registered data types must possess a size that is multiple of 4 (in bytes)!
         implicit none
         integer(INT_MPI), intent(in):: data_type         !in: pre-registered data type handle: {NO_TYPE,R4,R8,C8,...}
         integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
@@ -204,9 +207,10 @@
         if(errc.eq.0) then
          if(mod(data_type_size,8).eq.0) then
           data_type_size=data_type_size/8 !convert bits to bytes
+          if(mod(data_type_size,4).ne.0) errc=2 !data type size must be a multiple of 4
          else
           if(VERBOSE) write(CONS_OUT,'("#ERROR(distributed::data_type_size): Fractional type size detected: ",i11)') data_type_size
-          errc=2 !fractional data type size is not allowed
+          errc=3 !fractional data type size is not allowed
          endif
         endif
         if(present(ierr)) ierr=errc
@@ -270,7 +274,7 @@
 !Looks up a given pair (rank,window) in the active (rank,window) list and
 !returns the corresponding entry number (>0), if found. If not found, returns 0.
 !If <append> is present and TRUE, a new entry will be created (only if not found)
-!and its number will be returned. In case there are no free entries in the table,
+!and its number will be returned. In case when there are no free entries in the table,
 !a special return status TRY_LATER will be returned to postpone the request for later.
         implicit none
         class(RankWinList_t), intent(inout):: this       !inout: (rank,window) list
@@ -354,6 +358,28 @@
         if(present(ierr)) ierr=errc
         return
         end subroutine RankWinListDel
+!-----------------------------------------------
+        subroutine RankWinNewTrans(this,dd,ierr)
+!This subroutine increments the global transfer ID and communicated data size
+!and assigns the current transfer ID to the given data descriptor.
+        implicit none
+        class(RankWinList_t), intent(inout):: this       !inout: (rank,window) list
+        class(DataDescr_t), intent(inout):: dd           !inout: valid data descriptor
+        integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
+        integer(8), parameter:: int8=0_8
+        integer(INT_MPI):: n,errc
+
+        errc=0
+        if(this%TransCount.lt.huge(int8)) then
+         this%TransCount=this%TransCount+1
+         n=data_type_size(dd%DataType)
+         this%TransSize=this%TransSize+real(n,8)*real(dd%DataVol,8)
+        else
+         errc=1
+        endif
+        if(present(ierr)) ierr=errc
+        return
+        end subroutine RankWinNewTrans
 !========================================
         subroutine WinMPIClean(this,ierr)
 !Cleans an MPI window info.
@@ -458,7 +484,7 @@
         integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
         integer(INT_MPI):: errc
         integer(INT_ADDR):: vol
-        real(4), pointer, contiguous:: r4_ptr(:)
+        real(4), pointer, contiguous:: r4_ptr(:) !the (arbitrary) data will be mapped as a real(4) array
 
         errc=0
         if(.not.c_associated(loc_ptr,C_NULL_PTR)) then
@@ -507,7 +533,7 @@
         integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
         integer(INT_MPI):: errc
         integer(INT_ADDR):: vol
-        real(4), pointer, contiguous:: r4_ptr(:)
+        real(4), pointer, contiguous:: r4_ptr(:) !the (arbitrary) data is mapped as a real(4) array
 
         errc=0
         if(.not.c_associated(loc_ptr,C_NULL_PTR)) then
@@ -840,81 +866,128 @@
         end subroutine DataDescrInit
 !-----------------------------------------------------
         subroutine DataDescrFlushData(this,ierr,local)
-!Flushes the MPI passive target communication referred to by the data descriptor.
+!Completes an MPI one-sided communication specified by a given data descriptor.
+!Other outstanding MPI communications on the same (rank,window) will be completed as well.
         implicit none
         class(DataDescr_t), intent(inout):: this         !inout: data descriptor
         integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
         logical, intent(in), optional:: local            !in: if .true., the data is flushed only at the origin
-        integer(INT_MPI):: errc
+        integer(INT_MPI):: rwe,errc
+        type(RankWin_t), pointer:: rw_entry
         logical:: lcl
 
         errc=0
         if(present(local)) then; lcl=local; else; lcl=.false.; endif !default is flushing both at the origin and target
         if(this%RankMPI.ge.0) then
-         if(this%Locked.ne.NO_LOCK) then
-          if(lcl) then
-           call MPI_WIN_FLUSH_LOCAL(this%RankMPI,this%WinMPI%Window,errc) !complete at the origin only
-           if(errc.eq.0) then; this%StatMPI=MPI_STAT_COMPLETED_ORIG; else; this%StatMPI=MPI_STAT_ONESIDED_ERR; errc=1; endif
-          else
-           call MPI_WIN_FLUSH(this%RankMPI,this%WinMPI%Window,errc) !complete both at the origin and target
-           if(errc.eq.0) then; this%StatMPI=MPI_STAT_COMPLETED; else; this%StatMPI=MPI_STAT_ONESIDED_ERR; errc=2; endif
+         rwe=RankWinRefs%test(this%RankMPI,this%WinMPI%Window,errc) !get the (rank,window) entry
+         if(rwe.gt.0.and.errc.eq.0) then
+          rw_entry=>RankWinRefs(rwe)
+          if(rw_entry%RefCount.gt.1) then !not the last reference to this (rank,window)
+           if(lcl) then
+            call MPI_WIN_FLUSH_LOCAL(rw_entry%Rank,rw_entry%Window,errc) !complete at the origin only
+            if(errc.eq.0) then
+             this%StatMPI=MPI_STAT_COMPLETED_ORIG
+             rw_entry%RefCount=rw_entry%RefCount-1
+            else
+             this%StatMPI=MPI_STAT_ONESIDED_ERR; errc=1
+            endif
+           else
+            call MPI_WIN_FLUSH(rw_entry%Rank,rw_entry%Window,errc) !complete both at the origin and target
+            if(errc.eq.0) then
+             this%StatMPI=MPI_STAT_COMPLETED
+             rw_entry%RefCount=rw_entry%RefCount-1
+            else
+             this%StatMPI=MPI_STAT_ONESIDED_ERR; errc=2
+            endif
+           endif
+          else !the last reference to this (rank,window)
+           call MPI_WIN_UNLOCK(rw_entry%Rank,rw_entry%Window,errc)
+           if(errc.eq.0) then
+            this%StatMPI=MPI_STAT_COMPLETED
+            rw_entry%RefCount=rw_entry%RefCount-1
+           else
+            this%StatMPI=MPI_STAT_ONESIDED_ERR; errc=3
+           endif
           endif
+          if(errc.eq.0) rw_entry%LastSync=RankWinRefs%TransCount
+          if(rw_entry%RefCount.eq.0) then
+           call RankWinRefs%delete(rwe,errc); if(errc.ne.0) errc=4
+          elseif(rw_entry%RefCount.lt.0) then
+           write(CONS_OUT,'("#FATAL(distributed::DataDescr.FlushData): Negative reference count: ",i12)') rw_entry%RefCount
+           call quit(-1,'#FATAL: Unable to continue: Distributed Data Service failed!')
+          endif
+          nullify(rw_entry)
          else
-          errc=3
+          errc=5
          endif
         else
-         errc=4
+         errc=6
         endif
         if(present(ierr)) ierr=errc
         return
         end subroutine DataDescrFlushData
 !-----------------------------------------------------------
         subroutine DataDescrGetData(this,loc_ptr,ierr,async)
-!Initiates a load of distributed data into a local buffer.
+!Initiates a load of (remote) data into a local buffer.
+!The default (synchronous) call will complete the transfer here.
+!If <async> is present and equal to MPI_ASYNC_NRM or MPI_ASYNC_REQ,
+!then another (completion) call will be required to complete the communication.
+!If the internal tables for communication tracking no longer have free entries,
+!the status TRY_LATER is returned, meaning that one needs to wait until later.
         implicit none
-        class(DataDescr_t), intent(inout):: this         !inout: distributed data descriptor
+        class(DataDescr_t), intent(inout):: this         !inout: data descriptor
         type(C_PTR), intent(in):: loc_ptr                !in: pointer to a local buffer
-        integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
-        integer(INT_MPI), intent(in), optional:: async   !in: if present, the passive target communication is not completed here
-        integer(INT_MPI):: errc,asnc
+        integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success, TRY_LATER:resource is currently busy)
+        integer(INT_MPI), intent(in), optional:: async   !in: asynchronisity: {MPI_ASYNC_NOT,MPI_ASYNC_NRM,MPI_ASYNC_REQ}
+        integer(INT_MPI), parameter:: MPI_ASSER=0        !MPI lock assertion
+        integer(INT_MPI):: rwe,errc,asnc
         real(4), pointer, contiguous:: r4_ptr(:)
         real(8), pointer, contiguous:: r8_ptr(:)
         complex(8), pointer, contiguous:: c8_ptr(:)
 
         errc=0
-        if(present(async)) then; asnc=async; else; asnc=MPI_ASYNC_NOT; endif
+        if(present(async)) then; asnc=async; else; asnc=MPI_ASYNC_NOT; endif !default is synchronous communication
         if(asnc.eq.MPI_ASYNC_NOT.or.asnc.eq.MPI_ASYNC_NRM.or.asnc.eq.MPI_ASYNC_REQ) then
          if(.not.c_associated(loc_ptr,C_NULL_PTR)) then
           if(this%RankMPI.ge.0) then
-           if(this%StatMPI.eq.MPI_STAT_NONE.or.this%StatMPI.eq.MPI_STAT_COMPLETED) then
-            if(this%Locked.eq.NO_LOCK) then
-             call this%lock_data(SHARED_LOCK,errc); if(errc.ne.0) errc=1
-            endif
+           if(this%StatMPI.eq.MPI_STAT_NONE.or.this%StatMPI.eq.MPI_STAT_COMPLETED.or.&
+              this%StatMPI.eq.MPI_STAT_COMPLETED_ORIG) then
+            rwe=RankWinRefs%test(this%RankMPI,this%WinMPI%Window,errc,append=.true.) !get the (rank,window) entry
             if(errc.eq.0) then
              if(this%DataVol.gt.0) then
-              select case(this%DataType)
-              case(R4)
-               call c_f_pointer(loc_ptr,r4_ptr,(/this%DataVol/))
-               call start_get_r4(r4_ptr,errc); if(errc.ne.0) errc=2
-              case(R8)
-               call c_f_pointer(loc_ptr,r8_ptr,(/this%DataVol/))
-               call start_get_r8(r8_ptr,errc); if(errc.ne.0) errc=3
-              case(C8)
-               call c_f_pointer(loc_ptr,c8_ptr,(/this%DataVol/))
-               call start_get_c8(c8_ptr,errc); if(errc.ne.0) errc=4
-              case(NO_TYPE)
-               errc=5
-              case default
-               errc=6
+              call modify_lock(rwe,errc) !modify the (rank,window) lock status if needed
+              if(errc.eq.0) then
+               select case(this%DataType)
+               case(R4)
+                call c_f_pointer(loc_ptr,r4_ptr,(/this%DataVol/))
+                call start_get_r4(r4_ptr,errc); if(errc.ne.0) errc=1
+               case(R8)
+                call c_f_pointer(loc_ptr,r8_ptr,(/this%DataVol/))
+                call start_get_r8(r8_ptr,errc); if(errc.ne.0) errc=2
+               case(C8)
+                call c_f_pointer(loc_ptr,c8_ptr,(/this%DataVol/))
+                call start_get_c8(c8_ptr,errc); if(errc.ne.0) errc=3
+               case(NO_TYPE)
+                errc=4
+               case default
+                errc=5
+               endif
+               if(errc.eq.0) then
+                call RankWinRefs%new_transfer(this) !register a new transfer (will also set this%TransID field)
+                if(asnc.eq.MPI_ASYNC_NOT) then
+                 call this%flush_data(errc); if(errc.ne.0) errc=6
+                endif
+               endif
+              else
+               errc=7
               endif
-              if(errc.eq.0.and.asnc.eq.MPI_ASYNC_NOT)
-               call this%unlock_data(errc); if(errc.ne.0) errc=7
-              endif
-             elseif(this%DataVol.lt.0) then
+             elseif(this%DataVol.eq.0) then
+              this%StatMPI=MPI_STAT_COMPLETED
+             else
               errc=8
              endif
             else
-             errc=9
+             if(errc.ne.TRY_LATER) errc=9
             endif
            else
             errc=10
@@ -932,6 +1005,32 @@
         return
 
         contains
+
+         subroutine modify_lock(rw,jerr)
+         integer(INT_MPI), intent(in):: rw
+         integer(INT_MPI), intent(out):: jerr
+         type(RankWin_t), pointer:: rw_entry
+         jerr=0; rw_entry=>RankWinRefs(rw)
+         if(rw_entry%LockType*READ_SIGN.lt.0) then !communication direction change
+          call MPI_WIN_UNLOCK(rw_entry%Rank,rw_entry%Window,jerr)
+          if(jerr.eq.0) then
+           rw_entry%LockType=NO_LOCK
+           rw_entry%LastSync=RankWinRefs%TransCount
+          else
+           jerr=1
+          endif
+         endif
+         if(jerr.eq.0.and.rw_entry%LockType.eq.NO_LOCK) then
+          call MPI_WIN_LOCK(MPI_LOCK_SHARED,rw_entry%Rank,MPI_ASSER,rw_entry%Window,jerr)
+          if(jerr.eq.0) then
+           rw_entry%LockType=SHARED_LOCK*READ_SIGN
+          else
+           jerr=2
+          endif
+         endif
+         nullify(rw_entry)
+         return
+         end subroutine modify_lock
 
          subroutine start_get_r4(r4_arr,jerr)
          real(4), intent(inout), asynchronous:: r4_arr(*)
@@ -951,7 +1050,7 @@
            this%StatMPI=MPI_STAT_ONESIDED_ERR; jerr=1
           endif
          else !request-handle
-          call MPI_GET(r4_arr,jv,MPI_REAL4,this%RankMPI,this%Offset,jv,MPI_REAL4,this%WinMPI%Window,this%ReqHandle,jerr)
+          call MPI_RGET(r4_arr,jv,MPI_REAL4,this%RankMPI,this%Offset,jv,MPI_REAL4,this%WinMPI%Window,this%ReqHandle,jerr)
           if(jerr.eq.0) then
            this%StatMPI=MPI_STAT_PROGRESS_REQ
           else
@@ -979,7 +1078,7 @@
            this%StatMPI=MPI_STAT_ONESIDED_ERR; jerr=1
           endif
          else !request-handle
-          call MPI_GET(r8_arr,jv,MPI_REAL8,this%RankMPI,this%Offset,jv,MPI_REAL8,this%WinMPI%Window,this%ReqHandle,jerr)
+          call MPI_RGET(r8_arr,jv,MPI_REAL8,this%RankMPI,this%Offset,jv,MPI_REAL8,this%WinMPI%Window,this%ReqHandle,jerr)
           if(jerr.eq.0) then
            this%StatMPI=MPI_STAT_PROGRESS_REQ
           else
@@ -1007,7 +1106,7 @@
            this%StatMPI=MPI_STAT_ONESIDED_ERR; jerr=1
           endif
          else !request-handle
-          call MPI_GET(c8_arr,jv,MPI_COMPLEX8,this%RankMPI,this%Offset,jv,MPI_COMPLEX8,this%WinMPI%Window,this%ReqHandle,jerr)
+          call MPI_RGET(c8_arr,jv,MPI_COMPLEX8,this%RankMPI,this%Offset,jv,MPI_COMPLEX8,this%WinMPI%Window,this%ReqHandle,jerr)
           if(jerr.eq.0) then
            this%StatMPI=MPI_STAT_PROGRESS_REQ
           else
