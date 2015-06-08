@@ -719,7 +719,7 @@
         if(errc.eq.0) DistrSpaceLocalSize=loc_size
         if(present(ierr)) ierr=errc
         return
-        end subroutine DistrSpaceLocalSize
+        end function DistrSpaceLocalSize
 !-----------------------------------------------------------------------------------
         subroutine DistrSpaceAttach(this,loc_ptr,data_type,data_vol,data_descr,ierr)
 !Attaches a local (contiguous) buffer to the initialized distributed memory space.
@@ -1003,7 +1003,7 @@
         endif
         if(present(ierr)) ierr=errc
         return
-        end subroutine DataDescrTestData
+        end function DataDescrTestData
 !----------------------------------------------
         subroutine DataDescrWaitData(this,ierr)
 !Waits for a completion of a data request with a request handle.
