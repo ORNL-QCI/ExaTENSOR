@@ -342,8 +342,10 @@
         if(entry_num.ge.1.and.entry_num.le.MAX_ONESIDED_REQS) then
          if(this%RankWins(entry_num)%Rank.ge.0) then !active entry
           m=mod(this%RankWins(entry_num)%Rank,HASH_MOD)
-          i=this%PrevEntry(entry_num); if(i.gt.0) this%NextEntry(i)=j
-          j=this%NextEntry(entry_num); if(j.gt.0) this%PrevEntry(j)=i
+          i=this%PrevEntry(entry_num)
+          j=this%NextEntry(entry_num)
+          if(i.gt.0) this%NextEntry(i)=j
+          if(j.gt.0) this%PrevEntry(j)=i
           if(this%HashBin(m).eq.entry_num) this%HashBin(m)=j
           this%NextEntry(entry_num)=this%FirstFree
           if(this%FirstFree.gt.0) this%PrevEntry(this%FirstFree)=entry_num
