@@ -21,7 +21,7 @@
         module distributed
 !       use, intrinsic:: ISO_C_BINDING
         use service_mpi !includes ISO_C_BINDING & MPI (must stay public)
-        use:: tensor_algebra, only: NO_TYPE,R4,R8,C8 !tensor data kinds
+        use:: tensor_algebra, only: NO_TYPE,R4,R8,C8,R4_,R8_,C8_ !tensor data kinds
         implicit none
         public !because of mpi.mod (or mpif.h) contained in service_mpi.mod
 !PARAMETERS:
@@ -137,12 +137,12 @@
           procedure, public:: wait_data=>DataDescrWaitData      !wait until the data has been transferred to/from the origin (request)
           procedure, public:: get_data=>DataDescrGetData        !load data referred to by a data descriptor into a local buffer
           procedure, public:: acc_data=>DataDescrAccData        !accumulate data from a local buffer to the location specified by a data descriptor
-          procedure, public:: pack=>DataDescrPack               !pack the DataDescr_t object into a plain-byte packet
-          procedure, public:: unpack=>DataDescrUnpack           !unpack the DataDescr_t object from a plain-byte packet
+!          procedure, public:: pack=>DataDescrPack               !pack the DataDescr_t object into a plain-byte packet
+!          procedure, public:: unpack=>DataDescrUnpack           !unpack the DataDescr_t object from a plain-byte packet
         end type DataDescr_t
 !GLOBAL DATA:
  !MPI one-sided data transfer bookkeeping (master thread only):
-        type(RankWinList_t), private:: RankWinRefs !container for active one-sided communications initiated at the local origin
+        type(RankWinList_t), target, private:: RankWinRefs !container for active one-sided communications initiated at the local origin
 !FUNCTION VISIBILITY:
  !Global:
         public data_type_size
@@ -176,8 +176,8 @@
         private DataDescrWaitData
         private DataDescrGetData
         private DataDescrAccData
-        private DataDescrPack
-        private DataDescrUnpack
+!        private DataDescrPack
+!        private DataDescrUnpack
 
         contains
 !METHODS:
@@ -229,7 +229,7 @@
 
         errc=0
         if(present(rank)) then
-         if(present(window)) then !active descriptor
+         if(present(win)) then !active descriptor
           this%Rank=rank
           this%Window=win
           this%LockType=NO_LOCK
@@ -239,7 +239,7 @@
           errc=1
          endif
         else
-         if(present(window)) then
+         if(present(win)) then
           errc=2
          else !empty descriptor
           this%Rank=-1
@@ -339,7 +339,7 @@
         integer(INT_MPI):: i,j,m,errc
 
         errc=0
-        if(entry_num.ge.1.and.entry_num.le.MAX_ONDESIDED_REQS) then
+        if(entry_num.ge.1.and.entry_num.le.MAX_ONESIDED_REQS) then
          if(this%RankWins(entry_num)%Rank.ge.0) then !active entry
           m=mod(this%RankWins(entry_num)%Rank,HASH_MOD)
           i=this%PrevEntry(entry_num); if(i.gt.0) this%NextEntry(i)=j
@@ -522,7 +522,7 @@
         contains
 
          subroutine attach_buffer(r4_arr,bsize,jerr)
-         real(4), intent(in), asynchronous:: r4_arr(*)
+         real(4), intent(in):: r4_arr(*) !asynchronous
          integer(INT_ADDR), intent(in):: bsize
          integer(INT_MPI), intent(out):: jerr
          jerr=0
@@ -571,7 +571,7 @@
         contains
 
          subroutine detach_buffer(r4_arr,jerr)
-         real(4), intent(in), asynchronous:: r4_arr(*)
+         real(4), intent(in):: r4_arr(*) !asynchronous
          integer(INT_MPI), intent(out):: jerr
          jerr=0
          call MPI_WIN_DETACH(this%WinMPI%Window,r4_arr,jerr)
@@ -1080,7 +1080,7 @@
          if(.not.c_associated(loc_ptr,C_NULL_PTR)) then
           if(this%RankMPI.ge.0) then
            if(this%StatMPI.eq.MPI_STAT_NONE.or.this%StatMPI.eq.MPI_STAT_COMPLETED.or.&
-              this%StatMPI.eq.MPI_STAT_COMPLETED_ORIG) then
+             &this%StatMPI.eq.MPI_STAT_COMPLETED_ORIG) then
             rwe=RankWinRefs%test(this%RankMPI,this%WinMPI%Window,errc,append=.true.) !get the (rank,window) entry
             if(errc.eq.0) then
              if(this%DataVol.gt.0) then
@@ -1101,7 +1101,7 @@
                  errc=4
                 case default
                  errc=5
-                endif
+                end select
                 if(errc.eq.0) then
                  call RankWinRefs%new_transfer(this,rwe) !register a new transfer (will also set this%TransID field)
                  if(asnc.eq.MPI_ASYNC_NOT) then
@@ -1166,7 +1166,7 @@
          end subroutine modify_lock
 
          subroutine start_get_r4(r4_arr,jerr)
-         real(4), intent(inout), asynchronous:: r4_arr(*)
+         real(4), intent(inout):: r4_arr(*) !asynchronous
          integer(INT_MPI), intent(out):: jerr
          integer(INT_COUNT):: ji,js
          integer(INT_MPI):: jv
@@ -1174,7 +1174,7 @@
          if(asnc.ne.MPI_ASYNC_REQ) then !regular
           do js=1,this%DataVol,ji
            jv=int(min(this%DataVol-js+1,ji),INT_MPI)
-           call MPI_GET(r4_arr(js:),jv,MPI_REAL4,this%RankMPI,this%Offset,jv,MPI_REAL4,this%WinMPI%Window,jerr)
+           call MPI_GET(r4_arr(js:js+jv-1),jv,MPI_REAL4,this%RankMPI,this%Offset,jv,MPI_REAL4,this%WinMPI%Window,jerr)
            if(jerr.ne.0) exit
           enddo
           if(jerr.eq.0) then
@@ -1195,7 +1195,7 @@
          end subroutine start_get_r4
 
          subroutine start_get_r8(r8_arr,jerr)
-         real(8), intent(inout), asynchronous:: r8_arr(*)
+         real(8), intent(inout):: r8_arr(*) !asynchronous
          integer(INT_MPI), intent(out):: jerr
          integer(INT_COUNT):: ji,js
          integer(INT_MPI):: jv
@@ -1203,7 +1203,7 @@
          if(asnc.ne.MPI_ASYNC_REQ) then !regular
           do js=1,this%DataVol,ji
            jv=int(min(this%DataVol-js+1,ji),INT_MPI)
-           call MPI_GET(r8_arr(js:),jv,MPI_REAL8,this%RankMPI,this%Offset,jv,MPI_REAL8,this%WinMPI%Window,jerr)
+           call MPI_GET(r8_arr(js:js+jv-1),jv,MPI_REAL8,this%RankMPI,this%Offset,jv,MPI_REAL8,this%WinMPI%Window,jerr)
            if(jerr.ne.0) exit
           enddo
           if(jerr.eq.0) then
@@ -1224,7 +1224,7 @@
          end subroutine start_get_r8
 
          subroutine start_get_c8(c8_arr,jerr)
-         complex(8), intent(inout), asynchronous:: c8_arr(*)
+         complex(8), intent(inout):: c8_arr(*) !asynchronous
          integer(INT_MPI), intent(out):: jerr
          integer(INT_COUNT):: ji,js
          integer(INT_MPI):: jv
@@ -1232,7 +1232,7 @@
          if(asnc.ne.MPI_ASYNC_REQ) then !regular
           do js=1,this%DataVol,ji
            jv=int(min(this%DataVol-js+1,ji),INT_MPI)
-           call MPI_GET(c8_arr(js:),jv,MPI_COMPLEX8,this%RankMPI,this%Offset,jv,MPI_COMPLEX8,this%WinMPI%Window,jerr)
+           call MPI_GET(c8_arr(js:js+jv-1),jv,MPI_COMPLEX8,this%RankMPI,this%Offset,jv,MPI_COMPLEX8,this%WinMPI%Window,jerr)
            if(jerr.ne.0) exit
           enddo
           if(jerr.eq.0) then
@@ -1299,7 +1299,7 @@
                  errc=4
                 case default
                  errc=5
-                endif
+                end select
                 if(errc.eq.0) then
                  call RankWinRefs%new_transfer(this,rwe) !register a new transfer (will also set this%TransID field)
                  if(asnc.eq.MPI_ASYNC_NOT) then
@@ -1364,7 +1364,7 @@
          end subroutine modify_lock
 
          subroutine start_acc_r4(r4_arr,jerr)
-         real(4), intent(inout), asynchronous:: r4_arr(*)
+         real(4), intent(inout):: r4_arr(*) !asynchronous
          integer(INT_MPI), intent(out):: jerr
          integer(INT_COUNT):: ji,js
          integer(INT_MPI):: jv
@@ -1372,7 +1372,8 @@
          if(asnc.ne.MPI_ASYNC_REQ) then !regular
           do js=1,this%DataVol,ji
            jv=int(min(this%DataVol-js+1,ji),INT_MPI)
-           call MPI_ACCUMULATE(r4_arr(js:),jv,MPI_REAL4,this%RankMPI,this%Offset,jv,MPI_REAL4,MPI_SUM,this%WinMPI%Window,jerr)
+           call MPI_ACCUMULATE(r4_arr(js:js+jv-1),jv,MPI_REAL4,this%RankMPI,this%Offset,jv,MPI_REAL4,MPI_SUM,&
+                              &this%WinMPI%Window,jerr)
            if(jerr.ne.0) exit
           enddo
           if(jerr.eq.0) then
@@ -1394,7 +1395,7 @@
          end subroutine start_acc_r4
 
          subroutine start_acc_r8(r8_arr,jerr)
-         real(8), intent(inout), asynchronous:: r8_arr(*)
+         real(8), intent(inout):: r8_arr(*) !asynchronous
          integer(INT_MPI), intent(out):: jerr
          integer(INT_COUNT):: ji,js
          integer(INT_MPI):: jv
@@ -1402,7 +1403,8 @@
          if(asnc.ne.MPI_ASYNC_REQ) then !regular
           do js=1,this%DataVol,ji
            jv=int(min(this%DataVol-js+1,ji),INT_MPI)
-           call MPI_ACCUMULATE(r8_arr(js:),jv,MPI_REAL8,this%RankMPI,this%Offset,jv,MPI_REAL8,MPI_SUM,this%WinMPI%Window,jerr)
+           call MPI_ACCUMULATE(r8_arr(js:js+jv-1),jv,MPI_REAL8,this%RankMPI,this%Offset,jv,MPI_REAL8,MPI_SUM,&
+                              &this%WinMPI%Window,jerr)
            if(jerr.ne.0) exit
           enddo
           if(jerr.eq.0) then
@@ -1424,7 +1426,7 @@
          end subroutine start_acc_r8
 
          subroutine start_acc_c8(c8_arr,jerr)
-         complex(8), intent(inout), asynchronous:: c8_arr(*)
+         complex(8), intent(inout):: c8_arr(*) !asynchronous
          integer(INT_MPI), intent(out):: jerr
          integer(INT_COUNT):: ji,js
          integer(INT_MPI):: jv
@@ -1432,7 +1434,7 @@
          if(asnc.ne.MPI_ASYNC_REQ) then !regular
           do js=1,this%DataVol,ji
            jv=int(min(this%DataVol-js+1,ji),INT_MPI)
-           call MPI_ACCUMULATE(c8_arr(js:),jv,MPI_COMPLEX8,this%RankMPI,this%Offset,jv,MPI_COMPLEX8,MPI_SUM,&
+           call MPI_ACCUMULATE(c8_arr(js:js+jv-1),jv,MPI_COMPLEX8,this%RankMPI,this%Offset,jv,MPI_COMPLEX8,MPI_SUM,&
                               &this%WinMPI%Window,jerr)
            if(jerr.ne.0) exit
           enddo
