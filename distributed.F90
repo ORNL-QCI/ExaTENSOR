@@ -1,6 +1,6 @@
 !Distributed data storage infrastructure (DDSI).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2015/06/05 (started 2015/03/18)
+!REVISION: 2015/06/08 (started 2015/03/18)
 !CONCEPTS:
 ! * Each MPI process can participate in one or more distributed memory spaces (DMS),
 !   where each distributed memory space is defined within a specific MPI communicator.
@@ -358,24 +358,33 @@
         if(present(ierr)) ierr=errc
         return
         end subroutine RankWinListDel
-!-----------------------------------------------
-        subroutine RankWinNewTrans(this,dd,ierr)
+!---------------------------------------------------
+        subroutine RankWinNewTrans(this,dd,rwe,ierr)
 !This subroutine increments the global transfer ID and communicated data size
 !and assigns the current transfer ID to the given data descriptor.
         implicit none
         class(RankWinList_t), intent(inout):: this       !inout: (rank,window) list
         class(DataDescr_t), intent(inout):: dd           !inout: valid data descriptor
+        integer(INT_MPI), intent(in):: rwe               !in: the corresponding (rank,window) entry
         integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
         integer(8), parameter:: int8=0_8
         integer(INT_MPI):: n,errc
 
         errc=0
         if(this%TransCount.lt.huge(int8)) then
-         this%TransCount=this%TransCount+1
-         n=data_type_size(dd%DataType)
-         this%TransSize=this%TransSize+real(n,8)*real(dd%DataVol,8)
+         if(rwe.ge.1.and.rwe.le.MAX_ONESIDED_REQS) then
+          this%TransCount=this%TransCount+1
+          n=data_type_size(dd%DataType)
+          this%TransSize=this%TransSize+real(n,8)*real(dd%DataVol,8)
+          dd%TransID=this%TransCount
+          this%RankWins(rwe)%RefCount=this%RankWins(rwe)%RefCount+1
+         else
+          errc=1
+         endif
         else
-         errc=1
+         if(VERBOSE) write(CONS_OUT,'("#FATAL(distributed::RankWin.NewTrans): Max int8 MPI message count exceeded!")')
+         errc=2
+         call quit(-1,'#FATAL: Unable to continue: Distributed Data Service failed!')
         endif
         if(present(ierr)) ierr=errc
         return
@@ -513,7 +522,7 @@
         contains
 
          subroutine attach_buffer(r4_arr,bsize,jerr)
-         real(4), intent(in):: r4_arr(*)
+         real(4), intent(in), asynchronous:: r4_arr(*)
          integer(INT_ADDR), intent(in):: bsize
          integer(INT_MPI), intent(out):: jerr
          jerr=0
@@ -562,7 +571,7 @@
         contains
 
          subroutine detach_buffer(r4_arr,jerr)
-         real(4), intent(in):: r4_arr(*)
+         real(4), intent(in), asynchronous:: r4_arr(*)
          integer(INT_MPI), intent(out):: jerr
          jerr=0
          call MPI_WIN_DETACH(this%WinMPI%Window,r4_arr,jerr)
@@ -847,6 +856,7 @@
             this%DataType=data_type
             this%TransID=0 !0 means "never assigned a Transfer ID"
             this%StatMPI=MPI_STAT_NONE
+            this%ReqHandle=MPI_REQUEST_NULL
             call MPI_Get_Displacement(loc_ptr,this%Offset,errc); if(errc.ne.0) errc=1
            else
             errc=2
@@ -868,6 +878,11 @@
         subroutine DataDescrFlushData(this,ierr,local)
 !Completes an MPI one-sided communication specified by a given data descriptor.
 !Other outstanding MPI communications on the same (rank,window) will be completed as well.
+!It is safe to flush the same (valid) data descriptor multiple times. However,
+!if the data descriptor was flushed the first time at the origin only (local=.true.),
+!one will no longer be able to request a full completion (both at origin and target).
+!In case of a one-sided synchronization error, the data request will still be marked
+!as pending, thus blocking the corresponding (rank,window) entry from release!
         implicit none
         class(DataDescr_t), intent(inout):: this         !inout: data descriptor
         integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
@@ -879,44 +894,107 @@
         errc=0
         if(present(local)) then; lcl=local; else; lcl=.false.; endif !default is flushing both at the origin and target
         if(this%RankMPI.ge.0) then
-         rwe=RankWinRefs%test(this%RankMPI,this%WinMPI%Window,errc) !get the (rank,window) entry
-         if(rwe.gt.0.and.errc.eq.0) then
-          rw_entry=>RankWinRefs(rwe)
-          if(rw_entry%RefCount.gt.1) then !not the last reference to this (rank,window)
-           if(lcl) then
-            call MPI_WIN_FLUSH_LOCAL(rw_entry%Rank,rw_entry%Window,errc) !complete at the origin only
-            if(errc.eq.0) then
-             this%StatMPI=MPI_STAT_COMPLETED_ORIG
-             rw_entry%RefCount=rw_entry%RefCount-1
-            else
-             this%StatMPI=MPI_STAT_ONESIDED_ERR; errc=1
+         if(this%StatMPI.eq.MPI_STAT_PROGRESS_NRM.or.this%StatMPI.eq.MPI_STAT_PROGRESS_REQ) then !first flush
+          rwe=RankWinRefs%test(this%RankMPI,this%WinMPI%Window,errc) !get the (rank,window) entry
+          if(rwe.gt.0.and.errc.eq.0) then
+           rw_entry=>RankWinRefs%RankWins(rwe)
+           if(rw_entry%RefCount.gt.1) then !not the last reference to this (rank,window)
+            if(lcl) then !complete at origin only
+             if(this%TransID.gt.rw_entry%LastSync) call MPI_WIN_FLUSH_LOCAL(rw_entry%Rank,rw_entry%Window,errc) !complete at the origin only
+             if(errc.eq.0) then
+              this%StatMPI=MPI_STAT_COMPLETED_ORIG
+              rw_entry%RefCount=rw_entry%RefCount-1
+             else
+              this%StatMPI=MPI_STAT_ONESIDED_ERR; errc=1
+             endif
+            else !complete at both origin and target
+             if(this%TransID.gt.rw_entry%LastSync) call MPI_WIN_FLUSH(rw_entry%Rank,rw_entry%Window,errc) !complete both at the origin and target
+             if(errc.eq.0) then
+              this%StatMPI=MPI_STAT_COMPLETED
+              rw_entry%RefCount=rw_entry%RefCount-1
+             else
+              this%StatMPI=MPI_STAT_ONESIDED_ERR; errc=2
+             endif
             endif
-           else
-            call MPI_WIN_FLUSH(rw_entry%Rank,rw_entry%Window,errc) !complete both at the origin and target
+           else !the last reference to this (rank,window)
+            if(this%TransID.gt.rw_entry%LastSync) call MPI_WIN_UNLOCK(rw_entry%Rank,rw_entry%Window,errc) !complete both at origin and target
             if(errc.eq.0) then
              this%StatMPI=MPI_STAT_COMPLETED
              rw_entry%RefCount=rw_entry%RefCount-1
             else
-             this%StatMPI=MPI_STAT_ONESIDED_ERR; errc=2
+             this%StatMPI=MPI_STAT_ONESIDED_ERR; errc=3
             endif
            endif
-          else !the last reference to this (rank,window)
-           call MPI_WIN_UNLOCK(rw_entry%Rank,rw_entry%Window,errc)
-           if(errc.eq.0) then
-            this%StatMPI=MPI_STAT_COMPLETED
-            rw_entry%RefCount=rw_entry%RefCount-1
-           else
-            this%StatMPI=MPI_STAT_ONESIDED_ERR; errc=3
+           if(errc.eq.0) rw_entry%LastSync=RankWinRefs%TransCount
+           if(rw_entry%RefCount.eq.0) then !delete the (rank,window) entry if no references are attached to it
+            call RankWinRefs%delete(rwe,errc); if(errc.ne.0) errc=4
+           elseif(rw_entry%RefCount.lt.0) then
+            write(CONS_OUT,'("#FATAL(distributed::DataDescr.FlushData): Negative reference count: ",i12)') rw_entry%RefCount
+            errc=5
+            call quit(-1,'#FATAL: Unable to continue: Distributed Data Service failed!')
            endif
+           nullify(rw_entry)
+          else
+           errc=6
           endif
-          if(errc.eq.0) rw_entry%LastSync=RankWinRefs%TransCount
-          if(rw_entry%RefCount.eq.0) then
-           call RankWinRefs%delete(rwe,errc); if(errc.ne.0) errc=4
-          elseif(rw_entry%RefCount.lt.0) then
-           write(CONS_OUT,'("#FATAL(distributed::DataDescr.FlushData): Negative reference count: ",i12)') rw_entry%RefCount
-           call quit(-1,'#FATAL: Unable to continue: Distributed Data Service failed!')
+         elseif(this%StatMPI.eq.MPI_STAT_NONE.or.this%StatMPI.eq.MPI_STAT_ONESIDED_ERR) then !invalid data descriptor
+          errc=7
+         endif
+        else
+         errc=8
+        endif
+        if(present(ierr)) ierr=errc
+        return
+        end subroutine DataDescrFlushData
+!----------------------------------------------------
+        logical function DataDescrTestData(this,ierr)
+!Tests a completion (at the origin) of a data request with a request handle.
+!In case of a one-sided synchronization error, the data request will still be marked
+!as pending, thus blocking the corresponding (rank,window) entry from release!
+        implicit none
+        class(DataDescr_t), intent(inout):: this         !inout: data descriptor
+        integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
+        integer(INT_MPI):: mpi_stat(MPI_STATUS_SIZE),rwe,errc
+        type(RankWin_t), pointer:: rw_entry
+        logical:: compl
+
+        errc=0; DataDescrTestData=.false.
+        if(this%RankMPI.ge.0) then
+         if(this%StatMPI.eq.MPI_STAT_PROGRESS_REQ) then
+          rwe=RankWinRefs%test(this%RankMPI,this%WinMPI%Window,errc) !get the (rank,window) entry
+          if(rwe.gt.0.and.errc.eq.0) then
+           rw_entry=>RankWinRefs%RankWins(rwe)
+           if(rw_entry%RefCount.gt.0) then
+            if(this%TransID.gt.rw_entry%LastSync) then
+             call MPI_TEST(this%ReqHandle,compl,mpi_stat,errc)
+             if(errc.eq.0) then
+              if(compl) then
+               this%StatMPI=MPI_STAT_COMPLETED_ORIG
+               rw_entry%RefCount=rw_entry%RefCount-1
+               DataDescrTestData=.true.
+              endif
+             else
+              this%StatMPI=MPI_STAT_ONESIDED_ERR; errc=1
+             endif
+            else
+             this%StatMPI=MPI_STAT_COMPLETED_ORIG
+             rw_entry%RefCount=rw_entry%RefCount-1
+             DataDescrTestData=.true.
+            endif
+            if(rw_entry%RefCount.eq.0) then !delete the (rank,window) entry if no references are attached to it
+             call RankWinRefs%delete(rwe,errc); if(errc.ne.0) errc=2
+            endif
+            nullify(rw_entry)
+           else
+            write(CONS_OUT,'("#FATAL(distributed::DataDescr.TestData): Invalid reference count: ",i12)') rw_entry%RefCount
+            errc=3
+            call quit(-1,'#FATAL: Unable to continue: Distributed Data Service failed!')
+           endif
+          else
+           errc=4
           endif
-          nullify(rw_entry)
+         elseif(this%StatMPI.eq.MPI_STAT_COMPLETED.or.this%StatMPI.eq.MPI_STAT_COMPLETED_ORIG) then
+          DataDescrTestData=.true.
          else
           errc=5
          endif
@@ -925,13 +1003,64 @@
         endif
         if(present(ierr)) ierr=errc
         return
-        end subroutine DataDescrFlushData
+        end subroutine DataDescrTestData
+!----------------------------------------------
+        subroutine DataDescrWaitData(this,ierr)
+!Waits for a completion of a data request with a request handle.
+!In case of a one-sided synchronization error, the data request will still be marked
+!as pending, thus blocking the corresponding (rank,window) entry from release!
+        implicit none
+        class(DataDescr_t), intent(inout):: this         !inout: data descriptor
+        integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
+        integer(INT_MPI):: mpi_stat(MPI_STATUS_SIZE),rwe,errc
+        type(RankWin_t), pointer:: rw_entry
+
+        errc=0
+        if(this%RankMPI.ge.0) then
+         if(this%StatMPI.eq.MPI_STAT_PROGRESS_REQ) then
+          rwe=RankWinRefs%test(this%RankMPI,this%WinMPI%Window,errc) !get the (rank,window) entry
+          if(rwe.gt.0.and.errc.eq.0) then
+           rw_entry=>RankWinRefs%RankWins(rwe)
+           if(rw_entry%RefCount.gt.0) then
+            if(this%TransID.gt.rw_entry%LastSync) then
+             call MPI_WAIT(this%ReqHandle,mpi_stat,errc)
+             if(errc.eq.0) then
+              this%StatMPI=MPI_STAT_COMPLETED_ORIG
+              rw_entry%RefCount=rw_entry%RefCount-1
+             else
+              this%StatMPI=MPI_STAT_ONESIDED_ERR; errc=1
+             endif
+            else
+             this%StatMPI=MPI_STAT_COMPLETED_ORIG
+             rw_entry%RefCount=rw_entry%RefCount-1
+            endif
+            if(rw_entry%RefCount.eq.0) then !delete the (rank,window) entry if no references are attached to it
+             call RankWinRefs%delete(rwe,errc); if(errc.ne.0) errc=2
+            endif
+            nullify(rw_entry)
+           else
+            write(CONS_OUT,'("#FATAL(distributed::DataDescr.WaitData): Invalid reference count: ",i12)') rw_entry%RefCount
+            errc=3
+            call quit(-1,'#FATAL: Unable to continue: Distributed Data Service failed!')
+           endif
+          else
+           errc=4
+          endif
+         elseif(this%StatMPI.ne.MPI_STAT_COMPLETED.and.this%StatMPI.ne.MPI_STAT_COMPLETED_ORIG) then
+          errc=5
+         endif
+        else
+         errc=6
+        endif
+        if(present(ierr)) ierr=errc
+        return
+        end subroutine DataDescrWaitData
 !-----------------------------------------------------------
         subroutine DataDescrGetData(this,loc_ptr,ierr,async)
-!Initiates a load of (remote) data into a local buffer.
-!The default (synchronous) call will complete the transfer here.
-!If <async> is present and equal to MPI_ASYNC_NRM or MPI_ASYNC_REQ,
-!then another (completion) call will be required to complete the communication.
+!Initiates a (remote) data fetch into a local buffer.
+!The default (synchronous) call will complete the transfer within this call.
+!If <async> is present and equal to MPI_ASYNC_NRM or MPI_ASYNC_REQ, then
+!another (completion) call will be required to complete the communication.
 !If the internal tables for communication tracking no longer have free entries,
 !the status TRY_LATER is returned, meaning that one needs to wait until later.
         implicit none
@@ -955,51 +1084,55 @@
             rwe=RankWinRefs%test(this%RankMPI,this%WinMPI%Window,errc,append=.true.) !get the (rank,window) entry
             if(errc.eq.0) then
              if(this%DataVol.gt.0) then
-              call modify_lock(rwe,errc) !modify the (rank,window) lock status if needed
-              if(errc.eq.0) then
-               select case(this%DataType)
-               case(R4)
-                call c_f_pointer(loc_ptr,r4_ptr,(/this%DataVol/))
-                call start_get_r4(r4_ptr,errc); if(errc.ne.0) errc=1
-               case(R8)
-                call c_f_pointer(loc_ptr,r8_ptr,(/this%DataVol/))
-                call start_get_r8(r8_ptr,errc); if(errc.ne.0) errc=2
-               case(C8)
-                call c_f_pointer(loc_ptr,c8_ptr,(/this%DataVol/))
-                call start_get_c8(c8_ptr,errc); if(errc.ne.0) errc=3
-               case(NO_TYPE)
-                errc=4
-               case default
-                errc=5
-               endif
+              if(.not.(asnc.eq.MPI_ASYNC_REQ.and.this%DataVol.gt.huge(asnc))) then
+               call modify_lock(rwe,errc) !modify the (rank,window) lock status if needed
                if(errc.eq.0) then
-                call RankWinRefs%new_transfer(this) !register a new transfer (will also set this%TransID field)
-                if(asnc.eq.MPI_ASYNC_NOT) then
-                 call this%flush_data(errc); if(errc.ne.0) errc=6
+                select case(this%DataType)
+                case(R4)
+                 call c_f_pointer(loc_ptr,r4_ptr,(/this%DataVol/))
+                 call start_get_r4(r4_ptr,errc); if(errc.ne.0) errc=1
+                case(R8)
+                 call c_f_pointer(loc_ptr,r8_ptr,(/this%DataVol/))
+                 call start_get_r8(r8_ptr,errc); if(errc.ne.0) errc=2
+                case(C8)
+                 call c_f_pointer(loc_ptr,c8_ptr,(/this%DataVol/))
+                 call start_get_c8(c8_ptr,errc); if(errc.ne.0) errc=3
+                case(NO_TYPE)
+                 errc=4
+                case default
+                 errc=5
                 endif
+                if(errc.eq.0) then
+                 call RankWinRefs%new_transfer(this,rwe) !register a new transfer (will also set this%TransID field)
+                 if(asnc.eq.MPI_ASYNC_NOT) then
+                  call this%flush_data(errc); if(errc.ne.0) errc=6
+                 endif
+                endif
+               else
+                errc=7
                endif
               else
-               errc=7
+               errc=8
               endif
              elseif(this%DataVol.eq.0) then
               this%StatMPI=MPI_STAT_COMPLETED
              else
-              errc=8
+              errc=9
              endif
             else
-             if(errc.ne.TRY_LATER) errc=9
+             if(errc.ne.TRY_LATER) errc=10
             endif
            else
-            errc=10
+            errc=11
            endif
           else
-           errc=11
+           errc=12
           endif
          else
-          errc=12
+          errc=13
          endif
         else
-         errc=13
+         errc=14
         endif
         if(present(ierr)) ierr=errc
         return
@@ -1010,7 +1143,7 @@
          integer(INT_MPI), intent(in):: rw
          integer(INT_MPI), intent(out):: jerr
          type(RankWin_t), pointer:: rw_entry
-         jerr=0; rw_entry=>RankWinRefs(rw)
+         jerr=0; rw_entry=>RankWinRefs%RankWins(rw)
          if(rw_entry%LockType*READ_SIGN.lt.0) then !communication direction change
           call MPI_WIN_UNLOCK(rw_entry%Rank,rw_entry%Window,jerr)
           if(jerr.eq.0) then
@@ -1041,7 +1174,7 @@
          if(asnc.ne.MPI_ASYNC_REQ) then !regular
           do js=1,this%DataVol,ji
            jv=int(min(this%DataVol-js+1,ji),INT_MPI)
-           call MPI_GET(r4_arr,jv,MPI_REAL4,this%RankMPI,this%Offset,jv,MPI_REAL4,this%WinMPI%Window,jerr)
+           call MPI_GET(r4_arr(js:),jv,MPI_REAL4,this%RankMPI,this%Offset,jv,MPI_REAL4,this%WinMPI%Window,jerr)
            if(jerr.ne.0) exit
           enddo
           if(jerr.eq.0) then
@@ -1050,6 +1183,7 @@
            this%StatMPI=MPI_STAT_ONESIDED_ERR; jerr=1
           endif
          else !request-handle
+          jv=this%DataVol
           call MPI_RGET(r4_arr,jv,MPI_REAL4,this%RankMPI,this%Offset,jv,MPI_REAL4,this%WinMPI%Window,this%ReqHandle,jerr)
           if(jerr.eq.0) then
            this%StatMPI=MPI_STAT_PROGRESS_REQ
@@ -1069,7 +1203,7 @@
          if(asnc.ne.MPI_ASYNC_REQ) then !regular
           do js=1,this%DataVol,ji
            jv=int(min(this%DataVol-js+1,ji),INT_MPI)
-           call MPI_GET(r8_arr,jv,MPI_REAL8,this%RankMPI,this%Offset,jv,MPI_REAL8,this%WinMPI%Window,jerr)
+           call MPI_GET(r8_arr(js:),jv,MPI_REAL8,this%RankMPI,this%Offset,jv,MPI_REAL8,this%WinMPI%Window,jerr)
            if(jerr.ne.0) exit
           enddo
           if(jerr.eq.0) then
@@ -1078,6 +1212,7 @@
            this%StatMPI=MPI_STAT_ONESIDED_ERR; jerr=1
           endif
          else !request-handle
+          jv=this%DataVol
           call MPI_RGET(r8_arr,jv,MPI_REAL8,this%RankMPI,this%Offset,jv,MPI_REAL8,this%WinMPI%Window,this%ReqHandle,jerr)
           if(jerr.eq.0) then
            this%StatMPI=MPI_STAT_PROGRESS_REQ
@@ -1097,7 +1232,7 @@
          if(asnc.ne.MPI_ASYNC_REQ) then !regular
           do js=1,this%DataVol,ji
            jv=int(min(this%DataVol-js+1,ji),INT_MPI)
-           call MPI_GET(c8_arr,jv,MPI_COMPLEX8,this%RankMPI,this%Offset,jv,MPI_COMPLEX8,this%WinMPI%Window,jerr)
+           call MPI_GET(c8_arr(js:),jv,MPI_COMPLEX8,this%RankMPI,this%Offset,jv,MPI_COMPLEX8,this%WinMPI%Window,jerr)
            if(jerr.ne.0) exit
           enddo
           if(jerr.eq.0) then
@@ -1106,6 +1241,7 @@
            this%StatMPI=MPI_STAT_ONESIDED_ERR; jerr=1
           endif
          else !request-handle
+          jv=this%DataVol
           call MPI_RGET(c8_arr,jv,MPI_COMPLEX8,this%RankMPI,this%Offset,jv,MPI_COMPLEX8,this%WinMPI%Window,this%ReqHandle,jerr)
           if(jerr.eq.0) then
            this%StatMPI=MPI_STAT_PROGRESS_REQ
@@ -1117,5 +1253,207 @@
          end subroutine start_get_c8
 
         end subroutine DataDescrGetData
+!-----------------------------------------------------------
+        subroutine DataDescrAccData(this,loc_ptr,ierr,async)
+!Initiates a (remote) data accumulate from a local buffer.
+!The default (synchronous) call will complete the transfer within this call.
+!If <async> is present and equal to MPI_ASYNC_NRM or MPI_ASYNC_REQ, then
+!another (completion) call will be required to complete the communication.
+!If the internal tables for communication tracking no longer have free entries,
+!the status TRY_LATER is returned, meaning that one needs to wait until later.
+        implicit none
+        class(DataDescr_t), intent(inout):: this         !inout: data descriptor
+        type(C_PTR), intent(in):: loc_ptr                !in: pointer to a local buffer
+        integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success, TRY_LATER:resource is currently busy)
+        integer(INT_MPI), intent(in), optional:: async   !in: asynchronisity: {MPI_ASYNC_NOT,MPI_ASYNC_NRM,MPI_ASYNC_REQ}
+        integer(INT_MPI), parameter:: MPI_ASSER=0        !MPI lock assertion
+        integer(INT_MPI):: rwe,errc,asnc
+        real(4), pointer, contiguous:: r4_ptr(:)
+        real(8), pointer, contiguous:: r8_ptr(:)
+        complex(8), pointer, contiguous:: c8_ptr(:)
+
+        errc=0
+        if(present(async)) then; asnc=async; else; asnc=MPI_ASYNC_NOT; endif !default is synchronous communication
+        if(asnc.eq.MPI_ASYNC_NOT.or.asnc.eq.MPI_ASYNC_NRM.or.asnc.eq.MPI_ASYNC_REQ) then
+         if(.not.c_associated(loc_ptr,C_NULL_PTR)) then
+          if(this%RankMPI.ge.0) then
+           if(this%StatMPI.eq.MPI_STAT_NONE.or.this%StatMPI.eq.MPI_STAT_COMPLETED.or.&
+              this%StatMPI.eq.MPI_STAT_COMPLETED_ORIG) then
+            rwe=RankWinRefs%test(this%RankMPI,this%WinMPI%Window,errc,append=.true.) !get the (rank,window) entry
+            if(errc.eq.0) then
+             if(this%DataVol.gt.0) then
+              if(.not.(asnc.eq.MPI_ASYNC_REQ.and.this%DataVol.gt.huge(asnc))) then
+               call modify_lock(rwe,errc) !modify the (rank,window) lock status if needed
+               if(errc.eq.0) then
+                select case(this%DataType)
+                case(R4)
+                 call c_f_pointer(loc_ptr,r4_ptr,(/this%DataVol/))
+                 call start_acc_r4(r4_ptr,errc); if(errc.ne.0) errc=1
+                case(R8)
+                 call c_f_pointer(loc_ptr,r8_ptr,(/this%DataVol/))
+                 call start_acc_r8(r8_ptr,errc); if(errc.ne.0) errc=2
+                case(C8)
+                 call c_f_pointer(loc_ptr,c8_ptr,(/this%DataVol/))
+                 call start_acc_c8(c8_ptr,errc); if(errc.ne.0) errc=3
+                case(NO_TYPE)
+                 errc=4
+                case default
+                 errc=5
+                endif
+                if(errc.eq.0) then
+                 call RankWinRefs%new_transfer(this,rwe) !register a new transfer (will also set this%TransID field)
+                 if(asnc.eq.MPI_ASYNC_NOT) then
+                  call this%flush_data(errc); if(errc.ne.0) errc=6
+                 endif
+                endif
+               else
+                errc=7
+               endif
+              else
+               errc=8
+              endif
+             elseif(this%DataVol.eq.0) then
+              this%StatMPI=MPI_STAT_COMPLETED
+             else
+              errc=9
+             endif
+            else
+             if(errc.ne.TRY_LATER) errc=10
+            endif
+           else
+            errc=11
+           endif
+          else
+           errc=12
+          endif
+         else
+          errc=13
+         endif
+        else
+         errc=14
+        endif
+        if(present(ierr)) ierr=errc
+        return
+
+        contains
+
+         subroutine modify_lock(rw,jerr)
+         integer(INT_MPI), intent(in):: rw
+         integer(INT_MPI), intent(out):: jerr
+         type(RankWin_t), pointer:: rw_entry
+         jerr=0; rw_entry=>RankWinRefs%RankWins(rw)
+         if(rw_entry%LockType*WRITE_SIGN.lt.0) then !communication direction change
+          call MPI_WIN_UNLOCK(rw_entry%Rank,rw_entry%Window,jerr)
+          if(jerr.eq.0) then
+           rw_entry%LockType=NO_LOCK
+           rw_entry%LastSync=RankWinRefs%TransCount
+          else
+           jerr=1
+          endif
+         endif
+         if(jerr.eq.0.and.rw_entry%LockType.eq.NO_LOCK) then
+          call MPI_WIN_LOCK(MPI_LOCK_SHARED,rw_entry%Rank,MPI_ASSER,rw_entry%Window,jerr)
+          if(jerr.eq.0) then
+           rw_entry%LockType=SHARED_LOCK*WRITE_SIGN
+          else
+           jerr=2
+          endif
+         endif
+         nullify(rw_entry)
+         return
+         end subroutine modify_lock
+
+         subroutine start_acc_r4(r4_arr,jerr)
+         real(4), intent(inout), asynchronous:: r4_arr(*)
+         integer(INT_MPI), intent(out):: jerr
+         integer(INT_COUNT):: ji,js
+         integer(INT_MPI):: jv
+         jerr=0; ji=int(MAX_MPI_MSG_VOL,INT_COUNT)
+         if(asnc.ne.MPI_ASYNC_REQ) then !regular
+          do js=1,this%DataVol,ji
+           jv=int(min(this%DataVol-js+1,ji),INT_MPI)
+           call MPI_ACCUMULATE(r4_arr(js:),jv,MPI_REAL4,this%RankMPI,this%Offset,jv,MPI_REAL4,MPI_SUM,this%WinMPI%Window,jerr)
+           if(jerr.ne.0) exit
+          enddo
+          if(jerr.eq.0) then
+           this%StatMPI=MPI_STAT_PROGRESS_NRM
+          else
+           this%StatMPI=MPI_STAT_ONESIDED_ERR; jerr=1
+          endif
+         else !request-handle
+          jv=this%DataVol
+          call MPI_RACCUMULATE(r4_arr,jv,MPI_REAL4,this%RankMPI,this%Offset,jv,MPI_REAL4,MPI_SUM,&
+                              &this%WinMPI%Window,this%ReqHandle,jerr)
+          if(jerr.eq.0) then
+           this%StatMPI=MPI_STAT_PROGRESS_REQ
+          else
+           this%StatMPI=MPI_STAT_ONESIDED_ERR; jerr=2
+          endif
+         endif
+         return
+         end subroutine start_acc_r4
+
+         subroutine start_acc_r8(r8_arr,jerr)
+         real(8), intent(inout), asynchronous:: r8_arr(*)
+         integer(INT_MPI), intent(out):: jerr
+         integer(INT_COUNT):: ji,js
+         integer(INT_MPI):: jv
+         jerr=0; ji=int(MAX_MPI_MSG_VOL,INT_COUNT)
+         if(asnc.ne.MPI_ASYNC_REQ) then !regular
+          do js=1,this%DataVol,ji
+           jv=int(min(this%DataVol-js+1,ji),INT_MPI)
+           call MPI_ACCUMULATE(r8_arr(js:),jv,MPI_REAL8,this%RankMPI,this%Offset,jv,MPI_REAL8,MPI_SUM,this%WinMPI%Window,jerr)
+           if(jerr.ne.0) exit
+          enddo
+          if(jerr.eq.0) then
+           this%StatMPI=MPI_STAT_PROGRESS_NRM
+          else
+           this%StatMPI=MPI_STAT_ONESIDED_ERR; jerr=1
+          endif
+         else !request-handle
+          jv=this%DataVol
+          call MPI_RACCUMULATE(r8_arr,jv,MPI_REAL8,this%RankMPI,this%Offset,jv,MPI_REAL8,MPI_SUM,&
+                              &this%WinMPI%Window,this%ReqHandle,jerr)
+          if(jerr.eq.0) then
+           this%StatMPI=MPI_STAT_PROGRESS_REQ
+          else
+           this%StatMPI=MPI_STAT_ONESIDED_ERR; jerr=2
+          endif
+         endif
+         return
+         end subroutine start_acc_r8
+
+         subroutine start_acc_c8(c8_arr,jerr)
+         complex(8), intent(inout), asynchronous:: c8_arr(*)
+         integer(INT_MPI), intent(out):: jerr
+         integer(INT_COUNT):: ji,js
+         integer(INT_MPI):: jv
+         jerr=0; ji=int(MAX_MPI_MSG_VOL,INT_COUNT)
+         if(asnc.ne.MPI_ASYNC_REQ) then !regular
+          do js=1,this%DataVol,ji
+           jv=int(min(this%DataVol-js+1,ji),INT_MPI)
+           call MPI_ACCUMULATE(c8_arr(js:),jv,MPI_COMPLEX8,this%RankMPI,this%Offset,jv,MPI_COMPLEX8,MPI_SUM,&
+                              &this%WinMPI%Window,jerr)
+           if(jerr.ne.0) exit
+          enddo
+          if(jerr.eq.0) then
+           this%StatMPI=MPI_STAT_PROGRESS_NRM
+          else
+           this%StatMPI=MPI_STAT_ONESIDED_ERR; jerr=1
+          endif
+         else !request-handle
+          jv=this%DataVol
+          call MPI_RACCUMULATE(c8_arr,jv,MPI_COMPLEX8,this%RankMPI,this%Offset,jv,MPI_COMPLEX8,MPI_SUM,&
+                              &this%WinMPI%Window,this%ReqHandle,jerr)
+          if(jerr.eq.0) then
+           this%StatMPI=MPI_STAT_PROGRESS_REQ
+          else
+           this%StatMPI=MPI_STAT_ONESIDED_ERR; jerr=2
+          endif
+         endif
+         return
+         end subroutine start_acc_c8
+
+        end subroutine DataDescrAccData
 
         end module distributed
