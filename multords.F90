@@ -189,7 +189,7 @@
 	  ifv(:)=0; ifv(1)=1; ifv(mov+1)=1 !special bound values
 	  isp(:)=0
 !Begin:
-	  iv1=>iv(1:n,1:mov); iv2=>ivb(1:n,1:mov); v1=>v(1:mov); v2=>vb(1:mov); final_copy=.false.
+	  iv1=>iv(:,1:mov); iv2=>ivb(:,1:mov); v1=>v(1:mov); v2=>vb(1:mov); final_copy=.false.
 	  iloop: do np=1,n
 	   kp=ip1(np)
 	   if(kp.gt.0.and.kp.le.n) then
@@ -218,9 +218,9 @@
 	      enddo
 	     enddo !next k
 	     if(.not.final_copy) then !switch buffers
-	      iv1=>ivb(1:n,1:mov); iv2=>iv(1:n,1:mov); v1=>vb(1:mov); v2=>v(1:mov); final_copy=.true.
+	      iv1=>ivb(:,1:mov); iv2=>iv(:,1:mov); v1=>vb(1:mov); v2=>v(1:mov); final_copy=.true.
 	     else
-	      iv1=>iv(1:n,1:mov); iv2=>ivb(1:n,1:mov); v1=>v(1:mov); v2=>vb(1:mov); final_copy=.false.
+	      iv1=>iv(:,1:mov); iv2=>ivb(:,1:mov); v1=>v(1:mov); v2=>vb(1:mov); final_copy=.false.
 	     endif
 	    enddo !next l: index part being analyzed
 	   elseif(kp.le.0) then
@@ -389,7 +389,7 @@
 	  ifv(:)=0; ifv(1)=1; ifv(mov+1)=1 !special bound values
 	  isp(:)=0
 !Begin:
-	  iv1=>iv(1:n,1:mov); iv2=>ivb(1:n,1:mov); v1=>v(1:mov); v2=>vb(1:mov); final_copy=.false.
+	  iv1=>iv(:,1:mov); iv2=>ivb(:,1:mov); v1=>v(1:mov); v2=>vb(1:mov); final_copy=.false.
 	  iloop: do np=1,n
 	   kp=ip1(np)
 	   if(kp.gt.0.and.kp.le.n) then
@@ -418,9 +418,9 @@
 	      enddo
 	     enddo !next k
 	     if(.not.final_copy) then !switch buffers
-	      iv1=>ivb(1:n,1:mov); iv2=>iv(1:n,1:mov); v1=>vb(1:mov); v2=>v(1:mov); final_copy=.true.
+	      iv1=>ivb(:,1:mov); iv2=>iv(:,1:mov); v1=>vb(1:mov); v2=>v(1:mov); final_copy=.true.
 	     else
-	      iv1=>iv(1:n,1:mov); iv2=>ivb(1:n,1:mov); v1=>v(1:mov); v2=>vb(1:mov); final_copy=.false.
+	      iv1=>iv(:,1:mov); iv2=>ivb(:,1:mov); v1=>v(1:mov); v2=>vb(1:mov); final_copy=.false.
 	     endif
 	    enddo !next l: index part being analyzed
 	   elseif(kp.le.0) then
@@ -482,7 +482,7 @@
 	  ifv(:)=0_8; ifv(1_8)=1_8; ifv(mov+1_8)=1_8 !special bound values
 	  isp(:)=0_8
 !Begin:
-	  iv1=>iv(1_8:n,1_8:mov); iv2=>ivb(1_8:n,1_8:mov); v1=>v(1_8:mov); v2=>vb(1_8:mov); final_copy=.false.
+	  iv1=>iv(:,1_8:mov); iv2=>ivb(:,1_8:mov); v1=>v(1_8:mov); v2=>vb(1_8:mov); final_copy=.false.
 	  iloop: do np=1_8,n
 	   kp=ip1(np)
 	   if(kp.gt.0_8.and.kp.le.n) then
@@ -511,9 +511,9 @@
 	      enddo
 	     enddo !next k
 	     if(.not.final_copy) then !switch buffers
-	      iv1=>ivb(1_8:n,1_8:mov); iv2=>iv(1_8:n,1_8:mov); v1=>vb(1_8:mov); v2=>v(1_8:mov); final_copy=.true.
+	      iv1=>ivb(:,1_8:mov); iv2=>iv(:,1_8:mov); v1=>vb(1_8:mov); v2=>v(1_8:mov); final_copy=.true.
 	     else
-	      iv1=>iv(1_8:n,1_8:mov); iv2=>ivb(1_8:n,1_8:mov); v1=>v(1_8:mov); v2=>vb(1_8:mov); final_copy=.false.
+	      iv1=>iv(:,1_8:mov); iv2=>ivb(:,1_8:mov); v1=>v(1_8:mov); v2=>vb(1_8:mov); final_copy=.false.
 	     endif
 	    enddo !next l: index part being analyzed
 	   elseif(kp.le.0_8) then

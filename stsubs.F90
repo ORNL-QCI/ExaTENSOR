@@ -246,7 +246,8 @@
 	 implicit none
 	 integer, intent(inout):: L    !inout: length of the string (resets to ZERO in case of error!)
 	 character(*), intent(in):: OS !in: OS(1:L): positive or negative number as a string
-	 integer K,M,N,IA0
+	 integer:: K,M,N,IA0
+
 	 IA0=iachar('0')
 	 if(L.gt.0) then
 	  if(OS(1:1).eq.'-') then      !negative

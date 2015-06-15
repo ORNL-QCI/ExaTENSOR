@@ -1,6 +1,6 @@
 !Tensor Algebra for Multi-Core CPUs (OpenMP based).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2015/04/27
+!REVISION: 2015/06/15
 !GNU linking options: -lgomp -lblas -llapack
 !ACRONYMS:
 ! - mlndx - multiindex;
@@ -3367,7 +3367,7 @@
 	                                      '20','21','22','23','24','25','26','27','28','29', &
 	                                      '30','31','32','33','34','35','36','37','38','39', &
 	                                      '40','41','42','43','44','45','46','47','48','49'/)
-	integer i,j,k,l,m,n,k0,k1,k2,k3,k4,ks,kf,adims(0:2),tag_len
+	integer i,j,k,l,m,n,k0,k1,k2,k3,k4,k5,ks,kf,adims(0:2),tag_len
 	character(2048) str !increase the length if needed (I doubt)
 
 	ierr=0; l=len_trim(cptrn); cpl=0
@@ -3415,8 +3415,10 @@
 	   k0=index(str(j+tag_len-1:m+1),str(i:j))+(j+tag_len-2)
 	   if(k0.gt.j+tag_len-2) then
 !	    write(cons_out,*)'DEBUG(tensor_algebra::get_contr_pattern): index match: '//str(i+1:j-1) !debug
-	    k1=icharnum(1,str(i-tag_len+2:i-tag_len+2)); k2=icharnum(2,str(i-tag_len+3:i-tag_len+4))
-	    k3=icharnum(1,str(k0-tag_len+2:k0-tag_len+2)); k4=icharnum(2,str(k0-tag_len+3:k0-tag_len+4))
+	    k5=1; k1=icharnum(k5,str(i-tag_len+2:i-tag_len+2))
+            k5=2; k2=icharnum(k5,str(i-tag_len+3:i-tag_len+4))
+	    k5=1; k3=icharnum(k5,str(k0-tag_len+2:k0-tag_len+2))
+            k5=2; k4=icharnum(k5,str(k0-tag_len+3:k0-tag_len+4))
 	    if(k1.eq.0.and.k3.eq.1) then !open index
 	     contr_ptrn(k4)=k2
 	    elseif(k1.eq.0.and.k3.eq.2) then !open index

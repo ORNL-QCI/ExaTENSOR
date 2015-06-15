@@ -1,6 +1,6 @@
 #It is crucial to launch MPI processes consecutively within a node!
 #Environment variable QF_PROCS_PER_NODE must be set appropriately!
-export QFORCE_PATH=/autofs/na3_home1/div/src/ExaTensor #mandatory
+export QFORCE_PATH=/ccs/home/div/src/ExaTensor      #mandatory
 export QF_NUM_PROCS=1                               #mandatory
 export QF_PROCS_PER_NODE=1                          #mandatory
 export QF_CORES_PER_PROC=16                         #mandatory
