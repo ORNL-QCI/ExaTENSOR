@@ -1,12 +1,13 @@
 !Parallel Virtual Processing for Scale-Adaptive Tensor Algebra:
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2015/06/04
+!REVISION: 2015/06/15
         module exatensor
         use tensor_algebra_cpu_phi
         use distributed
         use subspaces
         use lists
         use dictionary
+        use multords
         use extern_names
         implicit none
         public

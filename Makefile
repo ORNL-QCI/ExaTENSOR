@@ -40,8 +40,8 @@ LTHREAD_PGI   = -lpthread
 LTHREAD = $(LTHREAD_$(TOOLKIT))
 LFLAGS = $(LTHREAD) $(LA_LINK) $(CUDA_LINK) -o
 
-OBJS =  stsubs.o combinatoric.o timers.o extern_names.o lists.o dictionary.o symm_index.o \
-	tensor_algebra.o tensor_algebra_cpu.o tensor_algebra_cpu_phi.o tensor_dil_omp.o \
+OBJS =  stsubs.o multords.o combinatoric.o timers.o extern_names.o lists.o dictionary.o \
+	symm_index.o tensor_algebra.o tensor_algebra_cpu.o tensor_algebra_cpu_phi.o tensor_dil_omp.o \
 	service_mpi.o cuda2fortran.o c_proc_bufs.o tensor_algebra_gpu_nvidia.o sys_service.o \
 	mpi_fort.o distributed.o subspaces.o exatensor.o c_process.o qforce.o proceed.o main.o
 
@@ -50,6 +50,9 @@ $(NAME): $(OBJS)
 
 stsubs.o: stsubs.F90
 	$(FC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) stsubs.F90
+
+multords.o: multords.F90
+	$(FC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) multords.F90
 
 combinatoric.o: combinatoric.F90
 	$(FC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) combinatoric.F90
@@ -106,7 +109,7 @@ distributed.o: distributed.F90 service_mpi.o tensor_algebra.o
 subspaces.o: subspaces.F90 tensor_algebra.o
 	$(FC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) subspaces.F90
 
-exatensor.o: exatensor.F90 tensor_algebra_cpu_phi.o distributed.o subspaces.o lists.o dictionary.o extern_names.o
+exatensor.o: exatensor.F90 tensor_algebra_cpu_phi.o distributed.o subspaces.o lists.o dictionary.o multords.o extern_names.o
 	$(FC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) exatensor.F90
 
 c_process.o: c_process.F90 exatensor.o
