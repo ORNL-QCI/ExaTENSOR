@@ -1,9 +1,9 @@
 !PROJECT: Q-FORCE: Massively Parallel Quantum Many-Body Methodology on Heterogeneous HPC systems.
 !BASE: ExaTensor: Massively Parallel Tensor Algebra Virtual Processor for Heterogeneous HPC systems.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2015/04/27
+!REVISION: 2015/06/16
 !COMPILATION:
-! - Fortran 2003 at least.
+! - Fortran 2003 at least (some 2008 as well).
 ! - MPI 3.0 at least.
 ! - OpenMP 3.0 at least.
 ! - CUDA 5.0 at least.
@@ -65,7 +65,7 @@
 !       write(*,*) impis,impir,max_threads,jo,log_file; call quit(-1,'Test') !debug
         call numchar(impir,k0,str0); open(log_file,file='qforce.'//str0(1:k0)//'.log',form='FORMATTED',status='UNKNOWN',err=2000) !open the log file for each process
         if(impir.ne.0) jo=log_file !redirect the standard output for slave processes to their log-files
-        write(jo,'("   *** Q-FORCE v.15.04.27 by Dmitry I. Lyakh ***")')
+        write(jo,'("   *** Q-FORCE v.15.06.16 by Dmitry I. Lyakh ***")')
         write(jo,'("MPI number of processes            : ",i10)') impis
         write(jo,'("Current process rank               : ",i10)') impir
 #ifndef NO_OMP
@@ -227,7 +227,7 @@
           ierr=5; write(jo,'("#ERROR(gpu_nvidia_init): unable to restrict the amount of GPUs per MPI process!")')
           gpu_count=0; gpu_start=0
          endif
-         write(jo,'("Range of GPUs assigned to process  : ",i4,"-",i4)') gpu_start,gpu_start+gpu_count-1
+         write(jo,'("Range of GPUs assigned to process  : ",i4," -",i4)') gpu_start,gpu_start+gpu_count-1
          write(jo,'("Ok")')
         elseif(gpus_found.lt.0) then !invalid (negative) number of GPUs found
          gpus_found=0; gpu_count=0; ierr=6
