@@ -1,20 +1,21 @@
 !Linear-scaling sorting subroutines operating with multi-index keys.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2015/06/15 (origin 2005)
+!REVISION: 2015/06/16 (origin 2005 PhD work, Mol.Phys. 2007)
 !DESCRIPTION:
-!The following subroutines sort a list of items according to the unsigned integer multi-index keys.
+!The following subroutines sort a list of items according to their unsigned integer multi-index keys.
 !The formal scaling of the sorting algorithm is O(L*N), where N is the number of items
-!and L is the length of the integer multi-index key (number of indices in the key).
+!and L is the length of the integer multi-index key (number of integer indices in the key).
 !An additional RAM of the same size as the input is allocated: Total RAM ~ O(2*(L+1)*N).
 !There are two versions of the sorting subroutines:
 ! 1) Disk version (suffix "d"): The input/output is stored on disk:
 !    The input file contains the entries to be sorted in the format:
 !    <Entry VALUE (integer/real)>  <Entry KEY (integer multi-index)>
-!    The (sorted) output will overwrite the input in the file.
-! 2) Memory version: The input/output is stored in RAM:
+!    The (sorted) output will overwrite the input in the same file.
+! 2) RAM version: The input/output is stored in RAM:
 !    A 1d array of entry values (integer/real);
 !    A 2d array of entry keys (each key is an integer multi-index).
 !    The (sorted) output will overwrite the input in the memory.
+!Each integer index in a multi-index key must be non-negative!
 !INTERFACES:
 ! - multord_r8d(i:ifh,i:n,i:nl,i:mov,i[1]:ip1);
 ! - multord_r8(i:n,i:nl,i:mov,i[1]:ip1,i[2]:iv,r8[1]:v);
@@ -23,7 +24,7 @@
 ! - multord_i8(i8:n,i8:nl,i8:mov,i8[1]:ip1,i8[2]:iv,i8[1]:v).
         module multords
 !PARAMETERS:
- !Key:
+ !Key length:
         integer, parameter, private:: MAX_MLNDX_LEN=1024    !max length of a multi-index key (keep consistent with MLNDX_FMT)
         character(4), parameter, private:: MLNDX_FMT='1024' !multi-index key read/write format (keep consistent with MAX_MLNDX_LEN)
  !Output:
@@ -31,11 +32,11 @@
         logical, private:: VERBOSE=.true. !verbosity for errors
         logical, private:: DEBUG=.false.  !debugging
 !VISIBILITY:
-        public multord_r8d
-        public multord_r8
-        public multord_id
-        public multord_i
-        public multord_i8
+        public multord_r8d !<real(8) value> + <integer multi-index key>: Disk version
+        public multord_r8  !<real(8) value> + <integer multi-index key>: RAM version
+        public multord_id  !<integer value> + <integer multi-index key>: Disk version
+        public multord_i   !<integer value> + <integer multi-index key>: RAM version
+        public multord_i8  !<integer(8) value> + <integer(8) multi-index key>: RAM version
 
         contains
 !-----------------------------------------------
