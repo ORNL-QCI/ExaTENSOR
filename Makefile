@@ -1,21 +1,36 @@
 NAME = qforce.v13.01.x
-TOOLKIT = CRAY
+WRAP = NO
+TOOLKIT = GNU
 TYPE = OPT
 
-FC  = ftn
-CC  = cc
-CPP = CC
+FC_YES = ftn
+FC_NO = mpif90
+FC = $(FC_$(WRAP))
+CC_YES = cc
+CC_NO = mpicc
+CC = $(CC_$(WRAP))
+CPP_YES = CC
+CPP_NO = mpic++
+CPP = $(CPP_$(WRAP))
 CUDA_C = nvcc
-MPI_INC = -I.
-CUDA_INC = -I.
-CUDA_LINK = -lcudart -lcublas -L.
+MPI_INC_YES = -I.
+MPI_INC_NO = -I/usr/local/include
+MPI_INC = $(MPI_INC_$(WRAP))
+CUDA_INC_YES = -I.
+CUDA_INC_NO = -I/usr/local/cuda/include
+CUDA_INC = $(CUDA_INC_$(WRAP))
+CUDA_LINK_YES = -L. -lcudart -lcublas
+CUDA_LINK_NO = -L/usr/local/cuda/lib64 -lcudart -lcublas
+CUDA_LINK = $(CUDA_LINK_$(WRAP))
 
 CUDA_FLAGS_DEV = --compile -arch=sm_35 -D CUDA_ARCH=350 -g -G -D DEBUG_GPU
 CUDA_FLAGS_OPT = --compile -arch=sm_35 -D CUDA_ARCH=350 -O3
 CUDA_FLAGS = $(CUDA_FLAGS_$(TYPE))
 LA_LINK_MKL = -lmkl_core -lmkl_intel_thread -lmkl_intel_lp64 -lmkl_blas95_lp64 -lmkl_lapack95_lp64 -lrt
 LA_LINK_ACML = -lacml_mp -L/opt/acml/5.3.1/gfortran64_fma4_mp/lib
-LA_LINK_DEFAULT = -L.
+LA_LINK_DEFAULT_YES = -L.
+LA_LINK_DEFAULT_NO = -L/usr/lib/atlas-base/atlas -lblas -llapack
+LA_LINK_DEFAULT = $(LA_LINK_DEFAULT_$(WRAP))
 LA_LINK_INTEL = $(LA_LINK_DEFAULT)
 LA_LINK_CRAY = $(LA_LINK_DEFAULT)
 LA_LINK_GNU = $(LA_LINK_DEFAULT)
