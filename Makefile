@@ -1,10 +1,16 @@
 NAME = qforce.v13.01.x
+#Cross-compiling wrappers: [YES|NO]:
 WRAP = NO
+#Compiler: [GNU|PGI|INTEL|CRAY]:
 TOOLKIT = GNU
+#Optimization: [DEV|OPT]:
 TYPE = OPT
-
+#MPI Library: [MPICH|OPENMPI]:
+MPILIB = MPICH
+#DONE.
+#-----------------------------------------------
 FC_YES = ftn
-FC_NO = mpif90
+FC_NO = /usr/bin/mpif90
 FC = $(FC_$(WRAP))
 CC_YES = cc
 CC_NO = mpicc
@@ -13,9 +19,16 @@ CPP_YES = CC
 CPP_NO = mpic++
 CPP = $(CPP_$(WRAP))
 CUDA_C = nvcc
+MPI_INC_MPICH = -I/usr/lib/mpich/include
+MPI_INC_OPENMPI = -I/usr/local/include
 MPI_INC_YES = -I.
-MPI_INC_NO = -I/usr/local/include
+MPI_INC_NO = $(MPI_INC_$(MPILIB))
 MPI_INC = $(MPI_INC_$(WRAP))
+MPI_LINK_MPICH = -L/usr/lib
+MPI_LINK_OPENMPI = -L/usr/local/lib
+MPI_LINK_YES = -L.
+MPI_LINK_NO = $(MPI_LINK_$(MPILIB))
+MPI_LINK = $(MPI_LINK_$(WRAP))
 CUDA_INC_YES = -I.
 CUDA_INC_NO = -I/usr/local/cuda/include
 CUDA_INC = $(CUDA_INC_$(WRAP))
@@ -53,7 +66,7 @@ LTHREAD_CRAY  = -L.
 LTHREAD_GNU   = -lgomp
 LTHREAD_PGI   = -lpthread
 LTHREAD = $(LTHREAD_$(TOOLKIT))
-LFLAGS = $(LTHREAD) $(LA_LINK) $(CUDA_LINK) -o
+LFLAGS = $(LTHREAD) $(MPI_LINK) $(LA_LINK) $(CUDA_LINK) -o
 
 OBJS =  stsubs.o multords.o combinatoric.o timers.o extern_names.o lists.o dictionary.o \
 	symm_index.o tensor_algebra.o tensor_algebra_cpu.o tensor_algebra_cpu_phi.o tensor_dil_omp.o \
@@ -113,10 +126,10 @@ tensor_algebra_gpu_nvidia.o: tensor_algebra_gpu_nvidia.cu tensor_algebra.h
 	$(CUDA_C) $(MPI_INC) $(CUDA_INC) $(CUDA_FLAGS) tensor_algebra_gpu_nvidia.cu
 
 sys_service.o: sys_service.c
-	$(CC) $(CFLAGS) sys_service.c
+	$(CC) $(MPI_INC) $(CUDA_INC) $(CFLAGS) sys_service.c
 
 mpi_fort.o: mpi_fort.c
-	$(CC) $(CFLAGS) mpi_fort.c
+	$(CC) $(MPI_INC) $(CUDA_INC) $(CFLAGS) mpi_fort.c
 
 distributed.o: distributed.F90 service_mpi.o tensor_algebra.o
 	$(FC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) distributed.F90
