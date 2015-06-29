@@ -1,24 +1,24 @@
 !This module provides functionality for a Computing Process (C-PROCESS, CP).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2015/06/04
+!REVISION: 2015/06/26
 !PREPROCESSOR:
 ! -D NO_GPU: No NVidia GPU;
-! -D NO_PHI: No Intel Xeon Phi;
+! -D NO_PHI: No Intel Xeon Phi (Intel MIC);
 ! -D NO_AMD: No AMD GPU;
 !CONCEPTS (CP workflow):
 ! - Each CP stores its own tensor blocks in TBB, with a possibility of disk dump.
 ! - LR sends a batch of ETI to be executed on this CP unit (CP MPI Process).
-!   The location of each tensor-block operand of ETI is already given there,
+!   The location of each tensor-block operand in ETI is already given there,
 !   as well as some other characteristics (approx. operation cost, memory requirements, etc.).
 ! - CP places the ETI received into multiple queues, based on the number of remote operands and ETI cost.
 ! - Each non-trivial ETI operand (tensor block) is assigned an AAR entry that points to
 !   either a <tensor_block_t> entity (to be used on CPU or Intel Xeon Phi)
 !   or a <tensBlck_t> entity (to be used on Nvidia GPU). Once the corresponding
-!   data (tensor block) is in local memory of CP (either in TBB, or HAB, or DEB),
+!   data (tensor block) is in local memory of CP (either in TBB or HAB),
 !   the new AAR entry is defined and all ETI operands, referring to it, become ready.
 !   Data (tensor blocks) registered in AAR can be reused while locally present.
 !   AAR is the only way to access a tensor block for ETI (the tensor block itself
-!   can physically reside in either TBB, or HAB, or DEB).
+!   can physically reside in either TBB or HAB).
 ! - ETI with all operands ready can be scheduled for execution on an appropriate device:
 !    - On each distinct device, ETI are issued in-order but executed asynchronously;
 !    - ETI with ready input arguments can be further prioritized;
@@ -31,24 +31,23 @@
 ! - Data synchronization in an instance of <tensor_block_t> (Fortran)
 !   associated with a Host Argument Buffer entry can allocate only regular CPU memory
 !   (the one outside the pinned Host Argument buffer). Hence the newly allocated
-!   memory is not in HAB, thus cannot be used with Nvidia GPUs, unless registered.
+!   memory is not in HAB, thus cannot be used with NVidia GPUs, unless registered explicitly.
 !Acronyms:
 ! - CP - Computing (MPI) Process;
 ! - MT - Master Thread;
 ! - LST - Leading Slave Thread;
 ! - STCU - Slave Threads Computing Unit;
-! - NVCU - Nvidia GPU Computing Unit;
+! - NVCU - NVidia GPU Computing Unit;
 ! - XPCU - Intel Xeon Phi Computing Unit;
 ! - AMCU - AMD GPU Computing Unit;
 ! - ETI - Elementary Tensor Instruction;
-! - ETIS - Elementary Tensor Instruction Scheduler (SETIS, LETIS, GETIS);
+! - ETIS - Elementary Tensor Instruction Scheduler;
 ! - ETIQ - Elementary Tensor Instruction Queue (out-of-order issuance);
-! - HAB - Host Argument Buffer;
-! - GAB - GPU Argument Buffer;
-! - DEB - Data Exchange Buffer (additional buffer for temporary present tensor blocks);
-! - TBB - Tensor Block Bank (storage);
-! - AAR - Active Argument Register;
-! - TAL - Tensor Algebra Library (CPU, GPU, MIC, etc.);
+! - HAB - Host Argument Buffer (Host RAM);
+! - GAB - GPU Argument Buffer (GPU RAM);
+! - TBB - Tensor Block Bank (storage for local tensor blocks);
+! - AAR - Active Argument Register (registers active tensor operands);
+! - TAL - Tensor Algebra Library (CPU, GPU, MIC, etc.): Driver;
        module c_process
 !       use, intrinsic:: ISO_C_BINDING
         use exatensor
@@ -69,8 +68,8 @@
         integer, parameter, private:: CZ=C_SIZE_T
  !Elementary Tensor Instruction Scheduler (ETIS):
   !Host Argument Buffer (HAB):
-        integer(CZ), parameter, private:: MAX_HAB_SIZE=8192_CZ*(1024_CZ*1024_CZ) !max size in bytes of the HAB
-        integer(CZ), parameter, private:: MIN_HAB_SIZE=64_CZ*(1024_CZ*1024_CZ)   !min size in bytes of the HAB
+        integer(CZ), parameter, private:: MIN_HAB_SIZE=64_CZ*(1024_CZ*1024_CZ) !min HAB size in bytes
+        real(8), parameter, private:: HAB_PART=2d-1                            !portion of the free Host RAM to be used as HAB: [0..1]
   !Elementary Tensor Instruction Queue (ETIQ):
         integer(C_INT), parameter, private:: etiq_max_depth=16384 !max number of simultaneously scheduled ETI at this CP
         integer(C_INT), parameter, private:: etiq_loc_levels=4    !number of locality levels in ETIQ (senior)
@@ -286,10 +285,10 @@
 !This subroutine implements C-PROCESS life cycle.
 !INPUT (external):
 ! - jo - global output device (service.mod);
-! - impir - MPI rank of the process (service.mod);
+! - impir - rank of the MPI process (service.mod);
 ! - impis - global MPI comminicator size (service.mod);
 ! - max_threads - max number of threads available to the current MPI process (service.mod);
-! - {gpu_start:gpu_start+gpu_count-1} - range of Nvidia GPUs assigned to the current MPI process (service.mod);
+! - {gpu_start:gpu_start+gpu_count-1} - range of NVidia GPUs assigned to the current MPI process (service.mod);
 !OUTPUT:
 ! - ierr - error code (0:success);
 ! - Executed elementary tensor instructions.
@@ -303,7 +302,7 @@
         integer:: stcu_simd_my_pass,stcu_mimd_my_pass,stcu_mimd_max_pass !STCU variables
         type(nvcu_task_t), allocatable:: nvcu_tasks(:) !parallel to etiq_nvcu
         type(xpcu_task_t), allocatable:: xpcu_tasks(:) !parallel to etiq_xpcu
-        integer(C_SIZE_T):: blck_sizes(0:max_arg_buf_levels-1),total_mem,free_mem,used_swap
+        integer(C_SIZE_T):: blck_sizes(0:max_arg_buf_levels-1),total_mem,free_mem,used_swap,hab_size_trial
         integer:: tree_height; integer(8):: tree_volume
         type(tens_blck_id_t):: key(0:15)
         type(tensor_block_t):: tens
@@ -324,24 +323,27 @@
          write(CONS_OUT,'("#MSG(c_process::c_proc_life): Total usable memory (bytes) = ",i13)') total_mem
          write(CONS_OUT,'("#MSG(c_process::c_proc_life): Free usable memory (bytes)  = ",i13)') free_mem
          write(CONS_OUT,'("#MSG(c_process::c_proc_life): Used swap memory (bytes)    = ",i13)') used_swap
+         hab_size_trial=max(int(real(free_mem,8)*HAB_PART,C_SIZE_T),MIN_HAB_SIZE)
+        else
+         hab_size_trial=MIN_HAB_SIZE
         endif
  !Init TAL infrastructure (TAL buffers, cuBLAS, etc.):
         write(CONS_OUT,'("#MSG(c_process::c_proc_life): Allocating argument buffers ... ")',advance='no')
         tm=thread_wtime()
-        hab_size=MAX_HAB_SIZE !desired (max) HAB size
+        hab_size=hab_size_trial !desired (max) HAB size
         i=arg_buf_allocate(hab_size,max_hab_args,gpu_start,gpu_start+gpu_count-1)
         if(i.ne.0) then; write(CONS_OUT,'("Failed!")'); call c_proc_quit(1); return; endif
         tm=thread_wtime()-tm; write(CONS_OUT,'("Ok(",F4.1," sec): Host argument buffer size (B) = ",i11)') tm,hab_size
         if(hab_size.lt.MIN_HAB_SIZE.or.max_hab_args.lt.6) then
          write(CONS_OUT,'("#FATAL(c_process::c_proc_life): Host argument buffer is too small: ",i11,1x,i11,1x,i11)') &
-          MIN_HAB_SIZE,hab_size,max_hab_args
+          &MIN_HAB_SIZE,hab_size,max_hab_args
          call c_proc_quit(2); return
         endif
   !Check Host argument buffer (HAB) levels:
         i=get_blck_buf_sizes_host(blck_sizes)
         if(i.le.0.or.i.gt.max_arg_buf_levels) then
          write(CONS_OUT,'("#ERROR(c_process::c_proc_life): Invalid number of Host argument buffer levels: ",i11,1x,i11)') &
-          max_arg_buf_levels,i
+          &max_arg_buf_levels,i
          call c_proc_quit(3); return
         else
          write(CONS_OUT,'("#MSG(c_process::c_proc_life): Number of Host argument buffer levels = ",i4,":")') i
@@ -357,7 +359,7 @@
           i=get_blck_buf_sizes_gpu(j,blck_sizes)
           if(i.le.0.or.i.gt.max_arg_buf_levels) then
            write(CONS_OUT,'("#ERROR(c_process::c_proc_life): Invalid number of GPU argument buffer levels: ",i11,1x,i11)') &
-            max_arg_buf_levels,i
+            &max_arg_buf_levels,i
            call c_proc_quit(4); return
           else
            write(CONS_OUT,'("#MSG(c_process::c_proc_life): Number of GPU#",i2," argument buffer levels = ",i4,":")') j,i
@@ -701,12 +703,12 @@
             etiq%eti(etiq_nvcu%etiq_entry(0))%instr_status=INSTR_SCHEDULED
  !Enqueue tensor instructions to STCU:
             etiq_stcu%etiq_entry(9)=10
-            etiq_stcu%te_conf(9)=te_conf_t(etiq%eti(etiq_stcu%etiq_entry(9))%instr_cu,1,8,1)
+            etiq_stcu%te_conf(9)=te_conf_t(etiq%eti(etiq_stcu%etiq_entry(9))%instr_cu,1,7,1)
             etiq_stcu%scheduled=etiq_stcu%scheduled+1
             etiq%eti(etiq_stcu%etiq_entry(9))%instr_status=INSTR_SCHEDULED
             do k=8,0,-1
              etiq_stcu%etiq_entry(k)=1+k
-             etiq_stcu%te_conf(k)=te_conf_t(etiq%eti(etiq_stcu%etiq_entry(k))%instr_cu,1,4,1)
+             etiq_stcu%te_conf(k)=te_conf_t(etiq%eti(etiq_stcu%etiq_entry(k))%instr_cu,1,2,1)
              etiq_stcu%scheduled=etiq_stcu%scheduled+1
              etiq%eti(etiq_stcu%etiq_entry(k))%instr_status=INSTR_SCHEDULED
             enddo
@@ -795,8 +797,8 @@
                  etiq_stcu%ip=etiq_stcu%ip+1
                  if(etiq_stcu%ip.ge.etiq_stcu%depth) etiq_stcu%ip=etiq_stcu%ip-etiq_stcu%depth
                 else
-                 write(CONS_OUT,'("#ERROR(c_process::c_proc_life): STCU 0/0: execution error ",i11," for ETI #",i7)') &
-                  err_code,stcu_my_eti
+                 write(CONS_OUT,'("#ERROR(c_process::c_proc_life): STCU 0/0: execution error ",i11," for ETI #",i7)')&
+                  &err_code,stcu_my_eti
 !$OMP ATOMIC WRITE
                  stcu_error=1 !error during ETI execution in one or more STCU
 !$OMP FLUSH(stcu_error)
@@ -804,13 +806,13 @@
                elseif(stcu_num_units.gt.1.and.stcu_num_units.le.stcu_max_units) then !multiple STCU: MIMD execution
                 stcu_simd_my_pass=0; stcu_mimd_my_pass=0; stcu_mimd_max_pass=1
                 if(VERBOSE) write(CONS_OUT,'("#DEBUG(c_process::c_proc_life): STCU MIMD: requested number of STCU units = ",i3)')&
-                &stcu_num_units !debug
+                 &stcu_num_units !debug
 !$OMP PARALLEL NUM_THREADS(stcu_num_units) FIRSTPRIVATE(stcu_base_ip,stcu_mimd_my_pass,err_code) &
 !$OMP          PRIVATE(thread_num,stcu_my_ip,stcu_my_eti,i,j,k) DEFAULT(SHARED)
                 thread_num=omp_get_thread_num()
                 if(thread_num.eq.0) then
-                 if(VERBOSE) write(CONS_OUT,'("#DEBUG(c_process::c_proc_life): STCU MIMD: ",i3," unit(s) created.")') &
-                  omp_get_num_threads() !debug
+                 if(VERBOSE) write(CONS_OUT,'("#DEBUG(c_process::c_proc_life): STCU MIMD: ",i3," unit(s) created.")')&
+                  &omp_get_num_threads() !debug
                 endif
 !$OMP BARRIER
                 if(omp_get_num_threads().eq.stcu_num_units) then
@@ -819,13 +821,13 @@
                   stcu_my_ip=stcu_base_ip+thread_num; if(stcu_my_ip.ge.etiq_stcu%depth) stcu_my_ip=stcu_my_ip-etiq_stcu%depth
                   stcu_my_eti=etiq_stcu%etiq_entry(stcu_my_ip)
                   if(VERBOSE) write(CONS_OUT,'("#DEBUG(c_process::c_proc_life): STCU ",i2,&
-                   &"/",i2,": Pass ",i5,": IP ",i5,": ETI #",i7,": thread_count=",i3)') &
-                   thread_num,stcu_num_units,stcu_mimd_my_pass,stcu_my_ip,stcu_my_eti,etiq_stcu%te_conf(stcu_my_ip)%num_workers !debug
+                   &"/",i2,": Pass ",i5,": IP ",i5,": ETI #",i7,": thread_count=",i3)')&
+                   &thread_num,stcu_num_units,stcu_mimd_my_pass,stcu_my_ip,stcu_my_eti,etiq_stcu%te_conf(stcu_my_ip)%num_workers !debug
                   call omp_set_num_threads(etiq_stcu%te_conf(stcu_my_ip)%num_workers)
                   err_code=stcu_execute_eti(stcu_my_eti)
                   if(err_code.ne.0) then
-                   write(CONS_OUT,'("#ERROR(c_process::c_proc_life): STCU ",i2,": execution error ",i11," for ETI #",i7)') &
-                    thread_num,err_code,stcu_my_eti
+                   write(CONS_OUT,'("#ERROR(c_process::c_proc_life): STCU ",i2,": execution error ",i11," for ETI #",i7)')&
+                    &thread_num,err_code,stcu_my_eti
 !$OMP ATOMIC WRITE
                    stcu_error=2 !error during ETI execution in one or more STCU
                   endif
@@ -873,8 +875,8 @@
                   endif
                  enddo mimd_loop
                 else
-                 write(CONS_OUT,'("#ERROR(c_process::c_proc_life): STCU: Invalid number of units created: ",i11,1x,i11)') &
-                  omp_get_num_threads(),stcu_num_units
+                 write(CONS_OUT,'("#ERROR(c_process::c_proc_life): STCU: Invalid number of units created: ",i11,1x,i11)')&
+                  &omp_get_num_threads(),stcu_num_units
 !$OMP ATOMIC WRITE
                  stcu_error=3 !invalid number of STCU units created
                 endif
@@ -907,7 +909,7 @@
          else
 !$OMP MASTER
           write(CONS_OUT,'("#ERROR(c_process::c_proc_life): invalid initial number of threads or nested: ",i6,l1)')&
-          &n,omp_get_nested()
+           &n,omp_get_nested()
           ierr=-2
 !$OMP END MASTER
          endif
@@ -1003,8 +1005,8 @@
                 if(j0.ge.0.and.mod(j0,3).eq.0.and.jl+j0.le.ju) then !j0 equals tensor_rank*3
                  if(j0.gt.0) then !true tensor
                   j0=j0/3 !now j0 = tensor rank
-                  call tensor_shape_str_create(j0,my_eti%instr_aux(jl+1:jl+j0),jtsss,j1,ier, &
-                        divs=my_eti%instr_aux(jl+j0+1:jl+j0*2),grps=my_eti%instr_aux(jl+j0*2+1:jl+j0*3))
+                  call tensor_shape_str_create(j0,my_eti%instr_aux(jl+1:jl+j0),jtsss,j1,ier,&
+                        &divs=my_eti%instr_aux(jl+j0+1:jl+j0*2),grps=my_eti%instr_aux(jl+j0*2+1:jl+j0*3))
                  else !scalar
                   call tensor_shape_str_create(j0,my_eti%instr_aux(jl:),jtsss,j1,ier)
                  endif
@@ -1197,8 +1199,8 @@
            case(INSTR_TENSOR_CMP)
   !Compare two tensor blocks (scalar dtens_ will contain the number of elements that differ):
             if(associated(dtens_).and.associated(ltens_).and.associated(rtens_)) then
-             if(tensor_block_layout(dtens_,ier).ne.not_allocated.and. &
-                tensor_block_layout(ltens_,ier).ne.not_allocated.and.tensor_block_layout(rtens_,ier).ne.not_allocated) then
+             if(tensor_block_layout(dtens_,ier).ne.not_allocated.and.&
+               &tensor_block_layout(ltens_,ier).ne.not_allocated.and.tensor_block_layout(rtens_,ier).ne.not_allocated) then
               if(dtens_%tensor_shape%num_dim.eq.0) then
                jdiff=0
                if(associated(stens_)) then !real part is the comparison threshold
@@ -1221,8 +1223,8 @@
            case(INSTR_TENSOR_CONTRACT)
   !Contract two tensor blocks and accumulate the result into another tensor block:
             if(associated(dtens_).and.associated(ltens_).and.associated(rtens_)) then
-             if(tensor_block_layout(dtens_,ier).ne.not_allocated.and. &
-                tensor_block_layout(ltens_,ier).ne.not_allocated.and.tensor_block_layout(rtens_,ier).ne.not_allocated) then
+             if(tensor_block_layout(dtens_,ier).ne.not_allocated.and.&
+               &tensor_block_layout(ltens_,ier).ne.not_allocated.and.tensor_block_layout(rtens_,ier).ne.not_allocated) then
               if(allocated(my_eti%instr_aux)) then
                jl=lbound(my_eti%instr_aux,1); ju=ubound(my_eti%instr_aux,1)
                if(ju.ge.jl+1.and.ju-jl+1.eq.my_eti%instr_aux(jl)) then
@@ -1403,17 +1405,17 @@
                    endif
                    if(nvcu_execute_eti.eq.0) then
                     if(j0.gt.0) then !at least one tensor is not a scalar
-                     ier=gpu_tensor_block_contract_dlf_(my_eti%instr_aux(jl+1:), &
-                                                        my_eti%tens_op(1)%op_aar_entry%tens_blck_c, &
-                                                        my_eti%tens_op(2)%op_aar_entry%tens_blck_c, &
-                                                        my_eti%tens_op(0)%op_aar_entry%tens_blck_c, &
-                                                        j1,nvcu_tasks(etiq_nvcu_loc)%cuda_task_handle)
+                     ier=gpu_tensor_block_contract_dlf_(my_eti%instr_aux(jl+1:),&
+                                                       &my_eti%tens_op(1)%op_aar_entry%tens_blck_c,&
+                                                       &my_eti%tens_op(2)%op_aar_entry%tens_blck_c,&
+                                                       &my_eti%tens_op(0)%op_aar_entry%tens_blck_c,&
+                                                       &j1,nvcu_tasks(etiq_nvcu_loc)%cuda_task_handle)
                     else !all three tensor are scalars
-                     ier=gpu_tensor_block_contract_dlf_(my_eti%instr_aux(jl:), & !%instr_aux will be ignored
-                                                        my_eti%tens_op(1)%op_aar_entry%tens_blck_c, &
-                                                        my_eti%tens_op(2)%op_aar_entry%tens_blck_c, &
-                                                        my_eti%tens_op(0)%op_aar_entry%tens_blck_c, &
-                                                        j1,nvcu_tasks(etiq_nvcu_loc)%cuda_task_handle)
+                     ier=gpu_tensor_block_contract_dlf_(my_eti%instr_aux(jl:),& !%instr_aux will be ignored
+                                                        &my_eti%tens_op(1)%op_aar_entry%tens_blck_c,&
+                                                        &my_eti%tens_op(2)%op_aar_entry%tens_blck_c,&
+                                                        &my_eti%tens_op(0)%op_aar_entry%tens_blck_c,&
+                                                        &j1,nvcu_tasks(etiq_nvcu_loc)%cuda_task_handle)
                     endif
                     if(ier.ne.0) then
                      ier=cuda_task_destroy(nvcu_tasks(etiq_nvcu_loc)%cuda_task_handle)
@@ -1483,7 +1485,7 @@
                if(c_associated(my_eti%tens_op(j1)%op_aar_entry%tens_blck_c)) then
                 j2=tensBlck_set_presence(my_eti%tens_op(j1)%op_aar_entry%tens_blck_c) !mark tensBlck_t as present on the GPU
                 if(j2.ne.0)&
-                &write(CONS_OUT,'("ERROR(c_process::c_proc_life:nvcu_task_status): tensBlck_set_presence failed: ",i10)') j2
+                 &write(CONS_OUT,'("ERROR(c_process::c_proc_life:nvcu_task_status): tensBlck_set_presence failed: ",i10)') j2
                endif
               endif
              enddo
@@ -1506,8 +1508,8 @@
            nvcu_task_status=-998
           endif
          else
-          if(VERBOSE) write(CONS_OUT,'("#ERROR(c_process::c_proc_life:nvcu_task_status): invalid NVCU task number: ",i12)') &
-           nvcu_task_num
+          if(VERBOSE) write(CONS_OUT,'("#ERROR(c_process::c_proc_life:nvcu_task_status): invalid NVCU task number: ",i12)')&
+           &nvcu_task_num
           nvcu_task_status=-999
          endif
          return
@@ -2153,8 +2155,8 @@
         integer jt
         eti_mark_aar_used=0
         do jt=0,max_tensor_operands-1
-         if(associated(this%tens_op(jt)%op_aar_entry)) &
-          this%tens_op(jt)%op_aar_entry%times_used=this%tens_op(jt)%op_aar_entry%times_used+1
+         if(associated(this%tens_op(jt)%op_aar_entry))&
+          &this%tens_op(jt)%op_aar_entry%times_used=this%tens_op(jt)%op_aar_entry%times_used+1
         enddo
         return
         end function eti_mark_aar_used
@@ -2803,7 +2805,7 @@
          nullify(tens%tensor_shape%dim_extent)
          nullify(tens%tensor_shape%dim_divider)
          nullify(tens%tensor_shape%dim_group)
-        endif        
+        endif
         if(trank.gt.0) then
          allocate(tens%tensor_shape%dim_extent(1:trank),STAT=ierr); if(ierr.ne.0) then; ierr=9; return; endif
          allocate(tens%tensor_shape%dim_divider(1:trank),STAT=ierr); if(ierr.ne.0) then; ierr=10; return; endif
@@ -3064,8 +3066,8 @@
          err_code=get_buf_entry_gpu(gpu_num,s0,addr_gpu,entry_gpu); if(err_code.ne.0.or.entry_gpu.lt.0) then; ierr=3; return; endif
          err_code=const_args_entry_get(gpu_num,entry_const); if(err_code.ne.0.or.entry_const.lt.0) then; ierr=4; return; endif
          err_code=tensBlck_create(ctens); if(err_code.ne.0) then; ctens=C_NULL_PTR; ierr=5; return; endif
-         err_code=tensBlck_construct(ctens,DEV_NVIDIA_GPU,gpu_num,data_kind,trank, &
-                                     addr_dims,addr_divs,addr_grps,addr_prmn,addr_host,addr_gpu,hab_entry,entry_gpu,entry_const)
+         err_code=tensBlck_construct(ctens,DEV_NVIDIA_GPU,gpu_num,data_kind,trank,&
+                                    &addr_dims,addr_divs,addr_grps,addr_prmn,addr_host,addr_gpu,hab_entry,entry_gpu,entry_const)
          if(err_code.ne.0) then; ierr=6; return; endif
 #else
          write(CONS_OUT,'("#FATAL(c_process::tens_blck_assoc):&
@@ -3126,7 +3128,7 @@
         err_code=tensBlck_destroy(ctens); if(err_code.ne.0) ierr=ierr+1000
 #else
         write(CONS_OUT,'("#FATAL(c_process::tens_blck_dissoc):&
-         & attempt to dissociate a GPU-resident tensor block in GPU-free code compilation!")') !trap
+         &attempt to dissociate a GPU-resident tensor block in GPU-free code compilation!")') !trap
         ierr=-1; return !attempt to initialize tensBlck_t in a GPU-free code compilation
 #endif
         return
@@ -3511,7 +3513,7 @@
             call tensor_block_destroy(ftens(0),ierr)
             ntotal=ntotal+1
             write(CONS_OUT,'("#STATISTICS (dir,sct,opt):",i10,1x,3(1x,F10.6),2x,3(1x,F14.2))') tens_size,&
-             tmd/dble(ntotal),tms/dble(ntotal*2),tme/dble(ntotal*2),gtd/dble(ntotal),gts/dble(ntotal*2),gte/dble(ntotal*2)
+             &tmd/dble(ntotal),tms/dble(ntotal*2),tme/dble(ntotal*2),gtd/dble(ntotal),gts/dble(ntotal*2),gte/dble(ntotal*2)
 !            call particular_trn; goto 999 !debug
            enddo !repetition
           enddo !dim_spread
