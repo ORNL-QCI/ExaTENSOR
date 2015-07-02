@@ -83,7 +83,7 @@
         real(8):: time_begin,time_end              !wall time for the MPI process
         integer:: exec_status=0                    !current execution status (0:success)
         character(MPI_MAX_PROCESSOR_NAME):: proc_name=' ' !processor name (set by runtime)
-        integer:: proc_name_len                    !the length of the processor name
+        integer(INT_MPI):: proc_name_len           !the length of the processor name
  !File Management:
         integer, private:: nof=0                          !current number of open files (local to each process)
         integer, private:: fhot(16:16+MAX_OPEN_FILES-1)=0 !file handle occupancy table (first 16 file handles [0..15] are reserved)
