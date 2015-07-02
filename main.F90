@@ -1,18 +1,12 @@
 !PROJECT: Q-FORCE: Massively Parallel Quantum Many-Body Methodology on Heterogeneous HPC systems.
 !BASE: ExaTensor: Massively Parallel Tensor Algebra Virtual Processor for Heterogeneous HPC systems.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2015/06/16
+!REVISION: 2015/07/03
 !COMPILATION:
 ! - Fortran 2003 at least (some 2008 as well).
 ! - MPI 3.0 at least.
-! - OpenMP 3.0 at least.
+! - OpenMP 3.0 at least (OpenMP 4.0 if using Intel MIC).
 ! - CUDA 5.0 at least.
-! - GNU compiling flags: -c -O3 -fopenmp
-!   GNU linking flags: -lgomp
-!   GNU BLAS/LAPACK: -lblas -llapack
-! - Intel compiling flags: -c -O3 -fpp -vec-threshold4 -vec-report2 -openmp -openmp-report2 -D USE_MKL
-!   Intel linking flags: -Bdynamic
-!   Intel MKL: -lmkl_core -lmkl_intel_thread -lmkl_intel_lp64 -lmkl_blas95_lp64 -lmkl_lapack95_lp64 -liomp5
 !MPI launch notes:
 ! - MPI processes launched on the same node MUST have consecutive numbers!
 ! - Environment variable <QF_PROCS_PER_NODE> MUST be defined when using accelerators (number of processes per node)!
@@ -20,7 +14,7 @@
 ! - NO_AMD - do not use AMD GPU;
 ! - NO_PHI - do not use Intel Xeon Phi (MIC);
 ! - NO_GPU - do not use NVidia GPU (CUDA);
-! - NO_BLAS - BLAS/LAPACK calls will be replaced by my own routines (D.I.L.);
+! - NO_BLAS - BLAS/LAPACK calls will be replaced by in-house routines (D.I.L.);
 ! - USE_OMP_MOD - use OpenMP module;
 ! - USE_MPI_MOD - use MPI module instead of mpif.h;
 ! - USE_MKL - use Intel MKL library for BLAS/LAPACK;
@@ -35,7 +29,8 @@
         use qforce
         implicit none
         integer i,j,k,l,m,n,k0,ierr
-        character(1024) str0
+        integer(INT_MPI):: errc
+        character(1024):: str0
         integer, external:: omp_get_max_threads
 
         ierr=0
@@ -101,7 +96,7 @@
         call MPI_BARRIER(MPI_COMM_WORLD,ierr); if(ierr.ne.0) call quit(ierr,'#ERROR(main): MPI_BARRIER error (trap 2)')
 
 !Run the process life:
-        call proceed(ierr); if(ierr.ne.0) then; exec_status=ierr; write(jo,'("#ERROR(main): Process life dirty!")'); endif
+        call proceed(MPI_COMM_WORLD,ierr); if(ierr.ne.0) then; exec_status=ierr; write(jo,'("#ERROR(main): Process life dirty!")'); endif
         call qforce_free_memory(ierr)
         if(exec_status.eq.0.and.ierr.ne.0) then
          exec_status=ierr; write(jo,'("#ERROR(main): Unable to free QFORCE data structures!")')

@@ -1,6 +1,6 @@
 !Parallel Virtual Processing for Scale-Adaptive Tensor Algebra:
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2015/06/15
+!REVISION: 2015/07/03
         module exatensor
         use tensor_algebra_cpu_phi
         use distributed
@@ -21,6 +21,7 @@
         real(8), parameter, public:: EPS8=epsilon(1d0) !double precision epsilon
         real(8), parameter, public:: ZERO_THRESH=1d-11 !numerical comparison threshold: should account for possible round-off errors
  !Kinds of MPI processes (process roles):
+        integer(INTD), parameter, public:: NO_ROLE=0                 !undefined role
         integer(INTD), parameter, public:: GLOBAL_ROOT=1             !global root
         integer(INTD), parameter, public:: LOCAL_ROOT=2              !local root
         integer(INTD), parameter, public:: C_PROCESS_PRIVATE=3       !computing process private to his root
@@ -61,7 +62,10 @@
 !TYPES:
 
 !DATA:
-
+ !Process role:
+        integer(INTD), public:: my_role=NO_ROLE   !role of the MPI process (set during runtime)
+        integer(INTD), public:: my_group=-1       !computing group the process belongs to (set during runtime)
+        integer(INTD), public:: my_group_index=-1 !ID of the process within the computing group
 !FUNCTION VISIBILITY:
 
 !METHODS:
