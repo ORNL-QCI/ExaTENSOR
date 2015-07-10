@@ -1,6 +1,6 @@
 !This module provides functionality for a Computing Process (C-PROCESS, CP).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2015/06/26
+!REVISION: 2015/07/02
 !PREPROCESSOR:
 ! -D NO_GPU: No NVidia GPU;
 ! -D NO_PHI: No Intel Xeon Phi (Intel MIC);
@@ -1801,8 +1801,7 @@
 !-----------------------------------------------
         integer function tens_key_cmp(key1,key2) !SERIAL
         implicit none
-!       class(tens_blck_id_t):: key1,key2
-        class(*):: key1,key2 !must comply with the abstract interface used in "dictionary.F90"
+        class(*), intent(in):: key1,key2 !must comply with the abstract interface used in "dictionary.F90"
         integer:: i,l1,l2
         tens_key_cmp=dict_key_eq
         select type (key1)
