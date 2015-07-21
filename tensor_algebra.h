@@ -1,6 +1,6 @@
 /** Parameters, derived types, and function prototypes used
     in tensor_algebra_gpu_nvidia.cu, c_proc_bufs.cu (NV-TAL).
-REVISION: 2015/05/05
+REVISION: 2015/07/21
 Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
 Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
 
@@ -41,8 +41,12 @@ NOTES:
      AMD GPU: {MAX_GPUS_PER_NODE+MAX_MICS_PER_NODE+1:MAX_GPUS_PER_NODE+MAX_MICS_PER_NODE+MAX_AMDS_PER_NODE}, etc.
     DEVICE_ID is used in tensBlck_t: If tensor elements are already on the Device it is positive, otherwise negative.
  # MAX_SCR_ENTRY_COUNT regulates the maximal amount of additional device argument-buffer entries
-    allocated per tensor operation (it is no more than 3 for tensor contractions).
- # MAX_GPU_ARGS regulates the maximal allowed amount of device argument-buffer entries.
+    allocated per tensor operation (it is 3 for tensor contractions or other binary tensor operations).
+ # MAX_GPU_ARGS regulates the maximal allowed number of argument-buffer entries on a GPU.
+ # tensBlck_t is a hardware-specific specification of a tensor block argument used with NVidia GPU.
+   In tensBlck_t, the tensor shape and tensor body must always point to the pinned Host memory
+   allocated either in the HAB or explicitly via <host_mem_alloc_pin>, unless the Host copy of the
+   tensor block had been released (freed).
  # CUDA_TASK is considered completed successfully if the value of the .task_error field equals zero.
     Negative .task_error means that either the CUDA task is empty or it is in progress.
     In the former case, .gpu_id=-1 and .task_stream is undefined.
@@ -74,6 +78,7 @@ NOTES:
 
 //KERNEL PARAMETERS:
 #define GPU_CACHE_LINE_LEN 128     //cache line length in bytes
+#define GPU_SHMEM_WIDTH 8          //default width of the GPU shared memory banks (4 or 8 bytes)
 #define MAX_CUDA_BLOCKS 1024       //max number of CUDA thread blocks per kernel
 #if CUDA_ARCH >= 300
 #define TENS_TRANSP_BUF_SIZE 2560  //buffer size (elements) for <gpu_tensor_block_copy_dlf_XX__>

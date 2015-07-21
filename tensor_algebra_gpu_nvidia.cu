@@ -1,5 +1,5 @@
-/** Tensor Algebra Library for NVidia GPUs (CUDA).
-REVISION: 2015/06/15
+/** Tensor Algebra Library for NVidia GPUs NV-TAL (CUDA based).
+REVISION: 2015/07/21
 Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
 Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
 
@@ -32,7 +32,7 @@ NOTES:
  # External non-blocking tensor algebra functions carry an additional input argument <copy_back>
    which, when set to zero, prevents the output data from being copied back from GPU to Host.
    Passing zero to <copy_back> must be done with care since the Host copy
-   of the tensor data will become outdated that cannot be checked!
+   of the tensor data will become outdated that cannot be checked automatically!
    To restore consistency between the Host and GPU argument buffers,
    a GPU argument entry has to be explictly fetched by Host (user responsibility).
  # Seems like cudaEventRecord() issued in different streams can serialize the stream
@@ -169,7 +169,7 @@ __host__ static int prmn_convert(int n, const int *o2n, int *n2o) //converts o2n
 }
 
 __host__ static int non_trivial_prmn(int n, const int *prm) //returns 0 if the permutation is trivial, 1 otherwise
-/** The permutation is sign-free but numeration starts from 1. **/
+/** The permutation is sign-free but numeration starts from 1. No error check. **/
 {
  int f=0;
  for(int i=0;i<n;i++){if(prm[i] != i+1){f=1; break;}}
@@ -246,13 +246,13 @@ __host__ int tensBlck_create(tensBlck_t **ctens)
 }
 
 __host__ int tensBlck_destroy(tensBlck_t *ctens)
-/** Destroy an instance of tensBlck_t **/
+/** Destroys an empty instance of tensBlck_t **/
 {if(ctens != NULL){free(ctens); ctens=NULL; return 0;}else{return 1;}}
 
 __host__ int tensBlck_construct(tensBlck_t *ctens, int dev_kind, int dev_num, int data_kind, int trank,
                                 const int *dims, const int *divs, const int *grps, const int *prmn,
                                 void *addr_host, void *addr_gpu, int entry_host, int entry_gpu, int entry_const)
-/** Full constructor for tensBlck_t (tensor block to be processed on an accelerator) based
+/** Full constructor for tensBlck_t (tensor block to be processed on a GPU) based
 on the custom memory allocator which uses Host and Device argument buffers (see c_proc_bufs.cu).
 The custom allocator supplies space for all needed arrays: dims, divs, grps, prmn, addr_host, addr_gpu.
 For scalar tensors (rank = 0), pointers dims, divs, grps, prmn are irrelevant (may be NULL).
@@ -417,19 +417,21 @@ OUTPUT:
  return dev_num;
 }
 
-__host__ int tensBlck_set_presence(tensBlck_t *ctens) // Marks tensor block data as residing on GPU
+__host__ int tensBlck_set_presence(tensBlck_t *ctens) //Marks tensor block data as residing on GPU
 {if(ctens != NULL){if(ctens->device_id < 0) ctens->device_id=-(ctens->device_id); return 0;}else{return 1;}}
 
-__host__ int tensBlck_set_absence(tensBlck_t *ctens) // Unmarks tensor block data as residing on GPU
+__host__ int tensBlck_set_absence(tensBlck_t *ctens) //Unmarks tensor block data as residing on GPU
 {if(ctens != NULL){if(ctens->device_id > 0) ctens->device_id=-(ctens->device_id); return 0;}else{return 1;}}
 
-__host__ int tensBlck_present(const tensBlck_t *ctens) //Check presence of the block data on Device (or Host)
+__host__ int tensBlck_present(const tensBlck_t *ctens) //Checks presence of the block data on Device (or Host)
 {if(ctens != NULL){if(ctens->device_id >= 0){return 1;}else{return 0;}}else{return -1;}}
 
 __host__ int tensBlck_hab_free(tensBlck_t *ctens){
 /** For tensor blocks simultaneously residing on Host and GPU, frees the Host copy.
 The data does not have to be present on GPU, in which case the tensor block
-becomes uninitialized but still usable on the GPU. **/
+becomes uninitialized but still usable on the GPU. If the Host-residing tensor body
+had been allocated in HAB, it frees that HAB buffer entry, otherwise deallocates
+the corresponding pinned memory explicitly via <host_mem_free_pin>. **/
  int i,dev_kind,dev_num,errc;
 
  errc=0;
@@ -440,6 +442,7 @@ becomes uninitialized but still usable on the GPU. **/
     if(ctens->elems_h != NULL){
      if(ctens->buf_entry_host >= 0){
       i=free_buf_entry_host(ctens->buf_entry_host); errc+=i;
+      if(i == 0) ctens->buf_entry_host=-1;
      }else{
       i=host_mem_free_pin(ctens->elems_h); errc+=i;
      }
@@ -459,7 +462,7 @@ becomes uninitialized but still usable on the GPU. **/
  return errc;
 }
 
-__host__ size_t tensBlck_volume(const tensBlck_t *ctens) //Number of elements in a tensor block
+__host__ size_t tensBlck_volume(const tensBlck_t *ctens) //Number of elements in a tensor block (volume)
 {size_t tvol=1; for(int i=0;i<ctens->rank;i++){tvol*=(ctens->dims_h[i]);}; return tvol;}
 
 __host__ int cuda_task_create(cudaTask_t **cuda_task)
@@ -771,7 +774,7 @@ Returned positive value is the number of initialized GPUs; negative means an err
 Each enabled GPU from the range [gpu_beg:gpu_end] will obtain its own cublasHandle.
 The first enabled GPU will be left active at the end. **/
 {
- int i,n;
+ int i,n,errc;
  cudaError_t err;
 #ifndef NO_BLAS
  cublasStatus_t err_cublas;
@@ -784,6 +787,8 @@ The first enabled GPU will be left active at the end. **/
    err=cudaSetDevice(i);
    if(err == cudaSuccess){
     gpu_up[i]=GPU_MINE; err=cudaGetDeviceProperties(&(gpu_prop[i]),i); if(err != cudaSuccess) gpu_up[i]=NOPE;
+    errc=gpu_set_shmem_width(GPU_SHMEM_WIDTH);
+    if(errc != 0 && VERBOSE) printf("#ERROR(tensor_algebra_gpu_nvidia:init_gpus): Unable to set GPU SHMEM width %d: Error %d \n",GPU_SHMEM_WIDTH,errc);
 #ifndef NO_BLAS
     if(gpu_up[i] > NOPE){
      err_cublas=cublasCreate(&(cublas_handle[i]));
