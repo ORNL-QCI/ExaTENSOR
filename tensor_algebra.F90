@@ -43,19 +43,20 @@
 #endif
 
 !ALIASES (keep consistent with tensor_algebra.h):
-        integer(C_INT), parameter, public:: NOPE=0                     !"NO" answer
-        integer(C_INT), parameter, public:: YEP=1                      !"YES" answer
-        integer(C_INT), parameter, public:: NO_COPY_BACK=0             !keeps the tensor-result on Accelerator without updating Host
-        integer(C_INT), parameter, public:: COPY_BACK=1                !tensor-result will be copied back from Accelerator to Host (default)
-        integer(C_INT), parameter, public:: BLAS_ON=0                  !enables BLAS
-        integer(C_INT), parameter, public:: BLAS_OFF=1                 !disables BLAS
-        integer(C_INT), parameter, public:: EFF_TRN_OFF=0              !disables efficient tensor transpose algorithm
-        integer(C_INT), parameter, public:: EFF_TRN_ON=1               !enables efficient tensor transpose algorithm
-        integer(C_INT), parameter, public:: EVENTS_OFF=0               !disables CUDA event recording
-        integer(C_INT), parameter, public:: EVENTS_ON=1                !enables CUDA event recording (default)
+        integer(C_INT), parameter, public:: NOPE=0                 !"NO" answer
+        integer(C_INT), parameter, public:: YEP=1                  !"YES" answer
+        integer(C_INT), parameter, public:: NO_COPY_BACK=0         !keeps the tensor-result on Accelerator without updating Host
+        integer(C_INT), parameter, public:: COPY_BACK=1            !tensor-result will be copied back from Accelerator to Host (default)
+        integer(C_INT), parameter, public:: BLAS_ON=0              !enables BLAS
+        integer(C_INT), parameter, public:: BLAS_OFF=1             !disables BLAS
+        integer(C_INT), parameter, public:: EFF_TRN_OFF=0          !disables efficient tensor transpose algorithm
+        integer(C_INT), parameter, public:: EFF_TRN_ON=1           !enables efficient tensor transpose algorithm
+        integer(C_INT), parameter, public:: EVENTS_OFF=0           !disables CUDA event recording
+        integer(C_INT), parameter, public:: EVENTS_ON=1            !enables CUDA event recording (default)
+        integer(C_INT), parameter, public:: TRY_LATER=918273645    !try the action later (resources are currently busy): KEEP THIS UNIQUE!
 #ifndef NO_PHI
-!DIR$ ATTRIBUTES OFFLOAD:mic:: NOPE,YEP,NO_COPY_BACK,COPY_BACK,BLAS_ON,BLAS_OFF,EFF_TRN_OFF,EFF_TRN_ON
-!DIR$ ATTRIBUTES ALIGN:128:: NOPE,YEP,NO_COPY_BACK,COPY_BACK,BLAS_ON,BLAS_OFF,EFF_TRN_OFF,EFF_TRN_ON
+!DIR$ ATTRIBUTES OFFLOAD:mic:: NOPE,YEP,NO_COPY_BACK,COPY_BACK,BLAS_ON,BLAS_OFF,EFF_TRN_OFF,EFF_TRN_ON,TRY_LATER
+!DIR$ ATTRIBUTES ALIGN:128:: NOPE,YEP,NO_COPY_BACK,COPY_BACK,BLAS_ON,BLAS_OFF,EFF_TRN_OFF,EFF_TRN_ON,TRY_LATER
 #endif
 
 !CUDA TASK STATUS (keep consistent with tensor_algebra.h):

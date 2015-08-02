@@ -1,7 +1,7 @@
        module timers
 !Timing services (threadsafe).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2015/04/30
+!REVISION: 2015/07/30
 !PUBLIC FUNCTIONS:
 ! # integer timer_start(real8:time_set, integer:time_handle);
 ! # logical time_is_off(integer:time_handle, integer:ierr[, logical:destroy]);
@@ -47,6 +47,14 @@
         public timer_destroy
         public timer_tick_sec
         public thread_wtime
+        public accu_time
+!EXTERNAL INTERFACES:
+        interface
+         function accu_time() bind(C,name='accu_time')
+          use, intrinsic:: ISO_C_BINDING, only: C_DOUBLE
+          real(C_DOUBLE):: accu_time
+         end function accu_time
+        end interface
 
        contains
 !---------------------------------------------------------

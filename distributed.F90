@@ -1,6 +1,6 @@
 !Distributed data storage infrastructure (DDSI).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2015/06/08 (started 2015/03/18)
+!REVISION: 2015/07/31 (started 2015/03/18)
 !CONCEPTS:
 ! * Each MPI process can participate in one or more distributed memory spaces (DMS),
 !   where each distributed memory space is defined within a specific MPI communicator.
@@ -21,7 +21,7 @@
         module distributed
 !       use, intrinsic:: ISO_C_BINDING
         use service_mpi !includes ISO_C_BINDING & MPI (must stay public)
-        use:: tensor_algebra, only: NO_TYPE,R4,R8,C8,R4_,R8_,C8_ !tensor data kinds
+        use:: tensor_algebra, only: TRY_LATER,NO_TYPE,R4,R8,C8,R4_,R8_,C8_
         implicit none
         public !because of mpi.mod (or mpif.h) contained in service_mpi.mod
 !PARAMETERS:
@@ -29,8 +29,6 @@
         integer, private:: CONS_OUT=6     !default output for this module
         logical, private:: VERBOSE=.true. !verbosity for errors
         logical, private:: DEBUG=.true.   !debugging mode
- !Special return statuses (use unique very large integers):
-        integer(INT_MPI), parameter, public:: TRY_LATER=918273645 !try the action later (resources are currently busy)
  !Distributed memory spaces:
         integer(INT_MPI), parameter, public:: DISTR_SPACE_NAME_LEN=128 !max length of a distributed space name (multiple of 8)
  !Data transfers:

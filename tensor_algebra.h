@@ -1,6 +1,6 @@
 /** Parameters, derived types, and function prototypes used
     in tensor_algebra_gpu_nvidia.cu, c_proc_bufs.cu (NV-TAL).
-REVISION: 2015/07/21
+REVISION: 2015/07/31
 Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
 Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
 
@@ -65,6 +65,9 @@ NOTES:
 #define MAX_TENSOR_RANK 32         //max allowed tensor rank: Must be multiple of 4
 #define MAX_GPU_ARGS 128           //max allowed number of tensor arguments simultaneously residing on a GPU: Must be multiple of 8
 #define MAX_SCR_ENTRY_COUNT 3      //max allowed number of additional GPU argument entries allocated per tensor operation
+#define MAX_CUDA_TASKS 128         //max allowed number of simultaneously active CUDA tasks per CUDA device
+#define NUM_EVENTS_PER_TASK 4      //number of CUDA events recorded per CUDA task
+#define MAX_CUDA_EVENTS MAX_CUDA_TASKS*NUM_EVENTS_PER_TASK //max number of CUDA events per CUDA device
 
 //DEVICE KINDS:
 #define MAX_GPUS_PER_NODE 8        //max allowed number of NVidia GPUs on a node
@@ -119,7 +122,7 @@ NOTES:
 #define CUDA_TASK_OUTPUT_THERE 4
 #define CUDA_TASK_COMPLETED 5
 
-//ALIASES:
+//ALIASES (keep consistent with tensor_algebra.F90):
 #define NOPE 0
 #define YEP 1
 #define GPU_MINE 1
@@ -132,6 +135,7 @@ NOTES:
 #define BLAS_OFF 1
 #define EFF_TRN_OFF 0
 #define EFF_TRN_ON 1
+#define TRY_LATER 918273645
 
 //MACRO FUNCTIONS:
 #define MIN(a,b) (((a)<(b))?(a):(b))
@@ -155,7 +159,8 @@ typedef struct{
 } tensBlck_t;
 
 #ifndef NO_GPU
-// CUDA task (returned by non-blocking CUDA calling functions):
+// CUDA task (returned by non-blocking CUDA functions):
+// Adding new CUDA events will require adjustment of NUM_EVENTS_PER_TASK.
 typedef struct{
  int task_error;                     //error code (<0: Task is either empty or in progress; 0: Success; >0: Error code)
  int gpu_id;                         //NVidia GPU ID on which the task was scheduled (-1 means CPU Host)

@@ -1,5 +1,5 @@
 /** Tensor Algebra Library for NVidia GPUs NV-TAL (CUDA based).
-REVISION: 2015/07/21
+REVISION: 2015/08/01
 Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
 Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
 
@@ -73,6 +73,10 @@ static int cuda_task_finalize(cudaTask_t *cuda_task, int err_code, int gpu_num);
 static int cuda_task_record(cudaTask_t *cuda_task, int err_code, int gpu_num, cudaStream_t cuda_stream,
             cudaEvent_t cuda_start, cudaEvent_t cuda_comput, cudaEvent_t cuda_output, cudaEvent_t cuda_finish,
             int scr_entry_cnt, int *scr_entries);
+static int cuda_stream_get(int gpu_num, int * cuda_stream_handle);
+static int cuda_stream_release(int gpu_num, int cuda_stream_handle);
+static int cuda_event_get(int gpu_num, int * cuda_event_handle);
+static int cuda_event_release(int gpu_num, int cuda_event_handle);
 static void limit_cuda_blocks2d(int max_blocks, int *bx, int *by);
 // CUDA KERNELS:
 __global__ void gpu_array_2norm2_r4__(size_t arr_size, const float *arr, float *bnorm2);
@@ -111,6 +115,15 @@ static cudaDeviceProp gpu_prop[MAX_GPUS_PER_NODE]; //properties of all GPUs pres
 // GPU constant memory arguments for each GPU:
 __device__ __constant__ int const_args_dims[MAX_GPU_ARGS][MAX_TENSOR_RANK]; //storage for device constant memory arguments: dimension extents
 __device__ __constant__ int const_args_prmn[MAX_GPU_ARGS][MAX_TENSOR_RANK]; //storage for device constant memory arguments: permutation
+// GPU asynchronous resources:
+//  CUDA stream handles:
+static cudaStream_t CUDAStreamBank[MAX_GPUS_PER_NODE][MAX_CUDA_TASKS]; //pre-allocated CUDA stream handles (for each CUDA device)
+static int CUDAStreamFreeHandle[MAX_GPUS_PER_NODE][MAX_CUDA_TASKS]; //free CUDA stream handles
+static int CUDAStreamFFE[MAX_GPUS_PER_NODE]; //number of free handles left in CUDAStreamFreeHandle
+//  CUDA event handles:
+static cudaEvent_t CUDAEventBank[MAX_GPUS_PER_NODE][MAX_CUDA_EVENTS]; //pre-allocated CUDA event handles (for each CUDA device)
+static int CUDAEventFreeHandle[MAX_GPUS_PER_NODE][MAX_CUDA_EVENTS]; //free CUDA event handles
+static int CUDAEventFFE[MAX_GPUS_PER_NODE]; //number of free handles left in CUDAEventFreeHandle
 // GPU error control and debugging for each GPU:
 __device__ int gpu_error_count=0; //total number of CUDA errors registered on device till the current moment
 __device__ int gpu_debug_dump[GPU_DEBUG_DUMP_SIZE];
@@ -752,6 +765,108 @@ Also, in_copy is input copying time, out_copy is output copying time, and comp i
  }
 }
 
+__host__ static int cuda_stream_get(int gpu_num, int * cuda_stream_handle)
+/** For GPU#gpu_num, returns a usable CUDA stream handle (<cuda_stream_handle>).
+Non-zero return status means an error, except a return status TRY_LATER means
+no free resources are currently available (not an error). **/
+{
+ *cuda_stream_handle=-1;
+ if(gpu_num >= 0 && gpu_num < MAX_GPUS_PER_NODE){
+  if(gpu_up[gpu_num] >= GPU_MINE){
+   if(CUDAStreamFFE[gpu_num] > 0){ //number of free handles left on GPU#gpu_num
+    CUDAStreamFFE[gpu_num]--;
+    *cuda_stream_handle=CUDAStreamFreeHandle[gpu_num][CUDAStreamFFE[gpu_num]];
+    if(*cuda_stream_handle < 0 || *cuda_stream_handle >= MAX_CUDA_TASKS){
+     *cuda_stream_handle=-1; return 3; //invalid handle: corruption
+    }
+   }else{
+    return TRY_LATER; //all handles are currently busy
+   }
+  }else{
+   return 2;
+  }
+ }else{
+  return 1;
+ }
+ return 0;
+}
+
+__host__ static int cuda_stream_release(int gpu_num, int cuda_stream_handle)
+/** For GPU#gpu_num, releases a CUDA stream handle <cuda_stream_handle>.
+Non-zero return status means an error. **/
+{
+ if(gpu_num >= 0 && gpu_num < MAX_GPUS_PER_NODE){
+  if(gpu_up[gpu_num] >= GPU_MINE){
+   if(cuda_stream_handle >= 0 && cuda_stream_handle < MAX_CUDA_TASKS){
+    if(CUDAStreamFFE[gpu_num] < 0 || CUDAStreamFFE[gpu_num] > MAX_CUDA_TASKS) return 5; //corrupted
+    if(CUDAStreamFFE[gpu_num] < MAX_CUDA_TASKS){
+     CUDAStreamFreeHandle[gpu_num][CUDAStreamFFE[gpu_num]++]=cuda_stream_handle;
+    }else{
+     return 4; //an attempt to release a non-existing handle
+    }
+   }else{
+    return 3;
+   }
+  }else{
+   return 2;
+  }
+ }else{
+  return 1;
+ }
+ return 0;
+}
+
+__host__ static int cuda_event_get(int gpu_num, int * cuda_event_handle)
+/** For GPU#gpu_num, returns a usable CUDA event handle (<cuda_event_handle>).
+Non-zero return status means an error, except a return status TRY_LATER means
+no free resources are currently available (not an error). **/
+{
+ *cuda_event_handle=-1;
+ if(gpu_num >= 0 && gpu_num < MAX_GPUS_PER_NODE){
+  if(gpu_up[gpu_num] >= GPU_MINE){
+   if(CUDAEventFFE[gpu_num] > 0){ //number of free handles left on GPU#gpu_num
+    CUDAEventFFE[gpu_num]--;
+    *cuda_event_handle=CUDAEventFreeHandle[gpu_num][CUDAEventFFE[gpu_num]];
+    if(*cuda_event_handle < 0 || *cuda_event_handle >= MAX_CUDA_EVENTS){
+     *cuda_event_handle=-1; return 3; //invalid handle: corruption
+    }
+   }else{
+    return TRY_LATER; //all handles are currently busy
+   }
+  }else{
+   return 2;
+  }
+ }else{
+  return 1;
+ }
+ return 0;
+}
+
+__host__ static int cuda_event_release(int gpu_num, int cuda_event_handle)
+/** For GPU#gpu_num, releases a CUDA event handle <cuda_event_handle>.
+Non-zero return status means an error. **/
+{
+ if(gpu_num >= 0 && gpu_num < MAX_GPUS_PER_NODE){
+  if(gpu_up[gpu_num] >= GPU_MINE){
+   if(cuda_event_handle >= 0 && cuda_event_handle < MAX_CUDA_EVENTS){
+    if(CUDAEventFFE[gpu_num] < 0 || CUDAEventFFE[gpu_num] > MAX_CUDA_EVENTS) return 5; //corrupted
+    if(CUDAEventFFE[gpu_num] < MAX_CUDA_EVENTS){
+     CUDAEventFreeHandle[gpu_num][CUDAEventFFE[gpu_num]++]=cuda_event_handle;
+    }else{
+     return 4; //an attempt to release a non-existing handle
+    }
+   }else{
+    return 3;
+   }
+  }else{
+   return 2;
+  }
+ }else{
+  return 1;
+ }
+ return 0;
+}
+
 __host__ static void limit_cuda_blocks2d(int max_blocks, int *bx, int *by)
 {
  double rdc = (double)max_blocks/((double)((*bx)*(*by)));
@@ -774,7 +889,7 @@ Returned positive value is the number of initialized GPUs; negative means an err
 Each enabled GPU from the range [gpu_beg:gpu_end] will obtain its own cublasHandle.
 The first enabled GPU will be left active at the end. **/
 {
- int i,n,errc;
+ int i,j,n,errc;
  cudaError_t err;
 #ifndef NO_BLAS
  cublasStatus_t err_cublas;
@@ -787,8 +902,10 @@ The first enabled GPU will be left active at the end. **/
    err=cudaSetDevice(i);
    if(err == cudaSuccess){
     gpu_up[i]=GPU_MINE; err=cudaGetDeviceProperties(&(gpu_prop[i]),i); if(err != cudaSuccess) gpu_up[i]=NOPE;
+//SHMEM width:
     errc=gpu_set_shmem_width(GPU_SHMEM_WIDTH);
     if(errc != 0 && VERBOSE) printf("#ERROR(tensor_algebra_gpu_nvidia:init_gpus): Unable to set GPU SHMEM width %d: Error %d \n",GPU_SHMEM_WIDTH,errc);
+//cuBLAS.v2 context:
 #ifndef NO_BLAS
     if(gpu_up[i] > NOPE){
      err_cublas=cublasCreate(&(cublas_handle[i]));
@@ -799,6 +916,20 @@ The first enabled GPU will be left active at the end. **/
      }
     }
 #endif
+//CUDA stream bank:
+    if(gpu_up[i] > NOPE){
+     for(j=0;j<MAX_CUDA_TASKS;j++) CUDAStreamFreeHandle[i][j]=j; CUDAStreamFFE[i]=MAX_CUDA_TASKS;
+     for(j=0;j<MAX_CUDA_TASKS;j++){
+      err=cudaStreamCreate(&(CUDAStreamBank[i][j])); if(err != cudaSuccess){gpu_up[i]=NOPE; break;};
+     }
+    }
+//CUDA event bank:
+    if(gpu_up[i] > NOPE){
+     for(j=0;j<MAX_CUDA_EVENTS;j++) CUDAEventFreeHandle[i][j]=j; CUDAEventFFE[i]=MAX_CUDA_EVENTS;
+     for(j=0;j<MAX_CUDA_EVENTS;j++){
+      err=cudaEventCreate(&(CUDAEventBank[i][j])); if(err != cudaSuccess){gpu_up[i]=NOPE; break;};
+     }
+    }
     if(gpu_up[i] > NOPE) n++;
    }
   }
@@ -810,12 +941,12 @@ __host__ int free_gpus(int gpu_beg, int gpu_end)
 /** Destroy all GPU/CUBLAS contexts on all GPU devices belonging to the MPI process.
 A positive value returned is the number of failed GPUs; a negative one is an error. **/
 {
- int i,n;
+ int i,j,n,failure;
  cudaError_t err;
 #ifndef NO_BLAS
  cublasStatus_t err_cublas;
 #endif
- n=0;
+ failure=0; n=0;
  if(gpu_beg >= 0 && gpu_end >= gpu_beg){
   err=cudaGetDeviceCount(&i); if(err != cudaSuccess) return -1;
   if(gpu_end >= MAX_GPUS_PER_NODE || gpu_end >= i) return -2;
@@ -826,12 +957,23 @@ A positive value returned is the number of failed GPUs; a negative one is an err
 #ifndef NO_BLAS
      if(gpu_up[i] >= GPU_MINE_CUBLAS){err_cublas=cublasDestroy(cublas_handle[i]); if(err_cublas == CUBLAS_STATUS_SUCCESS) gpu_up[i]=GPU_MINE;}
 #endif
+//CUDA stream bank:
+     if(gpu_up[i] > NOPE){
+      for(j=0;j<MAX_CUDA_TASKS;j++) CUDAStreamFreeHandle[i][j]=j; CUDAStreamFFE[i]=MAX_CUDA_TASKS;
+      for(j=0;j<MAX_CUDA_TASKS;j++){err=cudaStreamDestroy(CUDAStreamBank[i][j]); if(err != cudaSuccess) failure++;}
+     }
+//CUDA event bank:
+     if(gpu_up[i] > NOPE){
+      for(j=0;j<MAX_CUDA_EVENTS;j++) CUDAEventFreeHandle[i][j]=j; CUDAEventFFE[i]=MAX_CUDA_EVENTS;
+      for(j=0;j<MAX_CUDA_EVENTS;j++){err=cudaEventDestroy(CUDAEventBank[i][j]); if(err != cudaSuccess) failure++;}
+     }
      n--; err=cudaDeviceReset();
     }
     gpu_up[i]=NOPE; //GPU is taken out of use regardless of its status!
    }
   }
  }
+ if(failure) printf("#WARNING(tensor_algebra_gpu_nvidia:free_gpus): Resource deallocation was not fully successful!");
  return n;
 }
 
