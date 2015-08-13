@@ -1,6 +1,6 @@
 /** Parameters, derived types, and function prototypes used
     in tensor_algebra_gpu_nvidia.cu, c_proc_bufs.cu (NV-TAL).
-REVISION: 2015/07/31
+REVISION: 2015/08/13
 Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
 Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
 
@@ -125,10 +125,25 @@ NOTES:
 //ALIASES (keep consistent with tensor_algebra.F90):
 #define NOPE 0
 #define YEP 1
+#define GPU_OFF 0
 #define GPU_MINE 1
 #define GPU_MINE_CUBLAS 2
 #define NO_COPY_BACK 0
 #define COPY_BACK 1
+#define COPY_FFF 0
+#define COPY_FFK 1
+#define COPY_FKF 2
+#define COPY_FKK 3
+#define COPY_KFF 4
+#define COPY_KFK 5
+#define COPY_KKF 6
+#define COPY_KKK 7
+#define COPY_FF 0
+#define COPY_FK 1
+#define COPY_KF 2
+#define COPY_KK 3
+#define COPY_F 0
+#define COPY_K 1
 #define EVENTS_OFF 0
 #define EVENTS_ON 1
 #define BLAS_ON 0
@@ -136,13 +151,14 @@ NOTES:
 #define EFF_TRN_OFF 0
 #define EFF_TRN_ON 1
 #define TRY_LATER 918273645
+#define DEVICE_UNSUITABLE 546372819
 
 //MACRO FUNCTIONS:
 #define MIN(a,b) (((a)<(b))?(a):(b))
 #define MAX(a,b) (((a)>(b))?(a):(b))
 
 //DERIVED TYPES:
-// Tensor block:
+// Tensor block (C/C++):
 typedef struct{
  int device_id;        //device on which the tensor block already resides (+) or will reside (-) (device_id=0 means Host)
  int data_kind;        //tensor element size in bytes: float (4), double (8), or double complex (16)
@@ -157,6 +173,15 @@ typedef struct{
  int buf_entry_gpu;    //GPU argument buffer entry pointed to by *elems_d: GPU global memory
  int const_args_entry; //entry number in const_args[]: GPU constant memory (dims[] and prmn[] arrays are stored there)
 } tensBlck_t;
+
+// Interoperable tensor block:
+typedef struct{
+ void * tensF; //pointer to Fortran <tensor_block_t>
+ void * tensC; //pointer to C tensBlck_t
+} talsh_tens_t;
+
+// Interface for a user-defined tensor block initialization routine:
+typedef void (*talsh_tens_init_i)(void * tens_ptr, int data_type, int tens_rank, int tens_dims[], int * ierr);
 
 #ifndef NO_GPU
 // CUDA task (returned by non-blocking CUDA functions):
@@ -173,6 +198,18 @@ typedef struct{
  int scr_entry[MAX_SCR_ENTRY_COUNT]; //additional GPU argument-buffer entries allocated by the task
 } cudaTask_t;
 #endif
+
+// Device statistics:
+typedef struct{
+ double time_active;                     //time in seconds device is active
+ unsigned long long int tasks_submitted; //number of TAL-SH tasks submitted to the device
+ unsigned long long int tasks_completed; //number of TAL-SH tasks completed by the device
+ unsigned long long int tasks_deferred;  //number of TAL-SH tasks deferred for later (TRY_LATER)
+ unsigned long long int tasks_failed;    //number of TAL-SH tasks failed (except TRY_LATER)
+ unsigned long long int flops;           //total number of Flops processed (successfully completed)
+ unsigned long long int traffic_in;      //total number of bytes transferred in
+ unsigned long long int traffic_out;     //total number of bytes transferred out
+} talsh_stats_t;
 
 //FUNCTION PROTOTYPES:
 #ifdef __cplusplus

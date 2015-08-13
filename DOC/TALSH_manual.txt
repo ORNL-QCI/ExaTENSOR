@@ -1,0 +1,247 @@
+*** TAL-SH: Tensor Algebra Library for Shared Memory Computers ***
+AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
+Copyright (C) 2015 Dmitry I. Lyakh
+Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
+LICENSE: GPL v.2
+--------------------------------------------------------------
+
+0. Preambule
+
+The TAL-SH library provides API for performing basic tensor algebra
+operations on multicore CPU, NVidia GPU, Intel Xeon Phi, and other
+accelerators (in future). Basic tensor algebra operations include
+tensor contraction, tensor product, tensor addition, tensor transpose,
+multiplication by a scalar, etc., which operate on locally stored tensors.
+The execution of tensor operations on accelerators is asynchronous with
+respect to the CPU Host, if the underlying node is heterogeneous. Both
+Fortran and C API interfaces are provided (Fortran 2003 and later).
+
+
+1. Nomenclature
+
+Tensor: A multi-dimensional array of real or complex numbers. Real
+numbers can be of either single (R4) or double precision (R8).
+Complex numbers always assume double precision (C8).
+
+Tensor Block (TB): A slice of a tensor that is stored as a whole
+locally on a node. In general, a tensor block is defined by its
+(a) Data type: Real (R4, R8) or complex (C8);
+(b) Signature: A unique identifier of this specific tensor block;
+(c) Shape: Tensor block rank, dimension extents, storage layout;
+(d) Tensor elements: Values of the elements of the tensor block.
+
+Host Argument Buffer (HAB): An optional buffer can be created in
+pinned Host memory that can be later used for storing tensor blocks.
+Preallocation of this buffer is recommended in order to avoid
+memory fragmentation issues and minimize the overhead associated
+with Host memory pinning.
+
+
+2. Device control API
+
+Supported device kinds:
+ DEV_HOST: Multicore CPU: Device range [0];
+ DEV_NVIDIA_GPU: NVidia GPU: Device range [0..MAX_GPUS_PER_NODE-1];
+ DEV_INTEL_MIC: Intel Xeon Phi: Device range [0..MAX_MICS_PER_NODE-1];
+ DEV_AMD_GPU: AMD APU (future): Device range [0..MAX_AMDS_PER_NODE-1];
+
+Flat device numeration:
+ Each device of each kind also has a flat device id in the range [0..DEV_MAX-1].
+ 0 is always reserved for the Host (multicore CPU). Some functions, which convert
+ between the flat and device kind specific numerations, may also return DEV_MAX
+ with the meaning of "out of range" (error code).
+
+API: Initialize TAL-SH library:
+
+ Fortran 2003:
+  function talsh_init(host_buf_size,host_arg_max,gpu_list,mic_list) result(ierr):
+   integer(C_INT):: ierr                                      !out: error code (0:success)
+   integer(C_SIZE_T), intent(inout), optional:: host_buf_size !inout: desired size in bytes of the Host Argument Buffer.
+                                                              !       It will be replaced by the actual size.
+   integer(C_INT), intent(out), optional:: host_arg_max       !out: max number of arguments the HAB can contain
+   integer(C_INT), intent(in), optional:: gpu_list(1:)        !in: list of NVidia GPU's to use
+   integer(C_INT), intent(in), optional:: mic_list(1:)        !in: list of Intel Xeon Phi's to use
+
+ C/C++:
+  int talsh_Init(          //out: error code (0:success)
+   size_t * host_buf_size, //inout: desired size in bytes of the Host Argument Buffer.
+                           //       It will be replaced by the actual size.
+   int * host_arg_max,     //out: max number of arguments the HAB can contain
+   int ngpus,              //in: number of NVidia GPUs to use
+   int gpu_list[],         //in: list of NVidia GPUs to use
+   int nmics,              //in: number of Intel Xeon Phi's to use
+   int mic_list[]          //in: list of Intel Xeon Phi's to use
+  )
+
+API: Shutdown TAL-SH library:
+
+ Fortran 2003:
+  function talsh_shutdown() result(ierr):
+   integer(C_INT):: ierr !out: error code (0:success)
+
+ C/C++:
+  int talsh_Shutdown( //out: error code (0:success)
+  )
+
+API: Get a flat device id:
+
+ Fortran 2003:
+  function encode_device_id(dev_kind,dev_num) result(dev_id):
+   integer(C_INT):: dev_id                      !out: flat device id (Success: [0..DEV_MAX-1])
+   integer(C_INT), intent(in), value:: dev_kind !in: device kind (see above)
+   integer(C_INT), intent(in), value:: dev_num  !in: device number within its kind [0..max]
+
+ C/C++:
+  int encode_device_id( //out: flat device id (Success: [0..DEV_MAX-1])
+   int dev_kind,        //in: device kind (see above)
+   int dev_num          //in: device number within its kind
+  )
+
+API: Convert a flat device id into the kind specific device id:
+
+ Fortran 2003:
+  function decode_device_id(dev_id,dev_kind) result(dev_num)
+   integer(C_INT):: dev_num                   !out: kind specific device number [0..max]
+   integer(C_INT), intent(in), value:: dev_id !in: flat device id
+   integer(C_INT), intent(out):: dev_kind     !out: device kind
+
+ C/C++:
+  int decode_device_id( //out: kind specific device number [0..max]
+   int dev_id,          //in: flat device id
+   int * dev_kind       //out: device kind
+  )
+
+API: Query the state of a device:
+
+ Fortran 2003:
+  function talsh_device_state(dev_num,dev_kind) result(dev_state)
+   integer(C_INT):: dev_state                             !out: device state (Success:[DEV_OFF,DEV_ON,DEV_ON_BLAS])
+   integer(C_INT), intent(in), value:: dev_num            !in: either a flat or kind specific (when <dev_kind> is present) device id
+   integer(C_INT), intent(in), value, optional:: dev_kind !in: device kind (note that it changes the meaning of the <dev_num> argument)
+
+ C/C++:
+  int talsh_Device_State( //out: device state (Success:[DEV_OFF,DEV_ON,DEV_ON_BLAS])
+   int dev_num,           //in: either a flat or kind specific (when <dev_kind> is present) device id
+   int dev_kind=-1        //in: device kind (note that it changes the meaning of the <dev_num> argument)
+  )
+
+ Description:
+  DEV_OFF: Device is off (cannot be used by TAL-SH);
+  DEV_ON: Device is on (can be used by TAL-SH);
+  DEV_ON_BLAS: Device is on and can use vendor provided BLAS.
+
+API: Find the least busy device:
+
+ Fortran 2003:
+  function talsh_device_busy_least(dev_kind) result(dev_id)
+   integer(C_INT):: dev_id                                !out: either a flat or kind specific device id
+   integer(C_INT), intent(in), value, optional:: dev_kind !in: device kind (if absent, <dev_id> will return a flat device id)
+
+ C/C++:
+  int talsh_Device_Busy_Least( //out: either a flat or kind specific device id
+   int dev_kind=-1             //in: device kind (if absent, a flat device id will be returned)
+  )
+
+API: Print TAL-SH statistics:
+
+ Fortran 2003:
+  function talsh_stats(dev_id,dev_kind) result(ierr)
+   integer(C_INT):: ierr                           !out: error code (0:success)
+   integer(C_INT), intent(in), optional:: dev_id   !in: device id (either flat or kind specific device id, see below)
+   integer(C_INT), intent(in), optional:: dev_kind !in: device kind (if present, <dev_id> will be interpreted as kind specific)
+
+ C/C++:
+  int talsh_Stats( //out: error code (0:success)
+   int dev_id=-1,  //in: device id (either flat or kind specific device id, see below)
+   int dev_kind=-1 //in: device kind (if present, <dev_id> will be interpreted as kind specific)
+  )
+
+ Description:
+  If no arguments are passed, the statistics will be shown for all active devices.
+  The statistics includes:
+   (a) Time active (sec);
+   (b) Number of TAL-SH tasks submitted;
+   (c) Number of TAL-SH tasks completed;
+   (d) Number of TAL-SH tasks deferred (TRY_LATER);
+   (e) Number of TAL-SH tasks failed (except TRY_LATER);
+   (f) Number of Flops processed (successful only);
+   (g) Input data transferred (bytes);
+   (h) Output data transferred (bytes);
+
+3. Tensor block constructors
+
+At the user level, a tensor block is represented by an interoperable type <talsh_tens_t>.
+A tensor block either can be constructed from scrath, including memory allocation, or
+an existing tensor block can be registered for the use in TAL-SH. Furthermore, an allocated
+tensor block can be initialized to some constant value or a user-defined initialization method
+can be invoked on it. In all cases TAL-SH does not allocate/deallocate the <talsh_tens_t> object,
+which is a user responsibility! Instead TAL-SH uses an exsiting <talsh_tens_t> handle.
+
+For developers only:
+ Depending on the device, a tensor block is specified via one of the two internal types:
+ <tensor_block_t> (for the use on CPU and MIC) and <tensBlck_t> (for the use on NVidia GPU).
+ Type <tensor_block_t> is natively defined in Fortran 2003 and is emulated in C (opaque handle).
+ Type <tensBlck_t> is natively defined in C and is emulated in Fortran (opaque handle).
+
+API: Construct a tensor block:
+
+ Fortran 2003:
+  function talsh_tensor_construct(tens_block,data_type,tens_shape,ext_ptr,use_hab,dev_target,init_val,init_method) result(ierr)
+   integer(C_INT):: ierr !out: error code (0: success, TRY_LATER: currently no enough memory available)
+   type(talsh_tens_t), intent(inout):: tens_block                      !out: constructed tensor block
+   integer(C_INT), intent(in):: data_type                              !in: data type: {R4,R8,C8}
+   {integer(C_INT),dimension(:)|character(*)|type(tensor_shape_t)}, intent(in):: tens_shape !in: tensor shape (either digital or symbolic)
+   type(C_PTR), intent(in), optional:: ext_ptr                         !in: pointer to an externally provided memory for tensor elements
+   logical, intent(in), optional:: use_hab                             !in: if TRUE, memory allocation will be done via HAB (defaults to FALSE)
+   complex(8), intent(in), optional:: init_val                         !in: initialization value (will be typecast to <data_type>, defaults to 0)
+   procedure(talsh_tens_init_i), optional:: init_method                !in: user-defined initialization method
+
+ C/C++:
+  int talsh_Tensor_Construct(  //out: error code (0: success, TRY_LATER: currently no enough memory available)
+   talsh_tens_t * tens_block,  //out: constructed tensor block
+   int data_type,              //in: data type: {R4,R8,C8}
+   int tens_rank,              //in: tensor block rank
+   int tens_dims[],            //in: tensor block dimension extents
+   void * ext_ptr = NULL,      //in: pointer to an externally provided memory for tensor elements
+   int use_hab = 0,            //in: if TRUE, memory allocation will be done via HAB (defaults to FALSE)
+   double init_val_real = 0.0  //in: initialization value (real part), defaults to 0
+   double init_val_imag = 0.0  //in: initialization value (imaginary part), defaults to 0
+   talsh_tens_init_i = NULL    //in: user-defined initialization method (function pointer)
+  )
+
+ Description:
+  A tensor block shape can be specified via an integer array whose length
+  will define the tensor rank and each element will define the extent of the
+  corresponding dimension of the tensor block. Alternatively, in Fortran,
+  the tensor block shape can be specified symbolically as a string of characters,
+  following the format:
+  '(E1,E2,...,En)',
+  where
+   n is the tensor block rank (the number of dimensions),
+   Ex is the extent of dimension x.
+  By default, the 1st dimension is the most minor one while the last is the most senior (Fortran-like).
+  An optional user-defined initialization method must have the following interface:
+  Fortran 2003:
+   abstract interface
+    subroutine talsh_tens_init_i(tens_ptr,data_type,tens_rank,tens_dims,ierr)
+     type(C_PTR), value:: tens_ptr                !in: pointer to the tensor elements storage
+     integer(C_INT), value:: data_type            !in: data type: {R4,R8,C8}
+     integer(C_INT), value:: tens_rank            !in: tensor block rank
+     integer(C_INT), intent(in):: tens_dims(1:*)  !in: tensor block dimension extents
+     integer(C_INT), intent(out):: ierr           !out: error code (0:success)
+    end subroutine talsh_tens_init_i
+   end interface
+  C/C++:
+   typedef void (*talsh_tens_init_i)(void * tens_ptr, int data_type, int tens_rank, int tens_dims[], int * ierr);
+
+API: Destroy a tensor block:
+
+ Fortran 2003:
+  function talsh_tensor_destroy(tens_block) result(ierr)
+   integer(C_INT):: ierr                          !out: error code (0:success)
+   type(talsh_tens_t), intent(inout):: tens_block !inout: destroyed tensor block (but not <tens_block> itself)
+
+ C/C++:
+  int talsh_Tensor_Destroy(  //out: error code (0:success)
+   talsh_tens_t * tens_block //inout: destroyed tensor block (but not <tens_block> itself)
+  )

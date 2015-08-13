@@ -43,20 +43,39 @@
 #endif
 
 !ALIASES (keep consistent with tensor_algebra.h):
-        integer(C_INT), parameter, public:: NOPE=0                 !"NO" answer
-        integer(C_INT), parameter, public:: YEP=1                  !"YES" answer
-        integer(C_INT), parameter, public:: NO_COPY_BACK=0         !keeps the tensor-result on Accelerator without updating Host
-        integer(C_INT), parameter, public:: COPY_BACK=1            !tensor-result will be copied back from Accelerator to Host (default)
-        integer(C_INT), parameter, public:: BLAS_ON=0              !enables BLAS
-        integer(C_INT), parameter, public:: BLAS_OFF=1             !disables BLAS
-        integer(C_INT), parameter, public:: EFF_TRN_OFF=0          !disables efficient tensor transpose algorithm
-        integer(C_INT), parameter, public:: EFF_TRN_ON=1           !enables efficient tensor transpose algorithm
-        integer(C_INT), parameter, public:: EVENTS_OFF=0           !disables CUDA event recording
-        integer(C_INT), parameter, public:: EVENTS_ON=1            !enables CUDA event recording (default)
-        integer(C_INT), parameter, public:: TRY_LATER=918273645    !try the action later (resources are currently busy): KEEP THIS UNIQUE!
+        integer(C_INT), parameter, public:: NOPE=0                      !"NO" answer
+        integer(C_INT), parameter, public:: YEP=1                       !"YES" answer
+        integer(C_INT), parameter, public:: NO_COPY_BACK=0              !keeps the tensor-result on Accelerator without updating Host
+        integer(C_INT), parameter, public:: COPY_BACK=1                 !tensor-result will be copied back from Accelerator to Host (default)
+        integer(C_INT), parameter, public:: COPY_FFF=0                  !Free Destination, Free Left, Free right arguments (on device)
+        integer(C_INT), parameter, public:: COPY_FFK=1                  !Free Destination, Free Left, Keep right arguments (on device)
+        integer(C_INT), parameter, public:: COPY_FKF=2                  !Free Destination, Keep Left, Free right arguments (on device)
+        integer(C_INT), parameter, public:: COPY_FKK=3                  !Free Destination, Keep Left, Keep right arguments (on device)
+        integer(C_INT), parameter, public:: COPY_KFF=4                  !Keep Destination, Free Left, Free right arguments (on device)
+        integer(C_INT), parameter, public:: COPY_KFK=5                  !Keep Destination, Free Left, Keep right arguments (on device)
+        integer(C_INT), parameter, public:: COPY_KKF=6                  !Keep Destination, Keep Left, Free right arguments (on device)
+        integer(C_INT), parameter, public:: COPY_KKK=7                  !Keep Destination, Keep Left, Keep right arguments (on device)
+        integer(C_INT), parameter, public:: COPY_FF=COPY_FFK
+        integer(C_INT), parameter, public:: COPY_FK=COPY_FKK
+        integer(C_INT), parameter, public:: COPY_KF=COPY_KFK
+        integer(C_INT), parameter, public:: COPY_KK=COPY_KKK
+        integer(C_INT), parameter, public:: COPY_F=COPY_FKK
+        integer(C_INT), parameter, public:: COPY_K=COPY_KKK
+        integer(C_INT), parameter, public:: BLAS_ON=0                   !enables BLAS
+        integer(C_INT), parameter, public:: BLAS_OFF=1                  !disables BLAS
+        integer(C_INT), parameter, public:: EFF_TRN_OFF=0               !disables efficient tensor transpose algorithm
+        integer(C_INT), parameter, public:: EFF_TRN_ON=1                !enables efficient tensor transpose algorithm
+        integer(C_INT), parameter, public:: EVENTS_OFF=0                !disables CUDA event recording
+        integer(C_INT), parameter, public:: EVENTS_ON=1                 !enables CUDA event recording (default)
+        integer(C_INT), parameter, public:: TRY_LATER=918273645         !try the action later (resources are currently busy): KEEP THIS UNIQUE!
+        integer(C_INT), parameter, public:: DEVICE_UNSUITABLE=546372819 !device is unsuitable for the given task: KEEP THIS UNIQUE!
 #ifndef NO_PHI
-!DIR$ ATTRIBUTES OFFLOAD:mic:: NOPE,YEP,NO_COPY_BACK,COPY_BACK,BLAS_ON,BLAS_OFF,EFF_TRN_OFF,EFF_TRN_ON,TRY_LATER
-!DIR$ ATTRIBUTES ALIGN:128:: NOPE,YEP,NO_COPY_BACK,COPY_BACK,BLAS_ON,BLAS_OFF,EFF_TRN_OFF,EFF_TRN_ON,TRY_LATER
+!DIR$ ATTRIBUTES OFFLOAD:mic:: NO_COPY_BACK,COPY_BACK,COPY_FFF,COPY_FFK,COPY_FKF,COPY_FKK,COPY_KFF,COPY_KFK,COPY_KKF,COPY_KKK
+!DIR$ ATTRIBUTES OFFLOAD:mic:: COPY_FF,COPY_FK,COPY_KF,COPY_KK,COPY_F,COPY_K
+!DIR$ ATTRIBUTES OFFLOAD:mic:: NOPE,YEP,BLAS_ON,BLAS_OFF,EFF_TRN_OFF,EFF_TRN_ON,TRY_LATER,DEVICE_UNSUITABLE
+!DIR$ ATTRIBUTES ALIGN:128:: NO_COPY_BACK,COPY_BACK,COPY_FFF,COPY_FFK,COPY_FKF,COPY_FKK,COPY_KFF,COPY_KFK,COPY_KKF,COPY_KKK
+!DIR$ ATTRIBUTES ALIGN:128:: COPY_FF,COPY_FK,COPY_KF,COPY_KK,COPY_F,COPY_K
+!DIR$ ATTRIBUTES ALIGN:128:: NOPE,YEP,BLAS_ON,BLAS_OFF,EFF_TRN_OFF,EFF_TRN_ON,TRY_LATER,DEVICE_UNSUITABLE
 #endif
 
 !CUDA TASK STATUS (keep consistent with tensor_algebra.h):
@@ -84,4 +103,18 @@
 !DIR$ ATTRIBUTES ALIGN:128:: NOT_ALLOCATED,SCALAR_TENSOR,DIMENSION_LED,BRICKED_DENSE,BRICKED_ORDERED,SPARSE_LIST,COMPRESSED
 !DIR$ ATTRIBUTES ALIGN:128:: FORTRAN_LIKE,C_LIKE
 #endif
+
+!EXTERNAL INTERFACES:
+ !User-defined tensor block initialization:
+        abstract interface
+         subroutine talsh_tens_init_i(tens_ptr,data_type,tens_rank,tens_dims,ierr)
+          import
+          type(C_PTR), value:: tens_ptr                !in: pointer to the tensor elements storage
+          integer(C_INT), value:: data_type            !in: data type: {R4,R8,C8}
+          integer(C_INT), value:: tens_rank            !in: tensor block rank
+          integer(C_INT), intent(in):: tens_dims(1:*)  !in: tensor block dimension extents
+          integer(C_INT), intent(out):: ierr           !out: error code (0:success)
+         end subroutine talsh_tens_init_i
+        end interface
+
         end module tensor_algebra
