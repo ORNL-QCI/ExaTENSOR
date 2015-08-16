@@ -1,7 +1,7 @@
 /** ExaTensor::TAL-SH Header:
     Parameters, derived types, and function prototypes used
     in tensor_algebra_gpu_nvidia.cu, c_proc_bufs.cu (NV-TAL).
-REVISION: 2015/08/15
+REVISION: 2015/08/16
 Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
 Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
 
@@ -126,6 +126,8 @@ NOTES:
 #define CUDA_TASK_COMPLETED 5
 
 //ALIASES (keep consistent with tensor_algebra.F90):
+#define TALSH_SUCCESS 0
+#define TALSH_FAILURE -666
 #define NOPE 0
 #define YEP 1
 #define DEV_OFF 0
