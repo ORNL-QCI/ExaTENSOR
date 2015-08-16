@@ -1,6 +1,7 @@
-/** Parameters, derived types, and function prototypes used
+/** ExaTensor::TAL-SH Header:
+    Parameters, derived types, and function prototypes used
     in tensor_algebra_gpu_nvidia.cu, c_proc_bufs.cu (NV-TAL).
-REVISION: 2015/08/13
+REVISION: 2015/08/15
 Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
 Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
 
@@ -35,6 +36,7 @@ NOTES:
     to a specific Intel Xeon Phi: mic_id=abs(DEVICE_ID)-1-MAX_GPUS_PER_NODE, OR
     to a specific AMD GPU: amd_id=abs(DEVICE_ID)-1-MAX_GPUS_PER_NODE-MAX_MICS_PER_NODE, etc.
     Device numeration:
+     Null: {-1};
      Host: {0};
      NVidia GPU: {1..MAX_GPUS_PER_NODE};
      Intel Xeon Phi: {MAX_GPUS_PER_NODE+1:MAX_GPUS_PER_NODE+MAX_MICS_PER_NODE};
@@ -43,7 +45,7 @@ NOTES:
  # MAX_SCR_ENTRY_COUNT regulates the maximal amount of additional device argument-buffer entries
     allocated per tensor operation (it is 3 for tensor contractions or other binary tensor operations).
  # MAX_GPU_ARGS regulates the maximal allowed number of argument-buffer entries on a GPU.
- # tensBlck_t is a hardware-specific specification of a tensor block argument used with NVidia GPU.
+ # tensBlck_t is a hardware-specific specification of a tensor-block argument used with NVidia GPU.
    In tensBlck_t, the tensor shape and tensor body must always point to the pinned Host memory
    allocated either in the HAB or explicitly via <host_mem_alloc_pin>, unless the Host copy of the
    tensor block had been released (freed).
@@ -73,13 +75,14 @@ NOTES:
 #define MAX_GPUS_PER_NODE 8        //max allowed number of NVidia GPUs on a node
 #define MAX_MICS_PER_NODE 8        //max allowed number of Intel MICs on a node
 #define MAX_AMDS_PER_NODE 8        //max allowed number of AMD GPUs on a node
-#define DEV_HOST 0                 //(multi-)CPU Host
-#define DEV_NVIDIA_GPU 1           //NVidia GPU
-#define DEV_INTEL_MIC 2            //Intel Xeon Phi
-#define DEV_AMD_GPU 3              //AMD GPU
+#define DEV_NULL -1                //abstract null device
+#define DEV_HOST 0                 //multicore CPU Host (includes any self-hosted system)
+#define DEV_NVIDIA_GPU 1           //NVidia GPU (as an accelerator)
+#define DEV_INTEL_MIC 2            //Intel Xeon Phi (as an accelerator)
+#define DEV_AMD_GPU 3              //AMD GPU (as an accelerator)
 #define DEV_MAX 1+MAX_GPUS_PER_NODE+MAX_MICS_PER_NODE+MAX_AMDS_PER_NODE
 
-//KERNEL PARAMETERS:
+//KERNEL PARAMETERS for NVidia GPU:
 #define GPU_CACHE_LINE_LEN 128     //cache line length in bytes
 #define GPU_SHMEM_WIDTH 8          //default width of the GPU shared memory banks (4 or 8 bytes)
 #define MAX_CUDA_BLOCKS 1024       //max number of CUDA thread blocks per kernel
@@ -125,6 +128,9 @@ NOTES:
 //ALIASES (keep consistent with tensor_algebra.F90):
 #define NOPE 0
 #define YEP 1
+#define DEV_OFF 0
+#define DEV_ON 1
+#define DEV_ON_BLAS 2
 #define GPU_OFF 0
 #define GPU_MINE 1
 #define GPU_MINE_CUBLAS 2
@@ -158,6 +164,14 @@ NOTES:
 #define MAX(a,b) (((a)>(b))?(a):(b))
 
 //DERIVED TYPES:
+// Tensor shape:
+typedef struct{
+ int num_dim;   //tensor rank (number of dimensions)
+ int * dims;    //tensor dimension extents
+ int * divs;    //tensor dimension dividers
+ int * grps;    //tensor dimension groups
+} talsh_tens_shape_t;
+
 // Tensor block (C/C++):
 typedef struct{
  int device_id;        //device on which the tensor block already resides (+) or will reside (-) (device_id=0 means Host)
@@ -198,6 +212,12 @@ typedef struct{
  int scr_entry[MAX_SCR_ENTRY_COUNT]; //additional GPU argument-buffer entries allocated by the task
 } cudaTask_t;
 #endif
+
+// Interoperable TAL-SH task:
+typedef struct{
+ int dev_kind;  //device kind
+ void * task_p; //pointer to the corresponding task object
+} talsh_task_t;
 
 // Device statistics:
 typedef struct{

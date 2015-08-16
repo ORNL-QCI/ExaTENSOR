@@ -1,4 +1,4 @@
-!ExaTensor: Basic parameters and definitions:
+!ExaTensor::TAL-SH: Basic parameters and types:
         module tensor_algebra
         use, intrinsic:: ISO_C_BINDING
         implicit none
@@ -22,11 +22,12 @@
 !DEVICE KINDS (keep consistent with tensor_algebra.h):
         integer(C_INT), parameter, public:: MAX_GPUS_PER_NODE=8   !max number of NVidia GPUs on a node
         integer(C_INT), parameter, public:: MAX_MICS_PER_NODE=8   !max number of Intel MICs on a node
-        integer(C_INT), parameter, public:: MAX_AMDS_PER_NODE=8   !max number of AMD GPUs on a node
-        integer(C_INT), parameter, public:: DEV_HOST=0
-        integer(C_INT), parameter, public:: DEV_NVIDIA_GPU=1
-        integer(C_INT), parameter, public:: DEV_INTEL_MIC=2
-        integer(C_INT), parameter, public:: DEV_AMD_GPU=3
+        integer(C_INT), parameter, public:: MAX_AMDS_PER_NODE=8   !max number of AMD APUs on a node
+        integer(C_INT), parameter, public:: DEV_NULL=-1           !abstract null device
+        integer(C_INT), parameter, public:: DEV_HOST=0            !multicore CPU Host (includes all self-hosted systems)
+        integer(C_INT), parameter, public:: DEV_NVIDIA_GPU=1      !NVidia GPU
+        integer(C_INT), parameter, public:: DEV_INTEL_MIC=2       !Intel Xeon Phi
+        integer(C_INT), parameter, public:: DEV_AMD_GPU=3         !AMD APU
         integer(C_INT), parameter, public:: DEV_MAX=1+MAX_GPUS_PER_NODE+MAX_MICS_PER_NODE+MAX_AMDS_PER_NODE
 
 !TENSOR DATA KINDS (keep consistent with tensor_algebra.h):
@@ -45,6 +46,9 @@
 !ALIASES (keep consistent with tensor_algebra.h):
         integer(C_INT), parameter, public:: NOPE=0                      !"NO" answer
         integer(C_INT), parameter, public:: YEP=1                       !"YES" answer
+        integer(C_INT), parameter, public:: DEV_OFF=0                   !device status "Disabled"
+        integer(C_INT), parameter, public:: DEV_ON=1                    !device status "Enabled"
+        integer(C_INT), parameter, public:: DEV_ON_BLAS=2               !device status "Enabled with vendor provided BLAS"
         integer(C_INT), parameter, public:: NO_COPY_BACK=0              !keeps the tensor-result on Accelerator without updating Host
         integer(C_INT), parameter, public:: COPY_BACK=1                 !tensor-result will be copied back from Accelerator to Host (default)
         integer(C_INT), parameter, public:: COPY_FFF=0                  !Free Destination, Free Left, Free right arguments (on device)
@@ -71,11 +75,11 @@
         integer(C_INT), parameter, public:: DEVICE_UNSUITABLE=546372819 !device is unsuitable for the given task: KEEP THIS UNIQUE!
 #ifndef NO_PHI
 !DIR$ ATTRIBUTES OFFLOAD:mic:: NO_COPY_BACK,COPY_BACK,COPY_FFF,COPY_FFK,COPY_FKF,COPY_FKK,COPY_KFF,COPY_KFK,COPY_KKF,COPY_KKK
-!DIR$ ATTRIBUTES OFFLOAD:mic:: COPY_FF,COPY_FK,COPY_KF,COPY_KK,COPY_F,COPY_K
-!DIR$ ATTRIBUTES OFFLOAD:mic:: NOPE,YEP,BLAS_ON,BLAS_OFF,EFF_TRN_OFF,EFF_TRN_ON,TRY_LATER,DEVICE_UNSUITABLE
+!DIR$ ATTRIBUTES OFFLOAD:mic:: COPY_FF,COPY_FK,COPY_KF,COPY_KK,COPY_F,COPY_K,TRY_LATER,DEVICE_UNSUITABLE
+!DIR$ ATTRIBUTES OFFLOAD:mic:: NOPE,YEP,DEV_OFF,DEV_ON,DEV_ON_BLAS,BLAS_ON,BLAS_OFF,EFF_TRN_OFF,EFF_TRN_ON
 !DIR$ ATTRIBUTES ALIGN:128:: NO_COPY_BACK,COPY_BACK,COPY_FFF,COPY_FFK,COPY_FKF,COPY_FKK,COPY_KFF,COPY_KFK,COPY_KKF,COPY_KKK
-!DIR$ ATTRIBUTES ALIGN:128:: COPY_FF,COPY_FK,COPY_KF,COPY_KK,COPY_F,COPY_K
-!DIR$ ATTRIBUTES ALIGN:128:: NOPE,YEP,BLAS_ON,BLAS_OFF,EFF_TRN_OFF,EFF_TRN_ON,TRY_LATER,DEVICE_UNSUITABLE
+!DIR$ ATTRIBUTES ALIGN:128:: COPY_FF,COPY_FK,COPY_KF,COPY_KK,COPY_F,COPY_K,TRY_LATER,DEVICE_UNSUITABLE
+!DIR$ ATTRIBUTES ALIGN:128:: NOPE,YEP,DEV_OFF,DEV_ON,DEV_ON_BLAS,BLAS_ON,BLAS_OFF,EFF_TRN_OFF,EFF_TRN_ON
 #endif
 
 !CUDA TASK STATUS (keep consistent with tensor_algebra.h):
@@ -87,7 +91,7 @@
         integer(C_INT), parameter, public:: CUDA_TASK_OUTPUT_THERE=4
         integer(C_INT), parameter, public:: CUDA_TASK_COMPLETED=5
 
-!TENSOR BLOCK STORATE LAYOUT:
+!TENSOR BLOCK STORAGE LAYOUT:
         integer(C_INT), parameter, public:: NOT_ALLOCATED=0   !tensor block has not been allocated/initialized
         integer(C_INT), parameter, public:: SCALAR_TENSOR=1   !scalar (rank-0 tensor)
         integer(C_INT), parameter, public:: DIMENSION_LED=2   !dense tensor block (column-major storage by default): no symmetry restrictions
@@ -103,6 +107,18 @@
 !DIR$ ATTRIBUTES ALIGN:128:: NOT_ALLOCATED,SCALAR_TENSOR,DIMENSION_LED,BRICKED_DENSE,BRICKED_ORDERED,SPARSE_LIST,COMPRESSED
 !DIR$ ATTRIBUTES ALIGN:128:: FORTRAN_LIKE,C_LIKE
 #endif
+
+!INTEROPERABLE TYPES:
+ !TAL-SH tensor block:
+        type, bind(C):: talsh_tens_t
+         type(C_PTR):: tensF         !pointer to Fortran <tensor_block_t>
+         type(C_PTR):: tensC         !pointer to C/C++ <tensBlck_t>
+        end type talsh_tens_t
+ !TAL-SH task:
+        type, bind(C):: talsh_task_t
+         integer(C_INT):: dev_kind   !device kind
+         type(C_PTR):: task_p        !pointer to the corresponding task object
+        end type talsh_task_t
 
 !EXTERNAL INTERFACES:
  !User-defined tensor block initialization:
