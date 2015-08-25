@@ -1,7 +1,7 @@
 !PROJECT: Q-FORCE: Massively Parallel Quantum Many-Body Methodology on Heterogeneous HPC systems.
 !BASE: ExaTensor: Massively Parallel Tensor Algebra Virtual Processor for Heterogeneous HPC systems.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2015/07/03
+!REVISION: 2015/08/24
 !COMPILATION:
 ! - Fortran 2003 at least (some 2008 as well).
 ! - MPI 3.0 at least.
@@ -59,8 +59,8 @@
         endif
 #endif
         call MPI_BARRIER(MPI_COMM_WORLD,errc)
-        if(errc.ne.0) then; ierr=3; call quit(ierr,'#ERROR(main): MPI_BARRIER failure (1)!'); endif
         time_begin=MPI_WTIME() !walltime begin
+        if(errc.ne.0) then; ierr=3; call quit(ierr,'#ERROR(main): MPI_BARRIER failure (1)!'); endif
         call MPI_COMM_SIZE(MPI_COMM_WORLD,impis,errc)
         if(errc.ne.0) then; ierr=4; call quit(ierr,'#ERROR(main): MPI_COMM_SIZE failed!'); endif
         call MPI_COMM_RANK(MPI_COMM_WORLD,impir,errc)

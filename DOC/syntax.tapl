@@ -1,0 +1,32 @@
+#Tensor Algebra Programming Language (TAPL) syntax:
+
+entry point: my_tapl_program                         #first scoping unit to execute
+
+scope my_tapl_program
+#Declarations and definitions:
+ basis(real|complex):: basis0=[1:970],basis1=[0:893] #define basis sets
+ range(basis0):: occ=[1:90],virt=[91:970]            #define subranges of basis functions
+ index(occ):: i0,i1,k0,k1                            #assign index labels to the defined subranges
+ index(virt):: a0,a1,c0,c1                           #assign index labels to the defined subranges
+#Begin execution:
+#load T2: tag("My old tensor")              #this will load the full tensor (block-sparse in general)
+ load T2(a0,a1,i0,i1): tag("My old tensor") #this will load only a tensor slice (block-sparse in general)
+#V2(i0,i1,a0,a1)=method("2e Coulomb"): [i0<i1],[a0<a1],sparse("Scheme0") #this will generate the given tensor slice
+ external V2(i0,i1,a0,a1): method("2e Coulomb")                          #this will defer the generator to upon necessity
+ Z2(a0,a1,i0,i1)=V2(i0,k0,a0,c0)*T2(c0,a1,k0,i1): [i0<i1],[a0<a1],sparse("Scheme1") #tensor contraction with restrictions
+ save Z2(a0,a1,i0,i1): tag("My new tensor")               #save a tensor slice
+ save V2: tag("My integrals")                             #save the full tensor
+ destroy V2,T2,Z2(a0,a1,i0,i1)                            #destroy full V2 and T2, and a slice of Z2
+ export Z2(a0,a1,i0,i1): tag("My Z2")                     #this will expose the Z2 slice to other scoping units
+#export Z2(a0,a1,i0,i1): tag("My Z2"): to(DIIS_algorithm) #this will expose the Z2 slice to DIIS_algorithm only
+ invoke DIIS_algorithm                                    #invoke another scoping unit
+ import C0(): tag("Scalar"): from(DIIS_algorithm)         #import the result from DIIS_algorithm
+end scope my_tapl_program
+
+
+scope DIIS_algrithm
+ import S2(a0,a1,i0,i1): tag("My S2")            #this will import a tensor exported by another scoping unit, the indices will become defined automatically
+ index:: a2=a1,i2=i1                             #indices a2 and i2 will be assigned to the same subranges as a1 and i1, respectively
+ D0()=S2(a0,a1,i0,i1)*S2(a0,a1,i0,i1)            #full tensor contraction
+ export D0(): tag("Scalar"): to(my_tapl_program) #export the result to another scoping unit
+end scope DIIS_algorithm
