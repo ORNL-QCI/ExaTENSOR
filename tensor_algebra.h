@@ -1,7 +1,6 @@
 /** ExaTensor::TAL-SH Header:
-    Parameters, derived types, and function prototypes used
-    in tensor_algebra_gpu_nvidia.cu, c_proc_bufs.cu (NV-TAL).
-REVISION: 2015/08/16
+    Parameters, derived types, and function prototypes used in TAL-SH.
+REVISION: 2015/08/28
 Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
 Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
 
@@ -159,7 +158,7 @@ NOTES:
 #define EFF_TRN_OFF 0
 #define EFF_TRN_ON 1
 #define TRY_LATER 918273645
-#define DEVICE_UNSUITABLE 546372819
+#define DEVICE_UNABLE 546372819
 
 //MACRO FUNCTIONS:
 #define MIN(a,b) (((a)<(b))?(a):(b))

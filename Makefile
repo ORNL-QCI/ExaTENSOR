@@ -70,7 +70,7 @@ LFLAGS = $(LTHREAD) $(MPI_LINK) $(LA_LINK) $(CUDA_LINK) -o
 
 OBJS =  stsubs.o multords.o combinatoric.o timers.o extern_names.o lists.o dictionary.o \
 	symm_index.o tensor_algebra.o tensor_algebra_cpu.o tensor_algebra_cpu_phi.o tensor_dil_omp.o \
-	service_mpi.o cuda2fortran.o c_proc_bufs.o tensor_algebra_gpu_nvidia.o sys_service.o \
+	service_mpi.o cuda2fortran.o mem_manager.o tensor_algebra_gpu_nvidia.o sys_service.o \
 	mpi_fort.o distributed.o subspaces.o exatensor.o c_process.o qforce.o proceed.o main.o
 
 $(NAME): $(OBJS)
@@ -118,8 +118,8 @@ service_mpi.o: service_mpi.F90 stsubs.o
 cuda2fortran.o: cuda2fortran.cu
 	$(CUDA_C) $(MPI_INC) $(CUDA_INC) $(CUDA_FLAGS) cuda2fortran.cu
 
-c_proc_bufs.o: c_proc_bufs.cu tensor_algebra.h
-	$(CUDA_C) $(MPI_INC) $(CUDA_INC) $(CUDA_FLAGS) c_proc_bufs.cu
+mem_manager.o: mem_manager.cu tensor_algebra.h
+	$(CUDA_C) $(MPI_INC) $(CUDA_INC) $(CUDA_FLAGS) mem_manager.cu
 
 tensor_algebra_gpu_nvidia.o: tensor_algebra_gpu_nvidia.cu tensor_algebra.h
 	$(CUDA_C) $(MPI_INC) $(CUDA_INC) $(CUDA_FLAGS) -ptx tensor_algebra_gpu_nvidia.cu
