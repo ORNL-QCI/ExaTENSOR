@@ -1,9 +1,10 @@
-//This file contains C wrappers for CUDA run-time functions to be called from Fortran.
+//This file contains wrappers for C/CUDA functions to be called from Fortran.
 #include <stdio.h>
-#include <cuda.h>
-#include <cuda_runtime.h>
 
 #ifndef NO_GPU
+
+#include <cuda.h>
+#include <cuda_runtime.h>
 //Protect the C function names from name mangling:
 #ifdef __cplusplus
 extern "C"{
@@ -19,11 +20,14 @@ extern "C"{
 #ifdef __cplusplus
 }
 #endif
+
 #endif
+
 #ifdef __cplusplus
 extern "C"{
 #endif
- void print_c_ptr(void *c_ptr);
+ char * ptr_offset(char * byte_ptr, size_t byte_offset);
+ void print_c_ptr(void * c_ptr);
 #ifdef __cplusplus
 }
 #endif
@@ -93,15 +97,20 @@ __host__ void cudadevicesynchronize(int *err_code)
  return;
 }
 #endif
-//---------------------------------------------------------------
+//----------------------------------------------------------------------------
 //Auxiliary functions:
-int string_len(const char* str){
+int string_len(const char* str){ //get the length of a C string
  const int max_string_len=2147483647;
  int i;
  for(i=0;i<max_string_len;i++){if(str[i]==0) break;};
  return i;
 }
-void print_c_ptr(void *c_ptr){
+
+char* ptr_offset(char *byte_ptr, size_t byte_offset){ //offset a C pointer by a number of bytes
+ char *addr=&byte_ptr[byte_offset]; return addr;
+}
+
+void print_c_ptr(void *c_ptr){ //print a C-pointer
  printf("%p ",c_ptr);
  return;
 }

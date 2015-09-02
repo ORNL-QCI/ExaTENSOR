@@ -5,6 +5,11 @@ Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
 LICENSE: GPL v.2
 --------------------------------------------------------------
 
+NOTE: This is how the TAL-SH API interface will look like soon!
+      Currently the source code still consists of separate pieces,
+      each one specific for a particular device kind.
+
+
 0. Preambule
 
 The TAL-SH library provides API for performing basic tensor algebra
@@ -685,8 +690,9 @@ API: Add a tensor block to another tensor block:
 API: Contract two tensor blocks and add the result to another tensor block:
 
  Fortran 2003:
-  function talsh_tensor_contract(dtens,ltens,rtens,scale,dev_id,dev_kind,copy_ctrl,task) result(ierr)
+  function talsh_tensor_contract(cptrn,dtens,ltens,rtens,scale,dev_id,dev_kind,copy_ctrl,task) result(ierr)
    integer(C_INT):: ierr                              !out: error code (0:success)
+   character(*), intent(in):: cptrn                   !in: symbolic contraction pattern, e.g. "D(a,b,c,d)+=L(c,i,j,a)*R(b,j,d,i)"
    type(talsh_tens_t), intent(inout):: dtens          !inout: destination tensor block
    type(talsh_tens_t), intent(inout):: ltens          !inout: left source tensor block
    type(talsh_tens_t), intent(inout):: rtens          !inout: right source tensor block
@@ -698,6 +704,7 @@ API: Contract two tensor blocks and add the result to another tensor block:
 
  C/C++:
   int talsh_Tensor_Contract(   //out: error code (0:success)
+   char * cptrn,               //in: C-string: symbolic contraction pattern, e.g. "D(a,b,c,d)+=L(c,i,j,a)*R(b,j,d,i)"
    talsh_tens_t * dtens,       //inout: destination tensor block
    talsh_tens_t * ltens,       //inout: left source tensor block
    talsh_tens_t * rtens,       //inout: right source tensor block

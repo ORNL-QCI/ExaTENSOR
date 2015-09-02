@@ -1,5 +1,5 @@
 /** Tensor Algebra Library for NVidia GPUs NV-TAL (CUDA based).
-REVISION: 2015/08/25
+REVISION: 2015/09/02
 Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
 Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
 
@@ -38,13 +38,19 @@ NOTES:
  # Seems like cudaEventRecord() issued in different streams can serialize the stream
    execution for some compute capabilities. EVENT_RECORD=0 will disable event recording.
    If GPU timing is needed, event recording has to be enabled (EVENT_RECORD=1).
+FOR DEVELOPERS ONLY:
+ # Some functions, which construct tensor blocks or perform asynchronous operations on them,
+   allocate GPU resources (global/constant memory chunks). In case, the corresponding
+   GPU resource allocator returns TRY_LATER or DEVICE_UNABLE (or actually any other error),
+   they must clean the partially created tensor_block or CUDA stream before returning. Thus,
+   the corresponding object will be kept in its initial state if no SUCCESS.
 **/
 
 #ifndef NO_GPU
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <time.h>
+//#include <time.h>
 #include <cuda.h>
 #include <cuda_runtime.h>
 #include "tensor_algebra.h"
@@ -218,6 +224,39 @@ __host__ void gpu_set_matmult_algorithm(int alg){ //activate cuBLAS (0) or my ow
  return;
 }
 
+__host__ int gpu_print_stats(int gpu_num = -1)
+/** Print GPU statistics. **/
+{
+ int i,b,f;
+ clock_t ctm;
+
+ if(gpu_num >= 0 && gpu_num < MAX_GPUS_PER_NODE){
+  b=gpu_num; f=gpu_num;
+ }else if(gpu_num == -1){
+  b=0; f=MAX_GPUS_PER_NODE-1;
+ }else{
+  return -1; //invalid GPU number
+ }
+ for(i=b;i<=f;i++){
+  if(gpu_is_mine(i) != GPU_OFF){
+   ctm=clock();
+   gpu_stats[i].time_active=((double)(ctm-gpu_stats[i].time_start))/CLOCKS_PER_SEC;
+   printf("\nTAL-SH::NV-TAL: Statistics on GPU #%d:\n",i);
+   printf(" Number of tasks submitted: %llu\n",gpu_stats[i].tasks_submitted);
+   printf(" Number of tasks completed: %llu\n",gpu_stats[i].tasks_completed);
+   printf(" Number of tasks deferred : %llu\n",gpu_stats[i].tasks_deferred);
+   printf(" Number of tasks failed   : %llu\n",gpu_stats[i].tasks_failed);
+   printf(" Number of Flops processed: %G\n",gpu_stats[i].flops);
+   printf(" Number of Bytes received : %G\n",gpu_stats[i].traffic_in);
+   printf(" Number of Bytes sent     : %G\n",gpu_stats[i].traffic_out);
+   printf(" Time active (sec)        : %f\n",gpu_stats[i].time_active);
+  }else{
+   printf("\nTAL-SH::NV-TAL: Statistics on GPU #%d: GPU is OFF\n",i);
+  }
+ }
+ return 0;
+}
+
 __host__ int encode_device_id(int dev_kind, int dev_num)
 /** Given a device ID <dev_num> within its kind <dev_kind>, get the flat device ID. **/
 {
@@ -325,24 +364,28 @@ The GPU memory is taken from the GPU argument buffer. **/
     ctens->grps_h=NULL; ctens->prmn_h=NULL;
    }
    tvol=tensBlck_volume(ctens); //tensor block volume (number of elements)
-   i=const_args_entry_get(dev_num,&(ctens->const_args_entry)); if(i) return 7;
+   i=const_args_entry_get(dev_num,&(ctens->const_args_entry));
+   if(i){if(i == TRY_LATER || i == DEVICE_UNABLE){return i;}else{return 7;}}
    ctens->buf_entry_host=-1; //Host argument buffer is not used here
 //Initialize the Host data to zero:
    switch(data_kind){
     case R4:
-     i=get_buf_entry_gpu(dev_num,tvol*(size_t)data_kind,(char**)&(ctens->elems_d),&(ctens->buf_entry_gpu)); if(i) return 8;
+     i=get_buf_entry_gpu(dev_num,tvol*(size_t)data_kind,(char**)&(ctens->elems_d),&(ctens->buf_entry_gpu));
+     if(i){if(i == TRY_LATER || i == DEVICE_UNABLE){return i;}else{return 8;}}
      i=host_mem_alloc_pin((void**)&(ctens->elems_h),tvol*(size_t)data_kind); if(i) return 9;
 #pragma omp parallel for
      for(l=0;l<tvol;l++){((float*)(ctens->elems_h))[l]=0.0f;}
      break;
     case R8:
-     i=get_buf_entry_gpu(dev_num,tvol*(size_t)data_kind,(char**)&(ctens->elems_d),&(ctens->buf_entry_gpu)); if(i) return 10;
+     i=get_buf_entry_gpu(dev_num,tvol*(size_t)data_kind,(char**)&(ctens->elems_d),&(ctens->buf_entry_gpu));
+     if(i){if(i == TRY_LATER || i == DEVICE_UNABLE){return i;}else{return 10;}}
      i=host_mem_alloc_pin((void**)&(ctens->elems_h),tvol*(size_t)data_kind); if(i) return 11;
 #pragma omp parallel for
      for(l=0;l<tvol;l++){((double*)(ctens->elems_h))[l]=0.0;}
      break;
     case C8:
-     i=get_buf_entry_gpu(dev_num,tvol*(size_t)data_kind,(char**)&(ctens->elems_d),&(ctens->buf_entry_gpu)); if(i) return 12;
+     i=get_buf_entry_gpu(dev_num,tvol*(size_t)data_kind,(char**)&(ctens->elems_d),&(ctens->buf_entry_gpu));
+     if(i){if(i == TRY_LATER || i == DEVICE_UNABLE){return i;}else{return 12;}}
      i=host_mem_alloc_pin((void**)&(ctens->elems_h),tvol*(size_t)data_kind); if(i) return 13;
 #pragma omp parallel for
      for(l=0;l<tvol*2;l++){((double*)(ctens->elems_h))[l]=0.0;}
@@ -939,11 +982,22 @@ The first enabled GPU will be left active at the end. **/
     }
 //Last task:
     LastTask[i]=NULL;
+//Clear GPU statistics:
+    gpu_stats[i].tasks_submitted=0;
+    gpu_stats[i].tasks_completed=0;
+    gpu_stats[i].tasks_deferred=0;
+    gpu_stats[i].tasks_failed=0;
+    gpu_stats[i].flops=0.0;
+    gpu_stats[i].traffic_in=0.0;
+    gpu_stats[i].traffic_out=0.0;
+    gpu_stats[i].time_active=0.0;
+    gpu_stats[i].time_start=clock();
+//Accept GPU as ready (active):
     if(gpu_up[i] > NOPE) n++;
    }
   }
  }
- return n;
+ return n; //number of initialized GPU's
 }
 
 __host__ int free_gpus(int gpu_beg, int gpu_end)
@@ -991,11 +1045,21 @@ A positive value returned is the number of failed GPUs; a negative one is an err
 __host__ int gpu_is_mine(int gpu_num) //Positive: GPU is mine; 0: GPU is not mine; -1: invalid <gpu_num>.
 {if(gpu_num >= 0 && gpu_num < MAX_GPUS_PER_NODE){return gpu_up[gpu_num];}else{return -1;}}
 
-__host__ int gpu_busy_least() //Returns the ID of the least busy GPU (non-negative) or -1 (error)
+__host__ int gpu_busy_least() //Returns the ID of the least busy GPU (non-negative) or -1 (no GPU found)
 {
- int i;
- for(i=0;i<MAX_GPUS_PER_NODE;i++){if(gpu_up[i] > NOPE) return i;}
- return -1; //no enabled GPU found
+ int i,j,m,n;
+ m=-1; n=-1;
+ for(i=0;i<MAX_GPUS_PER_NODE;i++){
+  if(gpu_up[i] != GPU_OFF){
+   j=gpu_stats[i].tasks_submitted-(gpu_stats[i].tasks_completed+gpu_stats[i].tasks_deferred+gpu_stats[i].tasks_failed);
+   if(m >= 0){
+    if(j < m){m=j; n=i;};
+   }else{
+    m=j; n=i;
+   }
+  }
+ }
+ return n;
 }
 
 __host__ int gpu_activate(int gpu_num) //If GPU is enabled (mine), does cudaSetDevice; returns non-zero otherwise (error)
@@ -2421,8 +2485,8 @@ NOTES:
      cae=ltens->const_args_entry;
      i=get_buf_entry_gpu(dev_num,lsize*(ltens->data_kind),(char**)&larg,&j);
      if(i != 0){
-      i=cuda_task_record(cuda_task,45,dev_num,cuda_stream,cuda_start,cuda_comput,cuda_output,cuda_finish,scr_entry_cnt,scr_entries);
-      err=cudaSetDevice(gpu_num); return 45;
+      j=cuda_task_record(cuda_task,45,dev_num,cuda_stream,cuda_start,cuda_comput,cuda_output,cuda_finish,scr_entry_cnt,scr_entries);
+      err=cudaSetDevice(gpu_num); if(i == TRY_LATER || i == DEVICE_UNABLE){return i;}else{return 45;}
      }
      if(scr_entry_cnt < MAX_SCR_ENTRY_COUNT){
       scr_entries[scr_entry_cnt++]=j;
@@ -2465,8 +2529,8 @@ NOTES:
      cae=rtens->const_args_entry;
      i=get_buf_entry_gpu(dev_num,rsize*(rtens->data_kind),(char**)&rarg,&j);
      if(i != 0){
-      i=cuda_task_record(cuda_task,49,dev_num,cuda_stream,cuda_start,cuda_comput,cuda_output,cuda_finish,scr_entry_cnt,scr_entries);
-      err=cudaSetDevice(gpu_num); return 49;
+      j=cuda_task_record(cuda_task,49,dev_num,cuda_stream,cuda_start,cuda_comput,cuda_output,cuda_finish,scr_entry_cnt,scr_entries);
+      err=cudaSetDevice(gpu_num); if(i == TRY_LATER || i == DEVICE_UNABLE){return i;}else{return 49;}
      }
      if(scr_entry_cnt < MAX_SCR_ENTRY_COUNT){
       scr_entries[scr_entry_cnt++]=j;
@@ -2510,8 +2574,8 @@ NOTES:
      cae=dtens->const_args_entry;
      i=get_buf_entry_gpu(dev_num,dsize*(dtens->data_kind),(char**)&darg,&j);
      if(i != 0){
-      i=cuda_task_record(cuda_task,53,dev_num,cuda_stream,cuda_start,cuda_comput,cuda_output,cuda_finish,scr_entry_cnt,scr_entries);
-      err=cudaSetDevice(gpu_num); return 53;
+      j=cuda_task_record(cuda_task,53,dev_num,cuda_stream,cuda_start,cuda_comput,cuda_output,cuda_finish,scr_entry_cnt,scr_entries);
+      err=cudaSetDevice(gpu_num); if(i == TRY_LATER || i == DEVICE_UNABLE){return i;}else{return 53;}
      }
      if(scr_entry_cnt < MAX_SCR_ENTRY_COUNT){
       scr_entries[scr_entry_cnt++]=j;
