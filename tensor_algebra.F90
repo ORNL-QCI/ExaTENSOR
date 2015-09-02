@@ -231,7 +231,14 @@
           integer(C_INT), value, intent(in):: entry_num
          end function const_args_entry_free
 #endif
-  !Print the current status of the argument buffer on a chosen device:
+  !Query the free buffer space in bytes on a given device:
+         integer(C_INT) function mem_free_left(dev_id,free_mem) bind(c,name='mem_free_left')
+          import
+          implicit none
+          integer(C_INT), value, intent(in):: dev_id
+          integer(C_SIZE_T), intent(out):: free_mem
+         end function mem_free_left
+  !Print the current status of the argument buffer on a given device:
          integer(C_INT) function mem_print_stats(dev_id) bind(c,name='mem_print_stats')
           import
           implicit none
