@@ -46,27 +46,6 @@
 !ALIASES (keep consistent with tensor_algebra.h):
         integer(C_INT), parameter, public:: TALSH_SUCCESS=0             !success
         integer(C_INT), parameter, public:: TALSH_FAILURE=-666          !failure
-        integer(C_INT), parameter, public:: NOPE=0                      !"NO" answer
-        integer(C_INT), parameter, public:: YEP=1                       !"YES" answer
-        integer(C_INT), parameter, public:: DEV_OFF=0                   !device status "Disabled"
-        integer(C_INT), parameter, public:: DEV_ON=1                    !device status "Enabled"
-        integer(C_INT), parameter, public:: DEV_ON_BLAS=2               !device status "Enabled with vendor provided BLAS"
-        integer(C_INT), parameter, public:: NO_COPY_BACK=0              !keeps the tensor-result on Accelerator without updating Host
-        integer(C_INT), parameter, public:: COPY_BACK=1                 !tensor-result will be copied back from Accelerator to Host (default)
-        integer(C_INT), parameter, public:: COPY_FFF=0                  !Free Destination, Free Left, Free right arguments (on device)
-        integer(C_INT), parameter, public:: COPY_FFK=1                  !Free Destination, Free Left, Keep right arguments (on device)
-        integer(C_INT), parameter, public:: COPY_FKF=2                  !Free Destination, Keep Left, Free right arguments (on device)
-        integer(C_INT), parameter, public:: COPY_FKK=3                  !Free Destination, Keep Left, Keep right arguments (on device)
-        integer(C_INT), parameter, public:: COPY_KFF=4                  !Keep Destination, Free Left, Free right arguments (on device)
-        integer(C_INT), parameter, public:: COPY_KFK=5                  !Keep Destination, Free Left, Keep right arguments (on device)
-        integer(C_INT), parameter, public:: COPY_KKF=6                  !Keep Destination, Keep Left, Free right arguments (on device)
-        integer(C_INT), parameter, public:: COPY_KKK=7                  !Keep Destination, Keep Left, Keep right arguments (on device)
-        integer(C_INT), parameter, public:: COPY_FF=COPY_FFK
-        integer(C_INT), parameter, public:: COPY_FK=COPY_FKK
-        integer(C_INT), parameter, public:: COPY_KF=COPY_KFK
-        integer(C_INT), parameter, public:: COPY_KK=COPY_KKK
-        integer(C_INT), parameter, public:: COPY_F=COPY_FKK
-        integer(C_INT), parameter, public:: COPY_K=COPY_KKK
         integer(C_INT), parameter, public:: BLAS_ON=0                   !enables BLAS
         integer(C_INT), parameter, public:: BLAS_OFF=1                  !disables BLAS
         integer(C_INT), parameter, public:: EFF_TRN_OFF=0               !disables efficient tensor transpose algorithm
@@ -75,13 +54,116 @@
         integer(C_INT), parameter, public:: EVENTS_ON=1                 !enables CUDA event recording (default)
         integer(C_INT), parameter, public:: TRY_LATER=-918273645        !try the action later (resources are currently busy): KEEP THIS UNIQUE!
         integer(C_INT), parameter, public:: DEVICE_UNABLE=-546372819    !device is unsuitable for the given task: KEEP THIS UNIQUE!
+        integer(C_INT), parameter, public:: NOPE=0                      !"NO" answer
+        integer(C_INT), parameter, public:: YEP=1                       !"YES" answer
+        integer(C_INT), parameter, public:: DEV_OFF=0                   !device status "Disabled"
+        integer(C_INT), parameter, public:: DEV_ON=1                    !device status "Enabled"
+        integer(C_INT), parameter, public:: DEV_ON_BLAS=2               !device status "Enabled with vendor provided BLAS"
+        integer(C_INT), parameter, public:: NO_COPY_BACK=0              !keeps the tensor-result on Accelerator without updating Host
+        integer(C_INT), parameter, public:: COPY_BACK=1                 !tensor-result will be copied back from Accelerator to Host (default)
+        integer(C_INT), parameter, public:: COPY_F=0                    !free the only argument (on device)
+        integer(C_INT), parameter, public:: COPY_K=1                    !keep the only argument (on device)
+        integer(C_INT), parameter, public:: COPY_FF=0                   !free both argument (on device)
+        integer(C_INT), parameter, public:: COPY_FK=1                   !free the left argument, keep the right argument (on device)
+        integer(C_INT), parameter, public:: COPY_KF=2                   !keep the left argument, free the right argument (on device)
+        integer(C_INT), parameter, public:: COPY_KK=3                   !keep both arguments (on device)
+        integer(C_INT), parameter, public:: COPY_FFF=0                  !free Destination, free Left, free right arguments (on device)
+        integer(C_INT), parameter, public:: COPY_FFK=1                  !free Destination, free Left, keep right arguments (on device)
+        integer(C_INT), parameter, public:: COPY_FKF=2                  !free Destination, keep Left, free right arguments (on device)
+        integer(C_INT), parameter, public:: COPY_FKK=3                  !free Destination, keep Left, keep right arguments (on device)
+        integer(C_INT), parameter, public:: COPY_KFF=4                  !keep Destination, free Left, free right arguments (on device)
+        integer(C_INT), parameter, public:: COPY_KFK=5                  !keep Destination, free Left, keep right arguments (on device)
+        integer(C_INT), parameter, public:: COPY_KKF=6                  !keep Destination, keep Left, free right arguments (on device)
+        integer(C_INT), parameter, public:: COPY_KKK=7                  !keep Destination, keep Left, keep right arguments (on device)
+        integer(C_INT), parameter, public:: COPY_D=0
+        integer(C_INT), parameter, public:: COPY_M=1
+        integer(C_INT), parameter, public:: COPY_T=2
+        integer(C_INT), parameter, public:: COPY_K=3
+        integer(C_INT), parameter, public:: COPY_DD=0
+        integer(C_INT), parameter, public:: COPY_DM=1
+        integer(C_INT), parameter, public:: COPY_DT=2
+        integer(C_INT), parameter, public:: COPY_DK=3
+        integer(C_INT), parameter, public:: COPY_MD=4
+        integer(C_INT), parameter, public:: COPY_MM=5
+        integer(C_INT), parameter, public:: COPY_MT=6
+        integer(C_INT), parameter, public:: COPY_MK=7
+        integer(C_INT), parameter, public:: COPY_TD=8
+        integer(C_INT), parameter, public:: COPY_TM=9
+        integer(C_INT), parameter, public:: COPY_TT=10
+        integer(C_INT), parameter, public:: COPY_TK=11
+        integer(C_INT), parameter, public:: COPY_KD=12
+        integer(C_INT), parameter, public:: COPY_KM=13
+        integer(C_INT), parameter, public:: COPY_KT=14
+        integer(C_INT), parameter, public:: COPY_KK=15
+        integer(C_INT), parameter, public:: COPY_DDD=0
+        integer(C_INT), parameter, public:: COPY_DDM=1
+        integer(C_INT), parameter, public:: COPY_DDT=2
+        integer(C_INT), parameter, public:: COPY_DDK=3
+        integer(C_INT), parameter, public:: COPY_DMD=4
+        integer(C_INT), parameter, public:: COPY_DMM=5
+        integer(C_INT), parameter, public:: COPY_DMT=6
+        integer(C_INT), parameter, public:: COPY_DMK=7
+        integer(C_INT), parameter, public:: COPY_DTD=8
+        integer(C_INT), parameter, public:: COPY_DTM=9
+        integer(C_INT), parameter, public:: COPY_DTT=10
+        integer(C_INT), parameter, public:: COPY_DTK=11
+        integer(C_INT), parameter, public:: COPY_DKD=12
+        integer(C_INT), parameter, public:: COPY_DKM=13
+        integer(C_INT), parameter, public:: COPY_DKT=14
+        integer(C_INT), parameter, public:: COPY_DKK=15
+        integer(C_INT), parameter, public:: COPY_MDD=16
+        integer(C_INT), parameter, public:: COPY_MDM=17
+        integer(C_INT), parameter, public:: COPY_MDT=18
+        integer(C_INT), parameter, public:: COPY_MDK=19
+        integer(C_INT), parameter, public:: COPY_MMD=20
+        integer(C_INT), parameter, public:: COPY_MMM=21
+        integer(C_INT), parameter, public:: COPY_MMT=22
+        integer(C_INT), parameter, public:: COPY_MMK=23
+        integer(C_INT), parameter, public:: COPY_MTD=24
+        integer(C_INT), parameter, public:: COPY_MTM=25
+        integer(C_INT), parameter, public:: COPY_MTT=26
+        integer(C_INT), parameter, public:: COPY_MTK=27
+        integer(C_INT), parameter, public:: COPY_MKD=28
+        integer(C_INT), parameter, public:: COPY_MKM=29
+        integer(C_INT), parameter, public:: COPY_MKT=30
+        integer(C_INT), parameter, public:: COPY_MKK=31
+        integer(C_INT), parameter, public:: COPY_TDD=32
+        integer(C_INT), parameter, public:: COPY_TDM=33
+        integer(C_INT), parameter, public:: COPY_TDT=34
+        integer(C_INT), parameter, public:: COPY_TDK=35
+        integer(C_INT), parameter, public:: COPY_TMD=36
+        integer(C_INT), parameter, public:: COPY_TMM=37
+        integer(C_INT), parameter, public:: COPY_TMT=38
+        integer(C_INT), parameter, public:: COPY_TMK=39
+        integer(C_INT), parameter, public:: COPY_TTD=40
+        integer(C_INT), parameter, public:: COPY_TTM=41
+        integer(C_INT), parameter, public:: COPY_TTT=42
+        integer(C_INT), parameter, public:: COPY_TTK=43
+        integer(C_INT), parameter, public:: COPY_TKD=44
+        integer(C_INT), parameter, public:: COPY_TKM=45
+        integer(C_INT), parameter, public:: COPY_TKT=46
+        integer(C_INT), parameter, public:: COPY_TKK=47
+        integer(C_INT), parameter, public:: COPY_KDD=48
+        integer(C_INT), parameter, public:: COPY_KDM=49
+        integer(C_INT), parameter, public:: COPY_KDT=50
+        integer(C_INT), parameter, public:: COPY_KDK=51
+        integer(C_INT), parameter, public:: COPY_KMD=52
+        integer(C_INT), parameter, public:: COPY_KMM=53
+        integer(C_INT), parameter, public:: COPY_KMT=54
+        integer(C_INT), parameter, public:: COPY_KMK=55
+        integer(C_INT), parameter, public:: COPY_KTD=56
+        integer(C_INT), parameter, public:: COPY_KTM=57
+        integer(C_INT), parameter, public:: COPY_KTT=58
+        integer(C_INT), parameter, public:: COPY_KTK=59
+        integer(C_INT), parameter, public:: COPY_KKD=60
+        integer(C_INT), parameter, public:: COPY_KKM=61
+        integer(C_INT), parameter, public:: COPY_KKT=62
+        integer(C_INT), parameter, public:: COPY_KKK=63
 #ifndef NO_PHI
-!DIR$ ATTRIBUTES OFFLOAD:mic:: NO_COPY_BACK,COPY_BACK,COPY_FFF,COPY_FFK,COPY_FKF,COPY_FKK,COPY_KFF,COPY_KFK,COPY_KKF,COPY_KKK
-!DIR$ ATTRIBUTES OFFLOAD:mic:: COPY_FF,COPY_FK,COPY_KF,COPY_KK,COPY_F,COPY_K,TRY_LATER,DEVICE_UNABLE,TALSH_FAILURE
-!DIR$ ATTRIBUTES OFFLOAD:mic:: TALSH_SUCCESS,NOPE,YEP,DEV_OFF,DEV_ON,DEV_ON_BLAS,BLAS_ON,BLAS_OFF,EFF_TRN_OFF,EFF_TRN_ON
-!DIR$ ATTRIBUTES ALIGN:128:: NO_COPY_BACK,COPY_BACK,COPY_FFF,COPY_FFK,COPY_FKF,COPY_FKK,COPY_KFF,COPY_KFK,COPY_KKF,COPY_KKK
-!DIR$ ATTRIBUTES ALIGN:128:: COPY_FF,COPY_FK,COPY_KF,COPY_KK,COPY_F,COPY_K,TRY_LATER,DEVICE_UNABLE,TALSH_FAILURE
-!DIR$ ATTRIBUTES ALIGN:128:: TALSH_SUCCESS,NOPE,YEP,DEV_OFF,DEV_ON,DEV_ON_BLAS,BLAS_ON,BLAS_OFF,EFF_TRN_OFF,EFF_TRN_ON
+!DIR$ ATTRIBUTES OFFLOAD:mic:: TALSH_SUCCESS,TALSH_FAILURE,BLAS_ON,BLAS_OFF,EFF_TRN_OFF,EFF_TRN_ON,TRY_LATER,DEVICE_UNABLE
+!DIR$ ATTRIBUTES OFFLOAD:mic:: NOPE,YEP,DEV_OFF,DEV_ON,DEV_ON_BLAS,NO_COPY_BACK,COPY_BACK
+!DIR$ ATTRIBUTES ALIGN:128:: TALSH_SUCCESS,TALSH_FAILURE,BLAS_ON,BLAS_OFF,EFF_TRN_OFF,EFF_TRN_ON,TRY_LATER,DEVICE_UNABLE
+!DIR$ ATTRIBUTES ALIGN:128:: NOPE,YEP,DEV_OFF,DEV_ON,DEV_ON_BLAS,NO_COPY_BACK,COPY_BACK
 #endif
 
 !CUDA TASK STATUS (keep consistent with tensor_algebra.h):
@@ -113,13 +195,13 @@
 !INTEROPERABLE TYPES (keep consistent with tensor_algebra.h):
  !TAL-SH tensor block:
         type, bind(C):: talsh_tens_t
+         integer(C_INT):: ndev       !number of devices the tensor block resides on
+         type(C_PTR):: dev_list      !list of flat device id's the tensor block resides on
+         type(C_PTR):: dev_rsc       !list of device resources occupied by the tensor block on each device
          type(C_PTR):: tensF         !pointer to Fortran <tensor_block_t>
          type(C_PTR):: tensC         !pointer to C/C++ <tensBlck_t>
-         integer(C_INT):: ndev       !number of devices the tensor block resides on
-         type(C_PTR):: dev_list      !device flat id's the tensor block resides on
-         type(C_PTR):: dev_rsc       !occupied device resource for each device
         end type talsh_tens_t
- !TAL-SH task:
+ !TAL-SH task handle:
         type, bind(C):: talsh_task_t
          integer(C_INT):: dev_kind   !device kind
          type(C_PTR):: task_p        !pointer to the corresponding task object
@@ -137,9 +219,8 @@
           integer(C_INT), intent(out):: ierr           !out: error code (0:success)
          end subroutine talsh_tens_init_i
         end interface
-
-        interface
 !C FUNCTION INTERFACES (for Fortran):
+        interface
  !Argument buffer memory management:
   !Initialize all argument buffers on Host and all Devices (GPU constant+global, MICs, etc):
          integer(C_INT) function arg_buf_allocate(host_mem,arg_max,gpu_beg,gpu_end) bind(c,name='arg_buf_allocate')

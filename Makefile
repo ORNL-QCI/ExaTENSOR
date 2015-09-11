@@ -68,10 +68,11 @@ LTHREAD_PGI   = -lpthread
 LTHREAD = $(LTHREAD_$(TOOLKIT))
 LFLAGS = $(LTHREAD) $(MPI_LINK) $(LA_LINK) $(CUDA_LINK) -o
 
-OBJS =  stsubs.o multords.o combinatoric.o timers.o extern_names.o lists.o dictionary.o \
+OBJS =  stsubs.o multords.o combinatoric.o timers.o extern_names.o stack.o lists.o dictionary.o \
 	symm_index.o tensor_algebra.o tensor_algebra_cpu.o tensor_algebra_cpu_phi.o tensor_dil_omp.o \
-	service_mpi.o c2fortran.o mem_manager.o tensor_algebra_gpu_nvidia.o sys_service.o \
-	mpi_fort.o distributed.o subspaces.o exatensor.o c_process.o qforce.o proceed.o main.o
+	mem_manager.o tensor_algebra_gpu_nvidia.o talshf.o talshc.o service_mpi.o c2fortran.o \
+	sys_service.o mpi_fort.o distributed.o subspaces.o exatensor.o c_process.o qforce.o proceed.o \
+	main.o
 
 $(NAME): $(OBJS)
 	$(FC) $(OBJS) $(LFLAGS) $(NAME)
@@ -90,6 +91,9 @@ timers.o: timers.F90
 
 extern_names.o: extern_names.F90
 	$(FC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) extern_names.F90
+
+stack.o: stack.F90
+	$(FC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) stack.F90
 
 lists.o: lists.F90
 	$(FC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) lists.F90
@@ -112,18 +116,24 @@ tensor_algebra_cpu_phi.o: tensor_algebra_cpu_phi.F90 tensor_algebra_cpu.o
 tensor_dil_omp.o: tensor_dil_omp.F90 timers.o
 	$(FC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) tensor_dil_omp.F90
 
-service_mpi.o: service_mpi.F90 stsubs.o
-	$(FC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) service_mpi.F90
-
-c2fortran.o: c2fortran.cu
-	$(CUDA_C) $(MPI_INC) $(CUDA_INC) $(CUDA_FLAGS) c2fortran.cu
-
 mem_manager.o: mem_manager.cu tensor_algebra.h
 	$(CUDA_C) $(MPI_INC) $(CUDA_INC) $(CUDA_FLAGS) mem_manager.cu
 
 tensor_algebra_gpu_nvidia.o: tensor_algebra_gpu_nvidia.cu tensor_algebra.h
 	$(CUDA_C) $(MPI_INC) $(CUDA_INC) $(CUDA_FLAGS) -ptx tensor_algebra_gpu_nvidia.cu
 	$(CUDA_C) $(MPI_INC) $(CUDA_INC) $(CUDA_FLAGS) tensor_algebra_gpu_nvidia.cu
+
+talshf.o: talshf.F90 tensor_algebra.o tensor_algebra_cpu_phi.o tensor_algebra_gpu_nvidia.o
+	$(FC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) talshf.F90
+
+talshc.o: talshc.c talsh.h tensor_algebra.h tensor_algebra_cpu_phi.o tensor_algebra_gpu_nvidia.o
+	$(CC) $(MPI_INC) $(CUDA_INC) $(CFLAGS) talshc.c
+
+service_mpi.o: service_mpi.F90 stsubs.o
+	$(FC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) service_mpi.F90
+
+c2fortran.o: c2fortran.cu
+	$(CUDA_C) $(MPI_INC) $(CUDA_INC) $(CUDA_FLAGS) c2fortran.cu
 
 sys_service.o: sys_service.c
 	$(CC) $(MPI_INC) $(CUDA_INC) $(CFLAGS) sys_service.c
@@ -137,7 +147,7 @@ distributed.o: distributed.F90 service_mpi.o tensor_algebra.o
 subspaces.o: subspaces.F90 tensor_algebra.o
 	$(FC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) subspaces.F90
 
-exatensor.o: exatensor.F90 tensor_algebra_cpu_phi.o distributed.o subspaces.o lists.o dictionary.o multords.o extern_names.o
+exatensor.o: exatensor.F90 talshf.o talshc.o distributed.o subspaces.o lists.o dictionary.o multords.o extern_names.o
 	$(FC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) exatensor.F90
 
 c_process.o: c_process.F90 exatensor.o
