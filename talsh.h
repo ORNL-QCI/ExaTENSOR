@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: User-level header.
-REVISION: 2015/09/08
+REVISION: 2015/09/15
 Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
 Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
 
@@ -21,7 +21,6 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
 #ifndef TALSH_H
 #define TALSH_H
-
 
 
 #endif

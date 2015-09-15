@@ -1,4 +1,4 @@
-!This module contains interfaces to C/CUDA functions callable from Fortran.
+!This module contains interfaces to auxiliary C/CUDA functions callable from Fortran.
        module extern_names
         use, intrinsic:: ISO_C_BINDING
 
@@ -17,6 +17,18 @@
           implicit none
           type(C_PTR), value:: c_pointer
          end subroutine print_c_ptr
+ !Get the Linux memory status:
+         integer(C_INT) function get_memory_stat(total_ram,free_ram,used_swap) bind(C)
+          import
+          integer(C_SIZE_T), intent(out):: total_ram
+          integer(C_SIZE_T), intent(out):: free_ram
+          integer(C_SIZE_T), intent(out):: used_swap
+         end function get_memory_stat
+ !Get an accurate C time:
+         function accu_time() result(tm) bind(C,name='accu_time')
+          import
+          real(C_DOUBLE):: tm
+         end function accu_time
 !C wrappers for CUDA runtime functions:
 #ifndef NO_GPU
  !Get the total number of available GPU(Nvidia) devices on a node:

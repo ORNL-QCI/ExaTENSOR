@@ -4,4 +4,5 @@
 #include <stdlib.h>
 
 #include "tensor_algebra.h"
+#include "talsh.h"
 

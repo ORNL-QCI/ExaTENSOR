@@ -1,6 +1,6 @@
 !This module provides general services for MPI parallel programs.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2015/07/03
+!REVISION: 2015/09/15
        module service_mpi
         use, intrinsic:: ISO_C_BINDING
 !If a function contains MPI calls it is classified as PARALLEL (PARALLEL: YES).
@@ -13,10 +13,10 @@
 #ifdef USE_MPI_MOD
         use mpi          !MPI Fortran interface
         implicit none
-        public
+        public           !must be PUBLIC because of sharing the MPI header
 #else
         implicit none
-        public
+        public           !must be PUBLIC because of sharing the MPI header
         include 'mpif.h' !MPI Fortran interface
 #endif
 !Parameters:
@@ -97,7 +97,6 @@
           integer(MPI_ADDRESS_KIND):: disp          !out: absolute MPI displacement
           integer(C_INT):: ierr                     !out: error code (0:success)
          end subroutine MPI_Get_Displacement
-
         end interface
 
        contains
@@ -204,15 +203,8 @@
 ! - total_ram - total usable RAM available on the node in bytes;
 ! - free_ram - free usable RAM available on the node in bytes;
 ! - used_swap - current swap size in bytes;
+        use extern_names, only: get_memory_stat
         implicit none
-        interface
-         integer(C_INT) function get_memory_stat(total_ram,free_ram,used_swap) bind(C)
-          use, intrinsic:: ISO_C_BINDING
-          integer(C_SIZE_T), intent(out):: total_ram
-          integer(C_SIZE_T), intent(out):: free_ram
-          integer(C_SIZE_T), intent(out):: used_swap
-         end function get_memory_stat
-        end interface
         integer(C_SIZE_T), intent(out):: total_ram,free_ram,used_swap
         integer, intent(inout):: ierr
         ierr=get_memory_stat(total_ram,free_ram,used_swap)

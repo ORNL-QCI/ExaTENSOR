@@ -4,6 +4,7 @@
        module qforce
         use exatensor
         implicit none
+        public
 !PARAMETERS:
 
 !TYPES:

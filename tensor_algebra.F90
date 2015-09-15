@@ -2,7 +2,7 @@
         module tensor_algebra
         use, intrinsic:: ISO_C_BINDING
         implicit none
-!BASIC TYPE SIZES:
+!BASIC TYPE SIZES:`These should perhaps go to a separate module, including TRY_LATER and DEVICE_UNABLE
         integer(C_INT), parameter, public:: INTD=4  !default integer size
         integer(C_INT), parameter, public:: INTL=8  !long integer size
         integer(C_INT), parameter, public:: REALD=8 !default real size
@@ -365,7 +365,7 @@
           implicit none
           type(C_PTR), value:: cptr
          end function gpu_mem_free
- !NV-TAL auxiliary:
+ !NV-TAL auxiliary (`TAL-SH level):
   !Convert a kind specific device id into the flat device id:
          integer(C_INT) function encode_device_id(dev_kind,dev_num) bind(c,name='encode_device_id')
           import

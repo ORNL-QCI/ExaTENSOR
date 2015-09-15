@@ -1,6 +1,6 @@
 !This module provides functionality for a Computing Process (C-PROCESS, CP).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2015/07/02
+!REVISION: 2015/09/15
 !PREPROCESSOR:
 ! -D NO_GPU: No NVidia GPU;
 ! -D NO_PHI: No Intel Xeon Phi (Intel MIC);
@@ -50,7 +50,7 @@
 ! - TAL - Tensor Algebra Library (CPU, GPU, MIC, etc.): Driver;
        module c_process
 !       use, intrinsic:: ISO_C_BINDING
-        use exatensor
+        use ta_virt_proc
         implicit none
         private
 #ifndef USE_OMP_MOD

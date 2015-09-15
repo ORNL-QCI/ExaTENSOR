@@ -1,5 +1,5 @@
 !ExaTensor::TAL-SH: User-level API definition:
-!REVISION: 2015/09/09
+!REVISION: 2015/09/15
 !Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
 !Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
 
@@ -20,6 +20,7 @@
        module talsh
         use tensor_algebra_cpu_phi
         implicit none
+!       private
 !PARAMETERS:
  !Generic:
         integer(INTD), private:: CONS_OUT=6   !default output device for this module

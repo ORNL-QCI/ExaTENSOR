@@ -9,9 +9,6 @@
 !   Groups (CG), each Computing Group being assigned a unique Local Root.
 ! * Role "Data Process": Data Processes (DP) facilitate data traffic and disk operations.
 !This subroutine also creates local MPI communicators for computing groups and managers.
-!       use g_process
-!       use l_process
-        use c_process
         use exatensor
         implicit none
         integer(INT_MPI), intent(in):: my_mpi_comm !in: global MPI communicator

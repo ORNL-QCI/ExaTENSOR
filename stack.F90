@@ -1,6 +1,6 @@
 !Generic implementation of a stack based on OOP Fortran 2008.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2015/09/11
+!REVISION: 2015/09/14
 !Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
 !Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
        module stack
@@ -159,10 +159,14 @@
           erc=0; allocate(this%last,STAT=erc) !allocate a new stack entry
           if(erc.eq.0) then
            if(only_point) then
-            this%last%item=>item
+            this%last%item=>item; this%last%pointed_only=.true.
+            this%num_items=this%num_items+1
            else
             allocate(this%last%item,source=item,STAT=erc)
-            if(erc.ne.0) then
+            if(erc.eq.0) then
+             this%last%pointed_only=.false.
+             this%num_items=this%num_items+1
+            else
              deallocate(this%last,STAT=erc)
              if(erc.eq.0) then
               erc=STACK_MEM_ALLOC_FAIL
@@ -179,5 +183,41 @@
          end subroutine add_new_entry
 
         end subroutine stack_push
+!--------------------------------------------
+        subroutine stack_pull(this,item,ierr)
+!Pops up the last item out of the stack.
+        implicit none
+        class(stack_t), intent(inout):: this        !in: stack
+        class(*), intent(out), pointer:: item       !out: item
+        integer(INTD), intent(out), optional:: ierr !out: error code (0:success)
+        integer(INTD):: errc
+        class(stack_entry_t):: sp
+
+        errc=0; item=>NULL()
+        if(.not.this%corrupted) then
+         if(this%num_items.gt.0.and.associated(this%last)) then
+          if(associated(this%last%item)) then
+           item=>this%last%item; this%last%item=>NULL()
+           sp=>this%last%prev
+           deallocate(this%last,STAT=errc)
+           if(errc.eq.0) then
+            if(associated(sp)) then; this%last=>sp; else; this%last=>NULL(); endif
+            this%num_items=this%num_items-1
+           else
+            this%corrupted=.true.; errc=STACK_CORRUPTED
+           endif
+           sp=>NULL()
+          else
+           this%corrupted=.true.; errc=STACK_CORRUPTED
+          endif
+         else
+          errc=STACK_EMPTY
+         endif
+        else
+         errc=STACK_CORRUPTED
+        endif
+        if(present(ierr)) ierr=errc
+        return
+        end subroutine stack_pull
 
        end module stack
