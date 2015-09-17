@@ -196,6 +196,7 @@
  !TAL-SH tensor block:
         type, bind(C):: talsh_tens_t
          integer(C_INT):: ndev       !number of devices the tensor block resides on
+         integer(C_INT):: last_write !flat device id where the last write happened, -1 means coherence on all devices where the tensor block resides
          type(C_PTR):: dev_list      !list of flat device id's the tensor block resides on
          type(C_PTR):: dev_rsc       !list of device resources occupied by the tensor block on each device
          type(C_PTR):: tensF         !pointer to Fortran <tensor_block_t>

@@ -2,7 +2,7 @@
     Parameters, derived types, and function prototypes
     used at the lower level of TAL-SH (device specific):
     CP-TAL, NV-TAL, XP-TAL, AM-TAL, etc.
-REVISION: 2015/09/09
+REVISION: 2015/09/15
 Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
 Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
 
@@ -118,13 +118,13 @@ FOR DEVELOPERS ONLY:
 #endif
 #define THRDS_TENSOR_COPY_SCAT 256 //threads per block for <gpu_tensor_block_copy_scatter_dlf_XX__>
 
-//DATA KINDS:
+//DATA KINDS (keep consistent with tensor_algebra.F90):
 #define NO_TYPE 0 //null type
 #define R4 4      //float data kind (keep consistent with c_process.f90::tens_blck_pack/unpack)
 #define R8 8      //double data kind (keep consistent with c_process.f90::tens_blck_pack/unpack)
 #define C8 16     //double complex data kind (keep consistent with c_process.f90::tens_blck_pack/unpack)
 
-//CUDA TASK STATUS:
+//CUDA TASK STATUS (keep consistent with tensor_algebra.F90):
 #define CUDA_TASK_ERROR -1
 #define CUDA_TASK_EMPTY 0
 #define CUDA_TASK_SCHEDULED 1
@@ -259,7 +259,7 @@ FOR DEVELOPERS ONLY:
 #define MIN(a,b) (((a)<(b))?(a):(b))
 #define MAX(a,b) (((a)>(b))?(a):(b))
 
-//DERIVED TYPES:
+//DERIVED TYPES (keep consistent with tensor_algebra.F90):
 // Tensor shape:
 typedef struct{
  int num_dim;   //tensor rank (number of dimensions)
@@ -267,7 +267,6 @@ typedef struct{
  int * divs;    //tensor dimension dividers
  int * grps;    //tensor dimension groups
 } talsh_tens_shape_t;
-
 // Device resource (occupied by a tensor block):
 typedef struct{
  void * gmem_p;       //pointer to Host/Device global memory where the tensor body resides
@@ -275,7 +274,6 @@ typedef struct{
  int const_mem_entry; //NVidia GPU constant memory entry number
 } talsh_dev_rsc_t;
 //Note: Not all fields above are defined on each device (some are device specific).
-
 // Tensor block (for the use on NVidia GPU):
 typedef struct{
  int device_id;        //device on which the tensor block already resides (+) or will reside (-) (device_id=0 means Host)
@@ -291,16 +289,15 @@ typedef struct{
  int buf_entry_gpu;    //GPU argument buffer entry pointed to by *elems_d: GPU global memory
  int const_args_entry; //entry number in const_args[]: GPU constant memory (dims[] and prmn[] arrays are stored there)
 } tensBlck_t;
-
 // Interoperable tensor block:
 typedef struct{
  int ndev;                  //number of devices the tensor block resides on
+ int last_write;            //flat device id where the last write happened, -1 means coherence on all devices where the tensor block resides
  int * dev_list;            //list of the flat device id's which the tensor block resides on
  talsh_dev_rsc_t * dev_rsc; //list of the device resources occupied by the tensor block on each device
  void * tensF;              //pointer to Fortran <tensor_block_t>
  void * tensC;              //pointer to C <tensBlck_t>
 } talsh_tens_t;
-
 // Interoperable TAL-SH task handle:
 typedef struct{
  int dev_kind;  //device kind
