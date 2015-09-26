@@ -1,7 +1,7 @@
-	module combinatoric
+       module combinatoric
 !Combinatoric Procedures.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!Revision: 2014/09/24
+!Revision: 2015/09/23
 !All rights reserved! No single part can be taken or reproduced!
 !PROCEDURES:
 ! - TRNG(i:ctrl,i:ni,i[1]:trn,i[1]:ngt): permutation generator which returns each new permutation.
@@ -69,46 +69,95 @@
 !   the integer and fractional parts are given 6 digits each, thus restricting the max number of colors and the max number of connection kinds to 1000000.
 ! - On some machines, DINT2FRAC and FRAC2DINT can be numerically unstable: 1572/10000 = 0.1572 --> 0.15719999999999.
 !   This is, however, being checked, leading to an exception and termination of the program.
-
+        implicit none
+        private
 !GLOBAL PARAMETERS:
-	integer, parameter:: dp_codon_len=6 !number of decimal digits in a double-precision codon (codon is a sequence of decimal digits representing either the integer or the fractional part of the real number)
-	real(8), parameter:: dp_zero_thresh=1d-13 !certified guaranteed precision of a double-precision real number (one order lower than the epsilon)
+        integer, parameter, private:: DP_CODON_LEN=6 !number of decimal digits in a double-precision codon (codon is a sequence of decimal digits representing either the integer or the fractional part of the real number)
+        real(8), parameter, public:: DP_ZERO_THRESH=1d-13 !certified guaranteed precision of a double-precision real number (one order lower than the epsilon)
 !DATA TYPES:
-        type slot !describes a particular (possbily multiple, possibly directed) connection of a certain vertex
+        type, private:: slot !describes a particular (possbily multiple, possibly directed) connection of a certain vertex
          integer:: vert_attr=0           !attribute of the connected vertex (can be either VERTEX_ID or VERTEX_CLASS, depending on the purpose)
-	 complex(8):: conn_typ=(0d0,0d0) !connection type: off-diag: real=x.y: x is the amount of undirected edges, y is the amount of directed compensated edge-pairs; imag=+/-v.w: v is the amount of uncompensated directed edges (sign shows which), w is reserved
-	end type slot                    !                     diag: real=0.y: y is the amount of loops (color is taken out); imag=0.0
+         complex(8):: conn_typ=(0d0,0d0) !connection type: off-diag: real=x.y: x is the amount of undirected edges, y is the amount of directed compensated edge-pairs; imag=+/-v.w: v is the amount of uncompensated directed edges (sign shows which), w is reserved
+        end type slot                    !                     diag: real=0.y: y is the amount of loops (color is taken out); imag=0.0
 
-	type vertex                         !describes a vertex (color + connections to other vertices)
+        type, private:: vertex !describes a vertex (color + connections to other vertices)
          real(8):: color=0d0                !vertex color (should be integer, except some special cases)
          integer:: conn_num=0               !number of connections of the current vertex (possibly including the only possible self-connection)
          type(slot), allocatable:: slots(:) !vertex connections (VERT_ATTR=VERTEX_ID): SLOTS(1:CONN_NUM)
         end type vertex
 
-	type descriptor                     !vertex descriptor
-	 integer:: vertex_class=0           !vertex class
+        type, private:: descriptor !vertex descriptor
+         integer:: vertex_class=0           !vertex class
          integer:: conn_num=0               !length of the descriptor (number of connections of the current vertex)
          type(slot), allocatable:: slots(:) !slots (VERT_ATTR=VERTEX_CLASS): SLOTS(1:CONN_NUM)
         end type descriptor
 
-        type classification                 !describes a classification
+        type, private:: classification !describes a classification
          integer:: length=0                 !length of the classification
-	 integer:: num_classes=0            !number of classes: [1..num_classes]
-	 integer, allocatable:: class(:)    !classes of the vertices (by vertex ID): CLASS# = class(VERTEX_ID)
-	 integer, allocatable:: new_id(:)   !new positions of the vertices (by vertex ID): NEW# = new_id(VERTEX_ID)
+         integer:: num_classes=0            !number of classes: [1..num_classes]
+         integer, allocatable:: class(:)    !classes of the vertices (by vertex ID): CLASS# = class(VERTEX_ID)
+         integer, allocatable:: new_id(:)   !new positions of the vertices (by vertex ID): NEW# = new_id(VERTEX_ID)
         end type classification
 
-        type graph_sparse                         !desribes an arbitrary graph (colored directed multigraph). Vertex numeration should begin with 1.
+        type, public:: graph_sparse !desribes an arbitrary graph (colored directed multigraph). Vertex numeration should begin with 1.
          integer:: gcard=0                        !graph cardinality (number of vertices)
-	 integer:: graph_typ=0                    !graph type (default is 0: non-specific)
-	 logical:: descr_allocated=.false.        !.true. if descr(:) is allocated
-	 type(vertex), allocatable:: vertices(:)  !description of the vertices: a vertex should not have more than one (complex) connection to another vertex
-	 type(descriptor), allocatable:: descr(:) !vertex descriptors: auxiliary: allocated whenever needed
-	end type graph_sparse
-!----------------------------------------------------------------------------------------------------------
-	contains
+         integer:: graph_typ=0                    !graph type (default is 0: non-specific)
+         logical:: descr_allocated=.false.        !.true. if descr(:) is allocated
+         type(vertex), allocatable:: vertices(:)  !description of the vertices: a vertex should not have more than one (complex) connection to another vertex
+         type(descriptor), allocatable:: descr(:) !vertex descriptors: auxiliary: allocated whenever needed
+        end type graph_sparse
+!PROCEDURE VISIBILITY:
+        public trng
+        public trsign
+        public factorial
+        public noid
+        public noid8
+        public gpgen
+        public tr_cycle
+        public perm_trivial
+        public perm_trivial_int8
+        public perm_ok
+        public perm2trans
+        public permutation_converter
+        public hash_arr_int
+        public hash_arr_int8
+        public cmp_multinds
+        public cmp_multinds_int8
+        public multindx_merge
+        public cmp_arrays_int
+        public cmp_arrays_int8
+        public clanal
+        public random_permutation
+        public random_permutation_int8
+        public random_composition
+        public merge_sort_int
+        public merge_sort_key_int
+        public merge_sort_int8
+        public merge_sort_key_int8
+        public merge_sort_real8
+        public merge_sort_key_real8
+        public merge_sort_cmplx8
+        public merge_sort_key_cmplx8
+        private sort_slots
+        public nullify_sparse_graph
+        public copy_sparse_graph
+        private compare_descr_slots
+        private sort_vertex_connections
+        public graph_standard
+        public print_graph_status
+        public graph_isomorphic
+        public dint2frac
+        public frac2dint
+        public graph2matrix
+        public matrix2graph
+        public check_hermiticity
+        public star_graph
+        public random_graph
+        public remove_random_edges
+!-----------------------------------------------------------------------------------------
+       contains
 !METHODS:
-	subroutine trng(ctrl,ni,trn,ngt)
+        subroutine trng(ctrl,ni,trn,ngt)
 !Permutation generator: Returns each subsequent permutation.
 ! CTRL - control argument. The first call must have CTRL<>0 and initialized TRN!
 !        Then, on a regular output, CTRL will be 0 unless permutations are over (CTRL=-1).
@@ -151,7 +200,7 @@
 	  return
 	 end subroutine transp
 
-	end subroutine trng
+        end subroutine trng
 !------------------------------------------------------------------
 	subroutine trsign(n,itr) !ITR - permutation of the length N
 !This subroutine orders integers in ITR in an ascending order.
@@ -177,7 +226,7 @@
 	itr(0)=isgn
 	return
 	end subroutine trsign
-!-------------------------------------------------------------------
+!---------------------------------------
 	integer(8) function factorial(n) !returns N! for N>=0, and -1 otherwise
 	implicit none
 	integer, intent(in):: n
@@ -1478,8 +1527,8 @@
 	    elseif(k1.ge.k2) then !left block is over
 	     prm(i+l:i+kf-1)=trn(k3:k4-1); l=kf
 	    else
-	     if(dble(trn(k1))-dble(trn(k3)).gt.0d0.or. &
-	        (dble(trn(k1)).eq.dble(trn(k3)).and.dimag(trn(k1))-dimag(trn(k3)).gt.0d0)) then
+	     if(dble(trn(k1))-dble(trn(k3)).gt.0d0.or.&
+	        &(dble(trn(k1)).eq.dble(trn(k3)).and.dimag(trn(k1))-dimag(trn(k3)).gt.0d0)) then
 	      prm(i+l)=trn(k3); k3=k3+1; sgn=ds(mod(k2-k1,2))*sgn
 	     else
 	      prm(i+l)=trn(k1); k1=k1+1
@@ -1536,8 +1585,8 @@
 	    elseif(k1.ge.k2) then !left block is over
 	     prm(i+l:i+kf-1)=trn(k3:k4-1); l=kf
 	    else
-	     if(dble(key(trn(k1)))-dble(key(trn(k3))).gt.0d0.or. &
-	        (dble(key(trn(k1))).eq.dble(key(trn(k3))).and.dimag(key(trn(k1)))-dimag(key(trn(k3))).gt.0d0)) then
+	     if(dble(key(trn(k1)))-dble(key(trn(k3))).gt.0d0.or.&
+	        &(dble(key(trn(k1))).eq.dble(key(trn(k3))).and.dimag(key(trn(k1)))-dimag(key(trn(k3))).gt.0d0)) then
 	      prm(i+l)=trn(k3); k3=k3+1; trn(0)=(1-2*mod(k2-k1,2))*trn(0)
 	     else
 	      prm(i+l)=trn(k1); k1=k1+1
@@ -1553,7 +1602,7 @@
 	endif
 	return
 	end subroutine merge_sort_key_cmplx8
-!-------------------------------------------
+!-----------------------------------------
 	subroutine sort_slots(ni,keys,trn)
 !This subroutine sorts an array of NI items of type SLOT putting them in a non-descending order
 !by their key-values in accordance with a special relation of order.
@@ -2193,7 +2242,7 @@
 	end function compare_classifications
 
 	end subroutine graph_standard
-!----------------------------------------------------------------------------------------------------
+!----------------------------------------
 	subroutine print_graph_status(gr) !prints a detailed allocation status for type(graph_sparse), together with the number of connections for each vertex
 	implicit none
 	type(graph_sparse), intent(in):: gr
@@ -2201,8 +2250,8 @@
 	n=gr%gcard
 	write(*,'(" Printing the status of a graph of cardinality ",i4,1x,l1,l1":")') n,allocated(gr%vertices),allocated(gr%descr)
 	if(n.gt.0) then
-	 write(*,'(1x,256(1x,i4,1x,l1,1x,l1,1x))') &
-	  (gr%vertices(j)%conn_num,allocated(gr%vertices(j)%slots),allocated(gr%descr(j)%slots),j=1,n)
+	 write(*,'(1x,256(1x,i4,1x,l1,1x,l1,1x))')&
+	  &(gr%vertices(j)%conn_num,allocated(gr%vertices(j)%slots),allocated(gr%descr(j)%slots),j=1,n)
 	endif
 	return
 	end subroutine print_graph_status
@@ -2279,7 +2328,7 @@
 	if(allocated(trna1)) deallocate(trna1); if(allocated(trna2)) deallocate(trna2)
 	return
 	end function graph_isomorphic
-!------------------------------------------
+!-------------------------------------------
 	real(8) function dint2frac(dpi,prec)
 !This function converts a double-precision integer into a double-precision fractional number less than 1d0
 !by reflecting the sequence of decimal digits against the decimal point. For example, 6529450. --> .0549256
@@ -2315,7 +2364,7 @@
 	endif
 	return
 	end function dint2frac
-!------------------------------------------
+!-------------------------------------------
 	real(8) function frac2dint(dpf,prec)
 !This is the inverse function with respect to DINT2FRAC.
 !INPUT:
@@ -2364,7 +2413,7 @@
 	type(graph_sparse), intent(in):: gr
 	integer, intent(out):: nv
 	complex(8), allocatable, intent(inout):: adj(:,:)
-	real(8), parameter:: herm_thresh=dp_zero_thresh !hermiticity threshold (real*8 comparison zero threshold)
+	real(8), parameter:: herm_thresh=DP_ZERO_THRESH !hermiticity threshold (real*8 comparison zero threshold)
 	integer i,j,k,l,m,n,k0,k1,k2,k3,ks,kf,ierr
 	real(8) diff,cl,cf,ct
 
@@ -2376,7 +2425,7 @@
 	 adj(:,:)=(0d0,0d0)
 	 do i=1,nv !vertex numbers [1..nv]
 	  cl=abs(gr%vertices(i)%color)
-	  if(cl-dint(cl).le.dp_zero_thresh) then
+	  if(cl-dint(cl).le.DP_ZERO_THRESH) then
 	   cl=dint(cl); cf=0d0
 	   do j=1,gr%vertices(i)%conn_num
 	    k=gr%vertices(i)%slots(j)%vert_attr
@@ -2385,7 +2434,7 @@
 	      adj(k,i)=gr%vertices(i)%slots(j)%conn_typ
 	     else !diagonal element, <color.number_of_loops>
 	      ct=dble(gr%vertices(i)%slots(j)%conn_typ)
-	      if(dabs(dimag(gr%vertices(i)%slots(j)%conn_typ)).le.dp_zero_thresh.and.dabs(ct-dint(ct)).le.dp_zero_thresh) then !no imaginary part, integer real part
+	      if(dabs(dimag(gr%vertices(i)%slots(j)%conn_typ)).le.DP_ZERO_THRESH.and.dabs(ct-dint(ct)).le.DP_ZERO_THRESH) then !no imaginary part, integer real part
 	       ct=dint(ct) !real integer
 	       if(cf.eq.0d0) then
 	        if(ct.ge.0d0) then
@@ -2395,20 +2444,20 @@
 	           stop
 	          endif
 	         endif
-	         cf=dint2frac(ct,dp_codon_len) !set vertex loops: convert a pure integer into a pure fractional
+	         cf=dint2frac(ct,DP_CODON_LEN) !set vertex loops: convert a pure integer into a pure fractional
 	        else
-	         write(*,*)'ERROR(combinatoric:graph2matrix): negative loop attribute detected: ', &
-	          gr%vertices(i)%slots(j)%conn_typ,ct,i,j
+	         write(*,*)'ERROR(combinatoric:graph2matrix): negative loop attribute detected: ',&
+	          &gr%vertices(i)%slots(j)%conn_typ,ct,i,j
 	         stop
 	        endif
 	       else
-	        write(*,*)'ERROR(combinatoric:graph2matrix): repeated self-connection (loop) detected: ', &
-	         cf,i,j,gr%vertices(i)%slots(j)%conn_typ
+	        write(*,*)'ERROR(combinatoric:graph2matrix): repeated self-connection (loop) detected: ',&
+	         &cf,i,j,gr%vertices(i)%slots(j)%conn_typ
 	        stop
 	       endif
 	      else
-	       write(*,*)'ERROR(combinatoric:graph2matrix): unable to process non-integer self-connection attribute (loop): ', &
-	        gr%vertices(i)%slots(j)%conn_typ,i,j
+	       write(*,*)'ERROR(combinatoric:graph2matrix): unable to process non-integer self-connection attribute (loop): ',&
+	        &gr%vertices(i)%slots(j)%conn_typ,i,j
 	       stop
 	      endif
 	     endif
@@ -2447,7 +2496,7 @@
 	integer, intent(in):: nv
 	complex(8), intent(inout):: adj(1:,1:)
 	type(graph_sparse), intent(inout):: gr
-	real(8), parameter:: herm_thresh=dp_zero_thresh !hermiticity threshold
+	real(8), parameter:: herm_thresh=DP_ZERO_THRESH !hermiticity threshold
 	integer i,j,k,l,m,n,k0,k1,k2,k3,ks,kf,ierr
 	real(8) diff,de,dl
 
@@ -2458,11 +2507,11 @@
 	  if(diff.le.herm_thresh) then
 	   gr%gcard=nv; allocate(gr%vertices(1:nv))
 	   do j=1,nv !columns
-	    if(dabs(dimag(adj(j,j))).le.dp_zero_thresh) then !diagonal elements must be real
+	    if(dabs(dimag(adj(j,j))).le.DP_ZERO_THRESH) then !diagonal elements must be real
 	     de=dble(adj(j,j))
 	     gr%vertices(j)%color=dint(de) !vertex color := integer part of the real part of the diagonal element
-	     if(dabs(de-dint(de)).gt.dp_zero_thresh) then !vertex self-connection (loop)
-	      dl=frac2dint(de-dint(de),dp_codon_len); m=1
+	     if(dabs(de-dint(de)).gt.DP_ZERO_THRESH) then !vertex self-connection (loop)
+	      dl=frac2dint(de-dint(de),DP_CODON_LEN); m=1
 	     else !no loops
 	      dl=0d0; m=0
 	     endif
@@ -2495,7 +2544,7 @@
 	endif
 	return
 	end subroutine matrix2graph
-!--------------------------------------------------------
+!---------------------------------------------------------
 	real(8) function check_hermiticity(nv,adj,correct)
 !This function checks hermiticity of a complex(8) matrix, returning the maximal deviation.
 !If correct=.true., the hermiticity will be imposed by the upper triangle.
@@ -2693,4 +2742,4 @@
 	return
 	end subroutine remove_random_edges
 
-	end module combinatoric
+       end module combinatoric

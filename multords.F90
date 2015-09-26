@@ -1,6 +1,6 @@
 !Linear-scaling sorting subroutines operating with multi-index keys.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2015/06/17 (origin 2005 PhD work, used in Mol.Phys.2007)
+!REVISION: 2015/09/23 (origin 2005 PhD work, used in Mol.Phys.2007)
 !DESCRIPTION:
 !The following subroutines sort a list of items according to their unsigned integer multi-index keys.
 !The formal scaling of the sorting algorithm is O(L*N), where N is the number of items
@@ -23,6 +23,8 @@
 ! - multord_i(i:n,i:nl,i:mov,i[1]:ip1,i[2]:iv,i[1]:v);
 ! - multord_i8(i8:n,i8:nl,i8:mov,i8[1]:ip1,i8[2]:iv,i8[1]:v).
         module multords
+        implicit none
+        private
 !PARAMETERS:
  !Key length:
         integer, parameter, private:: MAX_MLNDX_LEN=1024    !max length of a multi-index key (keep consistent with MLNDX_FMT)

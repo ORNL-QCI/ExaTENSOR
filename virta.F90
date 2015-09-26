@@ -1,8 +1,9 @@
-!Parallel Virtual Processing for Scale-Adaptive Tensor Algebra:
+!ExaTensor::Parallel Virtual Processing for Scale-Adaptive Tensor Algebra
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2015/09/15
+!REVISION: 2015/09/24
 !Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
 !Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
+!LICENSE: GPLv2
 
 !This source file is free software; you can redistribute it and/or
 !modify it under the terms of the GNU General Public License
@@ -18,7 +19,7 @@
 !along with this program; if not, write to the Free Software
 !Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 --------------------------------------------------------------------------------
-        module ta_virt_proc
+        module virta
         use talsh
         use distributed
         use subspaces
@@ -29,7 +30,7 @@
         implicit none
         public
 !PARAMETERS:
- !Output:
+ !General:
         integer, private:: CONS_OUT=6     !default output for this module
         logical, private:: VERBOSE=.true. !verbosity for errors
         logical, private:: DEBUG=.true.   !debugging mode
@@ -55,9 +56,9 @@
   !Tensor instruction status (any negative value will correspond to a failure, designating the error code):
         integer(INTD), parameter, public:: INSTR_NULL=0          !uninitialized instruction (empty)
         integer(INTD), parameter, public:: INSTR_FRESH=1         !newly arrived instruction
-        integer(INTD), parameter, public:: INSTR_DATA_WAIT=2     !instruction is waiting for the input data to arrive
+        integer(INTD), parameter, public:: INSTR_DATA_WAIT=2     !instruction is waiting for the remote data to arrive
         integer(INTD), parameter, public:: INSTR_READY_TO_EXEC=3 !instruction is ready to be executed (input data has arrived)
-        integer(INTD), parameter, public:: INSTR_SCHEDULED=4     !instruction has been placed into an execution queue on a specific CU
+        integer(INTD), parameter, public:: INSTR_SCHEDULED=4     !instruction has been placed into the execution queue on a specific CU
         integer(INTD), parameter, public:: INSTR_ISSUED=5        !instruction has been issued for execution to a computing unit (CU)
         integer(INTD), parameter, public:: INSTR_COMPLETED=6     !instruction has completed (the result may still need a remote upload)
         integer(INTD), parameter, public:: INSTR_RETIRED=7       !instruction can safely be removed from the queue
@@ -82,9 +83,9 @@
  !Process role:
         integer(INTD), public:: my_role=NO_ROLE   !role of the MPI process (set during runtime)
         integer(INTD), public:: my_group=-1       !computing group the process belongs to (set during runtime)
-        integer(INTD), public:: my_group_index=-1 !ID of the process within the computing group
-!FUNCTION VISIBILITY:
+        integer(INTD), public:: my_group_index=-1 !ID of the process within the computing group (set during runtime)
+!VISIBILITY:
 
 !METHODS:
 
-        end module ta_virt_proc
+        end module virta

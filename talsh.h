@@ -1,5 +1,5 @@
-/** ExaTensor::TAL-SH: User-level header.
-REVISION: 2015/09/15
+/** ExaTensor::TAL-SH: Device-unified user-level API header.
+REVISION: 2015/09/24
 Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
 Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
 

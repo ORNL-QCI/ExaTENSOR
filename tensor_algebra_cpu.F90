@@ -1,6 +1,6 @@
 !Tensor Algebra for Multi-Core CPUs (OpenMP based).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2015/06/15
+!REVISION: 2015/09/23
 !GNU linking options: -lgomp -lblas -llapack
 !ACRONYMS:
 ! - mlndx - multiindex;
@@ -22,8 +22,9 @@
 ! -D NO_PHI: Ignore Intel MIC;
        module tensor_algebra_cpu
 !       use, intrinsic:: ISO_C_BINDING
-        use tensor_algebra !includes ISO_C_BINDING
-        use STSUBS
+!       use dil_kinds
+        use tensor_algebra !includes ISO_C_BINDING, dil_kinds
+        use stsubs
         use combinatoric
         use timers
         use symm_index
@@ -36,10 +37,15 @@
 #ifdef USE_OMP_MOD
         use omp_lib
         implicit none
+        public
 #else
         implicit none
+        public
         integer, external, private:: omp_get_max_threads,omp_get_num_threads,omp_get_thread_num
 #endif
+#else
+        implicit none
+        public
 #endif
 !PARAMETERS:
  !Default output for the module procedures:
@@ -50,9 +56,9 @@
 !DIR$ ATTRIBUTES ALIGN:128:: cons_out,verbose
 #endif
  !Global:
-	integer, parameter, public:: max_shape_str_len=1024 !max allowed length for a tensor shape specification string (TSSS)
+	integer, parameter, public:: MAX_SHAPE_STR_LEN=1024 !max allowed length for a tensor shape specification string (TSSS)
 	integer, parameter, public:: LONGINT=INTL           !long integer size in bytes
-	integer, parameter, private:: max_threads=1024      !max allowed number of threads in this module
+	integer, parameter, private:: MAX_THREADS=1024      !max allowed number of threads in this module
 	logical, private:: data_kind_sync=.true. !if .true., each tensor operation will syncronize all existing data kinds
 	logical, private:: trans_shmem=.true.    !cache-efficient (true) VS scatter (false) tensor transpose algorithm
 #ifndef NO_BLAS
@@ -61,8 +67,8 @@
         logical, private:: disable_blas=.true.   !if .true. and BLAS is accessible, BLAS calls will be replaced by my own routines
 #endif
 #ifndef NO_PHI
-!DIR$ ATTRIBUTES OFFLOAD:mic:: max_shape_str_len,LONGINT,max_threads,data_kind_sync,trans_shmem,disable_blas
-!DIR$ ATTRIBUTES ALIGN:128:: max_shape_str_len,LONGINT,max_threads,data_kind_sync,trans_shmem,disable_blas
+!DIR$ ATTRIBUTES OFFLOAD:mic:: MAX_SHAPE_STR_LEN,LONGINT,MAX_THREADS,data_kind_sync,trans_shmem,disable_blas
+!DIR$ ATTRIBUTES ALIGN:128:: MAX_SHAPE_STR_LEN,LONGINT,MAX_THREADS,data_kind_sync,trans_shmem,disable_blas
 #endif
  !Numerical:
 	real(8), parameter, private:: abs_cmp_thresh=1d-13 !default absolute error threshold for numerical comparisons
@@ -339,8 +345,8 @@
 	if(present(check_shape)) then
 	 if(check_shape) then; ierr=tensor_shape_ok(tens); if(ierr.ne.0) return; endif
 	endif
-	if(tens%tensor_shape%num_dim.gt.0.and.associated(tens%tensor_shape%dim_extent).and. &
-	   associated(tens%tensor_shape%dim_divider).and.associated(tens%tensor_shape%dim_group)) then !true tensor
+	if(tens%tensor_shape%num_dim.gt.0.and.associated(tens%tensor_shape%dim_extent).and.&
+	   &associated(tens%tensor_shape%dim_divider).and.associated(tens%tensor_shape%dim_group)) then !true tensor
 	 if(tens%tensor_shape%dim_divider(1).gt.0) then !dimension-led or bricked
 	  tensor_block_layout=dimension_led
 	  do i=1,tens%tensor_shape%num_dim
@@ -383,9 +389,9 @@
 	case(dimension_led,bricked_dense)
 	 tensor_shape_size=1_LONGINT
 	 do i=1,tens_block%tensor_shape%num_dim
-	  if(tens_block%tensor_shape%dim_extent(i).gt.0.and. &
-	     tens_block%tensor_shape%dim_divider(i).gt.0.and. &
-	     tens_block%tensor_shape%dim_divider(i).le.tens_block%tensor_shape%dim_extent(i)) then
+	  if(tens_block%tensor_shape%dim_extent(i).gt.0.and.&
+	     &tens_block%tensor_shape%dim_divider(i).gt.0.and.&
+	     &tens_block%tensor_shape%dim_divider(i).le.tens_block%tensor_shape%dim_extent(i)) then
 	   tensor_shape_size=tensor_shape_size*int(tens_block%tensor_shape%dim_extent(i),LONGINT)
 	  else
 	   ierr=100+i; return !invalid dimension specificator in tens_block%tensor_shape%
@@ -476,14 +482,14 @@
 	 n=tens_in%tensor_shape%num_dim
 	 if(n.gt.0) then
 !Check tensor shapes:
-	  if(associated(tens_in%tensor_shape%dim_extent).and.associated(tens_in%tensor_shape%dim_divider).and. &
-	    associated(tens_in%tensor_shape%dim_group).and.associated(tens_out%tensor_shape%dim_extent).and. &
-	    associated(tens_out%tensor_shape%dim_divider).and.associated(tens_out%tensor_shape%dim_group)) then
+	  if(associated(tens_in%tensor_shape%dim_extent).and.associated(tens_in%tensor_shape%dim_divider).and.&
+	    &associated(tens_in%tensor_shape%dim_group).and.associated(tens_out%tensor_shape%dim_extent).and.&
+	    &associated(tens_out%tensor_shape%dim_divider).and.associated(tens_out%tensor_shape%dim_group)) then
 	   if(present(transp)) then; trn(0:n)=transp(0:n); else; trn(0:n)=(/+1,(j,j=1,n)/); endif
 	   do i=1,n
-	    if(tens_out%tensor_shape%dim_extent(trn(i)).ne.tens_in%tensor_shape%dim_extent(i).or. &
-	       tens_out%tensor_shape%dim_divider(trn(i)).ne.tens_in%tensor_shape%dim_divider(i).or. &
-	       tens_out%tensor_shape%dim_group(trn(i)).ne.tens_in%tensor_shape%dim_group(i)) then
+	    if(tens_out%tensor_shape%dim_extent(trn(i)).ne.tens_in%tensor_shape%dim_extent(i).or.&
+	       &tens_out%tensor_shape%dim_divider(trn(i)).ne.tens_in%tensor_shape%dim_divider(i).or.&
+	       &tens_out%tensor_shape%dim_group(trn(i)).ne.tens_in%tensor_shape%dim_group(i)) then
 	     tensor_block_compatible=.false.
 	     exit
 	    endif
@@ -495,8 +501,8 @@
 	    else
 	     if(present(no_check_data_kinds)) then; chdtk=no_check_data_kinds; else; chdtk=.false.; endif
 	     if(.not.chdtk) then
-	      if((associated(tens_in%data_real4).and.(.not.associated(tens_out%data_real4))).or. &
-	        ((.not.associated(tens_in%data_real4)).and.associated(tens_out%data_real4))) then
+	      if((associated(tens_in%data_real4).and.(.not.associated(tens_out%data_real4))).or.&
+	        &((.not.associated(tens_in%data_real4)).and.associated(tens_out%data_real4))) then
 	       tensor_block_compatible=.false.; return
 	      else
 	       if(associated(tens_in%data_real4)) then
@@ -506,8 +512,8 @@
 	        endif
 	       endif
 	      endif
-	      if((associated(tens_in%data_real8).and.(.not.associated(tens_out%data_real8))).or. &
-	        ((.not.associated(tens_in%data_real8)).and.associated(tens_out%data_real8))) then
+	      if((associated(tens_in%data_real8).and.(.not.associated(tens_out%data_real8))).or.&
+	        &((.not.associated(tens_in%data_real8)).and.associated(tens_out%data_real8))) then
 	       tensor_block_compatible=.false.; return
 	      else
 	       if(associated(tens_in%data_real8)) then
@@ -517,8 +523,8 @@
 	        endif
 	       endif
 	      endif
-	      if((associated(tens_in%data_cmplx8).and.(.not.associated(tens_out%data_cmplx8))).or. &
-	        ((.not.associated(tens_in%data_cmplx8)).and.associated(tens_out%data_cmplx8))) then
+	      if((associated(tens_in%data_cmplx8).and.(.not.associated(tens_out%data_cmplx8))).or.&
+	        &((.not.associated(tens_in%data_cmplx8)).and.associated(tens_out%data_cmplx8))) then
 	       tensor_block_compatible=.false.; return
 	      else
 	       if(associated(tens_in%data_cmplx8)) then
@@ -812,8 +818,8 @@
 	   enddo
 !$OMP END DO NOWAIT
 !$OMP MASTER
-	   tens_block%data_real4(tens_block%tensor_block_size-mod(tens_block%tensor_block_size,vec_size): &
-	    tens_block%tensor_block_size-1_LONGINT)=valr4
+	   tens_block%data_real4(tens_block%tensor_block_size-mod(tens_block%tensor_block_size,vec_size):&
+	                        &tens_block%tensor_block_size-1_LONGINT)=valr4
 !$OMP END MASTER
 !$OMP END PARALLEL
 	  else !random fill
@@ -884,8 +890,8 @@
 	   enddo
 !$OMP END DO NOWAIT
 !$OMP MASTER
-	   tens_block%data_real8(tens_block%tensor_block_size-mod(tens_block%tensor_block_size,vec_size): &
-	    tens_block%tensor_block_size-1_LONGINT)=valr8
+	   tens_block%data_real8(tens_block%tensor_block_size-mod(tens_block%tensor_block_size,vec_size):&
+	                        &tens_block%tensor_block_size-1_LONGINT)=valr8
 !$OMP END MASTER
 !$OMP END PARALLEL
 	  else !random fill
@@ -956,8 +962,8 @@
 	   enddo
 !$OMP END DO NOWAIT
 !$OMP MASTER
-	   tens_block%data_cmplx8(tens_block%tensor_block_size-mod(tens_block%tensor_block_size,vec_size): &
-	    tens_block%tensor_block_size-1_LONGINT)=valc8
+	   tens_block%data_cmplx8(tens_block%tensor_block_size-mod(tens_block%tensor_block_size,vec_size):&
+	                         &tens_block%tensor_block_size-1_LONGINT)=valc8
 !$OMP END MASTER
 !$OMP END PARALLEL
 	  else !random fill
@@ -1099,9 +1105,9 @@
 	if(mast_kind.ne.'r4'.and.mast_kind.ne.'r8'.and.mast_kind.ne.'c8') then; ierr=1; return; endif
 	if(present(slave_kind)) then; slk=slave_kind; else; slk='  '; endif
 	if(tens%tensor_shape%num_dim.gt.0) then !true tensor
-	 if((mast_kind.eq.'r4'.and.associated(tens%data_real4)).or. &
-	    (mast_kind.eq.'r8'.and.associated(tens%data_real8)).or. &
-	    (mast_kind.eq.'c8'.and.associated(tens%data_cmplx8))) then
+	 if((mast_kind.eq.'r4'.and.associated(tens%data_real4)).or.&
+	   &(mast_kind.eq.'r8'.and.associated(tens%data_real8)).or.&
+	   &(mast_kind.eq.'c8'.and.associated(tens%data_cmplx8))) then
 	  ls=tens%tensor_block_size
 	  if(slk.eq.'--') then !destroy master data kind
 	   select case(mast_kind)
@@ -1671,8 +1677,8 @@
 !Check whether the slice is trivial:
 	  kf=0
 	  do i=1,n
-	   if(ext_beg(i).lt.0.or.ext_beg(i).ge.tens%tensor_shape%dim_extent(i).or.slice%tensor_shape%dim_extent(i).le.0.or. &
-	      ext_beg(i)+slice%tensor_shape%dim_extent(i)-1.ge.tens%tensor_shape%dim_extent(i)) then
+	   if(ext_beg(i).lt.0.or.ext_beg(i).ge.tens%tensor_shape%dim_extent(i).or.slice%tensor_shape%dim_extent(i).le.0.or.&
+	     &ext_beg(i)+slice%tensor_shape%dim_extent(i)-1.ge.tens%tensor_shape%dim_extent(i)) then
 	    ierr=14; return
 	   endif
 	   if(slice%tensor_shape%dim_extent(i).ne.tens%tensor_shape%dim_extent(i)) kf=1 !non-trivial
@@ -1688,14 +1694,14 @@
 	    case(dimension_led)
 	     select case(dtk)
 	     case('r4')
-	      call tensor_block_slice_dlf(n,tens%data_real4,tens%tensor_shape%dim_extent, &
-	            slice%data_real4,slice%tensor_shape%dim_extent,ext_beg,ierr); if(ierr.ne.0) then; ierr=18; return; endif
+	      call tensor_block_slice_dlf(n,tens%data_real4,tens%tensor_shape%dim_extent,&
+	            &slice%data_real4,slice%tensor_shape%dim_extent,ext_beg,ierr); if(ierr.ne.0) then; ierr=18; return; endif
 	     case('r8')
-	      call tensor_block_slice_dlf(n,tens%data_real8,tens%tensor_shape%dim_extent, &
-	            slice%data_real8,slice%tensor_shape%dim_extent,ext_beg,ierr); if(ierr.ne.0) then; ierr=19; return; endif
+	      call tensor_block_slice_dlf(n,tens%data_real8,tens%tensor_shape%dim_extent,&
+	            &slice%data_real8,slice%tensor_shape%dim_extent,ext_beg,ierr); if(ierr.ne.0) then; ierr=19; return; endif
 	     case('c8')
-	      call tensor_block_slice_dlf(n,tens%data_cmplx8,tens%tensor_shape%dim_extent, &
-	            slice%data_cmplx8,slice%tensor_shape%dim_extent,ext_beg,ierr); if(ierr.ne.0) then; ierr=20; return; endif
+	      call tensor_block_slice_dlf(n,tens%data_cmplx8,tens%tensor_shape%dim_extent,&
+	            &slice%data_cmplx8,slice%tensor_shape%dim_extent,ext_beg,ierr); if(ierr.ne.0) then; ierr=20; return; endif
 	     end select
 	    case(bricked_dense,bricked_ordered)
 	     !`Future
@@ -1803,8 +1809,8 @@
 !Check whether the slice is trivial:
 	  kf=0
 	  do i=1,n
-	   if(ext_beg(i).lt.0.or.ext_beg(i).ge.tens%tensor_shape%dim_extent(i).or.slice%tensor_shape%dim_extent(i).le.0.or. &
-	      ext_beg(i)+slice%tensor_shape%dim_extent(i)-1.ge.tens%tensor_shape%dim_extent(i)) then
+	   if(ext_beg(i).lt.0.or.ext_beg(i).ge.tens%tensor_shape%dim_extent(i).or.slice%tensor_shape%dim_extent(i).le.0.or.&
+	     &ext_beg(i)+slice%tensor_shape%dim_extent(i)-1.ge.tens%tensor_shape%dim_extent(i)) then
 	    ierr=18; return
 	   endif
 	   if(slice%tensor_shape%dim_extent(i).ne.tens%tensor_shape%dim_extent(i)) kf=1 !non-trivial
@@ -1820,14 +1826,14 @@
 	    case(dimension_led)
 	     select case(dtk)
 	     case('r4')
-	      call tensor_block_insert_dlf(n,tens%data_real4,tens%tensor_shape%dim_extent, &
-	            slice%data_real4,slice%tensor_shape%dim_extent,ext_beg,ierr); if(ierr.ne.0) then; ierr=22; return; endif
+	      call tensor_block_insert_dlf(n,tens%data_real4,tens%tensor_shape%dim_extent,&
+	            &slice%data_real4,slice%tensor_shape%dim_extent,ext_beg,ierr); if(ierr.ne.0) then; ierr=22; return; endif
 	     case('r8')
-	      call tensor_block_insert_dlf(n,tens%data_real8,tens%tensor_shape%dim_extent, &
-	            slice%data_real8,slice%tensor_shape%dim_extent,ext_beg,ierr); if(ierr.ne.0) then; ierr=23; return; endif
+	      call tensor_block_insert_dlf(n,tens%data_real8,tens%tensor_shape%dim_extent,&
+	            &slice%data_real8,slice%tensor_shape%dim_extent,ext_beg,ierr); if(ierr.ne.0) then; ierr=23; return; endif
 	     case('c8')
-	      call tensor_block_insert_dlf(n,tens%data_cmplx8,tens%tensor_shape%dim_extent, &
-	            slice%data_cmplx8,slice%tensor_shape%dim_extent,ext_beg,ierr); if(ierr.ne.0) then; ierr=24; return; endif
+	      call tensor_block_insert_dlf(n,tens%data_cmplx8,tens%tensor_shape%dim_extent,&
+	            &slice%data_cmplx8,slice%tensor_shape%dim_extent,ext_beg,ierr); if(ierr.ne.0) then; ierr=24; return; endif
 	     end select
 	    case(bricked_dense,bricked_ordered)
 	     !`Future
@@ -2002,13 +2008,13 @@
 	      dlt='  '
 	     endif
 	     if(rank_out.gt.0) then !partial trace
-	      call tensor_block_ptrace_dlf(contr_ptrn,ord_rest,tens_in%data_real4,rank_in,tens_in%tensor_shape%dim_extent, &
-	            tens_out%data_real4,rank_out,tens_out%tensor_shape%dim_extent,ierr)
+	      call tensor_block_ptrace_dlf(contr_ptrn,ord_rest,tens_in%data_real4,rank_in,tens_in%tensor_shape%dim_extent,&
+	            &tens_out%data_real4,rank_out,tens_out%tensor_shape%dim_extent,ierr)
 	      if(ierr.ne.0) then; ierr=8; return; endif
 	     else !full trace
 	      valr4=real(cmplx8_to_real8(tens_out%scalar_value),4)
-	      call tensor_block_ftrace_dlf(contr_ptrn,ord_rest,tens_in%data_real4,rank_in, &
-	            tens_in%tensor_shape%dim_extent,valr4,ierr)
+	      call tensor_block_ftrace_dlf(contr_ptrn,ord_rest,tens_in%data_real4,rank_in,&
+	            &tens_in%tensor_shape%dim_extent,valr4,ierr)
 	      if(ierr.ne.0) then; ierr=9; return; endif
 	      tens_out%scalar_value=cmplx(real(valr4,8),0d0,8)
 	     endif
@@ -2025,13 +2031,13 @@
 	      dlt='  '
 	     endif
 	     if(rank_out.gt.0) then !partial trace
-	      call tensor_block_ptrace_dlf(contr_ptrn,ord_rest,tens_in%data_real8,rank_in,tens_in%tensor_shape%dim_extent, &
-	            tens_out%data_real8,rank_out,tens_out%tensor_shape%dim_extent,ierr)
+	      call tensor_block_ptrace_dlf(contr_ptrn,ord_rest,tens_in%data_real8,rank_in,tens_in%tensor_shape%dim_extent,&
+	            &tens_out%data_real8,rank_out,tens_out%tensor_shape%dim_extent,ierr)
 	      if(ierr.ne.0) then; ierr=14; return; endif
 	     else !full trace
 	      valr8=cmplx8_to_real8(tens_out%scalar_value)
-	      call tensor_block_ftrace_dlf(contr_ptrn,ord_rest,tens_in%data_real8,rank_in, &
-	            tens_in%tensor_shape%dim_extent,valr8,ierr)
+	      call tensor_block_ftrace_dlf(contr_ptrn,ord_rest,tens_in%data_real8,rank_in,&
+	            &tens_in%tensor_shape%dim_extent,valr8,ierr)
 	      if(ierr.ne.0) then; ierr=15; return; endif
 	      tens_out%scalar_value=cmplx(valr8,0d0,8)
 	     endif
@@ -2048,13 +2054,13 @@
 	      dlt='  '
 	     endif
 	     if(rank_out.gt.0) then !partial trace
-	      call tensor_block_ptrace_dlf(contr_ptrn,ord_rest,tens_in%data_cmplx8,rank_in,tens_in%tensor_shape%dim_extent, &
-	            tens_out%data_cmplx8,rank_out,tens_out%tensor_shape%dim_extent,ierr)
+	      call tensor_block_ptrace_dlf(contr_ptrn,ord_rest,tens_in%data_cmplx8,rank_in,tens_in%tensor_shape%dim_extent,&
+	            &tens_out%data_cmplx8,rank_out,tens_out%tensor_shape%dim_extent,ierr)
 	      if(ierr.ne.0) then; ierr=20; return; endif
 	     else !full trace
 	      valc8=tens_out%scalar_value
-	      call tensor_block_ftrace_dlf(contr_ptrn,ord_rest,tens_in%data_cmplx8,rank_in, &
-	            tens_in%tensor_shape%dim_extent,valc8,ierr)
+	      call tensor_block_ftrace_dlf(contr_ptrn,ord_rest,tens_in%data_cmplx8,rank_in,&
+	            &tens_in%tensor_shape%dim_extent,valc8,ierr)
 	      if(ierr.ne.0) then; ierr=21; return; endif
 	      tens_out%scalar_value=valc8
 	     endif
@@ -2653,8 +2659,8 @@
 	if(ltb.eq.not_allocated.or.rtb.eq.not_allocated.or.dtb.eq.not_allocated) then; ierr=4; return; endif
 	if(ltb.eq.scalar_tensor.and.rtb.eq.scalar_tensor.and.dtb.eq.scalar_tensor) then !multiplication of scalars
 	 contr_case=multiply_scalars
-	elseif((ltb.ne.scalar_tensor.and.rtb.eq.scalar_tensor.and.dtb.ne.scalar_tensor).or. &
-	       (ltb.eq.scalar_tensor.and.rtb.ne.scalar_tensor.and.dtb.ne.scalar_tensor)) then
+	elseif((ltb.ne.scalar_tensor.and.rtb.eq.scalar_tensor.and.dtb.ne.scalar_tensor).or.&
+	      &(ltb.eq.scalar_tensor.and.rtb.ne.scalar_tensor.and.dtb.ne.scalar_tensor)) then
 	 contr_case=add_tensor
 	elseif(ltb.ne.scalar_tensor.and.rtb.ne.scalar_tensor.and.dtb.eq.scalar_tensor) then
 	 contr_case=full_contraction
@@ -2665,8 +2671,8 @@
 	endif
 !Check tensor ranks:
 	lrank=ltens%tensor_shape%num_dim; rrank=rtens%tensor_shape%num_dim; drank=dtens%tensor_shape%num_dim
-	if(lrank.ge.0.and.lrank.le.max_tensor_rank.and.rrank.ge.0.and.rrank.le.max_tensor_rank.and. &
-	   drank.ge.0.and.drank.le.max_tensor_rank) then
+	if(lrank.ge.0.and.lrank.le.max_tensor_rank.and.rrank.ge.0.and.rrank.le.max_tensor_rank.and.&
+	  &drank.ge.0.and.drank.le.max_tensor_rank) then
 	 if(present(data_kind)) then
 	  dtk=data_kind
 	 else
@@ -2754,8 +2760,8 @@
 	   if(ierr.ne.0) then; ierr=16; goto 999; endif
 #else
 	   if(.not.disable_blas) then
-	    call sgemm('T','N',int(lld,4),int(lrd,4),int(lcd,4),1.0,ltp%data_real4,int(lcd,4),rtp%data_real4,int(lcd,4),1.0, &
-	               dtp%data_real4,int(lld,4))
+	    call sgemm('T','N',int(lld,4),int(lrd,4),int(lcd,4),1.0,ltp%data_real4,int(lcd,4),rtp%data_real4,int(lcd,4),1.0,&
+	              &dtp%data_real4,int(lld,4))
 	   else
 	    call tensor_block_pcontract_dlf(lld,lrd,lcd,ltp%data_real4,rtp%data_real4,dtp%data_real4,ierr)
 	    if(ierr.ne.0) then; ierr=17; goto 999; endif
@@ -2767,8 +2773,8 @@
 	   if(ierr.ne.0) then; ierr=18; goto 999; endif
 #else
 	   if(.not.disable_blas) then
-	    call dgemm('T','N',int(lld,4),int(lrd,4),int(lcd,4),1d0,ltp%data_real8,int(lcd,4),rtp%data_real8,int(lcd,4),1d0, &
-	               dtp%data_real8,int(lld,4))
+	    call dgemm('T','N',int(lld,4),int(lrd,4),int(lcd,4),1d0,ltp%data_real8,int(lcd,4),rtp%data_real8,int(lcd,4),1d0,&
+	              &dtp%data_real8,int(lld,4))
 	   else
 	    call tensor_block_pcontract_dlf(lld,lrd,lcd,ltp%data_real8,rtp%data_real8,dtp%data_real8,ierr)
 	    if(ierr.ne.0) then; ierr=19; goto 999; endif
@@ -2780,8 +2786,8 @@
 	   if(ierr.ne.0) then; ierr=20; goto 999; endif
 #else
 	   if(.not.disable_blas) then
-	    call zgemm('T','N',int(lld,4),int(lrd,4),int(lcd,4),1d0,ltp%data_cmplx8,int(lcd,4),rtp%data_cmplx8,int(lcd,4),1d0, &
-	               dtp%data_cmplx8,int(lld,4))
+	    call zgemm('T','N',int(lld,4),int(lrd,4),int(lcd,4),1d0,ltp%data_cmplx8,int(lcd,4),rtp%data_cmplx8,int(lcd,4),1d0,&
+	              &dtp%data_cmplx8,int(lld,4))
 	   else
 	    call tensor_block_pcontract_dlf(lld,lrd,lcd,ltp%data_cmplx8,rtp%data_cmplx8,dtp%data_cmplx8,ierr)
 	    if(ierr.ne.0) then; ierr=21; goto 999; endif
@@ -3263,8 +3269,8 @@
 
         ierr=0; tensor_shape_rank=0
         if(tsss(1:1).eq.'(') then
-         l=1; do while(l.le.max_shape_str_len); if(tsss(l:l).eq.')') exit; l=l+1; enddo
-         if(l.le.max_shape_str_len) then
+         l=1; do while(l.le.MAX_SHAPE_STR_LEN); if(tsss(l:l).eq.')') exit; l=l+1; enddo
+         if(l.le.MAX_SHAPE_STR_LEN) then
           if(l.gt.2) then
            i=1
            do while(tsss(i:i).ne.')')
@@ -3362,11 +3368,11 @@
 	integer, intent(out):: contr_ptrn(1:*),cpl
 	integer, intent(inout):: ierr
 	character(1), parameter:: dn1(0:9)=(/'0','1','2','3','4','5','6','7','8','9'/)
-	character(2), parameter:: dn2(0:49)=(/'00','01','02','03','04','05','06','07','08','09', &
-	                                      '10','11','12','13','14','15','16','17','18','19', &
-	                                      '20','21','22','23','24','25','26','27','28','29', &
-	                                      '30','31','32','33','34','35','36','37','38','39', &
-	                                      '40','41','42','43','44','45','46','47','48','49'/)
+	character(2), parameter:: dn2(0:49)=(/'00','01','02','03','04','05','06','07','08','09',&
+	                                     &'10','11','12','13','14','15','16','17','18','19',&
+	                                     &'20','21','22','23','24','25','26','27','28','29',&
+	                                     &'30','31','32','33','34','35','36','37','38','39',&
+	                                     &'40','41','42','43','44','45','46','47','48','49'/)
 	integer i,j,k,l,m,n,k0,k1,k2,k3,k4,k5,ks,kf,adims(0:2),tag_len
 	character(2048) str !increase the length if needed (I doubt)
 
@@ -3452,8 +3458,8 @@
 	  if(j0.gt.0) then
 	   do j1=1,j0
 	    j2=iachar(lb(j1:j1))
-	    if(.not.((j2.ge.iachar('a').and.j2.le.iachar('z')).or. &
-	             (j2.ge.iachar('A').and.j2.le.iachar('Z')).or.(j2.ge.iachar('0').and.j2.le.iachar('9')))) then
+	    if(.not.((j2.ge.iachar('a').and.j2.le.iachar('z')).or.&
+	            &(j2.ge.iachar('A').and.j2.le.iachar('Z')).or.(j2.ge.iachar('0').and.j2.le.iachar('9')))) then
 	     index_label_ok=.false.; return
 	    endif
 	   enddo
@@ -3695,11 +3701,11 @@
 	type(tensor_block_t), intent(inout):: tens
 	integer, intent(inout):: ierr
 	integer i,j,k,l,m,n,k0,k1,k2,k3,ks,kf
-	character(max_shape_str_len) shp
+	character(MAX_SHAPE_STR_LEN) shp
 	logical res
 
 	ierr=0; l=len_trim(shape_str)
-	if(l.gt.max_shape_str_len) then
+	if(l.gt.MAX_SHAPE_STR_LEN) then
 	 if(verbose) write(cons_out,*)'FATAL(tensor_algebra::tensor_shape_create): '//&
 	             &'max length of a shape specification string exceeded: ',l
 	 ierr=1; return
@@ -3868,8 +3874,8 @@
 	     tensor_shape_ok=11; return
 	    elseif(tens%tensor_shape%dim_group(i).gt.0) then !non-trivial symmetric group
 	     if(tens%tensor_shape%dim_group(i).le.n) then
-	      if(group_div(tens%tensor_shape%dim_group(i)).eq.0) &
-	       group_div(tens%tensor_shape%dim_group(i))=tens%tensor_shape%dim_divider(i)
+	      if(group_div(tens%tensor_shape%dim_group(i)).eq.0)&
+	        &group_div(tens%tensor_shape%dim_group(i))=tens%tensor_shape%dim_divider(i)
 	      if(tens%tensor_shape%dim_divider(i).ne.group_div(tens%tensor_shape%dim_group(i))) then
 	       tensor_shape_ok=12; return !divider must be the same for symmetric dimensions
 	      endif
@@ -3937,9 +3943,9 @@
           stex=btest(tens%ptr_alloc,0); stdv=btest(tens%ptr_alloc,1); stgr=btest(tens%ptr_alloc,2)
           if(stex.and.stdv.and.stgr) then !all .true.
            tensor_block_alloc=.true.
-           if((.not.associated(tens%tensor_shape%dim_extent)).or. &
-              (.not.associated(tens%tensor_shape%dim_divider)).or. &
-              (.not.associated(tens%tensor_shape%dim_group))) then
+           if((.not.associated(tens%tensor_shape%dim_extent)).or.&
+             &(.not.associated(tens%tensor_shape%dim_divider)).or.&
+             &(.not.associated(tens%tensor_shape%dim_group))) then
             if(verbose) write(cons_out,'("ERROR(tensor_algebra::tensor_block_alloc): disassociated shape marked allocated!")')
             ierr=1; return
            endif
@@ -3999,7 +4005,7 @@
             ierr=5; return
            endif
           endif
-         endif          
+         endif
         case default
          ierr=6
         end select
@@ -4031,7 +4037,7 @@
 	real(real_kind), intent(out):: slice(0:*)
 	integer, intent(inout):: ierr
 	integer i,j,k,l,m,n,ks,kf,im(1:dim_num)
-	integer(LONGINT):: lts,lss,l_in,l_out,lb,le,ll,bases_in(1:dim_num),bases_out(1:dim_num),segs(0:max_threads) !`Is segs(:) threadsafe?
+	integer(LONGINT):: lts,lss,l_in,l_out,lb,le,ll,bases_in(1:dim_num),bases_out(1:dim_num),segs(0:MAX_THREADS) !`Is segs(:) threadsafe?
 	real(8) time_beg
 #ifndef NO_PHI
 !DIR$ ATTRIBUTES OFFLOAD:mic:: real_kind
@@ -4103,7 +4109,7 @@
 	real(real_kind), intent(out):: slice(0:*)
 	integer, intent(inout):: ierr
 	integer i,j,k,l,m,n,ks,kf,im(1:dim_num)
-	integer(LONGINT):: lts,lss,l_in,l_out,lb,le,ll,bases_in(1:dim_num),bases_out(1:dim_num),segs(0:max_threads) !`Is segs(:) threadsafe?
+	integer(LONGINT):: lts,lss,l_in,l_out,lb,le,ll,bases_in(1:dim_num),bases_out(1:dim_num),segs(0:MAX_THREADS) !`Is segs(:) threadsafe?
 	real(8) time_beg
 #ifndef NO_PHI
 !DIR$ ATTRIBUTES OFFLOAD:mic:: real_kind
@@ -4175,7 +4181,7 @@
 	complex(real_kind), intent(out):: slice(0:*)
 	integer, intent(inout):: ierr
 	integer i,j,k,l,m,n,ks,kf,im(1:dim_num)
-	integer(LONGINT):: lts,lss,l_in,l_out,lb,le,ll,bases_in(1:dim_num),bases_out(1:dim_num),segs(0:max_threads) !`Is segs(:) threadsafe?
+	integer(LONGINT):: lts,lss,l_in,l_out,lb,le,ll,bases_in(1:dim_num),bases_out(1:dim_num),segs(0:MAX_THREADS) !`Is segs(:) threadsafe?
 	real(8) time_beg
 #ifndef NO_PHI
 !DIR$ ATTRIBUTES OFFLOAD:mic:: real_kind
@@ -4247,7 +4253,7 @@
 	real(real_kind), intent(inout):: tens(0:*)
 	integer, intent(inout):: ierr
 	integer i,j,k,l,m,n,ks,kf,im(1:dim_num)
-	integer(LONGINT):: lts,lss,l_in,l_out,lb,le,ll,bases_in(1:dim_num),bases_out(1:dim_num),segs(0:max_threads) !`Is segs(:) threadsafe?
+	integer(LONGINT):: lts,lss,l_in,l_out,lb,le,ll,bases_in(1:dim_num),bases_out(1:dim_num),segs(0:MAX_THREADS) !`Is segs(:) threadsafe?
 	real(8) time_beg
 #ifndef NO_PHI
 !DIR$ ATTRIBUTES OFFLOAD:mic:: real_kind
@@ -4319,7 +4325,7 @@
 	real(real_kind), intent(inout):: tens(0:*)
 	integer, intent(inout):: ierr
 	integer i,j,k,l,m,n,ks,kf,im(1:dim_num)
-	integer(LONGINT):: lts,lss,l_in,l_out,lb,le,ll,bases_in(1:dim_num),bases_out(1:dim_num),segs(0:max_threads) !`Is segs(:) threadsafe?
+	integer(LONGINT):: lts,lss,l_in,l_out,lb,le,ll,bases_in(1:dim_num),bases_out(1:dim_num),segs(0:MAX_THREADS) !`Is segs(:) threadsafe?
 	real(8) time_beg
 #ifndef NO_PHI
 !DIR$ ATTRIBUTES OFFLOAD:mic:: real_kind
@@ -4391,7 +4397,7 @@
 	complex(real_kind), intent(inout):: tens(0:*)
 	integer, intent(inout):: ierr
 	integer i,j,k,l,m,n,ks,kf,im(1:dim_num)
-	integer(LONGINT):: lts,lss,l_in,l_out,lb,le,ll,bases_in(1:dim_num),bases_out(1:dim_num),segs(0:max_threads) !`Is segs(:) threadsafe?
+	integer(LONGINT):: lts,lss,l_in,l_out,lb,le,ll,bases_in(1:dim_num),bases_out(1:dim_num),segs(0:MAX_THREADS) !`Is segs(:) threadsafe?
 	real(8) time_beg
 #ifndef NO_PHI
 !DIR$ ATTRIBUTES OFFLOAD:mic:: real_kind
@@ -4472,7 +4478,7 @@
 	integer, intent(inout):: ierr
 	integer i,j,k,l,m,n,k1,k2,ks,kf,split_in,split_out
 	integer im(1:dim_num),n2o(0:dim_num+1),ipr(1:dim_num+1),dim_beg(1:dim_num),dim_end(1:dim_num)
-	integer(LONGINT) bases_in(1:dim_num+1),bases_out(1:dim_num+1),bases_pri(1:dim_num+1),segs(0:max_threads) !`Is segs(:) threadsafe?
+	integer(LONGINT) bases_in(1:dim_num+1),bases_out(1:dim_num+1),bases_pri(1:dim_num+1),segs(0:MAX_THREADS) !`Is segs(:) threadsafe?
 	integer(LONGINT) bs,l0,l1,l2,l3,ll,lb,le,ls,l_in,l_out,seg_in,seg_out,vol_min,vol_ext
 	logical trivial
 	real(8) time_beg,tm
@@ -4713,7 +4719,7 @@
 	integer, intent(inout):: ierr
 	integer i,j,k,l,m,n,k1,k2,ks,kf,split_in,split_out
 	integer im(1:dim_num),n2o(0:dim_num+1),ipr(1:dim_num+1),dim_beg(1:dim_num),dim_end(1:dim_num)
-	integer(LONGINT) bases_in(1:dim_num+1),bases_out(1:dim_num+1),bases_pri(1:dim_num+1),segs(0:max_threads) !`Is segs(:) threadsafe?
+	integer(LONGINT) bases_in(1:dim_num+1),bases_out(1:dim_num+1),bases_pri(1:dim_num+1),segs(0:MAX_THREADS) !`Is segs(:) threadsafe?
 	integer(LONGINT) bs,l0,l1,l2,l3,ll,lb,le,ls,l_in,l_out,seg_in,seg_out,vol_min,vol_ext
 	logical trivial
 	real(8) time_beg,tm
@@ -4954,7 +4960,7 @@
 	integer, intent(inout):: ierr
 	integer i,j,k,l,m,n,k1,k2,ks,kf,split_in,split_out
 	integer im(1:dim_num),n2o(0:dim_num+1),ipr(1:dim_num+1),dim_beg(1:dim_num),dim_end(1:dim_num)
-	integer(LONGINT) bases_in(1:dim_num+1),bases_out(1:dim_num+1),bases_pri(1:dim_num+1),segs(0:max_threads) !`Is segs(:) threadsafe?
+	integer(LONGINT) bases_in(1:dim_num+1),bases_out(1:dim_num+1),bases_pri(1:dim_num+1),segs(0:MAX_THREADS) !`Is segs(:) threadsafe?
 	integer(LONGINT) bs,l0,l1,l2,l3,ll,lb,le,ls,l_in,l_out,seg_in,seg_out,vol_min,vol_ext
 	logical trivial
 	real(8) time_beg,tm
@@ -6362,7 +6368,7 @@
 	real(real_kind), intent(inout):: val_out
 	integer, intent(inout):: ierr
 	integer i,j,k,l,m,n,ks,kf,im(1:rank_in),ic(1:rank_in)
-	integer(LONGINT) bases_in(1:rank_in),bases_tr(1:rank_in),segs(0:max_threads),ls,lc,l_in,l0 !`Is segs(:) threadsafe?
+	integer(LONGINT) bases_in(1:rank_in),bases_tr(1:rank_in),segs(0:MAX_THREADS),ls,lc,l_in,l0 !`Is segs(:) threadsafe?
 	real(real_kind) val_tr
 	real(8) time_beg
 #ifndef NO_PHI
@@ -6471,7 +6477,7 @@
 	real(real_kind), intent(inout):: val_out
 	integer, intent(inout):: ierr
 	integer i,j,k,l,m,n,ks,kf,im(1:rank_in),ic(1:rank_in)
-	integer(LONGINT) bases_in(1:rank_in),bases_tr(1:rank_in),segs(0:max_threads),ls,lc,l_in,l0  !`Is segs(:) threadsafe?
+	integer(LONGINT) bases_in(1:rank_in),bases_tr(1:rank_in),segs(0:MAX_THREADS),ls,lc,l_in,l0  !`Is segs(:) threadsafe?
 	real(real_kind) val_tr
 	real(8) time_beg
 #ifndef NO_PHI
@@ -6580,7 +6586,7 @@
 	complex(real_kind), intent(inout):: val_out
 	integer, intent(inout):: ierr
 	integer i,j,k,l,m,n,ks,kf,im(1:rank_in),ic(1:rank_in)
-	integer(LONGINT) bases_in(1:rank_in),bases_tr(1:rank_in),segs(0:max_threads),ls,lc,l_in,l0  !`Is segs(:) threadsafe?
+	integer(LONGINT) bases_in(1:rank_in),bases_tr(1:rank_in),segs(0:MAX_THREADS),ls,lc,l_in,l0  !`Is segs(:) threadsafe?
 	complex(real_kind) val_tr
 	real(8) time_beg
 #ifndef NO_PHI
@@ -6690,7 +6696,7 @@
 	real(real_kind), intent(inout):: tens_out(0:*)
 	integer, intent(inout):: ierr
 	integer i,j,k,l,m,n,ks,kf,im(1:rank_in),ic(1:rank_in),ip(1:rank_out)
-	integer(LONGINT) bases_in(1:rank_in),bases_out(1:rank_out),bases_tr(1:rank_in),segs(0:max_threads)  !`Is segs(:) threadsafe?
+	integer(LONGINT) bases_in(1:rank_in),bases_out(1:rank_out),bases_tr(1:rank_in),segs(0:MAX_THREADS)  !`Is segs(:) threadsafe?
 	integer(LONGINT) li,lo,lc,l_in,l_out,l0
 	real(real_kind) val_tr
 	real(8) time_beg
@@ -6849,7 +6855,7 @@
 	real(real_kind), intent(inout):: tens_out(0:*)
 	integer, intent(inout):: ierr
 	integer i,j,k,l,m,n,ks,kf,im(1:rank_in),ic(1:rank_in),ip(1:rank_out)
-	integer(LONGINT) bases_in(1:rank_in),bases_out(1:rank_out),bases_tr(1:rank_in),segs(0:max_threads)  !`Is segs(:) threadsafe?
+	integer(LONGINT) bases_in(1:rank_in),bases_out(1:rank_out),bases_tr(1:rank_in),segs(0:MAX_THREADS)  !`Is segs(:) threadsafe?
 	integer(LONGINT) li,lo,lc,l_in,l_out,l0
 	real(real_kind) val_tr
 	real(8) time_beg
@@ -7008,7 +7014,7 @@
 	complex(real_kind), intent(inout):: tens_out(0:*)
 	integer, intent(inout):: ierr
 	integer i,j,k,l,m,n,ks,kf,im(1:rank_in),ic(1:rank_in),ip(1:rank_out)
-	integer(LONGINT) bases_in(1:rank_in),bases_out(1:rank_out),bases_tr(1:rank_in),segs(0:max_threads)  !`Is segs(:) threadsafe?
+	integer(LONGINT) bases_in(1:rank_in),bases_out(1:rank_out),bases_tr(1:rank_in),segs(0:MAX_THREADS)  !`Is segs(:) threadsafe?
 	integer(LONGINT) li,lo,lc,l_in,l_out,l0
         complex(real_kind) val_tr
 	real(8) time_beg

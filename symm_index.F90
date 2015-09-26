@@ -1,7 +1,7 @@
 !This module provides infrastructure for symmetric multi-indexing
 !for higher rank tensor algebra.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2014/08/29
+!REVISION: 2015/09/23
 !DESCRIPTION:
 ! # Given a symmetric multi-index {I1<=I2<=...<=In}, each subsequent value
 !   of the multi-index is consecutively assigned an integer from the range [0..max]
@@ -22,14 +22,16 @@
 ! # i:delete_address_table(i:handle);
 ! # i:test_address_table(i[2]:iba,i:ndim,i:ord,i:mrpt,i[1]:lb,i[1]:ub);
        module symm_index
+        implicit none
+        private
 !PARAMETERS:
-        integer, private:: cons_out=6
-        logical, private:: verbose=.true.
-        logical, private:: debug=.true.
-        integer, parameter, private:: max_mlndx_length=256                      !max allowed multi-index length
-        integer, parameter, private:: max_banks=16                              !max number of table banks
-        integer, parameter, private:: tables_per_bank=16384                     !max number of tables per bank
-        integer, parameter, private:: max_addr_tables=max_banks*tables_per_bank !max number of addressing tables
+        integer, private:: CONS_OUT=6
+        logical, private:: VERBOSE=.true.
+        logical, private:: DEBUG=.true.
+        integer, parameter, private:: MAX_MLNDX_LENGTH=256                      !max allowed multi-index length
+        integer, parameter, private:: MAX_BANKS=16                              !max number of table banks
+        integer, parameter, private:: TABLES_PER_BANK=16384                     !max number of tables per bank
+        integer, parameter, private:: MAX_ADDR_TABLES=MAX_BANKS*TABLES_PER_BANK !max number of addressing tables
 !ALIASES:
         integer, parameter, public:: SYMM_INDEX_EMPTY=-1
         integer, parameter, public:: SYMM_INDEX_NO_ORDER=0
@@ -55,7 +57,7 @@
          integer, private:: banks_in_use=0                    !number of table banks in use
          integer, private:: tables_in_use=0                   !total number of tables in use
          integer, private:: total_tables_size=0               !total number of elements in all allocated addressing tables
-         type(tables_bank_t), private:: tab_bank(1:max_banks) !table banks
+         type(tables_bank_t), private:: tab_bank(1:MAX_BANKS) !table banks
         end type address_tables_t
 !DATA:
         type(address_tables_t), target, private:: address_tables !addressing tables storage
@@ -75,7 +77,7 @@
 !   with allocated components must deallocate the latter as well. This is assumed here.
         implicit none
         integer i
-        do i=1,max_banks
+        do i=1,MAX_BANKS
          if(allocated(address_tables%tab_bank(i)%free_tab)) deallocate(address_tables%tab_bank(i)%free_tab)
          if(allocated(address_tables%tab_bank(i)%addr_tab)) deallocate(address_tables%tab_bank(i)%addr_tab) !hierarchical deallocation!
          address_tables%tab_bank(i)%num_tables=0
@@ -92,7 +94,7 @@
         integer, intent(out):: tables_left !number of free tables
         num_tables=address_tables%tables_in_use
         num_elems=address_tables%total_tables_size
-        tables_left=max_addr_tables-max(num_tables,0)
+        tables_left=MAX_ADDR_TABLES-max(num_tables,0)
         return
         end subroutine info_address_tables
 !----------------------------------------------------------------------
@@ -124,13 +126,13 @@
         integer, intent(in), optional:: lbnd(1:*)  !lower bounds of index ranges
         integer, intent(in), optional:: ubnd(1:*)  !upper bounds of index ranges
         integer i,j,k,l,m,n,bank,tab,top_val,ierr
-        integer lb(1:max_mlndx_length),ub(1:max_mlndx_length),im(0:max_mlndx_length+1)
+        integer lb(1:MAX_MLNDX_LENGTH),ub(1:MAX_MLNDX_LENGTH),im(0:MAX_MLNDX_LENGTH+1)
 
         get_address_table=0
-        if(handle.gt.0.and.handle.le.max_addr_tables) then !handle --> existing table
-         bank=((handle-1)/tables_per_bank)+1 !bank number
+        if(handle.gt.0.and.handle.le.MAX_ADDR_TABLES) then !handle --> existing table
+         bank=((handle-1)/TABLES_PER_BANK)+1 !bank number
          if(allocated(address_tables%tab_bank(bank)%addr_tab)) then
-          i=handle-(bank-1)*tables_per_bank !entry number
+          i=handle-(bank-1)*TABLES_PER_BANK !entry number
           if(allocated(address_tables%tab_bank(bank)%addr_tab(i)%incr)) then
            iba(0:,1:)=>address_tables%tab_bank(bank)%addr_tab(i)%incr
           else
@@ -141,7 +143,7 @@
          endif
         elseif(handle.le.0) then !empty handle: create a new table
          if(present(ndim).and.present(ord).and.present(mrpt).and.present(lbnd).and.present(ubnd)) then
-          if(ndim.gt.0.and.ndim.le.max_mlndx_length.and.mrpt.ge.0) then
+          if(ndim.gt.0.and.ndim.le.MAX_MLNDX_LENGTH.and.mrpt.ge.0) then
            do i=1,ndim; if(lbnd(i).gt.ubnd(i)) then; get_address_table=-3; return; endif; enddo !check
            select case(ord)
            case(SYMM_INDEX_NO_ORDER)
@@ -175,9 +177,9 @@
               endif
              enddo
              if(n.lt.0) then; get_address_table=1; return; endif !multi-index range is empty under these restrictions
-	     if(debug) then
-	      write(cons_out,'("#DEBUG(symm_index::get_address_table): min: ",64(1x,i4))') im(1:m)
-	     endif
+             if(DEBUG) then
+              write(CONS_OUT,'("#DEBUG(symm_index::get_address_table): min: ",64(1x,i4))') im(1:m)
+             endif
   !Compute increments for position m:
              l=0
              do while(im(m).le.ub(m)) !index value
@@ -216,30 +218,30 @@
          integer, intent(out):: jb,jt,hndl
          integer:: j0,je
          get_free_table=0
-         if(address_tables%tables_in_use.lt.max_addr_tables) then
+         if(address_tables%tables_in_use.lt.MAX_ADDR_TABLES) then
           jb=0; jt=0; hndl=0
-          do j0=1,max_banks
+          do j0=1,MAX_BANKS
            if(allocated(address_tables%tab_bank(j0)%addr_tab)) then
-            if(address_tables%tab_bank(j0)%num_tables.lt.tables_per_bank) then
+            if(address_tables%tab_bank(j0)%num_tables.lt.TABLES_PER_BANK) then
              address_tables%tab_bank(j0)%num_tables=address_tables%tab_bank(j0)%num_tables+1
              jt=address_tables%tab_bank(j0)%free_tab(address_tables%tab_bank(j0)%num_tables); jb=j0
-             hndl=jt+(jb-1)*tables_per_bank
+             hndl=jt+(jb-1)*TABLES_PER_BANK
              exit
             endif
            else
-            allocate(address_tables%tab_bank(j0)%addr_tab(1:tables_per_bank), &
-                     address_tables%tab_bank(j0)%free_tab(1:tables_per_bank),STAT=je)
+            allocate(address_tables%tab_bank(j0)%addr_tab(1:TABLES_PER_BANK),&
+                     &address_tables%tab_bank(j0)%free_tab(1:TABLES_PER_BANK),STAT=je)
             if(je.ne.0) then; get_free_table=-1; return; endif
-            do je=1,tables_per_bank; address_tables%tab_bank(j0)%free_tab(je)=je; enddo
-            address_tables%tab_bank(j0)%num_tables=1; jb=j0; jt=1; hndl=jt+(jb-1)*tables_per_bank
+            do je=1,TABLES_PER_BANK; address_tables%tab_bank(j0)%free_tab(je)=je; enddo
+            address_tables%tab_bank(j0)%num_tables=1; jb=j0; jt=1; hndl=jt+(jb-1)*TABLES_PER_BANK
             address_tables%banks_in_use=address_tables%banks_in_use+1
             exit
            endif
           enddo
           if(jb.gt.0.and.jt.gt.0) then
-           allocate(address_tables%tab_bank(jb)%addr_tab(jt)%lbounds(1:ndim), &
-                    address_tables%tab_bank(jb)%addr_tab(jt)%ubounds(1:ndim), &
-                    address_tables%tab_bank(jb)%addr_tab(jt)%incr(0:top_val,1:ndim),STAT=je)
+           allocate(address_tables%tab_bank(jb)%addr_tab(jt)%lbounds(1:ndim),&
+                    &address_tables%tab_bank(jb)%addr_tab(jt)%ubounds(1:ndim),&
+                    &address_tables%tab_bank(jb)%addr_tab(jt)%incr(0:top_val,1:ndim),STAT=je)
            if(je.eq.0) then
             address_tables%tab_bank(jb)%addr_tab(jt)%ordering=ord
             address_tables%tab_bank(jb)%addr_tab(jt)%max_repeats=mrpt
@@ -248,12 +250,12 @@
             address_tables%tables_in_use=address_tables%tables_in_use+1
             address_tables%total_tables_size=address_tables%total_tables_size+(top_val+1)*ndim
            else
-            if(allocated(address_tables%tab_bank(jb)%addr_tab(jt)%lbounds)) &
-             deallocate(address_tables%tab_bank(jb)%addr_tab(jt)%lbounds)
-            if(allocated(address_tables%tab_bank(jb)%addr_tab(jt)%ubounds)) &
-             deallocate(address_tables%tab_bank(jb)%addr_tab(jt)%ubounds)
-            if(allocated(address_tables%tab_bank(jb)%addr_tab(jt)%incr)) &
-             deallocate(address_tables%tab_bank(jb)%addr_tab(jt)%incr)
+            if(allocated(address_tables%tab_bank(jb)%addr_tab(jt)%lbounds))&
+             &deallocate(address_tables%tab_bank(jb)%addr_tab(jt)%lbounds)
+            if(allocated(address_tables%tab_bank(jb)%addr_tab(jt)%ubounds))&
+             &deallocate(address_tables%tab_bank(jb)%addr_tab(jt)%ubounds)
+            if(allocated(address_tables%tab_bank(jb)%addr_tab(jt)%incr))&
+             &deallocate(address_tables%tab_bank(jb)%addr_tab(jt)%incr)
             jb=0; jt=0; hndl=0; get_free_table=-2
            endif
           else
@@ -273,14 +275,14 @@
         integer, intent(inout):: handle
         integer i,n
         delete_address_table=0
-        if(handle.gt.0.and.handle.le.max_addr_tables) then
-         n=((handle-1)/tables_per_bank)+1; i=handle-(n-1)*tables_per_bank
-         if(allocated(address_tables%tab_bank(n)%addr_tab).and. &
-            allocated(address_tables%tab_bank(n)%free_tab)) then
-          if(allocated(address_tables%tab_bank(n)%addr_tab(i)%lbounds)) &
-           deallocate(address_tables%tab_bank(n)%addr_tab(i)%lbounds)
-          if(allocated(address_tables%tab_bank(n)%addr_tab(i)%ubounds)) &
-           deallocate(address_tables%tab_bank(n)%addr_tab(i)%ubounds)
+        if(handle.gt.0.and.handle.le.MAX_ADDR_TABLES) then
+         n=((handle-1)/TABLES_PER_BANK)+1; i=handle-(n-1)*TABLES_PER_BANK
+         if(allocated(address_tables%tab_bank(n)%addr_tab).and.&
+           &allocated(address_tables%tab_bank(n)%free_tab)) then
+          if(allocated(address_tables%tab_bank(n)%addr_tab(i)%lbounds))&
+            &deallocate(address_tables%tab_bank(n)%addr_tab(i)%lbounds)
+          if(allocated(address_tables%tab_bank(n)%addr_tab(i)%ubounds))&
+            &deallocate(address_tables%tab_bank(n)%addr_tab(i)%ubounds)
           if(allocated(address_tables%tab_bank(n)%addr_tab(i)%incr)) then
            address_tables%total_tables_size=address_tables%total_tables_size-size(address_tables%tab_bank(n)%addr_tab(i)%incr)
            deallocate(address_tables%tab_bank(n)%addr_tab(i)%incr)
@@ -313,10 +315,10 @@
         integer, intent(in):: mrpt       !max allowed number of index repeats in an ordered multi-index
         integer, intent(in):: lb(1:*)    !index lower bounds
         integer, intent(in):: ub(1:*)    !index upper bounds
-        integer i,j,k,l,m,n,im(0:max_mlndx_length+1),ir(1:max_mlndx_length)
+        integer i,j,k,l,m,n,im(0:MAX_MLNDX_LENGTH+1),ir(1:MAX_MLNDX_LENGTH)
 
         test_address_table=0
-        if(ndim.gt.0.and.ndim.le.max_mlndx_length.and.mrpt.ge.0) then
+        if(ndim.gt.0.and.ndim.le.MAX_MLNDX_LENGTH.and.mrpt.ge.0) then
          if(lbound(iba,1).eq.0.and.lbound(iba,2).eq.1.and.lb(1).eq.0) then
           select case(ord)
           case(SYMM_INDEX_NO_ORDER)
@@ -334,19 +336,19 @@
  !Test all multi-indices:
            if(n.ge.0) then
             l=-1; k=0; do i=1,ndim; k=k+iba(im(i),i); enddo
-            if(debug) then
-             write(cons_out,'("#DEBUG(symm_index::test_address_table): ndim, mrpt: ",i4,1x,i4)') ndim,mrpt
-             write(cons_out,'("#DEBUG(symm_index::test_address_table): min: ",i10,":",64(1x,i4))') k,im(1:ndim)
-             write(cons_out,'("#DEBUG(symm_index::test_address_table): min: ",i10,":",64(1x,i4))') l,ir(1:ndim)
+            if(DEBUG) then
+             write(CONS_OUT,'("#DEBUG(symm_index::test_address_table): ndim, mrpt: ",i4,1x,i4)') ndim,mrpt
+             write(CONS_OUT,'("#DEBUG(symm_index::test_address_table): min: ",i10,":",64(1x,i4))') k,im(1:ndim)
+             write(CONS_OUT,'("#DEBUG(symm_index::test_address_table): min: ",i10,":",64(1x,i4))') l,ir(1:ndim)
             endif
             tloop: do
              l=l+1
-             if(debug) then
-              write(cons_out,'("#DEBUG(symm_index::test_address_table):",i10,":",64(1x,i4))') k,im(1:ndim)
-!              write(cons_out,'("#DEBUG(symm_index::test_address_table):",i10,":",64(1x,i4))') l,ir(1:ndim)
+             if(DEBUG) then
+              write(CONS_OUT,'("#DEBUG(symm_index::test_address_table):",i10,":",64(1x,i4))') k,im(1:ndim)
+!             write(CONS_OUT,'("#DEBUG(symm_index::test_address_table):",i10,":",64(1x,i4))') l,ir(1:ndim)
              endif
              if(k.ne.l) then
-              if(verbose) write(cons_out,'("#ERROR(symm_index::test_address_table): mismatch: ",i11,1x,i11)') l,k
+              if(VERBOSE) write(CONS_OUT,'("#ERROR(symm_index::test_address_table): mismatch: ",i11,1x,i11)') l,k
               test_address_table=1; return !addressing table is invalid
              endif
              iloop: do i=1,ndim
@@ -374,7 +376,7 @@
              exit tloop
             enddo tloop
            else
-            if(verbose) write(cons_out,'("#ERROR(symm_index::test_address_table): No minimal multi-index exists!")')
+            if(VERBOSE) write(CONS_OUT,'("#ERROR(symm_index::test_address_table): No minimal multi-index exists!")')
             test_address_table=2
            endif
           case(SYMM_INDEX_GE_ORDER)
@@ -383,8 +385,8 @@
            test_address_table=3
           end select
          else
-          if(verbose) write(cons_out,'("#ERROR(symm_index::test_address_table): invalid bounds: ",i6,1x,i6,1x,i6)') &
-           lbound(iba,1),lbound(iba,2),lb(1)
+          if(VERBOSE) write(CONS_OUT,'("#ERROR(symm_index::test_address_table): invalid bounds: ",i6,1x,i6,1x,i6)')&
+           &lbound(iba,1),lbound(iba,2),lb(1)
           test_address_table=4
          endif
         else

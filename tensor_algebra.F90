@@ -1,16 +1,9 @@
 !ExaTensor::TAL-SH: Basic parameters and types:
         module tensor_algebra
         use, intrinsic:: ISO_C_BINDING
+        use dil_kinds
         implicit none
-!BASIC TYPE SIZES:`These should perhaps go to a separate module, including TRY_LATER and DEVICE_UNABLE
-        integer(C_INT), parameter, public:: INTD=4  !default integer size
-        integer(C_INT), parameter, public:: INTL=8  !long integer size
-        integer(C_INT), parameter, public:: REALD=8 !default real size
-#ifndef NO_PHI
-!DIR$ ATTRIBUTES OFFLOAD:mic:: INTD,INTL,REALD
-!DIR$ ATTRIBUTES ALIGN:128:: INTD,INTL,REALD
-#endif
-
+        public
 !TENSOR ALGEBRA LIMITS (keep consistent with tensor_algebra.h):
         integer(C_INT), parameter, public:: MAX_TENSOR_RANK=32    !max allowed tensor rank (max number of indices in a tensor)
         integer(C_INT), parameter, public:: MAX_TENSOR_OPERANDS=4 !max number of tensor operands in a tensor operation

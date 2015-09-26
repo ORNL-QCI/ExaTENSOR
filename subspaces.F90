@@ -1,9 +1,9 @@
-!Infrastructure for adaptive Hilbert space decompositions.
+!Infrastructure for a recursive adaptive Hilbert space decomposition.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2015/04/28
+!REVISION: 2015/09/24
 !All rights reserved!
         module subspaces
-        use tensor_algebra
+        use dil_kinds
         implicit none
         private
 !PARAMETERS:
@@ -24,7 +24,7 @@
         end type HilbertSpaceAd_t
 !DATA:
 
-!FUNCTION VISIBILITY:
+!VISIBILITY:
 
         contains
 !METHODS:

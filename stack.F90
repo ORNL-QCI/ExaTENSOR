@@ -13,6 +13,7 @@
 !NOTES:
 ! a) It is illegal to try pushing a NULL object.
        module stack
+        use dil_kinds
         implicit none
         private
 !PARAMETERS:
@@ -20,8 +21,6 @@
         integer, private:: CONS_OUT=6        !default output
         logical, private:: VERBOSE=.true.    !verbosity for errors
         logical, private:: DEBUG=.true.      !debugging mode
-        integer, parameter, private:: INTD=4 !default integer kind
-        integer, parameter, private:: INTL=8 !long integer kind
  !Error codes:
         integer(INTD), parameter, public:: STACK_SUCCESS=0         !success
         integer(INTD), parameter, public:: STACK_ERROR=-1          !unclassified error
@@ -258,11 +257,10 @@
 !TESTING PART:
 !----------------------------------------------------------------------
        module stack_test
+        use dil_kinds
         use stack
         implicit none
         private
-
-        integer, parameter, public:: INTD=4 !default integer kind
 
         public dil_test_stack
 

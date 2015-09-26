@@ -1,7 +1,7 @@
        module dictionary
 !General-purpose dictionary implementation (OO Fortran 2008) based on AVL BST.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2015/07/10
+!REVISION: 2015/09/23
 !DESCRIPTION:
 !#Dictionary items:
 !  In order to store an item ({key;value}) in the dictionary,
@@ -32,6 +32,7 @@
 !  must be supplied (see print_func_i interface below). The item printing
 !  function must operate on an unlimited polymorphic entity (item)!
         implicit none
+        private
 !PARAMETERS:
  !General:
         integer, private:: jo_dict=6      !default output device
@@ -100,19 +101,6 @@
           procedure, public:: print_entry=>dict_print_entry !print the current (CDP) entry
           procedure, public:: search=>dict_search !searches for an item by a given key with further optional actions
         end type dict_t
-!MODULE PROCEDURE VISIBILITY:
-        public dict_verbose
-        private dict_volume
-        private dict_reset
-        private dict_move_down
-        private dict_move_up
-        private dict_next_in_order
-        private dict_traverse
-        private dict_destroy
-        private dict_print
-        private dict_print_entry
-        private dict_search
-        private print_key
 !INTERFACES:
         abstract interface
  !Generic key comparison function:
@@ -131,6 +119,24 @@
           integer:: ierr
          end function destruct_func_i
         end interface
+!OBJECT VISIBILITY:
+ !Procedures:
+        public dict_verbose
+        private dict_volume
+        private dict_reset
+        private dict_move_down
+        private dict_move_up
+        private dict_next_in_order
+        private dict_traverse
+        private dict_destroy
+        private dict_print
+        private dict_print_entry
+        private dict_search
+        private print_key
+ !Interfaces:
+        public cmp_key_func_i
+        public print_func_i
+        public destruct_func_i
 !-------------------------------------------
        contains
 !SERVICE PROCEDURES:

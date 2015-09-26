@@ -1,7 +1,8 @@
-!ExaTensor::TAL-SH: User-level API definition:
-!REVISION: 2015/09/15
+!ExaTensor::TAL-SH: Device-unified user-level API:
+!REVISION: 2015/09/24
 !Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
 !Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
+!LICENSE: GPLv2
 
 !This source file is free software; you can redistribute it and/or
 !modify it under the terms of the GNU General Public License
@@ -18,21 +19,22 @@
 !Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 --------------------------------------------------------------------------------
        module talsh
-        use tensor_algebra_cpu_phi
+        use tensor_algebra_cpu_phi !device-specific tensor algebra API + basic
         implicit none
-!       private
+        public
 !PARAMETERS:
  !Generic:
-        integer(INTD), private:: CONS_OUT=6   !default output device for this module
-        logical(INTD), private:: DEBUG=.true. !debugging mode for this module
+        integer(INTD), private:: CONS_OUT=6     !default output device for this module
+        logical(INTD), private:: VERBOSE=.true. !verbosity for errors
+        logical(INTD), private:: DEBUG=.true.   !debugging mode for this module
 !DERIVED TYPES:
 
 !GLOBALS:
 
 !INTERFACES:
 
-!PROCEDURE VISIBILITY:
- !Device control API:
+!VISIBILITY:
+ !TAL-SH device control API:
         public talsh_init
         public talsh_shutdown
         public talsh_flat_dev_id
@@ -40,7 +42,7 @@
         public talsh_device_state
         public talsh_device_busy_least
         public talsh_stats
- !Tensor block API:
+ !TAL-SH tensor block API:
         public talsh_tensor_construct
         public talsh_tensor_destroy
         public talsh_tensor_volume
@@ -55,7 +57,7 @@
         public talsh_task_wait
         public talsh_tasks_wait
         public talsh_task_time
- !Tensor operations:
+ !TAL-SH tensor operations:
         public talsh_tensor_place
         public talsh_tensor_discard
         public talsh_tensor_init
@@ -67,6 +69,6 @@
         public talsh_tensor_contract
 
        contains
-!API DEFINTION:
+!API DEFINITION:
 
        end module talsh

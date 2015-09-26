@@ -1,7 +1,9 @@
 !Standard procedures often used by me.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISON: 2015/06/15
+!REVISON: 2015/09/23
 	module stsubs
+        implicit none
+        private
 !Parameters:
         logical, private:: VERBOSE=.false.                 !verbosity for errors
 	real(8), parameter, public:: PI=3.14159265358979d0 !PI constant

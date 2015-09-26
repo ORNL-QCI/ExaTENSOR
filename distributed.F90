@@ -1,6 +1,10 @@
-!Distributed data storage infrastructure (DDSI).
+!Distributed data storage service (DDSS).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2015/07/31 (started 2015/03/18)
+!REVISION: 2015/09/24 (started 2015/03/18)
+!Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
+!Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
+!LICENSE: GPLv2
+
 !CONCEPTS:
 ! * Each MPI process can participate in one or more distributed memory spaces (DMS),
 !   where each distributed memory space is defined within a specific MPI communicator.
@@ -20,10 +24,10 @@
 !   Contrary, special return statuses should be closer to the HUGE by their absolute values.
         module distributed
 !       use, intrinsic:: ISO_C_BINDING
-        use service_mpi !includes ISO_C_BINDING & MPI (must stay public)
+        use service_mpi !includes ISO_C_BINDING & MPI
         use:: tensor_algebra, only: TRY_LATER,NO_TYPE,R4,R8,C8,R4_,R8_,C8_
         implicit none
-        public !because of mpi.mod (or mpif.h) contained in service_mpi.mod
+        private
 !PARAMETERS:
  !Output:
         integer, private:: CONS_OUT=6     !default output for this module
