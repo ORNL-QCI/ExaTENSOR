@@ -1,6 +1,6 @@
 !ExaTensor::Massively Parallel Virtual Processor for Scale-Adaptive Tensor Algebra
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2015/09/25
+!REVISION: 2015/09/29
 !Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
 !Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
 !LICENSE: GPLv2
@@ -18,7 +18,7 @@
 !You should have received a copy of the GNU General Public License
 !along with this program; if not, write to the Free Software
 !Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
---------------------------------------------------------------------------------
+!--------------------------------------------------------------------------------
       module exatensor
        use virta
        use c_process
