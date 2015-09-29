@@ -78,7 +78,7 @@ $(NAME): $(OBJS)
 	$(FC) $(OBJS) $(LFLAGS) $(NAME)
 
 dil_kinds.o: dil_kinds.F90
-	$(CC) $(MPI_INC) $(CUDA_INC) $(CFLAGS) dil_kinds.F90
+	$(FC) $(MPI_INC) $(CUDA_INC) $(CFLAGS) dil_kinds.F90
 
 sys_service.o: sys_service.c
 	$(CC) $(MPI_INC) $(CUDA_INC) $(CFLAGS) sys_service.c
