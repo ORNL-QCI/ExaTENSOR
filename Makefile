@@ -72,7 +72,7 @@ OBJS = dil_kinds.o sys_service.o stsubs.o multords.o combinatoric.o symm_index.o
 	extern_names.o tensor_algebra.o tensor_algebra_cpu.o tensor_algebra_cpu_phi.o tensor_dil_omp.o \
 	c2fortran.o mem_manager.o tensor_algebra_gpu_nvidia.o talshf.o talshc.o \
 	mpi_fort.o service_mpi.o distributed.o subspaces.o virta.o c_process.o exatensor.o \
-	qforce.o proceed.o main.o
+	qforce.o main.o
 
 $(NAME): $(OBJS)
 	$(FC) $(OBJS) $(LFLAGS) $(NAME)
