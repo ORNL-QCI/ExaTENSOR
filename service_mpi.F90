@@ -603,7 +603,7 @@
         use extern_names, only: get_memory_stat
         implicit none
         integer(C_SIZE_T), intent(out):: total_ram,free_ram,used_swap
-        integer, intent(inout):: ierr
+        integer(C_INT), intent(inout):: ierr
         ierr=get_memory_stat(total_ram,free_ram,used_swap)
         return
         end subroutine get_memory_status

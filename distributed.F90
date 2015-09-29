@@ -29,6 +29,7 @@
         implicit none
         private
 !EXPOSE some <service_mpi>:
+        public INT_MPI,INT_ADDR,INT_OFFSET,INT_COUNT !MPI integer kinds
         public jo                  !process log output device
         public impis               !size of the global MPI communicator
         public impir               !global MPI rank of the process

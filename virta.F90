@@ -28,6 +28,7 @@
         use dictionary
         use multords
         use extern_names
+        use service_mpi, only: get_memory_status
         implicit none
         public
 !PARAMETERS:
