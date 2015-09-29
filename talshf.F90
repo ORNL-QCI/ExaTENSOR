@@ -1,5 +1,5 @@
 !ExaTensor::TAL-SH: Device-unified user-level API:
-!REVISION: 2015/09/24
+!REVISION: 2015/09/28
 !Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
 !Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
 !LICENSE: GPLv2
@@ -17,16 +17,16 @@
 !You should have received a copy of the GNU General Public License
 !along with this program; if not, write to the Free Software
 !Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
---------------------------------------------------------------------------------
+!--------------------------------------------------------------------------------
        module talsh
         use tensor_algebra_cpu_phi !device-specific tensor algebra API + basic
         implicit none
         public
 !PARAMETERS:
  !Generic:
-        integer(INTD), private:: CONS_OUT=6     !default output device for this module
-        logical(INTD), private:: VERBOSE=.true. !verbosity for errors
-        logical(INTD), private:: DEBUG=.true.   !debugging mode for this module
+        integer(INTD), private:: CONS_OUT=6 !default output device for this module
+        logical, private:: VERBOSE=.true.   !verbosity for errors
+        logical, private:: DEBUG=.true.     !debugging mode for this module
 !DERIVED TYPES:
 
 !GLOBALS:
@@ -35,38 +35,38 @@
 
 !VISIBILITY:
  !TAL-SH device control API:
-        public talsh_init
-        public talsh_shutdown
-        public talsh_flat_dev_id
-        public talsh_kind_dev_id
-        public talsh_device_state
-        public talsh_device_busy_least
-        public talsh_stats
+!        public talsh_init
+!        public talsh_shutdown
+!        public talsh_flat_dev_id
+!        public talsh_kind_dev_id
+!        public talsh_device_state
+!        public talsh_device_busy_least
+!        public talsh_stats
  !TAL-SH tensor block API:
-        public talsh_tensor_construct
-        public talsh_tensor_destroy
-        public talsh_tensor_volume
-        public talsh_tensor_datatype
-        public talsh_tensor_shape
-        public talsh_tensor_presence
+!        public talsh_tensor_construct
+!        public talsh_tensor_destroy
+!        public talsh_tensor_volume
+!        public talsh_tensor_datatype
+!        public talsh_tensor_shape
+!        public talsh_tensor_presence
  !TAL-SH task API:
-        public talsh_task_clean
-        public talsh_task_dev_id
-        public talsh_task_status
-        public talsh_task_completed
-        public talsh_task_wait
-        public talsh_tasks_wait
-        public talsh_task_time
+!        public talsh_task_clean
+!        public talsh_task_dev_id
+!        public talsh_task_status
+!        public talsh_task_completed
+!        public talsh_task_wait
+!        public talsh_tasks_wait
+!        public talsh_task_time
  !TAL-SH tensor operations:
-        public talsh_tensor_place
-        public talsh_tensor_discard
-        public talsh_tensor_init
-        public talsh_tensor_scale
-        public talsh_tensor_norm1
-        public talsh_tensor_norm2
-        public talsh_tensor_copy
-        public talsh_tensor_add
-        public talsh_tensor_contract
+!        public talsh_tensor_place
+!        public talsh_tensor_discard
+!        public talsh_tensor_init
+!        public talsh_tensor_scale
+!        public talsh_tensor_norm1
+!        public talsh_tensor_norm2
+!        public talsh_tensor_copy
+!        public talsh_tensor_add
+!        public talsh_tensor_contract
 
        contains
 !API DEFINITION:

@@ -1,6 +1,6 @@
 !Distributed data storage service (DDSS).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2015/09/24 (started 2015/03/18)
+!REVISION: 2015/09/29 (started 2015/03/18)
 !Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
 !Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
 !LICENSE: GPLv2
@@ -28,6 +28,12 @@
         use:: tensor_algebra, only: TRY_LATER,NO_TYPE,R4,R8,C8,R4_,R8_,C8_
         implicit none
         private
+!EXPOSE some <service_mpi>:
+        public jo                  !process log output device
+        public impis               !size of the global MPI communicator
+        public impir               !global MPI rank of the process
+        public max_threads         !max number of threads per process
+        public gpu_start,gpu_count !GPU range assigned to the process
 !PARAMETERS:
  !Output:
         integer, private:: CONS_OUT=6     !default output for this module

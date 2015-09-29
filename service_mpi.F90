@@ -1,6 +1,6 @@
 !This module provides general services for MPI parallel programs.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2015/09/26
+!REVISION: 2015/09/28
        module service_mpi
         use, intrinsic:: ISO_C_BINDING
         !depends on <mpi_fort.c>
@@ -133,7 +133,7 @@
         integer(INT_MPI), intent(in), optional:: ext_comm !in: external communicator
         integer(INT_MPI):: errc
         integer:: k0
-        character(1024):: str
+        character(1024):: str0
 
         ierr=0; if(process_up) then; ierr=1; return; endif !process already initialized
         process_up=.false.

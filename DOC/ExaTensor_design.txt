@@ -1,7 +1,7 @@
-*** ExaTensor: Massively parallel, efficiency-portable computational
+*** ExaTensor: Massively parallel, performance-portable computational
                infrastructure for sparse/dense tensor algebra ***
 AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-REVISION: 2015/08/18 (Project start date: Dec 2013)
+REVISION: 2015/09/28 (Project start date: Dec 2013)
 Copyright (C) 2015 Dmitry I. Lyakh
 Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
 LICENSE: GPL v.2
@@ -15,7 +15,7 @@ those based on quantum many-body theory, with applications in quantum
 chemistry (electronic structure theory), nuclear physics, and quantum
 computing simulations. Yet, to date no single attempt has resulted in
 a production-level software flexible enough to be used accross these
-computational domains while being efficiency-portable with respect to
+computational domains while being performance-portable with respect to
 different hardware (CPU, GPU, Xeon Phi, etc.) and with respect to the
 size of the HPC system. This was the main motivation to start the
 ExaTensor project. In the design of ExaTensor, the author tried to
@@ -25,20 +25,20 @@ structure theory), while leveraging some relevant general-purpose
 techniques which were shown to be successful in similar contexts.
 On top of that, some novel algorithmic elements are introduced.
 Thus, ExaTensor is in some sense a synthetic project based on a
-critical analysis of the previous experience, in particular that
-by the author himself.
+critical analysis of the previous experience, in particular,
+that by the author himself.
 
 
 1. Goals
 
-(a) Efficiency at the node level, efficient utilization of diverse
-hardware: multicore CPU, NVidia GPU, Intel Xeon Phi, AMD APU, etc.
+(a) Hardware-agnostic: Efficiency at the node level, efficient utilization
+of diverse hardware: Multicore CPU, NVidia GPU, Intel Xeon Phi, AMD APU, etc.
 
-(b) Efficiency at the HPC level, efficient distributed data mapping
-and work scheduling for any given HPC system: From small clusters
-to the Leadership HPC systems.
+(b) Scale-agnostic: Efficiency at the HPC level, efficient distributed
+data mapping and work scheduling for any given HPC system: From small
+clusters to the Leadership HPC systems.
 
-(c) Ease of use accross different computational domains.
+(c) Expertise-agnostic: Ease of use accross different computational domains.
 
 
 2. Key design elements

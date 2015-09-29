@@ -150,7 +150,7 @@ distributed.o: distributed.F90 service_mpi.o tensor_algebra.o
 subspaces.o: subspaces.F90 dil_kinds.o
 	$(FC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) subspaces.F90
 
-virta.o: virta.F90 talshf.o talshc.o distributed.o subspaces.o lists.o dictionary.o multords.o extern_names.o
+virta.o: virta.F90 talshf.o talshc.o distributed.o subspaces.o stack.o lists.o dictionary.o multords.o extern_names.o
 	$(FC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) virta.F90
 
 c_process.o: c_process.F90 virta.o

@@ -1,4 +1,5 @@
        module dil_kinds
+        use, intrinsic:: ISO_C_BINDING
         implicit none
         public
 !BASIC TYPE KINDS:

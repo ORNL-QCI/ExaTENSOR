@@ -2,7 +2,7 @@
     Parameters, derived types, and function prototypes
     used at the lower level of TAL-SH (device specific):
     CP-TAL, NV-TAL, XP-TAL, AM-TAL, etc.
-REVISION: 2015/09/15
+REVISION: 2015/09/28
 Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
 Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
 
@@ -154,7 +154,7 @@ FOR DEVELOPERS ONLY:
 #define GPU_MINE_CUBLAS 2
 #define NO_COPY_BACK 0
 #define COPY_BACK 1
-
+/*
 #define COPY_F 0
 #define COPY_K 1
 #define COPY_FF 0
@@ -169,7 +169,7 @@ FOR DEVELOPERS ONLY:
 #define COPY_KFK 5
 #define COPY_KKF 6
 #define COPY_KKK 7
-
+*/
 #define COPY_D 0
 #define COPY_M 1
 #define COPY_T 2

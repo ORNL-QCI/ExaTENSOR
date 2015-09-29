@@ -1,6 +1,7 @@
-!This module provides functionality for a Computing Process (C-PROCESS, CP).
+!ExaTensor::C_Process: This module provides functionality for
+!a Computing Process (C-PROCESS, CP).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2015/09/24
+!REVISION: 2015/09/29
 !PREPROCESSOR:
 ! -D NO_GPU: No NVidia GPU;
 ! -D NO_PHI: No Intel Xeon Phi (Intel MIC);
