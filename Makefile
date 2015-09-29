@@ -51,7 +51,7 @@ LA_LINK_PGI = $(LA_LINK_DEFAULT)
 LA_LINK = $(LA_LINK_$(TOOLKIT))
 CFLAGS_DEV = -c -D CUDA_ARCH=350 -g
 CFLAGS_OPT = -c -D CUDA_ARCH=350 -O3
-CFLAGS = $(CFLAGS_$(TYPE))
+CFLAGS = $(CFLAGS_$(TYPE)) -D NO_PHI -D NO_AMD
 FFLAGS_INTEL_DEV = -c -g -fpp -vec-threshold4 -openmp
 FFLAGS_INTEL_OPT = -c -O3 -fpp -vec-threshold4 -openmp
 FFLAGS_CRAY_DEV = -c -D CUDA_ARCH=350 -g
@@ -78,7 +78,7 @@ $(NAME): $(OBJS)
 	$(FC) $(OBJS) $(LFLAGS) $(NAME)
 
 dil_kinds.o: dil_kinds.F90
-	$(FC) $(MPI_INC) $(CUDA_INC) $(CFLAGS) dil_kinds.F90
+	$(FC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) dil_kinds.F90
 
 sys_service.o: sys_service.c
 	$(CC) $(MPI_INC) $(CUDA_INC) $(CFLAGS) sys_service.c
