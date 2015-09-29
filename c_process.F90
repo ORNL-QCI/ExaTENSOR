@@ -1630,7 +1630,7 @@
             if(jf.ge.KEEP_HAB_DATA) then; jf=jf-KEEP_HAB_DATA; k_hab=.true.; else; k_hab=.false.; endif
             if(jf.ge.KEEP_TBB_DATA) then; jf=jf-KEEP_TBB_DATA; k_tbb=.true.; else; k_tbb=.false.; endif
             if(.not.k_hab) then !free the HAB entry of the tensor argument (if any)
-             if(curr_arg%buf_entry_host.ge.0) then              
+             if(curr_arg%buf_entry_host.ge.0) then
               if(c_associated(curr_arg%tens_blck_c)) then
                je=tensBlck_hab_free(curr_arg%tens_blck_c); if(je.ne.0) eti_task_cleanup=eti_task_cleanup+1 !free HAB entry
               else
@@ -1767,7 +1767,7 @@
 !----------------------------------------------------------
         recursive function cp_destructor(this) result(ierr) !universal destructor: destroys all allocated components
         implicit none
-        class(*):: this !<this> itself is not destroyed, only its allocated components!
+        class(*), intent(inout):: this !<this> itself is not destroyed, only its allocated components!
         integer:: ierr
         integer:: i,j
         ierr=0
@@ -2624,7 +2624,7 @@
         complex(8) elems_c8; integer(C_SIZE_T) off_elems_c8; complex(8), pointer:: ptr_elems_c8(:)=>NULL()
 
         ierr=0
-!	write(CONS_OUT,'("#DEBUG(c_process::tens_blck_pack): Creating a tensor block packet:")') !debug
+!       write(CONS_OUT,'("#DEBUG(c_process::tens_blck_pack): Creating a tensor block packet:")') !debug
 !Compute the size (in bytes) of the tensor block packet (linearized tensor_block_t):
         off_packet_size=0; packet_size=0
         off_data_kind=off_packet_size+sizeof(packet_size)

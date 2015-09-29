@@ -1,6 +1,6 @@
 !Linear-scaling sorting subroutines operating with multi-index keys.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2015/09/23 (origin 2005 PhD work, used in Mol.Phys.2007)
+!REVISION: 2015/09/29 (origin 2005 PhD work, used in Mol.Phys.2007)
 !DESCRIPTION:
 !The following subroutines sort a list of items according to their unsigned integer multi-index keys.
 !The formal scaling of the sorting algorithm is O(L*N), where N is the number of items
@@ -461,7 +461,8 @@
 	integer(8), intent(inout), target:: iv(1:n,1:*)
 	integer(8), intent(inout), target:: v(1:*)
 	integer(8), parameter:: index_base=2**6 !a base for index splitting: MUST BE EVEN!
-	integer(8) i,j,k,l,m,k1,k2,k3,ks,kf,ierr
+	integer(8) i,j,k,l,m,k1,k2,k3,ks,kf
+        integer(4):: ierr
 	integer(8) isp(0:index_base-1),ibp(0:index_base-1),m1,m2,np,kp,index_split,index_part
 	logical final_copy
 	integer(8), allocatable, target:: ivb(:,:),ifv(:)
@@ -480,7 +481,7 @@
 	 index_split=0_8; k=nl; do while(k.gt.0_8); k=k/index_base; index_split=index_split+1_8; enddo
 !Array allocation:
 	 allocate(ifv(mov+1_8),ivb(n,mov),vb(mov),STAT=ierr) !work structures
-	 if(ierr.eq.0_8) then
+	 if(ierr.eq.0) then
 !Init:
 	  ifv(:)=0_8; ifv(1_8)=1_8; ifv(mov+1_8)=1_8 !special bound values
 	  isp(:)=0_8
