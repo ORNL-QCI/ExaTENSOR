@@ -152,7 +152,7 @@ symm_index.o: symm_index.F90
 timers.o: timers.F90
 	$(FC) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) timers.F90
 
-stack.o: stack.F90
+stack.o: stack.F90 timers.o
 	$(FC) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) stack.F90
 
 lists.o: lists.F90

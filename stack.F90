@@ -1,6 +1,6 @@
 !Generic implementation of a stack (OO Fortran 2003).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2015/09/22
+!REVISION: 2015/10/01
 !Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
 !Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
 !LICENSE: GPL v.2
@@ -8,10 +8,13 @@
 ! 1) Allocate a stack object via Fortran allocate;
 ! 2) Clean the stack at any point via .clean;
 ! 3) Push/pop any objects to the stack via .push and .pop;
-! 4) Clean the stack at the end via .clean;
-! 5) Deallocate the stack object via Fortran deallocate.
+! 4) Clean the stack at the end via .clean (if it is not empty);
+! 5) Deallocate the stack object via Fortran deallocate;
+! 6) While the stack is in scope, .state can return info on it.
 !NOTES:
-! a) It is illegal to try pushing a NULL object.
+! a) An object pushed to the stack can be of any scalar type/class.
+! b) It is illegal to push a NULL object.
+! c) So far, it is illegal to push non-scalar objects (arrays).
        module stack
         use dil_kinds
         implicit none
@@ -46,13 +49,13 @@
           procedure, public:: clean=>stack_clean !cleans the stack (pops out all items)
           procedure, public:: state=>stack_state !returns the current state of the stack
           procedure, public:: push=>stack_push   !adds an item to the stack
-          procedure, public:: pull=>stack_pull   !extracts the last item from the stack
+          procedure, public:: pop=>stack_pop     !extracts the last item from the stack
         end type stack_t
 !VISIBILITY:
         private stack_clean
         private stack_state
         private stack_push
-        private stack_pull
+        private stack_pop
 
        contains
 !----------------------------------------
@@ -140,12 +143,12 @@
 !-------------------------------------------------------
         subroutine stack_push(this,item,ierr,point_only)
 !Adds an item to a stack. An item can be an arbitrary object.
-!It can either be cloned (default) or pointed out to (point_only=true).
+!It can either be cloned (default) or pointed to (point_only=TRUE).
         implicit none
         class(stack_t), intent(inout):: this        !in: stack
         class(*), intent(in), target:: item         !in: item
         integer(INTD), intent(out), optional:: ierr !out: error code (0:success)
-        logical, intent(in), optional:: point_only  !in: if .true., the %item field will be just associated with <item> (default: false)
+        logical, intent(in), optional:: point_only  !in: if TRUE, the %item field will be just associated with <item> (default: false)
         integer(INTD):: errc
         logical:: only_point
         class(stack_entry_t), pointer:: sp
@@ -212,8 +215,8 @@
          end subroutine add_new_entry
 
         end subroutine stack_push
-!--------------------------------------------
-        subroutine stack_pull(this,item,ierr)
+!-------------------------------------------
+        subroutine stack_pop(this,item,ierr)
 !Pops up the last item out of the stack.
         implicit none
         class(stack_t), intent(inout):: this        !in: stack
@@ -250,7 +253,7 @@
         endif
         if(present(ierr)) ierr=errc
         return
-        end subroutine stack_pull
+        end subroutine stack_pop
 
        end module stack
 !----------------------------------------------------------------------
@@ -259,9 +262,10 @@
        module stack_test
         use dil_kinds
         use stack
+        use timers, only: thread_wtime
         implicit none
         private
-
+!VISIBILITY:
         public dil_test_stack
 
        contains
@@ -271,6 +275,8 @@
          integer(INTD):: ierr                          !out: error code (0:success)
          real(8), intent(out):: perf                   !out: performance index
          integer(INTD), intent(in), optional:: dev_out !in: default output device
+!-----------------------------------------------------
+         integer(INTD), parameter:: MAX_ACTIONS=1000000
 
          type base_t
           integer(INTD):: int_field
@@ -278,28 +284,88 @@
          end type base_t
 
          type, extends(base_t):: derv_t
+          logical:: lgc_field
           type(base_t), pointer:: base_ptr
          end type derv_t
 
-         integer(INTD):: jo
+         integer(INTD):: jo,i,pushed,popped
+         integer(INTL):: n
          type(base_t), target:: base
          type(derv_t):: derv
          type(stack_t), pointer:: my_stack
+         class(*), pointer:: item
+         class(base_t), pointer:: bp
+         real(8):: rn,tm,sm
 
          ierr=0_INTD; perf=0d0
          if(present(dev_out)) then; jo=dev_out; else; jo=6_INTD; endif
          base=base_t(3_INTD,-1.134d0)
-         derv%base_ptr=>base
+         derv%base_t=base_t(-11_INTD,-1.134d0); derv%lgc_field=.true.; derv%base_ptr=>base
          allocate(my_stack,STAT=ierr); if(ierr.ne.0) then; call test_quit(1_INTD); return; endif
-         
-         deallocate(my_stack,STAT=ierr); if(ierr.ne.0) then; call test_quit(1_INTD); return; endif
+         call my_stack%clean(ierr); if(ierr.ne.STACK_SUCCESS) then; call test_quit(2_INTD); return; endif
+         pushed=0; popped=0; sm=0d0; tm=thread_wtime()
+         do i=1,MAX_ACTIONS
+          nullify(item)
+          call random_number(rn)
+          if(rn.gt.2d-1) then !push (more often)
+           if(rn.gt.6d-1) then
+            call my_stack%push(base,ierr,point_only=.false.)
+           else
+            call my_stack%push(derv,ierr,point_only=.false.)
+           endif
+           if(ierr.ne.STACK_SUCCESS) then; call test_quit(3_INTD); return; endif
+           pushed=pushed+1
+          else !pop (less often)
+           call my_stack%state(n,ierr,test_it=.false.)
+           if(ierr.ne.STACK_SUCCESS) then; call test_quit(4_INTD); return; endif
+           call my_stack%pop(item,ierr)
+           if(.not.((n.gt.0.and.ierr.eq.STACK_SUCCESS.and.associated(item)).or.(n.le.0.and.ierr.eq.STACK_EMPTY))) then
+            call test_quit(5_INTD); return
+           endif
+           if(ierr.eq.STACK_SUCCESS) then
+            select type(item)
+            class is(base_t)
+             bp=>item; sm=sm+bp%real8_field
+            class default
+             call test_quit(6_INTD); return
+            end select
+            popped=popped+1
+           endif
+          endif
+         enddo
+         ierr=STACK_SUCCESS
+         do while(ierr.eq.STACK_SUCCESS)
+          call my_stack%pop(item,ierr)
+          if(ierr.eq.STACK_SUCCESS) then
+           popped=popped+1; if(.not.associated(item)) then; call test_quit(7_INTD); return; endif
+           select type(item)
+           class is(base_t)
+            bp=>item; sm=sm+bp%real8_field
+           class default
+            call test_quit(8_INTD); return
+           end select
+          endif
+         enddo
+         if(ierr.ne.STACK_EMPTY) then; call test_quit(9_INTD); return; endif
+         if(pushed.ne.popped) then; call test_quit(10_INTD); return; endif
+         tm=thread_wtime(tm); perf=dble(MAX_ACTIONS)/tm
+!        write(jo,*) popped,sm !debug
+         call my_stack%clean()
+         deallocate(my_stack,STAT=ierr); if(ierr.ne.0) then; call test_quit(11_INTD); return; endif
          return
 
          contains
 
           subroutine test_quit(jerr)
-           integer, intent(in):: jerr
-           ierr=jerr; write(jo,'("#ERROR(stack::dil_test_stack): Test failed: Error code ",i13)') jerr
+           integer(INTD), intent(in):: jerr
+           ierr=jerr
+           if(ierr.ne.0) then
+            write(jo,'("#ERROR(stack::dil_test_stack): Test failed: Error code ",i13)') ierr
+            write(jo,'("Please contact the developer at QUANT4ME@GMAIL.COM")')
+           endif
+           if(associated(my_stack)) then
+            call my_stack%clean(); deallocate(my_stack)
+           endif
            return
           end subroutine test_quit
 
