@@ -1,7 +1,7 @@
        module dictionary
-!General-purpose dictionary implementation (OO Fortran 2008) based on AVL BST.
+!Generic dictionary implementation (OO Fortran 2008) based on AVL BST.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2015/09/23
+!REVISION: 2015/10/02
 !DESCRIPTION:
 !#Dictionary items:
 !  In order to store an item ({key;value}) in the dictionary,
@@ -17,7 +17,7 @@
 !  Every dictionary has an internal iterator which is set every time a key is
 !  found (and not deleted) or newly added. There are explicit moving methods
 !  which move the position of the iterator up/down the binary tree. The subtree
-!  rooted at the current iterator position can be traversed or printed.
+!  rooted at the current iterator position can also be traversed or printed.
 !#Key comparison function:
 !  The key comparison function must be supplied to <search> (see cmp_key_func_i interface below).
 !  The key comparison function must operate on unlimited polymorphic entities (<keys>)!
@@ -68,7 +68,7 @@
         integer, parameter, public:: DICT_ALLOC_FAILED=-6
         integer, parameter, public:: DICT_FREE_FAILED=-7
         integer, parameter, public:: DICT_CORRUPTED=-8
-        integer, parameter, public:: DICT_ERR_MAX_HEIGHT=-10
+        integer, parameter, public:: DICT_ERR_MAX_HEIGHT=-9
   !Key comparison results:
         integer, parameter, public:: DICT_KEY_EQ=0
         integer, parameter, public:: DICT_KEY_LT=-1
@@ -1108,3 +1108,63 @@
         end subroutine print_key
 
        end module dictionary
+!-----------------------------------------------
+!TESTING:
+!-----------------------------------------------
+       module dictionary_test
+        use dictionary
+        use timers, only: thread_wtime
+        implicit none
+        private
+!VISIBILITY:
+        public dil_test_dictionary
+
+       contains
+
+        function dil_test_dictionary(perf,dev_out) result(ierr)
+         implicit none
+         integer:: ierr                          !out: error code (0:success)
+         real(8), intent(out):: perf             !out: performance index
+         integer, intent(in), optional:: dev_out !in: default output device
+!-----------------------------------------------
+         integer, parameter:: MAX_ACTIONS=1000000
+
+         type base_t
+          integer:: int_field
+          real(8):: real8_field
+         end type base_t
+
+         type, extends(base_t):: derv_t
+          logical:: lgc_field
+          type(base_t), pointer:: base_ptr
+         end type derv_t
+
+         integer:: jo,i,n
+         type(base_t), target:: base
+         type(derv_t):: derv
+         type(dict_t), pointer:: my_dict
+
+         ierr=0; perf=0d0
+         if(present(dev_out)) then; jo=dev_out; else; jo=6; endif
+         base=base_t(3,-1.134d0)
+         derv%base_t=base_t(-11,-1.134d0); derv%lgc_field=.true.; derv%base_ptr=>base
+
+         return
+         contains
+
+          subroutine test_quit(jerr)
+           integer, intent(inout):: jerr
+           ierr=jerr
+           if(ierr.ne.0) then
+            write(jo,'("#ERROR(dictionary::dil_test_dictionary): Test failed: Error code ",i13)') ierr
+            write(jo,'("Please contact the developer at QUANT4ME@GMAIL.COM")')
+           endif
+           if(associated(my_dict)) then
+            jerr=my_dict%destroy(); deallocate(my_dict)
+           endif
+           return
+          end subroutine test_quit
+
+        end function dil_test_dictionary
+
+       end module dictionary_test

@@ -10,32 +10,32 @@ MPILIB = MPICH
 #DONE.
 #-----------------------------------------------
 #Fortran compiler:
-FC_GNU = /home/dima/build/gcc_5_2_0/bin/gfortran
+FC_GNU = gfortran
 FC_PGI = pgf90
 FC_INTEL = ifort
 FC_CRAY = ftn
 FC_MPICH = /usr/bin/mpif90
-FC_OPENMPI = /usr/local/bin/mpifort
+FC_OPENMPI = /usr/local/openmpi/bin/mpifort
 FC_NO = $(FC_$(MPILIB))
 FC_YES = ftn
 FC = $(FC_$(WRAP))
 #C compiler:
-CC_GNU = /home/dima/build/gcc_5_2_0/bin/gcc
+CC_GNU = gcc
 CC_PGI = pgcc
 CC_INTEL = icc
 CC_CRAY = cc
 CC_MPICH = /usr/bin/mpicc
-CC_OPENMPI = /usr/local/bin/mpicc
+CC_OPENMPI = /usr/local/openmpi/bin/mpicc
 CC_NO = $(CC_$(MPILIB))
 CC_YES = cc
 CC = $(CC_$(WRAP))
 #C++ compiler:
-CPP_GNU = /home/dima/build/gcc_5_2_0/bin/g++
+CPP_GNU = g++
 CPP_PGI = pgc++
 CPP_INTEL = icc
 CPP_CRAY = CC
 CPP_MPICH = /usr/bin/mpic++
-CPP_OPENMPI = /usr/local/bin/mpic++
+CPP_OPENMPI = /usr/local/openmpi/bin/mpic++
 CPP_NO = $(CPP_$(MPILIB))
 CPP_YES = CC
 CPP = $(CPP_$(WRAP))
@@ -43,7 +43,8 @@ CPP = $(CPP_$(WRAP))
 CUDA_C = nvcc
 
 #COMPILER INCLUDES:
-INC_GNU = -I/home/dima/build/gcc_5_2_0/include/c++/5.2.0
+#INC_GNU = -I/usr/local/gcc-5.2.0/include/c++/5.2.0
+INC_GNU = -I.
 INC_PGI = -I.
 INC_INTEL = -I.
 INC_CRAY = -I.
@@ -52,8 +53,8 @@ INC_YES = -I.
 INC = $(INC_$(WRAP))
 
 #MPI INCLUDES:
-MPI_INC_MPICH = -I/usr/lib/mpich/include
-MPI_INC_OPENMPI = -I/usr/local/include
+MPI_INC_MPICH = -I/usr/include/mpich
+MPI_INC_OPENMPI = -I/usr/local/openmpi/include -I/usr/local/openmpi/lib
 MPI_INC_NO = $(MPI_INC_$(MPILIB))
 MPI_INC_YES = -I.
 MPI_INC = $(MPI_INC_$(WRAP))
@@ -62,7 +63,8 @@ MPI_INC = $(MPI_INC_$(WRAP))
 CUDA_INC = -I/usr/local/cuda/include
 
 #COMPILER LIBS:
-LIB_GNU = -L/home/dima/build/gcc_5_2_0/lib64
+#LIB_GNU = -L/usr/local/gcc-5.2.0/lib64
+LIB_GNU = -L.
 LIB_PGI = -L.
 LIB_INTEL = -L.
 LIB_CRAY = -L.
@@ -72,7 +74,7 @@ LIB = $(LIB_$(WRAP))
 
 #MPI LIBS:
 MPI_LINK_MPICH = -L/usr/lib
-MPI_LINK_OPENMPI = -L/usr/local/lib
+MPI_LINK_OPENMPI = -L/usr/local/openmpi/lib
 MPI_LINK_NO = $(MPI_LINK_$(MPILIB))
 MPI_LINK_YES = -L.
 MPI_LINK = $(MPI_LINK_$(WRAP))
@@ -83,7 +85,7 @@ CUDA_LINK_YES = -L. -lcudart -lcublas
 CUDA_LINK = $(CUDA_LINK_$(WRAP))
 
 #CUDA FLAGS:
-CUDA_HOST_NO = --compiler-bindir /home/dima/build/gcc_5_2_0/bin
+CUDA_HOST_NO = --compiler-bindir /usr/bin
 CUDA_HOST_YES = " "
 CUDA_HOST = $(CUDA_HOST_$(WRAP))
 CUDA_FLAGS_DEV = --compile -arch=sm_35 -D CUDA_ARCH=350 -g -G -D DEBUG_GPU
@@ -115,10 +117,10 @@ FFLAGS_PGI_DEV = -c -mp -Mcache_align -Mbounds -Mchkptr -Mstandard -pg
 FFLAGS_PGI_OPT = -c -mp -Mcache_align -Mstandard -O3
 FFLAGS = $(FFLAGS_$(TOOLKIT)_$(TYPE)) -D NO_PHI -D NO_AMD
 #THREADS:
-LTHREAD_INTEL = -liomp5
-LTHREAD_CRAY  = -L.
 LTHREAD_GNU   = -lgomp
 LTHREAD_PGI   = -lpthread
+LTHREAD_INTEL = -liomp5
+LTHREAD_CRAY  = -L.
 LTHREAD = $(LTHREAD_$(TOOLKIT))
 LFLAGS = $(LIB) $(LTHREAD) $(MPI_LINK) $(LA_LINK) $(CUDA_LINK) -o
 
@@ -155,10 +157,10 @@ timers.o: timers.F90
 stack.o: stack.F90 timers.o
 	$(FC) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) stack.F90
 
-lists.o: lists.F90
+lists.o: lists.F90 timers.o
 	$(FC) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) lists.F90
 
-dictionary.o: dictionary.F90
+dictionary.o: dictionary.F90 timers.o
 	$(FC) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) dictionary.F90
 
 extern_names.o: extern_names.F90
