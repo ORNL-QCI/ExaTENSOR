@@ -1,8 +1,8 @@
 NAME = qforce.v13.01.x
 #Cross-compiling wrappers: [YES|NO]:
-WRAP = NO
+WRAP = YES
 #Compiler: [GNU|PGI|INTEL|CRAY]:
-TOOLKIT = GNU
+TOOLKIT = CRAY
 #Optimization: [DEV|OPT]:
 TYPE = OPT
 #MPI Library: [MPICH|OPENMPI]:
@@ -86,7 +86,7 @@ CUDA_LINK = $(CUDA_LINK_$(WRAP))
 
 #CUDA FLAGS:
 CUDA_HOST_NO = --compiler-bindir /usr/bin
-CUDA_HOST_YES = " "
+CUDA_HOST_YES = -I.
 CUDA_HOST = $(CUDA_HOST_$(WRAP))
 CUDA_FLAGS_DEV = --compile -arch=sm_35 -D CUDA_ARCH=350 -g -G -D DEBUG_GPU
 CUDA_FLAGS_OPT = --compile -arch=sm_35 -D CUDA_ARCH=350 -O3
