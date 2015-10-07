@@ -1,8 +1,8 @@
 NAME = qforce.v13.01.x
 #Cross-compiling wrappers: [YES|NO]:
-WRAP = YES
+WRAP = NO
 #Compiler: [GNU|PGI|INTEL|CRAY]:
-TOOLKIT = CRAY
+TOOLKIT = GNU
 #Optimization: [DEV|OPT]:
 TYPE = OPT
 #MPI Library: [MPICH|OPENMPI]:

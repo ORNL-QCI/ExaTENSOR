@@ -1,7 +1,7 @@
        module dictionary
 !Generic dictionary implementation (OO Fortran 2008) based on AVL BST.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2015/10/02
+!REVISION: 2015/10/07
 !DESCRIPTION:
 !#Dictionary items:
 !  In order to store an item ({key;value}) in the dictionary,
@@ -1116,11 +1116,56 @@
         use timers, only: thread_wtime
         implicit none
         private
+!PARAMETERS:
+        integer, parameter, private:: KEY_LEN=16
+        integer, parameter, private:: MAX_IND_VAL=7
+!TYPES:
+ !Key:
+        type, private:: key_t
+         integer:: rank=KEY_LEN
+         integer:: dims(1:KEY_LEN)
+        end type key_t
+ !Values:
+        type, private:: val_t
+         logical:: lgc_field
+         type(key_t), pointer:: key_ptr
+        end type val_t
 !VISIBILITY:
         public dil_test_dictionary
+        private cmp_key_test
 
        contains
+!-------------------------------------------------
+        function cmp_key_test(up1,up2) result(cmp)
+         implicit none
+         integer:: cmp
+         class(*), intent(in):: up1,up2
+         integer:: i
 
+         cmp=DICT_KEY_ERR
+         select type(up1)
+         class is(key_t)
+          select type(up2)
+          class is(key_t)
+           if(up1%rank.lt.up2%rank) then
+            cmp=DICT_KEY_LT
+           elseif(up1%rank.gt.up2%rank) then
+            cmp=DICT_KEY_GT
+           else
+            cmp=DICT_KEY_EQ
+            do i=1,up1%rank
+             if(up1%dims(i).lt.up2%dims(i)) then
+              cmp=DICT_KEY_LT; exit
+             elseif(up1%dims(i).gt.up2%dims(i)) then
+              cmp=DICT_KEY_GT; exit
+             endif
+            enddo
+           endif
+          end select
+         end select
+         return
+        end function cmp_key_test
+!--------------------------------------------------------------
         function dil_test_dictionary(perf,dev_out) result(ierr)
          implicit none
          integer:: ierr                          !out: error code (0:success)
@@ -1128,40 +1173,56 @@
          integer, intent(in), optional:: dev_out !in: default output device
 !-----------------------------------------------
          integer, parameter:: MAX_ACTIONS=1000000
+         integer:: jo,i,j,fnd,nfnd
+         type(key_t), target:: key
+         type(val_t):: val
+         type(dict_t):: my_dict
+         class(*), pointer:: uptr
+         real(8):: tm
 
-         type base_t
-          integer:: int_field
-          real(8):: real8_field
-         end type base_t
-
-         type, extends(base_t):: derv_t
-          logical:: lgc_field
-          type(base_t), pointer:: base_ptr
-         end type derv_t
-
-         integer:: jo,i,n
-         type(base_t), target:: base
-         type(derv_t):: derv
-         type(dict_t), pointer:: my_dict
-
-         ierr=0; perf=0d0
+         ierr=0; perf=0d0; uptr=>NULL()
          if(present(dev_out)) then; jo=dev_out; else; jo=6; endif
-         base=base_t(3,-1.134d0)
-         derv%base_t=base_t(-11,-1.134d0); derv%lgc_field=.true.; derv%base_ptr=>base
-
+         fnd=0; nfnd=0; key%rank=KEY_LEN
+         tm=thread_wtime()
+         do i=1,MAX_ACTIONS
+          call get_rnd_key(key) !random key
+          val%lgc_field=.true.; val%key_ptr=>key !value
+          j=my_dict%search(DICT_ADD_IF_NOT_FOUND,cmp_key_test,key,val,uptr)
+          if(j.eq.DICT_KEY_FOUND) then
+           fnd=fnd+1
+           if(.not.associated(uptr)) then; call test_quit(1); return; endif
+          elseif(j.eq.DICT_KEY_NOT_FOUND) then
+           nfnd=nfnd+1
+          else
+           call test_quit(2)
+          endif
+         enddo
+         tm=thread_wtime(tm)
+         perf=dble(MAX_ACTIONS)/tm
          return
+
          contains
 
+          subroutine get_rnd_key(akey)
+           type(key_t), intent(inout):: akey
+           integer:: jj
+           real(8):: jv(1:KEY_LEN)
+           call random_number(jv(1:KEY_LEN))
+           do jj=1,akey%rank
+            akey%dims(jj)=nint(jv(jj)*dble(MAX_IND_VAL))
+           enddo
+           return
+          end subroutine get_rnd_key
+
           subroutine test_quit(jerr)
-           integer, intent(inout):: jerr
+           integer, intent(in):: jerr
+           integer:: jj
            ierr=jerr
            if(ierr.ne.0) then
             write(jo,'("#ERROR(dictionary::dil_test_dictionary): Test failed: Error code ",i13)') ierr
             write(jo,'("Please contact the developer at QUANT4ME@GMAIL.COM")')
            endif
-           if(associated(my_dict)) then
-            jerr=my_dict%destroy(); deallocate(my_dict)
-           endif
+           jj=my_dict%destroy()
            return
           end subroutine test_quit
 

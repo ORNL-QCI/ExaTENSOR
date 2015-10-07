@@ -1,6 +1,6 @@
 !Generic implementation of a stack (OO Fortran 2003).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2015/10/01
+!REVISION: 2015/10/04
 !Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
 !Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
 !LICENSE: GPL v.2
@@ -348,8 +348,8 @@
          enddo
          if(ierr.ne.STACK_EMPTY) then; call test_quit(9_INTD); return; endif
          if(pushed.ne.popped) then; call test_quit(10_INTD); return; endif
-         tm=thread_wtime(tm); perf=dble(MAX_ACTIONS)/tm
-!        write(jo,*) popped,sm !debug
+         tm=thread_wtime(tm); perf=dble(pushed+popped)/tm
+!        write(jo,*) pushed,popped,sm !debug
          call my_stack%clean()
          deallocate(my_stack,STAT=ierr); if(ierr.ne.0) then; call test_quit(11_INTD); return; endif
          return
