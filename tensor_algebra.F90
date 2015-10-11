@@ -1,4 +1,5 @@
 !ExaTensor::TAL-SH: Basic parameters and types:
+!Keep consistent with "tensor_algebra.h"!
         module tensor_algebra
         use dil_kinds !contains ISO_C_BINDING
         implicit none
@@ -53,20 +54,7 @@
         integer(C_INT), parameter, public:: DEV_ON_BLAS=2               !device status "Enabled with vendor provided BLAS"
         integer(C_INT), parameter, public:: NO_COPY_BACK=0              !keeps the tensor-result on Accelerator without updating Host
         integer(C_INT), parameter, public:: COPY_BACK=1                 !tensor-result will be copied back from Accelerator to Host (default)
-!        integer(C_INT), parameter, public:: COPY_F=0                    !free the only argument (on device)
-!        integer(C_INT), parameter, public:: COPY_K=1                    !keep the only argument (on device)
-!        integer(C_INT), parameter, public:: COPY_FF=0                   !free both argument (on device)
-!        integer(C_INT), parameter, public:: COPY_FK=1                   !free the left argument, keep the right argument (on device)
-!        integer(C_INT), parameter, public:: COPY_KF=2                   !keep the left argument, free the right argument (on device)
-!        integer(C_INT), parameter, public:: COPY_KK=3                   !keep both arguments (on device)
-!        integer(C_INT), parameter, public:: COPY_FFF=0                  !free Destination, free Left, free right arguments (on device)
-!        integer(C_INT), parameter, public:: COPY_FFK=1                  !free Destination, free Left, keep right arguments (on device)
-!        integer(C_INT), parameter, public:: COPY_FKF=2                  !free Destination, keep Left, free right arguments (on device)
-!        integer(C_INT), parameter, public:: COPY_FKK=3                  !free Destination, keep Left, keep right arguments (on device)
-!        integer(C_INT), parameter, public:: COPY_KFF=4                  !keep Destination, free Left, free right arguments (on device)
-!        integer(C_INT), parameter, public:: COPY_KFK=5                  !keep Destination, free Left, keep right arguments (on device)
-!        integer(C_INT), parameter, public:: COPY_KKF=6                  !keep Destination, keep Left, free right arguments (on device)
-!        integer(C_INT), parameter, public:: COPY_KKK=7                  !keep Destination, keep Left, keep right arguments (on device)
+
         integer(C_INT), parameter, public:: COPY_D=0
         integer(C_INT), parameter, public:: COPY_M=1
         integer(C_INT), parameter, public:: COPY_T=2

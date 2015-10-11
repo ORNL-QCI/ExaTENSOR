@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level API header.
-REVISION: 2015/09/24
+REVISION: 2015/10/08
 Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
 Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
 
@@ -19,8 +19,8 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 -------------------------------------------------------------------------------
 **/
 
-#ifndef TALSH_H
-#define TALSH_H
+#ifndef _TALSH_H
+#define _TALSH_H
 
 
 #endif
