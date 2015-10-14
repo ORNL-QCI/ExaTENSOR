@@ -1,5 +1,5 @@
 /** Tensor Algebra Library for NVidia GPU: NV-TAL (CUDA based).
-REVISION: 2015/10/10
+REVISION: 2015/10/14
 Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
 Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
 
@@ -18,9 +18,9 @@ along with this program; if not, write to the Free Software
 Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 -------------------------------------------------------------------------------
 OPTIONS:
- # -D CUDA_ARCH=350: target device compute capability (default is 130);
- # -D NO_GPU: disables GPU usage (this source file will become empty);
- # -D NO_BLAS: disables cuBLAS calls, they will be replaced by in-house routines;
+ # -D CUDA_ARCH=350: target GPU compute capability (default is 130);
+ # -D NO_GPU: disables GPU usage;
+ # -D NO_BLAS: disables cuBLAS calls, they will be replaced by in-house routines (slower);
  # -D DEBUG_GPU: collection of debugging information will be activated;
 NOTES:
  # Minimal required compute capability is 1.1 (1.3 for double precision);
@@ -28,28 +28,28 @@ NOTES:
  # Functions without underscores at the end of their names are blocking functions;
    Functions with one underscore at the end of their names are non-blocking functions;
    Functions with two underscores at the end of their names are (non-blocking) CUDA kernels.
- # Non-blocking tensor algebra functions carry an additional output argument <cuda_task>.
- # Non-blocking tensor algebra functions carry an additional input argument <copy_back>
+ # Non-blocking tensor algebra functions carry an additional output argument <cuda_task> (task handle).
+ # 'Obsolete: Non-blocking tensor algebra functions carry an additional input argument <copy_back>
    which, when set to zero, prevents the output data from being copied back from GPU to Host.
    Passing zero to <copy_back> must be done with care since the Host copy of the tensor data
    will become outdated that cannot be checked automatically! To restore consistency between
    the Host and GPU argument buffers, a GPU argument entry has to be explictly fetched by Host.
  # Seems like cudaEventRecord() issued in different streams can serialize the stream
-   execution for some compute capabilities. EVENT_RECORD=0 will disable event recording.
+   execution for some older compute capabilities. EVENT_RECORD=0 will disable event recording.
    If GPU timing is needed, event recording has to be enabled (EVENT_RECORD=1).
 FOR DEVELOPERS ONLY:
  # Some functions, which construct tensor blocks or perform asynchronous operations on them,
    allocate GPU resources (global/constant memory chunks). In case, the corresponding
    GPU resource allocator returns TRY_LATER or DEVICE_UNABLE (or actually any other error),
-   they must clean the partially created tensor_block or CUDA stream before returning. Thus,
-   the corresponding object will be kept in its initial state if no SUCCESS.
+   the corresponding function must clean the partially created tensor_block and/or CUDA task
+   before returning: The corresponding object will be kept in its initial state if no SUCCESS.
 **/
-
-#ifndef NO_GPU
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
+
+#ifndef NO_GPU
 
 #include <cuda.h>
 #include <cuda_runtime.h>
@@ -58,10 +58,14 @@ FOR DEVELOPERS ONLY:
 #include <cublas_v2.h>
 #endif
 
+#endif
+
 #include "tensor_algebra.h"
 
+#ifndef NO_GPU
 //PARAMETERS:
 #define GPU_DEBUG_DUMP_SIZE 128 //size of the GPU debug dump (int array)
+#endif
 //----------------------------------------------------------------------
 //FUNCTION PROTOTYPES:
 // IMPORTED:
@@ -78,11 +82,13 @@ static int prmn_convert(int n, const int *o2n, int *n2o);
 static int non_trivial_prmn(int n, const int *prm);
 static int mi_entry_get(int ** mi_entry);
 static int mi_entry_release(int * mi_entry);
+#ifndef NO_GPU
 static int cuda_stream_get(int gpu_num, int * cuda_stream_handle);
 static int cuda_stream_release(int gpu_num, int cuda_stream_handle);
 static int cuda_event_get(int gpu_num, int * cuda_event_handle);
 static int cuda_event_release(int gpu_num, int cuda_event_handle);
 static void limit_cuda_blocks2d(int max_blocks, int *bx, int *by);
+static int tensDevRsc_clean(talsh_dev_rsc_t * drsc);
 static int cuda_task_finalize(cudaTask_t *cuda_task, int err_code, int gpu_num);
 static int cuda_task_record(cudaTask_t *cuda_task, int err_code, int gpu_num, cudaStream_t cuda_stream,
             cudaEvent_t cuda_start, cudaEvent_t cuda_comput, cudaEvent_t cuda_output, cudaEvent_t cuda_finish,
@@ -114,10 +120,11 @@ __global__ void gpu_matrix_multiply_tn_r4__(size_t ll, size_t lr, size_t lc, con
                                             const float* __restrict__ arg2, float* __restrict__ arg0);
 __global__ void gpu_matrix_multiply_tn_r8__(size_t ll, size_t lr, size_t lc, const double* __restrict__ arg1,
                                             const double* __restrict__ arg2, double* __restrict__ arg0);
+#endif
 //------------------------------------------------------------------------------------------------------
 //PARAMETERS:
 static int VERBOSE=1; //verbosity for error messages
-
+#ifndef NO_GPU
 //GLOBAL DATA:
 // GPU control on the current MPI process:
 static int gpu_up[MAX_GPUS_PER_NODE]; //GPU_OFF(0): GPU is disabled; GPU_MINE(1): GPU is enabled; GPU_MINE_CUBLAS(2): GPU is BLAS enabled
@@ -127,11 +134,12 @@ static talsh_stats_t gpu_stats[MAX_GPUS_PER_NODE]; //runtime statistics for all 
 // Infrastructure for CUBLAS:
 static cublasHandle_t cublas_handle[MAX_GPUS_PER_NODE]; //each GPU present on a node obtains its own cuBLAS context handle
 #endif
-
+#endif
 // Slab for the multi-index storage (will be pinned):
 static int miBank[MAX_GPU_ARGS*MAX_MLNDS_PER_SHAPE][MAX_TENSOR_RANK]; //All active .dims[], .divs[], .grps[] will be stored here
 static int miFreeHandle[MAX_GPU_ARGS*MAX_MLNDS_PER_SHAPE]; //free entries for storing multi-indices
 static int miFFE; //number of free handles left in miBank
+#ifndef NO_GPU
 // Slabs for the GPU asynchronous resources:
 //  CUDA stream handles:
 static cudaStream_t CUDAStreamBank[MAX_GPUS_PER_NODE][MAX_CUDA_TASKS]; //pre-allocated CUDA stream handles (for each CUDA device)
@@ -231,9 +239,10 @@ __host__ int gpu_get_debug_dump(int *dump)
  cudaError_t err=cudaMemcpyFromSymbol((void*)dump,gpu_debug_dump,sizeof(int)*GPU_DEBUG_DUMP_SIZE,0,cudaMemcpyDeviceToHost);
  if(err == cudaSuccess){return GPU_DEBUG_DUMP_SIZE;}else{return -1;}
 }
+#endif
 
 //AUXILIARY FUNCTIONS:
-__host__ static int prmn_convert(int n, const int *o2n, int *n2o)
+static int prmn_convert(int n, const int *o2n, int *n2o)
 /** Converts an O2N permutation into N2O (length = n). Both permutations
     are sign-free and the numeration starts from 1. **/
 {
@@ -246,7 +255,7 @@ __host__ static int prmn_convert(int n, const int *o2n, int *n2o)
  return 0;
 }
 
-__host__ static int non_trivial_prmn(int n, const int *prm)
+static int non_trivial_prmn(int n, const int *prm)
 /** Returns 0 if the permutation prm[0:n-1] is trivial, 1 otherwise.
     The permutation is sign-free and the numeration starts from 1. No error check. **/
 {
@@ -255,7 +264,7 @@ __host__ static int non_trivial_prmn(int n, const int *prm)
  return f;
 }
 
-__host__ static int mi_entry_get(int ** mi_entry)
+static int mi_entry_get(int ** mi_entry)
 /** Obtains a pointer to an entry in the multi-index storage slab.
     The entry can fit an <int> multi-index up to MAX_TENSOR_RANK.
     Returns TRY_LATER if no free handles are currently available. **/
@@ -271,24 +280,29 @@ __host__ static int mi_entry_get(int ** mi_entry)
  return 0;
 }
 
-__host__ static int mi_entry_release(int * mi_entry)
+static int mi_entry_release(int * mi_entry)
 /** Releases an entry back to the multi-index storage slab. **/
 {
  int m;
- if(miFFE >= 0){
-  m=(int)(mi_entry-&miBank[0][0]);
-  if(m%MAX_TENSOR_RANK == 0){
-   m/=MAX_TENSOR_RANK;
-   miFreeHandle[miFFE++]=m;
+ if(mi_entry != NULL){
+  if(miFFE >= 0){
+   m=(int)(mi_entry-&miBank[0][0]);
+   if(m%MAX_TENSOR_RANK == 0){
+    m/=MAX_TENSOR_RANK;
+    miFreeHandle[miFFE++]=m;
+   }else{
+    return 1;
+   }
   }else{
-   return 1;
+   return 2;
   }
  }else{
-  return 2;
+  return 3;
  }
  return 0;
 }
 
+#ifndef NO_GPU
 __host__ static int cuda_stream_get(int gpu_num, int * cuda_stream_handle)
 /** For GPU#gpu_num, returns a usable CUDA stream handle <cuda_stream_handle>.
 Non-zero return status means an error, except the return status TRY_LATER means
@@ -645,24 +659,121 @@ __host__ int gpu_print_stats(int gpu_num = -1)
  }
  return 0;
 }
+#endif
 
 //TENSOR BLOCK API:
-__host__ int tensBlck_create(tensBlck_t **ctens)
-/** Creates an empty instance of tensBlck_t **/
+static int tensDevRsc_clean(talsh_dev_rsc_t * drsc)
+/** Cleans (initializes to null) a device resource for tensBlck_t. **/
 {
- *ctens=(tensBlck_t*)malloc(sizeof(tensBlck_t)); if(*ctens == NULL) return 1;
- (*ctens)->device_id=encode_device_id(DEV_HOST,0); (*ctens)->data_kind=0; (*ctens)->rank=-1;
- (*ctens)->dims_h=NULL; (*ctens)->divs_h=NULL; (*ctens)->grps_h=NULL; (*ctens)->prmn_h=NULL;
- (*ctens)->elems_h=NULL; (*ctens)->elems_d=NULL;
- (*ctens)->buf_entry_host=-1; (*ctens)->buf_entry_gpu=-1; (*ctens)->const_args_entry=-1;
+ if(drsc != NULL){
+  drsc->gmem_p=NULL;        //device global memory pointer (any device)
+  drsc->buf_entry=-1;       //device argument buffer entry (any device)
+  drsc->const_mem_entry=-1; //constant memory bank entry (Nvidia GPU only)
+ }else{
+  return -1;
+ }
  return 0;
 }
 
-__host__ int tensBlck_destroy(tensBlck_t *ctens)
-/** Destroys an empty instance of tensBlck_t **/
-{if(ctens != NULL){free(ctens); ctens=NULL; return 0;}else{return 1;}}
+int tensShape_clean(talsh_tens_shape_t * tshape)
+/** Cleans a tensor shape. A clean (initialized, but undefined) tensor shape has .num_dim=-1.
+    A defined tensor shape has .num_dim >= 0. **/
+{
+ if(tshape != NULL){
+  tshape->num_dim=-1; //tensor rank
+  tshape->dims=NULL;  //tensor dimension extents
+  tshape->divs=NULL;  //tensor dimension dividers
+  tshape->grps=NULL;  //tensor dimension groups
+ }else{
+  return -1;
+ }
+ return 0;
+}
 
-__host__ int tensBlck_construct(tensBlck_t *ctens, int dev_kind, int dev_num, int data_kind, int trank,
+int tensShape_construct(talsh_tens_shape_t * tshape, int rank, const int * dims = NULL, const int * divs = NULL, const int * grps = NULL)
+/** (Re-)defines a tensor shape. It is errorneous to pass an uninitialized tensor shape here,
+    that is, the tensor shape *(tshape) must be either clean or previously defined. If <rank> > 0,
+    <dims[rank]> must be supplied, whereas <divs[rank]> and <grps[rank]> are always optional.
+    A negative return status means a critical error occurred, a positive return status
+    indicates a tollerable error. TRY_LATER or DEVICE_UNABLE return statuses are not errors.
+    In case of any non-zero return status, the object <tshape> is left unchanged. **/
+{
+ int i,n,errc;
+ int *mi_dims,*mi_divs,*mi_grps;
+
+ n=0; //number of tollerable errors
+ mi_dims=NULL; mi_divs=NULL; mi_grps=NULL;
+ if(tshape != NULL){
+  if(rank >= 0){
+//Check arguments:
+   if(dims != NULL){for(i=0;i<rank;i++){if(dims[i] < 0) return -9;}}
+   if(divs != NULL){for(i=0;i<rank;i++){if(divs[i] < 0) return -8;}}
+   if(grps != NULL){for(i=0;i<rank;i++){if(grps[i] < 0) return -7;}}
+   if(rank > 0 && dims == NULL) return -6; //dimension extents must be present for rank>0
+//Acquire/release resources if needed:
+   if(rank > 0 && tshape->num_dim <= 0){ //acquire multi-index resources
+ //Multi-index "Dimension extents":
+    errc=mi_entry_get(&mi_dims);
+    if(errc != 0){
+     if(errc == TRY_LATER || errc == DEVICE_UNABLE){return errc;}else{return -5;}
+    }
+ //Multi-index "Dimension dividers":
+    if(divs != NULL){
+     errc=mi_entry_get(&mi_divs);
+     if(errc != 0){
+      i=mi_entry_release(mi_dims);
+      if(errc == TRY_LATER || errc == DEVICE_UNABLE){return errc;}else{return -4;}
+     }
+    }
+ //Multi-index "Dimension groups":
+    if(grps != NULL){
+     errc=mi_entry_get(&mi_grps);
+     if(errc != 0){
+      i=mi_entry_release(mi_divs);
+      i=mi_entry_release(mi_dims);
+      if(errc == TRY_LATER || errc == DEVICE_UNABLE){return errc;}else{return -3;}
+     }
+    }
+    tshape->dims=mi_dims; tshape->divs=mi_divs; tshape->grps=mi_grps;
+   }else if(rank == 0 && tshape->num_dim > 0){ //release multi-index resources
+    if(tshape->dims != NULL){errc=mi_entry_release(tshape->dims); if(errc != 0) n++; tshape->dims=NULL;}
+    if(tshape->divs != NULL){errc=mi_entry_release(tshape->divs); if(errc != 0) n++; tshape->divs=NULL;}
+    if(tshape->grps != NULL){errc=mi_entry_release(tshape->grps); if(errc != 0) n++; tshape->grps=NULL;}
+   }
+//Tensor rank:
+   tshape->num_dim=rank;
+//Tensor dimension extents:
+   if(dims != NULL){for(i=0;i<rank;i++) tshape->dims[i]=dims[i];} //tshape->dims: pinned Host memory
+   if(divs != NULL){for(i=0;i<rank;i++) tshape->divs[i]=divs[i];} //tshape->divs: pinned Host memory
+   if(grps != NULL){for(i=0;i<rank;i++) tshape->grps[i]=grps[i];} //tshape->grps: pinned Host memory
+  }else{
+   return -2;
+  }
+ }else{
+  return -1;
+ }
+ return n;
+}
+
+int tensBlck_create(tensBlck_t **ctens)
+/** Creates an empty instance of tensBlck_t and initializes it to null. **/
+{
+ int errc;
+ *ctens=(tensBlck_t*)malloc(sizeof(tensBlck_t)); if(*ctens == NULL) return 1;
+ (*ctens)->data_kind=NO_TYPE;
+ errc=tensShape_clean(&((*ctens)->shape)); if(errc != 0) return 2;
+ errc=tensDevRsc_clean(&((*ctens)->src_rsc)); if(errc !=0) return 3;
+ errc=tensDevRsc_clean(&((*ctens)->dst_rsc)); if(errc !=0) return 4;
+ errc=tensDevRsc_clean(&((*ctens)->tmp_rsc)); if(errc !=0) return 5;
+ (*ctens)->prmn_h=NULL;
+ return 0;
+}
+
+int tensBlck_destroy(tensBlck_t *ctens)
+/** Destroys an empty (null) instance of tensBlck_t **/
+{if(ctens != NULL){free(ctens); return 0;}else{return -1;}}
+
+int tensBlck_construct(tensBlck_t *ctens, int dev_kind, int dev_num, int data_kind, int trank,
                                 const int *dims, const int *divs, const int *grps, const int *prmn,
                                 void *addr_host, void *addr_gpu, int entry_host, int entry_gpu, int entry_const)
 /** Full constructor for tensBlck_t (tensor block to be processed on a GPU) based
@@ -695,7 +806,7 @@ dims, divs, grps, prmn, elems_h, elems_d must have been properly aligned! **/
  return 0;
 }
 
-__host__ int tensBlck_alloc(tensBlck_t *ctens, int dev_num, int data_kind, int trank, const int *dims){
+int tensBlck_alloc(tensBlck_t *ctens, int dev_num, int data_kind, int trank, const int *dims){
 /** Simplified tensBlck constructor + initialization to zero on the Host.
 The tensBlck_t instance is prepared for the use on NVidia GPU #dev_num.
 The pinned Host memory is allocated here explicitly.
@@ -763,7 +874,7 @@ The GPU memory is taken from the GPU argument buffer. **/
  return 0;
 }
 
-__host__ int tensBlck_free(tensBlck_t *ctens){
+int tensBlck_free(tensBlck_t *ctens){
 /** Frees Host memory occupied by a tensBlck_t instance, frees
 the GPU argument buffer entry. tensBlck itself is not destroyed. **/
  int i,dev_kind,gpu_num,errc;
@@ -805,7 +916,7 @@ the GPU argument buffer entry. tensBlck itself is not destroyed. **/
  return errc;
 }
 
-__host__ int tensBlck_acc_id(const tensBlck_t *ctens, int *dev_kind, int *entry_gpu, int *entry_const, int *data_kind,
+int tensBlck_acc_id(const tensBlck_t *ctens, int *dev_kind, int *entry_gpu, int *entry_const, int *data_kind,
                              int *there)
 /** Returns Accelerator ID on which the tensor block data resides or will reside (negative return means Host residence).
 INPUT:
@@ -834,16 +945,16 @@ OUTPUT:
  return dev_num;
 }
 
-__host__ int tensBlck_set_presence(tensBlck_t *ctens) //Marks tensor block data as residing on GPU
+int tensBlck_set_presence(tensBlck_t *ctens) //Marks tensor block data as residing on GPU
 {if(ctens != NULL){if(ctens->device_id < 0) ctens->device_id=-(ctens->device_id); return 0;}else{return 1;}}
 
-__host__ int tensBlck_set_absence(tensBlck_t *ctens) //Unmarks tensor block data as residing on GPU
+int tensBlck_set_absence(tensBlck_t *ctens) //Unmarks tensor block data as residing on GPU
 {if(ctens != NULL){if(ctens->device_id > 0) ctens->device_id=-(ctens->device_id); return 0;}else{return 1;}}
 
-__host__ int tensBlck_present(const tensBlck_t *ctens) //Checks presence of the block data on Device (or Host)
+int tensBlck_present(const tensBlck_t *ctens) //Checks presence of the block data on Device (or Host)
 {if(ctens != NULL){if(ctens->device_id >= 0){return 1;}else{return 0;}}else{return -1;}}
 
-__host__ int tensBlck_hab_free(tensBlck_t *ctens){
+int tensBlck_hab_free(tensBlck_t *ctens){
 /** For tensor blocks simultaneously residing on Host and GPU, frees the Host copy.
 The data does not have to be present on GPU, in which case the tensor block
 becomes uninitialized but still usable on the GPU. If the Host-residing tensor body
@@ -879,9 +990,11 @@ the corresponding pinned memory explicitly via <host_mem_free_pin>. **/
  return errc;
 }
 
-__host__ size_t tensBlck_volume(const tensBlck_t *ctens) //Number of elements in a tensor block (volume)
+size_t tensBlck_volume(const tensBlck_t *ctens) //Number of elements in a tensor block (volume)
 {size_t tvol=1; for(int i=0;i<ctens->rank;i++){tvol*=(ctens->dims_h[i]);}; return tvol;}
 
+#ifndef NO_GPU
+//CUDA TASK API:
 __host__ int cuda_task_create(cudaTask_t **cuda_task)
 /** Creates an instance of cudaTask_t **/
 {

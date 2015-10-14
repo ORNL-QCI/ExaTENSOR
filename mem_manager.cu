@@ -2,7 +2,7 @@
 implementation of the tensor algebra library TAL-SH:
 CP-TAL (TAL for CPU), NV-TAL (TAL for NVidia GPU),
 XP-TAL (TAL for Intel Xeon Phi), AM-TAL (TAL for AMD GPU).
-REVISION: 2015/09/02
+REVISION: 2015/10/14
 Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
 Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
 
@@ -721,31 +721,48 @@ int mem_print_stats(int dev_id) //print memory statistics for Device <dev_id>
  return 0;
 }
 
+int host_mem_alloc_pin(void **host_ptr, size_t tsize){
 #ifndef NO_GPU
-__host__ int host_mem_alloc_pin(void **host_ptr, size_t tsize){
  cudaError_t err=cudaHostAlloc(host_ptr,tsize,cudaHostAllocPortable);
  if(err != cudaSuccess) return 1;
+#else
+ *host_ptr=(void*)malloc(tsize);
+ if(*host_ptr == NULL) return 1;
+#endif
  return 0;
 }
 
-__host__ int host_mem_free_pin(void *host_ptr){
+int host_mem_free_pin(void *host_ptr){
+#ifndef NO_GPU
  cudaError_t err=cudaFreeHost(host_ptr);
  if(err != cudaSuccess) return 1;
+#else
+ free(host_ptr); host_ptr = NULL;
+#endif
  return 0;
 }
 
-__host__ int host_mem_register(void *host_ptr, size_t tsize){
+int host_mem_register(void *host_ptr, size_t tsize){
+#ifndef NO_GPU
  cudaError_t err=cudaHostRegister(host_ptr,tsize,cudaHostAllocPortable);
  if(err != cudaSuccess) return 1;
  return 0;
+#else
+ return 0; //`Cannot register the Host memory without CUDA
+#endif
 }
 
-__host__ int host_mem_unregister(void *host_ptr){
+int host_mem_unregister(void *host_ptr){
+#ifndef NO_GPU
  cudaError_t err=cudaHostUnregister(host_ptr);
  if(err != cudaSuccess) return 1;
  return 0;
+#else
+ return 0; //`Cannot register the Host memory without CUDA
+#endif
 }
 
+#ifndef NO_GPU
 __host__ int gpu_mem_alloc(void **dev_ptr, size_t tsize) //`Add gpu_num
 {
  cudaError_t err=cudaMalloc(dev_ptr,tsize); if(err != cudaSuccess) return 1;
