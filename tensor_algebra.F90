@@ -1,5 +1,6 @@
 !ExaTensor::TAL-SH: Basic parameters and types:
 !Keep consistent with "tensor_algebra.h"!
+!REVISION: 2015/10/16
         module tensor_algebra
         use dil_kinds !contains ISO_C_BINDING
         implicit none
@@ -47,8 +48,13 @@
         integer(C_INT), parameter, public:: EVENTS_ON=1                 !enables CUDA event recording (default)
         integer(C_INT), parameter, public:: TRY_LATER=-918273645        !try the action later (resources are currently busy): KEEP THIS UNIQUE!
         integer(C_INT), parameter, public:: DEVICE_UNABLE=-546372819    !device is unsuitable for the given task: KEEP THIS UNIQUE!
+        integer(C_INT), parameter, public:: NOT_CLEAN=-192837465        !something, like resource release, did not go right, but you can continue: KEEP THIS UNIQUE!
         integer(C_INT), parameter, public:: NOPE=0                      !"NO" answer
         integer(C_INT), parameter, public:: YEP=1                       !"YES" answer
+        integer(C_INT), parameter, public:: EVERYTHING=0                !everything (source, destination, temporary)
+        integer(C_INT), parameter, public:: SOURCE=1                    !source
+        integer(C_INT), parameter, public:: DESTINATION=2               !destination
+        integer(C_INT), parameter, public:: TEMPORARY=3                 !temporary
         integer(C_INT), parameter, public:: DEV_OFF=0                   !device status "Disabled"
         integer(C_INT), parameter, public:: DEV_ON=1                    !device status "Enabled"
         integer(C_INT), parameter, public:: DEV_ON_BLAS=2               !device status "Enabled with vendor provided BLAS"
@@ -141,9 +147,9 @@
         integer(C_INT), parameter, public:: COPY_KKK=63
 #ifndef NO_PHI
 !DIR$ ATTRIBUTES OFFLOAD:mic:: TALSH_SUCCESS,TALSH_FAILURE,BLAS_ON,BLAS_OFF,EFF_TRN_OFF,EFF_TRN_ON,TRY_LATER,DEVICE_UNABLE
-!DIR$ ATTRIBUTES OFFLOAD:mic:: NOPE,YEP,DEV_OFF,DEV_ON,DEV_ON_BLAS,NO_COPY_BACK,COPY_BACK
+!DIR$ ATTRIBUTES OFFLOAD:mic:: NOPE,YEP,EVERYTHING,SOURCE,DESTINATION,TEMPORARY,DEV_OFF,DEV_ON,DEV_ON_BLAS,NO_COPY_BACK,COPY_BACK
 !DIR$ ATTRIBUTES ALIGN:128:: TALSH_SUCCESS,TALSH_FAILURE,BLAS_ON,BLAS_OFF,EFF_TRN_OFF,EFF_TRN_ON,TRY_LATER,DEVICE_UNABLE
-!DIR$ ATTRIBUTES ALIGN:128:: NOPE,YEP,DEV_OFF,DEV_ON,DEV_ON_BLAS,NO_COPY_BACK,COPY_BACK
+!DIR$ ATTRIBUTES ALIGN:128:: NOPE,YEP,EVERYTHING,SOURCE,DESTINATION,TEMPORARY,DEV_OFF,DEV_ON,DEV_ON_BLAS,NO_COPY_BACK,COPY_BACK
 #endif
 
 !CUDA TASK STATUS (keep consistent with tensor_algebra.h):
@@ -177,7 +183,6 @@
         type, bind(C):: talsh_tens_t
          integer(C_INT):: ndev       !number of devices the tensor block resides on
          integer(C_INT):: last_write !flat device id where the last write happened, -1 means coherence on all devices where the tensor block resides
-         type(C_PTR):: dev_list      !list of flat device id's the tensor block resides on
          type(C_PTR):: dev_rsc       !list of device resources occupied by the tensor block on each device
          type(C_PTR):: tensF         !pointer to Fortran <tensor_block_t>
          type(C_PTR):: tensC         !pointer to C/C++ <tensBlck_t>

@@ -2,7 +2,7 @@
     Parameters, derived types, and function prototypes
     used at the lower level of TAL-SH (device specific):
     CP-TAL, NV-TAL, XP-TAL, AM-TAL, etc.
-REVISION: 2015/10/14
+REVISION: 2015/10/16
 Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
 Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
 
@@ -69,7 +69,7 @@ FOR DEVELOPERS ONLY:
 #define MAX_TENSOR_RANK 32         //max allowed tensor rank: Must be multiple of 4
 #define MAX_TENSOR_OPERANDS 4      //max allowed number of tensor operands in a tensor operation
 #define MAX_GPU_ARGS 128           //max allowed number of tensor arguments simultaneously residing on a GPU: Must be a multiple of 8
-#define MAX_MLNDS_PER_SHAPE 4      //max number of multi-indices per tensor shape (dims, divs, grps, reserved)
+#define MAX_MLNDS_PER_TENS 4       //max number of multi-indices per tensor block (dims, divs, grps, prmn)
 #define MAX_CUDA_TASKS 128         //max allowed number of simultaneously active CUDA tasks per CUDA device
 #define NUM_EVENTS_PER_TASK 4      //number of CUDA events recorded per CUDA task
 #define MAX_CUDA_EVENTS MAX_CUDA_TASKS*NUM_EVENTS_PER_TASK //max number of CUDA events per CUDA device
@@ -139,8 +139,15 @@ FOR DEVELOPERS ONLY:
 #define EFF_TRN_ON 1
 #define TRY_LATER -918273645
 #define DEVICE_UNABLE -546372819
+#define NOT_CLEAN -192837465
 #define NOPE 0
 #define YEP 1
+
+#define EVERYTHING 0
+#define SOURCE 1
+#define DESTINATION 2
+#define TEMPORARY 3
+
 #define DEV_OFF 0
 #define DEV_ON 1
 #define DEV_ON_BLAS 2
@@ -250,28 +257,28 @@ typedef struct{
 
 // Device resource (occupied by a tensor block):
 typedef struct{
- void * gmem_p;       //pointer to Host/Device global memory where the tensor body resides
- int buf_entry;       //argument buffer entry number (in Host/Device global memory)
- int const_mem_entry; //NVidia GPU constant memory entry number
+ int dev_id;          //flat device id the following resources belong to
+ void * gmem_p;       //pointer to global memory where the tensor body resides
+ int buf_entry;       //argument buffer entry handle corresponding to <gmem_p>
+ int const_mem_entry; //NVidia GPU constant memory entry handle
 } talsh_dev_rsc_t;
 //Note: Some of the fields above are device specific.
 
 // Tensor block (for the use on NVidia GPU):
 typedef struct{
- int data_kind;            //tensor element size in bytes: float (R4), double (R8), or double complex (C8)
- talsh_tens_shape_t shape; //tensor shape: pinned Host memory (pointer components use the multi-index slab, miBank)
- talsh_dev_rsc_t src_rsc;  //source of the data (memory resource where the data resides before the task)
- talsh_dev_rsc_t dst_rsc;  //destination of the data (memory resource where the data will reside after the task)
- talsh_dev_rsc_t tmp_rsc;  //temporary memory resource
- int * prmn_h;             //tensor block dimension permutation (not to be set by a user!): pinnned HOST memory
+ int data_kind;              //tensor element size in bytes: float (R4), double (R8), or double complex (C8)
+ talsh_tens_shape_t shape;   //tensor shape: pinned Host memory (pointer components use the multi-index slab, miBank)
+ talsh_dev_rsc_t * src_rsc;  //source of the data (memory resource where the data resides before the task)
+ talsh_dev_rsc_t * dst_rsc;  //destination of the data (memory resource where the data will reside after the task)
+ talsh_dev_rsc_t * tmp_rsc;  //temporary memory resource
+ int * prmn_h;               //tensor block dimension permutation (not to be set by a user!): pinnned HOST memory (miBank)
 } tensBlck_t;
 
 // Interoperable tensor block:
 typedef struct{
  int ndev;                  //number of devices the tensor block resides on
  int last_write;            //flat device id where the last write happened, -1 means coherence on all devices where the tensor block resides
- int * dev_list;            //list of the flat device id's the tensor block resides on
- talsh_dev_rsc_t * dev_rsc; //list of the device resources occupied by the tensor block on each device
+ talsh_dev_rsc_t * dev_rsc; //list of device resources occupied by the tensor block on each device
  void * tensF;              //pointer to Fortran <tensor_block_t>
  void * tensC;              //pointer to C <tensBlck_t>
 } talsh_tens_t;
@@ -337,8 +344,8 @@ extern "C"{
  int host_mem_register(void *host_ptr, size_t tsize); //generic
  int host_mem_unregister(void *host_ptr); //generic
 #ifndef NO_GPU
- int gpu_mem_alloc(void **dev_ptr, size_t tsize); //NVidia GPU only
- int gpu_mem_free(void *dev_ptr); //NVidia GPU only
+ int gpu_mem_alloc(void **dev_ptr, size_t tsize, int gpu_id); //NVidia GPU only
+ int gpu_mem_free(void *dev_ptr, int gpu_id); //NVidia GPU only
 #endif
 // NVidia GPU operations (NV-TAL):
 //  Device id conversion:
@@ -365,13 +372,13 @@ extern "C"{
 //  NV-TAL tensor block API:
  int tensShape_clean(talsh_tens_shape_t * tshape);
  int tensShape_construct(talsh_tens_shape_t * tshape, int rank, const int * dims, const int * divs, const int * grps);
+ int tensShape_destruct(talsh_tens_shape_t * tshape);
  int tensBlck_create(tensBlck_t **ctens);
  int tensBlck_destroy(tensBlck_t *ctens);
- int tensBlck_construct(tensBlck_t *ctens, int dev_kind, int dev_num, int data_kind, int trank,
-                        const int *dims, const int *divs, const int *grps, const int *prmn,
-                        void *addr_host, void *addr_gpu, int entry_host, int entry_gpu, int entry_const);
- int tensBlck_alloc(tensBlck_t *ctens, int dev_num, int data_kind, int trank, const int *dims);
- int tensBlck_free(tensBlck_t *ctens);
+ int tensBlck_construct(tensBlck_t *ctens, int trank, const int *dims, const int *divs, const int *grps);
+ int tensBlck_attach_body(tensBlck_t *ctens, int data_kind, int dev_id, void *body_ptr, int buf_entry);
+ int tensBlck_destruct(tensBlck_t *ctens, int release_body, int which_body);
+ 
  int tensBlck_acc_id(const tensBlck_t *ctens, int *dev_kind, int *entry_gpu, int *entry_const, int *data_kind, int *there);
  int tensBlck_set_presence(tensBlck_t *ctens);
  int tensBlck_set_absence(tensBlck_t *ctens);

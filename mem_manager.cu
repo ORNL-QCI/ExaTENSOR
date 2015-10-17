@@ -2,7 +2,7 @@
 implementation of the tensor algebra library TAL-SH:
 CP-TAL (TAL for CPU), NV-TAL (TAL for NVidia GPU),
 XP-TAL (TAL for Intel Xeon Phi), AM-TAL (TAL for AMD GPU).
-REVISION: 2015/10/14
+REVISION: 2015/10/16
 Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
 Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
 
@@ -763,15 +763,35 @@ int host_mem_unregister(void *host_ptr){
 }
 
 #ifndef NO_GPU
-__host__ int gpu_mem_alloc(void **dev_ptr, size_t tsize) //`Add gpu_num
+__host__ int gpu_mem_alloc(void **dev_ptr, size_t tsize, int gpu_id = -1)
+/** Allocates global memory on a specific GPU (or current GPU by default).
+    A return status NOT_CLEAN is not critical. **/
 {
- cudaError_t err=cudaMalloc(dev_ptr,tsize); if(err != cudaSuccess) return 1;
+ int i;
+ cudaError_t err;
+ i=-1;
+ if(gpu_id >= 0 && gpu_id < MAX_GPUS_PER_NODE){
+  err=cudaGetDevice(&i); if(err != cudaSuccess) return 1;
+  err=cudaSetDevice(gpu_id); if(err != cudaSuccess){err=cudaSetDevice(i); return 2;}
+ }
+ err=cudaMalloc(dev_ptr,tsize); if(err != cudaSuccess){if(i >= 0) err=cudaSetDevice(i); return 3;}
+ if(i >= 0){err=cudaSetDevice(i); if(err != cudaSuccess) return NOT_CLEAN;}
  return 0;
 }
 
-__host__ int gpu_mem_free(void *dev_ptr) //`Add gpu_num
+__host__ int gpu_mem_free(void *dev_ptr, int gpu_id = -1)
+/** Frees global memory on a specific GPU (or current GPU by default).
+    A return status NOT_CLEAN is not critical. **/
 {
- cudaError_t err=cudaFree(dev_ptr); if(err != cudaSuccess) return 1;
+ int i;
+ cudaError_t err;
+ i=-1;
+ if(gpu_id >= 0 && gpu_id < MAX_GPUS_PER_NODE){
+  err=cudaGetDevice(&i); if(err != cudaSuccess) return 1;
+  err=cudaSetDevice(gpu_id); if(err != cudaSuccess){err=cudaSetDevice(i); return 2;}
+ }
+ err=cudaFree(dev_ptr); if(err != cudaSuccess){if(i >= 0) err=cudaSetDevice(i); return 3;}
+ if(i >= 0){err=cudaSetDevice(i); if(err != cudaSuccess) return NOT_CLEAN;}
  return 0;
 }
 #endif
