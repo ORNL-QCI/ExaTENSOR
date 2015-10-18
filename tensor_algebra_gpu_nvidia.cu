@@ -1,5 +1,5 @@
 /** Tensor Algebra Library for NVidia GPU: NV-TAL (CUDA based).
-REVISION: 2015/10/16
+REVISION: 2015/10/18
 Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
 Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
 
@@ -111,6 +111,7 @@ static int mi_entry_get(int ** mi_entry);
 static int mi_entry_release(int * mi_entry);
 static int tensDevRsc_create(talsh_dev_rsc_t **drsc);
 static int tensDevRsc_clean(talsh_dev_rsc_t * drsc);
+static int tensDevRsc_empty(talsh_dev_rsc_t * drsc);
 static int tensDevRsc_attach_mem(talsh_dev_rsc_t * drsc, int dev_id, void * mem_p, int buf_entry);
 static int tensDevRsc_detach_mem(talsh_dev_rsc_t * drsc);
 static int tensDevRsc_allocate_mem(talsh_dev_rsc_t * drsc, int dev_id, size_t mem_size, int in_arg_buf);
@@ -281,7 +282,7 @@ __host__ int gpu_get_debug_dump(int *dump)
 
 //AUXILIARY FUNCTIONS:
 static int tens_valid_data_kind(int datk)
-/** Returns YEP if the data kind <datk> is valid for a tensor body, NOPE otherwise. **/
+/** Returns YEP if the data kind <datk> is valid in TAL-SH, NOPE otherwise. **/
 {
  if(datk == R4 || datk == R8 || datk == C8 || datk == NO_TYPE) return YEP;
  return NOPE;
@@ -332,6 +333,16 @@ static int tensDevRsc_clean(talsh_dev_rsc_t * drsc)
  return 0;
 }
 
+static int tensDevRsc_empty(talsh_dev_rsc_t * drsc)
+/** Returns YEP if the device resource descriptor is empty, NOPE otherwise.
+    Negative return status means an error. **/
+{
+ if(drsc == NULL) return -1;
+ if(drsc->gmem_p != NULL || drsc->buf_entry >= 0 || drsc->const_mem_entry >= 0) return NOPE;
+ drsc->dev_id=DEV_NULL;
+ return YEP;
+}
+
 static int tensDevRsc_attach_mem(talsh_dev_rsc_t * drsc, int dev_id, void * mem_p, int buf_entry = -1)
 /** Attaches a chunk of existing global memory to a device resource descriptor.
     If <buf_entry> >= 0, that means that the global memory is in the argument buffer.
@@ -351,10 +362,13 @@ static int tensDevRsc_detach_mem(talsh_dev_rsc_t * drsc)
 /** Detaches a chunk of external memory from a device resource descriptor.
     Regardless of the origin of that memory, it is not released. **/
 {
+ int errc;
+
  if(drsc == NULL) return -1;
  if(drsc->dev_id < 0) return -2; //empty resource descriptor
  if(drsc->gmem_p == NULL) return 1; //no global memory attached
  drsc->gmem_p=NULL; drsc->buf_entry=-1;
+ errc=tensDevRsc_empty(drsc);
  return 0;
 }
 
@@ -373,43 +387,146 @@ static int tensDevRsc_allocate_mem(talsh_dev_rsc_t * drsc, int dev_id, size_t me
  if(devn < 0) return -4; //invalid flat device id
  if(drsc->dev_id >= 0 && drsc->dev_id != dev_id) return 1; //resource was assigned to a different device
  if(drsc->gmem_p != NULL) return 2; //resource already has global memory attached
- drsc->dev_id=dev_id;
  switch(devk){
   case DEV_HOST:
    if(in_arg_buf == NOPE){
-    
+    errc=host_mem_alloc_pin(&(drsc->gmem_p),mem_size); if(errc != 0){drsc->gmem_p = NULL; return 3;}
    }else{
     errc=get_buf_entry_host(mem_size,&byte_ptr,&i);
-    if(errc != 0){if(errc == TRY_LATER || errc == DEVICE_UNABLE){return errc;}else{return 3;}}
+    if(errc != 0){if(errc == TRY_LATER || errc == DEVICE_UNABLE){return errc;}else{return 4;}}
     drsc->gmem_p=(void*)byte_ptr; drsc->buf_entry=i;
    }
    break;
   case DEV_NVIDIA_GPU:
 #ifndef NO_GPU
-   
+   if(in_arg_buf == NOPE){
+    errc=gpu_mem_alloc(&(drsc->gmem_p),mem_size,devn); if(errc != 0){drsc->gmem_p = NULL; return 5;}
+   }else{
+    errc=get_buf_entry_gpu(devn,mem_size,&byte_ptr,&i);
+    if(errc != 0){if(errc == TRY_LATER || errc == DEVICE_UNABLE){return errc;}else{return 6;}}
+    drsc->gmem_p=(void*)byte_ptr; drsc->buf_entry=i;
+   }
+   break;
 #else
    return -5;
 #endif
    break;
   case DEV_INTEL_MIC:
 #ifndef NO_MIC
-   
+   //`Future
 #else
    return -6;
 #endif
    break;
   case DEV_AMD_GPU:
 #ifndef NO_AMD
-   
+   //`Future
 #else
    return -7;
 #endif
    break;
   default:
-   return -8;
+   return -8; //unknown device kind
  }
+ drsc->dev_id=dev_id;
  return 0;
 }
+
+static int tensDevRsc_free_mem(talsh_dev_rsc_t * drsc)
+/** Release global memory referred to by a device resource descriptor. **/
+{
+ int n,devn,devk,errc;
+
+ n=0;
+ if(drsc == NULL) return -1;
+ if(drsc->dev_id < 0) return -2;
+ if(drsc->gmem_p == NULL) return -3;
+ devn=decode_device_id(drsc->dev_id,&devk);
+ if(devn < 0) return -4; //invalid flat device id
+ switch(devk){
+  case DEV_HOST:
+   if(drsc->buf_entry >= 0){
+    errc=free_buf_entry_host(drsc->buf_entry); if(errc != 0) n=NOT_CLEAN;
+   }else{
+    if(drsc->gmem_p != NULL){errc=host_mem_free_pin(drsc->gmem_p); i(errc != 0) n=NOT_CLEAN;}
+   }
+   break;
+  case DEV_NVIDIA_GPU:
+#ifndef NO_GPU
+   if(drsc->buf_entry >= 0){
+    errc=free_buf_entry_gpu(devn,drsc->buf_entry); if(errc != 0) n=NOT_CLEAN;
+   }else{
+    if(drsc->gmem_p != NULL){errc=gpu_mem_free(drsc->gmem_p,devn); if(errc != 0) n=NOT_CLEAN;}
+   }
+   break;
+#else
+   return -5;
+#endif
+  case DEV_INTEL_MIC:
+#ifndef NO_MIC
+   //`Future
+   break;
+#else
+   return -6;
+#endif
+  case DEV_AMD_GPU:
+#ifndef NO_AMD
+   //`Future
+   break;
+#else
+   return -7;
+#endif
+  default:
+   return -8; //invalid device kind
+ }
+ errc=tensDevRsc_empty(drsc);
+ return n;
+}
+
+#ifndef NO_GPU
+static int tensDevRsc_get_const_entry(talsh_dev_rsc_t * drsc, int dev_id)
+/** Acquires a constant memory entry on an Nvidia GPU. A return status TRY_LATER or
+    DEVICE_UNABLE indicate a temporary or permanent shortage of the corresponding resource. **/
+{
+ int i,devn,devk,errc;
+
+ if(drsc == NULL) return -1;
+ if(dev_id < 0) return -2;
+ devn=decode_device_id(dev_id,&devk);
+ if(devn < 0) return -3; //invalid flat device id
+ if(drsc->dev_id >= 0 && drsc->dev_id != dev_id) return 1; //resource was assigned to a different device
+ if(drsc->const_mem_entry >= 0) return 2; //resource already has constant memory entry attached
+ if(devk == DEV_NVIDIA_GPU){
+  errc=const_args_entry_get(devn,&i); if(errc != 0){if(errc == TRY_LATER || errc == DEVICE_UNABLE){return errc;}else{return 3;}}
+  drsc->const_mem_entry=i;
+ }else{
+  return 4;
+ }
+ drsc->dev_id=dev_id;
+ return 0;
+}
+
+static int tensDevRsc_release_const_entry(talsh_dev_rsc_t * drsc)
+/** Releases a constant memory entry from a given device resource descriptor. **/
+{
+ int n,devn,devk,errc;
+
+ n=0;
+ if(drsc == NULL) return -1;
+ if(drsc->dev_id < 0) return -2;
+ devn=decode_device_id(drsc->dev_id,&devk);
+ if(devn < 0) return -3; //invalid flat device id
+ if(drsc->const_mem_entry < 0) return 1;
+ if(devk == DEV_NVIDIA_GPU){
+  errc=const_args_entry_free(devn,drsc->const_mem_entry); if(errc != 0) n=NOT_CLEAN;
+  drsc->const_mem_entry=-1;
+ }else{
+  return 3;
+ }
+ errc=tensDevRsc_empty(drsc);
+ return n;
+}
+#endif
 
 static int tensDevRsc_release_all(talsh_dev_rsc_t * drsc)
 /** Releases all device resources in <drsc>. **/
@@ -426,7 +543,7 @@ static int tensDevRsc_release_all(talsh_dev_rsc_t * drsc)
     if(drsc->buf_entry >= 0){
      errc=free_buf_entry_host(drsc->buf_entry); if(errc != 0) n=NOT_CLEAN;
     }else{
-     if(drsc->gmem_p != NULL){free(drsc->gmem_p);}
+     if(drsc->gmem_p != NULL){errc=host_mem_free_pin(drsc->gmem_p); i(errc != 0) n=NOT_CLEAN;}
     }
     break;
    case DEV_NVIDIA_GPU:
@@ -462,6 +579,19 @@ static int tensDevRsc_release_all(talsh_dev_rsc_t * drsc)
   }
   errc=tensDevRsc_clean(drsc);
  }
+ return n;
+}
+
+static int tensDevRsc_destroy(talsh_dev_rsc_t * drsc)
+/** Completely destroys a device resource descriptor.
+    A return status NOT_CLEAN is not a critical error. **/
+{
+ int n,errc;
+
+ n=0;
+ if(drsc == NULL) return -1;
+ errc=tensDevRsc_release_all(drsc); if(errc != 0) n=NOT_CLEAN;
+ free(drsc);
  return n;
 }
 
