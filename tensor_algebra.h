@@ -2,7 +2,7 @@
     Parameters, derived types, and function prototypes
     used at the lower level of TAL-SH (device specific):
     CP-TAL, NV-TAL, XP-TAL, AM-TAL, etc.
-REVISION: 2015/10/16
+REVISION: 2015/11/01
 Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
 Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
 
@@ -21,9 +21,9 @@ along with this program; if not, write to the Free Software
 Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 -------------------------------------------------------------------------------
 PREPROCESSOR OPTIONS:
- # -D CUDA_ARCH=350: target GPU compute capability (default is 130);
- # -D NO_GPU: disables GPU usage (CPU structures only);
- # -D NO_BLAS: cuBLAS calls will be replaced by in-house routines;
+ # -D CUDA_ARCH=350: target Nvidia GPU compute capability (default is 130);
+ # -D NO_GPU: disables Nvidia GPU usage (CPU structures only);
+ # -D NO_BLAS: cuBLAS calls will be replaced by in-house routines (slower);
  # -D DEBUG_GPU: collection of debugging information will be activated;
 NOTES:
  # GPU_ID is a unique CUDA GPU ID given to a specific NVidia GPU present on the Host node:
@@ -42,17 +42,20 @@ NOTES:
      NVidia GPU: {1..MAX_GPUS_PER_NODE};
      Intel Xeon Phi: {MAX_GPUS_PER_NODE+1:MAX_GPUS_PER_NODE+MAX_MICS_PER_NODE};
      AMD GPU: {MAX_GPUS_PER_NODE+MAX_MICS_PER_NODE+1:MAX_GPUS_PER_NODE+MAX_MICS_PER_NODE+MAX_AMDS_PER_NODE}, etc.
-    DEVICE_ID is used in tensBlck_t: If tensor elements are already on the Device it is positive, otherwise negative.
- # MAX_GPU_ARGS limits the maximal allowed number of argument-buffer entries on a GPU.
-   It determines the amount of static constant memory allocated on each GPU.
+ # MAX_GPU_ARGS limits the maximal allowed number of argument-buffer entries on each GPU.
+   It determines the amount of static constant memory allocated on each GPU. Since each
+   tensor contraction can involve up to six tensor blocks (because of dimension permutations),
+   the maximal number of simultaneously active tensor contractions on each GPU is limited to MAX_GPU_ARGS/6.
  # CUDA_TASK is considered completed successfully if the value of the .task_error field equals zero.
    Negative .task_error means that either the CUDA task is empty (.gpu_id<0) or it is in progress (gpu_id>=0).
-   Positive .task_error means that an error occured during the task scheduling/execution process.
+   Positive .task_error means that an error occured during task scheduling/execution.
 FOR DEVELOPERS ONLY:
- # CPU/GPU resource allocation API functions (memory, streams, events, etc.) may return a status
-   TRY_LATER or DEVICE_UNABLE, both are not errors. If this happens within a scheduling function
-   (asynchronous tensor operation), all relevant objects, which have already been allocated, must
-   be released and returned to their initial state (the state before the scheduling function call).
+ # CPU/GPU resource allocation API functions (memory, mutli-indices, streams, events, etc.) may
+   return a status TRY_LATER or DEVICE_UNABLE, both are not errors. If this happens within a scheduling
+   function (asynchronous tensor operation), all relevant objects, which have already been created,
+   must be destroyed or returned to their initial state (the state before the scheduling function call).
+ # If for some reason a device resource is not released properly but the object destruction still
+   has happened, a non-critical error NOT_CLEAN may be returned.
 **/
 //BEGINNING OF TENSOR_ALGEBRA_H
 #ifndef _TENSOR_ALGEBRA_H
@@ -249,18 +252,18 @@ FOR DEVELOPERS ONLY:
 //DERIVED TYPES (keep consistent with tensor_algebra.F90):
 // Tensor shape:
 typedef struct{
- int num_dim;   //tensor rank (number of dimensions)
- int * dims;    //tensor dimension extents
- int * divs;    //tensor dimension dividers
- int * grps;    //tensor dimension groups
+ int num_dim;   //tensor rank (number of dimensions): >=0, -1:Empty
+ int * dims;    //tensor dimension extents (either in regular RAM or pinned)
+ int * divs;    //tensor dimension dividers (either in regular RAM or pinned)
+ int * grps;    //tensor dimension groups (either in regular RAM or pinned)
 } talsh_tens_shape_t;
 
 // Device resource (occupied by a tensor block):
 typedef struct{
- int dev_id;          //flat device id the following resources belong to
- void * gmem_p;       //pointer to global memory where the tensor body resides
- int buf_entry;       //argument buffer entry handle corresponding to <gmem_p>
- int const_mem_entry; //NVidia GPU constant memory entry handle
+ int dev_id;          //flat device id (>=0) the following resources belong to (-1:None)
+ void * gmem_p;       //pointer to global memory where the tensor body resides (NULL:None)
+ int buf_entry;       //argument buffer entry handle (>=0) corresponding to <gmem_p> (-1:None)
+ int const_mem_entry; //NVidia GPU constant memory entry handle (>=0, -1:None)
 } talsh_dev_rsc_t;
 //Note: Some of the fields above are device specific.
 
@@ -298,9 +301,9 @@ typedef struct{
  int event_comput_hl; //handle of the CUDA event recorded before the CUDA kernels start (all input data is on Device)
  int event_output_hl; //handle of the CUDA event recorded when the CUDA kernels finish (before output to the Host)
  int event_finish_hl; //handle of the CUDA event recorded at the end of the task (full completion)
- int coherence;       //coherence control for this task (COPY_XXX)
+ int coherence;       //coherence control for this task (see COPY_XXX constants)
  int num_args;        //number of tensor arguments participating in the tensor operation
- tensBlck_t tens_args[MAX_TENSOR_OPERANDS]; //tensor arguments
+ tensBlck_t *tens_args[MAX_TENSOR_OPERANDS]; //tensor arguments participating in the tensor operation
 } cudaTask_t;
 //Note: Adding new CUDA events will require adjustment of NUM_EVENTS_PER_TASK.
 
@@ -347,11 +350,11 @@ extern "C"{
  int gpu_mem_alloc(void **dev_ptr, size_t tsize, int gpu_id); //NVidia GPU only
  int gpu_mem_free(void *dev_ptr, int gpu_id); //NVidia GPU only
 #endif
-// NVidia GPU operations (NV-TAL):
-//  Device id conversion:
+// Device id conversion:
  int encode_device_id(int dev_kind, int dev_num);
  int decode_device_id(int dev_id, int *dev_kind);
 #ifndef NO_GPU
+// NVidia GPU operations (NV-TAL):
 //  NV-TAL debugging:
  int gpu_get_error_count();
  int gpu_get_debug_dump(int *dump);
@@ -371,7 +374,7 @@ extern "C"{
 #endif
 //  NV-TAL tensor block API:
  int tensShape_clean(talsh_tens_shape_t * tshape);
- int tensShape_construct(talsh_tens_shape_t * tshape, int rank, const int * dims, const int * divs, const int * grps);
+ int tensShape_construct(talsh_tens_shape_t * tshape, int pinned, int rank, const int * dims, const int * divs, const int * grps);
  int tensShape_destruct(talsh_tens_shape_t * tshape);
  int tensBlck_create(tensBlck_t **ctens);
  int tensBlck_destroy(tensBlck_t *ctens);
