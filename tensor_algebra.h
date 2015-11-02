@@ -376,9 +376,10 @@ extern "C"{
  int tensShape_clean(talsh_tens_shape_t * tshape);
  int tensShape_construct(talsh_tens_shape_t * tshape, int pinned, int rank, const int * dims, const int * divs, const int * grps);
  int tensShape_destruct(talsh_tens_shape_t * tshape);
+ size_t tensShape_volume(const talsh_tens_shape_t * tshape);
  int tensBlck_create(tensBlck_t **ctens);
  int tensBlck_destroy(tensBlck_t *ctens);
- int tensBlck_construct(tensBlck_t *ctens, int trank, const int *dims, const int *divs, const int *grps);
+ int tensBlck_construct(tensBlck_t *ctens, int pinned, int trank, const int *dims, const int *divs, const int *grps);
  int tensBlck_attach_body(tensBlck_t *ctens, int data_kind, int dev_id, void *body_ptr, int buf_entry);
  int tensBlck_destruct(tensBlck_t *ctens, int release_body, int which_body);
  

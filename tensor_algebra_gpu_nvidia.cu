@@ -1,5 +1,5 @@
 /** Tensor Algebra Library for NVidia GPU: NV-TAL (CUDA based).
-REVISION: 2015/11/01
+REVISION: 2015/11/02
 Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
 Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
 
@@ -1044,7 +1044,7 @@ int tensShape_clean(talsh_tens_shape_t * tshape)
  if(tshape != NULL){
   tshape->num_dim=-1; //tensor rank
   tshape->dims=NULL;  //tensor dimension extents
-  tshape->divs=NULL;  //tensor dimension dividers
+  tshape->divs=NULL;  //tensor dimension dividers (segment sizes)
   tshape->grps=NULL;  //tensor dimension groups
  }else{
   return -1;
@@ -1114,7 +1114,7 @@ int tensShape_construct(talsh_tens_shape_t * tshape, int pinned, int rank, const
  if(divs != NULL){
   for(i=0;i<rank;i++) tshape->divs[i]=divs[i];
  }else{
-  for(i=0;i<rank;i++) tshape->divs[i]=tshape->dims[i]; //default dividers (1 segment per dimension)
+  for(i=0;i<rank;i++) tshape->divs[i]=tshape->dims[i]; //default dividers (one segment per dimension)
  }
  if(grps != NULL){
   for(i=0;i<rank;i++) tshape->grps[i]=grps[i];
@@ -1155,14 +1155,34 @@ int tensShape_destruct(talsh_tens_shape_t * tshape)
  return n; //either 0 or NOT_CLEAN
 }
 
+static size_t tensShape_volume(const talsh_tens_shape_t * tshape)
+/** Returns the volume of a defined tensor shape, or 0 otherwise. **/
+{
+ int i;
+ size_t vol;
+
+ vol=0;
+ if(tshape->num_dim >= 0 && tshape->num_dim <= MAX_TENSOR_RANK){
+  vol=1;
+  for(i=0;i<tshape->num_dim;i++){
+   if(tshape->dims[i] > 0){
+    vol*=tshape->dims[i];
+   }else{
+    return 0;
+   }
+  }
+ }
+ return vol;
+}
+
 int tensBlck_create(tensBlck_t **ctens)
-/** Creates an empty instance of tensBlck_t and initializes it to null. **/
+/** Creates an empty instance of tensBlck_t and initializes it to null (on Host). **/
 {
  int errc;
 
- *ctens=(tensBlck_t*)malloc(sizeof(tensBlck_t)); if(*ctens == NULL) return 1;
+ *ctens=(tensBlck_t*)malloc(sizeof(tensBlck_t)); if(*ctens == NULL) return TRY_LATER;
  (*ctens)->data_kind=NO_TYPE;
- errc=tensShape_clean(&((*ctens)->shape)); if(errc != 0) return 2;
+ errc=tensShape_clean(&((*ctens)->shape)); if(errc != 0) return 1;
  (*ctens)->src_rsc=NULL; //source memory resource (where the tensor body is before the operation)
  (*ctens)->dst_rsc=NULL; //destination memory resource (where the tensor body will be after the operation)
  (*ctens)->tmp_rsc=NULL; //temporary memory resource (where the tensor body can be during the operation)
@@ -1176,6 +1196,7 @@ int tensBlck_destroy(tensBlck_t *ctens)
     can be considered as a tolerable error (the object will still be destroyed). **/
 {
  int errc;
+
  errc=0;
  if(ctens == NULL) return -1;
  errc=tensBlck_destruct(ctens); if(errc != 0 && errc != NOT_CLEAN) errc=1;
@@ -1184,21 +1205,25 @@ int tensBlck_destroy(tensBlck_t *ctens)
 }
 
 int tensBlck_construct(tensBlck_t *ctens,      //pointer to defined tensor block (either nullified or defined to a value)
+                       int pinned,             //YEP: tensor shape multi-indices will be pinned (for GPU), NOPE: regular malloc (not pinned)
                        int trank,              //tensor rank
                        const int *dims = NULL, //tensor dimension extents (when trank > 0)
                        const int *divs = NULL, //tensor dimension dividers (when trank > 0, optional)
                        const int *grps = NULL) //tensor dimension groups (when trank > 0, optional)
 /** Constructs (defines/redefines) a tensor block without attaching its body (only the shape).
+    If the tensor block is to be used on Nvidia GPUs or other asynchronous devices,
+    argument <pinned> must be set to YEP (NOPE will not use pinned memory).
     A return status NOT_CLEAN indicates an unsuccessful resource release, which,
     can be considered as a tolerable error (the object will still be constructed). **/
 {
  int n,errc;
+
  n=0;
  if(ctens == NULL) return -1;
- if(trank < 0 || trank > MAX_TENSOR_RANK) return -2;
- if(trank > 0 && dims == NULL) return -3;
+ if(trank < 0 || trank > MAX_TENSOR_RANK) return -2; //invalid tensor rank
+ if(trank > 0 && dims == NULL) return -3; //dimension extents must be present for rank>0 tensors
  errc=tensBlck_destruct(ctens); if(errc != 0){if(errc == NOT_CLEAN){n=errc;}else{return 1;}}
- errc=tensShape_construct(&(ctens->shape),trank,dims,divs,grps);
+ errc=tensShape_construct(&(ctens->shape),pinned,trank,dims,divs,grps);
  if(errc != 0){if(errc == TRY_LATER || errc == DEVICE_UNABLE){return errc;}else{return 2;}}
  return n; //either 0 or NOT_CLEAN
 }
@@ -1209,19 +1234,30 @@ int tensBlck_attach_body(tensBlck_t *ctens,     //pointer to a shape-defined (co
                          void *body_ptr = NULL, //pointer to the tensor body (global memory of device <dev_id>)
                          int buf_entry = -1)    //argument buffer entry handle corresponding to the <body_ptr> (optional)
 /** Attaches a body to a shape-defined tensor block. If both <body_ptr> and <buf_entry> are absent,
-    a resource will be allocated on device <dev_id> (Host or Nvidia GPU) in the argument buffer.
-    If <buf_entry> is absent, a defined <body_ptr> points to an external memory (not in the argument buffer).
-    In both cases, the memory resource will be associated with the .src_rsc component of tensBlck_t.
-    A return status of TRY_LATER or DEVICE_UNABLE indicates the current or permanent shortage
-    in the necessary resources and is not an error. **/
+    a resource will be allocated on device <dev_id> in the device argument buffer (if available).
+    If <buf_entry> is absent, a defined <body_ptr> points to an external memory (either pinned or not).
+    If both <body_ptr> and <buf_entry> are defined, the external memory is assumed to be within that
+    argument buffer entry. In all cases, the memory resource will be associated with the .src_rsc component
+    of tensBlck_t. It is forbidden to attempt allocating/attaching a memory resource when an existing memory
+    resource is still in use (this will result in an error). A return status of TRY_LATER or DEVICE_UNABLE
+    indicates the current or permanent shortage in the necessary resources and is not an error. **/
 {
- int devk,devn,errc;
+ int errc;
+ size_t vol,body_size;
 
  if(ctens == NULL) return -1;
  if(tens_valid_data_kind(data_kind) != YEP || data_kind == NO_TYPE) return -2;
  if(ctens->shape.num_dim < 0 || ctens->shape.num_dim > MAX_TENSOR_RANK) return -3; //tensor block must be shape-defined
- if(body_ptr == NULL && buf_entry >= 0) return -4;
- 
+ if(body_ptr == NULL && buf_entry >= 0) return -4; //a defined argument buffer entry must be supplied with the corresponding pointer
+ vol=tensShape_volume(&(ctens->shape)); //tensor body volume (number of elements)
+ body_size=vol*data_kind; //tensor body size in bytes
+ if(body_ptr == NULL){ //allocate memory in the argument buffer
+  errc=tensDevRsc_allocate_mem(ctens->src_rsc,dev_id,body_size,YEP);
+  if(errc != 0){if(errc == TRY_LATER || errc == DEVICE_UNABLE){return errc;}else{return 1;}}
+ }else{ //associate memory
+  errc=tensDevRsc_attach_mem(ctens->src_rsc,dev_id,body_ptr,buf_entry);
+  if(errc != 0){if(errc == TRY_LATER || errc == DEVICE_UNABLE){return errc;}else{return 2;}}
+ }
  return 0;
 }
 
@@ -1238,27 +1274,30 @@ int tensBlck_destruct(tensBlck_t *ctens, int release_body = YEP, int which_body 
  if(ctens == NULL) return -1;
  if(ctens->shape.num_dim >= 0){ //shape-defined tensor block
   if(ctens->shape.num_dim > MAX_TENSOR_RANK) return -2;
-//Dimension permutation:
+//Dimension permutation (temporary resource used by Nvidia GPU):
   if(ctens->prmn_h != NULL){errc=mi_entry_release(ctens->prmn_h); if(errc != 0) n=NOT_CLEAN; ctens->prmn_h=NULL;} //release a mi resource
 //Release the TEMPORARY resource:
   if(ctens->tmp_rsc != NULL &&
      ((release_body == YEP && (which_body == EVERYTHING || which_body == TEMPORARY)) ||
       (release_body == NOPE && (which_body != EVERYTHING && which_body != TEMPORARY)))){
-   errc=tensDevRsc_release(ctens->tmp_rsc); if(errc != 0) n=NOT_CLEAN; ctens->tmp_rsc=NULL;}
+   errc=tensDevRsc_release(ctens->tmp_rsc); if(errc != 0) n=NOT_CLEAN;
   }
+  ctens->tmp_rsc=NULL;
 //Release the DESTINATION resource:
   if(ctens->dst_rsc != NULL &&
      ((release_body == YEP && (which_body == EVERYTHING || which_body == DESTINATION)) ||
       (release_body == NOPE && (which_body != EVERYTHING && which_body != DESTINATION)))){
-   errc=tensDevRsc_release(ctens->dst_rsc); if(errc != 0) n=NOT_CLEAN; ctens->dst_rsc=NULL;}
+   errc=tensDevRsc_release(ctens->dst_rsc); if(errc != 0) n=NOT_CLEAN;
   }
+  ctens->dst_rsc=NULL;
 //Release the SOURCE resource:
   if(ctens->src_rsc != NULL &&
      ((release_body == YEP && (which_body == EVERYTHING || which_body == SOURCE)) ||
       (release_body == NOPE && (which_body != EVERYTHING && which_body != SOURCE)))){
-   errc=tensDevRsc_release(ctens->src_rsc); if(errc != 0) n=NOT_CLEAN; ctens->src_rsc=NULL;}
+   errc=tensDevRsc_release(ctens->src_rsc); if(errc != 0) n=NOT_CLEAN;
   }
- }else{ //nullified tensor block
+  ctens->src_rsc=NULL;
+ }else{ //nullified tensor block: All resources must have been released already
   if(ctens->src_rsc != NULL){ctens->src_rsc=NULL; n=NOT_CLEAN;}
   if(ctens->dst_rsc != NULL){ctens->dst_rsc=NULL; n=NOT_CLEAN;}
   if(ctens->tmp_rsc != NULL){ctens->tmp_rsc=NULL; n=NOT_CLEAN;}
