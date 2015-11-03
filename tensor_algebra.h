@@ -2,7 +2,7 @@
     Parameters, derived types, and function prototypes
     used at the lower level of TAL-SH (device specific):
     CP-TAL, NV-TAL, XP-TAL, AM-TAL, etc.
-REVISION: 2015/11/01
+REVISION: 2015/11/03
 Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
 Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
 
@@ -351,6 +351,7 @@ extern "C"{
  int gpu_mem_free(void *dev_ptr, int gpu_id); //NVidia GPU only
 #endif
 // Device id conversion:
+ int valid_device_kind(int dev_kind);
  int encode_device_id(int dev_kind, int dev_num);
  int decode_device_id(int dev_id, int *dev_kind);
 #ifndef NO_GPU
@@ -382,13 +383,9 @@ extern "C"{
  int tensBlck_construct(tensBlck_t *ctens, int pinned, int trank, const int *dims, const int *divs, const int *grps);
  int tensBlck_attach_body(tensBlck_t *ctens, int data_kind, int dev_id, void *body_ptr, int buf_entry);
  int tensBlck_destruct(tensBlck_t *ctens, int release_body, int which_body);
- 
- int tensBlck_acc_id(const tensBlck_t *ctens, int *dev_kind, int *entry_gpu, int *entry_const, int *data_kind, int *there);
- int tensBlck_set_presence(tensBlck_t *ctens);
- int tensBlck_set_absence(tensBlck_t *ctens);
- int tensBlck_present(const tensBlck_t *ctens);
- int tensBlck_hab_free(tensBlck_t *ctens);
- size_t tensBlck_volume(const tensBlck_t *ctens);
+ int tensBlck_src_dev_id(const tensBlck_t * ctens, int * dev_kind);
+ int tensBlck_present(const tensBlck_t * ctens, int dev_id, int dev_kind);
+ size_t tensBlck_volume(const tensBlck_t * ctens);
 #ifndef NO_GPU
 //  NV-TAL CUDA task API:
  int cuda_task_create(cudaTask_t **cuda_task);

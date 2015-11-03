@@ -1,5 +1,5 @@
 /** Tensor Algebra Library for NVidia GPU: NV-TAL (CUDA based).
-REVISION: 2015/11/02
+REVISION: 2015/11/03
 Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
 Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
 
@@ -228,6 +228,17 @@ static double blck_norms2_r8[MAX_CUDA_BLOCKS]; //`Obsolete `Not multi-GPU safe
 #endif
 //-------------------------------------------------------------------------------------
 //DEVICE ID CONVERSION:
+int valid_device_kind(int dev_kind)
+/** Returns YEP if <dev_kind> is a valid device kind, inlcluding DEV_NULL. NOPE otherwise. **/
+{
+ if(dev_kind == DEV_NULL ||
+    dev_kind == DEV_HOST ||
+    dev_kind == DEV_NVIDIA_GPU ||
+    dev_kind == DEV_INTEL_MIC ||
+    dev_kind == DEV_AMD_GPU) return YEP;
+ return NOPE;
+}
+
 int encode_device_id(int dev_kind, int dev_num)
 /** Given a device ID <dev_num> within its kind <dev_kind>, returns the flat device ID.
     DEV_MAX value on return means that the arguments were invalid. **/
@@ -243,21 +254,28 @@ int encode_device_id(int dev_kind, int dev_num)
  return dev_id;
 }
 
-int decode_device_id(int dev_id, int *dev_kind)
-/** Given a flat device ID <dev_id>, returns the device kind <dev_kind>
-    and its kind-specific ID (>=0) as the return value.
-    A negative return status means an invalid <dev_id> was passed. **/
+int decode_device_id(int dev_id, int * dev_kind = NULL)
+/** Given a flat device ID <dev_id>, returns the device kind <dev_kind> (optional)
+    and the kind-specific device ID (>=0) as the return value.
+    A negative return status (DEV_NULL) indicates an invalid <dev_id>. **/
 {
- int dvn=-1; //Negative return value will correspond to an invalid <dev_id>
- int dvid=abs(dev_id); //flat device id is defined up to a sign
+ int dvn,dvid;
+
+ dvn=DEV_NULL; //negative return value will correspond to an invalid <dev_id>
+ if(dev_kind != NULL) *dev_kind=DEV_NULL;
+ dvid=abs(dev_id); //flat device id is defined up to a sign
  if(dvid == 0){ //Host
-  *dev_kind=DEV_HOST; dvn=0;
+  if(dev_kind != NULL) *dev_kind=DEV_HOST;
+  dvn=0;
  }else if(dvid >= 1 && dvid <= MAX_GPUS_PER_NODE){ //Nvidia GPU
-  *dev_kind=DEV_NVIDIA_GPU; dvn=dvid-1;
+  if(dev_kind != NULL) *dev_kind=DEV_NVIDIA_GPU;
+  dvn=dvid-1;
  }else if(dvid >= 1+MAX_GPUS_PER_NODE && dvid <= MAX_GPUS_PER_NODE+MAX_MICS_PER_NODE){ //Intel MIC
-  *dev_kind=DEV_INTEL_MIC; dvn=dvid-1-MAX_GPUS_PER_NODE;
+  if(dev_kind != NULL) *dev_kind=DEV_INTEL_MIC;
+  dvn=dvid-1-MAX_GPUS_PER_NODE;
  }else if(dvid >= 1+MAX_GPUS_PER_NODE+MAX_MICS_PER_NODE && dvid <= MAX_GPUS_PER_NODE+MAX_MICS_PER_NODE+MAX_AMDS_PER_NODE){ //AMD GPU
-  *dev_kind=DEV_AMD_GPU; dvn=dvid-1-MAX_GPUS_PER_NODE-MAX_MICS_PER_NODE;
+  if(dev_kind != NULL) *dev_kind=DEV_AMD_GPU;
+  dvn=dvid-1-MAX_GPUS_PER_NODE-MAX_MICS_PER_NODE;
  }
  return dvn; //ID of the device within its kind
 }
@@ -1155,20 +1173,22 @@ int tensShape_destruct(talsh_tens_shape_t * tshape)
  return n; //either 0 or NOT_CLEAN
 }
 
-static size_t tensShape_volume(const talsh_tens_shape_t * tshape)
+size_t tensShape_volume(const talsh_tens_shape_t * tshape)
 /** Returns the volume of a defined tensor shape, or 0 otherwise. **/
 {
  int i;
  size_t vol;
 
  vol=0;
- if(tshape->num_dim >= 0 && tshape->num_dim <= MAX_TENSOR_RANK){
-  vol=1;
-  for(i=0;i<tshape->num_dim;i++){
-   if(tshape->dims[i] > 0){
-    vol*=tshape->dims[i];
-   }else{
-    return 0;
+ if(tshape != NULL){
+  if(tshape->num_dim >= 0 && tshape->num_dim <= MAX_TENSOR_RANK){
+   vol=1;
+   for(i=0;i<tshape->num_dim;i++){
+    if(tshape->dims[i] > 0){
+     vol*=tshape->dims[i];
+    }else{
+     return 0;
+    }
    }
   }
  }
@@ -1308,82 +1328,71 @@ int tensBlck_destruct(tensBlck_t *ctens, int release_body = YEP, int which_body 
  return n;
 }
 
-int tensBlck_acc_id(const tensBlck_t *ctens, int *dev_kind, int *entry_gpu, int *entry_const, int *data_kind,
-                             int *there)
-/** Returns Accelerator ID on which the tensor block data resides or will reside (negative return means Host residence).
-INPUT:
- # ctens - pointer to an instance of tensBlck_t;
-OUTPUT:
- # tensBlck_acc_id - ACC ID (non-negative) OR -1 (Host residence of the tensor block);
- # dev_kind - device (accelerator) kind (GPU, MIC, etc.);
- # entry_gpu - device global memory argument-buffer entry number;
- # entry_const - GPU constant memory entry number;
- # data_kind - 4:float, 8:double, 16:double_complex;
- # there - 0 means that tensor block elements are not in the ACC memory yet, 1 means opposite.
-**/
+int tensBlck_src_dev_id(const tensBlck_t * ctens, int * dev_kind = NULL)
+/** Returns the device id on which the source data (tensor body) resides.
+    If <dev_kind> is provided (!=NULL), the device id will be kind-specific,
+    belonging to the device kind <dev_kind>. Otherwise, it will be the flat id.
+    A return status DEV_NULL indicates no current source data. A return
+    status DEV_MAX indicates a failure (error). **/
 {
- int dev_num;
- if(ctens != NULL){
-  *data_kind=ctens->data_kind; *there=tensBlck_present(ctens);
-  *dev_kind=DEV_HOST; dev_num=decode_device_id(ctens->device_id,dev_kind);
-  if(*dev_kind == DEV_NVIDIA_GPU){ //GPU residence
-   *entry_gpu=ctens->buf_entry_gpu; *entry_const=ctens->const_args_entry;
-  }else{ //Not GPU residence
-   *entry_gpu=-1; *entry_const=-1;
-  }
- }else{
-  dev_num=-1; *dev_kind=-1; *entry_gpu=-1; *entry_const=-1; *data_kind=0; *there=0;
- }
- return dev_num;
-}
+ int dev_id;
 
-int tensBlck_set_presence(tensBlck_t *ctens) //Marks tensor block data as residing on GPU
-{if(ctens != NULL){if(ctens->device_id < 0) ctens->device_id=-(ctens->device_id); return 0;}else{return 1;}}
-
-int tensBlck_set_absence(tensBlck_t *ctens) //Unmarks tensor block data as residing on GPU
-{if(ctens != NULL){if(ctens->device_id > 0) ctens->device_id=-(ctens->device_id); return 0;}else{return 1;}}
-
-int tensBlck_present(const tensBlck_t *ctens) //Checks presence of the block data on Device (or Host)
-{if(ctens != NULL){if(ctens->device_id >= 0){return 1;}else{return 0;}}else{return -1;}}
-
-int tensBlck_hab_free(tensBlck_t *ctens){
-/** For tensor blocks simultaneously residing on Host and GPU, frees the Host copy.
-The data does not have to be present on GPU, in which case the tensor block
-becomes uninitialized but still usable on the GPU. If the Host-residing tensor body
-had been allocated in HAB, it frees that HAB buffer entry, otherwise deallocates
-the corresponding pinned memory explicitly via <host_mem_free_pin>. **/
- int i,dev_kind,dev_num,errc;
-
- errc=0;
- if(ctens != NULL){
-  dev_num=decode_device_id(ctens->device_id,&dev_kind);
-  if(dev_num >= 0){
-   if(dev_kind == DEV_NVIDIA_GPU){
-    if(ctens->elems_h != NULL){
-     if(ctens->buf_entry_host >= 0){
-      i=free_buf_entry_host(ctens->buf_entry_host); errc+=i;
-      if(i == 0) ctens->buf_entry_host=-1;
-     }else{
-      i=host_mem_free_pin(ctens->elems_h); errc+=i;
-     }
-     ctens->buf_entry_host=-1; ctens->elems_h=NULL;
-    }else{
-     errc+=333;
-    }
-   }else{
-    errc+=555;
-   }
+ dev_id=DEV_NULL;
+ if(dev_kind != NULL) *dev_kind=DEV_NULL;
+ if(ctens == NULL) return DEV_MAX;
+ if(ctens->src_rsc != NULL){
+  if(dev_kind == NULL){
+   dev_id=((*ctens).src_rsc)->dev_id;
   }else{
-   errc+=777;
+   dev_id=decode_device_id(((*ctens).src_rsc)->dev_id,dev_kind);
   }
- }else{
-  errc+=999;
  }
- return errc;
+ return dev_id;
 }
 
-size_t tensBlck_volume(const tensBlck_t *ctens) //Number of elements in a tensor block (volume)
-{size_t tvol=1; for(int i=0;i<ctens->rank;i++){tvol*=(ctens->dims_h[i]);}; return tvol;}
+int tensBlck_present(const tensBlck_t * ctens, int dev_id = DEV_NULL, int dev_kind = DEV_NULL)
+/** Returns YEP/NOPE if the tensor body is present/absent on the device specified by
+    a device id <dev_id> and a device kind <dev_kind>. If <dev_kind> is absent,
+    <dev_id> will be the flat device id, otherwise it will be the kind-specific id.
+    If both <dev_id> and <dev_kind> are absent, any presence will be checked (on any device).
+    A return status TALSH_FAILURE indicates invalid arguments. **/
+{
+ int src_dev,dst_dev,devn,devk;
+
+ if(ctens == NULL) return TALSH_FAILURE;
+ src_dev=(ctens->src_rsc)->dev_id;
+ dst_dev=(ctens->dst_rsc)->dev_id;
+ if(dev_kind == DEV_NULL){
+  if(dev_id == DEV_NULL){
+   if(src_dev >= 0 || dst_dev >= 0) return YEP;
+  }else{
+   if(dev_id < 0 || dev_id >= DEV_MAX) return TALSH_FAILURE;
+   if(src_dev == dev_id || dst_dev == dev_id) return YEP;
+  }
+ }else{
+  if(valid_device_kind(dev_kind) != YEP) return TALSH_FAILURE;
+  if(dev_id == DEV_NULL){
+   devn=decode_device_id(src_dev,&devk);
+   if(devn >= 0 && devk == dev_kind) return YEP;
+   devn=decode_device_id(dst_dev,&devk);
+   if(devn >= 0 && devk == dev_kind) return YEP;
+  }else{
+   devn=encode_device_id(dev_id,dev_kind);
+   if(devn >= DEV_MAX) return TALSH_FAILURE;
+   if(src_dev == devn || dst_dev == devn) return YEP;
+  }
+ }
+ return NOPE;
+}
+
+size_t tensBlck_volume(const tensBlck_t * ctens)
+/** Returns the volume of a tensor block (number of elements)
+    or zero in case of an empty tensor block or an error. **/
+{
+ size_t tvol;
+ tvol=tensShape_volume(&(ctens->shape));
+ return tvol;
+}
 
 #ifndef NO_GPU
 //CUDA TASK API:
