@@ -1,6 +1,6 @@
 !ExaTensor::TAL-SH: Basic parameters and types:
 !Keep consistent with "tensor_algebra.h"!
-!REVISION: 2015/10/16
+!REVISION: 2015/11/11
         module tensor_algebra
         use dil_kinds !contains ISO_C_BINDING
         implicit none
@@ -44,8 +44,6 @@
         integer(C_INT), parameter, public:: BLAS_OFF=1                  !disables BLAS
         integer(C_INT), parameter, public:: EFF_TRN_OFF=0               !disables efficient tensor transpose algorithm
         integer(C_INT), parameter, public:: EFF_TRN_ON=1                !enables efficient tensor transpose algorithm
-        integer(C_INT), parameter, public:: EVENTS_OFF=0                !disables CUDA event recording
-        integer(C_INT), parameter, public:: EVENTS_ON=1                 !enables CUDA event recording (default)
         integer(C_INT), parameter, public:: TRY_LATER=-918273645        !try the action later (resources are currently busy): KEEP THIS UNIQUE!
         integer(C_INT), parameter, public:: DEVICE_UNABLE=-546372819    !device is unsuitable for the given task: KEEP THIS UNIQUE!
         integer(C_INT), parameter, public:: NOT_CLEAN=-192837465        !something, like resource release, did not go right, but you can continue: KEEP THIS UNIQUE!
@@ -385,12 +383,6 @@
           implicit none
           integer(C_INT), value, intent(in):: width
          end function gpu_set_shmem_width
-  !Turn on/off CUDA timing events:
-         subroutine gpu_set_event_policy(alg) bind(c,name='gpu_set_event_policy')
-          import
-          implicit none
-          integer(C_INT), value:: alg
-         end subroutine gpu_set_event_policy
   !Set the tensor transpose algorithm:
          subroutine gpu_set_transpose_algorithm(alg) bind(c,name='gpu_set_transpose_algorithm')
           import

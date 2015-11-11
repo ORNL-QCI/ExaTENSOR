@@ -1,5 +1,5 @@
 /** Tensor Algebra Library for NVidia GPU: NV-TAL (CUDA based).
-REVISION: 2015/11/03
+REVISION: 2015/11/11
 Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
 Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
 
@@ -31,9 +31,6 @@ NOTES:
  # Non-blocking tensor algebra functions carry an additional input argument <coherence_ctrl>
    which controls the tensor argument synchronization accross different devices.
  # Non-blocking tensor algebra functions carry an additional output argument <cuda_task> (task handle).
- # Seems like cudaEventRecord() issued in different streams can serialize the stream
-   execution for some older compute capabilities. EVENT_RECORD=0 will disable event recording.
-   If GPU timing is needed, event recording has to be enabled (EVENT_RECORD=1).
 FOR DEVELOPERS ONLY:
  # Current device resources:
     - Global memory pointer (any device);
@@ -126,8 +123,10 @@ static int mi_entry_pinned(int * mi_entry);
 #ifndef NO_GPU
 static int cuda_stream_get(int gpu_num, int * cuda_stream_handle);
 static int cuda_stream_release(int gpu_num, int cuda_stream_handle);
+static cudaStream_t * cuda_stream_ptr(int gpu_num, int cuda_stream_handle);
 static int cuda_event_get(int gpu_num, int * cuda_event_handle);
 static int cuda_event_release(int gpu_num, int cuda_event_handle);
+static cudaEvent_t * cuda_event_ptr(int gpu_num, int cuda_event_handle);
 static void limit_cuda_blocks2d(int max_blocks, int *bx, int *by);
 static int cuda_task_finalize(cudaTask_t *cuda_task, int err_code, int gpu_num);
 static int cuda_task_record(cudaTask_t *cuda_task, int err_code, int gpu_num, cudaStream_t cuda_stream,
@@ -164,6 +163,7 @@ __global__ void gpu_matrix_multiply_tn_r8__(size_t ll, size_t lr, size_t lc, con
 //------------------------------------------------------------------------------------------------------
 //PARAMETERS:
 static int VERBOSE=1; //verbosity for error messages
+static int DEBUG=1; //debugging mode
 #ifndef NO_GPU
 //GLOBAL DATA:
 // GPU control on the current MPI process:
@@ -200,7 +200,6 @@ __device__ int gpu_error_count=0; //total number of CUDA errors registered on de
 __device__ int gpu_debug_dump[GPU_DEBUG_DUMP_SIZE]; //debug dump
 
 // Global CUDA event recording policy:
-static int EVENT_RECORD=1; //non-zero value enables CUDA event recording
 static int PRINT_TIMING=1; //non-zero value enables time printing statements
 // Infrastructure for function <gpu_tensor_block_copy_dlf> (blocking and non-blocking):
 static int TRANS_SHMEM=1; //switch between shared-memory tensor transpose (1) and scatter tensor transpose (0)
@@ -746,6 +745,14 @@ Non-zero return status means an error. **/
  return 0;
 }
 
+__host__ static cudaStream_t * cuda_stream_ptr(int gpu_num, int cuda_stream_handle)
+{
+ if(gpu_num < 0 || gpu_num >= MAX_GPUS_PER_NODE) return NULL;
+ if(cuda_stream_handle < 0 || cuda_stream_handle >= MAX_CUDA_TASKS) return NULL;
+ if(gpu_up[gpu_num] > GPU_OFF) return &(CUDAStreamBank[gpu_num][cuda_stream_handle]);
+ return NULL;
+}
+
 __host__ static int cuda_event_get(int gpu_num, int * cuda_event_handle)
 /** For GPU#gpu_num, returns a usable CUDA event handle <cuda_event_handle>.
 Non-zero return status means an error, except the return status TRY_LATER means
@@ -794,6 +801,14 @@ Non-zero return status means an error. **/
   return 1;
  }
  return 0;
+}
+
+__host__ static cudaEvent_t * cuda_event_ptr(int gpu_num, int cuda_event_handle)
+{
+ if(gpu_num < 0 || gpu_num >= MAX_GPUS_PER_NODE) return NULL;
+ if(cuda_event_handle < 0 || cuda_event_handle >= MAX_CUDA_EVENTS) return NULL;
+ if(gpu_up[gpu_num] > GPU_OFF) return &(CUDAEventBank[gpu_num][cuda_event_handle]);
+ return NULL;
 }
 
 __host__ static void limit_cuda_blocks2d(int max_blocks, int *bx, int *by)
@@ -973,12 +988,31 @@ __host__ int gpu_busy_least()
  return n;
 }
 
+__host__ int gpu_in_focus(int gpu_num = -1)
+/** If <gpu_num> is not passed here, returns the id of the current GPU in focus.
+    If <gpu_num> is passed here, returns YEP if it is currently in focus, NOPE otherwise.
+    In case of error, returns TALSH_FAILURE (negative integer). **/
+{
+ int n;
+ cudaError_t err;
+ err=cudaGetDevice(&n); if(err != cudaSuccess) return TALSH_FAILURE;
+ if(gpu_num >= 0){if(n == gpu_num){return YEP;}else{return NOPE;}}
+ if(n < 0 || n >= MAX_GPUS_PER_NODE) return TALSH_FAILURE; //GPU id must not exceed the TALSH limit per node
+ return n;
+}
+
 __host__ int gpu_activate(int gpu_num)
 /** If GPU is enabled (mine), does cudaSetDevice; returns non-zero otherwise (error). **/
 {
+ int cur_gpu;
  cudaError_t err;
  if(gpu_num >= 0 && gpu_num < MAX_GPUS_PER_NODE){
-  if(gpu_up[gpu_num] > GPU_OFF){err=cudaSetDevice(gpu_num); if(err != cudaSuccess) return 3;}else{return 2;}
+  if(gpu_up[gpu_num] > GPU_OFF){
+   cur_gpu=gpu_in_focus();
+   if(cur_gpu != gpu_num){err=cudaSetDevice(gpu_num); if(err != cudaSuccess) return 3;}
+  }else{
+   return 2; //GPU is not mine
+  }
  }else{
   return 1; //invalid <gpu_num>
  }
@@ -1001,10 +1035,6 @@ __host__ int gpu_set_shmem_width(int width){
  if(cerr != cudaSuccess) return 2;
  return 0;
 }
-
-__host__ void gpu_set_event_policy(int alg)
-/** Turns on/off timing CUDA events (1/0). **/
-{if(alg == EVENTS_OFF){EVENT_RECORD=EVENTS_OFF;}else{EVENT_RECORD=EVENTS_ON;}; return;}
 
 __host__ void gpu_set_transpose_algorithm(int alg)
 /** Activates either the scatter or the shared-memory based tensor transpose algorithm. **/
@@ -1387,7 +1417,7 @@ int tensBlck_present(const tensBlck_t * ctens, int dev_id = DEV_NULL, int dev_ki
 
 size_t tensBlck_volume(const tensBlck_t * ctens)
 /** Returns the volume of a tensor block (number of elements)
-    or zero in case of an empty tensor block or an error. **/
+    or zero in cases of an empty tensor block or an error. **/
 {
  size_t tvol;
  tvol=tensShape_volume(&(ctens->shape));
@@ -1397,191 +1427,163 @@ size_t tensBlck_volume(const tensBlck_t * ctens)
 #ifndef NO_GPU
 //CUDA TASK API:
 __host__ int cuda_task_create(cudaTask_t **cuda_task)
-/** Creates an instance of cudaTask_t **/
+/** Creates an empty instance of cudaTask_t. An unsuccessful attempt
+    to allocate memory for the CUDA task returns status TRY_LATER. **/
 {
-//printf("\n#DEBUG(tensor_algebra_gpu_nvidia:cuda_task_create): sizeof(cudaTask_t) = %d",sizeof(cudaTask_t)); //debug
- *cuda_task=(cudaTask_t*)malloc(sizeof(cudaTask_t)); if(*cuda_task == NULL) return 1;
- (*cuda_task)->task_error=-1; (*cuda_task)->gpu_id=-1; (*cuda_task)->scr_entry_count=0;
+ int errc;
+//if(DEBUG) printf("\n#DEBUG(tensor_algebra_gpu_nvidia:cuda_task_create): New CUDA task: sizeof(cudaTask_t) = %d",sizeof(cudaTask_t)); //debug
+ *cuda_task=(cudaTask_t*)malloc(sizeof(cudaTask_t)); if(*cuda_task == NULL) return TRY_LATER;
+ errc=cuda_task_clean(*cuda_task);
  return 0;
 }
 
 __host__ int cuda_task_clean(cudaTask_t *cuda_task)
-/** Cleans an existing cudaTask_t for reuse. **/
+/** Cleans (initializes to null) a freshly allocated CUDA task. **/
 {
- int i,j,cur_gpu,err_code;
- cudaError_t err;
-
- err_code=0;
- if(cuda_task != NULL){
-  i=cuda_task_complete(cuda_task);
-  if(i == CUDA_TASK_COMPLETED){ //task has completed (successfully or not)
-   if(cuda_task->gpu_id >= 0 && cuda_task->gpu_id < MAX_GPUS_PER_NODE){
-    cur_gpu=-1; err=cudaGetDevice(&cur_gpu); if(err != cudaSuccess){cur_gpu=-1; err_code+=1;}
-    err=cudaSuccess; if(cur_gpu != cuda_task->gpu_id) err=cudaSetDevice(cuda_task->gpu_id);
-    if(err == cudaSuccess){
-     err=cudaEventDestroy(cuda_task->task_finish);
-     err=cudaEventDestroy(cuda_task->task_output);
-     err=cudaEventDestroy(cuda_task->task_comput);
-     err=cudaEventDestroy(cuda_task->task_start);
-     err=cudaStreamDestroy(cuda_task->task_stream); if(err != cudaSuccess) err_code+=5;
-    }else{
-     err_code+=20;
-    }
-    if(cuda_task->scr_entry_count <= MAX_SCR_ENTRY_COUNT){
-     for(i=cuda_task->scr_entry_count-1;i>=0;i--){
-      j=free_buf_entry_gpu(cuda_task->gpu_id,cuda_task->scr_entry[i]); err_code+=j*100;
-     }
-    }else{
-     err_code+=10000;
-    }
-    if(cur_gpu >= 0 && cur_gpu != cuda_task->gpu_id){err=cudaSetDevice(cur_gpu); if(err != cudaSuccess) err_code+=30000;}
-   }else{
-    err_code+=50000;
-   }
-   cuda_task->task_error=-1; cuda_task->gpu_id=-1; cuda_task->scr_entry_count=0;
-  }else if(i == CUDA_TASK_EMPTY || i == CUDA_TASK_ERROR){ //empty task or cuda_task_complete() failed
-   cuda_task->task_error=-1; cuda_task->gpu_id=-1; cuda_task->scr_entry_count=0;
-  }else{ //task has not completed yet, thus cannot be destroyed
-   err_code+=100000;
-  }
- }else{
-  err_code+=300000;
- }
- return err_code;
+ if(cuda_task == NULL) return -1;
+ cuda_task->task_error=-1; cuda_task->gpu_id=-1; cuda_task->num_args=0;
+ cuda_task->stream_hl=-1; cuda_task->event_start_hl=-1; cuda_task->event_comput_hl=-1;
+ cuda_task->event_output_hl=-1; cuda_task->event_finish_hl=-1;
+ return 0;
 }
 
-__host__ int cuda_task_destroy(cudaTask_t *cuda_task)
-/** Destroys an instance of cudaTask_t if the CUDA task has completed or empty. **/
+__host__ int cuda_task_construct(cudaTask_t *cuda_task, int gpu_id = -1)
+/** Constructs a CUDA task ready for recording on GPU#gpu_id (acquires resources).
+    If <gpu_id> is not passed here (negative), the currently active GPU will be used.
+    Returns TRY_LATER or DEVICE_UNABLE in case of temporary or permanent
+    shortage of GPU resources, respectively. **/
 {
- int i,j,cur_gpu,err_code;
- cudaError_t err;
+ int errc;
 
- err_code=0;
- if(cuda_task != NULL){
-  if(EVENT_RECORD != 0){ //`This should be done atomically for thread safety
-   if(cuda_task->gpu_id >= 0 && cuda_task->gpu_id < MAX_GPUS_PER_NODE){
-    if(LastTask[cuda_task->gpu_id] == cuda_task) LastTask[cuda_task->gpu_id]=NULL;
-   }
-  }
-  i=cuda_task_complete(cuda_task);
-  if(i == CUDA_TASK_COMPLETED){ //task has completed (successfully or not)
-   if(cuda_task->gpu_id >= 0 && cuda_task->gpu_id < MAX_GPUS_PER_NODE){
-    cur_gpu=-1; err=cudaGetDevice(&cur_gpu); if(err != cudaSuccess){cur_gpu=-1; err_code+=1;}
-    err=cudaSuccess; if(cur_gpu != cuda_task->gpu_id) err=cudaSetDevice(cuda_task->gpu_id);
-    if(err == cudaSuccess){
-     err=cudaEventDestroy(cuda_task->task_finish);
-     err=cudaEventDestroy(cuda_task->task_output);
-     err=cudaEventDestroy(cuda_task->task_comput);
-     err=cudaEventDestroy(cuda_task->task_start);
-     err=cudaStreamDestroy(cuda_task->task_stream); if(err != cudaSuccess) err_code+=5;
-    }else{
-     err_code+=20;
-    }
-    if(cuda_task->scr_entry_count <= MAX_SCR_ENTRY_COUNT){
-     for(i=cuda_task->scr_entry_count-1;i>=0;i--){
-      j=free_buf_entry_gpu(cuda_task->gpu_id,cuda_task->scr_entry[i]); err_code+=j*100;
-     }
-    }else{
-     err_code+=10000;
-    }
-    if(cur_gpu >= 0 && cur_gpu != cuda_task->gpu_id){err=cudaSetDevice(cur_gpu); if(err != cudaSuccess) err_code+=30000;}
-   }else{
-    err_code+=50000;
-   }
-   free(cuda_task); cuda_task=NULL;
-  }else if(i == CUDA_TASK_EMPTY || i == CUDA_TASK_ERROR){ //empty task or cuda_task_complete() failed
-   free(cuda_task); cuda_task=NULL;
-  }else{ //task has not completed yet, thus cannot be destroyed
-   err_code+=100000;
-  }
+ if(cuda_task == NULL) return -1;
+ if(cuda_task->task_error >= 0 || cuda_task->gpu_id >= 0 || cuda_task->num_args > 0) return 1; //CUDA task is not clean: Destruct it first
+ if(gpu_id < 0) gpu_id=gpu_in_focus();
+ if(gpu_id < 0 || gpu_id >= MAX_GPUS_PER_NODE) return 2; //gpu_id is out of range
+ if(gpu_up[gpu_id] > GPU_OFF){
+  errc=cuda_stream_get(gpu_id,&(cuda_task->stream_hl));
+  if(errc != 0){cuda_task->stream_hl=-1; if(errc == TRY_LATER || errc == DEVICE_UNABLE){return errc;}else{return 3;}}
+  errc=cuda_event_get(gpu_id,&(cuda_task->event_start_hl));
+  if(errc != 0){cuda_task->event_start_hl=-1; if(errc == TRY_LATER || errc == DEVICE_UNABLE){return errc;}else{return 4;}}
+  errc=cuda_event_get(gpu_id,&(cuda_task->event_comput_hl));
+  if(errc != 0){cuda_task->event_comput_hl=-1; if(errc == TRY_LATER || errc == DEVICE_UNABLE){return errc;}else{return 5;}}
+  errc=cuda_event_get(gpu_id,&(cuda_task->event_output_hl));
+  if(errc != 0){cuda_task->event_output_hl=-1; if(errc == TRY_LATER || errc == DEVICE_UNABLE){return errc;}else{return 6;}}
+  errc=cuda_event_get(gpu_id,&(cuda_task->event_finish_hl));
+  if(errc != 0){cuda_task->event_finish_hl=-1; if(errc == TRY_LATER || errc == DEVICE_UNABLE){return errc;}else{return 7;}}
+  cuda_task->task_error=-1; cuda_task->gpu_id=gpu_id;
  }else{
-  err_code+=300000;
- }
- return err_code;
-}
-
-__host__ static int cuda_task_finalize(cudaTask_t *cuda_task, int err_code, int gpu_num=-1)
-/** Finalizes a CUDA task: gpu_num=-1: on Host; gpu_num>=0: on GPU#gpu_num. **/
-{if(cuda_task != NULL){cuda_task->task_error=err_code; cuda_task->gpu_id=gpu_num; return 0;}else{return 1;}}
-
-__host__ static int cuda_task_record(cudaTask_t *cuda_task, int err_code, int gpu_num, cudaStream_t cuda_stream,
-                     cudaEvent_t cuda_start, cudaEvent_t cuda_comput, cudaEvent_t cuda_output, cudaEvent_t cuda_finish,
-                     int scr_entry_cnt, int *scr_entries)
-/** Registers a CUDA task: Launch-error-free tasks are recorded with .task_error=-1 (in normal progress). **/
-{
- int i;
- if(cuda_task != NULL){
-  if(err_code == 0){ //No error occured during the task scheduling
-   cuda_task->task_error=-1;            //error code (<0: In progress; 0: Success; >0: Launch error (may be in progress))
-  }else{
-   cuda_task->task_error=err_code;      //error code (<0: In progress; 0: Success; >0: Launch error (may be in progress))
-  }
-  if(gpu_num >= 0 && gpu_num < MAX_GPUS_PER_NODE){
-   cuda_task->gpu_id=gpu_num;            //GPU number on which the task was scheduled
-   cuda_task->task_stream=cuda_stream;   //CUDA stream assinged to the task
-   cuda_task->task_start=cuda_start;     //CUDA event recorded at the beginning of the task
-   cuda_task->task_comput=cuda_comput;   //CUDA event recorded when the computing kernel starts (all the input data is on device)
-   cuda_task->task_output=cuda_output;   //CUDA event recorded when the computing kernel finishes (before output is copied back)
-   cuda_task->task_finish=cuda_finish;   //CUDA event recorded at the end of the task
-   if(scr_entry_cnt >= 0 && scr_entry_cnt <= MAX_SCR_ENTRY_COUNT){
-    cuda_task->scr_entry_count=scr_entry_cnt; //number of additional GPU argument buffer entries allocated by the task
-    for(i=0;i<scr_entry_cnt;i++) cuda_task->scr_entry[i]=scr_entries[i]; //additional GPU argument buffer entries allocated by the task
-   }else{
-    return 3;
-   }
-  }else{
-   return 2;
-  }
- }else{
-  return 1;
+  return DEVICE_UNABLE;
  }
  return 0;
 }
 
-__host__ int cuda_task_gpu_id(const cudaTask_t *cuda_task){return cuda_task->gpu_id;}
+__host__ int cuda_task_destruct(cudaTask_t *cuda_task)
+/** Destructs a defined completed CUDA task or does nothing. If the CUDA task
+    is defined but not completed, a return status TRY_LATER is returned.
+    If any of the resources used by the CUDA task cannot be released cleanly,
+    a return status NOT_CLEAN is returned. Nevertheless, the CUDA task will be
+    clean at the end. **/
+{
+ int n,errc;
+
+ if(cuda_task == NULL) return -1;
+ errc=cuda_task_completed(cuda_task);
+ if(errc == CUDA_TASK_EMPTY) return 0;
+ n=0; //number of unsuccessful resource releases
+ if(errc == CUDA_TASK_COMPLETED || errc == CUDA_TASK_ERROR){
+  if(cuda_task->gpu_id < 0 || cuda_task->gpu_id >= MAX_GPUS_PER_NODE) return -2; //GPU id is out of allowed range
+  errc=cuda_stream_release(cuda_task->gpu_id,cuda_task->stream_hl); cuda_task->stream_hl=-1; if(errc != 0) n++;
+  errc=cuda_event_release(cuda_task->gpu_id,cuda_task->event_start_hl); cuda_task->event_start_hl=-1; if(errc != 0) n++;
+  errc=cuda_event_release(cuda_task->gpu_id,cuda_task->event_comput_hl); cuda_task->event_comput_hl=-1; if(errc != 0) n++;
+  errc=cuda_event_release(cuda_task->gpu_id,cuda_task->event_output_hl); cuda_task->event_output_hl=-1; if(errc != 0) n++;
+  errc=cuda_event_release(cuda_task->gpu_id,cuda_task->event_finish_hl); cuda_task->event_finish_hl=-1; if(errc != 0) n++;
+  errc=cuda_task_clean(cuda_task);
+ }else{
+  return TRY_LATER; //CUDA task is still in progress
+ }
+ if(n != 0) n=NOT_CLEAN;
+ return n;
+}
+
+__host__ int cuda_task_destroy(cudaTask_t *cuda_task)
+/** Destroys an instance of cudaTask_t if the CUDA task has completed or empty.
+    If the CUDA task is still in progress, a return status TRY_LATER is returned.
+    If any of the CUDA task resources could not be released cleanly, a return
+    status NOT_CLEAN will be returned but the CUDA task will still be destroyed. **/
+{
+ int n,errc;
+
+ n=0;
+ if(cuda_task == NULL) return -1;
+ errc=cuda_task_completed(cuda_task);
+ if(errc == CUDA_TASK_COMPLETED || errc == CUDA_TASK_ERROR){
+  errc=cuda_task_destruct(cuda_task); if(errc != 0) n=NOT_CLEAN;
+ }else{
+  if(errc != CUDA_TASK_EMPTY) return TRY_LATER;
+ }
+ free(cuda_task);
+ return n;
+}
+
+__host__ int cuda_task_gpu_id(const cudaTask_t *cuda_task)
+/** Returns the GPU id associated with a CUDA task. A negative
+    return value means a null or empty task was passed. **/
+{
+ if(cuda_task == NULL) return -2;
+ if(cuda_task->gpu_id >= 0 && cuda_task->gpu_id < MAX_GPUS_PER_NODE) return cuda_task->gpu_id;
+ return -1;
+}
 
 __host__ int cuda_task_status(cudaTask_t *cuda_task)
 /** Checks the status of a CUDA task. Possible status values are listed in
-tensor_algebra.h and tensor_algebra.inc: Keep them consistent! **/
+tensor_algebra.h and tensor_algebra.inc (keep them consistent!). An unsuccessful
+attempt to find out the status of the CUDA task results in a return status TALSH_FAILURE. **/
 {
- int task_stat,cur_gpu;
+ int task_stat,cur_gpu,errc;
+ cudaEvent_t *evnt_p;
  cudaError_t err;
- if(cuda_task != NULL){
-  if(cuda_task->task_error == 0) return CUDA_TASK_COMPLETED; //task has successfully completed
-  cur_gpu=-1; err=cudaGetDevice(&cur_gpu); if(err != cudaSuccess) return CUDA_TASK_ERROR;
-  if(cur_gpu != cuda_task->gpu_id){
-   err=cudaSetDevice(cuda_task->gpu_id); if(err != cudaSuccess){err=cudaSetDevice(cur_gpu); return CUDA_TASK_ERROR;}
-  }
-  err=cudaEventQuery(cuda_task->task_finish);
-  if(err == cudaSuccess){
-   if(cuda_task->task_error < 0) cuda_task->task_error=0; //task completed successfully
-   task_stat=CUDA_TASK_COMPLETED; //task completed
+
+ if(cuda_task == NULL) return CUDA_TASK_EMPTY; //NULL task pointer is treated as an empty task here
+ if(cuda_task->task_error < 0 && cuda_task->gpu_id < 0) return CUDA_TASK_EMPTY; //empty CUDA task
+ if(cuda_task->task_error == 0) return CUDA_TASK_COMPLETED; //CUDA task had completed successfully
+ if(cuda_task->task_error > 0) return CUDA_TASK_ERROR; //CUDA task error had been registered
+ cur_gpu=gpu_in_focus(); if(cur_gpu < 0 || cur_gpu >= MAX_GPUS_PER_NODE) return TALSH_FAILURE;
+ errc=gpu_activate(cuda_task->gpu_id); if(errc != 0) return TALSH_FAILURE;
+ evnt_p=cuda_event_ptr(cuda_task->gpu_id,cuda_task->event_finish_hl);
+ err=cudaEventQuery(*evnt_p);
+ if(err == cudaSuccess){
+  errc=cuda_task_finalize(cuda_task); //release unneeded memory resources occupied by the task arguments
+  if(errc == 0){
+   cuda_task->task_error=0; task_stat=CUDA_TASK_COMPLETED; //CUDA task completed, memory released cleanly
   }else{
-   err=cudaEventQuery(cuda_task->task_output);
+   cuda_task->task_error=127; task_stat=CUDA_TASK_ERROR; //CUDA task completed, memory could not be released cleanly
+  }
+ }else{
+  evnt_p=cuda_event_ptr(cuda_task->gpu_id,cuda_task->event_output_hl);
+  err=cudaEventQuery(*evnt_p);
+  if(err == cudaSuccess){
+   task_stat=CUDA_TASK_OUTPUT_THERE; //computing kernel has finished
+  }else{
+   evnt_p=cuda_event_ptr(cuda_task->gpu_id,cuda_task->event_comput_hl);
+   err=cudaEventQuery(*evnt_p);
    if(err == cudaSuccess){
-    task_stat=CUDA_TASK_OUTPUT_THERE; //computing kernel has finished
+    task_stat=CUDA_TASK_INPUT_THERE; //computation started, input data is on device (can be reused later)
    }else{
-    err=cudaEventQuery(cuda_task->task_comput);
+    evnt_p=cuda_event_ptr(cuda_task->gpu_id,cuda_task->event_start_hl);
+    err=cudaEventQuery(*evnt_p);
     if(err == cudaSuccess){
-     task_stat=CUDA_TASK_INPUT_THERE; //computation started, input data is on device (can be reused later)
+     task_stat=CUDA_TASK_STARTED; //task started
     }else{
-     err=cudaEventQuery(cuda_task->task_start);
-     if(err == cudaSuccess){
-      task_stat=CUDA_TASK_STARTED; //task started
-     }else{
-      task_stat=CUDA_TASK_SCHEDULED; //task has not started yet
-     }
+     task_stat=CUDA_TASK_SCHEDULED; //task has not started yet
     }
    }
   }
-  if(cur_gpu != cuda_task->gpu_id){err=cudaSetDevice(cur_gpu); if(err != cudaSuccess) return CUDA_TASK_ERROR;}
- }else{
-  task_stat=CUDA_TASK_EMPTY;
  }
+ errc=gpu_activate(cur_gpu);
  return task_stat;
 }
 
-__host__ int cuda_task_complete(cudaTask_t *cuda_task)
+__host__ int cuda_task_completed(cudaTask_t *cuda_task)
 /** Returns CUDA_TASK_COMPLETED if an existing CUDA task <cuda_task> has completed.
 Note that having cuda_task->task_error=0 suggests completion without further querying!
 Other possible outputs: CUDA_TASK_EMPTY, CUDA_TASK_SCHEDULED, CUDA_TASK_COMPLETED, CUDA_TASK_ERROR.
@@ -1613,6 +1615,10 @@ Other possible outputs: CUDA_TASK_EMPTY, CUDA_TASK_SCHEDULED, CUDA_TASK_COMPLETE
  }
  return err_code;
 }
+
+
+
+
 
 __host__ int cuda_task_wait(cudaTask_t *cuda_task)
 /** Waits on accomplishment of a CUDA task: Returns the output of cuda_task_complete().
@@ -1688,7 +1694,46 @@ Also, in_copy is input copying time, out_copy is output copying time, and comp i
  }
 }
 
-//----------------------------------------------------------------------------------------
+
+
+__host__ static int cuda_task_finalize(cudaTask_t *cuda_task, int err_code, int gpu_num=-1)
+/** Finalizes a CUDA task: gpu_num=-1: on Host; gpu_num>=0: on GPU#gpu_num. **/
+{if(cuda_task != NULL){cuda_task->task_error=err_code; cuda_task->gpu_id=gpu_num; return 0;}else{return 1;}}
+
+__host__ static int cuda_task_record(cudaTask_t *cuda_task, int err_code, int gpu_num, cudaStream_t cuda_stream,
+                     cudaEvent_t cuda_start, cudaEvent_t cuda_comput, cudaEvent_t cuda_output, cudaEvent_t cuda_finish,
+                     int scr_entry_cnt, int *scr_entries)
+/** Registers a CUDA task: Launch-error-free tasks are recorded with .task_error=-1 (in normal progress). **/
+{
+ int i;
+ if(cuda_task != NULL){
+  if(err_code == 0){ //No error occured during the task scheduling
+   cuda_task->task_error=-1;            //error code (<0: In progress; 0: Success; >0: Launch error (may be in progress))
+  }else{
+   cuda_task->task_error=err_code;      //error code (<0: In progress; 0: Success; >0: Launch error (may be in progress))
+  }
+  if(gpu_num >= 0 && gpu_num < MAX_GPUS_PER_NODE){
+   cuda_task->gpu_id=gpu_num;            //GPU number on which the task was scheduled
+   cuda_task->task_stream=cuda_stream;   //CUDA stream assinged to the task
+   cuda_task->task_start=cuda_start;     //CUDA event recorded at the beginning of the task
+   cuda_task->task_comput=cuda_comput;   //CUDA event recorded when the computing kernel starts (all the input data is on device)
+   cuda_task->task_output=cuda_output;   //CUDA event recorded when the computing kernel finishes (before output is copied back)
+   cuda_task->task_finish=cuda_finish;   //CUDA event recorded at the end of the task
+   if(scr_entry_cnt >= 0 && scr_entry_cnt <= MAX_SCR_ENTRY_COUNT){
+    cuda_task->scr_entry_count=scr_entry_cnt; //number of additional GPU argument buffer entries allocated by the task
+    for(i=0;i<scr_entry_cnt;i++) cuda_task->scr_entry[i]=scr_entries[i]; //additional GPU argument buffer entries allocated by the task
+   }else{
+    return 3;
+   }
+  }else{
+   return 2;
+  }
+ }else{
+  return 1;
+ }
+ return 0;
+}
+//--------------------------------------------------------------------------------------------------
 //EXPORTED FUNCTIONS (callable from Fortran):
 //----------------------------------------------------
 // CPU->GPU TENSOR BLOCK COPY (blocking):

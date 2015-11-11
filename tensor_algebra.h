@@ -2,7 +2,7 @@
     Parameters, derived types, and function prototypes
     used at the lower level of TAL-SH (device specific):
     CP-TAL, NV-TAL, XP-TAL, AM-TAL, etc.
-REVISION: 2015/11/03
+REVISION: 2015/11/11
 Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
 Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
 
@@ -134,8 +134,6 @@ FOR DEVELOPERS ONLY:
 //ALIASES (keep consistent with tensor_algebra.F90):
 #define TALSH_SUCCESS 0
 #define TALSH_FAILURE -666
-#define EVENTS_OFF 0
-#define EVENTS_ON 1
 #define BLAS_ON 0
 #define BLAS_OFF 1
 #define EFF_TRN_OFF 0
@@ -365,10 +363,10 @@ extern "C"{
 //  NV-TAL query/action API:
  int gpu_is_mine(int gpu_num);
  int gpu_busy_least();
+ int gpu_in_focus(int gpu_num);
  int gpu_activate(int gpu_num);
 //  NV-TAL internal control:
  int gpu_set_shmem_width(int width);
- void gpu_set_event_policy(int alg);
  void gpu_set_transpose_algorithm(int alg);
  void gpu_set_matmult_algorithm(int alg);
  int gpu_print_stats(int gpu_num);
@@ -389,11 +387,13 @@ extern "C"{
 #ifndef NO_GPU
 //  NV-TAL CUDA task API:
  int cuda_task_create(cudaTask_t **cuda_task);
- int cuda_task_destroy(cudaTask_t *cuda_task);
  int cuda_task_clean(cudaTask_t *cuda_task);
+ int cuda_task_construct(cudaTask_t *cuda_task, int gpu_id);
+ int cuda_task_destruct(cudaTask_t *cuda_task);
+ int cuda_task_destroy(cudaTask_t *cuda_task);
  int cuda_task_gpu_id(const cudaTask_t *cuda_task);
  int cuda_task_status(cudaTask_t *cuda_task);
- int cuda_task_complete(cudaTask_t *cuda_task);
+ int cuda_task_completed(cudaTask_t *cuda_task);
  int cuda_task_wait(cudaTask_t *cuda_task);
  int cuda_tasks_wait(int num_tasks, cudaTask_t **cuda_tasks, int* task_stats);
  float cuda_task_time(const cudaTask_t *cuda_task, float *in_copy, float *out_copy, float *comp);
