@@ -1,6 +1,6 @@
 !Distributed data storage service (DDSS).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2015/09/29 (started 2015/03/18)
+!REVISION: 2015/11/13 (started 2015/03/18)
 !Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
 !Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
 !LICENSE: GPLv2
@@ -13,13 +13,13 @@
 ! * Whenever new persistent data (e.g., a tensor block) is allocated by the MPI process,
 !   it can be attached to one of the dynamic MPI windows in a specific distributed memory space
 !   and the corresponding data descriptor (DD) should be sent to the manager for registration.
-!   The registered data descriptor can be used by other MPI processes for the remote access to the data.
+!   The registered data descriptor can be used by other MPI processes to remotely access the data.
 ! * Upon a request from the manager, data (e.g., a tensor block) can be detached from
 !   the corresponding distributed memory space and subsequently destroyed (if needed).
 ! * Data communication is accomplished via data transfer requests (DTR) and
 !   data transfer completion requests (DTCR), using data descriptors. On each MPI process,
 !   all data transfer requests are enumerated sequentially in the order they were issued (starting at 1).
-! * All procedures return error codes, but special return statuses must be distinguished
+! * All procedures return error codes where special return statuses must be distinguished
 !   (see "Special return statuses" below). Normally, error codes are smaller by absolute value integers.
 !   Contrary, special return statuses should be closer to the HUGE by their absolute values.
         module distributed
