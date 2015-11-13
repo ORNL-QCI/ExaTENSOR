@@ -2,7 +2,7 @@
     Parameters, derived types, and function prototypes
     used at the lower level of TAL-SH (device specific):
     CP-TAL, NV-TAL, XP-TAL, AM-TAL, etc.
-REVISION: 2015/11/11
+REVISION: 2015/11/13
 Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
 Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
 
@@ -292,15 +292,15 @@ typedef struct{
 
 // CUDA task (returned by non-blocking CUDA functions):
 typedef struct{
- int task_error;      //error code (<0: Task is either empty or in progress; 0: Success; >0: Error code)
- int gpu_id;          //NVidia GPU ID the task was scheduled on (>=0, -1 means the task is empty)
- int stream_hl;       //CUDA stream handle the task went into
- int event_start_hl;  //handle of the CUDA event recorded at the beginning of the task
- int event_comput_hl; //handle of the CUDA event recorded before the CUDA kernels start (all input data is on Device)
- int event_output_hl; //handle of the CUDA event recorded when the CUDA kernels finish (before output to the Host)
- int event_finish_hl; //handle of the CUDA event recorded at the end of the task (full completion)
- int coherence;       //coherence control for this task (see COPY_XXX constants)
- int num_args;        //number of tensor arguments participating in the tensor operation
+ int task_error;         //error code (<0: Task is either empty or in progress; 0: Success; >0: Error code)
+ int gpu_id;             //NVidia GPU ID the task was scheduled on (>=0, -1 means the task is empty)
+ int stream_hl;          //CUDA stream handle the task went into
+ int event_start_hl;     //handle of the CUDA event recorded at the beginning of the task
+ int event_comput_hl;    //handle of the CUDA event recorded before the CUDA kernels start (all input data is on Device)
+ int event_output_hl;    //handle of the CUDA event recorded when the CUDA kernels finish (before output to the Host)
+ int event_finish_hl;    //handle of the CUDA event recorded at the end of the task (full completion)
+ unsigned int coherence; //coherence control for this task (see COPY_XXX constants)
+ unsigned int num_args;  //number of tensor arguments participating in the tensor operation
  tensBlck_t *tens_args[MAX_TENSOR_OPERANDS]; //tensor arguments participating in the tensor operation
 } cudaTask_t;
 //Note: Adding new CUDA events will require adjustment of NUM_EVENTS_PER_TASK.
@@ -395,7 +395,7 @@ extern "C"{
  int cuda_task_status(cudaTask_t *cuda_task);
  int cuda_task_completed(cudaTask_t *cuda_task);
  int cuda_task_wait(cudaTask_t *cuda_task);
- int cuda_tasks_wait(int num_tasks, cudaTask_t **cuda_tasks, int* task_stats);
+ int cuda_tasks_wait(unsigned int num_tasks, cudaTask_t **cuda_tasks, int *task_stats);
  float cuda_task_time(const cudaTask_t *cuda_task, float *in_copy, float *out_copy, float *comp);
 //  NV-TAL tensor operations:
  int gpu_put_arg(tensBlck_t *ctens);
