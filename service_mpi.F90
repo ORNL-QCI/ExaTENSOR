@@ -1,6 +1,6 @@
 !This module provides general services for MPI parallel programs.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2015/09/28
+!REVISION: 2015/11/16
        module service_mpi
         use, intrinsic:: ISO_C_BINDING
         !depends on <mpi_fort.c>
@@ -18,6 +18,8 @@
         include 'mpif.h' !MPI Fortran interface
 #endif
 !Parameters:
+ !Internal:
+        logical, private:: DEBUG=.false.
  !MPI kinds:
         integer(C_INT), parameter, public:: INT_MPI=MPI_INTEGER_KIND   !default MPI integer kind
         integer(C_INT), parameter, public:: INT_ADDR=MPI_ADDRESS_KIND  !default MPI address/size kind
@@ -136,18 +138,23 @@
         character(1024):: str0
 
         ierr=0; if(process_up) then; ierr=1; return; endif !process already initialized
-        process_up=.false.
+        process_up=.false.; exec_status=0
 !Start MPI:
 #ifdef NO_OMP
         if(present(ext_comm)) then
          GLOBAL_MPI_COMM=ext_comm; comm_imported=.true.
+         if(DEBUG) write(jo,'("#DEBUG(service_mpi::dil_process_start): Imported a single-thread MPI communicator: ",i13)')&
+                   &GLOBAL_MPI_COMM
         else
          GLOBAL_MPI_COMM=MPI_COMM_WORLD; comm_imported=.false.
          call MPI_INIT(errc)
          if(errc.ne.0) then
           ierr=2
-          call quit(ierr,'#ERROR(exatensor::dil_process_start): MPI_INIT error!',comm_imported)
+          call quit(ierr,'#ERROR(ExaTensor::service_mpi::dil_process_start): MPI_INIT error!',comm_imported)
           return
+         else
+          if(DEBUG) write(jo,'("#DEBUG(service_mpi::dil_process_start): Created a single-thread MPI communicator: ",i13)')&
+                    &GLOBAL_MPI_COMM
          endif
         endif
         mpi_thread_provided=0; max_threads=1
@@ -156,25 +163,30 @@
          GLOBAL_MPI_COMM=ext_comm; comm_imported=.true.
          mpi_thread_provided=MPI_THREAD_FUNNELED !assumes at least this level of MPI threading
          max_threads=omp_get_max_threads()
+         if(DEBUG) write(jo,'("#DEBUG(service_mpi::dil_process_start): Imported a multi-threaded MPI communicator: ",i13,1x,i5)')&
+                   &GLOBAL_MPI_COMM,max_threads
         else
          GLOBAL_MPI_COMM=MPI_COMM_WORLD; comm_imported=.false.
          call MPI_INIT_THREAD(MPI_THREAD_FUNNELED,mpi_thread_provided,errc)
          if(errc.ne.0) then
           ierr=3
-          call quit(ierr,'#ERROR(exatensor::dil_process_start): MPI_INIT_THREAD error!',comm_imported)
+          call quit(ierr,'#ERROR(ExaTensor::service_mpi::dil_process_start): MPI_INIT_THREAD error!',comm_imported)
           return
-         endif
-         if(mpi_thread_provided.gt.MPI_THREAD_SINGLE) then
-          max_threads=omp_get_max_threads()
          else
-          max_threads=1
+          if(mpi_thread_provided.gt.MPI_THREAD_SINGLE) then
+           max_threads=omp_get_max_threads()
+          else
+           max_threads=1
+          endif
+          if(DEBUG) write(jo,'("#DEBUG(service_mpi::dil_process_start): Created a multi-threaded MPI communicator: ",i13,1x,i5)')&
+                    &GLOBAL_MPI_COMM,max_threads
          endif
         endif
 #endif
         call MPI_BARRIER(GLOBAL_MPI_COMM,errc)
         if(errc.ne.0) then
          ierr=4
-         call quit(ierr,'#ERROR(exatensor::dil_process_start): Initial MPI_BARRIER failure!',comm_imported)
+         call quit(ierr,'#ERROR(ExaTensor::service_mpi::dil_process_start): Initial MPI_BARRIER failure!',comm_imported)
          return
         endif
 !Start time:
@@ -182,34 +194,41 @@
 !Check the size of the basic data types:
         if(C_INT.ne.4.or.C_LONG_LONG.ne.8.or.C_FLOAT.ne.4.or.C_DOUBLE.ne.8) then
          ierr=5
-         call quit(ierr,'#ERROR(exatensor::dil_process_start): C/Fortran basic data types are not interoperable!',comm_imported)
+         call quit(ierr,'#ERROR(ExaTensor::service_mpi::dil_process_start): C/Fortran basic data types are not interoperable!',&
+              &comm_imported)
          return
         endif
 !Get the global communicator characteristics:
         call MPI_COMM_SIZE(GLOBAL_MPI_COMM,impis,errc)
         if(errc.ne.0) then
          ierr=6
-         call quit(ierr,'#ERROR(exatensor::dil_process_start): MPI_COMM_SIZE failed!',comm_imported)
+         call quit(ierr,'#ERROR(ExaTensor::service_mpi::dil_process_start): MPI_COMM_SIZE failed!',comm_imported)
          return
         endif
         call MPI_COMM_RANK(GLOBAL_MPI_COMM,impir,errc)
         if(errc.ne.0) then
          ierr=7
-         call quit(ierr,'#ERROR(exatensor::dil_process_start): MPI_COMM_RANK failed!',comm_imported)
+         call quit(ierr,'#ERROR(ExaTensor::service_mpi::dil_process_start): MPI_COMM_RANK failed!',comm_imported)
          return
         endif
+        if(DEBUG) write(jo,'("#DEBUG(service_mpi::dil_process_start): My MPI rank is ",i10," out of ",i10)') impir,impis
 !Open the log file:
         call file_handle('get',log_file,ierr)
         if(ierr.ne.0) then
          ierr=8
-         call quit(ierr,'#ERROR(exatensor::dil_process_start): unable to get a log-file handle!',comm_imported)
+         call quit(ierr,'#ERROR(ExaTensor::service_mpi::dil_process_start): unable to get a log-file handle!',comm_imported)
          return
         endif
         call numchar(impir,k0,str0)
         open(log_file,file='qforce.'//str0(1:k0)//'.log',form='FORMATTED',status='UNKNOWN',err=2000) !open a log file for each process
-        if(impir.ne.0) jo=log_file !redirect the standard output for slave processes to their log files
+        if(impir.ne.0) then
+         jo=log_file !redirect the standard output for slave processes to their log files
+        else
+         if(DEBUG)&
+         &write(jo,'("#DEBUG(service_mpi::dil_process_start): MPI slave output has been redirected to individual log files!")')
+        endif
 !Greetings:
-        write(jo,'("   *** ExaTensor v.15.09.25 by Dmitry I. Lyakh ***")')
+        write(jo,'("   *** ExaTensor v.15.11.16 by Dmitry I. Lyakh ***")')
 !Info:
         write(jo,'("MPI number of processes            : ",i10)') impis
         write(jo,'("Current process rank               : ",i10)') impir
@@ -226,7 +245,7 @@
         case default
          write(jo,'("MPI threading level                :          ",i1," (Unknown)")') mpi_thread_provided
          ierr=9
-         call quit(ierr,'#ERROR(exatensor::dil_process_start): Unknown/invalid MPI threading support!',comm_imported)
+         call quit(ierr,'#ERROR(ExaTensor::service_mpi::dil_process_start): Unknown/invalid MPI threading support!',comm_imported)
          return
         end select
 #endif
@@ -239,7 +258,7 @@
         call MPI_GET_PROCESSOR_NAME(proc_name,proc_name_len,errc)
         if(errc.ne.0) then
          ierr=10
-         call quit(ierr,'#ERROR(exatensor::dil_process_start): MPI_GET_PROCESSOR_NAME failed!',comm_imported)
+         call quit(ierr,'#ERROR(ExaTensor::service_mpi::dil_process_start): MPI_GET_PROCESSOR_NAME failed!',comm_imported)
          return
         endif
         call printl(jo,'My processor name                  : '//proc_name(1:proc_name_len))
@@ -247,27 +266,28 @@
         call get_environment(ierr)
         if(ierr.ne.0) then
          ierr=0
-         write(jo,'("#WARNING(exatensor::dil_process_start): Unable to read environment variables! Ignored.")')
+         write(jo,'("#WARNING(ExaTensor::service_mpi::dil_process_start): Unable to read environment variables! Ignored.")')
         endif
         if(mpi_procs_per_node.gt.0) write(jo,'("Number of MPI processes per node   :       ",i4)') mpi_procs_per_node
 !Probe Nvidia GPU(s):
         call gpu_nvidia_probe(ierr)
         if(ierr.ne.0) then
          ierr=0
-         write(jo,'("#WARNING(exatensor::dil_process_start): GPU(NVidia) probe failed! No GPU in use for this process! Ignored.")')
+         write(jo,'("#WARNING(ExaTensor::service_mpi::dil_process_start): GPU(NVidia) probe failed!",'//&
+                   &'" No GPU in use for this process! Ignored.")')
         endif
         call MPI_BARRIER(GLOBAL_MPI_COMM,errc)
         if(errc.ne.0) then
          ierr=11
-         call quit(ierr,'#ERROR(exatensor::dil_process_start): Intermediate MPI_BARRIER failure!',comm_imported)
+         call quit(ierr,'#ERROR(ExaTensor::service_mpi::dil_process_start): Intermediate MPI_BARRIER failure!',comm_imported)
          return
         endif
 !Clear the process status if no error:
         exec_status=ierr
         if(ierr.eq.0) process_up=.true.
         return
-!-----------------------------------------------------------------------------------------------------
-2000    call quit(-1,'#ERROR(exatensor::dil_process_start): unable to open a log file!',comm_imported)
+!------------------------------------------------------------------------------------------------------------------
+2000    call quit(-1,'#ERROR(ExaTensor::service_mpi::dil_process_start): unable to open a log file!',comm_imported)
         ierr=12
         return
 
@@ -287,11 +307,13 @@
            mpi_proc_id_on_node=mod(impir,mpi_procs_per_node)
           else
            mpi_procs_per_node=0
-           write(jo,'("#ERROR(dil_process_start:get_environment): Environment variable QF_PROCS_PER_NODE is not a number!")')
+           write(jo,'("#ERROR(service_mpi::dil_process_start:get_environment): ",'//&
+                   &'"Environment variable QF_PROCS_PER_NODE is not a number!")')
            ier=1; return
           endif
          else
-          write(jo,'("#ERROR(dil_process_start:get_environment): Environment variable QF_PROCS_PER_NODE is not set!")')
+          write(jo,'("#ERROR(service_mpi::dil_process_start:get_environment): ",'//&
+                  &'"Environment variable QF_PROCS_PER_NODE is not set!")')
           ier=2; return
          endif
          return
@@ -300,24 +322,26 @@
         end subroutine dil_process_start
 !------------------------------------------
         subroutine dil_process_finish(ierr)
-!Terminates the (MPI) process.
+!Terminates the (MPI) process after a successful execution.
+!Module variable <exec_status> determines whether the execution was successful.
         implicit none
         integer(INT_MPI), intent(out):: ierr !out: error code (0:success)
         integer(INT_MPI):: errc
+        integer:: erc
 
         ierr=0
         if(process_up) then
          call free_info_mem(ierr)
-         if(ierr.ne.0) write(jo,'("#WARNING(exatensor::dil_process_finish): Unable to free info data!")')
+         if(ierr.ne.0) write(jo,'("#WARNING(ExaTensor::service_mpi::dil_process_finish): Unable to free info data!")')
          process_up=.false.
          if(exec_status.eq.0) then
           call MPI_BARRIER(GLOBAL_MPI_COMM,errc)
           if(errc.ne.0) then
            ierr=ierr+3
-           call quit(ierr,'#ERROR(exatensor::dil_process_finish): Final MPI_BARRIER failure!',comm_imported)
+           call quit(ierr,'#ERROR(ExaTensor::service_mpi::dil_process_finish): Final MPI_BARRIER failure!',comm_imported)
           endif
          endif
-         call quit(exec_status,'###ExaTensor finalized.',comm_imported)
+         call quit(exec_status,'###ExaTensor exited:',comm_imported)
         else
          ierr=ierr+7
         endif
@@ -584,6 +608,7 @@
          write(jo,'(''###ExaTensor Process '',i9,'': Error '',i12,'': Wall Time (sec): '',f12.2)')&
           &impir,error_code,time_end-time_begin
         endif
+        flush(jo)
 !Close all local files opened by the process:
         l=0; call file_handle('stop',l,ierr)
         if(ierr.ne.0) write(*,'(''#WARNING(ExaTensor::quit): Process '',i9,'': Could not close all local files!'')') impir

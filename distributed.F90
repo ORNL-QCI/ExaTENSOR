@@ -1,6 +1,6 @@
 !Distributed data storage service (DDSS).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2015/11/13 (started 2015/03/18)
+!REVISION: 2015/11/16 (started 2015/03/18)
 !Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
 !Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
 !LICENSE: GPLv2
@@ -19,13 +19,15 @@
 ! * Data communication is accomplished via data transfer requests (DTR) and
 !   data transfer completion requests (DTCR), using data descriptors. On each MPI process,
 !   all data transfer requests are enumerated sequentially in the order they were issued (starting at 1).
-! * All procedures return error codes where special return statuses must be distinguished
-!   (see "Special return statuses" below). Normally, error codes are smaller by absolute value integers.
+! * All procedures return error codes where special return statuses must be distinguished,
+!   for example TRY_LATER. Normally, error codes are smaller by absolute value integers.
 !   Contrary, special return statuses should be closer to the HUGE by their absolute values.
+! * Currently, chunks of memory that can be attached to a distributed memory space must be
+!   multiple of 4 bytes. This is because the memory chunks are mapped to 32-bit words internally.
         module distributed
 !       use, intrinsic:: ISO_C_BINDING
         use service_mpi !includes ISO_C_BINDING & MPI
-        use:: tensor_algebra, only: TRY_LATER,NO_TYPE,R4,R8,C8,R4_,R8_,C8_
+        use:: tensor_algebra, only: TRY_LATER,NO_TYPE,R4,R8,C8,R4_,R8_,C8_ !some basic types and statuses
         implicit none
         private
 !EXPOSE some <service_mpi>:
@@ -185,8 +187,8 @@
         private DataDescrWaitData
         private DataDescrGetData
         private DataDescrAccData
-!        private DataDescrPack
-!        private DataDescrUnpack
+!        private DataDescrPack    !`Write
+!        private DataDescrUnpack  !`Write
 
         contains
 !METHODS:
@@ -238,18 +240,22 @@
 
         errc=0
         if(present(rank)) then
-         if(present(win)) then !active descriptor
-          this%Rank=rank
-          this%Window=win
-          this%LockType=NO_LOCK
-          this%RefCount=0
-          this%LastSync=0 !0 means "never synced"
+         if(rank.ge.0) then
+          if(present(win)) then !active descriptor
+           this%Rank=rank
+           this%Window=win
+           this%LockType=NO_LOCK
+           this%RefCount=0
+           this%LastSync=0 !0 means "never synced"
+          else
+           errc=1
+          endif
          else
-          errc=1
+          errc=2
          endif
         else
          if(present(win)) then
-          errc=2
+          errc=3
          else !empty descriptor
           this%Rank=-1
           this%Window=0
@@ -270,8 +276,7 @@
         integer(INT_MPI):: i
 
         this%TransCount=0; this%TransSize=0d0
-        this%NumEntries=0; this%HashBin(:)=0
-        this%FirstFree=1
+        this%NumEntries=0; this%FirstFree=1; this%HashBin(:)=0
         this%PrevEntry(1)=0; do i=2,MAX_ONESIDED_REQS; this%PrevEntry(i)=i-1; enddo
         do i=1,MAX_ONESIDED_REQS-1; this%NextEntry(i)=i+1; enddo; this%NextEntry(MAX_ONESIDED_REQS)=0
         do i=1,MAX_ONESIDED_REQS; call this%RankWins(i)%init(); enddo !init all entries to null
@@ -327,7 +332,13 @@
            this%PrevEntry(j)=m; this%NextEntry(j)=i
            if(i.gt.0) this%PrevEntry(i)=j
            call this%RankWins(j)%init(rank,win,errc)
-           if(errc.ne.0) then; call this%delete(j); errc=1; endif
+           if(errc.eq.0) then
+            RankWinListTest=j
+            if(DEBUG) write(jo,'("#DEBUG(distributed::RankWinList.Test)[",i7,"]: New (rank,window) registered: ",i9,1x,i13)')&
+                      &impir,rank,win
+           else
+            call this%delete(j); errc=1
+           endif
           else
            errc=TRY_LATER !no more free entries, try later (not an error)
           endif
@@ -359,6 +370,8 @@
           this%NextEntry(entry_num)=this%FirstFree
           if(this%FirstFree.gt.0) this%PrevEntry(this%FirstFree)=entry_num
           this%FirstFree=entry_num; this%NumEntries=this%NumEntries-1
+          if(DEBUG) write(jo,'("#DEBUG(distributed::RankWinList.Del)[",i7,"]: (rank,window) deleted: ",i9,1x,i13)')&
+                    &impir,this%RankWins(entry_num)%Rank,this%RankWins(entry_num)%Window
           call this%RankWins(entry_num)%init() !clean entry
          else
           errc=1 !empty entries cannot be deleted
@@ -387,8 +400,10 @@
           this%TransCount=this%TransCount+1
           n=data_type_size(dd%DataType)
           this%TransSize=this%TransSize+real(n,8)*real(dd%DataVol,8)
-          dd%TransID=this%TransCount
+          dd%TransID=this%TransCount !global transaction ID
           this%RankWins(rwe)%RefCount=this%RankWins(rwe)%RefCount+1
+          if(DEBUG) write(jo,'("#DEBUG(distributed::RankWin.NewTrans)[",i7,"]: New transfer: ",i9,1x,i13,1x,i5,1x,i13)')&
+                    &impir,this%RankWins(rwe)%Rank,this%RankWins(rwe)%Window,this%RankWins(rwe)%RefCount,dd%TransID
          else
           errc=1
          endif
@@ -450,6 +465,8 @@
             this%WinMPI%CommMPI=comm_mpi
             this%WinMPI%Dynamic=.true.
             this%WinSize=0
+            if(DEBUG) write(jo,'("#DEBUG(distributed::DataWin.Create)[",i7,"]: MPI window created: ",i11,1x,i11,1x,i2,1x,i11)')&
+                      &impir,this%WinMPI%Window,this%WinMPI%CommMPI,this%WinMPI%DispUnit,this%WinSize
            else
             errc=1
            endif
@@ -479,8 +496,9 @@
          if(this%WinSize.eq.0) then !MPI window must be empty
           call MPI_WIN_FREE(this%WinMPI%Window,errc)
           if(errc.eq.0) then
-           call this%WinMPI%clean(errc)
-           this%WinSize=-1
+           if(DEBUG) write(jo,'("#DEBUG(distributed::DataWin.Destroy)[",i7,"]: MPI window destroyed: ",i11,1x,i11,1x,i2,1x,i11)')&
+                     &impir,this%WinMPI%Window,this%WinMPI%CommMPI,this%WinMPI%DispUnit,this%WinSize
+           call this%clean(errc)
           else
            errc=1
           endif
@@ -496,7 +514,7 @@
 !-----------------------------------------------------------
         subroutine DataWinAttach(this,loc_ptr,loc_size,ierr)
 !Attaches a local (contiguous) data buffer to the MPI data window.
-!Allowed data types: {R4,R8,C8,...}: Must be at least 4-byte long!
+!The size of the data buffer in bytes must be a multiple of 4.
         implicit none
         class(DataWin_t), intent(inout):: this           !inout: data window
         type(C_PTR), intent(in):: loc_ptr                !in: C pointer to the local data buffer
@@ -515,6 +533,8 @@
            call attach_buffer(r4_ptr,loc_size,errc)
            if(errc.eq.0) then
             this%WinSize=this%WinSize+loc_size
+            if(DEBUG) write(jo,'("#DEBUG(distributed::DataWin.Attach)[",i7,"]: Buffer attached: ",i11,1x,i11,1x,i11)')&
+                      &impir,loc_size,this%WinMPI%Window,this%WinSize
            else
             errc=1
            endif
@@ -533,7 +553,7 @@
         contains
 
          subroutine attach_buffer(r4_arr,bsize,jerr)
-         real(4), intent(in):: r4_arr(*) !asynchronous
+         real(4), intent(in):: r4_arr(*) !`asynchronous attribute
          integer(INT_ADDR), intent(in):: bsize
          integer(INT_MPI), intent(out):: jerr
          jerr=0
@@ -544,7 +564,7 @@
         end subroutine DataWinAttach
 !-----------------------------------------------------------
         subroutine DataWinDetach(this,loc_ptr,loc_size,ierr)
-!Detaches a previously attached local (contiguous) data buffer from the MPI data window.
+!Detaches a previously attached local (contiguous) data buffer from an MPI data window.
 !The size of the data buffer in bytes must be a multiple of 4.
         implicit none
         class(DataWin_t), intent(inout):: this           !inout: data window
@@ -564,6 +584,8 @@
            call detach_buffer(r4_ptr,errc)
            if(errc.eq.0) then
             this%WinSize=this%WinSize-loc_size
+            if(DEBUG) write(jo,'("#DEBUG(distributed::DataWin.Detach)[",i7,"]: Buffer detached: ",i11,1x,i11,1x,i11)')&
+                      &impir,loc_size,this%WinMPI%Window,this%WinSize
            else
             errc=1
            endif
@@ -582,7 +604,7 @@
         contains
 
          subroutine detach_buffer(r4_arr,jerr)
-         real(4), intent(in):: r4_arr(*) !asynchronous
+         real(4), intent(in):: r4_arr(*) !`asynchronous attribute
          integer(INT_MPI), intent(out):: jerr
          jerr=0
          call MPI_WIN_DETACH(this%WinMPI%Window,r4_arr,jerr)
@@ -592,7 +614,7 @@
         end subroutine DataWinDetach
 !----------------------------------------
         subroutine DataWinSync(this,ierr)
-!Synchronizes the local private and public copy of the MPI data window.
+!Synchronizes the local private and public copy of an MPI data window.
         implicit none
         class(DataWin_t), intent(in):: this              !in: data window
         integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
@@ -600,7 +622,13 @@
 
         errc=0
         if(this%WinSize.ge.0) then !data window is initialized
-         call MPI_WIN_SYNC(this%WinMPI%Window,errc); if(errc.ne.0) errc=1
+         call MPI_WIN_SYNC(this%WinMPI%Window,errc)
+         if(errc.eq.0) then
+          if(DEBUG) write(jo,'("#DEBUG(distributed::DataWin.Sync)[",i7,"]: MPI window synced: ",i11,1x,i11)')&
+                    &impir,this%WinMPI%Window,this%WinSize
+         else
+          errc=1
+         endif
         else
          errc=2
         endif
@@ -609,7 +637,7 @@
         end subroutine DataWinSync
 !==========================================================================
         subroutine DistrSpaceCreate(this,comm_mpi,num_wins,space_name,ierr) !COLLECTIVE
-!Creates a distributed space with <num_wins> dynamic windows.
+!Creates a distributed memory space with <num_wins> dynamic windows.
 !This is a collective call and every MPI process must receive the same <num_wins>!
         implicit none
         class(DistrSpace_t), intent(inout):: this        !inout: distributed memory space
@@ -635,6 +663,8 @@
              this%NumWins=num_wins
              this%CommMPI=comm_mpi
              this%SpaceName=space_name(1:min(len_trim(space_name),DISTR_SPACE_NAME_LEN)) !alphabetic name for convenience
+             if(DEBUG)write(jo,'("#DEBUG(distributed::DistrSpace.Create)[",i7,"]: Distributed space created: ",i11,1x,i4,1x,A16)')&
+                       &impir,this%CommMPI,this%NumWins,this%SpaceName(1:min(DISTR_SPACE_NAME_LEN,16))
             else
              do i=num_wins,1,-1
               call this%DataWins(i)%destroy()
@@ -662,7 +692,7 @@
         subroutine DistrSpaceDestroy(this,ierr) !COLLECTIVE
 !Destroys a distributed memory space. This is a collective call.
 !The distributed memory space descriptor passed here must be valid!
-!Also the distributed memory space itself must be empty!
+!Also the distributed memory space itself must be empty (0-byte size)!
         implicit none
         class(DistrSpace_t), intent(inout):: this        !inout: distributed memory space
         integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
@@ -679,6 +709,9 @@
             if(errc.eq.0) then
              deallocate(this%DataWins,STAT=errc)
              if(errc.eq.0) then
+              if(DEBUG)&
+               &write(jo,'("#DEBUG(distributed::DistrSpace.Destroy)[",i7,"]: Distributed space destroyed: ",i11,1x,i4,1x,A16)')&
+               &impir,this%CommMPI,this%NumWins,this%SpaceName(1:min(DISTR_SPACE_NAME_LEN,16))
               this%NumWins=0
               this%CommMPI=MPI_COMM_NULL
               this%SpaceName=' '
@@ -940,7 +973,8 @@
            if(rw_entry%RefCount.eq.0) then !delete the (rank,window) entry if no references are attached to it
             call RankWinRefs%delete(rwe,errc); if(errc.ne.0) errc=4
            elseif(rw_entry%RefCount.lt.0) then
-            write(CONS_OUT,'("#FATAL(distributed::DataDescr.FlushData): Negative reference count: ",i12)') rw_entry%RefCount
+            if(VERBOSE) write(CONS_OUT,'("#FATAL(distributed::DataDescr.FlushData): Negative reference count: ",i12)')&
+                        &rw_entry%RefCount
             errc=5
             call quit(-1,'#FATAL: Unable to continue: Distributed Data Service failed!')
            endif
@@ -997,7 +1031,8 @@
             endif
             nullify(rw_entry)
            else
-            write(CONS_OUT,'("#FATAL(distributed::DataDescr.TestData): Invalid reference count: ",i12)') rw_entry%RefCount
+            if(VERBOSE) write(CONS_OUT,'("#FATAL(distributed::DataDescr.TestData): Invalid reference count: ",i12)')&
+                        &rw_entry%RefCount
             errc=3
             call quit(-1,'#FATAL: Unable to continue: Distributed Data Service failed!')
            endif
@@ -1050,7 +1085,8 @@
             endif
             nullify(rw_entry)
            else
-            write(CONS_OUT,'("#FATAL(distributed::DataDescr.WaitData): Invalid reference count: ",i12)') rw_entry%RefCount
+            if(VERBOSE) write(CONS_OUT,'("#FATAL(distributed::DataDescr.WaitData): Invalid reference count: ",i12)')&
+                        &rw_entry%RefCount
             errc=3
             call quit(-1,'#FATAL: Unable to continue: Distributed Data Service failed!')
            endif
