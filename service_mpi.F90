@@ -1,12 +1,12 @@
 !This module provides general services for MPI parallel programs.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2015/11/16
+!REVISION: 2015/11/17
        module service_mpi
         use, intrinsic:: ISO_C_BINDING
         !depends on <mpi_fort.c>
 #ifdef USE_MPI_MOD
 #ifdef FORTRAN2008
-        use mpi_f08      !MPI Fortran 2008 interface
+        use mpi_f08      !MPI Fortran 2008 interface `This will not work
 #else
         use mpi          !MPI Fortran interface
 #endif

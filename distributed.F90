@@ -1,6 +1,6 @@
 !Distributed data storage service (DDSS).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2015/11/16 (started 2015/03/18)
+!REVISION: 2015/11/17 (started 2015/03/18)
 !Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
 !Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
 !LICENSE: GPLv2
@@ -30,6 +30,8 @@
         use:: tensor_algebra, only: TRY_LATER,NO_TYPE,R4,R8,C8,R4_,R8_,C8_ !some basic types and statuses
         implicit none
         private
+!EXPOSE some <tensor_algebra>:
+        public TRY_LATER,NO_TYPE,R4,R8,C8
 !EXPOSE some <service_mpi>:
         public INT_MPI,INT_ADDR,INT_OFFSET,INT_COUNT !MPI integer kinds
         public jo                  !process log output device
@@ -494,6 +496,8 @@
         call MPI_BARRIER(this%WinMPI%CommMPI,errc) !test the validity of the MPI communicator
         if(errc.eq.0) then
          if(this%WinSize.eq.0) then !MPI window must be empty
+          if(DEBUG)write(jo,'("#DEBUG(distributed::DataWin.Destroy)[",i7,"]: MPI window for destruct: ",i11,1x,i11,1x,i2,1x,i11)')&
+                   &impir,this%WinMPI%Window,this%WinMPI%CommMPI,this%WinMPI%DispUnit,this%WinSize
           call MPI_WIN_FREE(this%WinMPI%Window,errc)
           if(errc.eq.0) then
            if(DEBUG) write(jo,'("#DEBUG(distributed::DataWin.Destroy)[",i7,"]: MPI window destroyed: ",i11,1x,i11,1x,i2,1x,i11)')&
@@ -664,7 +668,7 @@
              this%CommMPI=comm_mpi
              this%SpaceName=space_name(1:min(len_trim(space_name),DISTR_SPACE_NAME_LEN)) !alphabetic name for convenience
              if(DEBUG)write(jo,'("#DEBUG(distributed::DistrSpace.Create)[",i7,"]: Distributed space created: ",i11,1x,i4,1x,A16)')&
-                       &impir,this%CommMPI,this%NumWins,this%SpaceName(1:min(DISTR_SPACE_NAME_LEN,16))
+                      &impir,this%CommMPI,this%NumWins,this%SpaceName(1:min(min(len_trim(this%SpaceName),DISTR_SPACE_NAME_LEN),16))
             else
              do i=num_wins,1,-1
               call this%DataWins(i)%destroy()
@@ -682,6 +686,7 @@
          else
           errc=4
          endif
+         call MPI_BARRIER(comm_mpi,errc)
         else
          errc=5
         endif
@@ -711,7 +716,7 @@
              if(errc.eq.0) then
               if(DEBUG)&
                &write(jo,'("#DEBUG(distributed::DistrSpace.Destroy)[",i7,"]: Distributed space destroyed: ",i11,1x,i4,1x,A16)')&
-               &impir,this%CommMPI,this%NumWins,this%SpaceName(1:min(DISTR_SPACE_NAME_LEN,16))
+               &impir,this%CommMPI,this%NumWins,this%SpaceName(1:min(min(len_trim(this%SpaceName),DISTR_SPACE_NAME_LEN),16))
               this%NumWins=0
               this%CommMPI=MPI_COMM_NULL
               this%SpaceName=' '
@@ -756,7 +761,7 @@
            errc=1
            exit
           endif
-         enddo 
+         enddo
         else
          errc=2
         endif

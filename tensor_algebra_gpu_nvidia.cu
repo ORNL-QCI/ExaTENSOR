@@ -1,5 +1,5 @@
 /** Tensor Algebra Library for NVidia GPU: NV-TAL (CUDA based).
-REVISION: 2015/11/13
+REVISION: 2015/11/17
 Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
 Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
 
@@ -1491,6 +1491,7 @@ __host__ int cuda_task_destruct(cudaTask_t *cuda_task)
  n=0; //number of unsuccessful resource releases
  if(errc == CUDA_TASK_COMPLETED || errc == CUDA_TASK_ERROR){
   if(cuda_task->gpu_id < 0 || cuda_task->gpu_id >= MAX_GPUS_PER_NODE) return -2; //GPU id is out of allowed range
+  if(cuda_task == LastTask[cuda_task->gpu_id]) LastTask[cuda_task->gpu_id]=NULL; //clear task dependency
   errc=cuda_stream_release(cuda_task->gpu_id,cuda_task->stream_hl); cuda_task->stream_hl=-1; if(errc != 0) n++;
   errc=cuda_event_release(cuda_task->gpu_id,cuda_task->event_start_hl); cuda_task->event_start_hl=-1; if(errc != 0) n++;
   errc=cuda_event_release(cuda_task->gpu_id,cuda_task->event_comput_hl); cuda_task->event_comput_hl=-1; if(errc != 0) n++;
@@ -1518,7 +1519,7 @@ __host__ int cuda_task_destroy(cudaTask_t *cuda_task)
  if(errc == CUDA_TASK_COMPLETED || errc == CUDA_TASK_ERROR){
   errc=cuda_task_destruct(cuda_task); if(errc != 0) n=NOT_CLEAN;
  }else{
-  if(errc != CUDA_TASK_EMPTY) return TRY_LATER;
+  if(errc != CUDA_TASK_EMPTY) return TRY_LATER; //CUDA task is still in progress
  }
  free(cuda_task);
  return n;
