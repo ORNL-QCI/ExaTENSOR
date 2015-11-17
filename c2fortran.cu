@@ -28,6 +28,7 @@ extern "C"{
 #endif
  char * ptr_offset(char * byte_ptr, size_t byte_offset);
  size_t c_ptr_value(void * c_ptr);
+ void c_ptr_set(size_t cpval, void ** cptr);
  void print_c_ptr(void * c_ptr);
 #ifdef __cplusplus
 }
@@ -108,11 +109,17 @@ int string_len(const char* str){ //get the length of a C string
 }
 
 char* ptr_offset(char *byte_ptr, size_t byte_offset){ //offsets a C pointer by a number of bytes
- char *addr=&byte_ptr[byte_offset]; return addr;
+ char *addr=&byte_ptr[byte_offset];
+ return addr;
 }
 
 size_t c_ptr_value(void * c_ptr){ //returns a C pointer as an integer
  return (size_t)c_ptr;
+}
+
+void c_ptr_set(size_t cpval, void ** cptr){ //sets a C pointer to a specific integer address
+ *cptr=(void*)cpval;
+ return;
 }
 
 void print_c_ptr(void * c_ptr){ //prints a C-pointer
