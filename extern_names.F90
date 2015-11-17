@@ -11,6 +11,13 @@
           type(C_PTR), value, intent(in):: byte_ptr
           integer(C_SIZE_T), value, intent(in):: byte_offset
          end function ptr_offset
+ !Converts a C pointer into an integer (address):
+         function c_ptr_value(cptr) result(cpval) bind(c,name='c_ptr_value')
+          import
+          implicit none
+          type(C_PTR), value:: cptr
+          integer(C_SIZE_T):: cpval
+         end function c_ptr_value
  !Print a C pointer from Fortran:
          subroutine print_c_ptr(c_pointer) bind(c,name='print_c_ptr')
           import
