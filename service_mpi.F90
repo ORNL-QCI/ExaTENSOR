@@ -95,6 +95,7 @@
  !MPI_Get_address: Get the absolute MPI displacement of a local object (for remote accesses):
          subroutine MPI_Get_Displacement(location,disp,ierr) bind(c,name='MPI_Get_Displacement')
           import
+          implicit none
           type(C_PTR), value, intent(in):: location !in: pointer to the local object
           integer(MPI_ADDRESS_KIND):: disp          !out: absolute MPI displacement
           integer(C_INT):: ierr                     !out: error code (0:success)

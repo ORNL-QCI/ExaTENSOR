@@ -15,8 +15,9 @@ void MPI_Get_Displacement(const void * location, MPI_Aint * disp, int * ierr);
 
 //Function definitions:
 void MPI_Get_Displacement(const void * location, MPI_Aint * disp, int * ierr){
-*disp=0;
-*ierr=MPI_Get_address(location,disp);
-//`Check for signed overflow for Fortran
-return;
+// MPI_Aint dsp;
+ *disp=0;
+ *ierr=MPI_Get_address(location,disp);
+// dsp=*disp; *ierr=(int)(((unsigned long)dsp)>>(sizeof(unsigned long)*8-1)); //Check for signed overflow for Fortran
+ return;
 }
