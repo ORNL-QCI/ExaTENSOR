@@ -117,6 +117,7 @@
           procedure, private:: clean=>WinMPIClean      !clean MPI window info
           procedure, private:: pack=>WinMPIPAck        !packs the object into a plain integer packet
           procedure, private:: unpack=>WinMPIUnpack    !unpacks the object from a plain integer packet
+          procedure, private:: print_it=>WinMPIPrint   !prints the object data
         end type WinMPI_t
         integer(INT_MPI), parameter, private:: WinMPI_PACK_LEN=4 !packed length of WinMPI_t (in packing integers)
  !Local MPI data window descriptor:
@@ -165,6 +166,7 @@
           procedure, public:: acc_data=>DataDescrAccData        !accumulate data from a local buffer to the location specified by a data descriptor
           procedure, public:: pack=>DataDescrPack               !pack the DataDescr_t object into a plain integer packet
           procedure, public:: unpack=>DataDescrUnpack           !unpack the DataDescr_t object from a plain integer packet
+          procedure, public:: print_it=>DataDescrPrint          !prints the object data
         end type DataDescr_t
         integer(INT_MPI), parameter, private:: DataDescr_PACK_LEN=6+WinMPI_PACK_LEN !packed length of DataDescr_t (in packing integers)
 !GLOBAL DATA:
@@ -184,6 +186,7 @@
         private WinMPIClean
         private WinMPIPack
         private WinMPIUnpack
+        private WinMPIPrint
  !DataWin_t:
         private DataWinClean
         private DataWinCreate
@@ -207,6 +210,7 @@
         private DataDescrAccData
         private DataDescrPack
         private DataDescrUnpack
+        private DataDescrPrint
 
         contains
 !METHODS:
@@ -508,6 +512,28 @@
         if(present(ierr)) ierr=errc
         return
         end subroutine WinMPIUnpack
+!-------------------------------------------------
+        subroutine WinMPIPrint(this,dev_out,space)
+!Prints the object data.
+        use stsubs, only: numchar
+        implicit none
+        class(WinMPI_t), intent(in):: this               !in: object to print
+        integer(INT_MPI), intent(in), optional:: dev_out !in: output device
+        integer(INT_MPI), intent(in), optional:: space   !in: left alignment
+        character(32):: sfmt
+        integer(INT_MPI):: devo,sp
+        integer:: fl
+
+        devo=jo; if(present(dev_out)) devo=dev_out
+        sp=0; if(present(space)) sp=space
+        if(sp.gt.0) then; call numchar(int(sp),fl,sfmt); sfmt(fl+1:fl+2)='x,'; fl=fl+2; else; fl=0; endif
+        write(devo,'('//sfmt(1:fl)//'"#Printing WinMPI_t object:")')
+        write(devo,'('//sfmt(1:fl)//'"  MPI window       : ",i18)') this%Window
+        write(devo,'('//sfmt(1:fl)//'"  Displacement unit: ",i18)') this%DispUnit
+        write(devo,'('//sfmt(1:fl)//'"  MPI communicator : ",i18)') this%CommMPI
+        write(devo,'('//sfmt(1:fl)//'"  Dynamic window?  : ",l18)') this%Dynamic
+        return
+        end subroutine WinMPIPrint
 !=========================================
         subroutine DataWinClean(this,ierr)
 !Cleans an uninitialized MPI data window. Should be used
@@ -1664,5 +1690,32 @@
         if(present(ierr)) ierr=errc
         return
         end subroutine DataDescrUnpack
+!----------------------------------------------------
+        subroutine DataDescrPrint(this,dev_out,space)
+!Prints object data.
+        use stsubs, only: numchar
+        implicit none
+        class(DataDescr_t), intent(in):: this            !in: object to print
+        integer(INT_MPI), intent(in), optional:: dev_out !in: output device
+        integer(INT_MPI), intent(in), optional:: space   !in: left alignment
+        character(32):: sfmt
+        integer(INT_MPI):: devo,sp
+        integer:: fl
+
+        devo=jo; if(present(dev_out)) devo=dev_out
+        sp=0; if(present(space)) sp=space
+        if(sp.gt.0) then; call numchar(int(sp),fl,sfmt); sfmt(fl+1:fl+2)='x,'; fl=fl+2; else; fl=0; endif
+        write(devo,'('//sfmt(1:fl)//'"#Printing DataDescr_t object:")')
+        write(devo,'('//sfmt(1:fl)//'"  C pointer at data origin: ")',ADVANCE='NO'); write(devo,*) this%LocPtr
+        write(devo,'('//sfmt(1:fl)//'"  Origin MPI rank         : ",i18)') this%RankMPI
+        write(devo,'('//sfmt(1:fl)//'"  Origin data displacement: ",i18)') this%Offset
+        write(devo,'('//sfmt(1:fl)//'"  Data volume (elements)  : ",i18)') this%DataVol
+        write(devo,'('//sfmt(1:fl)//'"  Data type               : ",i18)') this%DataType
+        call this%WinMPI%print_it(devo,sp+2)
+        write(devo,'('//sfmt(1:fl)//'"  Current transaction ID  : ",i18)') this%TransID
+        write(devo,'('//sfmt(1:fl)//'"  MPI status              : ",i18)') this%StatMPI
+        write(devo,'('//sfmt(1:fl)//'"  MPI request handle      : ",i18)') this%ReqHandle
+        return
+        end subroutine DataDescrPrint
 
        end module distributed
