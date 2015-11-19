@@ -1,6 +1,6 @@
 !Distributed data storage service (DDSS).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2015/11/18 (started 2015/03/18)
+!REVISION: 2015/11/19 (started 2015/03/18)
 !Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
 !Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
 !LICENSE: GPLv2
@@ -19,7 +19,11 @@
 !   the length of the rest of the packet (number of integer elements carrying the information).
 !   Besdies, multiple data descriptors can be communicated simultaneously in a single super-packet,
 !   which consists of the first integer specifying the number of simple packets in the super-packet
-!   followed by the simple packets.
+!   followed by the simple packets. Note that data packed in packets, including the packet
+!   length (first element), cannot be read directly, but requires special access functions!
+!   The number of packets in a super-packet can be read directly though. Also, there is
+!   a tagged (marked) version of the super-packet (marked data packet container), which
+!   prefixes each simple packet contained in it with an additional element (tag).
 ! * Upon a request from the manager, data (e.g., a tensor block) can be detached from
 !   the corresponding distributed memory space and subsequently destroyed (if needed).
 ! * Data communication is accomplished via data transfer requests (DTR) and
@@ -169,12 +173,31 @@
           procedure, public:: print_it=>DataDescrPrint          !prints the object data
         end type DataDescr_t
         integer(INT_MPI), parameter, private:: DataDescr_PACK_LEN=6+WinMPI_PACK_LEN !packed length of DataDescr_t (in packing integers)
+ !Data packet container (collection of plain data packets):
+        type, public:: DataPack_t
+         integer(ELEM_PACK_SIZE), pointer, contiguous, private:: packets(:)=>NULL() !packet container (0:max): packets(0) = num_packets
+         integer(INT_COUNT), private:: ffe=-1         !first free element in <packets(:)>
+         logical, private:: alloc=.false.             !TRUE: packets() array was allocated, FALSE: packets(:) array was associated to an external buffer
+         integer(INT_MPI), protected:: num_packets=-1 !number of packets in the packet container
+         logical, protected:: marked=.false.          !tells whether individual packets are marked or not
+         contains
+          procedure, public:: clean=>DataPackClean          !reset the data container to an empty state
+          procedure, public:: reserve_mem=>DataPackReserve  !reserve memory for the packet container (either allocate or external)
+          procedure, public:: append=>DataPackAppend        !add a data packet to the packet container
+          procedure, public:: remove=>DataPackRemove        !remove a data packet from the packet container
+          procedure, public:: send=>DataPackSend            !send the packet container to other MPI process(es)
+          procedure, public:: receive=>DataPackRecv         !receive a packet container from other MPI process
+          procedure, public:: wait=>DataPackWait            !wait upon completion of the communication
+          procedure, public:: test=>DataPackTest            !test the completion of the communication
+        end type DataPack_t
 !GLOBAL DATA:
  !MPI one-sided data transfer bookkeeping (master thread only):
         type(RankWinList_t), target, private:: RankWinRefs !container for active one-sided communications initiated at the local origin
 !FUNCTION VISIBILITY:
  !Global:
         public data_type_size
+ !Auxiliary:
+        private packet_full_len
  !RankWin_t:
         private RankWinInit
  !RankWinList_t:
@@ -211,6 +234,15 @@
         private DataDescrPack
         private DataDescrUnpack
         private DataDescrPrint
+ !DataPack_t:
+        private DataPackClean
+        private DataPackReserve
+        private DataPackAppend
+        private DataPackRemove
+        private DataPackSend
+        private DataPackRecv
+        private DataPackWait
+        private DataPackTest
 
         contains
 !METHODS:
@@ -249,6 +281,22 @@
         if(present(ierr)) ierr=errc
         return
         end function data_type_size
+!-------------------------------------------------------------
+        function packet_full_len(packet,body_len) result(plen)
+!Returns the full packet length (number of elements).
+        implicit none
+        integer(INT_COUNT):: plen                                 !out: packet full length
+        integer(ELEM_PACK_SIZE), intent(in), target:: packet(0:*) !in: packet
+        integer(INT_COUNT), intent(out), optional:: body_len      !out: packet body length (useful legnth)
+        integer(INT_COUNT), pointer:: len_p
+        type(C_PTR):: cptr
+
+        cptr=c_loc(packet(0)); call c_f_pointer(cptr,len_p)
+        plen=1+len_p !full length
+        if(present(body_len)) body_len=max(0,len_p) !body length
+        nullify(len_p)
+        return
+        end function packet_full_len
 !=================================================
         subroutine RankWinInit(this,rank,win,ierr)
 !Initializes a (rank,window) descriptor (both <rank> and <win> must be present) OR
@@ -1717,5 +1765,194 @@
         write(devo,'('//sfmt(1:fl)//'"  MPI request handle      : ",i18)') this%ReqHandle
         return
         end subroutine DataDescrPrint
+!==========================================
+        subroutine DataPackClean(this,ierr)
+!Cleans a data packet container.
+        implicit none
+        class(DataPack_t), intent(inout):: this          !inout: data packet container
+        integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
+        integer(INT_MPI):: errc
+
+        errc=0
+        if(associated(this%packets).and.this%alloc) deallocate(this%packets)
+        nullify(this%packets)
+        this%ffe=-1
+        this%alloc=.false.
+        this%num_packets=-1
+        this%marked=.false.
+        if(present(ierr)) ierr=errc
+        return
+        end subroutine DataPackClean
+!----------------------------------------------------------------------
+        subroutine DataPackReserve(this,buf_len,ierr,ext_buf,resize_it)
+!Reserves memory for the data packet container. Returns TRY_LATER in case
+!the memory allocation was unsuccessful.
+        implicit none
+        class(DataPack_t), intent(inout):: this                             !inout: data packet container
+        integer(INT_MPI), intent(in):: buf_len                              !in: buffer length (in integers of kind ELEM_PACK_SIZE)
+        integer(INT_MPI), intent(inout), optional:: ierr                    !out: error code (0:success)
+        integer(ELEM_PACK_SIZE), target, contiguous, optional:: ext_buf(1:) !in: external buffer
+        logical, intent(in), optional:: resize_it                           !in: if TRUE, a previously allocated/associated buffer will be released
+        integer(INT_MPI):: errc
+        integer:: erc
+        logical:: rsz
+
+        errc=0
+        if(buf_len.gt.0) then
+         if(present(resize_it)) then; rsz=resize_it; else; rsz=.false.; endif
+         if(this%num_packets.le.0) then
+          if(associated(this%packets)) then
+           if(rsz) then
+            call this%clean(errc); if(errc.ne.0) errc=5
+           else
+            errc=4
+           endif
+          endif
+          if(errc.eq.0) then
+           if(present(ext_buf)) then !associate to an exeternally provided buffer
+            if(size(ext_buf).ge.buf_len) then
+             this%packets(0:buf_len-1)=>ext_buf(1:buf_len)
+             this%ffe=1 !packets(0) is reserved to contain <num_packets>
+             this%alloc=.false.
+             this%num_packets=0
+             this%marked=.false.
+            else
+             errc=3 !exetrnal buffer is not large enough
+            endif
+           else !allocate the buffer
+            allocate(this%packets(0:buf_len-1),STAT=erc)
+            if(erc.eq.0) then
+             this%ffe=1 !packets(0) is reserved to contain <num_packets>
+             this%alloc=.true.
+             this%num_packets=0
+             this%marked=.false.
+            else
+             nullify(this%packets)
+             call this%clean()
+             errc=TRY_LATER
+            endif
+           endif
+           if(errc.eq.0) this%packets(0)=this%num_packets
+          endif
+         else
+          errc=2 !non-empty data container
+         endif
+        else
+         errc=1
+        endif
+        if(present(ierr)) ierr=errc
+        return
+        end subroutine DataPackReserve
+!------------------------------------------------------
+        subroutine DataPackAppend(this,packet,ierr,tag)
+!Appends a packet to the data container. One cannot append a tag-marked
+!packet to a non-empty unmarked packet container, and vice versa.
+!An unmarked data container has the following format:
+! [num_packets; packet1; packet2; ...]
+!A marked data packet container has the following format:
+! [num_packets; tag1, packet1; tag2, packet2; ...]
+!Each tag occupies a single integer element of kind ELEM_PACK_SIZE.
+!Packet numeration starts from 1.
+        implicit none
+        class(DataPack_t), intent(inout):: this                   !inout: data packet container (either marked or unmarked)
+        integer(ELEM_PACK_SIZE), intent(in), target:: packet(0:*) !in: data packet
+        integer(INT_MPI), intent(inout), optional:: ierr          !out: error code (0:success)
+        integer(ELEM_PACK_SIZE), intent(in), optional:: tag       !in: marking tag
+        integer(INT_MPI):: errc
+        integer(INT_COUNT):: i,l,n,body_len
+
+        errc=0
+        if(associated(this%packets)) then
+         if(present(tag)) then
+          if(this%num_packets.le.0) this%marked=.true.
+          if(this%marked) then; i=1; else; errc=1; endif
+         else
+          if(this%num_packets.le.0) this%marked=.false.
+          if(.not.this%marked) then; i=0; else; errc=2; endif
+         endif
+         if(errc.eq.0) then
+          n=packet_full_len(packet,body_len)
+          if(body_len.gt.0) then
+           if(this%ffe+i+n-1.le.ubound(this%packets,1)) then
+            if(i.gt.0) then; this%packets(this%ffe)=tag; this%ffe=this%ffe+1; endif
+            this%packets(this%ffe:this%ffe+n-1)=packet(0:n-1); this%ffe=this%ffe+n
+            this%num_packets=this%num_packets+1
+            this%packets(0)=this%num_packets
+           else
+            errc=3 !insufficient buffer space
+           endif
+          else
+           errc=4 !empty packet
+          endif
+         endif
+        else
+         errc=5 !no buffer been reserved
+        endif
+        if(present(ierr)) ierr=errc
+        return
+        end subroutine DataPackAppend
+!---------------------------------------------------------------
+        subroutine DataPackRemove(this,ierr,pack_num,packet,tag)
+!Removes a data packet from the data packet container.
+!If <pack_num> is absent, the last packet will be removed.
+!Packet numeration starts from 1.
+!If <packet> is present, it will contain the removed packet.
+!For marked (tagged) packet containers, the tag will be returned in <tag>.
+        implicit none
+        class(DataPack_t), intent(inout):: this                        !inout: data packet container
+        integer(INT_MPI), intent(inout), optional:: ierr               !out: error code (0:success)
+        integer(INT_MPI), intent(in), optional:: pack_num              !in: optional packet number
+        integer(ELEM_PACK_SIZE), intent(inout), optional:: packet(0:*) !out: data packet
+        integer(ELEM_PACK_SIZE), intent(out), optional:: tag           !out: data packet tag (if any)
+        integer(INT_MPI):: i,pn,errc
+        integer(INT_COUNT):: l,k,j
+
+        errc=0
+        if(this%num_packets.gt.0.and.associated(this%packets)) then
+         if(present(pack_num)) then; pn=pack_num; else; pn=this%num_packets; endif
+         if(pn.gt.0.and.pn.le.this%num_packets) then
+          l=1; if(this%marked) then; k=1; else; k=0; endif
+          do i=1,pn-1
+           j=packet_full_len(this%packets(l+k)); if(j.le.1) then; errc=1; exit; endif
+           j=l+k+j; if(j.gt.l) then; l=j; else; errc=2; exit; endif
+          enddo
+          if(errc.eq.0) then
+           j=packet_full_len(this%packets(l+k))
+           if(j.ge.1) then
+            if(k.gt.0.and.present(tag)) tag=this%packets(l)
+            if(present(packet)) packet(0:j-1)=this%packets(l+k:l+k+j-1)
+            this%ffe=l; this%num_packets=this%num_packets-1
+            this%packets(0)=this%num_packets
+           else
+            errc=3
+           endif
+          endif
+         else
+          errc=4
+         endif
+        else
+         errc=5 !empty data packet container
+        endif
+        if(present(ierr)) ierr=errc
+        return
+        end subroutine DataPackRemove
+!------------------------------------------------------------------
+        subroutine DataPackSend(this,req_handle,ierr,mpi_rank,sync)
+!Sends a data packet container to other MPI process(es).
+!If <mpi_rank> is not specified, a broadcast will be performed.
+!Otherwise, a non-blocking P2P communication will be initiated,
+!and optionally completed.
+        implicit none
+        class(DataPack_t), intent(in):: this              !in: data packet container
+        integer(INT_MPI), intent(inout):: req_handle      !out: request handle for non-blocking communications
+        integer(INT_MPI), intent(inout), optional:: ierr  !out: error code (0:success)
+        integer(INT_MPI), intent(in), optional:: mpi_rank !in: receiver MPI rank
+        logical, intent(in), optional:: sync              !in: if TRUE, the communication will be completed here
+        integer(INT_MPI):: errc
+
+        errc=0
+        if(present(ierr)) ierr=errc
+        return
+        end subroutine DataPackSend
 
        end module distributed
