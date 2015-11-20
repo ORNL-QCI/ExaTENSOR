@@ -200,7 +200,7 @@ mpi_fort.o: mpi_fort.c
 service_mpi.o: service_mpi.F90 mpi_fort.o stsubs.o extern_names.o
 	$(FC) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) service_mpi.F90
 
-distributed.o: distributed.F90 service_mpi.o tensor_algebra.o
+distributed.o: distributed.F90 service_mpi.o tensor_algebra.o stsubs.o timers.o
 	$(FC) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) distributed.F90
 
 subspaces.o: subspaces.F90 dil_kinds.o
