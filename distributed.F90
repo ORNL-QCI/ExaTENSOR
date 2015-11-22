@@ -1,6 +1,6 @@
 !Distributed data storage service (DDSS).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2015/11/20 (started 2015/03/18)
+!REVISION: 2015/11/22 (started 2015/03/18)
 !Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
 !Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
 !LICENSE: GPLv2
@@ -301,14 +301,28 @@
         end function data_type_size
 !========================================================================
         function get_mpi_int_datatype(int_kind,mpi_data_typ) result(ierr)
-!Given an integer kind, returns the corresponing MPI integer data type.
+!Given an integer kind, returns the corresponing MPI integer data type handle.
+!If not found, returns a negatie error code <ierr>.
         implicit none
         integer(INT_MPI):: ierr
         integer(INT_MPI), intent(in):: int_kind
         integer(INT_MPI), intent(out):: mpi_data_typ
 
-        ierr=0
-        
+        ierr=0; mpi_data_typ=0
+        select case(int_kind)
+        case(1)
+         mpi_data_typ=MPI_INTEGER1
+        case(2)
+         mpi_data_typ=MPI_INTEGER2
+        case(4)
+         mpi_data_typ=MPI_INTEGER4
+        case(8)
+         mpi_data_typ=MPI_INTEGER8
+        case(16)
+         mpi_data_typ=MPI_INTEGER16
+        case default
+         ierr=-1
+        end select
         return
         end function get_mpi_int_datatype
 !-------------------------------------------------------------
@@ -2052,7 +2066,7 @@
         integer(ELEM_PACK_SIZE), intent(inout), optional:: packet(0:*) !out: data packet
         integer(ELEM_PACK_SIZE), intent(out), optional:: tag           !out: data packet tag (if any)
         integer(INT_MPI):: i,pn,errc
-        integer(INT_COUNT):: l,k,j,n
+        integer(INT_COUNT):: l,k,j,m,n
 
         errc=0
         if(this%num_packets.gt.0.and.associated(this%packets)) then
@@ -2073,6 +2087,12 @@
            if(j.gt.1) then
             if(k.gt.0.and.present(tag)) tag=this%packets(l)
             if(present(packet)) packet(0:j-1)=this%packets(l+k:l+k+j-1)
+            if(pn.lt.this%num_packets) then
+             do m=l+k+j,this%ffe-1
+              this%packets(l)=this%packets(m)
+              l=l+1
+             enddo
+            endif
             this%ffe=l; this%num_packets=this%num_packets-1
             this%packets(0)=this%num_packets
            else
