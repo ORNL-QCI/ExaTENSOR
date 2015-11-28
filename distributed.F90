@@ -1,6 +1,6 @@
 !Distributed data storage service (DDSS).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2015/11/27 (started 2015/03/18)
+!REVISION: 2015/11/28 (started 2015/03/18)
 !Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
 !Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
 !LICENSE: GPLv2
@@ -119,7 +119,7 @@
          integer(8), private:: TransCount=0                         !total number of posted data transfer requests
          real(8), private:: TransSize=0d0                           !total size of all posted data transfers in bytes
          integer(INT_MPI), private:: NumEntries=0                   !number of active entries in the list
-         integer(INT_MPI), private:: FirstFree=1                    !first free (inactive) entry
+         integer(INT_MPI), private:: FirstFree=-1                   !first free (inactive) entry
          type(RankWin_t), private:: RankWins(1:MAX_ONESIDED_REQS)   !(rank,window) entries
          integer(INT_MPI), private:: NextEntry(1:MAX_ONESIDED_REQS) !next entry within a bin (linked list)
          integer(INT_MPI), private:: PrevEntry(1:MAX_ONESIDED_REQS) !previous entry within a bin (linked list)
@@ -440,6 +440,7 @@
         this%PrevEntry(1)=0; do i=2,MAX_ONESIDED_REQS; this%PrevEntry(i)=i-1; enddo
         do i=1,MAX_ONESIDED_REQS-1; this%NextEntry(i)=i+1; enddo; this%NextEntry(MAX_ONESIDED_REQS)=0
         do i=1,MAX_ONESIDED_REQS; call this%RankWins(i)%init(); enddo !init all entries to null
+        if(DEBUG) write(jo,'("#DEBUG(distributed::RankWinList.Clean)[",i7,"]: (rank,win)-list cleaned.")') impir
         if(present(ierr)) ierr=0
         return
         end subroutine RankWinListClean
@@ -480,6 +481,8 @@
           endif
          enddo
          if(RankWinListTest.le.0.and.apnd) then !append if not found
+          if(DEBUG) write(jo,'("#DEBUG(distribiuted::RankWinList.Test)[",i7,"]: Registering new (rank,window) entry: "'//&
+                    &',i9,1x,i13,3x,i6,1x,i6)') impir,rank,win,this%NumEntries,this%FirstFree
           if(this%NumEntries.lt.MAX_ONESIDED_REQS) then
            j=this%FirstFree; this%FirstFree=this%NextEntry(j)
            this%PrevEntry(this%FirstFree)=0
@@ -895,6 +898,7 @@
 
         call MPI_BARRIER(comm_mpi,errc) !test the validity of the MPI communicator
         if(errc.eq.0) then
+         if(RankWinRefs%FirstFree.lt.0) call RankWinRefs%clean() !init the (rank,win) list
          if(num_wins.gt.0) then
           allocate(this%DataWins(1:num_wins),STAT=errc)
           if(errc.eq.0) then
