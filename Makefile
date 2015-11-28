@@ -4,7 +4,7 @@ WRAP = NO
 #Compiler: [GNU|PGI|INTEL|CRAY]:
 TOOLKIT = GNU
 #Optimization: [DEV|OPT]:
-TYPE = OPT
+TYPE = DEV
 #MPI Library: [MPICH|OPENMPI]:
 MPILIB = MPICH
 #DONE.
@@ -14,8 +14,8 @@ FC_GNU = gfortran
 FC_PGI = pgf90
 FC_INTEL = ifort
 FC_CRAY = ftn
-FC_MPICH = /usr/bin/mpif90
-FC_OPENMPI = /usr/local/openmpi/bin/mpifort
+FC_MPICH = mpif90
+FC_OPENMPI = mpifort
 FC_NO = $(FC_$(MPILIB))
 FC_YES = ftn
 FC = $(FC_$(WRAP))
@@ -24,8 +24,8 @@ CC_GNU = gcc
 CC_PGI = pgcc
 CC_INTEL = icc
 CC_CRAY = cc
-CC_MPICH = /usr/bin/mpicc
-CC_OPENMPI = /usr/local/openmpi/bin/mpicc
+CC_MPICH = mpicc
+CC_OPENMPI = mpicc
 CC_NO = $(CC_$(MPILIB))
 CC_YES = cc
 CC = $(CC_$(WRAP))
@@ -34,8 +34,8 @@ CPP_GNU = g++
 CPP_PGI = pgc++
 CPP_INTEL = icc
 CPP_CRAY = CC
-CPP_MPICH = /usr/bin/mpic++
-CPP_OPENMPI = /usr/local/openmpi/bin/mpic++
+CPP_MPICH = mpic++
+CPP_OPENMPI = mpic++
 CPP_NO = $(CPP_$(MPILIB))
 CPP_YES = CC
 CPP = $(CPP_$(WRAP))
@@ -43,7 +43,6 @@ CPP = $(CPP_$(WRAP))
 CUDA_C = nvcc
 
 #COMPILER INCLUDES:
-#INC_GNU = -I/usr/local/gcc-5.2.0/include/c++/5.2.0
 INC_GNU = -I.
 INC_PGI = -I.
 INC_INTEL = -I.
@@ -53,8 +52,8 @@ INC_YES = -I.
 INC = $(INC_$(WRAP))
 
 #MPI INCLUDES:
-MPI_INC_MPICH = -I/usr/include/mpich
-MPI_INC_OPENMPI = -I/usr/local/openmpi/include -I/usr/local/openmpi/lib
+MPI_INC_MPICH = -I/usr/local/mpich3.2/include
+MPI_INC_OPENMPI = -I/usr/local/openmpi1.10.1/include
 MPI_INC_NO = $(MPI_INC_$(MPILIB))
 MPI_INC_YES = -I.
 MPI_INC = $(MPI_INC_$(WRAP))
@@ -63,7 +62,6 @@ MPI_INC = $(MPI_INC_$(WRAP))
 CUDA_INC = -I/usr/local/cuda/include
 
 #COMPILER LIBS:
-#LIB_GNU = -L/usr/local/gcc-5.2.0/lib64
 LIB_GNU = -L.
 LIB_PGI = -L.
 LIB_INTEL = -L.
@@ -73,8 +71,8 @@ LIB_YES = -L.
 LIB = $(LIB_$(WRAP))
 
 #MPI LIBS:
-MPI_LINK_MPICH = -L/usr/lib
-MPI_LINK_OPENMPI = -L/usr/local/openmpi/lib
+MPI_LINK_MPICH = -L/usr/local/mpich3.2./lib
+MPI_LINK_OPENMPI = -L/usr/local/openmpi1.10.1/lib
 MPI_LINK_NO = $(MPI_LINK_$(MPILIB))
 MPI_LINK_YES = -L.
 MPI_LINK = $(MPI_LINK_$(WRAP))
@@ -95,7 +93,7 @@ CUDA_FLAGS = $(CUDA_HOST) $(CUDA_FLAGS_$(TYPE))
 LA_LINK_MKL = -lmkl_core -lmkl_intel_thread -lmkl_intel_lp64 -lmkl_blas95_lp64 -lmkl_lapack95_lp64 -lrt
 LA_LINK_ACML = -lacml_mp -L/opt/acml/5.3.1/gfortran64_fma4_mp/lib
 LA_LINK_DEFAULT_YES = -L.
-LA_LINK_DEFAULT_NO = -L/usr/lib/atlas-base/atlas -lblas -llapack
+LA_LINK_DEFAULT_NO = -L. -lblas -llapack
 LA_LINK_DEFAULT = $(LA_LINK_DEFAULT_$(WRAP))
 LA_LINK_INTEL = $(LA_LINK_DEFAULT)
 LA_LINK_CRAY = $(LA_LINK_DEFAULT)

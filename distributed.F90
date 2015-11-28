@@ -1,6 +1,6 @@
 !Distributed data storage service (DDSS).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2015/11/22 (started 2015/03/18)
+!REVISION: 2015/11/27 (started 2015/03/18)
 !Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
 !Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
 !LICENSE: GPLv2
@@ -15,31 +15,48 @@
 !   and the corresponding data descriptor (DD) should be sent to the manager for registration.
 !   The registered data descriptor can be used by other MPI processes to remotely access the data.
 ! * A data descriptor is communicated between MPI processes as a plain integer packet,
-!   with integer kind = ELEM_PACK_SIZE. The first integer in the packet always contains
+!   with integer kind ELEM_PACK_SIZE. The first integer in the packet always contains
 !   the length of the rest of the packet (number of integer elements carrying the information).
-!   Besdies, multiple data descriptors can be communicated simultaneously in a single super-packet,
+!   Besides, multiple data descriptors can be communicated simultaneously in a single super-packet,
 !   which consists of the first integer specifying the number of simple packets in the super-packet
-!   followed by the simple packets. Note that data packed in packets, including the packet
-!   length (first element), cannot be read directly, but requires special access functions!
-!   The number of packets in a super-packet can be read directly though. Also, there is
-!   a tagged (marked) version of the super-packet (marked data packet container), which
-!   prefixes each simple packet contained in it with an additional element (tag).
+!   followed by the simple packets themselves. Note that data packed in packets, including the
+!   packet length (first element), cannot be read directly, but requires special access functions!
+!   The number of packets in a super-packet can be read directly though (the absolute value of the
+!   first integer of integer kind ELEM_PACK_SIZE in the data packet container). Additionally,
+!   a tagged (marked) super-packet can be created (marked data packet container), in which each
+!   simple packet is prefixed with an additional integer element (tag). Tagged data containers
+!   are distinguished from untagged ones by the sign of the first integer in the data container,
+!   the one whose absolute value shows the number of simple packets stored in the data container.
 ! * Upon a request from the manager, data (e.g., a tensor block) can be detached from
 !   the corresponding distributed memory space and subsequently destroyed (if needed).
 ! * Data communication is accomplished via data transfer requests (DTR) and
 !   data transfer completion requests (DTCR), using data descriptors. On each MPI process,
-!   all data transfer requests are enumerated sequentially in the order they were issued (starting at 1).
+!   all data transfer requests are enumerated sequentially in the order they were issued (starting from 1).
 ! * All procedures return error codes where special return statuses must be distinguished,
-!   for example TRY_LATER. Normally, error codes are smaller by absolute value integers.
-!   Contrary, special return statuses should be closer to the HUGE by their absolute values.
+!   for example TRY_LATER or NOT_CLEAN. Normally, error codes are smaller by absolute value integers.
+!   Contrary, special return statuses are made closer to the HUGE by their absolute values.
 ! * Currently, chunks of memory that can be attached to a distributed memory space must be
-!   multiple of 4 bytes. This is because the memory chunks are mapped to 32-bit words internally.
+!   multiples of 4 bytes. This is because the memory chunks are mapped to 32-bit words internally.
 !   Also, so far only the REAL(4), REAL(8), and COMPLEX(8) data types are explicitly supported,
 !   but this is more like an artificial restriction which can be removed relatively easy.
+!TYPICAL USAGE WORKFLOW:
+! 0. Initialize MPI (if needed) and DDSS.
+! 1. Create one or more distributed spaces <DistrSpace_t> over specific MPI communicators (collective).
+! 2. Each MPI process participating in a distributed space can attach a contiguous array of data to that space
+!    and obtain the associated global data descriptor <DataDescr_t>.
+! 3. Data descriptors can be packed into plain integer packets and collected in a data packet container <DataPack_t>.
+!    A data packet container can be communicated between MPI processes using communication handles <CommHandle_t>.
+! 4. Upon receival, data descriptors can be unpacked from the data packet container back into <DataDescr_t> objects.
+!    These data descriptors can be used for remotely accessing the corresponding data stored on other MPI processes
+!    in an asynchronous one-sided manner. It is the user responsibility to ensure proper synchronization between
+!    conflicting data accesses!
+! 5. Once no longer needed, the data can be detached from the distributed space by the owning MPI process.
+! 6. Once a distributed memory space is empty and no longer needed, it can be destoyed (it must be empty!).
+! 7. Finalize DDSS and MPI (if needed).
        module distributed
 !       use, intrinsic:: ISO_C_BINDING
         use service_mpi !includes ISO_C_BINDING & MPI
-        use:: tensor_algebra, only: TRY_LATER,NOT_CLEAN,NO_TYPE,R4,R8,C8,R4_,R8_,C8_ !some basic types and statuses (`These should be moved somewhere else)
+        use:: tensor_algebra, only: TRY_LATER,NOT_CLEAN,NO_TYPE,R4,R8,C8,R4_,R8_,C8_ !some basic types and statuses (`These should be moved in a separate module)
 !       Depends on stsubs.F90, timers.F90 in some procedures
         implicit none
         private
@@ -58,7 +75,7 @@
         logical, private:: VERBOSE=.true. !verbosity for errors
         logical, private:: DEBUG=.true.   !debugging mode
  !Packing/unpacking:
-        integer(INT_MPI), parameter, private:: ELEM_PACK_SIZE=max(8,max(C_SIZE_T,max(INT_ADDR,INT_COUNT))) !packing size for integers/logicals/reals/C_pointers/C_sizes
+        integer(INT_MPI), parameter, public:: ELEM_PACK_SIZE=max(8,max(C_SIZE_T,max(INT_ADDR,INT_COUNT))) !packing size for integers/logicals/reals/C_pointers/C_sizes
  !Distributed memory spaces:
         integer(INT_MPI), parameter, public:: DISTR_SPACE_NAME_LEN=128 !max length of a distributed space name (multiple of 8)
  !Data transfers:
@@ -165,6 +182,9 @@
          contains
           procedure, private:: clean=>DataDescrClean            !clean a data descriptor
           procedure, private:: init=>DataDescrInit              !set up a data descriptor (initialization)
+          procedure, public:: data_type=>DataDescrDataType      !returns the data type
+          procedure, public:: data_volume=>DataDescrDataVol     !returns the data volume associated with the data descriptor
+          procedure, public:: data_size=>DataDescrDataSize      !returns the data size in bytes
           procedure, public:: flush_data=>DataDescrFlushData    !complete an outstanding data transfer request
           procedure, public:: test_data=>DataDescrTestData      !test whether the data has been transferred to/from the origin (request)
           procedure, public:: wait_data=>DataDescrWaitData      !wait until the data has been transferred to/from the origin (request)
@@ -176,34 +196,37 @@
         end type DataDescr_t
         integer(INT_MPI), parameter, private:: DataDescr_PACK_LEN=6+WinMPI_PACK_LEN !packed length of DataDescr_t (in packing integers)
  !Communication handle:
-        type, private:: CommHandle_t
+        type, public:: CommHandle_t
          integer(INT_MPI), private:: ReqHandle=MPI_REQUEST_NULL !current MPI request handle
          integer(INT_MPI), private:: LastReq=MPI_REQUEST_NULL   !the most recently completed MPI request handle
          integer(INT_MPI), private:: MPIRank=-1                 !MPI process rank
          integer(INT_MPI), private:: CommMPI                    !MPI communicator
          integer(INT_MPI), private:: CommTag                    !MPI P2P communication tag
          integer(INT_MPI), private:: MPIStat(MPI_STATUS_SIZE)   !MPI status
-         real(8), private:: time_initiated                      !time stamp when the communication was initiated
-         real(8), private:: time_found_completed                !time stamp when the communication is confirmed completed
+         class(DataPack_t), pointer, private:: DataCont=>NULL() !pointer to the corresponding data container CommHandle refers to
+         real(8), private:: TimeInitiated                       !time stamp when the communication was initiated
+         real(8), private:: TimeFoundCompleted                  !time stamp when the communication is confirmed completed
          contains
-          procedure, private:: clean=>CommHandleClean  !clean the commmunication handle
-          procedure, private:: wait=>CommHandleWait    !wait upon completion of the communication associated with the handle
-          procedure, private:: test=>CommHandleTest    !test the completion of the communication associated with the handle
+          procedure, public:: clean=>CommHandleClean !clean the commmunication handle
+          procedure, public:: wait=>CommHandleWait   !wait upon completion of the communication associated with the handle
+          procedure, public:: test=>CommHandleTest   !test the completion of the communication associated with the handle
         end type CommHandle_t
  !Data packet container (collection of plain data packets):
         type, public:: DataPack_t
-         integer(ELEM_PACK_SIZE), pointer, contiguous, private:: packets(:)=>NULL() !packet container (0:max): packets(0) = num_packets
-         integer(INT_COUNT), private:: ffe=-1         !first free element in <packets(:)>
-         logical, private:: alloc=.false.             !TRUE: packets() array was allocated, FALSE: packets(:) array was associated to an external buffer
-         integer(INT_MPI), protected:: num_packets=-1 !number of packets in the packet container
-         logical, protected:: marked=.false.          !tells whether individual packets are marked (tagged) or not
+         integer(ELEM_PACK_SIZE), pointer, contiguous, private:: Packets(:)=>NULL() !packet container (0:max): packets(0) = NumPackets
+         integer(INT_COUNT), private:: ffe=-1      !first free element in <packets(0:)> = active length of the container
+         logical, private:: Alloc=.false.          !TRUE: packets() array was allocated, FALSE: packets(:) array was associated to an external buffer
+         integer(INT_MPI), private:: NumPackets=-1 !number of packets in the packet container
+         logical, private:: Marked=.false.         !tells whether individual packets are marked (tagged) or not
          contains
           procedure, public:: clean=>DataPackClean          !reset the data container to an empty state
           procedure, public:: reserve_mem=>DataPackReserve  !reserve memory for the packet container (either allocate or external)
+          procedure, public:: num_packets=>DataPackNumPacks !returns the total number of packets in the packet container
           procedure, public:: append=>DataPackAppend        !add a data packet to the packet container
           procedure, public:: remove=>DataPackRemove        !remove a data packet from the packet container
           procedure, public:: send=>DataPackSend            !send the packet container to other MPI process(es)
           procedure, public:: receive=>DataPackRecv         !receive a packet container from other MPI process
+          procedure, private:: register_arrived=>DataPackRegArrived !register an arrived data packet container
         end type DataPack_t
 !GLOBAL DATA:
  !MPI one-sided data transfer bookkeeping (master thread only):
@@ -213,7 +236,8 @@
         public data_type_size
  !Auxiliary:
         private get_mpi_int_datatype
-        private packet_full_len
+        public packet_full_len
+        public num_packs_in_container
  !RankWin_t:
         private RankWinInit
  !RankWinList_t:
@@ -242,6 +266,9 @@
  !DataDescr_t:
         private DataDescrClean
         private DataDescrInit
+        private DataDescrDataType
+        private DataDescrDataVol
+        private DataDescrDataSize
         private DataDescrFlushData
         private DataDescrTestData
         private DataDescrWaitData
@@ -257,10 +284,12 @@
  !DataPack_t:
         private DataPackClean
         private DataPackReserve
+        private DataPackNumPacks
         private DataPackAppend
         private DataPackRemove
         private DataPackSend
         private DataPackRecv
+        private DataPackRegArrived
 
         contains
 !METHODS:
@@ -336,11 +365,28 @@
         type(C_PTR):: cptr
 
         cptr=c_loc(packet(0)); call c_f_pointer(cptr,len_p)
-        plen=1+len_p !full length
+        plen=1+len_p !full length (header + body)
         if(present(body_len)) body_len=max(0,len_p) !body length
         nullify(len_p)
         return
         end function packet_full_len
+!-----------------------------------------------------------------------
+        function num_packs_in_container(pack_cont,tagged) result(npacks)
+!Returns the total number of packets in the data packet container.
+        implicit none
+        integer(INT_MPI):: npacks
+        integer(ELEM_PACK_SIZE), intent(in):: pack_cont(0:*) !in: plain data packet container (integer array)
+        logical, intent(out), optional:: tagged              !out: TRUE if the packet container is tagged, FALSE otherwise
+
+        if(pack_cont(0).lt.0) then
+         npacks=-pack_cont(0)
+         if(present(tagged)) tagged=.true.
+        else
+         npacks=pack_cont(0)
+         if(present(tagged)) tagged=.false.
+        endif
+        return
+        end function num_packs_in_container
 !=================================================
         subroutine RankWinInit(this,rank,win,ierr)
 !Initializes a (rank,window) descriptor (both <rank> and <win> must be present) OR
@@ -543,7 +589,7 @@
         return
         end subroutine WinMPIClean
 !-------------------------------------------------------
-        subroutine WinMPIPack(this,packet,pack_len,ierr)
+        subroutine WinMPIPack(this,packet,ierr,pack_len)
 !Packs a WinMPI_t object into a plain integer packet <packet>.
 !The first integer is always the useful length of the packet, that is,
 !the number of the following integer elements storing the information.
@@ -551,8 +597,8 @@
         implicit none
         class(WinMPI_t), intent(in):: this                           !in: WinMPI_t object
         integer(ELEM_PACK_SIZE), intent(inout), target:: packet(0:*) !out: packet (length + information)
-        integer(INT_COUNT), intent(out), optional:: pack_len         !out: full packet length (in packing integers)
         integer(INT_MPI), intent(inout), optional:: ierr             !out: error code (0:success)
+        integer(INT_COUNT), intent(out), optional:: pack_len         !out: full packet length (in packing integers)
         integer(INT_MPI):: errc
         integer(INT_COUNT):: pl
         type(C_PTR):: cptr
@@ -572,13 +618,13 @@
         return
         end subroutine WinMPIPack
 !---------------------------------------------------------
-        subroutine WinMPIUnpack(this,packet,pack_len,ierr)
+        subroutine WinMPIUnpack(this,packet,ierr,pack_len)
 !Unpacks a WinMPI_t object from a plain integer packet <packet>.
         implicit none
         class(WinMPI_t), intent(inout):: this                     !out: unpacked WinMPI_t object
         integer(ELEM_PACK_SIZE), intent(in), target:: packet(0:*) !in: plain integer packet (length + information)
-        integer(INT_COUNT), intent(out), optional:: pack_len      !out: packet length (in packing integers)
         integer(INT_MPI), intent(inout), optional:: ierr          !out: error code (0:success)
+        integer(INT_COUNT), intent(out), optional:: pack_len      !out: packet length (in packing integers)
         integer(INT_MPI):: errc
         integer(INT_COUNT):: pl
         type(C_PTR):: cptr
@@ -1119,6 +1165,61 @@
         if(present(ierr)) ierr=errc
         return
         end subroutine DataDescrInit
+!-------------------------------------------------------------
+        function DataDescrDataType(this,ierr) result(data_typ)
+!Returns the type of the data associated with the data descriptor.
+        implicit none
+        integer(INT_MPI):: data_typ                      !out: data type
+        class(DataDescr_t), intent(in):: this            !in: data descriptor
+        integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
+        integer(INT_MPI):: errc
+
+        errc=0
+        if(this%RankMPI.ge.0) then
+         data_typ=this%DataType
+        else
+         data_typ=NO_TYPE; errc=-1
+        endif
+        if(present(ierr)) ierr=errc
+        return
+        end function DataDescrDataType
+!------------------------------------------------------------
+        function DataDescrDataVol(this,ierr) result(data_vol)
+!Returns the volume of the data associated with the data descriptor.
+        implicit none
+        integer(INT_COUNT):: data_vol                    !out: data volume (number of typed elements)
+        class(DataDescr_t), intent(in):: this            !in: data descriptor
+        integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
+        integer(INT_MPI):: errc
+
+        errc=0
+        if(this%RankMPI.ge.0) then
+         data_vol=this%DataVol
+        else
+         data_vol=-1; errc=-1
+        endif
+        if(present(ierr)) ierr=errc
+        return
+        end function DataDescrDataVol
+!--------------------------------------------------------------
+        function DataDescrDataSize(this,ierr) result(data_size)
+!Returns the size (in bytes) of the data associated with the data descriptor.
+        implicit none
+        integer(INT_COUNT):: data_size                   !out: data size in bytes
+        class(DataDescr_t), intent(in):: this            !in: data descriptor
+        integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
+        integer(INT_MPI):: errc
+
+        errc=0
+        if(this%RankMPI.ge.0) then
+         data_size=this%DataVol*int(data_type_size(this%DataType,errc),INT_COUNT)
+         if(errc.ne.0) data_size=-1
+        else
+         data_size=-1; errc=-1
+        endif
+        if(present(ierr)) ierr=errc
+        return
+        end function DataDescrDataSize
 !-----------------------------------------------------
         subroutine DataDescrFlushData(this,ierr,local)
 !Completes an MPI one-sided communication specified by a given data descriptor.
@@ -1526,7 +1627,7 @@
          if(.not.c_associated(loc_ptr,C_NULL_PTR)) then
           if(this%RankMPI.ge.0) then
            if(this%StatMPI.eq.MPI_STAT_NONE.or.this%StatMPI.eq.MPI_STAT_COMPLETED.or.&
-              this%StatMPI.eq.MPI_STAT_COMPLETED_ORIG) then
+             &this%StatMPI.eq.MPI_STAT_COMPLETED_ORIG) then
             rwe=RankWinRefs%test(this%RankMPI,this%WinMPI%Window,errc,append=.true.) !get the (rank,window) entry
             if(errc.eq.0) then
              if(this%DataVol.gt.0) then
@@ -1706,7 +1807,7 @@
 
         end subroutine DataDescrAccData
 !----------------------------------------------------------
-        subroutine DataDescrPack(this,packet,pack_len,ierr)
+        subroutine DataDescrPack(this,packet,ierr,pack_len)
 !Packs a data descriptor into a plain packet of integers of kind ELEM_PACK_SIZE.
 !The first integer in the packet is always the useful length of the packet,
 !that is, the number of following integer elements carrying the information.
@@ -1715,8 +1816,8 @@
         implicit none
         class(DataDescr_t), intent(in):: this                        !in: data descriptor
         integer(ELEM_PACK_SIZE), intent(inout), target:: packet(0:*) !out: plain integer packet (length + descriptor data)
-        integer(INT_COUNT), intent(out), optional:: pack_len         !out: total packet length (in packing integers)
         integer(INT_MPI), intent(inout), optional:: ierr             !out: error code (0:success)
+        integer(INT_COUNT), intent(out), optional:: pack_len         !out: total packet length (in packing integers)
         integer(INT_MPI):: errc
         integer(INT_COUNT):: pl,wl
         integer(C_SIZE_T), pointer:: isize_p
@@ -1729,7 +1830,7 @@
         packet(0)=0; pl=0
         pl=pl+1; packet(pl)=0; cptr=c_loc(packet(pl)); call c_f_pointer(cptr,isize_p); isize_p=c_ptr_value(this%LocPtr)
         pl=pl+1; packet(pl)=0; cptr=c_loc(packet(pl)); call c_f_pointer(cptr,impi_p); impi_p=this%RankMPI
-        pl=pl+1; call this%WinMPI%pack(packet(pl),wl,errc)
+        pl=pl+1; call this%WinMPI%pack(packet(pl),errc,wl)
         if(errc.eq.0) then
          pl=pl+wl; packet(pl)=0; cptr=c_loc(packet(pl)); call c_f_pointer(cptr,iaddr_p); iaddr_p=this%Offset
          pl=pl+1; packet(pl)=0; cptr=c_loc(packet(pl)); call c_f_pointer(cptr,len_p); len_p=this%DataVol
@@ -1744,14 +1845,14 @@
         return
         end subroutine DataDescrPack
 !------------------------------------------------------------
-        subroutine DataDescrUnpack(this,packet,pack_len,ierr)
+        subroutine DataDescrUnpack(this,packet,ierr,pack_len)
 !Unpacks a data descriptor from a plain integer packet.
         use extern_names, only: c_ptr_set
         implicit none
         class(DataDescr_t), intent(inout):: this                  !out: unpacked data descriptor
         integer(ELEM_PACK_SIZE), intent(in), target:: packet(0:*) !in: plain integer packet containing the data descriptor information
-        integer(INT_COUNT), intent(out), optional:: pack_len      !out: total packet length (in packing integers)
         integer(INT_MPI), intent(inout), optional:: ierr          !out: error code (0:success)
+        integer(INT_COUNT), intent(out), optional:: pack_len      !out: total packet length (in packing integers)
         integer(INT_MPI):: errc
         integer(INT_COUNT):: pl,wl
         integer(C_SIZE_T), pointer:: isize_p
@@ -1767,7 +1868,7 @@
          call this%clean(); pl=0
          pl=pl+1; cptr=c_loc(packet(pl)); call c_f_pointer(cptr,isize_p); call c_ptr_set(isize_p,this%LocPtr)
          pl=pl+1; cptr=c_loc(packet(pl)); call c_f_pointer(cptr,impi_p); this%RankMPI=impi_p
-         pl=pl+1; call this%WinMPI%unpack(packet(pl),wl,errc)
+         pl=pl+1; call this%WinMPI%unpack(packet(pl),errc,wl)
          if(errc.eq.0) then
           pl=pl+wl; cptr=c_loc(packet(pl)); call c_f_pointer(cptr,iaddr_p); this%Offset=iaddr_p
           pl=pl+1; cptr=c_loc(packet(pl)); call c_f_pointer(cptr,len_p); this%DataVol=len_p
@@ -1812,9 +1913,10 @@
 !==================================================
         subroutine CommHandleClean(this,ierr,force)
 !Cleans a communication handle, unless it is still participating in a communication.
-!In the latter case, a status TRY_LATER is returned, unless <force>=TRUE.
+!In the latter case, a status TRY_LATER is returned, unless <force>=TRUE, in which
+!case the handle will be cleaned anyways.
         implicit none
-        class(CommHandle_t), intent(inout): this         !inout: communication handle
+        class(CommHandle_t), intent(inout):: this        !inout: communication handle
         integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
         logical, intent(in), optional:: force            !in: if TRUE, cleaning will be enforced
         integer(INT_MPI):: errc
@@ -1827,7 +1929,8 @@
          this%ReqHandle=MPI_REQUEST_NULL
          this%LastReq=MPI_REQUEST_NULL
          this%MPIRank=-1
-         this%time_initiated=0d0; this%time_found_completed=-1d0
+         this%DataCont=>NULL()
+         this%TimeInitiated=0d0; this%TimeFoundCompleted=-1d0
          errc=0
         else
          errc=TRY_LATER !communication handle is still participating a communication
@@ -1856,7 +1959,12 @@
          if(errc.eq.0) then
           this%LastReq=this%ReqHandle
           this%ReqHandle=MPI_REQUEST_NULL
-          this%time_found_completed=thread_wtime()
+          this%TimeFoundCompleted=thread_wtime()
+          if(associated(this%DataCont)) then
+           call this%DataCont%register_arrived(errc); if(errc.ne.0) errc=3 !corrupted data packet container
+          else
+           errc=2 !no associated data packet container found
+          endif
          else
           errc=1 !MPI_WAIT failed
          endif
@@ -1895,8 +2003,13 @@
           if(fin) then !completed
            this%LastReq=this%ReqHandle
            this%ReqHandle=MPI_REQUEST_NULL
-           this%time_found_completed=thread_wtime()
+           this%TimeFoundCompleted=thread_wtime()
            msg_stat=MPI_STAT_COMPLETED_ORIG
+           if(associated(this%DataCont)) then
+            call this%DataCont%register_arrived(errc); if(errc.ne.0) errc=3 !corrupted data packet container
+           else
+            errc=2 !no associated data packet container found
+           endif
           endif
          else
           errc=1 !MPI_TEST failed
@@ -1917,27 +2030,28 @@
         subroutine DataPackClean(this,ierr,keep_buffer)
 !Cleans a data packet container. If <keep_buffer>=TRUE,
 !the buffer memory will not be released, so it can be reused.
+!In any case, all packets will be lost.
         implicit none
         class(DataPack_t), intent(inout):: this          !inout: data packet container
         integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
-        logical, intent(in), optional:: keep_buffer      !in: TRUE keeps the memory buffer
+        logical, intent(in), optional:: keep_buffer      !in: TRUE keeps the memory buffer (defaults to FALSE)
         integer(INT_MPI):: errc
         logical:: free_buf
 
         errc=0
-        free_buf=.true.; if(present(keep_buffer)) free_buf=.not.(keep_buffer.and.associated(this%packets))
+        free_buf=.true.; if(present(keep_buffer)) free_buf=.not.(keep_buffer.and.associated(this%Packets))
         if(free_buf) then
-         if(associated(this%packets).and.this%alloc) deallocate(this%packets)
-         nullify(this%packets)
+         if(associated(this%Packets).and.this%Alloc) deallocate(this%Packets)
+         nullify(this%Packets)
          this%ffe=-1
-         this%alloc=.false.
-         this%num_packets=-1
-         this%marked=.false.
+         this%Alloc=.false.
+         this%NumPackets=-1 !buffer does not exist
+         this%Marked=.false.
         else !keep the memory buffer
-         this%ffe=1 !packets(0) is reserved to contain <num_packets>
-         this%num_packets=0
-         this%marked=.false.
-         this%packets(0)=this%num_packets
+         this%ffe=1 !packets(0) is reserved to contain <NumPackets>
+         this%NumPackets=0  !buffer exists but empty
+         this%Marked=.false.
+         this%Packets(0)=int(this%NumPackets,ELEM_PACK_SIZE)
         endif
         if(present(ierr)) ierr=errc
         return
@@ -1946,7 +2060,8 @@
         subroutine DataPackReserve(this,buf_len,ierr,ext_buf,resize_it)
 !Reserves memory for the data packet container. Returns TRY_LATER in case
 !the memory allocation was unsuccessful. If the memory had already been
-!previously reserved, one can resize it by supplying <resize_it>=TRUE.
+!previously reserved, one can resize it by supplying <resize_it>=TRUE,
+!otherwise the request will fail.
         implicit none
         class(DataPack_t), intent(inout):: this                             !inout: data packet container
         integer(INT_MPI), intent(in):: buf_len                              !in: buffer length (in integers of kind ELEM_PACK_SIZE)
@@ -1960,8 +2075,8 @@
         errc=0
         if(buf_len.gt.0) then
          if(present(resize_it)) then; rsz=resize_it; else; rsz=.false.; endif
-         if(this%num_packets.le.0) then
-          if(associated(this%packets)) then
+         if(this%NumPackets.le.0) then
+          if(associated(this%Packets)) then
            if(rsz) then
             call this%clean(errc); if(errc.ne.0) errc=5
            else
@@ -1971,28 +2086,28 @@
           if(errc.eq.0) then
            if(present(ext_buf)) then !associate to an exeternally provided buffer
             if(size(ext_buf).ge.buf_len) then
-             this%packets(0:buf_len-1)=>ext_buf(1:buf_len)
-             this%ffe=1 !packets(0) is reserved to contain <num_packets>
-             this%alloc=.false.
-             this%num_packets=0
-             this%marked=.false.
+             this%Packets(0:buf_len-1)=>ext_buf(1:buf_len)
+             this%ffe=1 !packets(0) is reserved to contain <NumPackets>
+             this%Alloc=.false.
+             this%NumPackets=0
+             this%Marked=.false.
             else
              errc=3 !exetrnal buffer is not large enough
             endif
            else !allocate the buffer
-            allocate(this%packets(0:buf_len-1),STAT=erc)
+            allocate(this%Packets(0:buf_len-1),STAT=erc)
             if(erc.eq.0) then
-             this%ffe=1 !packets(0) is reserved to contain <num_packets>
-             this%alloc=.true.
-             this%num_packets=0
-             this%marked=.false.
+             this%ffe=1 !packets(0) is reserved to contain <NumPackets>
+             this%Alloc=.true.
+             this%NumPackets=0
+             this%Marked=.false.
             else
-             nullify(this%packets)
+             nullify(this%Packets)
              call this%clean()
              errc=TRY_LATER
             endif
            endif
-           if(errc.eq.0) this%packets(0)=this%num_packets
+           if(errc.eq.0) this%Packets(0)=int(this%NumPackets,ELEM_PACK_SIZE)
           endif
          else
           errc=2 !non-empty data container, clean it first
@@ -2003,6 +2118,25 @@
         if(present(ierr)) ierr=errc
         return
         end subroutine DataPackReserve
+!----------------------------------------------------------
+        function DataPackNumPacks(this,ierr) result(npacks)
+!Returns the total number of data packets in the data packet container.
+!A negative return value means either an empty container or an error.
+        implicit none
+        integer(INT_MPI):: npacks                        !out: total number of packets in the packet container
+        class(DataPack_t), intent(in):: this             !in: data packet container
+        integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
+        integer(INT_MPI):: errc
+
+        errc=0; npacks=this%NumPackets
+        if(associated(this%Packets)) then
+         if(num_packs_in_container(this%Packets(0:)).ne.npacks) errc=1
+        else
+         errc=-1; npacks=-1
+        endif
+        if(present(ierr)) ierr=errc
+        return
+        end function DataPackNumPacks
 !------------------------------------------------------
         subroutine DataPackAppend(this,packet,ierr,tag)
 !Appends a packet to the data container. One cannot append a tag-marked
@@ -2023,22 +2157,22 @@
         integer(INT_COUNT):: i,l,n,body_len
 
         errc=0
-        if(associated(this%packets)) then
+        if(associated(this%Packets)) then
          if(present(tag)) then
-          if(this%num_packets.le.0) this%marked=.true.
-          if(this%marked) then; i=1; else; errc=1; endif
+          if(this%NumPackets.le.0) this%Marked=.true.
+          if(this%Marked) then; i=1; else; errc=1; endif
          else
-          if(this%num_packets.le.0) this%marked=.false.
-          if(.not.this%marked) then; i=0; else; errc=2; endif
+          if(this%NumPackets.le.0) this%Marked=.false.
+          if(.not.this%Marked) then; i=0; else; errc=2; endif
          endif
          if(errc.eq.0) then
           n=packet_full_len(packet,body_len)
           if(body_len.gt.0) then
-           if(this%ffe+i+n-1.le.ubound(this%packets,1)) then
-            if(i.gt.0) then; this%packets(this%ffe)=tag; this%ffe=this%ffe+1; endif
-            this%packets(this%ffe:this%ffe+n-1)=packet(0:n-1); this%ffe=this%ffe+n
-            this%num_packets=this%num_packets+1
-            this%packets(0)=this%num_packets
+           if(this%ffe+i+n-1.le.ubound(this%Packets,1)) then
+            if(i.gt.0) then; this%Packets(this%ffe)=tag; this%ffe=this%ffe+1; endif
+            this%Packets(this%ffe:this%ffe+n-1)=packet(0:n-1); this%ffe=this%ffe+n
+            this%NumPackets=this%NumPackets+1
+            this%Packets(0)=int(this%NumPackets*(1-i*2),ELEM_PACK_SIZE) !inverts the sign when data container is marked (tagged)
            else
             errc=3 !insufficient buffer space: Resize the buffer
            endif
@@ -2069,32 +2203,32 @@
         integer(INT_COUNT):: l,k,j,m,n
 
         errc=0
-        if(this%num_packets.gt.0.and.associated(this%packets)) then
-         if(present(pack_num)) then; pn=pack_num; else; pn=this%num_packets; endif
-         if(pn.gt.0.and.pn.le.this%num_packets) then
-          n=ubound(this%packets,1)
-          l=1; if(this%marked) then; k=1; else; k=0; endif
+        if(this%NumPackets.gt.0.and.associated(this%Packets)) then
+         if(present(pack_num)) then; pn=pack_num; else; pn=this%NumPackets; endif
+         if(pn.gt.0.and.pn.le.this%NumPackets) then
+          n=ubound(this%Packets,1)
+          l=1; if(this%Marked) then; k=1; else; k=0; endif
           do i=1,pn-1
            if(l+k.le.n) then
-            j=packet_full_len(this%packets(l+k)); if(j.le.1) then; errc=1; exit; endif !invalid packet length
+            j=packet_full_len(this%Packets(l+k:)); if(j.le.1) then; errc=1; exit; endif !invalid packet length
             j=l+k+j; if(j.gt.l) then; l=j; else; errc=2; exit; endif !corrupted container
            else
             errc=3; exit !search is out-of-bounds
            endif
           enddo
           if(errc.eq.0) then
-           j=packet_full_len(this%packets(l+k))
+           j=packet_full_len(this%Packets(l+k:))
            if(j.gt.1) then
-            if(k.gt.0.and.present(tag)) tag=this%packets(l)
-            if(present(packet)) packet(0:j-1)=this%packets(l+k:l+k+j-1)
-            if(pn.lt.this%num_packets) then
+            if(k.gt.0.and.present(tag)) tag=this%Packets(l)
+            if(present(packet)) packet(0:j-1)=this%Packets(l+k:l+k+j-1)
+            if(pn.lt.this%NumPackets) then
              do m=l+k+j,this%ffe-1
-              this%packets(l)=this%packets(m)
+              this%Packets(l)=this%Packets(m)
               l=l+1
              enddo
             endif
-            this%ffe=l; this%num_packets=this%num_packets-1
-            this%packets(0)=this%num_packets
+            this%ffe=l; this%NumPackets=this%NumPackets-1
+            this%Packets(0)=int(this%NumPackets*(1-k*2),ELEM_PACK_SIZE)
            else
             errc=4 !invalid packet length
            endif
@@ -2108,34 +2242,40 @@
         if(present(ierr)) ierr=errc
         return
         end subroutine DataPackRemove
-!--------------------------------------------------------------------------------
-        subroutine DataPackSend(this,comm_hl,ierr,mpi_rank,msg_tag,comm_mpi,sync)
+!---------------------------------------------------------------------------------
+        subroutine DataPackSend(this,comm_hl,ierr,recv_rank,msg_tag,comm_mpi,sync)
 !Sends a data packet container to other MPI process(es).
-!If <mpi_rank> is not specified, a broadcast will be performed.
+!If <recv_rank> is not specified, a broadcast will be performed.
 !Otherwise, a non-blocking P2P communication will be initiated,
-!and optionally completed (<sync>=TRUE). Note that in case of broadcast
-!all other participating processes must call the corresponding recieve method!
+!and optionally completed (<sync>=TRUE). If <msg_tag> is absent,
+!the DEFAULT_MPI_TAG will be used as the P2P message tag. Note that
+!in case of broadcast all other participating processes must call
+!the corresponding receive method!
         use timers, only: thread_wtime
         implicit none
-        class(DataPack_t), intent(in):: this              !in: non-empty data packet container
-        type(CommHandle_t), intent(inout):: comm_hl       !out: communication handle
-        integer(INT_MPI), intent(inout), optional:: ierr  !out: error code (0:success)
-        integer(INT_MPI), intent(in), optional:: mpi_rank !in: receiver MPI rank (defaults to broadcast)
-        integer(INT_MPI), intent(in), optional:: msg_tag  !in: P2P communication tag (defaults to DEFAULT_MPI_TAG)
-        integer(INT_MPI), intent(in), optional:: comm_mpi !MPI communicator (defaults to GLOBAL_MPI_COMM)
-        logical, intent(in), optional:: sync              !in: if TRUE, the communication will be origin-completed here
+        class(DataPack_t), intent(in), target:: this       !in: non-empty data packet container
+        type(CommHandle_t), intent(inout):: comm_hl        !out: communication handle
+        integer(INT_MPI), intent(inout), optional:: ierr   !out: error code (0:success)
+        integer(INT_MPI), intent(in), optional:: recv_rank !in: receiver MPI rank (defaults to broadcast)
+        integer(INT_MPI), intent(in), optional:: msg_tag   !in: P2P communication tag (defaults to DEFAULT_MPI_TAG)
+        integer(INT_MPI), intent(in), optional:: comm_mpi  !MPI communicator (defaults to GLOBAL_MPI_COMM)
+        logical, intent(in), optional:: sync               !in: if TRUE, the communication will be origin-completed here (default:FALSE)
         integer(INT_MPI):: comm,comm_sz,rx_rank,ctag,errc
 
         errc=0
         comm=GLOBAL_MPI_COMM; if(present(comm_mpi)) comm=comm_mpi
-        if(present(mpi_rank)) then
-         rx_rank=mpi_rank
+        if(present(recv_rank)) then
+         rx_rank=recv_rank
          if(comm.eq.GLOBAL_MPI_COMM) then
           comm_sz=impis
          else
           call MPI_COMM_SIZE(comm,comm_sz,errc)
          endif
-         if(rx_rank.lt.0.or.rx_rank.ge.comm_sz) errc=1 !invalid reciever MPI rank
+         if(errc.eq.0) then
+          if(rx_rank.lt.0.or.rx_rank.ge.comm_sz) errc=1 !invalid reciever MPI rank
+         else
+          errc=2 !failed to determine the size of the MPI communicator
+         endif
         else
          rx_rank=-1 !broadcast
         endif
@@ -2144,29 +2284,31 @@
          errc=comm_hl%test()
          if(errc.ne.MPI_STAT_PROGRESS_REQ) then
           errc=0
-          if(rx_rank.ge.0) then !initiate P2P
-           call send_message(this%packets,errc)
-          else !(initiate) broadcast
-           call broadcast_message(this%packets,errc)
+          comm_hl%TimeInitiated=thread_wtime()
+          if(rx_rank.ge.0) then !initiate a P2P send
+           call send_message(this%Packets,errc)
+          else !(initiate) a sending broadcast
+           call broadcast_message(this%Packets,errc)
+           rx_rank=MPI_ANY_SOURCE
           endif
           if(errc.eq.0) then
-           comm_hl%MPIRank=rx_rank
+           comm_hl%MPIRank=rx_rank !MPI_ANY_SOURCE will mean broadcast
            comm_hl%CommMPI=comm
            comm_hl%CommTag=ctag
-           comm_hl%time_initiated=thread_wtime()
+           comm_hl%DataCont=>this
            if(present(sync)) then
             if(sync) then
              call comm_hl%wait(errc,ignore_old=.true.)
-             if(errc.ne.0) errc=2 !synchronization failed: Communication is lost
+             if(errc.ne.0) errc=3 !synchronization failed: Communication is lost
             endif
            endif
           else
-           call MPI_REQUEST_FREE(this%ReqHandle,errc)
-           this%ReqHandle=MPI_REQUEST_NULL
-           errc=3 !MPI sending failed
+           call MPI_REQUEST_FREE(comm_hl%ReqHandle,errc)
+           comm_hl%ReqHandle=MPI_REQUEST_NULL
+           errc=4 !MPI sending failed
           endif
          else
-          errc=4 !communication handle is associated with a packet which is currently being communicated
+          errc=5 !communication handle is associated with a message which is currently being communicated
          endif
         endif
         if(present(ierr)) ierr=errc
@@ -2190,30 +2332,150 @@
           jerr=get_mpi_int_datatype(ELEM_PACK_SIZE,data_typ)
           if(jerr.eq.0) call MPI_IBCAST(msg,int(this%ffe),data_typ,impir,comm,comm_hl%ReqHandle,jerr)
           return
-         end subroutine send_message
+         end subroutine broadcast_message
 
         end subroutine DataPackSend
 !---------------------------------------------------------------------------------------
-        subroutine DataPackRecv(this,comm_hl,send_rank,ierr,msg_tag,comm_mpi,bcast,sync)
-!Recieves a data packet container from MPI process <send_rank>.
-!If <bcast> is TRUE, a broadcast from <send_rank> is assumed.
-!If <sync> is TRUE, the receive will be completed here.
+        subroutine DataPackRecv(this,comm_hl,ierr,send_rank,msg_tag,comm_mpi,bcast,sync)
+!Posts a receive for a data packet container. If <send_rank> is present,
+!the message is expected to come from that MPI process (either P2P or broadcast),
+!otherwise it can come from any MPI process (P2P only). If <msg_tag> is present,
+!the message is expected to have that MPI tag, otherwise DEFAULT_MPI_TAG will be used.
+!If <bcast> is TRUE, a broadcast from <send_rank> is assumed. If <sync> is TRUE,
+!the receive will be completed here, otherwise one will need to test
+!the communication handle <comm_hl> for completion later.
+        use timers, only: thread_wtime
         implicit none
-        class(DataPack_t), intent(inout):: this           !in: data packet container
-        type(CommHandle_t), intent(inout):: comm_hl       !out: communication handle
-        integer(INT_MPI), intent(in):: send_rank          !in: sender MPI rank
-        integer(INT_MPI), intent(inout), optional:: ierr  !out: error code (0:success)
-        integer(INT_MPI), intent(in), optional:: msg_tag  !in: P2P communication tag (defaults to DEFAULT_MPI_TAG)
-        integer(INT_MPI), intent(in), optional:: comm_mpi !MPI communicator (defaults to GLOBAL_MPI_COMM)
-        logical, intent(in), optional:: bcast             !in: if TRUE, a broadcast from <send_rank> is asssumed
-        logical, intent(in), optional:: sync              !in: if TRUE, the communication will be completed here
-        integer(INT_MPI):: comm,comm_sz,ctag,errc
+        class(DataPack_t), intent(inout), target:: this    !in: data packet container
+        type(CommHandle_t), intent(inout):: comm_hl        !out: communication handle
+        integer(INT_MPI), intent(inout), optional:: ierr   !out: error code (0:success)
+        integer(INT_MPI), intent(in), optional:: send_rank !in: sender MPI rank (either P2P or broadcast)
+        integer(INT_MPI), intent(in), optional:: msg_tag   !in: P2P communication tag (defaults to MPI_ANY_TAG)
+        integer(INT_MPI), intent(in), optional:: comm_mpi  !MPI communicator (defaults to GLOBAL_MPI_COMM)
+        logical, intent(in), optional:: bcast              !in: if TRUE, a broadcast from <send_rank> is asssumed (default:FALSE)
+        logical, intent(in), optional:: sync               !in: if TRUE, the communication will be completed here (default:FALSE)
+        integer(INT_MPI):: comm,comm_sz,sx_rank,ctag,buf_vol,errc
         logical:: bcs
 
         errc=0
-        
+        if(present(bcast)) then; bcs=bcast; else; bcs=.false.; endif
+        comm=GLOBAL_MPI_COMM; if(present(comm_mpi)) comm=comm_mpi
+        if(present(send_rank)) then
+         sx_rank=send_rank
+         if(comm.eq.GLOBAL_MPI_COMM) then
+          comm_sz=impis
+         else
+          call MPI_COMM_SIZE(comm,comm_sz,errc)
+         endif
+         if(errc.eq.0) then
+          if(sx_rank.lt.0.or.sx_rank.ge.comm_sz) errc=1 !invalid sender MPI rank
+         else
+          errc=2 !failed to determine the size of the MPI communicator
+         endif
+        else
+         if(.not.bcs) then
+          sx_rank=MPI_ANY_SOURCE
+         else
+          errc=3 !broadcast requires <send_rank>
+         endif
+        endif
+        if(errc.eq.0) then
+         ctag=DEFAULT_MPI_TAG; if(present(msg_tag)) ctag=msg_tag
+         errc=comm_hl%test()
+         if(errc.ne.MPI_STAT_PROGRESS_REQ) then
+          buf_vol=size(this%Packets)
+          if(buf_vol.gt.1) then
+           errc=0
+           comm_hl%TimeInitiated=thread_wtime()
+           if(bcs) then !(initiate) a receiving broadcast
+            call broadcast_message(this%Packets,errc)
+           else !initiate a P2P receive
+            call receive_message(this%Packets,errc)
+           endif
+           if(errc.eq.0) then
+            comm_hl%MPIRank=sx_rank !sender rank (P2P or BCAST) or MPI_ANY_SOURCE (P2P only)
+            comm_hl%CommMPI=comm
+            comm_hl%CommTag=ctag
+            comm_hl%DataCont=>this
+            if(present(sync)) then
+             if(sync) then
+              call comm_hl%wait(errc,ignore_old=.true.)
+              if(errc.ne.0) errc=4 !synchronization failed: Communication is lost
+             endif
+            endif
+           else
+            call MPI_REQUEST_FREE(comm_hl%ReqHandle,errc)
+            comm_hl%ReqHandle=MPI_REQUEST_NULL
+            errc=5 !MPI sending failed
+           endif
+          else
+           errc=6
+          endif
+         else
+          errc=7 !communication handle is associated with a message which is currently being communicated
+         endif
+        endif
         if(present(ierr)) ierr=errc
         return
+
+        contains
+
+         subroutine receive_message(msg,jerr)
+          integer(ELEM_PACK_SIZE), intent(inout):: msg(1:*)
+          integer(INT_MPI), intent(out):: jerr
+          integer(INT_MPI):: data_typ
+          jerr=get_mpi_int_datatype(ELEM_PACK_SIZE,data_typ)
+          if(jerr.eq.0) call MPI_IRECV(msg,buf_vol,data_typ,sx_rank,ctag,comm,comm_hl%ReqHandle,jerr)
+          return
+         end subroutine receive_message
+
+         subroutine broadcast_message(msg,jerr)
+          integer(ELEM_PACK_SIZE), intent(inout):: msg(1:*)
+          integer(INT_MPI), intent(out):: jerr
+          integer(INT_MPI):: data_typ
+          jerr=get_mpi_int_datatype(ELEM_PACK_SIZE,data_typ)
+          if(jerr.eq.0) call MPI_IBCAST(msg,buf_vol,data_typ,sx_rank,comm,comm_hl%ReqHandle,jerr)
+          return
+         end subroutine broadcast_message
+
         end subroutine DataPackRecv
+!-----------------------------------------------
+        subroutine DataPackRegArrived(this,ierr)
+!Registers an arrived data packet container.
+        implicit none
+        class(DataPack_t), intent(inout):: this          !inout: data packet container with arrived data
+        integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
+        integer(INT_MPI):: i,errc
+        integer(INT_COUNT):: k,l,m
+
+        errc=0
+        if(associated(this%Packets)) then
+         if(this%Packets(0).lt.0) then !tagged container
+          this%Marked=.true.; k=1
+         else !untagged container 
+          this%Marked=.false.; k=0
+         endif
+         this%NumPackets=abs(this%Packets(0))
+         this%ffe=1; m=ubound(this%Packets,1)
+         do i=1,this%NumPackets
+          if(this%ffe+k.le.m) then
+           l=packet_full_len(this%Packets(this%ffe+k:))
+           if(l.gt.0) then
+            this%ffe=this%ffe+k+l
+           else
+            errc=4; exit
+           endif
+          else
+           errc=3; exit
+          endif
+         enddo
+         if(this%ffe.gt.m+1) errc=2
+         if(errc.ne.0) this%ffe=1
+        else
+         errc=1
+        endif
+        if(present(ierr)) ierr=errc
+        return
+        end subroutine DataPackRegArrived
 
        end module distributed

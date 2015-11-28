@@ -2,7 +2,7 @@
     Parameters, derived types, and function prototypes
     used at the lower level of TAL-SH (device specific):
     CP-TAL, NV-TAL, XP-TAL, AM-TAL, etc.
-REVISION: 2015/11/13
+REVISION: 2015/11/28
 Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
 Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
 
@@ -345,13 +345,13 @@ extern "C"{
  int host_mem_register(void *host_ptr, size_t tsize); //generic
  int host_mem_unregister(void *host_ptr); //generic
 #ifndef NO_GPU
- int gpu_mem_alloc(void **dev_ptr, size_t tsize, int gpu_id); //NVidia GPU only
- int gpu_mem_free(void *dev_ptr, int gpu_id); //NVidia GPU only
+ int gpu_mem_alloc(void **dev_ptr, size_t tsize, int gpu_id = -1); //NVidia GPU only
+ int gpu_mem_free(void *dev_ptr, int gpu_id = -1); //NVidia GPU only
 #endif
 // Device id conversion:
  int valid_device_kind(int dev_kind);
  int encode_device_id(int dev_kind, int dev_num);
- int decode_device_id(int dev_id, int *dev_kind);
+ int decode_device_id(int dev_id, int * dev_kind = NULL);
 #ifndef NO_GPU
 // NVidia GPU operations (NV-TAL):
 //  NV-TAL debugging:
@@ -363,32 +363,34 @@ extern "C"{
 //  NV-TAL query/action API:
  int gpu_is_mine(int gpu_num);
  int gpu_busy_least();
- int gpu_in_focus(int gpu_num);
+ int gpu_in_focus(int gpu_num = -1);
  int gpu_activate(int gpu_num);
 //  NV-TAL internal control:
  int gpu_set_shmem_width(int width);
  void gpu_set_transpose_algorithm(int alg);
  void gpu_set_matmult_algorithm(int alg);
- int gpu_print_stats(int gpu_num);
+ int gpu_print_stats(int gpu_num = -1);
 #endif
 //  NV-TAL tensor block API:
  int tensShape_clean(talsh_tens_shape_t * tshape);
- int tensShape_construct(talsh_tens_shape_t * tshape, int pinned, int rank, const int * dims, const int * divs, const int * grps);
+ int tensShape_construct(talsh_tens_shape_t * tshape, int pinned,
+                         int rank, const int * dims = NULL, const int * divs = NULL, const int * grps = NULL);
  int tensShape_destruct(talsh_tens_shape_t * tshape);
  size_t tensShape_volume(const talsh_tens_shape_t * tshape);
  int tensBlck_create(tensBlck_t **ctens);
  int tensBlck_destroy(tensBlck_t *ctens);
- int tensBlck_construct(tensBlck_t *ctens, int pinned, int trank, const int *dims, const int *divs, const int *grps);
- int tensBlck_attach_body(tensBlck_t *ctens, int data_kind, int dev_id, void *body_ptr, int buf_entry);
- int tensBlck_destruct(tensBlck_t *ctens, int release_body, int which_body);
- int tensBlck_src_dev_id(const tensBlck_t * ctens, int * dev_kind);
- int tensBlck_present(const tensBlck_t * ctens, int dev_id, int dev_kind);
+ int tensBlck_construct(tensBlck_t *ctens, int pinned,
+                        int trank, const int *dims = NULL, const int *divs = NULL, const int *grps = NULL);
+ int tensBlck_attach_body(tensBlck_t *ctens, int data_kind, int dev_id, void *body_ptr = NULL, int buf_entry = -1);
+ int tensBlck_destruct(tensBlck_t *ctens, int release_body = YEP, int which_body = EVERYTHING);
+ int tensBlck_src_dev_id(const tensBlck_t * ctens, int * dev_kind = NULL);
+ int tensBlck_present(const tensBlck_t * ctens, int dev_id = DEV_NULL, int dev_kind = DEV_NULL);
  size_t tensBlck_volume(const tensBlck_t * ctens);
 #ifndef NO_GPU
 //  NV-TAL CUDA task API:
  int cuda_task_create(cudaTask_t **cuda_task);
  int cuda_task_clean(cudaTask_t *cuda_task);
- int cuda_task_construct(cudaTask_t *cuda_task, int gpu_id);
+ int cuda_task_construct(cudaTask_t *cuda_task, int gpu_id = -1);
  int cuda_task_destruct(cudaTask_t *cuda_task);
  int cuda_task_destroy(cudaTask_t *cuda_task);
  int cuda_task_gpu_id(const cudaTask_t *cuda_task);
