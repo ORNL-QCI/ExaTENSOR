@@ -1,6 +1,6 @@
 !Distributed data storage service (DDSS).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2015/11/28 (started 2015/03/18)
+!REVISION: 2015/11/30 (started 2015/03/18)
 !Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
 !Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
 !LICENSE: GPLv2
@@ -119,16 +119,17 @@
          integer(8), private:: TransCount=0                         !total number of posted data transfer requests
          real(8), private:: TransSize=0d0                           !total size of all posted data transfers in bytes
          integer(INT_MPI), private:: NumEntries=0                   !number of active entries in the list
-         integer(INT_MPI), private:: FirstFree=-1                   !first free (inactive) entry
+         integer(INT_MPI), private:: FirstFree=-1                   !first free (inactive) entry: Must be set to -1 when not initalized
          type(RankWin_t), private:: RankWins(1:MAX_ONESIDED_REQS)   !(rank,window) entries
          integer(INT_MPI), private:: NextEntry(1:MAX_ONESIDED_REQS) !next entry within a bin (linked list)
          integer(INT_MPI), private:: PrevEntry(1:MAX_ONESIDED_REQS) !previous entry within a bin (linked list)
          integer(INT_MPI), private:: HashBin(0:HASH_MOD-1)=0        !first element in each hash bin
          contains
-          procedure, private:: clean=>RankWinListClean !clean the (rank,window) list (initialization)
-          procedure, private:: test=>RankWinListTest   !test whether a given (rank,window) entry is in the list (with an optional append)
-          procedure, private:: delete=>RankWinListDel  !delete a given active (rank,window) entry
-          procedure, private:: new_transfer=>RankWinNewTrans !register a new data transfer (increment the global transfer ID)
+          procedure, private:: clean=>RankWinListClean           !clean the (rank,window) list (initialization)
+          procedure, private:: test=>RankWinListTest             !test whether a given (rank,window) entry is in the list (with an optional append)
+          procedure, private:: delete=>RankWinListDel            !delete a given active (rank,window) entry
+          procedure, private:: new_transfer=>RankWinListNewTrans !register a new data transfer (increment the global transfer ID)
+          procedure, private:: print_all=>RankWinListPrint       !print all active communications
         end type RankWinList_t
  !Basic MPI window info:
         type, private:: WinMPI_t
@@ -234,6 +235,7 @@
 !FUNCTION VISIBILITY:
  !Global:
         public data_type_size
+        public ddss_print_stat
  !Auxiliary:
         private get_mpi_int_datatype
         public packet_full_len
@@ -244,7 +246,8 @@
         private RankWinListClean
         private RankWinListTest
         private RankWinListDel
-        private RankWinNewTrans
+        private RankWinListNewTrans
+        private RankWinListPrint
  !WinMPI_t:
         private WinMPIClean
         private WinMPIPack
@@ -328,6 +331,20 @@
         if(present(ierr)) ierr=errc
         return
         end function data_type_size
+!-----------------------------------------------
+        subroutine ddss_print_stat(ierr,dev_out)
+!Prints the current DDSS communication statistics.
+        implicit none
+        integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
+        integer(INT_MPI), intent(in), optional:: dev_out !in: output device (defaults to <jo>)
+        integer(INT_MPI):: devo,errc
+
+        errc=0
+        if(present(dev_out)) then; devo=dev_out; else; devo=jo; endif
+        call RankWinRefs%print_all(errc,devo)
+        if(present(ierr)) ierr=errc
+        return
+        end subroutine ddss_print_stat
 !========================================================================
         function get_mpi_int_datatype(int_kind,mpi_data_typ) result(ierr)
 !Given an integer kind, returns the corresponing MPI integer data type handle.
@@ -545,8 +562,8 @@
         if(present(ierr)) ierr=errc
         return
         end subroutine RankWinListDel
-!---------------------------------------------------
-        subroutine RankWinNewTrans(this,dd,rwe,ierr)
+!-------------------------------------------------------
+        subroutine RankWinListNewTrans(this,dd,rwe,ierr)
 !This subroutine increments the global transfer ID and communicated data size
 !and assigns the current transfer ID to the given data descriptor.
         implicit none
@@ -577,7 +594,30 @@
         endif
         if(present(ierr)) ierr=errc
         return
-        end subroutine RankWinNewTrans
+        end subroutine RankWinListNewTrans
+!-----------------------------------------------------
+        subroutine RankWinListPrint(this,ierr,dev_out)
+!This subroutine prints the current state of the RankWinList_t,
+!that is, all active communications initiated at origin.
+        implicit none
+        class(RankWinList_t), intent(in):: this          !in: RankWinList object
+        integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
+        integer(INT_MPI), intent(in), optional:: dev_out !in: output device (defaults to <jo>)
+        integer(INT_MPI):: i,devo,errc
+
+        errc=0
+        if(present(dev_out)) then; devo=dev_out; else; devo=jo; endif
+        write(devo,'("#Printing the current Rank-Window list (active communications):")')
+        write(devo,'(1x,"Entry",4x,"Rank",6x,"Window",4x,"Lock",1x,"Refs",3x,"Last Synced")')
+        do i=1,this%NumEntries
+         write(devo,'(1x,i4,3x,i7,1x,i13,2x,i2,2x,i4,1x,i13)') i,this%RankWins(i)%Rank,this%RankWins(i)%Window,&
+         &this%RankWins(i)%LockType,this%RankWins(i)%RefCount,this%RankWins(i)%LastSync
+        enddo
+        write(devo,'(1x,"Total number of transactions registered  = ",i18)') this%TransCount
+        write(devo,'(1x,"Total size of communicated data (Mbytes) = ",D18.6)') this%TransSize/(1024d0*1024d0)
+        if(present(ierr)) ierr=errc
+        return
+        end subroutine RankWinListPrint
 !========================================
         subroutine WinMPIClean(this,ierr)
 !Cleans an MPI window info.
