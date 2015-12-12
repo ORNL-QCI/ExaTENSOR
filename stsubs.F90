@@ -1,6 +1,6 @@
 !Standard procedures often used by me.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISON: 2015/09/23
+!REVISON: 2015/12/08
 	module stsubs
         implicit none
         private
@@ -13,6 +13,7 @@
 	public:: CAP_ASCII   !makes all English letters capital
 	public:: CHARNUM     !converts a number given as a string to real*8 and integer numbers
 	public:: CREATE_LINE !creates a table line in .txt format with ; separator
+	public:: DUMB_WORK   !performs a dumb work on one or two arrays producing a third one
 	public:: ICHARNUM    !converts a number given as a string to the integer number
 	public:: IFCL        !calculates factorial
 	public:: IS_IT_NUMBER!checks if the character is an ASCII number
@@ -241,6 +242,44 @@
 	enddo
 	return
 	end subroutine create_line
+!-------------------------------------------
+        subroutine dumb_work(arr0,arr1,arr2)
+!Performs a dumb work on one or two arrays, producing a third one.
+        implicit none
+        real(8), intent(inout), contiguous:: arr0(0:)
+        real(8), intent(in), contiguous:: arr1(0:)
+        real(8), intent(in), contiguous, optional:: arr2(0:)
+        integer:: vol0,vol1,vol2,i,j,k
+        real(8):: val,ax
+
+        vol0=size(arr0); vol1=size(arr1)
+        if(vol0.le.0.or.vol1.le.0) return
+        if(present(arr2)) then
+         vol2=size(arr2)
+!$OMP PARALLEL DO DEFAULT(SHARED) SCHEDULE(GUIDED) PRIVATE(i,j,k,val,ax)
+         do i=0,vol0-1
+          ax=0d0
+          do j=mod(i,vol1),vol1-1
+           val=arr1(j)
+           do k=mod(i,vol2),vol2-1
+            ax=ax+arr2(k)*val
+           enddo
+          enddo
+          arr0(i)=ax
+         enddo
+!$OMP END PARALLEL DO
+        else
+!$OMP PARALLEL DO DEFAULT(SHARED) SCHEDULE(GUIDED) PRIVATE(i,j)
+         do i=0,vol0-1
+          arr0(i)=0d0
+          do j=mod(i,vol1),vol1-1
+           arr0(i)=arr0(i)+arr1(j)*arr1(j)
+          enddo
+         enddo
+!$OMP END PARALLEL DO
+        endif
+        return
+        end subroutine dumb_work
 !--------------------------------------
 	integer function icharnum(L,OS)
 !Converts an integer number OS(1:L) given as a string into INTEGER.

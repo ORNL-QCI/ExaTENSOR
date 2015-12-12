@@ -1,6 +1,6 @@
 !This module provides general services for MPI parallel programs.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2015/11/17
+!REVISION: 2015/12/11
        module service_mpi
         use, intrinsic:: ISO_C_BINDING
         !depends on <mpi_fort.c>
@@ -120,7 +120,7 @@
 !Starts the (MPI) process. By default the usual MPI_COMM_WORLD communicator
 !is initialized, unless an existing MPI communicator <ext_comm> is provided.
 !In the latter case, the MPI threading level must be at least MPI_THREAD_FUNNELED.
-        use stsubs
+        use stsubs, only: numchar,icharnum,printl
 #ifndef NO_OMP
 #ifdef USE_OMP_MOD
         use omp_lib, only: omp_get_max_threads
@@ -162,13 +162,13 @@
 #else
         if(present(ext_comm)) then
          GLOBAL_MPI_COMM=ext_comm; comm_imported=.true.
-         mpi_thread_provided=MPI_THREAD_FUNNELED !assumes at least this level of MPI threading
+         mpi_thread_provided=MPI_THREAD_MULTIPLE !assumes at least this level of MPI threading
          max_threads=omp_get_max_threads()
          if(DEBUG) write(jo,'("#DEBUG(service_mpi::dil_process_start): Imported a multi-threaded MPI communicator: ",i13,1x,i5)')&
                    &GLOBAL_MPI_COMM,max_threads
         else
          GLOBAL_MPI_COMM=MPI_COMM_WORLD; comm_imported=.false.
-         call MPI_INIT_THREAD(MPI_THREAD_FUNNELED,mpi_thread_provided,errc)
+         call MPI_INIT_THREAD(MPI_THREAD_MULTIPLE,mpi_thread_provided,errc)
          if(errc.ne.0) then
           ierr=3
           call quit(ierr,'#ERROR(ExaTensor::service_mpi::dil_process_start): MPI_INIT_THREAD error!',comm_imported)
@@ -179,8 +179,9 @@
           else
            max_threads=1
           endif
-          if(DEBUG) write(jo,'("#DEBUG(service_mpi::dil_process_start): Created a multi-threaded MPI communicator: ",i13,1x,i5)')&
-                    &GLOBAL_MPI_COMM,max_threads
+          if(DEBUG)&
+          &write(jo,'("#DEBUG(service_mpi::dil_process_start): Created a multi-threaded MPI communicator: ",i13,1x,i5,1x,i9)')&
+                    &GLOBAL_MPI_COMM,max_threads,mpi_thread_provided
          endif
         endif
 #endif
@@ -528,7 +529,7 @@
 ! - ifh - file handle when command='get';
 ! - ierr - error code (0 - success);
 !PARALLEL: NO.
-        use stsubs
+        use stsubs, only: printl
         implicit none
         character(*), intent(in):: command
         integer, intent(inout):: ifh
@@ -590,7 +591,7 @@
 !OUTPUT:
 ! - error information printed by EACH process.
 !PARALLEL: YES.
-        use stsubs
+        use stsubs, only: printl
         implicit none
         integer, intent(in):: error_code         !in: error code
         character(*), intent(in):: error_msg     !in: error message

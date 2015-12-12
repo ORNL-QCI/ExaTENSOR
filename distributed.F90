@@ -1,6 +1,6 @@
 !Distributed data storage service (DDSS).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2015/11/30 (started 2015/03/18)
+!REVISION: 2015/12/11 (started 2015/03/18)
 !Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
 !Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
 !LICENSE: GPLv2
@@ -10,7 +10,7 @@
 !   where each distributed memory space is defined within a specific MPI communicator.
 !   Internally, within each distributed memory space, each MPI process opens a number
 !   of dynamic MPI windows for data storage, which are opaque to the user.
-! * Whenever new persistent data (e.g., a tensor block) is allocated by the MPI process,
+! * Whenever new persistent data (e.g., a tensor block) is allocated by an MPI process,
 !   it can be attached to one of the dynamic MPI windows in a specific distributed memory space
 !   and the corresponding data descriptor (DD) should be sent to the manager for registration.
 !   The registered data descriptor can be used by other MPI processes to remotely access the data.
@@ -19,7 +19,7 @@
 !   the length of the rest of the packet (number of integer elements carrying the information).
 !   Besides, multiple data descriptors can be communicated simultaneously in a single super-packet,
 !   which consists of the first integer specifying the number of simple packets in the super-packet
-!   followed by the simple packets themselves. Note that data packed in packets, including the
+!   followed by the simple packets themselves. Note that the data packed in packets, including the
 !   packet length (first element), cannot be read directly, but requires special access functions!
 !   The number of packets in a super-packet can be read directly though (the absolute value of the
 !   first integer of integer kind ELEM_PACK_SIZE in the data packet container). Additionally,
@@ -40,24 +40,24 @@
 !   Also, so far only the REAL(4), REAL(8), and COMPLEX(8) data types are explicitly supported,
 !   but this is more like an artificial restriction which can be removed relatively easy.
 !TYPICAL USAGE WORKFLOW:
-! 0. Initialize MPI (if needed) and DDSS.
+! 0. Initialize the DDSS/MPI parallel service via the procedure provided in "service_mpi.F90".
 ! 1. Create one or more distributed spaces <DistrSpace_t> over specific MPI communicators (collective).
 ! 2. Each MPI process participating in a distributed space can attach a contiguous array of data to that space
 !    and obtain the associated global data descriptor <DataDescr_t>.
-! 3. Data descriptors can be packed into plain integer packets and collected in a data packet container <DataPack_t>.
+! 3. Data descriptors can be packed into plain integer packets and collected in a data packet container <PackCont_t>.
 !    A data packet container can be communicated between MPI processes using communication handles <CommHandle_t>.
 ! 4. Upon receival, data descriptors can be unpacked from the data packet container back into <DataDescr_t> objects.
 !    These data descriptors can be used for remotely accessing the corresponding data stored on other MPI processes
 !    in an asynchronous one-sided manner. It is the user responsibility to ensure proper synchronization between
-!    conflicting data accesses!
-! 5. Once no longer needed, the data can be detached from the distributed space by the owning MPI process.
+!    conflicting data accesses (avoid races)!
+! 5. Once no longer needed, the data can be detached from the distributed memory space by the owning MPI process.
 ! 6. Once a distributed memory space is empty and no longer needed, it can be destoyed (it must be empty!).
-! 7. Finalize DDSS and MPI (if needed).
+! 7. Finalize the DDSS/MPI parallel service via the procedure provided in "service_mpi.F90".
        module distributed
 !       use, intrinsic:: ISO_C_BINDING
         use service_mpi !includes ISO_C_BINDING & MPI
-        use:: tensor_algebra, only: TRY_LATER,NOT_CLEAN,NO_TYPE,R4,R8,C8,R4_,R8_,C8_ !some basic types and statuses (`These should be moved in a separate module)
-!       Depends on stsubs.F90, timers.F90 in some procedures
+        use:: tensor_algebra, only: TRY_LATER,NOT_CLEAN,NO_TYPE,R4,R8,C8,R4_,R8_,C8_ !some basic types and statuses (`These should be moved to a separate module)
+!       Depends on stsubs.F90, timers.F90, extern_names.F90 in some procedures
         implicit none
         private
 !EXPOSE some <tensor_algebra>:
@@ -138,12 +138,16 @@
          integer(INT_MPI), private:: CommMPI           !MPI communicator the MPI window is associated with
          logical, private:: Dynamic                    !.true. if the MPI window is dynamic, .false. otherwise
          contains
-          procedure, private:: clean=>WinMPIClean      !clean MPI window info
-          procedure, private:: pack=>WinMPIPAck        !packs the object into a plain integer packet
-          procedure, private:: unpack=>WinMPIUnpack    !unpacks the object from a plain integer packet
-          procedure, private:: print_it=>WinMPIPrint   !prints the object data
+          procedure, private:: clean=>WinMPIClean                 !clean MPI window info
+          procedure, private:: WinMPIPack                         !packs the object into SimplePack_t
+          procedure, private:: WinMPIPackInt                      !packs the object into a plain integer packet
+          generic, private:: pack=>WinMPIPack,WinMPIPackInt       !generic packing
+          procedure, private:: WinMPIUnpack                       !unpacks the object from SimplePack_t
+          procedure, private:: WinMPIUnpackInt                    !unpacks the object from a plain integer packet
+          generic, private:: unpack=>WinMPIUnpack,WinMPIUnpackInt !generic unpacking
+          procedure, private:: print_it=>WinMPIPrint              !prints the object data
         end type WinMPI_t
-        integer(INT_MPI), parameter, private:: WinMPI_PACK_LEN=4 !packed length of WinMPI_t (in packing integers)
+        integer(INT_MPI), parameter, private:: WinMPI_PACK_LEN=4  !packed length of WinMPI_t (in packing integers)
  !Local MPI data window descriptor:
         type, private:: DataWin_t
          integer(INT_ADDR), private:: WinSize=-1       !current size (in bytes) of the local part of the MPI window
@@ -181,21 +185,38 @@
          integer(INT_MPI), private:: StatMPI    !status of the data transfer request (see MPI_STAT_XXX parameters above)
          integer(INT_MPI), private:: ReqHandle  !MPI request handle (for MPI communications with a request handle)
          contains
-          procedure, private:: clean=>DataDescrClean            !clean a data descriptor
-          procedure, private:: init=>DataDescrInit              !set up a data descriptor (initialization)
-          procedure, public:: data_type=>DataDescrDataType      !returns the data type
-          procedure, public:: data_volume=>DataDescrDataVol     !returns the data volume associated with the data descriptor
-          procedure, public:: data_size=>DataDescrDataSize      !returns the data size in bytes
-          procedure, public:: flush_data=>DataDescrFlushData    !complete an outstanding data transfer request
-          procedure, public:: test_data=>DataDescrTestData      !test whether the data has been transferred to/from the origin (request)
-          procedure, public:: wait_data=>DataDescrWaitData      !wait until the data has been transferred to/from the origin (request)
-          procedure, public:: get_data=>DataDescrGetData        !load data referred to by a data descriptor into a local buffer
-          procedure, public:: acc_data=>DataDescrAccData        !accumulate data from a local buffer to the location specified by a data descriptor
-          procedure, public:: pack=>DataDescrPack               !pack the DataDescr_t object into a plain integer packet
-          procedure, public:: unpack=>DataDescrUnpack           !unpack the DataDescr_t object from a plain integer packet
-          procedure, public:: print_it=>DataDescrPrint          !prints the object data
+          procedure, private:: clean=>DataDescrClean         !clean a data descriptor
+          procedure, private:: init=>DataDescrInit           !set up a data descriptor (initialization)
+          procedure, public:: data_type=>DataDescrDataType   !returns the type of the data associated with the data descriptor
+          procedure, public:: data_volume=>DataDescrDataVol  !returns the data volume associated with the data descriptor
+          procedure, public:: data_size=>DataDescrDataSize   !returns the data size in bytes
+          procedure, public:: flush_data=>DataDescrFlushData !completes an outstanding data transfer request
+          procedure, public:: sync_data=>DataDescrSyncData   !synchronizes the private and public data views (in case the data was modified locally)
+          procedure, public:: test_data=>DataDescrTestData   !tests whether the data has been transferred to/from the origin (request based)
+          procedure, public:: wait_data=>DataDescrWaitData   !waits until the data has been transferred to/from the origin (request based)
+          procedure, public:: get_data=>DataDescrGetData     !loads data referred to by a data descriptor into a local buffer
+          procedure, public:: acc_data=>DataDescrAccData     !accumulates data from a local buffer to the location specified by a data descriptor
+          procedure, private:: DataDescrPack                 !packs the DataDescr_t object into SimplePack_t (simple packet)
+          procedure, private:: DataDescrPackInt              !packs the DataDescr_t object into a plain integer packet (simple packet)
+          generic, public:: pack=>DataDescrPack,DataDescrPackInt !generic packing
+          procedure, private:: DataDescrUnpack               !unpacks the DataDescr_t object from SimplePack_t (simple packet)
+          procedure, private:: DataDescrUnpackInt            !unpacks the DataDescr_t object from a plain integer packet (simple packet)
+          generic, public:: unpack=>DataDescrUnpack,DataDescrUnpackInt !generic unpacking
+          procedure, public:: print_it=>DataDescrPrint       !prints the data descriptor
         end type DataDescr_t
         integer(INT_MPI), parameter, private:: DataDescr_PACK_LEN=6+WinMPI_PACK_LEN !packed length of DataDescr_t (in packing integers)
+ !Simple packet (plain integer array):
+        type, public:: SimplePack_t
+         integer(ELEM_PACK_SIZE), pointer, contiguous, private:: Packet(:)=>NULL() !plain integer packet (1d array)
+         logical, private:: Alloc                                                  !if .TRUE., the packet was allocated (not associated)
+         contains
+          procedure, public:: reserve_mem=>SimplePackReserve  !reserves a memory buffer %Packet(:)
+          procedure, public:: buf_len=>SimplePackBufLen       !returns the volume of the memory buffer
+          procedure, public:: pack_len=>SimplePackFullLen     !returns the full length of the packet in the memory buffer
+          procedure, public:: body_len=>SimplePackBodyLen     !returns the body length of the packet in the memory buffer
+          procedure, public:: discard=>SimplePackDiscard      !discards an existing packet from the memory buffer
+          procedure, public:: destroy=>SimplePackDestroy      !destroys the memory buffer
+        end type SimplePack_t
  !Communication handle:
         type, public:: CommHandle_t
          integer(INT_MPI), private:: ReqHandle=MPI_REQUEST_NULL !current MPI request handle
@@ -204,7 +225,7 @@
          integer(INT_MPI), private:: CommMPI                    !MPI communicator
          integer(INT_MPI), private:: CommTag                    !MPI P2P communication tag
          integer(INT_MPI), private:: MPIStat(MPI_STATUS_SIZE)   !MPI status
-         class(DataPack_t), pointer, private:: DataCont=>NULL() !pointer to the corresponding data container CommHandle refers to
+         class(PackCont_t), pointer, private:: DataCont=>NULL() !pointer to the corresponding data container CommHandle refers to
          real(8), private:: TimeInitiated                       !time stamp when the communication was initiated
          real(8), private:: TimeFoundCompleted                  !time stamp when the communication is confirmed completed
          contains
@@ -213,22 +234,22 @@
           procedure, public:: test=>CommHandleTest   !test the completion of the communication associated with the handle
         end type CommHandle_t
  !Data packet container (collection of plain data packets):
-        type, public:: DataPack_t
+        type, public:: PackCont_t
          integer(ELEM_PACK_SIZE), pointer, contiguous, private:: Packets(:)=>NULL() !packet container (0:max): packets(0) = NumPackets
          integer(INT_COUNT), private:: ffe=-1      !first free element in <packets(0:)> = active length of the container
          logical, private:: Alloc=.false.          !TRUE: packets() array was allocated, FALSE: packets(:) array was associated to an external buffer
          integer(INT_MPI), private:: NumPackets=-1 !number of packets in the packet container
          logical, private:: Marked=.false.         !tells whether individual packets are marked (tagged) or not
          contains
-          procedure, public:: clean=>DataPackClean          !reset the data container to an empty state
-          procedure, public:: reserve_mem=>DataPackReserve  !reserve memory for the packet container (either allocate or external)
-          procedure, public:: num_packets=>DataPackNumPacks !returns the total number of packets in the packet container
-          procedure, public:: append=>DataPackAppend        !add a data packet to the packet container
-          procedure, public:: remove=>DataPackRemove        !remove a data packet from the packet container
-          procedure, public:: send=>DataPackSend            !send the packet container to other MPI process(es)
-          procedure, public:: receive=>DataPackRecv         !receive a packet container from other MPI process
-          procedure, private:: register_arrived=>DataPackRegArrived !register an arrived data packet container
-        end type DataPack_t
+          procedure, public:: clean=>PackContClean          !reset the data container to an empty state
+          procedure, public:: reserve_mem=>PackContReserve  !reserve memory for the packet container (either allocate or external)
+          procedure, public:: num_packets=>PackContNumPacks !returns the total number of packets in the packet container
+          procedure, public:: append=>PackContAppend        !add a data packet to the packet container
+          procedure, public:: remove=>PackContRemove        !remove a data packet from the packet container
+          procedure, public:: send=>PackContSend            !send the packet container to other MPI process(es)
+          procedure, public:: receive=>PackContRecv         !receive a packet container from other MPI process
+          procedure, private:: register_arrived=>PackContRegArrived !register an arrived data packet container
+        end type PackCont_t
 !GLOBAL DATA:
  !MPI one-sided data transfer bookkeeping (master thread only):
         type(RankWinList_t), target, private:: RankWinRefs !container for active one-sided communications initiated at the local origin
@@ -251,7 +272,9 @@
  !WinMPI_t:
         private WinMPIClean
         private WinMPIPack
+        private WinMPIPackInt
         private WinMPIUnpack
+        private WinMPIUnpackInt
         private WinMPIPrint
  !DataWin_t:
         private DataWinClean
@@ -273,26 +296,36 @@
         private DataDescrDataVol
         private DataDescrDataSize
         private DataDescrFlushData
+        private DataDescrSyncData
         private DataDescrTestData
         private DataDescrWaitData
         private DataDescrGetData
         private DataDescrAccData
         private DataDescrPack
+        private DataDescrPackInt
         private DataDescrUnpack
+        private DataDescrUnpackInt
         private DataDescrPrint
+ !SimplePack_t:
+        private SimplePackReserve
+        private SimplePackBufLen
+        private SimplePackFullLen
+        private SimplePackBodyLen
+        private SimplePackDiscard
+        private SimplePackDestroy
  !CommHandle_t:
         private CommHandleClean
         private CommHandleWait
         private CommHandleTest
- !DataPack_t:
-        private DataPackClean
-        private DataPackReserve
-        private DataPackNumPacks
-        private DataPackAppend
-        private DataPackRemove
-        private DataPackSend
-        private DataPackRecv
-        private DataPackRegArrived
+ !PackCont_t:
+        private PackContClean
+        private PackContReserve
+        private PackContNumPacks
+        private PackContAppend
+        private PackContRemove
+        private PackContSend
+        private PackContRecv
+        private PackContRegArrived
 
         contains
 !METHODS:
@@ -381,7 +414,7 @@
         integer(INT_COUNT), pointer:: len_p
         type(C_PTR):: cptr
 
-        cptr=c_loc(packet(0)); call c_f_pointer(cptr,len_p)
+        cptr=c_loc(packet(0)); call c_f_pointer(cptr,len_p) !body length has integer kind INT_COUNT
         plen=1+len_p !full length (header + body)
         if(present(body_len)) body_len=max(0,len_p) !body length
         nullify(len_p)
@@ -638,6 +671,42 @@
 !the number of the following integer elements storing the information.
 !It is the user responsibility to provide a large enough packet buffer.
         implicit none
+        class(WinMPI_t), intent(in):: this                   !in: WinMPI_t object
+        class(SimplePack_t), intent(inout), target:: packet  !out: packet (length + information)
+        integer(INT_MPI), intent(inout), optional:: ierr     !out: error code (0:success)
+        integer(INT_COUNT), intent(out), optional:: pack_len !out: full packet length (in packing integers)
+        integer(INT_MPI):: errc
+        integer(INT_COUNT):: pl
+        type(C_PTR):: cptr
+        integer(INT_COUNT), pointer:: len_p
+        integer(INT_MPI), pointer:: impi_p
+        logical, pointer:: log_p
+
+        errc=0
+        if(packet%buf_len().lt.1+WinMPI_PACK_LEN) call packet%reserve_mem(int(1+WinMPI_PACK_LEN,INT_MPI),errc)
+        if(errc.eq.0) then
+         packet%Packet(0)=0; pl=0
+         pl=pl+1; packet%Packet(pl)=0; cptr=c_loc(packet%Packet(pl)); call c_f_pointer(cptr,impi_p); impi_p=this%Window
+         pl=pl+1; packet%Packet(pl)=0; cptr=c_loc(packet%Packet(pl)); call c_f_pointer(cptr,impi_p); impi_p=this%DispUnit
+         pl=pl+1; packet%Packet(pl)=0; cptr=c_loc(packet%Packet(pl)); call c_f_pointer(cptr,impi_p); impi_p=this%CommMPI
+         pl=pl+1; packet%Packet(pl)=0; cptr=c_loc(packet%Packet(pl)); call c_f_pointer(cptr,log_p); log_p=this%Dynamic
+         cptr=c_loc(packet%Packet(0)); call c_f_pointer(cptr,len_p); len_p=pl !packet body length is stored in the header integer
+         len_p=>NULL(); log_p=>NULL(); impi_p=>NULL()
+         if(present(pack_len)) pack_len=1+pl !header integer + packet body
+        else
+         if(present(pack_len)) pack_len=0
+         errc=1
+        endif
+        if(present(ierr)) ierr=errc
+        return
+        end subroutine WinMPIPack
+!----------------------------------------------------------
+        subroutine WinMPIPackInt(this,packet,ierr,pack_len)
+!Packs a WinMPI_t object into a plain integer packet <packet>.
+!The first integer is always the useful length of the packet, that is,
+!the number of the following integer elements storing the information.
+!It is the user responsibility to provide a large enough packet buffer.
+        implicit none
         class(WinMPI_t), intent(in):: this                           !in: WinMPI_t object
         integer(ELEM_PACK_SIZE), intent(inout), target:: packet(0:*) !out: packet (length + information)
         integer(INT_MPI), intent(inout), optional:: ierr             !out: error code (0:success)
@@ -659,9 +728,46 @@
         if(present(pack_len)) pack_len=1+pl !header integer + packet body
         if(present(ierr)) ierr=errc
         return
-        end subroutine WinMPIPack
+        end subroutine WinMPIPackInt
 !---------------------------------------------------------
         subroutine WinMPIUnpack(this,packet,ierr,pack_len)
+!Unpacks a WinMPI_t object from a plain integer packet <packet>.
+        implicit none
+        class(WinMPI_t), intent(inout):: this                !out: unpacked WinMPI_t object
+        class(SimplePack_t), intent(in), target:: packet     !in: plain integer packet (length + information)
+        integer(INT_MPI), intent(inout), optional:: ierr     !out: error code (0:success)
+        integer(INT_COUNT), intent(out), optional:: pack_len !out: packet length (in packing integers)
+        integer(INT_MPI):: errc
+        integer(INT_COUNT):: pl
+        type(C_PTR):: cptr
+        integer(INT_COUNT), pointer:: len_p
+        integer(INT_MPI), pointer:: impi_p
+        logical, pointer:: log_p
+
+        errc=0
+        if(packet%body_len().ge.WinMPI_PACK_LEN) then
+!Check the length:
+         cptr=c_loc(packet%Packet(0)); call c_f_pointer(cptr,len_p)
+         if(present(pack_len)) pack_len=1+len_p
+         if(len_p.eq.WinMPI_PACK_LEN) then
+!Unpack:
+          call this%clean(); pl=0
+          pl=pl+1; cptr=c_loc(packet%Packet(pl)); call c_f_pointer(cptr,impi_p); this%Window=impi_p
+          pl=pl+1; cptr=c_loc(packet%Packet(pl)); call c_f_pointer(cptr,impi_p); this%DispUnit=impi_p
+          pl=pl+1; cptr=c_loc(packet%Packet(pl)); call c_f_pointer(cptr,impi_p); this%CommMPI=impi_p
+          pl=pl+1; cptr=c_loc(packet%Packet(pl)); call c_f_pointer(cptr,log_p); this%Dynamic=log_p
+          len_p=>NULL(); log_p=>NULL(); impi_p=>NULL()
+         else
+          errc=1
+         endif
+        else
+         errc=-1
+        endif
+        if(present(ierr)) ierr=errc
+        return
+        end subroutine WinMPIUnpack
+!------------------------------------------------------------
+        subroutine WinMPIUnpackInt(this,packet,ierr,pack_len)
 !Unpacks a WinMPI_t object from a plain integer packet <packet>.
         implicit none
         class(WinMPI_t), intent(inout):: this                     !out: unpacked WinMPI_t object
@@ -692,7 +798,7 @@
         endif
         if(present(ierr)) ierr=errc
         return
-        end subroutine WinMPIUnpack
+        end subroutine WinMPIUnpackInt
 !-------------------------------------------------
         subroutine WinMPIPrint(this,dev_out,space)
 !Prints the object data.
@@ -1337,6 +1443,24 @@
         if(present(ierr)) ierr=errc
         return
         end subroutine DataDescrFlushData
+!----------------------------------------------
+        subroutine DataDescrSyncData(this,ierr)
+!Synchronizes the private and public views of the data in case the data was modified locally.
+        implicit none
+        class(DataDescr_t), intent(in):: this            !inout: data descriptor
+        integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
+        integer(INT_MPI):: errc
+
+        errc=0
+        if(this%RankMPI.ge.0) then
+         call MPI_WIN_SYNC(this%WinMPI%Window,errc)
+         if(errc.ne.0) errc=1
+        else
+         errc=-1
+        endif
+        if(present(ierr)) ierr=errc
+        return
+        end subroutine DataDescrSyncData
 !----------------------------------------------------
         logical function DataDescrTestData(this,ierr)
 !Tests a completion (at the origin) of a data request with a request handle.
@@ -1858,8 +1982,56 @@
 !It is the user responsibility to provide a large enough packet buffer.
         use extern_names, only: c_ptr_value
         implicit none
+        class(DataDescr_t), intent(in):: this                !in: data descriptor
+        class(SimplePack_t), intent(inout), target:: packet  !out: plain integer packet (length + descriptor data)
+        integer(INT_MPI), intent(inout), optional:: ierr     !out: error code (0:success)
+        integer(INT_COUNT), intent(out), optional:: pack_len !out: total packet length (in packing integers)
+        integer(INT_MPI):: errc
+        integer(INT_COUNT):: pl,wl
+        integer(C_SIZE_T), pointer:: isize_p
+        integer(INT_ADDR), pointer:: iaddr_p
+        integer(INT_MPI), pointer:: impi_p
+        integer(INT_COUNT), pointer:: len_p
+        type(C_PTR):: cptr
+
+        errc=0; if(present(pack_len)) pack_len=0
+        if(packet%buf_len().lt.1+DataDescr_PACK_LEN) call packet%reserve_mem(int(1+DataDescr_PACK_LEN,INT_MPI),errc)
+        if(errc.eq.0) then
+         packet%Packet(0)=0; pl=0
+         pl=pl+1; packet%Packet(pl)=0; cptr=c_loc(packet%Packet(pl))
+         call c_f_pointer(cptr,isize_p); isize_p=c_ptr_value(this%LocPtr)
+         pl=pl+1; packet%Packet(pl)=0; cptr=c_loc(packet%Packet(pl))
+         call c_f_pointer(cptr,impi_p); impi_p=this%RankMPI
+         pl=pl+1; call this%WinMPI%pack(packet%Packet(pl:),errc,wl)
+         if(errc.eq.0) then
+          pl=pl+wl; packet%Packet(pl)=0; cptr=c_loc(packet%Packet(pl))
+          call c_f_pointer(cptr,iaddr_p); iaddr_p=this%Offset
+          pl=pl+1; packet%Packet(pl)=0; cptr=c_loc(packet%Packet(pl))
+          call c_f_pointer(cptr,len_p); len_p=this%DataVol
+          pl=pl+1; packet%Packet(pl)=0; cptr=c_loc(packet%Packet(pl))
+          call c_f_pointer(cptr,impi_p); impi_p=this%DataType
+          cptr=c_loc(packet%Packet(0)); call c_f_pointer(cptr,len_p); len_p=pl !packet body length
+          len_p=>NULL(); impi_p=>NULL(); iaddr_p=>NULL(); isize_p=>NULL()
+          if(present(pack_len)) pack_len=1+pl !header integer + packet body
+         else
+          errc=2
+         endif
+        else
+         errc=1
+        endif
+        if(present(ierr)) ierr=errc
+        return
+        end subroutine DataDescrPack
+!-------------------------------------------------------------
+        subroutine DataDescrPackInt(this,packet,ierr,pack_len)
+!Packs a data descriptor into a plain packet of integers of kind ELEM_PACK_SIZE.
+!The first integer in the packet is always the useful length of the packet,
+!that is, the number of following integer elements carrying the information.
+!It is the user responsibility to provide a large enough packet buffer.
+        use extern_names, only: c_ptr_value
+        implicit none
         class(DataDescr_t), intent(in):: this                        !in: data descriptor
-        integer(ELEM_PACK_SIZE), intent(inout), target:: packet(0:*) !out: plain integer packet (length + descriptor data)
+        integer(ELEM_PACK_SIZE), intent(inout), contiguous, target:: packet(0:) !out: plain integer packet (length + descriptor data)
         integer(INT_MPI), intent(inout), optional:: ierr             !out: error code (0:success)
         integer(INT_COUNT), intent(out), optional:: pack_len         !out: total packet length (in packing integers)
         integer(INT_MPI):: errc
@@ -1874,7 +2046,7 @@
         packet(0)=0; pl=0
         pl=pl+1; packet(pl)=0; cptr=c_loc(packet(pl)); call c_f_pointer(cptr,isize_p); isize_p=c_ptr_value(this%LocPtr)
         pl=pl+1; packet(pl)=0; cptr=c_loc(packet(pl)); call c_f_pointer(cptr,impi_p); impi_p=this%RankMPI
-        pl=pl+1; call this%WinMPI%pack(packet(pl),errc,wl)
+        pl=pl+1; call this%WinMPI%pack(packet(pl:),errc,wl)
         if(errc.eq.0) then
          pl=pl+wl; packet(pl)=0; cptr=c_loc(packet(pl)); call c_f_pointer(cptr,iaddr_p); iaddr_p=this%Offset
          pl=pl+1; packet(pl)=0; cptr=c_loc(packet(pl)); call c_f_pointer(cptr,len_p); len_p=this%DataVol
@@ -1887,14 +2059,57 @@
         endif
         if(present(ierr)) ierr=errc
         return
-        end subroutine DataDescrPack
+        end subroutine DataDescrPackInt
 !------------------------------------------------------------
         subroutine DataDescrUnpack(this,packet,ierr,pack_len)
 !Unpacks a data descriptor from a plain integer packet.
         use extern_names, only: c_ptr_set
         implicit none
+        class(DataDescr_t), intent(inout):: this             !out: unpacked data descriptor
+        class(SimplePack_t), intent(in), target:: packet     !in: plain integer packet containing the data descriptor information
+        integer(INT_MPI), intent(inout), optional:: ierr     !out: error code (0:success)
+        integer(INT_COUNT), intent(out), optional:: pack_len !out: total packet length (in packing integers)
+        integer(INT_MPI):: errc
+        integer(INT_COUNT):: pl,wl
+        integer(C_SIZE_T), pointer:: isize_p
+        integer(INT_ADDR), pointer:: iaddr_p
+        integer(INT_MPI), pointer:: impi_p
+        integer(INT_COUNT), pointer:: len_p
+        type(C_PTR):: cptr
+
+        errc=0
+        if(packet%body_len().ge.DataDescr_PACK_LEN) then
+         cptr=c_loc(packet%Packet(0)); call c_f_pointer(cptr,len_p)
+         if(present(pack_len)) pack_len=1+len_p
+         if(len_p.eq.DataDescr_PACK_LEN) then
+          call this%clean(); pl=0
+          pl=pl+1; cptr=c_loc(packet%Packet(pl)); call c_f_pointer(cptr,isize_p); call c_ptr_set(isize_p,this%LocPtr)
+          pl=pl+1; cptr=c_loc(packet%Packet(pl)); call c_f_pointer(cptr,impi_p); this%RankMPI=impi_p
+          pl=pl+1; call this%WinMPI%unpack(packet%Packet(pl:),errc,wl)
+          if(errc.eq.0) then
+           pl=pl+wl; cptr=c_loc(packet%Packet(pl)); call c_f_pointer(cptr,iaddr_p); this%Offset=iaddr_p
+           pl=pl+1; cptr=c_loc(packet%Packet(pl)); call c_f_pointer(cptr,len_p); this%DataVol=len_p
+           pl=pl+1; cptr=c_loc(packet%Packet(pl)); call c_f_pointer(cptr,impi_p); this%DataType=impi_p
+          else
+           errc=2
+          endif
+          len_p=>NULL(); impi_p=>NULL(); iaddr_p=>NULL(); isize_p=>NULL()
+         else
+          errc=1
+         endif
+        else
+         errc=-1
+        endif
+        if(present(ierr)) ierr=errc
+        return
+        end subroutine DataDescrUnpack
+!---------------------------------------------------------------
+        subroutine DataDescrUnpackInt(this,packet,ierr,pack_len)
+!Unpacks a data descriptor from a plain integer packet.
+        use extern_names, only: c_ptr_set
+        implicit none
         class(DataDescr_t), intent(inout):: this                  !out: unpacked data descriptor
-        integer(ELEM_PACK_SIZE), intent(in), target:: packet(0:*) !in: plain integer packet containing the data descriptor information
+        integer(ELEM_PACK_SIZE), intent(in), contiguous, target:: packet(0:) !in: plain integer packet containing the data descriptor information
         integer(INT_MPI), intent(inout), optional:: ierr          !out: error code (0:success)
         integer(INT_COUNT), intent(out), optional:: pack_len      !out: total packet length (in packing integers)
         integer(INT_MPI):: errc
@@ -1912,7 +2127,7 @@
          call this%clean(); pl=0
          pl=pl+1; cptr=c_loc(packet(pl)); call c_f_pointer(cptr,isize_p); call c_ptr_set(isize_p,this%LocPtr)
          pl=pl+1; cptr=c_loc(packet(pl)); call c_f_pointer(cptr,impi_p); this%RankMPI=impi_p
-         pl=pl+1; call this%WinMPI%unpack(packet(pl),errc,wl)
+         pl=pl+1; call this%WinMPI%unpack(packet(pl:),errc,wl)
          if(errc.eq.0) then
           pl=pl+wl; cptr=c_loc(packet(pl)); call c_f_pointer(cptr,iaddr_p); this%Offset=iaddr_p
           pl=pl+1; cptr=c_loc(packet(pl)); call c_f_pointer(cptr,len_p); this%DataVol=len_p
@@ -1926,11 +2141,12 @@
         endif
         if(present(ierr)) ierr=errc
         return
-        end subroutine DataDescrUnpack
+        end subroutine DataDescrUnpackInt
 !----------------------------------------------------
         subroutine DataDescrPrint(this,dev_out,space)
 !Prints object data.
         use stsubs, only: numchar
+!       use extern_names, only: print_c_ptr
         implicit none
         class(DataDescr_t), intent(in):: this            !in: object to print
         integer(INT_MPI), intent(in), optional:: dev_out !in: output device
@@ -1943,7 +2159,7 @@
         sp=0; if(present(space)) sp=space
         if(sp.gt.0) then; call numchar(int(sp),fl,sfmt); sfmt(fl+1:fl+2)='x,'; fl=fl+2; else; fl=0; endif
         write(devo,'('//sfmt(1:fl)//'"#Printing DataDescr_t object:")')
-        write(devo,'('//sfmt(1:fl)//'"  C pointer at data origin: ")',ADVANCE='NO'); write(devo,*) this%LocPtr
+!       write(devo,'('//sfmt(1:fl)//'"  C pointer at data origin: ")',ADVANCE='NO'); write(devo,*) this%LocPtr
         write(devo,'('//sfmt(1:fl)//'"  Origin MPI rank         : ",i18)') this%RankMPI
         write(devo,'('//sfmt(1:fl)//'"  Origin data displacement: ",i18)') this%Offset
         write(devo,'('//sfmt(1:fl)//'"  Data volume (elements)  : ",i18)') this%DataVol
@@ -1954,6 +2170,133 @@
         write(devo,'('//sfmt(1:fl)//'"  MPI request handle      : ",i18)') this%ReqHandle
         return
         end subroutine DataDescrPrint
+!==========================================================
+        subroutine SimplePackReserve(this,vol,ierr,ext_buf)
+!Reserves a new memory buffer. If the memory buffer had already been reserved,
+!it will be freed and the new one will be reserved.
+        implicit none
+        class(SimplePack_t), intent(inout):: this        !inout: simple packet
+        integer(INT_MPI), intent(in):: vol               !in: requested volume of the memory buffer (in integers of kind ELEM_PACK_SIZE)
+        integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
+        integer(ELEM_PACK_SIZE), contiguous, target, intent(in), optional:: ext_buf(:) !in: external buffer
+        integer(INT_MPI):: l,errc
+        integer:: i
+
+        errc=0
+        if(vol.gt.0) then
+         if(associated(this%Packet)) then
+          if(this%Alloc) deallocate(this%Packet)
+         endif
+         nullify(this%Packet); this%Alloc=.false.
+         if(present(ext_buf)) then
+          if(size(ext_buf).ge.vol) then
+           l=lbound(ext_buf,1)
+           this%Packet(0:vol-1)=>ext_buf(l:l+vol-1)
+           this%Alloc=.false.
+          else
+           errc=3
+          endif
+         else
+          allocate(this%Packet(0:vol-1),STAT=i)
+          if(i.eq.0) then; this%Alloc=.true.; else; nullify(this%Packet); errc=2; endif
+         endif
+         if(associated(this%Packet)) this%Packet(0)=0 !empty packet flag
+        else
+         errc=1
+        endif
+        if(present(ierr)) ierr=errc
+        return
+        end subroutine SimplePackReserve
+!--------------------------------------------------------
+        function SimplePackBufLen(this,ierr) result(blen)
+!Returns the memory buffer length in integers of kind ELEM_PACK_SIZE.
+        implicit none
+        integer(INT_MPI):: blen                          !out: memory buffer length
+        class(SimplePack_t), intent(in):: this           !in: simple packet
+        integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
+        integer(INT_MPI):: errc
+
+        errc=0; blen=0
+        if(associated(this%Packet)) blen=size(this%Packet)
+        if(present(ierr)) ierr=errc
+        return
+        end function SimplePackBufLen
+!---------------------------------------------------------
+        function SimplePackFullLen(this,ierr) result(blen)
+!Returns the full length of the packet in integers of kind ELEM_PACK_SIZE.
+!0 means no packet resides in the memory buffer.
+        implicit none
+        integer(INT_MPI):: blen                          !out: full packet length
+        class(SimplePack_t), intent(in):: this           !in: simple packet
+        integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
+        integer(INT_MPI):: errc
+        integer(INT_COUNT):: l
+
+        errc=0; blen=0
+        if(associated(this%Packet)) then
+         blen=packet_full_len(this%Packet,l)
+         if(l.le.0) blen=0
+        else
+         errc=-1
+        endif
+        if(present(ierr)) ierr=errc
+        return
+        end function SimplePackFullLen
+!--------------------------------------------------------
+        function SimplePackBodyLen(this,ierr) result(blen)
+!Returns the body length of an existing packet in integers of kind ELEM_PACK_SIZE.
+!0 means no packet resides in the memory buffer.
+        implicit none
+        integer(INT_MPI):: blen                          !out: body length of the packet
+        class(SimplePack_t), intent(in):: this           !in: simple packet
+        integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
+        integer(INT_MPI):: errc
+        integer(INT_COUNT):: l
+
+        errc=0; blen=0
+        if(associated(this%Packet)) then
+         blen=packet_full_len(this%Packet,l); blen=l
+        else
+         errc=-1
+        endif
+        if(present(ierr)) ierr=errc
+        return
+        end function SimplePackBodyLen
+!----------------------------------------------
+        subroutine SimplePackDiscard(this,ierr)
+!Discards the packet from the memory buffer.
+        implicit none
+        class(SimplePack_t), intent(inout):: this        !in: simple packet
+        integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
+        integer(INT_MPI):: errc
+
+        errc=0
+        if(associated(this%Packet)) then
+         this%Packet(0)=0
+        else
+         errc=-1
+        endif
+        if(present(ierr)) ierr=errc
+        return
+        end subroutine SimplePackDiscard
+!----------------------------------------------
+        subroutine SimplePackDestroy(this,ierr)
+!Destroys the memory buffer.
+        implicit none
+        class(SimplePack_t), intent(inout):: this        !in: simple packet
+        integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
+        integer(INT_MPI):: errc
+
+        errc=0
+        if(associated(this%Packet)) then
+         if(this%Alloc) deallocate(this%Packet)
+         nullify(this%Packet); this%Alloc=.false.
+        else
+         errc=-1
+        endif
+        if(present(ierr)) ierr=errc
+        return
+        end subroutine SimplePackDestroy
 !==================================================
         subroutine CommHandleClean(this,ierr,force)
 !Cleans a communication handle, unless it is still participating in a communication.
@@ -2071,12 +2414,12 @@
         return
         end function CommHandleTest
 !======================================================
-        subroutine DataPackClean(this,ierr,keep_buffer)
+        subroutine PackContClean(this,ierr,keep_buffer)
 !Cleans a data packet container. If <keep_buffer>=TRUE,
 !the buffer memory will not be released, so it can be reused.
 !In any case, all packets will be lost.
         implicit none
-        class(DataPack_t), intent(inout):: this          !inout: data packet container
+        class(PackCont_t), intent(inout):: this          !inout: data packet container
         integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
         logical, intent(in), optional:: keep_buffer      !in: TRUE keeps the memory buffer (defaults to FALSE)
         integer(INT_MPI):: errc
@@ -2099,15 +2442,15 @@
         endif
         if(present(ierr)) ierr=errc
         return
-        end subroutine DataPackClean
+        end subroutine PackContClean
 !----------------------------------------------------------------------
-        subroutine DataPackReserve(this,buf_len,ierr,ext_buf,resize_it)
+        subroutine PackContReserve(this,buf_len,ierr,ext_buf,resize_it)
 !Reserves memory for the data packet container. Returns TRY_LATER in case
 !the memory allocation was unsuccessful. If the memory had already been
 !previously reserved, one can resize it by supplying <resize_it>=TRUE,
 !otherwise the request will fail.
         implicit none
-        class(DataPack_t), intent(inout):: this                             !inout: data packet container
+        class(PackCont_t), intent(inout):: this                             !inout: data packet container
         integer(INT_MPI), intent(in):: buf_len                              !in: buffer length (in integers of kind ELEM_PACK_SIZE)
         integer(INT_MPI), intent(inout), optional:: ierr                    !out: error code (0:success)
         integer(ELEM_PACK_SIZE), target, contiguous, optional:: ext_buf(1:) !in: external buffer
@@ -2161,14 +2504,14 @@
         endif
         if(present(ierr)) ierr=errc
         return
-        end subroutine DataPackReserve
+        end subroutine PackContReserve
 !----------------------------------------------------------
-        function DataPackNumPacks(this,ierr) result(npacks)
+        function PackContNumPacks(this,ierr) result(npacks)
 !Returns the total number of data packets in the data packet container.
 !A negative return value means either an empty container or an error.
         implicit none
         integer(INT_MPI):: npacks                        !out: total number of packets in the packet container
-        class(DataPack_t), intent(in):: this             !in: data packet container
+        class(PackCont_t), intent(in):: this             !in: data packet container
         integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
         integer(INT_MPI):: errc
 
@@ -2180,9 +2523,9 @@
         endif
         if(present(ierr)) ierr=errc
         return
-        end function DataPackNumPacks
+        end function PackContNumPacks
 !------------------------------------------------------
-        subroutine DataPackAppend(this,packet,ierr,tag)
+        subroutine PackContAppend(this,packet,ierr,tag)
 !Appends a packet to the data container. One cannot append a tag-marked
 !packet to a non-empty unmarked packet container, and vice versa.
 !That is, either all stored packets are tagged or all are not tagged.
@@ -2193,7 +2536,7 @@
 !Each tag occupies a single integer element of kind ELEM_PACK_SIZE.
 !Packet numeration starts from 1.
         implicit none
-        class(DataPack_t), intent(inout):: this                   !inout: data packet container (either marked or unmarked)
+        class(PackCont_t), intent(inout):: this                   !inout: data packet container (either marked or unmarked)
         integer(ELEM_PACK_SIZE), intent(in), target:: packet(0:*) !in: data packet
         integer(INT_MPI), intent(inout), optional:: ierr          !out: error code (0:success)
         integer(ELEM_PACK_SIZE), intent(in), optional:: tag       !in: marking tag (to mark the packet)
@@ -2229,16 +2572,16 @@
         endif
         if(present(ierr)) ierr=errc
         return
-        end subroutine DataPackAppend
+        end subroutine PackContAppend
 !---------------------------------------------------------------
-        subroutine DataPackRemove(this,ierr,pack_num,packet,tag)
+        subroutine PackContRemove(this,ierr,pack_num,packet,tag)
 !Removes a data packet from the data packet container.
 !If <pack_num> is absent, the last packet will be removed.
 !Packet numeration starts from 1.
 !If <packet> is present, it will contain the removed packet.
 !For marked (tagged) packet containers, the tag can be returned via <tag>.
         implicit none
-        class(DataPack_t), intent(inout):: this                        !inout: data packet container
+        class(PackCont_t), intent(inout):: this                        !inout: data packet container
         integer(INT_MPI), intent(inout), optional:: ierr               !out: error code (0:success)
         integer(INT_MPI), intent(in), optional:: pack_num              !in: optional packet number
         integer(ELEM_PACK_SIZE), intent(inout), optional:: packet(0:*) !out: data packet
@@ -2285,9 +2628,9 @@
         endif
         if(present(ierr)) ierr=errc
         return
-        end subroutine DataPackRemove
+        end subroutine PackContRemove
 !---------------------------------------------------------------------------------
-        subroutine DataPackSend(this,comm_hl,ierr,recv_rank,msg_tag,comm_mpi,sync)
+        subroutine PackContSend(this,comm_hl,ierr,recv_rank,msg_tag,comm_mpi,sync)
 !Sends a data packet container to other MPI process(es).
 !If <recv_rank> is not specified, a broadcast will be performed.
 !Otherwise, a non-blocking P2P communication will be initiated,
@@ -2297,7 +2640,7 @@
 !the corresponding receive method!
         use timers, only: thread_wtime
         implicit none
-        class(DataPack_t), intent(in), target:: this       !in: non-empty data packet container
+        class(PackCont_t), intent(in), target:: this       !in: non-empty data packet container
         type(CommHandle_t), intent(inout):: comm_hl        !out: communication handle
         integer(INT_MPI), intent(inout), optional:: ierr   !out: error code (0:success)
         integer(INT_MPI), intent(in), optional:: recv_rank !in: receiver MPI rank (defaults to broadcast)
@@ -2378,9 +2721,9 @@
           return
          end subroutine broadcast_message
 
-        end subroutine DataPackSend
+        end subroutine PackContSend
 !---------------------------------------------------------------------------------------
-        subroutine DataPackRecv(this,comm_hl,ierr,send_rank,msg_tag,comm_mpi,bcast,sync)
+        subroutine PackContRecv(this,comm_hl,ierr,send_rank,msg_tag,comm_mpi,bcast,sync)
 !Posts a receive for a data packet container. If <send_rank> is present,
 !the message is expected to come from that MPI process (either P2P or broadcast),
 !otherwise it can come from any MPI process (P2P only). If <msg_tag> is present,
@@ -2390,7 +2733,7 @@
 !the communication handle <comm_hl> for completion later.
         use timers, only: thread_wtime
         implicit none
-        class(DataPack_t), intent(inout), target:: this    !in: data packet container
+        class(PackCont_t), intent(inout), target:: this    !in: data packet container
         type(CommHandle_t), intent(inout):: comm_hl        !out: communication handle
         integer(INT_MPI), intent(inout), optional:: ierr   !out: error code (0:success)
         integer(INT_MPI), intent(in), optional:: send_rank !in: sender MPI rank (either P2P or broadcast)
@@ -2482,12 +2825,12 @@
           return
          end subroutine broadcast_message
 
-        end subroutine DataPackRecv
+        end subroutine PackContRecv
 !-----------------------------------------------
-        subroutine DataPackRegArrived(this,ierr)
+        subroutine PackContRegArrived(this,ierr)
 !Registers an arrived data packet container.
         implicit none
-        class(DataPack_t), intent(inout):: this          !inout: data packet container with arrived data
+        class(PackCont_t), intent(inout):: this          !inout: data packet container with arrived data
         integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
         integer(INT_MPI):: i,errc
         integer(INT_COUNT):: k,l,m
@@ -2520,6 +2863,6 @@
         endif
         if(present(ierr)) ierr=errc
         return
-        end subroutine DataPackRegArrived
+        end subroutine PackContRegArrived
 
        end module distributed

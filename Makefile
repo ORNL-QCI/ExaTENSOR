@@ -1,43 +1,56 @@
 NAME = qforce.v13.01.x
-#Cross-compiling wrappers: [YES|NO]:
-WRAP = NO
+
+#Cross-compiling wrappers: [WRAP|NOWRAP]:
+WRAP = NOWRAP
 #Compiler: [GNU|PGI|INTEL|CRAY]:
 TOOLKIT = GNU
 #Optimization: [DEV|OPT]:
 TYPE = DEV
 #MPI Library: [MPICH|OPENMPI]:
 MPILIB = MPICH
+#BLAS: [ATLAS|MKL|ACML]:
+BLASLIB = ATLAS
+#Nvidia GPU via CUDA: [CUDA|NOCUDA]:
+GPU_CUDA = NOCUDA
+
+#Local paths (for unwrapped compilation):
+# MPI:
+PATH_MPICH=/usr/local/mpich3.2
+PATH_OPENMPI=/usr/local/openmpi1.10.1
+# CUDA:
+PATH_CUDA=/usr/local/cuda
 #DONE.
-#-----------------------------------------------
+
+#=================
 #Fortran compiler:
 FC_GNU = gfortran
 FC_PGI = pgf90
 FC_INTEL = ifort
 FC_CRAY = ftn
-FC_MPICH = mpif90
-FC_OPENMPI = mpifort
-FC_NO = $(FC_$(MPILIB))
-FC_YES = ftn
+FC_MPICH = $(PATH_MPICH)/bin/mpif90
+FC_OPENMPI = $(PATH_OPENMPI)/bin/mpifort
+FC_NOWRAP = $(FC_$(MPILIB))
+FC_WRAP = ftn
 FC = $(FC_$(WRAP))
 #C compiler:
 CC_GNU = gcc
 CC_PGI = pgcc
 CC_INTEL = icc
 CC_CRAY = cc
-CC_MPICH = mpicc
-CC_OPENMPI = mpicc
-CC_NO = $(CC_$(MPILIB))
-CC_YES = cc
+CC_MPICH = $(PATH_MPICH)/bin/mpicc
+CC_OPENMPI = $(PATH_OPENMPI)/bin/mpicc
+CC_NOWRAP = $(CC_$(MPILIB))
+CC_WRAP = cc
 CC = $(CC_$(WRAP))
 #C++ compiler:
 CPP_GNU = g++
 CPP_PGI = pgc++
 CPP_INTEL = icc
 CPP_CRAY = CC
-CPP_MPICH = mpic++
-CPP_OPENMPI = mpic++
-CPP_NO = $(CPP_$(MPILIB))
-CPP_YES = CC
+CPP_MPICH = $(PATH_MPICH)/bin/mpic++
+CPP_OPENMPI = $(PATH_OPENMPI)/bin/mpic++
+CPP_NOWRAP = $(CPP_$(MPILIB))
+CPP_WRAP = CC
 CPP = $(CPP_$(WRAP))
 #CUDA compiler:
 CUDA_C = nvcc
@@ -47,80 +60,99 @@ INC_GNU = -I.
 INC_PGI = -I.
 INC_INTEL = -I.
 INC_CRAY = -I.
-INC_NO = $(INC_$(TOOLKIT))
-INC_YES = -I.
+INC_NOWRAP = $(INC_$(TOOLKIT))
+INC_WRAP = -I.
 INC = $(INC_$(WRAP))
-
-#MPI INCLUDES:
-MPI_INC_MPICH = -I/usr/local/mpich3.2/include
-MPI_INC_OPENMPI = -I/usr/local/openmpi1.10.1/include
-MPI_INC_NO = $(MPI_INC_$(MPILIB))
-MPI_INC_YES = -I.
-MPI_INC = $(MPI_INC_$(WRAP))
-
-#CUDA INCLUDES:
-CUDA_INC = -I/usr/local/cuda/include
 
 #COMPILER LIBS:
 LIB_GNU = -L.
 LIB_PGI = -L.
 LIB_INTEL = -L.
 LIB_CRAY = -L.
-LIB_NO = $(LIB_$(TOOLKIT))
-LIB_YES = -L.
+LIB_NOWRAP = $(LIB_$(TOOLKIT))
+LIB_WRAP = -L.
 LIB = $(LIB_$(WRAP))
 
+#MPI INCLUDES:
+MPI_INC_MPICH = -I$(PATH_MPICH)/include
+MPI_INC_OPENMPI = -I$(PATH_OPENMPI)/include
+MPI_INC_NOWRAP = $(MPI_INC_$(MPILIB))
+MPI_INC_WRAP = -I.
+MPI_INC = $(MPI_INC_$(WRAP))
+
 #MPI LIBS:
-MPI_LINK_MPICH = -L/usr/local/mpich3.2./lib
-MPI_LINK_OPENMPI = -L/usr/local/openmpi1.10.1/lib
-MPI_LINK_NO = $(MPI_LINK_$(MPILIB))
-MPI_LINK_YES = -L.
+MPI_LINK_MPICH = -L$(PATH_MPICH)/lib
+MPI_LINK_OPENMPI = -L$(PATH_OPENMPI)/lib
+MPI_LINK_NOWRAP = $(MPI_LINK_$(MPILIB))
+MPI_LINK_WRAP = -L.
 MPI_LINK = $(MPI_LINK_$(WRAP))
 
-#CUDA LIBS:
-CUDA_LINK_NO = -L/usr/local/cuda/lib64 -lcudart -lcublas
-CUDA_LINK_YES = -L. -lcudart -lcublas
-CUDA_LINK = $(CUDA_LINK_$(WRAP))
-
-#CUDA FLAGS:
-CUDA_HOST_NO = --compiler-bindir /usr/bin
-CUDA_HOST_YES = -I.
-CUDA_HOST = $(CUDA_HOST_$(WRAP))
-CUDA_FLAGS_DEV = --compile -arch=sm_35 -D CUDA_ARCH=350 -g -G -D DEBUG_GPU
-CUDA_FLAGS_OPT = --compile -arch=sm_35 -D CUDA_ARCH=350 -O3
-CUDA_FLAGS = $(CUDA_HOST) $(CUDA_FLAGS_$(TYPE))
 #LINEAR ALGEBRA FLAGS:
-LA_LINK_MKL = -lmkl_core -lmkl_intel_thread -lmkl_intel_lp64 -lmkl_blas95_lp64 -lmkl_lapack95_lp64 -lrt
-LA_LINK_ACML = -lacml_mp -L/opt/acml/5.3.1/gfortran64_fma4_mp/lib
-LA_LINK_DEFAULT_YES = -L.
-LA_LINK_DEFAULT_NO = -L. -lblas -llapack
+LA_LINK_MKL = -L. -lmkl_core -lmkl_intel_thread -lmkl_intel_lp64 -lmkl_blas95_lp64 -lmkl_lapack95_lp64 -lrt
+LA_LINK_ACML = -L. -lacml_mp
+LA_LINK_DEFAULT_WRAP = -L.
+LA_LINK_DEFAULT_NOWRAP = -L. -lblas -llapack
 LA_LINK_DEFAULT = $(LA_LINK_DEFAULT_$(WRAP))
 LA_LINK_INTEL = $(LA_LINK_DEFAULT)
 LA_LINK_CRAY = $(LA_LINK_DEFAULT)
 LA_LINK_GNU = $(LA_LINK_DEFAULT)
 LA_LINK_PGI = $(LA_LINK_DEFAULT)
 LA_LINK = $(LA_LINK_$(TOOLKIT))
+
+#CUDA INCLUDES:
+CUDA_INC_CUDA = -I$(PATH_CUDA)/include
+CUDA_INC_NOCUDA = -I.
+CUDA_INC_NOWRAP = $(CUDA_INC_$(GPU_CUDA))
+CUDA_INC_WRAP = -I.
+CUDA_INC = $(CUDA_INC_$(WRAP))
+
+#CUDA LIBS:
+CUDA_LINK_NOWRAP = -L$(PATH_CUDA)/lib64 -lcudart -lcublas
+CUDA_LINK_WRAP = -lcudart -lcublas
+CUDA_LINK_CUDA = $(CUDA_LINK_$(WRAP))
+CUDA_LINK_NOCUDA = -L.
+CUDA_LINK = $(CUDA_LINK_$(GPU_CUDA))
+
+#CUDA FLAGS:
+CUDA_HOST_NOWRAP = --compiler-bindir /usr/bin
+CUDA_HOST_WRAP = -I.
+CUDA_HOST = $(CUDA_HOST_$(WRAP))
+CUDA_FLAGS_DEV = --compile -arch=sm_35 -g -G -D CUDA_ARCH=350 -D DEBUG_GPU
+CUDA_FLAGS_OPT = --compile -arch=sm_35 -O3 -D CUDA_ARCH=350
+CUDA_FLAGS_CUDA = $(CUDA_HOST) $(CUDA_FLAGS_$(TYPE))
+CUDA_FLAGS_NOCUDA = -I.
+CUDA_FLAGS = $(CUDA_FLAGS_$(GPU_CUDA))
+
+#Accelerator support:
+NO_ACCEL_CUDA = -D NO_AMD -D NO_PHI -D CUDA_ARCH=350
+NO_ACCEL_NOCUDA = -D NO_AMD -D NO_PHI -D NO_GPU
+NO_ACCEL = $(NO_ACCEL_$(GPU_CUDA))
+
 #C FLAGS:
-CFLAGS_DEV = -c -D CUDA_ARCH=350 -g
-CFLAGS_OPT = -c -D CUDA_ARCH=350 -O3
-CFLAGS = $(CFLAGS_$(TYPE)) -D NO_PHI -D NO_AMD
+CFLAGS_DEV = -c -g $(NO_ACCEL)
+CFLAGS_OPT = -c -O3 $(NO_ACCEL)
+CFLAGS = $(CFLAGS_$(TYPE))
+
 #FORTRAN FLAGS:
-FFLAGS_INTEL_DEV = -c -g -fpp -vec-threshold4 -openmp
-FFLAGS_INTEL_OPT = -c -O3 -fpp -vec-threshold4 -openmp
-FFLAGS_CRAY_DEV = -c -D CUDA_ARCH=350 -g
-FFLAGS_CRAY_OPT = -c -D CUDA_ARCH=350 -O3
-FFLAGS_GNU_DEV = -c -fopenmp -fbacktrace -fcheck=bounds -fcheck=array-temps -fcheck=pointer -pg
-FFLAGS_GNU_OPT = -c -fopenmp -O3
-FFLAGS_PGI_DEV = -c -mp -Mcache_align -Mbounds -Mchkptr -Mstandard -pg
-FFLAGS_PGI_OPT = -c -mp -Mcache_align -Mstandard -O3
-FFLAGS = $(FFLAGS_$(TOOLKIT)_$(TYPE)) -D NO_PHI -D NO_AMD
+FFLAGS_INTEL_DEV = -c -g -fpp -vec-threshold4 -openmp $(NO_ACCEL)
+FFLAGS_INTEL_OPT = -c -O3 -fpp -vec-threshold4 -openmp $(NO_ACCEL)
+FFLAGS_CRAY_DEV = -c -g $(NO_ACCEL)
+FFLAGS_CRAY_OPT = -c -O3 $(NO_ACCEL)
+FFLAGS_GNU_DEV = -c -fopenmp -fbacktrace -fcheck=bounds -fcheck=array-temps -fcheck=pointer -pg $(NO_ACCEL)
+FFLAGS_GNU_OPT = -c -fopenmp -O3 $(NO_ACCEL)
+FFLAGS_PGI_DEV = -c -mp -Mcache_align -Mbounds -Mchkptr -Mstandard -pg $(NO_ACCEL)
+FFLAGS_PGI_OPT = -c -mp -Mcache_align -Mstandard -O3 $(NO_ACCEL)
+FFLAGS = $(FFLAGS_$(TOOLKIT)_$(TYPE))
+
 #THREADS:
 LTHREAD_GNU   = -lgomp
 LTHREAD_PGI   = -lpthread
 LTHREAD_INTEL = -liomp5
 LTHREAD_CRAY  = -L.
 LTHREAD = $(LTHREAD_$(TOOLKIT))
-LFLAGS = $(LIB) $(LTHREAD) $(MPI_LINK) $(LA_LINK) $(CUDA_LINK) -o
+
+#LINKING:
+LFLAGS = $(LIB) $(LTHREAD) $(MPI_LINK) $(LA_LINK) $(CUDA_LINK) -o $(NAME)
 
 OBJS = dil_kinds.o sys_service.o stsubs.o multords.o combinatoric.o symm_index.o timers.o stack.o lists.o dictionary.o \
 	extern_names.o tensor_algebra.o tensor_algebra_cpu.o tensor_algebra_cpu_phi.o tensor_dil_omp.o \
@@ -129,7 +161,7 @@ OBJS = dil_kinds.o sys_service.o stsubs.o multords.o combinatoric.o symm_index.o
 	qforce.o main.o
 
 $(NAME): $(OBJS)
-	$(FC) $(OBJS) $(LFLAGS) $(NAME)
+	$(FC) $(OBJS) $(LFLAGS)
 
 dil_kinds.o: dil_kinds.F90
 	$(FC) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) dil_kinds.F90
@@ -198,7 +230,7 @@ mpi_fort.o: mpi_fort.c
 service_mpi.o: service_mpi.F90 mpi_fort.o stsubs.o extern_names.o
 	$(FC) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) service_mpi.F90
 
-distributed.o: distributed.F90 service_mpi.o tensor_algebra.o stsubs.o timers.o
+distributed.o: distributed.F90 service_mpi.o tensor_algebra.o stsubs.o timers.o extern_names.o
 	$(FC) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) distributed.F90
 
 subspaces.o: subspaces.F90 dil_kinds.o
