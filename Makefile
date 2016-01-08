@@ -199,7 +199,7 @@ extern_names.o: extern_names.F90
 tensor_algebra.o: tensor_algebra.F90 dil_kinds.o
 	$(FC) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) tensor_algebra.F90
 
-tensor_algebra_cpu.o: tensor_algebra_cpu.F90 tensor_algebra.o stsubs.o combinatoric.o timers.o symm_index.o
+tensor_algebra_cpu.o: tensor_algebra_cpu.F90 tensor_algebra.o stsubs.o combinatoric.o symm_index.o timers.o
 	$(FC) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) tensor_algebra_cpu.F90
 
 tensor_algebra_cpu_phi.o: tensor_algebra_cpu_phi.F90 tensor_algebra_cpu.o
@@ -227,10 +227,10 @@ talshc.o: talshc.c talsh.h tensor_algebra.h tensor_algebra_cpu_phi.o tensor_alge
 mpi_fort.o: mpi_fort.c
 	$(CC) $(INC) $(MPI_INC) $(CUDA_INC) $(CFLAGS) mpi_fort.c
 
-service_mpi.o: service_mpi.F90 mpi_fort.o stsubs.o extern_names.o
+service_mpi.o: service_mpi.F90 mpi_fort.o stsubs.o extern_names.o dil_kinds.o timers.o
 	$(FC) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) service_mpi.F90
 
-distributed.o: distributed.F90 service_mpi.o tensor_algebra.o stsubs.o timers.o extern_names.o
+distributed.o: distributed.F90 service_mpi.o stsubs.o extern_names.o timers.o
 	$(FC) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) distributed.F90
 
 subspaces.o: subspaces.F90 dil_kinds.o
@@ -242,10 +242,10 @@ virta.o: virta.F90 talshf.o talshc.o distributed.o subspaces.o stack.o lists.o d
 c_process.o: c_process.F90 virta.o
 	$(FC) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) c_process.F90
 
-exatensor.o: exatensor.F90 c_process.o service_mpi.o virta.o
+exatensor.o: exatensor.F90 virta.o c_process.o service_mpi.o
 	$(FC) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) exatensor.F90
 
-qforce.o: qforce.F90 dil_kinds.o exatensor.o
+qforce.o: qforce.F90 exatensor.o dil_kinds.o
 	$(FC) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) qforce.F90
 
 main.o: main.F90 exatensor.o

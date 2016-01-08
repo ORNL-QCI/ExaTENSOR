@@ -1,6 +1,6 @@
 !ExaTensor::TAL-SH: Basic parameters and types:
 !Keep consistent with "tensor_algebra.h"!
-!REVISION: 2015/11/28
+!REVISION: 2016/01/08
         module tensor_algebra
         use dil_kinds !contains ISO_C_BINDING
         implicit none
@@ -24,19 +24,6 @@
         integer(C_INT), parameter, public:: DEV_AMD_GPU=3         !AMD APU
         integer(C_INT), parameter, public:: DEV_MAX=1+MAX_GPUS_PER_NODE+MAX_MICS_PER_NODE+MAX_AMDS_PER_NODE
 
-!TENSOR DATA KINDS (keep consistent with tensor_algebra.h):
-        integer(C_INT), parameter, public:: NO_TYPE=0 !no type/kind
-        integer(C_INT), parameter, public:: R4=4      !float data kind
-        integer(C_INT), parameter, public:: R8=8      !double data kind
-        integer(C_INT), parameter, public:: C8=16     !double complex data kind
-        real(4), parameter, public:: R4_=0.0
-        real(8), parameter, public:: R8_=0d0
-        complex(8), parameter, public:: C8_=(0d0,0d0)
-#ifndef NO_PHI
-!DIR$ ATTRIBUTES OFFLOAD:mic:: NO_TYPE,R4,R8,C8,R4_,R8_,C8_
-!DIR$ ATTRIBUTES ALIGN:128:: NO_TYPE,R4,R8,C8,R4_,R8_,C8_
-#endif
-
 !ALIASES (keep consistent with tensor_algebra.h):
         integer(C_INT), parameter, public:: TALSH_SUCCESS=0             !success
         integer(C_INT), parameter, public:: TALSH_FAILURE=-666          !failure
@@ -44,11 +31,8 @@
         integer(C_INT), parameter, public:: BLAS_OFF=1                  !disables BLAS
         integer(C_INT), parameter, public:: EFF_TRN_OFF=0               !disables efficient tensor transpose algorithm
         integer(C_INT), parameter, public:: EFF_TRN_ON=1                !enables efficient tensor transpose algorithm
-        integer(C_INT), parameter, public:: TRY_LATER=-918273645        !try the action later (resources are currently busy): KEEP THIS UNIQUE!
         integer(C_INT), parameter, public:: DEVICE_UNABLE=-546372819    !device is unsuitable for the given task: KEEP THIS UNIQUE!
-        integer(C_INT), parameter, public:: NOT_CLEAN=-192837465        !something, like resource release, did not go right, but you can continue: KEEP THIS UNIQUE!
-        integer(C_INT), parameter, public:: NOPE=0                      !"NO" answer
-        integer(C_INT), parameter, public:: YEP=1                       !"YES" answer
+
         integer(C_INT), parameter, public:: EVERYTHING=0                !everything (source, destination, temporary)
         integer(C_INT), parameter, public:: SOURCE=1                    !source
         integer(C_INT), parameter, public:: DESTINATION=2               !destination

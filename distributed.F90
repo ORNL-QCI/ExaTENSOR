@@ -1,6 +1,6 @@
 !Distributed data storage service (DDSS).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2015/12/11 (started 2015/03/18)
+!REVISION: 2016/01/08 (started 2015/03/18)
 !Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
 !Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
 !LICENSE: GPLv2
@@ -55,8 +55,7 @@
 ! 7. Finalize the DDSS/MPI parallel service via the procedure provided in "service_mpi.F90".
        module distributed
 !       use, intrinsic:: ISO_C_BINDING
-        use service_mpi !includes ISO_C_BINDING & MPI
-        use:: tensor_algebra, only: TRY_LATER,NOT_CLEAN,NO_TYPE,R4,R8,C8,R4_,R8_,C8_ !some basic types and statuses (`These should be moved to a separate module)
+        use service_mpi !includes ISO_C_BINDING & MPI & dil_kinds
 !       Depends on stsubs.F90, timers.F90, extern_names.F90 in some procedures
         implicit none
         private

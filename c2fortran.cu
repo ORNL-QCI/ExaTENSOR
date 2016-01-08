@@ -26,6 +26,7 @@ extern "C"{
 #ifdef __cplusplus
 extern "C"{
 #endif
+ int string_len(const char * str);
  char * ptr_offset(char * byte_ptr, size_t byte_offset);
  size_t c_ptr_value(void * c_ptr);
  void c_ptr_set(size_t cpval, void ** cptr);

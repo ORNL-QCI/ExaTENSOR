@@ -3,7 +3,7 @@
 !REVISION: 2015/12/11
        module service_mpi
         use, intrinsic:: ISO_C_BINDING
-        !depends on <mpi_fort.c>
+        !Depends on <mpi_fort.c>
 #ifdef USE_MPI_MOD
 #ifdef FORTRAN2008
         use mpi_f08      !MPI Fortran 2008 interface `This will not work
