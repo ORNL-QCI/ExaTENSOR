@@ -1,20 +1,20 @@
 *** ExaTensor: Massively parallel, performance-portable computational
                infrastructure for sparse/dense tensor algebra ***
 AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-REVISION: 2015/09/28 (Project start date: Dec 2013)
+REVISION: 2016/01/21 (Project start date: Dec 2013)
 Copyright (C) 2015 Dmitry I. Lyakh
 Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
 LICENSE: GPL v.2
 --------------------------------------------------------------
 
-0. Preambule
+0. Preamble
 
 Large-scale tensor algebra is an existential prerequisite for
 successful simulations in multiple scientific domains, most notably
-those based on quantum many-body theory, with applications in quantum
-chemistry (electronic structure theory), nuclear physics, and quantum
-computing simulations. Yet, to date no single attempt has resulted in
-a production-level software flexible enough to be used accross these
+those dealing with quantum many-body theory, with applications in
+quantum chemistry (electronic structure theory), nuclear physics, and
+quantum computing simulations. Yet, to date no single attempt has resulted
+in a production-level software flexible enough to be used accross these
 computational domains while being performance-portable with respect to
 different hardware (CPU, GPU, Xeon Phi, etc.) and with respect to the
 size of the HPC system. This was the main motivation to start the
@@ -31,11 +31,12 @@ that by the author himself.
 
 1. Goals
 
-(a) Hardware-agnostic: Efficiency at the node level, efficient utilization
-of diverse hardware: Multicore CPU, NVidia GPU, Intel Xeon Phi, AMD APU, etc.
+(a) Hardware-agnosticism: Efficiency at the node level, efficient utilization
+of diverse hardware: Multicore CPU, NVidia GPU, Intel Xeon Phi, AMD GPU/APU, etc.
+Efficient utilization of deep memory hierarchy available on node.
 
-(b) Scale-agnostic: Efficiency at the HPC level, efficient distributed
-data mapping and work scheduling for any given HPC system: From small
+(b) Scale-agnosticism: Efficiency at the HPC level, efficient distributed
+data mapping and task scheduling for any given HPC system: From small
 clusters to the Leadership HPC systems.
 
 (c) Expertise-agnostic: Ease of use accross different computational domains.
@@ -61,11 +62,15 @@ sent close to the participating data objects (tensor arguments).
 domain-specific instructions is introduced, yet being capable of
 describing basic tensor algebra operations the way they appear
 in different scientific domains. In this way, one should be able
-to express a tensor algorithm with a minimal amount of special code.
-The code can be directly interpreted by the ExaTensor runtime
-(virtual processor), where all efficient parallelization decisions
-are made by ExaTensor, thus allowing the user to completely focus
-on a higher-level expression of the tensor algorithm of interest.
+to express a tensor algebra algorithm with a minimal amount of
+domain-specific code. The code can be directly interpreted by the
+ExaTensor runtime (virtual processor), where all efficient
+parallelization decisions are made by ExaTensor, thus allowing
+the user to completely focus on a higher-level expression of the
+tensor algebra algorithm of interest.
+
+(d) Composability: The ExaTensor framework is composed of useful
+reusable components which can be deployed autonomously elsewhere.
 
 
 3. ExaTensor software layers

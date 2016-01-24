@@ -2,7 +2,7 @@
 implementation of the tensor algebra library TAL-SH:
 CP-TAL (TAL for CPU), NV-TAL (TAL for NVidia GPU),
 XP-TAL (TAL for Intel Xeon Phi), AM-TAL (TAL for AMD GPU).
-REVISION: 2015/11/28
+REVISION: 2016/01/24
 Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
 Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
 
@@ -763,7 +763,7 @@ int host_mem_unregister(void *host_ptr){
 }
 
 #ifndef NO_GPU
-__host__ int gpu_mem_alloc(void **dev_ptr, size_t tsize, int gpu_id)
+int gpu_mem_alloc(void **dev_ptr, size_t tsize, int gpu_id)
 /** Allocates global memory on a specific GPU (or current GPU by default).
     A return status NOT_CLEAN is not critical. **/
 {
@@ -779,7 +779,7 @@ __host__ int gpu_mem_alloc(void **dev_ptr, size_t tsize, int gpu_id)
  return 0;
 }
 
-__host__ int gpu_mem_free(void *dev_ptr, int gpu_id)
+int gpu_mem_free(void *dev_ptr, int gpu_id)
 /** Frees global memory on a specific GPU (or current GPU by default).
     A return status NOT_CLEAN is not critical. **/
 {

@@ -37,7 +37,7 @@ extern "C"{
 //-------------------------------------------------------------------
 #ifndef NO_GPU
 //C Wrappers (called from Fortran to invoke CUDA run-time functions):
-__host__ void cudagetdevicecount(int* count, int* err_code){
+void cudagetdevicecount(int* count, int* err_code){
  cudaError_t err; const char* err_msg;
  *err_code=0;
  err=cudaGetDeviceCount(count); if(err!=cudaSuccess){
@@ -48,7 +48,7 @@ __host__ void cudagetdevicecount(int* count, int* err_code){
  return;
 }
 
-__host__ void cudasetdevice(int device, int* err_code){
+void cudasetdevice(int device, int* err_code){
  cudaError_t err; const char* err_msg;
  *err_code=0;
  err=cudaSetDevice(device); if(err!=cudaSuccess){
@@ -59,7 +59,7 @@ __host__ void cudasetdevice(int device, int* err_code){
  return;
 }
 
-__host__ void cudagetdeviceproperties(int device, size_t *totalGlobalMem_, size_t *sharedMemPerBlock_,
+void cudagetdeviceproperties(int device, size_t *totalGlobalMem_, size_t *sharedMemPerBlock_,
                int *regsPerBlock_, int *warpSize_, int *maxThreadsPerBlock_, int *maxThreadsDim_, int *maxGridSize_,
                int *clockRate_, size_t *totalConstMem_, int *major_, int *minor_, int *deviceOverlap_,
                int *multiProcessorCount_, int *concurrentKernels_, int *ECCEnabled_, int *asyncEngineCount_,
@@ -93,7 +93,8 @@ __host__ void cudagetdeviceproperties(int device, size_t *totalGlobalMem_, size_
  };
  return;
 }
-__host__ void cudadevicesynchronize(int *err_code)
+
+void cudadevicesynchronize(int *err_code)
 {
  *err_code=0;
  cudaError_t err=cudaDeviceSynchronize(); if(err != cudaSuccess){*err_code=1;}

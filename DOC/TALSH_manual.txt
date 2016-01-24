@@ -1,6 +1,6 @@
 *** TAL-SH: Tensor Algebra Library for Shared Memory Computers ***
 AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-REVISION: 2015/09/28
+REVISION: 2016/01/21
 Copyright (C) 2015 Dmitry I. Lyakh
 Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
 LICENSE: GPL v.2
@@ -11,7 +11,7 @@ NOTE: This is how the TAL-SH API interface will look like soon!
       each one specific for a particular device kind.
 
 
-0. Preambule
+0. Preamble
 
 The TAL-SH library provides API for performing basic tensor algebra
 operations on multicore CPU, NVidia GPU, Intel Xeon Phi, and other

@@ -9,7 +9,7 @@
 *.cubin
 *.module_id
 *.hash
+*.a
 *.x
-/Archive
-/Compress
-/Tests
+/Misc
+/*/OBJ

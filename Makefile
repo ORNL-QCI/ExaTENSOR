@@ -1,24 +1,29 @@
-NAME = qforce.v13.01.x
+NAME = qforce.x
 
 #Cross-compiling wrappers: [WRAP|NOWRAP]:
-WRAP = NOWRAP
+export WRAP = NOWRAP
 #Compiler: [GNU|PGI|INTEL|CRAY]:
-TOOLKIT = GNU
+export TOOLKIT = GNU
 #Optimization: [DEV|OPT]:
-TYPE = DEV
+export BUILD_TYPE = DEV
 #MPI Library: [MPICH|OPENMPI]:
-MPILIB = MPICH
+export MPILIB = MPICH
 #BLAS: [ATLAS|MKL|ACML]:
-BLASLIB = ATLAS
+export BLASLIB = ATLAS
 #Nvidia GPU via CUDA: [CUDA|NOCUDA]:
-GPU_CUDA = NOCUDA
+export GPU_CUDA = NOCUDA
 
 #Local paths (for unwrapped compilation):
 # MPI:
-PATH_MPICH=/usr/local/mpich3.2
-PATH_OPENMPI=/usr/local/openmpi1.10.1
+export PATH_MPICH = /usr/local/mpich3.2
+export PATH_OPENMPI = /usr/local/openmpi1.10.1
+# BLAS:
+export PATH_BLAS_ATLAS = /usr/lib
+export PATH_BLAS_INTEL = /usr/lib
+export PATH_BLAS_ACML = /usr/lib
+PATH_BLAS = $(PATH_BLAS_$(BLASLIB))
 # CUDA:
-PATH_CUDA=/usr/local/cuda
+export PATH_CUDA=/usr/local/cuda
 #DONE.
 
 #=================
@@ -31,7 +36,7 @@ FC_MPICH = $(PATH_MPICH)/bin/mpif90
 FC_OPENMPI = $(PATH_OPENMPI)/bin/mpifort
 FC_NOWRAP = $(FC_$(MPILIB))
 FC_WRAP = ftn
-FC = $(FC_$(WRAP))
+FCOMP = $(FC_$(WRAP))
 #C compiler:
 CC_GNU = gcc
 CC_PGI = pgcc
@@ -41,7 +46,7 @@ CC_MPICH = $(PATH_MPICH)/bin/mpicc
 CC_OPENMPI = $(PATH_OPENMPI)/bin/mpicc
 CC_NOWRAP = $(CC_$(MPILIB))
 CC_WRAP = cc
-CC = $(CC_$(WRAP))
+CCOMP = $(CC_$(WRAP))
 #C++ compiler:
 CPP_GNU = g++
 CPP_PGI = pgc++
@@ -51,9 +56,9 @@ CPP_MPICH = $(PATH_MPICH)/bin/mpic++
 CPP_OPENMPI = $(PATH_OPENMPI)/bin/mpic++
 CPP_NOWRAP = $(CPP_$(MPILIB))
 CPP_WRAP = CC
-CPP = $(CPP_$(WRAP))
+CPPCOMP = $(CPP_$(WRAP))
 #CUDA compiler:
-CUDA_C = nvcc
+CUDA_COMP = nvcc
 
 #COMPILER INCLUDES:
 INC_GNU = -I.
@@ -88,16 +93,12 @@ MPI_LINK_WRAP = -L.
 MPI_LINK = $(MPI_LINK_$(WRAP))
 
 #LINEAR ALGEBRA FLAGS:
-LA_LINK_MKL = -L. -lmkl_core -lmkl_intel_thread -lmkl_intel_lp64 -lmkl_blas95_lp64 -lmkl_lapack95_lp64 -lrt
-LA_LINK_ACML = -L. -lacml_mp
-LA_LINK_DEFAULT_WRAP = -L.
-LA_LINK_DEFAULT_NOWRAP = -L. -lblas -llapack
-LA_LINK_DEFAULT = $(LA_LINK_DEFAULT_$(WRAP))
-LA_LINK_INTEL = $(LA_LINK_DEFAULT)
-LA_LINK_CRAY = $(LA_LINK_DEFAULT)
-LA_LINK_GNU = $(LA_LINK_DEFAULT)
-LA_LINK_PGI = $(LA_LINK_DEFAULT)
-LA_LINK = $(LA_LINK_$(TOOLKIT))
+LA_LINK_ATLAS = -L$(PATH_BLAS) -lblas -llapack
+LA_LINK_MKL = -L$(PATH_BLAS) -lmkl_core -lmkl_intel_thread -lmkl_intel_lp64 -lmkl_blas95_lp64 -lmkl_lapack95_lp64 -lrt
+LA_LINK_ACML = -L$(PATH_BLAS) -lacml_mp
+LA_LINK_WRAP = -L.
+LA_LINK_NOWRAP = $(LA_LINK_$(BLASLIB))
+LA_LINK = $(LA_LINK_$(WRAP))
 
 #CUDA INCLUDES:
 CUDA_INC_CUDA = -I$(PATH_CUDA)/include
@@ -119,7 +120,7 @@ CUDA_HOST_WRAP = -I.
 CUDA_HOST = $(CUDA_HOST_$(WRAP))
 CUDA_FLAGS_DEV = --compile -arch=sm_35 -g -G -D CUDA_ARCH=350 -D DEBUG_GPU
 CUDA_FLAGS_OPT = --compile -arch=sm_35 -O3 -D CUDA_ARCH=350
-CUDA_FLAGS_CUDA = $(CUDA_HOST) $(CUDA_FLAGS_$(TYPE))
+CUDA_FLAGS_CUDA = $(CUDA_HOST) $(CUDA_FLAGS_$(BUILD_TYPE))
 CUDA_FLAGS_NOCUDA = -I.
 CUDA_FLAGS = $(CUDA_FLAGS_$(GPU_CUDA))
 
@@ -131,7 +132,7 @@ NO_ACCEL = $(NO_ACCEL_$(GPU_CUDA))
 #C FLAGS:
 CFLAGS_DEV = -c -g $(NO_ACCEL)
 CFLAGS_OPT = -c -O3 $(NO_ACCEL)
-CFLAGS = $(CFLAGS_$(TYPE))
+CFLAGS = $(CFLAGS_$(BUILD_TYPE))
 
 #FORTRAN FLAGS:
 FFLAGS_INTEL_DEV = -c -g -fpp -vec-threshold4 -openmp $(NO_ACCEL)
@@ -142,7 +143,7 @@ FFLAGS_GNU_DEV = -c -fopenmp -fbacktrace -fcheck=bounds -fcheck=array-temps -fch
 FFLAGS_GNU_OPT = -c -fopenmp -O3 $(NO_ACCEL)
 FFLAGS_PGI_DEV = -c -mp -Mcache_align -Mbounds -Mchkptr -Mstandard -pg $(NO_ACCEL)
 FFLAGS_PGI_OPT = -c -mp -Mcache_align -Mstandard -O3 $(NO_ACCEL)
-FFLAGS = $(FFLAGS_$(TOOLKIT)_$(TYPE))
+FFLAGS = $(FFLAGS_$(TOOLKIT)_$(BUILD_TYPE))
 
 #THREADS:
 LTHREAD_GNU   = -lgomp
@@ -154,105 +155,106 @@ LTHREAD = $(LTHREAD_$(TOOLKIT))
 #LINKING:
 LFLAGS = $(LIB) $(LTHREAD) $(MPI_LINK) $(LA_LINK) $(CUDA_LINK) -o $(NAME)
 
-OBJS = dil_kinds.o sys_service.o stsubs.o multords.o combinatoric.o symm_index.o timers.o stack.o lists.o dictionary.o \
-	extern_names.o tensor_algebra.o tensor_algebra_cpu.o tensor_algebra_cpu_phi.o tensor_dil_omp.o \
+OBJS =  dil_basic.o sys_service.o stsubs.o multords.o combinatoric.o symm_index.o timers.o stack.o lists.o dictionary.o \
+	c2f_ifc.o tensor_algebra.o tensor_algebra_cpu.o tensor_algebra_cpu_phi.o tensor_dil_omp.o \
 	c2fortran.o mem_manager.o tensor_algebra_gpu_nvidia.o talshf.o talshc.o \
 	mpi_fort.o service_mpi.o distributed.o subspaces.o virta.o c_process.o exatensor.o \
 	qforce.o main.o
 
 $(NAME): $(OBJS)
-	$(FC) $(OBJS) $(LFLAGS)
+	$(FCOMP) $(OBJS) $(LFLAGS)
 
-dil_kinds.o: dil_kinds.F90
-	$(FC) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) dil_kinds.F90
+dil_basic.o: dil_basic.F90
+	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) dil_basic.F90
 
 sys_service.o: sys_service.c
-	$(CC) $(INC) $(MPI_INC) $(CUDA_INC) $(CFLAGS) sys_service.c
+	$(CCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(CFLAGS) sys_service.c
 
 stsubs.o: stsubs.F90
-	$(FC) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) stsubs.F90
+	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) stsubs.F90
 
 multords.o: multords.F90
-	$(FC) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) multords.F90
+	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) multords.F90
 
 combinatoric.o: combinatoric.F90
-	$(FC) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) combinatoric.F90
+	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) combinatoric.F90
 
 symm_index.o: symm_index.F90
-	$(FC) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) symm_index.F90
+	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) symm_index.F90
 
 timers.o: timers.F90
-	$(FC) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) timers.F90
+	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) timers.F90
 
 stack.o: stack.F90 timers.o
-	$(FC) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) stack.F90
+	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) stack.F90
 
 lists.o: lists.F90 timers.o
-	$(FC) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) lists.F90
+	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) lists.F90
 
 dictionary.o: dictionary.F90 timers.o
-	$(FC) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) dictionary.F90
+	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) dictionary.F90
 
-extern_names.o: extern_names.F90
-	$(FC) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) extern_names.F90
+c2f_ifc.o: c2f_ifc.F90
+	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) c2f_ifc.F90
 
-tensor_algebra.o: tensor_algebra.F90 dil_kinds.o
-	$(FC) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) tensor_algebra.F90
+tensor_algebra.o: tensor_algebra.F90 dil_basic.o
+	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) tensor_algebra.F90
 
 tensor_algebra_cpu.o: tensor_algebra_cpu.F90 tensor_algebra.o stsubs.o combinatoric.o symm_index.o timers.o
-	$(FC) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) tensor_algebra_cpu.F90
+	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) tensor_algebra_cpu.F90
 
 tensor_algebra_cpu_phi.o: tensor_algebra_cpu_phi.F90 tensor_algebra_cpu.o
-	$(FC) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) tensor_algebra_cpu_phi.F90
+	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) tensor_algebra_cpu_phi.F90
 
 tensor_dil_omp.o: tensor_dil_omp.F90 timers.o
-	$(FC) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) tensor_dil_omp.F90
+	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) tensor_dil_omp.F90
 
-c2fortran.o: c2fortran.cu
-	$(CUDA_C) $(INC) $(MPI_INC) $(CUDA_INC) $(CUDA_FLAGS) c2fortran.cu
+c2fortran.o: c2fortran.c
+	$(CCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(CFLAGS) c2fortran.c
 
-mem_manager.o: mem_manager.cu tensor_algebra.h
-	$(CUDA_C) $(INC) $(MPI_INC) $(CUDA_INC) $(CUDA_FLAGS) mem_manager.cu
+mem_manager.o: mem_manager.c tensor_algebra.h
+	$(CCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(CFLAGS) mem_manager.c
 
 tensor_algebra_gpu_nvidia.o: tensor_algebra_gpu_nvidia.cu tensor_algebra.h
-	$(CUDA_C) $(INC) $(MPI_INC) $(CUDA_INC) $(CUDA_FLAGS) -ptx tensor_algebra_gpu_nvidia.cu
-	$(CUDA_C) $(INC) $(MPI_INC) $(CUDA_INC) $(CUDA_FLAGS) tensor_algebra_gpu_nvidia.cu
+	$(CUDA_COMP) $(INC) $(MPI_INC) $(CUDA_INC) $(CUDA_FLAGS) -ptx tensor_algebra_gpu_nvidia.cu
+	$(CUDA_COMP) $(INC) $(MPI_INC) $(CUDA_INC) $(CUDA_FLAGS) tensor_algebra_gpu_nvidia.cu
 
 talshf.o: talshf.F90 tensor_algebra_cpu_phi.o tensor_algebra_gpu_nvidia.o mem_manager.o
-	$(FC) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) talshf.F90
+	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) talshf.F90
 
 talshc.o: talshc.c talsh.h tensor_algebra.h tensor_algebra_cpu_phi.o tensor_algebra_gpu_nvidia.o mem_manager.o
-	$(CC) $(INC) $(MPI_INC) $(CUDA_INC) $(CFLAGS) talshc.c
+	$(CCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(CFLAGS) talshc.c
 
 mpi_fort.o: mpi_fort.c
-	$(CC) $(INC) $(MPI_INC) $(CUDA_INC) $(CFLAGS) mpi_fort.c
+	$(CCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(CFLAGS) mpi_fort.c
 
-service_mpi.o: service_mpi.F90 mpi_fort.o stsubs.o extern_names.o dil_kinds.o timers.o
-	$(FC) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) service_mpi.F90
+service_mpi.o: service_mpi.F90 mpi_fort.o stsubs.o c2f_ifc.o dil_basic.o timers.o
+	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) service_mpi.F90
 
-distributed.o: distributed.F90 service_mpi.o stsubs.o extern_names.o timers.o
-	$(FC) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) distributed.F90
+distributed.o: distributed.F90 service_mpi.o stsubs.o c2f_ifc.o timers.o
+	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) distributed.F90
 
-subspaces.o: subspaces.F90 dil_kinds.o
-	$(FC) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) subspaces.F90
+subspaces.o: subspaces.F90 dil_basic.o
+	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) subspaces.F90
 
-virta.o: virta.F90 talshf.o talshc.o distributed.o subspaces.o stack.o lists.o dictionary.o multords.o extern_names.o service_mpi.o
-	$(FC) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) virta.F90
+virta.o: virta.F90 talshf.o talshc.o distributed.o subspaces.o stack.o lists.o dictionary.o multords.o c2f_ifc.o service_mpi.o
+	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) virta.F90
 
 c_process.o: c_process.F90 virta.o
-	$(FC) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) c_process.F90
+	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) c_process.F90
 
 exatensor.o: exatensor.F90 virta.o c_process.o service_mpi.o
-	$(FC) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) exatensor.F90
+	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) exatensor.F90
 
-qforce.o: qforce.F90 exatensor.o dil_kinds.o
-	$(FC) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) qforce.F90
+qforce.o: qforce.F90 exatensor.o dil_basic.o
+	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) qforce.F90
 
 main.o: main.F90 exatensor.o
-	$(FC) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) main.F90
+	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) main.F90
 
 #%.o: %.F90
-#	$(FC) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) $?
+#	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) $?
 
+.PHONY: clean
 clean:
-	rm *.o *.mod *.modmic *.ptx *.x
+	rm *.x *.o *.a *.mod *.modmic *.ptx
