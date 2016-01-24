@@ -23,7 +23,7 @@ export PATH_BLAS_INTEL = /usr/lib
 export PATH_BLAS_ACML = /usr/lib
 PATH_BLAS = $(PATH_BLAS_$(BLASLIB))
 # CUDA:
-export PATH_CUDA=/usr/local/cuda
+export PATH_CUDA = /usr/local/cuda
 #DONE.
 
 #=================

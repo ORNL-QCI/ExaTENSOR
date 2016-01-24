@@ -1,8 +1,8 @@
 !ExaTensor::TAL-SH: Basic parameters and types:
 !Keep consistent with "tensor_algebra.h"!
-!REVISION: 2016/01/08
+!REVISION: 2016/01/24
         module tensor_algebra
-        use dil_kinds !contains ISO_C_BINDING
+        use dil_basic !contains ISO_C_BINDING
         implicit none
         public
 !TENSOR ALGEBRA LIMITS (keep consistent with tensor_algebra.h):

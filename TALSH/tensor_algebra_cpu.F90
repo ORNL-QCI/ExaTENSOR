@@ -1,6 +1,6 @@
 !Tensor Algebra for Multi-Core CPUs (OpenMP based).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2015/09/23
+!REVISION: 2016/01/24
 !GNU linking options: -lgomp -lblas -llapack
 !ACRONYMS:
 ! - mlndx - multiindex;
@@ -22,8 +22,8 @@
 ! -D NO_PHI: Ignore Intel MIC;
        module tensor_algebra_cpu
 !       use, intrinsic:: ISO_C_BINDING
-!       use dil_kinds
-        use tensor_algebra !includes ISO_C_BINDING, dil_kinds
+!       use dil_basic
+        use tensor_algebra !includes ISO_C_BINDING, dil_basic
         use stsubs
         use combinatoric
         use timers
