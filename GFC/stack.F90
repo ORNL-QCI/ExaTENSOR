@@ -1,6 +1,6 @@
 !Generic implementation of a stack (OO Fortran 2003).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2015/10/04
+!REVISION: 2016/01/25
 !Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
 !Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
 !LICENSE: GPL v.2
@@ -16,7 +16,7 @@
 ! b) It is illegal to push a NULL object.
 ! c) So far, it is illegal to push non-scalar objects (arrays).
        module stack
-        use dil_kinds
+        use dil_basic
         implicit none
         private
 !PARAMETERS:
@@ -260,7 +260,7 @@
 !TESTING PART:
 !----------------------------------------------------------------------
        module stack_test
-        use dil_kinds
+        use dil_basic
         use stack
         use timers, only: thread_wtime
         implicit none

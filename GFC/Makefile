@@ -1,4 +1,4 @@
-NAME = talsh
+NAME = gfc
 
 #Cross-compiling wrappers: [WRAP|NOWRAP]:
 WRAP ?= NOWRAP
@@ -11,7 +11,7 @@ MPILIB ?= MPICH
 #BLAS: [ATLAS|MKL|ACML]:
 BLASLIB ?= ATLAS
 #Nvidia GPU via CUDA: [CUDA|NOCUDA]:
-GPU_CUDA ?= CUDA
+GPU_CUDA ?= NOCUDA
 
 #Local paths (for unwrapped compilation):
 # MPI:
@@ -155,9 +155,7 @@ LTHREAD = $(LTHREAD_$(TOOLKIT))
 #LINKING:
 LFLAGS = $(LIB) $(LTHREAD) $(MPI_LINK) $(LA_LINK) $(CUDA_LINK)
 
-OBJS =  ./OBJ/dil_basic.o ./OBJ/stsubs.o ./OBJ/combinatoric.o ./OBJ/symm_index.o ./OBJ/timers.o \
-	./OBJ/tensor_algebra.o ./OBJ/tensor_algebra_cpu.o ./OBJ/tensor_algebra_cpu_phi.o ./OBJ/tensor_dil_omp.o \
-	./OBJ/mem_manager.o ./OBJ/tensor_algebra_gpu_nvidia.o ./OBJ/talshf.o ./OBJ/talshc.o
+OBJS = ./OBJ/dil_basic.o ./OBJ/multords.o ./OBJ/timers.o ./OBJ/stack.o ./OBJ/lists.o ./OBJ/dictionary.o
 
 $(NAME): lib$(NAME).a ./OBJ/main.o
 	$(FCOMP) ./OBJ/main.o lib$(NAME).a $(LFLAGS) -o $(NAME).x
@@ -168,51 +166,23 @@ lib$(NAME).a: $(OBJS)
 ./OBJ/dil_basic.o: dil_basic.F90
 	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) dil_basic.F90 -o ./OBJ/dil_basic.o
 
-./OBJ/stsubs.o: stsubs.F90
-	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) stsubs.F90 -o ./OBJ/stsubs.o
-
-./OBJ/combinatoric.o: combinatoric.F90
-	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) combinatoric.F90 -o ./OBJ/combinatoric.o
-
-./OBJ/symm_index.o: symm_index.F90
-	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) symm_index.F90 -o ./OBJ/symm_index.o
+./OBJ/multords.o: multords.F90
+	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) multords.F90 -o ./OBJ/multords.o
 
 ./OBJ/timers.o: timers.F90
 	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) timers.F90 -o ./OBJ/timers.o
 
-./OBJ/tensor_algebra.o: tensor_algebra.F90 ./OBJ/dil_basic.o
-	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) tensor_algebra.F90 -o ./OBJ/tensor_algebra.o
+./OBJ/stack.o: stack.F90 ./OBJ/dil_basic.o ./OBJ/timers.o
+	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) stack.F90 -o ./OBJ/stack.o
 
-./OBJ/tensor_algebra_cpu.o: tensor_algebra_cpu.F90 ./OBJ/tensor_algebra.o ./OBJ/stsubs.o ./OBJ/combinatoric.o ./OBJ/symm_index.o ./OBJ/timers.o
-	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) tensor_algebra_cpu.F90 -o ./OBJ/tensor_algebra_cpu.o
+./OBJ/lists.o: lists.F90 ./OBJ/timers.o
+	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) lists.F90 -o ./OBJ/lists.o
 
-./OBJ/tensor_algebra_cpu_phi.o: tensor_algebra_cpu_phi.F90 ./OBJ/tensor_algebra_cpu.o
-	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) tensor_algebra_cpu_phi.F90 -o ./OBJ/tensor_algebra_cpu_phi.o
+./OBJ/dictionary.o: dictionary.F90 ./OBJ/timers.o
+	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) dictionary.F90 -o ./OBJ/dictionary.o
 
-./OBJ/tensor_dil_omp.o: tensor_dil_omp.F90 ./OBJ/timers.o
-	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) tensor_dil_omp.F90 -o ./OBJ/tensor_dil_omp.o
-
-./OBJ/mem_manager.o: mem_manager.cpp tensor_algebra.h
-	$(CCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(CFLAGS) mem_manager.cpp -o ./OBJ/mem_manager.o
-
-./OBJ/tensor_algebra_gpu_nvidia.o: tensor_algebra_gpu_nvidia.cu tensor_algebra.h
-ifeq ($(GPU_CUDA),CUDA)
-	$(CUDA_COMP) $(INC) $(MPI_INC) $(CUDA_INC) $(CUDA_FLAGS) -ptx tensor_algebra_gpu_nvidia.cu -o ./OBJ/tensor_algebra_gpu_nvidia.o
-	$(CUDA_COMP) $(INC) $(MPI_INC) $(CUDA_INC) $(CUDA_FLAGS) tensor_algebra_gpu_nvidia.cu -o ./OBJ/tensor_algebra_gpu_nvidia.o
-else
-	cp tensor_algebra_gpu_nvidia.cu tensor_algebra_gpu_nvidia.cpp
-	$(CCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(CFLAGS) tensor_algebra_gpu_nvidia.cpp -o ./OBJ/tensor_algebra_gpu_nvidia.o
-	rm -f tensor_algebra_gpu_nvidia.cpp
-endif
-
-./OBJ/talshf.o: talshf.F90 ./OBJ/tensor_algebra_cpu_phi.o ./OBJ/tensor_algebra_gpu_nvidia.o ./OBJ/mem_manager.o
-	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) talshf.F90 -o ./OBJ/talshf.o
-
-./OBJ/talshc.o: talshc.cpp talsh.h tensor_algebra.h ./OBJ/tensor_algebra_cpu_phi.o ./OBJ/tensor_algebra_gpu_nvidia.o ./OBJ/mem_manager.o
-	$(CCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(CFLAGS) talshc.cpp -o ./OBJ/talshc.o
-
-./OBJ/main.o: main.cpp lib$(NAME).a
-	$(CCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(CFLAGS) main.cpp -o ./OBJ/main.o
+./OBJ/main.o: main.F90 ./OBJ/dil_basic.o ./OBJ/timers.o
+	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) main.F90 -o ./OBJ/main.o
 
 
 .PHONY: clean
