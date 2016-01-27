@@ -2,7 +2,7 @@
     Parameters, derived types, and function prototypes
     used at the lower level of TAL-SH (device specific):
     CP-TAL, NV-TAL, XP-TAL, AM-TAL, etc.
-REVISION: 2015/11/28
+REVISION: 2016/01/26
 Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
 Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
 
@@ -415,7 +415,7 @@ extern "C"{
  int gpu_tensor_block_copy_dlf_(const int *dim_trn, tensBlck_t *tens_in, tensBlck_t *tens_out,
                                 int copy_back, cudaTask_t *cuda_task);
  int gpu_tensor_block_contract_dlf_(const int *cptrn, const tensBlck_t *ltens, const tensBlck_t *rtens,
-                                    tensBlck_t *dtens, int copy_back, cudaTask_t *cuda_task);
+                                    tensBlck_t *dtens, unsigned int coh_ctrl, cudaTask_t *cuda_task, int gpu_id = -1);
 #endif
 #ifdef __cplusplus
 }

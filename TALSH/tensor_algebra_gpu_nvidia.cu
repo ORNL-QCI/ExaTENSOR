@@ -1,5 +1,5 @@
 /** Tensor Algebra Library for NVidia GPU: NV-TAL (CUDA based).
-REVISION: 2015/11/28
+REVISION: 2016/01/27
 Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
 Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
 
@@ -35,20 +35,20 @@ FOR DEVELOPERS ONLY:
  # Current device resources:
     - Global memory pointer (any device);
     - Argument buffer entry handle (any device);
-    - Multi-index-entry pointer (any device, entry length = MAX_TENSOR_RANK);
-    - Constant-memory-entry handle (Nvidia GPU);
+    - Multi-index entry pointer (any device, entry length = MAX_TENSOR_RANK);
+    - Constant-memory entry handle (Nvidia GPU);
     - CUDA stream handle (Nvidia GPU);
     - CUDA event handle (Nvidia GPU).
  # A life cycle of a C object (for example, tensBlck_t):
     a) Allocate memory for the object, if needed: Suffix _alloc or _create (includes cleaning);
     b) Clean (initialize to null) an allocated (empty) object: Suffix _clean (normally included in _create);
     c) Construct (define or redefine) an existing object (resources will be acquired/released): Suffix _construct;
-    d) Destruct a defined object (resources will be released, the object will be initialized to null): Suffix _destruct;
+    d) Destruct a defined object (resources will be released, the object will be initialized to clean): Suffix _destruct;
     e) Free the memory occupied by a clean (initialized to null or destructed) object: Suffix _free or _destroy (may include _destruct).
    Thus, as a rule, the device resource acquisition/release occurs solely in _construct and _destruct functions.
  # A state of a C object:
     a) Undefined: After the memory allocation (either dynamic or static);
-    b) Defined nullified: After cleaning or destruction;
+    b) Defined nullified (clean): After cleaning or destruction;
     c) Defined to a value: After construction;
     d) Dead: After memory deallocation (if it was allocated dynamically).
  # Resource acquisition/release:
@@ -128,8 +128,9 @@ static int cuda_event_get(int gpu_num, int * cuda_event_handle);
 static int cuda_event_release(int gpu_num, int cuda_event_handle);
 static cudaEvent_t * cuda_event_ptr(int gpu_num, int cuda_event_handle);
 static void limit_cuda_blocks2d(int max_blocks, int *bx, int *by);
+static int tens_op_best_gpu(const tensBlck_t *tens0 == NULL, const tensBlck_t *tens1 == NULL, const tensBlck_t *tens2 == NULL);
 static int cuda_task_set_arg(cudaTask_t *cuda_task, unsigned int arg_num, tensBlck_t *tens_arg = NULL);
-static int cuda_task_record(cudaTask_t *cuda_task, unsigned int gpu_id, unsigned int coh_ctrl, unsigned int err_code = 0);
+static int cuda_task_record(cudaTask_t *cuda_task, unsigned int coh_ctrl, unsigned int err_code = 0);
 static int cuda_task_finalize(cudaTask_t *cuda_task);
 // CUDA KERNELS:
 __global__ void gpu_array_2norm2_r4__(size_t arr_size, const float *arr, float *bnorm2);
@@ -175,7 +176,7 @@ static cublasHandle_t cublas_handle[MAX_GPUS_PER_NODE]; //each GPU present on a 
 #endif
 #endif
 // Slab for the multi-index storage (will be pinned):
-static int miBank[MAX_GPU_ARGS*MAX_MLNDS_PER_TENS][MAX_TENSOR_RANK]; //All active .dims[], .divs[], .grps[] will be stored here
+static int miBank[MAX_GPU_ARGS*MAX_MLNDS_PER_TENS][MAX_TENSOR_RANK]; //All active .dims[], .divs[], .grps[], .prmn_h[] will be stored here
 static int miFreeHandle[MAX_GPU_ARGS*MAX_MLNDS_PER_TENS]; //free entries for storing multi-indices
 static int miFFE; //number of free handles left in miBank
 
@@ -190,7 +191,7 @@ static cudaEvent_t CUDAEventBank[MAX_GPUS_PER_NODE][MAX_CUDA_EVENTS]; //pre-allo
 static int CUDAEventFreeHandle[MAX_GPUS_PER_NODE][MAX_CUDA_EVENTS]; //free CUDA event handles
 static int CUDAEventFFE[MAX_GPUS_PER_NODE]; //number of free handles left in CUDAEventFreeHandle
 
-// Slab of GPU constant memory arguments for each GPU (managed by "mem_manager.cu"):
+// Slab of GPU constant memory arguments for each GPU (managed by "mem_manager.cpp"):
 __device__ __constant__ int const_args_dims[MAX_GPU_ARGS][MAX_TENSOR_RANK]; //storage for device constant memory arguments: dimension extents
 __device__ __constant__ int const_args_prmn[MAX_GPU_ARGS][MAX_TENSOR_RANK]; //storage for device constant memory arguments: permutation
 
@@ -303,7 +304,7 @@ __host__ int gpu_get_debug_dump(int *dump)
 static int tens_valid_data_kind(int datk)
 /** Returns YEP if the data kind <datk> is valid in TAL-SH, NOPE otherwise. **/
 {
- if(datk == R4 || datk == R8 || datk == C8 || datk == NO_TYPE) return YEP;
+ if(datk == R4 || datk == R8 || datk == C4 || datk == C8 || datk == NO_TYPE) return YEP;
  return NOPE;
 }
 
@@ -746,6 +747,7 @@ Non-zero return status means an error. **/
 
 __host__ static cudaStream_t * cuda_stream_ptr(int gpu_num, int cuda_stream_handle)
 {
+/** Returns a pointer to a valid CUDA stream handle. **/
  if(gpu_num < 0 || gpu_num >= MAX_GPUS_PER_NODE) return NULL;
  if(cuda_stream_handle < 0 || cuda_stream_handle >= MAX_CUDA_TASKS) return NULL;
  if(gpu_up[gpu_num] > GPU_OFF) return &(CUDAStreamBank[gpu_num][cuda_stream_handle]);
@@ -804,6 +806,7 @@ Non-zero return status means an error. **/
 
 __host__ static cudaEvent_t * cuda_event_ptr(int gpu_num, int cuda_event_handle)
 {
+/** Returns a pointer to a valid CUDA event handle. **/
  if(gpu_num < 0 || gpu_num >= MAX_GPUS_PER_NODE) return NULL;
  if(cuda_event_handle < 0 || cuda_event_handle >= MAX_CUDA_EVENTS) return NULL;
  if(gpu_up[gpu_num] > GPU_OFF) return &(CUDAEventBank[gpu_num][cuda_event_handle]);
@@ -833,6 +836,58 @@ __host__ static void limit_cuda_blocks2d(int max_blocks, int *bx, int *by)
   *bx=1; *by=1;
  }
  return;
+}
+
+__host__ static int tens_op_best_gpu(const tensBlck_t *tens0, const tensBlck_t *tens1, const tensBlck_t *tens2)
+/** Returns the optimal GPU for a given set of tensor arguments (from the data locality point of view).
+    A negative return status means an error. All arguments are optional. **/
+{
+ int gpu0,gpu1,gpu2,gpu,dev_kind;
+
+ gpu=-1;
+ if(tens0 != NULL){
+  gpu0=decode_device_id((tens0->src_rsc)->dev_id,&dev_kind);
+  if(dev_kind != DEV_NVIDIA_GPU) gpu0=-1;
+  if(tens1 != NULL){
+   gpu1=decode_device_id((tens1->src_rsc)->dev_id,&dev_kind);
+   if(dev_kind != DEV_NVIDIA_GPU) gpu1=-1;
+   if(gpu1 >= 0 && gpu1 == gpu0){
+    gpu=gpu1;
+   }else{
+    if(tens2 != NULL){
+     gpu2=decode_device_id((tens2->src_rsc)->dev_id,&dev_kind);
+     if(dev_kind != DEV_NVIDIA_GPU) gpu2=-1;
+     if(gpu2 >= 0 && (gpu2 == gpu1 || gpu2 == gpu0)){
+      gpu=gpu2;
+     }else{
+      if(gpu0 >= 0) gpu0=gpu_stats[gpu0].tasks_submitted-(gpu_stats[gpu0].tasks_completed+gpu_stats[gpu0].tasks_deferred+gpu_stats[gpu0].tasks_failed);
+      if(gpu1 >= 0) gpu1=gpu_stats[gpu1].tasks_submitted-(gpu_stats[gpu1].tasks_completed+gpu_stats[gpu1].tasks_deferred+gpu_stats[gpu1].tasks_failed);
+      if(gpu2 >= 0) gpu2=gpu_stats[gpu2].tasks_submitted-(gpu_stats[gpu2].tasks_completed+gpu_stats[gpu2].tasks_deferred+gpu_stats[gpu2].tasks_failed);
+      if(gpu0 >= 0 && (gpu1 < 0 || gpu0 <= gpu1) && (gpu2 < 0 || gpu0 <= gpu2)){
+       gpu=gpu0;
+      }else if(gpu1 >= 0 && (gpu0 < 0 || gpu1 <= gpu0) && (gpu2 < 0 || gpu1 <= gpu2)){
+       gpu=gpu1;
+      }else if(gpu2 >= 0 && (gpu1 < 0 || gpu2 <= gpu1) && (gpu0 < 0 || gpu2 <= gpu0)){
+       gpu=gpu2;
+      }
+     }
+    }else{
+     if(gpu0 >= 0) gpu0=gpu_stats[gpu0].tasks_submitted-(gpu_stats[gpu0].tasks_completed+gpu_stats[gpu0].tasks_deferred+gpu_stats[gpu0].tasks_failed);
+     if(gpu1 >= 0) gpu1=gpu_stats[gpu1].tasks_submitted-(gpu_stats[gpu1].tasks_completed+gpu_stats[gpu1].tasks_deferred+gpu_stats[gpu1].tasks_failed);
+     if(gpu0 >= 0 && (gpu1 < 0 || gpu0 <= gpu1)){
+      gpu=gpu0;
+     }else if(gpu1 >= 0 && (gpu0 < 0 || gpu1 <= gpu0)){
+      gpu=gpu1;
+     }
+    }
+   }
+  }else{
+   gpu=gpu0;
+  }
+ }
+ if(gpu < 0 || gpu >= MAX_GPUS_PER_NODE) gpu=gpu_busy_least();
+ if(gpu_is_mine(gpu) <= GPU_OFF) gpu=-1; //for safety
+ return gpu;
 }
 
 //NV-TAL INITIALIZATION/SHUTDOWN (internal use only):
@@ -1323,7 +1378,7 @@ int tensBlck_destruct(tensBlck_t *ctens, int release_body, int which_body)
  if(ctens->shape.num_dim >= 0){ //shape-defined tensor block
   if(ctens->shape.num_dim > MAX_TENSOR_RANK) return -2;
 //Dimension permutation (temporary resource used by Nvidia GPU):
-  if(ctens->prmn_h != NULL){errc=mi_entry_release(ctens->prmn_h); if(errc != 0) n=NOT_CLEAN; ctens->prmn_h=NULL;} //release a mi resource
+  if(ctens->prmn_h != NULL){errc=mi_entry_release(ctens->prmn_h); if(errc != 0) n=NOT_CLEAN; ctens->prmn_h=NULL;} //release a mi resource (internal pinned memory slab)
 //Release the TEMPORARY resource:
   if(ctens->tmp_rsc != NULL &&
      ((release_body == YEP && (which_body == EVERYTHING || which_body == TEMPORARY)) ||
@@ -1442,6 +1497,7 @@ __host__ int cuda_task_clean(cudaTask_t *cuda_task)
  cuda_task->task_error=-1; cuda_task->gpu_id=-1; cuda_task->num_args=0;
  cuda_task->stream_hl=-1; cuda_task->event_start_hl=-1; cuda_task->event_comput_hl=-1;
  cuda_task->event_output_hl=-1; cuda_task->event_finish_hl=-1;
+ for(int i=0;i<MAX_TENSOR_OPERANDS;i++){(cuda_task->tens_args)[i]=NULL;}
  return 0;
 }
 
@@ -1449,30 +1505,54 @@ __host__ int cuda_task_construct(cudaTask_t *cuda_task, int gpu_id)
 /** Constructs a CUDA task ready for recording on GPU#gpu_id (acquires resources).
     If <gpu_id> is not passed here (negative), the currently active GPU will be used.
     Returns TRY_LATER or DEVICE_UNABLE in case of temporary or permanent
-    shortage of GPU resources, respectively. **/
+    shortage of GPU resources, respectively (CUDA task is left clean). **/
 {
- int errc;
+ int i,errc;
 
+ errc=0;
  if(cuda_task == NULL) return -1;
  if(cuda_task->task_error >= 0 || cuda_task->gpu_id >= 0 || cuda_task->num_args > 0) return 1; //CUDA task is not clean: Destruct it first
+ i=cuda_task_clean(cuda_task); //this is not necessary here
  if(gpu_id < 0) gpu_id=gpu_in_focus();
  if(gpu_id < 0 || gpu_id >= MAX_GPUS_PER_NODE) return 2; //gpu_id is out of range
  if(gpu_up[gpu_id] > GPU_OFF){
   errc=cuda_stream_get(gpu_id,&(cuda_task->stream_hl));
-  if(errc != 0){cuda_task->stream_hl=-1; if(errc == TRY_LATER || errc == DEVICE_UNABLE){return errc;}else{return 3;}}
-  errc=cuda_event_get(gpu_id,&(cuda_task->event_start_hl));
-  if(errc != 0){cuda_task->event_start_hl=-1; if(errc == TRY_LATER || errc == DEVICE_UNABLE){return errc;}else{return 4;}}
-  errc=cuda_event_get(gpu_id,&(cuda_task->event_comput_hl));
-  if(errc != 0){cuda_task->event_comput_hl=-1; if(errc == TRY_LATER || errc == DEVICE_UNABLE){return errc;}else{return 5;}}
-  errc=cuda_event_get(gpu_id,&(cuda_task->event_output_hl));
-  if(errc != 0){cuda_task->event_output_hl=-1; if(errc == TRY_LATER || errc == DEVICE_UNABLE){return errc;}else{return 6;}}
-  errc=cuda_event_get(gpu_id,&(cuda_task->event_finish_hl));
-  if(errc != 0){cuda_task->event_finish_hl=-1; if(errc == TRY_LATER || errc == DEVICE_UNABLE){return errc;}else{return 7;}}
-  cuda_task->task_error=-1; cuda_task->gpu_id=gpu_id;
+  if(errc != 0){
+   cuda_task->stream_hl=-1; if(errc != TRY_LATER && errc != DEVICE_UNABLE) errc=3;
+  }else{
+   errc=cuda_event_get(gpu_id,&(cuda_task->event_start_hl));
+   if(errc != 0){
+    cuda_task->event_start_hl=-1; if(errc != TRY_LATER && errc != DEVICE_UNABLE) errc=4;
+   }else{
+    errc=cuda_event_get(gpu_id,&(cuda_task->event_comput_hl));
+    if(errc != 0){
+     cuda_task->event_comput_hl=-1; if(errc != TRY_LATER && errc != DEVICE_UNABLE) errc=5;
+    }else{
+     errc=cuda_event_get(gpu_id,&(cuda_task->event_output_hl));
+     if(errc != 0){
+      cuda_task->event_output_hl=-1; if(errc != TRY_LATER && errc != DEVICE_UNABLE) errc=6;
+      errc=cuda_event_get(gpu_id,&(cuda_task->event_finish_hl));
+      if(errc != 0){
+       cuda_task->event_finish_hl=-1; if(errc != TRY_LATER && errc != DEVICE_UNABLE) errc=7;
+      }
+     }
+    }
+   }
+  }
+  if(errc == 0){
+   cuda_task->task_error=-1; cuda_task->gpu_id=gpu_id;
+  }else{
+   i=cuda_event_release(gpu_id,cuda_task->event_finish_hl); cuda_task->event_finish_hl=-1;
+   i=cuda_event_release(gpu_id,cuda_task->event_output_hl); cuda_task->event_output_hl=-1;
+   i=cuda_event_release(gpu_id,cuda_task->event_comput_hl); cuda_task->event_comput_hl=-1;
+   i=cuda_event_release(gpu_id,cuda_task->event_start_hl); cuda_task->event_start_hl=-1;
+   i=cuda_stream_release(gpu_id,cuda_task->stream_hl); cuda_task->stream_hl=-1;
+   i=cuda_task_clean(cuda_task);
+  }
  }else{
   return DEVICE_UNABLE;
  }
- return 0;
+ return errc;
 }
 
 __host__ int cuda_task_destruct(cudaTask_t *cuda_task)
@@ -1483,6 +1563,8 @@ __host__ int cuda_task_destruct(cudaTask_t *cuda_task)
     clean at the end. **/
 {
  int n,errc;
+ unsigned int i;
+ tensBlck_t *tens_p;
 
  if(cuda_task == NULL) return -1;
  errc=cuda_task_completed(cuda_task);
@@ -1491,11 +1573,22 @@ __host__ int cuda_task_destruct(cudaTask_t *cuda_task)
  if(errc == CUDA_TASK_COMPLETED || errc == CUDA_TASK_ERROR){
   if(cuda_task->gpu_id < 0 || cuda_task->gpu_id >= MAX_GPUS_PER_NODE) return -2; //GPU id is out of allowed range
   if(cuda_task == LastTask[cuda_task->gpu_id]) LastTask[cuda_task->gpu_id]=NULL; //clear task dependency
+// Release CUDA resources:
   errc=cuda_stream_release(cuda_task->gpu_id,cuda_task->stream_hl); cuda_task->stream_hl=-1; if(errc != 0) n++;
   errc=cuda_event_release(cuda_task->gpu_id,cuda_task->event_start_hl); cuda_task->event_start_hl=-1; if(errc != 0) n++;
   errc=cuda_event_release(cuda_task->gpu_id,cuda_task->event_comput_hl); cuda_task->event_comput_hl=-1; if(errc != 0) n++;
   errc=cuda_event_release(cuda_task->gpu_id,cuda_task->event_output_hl); cuda_task->event_output_hl=-1; if(errc != 0) n++;
   errc=cuda_event_release(cuda_task->gpu_id,cuda_task->event_finish_hl); cuda_task->event_finish_hl=-1; if(errc != 0) n++;
+// Release other scheduling resources (pinned permutation multi-indices), if any:
+  for(i=0;i<cuda_task->num_args;i++){
+   tens_p=(cuda_task->tens_args)[i]; //pointer to a tensor argument associate with the CUDA task
+   if(tens_p != NULL){
+    if(tens_p->prmn_h != NULL){
+     if(mi_entry_pinned(tens_p->prmn_h) == YEP){errc=mi_entry_release(tens_p->prmn_h); if(errc) n++; tens_p->prmn_h=NULL;}
+    }
+   }
+  }
+// Clean the CUDA task:
   errc=cuda_task_clean(cuda_task);
  }else{
   return TRY_LATER; //CUDA task is still in progress
@@ -1703,11 +1796,11 @@ __host__ static int cuda_task_set_arg(cudaTask_t *cuda_task, unsigned int arg_nu
  if(cuda_task == NULL) return -1;
  if(arg_num >= MAX_TENSOR_OPERANDS) return -2; //[0..MAX_TENSOR_OPERANDS-1]
  cuda_task->tens_args[arg_num]=tens_arg; //no checks, just do it
- cuda_task->num_args=MAX(cuda_task->num_args,arg_num+1); //it is developer's responsibility to set all preceding arguments
+ cuda_task->num_args=MAX(cuda_task->num_args,arg_num+1); //it is user's responsibility to set all preceding arguments
  return 0;
 }
 
-__host__ static int cuda_task_record(cudaTask_t *cuda_task, unsigned int gpu_id, unsigned int coh_ctrl, unsigned int err_code)
+__host__ static int cuda_task_record(cudaTask_t *cuda_task, unsigned int coh_ctrl, unsigned int err_code)
 /** Records a scheduled CUDA task. A successfully scheduled CUDA task has <err_code>=0,
     otherwise a positive <err_code> indicates a task scheduling failure. In the latter
     case, the CUDA task will be finalized here. **/
@@ -1715,13 +1808,12 @@ __host__ static int cuda_task_record(cudaTask_t *cuda_task, unsigned int gpu_id,
  int i,errc;
 
  if(cuda_task == NULL) return -1;
- if(gpu_id >= MAX_GPUS_PER_NODE) return -2;
- if(cuda_task->task_error >= 0 || cuda_task->gpu_id >= 0) return -3; //non-empty CUDA task
- if(cuda_task->num_args == 0 || cuda_task->num_args > MAX_TENSOR_OPERANDS) return -4;
+ if(cuda_task->task_error >= 0) return -2; //CUDA task is not clean
+ if(cuda_task->gpu_id < 0 || cuda_task->gpu_id >= MAX_GPUS_PER_NODE) return -3; //GPU ID is out of range or CUDA task is not clean
+ if(cuda_task->num_args == 0 || cuda_task->num_args > MAX_TENSOR_OPERANDS) return -4; //no operands associated with the task
  for(i=0;i<cuda_task->num_args;i++){if(cuda_task->tens_args[i] == NULL) return -5;} //all tensor arguments must be set
- cuda_task->gpu_id=gpu_id;
  if(err_code == 0){ //successfully scheduled CUDA task
-  if(gpu_up[gpu_id] > GPU_OFF){
+  if(gpu_up[cuda_task->gpu_id] > GPU_OFF){
    cuda_task->task_error=-1; cuda_task->coherence=coh_ctrl;
   }else{
    cuda_task->task_error=13; cuda_task->coherence=coh_ctrl; //GPU is not mine
@@ -1734,10 +1826,11 @@ __host__ static int cuda_task_record(cudaTask_t *cuda_task, unsigned int gpu_id,
  return 0;
 }
 
-__host__ static int cuda_task_finalize(cudaTask_t *cuda_task)
+__host__ static int cuda_task_finalize(cudaTask_t *cuda_task) //do not call this function in tensor operations
 /** Releases unneeded (temporary and other) memory resources right after a CUDA task
     has completed. In case the resources cannot be released cleanly, returns NOT_CLEAN
-    just as a warning, but the CUDA task is finalized anyway. **/
+    just as a warning, but the CUDA task is finalized anyway. Note that the CUDA task
+    is not destructed here (CUDA resources will still be active). **/
 {
  const unsigned int msk=4; //two right bits are set
  unsigned int bts,coh,s_d_same;
@@ -1766,13 +1859,18 @@ __host__ static int cuda_task_finalize(cudaTask_t *cuda_task)
   }else if(bts == 2){
    if(s_d_same == NOPE){errc=tensDevRsc_release_all(tens_arg->dst_rsc); if(errc != 0) ret_stat=NOT_CLEAN;}
   }
-  coh=coh>>2;
+  coh=coh>>2; //select the bit for the next argument
+// Release the permutation multi-index entry if any:
+  if(tens_arg->prmn_h != NULL){
+   if(mi_entry_pinned(tens_arg->prmn_h) == YEP){errc=mi_entry_release(tens_arg->prmn_h); if(errc) ret_stat=NOT_CLEAN; tens_arg->prmn_h=NULL;}
+  }
  }
  return ret_stat;
 }
 //----------------------------------------------------
 //EXPORTED FUNCTIONS (callable from Fortran):
 //----------------------------------------------------
+#ifdef NOTHING
 // CPU->GPU TENSOR BLOCK COPY (blocking):
 __host__ int gpu_put_arg(tensBlck_t *ctens) //Blocking
 /** This function copies a tensor block from the Host argument buffer into a GPU argument buffer **/
@@ -2935,100 +3033,140 @@ NOTES:
  }
  return 0;
 }
+#endif
 //-------------------------------------------------------------------------------------------------------------
 // TENSOR CONTRACTION (non-blocking):
 __host__ int gpu_tensor_block_contract_dlf_(const int *cptrn, const tensBlck_t *ltens, const tensBlck_t *rtens,
-                                            tensBlck_t *dtens, int copy_back, cudaTask_t *cuda_task)
+                                   tensBlck_t *dtens, unsigned int coh_ctrl, cudaTask_t *cuda_task, int gpu_id)
 /**
 dtens(:)+=ltens(:)*rtens(:)
 INPUT:
  # cptrn(1:lrank+rrank) - contraction pattern: Position correspondence:
                           Uncontracted indices are positive, contracted are negative;
- # ltens - left tensor argument;
- # rtens - right tensor argument;
+ # ltens - left tensor argument (initialized!);
+ # rtens - right tensor argument (initialized!);
  # dtens - destination tensor (initialized!);
- # copy_back - 0: Output will not be copied back to Host (careful!); 1: It will.
+ # coh_ctrl - one of the COPY_XXX parameters regulating the data presence for each tensor argument;
+ # cuda_task - pointer to an empty (clean) CUDA task;
+ # gpu_id - GPU ID on which the operation is to be scheduled (defaults to the optimal one);
 OUTPUT:
- # dtens - modified destination tensor;
- # cuda_task - returns the relevant information on the cuda task launched.
+ # dtens - updated destination tensor;
+ # cuda_task - recorded CUDA task (either successfully scheduled or error).
 NOTES:
- # For all scalar tensors or all tensors of volume 1, <copy_back> will always be TRUE.
+ # If the tensor operation has been scheduled successfully, a recorded (active) CUDA task
+   will be returned along with zero return status. A scheduling error results in either
+   a negative (at early stages) or positive (at later stages) return status. In the former case
+   the CUDA task is left clean, while at the latter case it will be recorded as failed (error).
+ # Special return statuses TRY_LATER and DEVICE_UNABLE are not errors but merely indicators
+   of the current or permanent lack of resources, respectively.
 **/
 {
- int i,j,ncd,nlu,nru,cae,non_triv,gpu_num,dev_num,dev_kind,bx,by;
+ int i,j,drank,lrank,rrank,ncd,nlu,nru,cae,non_triv,gpu_num,cur_gpu,bx,by,errc;
  int dprm[1+MAX_TENSOR_RANK],lprm[1+MAX_TENSOR_RANK],rprm[1+MAX_TENSOR_RANK]; //the 1st element is the sign of the permutation
  size_t dsize,lsize,rsize,lc,ll,lr;
- int scr_entry_cnt,scr_entries[MAX_SCR_ENTRY_COUNT]; //additional GPU argument buffer entries (three at most)
+ int scr_entry_cnt,scr_entries[MAX_SCR_ENTRY_COUNT]; //additional GPU argument buffer entries
  void *darg,*larg,*rarg,*alpha,*beta;
- cudaStream_t cuda_stream;
- cudaEvent_t cuda_start,cuda_comput,cuda_output,cuda_finish;
+ cudaStream_t *cuda_stream;
+ cudaEvent_t *cuda_start,*cuda_comput,*cuda_output,*cuda_finish;
  cudaError_t err;
  const char *err_msg;
 #ifndef NO_BLAS
  cublasStatus_t err_cublas;
 #endif
 
- err=cudaGetLastError(); err=cudaSuccess; scr_entry_cnt=0;
 //printf("\n#DEBUG(tensor_algebra_gpu_nvidia:gpu_tensor_block_contract_dlf_): GPU Tensor Contraction:\n"); //debug
-//Check arguments:
- if(cptrn == NULL || dtens == NULL || ltens == NULL || rtens == NULL || cuda_task == NULL) return 1;
- if(ltens->elems_h == NULL || ltens->elems_d == NULL || rtens->elems_h == NULL || rtens->elems_d == NULL ||
-    dtens->elems_h == NULL || dtens->elems_d == NULL){i=cuda_task_finalize(cuda_task,2); return 2;}
- if((*dtens).rank < 0 || (*dtens).rank > MAX_TENSOR_RANK ||
-    (*ltens).rank < 0 || (*ltens).rank > MAX_TENSOR_RANK ||
-    (*rtens).rank < 0 || (*rtens).rank > MAX_TENSOR_RANK){i=cuda_task_finalize(cuda_task,3); return 3;}
- if(!(dtens->data_kind > 0 && ltens->data_kind == dtens->data_kind && rtens->data_kind == dtens->data_kind)){i=cuda_task_finalize(cuda_task,4); return 4;}
-//Check contraction pattern and dimension extent correspondence:
- for(i=0;i<dtens->rank;i++) dprm[i]=0; for(i=0;i<ltens->rank;i++) lprm[i]=0; for(i=0;i<rtens->rank;i++) rprm[i]=0;
- for(i=0;i<ltens->rank;i++){
+//Check function arguments:
+ if(cptrn == NULL || dtens == NULL || ltens == NULL || rtens == NULL || cuda_task == NULL) return -1;
+ if(tensBlck_present(dtens) != YEP || tensBlck_present(ltens) != YEP || tensBlck_present(rtens) != YEP) return -2; //tensor blocks must reside in some device memory
+ if(cuda_task_gpu_id(cuda_task) >= 0) return -3; //CUDA task is not clean (destruct/clean it first)
+//Check tensor arguments:
+ drank=(dtens->shape).num_dim; //destination tensor rank
+ lrank=(ltens->shape).num_dim; //left tensor rank
+ rrank=(rtens->shape).num_dim; //right tensor rank
+ if(drank < 0 || drank > MAX_TENSOR_RANK ||
+    lrank < 0 || lrank > MAX_TENSOR_RANK ||
+    rrank < 0 || rrank > MAX_TENSOR_RANK) return -4;
+ if(!(dtens->data_kind > 0 && ltens->data_kind == dtens->data_kind && rtens->data_kind == dtens->data_kind)) return -5;
+//Check the contraction pattern and dimension extent correspondence:
+ for(i=0;i<drank;i++) dprm[i]=0; for(i=0;i<lrank;i++) lprm[i]=0; for(i=0;i<rrank;i++) rprm[i]=0;
+ for(i=0;i<lrank;i++){ //position in ltens
   j=cptrn[i];
   if(j > 0){ //position in dtens
-   if(j > dtens->rank){bx=cuda_task_finalize(cuda_task,5); return 5;}
-   if(dtens->dims_h[j-1] != ltens->dims_h[i]){bx=cuda_task_finalize(cuda_task,6); return 6;}
-   if(dprm[j-1] == 0){dprm[j-1]=1;}else{bx=cuda_task_finalize(cuda_task,7); return 7;}
+   if(j > drank) return -6;
+   if((dtens->shape).dims[j-1] != (ltens->shape).dims[i]) return -7;
+   if(dprm[j-1] == 0){dprm[j-1]=1;}else{return -8;}
   }else if(j < 0){ //position in rtens
-   if(-j > rtens->rank){bx=cuda_task_finalize(cuda_task,8); return 8;}
-   if(rtens->dims_h[-j-1] != ltens->dims_h[i]){bx=cuda_task_finalize(cuda_task,9); return 9;}
-   if(cptrn[ltens->rank+(-j-1)] != -(i+1)){bx=cuda_task_finalize(cuda_task,10); return 10;}
-   if(rprm[-j-1] == 0){rprm[-j-1]=1;}else{bx=cuda_task_finalize(cuda_task,11); return 11;}
+   if(-j > rrank) return -9;
+   if((rtens->shape).dims[-j-1] != (ltens->shape).dims[i]) return -10;
+   if(cptrn[lrank+(-j-1)] != -(i+1)) return -11;
+   if(rprm[-j-1] == 0){rprm[-j-1]=1;}else{return -12;}
   }else{
-   bx=cuda_task_finalize(cuda_task,12); return 12;
+   return -13;
   }
  }
- for(i=0;i<rtens->rank;i++){
-  j=cptrn[ltens->rank+i];
+ for(i=0;i<rrank;i++){ //position in rtens
+  j=cptrn[lrank+i];
   if(j > 0){ //position in dtens
-   if(j > dtens->rank){bx=cuda_task_finalize(cuda_task,13); return 13;}
-   if(dtens->dims_h[j-1] != rtens->dims_h[i]){bx=cuda_task_finalize(cuda_task,14); return 14;}
-   if(dprm[j-1] == 0){dprm[j-1]=1;}else{bx=cuda_task_finalize(cuda_task,15); return 15;}
+   if(j > drank) return -14;
+   if((dtens->shape).dims[j-1] != (rtens->shape).dims[i]) return -15;
+   if(dprm[j-1] == 0){dprm[j-1]=1;}else{return -16;}
   }else if(j < 0){ //position in ltens
-   if(-j > ltens->rank){bx=cuda_task_finalize(cuda_task,16); return 16;}
-   if(ltens->dims_h[-j-1] != rtens->dims_h[i]){bx=cuda_task_finalize(cuda_task,17); return 17;}
-   if(cptrn[-j-1] != -(i+1)){bx=cuda_task_finalize(cuda_task,18); return 18;}
-   if(lprm[-j-1] == 0){lprm[-j-1]=1;}else{bx=cuda_task_finalize(cuda_task,19); return 19;}
+   if(-j > lrank) return -17;
+   if((ltens->shape).dims[-j-1] != (rtens->shape).dims[i]) return -18;
+   if(cptrn[-j-1] != -(i+1)) return -19;
+   if(lprm[-j-1] == 0){lprm[-j-1]=1;}else{return -20;}
   }else{
-   bx=cuda_task_finalize(cuda_task,20); return 20;
+   return -21;
   }
  }
- for(i=0;i<dtens->rank;i++) if(dprm[i] != 1){bx=cuda_task_finalize(cuda_task,21); return 21;}
-//Switch GPUs, if needed:
- dev_num=decode_device_id(dtens->device_id,&dev_kind);
- i=decode_device_id(ltens->device_id,&bx); j=decode_device_id(rtens->device_id,&by);
- if(!(dev_kind == DEV_NVIDIA_GPU && bx == dev_kind && by == dev_kind && dev_num >= 0 && i == dev_num && j == dev_num)){i=cuda_task_finalize(cuda_task,22); return 22;}
- err=cudaGetDevice(&gpu_num); if(err!=cudaSuccess){err_msg=cudaGetErrorString(err); i=cuda_task_finalize(cuda_task,23); return 23;}
- if(dev_num != gpu_num){err=cudaSetDevice(dev_num); if(err!=cudaSuccess){err_msg=cudaGetErrorString(err); i=cuda_task_finalize(cuda_task,24); err=cudaSetDevice(gpu_num); return 24;}}
-//Create a CUDA stream and events:
- i=0; err=cudaStreamCreate(&cuda_stream); if(err != cudaSuccess) i++;
- err=cudaEventCreate(&cuda_start); if(err != cudaSuccess) i++;
- err=cudaEventCreate(&cuda_comput); if(err != cudaSuccess) i++;
- err=cudaEventCreate(&cuda_output); if(err != cudaSuccess) i++;
- err=cudaEventCreate(&cuda_finish); if(err != cudaSuccess) i++;
- if(i != 0){
-  i=cuda_task_record(cuda_task,25,dev_num,cuda_stream,cuda_start,cuda_comput,cuda_output,cuda_finish,scr_entry_cnt,scr_entries);
-  err=cudaSetDevice(gpu_num); return 25;
+ for(i=0;i<drank;i++) if(dprm[i] != 1) return -22;
+//Activate the right GPU:
+ if(gpu_id < 0 || gpu_id >= MAX_GPUS_PER_NODE){gpu_num=tens_op_best_gpu(dtens,ltens,rtens);}else{gpu_num=gpu_id;};
+ if(gpu_is_mine(gpu_num) <= GPU_OFF) return -23; //GPU is not mine or error
+ cur_gpu=gpu_in_focus(); //save the current GPU
+ errc=gpu_activate(gpu_num); if(errc){errc=gpu_activate(cur_gpu); return -24;};
+ err=cudaGetLastError(); err=cudaSuccess; //clear the GPU error status
+//Construct a CUDA task (acquire CUDA resources):
+ errc=cuda_task_construct(cuda_task,gpu_num);
+ if(errc){i=gpu_activate(cur_gpu); if(errc == TRY_LATER || errc == DEVICE_UNABLE){return errc;}else{return -25;}}
+
+// *** From this point all errors must be positive and the CUDA task must be recorded! ***
+//Associate CUDA stream and events pointers for convenience:
+ cuda_stream=cuda_stream_ptr(cuda_task->gpu_id,cuda_task->stream_hl);
+ if(cuda_stream == NULL){errc=gpu_activate(cur_gpu); errc=cuda_task_record(cuda_task,coh_ctrl,1); return 1;}
+ cuda_start=cuda_event_ptr(cuda_task->gpu_id,cuda_task->event_start_hl);
+ if(cuda_start == NULL){errc=gpu_activate(cur_gpu); errc=cuda_task_record(cuda_task,coh_ctrl,2); return 2;}
+ cuda_comput=cuda_event_ptr(cuda_task->gpu_id,cuda_task->event_comput_hl);
+ if(cuda_comput == NULL){errc=gpu_activate(cur_gpu); errc=cuda_task_record(cuda_task,coh_ctrl,3); return 3;}
+ cuda_output=cuda_event_ptr(cuda_task->gpu_id,cuda_task->event_output_hl);
+ if(cuda_output == NULL){errc=gpu_activate(cur_gpu); errc=cuda_task_record(cuda_task,coh_ctrl,4); return 4;}
+ cuda_finish=cuda_event_ptr(cuda_task->gpu_id,cuda_task->event_finish_hl);
+ if(cuda_finish == NULL){errc=gpu_activate(cur_gpu); errc=cuda_task_record(cuda_task,coh_ctrl,5); return 5;}
+//Get a permutation multi-index entry for each tensor argument (from an internal slab of pinned Host memory):
+ if(drank > 0){
+  errc=mi_entry_get(&(dtens->prmn_h));
+  if(errc){
+   i=gpu_activate(cur_gpu); i=cuda_task_record(cuda_task,coh_ctrl,6); //not an error if TRY_LATER or DEVICE_UNABLE returned
+   if(errc == TRY_LATER || errc == DEVICE_UNABLE){return errc;}else{return 6;}
+  }
  }
-//Contraction case: Multiplication of scalars:
- if((*dtens).rank == 0 && (*ltens).rank == 0 && (*rtens).rank == 0){
+ if(lrank > 0){
+  errc=mi_entry_get(&(ltens->prmn_h));
+  if(errc){
+   i=gpu_activate(cur_gpu); i=cuda_task_record(cuda_task,coh_ctrl,7); //not an error if TRY_LATER or DEVICE_UNABLE returned
+   if(errc == TRY_LATER || errc == DEVICE_UNABLE){return errc;}else{return 7;}
+  }
+ }
+ if(rrank > 0){
+  errc=mi_entry_get(&(rtens->prmn_h));
+  if(errc){
+   i=gpu_activate(cur_gpu); i=cuda_task_record(cuda_task,coh_ctrl,8); //not an error if TRY_LATER or DEVICE_UNABLE returned
+   if(errc == TRY_LATER || errc == DEVICE_UNABLE){return errc;}else{return 8;}
+  }
+ }
+
+//CONTRACTION CASE: Multiplication of scalars:
+ if(drank == 0 && lrank == 0 && rrank == 0){
   if(EVENT_RECORD != 0){
    err=cudaEventRecord(cuda_start,cuda_stream); if(err != cudaSuccess){
     i=cuda_task_record(cuda_task,26,dev_num,cuda_stream,cuda_start,cuda_comput,cuda_output,cuda_finish,scr_entry_cnt,scr_entries);
@@ -3054,7 +3192,7 @@ NOTES:
     err=cudaSetDevice(gpu_num); return 29;
    }
   }
-//Other contraction cases (tensor rescaling, full contraction, tensor product, partial contraction):
+//CONTRACTION CASE: Tensor rescaling, full contraction, tensor product, partial contraction:
  }else{
 // Get contraction permutations for all arguments:
   get_contr_permutations((*ltens).rank,(*rtens).rank,cptrn,dprm,lprm,rprm,&ncd,&nlu,&nru,&i);
