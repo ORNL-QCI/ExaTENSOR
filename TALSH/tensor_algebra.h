@@ -2,7 +2,7 @@
     Parameters, derived types, and function prototypes
     used at the lower level of TAL-SH (device specific):
     CP-TAL, NV-TAL, XP-TAL, AM-TAL, etc.
-REVISION: 2016/01/26
+REVISION: 2016/01/28
 Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
 Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
 
@@ -63,9 +63,9 @@ FOR DEVELOPERS ONLY:
 
 #include <time.h>
 
-//DEVICE COMPUTE CAPABILITY:
+//DEVICE COMPUTE CAPABILITY (for Host code, use __CUDA_ARCH__ for device code):
 #ifndef CUDA_ARCH
-#define CUDA_ARCH 130
+#define CUDA_ARCH 130 //minimal required compute capability
 #endif
 
 //GLOBAL PARAMETERS:
@@ -78,7 +78,7 @@ FOR DEVELOPERS ONLY:
 #define MAX_CUDA_EVENTS MAX_CUDA_TASKS*NUM_EVENTS_PER_TASK //max number of CUDA events per CUDA device
 
 //DEVICE KINDS:
-#define MAX_GPUS_PER_NODE 8        //max allowed number of NVidia GPUs on a node
+#define MAX_GPUS_PER_NODE 8        //max allowed number of NVidia GPUs on a node (peer memory access will not work for more than that)
 #define MAX_MICS_PER_NODE 8        //max allowed number of Intel MICs on a node
 #define MAX_AMDS_PER_NODE 8        //max allowed number of AMD GPUs on a node
 #define DEV_NULL -1                //abstract null device
@@ -89,6 +89,11 @@ FOR DEVELOPERS ONLY:
 #define DEV_MAX 1+MAX_GPUS_PER_NODE+MAX_MICS_PER_NODE+MAX_AMDS_PER_NODE
 
 //KERNEL PARAMETERS for NVidia GPU:
+#if CUDA_ARCH >= 300
+#define UNIFIED_ADDRESSING 1       //non-zero value will assume the availability of unified virtual addressing on GPU(s)
+#else
+#undef UNIFIED_ADDRESSING
+#endif
 #define GPU_CACHE_LINE_LEN 128     //cache line length in bytes
 #define GPU_SHMEM_WIDTH 8          //default width of the GPU shared memory banks (4 or 8 bytes)
 #define MAX_CUDA_BLOCKS 1024       //max number of CUDA thread blocks per kernel
@@ -120,6 +125,7 @@ FOR DEVELOPERS ONLY:
 #define NO_TYPE 0 //null type
 #define R4 4      //float data kind (keep consistent with c_process.f90::tens_blck_pack/unpack)
 #define R8 8      //double data kind (keep consistent with c_process.f90::tens_blck_pack/unpack)
+#define C4 12     //float complex data kind (keep consistent with c_process.f90::tens_blck_pack/unpack)
 #define C8 16     //double complex data kind (keep consistent with c_process.f90::tens_blck_pack/unpack)
 
 //CUDA TASK STATUS (keep consistent with tensor_algebra.F90):
@@ -348,6 +354,8 @@ extern "C"{
  int gpu_mem_alloc(void **dev_ptr, size_t tsize, int gpu_id = -1); //NVidia GPU only
  int gpu_mem_free(void *dev_ptr, int gpu_id = -1); //NVidia GPU only
 #endif
+//Generic:
+ int tens_valid_data_kind(int datk, int * datk_size = NULL);
 // Device id conversion:
  int valid_device_kind(int dev_kind);
  int encode_device_id(int dev_kind, int dev_num);
