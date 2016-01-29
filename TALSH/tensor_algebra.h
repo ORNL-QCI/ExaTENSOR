@@ -267,6 +267,7 @@ typedef struct{
  int dev_id;        //flat device id (>=0) the following resources belong to (-1:None)
  void * gmem_p;     //pointer to global memory where the tensor body resides (NULL:None)
  int buf_entry;     //argument buffer entry handle (>=0) corresponding to <gmem_p> (-1:None)
+ int mem_attached;  //0:memory was allocated; 1:memory was attached (external memory)
 } talsh_dev_rsc_t;
 
 // Tensor block (for the use on NVidia GPU):
@@ -311,7 +312,7 @@ typedef struct{
  int event_finish_hl;    //handle of the CUDA event recorded at the end of the task (full completion)
  unsigned int coherence; //coherence control for this task (see COPY_XXX constants)
  unsigned int num_args;  //number of tensor arguments participating in the tensor operation
- tensArg_t *tens_args[MAX_TENSOR_OPERANDS]; //pointers to tensor arguments participating in the tensor operation
+ tensArg_t tens_args[MAX_TENSOR_OPERANDS]; //tensor arguments participating in the tensor operation
 } cudaTask_t;
 //Note: Adding new CUDA events will require adjustment of NUM_EVENTS_PER_TASK.
 

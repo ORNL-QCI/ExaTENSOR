@@ -122,8 +122,7 @@ static int cuda_event_release(int gpu_num, int cuda_event_handle);
 static cudaEvent_t * cuda_event_ptr(int gpu_num, int cuda_event_handle);
 static void limit_cuda_blocks2d(int max_blocks, int *bx, int *by);
 static int tens_op_best_gpu(const tensBlck_t *tens0 == NULL, const tensBlck_t *tens1 == NULL, const tensBlck_t *tens2 == NULL);
-static int cuda_task_set_arg(cudaTask_t *cuda_task, unsigned int arg_num, tensBlck_t *tens_arg);
-static int cuda_task_clear_args(cudaTask_t *cuda_task);
+static int cuda_task_set_arg(cudaTask_t *cuda_task, unsigned int arg_num, tensBlck_t *tens_p);
 static int cuda_task_record(cudaTask_t *cuda_task, unsigned int coh_ctrl, unsigned int err_code = 0);
 static int cuda_task_finalize(cudaTask_t *cuda_task);
 // CUDA KERNELS:
@@ -218,10 +217,10 @@ int tens_valid_data_kind(int datk, int * datk_size)
  int datk_sz=-1;
  int ans=NOPE;
  switch(datk){
-  case R4: ans=YEP; datk_sz=sizeof(float);
-  case R8: ans=YEP; datk_sz=sizeof(double);
-  case C4: ans=YEP; datk_sz=sizeof(float)*2;
-  case C8: ans=YEP; datk_sz=sizeof(double)*2;
+  case R4: ans=YEP; datk_sz=sizeof(float);    //real float
+  case R8: ans=YEP; datk_sz=sizeof(double);   //real double
+  case C4: ans=YEP; datk_sz=sizeof(float)*2;  //complex float
+  case C8: ans=YEP; datk_sz=sizeof(double)*2; //complex double
   case NO_TYPE: ans=YEP; datk_sz=0;
  }
  if(datk_size != NULL) *datk_size=datk_sz;
@@ -330,18 +329,19 @@ static int tensDevRsc_create(talsh_dev_rsc_t **drsc)
 /** Creates a new device resource descriptor and inits it to null. **/
 {
  int errc;
- *drsc=(talsh_dev_rsc_t*)malloc(sizeof(talsh_dev_rsc_t)); if(*drsc == NULL) return 1;
+ *drsc=(talsh_dev_rsc_t*)malloc(sizeof(talsh_dev_rsc_t)); if(*drsc == NULL) return TRY_LATER;
  errc=tensDevRsc_clean(*drsc);
  return 0;
 }
 
 static int tensDevRsc_clean(talsh_dev_rsc_t * drsc)
-/** Cleans (initializes to null) a device resource for tensBlck_t. **/
+/** Cleans (initializes to null) a device resource descriptor. **/
 {
  if(drsc != NULL){
   drsc->dev_id=DEV_NULL; //flat device id
   drsc->gmem_p=NULL;     //device global memory pointer (any device)
   drsc->buf_entry=-1;    //device argument buffer entry (any device)
+  drsc->mem_attached=0;  //memory attachement flag (distinguishes between allocated and attached memory)
  }else{
   return -1;
  }
@@ -352,9 +352,10 @@ static int tensDevRsc_empty(talsh_dev_rsc_t * drsc)
 /** Returns YEP if the device resource descriptor is empty, NOPE otherwise.
     Negative return status means an error. **/
 {
+ int errc;
  if(drsc == NULL) return -1;
- if(drsc->gmem_p != NULL || drsc->buf_entry >= 0) return NOPE;
- drsc->dev_id=DEV_NULL;
+ if(drsc->gmem_p != NULL || drsc->buf_entry >= 0) return NOPE; //check all resources
+ errc=tensDevRsc_clean(drsc);
  return YEP;
 }
 
@@ -365,24 +366,23 @@ static int tensDevRsc_attach_mem(talsh_dev_rsc_t * drsc, int dev_id, void * mem_
     argument must match that one. **/
 {
  if(drsc == NULL) return -1;
- if(dev_id < 0) return -2;
+ if(dev_id < 0 || dev_id >= DEV_MAX) return -2;
  if(mem_p == NULL) return -3;
- if(drsc->dev_id >= 0 && drsc->dev_id != dev_id) return 1; //resource was assigned to a different device
- if(drsc->gmem_p != NULL) return 2; //resource already has global memory attached
- drsc->dev_id=dev_id; drsc->gmem_p=mem_p; drsc->buf_entry=buf_entry;
+ if(drsc->dev_id >= 0 && drsc->dev_id != dev_id) return 1; //a non-empty descriptor must be associated with the same device
+ if(drsc->gmem_p != NULL || drsc->buf_entry >= 0) return 2; //resource already has global memory attached
+ drsc->dev_id=dev_id; drsc->gmem_p=mem_p; drsc->buf_entry=buf_entry; drsc->mem_attached=1;
  return 0;
 }
 
 static int tensDevRsc_detach_mem(talsh_dev_rsc_t * drsc)
 /** Detaches a chunk of external memory from a device resource descriptor.
-    Regardless of the origin of that memory, it is not released. **/
+    Regardless of the origin, that memory is not released. **/
 {
  int errc;
-
  if(drsc == NULL) return -1;
- if(drsc->dev_id < 0) return -2; //empty resource descriptor
- if(drsc->gmem_p == NULL) return 1; //no global memory attached
- drsc->gmem_p=NULL; drsc->buf_entry=-1;
+ if(drsc->dev_id < 0 || drsc->dev_id >= DEV_MAX) return -2; //empty resource descriptor
+ if(drsc->gmem_p == NULL || drsc->mem_attached == 0) return 1; //no global memory attached
+ drsc->gmem_p=NULL; drsc->buf_entry=-1; drsc->mem_attached=0;
  errc=tensDevRsc_empty(drsc);
  return 0;
 }
@@ -396,12 +396,11 @@ static int tensDevRsc_allocate_mem(talsh_dev_rsc_t * drsc, int dev_id, size_t me
  char *byte_ptr;
 
  if(drsc == NULL) return -1;
- if(dev_id < 0) return -2;
+ if(dev_id < 0 || dev_id >= DEV_MAX) return -2;
  if(mem_size <= 0) return -3;
- devn=decode_device_id(dev_id,&devk);
- if(devn < 0) return -4; //invalid flat device id
+ devn=decode_device_id(dev_id,&devk); if(devn < 0) return -4; //invalid flat device id
  if(drsc->dev_id >= 0 && drsc->dev_id != dev_id) return 1; //resource was assigned to a different device
- if(drsc->gmem_p != NULL) return 2; //resource already has global memory attached
+ if(drsc->gmem_p != NULL || drsc->buf_entry >= 0) return 2; //resource already has global memory attached
  switch(devk){
   case DEV_HOST:
    if(in_arg_buf == NOPE){
@@ -411,6 +410,7 @@ static int tensDevRsc_allocate_mem(talsh_dev_rsc_t * drsc, int dev_id, size_t me
     if(errc != 0){if(errc == TRY_LATER || errc == DEVICE_UNABLE){return errc;}else{return 4;}}
     drsc->gmem_p=(void*)byte_ptr; drsc->buf_entry=i;
    }
+   drsc->mem_attached=0;
    break;
   case DEV_NVIDIA_GPU:
 #ifndef NO_GPU
@@ -421,6 +421,7 @@ static int tensDevRsc_allocate_mem(talsh_dev_rsc_t * drsc, int dev_id, size_t me
     if(errc != 0){if(errc == TRY_LATER || errc == DEVICE_UNABLE){return errc;}else{return 6;}}
     drsc->gmem_p=(void*)byte_ptr; drsc->buf_entry=i;
    }
+   drsc->mem_attached=0;
    break;
 #else
    return -5;
@@ -456,33 +457,29 @@ static int tensDevRsc_free_mem(talsh_dev_rsc_t * drsc)
 
  n=0;
  if(drsc == NULL) return -1;
- if(drsc->dev_id < 0) return -2;
+ if(drsc->dev_id < 0 || drsc->dev_id >= DEV_MAX) return -2;
  if(drsc->gmem_p == NULL) return -3;
- devn=decode_device_id(drsc->dev_id,&devk);
- if(devn < 0) return -4; //invalid flat device id
+ devn=decode_device_id(drsc->dev_id,&devk); if(devn < 0) return -4; //invalid flat device id
+ if(drsc->mem_attached != 0) return 1; //memory was not allocated but attached
  switch(devk){
   case DEV_HOST:
    if(drsc->buf_entry >= 0){
     errc=free_buf_entry_host(drsc->buf_entry); if(errc != 0) n=NOT_CLEAN;
-    drsc->gmem_p=NULL; drsc->buf_entry=-1;
+    drsc->buf_entry=-1;
    }else{
-    if(drsc->gmem_p != NULL){
-     errc=host_mem_free_pin(drsc->gmem_p); if(errc != 0) n=NOT_CLEAN;
-     drsc->gmem_p=NULL;
-    }
+    errc=host_mem_free_pin(drsc->gmem_p); if(errc != 0) n=NOT_CLEAN;
    }
+   drsc->gmem_p=NULL;
    break;
   case DEV_NVIDIA_GPU:
 #ifndef NO_GPU
    if(drsc->buf_entry >= 0){
     errc=free_buf_entry_gpu(devn,drsc->buf_entry); if(errc != 0) n=NOT_CLEAN;
-    drsc->gmem_p=NULL; drsc->buf_entry=-1;
+    drsc->buf_entry=-1;
    }else{
-    if(drsc->gmem_p != NULL){
-     errc=gpu_mem_free(drsc->gmem_p,devn); if(errc != 0) n=NOT_CLEAN;
-     drsc->gmem_p=NULL;
-    }
+    errc=gpu_mem_free(drsc->gmem_p,devn); if(errc != 0) n=NOT_CLEAN;
    }
+   drsc->gmem_p=NULL;
    break;
 #else
    return -5;
@@ -514,59 +511,21 @@ static int tensDevRsc_release_all(talsh_dev_rsc_t * drsc)
     but the corresponding components of the device resource descriptor
     are cleaned anyway. An empty resource causes no action. **/
 {
- int n,devk,devn,errc;
+ int n,errc;
 
  n=0;
  if(drsc == NULL) return -1;
- if(drsc->dev_id >= 0){ //resource handle is not empty
-  devn=decode_device_id(drsc->dev_id,&devk);
-  if(devn < 0) return -2; //invalid flat device id
-  switch(devk){
-   case DEV_HOST:
-    if(drsc->buf_entry >= 0){
-     errc=free_buf_entry_host(drsc->buf_entry); if(errc != 0) n=NOT_CLEAN;
-     drsc->gmem_p=NULL; drsc->buf_entry=-1;
-    }else{
-     if(drsc->gmem_p != NULL){
-      errc=host_mem_free_pin(drsc->gmem_p); if(errc != 0) n=NOT_CLEAN;
-      drsc->gmem_p=NULL;
-     }
-    }
-    break;
-   case DEV_NVIDIA_GPU:
-#ifndef NO_GPU
-    if(drsc->buf_entry >= 0){
-     errc=free_buf_entry_gpu(devn,drsc->buf_entry); if(errc != 0) n=NOT_CLEAN;
-     drsc->gmem_p=NULL; drsc->buf_entry=-1;
-    }else{
-     if(drsc->gmem_p != NULL){
-      errc=gpu_mem_free(drsc->gmem_p,devn); if(errc != 0) n=NOT_CLEAN;
-      drsc->gmem_p=NULL;
-     }
-    }
-    break;
-#else
-    return -3;
-#endif
-   case DEV_INTEL_MIC:
-#ifndef NO_MIC
-    //`Future
-    break;
-#else
-    return -4;
-#endif
-   case DEV_AMD_GPU:
-#ifndef NO_AMD
-    //`Future
-    break;
-#else
-    return -5;
-#endif
-   default:
-    return -6; //invalid device kind
+ if(drsc->dev_id >= 0 && drsc->dev_id < DEV_MAX){ //resource handle is not empty
+//Release global memory:
+  if(drsc->gmem_p != NULL){
+   if(drsc->mem_attached){
+    errc=tensDevRsc_detach_mem(drsc); if(errc) n=NOT_CLEAN;
+   }else{
+    errc=tensDevRsc_free_mem(drsc); if(errc) n=NOT_CLEAN;
+   }
   }
-  errc=tensDevRsc_clean(drsc);
  }
+ errc=tensDevRsc_clean(drsc);
  return n;
 }
 
@@ -576,10 +535,9 @@ static int tensDevRsc_destroy(talsh_dev_rsc_t * drsc)
     but it is not a critical error in general (however, a leak can occur). **/
 {
  int n,errc;
-
  n=0;
  if(drsc == NULL) return -1;
- errc=tensDevRsc_release_all(drsc); if(errc != 0) n=NOT_CLEAN;
+ errc=tensDevRsc_release_all(drsc); if(errc) n=NOT_CLEAN;
  free(drsc);
  return n;
 }
@@ -956,7 +914,10 @@ __host__ int gpu_activate(int gpu_num)
  if(gpu_num >= 0 && gpu_num < MAX_GPUS_PER_NODE){
   if(gpu_up[gpu_num] > GPU_OFF){
    cur_gpu=gpu_in_focus();
-   if(cur_gpu != gpu_num){err=cudaSetDevice(gpu_num); if(err != cudaSuccess) return 3;}
+   if(cur_gpu != gpu_num){
+    err=cudaSetDevice(gpu_num);
+    if(err != cudaSuccess){if(cur_gpu >= 0) err=cudaSetDevice(cur_gpu); return 3;}
+   }
   }else{
    return 2; //GPU is not mine
   }
@@ -1136,9 +1097,9 @@ int tensShape_destruct(talsh_tens_shape_t * tshape)
     free(tshape->dims); //will free all {dims,divs,grps}
     tshape->dims=NULL; tshape->divs=NULL; tshape->grps=NULL;
    }else{
-    if(tshape->dims != NULL){errc=mi_entry_release(tshape->dims); if(errc != 0) n++; tshape->dims=NULL;} //release a mi resource
-    if(tshape->divs != NULL){errc=mi_entry_release(tshape->divs); if(errc != 0) n++; tshape->divs=NULL;} //release a mi resource
     if(tshape->grps != NULL){errc=mi_entry_release(tshape->grps); if(errc != 0) n++; tshape->grps=NULL;} //release a mi resource
+    if(tshape->divs != NULL){errc=mi_entry_release(tshape->divs); if(errc != 0) n++; tshape->divs=NULL;} //release a mi resource
+    if(tshape->dims != NULL){errc=mi_entry_release(tshape->dims); if(errc != 0) n++; tshape->dims=NULL;} //release a mi resource
    }
   }else{
    return -2;
@@ -1224,7 +1185,7 @@ int tensBlck_construct(tensBlck_t *ctens, //pointer to defined tensor block (eit
 }
 
 int tensBlck_attach_body(tensBlck_t *ctens, //pointer to a shape-defined (constructed) tensor block
-                         int data_kind,     //data kind (R4,R8,C8)
+                         int data_kind,     //data kind (R4,R8,C4,C8)
                          int dev_id,        //flat device id where the body resides (or should reside)
                          void *body_ptr,    //pointer to the tensor body (global memory of device <dev_id>)
                          int buf_entry)     //argument buffer entry handle corresponding to the <body_ptr> (optional)
@@ -1237,15 +1198,16 @@ int tensBlck_attach_body(tensBlck_t *ctens, //pointer to a shape-defined (constr
     resource is still in use (this will result in an error). A return status of TRY_LATER or DEVICE_UNABLE
     indicates the current or permanent shortage in the necessary resources and is not an error. **/
 {
- int errc;
+ int errc,dks;
  size_t vol,body_size;
 
  if(ctens == NULL) return -1;
- if(tens_valid_data_kind(data_kind) != YEP || data_kind == NO_TYPE) return -2;
+ errc=tens_valid_data_kind(data_kind,&dks);
+ if(errc != YEP || data_kind == NO_TYPE) return -2;
  if(ctens->shape.num_dim < 0 || ctens->shape.num_dim > MAX_TENSOR_RANK) return -3; //tensor block must be shape-defined
  if(body_ptr == NULL && buf_entry >= 0) return -4; //a defined argument buffer entry must be supplied with the corresponding pointer
  vol=tensShape_volume(&(ctens->shape)); //tensor body volume (number of elements)
- body_size=vol*data_kind; //tensor body size in bytes
+ body_size=vol*(size_t)dks; //tensor body size in bytes
  if(body_ptr == NULL){ //allocate memory in the argument buffer
   errc=tensDevRsc_allocate_mem(ctens->src_rsc,dev_id,body_size,YEP);
   if(errc != 0){if(errc == TRY_LATER || errc == DEVICE_UNABLE){return errc;}else{return 1;}}
@@ -1361,8 +1323,8 @@ size_t tensBlck_volume(const tensBlck_t * ctens)
 /** Returns the volume of a tensor block (number of elements)
     or zero in cases of an empty tensor block or an error. **/
 {
- size_t tvol;
- tvol=tensShape_volume(&(ctens->shape));
+ if(ctens == NULL) return 0;
+ size_t tvol=tensShape_volume(&(ctens->shape));
  return tvol;
 }
 
@@ -1386,7 +1348,11 @@ __host__ int cuda_task_clean(cudaTask_t *cuda_task)
  cuda_task->task_error=-1; cuda_task->gpu_id=-1; cuda_task->num_args=0;
  cuda_task->stream_hl=-1; cuda_task->event_start_hl=-1; cuda_task->event_comput_hl=-1;
  cuda_task->event_output_hl=-1; cuda_task->event_finish_hl=-1;
- for(int i=0;i<MAX_TENSOR_OPERANDS;i++){(cuda_task->tens_args)[i]=NULL;}
+ for(int i=0;i<MAX_TENSOR_OPERANDS;i++){
+  cuda_task->tens_args[i].tens_p=NULL;
+  cuda_task->tens_args[i].prmn_p=NULL;
+  cuda_task->tens_args[i].const_mem_entry=-1;
+ }
  return 0;
 }
 
@@ -1400,8 +1366,8 @@ __host__ int cuda_task_construct(cudaTask_t *cuda_task, int gpu_id)
 
  errc=0;
  if(cuda_task == NULL) return -1;
- if(cuda_task->task_error >= 0 || cuda_task->gpu_id >= 0 || cuda_task->num_args > 0) return 1; //CUDA task is not clean: Destruct it first
- i=cuda_task_clean(cuda_task); //this is not necessary here
+ if(cuda_task->task_error >= 0 || cuda_task->gpu_id >= 0 || cuda_task->num_args > 0) return 1; //CUDA task is not clean: Destruct/clean it first
+ i=cuda_task_clean(cuda_task); //just in case
  if(gpu_id < 0) gpu_id=gpu_in_focus();
  if(gpu_id < 0 || gpu_id >= MAX_GPUS_PER_NODE) return 2; //gpu_id is out of range
  if(gpu_up[gpu_id] > GPU_OFF){
@@ -1452,11 +1418,9 @@ __host__ int cuda_task_destruct(cudaTask_t *cuda_task)
     clean at the end. **/
 {
  int n,errc;
- unsigned int i;
- tensBlck_t *tens_p;
 
  if(cuda_task == NULL) return -1;
- errc=cuda_task_completed(cuda_task);
+ errc=cuda_task_completed(cuda_task); //CUDA task is finalized there (if completed or failed)
  if(errc == CUDA_TASK_EMPTY) return 0;
  n=0; //number of unsuccessful resource releases
  if(errc == CUDA_TASK_COMPLETED || errc == CUDA_TASK_ERROR){
@@ -1468,15 +1432,6 @@ __host__ int cuda_task_destruct(cudaTask_t *cuda_task)
   errc=cuda_event_release(cuda_task->gpu_id,cuda_task->event_comput_hl); cuda_task->event_comput_hl=-1; if(errc != 0) n++;
   errc=cuda_event_release(cuda_task->gpu_id,cuda_task->event_output_hl); cuda_task->event_output_hl=-1; if(errc != 0) n++;
   errc=cuda_event_release(cuda_task->gpu_id,cuda_task->event_finish_hl); cuda_task->event_finish_hl=-1; if(errc != 0) n++;
-// Release other scheduling resources (pinned permutation multi-indices), if any:
-  for(i=0;i<cuda_task->num_args;i++){
-   tens_p=(cuda_task->tens_args)[i]; //pointer to a tensor argument associate with the CUDA task
-   if(tens_p != NULL){
-    if(tens_p->prmn_h != NULL){
-     if(mi_entry_pinned(tens_p->prmn_h) == YEP){errc=mi_entry_release(tens_p->prmn_h); if(errc) n++; tens_p->prmn_h=NULL;}
-    }
-   }
-  }
 // Clean the CUDA task:
   errc=cuda_task_clean(cuda_task);
  }else{
@@ -1496,7 +1451,7 @@ __host__ int cuda_task_destroy(cudaTask_t *cuda_task)
 
  n=0;
  if(cuda_task == NULL) return -1;
- errc=cuda_task_completed(cuda_task);
+ errc=cuda_task_completed(cuda_task); //CUDA task is finalized there (if completed or failed)
  if(errc == CUDA_TASK_COMPLETED || errc == CUDA_TASK_ERROR){
   errc=cuda_task_destruct(cuda_task); if(errc != 0) n=NOT_CLEAN;
  }else{
@@ -1679,22 +1634,34 @@ __host__ float cuda_task_time(const cudaTask_t *cuda_task, float *in_copy, float
  }
 }
 
-__host__ static int cuda_task_set_arg(cudaTask_t *cuda_task, unsigned int arg_num, tensBlck_t *tens_arg)
-/** Sets a specific tensor argument in a CUDA task. The previous operand is blindly discarded, if any! **/
+__host__ static int cuda_task_set_arg(cudaTask_t *cuda_task, unsigned int arg_num, tensBlck_t *tens_p)
+/** Sets a specific tensor argument in a CUDA task. The tensor argument is associated with
+    the provided tensor block and the required temporary multi-index entries are acquired.
+    If the multi-index resources cannot be acquired at this time, TRY_LATER is returned. **/
 {
+ int cae,errc;
  if(cuda_task == NULL) return -1;
- if(arg_num >= MAX_TENSOR_OPERANDS) return -2; //[0..MAX_TENSOR_OPERANDS-1]
- if(tens_arg == NULL) return -3;
- cuda_task->tens_args[arg_num]=tens_arg; //no checks, just do it
- cuda_task->num_args=MAX(cuda_task->num_args,arg_num+1); //it is user's responsibility to set all preceding arguments
- return 0;
-}
-
-__host__ static int cuda_task_clear_args(cudaTask_t *cuda_task)
-/** Nullifies all tensor arguments associated with a CUDA task (but no resource release!). **/
-{
- if(cuda_task == NULL) return -1;
- while(cuda_task->num_args > 0){(cuda_task->tens_args)[--(cuda_task->num_args)]=NULL;}
+ if(cuda_task->task_error >= 0 || cuda_task->gpu_id < 0 || cuda_task->gpu_id >= MAX_GPUS_PER_NODE) return -2; //finished or empty CUDA task
+ if(arg_num >= MAX_TENSOR_OPERANDS) return -3; //[0..MAX_TENSOR_OPERANDS-1]
+ if(tens_p == NULL) return -4;
+ if(gpu_up[cuda_task->gpu_id] > GPU_OFF){
+//Associate the tensor block:
+  cuda_task->tens_args[arg_num].tens_p=tens_p; //no checks, just do it
+//Acquire a multi-index entry in pinned Host memory:
+  errc=mi_entry_get(&(cuda_task->tens_args[arg_num].prmn_p));
+  if(errc){cuda_task->tens_args[arg_num].prmn_p=NULL; cuda_task->tens_args[arg_num].tens_p=NULL; return TRY_LATER;}
+//Acquire a paired multi-index entry in GPU constant memory:
+  errc=const_args_entry_get(cuda_task->gpu_id,&cae);
+  if(errc == 0){
+   cuda_task->tens_args[arg_num].const_mem_entry=cae;
+  }else{
+   cuda_task->tens_args[arg_num].prmn_p=NULL; cuda_task->tens_args[arg_num].tens_p=NULL;
+   return TRY_LATER;
+  }
+  cuda_task->num_args=MAX(cuda_task->num_args,arg_num+1); //it is user's responsibility to set all preceding arguments
+ }else{
+  return 1;
+ }
  return 0;
 }
 
@@ -1726,45 +1693,54 @@ __host__ static int cuda_task_record(cudaTask_t *cuda_task, unsigned int coh_ctr
 
 __host__ static int cuda_task_finalize(cudaTask_t *cuda_task) //do not call this function in tensor operations
 /** Releases unneeded (temporary and other) memory resources right after a CUDA task
-    has completed. In case the resources cannot be released cleanly, returns NOT_CLEAN
-    just as a warning, but the CUDA task is finalized anyway. Note that the CUDA task
-    is not destructed here (CUDA resources will still be active). **/
+    has completed or failed. In case the resources cannot be released cleanly,
+    it returns NOT_CLEAN just as a warning, but the CUDA task is finalized anyway.
+    It also applies the coherence control protocol (for successfully completed tasks only).
+    Note that the CUDA task is not destructed here, namely CUDA stream/event resources and the
+    .tens_p component of .tens_args[] are unmodified (.prmn_p and .const_mem_entry are released). **/
 {
  const unsigned int msk=4; //two right bits are set: {0:D,1:M,2:T,3:K}
  unsigned int bts,coh,s_d_same;
  int i,ret_stat,errc;
- tensBlck_t *tens_arg;
+ tensArg_t *tens_arg;
 
  if(cuda_task == NULL) return -1;
- if(cuda_task->task_error < 0) return 1; //unfinished CUDA task cannot be finalized
- if(cuda_task->gpu_id < 0 || cuda_task->gpu_id >= MAX_GPUS_PER_NODE) return 2; //invalid GPU id
+ if(cuda_task->task_error < 0) return 1; //unfinished or empty CUDA task cannot be finalized
+ if(cuda_task->gpu_id < 0 || cuda_task->gpu_id >= MAX_GPUS_PER_NODE) return 2; //invalid GPU id or empty
  if(cuda_task->num_args > MAX_TENSOR_OPERANDS) return 3; //invalid number of tensor arguments
  ret_stat=0; coh=cuda_task->coherence;
  for(i=cuda_task->num_args-1;i>=0;i--){
   bts=coh&msk;
-  tens_arg=(*cuda_task).tens_args[i];
-  if(tens_arg != NULL){
-   if(tens_arg->src_rsc == NULL) return -2; //source must always be present
-   if(tens_arg->dst_rsc != NULL){
-    if(tens_arg->src_rsc->dev_id == tens_arg->dst_rsc->dev_id){s_d_same=YEP;}else{s_d_same=NOPE;};
+  tens_arg=&(cuda_task->tens_args[i]);
+  if(tens_arg->tens_p != NULL){ //pointer to the tensor block associated with this argument
+   if(tens_arg->tens_p->src_rsc == NULL) return -2; //source must always be present
+   if(tens_arg->tens_p->dst_rsc != NULL){
+    if(tens_arg->tens_p->src_rsc->dev_id == tens_arg->tens_p->dst_rsc->dev_id){s_d_same=YEP;}else{s_d_same=NOPE;};
    }else{
     if(cuda_task->task_error == 0) return -3; //destination resource must be present for successfully completed CUDA tasks
     s_d_same=NOPE; //no destination resource (failed CUDA tasks only)
    }
 // Release temporary resources (always):
-   if(tens_arg->tmp_rsc != NULL){
-    errc=tensDevRsc_release_all(tens_arg->tmp_rsc); if(errc != 0) ret_stat=NOT_CLEAN;
+   if(tens_arg->tens_p->tmp_rsc != NULL){
+    errc=tensDevRsc_release_all(tens_arg->tens_p->tmp_rsc); if(errc) ret_stat=NOT_CLEAN;
    }
 // Release source/destination resources if needed:
-   if(bts < 2){
-    if(s_d_same == NOPE){errc=tensDevRsc_release_all(tens_arg->src_rsc); if(errc != 0) ret_stat=NOT_CLEAN;}
-    if(bts == 0 && tens_arg->dst_rsc != NULL){errc=tensDevRsc_release_all(tens_arg->dst_rsc); if(errc) ret_stat=NOT_CLEAN;}
-   }else if(bts == 2){
-    if(s_d_same == NOPE && tens_arg->dst_rsc != NULL){errc=tensDevRsc_release_all(tens_arg->dst_rsc); if(errc) ret_stat=NOT_CLEAN;}
+   if(cuda_task->task_error == 0){ //coherence control for successfully completed CUDA tasks
+    if(bts < 2){
+     if(s_d_same == NOPE){errc=tensDevRsc_release_all(tens_arg->tens_p->src_rsc); if(errc) ret_stat=NOT_CLEAN;}
+     if(bts == 0 && tens_arg->tens_p->dst_rsc != NULL){errc=tensDevRsc_release_all(tens_arg->tens_p->dst_rsc); if(errc) ret_stat=NOT_CLEAN;}
+    }else if(bts == 2){
+     if(s_d_same == NOPE && tens_arg->tens_p->dst_rsc != NULL){errc=tensDevRsc_release_all(tens_arg->tens_p->dst_rsc); if(errc) ret_stat=NOT_CLEAN;}
+    }
+   }else{ //failed CUDA task
+    if(tens_arg->tens_p->dst_rsc != NULL){errc=tensDevRsc_release_all(tens_arg->tens_p->dst_rsc); if(errc) ret_stat=NOT_CLEAN;}
    }
-// Release the permutation multi-index entry if any:
-   if(tens_arg->prmn_h != NULL){ //if .prmn_h is not from the internal pinned slab, nothing will be done
-    if(mi_entry_pinned(tens_arg->prmn_h) == YEP){errc=mi_entry_release(tens_arg->prmn_h); if(errc) ret_stat=NOT_CLEAN; tens_arg->prmn_h=NULL;}
+// Release multi-index entries if any:
+   if(tens_arg->prmn_p != NULL){ //if .prmn_p is not from the internal pinned slab nothing will be done:
+    if(mi_entry_pinned(tens_arg->prmn_p) == YEP){errc=mi_entry_release(tens_arg->prmn_p); if(errc) ret_stat=NOT_CLEAN; tens_arg->prmn_p=NULL;}
+   }
+   if(tens_arg->const_mem_entry >= 0){
+    errc=const_args_entry_free(cuda_task->gpu_id,tens_arg->const_mem_entry); if(errc) ret_stat=NOT_CLEAN; tens_arg->const_mem_entry=0;
    }
   }else{
    if(cuda_task->task_error == 0) return -4; //successfully completed CUDA tasks must have all tensor arguments associated
