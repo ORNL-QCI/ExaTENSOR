@@ -2,7 +2,7 @@
     Parameters, derived types, and function prototypes
     used at the lower level of TAL-SH (device specific):
     CP-TAL, NV-TAL, XP-TAL, AM-TAL, etc.
-REVISION: 2016/01/28
+REVISION: 2016/01/29
 Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
 Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
 
@@ -27,7 +27,7 @@ PREPROCESSOR OPTIONS:
  # -D DEBUG_GPU: collection of debugging information will be activated;
 NOTES:
  # GPU_ID is a unique CUDA GPU ID given to a specific NVidia GPU present on the Host node:
-    0<=GPU_ID<MAX_GPUS_PER_NODE; GPU_ID=-1 will refer to the (multi-)CPU Host.
+    0<=GPU_ID<MAX_GPUS_PER_NODE; GPU_ID=-1 sometimes will refer to the (multi-)CPU Host.
     All MPI processes running on the same node will have a flat numeration of all present GPUs,
     each process either having its own subrange of GPUs or sharing all of them with others.
  # MIC_ID, AMD_ID, etc. are defined completely analogously to GPU_ID.
@@ -53,7 +53,7 @@ FOR DEVELOPERS ONLY:
  # CPU/GPU resource allocation API functions (memory, mutli-indices, streams, events, etc.) may
    return a status TRY_LATER or DEVICE_UNABLE, both are not errors. If this happens within a scheduling
    function (asynchronous tensor operation), all relevant objects, which have already been created,
-   must be destroyed or returned to their initial state (the state before the scheduling function call).
+   will be returned to their initial state (the state before the scheduling function call).
  # If for some reason a device resource is not released properly but the object destruction still
    has happened, a non-critical error NOT_CLEAN may be returned.
 **/
@@ -264,12 +264,10 @@ typedef struct{
 
 // Device resource (occupied by a tensor block):
 typedef struct{
- int dev_id;          //flat device id (>=0) the following resources belong to (-1:None)
- void * gmem_p;       //pointer to global memory where the tensor body resides (NULL:None)
- int buf_entry;       //argument buffer entry handle (>=0) corresponding to <gmem_p> (-1:None)
- int const_mem_entry; //NVidia GPU constant memory entry handle (>=0, -1:None)
+ int dev_id;        //flat device id (>=0) the following resources belong to (-1:None)
+ void * gmem_p;     //pointer to global memory where the tensor body resides (NULL:None)
+ int buf_entry;     //argument buffer entry handle (>=0) corresponding to <gmem_p> (-1:None)
 } talsh_dev_rsc_t;
-//Note: Some of the fields above are device specific.
 
 // Tensor block (for the use on NVidia GPU):
 typedef struct{
@@ -277,9 +275,15 @@ typedef struct{
  talsh_tens_shape_t shape;   //tensor shape: pinned Host memory (pointer components use the multi-index slab, miBank)
  talsh_dev_rsc_t * src_rsc;  //source of the data (memory resource where the data resides before the task)
  talsh_dev_rsc_t * dst_rsc;  //destination of the data (memory resource where the data will reside after the task)
- talsh_dev_rsc_t * tmp_rsc;  //temporary memory resource
- int * prmn_h;               //tensor block dimension permutation (not to be set by a user!): pinnned HOST memory (miBank)
+ talsh_dev_rsc_t * tmp_rsc;  //temporary memory resource (for tensor transposes)
 } tensBlck_t;
+
+// Tensor argument (for the use on Nvidia GPU):
+typedef struct{
+ tensBlck_t * tens_p; //pointer to a tensor block
+ int * prmn_p;        //tensor block dimension permutation: pinnned HOST memory (miBank)
+ int const_mem_entry; //NVidia GPU constant memory entry handle (>=0, -1:None)
+} tensArg_t;
 
 // Interoperable tensor block:
 typedef struct{
@@ -307,7 +311,7 @@ typedef struct{
  int event_finish_hl;    //handle of the CUDA event recorded at the end of the task (full completion)
  unsigned int coherence; //coherence control for this task (see COPY_XXX constants)
  unsigned int num_args;  //number of tensor arguments participating in the tensor operation
- tensBlck_t *tens_args[MAX_TENSOR_OPERANDS]; //tensor arguments participating in the tensor operation
+ tensArg_t *tens_args[MAX_TENSOR_OPERANDS]; //pointers to tensor arguments participating in the tensor operation
 } cudaTask_t;
 //Note: Adding new CUDA events will require adjustment of NUM_EVENTS_PER_TASK.
 
@@ -317,7 +321,7 @@ typedef void (*talsh_tens_init_i)(void * tens_ptr, int data_type, int tens_rank,
 // Device statistics:
 typedef struct{
  unsigned long long int tasks_submitted; //number of TAL-SH tasks submitted to the device
- unsigned long long int tasks_completed; //number of TAL-SH tasks completed by the device
+ unsigned long long int tasks_completed; //number of TAL-SH tasks successfully completed on the device
  unsigned long long int tasks_deferred;  //number of TAL-SH tasks deferred (TRY_LATER or DEVICE_UNABLE)
  unsigned long long int tasks_failed;    //number of TAL-SH tasks failed (with an error)
  double flops;                           //total number of Flops processed (successfully completed)
@@ -350,6 +354,9 @@ extern "C"{
  int host_mem_free_pin(void *host_ptr); //generic
  int host_mem_register(void *host_ptr, size_t tsize); //generic
  int host_mem_unregister(void *host_ptr); //generic
+ int mi_entry_get(int ** mi_entry); //generic
+ int mi_entry_release(int * mi_entry); //generic
+ int mi_entry_pinned(int * mi_entry); //generic
 #ifndef NO_GPU
  int gpu_mem_alloc(void **dev_ptr, size_t tsize, int gpu_id = -1); //NVidia GPU only
  int gpu_mem_free(void *dev_ptr, int gpu_id = -1); //NVidia GPU only

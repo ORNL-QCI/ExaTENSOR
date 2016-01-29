@@ -1,5 +1,5 @@
 /** Tensor Algebra Library for NVidia GPU: NV-TAL (CUDA based).
-REVISION: 2016/01/28
+REVISION: 2016/01/29
 Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
 Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
 
@@ -29,22 +29,22 @@ NOTES:
    Functions with one underscore at the end of their names are non-blocking functions;
    Functions with two underscores at the end of their names are (non-blocking) CUDA kernels.
  # Non-blocking tensor algebra functions carry an additional input argument <coherence_ctrl>
-   which controls the tensor argument synchronization accross different devices.
+   which controls the tensor data synchronization accross different devices.
  # Non-blocking tensor algebra functions carry an additional output argument <cuda_task> (task handle).
 FOR DEVELOPERS ONLY:
- # Current device resources:
+ # Currently used device resources:
     - Global memory pointer (any device);
     - Argument buffer entry handle (any device);
-    - Multi-index entry pointer (any device, entry length = MAX_TENSOR_RANK);
-    - Constant-memory entry handle (Nvidia GPU);
+    - Multi-index entry * (Host pinned memory, entry length = MAX_TENSOR_RANK);
+    - GPU constant-memory entry handle (Nvidia GPU);
     - CUDA stream handle (Nvidia GPU);
     - CUDA event handle (Nvidia GPU).
  # A life cycle of a C object (for example, tensBlck_t):
-    a) Allocate memory for the object, if needed: Suffix _alloc or _create (includes cleaning);
+    a) Allocate memory for the object itself, if needed: Suffix _alloc or _create (includes cleaning);
     b) Clean (initialize to null) an allocated (empty) object: Suffix _clean (normally included in _create);
     c) Construct (define or redefine) an existing object (resources will be acquired/released): Suffix _construct;
     d) Destruct a defined object (resources will be released, the object will be initialized to clean): Suffix _destruct;
-    e) Free the memory occupied by a clean (initialized to null or destructed) object: Suffix _free or _destroy (may include _destruct).
+    e) Free the memory occupied by an object: Suffix _free or _destroy (may include _destruct).
    Thus, as a rule, the device resource acquisition/release occurs solely in _construct and _destruct functions.
  # A state of a C object:
     a) Undefined: After the memory allocation (either dynamic or static);
@@ -54,20 +54,19 @@ FOR DEVELOPERS ONLY:
  # Resource acquisition/release:
     - Tensor block constructor/destructor acquires/releases global memory resources, including
       both pointers and buffer handles, as well as multi-index bank entries (pinned Host memory).
+    - CUDA task constructor/destructor acquires/releases CUDA resources (stream, events).
     - Tensor operation scheduling functions acquire GPU global memory resources,
-      GPU constant memory resources, multi-index entries, CUDA stream and event handles (Nvidia GPU).
-    - CUDA task completion/error check functions release GPU global memory resources,
-      GPU constant memory resources, multi-index entries, CUDA stream and event handles (Nvidia GPU).
+      GPU constant memory resources, Host pinned multi-index entries.
+    - CUDA task completion/error query functions release GPU global memory resources,
+      GPU constant memory resources, Host pinned multi-index entries.
+    - Coherence control is only applied to successfully finished CUDA tasks.
+      It is the user responsibility to pass correct values to coherence control.
  # Functions which construct tensor blocks or perform asynchronous operations on them
    allocate resources (global/constant memory, etc). In case the corresponding resource
    allocator returns TRY_LATER or DEVICE_UNABLE (or an error), the corresponding function
    must clean the partially created tensor block or the CUDA task before returning:
    Thus, the corresponding object will be kept in its initial state if no SUCCESS.
 TO BE FIXED:
- # The pinned multi-index slab is only initialized when NVidia GPU is enabled (in <init_gpus>).
-   Consequently, I should probably move this initialization into <talsh_init> instead.
- # Currently cuda_task_finalize applies the coherence control procedure for failed tasks.
-   Perhaps, I should limit it to successfully completed tasks only.
 **/
 
 #include <stdio.h>
@@ -112,15 +111,8 @@ static int tensDevRsc_attach_mem(talsh_dev_rsc_t * drsc, int dev_id, void * mem_
 static int tensDevRsc_detach_mem(talsh_dev_rsc_t * drsc);
 static int tensDevRsc_allocate_mem(talsh_dev_rsc_t * drsc, int dev_id, size_t mem_size, int in_arg_buf = NOPE);
 static int tensDevRsc_free_mem(talsh_dev_rsc_t * drsc);
-#ifndef NO_GPU
-static int tensDevRsc_get_const_entry(talsh_dev_rsc_t * drsc, int dev_id);
-static int tensDevRsc_release_const_entry(talsh_dev_rsc_t * drsc);
-#endif
 static int tensDevRsc_release_all(talsh_dev_rsc_t * drsc);
 static int tensDevRsc_destroy(talsh_dev_rsc_t * drsc);
-static int mi_entry_get(int ** mi_entry);
-static int mi_entry_release(int * mi_entry);
-static int mi_entry_pinned(int * mi_entry);
 #ifndef NO_GPU
 static int cuda_stream_get(int gpu_num, int * cuda_stream_handle);
 static int cuda_stream_release(int gpu_num, int cuda_stream_handle);
@@ -176,13 +168,6 @@ static talsh_stats_t gpu_stats[MAX_GPUS_PER_NODE]; //runtime statistics for all 
 // Infrastructure for CUBLAS:
 static cublasHandle_t cublas_handle[MAX_GPUS_PER_NODE]; //each GPU present on a node obtains its own cuBLAS context handle
 #endif
-#endif
-// Slab for the multi-index storage (will be pinned):
-static int miBank[MAX_GPU_ARGS*MAX_MLNDS_PER_TENS][MAX_TENSOR_RANK]; //All active .dims[], .divs[], .grps[], .prmn_h[] will be stored here
-static int miFreeHandle[MAX_GPU_ARGS*MAX_MLNDS_PER_TENS]; //free entries for storing multi-indices
-static int miFFE; //number of free handles left in miBank
-
-#ifndef NO_GPU
 // Slabs for the GPU asynchronous resources:
 //  CUDA stream handles:
 static cudaStream_t CUDAStreamBank[MAX_GPUS_PER_NODE][MAX_CUDA_TASKS]; //pre-allocated CUDA stream handles (for each CUDA device)
@@ -192,15 +177,12 @@ static int CUDAStreamFFE[MAX_GPUS_PER_NODE]; //number of free handles left in CU
 static cudaEvent_t CUDAEventBank[MAX_GPUS_PER_NODE][MAX_CUDA_EVENTS]; //pre-allocated CUDA event handles (for each CUDA device)
 static int CUDAEventFreeHandle[MAX_GPUS_PER_NODE][MAX_CUDA_EVENTS]; //free CUDA event handles
 static int CUDAEventFFE[MAX_GPUS_PER_NODE]; //number of free handles left in CUDAEventFreeHandle
-
 // Slab of GPU constant memory arguments for each GPU (managed by "mem_manager.cpp"):
 __device__ __constant__ int const_args_dims[MAX_GPU_ARGS][MAX_TENSOR_RANK]; //storage for device constant memory arguments: dimension extents
 __device__ __constant__ int const_args_prmn[MAX_GPU_ARGS][MAX_TENSOR_RANK]; //storage for device constant memory arguments: permutation
-
 // GPU error control and debugging for each GPU:
 __device__ int gpu_error_count=0; //total number of CUDA errors registered on device till the current moment
 __device__ int gpu_debug_dump[GPU_DEBUG_DUMP_SIZE]; //debug dump
-
 // Global CUDA event recording policy:
 static int PRINT_TIMING=1; //non-zero value enables time printing statements
 // Infrastructure for function <gpu_tensor_block_copy_dlf> (blocking and non-blocking):
@@ -357,10 +339,9 @@ static int tensDevRsc_clean(talsh_dev_rsc_t * drsc)
 /** Cleans (initializes to null) a device resource for tensBlck_t. **/
 {
  if(drsc != NULL){
-  drsc->dev_id=DEV_NULL;    //flat device id
-  drsc->gmem_p=NULL;        //device global memory pointer (any device)
-  drsc->buf_entry=-1;       //device argument buffer entry (any device)
-  drsc->const_mem_entry=-1; //constant memory bank entry (Nvidia GPU only)
+  drsc->dev_id=DEV_NULL; //flat device id
+  drsc->gmem_p=NULL;     //device global memory pointer (any device)
+  drsc->buf_entry=-1;    //device argument buffer entry (any device)
  }else{
   return -1;
  }
@@ -372,7 +353,7 @@ static int tensDevRsc_empty(talsh_dev_rsc_t * drsc)
     Negative return status means an error. **/
 {
  if(drsc == NULL) return -1;
- if(drsc->gmem_p != NULL || drsc->buf_entry >= 0 || drsc->const_mem_entry >= 0) return NOPE;
+ if(drsc->gmem_p != NULL || drsc->buf_entry >= 0) return NOPE;
  drsc->dev_id=DEV_NULL;
  return YEP;
 }
@@ -527,55 +508,6 @@ static int tensDevRsc_free_mem(talsh_dev_rsc_t * drsc)
  return n;
 }
 
-#ifndef NO_GPU
-static int tensDevRsc_get_const_entry(talsh_dev_rsc_t * drsc, int dev_id)
-/** Acquires a constant memory entry on an Nvidia GPU. A return status TRY_LATER or
-    DEVICE_UNABLE indicate a temporary or permanent shortage of the corresponding resource. **/
-{
- int i,devn,devk,errc;
-
- if(drsc == NULL) return -1;
- if(dev_id < 0) return -2;
- devn=decode_device_id(dev_id,&devk);
- if(devn < 0) return -3; //invalid flat device id
- if(drsc->dev_id >= 0 && drsc->dev_id != dev_id) return 1; //resource was assigned to a different device
- if(drsc->const_mem_entry >= 0) return 2; //resource already has constant memory entry attached
- if(devk == DEV_NVIDIA_GPU){
-  errc=const_args_entry_get(devn,&i);
-  if(errc != 0){if(errc == TRY_LATER || errc == DEVICE_UNABLE){return errc;}else{return 3;}}
-  drsc->const_mem_entry=i;
- }else{
-  return 4;
- }
- drsc->dev_id=dev_id;
- return 0;
-}
-
-static int tensDevRsc_release_const_entry(talsh_dev_rsc_t * drsc)
-/** Releases a GPU constant memory entry from a given device resource descriptor.
-    An unsuccessful release of the GPU constant memory entry is marked with
-    an error status NOT_CLEAN, but the corresponding component of the resource
-    descriptor is cleared anyway. **/
-{
- int n,devn,devk,errc;
-
- n=0;
- if(drsc == NULL) return -1;
- if(drsc->dev_id < 0) return -2;
- devn=decode_device_id(drsc->dev_id,&devk);
- if(devn < 0) return -3; //invalid flat device id
- if(drsc->const_mem_entry < 0) return 1;
- if(devk == DEV_NVIDIA_GPU){
-  errc=const_args_entry_free(devn,drsc->const_mem_entry); if(errc != 0) n=NOT_CLEAN;
-  drsc->const_mem_entry=-1;
- }else{
-  return 2;
- }
- errc=tensDevRsc_empty(drsc);
- return n;
-}
-#endif
-
 static int tensDevRsc_release_all(talsh_dev_rsc_t * drsc)
 /** Releases all device resources in <drsc>. An unsuccessful release
     of one or more resources is marked with a return status NOT_CLEAN,
@@ -611,10 +543,6 @@ static int tensDevRsc_release_all(talsh_dev_rsc_t * drsc)
       errc=gpu_mem_free(drsc->gmem_p,devn); if(errc != 0) n=NOT_CLEAN;
       drsc->gmem_p=NULL;
      }
-    }
-    if(drsc->const_mem_entry >= 0){
-     errc=const_args_entry_free(devn,drsc->const_mem_entry); if(errc != 0) n=NOT_CLEAN;
-     drsc->const_mem_entry=-1;
     }
     break;
 #else
@@ -653,57 +581,6 @@ static int tensDevRsc_destroy(talsh_dev_rsc_t * drsc)
  if(drsc == NULL) return -1;
  errc=tensDevRsc_release_all(drsc); if(errc != 0) n=NOT_CLEAN;
  free(drsc);
- return n;
-}
-
-static int mi_entry_get(int ** mi_entry)
-/** Obtains a pointer to an entry in the multi-index storage slab.
-    The entry can fit an <int> multi-index up to MAX_TENSOR_RANK length.
-    Returns TRY_LATER if no free handles are currently available. **/
-{
- int m;
- *mi_entry=NULL;
- if(miFFE > 0){ //number of free handles left
-  m=miFreeHandle[--miFFE];
-  *mi_entry=&miBank[m][0];
- }else{
-  return TRY_LATER; //currently no free handles left
- }
- return 0;
-}
-
-static int mi_entry_release(int * mi_entry)
-/** Releases an entry back to the multi-index storage slab. **/
-{
- int m;
- if(mi_entry != NULL){
-  if(miFFE >= 0){
-   m=(int)(mi_entry-&miBank[0][0]);
-   if(m%MAX_TENSOR_RANK == 0){
-    m/=MAX_TENSOR_RANK;
-    miFreeHandle[miFFE++]=m;
-   }else{
-    return 1;
-   }
-  }else{
-   return 2;
-  }
- }else{
-  return 3;
- }
- return 0;
-}
-
-static int mi_entry_pinned(int * mi_entry)
-/** Returns YEP if the multi-index is in the multi-index bank,
-    NOPE othewise. **/
-{
- int n;
-
- n=NOPE;
- if(mi_entry != NULL){
-  if((unsigned long)(mi_entry-miBank[0][0]) < MAX_GPU_ARGS*MAX_MLNDS_PER_TENS*MAX_TENSOR_RANK) n=YEP;
- }
  return n;
 }
 
@@ -919,18 +796,9 @@ no GPU will be initialized. **/
 #endif
 
  n=0; for(i=0;i<MAX_GPUS_PER_NODE;i++) gpu_up[i]=GPU_OFF; //initial GPU status
-//Multi-index bank:
- miFFE=MAX_GPU_ARGS*MAX_MLNDS_PER_TENS;
- for(j=0;j<miFFE;j++) miFreeHandle[j]=j;
- m=(size_t)(miFFE*MAX_TENSOR_RANK*sizeof(int));
- errc=host_mem_register(&miBank[0][0],m);
- if(errc != 0){
-  if(VERBOSE) printf("#ERROR(tensor_algebra_gpu_nvidia:init_gpus): Unable to register the multi-index bank: Error %d\n",errc);
-  return -1;
- }
  if(gpu_beg >= 0 && gpu_end >= gpu_beg){
-  err=cudaGetDeviceCount(&i); if(err != cudaSuccess) return -2;
-  if(gpu_end >= MAX_GPUS_PER_NODE || gpu_end >= i) return -3;
+  err=cudaGetDeviceCount(&i); if(err != cudaSuccess) return -1;
+  if(gpu_end >= MAX_GPUS_PER_NODE || gpu_end >= i) return -2;
   for(i=gpu_end;i>=gpu_beg;i--){
    err=cudaSetDevice(i);
    if(err == cudaSuccess){
@@ -987,7 +855,9 @@ no GPU will be initialized. **/
      err=cudaSetDevice(i);
      if(err == cudaSuccess){
       for(j=gpu_end;j>=gpu_beg;j--){
-       if(j != i && gpu_up[j] > GPU_OFF) err=cudaDeviceEnablePeerAccess(j,0); //device i can access memory of device j
+       if(j != i && gpu_up[j] > GPU_OFF){
+        if(gpu_prop[j].unifiedAddressing != 0) err=cudaDeviceEnablePeerAccess(j,0); //device i can access memory of device j
+       }
       }
      }else{
       gpu_up[i]=GPU_OFF; n--;
@@ -1011,14 +881,6 @@ If <gpu_beg> > <gpu_end>, nothing wil be done. **/
  cublasStatus_t err_cublas;
 #endif
  failure=0; n=0;
-//Multi-index bank:
- miFFE=MAX_GPU_ARGS*MAX_MLNDS_PER_TENS;
- for(j=0;j<miFFE;j++) miFreeHandle[j]=j;
- j=host_mem_unregister(&miBank[0][0]); //`This is probably not needed
- if(j != 0){
-  failure++;
-  if(VERBOSE) printf("#WARNING(tensor_algebra_gpu_nvidia:free_gpus): Unable to unregister the multi-index bank: Error %d\n",j);
- }
  if(gpu_beg >= 0 && gpu_end >= gpu_beg){
   err=cudaGetDeviceCount(&i); if(err != cudaSuccess) return -1;
   if(gpu_end >= MAX_GPUS_PER_NODE || gpu_end >= i) return -2;
@@ -1320,7 +1182,6 @@ int tensBlck_create(tensBlck_t **ctens)
  (*ctens)->src_rsc=NULL; //source memory resource (where the tensor body is before the operation)
  (*ctens)->dst_rsc=NULL; //destination memory resource (where the tensor body will be after the operation)
  (*ctens)->tmp_rsc=NULL; //temporary memory resource (where the tensor body can be during the operation)
- (*ctens)->prmn_h=NULL;  //dimension permutation (internal use only)
  return 0;
 }
 
@@ -1408,8 +1269,6 @@ int tensBlck_destruct(tensBlck_t *ctens, int release_body, int which_body)
  if(ctens == NULL) return -1;
  if(ctens->shape.num_dim >= 0){ //shape-defined tensor block
   if(ctens->shape.num_dim > MAX_TENSOR_RANK) return -2;
-//Dimension permutation (temporary resource used by Nvidia GPU):
-  if(ctens->prmn_h != NULL){errc=mi_entry_release(ctens->prmn_h); if(errc != 0) n=NOT_CLEAN; ctens->prmn_h=NULL;} //release a mi resource (internal pinned memory slab)
 //Release the TEMPORARY resource:
   if(ctens->tmp_rsc != NULL &&
      ((release_body == YEP && (which_body == EVERYTHING || which_body == TEMPORARY)) ||
@@ -1435,7 +1294,6 @@ int tensBlck_destruct(tensBlck_t *ctens, int release_body, int which_body)
   if(ctens->src_rsc != NULL){ctens->src_rsc=NULL; n=NOT_CLEAN;}
   if(ctens->dst_rsc != NULL){ctens->dst_rsc=NULL; n=NOT_CLEAN;}
   if(ctens->tmp_rsc != NULL){ctens->tmp_rsc=NULL; n=NOT_CLEAN;}
-  if(ctens->prmn_h != NULL){ctens->prmn_h=NULL; n=NOT_CLEAN;}
  }
  if(tens_valid_data_kind(ctens->data_kind) != YEP) n=NOT_CLEAN; ctens->data_kind=NO_TYPE;
  errc=tensShape_destruct(&(ctens->shape)); if(errc != 0){if(errc == NOT_CLEAN){n=NOT_CLEAN;}else{return 1;}}

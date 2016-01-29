@@ -2,7 +2,7 @@
 implementation of the tensor algebra library TAL-SH:
 CP-TAL (TAL for CPU), NV-TAL (TAL for NVidia GPU),
 XP-TAL (TAL for Intel Xeon Phi), AM-TAL (TAL for AMD GPU).
-REVISION: 2016/01/24
+REVISION: 2016/01/29
 Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
 Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
 
@@ -87,6 +87,10 @@ static size_t occ_size_host=0; //total size (bytes) of all occupied entries in t
 static size_t occ_size_gpu[MAX_GPUS_PER_NODE]={0}; //total size (bytes) of all occupied entries in each GPU buffer
 static size_t args_size_host=0; //total size (bytes) of all arguments in the Host argument buffer !`Not used now
 static size_t args_size_gpu[MAX_GPUS_PER_NODE]={0}; //total size (bytes) of all arguments in each GPU buffer !`Not used now
+// Slab for multi-index storage (pinned Host memory):
+static int miBank[MAX_GPU_ARGS*MAX_MLNDS_PER_TENS][MAX_TENSOR_RANK]; //All active .dims[], .divs[], .grps[], .prmn[] will be stored here
+static int miFreeHandle[MAX_GPU_ARGS*MAX_MLNDS_PER_TENS]; //free entries for storing multi-indices
+static int miFFE=0; //number of free handles left in miBank
 
 //LOCAL (PRIVATE) FUNCTION PROTOTYPES:
 static int const_args_link_init(int gpu_beg, int gpu_end);
@@ -98,6 +102,7 @@ static size_t ab_get_offset(ab_conf_t ab_conf, int level, int offset, const size
 static int get_buf_entry(ab_conf_t ab_conf, size_t bsize, void *arg_buf_ptr, size_t *ab_occ, size_t ab_occ_size,
                          const size_t *blck_sizes, char **entry_ptr, int *entry_num);
 static int free_buf_entry(ab_conf_t ab_conf, size_t *ab_occ, size_t ab_occ_size, const size_t *blck_sizes, int entry_num);
+static int mi_entry_init();
 //------------------------------------------------------------------------------------------------------------------------
 
 //FUNCTION DEFINITIONS:
@@ -224,20 +229,22 @@ OUTPUT:
   abh_occ_size=hsize;
   for(hsize=0;hsize<abh_occ_size;hsize++){abh_occ[hsize]=0;} //initialize zero occupancy for each buffer entry
   num_args_host=0; occ_size_host=0; args_size_host=0; //clear Host memory statistics
+//Initialize the multi-index entry bank (slab) in pinned Host memory:
+  err_code=mi_entry_init(); if(err_code) return 3;
 #ifndef NO_GPU
 //Allocate GPUs buffers, if needed:
   if(gpu_beg >= 0 && gpu_end >= gpu_beg){ //GPU exist for this MPI process
-   err=cudaGetDeviceCount(&i); if(err != cudaSuccess) return 3;
+   err=cudaGetDeviceCount(&i); if(err != cudaSuccess) return 4;
    if(gpu_end < MAX_GPUS_PER_NODE && gpu_end < i){
-    err_code=init_gpus(gpu_beg,gpu_end); if(err_code < 0) return 4;
+    err_code=init_gpus(gpu_beg,gpu_end); if(err_code < 0) return 5;
 // Constant memory banks for all GPUs:
-    err_code=const_args_link_init(gpu_beg,gpu_end); if(err_code != 0) return 5;
+    err_code=const_args_link_init(gpu_beg,gpu_end); if(err_code != 0) return 6;
 // Global memory banks for each GPU:
     mem_alloc_dec=MEM_ALIGN*BLCK_BUF_TOP_GPU; for(i=1;i<BLCK_BUF_DEPTH_GPU;i++) mem_alloc_dec*=BLCK_BUF_BRANCH_GPU;
     for(i=gpu_beg;i<=gpu_end;i++){
      if(gpu_is_mine(i) != 0){ //Initialize only my GPUs
-      err=cudaSetDevice(i); if(err != cudaSuccess) return 6;
-      err=cudaMemGetInfo(&hsize,&total); if(err != cudaSuccess) return 7;
+      err=cudaSetDevice(i); if(err != cudaSuccess) return 7;
+      err=cudaMemGetInfo(&hsize,&total); if(err != cudaSuccess) return 8;
       hsize=(size_t)(float(hsize)/100.0f*float(GPU_MEM_PART_USED)); hsize-=hsize%mem_alloc_dec; err_code=1;
       while(hsize > mem_alloc_dec){
        err=cudaMalloc(&arg_buf_gpu[i],hsize);
@@ -256,24 +263,24 @@ OUTPUT:
         blck_sizes_gpu[i][j]=blck_sizes_gpu[i][j-1]/BLCK_BUF_BRANCH_GPU; max_args_gpu[i]*=BLCK_BUF_BRANCH_GPU;
         hsize+=max_args_gpu[i];
        }
-       if(max_args_gpu[i] > MAX_GPU_ARGS) return 8; //Increase MAX_GPU_ARGS and recompile
+       if(max_args_gpu[i] > MAX_GPU_ARGS) return 9; //Increase MAX_GPU_ARGS and recompile
 // Initialize each GPU argument buffer occupancy tables:
-       abg_occ[i]=(size_t*)malloc(hsize*sizeof(size_t)); if(abg_occ[i] == NULL) return 9; //GPU#i buffer occupancy table
+       abg_occ[i]=(size_t*)malloc(hsize*sizeof(size_t)); if(abg_occ[i] == NULL) return 10; //GPU#i buffer occupancy table
        abg_occ_size[i]=hsize;
        for(hsize=0;hsize<abg_occ_size[i];hsize++){abg_occ[i][hsize]=0;} //initialize each buffer entry to zero occupancy
        num_args_gpu[i]=0; occ_size_gpu[i]=0; args_size_gpu[i]=0; //clear GPU memory statistics
       }else{
-       return 10;
+       return 11;
       }
      }
     }
    }else{
-    return 11;
+    return 12;
    }
   }
 #endif
  }else{
-  return 12;
+  return 13;
  }
  bufs_ready=1; //mark the Host and GPU argument buffers as ready
  return 0;
@@ -294,6 +301,7 @@ int arg_buf_deallocate(int gpu_beg, int gpu_end)
   if(abg_occ[i] != NULL) free(abg_occ[i]); abg_occ[i]=NULL; abg_occ_size[i]=0; max_args_gpu[i]=0;
  }
  arg_buf_host_size=0; num_args_host=0; occ_size_host=0; args_size_host=0; //clear Host memory statistics
+ miFFE=0; //deactivate multi-index bank
 #ifndef NO_GPU
  err=cudaFreeHost(arg_buf_host);
  if(err != cudaSuccess){
@@ -760,6 +768,72 @@ int host_mem_unregister(void *host_ptr){
 #else
  return 0; //`Cannot register the Host memory without CUDA
 #endif
+}
+
+static int mi_entry_init()
+/** Initializes the multi-index entry bank in pinned Host memory. **/
+{
+ int j,m,errc;
+ miFFE=MAX_GPU_ARGS*MAX_MLNDS_PER_TENS;
+ for(j=0;j<miFFE;j++) miFreeHandle[j]=j;
+ m=(size_t)(miFFE*MAX_TENSOR_RANK*sizeof(int));
+ errc=host_mem_register(&miBank[0][0],m);
+ if(errc != 0){
+  miFFE=0;
+  if(VERBOSE) printf("#ERROR(mem_manager:mi_entry_init): Unable to register the multi-index bank: Error %d\n",errc);
+  return -1;
+ }
+ return 0;
+}
+
+int mi_entry_get(int ** mi_entry)
+/** Obtains a pointer to an entry in the multi-index storage slab.
+    The entry can fit an <int> multi-index up to MAX_TENSOR_RANK length.
+    Returns TRY_LATER if no free handles are currently available. **/
+{
+ int m;
+ *mi_entry=NULL;
+ if(miFFE > 0){ //number of free handles left
+  m=miFreeHandle[--miFFE];
+  *mi_entry=&miBank[m][0];
+ }else{
+  return TRY_LATER; //currently no free handles left
+ }
+ return 0;
+}
+
+int mi_entry_release(int * mi_entry)
+/** Releases an entry back to the multi-index storage slab. **/
+{
+ int m;
+ if(mi_entry != NULL){
+  if(miFFE >= 0){
+   m=(int)(mi_entry-&miBank[0][0]);
+   if(m%MAX_TENSOR_RANK == 0){
+    m/=MAX_TENSOR_RANK;
+    miFreeHandle[miFFE++]=m;
+   }else{
+    return 1;
+   }
+  }else{
+   return 2;
+  }
+ }else{
+  return 3;
+ }
+ return 0;
+}
+
+int mi_entry_pinned(int * mi_entry)
+/** Returns YEP if the multi-index is in the multi-index bank,
+    NOPE othewise. **/
+{
+ int n;
+ n=NOPE;
+ if(mi_entry != NULL){
+  if((unsigned long)(mi_entry-miBank[0][0]) < MAX_GPU_ARGS*MAX_MLNDS_PER_TENS*MAX_TENSOR_RANK) n=YEP;
+ }
+ return n;
 }
 
 #ifndef NO_GPU
