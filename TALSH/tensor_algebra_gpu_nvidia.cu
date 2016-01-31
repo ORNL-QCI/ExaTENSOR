@@ -1,5 +1,5 @@
 /** Tensor Algebra Library for NVidia GPU: NV-TAL (CUDA based).
-REVISION: 2016/01/29
+REVISION: 2016/01/31
 Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
 Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
 
@@ -126,10 +126,12 @@ static int cuda_task_set_arg(cudaTask_t *cuda_task, unsigned int arg_num, tensBl
 static int cuda_task_record(cudaTask_t *cuda_task, unsigned int coh_ctrl, unsigned int err_code = 0);
 static int cuda_task_finalize(cudaTask_t *cuda_task);
 // CUDA KERNELS:
-__global__ void gpu_array_2norm2_r4__(size_t arr_size, const float *arr, float *bnorm2);
-__global__ void gpu_array_2norm2_r8__(size_t arr_size, const double *arr, double *bnorm2);
+__global__ void gpu_array_norm2_r4__(size_t arr_size, const float *arr, float *bnorm2);
+__global__ void gpu_array_norm2_r8__(size_t arr_size, const double *arr, double *bnorm2);
 __global__ void gpu_array_init_r4__(size_t tsize, float *arr, float val);
 __global__ void gpu_array_init_r8__(size_t tsize, double *arr, double val);
+template <typename T>
+__global__ void gpu_scalar_multiply__(const T * left_arg, const T * right_arg, T * dest_arg);
 __global__ void gpu_array_scale_r4__(size_t tsize, float *arr, float val);
 __global__ void gpu_array_scale_r8__(size_t tsize, double *arr, double val);
 __global__ void gpu_array_add_r4__(size_t tsize, float* __restrict__ arr0, const float* __restrict__ arr1, float val);
@@ -201,12 +203,6 @@ __device__ __constant__ double dgemm_beta=1.0;  //default beta constant DGEMM
 __device__ int norm2_wr_lock=0; //write lock (shared by all <gpu_array_norm2_XX> running on device)
 // Infrastructure for kernels <gpu_array_dot_product_XX__>:
 __device__ int dot_product_wr_lock=0; //write lock (shared by all <gpu_array_dot_product_XX__> running on device)
-
-// Infrastructure for functions <gpu_array_2norm2_XX> (blocking)`Obsolete:
-__device__ float gpu_blck_norms2_r4[MAX_CUDA_BLOCKS]; //`Obsolete
-__device__ double gpu_blck_norms2_r8[MAX_CUDA_BLOCKS]; //`Obsolete
-static float blck_norms2_r4[MAX_CUDA_BLOCKS];  //`Obsolete `Not multi-GPU safe
-static double blck_norms2_r8[MAX_CUDA_BLOCKS]; //`Obsolete `Not multi-GPU safe
 #endif
 //-------------------------------------------------------------------------
 //GENERIC:
@@ -2973,7 +2969,7 @@ NOTES:
     tens_valid_data_kind(ltens->data_kind,&tds_l) != YEP ||          //tds_l: left tensor element size in bytes
     tens_valid_data_kind(rtens->data_kind,&tds_r) != YEP) return -5; //tds_r: right tensor element size in bytes
  if(!(dtens->data_kind > 0 && ltens->data_kind == dtens->data_kind && rtens->data_kind == dtens->data_kind)) return -6; //data kind mismatch
- if(dtens->src_rsc == NULL || ltens->src_rsc == NULL || rtens->src_rsc == NULL) return -7; //source resources must always be present
+ if(dtens->src_rsc == NULL || ltens->src_rsc == NULL || rtens->src_rsc == NULL) return -7; //source resource must always be present
 //Check the contraction pattern and dimension extent correspondence:
  for(i=0;i<drank;i++) dprm[i]=0; for(i=0;i<lrank;i++) lprm[i]=0; for(i=0;i<rrank;i++) rprm[i]=0;
  for(i=0;i<lrank;i++){ //position in ltens
@@ -3011,14 +3007,14 @@ NOTES:
  if(gpu_id < 0 || gpu_id >= MAX_GPUS_PER_NODE){gpu_num=tens_op_best_gpu(dtens,ltens,rtens);}else{gpu_num=gpu_id;};
  if(gpu_is_mine(gpu_num) <= GPU_OFF) return -25; //GPU is not mine or error
  cur_gpu=gpu_in_focus(); //save the current GPU
- errc=gpu_activate(gpu_num); if(errc){errc=gpu_activate(cur_gpu); return -26;};
+ if(gpu_num != cur_gpu){errc=gpu_activate(gpu_num); if(errc){errc=gpu_activate(cur_gpu); return -26;}}
  err=cudaGetLastError(); err=cudaSuccess; //clear the GPU error status
 //Construct a CUDA task (acquire CUDA resources):
  errc=cuda_task_construct(cuda_task,gpu_num);
  if(errc){i=gpu_activate(cur_gpu); if(errc == TRY_LATER || errc == DEVICE_UNABLE){return errc;}else{return -27;}}
 
 // *** From this point all errors must be positive and the CUDA task must be recorded! ***
-//Associate CUDA stream and events pointers for convenience:
+//Associate CUDA stream and events pointers locally for convenience:
  cuda_stream=cuda_stream_ptr(cuda_task->gpu_id,cuda_task->stream_hl);
  if(cuda_stream == NULL){errc=gpu_activate(cur_gpu); errc=cuda_task_record(cuda_task,coh_ctrl,1); return 1;}
  cuda_start=cuda_event_ptr(cuda_task->gpu_id,cuda_task->event_start_hl);
@@ -3029,47 +3025,48 @@ NOTES:
  if(cuda_output == NULL){errc=gpu_activate(cur_gpu); errc=cuda_task_record(cuda_task,coh_ctrl,4); return 4;}
  cuda_finish=cuda_event_ptr(cuda_task->gpu_id,cuda_task->event_finish_hl);
  if(cuda_finish == NULL){errc=gpu_activate(cur_gpu); errc=cuda_task_record(cuda_task,coh_ctrl,5); return 5;}
-//Get a permutation multi-index entry for each tensor argument (from an internal slab of pinned Host memory):
- if(drank > 0){
-  errc=mi_entry_get(&(dtens->prmn_h));
-  if(errc){
-   i=gpu_activate(cur_gpu); i=cuda_task_record(cuda_task,coh_ctrl,6); //not an error if TRY_LATER or DEVICE_UNABLE returned
-   if(errc == TRY_LATER || errc == DEVICE_UNABLE){return errc;}else{return 6;}
-  }
+//Set up tensor arguments:
+// Destination argument:
+ errc=cuda_task_set_arg(cuda_task,0,dtens);
+ if(errc){
+  i=gpu_activate(cur_gpu); i=cuda_task_record(cuda_task,coh_ctrl,6); //not an error if TRY_LATER or DEVICE_UNABLE are returned
+  if(errc == TRY_LATER || errc == DEVICE_UNABLE){return errc;}else{return 6;}
  }
- if(lrank > 0){
-  errc=mi_entry_get(&(ltens->prmn_h));
-  if(errc){
-   i=gpu_activate(cur_gpu); i=cuda_task_record(cuda_task,coh_ctrl,7); //not an error if TRY_LATER or DEVICE_UNABLE returned
-   if(errc == TRY_LATER || errc == DEVICE_UNABLE){return errc;}else{return 7;}
-  }
+// Left argument:
+ errc=cuda_task_set_arg(cuda_task,1,ltens);
+ if(errc){
+  i=gpu_activate(cur_gpu); i=cuda_task_record(cuda_task,coh_ctrl,7); //not an error if TRY_LATER or DEVICE_UNABLE are returned
+  if(errc == TRY_LATER || errc == DEVICE_UNABLE){return errc;}else{return 7;}
  }
- if(rrank > 0){
-  errc=mi_entry_get(&(rtens->prmn_h));
-  if(errc){
-   i=gpu_activate(cur_gpu); i=cuda_task_record(cuda_task,coh_ctrl,8); //not an error if TRY_LATER or DEVICE_UNABLE returned
-   if(errc == TRY_LATER || errc == DEVICE_UNABLE){return errc;}else{return 8;}
-  }
+// Right argument:
+ errc=cuda_task_set_arg(cuda_task,2,rtens);
+ if(errc){
+  i=gpu_activate(cur_gpu); i=cuda_task_record(cuda_task,coh_ctrl,8); //not an error if TRY_LATER or DEVICE_UNABLE are returned
+  if(errc == TRY_LATER || errc == DEVICE_UNABLE){return errc;}else{return 8;}
  }
 //Determine the volume and required matricization permutation for each tensor argument:
  get_contr_permutations(lrank,rrank,cptrn,dprm,lprm,rprm,&ncd,&nlu,&nru,&errc);
  if(errc){i=gpu_activate(cur_gpu); i=cuda_task_record(cuda_task,coh_ctrl,9); return 9;}
- for(i=0;i<drank;i++) dtens->prmn_h[i]=dprm[1+i]; //ignore the permutaion sign
- for(i=0;i<lrank;i++) ltens->prmn_h[i]=lprm[1+i]; //ignore the permutaion sign
- for(i=0;i<rrank;i++) rtens->prmn_h[i]=rprm[1+i]; //ignore the permutaion sign
- perm_d=non_trivial_prmn(drank,dtens->prmn_h);
- perm_l=non_trivial_prmn(lrank,ltens->prmn_h);
- perm_r=non_trivial_prmn(rrank,rtens->prmn_h);
- dsize=tensBlck_volume(dtens)*tds_d; //destination tensor size in bytes
- lsize=tensBlck_volume(ltens)*tds_l; //left tensor size in bytes
- rsize=tensBlck_volume(rtens)*tds_r; //right tensor size in bytes
- lc=1; ll=1; for(i=0;i<lrank;i++){if(ltens->prmn_h[i] <= ncd){lc*=((ltens->shape).dims[i]);}else{ll*=((ltens->shape).dims[i]);}}
+ for(i=0;i<drank;i++) cuda_task->tens_args[0].prmn_p[i]=dprm[1+i]; //ignore the permutaion sign
+ perm_d=non_trivial_prmn(drank,cuda_task->tens_args[0].prmn_p);
+ for(i=0;i<lrank;i++) cuda_task->tens_args[1].prmn_p[i]=lprm[1+i]; //ignore the permutaion sign
+ perm_l=non_trivial_prmn(lrank,cuda_task->tens_args[1].prmn_p);
+ for(i=0;i<rrank;i++) cuda_task->tens_args[2].prmn_p[i]=rprm[1+i]; //ignore the permutaion sign
+ perm_r=non_trivial_prmn(rrank,cuda_task->tens_args[2].prmn_p);
+ dsize=tensBlck_volume(dtens);
+ lsize=tensBlck_volume(ltens);
+ rsize=tensBlck_volume(rtens);
+ lc=1; ll=1;
+ for(i=0;i<lrank;i++){
+  if(cuda_task->tens_args[1].prmn_p[i] <= ncd){lc*=((ltens->shape).dims[i]);}else{ll*=((ltens->shape).dims[i]);}
+ }
  lr=dsize/ll;
  if(lsize <= 0 || rsize <= 0 || dsize <= 0 || dsize%ll != 0 || rsize%lr != 0 || rsize/lr != lc){
   i=gpu_activate(cur_gpu); i=cuda_task_record(cuda_task,coh_ctrl,10); return 10; //invalid matrix dimensions obtained
  }
+ dsize*=tds_d; lsize*=tds_l; rsize*=tds_r; //tensor argument sizes in bytes
 //Acquire memory resources for tensor arguments if needed:
-// Check whether source memory is present in all tensors and acquire constant memory if needed:
+// Check source memory resources (must be defined in all tensor arguments):
 
 // Set up destination memory resources in all tensors:
 
@@ -3083,10 +3080,7 @@ NOTES:
 
 //Schedule the inverse tensor transpose for the destination tensor:
 
-//Schedule the back data transfers if needed:
-
 //Record the scheduled CUDA task and set LastTask:
-
 
 
 /*//DEBUG begin:
@@ -3592,60 +3586,10 @@ NOTES:
 //printf("\n#DEBUG(tensor_algebra_gpu_nvidia:gpu_tensor_block_contract_dlf_): Scheduled Successfully.\n"); //debug
  return 0;
 }
-//-------------------------------------------------------------------------------------
-//CUDA KERNELS:
-// SQUARED 2-NORM OF AN ARRAY (R4):`Obsolete
-__global__ void gpu_array_2norm2_r4__(size_t arr_size, const float *arr, float *bnorm2)
-/** Computes the squared Euclidean (Frobenius) norm of an array arr(0:arr_size-1)
-INPUT:
- # arr_size - size of the array;
- # arr(0:arr_size-1) - array;
-OUTPUT:
- # bnorm2[0:gridDim.x-1] - squared 2-norm of a sub-array computed by each CUDA thread block;
-**/
-{
- size_t i,n;
- float _thread_norm2;
- extern __shared__ float thread_norms2_r4[];
-
- n=gridDim.x*blockDim.x; _thread_norm2=0.0f;
- for(i=blockIdx.x*blockDim.x+threadIdx.x;i<arr_size;i+=n){_thread_norm2+=arr[i]*arr[i];}
- thread_norms2_r4[threadIdx.x]=_thread_norm2;
- __syncthreads();
- if(threadIdx.x == 0){
-  bnorm2[blockIdx.x]=thread_norms2_r4[0]; for(i=1;i<blockDim.x;i++){bnorm2[blockIdx.x]+=thread_norms2_r4[i];}
- }
- __syncthreads();
- return;
-}
-//---------------------------------------------------------------------------------------
-// SQUARED 2-NORM OF AN ARRAY (R8):`Obsolete
-__global__ void gpu_array_2norm2_r8__(size_t arr_size, const double *arr, double *bnorm2)
-/** Computes the squared Euclidean (Frobenius) norm of an array arr(0:arr_size-1)
-INPUT:
- # arr_size - size of the array;
- # arr(0:arr_size-1) - array;
-OUTPUT:
- # bnorm2[0:gridDim.x-1] - squared 2-norm of a sub-array computed by each CUDA thread block;
-**/
-{
- size_t i,n;
- double _thread_norm2;
- extern __shared__ double thread_norms2_r8[];
-
- n=gridDim.x*blockDim.x; _thread_norm2=0.0;
- for(i=blockIdx.x*blockDim.x+threadIdx.x;i<arr_size;i+=n){_thread_norm2+=arr[i]*arr[i];}
- thread_norms2_r8[threadIdx.x]=_thread_norm2;
- __syncthreads();
- if(threadIdx.x == 0){
-  bnorm2[blockIdx.x]=thread_norms2_r8[0]; for(i=1;i<blockDim.x;i++){bnorm2[blockIdx.x]+=thread_norms2_r8[i];}
- }
- __syncthreads();
- return;
-}
 //------------------------------------------------------------------------------------
+//CUDA KERNELS:
 // SUM OF THE SQUARES OF ALL ARRAY ELEMENTS (R4):
-__global__ void gpu_array_norm2_r8__(size_t arr_size, const float *arr, float *bnorm2)
+__global__ void gpu_array_norm2_r4__(size_t arr_size, const float *arr, float *bnorm2)
 /** Computes the squared 2-norm of array arr(0:arr_size-1)
 INPUT:
  # arr_size - size of the array;
@@ -3719,6 +3663,16 @@ __global__ void gpu_array_init_r8__(size_t tsize, double *arr, double val)
  size_t _ti = blockIdx.x*blockDim.x + threadIdx.x;
  size_t _gd = gridDim.x*blockDim.x;
  for(size_t l=_ti;l<tsize;l+=_gd){arr[l]=val;}
+ return;
+}
+//------------------------------------------------------------------------------------------
+// SCALAR MULTIPLICATION:
+template <typename T>
+__global__ void gpu_scalar_multiply__(const T * left_arg, const T * right_arg, T * dest_arg)
+{
+ if(blockIdx.x == 0 && threadIdx.x == 0){
+  *dest_arg+=(*left_arg)*(*right_arg);
+ }
  return;
 }
 //-----------------------------------------------------------------------

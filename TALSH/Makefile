@@ -159,7 +159,7 @@ OBJS =  ./OBJ/dil_basic.o ./OBJ/stsubs.o ./OBJ/combinatoric.o ./OBJ/symm_index.o
 	./OBJ/tensor_algebra.o ./OBJ/tensor_algebra_cpu.o ./OBJ/tensor_algebra_cpu_phi.o ./OBJ/tensor_dil_omp.o \
 	./OBJ/mem_manager.o ./OBJ/tensor_algebra_gpu_nvidia.o ./OBJ/talshf.o ./OBJ/talshc.o
 
-$(NAME): lib$(NAME).a ./OBJ/main.o
+$(NAME): lib$(NAME).a ./OBJ/test.o ./OBJ/main.o
 	$(FCOMP) ./OBJ/main.o lib$(NAME).a $(LFLAGS) -o $(NAME).x
 
 lib$(NAME).a: $(OBJS)
@@ -211,8 +211,11 @@ endif
 ./OBJ/talshc.o: talshc.cpp talsh.h tensor_algebra.h ./OBJ/tensor_algebra_cpu_phi.o ./OBJ/tensor_algebra_gpu_nvidia.o ./OBJ/mem_manager.o
 	$(CCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(CFLAGS) talshc.cpp -o ./OBJ/talshc.o
 
+./OBJ/test.o: test.cpp lib$(NAME).a
+	$(CCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(CFLAGS) test.cpp -o ./OBJ/test.o
+
 ./OBJ/main.o: main.cpp lib$(NAME).a
-	$(CCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(CFLAGS) main.cpp -o ./OBJ/main.o
+	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) main.F90 -o ./OBJ/main.o
 
 
 .PHONY: clean
