@@ -1,5 +1,5 @@
 /** Tensor Algebra Library for NVidia GPU: NV-TAL (CUDA based).
-REVISION: 2016/01/31
+REVISION: 2016/02/01
 Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
 Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
 
@@ -61,6 +61,9 @@ FOR DEVELOPERS ONLY:
       GPU constant memory resources, Host pinned multi-index entries.
     - Coherence control is only applied to successfully finished CUDA tasks.
       It is the user responsibility to pass correct values to coherence control.
+    - Care must be taken in case the destination resource is the same as the source
+      resource: Release only once! This happens when the computing GPU also holds
+      the data for one or more tensor arguments (no transfer is needed: DST=SRC).
  # Functions which construct tensor blocks or perform asynchronous operations on them
    allocate resources (global/constant memory, etc). In case the corresponding resource
    allocator returns TRY_LATER or DEVICE_UNABLE (or an error), the corresponding function
@@ -107,6 +110,7 @@ static int non_trivial_prmn(int n, const int *prm);
 static int tensDevRsc_create(talsh_dev_rsc_t **drsc);
 static int tensDevRsc_clean(talsh_dev_rsc_t * drsc);
 static int tensDevRsc_empty(talsh_dev_rsc_t * drsc);
+static int tensDevRsc_same(talsh_dev_rsc_t * drsc0, talsh_dev_rsc_t * drsc1);
 static int tensDevRsc_attach_mem(talsh_dev_rsc_t * drsc, int dev_id, void * mem_p, int buf_entry = -1);
 static int tensDevRsc_detach_mem(talsh_dev_rsc_t * drsc);
 static int tensDevRsc_allocate_mem(talsh_dev_rsc_t * drsc, int dev_id, size_t mem_size, int in_arg_buf = NOPE);
@@ -350,9 +354,20 @@ static int tensDevRsc_empty(talsh_dev_rsc_t * drsc)
 {
  int errc;
  if(drsc == NULL) return -1;
- if(drsc->gmem_p != NULL || drsc->buf_entry >= 0) return NOPE; //check all resources
+ if(drsc->dev_id >= 0 && drsc->dev_id < DEV_MAX){if(drsc->gmem_p != NULL) return NOPE;}
  errc=tensDevRsc_clean(drsc);
  return YEP;
+}
+
+static int tensDevRsc_same(talsh_dev_rsc_t * drsc0, talsh_dev_rsc_t * drsc1)
+/** Returns YEP if two resource descriptors point to the same resources, NOPE otherwise.
+    A negative return status indicates an error. **/
+{
+ if(drsc0 == NULL) return -1;
+ if(drsc1 == NULL) return -2;
+ if(drsc0->dev_id == drsc1->dev_id &&
+    drsc0->gmem_p == drsc1->gmem_p) return YEP;
+ return NOPE;
 }
 
 static int tensDevRsc_attach_mem(talsh_dev_rsc_t * drsc, int dev_id, void * mem_p, int buf_entry)
@@ -1152,6 +1167,10 @@ int tensBlck_destroy(tensBlck_t *ctens)
  errc=0;
  if(ctens == NULL) return -1;
  errc=tensBlck_destruct(ctens); if(errc != 0 && errc != NOT_CLEAN) errc=1;
+ if(ctens->tmp_rsc != NULL){errc=tensDevRsc_destroy(ctens->tmp_rsc); if(errc) n=NOT_CLEAN;}
+ if(ctens->dst_rsc != NULL && ctens->dst_rsc != ctens->src_rsc){errc=tensDevRsc_destroy(ctens->dst_rsc); if(errc) n=NOT_CLEAN;}
+ if(ctens->src_rsc != NULL){errc=tensDevRsc_destroy(ctens->src_rsc); if(errc) n=NOT_CLEAN;}
+ ctens->src_rsc=NULL; ctens->dst_rsc=NULL; ctens->tmp_rsc=NULL;
  free(ctens);
  return errc;
 }
@@ -1185,14 +1204,13 @@ int tensBlck_attach_body(tensBlck_t *ctens, //pointer to a shape-defined (constr
                          int dev_id,        //flat device id where the body resides (or should reside)
                          void *body_ptr,    //pointer to the tensor body (global memory of device <dev_id>)
                          int buf_entry)     //argument buffer entry handle corresponding to the <body_ptr> (optional)
-/** Attaches a body to a shape-defined tensor block. If both <body_ptr> and <buf_entry> are absent,
-    a resource will be allocated on device <dev_id> in the device argument buffer (if available).
-    If <buf_entry> is absent, a defined <body_ptr> points to an external memory (either pinned or not).
-    If both <body_ptr> and <buf_entry> are defined, the external memory is assumed to be within that
-    argument buffer entry. In all cases, the memory resource will be associated with the .src_rsc component
-    of tensBlck_t. It is forbidden to attempt allocating/attaching a memory resource when an existing memory
-    resource is still in use (this will result in an error). A return status of TRY_LATER or DEVICE_UNABLE
-    indicates the current or permanent shortage in the necessary resources and is not an error. **/
+/** Attaches a body to a shape-defined tensor block (with an empty body). If both <body_ptr> and <buf_entry> are absent,
+    a resource will be allocated on device <dev_id> in the device argument buffer (if available). If <buf_entry> is absent,
+    a defined <body_ptr> points to an external memory (either pinned or not). If both <body_ptr> and <buf_entry> are defined,
+    the external memory is assumed to be within that argument buffer entry. In all cases, the memory resource will be
+    associated with the .src_rsc component of tensBlck_t. It is forbidden to attempt allocating/attaching a memory resource
+    when an existing memory resource is still in use (this will result in an error). A return status of TRY_LATER or
+    DEVICE_UNABLE indicates the current or permanent shortage in the necessary resources and is not an error. **/
 {
  int errc,dks;
  size_t vol,body_size;
@@ -1202,14 +1220,19 @@ int tensBlck_attach_body(tensBlck_t *ctens, //pointer to a shape-defined (constr
  if(errc != YEP || data_kind == NO_TYPE) return -2;
  if(ctens->shape.num_dim < 0 || ctens->shape.num_dim > MAX_TENSOR_RANK) return -3; //tensor block must be shape-defined
  if(body_ptr == NULL && buf_entry >= 0) return -4; //a defined argument buffer entry must be supplied with the corresponding pointer
+ if(ctens->src_rsc == NULL){
+  errc=tensDevRsc_create(&(ctens->src_rsc)); if(errc != 0 || ctens->src_rsc == NULL) return 1;
+ }else{
+  if(tensDevRsc_empty(ctens->src_rsc) == NOPE) return 2; //source resource is not empty (release it first)
+ }
  vol=tensShape_volume(&(ctens->shape)); //tensor body volume (number of elements)
  body_size=vol*(size_t)dks; //tensor body size in bytes
  if(body_ptr == NULL){ //allocate memory in the argument buffer
   errc=tensDevRsc_allocate_mem(ctens->src_rsc,dev_id,body_size,YEP);
-  if(errc != 0){if(errc == TRY_LATER || errc == DEVICE_UNABLE){return errc;}else{return 1;}}
+  if(errc != 0){if(errc == TRY_LATER || errc == DEVICE_UNABLE){return errc;}else{return 3;}}
  }else{ //associate memory
   errc=tensDevRsc_attach_mem(ctens->src_rsc,dev_id,body_ptr,buf_entry);
-  if(errc != 0){if(errc == TRY_LATER || errc == DEVICE_UNABLE){return errc;}else{return 2;}}
+  if(errc != 0){if(errc == TRY_LATER || errc == DEVICE_UNABLE){return errc;}else{return 4;}}
  }
  return 0;
 }
@@ -1218,8 +1241,9 @@ int tensBlck_destruct(tensBlck_t *ctens, int release_body, int which_body)
 /** Destructs a defined tensor block (releases all resources and initializes the tensor block to null).
     If <release_body> == YEP/NOPE, the global memory resources will be released/kept. Argument <which_body>
     can further regulate which tensor body to be released/kept (SOURCE, DESTINATION, TEMPORARY, EVERYTHING).
-    A return status NOT_CLEAN indicates an unsuccessful resource release that may be
-    considered as a tolerable error since the tensor block will be nullified anyway. **/
+    A return status NOT_CLEAN indicates an unsuccessful resource release that may be considered as a
+    tolerable error since the tensor block will be nullified anyway. Although device resources are
+    released the resource objects themselves are not (they are only destroyed in _destroy method). **/
 {
  int n,errc;
 
@@ -1231,30 +1255,28 @@ int tensBlck_destruct(tensBlck_t *ctens, int release_body, int which_body)
   if(ctens->tmp_rsc != NULL &&
      ((release_body == YEP && (which_body == EVERYTHING || which_body == TEMPORARY)) ||
       (release_body == NOPE && (which_body != EVERYTHING && which_body != TEMPORARY)))){
-   errc=tensDevRsc_release_all(ctens->tmp_rsc); if(errc != 0) n=NOT_CLEAN;
+   errc=tensDevRsc_release_all(ctens->tmp_rsc); if(errc != 0) n=NOT_CLEAN; //Note: Resource object is not destroyed!
   }
-  ctens->tmp_rsc=NULL;
-//Release the DESTINATION resource:
+//Release the DESTINATION resource (only if different from the SOURCE resource):
   if(ctens->dst_rsc != NULL &&
      ((release_body == YEP && (which_body == EVERYTHING || which_body == DESTINATION)) ||
       (release_body == NOPE && (which_body != EVERYTHING && which_body != DESTINATION)))){
-   errc=tensDevRsc_release_all(ctens->dst_rsc); if(errc != 0) n=NOT_CLEAN;
+   if(ctens->dst_rsc != ctens->src_rsc){
+    errc=tensDevRsc_release_all(ctens->dst_rsc); if(errc != 0) n=NOT_CLEAN; //Note: Resource object is not destroyed!
+   }else{
+    ctens->dst_rsc=NULL; //destination resource simply pointed to the source resource
+   }
   }
-  ctens->dst_rsc=NULL;
 //Release the SOURCE resource:
   if(ctens->src_rsc != NULL &&
      ((release_body == YEP && (which_body == EVERYTHING || which_body == SOURCE)) ||
       (release_body == NOPE && (which_body != EVERYTHING && which_body != SOURCE)))){
-   errc=tensDevRsc_release_all(ctens->src_rsc); if(errc != 0) n=NOT_CLEAN;
+   errc=tensDevRsc_release_all(ctens->src_rsc); if(errc != 0) n=NOT_CLEAN; //Note: Resource object is not destroyed!
   }
-  ctens->src_rsc=NULL;
- }else{ //nullified tensor block: All resources must have been released already
-  if(ctens->src_rsc != NULL){ctens->src_rsc=NULL; n=NOT_CLEAN;}
-  if(ctens->dst_rsc != NULL){ctens->dst_rsc=NULL; n=NOT_CLEAN;}
-  if(ctens->tmp_rsc != NULL){ctens->tmp_rsc=NULL; n=NOT_CLEAN;}
+  if(tens_valid_data_kind(ctens->data_kind) != YEP) n=NOT_CLEAN;
  }
- if(tens_valid_data_kind(ctens->data_kind) != YEP) n=NOT_CLEAN; ctens->data_kind=NO_TYPE;
- errc=tensShape_destruct(&(ctens->shape)); if(errc != 0){if(errc == NOT_CLEAN){n=NOT_CLEAN;}else{return 1;}}
+ ctens->data_kind=NO_TYPE;
+ errc=tensShape_destruct(&(ctens->shape)); if(errc){if(errc == NOT_CLEAN){n=NOT_CLEAN;}else{return 1;}}
  return n;
 }
 
@@ -1721,6 +1743,7 @@ __host__ static int cuda_task_finalize(cudaTask_t *cuda_task) //do not call this
     errc=tensDevRsc_release_all(tens_arg->tens_p->tmp_rsc); if(errc) ret_stat=NOT_CLEAN;
    }
 // Release source/destination resources if needed:
+   if(tens_arg->tens_p->dst_rsc == tens_arg->tens_p->src_rsc) tens_arg->tens_p->dst_rsc=NULL;
    if(cuda_task->task_error == 0){ //coherence control for successfully completed CUDA tasks
     if(bts < 2){
      if(s_d_same == NOPE){errc=tensDevRsc_release_all(tens_arg->tens_p->src_rsc); if(errc) ret_stat=NOT_CLEAN;}
@@ -2912,10 +2935,10 @@ NOTES:
  return 0;
 }
 #endif
-//-------------------------------------------------------------------------------------------------------------
+//--------------------------------------------------------------------------------------------------------------------------------
 // TENSOR CONTRACTION (non-blocking):
-__host__ int gpu_tensor_block_contract_dlf_(const int *cptrn, const tensBlck_t *ltens, const tensBlck_t *rtens,
-                                   tensBlck_t *dtens, unsigned int coh_ctrl, cudaTask_t *cuda_task, int gpu_id)
+__host__ int gpu_tensor_block_contract_dlf_(const int *cptrn, const tensBlck_t *ltens, const tensBlck_t *rtens, tensBlck_t *dtens,
+                                            unsigned int coh_ctrl, cudaTask_t *cuda_task, int gpu_id, double alpha, double beta)
 /**
 dtens(:)+=ltens(:)*rtens(:)
 INPUT:
@@ -2927,9 +2950,11 @@ INPUT:
  # coh_ctrl - one of the COPY_XXX parameters regulating the data presence for each tensor argument;
  # cuda_task - pointer to an empty (clean) CUDA task;
  # gpu_id - suggested GPU ID on which the operation is to be scheduled (defaults to the optimal one);
+ # alpha - GEMM alpha coefficient (defaults to 1.0);
+ # beta - GEMM beta coefficient (defaults to 1.0);
 OUTPUT:
  # dtens - updated destination tensor;
- # cuda_task - recorded CUDA task (either successfully scheduled or error).
+ # cuda_task - recorded CUDA task (either successfully scheduled or failed).
 NOTES:
  # If the tensor operation has been scheduled successfully, a recorded (active) CUDA task
    will be returned along with zero return status. A scheduling error results in either
@@ -2941,12 +2966,12 @@ NOTES:
  #If <gpu_id> is out of the legitimate GPU range, it will be replaced by an optimal one here.
 **/
 {
- int i,j,drank,lrank,rrank,tds_d,tds_l,tds_r,gpu_num,cur_gpu,perm_d,perm_l,perm_r,ncd,nlu,nru,bx,by,errc;
+ int i,j,drank,lrank,rrank,tds_d,tds_l,tds_r,gpu_d,gpu_l,gpu_r,perm_d,perm_l,perm_r,ncd,nlu,nru,gpu_num,cur_gpu,targ_dev,bx,by,errc,stat;
  int dprm[1+MAX_TENSOR_RANK],lprm[1+MAX_TENSOR_RANK],rprm[1+MAX_TENSOR_RANK]; //the 1st element is the sign of the permutation
  size_t dsize,lsize,rsize,lc,ll,lr;
  void *darg,*larg,*rarg,*alpha,*beta;
  cudaStream_t *cuda_stream;
- cudaEvent_t *cuda_start,*cuda_comput,*cuda_output,*cuda_finish;
+ cudaEvent_t *cuda_start,*cuda_comput,*cuda_output,*cuda_finish,*dep_event;
  cudaError_t err;
  const char *err_msg;
 #ifndef NO_BLAS
@@ -2954,6 +2979,7 @@ NOTES:
 #endif
 
 //printf("\n#DEBUG(tensor_algebra_gpu_nvidia:gpu_tensor_block_contract_dlf_): GPU Tensor Contraction:\n"); //debug
+ stat=0;
 //Check function arguments:
  if(cptrn == NULL || dtens == NULL || ltens == NULL || rtens == NULL || cuda_task == NULL) return -1;
  if(tensBlck_present(dtens) != YEP || tensBlck_present(ltens) != YEP || tensBlck_present(rtens) != YEP) return -2; //tensor blocks must reside in some device memory
@@ -2970,48 +2996,76 @@ NOTES:
     tens_valid_data_kind(rtens->data_kind,&tds_r) != YEP) return -5; //tds_r: right tensor element size in bytes
  if(!(dtens->data_kind > 0 && ltens->data_kind == dtens->data_kind && rtens->data_kind == dtens->data_kind)) return -6; //data kind mismatch
  if(dtens->src_rsc == NULL || ltens->src_rsc == NULL || rtens->src_rsc == NULL) return -7; //source resource must always be present
+ if(tensDevRsc_empty(dtens->src_rsc) != NOPE) return -8;  //source resource must be present (tensor body)
+ if(tensDevRsc_empty(ltens->src_rsc) != NOPE) return -9;  //source resource must be present (tensor body)
+ if(tensDevRsc_empty(rtens->src_rsc) != NOPE) return -10; //source resource must be present (tensor body)
 //Check the contraction pattern and dimension extent correspondence:
  for(i=0;i<drank;i++) dprm[i]=0; for(i=0;i<lrank;i++) lprm[i]=0; for(i=0;i<rrank;i++) rprm[i]=0;
  for(i=0;i<lrank;i++){ //position in ltens
   j=cptrn[i];
   if(j > 0){ //position in dtens
-   if(j > drank) return -8;
-   if((dtens->shape).dims[j-1] != (ltens->shape).dims[i]) return -9;
-   if(dprm[j-1] == 0){dprm[j-1]=1;}else{return -10;}
+   if(j > drank) return -11;
+   if((dtens->shape).dims[j-1] != (ltens->shape).dims[i]) return -12;
+   if(dprm[j-1] == 0){dprm[j-1]=1;}else{return -13;}
   }else if(j < 0){ //position in rtens
-   if(-j > rrank) return -11;
-   if((rtens->shape).dims[-j-1] != (ltens->shape).dims[i]) return -12;
-   if(cptrn[lrank+(-j-1)] != -(i+1)) return -13;
-   if(rprm[-j-1] == 0){rprm[-j-1]=1;}else{return -14;}
+   if(-j > rrank) return -14;
+   if((rtens->shape).dims[-j-1] != (ltens->shape).dims[i]) return -15;
+   if(cptrn[lrank+(-j-1)] != -(i+1)) return -16;
+   if(rprm[-j-1] == 0){rprm[-j-1]=1;}else{return -17;}
   }else{
-   return -15;
+   return -18;
   }
  }
  for(i=0;i<rrank;i++){ //position in rtens
   j=cptrn[lrank+i];
   if(j > 0){ //position in dtens
-   if(j > drank) return -16;
-   if((dtens->shape).dims[j-1] != (rtens->shape).dims[i]) return -17;
-   if(dprm[j-1] == 0){dprm[j-1]=1;}else{return -18;}
+   if(j > drank) return -19;
+   if((dtens->shape).dims[j-1] != (rtens->shape).dims[i]) return -20;
+   if(dprm[j-1] == 0){dprm[j-1]=1;}else{return -21;}
   }else if(j < 0){ //position in ltens
-   if(-j > lrank) return -19;
-   if((ltens->shape).dims[-j-1] != (rtens->shape).dims[i]) return -20;
-   if(cptrn[-j-1] != -(i+1)) return -21;
-   if(lprm[-j-1] == 0){lprm[-j-1]=1;}else{return -22;}
+   if(-j > lrank) return -22;
+   if((ltens->shape).dims[-j-1] != (rtens->shape).dims[i]) return -23;
+   if(cptrn[-j-1] != -(i+1)) return -24;
+   if(lprm[-j-1] == 0){lprm[-j-1]=1;}else{return -25;}
   }else{
-   return -23;
+   return -26;
   }
  }
- for(i=0;i<drank;i++) if(dprm[i] != 1) return -24;
+ for(i=0;i<drank;i++) if(dprm[i] != 1) return -27;
 //Activate the right GPU:
- if(gpu_id < 0 || gpu_id >= MAX_GPUS_PER_NODE){gpu_num=tens_op_best_gpu(dtens,ltens,rtens);}else{gpu_num=gpu_id;};
- if(gpu_is_mine(gpu_num) <= GPU_OFF) return -25; //GPU is not mine or error
+ if(gpu_id < 0 || gpu_id >= MAX_GPUS_PER_NODE){gpu_num=tens_op_best_gpu(dtens,ltens,rtens);}else{gpu_num=gpu_id;}
+ if(gpu_is_mine(gpu_num) <= GPU_OFF) return -28; //GPU is not mine or error
+ gpu_d=decode_device_id(dtens->src_rsc->dev_id,&j); if(gpu_d < 0) return -29; //destination tensor source device id
+ if(j == DEV_NVIDIA_GPU){
+  err=cudaDeviceCanAccessPeer(&j,gpu_num,gpu_d); if(err != cudaSuccess || j == 0) return DEVICE_UNABLE; //peer access impossible for this GPU device
+ }else if(j == DEV_HOST){
+  gpu_d=-1; //data is in Host memory
+ }else{
+  return DEVICE_UNABLE; //data is not in Host or GPU memory
+ }
+ gpu_l=decode_device_id(ltens->src_rsc->dev_id,&j); if(gpu_l < 0) return -30; //left tensor source device id
+ if(j == DEV_NVIDIA_GPU){
+  err=cudaDeviceCanAccessPeer(&j,gpu_num,gpu_l); if(err != cudaSuccess || j == 0) return DEVICE_UNABLE; //peer access impossible for this GPU device
+ }else if(j == DEV_HOST){
+  gpu_l=-1; //data is in Host memory
+ }else{
+  return DEVICE_UNABLE; //data is not in Host or GPU memory
+ }
+ gpu_r=decode_device_id(rtens->src_rsc->dev_id,&j); if(gpu_r < 0) return -31; //right tensor source device id
+ if(j == DEV_NVIDIA_GPU){
+  err=cudaDeviceCanAccessPeer(&j,gpu_num,gpu_r); if(err != cudaSuccess || j == 0) return DEVICE_UNABLE; //peer access impossible for this GPU device
+ }else if(j == DEV_HOST){
+  gpu_r=-1; //data is in Host memory
+ }else{
+  return DEVICE_UNABLE; //data is not in Host or GPU memory
+ }
  cur_gpu=gpu_in_focus(); //save the current GPU
- if(gpu_num != cur_gpu){errc=gpu_activate(gpu_num); if(errc){errc=gpu_activate(cur_gpu); return -26;}}
+ if(gpu_num != cur_gpu){errc=gpu_activate(gpu_num); if(errc){errc=gpu_activate(cur_gpu); return -32;}} //activate the target GPU
  err=cudaGetLastError(); err=cudaSuccess; //clear the GPU error status
-//Construct a CUDA task (acquire CUDA resources):
+ targ_dev=encode_device_id(DEV_NVIDIA_GPU,gpu_num); //flat device id
+//Construct a CUDA task (acquire CUDA resources) for the target GPU:
  errc=cuda_task_construct(cuda_task,gpu_num);
- if(errc){i=gpu_activate(cur_gpu); if(errc == TRY_LATER || errc == DEVICE_UNABLE){return errc;}else{return -27;}}
+ if(errc){i=gpu_activate(cur_gpu); if(errc == TRY_LATER || errc == DEVICE_UNABLE){return errc;}else{return -33;}}
 
 // *** From this point all errors must be positive and the CUDA task must be recorded! ***
 //Associate CUDA stream and events pointers locally for convenience:
@@ -3025,7 +3079,7 @@ NOTES:
  if(cuda_output == NULL){errc=gpu_activate(cur_gpu); errc=cuda_task_record(cuda_task,coh_ctrl,4); return 4;}
  cuda_finish=cuda_event_ptr(cuda_task->gpu_id,cuda_task->event_finish_hl);
  if(cuda_finish == NULL){errc=gpu_activate(cur_gpu); errc=cuda_task_record(cuda_task,coh_ctrl,5); return 5;}
-//Set up tensor arguments:
+//Set up tensor arguments (allocates additional resources for each tensor argument):
 // Destination argument:
  errc=cuda_task_set_arg(cuda_task,0,dtens);
  if(errc){
@@ -3045,14 +3099,14 @@ NOTES:
   if(errc == TRY_LATER || errc == DEVICE_UNABLE){return errc;}else{return 8;}
  }
 //Determine the volume and required matricization permutation for each tensor argument:
- get_contr_permutations(lrank,rrank,cptrn,dprm,lprm,rprm,&ncd,&nlu,&nru,&errc);
+ get_contr_permutations(lrank,rrank,cptrn,dprm,lprm,rprm,&ncd,&nlu,&nru,&errc); //permutations and numbers of dimensions
  if(errc){i=gpu_activate(cur_gpu); i=cuda_task_record(cuda_task,coh_ctrl,9); return 9;}
  for(i=0;i<drank;i++) cuda_task->tens_args[0].prmn_p[i]=dprm[1+i]; //ignore the permutaion sign
- perm_d=non_trivial_prmn(drank,cuda_task->tens_args[0].prmn_p);
+ perm_d=non_trivial_prmn(drank,cuda_task->tens_args[0].prmn_p);    //trivial or not
  for(i=0;i<lrank;i++) cuda_task->tens_args[1].prmn_p[i]=lprm[1+i]; //ignore the permutaion sign
- perm_l=non_trivial_prmn(lrank,cuda_task->tens_args[1].prmn_p);
+ perm_l=non_trivial_prmn(lrank,cuda_task->tens_args[1].prmn_p);    //trivial or not
  for(i=0;i<rrank;i++) cuda_task->tens_args[2].prmn_p[i]=rprm[1+i]; //ignore the permutaion sign
- perm_r=non_trivial_prmn(rrank,cuda_task->tens_args[2].prmn_p);
+ perm_r=non_trivial_prmn(rrank,cuda_task->tens_args[2].prmn_p);    //trivial or not
  dsize=tensBlck_volume(dtens);
  lsize=tensBlck_volume(ltens);
  rsize=tensBlck_volume(rtens);
@@ -3065,15 +3119,218 @@ NOTES:
   i=gpu_activate(cur_gpu); i=cuda_task_record(cuda_task,coh_ctrl,10); return 10; //invalid matrix dimensions obtained
  }
  dsize*=tds_d; lsize*=tds_l; rsize*=tds_r; //tensor argument sizes in bytes
-//Acquire memory resources for tensor arguments if needed:
-// Check source memory resources (must be defined in all tensor arguments):
-
+//Acquire global memory resources for tensor arguments if needed:
 // Set up destination memory resources in all tensors:
-
+//  Destination tensor:
+ if(dtens->dst_rsc == dtens->src_rsc) dtens->dst_rsc = NULL; //destination resource was pointing to the source resource
+ if(gpu_d != gpu_num){ //data is on a different GPU device or Host
+  if(dtens->dst_rsc == NULL){
+   errc=tensDevRsc_create(&(dtens->dst_rsc)); if(errc){i=gpu_activate(cur_gpu); i=cuda_task_record(cuda_task,coh_ctrl,11); return 11;}
+  }else{
+   if(tensDevRsc_empty(dtens->dst_rsc) == NOPE){errc=tensDevRsc_release_all(dtens->dst_rsc); if(errc) stat=NOT_CLEAN;}
+  }
+  errc=tensDevRsc_allocate_mem(dtens->dst_rsc,targ_dev,dsize,YEP);
+  if(errc){
+   i=gpu_activate(cur_gpu); i=cuda_task_record(cuda_task,coh_ctrl,12);
+   if(errc == TRY_LATER || errc == DEVICE_UNABLE){return errc;}else{return 12;}
+  }
+ }else{
+  dtens->dst_rsc=dtens->src_rsc; //destination and source resources are the same (because the data is already on the computing GPU)
+ }
+//  Left tensor:
+ if(ltens->dst_rsc == ltens->src_rsc) ltens->dst_rsc = NULL; //destination resource was pointing to the source resource
+ if(gpu_l != gpu_num){ //data is on a different GPU device or Host
+  if(ltens->dst_rsc == NULL){
+   errc=tensDevRsc_create(&(ltens->dst_rsc)); if(errc){i=gpu_activate(cur_gpu); i=cuda_task_record(cuda_task,coh_ctrl,13); return 13;}
+  }else{
+   if(tensDevRsc_empty(ltens->dst_rsc) == NOPE){errc=tensDevRsc_release_all(ltens->dst_rsc); if(errc) stat=NOT_CLEAN;}
+  }
+  errc=tensDevRsc_allocate_mem(ltens->dst_rsc,targ_dev,lsize,YEP);
+  if(errc){
+   i=gpu_activate(cur_gpu); i=cuda_task_record(cuda_task,coh_ctrl,14);
+   if(errc == TRY_LATER || errc == DEVICE_UNABLE){return errc;}else{return 14;}
+  }
+ }else{
+  ltens->dst_rsc=ltens->src_rsc; //destination and source resources are the same (because the data is already on the computing GPU)
+ }
+//  Right tensor:
+ if(rtens->dst_rsc == rtens->src_rsc) rtens->dst_rsc = NULL; //destination resource was pointing to the source resource
+ if(gpu_r != gpu_num){ //data is on a different GPU device or Host
+  if(rtens->dst_rsc == NULL){
+   errc=tensDevRsc_create(&(rtens->dst_rsc)); if(errc){i=gpu_activate(cur_gpu); i=cuda_task_record(cuda_task,coh_ctrl,15); return 15;}
+  }else{
+   if(tensDevRsc_empty(rtens->dst_rsc) == NOPE){errc=tensDevRsc_release_all(rtens->dst_rsc); if(errc) stat=NOT_CLEAN;}
+  }
+  errc=tensDevRsc_allocate_mem(rtens->dst_rsc,targ_dev,rsize,YEP);
+  if(errc){
+   i=gpu_activate(cur_gpu); i=cuda_task_record(cuda_task,coh_ctrl,16);
+   if(errc == TRY_LATER || errc == DEVICE_UNABLE){return errc;}else{return 16;}
+  }
+ }else{
+  rtens->dst_rsc=rtens->src_rsc; //destination and source resources are the same (because the data is already on the computing GPU)
+ }
 // Set up temporary memory resources in all tensors if needed (because of out-of-place tensor transpose):
-
+//  Destination tensor:
+ if(perm_d == YEP){
+  if(dtens->tmp_rsc == NULL){
+   errc=tensDevRsc_create(&(dtens->tmp_rsc)); if(errc){i=gpu_activate(cur_gpu); i=cuda_task_record(cuda_task,coh_ctrl,17); return 17;}
+  }else{
+   if(tensDevRsc_empty(dtens->tmp_rsc) == NOPE){errc=tensDevRsc_release_all(dtens->tmp_rsc); if(errc) stat=NOT_CLEAN;}
+  }
+  errc=tensDevRsc_allocate_mem(dtens->tmp_rsc,targ_dev,dsize,YEP);
+  if(errc){
+   i=gpu_activate(cur_gpu); i=cuda_task_record(cuda_task,coh_ctrl,18);
+   if(errc == TRY_LATER || errc == DEVICE_UNABLE){return errc;}else{return 18;}
+  }
+ }
+//  Left tensor:
+ if(perm_l == YEP){
+  if(ltens->tmp_rsc == NULL){
+   errc=tensDevRsc_create(&(ltens->tmp_rsc)); if(errc){i=gpu_activate(cur_gpu); i=cuda_task_record(cuda_task,coh_ctrl,19); return 19;}
+  }else{
+   if(tensDevRsc_empty(ltens->tmp_rsc) == NOPE){errc=tensDevRsc_release_all(ltens->tmp_rsc); if(errc) stat=NOT_CLEAN;}
+  }
+  errc=tensDevRsc_allocate_mem(ltens->tmp_rsc,targ_dev,lsize,YEP);
+  if(errc){
+   i=gpu_activate(cur_gpu); i=cuda_task_record(cuda_task,coh_ctrl,20);
+   if(errc == TRY_LATER || errc == DEVICE_UNABLE){return errc;}else{return 20;}
+  }
+ }
+//  Right tensor:
+ if(perm_r == YEP){
+  if(rtens->tmp_rsc == NULL){
+   errc=tensDevRsc_create(&(rtens->tmp_rsc)); if(errc){i=gpu_activate(cur_gpu); i=cuda_task_record(cuda_task,coh_ctrl,21); return 21;}
+  }else{
+   if(tensDevRsc_empty(rtens->tmp_rsc) == NOPE){errc=tensDevRsc_release_all(rtens->tmp_rsc); if(errc) stat=NOT_CLEAN;}
+  }
+  errc=tensDevRsc_allocate_mem(rtens->tmp_rsc,targ_dev,rsize,YEP);
+  if(errc){
+   i=gpu_activate(cur_gpu); i=cuda_task_record(cuda_task,coh_ctrl,22);
+   if(errc == TRY_LATER || errc == DEVICE_UNABLE){return errc;}else{return 22;}
+  }
+ }
+#ifdef DEBUG_GPU
+//DEBUG begin:
+ if(DEBUG){
+  printf("\nDEBUG(tensor_algebra_gpu_nvidia:gpu_tensor_block_contract_dlf_):\n");
+  printf(" Const args (d,l,r) : %d %d %d\n",cuda_task->tens_args[0].const_mem_entry,
+                                            cuda_task->tens_args[1].const_mem_entry,
+                                            cuda_task->tens_args[2].const_mem_entry); //debug
+  printf(" Block sizes (d,l,r): %llu %llu %llu\n",dsize,lsize,rsize); //debug
+  printf(" Block ranks (d,l,r): %d %d %d\n",dtens->shape.num_dim,ltens->shape.num_dim,rtens->shape.num_dim); //debug
+  printf(" Contraction pattern:"); for(i=0;i<(ltens->shape.num_dim+rtens->shape.num_dim);i++) printf(" %d",cptrn[i]); //debug
+  printf("\n Contr/uncontr/lens : %d %d %d: %llu %llu %llu\n",ncd,nlu,nru,lc,ll,lr); //debug
+  printf(" D-permutation      :"); for(i=0;i<dtens->shape.num_dim;i++) printf(" %d",cuda_task->tens_args[0].prmn_p[i]); //debug
+  printf("\n L-permutation      :"); for(i=0;i<ltens->shape.num_dim;i++) printf(" %d",cuda_task->tens_args[1].prmn_p[i]); //debug
+  printf("\n R-permutation      :"); for(i=0;i<rtens->shape.num_dim;i++) printf(" %d",cuda_task->tens_args[2].prmn_p[i]); //debug
+  printf("\nEnd of DEBUG message\n");
+ }
+//DEBUG end.
+#endif
+//Start scheduling CUDA calls:
+ err=cudaEventRecord(*cuda_start,*cuda_stream);
+ if(err != cudaSuccess){
+  err_msg=cudaGetErrorString(err);
+  if(VERBOSE) printf("\n#ERROR(tensor_algebra_gpu_nvidia:gpu_tensor_block_contract_dlf_): Unable to record the start event: %s\n",err_msg);
+  errc=gpu_activate(cur_gpu); errc=cuda_task_record(cuda_task,coh_ctrl,23); return 23;
+ }
+ if(LastTask[gpu_num] != NULL){ //`This should be done atomically for thread safety
+  dep_event=cuda_event_ptr(LastTask[gpu_num]->gpu_id,LastTask[gpu_num]->event_comput_hl);
+  err=cudaStreamWaitEvent(*cuda_stream,*dep_event,0); //input transfers should only begin after the previous task input transfers have completed
+  if(err != cudaSuccess){
+   err_msg=cudaGetErrorString(err);
+   if(VERBOSE) printf("\n#ERROR(tensor_algebra_gpu_nvidia:gpu_tensor_block_contract_dlf_): Unable to create a task dependency: %s\n",err_msg);
+   errc=gpu_activate(cur_gpu); errc=cuda_task_record(cuda_task,coh_ctrl,24); return 24;
+  }
+ }
 //Schedule forward data transfers for all tensors if needed:
-
+// Left tensor:
+ if(cuda_task->tens_args[1].const_mem_entry >= 0){ //GPU constant memory entry will contain tensor dimension extents and the matricization permutation (if any)
+  err=cudaMemcpyToSymbolAsync(const_args_dims,(void*)(ltens->shape.dims),sizeof(int)*((size_t)lrank),
+                sizeof(int)*((size_t)(MAX_TENSOR_RANK*(cuda_task->tens_args[1].const_mem_entry))),cudaMemcpyHostToDevice,*cuda_stream); //tensor dimension extents
+  if(err != cudaSuccess){
+   err_msg=cudaGetErrorString(err);
+   if(VERBOSE) printf("\n#ERROR(tensor_algebra_gpu_nvidia:gpu_tensor_block_contract_dlf_): Left tensor dims H2D copy failed: %s\n",err_msg);
+   errc=gpu_activate(cur_gpu); errc=cuda_task_record(cuda_task,coh_ctrl,25); return 25;
+  }
+  if(perm_l == YEP){
+   err=cudaMemcpyToSymbolAsync(const_args_prmn,(void*)(cuda_task->tens_args[1].prmn_p),sizeof(int)*((size_t)lrank),
+                 sizeof(int)*((size_t)(MAX_TENSOR_RANK*(cuda_task->tens_args[1].const_mem_entry))),cudaMemcpyHostToDevice,*cuda_stream); //tensor matricization permutation
+   if(err != cudaSuccess){
+    err_msg=cudaGetErrorString(err);
+    if(VERBOSE) printf("\n#ERROR(tensor_algebra_gpu_nvidia:gpu_tensor_block_contract_dlf_): Left tensor prmn H2D copy failed: %s\n",err_msg);
+    errc=gpu_activate(cur_gpu); errc=cuda_task_record(cuda_task,coh_ctrl,26); return 26;
+   }
+  }
+  if(gpu_l != gpu_num){ //data is not on the computing GPU
+   err=cudaMemcpyAsync(ltens->dst_rsc->gmem_p,ltens->src_rsc->gmem_p,lsize,cudaMemcpyDefault,*cuda_stream);
+   if(err != cudaSuccess){
+    err_msg=cudaGetErrorString(err);
+    if(VERBOSE) printf("\n#ERROR(tensor_algebra_gpu_nvidia:gpu_tensor_block_contract_dlf_): Left tensor body copy failed: %s\n",err_msg);
+    errc=gpu_activate(cur_gpu); errc=cuda_task_record(cuda_task,coh_ctrl,27); return 27;
+   }
+  }
+ }else{
+  errc=gpu_activate(cur_gpu); errc=cuda_task_record(cuda_task,coh_ctrl,28); return 28;
+ }
+// Right tensor:
+ if(cuda_task->tens_args[2].const_mem_entry >= 0){ //GPU constant memory entry will contain tensor dimension extents and the matricization permutation (if any)
+  err=cudaMemcpyToSymbolAsync(const_args_dims,(void*)(rtens->shape.dims),sizeof(int)*((size_t)rrank),
+                sizeof(int)*((size_t)(MAX_TENSOR_RANK*(cuda_task->tens_args[2].const_mem_entry))),cudaMemcpyHostToDevice,*cuda_stream); //tensor dimension extents
+  if(err != cudaSuccess){
+   err_msg=cudaGetErrorString(err);
+   if(VERBOSE) printf("\n#ERROR(tensor_algebra_gpu_nvidia:gpu_tensor_block_contract_dlf_): Right tensor dims H2D copy failed: %s\n",err_msg);
+   errc=gpu_activate(cur_gpu); errc=cuda_task_record(cuda_task,coh_ctrl,29); return 29;
+  }
+  if(perm_r == YEP){
+   err=cudaMemcpyToSymbolAsync(const_args_prmn,(void*)(cuda_task->tens_args[2].prmn_p),sizeof(int)*((size_t)rrank),
+                 sizeof(int)*((size_t)(MAX_TENSOR_RANK*(cuda_task->tens_args[2].const_mem_entry))),cudaMemcpyHostToDevice,*cuda_stream); //tensor matricization permutation
+   if(err != cudaSuccess){
+    err_msg=cudaGetErrorString(err);
+    if(VERBOSE) printf("\n#ERROR(tensor_algebra_gpu_nvidia:gpu_tensor_block_contract_dlf_): Right tensor prmn H2D copy failed: %s\n",err_msg);
+    errc=gpu_activate(cur_gpu); errc=cuda_task_record(cuda_task,coh_ctrl,30); return 30;
+   }
+  }
+  if(gpu_r != gpu_num){ //data is not on the computing GPU
+   err=cudaMemcpyAsync(rtens->dst_rsc->gmem_p,rtens->src_rsc->gmem_p,rsize,cudaMemcpyDefault,*cuda_stream);
+   if(err != cudaSuccess){
+    err_msg=cudaGetErrorString(err);
+    if(VERBOSE) printf("\n#ERROR(tensor_algebra_gpu_nvidia:gpu_tensor_block_contract_dlf_): Right tensor body copy failed: %s\n",err_msg);
+    errc=gpu_activate(cur_gpu); errc=cuda_task_record(cuda_task,coh_ctrl,31); return 31;
+   }
+  }
+ }else{
+  errc=gpu_activate(cur_gpu); errc=cuda_task_record(cuda_task,coh_ctrl,32); return 32;
+ }
+// Destination tensor:
+ if(cuda_task->tens_args[0].const_mem_entry >= 0){ //GPU constant memory entry will contain tensor dimension extents and the matricization permutation (if any)
+  err=cudaMemcpyToSymbolAsync(const_args_dims,(void*)(dtens->shape.dims),sizeof(int)*((size_t)drank),
+                sizeof(int)*((size_t)(MAX_TENSOR_RANK*(cuda_task->tens_args[0].const_mem_entry))),cudaMemcpyHostToDevice,*cuda_stream); //tensor dimension extents
+  if(err != cudaSuccess){
+   err_msg=cudaGetErrorString(err);
+   if(VERBOSE) printf("\n#ERROR(tensor_algebra_gpu_nvidia:gpu_tensor_block_contract_dlf_): Destination tensor dims H2D copy failed: %s\n",err_msg);
+   errc=gpu_activate(cur_gpu); errc=cuda_task_record(cuda_task,coh_ctrl,33); return 33;
+  }
+  if(perm_d == YEP){
+   err=cudaMemcpyToSymbolAsync(const_args_prmn,(void*)(cuda_task->tens_args[0].prmn_p),sizeof(int)*((size_t)drank),
+                 sizeof(int)*((size_t)(MAX_TENSOR_RANK*(cuda_task->tens_args[0].const_mem_entry))),cudaMemcpyHostToDevice,*cuda_stream); //tensor matricization permutation
+   if(err != cudaSuccess){
+    err_msg=cudaGetErrorString(err);
+    if(VERBOSE) printf("\n#ERROR(tensor_algebra_gpu_nvidia:gpu_tensor_block_contract_dlf_): Destination tensor prmn H2D copy failed: %s\n",err_msg);
+    errc=gpu_activate(cur_gpu); errc=cuda_task_record(cuda_task,coh_ctrl,34); return 34;
+   }
+  }
+  if(gpu_d != gpu_num){ //data is not on the computing GPU
+   err=cudaMemcpyAsync(dtens->dst_rsc->gmem_p,dtens->src_rsc->gmem_p,dsize,cudaMemcpyDefault,*cuda_stream);
+   if(err != cudaSuccess){
+    err_msg=cudaGetErrorString(err);
+    if(VERBOSE) printf("\n#ERROR(tensor_algebra_gpu_nvidia:gpu_tensor_block_contract_dlf_): Destination tensor body copy failed: %s\n",err_msg);
+    errc=gpu_activate(cur_gpu); errc=cuda_task_record(cuda_task,coh_ctrl,35); return 35;
+   }
+  }
+ }else{
+  errc=gpu_activate(cur_gpu); errc=cuda_task_record(cuda_task,coh_ctrl,36); return 36;
+ }
 //Schedule tensor transposes if needed:
 
 //Schedule the computation kernel:
@@ -3081,18 +3338,9 @@ NOTES:
 //Schedule the inverse tensor transpose for the destination tensor:
 
 //Record the scheduled CUDA task and set LastTask:
+``return stat;
 
 
-/*//DEBUG begin:
-    printf(" Const args (d,l,r) : %d %d %d\n",dtens->const_args_entry,ltens->const_args_entry,rtens->const_args_entry); //debug
-    printf(" Block sizes (d,l,r): %d %d %d\n",dsize,lsize,rsize); //debug
-    printf(" Block ranks (d,l,r): %d %d %d\n",dtens->rank,ltens->rank,rtens->rank); //debug
-    printf(" Contraction pattern:"); for(i=0;i<ltens->rank+rtens->rank;i++) printf(" %d",cptrn[i]); //debug
-    printf("\n Contr/uncontr(l,r) : %d %d %d: %d %d %d\n",ncd,nlu,nru,lc,ll,lr); //debug
-    printf(" D-permutation      :"); for(i=0;i<dtens->rank;i++) printf(" %d",dtens->prmn_h[i]); //debug
-    printf("\n L-permutation      :"); for(i=0;i<ltens->rank;i++) printf(" %d",ltens->prmn_h[i]); //debug
-    printf("\n R-permutation      :"); for(i=0;i<rtens->rank;i++) printf(" %d",rtens->prmn_h[i]); //debug
-//DEBUG end.*/
 
 
 
