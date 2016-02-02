@@ -71,8 +71,8 @@ FOR DEVELOPERS ONLY:
    Thus, the corresponding object will be kept in its initial state if no SUCCESS.
 TO BE FIXED:
  # In tensor operation scheduling functions, if a scheduling error occurs after
-   a data transfer or a CUDA kernel has been scheduled, the CUDA task finalization
-   must not begin until the partially scheduled CUDA task has completed.
+   the data transfer or CUDA kernel has been scheduled, the CUDA task finalization
+   must not begin until the partially scheduled CUDA task has completed on GPU.
 **/
 
 #include <stdio.h>
@@ -133,14 +133,14 @@ static int cuda_task_set_arg(cudaTask_t *cuda_task, unsigned int arg_num, tensBl
 static int cuda_task_record(cudaTask_t *cuda_task, unsigned int coh_ctrl, unsigned int err_code = 0);
 static int cuda_task_finalize(cudaTask_t *cuda_task);
 // CUDA KERNELS:
-__global__ void gpu_array_norm2_r4__(size_t arr_size, const float *arr, float *bnorm2);
-__global__ void gpu_array_norm2_r8__(size_t arr_size, const double *arr, double *bnorm2);
+__global__ void gpu_array_norm2_r4__(size_t arr_size, const float *arr, volatile float *bnorm2);
+__global__ void gpu_array_norm2_r8__(size_t arr_size, const double *arr, volatile double *bnorm2);
 __global__ void gpu_array_init_r4__(size_t tsize, float *arr, float val);
 __global__ void gpu_array_init_r8__(size_t tsize, double *arr, double val);
 template <typename T>
 __global__ void gpu_scalar_multiply__(const T * left_arg, const T * right_arg, T * dest_arg);
-__global__ void gpu_array_scale_r4__(size_t tsize, float *arr, float val);
-__global__ void gpu_array_scale_r8__(size_t tsize, double *arr, double val);
+__global__ void gpu_array_scale_r4__(size_t tsize, float __restrict__ *arr, const float __restrict__ *val_p);
+__global__ void gpu_array_scale_r8__(size_t tsize, double __restrict__ *arr, const double __restrict__ *val_p);
 __global__ void gpu_array_add_r4__(size_t tsize, float* __restrict__ arr0, const float* __restrict__ arr1, float val);
 __global__ void gpu_array_add_r8__(size_t tsize, double* __restrict__ arr0, const double* __restrict__ arr1, double val);
 __global__ void gpu_array_dot_product_r4__(size_t tsize, const float *arr1, const float *arr2, volatile float *dprod);
@@ -202,14 +202,22 @@ static int DISABLE_BLAS=0; //non-zero value will disable cuBLAS usage (if it had
 static int DISABLE_BLAS=1; //non-zero value will disable cuBLAS usage (if it had been cuBLAS compiled/linked)
 #endif
 static cudaTask_t * LastTask[MAX_GPUS_PER_NODE]; //last CUDA task successfully scheduled on each GPU
-__device__ __constant__ float sgemm_alpha=1.0f; //default alpha constant for SGEMM
-__device__ __constant__ float sgemm_beta=1.0f;  //default beta constant SGEMM
-__device__ __constant__ double dgemm_alpha=1.0; //default alpha constant for DGEMM
-__device__ __constant__ double dgemm_beta=1.0;  //default beta constant DGEMM
+__device__ __constant__ float sgemm_alpha=1.0f;      //default alpha constant for SGEMM
+__device__ __constant__ float sgemm_beta=1.0f;       //default beta constant SGEMM
+__device__ __constant__ double dgemm_alpha=1.0;      //default alpha constant for DGEMM
+__device__ __constant__ double dgemm_beta=1.0;       //default beta constant DGEMM
+__device__ __constant__ cuComplex cgemm_alpha;       //default alpha constant CGEMM
+__device__ __constant__ cuComplex cgemm_beta;        //default beta constant CGEMM
+__device__ __constant__ cuDoubleComplex zgemm_alpha; //default alpha constant ZGEMM
+__device__ __constant__ cuDoubleComplex zgemm_beta;  //default beta constant ZGEMM
+__device__ __constant__ float sgemm_coefs[2];           //user-defined alpha/beta SGEMM coefficients
+__device__ __constant__ double dgemm_coefs[2];          //user-defined alpha/beta DGEMM coefficients
+__device__ __constant__ cuComplex cgemm_coefs[2];       //user-defined alpha/beta CGEMM coefficients
+__device__ __constant__ cuDoubleComplex zgemm_coefs[2]; //user-defined alpha/beta ZGEMM coefficients
 // Infrastructure for functions <gpu_array_norm2_XX>:
-__device__ int norm2_wr_lock=0; //write lock (shared by all <gpu_array_norm2_XX> running on device)
+__device__ int norm2_wr_lock=0; //write lock (shared by all <gpu_array_norm2_XX> running on GPU)
 // Infrastructure for kernels <gpu_array_dot_product_XX__>:
-__device__ int dot_product_wr_lock=0; //write lock (shared by all <gpu_array_dot_product_XX__> running on device)
+__device__ int dot_product_wr_lock=0; //write lock (shared by all <gpu_array_dot_product_XX__> running on GPU)
 #endif
 //-------------------------------------------------------------------------
 //GENERIC:
@@ -2977,7 +2985,7 @@ NOTES:
  int i,j,drank,lrank,rrank,tds_d,tds_l,tds_r,gpu_d,gpu_l,gpu_r,perm_d,perm_l,perm_r,ncd,nlu,nru,gpu_num,cur_gpu,targ_dev,bx,by,errc,stat;
  int dprm[1+MAX_TENSOR_RANK],lprm[1+MAX_TENSOR_RANK],rprm[1+MAX_TENSOR_RANK]; //the 1st element is the sign of the permutation
  size_t vol_d,vol_l,vol_r,dsize,lsize,rsize,lc,ll,lr;
- void *darg,*larg,*rarg,*alpha,*beta;
+ void *darg,*larg,*rarg;
  cudaStream_t *cuda_stream;
  cudaEvent_t *cuda_start,*cuda_comput,*cuda_output,*cuda_finish,*dep_event;
  cudaError_t err;
@@ -3451,66 +3459,74 @@ NOTES:
   rarg=rtens->dst_rsc->gmem_p;
  }
 //Schedule the appropriate computation kernel:
-// Right tensor rescaling:
- if(lrank == 0 && rrank > 0){
-  bx=1+(rsize-1)/THRDS_ARRAY_SCALE; if(bx > MAX_CUDA_BLOCKS) bx=MAX_CUDA_BLOCKS;
-  switch(rtens->data_kind){
+// Scalar multiplication:
+ if(drank == 0 && lrank == 0 && rrank == 0){
+  switch(dtens->data_kind){
    case R4:
-    gpu_array_scale_r4__<<<bx,THRDS_ARRAY_SCALE,0,cuda_stream>>>(rsize,(float*)(rarg),((float*)(ltens->elems_h))[0]);
+    gpu_scalar_multiply<float> <<<1,1,0,*cuda_stream>>> ((float*)larg,(float*)rarg,(float*)darg);
     break;
    case R8:
-    gpu_array_scale_r8__<<<bx,THRDS_ARRAY_SCALE,0,cuda_stream>>>(rsize,(double*)(rarg),((double*)(ltens->elems_h))[0]);
+    gpu_scalar_multiply<double> <<<1,1,0,*cuda_stream>>> ((double*)larg,(double*)rarg,(double*)darg);
     break;
    default:
-    i=cuda_task_record(cuda_task,57,dev_num,cuda_stream,cuda_start,cuda_comput,cuda_output,cuda_finish,scr_entry_cnt,scr_entries);
-    err=cudaSetDevice(gpu_num); return 57;
+    errc=gpu_activate(cur_gpu); errc=cuda_task_record(cuda_task,coh_ctrl,44); return 44;
+  }
+// Right tensor rescaling:
+ }else if(lrank == 0 && rrank > 0){
+  bx=1+(vol_r-1)/THRDS_ARRAY_SCALE; if(bx > MAX_CUDA_BLOCKS) bx=MAX_CUDA_BLOCKS;
+  switch(rtens->data_kind){
+   case R4:
+    gpu_array_scale_r4__<<<bx,THRDS_ARRAY_SCALE,0,*cuda_stream>>>(vol_r,(float*)(rarg),(float*)(larg));
+    break;
+   case R8:
+    gpu_array_scale_r8__<<<bx,THRDS_ARRAY_SCALE,0,*cuda_stream>>>(vol_r,(double*)(rarg),(double*)(larg));
+    break;
+   default:
+    errc=gpu_activate(cur_gpu); errc=cuda_task_record(cuda_task,coh_ctrl,45); return 45;
   }
 // Left tensor rescaling:
  }else if(lrank > 0 && rrank == 0){
-  bx=1+(lsize-1)/THRDS_ARRAY_SCALE; if(bx > MAX_CUDA_BLOCKS) bx=MAX_CUDA_BLOCKS;
+  bx=1+(vol_l-1)/THRDS_ARRAY_SCALE; if(bx > MAX_CUDA_BLOCKS) bx=MAX_CUDA_BLOCKS;
   switch(ltens->data_kind){
    case R4:
-    gpu_array_scale_r4__<<<bx,THRDS_ARRAY_SCALE,0,cuda_stream>>>(lsize,(float*)(larg),((float*)(rtens->elems_h))[0]);
+    gpu_array_scale_r4__<<<bx,THRDS_ARRAY_SCALE,0,*cuda_stream>>>(vol_l,(float*)(larg),(float*)(rarg));
     break;
    case R8:
-    gpu_array_scale_r8__<<<bx,THRDS_ARRAY_SCALE,0,cuda_stream>>>(lsize,(double*)(larg),((double*)(rtens->elems_h))[0]);
+    gpu_array_scale_r8__<<<bx,THRDS_ARRAY_SCALE,0,*cuda_stream>>>(vol_l,(double*)(larg),(double*)(rarg));
     break;
    default:
-    i=cuda_task_record(cuda_task,58,dev_num,cuda_stream,cuda_start,cuda_comput,cuda_output,cuda_finish,scr_entry_cnt,scr_entries);
-    err=cudaSetDevice(gpu_num); return 58;
+    errc=gpu_activate(cur_gpu); errc=cuda_task_record(cuda_task,coh_ctrl,46); return 46;
   }
 // Full tensor contraction (via vector dot-product):
  }else if(drank == 0 && lrank > 0 && rrank == lrank){
-  bx=1+(lsize-1)/THRDS_ARRAY_SCALE; if(bx > MAX_CUDA_BLOCKS) bx=MAX_CUDA_BLOCKS;
+  bx=1+(vol_l-1)/THRDS_ARRAY_SCALE; if(bx > MAX_CUDA_BLOCKS) bx=MAX_CUDA_BLOCKS;
   switch(ltens->data_kind){
    case R4:
-    gpu_array_dot_product_r4__<<<bx,THRDS_ARRAY_SCALE,THRDS_ARRAY_SCALE*sizeof(float),cuda_stream>>>
-                                 (lsize,(float*)larg,(float*)rarg,(float*)darg);
+    gpu_array_dot_product_r4__<<<bx,THRDS_ARRAY_SCALE,THRDS_ARRAY_SCALE*sizeof(float),*cuda_stream>>>
+                                 (vol_l,(float*)larg,(float*)rarg,(float*)darg);
     break;
    case R8:
-    gpu_array_dot_product_r8__<<<bx,THRDS_ARRAY_SCALE,THRDS_ARRAY_SCALE*sizeof(double),cuda_stream>>>
-                                 (lsize,(double*)larg,(double*)rarg,(double*)darg);
+    gpu_array_dot_product_r8__<<<bx,THRDS_ARRAY_SCALE,THRDS_ARRAY_SCALE*sizeof(double),*cuda_stream>>>
+                                 (vol_l,(double*)larg,(double*)rarg,(double*)darg);
     break;
    default:
-    i=cuda_task_record(cuda_task,59,dev_num,cuda_stream,cuda_start,cuda_comput,cuda_output,cuda_finish,scr_entry_cnt,scr_entries);
-    err=cudaSetDevice(gpu_num); return 59;
+    errc=gpu_activate(cur_gpu); errc=cuda_task_record(cuda_task,coh_ctrl,47); return 47;
   }
 // Tensor product (no contracted indices):
  }else if(drank > 0 && drank == lrank + rrank){
-  bx=1+(lsize-1)/THRDS_ARRAY_PRODUCT; by=1+(rsize-1)/THRDS_ARRAY_PRODUCT;
+  bx=1+(vol_l-1)/THRDS_ARRAY_PRODUCT; by=1+(vol_r-1)/THRDS_ARRAY_PRODUCT;
   limit_cuda_blocks2d(MAX_CUDA_BLOCKS,&bx,&by); dim3 blcks(bx,by);
   switch(dtens->data_kind){
    case R4:
-    gpu_array_product_r4__<<<blcks,THRDS_ARRAY_PRODUCT,0,cuda_stream>>>
-                             (lsize,(float*)larg,rsize,(float*)rarg,(float*)darg);
+    gpu_array_product_r4__<<<blcks,THRDS_ARRAY_PRODUCT,0,*cuda_stream>>>
+                             (vol_l,(float*)larg,vol_r,(float*)rarg,(float*)darg);
     break;
    case R8:
-    gpu_array_product_r8__<<<blcks,THRDS_ARRAY_PRODUCT,0,cuda_stream>>>
-                             (lsize,(double*)larg,rsize,(double*)rarg,(double*)darg);
+    gpu_array_product_r8__<<<blcks,THRDS_ARRAY_PRODUCT,0,*cuda_stream>>>
+                             (vol_l,(double*)larg,vol_r,(double*)rarg,(double*)darg);
     break;
    default:
-    i=cuda_task_record(cuda_task,60,dev_num,cuda_stream,cuda_start,cuda_comput,cuda_output,cuda_finish,scr_entry_cnt,scr_entries);
-    err=cudaSetDevice(gpu_num); return 60;
+    errc=gpu_activate(cur_gpu); errc=cuda_task_record(cuda_task,coh_ctrl,48); return 48;
   }
 // Partial tensor contraction (via TN matrix multiplication):
  }else{
@@ -3627,16 +3643,18 @@ NOTES:
   if(VERBOSE) printf("\n#ERROR(tensor_algebra_gpu_nvidia:gpu_tensor_block_contract_dlf_): Unable to record the output event: %s\n",err_msg);
   errc=gpu_activate(cur_gpu); errc=cuda_task_record(cuda_task,coh_ctrl,37); return 37;
  }
+//Record a CUDA event (task finished):
+//???
 //Record the successfully scheduled CUDA task and update the Last Task:
  errc=cuda_task_record(cuda_task,coh_ctrl,0);
  LastTask[gpu_num]=cuda_task;
  errc=gpu_activate(cur_gpu);
  return stat; //either 0 (success) or NOT_CLEAN (warning)
 }
-//------------------------------------------------------------------------------------
+//---------------------------------------------------------------------------------------------
 //CUDA KERNELS:
 // SUM OF THE SQUARES OF ALL ARRAY ELEMENTS (R4):
-__global__ void gpu_array_norm2_r4__(size_t arr_size, const float *arr, float *bnorm2)
+__global__ void gpu_array_norm2_r4__(size_t arr_size, const float *arr, volatile float *bnorm2)
 /** Computes the squared 2-norm of array arr(0:arr_size-1)
 INPUT:
  # arr_size - size of the array;
@@ -3663,9 +3681,9 @@ OUTPUT:
  __syncthreads();
  return;
 }
-//--------------------------------------------------------------------------------------
+//-----------------------------------------------------------------------------------------------
 // SUM OF THE SQUARES OF ALL ARRAY ELEMENTS (R8):
-__global__ void gpu_array_norm2_r8__(size_t arr_size, const double *arr, double *bnorm2)
+__global__ void gpu_array_norm2_r8__(size_t arr_size, const double *arr, volatile double *bnorm2)
 /** Computes the squared 2-norm of array arr(0:arr_size-1)
 INPUT:
  # arr_size - size of the array;
@@ -3716,27 +3734,30 @@ __global__ void gpu_array_init_r8__(size_t tsize, double *arr, double val)
 // SCALAR MULTIPLICATION:
 template <typename T>
 __global__ void gpu_scalar_multiply__(const T * left_arg, const T * right_arg, T * dest_arg)
+/** Scalar += Scalar * Scalar **/
 {
  if(blockIdx.x == 0 && threadIdx.x == 0){
   *dest_arg+=(*left_arg)*(*right_arg);
  }
  return;
 }
-//-----------------------------------------------------------------------
+//----------------------------------------------------------------------------------------------------------
 // ARRAY RESCALING (R4):
-__global__ void gpu_array_scale_r4__(size_t tsize, float *arr, float val)
-/** arr(:)*=val **/
+__global__ void gpu_array_scale_r4__(size_t tsize, float __restrict__ *arr, const float __restrict__ *val_p)
+/** arr(:)*=val: val is in the GPU memory. **/
 {
+ float val = *val_p;
  size_t _ti = blockIdx.x*blockDim.x + threadIdx.x;
  size_t _gd = gridDim.x*blockDim.x;
  for(size_t l=_ti;l<tsize;l+=_gd){arr[l]*=val;}
  return;
 }
-//-------------------------------------------------------------------------
+//------------------------------------------------------------------------------------------------------------
 // ARRAY RESCALING (R8):
-__global__ void gpu_array_scale_r8__(size_t tsize, double *arr, double val)
-/** arr(:)*=val **/
+__global__ void gpu_array_scale_r8__(size_t tsize, double __restrict__ *arr, const double __restrict__ *val_p)
+/** arr(:)*=val: val is in the GPU memory. **/
 {
+ double val = *val_p;
  size_t _ti = blockIdx.x*blockDim.x + threadIdx.x;
  size_t _gd = gridDim.x*blockDim.x;
  for(size_t l=_ti;l<tsize;l+=_gd){arr[l]*=val;}
