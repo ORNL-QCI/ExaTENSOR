@@ -160,7 +160,7 @@ OBJS =  ./OBJ/dil_basic.o ./OBJ/stsubs.o ./OBJ/combinatoric.o ./OBJ/symm_index.o
 	./OBJ/mem_manager.o ./OBJ/tensor_algebra_gpu_nvidia.o ./OBJ/talshf.o ./OBJ/talshc.o
 
 $(NAME): lib$(NAME).a ./OBJ/test.o ./OBJ/main.o
-	$(FCOMP) ./OBJ/main.o lib$(NAME).a $(LFLAGS) -o $(NAME).x
+	$(FCOMP) ./OBJ/main.o ./OBJ/test.o lib$(NAME).a $(LFLAGS) -o $(NAME).x
 
 lib$(NAME).a: $(OBJS)
 	ar cr lib$(NAME).a $(OBJS)
@@ -214,7 +214,7 @@ endif
 ./OBJ/test.o: test.cpp lib$(NAME).a
 	$(CCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(CFLAGS) test.cpp -o ./OBJ/test.o
 
-./OBJ/main.o: main.cpp lib$(NAME).a
+./OBJ/main.o: main.F90 lib$(NAME).a
 	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) main.F90 -o ./OBJ/main.o
 
 

@@ -2,7 +2,7 @@
     Parameters, derived types, and function prototypes
     used at the lower level of TAL-SH (device specific):
     CP-TAL, NV-TAL, XP-TAL, AM-TAL, etc.
-REVISION: 2016/02/01
+REVISION: 2016/02/03
 Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
 Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
 
@@ -110,7 +110,7 @@ FOR DEVELOPERS ONLY:
 #define MAT_MULT_TILE_DIMX 16      //X tile dimension size for <gpu_matrix_multiply_tn_XX__>: Must be multiple of MAT_MULT_TILE_DIMY
 #endif
 #define THRDS_ARRAY_PRODUCT 256    //threads per block for <gpu_array_product_XX__>
-#define THRDS_ARRAY_NORM2 256      //threads per block for <gpu_array_2norm2_XX__>
+#define THRDS_ARRAY_NORM2 256      //threads per block for <gpu_array_norm2_XX__>
 #define THRDS_ARRAY_INIT 256       //threads per block for <gpu_array_init_XX__>
 #define THRDS_ARRAY_SCALE 256      //threads per block for <gpu_array_scale_XX__> and <gpu_array_dot_product_XX__>
 #define THRDS_ARRAY_ADD 256        //threads per block for <gpu_array_add_XX__>
@@ -420,8 +420,8 @@ extern "C"{
  int gpu_get_arg(tensBlck_t *ctens);
  int gpu_put_arg_(tensBlck_t *ctens, cudaTask_t *cuda_task);
  int gpu_get_arg_(tensBlck_t *ctens, cudaTask_t *cuda_task);
- int gpu_array_2norm2_r4(size_t size, const float *arr, float *norm2);
- int gpu_array_2norm2_r8(size_t size, const double *arr, double *norm2);
+ int gpu_array_norm2_r4_(size_t size, const float *arr, float *norm2);
+ int gpu_array_norm2_r8_(size_t size, const double *arr, double *norm2);
  int gpu_matrix_multiply_tn_r4(size_t ll, size_t lr, size_t lc, const float *lmat, const float *rmat, float *dmat);
  int gpu_matrix_multiply_tn_r8(size_t ll, size_t lr, size_t lc, const double *lmat, const double *rmat, double *dmat);
  int gpu_tensor_block_init_(tensBlck_t *ctens, double val, int copy_back, cudaTask_t *cuda_task);
@@ -430,8 +430,8 @@ extern "C"{
  int gpu_tensor_block_copy_dlf(const int *dim_trn, tensBlck_t *tens_in, tensBlck_t *tens_out);
  int gpu_tensor_block_copy_dlf_(const int *dim_trn, tensBlck_t *tens_in, tensBlck_t *tens_out,
                                 int copy_back, cudaTask_t *cuda_task);
- int gpu_tensor_block_contract_dlf_(const int *cptrn, const tensBlck_t *ltens, const tensBlck_t *rtens, tensBlck_t *dtens,
-                                    unsigned int coh_ctrl, cudaTask_t *cuda_task, int gpu_id = -1, double alpha = 1.0, double beta = 1.0);
+ int gpu_tensor_block_contract_dlf_(const int *cptrn, tensBlck_t *ltens, tensBlck_t *rtens, tensBlck_t *dtens, unsigned int coh_ctrl,
+                                    cudaTask_t *cuda_task, int gpu_id = -1, double alpha = 1.0, double beta = 1.0);
 #endif
 #ifdef __cplusplus
 }
