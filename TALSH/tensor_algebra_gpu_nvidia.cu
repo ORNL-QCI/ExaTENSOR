@@ -1,5 +1,5 @@
 /** Tensor Algebra Library for NVidia GPU: NV-TAL (CUDA based).
-REVISION: 2016/02/03
+REVISION: 2016/02/04
 Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
 Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
 
@@ -1752,7 +1752,7 @@ __host__ static int cuda_task_finalize(cudaTask_t *cuda_task) //do not call this
  if(cuda_task->gpu_id < 0 || cuda_task->gpu_id >= MAX_GPUS_PER_NODE) return 2; //invalid GPU id or empty
  if(cuda_task->num_args > MAX_TENSOR_OPERANDS) return 3; //invalid number of tensor arguments
  ret_stat=0; coh=cuda_task->coherence;
- for(i=cuda_task->num_args-1;i>=0;i--){
+ for(i=cuda_task->num_args-1;i>=0;i--){ //last argument corresponds to the first (minor) two bits
   bts=coh&msk;
   tens_arg=&(cuda_task->tens_args[i]);
   if(tens_arg->tens_p != NULL){ //pointer to the tensor block associated with this argument
@@ -2919,6 +2919,8 @@ NOTES:
  int i,j,drank,lrank,rrank,tds_d,tds_l,tds_r,gpu_d,gpu_l,gpu_r,perm_d,perm_l,perm_r,ncd,nlu,nru,gpu_num,cur_gpu,targ_dev,bx,by,errc,stat;
  int dprm[1+MAX_TENSOR_RANK],lprm[1+MAX_TENSOR_RANK],rprm[1+MAX_TENSOR_RANK]; //the 1st element is the sign of the permutation
  size_t vol_d,vol_l,vol_r,dsize,lsize,rsize,lc,ll,lr;
+ unsigned int coh;
+ const unsigned int msk=4;
  void *darg,*larg,*rarg,*alpha_p,*beta_p;
  cudaStream_t *cuda_stream;
  cudaEvent_t *cuda_start,*cuda_comput,*cuda_output,*cuda_finish,*dep_event;
@@ -3164,10 +3166,10 @@ NOTES:
   printf(" Const args (d,l,r) : %d %d %d\n",cuda_task->tens_args[0].const_mem_entry,
                                             cuda_task->tens_args[1].const_mem_entry,
                                             cuda_task->tens_args[2].const_mem_entry); //debug
-  printf(" Block sizes (d,l,r): %llu %llu %llu\n",dsize,lsize,rsize); //debug
+  printf(" Block sizes (d,l,r): %lu %lu %lu\n",dsize,lsize,rsize); //debug
   printf(" Block ranks (d,l,r): %d %d %d\n",dtens->shape.num_dim,ltens->shape.num_dim,rtens->shape.num_dim); //debug
   printf(" Contraction pattern:"); for(i=0;i<(ltens->shape.num_dim+rtens->shape.num_dim);i++) printf(" %d",cptrn[i]); //debug
-  printf("\n Contr/uncontr/lens : %d %d %d: %llu %llu %llu\n",ncd,nlu,nru,lc,ll,lr); //debug
+  printf("\n Contr/uncontr/lens : %d %d %d: %lu %lu %lu\n",ncd,nlu,nru,lc,ll,lr); //debug
   printf(" D-permutation      :"); for(i=0;i<dtens->shape.num_dim;i++) printf(" %d",cuda_task->tens_args[0].prmn_p[i]); //debug
   printf("\n L-permutation      :"); for(i=0;i<ltens->shape.num_dim;i++) printf(" %d",cuda_task->tens_args[1].prmn_p[i]); //debug
   printf("\n R-permutation      :"); for(i=0;i<rtens->shape.num_dim;i++) printf(" %d",cuda_task->tens_args[2].prmn_p[i]); //debug
@@ -3558,8 +3560,23 @@ NOTES:
   if(VERBOSE) printf("\n#ERROR(tensor_algebra_gpu_nvidia:gpu_tensor_block_contract_dlf_): Unable to record the output event: %s\n",err_msg);
   errc=cuda_task_record(cuda_task,coh_ctrl,56); errc=gpu_activate(cur_gpu); return 56;
  }
+//Transfer back the updated destination tensor if needed ("T","K" coherence control):
+ coh=(coh_ctrl>>4)&msk; //select bits 4,5 (destination tensor coherence)
+ if(gpu_d != gpu_num && coh >= 2){ //data is not on the computing GPU and coherence control = 2("T") or (3)"K":
+  err=cudaMemcpyAsync(dtens->src_rsc->gmem_p,dtens->dst_rsc->gmem_p,dsize,cudaMemcpyDefault,*cuda_stream);
+  if(err != cudaSuccess){
+   err_msg=cudaGetErrorString(err);
+   if(VERBOSE) printf("\n#ERROR(tensor_algebra_gpu_nvidia:gpu_tensor_block_contract_dlf_): Destination tensor body back copy failed: %s\n",err_msg);
+   errc=cuda_task_record(cuda_task,coh_ctrl,57); errc=gpu_activate(cur_gpu); return 57;
+  }
+ }
 //Record a CUDA event (task finished):
-//???
+ err=cudaEventRecord(*cuda_finish,*cuda_stream);
+ if(err != cudaSuccess){
+  err_msg=cudaGetErrorString(err);
+  if(VERBOSE) printf("\n#ERROR(tensor_algebra_gpu_nvidia:gpu_tensor_block_contract_dlf_): Unable to record the finish event: %s\n",err_msg);
+  errc=cuda_task_record(cuda_task,coh_ctrl,58); errc=gpu_activate(cur_gpu); return 58;
+ }
 //Record the successfully scheduled CUDA task and update the Last Task:
  errc=cuda_task_record(cuda_task,coh_ctrl,0);
  LastTask[gpu_num]=cuda_task;
