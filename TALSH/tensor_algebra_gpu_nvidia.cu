@@ -1226,7 +1226,7 @@ int tensBlck_construct(tensBlck_t *ctens, //pointer to defined tensor block (eit
 
 int tensBlck_attach_body(tensBlck_t *ctens, //pointer to a shape-defined (constructed) tensor block
                          int data_kind,     //data kind (R4,R8,C4,C8)
-                         int dev_id,        //flat device id where the body resides (or should reside)
+                         int dev_id,        //flat device id where the body resides (or should reside): Defaults to Host
                          void *body_ptr,    //pointer to the tensor body (global memory of device <dev_id>)
                          int buf_entry)     //argument buffer entry handle corresponding to the <body_ptr> (optional)
 /** Attaches a body to a shape-defined tensor block (with an empty body). If both <body_ptr> and <buf_entry> are absent,
@@ -1245,6 +1245,7 @@ int tensBlck_attach_body(tensBlck_t *ctens, //pointer to a shape-defined (constr
  if(errc != YEP || data_kind == NO_TYPE) return -2;
  if(ctens->shape.num_dim < 0 || ctens->shape.num_dim > MAX_TENSOR_RANK) return -3; //tensor block must be shape-defined
  if(body_ptr == NULL && buf_entry >= 0) return -4; //a defined argument buffer entry must be supplied with the corresponding pointer
+ if(dev_id < 0){dev_id=encode_device_id(DEV_HOST,0); if(dev_id < 0 || dev_id >= DEV_MAX) return -5;} //dev_id defaults to Host
  if(ctens->src_rsc == NULL){
   errc=tensDevRsc_create(&(ctens->src_rsc)); if(errc != 0 || ctens->src_rsc == NULL) return 1;
  }else{

@@ -22,5 +22,6 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #ifndef _TALSH_H
 #define _TALSH_H
 
+#include "tensor_algebra.h"
 
 #endif

@@ -2,7 +2,7 @@
 implementation of the tensor algebra library TAL-SH:
 CP-TAL (TAL for CPU), NV-TAL (TAL for NVidia GPU),
 XP-TAL (TAL for Intel Xeon Phi), AM-TAL (TAL for AMD GPU).
-REVISION: 2016/01/29
+REVISION: 2016/02/04
 Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
 Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
 
@@ -786,29 +786,29 @@ static int mi_entry_init()
  return 0;
 }
 
-int mi_entry_get(int ** mi_entry)
+int mi_entry_get(int ** mi_entry_p)
 /** Obtains a pointer to an entry in the multi-index storage slab.
     The entry can fit an <int> multi-index up to MAX_TENSOR_RANK length.
     Returns TRY_LATER if no free handles are currently available. **/
 {
  int m;
- *mi_entry=NULL;
+ *mi_entry_p=NULL;
  if(miFFE > 0){ //number of free handles left
   m=miFreeHandle[--miFFE];
-  *mi_entry=&miBank[m][0];
+  *mi_entry_p=&miBank[m][0];
  }else{
   return TRY_LATER; //currently no free handles left
  }
  return 0;
 }
 
-int mi_entry_release(int * mi_entry)
+int mi_entry_release(int * mi_entry_p)
 /** Releases an entry back to the multi-index storage slab. **/
 {
  int m;
- if(mi_entry != NULL){
+ if(mi_entry_p != NULL){
   if(miFFE >= 0){
-   m=(int)(mi_entry-&miBank[0][0]);
+   m=(int)(mi_entry_p-&miBank[0][0]);
    if(m%MAX_TENSOR_RANK == 0){
     m/=MAX_TENSOR_RANK;
     miFreeHandle[miFFE++]=m;
@@ -824,14 +824,15 @@ int mi_entry_release(int * mi_entry)
  return 0;
 }
 
-int mi_entry_pinned(int * mi_entry)
+int mi_entry_pinned(int * mi_entry_p)
 /** Returns YEP if the multi-index is in the multi-index bank,
     NOPE othewise. **/
 {
- int n;
+ int l,n;
  n=NOPE;
- if(mi_entry != NULL){
-  if((unsigned long)(mi_entry-miBank[0][0]) < MAX_GPU_ARGS*MAX_MLNDS_PER_TENS*MAX_TENSOR_RANK) n=YEP;
+ if(mi_entry_p != NULL){
+  l=(int)(mi_entry_p-&miBank[0][0]);
+  if(l >= 0 && l < MAX_GPU_ARGS*MAX_MLNDS_PER_TENS*MAX_TENSOR_RANK) n=YEP;
  }
  return n;
 }

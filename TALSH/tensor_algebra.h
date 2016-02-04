@@ -2,7 +2,7 @@
     Parameters, derived types, and function prototypes
     used at the lower level of TAL-SH (device specific):
     CP-TAL, NV-TAL, XP-TAL, AM-TAL, etc.
-REVISION: 2016/02/03
+REVISION: 2016/02/04
 Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
 Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
 
@@ -355,9 +355,9 @@ extern "C"{
  int host_mem_free_pin(void *host_ptr); //generic
  int host_mem_register(void *host_ptr, size_t tsize); //generic
  int host_mem_unregister(void *host_ptr); //generic
- int mi_entry_get(int ** mi_entry); //generic
- int mi_entry_release(int * mi_entry); //generic
- int mi_entry_pinned(int * mi_entry); //generic
+ int mi_entry_get(int ** mi_entry_p); //generic
+ int mi_entry_release(int * mi_entry_p); //generic
+ int mi_entry_pinned(int * mi_entry_p); //generic
 #ifndef NO_GPU
  int gpu_mem_alloc(void **dev_ptr, size_t tsize, int gpu_id = -1); //NVidia GPU only
  int gpu_mem_free(void *dev_ptr, int gpu_id = -1); //NVidia GPU only
@@ -397,7 +397,7 @@ extern "C"{
  int tensBlck_destroy(tensBlck_t *ctens);
  int tensBlck_construct(tensBlck_t *ctens, int pinned,
                         int trank, const int *dims = NULL, const int *divs = NULL, const int *grps = NULL);
- int tensBlck_attach_body(tensBlck_t *ctens, int data_kind, int dev_id, void *body_ptr = NULL, int buf_entry = -1);
+ int tensBlck_attach_body(tensBlck_t *ctens, int data_kind, int dev_id = -1, void *body_ptr = NULL, int buf_entry = -1);
  int tensBlck_destruct(tensBlck_t *ctens, int release_body = YEP, int which_body = EVERYTHING);
  int tensBlck_src_dev_id(const tensBlck_t * ctens, int * dev_kind = NULL);
  int tensBlck_present(const tensBlck_t * ctens, int dev_id = DEV_NULL, int dev_kind = DEV_NULL);
