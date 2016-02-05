@@ -1,6 +1,6 @@
-!Tensor Algebra for Multi-Core CPUs (OpenMP based).
+!Tensor Algebra for Multi- and Many-core CPUs (OpenMP based).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2016/01/24
+!REVISION: 2016/02/05
 !GNU linking options: -lgomp -lblas -llapack
 !ACRONYMS:
 ! - mlndx - multiindex;
@@ -187,6 +187,7 @@
 	public get_contr_pattern           !converts a mnemonic contraction pattern into the digital form used by tensor_block_contract
 	public get_contr_permutations      !given a digital contraction pattern, returns all tensor permutations necessary for the subsequent matrix multiplication
 	public contr_pattern_rnd           !returns a random tensor contraction pattern
+	public coherence_control_var       !returns a coherence control variable based on a mnemonic input
 	private tensor_shape_create        !generates the tensor shape based on the tensor shape specification string (TSSS)
 	private tensor_shape_ok            !checks the correctness of a tensor shape generated from a tensor shape specification string (TSSS)
 	public tensor_block_alloc          !queries the allocation status of data pointers in a tensor block
@@ -3681,7 +3682,39 @@
         endif
         return
         end subroutine contr_pattern_rnd
-!---------------------------------------
+!----------------------------------------------------------------------------
+        function coherence_control_var(narg,coh_str) result(coh_ctrl) bind(c)
+!Given a mnemonic description of the coherence control, returns an integer
+!that can be used in tensor operations for specifying it. A negative return
+!value indicates an error (invalid arguments).
+        implicit none
+        integer(C_INT):: coh_ctrl                    !out: coherence control variable (-:error)
+        integer(C_INT), intent(in):: narg            !in: number of arguments (>0)
+        character(C_CHAR), intent(in):: coh_str(1:*) !in: coherence letter for each argument (dest arg, 1st lhs arg, 2nd lhs arg, ...): "D","M","T","K"
+        integer(C_INT):: i
+
+        coh_ctrl=-1
+        if(narg.gt.0.and.narg.le.MAX_TENSOR_OPERANDS) then
+         coh_ctrl=0
+         do i=1,narg
+          select case(coh_str(i))
+          case('d','D')
+           coh_ctrl=coh_ctrl*4+0
+          case('m','M')
+           coh_ctrl=coh_ctrl*4+1
+          case('t','T')
+           coh_ctrl=coh_ctrl*4+2
+          case('k','K')
+           coh_ctrl=coh_ctrl*4+3
+          case default
+           coh_ctrl=-2
+           exit
+          end select
+         enddo
+        endif
+        return
+        end function coherence_control_var
+!-----------------------------------------
 !PRIVATE FUNCTIONS:
 !----------------------------------------------------------
 	subroutine tensor_shape_create(shape_str,tens,ierr) !SERIAL

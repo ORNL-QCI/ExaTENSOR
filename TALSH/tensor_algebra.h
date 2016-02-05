@@ -418,6 +418,7 @@ extern "C"{
  int cuda_task_wait(cudaTask_t *cuda_task);
  int cuda_tasks_wait(unsigned int num_tasks, cudaTask_t **cuda_tasks, int *task_stats);
  float cuda_task_time(const cudaTask_t *cuda_task, float *in_copy, float *out_copy, float *comp);
+ void cuda_task_print(const cudaTask_t *cuda_task);
 //  NV-TAL tensor operations:
  int gpu_put_arg(tensBlck_t *ctens);
  int gpu_get_arg(tensBlck_t *ctens);
