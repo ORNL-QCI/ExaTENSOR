@@ -2,7 +2,7 @@
     Parameters, derived types, and function prototypes
     used at the lower level of TAL-SH (device specific):
     CP-TAL, NV-TAL, XP-TAL, AM-TAL, etc.
-REVISION: 2016/02/04
+REVISION: 2016/02/05
 Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
 Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
 
@@ -402,6 +402,9 @@ extern "C"{
  int tensBlck_src_dev_id(const tensBlck_t * ctens, int * dev_kind = NULL);
  int tensBlck_present(const tensBlck_t * ctens, int dev_id = DEV_NULL, int dev_kind = DEV_NULL);
  size_t tensBlck_volume(const tensBlck_t * ctens);
+ void tensBlck_print(const tensBlck_t * ctens);
+ int tensBlck_init_host(tensBlck_t * ctens, double init_val);
+ double tensBlck_norm2_host(const tensBlck_t * ctens);
 #ifndef NO_GPU
 //  NV-TAL CUDA task API:
  int cuda_task_create(cudaTask_t **cuda_task);

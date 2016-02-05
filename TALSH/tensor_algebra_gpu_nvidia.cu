@@ -1,5 +1,5 @@
 /** Tensor Algebra Library for NVidia GPU: NV-TAL (CUDA based).
-REVISION: 2016/02/04
+REVISION: 2016/02/05
 Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
 Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
 
@@ -238,11 +238,11 @@ int tens_valid_data_kind(int datk, int * datk_size)
  int datk_sz=-1;
  int ans=NOPE;
  switch(datk){
-  case R4: ans=YEP; datk_sz=sizeof(float);    //real float
-  case R8: ans=YEP; datk_sz=sizeof(double);   //real double
-  case C4: ans=YEP; datk_sz=sizeof(float)*2;  //complex float
-  case C8: ans=YEP; datk_sz=sizeof(double)*2; //complex double
-  case NO_TYPE: ans=YEP; datk_sz=0;
+  case R4: ans=YEP; datk_sz=sizeof(float); break;    //real float
+  case R8: ans=YEP; datk_sz=sizeof(double); break;   //real double
+  case C4: ans=YEP; datk_sz=sizeof(float)*2; break;  //complex float
+  case C8: ans=YEP; datk_sz=sizeof(double)*2; break; //complex double
+  case NO_TYPE: ans=YEP; datk_sz=0; break;
  }
  if(datk_size != NULL) *datk_size=datk_sz;
  return ans;
@@ -1252,7 +1252,7 @@ int tensBlck_attach_body(tensBlck_t *ctens, //pointer to a shape-defined (constr
   if(tensDevRsc_empty(ctens->src_rsc) == NOPE) return 2; //source resource is not empty (release it first)
  }
  vol=tensShape_volume(&(ctens->shape)); //tensor body volume (number of elements)
- body_size=vol*(size_t)dks; //tensor body size in bytes
+ body_size=vol*((size_t)dks); //tensor body size in bytes
  if(body_ptr == NULL){ //allocate memory in the argument buffer
   errc=tensDevRsc_allocate_mem(ctens->src_rsc,dev_id,body_size,YEP);
   if(errc != 0){if(errc == TRY_LATER || errc == DEVICE_UNABLE){return errc;}else{return 3;}}
@@ -1260,6 +1260,7 @@ int tensBlck_attach_body(tensBlck_t *ctens, //pointer to a shape-defined (constr
   errc=tensDevRsc_attach_mem(ctens->src_rsc,dev_id,body_ptr,buf_entry);
   if(errc != 0){if(errc == TRY_LATER || errc == DEVICE_UNABLE){return errc;}else{return 4;}}
  }
+ ctens->data_kind=data_kind;
  return 0;
 }
 
@@ -1370,6 +1371,109 @@ size_t tensBlck_volume(const tensBlck_t * ctens)
  if(ctens == NULL) return 0;
  size_t tvol=tensShape_volume(&(ctens->shape));
  return tvol;
+}
+
+void tensBlck_print(const tensBlck_t * ctens)
+/** Print info on a given tensor block. **/
+{
+ if(ctens != NULL){
+  printf("\n#MESSAGE: Printing tensor block info:\n");
+  printf(" Tensor block address   : %p\n",ctens);
+  printf(" Tensor block data kind : %d\n",ctens->data_kind);
+  printf(" Tensor block rank      : %d\n",ctens->shape.num_dim);
+  if(ctens->shape.num_dim >= 0 && ctens->shape.num_dim <= MAX_TENSOR_RANK){
+   printf(" Tensor block dimensions:"); for(int i=0;i<(ctens->shape.num_dim);i++) printf(" %d",ctens->shape.dims[i]);
+   printf("\n Tensor block source resource: %p:\n",ctens->src_rsc);
+   if(ctens->src_rsc != NULL){
+    printf("  Device ID     : %d\n",ctens->src_rsc->dev_id);
+    printf("  Memory address: %p\n",ctens->src_rsc->gmem_p);
+    printf("  Buffer entry  : %d\n",ctens->src_rsc->buf_entry);
+    printf("  External mem  : %d\n",ctens->src_rsc->mem_attached);
+   }
+   printf(" Tensor block destination resource: %p:\n",ctens->dst_rsc);
+   if(ctens->dst_rsc != NULL){
+    printf("  Device ID     : %d\n",ctens->dst_rsc->dev_id);
+    printf("  Memory address: %p\n",ctens->dst_rsc->gmem_p);
+    printf("  Buffer entry  : %d\n",ctens->dst_rsc->buf_entry);
+    printf("  External mem  : %d\n",ctens->dst_rsc->mem_attached);
+   }
+   printf(" Tensor block temporary resource: %p:\n",ctens->tmp_rsc);
+   if(ctens->tmp_rsc != NULL){
+    printf("  Device ID     : %d\n",ctens->tmp_rsc->dev_id);
+    printf("  Memory address: %p\n",ctens->tmp_rsc->gmem_p);
+    printf("  Buffer entry  : %d\n",ctens->tmp_rsc->buf_entry);
+    printf("  External mem  : %d\n",ctens->tmp_rsc->mem_attached);
+   }
+  }
+  printf("#END OF MESSAGE");
+ }else{
+  if(VERBOSE) printf("\n#WARNING(tensor_algebra_gpu_nvidia:tensBlck_print): NULL pointer!");
+ }
+ return;
+}
+
+int tensBlck_init_host(tensBlck_t * ctens, double init_val)
+/** Initializes a tensor block on Host. **/
+{
+ int i,dev_kind;
+ size_t vol;
+ float fval;
+ float *fp;
+ double *dp;
+ if(ctens == NULL) return -1;
+ if(ctens->shape.num_dim < 0 || ctens->src_rsc == NULL) return -2;
+ if(ctens->src_rsc->gmem_p == NULL) return -3;
+ if(tens_valid_data_kind(ctens->data_kind) != YEP || ctens->data_kind == NO_TYPE) return -4;
+ i=decode_device_id(ctens->src_rsc->dev_id,&dev_kind); if(dev_kind != DEV_HOST || i != 0) return 1;
+ vol=tensBlck_volume(ctens); if(vol == 0) return -5;
+ switch(ctens->data_kind){
+  case R4:
+   fval = (float)init_val;
+   fp = (float*)(ctens->src_rsc->gmem_p);
+#pragma omp for schedule(guided)
+   for(size_t l=0; l < vol; l++) fp[l]=fval;
+   break;
+  case R8:
+   dp = (double*)(ctens->src_rsc->gmem_p);
+#pragma omp for schedule(guided)
+   for(size_t l=0; l < vol; l++) dp[l]=init_val;
+   break;
+  default:
+   return 2;
+ }
+ return 0;
+}
+
+double tensBlck_norm2_host(const tensBlck_t * ctens)
+/** Computes the squared 2-norm of the tensor block on Host. **/
+{
+ int i,dev_kind;
+ size_t vol;
+ double nrm2;
+ float *fp;
+ double *dp;
+ if(ctens == NULL) return -1;
+ if(ctens->shape.num_dim < 0 || ctens->src_rsc == NULL) return -2;
+ if(ctens->src_rsc->gmem_p == NULL) return -3;
+ if(tens_valid_data_kind(ctens->data_kind) != YEP || ctens->data_kind == NO_TYPE) return -4;
+ i=decode_device_id(ctens->src_rsc->dev_id,&dev_kind); if(dev_kind != DEV_HOST || i != 0) return 1;
+ vol=tensBlck_volume(ctens); if(vol == 0) return -5;
+ nrm2=0.0;
+ switch(ctens->data_kind){
+  case R4:
+   fp = (float*)(ctens->src_rsc->gmem_p);
+#pragma omp for schedule(guided) reduction(+:nrm2)
+   for(size_t l=0; l < vol; l++) nrm2+=(double)(fp[l]*fp[l]);
+   break;
+  case R8:
+   dp = (double*)(ctens->src_rsc->gmem_p);
+#pragma omp for schedule(guided) reduction(+:nrm2)
+   for(size_t l=0; l < vol; l++) nrm2+=dp[l]*dp[l];
+   break;
+  default:
+   return 2;
+ }
+ return nrm2;
 }
 
 #ifndef NO_GPU
