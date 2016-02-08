@@ -62,6 +62,7 @@ FOR DEVELOPERS ONLY:
 #define _TENSOR_ALGEBRA_H
 
 #include <time.h>
+#include "mem_manager.h"
 
 //DEVICE COMPUTE CAPABILITY (for Host code, use __CUDA_ARCH__ for device code):
 #ifndef CUDA_ARCH
@@ -335,32 +336,6 @@ typedef struct{
 //FUNCTION PROTOTYPES:
 #ifdef __cplusplus
 extern "C"{
-#endif
-// Buffer memory management (all devices):
- int arg_buf_allocate(size_t *arg_buf_size, int *arg_max, int gpu_beg, int gpu_end); //generic
- int arg_buf_deallocate(int gpu_beg, int gpu_end); //generic
- int arg_buf_clean_host(); //Host only
- int arg_buf_clean_gpu(int gpu_num); //NVidia GPU only
- int get_blck_buf_sizes_host(size_t *blck_sizes); //Host only
- int get_blck_buf_sizes_gpu(int gpu_num, size_t *blck_sizes); //NVidia GPU only
- int get_buf_entry_host(size_t bsize, char **entry_ptr, int *entry_num); //Host only
- int free_buf_entry_host(int entry_num); //Host only
- int get_buf_entry_gpu(int gpu_num, size_t bsize, char **entry_ptr, int *entry_num); //NVidia GPU only
- int free_buf_entry_gpu(int gpu_num, int entry_num); //NVidia GPU only
- int const_args_entry_get(int gpu_num, int *entry_num); //NVidia GPU only
- int const_args_entry_free(int gpu_num, int entry_num); //NVidia GPU only
- int mem_free_left(int dev_id, size_t * free_mem); //generic
- int mem_print_stats(int dev_id); //generic
- int host_mem_alloc_pin(void **host_ptr, size_t tsize); //generic
- int host_mem_free_pin(void *host_ptr); //generic
- int host_mem_register(void *host_ptr, size_t tsize); //generic
- int host_mem_unregister(void *host_ptr); //generic
- int mi_entry_get(int ** mi_entry_p); //generic
- int mi_entry_release(int * mi_entry_p); //generic
- int mi_entry_pinned(int * mi_entry_p); //generic
-#ifndef NO_GPU
- int gpu_mem_alloc(void **dev_ptr, size_t tsize, int gpu_id = -1); //NVidia GPU only
- int gpu_mem_free(void *dev_ptr, int gpu_id = -1); //NVidia GPU only
 #endif
 //Generic:
  int tens_valid_data_kind(int datk, int * datk_size = NULL);

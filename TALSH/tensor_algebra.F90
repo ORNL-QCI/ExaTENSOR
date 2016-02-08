@@ -359,49 +359,49 @@
          end subroutine gpu_set_matmult_algorithm
  !NV-TAL CUDA task API:
   !Create a CUDA task:
-         integer(C_INT) function cuda_task_create(cuda_task) bind(c)
+         integer(C_INT) function cuda_task_create(cuda_task) bind(c,name='cuda_task_create')
           import
           implicit none
           type(C_PTR), intent(out):: cuda_task
          end function cuda_task_create
   !Clean a CUDA task:
-         integer(C_INT) function cuda_task_clean(cuda_task) bind(c)
+         integer(C_INT) function cuda_task_clean(cuda_task) bind(c,name='cuda_task_clean')
           import
           implicit none
           type(C_PTR), value:: cuda_task
          end function cuda_task_clean
   !Destroy a CUDA task:
-         integer(C_INT) function cuda_task_destroy(cuda_task) bind(c)
+         integer(C_INT) function cuda_task_destroy(cuda_task) bind(c,name='cuda_task_destroy')
           import
           implicit none
           type(C_PTR), value:: cuda_task
          end function cuda_task_destroy
   !Get the GPU ID the CUDA task is scheduled on:
-         integer(C_INT) function cuda_task_gpu_id(cuda_task) bind(c)
+         integer(C_INT) function cuda_task_gpu_id(cuda_task) bind(c,name='cuda_task_gpu_id')
           import
           implicit none
           type(C_PTR), value, intent(in):: cuda_task
          end function cuda_task_gpu_id
   !Get the CUDA task status:
-         integer(C_INT) function cuda_task_status(cuda_task) bind(c)
+         integer(C_INT) function cuda_task_status(cuda_task) bind(c,name='cuda_task_status')
           import
           implicit none
           type(C_PTR), value:: cuda_task
          end function cuda_task_status
   !Query CUDA task completion:
-         integer(C_INT) function cuda_task_completed(cuda_task) bind(c)
+         integer(C_INT) function cuda_task_complete(cuda_task) bind(c,name='cuda_task_completed')
           import
           implicit none
           type(C_PTR), value:: cuda_task
-         end function cuda_task_completed
+         end function cuda_task_complete
   !Wait on completion of a CUDA task:
-         integer(C_INT) function cuda_task_wait(cuda_task) bind(c)
+         integer(C_INT) function cuda_task_wait(cuda_task) bind(c,name='cuda_task_wait')
           import
           implicit none
           type(C_PTR), value:: cuda_task
          end function cuda_task_wait
   !Get the task timing in seconds:
-         real(C_FLOAT) function cuda_task_time(cuda_task,in_copy,out_copy,comp) bind(c)
+         real(C_FLOAT) function cuda_task_time(cuda_task,in_copy,out_copy,comp) bind(c,name='cuda_task_time')
           import
           implicit none
           type(C_PTR), value, intent(in):: cuda_task

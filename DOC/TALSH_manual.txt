@@ -6,10 +6,6 @@ Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
 LICENSE: GPL v.2
 --------------------------------------------------------------
 
-NOTE: This is how the TAL-SH API interface will look like soon!
-      Currently the source code still consists of separate pieces,
-      each one specific for a particular device kind.
-
 
 0. Preamble
 
@@ -20,18 +16,18 @@ tensor contraction, tensor product, tensor addition, tensor transpose,
 multiplication by a scalar, etc., which operate on locally stored tensors.
 The execution of tensor operations on accelerators is asynchronous with
 respect to the CPU Host, if the underlying node is heterogeneous. Both
-Fortran and C API interfaces are provided (Fortran 2003 and later).
+Fortran and C/C++ API interfaces are provided (Fortran 2003 and later).
 
 
 1. Nomenclature
 
-Tensor: A multi-dimensional array of real or complex numbers. Real
-numbers can be in either single (R4) or double precision (R8).
-Complex numbers always assume double precision (C8).
+Tensor: A multi-dimensional array of real or complex numbers.
+Both real and complex numbers come either in a single-precision
+form (R4/C4) or double precision form (R8/C8).
 
 Tensor Block (TB): A locally stored slice of a tensor.
 In general, a tensor block is defined by its
-(a) Data type: Real (R4, R8) or complex (C8);
+(a) Data type: Real (R4, R8) or complex (C4, C8);
 (b) Signature: A unique identifier of this specific tensor block;
 (c) Shape: Tensor block rank, dimension extents, storage layout;
 (d) Tensor elements: Values of the elements of the tensor block.
@@ -40,7 +36,7 @@ Host Argument Buffer (HAB): An optional buffer can be created in
 pinned Host memory that can be later used for storing tensor blocks.
 Preallocation of this buffer is recommended in order to avoid
 memory fragmentation issues and minimize the overhead associated
-with Host memory pinning.
+with Host memory pinning when running asynchronous operations.
 
 
 2. Device control API
@@ -50,7 +46,7 @@ Supported device kinds:
  DEV_HOST: Multicore CPU: Device range [0];
  DEV_NVIDIA_GPU: NVidia GPU: Device range [0..MAX_GPUS_PER_NODE-1];
  DEV_INTEL_MIC: Intel Xeon Phi: Device range [0..MAX_MICS_PER_NODE-1];
- DEV_AMD_GPU: AMD APU (future): Device range [0..MAX_AMDS_PER_NODE-1];
+ DEV_AMD_GPU: AMD GPU (future): Device range [0..MAX_AMDS_PER_NODE-1];
 
  Note that self-hosted platforms will fall under the DEV_HOST kind,
  regardless of the actual hardware.
@@ -65,17 +61,17 @@ Flat device numeration:
 API: Initialize the TAL-SH library:
 
  Fortran 2003:
-  function talsh_init(host_buf_size,host_arg_max,gpu_list,mic_list,apu_list) result(ierr):
+  function talsh_init(host_buf_size,host_arg_max,gpu_list,mic_list,amd_list) result(ierr):
    integer(C_INT):: ierr                                      !out: error code (0:success)
    integer(C_SIZE_T), intent(inout), optional:: host_buf_size !inout: desired size in bytes of the Host Argument Buffer.
                                                               !       It will be replaced by the actual size.
    integer(C_INT), intent(out), optional:: host_arg_max       !out: max number of arguments the HAB can contain
    integer(C_INT), intent(in), optional:: gpu_list(1:)        !in: list of NVidia GPU's to use
    integer(C_INT), intent(in), optional:: mic_list(1:)        !in: list of Intel Xeon Phi's to use
-   integer(C_INT), intent(in), optional:: apu_list(1:)        !in: list of AMD APU's to use
+   integer(C_INT), intent(in), optional:: amd_list(1:)        !in: list of AMD GPU's to use
 
  C/C++:
-  int talsh_Init(          //out: error code (0:success)
+  int talshInit(           //out: error code (0:success)
    size_t * host_buf_size, //inout: desired size in bytes of the Host Argument Buffer.
                            //       It will be replaced by the actual size.
    int * host_arg_max,     //out: max number of arguments the HAB can contain
@@ -83,8 +79,8 @@ API: Initialize the TAL-SH library:
    int gpu_list[],         //in: list of NVidia GPUs to use
    int nmics,              //in: number of Intel Xeon Phi's to use
    int mic_list[],         //in: list of Intel Xeon Phi's to use
-   int napus,              //in: number of AMD APU's to use
-   int apu_list[]          //in: list of AMD APU's to use
+   int namds,              //in: number of AMD GPU's to use
+   int amd_list[]          //in: list of AMD GPU's to use
   )
 
 API: Shutdown the TAL-SH library:
@@ -94,7 +90,7 @@ API: Shutdown the TAL-SH library:
    integer(C_INT):: ierr !out: error code (0:success)
 
  C/C++:
-  int talsh_Shutdown( //out: error code (0:success)
+  int talshShutdown( //out: error code (0:success)
   )
 
 API: Get a flat device id:

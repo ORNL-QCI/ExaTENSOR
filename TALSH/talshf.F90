@@ -1,5 +1,5 @@
 !ExaTensor::TAL-SH: Device-unified user-level API:
-!REVISION: 2016/01/08
+!REVISION: 2016/02/08
 !Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
 !Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
 !LICENSE: GPLv2
@@ -32,11 +32,33 @@
 !GLOBALS:
 
 !INTERFACES:
+        interface
+ !TAL-SH device control C API:
+  !Initialize TAL-SH:
+         integer(C_INT) function talshInit(host_buf_size,host_arg_max,ngpus,gpu_list,nmics,mic_list,namds,amd_list) &
+                                          &bind(c,name='talshInit')
+          import
+          implicit none
+          integer(C_SIZE_T), intent(inout):: host_buf_size
+          integer(C_INT), intent(out):: host_arg_max
+          integer(C_INT), value, intent(in):: ngpus
+          integer(C_INT), intent(in):: gpu_list(*)
+          integer(C_INT), value, intent(in):: nmics
+          integer(C_INT), intent(in):: mic_list(*)
+          integer(C_INT), value, intent(in):: namds
+          integer(C_INT), intent(in):: amd_list(*)
+         end function talshInit
+  !Shutdown TAL-SH:
+         integer(C_INT) function talshShutdown() bind(c,name='talshShutdown')
+          import
+          implicit none
+         end function talshShutdown
 
+        end interface
 !VISIBILITY:
  !TAL-SH device control API:
-!        public talsh_init
-!        public talsh_shutdown
+        public talsh_init
+        public talsh_shutdown
 !        public talsh_flat_dev_id
 !        public talsh_kind_dev_id
 !        public talsh_device_state
@@ -69,6 +91,27 @@
 !        public talsh_tensor_contract
 
        contains
-!API DEFINITION:
+!Fortran API definitions:
+ !TAL-SH device control API:
+!----------------------------------------------------------------------------------------------
+        function talsh_init(host_buf_size,host_arg_max,gpu_list,mic_list,amd_list) result(ierr)
+         integer(C_INT):: ierr                                      !out: error code (0:success)
+         integer(C_SIZE_T), intent(inout), optional:: host_buf_size !inout: desired size in bytes of the Host Argument Buffer.
+                                                                    !       It will be replaced by the actual size.
+         integer(C_INT), intent(out), optional:: host_arg_max       !out: max number of arguments the HAB can contain
+         integer(C_INT), intent(in), optional:: gpu_list(1:)        !in: list of NVidia GPU's to use
+         integer(C_INT), intent(in), optional:: mic_list(1:)        !in: list of Intel Xeon Phi's to use
+         integer(C_INT), intent(in), optional:: amd_list(1:)        !in: list of AMD GPU's to use
+
+         ierr=TALSH_SUCCESS; host_arg_max=0;
+         return
+        end function talsh_init
+!---------------------------------------------
+        function talsh_shutdown() result(ierr)
+         integer(C_INT):: ierr !out: error code (0:success)
+
+         ierr=TALSH_SUCCESS
+         return
+        end function talsh_shutdown
 
        end module talsh

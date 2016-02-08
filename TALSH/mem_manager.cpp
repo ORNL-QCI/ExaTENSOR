@@ -2,7 +2,7 @@
 implementation of the tensor algebra library TAL-SH:
 CP-TAL (TAL for CPU), NV-TAL (TAL for NVidia GPU),
 XP-TAL (TAL for Intel Xeon Phi), AM-TAL (TAL for AMD GPU).
-REVISION: 2016/02/04
+REVISION: 2016/02/08
 Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
 Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
 
@@ -729,6 +729,103 @@ int mem_print_stats(int dev_id) //print memory statistics for Device <dev_id>
  return 0;
 }
 
+//Generic memory slab API:
+int slab_create(slab_t ** slab)
+/** Allocates an empty slab object on heap. **/
+{
+ *slab=NULL; *slab=(slab_t*)malloc(sizeof(slab_t)); if(*slab == NULL) return -1;
+ (*slab)->max_entries=0; (*slab)->entry_size=0; (*slab)->slab_base=NULL; (*slab)->free_entries=NULL;
+ return 0;
+}
+
+int slab_construct(slab_t * slab, size_t slab_entry_size, size_t slab_max_entries, size_t align)
+/** Constructs a user-defined slab. **/
+{
+ size_t j,l;
+ if(slab == NULL || slab_entry_size == 0 || slab_max_entries == 0) return -1;
+ slab->slab_base=NULL; slab->free_entries=NULL; slab->max_entries=0;
+ if(align == 0){
+  slab->entry_size = slab_entry_size;
+ }else{
+  if(slab_entry_size%align > 0){
+   slab->entry_size = slab_entry_size - slab_entry_size%align + align;
+  }else{
+   slab->entry_size = slab_entry_size;
+  }
+ }
+ slab->slab_base=(void*)malloc((slab->entry_size)*slab_max_entries);
+ if(slab->slab_base == NULL){slab->entry_size=0; return 1;}
+ slab->free_entries=(void**)malloc(sizeof(void*)*slab_max_entries);
+ if(slab->free_entries == NULL){free(slab->slab_base); slab->entry_size=0; return 2;}
+ slab->max_entries=slab_max_entries;
+ slab->alignment=MAX(align,1);
+ slab->first_free=0; j=0;
+ for(l=0;l<slab_max_entries;l++){
+  slab->free_entries[l]=(void*)(&(((char*)(slab->slab_base))[j]));
+  j=j+slab->entry_size;
+ }
+ return 0;
+}
+
+int slab_entry_get(slab_t * slab, void ** slab_entry)
+/** Gets a slab entry. **/
+{
+ if(slab == NULL) return -1;
+ if(slab->max_entries == 0 || slab->slab_base == NULL || slab->free_entries == NULL) return -2;
+ if(slab->first_free < slab->max_entries){
+  *slab_entry=slab->free_entries[(slab->first_free)++];
+ }else{
+  return TRY_LATER; //no free entries left
+ }
+ return 0;
+}
+
+int slab_entry_release(slab_t * slab, void * slab_entry)
+/** Releases a slab entry. **/
+{
+ if(slab == NULL) return -1;
+ if(slab->max_entries == 0 || slab->slab_base == NULL || slab->free_entries == NULL) return -2;
+ if(slab->first_free > 0 && slab->first_free <= slab->max_entries){
+  slab->free_entries[--(slab->first_free)]=slab_entry;
+ }else{
+  return 1; //no slab entries were in use or corrupted
+ }
+ return 0;
+}
+
+int slab_destruct(slab_t * slab)
+/** Destructs a slab. **/
+{
+ int errc=0;
+ if(slab == NULL) return -1;
+ if(slab->slab_base != NULL){
+  if(slab->max_entries == 0) errc=NOT_CLEAN;
+  free(slab->slab_base); slab->slab_base=NULL;
+ }else{
+  if(slab->max_entries > 0) errc=NOT_CLEAN;
+ }
+ if(slab->free_entries != NULL){
+  if(slab->max_entries == 0) errc=NOT_CLEAN;
+  free(slab->free_entries); slab->free_entries=NULL;
+ }else{
+  if(slab->max_entries > 0) errc=NOT_CLEAN;
+ }
+ slab->max_entries=0;
+ slab->entry_size=0;
+ return errc; //either success (0) or NOT_CLEAN (warning)
+}
+
+int slab_destroy(slab_t * slab)
+/** Destroys a slab object. **/
+{
+ int errc;
+ if(slab == NULL) return -1;
+ errc=slab_destruct(slab);
+ free(slab);
+ return errc; //either success (0) or NOT_CLEAN (warning)
+}
+
+//Other memory allocation API:
 int host_mem_alloc_pin(void **host_ptr, size_t tsize){
 #ifndef NO_GPU
  cudaError_t err=cudaHostAlloc(host_ptr,tsize,cudaHostAllocPortable);

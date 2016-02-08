@@ -192,7 +192,7 @@ lib$(NAME).a: $(OBJS)
 ./OBJ/tensor_dil_omp.o: tensor_dil_omp.F90 ./OBJ/timers.o
 	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) tensor_dil_omp.F90 -o ./OBJ/tensor_dil_omp.o
 
-./OBJ/mem_manager.o: mem_manager.cpp tensor_algebra.h
+./OBJ/mem_manager.o: mem_manager.cpp mem_manager.h tensor_algebra.h
 	$(CCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(CFLAGS) mem_manager.cpp -o ./OBJ/mem_manager.o
 
 ./OBJ/tensor_algebra_gpu_nvidia.o: tensor_algebra_gpu_nvidia.cu tensor_algebra.h
