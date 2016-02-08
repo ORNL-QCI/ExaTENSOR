@@ -1,7 +1,6 @@
 !TALSH::Fortran API testing.
         program main
         use, intrinsic:: ISO_C_BINDING
-        use talsh
         implicit none
 
         interface
@@ -19,7 +18,17 @@
         write(*,'("Done: Status ",i5)') ierr
 !Test Fortran API interface:
         write(*,'("Testing TALSH Fortran API ...")')
-!       call test_talsh_c(ierr)
+        call test_talsh_f(ierr)
         write(*,'("Done: Status ",i5)') ierr
         stop
         end program main
+!------------------------------------
+        subroutine test_talsh_f(ierr)
+        use, intrinsic:: ISO_C_BINDING
+        use talsh
+        implicit none
+        integer(C_INT):: ierr
+
+        ierr=0
+        return
+        end subroutine test_talsh_f
