@@ -1,8 +1,8 @@
-!ExaTensor::TAL-SH: Basic parameters and types:
+!ExaTensor::TAL-SH: Parameters, types, C function interfaces:
 !Keep consistent with "tensor_algebra.h"!
-!REVISION: 2016/01/24
+!REVISION: 2016/02/08
         module tensor_algebra
-        use dil_basic !contains ISO_C_BINDING
+        use dil_basic !contains ISO_C_BINDING: basic parameters
         implicit none
         public
 !TENSOR ALGEBRA LIMITS (keep consistent with tensor_algebra.h):
@@ -40,9 +40,17 @@
         integer(C_INT), parameter, public:: DEV_OFF=0                   !device status "Disabled"
         integer(C_INT), parameter, public:: DEV_ON=1                    !device status "Enabled"
         integer(C_INT), parameter, public:: DEV_ON_BLAS=2               !device status "Enabled with vendor provided BLAS"
+        integer(C_INT), parameter, public:: GPU_OFF=0                   !GPU status "Disabled"
+        integer(C_INT), parameter, public:: GPU_ON=1                    !GPU status "Enabled"
+        integer(C_INT), parameter, public:: GPU_ON_BLAS=2               !GPU status "Enabled with vendor provided BLAS"
         integer(C_INT), parameter, public:: NO_COPY_BACK=0              !keeps the tensor-result on Accelerator without updating Host
         integer(C_INT), parameter, public:: COPY_BACK=1                 !tensor-result will be copied back from Accelerator to Host (default)
-
+#ifndef NO_PHI
+!DIR$ ATTRIBUTES OFFLOAD:mic:: TALSH_SUCCESS,TALSH_FAILURE,BLAS_ON,BLAS_OFF,EFF_TRN_OFF,EFF_TRN_ON,DEVICE_UNABLE,TRY_LATER,NOT_CLEAN
+!DIR$ ATTRIBUTES OFFLOAD:mic:: NOPE,YEP,EVERYTHING,SOURCE,DESTINATION,TEMPORARY,DEV_OFF,DEV_ON,DEV_ON_BLAS,NO_COPY_BACK,COPY_BACK
+!DIR$ ATTRIBUTES ALIGN:128:: TALSH_SUCCESS,TALSH_FAILURE,BLAS_ON,BLAS_OFF,EFF_TRN_OFF,EFF_TRN_ON,DEVICE_UNABLE,TRY_LATER,NOT_CLEAN
+!DIR$ ATTRIBUTES ALIGN:128:: NOPE,YEP,EVERYTHING,SOURCE,DESTINATION,TEMPORARY,DEV_OFF,DEV_ON,DEV_ON_BLAS,NO_COPY_BACK,COPY_BACK
+#endif
         integer(C_INT), parameter, public:: COPY_D=0
         integer(C_INT), parameter, public:: COPY_M=1
         integer(C_INT), parameter, public:: COPY_T=2
@@ -127,12 +135,6 @@
         integer(C_INT), parameter, public:: COPY_KKM=61
         integer(C_INT), parameter, public:: COPY_KKT=62
         integer(C_INT), parameter, public:: COPY_KKK=63
-#ifndef NO_PHI
-!DIR$ ATTRIBUTES OFFLOAD:mic:: TALSH_SUCCESS,TALSH_FAILURE,BLAS_ON,BLAS_OFF,EFF_TRN_OFF,EFF_TRN_ON,TRY_LATER,DEVICE_UNABLE
-!DIR$ ATTRIBUTES OFFLOAD:mic:: NOPE,YEP,EVERYTHING,SOURCE,DESTINATION,TEMPORARY,DEV_OFF,DEV_ON,DEV_ON_BLAS,NO_COPY_BACK,COPY_BACK
-!DIR$ ATTRIBUTES ALIGN:128:: TALSH_SUCCESS,TALSH_FAILURE,BLAS_ON,BLAS_OFF,EFF_TRN_OFF,EFF_TRN_ON,TRY_LATER,DEVICE_UNABLE
-!DIR$ ATTRIBUTES ALIGN:128:: NOPE,YEP,EVERYTHING,SOURCE,DESTINATION,TEMPORARY,DEV_OFF,DEV_ON,DEV_ON_BLAS,NO_COPY_BACK,COPY_BACK
-#endif
 
 !CUDA TASK STATUS (keep consistent with tensor_algebra.h):
         integer(C_INT), parameter, public:: CUDA_TASK_ERROR=-1
@@ -265,20 +267,6 @@
           integer(C_INT), value, intent(in):: gpu_num
           integer(C_INT), value, intent(in):: entry_num
          end function free_buf_entry_gpu
-  !Get a free entry from the GPU constant memory argument bank:
-         integer(C_INT) function const_args_entry_get(gpu_num,entry_num) bind(c,name='const_args_entry_get')
-          import
-          implicit none
-          integer(C_INT), value, intent(in):: gpu_num
-          integer(C_INT), intent(out):: entry_num
-         end function const_args_entry_get
-  !Return back an entry to the GPU constant memory argument bank:
-         integer(C_INT) function const_args_entry_free(gpu_num,entry_num) bind(c,name='const_args_entry_free')
-          import
-          implicit none
-          integer(C_INT), value, intent(in):: gpu_num
-          integer(C_INT), value, intent(in):: entry_num
-         end function const_args_entry_free
 #endif
   !Query the free buffer space in bytes on a given device:
          integer(C_INT) function mem_free_left(dev_id,free_mem) bind(c,name='mem_free_left')
@@ -293,7 +281,6 @@
           implicit none
           integer(C_INT), value, intent(in):: dev_id
          end function mem_print_stats
-#ifndef NO_GPU
   !Allocate pinned memory on Host:
          integer(C_INT) function host_mem_alloc_pin(cptr,bsize) bind(c,name='host_mem_alloc_pin')
           import
@@ -320,34 +307,7 @@
           implicit none
           type(C_PTR), value:: cptr
          end function host_mem_unregister
-  !Allocate memory on current GPU:
-         integer(C_INT) function gpu_mem_alloc(cptr,bsize) bind(c,name='gpu_mem_alloc')
-          import
-          implicit none
-          type(C_PTR), intent(out):: cptr
-          integer(C_SIZE_T), value, intent(in):: bsize !bytes
-         end function gpu_mem_alloc
-  !Free memory on current GPU:
-         integer(C_INT) function gpu_mem_free(cptr) bind(c,name='gpu_mem_free')
-          import
-          implicit none
-          type(C_PTR), value:: cptr
-         end function gpu_mem_free
- !NV-TAL auxiliary (`TAL-SH level):
-  !Convert a kind specific device id into the flat device id:
-         integer(C_INT) function encode_device_id(dev_kind,dev_num) bind(c,name='encode_device_id')
-          import
-          implicit none
-          integer(C_INT), value, intent(in):: dev_kind
-          integer(C_INT), value, intent(in):: dev_num
-         end function encode_device_id
-  !Convert a flat device id into the kind specific device id:
-         integer(C_INT) function decode_device_id(dev_id,dev_kind) bind(c,name='decode_device_id')
-          import
-          implicit none
-          integer(C_INT), value, intent(in):: dev_id
-          integer(C_INT), intent(out):: dev_kind
-         end function decode_device_id
+#ifndef NO_GPU
  !NV-TAL debugging:
   !Get the current GPU error count:
          integer(C_INT) function gpu_get_error_count() bind(c,name='gpu_get_error_count')
@@ -360,6 +320,24 @@
           implicit none
           integer(C_INT), intent(out):: dump(*)
          end function gpu_get_debug_dump
+ !NV-TAL query/action API:
+  !Check whether GPU belongs to the current process:
+         integer(C_INT) function gpu_is_mine(gpu_num) bind(c,name='gpu_is_mine')
+          import
+          implicit none
+          integer(C_INT), value, intent(in):: gpu_num
+         end function gpu_is_mine
+  !Returns the ID of the least busy NVidia GPU (which belongs to the process):
+         integer(C_INT) function gpu_busy_least() bind(c,name='gpu_busy_least')
+          import
+          implicit none
+         end function gpu_busy_least
+  !Activate a specific GPU (only if it belongs to the process):
+         integer(C_INT) function gpu_activate(gpu_num) bind(c,name='gpu_activate')
+          import
+          implicit none
+          integer(C_INT), value, intent(in):: gpu_num
+         end function gpu_activate
  !NV-TAL internal control:
   !Set the width of the NVidia GPU shared memory bank:
          integer(C_INT) function gpu_set_shmem_width(width) bind(c,name='gpu_set_shmem_width')
@@ -371,151 +349,59 @@
          subroutine gpu_set_transpose_algorithm(alg) bind(c,name='gpu_set_transpose_algorithm')
           import
           implicit none
-          integer(C_INT), value:: alg
+          integer(C_INT), value, intent(in):: alg
          end subroutine gpu_set_transpose_algorithm
   !Set the matrix multiplication algorithm:
          subroutine gpu_set_matmult_algorithm(alg) bind(c,name='gpu_set_matmult_algorithm')
           import
           implicit none
-          integer(C_INT), value:: alg
+          integer(C_INT), value, intent(in):: alg
          end subroutine gpu_set_matmult_algorithm
- !NV-TAL tensor block API:
-  !Create an instance of tensBlck_t:
-         integer(C_INT) function tensBlck_create(ctens) bind(c,name='tensBlck_create')
-          import
-          implicit none
-          type(C_PTR), intent(out):: ctens
-         end function tensBlck_create
-  !Destroy an instance of tensBlck_t:
-         integer(C_INT) function tensBlck_destroy(ctens) bind(c,name='tensBlck_destroy')
-          import
-          implicit none
-          type(C_PTR), value:: ctens
-         end function tensBlck_destroy
-  !Construct tensBlck_t using externally provided memory pointers (custom allocation):
-         integer(C_INT) function tensBlck_construct(ctens,dev_kind,dev_num,data_kind,trank,&
-                                  &addr_dims,addr_divs,addr_grps,addr_prmn,addr_host,addr_gpu,&
-                                  &entry_host,entry_gpu,entry_const) bind(c,name='tensBlck_construct')
-          import
-          implicit none
-          type(C_PTR), value:: ctens
-          integer(C_INT), value, intent(in):: dev_kind
-          integer(C_INT), value, intent(in):: dev_num
-          integer(C_INT), value, intent(in):: data_kind
-          integer(C_INT), value, intent(in):: trank
-          type(C_PTR), value, intent(in):: addr_dims
-          type(C_PTR), value, intent(in):: addr_divs
-          type(C_PTR), value, intent(in):: addr_grps
-          type(C_PTR), value, intent(in):: addr_prmn
-          type(C_PTR), value, intent(in):: addr_host
-          type(C_PTR), value, intent(in):: addr_gpu
-          integer(C_INT), value, intent(in):: entry_host
-          integer(C_INT), value, intent(in):: entry_gpu
-          integer(C_INT), value, intent(in):: entry_const
-         end function tensBlck_construct
-  !Allocate a space for tensBlck_t data in Host and GPU memory:
-         integer(C_INT) function tensBlck_alloc(ctens,dev_num,data_kind,trank,dims) bind(c,name='tensBlck_alloc')
-          import
-          implicit none
-          type(C_PTR), value:: ctens
-          integer(C_INT), value, intent(in):: dev_num
-          integer(C_INT), value, intent(in):: data_kind
-          integer(C_INT), value, intent(in):: trank
-          type(C_PTR), value, intent(in):: dims
-         end function tensBlck_alloc
-  !Free space occupied by the tensBlck_t data:
-         integer(C_INT) function tensBlck_free(ctens) bind(c,name='tensBlck_free')
-          import
-          implicit none
-          type(C_PTR), value:: ctens
-         end function tensBlck_free
-  !Get the accelerator ID and other information from tensBlck_t:
-         integer(C_INT) function tensBlck_acc_id(ctens,dev_kind,entry_gpu,entry_const,data_kind,there)&
-                                  &bind(c,name='tensBlck_acc_id')
-          import
-          implicit none
-          type(C_PTR), value, intent(in):: ctens
-          integer(C_INT), intent(out):: dev_kind
-          integer(C_INT), intent(out):: entry_gpu
-          integer(C_INT), intent(out):: entry_const
-          integer(C_INT), intent(out):: data_kind
-          integer(C_INT), intent(out):: there
-         end function tensBlck_acc_id
-  !Mark tensBlck_t as residing on GPU:
-         integer(C_INT) function tensBlck_set_presence(ctens) bind(c,name='tensBlck_set_presence')
-          import
-          implicit none
-          type(C_PTR), value:: ctens
-         end function tensBlck_set_presence
-  !Unmark tensBlck_t as residing on GPU:
-         integer(C_INT) function tensBlck_set_absence(ctens) bind(c,name='tensBlck_set_absence')
-          import
-          implicit none
-          type(C_PTR), value:: ctens
-         end function tensBlck_set_absence
-  !Check presence (residence) of tensBlck_t data on GPU:
-         integer(C_INT) function tensBlck_present(ctens) bind(c,name='tensBlck_present')
-          import
-          implicit none
-          type(C_PTR), value, intent(in):: ctens
-         end function tensBlck_present
-  !Free the HAB entry occupied by tensBlck_t:
-         integer(C_INT) function tensBlck_hab_free(ctens) bind(c,name='tensBlck_hab_free')
-          import
-          implicit none
-          type(C_PTR), value:: ctens
-         end function tensBlck_hab_free
-  !Get the number of tensor elements (volume) in tensBlck_t:
-         integer(C_SIZE_T) function tensBlck_volume(ctens) bind(c,name='tensBlck_volume')
-          import
-          implicit none
-          type(C_PTR), value, intent(in):: ctens
-         end function tensBlck_volume
  !NV-TAL CUDA task API:
   !Create a CUDA task:
-         integer(C_INT) function cuda_task_create(cuda_task) bind(c,name='cuda_task_create')
+         integer(C_INT) function cuda_task_create(cuda_task) bind(c)
           import
           implicit none
           type(C_PTR), intent(out):: cuda_task
          end function cuda_task_create
-  !Destroy a CUDA task:
-         integer(C_INT) function cuda_task_destroy(cuda_task) bind(c,name='cuda_task_destroy')
-          import
-          implicit none
-          type(C_PTR), value:: cuda_task
-         end function cuda_task_destroy
-  !Clean a CUDA task for reuse:
-         integer(C_INT) function cuda_task_clean(cuda_task) bind(c,name='cuda_task_clean')
+  !Clean a CUDA task:
+         integer(C_INT) function cuda_task_clean(cuda_task) bind(c)
           import
           implicit none
           type(C_PTR), value:: cuda_task
          end function cuda_task_clean
-  !Get the CUDA GPU ID from cudaTask_t:
-         integer(C_INT) function cuda_task_gpu_id(cuda_task) bind(c,name='cuda_task_gpu_id')
+  !Destroy a CUDA task:
+         integer(C_INT) function cuda_task_destroy(cuda_task) bind(c)
+          import
+          implicit none
+          type(C_PTR), value:: cuda_task
+         end function cuda_task_destroy
+  !Get the GPU ID the CUDA task is scheduled on:
+         integer(C_INT) function cuda_task_gpu_id(cuda_task) bind(c)
           import
           implicit none
           type(C_PTR), value, intent(in):: cuda_task
          end function cuda_task_gpu_id
   !Get the CUDA task status:
-         integer(C_INT) function cuda_task_status(cuda_task) bind(c,name='cuda_task_status')
+         integer(C_INT) function cuda_task_status(cuda_task) bind(c)
           import
           implicit none
           type(C_PTR), value:: cuda_task
          end function cuda_task_status
   !Query CUDA task completion:
-         integer(C_INT) function cuda_task_complete(cuda_task) bind(c,name='cuda_task_complete')
+         integer(C_INT) function cuda_task_completed(cuda_task) bind(c)
           import
           implicit none
           type(C_PTR), value:: cuda_task
-         end function cuda_task_complete
+         end function cuda_task_completed
   !Wait on completion of a CUDA task:
-         integer(C_INT) function cuda_task_wait(cuda_task) bind(c,name='cuda_task_wait')
+         integer(C_INT) function cuda_task_wait(cuda_task) bind(c)
           import
           implicit none
           type(C_PTR), value:: cuda_task
          end function cuda_task_wait
   !Get the task timing in seconds:
-         real(C_FLOAT) function cuda_task_time(cuda_task,in_copy,out_copy,comp) bind(c,name='cuda_task_time')
+         real(C_FLOAT) function cuda_task_time(cuda_task,in_copy,out_copy,comp) bind(c)
           import
           implicit none
           type(C_PTR), value, intent(in):: cuda_task
@@ -523,154 +409,6 @@
           real(C_FLOAT), intent(out):: out_copy
           real(C_FLOAT), intent(out):: comp
          end function cuda_task_time
- !NV-TAL query/action API:
-  !Check whether GPU belongs to the current MPI process:
-         integer(C_INT) function gpu_is_mine(gpu_num) bind(c,name='gpu_is_mine')
-          import
-          implicit none
-          integer(C_INT), value:: gpu_num
-         end function gpu_is_mine
-  !Returns the ID of the least busy NVidia GPU (which belongs to the MPI process):
-         integer(C_INT) function gpu_busy_least() bind(c,name='gpu_busy_least')
-          import
-          implicit none
-         end function gpu_busy_least
-  !Activate a specific GPU (only if it belongs to the MPI process):
-         integer(C_INT) function gpu_activate(gpu_num) bind(c,name='gpu_activate')
-          import
-          implicit none
-          integer(C_INT), value:: gpu_num
-         end function gpu_activate
- !NV-TAL tensor operations:
-  !Copy tensor block data from the Host argument buffer to a GPU argument buffer (blocking):
-         integer(C_INT) function gpu_put_arg(ctens) bind(c,name='gpu_put_arg')
-          import
-          implicit none
-          type(C_PTR), value:: ctens
-         end function gpu_put_arg
-  !Copy tensor block data from a GPU argument buffer to the Host argument buffer (blocking):
-         integer(C_INT) function gpu_get_arg(ctens) bind(c,name='gpu_get_arg')
-          import
-          implicit none
-          type(C_PTR), value:: ctens
-         end function gpu_get_arg
-  !Copy tensor block data from the Host argument buffer to a GPU argument buffer (non-blocking):
-         integer(C_INT) function gpu_put_arg_(ctens,cuda_task) bind(c,name='gpu_put_arg_')
-          import
-          implicit none
-          type(C_PTR), value:: ctens
-          type(C_PTR), value:: cuda_task
-         end function gpu_put_arg_
-  !Copy tensor block data from a GPU argument buffer to the Host argument buffer (non-blocking):
-         integer(C_INT) function gpu_get_arg_(ctens,cuda_task) bind(c,name='gpu_get_arg_')
-          import
-          implicit none
-          type(C_PTR), value:: ctens
-          type(C_PTR), value:: cuda_task
-         end function gpu_get_arg_
-  !Array 2-norm squared (R4):
-         integer(C_INT) function gpu_array_2norm2_r4(asize,arr,norm2) bind(c,name='gpu_array_2norm2_r4')
-          import
-          implicit none
-          integer(C_SIZE_T), value:: asize
-          real(C_FLOAT), intent(in):: arr(*)
-          real(C_FLOAT), intent(out):: norm2
-         end function gpu_array_2norm2_r4
-  !Array 2-norm squared (R8):
-         integer(C_INT) function gpu_array_2norm2_r8(asize,arr,norm2) bind(c,name='gpu_array_2norm2_r8')
-          import
-          implicit none
-          integer(C_SIZE_T), value:: asize
-          real(C_DOUBLE), intent(in):: arr(*)
-          real(C_DOUBLE), intent(out):: norm2
-         end function gpu_array_2norm2_r8
-  !Blocking matrix multiplication (TN variant, R4):
-         integer(C_INT) function gpu_matrix_multiply_tn_r4(ll,lr,lc,lmat,rmat,dmat)&
-                                  &bind(c,name='gpu_matrix_multiply_tn_r4')
-          import
-          implicit none
-          integer(C_SIZE_T), value, intent(in):: ll
-          integer(C_SIZE_T), value, intent(in):: lr
-          integer(C_SIZE_T), value, intent(in):: lc
-          real(C_FLOAT), intent(in):: lmat(*)
-          real(C_FLOAT), intent(in):: rmat(*)
-          real(C_FLOAT), intent(inout):: dmat(*)
-         end function gpu_matrix_multiply_tn_r4
-  !Blocking matrix multiplication (TN variant, R8):
-         integer(C_INT) function gpu_matrix_multiply_tn_r8(ll,lr,lc,lmat,rmat,dmat)&
-                                  &bind(c,name='gpu_matrix_multiply_tn_r8')
-          import
-          implicit none
-          integer(C_SIZE_T), value, intent(in):: ll
-          integer(C_SIZE_T), value, intent(in):: lr
-          integer(C_SIZE_T), value, intent(in):: lc
-          real(C_DOUBLE), intent(in):: lmat(*)
-          real(C_DOUBLE), intent(in):: rmat(*)
-          real(C_DOUBLE), intent(inout):: dmat(*)
-         end function gpu_matrix_multiply_tn_r8
-  !Tensor block initialization:
-         integer(C_INT) function gpu_tensor_block_init_(ctens,val,copy_back,cuda_task)&
-                                  &bind(c,name='gpu_tensor_block_init_')
-          import
-          implicit none
-          type(C_PTR), value:: ctens
-          real(C_DOUBLE), value:: val
-          integer(C_INT), value:: copy_back
-          type(C_PTR), value:: cuda_task
-         end function gpu_tensor_block_init_
-  !Tensor block rescaling:
-         integer(C_INT) function gpu_tensor_block_scale_(ctens,val,copy_back,cuda_task)&
-                                  &bind(c,name='gpu_tensor_block_scale_')
-          import
-          implicit none
-          type(C_PTR), value:: ctens
-          real(C_DOUBLE), value:: val
-          integer(C_INT), value:: copy_back
-          type(C_PTR), value:: cuda_task
-         end function gpu_tensor_block_scale_
-  !Tensor block addition:
-         integer(C_INT) function gpu_tensor_block_add_dlf_(ctens0,ctens1,val,copy_back,cuda_task)&
-                                  &bind(c,name='gpu_tensor_block_add_dlf_')
-          import
-          implicit none
-          type(C_PTR), value:: ctens0
-          type(C_PTR), value, intent(in):: ctens1
-          real(C_DOUBLE), value:: val
-          integer(C_INT), value:: copy_back
-          type(C_PTR), value:: cuda_task
-         end function gpu_tensor_block_add_dlf_
-  !Blocking tensor transpose:
-         integer(C_INT) function gpu_tensor_block_copy_dlf(dim_trn,tens_in,tens_out)&
-                                  &bind(c,name='gpu_tensor_block_copy_dlf')
-          import
-          implicit none
-          integer(C_INT), intent(in):: dim_trn(*)
-          type(C_PTR), value:: tens_in
-          type(C_PTR), value:: tens_out
-         end function gpu_tensor_block_copy_dlf
-  !Non-blocking tensor transpose:
-         integer(C_INT) function gpu_tensor_block_copy_dlf_(dim_trn,tens_in,tens_out,copy_back,cuda_task)&
-                                  &bind(c,name='gpu_tensor_block_copy_dlf_')
-          import
-          implicit none
-          integer(C_INT), intent(in):: dim_trn(*)
-          type(C_PTR), value:: tens_in
-          type(C_PTR), value:: tens_out
-          integer(C_INT), value:: copy_back
-          type(C_PTR), value:: cuda_task
-         end function gpu_tensor_block_copy_dlf_
-  !Non-blocking tensor contraction:
-         integer(C_INT) function gpu_tensor_block_contract_dlf_(cptrn,ltens,rtens,dtens,copy_back,cuda_task)&
-                                  &bind(c,name='gpu_tensor_block_contract_dlf_')
-          import
-          implicit none
-          integer(C_INT), intent(in):: cptrn(*)
-          type(C_PTR), value:: ltens
-          type(C_PTR), value:: rtens
-          type(C_PTR), value:: dtens
-          integer(C_INT), value:: copy_back
-          type(C_PTR), value:: cuda_task
-         end function gpu_tensor_block_contract_dlf_
 #endif
         end interface
 

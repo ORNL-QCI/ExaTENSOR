@@ -1,5 +1,5 @@
 /** Tensor Algebra Library for NVidia GPU: NV-TAL (CUDA based).
-REVISION: 2016/02/05
+REVISION: 2016/02/08
 Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
 Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
 
@@ -1020,8 +1020,9 @@ __host__ int gpu_print_stats(int gpu_num)
    printf(" Number of Bytes to GPU   : %G\n",gpu_stats[i].traffic_in);
    printf(" Number of Bytes from GPU : %G\n",gpu_stats[i].traffic_out);
    printf(" Time active (sec)        : %f\n",gpu_stats[i].time_active);
-  }else{
-   printf("\n#MSG(TAL-SH::NV-TAL): Statistics on GPU #%d: GPU is OFF\n",i);
+   printf("#END_MSG\n");
+//  }else{
+//   printf("\n#MSG(TAL-SH::NV-TAL): Statistics on GPU #%d: GPU is OFF\n",i);
   }
  }
  return 0;

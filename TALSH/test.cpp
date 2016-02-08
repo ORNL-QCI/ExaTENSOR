@@ -23,6 +23,7 @@ void test_talsh_c(int * ierr)
  int dims0[]={40,40,40,40}; //tensor block 0 dimensions
  int dims1[]={40,40,40,40}; //tensor block 1 dimensions
  int dims2[]={40,40,40,40}; //tensor block 2 dimensions
+ float tm_tot,tm_in,tm_out,tm_comp;
 
  *ierr=0;
 //Initialize Host/GPU argument buffers and NV-TAL:
@@ -64,7 +65,7 @@ void test_talsh_c(int * ierr)
  errc=tensBlck_attach_body(t2,R8);
  printf(" Status %d\n",errc); if(errc){*ierr=1; return;}
 
-//Initialize tensor blocks to value:
+//Initialize tensor blocks to value (on Host):
  //Tensor block 0:
  printf(" Initializing tensor block 0 ...");
  errc=tensBlck_init_host(t0,0.0);
@@ -99,7 +100,9 @@ void test_talsh_c(int * ierr)
  //Wait until task completion:
  printf(" Waiting upon completion ...");
  errc=cuda_task_wait(tsk0);
- printf(" Status %d\n",errc); if(errc != CUDA_TASK_COMPLETED){*ierr=1; return;}
+ printf(" Status %d",errc); if(errc != CUDA_TASK_COMPLETED){*ierr=1; return;}
+ tm_tot=cuda_task_time(tsk0,&tm_in,&tm_out,&tm_comp); //task timing
+ printf(": Timings (total,in,out,comp): %f %f %f %f\n",tm_tot,tm_in,tm_out,tm_comp);
  //Print the 2-norm of the destination tensor:
  printf(" Destination tensor squared 2-norm = %e\n",tensBlck_norm2_host(t0));
 

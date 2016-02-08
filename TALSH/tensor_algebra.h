@@ -2,7 +2,7 @@
     Parameters, derived types, and function prototypes
     used at the lower level of TAL-SH (device specific):
     CP-TAL, NV-TAL, XP-TAL, AM-TAL, etc.
-REVISION: 2016/02/05
+REVISION: 2016/02/08
 Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
 Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
 
@@ -138,17 +138,17 @@ FOR DEVELOPERS ONLY:
 #define CUDA_TASK_COMPLETED 5
 
 //ALIASES (keep consistent with tensor_algebra.F90):
+#define NOPE 0
+#define YEP 1
 #define TALSH_SUCCESS 0
 #define TALSH_FAILURE -666
 #define BLAS_ON 0
 #define BLAS_OFF 1
 #define EFF_TRN_OFF 0
 #define EFF_TRN_ON 1
-#define TRY_LATER -918273645
 #define DEVICE_UNABLE -546372819
+#define TRY_LATER -918273645
 #define NOT_CLEAN -192837465
-#define NOPE 0
-#define YEP 1
 
 #define EVERYTHING 0
 #define SOURCE 1
