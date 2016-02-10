@@ -11,5 +11,6 @@
 *.hash
 *.a
 *.x
+*.log
 /Misc
 /*/OBJ

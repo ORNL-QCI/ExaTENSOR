@@ -197,4 +197,4 @@ lib$(NAME).a: $(OBJS)
 
 .PHONY: clean
 clean:
-	rm *.x *.a ./OBJ/* *.mod *.modmic *.ptx
+	rm -f *.x *.a ./OBJ/* *.mod *.modmic *.ptx *.log
