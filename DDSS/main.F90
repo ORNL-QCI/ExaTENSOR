@@ -29,6 +29,7 @@
         implicit none
         integer(INT_MPI), parameter:: NUM_WINS_PER_SPACE=1     !number of MPI windows per distributed space
         integer(INT_COUNT), parameter:: MAX_BUF_VOL=20000000   !max volume of the send buffer (for testing)
+        integer(INT_MPI), parameter:: MAX_PACK_LEN=1024
         real(8), parameter:: pause1=0.2d0, pause2=0.2d0        !pauses in seconds
         real(8), allocatable, target:: send_buf(:),recv_buf(:)
         integer(INT_COUNT):: buf_vol0,buf_vol1,pack_len0,pack_len1
@@ -39,7 +40,7 @@
         type(PackCont_t):: dpack0,dpack1
         type(CommHandle_t):: ch0,ch1
         real(8):: rnd,tms,tm,snorm1,snorm2
-        integer(ELEM_PACK_SIZE):: packet0(1024),packet1(1024)
+        integer(ELEM_PACK_SIZE):: packet0(MAX_PACK_LEN),packet1(MAX_PACK_LEN)
         integer:: errc,tmr
 
 !Initialize the MPI infrastructure:
@@ -50,22 +51,22 @@
         call dspace0%create(GLOBAL_MPI_COMM,NUM_WINS_PER_SPACE,'My Space',ierr)
         write(jo,*) 'My space created(rank,err): ',impir,ierr
         if(ierr.ne.0) call quit(ierr,'ERROR: Failed to create my space!')
-        flush(jo)
+        flush(jo) !jo: output device; impir: current MPI rank.
 !Get a random buffer volume for each MPI process:
         do i=0,impir; call random_number(rnd); enddo !to make rnd different on different MPI processes
-        buf_vol0=int(dble(MAX_BUF_VOL)*rnd,INT_COUNT)+4 !random send buffer volume
+!       buf_vol0=int(dble(MAX_BUF_VOL)*rnd,INT_COUNT)+4 !random send buffer volume
+        buf_vol0=MAX_BUF_VOL !let's have them all of the sam size for now
         allocate(send_buf(1:buf_vol0)); cptr=c_loc(send_buf)
         write(jo,*) 'Allocated a send buffer(rank,vol,addr): ',impir,buf_vol0,c_ptr_value(cptr)
 !Fill the send buffer with random numbers:
         call random_number(send_buf); snorm1=array_norm(send_buf,buf_vol0)
-        write(jo,*) 'Norm1 of the send buffer = ',snorm1,buf_vol0
-!Attach the buffer to the distributed memory space:
-        call dspace0%attach(c_loc(send_buf),R8,buf_vol0,descr0,ierr)
+        write(jo,*) 'Norm1 of the send buffer = ',snorm1,'; Volume = ',buf_vol0
+!Attach the buffer to the distributed memory space as double precision (R8):
+        call dspace0%attach(c_loc(send_buf),R8,buf_vol0,descr0,ierr) !send buffer is associated with the data descriptor <descr0>
         write(jo,*) 'Attached a buffer(rank,vol,err): ',impir,buf_vol0,ierr
         if(ierr.ne.0) call quit(ierr,'ERROR: Failed to attach the send buffer!')
 !DEBUG: Print the original data descriptor:
-        call descr0%print_it(dev_out=jo)
-        flush(jo)
+        call descr0%print_it(dev_out=jo); flush(jo)
 !Pack the data descriptor:
         call descr0%pack(packet0,ierr,pack_len0)
         write(jo,*) 'Packed the original descriptor(rank,len,err): ',impir,pack_len0,ierr
@@ -75,13 +76,13 @@
 !        write(jo,*) 'UnPacked into another descriptor(rank,len,err): ',impir,pack_len0,ierr
 !        if(ierr.ne.0) call quit(ierr,'ERROR: Failed to unpack a data descriptor!')
 !DEBUG: Print the resulting data descriptor:
-!        call descr1%print_it(dev_out=jo)
+!        call descr1%print_it(dev_out=jo); flush(jo)
 !Exchange data descriptors between processes:
  !Create the data packet container:
-        call dpack0%reserve_mem(1024,ierr)
+        call dpack0%reserve_mem(MAX_PACK_LEN,ierr)
         write(jo,*) 'Created a data packet container 0 (rank,err): ',impir,ierr
         if(ierr.ne.0) call quit(ierr,'ERROR: Failed to create a data packet container!')
-        call dpack1%reserve_mem(1024,ierr)
+        call dpack1%reserve_mem(MAX_PACK_LEN,ierr)
         write(jo,*) 'Created a data packet container 1 (rank,err): ',impir,ierr
         if(ierr.ne.0) call quit(ierr,'ERROR: Failed to create a data packet container!')
  !Append packet 0 to the data packet container:
@@ -90,18 +91,18 @@
         if(ierr.ne.0) call quit(ierr,'ERROR: Failed to append a data packet to a data packet container!')
  !Send the data packet container to the next MPI process:
         i=mod(impir+1,impis) !next MPI process
-        call dpack0%send(ch0,ierr,i)
+        call dpack0%send(ch0,ierr,i) !ch0: communication request handle
         write(jo,*) 'Send initiated for the data packet container (rank_from,rank_to,err): ',impir,i,ierr
         if(ierr.ne.0) call quit(ierr,'ERROR: Failed to initiate a send operation!')
  !Receive a data packet container from the previous MPI process:
         i=mod(impis+impir-1,impis) !previous MPI process
-        call dpack1%receive(ch1,ierr,i)
+        call dpack1%receive(ch1,ierr,i) !ch1: communication request handle
         write(jo,*) 'Receive initiated for the data packet container (rank_from,rank_to,err): ',i,impir,ierr
         if(ierr.ne.0) call quit(ierr,'ERROR: Failed to initiate a receive operation!')
  !Synchronize the receive:
         call ch1%wait(ierr,ignore_old=.true.)
         write(jo,*) 'Synchronized the receive of the data packet container (rank,err): ',impir,ierr
-        if(ierr.ne.0) call quit(ierr,'ERROR: Failed to synchronize the receieve operation!')
+        if(ierr.ne.0) call quit(ierr,'ERROR: Failed to synchronize the receive operation!')
         write(jo,*) 'Total number of packets in the data packet container = ',dpack1%num_packets()
  !Extract a packet from the data packet container:
         call dpack1%remove(ierr,packet=packet1)
@@ -113,8 +114,7 @@
         write(jo,*) 'Unpacked a data descriptor from the extracted data packet (rank,len,data_vol,err): ',&
         &impir,pack_len1,buf_vol1,ierr
         if(ierr.ne.0.or.buf_vol1.le.0) call quit(ierr,'ERROR: Failed to unpack a data descriptor!')
-        call descr1%print_it(dev_out=jo) !print it: DEBUG
-        flush(jo)
+        call descr1%print_it(dev_out=jo); flush(jo) !print it: DEBUG
 !Allocate a receive buffer of appropriate volume:
         allocate(recv_buf(1:buf_vol1))
         write(jo,*) 'Allocated a receive buffer(rank,vol): ',impir,buf_vol1
@@ -129,16 +129,17 @@
         tm=thread_wtime(tms)
         write(jo,*) 'Initiated fetching remote data (rank,time,err): ',impir,tm,ierr
         call ddss_print_stat() !DEBUG
- !Complete fetching:
+ !Pause (like we are doing some computations now and the MPI message is progressing on the background):
         tms=thread_wtime()
         errc=timer_start(pause1,tmr); do while(.not.time_is_off(tmr,errc)); enddo !DEBUG: Pause before FLUSH
         tm=thread_wtime(tms); write(jo,*) 'Pause before FLUSH (sec) = ',tm !DEBUG
+ !Now complete fetching (hopefully the MPI message is already here):
         tms=thread_wtime()
         call descr1%flush_data(ierr)
         tm=thread_wtime(tms)
         write(jo,*) 'Completed the fetch after a pause: (rank,time,err): ',impir,tm,ierr
         call ddss_print_stat() !DEBUG
-        write(jo,*) 'Norm1 of the receive buffer = ',array_norm(recv_buf,buf_vol1),buf_vol1
+        write(jo,*) 'Norm1 of the receive buffer = ',array_norm(recv_buf,buf_vol1),'; Volume = ',buf_vol1
 !Accumulate the fetched data back to the target process:
  !Initiate the accumulate:
         tms=thread_wtime()
@@ -146,10 +147,11 @@
         tm=thread_wtime(tms)
         write(jo,*) 'Initiated a remote accumulate (rank,time,err): ',impir,tm,ierr
         call ddss_print_stat() !DEBUG
- !Complete the accumulate:
+ !Pause (like we are doing some computations now and the MPI message is progressing on the background):
         tms=thread_wtime()
         errc=timer_start(pause2,tmr); do while(.not.time_is_off(tmr,errc)); enddo !DEBUG: Pause before FLUSH
         tm=thread_wtime(tms); write(jo,*) 'Pause before FLUSH (sec) = ',tm !DEBUG
+ !Now complete the accumulate (hopefully it is already completed):
         tms=thread_wtime()
         call descr1%flush_data(ierr)
         tm=thread_wtime(tms)
@@ -160,7 +162,7 @@
         flush(jo)
         call dil_global_comm_barrier()
         snorm2=array_norm(send_buf,buf_vol0)
-        write(jo,*) 'Norm1 of the accumulated send buffer = ',snorm2,snorm2/snorm1
+        write(jo,*) 'Norm1 of the accumulated send buffer = ',snorm2,': Expected ratio of 2 is actually ',snorm2/snorm1
         flush(jo)
 !Destroy the data packet container:
         call dpack1%clean(ierr)
