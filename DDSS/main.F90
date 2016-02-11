@@ -27,19 +27,22 @@
         use extern_names, only: c_ptr_value
         use aux
         implicit none
+
         integer(INT_MPI), parameter:: NUM_WINS_PER_SPACE=1     !number of MPI windows per distributed space
         integer(INT_COUNT), parameter:: MAX_BUF_VOL=20000000   !max volume of the send buffer (for testing)
+        integer(INT_MPI), parameter:: NUM_PASSES=4             !number of passes with a different pause value
+        real(8), parameter:: PAUS_INC=0.2d0                    !pause length increment
         integer(INT_MPI), parameter:: MAX_PACK_LEN=1024
-        real(8), parameter:: pause1=0.2d0, pause2=0.2d0        !pauses in seconds
+
         real(8), allocatable, target:: send_buf(:),recv_buf(:)
         integer(INT_COUNT):: buf_vol0,buf_vol1,pack_len0,pack_len1
         type(C_PTR):: cptr
-        integer(INT_MPI):: i,ierr
+        integer(INT_MPI):: i,n,ierr
         type(DistrSpace_t):: dspace0
         type(DataDescr_t):: descr0,descr1
         type(PackCont_t):: dpack0,dpack1
         type(CommHandle_t):: ch0,ch1
-        real(8):: rnd,tms,tm,snorm1,snorm2
+        real(8):: paus,rnd,tms,tm,snorm1,snorm2
         integer(ELEM_PACK_SIZE):: packet0(MAX_PACK_LEN),packet1(MAX_PACK_LEN)
         integer:: errc,tmr
 
@@ -118,51 +121,66 @@
 !Allocate a receive buffer of appropriate volume:
         allocate(recv_buf(1:buf_vol1))
         write(jo,*) 'Allocated a receive buffer(rank,vol): ',impir,buf_vol1
-        recv_buf(:)=0d0
-!Sync for timing:
-        call dil_global_comm_barrier()
+
+        paus=0d0
+        do n=1,NUM_PASSES
+
+!Clear receive buffer:
+         recv_buf(:)=0d0
+!Sync for clear timing:
+         call dil_global_comm_barrier()
 
 !Fetch the remote data into the receive buffer:
  !Initiate fetching:
-        tms=thread_wtime()
-        call descr1%get_data(c_loc(recv_buf),ierr,MPI_ASYNC_NRM)
-        tm=thread_wtime(tms)
-        write(jo,*) 'Initiated fetching remote data (rank,time,err): ',impir,tm,ierr
-        call ddss_print_stat() !DEBUG
+         tms=thread_wtime()
+         call descr1%get_data(c_loc(recv_buf),ierr,MPI_ASYNC_NRM)
+         tm=thread_wtime(tms)
+         write(jo,*) 'Initiated fetching remote data (rank,time,err): ',impir,tm,ierr
+         call ddss_print_stat() !DEBUG
  !Pause (like we are doing some computations now and the MPI message is progressing on the background):
-        tms=thread_wtime()
-        errc=timer_start(pause1,tmr); do while(.not.time_is_off(tmr,errc)); enddo !DEBUG: Pause before FLUSH
-        tm=thread_wtime(tms); write(jo,*) 'Pause before FLUSH (sec) = ',tm !DEBUG
+         tms=thread_wtime()
+         errc=timer_start(paus,tmr); do while(.not.time_is_off(tmr,errc)); enddo !DEBUG: Pause before FLUSH
+         tm=thread_wtime(tms); write(jo,*) 'Pause before FLUSH (sec) = ',tm !DEBUG
  !Now complete fetching (hopefully the MPI message is already here):
-        tms=thread_wtime()
-        call descr1%flush_data(ierr)
-        tm=thread_wtime(tms)
-        write(jo,*) 'Completed the fetch after a pause: (rank,time,err): ',impir,tm,ierr
-        call ddss_print_stat() !DEBUG
-        write(jo,*) 'Norm1 of the receive buffer = ',array_norm(recv_buf,buf_vol1),'; Volume = ',buf_vol1
+         tms=thread_wtime()
+         call descr1%flush_data(ierr)
+         tm=thread_wtime(tms)
+         write(jo,*) 'Completed the fetch after a pause: (rank,time,err): ',impir,tm,ierr
+         write(jo,*) 'Fetch bandwidth (GB/s) = ',dble(buf_vol1*8)/(tm*1024d0*1024d0*1024d0)
+         call ddss_print_stat() !DEBUG
+         write(jo,*) 'Norm1 of the receive buffer = ',array_norm(recv_buf,buf_vol1),'; Volume = ',buf_vol1
+!Sync for clear timing:
+         call dil_global_comm_barrier()
+
 !Accumulate the fetched data back to the target process:
  !Initiate the accumulate:
-        tms=thread_wtime()
-        call descr1%acc_data(c_loc(recv_buf),ierr,MPI_ASYNC_NRM)
-        tm=thread_wtime(tms)
-        write(jo,*) 'Initiated a remote accumulate (rank,time,err): ',impir,tm,ierr
-        call ddss_print_stat() !DEBUG
+         tms=thread_wtime()
+         call descr1%acc_data(c_loc(recv_buf),ierr,MPI_ASYNC_NRM)
+         tm=thread_wtime(tms)
+         write(jo,*) 'Initiated a remote accumulate (rank,time,err): ',impir,tm,ierr
+         call ddss_print_stat() !DEBUG
  !Pause (like we are doing some computations now and the MPI message is progressing on the background):
-        tms=thread_wtime()
-        errc=timer_start(pause2,tmr); do while(.not.time_is_off(tmr,errc)); enddo !DEBUG: Pause before FLUSH
-        tm=thread_wtime(tms); write(jo,*) 'Pause before FLUSH (sec) = ',tm !DEBUG
+         tms=thread_wtime()
+         errc=timer_start(paus,tmr); do while(.not.time_is_off(tmr,errc)); enddo !DEBUG: Pause before FLUSH
+         tm=thread_wtime(tms); write(jo,*) 'Pause before FLUSH (sec) = ',tm !DEBUG
  !Now complete the accumulate (hopefully it is already completed):
-        tms=thread_wtime()
-        call descr1%flush_data(ierr)
-        tm=thread_wtime(tms)
-        write(jo,*) 'Completed the accumulate after a pause: (rank,time,err): ',impir,tm,ierr
-        call ddss_print_stat() !DEBUG
+         tms=thread_wtime()
+         call descr1%flush_data(ierr)
+         tm=thread_wtime(tms)
+         write(jo,*) 'Completed the accumulate after a pause: (rank,time,err): ',impir,tm,ierr
+         write(jo,*) 'Accumulate bandwidth (GB/s) = ',dble(buf_vol1*8)/(tm*1024d0*1024d0*1024d0)
+         call ddss_print_stat() !DEBUG
+         flush(jo)
+!Sync for clear timing:
+         call dil_global_comm_barrier()
 
-!Sync processes:
-        flush(jo)
-        call dil_global_comm_barrier()
+         paus=paus+PAUS_INC
+        enddo
+
+!Check the resulting array norm:
+        write(jo,*) 'Number of passes done = ',NUM_PASSES
         snorm2=array_norm(send_buf,buf_vol0)
-        write(jo,*) 'Norm1 of the accumulated send buffer = ',snorm2,': Expected ratio of 2 is actually ',snorm2/snorm1
+        write(jo,*) 'Norm1 of the accumulated send buffer = ',snorm2,': Result norm ratio =  ',snorm2/snorm1
         flush(jo)
 !Destroy the data packet container:
         call dpack1%clean(ierr)

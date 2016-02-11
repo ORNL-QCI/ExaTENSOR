@@ -38,8 +38,9 @@ export MPICH_GNI_MEM_DEBUG_FNAME=MPICH.memdebug
 #export MPICH_RANK_REORDER_DISPLAY=1
 
 rm *.tmp *.log *.out *.x
-cp $QFORCE_PATH/qforce.v13.01.x ./
-aprun -n $QF_NUM_PROCS -N $QF_PROCS_PER_NODE -d $QF_CORES_PER_PROC -cc 0,2,4,6,8,10,12,14 -r 8 ./qforce.v13.01.x #> qforce.log
+cp $QFORCE_PATH/ddss.x ./
+aprun -n $QF_NUM_PROCS -N $QF_PROCS_PER_NODE -d $QF_CORES_PER_PROC -cc 0,2,4,6,8,10,12,14 -r 8 ./ddss.x #> qforce.log
+#mpiexec -n $QF_NUM_PROCS -npernode $QF_PROCS_PER_NODE ./ddss.x
 #nvprof --log-file nv_profile.log --print-gpu-trace ./qforce.v13.01.x # &> qforce.log &
 #nvprof --log-file nv_profile.log --print-gpu-trace --metrics branch_efficiency,gld_efficiency,gst_efficiency ./qforce.v13.01.x # &> qforce.log &
 #gprof ./qforce.v13.01.x gmon.out > profile.log
