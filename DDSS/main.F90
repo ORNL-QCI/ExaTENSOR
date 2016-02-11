@@ -29,9 +29,9 @@
         implicit none
 
         integer(INT_MPI), parameter:: NUM_WINS_PER_SPACE=1     !number of MPI windows per distributed space
-        integer(INT_COUNT), parameter:: MAX_BUF_VOL=20000000   !max volume of the send buffer (for testing)
+        integer(INT_COUNT), parameter:: MAX_BUF_VOL=40000000   !max volume of the send buffer (for testing)
         integer(INT_MPI), parameter:: NUM_PASSES=4             !number of passes with a different pause value
-        real(8), parameter:: PAUS_INC=0.2d0                    !pause length increment
+        real(8), parameter:: PAUS_INC=0.05d0                   !pause length increment
         integer(INT_MPI), parameter:: MAX_PACK_LEN=1024
 
         real(8), allocatable, target:: send_buf(:),recv_buf(:)
@@ -55,15 +55,15 @@
         write(jo,*) 'My space created(rank,err): ',impir,ierr
         if(ierr.ne.0) call quit(ierr,'ERROR: Failed to create my space!')
         flush(jo) !jo: output device; impir: current MPI rank.
-!Get a random buffer volume for each MPI process:
+!Allocate a buffer on each MPI process:
         do i=0,impir; call random_number(rnd); enddo !to make rnd different on different MPI processes
 !       buf_vol0=int(dble(MAX_BUF_VOL)*rnd,INT_COUNT)+4 !random send buffer volume
         buf_vol0=MAX_BUF_VOL !let's have them all of the sam size for now
         allocate(send_buf(1:buf_vol0)); cptr=c_loc(send_buf)
+!$OMP WORKSHARE
+        send_buf(1:buf_vol0)=0d0
+!$OMP END WORKSHARE
         write(jo,*) 'Allocated a send buffer(rank,vol,addr): ',impir,buf_vol0,c_ptr_value(cptr)
-!Fill the send buffer with random numbers:
-        call random_number(send_buf); snorm1=array_norm(send_buf,buf_vol0)
-        write(jo,*) 'Norm1 of the send buffer = ',snorm1,'; Volume = ',buf_vol0
 !Attach the buffer to the distributed memory space as double precision (R8):
         call dspace0%attach(c_loc(send_buf),R8,buf_vol0,descr0,ierr) !send buffer is associated with the data descriptor <descr0>
         write(jo,*) 'Attached a buffer(rank,vol,err): ',impir,buf_vol0,ierr
@@ -125,8 +125,13 @@
         paus=0d0
         do n=1,NUM_PASSES
 
+!Fill the send buffer with random numbers:
+        call random_number(send_buf); snorm1=array_norm(send_buf,buf_vol0)
+        write(jo,*) 'Norm1 of the send buffer = ',snorm1,'; Volume = ',buf_vol0
 !Clear receive buffer:
-         recv_buf(:)=0d0
+!$OMP WORKSHARE
+         recv_buf(1:buf_vol1)=0d0
+!$OMP END WORKSHARE
 !Sync for clear timing:
          call dil_global_comm_barrier()
 
@@ -149,6 +154,10 @@
          write(jo,*) 'Fetch bandwidth (GB/s) = ',dble(buf_vol1*8)/(tm*1024d0*1024d0*1024d0)
          call ddss_print_stat() !DEBUG
          write(jo,*) 'Norm1 of the receive buffer = ',array_norm(recv_buf,buf_vol1),'; Volume = ',buf_vol1
+!Invert the sign of the receive buffer:
+!$OMP WORKSHARE
+         recv_buf(1:buf_vol1)=-recv_buf(1:buf_vol1)
+!$OMP END WORKSHARE
 !Sync for clear timing:
          call dil_global_comm_barrier()
 
@@ -170,18 +179,18 @@
          write(jo,*) 'Completed the accumulate after a pause: (rank,time,err): ',impir,tm,ierr
          write(jo,*) 'Accumulate bandwidth (GB/s) = ',dble(buf_vol1*8)/(tm*1024d0*1024d0*1024d0)
          call ddss_print_stat() !DEBUG
-         flush(jo)
-!Sync for clear timing:
          call dil_global_comm_barrier()
+!Check the resulting array norm:
+         snorm2=array_norm(send_buf,buf_vol0)
+         write(jo,*) 'Norm1 of the accumulated send buffer = ',snorm2,'; Volume = ',buf_vol0
+         flush(jo)
 
          paus=paus+PAUS_INC
         enddo
 
-!Check the resulting array norm:
         write(jo,*) 'Number of passes done = ',NUM_PASSES
-        snorm2=array_norm(send_buf,buf_vol0)
-        write(jo,*) 'Norm1 of the accumulated send buffer = ',snorm2,': Result norm ratio =  ',snorm2/snorm1
         flush(jo)
+
 !Destroy the data packet container:
         call dpack1%clean(ierr)
         write(jo,*) 'Destroyed the data packet container (rank,ierr): ',impir,ierr
