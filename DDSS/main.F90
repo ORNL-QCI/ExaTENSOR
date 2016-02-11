@@ -28,11 +28,11 @@
         use aux
         implicit none
 
-        integer(INT_MPI), parameter:: NUM_WINS_PER_SPACE=1     !number of MPI windows per distributed space
         integer(INT_COUNT), parameter:: MAX_BUF_VOL=40000000   !max volume of the send buffer (for testing)
-        integer(INT_MPI), parameter:: NUM_PASSES=4             !number of passes with a different pause value
-        real(8), parameter:: PAUS_INC=0.05d0                   !pause length increment
-        integer(INT_MPI), parameter:: MAX_PACK_LEN=1024
+        integer(INT_MPI), parameter:: NUM_PASSES=8             !number of passes with a different pause length
+        real(8), parameter:: PAUS_INC=0.05d0                   !pause length increment in seconds
+        integer(INT_MPI), parameter:: NUM_WINS_PER_SPACE=1     !number of MPI windows per distributed space
+        integer(INT_MPI), parameter:: MAX_PACK_LEN=1024        !max packet length (internal use)
 
         real(8), allocatable, target:: send_buf(:),recv_buf(:)
         integer(INT_COUNT):: buf_vol0,buf_vol1,pack_len0,pack_len1
