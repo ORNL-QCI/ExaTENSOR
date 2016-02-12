@@ -45,7 +45,10 @@ extern "C"{
                                                            int namds, int amd_list[]);
 //  Shutdown TAL-SH:
  int talshShutdown();
-
+//  Get the flat device Id:
+ int talshFlatDevId(int dev_kind, int dev_num);
+//  Get the kind-specific device Id:
+ int talshKindDevId(int dev_id, int * dev_kind);
 
 #ifdef __cplusplus
 }

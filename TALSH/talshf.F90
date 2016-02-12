@@ -58,14 +58,28 @@
           import
           implicit none
          end function talshShutdown
+  !Get the flat device Id:
+         integer(C_INT) function talshFlatDevId(dev_kind,dev_num) bind(c,name='talshFlatDevId')
+          import
+          implicit none
+          integer(C_INT), value, intent(in):: dev_kind
+          integer(C_INT), value, intent(in):: dev_num
+         end function talshFlatDevId
+  !Get the kind-specific device Id:
+         integer(C_INT) function talshKindDevId(dev_id,dev_kind) bind(c,name='talshKindDevId')
+          import
+          implicit none
+          integer(C_INT), value, intent(in):: dev_id
+          integer(C_INT), intent(out):: dev_kind
+         end function talshKindDevId
 
         end interface
 !VISIBILITY:
  !TAL-SH device control API:
         public talsh_init
         public talsh_shutdown
-!        public talsh_flat_dev_id
-!        public talsh_kind_dev_id
+        public talsh_flat_dev_id
+        public talsh_kind_dev_id
 !        public talsh_device_state
 !        public talsh_device_busy_least
 !        public talsh_stats
@@ -100,6 +114,7 @@
  !TAL-SH device control API:
 !----------------------------------------------------------------------------------------------
         function talsh_init(host_buf_size,host_arg_max,gpu_list,mic_list,amd_list) result(ierr)
+         implicit none
          integer(C_INT):: ierr                                      !out: error code (0:success)
          integer(C_SIZE_T), intent(inout), optional:: host_buf_size !inout: desired size in bytes of the Host Argument Buffer (HAB).
                                                                     !       It will be replaced by the actual size.
@@ -124,10 +139,28 @@
         end function talsh_init
 !---------------------------------------------
         function talsh_shutdown() result(ierr)
+         implicit none
          integer(C_INT):: ierr !out: error code (0:success)
-
          ierr=talshShutdown()
          return
         end function talsh_shutdown
+!----------------------------------------------------------------
+        function talsh_flat_dev_id(dev_kind,dev_num) result(res)
+         implicit none
+         integer(C_INT):: res                  !out: Flat device Id [0..DEV_MAX-1]; Failure: DEV_MAX
+         integer(C_INT), intent(in):: dev_kind !in: device kind
+         integer(C_INT), intent(in):: dev_num  !in: device Id within its kind (0..MAX)
+         res=talshFlatDevId(dev_kind,dev_num)
+         return
+        end function talsh_flat_dev_id
+!--------------------------------------------------------------
+        function talsh_kind_dev_id(dev_id,dev_kind) result(res)
+         implicit none
+         integer(C_INT):: res                   !out: kind-specific device Id [0..]; Failure: DEV_NULL
+         integer(C_INT), intent(in):: dev_id    !in: flat device Id
+         integer(C_INT), intent(out):: dev_kind !out: device kind
+         res=talshKindDevId(dev_id,dev_kind)
+         return
+        end function talsh_kind_dev_id
 
        end module talsh

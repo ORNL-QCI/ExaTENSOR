@@ -1,6 +1,6 @@
 *** TAL-SH: Tensor Algebra Library for Shared Memory Computers ***
 AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-REVISION: 2016/02/11
+REVISION: 2016/02/12
 Copyright (C) 2015 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
 LICENSE: GPL v.2
@@ -96,34 +96,30 @@ API: Shutdown the TAL-SH library:
 API: Get a flat device id:
 
  Fortran 2003:
-  function encode_device_id(dev_kind,dev_num) result(dev_id):
+  function talsh_flat_dev_id(dev_kind,dev_num) result(dev_id):
    integer(C_INT):: dev_id                      !out: flat device id (Success: [0..DEV_MAX-1])
    integer(C_INT), intent(in), value:: dev_kind !in: device kind (see above)
    integer(C_INT), intent(in), value:: dev_num  !in: device number within its kind [0..max]
 
  C/C++:
-  int encode_device_id( //out: flat device id (Success: [0..DEV_MAX-1])
-   int dev_kind,        //in: device kind (see above)
-   int dev_num          //in: device number within its kind [0..max]
+  int talshFlatDevId( //out: flat device id (Success: [0..DEV_MAX-1])
+   int dev_kind,      //in: device kind (see above)
+   int dev_num        //in: device number within its kind [0..max]
   )
-
-  `Note: This function will be renamed: "talsh_flat_dev_id".
 
 API: Convert a flat device id into the kind specific device id:
 
  Fortran 2003:
-  function decode_device_id(dev_id,dev_kind) result(dev_num)
+  function talsh_kind_dev_id(dev_id,dev_kind) result(dev_num)
    integer(C_INT):: dev_num                   !out: kind specific device number [0..max]
    integer(C_INT), intent(in), value:: dev_id !in: flat device id
    integer(C_INT), intent(out):: dev_kind     !out: device kind (see above)
 
  C/C++:
-  int decode_device_id( //out: kind specific device number [0..max]
-   int dev_id,          //in: flat device id
-   int * dev_kind       //out: device kind (see above)
+  int talshKindDevId( //out: kind specific device number [0..max]
+   int dev_id,        //in: flat device id
+   int * dev_kind     //out: device kind (see above)
   )
-
- `Note: This function will be renamed: "talsh_kind_dev_id".
 
 API: Query the state of a device:
 
