@@ -1,8 +1,8 @@
 !ExaTensor::TAL-SH: Device-unified user-level API:
-!REVISION: 2016/02/08
+!REVISION: 2016/02/12
 !Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
 !Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
-!LICENSE: GPLv2
+!LICENSE: GNU GPLv2
 
 !This source file is free software; you can redistribute it and/or
 !modify it under the terms of the GNU General Public License
@@ -27,6 +27,11 @@
         integer(INTD), private:: CONS_OUT=6 !default output device for this module
         logical, private:: VERBOSE=.true.   !verbosity for errors
         logical, private:: DEBUG=.true.     !debugging mode for this module
+ !Errors:
+        integer(C_INT), parameter, public:: TALSH_SUCCESS=0             !success
+        integer(C_INT), parameter, public:: TALSH_FAILURE=-666          !generic failure
+ !Host argument buffer:
+        integer(C_SIZE_T), parameter, private:: HAB_SIZE_DEFAULT=1024*1024 !default size of the Host argument buffer
 !DERIVED TYPES:
 
 !GLOBALS:
@@ -96,21 +101,32 @@
 !----------------------------------------------------------------------------------------------
         function talsh_init(host_buf_size,host_arg_max,gpu_list,mic_list,amd_list) result(ierr)
          integer(C_INT):: ierr                                      !out: error code (0:success)
-         integer(C_SIZE_T), intent(inout), optional:: host_buf_size !inout: desired size in bytes of the Host Argument Buffer.
+         integer(C_SIZE_T), intent(inout), optional:: host_buf_size !inout: desired size in bytes of the Host Argument Buffer (HAB).
                                                                     !       It will be replaced by the actual size.
          integer(C_INT), intent(out), optional:: host_arg_max       !out: max number of arguments the HAB can contain
          integer(C_INT), intent(in), optional:: gpu_list(1:)        !in: list of NVidia GPU's to use
          integer(C_INT), intent(in), optional:: mic_list(1:)        !in: list of Intel Xeon Phi's to use
          integer(C_INT), intent(in), optional:: amd_list(1:)        !in: list of AMD GPU's to use
+         integer(C_INT):: ngpus,gpus(MAX_GPUS_PER_NODE)
+         integer(C_INT):: nmics,mics(MAX_MICS_PER_NODE)
+         integer(C_INT):: namds,amds(MAX_AMDS_PER_NODE)
+         integer(C_SIZE_T):: hbuf_size
+         integer(C_INT):: harg_max
 
-         ierr=TALSH_SUCCESS; host_arg_max=0;
+         if(present(host_buf_size)) then; hbuf_size=host_buf_size; else; hbuf_size=HAB_SIZE_DEFAULT; endif
+         if(present(gpu_list)) then; ngpus=size(gpu_list); gpus(1:ngpus)=gpu_list(1:ngpus); else; ngpus=0; endif
+         if(present(mic_list)) then; nmics=size(mic_list); mics(1:nmics)=mic_list(1:nmics); else; nmics=0; endif
+         if(present(amd_list)) then; namds=size(amd_list); amds(1:namds)=amd_list(1:namds); else; namds=0; endif
+         ierr=talshInit(hbuf_size,harg_max,ngpus,gpus,nmics,mics,namds,amds)
+         if(present(host_arg_max)) host_arg_max=harg_max
+         if(present(host_buf_size)) host_buf_size=hbuf_size
          return
         end function talsh_init
 !---------------------------------------------
         function talsh_shutdown() result(ierr)
          integer(C_INT):: ierr !out: error code (0:success)
 
-         ierr=TALSH_SUCCESS
+         ierr=talshShutdown()
          return
         end function talsh_shutdown
 

@@ -82,7 +82,8 @@ int talshShutdown()
  int errc;
 
  if(talsh_on == 0) return TALSH_NOT_INITIALIZED;
- errc=arg_buf_deallocate(talsh_gpu_beg,talsh_gpu_end); if(errc) return TALSH_FAILURE;
+ errc=arg_buf_deallocate(talsh_gpu_beg,talsh_gpu_end);
  talsh_gpu_beg=0; talsh_gpu_end=-1; talsh_on=0;
+ if(errc) return TALSH_FAILURE;
  return TALSH_SUCCESS;
 }
