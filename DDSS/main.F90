@@ -30,8 +30,10 @@
 
         integer(INT_COUNT), parameter:: MAX_BUF_VOL=40000000   !max volume of the send buffer in words (for testing)
         integer(INT_MPI), parameter:: NUM_PASSES=8             !number of passes with a different pause length
-        real(8), parameter:: PAUSE_INC=0.05d0                  !pause length increment in seconds
+        real(8), parameter:: PAUSE_INC=1d-1                    !pause length increment in seconds
+        real(8), parameter:: MIN_PAUSE=9.999999d-2             !minimal meaningful pause length to check the comm/comp overlap
         integer(INT_MPI), parameter:: NUM_WINS_PER_SPACE=1     !number of MPI windows per distributed space
+        real(8), parameter:: ZERO_NRM_TOL=1d-6                 !zero norm tolerance
         integer(INT_MPI), parameter:: MAX_PACK_LEN=1024        !max packet length (internal use)
 
         real(8), allocatable, target:: send_buf(:),recv_buf(:)
@@ -42,7 +44,7 @@
         type(DataDescr_t):: descr0,descr1
         type(PackCont_t):: dpack0,dpack1
         type(CommHandle_t):: ch0,ch1
-        real(8):: paus,rnd,tms,tm,fl_get_tm0,fl_acc_tm0,snorm1,snorm2
+        real(8):: paus,rnd,tms,tm,fl_get_tm0,fl_acc_tm0,snorm1,snorm2,worst_time,best_time,overlap
         integer(ELEM_PACK_SIZE):: packet0(MAX_PACK_LEN),packet1(MAX_PACK_LEN)
         integer:: errc,tmr
 
@@ -143,6 +145,7 @@
          call descr1%get_data(c_loc(recv_buf),ierr,MPI_ASYNC_NRM)
          tm=thread_wtime(tms)
          write(jo,*) 'Initiated fetching remote data (rank,time,err): ',impir,tm,ierr
+         if(ierr.ne.0) call quit(ierr,'ERROR: Fetch initiation failed!')
 !        call ddss_print_stat() !DEBUG
  !Pause (like we are doing some computations now and the MPI message is progressing on the background, hopefully):
          tms=thread_wtime()
@@ -153,8 +156,16 @@
          call descr1%flush_data(ierr)
          tm=thread_wtime(tms); if(n.eq.1) fl_get_tm0=tm
          write(jo,*) 'Completed the fetch after a pause: (rank,flush_time,err): ',impir,tm,ierr
+         if(ierr.ne.0) call quit(ierr,'ERROR: Fetch completion failed!')
          write(jo,*) 'Effective flush bandwidth (GB/s) = ',dble(buf_vol1*8)/(tm*1024d0*1024d0*1024d0)
-         write(jo,*) 'Overlap ratio (1.0 is ideal, 0.0 is none) = ',1d0-min(tm/fl_get_tm0,1d0)
+         if(paus.ge.MIN_PAUSE) then
+          worst_time=fl_get_tm0 !flush time for 0 sec pause (no pause)
+          best_time=max(fl_get_tm0-paus,0d0) !the best possible flush time for the current pause length
+          overlap=1d0-((min(max(tm,best_time),worst_time)-best_time)/(worst_time-best_time))
+         else
+          overlap=0d0
+         endif
+         write(jo,'("Rank ",i4,", pause ",F5.2," sec: MPI_GET overlap (1.0 is ideal, 0.0 is none) = ",F5.2)') impir,paus,overlap
 !        call ddss_print_stat() !DEBUG
          write(jo,*) 'Norm1 of the receive buffer = ',array_norm(recv_buf,buf_vol1),'; Volume = ',buf_vol1
 !Invert the sign of the receive buffer:
@@ -170,6 +181,7 @@
          call descr1%acc_data(c_loc(recv_buf),ierr,MPI_ASYNC_NRM)
          tm=thread_wtime(tms)
          write(jo,*) 'Initiated a remote accumulate (rank,time,err): ',impir,tm,ierr
+         if(ierr.ne.0) call quit(ierr,'ERROR: Accumulate initiation failed!')
 !        call ddss_print_stat() !DEBUG
  !Pause (like we are doing some computations now and the MPI message is progressing on the background hopefully):
          tms=thread_wtime()
@@ -180,14 +192,22 @@
          call descr1%flush_data(ierr)
          tm=thread_wtime(tms); if(n.eq.1) fl_acc_tm0=tm
          write(jo,*) 'Completed the accumulate after a pause: (rank,flush_time,err): ',impir,tm,ierr
+         if(ierr.ne.0) call quit(ierr,'ERROR: Accumulate completion failed!')
          write(jo,*) 'Effective flush bandwidth (GB/s) = ',dble(buf_vol1*8)/(tm*1024d0*1024d0*1024d0)
-         write(jo,*) 'Overlap ratio (1.0 is ideal, 0.0 is none) = ',1d0-min(tm/fl_acc_tm0,1d0)
+         if(paus.ge.MIN_PAUSE) then
+          worst_time=fl_acc_tm0 !flush time for 0 sec pause (no pause)
+          best_time=max(fl_acc_tm0-paus,0d0) !the best possible flush time for the current pause length
+          overlap=1d0-((min(max(tm,best_time),worst_time)-best_time)/(worst_time-best_time))
+         else
+          overlap=0d0
+         endif
+         write(jo,'("Rank ",i4,", pause ",F5.2," sec: MPI_ACC overlap (1.0 is ideal, 0.0 is none) = ",F5.2)') impir,paus,overlap
 !        call ddss_print_stat() !DEBUG
          call dil_global_comm_barrier()
 !Check the resulting array norm:
          snorm2=array_norm(send_buf,buf_vol0)
-         write(jo,*) 'Norm1 of the accumulated buffer (should be zero) = ',snorm2,'; Volume = ',buf_vol0
-         flush(jo)
+         write(jo,*) 'Norm1 of the accumulated buffer (should be zero) = ',snorm2,'; Volume = ',buf_vol0; flush(jo)
+         if(snorm2.gt.ZERO_NRM_TOL) call quit(ierr,'ERROR: Communication corrupted the data!')
 
          paus=paus+PAUSE_INC
         enddo
