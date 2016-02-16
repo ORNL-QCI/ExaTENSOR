@@ -28,9 +28,9 @@
         use aux
         implicit none
 
-        integer(INT_COUNT), parameter:: MAX_BUF_VOL=40000000   !max volume of the send buffer (for testing)
+        integer(INT_COUNT), parameter:: MAX_BUF_VOL=40000000   !max volume of the send buffer in words (for testing)
         integer(INT_MPI), parameter:: NUM_PASSES=8             !number of passes with a different pause length
-        real(8), parameter:: PAUS_INC=0.05d0                   !pause length increment in seconds
+        real(8), parameter:: PAUSE_INC=0.05d0                  !pause length increment in seconds
         integer(INT_MPI), parameter:: NUM_WINS_PER_SPACE=1     !number of MPI windows per distributed space
         integer(INT_MPI), parameter:: MAX_PACK_LEN=1024        !max packet length (internal use)
 
@@ -42,7 +42,7 @@
         type(DataDescr_t):: descr0,descr1
         type(PackCont_t):: dpack0,dpack1
         type(CommHandle_t):: ch0,ch1
-        real(8):: paus,rnd,tms,tm,snorm1,snorm2
+        real(8):: paus,rnd,tms,tm,fl_get_tm0,fl_acc_tm0,snorm1,snorm2
         integer(ELEM_PACK_SIZE):: packet0(MAX_PACK_LEN),packet1(MAX_PACK_LEN)
         integer:: errc,tmr
 
@@ -58,7 +58,7 @@
 !Allocate a buffer on each MPI process:
         do i=0,impir; call random_number(rnd); enddo !to make rnd different on different MPI processes
 !       buf_vol0=int(dble(MAX_BUF_VOL)*rnd,INT_COUNT)+4 !random send buffer volume
-        buf_vol0=MAX_BUF_VOL !let's have them all of the sam size for now
+        buf_vol0=MAX_BUF_VOL !let's have them all of the same size for now
         allocate(send_buf(1:buf_vol0)); cptr=c_loc(send_buf)
 !$OMP WORKSHARE
         send_buf(1:buf_vol0)=0d0
@@ -69,24 +69,24 @@
         write(jo,*) 'Attached a buffer(rank,vol,err): ',impir,buf_vol0,ierr
         if(ierr.ne.0) call quit(ierr,'ERROR: Failed to attach the send buffer!')
 !DEBUG: Print the original data descriptor:
-        call descr0%print_it(dev_out=jo); flush(jo)
+!       call descr0%print_it(dev_out=jo); flush(jo)
 !Pack the data descriptor:
         call descr0%pack(packet0,ierr,pack_len0)
-        write(jo,*) 'Packed the original descriptor(rank,len,err): ',impir,pack_len0,ierr
+        write(jo,*) 'Packed the original data descriptor(rank,len,err): ',impir,pack_len0,ierr
         if(ierr.ne.0) call quit(ierr,'ERROR: Failed to pack a data descriptor!')
 !DEBUG: Unpack the packet into another descriptor:
-!        pack_len0=0; call descr1%unpack(packet0,ierr,pack_len0)
-!        write(jo,*) 'UnPacked into another descriptor(rank,len,err): ',impir,pack_len0,ierr
-!        if(ierr.ne.0) call quit(ierr,'ERROR: Failed to unpack a data descriptor!')
+!       pack_len0=0; call descr1%unpack(packet0,ierr,pack_len0)
+!       write(jo,*) 'UnPacked into another descriptor(rank,len,err): ',impir,pack_len0,ierr
+!       if(ierr.ne.0) call quit(ierr,'ERROR: Failed to unpack a data descriptor!')
 !DEBUG: Print the resulting data descriptor:
-!        call descr1%print_it(dev_out=jo); flush(jo)
+!       call descr1%print_it(dev_out=jo); flush(jo)
 !Exchange data descriptors between processes:
  !Create the data packet container:
         call dpack0%reserve_mem(MAX_PACK_LEN,ierr)
-        write(jo,*) 'Created a data packet container 0 (rank,err): ',impir,ierr
+        write(jo,*) 'Created data packet container 0 (rank,err): ',impir,ierr
         if(ierr.ne.0) call quit(ierr,'ERROR: Failed to create a data packet container!')
         call dpack1%reserve_mem(MAX_PACK_LEN,ierr)
-        write(jo,*) 'Created a data packet container 1 (rank,err): ',impir,ierr
+        write(jo,*) 'Created data packet container 1 (rank,err): ',impir,ierr
         if(ierr.ne.0) call quit(ierr,'ERROR: Failed to create a data packet container!')
  !Append packet 0 to the data packet container:
         call dpack0%append(packet0,ierr)
@@ -102,7 +102,7 @@
         call dpack1%receive(ch1,ierr,i) !ch1: communication request handle
         write(jo,*) 'Receive initiated for the data packet container (rank_from,rank_to,err): ',i,impir,ierr
         if(ierr.ne.0) call quit(ierr,'ERROR: Failed to initiate a receive operation!')
- !Synchronize the receive:
+ !Synchronize the receive of the data packet container:
         call ch1%wait(ierr,ignore_old=.true.)
         write(jo,*) 'Synchronized the receive of the data packet container (rank,err): ',impir,ierr
         if(ierr.ne.0) call quit(ierr,'ERROR: Failed to synchronize the receive operation!')
@@ -111,28 +111,30 @@
         call dpack1%remove(ierr,packet=packet1)
         write(jo,*) 'Extracted a packet from the received data packet container (rank,err): ',impir,ierr
         if(ierr.ne.0) call quit(ierr,'ERROR: Failed to extract a packet from the data packet container!')
- !Get the data descriptor from the packet:
+ !Unpack the data descriptor from the packet:
         call descr1%unpack(packet1,ierr,pack_len1)
         buf_vol1=descr1%data_volume()
         write(jo,*) 'Unpacked a data descriptor from the extracted data packet (rank,len,data_vol,err): ',&
         &impir,pack_len1,buf_vol1,ierr
         if(ierr.ne.0.or.buf_vol1.le.0) call quit(ierr,'ERROR: Failed to unpack a data descriptor!')
-        call descr1%print_it(dev_out=jo); flush(jo) !print it: DEBUG
+!       call descr1%print_it(dev_out=jo); flush(jo) !print it: DEBUG
 !Allocate a receive buffer of appropriate volume:
         allocate(recv_buf(1:buf_vol1))
         write(jo,*) 'Allocated a receive buffer(rank,vol): ',impir,buf_vol1
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
-        paus=0d0
+!START TESTING PASSESS:
+        paus=0d0 !initial pause length in seconds
         do n=1,NUM_PASSES
 
 !Fill the send buffer with random numbers:
-        call random_number(send_buf); snorm1=array_norm(send_buf,buf_vol0)
-        write(jo,*) 'Norm1 of the send buffer = ',snorm1,'; Volume = ',buf_vol0
-!Clear receive buffer:
+         call random_number(send_buf); snorm1=array_norm(send_buf,buf_vol0)
+         write(jo,*) 'Norm1 of the send buffer = ',snorm1,'; Volume = ',buf_vol0
+!Clear the receive buffer:
 !$OMP WORKSHARE
          recv_buf(1:buf_vol1)=0d0
 !$OMP END WORKSHARE
-!Sync for clear timing:
+!Sync all processes for clear timing:
          call dil_global_comm_barrier()
 
 !Fetch the remote data into the receive buffer:
@@ -141,51 +143,53 @@
          call descr1%get_data(c_loc(recv_buf),ierr,MPI_ASYNC_NRM)
          tm=thread_wtime(tms)
          write(jo,*) 'Initiated fetching remote data (rank,time,err): ',impir,tm,ierr
-         call ddss_print_stat() !DEBUG
- !Pause (like we are doing some computations now and the MPI message is progressing on the background):
+!        call ddss_print_stat() !DEBUG
+ !Pause (like we are doing some computations now and the MPI message is progressing on the background, hopefully):
          tms=thread_wtime()
          errc=timer_start(paus,tmr); do while(.not.time_is_off(tmr,errc)); enddo !DEBUG: Pause before FLUSH
          tm=thread_wtime(tms); write(jo,*) 'Pause before FLUSH (sec) = ',tm !DEBUG
  !Now complete fetching (hopefully the MPI message is already here):
          tms=thread_wtime()
          call descr1%flush_data(ierr)
-         tm=thread_wtime(tms)
-         write(jo,*) 'Completed the fetch after a pause: (rank,time,err): ',impir,tm,ierr
-         write(jo,*) 'Fetch bandwidth (GB/s) = ',dble(buf_vol1*8)/(tm*1024d0*1024d0*1024d0)
-         call ddss_print_stat() !DEBUG
+         tm=thread_wtime(tms); if(n.eq.1) fl_get_tm0=tm
+         write(jo,*) 'Completed the fetch after a pause: (rank,flush_time,err): ',impir,tm,ierr
+         write(jo,*) 'Effective flush bandwidth (GB/s) = ',dble(buf_vol1*8)/(tm*1024d0*1024d0*1024d0)
+         write(jo,*) 'Overlap ratio (1.0 is ideal, 0.0 is none) = ',1d0-min(tm/fl_get_tm0,1d0)
+!        call ddss_print_stat() !DEBUG
          write(jo,*) 'Norm1 of the receive buffer = ',array_norm(recv_buf,buf_vol1),'; Volume = ',buf_vol1
 !Invert the sign of the receive buffer:
 !$OMP WORKSHARE
          recv_buf(1:buf_vol1)=-recv_buf(1:buf_vol1)
 !$OMP END WORKSHARE
-!Sync for clear timing:
+!Sync processes for clear timing:
          call dil_global_comm_barrier()
 
-!Accumulate the fetched data back to the target process:
+!Accumulate the fetched data back to the target process (with an inverted sign):
  !Initiate the accumulate:
          tms=thread_wtime()
          call descr1%acc_data(c_loc(recv_buf),ierr,MPI_ASYNC_NRM)
          tm=thread_wtime(tms)
          write(jo,*) 'Initiated a remote accumulate (rank,time,err): ',impir,tm,ierr
-         call ddss_print_stat() !DEBUG
- !Pause (like we are doing some computations now and the MPI message is progressing on the background):
+!        call ddss_print_stat() !DEBUG
+ !Pause (like we are doing some computations now and the MPI message is progressing on the background hopefully):
          tms=thread_wtime()
          errc=timer_start(paus,tmr); do while(.not.time_is_off(tmr,errc)); enddo !DEBUG: Pause before FLUSH
          tm=thread_wtime(tms); write(jo,*) 'Pause before FLUSH (sec) = ',tm !DEBUG
  !Now complete the accumulate (hopefully it is already completed):
          tms=thread_wtime()
          call descr1%flush_data(ierr)
-         tm=thread_wtime(tms)
-         write(jo,*) 'Completed the accumulate after a pause: (rank,time,err): ',impir,tm,ierr
-         write(jo,*) 'Accumulate bandwidth (GB/s) = ',dble(buf_vol1*8)/(tm*1024d0*1024d0*1024d0)
-         call ddss_print_stat() !DEBUG
+         tm=thread_wtime(tms); if(n.eq.1) fl_acc_tm0=tm
+         write(jo,*) 'Completed the accumulate after a pause: (rank,flush_time,err): ',impir,tm,ierr
+         write(jo,*) 'Effective flush bandwidth (GB/s) = ',dble(buf_vol1*8)/(tm*1024d0*1024d0*1024d0)
+         write(jo,*) 'Overlap ratio (1.0 is ideal, 0.0 is none) = ',1d0-min(tm/fl_acc_tm0,1d0)
+!        call ddss_print_stat() !DEBUG
          call dil_global_comm_barrier()
 !Check the resulting array norm:
          snorm2=array_norm(send_buf,buf_vol0)
-         write(jo,*) 'Norm1 of the accumulated send buffer = ',snorm2,'; Volume = ',buf_vol0
+         write(jo,*) 'Norm1 of the accumulated buffer (should be zero) = ',snorm2,'; Volume = ',buf_vol0
          flush(jo)
 
-         paus=paus+PAUS_INC
+         paus=paus+PAUSE_INC
         enddo
 
         write(jo,*) 'Number of passes done = ',NUM_PASSES

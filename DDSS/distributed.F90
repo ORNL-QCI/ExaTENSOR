@@ -1,6 +1,6 @@
 !Distributed data storage service (DDSS).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2016/02/11 (started 2015/03/18)
+!REVISION: 2016/02/16 (started 2015/03/18)
 !Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
 !Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
 !LICENSE: GPLv2
@@ -81,7 +81,7 @@
         integer(INT_MPI), parameter, private:: READ_SIGN=+1  !incoming traffic sign (reading direction)
         integer(INT_MPI), parameter, private:: WRITE_SIGN=-1 !outgoing traffic sign (writing direction)
   !Messaging:
-        integer(INT_COUNT), parameter, private:: MAX_MPI_MSG_VOL=2**23 !max number of elements in a single MPI message (larger to be split)
+        integer(INT_COUNT), parameter, private:: MAX_MPI_MSG_VOL=2**26 !max number of elements in a single MPI message (larger to be split)
         integer(INT_MPI), parameter, private:: MAX_ONESIDED_REQS=4096  !max number of outstanding one-sided data transfer requests per process
         integer(INT_MPI), parameter, public:: DEFAULT_MPI_TAG=0        !default communication tag (for P2P MPI communications)
   !Lock types:
