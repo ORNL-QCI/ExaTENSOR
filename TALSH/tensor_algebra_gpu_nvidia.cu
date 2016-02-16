@@ -1,5 +1,5 @@
 /** Tensor Algebra Library for NVidia GPU: NV-TAL (CUDA based).
-REVISION: 2016/02/12
+REVISION: 2016/02/15
 Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
 Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
 
@@ -1030,6 +1030,17 @@ __host__ int gpu_print_stats(int gpu_num)
 #endif
 
 //TENSOR BLOCK API:
+int tensShape_create(talsh_tens_shape_t ** tshape)
+/** Creates a tensor shape and cleans it. **/
+{
+ int errc;
+ if(tshape == NULL) return -1;
+ (*tshape)=(talsh_tens_shape_t*)malloc(sizeof(talsh_tens_shape_t));
+ if(*tshape == NULL) return TRY_LATER;
+ errc=tensShape_clean(*tshape); if(errc) return 1;
+ return 0;
+}
+
 int tensShape_clean(talsh_tens_shape_t * tshape)
 /** Cleans a tensor shape. A clean (initialized to null) tensor shape has .num_dim=-1.
     A further defined tensor shape has .num_dim >= 0. **/
@@ -1145,6 +1156,16 @@ int tensShape_destruct(talsh_tens_shape_t * tshape)
  if(n != 0) n=NOT_CLEAN;
  errc=tensShape_clean(tshape);
  return n; //either 0 or NOT_CLEAN
+}
+
+int tensShape_destroy(talsh_tens_shape_t * tshape)
+/** Completely destroys a tensor shape. **/
+{
+ int errc,n;
+ if(tshape == NULL) return -1;
+ n=0; errc=tensShape_destruct(tshape); if(errc) n=NOT_CLEAN;
+ free(tshape);
+ return n; //either 0 (success) or NOT_CLEAN
 }
 
 size_t tensShape_volume(const talsh_tens_shape_t * tshape)
