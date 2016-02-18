@@ -220,4 +220,4 @@ endif
 
 .PHONY: clean
 clean:
-	rm *.x *.a ./OBJ/* *.mod *.modmic *.ptx
+	rm -f *.x *.a ./OBJ/* *.mod *.modmic *.ptx

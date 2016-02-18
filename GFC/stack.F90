@@ -1,9 +1,9 @@
 !Generic implementation of a stack (OO Fortran 2003).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2016/01/25
-!Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
-!Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
-!LICENSE: GPL v.2
+!REVISION: 2016/02/17
+!Copyright (C) 2015-2016 Dmitry I. Lyakh (email: quant4me@gmail.com)
+!Copyright (C) 2015-2016 Oak Ridge National Laboratory (UT-Battelle)
+!LICENSE: GNU GPL v.2
 !DESCRIPTION:
 ! 1) Allocate a stack object via Fortran allocate;
 ! 2) Clean the stack at any point via .clean;

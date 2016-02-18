@@ -1,7 +1,7 @@
        module lists
-!Realizations of linked lists.
+!Special realization of linked lists.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2015/09/23
+!REVISION: 2016/02/18
 !DESCRIPTION:
 ! CLASS(list_two_way_t):
 !  NOTES:
