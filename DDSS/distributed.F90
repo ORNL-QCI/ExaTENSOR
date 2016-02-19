@@ -1,6 +1,6 @@
 !Distributed data storage service (DDSS).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2016/02/16 (started 2015/03/18)
+!REVISION: 2016/02/19 (started 2015/03/18)
 !Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
 !Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
 !LICENSE: GPLv2
@@ -1412,7 +1412,10 @@
              endif
             endif
            else !the last reference to this (rank,window)
-            if(this%TransID.gt.rw_entry%LastSync) call MPI_WIN_UNLOCK(rw_entry%Rank,rw_entry%Window,errc) !complete both at origin and target
+            if(this%TransID.gt.rw_entry%LastSync) then
+             write(CONS_OUT,'("#DEBUG[",i4,"]: WIN_UNLOCK(1): ",i7,1x,i11)') impir,rw_entry%Rank,rw_entry%Window; flush(CONS_OUT) !debug
+             call MPI_WIN_UNLOCK(rw_entry%Rank,rw_entry%Window,errc) !complete both at origin and target
+            endif
             if(errc.eq.0) then
              this%StatMPI=MPI_STAT_COMPLETED
              rw_entry%RefCount=rw_entry%RefCount-1
@@ -1665,6 +1668,7 @@
          type(RankWin_t), pointer:: rw_entry
          jerr=0; rw_entry=>RankWinRefs%RankWins(rw)
          if(rw_entry%LockType*READ_SIGN.lt.0) then !communication direction change
+          write(CONS_OUT,'("#DEBUG[",i4,"]: WIN_UNLOCK(2): ",i7,1x,i11)') impir,rw_entry%Rank,rw_entry%Window; flush(CONS_OUT) !debug
           call MPI_WIN_UNLOCK(rw_entry%Rank,rw_entry%Window,jerr)
           if(jerr.eq.0) then
            rw_entry%LockType=NO_LOCK
@@ -1674,6 +1678,7 @@
           endif
          endif
          if(jerr.eq.0.and.rw_entry%LockType.eq.NO_LOCK) then
+          write(CONS_OUT,'("#DEBUG[",i4,"]: WIN_LOCK(1): ",i7,1x,i11)') impir,rw_entry%Rank,rw_entry%Window; flush(CONS_OUT) !debug
           call MPI_WIN_LOCK(MPI_LOCK_SHARED,rw_entry%Rank,MPI_ASSER,rw_entry%Window,jerr)
           if(jerr.eq.0) then
            rw_entry%LockType=SHARED_LOCK*READ_SIGN
@@ -1912,6 +1917,7 @@
          type(RankWin_t), pointer:: rw_entry
          jerr=0; rw_entry=>RankWinRefs%RankWins(rw)
          if(rw_entry%LockType*WRITE_SIGN.lt.0) then !communication direction change
+          write(CONS_OUT,'("#DEBUG[",i4,"]: WIN_UNLOCK(3): ",i7,1x,i11)') impir,rw_entry%Rank,rw_entry%Window; flush(CONS_OUT) !debug
           call MPI_WIN_UNLOCK(rw_entry%Rank,rw_entry%Window,jerr)
           if(jerr.eq.0) then
            rw_entry%LockType=NO_LOCK
@@ -1921,6 +1927,7 @@
           endif
          endif
          if(jerr.eq.0.and.rw_entry%LockType.eq.NO_LOCK) then
+          write(CONS_OUT,'("#DEBUG[",i4,"]: WIN_LOCK(2): ",i7,1x,i11)') impir,rw_entry%Rank,rw_entry%Window; flush(CONS_OUT) !debug
           call MPI_WIN_LOCK(MPI_LOCK_SHARED,rw_entry%Rank,MPI_ASSER,rw_entry%Window,jerr)
           if(jerr.eq.0) then
            rw_entry%LockType=SHARED_LOCK*WRITE_SIGN
