@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Base
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2016-02-19 (started 2016-02-17)
+!REVISION: 2016-02-20 (started 2016-02-17)
 !Copyright (C) 2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2016 Oak Ridge National Laboratory (UT-Battelle)
 !LICENSE: GNU GPL v.2
@@ -38,6 +38,9 @@
 !   on small objects.
        module gfc_base
         use dil_basic
+#ifndef NO_OMP
+        use omp_lib
+#endif
         implicit none
         public
 !PARAMETERS:
@@ -66,10 +69,10 @@
         integer(INTD), parameter:: GFC_CMP_PARENT=+2 !object1 is a parent of object2
         integer(INTD), parameter:: GFC_CMP_NA=-6     !objects are not comparable
  !GFC iterator status:
-        integer(INTD), parameter:: GFC_IT_NULL=-1    !uninitialized iterator
-        integer(INTD), parameter:: GFC_IT_EMPTY=0    !empty initialized iterator
-        integer(INTD), parameter:: GFC_IT_ACTIVE=1   !active (non-empty) iterator
-        integer(INTD), parameter:: GFC_IT_DONE=2     !pass the end of the container (done)
+        integer(INTD), parameter:: GFC_IT_NULL=1000    !uninitialized iterator
+        integer(INTD), parameter:: GFC_IT_EMPTY=1001   !empty initialized iterator
+        integer(INTD), parameter:: GFC_IT_ACTIVE=1002  !active (non-empty) iterator
+        integer(INTD), parameter:: GFC_IT_DONE=1003    !pass the end of the container (done)
 !TYPES:
  !Element of a container:
         type, public:: gfc_cont_elem_t
@@ -78,6 +81,7 @@
          contains
           procedure, public:: construct=>ContElemConstruct !constructs a new container element, either by reference or by value
           procedure, public:: destruct=>ContElemDestruct   !destructs an existing container element (releases memory occupied by value)
+          procedure, public:: get_value=>ContElemGetValue  !returns a pointer to the element value
           procedure, public:: is_empty=>ContElemIsEmpty    !returns TRUE if the element of the container is empty, FALSE otherwise
           procedure, public:: predicate=>ContElemPredicate !returns the value of a user-given predicate applied to the element
           procedure, public:: action=>ContElemAction       !acts on the element with a user-defined action
@@ -87,23 +91,24 @@
  !Base container:
         type, abstract, public:: gfc_container_t
          integer(INTL), private:: volume=0_INTL !volume of the container (total number of elements)
+#ifndef NO_OMP
+         integer(omp_lock_kind), private:: lock
+#endif
          contains
-          procedure(gfc_cont_null_i), deferred, public:: is_null        !returns TRUE if container is uninitialized, FALSE otherwise
-          procedure(gfc_cont_num_elems_i), deferred, public:: num_elems !returns the total number of elements in the container
+          procedure, non_overridable, public:: num_elems=>ContNumElems !returns the total number of elements in the container
         end type gfc_container_t
  !Base iterator:
         type, abstract, public:: gfc_iter_t
          integer(INTD), private:: state=GFC_IT_NULL !current state of the iterator
          contains
+          procedure, non_overridable, public:: get_status=>IterGetStatus !returns the status of the iterator
+          procedure, non_overridable, public:: set_status=>IterSetStatus !sets the status of the iterator
           procedure(gfc_it_init_i), deferred, public:: init       !initializes the iterator (associates it with a container and sets it to the root)
           procedure(gfc_it_pointee_i), deferred, public:: pointee !returns the element currently pointed to
           procedure(gfc_it_next_i), deferred, public:: next       !proceeds to the next element of the container
           procedure(gfc_it_next_i), deferred, public:: previous   !proceeds to the previous element of the container
           procedure(gfc_it_query_i), deferred, public:: on_first  !returns GFC_TRUE if the iterator is positioned at the first element, GFC_FALSE otherwise
           procedure(gfc_it_query_i), deferred, public:: on_last   !returns GFC_TRUE if the iterator is positioned at the last element, GFC_FALSE otherwise
-          procedure(gfc_it_query_i), deferred, public:: is_null   !returns GFC_TRUE if the iterator is uninitialized, GFC_FALSE otherwise
-          procedure(gfc_it_query_i), deferred, public:: is_empty  !returns GFC_TRUE if the iterator is empty, GFC_FALSE otherwise
-          procedure(gfc_it_query_i), deferred, public:: is_done   !returns GFC_TRUE if the iterator is beyond the end of the container (done), GFC_FALSE otherwise
         end type gfc_iter_t
 !ABSTRACT INTERFACES:
         abstract interface
@@ -139,24 +144,12 @@
           class(*), intent(in):: obj                   !in: arbitrary object
           integer(INTD), intent(in), optional:: dev_id !in: output device id (defaults to screen: 6)
          end function gfc_print_i
- !Deferred: GFC container: .is_null:
-         function gfc_cont_null_i(this) result(ans)
-          import:: gfc_container_t
-          class(gfc_container_t), intent(in):: this !GFC container
-          logical:: ans                             !TRUE if container is uninitialized, FALSE otherwise
-         end function gfc_cont_null_i
- !Deferred: GFC container: .num_elems:
-         function gfc_cont_num_elems_i(this) result(nelems)
-          import:: gfc_container_t,INTL
-          class(gfc_container_t), intent(in):: this !GFC container
-          integer(INTL):: nelems                    !total number of elements or error (negative)
-         end function gfc_cont_num_elems_i
  !Deferred: GFC iterator: .init:
          function gfc_it_init_i(this,cont) result(ierr)
           import:: gfc_iter_t,gfc_container_t,INTD
+          integer(INTD):: ierr                              !error code
           class(gfc_iter_t), intent(inout):: this           !GFC iterator
           class(gfc_container_t), target, intent(in):: cont !GFC container
-          integer(INTD):: ierr                              !error code
          end function gfc_it_init_i
  !Deferred: GFC iterator: .pointee:
          function gfc_it_pointee_i(this,ierr) result(pntee)
@@ -166,26 +159,31 @@
           integer(INTD), intent(out), optional:: ierr !error code
          end function gfc_it_pointee_i
  !Deferred: GFC iterator: .next .previous:
-         function gfc_it_next_i(this) result(ierr)
-          import:: gfc_iter_t,INTD
-          class(gfc_iter_t), intent(inout):: this !GFC iterator
-          integer(INTD):: ierr                    !error code
+         function gfc_it_next_i(this,elem_p) result(ierr)
+          import:: gfc_iter_t,gfc_cont_elem_t,INTD
+          integer(INTD):: ierr                                            !error code
+          class(gfc_iter_t), intent(inout):: this                         !GFC iterator
+          class(gfc_cont_elem_t), pointer, intent(out), optional:: elem_p !pointer to the container element
          end function gfc_it_next_i
  !Deferred: GFC iterator: query:
          function gfc_it_query_i(this) result(res)
           import:: gfc_iter_t,INTD
-          class(gfc_iter_t), intent(in):: this !GFC iterator
           integer(INTD):: res                  !result of the specific query
+          class(gfc_iter_t), intent(in):: this !GFC iterator
          end function gfc_it_query_i
         end interface
 !VISIBILITY:
         private ContElemConstruct
         private ContElemDestruct
+        private ContElemGetValue
         private ContElemIsEmpty
         private ContElemPredicate
         private ContElemAction
         private ContElemCompare
         private ContElemPrintIt
+        private ContNumElems
+        private IterGetStatus
+        private IterSetStatus
 
        contains
 !IMPLEMENTATION:
@@ -244,7 +242,25 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine ContElemDestruct
-!------------------------------------------------
+!---------------------------------------------------------
+        function ContElemGetValue(this,ierr) result(val_p)
+!Returns a pointer to the element value.
+         implicit none
+         class(gfc_cont_elem_t), intent(in):: this   !in: element of a container
+         integer(INTD), intent(out), optional:: ierr !out: error code (0:success)
+         class(*), pointer:: val_p                   !out: pointer to the element value
+         integer(INTD):: errc
+
+         val_p=>NULL()
+         if(.not.this%is_empty()) then
+          val_p=>this%value_p
+         else
+          errc=GFC_ELEM_EMPTY
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function ContElemGetValue
+!--------------------------------------------------
         function ContElemIsEmpty(this) result(empt)
 !Returns TRUE if the element of a container is empty, FALSE otherwise.
          implicit none
@@ -334,5 +350,50 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine ContElemPrintIt
+!------------------------------------------------------
+        function ContNumElems(this,ierr) result(nelems)
+!Returns the total number of elements stored in the container.
+         implicit none
+         integer(INTL):: nelems                      !out: total number of elements in the container
+         class(gfc_container_t), intent(in):: this   !in: container
+         integer(INTD), intent(out), optional:: ierr !out: error code (0:success)
+         integer(INTD):: errc
+
+         errc=GFC_SUCCESS
+         nelems=this%volume; if(nelems.lt.0) errc=GFC_CORRUPTED_CONT
+         if(present(ierr)) ierr=errc
+         return
+        end function ContNumElems
+!----------------------------------------------------
+        function IterGetStatus(this,ierr) result(sts)
+!Returns the status of the iterator.
+         implicit none
+         integer(INTD):: sts                         !out: current status of the iterator
+         class(gfc_iter_t), intent(in):: this        !in: iterator
+         integer(INTD), intent(out), optional:: ierr !out: error code (0:success)
+         integer(INTD):: errc
+
+         errc=GFC_SUCCESS
+         sts=this%state
+         if(present(ierr)) ierr=errc
+         return
+        end function IterGetStatus
+!----------------------------------------------------
+        function IterSetStatus(this,sts) result(ierr)
+!Sets the status of the iterator.
+         implicit none
+         integer(INTD):: ierr                    !out: error code (0:success)
+         class(gfc_iter_t), intent(inout):: this !in: iterator
+         integer(INTD), intent(in):: sts         !in: status
+
+         ierr=GFC_SUCCESS
+         select case(sts)
+         case(GFC_IT_NULL,GFC_IT_EMPTY,GFC_IT_ACTIVE,GFC_IT_DONE)
+          this%state=sts
+         case default
+          ierr=GFC_INVALID_ARGS
+         end select
+         return
+        end function IterSetStatus
 
        end module gfc_base
