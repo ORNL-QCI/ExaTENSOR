@@ -6,6 +6,7 @@
 !LICENSE: GNU GPL v.2
        module tree
         use gfc_base
+        use timers
         implicit none
         private
 !PARAMETERS:
@@ -46,8 +47,8 @@
           procedure, public:: pointee=>TreeIterPointee              !returns a pointer to the container element currently in focus
           procedure, public:: next=>TreeIterNext                    !moves the iterator to the next element
           procedure, public:: previous=>TreeIterPrevious            !moves the iterator to the previous element
-!          procedure, public:: scan=>TreeIterScan                    !traverses the container with an optional action
-!          procedure, public:: add_element=>TreeIterAddElement       !adds a new (child) element to the element of the container currently pointed to
+          procedure, public:: scan=>TreeIterScan                    !traverses the container with an optional action
+          procedure, public:: add_element=>TreeIterAddElement       !adds a new (child) element to the element of the container currently pointed to
 !          procedure, public:: add_subtree=>TreeIterAddSubtree       !adds a subtree to the element of the container currently pointed to
 !          procedure, public:: delete_subtree=>TreeIterDeleteSubtree !deletes a subtree beginning from the currently pointed element of the container
 !          procedure, public:: move_subtree=>TreeIterMoveSubtree     !moves the subtree beginning from the currently pointed element of the container to another location
@@ -70,8 +71,8 @@
         private TreeIterPointee
         private TreeIterNext
         private TreeIterPrevious
-!        private TreeIterScan
-!        private TreeIterAddElement
+        private TreeIterScan
+        private TreeIterAddElement
 !        private TreeIterAddSubtree
 !        private TreeIterDeleteSubtree
 !        private TreeIterMoveSubtree
@@ -275,5 +276,130 @@
          endif
          return
         end function TreeIterPrevious
+!------------------------------------------------------------------------------------------------
+        function TreeIterScan(this,return_each,predicate,action,time_limit,backward) result(ierr)
+!Traverses the tree container via an associated iterator beginning
+!from the current position of the iterator.
+         implicit none
+         integer(INTD):: ierr                             !out: error code (0:success)
+         class(tree_iter_t), intent(inout):: this         !inout: iterator
+         logical, intent(in), optional:: return_each      !if TRUE, each successful match will be returned (defaults to FALSE)
+         procedure(gfc_predicate_i), optional:: predicate !predicate function
+         procedure(gfc_action_i), optional:: action       !action function
+         real(8), intent(in), optional:: time_limit       !if specified, the active scan will be interrupted after this time limit (sec)
+         logical, intent(in), optional:: backward         !if TRUE, the container will be traversed in the backward direction
+         logical:: ret,pred,act,bkw
+         integer(INTD):: pred_val
+         class(*), pointer:: elem_val
+         real(8):: tml,tms
+
+         ierr=this%get_status()
+         if(ierr.eq.GFC_IT_ACTIVE) then
+          if(associated(this%current)) then
+           if(present(return_each)) then; ret=return_each; else; ret=.false.; endif
+           if(present(predicate)) then; pred=.true.; else; pred=.false.; endif
+           if(present(action)) then; act=.true.; else; act=.false.; endif
+           if(present(time_limit).and.(.not.ret)) then; tml=time_limit; else; tml=-1d0; endif
+           if(present(backward)) then; bkw=backward; else; bkw=.false.; endif
+           if(tml.gt.0d0) tms=thread_wtime()
+           ierr=GFC_SUCCESS
+           do while(ierr.eq.GFC_SUCCESS)
+            elem_val=>this%current%get_value(ierr)
+            if(ierr.ne.GFC_SUCCESS.or.(.not.associated(elem_val))) then; ierr=GFC_CORRUPTED_CONT; exit; endif
+            pred_val=GFC_TRUE; if(pred) pred_val=predicate(elem_val)
+            if(pred_val.eq.GFC_TRUE) then
+             if(act) then
+              ierr=action(elem_val); if(ierr.ne.0) then; ierr=GFC_ACTION_FAILED; exit; endif
+             endif
+             if(bkw) then; ierr=this%previous(); else; ierr=this%next(); endif !move to the next/previous element
+             if(ret) exit
+            else
+             if(bkw) then; ierr=this%previous(); else; ierr=this%next(); endif !move to the next/previous element
+            endif
+            if(tml.gt.0d0) then; if(thread_wtime(tms).gt.tml) exit; endif
+           enddo
+          else
+           ierr=GFC_CORRUPTED_CONT
+          endif
+         endif
+         return
+        end function TreeIterScan
+!---------------------------------------------------------------------------------
+        function TreeIterAddElement(this,elem_val,assoc_only,no_move) result(ierr)
+!Creates a new container element as the last child of the currently pointed element
+!and stores the value <elem_val> in it, either by value or by reference.
+         implicit none
+         integer(INTD):: ierr                       !out: error code (0:success)
+         class(tree_iter_t), intent(inout):: this   !inout: iterator
+         class(*), target, intent(in):: elem_val    !in: value to store in the container
+         logical, intent(in), optional:: assoc_only !TRUE: store by reference, FALSE: store by value; Defaults to FALSE
+         logical, intent(in), optional:: no_move    !if TRUE, the iterator will not move to the newly added element (defaults to FALSE)
+         class(tree_vertex_t), pointer:: tvp
+         integer:: errc
+         logical:: assoc,nomo
+
+         if(present(assoc_only)) then; assoc=assoc_only; else; assoc=.false.; endif
+         if(present(no_move)) then; nomo=no_move; else; nomo=.false.; endif
+         ierr=this%get_status()
+         if(ierr.eq.GFC_IT_ACTIVE) then
+          ierr=GFC_SUCCESS
+          if(associated(this%container).and.associated(this%current)) then
+           if(associated(this%current%first_child)) then
+            tvp=>this%current%first_child%prev_sibling !last sibling among children
+            allocate(tvp%next_sibling,STAT=errc)
+            if(errc.eq.0) then
+             tvp%next_sibling%prev_sibling=>tvp
+             tvp=>tvp%next_sibling
+            else
+             tvp%next_sibling=>this%current%first_child
+             ierr=GFC_MEM_ALLOC_FAILED
+            endif
+           else
+            allocate(this%current%first_child,STAT=errc)
+            if(errc.eq.0) then
+             tvp=>this%current%first_child
+            else
+             this%current%first_child=>NULL()
+             ierr=GFC_MEM_ALLOC_FAILED
+            endif
+           endif
+           if(ierr.eq.GFC_SUCCESS) then
+            tvp%parent=>this%current
+            tvp%next_sibling=>this%current%first_child
+            this%current%first_child%prev_sibling=>tvp
+            this%current%num_child=this%current%num_child+1
+            if(.not.nomo) this%current=>tvp
+           endif
+           tvp=>NULL()
+          else
+           ierr=GFC_CORRUPTED_CONT
+          endif
+         elseif(ierr.eq.GFC_IT_EMPTY) then !very first element of the container
+          ierr=GFC_SUCCESS
+          if(associated(this%container)) then
+           if(.not.(associated(this%container%root).or.associated(this%current))) then
+            allocate(this%container%root,STAT=errc)
+            if(errc.eq.0) then
+             call this%container%root%construct(elem_val,ierr,assoc_only=assoc)
+             if(ierr.eq.GFC_SUCCESS) then
+              this%current=>this%container%root   !move to the just added first element regardless of <no_move>
+              ierr=this%set_status(GFC_IT_ACTIVE) !change the EMPTY status to ACTIVE
+             else
+              deallocate(this%container%root)
+              this%container%root=>NULL()
+             endif
+            else
+             this%container%root=>NULL()
+             ierr=GFC_MEM_ALLOC_FAILED
+            endif
+           else
+            ierr=GFC_CORRUPTED_CONT
+           endif
+          else
+           ierr=GFC_CORRUPTED_CONT
+          endif
+         endif
+         return
+        end function TreeIterAddElement
 
        end module tree
