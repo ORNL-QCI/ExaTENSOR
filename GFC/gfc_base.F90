@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Base
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2016-02-20 (started 2016-02-17)
+!REVISION: 2016-02-21 (started 2016-02-17)
 !Copyright (C) 2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2016 Oak Ridge National Laboratory (UT-Battelle)
 !LICENSE: GNU GPL v.2
@@ -26,7 +26,11 @@
 !   the scan is interrupted after a given time interval.
 !   Each specific class of containers has its own iterator class because
 !   of different linkage between the elements of different containers.
-!   All insertion, deletion, and search operations are done via iterators.
+!   All insertion, deletion, and search operations are done via iterators,
+!   that is, the iterator methods provide the only possible way of accessing,
+!   updating, and performing actions on the associated container.
+!   All relevant iterator methods are thread-safe, thus enabling
+!   a parallel execution of container scans (via OpenMP threads).
 ! # The container element deletion operation may require a user-supplied
 !   destructor which will release all resources occupied by the object
 !   stored in that element, unless the object has FINAL methods defined.
@@ -81,7 +85,7 @@
          contains
           procedure, public:: construct=>ContElemConstruct !constructs a new container element, either by reference or by value
           procedure, public:: destruct=>ContElemDestruct   !destructs an existing container element (releases memory occupied by value)
-          procedure, public:: get_value=>ContElemGetValue  !returns a pointer to the element value
+          procedure, public:: get_value=>ContElemGetValue  !returns a pointer to the element value (unlimited polymorphic)
           procedure, public:: is_empty=>ContElemIsEmpty    !returns TRUE if the element of the container is empty, FALSE otherwise
           procedure, public:: predicate=>ContElemPredicate !returns the value of a user-given predicate applied to the element
           procedure, public:: action=>ContElemAction       !acts on the element with a user-defined action
@@ -92,7 +96,7 @@
         type, abstract, public:: gfc_container_t
          integer(INTL), private:: volume=0_INTL !volume of the container (total number of elements)
 #ifndef NO_OMP
-         integer(omp_lock_kind), private:: lock
+         integer(omp_lock_kind), private:: lock !container update lock (parallel)
 #endif
          contains
           procedure, non_overridable, public:: num_elems=>ContNumElems !returns the total number of elements in the container
@@ -104,11 +108,10 @@
           procedure, non_overridable, public:: get_status=>IterGetStatus !returns the status of the iterator
           procedure, non_overridable, public:: set_status=>IterSetStatus !sets the status of the iterator
           procedure(gfc_it_init_i), deferred, public:: init       !initializes the iterator (associates it with a container and sets it to the root)
+          procedure(gfc_it_reset_i), deferred, public:: reset     !resets the iterator to the beginning
           procedure(gfc_it_pointee_i), deferred, public:: pointee !returns the element currently pointed to
           procedure(gfc_it_next_i), deferred, public:: next       !proceeds to the next element of the container
           procedure(gfc_it_next_i), deferred, public:: previous   !proceeds to the previous element of the container
-          procedure(gfc_it_query_i), deferred, public:: on_first  !returns GFC_TRUE if the iterator is positioned at the first element, GFC_FALSE otherwise
-          procedure(gfc_it_query_i), deferred, public:: on_last   !returns GFC_TRUE if the iterator is positioned at the last element, GFC_FALSE otherwise
         end type gfc_iter_t
 !ABSTRACT INTERFACES:
         abstract interface
@@ -151,6 +154,12 @@
           class(gfc_iter_t), intent(inout):: this           !GFC iterator
           class(gfc_container_t), target, intent(in):: cont !GFC container
          end function gfc_it_init_i
+ !Deferred: GFC iterator: .reset:
+         function gfc_it_reset_i(this) result(ierr)
+          import:: gfc_iter_t,INTD
+          integer(INTD):: ierr                    !error code
+          class(gfc_iter_t), intent(inout):: this !iterator
+         end function gfc_it_reset_i
  !Deferred: GFC iterator: .pointee:
          function gfc_it_pointee_i(this,ierr) result(pntee)
           import:: gfc_iter_t,gfc_cont_elem_t,INTD
@@ -165,12 +174,6 @@
           class(gfc_iter_t), intent(inout):: this                         !GFC iterator
           class(gfc_cont_elem_t), pointer, intent(out), optional:: elem_p !pointer to the container element
          end function gfc_it_next_i
- !Deferred: GFC iterator: query:
-         function gfc_it_query_i(this) result(res)
-          import:: gfc_iter_t,INTD
-          integer(INTD):: res                  !result of the specific query
-          class(gfc_iter_t), intent(in):: this !GFC iterator
-         end function gfc_it_query_i
         end interface
 !VISIBILITY:
         private ContElemConstruct
