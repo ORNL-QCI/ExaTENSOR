@@ -4,6 +4,12 @@
 !Copyright (C) 2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2016 Oak Ridge National Laboratory (UT-Battelle)
 !LICENSE: GNU GPL v.2
+!NOTES:
+! # A tree is a derivative of an abstract GFC container.
+!   It possible to view subtrees of a tree as trees themselves,
+!   in which case the root element will have a parent but no siblings.
+! # All accesses, updates, and scans on a tree are performed via
+!   a tree iterator associated with the tree.
        module tree
         use gfc_base
         use timers
@@ -47,10 +53,13 @@
           procedure, public:: pointee=>TreeIterPointee              !returns a pointer to the container element currently in focus
           procedure, public:: next=>TreeIterNext                    !moves the iterator to the next element
           procedure, public:: previous=>TreeIterPrevious            !moves the iterator to the previous element
+          procedure, public:: to_sibling=>TreeIterToSibling         !moves the iterator to one of the siblings
+          procedure, public:: to_child=>TreeIterToChild             !moves the iterator to one of the children
+          procedure, public:: to_parent=>TreeIterToParent           !moves the iterator to the parent
           procedure, public:: add_element=>TreeIterAddElement       !adds a new (child) element to the element of the container currently pointed to
-          procedure, public:: add_subtree=>TreeIterAddSubtree       !adds a subtree to the element of the container currently pointed to
+          procedure, public:: attach_subtree=>TreeIterAttachSubtree !attaches a subtree to the element of the container currently pointed to as the last child
+          procedure, public:: detach_subtree=>TreeIterDetachSubtree !detaches a subtree beginning from the currently pointed element of the container
 !          procedure, public:: delete_subtree=>TreeIterDeleteSubtree !deletes a subtree beginning from the currently pointed element of the container
-!          procedure, public:: move_subtree=>TreeIterMoveSubtree     !moves the subtree beginning from the currently pointed element of the container to another location
         end type tree_iter_t
 !GLOBAL DATA:
 !VISIBILITY:
@@ -71,10 +80,13 @@
         private TreeIterPointee
         private TreeIterNext
         private TreeIterPrevious
+        private TreeIterToSibling
+        private TreeIterToChild
+        private TreeIterToParent
         private TreeIterAddElement
-        private TreeIterAddSubtree
+        private TreeIterAttachSubtree
+        private TreeIterDetachSubtree
 !        private TreeIterDeleteSubtree
-!        private TreeIterMoveSubtree
 
        contains
 !IMPLEMENTATION:
@@ -105,7 +117,7 @@
          class(tree_vertex_t), pointer:: tvp,ftvp
 
          errc=GFC_SUCCESS; nsibl=0
-         tvp=>this%next_sibling; ftvp=>tvp%prev_sibling
+         tvp=>this%next_sibling; ftvp=>tvp%prev_sibling !ftvp => this
          do while(.not.associated(tvp,ftvp))
           nsibl=nsibl+1; tvp=>tvp%next_sibling
          enddo
@@ -144,7 +156,7 @@
         end function TreeVertexLastSibling
 !----------------------------------------------------
         function TreeIterInit(this,cont) result(ierr)
-!Initializes an iterator.
+!Initializes an iterator and resets it to the beginning of the container.
          implicit none
          integer(INTD):: ierr                              !out: error code (0:success)
          class(tree_iter_t), intent(inout):: this          !inout: iterator
@@ -171,12 +183,13 @@
          if(associated(this%container)) then
           this%current=>this%container%root
           if(associated(this%current)) then
-           ierr=this%set_status(GFC_IT_ACTIVE) !non-empty iterator
+           ierr=this%set_status_(GFC_IT_ACTIVE) !non-empty iterator
           else
-           ierr=this%set_status(GFC_IT_EMPTY) !empty iterator
+           ierr=this%set_status_(GFC_IT_EMPTY) !empty iterator
           endif
+          call this%reset_count() !reset all iteration counters
          else
-          ierr=this%set_status(GFC_IT_NULL)
+          ierr=this%set_status_(GFC_IT_NULL)
           ierr=GFC_IT_NULL
          endif
          return
@@ -220,7 +233,11 @@
              if(tvp%last_sibling().eq.GFC_FALSE) then !not the last sibling
               tvp=>tvp%next_sibling; exit
              else
-              tvp=>tvp%parent
+              if(associated(tvp,this%container%root)) then !root of a subtree may have a parent
+               tvp=>NULL()
+              else
+               tvp=>tvp%parent
+              endif
              endif
             enddo
            endif
@@ -228,7 +245,7 @@
             elem_p=>tvp
            else
             this%current=>tvp
-            if(.not.associated(tvp)) ierr=this%set_status(GFC_IT_DONE)
+            if(.not.associated(tvp)) ierr=this%set_status_(GFC_IT_DONE)
            endif
            if(.not.associated(tvp)) ierr=GFC_IT_DONE
            tvp=>NULL()
@@ -254,18 +271,22 @@
           if(associated(this%current)) then
            tvp=>this%current
            if(tvp%first_sibling().eq.GFC_TRUE) then
-            tvp=>tvp%parent
+            if(associated(tvp,this%container%root)) then
+             tvp=>NULL()
+            else
+             tvp=>tvp%parent
+            endif
            else
             tvp=>tvp%prev_sibling
             do while(associated(tvp%first_child))
-             tvp=>tvp%first_child%prev_sibling !last sibling (because of ring)
+             tvp=>tvp%first_child%prev_sibling !last sibling among the children (because of ring linking)
             enddo
            endif
            if(present(elem_p)) then
             elem_p=>tvp
            else
             this%current=>tvp
-            if(.not.associated(tvp)) ierr=this%set_status(GFC_IT_DONE)
+            if(.not.associated(tvp)) ierr=this%set_status_(GFC_IT_DONE)
            endif
            if(.not.associated(tvp)) ierr=GFC_IT_DONE
            tvp=>NULL()
@@ -288,6 +309,7 @@
          class(tree_vertex_t), pointer:: tvp
          integer:: errc
          logical:: assoc,nomo
+         integer(INTL):: nelems
 
          if(present(assoc_only)) then; assoc=assoc_only; else; assoc=.false.; endif
          if(present(no_move)) then; nomo=no_move; else; nomo=.false.; endif
@@ -319,6 +341,7 @@
             tvp%next_sibling=>this%current%first_child
             this%current%first_child%prev_sibling=>tvp
             this%current%num_child=this%current%num_child+1
+            nelems=this%container%update_num_elems_(1_INTL,ierr); if(ierr.ne.GFC_SUCCESS) ierr=GFC_CORRUPTED_CONT
             if(.not.nomo) this%current=>tvp
            endif
            tvp=>NULL()
@@ -333,8 +356,9 @@
             if(errc.eq.0) then
              call this%container%root%construct(elem_val,ierr,assoc_only=assoc)
              if(ierr.eq.GFC_SUCCESS) then
-              this%current=>this%container%root   !move to the just added first element regardless of <no_move>
-              ierr=this%set_status(GFC_IT_ACTIVE) !change the EMPTY status to ACTIVE
+              this%current=>this%container%root    !move to the just added first element regardless of <no_move>
+              ierr=this%set_status_(GFC_IT_ACTIVE) !change the EMPTY status to ACTIVE
+              nelems=this%container%update_num_elems_(1_INTL,ierr); if(ierr.ne.GFC_SUCCESS) ierr=GFC_CORRUPTED_CONT
              else
               deallocate(this%container%root)
               this%container%root=>NULL()
@@ -352,27 +376,39 @@
          endif
          return
         end function TreeIterAddElement
-!-------------------------------------------------------------
-        function TreeIterAddSubtree(this,subtree) result(ierr)
-!Adds a subtree as the last child to the current iterator position.
+!----------------------------------------------------------------
+        function TreeIterAttachSubtree(this,subtree) result(ierr)
+!Attaches a subtree as the last child to the current iterator position.
+!The subtree root shall not have a parent. The iterator position does not change.
          implicit none
-         integer(INTD):: ierr                               !out: error code (0:success)
-         class(tree_iter_t), intent(inout):: this           !inout: iterator
-         class(tree_vertex_t), target, intent(in):: subtree !in: subtree (defined by its root vertex)
+         integer(INTD):: ierr                     !out: error code (0:success)
+         class(tree_iter_t), intent(inout):: this !inout: iterator
+         class(tree_t), intent(inout):: subtree   !inout: subtree
          class(tree_vertex_t), pointer:: tvp
+         integer(INTL):: nelems,totelems
 
          ierr=this%get_status()
          if(ierr.eq.GFC_IT_ACTIVE) then
           if(associated(this%current)) then
-           if(.not.associated(subtree%parent)) then !the subtree must not have a parent
-            if(associated(this%current%first_child)) then
-             tvp=>this%current%first_child%prev_sibling !last sibling
-             
+           if(associated(subtree%root)) then
+            nelems=subtree%num_elems(ierr)
+            if(ierr.eq.GFC_SUCCESS.and.nelems.gt.0.and.(.not.associated(subtree%root%parent))) then
+             if(associated(this%current%first_child)) then
+              tvp=>this%current%first_child%prev_sibling !tvp => last sibling
+              tvp%next_sibling=>subtree%root
+              subtree%root%prev_sibling=>tvp
+              subtree%root%next_sibling=>this%current%first_child
+              this%current%first_child%prev_sibling=>subtree%root
+             else
+              this%current%first_child=>subtree%root
+              subtree%root%next_sibling=>subtree%root
+              subtree%root%prev_sibling=>subtree%root
+             endif
+             subtree%root%parent=>this%current
+             totelems=this%container%update_num_elems_(nelems,ierr)
+             if(ierr.ne.GFC_SUCCESS) ierr=GFC_CORRUPTED_CONT
             else
-             this%current%first_child=>subtree
-             this%current%first_child%parent=>this%current
-             this%current%first_child%next_sibling=>this%current%first_child
-             this%current%first_child%prev_sibling=>this%current%first_child
+             ierr=GFC_INVALID_ARGS
             endif
            else
             ierr=GFC_INVALID_ARGS
@@ -382,6 +418,45 @@
           endif
          endif
          return
-        end function TreeIterAddSubtree
+        end function TreeIterAttachSubtree
+!----------------------------------------------------------------
+        function TreeIterDetachSubtree(this,subtree) result(ierr)
+!Detaches a subtree beginning at the current iterator position and returns it as a tree.
+!The iterator is moved to the parental vertex.
+         implicit none
+         integer(INTD):: ierr                     !out: error code (0:success)
+         class(tree_iter_t), intent(inout):: this !inout: iterator
+         class(tree_t), intent(inout):: subtree   !inout: subtree (must be empty at entrance)
+         class(tree_vertex_t), pointer:: psib,nsib
+         type(tree_iter_t):: subtree_it
+         integer(INTL):: nelems,totelems
+
+         ierr=this%get_status()
+         if(ierr.eq.GFC_IT_ACTIVE) then
+          if(associated(this%current)) then
+           if((.not.associated(subtree%root)).and.subtree%num_elems().eq.0) then
+            psib=>this%current%prev_sibling; nsib=>this%current%next_sibling
+            subtree%root=>this%current; this%current=>subtree%root%parent; subtree%root%parent=>NULL()
+            psib%next_sibling=>nsib; nsib%prev_sibling=>psib
+            subtree%root%prev_sibling=>subtree%root
+            subtree%root%next_sibling=>subtree%root
+            ierr=subtree_it%init(subtree)
+            if(ierr.eq.GFC_SUCCESS) then
+             ierr=subtree_it%scan()
+             if(ierr.eq.GFC_SUCCESS) then
+              nelems=subtree_it%total_count()
+              totelems=subtree%update_num_elems_(nelems)
+              totelems=this%container%update_num_elems_(-nelems,ierr)
+             endif
+            endif
+           else
+            ierr=GFC_INVALID_ARGS
+           endif
+          else
+           ierr=GFC_CORRUPTED_CONT
+          endif
+         endif
+         return
+        end function TreeIterDetachSubtree
 
        end module tree

@@ -49,6 +49,8 @@
 !   operations for which ultimate efficiency is not required. The use
 !   of GFC containers in the inner loop of compute intensive kernels
 !   is highly discouraged (please resort to plain data, like arrays).
+! # Due to the limitations of Fortran class inheritence, public methods
+!   with the trailing underscore shall not be used by the end user!
        module gfc_base
         use dil_basic
         use timers
@@ -109,14 +111,20 @@
 #endif
          contains
           procedure, non_overridable, public:: num_elems=>ContNumElems !returns the total number of elements in the container
+          procedure, non_overridable, public:: update_num_elems_=>ContUpdateNumElems !updates the number of elements
         end type gfc_container_t
  !Base iterator:
         type, abstract, public:: gfc_iter_t
          integer(INTD), private:: state=GFC_IT_NULL !current state of the iterator
+         integer(INTL), private:: tot_count=0_INTL  !total number of iterations after the last reset
+         integer(INTL), private:: pred_count=0_INTL !number of iterations with TRUE predicate after the last reset
          contains
-          procedure, non_overridable, public:: get_status=>IterGetStatus !returns the status of the iterator
-          procedure, non_overridable, public:: set_status=>IterSetStatus !sets the status of the iterator
-          procedure, public:: scan=>IterScan                             !traverses the container with an optional action
+          procedure, non_overridable, public:: get_status=>IterGetStatus  !returns the status of the iterator
+          procedure, non_overridable, public:: set_status_=>IterSetStatus !sets the status of the iterator
+          procedure, public:: reset_count=>IterResetCount                 !resets all iteration counters to zero
+          procedure, public:: total_count=>IterTotalCount                 !returns the total iteration count since the last reset
+          procedure, public:: predicated_count=>IterPredicatedCount       !returns the predicated iteration count since the last reset
+          procedure, public:: scan=>IterScan                              !traverses the container with an optional action
           procedure(gfc_it_init_i), deferred, public:: init       !initializes the iterator (associates it with a container and sets it to the root)
           procedure(gfc_it_reset_i), deferred, public:: reset     !resets the iterator to the beginning
           procedure(gfc_it_pointee_i), deferred, public:: pointee !returns the element currently pointed to
@@ -204,8 +212,12 @@
         private ContElemCompare
         private ContElemPrintIt
         private ContNumElems
+        private ContUpdateNumElems
         private IterGetStatus
         private IterSetStatus
+        private IterResetCount
+        private IterTotalCount
+        private IterPredicatedCount
         private IterScan
 
        contains
@@ -408,6 +420,26 @@
          if(present(ierr)) ierr=errc
          return
         end function ContNumElems
+!----------------------------------------------------------------------
+        function ContUpdateNumElems(this,new_elems,ierr) result(nelems) !INTERNAL USE ONLY!
+!Updates the total number of elements in the container.
+         implicit none
+         integer(INTL):: nelems                       !out: total number of elements after the update
+         class(gfc_container_t), intent(inout):: this !inout: container
+         integer(INTL), intent(in):: new_elems        !in: number of elements added (+) or deleted (-)
+         integer(INTD), intent(out), optional:: ierr  !out: error code (0:success)
+         integer(INTD):: errc
+
+         errc=GFC_SUCCESS
+         nelems=this%volume+new_elems
+         if(nelems.ge.0) then
+          this%volume=nelems
+         else
+          errc=GFC_INVALID_ARGS
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function ContUpdateNumElems
 !----------------------------------------------------
         function IterGetStatus(this,ierr) result(sts)
 !Returns the status of the iterator.
@@ -423,7 +455,7 @@
          return
         end function IterGetStatus
 !----------------------------------------------------
-        function IterSetStatus(this,sts) result(ierr)
+        function IterSetStatus(this,sts) result(ierr) !INTERNAL USE ONLY!
 !Sets the status of the iterator.
          implicit none
          integer(INTD):: ierr                    !out: error code (0:success)
@@ -439,8 +471,53 @@
          end select
          return
         end function IterSetStatus
+!-------------------------------------------
+        subroutine IterResetCount(this,ierr)
+!Resets all iteration counters.
+         implicit none
+         class(gfc_iter_t), intent(inout):: this     !inout: iterator
+         integer(INTD), intent(out), optional:: ierr !out: error code (0:success)
+         integer(INTD):: errc
+
+         errc=GFC_SUCCESS
+         this%tot_count=0; this%pred_count=0
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine IterResetCount
+!-----------------------------------------------------
+        function IterTotalCount(this,ierr) result(cnt)
+!Returns the total iteration count since the last reset.
+         implicit none
+         integer(INTL):: cnt                         !out: total iteration count
+         class(gfc_iter_t), intent(in):: this        !in: iterator
+         integer(INTD), intent(out), optional:: ierr !out: error code (0:success)
+         integer(INTD):: errc
+
+         cnt=-1_INTL; errc=this%get_status()
+         if(errc.ne.GFC_IT_NULL) then
+          cnt=this%tot_count; errc=GFC_SUCCESS
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function IterTotalCount
+!----------------------------------------------------------
+        function IterPredicatedCount(this,ierr) result(cnt)
+!Returns the predicated iteration count since the last reset.
+         implicit none
+         integer(INTL):: cnt                         !out: predicated iteration count
+         class(gfc_iter_t), intent(in):: this        !in: iterator
+         integer(INTD), intent(out), optional:: ierr !out: error code (0:success)
+         integer(INTD):: errc
+
+         cnt=-1_INTL; errc=this%get_status()
+         if(errc.ne.GFC_IT_NULL) then
+          cnt=this%pred_count; errc=GFC_SUCCESS
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function IterPredicatedCount
 !------------------------------------------------------------------------------------------------------
-        function IterScan(this,return_each,predicate_func,action_func,time_limit,backward) result(ierr)
+        function IterScan(this,return_each,predicate_func,action_func,backward,time_limit) result(ierr)
 !Traverses the container via an associated iterator beginning from the current position of the iterator.
 !Returns GFC_IT_DONE upon reaching the end of the container.
          implicit none
@@ -449,8 +526,8 @@
          logical, intent(in), optional:: return_each !if TRUE, each successful match will be returned (defaults to FALSE)
          procedure(gfc_predicate_i), optional:: predicate_func !predicate function
          procedure(gfc_action_i), optional:: action_func !action function
-         real(8), intent(in), optional:: time_limit !if specified, the active scan will be interrupted after this time limit (sec)
          logical, intent(in), optional:: backward !if TRUE, the container will be traversed in the backward direction (defaults to FALSE)
+         real(8), intent(in), optional:: time_limit !if specified, the active scan will be interrupted after this time limit (sec)
          logical:: ret,pred,act,bkw
          integer(INTD):: pred_val
          class(*), pointer:: elem_val
@@ -470,8 +547,10 @@
            do while(ierr.eq.GFC_SUCCESS)
             elem_val=>curr%get_value(ierr)
             if(ierr.eq.GFC_SUCCESS.and.associated(elem_val)) then
+             this%tot_count=this%tot_count+1
              pred_val=GFC_TRUE; if(pred) pred_val=curr%predicate(predicate_func)
              if(pred_val.eq.GFC_TRUE) then
+              this%pred_count=this%pred_count+1
               if(act) then; call curr%action(action_func,ierr); if(ierr.ne.0) then; ierr=GFC_ACTION_FAILED; exit; endif; endif
               if(bkw) then; ierr=this%previous(); else; ierr=this%next(); endif !move to the next/previous element
               if(ret) exit
