@@ -1,6 +1,6 @@
 !Generic Fortran Containers:: Tree.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2016-02-21 (started 2016-02-17)
+!REVISION: 2016-02-22 (started 2016-02-17)
 !Copyright (C) 2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2016 Oak Ridge National Laboratory (UT-Battelle)
 !LICENSE: GNU GPL v.2
@@ -47,20 +47,20 @@
           procedure, public:: pointee=>TreeIterPointee              !returns a pointer to the container element currently in focus
           procedure, public:: next=>TreeIterNext                    !moves the iterator to the next element
           procedure, public:: previous=>TreeIterPrevious            !moves the iterator to the previous element
-          procedure, public:: scan=>TreeIterScan                    !traverses the container with an optional action
           procedure, public:: add_element=>TreeIterAddElement       !adds a new (child) element to the element of the container currently pointed to
-!          procedure, public:: add_subtree=>TreeIterAddSubtree       !adds a subtree to the element of the container currently pointed to
+          procedure, public:: add_subtree=>TreeIterAddSubtree       !adds a subtree to the element of the container currently pointed to
 !          procedure, public:: delete_subtree=>TreeIterDeleteSubtree !deletes a subtree beginning from the currently pointed element of the container
 !          procedure, public:: move_subtree=>TreeIterMoveSubtree     !moves the subtree beginning from the currently pointed element of the container to another location
         end type tree_iter_t
 !GLOBAL DATA:
 !VISIBILITY:
  !Interfaces:
-        public gfc_predicate_i
-        public gfc_cmp_i
-        public gfc_destruct_i
-        public gfc_action_i
-        public gfc_print_i
+        public gfc_predicate_i !generic predicate function inferface
+        public gfc_cmp_i       !generic comparison function inferface
+        public gfc_copy_i      !generic copy constructor inferface
+        public gfc_destruct_i  !generic destructor inferface
+        public gfc_action_i    !generic action function inferface
+        public gfc_print_i     !generic print function inferface
  !Procedures:
         private TreeVertexNumChildren
         private TreeVertexNumSiblings
@@ -71,9 +71,8 @@
         private TreeIterPointee
         private TreeIterNext
         private TreeIterPrevious
-        private TreeIterScan
         private TreeIterAddElement
-!        private TreeIterAddSubtree
+        private TreeIterAddSubtree
 !        private TreeIterDeleteSubtree
 !        private TreeIterMoveSubtree
 
@@ -276,54 +275,6 @@
          endif
          return
         end function TreeIterPrevious
-!------------------------------------------------------------------------------------------------
-        function TreeIterScan(this,return_each,predicate,action,time_limit,backward) result(ierr)
-!Traverses the tree container via an associated iterator beginning
-!from the current position of the iterator.
-         implicit none
-         integer(INTD):: ierr                             !out: error code (0:success)
-         class(tree_iter_t), intent(inout):: this         !inout: iterator
-         logical, intent(in), optional:: return_each      !if TRUE, each successful match will be returned (defaults to FALSE)
-         procedure(gfc_predicate_i), optional:: predicate !predicate function
-         procedure(gfc_action_i), optional:: action       !action function
-         real(8), intent(in), optional:: time_limit       !if specified, the active scan will be interrupted after this time limit (sec)
-         logical, intent(in), optional:: backward         !if TRUE, the container will be traversed in the backward direction
-         logical:: ret,pred,act,bkw
-         integer(INTD):: pred_val
-         class(*), pointer:: elem_val
-         real(8):: tml,tms
-
-         ierr=this%get_status()
-         if(ierr.eq.GFC_IT_ACTIVE) then
-          if(associated(this%current)) then
-           if(present(return_each)) then; ret=return_each; else; ret=.false.; endif
-           if(present(predicate)) then; pred=.true.; else; pred=.false.; endif
-           if(present(action)) then; act=.true.; else; act=.false.; endif
-           if(present(time_limit).and.(.not.ret)) then; tml=time_limit; else; tml=-1d0; endif
-           if(present(backward)) then; bkw=backward; else; bkw=.false.; endif
-           if(tml.gt.0d0) tms=thread_wtime()
-           ierr=GFC_SUCCESS
-           do while(ierr.eq.GFC_SUCCESS)
-            elem_val=>this%current%get_value(ierr)
-            if(ierr.ne.GFC_SUCCESS.or.(.not.associated(elem_val))) then; ierr=GFC_CORRUPTED_CONT; exit; endif
-            pred_val=GFC_TRUE; if(pred) pred_val=predicate(elem_val)
-            if(pred_val.eq.GFC_TRUE) then
-             if(act) then
-              ierr=action(elem_val); if(ierr.ne.0) then; ierr=GFC_ACTION_FAILED; exit; endif
-             endif
-             if(bkw) then; ierr=this%previous(); else; ierr=this%next(); endif !move to the next/previous element
-             if(ret) exit
-            else
-             if(bkw) then; ierr=this%previous(); else; ierr=this%next(); endif !move to the next/previous element
-            endif
-            if(tml.gt.0d0) then; if(thread_wtime(tms).gt.tml) exit; endif
-           enddo
-          else
-           ierr=GFC_CORRUPTED_CONT
-          endif
-         endif
-         return
-        end function TreeIterScan
 !---------------------------------------------------------------------------------
         function TreeIterAddElement(this,elem_val,assoc_only,no_move) result(ierr)
 !Creates a new container element as the last child of the currently pointed element
@@ -401,5 +352,36 @@
          endif
          return
         end function TreeIterAddElement
+!-------------------------------------------------------------
+        function TreeIterAddSubtree(this,subtree) result(ierr)
+!Adds a subtree as the last child to the current iterator position.
+         implicit none
+         integer(INTD):: ierr                               !out: error code (0:success)
+         class(tree_iter_t), intent(inout):: this           !inout: iterator
+         class(tree_vertex_t), target, intent(in):: subtree !in: subtree (defined by its root vertex)
+         class(tree_vertex_t), pointer:: tvp
+
+         ierr=this%get_status()
+         if(ierr.eq.GFC_IT_ACTIVE) then
+          if(associated(this%current)) then
+           if(.not.associated(subtree%parent)) then !the subtree must not have a parent
+            if(associated(this%current%first_child)) then
+             tvp=>this%current%first_child%prev_sibling !last sibling
+             
+            else
+             this%current%first_child=>subtree
+             this%current%first_child%parent=>this%current
+             this%current%first_child%next_sibling=>this%current%first_child
+             this%current%first_child%prev_sibling=>this%current%first_child
+            endif
+           else
+            ierr=GFC_INVALID_ARGS
+           endif
+          else
+           ierr=GFC_CORRUPTED_CONT
+          endif
+         endif
+         return
+        end function TreeIterAddSubtree
 
        end module tree
