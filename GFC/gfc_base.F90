@@ -211,17 +211,23 @@
        contains
 !IMPLEMENTATION:
 !------------------------------------------------------------------------------
-        subroutine ContElemConstruct(this,obj,ierr,assoc_only,copy_constr_func)
+#ifdef NO_GNU
+        subroutine ContElemConstruct(this,obj,ierr,assoc_only,copy_constr_func) !`GCC/5.3.0 has a bug with this line
+#else
+        subroutine ContElemConstruct(this,obj,ierr,assoc_only)
+#endif
 !Constructs an element of a container (fills in its contents).
          implicit none
-         class(gfc_cont_elem_t), intent(inout):: this  !inout: element of a container
-         class(*), target, intent(in):: obj            !in: value to be stored in this element
-         integer(INTD), intent(out), optional:: ierr   !out: error code (0:success)
-         logical, intent(in), optional:: assoc_only    !in: if TRUE, <obj> will be stored by reference, otherwise by value (default)
-         procedure(gfc_copy_i), optional:: copy_constr_func !in: user-defined copy constructor
+         class(gfc_cont_elem_t), intent(inout):: this !inout: element of a container
+         class(*), target, intent(in):: obj           !in: value to be stored in this element
+         integer(INTD), intent(out), optional:: ierr  !out: error code (0:success)
+         logical, intent(in), optional:: assoc_only   !in: if TRUE, <obj> will be stored by reference, otherwise by value (default)
+#ifdef NO_GNU
+         procedure(gfc_copy_i), optional:: copy_constr_func !in: user-defined generic copy constructor
+#endif
+         integer(INTD):: errc
          integer:: errcode
          logical:: assoc
-         integer(INTD):: errc
 
          errc=GFC_SUCCESS
          if(present(assoc_only)) then; assoc=assoc_only; else; assoc=.false.; endif
@@ -230,12 +236,16 @@
            this%value_p=>obj
            this%alloc=GFC_FALSE
           else
+#ifdef NO_GNU
            if(present(copy_constr_func)) then
             this%value_p=>copy_constr_func(obj,errc)
            else
+#endif
             allocate(this%value_p,SOURCE=obj,STAT=errcode)
             if(errcode.ne.0) errc=GFC_MEM_ALLOC_FAILED
+#ifdef NO_GNU
            endif
+#endif
            if(errc.eq.GFC_SUCCESS) then
             this%alloc=GFC_TRUE
            else
