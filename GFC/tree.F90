@@ -1,15 +1,17 @@
 !Generic Fortran Containers:: Tree.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2016-02-22 (started 2016-02-17)
+!REVISION: 2016-02-23 (started 2016-02-17)
 !Copyright (C) 2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2016 Oak Ridge National Laboratory (UT-Battelle)
 !LICENSE: GNU GPL v.2
 !NOTES:
-! # A tree is a derivative of an abstract GFC container.
-!   It possible to view subtrees of a tree as trees themselves,
-!   in which case the root element will have a parent but no siblings.
+! # A tree is a linked derivative of an abstract (unlinked) GFC container.
+!   A subtree is a tree object that is linked as a part of another (larger) tree,
+!   thus having its root element linked to other elements of the larger tree.
 ! # All accesses, updates, and scans on a tree are performed via
-!   a tree iterator associated with the tree.
+!   a tree iterator associated with the tree. When attaching a tree
+!   to another tree, the attached tree can be accessed either
+!   via its own iterator or via the larger tree iterator.
        module tree
         use gfc_base
         use timers
@@ -38,10 +40,14 @@
           procedure, non_overridable, public:: num_siblings=>TreeVertexNumSiblings   !returns the total number of siblings
           procedure, non_overridable, public:: first_sibling=>TreeVertexFirstSibling !returns GFC_TRUE if the vertex is the first in the sibling (ring) list
           procedure, non_overridable, public:: last_sibling=>TreeVertexLastSibling   !returns GFC_TRUE if the vertex is the last in the sibling (ring) list
+          procedure, non_overridable, public:: is_root=>TreeVertexIsRoot             !returns GFC_TRUE if the vertex is the root of the tree, GFC_FALSE otherwise
+          procedure, non_overridable, public:: is_leaf=>TreeVertexIsLeaf             !returns GFC_TRUE if the vertex is a leaf, GFC_FALSE otherwise
         end type tree_vertex_t
  !Tree (all operations on the tree are performend via an iterator):
         type, extends(gfc_container_t), public:: tree_t
          class(tree_vertex_t), pointer, private:: root=>NULL() !root element (beginning)
+         contains
+          procedure, public:: is_subtree=>TreeIsSubtree !returns TRUE if the tree is a subtree of a larger tree, FALSE otherwise
         end type tree_t
  !Tree iterator:
         type, extends(gfc_iter_t), public:: tree_iter_t
@@ -50,13 +56,15 @@
          contains
           procedure, public:: init=>TreeIterInit                    !associates the iterator with a container and sets its position to the root element
           procedure, public:: reset=>TreeIterReset                  !resets the iterator to the beginning of the container (root element)
+          procedure, public:: release=>TreeIterRelease              !dissociates the iterator from its container
           procedure, public:: pointee=>TreeIterPointee              !returns a pointer to the container element currently in focus
           procedure, public:: next=>TreeIterNext                    !moves the iterator to the next element
           procedure, public:: previous=>TreeIterPrevious            !moves the iterator to the previous element
           procedure, public:: to_sibling=>TreeIterToSibling         !moves the iterator to one of the siblings
           procedure, public:: to_child=>TreeIterToChild             !moves the iterator to one of the children
           procedure, public:: to_parent=>TreeIterToParent           !moves the iterator to the parent
-          procedure, public:: add_element=>TreeIterAddElement       !adds a new (child) element to the element of the container currently pointed to
+          procedure, public:: add_leaf=>TreeIterAddLeaf             !adds a new leaf element to the element of the container currently pointed to
+          procedure, public:: delete_leaf=>TreeIterDeleteLeaf       !deletes the leaf pointed to by the iterator (if it is actually a leaf)
           procedure, public:: attach_subtree=>TreeIterAttachSubtree !attaches a subtree to the element of the container currently pointed to as the last child
           procedure, public:: detach_subtree=>TreeIterDetachSubtree !detaches a subtree beginning from the currently pointed element of the container
 !          procedure, public:: delete_subtree=>TreeIterDeleteSubtree !deletes a subtree beginning from the currently pointed element of the container
@@ -75,15 +83,20 @@
         private TreeVertexNumSiblings
         private TreeVertexFirstSibling
         private TreeVertexLastSibling
+        private TreeVertexIsRoot
+        private TreeVertexIsLeaf
+        private TreeIsSubtree
         private TreeIterInit
         private TreeIterReset
+        private TreeIterRelease
         private TreeIterPointee
         private TreeIterNext
         private TreeIterPrevious
         private TreeIterToSibling
         private TreeIterToChild
         private TreeIterToParent
-        private TreeIterAddElement
+        private TreeIterAddLeaf
+        private TreeIterDeleteLeaf
         private TreeIterAttachSubtree
         private TreeIterDetachSubtree
 !        private TreeIterDeleteSubtree
@@ -93,7 +106,7 @@
 !---------------------------------------------------------------
         function TreeVertexNumChildren(this,ierr) result(nchild)
 !Returns the total number of children attached to the tree vertex.
-!Complexity: O(1) worst.
+!Complexity: O(1).
          implicit none
          integer(INTL):: nchild                      !out: number of children
          class(tree_vertex_t), intent(in):: this     !in: tree vertex
@@ -108,19 +121,20 @@
 !--------------------------------------------------------------
         function TreeVertexNumSiblings(this,ierr) result(nsibl)
 !Returns the total number of siblings for a tree vertex.
-!Complexity: O(N) worst.
+!Complexity: O(1).
          implicit none
-         integer(INTL):: nsibl                       !out: number of children
+         integer(INTL):: nsibl                       !out: number of siblings
          class(tree_vertex_t), intent(in):: this     !in: tree vertex
          integer(INTD), intent(out), optional:: ierr !out: error code (0:success)
          integer(INTD):: errc
-         class(tree_vertex_t), pointer:: tvp,ftvp
 
-         errc=GFC_SUCCESS; nsibl=0
-         tvp=>this%next_sibling; ftvp=>tvp%prev_sibling !ftvp => this
-         do while(.not.associated(tvp,ftvp))
-          nsibl=nsibl+1; tvp=>tvp%next_sibling
-         enddo
+         errc=GFC_SUCCESS
+         if(associated(this%parent)) then
+          nsibl=this%parent%num_child-1
+         else !root vertex
+          nsibl=0
+         endif
+         if(nsibl.lt.0) errc=GFC_CORRUPTED_CONT
          if(present(ierr)) ierr=errc
          return
         end function TreeVertexNumSiblings
@@ -154,6 +168,48 @@
          endif
          return
         end function TreeVertexLastSibling
+!--------------------------------------------------
+        function TreeVertexIsRoot(this) result(res)
+!Returns GFC_TRUE if the vertex is the root of the tree.
+         implicit none
+         integer(INTD):: res                     !out: result
+         class(tree_vertex_t), intent(in):: this !in: tree vertex
+
+         if(.not.associated(this%parent)) then
+          if(associated(this%prev_sibling).or.associated(this%next_sibling)) then
+           res=GFC_CORRUPTED_CONT
+          else
+           res=GFC_TRUE
+          endif
+         else
+          res=GFC_FALSE
+         endif
+         return
+        end function TreeVertexIsRoot
+!--------------------------------------------------
+        function TreeVertexIsLeaf(this) result(res)
+!Returns GFC_TRUE if the vertex is a leaf.
+         implicit none
+         integer(INTD):: res                     !out: result
+         class(tree_vertex_t), intent(in):: this !in: tree vertex
+
+         res=GFC_FALSE
+         if(.not.associated(this%first_child)) res=GFC_TRUE
+         return
+        end function TreeVertexIsLeaf
+!-----------------------------------------------
+        function TreeIsSubtree(this) result(res)
+!Returns TRUE if the tree is a subtree of a larger tree.
+         implicit none
+         logical:: res                    !out: result
+         class(tree_t), intent(in):: this !in: tree
+
+         res=.false.
+         if(associated(this%root)) then
+          if(associated(this%root%parent)) res=.true.
+         endif
+         return
+        end function TreeIsSubtree
 !----------------------------------------------------
         function TreeIterInit(this,cont) result(ierr)
 !Initializes an iterator and resets it to the beginning of the container.
@@ -194,6 +250,17 @@
          endif
          return
         end function TreeIterReset
+!--------------------------------------------------
+        function TreeIterRelease(this) result(ierr)
+!Dissociates the iterator from its container.
+         implicit none
+         integer(INTD):: ierr                     !out: error code (0:success)
+         class(tree_iter_t), intent(inout):: this !inout: iterator
+
+         this%current=>NULL(); this%container=>NULL()
+         call this%reset_count(); ierr=this%set_status_(GFC_IT_NULL)
+         return
+        end function TreeIterRelease
 !--------------------------------------------------------
         function TreeIterPointee(this,ierr) result(pntee)
 !Returns the container element the iterator is currently pointing to.
@@ -216,7 +283,7 @@
         function TreeIterNext(this,elem_p) result(ierr)
 !If <elem_p> is absent, the iterator moves to the next element, if any.
 !If <elem_p> is present, the iterator simply returns the next element in <elem_p> without moving.
-!Complexity: O(1)...O(N).
+!Complexity: O(1)...O(N). No additional memory is used.
          implicit none
          integer(INTD):: ierr                                            !out: error code (0:success)
          class(tree_iter_t), intent(inout):: this                        !inout: iterator
@@ -226,18 +293,19 @@
          ierr=this%get_status()
          if(ierr.eq.GFC_IT_ACTIVE) then
           if(associated(this%current)) then
+           ierr=GFC_SUCCESS
            tvp=>this%current%first_child
            if(.not.associated(tvp)) then
             tvp=>this%current
             do while(associated(tvp))
-             if(tvp%last_sibling().eq.GFC_FALSE) then !not the last sibling
-              tvp=>tvp%next_sibling; exit
-             else
-              if(associated(tvp,this%container%root)) then !root of a subtree may have a parent
-               tvp=>NULL()
+             if(.not.associated(tvp,this%container%root)) then !root of a subtree may have a parent
+              if(tvp%last_sibling().eq.GFC_FALSE) then !not the last sibling
+               tvp=>tvp%next_sibling; exit
               else
                tvp=>tvp%parent
               endif
+             else
+              tvp=>NULL()
              endif
             enddo
            endif
@@ -259,28 +327,30 @@
         function TreeIterPrevious(this,elem_p) result(ierr)
 !If <elem_p> is absent, the iterator moves to the previous element, if any.
 !If <elem_p> is present, the iterator simply returns the previous element in <elem_p> without moving.
-!Complexity: O(1)..O(N).
+!Complexity: O(1)..O(N). No additional memory is used.
          implicit none
          integer(INTD):: ierr                                            !out: error code (0:success)
          class(tree_iter_t), intent(inout):: this                        !inout: iterator
          class(gfc_cont_elem_t), pointer, intent(out), optional:: elem_p !out: pointer to the container element
          class(tree_vertex_t), pointer:: tvp
+         logical:: on_root
 
          ierr=this%get_status()
          if(ierr.eq.GFC_IT_ACTIVE) then
           if(associated(this%current)) then
-           tvp=>this%current
-           if(tvp%first_sibling().eq.GFC_TRUE) then
-            if(associated(tvp,this%container%root)) then
-             tvp=>NULL()
-            else
-             tvp=>tvp%parent
-            endif
+           ierr=GFC_SUCCESS
+           tvp=>this%current; on_root=associated(tvp,this%container%root)
+           if((.not.on_root).and.tvp%first_sibling().eq.GFC_TRUE) then
+            tvp=>tvp%parent
            else
-            tvp=>tvp%prev_sibling
-            do while(associated(tvp%first_child))
-             tvp=>tvp%first_child%prev_sibling !last sibling among the children (because of ring linking)
-            enddo
+            if(.not.on_root) tvp=>tvp%prev_sibling
+            if((.not.on_root).or.associated(tvp%first_child)) then
+             do while(associated(tvp%first_child))
+              tvp=>tvp%first_child%prev_sibling !last sibling among the children (because of ring linking)
+             enddo
+            else
+             tvp=>NULL()
+            endif
            endif
            if(present(elem_p)) then
             elem_p=>tvp
@@ -296,16 +366,100 @@
          endif
          return
         end function TreeIterPrevious
-!---------------------------------------------------------------------------------
-        function TreeIterAddElement(this,elem_val,assoc_only,no_move) result(ierr)
-!Creates a new container element as the last child of the currently pointed element
-!and stores the value <elem_val> in it, either by value or by reference.
+!----------------------------------------------------------------
+        function TreeIterToSibling(this,to_previous) result(ierr)
+!Moves the iterator either to the next or to the previous sibling.
+         implicit none
+         integer(INTD):: ierr                        !out: error code (0:success)
+         class(tree_iter_t), intent(inout):: this    !inout: iterator
+         logical, intent(in), optional:: to_previous !in: if TRUE, the iterator will move to the previous sibling (defaults to FALSE)
+         class(tree_vertex_t), pointer:: tvp
+         logical:: to_next
+
+         ierr=this%get_status()
+         if(ierr.eq.GFC_IT_ACTIVE) then
+          if(associated(this%current)) then
+           if(.not.associated(this%current,this%container%root)) then
+            if(present(to_previous)) then; to_next=.not.to_previous; else; to_next=.true.; endif
+            ierr=GFC_SUCCESS
+            if(to_next) then
+             tvp=>this%current%next_sibling
+             if(associated(tvp,this%current%parent%first_child)) then
+              ierr=GFC_NO_MOVE
+             else
+              this%current=>tvp
+             endif
+             tvp=>NULL()
+            else
+             if(associated(this%current,this%current%parent%first_child)) then
+              ierr=GFC_NO_MOVE
+             else
+              this%current=>this%current%prev_sibling
+             endif
+            endif
+           else
+            ierr=GFC_NO_MOVE !tree root does not have siblings
+           endif
+          else
+           ierr=GFC_CORRUPTED_CONT
+          endif
+         endif
+         return
+        end function TreeIterToSibling
+!--------------------------------------------------
+        function TreeIterToChild(this) result(ierr)
+!Moves the iterator to the first child, if any.
+         implicit none
+         integer(INTD):: ierr                        !out: error code (0:success)
+         class(tree_iter_t), intent(inout):: this    !inout: iterator
+
+         ierr=this%get_status()
+         if(ierr.eq.GFC_IT_ACTIVE) then
+          if(associated(this%current)) then
+           if(associated(this%current%first_child)) then
+            this%current=>this%current%first_child
+            ierr=GFC_SUCCESS
+           else
+            ierr=GFC_NO_MOVE
+           endif
+          else
+           ierr=GFC_CORRUPTED_CONT
+          endif
+         endif
+         return
+        end function TreeIterToChild
+!---------------------------------------------------
+        function TreeIterToParent(this) result(ierr)
+!Moves the iterator to the parent, if any.
+         implicit none
+         integer(INTD):: ierr                        !out: error code (0:success)
+         class(tree_iter_t), intent(inout):: this    !inout: iterator
+
+         ierr=this%get_status()
+         if(ierr.eq.GFC_IT_ACTIVE) then
+          if(associated(this%current)) then
+           if(associated(this%current,this%container%root)) then
+            ierr=GFC_NO_MOVE
+           else
+            this%current=>this%current%parent
+            ierr=GFC_SUCCESS
+           endif
+          else
+           ierr=GFC_CORRUPTED_CONT
+          endif
+         endif
+         return
+        end function TreeIterToParent
+!------------------------------------------------------------------------------
+        function TreeIterAddLeaf(this,elem_val,assoc_only,no_move) result(ierr)
+!Creates a new container element (leaf) as the last child of the currently pointed
+!element and stores the value <elem_val> in it, either by value or by reference.
          implicit none
          integer(INTD):: ierr                       !out: error code (0:success)
          class(tree_iter_t), intent(inout):: this   !inout: iterator
          class(*), target, intent(in):: elem_val    !in: value to store in the container
-         logical, intent(in), optional:: assoc_only !TRUE: store by reference, FALSE: store by value; Defaults to FALSE
-         logical, intent(in), optional:: no_move    !if TRUE, the iterator will not move to the newly added element (defaults to FALSE)
+         logical, intent(in), optional:: assoc_only !in: TRUE: store by reference, FALSE: store by value; Defaults to FALSE
+         logical, intent(in), optional:: no_move    !in: if TRUE, the iterator will not move to the newly added element (defaults to FALSE)
          class(tree_vertex_t), pointer:: tvp
          integer:: errc
          logical:: assoc,nomo
@@ -321,8 +475,13 @@
             tvp=>this%current%first_child%prev_sibling !last sibling among children
             allocate(tvp%next_sibling,STAT=errc)
             if(errc.eq.0) then
-             tvp%next_sibling%prev_sibling=>tvp
-             tvp=>tvp%next_sibling
+             call tvp%next_sibling%construct(elem_val,ierr,assoc_only=assoc)
+             if(ierr.eq.GFC_SUCCESS) then
+              tvp%next_sibling%prev_sibling=>tvp
+              tvp=>tvp%next_sibling
+             else
+              deallocate(tvp%next_sibling)
+             endif
             else
              tvp%next_sibling=>this%current%first_child
              ierr=GFC_MEM_ALLOC_FAILED
@@ -330,7 +489,12 @@
            else
             allocate(this%current%first_child,STAT=errc)
             if(errc.eq.0) then
-             tvp=>this%current%first_child
+             call this%current%first_child%construct(elem_val,ierr,assoc_only=assoc)
+             if(ierr.eq.GFC_SUCCESS) then
+              tvp=>this%current%first_child
+             else
+              deallocate(this%current%first_child)
+             endif
             else
              this%current%first_child=>NULL()
              ierr=GFC_MEM_ALLOC_FAILED
@@ -375,15 +539,46 @@
           endif
          endif
          return
-        end function TreeIterAddElement
+        end function TreeIterAddLeaf
+!-------------------------------------------------------------------
+        function TreeIterDeleteLeaf(this,destruct_func) result(ierr)
+!Deletes a leaf from a tree.
+         implicit none
+         integer(INTD):: ierr                                !out: error code (0:success)
+         class(tree_iter_t), intent(inout):: this            !inout: iterator
+         procedure(gfc_destruct_i), optional:: destruct_func !in: value destructor
+         integer(INTL):: totelems
+
+         ierr=this%get_status()
+         if(ierr.eq.GFC_IT_ACTIVE) then
+          if(associated(this%current)) then
+           if(this%current%is_leaf().eq.GFC_TRUE) then
+            if(present(destruct_func)) then
+             call this%current%destruct(ierr,destruct_func)
+            else
+             call this%current%destruct(ierr)
+            endif
+
+            totelems=this%container%update_num_elems_(-1_INTL,ierr)
+           else
+            ierr=GFC_INVALID_ARGS
+           endif
+          else
+           ierr=GFC_CORRUPTED_CONT
+          endif
+         endif
+         return
+        end function TreeIterDeleteLeaf
 !----------------------------------------------------------------
         function TreeIterAttachSubtree(this,subtree) result(ierr)
-!Attaches a subtree as the last child to the current iterator position.
-!The subtree root shall not have a parent. The iterator position does not change.
+!Attaches a tree as the last child to the current iterator position,
+!thus making the attached tree a subtree (root will have a parent/siblings).
+!The attached tree root shall not have a parent/siblings at the beginning.
+!The iterator position does not change.
          implicit none
          integer(INTD):: ierr                     !out: error code (0:success)
          class(tree_iter_t), intent(inout):: this !inout: iterator
-         class(tree_t), intent(inout):: subtree   !inout: subtree
+         class(tree_t), intent(inout):: subtree   !inout: tree at input, subtree at output
          class(tree_vertex_t), pointer:: tvp
          integer(INTL):: nelems,totelems
 
@@ -434,7 +629,7 @@
          ierr=this%get_status()
          if(ierr.eq.GFC_IT_ACTIVE) then
           if(associated(this%current)) then
-           if((.not.associated(subtree%root)).and.subtree%num_elems().eq.0) then
+           if((.not.associated(subtree%root)).and.subtree%num_elems().eq.0) then !subtree must be empty on entrance
             psib=>this%current%prev_sibling; nsib=>this%current%next_sibling
             subtree%root=>this%current; this%current=>subtree%root%parent; subtree%root%parent=>NULL()
             psib%next_sibling=>nsib; nsib%prev_sibling=>psib

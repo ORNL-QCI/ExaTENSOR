@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Base
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2016-02-22 (started 2016-02-17)
+!REVISION: 2016-02-23 (started 2016-02-17)
 !Copyright (C) 2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2016 Oak Ridge National Laboratory (UT-Battelle)
 !LICENSE: GNU GPL v.2
@@ -73,6 +73,7 @@
         integer(INTD), parameter:: GFC_ELEM_NOT_EMPTY=-8    !element of the container is not empty
         integer(INTD), parameter:: GFC_ACTION_FAILED=-9     !user-defined action failed on an element
         integer(INTD), parameter:: GFC_METHOD_UNDEFINED=-10 !undefined method called on an object
+        integer(INTD), parameter:: GFC_NO_MOVE=999          !no move possible (for iterators)
  !Predicates (GFC_ERROR applies here as well):
         integer(INTD), parameter:: GFC_TRUE=1  !TRUE value
         integer(INTD), parameter:: GFC_FALSE=0 !FALSE value
@@ -126,7 +127,8 @@
           procedure, public:: predicated_count=>IterPredicatedCount       !returns the predicated iteration count since the last reset
           procedure, public:: scan=>IterScan                              !traverses the container with an optional action
           procedure(gfc_it_init_i), deferred, public:: init       !initializes the iterator (associates it with a container and sets it to the root)
-          procedure(gfc_it_reset_i), deferred, public:: reset     !resets the iterator to the beginning
+          procedure(gfc_it_reset_i), deferred, public:: reset     !resets the iterator to the beginning (root element)
+          procedure(gfc_it_reset_i), deferred, public:: release   !dissociates the iterator from its container
           procedure(gfc_it_pointee_i), deferred, public:: pointee !returns the element currently pointed to
           procedure(gfc_it_next_i), deferred, public:: next       !proceeds to the next element of the container
           procedure(gfc_it_next_i), deferred, public:: previous   !proceeds to the previous element of the container
@@ -181,7 +183,7 @@
           class(gfc_iter_t), intent(inout):: this           !GFC iterator
           class(gfc_container_t), target, intent(in):: cont !GFC container
          end function gfc_it_init_i
-  !Deferred: GFC iterator: .reset:
+  !Deferred: GFC iterator: .reset .release:
          function gfc_it_reset_i(this) result(ierr)
           import:: gfc_iter_t,INTD
           integer(INTD):: ierr                    !error code
