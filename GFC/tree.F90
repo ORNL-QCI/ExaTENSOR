@@ -1,6 +1,6 @@
 !Generic Fortran Containers:: Tree.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2016-02-23 (started 2016-02-17)
+!REVISION: 2016-02-24 (started 2016-02-17)
 !Copyright (C) 2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2016 Oak Ridge National Laboratory (UT-Battelle)
 !LICENSE: GNU GPL v.2
@@ -548,20 +548,40 @@
          class(tree_iter_t), intent(inout):: this            !inout: iterator
          procedure(gfc_destruct_i), optional:: destruct_func !in: value destructor
          integer(INTL):: totelems
+         integer(INTD):: errc
+         class(tree_vertex_t), pointer:: tvp
 
          ierr=this%get_status()
          if(ierr.eq.GFC_IT_ACTIVE) then
+          ierr=GFC_SUCCESS
           if(associated(this%current)) then
            if(this%current%is_leaf().eq.GFC_TRUE) then
             if(present(destruct_func)) then
-             call this%current%destruct(ierr,destruct_func)
+             call this%current%destruct(errc,destruct_func)
             else
-             call this%current%destruct(ierr)
+             call this%current%destruct(errc)
             endif
-
-            totelems=this%container%update_num_elems_(-1_INTL,ierr)
+            if(errc.ne.GFC_SUCCESS) ierr=NOT_CLEAN
+            if(this%current%num_siblings(errc).gt.0) then
+             if(errc.ne.GFC_SUCCESS) ierr=NOT_CLEAN
+             if(associated(this%current%parent)) then
+              if(this%current%first_sibling().eq.GFC_TRUE) this%current%parent%first_child=>this%current%next_sibling
+             endif
+             this%current%prev_sibling%next_sibling=>this%current%next_sibling
+             this%current%next_sibling%prev_sibling=>this%current%prev_sibling
+            else
+             if(associated(this%current%parent)) this%current%parent%first_child=>NULL()
+            endif
+            totelems=this%container%update_num_elems_(-1_INTL,errc); if(errc.ne.GFC_SUCCESS) ierr=NOT_CLEAN
+            if(this%current%is_root().eq.GFC_TRUE) then
+             this%current=>NULL()
+             errc=this%set_status_(GFC_IT_EMPTY)
+             if(errc.ne.GFC_SUCCESS) ierr=NOT_CLEAN
+            else
+             this%current=>this%current%parent
+            endif
            else
-            ierr=GFC_INVALID_ARGS
+            ierr=GFC_INVALID_ARGS !the current element is not a leaf
            endif
           else
            ierr=GFC_CORRUPTED_CONT
