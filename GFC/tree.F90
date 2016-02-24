@@ -67,7 +67,7 @@
           procedure, public:: delete_leaf=>TreeIterDeleteLeaf       !deletes the leaf pointed to by the iterator (if it is actually a leaf)
           procedure, public:: attach_subtree=>TreeIterAttachSubtree !attaches a subtree to the element of the container currently pointed to as the last child
           procedure, public:: detach_subtree=>TreeIterDetachSubtree !detaches a subtree beginning from the currently pointed element of the container
-!          procedure, public:: delete_subtree=>TreeIterDeleteSubtree !deletes a subtree beginning from the currently pointed element of the container
+          procedure, public:: delete_subtree=>TreeIterDeleteSubtree !deletes a subtree beginning from the currently pointed element of the container
         end type tree_iter_t
 !GLOBAL DATA:
 !VISIBILITY:
@@ -99,7 +99,7 @@
         private TreeIterDeleteLeaf
         private TreeIterAttachSubtree
         private TreeIterDetachSubtree
-!        private TreeIterDeleteSubtree
+        private TreeIterDeleteSubtree
 
        contains
 !IMPLEMENTATION:
@@ -673,5 +673,45 @@
          endif
          return
         end function TreeIterDetachSubtree
+!----------------------------------------------------------------------
+        function TreeIterDeleteSubtree(this,destruct_func) result(ierr)
+!Completely deletes a subtree starting from the current iterator position.
+!The iterator is moved to the parent at the end.
+         implicit none
+         integer(INTD):: ierr                                !out: error code (0:success)
+         class(tree_iter_t), intent(inout):: this            !inout: iterator
+         procedure(gfc_destruct_i), optional:: destruct_func !in: value destruction function
+         class(tree_vertex_t), pointer:: tvp
+         logical:: subtree,dsf,ntcl
+
+         ierr=this%get_status(); ntcl=.false.
+         if(ierr.eq.GFC_IT_ACTIVE) then
+          if(associated(this%current)) then
+           dsf=.false.; if(present(destruct_func)) dsf=.true.
+           if(associated(this%current%parent)) then
+            tvp=>this%current%parent; subtree=.true.
+           else
+            tvp=>NULL(); subtree=.false.
+           endif
+           do while(associated(this%current))
+            do while(associated(this%current%first_child)) !find a leaf
+             this%current=>this%current%first_child
+            enddo
+            if(dsf) then
+             ierr=this%delete_leaf(destruct_func)
+            else
+             ierr=this%delete_leaf()
+            endif
+            if(ierr.eq.NOT_CLEAN) then; ntcl=.true.; ierr=GFC_SUCCESS; endif
+            if(ierr.ne.GFC_SUCCESS) exit
+            if(subtree) then; if(associated(this%current,tvp)) exit; endif
+           enddo
+          else
+           ierr=GFC_CORRUPTED_CONT
+          endif
+         endif
+         if(ntcl.and.ierr.eq.GFC_SUCCESS) ierr=NOT_CLEAN
+         return
+        end function TreeIterDeleteSubtree
 
        end module tree
