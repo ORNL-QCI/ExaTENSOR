@@ -1127,8 +1127,8 @@
         end type key_t
  !Values:
         type, private:: val_t
-         logical:: lgc_field
-         type(key_t), pointer:: key_ptr
+         real(8):: my_array(1:KEY_LEN)
+         type(key_t):: key_stored
         end type val_t
 !VISIBILITY:
         public dil_test_dictionary
@@ -1186,7 +1186,7 @@
          tm=thread_wtime()
          do i=1,MAX_ACTIONS
           call get_rnd_key(key) !random key
-          val%lgc_field=.true.; val%key_ptr=>key !value
+          val%my_array(1:KEY_LEN)=13.777d0; val%key_stored=key !value
           j=my_dict%search(DICT_ADD_IF_NOT_FOUND,cmp_key_test,key,val,uptr)
           if(j.eq.DICT_KEY_FOUND) then
            fnd=fnd+1
