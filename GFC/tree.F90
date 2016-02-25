@@ -1,6 +1,6 @@
 !Generic Fortran Containers:: Tree.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2016-02-24 (started 2016-02-17)
+!REVISION: 2016-02-25 (started 2016-02-17)
 !Copyright (C) 2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2016 Oak Ridge National Laboratory (UT-Battelle)
 !LICENSE: GNU GPL v.2
@@ -11,7 +11,8 @@
 ! # All accesses, updates, and scans on a tree are performed via
 !   a tree iterator associated with the tree. When attaching a tree
 !   to another tree, the attached tree can be accessed either
-!   via its own iterator or via the larger tree iterator.
+!   via its own iterator or via the larger tree iterator. Multiple
+!   iterators can be associated with a tree at a time.
        module tree
         use gfc_base
         use timers
@@ -63,6 +64,7 @@
           procedure, public:: to_sibling=>TreeIterToSibling         !moves the iterator to one of the siblings
           procedure, public:: to_child=>TreeIterToChild             !moves the iterator to one of the children
           procedure, public:: to_parent=>TreeIterToParent           !moves the iterator to the parent
+          procedure, public:: my_parent=>TreeIterMyParent           !returns the parent of the current vertex
           procedure, public:: add_leaf=>TreeIterAddLeaf             !adds a new leaf element to the element of the container currently pointed to
           procedure, public:: delete_leaf=>TreeIterDeleteLeaf       !deletes the leaf pointed to by the iterator (if it is actually a leaf)
           procedure, public:: attach_subtree=>TreeIterAttachSubtree !attaches a subtree to the element of the container currently pointed to as the last child
@@ -95,6 +97,7 @@
         private TreeIterToSibling
         private TreeIterToChild
         private TreeIterToParent
+        private TreeIterMyParent
         private TreeIterAddLeaf
         private TreeIterDeleteLeaf
         private TreeIterAttachSubtree
@@ -450,6 +453,24 @@
          endif
          return
         end function TreeIterToParent
+!----------------------------------------------------------
+        function TreeIterMyParent(this,ierr) result(parent)
+!Returns the parent of the current vertex.
+         implicit none
+         class(gfc_cont_elem_t), pointer:: parent    !out: parent of the current vertex
+         class(tree_iter_t), intent(in):: this       !in: iterator
+         integer(INTD), intent(out), optional:: ierr !out: error code (0:success)
+         integer(INTD):: errc
+
+         errc=this%get_status()
+         if(errc.eq.GFC_IT_ACTIVE) then
+          parent=>this%current%parent; errc=GFC_SUCCESS
+         else
+          parent=>NULL()
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function TreeIterMyParent
 !------------------------------------------------------------------------------
         function TreeIterAddLeaf(this,elem_val,assoc_only,no_move) result(ierr)
 !Creates a new container element (leaf) as the last child of the currently pointed
@@ -458,7 +479,7 @@
          integer(INTD):: ierr                       !out: error code (0:success)
          class(tree_iter_t), intent(inout):: this   !inout: iterator
          class(*), target, intent(in):: elem_val    !in: value to store in the container
-         logical, intent(in), optional:: assoc_only !in: TRUE: store by reference, FALSE: store by value; Defaults to FALSE
+         logical, intent(in), optional:: assoc_only !in: TRUE: store by reference, FALSE: store by value (defaults to FALSE)
          logical, intent(in), optional:: no_move    !in: if TRUE, the iterator will not move to the newly added element (defaults to FALSE)
          class(tree_vertex_t), pointer:: tvp
          integer:: errc
@@ -542,7 +563,7 @@
         end function TreeIterAddLeaf
 !-------------------------------------------------------------------
         function TreeIterDeleteLeaf(this,destruct_func) result(ierr)
-!Deletes a leaf from a tree.
+!Deletes a leaf from a tree and moves the iterator to its parent.
          implicit none
          integer(INTD):: ierr                                !out: error code (0:success)
          class(tree_iter_t), intent(inout):: this            !inout: iterator
@@ -676,7 +697,8 @@
 !----------------------------------------------------------------------
         function TreeIterDeleteSubtree(this,destruct_func) result(ierr)
 !Completely deletes a subtree starting from the current iterator position.
-!The iterator is moved to the parent at the end.
+!The iterator is moved to the parent at the end. A return status NOT_CLEAN
+!indicates that some memory deallocation and/or object destruction failed.
          implicit none
          integer(INTD):: ierr                                !out: error code (0:success)
          class(tree_iter_t), intent(inout):: this            !inout: iterator
@@ -715,3 +737,137 @@
         end function TreeIterDeleteSubtree
 
        end module tree
+!=========================================
+!TESTING:
+       module tree_test
+        use gfc_base
+        use tree
+        use timers, only: thread_wtime
+        implicit none
+        private
+
+        public dil_test_tree
+
+        type, private:: some_t
+         real(8):: some_real=0d0
+         integer(INTD):: some_int=0
+         integer(INTL):: some_long=0
+         real(8), pointer:: some_arr(:)=>NULL()
+        end type some_t
+
+       contains
+
+        function some_destructor(obj) result(ierr)
+         implicit none
+         integer(INTD):: ierr
+         class(*), intent(inout):: obj
+         ierr=1
+         select type(obj)
+         class is(some_t)
+          if(associated(obj%some_arr)) deallocate(obj%some_arr)
+          obj%some_real=0d0
+          obj%some_long=0
+          ierr=0
+         end select
+         return
+        end function some_destructor
+
+        function some_action(obj) result(ierr)
+         implicit none
+         integer(INTD):: ierr
+         class(*), intent(inout):: obj
+         ierr=1
+         select type(obj)
+         class is(some_t)
+          if(.not.associated(obj%some_arr)) allocate(obj%some_arr(16))
+          obj%some_long=size(obj%some_arr)
+          ierr=0
+         end select
+         return
+        end function some_action
+
+        function print_action(obj) result(ierr)
+         implicit none
+         integer(INTD):: ierr
+         class(*), intent(inout):: obj
+         ierr=1
+         select type(obj)
+         class is(some_t)
+          write(*,'("Tree vertex ID = ",i9)') obj%some_int
+          ierr=0
+         end select
+         return
+        end function print_action
+
+        function some_predicate(obj) result(pred)
+         implicit none
+         integer(INTD):: pred
+         class(*), intent(in):: obj
+         pred=GFC_FALSE
+         select type(obj)
+         class is(some_t)
+          if(obj%some_real.gt.5d-1) pred=GFC_TRUE
+         end select
+        end function some_predicate
+
+        function dil_test_tree(perf,dev_out) result(ierr)
+         implicit none
+         integer(INTD):: ierr
+         real(8), intent(out):: perf
+         integer(INTD), intent(in), optional:: dev_out
+         integer(INTD), parameter:: MAX_TREE_ELEMS=10
+         class(gfc_cont_elem_t), pointer:: tvp
+         class(*), pointer:: val_p
+         integer(INTD):: jo,i,j,m
+         type(some_t):: some_val
+         type(tree_t):: some_tree
+         type(tree_iter_t):: some_iter
+         real(8):: tms,tm
+
+         if(present(dev_out)) then; jo=dev_out; else; jo=6; endif
+         perf=0d0; tms=thread_wtime()
+         ierr=some_iter%init(some_tree)
+         if(ierr.ne.GFC_SUCCESS) then; ierr=1; return; endif
+!Add elements to the tree:
+         some_val%some_real=1d0; some_val%some_int=11
+         ierr=some_iter%add_leaf(some_val) !root
+         if(ierr.ne.GFC_SUCCESS) then; ierr=2; return; endif
+         i=MAX_TREE_ELEMS
+         do while(i.gt.0)
+          ierr=some_iter%reset()
+          if(ierr.ne.GFC_SUCCESS) then; ierr=3; return; endif
+          do while(i.gt.0)
+!          write(jo,'("Scanning ... ")',ADVANCE='NO') !debug
+           ierr=some_iter%scan(.TRUE.,some_predicate,some_action)
+!          write(jo,'(i9)') ierr !debug
+           if(ierr.ne.GFC_SUCCESS) exit
+           call random_number(some_val%some_real); some_val%some_int=i
+           ierr=some_iter%add_leaf(some_val,no_move=.TRUE.)
+           if(ierr.ne.GFC_SUCCESS) then; ierr=4; return; endif
+           tvp=>some_iter%my_parent()
+           if(associated(tvp)) then
+            write(jo,'("Vertex ",i9," is a child of ")',ADVANCE='NO') i
+            val_p=>tvp%get_value(); ierr=print_action(val_p)
+           endif
+           i=i-1
+           ierr=some_iter%next()
+           if(ierr.ne.GFC_SUCCESS) then; ierr=5; return; endif
+          enddo
+          if(ierr.ne.GFC_SUCCESS.and.ierr.ne.GFC_IT_DONE) then; ierr=6; return; endif
+         enddo
+         write(jo,'("Total number of elements in the tree = ",i9)') some_tree%num_elems(ierr) !debug
+         if(ierr.ne.GFC_SUCCESS) then; ierr=7; return; endif
+         ierr=some_iter%reset(); if(ierr.ne.GFC_SUCCESS) then; ierr=8; return; endif
+         call some_iter%reset_count()
+         ierr=some_iter%scan(return_each=.false.,action_func=print_action)
+         write(jo,'("Total number of traversed elements = ",i9)') some_iter%total_count()
+!Delete the tree:
+         ierr=some_iter%reset()
+         if(ierr.ne.GFC_SUCCESS) then; ierr=9; return; endif
+         ierr=some_iter%delete_subtree(some_destructor)
+         if(ierr.ne.GFC_SUCCESS) then; ierr=10; return; endif
+         tm=thread_wtime(tms); perf=dble(MAX_TREE_ELEMS)/tm
+         return
+        end function dil_test_tree
+
+       end module tree_test

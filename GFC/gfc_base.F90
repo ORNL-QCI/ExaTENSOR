@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Base
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2016-02-23 (started 2016-02-17)
+!REVISION: 2016-02-25 (started 2016-02-17)
 !Copyright (C) 2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2016 Oak Ridge National Laboratory (UT-Battelle)
 !LICENSE: GNU GPL v.2
@@ -553,13 +553,13 @@
              pred_val=GFC_TRUE; if(pred) pred_val=curr%predicate(predicate_func)
              if(pred_val.eq.GFC_TRUE) then
               this%pred_count=this%pred_count+1
-              if(act) then; call curr%action(action_func,ierr); if(ierr.ne.0) then; ierr=GFC_ACTION_FAILED; exit; endif; endif
-              if(bkw) then; ierr=this%previous(); else; ierr=this%next(); endif !move to the next/previous element
+              if(act) then
+               call curr%action(action_func,ierr); if(ierr.ne.0) then; ierr=GFC_ACTION_FAILED; exit; endif
+              endif
               if(ret) exit
-             else
-              if(bkw) then; ierr=this%previous(); else; ierr=this%next(); endif !move to the next/previous element
              endif
              if(tml.gt.0d0) then; if(thread_wtime(tms).gt.tml) exit; endif
+             if(bkw) then; ierr=this%previous(); else; ierr=this%next(); endif !move to the next/previous element
             else
              ierr=GFC_CORRUPTED_CONT
             endif
