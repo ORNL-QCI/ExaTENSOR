@@ -522,6 +522,7 @@
         function IterScan(this,return_each,predicate_func,action_func,backward,time_limit) result(ierr)
 !Traverses the container via an associated iterator beginning from the current position of the iterator.
 !Returns GFC_IT_DONE upon reaching the end of the container; returns GFC_IT_ACTIVE in intermediate returns.
+!If the active scan is time limited, at least one move of the iterator will be done before returning.
          implicit none
          integer(INTD):: ierr !out: error code (GFC_IT_ACTIVE:intermediate return, GFC_IT_DONE:done, Other:empty or error)
          class(gfc_iter_t), intent(inout):: this !inout: iterator
@@ -530,7 +531,7 @@
          procedure(gfc_action_i), optional:: action_func !action function
          logical, intent(in), optional:: backward !if TRUE, the container will be traversed in the backward direction (defaults to FALSE)
          real(8), intent(in), optional:: time_limit !if specified, the active scan will be interrupted after this time limit (sec)
-         logical:: ret,pred,act,bkw
+         logical:: ret,pred,act,bkw,moved
          integer(INTD):: pred_val
          class(*), pointer:: elem_val
          class(gfc_cont_elem_t), pointer:: curr
@@ -544,7 +545,7 @@
           if(present(time_limit).and.(.not.ret)) then; tml=time_limit; else; tml=-1d0; endif
           if(present(backward)) then; bkw=backward; else; bkw=.false.; endif
           if(tml.gt.0d0) tms=thread_wtime()
-          ierr=GFC_SUCCESS
+          ierr=GFC_SUCCESS; moved=.false.
           do while(ierr.eq.GFC_SUCCESS)
            curr=>this%pointee(ierr)
            if(ierr.eq.GFC_SUCCESS.and.associated(curr)) then
@@ -559,8 +560,11 @@
               endif
               if(ret) then; ierr=GFC_IT_ACTIVE; exit; endif !intermediate return
              endif
-             if(tml.gt.0d0) then; if(thread_wtime(tms).gt.tml) exit; endif
+             if(tml.gt.0d0) then
+              if(thread_wtime(tms).gt.tml.and.moved) then; ierr=GFC_IT_ACTIVE; exit; endif !time limit exceeded (but at least one move done)
+             endif
              if(bkw) then; ierr=this%previous(); else; ierr=this%next(); endif !move to the next/previous element
+             moved=.true.
             else
              ierr=GFC_CORRUPTED_CONT
             endif
