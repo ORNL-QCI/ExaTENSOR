@@ -1,6 +1,6 @@
 !Generic Fortran Containers:: Tree.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2016-02-25 (started 2016-02-17)
+!REVISION: 2016-02-26 (started 2016-02-17)
 !Copyright (C) 2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2016 Oak Ridge National Laboratory (UT-Battelle)
 !LICENSE: GNU GPL v.2
@@ -457,7 +457,7 @@
         function TreeIterMyParent(this,ierr) result(parent)
 !Returns the parent of the current vertex.
          implicit none
-         class(gfc_cont_elem_t), pointer:: parent    !out: parent of the current vertex
+         class(gfc_cont_elem_t), pointer:: parent    !out: parent element of the current vertex
          class(tree_iter_t), intent(in):: this       !in: iterator
          integer(INTD), intent(out), optional:: ierr !out: error code (0:success)
          integer(INTD):: errc
@@ -755,6 +755,10 @@
          real(8), pointer:: some_arr(:)=>NULL()
         end type some_t
 
+        type, private:: vertex_ptr_t
+         type(gfc_cont_elem_t), pointer:: ptr=>NULL()
+        end type vertex_ptr_t
+
        contains
 
         function some_destructor(obj) result(ierr)
@@ -793,7 +797,7 @@
          ierr=1
          select type(obj)
          class is(some_t)
-          write(*,'("Tree vertex ID = ",i9)') obj%some_int
+          write(*,'("vertex ",i9," (",F6.4,")")') obj%some_int,obj%some_real
           ierr=0
          end select
          return
@@ -808,6 +812,7 @@
          class is(some_t)
           if(obj%some_real.gt.5d-1) pred=GFC_TRUE
          end select
+         return
         end function some_predicate
 
         function dil_test_tree(perf,dev_out) result(ierr)
@@ -823,49 +828,46 @@
          type(tree_t):: some_tree
          type(tree_iter_t):: some_iter
          real(8):: tms,tm
+         type(vertex_ptr_t):: vps(MAX_TREE_ELEMS) !debug
 
          if(present(dev_out)) then; jo=dev_out; else; jo=6; endif
          perf=0d0; tms=thread_wtime()
          ierr=some_iter%init(some_tree)
          if(ierr.ne.GFC_SUCCESS) then; ierr=1; return; endif
 !Add elements to the tree:
-         some_val%some_real=1d0; some_val%some_int=11
+         some_val%some_real=1d0; some_val%some_int=1
          ierr=some_iter%add_leaf(some_val) !root
          if(ierr.ne.GFC_SUCCESS) then; ierr=2; return; endif
-         i=MAX_TREE_ELEMS
+         vps(1)%ptr=>some_iter%pointee() !debug
+         i=MAX_TREE_ELEMS-1
          do while(i.gt.0)
-          ierr=some_iter%reset()
-          if(ierr.ne.GFC_SUCCESS) then; ierr=3; return; endif
+          ierr=some_iter%reset(); if(ierr.ne.GFC_SUCCESS) then; ierr=3; return; endif
           do while(i.gt.0)
-!          write(jo,'("Scanning ... ")',ADVANCE='NO') !debug
            ierr=some_iter%scan(.TRUE.,some_predicate,some_action)
-!          write(jo,'(i9)') ierr !debug
            if(ierr.ne.GFC_SUCCESS) exit
-           call random_number(some_val%some_real); some_val%some_int=i
-           ierr=some_iter%add_leaf(some_val,no_move=.TRUE.)
-           if(ierr.ne.GFC_SUCCESS) then; ierr=4; return; endif
-           tvp=>some_iter%my_parent()
-           if(associated(tvp)) then
-            write(jo,'("Vertex ",i9," is a child of ")',ADVANCE='NO') i
-            val_p=>tvp%get_value(); ierr=print_action(val_p)
-           endif
+           call random_number(some_val%some_real); some_val%some_int=MAX_TREE_ELEMS-i+1
+           tvp=>some_iter%pointee(); val_p=>tvp%get_value(); ierr=print_action(val_p)
+           ierr=some_iter%add_leaf(some_val); if(ierr.ne.GFC_SUCCESS) then; ierr=4; return; endif
+           write(jo,'(" is a parent of ")',ADVANCE='NO')
+           tvp=>some_iter%pointee(); val_p=>tvp%get_value(); ierr=print_action(val_p)
+           vps(MAX_TREE_ELEMS-i+1)%ptr=>tvp !debug
            i=i-1
-           ierr=some_iter%next()
-           if(ierr.ne.GFC_SUCCESS) then; ierr=5; return; endif
           enddo
-          if(ierr.ne.GFC_SUCCESS.and.ierr.ne.GFC_IT_DONE) then; ierr=6; return; endif
+          if(ierr.ne.GFC_SUCCESS.and.ierr.ne.GFC_IT_DONE) then; ierr=5; return; endif
          enddo
          write(jo,'("Total number of elements in the tree = ",i9)') some_tree%num_elems(ierr) !debug
-         if(ierr.ne.GFC_SUCCESS) then; ierr=7; return; endif
-         ierr=some_iter%reset(); if(ierr.ne.GFC_SUCCESS) then; ierr=8; return; endif
-         call some_iter%reset_count()
-         ierr=some_iter%scan(return_each=.false.,action_func=print_action)
-         write(jo,'("Total number of traversed elements = ",i9)') some_iter%total_count()
+         if(ierr.ne.GFC_SUCCESS) then; ierr=6; return; endif
+         do i=1,MAX_TREE_ELEMS
+          val_p=>vps(i)%ptr%get_value()
+          ierr=print_action(val_p)
+         enddo
+         print *,'====='
+         ierr=some_iter%reset(); if(ierr.ne.GFC_SUCCESS) then; ierr=7; return; endif
+         ierr=some_iter%scan(action_func=print_action)
+         write(jo,'("Total number of traversed elements   = ",i9)') some_iter%total_count()
 !Delete the tree:
-         ierr=some_iter%reset()
-         if(ierr.ne.GFC_SUCCESS) then; ierr=9; return; endif
-         ierr=some_iter%delete_subtree(some_destructor)
-         if(ierr.ne.GFC_SUCCESS) then; ierr=10; return; endif
+         ierr=some_iter%reset(); if(ierr.ne.GFC_SUCCESS) then; ierr=8; return; endif
+         ierr=some_iter%delete_subtree(some_destructor); if(ierr.ne.GFC_SUCCESS) then; ierr=9; return; endif
          tm=thread_wtime(tms); perf=dble(MAX_TREE_ELEMS)/tm
          return
         end function dil_test_tree
