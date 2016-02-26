@@ -134,7 +134,7 @@
          errc=GFC_SUCCESS
          if(associated(this%parent)) then
           nsibl=this%parent%num_child-1
-         else !root vertex
+         else !root vertex cannot have siblings
           nsibl=0
          endif
          if(nsibl.lt.0) errc=GFC_CORRUPTED_CONT
@@ -175,17 +175,13 @@
         function TreeVertexIsRoot(this) result(res)
 !Returns GFC_TRUE if the vertex is the root of the tree.
          implicit none
-         integer(INTD):: res                     !out: result
+         integer(INTD):: res                     !out: result {GFC_TRUE,GFC_FALSE}
          class(tree_vertex_t), intent(in):: this !in: tree vertex
 
-         if(.not.associated(this%parent)) then
-          if(associated(this%prev_sibling).or.associated(this%next_sibling)) then
-           res=GFC_CORRUPTED_CONT
-          else
-           res=GFC_TRUE
-          endif
-         else
+         if(associated(this%parent)) then
           res=GFC_FALSE
+         else
+          res=GFC_TRUE
          endif
          return
         end function TreeVertexIsRoot
@@ -574,32 +570,47 @@
 
          ierr=this%get_status()
          if(ierr.eq.GFC_IT_ACTIVE) then
-          ierr=GFC_SUCCESS
           if(associated(this%current)) then
-           if(this%current%is_leaf().eq.GFC_TRUE) then
-            if(present(destruct_func)) then
-             call this%current%destruct(errc,destruct_func)
+           ierr=GFC_SUCCESS; tvp=>this%current
+           if(tvp%is_leaf().eq.GFC_TRUE) then
+            if(present(destruct_func)) then !destructs the value of the current element
+             call tvp%destruct(errc,destruct_func)
             else
-             call this%current%destruct(errc)
+             call tvp%destruct(errc)
             endif
             if(errc.ne.GFC_SUCCESS) ierr=NOT_CLEAN
-            if(this%current%num_siblings(errc).gt.0) then
-             if(errc.ne.GFC_SUCCESS) ierr=NOT_CLEAN
-             if(associated(this%current%parent)) then
-              if(this%current%first_sibling().eq.GFC_TRUE) this%current%parent%first_child=>this%current%next_sibling
+            if(tvp%num_siblings(errc).gt.0) then
+             if(errc.eq.GFC_SUCCESS) then
+              if(associated(tvp%parent)) then
+               if(tvp%first_sibling().eq.GFC_TRUE) tvp%parent%first_child=>tvp%next_sibling
+              endif
+              tvp%prev_sibling%next_sibling=>tvp%next_sibling
+              tvp%next_sibling%prev_sibling=>tvp%prev_sibling
+             else
+              ierr=GFC_CORRUPTED_CONT
              endif
-             this%current%prev_sibling%next_sibling=>this%current%next_sibling
-             this%current%next_sibling%prev_sibling=>this%current%prev_sibling
             else
-             if(associated(this%current%parent)) this%current%parent%first_child=>NULL()
+             if(errc.eq.GFC_SUCCESS) then
+              if(associated(tvp%parent)) tvp%parent%first_child=>NULL()
+             else
+              ierr=GFC_CORRUPTED_CONT
+             endif
             endif
-            totelems=this%container%update_num_elems_(-1_INTL,errc); if(errc.ne.GFC_SUCCESS) ierr=NOT_CLEAN
-            if(this%current%is_root().eq.GFC_TRUE) then
-             this%current=>NULL()
-             errc=this%set_status_(GFC_IT_EMPTY)
-             if(errc.ne.GFC_SUCCESS) ierr=NOT_CLEAN
-            else
-             this%current=>this%current%parent
+            if(ierr.eq.GFC_SUCCESS.or.ierr.eq.NOT_CLEAN) then
+             totelems=this%container%update_num_elems_(-1_INTL,errc)
+             if(errc.eq.GFC_SUCCESS) then
+              if(tvp%is_root().eq.GFC_TRUE) then
+               this%current=>NULL()
+               errc=this%set_status_(GFC_IT_EMPTY)
+               if(errc.ne.GFC_SUCCESS) ierr=GFC_CORRUPTED_CONT
+              else
+               tvp%parent%num_child=tvp%parent%num_child-1
+               this%current=>tvp%parent
+              endif
+              deallocate(tvp,STAT=errc); if(errc.ne.0) ierr=NOT_CLEAN
+             else
+              ierr=GFC_CORRUPTED_CONT
+             endif
             endif
            else
             ierr=GFC_INVALID_ARGS !the current element is not a leaf
@@ -820,7 +831,7 @@
          integer(INTD):: ierr
          real(8), intent(out):: perf
          integer(INTD), intent(in), optional:: dev_out
-         integer(INTD), parameter:: MAX_TREE_ELEMS=10
+         integer(INTD), parameter:: MAX_TREE_ELEMS=1000000
          class(gfc_cont_elem_t), pointer:: tvp
          class(*), pointer:: val_p
          integer(INTD):: jo,i,j,m
@@ -828,46 +839,35 @@
          type(tree_t):: some_tree
          type(tree_iter_t):: some_iter
          real(8):: tms,tm
-         type(vertex_ptr_t):: vps(MAX_TREE_ELEMS) !debug
 
          if(present(dev_out)) then; jo=dev_out; else; jo=6; endif
          perf=0d0; tms=thread_wtime()
-         ierr=some_iter%init(some_tree)
-         if(ierr.ne.GFC_SUCCESS) then; ierr=1; return; endif
+         ierr=some_iter%init(some_tree); if(ierr.ne.GFC_SUCCESS) then; ierr=1; return; endif
 !Add elements to the tree:
-         some_val%some_real=1d0; some_val%some_int=1
-         ierr=some_iter%add_leaf(some_val) !root
-         if(ierr.ne.GFC_SUCCESS) then; ierr=2; return; endif
-         vps(1)%ptr=>some_iter%pointee() !debug
+         some_val%some_real=1d0; some_val%some_int=1 !root
+         ierr=some_iter%add_leaf(some_val); if(ierr.ne.GFC_SUCCESS) then; ierr=2; return; endif
          i=MAX_TREE_ELEMS-1
          do while(i.gt.0)
           ierr=some_iter%reset(); if(ierr.ne.GFC_SUCCESS) then; ierr=3; return; endif
           do while(i.gt.0)
-           ierr=some_iter%scan(.TRUE.,some_predicate,some_action)
-           if(ierr.ne.GFC_SUCCESS) exit
+           ierr=some_iter%scan(.TRUE.,some_predicate,some_action); if(ierr.ne.GFC_IT_ACTIVE) exit
            call random_number(some_val%some_real); some_val%some_int=MAX_TREE_ELEMS-i+1
-           tvp=>some_iter%pointee(); val_p=>tvp%get_value(); ierr=print_action(val_p)
+!          tvp=>some_iter%pointee(); val_p=>tvp%get_value(); ierr=print_action(val_p) !debug: parent
            ierr=some_iter%add_leaf(some_val); if(ierr.ne.GFC_SUCCESS) then; ierr=4; return; endif
-           write(jo,'(" is a parent of ")',ADVANCE='NO')
-           tvp=>some_iter%pointee(); val_p=>tvp%get_value(); ierr=print_action(val_p)
-           vps(MAX_TREE_ELEMS-i+1)%ptr=>tvp !debug
+!          tvp=>some_iter%pointee(); val_p=>tvp%get_value(); ierr=print_action(val_p) !debug: newly added
            i=i-1
           enddo
           if(ierr.ne.GFC_SUCCESS.and.ierr.ne.GFC_IT_DONE) then; ierr=5; return; endif
          enddo
-         write(jo,'("Total number of elements in the tree = ",i9)') some_tree%num_elems(ierr) !debug
+!        write(jo,'("Total number of elements in the tree = ",i9)') some_tree%num_elems(ierr) !debug
          if(ierr.ne.GFC_SUCCESS) then; ierr=6; return; endif
-         do i=1,MAX_TREE_ELEMS
-          val_p=>vps(i)%ptr%get_value()
-          ierr=print_action(val_p)
-         enddo
-         print *,'====='
          ierr=some_iter%reset(); if(ierr.ne.GFC_SUCCESS) then; ierr=7; return; endif
-         ierr=some_iter%scan(action_func=print_action)
-         write(jo,'("Total number of traversed elements   = ",i9)') some_iter%total_count()
+         ierr=some_iter%scan(); if(ierr.ne.GFC_IT_DONE) then; ierr=8; return; endif
+!        write(jo,'("Total number of traversed elements   = ",i9)') some_iter%total_count() !debug
+         if(some_tree%num_elems().ne.some_iter%total_count()) then; ierr=9; return; endif
 !Delete the tree:
-         ierr=some_iter%reset(); if(ierr.ne.GFC_SUCCESS) then; ierr=8; return; endif
-         ierr=some_iter%delete_subtree(some_destructor); if(ierr.ne.GFC_SUCCESS) then; ierr=9; return; endif
+         ierr=some_iter%reset(); if(ierr.ne.GFC_SUCCESS) then; ierr=10; return; endif
+         ierr=some_iter%delete_subtree(some_destructor); if(ierr.ne.GFC_SUCCESS) then; ierr=11; return; endif
          tm=thread_wtime(tms); perf=dble(MAX_TREE_ELEMS)/tm
          return
         end function dil_test_tree

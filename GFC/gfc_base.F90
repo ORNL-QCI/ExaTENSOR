@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Base
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2016-02-25 (started 2016-02-17)
+!REVISION: 2016-02-26 (started 2016-02-17)
 !Copyright (C) 2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2016 Oak Ridge National Laboratory (UT-Battelle)
 !LICENSE: GNU GPL v.2
@@ -521,9 +521,9 @@
 !------------------------------------------------------------------------------------------------------
         function IterScan(this,return_each,predicate_func,action_func,backward,time_limit) result(ierr)
 !Traverses the container via an associated iterator beginning from the current position of the iterator.
-!Returns GFC_IT_DONE upon reaching the end of the container.
+!Returns GFC_IT_DONE upon reaching the end of the container; returns GFC_IT_ACTIVE in intermediate returns.
          implicit none
-         integer(INTD):: ierr !out: error code (0:success, GFC_IT_DONE:done, Other:error)
+         integer(INTD):: ierr !out: error code (GFC_IT_ACTIVE:intermediate return, GFC_IT_DONE:done, Other:empty or error)
          class(gfc_iter_t), intent(inout):: this !inout: iterator
          logical, intent(in), optional:: return_each !if TRUE, each successful match will be returned (defaults to FALSE)
          procedure(gfc_predicate_i), optional:: predicate_func !predicate function
@@ -538,15 +538,16 @@
 
          ierr=this%get_status()
          if(ierr.eq.GFC_IT_ACTIVE) then
-          curr=>this%pointee(ierr)
-          if(associated(curr).and.ierr.eq.GFC_SUCCESS) then
-           if(present(return_each)) then; ret=return_each; else; ret=.false.; endif
-           if(present(predicate_func)) then; pred=.true.; else; pred=.false.; endif
-           if(present(action_func)) then; act=.true.; else; act=.false.; endif
-           if(present(time_limit).and.(.not.ret)) then; tml=time_limit; else; tml=-1d0; endif
-           if(present(backward)) then; bkw=backward; else; bkw=.false.; endif
-           if(tml.gt.0d0) tms=thread_wtime()
-           do while(ierr.eq.GFC_SUCCESS)
+          if(present(return_each)) then; ret=return_each; else; ret=.false.; endif
+          if(present(predicate_func)) then; pred=.true.; else; pred=.false.; endif
+          if(present(action_func)) then; act=.true.; else; act=.false.; endif
+          if(present(time_limit).and.(.not.ret)) then; tml=time_limit; else; tml=-1d0; endif
+          if(present(backward)) then; bkw=backward; else; bkw=.false.; endif
+          if(tml.gt.0d0) tms=thread_wtime()
+          ierr=GFC_SUCCESS
+          do while(ierr.eq.GFC_SUCCESS)
+           curr=>this%pointee(ierr)
+           if(ierr.eq.GFC_SUCCESS.and.associated(curr)) then
             elem_val=>curr%get_value(ierr)
             if(ierr.eq.GFC_SUCCESS.and.associated(elem_val)) then
              this%tot_count=this%tot_count+1
@@ -556,17 +557,17 @@
               if(act) then
                call curr%action(action_func,ierr); if(ierr.ne.0) then; ierr=GFC_ACTION_FAILED; exit; endif
               endif
-              if(ret) exit
+              if(ret) then; ierr=GFC_IT_ACTIVE; exit; endif !intermediate return
              endif
              if(tml.gt.0d0) then; if(thread_wtime(tms).gt.tml) exit; endif
              if(bkw) then; ierr=this%previous(); else; ierr=this%next(); endif !move to the next/previous element
             else
              ierr=GFC_CORRUPTED_CONT
             endif
-           enddo
-          else
-           ierr=GFC_CORRUPTED_CONT
-          endif
+           else
+            ierr=GFC_CORRUPTED_CONT
+           endif
+          enddo
          endif
          return
         end function IterScan
