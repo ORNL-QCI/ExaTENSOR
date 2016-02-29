@@ -1,6 +1,6 @@
 !Generic Fortran Containers:: Tree.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2016-02-26 (started 2016-02-17)
+!REVISION: 2016-02-29 (started 2016-02-17)
 !Copyright (C) 2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2016 Oak Ridge National Laboratory (UT-Battelle)
 !LICENSE: GNU GPL v.2
@@ -23,7 +23,7 @@
         integer(INTD), private:: CONS_OUT=6 !output device
         logical, private:: VERBOSE=.true.   !verbositiy for errors
         integer(INTD), private:: DEBUG=0    !debugging level (0:none)
- !Tree iterator:
+ !Tree iterator directions:
         integer(INTD), parameter, private:: TREE_IT_DOWN=1  !downward direction
         integer(INTD), parameter, private:: TREE_IT_RIGHT=2 !right direction
         integer(INTD), parameter, private:: TREE_IT_UP=3    !upward direction
@@ -73,13 +73,6 @@
         end type tree_iter_t
 !GLOBAL DATA:
 !VISIBILITY:
- !Interfaces:
-        public gfc_predicate_i !generic predicate function inferface
-        public gfc_cmp_i       !generic comparison function inferface
-        public gfc_copy_i      !generic copy constructor inferface
-        public gfc_destruct_i  !generic destructor inferface
-        public gfc_action_i    !generic action function inferface
-        public gfc_print_i     !generic print function inferface
  !Procedures:
         private TreeVertexNumChildren
         private TreeVertexNumSiblings

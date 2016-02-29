@@ -73,6 +73,33 @@
 
        contains
 !IMPLEMENTATION:
-!----------------------------
+!------------------------------------------------------
+        function ListElemIsFirst(this,ierr) result(res)
+!Returns GFC_TRUE if this list element is the first in the list.
+         implicit none
+         integer(INTD):: res                         !out: result
+         class(list_elem_t), intent(in):: this       !in: list element
+         integer(INTD), intent(out), optional:: ierr !out: error code (0:success)
+         integer(INTD):: errc
+
+         errc=GFC_SUCCESS; res=GFC_TRUE
+         if(associated(this%prev_elem)) res=GFC_FALSE
+         if(present(ierr)) ierr=errc
+         return
+        end function ListElemIsFirst
+!-----------------------------------------------------
+        function ListElemIsLast(this,ierr) result(res)
+!Returns GFC_TRUE if this list element is the last in the list.
+         implicit none
+         integer(INTD):: res                         !out: result
+         class(list_elem_t), intent(in):: this       !in: list element
+         integer(INTD), intent(out), optional:: ierr !out: error code (0:success)
+         integer(INTD):: errc
+
+         errc=GFC_SUCCESS; res=GFC_TRUE
+         if(associated(this%next_elem)) res=GFC_FALSE
+         if(present(ierr)) ierr=errc
+         return
+        end function ListElemIsLast
 
        end module list
