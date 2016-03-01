@@ -1,9 +1,9 @@
 !Distributed data storage service (DDSS).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2016/02/19 (started 2015/03/18)
+!REVISION: 2016/03/01 (started 2015/03/18)
 !Copyright (C) 2015 Dmitry I. Lyakh (email: quant4me@gmail.com)
 !Copyright (C) 2015 Oak Ridge National Laboratory (UT-Battelle)
-!LICENSE: GPLv2
+!LICENSE: GNU GPL v.2 (or higher).
 
 !CONCEPTS:
 ! * Each MPI process can participate in one or more distributed memory spaces (DMS),
@@ -14,6 +14,7 @@
 !   it can be attached to one of the dynamic MPI windows in a specific distributed memory space
 !   and the corresponding data descriptor (DD) should be sent to the manager for registration.
 !   The registered data descriptor can be used by other MPI processes to remotely access the data.
+!   The size of the data being attached to a distributed space must be aligned to DDSS_BUFFER_ALIGN.
 ! * A data descriptor is communicated between MPI processes as a plain integer packet,
 !   with integer kind ELEM_PACK_SIZE. The first integer in the packet always contains
 !   the length of the rest of the packet (number of integer elements carrying the information).
@@ -27,6 +28,7 @@
 !   simple packet is prefixed with an additional integer element (tag). Tagged data containers
 !   are distinguished from untagged ones by the sign of the first integer in the data container,
 !   the one whose absolute value shows the number of simple packets stored in the data container.
+!   For optimal performance, allocate just enough memory in the data packet container.
 ! * Upon a request from the manager, data (e.g., a tensor block) can be detached from
 !   the corresponding distributed memory space and subsequently destroyed (if needed).
 ! * Data communication is accomplished via data transfer requests (DTR) and
@@ -37,13 +39,13 @@
 !   Contrary, special return statuses are made closer to the HUGE by their absolute values.
 ! * Currently, chunks of memory that can be attached to a distributed memory space must be
 !   multiples of 4 bytes. This is because the memory chunks are mapped to 32-bit words internally.
-!   Also, so far only the REAL(4), REAL(8), and COMPLEX(8) data types are explicitly supported,
-!   but this is more like an artificial restriction which can be removed relatively easy.
+!   Also, so far only the REAL(4), REAL(8), COMPLEX(4), and COMPLEX(8) data types are explicitly
+!   supported, but this is more like an artificial restriction which can be removed relatively easy.
 !TYPICAL USAGE WORKFLOW:
-! 0. Initialize the DDSS/MPI parallel service via the procedure provided in "service_mpi.F90".
+! 0. Initialize the DDSS (over MPI) parallel service via the procedure provided in "service_mpi.F90".
 ! 1. Create one or more distributed spaces <DistrSpace_t> over specific MPI communicators (collective).
-! 2. Each MPI process participating in a distributed space can attach a contiguous array of data to that space
-!    and obtain the associated global data descriptor <DataDescr_t>.
+! 2. Each MPI process participating in a distributed space can attach a contiguous array of data to
+!    that space and obtain the associated global data descriptor <DataDescr_t>.
 ! 3. Data descriptors can be packed into plain integer packets and collected in a data packet container <PackCont_t>.
 !    A data packet container can be communicated between MPI processes using communication handles <CommHandle_t>.
 ! 4. Upon receival, data descriptors can be unpacked from the data packet container back into <DataDescr_t> objects.
@@ -53,6 +55,17 @@
 ! 5. Once no longer needed, the data can be detached from the distributed memory space by the owning MPI process.
 ! 6. Once a distributed memory space is empty and no longer needed, it can be destoyed (it must be empty!).
 ! 7. Finalize the DDSS/MPI parallel service via the procedure provided in "service_mpi.F90".
+!FOR DEVELOPERS ONLY:
+! * ELEM_PACK_SIZE is chosen large enough (typically 8 bytes) to capture all basic Fortran data types:
+!   INTEGER(1,2,4,8), REAL(4,8), COMPLEX(8,16) (16 is split in two), LOGICAL, CHARACTER(1).
+! * Packing of smaller than ELEM_PACK_SIZE data types must be done at the starting address
+!   of the ELEM_PACK_SIZE integer word to avoid problems with endianess. In particular, the
+!   length of a simple data packet is encoded as INT_COUNT stored in an INTEGER(ELEM_PACK_SIZE)
+!   and the number of packets in the data packet container (super-packet) is encoded as INT_MPI
+!   stored as INTEGER(ELEM_PACK_SIZE).
+! * Currently the entire data packet container volume is communicated. A better choice would be
+!   to commmunicate only the used part of it, thus preventing unnecessary communication
+!   (in case the capacity of the data container is significant but mostly unused).
        module distributed
 !       use, intrinsic:: ISO_C_BINDING
         use service_mpi !includes ISO_C_BINDING & MPI & dil_basic
@@ -73,6 +86,9 @@
         logical, private:: DEBUG=.true.   !debugging mode
  !Packing/unpacking:
         integer(INT_MPI), parameter, public:: ELEM_PACK_SIZE=max(8,max(C_SIZE_T,max(INT_ADDR,INT_COUNT))) !packing size for integers/logicals/reals/C_pointers/C_sizes
+ !Data alignment:
+        integer(INT_MPI), parameter, public:: DDSS_DATA_TYPE_ALIGN=4 !data type alignment in bytes
+        integer(INT_MPI), parameter, public:: DDSS_BUFFER_ALIGN=max(4,DDSS_DATA_TYPE_ALIGN) !alignment for attached memory buffers in bytes
  !Distributed memory spaces:
         integer(INT_MPI), parameter, public:: DISTR_SPACE_NAME_LEN=128 !max length of a distributed space name (multiple of 8)
  !Data transfers:
@@ -354,7 +370,7 @@
         if(errc.eq.0) then
          if(mod(data_type_size,8).eq.0) then
           data_type_size=data_type_size/8 !convert bits to bytes
-          if(mod(data_type_size,4).ne.0) errc=2 !data type size must be a multiple of 4
+          if(mod(data_type_size,DDSS_DATA_TYPE_ALIGN).ne.0) errc=2 !data type size must be a multiple of DDSS_DATA_TYPE_ALIGN
          else
           if(VERBOSE) write(CONS_OUT,'("#ERROR(distributed::data_type_size): Fractional type size detected: ",i11)') data_type_size
           errc=3 !fractional data type size is not allowed
@@ -405,33 +421,33 @@
         end function get_mpi_int_datatype
 !-------------------------------------------------------------
         function packet_full_len(packet,body_len) result(plen)
-!Returns the full packet length (number of elements).
+!Returns the full packet length (number of elements);
+!each element is an INTEGER(ELEM_PACK_SIZE).
         implicit none
-        integer(INT_COUNT):: plen                                 !out: packet full length
-        integer(ELEM_PACK_SIZE), intent(in), target:: packet(0:*) !in: packet
-        integer(INT_COUNT), intent(out), optional:: body_len      !out: packet body length (useful legnth)
+        integer(INT_COUNT):: plen                                 !out: data packet full length
+        integer(ELEM_PACK_SIZE), intent(in), target:: packet(0:*) !in: data packet
+        integer(INT_COUNT), intent(out), optional:: body_len      !out: data packet body length (useful legnth)
         integer(INT_COUNT), pointer:: len_p
         type(C_PTR):: cptr
 
         cptr=c_loc(packet(0)); call c_f_pointer(cptr,len_p) !body length has integer kind INT_COUNT
         plen=1+len_p !full length (header + body)
-        if(present(body_len)) body_len=max(0,len_p) !body length
+        if(present(body_len)) body_len=max(0,len_p) !body length (in packing integers)
         nullify(len_p)
         return
         end function packet_full_len
 !-----------------------------------------------------------------------
         function num_packs_in_container(pack_cont,tagged) result(npacks)
-!Returns the total number of packets in the data packet container.
+!Returns the total number of packets in the data packet container (super-packet).
         implicit none
-        integer(INT_MPI):: npacks
+        integer(INT_MPI):: npacks                            !out: number of data packets in the data packet container
         integer(ELEM_PACK_SIZE), intent(in):: pack_cont(0:*) !in: plain data packet container (integer array)
         logical, intent(out), optional:: tagged              !out: TRUE if the packet container is tagged, FALSE otherwise
 
-        if(pack_cont(0).lt.0) then
-         npacks=-pack_cont(0)
-         if(present(tagged)) tagged=.true.
-        else
-         npacks=pack_cont(0)
+        npacks=int(pack_cont(0),INT_MPI) !properly convert the storing integer into the result
+        if(npacks.lt.0) then !tagged packet container
+         npacks=-npacks; if(present(tagged)) tagged=.true.
+        else !tag-free packet container
          if(present(tagged)) tagged=.false.
         endif
         return
@@ -486,8 +502,8 @@
 
         this%TransCount=0; this%TransSize=0d0
         this%NumEntries=0; this%FirstFree=1; this%HashBin(:)=0
-        this%PrevEntry(1)=0; do i=2,MAX_ONESIDED_REQS; this%PrevEntry(i)=i-1; enddo
-        do i=1,MAX_ONESIDED_REQS-1; this%NextEntry(i)=i+1; enddo; this%NextEntry(MAX_ONESIDED_REQS)=0
+        this%PrevEntry(1)=0; do i=2,MAX_ONESIDED_REQS; this%PrevEntry(i)=i-1; enddo !linked list
+        do i=1,MAX_ONESIDED_REQS-1; this%NextEntry(i)=i+1; enddo; this%NextEntry(MAX_ONESIDED_REQS)=0 !linked list
         do i=1,MAX_ONESIDED_REQS; call this%RankWins(i)%init(); enddo !init all entries to null
         if(DEBUG) write(jo,'("#DEBUG(distributed::RankWinList.Clean)[",i7,"]: (rank,win)-list cleaned.")') impir
         if(present(ierr)) ierr=0
@@ -531,7 +547,7 @@
          enddo
          if(RankWinListTest.le.0.and.apnd) then !append if not found
           if(DEBUG) write(jo,'("#DEBUG(distribiuted::RankWinList.Test)[",i7,"]: Registering new (rank,window) entry: "'//&
-                    &',i9,1x,i13,3x,i6,1x,i6)') impir,rank,win,this%NumEntries,this%FirstFree
+                    &',i7,1x,i13,3x,i6,1x,i6)') impir,rank,win,this%NumEntries,this%FirstFree
           if(this%NumEntries.lt.MAX_ONESIDED_REQS) then
            j=this%FirstFree; this%FirstFree=this%NextEntry(j)
            this%PrevEntry(this%FirstFree)=0
@@ -546,7 +562,7 @@
            call this%RankWins(j)%init(rank,win,errc)
            if(errc.eq.0) then
             RankWinListTest=j
-            if(DEBUG) write(jo,'("#DEBUG(distributed::RankWinList.Test)[",i7,"]: New (rank,window) registered: ",i9,1x,i13)')&
+            if(DEBUG) write(jo,'("#DEBUG(distributed::RankWinList.Test)[",i7,"]: New (rank,window) registered: ",i7,1x,i13)')&
                       &impir,rank,win
            else
             call this%delete(j); errc=1
@@ -582,7 +598,7 @@
           this%NextEntry(entry_num)=this%FirstFree
           if(this%FirstFree.gt.0) this%PrevEntry(this%FirstFree)=entry_num
           this%FirstFree=entry_num; this%NumEntries=this%NumEntries-1
-          if(DEBUG) write(jo,'("#DEBUG(distributed::RankWinList.Del)[",i7,"]: (rank,window) deleted: ",i9,1x,i13)')&
+          if(DEBUG) write(jo,'("#DEBUG(distributed::RankWinList.Del)[",i7,"]: (rank,window) deleted: ",i7,1x,i13)')&
                     &impir,this%RankWins(entry_num)%Rank,this%RankWins(entry_num)%Window
           call this%RankWins(entry_num)%init() !clean entry
          else
@@ -614,13 +630,13 @@
           this%TransSize=this%TransSize+real(n,8)*real(dd%DataVol,8)
           dd%TransID=this%TransCount !global transaction ID
           this%RankWins(rwe)%RefCount=this%RankWins(rwe)%RefCount+1
-          if(DEBUG) write(jo,'("#DEBUG(distributed::RankWin.NewTrans)[",i7,"]: New transfer: ",i9,1x,i13,1x,i5,1x,i13)')&
+          if(DEBUG) write(jo,'("#DEBUG(distributed::RankWinList.NewTrans)[",i7,"]: New transfer: ",i7,1x,i13,1x,i5,1x,i13)')&
                     &impir,this%RankWins(rwe)%Rank,this%RankWins(rwe)%Window,this%RankWins(rwe)%RefCount,dd%TransID
          else
           errc=1
          endif
         else
-         if(VERBOSE) write(CONS_OUT,'("#FATAL(distributed::RankWin.NewTrans): Max int8 MPI message count exceeded!")')
+         if(VERBOSE) write(CONS_OUT,'("#FATAL(distributed::RankWinList.NewTrans): Max int8 MPI message count exceeded!")')
          errc=2
          call quit(-1,'#FATAL: Unable to continue: Distributed Data Service failed!')
         endif
@@ -663,42 +679,6 @@
         if(present(ierr)) ierr=errc
         return
         end subroutine WinMPIClean
-!-------------------------------------------------------
-        subroutine WinMPIPack(this,packet,ierr,pack_len)
-!Packs a WinMPI_t object into a plain integer packet <packet>.
-!The first integer is always the useful length of the packet, that is,
-!the number of the following integer elements storing the information.
-!It is the user responsibility to provide a large enough packet buffer.
-        implicit none
-        class(WinMPI_t), intent(in):: this                   !in: WinMPI_t object
-        class(SimplePack_t), intent(inout), target:: packet  !out: packet (length + information)
-        integer(INT_MPI), intent(inout), optional:: ierr     !out: error code (0:success)
-        integer(INT_COUNT), intent(out), optional:: pack_len !out: full packet length (in packing integers)
-        integer(INT_MPI):: errc
-        integer(INT_COUNT):: pl
-        type(C_PTR):: cptr
-        integer(INT_COUNT), pointer:: len_p
-        integer(INT_MPI), pointer:: impi_p
-        logical, pointer:: log_p
-
-        errc=0
-        if(packet%buf_len().lt.1+WinMPI_PACK_LEN) call packet%reserve_mem(int(1+WinMPI_PACK_LEN,INT_MPI),errc)
-        if(errc.eq.0) then
-         packet%Packet(0)=0; pl=0
-         pl=pl+1; packet%Packet(pl)=0; cptr=c_loc(packet%Packet(pl)); call c_f_pointer(cptr,impi_p); impi_p=this%Window
-         pl=pl+1; packet%Packet(pl)=0; cptr=c_loc(packet%Packet(pl)); call c_f_pointer(cptr,impi_p); impi_p=this%DispUnit
-         pl=pl+1; packet%Packet(pl)=0; cptr=c_loc(packet%Packet(pl)); call c_f_pointer(cptr,impi_p); impi_p=this%CommMPI
-         pl=pl+1; packet%Packet(pl)=0; cptr=c_loc(packet%Packet(pl)); call c_f_pointer(cptr,log_p); log_p=this%Dynamic
-         cptr=c_loc(packet%Packet(0)); call c_f_pointer(cptr,len_p); len_p=pl !packet body length is stored in the header integer
-         len_p=>NULL(); log_p=>NULL(); impi_p=>NULL()
-         if(present(pack_len)) pack_len=1+pl !header integer + packet body
-        else
-         if(present(pack_len)) pack_len=0
-         errc=1
-        endif
-        if(present(ierr)) ierr=errc
-        return
-        end subroutine WinMPIPack
 !----------------------------------------------------------
         subroutine WinMPIPackInt(this,packet,ierr,pack_len)
 !Packs a WinMPI_t object into a plain integer packet <packet>.
@@ -707,9 +687,9 @@
 !It is the user responsibility to provide a large enough packet buffer.
         implicit none
         class(WinMPI_t), intent(in):: this                           !in: WinMPI_t object
-        integer(ELEM_PACK_SIZE), intent(inout), target:: packet(0:*) !out: packet (length + information)
+        integer(ELEM_PACK_SIZE), intent(inout), target:: packet(0:*) !out: large enough data packet (length + information)
         integer(INT_MPI), intent(inout), optional:: ierr             !out: error code (0:success)
-        integer(INT_COUNT), intent(out), optional:: pack_len         !out: full packet length (in packing integers)
+        integer(INT_COUNT), intent(out), optional:: pack_len         !out: full data packet length (in packing integers)
         integer(INT_MPI):: errc
         integer(INT_COUNT):: pl
         type(C_PTR):: cptr
@@ -728,51 +708,42 @@
         if(present(ierr)) ierr=errc
         return
         end subroutine WinMPIPackInt
-!---------------------------------------------------------
-        subroutine WinMPIUnpack(this,packet,ierr,pack_len)
-!Unpacks a WinMPI_t object from a plain integer packet <packet>.
+!-------------------------------------------------------
+        subroutine WinMPIPack(this,packet,ierr,pack_len)
+!Packs a WinMPI_t object into a simple packet <packet>.
+!The first integer is always the useful length of the packet, that is,
+!the number of the following integer elements storing the information.
+!It is the user responsibility to provide a large enough packet buffer.
         implicit none
-        class(WinMPI_t), intent(inout):: this                !out: unpacked WinMPI_t object
-        class(SimplePack_t), intent(in), target:: packet     !in: plain integer packet (length + information)
+        class(WinMPI_t), intent(in):: this                   !in: WinMPI_t object
+        class(SimplePack_t), intent(inout), target:: packet  !out: data packet (length + information)
         integer(INT_MPI), intent(inout), optional:: ierr     !out: error code (0:success)
-        integer(INT_COUNT), intent(out), optional:: pack_len !out: packet length (in packing integers)
+        integer(INT_COUNT), intent(out), optional:: pack_len !out: full data packet length (in packing integers)
         integer(INT_MPI):: errc
-        integer(INT_COUNT):: pl
-        type(C_PTR):: cptr
-        integer(INT_COUNT), pointer:: len_p
-        integer(INT_MPI), pointer:: impi_p
-        logical, pointer:: log_p
 
         errc=0
-        if(packet%body_len().ge.WinMPI_PACK_LEN) then
-!Check the length:
-         cptr=c_loc(packet%Packet(0)); call c_f_pointer(cptr,len_p)
-         if(present(pack_len)) pack_len=1+len_p
-         if(len_p.eq.WinMPI_PACK_LEN) then
-!Unpack:
-          call this%clean(); pl=0
-          pl=pl+1; cptr=c_loc(packet%Packet(pl)); call c_f_pointer(cptr,impi_p); this%Window=impi_p
-          pl=pl+1; cptr=c_loc(packet%Packet(pl)); call c_f_pointer(cptr,impi_p); this%DispUnit=impi_p
-          pl=pl+1; cptr=c_loc(packet%Packet(pl)); call c_f_pointer(cptr,impi_p); this%CommMPI=impi_p
-          pl=pl+1; cptr=c_loc(packet%Packet(pl)); call c_f_pointer(cptr,log_p); this%Dynamic=log_p
-          len_p=>NULL(); log_p=>NULL(); impi_p=>NULL()
+        if(packet%buf_len().lt.1+WinMPI_PACK_LEN) call packet%reserve_mem(int(1+WinMPI_PACK_LEN,INT_MPI),errc)
+        if(errc.eq.0) then
+         if(present(pack_len)) then
+          call this%WinMPIPackInt(packet%Packet,errc,pack_len)
          else
-          errc=1
+          call this%WinMPIPackInt(packet%Packet,errc)
          endif
         else
-         errc=-1
+         if(present(pack_len)) pack_len=0
+         errc=1
         endif
         if(present(ierr)) ierr=errc
         return
-        end subroutine WinMPIUnpack
+        end subroutine WinMPIPack
 !------------------------------------------------------------
         subroutine WinMPIUnpackInt(this,packet,ierr,pack_len)
 !Unpacks a WinMPI_t object from a plain integer packet <packet>.
         implicit none
         class(WinMPI_t), intent(inout):: this                     !out: unpacked WinMPI_t object
-        integer(ELEM_PACK_SIZE), intent(in), target:: packet(0:*) !in: plain integer packet (length + information)
+        integer(ELEM_PACK_SIZE), intent(in), target:: packet(0:*) !in: plain integer data packet (length + information)
         integer(INT_MPI), intent(inout), optional:: ierr          !out: error code (0:success)
-        integer(INT_COUNT), intent(out), optional:: pack_len      !out: packet length (in packing integers)
+        integer(INT_COUNT), intent(out), optional:: pack_len      !out: full data packet length (in packing integers)
         integer(INT_MPI):: errc
         integer(INT_COUNT):: pl
         type(C_PTR):: cptr
@@ -798,6 +769,29 @@
         if(present(ierr)) ierr=errc
         return
         end subroutine WinMPIUnpackInt
+!---------------------------------------------------------
+        subroutine WinMPIUnpack(this,packet,ierr,pack_len)
+!Unpacks a WinMPI_t object from a simple packet <packet>.
+        implicit none
+        class(WinMPI_t), intent(inout):: this                !out: unpacked WinMPI_t object
+        class(SimplePack_t), intent(in), target:: packet     !in: data packet (length + information)
+        integer(INT_MPI), intent(inout), optional:: ierr     !out: error code (0:success)
+        integer(INT_COUNT), intent(out), optional:: pack_len !out: full data packet length (in packing integers)
+        integer(INT_MPI):: errc
+
+        errc=0
+        if(packet%body_len().ge.WinMPI_PACK_LEN) then
+         if(present(pack_len)) then
+          call this%WinMPIUnpackInt(packet%Packet,errc,pack_len)
+         else
+          call this%WinMPIUnpackInt(packet%Packet,errc)
+         endif
+        else
+         errc=-1
+        endif
+        if(present(ierr)) ierr=errc
+        return
+        end subroutine WinMPIUnpack
 !-------------------------------------------------
         subroutine WinMPIPrint(this,dev_out,space)
 !Prints the object data.
@@ -805,7 +799,7 @@
         implicit none
         class(WinMPI_t), intent(in):: this               !in: object to print
         integer(INT_MPI), intent(in), optional:: dev_out !in: output device
-        integer(INT_MPI), intent(in), optional:: space   !in: left alignment
+        integer(INT_MPI), intent(in), optional:: space   !in: left alignment (formatting)
         character(32):: sfmt
         integer(INT_MPI):: devo,sp
         integer:: fl
@@ -886,8 +880,8 @@
         call MPI_BARRIER(this%WinMPI%CommMPI,errc) !test the validity of the MPI communicator
         if(errc.eq.0) then
          if(this%WinSize.eq.0) then !MPI window must be empty
-          if(DEBUG)write(jo,'("#DEBUG(distributed::DataWin.Destroy)[",i7,"]: MPI window for destruct: ",i11,1x,i11,1x,i2,1x,i11)')&
-                   &impir,this%WinMPI%Window,this%WinMPI%CommMPI,this%WinMPI%DispUnit,this%WinSize
+          if(DEBUG) write(jo,'("#DEBUG(distributed::DataWin.Destroy)[",i7,"]: MPI window to destroy: ",i11,1x,i11,1x,i2,1x,i11)')&
+                    &impir,this%WinMPI%Window,this%WinMPI%CommMPI,this%WinMPI%DispUnit,this%WinSize
           call MPI_WIN_FREE(this%WinMPI%Window,errc)
           if(errc.eq.0) then
            if(DEBUG) write(jo,'("#DEBUG(distributed::DataWin.Destroy)[",i7,"]: MPI window destroyed: ",i11,1x,i11,1x,i2,1x,i11)')&
@@ -908,11 +902,11 @@
 !-----------------------------------------------------------
         subroutine DataWinAttach(this,loc_ptr,loc_size,ierr)
 !Attaches a local (contiguous) data buffer to the MPI data window.
-!The size of the data buffer in bytes must be a multiple of 4.
+!The size of the data buffer in bytes must be a multiple of DDSS_BUFFER_ALIGN.
         implicit none
         class(DataWin_t), intent(inout):: this           !inout: data window
         type(C_PTR), intent(in):: loc_ptr                !in: C pointer to the local data buffer
-        integer(INT_ADDR), intent(in):: loc_size         !in: size of the local data buffer in bytes: Must be multiple of 4
+        integer(INT_ADDR), intent(in):: loc_size         !in: size of the local data buffer in bytes: Must be multiple of DDSS_BUFFER_ALIGN
         integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
         integer(INT_MPI):: errc
         integer(INT_ADDR):: vol
@@ -920,8 +914,8 @@
 
         errc=0
         if(.not.c_associated(loc_ptr,C_NULL_PTR)) then
-         if(loc_size.gt.0.and.mod(loc_size,4).eq.0) then
-          vol=loc_size/4 !volume in 4-byte words
+         if(loc_size.gt.0.and.mod(loc_size,DDSS_BUFFER_ALIGN).eq.0) then
+          vol=loc_size/4 !volume in 4-byte (32-bit) words
           if(this%WinSize.ge.0) then !data window has been initialized
            call c_f_pointer(loc_ptr,r4_ptr,(/vol/))
            call attach_buffer(r4_ptr,loc_size,errc)
@@ -959,11 +953,11 @@
 !-----------------------------------------------------------
         subroutine DataWinDetach(this,loc_ptr,loc_size,ierr)
 !Detaches a previously attached local (contiguous) data buffer from an MPI data window.
-!The size of the data buffer in bytes must be a multiple of 4.
+!The size of the data buffer in bytes must be a multiple of DDSS_BUFFER_ALIGN.
         implicit none
         class(DataWin_t), intent(inout):: this           !inout: data window
         type(C_PTR), intent(in):: loc_ptr                !in: C pointer to the local data buffer to be detached
-        integer(INT_ADDR), intent(in):: loc_size         !in: size of the local data buffer in bytes: Must be multiple of 4
+        integer(INT_ADDR), intent(in):: loc_size         !in: size of the local data buffer in bytes: Must be multiple of DDSS_BUFFER_ALIGN
         integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
         integer(INT_MPI):: errc
         integer(INT_ADDR):: vol
@@ -971,7 +965,7 @@
 
         errc=0
         if(.not.c_associated(loc_ptr,C_NULL_PTR)) then
-         if(loc_size.gt.0.and.mod(loc_size,4).eq.0) then
+         if(loc_size.gt.0.and.mod(loc_size,DDSS_BUFFER_ALIGN).eq.0) then
           vol=loc_size/4 !volume in 4-byte words
           if(this%WinSize.ge.loc_size) then
            call c_f_pointer(loc_ptr,r4_ptr,(/vol/))
@@ -1058,8 +1052,8 @@
              this%NumWins=num_wins
              this%CommMPI=comm_mpi
              this%SpaceName=space_name(1:min(len_trim(space_name),DISTR_SPACE_NAME_LEN)) !alphabetic name for convenience
-             if(DEBUG)write(jo,'("#DEBUG(distributed::DistrSpace.Create)[",i7,"]: Distributed space created: ",i11,1x,i4,1x,A16)')&
-                      &impir,this%CommMPI,this%NumWins,this%SpaceName(1:min(min(len_trim(this%SpaceName),DISTR_SPACE_NAME_LEN),16))
+             if(DEBUG)write(jo,'("#DEBUG(distributed::DistrSpace.Create)[",i7,"]: Distributed space created: ",i11,1x,i4,1x,A32)')&
+                      &impir,this%CommMPI,this%NumWins,this%SpaceName(1:min(min(len_trim(this%SpaceName),DISTR_SPACE_NAME_LEN),32))
             else
              do i=num_wins,1,-1
               call this%DataWins(i)%destroy()
@@ -1106,8 +1100,8 @@
              deallocate(this%DataWins,STAT=errc)
              if(errc.eq.0) then
               if(DEBUG)&
-               &write(jo,'("#DEBUG(distributed::DistrSpace.Destroy)[",i7,"]: Distributed space destroyed: ",i11,1x,i4,1x,A16)')&
-               &impir,this%CommMPI,this%NumWins,this%SpaceName(1:min(min(len_trim(this%SpaceName),DISTR_SPACE_NAME_LEN),16))
+               &write(jo,'("#DEBUG(distributed::DistrSpace.Destroy)[",i7,"]: Distributed space destroyed: ",i11,1x,i4,1x,A32)')&
+               &impir,this%CommMPI,this%NumWins,this%SpaceName(1:min(min(len_trim(this%SpaceName),DISTR_SPACE_NAME_LEN),32))
               this%NumWins=0
               this%CommMPI=MPI_COMM_NULL
               this%SpaceName=' '
@@ -1395,7 +1389,10 @@
            rw_entry=>RankWinRefs%RankWins(rwe)
            if(rw_entry%RefCount.gt.1) then !not the last reference to this (rank,window)
             if(lcl) then !complete at origin only
-             if(this%TransID.gt.rw_entry%LastSync) call MPI_WIN_FLUSH_LOCAL(rw_entry%Rank,rw_entry%Window,errc) !complete at the origin only
+             if(this%TransID.gt.rw_entry%LastSync) then
+              if(DEBUG) write(jo,'("#DEBUG[",i7,"]: WIN_FLUSH_LOCAL: ",i7,1x,i11)') impir,rw_entry%Rank,rw_entry%Window !debug
+              call MPI_WIN_FLUSH_LOCAL(rw_entry%Rank,rw_entry%Window,errc) !complete at the origin only
+             endif
              if(errc.eq.0) then
               this%StatMPI=MPI_STAT_COMPLETED_ORIG
               rw_entry%RefCount=rw_entry%RefCount-1
@@ -1403,7 +1400,10 @@
               this%StatMPI=MPI_STAT_ONESIDED_ERR; errc=1
              endif
             else !complete at both origin and target
-             if(this%TransID.gt.rw_entry%LastSync) call MPI_WIN_FLUSH(rw_entry%Rank,rw_entry%Window,errc) !complete both at the origin and target
+             if(this%TransID.gt.rw_entry%LastSync) then
+              if(DEBUG) write(jo,'("#DEBUG[",i7,"]: WIN_FLUSH: ",i7,1x,i11)') impir,rw_entry%Rank,rw_entry%Window !debug
+              call MPI_WIN_FLUSH(rw_entry%Rank,rw_entry%Window,errc) !complete both at the origin and target
+             endif
              if(errc.eq.0) then
               this%StatMPI=MPI_STAT_COMPLETED
               rw_entry%RefCount=rw_entry%RefCount-1
@@ -1413,7 +1413,7 @@
             endif
            else !the last reference to this (rank,window)
             if(this%TransID.gt.rw_entry%LastSync) then
-             write(CONS_OUT,'("#DEBUG[",i4,"]: WIN_UNLOCK(1): ",i7,1x,i11)') impir,rw_entry%Rank,rw_entry%Window; flush(CONS_OUT) !debug
+             if(DEBUG) write(jo,'("#DEBUG[",i7,"]: WIN_UNLOCK(.flush): ",i7,1x,i11)') impir,rw_entry%Rank,rw_entry%Window !debug
              call MPI_WIN_UNLOCK(rw_entry%Rank,rw_entry%Window,errc) !complete both at origin and target
             endif
             if(errc.eq.0) then
@@ -1423,7 +1423,7 @@
              this%StatMPI=MPI_STAT_ONESIDED_ERR; errc=3
             endif
            endif
-           if(errc.eq.0) rw_entry%LastSync=RankWinRefs%TransCount
+           if(errc.eq.0) rw_entry%LastSync=RankWinRefs%TransCount !update the last sync event for this (rank,win)
            if(rw_entry%RefCount.eq.0) then !delete the (rank,window) entry if no references are attached to it
             call RankWinRefs%delete(rwe,errc); if(errc.ne.0) errc=4
            elseif(rw_entry%RefCount.lt.0) then
@@ -1455,6 +1455,7 @@
 
         errc=0
         if(this%RankMPI.ge.0) then
+         if(DEBUG) write(jo,'("#DEBUG[",i7,"]: WIN_SYNC: ",i11)') impir,this%WinMPI%Window !debug
          call MPI_WIN_SYNC(this%WinMPI%Window,errc)
          if(errc.ne.0) errc=1
         else
@@ -1483,6 +1484,7 @@
            rw_entry=>RankWinRefs%RankWins(rwe)
            if(rw_entry%RefCount.gt.0) then
             if(this%TransID.gt.rw_entry%LastSync) then
+             if(DEBUG) write(jo,'("#DEBUG[",i7,"]: MPI_TEST: ",i7,1x,i11)') impir,this%RankMPI,this%WinMPI%Window !debug
              call MPI_TEST(this%ReqHandle,compl,mpi_stat,errc)
              if(errc.eq.0) then
               if(compl) then
@@ -1499,25 +1501,28 @@
              DataDescrTestData=.true.
             endif
             if(rw_entry%RefCount.eq.0) then !delete the (rank,window) entry if no references are attached to it
-             call RankWinRefs%delete(rwe,errc); if(errc.ne.0) errc=2
+             if(DEBUG) write(jo,'("#DEBUG[",i7,"]: WIN_UNLOCK(.test): ",i7,1x,i11)') impir,rw_entry%Rank,rw_entry%Window !debug
+             call MPI_WIN_UNLOCK(rw_entry%Rank,rw_entry%Window,errc); if(errc.ne.0) errc=2
+             this%StatMPI=MPI_STAT_COMPLETED
+             call RankWinRefs%delete(rwe,errc); if(errc.ne.0) errc=3
             endif
             nullify(rw_entry)
            else
             if(VERBOSE) write(CONS_OUT,'("#FATAL(distributed::DataDescr.TestData): Invalid reference count: ",i12)')&
                         &rw_entry%RefCount
-            errc=3
+            errc=4
             call quit(-1,'#FATAL: Unable to continue: Distributed Data Service failed!')
            endif
           else
-           errc=4
+           errc=5
           endif
          elseif(this%StatMPI.eq.MPI_STAT_COMPLETED.or.this%StatMPI.eq.MPI_STAT_COMPLETED_ORIG) then
           DataDescrTestData=.true.
          else
-          errc=5
+          errc=6
          endif
         else
-         errc=6
+         errc=7
         endif
         if(present(ierr)) ierr=errc
         return
@@ -1541,6 +1546,7 @@
            rw_entry=>RankWinRefs%RankWins(rwe)
            if(rw_entry%RefCount.gt.0) then
             if(this%TransID.gt.rw_entry%LastSync) then
+             if(DEBUG) write(jo,'("#DEBUG[",i7,"]: MPI_WAIT: ",i7,1x,i11)') impir,this%RankMPI,this%WinMPI%Window !debug
              call MPI_WAIT(this%ReqHandle,mpi_stat,errc)
              if(errc.eq.0) then
               this%StatMPI=MPI_STAT_COMPLETED_ORIG
@@ -1553,23 +1559,26 @@
              rw_entry%RefCount=rw_entry%RefCount-1
             endif
             if(rw_entry%RefCount.eq.0) then !delete the (rank,window) entry if no references are attached to it
-             call RankWinRefs%delete(rwe,errc); if(errc.ne.0) errc=2
+             if(DEBUG) write(jo,'("#DEBUG[",i7,"]: WIN_UNLOCK(.wait): ",i7,1x,i11)') impir,rw_entry%Rank,rw_entry%Window !debug
+             call MPI_WIN_UNLOCK(rw_entry%Rank,rw_entry%Window,errc); if(errc.ne.0) errc=2
+             this%StatMPI=MPI_STAT_COMPLETED
+             call RankWinRefs%delete(rwe,errc); if(errc.ne.0) errc=3
             endif
             nullify(rw_entry)
            else
             if(VERBOSE) write(CONS_OUT,'("#FATAL(distributed::DataDescr.WaitData): Invalid reference count: ",i12)')&
                         &rw_entry%RefCount
-            errc=3
+            errc=4
             call quit(-1,'#FATAL: Unable to continue: Distributed Data Service failed!')
            endif
           else
-           errc=4
+           errc=5
           endif
          elseif(this%StatMPI.ne.MPI_STAT_COMPLETED.and.this%StatMPI.ne.MPI_STAT_COMPLETED_ORIG) then
-          errc=5
+          errc=6
          endif
         else
-         errc=6
+         errc=7
         endif
         if(present(ierr)) ierr=errc
         return
@@ -1668,7 +1677,7 @@
          type(RankWin_t), pointer:: rw_entry
          jerr=0; rw_entry=>RankWinRefs%RankWins(rw)
          if(rw_entry%LockType*READ_SIGN.lt.0) then !communication direction change
-          write(CONS_OUT,'("#DEBUG[",i4,"]: WIN_UNLOCK(2): ",i7,1x,i11)') impir,rw_entry%Rank,rw_entry%Window; flush(CONS_OUT) !debug
+          if(DEBUG) write(jo,'("#DEBUG[",i7,"]: WIN_UNLOCK(.get): ",i7,1x,i11)') impir,rw_entry%Rank,rw_entry%Window !debug
           call MPI_WIN_UNLOCK(rw_entry%Rank,rw_entry%Window,jerr)
           if(jerr.eq.0) then
            rw_entry%LockType=NO_LOCK
@@ -1678,7 +1687,7 @@
           endif
          endif
          if(jerr.eq.0.and.rw_entry%LockType.eq.NO_LOCK) then
-          write(CONS_OUT,'("#DEBUG[",i4,"]: WIN_LOCK(1): ",i7,1x,i11)') impir,rw_entry%Rank,rw_entry%Window; flush(CONS_OUT) !debug
+          if(DEBUG) write(jo,'("#DEBUG[",i7,"]: WIN_LOCK(.get): ",i7,1x,i11)') impir,rw_entry%Rank,rw_entry%Window !debug
           call MPI_WIN_LOCK(MPI_LOCK_SHARED,rw_entry%Rank,MPI_ASSER,rw_entry%Window,jerr)
           if(jerr.eq.0) then
            rw_entry%LockType=SHARED_LOCK*READ_SIGN
@@ -1917,7 +1926,7 @@
          type(RankWin_t), pointer:: rw_entry
          jerr=0; rw_entry=>RankWinRefs%RankWins(rw)
          if(rw_entry%LockType*WRITE_SIGN.lt.0) then !communication direction change
-          write(CONS_OUT,'("#DEBUG[",i4,"]: WIN_UNLOCK(3): ",i7,1x,i11)') impir,rw_entry%Rank,rw_entry%Window; flush(CONS_OUT) !debug
+          if(DEBUG) write(jo,'("#DEBUG[",i7,"]: WIN_UNLOCK(.acc): ",i7,1x,i11)') impir,rw_entry%Rank,rw_entry%Window !debug
           call MPI_WIN_UNLOCK(rw_entry%Rank,rw_entry%Window,jerr)
           if(jerr.eq.0) then
            rw_entry%LockType=NO_LOCK
@@ -1927,7 +1936,7 @@
           endif
          endif
          if(jerr.eq.0.and.rw_entry%LockType.eq.NO_LOCK) then
-          write(CONS_OUT,'("#DEBUG[",i4,"]: WIN_LOCK(2): ",i7,1x,i11)') impir,rw_entry%Rank,rw_entry%Window; flush(CONS_OUT) !debug
+          if(DEBUG) write(jo,'("#DEBUG[",i7,"]: WIN_LOCK(.acc): ",i7,1x,i11)') impir,rw_entry%Rank,rw_entry%Window !debug
           call MPI_WIN_LOCK(MPI_LOCK_SHARED,rw_entry%Rank,MPI_ASSER,rw_entry%Window,jerr)
           if(jerr.eq.0) then
            rw_entry%LockType=SHARED_LOCK*WRITE_SIGN
@@ -2751,13 +2760,13 @@
         integer(INT_MPI), intent(inout), optional:: ierr   !out: error code (0:success)
         integer(INT_MPI), intent(in), optional:: recv_rank !in: receiver MPI rank (defaults to broadcast)
         integer(INT_MPI), intent(in), optional:: msg_tag   !in: P2P communication tag (defaults to DEFAULT_MPI_TAG)
-        integer(INT_MPI), intent(in), optional:: comm_mpi  !MPI communicator (defaults to GLOBAL_MPI_COMM)
+        integer(INT_MPI), intent(in), optional:: comm_mpi  !in: MPI communicator (defaults to GLOBAL_MPI_COMM)
         logical, intent(in), optional:: sync               !in: if TRUE, the communication will be origin-completed here (default:FALSE)
-        integer(INT_MPI):: comm,comm_sz,rx_rank,ctag,errc
+        integer(INT_MPI):: comm,comm_sz,proc_rank,rx_rank,ctag,errc
 
         errc=0
         comm=GLOBAL_MPI_COMM; if(present(comm_mpi)) comm=comm_mpi
-        if(present(recv_rank)) then
+        if(present(recv_rank)) then !P2P
          rx_rank=recv_rank
          if(comm.eq.GLOBAL_MPI_COMM) then
           comm_sz=impis
@@ -2769,8 +2778,14 @@
          else
           errc=2 !failed to determine the size of the MPI communicator
          endif
-        else
-         rx_rank=-1 !broadcast
+        else !broadcast
+         rx_rank=-1
+         if(comm.eq.GLOBAL_MPI_COMM) then
+          comm_sz=impis; proc_rank=impir
+         else
+          call MPI_COMM_SIZE(comm,comm_sz,errc)
+          call MPI_COMM_RANK(comm,proc_rank,errc)
+         endif
         endif
         if(errc.eq.0) then
          ctag=DEFAULT_MPI_TAG; if(present(msg_tag)) ctag=msg_tag
@@ -2823,7 +2838,7 @@
           integer(INT_MPI), intent(out):: jerr
           integer(INT_MPI):: data_typ
           jerr=get_mpi_int_datatype(ELEM_PACK_SIZE,data_typ)
-          if(jerr.eq.0) call MPI_IBCAST(msg,int(this%ffe),data_typ,impir,comm,comm_hl%ReqHandle,jerr)
+          if(jerr.eq.0) call MPI_IBCAST(msg,int(this%ffe),data_typ,proc_rank,comm,comm_hl%ReqHandle,jerr)
           return
          end subroutine broadcast_message
 
@@ -2844,7 +2859,7 @@
         integer(INT_MPI), intent(inout), optional:: ierr   !out: error code (0:success)
         integer(INT_MPI), intent(in), optional:: send_rank !in: sender MPI rank (either P2P or broadcast)
         integer(INT_MPI), intent(in), optional:: msg_tag   !in: P2P communication tag (defaults to MPI_ANY_TAG)
-        integer(INT_MPI), intent(in), optional:: comm_mpi  !MPI communicator (defaults to GLOBAL_MPI_COMM)
+        integer(INT_MPI), intent(in), optional:: comm_mpi  !in: MPI communicator (defaults to GLOBAL_MPI_COMM)
         logical, intent(in), optional:: bcast              !in: if TRUE, a broadcast from <send_rank> is asssumed (default:FALSE)
         logical, intent(in), optional:: sync               !in: if TRUE, the communication will be completed here (default:FALSE)
         integer(INT_MPI):: comm,comm_sz,sx_rank,ctag,buf_vol,errc
@@ -2934,7 +2949,7 @@
         end subroutine PackContRecv
 !-----------------------------------------------
         subroutine PackContRegArrived(this,ierr)
-!Registers an arrived data packet container.
+!Registers an arrived data packet container (fills in the fields of PackCont_t).
         implicit none
         class(PackCont_t), intent(inout):: this          !inout: data packet container with arrived data
         integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
@@ -2943,27 +2958,27 @@
 
         errc=0
         if(associated(this%Packets)) then
-         if(this%Packets(0).lt.0) then !tagged container
+         this%NumPackets=int(this%Packets(0),INT_MPI)
+         if(this%NumPackets.lt.0) then !tagged container
+          this%NumPackets=-this%NumPackets
           this%Marked=.true.; k=1
-         else !untagged container 
+         else !tag-free container
           this%Marked=.false.; k=0
          endif
-         this%NumPackets=abs(this%Packets(0))
          this%ffe=1; m=ubound(this%Packets,1)
          do i=1,this%NumPackets
           if(this%ffe+k.le.m) then
            l=packet_full_len(this%Packets(this%ffe+k:))
-           if(l.gt.0) then
+           if(l.gt.0) then !`this allows empty packets in the container
             this%ffe=this%ffe+k+l
            else
-            errc=4; exit
+            errc=3; exit
            endif
           else
-           errc=3; exit
+           errc=2; exit
           endif
          enddo
-         if(this%ffe.gt.m+1) errc=2
-         if(errc.ne.0) this%ffe=1
+         if(errc.ne.0) then; this%NumPackets=0; this%ffe=1; endif !mark the data packet container as empty
         else
          errc=1
         endif

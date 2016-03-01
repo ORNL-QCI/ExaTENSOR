@@ -33,6 +33,7 @@
         real(8), parameter:: PAUSE_INC=1d-1                    !pause length increment in seconds
         real(8), parameter:: MIN_PAUSE=9.999999d-2             !minimal meaningful pause length to check the comm/comp overlap
         integer(INT_MPI), parameter:: NUM_WINS_PER_SPACE=1     !number of MPI windows per distributed space
+        logical:: IMMEDIATE_TEST=.true.                        !if TRUE, an immediate test will be issued after MPI_RGET
         real(8), parameter:: ZERO_NRM_TOL=1d-6                 !zero norm tolerance
         integer(INT_MPI), parameter:: MAX_PACK_LEN=1024        !max packet length (internal use)
 
@@ -47,6 +48,7 @@
         real(8):: paus,rnd,tms,tm,fl_get_tm0,fl_acc_tm0,snorm1,snorm2,worst_time,best_time,overlap
         integer(ELEM_PACK_SIZE):: packet0(MAX_PACK_LEN),packet1(MAX_PACK_LEN)
         integer:: errc,tmr
+        logical:: res
 
 !Initialize the MPI infrastructure:
         call dil_process_start(ierr)
@@ -125,7 +127,7 @@
         write(jo,*) 'Allocated a receive buffer(rank,vol): ',impir,buf_vol1
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
-        do cs=2,2 !switches between regular one-sided and request-based one-sided
+        do cs=1,2 !switches between regular one-sided and request-based one-sided
          if(cs.eq.1) then; comm_mode=MPI_ASYNC_NRM; else; comm_mode=MPI_ASYNC_REQ; endif
 !START TESTING PASSESS:
          paus=0d0 !initial pause length in seconds
@@ -148,6 +150,13 @@
           write(jo,*) 'Initiated fetching remote data (rank,time,err): ',impir,tm,ierr
           if(ierr.ne.0) call quit(ierr,'ERROR: Fetch initiation failed!')
 !         call ddss_print_stat() !DEBUG
+ !Optional test:
+          if(cs.eq.2.and.IMMEDIATE_TEST) then
+           res=descr1%test_data(ierr)
+           tm=thread_wtime(tms)
+           write(jo,*) 'GET+TEST bundle of remote data (rank,time,delivery,err): ',impir,tm,res,ierr
+           if(ierr.ne.0) call quit(ierr,'ERROR: Message delivery test failed!')
+          endif
  !Pause (like we are doing some computations now and the MPI message is progressing on the background, hopefully):
           tms=thread_wtime()
           errc=timer_start(paus,tmr); do while(.not.time_is_off(tmr,errc)); enddo !DEBUG: Pause before FLUSH
@@ -188,6 +197,13 @@
           write(jo,*) 'Initiated a remote accumulate (rank,time,err): ',impir,tm,ierr
           if(ierr.ne.0) call quit(ierr,'ERROR: Accumulate initiation failed!')
 !         call ddss_print_stat() !DEBUG
+ !Optional test:
+          if(cs.eq.2.and.IMMEDIATE_TEST) then
+           res=descr1%test_data(ierr)
+           tm=thread_wtime(tms)
+           write(jo,*) 'GET+TEST bundle of remote data (rank,time,delivery,err): ',impir,tm,res,ierr
+           if(ierr.ne.0) call quit(ierr,'ERROR: Message delivery test failed!')
+          endif
  !Pause (like we are doing some computations now and the MPI message is progressing on the background hopefully):
           tms=thread_wtime()
           errc=timer_start(paus,tmr); do while(.not.time_is_off(tmr,errc)); enddo !DEBUG: Pause before FLUSH
