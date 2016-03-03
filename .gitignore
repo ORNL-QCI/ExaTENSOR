@@ -13,4 +13,4 @@
 *.x
 *.log
 /Misc
-/*/OBJ
+/*/OBJ/*
