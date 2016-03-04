@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Base
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2016-02-26 (started 2016-02-17)
+!REVISION: 2016-03-04 (started 2016-02-17)
 !Copyright (C) 2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2016 Oak Ridge National Laboratory (UT-Battelle)
 !LICENSE: GNU GPL v.2
@@ -51,6 +51,10 @@
 !   is highly discouraged (please resort to plain data, like arrays).
 ! # Due to the limitations of Fortran class inheritence, public methods
 !   with the trailing underscore shall not be used by the end user!
+!FOR DEVELOPERS:
+! # Currently, if an element is added/deleted via a subcontainer iterator
+!   the total number of elements is not updated in the containing container,
+!   and vice versa!
        module gfc_base
         use dil_basic
         use timers

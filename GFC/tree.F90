@@ -1,6 +1,6 @@
 !Generic Fortran Containers:: Tree.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2016-02-29 (started 2016-02-17)
+!REVISION: 2016-03-04 (started 2016-02-17)
 !Copyright (C) 2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2016 Oak Ridge National Laboratory (UT-Battelle)
 !LICENSE: GNU GPL v.2
@@ -10,9 +10,13 @@
 !   thus having its root element linked to other elements of the larger tree.
 ! # All accesses, updates, and scans on a tree are performed via
 !   a tree iterator associated with the tree. When attaching a tree
-!   to another tree, the attached tree can be accessed either
-!   via its own iterator or via the larger tree iterator. Multiple
+!   to another tree, the attached tree elements can be accessed either
+!   via its own iterator or via the combined tree iterator. Multiple
 !   iterators can be associated with a tree at a time.
+!FOR DEVELOPERS:
+! * Currently, if an element is added/deleted via a subtree iterator
+!   the total number of elements is not updated in the containing tree,
+!   and vice versa!
        module tree
         use gfc_base
         use timers
@@ -460,8 +464,12 @@
          if(present(ierr)) ierr=errc
          return
         end function TreeIterMyParent
-!------------------------------------------------------------------------------
+!--------------------------------------------------------------------------------------------
+#ifdef NO_GNU
+        function TreeIterAddLeaf(this,elem_val,assoc_only,no_move,copy_constr_f) result(ierr) !`GCC/5.3.0 has a bug with this
+#else
         function TreeIterAddLeaf(this,elem_val,assoc_only,no_move) result(ierr)
+#endif
 !Creates a new container element (leaf) as the last child of the currently pointed
 !element and stores the value <elem_val> in it, either by value or by reference.
          implicit none
@@ -470,6 +478,9 @@
          class(*), target, intent(in):: elem_val    !in: value to store in the container
          logical, intent(in), optional:: assoc_only !in: TRUE: store by reference, FALSE: store by value (defaults to FALSE)
          logical, intent(in), optional:: no_move    !in: if TRUE, the iterator will not move to the newly added element (defaults to FALSE)
+#ifdef NO_GNU
+         procedure(gfc_copy_i), optional:: copy_constr_f !in: user-defined generic copy constructor
+#endif
          class(tree_vertex_t), pointer:: tvp
          integer:: errc
          logical:: assoc,nomo
@@ -485,7 +496,15 @@
             tvp=>this%current%first_child%prev_sibling !last sibling among children
             allocate(tvp%next_sibling,STAT=errc)
             if(errc.eq.0) then
+#ifdef NO_GNU
+             if(present(copy_constr_f)) then
+              call tvp%next_sibling%construct(elem_val,ierr,assoc_only=assoc,copy_constr_func=copy_constr_f)
+             else
+              call tvp%next_sibling%construct(elem_val,ierr,assoc_only=assoc)
+             endif
+#else
              call tvp%next_sibling%construct(elem_val,ierr,assoc_only=assoc)
+#endif
              if(ierr.eq.GFC_SUCCESS) then
               tvp%next_sibling%prev_sibling=>tvp
               tvp=>tvp%next_sibling
@@ -499,7 +518,15 @@
            else
             allocate(this%current%first_child,STAT=errc)
             if(errc.eq.0) then
+#ifdef NO_GNU
+             if(present(copy_constr_f)) then
+              call this%current%first_child%construct(elem_val,ierr,assoc_only=assoc,copy_constr_func=copy_constr_f)
+             else
+              call this%current%first_child%construct(elem_val,ierr,assoc_only=assoc)
+             endif
+#else
              call this%current%first_child%construct(elem_val,ierr,assoc_only=assoc)
+#endif
              if(ierr.eq.GFC_SUCCESS) then
               tvp=>this%current%first_child
              else
@@ -528,10 +555,17 @@
            if(.not.(associated(this%container%root).or.associated(this%current))) then
             allocate(this%container%root,STAT=errc)
             if(errc.eq.0) then
+#ifdef NO_GNU
+             if(present(copy_constr_f)) then
+              call this%container%root%construct(elem_val,ierr,assoc_only=assoc,copy_constr_func=copy_constr_f)
+             else
+              call this%container%root%construct(elem_val,ierr,assoc_only=assoc)
+             endif
+#else
              call this%container%root%construct(elem_val,ierr,assoc_only=assoc)
+#endif
              if(ierr.eq.GFC_SUCCESS) then
-              this%current=>this%container%root    !move to the just added first element regardless of <no_move>
-              ierr=this%set_status_(GFC_IT_ACTIVE) !change the EMPTY status to ACTIVE
+              ierr=this%reset() !move to the just added first element regardless of <no_move> and change the EMPTY status to ACTIVE
               nelems=this%container%update_num_elems_(1_INTL,ierr); if(ierr.ne.GFC_SUCCESS) ierr=GFC_CORRUPTED_CONT
              else
               deallocate(this%container%root)
