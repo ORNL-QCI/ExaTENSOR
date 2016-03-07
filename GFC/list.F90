@@ -1,6 +1,6 @@
 !Generic Fortran Containers:: Linked list.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2016-03-04 (started 2016-02-28)
+!REVISION: 2016-03-07 (started 2016-02-28)
 !Copyright (C) 2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2016 Oak Ridge National Laboratory (UT-Battelle)
 !LICENSE: GNU GPL v.2 (or higher).
@@ -57,7 +57,6 @@
          procedure, public:: insert_elem=>ListIterInsertElem    !inserts a new element at the current position of the container
          procedure, public:: insert_list=>ListIterInsertList    !inserts another linked list at the current position of the container
          generic, public:: insert=>ListIterInsertElem,ListIterInsertList !generic
-         procedure, public:: extract=>ListIterExtract           !extracts an element from the list (deletion is optional)
          procedure, public:: split=>ListIterSplit               !splits the list into two parts at the current position of the container
          procedure, public:: delete=>ListIterDelete             !deletes an element or multiple elements starting from the current position
         end type list_iter_t
@@ -76,7 +75,6 @@
         private ListIterAppend
         private ListIterInsertElem
         private ListIterInsertList
-        private ListIterExtract
         private ListIterSplit
         private ListIterDelete
 
@@ -513,13 +511,99 @@
          endif
          return
         end function ListIterInsertElem
-!----------------------------------------------------------
-        function ListIterInsertList(this,list) result(ierr)
-!Inserts another list at the current iterator position.
+!---------------------------------------------------------------------
+        function ListIterInsertList(this,sublist,precede) result(ierr)
+!Inserts another list at the current iterator position (either before or after).
+!The inserted list becomes a sublist after insertion.
          implicit none
-         integer(INTD):: ierr
+         integer(INTD):: ierr                     !out: error code (0:success)
+         class(list_iter_t), intent(inout):: this !inout: list iterator
+         class(list_bi_t), intent(in):: sublist   !in: inserted list
+         logical, intent(in), optional:: precede  !in: if TRUE the sublist will be inserted prior to the current iterator position (defaults to FALSE)
+         logical:: before
+         integer(INTL):: nelems,new_elems
 
+         if(present(precede)) then; before=precede; else; before=.false.; endif
+         ierr=this%get_status()
+         if(ierr.eq.GFC_IT_ACTIVE) then
+          if(associated(this%current)) then
+           if(associated(sublist%first_elem).and.associated(sublist%last_elem)) then
+            new_elems=sublist%num_elems(ierr)
+            if(ierr.eq.GFC_SUCCESS.and.new_elems.gt.0) then
+             if(before) then !insert prior to the current position
+              if(associated(this%current%prev_elem)) then
+               this%current%prev_elem%next_elem=>sublist%first_elem
+               sublist%first_elem%prev_elem=>this%current%prev_elem
+               sublist%last_elem%next_elem=>this%current
+               this%current%prev_elem=>sublist%last_elem
+              else
+               this%container%first_elem=>sublist%first_elem
+               sublist%last_elem%next_elem=>this%current
+               this%current%prev_elem=>sublist%last_elem
+              endif
+             else !insert after the current position
+              if(associated(this%current%next_elem)) then
+               this%current%next_elem%prev_elem=>sublist%last_elem
+               sublist%last_elem%next_elem=>this%current%next_elem
+               sublist%first_elem%prev_elem=>this%current
+               this%current%next_elem=>sublist%first_elem
+              else
+               this%container%last_elem=>sublist%last_elem
+               sublist%first_elem%prev_elem=>this%current
+               this%current%next_elem=>sublist%first_elem
+              endif
+             endif
+             nelems=this%container%update_num_elems_(new_elems,ierr); if(ierr.ne.GFC_SUCCESS) ierr=GFC_CORRUPTED_CONT
+            else
+             ierr=GFC_ERROR
+            endif
+           else
+            ierr=GFC_EMPTY_CONT
+           endif
+          else
+           ierr=GFC_CORRUPTED_CONT
+          endif
+         endif
          return
         end function ListIterInsertList
+!--------------------------------------------------------------------------------
+        function ListIterSplit(this,new_list,keep_tail,exclude_iter) result(ierr)
+!Splits the list into two parts at the current iterator position. Depending on
+!the value of <exclude_iter>, the iterator will either stay in the first part
+!of the list or in the second. One of the parts will be associated with the present
+!iterator, another part will be returned as a separate list. After splitting,
+!the iterator position is reset to the top of the list.
+         implicit none
+         integer(INTD):: ierr                         !out: error code (0:success)
+         class(list_iter_t), intent(inout):: this     !inout: list iterator
+         class(list_bi_t), intent(out):: new_list     !out: new list (cut)
+         logical, intent(in), optional:: keep_tail    !in: if TRUE, the tail part will be associated with the iterator (defaults to FALSE)
+         logical, intent(in), optional:: exclude_iter !in: if TRUE, the current element of the iterator will be excluded from the iterator (defaults to FALSE)
+         logical:: keep_top,include_iter
+         class(list_elem_t), pointer:: last1,first2
+
+         if(present(keep_tail)) then; keep_top=.not.keep_tail; else; keep_top=.true.; endif
+         if(present(exclude_iter)) then; include_iter=.not.exclude_iter; else; include_iter=.true.; endif
+         ierr=this%get_status()
+         if(ierr.eq.GFC_IT_ACTIVE) then
+          if(associated(this%current)) then
+           if(exclude_iter) then
+            last1=>this%current%prev_elem
+            first2=>this%current
+           else
+            last1=>this%current
+            first2=>this%current%next_elem
+           endif
+           if(keep_top) then
+            if(
+           else
+            
+           endif
+          else
+           ierr=GFC_CORRUPTED_CONT
+          endif
+         endif
+         return
+        end function ListIterSplit
 
        end module list

@@ -1,6 +1,6 @@
 !Generic Fortran Containers:: Tree.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2016-03-04 (started 2016-02-17)
+!REVISION: 2016-03-07 (started 2016-02-17)
 !Copyright (C) 2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2016 Oak Ridge National Laboratory (UT-Battelle)
 !LICENSE: GNU GPL v.2
@@ -14,9 +14,8 @@
 !   via its own iterator or via the combined tree iterator. Multiple
 !   iterators can be associated with a tree at a time.
 !FOR DEVELOPERS:
-! * Currently, if an element is added/deleted via a subtree iterator
-!   the total number of elements is not updated in the containing tree,
-!   and vice versa!
+! # Quick counting does not work with composite containers and subcontainers.
+!   Probably, quick counting should not be used at all.
        module tree
         use gfc_base
         use timers
@@ -665,8 +664,8 @@
          if(ierr.eq.GFC_IT_ACTIVE) then
           if(associated(this%current)) then
            if(associated(subtree%root)) then
-            nelems=subtree%num_elems(ierr)
-            if(ierr.eq.GFC_SUCCESS.and.nelems.gt.0.and.(.not.associated(subtree%root%parent))) then
+!           nelems=subtree%num_elems(ierr)
+            if(ierr.eq.GFC_SUCCESS.and.(.not.associated(subtree%root%parent))) then
              if(associated(this%current%first_child)) then
               tvp=>this%current%first_child%prev_sibling !tvp => last sibling
               tvp%next_sibling=>subtree%root
@@ -679,8 +678,10 @@
               subtree%root%prev_sibling=>subtree%root
              endif
              subtree%root%parent=>this%current
-             totelems=this%container%update_num_elems_(nelems,ierr)
-             if(ierr.ne.GFC_SUCCESS) ierr=GFC_CORRUPTED_CONT
+!            totelems=this%container%update_num_elems_(nelems,ierr)
+!            if(ierr.ne.GFC_SUCCESS) ierr=GFC_CORRUPTED_CONT
+             call this%container%quick_counting_off_() !turn off quick counting in the combined container
+             call subtree%quick_counting_off_() !turn off quick counting in the subcontainer
             else
              ierr=GFC_INVALID_ARGS
             endif
@@ -708,20 +709,30 @@
          ierr=this%get_status()
          if(ierr.eq.GFC_IT_ACTIVE) then
           if(associated(this%current)) then
-           if((.not.associated(subtree%root)).and.subtree%num_elems().eq.0) then !subtree must be empty on entrance
+           if(.not.associated(subtree%root)) then !subtree must be empty on entrance
             psib=>this%current%prev_sibling; nsib=>this%current%next_sibling
             subtree%root=>this%current; this%current=>subtree%root%parent; subtree%root%parent=>NULL()
             psib%next_sibling=>nsib; nsib%prev_sibling=>psib
             subtree%root%prev_sibling=>subtree%root
             subtree%root%next_sibling=>subtree%root
-            ierr=subtree_it%init(subtree)
-            if(ierr.eq.GFC_SUCCESS) then
-             ierr=subtree_it%scan()
+            if(this%container%num_elems().gt.0) then !quick counting is still on
+             ierr=subtree_it%init(subtree)
              if(ierr.eq.GFC_SUCCESS) then
-              nelems=subtree_it%total_count()
-              totelems=subtree%update_num_elems_(nelems)
-              totelems=this%container%update_num_elems_(-nelems,ierr)
+              ierr=subtree_it%scan()
+              if(ierr.eq.GFC_SUCCESS) then
+               nelems=subtree_it%total_count()
+               totelems=subtree%update_num_elems_(nelems)
+               totelems=this%container%update_num_elems_(-nelems,ierr)
+              else
+               call this%container%quick_counting_off_()
+               call subtree%quick_counting_off_()
+              endif
+             else
+              call this%container%quick_counting_off_()
+              call subtree%quick_counting_off_()
              endif
+            else
+             call subtree%quick_counting_off_()
             endif
            else
             ierr=GFC_INVALID_ARGS
@@ -891,7 +902,7 @@
          ierr=some_iter%reset(); if(ierr.ne.GFC_SUCCESS) then; ierr=7; return; endif
          ierr=some_iter%scan(); if(ierr.ne.GFC_IT_DONE) then; ierr=8; return; endif
 !        write(jo,'("Total number of traversed elements   = ",i9)') some_iter%total_count() !debug
-         if(some_tree%num_elems().ne.some_iter%total_count()) then; ierr=9; return; endif
+!        if(some_tree%num_elems().ne.some_iter%total_count()) then; ierr=9; return; endif
 !Delete the tree:
          ierr=some_iter%reset(); if(ierr.ne.GFC_SUCCESS) then; ierr=10; return; endif
          ierr=some_iter%delete_subtree(some_destructor); if(ierr.ne.GFC_SUCCESS) then; ierr=11; return; endif

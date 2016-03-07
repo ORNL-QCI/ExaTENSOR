@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Base
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2016-03-04 (started 2016-02-17)
+!REVISION: 2016-03-07 (started 2016-02-17)
 !Copyright (C) 2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2016 Oak Ridge National Laboratory (UT-Battelle)
 !LICENSE: GNU GPL v.2
@@ -13,6 +13,8 @@
 !   of derived types are recursively cloned whereas the pointer components
 !   are just pointer associated. To change this default behavior, one can
 !   supply a user-defined generic copy constructor (see interface below).
+! # A GFC subcontainer is a container linked as a part of some larger container.
+!   As a consequence, its boundary elements can have outside links.
 ! # Each container has an associated iterator for scanning over its elements.
 !   The structure of the container determines the scanning sequence, that is,
 !   the way the elements of the container are traversed over.
@@ -32,7 +34,7 @@
 !   of different linkage between the elements of different containers.
 !   All insertion, deletion, and search operations are done via iterators,
 !   that is, the iterator methods provide the only possible way of accessing,
-!   updating, and performing actions on the associated container.
+!   updating, and performing other actions on the associated container.
 !   All relevant iterator methods are thread-safe, thus enabling
 !   a parallel execution of container scans (via OpenMP threads).
 ! # The container element deletion operation may require a user-defined
@@ -51,10 +53,13 @@
 !   is highly discouraged (please resort to plain data, like arrays).
 ! # Due to the limitations of Fortran class inheritence, public methods
 !   with the trailing underscore shall not be used by the end user!
+! # Quick (constant time) element counting is deactivated when a container
+!   contains a subcontainer, in both the composite container and the subcontainer.
+!   The quick counting procedure will be replaced by an order-N counting algorithm.
 !FOR DEVELOPERS:
-! # Currently, if an element is added/deleted via a subcontainer iterator
-!   the total number of elements is not updated in the containing container,
-!   and vice versa!
+! # Quick counting does not work with composite containers and subcontainers
+!   and probably it should not be used at all. Currently gfc_container_t::num_elems()
+!   will not return the total number of elements without quick counting.
        module gfc_base
         use dil_basic
         use timers
@@ -116,7 +121,8 @@
 #endif
          contains
           procedure, non_overridable, public:: num_elems=>ContNumElems !returns the total number of elements in the container
-          procedure, non_overridable, public:: update_num_elems_=>ContUpdateNumElems !updates the number of elements
+          procedure, non_overridable, public:: update_num_elems_=>ContUpdateNumElems !updates the number of elements (INTERNAL)
+          procedure, non_overridable, public:: quick_counting_off_=>ContQuickCountingOff !turns off quick element counting (INTERNAL)
         end type gfc_container_t
  !Base iterator:
         type, abstract, public:: gfc_iter_t
@@ -219,6 +225,7 @@
         private ContElemPrintIt
         private ContNumElems
         private ContUpdateNumElems
+        private ContQuickCountingOff
         private IterGetStatus
         private IterSetStatus
         private IterResetCount
@@ -414,21 +421,28 @@
         end subroutine ContElemPrintIt
 !------------------------------------------------------
         function ContNumElems(this,ierr) result(nelems)
-!Returns the total number of elements stored in the container.
+!Returns the total number of elements stored in the container,
+!unless quick counting has been deactivated (returns -1 then).
          implicit none
-         integer(INTL):: nelems                      !out: total number of elements in the container
+         integer(INTL):: nelems                      !out: total number of elements in the container or -1
          class(gfc_container_t), intent(in):: this   !in: container
          integer(INTD), intent(out), optional:: ierr !out: error code (0:success)
          integer(INTD):: errc
 
          errc=GFC_SUCCESS
-         nelems=this%volume; if(nelems.lt.0) errc=GFC_CORRUPTED_CONT
+         if(this%volume.ge.0) then
+          nelems=this%volume
+         else
+          nelems=-1
+          !`Count somehow else (quick counting deactivated)
+         endif
          if(present(ierr)) ierr=errc
          return
         end function ContNumElems
 !----------------------------------------------------------------------
         function ContUpdateNumElems(this,new_elems,ierr) result(nelems) !INTERNAL USE ONLY!
-!Updates the total number of elements in the container.
+!Updates the total number of elements in the container,
+!unless quick counting has been deactivated (returns -1 then).
          implicit none
          integer(INTL):: nelems                       !out: total number of elements after the update
          class(gfc_container_t), intent(inout):: this !inout: container
@@ -437,15 +451,32 @@
          integer(INTD):: errc
 
          errc=GFC_SUCCESS
-         nelems=this%volume+new_elems
-         if(nelems.ge.0) then
-          this%volume=nelems
+         if(this%volume.ge.0) then
+          nelems=this%volume+new_elems
+          if(nelems.ge.0) then
+           this%volume=nelems
+          else
+           errc=GFC_INVALID_ARGS
+          endif
          else
-          errc=GFC_INVALID_ARGS
+          nelems=-1 !quick counting deactivated
          endif
          if(present(ierr)) ierr=errc
          return
         end function ContUpdateNumElems
+!-------------------------------------------------
+        subroutine ContQuickCountingOff(this,ierr) !INTERNAL USE ONLY!
+!Turns off quick element counting.
+         implicit none
+         class(gfc_container_t), intent(inout):: this !inout: container
+         integer(INTD), intent(out), optional:: ierr
+         integer(INTD):: errc
+
+         errc=GFC_SUCCESS
+         this%volume=-1
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine ContQuickCountingOff
 !----------------------------------------------------
         function IterGetStatus(this,ierr) result(sts)
 !Returns the status of the iterator.
@@ -530,11 +561,11 @@
          implicit none
          integer(INTD):: ierr !out: error code (GFC_IT_ACTIVE:intermediate return, GFC_IT_DONE:done, Other:empty or error)
          class(gfc_iter_t), intent(inout):: this !inout: iterator
-         logical, intent(in), optional:: return_each !if TRUE, each successful match will be returned (defaults to FALSE)
-         procedure(gfc_predicate_i), optional:: predicate_func !predicate function
-         procedure(gfc_action_i), optional:: action_func !action function
-         logical, intent(in), optional:: backward !if TRUE, the container will be traversed in the backward direction (defaults to FALSE)
-         real(8), intent(in), optional:: time_limit !if specified, the active scan will be interrupted after this time limit (sec)
+         logical, intent(in), optional:: return_each !in: if TRUE, each successful match will be returned (defaults to FALSE)
+         procedure(gfc_predicate_i), optional:: predicate_func !in: predicate function
+         procedure(gfc_action_i), optional:: action_func !in: action function
+         logical, intent(in), optional:: backward !in: if TRUE, the container will be traversed in the backward direction (defaults to FALSE)
+         real(8), intent(in), optional:: time_limit !in: if specified, the active scan will be interrupted after this time limit (sec)
          logical:: ret,pred,act,bkw,moved
          integer(INTD):: pred_val
          class(*), pointer:: elem_val
