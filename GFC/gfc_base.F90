@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Base
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2016-03-07 (started 2016-02-17)
+!REVISION: 2016-03-08 (started 2016-02-17)
 !Copyright (C) 2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2016 Oak Ridge National Laboratory (UT-Battelle)
 !LICENSE: GNU GPL v.2
@@ -13,7 +13,7 @@
 !   of derived types are recursively cloned whereas the pointer components
 !   are just pointer associated. To change this default behavior, one can
 !   supply a user-defined generic copy constructor (see interface below).
-! # A GFC subcontainer is a container linked as a part of some larger container.
+! # A GFC subcontainer is a container linked as a part of a larger container.
 !   As a consequence, its boundary elements can have outside links.
 ! # Each container has an associated iterator for scanning over its elements.
 !   The structure of the container determines the scanning sequence, that is,
@@ -55,10 +55,10 @@
 !   with the trailing underscore shall not be used by the end user!
 ! # Quick (constant time) element counting is deactivated when a container
 !   contains a subcontainer, in both the composite container and the subcontainer.
-!   The quick counting procedure will be replaced by an order-N counting algorithm.
+!   The quick counting procedure is replaced by an order-N counting algorithm.
 !FOR DEVELOPERS:
 ! # Quick counting does not work with composite containers and subcontainers
-!   and probably it should not be used at all. Currently gfc_container_t::num_elems()
+!   and probably it should not be used at all. Currently gfc_container_t::num_elems_()
 !   will not return the total number of elements without quick counting.
        module gfc_base
         use dil_basic
@@ -102,7 +102,7 @@
  !Element of a container:
         type, public:: gfc_cont_elem_t
          class(*), pointer, private:: value_p=>NULL() !element value (data): either associated (by reference) or allocated (by value)
-         integer(INTD), private:: alloc=GFC_FALSE     !FALSE: value is stored by reference or null; TRUE: value is stored by value
+         integer(INTD), private:: alloc=GFC_FALSE     !GFC_FALSE: value is stored by reference or null; GFC_TRUE: value is stored by value
          contains
           procedure, public:: construct=>ContElemConstruct !constructs a new container element, either by reference or by value
           procedure, public:: destruct=>ContElemDestruct   !destructs an existing container element (releases memory occupied by value)
@@ -120,7 +120,7 @@
          integer(omp_lock_kind), private:: lock !container update lock (for parallel updates)
 #endif
          contains
-          procedure, non_overridable, public:: num_elems=>ContNumElems !returns the total number of elements in the container
+          procedure, non_overridable, public:: num_elems_=>ContNumElems !returns the total number of elements in the container (INTERNAL)
           procedure, non_overridable, public:: update_num_elems_=>ContUpdateNumElems !updates the number of elements (INTERNAL)
           procedure, non_overridable, public:: quick_counting_off_=>ContQuickCountingOff !turns off quick element counting (INTERNAL)
         end type gfc_container_t
@@ -553,8 +553,8 @@
          if(present(ierr)) ierr=errc
          return
         end function IterPredicatedCount
-!------------------------------------------------------------------------------------------------------
-        function IterScan(this,return_each,predicate_func,action_func,backward,time_limit) result(ierr)
+!-------------------------------------------------------------------------------------------------------------------
+        function IterScan(this,return_each,predicate_func,action_func,backward,skip_current,time_limit) result(ierr)
 !Traverses the container via an associated iterator beginning from the current position of the iterator.
 !Returns GFC_IT_DONE upon reaching the end of the container; returns GFC_IT_ACTIVE in intermediate returns.
 !If the active scan is time limited, at least one move of the iterator will be done before returning.
@@ -565,8 +565,9 @@
          procedure(gfc_predicate_i), optional:: predicate_func !in: predicate function
          procedure(gfc_action_i), optional:: action_func !in: action function
          logical, intent(in), optional:: backward !in: if TRUE, the container will be traversed in the backward direction (defaults to FALSE)
+         logical, intent(in), optional:: skip_current !in: if TRUE, the current element of the container will be skipped (forces a move) (defaults to FALSE)
          real(8), intent(in), optional:: time_limit !in: if specified, the active scan will be interrupted after this time limit (sec)
-         logical:: ret,pred,act,bkw,moved
+         logical:: ret,pred,act,bkw,moved,skip
          integer(INTD):: pred_val
          class(*), pointer:: elem_val
          class(gfc_cont_elem_t), pointer:: curr
@@ -577,8 +578,9 @@
           if(present(return_each)) then; ret=return_each; else; ret=.false.; endif
           if(present(predicate_func)) then; pred=.true.; else; pred=.false.; endif
           if(present(action_func)) then; act=.true.; else; act=.false.; endif
-          if(present(time_limit).and.(.not.ret)) then; tml=time_limit; else; tml=-1d0; endif
           if(present(backward)) then; bkw=backward; else; bkw=.false.; endif
+          if(present(skip_current)) then; skip=skip_current; else; skip=.false.; endif
+          if(present(time_limit).and.(.not.ret)) then; tml=time_limit; else; tml=-1d0; endif
           if(tml.gt.0d0) tms=thread_wtime()
           ierr=GFC_SUCCESS; moved=.false.
           do while(ierr.eq.GFC_SUCCESS)
@@ -586,20 +588,23 @@
            if(ierr.eq.GFC_SUCCESS.and.associated(curr)) then
             elem_val=>curr%get_value(ierr)
             if(ierr.eq.GFC_SUCCESS.and.associated(elem_val)) then
-             this%tot_count=this%tot_count+1
-             pred_val=GFC_TRUE; if(pred) pred_val=curr%predicate(predicate_func)
+             if(skip) then
+              pred_val=GFC_FALSE
+             else
+              pred_val=GFC_TRUE; if(pred) pred_val=curr%predicate(predicate_func)
+             endif
              if(pred_val.eq.GFC_TRUE) then
               this%pred_count=this%pred_count+1
               if(act) then
                call curr%action(action_func,ierr); if(ierr.ne.0) then; ierr=GFC_ACTION_FAILED; exit; endif
               endif
-              if(ret) then; ierr=GFC_IT_ACTIVE; exit; endif !intermediate return
+              if(ret) then; ierr=GFC_IT_ACTIVE; exit; endif !intermediate return on passive scans
              endif
              if(tml.gt.0d0) then
               if(thread_wtime(tms).gt.tml.and.moved) then; ierr=GFC_IT_ACTIVE; exit; endif !time limit exceeded (but at least one move done)
              endif
              if(bkw) then; ierr=this%previous(); else; ierr=this%next(); endif !move to the next/previous element
-             moved=.true.
+             moved=.true.; skip=.false.; this%tot_count=this%tot_count+1 !register a move of the iterator
             else
              ierr=GFC_CORRUPTED_CONT
             endif

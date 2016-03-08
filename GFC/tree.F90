@@ -1,14 +1,14 @@
 !Generic Fortran Containers:: Tree.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2016-03-07 (started 2016-02-17)
+!REVISION: 2016-03-08 (started 2016-02-17)
 !Copyright (C) 2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2016 Oak Ridge National Laboratory (UT-Battelle)
 !LICENSE: GNU GPL v.2
 !NOTES:
 ! # A tree is a linked derivative of an abstract (unlinked) GFC container.
-!   A subtree is a tree object that is linked as a part of another (larger) tree,
+!   A subtree is a tree object that is linked as a part of a larger tree,
 !   thus having its root element linked to other elements of the larger tree.
-! # All accesses, updates, and scans on a tree are performed via
+! # All accesses, updates, scans, and actions on a tree are performed via
 !   a tree iterator associated with the tree. When attaching a tree
 !   to another tree, the attached tree elements can be accessed either
 !   via its own iterator or via the combined tree iterator. Multiple
@@ -625,8 +625,8 @@
             if(ierr.eq.GFC_SUCCESS.or.ierr.eq.NOT_CLEAN) then
              totelems=this%container%update_num_elems_(-1_INTL,errc)
              if(errc.eq.GFC_SUCCESS) then
-              if(tvp%is_root().eq.GFC_TRUE) then
-               this%current=>NULL()
+              if(associated(tvp,this%container%root)) then
+               this%current=>NULL(); this%container%root=>NULL()
                errc=this%set_status_(GFC_IT_EMPTY)
                if(errc.ne.GFC_SUCCESS) ierr=GFC_CORRUPTED_CONT
               else
@@ -664,7 +664,7 @@
          if(ierr.eq.GFC_IT_ACTIVE) then
           if(associated(this%current)) then
            if(associated(subtree%root)) then
-!           nelems=subtree%num_elems(ierr)
+            nelems=subtree%num_elems_(ierr)
             if(ierr.eq.GFC_SUCCESS.and.(.not.associated(subtree%root%parent))) then
              if(associated(this%current%first_child)) then
               tvp=>this%current%first_child%prev_sibling !tvp => last sibling
@@ -715,7 +715,7 @@
             psib%next_sibling=>nsib; nsib%prev_sibling=>psib
             subtree%root%prev_sibling=>subtree%root
             subtree%root%next_sibling=>subtree%root
-            if(this%container%num_elems().gt.0) then !quick counting is still on
+            if(this%container%num_elems_().gt.0) then !quick counting is still on
              ierr=subtree_it%init(subtree)
              if(ierr.eq.GFC_SUCCESS) then
               ierr=subtree_it%scan()
@@ -897,12 +897,12 @@
           enddo
           if(ierr.ne.GFC_SUCCESS.and.ierr.ne.GFC_IT_DONE) then; ierr=5; return; endif
          enddo
-!        write(jo,'("Total number of elements in the tree = ",i9)') some_tree%num_elems(ierr) !debug
+!        write(jo,'("Total number of elements in the tree = ",i9)') some_tree%num_elems_(ierr) !debug
          if(ierr.ne.GFC_SUCCESS) then; ierr=6; return; endif
          ierr=some_iter%reset(); if(ierr.ne.GFC_SUCCESS) then; ierr=7; return; endif
          ierr=some_iter%scan(); if(ierr.ne.GFC_IT_DONE) then; ierr=8; return; endif
 !        write(jo,'("Total number of traversed elements   = ",i9)') some_iter%total_count() !debug
-!        if(some_tree%num_elems().ne.some_iter%total_count()) then; ierr=9; return; endif
+!        if(some_tree%num_elems_().ne.some_iter%total_count()) then; ierr=9; return; endif
 !Delete the tree:
          ierr=some_iter%reset(); if(ierr.ne.GFC_SUCCESS) then; ierr=10; return; endif
          ierr=some_iter%delete_subtree(some_destructor); if(ierr.ne.GFC_SUCCESS) then; ierr=11; return; endif
