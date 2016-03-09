@@ -1,6 +1,6 @@
 !Generic Fortran Containers:: Tree.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2016-03-08 (started 2016-02-17)
+!REVISION: 2016-03-09 (started 2016-02-17)
 !Copyright (C) 2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2016 Oak Ridge National Laboratory (UT-Battelle)
 !LICENSE: GNU GPL v.2
@@ -234,9 +234,9 @@
          if(associated(this%container)) then
           this%current=>this%container%root
           if(associated(this%current)) then
-           ierr=this%set_status_(GFC_IT_ACTIVE) !non-empty iterator
+           ierr=this%set_status_(GFC_IT_ACTIVE) !non-empty iterator/container
           else
-           ierr=this%set_status_(GFC_IT_EMPTY) !empty iterator
+           ierr=this%set_status_(GFC_IT_EMPTY) !empty iterator/container
           endif
           call this%reset_count() !reset all iteration counters
          else
@@ -393,7 +393,7 @@
              endif
             endif
            else
-            ierr=GFC_NO_MOVE !tree root does not have siblings
+            ierr=GFC_NO_MOVE !tree/subtree root does not have siblings within its iterator
            endif
           else
            ierr=GFC_CORRUPTED_CONT
@@ -456,7 +456,11 @@
 
          errc=this%get_status()
          if(errc.eq.GFC_IT_ACTIVE) then
-          parent=>this%current%parent; errc=GFC_SUCCESS
+          if(associated(this%current)) then
+           parent=>this%current%parent; errc=GFC_SUCCESS
+          else
+           parent=>NULL(); errc=GFC_CORRUPTED_CONT
+          endif
          else
           parent=>NULL()
          endif
@@ -627,8 +631,7 @@
              if(errc.eq.GFC_SUCCESS) then
               if(associated(tvp,this%container%root)) then
                this%current=>NULL(); this%container%root=>NULL()
-               errc=this%set_status_(GFC_IT_EMPTY)
-               if(errc.ne.GFC_SUCCESS) ierr=GFC_CORRUPTED_CONT
+               errc=this%set_status_(GFC_IT_EMPTY); if(errc.ne.GFC_SUCCESS) ierr=GFC_CORRUPTED_CONT
               else
                tvp%parent%num_child=tvp%parent%num_child-1
                this%current=>tvp%parent
@@ -664,8 +667,9 @@
          if(ierr.eq.GFC_IT_ACTIVE) then
           if(associated(this%current)) then
            if(associated(subtree%root)) then
-            nelems=subtree%num_elems_(ierr)
-            if(ierr.eq.GFC_SUCCESS.and.(.not.associated(subtree%root%parent))) then
+            ierr=GFC_SUCCESS
+!           nelems=subtree%num_elems_(ierr) !this is irrelevant
+            if(.not.associated(subtree%root%parent)) then !the attached tree cannot be a subtree prior to that
              if(associated(this%current%first_child)) then
               tvp=>this%current%first_child%prev_sibling !tvp => last sibling
               tvp%next_sibling=>subtree%root
@@ -678,6 +682,7 @@
               subtree%root%prev_sibling=>subtree%root
              endif
              subtree%root%parent=>this%current
+             this%current%num_child=this%current%num_child+1
 !            totelems=this%container%update_num_elems_(nelems,ierr)
 !            if(ierr.ne.GFC_SUCCESS) ierr=GFC_CORRUPTED_CONT
              call this%container%quick_counting_off_() !turn off quick counting in the combined container
@@ -710,30 +715,54 @@
          if(ierr.eq.GFC_IT_ACTIVE) then
           if(associated(this%current)) then
            if(.not.associated(subtree%root)) then !subtree must be empty on entrance
+            ierr=GFC_SUCCESS
             psib=>this%current%prev_sibling; nsib=>this%current%next_sibling
-            subtree%root=>this%current; this%current=>subtree%root%parent; subtree%root%parent=>NULL()
-            psib%next_sibling=>nsib; nsib%prev_sibling=>psib
-            subtree%root%prev_sibling=>subtree%root
-            subtree%root%next_sibling=>subtree%root
-            if(this%container%num_elems_().gt.0) then !quick counting is still on
-             ierr=subtree_it%init(subtree)
+            subtree%root=>this%current
+            if(associated(this%current%parent)) then
+             this%current%parent%num_child=this%current%parent%num_child-1
+             if(this%current%num_siblings(ierr).gt.0) then
+              if(ierr.eq.GFC_SUCCESS) this%current%parent%first_child=>this%current%next_sibling
+             else
+              if(ierr.eq.GFC_SUCCESS) this%current%parent%first_child=>NULL()
+             endif
+            endif
+            if(ierr.eq.GFC_SUCCESS) then
+             if(associated(this%current,this%container%root)) then
+              this%current=>NULL(); this%container%root=>NULL()
+              ierr=this%set_status_(GFC_IT_EMPTY); if(ierr.ne.GFC_SUCCESS) ierr=GFC_CORRUPTED_CONT
+             else
+              this%current=>this%current%parent
+             endif
              if(ierr.eq.GFC_SUCCESS) then
-              ierr=subtree_it%scan()
-              if(ierr.eq.GFC_SUCCESS) then
-               nelems=subtree_it%total_count()
-               totelems=subtree%update_num_elems_(nelems)
-               totelems=this%container%update_num_elems_(-nelems,ierr)
+              subtree%root%parent=>NULL()
+              psib%next_sibling=>nsib; nsib%prev_sibling=>psib
+              subtree%root%prev_sibling=>subtree%root
+              subtree%root%next_sibling=>subtree%root
+              if(this%container%num_elems_().gt.0) then !quick counting is still on
+               ierr=subtree_it%init(subtree)
+               if(ierr.eq.GFC_SUCCESS) then
+                ierr=subtree_it%scan()
+                if(ierr.eq.GFC_SUCCESS) then
+                 nelems=subtree_it%total_count()
+                 totelems=subtree%update_num_elems_(nelems)
+                 totelems=this%container%update_num_elems_(-nelems,ierr)
+                else
+                 call this%container%quick_counting_off_()
+                 call subtree%quick_counting_off_()
+                endif
+               else
+                call this%container%quick_counting_off_()
+                call subtree%quick_counting_off_()
+               endif
+               ierr=subtree_it%release()
               else
-               call this%container%quick_counting_off_()
                call subtree%quick_counting_off_()
               endif
-             else
-              call this%container%quick_counting_off_()
-              call subtree%quick_counting_off_()
              endif
             else
-             call subtree%quick_counting_off_()
+             ierr=GFC_CORRUPTED_CONT
             endif
+            psib=>NULL(); nsib=>NULL()
            else
             ierr=GFC_INVALID_ARGS
            endif
