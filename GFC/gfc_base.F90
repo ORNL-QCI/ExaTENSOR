@@ -1,9 +1,25 @@
 !Generic Fortran Containers (GFC): Base
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2016-03-08 (started 2016-02-17)
-!Copyright (C) 2016 Dmitry I. Lyakh (Liakh)
-!Copyright (C) 2016 Oak Ridge National Laboratory (UT-Battelle)
-!LICENSE: GNU GPL v.2
+!REVISION: 2016-03-10 (started 2016-02-17)
+
+!Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
+!Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
+
+!This file is part of ExaTensor.
+
+!ExaTensor is free software: you can redistribute it and/or modify
+!it under the terms of the GNU Lesser General Public License as published
+!by the Free Software Foundation, either version 3 of the License, or
+!(at your option) any later version.
+
+!ExaTensor is distributed in the hope that it will be useful,
+!but WITHOUT ANY WARRANTY; without even the implied warranty of
+!MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+!GNU Lesser General Public License for more details.
+
+!You should have received a copy of the GNU Lesser General Public License
+!along with ExaTensor. If not, see <http://www.gnu.org/licenses/>.
+
 !DESIGN:
 ! # A GFC container is a structured collection of objects of any class;
 !   Objects of different classes can be stored in the same container.
@@ -57,6 +73,8 @@
 !   contains a subcontainer, in both the composite container and the subcontainer.
 !   The quick counting procedure is replaced by an order-N counting algorithm.
 !FOR DEVELOPERS:
+! # Inconsistency: When the last element of a subtree is deleted via the parent tree
+!   iterator, the subtree iterator is not updated to EMPTY.
 ! # Quick counting does not work with composite containers and subcontainers
 !   and probably it should not be used at all. Currently gfc_container_t::num_elems_()
 !   will not return the total number of elements without quick counting.
