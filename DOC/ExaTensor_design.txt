@@ -52,8 +52,8 @@ of diverse hardware: Multicore CPU, NVidia GPU, Intel Xeon Phi, AMD GPU/APU, etc
 Efficient utilization of deep memory hierarchy available on node.
 
 (b) Scale-agnosticism: Efficiency at the HPC level, efficient distributed
-data mapping and task scheduling for any given HPC system: From small
-clusters to the Leadership HPC systems.
+data mapping and asynchronous task scheduling on any given HPC system:
+From small clusters to the Leadership HPC systems.
 
 (c) Expertise-agnostic: Ease of use accross different computational domains.
 
@@ -64,15 +64,17 @@ clusters to the Leadership HPC systems.
 abstraction of virtual processing. Namely, each MPI rank is running
 a virtual tensor-algebra processor capable of performing tensor
 algebra operations (instructions) on diverse computer architectures.
+The node-level autonomy achieved via the concept of virtual processing
+is also beneficial for fault-tolerance.
 
 (b) Hierarchical view of the HPC system combined with the hierarchical
-data mapping and data-driven work scheduling: The entire HPC system is
+data mapping and data-driven task scheduling: The entire HPC system is
 recursively decomposed into smaller units, up to the node level. Each
 such a computing unit is running a virtual processor capable of performing
 tensor algebra operations at the corresponding level of granularity. As a
 consequence, both data and work is recursively split into smaller pieces
 and distributed at each level of hierarchy, the work being predominantly
-sent close to the participating data objects (tensor arguments).
+sent to where the participating data objects (tensor arguments) reside.
 
 (c) Compact domain-specific interpreted language: A minimal set of
 domain-specific instructions is introduced, yet being capable of

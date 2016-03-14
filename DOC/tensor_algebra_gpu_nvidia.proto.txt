@@ -1,3 +1,5 @@
+`OBSOLETE!
+
 *** Tensor algebra library for NVidia GPU ***
 Appendix: Data types and function prototypes.
 AUTHOR: Dmitry I. Lyakh: quant4me@gmail.com

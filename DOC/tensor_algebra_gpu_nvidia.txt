@@ -1,3 +1,5 @@
+`OBSOLETE!
+
 Document: Tensor Algebra Module for NVidia GPU: NV-TAL
 Author: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
 Organization: National Center for Computational Sciences,
