@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Base
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2016-03-10 (started 2016-02-17)
+!REVISION: 2016-03-14 (started 2016-02-17)
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -29,8 +29,9 @@
 !   of derived types are recursively cloned whereas the pointer components
 !   are just pointer associated. To change this default behavior, one can
 !   supply a user-defined generic copy constructor (see interface below).
-! # A GFC subcontainer is a container linked as a part of a larger container.
-!   As a consequence, its boundary elements can have outside links.
+! # A GFC subcontainer is a container linked as a part of another container.
+!   As a consequence, its boundary elements may have outside links.
+!   In this case, the larger container will be called a composite container.
 ! # Each container has an associated iterator for scanning over its elements.
 !   The structure of the container determines the scanning sequence, that is,
 !   the way the elements of the container are traversed over.
@@ -45,7 +46,7 @@
 !       or its part and applies a user-defined action to each element that
 !       satisfies a certain condition.
 !   Additionally, active scans allow for a time-limited execution, in which
-!   the scan is interrupted after a given time interval.
+!   the scan is interrupted after some time interval specified by a user.
 !   Each specific class of containers has its own iterator class because
 !   of different linkage between the elements of different containers.
 !   All insertion, deletion, and search operations are done via iterators,
@@ -68,16 +69,20 @@
 !   of GFC containers in the inner loop of compute intensive kernels
 !   is highly discouraged (please resort to plain data, like arrays).
 ! # Due to the limitations of Fortran class inheritence, public methods
-!   with the trailing underscore shall not be used by the end user!
+!   with a trailing underscore shall not be used by the end user!
 ! # Quick (constant time) element counting is deactivated when a container
 !   contains a subcontainer, in both the composite container and the subcontainer.
 !   The quick counting procedure is replaced by an order-N counting algorithm.
 !FOR DEVELOPERS:
-! # Inconsistency: When the last element of a subtree is deleted via the parent tree
-!   iterator, the subtree iterator is not updated to EMPTY.
+! # Inconsistency: When multiple iterators are associated with the same container,
+!   a deletion of a container element via one of the iterators may result in an
+!   undefined value for the boundary and/or current pointer in another iterator
+!   in case the deleted element is one of the boundary or the current element
+!   in that other iterator (also the other iterator's status may change to EMPTY).
 ! # Quick counting does not work with composite containers and subcontainers
 !   and probably it should not be used at all. Currently gfc_container_t::num_elems_()
-!   will not return the total number of elements without quick counting.
+!   will not return the total number of elements without quick counting. However, one
+!   can always traverse the container in order to count the total number of elements.
        module gfc_base
         use dil_basic
         use timers
@@ -121,6 +126,9 @@
         type, public:: gfc_cont_elem_t
          class(*), pointer, private:: value_p=>NULL() !element value (data): either associated (by reference) or allocated (by value)
          integer(INTD), private:: alloc=GFC_FALSE     !GFC_FALSE: value is stored by reference or null; GFC_TRUE: value is stored by value
+#ifndef NO_OMP
+         integer(omp_lock_kind), private:: lock       !update lock (for concurrent updates)
+#endif
          contains
           procedure, public:: construct=>ContElemConstruct !constructs a new container element, either by reference or by value
           procedure, public:: destruct=>ContElemDestruct   !destructs an existing container element (releases memory occupied by value)
@@ -133,10 +141,7 @@
         end type gfc_cont_elem_t
  !Base container:
         type, abstract, public:: gfc_container_t
-         integer(INTL), private:: volume=0_INTL !volume of the container (total number of elements)
-#ifndef NO_OMP
-         integer(omp_lock_kind), private:: lock !container update lock (for parallel updates)
-#endif
+         integer(INTL), private:: volume=0_INTL !volume of the container (total number of elements when quick counting is on), -1 means quick counting is off
          contains
           procedure, non_overridable, public:: num_elems_=>ContNumElems !returns the total number of elements in the container (INTERNAL)
           procedure, non_overridable, public:: update_num_elems_=>ContUpdateNumElems !updates the number of elements (INTERNAL)

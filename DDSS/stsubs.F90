@@ -3,7 +3,6 @@
 !REVISON: 2015/12/08
 
 !Copyright (C) 2005-2016 Dmitry I. Lyakh (Liakh)
-!Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
 
 !This file is part of ExaTensor.
 
