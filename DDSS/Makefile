@@ -11,13 +11,13 @@ MPILIB ?= MPICH
 #BLAS: [ATLAS|MKL|ACML]:
 BLASLIB ?= ATLAS
 #Nvidia GPU via CUDA: [CUDA|NOCUDA]:
-GPU_CUDA ?= NOCUDA
+GPU_CUDA ?= CUDA
 
 #Local paths (for unwrapped compilation):
 # MPI:
 PATH_MPICH ?= /usr/local/mpich3.2
 PATH_OPENMPI ?= /usr/local/openmpi1.10.1
-# BLAS:
+# BLAS LIB:
 PATH_BLAS_ATLAS ?= /usr/lib
 PATH_BLAS_INTEL ?= /usr/lib
 PATH_BLAS_ACML ?= /usr/lib
@@ -170,8 +170,14 @@ lib$(NAME).a: $(OBJS)
 ./OBJ/sys_service.o: sys_service.c
 	$(CCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(CFLAGS) sys_service.c -o ./OBJ/sys_service.o
 
-./OBJ/c2fortran.o: c2fortran.c
+./OBJ/c2fortran.o: c2fortran.cu
+ifeq ($(GPU_CUDA),CUDA)
+	$(CUDA_COMP) $(INC) $(MPI_INC) $(CUDA_INC) $(CUDA_FLAGS) c2fortran.cu -o ./OBJ/c2fortran.o
+else
+	cp c2fortran.cu c2fortran.c
 	$(CCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(CFLAGS) c2fortran.c -o ./OBJ/c2fortran.o
+	rm -f c2fortran.c
+endif
 
 ./OBJ/c2f_ifc.o: c2f_ifc.F90
 	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) c2f_ifc.F90 -o ./OBJ/c2f_ifc.o

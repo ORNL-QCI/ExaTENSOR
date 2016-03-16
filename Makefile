@@ -1,4 +1,4 @@
-NAME = qforce.x
+NAME = ExaTensor
 
 #Cross-compiling wrappers: [WRAP|NOWRAP]:
 export WRAP = NOWRAP
@@ -11,13 +11,13 @@ export MPILIB = MPICH
 #BLAS: [ATLAS|MKL|ACML]:
 export BLASLIB = ATLAS
 #Nvidia GPU via CUDA: [CUDA|NOCUDA]:
-export GPU_CUDA = NOCUDA
+export GPU_CUDA = CUDA
 
 #Local paths (for unwrapped compilation):
 # MPI:
 export PATH_MPICH = /usr/local/mpich3.2
 export PATH_OPENMPI = /usr/local/openmpi1.10.1
-# BLAS:
+# BLAS LIB:
 export PATH_BLAS_ATLAS = /usr/lib
 export PATH_BLAS_INTEL = /usr/lib
 export PATH_BLAS_ACML = /usr/lib
@@ -153,108 +153,17 @@ LTHREAD_CRAY  = -L.
 LTHREAD = $(LTHREAD_$(TOOLKIT))
 
 #LINKING:
-LFLAGS = $(LIB) $(LTHREAD) $(MPI_LINK) $(LA_LINK) $(CUDA_LINK) -o $(NAME)
+LFLAGS = $(LIB) $(LTHREAD) $(MPI_LINK) $(LA_LINK) $(CUDA_LINK)
 
-OBJS =  dil_basic.o sys_service.o stsubs.o multords.o combinatoric.o symm_index.o timers.o stack.o lists.o dictionary.o \
-	c2f_ifc.o tensor_algebra.o tensor_algebra_cpu.o tensor_algebra_cpu_phi.o tensor_dil_omp.o \
-	c2fortran.o mem_manager.o tensor_algebra_gpu_nvidia.o talshf.o talshc.o \
-	mpi_fort.o service_mpi.o distributed.o subspaces.o virta.o c_process.o exatensor.o \
-	qforce.o main.o
+$(NAME):
+	$(MAKE) -C ./TALSH
+	$(MAKE) -C ./DDSS
+	$(MAKE) -C ./GFC
+#	$(MAKE) -C ./INTRAVIRT
+#	$(MAKE) -C ./INTERVIRT
+#	$(MAKE) -C ./QFORCE
 
-$(NAME): $(OBJS)
-	$(FCOMP) $(OBJS) $(LFLAGS)
-
-dil_basic.o: dil_basic.F90
-	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) dil_basic.F90
-
-sys_service.o: sys_service.c
-	$(CCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(CFLAGS) sys_service.c
-
-stsubs.o: stsubs.F90
-	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) stsubs.F90
-
-multords.o: multords.F90
-	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) multords.F90
-
-combinatoric.o: combinatoric.F90
-	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) combinatoric.F90
-
-symm_index.o: symm_index.F90
-	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) symm_index.F90
-
-timers.o: timers.F90
-	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) timers.F90
-
-stack.o: stack.F90 timers.o
-	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) stack.F90
-
-lists.o: lists.F90 timers.o
-	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) lists.F90
-
-dictionary.o: dictionary.F90 timers.o
-	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) dictionary.F90
-
-c2f_ifc.o: c2f_ifc.F90
-	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) c2f_ifc.F90
-
-tensor_algebra.o: tensor_algebra.F90 dil_basic.o
-	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) tensor_algebra.F90
-
-tensor_algebra_cpu.o: tensor_algebra_cpu.F90 tensor_algebra.o stsubs.o combinatoric.o symm_index.o timers.o
-	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) tensor_algebra_cpu.F90
-
-tensor_algebra_cpu_phi.o: tensor_algebra_cpu_phi.F90 tensor_algebra_cpu.o
-	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) tensor_algebra_cpu_phi.F90
-
-tensor_dil_omp.o: tensor_dil_omp.F90 timers.o
-	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) tensor_dil_omp.F90
-
-c2fortran.o: c2fortran.c
-	$(CCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(CFLAGS) c2fortran.c
-
-mem_manager.o: mem_manager.c tensor_algebra.h
-	$(CCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(CFLAGS) mem_manager.c
-
-tensor_algebra_gpu_nvidia.o: tensor_algebra_gpu_nvidia.cu tensor_algebra.h
-	$(CUDA_COMP) $(INC) $(MPI_INC) $(CUDA_INC) $(CUDA_FLAGS) -ptx tensor_algebra_gpu_nvidia.cu
-	$(CUDA_COMP) $(INC) $(MPI_INC) $(CUDA_INC) $(CUDA_FLAGS) tensor_algebra_gpu_nvidia.cu
-
-talshf.o: talshf.F90 tensor_algebra_cpu_phi.o tensor_algebra_gpu_nvidia.o mem_manager.o
-	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) talshf.F90
-
-talshc.o: talshc.c talsh.h tensor_algebra.h tensor_algebra_cpu_phi.o tensor_algebra_gpu_nvidia.o mem_manager.o
-	$(CCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(CFLAGS) talshc.c
-
-mpi_fort.o: mpi_fort.c
-	$(CCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(CFLAGS) mpi_fort.c
-
-service_mpi.o: service_mpi.F90 mpi_fort.o stsubs.o c2f_ifc.o dil_basic.o timers.o
-	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) service_mpi.F90
-
-distributed.o: distributed.F90 service_mpi.o stsubs.o c2f_ifc.o timers.o
-	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) distributed.F90
-
-subspaces.o: subspaces.F90 dil_basic.o
-	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) subspaces.F90
-
-virta.o: virta.F90 talshf.o talshc.o distributed.o subspaces.o stack.o lists.o dictionary.o multords.o c2f_ifc.o service_mpi.o
-	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) virta.F90
-
-c_process.o: c_process.F90 virta.o
-	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) c_process.F90
-
-exatensor.o: exatensor.F90 virta.o c_process.o service_mpi.o
-	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) exatensor.F90
-
-qforce.o: qforce.F90 exatensor.o dil_basic.o
-	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) qforce.F90
-
-main.o: main.F90 exatensor.o
-	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) main.F90
-
-#%.o: %.F90
-#	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) $?
 
 .PHONY: clean
 clean:
-	rm *.x *.o *.a *.mod *.modmic *.ptx
+	rm -f ./*/*.x ./*/*.a ./*/*.mod ./*/OBJ/*
