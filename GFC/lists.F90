@@ -1,3 +1,7 @@
+!Special realization of linked lists.
+!AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
+!REVISION: 2016/03/16
+
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
 
@@ -17,9 +21,6 @@
 !along with ExaTensor. If not, see <http://www.gnu.org/licenses/>.
 
        module lists
-!Special realization of linked lists.
-!AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2016/02/18
 !DESCRIPTION:
 ! CLASS(list_two_way_t):
 !  NOTES:

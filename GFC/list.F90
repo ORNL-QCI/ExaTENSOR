@@ -1,6 +1,6 @@
-!Generic Fortran Containers:: Linked list.
+!Generic Fortran Containers (GFC): Linked list
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2016-03-08 (started 2016-02-28)
+!REVISION: 2016-03-16 (started 2016-02-28)
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -25,9 +25,9 @@
 !   A sublist is a list incorporated into another (composite) list.
 ! # All accesses, updates, scans, and actions are performed on a list
 !   via the list iterator associated with the list. Elements of a sublist
-!   can be accessed by both the original and the combined iterators.
+!   can be accessed by both the original and the combined list iterators.
 !   Multiple iterators can be associated with a list at the same time.
-!FOR DEVELOPERS:
+
        module list
         use gfc_base
         use timers
@@ -134,7 +134,11 @@
          if(associated(this%first_elem).and.associated(this%last_elem)) then
           if(associated(this%first_elem%prev_elem).or.associated(this%last_elem%next_elem)) res=.true.
          else
-          errc=GFC_EMPTY_CONT
+          if(associated(this%first_elem).or.associated(this%last_elem)) then
+           errc=GFC_CORRUPTED_CONT
+          else
+           errc=GFC_EMPTY_CONT
+          endif
          endif
          if(present(ierr)) ierr=errc
          return
@@ -168,13 +172,14 @@
          if(associated(this%container)) then
           this%current=>this%container%first_elem
           if(associated(this%current)) then
-           ierr=this%set_status(GFC_IT_ACTIVE)
+           ierr=this%set_status_(GFC_IT_ACTIVE)
           else
-           ierr=this%set_status(GFC_IT_EMPTY)
+           ierr=this%set_status_(GFC_IT_EMPTY)
           endif
           call this%reset_count() !reset all iteration counters
          else
-          ierr=this%set_status(GFC_IT_NULL)
+          this%current=>NULL()
+          ierr=this%set_status_(GFC_IT_NULL)
           ierr=GFC_IT_NULL
          endif
          return
@@ -190,13 +195,14 @@
          if(associated(this%container)) then
           this%current=>this%container%last_elem
           if(associated(this%current)) then
-           ierr=this%set_status(GFC_IT_ACTIVE)
+           ierr=this%set_status_(GFC_IT_ACTIVE)
           else
-           ierr=this%set_status(GFC_IT_EMPTY)
+           ierr=this%set_status_(GFC_IT_EMPTY)
           endif
           call this%reset_count() !reset all iteration counters
          else
-          ierr=this%set_status(GFC_IT_NULL)
+          this%current=>NULL()
+          ierr=this%set_status_(GFC_IT_NULL)
           ierr=GFC_IT_NULL
          endif
          return
@@ -209,7 +215,7 @@
          class(list_iter_t), intent(inout):: this !inout: iterator
 
          this%current=>NULL(); this%container=>NULL()
-         call this%reset_count(); ierr=this%set_status(GFC_IT_NULL)
+         call this%reset_count(); ierr=this%set_status_(GFC_IT_NULL)
          return
         end function ListIterRelease
 !--------------------------------------------------------
@@ -253,7 +259,7 @@
             endif
            else
             this%current=>NULL()
-            ierr=this%set_status(GFC_IT_DONE)
+            ierr=this%set_status_(GFC_IT_DONE)
             lep=>NULL()
            endif
            if(.not.associated(lep)) then; ierr=GFC_IT_DONE; else; lep=>NULL(); endif
@@ -286,7 +292,7 @@
             endif
            else
             this%current=>NULL()
-            ierr=this%set_status(GFC_IT_DONE)
+            ierr=this%set_status_(GFC_IT_DONE)
             lep=>NULL()
            endif
            if(.not.associated(lep)) then; ierr=GFC_IT_DONE; else; lep=>NULL(); endif
@@ -302,22 +308,22 @@
 #else
         function ListIterAppend(this,elem_val,at_top,assoc_only) result(ierr)
 #endif
-!Appends an element at the beginning or at the end of the list, either by value or by reference.
+!Appends an element at the beginning or at the end of the list/sublist, either by value or by reference.
 !For non-empty iterators, the iterator position is kept unchanged (even if it is GFC_IT_DONE).
-!If the iterator is empty on input, its status will be changed to GFC_IT_ACTIVE (via reset).
+!If the iterator is empty on input, its status will be changed to GFC_IT_ACTIVE via reset.
          implicit none
-         integer(INTD):: ierr                            !out: error code (0:success)
-         class(list_iter_t), intent(inout):: this        !inout: iterator
-         class(*), target, intent(in):: elem_val         !in: value to be stored
-         logical, intent(in), optional:: at_top          !in: TRUE:append at the top, FALSE:append at the end (default)
-         logical, intent(in), optional:: assoc_only      !in: storage type: TRUE:by reference, FALSE:by value (default)
+         integer(INTD):: ierr                       !out: error code (0:success)
+         class(list_iter_t), intent(inout):: this   !inout: iterator
+         class(*), target, intent(in):: elem_val    !in: value to be stored
+         logical, intent(in), optional:: at_top     !in: TRUE:append at the top, FALSE:append at the end (default)
+         logical, intent(in), optional:: assoc_only !in: storage type: TRUE:by reference, FALSE:by value (default)
 #ifdef NO_GNU
-         procedure(gfc_copy_i), optional:: copy_constr_f !user-defined generic copy constructor
+         procedure(gfc_copy_i), optional:: copy_constr_f !user-defined generic copy constructor (when storing by value only)
 #endif
          logical:: assoc,top
          integer:: errc
          integer(INTL):: nelems
-         class(list_elem_t), pointer:: lep
+         class(list_elem_t), pointer:: lep,oep
 
          if(present(at_top)) then; top=at_top; else; top=.false.; endif
          if(present(assoc_only)) then; assoc=assoc_only; else; assoc=.false.; endif
@@ -327,9 +333,11 @@
            if(associated(this%container%first_elem).and.associated(this%container%last_elem)) then
             ierr=GFC_SUCCESS
             if(top) then
+             oep=>this%container%first_elem%prev_elem !not necessarily NULL for sublists
              allocate(this%container%first_elem%prev_elem,STAT=errc)
              if(errc.eq.0) lep=>this%container%first_elem%prev_elem
             else
+             oep=>this%container%last_elem%next_elem !not necessarily NULL for sublists
              allocate(this%container%last_elem%next_elem,STAT=errc)
              if(errc.eq.0) lep=>this%container%last_elem%next_elem
             endif
@@ -346,31 +354,36 @@
              if(ierr.eq.GFC_SUCCESS) then
               if(top) then
                lep%next_elem=>this%container%first_elem
-               lep%prev_elem=>NULL()
+               lep%prev_elem=>oep
+               if(associated(oep)) oep%next_elem=>lep
                this%container%first_elem=>lep
               else
                lep%prev_elem=>this%container%last_elem
-               lep%next_elem=>NULL()
+               lep%next_elem=>oep
+               if(associated(oep)) oep%prev_elem=>lep
                this%container%last_elem=>lep
               endif
-              nelems=this%container%update_num_elems_(1_INTL,ierr); if(ierr.ne.GFC_SUCCESS) ierr=GFC_CORRUPTED_CONT
+              if(this%container%num_elems_().ge.0) then !quick counting is on
+               nelems=this%container%update_num_elems_(1_INTL,ierr); if(ierr.ne.GFC_SUCCESS) ierr=GFC_CORRUPTED_CONT
+              endif
              else
               if(top) then
-               deallocate(this%container%first_elem%prev_elem); this%container%first_elem%prev_elem=>NULL()
+               deallocate(this%container%first_elem%prev_elem); this%container%first_elem%prev_elem=>oep
               else
-               deallocate(this%container%last_elem%next_elem); this%container%last_elem%next_elem=>NULL()
+               deallocate(this%container%last_elem%next_elem); this%container%last_elem%next_elem=>oep
               endif
               ierr=GFC_ERROR
              endif
              lep=>NULL()
             else
              if(top) then
-              this%container%first_elem%prev_elem=>NULL()
+              this%container%first_elem%prev_elem=>oep
              else
-              this%container%last_elem%next_elem=>NULL()
+              this%container%last_elem%next_elem=>oep
              endif
              ierr=GFC_MEM_ALLOC_FAILED
             endif
+            oep=>NULL()
            else
             ierr=GFC_CORRUPTED_CONT
            endif
@@ -380,7 +393,8 @@
          elseif(ierr.eq.GFC_IT_EMPTY) then !empty container
           if(associated(this%container)) then
            ierr=GFC_SUCCESS
-           if(.not.(associated(this%container%first_elem).or.associated(this%container%last_elem))) then
+           if(.not.(associated(this%current).or.&
+                    &associated(this%container%first_elem).or.associated(this%container%last_elem))) then
             allocate(this%container%first_elem,STAT=errc)
             if(errc.eq.0) then
 #ifdef NO_GNU
@@ -397,7 +411,9 @@
               this%container%first_elem%next_elem=>NULL()
               this%container%last_elem=>this%container%first_elem
               ierr=this%reset() !reset the iterator to GFC_IT_ACTIVE
-              nelems=this%container%update_num_elems_(1_INTL,ierr); if(ierr.ne.GFC_SUCCESS) ierr=GFC_CORRUPTED_CONT
+              if(this%container%num_elems_().ge.0) then !quick counting is on
+               nelems=this%container%update_num_elems_(1_INTL,ierr); if(ierr.ne.GFC_SUCCESS) ierr=GFC_CORRUPTED_CONT
+              endif
              else
               deallocate(this%container%first_elem); this%container%first_elem=>NULL()
               ierr=GFC_ERROR
@@ -430,7 +446,7 @@
          class(*), target, intent(in):: elem_val         !in: value to be stored
          logical, intent(in), optional:: precede         !in: TRUE:insert before, FALSE:insert after (default)
          logical, intent(in), optional:: assoc_only      !in: storage type: TRUE:by reference, FALSE:by value (default)
-         logical, intent(in), optional:: no_move         !in: if TRUE, the iterator position does not change, FALSE it does move to the newly added element
+         logical, intent(in), optional:: no_move         !in: if TRUE, the iterator position does not change, FALSE it does move to the newly added element (default)
 #ifdef NO_GNU
          procedure(gfc_copy_i), optional:: copy_constr_f !user-defined generic copy constructor
 #endif
@@ -464,14 +480,18 @@
                lep%next_elem=>this%current
                if(associated(this%current%prev_elem)) this%current%prev_elem%next_elem=>lep
                this%current%prev_elem=>lep
+               if(associated(this%current,this%container%first_elem)) this%container%first_elem=>lep
               else
                lep%next_elem=>this%current%next_elem
                lep%prev_elem=>this%current
                if(associated(this%current%next_elem)) this%current%next_elem%prev_elem=>lep
                this%current%next_elem=>lep
+               if(associated(this%current,this%container%last_elem)) this%container%last_elem=>lep
               endif
               if(move) this%current=>lep
-              nelems=this%container%update_num_elems_(1_INTL,ierr); if(ierr.ne.GFC_SUCCESS) ierr=GFC_CORRUPTED_CONT
+              if(this%container%num_elems_().ge.0) then !quick counting is on
+               nelems=this%container%update_num_elems_(1_INTL,ierr); if(ierr.ne.GFC_SUCCESS) ierr=GFC_CORRUPTED_CONT
+              endif
              else
               deallocate(lep); ierr=GFC_ERROR
              endif
@@ -488,7 +508,7 @@
          elseif(ierr.eq.GFC_IT_EMPTY) then
           if(associated(this%container)) then
            if(.not.(associated(this%current).or.&
-             &associated(this%container%first_elem).or.associated(this%container%last_elem))) then
+                   &associated(this%container%first_elem).or.associated(this%container%last_elem))) then
             ierr=GFC_SUCCESS
             allocate(this%container%first_elem,STAT=errc)
             if(errc.eq.0) then
@@ -506,7 +526,9 @@
               this%container%first_elem%next_elem=>NULL()
               this%container%last_elem=>this%container%first_elem
               ierr=this%reset() !reset the iterator to GFC_IT_ACTIVE (regardless of <no_move>)
-              nelems=this%container%update_num_elems_(1_INTL,ierr); if(ierr.ne.GFC_SUCCESS) ierr=GFC_CORRUPTED_CONT
+              if(this%container%num_elems_().ge.0) then !quick counting is on
+               nelems=this%container%update_num_elems_(1_INTL,ierr); if(ierr.ne.GFC_SUCCESS) ierr=GFC_CORRUPTED_CONT
+              endif
              else
               deallocate(this%container%first_elem); this%container%first_elem=>NULL()
               ierr=GFC_ERROR
@@ -526,13 +548,13 @@
         end function ListIterInsertElem
 !---------------------------------------------------------------------
         function ListIterInsertList(this,sublist,precede) result(ierr)
-!Inserts another list at the current iterator position (either before or after).
-!The inserted list becomes a sublist after insertion.
+!Inserts another list at the current list iterator position (either before or after).
+!The inserted list becomes a sublist after insertion. The iterator position does not change.
          implicit none
-         integer(INTD):: ierr                     !out: error code (0:success)
-         class(list_iter_t), intent(inout):: this !inout: list iterator
-         class(list_bi_t), intent(in):: sublist   !in: inserted list
-         logical, intent(in), optional:: precede  !in: if TRUE the sublist will be inserted prior to the current iterator position (defaults to FALSE)
+         integer(INTD):: ierr                      !out: error code (0:success)
+         class(list_iter_t), intent(inout):: this  !inout: list iterator
+         class(list_bi_t), intent(inout):: sublist !in: inserted list (must not be a sublist)
+         logical, intent(in), optional:: precede   !in: if TRUE the sublist will be inserted prior to the current iterator position (defaults to FALSE)
          logical:: before
          integer(INTL):: nelems,new_elems
 
@@ -540,38 +562,29 @@
          ierr=this%get_status()
          if(ierr.eq.GFC_IT_ACTIVE) then
           if(associated(this%current)) then
-           if(associated(sublist%first_elem).and.associated(sublist%last_elem)) then
-            new_elems=sublist%num_elems_(ierr)
-            if(ierr.eq.GFC_SUCCESS) then
-             if(before) then !insert prior to the current position
-              if(associated(this%current%prev_elem)) then
-               this%current%prev_elem%next_elem=>sublist%first_elem
-               sublist%first_elem%prev_elem=>this%current%prev_elem
-               sublist%last_elem%next_elem=>this%current
-               this%current%prev_elem=>sublist%last_elem
-              else
-               this%container%first_elem=>sublist%first_elem
-               sublist%last_elem%next_elem=>this%current
-               this%current%prev_elem=>sublist%last_elem
-              endif
-             else !insert after the current position
-              if(associated(this%current%next_elem)) then
-               this%current%next_elem%prev_elem=>sublist%last_elem
-               sublist%last_elem%next_elem=>this%current%next_elem
-               sublist%first_elem%prev_elem=>this%current
-               this%current%next_elem=>sublist%first_elem
-              else
-               this%container%last_elem=>sublist%last_elem
-               sublist%first_elem%prev_elem=>this%current
-               this%current%next_elem=>sublist%first_elem
-              endif
+           if(associated(sublist%first_elem).and.associated(sublist%last_elem).and.(.not.sublist%is_sublist())) then
+            ierr=GFC_SUCCESS
+            if(before) then !insert prior to the current position
+             if(associated(this%current%prev_elem)) then
+              this%current%prev_elem%next_elem=>sublist%first_elem
+              sublist%first_elem%prev_elem=>this%current%prev_elem
+             else
+              this%container%first_elem=>sublist%first_elem
              endif
-!            nelems=this%container%update_num_elems_(new_elems,ierr); if(ierr.ne.GFC_SUCCESS) ierr=GFC_CORRUPTED_CONT
-             call this%container%quick_counting_off() !turn off quick element counting
-             call sublist%quick_counting_off() !turn off quick element counting
-            else
-             ierr=GFC_ERROR
+             sublist%last_elem%next_elem=>this%current
+             this%current%prev_elem=>sublist%last_elem
+            else !insert after the current position
+             if(associated(this%current%next_elem)) then
+              this%current%next_elem%prev_elem=>sublist%last_elem
+              sublist%last_elem%next_elem=>this%current%next_elem
+             else
+              this%container%last_elem=>sublist%last_elem
+             endif
+             sublist%first_elem%prev_elem=>this%current
+             this%current%next_elem=>sublist%first_elem
             endif
+            call this%container%quick_counting_off_() !turn off quick element counting
+            call sublist%quick_counting_off_() !turn off quick element counting
            else
             ierr=GFC_EMPTY_CONT
            endif
@@ -581,51 +594,57 @@
          endif
          return
         end function ListIterInsertList
-!--------------------------------------------------------------------------------
-        function ListIterSplit(this,new_list,keep_tail,exclude_iter) result(ierr)
-!Splits the list into two parts at the current iterator position. Depending on
-!the value of <exclude_iter>, the iterator will either belong to the first part
-!of the list or to the second. One of the parts will be associated with the present
-!iterator, another part will be returned as a separate list. After splitting,
-!the iterator position is reset to the top of the list.
+!-------------------------------------------------------------------
+        function ListIterSplit(this,new_list,keep_tail) result(ierr)
+!Splits the list into two parts at the current iterator position.
+!Depending on <keep_tail>, either the top or the bottom part will
+!stay with the original iterator, including the current element.
+!The other part will be returned as a separate list.
          implicit none
          integer(INTD):: ierr                         !out: error code (0:success)
-         class(list_iter_t), intent(inout):: this     !inout: list iterator
+         class(list_iter_t), intent(inout):: this     !inout: list iterator (cannot be a sublist iterator)
          class(list_bi_t), intent(out):: new_list     !out: new list (cut)
          logical, intent(in), optional:: keep_tail    !in: if TRUE, the tail part will be associated with the iterator (defaults to FALSE)
-         logical, intent(in), optional:: exclude_iter !in: if TRUE, the current element of the iterator will be excluded from the iterator (defaults to FALSE)
-         logical:: keep_top,include_iter
+         logical:: keep_top
          class(list_elem_t), pointer:: homo,lumo
 
          if(present(keep_tail)) then; keep_top=.not.keep_tail; else; keep_top=.true.; endif
-         if(present(exclude_iter)) then; include_iter=.not.exclude_iter; else; include_iter=.true.; endif
          ierr=this%get_status()
          if(ierr.eq.GFC_IT_ACTIVE) then
           if(associated(this%current)) then
-           ierr=GFC_SUCCESS
-           if(include_iter) then
-            if(keep_top) then
-             homo=>this%current
-             lumo=>this%current%next_elem
+           if(.not.this%container%is_sublist(ierr)) then
+            if(ierr.eq.GFC_SUCCESS) then
+             if(keep_top) then
+              homo=>this%current
+              lumo=>this%current%next_elem
+              if(associated(lumo)) then
+               new_list%first_elem=>lumo; new_list%first_elem%prev_elem=>NULL()
+               new_list%last_elem=>this%container%last_elem
+               this%container%last_elem=>homo; this%container%last_elem%next_elem=>NULL()
+              else
+               ierr=GFC_INVALID_ARGS
+              endif
+             else
+              homo=>this%current%prev_elem
+              lumo=>this%current
+              if(associated(homo)) then
+               new_list%first_elem=>this%container%first_elem
+               new_list%last_elem=>homo; new_list%last_elem%next_elem=>NULL()
+               this%container%first_elem=>lumo; this%container%first_elem%prev_elem=>NULL()
+              else
+               ierr=GFC_INVALID_ARGS
+              endif
+             endif
+             if(ierr.eq.GFC_SUCCESS) then
+              call this%container%quick_counting_off_() !turn off quick element counting
+              call new_list%quick_counting_off_() !turn off quick element counting
+             endif
+             homo=>NULL(); lumo=>NULL()
             else
-             
+             ierr=GFC_ERROR
             endif
            else
-            if(keep_top) then
-             homo=>this%current%prev_elem
-             lumo=>this%current
-            else
-             
-            endif
-           endif
-           if(keep_top) then !1st part stays with the iterator
-            
-           else !2nd part stays with the iterator
-            new_list%first_elem=>this%container%first_elem
-            new_list%last_elem=>homo
-            this%container%first_elem=>lumo
-            this%container%first_elem%prev_elem=>NULL()
-            new_list%last_elem=>NULL()
+            ierr=GFC_INVALID_ARGS
            endif
           else
            ierr=GFC_CORRUPTED_CONT
@@ -633,32 +652,34 @@
          endif
          return
         end function ListIterSplit
-!------------------------------------------------------------------------------------
-        function ListIterDelete(this,destruct_func,all_after,all_before) result(ierr)
+!-----------------------------------------------------------------------------------
+        function ListIterDelete(this,destruct_func,all_after,all_prior) result(ierr)
 !Deletes an element or multiple elements starting from the current iterator position.
          implicit none
          integer(INTD):: ierr                                !out: error code (0:success)
          class(list_iter_t), intent(inout):: this            !inout: iterator
          procedure(gfc_destruct_i), optional:: destruct_func !in: element value destructor
          logical, intent(in), optional:: all_after           !in: if TRUE, all subsequent elements will be deleted as well
-         logical, intent(in), optional:: all_before          !in: if TRUE, all preceding elements will be deleted as well
-         logical:: before,after
+         logical, intent(in), optional:: all_prior           !in: if TRUE, all preceding elements will be deleted as well
+         logical:: after,prior
          class(list_elem_t), pointer:: lep
 
          if(present(all_after)) then; after=all_after; else; after=.false.; endif
-         if(present(all_before)) then; before=all_before; else; before=.false. endif
+         if(present(all_prior)) then; prior=all_prior; else; prior=.false.; endif
          ierr=this%get_status()
          if(ierr.eq.GFC_IT_ACTIVE) then
-          if(before.and.after) then
-           this%current=>this%container%first_elem; before=.false.
-          endif
           if(associated(this%current)) then
            ierr=GFC_SUCCESS
+           if(prior.and.after) then
+            this%current=>this%container%first_elem; prior=.false.
+           endif
+           if(prior.and.associated(this%current,this%container%first_elem)) prior=.false.
+           if(after.and.associated(this%current,this%container%last_elem)) after=.false.
            do while(associated(this%current))
             lep=>this%current
             if(after) then
              ierr=this%next()
-            elseif(before) then
+            elseif(prior) then
              ierr=this%previous()
             else
              if(associated(this%current%prev_elem)) then
@@ -675,6 +696,7 @@
             if(ierr.eq.GFC_IT_DONE) then; ierr=GFC_SUCCESS; exit; endif
 
            enddo
+
           else
            ierr=GFC_CORRUPTED_CONT
           endif

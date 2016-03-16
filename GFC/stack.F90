@@ -1,6 +1,7 @@
 !Generic implementation of a stack (OO Fortran 2003).
+!So far it is not derived from the GFC::Base.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2016/02/17
+!REVISION: 2016/03/16
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)

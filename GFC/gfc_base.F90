@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Base
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2016-03-14 (started 2016-02-17)
+!REVISION: 2016-03-16 (started 2016-02-17)
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -79,10 +79,16 @@
 !   undefined value for the boundary and/or current pointer in another iterator
 !   in case the deleted element is one of the boundary or the current element
 !   in that other iterator (also the other iterator's status may change to EMPTY).
+!   Also, some derived containers (e.g., list_bi_t) allow splitting the container
+!   into parts that can break other iterators associated with the same list.
+!   So far the solution is to make user liable for such illegal use of GFC.
 ! # Quick counting does not work with composite containers and subcontainers
 !   and probably it should not be used at all. Currently gfc_container_t::num_elems_()
 !   will not return the total number of elements without quick counting. However, one
 !   can always traverse the container in order to count the total number of elements.
+!   Since .num_elems_() is currently marked with a trailing underscore, it shall not
+!   be used by a user.
+
        module gfc_base
         use dil_basic
         use timers

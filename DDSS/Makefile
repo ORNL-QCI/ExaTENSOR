@@ -11,7 +11,7 @@ MPILIB ?= MPICH
 #BLAS: [ATLAS|MKL|ACML]:
 BLASLIB ?= ATLAS
 #Nvidia GPU via CUDA: [CUDA|NOCUDA]:
-GPU_CUDA ?= CUDA
+GPU_CUDA ?= NOCUDA
 
 #Local paths (for unwrapped compilation):
 # MPI:

@@ -1,3 +1,8 @@
+!Generic dictionary implementation (OO Fortran) based on AVL BST.
+!So far it is not derived from GFC::Base.
+!AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
+!REVISION: 2016/03/16
+
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
 
@@ -17,9 +22,6 @@
 !along with ExaTensor. If not, see <http://www.gnu.org/licenses/>.
 
        module dictionary
-!Generic dictionary implementation (OO Fortran 2008) based on AVL BST.
-!AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2015/10/07
 !DESCRIPTION:
 !#Dictionary items:
 !  In order to store an item ({key;value}) in the dictionary,

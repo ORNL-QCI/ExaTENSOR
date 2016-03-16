@@ -1,6 +1,6 @@
-!Generic Fortran Containers:: Tree.
+!Generic Fortran Containers (GFC): Tree
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2016-03-09 (started 2016-02-17)
+!REVISION: 2016-03-16 (started 2016-02-17)
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -29,9 +29,7 @@
 !   to another tree, the attached tree elements can be accessed either
 !   via its own iterator or via the combined tree iterator. Multiple
 !   iterators can be associated with a tree at a time.
-!FOR DEVELOPERS:
-! # Quick counting does not work with composite containers and subcontainers.
-!   Probably, quick counting should not be used at all.
+
        module tree
         use gfc_base
         use timers
