@@ -76,7 +76,11 @@ LIB_INTEL = -L.
 LIB_CRAY = -L.
 LIB_NOWRAP = $(LIB_$(TOOLKIT))
 LIB_WRAP = -L.
-LIB = $(LIB_$(WRAP)) -lstdc++
+ifeq ($(TOOLKIT),PGI)
+ LIB = $(LIB_$(WRAP))
+else
+ LIB = $(LIB_$(WRAP)) -lstdc++
+endif
 
 #MPI INCLUDES:
 MPI_INC_MPICH = -I$(PATH_MPICH)/include
