@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Linked list
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2016-03-16 (started 2016-02-28)
+!REVISION: 2016-03-17 (started 2016-02-28)
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -69,7 +69,7 @@
          procedure, public:: append=>ListIterAppend             !inserts a new element either at the beginning or at the end of the container
          procedure, public:: insert_elem=>ListIterInsertElem    !inserts a new element at the current position of the container
          procedure, public:: insert_list=>ListIterInsertList    !inserts another linked list at the current position of the container
-         generic, public:: insert=>ListIterInsertElem,ListIterInsertList !generic
+!        generic, public:: insert=>insert_elem,insert_list      !generic
          procedure, public:: split=>ListIterSplit               !splits the list into two parts at the current position of the container
          procedure, public:: delete=>ListIterDelete             !deletes an element or multiple elements starting from the current position
         end type list_iter_t
