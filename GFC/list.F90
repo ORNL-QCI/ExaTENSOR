@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Linked list
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2016-03-17 (started 2016-02-28)
+!REVISION: 2016-03-18 (started 2016-02-28)
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -69,9 +69,10 @@
          procedure, public:: append=>ListIterAppend             !inserts a new element either at the beginning or at the end of the container
          procedure, public:: insert_elem=>ListIterInsertElem    !inserts a new element at the current position of the container
          procedure, public:: insert_list=>ListIterInsertList    !inserts another linked list at the current position of the container
-!        generic, public:: insert=>insert_elem,insert_list      !generic
-         procedure, public:: split=>ListIterSplit               !splits the list into two parts at the current position of the container
-         procedure, public:: delete=>ListIterDelete             !deletes an element or multiple elements starting from the current position
+!        generic, public:: insert=>insert_elem,insert_list      !generic (`Ambiguous)
+         procedure, public:: split=>ListIterSplit               !splits the list into two parts at the current position
+         procedure, public:: delete=>ListIterDelete             !deletes an element in the current position
+         procedure, public:: delete_all=>ListIterDeleteAll      !deletes all elements (either prior, or after, or all of them)
         end type list_iter_t
 !INTERFACES:
 !VISIBILITY:
@@ -90,6 +91,7 @@
         private ListIterInsertList
         private ListIterSplit
         private ListIterDelete
+        private ListIterDeleteAll
 
        contains
 !IMPLEMENTATION:
@@ -652,56 +654,104 @@
          endif
          return
         end function ListIterSplit
-!-----------------------------------------------------------------------------------
-        function ListIterDelete(this,destruct_func,all_after,all_prior) result(ierr)
-!Deletes an element or multiple elements starting from the current iterator position.
+!------------------------------------------------------------
+        function ListIterDelete(this,destruct_f) result(ierr)
+!Deletes the element in the current iterator position. The current
+!iterator position moves to the preious element, unless there is none.
+!In the latter case, it moves to the next element, unless there is none.
+!In the latter case, the iterator/container becomes empty.
          implicit none
-         integer(INTD):: ierr                                !out: error code (0:success)
-         class(list_iter_t), intent(inout):: this            !inout: iterator
-         procedure(gfc_destruct_i), optional:: destruct_func !in: element value destructor
-         logical, intent(in), optional:: all_after           !in: if TRUE, all subsequent elements will be deleted as well
-         logical, intent(in), optional:: all_prior           !in: if TRUE, all preceding elements will be deleted as well
-         logical:: after,prior
+         integer(INTD):: ierr                             !out: error code (0:success)
+         class(list_iter_t), intent(inout):: this         !inout: iterator
+         procedure(gfc_destruct_i), optional:: destruct_f !in: element value destructor
          class(list_elem_t), pointer:: lep
+         integer(INTD):: errc
+         integer(INTL):: nelems
+         logical:: first,last
 
-         if(present(all_after)) then; after=all_after; else; after=.false.; endif
-         if(present(all_prior)) then; prior=all_prior; else; prior=.false.; endif
          ierr=this%get_status()
          if(ierr.eq.GFC_IT_ACTIVE) then
           if(associated(this%current)) then
-           ierr=GFC_SUCCESS
-           if(prior.and.after) then
-            this%current=>this%container%first_elem; prior=.false.
-           endif
-           if(prior.and.associated(this%current,this%container%first_elem)) prior=.false.
-           if(after.and.associated(this%current,this%container%last_elem)) after=.false.
-           do while(associated(this%current))
-            lep=>this%current
-            if(after) then
-             ierr=this%next()
-            elseif(prior) then
-             ierr=this%previous()
-            else
-             if(associated(this%current%prev_elem)) then
-              this%current=>this%current%prev_elem
-             else
-              if(associated(this%current%next_elem)) then
-               this%current=>this%current%next_elem
-              else
-               this%current=>NULL()
-               ierr=this%reset()
-              endif
-             endif
+           ierr=GFC_SUCCESS; lep=>this%current
+           first=.false.; if(associated(this%current,this%container%first_elem)) first=.true.
+           last=.false.; if(associated(this%current,this%container%last_elem)) last=.true.
+           if(associated(this%current%prev_elem)) then
+            this%current%prev_elem%next_elem=>this%current%next_elem
+            if(associated(this%current%next_elem)) then
+             this%current%next_elem%prev_elem=>this%current%prev_elem
             endif
-            if(ierr.eq.GFC_IT_DONE) then; ierr=GFC_SUCCESS; exit; endif
-
-           enddo
-
+           else
+            if(associated(this%current%next_elem)) this%current%next_elem%prev_elem=>NULL()
+           endif
+           if(this%container%num_elems_().ge.0) then !quick counting is on
+            nelems=this%container%update_num_elems_(-1_INTL,errc); if(errc.ne.GFC_SUCCESS) ierr=NOT_CLEAN
+           endif
+           if(first.and.last) then !the only element
+            this%current=>NULL(); this%container%first_elem=>NULL(); this%container%last_elem=>NULL()
+            errc=this%reset(); if(errc.ne.GFC_SUCCESS) ierr=NOT_CLEAN
+           else
+            if(first) then
+             this%current=>this%current%next_elem
+            else
+             this%current=>this%current%prev_elem
+            endif
+           endif
+           if(present(destruct_f)) then
+            call lep%destruct(errc,destruct_f)
+           else
+            call lep%destruct(errc)
+           endif
+           if(errc.ne.0) ierr=NOT_CLEAN
+           deallocate(lep,STAT=errc); if(errc.ne.0) ierr=NOT_CLEAN
           else
            ierr=GFC_CORRUPTED_CONT
           endif
          endif
          return
         end function ListIterDelete
+!-------------------------------------------------------------------------
+        function ListIterDeleteAll(this,destruct_f,backwards) result(ierr)
+!Deletes all elements in the list starting from the current iterator position.
+         implicit none
+         integer(INTD):: ierr                             !out: error code (0:success)
+         class(list_iter_t), intent(inout):: this         !inout: list iterator
+         procedure(gfc_destruct_i), optional:: destruct_f !in: element value destructor
+         logical, intent(in), optional:: backwards !in: if TRUE, all preceding elements will be deleted instead of subsequent ones (defaults to FALSE)
+         integer(INTD):: errc
+         logical:: back
+         class(list_elem_t), pointer:: lep
+
+         ierr=this%get_status()
+         if(ierr.eq.GFC_SUCCESS) then
+          if(associated(this%current)) then
+           if(present(backwards)) then; back=backwards; else; back=.false.; endif
+           lep=>this%current
+           if(back) then
+            this%current=>this%container%last_elem
+           else
+            this%current=>this%container%first_elem
+           endif
+           if(associated(this%current)) then
+            if(present(destruct_f)) then
+             do while(.not.associated(this%current,lep))
+              errc=this%delete(destruct_f); if(errc.ne.GFC_SUCCESS) ierr=NOT_CLEAN
+             enddo
+             errc=this%delete(destruct_f); if(errc.ne.GFC_SUCCESS) ierr=NOT_CLEAN
+            else
+             do while(.not.associated(this%current,lep))
+              errc=this%delete(); if(errc.ne.GFC_SUCCESS) ierr=NOT_CLEAN
+             enddo
+             errc=this%delete(); if(errc.ne.GFC_SUCCESS) ierr=NOT_CLEAN
+            endif
+            lep=>NULL()
+           else
+            ierr=GFC_CORRUPTED_CONT
+           endif
+          else
+           ierr=GFC_CORRUPTED_CONT
+          endif
+         endif
+         return
+        end function ListIterDeleteAll
 
        end module list
