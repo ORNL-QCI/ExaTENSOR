@@ -1,7 +1,7 @@
-!PROJECT: Q-FORCE: Massively Parallel Quantum Many-Body Methodology on Heterogeneous HPC systems.
+!PROJECT Q-FORCE: Massively Parallel Quantum Many-Body Methodology on Heterogeneous HPC systems.
 !BASE: ExaTensor: Massively Parallel Tensor Algebra Virtual Processor for Heterogeneous HPC systems.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2015/09/25
+!REVISION: 2016/03/24
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -22,7 +22,7 @@
 !along with ExaTensor. If not, see <http://www.gnu.org/licenses/>.
 
 !COMPILATION:
-! - Fortran 2003 at least (some 2008 as well).
+! - Fortran 2003 at least (some minor 2008 as well).
 ! - MPI 3.0 at least.
 ! - OpenMP 3.0 at least (OpenMP 4.0 if using Intel MIC).
 ! - CUDA 5.0 at least.

@@ -1,6 +1,6 @@
 !This module provides general services for MPI parallel programs.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2016/03/14
+!REVISION: 2016/03/24
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -124,15 +124,16 @@
 !Visibility:
         public dil_process_start
         public dil_process_finish
-        public dil_process_global_id
+        public dil_global_process_id
         public dil_global_comm_size
         public dil_global_comm_barrier
         public MPI_Get_Displacement
-        private gpu_nvidia_probe
-!       private intel_mic_probe
+        public get_memory_status
         public file_handle
         public quit
-        public get_memory_status
+        private gpu_nvidia_probe
+!       private intel_mic_probe
+!       private gpu_amd_probe
 
        contains
 !--------------------------------------------------
@@ -381,7 +382,7 @@
 
         end subroutine dil_process_finish
 !-------------------------------------------------------
-        function dil_process_global_id(ierr) result(gid)
+        function dil_global_process_id(ierr) result(gid)
 !Returns the global (MPI) process rank.
         implicit none
         integer(INT_MPI):: gid                         !out: global rank of the process
@@ -396,7 +397,7 @@
         endif
         if(present(ierr)) ierr=errc
         return
-        end function dil_process_global_id
+        end function dil_global_process_id
 !------------------------------------------------------
         function dil_global_comm_size(ierr) result(gcs)
 !Returns the size of the global (MPI) communicator.

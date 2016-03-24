@@ -1,0 +1,52 @@
+# ---------------------------------------------------
+# tapl.syntax
+# ---------------------------------------------------
+
+caseinsensitive
+
+context default
+
+# structure
+    keyword whole entry white
+    keyword whole scope white
+    keyword whole end white
+
+# keywords
+    keyword whole basis green
+    keyword whole range green
+    keyword whole index green
+    keyword whole deferred green
+    keyword whole load green
+    keyword whole save green
+    keyword whole destroy green
+    keyword whole export green
+    keyword whole import green
+    keyword whole invoke green
+
+# modifiers
+    keyword whole real blue
+    keyword whole complex blue
+    keyword whole tag brightblue
+    keyword whole sparse brightblue
+    keyword whole method brightblue
+    keyword whole to brightblue
+    keyword whole from brightblue
+
+# operators and syntax elements
+    keyword ( brightcyan
+    keyword ) brightcyan
+    keyword : brightcyan
+    keyword , brightcyan
+    keyword \+ yellow
+    keyword \- yellow
+    keyword \* yellow
+    keyword \/ yellow
+    keyword = yellow
+    keyword < yellow
+    keyword > yellow
+    keyword [ brightmagenta
+    keyword ] brightmagenta
+
+context # \n brown
+
+   spellcheck

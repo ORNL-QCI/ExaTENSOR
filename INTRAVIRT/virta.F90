@@ -1,6 +1,6 @@
-!ExaTensor::Parallel Virtual Processing for Scale-Adaptive Tensor Algebra
+!ExaTensor: Parallel Virtual Processing for Scale-Adaptive Tensor Algebra
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2015/09/29
+!REVISION: 2016/03/24
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -19,40 +19,33 @@
 
 !You should have received a copy of the GNU Lesser General Public License
 !along with ExaTensor. If not, see <http://www.gnu.org/licenses/>.
-!--------------------------------------------------------------------------------
-        module virta
+
+       module virta
+        use dil_basic
         use talsh
         use distributed
-        use subspaces
-        use stack
-        use lists
-        use dictionary
-        use multords
-        use extern_names
         use service_mpi, only: get_memory_status
         implicit none
         public
 !PARAMETERS:
- !General:
-        integer, private:: CONS_OUT=6     !default output for this module
-        logical, private:: VERBOSE=.true. !verbosity for errors
-        logical, private:: DEBUG=.true.   !debugging mode
+ !Basic:
+        integer(INTD), private:: CONS_OUT=6 !default output for this module
+        integer(INTD), private:: DEBUG=0    !debugging mode
+        logical, private:: VERBOSE=.true.   !verbosity for errors
  !Numeric:
         real(4), parameter, public:: EPS4=epsilon(1.0) !single precision epsilon
         real(8), parameter, public:: EPS8=epsilon(1d0) !double precision epsilon
         real(8), parameter, public:: ZERO_THRESH=1d-11 !numerical comparison threshold: should account for possible round-off errors
  !Kinds of MPI processes (process roles):
-        integer(INTD), parameter, public:: NO_ROLE=0                 !undefined role
-        integer(INTD), parameter, public:: GLOBAL_ROOT=1             !global root
-        integer(INTD), parameter, public:: LOCAL_ROOT=2              !local root
-        integer(INTD), parameter, public:: C_PROCESS_PRIVATE=3       !computing process private to his root
-        integer(INTD), parameter, public:: C_PROCESS_SHARED=4        !computing process shared by multiple roots
-        integer(INTD), parameter, public:: D_PROCESS=5               !I/O operating process
-        integer(INTD), parameter, public:: C_PROCS_PER_LOCAL_ROOT=32 !number of C-processes per local root
+        integer(INTD), parameter, public:: EXA_NO_ROLE=0              !undefined role
+        integer(INTD), parameter, public:: EXA_MANAGER=1              !manager (global root is a manager as well)
+        integer(INTD), parameter, public:: EXA_WORKER=2               !worker (C-process)
+        integer(INTD), parameter, public:: EXA_HELPER=3               !helper
+        integer(INTD), parameter, public:: EXA_MAX_WORK_GROUP_SIZE=64 !maximal size of a work group (max number of workers per manager)
  !Elementary tensor instruction (ETI) granularity:
-        real(8), public:: FLOPS_MEDIUM=1d9 !minimal number of Flops to consider the operation as medium-cost
-        real(8), public:: FLOPS_LARGE=1d11 !minimal number of Flops to consider the operation as large-cost
-        real(8), public:: COST_TO_SIZE=1d1 !minimal cost to size ratio to consider the operation cost-efficient
+        real(8), public:: EXA_FLOPS_MEDIUM=1d9 !minimal number of Flops to consider the operation as medium-cost
+        real(8), public:: EXA_FLOPS_HEAVY=1d11 !minimal number of Flops to consider the operation as heavy-cost
+        real(8), public:: EXA_COST_TO_SIZE=1d1 !minimal cost to size ratio to consider the operation compute intensive
  !Tensor algebra virtual processor:
   !Tensor naming:
         integer(INTD), parameter, public:: TENSOR_NAME_LEN=32    !max number of characters used for tensor names
@@ -66,7 +59,7 @@
         integer(INTD), parameter, public:: INSTR_COMPLETED=6     !instruction has completed (the result may still need a remote upload)
         integer(INTD), parameter, public:: INSTR_RETIRED=7       !instruction can safely be removed from the queue
         integer(INTD), parameter, public:: INSTR_STATUSES=8      !total number of instruction statuses
-  !Tensor instruction code:
+  !Tensor instruction code (opcode):
         integer(INTD), parameter, public:: INSTR_TENSOR_INIT=1
         integer(INTD), parameter, public:: INSTR_TENSOR_NORM1=2
         integer(INTD), parameter, public:: INSTR_TENSOR_NORM2=3
@@ -83,12 +76,13 @@
 !TYPES:
 
 !DATA:
- !Process role:
-        integer(INTD), public:: my_role=NO_ROLE   !role of the MPI process (set during runtime)
-        integer(INTD), public:: my_group=-1       !computing group the process belongs to (set during runtime)
-        integer(INTD), public:: my_group_index=-1 !ID of the process within the computing group (set during runtime)
+ !Current process role:
+        integer(INTD), public:: my_role=EXA_NO_ROLE !role of this MPI process (set at run-time)
+        integer(INTD), public:: my_group=-1         !computing group the process belongs to (set at run-time): [0..MAX]
+        integer(INTD), public:: my_group_size=0     !size of the computing group the process belongs to (set at runtime): [1..EXA_MAX_WORK_GROUP_SIZE]
+        integer(INTD), public:: my_group_index=-1   !process ID within the computing group (set at run-time): [0..my_group_size-1]
 !VISIBILITY:
 
-!METHODS:
+!IMPLEMENTATION:
 
-        end module virta
+       end module virta

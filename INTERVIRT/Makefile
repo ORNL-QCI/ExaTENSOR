@@ -1,29 +1,29 @@
 NAME = ExaTensor
 
 #Cross-compiling wrappers: [WRAP|NOWRAP]:
-export WRAP = NOWRAP
+WRAP ?= NOWRAP
 #Compiler: [GNU|PGI|INTEL|CRAY]:
-export TOOLKIT = GNU
+TOOLKIT ?= GNU
 #Optimization: [DEV|OPT]:
-export BUILD_TYPE = DEV
+BUILD_TYPE ?= DEV
 #MPI Library: [MPICH|OPENMPI]:
-export MPILIB = MPICH
+MPILIB ?= MPICH
 #BLAS: [ATLAS|MKL|ACML]:
-export BLASLIB = ATLAS
+BLASLIB ?= ATLAS
 #Nvidia GPU via CUDA: [CUDA|NOCUDA]:
-export GPU_CUDA = CUDA
+GPU_CUDA ?= CUDA
 
 #Local paths (for unwrapped compilation):
 # MPI:
-export PATH_MPICH = /usr/local/mpich3.2
-export PATH_OPENMPI = /usr/local/openmpi1.10.1
+PATH_MPICH ?= /usr/local/mpich3.2
+PATH_OPENMPI ?= /usr/local/openmpi1.10.1
 # BLAS LIB:
-export PATH_BLAS_ATLAS = /usr/lib
-export PATH_BLAS_INTEL = /usr/lib
-export PATH_BLAS_ACML = /usr/lib
+PATH_BLAS_ATLAS ?= /usr/lib
+PATH_BLAS_INTEL ?= /usr/lib
+PATH_BLAS_ACML ?= /usr/lib
 PATH_BLAS = $(PATH_BLAS_$(BLASLIB))
 # CUDA:
-export PATH_CUDA = /usr/local/cuda
+PATH_CUDA ?= /usr/local/cuda
 #DONE.
 
 #=================
@@ -129,6 +129,9 @@ NO_ACCEL_CUDA = -D NO_AMD -D NO_PHI -D CUDA_ARCH=350
 NO_ACCEL_NOCUDA = -D NO_AMD -D NO_PHI -D NO_GPU
 NO_ACCEL = $(NO_ACCEL_$(GPU_CUDA))
 
+#ExaTensor includes:
+MY_INC = -I../GFC -I../DDSS -I../TALSH -I../INTRAVIRT
+
 #C FLAGS:
 CFLAGS_DEV = -c -g $(NO_ACCEL)
 CFLAGS_OPT = -c -O3 $(NO_ACCEL)
@@ -155,15 +158,30 @@ LTHREAD = $(LTHREAD_$(TOOLKIT))
 #LINKING:
 LFLAGS = $(LIB) $(LTHREAD) $(MPI_LINK) $(LA_LINK) $(CUDA_LINK)
 
-$(NAME):
-	$(MAKE) -C ./TALSH
-	$(MAKE) -C ./DDSS
-	$(MAKE) -C ./GFC
-	$(MAKE) -C ./INTRAVIRT
-	$(MAKE) -C ./INTERVIRT
-	$(MAKE) -C ./QFORCE
-	cp ./QFORCE/Qforce.x ./
+OBJS = ./OBJ/hardware.o ./OBJ/subspaces.o ./OBJ/task_recursive.o ./OBJ/m_process.o ./OBJ/g_process.o ./OBJ/exatensor.o
+
+$(NAME): $(OBJS)
+	ar cr lib$(NAME).a $(OBJS) ../GFC/libgfc.a ../DDSS/libddss.a ../TALSH/libtalsh.a ../INTRAVIRT/libintravirt.a
+
+./OBJ/hardware.o: hardware.F90 ../GFC/tree.mod ../GFC/dictionary.mod
+	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(FFLAGS) hardware.F90 -o ./OBJ/hardware.o
+
+./OBJ/subspaces.o: subspaces.F90 ../GFC/tree.mod ../GFC/dictionary.mod
+	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(FFLAGS) subspaces.F90 -o ./OBJ/subspaces.o
+
+./OBJ/task_recursive.o: task_recursive.F90 ./OBJ/hardware.o ./OBJ/subspaces.o ../INTRAVIRT/virta.mod
+	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(FFLAGS) task_recursive.F90 -o ./OBJ/task_recursive.o
+
+./OBJ/m_process.o: m_process.F90 ../INTRAVIRT/virta.mod
+	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(FFLAGS) m_process.F90 -o ./OBJ/m_process.o
+
+./OBJ/g_process.o: g_process.F90 ./OBJ/m_process.o
+	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(FFLAGS) g_process.F90 -o ./OBJ/g_process.o
+
+./OBJ/exatensor.o: exatensor.F90 ./OBJ/m_process.o ./OBJ/g_process.o ../INTRAVIRT/virta.mod
+	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(FFLAGS) exatensor.F90 -o ./OBJ/exatensor.o
+
 
 .PHONY: clean
 clean:
-	rm -f ./*/*.x ./*/*.a ./*/*.mod ./*/OBJ/*
+	rm -f *.x *.a ./OBJ/* *.mod *.modmic *.ptx *.log

@@ -1,3 +1,7 @@
+!ExaTensor::Managing process (manager).
+!AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
+!REVISION: 2016/03/24
+
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
 
@@ -16,9 +20,18 @@
 !You should have received a copy of the GNU Lesser General Public License
 !along with ExaTensor. If not, see <http://www.gnu.org/licenses/>.
 
-        module m_process
+       module m_process
+        use virta
         implicit none
         private
+!PARAMETERS:
+ !Basic:
+        integer(INTD), private:: CONS_OUT=6
+        integer(INTD), private:: DEBUG=0
+        logical, private:: VERBOSE=.true.
+!TYPES:
+!INTERFACES:
+!VISIBILITY
+!IMPLEMENTATION:
 
-
-        end module m_process
+       end module m_process

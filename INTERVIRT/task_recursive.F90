@@ -1,6 +1,6 @@
-!Recursive data/task decomposition for tensors and tensor operations.
+!ExaTensor: Recursive data/task decomposition for tensors and tensor operations.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2016/03/18
+!REVISION: 2016/03/24
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -25,12 +25,11 @@
 ! # NAT: Node Aggregation Tree.
 ! # SAT: Subspace Aggregation Tree.
 ! # MUD: Maximally Uniform Distribution.
+        use virta
+        use hardware
+        use subspaces
         implicit none
         private
-        use dil_basic
-        use subspaces
-        use hardware
-        use virta
 !PARAMETERS:
  !Basic:
         integer(INTD), private:: CONS_OUT=6
@@ -65,7 +64,7 @@
        contains
 !IMPLEMENTATION:
 !--------------------------------------------------------
-        subroutine TensOperSplit(this,nat,tens_list,ierr)
+        subroutine TensOperSplit(this)
 !Splits a tensor into smaller tensors according to SAT.
          implicit none
          class(tensor_operand_t), intent(in):: this
