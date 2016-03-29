@@ -1,6 +1,6 @@
 !ExaTensor: Massively Parallel Virtual Processor for Scale-Adaptive Tensor Algebra
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2016/03/24
+!REVISION: 2016/03/29
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -21,6 +21,7 @@
 !along with ExaTensor. If not, see <http://www.gnu.org/licenses/>.
 
       module exatensor
+       use hardware
        use virta
 !      use c_process
        use m_process
@@ -39,7 +40,7 @@
 !DATA:
 
 !VISIBILITY:
-       public exa_tensor !entry point to ExaTensor
+       public exa_tensor !entry point into ExaTensor
 
       contains
 !IMPLEMENTATION:
@@ -55,6 +56,7 @@
        integer, intent(out):: ierr                       !out: error code (0:success)
        integer(INT_MPI), intent(in), optional:: ext_comm !in: existing MPI communicator (defaults to MPI_COMM_WORLD)
        integer(INT_MPI):: errc,i,my_rank
+       integer(INTD):: error_code
 
 !Start the (MPI) process and init its services:
        ierr=0; errc=0
@@ -63,19 +65,40 @@
        else
         call dil_process_start(errc)
        endif
-       if(errc.ne.0) then; ierr=1; return; endif
+       if(errc.ne.0) then; ierr=-1; return; endif !failed to start an MPI process
 !Sync everyone:
        my_rank=dil_global_process_id()
        write(jo,'("###EXATENSOR LAUNCHED PROCESS ",i9,"/",i9,": Syncing ... ")',ADVANCE='NO')&
             &my_rank,dil_global_comm_size()
        call dil_global_comm_barrier(errc)
-       if(errc.eq.0) then; write(jo,'("Ok")'); else; write(jo,'("Failed")'); endif
-!Assign a role to the (MPI) process and live it:
+!Root builds NAT, SAT, and assigns roles to all processes:
        if(errc.eq.0) then
-        my_role=EXA_WORKER !debug
-!       call c_proc_life(ierr)
+        write(jo,'("Ok")')
+        if(my_rank.eq.0) then
+ !Build NAT:
+         write(jo,'("#MSG(exatensor): Building the Node Aggregation Tree (NAT) ... ")',ADVANCE='NO')
+         call build_nat('hardware_specs.exaconf',error_code)
+ !Build SAT:
+         if(error_code.eq.0) then
+          write(jo,'("Ok")')
+          write(jo,'("#MSG(exatensor): Building the Subspace Aggregation Tree (SAT) ... ")',ADVANCE='NO')
+          !...(error_code)
+          if(error_code.eq.0) then; write(jo,'("Ok")'); else; write(jo,'("Failed")'); ierr=-2; endif
+         else
+          write(jo,'("Failed")')
+          ierr=-3
+         endif
+        endif
        else
-        ierr=-1
+        write(jo,'("Failed")')
+        ierr=-4
+       endif
+       if(ierr.eq.0) then
+        call dil_global_comm_barrier(errc)
+ !Assign roles:
+        my_role=EXA_WORKER !debug
+ !Begin life:
+        !...(ierr)
        endif
 !Sync everyone:
        write(jo,'()')
@@ -84,7 +107,7 @@
        call dil_global_comm_barrier(errc)
        if(errc.eq.0) then; write(jo,'("Ok")'); else; write(jo,'("Failed")'); endif
 !Finish the (MPI) process:
-       call dil_process_finish(errc); if(errc.ne.0) ierr=2
+       call dil_process_finish(errc); if(errc.ne.0) ierr=-5
        return
        end subroutine exa_tensor
 

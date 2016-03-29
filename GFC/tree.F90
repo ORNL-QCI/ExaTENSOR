@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Tree
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2016-03-16 (started 2016-02-17)
+!REVISION: 2016-03-29 (started 2016-02-17)
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -76,11 +76,11 @@
           procedure, public:: reset=>TreeIterReset                  !resets the iterator to the beginning of the container (root element)
           procedure, public:: release=>TreeIterRelease              !dissociates the iterator from its container
           procedure, public:: pointee=>TreeIterPointee              !returns a pointer to the container element currently in focus
-          procedure, public:: next=>TreeIterNext                    !moves the iterator to the next element
-          procedure, public:: previous=>TreeIterPrevious            !moves the iterator to the previous element
-          procedure, public:: to_sibling=>TreeIterToSibling         !moves the iterator to one of the siblings
-          procedure, public:: to_child=>TreeIterToChild             !moves the iterator to one of the children
-          procedure, public:: to_parent=>TreeIterToParent           !moves the iterator to the parent
+          procedure, public:: next=>TreeIterNext                    !moves the iterator to the next element, if any
+          procedure, public:: previous=>TreeIterPrevious            !moves the iterator to the previous element, if any
+          procedure, public:: to_sibling=>TreeIterToSibling         !moves the iterator to the next/previous sibling, if any
+          procedure, public:: to_child=>TreeIterToChild             !moves the iterator to the first child, if any
+          procedure, public:: to_parent=>TreeIterToParent           !moves the iterator to the parent, if any
           procedure, public:: my_parent=>TreeIterMyParent           !returns the parent of the current vertex
           procedure, public:: add_leaf=>TreeIterAddLeaf             !adds a new leaf element to the element of the container currently pointed to
           procedure, public:: delete_leaf=>TreeIterDeleteLeaf       !deletes the leaf pointed to by the iterator (if it is actually a leaf)

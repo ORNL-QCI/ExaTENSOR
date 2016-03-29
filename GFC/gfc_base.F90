@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Base
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2016-03-16 (started 2016-02-17)
+!REVISION: 2016-03-29 (started 2016-02-17)
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -111,7 +111,6 @@
         integer(INTD), parameter:: GFC_ELEM_NOT_EMPTY=-8    !element of the container is not empty
         integer(INTD), parameter:: GFC_ACTION_FAILED=-9     !user-defined action failed on an element
         integer(INTD), parameter:: GFC_METHOD_UNDEFINED=-10 !undefined method called on an object
-        integer(INTD), parameter:: GFC_NO_MOVE=999          !no move possible (for iterators)
  !Predicates (GFC_ERROR applies here as well):
         integer(INTD), parameter:: GFC_TRUE=1  !TRUE value
         integer(INTD), parameter:: GFC_FALSE=0 !FALSE value
@@ -123,10 +122,11 @@
         integer(INTD), parameter:: GFC_CMP_PARENT=+2 !object1 is a parent of object2
         integer(INTD), parameter:: GFC_CMP_NA=-6     !objects are not comparable
  !GFC iterator status:
-        integer(INTD), parameter:: GFC_IT_NULL=1000    !uninitialized iterator
-        integer(INTD), parameter:: GFC_IT_EMPTY=1001   !empty initialized iterator
-        integer(INTD), parameter:: GFC_IT_ACTIVE=1002  !active (non-empty) iterator
-        integer(INTD), parameter:: GFC_IT_DONE=1003    !pass the end of the container (done)
+        integer(INTD), parameter:: GFC_IT_NULL=1000   !uninitialized iterator
+        integer(INTD), parameter:: GFC_IT_EMPTY=1001  !empty initialized iterator
+        integer(INTD), parameter:: GFC_IT_ACTIVE=1002 !active (non-empty) iterator
+        integer(INTD), parameter:: GFC_IT_DONE=1003   !pass the end of the container (done)
+        integer(INTD), parameter:: GFC_NO_MOVE=1004   !no move possible (for custom moves)
 !TYPES:
  !Element of a container:
         type, public:: gfc_cont_elem_t

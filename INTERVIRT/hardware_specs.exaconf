@@ -1,0 +1,11 @@
+@nodes
+128
+
+@architecture
+CPU, GPU*2
+
+@RAM per node
+26G, 6G 6G
+
+@FLOPS per node
+140G, 1.4T 1.4T
