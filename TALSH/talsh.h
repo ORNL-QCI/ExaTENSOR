@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level API header.
-REVISION: 2016/02/12
+REVISION: 2016/03/30
 
 Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -32,9 +32,9 @@ along with ExaTensor. If not, see <http://www.gnu.org/licenses/>.
 //ERROR CODES:
 #define TALSH_SUCCESS 0
 #define TALSH_FAILURE -666
-#define TALSH_NOT_INITIALIZED 1
-#define TALSH_ALREADY_INITIALIZED 2
-#define TALSH_INVALID_ARGS 3
+#define TALSH_NOT_INITIALIZED 1000000
+#define TALSH_ALREADY_INITIALIZED 1000001
+#define TALSH_INVALID_ARGS 1000002
 
 //Exported functions:
 #ifdef __cplusplus
@@ -42,15 +42,23 @@ extern "C"{
 #endif
 // TAL-SH control:
 //  Initialize TAL-SH:
- int talshInit(size_t * host_buf_size, int * host_arg_max, int ngpus, int gpu_list[],
-                                                           int nmics, int mic_list[],
-                                                           int namds, int amd_list[]);
+ int talshInit(size_t * host_buf_size,
+               int * host_arg_max,
+               int ngpus,
+               int gpu_list[],
+               int nmics,
+               int mic_list[],
+               int namds,
+               int amd_list[]);
 //  Shutdown TAL-SH:
  int talshShutdown();
 //  Get the flat device Id:
  int talshFlatDevId(int dev_kind, int dev_num);
 //  Get the kind-specific device Id:
  int talshKindDevId(int dev_id, int * dev_kind);
+//  Query the state of a device:
+ int talshDeviceState(int dev_num, int dev_kind = DEV_NULL);
+ int talshDeviceState_(int dev_num, int dev_kind);
 
 #ifdef __cplusplus
 }

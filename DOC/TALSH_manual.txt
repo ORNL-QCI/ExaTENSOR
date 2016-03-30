@@ -1,6 +1,6 @@
 *** TAL-SH: Tensor Algebra Library for Shared Memory Computers ***
 AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-REVISION: 2016/02/08
+REVISION: 2016/03/30
 
 Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -68,7 +68,7 @@ Supported device kinds:
 
 Flat device numeration:
  Each device of each kind also has a flat device id in the range [0..DEV_MAX-1].
- 0 is always reserved for the Host. Some functions, which convert
+ 0 is always reserved for the Host. Some functions, namely those which convert
  between the flat and device kind specific numerations, may also return DEV_MAX
  with the meaning of "out of range" (error code). Hereafter, the id of a device
  within its kind will be referred to as "kind-specific", as opposed to its flat id.
@@ -111,42 +111,38 @@ API: Shutdown the TAL-SH library:
 API: Get a flat device id:
 
  Fortran 2003:
-  function encode_device_id(dev_kind,dev_num) result(dev_id):
+  function talsh_flat_dev_id(dev_kind,dev_num) result(dev_id):
    integer(C_INT):: dev_id                      !out: flat device id (Success: [0..DEV_MAX-1])
    integer(C_INT), intent(in), value:: dev_kind !in: device kind (see above)
    integer(C_INT), intent(in), value:: dev_num  !in: device number within its kind [0..max]
 
  C/C++:
-  int encode_device_id( //out: flat device id (Success: [0..DEV_MAX-1])
-   int dev_kind,        //in: device kind (see above)
-   int dev_num          //in: device number within its kind [0..max]
+  int talshFlatDevId( //out: flat device id (Success: [0..DEV_MAX-1])
+   int dev_kind,      //in: device kind (see above)
+   int dev_num        //in: device number within its kind [0..max]
   )
-
-  `Note: This function will be renamed: "talsh_flat_dev_id".
 
 API: Convert a flat device id into the kind specific device id:
 
  Fortran 2003:
-  function decode_device_id(dev_id,dev_kind) result(dev_num)
+  function talsh_kind_dev_id(dev_id,dev_kind) result(dev_num)
    integer(C_INT):: dev_num                   !out: kind specific device number [0..max]
    integer(C_INT), intent(in), value:: dev_id !in: flat device id
    integer(C_INT), intent(out):: dev_kind     !out: device kind (see above)
 
  C/C++:
-  int decode_device_id( //out: kind specific device number [0..max]
-   int dev_id,          //in: flat device id
-   int * dev_kind       //out: device kind (see above)
+  int talshKindDevId( //out: kind specific device number [0..max]
+   int dev_id,        //in: flat device id
+   int * dev_kind     //out: device kind (see above)
   )
-
- `Note: This function will be renamed: "talsh_kind_dev_id".
 
 API: Query the state of a device:
 
  Fortran 2003:
   function talsh_device_state(dev_num,dev_kind) result(dev_state)
-   integer(C_INT):: dev_state                             !out: device state (Success:[DEV_OFF,DEV_ON,DEV_ON_BLAS])
-   integer(C_INT), intent(in), value:: dev_num            !in: either a flat or kind specific (when <dev_kind> is present) device id
-   integer(C_INT), intent(in), value, optional:: dev_kind !in: device kind (note that it changes the meaning of the <dev_num> argument)
+   integer(C_INT):: dev_state                      !out: device state (Success:[DEV_OFF,DEV_ON,DEV_ON_BLAS])
+   integer(C_INT), intent(in):: dev_num            !in: either a flat or kind specific (when <dev_kind> is present) device id
+   integer(C_INT), intent(in), optional:: dev_kind !in: device kind (note that it changes the meaning of the <dev_num> argument)
 
  C/C++:
   int talshDeviceState(  //out: device state (Success:[DEV_OFF,DEV_ON,DEV_ON_BLAS])

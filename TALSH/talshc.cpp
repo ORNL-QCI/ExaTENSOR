@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level API.
-REVISION: 2016/02/11
+REVISION: 2016/03/30
 
 Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -27,8 +27,8 @@ along with ExaTensor. If not, see <http://www.gnu.org/licenses/>.
 #include "talsh.h"
 
 static int talsh_on=0;    //TAL-SH initialization flag (1:initalized; 0:not)
-static int talsh_gpu_beg;
-static int talsh_gpu_end;
+static int talsh_gpu_beg; //first Nvidia GPU in the range `Obsolete
+static int talsh_gpu_end; //last Nvidia GPU in the range `Obsolete
 
 static int talsh_gpus[MAX_GPUS_PER_NODE]; //current GPU status
 static int talsh_mics[MAX_MICS_PER_NODE]; //current MIC status
@@ -37,7 +37,7 @@ static int talsh_amds[MAX_AMDS_PER_NODE]; //current AMD status
 static talsh_task_t talsh_tasks[TALSH_MAX_ACTIVE_TASKS]; //reusable TAL-SH tasks
 
 //Exported functions:
-// TAL-SH device control:
+// TAL-SH control API:
 int talshInit(size_t * host_buf_size,    //inout: Host Argument Buffer size in bytes (in: suggested; out: actual)
               int * host_arg_max,        //out: Max number of arguments that can fit into the Host Argument Buffer
               int ngpus, int gpu_list[], //in: number of Nvidia GPU(s) to use and the list of Nvidia GPU(s) to use
@@ -60,15 +60,14 @@ int talshInit(size_t * host_buf_size,    //inout: Host Argument Buffer size in b
     return TALSH_FAILURE;
    }
   }
-  errc=arg_buf_allocate(host_buf_size,host_arg_max,gpu_beg,gpu_end);
-  if(errc) return TALSH_FAILURE;
+  errc=arg_buf_allocate(host_buf_size,host_arg_max,gpu_beg,gpu_end); if(errc) return TALSH_FAILURE;
   talsh_gpu_beg=gpu_beg; talsh_gpu_end=gpu_end;
  }else{
   talsh_gpu_beg=0; talsh_gpu_end=-1;
  }
 //Intel Xeon Phi accelerators:
  if(nmics > 0){
-  printf("#FATAL(TALSH::talshInit): Intel Xeon Phi is not supported yet!");
+  printf("#FATAL(TALSH::talshInit): Intel Xeon Phi is not fully supported yet!");
   return TALSH_FAILURE;
  }
 //AMD GPU accelerators:
@@ -106,4 +105,37 @@ int talshKindDevId(int dev_id,     //in: flat device Id: [0:DEV_MAX-1]
     A negative return value indicates an invalid flat device Id. **/
 {
  return decode_device_id(dev_id,dev_kind);
+}
+
+int talshDeviceState(int dev_num,  //in: either a flat or kind specific (when <dev_kind> is present) device id
+                     int dev_kind) //in: device kind (note that it changes the meaning of the <dev_num> argument)
+/** Returns device state (Success:[DEV_OFF,DEV_ON,DEV_ON_BLAS]) **/
+{
+ int devk,i,sts;
+
+ if(dev_kind == DEV_NULL){
+  i=talshKindDevId(dev_num,&devk);
+  if(i < 0) return TALSH_INVALID_ARGS;
+ }else{
+  devk=dev_kind;
+ }
+ switch(devk){
+  case DEV_NVIDIA_GPU:
+   sts=talsh_gpus[i];
+   break;
+  case DEV_INTEL_MIC:
+   sts=talsh_mics[i];
+   break;
+  case DEV_AMD_GPU:
+   sts=talsh_amds[i];
+   break;
+  default:
+   return TALSH_INVALID_ARGS;
+ }
+ return sts;
+}
+
+int talshDeviceState_(int dev_num, int dev_kind)
+{
+ return talshDeviceState(dev_num,dev_kind);
 }

@@ -1,5 +1,5 @@
 !ExaTensor::TAL-SH: Device-unified user-level API:
-!REVISION: 2016/03/18
+!REVISION: 2016/03/30
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -24,28 +24,31 @@
         implicit none
         private
 !EXTERNAL PUBLIC:
-        public tensor_shape_t
-        public tensor_block_t
-        public MAX_SHAPE_STR_LEN
+        public tensor_shape_t    !tensor shape (Fortran)
+        public tensor_block_t    !tensor block (Fortran)
+        public MAX_SHAPE_STR_LEN !max length of a shape-defining string
 !PARAMETERS:
  !Generic:
         integer(INTD), private:: CONS_OUT=6 !default output device for this module
+        integer(INTD), private:: DEBUG=0    !debugging mode for this module
         logical, private:: VERBOSE=.true.   !verbosity for errors
-        logical, private:: DEBUG=.true.     !debugging mode for this module
  !Errors:
-        integer(C_INT), parameter, public:: TALSH_SUCCESS=0             !success
-        integer(C_INT), parameter, public:: TALSH_FAILURE=-666          !generic failure
+        integer(C_INT), parameter, public:: TALSH_SUCCESS=0                   !success
+        integer(C_INT), parameter, public:: TALSH_FAILURE=-666                !generic failure
+        integer(C_INT), parameter, public:: TALSH_NOT_INITIALIZED=1000001     !TALSH library has not been initialized
+        integer(C_INT), parameter, public:: TALSH_ALREADY_INITIALIZED=1000002 !TALSH library has already been initialized
+        integer(C_INT), parameter, public:: TALSH_INVALID_ARGS=1000003        !invalid arguments passed to a procedure
  !Host argument buffer:
-        integer(C_SIZE_T), parameter, private:: HAB_SIZE_DEFAULT=1024*1024 !default size of the Host argument buffer
+        integer(C_SIZE_T), parameter, private:: HAB_SIZE_DEFAULT=1048576 !default size of the Host argument buffer in bytes
 !DERIVED TYPES:
 
 !GLOBALS:
 
 !INTERFACES:
         interface
- !TAL-SH device control C API:
+ !TAL-SH control C/C++ API:
   !Initialize TAL-SH:
-         integer(C_INT) function talshInit(host_buf_size,host_arg_max,ngpus,gpu_list,nmics,mic_list,namds,amd_list) &
+         integer(C_INT) function talshInit(host_buf_size,host_arg_max,ngpus,gpu_list,nmics,mic_list,namds,amd_list)&
                                           &bind(c,name='talshInit')
           import
           implicit none
@@ -77,6 +80,13 @@
           integer(C_INT), value, intent(in):: dev_id
           integer(C_INT), intent(out):: dev_kind
          end function talshKindDevId
+  !Query the state of a device:
+         integer(C_INT) function talshDeviceState_(dev_num,dev_kind) bind(c,name='talshDeviceState_')
+          import
+          implicit none
+          integer(C_INT), value, intent(in):: dev_num
+          integer(C_INT), value, intent(in):: dev_kind
+         end function talshDeviceState_
 
         end interface
 !VISIBILITY:
@@ -85,7 +95,7 @@
         public talsh_shutdown
         public talsh_flat_dev_id
         public talsh_kind_dev_id
-!        public talsh_device_state
+        public talsh_device_state
 !        public talsh_device_busy_least
 !        public talsh_stats
  !TAL-SH tensor block API:
@@ -116,7 +126,7 @@
 
        contains
 !Fortran API definitions:
- !TAL-SH device control API:
+ !TAL-SH control API:
 !----------------------------------------------------------------------------------------------
         function talsh_init(host_buf_size,host_arg_max,gpu_list,mic_list,amd_list) result(ierr)
          implicit none
@@ -152,7 +162,7 @@
 !----------------------------------------------------------------
         function talsh_flat_dev_id(dev_kind,dev_num) result(res)
          implicit none
-         integer(C_INT):: res                  !out: Flat device Id [0..DEV_MAX-1]; Failure: DEV_MAX
+         integer(C_INT):: res                  !out: flat device Id [0..DEV_MAX-1]; Failure: DEV_MAX
          integer(C_INT), intent(in):: dev_kind !in: device kind
          integer(C_INT), intent(in):: dev_num  !in: device Id within its kind (0..MAX)
          res=talshFlatDevId(dev_kind,dev_num)
@@ -161,11 +171,23 @@
 !--------------------------------------------------------------
         function talsh_kind_dev_id(dev_id,dev_kind) result(res)
          implicit none
-         integer(C_INT):: res                   !out: kind-specific device Id [0..]; Failure: DEV_NULL
+         integer(C_INT):: res                   !out: kind-specific device Id [0..MAX]; Failure: DEV_NULL (negative)
          integer(C_INT), intent(in):: dev_id    !in: flat device Id
          integer(C_INT), intent(out):: dev_kind !out: device kind
          res=talshKindDevId(dev_id,dev_kind)
          return
         end function talsh_kind_dev_id
+!----------------------------------------------------------------------
+        function talsh_device_state(dev_num,dev_kind) result(dev_state)
+         implicit none
+         integer(C_INT):: dev_state                      !out: device state (Success:[DEV_OFF,DEV_ON,DEV_ON_BLAS])
+         integer(C_INT), intent(in):: dev_num            !in: either a flat or kind specific (when <dev_kind> is present) device id
+         integer(C_INT), intent(in), optional:: dev_kind !in: device kind (note that it changes the meaning of the <dev_num> argument)
+         integer(C_INT):: devk
+
+         if(present(dev_kind)) then; devk=dev_kind; else; devk=DEV_NULL; endif
+         dev_state=talshDeviceState_(dev_num,devk)
+         return
+        end function talsh_device_state
 
        end module talsh
