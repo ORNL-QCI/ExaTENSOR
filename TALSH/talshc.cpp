@@ -159,6 +159,7 @@ int talshDeviceState_(int dev_num, int dev_kind) //Fortran wrapper
 }
 
 int talshDeviceBusyLeast(int dev_kind) //in: device kind (defaults to any kind)
+/** Returns the least busy device id. **/
 {
  int i;
 
@@ -182,4 +183,46 @@ int talshDeviceBusyLeast(int dev_kind) //in: device kind (defaults to any kind)
 int talshDeviceBusyLeast_(int dev_kind) //Fortran wrapper
 {
  return talshDeviceBusyLeast(dev_kind);
+}
+
+int talshStats(int dev_id,   //in: device id (either flat or kind specific device id, see below)
+               int dev_kind) //in: device kind (if present, <dev_id> will be interpreted as kind specific)
+/** Prints the run-time statistics for devices of interest. **/
+{
+ int rc=TALSH_SUCCESS,devk,devn;
+
+ switch(dev_kind){
+  case DEV_NULL:
+   if(dev_id < 0){ //print stats for all active devices
+    rc=talshStats(-1,DEV_HOST);
+    rc=talshStats(-1,DEV_NVIDIA_GPU);
+    rc=talshStats(-1,DEV_INTEL_MIC);
+    rc=talshStats(-1,DEV_AMD_GPU);
+    rc=TALSH_SUCCESS;
+   }else{
+    devn=talshKindDevId(dev_id,&devk);
+    rc=talshStats(devn,devk);
+   }
+   break;
+  case DEV_HOST:
+   rc=TALSH_NOT_IMPLEMENTED;
+   break;
+  case DEV_NVIDIA_GPU:
+   rc=gpu_print_stats(dev_id);
+   break;
+  case DEV_INTEL_MIC:
+   rc=TALSH_NOT_IMPLEMENTED;
+   break;
+  case DEV_AMD_GPU:
+   rc=TALSH_NOT_IMPLEMENTED;
+   break;
+  default:
+   rc=TALSH_INVALID_ARGS;
+ }
+ return rc;
+}
+
+int talshStats_(int dev_id, int dev_kind) //Fortran wrapper
+{
+ return talshStats(dev_id,dev_kind);
 }

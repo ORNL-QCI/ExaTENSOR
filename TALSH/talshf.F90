@@ -1,5 +1,5 @@
 !ExaTensor::TAL-SH: Device-unified user-level API:
-!REVISION: 2016/03/30
+!REVISION: 2016/03/31
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -35,6 +35,8 @@
  !Errors:
         integer(C_INT), parameter, public:: TALSH_SUCCESS=0                   !success
         integer(C_INT), parameter, public:: TALSH_FAILURE=-666                !generic failure
+        integer(C_INT), parameter, public:: TALSH_NOT_AVAILABLE=-888          !information or feature not avaiable
+        integer(C_INT), parameter, public:: TALSH_NOT_IMPLEMENTED=-999        !feature not implemented yet
         integer(C_INT), parameter, public:: TALSH_NOT_INITIALIZED=1000001     !TALSH library has not been initialized
         integer(C_INT), parameter, public:: TALSH_ALREADY_INITIALIZED=1000002 !TALSH library has already been initialized
         integer(C_INT), parameter, public:: TALSH_INVALID_ARGS=1000003        !invalid arguments passed to a procedure
@@ -93,6 +95,13 @@
           implicit none
           integer(C_INT), value, intent(in):: dev_kind
          end function talshDeviceBusyLeast_
+  !Print run-time TAL-SH statistics for chosen devices:
+         integer(C_INT) function talshStats_(dev_id,dev_kind) bind(c,name='talshStats_')
+          import
+          implicit none
+          integer(C_INT), value, intent(in):: dev_id
+          integer(C_INT), value, intent(in):: dev_kind
+         end function talshStats_
 
         end interface
 !VISIBILITY:
@@ -103,7 +112,7 @@
         public talsh_kind_dev_id
         public talsh_device_state
         public talsh_device_busy_least
-!        public talsh_stats
+        public talsh_stats
  !TAL-SH tensor block API:
 !        public talsh_tensor_construct
 !        public talsh_tensor_destroy
@@ -206,5 +215,18 @@
          dev_id=talshDeviceBusyLeast_(devk)
          return
         end function talsh_device_busy_least
+!---------------------------------------------------------
+        function talsh_stats(dev_id,dev_kind) result(ierr)
+         implicit none
+         integer(C_INT):: ierr                           !out: error code (0:success)
+         integer(C_INT), intent(in), optional:: dev_id   !in: device id (either flat or kind specific device id, see below)
+         integer(C_INT), intent(in), optional:: dev_kind !in: device kind (if present, <dev_id> will be interpreted as kind specific)
+         integer(C_INT):: devn,devk
+
+         if(present(dev_id)) then; devn=dev_id; else; devn=-1; endif
+         if(present(dev_kind)) then; devk=dev_kind; else; devk=DEV_NULL; endif
+         ierr=talshStats_(devn,devk)
+         return
+        end function talsh_stats
 
        end module talsh
