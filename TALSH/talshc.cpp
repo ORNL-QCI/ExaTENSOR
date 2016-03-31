@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level API.
-REVISION: 2016/03/30
+REVISION: 2016/03/31
 
 Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -30,9 +30,10 @@ static int talsh_on=0;    //TAL-SH initialization flag (1:initalized; 0:not)
 static int talsh_gpu_beg; //first Nvidia GPU in the range `Obsolete
 static int talsh_gpu_end; //last Nvidia GPU in the range `Obsolete
 
-static int talsh_gpus[MAX_GPUS_PER_NODE]; //current GPU status
-static int talsh_mics[MAX_MICS_PER_NODE]; //current MIC status
-static int talsh_amds[MAX_AMDS_PER_NODE]; //current AMD status
+static int talsh_cpu=DEV_OFF;
+static int talsh_gpu[MAX_GPUS_PER_NODE]={DEV_OFF}; //current GPU status
+static int talsh_mic[MAX_MICS_PER_NODE]={DEV_OFF}; //current MIC status
+static int talsh_amd[MAX_AMDS_PER_NODE]={DEV_OFF}; //current AMD status
 
 static talsh_task_t talsh_tasks[TALSH_MAX_ACTIVE_TASKS]; //reusable TAL-SH tasks
 
@@ -45,9 +46,15 @@ int talshInit(size_t * host_buf_size,    //inout: Host Argument Buffer size in b
               int namds, int amd_list[]) //in: number of AMD GPU(s) to use and the list of AMD GPU(s) to use
 /** Initializes the TAL-SH runtime. **/
 {
- int i,gpu_beg,gpu_end,errc;
+ int i,j,gpu_beg,gpu_end,errc;
 
  if(talsh_on) return TALSH_ALREADY_INITIALIZED;
+//CPU Host:
+#ifndef NO_BLAS
+ talsh_cpu=DEV_ON_BLAS;
+#else
+ talsh_cpu=DEV_ON;
+#endif
 //NVidia GPU accelerators:
  if(ngpus > 0){
   if(ngpus > MAX_GPUS_PER_NODE) return TALSH_INVALID_ARGS;
@@ -62,18 +69,22 @@ int talshInit(size_t * host_buf_size,    //inout: Host Argument Buffer size in b
   }
   errc=arg_buf_allocate(host_buf_size,host_arg_max,gpu_beg,gpu_end); if(errc) return TALSH_FAILURE;
   talsh_gpu_beg=gpu_beg; talsh_gpu_end=gpu_end;
+  for(i=0;i<ngpus;i++){
+   j=gpu_list[i]; if(j < 0 || j >= MAX_GPUS_PER_NODE) return TALSH_INVALID_ARGS;
+   talsh_gpu[j]=gpu_is_mine(j);
+  }
  }else{
   talsh_gpu_beg=0; talsh_gpu_end=-1;
  }
 //Intel Xeon Phi accelerators:
  if(nmics > 0){
   printf("#FATAL(TALSH::talshInit): Intel Xeon Phi is not fully supported yet!");
-  return TALSH_FAILURE;
+  return TALSH_NOT_IMPLEMENTED;
  }
 //AMD GPU accelerators:
  if(namds > 0){
   printf("#FATAL(TALSH::talshInit): AMD GPU is not supported yet!");
-  return TALSH_FAILURE;
+  return TALSH_NOT_IMPLEMENTED;
  }
  talsh_on=1;
  return TALSH_SUCCESS;
@@ -82,11 +93,15 @@ int talshInit(size_t * host_buf_size,    //inout: Host Argument Buffer size in b
 int talshShutdown()
 /** Shuts down the TAL-SH runtime. **/
 {
- int errc;
+ int i,errc;
 
  if(talsh_on == 0) return TALSH_NOT_INITIALIZED;
  errc=arg_buf_deallocate(talsh_gpu_beg,talsh_gpu_end);
  talsh_gpu_beg=0; talsh_gpu_end=-1; talsh_on=0;
+ talsh_cpu=DEV_OFF;
+ for(i=0;i<MAX_GPUS_PER_NODE;i++) talsh_gpu[i]=DEV_OFF;
+ for(i=0;i<MAX_MICS_PER_NODE;i++) talsh_mic[i]=DEV_OFF;
+ for(i=0;i<MAX_AMDS_PER_NODE;i++) talsh_amd[i]=DEV_OFF;
  if(errc) return TALSH_FAILURE;
  return TALSH_SUCCESS;
 }
@@ -120,14 +135,17 @@ int talshDeviceState(int dev_num,  //in: either a flat or kind specific (when <d
   devk=dev_kind;
  }
  switch(devk){
+  case DEV_HOST:
+   sts=talsh_cpu;
+   break;
   case DEV_NVIDIA_GPU:
-   sts=talsh_gpus[i];
+   sts=talsh_gpu[i];
    break;
   case DEV_INTEL_MIC:
-   sts=talsh_mics[i];
+   sts=talsh_mic[i];
    break;
   case DEV_AMD_GPU:
-   sts=talsh_amds[i];
+   sts=talsh_amd[i];
    break;
   default:
    return TALSH_INVALID_ARGS;
@@ -135,7 +153,33 @@ int talshDeviceState(int dev_num,  //in: either a flat or kind specific (when <d
  return sts;
 }
 
-int talshDeviceState_(int dev_num, int dev_kind)
+int talshDeviceState_(int dev_num, int dev_kind) //Fortran wrapper
 {
  return talshDeviceState(dev_num,dev_kind);
+}
+
+int talshDeviceBusyLeast(int dev_kind) //in: device kind (defaults to any kind)
+{
+ int i;
+
+ switch(dev_kind){
+  case DEV_NULL:
+   return talshFlatDevId(DEV_HOST,0); //`if device kind not specified, return CPU Host for simplicity
+  case DEV_HOST:
+   return talshFlatDevId(DEV_HOST,0);
+  case DEV_NVIDIA_GPU:
+   i=gpu_busy_least();
+   if(i < 0 || i >= MAX_GPUS_PER_NODE) return TALSH_FAILURE;
+   return i;
+  case DEV_INTEL_MIC:
+   return TALSH_NOT_IMPLEMENTED; //`Implement
+  case DEV_AMD_GPU:
+   return TALSH_NOT_IMPLEMENTED; //`Implement
+ }
+ return TALSH_INVALID_ARGS;
+}
+
+int talshDeviceBusyLeast_(int dev_kind) //Fortran wrapper
+{
+ return talshDeviceBusyLeast(dev_kind);
 }

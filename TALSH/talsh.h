@@ -32,6 +32,7 @@ along with ExaTensor. If not, see <http://www.gnu.org/licenses/>.
 //ERROR CODES:
 #define TALSH_SUCCESS 0
 #define TALSH_FAILURE -666
+#define TALSH_NOT_IMPLEMENTED -999
 #define TALSH_NOT_INITIALIZED 1000000
 #define TALSH_ALREADY_INITIALIZED 1000001
 #define TALSH_INVALID_ARGS 1000002
@@ -53,12 +54,18 @@ extern "C"{
 //  Shutdown TAL-SH:
  int talshShutdown();
 //  Get the flat device Id:
- int talshFlatDevId(int dev_kind, int dev_num);
+ int talshFlatDevId(int dev_kind,
+                    int dev_num);
 //  Get the kind-specific device Id:
- int talshKindDevId(int dev_id, int * dev_kind);
+ int talshKindDevId(int dev_id,
+                    int * dev_kind);
 //  Query the state of a device:
- int talshDeviceState(int dev_num, int dev_kind = DEV_NULL);
+ int talshDeviceState(int dev_num,
+                      int dev_kind = DEV_NULL);
  int talshDeviceState_(int dev_num, int dev_kind);
+//  Find the least busy device:
+ int talshDeviceBusyLeast(int dev_kind = DEV_NULL);
+ int talshDeviceBusyLeast_(int dev_kind);
 
 #ifdef __cplusplus
 }

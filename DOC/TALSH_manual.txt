@@ -159,8 +159,8 @@ API: Find the least busy device:
 
  Fortran 2003:
   function talsh_device_busy_least(dev_kind) result(dev_id)
-   integer(C_INT):: dev_id                                !out: either a flat or kind specific device id
-   integer(C_INT), intent(in), value, optional:: dev_kind !in: device kind (if absent, <dev_id> will return the flat device id)
+   integer(C_INT):: dev_id                         !out: either a flat or kind specific device id
+   integer(C_INT), intent(in), optional:: dev_kind !in: device kind (if absent, <dev_id> will return the flat device id)
 
  C/C++:
   int talshDeviceBusyLeast( //out: either a flat or kind specific device id

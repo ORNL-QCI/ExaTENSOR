@@ -87,6 +87,12 @@
           integer(C_INT), value, intent(in):: dev_num
           integer(C_INT), value, intent(in):: dev_kind
          end function talshDeviceState_
+  !Find the least busy device:
+         integer(C_INT) function talshDeviceBusyLeast_(dev_kind) bind(c,name='talshDeviceBusyLeast_')
+          import
+          implicit none
+          integer(C_INT), value, intent(in):: dev_kind
+         end function talshDeviceBusyLeast_
 
         end interface
 !VISIBILITY:
@@ -96,7 +102,7 @@
         public talsh_flat_dev_id
         public talsh_kind_dev_id
         public talsh_device_state
-!        public talsh_device_busy_least
+        public talsh_device_busy_least
 !        public talsh_stats
  !TAL-SH tensor block API:
 !        public talsh_tensor_construct
@@ -189,5 +195,16 @@
          dev_state=talshDeviceState_(dev_num,devk)
          return
         end function talsh_device_state
+!----------------------------------------------------------------
+        function talsh_device_busy_least(dev_kind) result(dev_id)
+         implicit none
+         integer(C_INT):: dev_id                         !out: either a flat or kind specific device id
+         integer(C_INT), intent(in), optional:: dev_kind !in: device kind (if absent, <dev_id> will return the flat device id)
+         integer(C_INT):: devk
+
+         if(present(dev_kind)) then; devk=dev_kind; else; devk=DEV_NULL; endif
+         dev_id=talshDeviceBusyLeast_(devk)
+         return
+        end function talsh_device_busy_least
 
        end module talsh
