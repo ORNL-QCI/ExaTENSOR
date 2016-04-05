@@ -2,7 +2,7 @@
     Parameters, derived types, and function prototypes
     used at the lower level of TAL-SH (device specific):
     CP-TAL, NV-TAL, XP-TAL, AM-TAL, etc.
-REVISION: 2016/03/31
+REVISION: 2016/04/05
 
 Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -349,6 +349,17 @@ extern "C"{
  int valid_device_kind(int dev_kind);
  int encode_device_id(int dev_kind, int dev_num);
  int decode_device_id(int dev_id, int * dev_kind = NULL);
+// Device resource management:
+ int tensDevRsc_create(talsh_dev_rsc_t **drsc);
+ int tensDevRsc_clean(talsh_dev_rsc_t * drsc);
+ int tensDevRsc_empty(talsh_dev_rsc_t * drsc);
+ int tensDevRsc_same(talsh_dev_rsc_t * drsc0, talsh_dev_rsc_t * drsc1);
+ int tensDevRsc_attach_mem(talsh_dev_rsc_t * drsc, int dev_id, void * mem_p, int buf_entry = -1);
+ int tensDevRsc_detach_mem(talsh_dev_rsc_t * drsc);
+ int tensDevRsc_allocate_mem(talsh_dev_rsc_t * drsc, int dev_id, size_t mem_size, int in_arg_buf = NOPE);
+ int tensDevRsc_free_mem(talsh_dev_rsc_t * drsc);
+ int tensDevRsc_release_all(talsh_dev_rsc_t * drsc);
+ int tensDevRsc_destroy(talsh_dev_rsc_t * drsc);
 #ifndef NO_GPU
 // NVidia GPU operations (NV-TAL):
 //  NV-TAL debugging:

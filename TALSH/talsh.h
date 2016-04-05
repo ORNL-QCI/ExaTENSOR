@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level API header.
-REVISION: 2016/03/30
+REVISION: 2016/04/01
 
 Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -42,7 +42,7 @@ along with ExaTensor. If not, see <http://www.gnu.org/licenses/>.
 #ifdef __cplusplus
 extern "C"{
 #endif
-// TAL-SH control:
+// TAL-SH control API:
 //  Initialize TAL-SH:
  int talshInit(size_t * host_buf_size,
                int * host_arg_max,
@@ -67,10 +67,32 @@ extern "C"{
 //  Find the least busy device:
  int talshDeviceBusyLeast(int dev_kind = DEV_NULL);
  int talshDeviceBusyLeast_(int dev_kind);
-//  Print TAL-SH statistics:
+//  Print TAL-SH statistics for specific devices:
  int talshStats(int dev_id = -1,
                 int dev_kind = DEV_NULL);
  int talshStats_(int dev_id, int dev_kind);
+// TAL-SH tensor block API:
+//  Create an empty tensor block:
+ int talshTensorCreate(talsh_tens_t ** tens_block);
+// Clean a tensor block (default constructor):
+ int talshTensorClean(talsh_tens_t * tens_block);
+//  Construct a tensor block:
+ int talshTensorConstruct(talsh_tens_t * tens_block,
+                          int data_type,
+                          int tens_rank,
+                          int tens_dims[],
+                          int dev_id = 0,
+                          void * ext_mem = NULL,
+                          int in_hab = -1,
+                          talsh_tens_init_i init_method = NULL,
+                          double init_val_real = 0.0,
+                          double init_val_imag = 0.0);
+ int talshTensorConstruct_(talsh_tens_t * tens_block, int data_type, int tens_rank, int tens_dims[], int dev_id,
+                           void * ext_mem, int in_hab, talsh_tens_init_i init_method, double init_val_real, double init_val_imag);
+/// Destruct a tensor block:
+ int talshTensorDestruct(talsh_tens_t * tens_block);
+//  Destroy a tensor block:
+ int talshTensorDestroy(talsh_tens_t * tens_block);
 
 #ifdef __cplusplus
 }

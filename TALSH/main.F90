@@ -36,6 +36,7 @@
         call test_talsh_c(ierr)
         write(*,'("Done: Status ",i5)') ierr
         if(ierr.ne.0) stop
+        write(*,*)''
 !Test Fortran API interface:
         write(*,'("Testing TALSH Fortran API ...")')
         call test_talsh_f(ierr)
@@ -57,6 +58,9 @@
         host_buf_size=1024*1024*1024
         ierr=talsh_init(host_buf_size,host_arg_max,gpu_list=(/0/))
         write(*,'("Status ",i11,": Size (Bytes) = ",i13,": Max Args in HAB = ",i7)') ierr,host_buf_size,host_arg_max
+        if(ierr.ne.TALSH_SUCCESS) then; ierr=1; return; endif
+!Print run-time statistics:
+        ierr=talsh_stats()
         if(ierr.ne.TALSH_SUCCESS) then; ierr=1; return; endif
 !Shutdown TALSH:
         write(*,'(1x,"Shutting down TALSH ... ")',ADVANCE='NO')

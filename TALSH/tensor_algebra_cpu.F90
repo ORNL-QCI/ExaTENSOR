@@ -1,6 +1,6 @@
 !Tensor Algebra for Multi- and Many-core CPUs (OpenMP based).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2016/03/15
+!REVISION: 2016/04/01
 
 !Copyright (C) 2013-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -3649,21 +3649,21 @@
         endif
         return
         end subroutine contr_pattern_rnd
-!----------------------------------------------------------------------------
-        function coherence_control_var(narg,coh_str) result(coh_ctrl) bind(c)
+!-----------------------------------------------------------------------------
+        function coherence_control_var(nargs,coh_str) result(coh_ctrl) bind(c)
 !Given a mnemonic description of the coherence control, returns an integer
 !that can be used in tensor operations for specifying it. A negative return
 !value indicates an error (invalid arguments).
         implicit none
         integer(C_INT):: coh_ctrl                    !out: coherence control variable (-:error)
-        integer(C_INT), intent(in):: narg            !in: number of arguments (>0)
-        character(C_CHAR), intent(in):: coh_str(1:*) !in: coherence letter for each argument (dest arg, 1st lhs arg, 2nd lhs arg, ...): "D","M","T","K"
+        integer(C_INT), intent(in):: nargs           !in: number of arguments (>0)
+        character(C_CHAR), intent(in):: coh_str(1:*) !in: coherence letter for each argument (dest arg, 1st rhs arg, 2nd rhs arg, ...): "D","M","T","K"
         integer(C_INT):: i
 
         coh_ctrl=-1
-        if(narg.gt.0.and.narg.le.MAX_TENSOR_OPERANDS) then
+        if(nargs.gt.0.and.nargs.le.MAX_TENSOR_OPERANDS) then
          coh_ctrl=0
-         do i=1,narg
+         do i=1,nargs
           select case(coh_str(i))
           case('d','D')
            coh_ctrl=coh_ctrl*4+0

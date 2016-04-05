@@ -1,6 +1,6 @@
 /** Tensor Algebra Library for NVidia GPU: NV-TAL (CUDA based).
 AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-REVISION: 2016/03/31
+REVISION: 2016/04/05
 
 Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -119,16 +119,6 @@ extern "C" {
 // LOCAL (PRIVATE):
 static int prmn_convert(int n, const int *o2n, int *n2o);
 static int non_trivial_prmn(int n, const int *prm);
-static int tensDevRsc_create(talsh_dev_rsc_t **drsc);
-static int tensDevRsc_clean(talsh_dev_rsc_t * drsc);
-static int tensDevRsc_empty(talsh_dev_rsc_t * drsc);
-static int tensDevRsc_same(talsh_dev_rsc_t * drsc0, talsh_dev_rsc_t * drsc1);
-static int tensDevRsc_attach_mem(talsh_dev_rsc_t * drsc, int dev_id, void * mem_p, int buf_entry = -1);
-static int tensDevRsc_detach_mem(talsh_dev_rsc_t * drsc);
-static int tensDevRsc_allocate_mem(talsh_dev_rsc_t * drsc, int dev_id, size_t mem_size, int in_arg_buf = NOPE);
-static int tensDevRsc_free_mem(talsh_dev_rsc_t * drsc);
-static int tensDevRsc_release_all(talsh_dev_rsc_t * drsc);
-static int tensDevRsc_destroy(talsh_dev_rsc_t * drsc);
 #ifndef NO_GPU
 static int cuda_stream_get(int gpu_num, int * cuda_stream_handle);
 static int cuda_stream_release(int gpu_num, int cuda_stream_handle);
@@ -349,7 +339,7 @@ static int non_trivial_prmn(int n, const int *prm)
 }
 
 //DEVICE RESOURCE MANAGEMENT:
-static int tensDevRsc_create(talsh_dev_rsc_t **drsc)
+int tensDevRsc_create(talsh_dev_rsc_t **drsc)
 /** Creates a new device resource descriptor and inits it to null. **/
 {
  int errc = 0;
@@ -358,7 +348,7 @@ static int tensDevRsc_create(talsh_dev_rsc_t **drsc)
  return errc;
 }
 
-static int tensDevRsc_clean(talsh_dev_rsc_t * drsc)
+int tensDevRsc_clean(talsh_dev_rsc_t * drsc)
 /** Cleans (initializes to null) a device resource descriptor. **/
 {
  if(drsc != NULL){
@@ -372,7 +362,7 @@ static int tensDevRsc_clean(talsh_dev_rsc_t * drsc)
  return 0;
 }
 
-static int tensDevRsc_empty(talsh_dev_rsc_t * drsc)
+int tensDevRsc_empty(talsh_dev_rsc_t * drsc)
 /** Returns YEP if the device resource descriptor is empty, NOPE otherwise.
     Negative return status means an error. **/
 {
@@ -383,7 +373,7 @@ static int tensDevRsc_empty(talsh_dev_rsc_t * drsc)
  return errc;
 }
 
-static int tensDevRsc_same(talsh_dev_rsc_t * drsc0, talsh_dev_rsc_t * drsc1)
+int tensDevRsc_same(talsh_dev_rsc_t * drsc0, talsh_dev_rsc_t * drsc1)
 /** Returns YEP if two resource descriptors point to the same resources, NOPE otherwise.
     A negative return status indicates an error. **/
 {
@@ -394,7 +384,7 @@ static int tensDevRsc_same(talsh_dev_rsc_t * drsc0, talsh_dev_rsc_t * drsc1)
  return NOPE;
 }
 
-static int tensDevRsc_attach_mem(talsh_dev_rsc_t * drsc, int dev_id, void * mem_p, int buf_entry)
+int tensDevRsc_attach_mem(talsh_dev_rsc_t * drsc, int dev_id, void * mem_p, int buf_entry)
 /** Attaches a chunk of existing global memory to a device resource descriptor.
     If <buf_entry> >= 0, that means that the global memory is in the argument buffer.
     If the resource descriptor had already been assigned a device, the <dev_id>
@@ -409,7 +399,7 @@ static int tensDevRsc_attach_mem(talsh_dev_rsc_t * drsc, int dev_id, void * mem_
  return 0;
 }
 
-static int tensDevRsc_detach_mem(talsh_dev_rsc_t * drsc)
+int tensDevRsc_detach_mem(talsh_dev_rsc_t * drsc)
 /** Detaches a chunk of external memory from a device resource descriptor.
     Regardless of the origin, that memory is not released. **/
 {
@@ -422,7 +412,7 @@ static int tensDevRsc_detach_mem(talsh_dev_rsc_t * drsc)
  return errc;
 }
 
-static int tensDevRsc_allocate_mem(talsh_dev_rsc_t * drsc, int dev_id, size_t mem_size, int in_arg_buf)
+int tensDevRsc_allocate_mem(talsh_dev_rsc_t * drsc, int dev_id, size_t mem_size, int in_arg_buf)
 /** Allocates global memory on device <dev_id> and attaches it to a device resource descriptor.
     If <in_arg_buf> = YEP, the memory will be allocated via that device's argument buffer.
     A return status TRY_LATER or DEVICE_UNABLE indicates the resource shortage and is not an error. **/
@@ -482,7 +472,7 @@ static int tensDevRsc_allocate_mem(talsh_dev_rsc_t * drsc, int dev_id, size_t me
  return 0;
 }
 
-static int tensDevRsc_free_mem(talsh_dev_rsc_t * drsc)
+int tensDevRsc_free_mem(talsh_dev_rsc_t * drsc)
 /** Releases global memory referred to by a device resource descriptor.
     An unsuccessful release of the global memory is marked with
     an error status NOT_CLEAN, but the corresponding components of
@@ -540,7 +530,7 @@ static int tensDevRsc_free_mem(talsh_dev_rsc_t * drsc)
  return n;
 }
 
-static int tensDevRsc_release_all(talsh_dev_rsc_t * drsc)
+int tensDevRsc_release_all(talsh_dev_rsc_t * drsc)
 /** Releases all device resources in <drsc>. An unsuccessful release
     of one or more resources is marked with a return status NOT_CLEAN,
     but the corresponding components of the device resource descriptor
@@ -564,7 +554,7 @@ static int tensDevRsc_release_all(talsh_dev_rsc_t * drsc)
  return n;
 }
 
-static int tensDevRsc_destroy(talsh_dev_rsc_t * drsc)
+int tensDevRsc_destroy(talsh_dev_rsc_t * drsc)
 /** Completely destroys a device resource descriptor. A return status NOT_CLEAN
     means that certain resources have not been released cleanly,
     but it is not a critical error in general (however, a leak can occur). **/
