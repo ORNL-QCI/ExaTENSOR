@@ -2,7 +2,7 @@
     Parameters, derived types, and function prototypes
     used at the lower level of TAL-SH (device specific):
     CP-TAL, NV-TAL, XP-TAL, AM-TAL, etc.
-REVISION: 2016/04/05
+REVISION: 2016/04/06
 
 Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -289,24 +289,6 @@ typedef struct{
  int * prmn_p;        //tensor block dimension permutation: pinnned HOST memory (miBank)
  int const_mem_entry; //NVidia GPU constant memory entry handle (>=0, -1:None)
 } tensArg_t;
-
-// Interoperable tensor block:
-typedef struct{
- talsh_tens_shape_t * shape_p; //shape of the tensor block
- int ndev;                     //number of devices the tensor block resides on
- int last_write;               //flat device id where the last write happened, -1 means coherence on all devices where the tensor block resides
- talsh_dev_rsc_t * dev_rsc;    //list of device resources occupied by the tensor block on each device
- void * tensF;                 //pointer to Fortran <tensor_block_t> (CPU,Phi)
- void * tensC;                 //pointer to C <tensBlck_t> (Nvidia GPU)
-} talsh_tens_t;
-
-// Interoperable TAL-SH task handle:
-typedef struct{
- void * task_p;    //pointer to the corresponding task object
- int dev_kind;     //device kind (DEV_NULL: uninitalized)
- double flops;     //number of floating point operations
- double exec_time; //execution time in seconds
-} talsh_task_t;
 
 // CUDA task (returned by non-blocking CUDA functions):
 typedef struct{

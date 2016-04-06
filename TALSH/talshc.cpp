@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level API.
-REVISION: 2016/04/05
+REVISION: 2016/04/06
 
 Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -246,6 +246,7 @@ int talshTensorClean(talsh_tens_t * tens_block)
  tens_block->shape_p=NULL;
  tens_block->ndev=0;
  tens_block->last_write=DEV_NULL;
+ tens_block->dev_rsc_len=0;
  tens_block->dev_rsc=NULL;
  tens_block->tensF=NULL;
  tens_block->tensC=NULL;
@@ -272,19 +273,46 @@ int talshTensorConstruct(talsh_tens_t * tens_block,     //inout: constructed ten
  //Check arguments:
  if(tens_block == NULL) return TALSH_INVALID_ARGS; //tensor block object must have been preallocated
  if(tens_block->shape_p != NULL) return TALSH_ALREADY_INITIALIZED; //tensor block is not empty (destruct it first)
- if(tens_valid_data_kind(data_type,&dksize) != YEP) return TALSH_INVALID_ARGS; //unknown data type (NO_TYPE is a valid type)
+ if(tens_valid_data_kind(data_type,&dksize) != YEP) return TALSH_INVALID_ARGS; //unknown data type (NO_TYPE is a valid type here)
  dev_num=decode_device_id(dev_id); if(dev_num < 0) return TALSH_INVALID_ARGS; //invalid device id
- already_allocated=0; if(ext_mem != NULL) already_allocated=1;
- if(in_hab >= 0){if(already_allocated){already_allocated=2;}else{return TALSH_INVALID_ARGS;};}; //HAB entry number must be accompanied with the memory pointer <ext_mem>
+ already_allocated=0; if(ext_mem != NULL) already_allocated=1; //check whether an external memory space is provided for the tensor body
+ if(in_hab >= 0){ //HAB entry number must be accompanied with the external memory pointer <ext_mem>
+  if(already_allocated){already_allocated=2;}else{return TALSH_INVALID_ARGS;};
+ }else{
+  in_hab=-1; //no HAB entry in use
+ }
  //Tensor shape:
  errc=tensShape_create(&(tens_block->shape_p)); if(errc == TRY_LATER || errc == DEVICE_UNABLE) return errc;
  if(errc != 0 || tens_block->shape_p == NULL) return TALSH_FAILURE;
- errc=tensShape_construct(tens_block->shape_p,NOPE,tens_rank,tens_dims); //not pinned
+ errc=tensShape_construct(tens_block->shape_p,NOPE,tens_rank,tens_dims); //NOPE = not pinned
  if(errc != 0 && errc != TRY_LATER && errc != DEVICE_UNABLE) errc=TALSH_FAILURE;
  if(errc != 0){free(tens_block->shape_p); tens_block->shape_p=NULL; return errc;};
+ //Device resource storage:
+ if(tens_block->dev_rsc_len == 0 || tens_block->dev_rsc == NULL){
+  tens_block->dev_rsc=(talsh_dev_rsc_t*)malloc(TALSH_MAX_DEV_PRESENT*sizeof(talsh_dev_rsc_t));
+  if(tens_block->dev_rsc != NULL){
+   tens_block->dev_rsc_len=TALSH_MAX_DEV_PRESENT; tens_block->ndev=0; tens_block->last_write=DEV_NULL;
+  }else{
+   free(tens_block->shape_p); tens_block->shape_p=NULL; tens_block->dev_rsc=NULL; tens_block->dev_rsc_len=0;
+   return TRY_LATER;
+  }
+ }else{
+  free(tens_block->shape_p); tens_block->shape_p=NULL;
+  return TALSH_INVALID_ARGS;
+ }
  //Tensor body:
- if(data_type != NO_TYPE){
-  
+ if(already_allocated != 0){
+  errc=tensDevRsc_attach_mem(&(tens_block->dev_rsc[0]),dev_id,ext_mem,in_hab);
+  if(errc != 0){
+   free(tens_block->shape_p); tens_block->shape_p=NULL;
+   free(tens_block->dev_rsc); tens_block->dev_rsc=NULL; tens_block->dev_rsc_len=0;
+   return TALSH_FAILURE;
+  }
+  tens_block->ndev=1;
+ }else{
+  if(data_type != NO_TYPE){
+   
+  }
  }
  return errc;
 }

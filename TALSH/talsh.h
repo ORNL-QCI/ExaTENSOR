@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level API header.
-REVISION: 2016/04/01
+REVISION: 2016/04/06
 
 Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -28,6 +28,7 @@ along with ExaTensor. If not, see <http://www.gnu.org/licenses/>.
 
 //PARAMETERS:
 #define TALSH_MAX_ACTIVE_TASKS 4096 //max number of active tasks on all devices on a node
+#define TALSH_MAX_DEV_PRESENT 16 //max number of on-node devices the tensor block can be present on
 
 //ERROR CODES:
 #define TALSH_SUCCESS 0
@@ -38,7 +39,27 @@ along with ExaTensor. If not, see <http://www.gnu.org/licenses/>.
 #define TALSH_ALREADY_INITIALIZED 1000001
 #define TALSH_INVALID_ARGS 1000002
 
-//Exported functions:
+//DATA TYPES:
+// Interoperable tensor block:
+typedef struct{
+ talsh_tens_shape_t * shape_p; //shape of the tensor block
+ int ndev;                     //number of devices the tensor block resides on
+ int last_write;               //flat device id where the last write happened, -1 means coherence on all devices where the tensor block resides
+ int dev_rsc_len;              //capacity of dev_rsc[]: ndev <= dev_rsc_len;
+ talsh_dev_rsc_t * dev_rsc;    //list of device resources occupied by the tensor block on each device
+ void * tensF;                 //pointer to Fortran <tensor_block_t> (CPU,Phi)
+ void * tensC;                 //pointer to C <tensBlck_t> (Nvidia GPU)
+} talsh_tens_t;
+
+// Interoperable TAL-SH task handle:
+typedef struct{
+ void * task_p;    //pointer to the corresponding task object
+ int dev_kind;     //device kind (DEV_NULL: uninitalized)
+ double flops;     //number of floating point operations
+ double exec_time; //execution time in seconds
+} talsh_task_t;
+
+//EXPORTED FUNCTIONS:
 #ifdef __cplusplus
 extern "C"{
 #endif
