@@ -1,6 +1,6 @@
 *** TAL-SH: Tensor Algebra Library for Shared Memory Computers ***
 AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-REVISION: 2016/04/05
+REVISION: 2016/04/08
 
 Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -204,12 +204,36 @@ buffer (HAB). Furthermore, an allocated tensor block can be initialized to some 
 or a user-defined initialization method can be invoked on it. In all cases, TAL-SH does not
 allocate/deallocate the <talsh_tens_t> object itself, which is the user responsibility. Instead
 TAL-SH uses an existing empty <talsh_tens_t> object and just constructs it upon a user request.
+In C/C++ code, one should use talshTensorCreate() to dynamically allocate a <talsh_tens_t> object
+whereas statically allocated <talsh_tens_t> objects must be cleaned via talshTensorClean()
+before the first construction!
 
 For developers only:
  Depending on the device, a tensor block is further specified via one of the two internal types:
  <tensor_block_t> (for the use on CPU and MIC) and <tensBlck_t> (for the use on NVidia GPU).
  Type <tensor_block_t> is natively defined in Fortran and is emulated in C (opaque handle).
  Type <tensBlck_t> is natively defined in C and is emulated in Fortran (opaque handle).
+
+API: Create an empty tensor block object:
+
+ C/C++:
+  int talshTensorCreate(      //out: error code (0: success, TRY_LATER: currently no enough memory available)
+   talsh_tens_t ** tens_block //out: a pointer to an empty tensor block
+  )
+
+API: Clean a tensor block (set it to empty):
+
+ C/C++:
+  int talshTensorClean(      //out: error code (0: success, TRY_LATER: currently no enough memory available)
+   talsh_tens_t * tens_block //inout: tensor block set to empty
+  )
+
+API: Check whether a tensor block is empty:
+
+ C/C++:
+  int talshTensorIsEmpty(    //out: YEP if the tensor block is empty, NOPE if not, error code otherwise
+   talsh_tens_t * tens_block //in: tensor block
+  )
 
 API: Construct a tensor block:
 
@@ -242,7 +266,8 @@ API: Construct a tensor block:
  Description:
   A tensor block shape can be specified via an integer array whose length
   will define the tensor rank and each element will define the extent of the
-  corresponding dimension of the tensor block. Another option is to pass the
+  corresponding dimension of the tensor block (in C/C++ one will need to
+  provide the tensor block rank explicitly). Another option is to pass the
   tensor shape object directly (only Fortran). Alternatively, the shape of a
   tensor block can be specified symbolically as a string of characters:
   '(E1,E2,...,En)',
@@ -251,12 +276,14 @@ API: Construct a tensor block:
    Ex is the extent of dimension x.
   By default, the seniority of tensor dimensions increases to the right (Fortran-like).
   If neither <ext_mem> nor <in_hab> are explicitly passed, the tensor body will be
-  allocated in the HAB buffer on device <dev_id>; if <ext_mem> is present but <in_hab>
+  allocated in regular memory on device <dev_id>; if <ext_mem> is present but <in_hab>
   is not, the tensor body will reside in the location pointed to by <ext_mem> on device <dev_id>
   (it is the user responsibility to make sure <ext_mem> refers to memory on device <dev_id>);
   if both <ext_mem> and <in_hab> are present, the tensor body will reside in the location
-  pointed to by <ext_mem>, which is supposed to be in the HAB buffer (entry #<in_hab>) on
-  device <dev_id> (again it is the user responsibility to ensure consistency of the arguments).
+  pointed to by <ext_mem>, which is assumed to be in the HAB buffer as entry #<in_hab> on
+  device <dev_id> (it is the user responsibility to ensure consistency of the arguments);
+  if <ext_mem> is absent or NULL but <in_hab> is present and >=0, the tensor body will be
+  allocated in the HAB buffer on device <dev_id> (if that device has a HAB buffer).
   An optional user-defined initialization method must have the following interface:
   Fortran 2003:
    abstract interface
@@ -270,9 +297,11 @@ API: Construct a tensor block:
    end interface
   C/C++:
    typedef void (*talsh_tens_init_i)(void * tens_ptr, int data_type, int tens_rank, int tens_dims[], int * ierr);
-  The user-defined initialization method can only be supplied when the initialization value argument is absent.
+  The user-defined initialization method should only be supplied when the initialization value argument is absent.
+  If both the user-defined initialization method and the initialization value are provided, the initialization
+  method will take precedence (the value will be ignored).
 
-API: Destruct a tensor block:
+API: Destruct a tensor block (release all resources and set it to empty):
 
  Fortran 2003:
   function talsh_tensor_destruct(tens_block) result(ierr)
@@ -284,6 +313,13 @@ API: Destruct a tensor block:
    talsh_tens_t * tens_block //inout: destructed tensor block (but not <tens_block> itself)
   )
 
+API: Destroy a tensor block object (destruct it first and then completely destroy the object):
+
+ C/C++:
+  int talshTensorDestroy(    //out: error code (0:success)
+   talsh_tens_t * tens_block //inout: a tensor block (will be destroyed on exit)
+  )
+
 API: Get the volume of a tensor block (number of elements):
 
  Fortran 2003:
@@ -292,11 +328,11 @@ API: Get the volume of a tensor block (number of elements):
    type(talsh_tens_t), intent(in):: tens_block !in: tensor block
 
  C/C++:
-  long long int talshTensorVolume( //out: number of elements in the tensor block (negative on error)
+  size_t talshTensorVolume(        //out: number of elements in the tensor block (negative on error)
    const talsh_tens_t * tens_block //in: pointer to a tensor block
   )
 
- Note: Return value 0 means that the tensor block is empty (null).
+ Note: Return value 0 means that the tensor block is empty.
 
 API: Get the data type of the tensor block:
 
