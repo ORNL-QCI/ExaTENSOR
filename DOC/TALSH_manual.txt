@@ -1,6 +1,6 @@
 *** TAL-SH: Tensor Algebra Library for Shared Memory Computers ***
 AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-REVISION: 2016/04/08
+REVISION: 2016/04/14
 
 Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -282,9 +282,10 @@ API: Construct a tensor block:
   if both <ext_mem> and <in_hab> are present, the tensor body will reside in the location
   pointed to by <ext_mem>, which is assumed to be in the HAB buffer as entry #<in_hab> on
   device <dev_id> (it is the user responsibility to ensure consistency of the arguments);
-  if <ext_mem> is absent or NULL but <in_hab> is present and >=0, the tensor body will be
+  if <ext_mem> is absent (NULL) but <in_hab> is present and >=0, the tensor body will be
   allocated in the HAB buffer on device <dev_id> (if that device has a HAB buffer).
   An optional user-defined initialization method must have the following interface:
+
   Fortran 2003:
    abstract interface
     subroutine talsh_tens_init_i(tens_ptr,data_type,tens_rank,tens_dims,ierr)
@@ -295,8 +296,10 @@ API: Construct a tensor block:
      integer(C_INT), intent(out):: ierr           !out: error code (0:success)
     end subroutine talsh_tens_init_i
    end interface
+
   C/C++:
    typedef void (*talsh_tens_init_i)(void * tens_ptr, int data_type, int tens_rank, int tens_dims[], int * ierr);
+
   The user-defined initialization method should only be supplied when the initialization value argument is absent.
   If both the user-defined initialization method and the initialization value are provided, the initialization
   method will take precedence (the value will be ignored).

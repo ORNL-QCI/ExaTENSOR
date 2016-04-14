@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level API.
-REVISION: 2016/04/08
+REVISION: 2016/04/14
 
 Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -271,7 +271,7 @@ int talshTensorConstruct(talsh_tens_t * tens_block,     //inout: empty tensor bl
                          double init_val_real,          //in: initialization value (real part), defaults to 0.0
                          double init_val_imag)          //in: initialization value (imaginary part), defaults to 0.0
 /** Constructs a tensor block: {0: success; TRY_LATER: currently no enough memory available; DEVICE_UNABLE}.
-    If <data_type> == NO_TYPE, the tensor body is not allocated (only the tensor shape).
+    If <data_type> == NO_TYPE, the tensor body will not be allocated (only the tensor shape).
     If the tensor body initialization failed, a status NOT_CLEAN is returned
     but the tensor block is ready for use (except its body value is undefined). **/
 {

@@ -1,5 +1,5 @@
 !ExaTensor::TAL-SH: Device-unified user-level API:
-!REVISION: 2016/03/31
+!REVISION: 2016/04/14
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -43,7 +43,23 @@
  !Host argument buffer:
         integer(C_SIZE_T), parameter, private:: HAB_SIZE_DEFAULT=1048576 !default size of the Host argument buffer in bytes
 !DERIVED TYPES:
-
+ !TAL-SH tensor block:
+        type, bind(C):: talsh_tens_t
+         type(C_PTR):: shape_p=C_NULL_PTR     !shape of the tensor block
+         integer(C_INT):: ndev=0              !number of devices the tensor block resides on
+         integer(C_INT):: last_write=DEV_NULL !flat device id where the last write happened, -1 means coherence on all devices where the tensor block resides
+         integer(C_INT):: dev_rsc_len=0       !capacity of dev_rsc[]: ndev <= dev_rsc_len
+         type(C_PTR):: dev_rsc=C_NULL_PTR     !list of device resources occupied by the tensor block on each device
+         type(C_PTR):: tensF=C_NULL_PTR       !pointer to Fortran <tensor_block_t> (CPU,Phi)
+         type(C_PTR):: tensC=C_NULL_PTR       !pointer to C/C++ <tensBlck_t> (Nvidia GPU)
+        end type talsh_tens_t
+ !TAL-SH task handle:
+        type, bind(C):: talsh_task_t
+         type(C_PTR):: task_p=C_NULL_PTR    !pointer to the corresponding task object
+         integer(C_INT):: dev_kind=DEV_NULL !device kind (DEV_NULL: uninitialized)
+         real(C_DOUBLE):: flops=0d0         !number of floating point operations
+         real(C_DOUBLE):: exec_time=0d0     !execution time in seconds
+        end type talsh_task_t
 !GLOBALS:
 
 !INTERFACES:
@@ -102,6 +118,14 @@
           integer(C_INT), value, intent(in):: dev_id
           integer(C_INT), value, intent(in):: dev_kind
          end function talshStats_
+ !TAL-SH tensor block C/C++ API:
+  !Check whether a tensor block is empty:
+         integer(C_INT) function talshTensorIsEmpty(tens_block) bind(c,name='talshTensorIsEmpty')
+          import
+          implicit none
+          type(C_PTR), value, intent(in):: tens_block
+         end function talshTensorIsEmpty
+  !Construct a tensor block:
 
         end interface
 !VISIBILITY:
@@ -114,8 +138,9 @@
         public talsh_device_busy_least
         public talsh_stats
  !TAL-SH tensor block API:
+        public talsh_tensor_is_empty
 !        public talsh_tensor_construct
-!        public talsh_tensor_destroy
+!        public talsh_tensor_destruct
 !        public talsh_tensor_volume
 !        public talsh_tensor_datatype
 !        public talsh_tensor_shape
@@ -228,5 +253,15 @@
          ierr=talshStats_(devn,devk)
          return
         end function talsh_stats
+!-------------------------------------------------------------
+        function talsh_tensor_is_empty(tens_block) result(res)
+         implicit none
+         logical:: res                                       !out: .TRUE. if the tensor block is empty, .FALSE. otherwise
+         type(talsh_tens_t), intent(in), target:: tens_block !in: tensor block
+
+         res=.FALSE.
+         if(talshTensorIsEmpty(c_loc(tens_block)).eq.YEP) res=.TRUE.
+         return
+        end function talsh_tensor_is_empty
 
        end module talsh

@@ -1,6 +1,6 @@
 !ExaTensor::TAL-SH: Parameters, types, C function interfaces:
 !Keep consistent with "tensor_algebra.h"!
-!REVISION: 2016/02/15
+!REVISION: 2016/04/14
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -187,22 +187,6 @@
          type(C_PTR):: divs       !tensor dimension dividers
          type(C_PTR):: grps       !tensor dimension groups
         end type talsh_tens_shape_t
- !TAL-SH tensor block:
-        type, bind(C):: talsh_tens_t
-         type(C_PTR):: shape_p       !shape of the tensor block
-         integer(C_INT):: ndev       !number of devices the tensor block resides on
-         integer(C_INT):: last_write !flat device id where the last write happened, -1 means coherence on all devices where the tensor block resides
-         type(C_PTR):: dev_rsc       !list of device resources occupied by the tensor block on each device
-         type(C_PTR):: tensF         !pointer to Fortran <tensor_block_t> (CPU,Phi)
-         type(C_PTR):: tensC         !pointer to C/C++ <tensBlck_t> (Nvidia GPU)
-        end type talsh_tens_t
- !TAL-SH task handle:
-        type, bind(C):: talsh_task_t
-         type(C_PTR):: task_p       !pointer to the corresponding task object
-         integer(C_INT):: dev_kind  !device kind (DEV_NULL: uninitialized)
-         real(C_DOUBLE):: flops     !number of floating point operations
-         real(C_DOUBLE):: exec_time !execution time in seconds
-        end type talsh_task_t
 
 !EXTERNAL INTERFACES (keep consistent with tensor_algebra.h):
  !User-defined tensor block initialization:
@@ -216,6 +200,7 @@
           integer(C_INT), intent(out):: ierr           !out: error code (0:success)
          end subroutine talsh_tens_init_i
         end interface
+
 !C FUNCTION INTERFACES (for Fortran):
         interface
  !Argument buffer memory management:

@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level API header.
-REVISION: 2016/04/08
+REVISION: 2016/04/14
 
 Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -46,7 +46,7 @@ typedef struct{
  talsh_tens_shape_t * shape_p; //shape of the tensor block
  int ndev;                     //number of devices the tensor block resides on
  int last_write;               //flat device id where the last write happened, -1 means coherence on all devices where the tensor block resides
- int dev_rsc_len;              //capacity of dev_rsc[]: ndev <= dev_rsc_len;
+ int dev_rsc_len;              //capacity of dev_rsc[]: ndev <= dev_rsc_len
  talsh_dev_rsc_t * dev_rsc;    //list of device resources occupied by the tensor block on each device
  void * tensF;                 //pointer to Fortran <tensor_block_t> (CPU,Phi)
  void * tensC;                 //pointer to C <tensBlck_t> (Nvidia GPU)
@@ -99,7 +99,7 @@ extern "C"{
 //  Clean a tensor block (default constructor):
  int talshTensorClean(talsh_tens_t * tens_block);
 //  Check whether a tensor block is empty:
-int talshTensorIsEmpty(const talsh_tens_t * tens_block);
+ int talshTensorIsEmpty(const talsh_tens_t * tens_block);
 //  Construct a tensor block:
  int talshTensorConstruct(talsh_tens_t * tens_block,
                           int data_type,
