@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level API.
-REVISION: 2016/04/14
+REVISION: 2016/04/15
 
 Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -330,31 +330,40 @@ int talshTensorConstruct(talsh_tens_t * tens_block,     //inout: empty tensor bl
   }
  }
  //Initialization (`Currently supported only on Host):
- if(tens_block->ndev > 0 && dev_kind == DEV_HOST){
-  if(init_method != NULL){
-   init_method(tens_block->dev_rsc[0].gmem_p,data_type,tens_rank,tens_dims,&errc);
-   if(errc != 0) errc=NOT_CLEAN; //initialization failed
-  }else{
-   switch(data_type){
-    case R4:
-     fval = (float)init_val_real;
-     fp = (float*)(tens_block->dev_rsc[0].gmem_p);
+ if(tens_block->ndev > 0){
+  if(dev_kind == DEV_HOST){
+   if(init_method != NULL){
+    init_method(tens_block->dev_rsc[0].gmem_p,data_type,tens_rank,tens_dims,&errc);
+    if(errc != 0) errc=NOT_CLEAN; //initialization failed
+   }else{
+    switch(data_type){
+     case R4:
+      fval = (float)init_val_real;
+      fp = (float*)(tens_block->dev_rsc[0].gmem_p);
 #pragma omp parallel for schedule(guided)
-     for(size_t l=0; l < tvol; l++) fp[l]=fval;
-     break;
-    case R8:
-     dp = (double*)(tens_block->dev_rsc[0].gmem_p);
+      for(size_t l=0; l < tvol; l++) fp[l]=fval;
+      break;
+     case R8:
+      dp = (double*)(tens_block->dev_rsc[0].gmem_p);
 #pragma omp parallel for schedule(guided)
-     for(size_t l=0; l < tvol; l++) dp[l]=init_val_real;
-     break;
-    default:
-     return TALSH_NOT_IMPLEMENTED; //`Enable complex data type C4 and C8
+      for(size_t l=0; l < tvol; l++) dp[l]=init_val_real;
+      break;
+     default:
+      return NOT_CLEAN; //`Enable complex data type C4 and C8
+    }
    }
+  }else{
+   errc=TALSH_NOT_IMPLEMENTED; //`Initialization on other device kinds should be enabled
   }
- }else{
-  errc=NOT_CLEAN; //`Initialization on other device kinds should be enabled
  }
  return errc;
+}
+
+int talshTensorConstruct_(talsh_tens_t * tens_block, int data_type, int tens_rank, int tens_dims[], int dev_id, //Fortran wrapper
+                          void * ext_mem, int in_hab, talsh_tens_init_i init_method, double init_val_real, double init_val_imag)
+{
+ return talshTensorConstruct_(tens_block, data_type, tens_rank, tens_dims, dev_id,
+                              ext_mem, in_hab, init_method, init_val_real, init_val_imag);
 }
 
 int talshTensorDestruct(talsh_tens_t * tens_block) //in: non-NULL pointer to a tensor block (empty tensor block on exit)

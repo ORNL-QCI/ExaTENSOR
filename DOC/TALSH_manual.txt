@@ -1,6 +1,6 @@
 *** TAL-SH: Tensor Algebra Library for Shared Memory Computers ***
 AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-REVISION: 2016/04/14
+REVISION: 2016/04/15
 
 Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -206,10 +206,10 @@ allocate/deallocate the <talsh_tens_t> object itself, which is the user responsi
 TAL-SH uses an existing empty <talsh_tens_t> object and just constructs it upon a user request.
 In C/C++ code, one should use talshTensorCreate() to dynamically allocate a <talsh_tens_t> object
 whereas statically allocated <talsh_tens_t> objects must be cleaned via talshTensorClean()
-before the first construction!
+before the first non-trivial construction!
 
 For developers only:
- Depending on the device, a tensor block is further specified via one of the two internal types:
+ Depending on the device, a tensor block is further specialized to one of the two internal types:
  <tensor_block_t> (for the use on CPU and MIC) and <tensBlck_t> (for the use on NVidia GPU).
  Type <tensor_block_t> is natively defined in Fortran and is emulated in C (opaque handle).
  Type <tensBlck_t> is natively defined in C and is emulated in Fortran (opaque handle).
@@ -221,6 +221,8 @@ API: Create an empty tensor block object:
    talsh_tens_t ** tens_block //out: a pointer to an empty tensor block
   )
 
+ NOTE: Upon success, the tensor block becomes defined (but empty).
+
 API: Clean a tensor block (set it to empty):
 
  C/C++:
@@ -228,17 +230,27 @@ API: Clean a tensor block (set it to empty):
    talsh_tens_t * tens_block //inout: tensor block set to empty
   )
 
+ NOTE: This function should only be called on undefined statically allocated tensor blocks.
+       It does not perform destruction in case the tensor block is not empty (memory leak)!
+
 API: Check whether a tensor block is empty:
+
+ Fortran 2003:
+  function talsh_tensor_is_empty(tens_block) result(res)
+   logical:: res                               !out: .TRUE. if the tensor block is empty, .FALSE. otherwise
+   type(talsh_tens_t), intent(in):: tens_block !in: tensor block
 
  C/C++:
   int talshTensorIsEmpty(    //out: YEP if the tensor block is empty, NOPE if not, error code otherwise
    talsh_tens_t * tens_block //in: tensor block
   )
 
+  NOTE: In C/C++ this function should only be called on defined tensor blocks.
+
 API: Construct a tensor block:
 
  Fortran 2003:
-  function talsh_tensor_construct(tens_block,data_type,tens_shape,dev_id,ext_mem,in_hab,init_val,init_method) result(ierr)
+  function talsh_tensor_construct(tens_block,data_type,tens_shape,dev_id,ext_mem,in_hab,init_method,init_val) result(ierr)
    integer(C_INT):: ierr !out: error code (0: success, TRY_LATER: currently no enough memory available)
    type(talsh_tens_t), intent(inout):: tens_block                      !inout: constructed tensor block (must be empty on entrance)
    integer(C_INT), intent(in):: data_type                              !in: data type: {R4,R8,C4,C8,NO_TYPE}
@@ -246,8 +258,8 @@ API: Construct a tensor block:
    integer(C_INT), intent(in), optional:: dev_id                       !in: flat device ID on which the tensor block will reside
    type(C_PTR), intent(in), optional:: ext_mem                         !in: pointer to externally provided memory for tensor elements
    integer(C_INT), intent(in), optional:: in_hab                       !in: if >=0, <ext_mem> points to the HAB entry #<in_hab>
+   procedure(talsh_tens_init_i), optional:: init_method                !in: user-defined initialization method
    complex(8), intent(in), optional:: init_val                         !in: initialization value (will be typecast to <data_type>, defaults to 0)
-   procedure(talsh_tens_init_i), optional:: init_method                !in: user-defined initialization method (<init_val> must be absent)
 
  C/C++:
   int talshTensorConstruct(              //out: error code (0: success, TRY_LATER: currently no enough memory available)
@@ -300,9 +312,14 @@ API: Construct a tensor block:
   C/C++:
    typedef void (*talsh_tens_init_i)(void * tens_ptr, int data_type, int tens_rank, int tens_dims[], int * ierr);
 
-  The user-defined initialization method should only be supplied when the initialization value argument is absent.
-  If both the user-defined initialization method and the initialization value are provided, the initialization
-  method will take precedence (the value will be ignored).
+  The user-defined initialization method takes precedence over the initialization value.
+  The intialization value, if provided, will only be used if the initialization method
+  is absent (Fortran) or NULL (C/C++). If neither initialization method nor initialization
+  value is provided, the tensor block will be initialized to zero.
+
+  NOTE: So far the initialization only works for the CPU Host (DEV_HOST).
+        On other device kinds, the tensor block is left undefined and
+        a separate initialization operation will be reqired to define it.
 
 API: Destruct a tensor block (release all resources and set it to empty):
 

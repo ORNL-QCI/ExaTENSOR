@@ -1,5 +1,5 @@
 !ExaTensor::TAL-SH: Device-unified user-level API:
-!REVISION: 2016/04/14
+!REVISION: 2016/04/15
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -119,13 +119,28 @@
           integer(C_INT), value, intent(in):: dev_kind
          end function talshStats_
  !TAL-SH tensor block C/C++ API:
-  !Check whether a tensor block is empty:
+  !Check whether a tensor block is empty (only be called on defined tensor blocks!):
          integer(C_INT) function talshTensorIsEmpty(tens_block) bind(c,name='talshTensorIsEmpty')
           import
           implicit none
           type(C_PTR), value, intent(in):: tens_block
          end function talshTensorIsEmpty
   !Construct a tensor block:
+         integer(C_INT) function talshTensorConstruct_(tens_block,data_type,tens_rank,tens_dims,dev_id,&
+                        ext_mem,in_hab,init_method,init_val_real,init_val_imag) bind(c,name='talshTensorConstruct_')
+          import
+          implicit none
+          type(C_PTR), value:: tens_block
+          integer(C_INT), value, intent(in):: data_type
+          integer(C_INT), value, intent(in):: tens_rank
+          integer(C_INT), intent(in):: tens_dims(*)
+          integer(C_INT), value, intent(in):: dev_id
+          type(C_PTR), value:: ext_mem
+          integer(C_INT), value, intent(in):: in_hab
+          type(C_FUNPTR), value, intent(in):: init_method
+          real(C_DOUBLE), value, intent(in):: init_val_real
+          real(C_DOUBLE), value, intent(in):: init_val_imag
+         end function talshTensorConstruct_
 
         end interface
 !VISIBILITY:
@@ -139,7 +154,7 @@
         public talsh_stats
  !TAL-SH tensor block API:
         public talsh_tensor_is_empty
-!        public talsh_tensor_construct
+        public talsh_tensor_construct
 !        public talsh_tensor_destruct
 !        public talsh_tensor_volume
 !        public talsh_tensor_datatype
@@ -263,5 +278,23 @@
          if(talshTensorIsEmpty(c_loc(tens_block)).eq.YEP) res=.TRUE.
          return
         end function talsh_tensor_is_empty
+!-------------------------------------------------------------------------------------------------------------------------------
+        function talsh_tensor_construct(tens_block,data_type,tens_shape,dev_id,ext_mem,in_hab,init_method,init_val) result(ierr)
+         implicit none
+         integer(C_INT):: ierr
+         type(talsh_tens_t), intent(inout):: tens_block       !inout: constructed tensor block (must be empty on entrance)
+         integer(C_INT), intent(in):: data_type               !in: data type: {R4,R8,C4,C8,NO_TYPE}
+         integer(C_INT), intent(in):: tens_shape(1:)          !in: tensor shape
+         integer(C_INT), intent(in):: dev_id                  !in: flat device ID on which the tensor block will reside
+         type(C_PTR), intent(in), optional:: ext_mem          !in: pointer to externally provided memory for tensor elements
+         integer(C_INT), intent(in), optional:: in_hab        !in: if >=0, <ext_mem> points to the HAB entry #<in_hab>
+         procedure(talsh_tens_init_i), optional:: init_method !in: user-defined initialization method (<init_val> must be absent)
+         complex(8), intent(in), optional:: init_val          !in: initialization value (will be typecast to <data_type>, defaults to 0)
+         type(C_FUNPTR):: init_method_p
+
+         ierr=TALSH_SUCCESS
+         
+         return
+        end function talsh_tensor_construct
 
        end module talsh
