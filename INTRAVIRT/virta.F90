@@ -1,6 +1,6 @@
 !ExaTensor: Parallel Virtual Processing for Scale-Adaptive Tensor Algebra
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2016/03/24
+!REVISION: 2016/04/17
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -32,15 +32,11 @@
         integer(INTD), private:: CONS_OUT=6 !default output for this module
         integer(INTD), private:: DEBUG=0    !debugging mode
         logical, private:: VERBOSE=.true.   !verbosity for errors
- !Numeric:
-        real(4), parameter, public:: EPS4=epsilon(1.0) !single precision epsilon
-        real(8), parameter, public:: EPS8=epsilon(1d0) !double precision epsilon
-        real(8), parameter, public:: ZERO_THRESH=1d-11 !numerical comparison threshold: should account for possible round-off errors
  !Kinds of MPI processes (process roles):
         integer(INTD), parameter, public:: EXA_NO_ROLE=0              !undefined role
-        integer(INTD), parameter, public:: EXA_MANAGER=1              !manager (global root is a manager as well)
-        integer(INTD), parameter, public:: EXA_WORKER=2               !worker (C-process)
-        integer(INTD), parameter, public:: EXA_HELPER=3               !helper
+        integer(INTD), parameter, public:: EXA_MANAGER=1              !manager process (global root is a manager as well)
+        integer(INTD), parameter, public:: EXA_WORKER=2               !worker process (aka C-process)
+        integer(INTD), parameter, public:: EXA_HELPER=3               !helper process
         integer(INTD), parameter, public:: EXA_MAX_WORK_GROUP_SIZE=64 !maximal size of a work group (max number of workers per manager)
  !Elementary tensor instruction (ETI) granularity:
         real(8), public:: EXA_FLOPS_MEDIUM=1d9 !minimal number of Flops to consider the operation as medium-cost
@@ -80,7 +76,7 @@
         integer(INTD), public:: my_role=EXA_NO_ROLE !role of this MPI process (set at run-time)
         integer(INTD), public:: my_group=-1         !computing group the process belongs to (set at run-time): [0..MAX]
         integer(INTD), public:: my_group_size=0     !size of the computing group the process belongs to (set at runtime): [1..EXA_MAX_WORK_GROUP_SIZE]
-        integer(INTD), public:: my_group_index=-1   !process ID within the computing group (set at run-time): [0..my_group_size-1]
+        integer(INTD), public:: my_group_index=-1   !process ID within its computing group (set at run-time): [0..my_group_size-1]
 !VISIBILITY:
 
 !IMPLEMENTATION:

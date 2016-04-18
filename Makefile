@@ -162,8 +162,10 @@ $(NAME):
 	$(MAKE) -C ./INTRAVIRT
 	$(MAKE) -C ./INTERVIRT
 	$(MAKE) -C ./QFORCE
+	cp ./INTERVIRT/libExaTensor.a ./
 	cp ./QFORCE/Qforce.x ./
+	echo "Finished successfully!"
 
 .PHONY: clean
 clean:
-	rm -f ./*/*.x ./*/*.a ./*/*.mod ./*/OBJ/*
+	rm -f ./*.x ./*.a ./*/*.x ./*/*.a ./*/*.mod ./*/OBJ/*
