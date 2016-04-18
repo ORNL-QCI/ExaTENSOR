@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level API.
-REVISION: 2016/04/15
+REVISION: 2016/04/18
 
 Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -31,9 +31,9 @@ static int talsh_gpu_beg; //first Nvidia GPU in the range `Obsolete
 static int talsh_gpu_end; //last Nvidia GPU in the range `Obsolete
 
 static int talsh_cpu=DEV_OFF;
-static int talsh_gpu[MAX_GPUS_PER_NODE]={DEV_OFF}; //current GPU status
-static int talsh_mic[MAX_MICS_PER_NODE]={DEV_OFF}; //current MIC status
-static int talsh_amd[MAX_AMDS_PER_NODE]={DEV_OFF}; //current AMD status
+static int talsh_gpu[MAX_GPUS_PER_NODE]={DEV_OFF}; //current GPU status: {DEV_OFF,DEV_ON,DEV_ON_BLAS}
+static int talsh_mic[MAX_MICS_PER_NODE]={DEV_OFF}; //current MIC status: {DEV_OFF,DEV_ON,DEV_ON_BLAS}
+static int talsh_amd[MAX_AMDS_PER_NODE]={DEV_OFF}; //current AMD status: {DEV_OFF,DEV_ON,DEV_ON_BLAS}
 
 static talsh_task_t talsh_tasks[TALSH_MAX_ACTIVE_TASKS]; //reusable TAL-SH tasks
 
@@ -79,12 +79,12 @@ int talshInit(size_t * host_buf_size,    //inout: Host Argument Buffer size in b
 //Intel Xeon Phi accelerators:
  if(nmics > 0){
   printf("#FATAL(TALSH::talshInit): Intel Xeon Phi is not fully supported yet!");
-  return TALSH_NOT_IMPLEMENTED;
+  return TALSH_NOT_IMPLEMENTED; //`Future
  }
 //AMD GPU accelerators:
  if(namds > 0){
   printf("#FATAL(TALSH::talshInit): AMD GPU is not supported yet!");
-  return TALSH_NOT_IMPLEMENTED;
+  return TALSH_NOT_IMPLEMENTED; //`Future
  }
  talsh_on=1;
  return TALSH_SUCCESS;
@@ -128,6 +128,7 @@ int talshDeviceState(int dev_num,  //in: either a flat or kind specific (when <d
 {
  int devk,i,sts;
 
+ if(talsh_on == 0) return TALSH_NOT_INITIALIZED;
  if(dev_kind == DEV_NULL){
   i=talshKindDevId(dev_num,&devk);
   if(i < 0) return TALSH_INVALID_ARGS;
@@ -163,6 +164,7 @@ int talshDeviceBusyLeast(int dev_kind) //in: device kind (defaults to any kind)
 {
  int i;
 
+ if(talsh_on == 0) return TALSH_NOT_INITIALIZED;
  switch(dev_kind){
   case DEV_NULL:
    return talshFlatDevId(DEV_HOST,0); //`if device kind not specified, return CPU Host for simplicity
@@ -173,9 +175,9 @@ int talshDeviceBusyLeast(int dev_kind) //in: device kind (defaults to any kind)
    if(i < 0 || i >= MAX_GPUS_PER_NODE) return TALSH_FAILURE;
    return i;
   case DEV_INTEL_MIC:
-   return TALSH_NOT_IMPLEMENTED; //`Implement
+   return TALSH_NOT_IMPLEMENTED; //`Implement in future
   case DEV_AMD_GPU:
-   return TALSH_NOT_IMPLEMENTED; //`Implement
+   return TALSH_NOT_IMPLEMENTED; //`Implement in future
  }
  return TALSH_INVALID_ARGS;
 }
@@ -191,6 +193,7 @@ int talshStats(int dev_id,   //in: device id (either flat or kind specific devic
 {
  int rc=TALSH_SUCCESS,devk,devn;
 
+ if(talsh_on == 0) return TALSH_NOT_INITIALIZED;
  switch(dev_kind){
   case DEV_NULL:
    if(dev_id < 0){ //print stats for all active devices
@@ -205,16 +208,16 @@ int talshStats(int dev_id,   //in: device id (either flat or kind specific devic
    }
    break;
   case DEV_HOST:
-   rc=TALSH_NOT_IMPLEMENTED;
+   rc=TALSH_NOT_IMPLEMENTED; //`Implement
    break;
   case DEV_NVIDIA_GPU:
    rc=gpu_print_stats(dev_id);
    break;
   case DEV_INTEL_MIC:
-   rc=TALSH_NOT_IMPLEMENTED;
+   rc=TALSH_NOT_IMPLEMENTED; //`Implement in future
    break;
   case DEV_AMD_GPU:
-   rc=TALSH_NOT_IMPLEMENTED;
+   rc=TALSH_NOT_IMPLEMENTED; //`Implement in future
    break;
   default:
    rc=TALSH_INVALID_ARGS;
@@ -239,14 +242,15 @@ int talshTensorCreate(talsh_tens_t ** tens_block) //out: pointer to a newly crea
 }
 
 int talshTensorClean(talsh_tens_t * tens_block)
-/** Cleans a tensor block. **/
+/** Cleans a tensor block (default ctor). **/
 {
  if(tens_block == NULL) return TALSH_INVALID_ARGS;
  tens_block->shape_p=NULL;
+ tens_block->dev_rsc=NULL;
+ tens_block->data_type=NULL;
+ tens_block->dev_rsc_len=0;
  tens_block->ndev=0;
  tens_block->last_write=DEV_NULL;
- tens_block->dev_rsc_len=0;
- tens_block->dev_rsc=NULL;
  tens_block->tensF=NULL;
  tens_block->tensC=NULL;
  return TALSH_SUCCESS;
@@ -266,14 +270,18 @@ int talshTensorConstruct(talsh_tens_t * tens_block,     //inout: empty tensor bl
                          const int tens_dims[],         //in: tensor block dimension extents
                          int dev_id,                    //in: flat device ID on which the tensor block will reside
                          void * ext_mem,                //in: pointer to externally provided memory for tensor elements
-                         int in_hab,                    //in: if >=0, <ext_mem> points to the HAB entry #<in_hab>
+                         int in_hab,                    //in: if >=0, a non-NULL <ext_mem> points to the HAB entry #<in_hab>
                          talsh_tens_init_i init_method, //in: user-defined initialization method (function pointer)
                          double init_val_real,          //in: initialization value (real part), defaults to 0.0
                          double init_val_imag)          //in: initialization value (imaginary part), defaults to 0.0
-/** Constructs a tensor block: {0: success; TRY_LATER: currently no enough memory available; DEVICE_UNABLE}.
-    If <data_type> == NO_TYPE, the tensor body will not be allocated (only the tensor shape).
-    If the tensor body initialization failed, a status NOT_CLEAN is returned
-    but the tensor block is ready for use (except its body value is undefined). **/
+/** Constructs a tensor block: {0: success; TRY_LATER: no enough free memory available; DEVICE_UNABLE: device unable}.
+    If <data_type> == NO_TYPE, the tensor body will not be allocated (only the tensor shape),
+    unless an external storage is provided (<ext_mem>). In case the tensor body storage space
+    is provided externally (<ext_mem> != NULL), the initialization step is skipped. In other cases,
+    unless <data_type>=NO_TYPE, the newly allocated tensor body will be initialized by a user-defined
+    method, or, if no method is provided (NULL), by a user-defined value, which defaults to zero.
+    If the tensor body initialization failed, a status NOT_CLEAN is returned but
+    the tensor block is ready for use (except its body value is undefined). **/
 {
  int i,dev_num,dev_kind,dksize,errc,already_allocated,use_hab;
  size_t tvol,tsize;
@@ -281,10 +289,11 @@ int talshTensorConstruct(talsh_tens_t * tens_block,     //inout: empty tensor bl
  float *fp;
  double *dp;
 
+ if(talsh_on == 0) return TALSH_NOT_INITIALIZED;
  errc=TALSH_SUCCESS;
  //Check arguments:
  if(tens_block == NULL) return TALSH_INVALID_ARGS; //tensor block must have been preallocated
- if(talshTensorIsEmpty(tens_block) != YEP) return TALSH_ALREADY_INITIALIZED; //tensor block is not empty (destruct it first)
+ if(talshTensorIsEmpty(tens_block) != YEP) return TALSH_OBJECT_NOT_EMPTY; //tensor block is not empty (destruct it first)
  if(tens_valid_data_kind(data_type,&dksize) != YEP) return TALSH_INVALID_ARGS; //unknown data type (NO_TYPE is a valid type here)
  dev_num=talshKindDevId(dev_id,&dev_kind); if(dev_num < 0) return TALSH_INVALID_ARGS; //invalid device id
  already_allocated=0; if(ext_mem != NULL) already_allocated=1; //check whether an external memory space is provided for the tensor body
@@ -296,10 +305,12 @@ int talshTensorConstruct(talsh_tens_t * tens_block,     //inout: empty tensor bl
  if(errc != 0 && errc != TRY_LATER && errc != DEVICE_UNABLE) errc=TALSH_FAILURE;
  if(errc != 0){i=talshTensorDestruct(tens_block); return errc;}
  //Device resource storage:
- if(tens_block->dev_rsc_len == 0 || tens_block->dev_rsc == NULL){
+ if(tens_block->dev_rsc_len == 0 && tens_block->dev_rsc == NULL){
   tens_block->dev_rsc=(talsh_dev_rsc_t*)malloc(TALSH_MAX_DEV_PRESENT*sizeof(talsh_dev_rsc_t));
   if(tens_block->dev_rsc != NULL){
    tens_block->dev_rsc_len=TALSH_MAX_DEV_PRESENT; tens_block->ndev=0; tens_block->last_write=DEV_NULL;
+   tens_block->data_type=(int*)malloc(TALSH_MAX_DEV_PRESENT*sizeof(int));
+   if(tens_block->data_type == NULL){i=talshTensorDestruct(tens_block); return TRY_LATER;}
   }else{
    i=talshTensorDestruct(tens_block);
    return TRY_LATER;
@@ -309,11 +320,11 @@ int talshTensorConstruct(talsh_tens_t * tens_block,     //inout: empty tensor bl
   return TALSH_INVALID_ARGS;
  }
  //Tensor body:
- if(already_allocated){ //tensor body storage has been allocated outside
+ if(already_allocated){ //tensor body storage has been allocated outside (no initialization will be performed)
   errc=tensDevRsc_attach_mem(&(tens_block->dev_rsc[0]),dev_id,ext_mem,in_hab);
-  if(errc != 0){i=talshTensorDestruct(tens_block); return TALSH_FAILURE;}
-  tens_block->ndev=1;
- }else{ //tensor body storage needs to be allocated
+  if(errc){i=talshTensorDestruct(tens_block); return TALSH_FAILURE;}
+  tens_block->data_type[0]=data_type; tens_block->ndev=1; //present on one device, even if NO_TYPE
+ }else{ //tensor body storage needs to be allocated here (will also be initialized), unless NO_TYPE
   if(data_type != NO_TYPE){
    tvol=talshTensorVolume(tens_block);
    if(tvol > 0){
@@ -322,38 +333,38 @@ int talshTensorConstruct(talsh_tens_t * tens_block,     //inout: empty tensor bl
     errc=tensDevRsc_allocate_mem(&(tens_block->dev_rsc[0]),dev_id,tsize,use_hab);
     if(errc != 0 && errc != TRY_LATER && errc != DEVICE_UNABLE) errc=TALSH_FAILURE;
     if(errc != 0){i=talshTensorDestruct(tens_block); return errc;}
-    tens_block->ndev=1;
+    tens_block->data_type[0]=data_type; tens_block->ndev=1; //present on one device
    }else{
     i=talshTensorDestruct(tens_block);
     return TALSH_FAILURE;
    }
-  }
- }
- //Initialization (`Currently supported only on Host):
- if(tens_block->ndev > 0){
-  if(dev_kind == DEV_HOST){
-   if(init_method != NULL){
-    init_method(tens_block->dev_rsc[0].gmem_p,data_type,tens_rank,tens_dims,&errc);
-    if(errc != 0) errc=NOT_CLEAN; //initialization failed
-   }else{
-    switch(data_type){
-     case R4:
-      fval = (float)init_val_real;
-      fp = (float*)(tens_block->dev_rsc[0].gmem_p);
+   //Initialization:
+   if(tens_block->ndev > 0){
+    if(dev_kind == DEV_HOST){ //`Currently supported only on Host
+     if(init_method != NULL){
+      init_method(tens_block->dev_rsc[0].gmem_p,data_type,tens_rank,tens_dims,&errc);
+      if(errc) errc=NOT_CLEAN; //initialization failed, tensor block value is undefined, but one may continue
+     }else{
+      switch(data_type){
+       case R4:
+        fval = (float)init_val_real;
+        fp = (float*)(tens_block->dev_rsc[0].gmem_p);
 #pragma omp parallel for schedule(guided)
-      for(size_t l=0; l < tvol; l++) fp[l]=fval;
-      break;
-     case R8:
-      dp = (double*)(tens_block->dev_rsc[0].gmem_p);
+        for(size_t l=0; l < tvol; l++) fp[l]=fval;
+        break;
+       case R8:
+        dp = (double*)(tens_block->dev_rsc[0].gmem_p);
 #pragma omp parallel for schedule(guided)
-      for(size_t l=0; l < tvol; l++) dp[l]=init_val_real;
-      break;
-     default:
-      return NOT_CLEAN; //`Enable complex data type C4 and C8
+        for(size_t l=0; l < tvol; l++) dp[l]=init_val_real;
+        break;
+       default:
+        return NOT_CLEAN; //`Enable initialization for complex data types C4 and C8
+      }
+     }
+    }else{
+     errc=TALSH_NOT_IMPLEMENTED; //`Initialization on other device kinds should be enabled
     }
    }
-  }else{
-   errc=TALSH_NOT_IMPLEMENTED; //`Initialization on other device kinds should be enabled
   }
  }
  return errc;
@@ -371,20 +382,24 @@ int talshTensorDestruct(talsh_tens_t * tens_block) //in: non-NULL pointer to a t
 {
  int i,j,errc;
 
+ if(talsh_on == 0) return TALSH_NOT_INITIALIZED;
  errc=TALSH_SUCCESS;
  if(tens_block == NULL) return TALSH_INVALID_ARGS;
+ if(tens_block->tensF != NULL){free(tens_block->tensF); tens_block->tensF=NULL;}
+ if(tens_block->tensC != NULL){free(tens_block->tensC); tens_block->tensC=NULL;}
  if(tens_block->shape_p != NULL){
   i=tensShape_destroy(tens_block->shape_p); tens_block->shape_p=NULL;
-  if(i == 0 || i == NOT_CLEAN){errc=i;}else{errc=TALSH_FAILURE;}
- }
- if(tens_block->ndev > tens_block->dev_rsc_len){tens_block->ndev=tens_block->dev_rsc_len; errc=TALSH_FAILURE;}
- for(j=0;j<tens_block->ndev;j++){
-  i=tensDevRsc_release_all(&(tens_block->dev_rsc[j]));
   if(i == 0 || i == NOT_CLEAN){if(errc == 0) errc=i;}else{errc=TALSH_FAILURE;}
  }
- free(tens_block->dev_rsc); tens_block->dev_rsc=NULL;
- free(tens_block->tensF); tens_block->tensF=NULL;
- free(tens_block->tensC); tens_block->tensC=NULL;
+ if(tens_block->ndev > tens_block->dev_rsc_len){tens_block->ndev=tens_block->dev_rsc_len; errc=TALSH_FAILURE;}
+ if(tens_block->dev_rsc != NULL){
+  for(j=0;j<tens_block->ndev;j++){
+   i=tensDevRsc_release_all(&(tens_block->dev_rsc[j]));
+   if(i == 0 || i == NOT_CLEAN){if(errc == 0) errc=i;}else{errc=TALSH_FAILURE;}
+  }
+  free(tens_block->dev_rsc); tens_block->dev_rsc=NULL;
+ }
+ if(tens_block->data_type != NULL){free(tens_block->data_type); tens_block->data_type=NULL;}
  i=talshTensorClean(tens_block); //set to an empty status
  return errc;
 }
@@ -406,4 +421,19 @@ size_t talshTensorVolume(const talsh_tens_t * tens_block) //in: tensor block
  if(tens_block == NULL) return TALSH_INVALID_ARGS;
  if(talshTensorIsEmpty(tens_block) == YEP) return 0;
  return tensShape_volume(tens_block->shape_p);
+}
+
+int talshTensorShape(const talsh_tens_t * tens_block, talsh_tens_shape_t * tens_shape)
+/** Returns the shape of the tensor block. The tensor shape object <tens_shape>
+    passed here must either be empty defined or value defined. It is errorneous
+    to pass an undefined <tens_shape> object. **/
+{
+ int errc;
+
+ if(tens_block == NULL || tens_shape == NULL) return TALSH_INVALID_ARGS;
+ if(talshTensorIsEmpty(tens_block) == YEP) return TALSH_OBJECT_IS_EMPTY;
+ errc=tensShape_construct(tens_shape,NOPE,tens_block->shape_p->num_dim,tens_block->shape_p->dims, //NOPE: not pinned
+                          tens_block->shape_p->divs,tens_block->shape_p->grps);
+ if(errc) errc=TALSH_FAILURE;
+ return errc;
 }

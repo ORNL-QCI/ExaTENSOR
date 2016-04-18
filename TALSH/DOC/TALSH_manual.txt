@@ -1,6 +1,6 @@
 *** TAL-SH: Tensor Algebra Library for Shared Memory Computers ***
 AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-REVISION: 2016/04/15
+REVISION: 2016/04/18
 
 Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -199,14 +199,17 @@ API: Print TAL-SH statistics:
 At the user level, a tensor block is represented by an interoperable type <talsh_tens_t>.
 A tensor block either can be constructed from scrath, including memory allocation, or
 an existing tensor block can be registered for the use in TAL-SH. In the former case,
-the tensor block can either be allocated in regular memory or in the pinned Host argument
-buffer (HAB). Furthermore, an allocated tensor block can be initialized to some constant value
+the tensor block can either be allocated in regular memory or in the pinned Host/Device argument
+buffer (HAB/DAB). Furthermore, an allocated tensor block can be initialized to some constant value
 or a user-defined initialization method can be invoked on it. In all cases, TAL-SH does not
 allocate/deallocate the <talsh_tens_t> object itself, which is the user responsibility. Instead
 TAL-SH uses an existing empty <talsh_tens_t> object and just constructs it upon a user request.
 In C/C++ code, one should use talshTensorCreate() to dynamically allocate a <talsh_tens_t> object
 whereas statically allocated <talsh_tens_t> objects must be cleaned via talshTensorClean()
-before the first non-trivial construction!
+before the first non-trivial construction! Throughout its life, a tensor block may have
+its body residing on multiple devices simultaneously, where the data type may differ
+from device to device (single/double precision for example). The consistency of the
+data is maintained automatically by the TAL-SH runtime.
 
 For developers only:
  Depending on the device, a tensor block is further specialized to one of the two internal types:
@@ -257,7 +260,7 @@ API: Construct a tensor block:
    {integer(C_INT),dimension(:)|character(*)|type(tensor_shape_t)}, intent(in):: tens_shape !in: tensor shape (either digital or symbolic)
    integer(C_INT), intent(in), optional:: dev_id                       !in: flat device ID on which the tensor block will reside
    type(C_PTR), intent(in), optional:: ext_mem                         !in: pointer to externally provided memory for tensor elements
-   integer(C_INT), intent(in), optional:: in_hab                       !in: if >=0, <ext_mem> points to the HAB entry #<in_hab>
+   integer(C_INT), intent(in), optional:: in_hab                       !in: if >=0, a non-NULL <ext_mem> points to the HAB entry #<in_hab>
    procedure(talsh_tens_init_i), optional:: init_method                !in: user-defined initialization method
    complex(8), intent(in), optional:: init_val                         !in: initialization value (will be typecast to <data_type>, defaults to 0)
 
@@ -269,7 +272,7 @@ API: Construct a tensor block:
    const int tens_dims[],                //in: tensor block dimension extents
    int dev_id = 0,                       //in: flat device ID on which the tensor block will reside
    void * ext_mem = NULL,                //in: pointer to externally provided memory for tensor elements
-   int in_hab = -1,                      //in: if >=0, <ext_mem> points to the HAB entry #<in_hab>
+   int in_hab = -1,                      //in: if >=0, a non-NULL <ext_mem> points to the HAB entry #<in_hab>
    talsh_tens_init_i init_method = NULL, //in: user-defined initialization method (function pointer)
    double init_val_real = 0.0,           //in: initialization value (real part), defaults to 0
    double init_val_imag = 0.0            //in: initialization value (imaginary part), defaults to 0
@@ -296,11 +299,17 @@ API: Construct a tensor block:
   device <dev_id> (it is the user responsibility to ensure consistency of the arguments);
   if <ext_mem> is absent (NULL) but <in_hab> is present and >=0, the tensor body will be
   allocated in the HAB buffer on device <dev_id> (if that device has a HAB buffer).
-  An optional user-defined initialization method must have the following interface:
+  However, if <data_type>=NO_TYPE and <ext_mem>=NULL (absent) no memory will be provided
+  for the tensor body (deferred for later), whereas in case <ext_mem> is not NULL (present)
+  the externally provided memory space will serve as storage for the tensor body,
+  even if <data_type>=NO_TYPE (in this case, the tensor body can be initialized later,
+  upon deciding on the data type). The initialization of the tensor body will be
+  performed in case <ext_mem>=NULL and <data_type>!=NO_TYPE, but not otherwise.
+  A user-defined initialization method must have the following interface:
 
   Fortran 2003:
    abstract interface
-    subroutine talsh_tens_init_i(tens_ptr,data_type,tens_rank,tens_dims,ierr)
+    subroutine talsh_tens_init_i(tens_ptr,data_type,tens_rank,tens_dims,ierr) bind(c)
      type(C_PTR), value:: tens_ptr                !in: pointer to the tensor elements storage
      integer(C_INT), value:: data_type            !in: data type: {R4,R8,C4,C8}
      integer(C_INT), value:: tens_rank            !in: tensor block rank
@@ -315,9 +324,9 @@ API: Construct a tensor block:
   The user-defined initialization method takes precedence over the initialization value.
   The intialization value, if provided, will only be used if the initialization method
   is absent (Fortran) or NULL (C/C++). If neither initialization method nor initialization
-  value is provided, the tensor block will be initialized to zero.
+  value is provided, the tensor block will still be initialized to zero.
 
-  NOTE: So far the initialization only works for the CPU Host (DEV_HOST).
+  NOTE:`So far the initialization only works for the CPU Host (DEV_HOST).
         On other device kinds, the tensor block is left undefined and
         a separate initialization operation will be reqired to define it.
 
@@ -344,35 +353,23 @@ API: Get the volume of a tensor block (number of elements):
 
  Fortran 2003:
   function talsh_tensor_volume(tens_block) result(vol)
-   integer(INTL):: vol                         !out: number of elements in the tensor block (negative on error)
+   integer(C_SIZE_T):: vol                     !out: number of elements in the tensor block (0:empty)
    type(talsh_tens_t), intent(in):: tens_block !in: tensor block
 
  C/C++:
-  size_t talshTensorVolume(        //out: number of elements in the tensor block (negative on error)
+  size_t talshTensorVolume(        //out: number of elements in the tensor block (0:empty)
    const talsh_tens_t * tens_block //in: pointer to a tensor block
   )
 
  Note: Return value 0 means that the tensor block is empty.
 
-API: Get the data type of the tensor block:
-
- Fortran 2003:
-  function talsh_tensor_datatype(tens_block) result(datatyp)
-   integer(C_INT):: datatyp                    !out: tensor data type (Success:{R4,R8,C4,C8}; Error:NO_TYPE}
-   type(talsh_tens_t), intent(in):: tens_block !in: tensor block
-
- C/C++:
-  int talshTensorDatatype(         //out: tensor data type (Success:{R4,R8,C4,C8}; Error:NO_TYPE)
-   const talsh_tens_t * tens_block //in: pointer to a tensor block
-  )
-
 API: Get the shape of a tensor block:
 
  Fortran 2003:
   function talsh_tensor_shape(tens_block,tens_shape) result(ierr)
-   integer(C_INT):: ierr                            !out: error code (0:success)
-   type(talsh_tens_t), intent(in):: tens_block      !in: tensor block
-   type(tensor_shape_t), intent(inout):: tens_shape !out: tensor block shape
+   integer(C_INT):: ierr                                !out: error code (0:success)
+   type(talsh_tens_t), intent(in):: tens_block          !in: tensor block
+   type(talsh_tens_shape_t), intent(inout):: tens_shape !out: tensor block shape (copy)
 
  C/C++:
   int talshTensorShape(             //out: error code (0:success)

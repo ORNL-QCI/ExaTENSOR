@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level API header.
-REVISION: 2016/04/15
+REVISION: 2016/04/18
 
 Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -28,9 +28,9 @@ along with ExaTensor. If not, see <http://www.gnu.org/licenses/>.
 
 //TAL-SH PARAMETERS:
 #define TALSH_MAX_ACTIVE_TASKS 4096 //max number of active tasks on all devices on a node
-#define TALSH_MAX_DEV_PRESENT 16 //max number of on-node devices the tensor block can be present on
+#define TALSH_MAX_DEV_PRESENT 16 //max number of on-node devices the tensor block can be simultaneously present on
 
-//TAL-SH ERROR CODES:
+//TAL-SH ERROR CODES (keep consistent with "talshf.F90"):
 #define TALSH_SUCCESS 0
 #define TALSH_FAILURE -666
 #define TALSH_NOT_AVAILABLE -888
@@ -39,17 +39,20 @@ along with ExaTensor. If not, see <http://www.gnu.org/licenses/>.
 #define TALSH_ALREADY_INITIALIZED 1000001
 #define TALSH_INVALID_ARGS 1000002
 #define TALSH_INTEGER_OVERFLOW 1000003
+#define TALSH_OBJECT_NOT_EMPTY 1000004
+#define TALSH_OBJECT_IS_EMPTY 1000005
 
 //TAL-SH DATA TYPES:
 // Interoperable tensor block:
 typedef struct{
  talsh_tens_shape_t * shape_p; //shape of the tensor block
- int ndev;                     //number of devices the tensor block resides on
+ talsh_dev_rsc_t * dev_rsc;    //list of device resources occupied by the tensor block body on each device
+ int * data_type;              //list of data types for each device location occupied by the tensor body {R4,R8,C4,C8}
+ int dev_rsc_len;              //capacity of .dev_rsc[] and .data_type[]
+ int ndev;                     //number of devices the tensor block resides on: ndev <= dev_rsc_len
  int last_write;               //flat device id where the last write happened, -1 means coherence on all devices where the tensor block resides
- int dev_rsc_len;              //capacity of dev_rsc[]: ndev <= dev_rsc_len
- talsh_dev_rsc_t * dev_rsc;    //list of device resources occupied by the tensor block on each device
- void * tensF;                 //pointer to Fortran <tensor_block_t> (CPU,Phi)
- void * tensC;                 //pointer to C <tensBlck_t> (Nvidia GPU)
+ void * tensF;                 //pointer to Fortran <tensor_block_t> (CPU,Phi): Just a convenient alias to existing data
+ void * tensC;                 //pointer to C <tensBlck_t> (Nvidia GPU): Just a convenient alias to existing data
 } talsh_tens_t;
 
 // Interoperable TAL-SH task handle:
@@ -119,6 +122,8 @@ extern "C"{
  int talshTensorDestroy(talsh_tens_t * tens_block);
 //  Get the tensor block volume (number of elements):
  size_t talshTensorVolume(const talsh_tens_t * tens_block);
+//  Get the shape of the tensor block:
+ int talshTensorShape(const talsh_tens_t * tens_block, talsh_tens_shape_t * tens_shape);
 
 #ifdef __cplusplus
 }

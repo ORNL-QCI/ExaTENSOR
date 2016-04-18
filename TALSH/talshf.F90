@@ -1,5 +1,5 @@
 !ExaTensor::TAL-SH: Device-unified user-level API:
-!REVISION: 2016/04/15
+!REVISION: 2016/04/18
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -32,26 +32,30 @@
         integer(INTD), private:: CONS_OUT=6 !default output device for this module
         integer(INTD), private:: DEBUG=0    !debugging mode for this module
         logical, private:: VERBOSE=.true.   !verbosity for errors
- !Errors:
+ !Errors (keep consistent with "talsh.h"):
         integer(C_INT), parameter, public:: TALSH_SUCCESS=0                   !success
         integer(C_INT), parameter, public:: TALSH_FAILURE=-666                !generic failure
-        integer(C_INT), parameter, public:: TALSH_NOT_AVAILABLE=-888          !information or feature not avaiable
+        integer(C_INT), parameter, public:: TALSH_NOT_AVAILABLE=-888          !information or feature not avaiable (in principle)
         integer(C_INT), parameter, public:: TALSH_NOT_IMPLEMENTED=-999        !feature not implemented yet
-        integer(C_INT), parameter, public:: TALSH_NOT_INITIALIZED=1000001     !TALSH library has not been initialized
-        integer(C_INT), parameter, public:: TALSH_ALREADY_INITIALIZED=1000002 !TALSH library has already been initialized
-        integer(C_INT), parameter, public:: TALSH_INVALID_ARGS=1000003        !invalid arguments passed to a procedure
+        integer(C_INT), parameter, public:: TALSH_NOT_INITIALIZED=1000000     !TALSH library has not been initialized yet
+        integer(C_INT), parameter, public:: TALSH_ALREADY_INITIALIZED=1000001 !TALSH library has already been initialized
+        integer(C_INT), parameter, public:: TALSH_INVALID_ARGS=1000002        !invalid arguments passed to a procedure
+        integer(C_INT), parameter, public:: TALSH_INTEGER_OVERFLOW=1000003    !integer overflow occurred
+        integer(C_INT), parameter, public:: TALSH_OBJECT_NOT_EMPTY=1000004    !object is not empty while expected so
+        integer(C_INT), parameter, public:: TALSH_OBJECT_IS_EMPTY=1000005     !object is empty while not expected so
  !Host argument buffer:
         integer(C_SIZE_T), parameter, private:: HAB_SIZE_DEFAULT=1048576 !default size of the Host argument buffer in bytes
 !DERIVED TYPES:
  !TAL-SH tensor block:
         type, bind(C):: talsh_tens_t
          type(C_PTR):: shape_p=C_NULL_PTR     !shape of the tensor block
-         integer(C_INT):: ndev=0              !number of devices the tensor block resides on
+         type(C_PTR):: dev_rsc=C_NULL_PTR     !list of device resources occupied by the tensor block body on each device
+         type(C_PTR):: data_type=C_NULL_PTR   !list of data types for each device location occupied by the tensor body {R4,R8,C4,C8}
+         integer(C_INT):: dev_rsc_len=0       !capacity of .dev_rsc[] and .data_type[]
+         integer(C_INT):: ndev=0              !number of devices the tensor block resides on: ndev <= dev_rsc_len
          integer(C_INT):: last_write=DEV_NULL !flat device id where the last write happened, -1 means coherence on all devices where the tensor block resides
-         integer(C_INT):: dev_rsc_len=0       !capacity of dev_rsc[]: ndev <= dev_rsc_len
-         type(C_PTR):: dev_rsc=C_NULL_PTR     !list of device resources occupied by the tensor block on each device
-         type(C_PTR):: tensF=C_NULL_PTR       !pointer to Fortran <tensor_block_t> (CPU,Phi)
-         type(C_PTR):: tensC=C_NULL_PTR       !pointer to C/C++ <tensBlck_t> (Nvidia GPU)
+         type(C_PTR):: tensF=C_NULL_PTR       !pointer to Fortran <tensor_block_t> (CPU, Intel Xeon Phi): Just a convenient alias to existing data
+         type(C_PTR):: tensC=C_NULL_PTR       !pointer to C/C++ <tensBlck_t> (Nvidia GPU): Just a convenient alias to existing data
         end type talsh_tens_t
  !TAL-SH task handle:
         type, bind(C):: talsh_task_t
@@ -130,7 +134,7 @@
                         ext_mem,in_hab,init_method,init_val_real,init_val_imag) bind(c,name='talshTensorConstruct_')
           import
           implicit none
-          type(C_PTR), value:: tens_block
+          type(talsh_tens_t):: tens_block
           integer(C_INT), value, intent(in):: data_type
           integer(C_INT), value, intent(in):: tens_rank
           integer(C_INT), intent(in):: tens_dims(*)
@@ -141,6 +145,25 @@
           real(C_DOUBLE), value, intent(in):: init_val_real
           real(C_DOUBLE), value, intent(in):: init_val_imag
          end function talshTensorConstruct_
+  !Destruct a tensor block:
+         integer(C_INT) function talshTensorDestruct(tens_block) bind(c,name='talshTensorDestruct')
+          import
+          implicit none
+          type(talsh_tens_t):: tens_block
+         end function talshTensorDestruct
+  !Get the volume of the tensor block:
+         integer(C_SIZE_T) function talshTensorVolume(tens_block) bind(c,name='talshTensorVolume')
+          import
+          implicit none
+          type(talsh_tens_t), intent(in):: tens_block
+         end function talshTensorVolume
+  !Get the shape of the tensor block:
+         integer(C_INT) function talshTensorShape(tens_block,tens_shape) bind(c,name='talshTensorShape')
+          import
+          implicit none
+          type(talsh_tens_t), intent(in):: tens_block
+          type(talsh_tens_shape_t), intent(inout):: tens_shape
+         end function talshTensorShape
 
         end interface
 !VISIBILITY:
@@ -155,10 +178,9 @@
  !TAL-SH tensor block API:
         public talsh_tensor_is_empty
         public talsh_tensor_construct
-!        public talsh_tensor_destruct
-!        public talsh_tensor_volume
-!        public talsh_tensor_datatype
-!        public talsh_tensor_shape
+        public talsh_tensor_destruct
+        public talsh_tensor_volume
+        public talsh_tensor_shape
 !        public talsh_tensor_presence
  !TAL-SH task API:
 !        public talsh_task_clean
@@ -284,17 +306,57 @@
          integer(C_INT):: ierr
          type(talsh_tens_t), intent(inout):: tens_block       !inout: constructed tensor block (must be empty on entrance)
          integer(C_INT), intent(in):: data_type               !in: data type: {R4,R8,C4,C8,NO_TYPE}
-         integer(C_INT), intent(in):: tens_shape(1:)          !in: tensor shape
+         integer(C_INT), intent(in):: tens_shape(1:)          !in: tensor shape (volume = tensor rank)
          integer(C_INT), intent(in):: dev_id                  !in: flat device ID on which the tensor block will reside
          type(C_PTR), intent(in), optional:: ext_mem          !in: pointer to externally provided memory for tensor elements
          integer(C_INT), intent(in), optional:: in_hab        !in: if >=0, <ext_mem> points to the HAB entry #<in_hab>
          procedure(talsh_tens_init_i), optional:: init_method !in: user-defined initialization method (<init_val> must be absent)
          complex(8), intent(in), optional:: init_val          !in: initialization value (will be typecast to <data_type>, defaults to 0)
+         type(C_PTR):: tens_body_p
+         integer(C_INT):: hab_entry,tens_rank
+         integer(C_INT), target:: tens_dims(1:MAX_TENSOR_RANK)
          type(C_FUNPTR):: init_method_p
+         real(8):: val_real,val_imag
 
          ierr=TALSH_SUCCESS
-         
+         tens_rank=size(tens_shape) !tens_shape(1:) must have the exact volume = tensor rank
+         if(tens_rank.ge.0.and.tens_rank.le.MAX_TENSOR_RANK) then
+          if(tens_rank.gt.0) tens_dims(1:tens_rank)=tens_shape(1:tens_rank)
+          if(present(ext_mem)) then; tens_body_p=ext_mem; else; tens_body_p=C_NULL_PTR; endif
+          if(present(in_hab)) then; if(in_hab.ge.0) then; hab_entry=in_hab; else; hab_entry=-1; endif; else; hab_entry=-1; endif
+          if(present(init_method)) then; init_method_p=c_funloc(init_method); else; init_method_p=C_NULL_FUNPTR; endif
+          val_real=0d0; val_imag=0d0; if(present(init_val)) then; val_real=real(init_val); val_imag=aimag(init_val); endif
+          ierr=talshTensorConstruct_(tens_block,data_type,tens_rank,tens_dims,dev_id,&
+                                     tens_body_p,hab_entry,init_method_p,val_real,val_imag)
+         else
+          ierr=TALSH_INVALID_ARGS
+         endif
          return
         end function talsh_tensor_construct
+!--------------------------------------------------------------
+        function talsh_tensor_destruct(tens_block) result(ierr)
+         implicit none
+         integer(C_INT):: ierr
+         type(talsh_tens_t), intent(inout):: tens_block !inout: tensor block (will become empty on exit)
+         ierr=talshTensorDestruct(tens_block)
+         return
+        end function talsh_tensor_destruct
+!-----------------------------------------------------------
+        function talsh_tensor_volume(tens_block) result(vol)
+         implicit none
+         integer(C_SIZE_T):: vol                     !out: number of elements in the tensor block (negative on error)
+         type(talsh_tens_t), intent(in):: tens_block !in: tensor block
+         vol=talshTensorVolume(tens_block)
+         return
+        end function talsh_tensor_volume
+!----------------------------------------------------------------------
+        function talsh_tensor_shape(tens_block,tens_shape) result(ierr)
+         implicit none
+         integer(C_INT):: ierr                                !out: error code (0:success)
+         type(talsh_tens_t), intent(in):: tens_block          !in: tensor block
+         type(talsh_tens_shape_t), intent(inout):: tens_shape !out: tensor block shape (copy)
+         ierr=talshTensorShape(tens_block,tens_shape)
+         return
+        end function talsh_tensor_shape
 
        end module talsh
