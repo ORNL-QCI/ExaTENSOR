@@ -167,7 +167,7 @@ lib$(NAME).a: $(OBJS)
 ./OBJ/dil_basic.o: dil_basic.F90
 	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) dil_basic.F90 -o ./OBJ/dil_basic.o
 
-./OBJ/sys_service.o: sys_service.c
+./OBJ/sys_service.o: sys_service.c sys_service.h
 	$(CCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(CFLAGS) sys_service.c -o ./OBJ/sys_service.o
 
 ./OBJ/c2fortran.o: c2fortran.cu

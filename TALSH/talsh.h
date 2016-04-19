@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level API header.
-REVISION: 2016/04/18
+REVISION: 2016/04/19
 
 Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -48,9 +48,10 @@ typedef struct{
  talsh_tens_shape_t * shape_p; //shape of the tensor block
  talsh_dev_rsc_t * dev_rsc;    //list of device resources occupied by the tensor block body on each device
  int * data_type;              //list of data types for each device location occupied by the tensor body {R4,R8,C4,C8}
- int dev_rsc_len;              //capacity of .dev_rsc[] and .data_type[]
+ signed long long * updated;   //last update event number for each existing tensor block copy
+ int dev_rsc_len;              //capacity of .dev_rsc[], .data_type[], .updated[]
  int ndev;                     //number of devices the tensor block resides on: ndev <= dev_rsc_len
- int last_write;               //flat device id where the last write happened, -1 means coherence on all devices where the tensor block resides
+ signed long long last_update; //last data update event number
  void * tensF;                 //pointer to Fortran <tensor_block_t> (CPU,Phi): Just a convenient alias to existing data
  void * tensC;                 //pointer to C <tensBlck_t> (Nvidia GPU): Just a convenient alias to existing data
 } talsh_tens_t;
@@ -123,7 +124,16 @@ extern "C"{
 //  Get the tensor block volume (number of elements):
  size_t talshTensorVolume(const talsh_tens_t * tens_block);
 //  Get the shape of the tensor block:
- int talshTensorShape(const talsh_tens_t * tens_block, talsh_tens_shape_t * tens_shape);
+ int talshTensorShape(const talsh_tens_t * tens_block,
+                      talsh_tens_shape_t * tens_shape);
+//  Query the presence of the tensor block on device(s):
+ int talshTensorPresence(const talsh_tens_t * tens_block,
+                         int * ncopies,
+                         int copies[],
+                         int data_types[],
+                         int dev_kind = DEV_NULL,
+                         int dev_id = -1);
+ int talshTensorPresence_(const talsh_tens_t * tens_block, int * ncopies, int copies[], int data_types[], int dev_kind, int dev_id);
 
 #ifdef __cplusplus
 }

@@ -1,5 +1,5 @@
 !ExaTensor::TAL-SH: Device-unified user-level API:
-!REVISION: 2016/04/18
+!REVISION: 2016/04/19
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -48,14 +48,15 @@
 !DERIVED TYPES:
  !TAL-SH tensor block:
         type, bind(C):: talsh_tens_t
-         type(C_PTR):: shape_p=C_NULL_PTR     !shape of the tensor block
-         type(C_PTR):: dev_rsc=C_NULL_PTR     !list of device resources occupied by the tensor block body on each device
-         type(C_PTR):: data_type=C_NULL_PTR   !list of data types for each device location occupied by the tensor body {R4,R8,C4,C8}
-         integer(C_INT):: dev_rsc_len=0       !capacity of .dev_rsc[] and .data_type[]
-         integer(C_INT):: ndev=0              !number of devices the tensor block resides on: ndev <= dev_rsc_len
-         integer(C_INT):: last_write=DEV_NULL !flat device id where the last write happened, -1 means coherence on all devices where the tensor block resides
-         type(C_PTR):: tensF=C_NULL_PTR       !pointer to Fortran <tensor_block_t> (CPU, Intel Xeon Phi): Just a convenient alias to existing data
-         type(C_PTR):: tensC=C_NULL_PTR       !pointer to C/C++ <tensBlck_t> (Nvidia GPU): Just a convenient alias to existing data
+         type(C_PTR):: shape_p=C_NULL_PTR      !shape of the tensor block
+         type(C_PTR):: dev_rsc=C_NULL_PTR      !list of device resources occupied by the tensor block body on each device
+         type(C_PTR):: data_type=C_NULL_PTR    !list of data types for each device location occupied by the tensor body {R4,R8,C4,C8}
+         type(C_PTR):: updated=C_NULL_PTR      !last update event number for each existing tensor block copy
+         integer(C_INT):: dev_rsc_len=0        !capacity of .dev_rsc[], .data_type[], .updated[]
+         integer(C_INT):: ndev=0               !number of devices the tensor block resides on: ndev <= dev_rsc_len
+         integer(C_LONG_LONG):: last_update=-1 !last data update event number
+         type(C_PTR):: tensF=C_NULL_PTR        !pointer to Fortran <tensor_block_t> (CPU, Intel Xeon Phi): Just a convenient alias to existing data
+         type(C_PTR):: tensC=C_NULL_PTR        !pointer to C/C++ <tensBlck_t> (Nvidia GPU): Just a convenient alias to existing data
         end type talsh_tens_t
  !TAL-SH task handle:
         type, bind(C):: talsh_task_t
@@ -164,6 +165,18 @@
           type(talsh_tens_t), intent(in):: tens_block
           type(talsh_tens_shape_t), intent(inout):: tens_shape
          end function talshTensorShape
+  !Query the presence of the tensor block on device(s):
+         integer(C_INT) function talshTensorPresence_(tens_block,ncopies,copies,data_types,dev_kind,dev_id)&
+                                 bind(c,name='talshTensorPresence_')
+          import
+          implicit none
+          type(talsh_tens_t), intent(in):: tens_block
+          integer(C_INT), intent(out):: ncopies
+          integer(C_INT), intent(inout):: copies(*)
+          integer(C_INT), intent(inout):: data_types(*)
+          integer(C_INT), value, intent(in):: dev_kind
+          integer(C_INT), value, intent(in):: dev_id
+         end function talshTensorPresence_
 
         end interface
 !VISIBILITY:
@@ -181,7 +194,7 @@
         public talsh_tensor_destruct
         public talsh_tensor_volume
         public talsh_tensor_shape
-!        public talsh_tensor_presence
+        public talsh_tensor_presence
  !TAL-SH task API:
 !        public talsh_task_clean
 !        public talsh_task_dev_id
@@ -354,9 +367,25 @@
          implicit none
          integer(C_INT):: ierr                                !out: error code (0:success)
          type(talsh_tens_t), intent(in):: tens_block          !in: tensor block
-         type(talsh_tens_shape_t), intent(inout):: tens_shape !out: tensor block shape (copy)
+         type(talsh_tens_shape_t), intent(inout):: tens_shape !inout: tensor block shape (copy)
          ierr=talshTensorShape(tens_block,tens_shape)
          return
         end function talsh_tensor_shape
+!--------------------------------------------------------------------------------------------------------
+        function talsh_tensor_presence(tens_block,ncopies,copies,data_types,dev_kind,dev_id) result(ierr)
+         integer(C_INT):: ierr                           !out: error code (0:success)
+         type(talsh_tens_t), intent(in):: tens_block     !in: tensor block
+         integer(C_INT), intent(out):: ncopies           !out: number of found copies of the tensor block
+         integer(C_INT), intent(inout):: copies(1:*)     !out: copies found (list of flat device id's)
+         integer(C_INT), intent(inout):: data_types(1:*) !out: data type of each copy
+         integer(C_INT), intent(in), optional:: dev_kind !in: specific device kind of interest (defaults to All)
+         integer(C_INT), intent(in), optional:: dev_id   !in: specific device of interest
+         integer(C_INT):: devk,devnum
+
+         if(present(dev_kind)) then; devk=dev_kind; else; devk=DEV_NULL; endif
+         if(present(dev_id)) then; devnum=dev_id; else; devnum=-1; endif
+         ierr=talshTensorPresence_(tens_block,ncopies,copies,data_types,devk,devnum)
+         return
+        end function talsh_tensor_presence
 
        end module talsh

@@ -1,6 +1,6 @@
 /** Tensor Algebra Library for NVidia GPU: NV-TAL (CUDA based).
 AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-REVISION: 2016/04/08
+REVISION: 2016/04/19
 
 Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -1053,11 +1053,13 @@ int tensShape_construct(talsh_tens_shape_t * tshape, int pinned, int rank, const
 /** (Re-)defines a tensor shape. It is errorneous to pass an uninitialized tensor shape here,
     that is, the tensor shape *(tshape) must be either clean or previously defined. If <rank> > 0,
     <dims[rank]> must be supplied, whereas <divs[rank]> and <grps[rank]> are always optional.
-    If <pinned> = YEP, then the multi-indices will be allocated via the multi-index bank (pinned),
-    otherwise a regular malloc will be called. TRY_LATER or DEVICE_UNABLE return statuses are not
-    errors and in this case the input tensor shape will stay unchanged. A return status NOT_CLEAN
-    indicates an unsuccessful resource release that can be tolerated in general
-    (the construction will still occur). **/
+    If <pinned> = YEP and the tensor shape is clean, then the multi-indices will be allocated
+    via the multi-index bank (pinned), otherwise a regular malloc will be called. In case the
+    tensor shape is already defined, the previous mutli-index storage entries will be reused,
+    regardless whether they were pinned or not (argument <pinned> will not be respected!).
+    TRY_LATER or DEVICE_UNABLE return statuses are not errors and in this case the input
+    tensor shape will stay unchanged. A return status NOT_CLEAN indicates an unsuccessful
+    resource release that can be tolerated in general (the construction will still occur). **/
 {
  int i,errc;
  int *mi_dims,*mi_divs,*mi_grps;
@@ -1073,6 +1075,7 @@ int tensShape_construct(talsh_tens_shape_t * tshape, int pinned, int rank, const
 //Acquire/release resources if needed:
  mi_dims=NULL; mi_divs=NULL; mi_grps=NULL;
  if(rank > 0 && tshape->num_dim <= 0){ //acquire multi-index resources
+  if(tshape->dims != NULL || tshape->divs != NULL || tshape->grps != NULL) return -7; //shape must be clean if .num_dim<0
   if(pinned == NOPE){
    mi_dims=(int*)malloc(3*MAX_TENSOR_RANK*sizeof(int));
    if(mi_dims == NULL) return TRY_LATER;

@@ -1,6 +1,6 @@
 *** TAL-SH: Tensor Algebra Library for Shared Memory Computers ***
 AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-REVISION: 2016/04/18
+REVISION: 2016/04/19
 
 Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -32,6 +32,14 @@ multiplication by a scalar, etc., which operate on locally stored tensors.
 The execution of tensor operations on accelerators is asynchronous with
 respect to the CPU Host, if the underlying node is heterogeneous. Both
 Fortran and C/C++ API interfaces are provided (Fortran 2003 and later).
+The library has an object-oriented design, although without explicit
+object-oriented syntax (no explicit C++/Fortran classes). As a consequence,
+in C/C++ the basic TAL-SH objects, like <talsh_tens_t>, <talsh_tens_shape_t>,
+<talsh_task_t>, etc. must always be "cleaned" before the first use in case they
+are declared statically (dynamically created objects are cleaned automatically).
+In Fortran, the defaut type initializers will automatically clean new objects.
+The main reason the library is not implemented in C++ is the necessity of
+Fortran/C interoperability, to support both Fortran and C/C++ applications.
 
 
 1. Nomenclature
@@ -48,10 +56,18 @@ In general, a tensor block is defined by its
 (d) Tensor elements: Values of the elements of the tensor block.
 
 Host Argument Buffer (HAB): An optional buffer can be created in
-pinned Host memory that can be later used for storing tensor blocks.
+pinned Host memory that can later be used for storing tensor blocks.
 Preallocation of this buffer is recommended in order to avoid
 memory fragmentation issues and minimize the overhead associated
-with Host memory pinning when running asynchronous operations.
+with Host memory pinning when running asynchronous operations
+(the memory fragmentation can still occur, ranging from 0% (best)
+to 50% (worst), with an average of 25% of memory wasting).
+In contrast, memory allocations on all other device kinds,
+like GPU, MIC, etc., are always performed via argument buffers
+(custom memory allocators). These device argument buffers (DAB)
+are created when the library is initialized at the beginning and
+destroyed when the library is finalized. The memory fragmentation
+characteristics is the same as for the CPU Host argument buffer.
 
 
 2. Device control API
@@ -233,8 +249,8 @@ API: Clean a tensor block (set it to empty):
    talsh_tens_t * tens_block //inout: tensor block set to empty
   )
 
- NOTE: This function should only be called on undefined statically allocated tensor blocks.
-       It does not perform destruction in case the tensor block is not empty (memory leak)!
+ NOTE: In C/C++, this function should only be called on undefined statically allocated tensor
+       blocks. It does not perform destruction in case the tensor block is not empty (memory leak)!
 
 API: Check whether a tensor block is empty:
 
@@ -248,7 +264,7 @@ API: Check whether a tensor block is empty:
    talsh_tens_t * tens_block //in: tensor block
   )
 
-  NOTE: In C/C++ this function should only be called on defined tensor blocks.
+  NOTE: In C/C++, this function should only be called on defined tensor blocks (either clean or value defined).
 
 API: Construct a tensor block:
 
@@ -260,7 +276,7 @@ API: Construct a tensor block:
    {integer(C_INT),dimension(:)|character(*)|type(tensor_shape_t)}, intent(in):: tens_shape !in: tensor shape (either digital or symbolic)
    integer(C_INT), intent(in), optional:: dev_id                       !in: flat device ID on which the tensor block will reside
    type(C_PTR), intent(in), optional:: ext_mem                         !in: pointer to externally provided memory for tensor elements
-   integer(C_INT), intent(in), optional:: in_hab                       !in: if >=0, a non-NULL <ext_mem> points to the HAB entry #<in_hab>
+   integer(C_INT), intent(in), optional:: in_hab                       !in: if >=0, a non-NULL <ext_mem> points to the HAB/DAB entry #<in_hab>
    procedure(talsh_tens_init_i), optional:: init_method                !in: user-defined initialization method
    complex(8), intent(in), optional:: init_val                         !in: initialization value (will be typecast to <data_type>, defaults to 0)
 
@@ -272,7 +288,7 @@ API: Construct a tensor block:
    const int tens_dims[],                //in: tensor block dimension extents
    int dev_id = 0,                       //in: flat device ID on which the tensor block will reside
    void * ext_mem = NULL,                //in: pointer to externally provided memory for tensor elements
-   int in_hab = -1,                      //in: if >=0, a non-NULL <ext_mem> points to the HAB entry #<in_hab>
+   int in_hab = -1,                      //in: if >=0, a non-NULL <ext_mem> points to the HAB/DAB entry #<in_hab>
    talsh_tens_init_i init_method = NULL, //in: user-defined initialization method (function pointer)
    double init_val_real = 0.0,           //in: initialization value (real part), defaults to 0
    double init_val_imag = 0.0            //in: initialization value (imaginary part), defaults to 0
@@ -295,10 +311,10 @@ API: Construct a tensor block:
   is not, the tensor body will reside in the location pointed to by <ext_mem> on device <dev_id>
   (it is the user responsibility to make sure <ext_mem> refers to memory on device <dev_id>);
   if both <ext_mem> and <in_hab> are present, the tensor body will reside in the location
-  pointed to by <ext_mem>, which is assumed to be in the HAB buffer as entry #<in_hab> on
+  pointed to by <ext_mem>, which is assumed to be in the HAB/DAB buffer as entry #<in_hab> on
   device <dev_id> (it is the user responsibility to ensure consistency of the arguments);
   if <ext_mem> is absent (NULL) but <in_hab> is present and >=0, the tensor body will be
-  allocated in the HAB buffer on device <dev_id> (if that device has a HAB buffer).
+  allocated in the HAB/DAB buffer on device <dev_id> (if that device has a HAB/DAB buffer).
   However, if <data_type>=NO_TYPE and <ext_mem>=NULL (absent) no memory will be provided
   for the tensor body (deferred for later), whereas in case <ext_mem> is not NULL (present)
   the externally provided memory space will serve as storage for the tensor body,
@@ -326,6 +342,8 @@ API: Construct a tensor block:
   is absent (Fortran) or NULL (C/C++). If neither initialization method nor initialization
   value is provided, the tensor block will still be initialized to zero.
 
+  NOTE: This function must only be called on clean tensor blocks (empty defined).
+
   NOTE:`So far the initialization only works for the CPU Host (DEV_HOST).
         On other device kinds, the tensor block is left undefined and
         a separate initialization operation will be reqired to define it.
@@ -342,12 +360,16 @@ API: Destruct a tensor block (release all resources and set it to empty):
    talsh_tens_t * tens_block //inout: destructed tensor block (but not <tens_block> itself)
   )
 
+  NOTE: In C/C++, this function must not be called on static undefined (not cleaned) tensor blocks.
+
 API: Destroy a tensor block object (destruct it first and then completely destroy the object):
 
  C/C++:
   int talshTensorDestroy(    //out: error code (0:success)
    talsh_tens_t * tens_block //inout: a tensor block (will be destroyed on exit)
   )
+
+  NOTE: In C/C++, this function must not be called on static undefined (not cleaned) tensor blocks.
 
 API: Get the volume of a tensor block (number of elements):
 
@@ -361,7 +383,9 @@ API: Get the volume of a tensor block (number of elements):
    const talsh_tens_t * tens_block //in: pointer to a tensor block
   )
 
- Note: Return value 0 means that the tensor block is empty.
+  NOTE: Return value 0 means that the tensor block is empty.
+
+  NOTE: In C/C++, this function must not be called on static undefined (not cleaned) tensor blocks.
 
 API: Get the shape of a tensor block:
 
@@ -374,40 +398,47 @@ API: Get the shape of a tensor block:
  C/C++:
   int talshTensorShape(             //out: error code (0:success)
    const talsh_tens_t * tens_block, //in: pointer to a tensor block
-   talsh_tens_shape_t * tens_shape  //out: pointer to the shape of the tensor block (copy)
+   talsh_tens_shape_t * tens_shape  //out: pointer to the shape of the tensor block (copy): Must be either clean or value defined on input
   )
+
+  NOTE: In C/C++, argument <tens_shape> must be either empty clean or defined to a value on input.
+        Static undefined (not cleaned) <tens_shape> objects are not allowed!
 
 API: Query the presence of a tensor block on device(s):
 
  Fortran 2003:
-  function talsh_tensor_presence(tens_block,ncopies,copies,dev_kind,dev_id) result(ierr)
+  function talsh_tensor_presence(tens_block,ncopies,copies,data_types,dev_kind,dev_id) result(ierr)
    integer(C_INT):: ierr                           !out: error code (0:success)
    type(talsh_tens_t), intent(in):: tens_block     !in: tensor block
-   integer(C_INT), intent(out):: ncopies           !out: number of copies of the tensor block found
+   integer(C_INT), intent(out):: ncopies           !out: number of found copies of the tensor block
    integer(C_INT), intent(inout):: copies(1:*)     !out: copies found (list of device id's)
+   integer(C_INT), intent(inout):: data_types(1:*) !out: data type of each copy
    integer(C_INT), intent(in), optional:: dev_kind !in: specific device kind of interest (defaults to All)
    integer(C_INT), intent(in), optional:: dev_id   !in: specific device of interest
 
  C/C++:
   int talshTensorPresence(          //out: error code (0:success)
    const talsh_tens_t * tens_block, //in: pointer to a tensor block
-   int * ncopies,                   //out: number of copies of the tensor block found
+   int * ncopies,                   //out: number of found copies of the tensor block
    int copies[],                    //out: copies found (list of device id's)
+   int data_types[],                //out: data type of each copy
    int dev_kind = DEV_NULL,         //in: specific device kind of interest (defaults to All)
-   int dev_id = -1                  //in: specific device of interest
+   int dev_id = -1                  //in: specific device of interest (defaults to Any)
   )
 
- Note:
   This function returns a list of device id's which contain the given tensor block in memory.
-  If <dev_kind> is present, <dev_id> (if present) carries the kind specific device id.
-  If <dev_kind> is absent, <dev_id> (if present) carries the flat device id.
+  If <dev_kind> is specified, <dev_id> (if present) carries the kind-specific device id.
+  If <dev_kind> is not specified, <dev_id> (if present) carries the flat device id.
+
+  NOTE: This function must not be called on static undefined (not cleaned) tensor blocks).
 
 
 4. TAL-SH task API
 
 A TAL-SH task handle <talsh_task_t> is returned by every asynchronous tensor
 operation. It is associated with that specific operation and can be used for
-checking the completion of the operation and obtaining the timing information.
+checking the completion of the operation and obtaining other information,
+like timing, flops/s, etc.
 
 API: Clean a TAL-SH task for reuse:
 
