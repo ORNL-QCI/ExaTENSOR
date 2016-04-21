@@ -1,5 +1,5 @@
 !ExaTensor::TAL-SH: Device-unified user-level API:
-!REVISION: 2016/04/19
+!REVISION: 2016/04/21
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -50,18 +50,18 @@
         type, bind(C):: talsh_tens_t
          type(C_PTR):: shape_p=C_NULL_PTR      !shape of the tensor block
          type(C_PTR):: dev_rsc=C_NULL_PTR      !list of device resources occupied by the tensor block body on each device
-         type(C_PTR):: data_type=C_NULL_PTR    !list of data types for each device location occupied by the tensor body {R4,R8,C4,C8}
-         type(C_PTR):: updated=C_NULL_PTR      !last update event number for each existing tensor block copy
-         integer(C_INT):: dev_rsc_len=0        !capacity of .dev_rsc[], .data_type[], .updated[]
+         type(C_PTR):: data_kind=C_NULL_PTR    !list of data kinds for each device location occupied by the tensor body {R4,R8,C4,C8}
+         integer(C_INT):: dev_rsc_len=0        !capacity of .dev_rsc[], .data_kind[]
          integer(C_INT):: ndev=0               !number of devices the tensor block resides on: ndev <= dev_rsc_len
-         integer(C_LONG_LONG):: last_update=-1 !last data update event number
-         type(C_PTR):: tensF=C_NULL_PTR        !pointer to Fortran <tensor_block_t> (CPU, Intel Xeon Phi): Just a convenient alias to existing data
+         type(C_PTR):: tensF=C_NULL_PTR        !pointer to Fortran <tensor_block_t> (CPU, Intel MIC): Just a convenient alias to existing data
          type(C_PTR):: tensC=C_NULL_PTR        !pointer to C/C++ <tensBlck_t> (Nvidia GPU): Just a convenient alias to existing data
         end type talsh_tens_t
  !TAL-SH task handle:
         type, bind(C):: talsh_task_t
-         type(C_PTR):: task_p=C_NULL_PTR    !pointer to the corresponding task object
+         type(C_PTR):: task_p=C_NULL_PTR    !pointer to the corresponding device-specific task object
          integer(C_INT):: dev_kind=DEV_NULL !device kind (DEV_NULL: uninitialized)
+         integer(C_INT):: data_kind=NO_TYPE !data kind {R4,R8,C4,C8}, NO_TYPE: uninitialized
+         real(C_DOUBLE):: data_vol=0d0      !total data volume
          real(C_DOUBLE):: flops=0d0         !number of floating point operations
          real(C_DOUBLE):: exec_time=0d0     !execution time in seconds
         end type talsh_task_t
@@ -131,12 +131,12 @@
           type(C_PTR), value, intent(in):: tens_block
          end function talshTensorIsEmpty
   !Construct a tensor block:
-         integer(C_INT) function talshTensorConstruct_(tens_block,data_type,tens_rank,tens_dims,dev_id,&
+         integer(C_INT) function talshTensorConstruct_(tens_block,data_kind,tens_rank,tens_dims,dev_id,&
                         ext_mem,in_hab,init_method,init_val_real,init_val_imag) bind(c,name='talshTensorConstruct_')
           import
           implicit none
           type(talsh_tens_t):: tens_block
-          integer(C_INT), value, intent(in):: data_type
+          integer(C_INT), value, intent(in):: data_kind
           integer(C_INT), value, intent(in):: tens_rank
           integer(C_INT), intent(in):: tens_dims(*)
           integer(C_INT), value, intent(in):: dev_id
@@ -166,14 +166,14 @@
           type(talsh_tens_shape_t), intent(inout):: tens_shape
          end function talshTensorShape
   !Query the presence of the tensor block on device(s):
-         integer(C_INT) function talshTensorPresence_(tens_block,ncopies,copies,data_types,dev_kind,dev_id)&
+         integer(C_INT) function talshTensorPresence_(tens_block,ncopies,copies,data_kinds,dev_kind,dev_id)&
                                  bind(c,name='talshTensorPresence_')
           import
           implicit none
           type(talsh_tens_t), intent(in):: tens_block
           integer(C_INT), intent(out):: ncopies
           integer(C_INT), intent(inout):: copies(*)
-          integer(C_INT), intent(inout):: data_types(*)
+          integer(C_INT), intent(inout):: data_kinds(*)
           integer(C_INT), value, intent(in):: dev_kind
           integer(C_INT), value, intent(in):: dev_id
          end function talshTensorPresence_
@@ -196,7 +196,7 @@
         public talsh_tensor_shape
         public talsh_tensor_presence
  !TAL-SH task API:
-!        public talsh_task_clean
+        public talsh_task_destruct
 !        public talsh_task_dev_id
 !        public talsh_task_status
 !        public talsh_task_completed
@@ -314,17 +314,17 @@
          return
         end function talsh_tensor_is_empty
 !-------------------------------------------------------------------------------------------------------------------------------
-        function talsh_tensor_construct(tens_block,data_type,tens_shape,dev_id,ext_mem,in_hab,init_method,init_val) result(ierr)
+        function talsh_tensor_construct(tens_block,data_kind,tens_shape,dev_id,ext_mem,in_hab,init_method,init_val) result(ierr)
          implicit none
          integer(C_INT):: ierr
          type(talsh_tens_t), intent(inout):: tens_block       !inout: constructed tensor block (must be empty on entrance)
-         integer(C_INT), intent(in):: data_type               !in: data type: {R4,R8,C4,C8,NO_TYPE}
+         integer(C_INT), intent(in):: data_kind               !in: data kind: {R4,R8,C4,C8,NO_TYPE}
          integer(C_INT), intent(in):: tens_shape(1:)          !in: tensor shape (volume = tensor rank)
          integer(C_INT), intent(in):: dev_id                  !in: flat device ID on which the tensor block will reside
          type(C_PTR), intent(in), optional:: ext_mem          !in: pointer to externally provided memory for tensor elements
          integer(C_INT), intent(in), optional:: in_hab        !in: if >=0, <ext_mem> points to the HAB entry #<in_hab>
          procedure(talsh_tens_init_i), optional:: init_method !in: user-defined initialization method (<init_val> must be absent)
-         complex(8), intent(in), optional:: init_val          !in: initialization value (will be typecast to <data_type>, defaults to 0)
+         complex(8), intent(in), optional:: init_val          !in: initialization value (will be typecast to <data_kind>, defaults to 0)
          type(C_PTR):: tens_body_p
          integer(C_INT):: hab_entry,tens_rank
          integer(C_INT), target:: tens_dims(1:MAX_TENSOR_RANK)
@@ -339,7 +339,7 @@
           if(present(in_hab)) then; if(in_hab.ge.0) then; hab_entry=in_hab; else; hab_entry=-1; endif; else; hab_entry=-1; endif
           if(present(init_method)) then; init_method_p=c_funloc(init_method); else; init_method_p=C_NULL_FUNPTR; endif
           val_real=0d0; val_imag=0d0; if(present(init_val)) then; val_real=real(init_val); val_imag=aimag(init_val); endif
-          ierr=talshTensorConstruct_(tens_block,data_type,tens_rank,tens_dims,dev_id,&
+          ierr=talshTensorConstruct_(tens_block,data_kind,tens_rank,tens_dims,dev_id,&
                                      tens_body_p,hab_entry,init_method_p,val_real,val_imag)
          else
           ierr=TALSH_INVALID_ARGS
@@ -372,19 +372,19 @@
          return
         end function talsh_tensor_shape
 !--------------------------------------------------------------------------------------------------------
-        function talsh_tensor_presence(tens_block,ncopies,copies,data_types,dev_kind,dev_id) result(ierr)
+        function talsh_tensor_presence(tens_block,ncopies,copies,data_kinds,dev_kind,dev_id) result(ierr)
          integer(C_INT):: ierr                           !out: error code (0:success)
          type(talsh_tens_t), intent(in):: tens_block     !in: tensor block
          integer(C_INT), intent(out):: ncopies           !out: number of found copies of the tensor block
          integer(C_INT), intent(inout):: copies(1:*)     !out: copies found (list of flat device id's)
-         integer(C_INT), intent(inout):: data_types(1:*) !out: data type of each copy
+         integer(C_INT), intent(inout):: data_kinds(1:*) !out: data kind of each copy
          integer(C_INT), intent(in), optional:: dev_kind !in: specific device kind of interest (defaults to All)
          integer(C_INT), intent(in), optional:: dev_id   !in: specific device of interest
          integer(C_INT):: devk,devnum
 
          if(present(dev_kind)) then; devk=dev_kind; else; devk=DEV_NULL; endif
          if(present(dev_id)) then; devnum=dev_id; else; devnum=-1; endif
-         ierr=talshTensorPresence_(tens_block,ncopies,copies,data_types,devk,devnum)
+         ierr=talshTensorPresence_(tens_block,ncopies,copies,data_kinds,devk,devnum)
          return
         end function talsh_tensor_presence
 

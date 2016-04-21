@@ -1,6 +1,6 @@
 !ExaTensor::TAL-SH: Parameters, types, C function interfaces:
 !Keep consistent with "tensor_algebra.h"!
-!REVISION: 2016/04/19
+!REVISION: 2016/04/21
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -191,10 +191,10 @@
 !EXTERNAL INTERFACES (keep consistent with tensor_algebra.h):
  !User-defined tensor block initialization:
         abstract interface
-         subroutine talsh_tens_init_i(tens_body_p,data_type,tens_rank,tens_dims,ierr) bind(c)
+         subroutine talsh_tens_init_i(tens_body_p,data_kind,tens_rank,tens_dims,ierr) bind(c)
           import
           type(C_PTR), value:: tens_body_p             !in: pointer to the tensor elements storage
-          integer(C_INT), value:: data_type            !in: data type: {R4,R8,C4,C8}
+          integer(C_INT), value:: data_kind            !in: data kind: {R4,R8,C4,C8}
           integer(C_INT), value:: tens_rank            !in: tensor block rank
           integer(C_INT), intent(in):: tens_dims(1:*)  !in: tensor block dimension extents
           integer(C_INT), intent(out):: ierr           !out: error code (0:success)

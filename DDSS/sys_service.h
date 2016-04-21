@@ -1,5 +1,5 @@
-#ifndef SYS_SERVICE_H_
-#define SYS_SERVICE_H_
+#ifndef _SYS_SERVICE_H
+#define _SYS_SERVICE_H
 
 #ifdef __cplusplus
 extern "C"{

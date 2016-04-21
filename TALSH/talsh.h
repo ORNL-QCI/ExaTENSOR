@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level API header.
-REVISION: 2016/04/19
+REVISION: 2016/04/21
 
 Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -27,7 +27,6 @@ along with ExaTensor. If not, see <http://www.gnu.org/licenses/>.
 #include "tensor_algebra.h"
 
 //TAL-SH PARAMETERS:
-#define TALSH_MAX_ACTIVE_TASKS 4096 //max number of active tasks on all devices on a node
 #define TALSH_MAX_DEV_PRESENT 16 //max number of on-node devices the tensor block can be simultaneously present on
 
 //TAL-SH ERROR CODES (keep consistent with "talshf.F90"):
@@ -42,24 +41,33 @@ along with ExaTensor. If not, see <http://www.gnu.org/licenses/>.
 #define TALSH_OBJECT_NOT_EMPTY 1000004
 #define TALSH_OBJECT_IS_EMPTY 1000005
 
+//TAL-SH TASK STATUS:
+#define TALSH_TASK_ERROR TALSH_FAILURE
+#define TALSH_TASK_EMPTY 2000000
+#define TALSH_TASK_SCHEDULED 2000001
+#define TALSH_TASK_STARTED 2000002
+#define TALSH_TASK_INPUT_READY 2000003
+#define TALSH_TASK_OUTPUT_READY 2000004
+#deifne TALSH_TASK_COMPLETED 2000005
+
 //TAL-SH DATA TYPES:
 // Interoperable tensor block:
 typedef struct{
  talsh_tens_shape_t * shape_p; //shape of the tensor block
  talsh_dev_rsc_t * dev_rsc;    //list of device resources occupied by the tensor block body on each device
- int * data_type;              //list of data types for each device location occupied by the tensor body {R4,R8,C4,C8}
- signed long long * updated;   //last update event number for each existing tensor block copy
- int dev_rsc_len;              //capacity of .dev_rsc[], .data_type[], .updated[]
+ int * data_kind;              //list of data kinds for each device location occupied by the tensor body {R4,R8,C4,C8}
+ int dev_rsc_len;              //capacity of .dev_rsc[], .data_kind[]
  int ndev;                     //number of devices the tensor block resides on: ndev <= dev_rsc_len
- signed long long last_update; //last data update event number
- void * tensF;                 //pointer to Fortran <tensor_block_t> (CPU,Phi): Just a convenient alias to existing data
+ void * tensF;                 //pointer to Fortran <tensor_block_t> (CPU, Intel MIC): Just a convenient alias to existing data
  void * tensC;                 //pointer to C <tensBlck_t> (Nvidia GPU): Just a convenient alias to existing data
 } talsh_tens_t;
 
 // Interoperable TAL-SH task handle:
 typedef struct{
- void * task_p;    //pointer to the corresponding task object
+ void * task_p;    //pointer to the corresponding device-specific task object
  int dev_kind;     //device kind (DEV_NULL: uninitalized)
+ int data_kind;    //data kind {R4,R8,C4,C8}, NO_TYPE: uninitialized
+ double data_vol;  //total data volume
  double flops;     //number of floating point operations
  double exec_time; //execution time in seconds
 } talsh_task_t;
@@ -100,13 +108,13 @@ extern "C"{
 // TAL-SH tensor block API:
 //  Create an empty tensor block:
  int talshTensorCreate(talsh_tens_t ** tens_block);
-//  Clean a tensor block (default constructor):
+//  Clean an undefined tensor block (default constructor):
  int talshTensorClean(talsh_tens_t * tens_block);
-//  Check whether a tensor block is empty:
+//  Check whether a tensor block is empty (clean):
  int talshTensorIsEmpty(const talsh_tens_t * tens_block);
 //  Construct a tensor block:
  int talshTensorConstruct(talsh_tens_t * tens_block,
-                          int data_type,
+                          int data_kind,
                           int tens_rank,
                           int tens_dims[],
                           int dev_id = 0,
@@ -115,7 +123,7 @@ extern "C"{
                           talsh_tens_init_i init_method = NULL,
                           double init_val_real = 0.0,
                           double init_val_imag = 0.0);
- int talshTensorConstruct_(talsh_tens_t * tens_block, int data_type, int tens_rank, int tens_dims[], int dev_id,
+ int talshTensorConstruct_(talsh_tens_t * tens_block, int data_kind, int tens_rank, int tens_dims[], int dev_id,
                            void * ext_mem, int in_hab, talsh_tens_init_i init_method, double init_val_real, double init_val_imag);
 //  Destruct a tensor block:
  int talshTensorDestruct(talsh_tens_t * tens_block);
@@ -130,10 +138,19 @@ extern "C"{
  int talshTensorPresence(const talsh_tens_t * tens_block,
                          int * ncopies,
                          int copies[],
-                         int data_types[],
+                         int data_kinds[],
                          int dev_kind = DEV_NULL,
                          int dev_id = -1);
- int talshTensorPresence_(const talsh_tens_t * tens_block, int * ncopies, int copies[], int data_types[], int dev_kind, int dev_id);
+ int talshTensorPresence_(const talsh_tens_t * tens_block, int * ncopies, int copies[], int data_kinds[], int dev_kind, int dev_id);
+// TAL-SH task API:
+//  Create a clean (defined-empty) TAL-SH task:
+ int talshTaskCreate(talsh_task_t ** talsh_task);
+//  Clean an undefined TAL-SH task:
+ int talshTaskClean(talsh_task_t * talsh_task);
+//  Destruct a TAL-SH task:
+ int talshTaskDestruct(talsh_task_t * talsh_task);
+//  Destroy a TAL-SH task:
+ int talshTaskDestroy(talsh_task_t * talsh_task);
 
 #ifdef __cplusplus
 }
