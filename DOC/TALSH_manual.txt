@@ -1,6 +1,6 @@
 *** TAL-SH: Tensor Algebra Library for Shared Memory Computers ***
 AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-REVISION: 2016/04/21
+REVISION: 2016/04/22
 
 Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -31,9 +31,9 @@ tensor contraction, tensor product, tensor addition, tensor transpose,
 multiplication by a scalar, etc., which operate on locally stored tensors.
 The execution of tensor operations on accelerators is asynchronous with
 respect to the CPU Host, if the underlying node is heterogeneous. Both
-Fortran and C/C++ API interfaces are provided. The library has
-an object-oriented design, although without explicit object-oriented
-syntax (no explicit C++/Fortran classes). As a consequence, in C/C++ the basic
+Fortran and C/C++ API interfaces are provided. The library has a simplified
+object-oriented design, although without explicit object-oriented syntax
+(no explicit C++/Fortran classes). As a consequence, in C/C++ the basic
 TAL-SH objects, like <talsh_tens_t>, <talsh_tens_shape_t>, <talsh_task_t>, etc.
 must always be "cleaned" before the first use in case they are declared
 statically (dynamically created objects are cleaned automatically). In Fortran,
@@ -41,7 +41,7 @@ the defaut type initializers will automatically clean new objects. The main
 reason the library is not implemented in C++ is the necessity of Fortran/C
 interoperability, to support both Fortran and C/C++ applications. However,
 upon necessity, it should be relatively easy to wrap the TAL-SH API
-inside the C++ or Fortran-2003 object-oriented syntactic "sugar":
+with the C++ or Fortran-2003 object-oriented syntactic "sugar":
  (a) ObjectClean() becomes the trivial constructor in C++;
  (b) ObjectConstruct() becomes the non-trivial constructor in C++
      and Fortran-2003;
@@ -475,14 +475,15 @@ tensor operation. It is associated with that specific operation and can later be
 for checking the completion of the operation and obtaining other information, like
 timing, flop count, data size, etc. The lifecycle of a <talsh_task_t> object is
 similar to that of <talsh_tens_t>, with possible statuses:
- (a) Undefined: Statically allocated C/C++ <talsh_task_t> objects;
+ (a) Undefined: Statically allocated C/C++ <talsh_task_t> objects (C-like);
  (b) Defined-empty (clean): Dynamically allocated C/C++ <talsh_task_t> objects
                             and all Fortran <talsh_task_t> objects at creation,
                             also all properly destructed <talsh_task_t> objects;
  (c) Value-defined: All <talsh_task_t> objects successfully constructed;
 A peculiarity of <talsh_task_t> is that it should never be constructed explicitly
 by the user because the construction is done implictly when a tensor operation
-returns the <talsh_task_t> handle back to the user.
+returns the <talsh_task_t> handle back to the user. However, the user may call
+a destructor on a retired <talsh_task_t> object to reuse it in new operations.
 It is errorneous to call talshTaskClean() on value-defined <talsh_task_t> objects
 and to call any other talshTaskXXX() function on undefined <talsh_task_t> objects.
 In Fortran, a value-defined dynamically allocated <talsh_task_t> object must be

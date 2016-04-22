@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level API.
-REVISION: 2016/04/21
+REVISION: 2016/04/22
 
 Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -194,9 +194,17 @@ int talshDeviceBusyLeast(int dev_kind) //in: device kind (defaults to any kind)
    return TALSH_NOT_AVAILABLE;
 #endif
   case DEV_INTEL_MIC:
+#ifndef NO_MIC
    return TALSH_NOT_IMPLEMENTED; //`Implement in future
+#else
+   return TALSH_NOT_AVAILABLE;
+#endif
   case DEV_AMD_GPU:
+#ifndef NO_AMD
    return TALSH_NOT_IMPLEMENTED; //`Implement in future
+#else
+   return TALSH_NOT_AVAILABLE;
+#endif
  }
  return TALSH_INVALID_ARGS;
 }
@@ -237,10 +245,18 @@ int talshStats(int dev_id,   //in: device id (either flat or kind specific devic
 #endif
    break;
   case DEV_INTEL_MIC:
+#ifndef NO_MIC
    rc=TALSH_NOT_IMPLEMENTED; //`Implement in future
+#else
+   rc=TALSH_NOT_AVAILABLE;
+#endif
    break;
   case DEV_AMD_GPU:
+#ifndef NO_AMD
    rc=TALSH_NOT_IMPLEMENTED; //`Implement in future
+#else
+   rc=TALSH_NOT_AVAILABLE;
+#endif
    break;
   default:
    rc=TALSH_INVALID_ARGS;
@@ -537,35 +553,93 @@ static int talshTaskConstruct(talsh_task_t * talsh_task, int dev_kind, int data_
 
  if(talsh_task == NULL) return TALSH_INVALID_ARGS;
  if(valid_device_kind(dev_kind) != YEP) return TALSH_INVALID_ARGS;
- if(data_kind != NO_TYPE){
-  if(valid_data_kind(data_kind) != YEP) return TALSH_INVALID_ARGS;
- }
- if(talsh_task->dev_kind != DEV_NULL || talsh_task->task_p != NULL) errc=talshTaskDestruct(talsh_task); //destruct value-defined tasks first
- if(errc != TALSH_SUCCESS && errc != NOT_CLEAN) return TALSH_FAILURE;
- if(errc == NOT_CLEAN) talsh_not_clean();
+ if(data_kind != NO_TYPE){if(tens_valid_data_kind(data_kind) != YEP) return TALSH_INVALID_ARGS;}
+ if(talsh_task->dev_kind != DEV_NULL) errc=talshTaskDestruct(talsh_task); //destruct value-defined tasks first
+ if(errc != TALSH_SUCCESS && errc != NOT_CLEAN) return TALSH_FAILURE; if(errc == NOT_CLEAN) talsh_not_clean();
  switch(dev_kind){
   case DEV_HOST:
    talsh_task->task_p=NULL; //Host does not support asynchronism in TAL-SH
    break;
   case DEV_NVIDIA_GPU:
 #ifndef NO_GPU
-   i=cuda_task_create((cuda_task_t**)(&(talsh_task->task_p)));
-   if(i == TRY_LATER || i == DEVICE_UNABLE){errc=talshTaskClean(talsh_task); return i;} //previous NOT_CLEAN status can be lost here
-   if(i != 0){errc=talshTaskClean(talsh_task); return TALSH_FAILURE;}
+   i=cuda_task_create((cudaTask_t**)(&(talsh_task->task_p)));
+   if(i != 0){
+    errc=talshTaskClean(talsh_task);
+    if(i == TRY_LATER || i == DEVICE_UNABLE){return i;}else{return TALSH_FAILURE;} //overrules previous NOT_CLEAN status
+   }
 #else
    return TALSH_NOT_AVAILABLE;
 #endif
    break;
   case DEV_INTEL_MIC:
+#ifndef NO_MIC
    return TALSH_NOT_IMPLEMENTED; //`Future
+#else
+   return TALSH_NOT_AVAILABLE;
+#endif
    break;
   case DEV_AMD_GPU:
+#ifndef NO_AMD
    return TALSH_NOT_IMPLEMENTED; //`Future
+#else
+   return TALSH_NOT_AVAILABLE;
+#endif
    break;
   default:
    return TALSH_INVALID_ARGS;
  }
  talsh_task->dev_kind=dev_kind;
  talsh_task->data_kind=data_kind;
+ return errc;
+}
+
+int talshTaskDestruct(talsh_task_t * talsh_task)
+/** Destructs a TAL-SH task, putting it back into the defined-empty (clean) state. **/
+{
+ int i,errc;
+
+ if(talsh_task == NULL) return TALSH_INVALID_ARGS;
+ switch(talsh_task->dev_kind){
+  case DEV_HOST:
+   if(talsh_task->task_p != NULL) return TALSH_INVALID_ARGS;
+   break;
+  case DEV_NVIDIA_GPU:
+#ifndef NO_GPU
+   if(talsh_task->task_p == NULL) return TALSH_INVALID_ARGS;
+   errc=cuda_task_destruct((cudaTask_t*)(talsh_task->task_p));
+   if(errc != 0 && errc != TRY_LATER && errc != NOT_CLEAN) errc=TALSH_FAILURE;
+#else
+   return TALSH_NOT_AVAILABLE;
+#endif
+   break;
+  case DEV_INTEL_MIC:
+#ifndef NO_MIC
+   return TALSH_NOT_IMPLEMENTED; //`Future
+#else
+   return TALSH_NOT_AVAILABLE;
+#endif
+   break;
+  case DEV_AMD_GPU:
+#ifndef NO_AMD
+   return TALSH_NOT_IMPLEMENTED; //`Future
+#else
+   return TALSH_NOT_AVAILABLE;
+#endif
+   break;
+  default:
+   return TALSH_INVALID_ARGS;
+ }
+ i=talshTaskClean(talsh_task);
+ return errc;
+}
+
+int talshTaskDestroy(talsh_task_t * talsh_task)
+/** Completely destroys a <talsh_task_t> object. **/
+{
+ int errc;
+
+ if(talsh_task == NULL) return TALSH_INVALID_ARGS;
+ errc=talshTaskDestruct(talsh_task);
+ free(talsh_task);
  return errc;
 }

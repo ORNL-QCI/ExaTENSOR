@@ -48,7 +48,7 @@ along with ExaTensor. If not, see <http://www.gnu.org/licenses/>.
 #define TALSH_TASK_STARTED 2000002
 #define TALSH_TASK_INPUT_READY 2000003
 #define TALSH_TASK_OUTPUT_READY 2000004
-#deifne TALSH_TASK_COMPLETED 2000005
+#define TALSH_TASK_COMPLETED 2000005
 
 //TAL-SH DATA TYPES:
 // Interoperable tensor block:

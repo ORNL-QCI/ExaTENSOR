@@ -1,5 +1,5 @@
 !ExaTensor::TAL-SH: Device-unified user-level API:
-!REVISION: 2016/04/21
+!REVISION: 2016/04/22
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -177,6 +177,13 @@
           integer(C_INT), value, intent(in):: dev_kind
           integer(C_INT), value, intent(in):: dev_id
          end function talshTensorPresence_
+ !TAL-SH task C/C++ API:
+  !Destruct a TAL-SH task:
+         integer(C_INT) function talshTaskDestruct(talsh_task) bind(c,name='talshTaskDestruct')
+          import
+          implicit none
+          type(talsh_task_t), intent(inout):: talsh_task
+         end function talshTaskDestruct
 
         end interface
 !VISIBILITY:
@@ -373,6 +380,7 @@
         end function talsh_tensor_shape
 !--------------------------------------------------------------------------------------------------------
         function talsh_tensor_presence(tens_block,ncopies,copies,data_kinds,dev_kind,dev_id) result(ierr)
+         implicit none
          integer(C_INT):: ierr                           !out: error code (0:success)
          type(talsh_tens_t), intent(in):: tens_block     !in: tensor block
          integer(C_INT), intent(out):: ncopies           !out: number of found copies of the tensor block
@@ -387,5 +395,13 @@
          ierr=talshTensorPresence_(tens_block,ncopies,copies,data_kinds,devk,devnum)
          return
         end function talsh_tensor_presence
+!------------------------------------------------------------
+        function talsh_task_destruct(talsh_task) result(ierr)
+         implicit none
+         integer(C_INT):: ierr                          !out: error code (0:success)
+         type(talsh_task_t), intent(inout):: talsh_task !inout: TAL-SH task (clean on exit)
+         ierr=talshTaskDestruct(talsh_task)
+         return
+        end function talsh_task_destruct
 
        end module talsh
