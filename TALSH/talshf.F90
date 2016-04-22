@@ -184,6 +184,19 @@
           implicit none
           type(talsh_task_t), intent(inout):: talsh_task
          end function talshTaskDestruct
+  !Get the device id the TAL-SH task is scheduled on:
+         integer(C_INT) function talshTaskDevId_(talsh_task,dev_kind) bind(c,name='talshTaskDevId_')
+          import
+          implicit none
+          type(talsh_task_t), intent(inout):: talsh_task
+          type(C_PTR):: dev_kind
+         end function talshTaskDevId_
+  !Get the TAL-SH task status:
+         integer(C_INT) function talshTaskStatus(talsh_task) bind(c,name='talshTaskStatus')
+          import
+          implicit none
+          type(talsh_task_t), intent(inout):: talsh_task
+         end function talshTaskStatus
 
         end interface
 !VISIBILITY:
@@ -204,8 +217,8 @@
         public talsh_tensor_presence
  !TAL-SH task API:
         public talsh_task_destruct
-!        public talsh_task_dev_id
-!        public talsh_task_status
+        public talsh_task_dev_id
+        public talsh_task_status
 !        public talsh_task_completed
 !        public talsh_task_wait
 !        public talsh_tasks_wait
@@ -403,5 +416,27 @@
          ierr=talshTaskDestruct(talsh_task)
          return
         end function talsh_task_destruct
+!---------------------------------------------------------------------
+        function talsh_task_dev_id(talsh_task,dev_kind) result(dev_id)
+         implicit none
+         integer(C_INT):: dev_id                                  !out: flat or kind-specific device id
+         type(talsh_task_t), intent(inout):: talsh_task           !in: value-defined TAL-SH task
+         integer(C_INT), intent(out), optional, target:: dev_kind !out: device kind (if present, <dev_id> is kind-specific, if absent <dev_id> is flat)
+
+         if(present(dev_kind)) then
+          dev_id=talshTaskDevId_(talsh_task,c_loc(dev_kind))
+         else
+          dev_id=talshTaskDevId_(talsh_task,C_NULL_PTR)
+         endif
+         return
+        end function talsh_task_dev_id
+!----------------------------------------------------------
+        function talsh_task_status(talsh_task) result(stat)
+         implicit none
+         integer(C_INT):: stat                          !out: TAL-SH task status
+         type(talsh_task_t), intent(inout):: talsh_task !in: TAL-SH task
+         stat=talshTaskStatus(talsh_task)
+         return
+        end function talsh_task_status
 
        end module talsh

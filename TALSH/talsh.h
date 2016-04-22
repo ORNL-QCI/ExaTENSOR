@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level API header.
-REVISION: 2016/04/21
+REVISION: 2016/04/22
 
 Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -42,7 +42,7 @@ along with ExaTensor. If not, see <http://www.gnu.org/licenses/>.
 #define TALSH_OBJECT_IS_EMPTY 1000005
 
 //TAL-SH TASK STATUS:
-#define TALSH_TASK_ERROR TALSH_FAILURE
+#define TALSH_TASK_ERROR 1999999
 #define TALSH_TASK_EMPTY 2000000
 #define TALSH_TASK_SCHEDULED 2000001
 #define TALSH_TASK_STARTED 2000002
@@ -151,6 +151,12 @@ extern "C"{
  int talshTaskDestruct(talsh_task_t * talsh_task);
 //  Destroy a TAL-SH task:
  int talshTaskDestroy(talsh_task_t * talsh_task);
+//  Get the id of the device the TAL-SH task is scheduled on:
+ int talshTaskDevId(talsh_task_t * talsh_task,
+                    int * dev_kind = NULL);
+ int talshTaskDevId_(talsh_task_t * talsh_task, int * dev_kind);
+//  Get the TAL-SH task status:
+ int talshTaskStatus(talsh_task_t * talsh_task);
 
 #ifdef __cplusplus
 }

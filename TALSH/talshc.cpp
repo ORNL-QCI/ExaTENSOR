@@ -42,15 +42,46 @@ static int talsh_amd[MAX_AMDS_PER_NODE]={DEV_OFF}; //current AMD status: {DEV_OF
 // Failure statistics:
 static unsigned long long int not_clean_count=0LL; //number of times a NOT_CLEAN status was returned (possible indication of a memory leak)
 
+//INTERNAL TYPES:
+// Host task:
+typedef struct{
+ int task_error; //task error code (0:success)
+} host_task_t;
+
 //INTERNAL PROTOTYPES:
 // Error counters:
 static void talsh_not_clean();
+// Host task API:
+static int host_task_create(host_task_t ** host_task);
+static int host_task_clean(host_task_t * host_task);
+static int host_task_destroy(host_task_t * host_task);
 // Construct a TAL-SH task:
 static int talshTaskConstruct(talsh_task_t * talsh_task, int dev_kind, int data_kind = NO_TYPE);
 
 //INTERNAL FUNCTIONS:
 // Error counters:
 static void talsh_not_clean(){++not_clean_count;}
+// Host task API:
+static int host_task_create(host_task_t ** host_task)
+{
+ *host_task=(host_task_t*)malloc(sizeof(host_task_t));
+ if(*host_task == NULL) return TRY_LATER;
+ return host_task_clean(*host_task);
+}
+
+static int host_task_clean(host_task_t * host_task)
+{
+ if(host_task == NULL) return TALSH_INVALID_ARGS;
+ host_task->task_error=0;
+ return TALSH_SUCCESS;
+}
+
+static int host_task_destroy(host_task_t * host_task)
+{
+ if(host_task == NULL) return TALSH_INVALID_ARGS;
+ free(host_task);
+ return TALSH_SUCCESS;
+}
 
 //EXPORTED FUNCTIONS:
 // TAL-SH control API:
@@ -273,11 +304,9 @@ int talshStats_(int dev_id, int dev_kind) //Fortran wrapper
 int talshTensorCreate(talsh_tens_t ** tens_block) //out: pointer to a newly created empty tensor block
 /** Returns a pointer to a newly created empty tensor block (0:Success; TRY_LATER:Short on memory). **/
 {
- int errc;
  *tens_block=(talsh_tens_t*)malloc(sizeof(talsh_tens_t));
  if(*tens_block == NULL) return TRY_LATER;
- errc=talshTensorClean(*tens_block);
- return errc;
+ return talshTensorClean(*tens_block);
 }
 
 int talshTensorClean(talsh_tens_t * tens_block)
@@ -482,6 +511,7 @@ int talshTensorPresence(const talsh_tens_t * tens_block, int * ncopies, int copi
 {
  int i,j,m,devnum,devk,specific_kind,specific_device;
 
+ if(talsh_on == 0) return TALSH_NOT_INITIALIZED;
  *ncopies=0; devk=DEV_NULL; devnum=-1;
  if(tens_block == NULL) return TALSH_INVALID_ARGS;
  if(talshTensorIsEmpty(tens_block) == YEP) return TALSH_OBJECT_IS_EMPTY;
@@ -524,11 +554,9 @@ int talshTensorPresence_(const talsh_tens_t * tens_block, int * ncopies, int cop
 int talshTaskCreate(talsh_task_t ** talsh_task)
 /** Creates a clean <talsh_task_t> object on heap. **/
 {
- int errc;
  *talsh_task=(talsh_task_t*)malloc(sizeof(talsh_task_t));
  if(*talsh_task == NULL) return TRY_LATER;
- errc=talshTaskClean(*talsh_task);
- return errc;
+ return talshTaskClean(*talsh_task);
 }
 
 int talshTaskClean(talsh_task_t * talsh_task)
@@ -551,6 +579,8 @@ static int talshTaskConstruct(talsh_task_t * talsh_task, int dev_kind, int data_
 {
  int i,errc;
 
+ if(talsh_on == 0) return TALSH_NOT_INITIALIZED;
+ errc=TALSH_SUCCESS;
  if(talsh_task == NULL) return TALSH_INVALID_ARGS;
  if(valid_device_kind(dev_kind) != YEP) return TALSH_INVALID_ARGS;
  if(data_kind != NO_TYPE){if(tens_valid_data_kind(data_kind) != YEP) return TALSH_INVALID_ARGS;}
@@ -558,7 +588,11 @@ static int talshTaskConstruct(talsh_task_t * talsh_task, int dev_kind, int data_
  if(errc != TALSH_SUCCESS && errc != NOT_CLEAN) return TALSH_FAILURE; if(errc == NOT_CLEAN) talsh_not_clean();
  switch(dev_kind){
   case DEV_HOST:
-   talsh_task->task_p=NULL; //Host does not support asynchronism in TAL-SH
+   i=host_task_create((host_task_t**)(&(talsh_task->task_p)));
+   if(i != 0){
+    errc=talshTaskClean(talsh_task);
+    if(i == TRY_LATER || i == DEVICE_UNABLE){return i;}else{return TALSH_FAILURE;} //overrules previous NOT_CLEAN status
+   }
    break;
   case DEV_NVIDIA_GPU:
 #ifndef NO_GPU
@@ -598,15 +632,19 @@ int talshTaskDestruct(talsh_task_t * talsh_task)
 {
  int i,errc;
 
+ if(talsh_on == 0) return TALSH_NOT_INITIALIZED;
+ errc=TALSH_SUCCESS;
  if(talsh_task == NULL) return TALSH_INVALID_ARGS;
  switch(talsh_task->dev_kind){
   case DEV_HOST:
-   if(talsh_task->task_p != NULL) return TALSH_INVALID_ARGS;
+   if(talsh_task->task_p == NULL) return TALSH_INVALID_ARGS;
+   errc=host_task_destroy((host_task_t*)(talsh_task->task_p));
+   if(errc != 0 && errc != TRY_LATER && errc != NOT_CLEAN) errc=TALSH_FAILURE;
    break;
   case DEV_NVIDIA_GPU:
 #ifndef NO_GPU
    if(talsh_task->task_p == NULL) return TALSH_INVALID_ARGS;
-   errc=cuda_task_destruct((cudaTask_t*)(talsh_task->task_p));
+   errc=cuda_task_destroy((cudaTask_t*)(talsh_task->task_p));
    if(errc != 0 && errc != TRY_LATER && errc != NOT_CLEAN) errc=TALSH_FAILURE;
 #else
    return TALSH_NOT_AVAILABLE;
@@ -641,5 +679,114 @@ int talshTaskDestroy(talsh_task_t * talsh_task)
  if(talsh_task == NULL) return TALSH_INVALID_ARGS;
  errc=talshTaskDestruct(talsh_task);
  free(talsh_task);
+ return errc;
+}
+
+int talshTaskDevId(talsh_task_t * talsh_task, int * dev_kind)
+/** Returns either a flat (<dev_kind> is absent) or kind-specific (<dev_kind> is present)
+    device id on which the TAL-SH task is scheduled. DEV_NULL on return means an error. **/
+{
+ int devid,errc;
+
+ if(talsh_on == 0) return TALSH_NOT_INITIALIZED;
+ if(talsh_task == NULL) return DEV_NULL;
+ errc=talshTaskStatus(talsh_task);
+ if(errc == TALSH_FAILURE || errc == TALSH_TASK_EMPTY) return DEV_NULL;
+ switch(talsh_task->dev_kind){
+  case DEV_HOST:
+   devid=0; //Host is always single
+   break;
+  case DEV_NVIDIA_GPU:
+#ifndef NO_GPU
+   devid=cuda_task_gpu_id((cudaTask_t*)(talsh_task->task_p));
+   if(devid < 0) return DEV_NULL;
+#else
+   return DEV_NULL;
+#endif
+   break;
+  case DEV_INTEL_MIC:
+#ifndef NO_MIC
+   return DEV_NULL; //`Future
+#else
+   return DEV_NULL;
+#endif
+   break;
+  case DEV_AMD_GPU:
+#ifndef NO_AMD
+   return DEV_NULL; //`Future
+#else
+   return DEV_NULL;
+#endif
+   break;
+  default:
+   return DEV_NULL;
+ }
+ if(devid < 0) return DEV_NULL;
+ if(dev_kind != NULL){
+  *dev_kind=talsh_task->dev_kind;
+ }else{
+  devid=talshFlatDevId(talsh_task->dev_kind,devid); //convert to flat device id
+  if(devid < 0 || devid >= DEV_MAX) devid=DEV_NULL;
+ }
+ return devid;
+}
+
+int talshTaskDevId_(talsh_task_t * talsh_task, int * dev_kind) //Fortran wrapper
+{
+ return talshTaskDevId(talsh_task,dev_kind);
+}
+
+int talshTaskStatus(talsh_task_t * talsh_task)
+/** Returns the current status of the TAL-SH task or an error status. **/
+{
+ int i,errc;
+ host_task_t *host_task_p;
+ cudaTask_t *cuda_task_p;
+
+ if(talsh_on == 0) return TALSH_NOT_INITIALIZED;
+ if(talsh_task == NULL) return TALSH_INVALID_ARGS;
+ if(talsh_task->dev_kind == DEV_NULL) return TALSH_TASK_EMPTY;
+ if(talsh_task->task_p == NULL) return TALSH_INVALID_ARGS;
+ switch(talsh_task->dev_kind){
+  case DEV_HOST:
+   host_task_p=((host_task_t*)(talsh_task->task_p));
+   if(host_task_p->task_error == 0){errc=TALSH_TASK_COMPLETED;}else{errc=TALSH_TASK_ERROR;}
+   break;
+  case DEV_NVIDIA_GPU:
+#ifndef DEV_NVIDIA_GPU
+   cuda_task_p=(cudaTask_t*)(talsh_task->task_p);
+   i=cuda_task_status(cuda_task_p);
+   switch(i){
+    case CUDA_TASK_ERROR: errc=TALSH_TASK_ERROR; break;
+    case CUDA_TASK_EMPTY: errc=TALSH_TASK_EMPTY; break;
+    case CUDA_TASK_SCHEDULED: errc=TALSH_TASK_SCHEDULED; break;
+    case CUDA_TASK_STARTED: errc=TALSH_TASK_STARTED; break;
+    case CUDA_TASK_INPUT_THERE: errc=TALSH_TASK_INPUT_READY; break;
+    case CUDA_TASK_OUTPUT_THERE: errc=TALSH_TASK_OUTPUT_READY; break;
+    case CUDA_TASK_COMPLETED: errc=TALSH_TASK_COMPLETED; break;
+    default:
+     errc=TALSH_FAILURE;
+   }
+#else
+   return TALSH_NOT_AVAILABLE;
+#endif
+   break;
+  case DEV_INTEL_MIC:
+#ifndef DEV_INTEL_MIC
+   return TALSH_NOT_IMPLEMENTED; //`Future
+#else
+   return TALSH_NOT_AVAILABLE;
+#endif
+   break;
+  case DEV_AMD_GPU:
+#ifndef DEV_AMD_GPU
+   return TALSH_NOT_IMPLEMENTED; //`Future
+#else
+   return TALSH_NOT_AVAILABLE;
+#endif
+   break;
+  default:
+   return TALSH_INVALID_ARGS;
+ }
  return errc;
 }

@@ -532,33 +532,33 @@ API: Destroy a TAL-SH task:
 API: Get the id of the device the TAL-SH task is scheduled on:
 
  Fortran 2003:
-  function talsh_task_dev_id(task,dev_kind) result(dev_id)
+  function talsh_task_dev_id(talsh_task,dev_kind) result(dev_id)
    integer(C_INT):: dev_id                          !out: device id (either kind-specific or flat), -1 if error
-   type(talsh_task_t), intent(in):: task            !in: TAL-SH task handle
+   type(talsh_task_t), intent(inout):: talsh_task   !in: TAL-SH task handle
    integer(C_INT), intent(out), optional:: dev_kind !out: device kind (if present, <dev_id> will return the kind-specific device id)
 
  C/C++:
-  int talshTaskDevId(          //out: device id (either kind-specific or flat), -1 if error
-   const talsh_task_t * task,  //in: TAL-SH task handle
-   int * dev_kind = NULL       //out: device kind (if present, <dev_id> will return the kind-specific device id)
+  int talshTaskDevId(         //out: device id (either kind-specific or flat), -1 if error
+   talsh_task_t * talsh_task, //in: TAL-SH task handle
+   int * dev_kind = NULL      //out: device kind (if present, <dev_id> will return the kind-specific device id)
   )
 
 API: Get the TAL-SH task status:
 
  Fortran 2003:
-  function talsh_task_status(task) result(stat)
-   integer(C_INT):: stat             !out: task status (see below), TALSH_FAILURE if failed
-   type(talsh_task_t), intent(inout) !inout: TAL-SH task handle
+  function talsh_task_status(talsh_task) result(stat)
+   integer(C_INT):: stat                          !out: task status (see below), TALSH_FAILURE if failed
+   type(talsh_task_t), intent(inout):: talsh_task !inout: TAL-SH task handle
 
  C/C++:
-  int talshTaskStatus( //out: task status (see below), TALSH_FAILURE if failed
-   talsh_task_t * stat //inout: TAL-SH task handle
+  int talshTaskStatus(       //out: task status (see below), TALSH_FAILURE if failed
+   talsh_task_t * talsh_task //inout: TAL-SH task handle
   )
 
   Description:
    Possible task status:
     TALSH_TASK_ERROR: An error occured during task scheduling or execution
-    TALSH_TASK_EMPTY: The task has not been scheduled yet
+    TALSH_TASK_EMPTY: The task has not been scheduled yet (clean)
     TALSH_TASK_SCHEDULED: The task has been successfully scheduled
     TALSH_TASK_STARTED: The task started execution
     TALSH_TASK_INPUT_READY: The input data is on device
@@ -566,7 +566,7 @@ API: Get the TAL-SH task status:
     TALSH_TASK_COMPLETED: The task is completed
 
   NOTE: If the task scheduling call (tensor operation) returns TRY_LATER or DEVICE_UNABLE,
-        which are not errors, the task status is kept TALSH_TASK_EMPTY.
+        which are not errors, the task status is kept TALSH_TASK_EMPTY (clean).
 
 API: Check whether a TAL-SH task has completed:
 
