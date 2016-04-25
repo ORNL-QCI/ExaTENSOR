@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level API.
-REVISION: 2016/04/22
+REVISION: 2016/04/25
 
 Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -753,7 +753,7 @@ int talshTaskStatus(talsh_task_t * talsh_task)
    if(host_task_p->task_error == 0){errc=TALSH_TASK_COMPLETED;}else{errc=TALSH_TASK_ERROR;}
    break;
   case DEV_NVIDIA_GPU:
-#ifndef DEV_NVIDIA_GPU
+#ifndef NO_GPU
    cuda_task_p=(cudaTask_t*)(talsh_task->task_p);
    i=cuda_task_status(cuda_task_p);
    switch(i){
@@ -772,14 +772,14 @@ int talshTaskStatus(talsh_task_t * talsh_task)
 #endif
    break;
   case DEV_INTEL_MIC:
-#ifndef DEV_INTEL_MIC
+#ifndef NO_MIC
    return TALSH_NOT_IMPLEMENTED; //`Future
 #else
    return TALSH_NOT_AVAILABLE;
 #endif
    break;
   case DEV_AMD_GPU:
-#ifndef DEV_AMD_GPU
+#ifndef NO_AMD
    return TALSH_NOT_IMPLEMENTED; //`Future
 #else
    return TALSH_NOT_AVAILABLE;
@@ -789,4 +789,150 @@ int talshTaskStatus(talsh_task_t * talsh_task)
    return TALSH_INVALID_ARGS;
  }
  return errc;
+}
+
+int talshTaskCompleted(talsh_task_t * talsh_task, int * stats, int * ierr)
+/** Returns YEP if the TAL-SH has completed, NOPE otherwise.
+    The TAL-SH task status will be returned in <stats>. **/
+{
+ int errc;
+ host_task_t *host_task_p;
+ cudaTask_t *cuda_task_p;
+
+ errc=NOPE;
+ if(talsh_on == 0){*ierr=TALSH_NOT_INITIALIZED; return errc;}
+ if(ierr == NULL) return TALSH_INVALID_ARGS;
+ if(talsh_task == NULL || stats == NULL){*ierr=TALSH_INVALID_ARGS; return errc;}
+ if(talsh_task->task_p == NULL){*ierr=TALSH_OBJECT_IS_EMPTY; return errc;}
+ *ierr=TALSH_SUCCESS;
+ switch(talsh_task->dev_kind){
+  case DEV_HOST:
+   host_task_p=((host_task_t*)(talsh_task->task_p));
+   if(host_task_p->task_error == 0){*stats=TALSH_TASK_COMPLETED;}else{*stats=TALSH_TASK_ERROR;}
+   return YEP;
+  case DEV_NVIDIA_GPU:
+#ifndef NO_GPU
+   cuda_task_p=(cudaTask_t*)(talsh_task->task_p);
+   *stats=cuda_task_completed(cuda_task_p);
+   switch(*stats){
+    case CUDA_TASK_ERROR: *stats=TALSH_TASK_ERROR; errc=YEP; break;
+    case CUDA_TASK_EMPTY: *stats=TALSH_TASK_EMPTY; break;
+    case CUDA_TASK_SCHEDULED: *stats=TALSH_TASK_SCHEDULED; break;
+    case CUDA_TASK_STARTED: *stats=TALSH_TASK_STARTED; break;
+    case CUDA_TASK_INPUT_THERE: *stats=TALSH_TASK_INPUT_READY; break;
+    case CUDA_TASK_OUTPUT_THERE: *stats=TALSH_TASK_OUTPUT_READY; break;
+    case CUDA_TASK_COMPLETED: *stats=TALSH_TASK_COMPLETED; errc=YEP; break;
+    default:
+     *stats=TALSH_FAILURE; *ierr=TALSH_FAILURE;
+   }
+#else
+   *ierr=TALSH_NOT_AVAILABLE;
+#endif
+   return errc;
+  case DEV_INTEL_MIC:
+#ifndef NO_MIC
+   *ierr=TALSH_NOT_IMPLEMENTED; //`Future
+#else
+   *ierr=TALSH_NOT_AVAILABLE;
+#endif
+   return errc;
+  case DEV_AMD_GPU:
+#ifndef NO_AMD
+   *ierr=TALSH_NOT_IMPLEMENTED; //`Future
+#else
+   *ierr=TALSH_NOT_AVAILABLE;
+#endif
+   return errc;
+  default:
+   *ierr=TALSH_INVALID_ARGS;
+   return errc;
+ }
+ return errc;
+}
+
+int talshTaskWait(talsh_task_t * talsh_task, int * stats)
+/** Returns upon completion of a TAL-SH task. **/
+{
+ int errc;
+
+ if(talsh_on == 0) return TALSH_NOT_INITIALIZED;
+ if(talsh_task == NULL || stats == NULL) return TALSH_INVALID_ARGS;
+ errc=TALSH_SUCCESS;
+ while(talshTaskCompleted(talsh_task,stats,&errc) == NOPE){if(errc != TALSH_SUCCESS) break;};
+ return errc;
+}
+
+int talshTasksWait(int ntasks, talsh_task_t talsh_tasks[], int stats[])
+/** Returns upon completion of a number of TAL-SH tasks. **/
+{
+ int i,tc,errc;
+
+ if(talsh_on == 0) return TALSH_NOT_INITIALIZED;
+ if(ntasks <= 0 || talsh_tasks == NULL || stats == NULL) return TALSH_INVALID_ARGS;
+ for(i=0;i<ntasks;++i) stats[i]=TALSH_TASK_EMPTY;
+ tc=ntasks; errc=TALSH_SUCCESS;
+ while(tc > 0){
+  for(i=0;i<ntasks;++i){
+   if(talsh_tasks[i].task_p == NULL || talsh_tasks[i].dev_kind == DEV_NULL) return TALSH_OBJECT_IS_EMPTY;
+   if(stats[i] == TALSH_TASK_EMPTY){if(talshTaskCompleted(&(talsh_tasks[i]),&(stats[i]),&errc) == YEP) --tc;}
+   if(errc != TALSH_SUCCESS) return TALSH_FAILURE;
+  };
+ };
+ return TALSH_SUCCESS;
+}
+
+int talshTaskTime(talsh_task_t * talsh_task, double * total, double * comput, double * input, double * output)
+/** Returns the timing information for a given TAL-SH task. **/
+{
+ int sts,errc;
+ float tot_tm,in_tm,out_tm,comp_tm;
+ cudaTask_t *cuda_task_p;
+
+ if(talsh_on == 0) return TALSH_NOT_INITIALIZED;
+ if(talsh_task == NULL || total == NULL) return TALSH_INVALID_ARGS;
+ if(talsh_task->task_p == NULL) return TALSH_OBJECT_IS_EMPTY;
+ if(talshTaskCompleted(talsh_task,&sts,&errc) == NOPE){
+  if(errc != TALSH_SUCCESS) return TALSH_FAILURE;
+  return TALSH_IN_PROGRESS;
+ }
+ switch(talsh_task->dev_kind){
+  case DEV_HOST:
+   tot_tm=(float)talsh_task->exec_time; in_tm=-1.0f; out_tm=-1.0f; comp_tm=-1.0f;
+   if(tot_tm < 0.0f) errc=TALSH_FAILURE;
+  case DEV_NVIDIA_GPU:
+#ifndef NO_GPU
+   cuda_task_p=(cudaTask_t*)(talsh_task->task_p);
+   tot_tm=cuda_task_time(cuda_task_p,&in_tm,&out_tm,&comp_tm);
+   if(tot_tm < 0.0f) errc=TALSH_FAILURE;
+#else
+   return TALSH_NOT_AVAILABLE;
+#endif
+   break;
+  case DEV_INTEL_MIC:
+#ifndef NO_MIC
+   return TALSH_NOT_IMPLEMENTED; //`Future
+#else
+   return TALSH_NOT_AVAILABLE;
+#endif
+   break;
+  case DEV_AMD_GPU:
+#ifndef NO_AMD
+   return TALSH_NOT_IMPLEMENTED; //`Future
+#else
+   return TALSH_NOT_AVAILABLE;
+#endif
+   break;
+  default:
+   return TALSH_INVALID_ARGS;
+ }
+ *total=(double)tot_tm;
+ if(comput != NULL) *comput=(double)comp_tm;
+ if(input != NULL) *input=(double)in_tm;
+ if(output != NULL) *output=(double)out_tm;
+ return errc;
+}
+
+int talshTaskTime_(talsh_task_t * talsh_task, double * total, double * comput, double * input, double * output) //Fortran wrapper
+{
+ return talshTaskTime(talsh_task,total,comput,input,output);
 }

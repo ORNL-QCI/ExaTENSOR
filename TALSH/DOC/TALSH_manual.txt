@@ -1,6 +1,6 @@
 *** TAL-SH: Tensor Algebra Library for Shared Memory Computers ***
 AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-REVISION: 2016/04/22
+REVISION: 2016/04/25
 
 Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -571,57 +571,72 @@ API: Get the TAL-SH task status:
 API: Check whether a TAL-SH task has completed:
 
  Fortran 2003:
-  function talsh_task_completed(task,ierr) result(done)
-   logical:: done                           !out: TRUE if the task has completed, FALSE otherwise
-   type(talsh_task_t), intent(inout):: task !inout: TAL-SH task handle
-   integer(C_INT), intent(out):: ierr       !out: error code (0:success)
+  function talsh_task_completed(talsh_task,stats,ierr) result(done)
+   integer(C_INT):: done                          !out: YEP if the task has completed, NOPE otherwise
+   type(talsh_task_t), intent(inout):: talsh_task !inout: TAL-SH task handle
+   integer(C_INT), intent(out):: stats            !out: TAL-SH task status
+   integer(C_INT), intent(out):: ierr             !out: error code (0:success)
 
  C/C++:
-  int talshTaskCompleted( //out: 1 if the task has completed, 0 otherwise
-   talsh_task_t * task,   //inout: TAL-SH task handle
-   int * ierr             //out: error code (0:success)
+  int talshTaskCompleted(     //out: YEP if the task has completed, NOPE otherwise
+   talsh_task_t * talsh_task, //inout: TAL-SH task handle
+   int * stats,               //out: TAL-SH task status
+   int * ierr                 //out: error code (0:success)
   )
 
-API: Wait upon a completion of a TAL-SH task:
+  NOTE: Task completion assumes either TALSH_TASK_COMPLETED status
+        or TALSH_TASK_ERROR status.
+
+API: Wait upon completion of a TAL-SH task:
 
  Fortran 2003:
-  talsh_task_wait(task) result(ierr)
-   integer(C_INT):: ierr                    !out: error code (0:success)
-   type(talsh_task_t), intent(inout):: task !inout: TAL-SH task handle
+  talsh_task_wait(talsh_task,stats) result(ierr)
+   integer(C_INT):: ierr                          !out: error code (0:success)
+   type(talsh_task_t), intent(inout):: talsh_task !inout: TAL-SH task handle
+   integer(C_INT), intent(out):: stats            !out: TAL-SH task status
 
  C/C++:
-  int talshTaskWait(   //out: error code (0:success)
-   talsh_task_t * task //inout: TAL-SH task handle
+  int talshTaskWait(          //out: error code (0:success)
+   talsh_task_t * talsh_task, //inout: TAL-SH task handle
+   int * stats                //out: TAL-SH task status
   )
 
-API: Wait upon a completion of multiple TAL-SH tasks:
+  NOTE: Task completion assumes either TALSH_TASK_COMPLETED status
+        or TALSH_TASK_ERROR status.
+
+API: Wait upon completion of multiple TAL-SH tasks:
 
  Fortran 2003:
-  function talsh_tasks_wait(ntasks,tasks) result(ierr)
-   integer(C_INT):: ierr                               !out: error code (0:success)
-   integer(C_INT), intent(in):: ntasks                 !in: number of tasks
-   type(talsh_task_t), intent(inout):: tasks(1:ntasks) !inout: TAL-SH tasks handles
+  function talsh_tasks_wait(ntasks,talsh_tasks,stats) result(ierr)
+   integer(C_INT):: ierr                                     !out: error code (0:success)
+   integer(C_INT), intent(in):: ntasks                       !in: number of tasks
+   type(talsh_task_t), intent(inout):: talsh_tasks(1:ntasks) !inout: TAL-SH tasks handles
+   integer(C_INT), intent(out):: stats(1:ntasks)             !out: TAL-SH task statuses
 
  C/C++:
-  int talshTasksWait(    //out: error code (0:success)
-   int ntasks,           //in: number of tasks
-   talsh_task_t *tasks[] //inout: TAL-SH tasks handles
+  int talshTasksWait(          //out: error code (0:success)
+   int ntasks,                 //in: number of tasks
+   talsh_task_t talsh_tasks[], //inout: TAL-SH task handles (pointers)
+   int stats[]                 //out: TAL-SH task statuses
   )
 
-API: Get the task timings:
+  NOTE: Task completion assumes either TALSH_TASK_COMPLETED status
+        or TALSH_TASK_ERROR status.
+
+API: Get the TAL-SH task timings:
 
  Fortran 2003:
-  function talsh_task_time(task,total,comput,input,output) result(ierr)
-   integer(C_INT):: ierr                   !out: error code (0:success)
-   type(talsh_task_t), intent(in):: task   !in: TAL-SH task handle
-   real(8), intent(out):: total            !out: total execution time (sec)
-   real(8), intent(out), optional:: comput !out: time the computation took (sec)
-   real(8), intent(out), optional:: input  !out: time the ingoing data transfers took (sec)
-   real(8), intent(out), optional:: output !out: time the outgoing data transfers took (sec)
+  function talsh_task_time(talsh_task,total,comput,input,output) result(ierr)
+   integer(C_INT):: ierr                          !out: error code (0:success)
+   type(talsh_task_t), intent(inout):: talsh_task !inout: TAL-SH task handle
+   real(8), intent(out):: total                   !out: total execution time (sec)
+   real(8), intent(out), optional:: comput        !out: time the computation took (sec)
+   real(8), intent(out), optional:: input         !out: time the ingoing data transfers took (sec)
+   real(8), intent(out), optional:: output        !out: time the outgoing data transfers took (sec)
 
  C/C++:
   int talshTaskTime(          //out: error code (0:success)
-   const talsh_task_t * task, //in: TAL-SH task handle
+   talsh_task_t * talsh_task, //inout: TAL-SH task handle
    double * total,            //out: total execution time (sec)
    double * comput = NULL,    //out: time the computation took (sec)
    double * input = NULL,     //out: time the ingoing data transfers took (sec)

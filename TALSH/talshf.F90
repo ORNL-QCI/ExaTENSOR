@@ -1,5 +1,5 @@
 !ExaTensor::TAL-SH: Device-unified user-level API:
-!REVISION: 2016/04/22
+!REVISION: 2016/04/25
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -43,6 +43,7 @@
         integer(C_INT), parameter, public:: TALSH_INTEGER_OVERFLOW=1000003    !integer overflow occurred
         integer(C_INT), parameter, public:: TALSH_OBJECT_NOT_EMPTY=1000004    !object is not empty while expected so
         integer(C_INT), parameter, public:: TALSH_OBJECT_IS_EMPTY=1000005     !object is empty while not expected so
+        integer(C_INT), parameter, public:: TALSH_IN_PROGRESS=1000006         !TAL-SH operation is still in progress (not finished)
  !Host argument buffer:
         integer(C_SIZE_T), parameter, private:: HAB_SIZE_DEFAULT=1048576 !default size of the Host argument buffer in bytes
 !DERIVED TYPES:
@@ -197,6 +198,39 @@
           implicit none
           type(talsh_task_t), intent(inout):: talsh_task
          end function talshTaskStatus
+  !Check whether a TAL-SH task has completed:
+         integer(C_INT) function talshTaskCompleted(talsh_task,stats,ierr) bind(c,name='talshTaskCompleted')
+          import
+          implicit none
+          type(talsh_task_t), intent(inout):: talsh_task
+          integer(C_INT), intent(out):: stats
+          integer(C_INT), intent(out):: ierr
+         end function talshTaskCompleted
+  !Wait upon completion of a TAL-SH task:
+         integer(C_INT) function talshTaskWait(talsh_task,stats) bind(c,name='talshTaskWait')
+          import
+          implicit none
+          type(talsh_task_t), intent(inout):: talsh_task
+          integer(C_INT), intent(out):: stats
+         end function talshTaskWait
+  !Wait upon completion of multiple TAL-SH tasks:
+         integer(C_INT) function talshTasksWait(ntasks,talsh_tasks,stats) bind(c,name='talshTasksWait')
+          import
+          implicit none
+          integer(C_INT), value, intent(in):: ntasks
+          type(talsh_task_t), intent(inout):: talsh_tasks(*)
+          integer(C_INT), intent(out):: stats(*)
+         end function talshTasksWait
+  !Get the TAL-SH task timings:
+         integer(C_INT) function talshTaskTime_(talsh_task,total,comput,input,output) bind(c,name='talshTaskTime_')
+          import
+          implicit none
+          type(talsh_task_t), intent(inout):: talsh_task
+          real(C_DOUBLE), intent(out):: total
+          real(C_DOUBLE), intent(out):: comput
+          real(C_DOUBLE), intent(out):: input
+          real(C_DOUBLE), intent(out):: output
+         end function talshTaskTime_
 
         end interface
 !VISIBILITY:
@@ -219,10 +253,10 @@
         public talsh_task_destruct
         public talsh_task_dev_id
         public talsh_task_status
-!        public talsh_task_completed
-!        public talsh_task_wait
-!        public talsh_tasks_wait
-!        public talsh_task_time
+        public talsh_task_completed
+        public talsh_task_wait
+        public talsh_tasks_wait
+        public talsh_task_time
  !TAL-SH tensor operations:
 !        public talsh_tensor_place
 !        public talsh_tensor_discard
@@ -434,9 +468,54 @@
         function talsh_task_status(talsh_task) result(stat)
          implicit none
          integer(C_INT):: stat                          !out: TAL-SH task status
-         type(talsh_task_t), intent(inout):: talsh_task !in: TAL-SH task
+         type(talsh_task_t), intent(inout):: talsh_task !inout: TAL-SH task
          stat=talshTaskStatus(talsh_task)
          return
         end function talsh_task_status
+!------------------------------------------------------------------------
+        function talsh_task_completed(talsh_task,stats,ierr) result(done)
+         implicit none
+         integer(C_INT):: done                          !out: YEP if the task has completed, NOPE otherwise
+         type(talsh_task_t), intent(inout):: talsh_task !inout: TAL-SH task
+         integer(C_INT), intent(out):: stats            !out: TAL-SH task status
+         integer(C_INT), intent(out):: ierr             !out: error code (0:success)
+         done=talshTaskCompleted(talsh_task,stats,ierr)
+         return
+        end function talsh_task_completed
+!--------------------------------------------------------------
+        function talsh_task_wait(talsh_task,stats) result(ierr)
+         implicit none
+         integer(C_INT):: ierr                          !out: error code (0:success)
+         type(talsh_task_t), intent(inout):: talsh_task !inout: TAL-SH task
+         integer(C_INT), intent(out):: stats            !out: TAL-SH task status
+         ierr=talshTaskWait(talsh_task,stats)
+         return
+        end function talsh_task_wait
+!-----------------------------------------------------------------------
+        function talsh_tasks_wait(ntasks,talsh_tasks,stats) result(ierr)
+         implicit none
+         integer(C_INT):: ierr                                     !out: error code (0:success)
+         integer(C_INT), intent(in):: ntasks                       !in: number of tasks to wait upon
+         type(talsh_task_t), intent(inout):: talsh_tasks(1:ntasks) !inout: TAL-SH tasks
+         integer(C_INT), intent(out):: stats(1:ntasks)             !out: TAL-SH task statuses
+         ierr=talshTasksWait(ntasks,talsh_tasks,stats)
+         return
+        end function talsh_tasks_wait
+!----------------------------------------------------------------------------------
+        function talsh_task_time(talsh_task,total,comput,input,output) result(ierr)
+         implicit none
+         integer(C_INT):: ierr                          !out: error code (0:success)
+         type(talsh_task_t), intent(inout):: talsh_task !inout: TAL-SH task
+         real(C_DOUBLE), intent(out):: total            !out: total execution time (sec)
+         real(C_DOUBLE), intent(out), optional:: comput !out: time the computation took (sec)
+         real(C_DOUBLE), intent(out), optional:: input  !out: time the ingoing data transfers took (sec)
+         real(C_DOUBLE), intent(out), optional:: output !out: time the outgoing data transfers took (sec)
+         real(C_DOUBLE):: comp_tm,in_tm,out_tm
+         ierr=talshTaskTime_(talsh_task,total,comp_tm,in_tm,out_tm)
+         if(present(comput)) comput=comp_tm
+         if(present(input)) input=in_tm
+         if(present(output)) output=out_tm
+         return
+        end function talsh_task_time
 
        end module talsh

@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level API header.
-REVISION: 2016/04/22
+REVISION: 2016/04/25
 
 Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -40,6 +40,7 @@ along with ExaTensor. If not, see <http://www.gnu.org/licenses/>.
 #define TALSH_INTEGER_OVERFLOW 1000003
 #define TALSH_OBJECT_NOT_EMPTY 1000004
 #define TALSH_OBJECT_IS_EMPTY 1000005
+#define TALSH_IN_PROGRESS 1000006
 
 //TAL-SH TASK STATUS:
 #define TALSH_TASK_ERROR 1999999
@@ -157,7 +158,24 @@ extern "C"{
  int talshTaskDevId_(talsh_task_t * talsh_task, int * dev_kind);
 //  Get the TAL-SH task status:
  int talshTaskStatus(talsh_task_t * talsh_task);
-
+//  Check whether a TAL-SH task has completed:
+ int talshTaskCompleted(talsh_task_t * talsh_task,
+                        int * stats,
+                        int * ierr);
+//  Wait upon a completion of a TAL-SH task:
+ int talshTaskWait(talsh_task_t * talsh_task,
+                   int * stats);
+//  Wait upon a completion of multiple TAL-SH tasks:
+ int talshTasksWait(int ntasks,
+                    talsh_task_t talsh_tasks[],
+                    int stats[]);
+//  Get the TAL-SH task timings:
+ int talshTaskTime(talsh_task_t * talsh_task,
+                   double * total,
+                   double * comput = NULL,
+                   double * input = NULL,
+                   double * output = NULL);
+ int talshTaskTime_(talsh_task_t * talsh_task, double * total, double * comput, double * input, double * output);
 #ifdef __cplusplus
 }
 #endif
