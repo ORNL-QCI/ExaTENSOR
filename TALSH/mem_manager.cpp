@@ -2,7 +2,7 @@
 implementation of the tensor algebra library TAL-SH:
 CP-TAL (TAL for CPU), NV-TAL (TAL for NVidia GPU),
 XP-TAL (TAL for Intel Xeon Phi), AM-TAL (TAL for AMD GPU).
-REVISION: 2016/02/08
+REVISION: 2016/04/26
 
 Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -24,7 +24,7 @@ along with ExaTensor. If not, see <http://www.gnu.org/licenses/>.
 -------------------------------------------------------------------------------
 OPTIONS (PREPROCESSOR):
  # -DNO_GPU: disables GPU usage.
- # -DNO_MIC: disables Intel MIC usage (future).
+ # -DNO_PHI: disables Intel MIC usage (future).
  # -DNO_AMD: disables AMD GPU usage (future).
 FOR DEVELOPERS ONLY:
  # So far each argument buffer entry is occupied as a whole,
@@ -668,7 +668,7 @@ int mem_free_left(int dev_id, size_t * free_mem) //returns free buffer space in 
     *free_mem=arg_buf_gpu_size[i]-occ_size_gpu[i];
     break;
 #endif
-#ifndef NO_MIC
+#ifndef NO_PHI
    case DEV_INTEL_MIC: //`Future
     break;
 #endif
@@ -714,7 +714,7 @@ int mem_print_stats(int dev_id) //print memory statistics for Device <dev_id>
     }
     break;
 #endif
-#ifndef NO_MIC
+#ifndef NO_PHI
    case DEV_INTEL_MIC: //`Future
     break;
 #endif

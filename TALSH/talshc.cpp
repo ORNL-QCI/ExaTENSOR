@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level API.
-REVISION: 2016/04/25
+REVISION: 2016/04/26
 
 Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -225,7 +225,7 @@ int talshDeviceBusyLeast(int dev_kind) //in: device kind (defaults to any kind)
    return TALSH_NOT_AVAILABLE;
 #endif
   case DEV_INTEL_MIC:
-#ifndef NO_MIC
+#ifndef NO_PHI
    return TALSH_NOT_IMPLEMENTED; //`Implement in future
 #else
    return TALSH_NOT_AVAILABLE;
@@ -276,7 +276,7 @@ int talshStats(int dev_id,   //in: device id (either flat or kind specific devic
 #endif
    break;
   case DEV_INTEL_MIC:
-#ifndef NO_MIC
+#ifndef NO_PHI
    rc=TALSH_NOT_IMPLEMENTED; //`Implement in future
 #else
    rc=TALSH_NOT_AVAILABLE;
@@ -606,7 +606,7 @@ static int talshTaskConstruct(talsh_task_t * talsh_task, int dev_kind, int data_
 #endif
    break;
   case DEV_INTEL_MIC:
-#ifndef NO_MIC
+#ifndef NO_PHI
    return TALSH_NOT_IMPLEMENTED; //`Future
 #else
    return TALSH_NOT_AVAILABLE;
@@ -651,7 +651,7 @@ int talshTaskDestruct(talsh_task_t * talsh_task)
 #endif
    break;
   case DEV_INTEL_MIC:
-#ifndef NO_MIC
+#ifndef NO_PHI
    return TALSH_NOT_IMPLEMENTED; //`Future
 #else
    return TALSH_NOT_AVAILABLE;
@@ -705,7 +705,7 @@ int talshTaskDevId(talsh_task_t * talsh_task, int * dev_kind)
 #endif
    break;
   case DEV_INTEL_MIC:
-#ifndef NO_MIC
+#ifndef NO_PHI
    return DEV_NULL; //`Future
 #else
    return DEV_NULL;
@@ -772,7 +772,7 @@ int talshTaskStatus(talsh_task_t * talsh_task)
 #endif
    break;
   case DEV_INTEL_MIC:
-#ifndef NO_MIC
+#ifndef NO_PHI
    return TALSH_NOT_IMPLEMENTED; //`Future
 #else
    return TALSH_NOT_AVAILABLE;
@@ -830,7 +830,7 @@ int talshTaskCompleted(talsh_task_t * talsh_task, int * stats, int * ierr)
 #endif
    return errc;
   case DEV_INTEL_MIC:
-#ifndef NO_MIC
+#ifndef NO_PHI
    *ierr=TALSH_NOT_IMPLEMENTED; //`Future
 #else
    *ierr=TALSH_NOT_AVAILABLE;
@@ -909,7 +909,7 @@ int talshTaskTime(talsh_task_t * talsh_task, double * total, double * comput, do
 #endif
    break;
   case DEV_INTEL_MIC:
-#ifndef NO_MIC
+#ifndef NO_PHI
    return TALSH_NOT_IMPLEMENTED; //`Future
 #else
    return TALSH_NOT_AVAILABLE;

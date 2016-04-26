@@ -1,6 +1,6 @@
 !Tensor Algebra for Multi- and Many-core CPUs (OpenMP based).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2016/04/01
+!REVISION: 2016/04/26
 
 !Copyright (C) 2013-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -32,6 +32,7 @@
 ! - brc - bricked storage of tensor blocks where the 1st dimension is the most senior (C like);
 ! - r4 - real(4);
 ! - r8 - real(8);
+! - c4 - complex(4);
 ! - c8 - complex(8);
 !PREPROCESSOR:
 ! -D NO_OMP: Do not use OpenMP (serial);
@@ -90,17 +91,17 @@
 !DIR$ ATTRIBUTES ALIGN:128:: MAX_SHAPE_STR_LEN,LONGINT,MAX_THREADS,data_kind_sync,trans_shmem,disable_blas
 #endif
  !Numerical:
-	real(8), parameter, private:: abs_cmp_thresh=1d-13 !default absolute error threshold for numerical comparisons
-	real(8), parameter, private:: rel_cmp_thresh=1d-2  !default relative error threshold for numerical comparisons
+	real(8), parameter, private:: ABS_CMP_THRESH=1d-13 !default absolute error threshold for numerical comparisons
+	real(8), parameter, private:: REL_CMP_THRESH=1d-2  !default relative error threshold for numerical comparisons
 #ifndef NO_PHI
-!DIR$ ATTRIBUTES OFFLOAD:mic:: abs_cmp_thresh,rel_cmp_thresh
-!DIR$ ATTRIBUTES ALIGN:128:: abs_cmp_thresh,rel_cmp_thresh
+!DIR$ ATTRIBUTES OFFLOAD:mic:: ABS_CMP_THRESH,REL_CMP_THRESH
+!DIR$ ATTRIBUTES ALIGN:128:: ABS_CMP_THRESH,REL_CMP_THRESH
 #endif
 !DERIVED DATA TYPES:
  !Tensor shape (storage layout specification for a tensor block):
 	type, public:: tensor_shape_t
 	 integer:: num_dim=-1                      !total number of dimensions (num_dim=0 defines a scalar tensor).
-	 integer, pointer:: dim_extent(:)=>NULL()  !extent of each dimension (if num_dim>0): [0..extent-1].
+	 integer, pointer:: dim_extent(:)=>NULL()  !extent of each dimension (if num_dim>0): range=[0..extent-1].
 	 integer, pointer:: dim_divider(:)=>NULL() !divider for each dimension, i.e. the <Lm_segment_size> (ordered dimensions must have the same divider!): %dim_divider(1)=0 means that an alternative (neither dimension-led nor bricked) storage layout is used.
 	 integer, pointer:: dim_group(:)=>NULL()   !dimension grouping (default group 0 means no symmetry restrictions): if %dim_divider(1)=0, then %dim_group(1) regulates the alternative storage layout kind.
 	end type tensor_shape_t
@@ -112,7 +113,8 @@
 	 complex(8):: scalar_value=cmplx(0d0,0d0,8)               !scalar value if the rank is zero, otherwise can be used for storing the norm of the tensor block
 	 real(4), pointer, contiguous:: data_real4(:)=>NULL()     !tensor block data (float)
 	 real(8), pointer, contiguous:: data_real8(:)=>NULL()     !tensor block data (double)
-	 complex(8), pointer, contiguous:: data_cmplx8(:)=>NULL() !tensor block data (complex)
+!        complex(4), pointer, contiguous:: data_cmplx4(:)=>NULL() !tensor block data (float complex) `Implement throughout
+	 complex(8), pointer, contiguous:: data_cmplx8(:)=>NULL() !tensor block data (double complex)
 	end type tensor_block_t
 
 !GENERIC INTERFACES:
@@ -201,8 +203,8 @@
 	public get_contr_permutations      !given a digital contraction pattern, returns all tensor permutations necessary for the subsequent matrix multiplication
 	public contr_pattern_rnd           !returns a random tensor contraction pattern
 	public coherence_control_var       !returns a coherence control variable based on a mnemonic input
-	private tensor_shape_create        !generates the tensor shape based on the tensor shape specification string (TSSS)
-	private tensor_shape_ok            !checks the correctness of a tensor shape generated from a tensor shape specification string (TSSS)
+	public tensor_shape_create         !generates the tensor shape based on the tensor shape specification string (TSSS)
+	public tensor_shape_ok             !checks the correctness of a tensor shape generated from a tensor shape specification string (TSSS)
 	public tensor_block_alloc          !queries the allocation status of data pointers in a tensor block
 	private tensor_block_slice_dlf     !extracts a slice from a tensor block (Fortran-like dimension-led storage layout)
 	private tensor_block_insert_dlf    !inserts a slice into a tensor block (Fortran-like dimension-led storage layout)
@@ -1864,7 +1866,7 @@
 	  else
 	   dtk=tensor_master_data_kind(tens,ierr); if(ierr.ne.0) then; ierr=1; return; endif
 	  endif
-	  if(present(print_thresh)) then; prth=print_thresh; else; prth=abs_cmp_thresh; endif
+	  if(present(print_thresh)) then; prth=print_thresh; else; prth=ABS_CMP_THRESH; endif
 	  tst=tensor_block_layout(tens,ierr); if(ierr.ne.0) then; ierr=2; return; endif
 	  select case(tst)
 	  case(dimension_led)
@@ -2134,7 +2136,7 @@
 	if(present(cmp_thresh)) then
 	 cmp_thr8=cmp_thresh
 	else
-	 if(rel_comp) then; cmp_thr8=rel_cmp_thresh; else; cmp_thr8=abs_cmp_thresh; endif
+	 if(rel_comp) then; cmp_thr8=REL_CMP_THRESH; else; cmp_thr8=ABS_CMP_THRESH; endif
 	endif
 	if(present(diff_count)) then; diff_count=0_LONGINT; no_exit=.true.; else; no_exit=.false.; endif
 	tensor_block_cmp=tensor_block_compatible(tens1,tens2,ierr,no_check_data_kinds=.true.)
@@ -3649,8 +3651,8 @@
         endif
         return
         end subroutine contr_pattern_rnd
-!-----------------------------------------------------------------------------
-        function coherence_control_var(nargs,coh_str) result(coh_ctrl) bind(c)
+!----------------------------------------------------------------------------------------------------------
+        function coherence_control_var(nargs,coh_str) result(coh_ctrl) bind(c,name='coherence_control_var')
 !Given a mnemonic description of the coherence control, returns an integer
 !that can be used in tensor operations for specifying it. A negative return
 !value indicates an error (invalid arguments).
@@ -3663,7 +3665,7 @@
         coh_ctrl=-1
         if(nargs.gt.0.and.nargs.le.MAX_TENSOR_OPERANDS) then
          coh_ctrl=0
-         do i=1,nargs
+         aloop: do i=1,nargs
           select case(coh_str(i))
           case('d','D')
            coh_ctrl=coh_ctrl*4+0
@@ -3675,14 +3677,12 @@
            coh_ctrl=coh_ctrl*4+3
           case default
            coh_ctrl=-2
-           exit
+           exit aloop
           end select
-         enddo
+         enddo aloop
         endif
         return
         end function coherence_control_var
-!-----------------------------------------
-!PRIVATE FUNCTIONS:
 !----------------------------------------------------------
 	subroutine tensor_shape_create(shape_str,tens,ierr) !SERIAL
 !This subroutine generates a tensor shape based on the tensor shape specification string (TSSS) <str>.
@@ -3694,6 +3694,7 @@
 !      Ex MUST be a multiple of Dx (for simply dense tensor blocks Dx=Ex).
 !  {Gx} optionally specifies the symmetric group the dimension belongs to, Gx>=0 (default group 0 has no symmetry ordering).
 !       Dimensions grouped together (group#>0) will obey a non-descending ordering from left to right.
+!Only dimension-led-dense, bricked-dense, and bricked-ordered formats are considered here.
 !By default, the 1st dimension is the most minor one while the last is the most senior (Fortran-like).
 !If the number of dimensions equals to zero, the %scalar_value field will be used instead of data arrays.
 	implicit none
@@ -4011,6 +4012,8 @@
         end select
         return
         end function tensor_block_alloc
+!--------------------------------------
+!PRIVATE FUNCTIONS:
 !-----------------------------------------------------------------------------------------------
 #ifndef NO_PHI
 !DIR$ ATTRIBUTES OFFLOAD:mic:: tensor_block_slice_dlf_r4

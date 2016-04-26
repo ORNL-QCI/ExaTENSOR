@@ -1,6 +1,6 @@
 /** Tensor Algebra Library for NVidia GPU: NV-TAL (CUDA based).
 AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-REVISION: 2016/04/19
+REVISION: 2016/04/26
 
 Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -452,7 +452,7 @@ int tensDevRsc_allocate_mem(talsh_dev_rsc_t * drsc, int dev_id, size_t mem_size,
    return -5;
 #endif
   case DEV_INTEL_MIC:
-#ifndef NO_MIC
+#ifndef NO_PHI
    //`Future
    break;
 #else
@@ -510,7 +510,7 @@ int tensDevRsc_free_mem(talsh_dev_rsc_t * drsc)
    return -5;
 #endif
   case DEV_INTEL_MIC:
-#ifndef NO_MIC
+#ifndef NO_PHI
    //`Future
    break;
 #else

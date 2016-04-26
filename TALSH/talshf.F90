@@ -1,5 +1,5 @@
 !ExaTensor::TAL-SH: Device-unified user-level API:
-!REVISION: 2016/04/25
+!REVISION: 2016/04/26
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -67,8 +67,8 @@
          real(C_DOUBLE):: exec_time=0d0     !execution time in seconds
         end type talsh_task_t
 !GLOBALS:
-
-!INTERFACES:
+!       ...
+!INTERFACES FOR EXTERNAL C/C++ FUNCTIONS:
         interface
  !TAL-SH control C/C++ API:
   !Initialize TAL-SH:
@@ -231,8 +231,13 @@
           real(C_DOUBLE), intent(out):: input
           real(C_DOUBLE), intent(out):: output
          end function talshTaskTime_
-
         end interface
+!INTERFACES FOR OVERLOADED FOTRAN FUNCTIONS:
+        interface talsh_tensor_construct
+         module procedure talsh_tensor_construct_num
+         module procedure talsh_tensor_construct_sym
+         module procedure talsh_tensor_construct_shp
+        end interface talsh_tensor_construct
 !VISIBILITY:
  !TAL-SH device control API:
         public talsh_init
@@ -245,6 +250,9 @@
  !TAL-SH tensor block API:
         public talsh_tensor_is_empty
         public talsh_tensor_construct
+        private talsh_tensor_construct_num
+        private talsh_tensor_construct_sym
+        private talsh_tensor_construct_shp
         public talsh_tensor_destruct
         public talsh_tensor_volume
         public talsh_tensor_shape
@@ -367,13 +375,13 @@
          if(talshTensorIsEmpty(c_loc(tens_block)).eq.YEP) res=.TRUE.
          return
         end function talsh_tensor_is_empty
-!-------------------------------------------------------------------------------------------------------------------------------
-        function talsh_tensor_construct(tens_block,data_kind,tens_shape,dev_id,ext_mem,in_hab,init_method,init_val) result(ierr)
+!-----------------------------------------------------------------------------------------------------------------------------------
+        function talsh_tensor_construct_num(tens_block,data_kind,tens_shape,dev_id,ext_mem,in_hab,init_method,init_val) result(ierr)
          implicit none
-         integer(C_INT):: ierr
+         integer(C_INT):: ierr                                !out: error code (0:success)
          type(talsh_tens_t), intent(inout):: tens_block       !inout: constructed tensor block (must be empty on entrance)
          integer(C_INT), intent(in):: data_kind               !in: data kind: {R4,R8,C4,C8,NO_TYPE}
-         integer(C_INT), intent(in):: tens_shape(1:)          !in: tensor shape (volume = tensor rank)
+         integer(C_INT), intent(in):: tens_shape(1:)          !in: tensor shape (length = tensor rank)
          integer(C_INT), intent(in):: dev_id                  !in: flat device ID on which the tensor block will reside
          type(C_PTR), intent(in), optional:: ext_mem          !in: pointer to externally provided memory for tensor elements
          integer(C_INT), intent(in), optional:: in_hab        !in: if >=0, <ext_mem> points to the HAB entry #<in_hab>
@@ -399,7 +407,81 @@
           ierr=TALSH_INVALID_ARGS
          endif
          return
-        end function talsh_tensor_construct
+        end function talsh_tensor_construct_num
+!-----------------------------------------------------------------------------------------------------------------------------------
+        function talsh_tensor_construct_sym(tens_block,data_kind,tens_shape,dev_id,ext_mem,in_hab,init_method,init_val) result(ierr)
+         implicit none
+         integer(C_INT):: ierr                                !out: error code (0:success)
+         type(talsh_tens_t), intent(inout):: tens_block       !inout: constructed tensor block (must be empty on entrance)
+         integer(C_INT), intent(in):: data_kind               !in: data kind: {R4,R8,C4,C8,NO_TYPE}
+         character(*), intent(in):: tens_shape                !in: tensor shape (symbolic)
+         integer(C_INT), intent(in):: dev_id                  !in: flat device ID on which the tensor block will reside
+         type(C_PTR), intent(in), optional:: ext_mem          !in: pointer to externally provided memory for tensor elements
+         integer(C_INT), intent(in), optional:: in_hab        !in: if >=0, <ext_mem> points to the HAB entry #<in_hab>
+         procedure(talsh_tens_init_i), optional:: init_method !in: user-defined initialization method (<init_val> must be absent)
+         complex(8), intent(in), optional:: init_val          !in: initialization value (will be typecast to <data_kind>, defaults to 0)
+         type(tensor_block_t):: ftens
+         type(C_PTR):: extmem
+         integer(C_INT):: inhab,trank,tshape(1:MAX_TENSOR_RANK)
+         integer:: errc
+
+         call tensor_shape_create(tens_shape,ftens,errc)
+         trank=ftens%tensor_shape%num_dim
+         if(errc.eq.0.and.trank.ge.0.and.trank.le.MAX_TENSOR_RANK) then
+          tshape(1:trank)=ftens%tensor_shape%dim_extent(1:trank)
+          if(present(ext_mem)) then; extmem=ext_mem; else; extmem=C_NULL_PTR; endif
+          if(present(in_hab)) then; inhab=in_hab; else; inhab=-1; endif
+          if(present(init_method)) then
+           ierr=talsh_tensor_construct_num(tens_block,data_kind,tshape(1:trank),dev_id,extmem,inhab,init_method)
+          else
+           if(present(init_val)) then
+            ierr=talsh_tensor_construct_num(tens_block,data_kind,tshape(1:trank),dev_id,extmem,inhab,init_val=init_val)
+           else
+            ierr=talsh_tensor_construct_num(tens_block,data_kind,tshape(1:trank),dev_id,extmem,inhab)
+           endif
+          endif
+         else
+          ierr=TALSH_INVALID_ARGS
+         endif
+         call tensor_block_destroy(ftens,errc)
+         return
+        end function talsh_tensor_construct_sym
+!-----------------------------------------------------------------------------------------------------------------------------------
+        function talsh_tensor_construct_shp(tens_block,data_kind,tens_shape,dev_id,ext_mem,in_hab,init_method,init_val) result(ierr)
+         implicit none
+         integer(C_INT):: ierr                                !out: error code (0:success)
+         type(talsh_tens_t), intent(inout):: tens_block       !inout: constructed tensor block (must be empty on entrance)
+         integer(C_INT), intent(in):: data_kind               !in: data kind: {R4,R8,C4,C8,NO_TYPE}
+         type(talsh_tens_shape_t), intent(in):: tens_shape    !in: tensor shape
+         integer(C_INT), intent(in):: dev_id                  !in: flat device ID on which the tensor block will reside
+         type(C_PTR), intent(in), optional:: ext_mem          !in: pointer to externally provided memory for tensor elements
+         integer(C_INT), intent(in), optional:: in_hab        !in: if >=0, <ext_mem> points to the HAB entry #<in_hab>
+         procedure(talsh_tens_init_i), optional:: init_method !in: user-defined initialization method (<init_val> must be absent)
+         complex(8), intent(in), optional:: init_val          !in: initialization value (will be typecast to <data_kind>, defaults to 0)
+         type(C_PTR):: extmem
+         integer(C_INT):: inhab,trank
+         integer(C_INT), pointer:: tshape(:)
+         integer:: errc
+
+         trank=tens_shape%num_dim
+         if(trank.ge.0.and.trank.le.MAX_TENSOR_RANK) then
+          call c_f_pointer(tens_shape%dims,tshape,shape=(/trank/))
+          if(present(ext_mem)) then; extmem=ext_mem; else; extmem=C_NULL_PTR; endif
+          if(present(in_hab)) then; inhab=in_hab; else; inhab=-1; endif
+          if(present(init_method)) then
+           ierr=talsh_tensor_construct_num(tens_block,data_kind,tshape(1:trank),dev_id,extmem,inhab,init_method)
+          else
+           if(present(init_val)) then
+            ierr=talsh_tensor_construct_num(tens_block,data_kind,tshape(1:trank),dev_id,extmem,inhab,init_val=init_val)
+           else
+            ierr=talsh_tensor_construct_num(tens_block,data_kind,tshape(1:trank),dev_id,extmem,inhab)
+           endif
+          endif
+         else
+          ierr=TALSH_INVALID_ARGS
+         endif
+         return
+        end function talsh_tensor_construct_shp
 !--------------------------------------------------------------
         function talsh_tensor_destruct(tens_block) result(ierr)
          implicit none
