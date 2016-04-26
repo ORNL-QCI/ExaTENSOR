@@ -2,7 +2,7 @@
     Parameters, derived types, and function prototypes
     used at the lower level of TAL-SH (device specific):
     CP-TAL, NV-TAL, XP-TAL, AM-TAL, etc.
-REVISION: 2016/04/21
+REVISION: 2016/04/26
 
 Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -67,7 +67,7 @@ FOR DEVELOPERS ONLY:
 #include <time.h>
 #include "mem_manager.h"
 
-//DEVICE COMPUTE CAPABILITY (for Host code, use __CUDA_ARCH__ for device code):
+//DEVICE COMPUTE CAPABILITY (for Host code, but use __CUDA_ARCH__ for device code):
 #ifndef CUDA_ARCH
 #define CUDA_ARCH 130 //minimal required compute capability
 #endif

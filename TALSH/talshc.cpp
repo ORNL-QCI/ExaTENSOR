@@ -350,7 +350,7 @@ int talshTensorConstruct(talsh_tens_t * tens_block,     //inout: empty tensor bl
     If the tensor body initialization failed, a status NOT_CLEAN is returned but
     the tensor block is ready for use (except its body value is still undefined). **/
 {
- int i,dev_num,dev_kind,dksize,errc,already_allocated,use_hab;
+ int i,j,dev_num,dev_kind,dksize,errc,already_allocated,use_hab;
  size_t tvol,tsize;
  float fval;
  float *fp;
@@ -376,8 +376,10 @@ int talshTensorConstruct(talsh_tens_t * tens_block,     //inout: empty tensor bl
   tens_block->dev_rsc=(talsh_dev_rsc_t*)malloc(TALSH_MAX_DEV_PRESENT*sizeof(talsh_dev_rsc_t));
   if(tens_block->dev_rsc != NULL){
    tens_block->dev_rsc_len=TALSH_MAX_DEV_PRESENT; tens_block->ndev=0;
+   for(j=0;j<TALSH_MAX_DEV_PRESENT;++j){i=tensDevRsc_clean(&(tens_block->dev_rsc[j]));}
    tens_block->data_kind=(int*)malloc(TALSH_MAX_DEV_PRESENT*sizeof(int));
    if(tens_block->data_kind == NULL){i=talshTensorDestruct(tens_block); return TRY_LATER;}
+   for(j=0;j<TALSH_MAX_DEV_PRESENT;++j){tens_block->data_kind[j]=NO_TYPE;}
   }else{
    i=talshTensorDestruct(tens_block);
    return TRY_LATER;
