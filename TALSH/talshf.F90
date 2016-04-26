@@ -231,6 +231,23 @@
           real(C_DOUBLE), intent(out):: input
           real(C_DOUBLE), intent(out):: output
          end function talshTaskTime_
+ !TAL-SH tensor operations C/C++ API:
+  !Tensor contraction:
+         integer(C_INT) function talshTensorContract_(cptrn,dtens,ltens,rtens,copy_ctrl,scale_real,scale_imag,&
+                                                     &dev_id,dev_kind,talsh_task) bind(c,name='talshTensorContract_')
+          import
+          implicit none
+          character(C_CHAR), intent(in):: cptrn
+          type(talsh_tens_t), intent(inout):: dtens
+          type(talsh_tens_t), intent(inout):: ltens
+          type(talsh_tens_t), intent(inout):: rtens
+          integer(C_INT), value, intent(in):: copy_ctrl
+          real(C_DOUBLE), value, intent(in):: scale_real
+          real(C_DOUBLE), value, intent(in):: scale_imag
+          integer(C_INT), value, intent(in):: dev_id
+          integer(C_INT), value, intent(in):: dev_kind
+          type(talsh_task_t), intent(inout):: talsh_task
+         end function talshTensorContract_
         end interface
 !INTERFACES FOR OVERLOADED FOTRAN FUNCTIONS:
         interface talsh_tensor_construct
@@ -239,7 +256,7 @@
          module procedure talsh_tensor_construct_shp
         end interface talsh_tensor_construct
 !VISIBILITY:
- !TAL-SH device control API:
+ !TAL-SH control API:
         public talsh_init
         public talsh_shutdown
         public talsh_flat_dev_id
@@ -265,7 +282,7 @@
         public talsh_task_wait
         public talsh_tasks_wait
         public talsh_task_time
- !TAL-SH tensor operations:
+ !TAL-SH tensor operations API:
 !        public talsh_tensor_place
 !        public talsh_tensor_discard
 !        public talsh_tensor_init
@@ -274,7 +291,7 @@
 !        public talsh_tensor_norm2
 !        public talsh_tensor_copy
 !        public talsh_tensor_add
-!        public talsh_tensor_contract
+        public talsh_tensor_contract
 
        contains
 !Fortran API definitions:
@@ -602,5 +619,22 @@
          if(present(output)) output=out_tm
          return
         end function talsh_task_time
+!----------------------------------------------------------------------------------------------------------------------
+        function talsh_tensor_contract(cptrn,dtens,ltens,rtens,copy_ctrl,scale,dev_id,dev_kind,talsh_task) result(ierr)
+         implicit none
+         integer(C_INT):: ierr                            !out: error code (0:success)
+         character(*), intent(in):: cptrn                 !in: symbolic contraction pattern, e.g. "D(a,b,c,d)+=L(c,i,j,a)*R(b,j,d,i)"
+         type(talsh_tens_t), intent(inout):: dtens        !inout: destination tensor block
+         type(talsh_tens_t), intent(inout):: ltens        !inout: left source tensor block
+         type(talsh_tens_t), intent(inout):: rtens        !inout: right source tensor block
+         integer(C_INT), intent(in), optional:: copy_ctrl !in: copy control (COPY_XXX), defaults to COPY_MTT
+         complex(8), intent(in), optional:: scale         !in: scaling value, defaults to 1
+         integer(C_INT), intent(in), optional:: dev_id    !in: device id (flat or kind-specific)
+         integer(C_INT), intent(in), optional:: dev_kind  !in: device kind (if present, <dev_id> is kind-specific)
+         type(talsh_task_t), intent(inout), optional:: talsh_task !inout: TAL-SH task (must be clean)
+
+         ierr=TALSH_SUCCESS
+         return
+        end function talsh_tensor_contract
 
        end module talsh

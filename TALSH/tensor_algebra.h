@@ -86,6 +86,7 @@ FOR DEVELOPERS ONLY:
 #define MAX_MICS_PER_NODE 8        //max allowed number of Intel MICs on a node
 #define MAX_AMDS_PER_NODE 8        //max allowed number of AMD GPUs on a node
 #define DEV_NULL -1                //abstract null device
+#define DEV_DEFAULT DEV_NULL       //will allow runtime to choose the device
 #define DEV_HOST 0                 //multicore CPU Host (includes any self-hosted system)
 #define DEV_NVIDIA_GPU 1           //NVidia GPU (as an accelerator)
 #define DEV_INTEL_MIC 2            //Intel Xeon Phi (as an accelerator)

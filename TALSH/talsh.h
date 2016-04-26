@@ -176,6 +176,20 @@ extern "C"{
                    double * input = NULL,
                    double * output = NULL);
  int talshTaskTime_(talsh_task_t * talsh_task, double * total, double * comput, double * input, double * output);
+// TAL-SH tensor operations API:
+//  Tensor contraction:
+ int talshTensorContract(const char * cptrn,
+                         talsh_tens_t * dtens,
+                         talsh_tens_t * ltens,
+                         talsh_tens_t * rtens,
+                         int copy_ctrl = COPY_MTT,
+                         double scale_real = 1.0,
+                         double scale_imag = 0.0,
+                         int dev_id = DEV_DEFAULT,
+                         int dev_kind = DEV_DEFAULT,
+                         talsh_task_t * talsh_task = NULL);
+ int talshTensorContract_(const char * cptrn, talsh_tens_t * dtens, talsh_tens_t * ltens, talsh_tens_t * rtens, int copy_ctrl,
+                          double scale_real, double scale_imag, int dev_id, int dev_kind, talsh_task_t * talsh_task);
 #ifdef __cplusplus
 }
 #endif

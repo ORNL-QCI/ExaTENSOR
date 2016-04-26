@@ -666,6 +666,8 @@ int talshTaskDestruct(talsh_task_t * talsh_task)
    return TALSH_NOT_AVAILABLE;
 #endif
    break;
+  case DEV_NULL: //defined-empty task
+   break;
   default:
    return TALSH_INVALID_ARGS;
  }
@@ -937,4 +939,31 @@ int talshTaskTime(talsh_task_t * talsh_task, double * total, double * comput, do
 int talshTaskTime_(talsh_task_t * talsh_task, double * total, double * comput, double * input, double * output) //Fortran wrapper
 {
  return talshTaskTime(talsh_task,total,comput,input,output);
+}
+
+// TAL-SH tensor operations API:
+int talshTensorContract(const char * cptrn,        //in: C-string: symbolic contraction pattern, e.g. "D(a,b,c,d)+=L(c,i,j,a)*R(b,j,d,i)"
+                        talsh_tens_t * dtens,      //inout: destination tensor block
+                        talsh_tens_t * ltens,      //inout: left source tensor block
+                        talsh_tens_t * rtens,      //inout: right source tensor block
+                        int copy_ctrl,             //in: copy control (COPY_XXX), defaults to COPY_MTT
+                        double scale_real,         //in: scaling value (real part), defaults to 1
+                        double scale_imag,         //in: scaling value (imaginary part), defaults to 0
+                        int dev_id,                //in: device id (flat or kind-specific)
+                        int dev_kind,              //in: device kind (if present, <dev_id> is kind-specific)
+                        talsh_task_t * talsh_task) //inout: TAL-SH task (must be clean)
+/** Tensor contraction. **/
+{
+ int errc;
+
+ if(talsh_on == 0) return TALSH_NOT_INITIALIZED;
+ errc=TALSH_SUCCESS;
+
+ return errc;
+}
+
+int talshTensorContract_(const char * cptrn, talsh_tens_t * dtens, talsh_tens_t * ltens, talsh_tens_t * rtens, int copy_ctrl,
+                         double scale_real, double scale_imag, int dev_id, int dev_kind, talsh_task_t * talsh_task) //Fortran wrapper
+{
+ return talshTensorContract(cptrn,dtens,ltens,rtens,copy_ctrl,scale_real,scale_imag,dev_id,dev_kind,talsh_task);
 }

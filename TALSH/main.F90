@@ -54,7 +54,7 @@
         integer(C_SIZE_T), parameter:: BUF_SIZE=1024*1024*1024 !desired Host argument buffer size in bytes
         integer(C_INT), parameter:: DIM_EXT=41 !tensor dimension extent
         integer(C_SIZE_T):: host_buf_size
-        integer(C_INT):: i,ierr,host_arg_max,dev_gpu,dev_cpu
+        integer(C_INT):: i,ierr,host_arg_max,dev_gpu,dev_cpu,sts(3)
         type(talsh_tens_t):: tens(9) !three tensors for CPU, six for GPU
         type(talsh_task_t):: tsks(3) !three tasks (tensor contractions, three tensors per tensor contraction)
 
@@ -112,11 +112,27 @@
         dev_gpu=dev_cpu !fall back to CPU when no GPU in use
 #endif
 !Schedule two tensor contractions on GPU:
-
+        write(*,'(1x,"Scheduling tensor contraction 1 on GPU ... ")',ADVANCE='NO')
+        ierr=talsh_tensor_contract('D(a,b,i,j)+=L(j,c,k,a)*R(c,b,k,i)',tens(1),tens(2),tens(3),dev_id=dev_gpu,talsh_task=tsks(1))
+        write(*,'("Status ",i11)') ierr; if(ierr.ne.TALSH_SUCCESS) then; ierr=1; return; endif
+        write(*,'(1x,"Scheduling tensor contraction 2 on GPU ... ")',ADVANCE='NO')
+        ierr=talsh_tensor_contract('D(a,b,i,j)+=L(j,c,k,a)*R(c,b,k,i)',tens(4),tens(5),tens(6),dev_id=dev_gpu,talsh_task=tsks(2))
+        write(*,'("Status ",i11)') ierr; if(ierr.ne.TALSH_SUCCESS) then; ierr=1; return; endif
 !Execute a tensor contraction on CPU (while the previous two are running on GPU):
-
+        write(*,'(1x,"Executing tensor contraction 3 on CPU ... ")',ADVANCE='NO')
+        ierr=talsh_tensor_contract('D(a,b,i,j)+=L(j,c,k,a)*R(c,b,k,i)',tens(7),tens(8),tens(9),dev_id=dev_cpu,talsh_task=tsks(3))
+        write(*,'("Status ",i11)') ierr; if(ierr.ne.TALSH_SUCCESS) then; ierr=1; return; endif
 !Synchronize and compare the results:
+        write(*,'(1x,"Waiting upon completion of tensor contractions on GPU ... ")',ADVANCE='NO')
+!       ierr=talsh_tasks_wait(3,tsks,sts)
+        write(*,'("Status ",i11)') ierr; if(ierr.ne.TALSH_SUCCESS) then; ierr=1; return; endif
 
+!Destruct TAL-SH task handles:
+        do i=3,1,-1
+         write(*,'(1x,"Destructing task handle ",i2," ... ")',ADVANCE='NO') i
+         ierr=talsh_task_destruct(tsks(i))
+         write(*,'("Status ",i11)') ierr; if(ierr.ne.TALSH_SUCCESS) then; ierr=1; return; endif
+        enddo
 
 !Destroy tensors:
         do i=9,1,-1

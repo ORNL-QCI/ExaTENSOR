@@ -37,6 +37,7 @@
         integer(C_INT), parameter, public:: MAX_MICS_PER_NODE=8   !max number of Intel MICs on a node
         integer(C_INT), parameter, public:: MAX_AMDS_PER_NODE=8   !max number of AMD GPUs on a node
         integer(C_INT), parameter, public:: DEV_NULL=-1           !abstract null device
+        integer(C_INT), parameter, public:: DEV_DEFAULT=DEV_NULL  !will allow runtime to choose the device
         integer(C_INT), parameter, public:: DEV_HOST=0            !multicore CPU Host (includes all self-hosted systems)
         integer(C_INT), parameter, public:: DEV_NVIDIA_GPU=1      !NVidia GPU
         integer(C_INT), parameter, public:: DEV_INTEL_MIC=2       !Intel Xeon Phi
