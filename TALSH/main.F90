@@ -47,10 +47,14 @@
 !------------------------------------
         subroutine test_talsh_f(ierr)
         use, intrinsic:: ISO_C_BINDING
+        use tensor_algebra
         use talsh
         implicit none
-        integer(C_INT):: ierr,host_arg_max
+        integer(C_INT), parameter:: DIM_EXT=41
         integer(C_SIZE_T):: host_buf_size
+        integer(C_INT):: ierr,host_arg_max,dims(MAX_TENSOR_RANK)
+        type(talsh_tens_t):: tens(9)
+        type(talsh_task_t):: tsks(3)
 
         ierr=0
 !Init TALSH:
@@ -59,6 +63,16 @@
         ierr=talsh_init(host_buf_size,host_arg_max,gpu_list=(/0/))
         write(*,'("Status ",i11,": Size (Bytes) = ",i13,": Max Args in HAB = ",i7)') ierr,host_buf_size,host_arg_max
         if(ierr.ne.TALSH_SUCCESS) then; ierr=1; return; endif
+!Create tensor blocks:
+        write(*,'(1x,"Constructing tensor block 1 ... ")',ADVANCE='NO')
+        dims(1:4)=(/DIM_EXT,DIM_EXT,DIM_EXT,DIM_EXT/)
+        ierr=talsh_tensor_construct(tens(1),R8,dims(1:4))
+        write(*,'("Status ",i11)') ierr; if(ierr.ne.TALSH_SUCCESS) then; ierr=1; return; endif
+
+!Destroy tensor blocks:
+        write(*,'(1x,"Destructing tensor block 1 ... ")',ADVANCE='NO')
+        ierr=talsh_tensor_destruct(tens(1))
+        write(*,'("Status ",i11)') ierr; if(ierr.ne.TALSH_SUCCESS) then; ierr=1; return; endif
 !Print run-time statistics:
         ierr=talsh_stats()
         if(ierr.ne.TALSH_SUCCESS) then; ierr=1; return; endif

@@ -437,11 +437,11 @@ int talshTensorConstruct(talsh_tens_t * tens_block,     //inout: empty tensor bl
  return errc;
 }
 
-int talshTensorConstruct_(talsh_tens_t * tens_block, int data_kind, int tens_rank, int tens_dims[], int dev_id, //Fortran wrapper
+int talshTensorConstruct_(talsh_tens_t * tens_block, int data_kind, int tens_rank, const int tens_dims[], int dev_id, //Fortran wrapper
                           void * ext_mem, int in_hab, talsh_tens_init_i init_method, double init_val_real, double init_val_imag)
 {
- return talshTensorConstruct_(tens_block, data_kind, tens_rank, tens_dims, dev_id,
-                              ext_mem, in_hab, init_method, init_val_real, init_val_imag);
+ return talshTensorConstruct(tens_block, data_kind, tens_rank, tens_dims, dev_id,
+                             ext_mem, in_hab, init_method, init_val_real, init_val_imag);
 }
 
 int talshTensorDestruct(talsh_tens_t * tens_block) //in: non-NULL pointer to a tensor block (empty tensor block on exit)

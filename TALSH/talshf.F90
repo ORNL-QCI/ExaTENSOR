@@ -48,17 +48,17 @@
         integer(C_SIZE_T), parameter, private:: HAB_SIZE_DEFAULT=1048576 !default size of the Host argument buffer in bytes
 !DERIVED TYPES:
  !TAL-SH tensor block:
-        type, bind(C):: talsh_tens_t
-         type(C_PTR):: shape_p=C_NULL_PTR      !shape of the tensor block
-         type(C_PTR):: dev_rsc=C_NULL_PTR      !list of device resources occupied by the tensor block body on each device
-         type(C_PTR):: data_kind=C_NULL_PTR    !list of data kinds for each device location occupied by the tensor body {R4,R8,C4,C8}
-         integer(C_INT):: dev_rsc_len=0        !capacity of .dev_rsc[], .data_kind[]
-         integer(C_INT):: ndev=0               !number of devices the tensor block resides on: ndev <= dev_rsc_len
-         type(C_PTR):: tensF=C_NULL_PTR        !pointer to Fortran <tensor_block_t> (CPU, Intel MIC): Just a convenient alias to existing data
-         type(C_PTR):: tensC=C_NULL_PTR        !pointer to C/C++ <tensBlck_t> (Nvidia GPU): Just a convenient alias to existing data
+        type, public, bind(C):: talsh_tens_t
+         type(C_PTR):: shape_p=C_NULL_PTR   !shape of the tensor block
+         type(C_PTR):: dev_rsc=C_NULL_PTR   !list of device resources occupied by the tensor block body on each device
+         type(C_PTR):: data_kind=C_NULL_PTR !list of data kinds for each device location occupied by the tensor body {R4,R8,C4,C8}
+         integer(C_INT):: dev_rsc_len=0     !capacity of .dev_rsc[], .data_kind[]
+         integer(C_INT):: ndev=0            !number of devices the tensor block resides on: ndev <= dev_rsc_len
+         type(C_PTR):: tensF=C_NULL_PTR     !pointer to Fortran <tensor_block_t> (CPU, Intel MIC): Just a convenient alias to existing data
+         type(C_PTR):: tensC=C_NULL_PTR     !pointer to C/C++ <tensBlck_t> (Nvidia GPU): Just a convenient alias to existing data
         end type talsh_tens_t
  !TAL-SH task handle:
-        type, bind(C):: talsh_task_t
+        type, public, bind(C):: talsh_task_t
          type(C_PTR):: task_p=C_NULL_PTR    !pointer to the corresponding device-specific task object
          integer(C_INT):: dev_kind=DEV_NULL !device kind (DEV_NULL: uninitialized)
          integer(C_INT):: data_kind=NO_TYPE !data kind {R4,R8,C4,C8}, NO_TYPE: uninitialized
@@ -382,13 +382,13 @@
          type(talsh_tens_t), intent(inout):: tens_block       !inout: constructed tensor block (must be empty on entrance)
          integer(C_INT), intent(in):: data_kind               !in: data kind: {R4,R8,C4,C8,NO_TYPE}
          integer(C_INT), intent(in):: tens_shape(1:)          !in: tensor shape (length = tensor rank)
-         integer(C_INT), intent(in):: dev_id                  !in: flat device ID on which the tensor block will reside
+         integer(C_INT), intent(in), optional:: dev_id        !in: flat device ID on which the tensor block will reside
          type(C_PTR), intent(in), optional:: ext_mem          !in: pointer to externally provided memory for tensor elements
          integer(C_INT), intent(in), optional:: in_hab        !in: if >=0, <ext_mem> points to the HAB entry #<in_hab>
          procedure(talsh_tens_init_i), optional:: init_method !in: user-defined initialization method (<init_val> must be absent)
          complex(8), intent(in), optional:: init_val          !in: initialization value (will be typecast to <data_kind>, defaults to 0)
          type(C_PTR):: tens_body_p
-         integer(C_INT):: hab_entry,tens_rank
+         integer(C_INT):: devid,hab_entry,tens_rank
          integer(C_INT), target:: tens_dims(1:MAX_TENSOR_RANK)
          type(C_FUNPTR):: init_method_p
          real(8):: val_real,val_imag
@@ -397,11 +397,12 @@
          tens_rank=size(tens_shape) !tens_shape(1:) must have the exact volume = tensor rank
          if(tens_rank.ge.0.and.tens_rank.le.MAX_TENSOR_RANK) then
           if(tens_rank.gt.0) tens_dims(1:tens_rank)=tens_shape(1:tens_rank)
+          if(present(dev_id)) then; devid=dev_id; else; devid=talshFlatDevId(DEV_HOST,0); endif
           if(present(ext_mem)) then; tens_body_p=ext_mem; else; tens_body_p=C_NULL_PTR; endif
           if(present(in_hab)) then; if(in_hab.ge.0) then; hab_entry=in_hab; else; hab_entry=-1; endif; else; hab_entry=-1; endif
           if(present(init_method)) then; init_method_p=c_funloc(init_method); else; init_method_p=C_NULL_FUNPTR; endif
           val_real=0d0; val_imag=0d0; if(present(init_val)) then; val_real=real(init_val); val_imag=aimag(init_val); endif
-          ierr=talshTensorConstruct_(tens_block,data_kind,tens_rank,tens_dims,dev_id,&
+          ierr=talshTensorConstruct_(tens_block,data_kind,tens_rank,tens_dims,devid,&
                                      tens_body_p,hab_entry,init_method_p,val_real,val_imag)
          else
           ierr=TALSH_INVALID_ARGS
@@ -415,29 +416,30 @@
          type(talsh_tens_t), intent(inout):: tens_block       !inout: constructed tensor block (must be empty on entrance)
          integer(C_INT), intent(in):: data_kind               !in: data kind: {R4,R8,C4,C8,NO_TYPE}
          character(*), intent(in):: tens_shape                !in: tensor shape (symbolic)
-         integer(C_INT), intent(in):: dev_id                  !in: flat device ID on which the tensor block will reside
+         integer(C_INT), intent(in), optional:: dev_id        !in: flat device ID on which the tensor block will reside
          type(C_PTR), intent(in), optional:: ext_mem          !in: pointer to externally provided memory for tensor elements
          integer(C_INT), intent(in), optional:: in_hab        !in: if >=0, <ext_mem> points to the HAB entry #<in_hab>
          procedure(talsh_tens_init_i), optional:: init_method !in: user-defined initialization method (<init_val> must be absent)
          complex(8), intent(in), optional:: init_val          !in: initialization value (will be typecast to <data_kind>, defaults to 0)
          type(tensor_block_t):: ftens
          type(C_PTR):: extmem
-         integer(C_INT):: inhab,trank,tshape(1:MAX_TENSOR_RANK)
+         integer(C_INT):: devid,inhab,trank,tshape(1:MAX_TENSOR_RANK)
          integer:: errc
 
          call tensor_shape_create(tens_shape,ftens,errc)
          trank=ftens%tensor_shape%num_dim
          if(errc.eq.0.and.trank.ge.0.and.trank.le.MAX_TENSOR_RANK) then
           tshape(1:trank)=ftens%tensor_shape%dim_extent(1:trank)
+          if(present(dev_id)) then; devid=dev_id; else; devid=talshFlatDevId(DEV_HOST,0); endif
           if(present(ext_mem)) then; extmem=ext_mem; else; extmem=C_NULL_PTR; endif
           if(present(in_hab)) then; inhab=in_hab; else; inhab=-1; endif
           if(present(init_method)) then
-           ierr=talsh_tensor_construct_num(tens_block,data_kind,tshape(1:trank),dev_id,extmem,inhab,init_method)
+           ierr=talsh_tensor_construct_num(tens_block,data_kind,tshape(1:trank),devid,extmem,inhab,init_method)
           else
            if(present(init_val)) then
-            ierr=talsh_tensor_construct_num(tens_block,data_kind,tshape(1:trank),dev_id,extmem,inhab,init_val=init_val)
+            ierr=talsh_tensor_construct_num(tens_block,data_kind,tshape(1:trank),devid,extmem,inhab,init_val=init_val)
            else
-            ierr=talsh_tensor_construct_num(tens_block,data_kind,tshape(1:trank),dev_id,extmem,inhab)
+            ierr=talsh_tensor_construct_num(tens_block,data_kind,tshape(1:trank),devid,extmem,inhab)
            endif
           endif
          else
@@ -453,28 +455,29 @@
          type(talsh_tens_t), intent(inout):: tens_block       !inout: constructed tensor block (must be empty on entrance)
          integer(C_INT), intent(in):: data_kind               !in: data kind: {R4,R8,C4,C8,NO_TYPE}
          type(talsh_tens_shape_t), intent(in):: tens_shape    !in: tensor shape
-         integer(C_INT), intent(in):: dev_id                  !in: flat device ID on which the tensor block will reside
+         integer(C_INT), intent(in), optional:: dev_id        !in: flat device ID on which the tensor block will reside
          type(C_PTR), intent(in), optional:: ext_mem          !in: pointer to externally provided memory for tensor elements
          integer(C_INT), intent(in), optional:: in_hab        !in: if >=0, <ext_mem> points to the HAB entry #<in_hab>
          procedure(talsh_tens_init_i), optional:: init_method !in: user-defined initialization method (<init_val> must be absent)
          complex(8), intent(in), optional:: init_val          !in: initialization value (will be typecast to <data_kind>, defaults to 0)
          type(C_PTR):: extmem
-         integer(C_INT):: inhab,trank
+         integer(C_INT):: devid,inhab,trank
          integer(C_INT), pointer:: tshape(:)
          integer:: errc
 
          trank=tens_shape%num_dim
          if(trank.ge.0.and.trank.le.MAX_TENSOR_RANK) then
           call c_f_pointer(tens_shape%dims,tshape,shape=(/trank/))
+          if(present(dev_id)) then; devid=dev_id; else; devid=talshFlatDevId(DEV_HOST,0); endif
           if(present(ext_mem)) then; extmem=ext_mem; else; extmem=C_NULL_PTR; endif
           if(present(in_hab)) then; inhab=in_hab; else; inhab=-1; endif
           if(present(init_method)) then
-           ierr=talsh_tensor_construct_num(tens_block,data_kind,tshape(1:trank),dev_id,extmem,inhab,init_method)
+           ierr=talsh_tensor_construct_num(tens_block,data_kind,tshape(1:trank),devid,extmem,inhab,init_method)
           else
            if(present(init_val)) then
-            ierr=talsh_tensor_construct_num(tens_block,data_kind,tshape(1:trank),dev_id,extmem,inhab,init_val=init_val)
+            ierr=talsh_tensor_construct_num(tens_block,data_kind,tshape(1:trank),devid,extmem,inhab,init_val=init_val)
            else
-            ierr=talsh_tensor_construct_num(tens_block,data_kind,tshape(1:trank),dev_id,extmem,inhab)
+            ierr=talsh_tensor_construct_num(tens_block,data_kind,tshape(1:trank),devid,extmem,inhab)
            endif
           endif
          else

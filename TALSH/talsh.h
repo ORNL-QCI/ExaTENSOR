@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level API header.
-REVISION: 2016/04/25
+REVISION: 2016/04/26
 
 Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -117,14 +117,14 @@ extern "C"{
  int talshTensorConstruct(talsh_tens_t * tens_block,
                           int data_kind,
                           int tens_rank,
-                          int tens_dims[],
+                          const int tens_dims[],
                           int dev_id = 0,
                           void * ext_mem = NULL,
                           int in_hab = -1,
                           talsh_tens_init_i init_method = NULL,
                           double init_val_real = 0.0,
                           double init_val_imag = 0.0);
- int talshTensorConstruct_(talsh_tens_t * tens_block, int data_kind, int tens_rank, int tens_dims[], int dev_id,
+ int talshTensorConstruct_(talsh_tens_t * tens_block, int data_kind, int tens_rank, const int tens_dims[], int dev_id,
                            void * ext_mem, int in_hab, talsh_tens_init_i init_method, double init_val_real, double init_val_imag);
 //  Destruct a tensor block:
  int talshTensorDestruct(talsh_tens_t * tens_block);

@@ -1,6 +1,6 @@
 !ExaTensor::TAL-SH: Parameters, types, C function interfaces:
 !Keep consistent with "tensor_algebra.h"!
-!REVISION: 2016/04/21
+!REVISION: 2016/04/26
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -181,7 +181,7 @@
 
 !INTEROPERABLE TYPES (keep consistent with tensor_algebra.h):
  !TAL-SH tensor shape:
-        type, bind(C):: talsh_tens_shape_t
+        type, public, bind(C):: talsh_tens_shape_t
          integer(C_INT):: num_dim=-1   !tensor rank (number of dimensions): >=0; -1:empty
          type(C_PTR):: dims=C_NULL_PTR !tensor dimension extents
          type(C_PTR):: divs=C_NULL_PTR !tensor dimension dividers
@@ -200,6 +200,7 @@
           integer(C_INT), intent(out):: ierr           !out: error code (0:success)
          end subroutine talsh_tens_init_i
         end interface
+        public talsh_tens_init_i
 
 !C FUNCTION INTERFACES (for Fortran):
         interface
