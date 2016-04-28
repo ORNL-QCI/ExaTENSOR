@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level API.
-REVISION: 2016/04/26
+REVISION: 2016/04/28
 
 Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -31,7 +31,7 @@ along with ExaTensor. If not, see <http://www.gnu.org/licenses/>.
 // General:
 static int talsh_on=0;           //TAL-SH initialization flag (1:initalized; 0:not)
 static clock_t talsh_begin_time; //TAL-SH begin time (zero time reference)
-// Accelerator configuration:
+// Accelerator configuration (`Needs modification for non-contiguous subranges):
 static int talsh_gpu_beg;        //first Nvidia GPU in the range `Obsolete
 static int talsh_gpu_end;        //last Nvidia GPU in the range `Obsolete
 // Device status:
@@ -45,22 +45,30 @@ static unsigned long long int not_clean_count=0LL; //number of times a NOT_CLEAN
 //INTERNAL TYPES:
 // Host task:
 typedef struct{
- int task_error; //task error code (0:success)
+ int task_error; //task error code (-1:empty or in progress; 0:success; >0:error code)
 } host_task_t;
 
-//INTERNAL PROTOTYPES:
+//PROTOTYPES OF IMPORTED FUNCTIONS:
+// Fortran tensor block aliasing:
+int talsh_tensor_f_assoc(talsh_tens_t * talsh_tens, int image_id);
+int talsh_tensor_f_dissoc(talsh_tens_t * talsh_tens);
+
+//PROTOTYPES OF INTERNAL FUNCTIONS:
 // Error counters:
-static void talsh_not_clean();
+static void talsh_raise_not_clean();
 // Host task API:
 static int host_task_create(host_task_t ** host_task);
 static int host_task_clean(host_task_t * host_task);
 static int host_task_destroy(host_task_t * host_task);
+// C tensor block aliasing:
+static int talsh_tensor_c_assoc(talsh_tens_t * talsh_tens, int image_id);
+static int talsh_tensor_c_dissoc(talsh_tens_t * talsh_tens);
 // Construct a TAL-SH task:
 static int talshTaskConstruct(talsh_task_t * talsh_task, int dev_kind, int data_kind = NO_TYPE);
 
 //INTERNAL FUNCTIONS:
 // Error counters:
-static void talsh_not_clean(){++not_clean_count;}
+static void talsh_raise_not_clean(){++not_clean_count;}
 // Host task API:
 static int host_task_create(host_task_t ** host_task)
 {
@@ -72,7 +80,7 @@ static int host_task_create(host_task_t ** host_task)
 static int host_task_clean(host_task_t * host_task)
 {
  if(host_task == NULL) return TALSH_INVALID_ARGS;
- host_task->task_error=0;
+ host_task->task_error=-1;
  return TALSH_SUCCESS;
 }
 
@@ -81,6 +89,47 @@ static int host_task_destroy(host_task_t * host_task)
  if(host_task == NULL) return TALSH_INVALID_ARGS;
  free(host_task);
  return TALSH_SUCCESS;
+}
+
+static int talsh_tensor_c_assoc(talsh_tens_t * talsh_tens, //inout: TAL-SH tensor
+                                int image_id)              //in: id of the tensor body image to be used
+/** Fills in the <tensBlck_t> component inside the <talsh_tens_t> object by importing the information
+    from <talsh_tens>. A return status TRY_LATER indicates temporary shortage in available resources. **/
+{
+ int i,errc;
+ tensBlck_t *ctens;
+ talsh_dev_rsc_t *src_rsc_p;
+
+ if(talsh_on == 0) return TALSH_NOT_INITIALIZED;
+ if(talsh_tens == NULL) return TALSH_INVALID_ARGS;
+ if(talshTensorIsEmpty(talsh_tens) == YEP) return TALSH_INVALID_ARGS;
+ if(image_id < 0 || image_id >= talsh_tens->ndev) return TALSH_INVALID_ARGS;
+ if(talsh_tens->tensC != NULL) return TALSH_OBJECT_NOT_EMPTY;
+ if(talsh_tens->dev_rsc == NULL || talsh_tens->data_kind == NULL) return TALSH_FAILURE;
+ if(tens_valid_data_kind(talsh_tens->data_kind[image_id]) != YEP) return TALSH_FAILURE;
+ src_rsc_p=&(talsh_tens->dev_rsc[image_id]);
+ errc=tensBlck_create(&ctens); if(errc){if(errc != TRY_LATER) errc=TALSH_FAILURE; return errc;}
+ errc=tensBlck_construct(ctens,YEP,talsh_tens->shape_p->num_dim,talsh_tens->shape_p->dims,talsh_tens->shape_p->divs,talsh_tens->shape_p->grps);
+ if(errc){if(errc != TRY_LATER) errc=TALSH_FAILURE; i=tensBlck_destroy(ctens); return errc;}
+ errc=tensBlck_attach_body(ctens,talsh_tens->data_kind[image_id],src_rsc_p->dev_id,src_rsc_p->gmem_p,src_rsc_p->buf_entry);
+ if(errc){if(errc != TRY_LATER) errc=TALSH_FAILURE; i=tensBlck_destroy(ctens); return errc;}
+ talsh_tens->tensC=(void*)ctens; //.tensC has the right shape, data_kind, and source data
+ return TALSH_SUCCESS;
+}
+
+static int talsh_tensor_c_dissoc(talsh_tens_t * talsh_tens) //inout: TAL-SH tensor
+/** Destroys the <tensBlck_t> component in the <talsh_tens_t> object. **/
+{
+ int errc;
+ tensBlck_t *ctens;
+
+ if(talsh_on == 0) return TALSH_NOT_INITIALIZED;
+ if(talsh_tens == NULL) return TALSH_INVALID_ARGS;
+ if(talshTensorIsEmpty(talsh_tens) == YEP) return TALSH_INVALID_ARGS;
+ if(talsh_tens->tensC == NULL) return TALSH_OBJECT_IS_EMPTY;
+ ctens=(tensBlck_t*)talsh_tens->tensC; errc=tensBlck_destroy(ctens);
+ if(errc){if(errc != NOT_CLEAN) errc=TALSH_FAILURE;}
+ return errc;
 }
 
 //EXPORTED FUNCTIONS:
@@ -576,8 +625,8 @@ int talshTaskClean(talsh_task_t * talsh_task)
 
 static int talshTaskConstruct(talsh_task_t * talsh_task, int dev_kind, int data_kind)
 /** Constructs a TAL-SH task. It is errorneous to pass undefined <talsh_task_t> objects here!
-    At the same time, it is fine to pass value-defined <talsh_task_t> objects here because
-    they will be destructed before the new construction. **/
+    At the same time, it is fine to pass a value-defined <talsh_task_t> object here because
+    it will be destructed before the new construction. **/
 {
  int i,errc;
 
@@ -587,7 +636,7 @@ static int talshTaskConstruct(talsh_task_t * talsh_task, int dev_kind, int data_
  if(valid_device_kind(dev_kind) != YEP) return TALSH_INVALID_ARGS;
  if(data_kind != NO_TYPE){if(tens_valid_data_kind(data_kind) != YEP) return TALSH_INVALID_ARGS;}
  if(talsh_task->dev_kind != DEV_NULL) errc=talshTaskDestruct(talsh_task); //destruct value-defined tasks first
- if(errc != TALSH_SUCCESS && errc != NOT_CLEAN) return TALSH_FAILURE; if(errc == NOT_CLEAN) talsh_not_clean();
+ if(errc != TALSH_SUCCESS && errc != NOT_CLEAN) return TALSH_FAILURE; if(errc == NOT_CLEAN) talsh_raise_not_clean();
  switch(dev_kind){
   case DEV_HOST:
    i=host_task_create((host_task_t**)(&(talsh_task->task_p)));

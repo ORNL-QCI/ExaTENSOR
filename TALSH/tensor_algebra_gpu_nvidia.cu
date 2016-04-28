@@ -1,6 +1,6 @@
 /** Tensor Algebra Library for NVidia GPU: NV-TAL (CUDA based).
 AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-REVISION: 2016/04/26
+REVISION: 2016/04/28
 
 Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -235,7 +235,7 @@ int tens_valid_data_kind(int datk, int * datk_size)
   case R8: ans=YEP; datk_sz=sizeof(double); break;   //real double
   case C4: ans=YEP; datk_sz=sizeof(float)*2; break;  //complex float
   case C8: ans=YEP; datk_sz=sizeof(double)*2; break; //complex double
-  case NO_TYPE: ans=YEP; datk_sz=0; break;
+  case NO_TYPE: ans=YEP; datk_sz=0; break; //NO_TYPE is a valid data kind
  }
  if(datk_size != NULL) *datk_size=datk_sz;
  return ans;
@@ -1189,15 +1189,19 @@ size_t tensShape_volume(const talsh_tens_shape_t * tshape)
 int tensBlck_create(tensBlck_t **ctens)
 /** Creates an empty instance of tensBlck_t and initializes it to null (on Host). **/
 {
- int errc;
-
  *ctens=(tensBlck_t*)malloc(sizeof(tensBlck_t)); if(*ctens == NULL) return TRY_LATER;
- (*ctens)->data_kind=NO_TYPE;
- errc=tensShape_clean(&((*ctens)->shape)); if(errc != 0) return 1;
- (*ctens)->src_rsc=NULL; //source memory resource (where the tensor body is before the operation)
- (*ctens)->dst_rsc=NULL; //destination memory resource (where the tensor body will be after the operation)
- (*ctens)->tmp_rsc=NULL; //temporary memory resource (where the tensor body can be during the operation)
- return 0;
+ return tensBlck_clean(*ctens);
+}
+
+int tensBlck_clean(tensBlck_t *ctens)
+/** Cleans an undefined tensBlck_t object. **/
+{
+ if(ctens == NULL) return -1;
+ ctens->data_kind=NO_TYPE;
+ ctens->src_rsc=NULL; //source memory resource (where the tensor body is before the operation)
+ ctens->dst_rsc=NULL; //destination memory resource (where the tensor body will be after the operation)
+ ctens->tmp_rsc=NULL; //temporary memory resource (where the tensor body can be during the operation)
+ return tensShape_clean(&(ctens->shape));
 }
 
 int tensBlck_destroy(tensBlck_t *ctens)
@@ -1302,6 +1306,7 @@ int tensBlck_destruct(tensBlck_t *ctens, int release_body, int which_body)
       (release_body == NOPE && (which_body != EVERYTHING && which_body != TEMPORARY)))){
    errc=tensDevRsc_release_all(ctens->tmp_rsc); if(errc != 0) n=NOT_CLEAN; //Note: Resource object is not destroyed!
   }
+  ctens->tmp_rsc=NULL;
 //Release the DESTINATION resource (only if different from the SOURCE resource):
   if(ctens->dst_rsc != NULL &&
      ((release_body == YEP && (which_body == EVERYTHING || which_body == DESTINATION)) ||
@@ -1312,12 +1317,14 @@ int tensBlck_destruct(tensBlck_t *ctens, int release_body, int which_body)
     ctens->dst_rsc=NULL; //destination resource simply pointed to the source resource
    }
   }
+  ctens->dst_rsc=NULL;
 //Release the SOURCE resource:
   if(ctens->src_rsc != NULL &&
      ((release_body == YEP && (which_body == EVERYTHING || which_body == SOURCE)) ||
       (release_body == NOPE && (which_body != EVERYTHING && which_body != SOURCE)))){
    errc=tensDevRsc_release_all(ctens->src_rsc); if(errc != 0) n=NOT_CLEAN; //Note: Resource object is not destroyed!
   }
+  ctens->src_rsc=NULL;
   if(tens_valid_data_kind(ctens->data_kind) != YEP) n=NOT_CLEAN;
  }
  ctens->data_kind=NO_TYPE;

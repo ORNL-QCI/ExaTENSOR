@@ -2,7 +2,7 @@
     Parameters, derived types, and function prototypes
     used at the lower level of TAL-SH (device specific):
     CP-TAL, NV-TAL, XP-TAL, AM-TAL, etc.
-REVISION: 2016/04/26
+REVISION: 2016/04/27
 
 Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -371,6 +371,7 @@ extern "C"{
  int tensShape_destroy(talsh_tens_shape_t * tshape);
  size_t tensShape_volume(const talsh_tens_shape_t * tshape);
  int tensBlck_create(tensBlck_t **ctens);
+ int tensBlck_clean(tensBlck_t *ctens);
  int tensBlck_destroy(tensBlck_t *ctens);
  int tensBlck_construct(tensBlck_t *ctens, int pinned,
                         int trank, const int *dims = NULL, const int *divs = NULL, const int *grps = NULL);

@@ -1,5 +1,5 @@
 !ExaTensor::TAL-SH: Device-unified user-level API:
-!REVISION: 2016/04/26
+!REVISION: 2016/04/28
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -292,9 +292,99 @@
 !        public talsh_tensor_copy
 !        public talsh_tensor_add
         public talsh_tensor_contract
+ !INTERNAL:
+        public talsh_tensor_f_assoc
+        public talsh_tensor_f_dissoc
 
        contains
-!Fortran API definitions:
+!INTERNAL FUNCTIONS:
+!------------------------------------------------------------------------------------------------------------
+        integer(C_INT) function talsh_tensor_f_assoc(talsh_tens,image_id) bind(c,name='talsh_tensor_f_assoc')
+!Associates the <tensor_block_t> component <.tensF> of the <talsh_tens_t> object <talsh_tens>
+!with the tensor body image <image_id>.
+         implicit none
+         type(talsh_tens_t), intent(inout):: talsh_tens !inout: TAL-SH tensor
+         integer(C_INT), intent(in):: image_id          !in: tensor body image id
+         type(talsh_tens_shape_t), pointer:: tens_shape
+         type(tensor_block_t), pointer:: ftens
+         type(tensor_shape_t):: tshape
+         integer(C_INT), pointer, contiguous:: dims(:),divs(:),grps(:)
+         integer:: n,ierr
+
+         talsh_tensor_f_assoc=TALSH_SUCCESS
+         if(.not.talsh_tensor_is_empty(talsh_tens)) then
+          if(image_id.ge.0.and.image_id.lt.talsh_tens%ndev) then
+           if(.not.c_associated(talsh_tens%tensF)) then
+            if(c_associated(talsh_tens%dev_rsc).and.c_associated(talsh_tens%data_kind).and.&
+              &talsh_tens%ndev.gt.0.and.talsh_tens%ndev.le.talsh_tens%dev_rsc_len) then
+             call c_f_pointer(talsh_tens%shape_p,tens_shape)
+             n=tens_shape%num_dim
+             if(n.ge.0) then
+              allocate(ftens,STAT=ierr)
+              if(ierr.eq.0) then
+               if(n.gt.0) then
+                if(c_associated(tens_shape%dims)) then
+                 call c_f_pointer(tens_shape%dims,dims,shape=(/n/))
+                else
+                 dims=>NULL()
+                endif
+                if(c_associated(tens_shape%divs)) then
+                 call c_f_pointer(tens_shape%divs,divs,shape=(/n/))
+                else
+                 divs=>NULL()
+                endif
+                if(c_associated(tens_shape%grps)) then
+                 call c_f_pointer(tens_shape%grps,grps,shape=(/n/))
+                else
+                 grps=>NULL()
+                endif
+               else
+                dims=>NULL(); divs=>NULL(); grps=>NULL()
+               endif
+               call tensor_shape_assoc(tshape,ierr,dims,divs,grps)
+               
+               talsh_tens%tensF=c_loc(ftens)
+               ftens=>NULL()
+              else
+               talsh_tensor_f_assoc=TRY_LATER
+              endif
+             else
+              talsh_tensor_f_assoc=TALSH_FAILURE
+             endif
+            else
+             talsh_tensor_f_assoc=TALSH_FAILURE
+            endif
+           else
+            talsh_tensor_f_assoc=TALSH_OBJECT_NOT_EMPTY
+           endif
+          else
+           talsh_tensor_f_assoc=TALSH_INVALID_ARGS
+          endif
+         else
+          talsh_tensor_f_assoc=TALSH_OBJECT_IS_EMPTY
+         endif
+         return
+        end function talsh_tensor_f_assoc
+!-----------------------------------------------------------------------------------------------------
+        integer(C_INT) function talsh_tensor_f_dissoc(talsh_tens) bind(c,name='talsh_tensor_f_dissoc')
+!Dissociates the <tensor_block_t> component <.tensF> of the <talsh_tens_t> object <talsh_tens>.
+         implicit none
+         type(talsh_tens_t), intent(inout):: talsh_tens !inout: TAL-SH
+
+         talsh_tensor_f_dissoc=TALSH_SUCCESS
+         if(.not.talsh_tensor_is_empty(talsh_tens)) then
+          if(c_associated(talsh_tens%tensF)) then
+           
+          else
+           talsh_tensor_f_dissoc=TALSH_OBJECT_IS_EMPTY
+          endif
+         else
+          talsh_tensor_f_dissoc=TALSH_OBJECT_IS_EMPTY
+         endif
+         return
+        end function talsh_tensor_f_dissoc
+!-----------------------------------------
+!FORTRAN TAL-SH API DEFINITIONS:
  !TAL-SH control API:
 !----------------------------------------------------------------------------------------------
         function talsh_init(host_buf_size,host_arg_max,gpu_list,mic_list,amd_list) result(ierr)
@@ -443,7 +533,7 @@
          integer(C_INT):: devid,inhab,trank,tshape(1:MAX_TENSOR_RANK)
          integer:: errc
 
-         call tensor_shape_create(tens_shape,ftens,errc)
+         call tensor_block_shape_create(ftens,tens_shape,errc)
          trank=ftens%tensor_shape%num_dim
          if(errc.eq.0.and.trank.ge.0.and.trank.le.MAX_TENSOR_RANK) then
           tshape(1:trank)=ftens%tensor_shape%dim_extent(1:trank)

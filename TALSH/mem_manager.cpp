@@ -2,7 +2,7 @@
 implementation of the tensor algebra library TAL-SH:
 CP-TAL (TAL for CPU), NV-TAL (TAL for NVidia GPU),
 XP-TAL (TAL for Intel Xeon Phi), AM-TAL (TAL for AMD GPU).
-REVISION: 2016/04/26
+REVISION: 2016/04/28
 
 Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -828,6 +828,29 @@ int slab_destroy(slab_t * slab)
 }
 
 //Other memory allocation API:
+int host_mem_alloc(void **host_ptr, size_t tsize, size_t align)
+{
+ if(tsize > 0){
+  if(align > 1){ //non-trivial alignment
+   *host_ptr=(void*)malloc(tsize); //`Replace this with memalign()
+  }else{ //no aligment
+   *host_ptr=(void*)malloc(tsize);
+  }
+  if(*host_ptr == NULL) return 1;
+ }
+ return 0;
+}
+
+int host_mem_free(void *host_ptr)
+{
+ if(host_ptr != NULL){
+  free(host_ptr); //`Do I need to use another free() for aligned memory?
+ }else{
+  return 1;
+ }
+ return 0;
+}
+
 int host_mem_alloc_pin(void **host_ptr, size_t tsize){
 #ifndef NO_GPU
  cudaError_t err=cudaHostAlloc(host_ptr,tsize,cudaHostAllocPortable);
