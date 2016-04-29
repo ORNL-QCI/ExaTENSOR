@@ -1,6 +1,6 @@
 /** Tensor Algebra Library for NVidia GPU: NV-TAL (CUDA based).
 AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-REVISION: 2016/04/28
+REVISION: 2016/04/29
 
 Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -362,7 +362,7 @@ int tensDevRsc_clean(talsh_dev_rsc_t * drsc)
  return 0;
 }
 
-int tensDevRsc_empty(talsh_dev_rsc_t * drsc)
+int tensDevRsc_is_empty(talsh_dev_rsc_t * drsc)
 /** Returns YEP if the device resource descriptor is empty, NOPE otherwise.
     Negative return status means an error. **/
 {
@@ -408,7 +408,7 @@ int tensDevRsc_detach_mem(talsh_dev_rsc_t * drsc)
  if(drsc->dev_id < 0 || drsc->dev_id >= DEV_MAX) return -2; //empty resource descriptor
  if(drsc->gmem_p == NULL || drsc->mem_attached == 0) return 1; //no global memory attached
  drsc->gmem_p=NULL; drsc->buf_entry=-1; drsc->mem_attached=0;
- errc=tensDevRsc_empty(drsc); errc=0;
+ errc=tensDevRsc_is_empty(drsc); errc=0;
  return errc;
 }
 
@@ -526,8 +526,17 @@ int tensDevRsc_free_mem(talsh_dev_rsc_t * drsc)
   default:
    return -8; //invalid device kind
  }
- errc=tensDevRsc_empty(drsc);
+ errc=tensDevRsc_is_empty(drsc);
  return n;
+}
+
+int tensDevRsc_get_gmem_ptr(talsh_dev_rsc_t * drsc, void ** gmem_p)
+/** Returns the pointer to global memory (.gmem_p component) of the device resource. **/
+{
+ if(drsc == NULL) return -1;
+ if(tensDevRsc_is_empty(drsc) == YEP) return 1;
+ *gmem_p=drsc->gmem_p;
+ return 0;
 }
 
 int tensDevRsc_release_all(talsh_dev_rsc_t * drsc)
@@ -1271,7 +1280,7 @@ int tensBlck_attach_body(tensBlck_t *ctens, //pointer to a shape-defined (constr
  if(ctens->src_rsc == NULL){
   errc=tensDevRsc_create(&(ctens->src_rsc)); if(errc != 0 || ctens->src_rsc == NULL) return 1;
  }else{
-  if(tensDevRsc_empty(ctens->src_rsc) == NOPE) return 2; //source resource is not empty (release it first)
+  if(tensDevRsc_is_empty(ctens->src_rsc) == NOPE) return 2; //source resource is not empty (release it first)
  }
  vol=tensShape_volume(&(ctens->shape)); //tensor body volume (number of elements)
  body_size=vol*((size_t)dks); //tensor body size in bytes
@@ -3106,9 +3115,9 @@ NOTES:
     tens_valid_data_kind(rtens->data_kind,&tds_r) != YEP) return -5; //tds_r: right tensor element size in bytes
  if(!(dtens->data_kind > 0 && ltens->data_kind == dtens->data_kind && rtens->data_kind == dtens->data_kind)) return -6; //data kind mismatch
  if(dtens->src_rsc == NULL || ltens->src_rsc == NULL || rtens->src_rsc == NULL) return -7; //source resource must always be present
- if(tensDevRsc_empty(dtens->src_rsc) != NOPE) return -8;  //source resource must be present (tensor body)
- if(tensDevRsc_empty(ltens->src_rsc) != NOPE) return -9;  //source resource must be present (tensor body)
- if(tensDevRsc_empty(rtens->src_rsc) != NOPE) return -10; //source resource must be present (tensor body)
+ if(tensDevRsc_is_empty(dtens->src_rsc) != NOPE) return -8;  //source resource must be present (tensor body)
+ if(tensDevRsc_is_empty(ltens->src_rsc) != NOPE) return -9;  //source resource must be present (tensor body)
+ if(tensDevRsc_is_empty(rtens->src_rsc) != NOPE) return -10; //source resource must be present (tensor body)
 //Check the contraction pattern and dimension extent correspondence:
  for(i=0;i<drank;i++) dprm[i]=0; for(i=0;i<lrank;i++) lprm[i]=0; for(i=0;i<rrank;i++) rprm[i]=0;
  for(i=0;i<lrank;i++){ //position in ltens
@@ -3235,7 +3244,7 @@ NOTES:
   if(dtens->dst_rsc == NULL){
    errc=tensDevRsc_create(&(dtens->dst_rsc)); if(errc){i=cuda_task_record(cuda_task,coh_ctrl,11); i=gpu_activate(cur_gpu); return 11;}
   }else{
-   if(tensDevRsc_empty(dtens->dst_rsc) == NOPE){errc=tensDevRsc_release_all(dtens->dst_rsc); if(errc) stat=NOT_CLEAN;}
+   if(tensDevRsc_is_empty(dtens->dst_rsc) == NOPE){errc=tensDevRsc_release_all(dtens->dst_rsc); if(errc) stat=NOT_CLEAN;}
   }
   errc=tensDevRsc_allocate_mem(dtens->dst_rsc,targ_dev,dsize,YEP);
   if(errc){
@@ -3251,7 +3260,7 @@ NOTES:
   if(ltens->dst_rsc == NULL){
    errc=tensDevRsc_create(&(ltens->dst_rsc)); if(errc){i=cuda_task_record(cuda_task,coh_ctrl,13); i=gpu_activate(cur_gpu); return 13;}
   }else{
-   if(tensDevRsc_empty(ltens->dst_rsc) == NOPE){errc=tensDevRsc_release_all(ltens->dst_rsc); if(errc) stat=NOT_CLEAN;}
+   if(tensDevRsc_is_empty(ltens->dst_rsc) == NOPE){errc=tensDevRsc_release_all(ltens->dst_rsc); if(errc) stat=NOT_CLEAN;}
   }
   errc=tensDevRsc_allocate_mem(ltens->dst_rsc,targ_dev,lsize,YEP);
   if(errc){
@@ -3267,7 +3276,7 @@ NOTES:
   if(rtens->dst_rsc == NULL){
    errc=tensDevRsc_create(&(rtens->dst_rsc)); if(errc){i=cuda_task_record(cuda_task,coh_ctrl,15); i=gpu_activate(cur_gpu); return 15;}
   }else{
-   if(tensDevRsc_empty(rtens->dst_rsc) == NOPE){errc=tensDevRsc_release_all(rtens->dst_rsc); if(errc) stat=NOT_CLEAN;}
+   if(tensDevRsc_is_empty(rtens->dst_rsc) == NOPE){errc=tensDevRsc_release_all(rtens->dst_rsc); if(errc) stat=NOT_CLEAN;}
   }
   errc=tensDevRsc_allocate_mem(rtens->dst_rsc,targ_dev,rsize,YEP);
   if(errc){
@@ -3283,7 +3292,7 @@ NOTES:
   if(dtens->tmp_rsc == NULL){
    errc=tensDevRsc_create(&(dtens->tmp_rsc)); if(errc){i=cuda_task_record(cuda_task,coh_ctrl,17); i=gpu_activate(cur_gpu); return 17;}
   }else{
-   if(tensDevRsc_empty(dtens->tmp_rsc) == NOPE){errc=tensDevRsc_release_all(dtens->tmp_rsc); if(errc) stat=NOT_CLEAN;}
+   if(tensDevRsc_is_empty(dtens->tmp_rsc) == NOPE){errc=tensDevRsc_release_all(dtens->tmp_rsc); if(errc) stat=NOT_CLEAN;}
   }
   errc=tensDevRsc_allocate_mem(dtens->tmp_rsc,targ_dev,dsize,YEP);
   if(errc){
@@ -3296,7 +3305,7 @@ NOTES:
   if(ltens->tmp_rsc == NULL){
    errc=tensDevRsc_create(&(ltens->tmp_rsc)); if(errc){i=cuda_task_record(cuda_task,coh_ctrl,19); i=gpu_activate(cur_gpu); return 19;}
   }else{
-   if(tensDevRsc_empty(ltens->tmp_rsc) == NOPE){errc=tensDevRsc_release_all(ltens->tmp_rsc); if(errc) stat=NOT_CLEAN;}
+   if(tensDevRsc_is_empty(ltens->tmp_rsc) == NOPE){errc=tensDevRsc_release_all(ltens->tmp_rsc); if(errc) stat=NOT_CLEAN;}
   }
   errc=tensDevRsc_allocate_mem(ltens->tmp_rsc,targ_dev,lsize,YEP);
   if(errc){
@@ -3309,7 +3318,7 @@ NOTES:
   if(rtens->tmp_rsc == NULL){
    errc=tensDevRsc_create(&(rtens->tmp_rsc)); if(errc){i=cuda_task_record(cuda_task,coh_ctrl,21); i=gpu_activate(cur_gpu); return 21;}
   }else{
-   if(tensDevRsc_empty(rtens->tmp_rsc) == NOPE){errc=tensDevRsc_release_all(rtens->tmp_rsc); if(errc) stat=NOT_CLEAN;}
+   if(tensDevRsc_is_empty(rtens->tmp_rsc) == NOPE){errc=tensDevRsc_release_all(rtens->tmp_rsc); if(errc) stat=NOT_CLEAN;}
   }
   errc=tensDevRsc_allocate_mem(rtens->tmp_rsc,targ_dev,rsize,YEP);
   if(errc){

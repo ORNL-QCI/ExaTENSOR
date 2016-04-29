@@ -46,10 +46,9 @@ scope my_tapl_program
  import C0(): tag("Scalar") from(DIIS_algorithm)         #import the result from DIIS_algorithm
 end scope my_tapl_program
 
-
 scope DIIS_algrithm
  import S2(a0,a1,i0,i1): tag("My Z2")           #this will import a tensor exported by another scoping unit, the indices will become defined automatically
- index: a2=a1,i2=i1                             #indices a2 and i2 will be assigned to the same subranges as a1 and i1, respectively
+ index: a2=a1,i2=i1                             #indices a2 and i2 will be assigned the same subranges as a1 and i1, respectively
  D0()=S2(a0,a1,i0,i1)*S2(a0,a1,i0,i1)           #full tensor contraction
  export D0(): tag("Scalar") to(my_tapl_program) #export the result to another scoping unit
 end scope DIIS_algorithm

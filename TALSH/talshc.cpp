@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level API.
-REVISION: 2016/04/28
+REVISION: 2016/04/29
 
 Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -49,11 +49,25 @@ typedef struct{
 } host_task_t;
 
 //PROTOTYPES OF IMPORTED FUNCTIONS:
+#ifdef __cplusplus
+extern "C"{
+#endif
 // Fortran tensor block aliasing:
 int talsh_tensor_f_assoc(talsh_tens_t * talsh_tens, int image_id);
 int talsh_tensor_f_dissoc(talsh_tens_t * talsh_tens);
+#ifdef __cplusplus
+}
+#endif
 
 //PROTOTYPES OF INTERNAL FUNCTIONS:
+#ifdef __cplusplus
+extern "C"{
+#endif
+// Tensor block image info (exported to talshf.F90):
+int talsh_tensor_image_info(const talsh_tens_t * talsh_tens, int image_id, int * dev_id, int * data_kind, void ** gmem_p, int * buf_entry);
+#ifdef __cplusplus
+}
+#endif
 // Error counters:
 static void talsh_raise_not_clean();
 // Host task API:
@@ -88,6 +102,25 @@ static int host_task_destroy(host_task_t * host_task)
 {
  if(host_task == NULL) return TALSH_INVALID_ARGS;
  free(host_task);
+ return TALSH_SUCCESS;
+}
+
+int talsh_tensor_image_info(const talsh_tens_t * talsh_tens, int image_id,
+                            int * dev_id, int * data_kind, void ** gmem_p, int * buf_entry)
+{
+ talsh_dev_rsc_t *drsc;
+
+ if(talsh_tens == NULL) return TALSH_INVALID_ARGS;
+ if(talshTensorIsEmpty(talsh_tens) == YEP) return TALSH_OBJECT_IS_EMPTY;
+ if(talsh_tens->ndev <= 0 || talsh_tens->ndev > talsh_tens->dev_rsc_len ||
+    talsh_tens->dev_rsc == NULL || talsh_tens->data_kind == NULL) return TALSH_FAILURE;
+ if(image_id < 0 || image_id >= talsh_tens->ndev) return TALSH_INVALID_ARGS;
+ drsc=&(talsh_tens->dev_rsc[image_id]);
+ if(tensDevRsc_is_empty(drsc) == YEP) return TALSH_FAILURE;
+ *data_kind=talsh_tens->data_kind[image_id];
+ *dev_id=drsc->dev_id;
+ *gmem_p=drsc->gmem_p;
+ *buf_entry=drsc->buf_entry;
  return TALSH_SUCCESS;
 }
 

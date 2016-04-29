@@ -27,12 +27,12 @@
 #ifdef __cplusplus
 extern "C"{
 #endif
-void test_talsh_c(int * ierr);
+void test_nvtal_c(int * ierr);
 #ifdef __cplusplus
 }
 #endif
 
-void test_talsh_c(int * ierr)
+void test_nvtal_c(int * ierr)
 {
  int host_arg_max,errc;
  size_t host_buf_size;

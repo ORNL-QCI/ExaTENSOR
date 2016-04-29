@@ -2,7 +2,7 @@
     Parameters, derived types, and function prototypes
     used at the lower level of TAL-SH (device specific):
     CP-TAL, NV-TAL, XP-TAL, AM-TAL, etc.
-REVISION: 2016/04/27
+REVISION: 2016/04/29
 
 Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -300,7 +300,7 @@ typedef struct{
  int event_comput_hl;    //handle of the CUDA event recorded before the CUDA kernels start (all input data is on Device)
  int event_output_hl;    //handle of the CUDA event recorded when the CUDA kernels finish (before output to the Host)
  int event_finish_hl;    //handle of the CUDA event recorded at the end of the task (full completion)
- unsigned int coherence; //coherence control for this task (see COPY_XXX constants)
+ unsigned int coherence; //coherence control for this task (see COPY_X, COPY_XX, and COPY_XXX constants)
  unsigned int num_args;  //number of tensor arguments participating in the tensor operation
  tensArg_t tens_args[MAX_TENSOR_OPERANDS]; //tensor arguments participating in the tensor operation
 } cudaTask_t;
@@ -335,12 +335,13 @@ extern "C"{
 // Device resource management:
  int tensDevRsc_create(talsh_dev_rsc_t **drsc);
  int tensDevRsc_clean(talsh_dev_rsc_t * drsc);
- int tensDevRsc_empty(talsh_dev_rsc_t * drsc);
+ int tensDevRsc_is_empty(talsh_dev_rsc_t * drsc);
  int tensDevRsc_same(talsh_dev_rsc_t * drsc0, talsh_dev_rsc_t * drsc1);
  int tensDevRsc_attach_mem(talsh_dev_rsc_t * drsc, int dev_id, void * mem_p, int buf_entry = -1);
  int tensDevRsc_detach_mem(talsh_dev_rsc_t * drsc);
  int tensDevRsc_allocate_mem(talsh_dev_rsc_t * drsc, int dev_id, size_t mem_size, int in_arg_buf = NOPE);
  int tensDevRsc_free_mem(talsh_dev_rsc_t * drsc);
+ int tensDevRsc_get_gmem_ptr(talsh_dev_rsc_t * drsc, void ** gmem_p);
  int tensDevRsc_release_all(talsh_dev_rsc_t * drsc);
  int tensDevRsc_destroy(talsh_dev_rsc_t * drsc);
 #ifndef NO_GPU

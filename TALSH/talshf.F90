@@ -1,5 +1,5 @@
 !ExaTensor::TAL-SH: Device-unified user-level API:
-!REVISION: 2016/04/28
+!REVISION: 2016/04/29
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -248,6 +248,19 @@
           integer(C_INT), value, intent(in):: dev_kind
           type(talsh_task_t), intent(inout):: talsh_task
          end function talshTensorContract_
+ !Internal TAL-SH C/C++ API:
+  !Obtains the information on a specific tensor body image:
+         integer(C_INT) function talsh_tensor_image_info(talsh_tens,image_id,dev_id,data_kind,gmem_p,buf_entry)&
+                  & bind(c,name='talsh_tensor_image_info')
+          import
+          implicit none
+          type(talsh_tens_t), intent(in):: talsh_tens
+          integer(C_INT), value, intent(in):: image_id
+          integer(C_INT), intent(out):: dev_id
+          integer(C_INT), intent(out):: data_kind
+          type(C_PTR), intent(out):: gmem_p
+          integer(C_INT), intent(out):: buf_entry
+         end function talsh_tensor_image_info
         end interface
 !INTERFACES FOR OVERLOADED FOTRAN FUNCTIONS:
         interface talsh_tensor_construct
@@ -293,8 +306,6 @@
 !        public talsh_tensor_add
         public talsh_tensor_contract
  !INTERNAL:
-        public talsh_tensor_f_assoc
-        public talsh_tensor_f_dissoc
 
        contains
 !INTERNAL FUNCTIONS:
@@ -309,6 +320,8 @@
          type(tensor_block_t), pointer:: ftens
          type(tensor_shape_t):: tshape
          integer(C_INT), pointer, contiguous:: dims(:),divs(:),grps(:)
+         integer(C_INT):: devid,dtk,buf_entry,errc
+         type(C_PTR):: gmem_p
          integer:: n,ierr
 
          talsh_tensor_f_assoc=TALSH_SUCCESS
@@ -342,9 +355,24 @@
                 dims=>NULL(); divs=>NULL(); grps=>NULL()
                endif
                call tensor_shape_assoc(tshape,ierr,dims,divs,grps)
-               
-               talsh_tens%tensF=c_loc(ftens)
-               ftens=>NULL()
+               if(ierr.eq.0) then
+                errc=talsh_tensor_image_info(talsh_tens,image_id,devid,dtk,gmem_p,buf_entry)
+                if(errc.eq.0) then
+                 call tensor_block_assoc(ftens,tshape,dtk,gmem_p,errc)
+                 if(errc.ne.0) talsh_tensor_f_assoc=TALSH_FAILURE
+                else
+                 talsh_tensor_f_assoc=TALSH_FAILURE
+                endif
+               else
+                talsh_tensor_f_assoc=TALSH_FAILURE
+               endif
+               if(talsh_tensor_f_assoc.eq.TALSH_SUCCESS) then
+                talsh_tens%tensF=c_loc(ftens)
+                ftens=>NULL() !memory is not deallocated (pointed to by %tensF pointer)
+               else
+                call tensor_block_destroy(ftens,ierr)
+                deallocate(ftens)
+               endif
               else
                talsh_tensor_f_assoc=TRY_LATER
               endif
@@ -369,12 +397,23 @@
         integer(C_INT) function talsh_tensor_f_dissoc(talsh_tens) bind(c,name='talsh_tensor_f_dissoc')
 !Dissociates the <tensor_block_t> component <.tensF> of the <talsh_tens_t> object <talsh_tens>.
          implicit none
-         type(talsh_tens_t), intent(inout):: talsh_tens !inout: TAL-SH
+         type(talsh_tens_t), intent(inout):: talsh_tens !inout: TAL-SH tensor
+         type(tensor_block_t), pointer:: ftens
+         integer:: ierr
 
          talsh_tensor_f_dissoc=TALSH_SUCCESS
          if(.not.talsh_tensor_is_empty(talsh_tens)) then
           if(c_associated(talsh_tens%tensF)) then
-           
+           call c_f_pointer(talsh_tens%tensF,ftens)
+           call tensor_block_destroy(ftens,ierr)
+           if(ierr.ne.0) then
+            if(ierr.eq.NOT_CLEAN) then
+             talsh_tensor_f_dissoc=NOT_CLEAN
+            else
+             talsh_tensor_f_dissoc=TALSH_FAILURE
+            endif
+           endif
+           nullify(ftens)
           else
            talsh_tensor_f_dissoc=TALSH_OBJECT_IS_EMPTY
           endif

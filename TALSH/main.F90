@@ -23,22 +23,22 @@
         implicit none
 
         interface
-         subroutine test_talsh_c(ierr) bind(c)
+         subroutine test_nvtal_c(ierr) bind(c)
           import
           integer(C_INT), intent(out):: ierr
-         end subroutine test_talsh_c
+         end subroutine test_nvtal_c
         end interface
 
         integer(C_INT):: ierr
 
-!Test C API interface:
-        write(*,'("Testing TALSH C/C++ API ...")')
-        call test_talsh_c(ierr)
+!Test NV-TAL C/C++ API interface:
+        write(*,'("Testing NV-TAL C/C++ API ...")')
+        call test_nvtal_c(ierr)
         write(*,'("Done: Status ",i5)') ierr
         if(ierr.ne.0) stop
         write(*,*)''
 !Test Fortran API interface:
-        write(*,'("Testing TALSH Fortran API ...")')
+        write(*,'("Testing TAL-SH Fortran API ...")')
         call test_talsh_f(ierr)
         write(*,'("Done: Status ",i5)') ierr
         if(ierr.ne.0) stop

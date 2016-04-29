@@ -1,6 +1,6 @@
 *** TAL-SH: Tensor Algebra Library for Shared Memory Computers ***
 AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-REVISION: 2016/04/26
+REVISION: 2016/04/29
 
 Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -671,6 +671,9 @@ with the following options:
  X=T: Discard the tensor argument from the destination device if the destination device
       differs from the source device, otherwise do nothing;
  X=K: Keep the tensor argument on both devices if they are different.
+
+To remember the meaning of the above control letters, "D" stands for "discard",
+"M" stands for "move", "T" stands for "temporary", "K" stands for "keep".
 
 If a task cannot be scheduled at this point due to the lack of resources (memory, etc.),
 a return status TRY_LATER will indicate that. If a task cannot be scheduled

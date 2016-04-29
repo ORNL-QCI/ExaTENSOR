@@ -1,6 +1,6 @@
 !Tensor Algebra for Multi- and Many-core CPUs (OpenMP based).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2016/04/28
+!REVISION: 2016/04/29
 
 !Copyright (C) 2013-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -282,21 +282,21 @@
 #ifndef NO_PHI
 !DIR$ ATTRIBUTES OFFLOAD:mic:: cmplx8_to_real8
 #endif
-	real(8) function cmplx8_to_real8(cmplx_num) !SERIAL
+        real(8) function cmplx8_to_real8(cmplx_num) !SERIAL
 !This function returns a real approximant for a complex number with the following properties:
 ! 1) The Euclidean (Frobenius) norm (modulus) is preserved;
 ! 2) The sign inversion symmetry is preserved.
-	implicit none
-	complex(8), intent(in):: cmplx_num
-	real(8) real_part
-	real_part=dble(cmplx_num)
-	if(real_part.ne.0d0) then
-	 cmplx8_to_real8=abs(cmplx_num)*sign(1d0,real_part)
-	else
-	 cmplx8_to_real8=dimag(cmplx_num)
-	endif
-	return
-	end function cmplx8_to_real8
+         implicit none
+         complex(8), intent(in):: cmplx_num
+         real(8):: real_part
+         real_part=dble(cmplx_num)
+         if(real_part.ne.0d0) then
+          cmplx8_to_real8=abs(cmplx_num)*sign(1d0,real_part)
+         else
+          cmplx8_to_real8=dimag(cmplx_num)
+         endif
+         return
+        end function cmplx8_to_real8
 !--------------------------------------------------------------------
         subroutine tensor_shape_assoc(tens_shape,ierr,dims,divs,grps)
 !Constructs a tensor shape object <tensor_shape_t) by pointer associating it
@@ -1068,31 +1068,49 @@
           if(tens_shape%num_dim.ge.0.and.tens_shape%num_dim.le.MAX_TENSOR_RANK.and.associated(tens_shape%dim_extent)) then
            if(c_associated(tens_body)) then
             tens%ptr_alloc=0
-            tens%tensor_shape=tens_shape
+            tens%tensor_shape=tens_shape !pointer components are pointer associated only
             tens%tensor_block_size=tensor_block_shape_size(tens,ierr); if(ierr.ne.0) then; ierr=1; return; endif
-            if(tens%tensor_block_size.le.0) then; ierr=1; return; endif
-            tens%scalar_value=(0d0,0d0)
-            select case(data_kind)
-            case(R4)
-             call c_f_pointer(tens_body,r4p,shape=(/tens%tensor_block_size/))
-             tens%data_real4(0:)=>r4p; r4p=>NULL()
-            case(R8)
-             call c_f_pointer(tens_body,r8p,shape=(/tens%tensor_block_size/))
-             tens%data_real8(0:)=>r8p; r8p=>NULL()
-            case(C8)
-             call c_f_pointer(tens_body,c8p,shape=(/tens%tensor_block_size/))
-             tens%data_cmplx8(0:)=>c8p; c8p=>NULL()
-            case default
-             ierr=1
-            end select
+            if(tens%tensor_block_size.le.0) then; ierr=2; return; endif
+            if(tens%tensor_shape%num_dim.ge.0) then
+             select case(data_kind)
+             case(R4)
+              call c_f_pointer(tens_body,r4p,shape=(/tens%tensor_block_size/))
+              if(tens%tensor_shape%num_dim.gt.0) then
+               tens%data_real4(0:)=>r4p; tens%scalar_value=(0d0,0d0)
+              else
+               tens%scalar_value=cmplx(real(r4p(lbound(r4p,1)),8),0d0,8)
+              endif
+              r4p=>NULL()
+             case(R8)
+              call c_f_pointer(tens_body,r8p,shape=(/tens%tensor_block_size/))
+              if(tens%tensor_shape%num_dim.gt.0) then
+               tens%data_real8(0:)=>r8p; tens%scalar_value=(0d0,0d0)
+              else
+               tens%scalar_value=cmplx(r8p(lbound(r8p,1)),0d0,8)
+              endif
+              r8p=>NULL()
+             case(C8)
+              call c_f_pointer(tens_body,c8p,shape=(/tens%tensor_block_size/))
+              if(tens%tensor_shape%num_dim.gt.0) then
+               tens%data_cmplx8(0:)=>c8p; tens%scalar_value=(0d0,0d0)
+              else
+               tens%scalar_value=c8p(lbound(c8p,1))
+              endif
+              c8p=>NULL()
+             case default
+              ierr=3
+             end select
+            else
+             ierr=4
+            endif
            else
-            ierr=1
+            ierr=5 !tensor body is absent
            endif
           else
-           ierr=1
+           ierr=6 !tensor shape is empty
           endif
          else
-          ierr=1
+          ierr=7 !tensor block is not empty
          endif
          return
         end subroutine tensor_block_assoc
