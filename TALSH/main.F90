@@ -21,22 +21,24 @@
         program main
         use, intrinsic:: ISO_C_BINDING
         implicit none
-
+#ifndef NO_GPU
         interface
          subroutine test_nvtal_c(ierr) bind(c)
           import
           integer(C_INT), intent(out):: ierr
          end subroutine test_nvtal_c
         end interface
-
+#endif
         integer(C_INT):: ierr
 
 !Test NV-TAL C/C++ API interface:
+#ifndef NO_GPU
         write(*,'("Testing NV-TAL C/C++ API ...")')
         call test_nvtal_c(ierr)
         write(*,'("Done: Status ",i5)') ierr
         if(ierr.ne.0) stop
         write(*,*)''
+#endif
 !Test Fortran API interface:
         write(*,'("Testing TAL-SH Fortran API ...")')
         call test_talsh_f(ierr)
@@ -62,8 +64,12 @@
 !Init TALSH:
         write(*,'(1x,"Initializing TALSH ... ")',ADVANCE='NO')
         host_buf_size=BUF_SIZE
+#ifndef NO_GPU
         ierr=talsh_init(host_buf_size,host_arg_max,gpu_list=(/0/))
-        write(*,'("Status ",i11,": Size (Bytes) = ",i13,": Max Args in HAB = ",i7)') ierr,host_buf_size,host_arg_max
+#else
+        ierr=talsh_init(host_buf_size,host_arg_max)
+#endif
+        write(*,'("Status ",i11,": Size (Bytes) = ",i13,": Max args in HAB = ",i7)') ierr,host_buf_size,host_arg_max
         if(ierr.ne.TALSH_SUCCESS) then; ierr=1; return; endif
 
 !Create nine rank-4 tensors on Host and initialize them to value:

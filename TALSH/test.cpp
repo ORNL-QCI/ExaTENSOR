@@ -24,6 +24,8 @@
 
 #include "talsh.h"
 
+#ifndef NO_GPU
+
 #ifdef __cplusplus
 extern "C"{
 #endif
@@ -49,7 +51,7 @@ void test_nvtal_c(int * ierr)
  host_buf_size=1000000000;
  printf(" Initializing NV-TAL ...");
  errc=arg_buf_allocate(&host_buf_size,&host_arg_max,0,0);
- printf(" Status %d: Host argument buffer size = %lu; Host arg max = %d\n",errc,host_buf_size,host_arg_max);
+ printf(" Status %d: Host argument buffer size = %lu; Max args in HAB = %d\n",errc,host_buf_size,host_arg_max);
  if(errc){*ierr=1; return;}
 
 //Create tensor blocks:
@@ -157,3 +159,4 @@ void test_nvtal_c(int * ierr)
  printf(" Status: %d\n",errc); if(errc){*ierr=1; return;}
  return;
 }
+#endif

@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level API.
-REVISION: 2016/04/29
+REVISION: 2016/05/02
 
 Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -184,9 +184,10 @@ int talshInit(size_t * host_buf_size,    //inout: Host Argument Buffer size in b
  talsh_cpu=DEV_ON;
 #endif
 //NVidia GPU accelerators:
+#ifndef NO_GPU
  if(ngpus > 0){
   if(ngpus > MAX_GPUS_PER_NODE) return TALSH_INVALID_ARGS;
-  gpu_beg=gpu_list[0]; gpu_end=gpu_list[ngpus-1];
+  gpu_beg=gpu_list[0]; gpu_end=gpu_list[ngpus-1]; //`Allow for non-consecutive GPU ranges in arg_buf_allocate()
   if(gpu_beg < 0 || gpu_beg >= MAX_GPUS_PER_NODE) return TALSH_INVALID_ARGS;
   if(gpu_end < 0 || gpu_end >= MAX_GPUS_PER_NODE) return TALSH_INVALID_ARGS;
   for(i=1;i<ngpus;i++){
@@ -195,25 +196,34 @@ int talshInit(size_t * host_buf_size,    //inout: Host Argument Buffer size in b
     return TALSH_FAILURE;
    }
   }
-  errc=arg_buf_allocate(host_buf_size,host_arg_max,gpu_beg,gpu_end); if(errc) return TALSH_FAILURE;
-  talsh_gpu_beg=gpu_beg; talsh_gpu_end=gpu_end;
-  for(i=0;i<ngpus;i++){
-   j=gpu_list[i]; if(j < 0 || j >= MAX_GPUS_PER_NODE) return TALSH_INVALID_ARGS;
-   talsh_gpu[j]=gpu_is_mine(j);
-  }
  }else{
-  talsh_gpu_beg=0; talsh_gpu_end=-1;
+#endif
+  gpu_beg=0; gpu_end=-1;
+#ifndef NO_GPU
  }
+#endif
 //Intel Xeon Phi accelerators:
+#ifndef NO_MIC
  if(nmics > 0){
   printf("#FATAL(TALSH::talshInit): Intel Xeon Phi is not fully supported yet!");
   return TALSH_NOT_IMPLEMENTED; //`Future
  }
+#endif
 //AMD GPU accelerators:
+#ifndef NO_AMD
  if(namds > 0){
   printf("#FATAL(TALSH::talshInit): AMD GPU is not supported yet!");
   return TALSH_NOT_IMPLEMENTED; //`Future
  }
+#endif
+ errc=arg_buf_allocate(host_buf_size,host_arg_max,gpu_beg,gpu_end); if(errc) return TALSH_FAILURE;
+#ifndef NO_GPU
+ for(i=0;i<ngpus;i++){
+  j=gpu_list[i]; if(j < 0 || j >= MAX_GPUS_PER_NODE) return TALSH_INVALID_ARGS;
+  talsh_gpu[j]=gpu_is_mine(j);
+ }
+#endif
+ talsh_gpu_beg=gpu_beg; talsh_gpu_end=gpu_end;
  talsh_on=1; talsh_begin_time=clock();
  return TALSH_SUCCESS;
 }
