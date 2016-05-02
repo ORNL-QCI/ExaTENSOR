@@ -44,6 +44,7 @@
         integer(C_INT), parameter, public:: TALSH_OBJECT_NOT_EMPTY=1000004    !object is not empty while expected so
         integer(C_INT), parameter, public:: TALSH_OBJECT_IS_EMPTY=1000005     !object is empty while not expected so
         integer(C_INT), parameter, public:: TALSH_IN_PROGRESS=1000006         !TAL-SH operation is still in progress (not finished)
+        integer(C_INT), parameter, public:: TALSH_NOT_ALLOWED=1000007         !request is not allowed by TAL-SH
  !Host argument buffer:
         integer(C_SIZE_T), parameter, private:: HAB_SIZE_DEFAULT=1048576 !default size of the Host argument buffer in bytes
 !DERIVED TYPES:
@@ -314,8 +315,8 @@
         public talsh_tasks_wait
         public talsh_task_time
  !TAL-SH tensor operations API:
-!        public talsh_tensor_place
-!        public talsh_tensor_discard
+        public talsh_tensor_place
+        public talsh_tensor_discard
 !        public talsh_tensor_init
 !        public talsh_tensor_scale
 !        public talsh_tensor_norm1
@@ -766,6 +767,42 @@
          if(present(output)) output=out_tm
          return
         end function talsh_task_time
+!------------------------------------------------------------------------------------------
+        function talsh_tensor_place(tens,dev_id,dev_kind,copy_ctrl,talsh_task) result(ierr)
+         implicit none
+         integer(C_INT):: ierr                              !out: error code (0:success)
+         type(talsh_tens_t), intent(inout):: tens           !inout: tensor block
+         integer(C_INT), intent(in):: dev_id                !in: device id (flat or kind-specific)
+         integer(C_INT), intent(in), optional:: dev_kind    !in: device kind (if present, <dev_id> is kind-specific)
+         integer(C_INT), intent(in), optional:: copy_ctrl   !in: copy control (COPY_X), defaults to COPY_M
+         type(talsh_task_t), intent(inout), optional:: talsh_task !inout: TAL-SH task handle
+         integer(C_INT):: dvk,coh,sts
+         type(talsh_task_t):: tsk
+
+         if(present(dev_kind)) then; dvk=dev_kind; else; dvk=DEV_NULL; endif
+         if(present(copy_ctrl)) then; coh=copy_ctrl; else; coh=COPY_M; endif
+         if(present(talsh_task)) then
+          ierr=talshTensorPlace_(tens,dev_id,dvk,coh,talsh_task)
+         else
+          ierr=talshTensorPlace_(tens,dev_id,dvk,coh,tsk)
+          if(ierr.eq.TALSH_SUCCESS) ierr=talsh_task_wait(tsk,sts)
+          sts=talsh_task_destruct(tsk)
+         endif
+         return
+        end function talsh_tensor_place
+!-----------------------------------------------------------------------
+        function talsh_tensor_discard(tens,dev_id,dev_kind) result(ierr)
+         implicit none
+         integer(C_INT):: ierr                           !out: error code (0:success)
+         type(talsh_tens_t), intent(inout):: tens        !inout: tensor block
+         integer(C_INT), intent(in):: dev_id             !in: device id (flat or kind-specific)
+         integer(C_INT), intent(in), optional:: dev_kind !in: device kind (if present, <dev_id> is kind-specific)
+         integer(C_INT):: dvk
+
+         if(present(dev_kind)) then; dvk=dev_kind; else; dvk=DEV_NULL; endif
+         ierr=talshTensorDiscard_(tens,dev_id,dvk)
+         return
+        end function talsh_tensor_discard
 !----------------------------------------------------------------------------------------------------------------------
         function talsh_tensor_contract(cptrn,dtens,ltens,rtens,copy_ctrl,scale,dev_id,dev_kind,talsh_task) result(ierr)
          implicit none

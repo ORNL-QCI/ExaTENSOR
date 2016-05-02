@@ -41,6 +41,7 @@ along with ExaTensor. If not, see <http://www.gnu.org/licenses/>.
 #define TALSH_OBJECT_NOT_EMPTY 1000004
 #define TALSH_OBJECT_IS_EMPTY 1000005
 #define TALSH_IN_PROGRESS 1000006
+#define TALSH_NOT_ALLOWED 1000007
 
 //TAL-SH TASK STATUS:
 #define TALSH_TASK_ERROR 1999999
