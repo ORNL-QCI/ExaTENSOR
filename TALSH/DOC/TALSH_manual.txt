@@ -1,6 +1,6 @@
 *** TAL-SH: Tensor Algebra Library for Shared Memory Computers ***
 AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-REVISION: 2016/04/29
+REVISION: 2016/05/02
 
 Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -88,7 +88,7 @@ destroyed when the library is finalized. The memory fragmentation
 characteristics is the same as for the CPU Host argument buffer.
 
 
-2. Device control API
+2. TAL-SH control API
 
 Supported device kinds:
  DEV_NULL: Abstract null device [-1];
@@ -146,12 +146,12 @@ API: Get a flat device id:
 
  Fortran 2003:
   function talsh_flat_dev_id(dev_kind,dev_num) result(dev_id):
-   integer(C_INT):: dev_id                      !out: flat device id (Success: [0..DEV_MAX-1])
+   integer(C_INT):: dev_id                      !out: flat device id (Success: [0..DEV_MAX-1]; Failure: DEV_MAX)
    integer(C_INT), intent(in), value:: dev_kind !in: device kind (see above)
    integer(C_INT), intent(in), value:: dev_num  !in: device number within its kind [0..max]
 
  C/C++:
-  int talshFlatDevId( //out: flat device id (Success: [0..DEV_MAX-1])
+  int talshFlatDevId( //out: flat device id (Success: [0..DEV_MAX-1]; Failure: DEV_MAX)
    int dev_kind,      //in: device kind (see above)
    int dev_num        //in: device number within its kind [0..max]
   )
@@ -160,12 +160,12 @@ API: Convert a flat device id into the kind specific device id:
 
  Fortran 2003:
   function talsh_kind_dev_id(dev_id,dev_kind) result(dev_num)
-   integer(C_INT):: dev_num                   !out: kind specific device number [0..max]
+   integer(C_INT):: dev_num                   !out: kind specific device number [0..max], DEV_NULL on failure
    integer(C_INT), intent(in), value:: dev_id !in: flat device id
    integer(C_INT), intent(out):: dev_kind     !out: device kind (see above)
 
  C/C++:
-  int talshKindDevId( //out: kind specific device number [0..max]
+  int talshKindDevId( //out: kind specific device number [0..max], DEV_NULL on failure
    int dev_id,        //in: flat device id
    int * dev_kind     //out: device kind (see above)
   )
@@ -228,7 +228,7 @@ API: Print TAL-SH statistics:
     (h) Output data transferred (bytes);
 
 
-3. Tensor block API
+3. TAL-SH tensor block API
 
 At the user level, a tensor block is represented by an interoperable type <talsh_tens_t>.
 A tensor block either can be constructed from scrath, including memory allocation, or
@@ -647,7 +647,7 @@ API: Get the TAL-SH task timings:
         the same hardware resources, the corresponding timings will be non-exclusive.
 
 
-5. Tensor operations
+5. TAL-SH tensor operations API
 
 Each tensor operation can be executed asynchronously with respect to the Host,
 unless a synchronization is requested. An asynchronous execution is activated
@@ -685,24 +685,24 @@ A successful scheduling does not guarantee a successful execution, in general.
 API: Place a tensor block on a specific device:
 
  Fortran 2003:
-  function talsh_tensor_place(tens,dev_id,dev_kind,copy_ctrl,task) result(ierr)
+  function talsh_tensor_place(tens,dev_id,dev_kind,copy_ctrl,talsh_task) result(ierr)
    integer(C_INT):: ierr                              !out: error code (0:success)
    type(talsh_tens_t), intent(inout):: tens           !inout: tensor block
    integer(C_INT), intent(in):: dev_id                !in: device id (flat or kind-specific)
    integer(C_INT), intent(in), optional:: dev_kind    !in: device kind (if present, <dev_id> is kind-specific)
    integer(C_INT), intent(in), optional:: copy_ctrl   !in: copy control (COPY_X), defaults to COPY_M
-   type(talsh_task_t), intent(inout), optional:: task !inout: TAL-SH task handle
+   type(talsh_task_t), intent(inout), optional:: talsh_task !inout: TAL-SH task handle
 
  C/C++:
-  int talshTensorPlace(       //out: error code (0:success)
-   talsh_tens_t * tens,       //inout: tensor block
-   int dev_id,                //in: device id (flat or kind-specific)
-   int dev_kind = DEV_NULL,   //in: device kind (if present, <dev_id> is kind-specific)
-   int copy_ctrl = COPY_M,    //in: copy control (COPY_X), defaults to COPY_M
-   talsh_task_t * task = NULL //inout: TAL-SH task handle
+  int talshTensorPlace(             //out: error code (0:success)
+   talsh_tens_t * tens,             //inout: tensor block
+   int dev_id,                      //in: device id (flat or kind-specific)
+   int dev_kind = DEV_NULL,         //in: device kind (if present, <dev_id> is kind-specific)
+   int copy_ctrl = COPY_M,          //in: copy control (COPY_X), defaults to COPY_M
+   talsh_task_t * talsh_task = NULL //inout: TAL-SH task handle
   )
 
-API: Discard a tensor block from a specific device:
+API: Discard a tensor block on a specific device:
 
  Fortran 2003:
   function talsh_tensor_discard(tens,dev_id,dev_kind) result(ierr)
@@ -719,30 +719,30 @@ API: Discard a tensor block from a specific device:
   )
 
  Description:
-  Resources occupied by a tensor block on the given device, if any, will be released,
-  making the tensor block "absent" on that device.
+  Resources occupied by a tensor block on a given device, if any, will be released
+  immediately, making the tensor block "absent" on that device.
 
 API: Initialize a tensor block:
 
  Fortran 2003:
-  function talsh_tensor_init(tens,val,dev_id,dev_kind,copy_ctrl,task) result(ierr)
+  function talsh_tensor_init(tens,val,dev_id,dev_kind,copy_ctrl,talsh_task) result(ierr)
    integer(C_INT):: ierr                              !out: error code (0:success)
    type(talsh_tens_t), intent(inout):: tens           !inout: tensor block
    complex(8), intent(in):: val                       !in: initialization value
    integer(C_INT), intent(in), optional:: dev_id      !in: device id (flat or kind-specific)
    integer(C_INT), intent(in), optional:: dev_kind    !in: device kind (if present, <dev_id> is kind-specific)
    integer(C_INT), intent(in), optional:: copy_ctrl   !in: copy control (COPY_X), defaults to COPY_M
-   type(talsh_task_t), intent(inout), optional:: task !inout: TAL-SH task handle
+   type(talsh_task_t), intent(inout), optional:: talsh_task !inout: TAL-SH task handle
 
  C/C++:
-  int talshTensorInit(        //out: error code (0:success)
-   talsh_tens_t * tens,       //inout: tensor block
-   double val_real,           //in: initialization value (real part)
-   double val_imag,           //in: initialization value (complex part)
-   int dev_id = -1,           //in: device id (flat or kind-specific)
-   int dev_kind = DEV_NULL,   //in: device kind (if present, <dev_id> is kind-specific)
-   int copy_ctrl = COPY_M,    //in: copy control (COPY_X), defaults to COPY_M
-   talsh_task_t * task = NULL //inout: TAL-SH task handle
+  int talshTensorInit(              //out: error code (0:success)
+   talsh_tens_t * tens,             //inout: tensor block
+   double val_real,                 //in: initialization value (real part)
+   double val_imag,                 //in: initialization value (complex part)
+   int dev_id = -1,                 //in: device id (flat or kind-specific)
+   int dev_kind = DEV_NULL,         //in: device kind (if present, <dev_id> is kind-specific)
+   int copy_ctrl = COPY_M,          //in: copy control (COPY_X), defaults to COPY_M
+   talsh_task_t * talsh_task = NULL //inout: TAL-SH task handle
   )
 
  Note: If no device is specified, the execution device will be automatically
@@ -751,24 +751,24 @@ API: Initialize a tensor block:
 API: Multiply a tensor block by a scalar:
 
  Fortran 2003:
-  function talsh_tensor_scale(tens,val,dev_id,dev_kind,copy_ctrl,task) result(ierr)
+  function talsh_tensor_scale(tens,val,dev_id,dev_kind,copy_ctrl,talsh_task) result(ierr)
    integer(C_INT):: ierr                              !out: error code (0:success)
    type(talsh_tens_t), intent(inout):: tens           !inout: tensor block
    complex(8), intent(in):: val                       !in: scaling value
    integer(C_INT), intent(in), optional:: dev_id      !in: device id (flat or kind-specific)
    integer(C_INT), intent(in), optional:: dev_kind    !in: device kind (if present, <dev_id> is kind-specific)
    integer(C_INT), intent(in), optional:: copy_ctrl   !in: copy control (COPY_X), defaults to COPY_M
-   type(talsh_task_t), intent(inout), optional:: task !inout: TAL-SH task handle
+   type(talsh_task_t), intent(inout), optional:: talsh_task !inout: TAL-SH task handle
 
  C/C++:
-  int talshTensorScale(       //out: error code (0:success)
-   talsh_tens_t * tens,       //inout: tensor block
-   double val_real,           //in: scaling value (real part)
-   double val_imag,           //in: scaling value (complex part)
-   int dev_id = -1,           //in: device id (flat or kind-specific)
-   int dev_kind = DEV_NULL,   //in: device kind (if present, <dev_id> is kind-specific)
-   int copy_ctrl = COPY_M,    //in: copy control (COPY_X), defaults to COPY_M
-   talsh_task_t * task = NULL //inout: TAL-SH task handle
+  int talshTensorScale(             //out: error code (0:success)
+   talsh_tens_t * tens,             //inout: tensor block
+   double val_real,                 //in: scaling value (real part)
+   double val_imag,                 //in: scaling value (complex part)
+   int dev_id = -1,                 //in: device id (flat or kind-specific)
+   int dev_kind = DEV_NULL,         //in: device kind (if present, <dev_id> is kind-specific)
+   int copy_ctrl = COPY_M,          //in: copy control (COPY_X), defaults to COPY_M
+   talsh_task_t * talsh_task = NULL //inout: TAL-SH task handle
   )
 
  Note: If no device is specified, the execution device will be automatically
@@ -777,23 +777,23 @@ API: Multiply a tensor block by a scalar:
 API: Compute the 1-norm of a tensor block:
 
  Fortran 2003:
-  function talsh_tensor_norm1(dtens,ltens,dev_id,dev_kind,copy_ctrl,task) result(ierr)
+  function talsh_tensor_norm1(dtens,ltens,dev_id,dev_kind,copy_ctrl,talsh_task) result(ierr)
    integer(C_INT):: ierr                              !out: error code (0:success)
    type(talsh_tens_t), intent(inout):: dtens          !inout: rank-0 destination tensor (scalar containing the 1-norm)
    type(talsh_tens_t), intent(inout):: ltens          !inout: tensor block
    integer(C_INT), intent(in), optional:: dev_id      !in: device id (flat or kind-specific)
    integer(C_INT), intent(in), optional:: dev_kind    !in: device kind (if present, <dev_id> is kind-specific)
    integer(C_INT), intent(in), optional:: copy_ctrl   !in: copy control (COPY_XX), defaults to COPY_TT
-   type(talsh_task_t), intent(inout), optional:: task !inout: TAL-SH task handle
+   type(talsh_task_t), intent(inout), optional:: talsh_task !inout: TAL-SH task handle
 
  C/C++:
-  int talshTensorNorm1(       //out: error code (0:success)
-   talsh_tens_t * dtens,      //inout: rank-0 destination tensor (scalar containing the 1-norm)
-   talsh_tens_t * ltens,      //inout: tensor block
-   int dev_id = -1,           //in: device id (flat or kind-specific)
-   int dev_kind = DEV_NULL,   //in: device kind (if present, <dev_id> is kind-specific)
-   int copy_ctrl = COPY_TT,   //in: copy control (COPY_XX), defaults to COPY_TT
-   talsh_task_t * task = NULL //inout: TAL-SH task handle
+  int talshTensorNorm1(             //out: error code (0:success)
+   talsh_tens_t * dtens,            //inout: rank-0 destination tensor (scalar containing the 1-norm)
+   talsh_tens_t * ltens,            //inout: tensor block
+   int dev_id = -1,                 //in: device id (flat or kind-specific)
+   int dev_kind = DEV_NULL,         //in: device kind (if present, <dev_id> is kind-specific)
+   int copy_ctrl = COPY_TT,         //in: copy control (COPY_XX), defaults to COPY_TT
+   talsh_task_t * talsh_task = NULL //inout: TAL-SH task handle
   )
 
  Note: If no device is specified, the execution device will be automatically
@@ -802,23 +802,23 @@ API: Compute the 1-norm of a tensor block:
 API: Compute the 2-norm of a tensor block:
 
  Fortran 2003:
-  function talsh_tensor_norm2(dtens,ltens,dev_id,dev_kind,copy_ctrl,task) result(ierr)
+  function talsh_tensor_norm2(dtens,ltens,dev_id,dev_kind,copy_ctrl,talsh_task) result(ierr)
    integer(C_INT):: ierr                              !out: error code (0:success)
    type(talsh_tens_t), intent(inout):: dtens          !inout: rank-0 destination tensor (scalar containing the 2-norm)
    type(talsh_tens_t), intent(inout):: ltens          !inout: tensor block
    integer(C_INT), intent(in), optional:: dev_id      !in: device id (flat or kind-specific)
    integer(C_INT), intent(in), optional:: dev_kind    !in: device kind (if present, <dev_id> is kind-specific)
    integer(C_INT), intent(in), optional:: copy_ctrl   !in: copy control (COPY_XX), defaults to COPY_TT
-   type(talsh_task_t), intent(inout), optional:: task !inout: TAL-SH task handle
+   type(talsh_task_t), intent(inout), optional:: talsh_task !inout: TAL-SH task handle
 
  C/C++:
-  int talshTensorNorm2(       //out: error code (0:success)
-   talsh_tens_t * dtens,      //inout: rank-0 destination tensor (scalar containing the 2-norm)
-   talsh_tens_t * ltens,      //inout: tensor block
-   int dev_id = -1,           //in: device id (flat or kind-specific)
-   int dev_kind = DEV_NULL,   //in: device kind (if present, <dev_id> is kind-specific)
-   int copy_ctrl = COPY_TT,   //in: copy control (COPY_XX), defaults to COPY_TT
-   talsh_task_t * task = NULL //inout: TAL-SH task handle
+  int talshTensorNorm2(             //out: error code (0:success)
+   talsh_tens_t * dtens,            //inout: rank-0 destination tensor (scalar containing the 2-norm)
+   talsh_tens_t * ltens,            //inout: tensor block
+   int dev_id = -1,                 //in: device id (flat or kind-specific)
+   int dev_kind = DEV_NULL,         //in: device kind (if present, <dev_id> is kind-specific)
+   int copy_ctrl = COPY_TT,         //in: copy control (COPY_XX), defaults to COPY_TT
+   talsh_task_t * talsh_task = NULL //inout: TAL-SH task handle
   )
 
  Note: If no device is specified, the execution device will be automatically
@@ -827,7 +827,7 @@ API: Compute the 2-norm of a tensor block:
 API: Copy a tensor block with an optional dimension reordering:
 
  Fortran 2003:
-  function talsh_tensor_copy(dtens,ltens,prmn,scale,dev_id,dev_kind,copy_ctrl,task) result(ierr)
+  function talsh_tensor_copy(dtens,ltens,prmn,scale,dev_id,dev_kind,copy_ctrl,talsh_task) result(ierr)
    integer(C_INT):: ierr                              !out: error code (0:success)
    type(talsh_tens_t), intent(inout):: dtens          !inout: destination tensor block
    type(talsh_tens_t), intent(inout):: ltens          !inout: source tensor block
@@ -836,19 +836,19 @@ API: Copy a tensor block with an optional dimension reordering:
    integer(C_INT), intent(in), optional:: dev_id      !in: device id (flat or kind-specific)
    integer(C_INT), intent(in), optional:: dev_kind    !in: device kind (if present, <dev_id> is kind-specific)
    integer(C_INT), intent(in), optional:: copy_ctrl   !in: copy control (COPY_XX), defaults to COPY_MT
-   type(talsh_task_t), intent(inout), optional:: task !inout: TAL-SH task handle
+   type(talsh_task_t), intent(inout), optional:: talsh_task !inout: TAL-SH task handle
 
  C/C++:
-  int talshTensorCopy(         //out: error code (0:success)
-   talsh_tens_t * dtens,       //inout: destination tensor block
-   talsh_tens_t * ltens,       //inout: source tensor block
-   int * prmn = NULL,          //in: dimension permutation, defaults to trivial
-   double scale_real = 1.0,    //in: scaling value (real part), defaults to 1
-   double scale_imag = 0.0,    //in: scaling value (imaginary part), defaults to 0
-   int dev_id = -1,            //in: device id (flat or kind-specific)
-   int dev_kind = DEV_NULL,    //in: device kind (if present, <dev_id> is kind-specific)
-   int copy_ctrl = COPY_MT,    //in: copy control (COPY_XX), defaults to COPY_MT
-   talsh_task_t * task = NULL, //inout: TAL-SH task handle
+  int talshTensorCopy(               //out: error code (0:success)
+   talsh_tens_t * dtens,             //inout: destination tensor block
+   talsh_tens_t * ltens,             //inout: source tensor block
+   int * prmn = NULL,                //in: dimension permutation, defaults to trivial
+   double scale_real = 1.0,          //in: scaling value (real part), defaults to 1
+   double scale_imag = 0.0,          //in: scaling value (imaginary part), defaults to 0
+   int dev_id = -1,                  //in: device id (flat or kind-specific)
+   int dev_kind = DEV_NULL,          //in: device kind (if present, <dev_id> is kind-specific)
+   int copy_ctrl = COPY_MT,          //in: copy control (COPY_XX), defaults to COPY_MT
+   talsh_task_t * talsh_task = NULL, //inout: TAL-SH task handle
   )
 
  Note: If no device is specified, the execution device will be automatically
@@ -857,7 +857,7 @@ API: Copy a tensor block with an optional dimension reordering:
 API: Add a tensor block to another tensor block:
 
  Fortran 2003:
-  function talsh_tensor_add(dtens,ltens,scale,dev_id,dev_kind,copy_ctrl,task) result(ierr)
+  function talsh_tensor_add(dtens,ltens,scale,dev_id,dev_kind,copy_ctrl,talsh_task) result(ierr)
    integer(C_INT):: ierr                              !out: error code (0:success)
    type(talsh_tens_t), intent(inout):: dtens          !inout: destination tensor block
    type(talsh_tens_t), intent(inout):: ltens          !inout: source tensor block
@@ -865,18 +865,18 @@ API: Add a tensor block to another tensor block:
    integer(C_INT), intent(in), optional:: dev_id      !in: device id (flat or kind-specific)
    integer(C_INT), intent(in), optional:: dev_kind    !in: device kind (if present, <dev_id> is kind-specific)
    integer(C_INT), intent(in), optional:: copy_ctrl   !in: copy control (COPY_XX), defaults to COPY_MT
-   type(talsh_task_t), intent(inout), optional:: task !inout: TAL-SH task handle
+   type(talsh_task_t), intent(inout), optional:: talsh_task !inout: TAL-SH task handle
 
  C/C++:
-  int talshTensorAdd(          //out: error code (0:success)
-   talsh_tens_t * dtens,       //inout: destination tensor block
-   talsh_tens_t * ltens,       //inout: source tensor block
-   double scale_real = 1.0,    //in: scaling value (real part), defaults to 1
-   double scale_imag = 0.0,    //in: scaling value (imaginary part), defaults to 0
-   int dev_id = -1,            //in: device id (flat or kind-specific)
-   int dev_kind = DEV_NULL,    //in: device kind (if present, <dev_id> is kind-specific)
-   int copy_ctrl = COPY_MT,    //in: copy control (COPY_XX), defaults to COPY_MT
-   talsh_task_t * task = NULL, //inout: TAL-SH task handle
+  int talshTensorAdd(                //out: error code (0:success)
+   talsh_tens_t * dtens,             //inout: destination tensor block
+   talsh_tens_t * ltens,             //inout: source tensor block
+   double scale_real = 1.0,          //in: scaling value (real part), defaults to 1
+   double scale_imag = 0.0,          //in: scaling value (imaginary part), defaults to 0
+   int dev_id = -1,                  //in: device id (flat or kind-specific)
+   int dev_kind = DEV_NULL,          //in: device kind (if present, <dev_id> is kind-specific)
+   int copy_ctrl = COPY_MT,          //in: copy control (COPY_XX), defaults to COPY_MT
+   talsh_task_t * talsh_task = NULL, //inout: TAL-SH task handle
   )
 
  Note: If no device is specified, the execution device will be automatically

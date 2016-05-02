@@ -1,5 +1,5 @@
 !ExaTensor::TAL-SH: Device-unified user-level API:
-!REVISION: 2016/04/29
+!REVISION: 2016/05/02
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -232,6 +232,24 @@
           real(C_DOUBLE), intent(out):: output
          end function talshTaskTime_
  !TAL-SH tensor operations C/C++ API:
+  !Place a tensor block on a specific device:
+         integer(C_INT) function talshTensorPlace_(tens,dev_id,dev_kind,copy_ctrl,talsh_task) bind(c,name='talshTensorPlace_')
+          import
+          implicit none
+          type(talsh_tens_t), intent(inout):: tens
+          integer(C_INT), value, intent(in):: dev_id
+          integer(C_INT), value, intent(in):: dev_kind
+          integer(C_INT), value, intent(in):: copy_ctrl
+          type(talsh_task_t), intent(inout):: talsh_task
+         end function talshTensorPlace_
+  !Discard a tensor block on a specific device:
+         integer(C_INT) function talshTensorDiscard_(tens,dev_id,dev_kind) bind(c,name='talshTensorDiscard_')
+          import
+          implicit none
+          type(talsh_tens_t), intent(inout):: tens
+          integer(C_INT), value, intent(in):: dev_id
+          integer(C_INT), value, intent(in):: dev_kind
+         end function talshTensorDiscard_
   !Tensor contraction:
          integer(C_INT) function talshTensorContract_(cptrn,dtens,ltens,rtens,copy_ctrl,scale_real,scale_imag,&
                                                      &dev_id,dev_kind,talsh_task) bind(c,name='talshTensorContract_')

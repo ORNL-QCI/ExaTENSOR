@@ -1034,6 +1034,51 @@ int talshTaskTime_(talsh_task_t * talsh_task, double * total, double * comput, d
 }
 
 // TAL-SH tensor operations API:
+int talshTensorPlace(talsh_tens_t * tens, int dev_id, int dev_kind, int copy_ctrl, talsh_task_t * talsh_task)
+/** Places a tensor block on a specific device. **/
+{
+ int errc;
+
+ errc=TALSH_SUCCESS;
+ return errc;
+}
+
+int talshTensorPlace_(talsh_tens_t * tens, int dev_id, int dev_kind, int copy_ctrl, talsh_task_t * talsh_task) //Fortran wrapper
+{
+ return talshTensorPlace(tens,dev_id,dev_kind,copy_ctrl,talsh_task);
+}
+
+int talshTensorDiscard(talsh_tens_t * tens, int dev_id, int dev_kind)
+/** Discards a tensor block on a specific device. **/
+{
+ int i,j,k,errc,devid;
+
+ if(talsh_on == 0) return TALSH_NOT_INITIALIZED;
+ if(tens == NULL) return TALSH_INVALID_ARGS;
+ if(talshTensorIsEmpty(tens) == YEP) return TALSH_OBJECT_IS_EMPTY;
+ if(tens->ndev <= 0 || tens->ndev > tens->dev_rsc_len) return TALSH_FAILURE;
+ errc=TALSH_SUCCESS;
+ if(dev_kind == DEV_NULL){devid=dev_id;}else{devid=talshFlatDevId(dev_kind,dev_id);}
+ if(devid < 0 || devid >= DEV_MAX) return TALSH_INVALID_ARGS;
+ k=0;
+ for(i=0;i<tens->ndev;i++){
+  if(tens->dev_rsc[i].dev_id == devid){
+   j=tensDevRsc_release_all(&(tens->dev_rsc[i]));
+   if(j != 0 && errc != TALSH_FAILURE){if(j == NOT_CLEAN){errc=NOT_CLEAN;}else{errc=TALSH_FAILURE;}}
+  }else{
+   if(i != k){tens->dev_rsc[k]=tens->dev_rsc[i]; tens->data_kind[k]=tens->data_kind[i];}
+   k++;
+  }
+ }
+ tens->ndev=k;
+ return errc;
+}
+
+int talshTensorDiscard_(talsh_tens_t * tens, int dev_id, int dev_kind) //Fortran wrapper
+{
+ return talshTensorDiscard(tens,dev_id,dev_kind);
+}
+
 int talshTensorContract(const char * cptrn,        //in: C-string: symbolic contraction pattern, e.g. "D(a,b,c,d)+=L(c,i,j,a)*R(b,j,d,i)"
                         talsh_tens_t * dtens,      //inout: destination tensor block
                         talsh_tens_t * ltens,      //inout: left source tensor block
