@@ -1,5 +1,5 @@
 !ExaTensor::TAL-SH: Device-unified user-level API:
-!REVISION: 2016/05/02
+!REVISION: 2016/05/03
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -53,8 +53,9 @@
          type(C_PTR):: shape_p=C_NULL_PTR   !shape of the tensor block
          type(C_PTR):: dev_rsc=C_NULL_PTR   !list of device resources occupied by the tensor block body on each device
          type(C_PTR):: data_kind=C_NULL_PTR !list of data kinds for each device location occupied by the tensor body {R4,R8,C4,C8}
-         integer(C_INT):: dev_rsc_len=0     !capacity of .dev_rsc[], .data_kind[]
-         integer(C_INT):: ndev=0            !number of devices the tensor block resides on: ndev <= dev_rsc_len
+         type(C_PTR):: avail=C_NULL_PTR     !list of the data availability flags for each device location occupied by the tensor body
+         integer(C_INT):: dev_rsc_len=0     !capacity of .dev_rsc[], .data_kind[], .avail[]
+         integer(C_INT):: ndev=0            !number of devices the tensor block body resides on: ndev <= dev_rsc_len
          type(C_PTR):: tensF=C_NULL_PTR     !pointer to Fortran <tensor_block_t> (CPU, Intel MIC): Just a convenient alias to existing data
          type(C_PTR):: tensC=C_NULL_PTR     !pointer to C/C++ <tensBlck_t> (Nvidia GPU): Just a convenient alias to existing data
         end type talsh_tens_t
@@ -331,7 +332,8 @@
 !------------------------------------------------------------------------------------------------------------
         integer(C_INT) function talsh_tensor_f_assoc(talsh_tens,image_id) bind(c,name='talsh_tensor_f_assoc')
 !Associates the <tensor_block_t> component <.tensF> of the <talsh_tens_t> object <talsh_tens>
-!with the tensor body image <image_id>.
+!with the tensor body image <image_id>. A return status TALSH_NOT_ALLOWED indicates that
+!the requested tensor body image is no longer available (to be discarded by runtime).
          implicit none
          type(talsh_tens_t), intent(inout):: talsh_tens !inout: TAL-SH tensor
          integer(C_INT), intent(in):: image_id          !in: tensor body image id
@@ -347,7 +349,7 @@
          if(.not.talsh_tensor_is_empty(talsh_tens)) then
           if(image_id.ge.0.and.image_id.lt.talsh_tens%ndev) then
            if(.not.c_associated(talsh_tens%tensF)) then
-            if(c_associated(talsh_tens%dev_rsc).and.c_associated(talsh_tens%data_kind).and.&
+            if(c_associated(talsh_tens%dev_rsc).and.c_associated(talsh_tens%data_kind).and.c_associated(talsh_tens%avail).and.&
               &talsh_tens%ndev.gt.0.and.talsh_tens%ndev.le.talsh_tens%dev_rsc_len) then
              call c_f_pointer(talsh_tens%shape_p,tens_shape)
              n=tens_shape%num_dim
@@ -380,7 +382,11 @@
                  call tensor_block_assoc(ftens,tshape,dtk,gmem_p,errc)
                  if(errc.ne.0) talsh_tensor_f_assoc=TALSH_FAILURE
                 else
-                 talsh_tensor_f_assoc=TALSH_FAILURE
+                 if(errc.eq.TALSH_NOT_ALLOWED) then
+                  talsh_tensor_f_assoc=TALSH_NOT_ALLOWED !requested image is not available (to be discarded)
+                 else
+                  talsh_tensor_f_assoc=TALSH_FAILURE
+                 endif
                 endif
                else
                 talsh_tensor_f_assoc=TALSH_FAILURE
@@ -432,6 +438,7 @@
              talsh_tensor_f_dissoc=TALSH_FAILURE
             endif
            endif
+           talsh_tens%tensF=C_NULL_PTR
            nullify(ftens)
           else
            talsh_tensor_f_dissoc=TALSH_OBJECT_IS_EMPTY

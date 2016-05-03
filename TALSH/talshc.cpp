@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level API.
-REVISION: 2016/05/02
+REVISION: 2016/05/03
 
 Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -66,7 +66,12 @@ int talsh_tensor_f_dissoc(talsh_tens_t * talsh_tens);
 extern "C"{
 #endif
 // Tensor block image info (exported to talshf.F90):
-int talsh_tensor_image_info(const talsh_tens_t * talsh_tens, int image_id, int * dev_id, int * data_kind, void ** gmem_p, int * buf_entry);
+int talsh_tensor_image_info(const talsh_tens_t * talsh_tens, //in: TAL-SH tensor block
+                            int image_id,                    //in: tensor body image id
+                            int * dev_id,                    //out: flat device id where the image resides
+                            int * data_kind,                 //out: data kind of the image
+                            void ** gmem_p,                  //out: global memory pointer to the image location
+                            int * buf_entry);                //out: argument buffer entry holding the image (-1:none)
 // Release a specific tensor body image:
 static int talsh_tensor_image_release(talsh_tens_t * talsh_tens, int image_id);
 // Error counters:
@@ -152,39 +157,48 @@ static int host_task_destroy(host_task_t * host_task)
 
 int talsh_tensor_image_info(const talsh_tens_t * talsh_tens, int image_id,
                             int * dev_id, int * data_kind, void ** gmem_p, int * buf_entry)
+/** Returns the information on a specific tensor body image. A return status
+    TALSH_NOT_ALLOWED indicates that the image is no longer available (discarded). **/
 {
  talsh_dev_rsc_t *drsc;
 
  if(talsh_tens == NULL) return TALSH_INVALID_ARGS;
  if(talshTensorIsEmpty(talsh_tens) == YEP) return TALSH_OBJECT_IS_EMPTY;
- if(talsh_tens->ndev <= 0 || talsh_tens->ndev > talsh_tens->dev_rsc_len ||
-    talsh_tens->dev_rsc == NULL || talsh_tens->data_kind == NULL) return TALSH_FAILURE;
+ if(talsh_tens->dev_rsc == NULL || talsh_tens->data_kind == NULL || talsh_tens->avail == NULL ||
+    talsh_tens->ndev <= 0 || talsh_tens->ndev > talsh_tens->dev_rsc_len) return TALSH_FAILURE;
  if(image_id < 0 || image_id >= talsh_tens->ndev) return TALSH_INVALID_ARGS;
  drsc=&(talsh_tens->dev_rsc[image_id]);
  if(tensDevRsc_is_empty(drsc) == YEP) return TALSH_FAILURE;
- *data_kind=talsh_tens->data_kind[image_id];
- *dev_id=drsc->dev_id;
- *gmem_p=drsc->gmem_p;
- *buf_entry=drsc->buf_entry;
+ if(talsh_tens->avail[image_id] == YEP){
+  *data_kind=talsh_tens->data_kind[image_id];
+  *dev_id=drsc->dev_id;
+  *gmem_p=drsc->gmem_p;
+  *buf_entry=drsc->buf_entry;
+ }else{
+  return TALSH_NOT_ALLOWED; //image is no longer available (to be discarded)
+ }
  return TALSH_SUCCESS;
 }
 
 static int talsh_tensor_image_release(talsh_tens_t * talsh_tens, int image_id)
-/** Releases a specific tensor body image. **/
+/** Releases a specific tensor body image. A return status TALSH_NOT_ALLOWED
+    indicates that this is the last available image and it cannot be released. **/
 {
- int errc;
+ int i,n,errc;
 
  if(talsh_tens == NULL) return TALSH_INVALID_ARGS;
  if(talshTensorIsEmpty(talsh_tens) != NOPE) return TALSH_OBJECT_IS_EMPTY;
- if(talsh_tens->ndev <= 0 || talsh_tens->ndev > talsh_tens->dev_rsc_len ||
-    talsh_tens->dev_rsc == NULL || talsh_tens->data_kind == NULL) return TALSH_FAILURE;
+ if(talsh_tens->dev_rsc == NULL || talsh_tens->data_kind == NULL || talsh_tens->avail == NULL ||
+    talsh_tens->ndev <= 0 || talsh_tens->ndev > talsh_tens->dev_rsc_len) return TALSH_FAILURE;
  if(image_id < 0 || image_id >= talsh_tens->ndev) return TALSH_INVALID_ARGS;
- if(talsh_tens->ndev == 1) return TALSH_NOT_ALLOWED; //at least one tensor body image must exist
- errc=tensDevRsc_release_all(&(talsh_tens->dev_rsc[image_id])); talsh_tens->data_kind[image_id]=NO_TYPE;
+ n=0; for(i=0;i<talsh_tens->ndev;++i){if(i != image_id && talsh_tens->avail[i] == YEP) ++n;}
+ if(n == 0) return TALSH_NOT_ALLOWED; //at least one tensor body image must exist
+ errc=tensDevRsc_release_all(&(talsh_tens->dev_rsc[image_id]));
  if(errc != 0 && errc != NOT_CLEAN) errc=TALSH_FAILURE;
  if(image_id < talsh_tens->ndev-1){
   talsh_tens->dev_rsc[image_id]=talsh_tens->dev_rsc[talsh_tens->ndev-1];
   talsh_tens->data_kind[image_id]=talsh_tens->data_kind[talsh_tens->ndev-1];
+  talsh_tens->avail[image_id]=talsh_tens->avail[talsh_tens->ndev-1];
  }
  --(talsh_tens->ndev);
  return errc;
@@ -193,7 +207,9 @@ static int talsh_tensor_image_release(talsh_tens_t * talsh_tens, int image_id)
 static int talsh_tensor_c_assoc(talsh_tens_t * talsh_tens, //inout: TAL-SH tensor
                                 int image_id)              //in: id of the tensor body image to be used
 /** Fills in the <tensBlck_t> component inside the <talsh_tens_t> object by importing the information
-    from <talsh_tens>. A return status TRY_LATER indicates temporary shortage in available resources. **/
+    from <talsh_tens>. A return status TRY_LATER indicates temporary shortage in available resources.
+    A return status TALSH_NOT_ALLOWED indicates that the requested image is no longer available
+    (marked to be discarded). **/
 {
  int i,errc;
  tensBlck_t *ctens;
@@ -204,15 +220,20 @@ static int talsh_tensor_c_assoc(talsh_tens_t * talsh_tens, //inout: TAL-SH tenso
  if(talshTensorIsEmpty(talsh_tens) == YEP) return TALSH_INVALID_ARGS;
  if(image_id < 0 || image_id >= talsh_tens->ndev) return TALSH_INVALID_ARGS;
  if(talsh_tens->tensC != NULL) return TALSH_OBJECT_NOT_EMPTY;
- if(talsh_tens->dev_rsc == NULL || talsh_tens->data_kind == NULL) return TALSH_FAILURE;
+ if(talsh_tens->dev_rsc == NULL || talsh_tens->data_kind == NULL || talsh_tens->avail == NULL) return TALSH_FAILURE;
  if(tens_valid_data_kind(talsh_tens->data_kind[image_id]) != YEP) return TALSH_FAILURE;
- src_rsc_p=&(talsh_tens->dev_rsc[image_id]);
- errc=tensBlck_create(&ctens); if(errc){if(errc != TRY_LATER) errc=TALSH_FAILURE; return errc;}
- errc=tensBlck_construct(ctens,YEP,talsh_tens->shape_p->num_dim,talsh_tens->shape_p->dims,talsh_tens->shape_p->divs,talsh_tens->shape_p->grps);
- if(errc){if(errc != TRY_LATER) errc=TALSH_FAILURE; i=tensBlck_destroy(ctens); return errc;}
- errc=tensBlck_attach_body(ctens,talsh_tens->data_kind[image_id],src_rsc_p->dev_id,src_rsc_p->gmem_p,src_rsc_p->buf_entry);
- if(errc){if(errc != TRY_LATER) errc=TALSH_FAILURE; i=tensBlck_destroy(ctens); return errc;}
- talsh_tens->tensC=(void*)ctens; //.tensC has the right shape, data_kind, and source data
+ if(talsh_tens->avail[image_id] == YEP){
+  src_rsc_p=&(talsh_tens->dev_rsc[image_id]);
+  errc=tensBlck_create(&ctens); if(errc){if(errc != TRY_LATER) errc=TALSH_FAILURE; return errc;}
+  errc=tensBlck_construct(ctens,YEP,talsh_tens->shape_p->num_dim,talsh_tens->shape_p->dims, //YEP: shape in pinned memory
+                                    talsh_tens->shape_p->divs,talsh_tens->shape_p->grps);
+  if(errc){if(errc != TRY_LATER) errc=TALSH_FAILURE; i=tensBlck_destroy(ctens); return errc;}
+  errc=tensBlck_attach_body(ctens,talsh_tens->data_kind[image_id],src_rsc_p->dev_id,src_rsc_p->gmem_p,src_rsc_p->buf_entry);
+  if(errc){if(errc != TRY_LATER) errc=TALSH_FAILURE; i=tensBlck_destroy(ctens); return errc;}
+  talsh_tens->tensC=(void*)ctens; //.tensC has the right shape, data_kind, and source data
+ }else{
+  return TALSH_NOT_ALLOWED; //image is no longer available (to be discarded)
+ }
  return TALSH_SUCCESS;
 }
 
@@ -472,10 +493,11 @@ int talshTensorClean(talsh_tens_t * tens_block)
 {
  if(tens_block == NULL) return TALSH_INVALID_ARGS;
  tens_block->shape_p=NULL;
- tens_block->dev_rsc=NULL;
- tens_block->data_kind=NULL;
- tens_block->dev_rsc_len=0;
- tens_block->ndev=0;
+ tens_block->dev_rsc=NULL;   //`.tens_image.dev_rsc
+ tens_block->data_kind=NULL; //`.tens_image.data_kind
+ tens_block->avail=NULL;     //`.tens_image.avail
+ tens_block->dev_rsc_len=0;  //`.tens_image.capacity
+ tens_block->ndev=0;         //`.tens_image.ndev
  tens_block->tensF=NULL;
  tens_block->tensC=NULL;
  return TALSH_SUCCESS;
@@ -530,17 +552,26 @@ int talshTensorConstruct(talsh_tens_t * tens_block,     //inout: empty tensor bl
  if(errc != 0 && errc != TRY_LATER && errc != DEVICE_UNABLE) errc=TALSH_FAILURE;
  if(errc != 0){i=talshTensorDestruct(tens_block); return errc;}
  //Device resource storage:
- if(tens_block->dev_rsc_len == 0 && tens_block->dev_rsc == NULL && tens_block->data_kind == NULL){ //tensor block must be defined-empty
+ if(tens_block->dev_rsc_len == 0 && tens_block->dev_rsc == NULL &&
+    tens_block->data_kind == NULL && tens_block->avail == NULL){ //tensor block must be defined-empty
   tens_block->dev_rsc=(talsh_dev_rsc_t*)malloc(TALSH_MAX_DEV_PRESENT*sizeof(talsh_dev_rsc_t));
   if(tens_block->dev_rsc != NULL){
    tens_block->dev_rsc_len=TALSH_MAX_DEV_PRESENT; tens_block->ndev=0;
    for(j=0;j<TALSH_MAX_DEV_PRESENT;++j){i=tensDevRsc_clean(&(tens_block->dev_rsc[j]));}
    tens_block->data_kind=(int*)malloc(TALSH_MAX_DEV_PRESENT*sizeof(int));
-   if(tens_block->data_kind == NULL){i=talshTensorDestruct(tens_block); return TRY_LATER;}
-   for(j=0;j<TALSH_MAX_DEV_PRESENT;++j){tens_block->data_kind[j]=NO_TYPE;}
+   if(tens_block->data_kind != NULL){
+    for(j=0;j<TALSH_MAX_DEV_PRESENT;++j){tens_block->data_kind[j]=NO_TYPE;}
+    tens_block->avail=(int*)malloc(TALSH_MAX_DEV_PRESENT*sizeof(int));
+    if(tens_block->avail != NULL){
+     for(j=0;j<TALSH_MAX_DEV_PRESENT;++j){tens_block->avail[j]=NOPE;}
+    }else{
+     i=talshTensorDestruct(tens_block); return TRY_LATER;
+    }
+   }else{
+    i=talshTensorDestruct(tens_block); return TRY_LATER;
+   }
   }else{
-   i=talshTensorDestruct(tens_block);
-   return TRY_LATER;
+   i=talshTensorDestruct(tens_block); return TRY_LATER;
   }
  }else{
   i=talshTensorDestruct(tens_block);
@@ -550,7 +581,7 @@ int talshTensorConstruct(talsh_tens_t * tens_block,     //inout: empty tensor bl
  if(already_allocated){ //tensor body storage has been allocated outside (no initialization will be performed)
   errc=tensDevRsc_attach_mem(&(tens_block->dev_rsc[0]),dev_id,ext_mem,in_hab);
   if(errc){i=talshTensorDestruct(tens_block); return TALSH_FAILURE;}
-  tens_block->data_kind[0]=data_kind; tens_block->ndev=1; //present on one device, even if NO_TYPE
+  tens_block->data_kind[0]=data_kind; tens_block->avail[0]=YEP; tens_block->ndev=1;
  }else{ //tensor body storage needs to be allocated here (will also be initialized), unless NO_TYPE
   if(data_kind != NO_TYPE){
    tvol=talshTensorVolume(tens_block);
@@ -560,7 +591,7 @@ int talshTensorConstruct(talsh_tens_t * tens_block,     //inout: empty tensor bl
     errc=tensDevRsc_allocate_mem(&(tens_block->dev_rsc[0]),dev_id,tsize,use_hab);
     if(errc != 0 && errc != TRY_LATER && errc != DEVICE_UNABLE) errc=TALSH_FAILURE;
     if(errc != 0){i=talshTensorDestruct(tens_block); return errc;}
-    tens_block->data_kind[0]=data_kind; tens_block->ndev=1; //present on one device
+    tens_block->data_kind[0]=data_kind; tens_block->avail[0]=YEP; tens_block->ndev=1;
    }else{
     i=talshTensorDestruct(tens_block);
     return TALSH_FAILURE;
@@ -612,21 +643,22 @@ int talshTensorDestruct(talsh_tens_t * tens_block) //in: non-NULL pointer to a t
  if(talsh_on == 0) return TALSH_NOT_INITIALIZED;
  errc=TALSH_SUCCESS;
  if(tens_block == NULL) return TALSH_INVALID_ARGS;
- if(tens_block->tensF != NULL){free(tens_block->tensF); tens_block->tensF=NULL;}
- if(tens_block->tensC != NULL){free(tens_block->tensC); tens_block->tensC=NULL;}
+ if(tens_block->tensF != NULL){free(tens_block->tensF); tens_block->tensF=NULL;} //no resources inside this object
+ if(tens_block->tensC != NULL){free(tens_block->tensC); tens_block->tensC=NULL;} //no resources inside this object
  if(tens_block->shape_p != NULL){
   i=tensShape_destroy(tens_block->shape_p); tens_block->shape_p=NULL;
   if(i == 0 || i == NOT_CLEAN){if(errc == 0) errc=i;}else{errc=TALSH_FAILURE;}
  }
  if(tens_block->ndev > tens_block->dev_rsc_len){tens_block->ndev=tens_block->dev_rsc_len; errc=TALSH_FAILURE;}
  if(tens_block->dev_rsc != NULL){
-  for(j=0;j<tens_block->ndev;j++){
+  for(j=0;j<tens_block->ndev;++j){
    i=tensDevRsc_release_all(&(tens_block->dev_rsc[j]));
    if(i == 0 || i == NOT_CLEAN){if(errc == 0) errc=i;}else{errc=TALSH_FAILURE;}
   }
   free(tens_block->dev_rsc); tens_block->dev_rsc=NULL;
  }
  if(tens_block->data_kind != NULL){free(tens_block->data_kind); tens_block->data_kind=NULL;}
+ if(tens_block->avail != NULL){free(tens_block->avail); tens_block->avail=NULL;}
  i=talshTensorClean(tens_block); //set to an empty status
  return errc;
 }
@@ -667,7 +699,8 @@ int talshTensorShape(const talsh_tens_t * tens_block, talsh_tens_shape_t * tens_
 
 int talshTensorPresence(const talsh_tens_t * tens_block, int * ncopies, int copies[], int data_kinds[], int dev_kind, int dev_id)
 /** Returns the list of devices on which a copy of the tensor block resides, together with the data kind.
-    The presence of optional <dev_kind> and <dev_id> arguments further customizes the search. **/
+    The presence of optional <dev_kind> and <dev_id> arguments further customizes the search,
+    making it look only for copies on the specified device kind and/or device. **/
 {
  int i,j,m,devnum,devk,specific_kind,specific_device;
 
@@ -693,12 +726,14 @@ int talshTensorPresence(const talsh_tens_t * tens_block, int * ncopies, int copi
   }
  }
  if(tens_block->ndev > 0){
-  if(tens_block->ndev > TALSH_MAX_DEV_PRESENT || tens_block->ndev > tens_block->dev_rsc_len) return TALSH_FAILURE;
-  if(tens_block->dev_rsc == NULL || tens_block->data_kind == NULL) return TALSH_FAILURE;
-  for(i=0;i<tens_block->ndev;i++){
+  if(tens_block->ndev > tens_block->dev_rsc_len) return TALSH_FAILURE;
+  if(tens_block->dev_rsc == NULL || tens_block->data_kind == NULL || tens_block->avail == NULL) return TALSH_FAILURE;
+  for(i=0;i<tens_block->ndev;++i){
    j=talshKindDevId(tens_block->dev_rsc[i].dev_id,&m); if(j < 0) return TALSH_FAILURE;
-   if((m == devk || specific_kind == 0) && (j == devnum || specific_device == 0)){
-    (*ncopies)++; copies[*ncopies]=tens_block->dev_rsc[i].dev_id; data_kinds[*ncopies]=tens_block->data_kind[i];
+   if(tens_block->avail[i] == YEP){ //images that are no longer available are skipped
+    if((m == devk || specific_kind == 0) && (j == devnum || specific_device == 0)){
+     ++(*ncopies); copies[*ncopies]=tens_block->dev_rsc[i].dev_id; data_kinds[*ncopies]=tens_block->data_kind[i];
+    }
    }
   }
  }
@@ -1104,14 +1139,15 @@ int talshTaskTime_(talsh_task_t * talsh_task, double * total, double * comput, d
 
 // TAL-SH tensor operations API:
 int talshTensorPlace(talsh_tens_t * tens, int dev_id, int dev_kind, int copy_ctrl, talsh_task_t * talsh_task)
-/** Places a tensor block on a specific device. **/
+/** Places a tensor block body image on a specific device. **/
 {
  int i,j,dn,dk,errc,devid,dvk,dvn,image_id,host_image;
 
  if(talsh_on == 0) return TALSH_NOT_INITIALIZED;
  if(tens == NULL) return TALSH_INVALID_ARGS;
  if(talshTensorIsEmpty(tens) != NOPE) return TALSH_OBJECT_IS_EMPTY;
- if(tens->ndev <= 0 || tens->ndev > tens->dev_rsc_len || tens->dev_rsc == NULL || tens->data_kind == NULL) return TALSH_FAILURE;
+ if(tens->dev_rsc == NULL || tens->data_kind == NULL || tens->avail == NULL ||
+    tens->ndev <= 0 || tens->ndev > tens->dev_rsc_len) return TALSH_FAILURE;
  if(dev_kind == DEV_NULL){devid=dev_id;}else{devid=talshFlatDevId(dev_kind,dev_id);}
  dvn=talshKindDevId(devid,&dvk); if(dvn < 0) return TALSH_INVALID_ARGS;
  if(copy_ctrl == COPY_D || copy_ctrl == COPY_T) return TALSH_INVALID_ARGS; //'Discard' and 'Temporary' do not make sense here
@@ -1194,25 +1230,32 @@ int talshTensorPlace_(talsh_tens_t * tens, int dev_id, int dev_kind, int copy_ct
 }
 
 int talshTensorDiscard(talsh_tens_t * tens, int dev_id, int dev_kind)
-/** Discards a tensor block on a specific device. **/
+/** Discards a tensor block body image on a specific device. **/
 {
  int i,j,k,errc,devid;
 
  if(talsh_on == 0) return TALSH_NOT_INITIALIZED;
  if(tens == NULL) return TALSH_INVALID_ARGS;
- if(talshTensorIsEmpty(tens) == YEP) return TALSH_OBJECT_IS_EMPTY;
- if(tens->ndev <= 0 || tens->ndev > tens->dev_rsc_len || tens->dev_rsc == NULL || tens->data_kind == NULL) return TALSH_FAILURE;
+ if(talshTensorIsEmpty(tens) != NOPE) return TALSH_OBJECT_IS_EMPTY;
+ if(tens->dev_rsc == NULL || tens->data_kind == NULL || tens->avail == NULL ||
+    tens->ndev <= 0 || tens->ndev > tens->dev_rsc_len) return TALSH_FAILURE;
  if(dev_kind == DEV_NULL){devid=dev_id;}else{devid=talshFlatDevId(dev_kind,dev_id);}
  if(devid < 0 || devid >= DEV_MAX) return TALSH_INVALID_ARGS;
  errc=TALSH_SUCCESS;
  k=0;
- for(i=0;i<tens->ndev;i++){
-  if(tens->dev_rsc[i].dev_id == devid){
-   j=tensDevRsc_release_all(&(tens->dev_rsc[i]));
-   if(j != 0 && errc != TALSH_FAILURE){if(j == NOT_CLEAN){errc=NOT_CLEAN;}else{errc=TALSH_FAILURE;}}
+ for(i=0;i<tens->ndev;++i){
+  if(tens->avail[i] == YEP){ //images to be discarded cannot be discarded again
+   if(tens->dev_rsc[i].dev_id == devid){
+    j=tensDevRsc_release_all(&(tens->dev_rsc[i]));
+    if(j != 0 && errc != TALSH_FAILURE){if(j == NOT_CLEAN){errc=NOT_CLEAN;}else{errc=TALSH_FAILURE;}}
+   }else{
+    if(i > k){
+     tens->dev_rsc[k]=tens->dev_rsc[i]; tens->data_kind[k]=tens->data_kind[i]; tens->avail[k]=tens->avail[i];
+    }
+    ++k;
+   }
   }else{
-   if(i != k){tens->dev_rsc[k]=tens->dev_rsc[i]; tens->data_kind[k]=tens->data_kind[i];}
-   k++;
+   ++k;
   }
  }
  tens->ndev=k;

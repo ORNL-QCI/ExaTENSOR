@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level API header.
-REVISION: 2016/05/02
+REVISION: 2016/05/03
 
 Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -58,8 +58,9 @@ typedef struct{
  talsh_tens_shape_t * shape_p; //shape of the tensor block
  talsh_dev_rsc_t * dev_rsc;    //list of device resources occupied by the tensor block body on each device
  int * data_kind;              //list of data kinds for each device location occupied by the tensor body {R4,R8,C4,C8}
- int dev_rsc_len;              //capacity of .dev_rsc[], .data_kind[]
- int ndev;                     //number of devices the tensor block resides on: ndev <= dev_rsc_len
+ int * avail;                  //list of the data availability flags for each device location occupied by the tensor body
+ int dev_rsc_len;              //capacity of .dev_rsc[], .data_kind[], .avail[]
+ int ndev;                     //number of devices the tensor block body resides on: ndev <= dev_rsc_len
  void * tensF;                 //pointer to Fortran <tensor_block_t> (CPU, Intel MIC): Just a convenient alias to existing data
  void * tensC;                 //pointer to C <tensBlck_t> (Nvidia GPU): Just a convenient alias to existing data
 } talsh_tens_t;

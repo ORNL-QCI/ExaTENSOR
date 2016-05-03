@@ -123,7 +123,7 @@ CUDA_HOST_NOWRAP = --compiler-bindir /usr/bin
 CUDA_HOST_WRAP = -I.
 CUDA_HOST = $(CUDA_HOST_$(WRAP))
 CUDA_FLAGS_DEV = --compile -arch=sm_35 -g -G -D CUDA_ARCH=350 -D DEBUG_GPU
-CUDA_FLAGS_OPT = --compile -arch=sm_35 -O3 -D CUDA_ARCH=350
+CUDA_FLAGS_OPT = --compile -arch=sm_35 -O3 -lineinfo -D CUDA_ARCH=350
 CUDA_FLAGS_CUDA = $(CUDA_HOST) $(CUDA_FLAGS_$(BUILD_TYPE))
 CUDA_FLAGS_NOCUDA = -I.
 CUDA_FLAGS = $(CUDA_FLAGS_$(GPU_CUDA))

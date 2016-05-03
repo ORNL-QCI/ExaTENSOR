@@ -39,7 +39,7 @@
         if(ierr.ne.0) stop
         write(*,*)''
 #endif
-!Test Fortran API interface:
+!Test TAL-SH Fortran API interface:
         write(*,'("Testing TAL-SH Fortran API ...")')
         call test_talsh_f(ierr)
         write(*,'("Done: Status ",i5)') ierr
