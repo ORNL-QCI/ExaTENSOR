@@ -1,6 +1,6 @@
 /** Tensor Algebra Library for NVidia GPU: NV-TAL (CUDA based).
 AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-REVISION: 2016/04/29
+REVISION: 2016/05/05
 
 Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -201,14 +201,14 @@ static int DISABLE_BLAS=0; //non-zero value will disable cuBLAS usage (if it had
 static int DISABLE_BLAS=1; //non-zero value will disable cuBLAS usage (if it had been cuBLAS compiled/linked)
 #endif
 static cudaTask_t * LastTask[MAX_GPUS_PER_NODE]; //last CUDA task successfully scheduled on each GPU
-__device__ __constant__ static float sgemm_alpha=1.0f;       //default alpha constant for SGEMM
-__device__ __constant__ static float sgemm_beta=1.0f;        //default beta constant SGEMM
-__device__ __constant__ static double dgemm_alpha=1.0;       //default alpha constant for DGEMM
-__device__ __constant__ static double dgemm_beta=1.0;        //default beta constant DGEMM
-__device__ __constant__ static cuComplex cgemm_alpha;        //default alpha constant CGEMM
-__device__ __constant__ static cuComplex cgemm_beta;         //default beta constant CGEMM
-__device__ __constant__ static cuDoubleComplex zgemm_alpha;  //default alpha constant ZGEMM
-__device__ __constant__ static cuDoubleComplex zgemm_beta;   //default beta constant ZGEMM
+__device__ __constant__ static float sgemm_alpha=1.0f;                //default alpha constant for SGEMM
+__device__ __constant__ static float sgemm_beta=1.0f;                 //default beta constant SGEMM
+__device__ __constant__ static double dgemm_alpha=1.0;                //default alpha constant for DGEMM
+__device__ __constant__ static double dgemm_beta=1.0;                 //default beta constant DGEMM
+__device__ __constant__ static cuComplex cgemm_alpha={1.0f,0.0f};     //default alpha constant CGEMM
+__device__ __constant__ static cuComplex cgemm_beta={1.0f,0.0f};      //default beta constant CGEMM
+__device__ __constant__ static cuDoubleComplex zgemm_alpha={1.0,0.0}; //default alpha constant ZGEMM
+__device__ __constant__ static cuDoubleComplex zgemm_beta={1.0,0.0};  //default beta constant ZGEMM
 __device__ __constant__ static float sgemm_alpha_;           //alpha constant for SGEMM
 __device__ __constant__ static float sgemm_beta_;            //beta constant SGEMM
 __device__ __constant__ static double dgemm_alpha_;          //alpha constant for DGEMM
@@ -3050,6 +3050,11 @@ NOTES:
  return 0;
 }
 #endif
+// TENSOR BODY CLONING (non-blocking):
+__host__ int gpu_tensor_block_place(tensBlck_t *ctens, int gpu_id, unsigned int coh_ctrl, cudaTask_t *cuda_task)
+{
+ return 0;
+}
 //------------------------------------------------------------------------------------------------------------------------------
 // TENSOR CONTRACTION (non-blocking):
 __host__ int gpu_tensor_block_contract_dlf_(const int *cptrn, tensBlck_t *ltens, tensBlck_t *rtens, tensBlck_t *dtens,
