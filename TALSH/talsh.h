@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level API header.
-REVISION: 2016/05/03
+REVISION: 2016/05/05
 
 Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -65,14 +65,23 @@ typedef struct{
  void * tensC;                 //pointer to C <tensBlck_t> (Nvidia GPU): Just a convenient alias to existing data
 } talsh_tens_t;
 
+// Tensor operation argument (auxiliary type):
+typedef struct{
+ talsh_tens_t * tens_p; //pointer to a tensor block
+ int source_image;      //specific body image of that tensor block participating in the operation
+} talshTensArg_t;
+
 // Interoperable TAL-SH task handle:
 typedef struct{
  void * task_p;    //pointer to the corresponding device-kind-specific task object
  int dev_kind;     //device kind (DEV_NULL: uninitalized)
  int data_kind;    //data kind {R4,R8,C4,C8}, NO_TYPE: uninitialized
- double data_vol;  //total data volume
- double flops;     //number of floating point operations
- double exec_time; //execution time in seconds
+ int coherence;    //coherence control (-1:undefined)
+ int num_args;     //number of arguments participating in the tensor operation
+ talshTensArg_t tens_args[MAX_TENSOR_OPERANDS]; //tensor arguments
+ double data_vol;  //total data volume (information)
+ double flops;     //number of floating point operations (information)
+ double exec_time; //execution time in seconds (information)
 } talsh_task_t;
 
 //EXPORTED FUNCTIONS:

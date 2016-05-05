@@ -289,7 +289,7 @@ typedef struct{
  tensBlck_t * tens_p; //pointer to a tensor block
  int * prmn_p;        //tensor block dimension permutation: pinnned HOST memory (miBank)
  int const_mem_entry; //NVidia GPU constant memory entry handle (>=0, -1:None)
-} tensArg_t;
+} cudaTensArg_t;
 
 // CUDA task (returned by non-blocking CUDA functions):
 typedef struct{
@@ -302,7 +302,7 @@ typedef struct{
  int event_finish_hl;    //handle of the CUDA event recorded at the end of the task (full completion)
  unsigned int coherence; //coherence control for this task (see COPY_X, COPY_XX, and COPY_XXX constants)
  unsigned int num_args;  //number of tensor arguments participating in the tensor operation
- tensArg_t tens_args[MAX_TENSOR_OPERANDS]; //tensor arguments participating in the tensor operation
+ cudaTensArg_t tens_args[MAX_TENSOR_OPERANDS]; //tensor arguments participating in the tensor operation
 } cudaTask_t;
 //Note: Adding new CUDA events will require adjustment of NUM_EVENTS_PER_TASK.
 
@@ -336,7 +336,8 @@ extern "C"{
  int tensDevRsc_create(talsh_dev_rsc_t **drsc);
  int tensDevRsc_clean(talsh_dev_rsc_t * drsc);
  int tensDevRsc_is_empty(talsh_dev_rsc_t * drsc);
- int tensDevRsc_same(talsh_dev_rsc_t * drsc0, talsh_dev_rsc_t * drsc1);
+ int tensDevRsc_same(const talsh_dev_rsc_t * drsc0, const talsh_dev_rsc_t * drsc1);
+ int tensDevRsc_clone(const talsh_dev_rsc_t * drsc_in, talsh_dev_rsc_t * drsc_out);
  int tensDevRsc_attach_mem(talsh_dev_rsc_t * drsc, int dev_id, void * mem_p, int buf_entry = -1);
  int tensDevRsc_detach_mem(talsh_dev_rsc_t * drsc);
  int tensDevRsc_allocate_mem(talsh_dev_rsc_t * drsc, int dev_id, size_t mem_size, int in_arg_buf = NOPE);
@@ -396,6 +397,7 @@ extern "C"{
  int cuda_task_completed(cudaTask_t *cuda_task);
  int cuda_task_wait(cudaTask_t *cuda_task);
  int cuda_tasks_wait(unsigned int num_tasks, cudaTask_t **cuda_tasks, int *task_stats);
+ int cuda_task_get_dev_rsc(const cudaTask_t *cuda_task, unsigned int arg_num, char which, talsh_dev_rsc_t *dev_rsc);
  float cuda_task_time(const cudaTask_t *cuda_task, float *in_copy, float *out_copy, float *comp);
  void cuda_task_print(const cudaTask_t *cuda_task);
 //  NV-TAL tensor operations:

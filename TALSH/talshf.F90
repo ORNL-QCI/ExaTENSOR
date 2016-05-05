@@ -1,5 +1,5 @@
 !ExaTensor::TAL-SH: Device-unified user-level API:
-!REVISION: 2016/05/03
+!REVISION: 2016/05/05
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -59,14 +59,22 @@
          type(C_PTR):: tensF=C_NULL_PTR     !pointer to Fortran <tensor_block_t> (CPU, Intel MIC): Just a convenient alias to existing data
          type(C_PTR):: tensC=C_NULL_PTR     !pointer to C/C++ <tensBlck_t> (Nvidia GPU): Just a convenient alias to existing data
         end type talsh_tens_t
+ !Tensor operation argument (auxiliary type):
+        type, bind(C):: talshTensArg_t
+         type(C_PTR):: tens_p               !pointer to a tensor block
+         integer(C_INT):: source_image      !specific body image of that tensor block participating in the operation
+        end type talshTensArg_t
  !TAL-SH task handle:
         type, public, bind(C):: talsh_task_t
          type(C_PTR):: task_p=C_NULL_PTR    !pointer to the corresponding device-specific task object
          integer(C_INT):: dev_kind=DEV_NULL !device kind (DEV_NULL: uninitialized)
          integer(C_INT):: data_kind=NO_TYPE !data kind {R4,R8,C4,C8}, NO_TYPE: uninitialized
-         real(C_DOUBLE):: data_vol=0d0      !total data volume
-         real(C_DOUBLE):: flops=0d0         !number of floating point operations
-         real(C_DOUBLE):: exec_time=0d0     !execution time in seconds
+         integer(C_INT):: coherence         !coherence control (-1:undefined)
+         integer(C_INT):: num_args          !number of tensor arguments participating in the tensor operation
+         type(talshTensArg_t):: tens_args(MAX_TENSOR_OPERANDS) !tensor arguments
+         real(C_DOUBLE):: data_vol=0d0      !total data volume (information)
+         real(C_DOUBLE):: flops=0d0         !number of floating point operations (information)
+         real(C_DOUBLE):: exec_time=0d0     !execution time in seconds (information)
         end type talsh_task_t
 !GLOBALS:
 !       ...

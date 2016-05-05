@@ -373,7 +373,7 @@ int tensDevRsc_is_empty(talsh_dev_rsc_t * drsc)
  return errc;
 }
 
-int tensDevRsc_same(talsh_dev_rsc_t * drsc0, talsh_dev_rsc_t * drsc1)
+int tensDevRsc_same(const talsh_dev_rsc_t * drsc0, const talsh_dev_rsc_t * drsc1)
 /** Returns YEP if two resource descriptors point to the same resources, NOPE otherwise.
     A negative return status indicates an error. **/
 {
@@ -382,6 +382,18 @@ int tensDevRsc_same(talsh_dev_rsc_t * drsc0, talsh_dev_rsc_t * drsc1)
  if(drsc0->dev_id == drsc1->dev_id &&
     drsc0->gmem_p == drsc1->gmem_p) return YEP;
  return NOPE;
+}
+
+int tensDevRsc_clone(const talsh_dev_rsc_t * drsc_in, talsh_dev_rsc_t * drsc_out)
+/** Copy constructor for a device resource. **/
+{
+ if(drsc_in == NULL) return -1;
+ if(drsc_out == NULL) return -2;
+ drsc_out->dev_id=drsc_in->dev_id;
+ drsc_out->gmem_p=drsc_in->gmem_p;
+ drsc_out->buf_entry=drsc_in->buf_entry;
+ drsc_out->mem_attached=drsc_in->mem_attached;
+ return 0;
 }
 
 int tensDevRsc_attach_mem(talsh_dev_rsc_t * drsc, int dev_id, void * mem_p, int buf_entry)
@@ -1785,6 +1797,30 @@ __host__ int cuda_tasks_wait(unsigned int num_tasks, cudaTask_t **cuda_tasks, in
  return 0;
 }
 
+__host__ int cuda_task_get_dev_rsc(const cudaTask_t *cuda_task, unsigned int arg_num, char which, talsh_dev_rsc_t *dev_rsc)
+/** Clones the device resource object from a tensor argument of a CUDA task into <dev_rsc>:
+    <which> selects bewteen 's':source, 't':temporary, 'd':destination (resource). **/
+{
+ int errc;
+ tensBlck_t * ctens;
+
+ if(cuda_task == NULL) return -1;
+ if(dev_rsc == NULL) return -2;
+ if(arg_num > cuda_task->num_args) return 1;
+ ctens=cuda_task->tens_args[arg_num].tens_p;
+ if(ctens){
+  switch(which){
+   case 's': errc=tensDevRsc_clone(ctens->src_rsc,dev_rsc); break;
+   case 't': errc=tensDevRsc_clone(ctens->tmp_rsc,dev_rsc); break;
+   case 'd': errc=tensDevRsc_clone(ctens->dst_rsc,dev_rsc); break;
+   default: errc=2;
+  }
+ }else{
+  errc=3;
+ }
+ return errc;
+}
+
 __host__ float cuda_task_time(const cudaTask_t *cuda_task, float *in_copy, float *out_copy, float *comp)
 /** Returns the time (in seconds) the CUDA task took to complete. Also, <in_copy> is the input copying time,
     <out_copy> is the output copying time, and <comp> is the computing time in seconds.
@@ -1911,7 +1947,7 @@ __host__ static int cuda_task_finalize(cudaTask_t *cuda_task) //do not call this
  const unsigned int msk=3; //two right bits are set: {0:D,1:M,2:T,3:K}
  unsigned int bts,coh,s_d_same;
  int i,ret_stat,errc;
- tensArg_t *tens_arg;
+ cudaTensArg_t *tens_arg;
 
  if(cuda_task == NULL) return -1;
  if(cuda_task->task_error < 0) return 1; //unfinished or empty CUDA task cannot be finalized
