@@ -1,5 +1,5 @@
 !ExaTensor::TAL-SH: Device-unified user-level API:
-!REVISION: 2016/05/05
+!REVISION: 2016/05/09
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -56,8 +56,6 @@
          type(C_PTR):: avail=C_NULL_PTR     !list of the data availability flags for each device location occupied by the tensor body
          integer(C_INT):: dev_rsc_len=0     !capacity of .dev_rsc[], .data_kind[], .avail[]
          integer(C_INT):: ndev=0            !number of devices the tensor block body resides on: ndev <= dev_rsc_len
-         type(C_PTR):: tensF=C_NULL_PTR     !pointer to Fortran <tensor_block_t> (CPU, Intel MIC): Just a convenient alias to existing data
-         type(C_PTR):: tensC=C_NULL_PTR     !pointer to C/C++ <tensBlck_t> (Nvidia GPU): Just a convenient alias to existing data
         end type talsh_tens_t
  !Tensor operation argument (auxiliary type):
         type, bind(C):: talshTensArg_t
@@ -337,117 +335,126 @@
 
        contains
 !INTERNAL FUNCTIONS:
-!------------------------------------------------------------------------------------------------------------
-        integer(C_INT) function talsh_tensor_f_assoc(talsh_tens,image_id) bind(c,name='talsh_tensor_f_assoc')
-!Associates the <tensor_block_t> component <.tensF> of the <talsh_tens_t> object <talsh_tens>
-!with the tensor body image <image_id>. A return status TALSH_NOT_ALLOWED indicates that
-!the requested tensor body image is no longer available (to be discarded by runtime).
+!------------------------------------------------------------------------------------------------------------------
+        integer(C_INT) function talsh_tensor_f_assoc(talsh_tens,image_id,tensF) bind(c,name='talsh_tensor_f_assoc')
+!Returns a C pointer <tensF> to a <tensor_block_t> object instantiated with the tensor body image <image_id>.
+!A return status TALSH_NOT_ALLOWED indicates that the requested tensor body image
+!is no longer available (to be discarded by runtime).
          implicit none
-         type(talsh_tens_t), intent(inout):: talsh_tens !inout: TAL-SH tensor
-         integer(C_INT), intent(in):: image_id          !in: tensor body image id
-         type(talsh_tens_shape_t), pointer:: tens_shape
+         type(talsh_tens_t), intent(in):: talsh_tens !in: TAL-SH tensor
+         integer(C_INT), intent(in):: image_id       !in: tensor body image id
+         type(C_PTR), intent(out):: tensF            !out: C pointer to <tensor_block_t> associated with the TAL-SH tensor image
          type(tensor_block_t), pointer:: ftens
+         talsh_tensor_f_assoc=talsh_tensor_f_assoc_(talsh_tens,image_id,ftens)
+         if(talsh_tensor_f_assoc.eq.TALSH_SUCCESS) then; tensF=c_loc(ftens); else; tensF=C_NULL_PTR; endif
+         return
+        end function talsh_tensor_f_assoc
+!-------------------------------------------------------------------------------
+        integer(C_INT) function talsh_tensor_f_assoc_(talsh_tens,image_id,ftens)
+!An auxiliary function for <talsh_tensor_f_assoc()>.
+         implicit none
+         type(talsh_tens_t), intent(in):: talsh_tens        !in: TAL-SH tensor
+         integer(C_INT), intent(in):: image_id              !in: tensor body image id
+         type(tensor_block_t), pointer, intent(out):: ftens !out: pointer to a newly allocated <tensor_block_t>
+         type(talsh_tens_shape_t), pointer:: tens_shape
          type(tensor_shape_t):: tshape
          integer(C_INT), pointer, contiguous:: dims(:),divs(:),grps(:)
          integer(C_INT):: devid,dtk,buf_entry,errc
          type(C_PTR):: gmem_p
          integer:: n,ierr
 
-         talsh_tensor_f_assoc=TALSH_SUCCESS
+         talsh_tensor_f_assoc_=TALSH_SUCCESS
          if(.not.talsh_tensor_is_empty(talsh_tens)) then
           if(image_id.ge.0.and.image_id.lt.talsh_tens%ndev) then
-           if(.not.c_associated(talsh_tens%tensF)) then
-            if(c_associated(talsh_tens%dev_rsc).and.c_associated(talsh_tens%data_kind).and.c_associated(talsh_tens%avail).and.&
-              &talsh_tens%ndev.gt.0.and.talsh_tens%ndev.le.talsh_tens%dev_rsc_len) then
-             call c_f_pointer(talsh_tens%shape_p,tens_shape)
-             n=tens_shape%num_dim
-             if(n.ge.0) then
-              allocate(ftens,STAT=ierr)
-              if(ierr.eq.0) then
-               if(n.gt.0) then
-                if(c_associated(tens_shape%dims)) then
-                 call c_f_pointer(tens_shape%dims,dims,shape=(/n/))
-                else
-                 dims=>NULL()
-                endif
-                if(c_associated(tens_shape%divs)) then
-                 call c_f_pointer(tens_shape%divs,divs,shape=(/n/))
-                else
-                 divs=>NULL()
-                endif
-                if(c_associated(tens_shape%grps)) then
-                 call c_f_pointer(tens_shape%grps,grps,shape=(/n/))
-                else
-                 grps=>NULL()
-                endif
+           if(c_associated(talsh_tens%dev_rsc).and.c_associated(talsh_tens%data_kind).and.c_associated(talsh_tens%avail).and.&
+             &talsh_tens%ndev.gt.0.and.talsh_tens%ndev.le.talsh_tens%dev_rsc_len) then
+            call c_f_pointer(talsh_tens%shape_p,tens_shape)
+            n=tens_shape%num_dim
+            if(n.ge.0) then
+             allocate(ftens,STAT=ierr)
+             if(ierr.eq.0) then
+              if(n.gt.0) then
+               if(c_associated(tens_shape%dims)) then
+                call c_f_pointer(tens_shape%dims,dims,shape=(/n/))
                else
-                dims=>NULL(); divs=>NULL(); grps=>NULL()
+                dims=>NULL()
                endif
-               call tensor_shape_assoc(tshape,ierr,dims,divs,grps)
-               if(ierr.eq.0) then
-                errc=talsh_tensor_image_info(talsh_tens,image_id,devid,dtk,gmem_p,buf_entry)
-                if(errc.eq.0) then
-                 call tensor_block_assoc(ftens,tshape,dtk,gmem_p,errc)
-                 if(errc.ne.0) talsh_tensor_f_assoc=TALSH_FAILURE
-                else
-                 if(errc.eq.TALSH_NOT_ALLOWED) then
-                  talsh_tensor_f_assoc=TALSH_NOT_ALLOWED !requested image is not available (to be discarded)
-                 else
-                  talsh_tensor_f_assoc=TALSH_FAILURE
-                 endif
-                endif
+               if(c_associated(tens_shape%divs)) then
+                call c_f_pointer(tens_shape%divs,divs,shape=(/n/))
                else
-                talsh_tensor_f_assoc=TALSH_FAILURE
+                divs=>NULL()
                endif
-               if(talsh_tensor_f_assoc.eq.TALSH_SUCCESS) then
-                talsh_tens%tensF=c_loc(ftens)
-                ftens=>NULL() !memory is not deallocated (pointed to by %tensF pointer)
+               if(c_associated(tens_shape%grps)) then
+                call c_f_pointer(tens_shape%grps,grps,shape=(/n/))
                else
-                call tensor_block_destroy(ftens,ierr)
-                deallocate(ftens)
+                grps=>NULL()
                endif
               else
-               talsh_tensor_f_assoc=TRY_LATER
+               dims=>NULL(); divs=>NULL(); grps=>NULL()
+              endif
+              call tensor_shape_assoc(tshape,ierr,dims,divs,grps)
+              if(ierr.eq.0) then
+               errc=talsh_tensor_image_info(talsh_tens,image_id,devid,dtk,gmem_p,buf_entry)
+               if(errc.eq.0) then
+                call tensor_block_assoc(ftens,tshape,dtk,gmem_p,errc)
+                if(errc.ne.0) talsh_tensor_f_assoc_=TALSH_FAILURE
+               else
+                if(errc.eq.TALSH_NOT_ALLOWED) then
+                 talsh_tensor_f_assoc_=TALSH_NOT_ALLOWED !requested image is not available (to be discarded)
+                else
+                 talsh_tensor_f_assoc_=TALSH_FAILURE
+                endif
+               endif
+              else
+               talsh_tensor_f_assoc_=TALSH_FAILURE
+              endif
+              if(talsh_tensor_f_assoc_.ne.TALSH_SUCCESS) then
+               call tensor_block_destroy(ftens,ierr)
+               deallocate(ftens)
               endif
              else
-              talsh_tensor_f_assoc=TALSH_FAILURE
+              talsh_tensor_f_assoc_=TRY_LATER
              endif
             else
-             talsh_tensor_f_assoc=TALSH_FAILURE
+             talsh_tensor_f_assoc_=TALSH_FAILURE
             endif
            else
-            talsh_tensor_f_assoc=TALSH_OBJECT_NOT_EMPTY
+            talsh_tensor_f_assoc_=TALSH_FAILURE
            endif
           else
-           talsh_tensor_f_assoc=TALSH_INVALID_ARGS
+           talsh_tensor_f_assoc_=TALSH_INVALID_ARGS
           endif
          else
-          talsh_tensor_f_assoc=TALSH_OBJECT_IS_EMPTY
+          talsh_tensor_f_assoc_=TALSH_OBJECT_IS_EMPTY
          endif
          return
-        end function talsh_tensor_f_assoc
-!-----------------------------------------------------------------------------------------------------
-        integer(C_INT) function talsh_tensor_f_dissoc(talsh_tens) bind(c,name='talsh_tensor_f_dissoc')
-!Dissociates the <tensor_block_t> component <.tensF> of the <talsh_tens_t> object <talsh_tens>.
+        end function talsh_tensor_f_assoc_
+!------------------------------------------------------------------------------------------------
+        integer(C_INT) function talsh_tensor_f_dissoc(tensF) bind(c,name='talsh_tensor_f_dissoc')
+!Destroys a temporary <tensor_block_t> object associated with a specific image of some TAL-SH tensor.
          implicit none
-         type(talsh_tens_t), intent(inout):: talsh_tens !inout: TAL-SH tensor
+         type(C_PTR), value:: tensF !in: C pointer to a <tensor_block_t> object created by <talsh_tensor_f_assoc()>
          type(tensor_block_t), pointer:: ftens
          integer:: ierr
 
          talsh_tensor_f_dissoc=TALSH_SUCCESS
-         if(.not.talsh_tensor_is_empty(talsh_tens)) then
-          if(c_associated(talsh_tens%tensF)) then
-           call c_f_pointer(talsh_tens%tensF,ftens)
-           call tensor_block_destroy(ftens,ierr)
-           if(ierr.ne.0) then
-            if(ierr.eq.NOT_CLEAN) then
-             talsh_tensor_f_dissoc=NOT_CLEAN
-            else
-             talsh_tensor_f_dissoc=TALSH_FAILURE
+         if(c_associated(tensF)) then
+          call c_f_pointer(tensF,ftens)
+          if(.not.tensor_block_is_empty(ftens,ierr)) then
+           if(ierr.eq.0) then
+            call tensor_block_destroy(ftens,ierr)
+            if(ierr.ne.0) then
+             if(ierr.eq.NOT_CLEAN) then
+              talsh_tensor_f_dissoc=NOT_CLEAN
+             else
+              talsh_tensor_f_dissoc=TALSH_FAILURE
+             endif
             endif
+            deallocate(ftens,STAT=ierr)
+            if(ierr.ne.0.and.talsh_tensor_f_dissoc.eq.TALSH_SUCCESS) talsh_tensor_f_dissoc=TALSH_FAILURE
+           else
+            talsh_tensor_f_dissoc=TALSH_FAILURE
            endif
-           talsh_tens%tensF=C_NULL_PTR
-           nullify(ftens)
           else
            talsh_tensor_f_dissoc=TALSH_OBJECT_IS_EMPTY
           endif

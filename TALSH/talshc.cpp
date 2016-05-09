@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level API.
-REVISION: 2016/05/05
+REVISION: 2016/05/09
 
 Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -70,8 +70,8 @@ typedef struct{
 extern "C"{
 #endif
 // Fortran tensor block aliasing:
-int talsh_tensor_f_assoc(talsh_tens_t * talsh_tens, int image_id);
-int talsh_tensor_f_dissoc(talsh_tens_t * talsh_tens);
+int talsh_tensor_f_assoc(const talsh_tens_t * talsh_tens, int image_id, void ** tensF);
+int talsh_tensor_f_dissoc(void * tensF);
 #ifdef __cplusplus
 }
 #endif
@@ -99,8 +99,8 @@ static int host_task_record(host_task_t * host_task, unsigned int coh_ctrl, unsi
 static int host_task_status(host_task_t * host_task);
 static int host_task_destroy(host_task_t * host_task);
 // C tensor block aliasing:
-static int talsh_tensor_c_assoc(talsh_tens_t * talsh_tens, int image_id);
-static int talsh_tensor_c_dissoc(talsh_tens_t * talsh_tens);
+static int talsh_tensor_c_assoc(const talsh_tens_t * talsh_tens, int image_id, tensBlck_t ** tensC);
+static int talsh_tensor_c_dissoc(tensBlck_t * tensC);
 // Construct a TAL-SH task:
 static int talshTaskConstruct(talsh_task_t * talsh_task, int dev_kind, int coh_ctrl, int data_kind = NO_TYPE);
 static int talshTaskSetArg(talsh_task_t * talsh_task, talsh_tens_t * talsh_tens_p, int image_id);
@@ -227,10 +227,11 @@ static int talsh_tensor_image_discard(talsh_tens_t * talsh_tens, int image_id)
  return errc;
 }
 
-static int talsh_tensor_c_assoc(talsh_tens_t * talsh_tens, //inout: TAL-SH tensor
-                                int image_id)              //in: id of the tensor body image to be used
-/** Fills in the <tensBlck_t> component inside the <talsh_tens_t> object by importing the information
-    from <talsh_tens>. A return status TRY_LATER indicates temporary shortage in available resources.
+static int talsh_tensor_c_assoc(const talsh_tens_t * talsh_tens, //in: TAL-SH tensor
+                                int image_id,                    //in: id of the tensor body image to be used
+                                tensBlck_t ** tensC)             //out: newly created <tensBlck_t> object
+/** Creates a <tensBlck_t> object for a specific image of <talsh_tens>.
+    A return status TRY_LATER indicates temporary shortage in available resources.
     A return status TALSH_NOT_ALLOWED indicates that the requested image is no longer available
     (marked to be discarded). **/
 {
@@ -242,7 +243,6 @@ static int talsh_tensor_c_assoc(talsh_tens_t * talsh_tens, //inout: TAL-SH tenso
  if(talsh_tens == NULL) return TALSH_INVALID_ARGS;
  if(talshTensorIsEmpty(talsh_tens) == YEP) return TALSH_INVALID_ARGS;
  if(image_id < 0 || image_id >= talsh_tens->ndev) return TALSH_INVALID_ARGS;
- if(talsh_tens->tensC != NULL) return TALSH_OBJECT_NOT_EMPTY;
  if(talsh_tens->dev_rsc == NULL || talsh_tens->data_kind == NULL || talsh_tens->avail == NULL) return TALSH_FAILURE;
  if(tens_valid_data_kind(talsh_tens->data_kind[image_id]) != YEP) return TALSH_FAILURE;
  if(talsh_tens->avail[image_id] == YEP){
@@ -253,25 +253,22 @@ static int talsh_tensor_c_assoc(talsh_tens_t * talsh_tens, //inout: TAL-SH tenso
   if(errc){if(errc != TRY_LATER) errc=TALSH_FAILURE; i=tensBlck_destroy(ctens); return errc;}
   errc=tensBlck_attach_body(ctens,talsh_tens->data_kind[image_id],src_rsc_p->dev_id,src_rsc_p->gmem_p,src_rsc_p->buf_entry);
   if(errc){if(errc != TRY_LATER) errc=TALSH_FAILURE; i=tensBlck_destroy(ctens); return errc;}
-  talsh_tens->tensC=(void*)ctens; //.tensC has the right shape, data_kind, and source data
+  tensC=&ctens; //tensC has the right shape, data_kind, and source data
  }else{
   return TALSH_NOT_ALLOWED; //image is no longer available (to be discarded)
  }
  return TALSH_SUCCESS;
 }
 
-static int talsh_tensor_c_dissoc(talsh_tens_t * talsh_tens) //inout: TAL-SH tensor
-/** Destroys the <tensBlck_t> component in the <talsh_tens_t> object. **/
+static int talsh_tensor_c_dissoc(tensBlck_t * tensC) //inout: <tensBlck_t> created by <talsh_tensor_c_assoc()>
+/** Destroys the <tensBlck_t> object created by <talsh_tensor_c_assoc()>. **/
 {
  int errc;
- tensBlck_t *ctens;
 
  if(talsh_on == 0) return TALSH_NOT_INITIALIZED;
- if(talsh_tens == NULL) return TALSH_INVALID_ARGS;
- if(talshTensorIsEmpty(talsh_tens) == YEP) return TALSH_INVALID_ARGS;
- if(talsh_tens->tensC == NULL) return TALSH_OBJECT_IS_EMPTY;
- ctens=(tensBlck_t*)talsh_tens->tensC; errc=tensBlck_destroy(ctens);
- if(errc){if(errc != NOT_CLEAN) errc=TALSH_FAILURE;}
+ if(tensC == NULL) return TALSH_INVALID_ARGS;
+ if(tensBlck_volume(tensC) == 0) return TALSH_OBJECT_IS_EMPTY;
+ errc=tensBlck_destroy(tensC); if(errc){if(errc != NOT_CLEAN) errc=TALSH_FAILURE;}
  return errc;
 }
 
@@ -521,8 +518,6 @@ int talshTensorClean(talsh_tens_t * tens_block)
  tens_block->avail=NULL;     //`.tens_image.avail
  tens_block->dev_rsc_len=0;  //`.tens_image.capacity
  tens_block->ndev=0;         //`.tens_image.ndev
- tens_block->tensF=NULL;
- tens_block->tensC=NULL;
  return TALSH_SUCCESS;
 }
 
@@ -666,8 +661,6 @@ int talshTensorDestruct(talsh_tens_t * tens_block) //in: non-NULL pointer to a t
  if(talsh_on == 0) return TALSH_NOT_INITIALIZED;
  errc=TALSH_SUCCESS;
  if(tens_block == NULL) return TALSH_INVALID_ARGS;
- if(tens_block->tensF != NULL){free(tens_block->tensF); tens_block->tensF=NULL;} //no resources inside this object
- if(tens_block->tensC != NULL){free(tens_block->tensC); tens_block->tensC=NULL;} //no resources inside this object
  if(tens_block->shape_p != NULL){
   i=tensShape_destroy(tens_block->shape_p); tens_block->shape_p=NULL;
   if(i == 0 || i == NOT_CLEAN){if(errc == 0) errc=i;}else{errc=TALSH_FAILURE;}
@@ -1323,22 +1316,21 @@ int talshTensorPlace(talsh_tens_t * tens, int dev_id, int dev_kind, int copy_ctr
    break;
   case DEV_NVIDIA_GPU:
 #ifndef NO_GPU
-   errc=talsh_tensor_c_assoc(tens,image_id);
-   if(errc || tens->tensC == NULL){if(talsh_task == NULL) j=talshTaskDestroy(tsk); return TALSH_FAILURE;}
-   ctens=(tensBlck_t*)tens->tensC; cuda_task=(cudaTask_t*)(tsk->task_p);
+   errc=talsh_tensor_c_assoc(tens,image_id,&ctens);
+   if(errc || ctens == NULL){if(talsh_task == NULL) j=talshTaskDestroy(tsk); return TALSH_FAILURE;}
+   cuda_task=(cudaTask_t*)(tsk->task_p);
    if(dvk == DEV_HOST && dvn == 0){ //destination is Host
     j=-1; //Host
    }else if(dvk == DEV_NVIDIA_GPU){ //destination is Nvidia GPU
     j=dvn; //GPU device number
    }else{
-    ctens=NULL; j=talsh_tensor_c_dissoc(tens);
-    if(talsh_task == NULL) j=talshTaskDestroy(tsk);
+    j=talsh_tensor_c_dissoc(ctens); if(talsh_task == NULL) j=talshTaskDestroy(tsk);
     return TALSH_FAILURE;
    }
    errc=gpu_tensor_block_place(ctens,j,(unsigned int)copy_ctrl,cuda_task);
    if(errc){ //in case of error, CUDA task has already been finalized (with error) without coherence control
     if(errc != TRY_LATER && errc != DEVICE_UNABLE) errc=TALSH_FAILURE;
-    ctens=NULL; j=talsh_tensor_c_dissoc(tens);
+    j=talsh_tensor_c_dissoc(ctens);
    }else{ //coherence control
     if(copy_ctrl == COPY_M) tens->avail[image_id]=NOPE; //mark the image not available since it will be discarded in case of successful execution
    }
