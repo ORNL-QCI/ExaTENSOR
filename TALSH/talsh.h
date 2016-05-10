@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level API header.
-REVISION: 2016/05/09
+REVISION: 2016/05/10
 
 Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -72,6 +72,7 @@ typedef struct{
 // Interoperable TAL-SH task handle:
 typedef struct{
  void * task_p;    //pointer to the corresponding device-kind-specific task object
+ int task_error;   //-1:undefined(task in progress or empty); 0:successfully completed; >0: error code
  int dev_kind;     //device kind (DEV_NULL: uninitalized)
  int data_kind;    //data kind {R4,R8,C4,C8}, NO_TYPE: uninitialized
  int coherence;    //coherence control (-1:undefined)

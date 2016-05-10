@@ -1,5 +1,5 @@
 !ExaTensor::TAL-SH: Device-unified user-level API:
-!REVISION: 2016/05/09
+!REVISION: 2016/05/10
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -65,6 +65,7 @@
  !TAL-SH task handle:
         type, public, bind(C):: talsh_task_t
          type(C_PTR):: task_p=C_NULL_PTR    !pointer to the corresponding device-specific task object
+         integer(C_INT):: task_error=-1     !-1:undefined(task in progress or empty); 0:successfully completed; >0: error code
          integer(C_INT):: dev_kind=DEV_NULL !device kind (DEV_NULL: uninitialized)
          integer(C_INT):: data_kind=NO_TYPE !data kind {R4,R8,C4,C8}, NO_TYPE: uninitialized
          integer(C_INT):: coherence         !coherence control (-1:undefined)
