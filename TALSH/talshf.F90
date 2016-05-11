@@ -1,5 +1,5 @@
 !ExaTensor::TAL-SH: Device-unified user-level API:
-!REVISION: 2016/05/10
+!REVISION: 2016/05/11
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -45,6 +45,7 @@
         integer(C_INT), parameter, public:: TALSH_OBJECT_IS_EMPTY=1000005     !object is empty while not expected so
         integer(C_INT), parameter, public:: TALSH_IN_PROGRESS=1000006         !TAL-SH operation is still in progress (not finished)
         integer(C_INT), parameter, public:: TALSH_NOT_ALLOWED=1000007         !request is not allowed by TAL-SH
+        integer(C_INT), parameter, public:: TALSH_LIMIT_EXCEEDED=1000008      !internal limit exceeded
  !Host argument buffer:
         integer(C_SIZE_T), parameter, private:: HAB_SIZE_DEFAULT=1048576 !default size of the Host argument buffer in bytes
 !DERIVED TYPES:
@@ -68,8 +69,8 @@
          integer(C_INT):: task_error=-1     !-1:undefined(task in progress or empty); 0:successfully completed; >0: error code
          integer(C_INT):: dev_kind=DEV_NULL !device kind (DEV_NULL: uninitialized)
          integer(C_INT):: data_kind=NO_TYPE !data kind {R4,R8,C4,C8}, NO_TYPE: uninitialized
-         integer(C_INT):: coherence         !coherence control (-1:undefined)
-         integer(C_INT):: num_args          !number of tensor arguments participating in the tensor operation
+         integer(C_INT):: coherence=-1      !coherence control (-1:undefined)
+         integer(C_INT):: num_args=0        !number of tensor arguments participating in the tensor operation
          type(talshTensArg_t):: tens_args(MAX_TENSOR_OPERANDS) !tensor arguments
          real(C_DOUBLE):: data_vol=0d0      !total data volume (information)
          real(C_DOUBLE):: flops=0d0         !number of floating point operations (information)

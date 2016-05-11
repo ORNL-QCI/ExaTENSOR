@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level API header.
-REVISION: 2016/05/10
+REVISION: 2016/05/11
 
 Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -42,6 +42,7 @@ along with ExaTensor. If not, see <http://www.gnu.org/licenses/>.
 #define TALSH_OBJECT_IS_EMPTY 1000005
 #define TALSH_IN_PROGRESS 1000006
 #define TALSH_NOT_ALLOWED 1000007
+#define TALSH_LIMIT_EXCEEDED 1000008
 
 //TAL-SH TASK STATUS:
 #define TALSH_TASK_ERROR 1999999
@@ -158,6 +159,8 @@ extern "C"{
  int talshTaskCreate(talsh_task_t ** talsh_task);
 //  Clean an undefined TAL-SH task:
  int talshTaskClean(talsh_task_t * talsh_task);
+//  Query whether a TAL-SH task is empty:
+ int talshTaskIsEmpty(const talsh_task_t * talsh_task);
 //  Destruct a TAL-SH task:
  int talshTaskDestruct(talsh_task_t * talsh_task);
 //  Destroy a TAL-SH task:

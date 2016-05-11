@@ -1,6 +1,6 @@
 /** Tensor Algebra Library for NVidia GPU: NV-TAL (CUDA based).
 AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-REVISION: 2016/05/05
+REVISION: 2016/05/11
 
 Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -1797,7 +1797,11 @@ __host__ int cuda_tasks_wait(unsigned int num_tasks, cudaTask_t **cuda_tasks, in
  return 0;
 }
 
-__host__ int cuda_task_get_dev_rsc(const cudaTask_t *cuda_task, unsigned int arg_num, char which, talsh_dev_rsc_t *dev_rsc)
+__host__ int cuda_task_error_code(const cudaTask_t *cuda_task)
+/** Returns the current .task_error member variable. **/
+{return cuda_task->task_error;}
+
+__host__ int cuda_task_dev_rsc_copy(const cudaTask_t *cuda_task, unsigned int arg_num, char which, talsh_dev_rsc_t *dev_rsc)
 /** Clones the device resource object from a tensor argument of a CUDA task into <dev_rsc>:
     <which> selects bewteen 's':source, 't':temporary, 'd':destination (resource). **/
 {
@@ -1817,6 +1821,53 @@ __host__ int cuda_task_get_dev_rsc(const cudaTask_t *cuda_task, unsigned int arg
   }
  }else{
   errc=3;
+ }
+ return errc;
+}
+
+__host__ int cuda_task_dev_rsc_move(cudaTask_t *cuda_task, unsigned int arg_num, char which, talsh_dev_rsc_t *dev_rsc)
+/** Moves the device resource object from a tensor argument of a CUDA task into <dev_rsc>:
+    <which> selects bewteen 's':source, 't':temporary, 'd':destination (resource). **/
+{
+ int errc;
+ tensBlck_t * ctens;
+
+ if(cuda_task == NULL) return -1;
+ if(dev_rsc == NULL) return -2;
+ if(arg_num > cuda_task->num_args) return 1;
+ ctens=cuda_task->tens_args[arg_num].tens_p;
+ if(ctens){
+  switch(which){
+   case 's': errc=tensDevRsc_clone(ctens->src_rsc,dev_rsc); if(errc == 0){free(ctens->src_rsc); ctens->src_rsc=NULL;} break;
+   case 't': errc=tensDevRsc_clone(ctens->tmp_rsc,dev_rsc); if(errc == 0){free(ctens->tmp_rsc); ctens->tmp_rsc=NULL;} break;
+   case 'd': errc=tensDevRsc_clone(ctens->dst_rsc,dev_rsc); if(errc == 0){free(ctens->dst_rsc); ctens->dst_rsc=NULL;} break;
+   default: errc=2;
+  }
+ }else{
+  errc=3;
+ }
+ return errc;
+}
+
+__host__ int cuda_task_arg_destroy(cudaTask_t *cuda_task, int arg_num) //internal use only
+/** Destroys a specific <tensBlck_t> argument in a CUDA task. If <arg_num> is not
+    specified (negative), all arguments of the CUDA task will be destroyed. **/
+{
+ int i,errc;
+
+ errc=0;
+ if(cuda_task == NULL) return -1;
+ if(arg_num >= cuda_task->num_args) return 1;
+ if(arg_num < 0){ //destroy all tensor arguments
+  while(cuda_task->num_args > 0){
+   i=tensBlck_destroy(cuda_task->tens_args[cuda_task->num_args-1].tens_p);
+   if((i == 0 || i == NOT_CLEAN) && errc == 0){errc=i;}else{errc=2;}
+   cuda_task->tens_args[--(cuda_task->num_args)].tens_p=NULL;
+  }
+ }else{ //destroy a specific tensor argument
+  i=tensBlck_destroy(cuda_task->tens_args[arg_num].tens_p);
+  if((i == 0 || i == NOT_CLEAN) && errc == 0){errc=i;}else{errc=3;}
+  cuda_task->tens_args[arg_num].tens_p=NULL;
  }
  return errc;
 }

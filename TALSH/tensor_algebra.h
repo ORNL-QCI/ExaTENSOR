@@ -2,7 +2,7 @@
     Parameters, derived types, and function prototypes
     used at the lower level of TAL-SH (device specific):
     CP-TAL, NV-TAL, XP-TAL, AM-TAL, etc.
-REVISION: 2016/05/05
+REVISION: 2016/05/11
 
 Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -397,7 +397,10 @@ extern "C"{
  int cuda_task_completed(cudaTask_t *cuda_task);
  int cuda_task_wait(cudaTask_t *cuda_task);
  int cuda_tasks_wait(unsigned int num_tasks, cudaTask_t **cuda_tasks, int *task_stats);
- int cuda_task_get_dev_rsc(const cudaTask_t *cuda_task, unsigned int arg_num, char which, talsh_dev_rsc_t *dev_rsc);
+ int cuda_task_error_code(const cudaTask_t *cuda_task);
+ int cuda_task_dev_rsc_copy(const cudaTask_t *cuda_task, unsigned int arg_num, char which, talsh_dev_rsc_t *dev_rsc);
+ int cuda_task_dev_rsc_move(cudaTask_t *cuda_task, unsigned int arg_num, char which, talsh_dev_rsc_t *dev_rsc);
+ int cuda_task_arg_destroy(cudaTask_t *cuda_task, int arg_num = -1);
  float cuda_task_time(const cudaTask_t *cuda_task, float *in_copy, float *out_copy, float *comp);
  void cuda_task_print(const cudaTask_t *cuda_task);
 //  NV-TAL tensor operations:
