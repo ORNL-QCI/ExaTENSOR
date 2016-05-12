@@ -2,7 +2,7 @@
     Parameters, derived types, and function prototypes
     used at the lower level of TAL-SH (device specific):
     CP-TAL, NV-TAL, XP-TAL, AM-TAL, etc.
-REVISION: 2016/05/11
+REVISION: 2016/05/12
 
 Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -343,6 +343,7 @@ extern "C"{
  int tensDevRsc_allocate_mem(talsh_dev_rsc_t * drsc, int dev_id, size_t mem_size, int in_arg_buf = NOPE);
  int tensDevRsc_free_mem(talsh_dev_rsc_t * drsc);
  int tensDevRsc_get_gmem_ptr(talsh_dev_rsc_t * drsc, void ** gmem_p);
+ int tensDevRsc_device_id(talsh_dev_rsc_t * drsc);
  int tensDevRsc_release_all(talsh_dev_rsc_t * drsc);
  int tensDevRsc_destroy(talsh_dev_rsc_t * drsc);
 #ifndef NO_GPU
