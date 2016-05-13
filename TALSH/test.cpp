@@ -115,7 +115,7 @@ void test_nvtal_c(int * ierr)
  int cptrn0[]={4,3,-3,-4,2,1,-3,-4}; //tensor contraction pattern
  //Schedule a tensor contraction task on GPU:
  printf(" Scheduling a tensor contraction on GPU ...");
- errc=gpu_tensor_block_contract_dlf_(cptrn0,t1,t2,t0,COPY_TTT,tsk0);
+ errc=gpu_tensor_block_contract_dlf(cptrn0,t1,t2,t0,COPY_TTT,tsk0);
  cuda_task_print(tsk0);
  printf(" Status %d\n",errc); if(errc){*ierr=1; return;}
  //Wait until task completion:
