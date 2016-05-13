@@ -154,6 +154,7 @@ extern "C"{
                          int dev_kind = DEV_NULL,
                          int dev_id = -1);
  int talshTensorPresence_(const talsh_tens_t * tens_block, int * ncopies, int copies[], int data_kinds[], int dev_kind, int dev_id);
+ void talshTensorPrintInfo(const talsh_tens_t * tens_block);
 // TAL-SH task API:
 //  Create a clean (defined-empty) TAL-SH task:
  int talshTaskCreate(talsh_task_t ** talsh_task);

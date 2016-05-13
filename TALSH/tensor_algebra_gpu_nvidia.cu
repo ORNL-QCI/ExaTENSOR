@@ -1919,8 +1919,12 @@ void cuda_task_print(const cudaTask_t *cuda_task)
   printf(" CUDA task event_finish handle: %d\n",cuda_task->event_finish_hl);
   printf(" CUDA task coherence_var      : %u\n",cuda_task->coherence);
   printf(" CUDA task num_args           : %u\n",cuda_task->num_args);
-  for(int i=0; i < cuda_task->num_args; i++){
-   printf("  Tensor argument #%d address: %p\n",i,cuda_task->tens_args[i].tens_p);
+  if(cuda_task->num_args <= MAX_TENSOR_OPERANDS){
+   for(int i=0; i < cuda_task->num_args; ++i){
+    printf("  Tensor argument #%d address: %p\n",i,cuda_task->tens_args[i].tens_p);
+   }
+  }else{
+   printf(" ERROR: Invalid number of arguments!!!\n");
   }
   printf("#END OF MESSAGE\n");
  }else{
@@ -2779,9 +2783,9 @@ __host__ int gpu_tensor_block_place(tensBlck_t *ctens, int gpu_id, unsigned int 
    return -8; //invalid gpu_id
   }
   //Construct the CUDA task:
-  if(gpu_ex < 0){ //Host-to-self transfer requested
+  if(gpu_ex < 0){ //Host-to-self transfer requested (no transfer)
    errc=cuda_task_construct(cuda_task);
-  }else{
+  }else{ //Host-to-GPU, GPU-to-Host, GPU-to-GPU
    gpu_stats[gpu_ex].tasks_submitted++;
    //Check peer access if appropriate:
    if(src_gpu >= 0 && src_gpu != gpu_ex){
@@ -2795,7 +2799,7 @@ __host__ int gpu_tensor_block_place(tensBlck_t *ctens, int gpu_id, unsigned int 
   }
   if(errc){if(errc == TRY_LATER || errc == DEVICE_UNABLE){return errc;}else{return -10;}}
 
-  // *** From this point all errors must be positive and the CUDA task must be recorded! ***
+  // *** From this point all error codes must be positive and the CUDA task must be recorded! ***
   //Set the CUDA task argument(s):
   errc=cuda_task_set_arg(cuda_task,0,ctens);
   if(errc){
@@ -2817,9 +2821,9 @@ __host__ int gpu_tensor_block_place(tensBlck_t *ctens, int gpu_id, unsigned int 
   cuda_finish=cuda_event_ptr(cuda_task->gpu_id,cuda_task->event_finish_hl);
   if(cuda_finish == NULL){errc=cuda_task_record(cuda_task,coh_ctrl,7); errc=gpu_activate(cur_gpu); return 7;}
   //Acquire global memory resources (destination resource):
-  if(gpu_id >= 0){devid=encode_device_id(DEV_NVIDIA_GPU,gpu_id);}else{devid=encode_device_id(DEV_HOST,0);} //flat device id of destination
+  if(gpu_id >= 0){devid=encode_device_id(DEV_NVIDIA_GPU,gpu_id);}else{devid=encode_device_id(DEV_HOST,0);} //flat device id of the destination
   if(ctens->dst_rsc == ctens->src_rsc) ctens->dst_rsc=NULL;
-  if(gpu_ex >= 0 && src_gpu != gpu_ex){ //data is on a different GPU device or Host
+  if(gpu_ex >= 0 && gpu_id != src_gpu){ //data is on a different GPU device or Host
    if(ctens->dst_rsc == NULL){
     errc=tensDevRsc_create(&(ctens->dst_rsc)); if(errc){j=cuda_task_record(cuda_task,coh_ctrl,8); j=gpu_activate(cur_gpu); return 8;}
    }else{
@@ -2834,7 +2838,7 @@ __host__ int gpu_tensor_block_place(tensBlck_t *ctens, int gpu_id, unsigned int 
    if(ctens->dst_rsc != NULL){
     if(tensDevRsc_is_empty(ctens->dst_rsc) == NOPE){j=tensDevRsc_release_all(ctens->dst_rsc); if(j) ++nclean;}
    }
-   ctens->dst_rsc=ctens->src_rsc; //destination and source resources are the same (because the data is already on the executing GPU)
+   ctens->dst_rsc=ctens->src_rsc; //destination and source resources are the same (because the data is already on the executing GPU or Host)
   }
   //Record the start event:
   err=cudaEventRecord(*cuda_start,*cuda_stream);
@@ -2844,7 +2848,7 @@ __host__ int gpu_tensor_block_place(tensBlck_t *ctens, int gpu_id, unsigned int 
    j=cuda_task_record(cuda_task,coh_ctrl,10); j=gpu_activate(cur_gpu); return 10;
   }
   //Schedule the data transfer:
-  if(gpu_ex >= 0 && gpu_ex != src_gpu){
+  if(gpu_ex >= 0 && gpu_id != src_gpu){
    //Make sure the data transfer does not begin before the data transfer from the previous task has finished:
    if(LastTask[gpu_ex] != NULL){ //`This should be done atomically for thread safety
     dep_event=cuda_event_ptr(LastTask[gpu_ex]->gpu_id,LastTask[gpu_ex]->event_comput_hl);
@@ -2859,12 +2863,12 @@ __host__ int gpu_tensor_block_place(tensBlck_t *ctens, int gpu_id, unsigned int 
    err=cudaMemcpyAsync(ctens->dst_rsc->gmem_p,ctens->src_rsc->gmem_p,tsize,cudaMemcpyDefault,*cuda_stream);
    if(err != cudaSuccess){
     err_msg=cudaGetErrorString(err);
-    if(VERBOSE) printf("\n#ERROR(tensor_algebra_gpu_nvidia:gpu_tensor_block_place): Tensor body copy failed: %s\n",err_msg);
+    if(VERBOSE) printf("\n#ERROR(tensor_algebra_gpu_nvidia:gpu_tensor_block_place): Tensor body transfer failed: %s\n",err_msg);
     j=cuda_task_record(cuda_task,coh_ctrl,12); j=gpu_activate(cur_gpu); return 12;
    }
-   if(gpu_id >= 0){ //incoming traffice
+   if(gpu_id >= 0){ //incoming traffic
     gpu_stats[gpu_ex].traffic_in+=tsize;
-   }else{ //outgoing traffice (to Host)
+   }else{ //outgoing traffic (to Host)
     gpu_stats[gpu_ex].traffic_out+=tsize;
    }
   }
@@ -2872,7 +2876,7 @@ __host__ int gpu_tensor_block_place(tensBlck_t *ctens, int gpu_id, unsigned int 
   err=cudaEventRecord(*cuda_comput,*cuda_stream);
   if(err != cudaSuccess){
    err_msg=cudaGetErrorString(err);
-   if(VERBOSE) printf("\n#ERROR(tensor_algebra_gpu_nvidia:gpu_tensor_block_place): Unable to record the computing event: %s\n",err_msg);
+   if(VERBOSE) printf("\n#ERROR(tensor_algebra_gpu_nvidia:gpu_tensor_block_place): Unable to record the compute event: %s\n",err_msg);
    j=cuda_task_record(cuda_task,coh_ctrl,13); j=gpu_activate(cur_gpu); return 13;
   }
   err=cudaEventRecord(*cuda_output,*cuda_stream);
@@ -2887,7 +2891,7 @@ __host__ int gpu_tensor_block_place(tensBlck_t *ctens, int gpu_id, unsigned int 
    if(VERBOSE) printf("\n#ERROR(tensor_algebra_gpu_nvidia:gpu_tensor_block_place): Unable to record the finish event: %s\n",err_msg);
    errc=cuda_task_record(cuda_task,coh_ctrl,15); errc=gpu_activate(cur_gpu); return 15;
   }
-  //Record the successfully scheduled CUDA task and update the Last Task:
+  //Record the successfully scheduled CUDA task, update the Last Task, and restore the original GPU:
   errc=cuda_task_record(cuda_task,coh_ctrl,0);
   if(gpu_ex >= 0 && gpu_ex != src_gpu) LastTask[gpu_ex]=cuda_task;
   if(gpu_ex >= 0 && gpu_ex != cur_gpu) j=gpu_activate(cur_gpu);
@@ -2945,7 +2949,6 @@ NOTES:
 
  //if(DEBUG) printf("\n#DEBUG(tensor_algebra_gpu_nvidia:gpu_tensor_block_contract_dlf): GPU Tensor Contraction:\n"); //debug
  stat=0; //return status in case of successful scheduling
- gpu_stats[gpu_num].tasks_submitted++;
 //Check function arguments:
  if(cptrn == NULL || dtens == NULL || ltens == NULL || rtens == NULL || cuda_task == NULL) return -1;
  if(tensBlck_present(dtens) != YEP || tensBlck_present(ltens) != YEP || tensBlck_present(rtens) != YEP) return -2; //tensor blocks must reside in some device memory
@@ -3001,6 +3004,7 @@ NOTES:
 //Activate the right GPU:
  if(gpu_id < 0 || gpu_id >= MAX_GPUS_PER_NODE){gpu_num=tens_op_best_gpu(dtens,ltens,rtens);}else{gpu_num=gpu_id;}
  if(gpu_is_mine(gpu_num) <= GPU_OFF) return -28; //GPU is not mine or error
+ gpu_stats[gpu_num].tasks_submitted++;
  gpu_d=decode_device_id(dtens->src_rsc->dev_id,&j); if(gpu_d < 0) return -29; //destination tensor source device id
  if(j == DEV_NVIDIA_GPU){
   err=cudaDeviceCanAccessPeer(&j,gpu_num,gpu_d); if(err != cudaSuccess || j == 0) return DEVICE_UNABLE; //peer access impossible for this GPU device
@@ -3033,7 +3037,7 @@ NOTES:
  errc=cuda_task_construct(cuda_task,gpu_num);
  if(errc){i=gpu_activate(cur_gpu); if(errc == TRY_LATER || errc == DEVICE_UNABLE){return errc;}else{return -33;}}
 
-// *** From this point all errors must be positive and the CUDA task must be recorded! ***
+// *** From this point all error codes must be positive and the CUDA task must be recorded! ***
 //Set up tensor arguments (allocates additional resources for each tensor argument):
 // Destination argument:
  errc=cuda_task_set_arg(cuda_task,0,dtens);
@@ -3318,7 +3322,7 @@ NOTES:
  err=cudaEventRecord(*cuda_comput,*cuda_stream);
  if(err != cudaSuccess){
   err_msg=cudaGetErrorString(err);
-  if(VERBOSE) printf("\n#ERROR(tensor_algebra_gpu_nvidia:gpu_tensor_block_contract_dlf): Unable to record the computing event: %s\n",err_msg);
+  if(VERBOSE) printf("\n#ERROR(tensor_algebra_gpu_nvidia:gpu_tensor_block_contract_dlf): Unable to record the compute event: %s\n",err_msg);
   errc=cuda_task_record(cuda_task,coh_ctrl,37); errc=gpu_activate(cur_gpu); return 37;
  }
 // Destination tensor transpose:

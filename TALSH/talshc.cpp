@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level API.
-REVISION: 2016/05/12
+REVISION: 2016/05/13
 
 Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -261,7 +261,7 @@ static int talsh_tensor_c_assoc(const talsh_tens_t * talsh_tens, //in: TAL-SH te
   if(errc){if(errc != TRY_LATER) errc=TALSH_FAILURE; i=tensBlck_destroy(ctens); return errc;}
   errc=tensBlck_attach_body(ctens,talsh_tens->data_kind[image_id],src_rsc_p->dev_id,src_rsc_p->gmem_p,src_rsc_p->buf_entry);
   if(errc){if(errc != TRY_LATER) errc=TALSH_FAILURE; i=tensBlck_destroy(ctens); return errc;}
-  tensC=&ctens; //tensC has the right shape, data_kind, and source data
+  *tensC=ctens; //tensC has the right shape, data_kind, and source data
  }else{
   return TALSH_NOT_ALLOWED; //image is no longer available (to be discarded)
  }
@@ -790,6 +790,32 @@ static int talshTensorIsHealthy(const talsh_tens_t * talsh_tens)
  return YEP;
 }
 
+void talshTensorPrintInfo(const talsh_tens_t * tens_block)
+/** Prints information about a TAL-SH tensor. **/
+{
+ int i,dvn,dvk;
+
+ if(tens_block != NULL){
+  printf("\n#MESSAGE: Printing TAL-SH tensor info:\n");
+  printf(" Tensor block address: %p\n",tens_block);
+  printf(" Tensor block shape:\n");
+  printf("  Tensor block rank: %d\n",tens_block->shape_p->num_dim);
+  if(tens_block->shape_p->num_dim > 0){
+   printf("  Tensor block dimension extents:");
+   for(i=0;i<tens_block->shape_p->num_dim;++i) printf(" %d",tens_block->shape_p->dims[i]);
+  }
+  printf("\n Tensor block presence ([dev_kind,dev_id|data_kind|avail]):");
+  for(i=0; i < tens_block->ndev; ++i){
+   dvn=talshKindDevId(tens_block->dev_rsc[i].dev_id,&dvk);
+   printf(" [%d,%d|%d|%d]",dvk,dvn,tens_block->data_kind[i],tens_block->avail[i]);
+  }
+  printf("\n#END OF MESSAGE\n");
+ }else{
+  printf("\n#WARNING(talshc:talshTensorPrintInfo): NULL pointer!\n");
+ }
+ return;
+}
+
 // TAL-SH task API:
 int talshTaskCreate(talsh_task_t ** talsh_task)
 /** Creates a clean <talsh_task_t> object on heap. **/
@@ -950,17 +976,6 @@ static int talshTaskFinalize(talsh_task_t * talsh_task, int task_status)
    if(talshTensorIsEmpty(talsh_tens) == NOPE && talshTensorIsHealthy(talsh_tens) == YEP){
     if(image_id >= 0 && image_id < talsh_tens->ndev){
      src_dev_id=tensDevRsc_device_id(&(talsh_tens->dev_rsc[image_id]));
-     //Discard/unmark the source image if needed:
-     if(cc == COPY_D || cc == COPY_M){ //source to be discarded
-      if(talsh_tens->avail[image_id] == NOPE){ //discard the source tensor body image only if it is marked for discarding
-       if(coherence_control){
-        j=talsh_tensor_image_discard(talsh_tens,image_id); if(j != 0 && errc == TALSH_SUCCESS) errc=NOT_CLEAN; //discard image
-        src_dev_id=DEV_NULL;
-       }else{
-        talsh_tens->avail[image_id]=YEP; //unmark image (make it available again)
-       }
-      }
-     }
      if(coherence_control != 0 || discard_device_aliases != 0){
       switch(talsh_task->dev_kind){
        case DEV_HOST: //Host: Destination images are created explicitly in the TAL-SH operation and tensor aliases are destroyed there as well
@@ -973,13 +988,14 @@ static int talshTaskFinalize(talsh_task_t * talsh_task, int task_status)
         //Append the newly formed destination image if needed:
         if(cc == COPY_M || cc == COPY_K){
          ++(talsh_tens->ndev); if(talsh_tens->ndev > talsh_tens->dev_rsc_len) return TALSH_LIMIT_EXCEEDED;
-         j=cuda_task_dev_rsc_move(cuda_task,(unsigned int)i,'d',&(talsh_tens->dev_rsc[talsh_tens->ndev]));
+         j=cuda_task_dev_rsc_move(cuda_task,(unsigned int)i,'d',&(talsh_tens->dev_rsc[talsh_tens->ndev-1]));
          if(j == 0){
-          if(tensDevRsc_device_id(&(talsh_tens->dev_rsc[talsh_tens->ndev])) != src_dev_id){
-           talsh_tens->data_kind[talsh_tens->ndev]=talsh_task->data_kind;
-           talsh_tens->avail[talsh_tens->ndev]=YEP;
+          if(tensDevRsc_device_id(&(talsh_tens->dev_rsc[talsh_tens->ndev-1])) != src_dev_id){
+           talsh_tens->data_kind[talsh_tens->ndev-1]=talsh_task->data_kind;
+           talsh_tens->avail[talsh_tens->ndev-1]=YEP;
           }else{
-           if(tensDevRsc_same(&(talsh_tens->dev_rsc[image_id]),&(talsh_tens->dev_rsc[(talsh_tens->ndev)--])) != YEP) return TALSH_FAILURE;
+           if(tensDevRsc_same(&(talsh_tens->dev_rsc[image_id]),&(talsh_tens->dev_rsc[talsh_tens->ndev-1])) != YEP) return TALSH_FAILURE;
+           --(talsh_tens->ndev);
           }
          }else{
           --(talsh_tens->ndev); errc=TALSH_FAILURE;
@@ -1010,6 +1026,17 @@ static int talshTaskFinalize(talsh_task_t * talsh_task, int task_status)
         break;
        default:
         errc=TALSH_FAILURE;
+      }
+     }
+     //Discard/unmark the source image if needed:
+     if(cc == COPY_D || cc == COPY_M){ //source to be discarded
+      if(talsh_tens->avail[image_id] == NOPE){ //discard the source tensor body image only if it is marked for discarding
+       if(coherence_control){
+        j=talsh_tensor_image_discard(talsh_tens,image_id); if(j != 0 && errc == TALSH_SUCCESS) errc=NOT_CLEAN; //discard image
+        src_dev_id=DEV_NULL;
+       }else{
+        talsh_tens->avail[image_id]=YEP; //unmark image (make it available again)
+       }
       }
      }
     }else{
@@ -1380,12 +1407,12 @@ int talshTensorPlace(talsh_tens_t * tens, int dev_id, int dev_kind, int copy_ctr
  }
  //Check function arguments:
  if(tens == NULL){tsk->task_error=100; if(talsh_task == NULL) j=talshTaskDestroy(tsk); return TALSH_INVALID_ARGS;}
- if(talshTensorIsEmpty(tens) != NOPE){tsk->task_error=100; if(talsh_task == NULL) j=talshTaskDestroy(tsk); return TALSH_OBJECT_IS_EMPTY;}
- if(talshTensorIsHealthy(tens) != YEP){tsk->task_error=100; if(talsh_task == NULL) j=talshTaskDestroy(tsk); return TALSH_FAILURE;}
+ if(talshTensorIsEmpty(tens) != NOPE){tsk->task_error=101; if(talsh_task == NULL) j=talshTaskDestroy(tsk); return TALSH_OBJECT_IS_EMPTY;}
+ if(talshTensorIsHealthy(tens) != YEP){tsk->task_error=102; if(talsh_task == NULL) j=talshTaskDestroy(tsk); return TALSH_FAILURE;}
  if(dev_kind == DEV_NULL){devid=dev_id;}else{devid=talshFlatDevId(dev_kind,dev_id);}
- dvn=talshKindDevId(devid,&dvk); if(dvn < 0){tsk->task_error=100; if(talsh_task == NULL) j=talshTaskDestroy(tsk); return TALSH_INVALID_ARGS;} //[dvk,dvn]: destination device
+ dvn=talshKindDevId(devid,&dvk); if(dvn < 0){tsk->task_error=103; if(talsh_task == NULL) j=talshTaskDestroy(tsk); return TALSH_INVALID_ARGS;} //[dvk,dvn]: destination device
  if(copy_ctrl < 0 || copy_ctrl == COPY_D || copy_ctrl == COPY_T){ //'Discard' and 'Temporary' do not make sense here
-  tsk->task_error=100; if(talsh_task == NULL) j=talshTaskDestroy(tsk); return TALSH_INVALID_ARGS;
+  tsk->task_error=104; if(talsh_task == NULL) j=talshTaskDestroy(tsk); return TALSH_INVALID_ARGS;
  }
  errc=TALSH_SUCCESS;
  //Find the source tensor body image:
@@ -1393,7 +1420,7 @@ int talshTensorPlace(talsh_tens_t * tens, int dev_id, int dev_kind, int copy_ctr
  for(i=0;i<tens->ndev;++i){
   if(tens->avail[i] == YEP){ //no longer available images are not considered
    dn=talshKindDevId(tens->dev_rsc[i].dev_id,&dk);
-   if(dn < 0){tsk->task_error=100; if(talsh_task == NULL) j=talshTaskDestroy(tsk); return TALSH_FAILURE;}
+   if(dn < 0){tsk->task_error=105; if(talsh_task == NULL) j=talshTaskDestroy(tsk); return TALSH_FAILURE;}
    if(dk == dvk){image_id=i; if(dn == dvn) break;} //`Unless exact match, the last device of the given kind will always be selected
    if(dk == DEV_HOST) host_image=i;
   }
@@ -1402,10 +1429,10 @@ int talshTensorPlace(talsh_tens_t * tens, int dev_id, int dev_kind, int copy_ctr
   if(image_id < 0){ //no device of requested kind holds an image
    if(host_image < 0){ //image is absent on Host as well => a blocking copy will be required
     errc=talshTensorPlace(tens,0,DEV_HOST,copy_ctrl); //clone/move the image to Host (blocking call!)
-    if(errc != TALSH_SUCCESS){tsk->task_error=100; if(talsh_task == NULL) j=talshTaskDestroy(tsk); return errc;}
+    if(errc != TALSH_SUCCESS){tsk->task_error=106; if(talsh_task == NULL) j=talshTaskDestroy(tsk); return errc;}
     image_id=tens->ndev-1; //the last image is now residing on Host
     if(tens->dev_rsc[image_id].dev_id != talshFlatDevId(DEV_HOST,0)){
-     tsk->task_error=100; if(talsh_task == NULL) j=talshTaskDestroy(tsk); return TALSH_FAILURE;
+     tsk->task_error=107; if(talsh_task == NULL) j=talshTaskDestroy(tsk); return TALSH_FAILURE;
     }
     if(copy_ctrl == COPY_K) copy_ctrl=COPY_M; //the intermediate image needs to be discarded at the end
    }else{
@@ -1424,24 +1451,24 @@ int talshTensorPlace(talsh_tens_t * tens, int dev_id, int dev_kind, int copy_ctr
  }
  //Construct a TAL-SH task:
  if(talshTaskStatus(tsk) == TALSH_TASK_EMPTY){
-  errc=talshTaskConstruct(tsk,dvk,copy_ctrl,tens->data_kind[image_id]);
-  if(errc){tsk->task_error=100; if(talsh_task == NULL) j=talshTaskDestroy(tsk); return errc;}
+  errc=talshTaskConstruct(tsk,runtime,copy_ctrl,tens->data_kind[image_id]);
+  if(errc){tsk->task_error=108; if(talsh_task == NULL) j=talshTaskDestroy(tsk); return errc;}
   errc=talshTaskSetArg(tsk,tens,image_id);
-  if(errc){tsk->task_error=100; if(talsh_task == NULL) j=talshTaskDestroy(tsk); return errc;}
+  if(errc){tsk->task_error=109; if(talsh_task == NULL) j=talshTaskDestroy(tsk); return errc;}
  }else{
-  tsk->task_error=100; if(talsh_task == NULL) j=talshTaskDestroy(tsk); return TALSH_OBJECT_NOT_EMPTY;
+  tsk->task_error=110; if(talsh_task == NULL) j=talshTaskDestroy(tsk); return TALSH_OBJECT_NOT_EMPTY;
  }
  //Call the device-kind specific data transfer runtime function:
  switch(runtime){
   case DEV_HOST: //destination = Host, Source = Host: Nothing to do (image already there)
    host_task=(host_task_t*)(tsk->task_p);
    errc=host_task_record(host_task,(unsigned int)copy_ctrl,0); //record task success (no coherence control on Host)
-   if(errc){tsk->task_error=100; if(talsh_task == NULL) j=talshTaskDestroy(tsk); return TALSH_FAILURE;}
+   if(errc){tsk->task_error=111; if(talsh_task == NULL) j=talshTaskDestroy(tsk); return TALSH_FAILURE;}
    break;
   case DEV_NVIDIA_GPU:
 #ifndef NO_GPU
    errc=talsh_tensor_c_assoc(tens,image_id,&ctens);
-   if(errc || ctens == NULL){tsk->task_error=100; if(talsh_task == NULL) j=talshTaskDestroy(tsk); return TALSH_FAILURE;}
+   if(errc || ctens == NULL){tsk->task_error=112; if(talsh_task == NULL) j=talshTaskDestroy(tsk); return TALSH_FAILURE;}
    cuda_task=(cudaTask_t*)(tsk->task_p);
    if(dvk == DEV_HOST && dvn == 0){ //destination is Host
     j=-1; //Host
@@ -1449,14 +1476,14 @@ int talshTensorPlace(talsh_tens_t * tens, int dev_id, int dev_kind, int copy_ctr
     j=dvn; //GPU device number
    }else{
     j=talsh_tensor_c_dissoc(ctens); ctens=NULL;
-    tsk->task_error=100; if(talsh_task == NULL) j=talshTaskDestroy(tsk); return TALSH_FAILURE;
+    tsk->task_error=113; if(talsh_task == NULL) j=talshTaskDestroy(tsk); return TALSH_FAILURE;
    }
    errc=gpu_tensor_block_place(ctens,j,(unsigned int)copy_ctrl,cuda_task); //if source == destination, no transfer will be initiated (ok)
    if(errc){ //in case of error, CUDA task has already been finalized (with error) without coherence control
     if(errc != TRY_LATER && errc != DEVICE_UNABLE) errc=TALSH_FAILURE;
     j=talsh_tensor_c_dissoc(ctens); if(j) errc=TALSH_FAILURE;
     j=cuda_task_destroy(cuda_task); if(j) errc=TALSH_FAILURE;
-    tsk->task_error=100; if(talsh_task == NULL) j=talshTaskDestroy(tsk);
+    tsk->task_error=114; if(talsh_task == NULL) j=talshTaskDestroy(tsk);
     return errc;
    }else{ //coherence control
     if(copy_ctrl == COPY_M){
@@ -1469,30 +1496,30 @@ int talshTensorPlace(talsh_tens_t * tens, int dev_id, int dev_kind, int copy_ctr
     j=talshTaskDestroy(tsk); if(j != TALSH_SUCCESS && errc == TALSH_SUCCESS) errc=j;
    }
 #else
-   tsk->task_error=100; if(talsh_task == NULL) j=talshTaskDestroy(tsk);
+   tsk->task_error=115; if(talsh_task == NULL) j=talshTaskDestroy(tsk);
    return TALSH_NOT_AVAILABLE;
 #endif
    break;
   case DEV_INTEL_MIC:
 #ifndef NO_PHI
-   tsk->task_error=100; if(talsh_task == NULL) j=talshTaskDestroy(tsk);
+   tsk->task_error=116; if(talsh_task == NULL) j=talshTaskDestroy(tsk);
    return TALSH_NOT_IMPLEMENTED; //`Future
 #else
-   tsk->task_error=100; if(talsh_task == NULL) j=talshTaskDestroy(tsk);
+   tsk->task_error=117; if(talsh_task == NULL) j=talshTaskDestroy(tsk);
    return TALSH_NOT_AVAILABLE;
 #endif
    break;
   case DEV_AMD_GPU:
 #ifndef NO_AMD
-   tsk->task_error=100; if(talsh_task == NULL) j=talshTaskDestroy(tsk);
+   tsk->task_error=118; if(talsh_task == NULL) j=talshTaskDestroy(tsk);
    return TALSH_NOT_IMPLEMENTED; //`Future
 #else
-   tsk->task_error=100; if(talsh_task == NULL) j=talshTaskDestroy(tsk);
+   tsk->task_error=119; if(talsh_task == NULL) j=talshTaskDestroy(tsk);
    return TALSH_NOT_AVAILABLE;
 #endif
    break;
   default:
-   tsk->task_error=100; if(talsh_task == NULL) j=talshTaskDestroy(tsk);
+   tsk->task_error=120; if(talsh_task == NULL) j=talshTaskDestroy(tsk);
    return TALSH_INVALID_ARGS;
  }
  return errc;

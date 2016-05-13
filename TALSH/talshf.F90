@@ -1,5 +1,5 @@
 !ExaTensor::TAL-SH: Device-unified user-level API:
-!REVISION: 2016/05/11
+!REVISION: 2016/05/13
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -188,6 +188,12 @@
           integer(C_INT), value, intent(in):: dev_kind
           integer(C_INT), value, intent(in):: dev_id
          end function talshTensorPresence_
+  !Print information about a TAL-SH tensor:
+         subroutine talsh_tensor_print_info(tens_block) bind(c,name='talshTensorPrintInfo')
+          import
+          implicit none
+          type(talsh_tens_t), intent(in):: tens_block
+         end subroutine talsh_tensor_print_info
  !TAL-SH task C/C++ API:
   !Destruct a TAL-SH task:
          integer(C_INT) function talshTaskDestruct(talsh_task) bind(c,name='talshTaskDestruct')
@@ -315,6 +321,7 @@
         public talsh_tensor_volume
         public talsh_tensor_shape
         public talsh_tensor_presence
+        public talsh_tensor_print_info
  !TAL-SH task API:
         public talsh_task_destruct
         public talsh_task_dev_id
