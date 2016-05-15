@@ -1,5 +1,5 @@
 !ExaTensor::TAL-SH: Device-unified user-level API:
-!REVISION: 2016/05/13
+!REVISION: 2016/05/15
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -344,6 +344,37 @@
 
        contains
 !INTERNAL FUNCTIONS:
+!-------------------------------------------------------------------------------------------------------------------------------
+        integer(C_INT) function talsh_get_contr_ptrn_str2dig(c_str,dig_ptrn,dig_len) bind(c,name='talsh_get_contr_ptrn_str2dig')
+         implicit none
+         character(C_CHAR), intent(in):: c_str(1:*)  !in: C-string (NULL terminated) containing the mnemonic contraction pattern
+         integer(C_INT), intent(out):: dig_ptrn(1:*) !out: digitial tensor contraction pattern
+         integer(C_INT), intent(out):: dig_len       !out: length of the digital tensor contraction pattern
+         integer, parameter:: MAX_CONTR_STR_LEN=1024 !max length of the tensor contraction string
+         integer:: dgp(MAX_TENSOR_RANK*2),dgl,csl,ierr
+         character(MAX_CONTR_STR_LEN):: contr_str
+
+         talsh_get_contr_ptrn_str2dig=0; dig_len=0
+!Convert C-string to a Fortran string:
+         csl=1
+         do while(iachar(c_str(csl)).ne.0)
+          if(csl.gt.MAX_CONTR_STR_LEN) then
+           talsh_get_contr_ptrn_str2dig=-1; return
+          endif
+          contr_str(csl:csl)=c_str(csl); csl=csl+1
+         enddo
+         csl=csl-1
+!Call converter from CP-TAL:
+         if(csl.gt.0) then
+          call get_contr_pattern(contr_str(1:csl),dgp,dgl,ierr)
+          if(ierr.eq.0) then
+           dig_len=dgl; if(dgl.gt.0) dig_ptrn(1:dgl)=dgp(1:dgl)
+          else
+           talsh_get_contr_ptrn_str2dig=ierr; return
+          endif
+         endif
+         return
+        end function talsh_get_contr_ptrn_str2dig
 !------------------------------------------------------------------------------------------------------------------
         integer(C_INT) function talsh_tensor_f_assoc(talsh_tens,image_id,tensF) bind(c,name='talsh_tensor_f_assoc')
 !Returns a C pointer <tensF> to a <tensor_block_t> object instantiated with the tensor body image <image_id>.
