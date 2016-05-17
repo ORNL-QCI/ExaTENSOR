@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level API.
-REVISION: 2016/05/15
+REVISION: 2016/05/17
 
 Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -40,9 +40,14 @@ FOR DEVELOPER(s):
       as "IN_USE" even if they are not to be discarded because other tensor
       operations may mark them "TO_BE_DISCARDED" and then discard them before
       the former tensor operation finishes (inter-task data synchronization).
+      So far it is the user responsibility to avoid race conditions.
    2. .data_kind[] array in <talsh_tens_t> is redundant because all images
       have the same data kind (because new tensor body images can only be
       created in tensor operations). Thus, it can be reduced to a scalar.
+      Alternatively, by enabling coexistence of images of different data
+      kinds, the data kind runtime check needs to be implemented in tensor
+      operations and image selecting functions, with a possible data kind
+      conversion.
 **/
 
 #include <stdio.h>
@@ -300,13 +305,38 @@ static int talsh_tensor_c_dissoc(tensBlck_t * tensC) //inout: <tensBlck_t> creat
 
 static int talsh_find_proper_device(const talsh_tens_t * tens0, const talsh_tens_t * tens1, const talsh_tens_t * tens2)
 /** Given tensor arguments, returns a flat id of the most appropriate device
-    based on the data residence and current device occupation. A negative
-    return status indicates an error. **/
+    based on the data residence, tensor sizes, and current device occupation.
+    A negative return status indicates an error. **/
 {
- int devid;
+ int i,j,k,devid,sp2,d1;
+ int match2[TALSH_MAX_DEV_PRESENT*3];
 
- devid=DEV_NULL;
- //`Finish
+ devid=DEV_NULL; if(tens0 == NULL) return devid;
+ sp2=0; d1=DEV_NULL;
+ for(i=0;i<tens0->ndev;++i){ //`The following algorithm is really simplistic
+  if(tens0->avail[i] == YEP){
+   if(tens1 != NULL){
+    for(j=0;j<tens1->ndev;++j){
+     if(tens1->avail[j] == YEP){
+      if(tens1->dev_rsc[j].dev_id == tens0->dev_rsc[i].dev_id) match2[sp2++]=tens0->dev_rsc[i].dev_id; //double match
+      if(tens2 != NULL){
+       for(k=0;k<tens2->ndev;++k){
+        if(tens2->avail[k] == YEP){
+         if(sp2 > 0){if(tens2->dev_rsc[k].dev_id == match2[sp2-1]) return tens2->dev_rsc[k].dev_id;}
+         if(tens2->dev_rsc[k].dev_id == tens1->dev_rsc[j].dev_id ||
+            tens2->dev_rsc[k].dev_id == tens0->dev_rsc[i].dev_id){
+          match2[sp2++]=tens2->dev_rsc[k].dev_id;
+         }
+        }
+       }
+      }
+     }
+    }
+   }
+   d1=tens0->dev_rsc[i].dev_id;
+  }
+ }
+ if(devid < 0){if(sp2 > 0){devid=match2[sp2-1];}else{devid=d1;}}
  return devid;
 }
 
