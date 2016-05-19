@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level API.
-REVISION: 2016/05/17
+REVISION: 2016/05/19
 
 Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -119,9 +119,9 @@ static int host_task_destroy(host_task_t * host_task);
 static int talsh_tensor_c_assoc(const talsh_tens_t * talsh_tens, int image_id, tensBlck_t ** tensC);
 static int talsh_tensor_c_dissoc(tensBlck_t * tensC);
 // Find proper device for a tensor operation:
-static int talsh_find_proper_device(const talsh_tens_t * tens0,
-                                    const talsh_tens_t * tens1 = NULL,
-                                    const talsh_tens_t * tens2 = NULL);
+static int talsh_find_optimal_device(const talsh_tens_t * tens0,
+                                     const talsh_tens_t * tens1 = NULL,
+                                     const talsh_tens_t * tens2 = NULL);
 // Choose the appropriate tensor body image to use in a tensor operation:
 static int talsh_choose_image_for_device(talsh_tens_t * tens, int dvk, int dvn);
 // Additional TAL-SH tensor API:
@@ -303,40 +303,103 @@ static int talsh_tensor_c_dissoc(tensBlck_t * tensC) //inout: <tensBlck_t> creat
  return errc;
 }
 
-static int talsh_find_proper_device(const talsh_tens_t * tens0, const talsh_tens_t * tens1, const talsh_tens_t * tens2)
+static int talsh_find_optimal_device(const talsh_tens_t * tens0, const talsh_tens_t * tens1, const talsh_tens_t * tens2)
 /** Given tensor arguments, returns a flat id of the most appropriate device
     based on the data residence, tensor sizes, and current device occupation.
     A negative return status indicates an error. **/
 {
- int i,j,k,devid,sp2,d1;
- int match2[TALSH_MAX_DEV_PRESENT*3];
+ int i,j,devid,al,am,as,ov[3][TALSH_MAX_DEV_PRESENT],ovl[3];
+ size_t s[3];
 
- devid=DEV_NULL; if(tens0 == NULL) return devid;
- sp2=0; d1=DEV_NULL;
- for(i=0;i<tens0->ndev;++i){ //`The following algorithm is really simplistic
-  if(tens0->avail[i] == YEP){
-   if(tens1 != NULL){
+ s[0]=0; if(tens0 != NULL) s[0]=talshTensorVolume(tens0);
+ s[1]=0; if(tens1 != NULL) s[1]=talshTensorVolume(tens1);
+ s[2]=0; if(tens2 != NULL) s[2]=talshTensorVolume(tens2);
+ for(i=0;i<3;++i) ovl[i]=0;
+ //Overlap 01:
+ if(s[0] && s[1]){
+  for(i=0;i<tens0->ndev;++i){
+   if(tens0->avail[i] == YEP){
     for(j=0;j<tens1->ndev;++j){
      if(tens1->avail[j] == YEP){
-      if(tens1->dev_rsc[j].dev_id == tens0->dev_rsc[i].dev_id) match2[sp2++]=tens0->dev_rsc[i].dev_id; //double match
-      if(tens2 != NULL){
-       for(k=0;k<tens2->ndev;++k){
-        if(tens2->avail[k] == YEP){
-         if(sp2 > 0){if(tens2->dev_rsc[k].dev_id == match2[sp2-1]) return tens2->dev_rsc[k].dev_id;}
-         if(tens2->dev_rsc[k].dev_id == tens1->dev_rsc[j].dev_id ||
-            tens2->dev_rsc[k].dev_id == tens0->dev_rsc[i].dev_id){
-          match2[sp2++]=tens2->dev_rsc[k].dev_id;
-         }
-        }
-       }
+      if(tens1->dev_rsc[j].dev_id == tens0->dev_rsc[i].dev_id){
+       ov[0][(ovl[0])++]=tens1->dev_rsc[j].dev_id;
       }
      }
     }
    }
-   d1=tens0->dev_rsc[i].dev_id;
+  }
+  if(s[2]){
+   for(j=0;j<tens2->ndev;++j){
+    if(tens2->avail[j] == YEP){
+     for(i=0;i<ovl[0];++i){
+      if(tens2->dev_rsc[j].dev_id == ov[0][i]) return ov[0][i]; //triple match
+     }
+    }
+   }
   }
  }
- if(devid < 0){if(sp2 > 0){devid=match2[sp2-1];}else{devid=d1;}}
+ //Overlap 02:
+ if(s[0] && s[2]){
+  for(i=0;i<tens0->ndev;++i){
+   if(tens0->avail[i] == YEP){
+    for(j=0;j<tens2->ndev;++j){
+     if(tens2->avail[j] == YEP){
+      if(tens2->dev_rsc[j].dev_id == tens0->dev_rsc[i].dev_id){
+       ov[1][(ovl[1])++]=tens2->dev_rsc[j].dev_id;
+      }
+     }
+    }
+   }
+  }
+  if(s[1]){
+   for(j=0;j<tens1->ndev;++j){
+    if(tens1->avail[j] == YEP){
+     for(i=0;i<ovl[1];++i){
+      if(tens1->dev_rsc[j].dev_id == ov[1][i]) return ov[1][i]; //triple match
+     }
+    }
+   }
+  }
+ }
+ //Overlap 12:
+ if(s[1] && s[2]){
+  for(i=0;i<tens1->ndev;++i){
+   if(tens1->avail[i] == YEP){
+    for(j=0;j<tens2->ndev;++j){
+     if(tens2->avail[j] == YEP){
+      if(tens2->dev_rsc[j].dev_id == tens1->dev_rsc[i].dev_id){
+       ov[2][(ovl[2])++]=tens2->dev_rsc[j].dev_id;
+      }
+     }
+    }
+   }
+  }
+  if(s[0]){
+   for(j=0;j<tens0->ndev;++j){
+    if(tens0->avail[j] == YEP){
+     for(i=0;i<ovl[2];++i){
+      if(tens0->dev_rsc[j].dev_id == ov[2][i]) return ov[2][i]; //triple match
+     }
+    }
+   }
+  }
+ }
+ //No triple match happened => communication is necessary.
+ //Order the arguments by size (al >= am >= as):
+ if(s[1] >= s[2]){al=1; am=2;}else{al=2; am=1;}
+ if(s[0] >= al){
+  as=am; am=al; al=0;
+ }else{
+  if(s[0] >= am){as=am; am=0;}else{as=0;}
+ }
+ //Find the optimal device to minimize the communication:
+ if(s[al] > s[am] + s[as]){
+  
+ }else if(s[al] = s[am] + s[as]){
+  
+ }else{ //s[al] < s[am] + s[as]
+  
+ }
  return devid;
 }
 
@@ -1704,7 +1767,7 @@ int talshTensorContract(const char * cptrn,        //in: C-string: symbolic cont
  //Determine the execution device (devid:[dvk,dvn]):
  if(dev_kind == DEV_DEFAULT){ //device kind is not specified explicitly
   if(dev_id == DEV_DEFAULT){ //neither specific device nor device kind are specified: Find one
-   devid=talsh_find_proper_device(dtens,ltens,rtens);
+   devid=talsh_find_optimal_device(dtens,ltens,rtens);
    if(devid < 0 || devid >= DEV_MAX){
     tsk->task_error=100; if(talsh_task == NULL) j=talshTaskDestroy(tsk); return TALSH_FAILURE;
    }
