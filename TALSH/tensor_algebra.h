@@ -328,7 +328,8 @@ extern "C"{
 #endif
 //Generic:
  int tens_valid_data_kind(int datk, int * datk_size = NULL);
- unsigned int argument_coherence_value(unsigned int coh_ctrl, unsigned int tot_args, unsigned int arg_num);
+ unsigned int argument_coherence_get_value(unsigned int coh_ctrl, unsigned int tot_args, unsigned int arg_num);
+ int argument_coherence_set_value(unsigned int * coh_ctrl, unsigned int tot_args, unsigned int arg_num, unsigned int coh_val);
 // Device id conversion:
  int valid_device_kind(int dev_kind);
  int encode_device_id(int dev_kind, int dev_num);

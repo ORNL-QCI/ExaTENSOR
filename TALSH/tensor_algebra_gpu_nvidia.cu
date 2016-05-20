@@ -235,12 +235,32 @@ int tens_valid_data_kind(int datk, int * datk_size)
  return ans;
 }
 
-unsigned int argument_coherence_value(unsigned int coh_ctrl, unsigned int tot_args, unsigned int arg_num)
+unsigned int argument_coherence_get_value(unsigned int coh_ctrl, unsigned int tot_args, unsigned int arg_num)
 /** Given a composite coherence control value, returns an individual component.
     No argument consistency check (0 <= arg_num < tot_args). **/
 {
- unsigned int coh = ((coh_ctrl>>((tot_args-(arg_num+1))*2))&(3));
+ const unsigned int two_bits_set = 3;
+ unsigned int coh = ((coh_ctrl>>((tot_args-(arg_num+1))*2))&(two_bits_set));
  return coh;
+}
+
+int argument_coherence_set_value(unsigned int * coh_ctrl, unsigned int tot_args, unsigned int arg_num, unsigned int coh_val)
+/** Sets the coherence value for a specific argument in a composite coherence control value. **/
+{
+ if(arg_num < tot_args){
+  const unsigned int two_bits_set = 3;
+  if((coh_val&(~two_bits_set)) == 0){
+   const unsigned int clear_mask = ((two_bits_set)<<((tot_args-(arg_num+1))*2));
+   const unsigned int set_mask = ((coh_val)<<((tot_args-(arg_num+1))*2));
+   const unsigned int coh = (((*coh_ctrl)&(~clear_mask))|set_mask);
+   *coh_ctrl=coh;
+  }else{
+   return 2;
+  }
+ }else{
+  return 1;
+ }
+ return 0;
 }
 
 //DEVICE ID CONVERSION:

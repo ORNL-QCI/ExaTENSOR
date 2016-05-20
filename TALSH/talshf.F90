@@ -1,5 +1,5 @@
 !ExaTensor::TAL-SH: Device-unified user-level API:
-!REVISION: 2016/05/15
+!REVISION: 2016/05/20
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -882,5 +882,35 @@
          ierr=TALSH_SUCCESS
          return
         end function talsh_tensor_contract
+!-------------------------------------------------------------------------------------------------------------------
+        integer(C_INT) function cpu_tensor_block_contract(contr_ptrn,ltens_p,rtens_p,dtens_p,scale_real,scale_imag)&
+                                                         &bind(c,name='cpu_tensor_block_contract')
+         implicit none
+         integer(C_INT), intent(in):: contr_ptrn(*) !in: digital tensor contraction pattern
+         type(C_PTR), value:: ltens_p               !in: left tensor argument
+         type(C_PTR), value:: rtens_p               !in: right tensor argument
+         type(C_PTR), value:: dtens_p               !inout: destination tensor argument
+         real(8), value:: scale_real                !in: scaling prefactor (real part)
+         real(8), value:: scale_imag                !in: scaling prefactor (imaginary part)
+         type(tensor_block_t), pointer:: dtp,ltp,rtp
+         integer:: ierr
+
+         cpu_tensor_block_contract=0
+         if(dabs(scale_real-1d0).gt.ZERO_THRESH.or.dabs(scale_imag-0d0).gt.ZERO_THRESH) then !`Scaling prefactor should be accounted for
+          cpu_tensor_block_contract=-3; return
+         endif
+         if(c_associated(dtens_p).and.c_associated(ltens_p).and.c_associated(rtens_p)) then
+          call c_f_pointer(dtens_p,dtp); call c_f_pointer(ltens_p,ltp); call c_f_pointer(rtens_p,rtp)
+          if(associated(dtp).and.associated(ltp).and.associated(rtp)) then
+           call tensor_block_contract(contr_ptrn,ltp,rtp,dtp,ierr)
+           cpu_tensor_block_contract=ierr
+          else
+           cpu_tensor_block_contract=-2
+          endif
+         else
+          cpu_tensor_block_contract=-1
+         endif
+         return
+        end function cpu_tensor_block_contract
 
        end module talsh
