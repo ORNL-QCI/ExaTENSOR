@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level API.
-REVISION: 2016/05/19
+REVISION: 2016/05/20
 
 Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -309,14 +309,15 @@ static int talsh_find_optimal_device(const talsh_tens_t * tens0, const talsh_ten
     A negative return status indicates an error. **/
 {
  int i,j,devid,al,am,as,ov[3][TALSH_MAX_DEV_PRESENT],ovl[3];
+ const int idx[3][3]={-1,0,1, 0,-1,2, 1,2,-1};
  size_t s[3];
 
- s[0]=0; if(tens0 != NULL) s[0]=talshTensorVolume(tens0);
+ s[0]=0; if(tens0 != NULL){s[0]=talshTensorVolume(tens0);}else{return DEV_NULL;}
  s[1]=0; if(tens1 != NULL) s[1]=talshTensorVolume(tens1);
  s[2]=0; if(tens2 != NULL) s[2]=talshTensorVolume(tens2);
- for(i=0;i<3;++i) ovl[i]=0;
- //Overlap 01:
- if(s[0] && s[1]){
+ devid=DEV_NULL; for(i=0;i<3;++i) ovl[i]=0;
+ //Overlap tens0 and tens1:
+ if(s[0] > 0 && s[1] > 0){
   for(i=0;i<tens0->ndev;++i){
    if(tens0->avail[i] == YEP){
     for(j=0;j<tens1->ndev;++j){
@@ -328,7 +329,7 @@ static int talsh_find_optimal_device(const talsh_tens_t * tens0, const talsh_ten
     }
    }
   }
-  if(s[2]){
+  if(s[2] > 0){
    for(j=0;j<tens2->ndev;++j){
     if(tens2->avail[j] == YEP){
      for(i=0;i<ovl[0];++i){
@@ -338,8 +339,8 @@ static int talsh_find_optimal_device(const talsh_tens_t * tens0, const talsh_ten
    }
   }
  }
- //Overlap 02:
- if(s[0] && s[2]){
+ //Overlap tens0 and tens2:
+ if(s[0] > 0 && s[2] > 0){
   for(i=0;i<tens0->ndev;++i){
    if(tens0->avail[i] == YEP){
     for(j=0;j<tens2->ndev;++j){
@@ -351,7 +352,7 @@ static int talsh_find_optimal_device(const talsh_tens_t * tens0, const talsh_ten
     }
    }
   }
-  if(s[1]){
+  if(s[1] > 0){
    for(j=0;j<tens1->ndev;++j){
     if(tens1->avail[j] == YEP){
      for(i=0;i<ovl[1];++i){
@@ -361,8 +362,8 @@ static int talsh_find_optimal_device(const talsh_tens_t * tens0, const talsh_ten
    }
   }
  }
- //Overlap 12:
- if(s[1] && s[2]){
+ //Overlap tens1 and tens2:
+ if(s[1] > 0 && s[2] > 0){
   for(i=0;i<tens1->ndev;++i){
    if(tens1->avail[i] == YEP){
     for(j=0;j<tens2->ndev;++j){
@@ -374,7 +375,7 @@ static int talsh_find_optimal_device(const talsh_tens_t * tens0, const talsh_ten
     }
    }
   }
-  if(s[0]){
+  if(s[0] > 0){
    for(j=0;j<tens0->ndev;++j){
     if(tens0->avail[j] == YEP){
      for(i=0;i<ovl[2];++i){
@@ -385,7 +386,7 @@ static int talsh_find_optimal_device(const talsh_tens_t * tens0, const talsh_ten
   }
  }
  //No triple match happened => communication is necessary.
- //Order the arguments by size (al >= am >= as):
+ //Order the arguments by size (#al >= #am >= #as):
  if(s[1] >= s[2]){al=1; am=2;}else{al=2; am=1;}
  if(s[0] >= al){
   as=am; am=al; al=0;
@@ -394,11 +395,17 @@ static int talsh_find_optimal_device(const talsh_tens_t * tens0, const talsh_ten
  }
  //Find the optimal device to minimize the communication:
  if(s[al] > s[am] + s[as]){
-  
- }else if(s[al] = s[am] + s[as]){
-  
- }else{ //s[al] < s[am] + s[as]
-  
+  i=idx[al][am]; if(ovl[i] > 0) return ov[i][0]; //Large/medium overlap
+  i=idx[al][as]; if(ovl[i] > 0) return ov[i][0]; //Large/small overlap
+ }else{
+  i=idx[al][am]; if(ovl[i] > 0) return ov[i][0]; //Large/medium overlap
+  i=idx[al][as]; if(ovl[i] > 0) return ov[i][0]; //Large/small overlap
+  i=idx[am][as]; if(ovl[i] > 0) return ov[i][0]; //Medium/small overlap
+ }
+ switch(al){ //Large does not overlap with other arguments
+  case 0: devid=tens0->dev_rsc[0].dev_id; break;
+  case 1: devid=tens1->dev_rsc[0].dev_id; break;
+  case 2: devid=tens2->dev_rsc[0].dev_id; break;
  }
  return devid;
 }
