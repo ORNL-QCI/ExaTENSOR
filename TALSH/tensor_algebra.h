@@ -2,7 +2,7 @@
     Parameters, derived types, and function prototypes
     used at the lower level of TAL-SH (device specific):
     CP-TAL, NV-TAL, XP-TAL, AM-TAL, etc.
-REVISION: 2016/05/13
+REVISION: 2016/05/20
 
 Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -328,6 +328,7 @@ extern "C"{
 #endif
 //Generic:
  int tens_valid_data_kind(int datk, int * datk_size = NULL);
+ unsigned int argument_coherence_value(unsigned int coh_ctrl, unsigned int tot_args, unsigned int arg_num);
 // Device id conversion:
  int valid_device_kind(int dev_kind);
  int encode_device_id(int dev_kind, int dev_num);

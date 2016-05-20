@@ -1,6 +1,6 @@
 /** Tensor Algebra Library for NVidia GPU: NV-TAL (CUDA based).
 AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-REVISION: 2016/05/15
+REVISION: 2016/05/20
 
 Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -30,7 +30,8 @@ NOTES:
  # cuBLAS.v2 is required when BLAS is enabled.
  # Non-blocking tensor algebra functions carry an additional output argument <cuda_task> (task handle).
  # Non-blocking tensor algebra functions carry an additional input argument <coherence_ctrl>
-   which controls the tensor data consistency synchronization accross different devices.
+   which controls the tensor data consistency synchronization accross different devices
+   after the tensor operation has completed successfully.
 FOR DEVELOPERS ONLY:
  # Currently used device resources:
     - Global memory pointer (any device);
@@ -232,6 +233,14 @@ int tens_valid_data_kind(int datk, int * datk_size)
  }
  if(datk_size != NULL) *datk_size=datk_sz;
  return ans;
+}
+
+unsigned int argument_coherence_value(unsigned int coh_ctrl, unsigned int tot_args, unsigned int arg_num)
+/** Given a composite coherence control value, returns an individual component.
+    No argument consistency check (0 <= arg_num < tot_args). **/
+{
+ unsigned int coh = ((coh_ctrl>>((tot_args-(arg_num+1))*2))&(3));
+ return coh;
 }
 
 //DEVICE ID CONVERSION:
