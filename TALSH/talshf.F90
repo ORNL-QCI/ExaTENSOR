@@ -255,6 +255,12 @@
           real(C_DOUBLE), intent(out):: input
           real(C_DOUBLE), intent(out):: output
          end function talshTaskTime_
+  !Print TAL-SH task info:
+         subroutine talsh_task_print_info(talsh_task) bind(c,name='talshTaskPrint')
+          import
+          implicit none
+          type(talsh_task_t), intent(in):: talsh_task
+         end subroutine talsh_task_print_info
  !TAL-SH tensor operations C/C++ API:
   !Place a tensor block on a specific device:
          integer(C_INT) function talshTensorPlace_(tens,dev_id,dev_kind,copy_ctrl,talsh_task) bind(c,name='talshTensorPlace_')
@@ -338,6 +344,7 @@
         public talsh_task_wait
         public talsh_tasks_wait
         public talsh_task_time
+        public talsh_task_print_info
  !TAL-SH tensor operations API:
         public talsh_tensor_place
         public talsh_tensor_discard
@@ -626,7 +633,7 @@
          integer(C_INT):: devid,hab_entry,tens_rank
          integer(C_INT), target:: tens_dims(1:MAX_TENSOR_RANK)
          type(C_FUNPTR):: init_method_p
-         real(8):: val_real,val_imag
+         real(C_DOUBLE):: val_real,val_imag
 
          ierr=TALSH_SUCCESS
          tens_rank=size(tens_shape) !tens_shape(1:) must have the exact volume = tensor rank
@@ -891,7 +898,7 @@
          character(C_CHAR):: contr_ptrn(1:1024) !contraction pattern
          integer(C_INT):: coh_ctrl,devn,devk,sts
          integer:: l
-         real(8):: scale_real,scale_imag
+         real(C_DOUBLE):: scale_real,scale_imag
          type(talsh_task_t):: tsk
 
          ierr=TALSH_SUCCESS; l=len_trim(cptrn)
@@ -927,8 +934,8 @@
          type(C_PTR), value:: ltens_p               !in: left tensor argument
          type(C_PTR), value:: rtens_p               !in: right tensor argument
          type(C_PTR), value:: dtens_p               !inout: destination tensor argument
-         real(8), value:: scale_real                !in: scaling prefactor (real part)
-         real(8), value:: scale_imag                !in: scaling prefactor (imaginary part)
+         real(C_DOUBLE), value:: scale_real         !in: scaling prefactor (real part)
+         real(C_DOUBLE), value:: scale_imag         !in: scaling prefactor (imaginary part)
          type(tensor_block_t), pointer:: dtp,ltp,rtp
          integer:: ierr
 

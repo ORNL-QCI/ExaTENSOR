@@ -35,6 +35,10 @@ FOR DEVELOPER(s):
    XP-TAL (Intel MIC, asynchronous),
    AM-TAL (AMD GPU, asynchronous),
    etc.
+   Contrary to accelerators, the Host does not have a dedicated runtime layer
+   for managing resource acquisition, data transfers and consistency, and
+   asynchronous execution. Except the latter, these functions are delegated
+   to the TAL-SH layer (resource acquisition, data transfers/consistency).
  # Outstanding problems:
    1. Tensor body images participating in tensor operations must be marked
       as "IN_USE" even if they are not to be discarded because other tensor
@@ -118,6 +122,7 @@ static int host_task_record(host_task_t * host_task, unsigned int coh_ctrl, unsi
 static int host_task_status(host_task_t * host_task);
 static int host_task_error_code(const host_task_t * host_task);
 static int host_task_destroy(host_task_t * host_task);
+static void host_task_print(const host_task_t * host_task);
 // C tensor block aliasing:
 static int talsh_tensor_c_assoc(const talsh_tens_t * talsh_tens, int image_id, tensBlck_t ** tensC);
 static int talsh_tensor_c_dissoc(tensBlck_t * tensC);
@@ -212,6 +217,19 @@ static int host_task_destroy(host_task_t * host_task)
  if(host_task == NULL) return TALSH_INVALID_ARGS;
  free(host_task);
  return TALSH_SUCCESS;
+}
+
+static void host_task_print(const host_task_t * host_task)
+/** Prints Host task info. **/
+{
+ if(host_task != NULL){
+  printf("\n#MESSAGE: Printing Host task info:\n");
+  printf(" Host task status       : %d\n",host_task->task_error);
+  printf(" Host task device id    : %d\n",host_task->host_id);
+  printf(" Host task coherence_var: %u\n",host_task->coherence);
+  printf("#END OF MESSAGE\n");
+ }
+ return;
 }
 
 int talsh_tensor_image_info(const talsh_tens_t * talsh_tens, int image_id,
@@ -1518,7 +1536,7 @@ int talshTaskWait(talsh_task_t * talsh_task, int * stats)
 int talshTasksWait(int ntasks, talsh_task_t talsh_tasks[], int stats[])
 /** Returns upon completion of a number of TAL-SH tasks. **/
 {
- int i,tc,errc;
+ int i,tc,sts,errc;
 
  if(talsh_on == 0) return TALSH_NOT_INITIALIZED;
  if(ntasks <= 0 || talsh_tasks == NULL || stats == NULL) return TALSH_INVALID_ARGS;
@@ -1527,10 +1545,12 @@ int talshTasksWait(int ntasks, talsh_task_t talsh_tasks[], int stats[])
  while(tc > 0){
   for(i=0;i<ntasks;++i){
    if(talsh_tasks[i].task_p == NULL || talsh_tasks[i].dev_kind == DEV_NULL) return TALSH_OBJECT_IS_EMPTY;
-   if(stats[i] == TALSH_TASK_EMPTY){if(talshTaskComplete(&(talsh_tasks[i]),&(stats[i]),&errc) == YEP) --tc;}
-   if(errc != TALSH_SUCCESS) return TALSH_FAILURE;
-  };
- };
+   if(stats[i] == TALSH_TASK_EMPTY){
+    if(talshTaskComplete(&(talsh_tasks[i]),&sts,&errc) == YEP){stats[i]=sts; --tc;}
+    if(errc != TALSH_SUCCESS) return TALSH_FAILURE;
+   }
+  }
+ }
  return TALSH_SUCCESS;
 }
 
@@ -1588,6 +1608,26 @@ int talshTaskTime(talsh_task_t * talsh_task, double * total, double * comput, do
 int talshTaskTime_(talsh_task_t * talsh_task, double * total, double * comput, double * input, double * output) //Fortran wrapper
 {
  return talshTaskTime(talsh_task,total,comput,input,output);
+}
+
+void talshTaskPrint(const talsh_task_t * talsh_task)
+/** Prints TAL-SH task info. **/
+{
+ if(talsh_task != NULL){
+  switch(talsh_task->dev_kind){
+   case DEV_HOST:
+    host_task_print((host_task_t*)(talsh_task->task_p));
+    break;
+   case DEV_NVIDIA_GPU:
+    cuda_task_print((cudaTask_t*)(talsh_task->task_p));
+    break;
+   case DEV_INTEL_MIC:
+    break;
+   case DEV_AMD_GPU:
+    break;
+  }
+ }
+ return;
 }
 
 // TAL-SH tensor operations API:
@@ -2028,4 +2068,31 @@ int talshTensorContract_(const char * cptrn, talsh_tens_t * dtens, talsh_tens_t 
                          double scale_real, double scale_imag, int dev_id, int dev_kind, talsh_task_t * talsh_task) //Fortran wrapper
 {
  return talshTensorContract(cptrn,dtens,ltens,rtens,copy_ctrl,scale_real,scale_imag,dev_id,dev_kind,talsh_task);
+}
+
+double talshTensorImageNorm1_cpu(const talsh_tens_t * talsh_tens)
+/** Computes the 1-norm of the tensor body image residing on Host. **/
+{
+ int i,j,n;
+ double norm1;
+ double *image_p;
+
+ norm1=-1.0;
+ if(talsh_tens != NULL){
+  for(i=0;i<talsh_tens->ndev;++i){
+   if(talsh_tens->dev_rsc[i].dev_id == talshFlatDevId(DEV_HOST,0)){
+    n=talshTensorVolume(talsh_tens); norm1=0.0;
+    image_p=(double*)(talsh_tens->dev_rsc[i].gmem_p);
+    for(j=0;j<n;++j){
+     if(image_p[j] < 0){
+      norm1-=image_p[j];
+     }else{
+      norm1+=image_p[j];
+     }
+    }
+    break;
+   }
+  }
+ }
+ return norm1;
 }

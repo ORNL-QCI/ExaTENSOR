@@ -190,6 +190,8 @@ extern "C"{
                    double * input = NULL,
                    double * output = NULL);
  int talshTaskTime_(talsh_task_t * talsh_task, double * total, double * comput, double * input, double * output);
+//  Print TAL-SH task info:
+ void talshTaskPrint(const talsh_task_t * talsh_task);
 // TAL-SH tensor operations API:
 //  Place a tensor block on a specific device:
  int talshTensorPlace(talsh_tens_t * tens,               //inout: tensor block
@@ -216,6 +218,9 @@ extern "C"{
                          talsh_task_t * talsh_task = NULL); ////inout: TAL-SH task (must be clean)
  int talshTensorContract_(const char * cptrn, talsh_tens_t * dtens, talsh_tens_t * ltens, talsh_tens_t * rtens, int copy_ctrl,
                           double scale_real, double scale_imag, int dev_id, int dev_kind, talsh_task_t * talsh_task);
+// TAL-SH debugging:
+//  1-norm of the tensor body image on Host:
+ double talshTensorImageNorm1_cpu(const talsh_tens_t * talsh_tens);
 #ifdef __cplusplus
 }
 #endif
