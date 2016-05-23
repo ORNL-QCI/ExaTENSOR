@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level API header.
-REVISION: 2016/05/11
+REVISION: 2016/05/23
 
 Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -173,9 +173,9 @@ extern "C"{
 //  Get the TAL-SH task status:
  int talshTaskStatus(talsh_task_t * talsh_task);
 //  Check whether a TAL-SH task has completed:
- int talshTaskCompleted(talsh_task_t * talsh_task,
-                        int * stats,
-                        int * ierr);
+ int talshTaskComplete(talsh_task_t * talsh_task,
+                       int * stats,
+                       int * ierr);
 //  Wait upon a completion of a TAL-SH task:
  int talshTaskWait(talsh_task_t * talsh_task,
                    int * stats);

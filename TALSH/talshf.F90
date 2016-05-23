@@ -1,5 +1,5 @@
 !ExaTensor::TAL-SH: Device-unified user-level API:
-!REVISION: 2016/05/20
+!REVISION: 2016/05/23
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -46,6 +46,14 @@
         integer(C_INT), parameter, public:: TALSH_IN_PROGRESS=1000006         !TAL-SH operation is still in progress (not finished)
         integer(C_INT), parameter, public:: TALSH_NOT_ALLOWED=1000007         !request is not allowed by TAL-SH
         integer(C_INT), parameter, public:: TALSH_LIMIT_EXCEEDED=1000008      !internal limit exceeded
+ !TAL-SH task status:
+        integer(C_INT), parameter, public:: TALSH_TASK_ERROR=1999999
+        integer(C_INT), parameter, public:: TALSH_TASK_EMPTY=2000000
+        integer(C_INT), parameter, public:: TALSH_TASK_SCHEDULED=2000001
+        integer(C_INT), parameter, public:: TALSH_TASK_STARTED=2000002
+        integer(C_INT), parameter, public:: TALSH_TASK_INPUT_READY=2000003
+        integer(C_INT), parameter, public:: TALSH_TASK_OUTPUT_READY=2000004
+        integer(C_INT), parameter, public:: TALSH_TASK_COMPLETED=2000005
  !Host argument buffer:
         integer(C_SIZE_T), parameter, private:: HAB_SIZE_DEFAULT=1048576 !default size of the Host argument buffer in bytes
 !DERIVED TYPES:
@@ -215,13 +223,13 @@
           type(talsh_task_t), intent(inout):: talsh_task
          end function talshTaskStatus
   !Check whether a TAL-SH task has completed:
-         integer(C_INT) function talshTaskCompleted(talsh_task,stats,ierr) bind(c,name='talshTaskCompleted')
+         integer(C_INT) function talshTaskComplete(talsh_task,stats,ierr) bind(c,name='talshTaskComplete')
           import
           implicit none
           type(talsh_task_t), intent(inout):: talsh_task
           integer(C_INT), intent(out):: stats
           integer(C_INT), intent(out):: ierr
-         end function talshTaskCompleted
+         end function talshTaskComplete
   !Wait upon completion of a TAL-SH task:
          integer(C_INT) function talshTaskWait(talsh_task,stats) bind(c,name='talshTaskWait')
           import
@@ -326,7 +334,7 @@
         public talsh_task_destruct
         public talsh_task_dev_id
         public talsh_task_status
-        public talsh_task_completed
+        public talsh_task_complete
         public talsh_task_wait
         public talsh_tasks_wait
         public talsh_task_time
@@ -784,16 +792,16 @@
          stat=talshTaskStatus(talsh_task)
          return
         end function talsh_task_status
-!------------------------------------------------------------------------
-        function talsh_task_completed(talsh_task,stats,ierr) result(done)
+!-----------------------------------------------------------------------
+        function talsh_task_complete(talsh_task,stats,ierr) result(done)
          implicit none
          integer(C_INT):: done                          !out: YEP if the task has completed, NOPE otherwise
          type(talsh_task_t), intent(inout):: talsh_task !inout: TAL-SH task
          integer(C_INT), intent(out):: stats            !out: TAL-SH task status
          integer(C_INT), intent(out):: ierr             !out: error code (0:success)
-         done=talshTaskCompleted(talsh_task,stats,ierr)
+         done=talshTaskComplete(talsh_task,stats,ierr)
          return
-        end function talsh_task_completed
+        end function talsh_task_complete
 !--------------------------------------------------------------
         function talsh_task_wait(talsh_task,stats) result(ierr)
          implicit none
@@ -847,7 +855,9 @@
           ierr=talshTensorPlace_(tens,dev_id,dvk,coh,talsh_task)
          else
           ierr=talshTensorPlace_(tens,dev_id,dvk,coh,tsk)
-          if(ierr.eq.TALSH_SUCCESS) ierr=talsh_task_wait(tsk,sts)
+          if(ierr.eq.TALSH_SUCCESS) then
+           ierr=talsh_task_wait(tsk,sts); if(sts.ne.TALSH_TASK_COMPLETED) ierr=TALSH_TASK_ERROR
+          endif
           sts=talsh_task_destruct(tsk)
          endif
          return
@@ -878,8 +888,35 @@
          integer(C_INT), intent(in), optional:: dev_id    !in: device id (flat or kind-specific)
          integer(C_INT), intent(in), optional:: dev_kind  !in: device kind (if present, <dev_id> is kind-specific)
          type(talsh_task_t), intent(inout), optional:: talsh_task !inout: TAL-SH task (must be clean)
+         character(C_CHAR):: contr_ptrn(1:1024) !contraction pattern
+         integer(C_INT):: coh_ctrl,devn,devk,sts
+         integer:: l
+         real(8):: scale_real,scale_imag
+         type(talsh_task_t):: tsk
 
-         ierr=TALSH_SUCCESS
+         ierr=TALSH_SUCCESS; l=len_trim(cptrn)
+         if(l.gt.0) then
+          if(present(copy_ctrl)) then; coh_ctrl=copy_ctrl; else; coh_ctrl=COPY_MTT; endif
+          if(present(scale)) then; scale_real=dble(scale); scale_imag=dimag(scale); else; scale_real=1d0; scale_imag=0d0; endif
+          if(present(dev_id)) then; devn=dev_id; else; devn=DEV_DEFAULT; endif
+          if(present(dev_kind)) then; devk=dev_kind; else; devk=DEV_DEFAULT; endif
+          call string2array(cptrn(1:l),contr_ptrn,l,ierr)
+          if(ierr.eq.0) then
+           if(present(talsh_task)) then
+            ierr=talshTensorContract_(cptrn,dtens,ltens,rtens,coh_ctrl,scale_real,scale_imag,devn,devk,talsh_task)
+           else
+            ierr=talshTensorContract_(cptrn,dtens,ltens,rtens,coh_ctrl,scale_real,scale_imag,devn,devk,tsk)
+            if(ierr.eq.TALSH_SUCCESS) then
+             ierr=talsh_task_wait(tsk,sts); if(sts.ne.TALSH_TASK_COMPLETED) ierr=TALSH_TASK_ERROR
+            endif
+            sts=talsh_task_destruct(tsk)
+           endif
+          else
+           ierr=TALSH_INVALID_ARGS
+          endif
+         else
+          ierr=TALSH_INVALID_ARGS
+         endif
          return
         end function talsh_tensor_contract
 !-------------------------------------------------------------------------------------------------------------------
@@ -897,7 +934,7 @@
 
          cpu_tensor_block_contract=0
          if(dabs(scale_real-1d0).gt.ZERO_THRESH.or.dabs(scale_imag-0d0).gt.ZERO_THRESH) then !`Scaling prefactor should be accounted for
-          cpu_tensor_block_contract=-3; return
+          cpu_tensor_block_contract=TALSH_NOT_IMPLEMENTED; return !`Implement
          endif
          if(c_associated(dtens_p).and.c_associated(ltens_p).and.c_associated(rtens_p)) then
           call c_f_pointer(dtens_p,dtp); call c_f_pointer(ltens_p,ltp); call c_f_pointer(rtens_p,rtp)

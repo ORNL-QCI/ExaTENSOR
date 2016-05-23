@@ -1,6 +1,6 @@
 /** Tensor Algebra Library for NVidia GPU: NV-TAL (CUDA based).
 AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-REVISION: 2016/05/20
+REVISION: 2016/05/21
 
 Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -239,8 +239,8 @@ unsigned int argument_coherence_get_value(unsigned int coh_ctrl, unsigned int to
 /** Given a composite coherence control value, returns an individual component.
     No argument consistency check (0 <= arg_num < tot_args). **/
 {
- const unsigned int two_bits_set = 3;
- unsigned int coh = ((coh_ctrl>>((tot_args-(arg_num+1))*2))&(two_bits_set));
+ const unsigned int TWO_BITS_SET = 3;
+ unsigned int coh = ((coh_ctrl>>((tot_args-(arg_num+1))*2))&(TWO_BITS_SET));
  return coh;
 }
 
@@ -248,9 +248,9 @@ int argument_coherence_set_value(unsigned int * coh_ctrl, unsigned int tot_args,
 /** Sets the coherence value for a specific argument in a composite coherence control value. **/
 {
  if(arg_num < tot_args){
-  const unsigned int two_bits_set = 3;
-  if((coh_val&(~two_bits_set)) == 0){
-   const unsigned int clear_mask = ((two_bits_set)<<((tot_args-(arg_num+1))*2));
+  const unsigned int TWO_BITS_SET = 3;
+  if((coh_val&(~TWO_BITS_SET)) == 0){
+   const unsigned int clear_mask = ((TWO_BITS_SET)<<((tot_args-(arg_num+1))*2));
    const unsigned int set_mask = ((coh_val)<<((tot_args-(arg_num+1))*2));
    const unsigned int coh = (((*coh_ctrl)&(~clear_mask))|set_mask);
    *coh_ctrl=coh;
@@ -2027,7 +2027,7 @@ __host__ static int cuda_task_finalize(cudaTask_t *cuda_task) //do not call this
     Note that the CUDA task is not destructed here, namely CUDA stream/event resources and the
     .tens_p component of .tens_args[] are unmodified (.prmn_p and .const_mem_entry are released). **/
 {
- const unsigned int msk=3; //two right bits are set: {0:D,1:M,2:T,3:K}
+ const unsigned int TWO_BITS_SET = 3; //two right bits are set: {0:D,1:M,2:T,3:K}
  unsigned int bts,coh,s_d_same;
  int i,ret_stat,errc;
  cudaTensArg_t *tens_arg;
@@ -2038,7 +2038,7 @@ __host__ static int cuda_task_finalize(cudaTask_t *cuda_task) //do not call this
  if(cuda_task->num_args > MAX_TENSOR_OPERANDS) return 3; //invalid number of tensor arguments
  ret_stat=0; coh=cuda_task->coherence;
  for(i=cuda_task->num_args-1;i>=0;i--){ //last argument corresponds to the first (minor) two bits
-  bts=coh&msk;
+  bts=(coh)&(TWO_BITS_SET);
   tens_arg=&(cuda_task->tens_args[i]);
   if(tens_arg->tens_p != NULL){ //pointer to the tensor block associated with this argument
    if(tens_arg->tens_p->src_rsc == NULL) return -2; //source must always be present
@@ -2966,7 +2966,7 @@ NOTES:
  int dprm[1+MAX_TENSOR_RANK],lprm[1+MAX_TENSOR_RANK],rprm[1+MAX_TENSOR_RANK]; //the 1st element is the sign of the permutation
  size_t vol_d,vol_l,vol_r,dsize,lsize,rsize,lc,ll,lr;
  unsigned int coh;
- const unsigned int msk=3; //two right bits are set
+ const unsigned int TWO_BITS_SET = 3; //two right bits are set
  void *darg,*larg,*rarg,*alpha_p,*beta_p;
  cudaStream_t *cuda_stream;
  cudaEvent_t *cuda_start,*cuda_comput,*cuda_output,*cuda_finish,*dep_event;
@@ -3627,7 +3627,7 @@ NOTES:
   errc=cuda_task_record(cuda_task,coh_ctrl,56); errc=gpu_activate(cur_gpu); return 56;
  }
 //Transfer back the updated destination tensor if needed ("T","K" coherence control):
- coh=(coh_ctrl>>4)&msk; //select bits 4,5 (destination tensor coherence)
+ coh=(coh_ctrl>>4)&(TWO_BITS_SET); //select bits 4,5 (destination tensor coherence)
  if(gpu_d != gpu_num && coh >= 2){ //data is not on the computing GPU and coherence control = 2("T") or (3)"K":
   err=cudaMemcpyAsync(dtens->src_rsc->gmem_p,dtens->dst_rsc->gmem_p,dsize,cudaMemcpyDefault,*cuda_stream);
   if(err != cudaSuccess){

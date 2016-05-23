@@ -127,7 +127,7 @@
         ierr=talsh_task_wait(tsks(1),sts(1))
         write(*,'("Status ",i11," Completion = ",i11)') ierr,sts(1); if(ierr.ne.TALSH_SUCCESS) then; ierr=1; return; endif
  !Print tensor info:
-        call talsh_tensor_print_info(tens(2))
+        !call talsh_tensor_print_info(tens(2))
  !Destruct (clean) TAL-SH task:
         write(*,'(1x,"Destructing TAL-SH task 1 ... ")',ADVANCE='NO')
         ierr=talsh_task_destruct(tsks(1))
@@ -138,7 +138,7 @@
         ierr=talsh_tensor_discard(tens(2),0,DEV_HOST)
         write(*,'("Status ",i11)') ierr; if(ierr.ne.TALSH_SUCCESS) then; ierr=1; return; endif
  !Print tensor info:
-        call talsh_tensor_print_info(tens(2))
+        !call talsh_tensor_print_info(tens(2))
  !Move the GPU copy back to CPU:
         write(*,'(1x,"Moving tensor block 2 from GPU to CPU ... ")',ADVANCE='NO')
         ierr=talsh_tensor_place(tens(2),dev_cpu,copy_ctrl=COPY_M,talsh_task=tsks(1))
@@ -147,7 +147,7 @@
         ierr=talsh_task_wait(tsks(1),sts(1))
         write(*,'("Status ",i11," Completion = ",i11)') ierr,sts(1); if(ierr.ne.TALSH_SUCCESS) then; ierr=1; return; endif
  !Print tensor info:
-        call talsh_tensor_print_info(tens(2))
+        !call talsh_tensor_print_info(tens(2))
  !Destruct (clean) TAL-SH task:
         write(*,'(1x,"Destructing TAL-SH task 1 ... ")',ADVANCE='NO')
         ierr=talsh_task_destruct(tsks(1))
@@ -162,12 +162,12 @@
         ierr=talsh_tensor_contract('D(a,b,i,j)+=L(j,c,k,a)*R(c,b,k,i)',tens(4),tens(5),tens(6),dev_id=dev_gpu,talsh_task=tsks(2))
         write(*,'("Status ",i11)') ierr; if(ierr.ne.TALSH_SUCCESS) then; ierr=1; return; endif
 !Execute a tensor contraction on CPU (while the previous two are running on GPU):
-        write(*,'(1x,"Executing tensor contraction 3 on CPU ... ")',ADVANCE='NO')
-        ierr=talsh_tensor_contract('D(a,b,i,j)+=L(j,c,k,a)*R(c,b,k,i)',tens(7),tens(8),tens(9),dev_id=dev_cpu,talsh_task=tsks(3))
-        write(*,'("Status ",i11)') ierr; if(ierr.ne.TALSH_SUCCESS) then; ierr=1; return; endif
+        !write(*,'(1x,"Executing tensor contraction 3 on CPU ... ")',ADVANCE='NO')
+        !ierr=talsh_tensor_contract('D(a,b,i,j)+=L(j,c,k,a)*R(c,b,k,i)',tens(7),tens(8),tens(9),dev_id=dev_cpu,talsh_task=tsks(3))
+        !write(*,'("Status ",i11)') ierr; if(ierr.ne.TALSH_SUCCESS) then; ierr=1; return; endif
 !Synchronize and compare the results:
         write(*,'(1x,"Waiting upon completion of tensor contractions on GPU ... ")',ADVANCE='NO')
-!       ierr=talsh_tasks_wait(3,tsks,sts)
+        ierr=talsh_tasks_wait(2,tsks,sts)
         write(*,'("Status ",i11)') ierr; if(ierr.ne.TALSH_SUCCESS) then; ierr=1; return; endif
 
 !Destruct TAL-SH task handles:
