@@ -1620,11 +1620,17 @@ void talshTaskPrint(const talsh_task_t * talsh_task)
     host_task_print((host_task_t*)(talsh_task->task_p));
     break;
    case DEV_NVIDIA_GPU:
+#ifndef NO_GPU
     cuda_task_print((cudaTask_t*)(talsh_task->task_p));
+#endif
     break;
    case DEV_INTEL_MIC:
+#ifndef NO_PHI
+#endif
     break;
    case DEV_AMD_GPU:
+#ifndef NO_AMD
+#endif
     break;
   }
  }
