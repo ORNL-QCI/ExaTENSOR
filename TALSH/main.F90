@@ -177,15 +177,16 @@
         write(*,'("Status ",i11)') ierr; if(ierr.ne.TALSH_SUCCESS) then; ierr=1; return; endif
         !call talsh_task_print_info(tsks(n)) !debug
 !Execute a tensor contraction on CPU (while the previous two are running on GPU):
-        !write(*,'(1x,"Executing tensor contraction 3 on CPU ... ")',ADVANCE='NO')
-        !n=n+1
-        !ierr=talsh_tensor_contract('D(a,b,i,j)+=L(j,c,k,a)*R(c,b,k,i)',tens(7),tens(8),tens(9),dev_id=dev_cpu,talsh_task=tsks(n))
-        !write(*,'("Status ",i11)') ierr; if(ierr.ne.TALSH_SUCCESS) then; ierr=1; return; endif
-        !call talsh_task_print_info(tsks(n))
+        write(*,'(1x,"Executing tensor contraction 3 on CPU ... ")',ADVANCE='NO')
+        n=n+1
+        ierr=talsh_tensor_contract('D(a,b,i,j)+=L(j,c,k,a)*R(c,b,k,i)',tens(7),tens(8),tens(9),dev_id=dev_cpu,talsh_task=tsks(n))
+        write(*,'("Status ",i11)') ierr; if(ierr.ne.TALSH_SUCCESS) then; ierr=1; return; endif
+        !call talsh_task_print_info(tsks(n)) !debug
 !Synchronize and compare the results:
         write(*,'(1x,"Waiting upon completion of tensor contractions on GPU ... ")',ADVANCE='NO')
         ierr=talsh_tasks_wait(n,tsks,sts)
         write(*,'("Status ",i11," Completion = ",8(i8))') ierr,sts(1:n); if(ierr.ne.TALSH_SUCCESS) then; ierr=1; return; endif
+!Printing results:
         call talsh_tensor_print_info(tens(1)); print *,'TENSOR 1 NORM1 = ',talshTensorImageNorm1_cpu(tens(1))
         call talsh_tensor_print_info(tens(4)); print *,'TENSOR 4 NORM1 = ',talshTensorImageNorm1_cpu(tens(4))
         call talsh_tensor_print_info(tens(7)); print *,'TENSOR 7 NORM1 = ',talshTensorImageNorm1_cpu(tens(7))

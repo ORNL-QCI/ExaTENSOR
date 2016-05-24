@@ -1,6 +1,6 @@
 !Tensor Algebra for Multi- and Many-core CPUs (OpenMP based).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2016/05/09
+!REVISION: 2016/05/24
 
 !Copyright (C) 2013-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -1043,18 +1043,20 @@
          implicit none
          type(tensor_block_t), intent(in):: tens !in: tensor block
          integer, intent(out), optional:: ierr   !out: error code (0:success)
+         integer:: errc
 
-         ierr=0; tensor_block_is_empty=.TRUE.
+         errc=0; tensor_block_is_empty=.TRUE.
          if(tens%tensor_shape%num_dim.ge.0) then
           tensor_block_is_empty=.FALSE.
           if(tens%tensor_shape%num_dim.le.MAX_TENSOR_RANK) then
            if(.not.associated(tens%tensor_shape%dim_extent).and.tens%tensor_shape%num_dim.gt.0) then
-            ierr=2; tensor_block_is_empty=.TRUE.
+            errc=2; tensor_block_is_empty=.TRUE.
            endif
           else
-           ierr=1; tensor_block_is_empty=.TRUE.
+           errc=1; tensor_block_is_empty=.TRUE.
           endif
          endif
+         if(present(ierr)) ierr=errc
          return
         end function tensor_block_is_empty
 !------------------------------------------------------------------------------

@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level API.
-REVISION: 2016/05/23
+REVISION: 2016/05/24
 
 Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -289,6 +289,7 @@ static int talsh_tensor_image_discard_other(talsh_tens_t * talsh_tens, int image
  if(talshTensorIsHealthy(talsh_tens) != YEP) return TALSH_FAILURE;
  if(image_id < 0 || image_id >= talsh_tens->ndev) return TALSH_INVALID_ARGS;
  if(talsh_tens->avail[image_id] != YEP) return TALSH_NOT_ALLOWED; //at least one tensor body image must exist, otherwise just destroy the tensor
+ errc=TALSH_SUCCESS;
  for(i=0;i<talsh_tens->ndev;++i){
   if(i != image_id){
    j=tensDevRsc_release_all(&(talsh_tens->dev_rsc[i]));

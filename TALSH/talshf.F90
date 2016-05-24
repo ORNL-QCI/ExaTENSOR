@@ -1,5 +1,5 @@
 !ExaTensor::TAL-SH: Device-unified user-level API:
-!REVISION: 2016/05/23
+!REVISION: 2016/05/24
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -396,9 +396,9 @@
 !A return status TALSH_NOT_ALLOWED indicates that the requested tensor body image
 !is no longer available (to be discarded by runtime).
          implicit none
-         type(talsh_tens_t), intent(in):: talsh_tens !in: TAL-SH tensor
-         integer(C_INT), intent(in):: image_id       !in: tensor body image id
-         type(C_PTR), intent(out):: tensF            !out: C pointer to <tensor_block_t> associated with the TAL-SH tensor image
+         type(talsh_tens_t), intent(in):: talsh_tens  !in: TAL-SH tensor
+         integer(C_INT), value, intent(in):: image_id !in: tensor body image id
+         type(C_PTR), intent(out):: tensF             !out: C pointer to <tensor_block_t> associated with the TAL-SH tensor image
          type(tensor_block_t), pointer:: ftens
          talsh_tensor_f_assoc=talsh_tensor_f_assoc_(talsh_tens,image_id,ftens)
          if(talsh_tensor_f_assoc.eq.TALSH_SUCCESS) then; tensF=c_loc(ftens); else; tensF=C_NULL_PTR; endif
