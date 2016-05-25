@@ -1,5 +1,7 @@
 /** This file contains Linux OS wrapped calls. **/
 
+#ifndef NO_LINUX
+
 #include <stddef.h>
 #include <stdlib.h>
 #include <sys/sysinfo.h>
@@ -34,3 +36,5 @@ double system_clock()
  if(clock_gettime(CLOCK_MONOTONIC,&tp)) return -1.0;
  return (((double)tp.tv_sec)+((double)tp.tv_nsec)*(1.0E-9));
 }
+
+#endif
