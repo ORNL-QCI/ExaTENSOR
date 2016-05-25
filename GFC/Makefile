@@ -13,7 +13,7 @@ export MPILIB ?= MPICH
 #BLAS: [ATLAS|MKL|ACML]:
 export BLASLIB ?= ATLAS
 #Nvidia GPU via CUDA: [CUDA|NOCUDA]:
-export GPU_CUDA ?= CUDA
+export GPU_CUDA ?= NOCUDA
 #Operating system: [LINUX|NO_LINUX]:
 export EXA_OS ?= LINUX
 
