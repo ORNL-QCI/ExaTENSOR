@@ -55,6 +55,11 @@
         implicit none
         integer(C_SIZE_T), parameter:: BUF_SIZE=1024*1024*1024 !desired Host argument buffer size in bytes
         integer(C_INT), parameter:: DIM_EXT=41 !tensor dimension extent
+#ifndef NO_GPU
+        integer(C_INT), parameter:: NUM_GPUS_TO_USE=1 !number of GPUs to test on a node
+#else
+        integer(C_INT), parameter:: NUM_GPUS_TO_USE=0 !number of GPUs to test on a node
+#endif
         integer(C_SIZE_T):: host_buf_size
         integer(C_INT):: i,n,ierr,host_arg_max,dev_gpu,dev_cpu,sts(3)
         type(talsh_tens_t):: tens(9) !three tensors for CPU, six for GPU
@@ -73,7 +78,7 @@
         write(*,'(1x,"Initializing TALSH ... ")',ADVANCE='NO')
         host_buf_size=BUF_SIZE
 #ifndef NO_GPU
-        ierr=talsh_init(host_buf_size,host_arg_max,gpu_list=(/0/))
+        ierr=talsh_init(host_buf_size,host_arg_max,gpu_list=(/(i,i=0,NUM_GPUS_TO_USE-1)/))
 #else
         ierr=talsh_init(host_buf_size,host_arg_max)
 #endif

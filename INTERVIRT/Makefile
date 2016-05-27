@@ -24,7 +24,7 @@ export PATH_MPICH ?= /usr/local/mpich3.2
 export PATH_OPENMPI ?= /usr/local/openmpi1.10.1
 # BLAS lib path:
 export PATH_BLAS_ATLAS ?= /usr/lib
-export PATH_BLAS_INTEL ?= /usr/lib
+export PATH_BLAS_MKL ?= /ccs/compilers/intel/rh6-x86_64/16.0.0/compilers_and_libraries/linux/mkl/lib
 export PATH_BLAS_ACML ?= /usr/lib
 PATH_BLAS = $(PATH_BLAS_$(BLASLIB))
 # CUDA path:
@@ -105,7 +105,7 @@ MPI_LINK = $(MPI_LINK_$(WRAP))
 
 #LINEAR ALGEBRA FLAGS:
 LA_LINK_ATLAS = -L$(PATH_BLAS) -lblas -llapack
-LA_LINK_MKL = -L$(PATH_BLAS) -lmkl_core -lmkl_intel_thread -lmkl_intel_lp64 -lmkl_blas95_lp64 -lmkl_lapack95_lp64 -lrt
+LA_LINK_MKL = -L$(PATH_BLAS) -lmkl_intel_lp64 -lmkl_core -lmkl_intel_thread -lpthread -lm -ldl
 LA_LINK_ACML = -L$(PATH_BLAS) -lacml_mp
 LA_LINK_WRAP = -L.
 LA_LINK_NOWRAP = $(LA_LINK_$(BLASLIB))
@@ -149,8 +149,10 @@ CFLAGS_OPT = -c -O3 $(NO_ACCEL)
 CFLAGS = $(CFLAGS_$(BUILD_TYPE)) -D$(EXA_OS)
 
 #FORTRAN FLAGS:
-FFLAGS_INTEL_DEV = -c -g -fpp -vec-threshold4 -openmp $(NO_ACCEL)
-FFLAGS_INTEL_OPT = -c -O3 -fpp -vec-threshold4 -openmp $(NO_ACCEL)
+FFLAGS_INTEL_DEV = -c -g -fpp -vec-threshold4 -qopenmp -mkl=parallel $(NO_ACCEL)
+#FFLAGS_INTEL_DEV = -c -g -fpp -vec-threshold4 -openmp $(NO_ACCEL)
+FFLAGS_INTEL_OPT = -c -O3 -fpp -vec-threshold4 -qopenmp -mkl=parallel $(NO_ACCEL)
+#FFLAGS_INTEL_OPT = -c -O3 -fpp -vec-threshold4 -openmp $(NO_ACCEL)
 FFLAGS_CRAY_DEV = -c -g $(NO_ACCEL)
 FFLAGS_CRAY_OPT = -c -O3 $(NO_ACCEL)
 FFLAGS_GNU_DEV = -c -fopenmp -fbacktrace -fcheck=bounds -fcheck=array-temps -fcheck=pointer -g $(NO_ACCEL)
