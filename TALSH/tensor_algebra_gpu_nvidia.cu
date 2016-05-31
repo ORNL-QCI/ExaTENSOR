@@ -1,6 +1,6 @@
 /** Tensor Algebra Library for NVidia GPU: NV-TAL (CUDA based).
 AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-REVISION: 2016/05/21
+REVISION: 2016/05/31
 
 Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -216,7 +216,16 @@ __device__ static int norm2_wr_lock=0; //write lock (shared by all <gpu_array_no
 // Infrastructure for kernels <gpu_array_dot_product_XX__>:
 __device__ static int dot_product_wr_lock=0; //write lock (shared by all <gpu_array_dot_product_XX__> running on GPU)
 #endif
-//-------------------------------------------------------------------------
+//-------------------------------------------------------------------------------------------------------------------
+//CUDA runtime (for Fortran):
+#ifndef NO_GPU
+int cuda_get_device_count(int * dev_count)
+{
+ cudaError_t cuda_err = cudaGetDeviceCount(dev_count);
+ if(cuda_err != cudaSuccess){*dev_count=-1; return 1;}
+ return 0;
+}
+#endif
 //GENERIC:
 int tens_valid_data_kind(int datk, int * datk_size)
 /** Returns YEP if the data kind <datk> is valid in TAL-SH, NOPE otherwise.

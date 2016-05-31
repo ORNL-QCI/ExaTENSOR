@@ -1,5 +1,5 @@
 !ExaTensor::TAL-SH: Device-unified user-level API:
-!REVISION: 2016/05/24
+!REVISION: 2016/05/31
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -309,6 +309,13 @@
           type(C_PTR), intent(out):: gmem_p
           integer(C_INT), intent(out):: buf_entry
          end function talsh_tensor_image_info
+ !CUDA runtime:
+  !Get on-node GPU device count:
+         integer(C_INT) function cuda_get_device_count(dev_count) bind(c,name='cuda_get_device_count')
+          import
+          implicit none
+          integer(C_INT), intent(out):: dev_count
+         end function cuda_get_device_count
         end interface
 !INTERFACES FOR OVERLOADED FOTRAN FUNCTIONS:
         interface talsh_tensor_construct
@@ -355,7 +362,8 @@
 !        public talsh_tensor_copy
 !        public talsh_tensor_add
         public talsh_tensor_contract
- !INTERNAL:
+ !CUDA runtime:
+        public cuda_get_device_count
 
        contains
 !INTERNAL FUNCTIONS:

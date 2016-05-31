@@ -33,11 +33,11 @@
 
 !Test NV-TAL C/C++ API interface:
 #ifndef NO_GPU
-        write(*,'("Testing NV-TAL C/C++ API ...")')
-        call test_nvtal_c(ierr)
-        write(*,'("Done: Status ",i5)') ierr
-        if(ierr.ne.0) stop
-        write(*,*)''
+!        write(*,'("Testing NV-TAL C/C++ API ...")')
+!        call test_nvtal_c(ierr)
+!        write(*,'("Done: Status ",i5)') ierr
+!        if(ierr.ne.0) stop
+!        write(*,*)''
 #endif
 !Test TAL-SH Fortran API interface:
         write(*,'("Testing TAL-SH Fortran API ...")')
@@ -55,13 +55,8 @@
         implicit none
         integer(C_SIZE_T), parameter:: BUF_SIZE=1024*1024*1024 !desired Host argument buffer size in bytes
         integer(C_INT), parameter:: DIM_EXT=41 !tensor dimension extent
-#ifndef NO_GPU
-        integer(C_INT), parameter:: NUM_GPUS_TO_USE=1 !number of GPUs to test on a node
-#else
-        integer(C_INT), parameter:: NUM_GPUS_TO_USE=0 !number of GPUs to test on a node
-#endif
         integer(C_SIZE_T):: host_buf_size
-        integer(C_INT):: i,n,ierr,host_arg_max,dev_gpu,dev_cpu,sts(3)
+        integer(C_INT):: i,n,ierr,num_gpus,host_arg_max,dev_gpu,dev_cpu,sts(3)
         type(talsh_tens_t):: tens(9) !three tensors for CPU, six for GPU
         type(talsh_task_t):: tsks(3) !three tasks (tensor contractions, three tensors per tensor contraction)
 
@@ -74,11 +69,18 @@
         end interface
 
         ierr=0
+!Check GPU availability:
+#ifndef NO_GPU
+        write(*,'(1x,"Checking Nvidia GPU availability ... ")',ADVANCE='NO')
+        ierr=cuda_get_device_count(num_gpus)
+        write(*,'("Status ",i11,": Number of GPUs = ",i3)') ierr,num_gpus
+        if(ierr.ne.TALSH_SUCCESS) then; ierr=1; return; endif
+#endif
 !Init TALSH:
         write(*,'(1x,"Initializing TALSH ... ")',ADVANCE='NO')
         host_buf_size=BUF_SIZE
 #ifndef NO_GPU
-        ierr=talsh_init(host_buf_size,host_arg_max,gpu_list=(/(i,i=0,NUM_GPUS_TO_USE-1)/))
+        ierr=talsh_init(host_buf_size,host_arg_max,gpu_list=(/(i,i=0,num_gpus-1)/))
 #else
         ierr=talsh_init(host_buf_size,host_arg_max)
 #endif
