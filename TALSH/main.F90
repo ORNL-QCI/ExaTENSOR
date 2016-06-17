@@ -147,13 +147,6 @@
           enddo
          endif
         enddo sloop
-!Execute a tensor contraction on CPU (while the previous are running on GPUs):
-!        n=n+1
-!        write(*,'(1x,"Executing tensor contraction ",i2," on CPU ... ")',ADVANCE='NO') n
-!        ierr=talsh_tensor_contract('D(a,b,i,j)+=L(j,c,k,a)*R(c,b,k,i)',tens(1),tens(2),tens(3),&
-!                                  &dev_id=talsh_flat_dev_id(DEV_HOST,0),talsh_task=tsks(n))
-!        write(*,'("Status ",i11)') ierr; if(ierr.ne.TALSH_SUCCESS) then; ierr=8; return; endif
-!        call talsh_task_print_info(tsks(n)) !debug
 !Synchronize and compare the results:
         write(*,'(1x,"Waiting upon completion of tensor contractions on all GPUs ... ")',ADVANCE='NO')
         ierr=talsh_tasks_wait(n,tsks,sts)
@@ -164,6 +157,18 @@
          call talsh_tensor_print_info(tens(i))
          print *,'TENSOR ',i,' NORM1 = ',talshTensorImageNorm1_cpu(tens(i))
         enddo
+#else
+!Execute a tensor contraction on CPU:
+        n=n+1
+        write(*,'(1x,"Executing tensor contraction ",i2," on CPU ... ")',ADVANCE='NO') n
+        ierr=talsh_tensor_contract('D(a,b,i,j)+=L(j,k,c,i)*R(c,b,k,a)',tens(1),tens(2),tens(3),&
+                                  &dev_id=talsh_flat_dev_id(DEV_HOST,0),talsh_task=tsks(n))
+        write(*,'("Status ",i11)') ierr; if(ierr.ne.TALSH_SUCCESS) then; ierr=8; return; endif
+!       call talsh_task_print_info(tsks(n)) !debug
+        write(*,'(1x,"Waiting upon completion of tensor contractions on CPU ... ")',ADVANCE='NO')
+        ierr=talsh_tasks_wait(n,tsks,sts)
+        write(*,'("Status ",i11," Completion =",8(1x,i8))') ierr,sts(1:n)
+        if(ierr.ne.TALSH_SUCCESS) then; ierr=9; return; endif
 #endif
 
 !Destruct TAL-SH task handles:
