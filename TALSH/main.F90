@@ -52,14 +52,14 @@
         use, intrinsic:: ISO_C_BINDING
         use tensor_algebra
         use talsh
+        use stsubs
         implicit none
-        integer(C_SIZE_T), parameter:: BUF_SIZE=8_8*1024_8*1024_8*1024_8 !desired Host argument buffer size in bytes
-        integer(C_INT), parameter:: DIM_EXT=81 !tensor dimension extent
-        integer(C_INT), parameter:: NUM_PASSES=2
+        integer(C_SIZE_T), parameter:: BUF_SIZE=1_8*1024_8*1024_8*1024_8 !desired Host argument buffer size in bytes
         integer(C_INT), parameter:: MAX_TENSORS=24
         integer(C_INT), parameter:: MAX_TASKS=16
+        integer(C_INT), parameter:: DIM_EXT=int(real(BUF_SIZE/8/(MAX_TENSORS+2),8)**(0.25d0)) !tensor dimension extent
         integer(C_SIZE_T):: host_buf_size
-        integer(C_INT):: i,j,m,n,ierr,num_gpus,host_arg_max
+        integer(C_INT):: i,j,k,l,m,n,ierr,num_gpus,host_arg_max,sta
         integer(C_INT):: sts(MAX_TASKS)        !task statuses
         type(talsh_task_t):: tsks(MAX_TASKS)   !task handles
         type(talsh_tens_t):: tens(MAX_TENSORS) !tensors
@@ -80,11 +80,10 @@
         ierr=cuda_get_device_count(num_gpus)
         write(*,'("Status ",i11,": Number of GPUs = ",i3)') ierr,num_gpus
         if(ierr.ne.TALSH_SUCCESS) then; ierr=1; return; endif
-        !num_gpus=1
 #else
         num_gpus=0
 #endif
-        if(MAX_TENSORS.lt.3*num_gpus) then; ierr=1; return; endif
+        if(MAX_TENSORS.lt.3*2*num_gpus) then; ierr=2; return; endif
 !Initialize TALSH runtime:
         write(*,'(1x,"Initializing TALSH ... ")',ADVANCE='NO')
         host_buf_size=BUF_SIZE
@@ -94,9 +93,10 @@
         ierr=talsh_init(host_buf_size,host_arg_max)
 #endif
         write(*,'("Status ",i11,": Size (Bytes) = ",i13,": Max args in HAB = ",i7)') ierr,host_buf_size,host_arg_max
-        if(ierr.ne.TALSH_SUCCESS) then; ierr=1; return; endif
+        if(ierr.ne.TALSH_SUCCESS) then; ierr=3; return; endif
 
 !Create tensors on Host and initialize them to a value:
+        write(*,'("Tensor dimension extent = ",i5)') DIM_EXT
         do i=1,MAX_TENSORS
          write(*,'(1x,"Constructing tensor block ",i2," ... ")',ADVANCE='NO') i
          select case(mod(i,3))
@@ -108,61 +108,84 @@
           cval=(1d-3,0d0)
          end select
          ierr=talsh_tensor_construct(tens(i),R8,(/DIM_EXT,DIM_EXT,DIM_EXT,DIM_EXT/),init_val=cval)
-         write(*,'("Status ",i11)') ierr; if(ierr.ne.TALSH_SUCCESS) then; ierr=1; return; endif
+         write(*,'("Status ",i11)') ierr; if(ierr.ne.TALSH_SUCCESS) then; ierr=4; return; endif
         enddo
 
-!Tensor contractions on all GPUs:
         n=0 !number of tasks scheduled
-        j=0
-        do m=1,NUM_PASSES
+!Stream tensor contractions on all GPUs:
+#ifndef NO_GPU
+        sts(:)=TALSH_TASK_EMPTY
+        j=0; k=0
+        sloop: do
+         k=k+1
          do i=0,num_gpus-1
+          if(j+3.gt.MAX_TENSORS) exit sloop
           n=n+1
           write(*,'(1x,"Scheduling tensor contraction ",i2," on GPU ",i2,"... ")',ADVANCE='NO') n,i
-          ierr=talsh_tensor_contract('D(a,b,i,j)+=L(j,c,k,a)*R(c,b,k,i)',tens(j+1),tens(j+2),tens(j+3),&
-                                   &copy_ctrl=COPY_TTT,dev_id=talsh_flat_dev_id(DEV_NVIDIA_GPU,i),talsh_task=tsks(n))
-          write(*,'("Status ",i11)') ierr; if(ierr.ne.TALSH_SUCCESS) then; ierr=1; return; endif
-!         call talsh_task_print_info(tsks(n)) !debug
-          j=j+3 !next set of tensor arguments
+          ierr=talsh_tensor_contract('D(a,b,i,j)+=L(j,k,c,i)*R(c,b,k,a)',tens(j+1),tens(j+2),tens(j+3),&
+                                    &copy_ctrl=COPY_TTT,dev_id=talsh_flat_dev_id(DEV_NVIDIA_GPU,i),talsh_task=tsks(n))
+          write(*,'("Status ",i11)') ierr
+          if(ierr.ne.TRY_LATER) then
+           if(ierr.ne.TALSH_SUCCESS) then; ierr=5; return; endif
+           sts(n)=TALSH_TASK_SCHEDULED
+!          call talsh_task_print_info(tsks(n)) !debug
+           j=j+3 !next set of tensor arguments
+          else
+           ierr=talsh_task_destruct(tsks(n))
+           if(ierr.ne.TALSH_SUCCESS) then; print *,ierr; ierr=6; return; endif
+           n=n-1
+           call wait_delay(0.1) !seconds
+          endif
          enddo
-        enddo
+         if(k.gt.1) then
+          do l=1,n
+           if(sts(l).ne.TALSH_TASK_COMPLETED.and.sts(l).ne.TALSH_TASK_ERROR) then
+            sta=talsh_task_complete(tsks(l),sts(l),ierr)
+            if(ierr.ne.TALSH_SUCCESS) then; ierr=7; return; endif
+            if(sta.eq.YEP) write(*,'("Task ",i3," completed with status ",i9)') l,sts(l)
+           endif
+          enddo
+         endif
+        enddo sloop
 !Execute a tensor contraction on CPU (while the previous are running on GPUs):
 !        n=n+1
 !        write(*,'(1x,"Executing tensor contraction ",i2," on CPU ... ")',ADVANCE='NO') n
 !        ierr=talsh_tensor_contract('D(a,b,i,j)+=L(j,c,k,a)*R(c,b,k,i)',tens(1),tens(2),tens(3),&
 !                                  &dev_id=talsh_flat_dev_id(DEV_HOST,0),talsh_task=tsks(n))
-!        write(*,'("Status ",i11)') ierr; if(ierr.ne.TALSH_SUCCESS) then; ierr=1; return; endif
+!        write(*,'("Status ",i11)') ierr; if(ierr.ne.TALSH_SUCCESS) then; ierr=8; return; endif
 !        call talsh_task_print_info(tsks(n)) !debug
 !Synchronize and compare the results:
         write(*,'(1x,"Waiting upon completion of tensor contractions on all GPUs ... ")',ADVANCE='NO')
         ierr=talsh_tasks_wait(n,tsks,sts)
         write(*,'("Status ",i11," Completion =",8(1x,i8))') ierr,sts(1:n)
-        if(ierr.ne.TALSH_SUCCESS) then; ierr=1; return; endif
+        if(ierr.ne.TALSH_SUCCESS) then; ierr=9; return; endif
 !Printing results:
         do i=1,MAX_TENSORS,3
          call talsh_tensor_print_info(tens(i))
          print *,'TENSOR ',i,' NORM1 = ',talshTensorImageNorm1_cpu(tens(i))
         enddo
+#endif
 
 !Destruct TAL-SH task handles:
         do i=n,1,-1
          write(*,'(1x,"Destructing TAL-SH task handle ",i2," ... ")',ADVANCE='NO') i
          ierr=talsh_task_destruct(tsks(i))
-         write(*,'("Status ",i11)') ierr; if(ierr.ne.TALSH_SUCCESS) then; ierr=1; return; endif
+         write(*,'("Status ",i11)') ierr; if(ierr.ne.TALSH_SUCCESS) then; ierr=10; return; endif
         enddo
 
 !Destroy tensors:
         do i=MAX_TENSORS,1,-1
          write(*,'(1x,"Destructing tensor block ",i2," ... ")',ADVANCE='NO') i
          ierr=talsh_tensor_destruct(tens(i))
-         write(*,'("Status ",i11)') ierr; if(ierr.ne.TALSH_SUCCESS) then; ierr=1; return; endif
+         write(*,'("Status ",i11)') ierr; if(ierr.ne.TALSH_SUCCESS) then; ierr=11; return; endif
         enddo
 !Print run-time statistics:
         ierr=talsh_stats()
-        if(ierr.ne.TALSH_SUCCESS) then; ierr=1; return; endif
+        if(ierr.ne.TALSH_SUCCESS) then; ierr=12; return; endif
 !Shutdown TALSH:
         write(*,'(1x,"Shutting down TALSH ... ")',ADVANCE='NO')
         ierr=talsh_shutdown()
         write(*,'("Status ",i11)') ierr
-        if(ierr.ne.TALSH_SUCCESS) then; ierr=1; return; endif
+        if(ierr.ne.TALSH_SUCCESS) then; ierr=13; return; endif
         return
         end subroutine test_talsh_f
