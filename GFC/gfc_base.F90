@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Base
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2016-03-29 (started 2016-02-17)
+!REVISION: 2016-06-30 (started 2016-02-17)
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -160,7 +160,7 @@
          integer(INTL), private:: pred_count=0_INTL !number of iterations with TRUE predicate after the last reset
          contains
           procedure, non_overridable, public:: get_status=>IterGetStatus  !returns the status of the iterator
-          procedure, non_overridable, public:: set_status_=>IterSetStatus !sets the status of the iterator
+          procedure, non_overridable, public:: set_status_=>IterSetStatus !sets the status of the iterator (INTERNAL)
           procedure, public:: reset_count=>IterResetCount                 !resets all iteration counters to zero
           procedure, public:: total_count=>IterTotalCount                 !returns the total iteration count since the last reset
           procedure, public:: predicated_count=>IterPredicatedCount       !returns the predicated iteration count since the last reset

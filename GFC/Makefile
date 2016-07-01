@@ -1,7 +1,6 @@
 NAME = gfc
 
 #ADJUST THE FOLLOWING ACCORDINGLY:
-
 #Cross-compiling wrappers: [WRAP|NOWRAP]:
 export WRAP ?= NOWRAP
 #Compiler: [GNU|PGI|INTEL|CRAY]:
@@ -12,13 +11,10 @@ export BUILD_TYPE ?= DEV
 export MPILIB ?= MPICH
 #BLAS: [ATLAS|MKL|ACML]:
 export BLASLIB ?= ATLAS
-#Nvidia GPU via CUDA: [CUDA|NOCUDA]:
-export GPU_CUDA ?= NOCUDA
 #Operating system: [LINUX|NO_LINUX]:
 export EXA_OS ?= LINUX
 
 #SET YOUR LOCAL PATHS (for unwrapped build):
-
 # MPI path:
 export PATH_MPICH ?= /usr/local/mpich3.2
 export PATH_OPENMPI ?= /usr/local/openmpi1.10.1
@@ -27,8 +23,6 @@ export PATH_BLAS_ATLAS ?= /usr/lib
 export PATH_BLAS_MKL ?= /ccs/compilers/intel/rh6-x86_64/16.0.0/compilers_and_libraries/linux/mkl/lib
 export PATH_BLAS_ACML ?= /usr/lib
 PATH_BLAS = $(PATH_BLAS_$(BLASLIB))
-# CUDA path:
-export PATH_CUDA ?= /usr/local/cuda
 
 #YOU ARE DONE!
 
