@@ -28,13 +28,25 @@ program main
  dev_out=6
 
  ierr=dil_test_tree(perf,dev_out)
- print *,'Tree testing status: ',ierr,': Performance: ',perf
+ if(ierr.eq.0) then
+  write(*,*) 'Tree testing status: ',ierr,'(PASSED): Performance: ',perf
+ else
+  write(*,*) 'Tree testing status: ',ierr,'(FAILED): Performance: ',perf
+ endif
 
  ierr=dil_test_stack(perf,dev_out)
- print *,'Stack testing status: ',ierr,': Performance: ',perf
+ if(ierr.eq.0) then
+  write(*,*) 'Stack testing status: ',ierr,'(PASSED): Performance: ',perf
+ else
+  write(*,*) 'Stack testing status: ',ierr,'(FAILED): Performance: ',perf
+ endif
 
  ierr=dil_test_dictionary(perf,dev_out)
- print *,'Dictionary testing status: ',ierr,': Performance: ',perf
+ if(ierr.eq.0) then
+  write(*,*) 'Dictionary testing status: ',ierr,'(PASSED): Performance: ',perf
+ else
+  write(*,*) 'Dictionary testing status: ',ierr,'(FAILED): Performance: ',perf
+ endif
 
  stop
 end program main
