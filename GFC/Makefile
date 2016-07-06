@@ -3,11 +3,11 @@ NAME = gfc
 #ADJUST THE FOLLOWING ACCORDINGLY:
 #Cross-compiling wrappers: [WRAP|NOWRAP]:
 export WRAP ?= NOWRAP
-#Compiler: [GNU|PGI|INTEL|CRAY]:
+#Compiler: [GNU|PGI|INTEL|CRAY|IBM]:
 export TOOLKIT ?= GNU
 #Optimization: [DEV|OPT]:
 export BUILD_TYPE ?= DEV
-#MPI Library: [MPICH|OPENMPI]:
+#MPI Library: [MPICH|OPENMPI|NONE]:
 export MPILIB ?= MPICH
 #BLAS: [ATLAS|MKL|ACML]:
 export BLASLIB ?= ATLAS
@@ -33,8 +33,10 @@ FC_GNU = gfortran
 FC_PGI = pgf90
 FC_INTEL = ifort
 FC_CRAY = ftn
+FC_IBM = xlf2008_r
 FC_MPICH = $(PATH_MPICH)/bin/mpif90
 FC_OPENMPI = $(PATH_OPENMPI)/bin/mpifort
+FC_NONE = $(FC_$(TOOLKIT))
 FC_NOWRAP = $(FC_$(MPILIB))
 FC_WRAP = ftn
 FCOMP = $(FC_$(WRAP))
@@ -43,8 +45,10 @@ CC_GNU = gcc
 CC_PGI = pgcc
 CC_INTEL = icc
 CC_CRAY = cc
+CC_IBM = xlc_r
 CC_MPICH = $(PATH_MPICH)/bin/mpicc
 CC_OPENMPI = $(PATH_OPENMPI)/bin/mpicc
+CC_NONE = $(CC_$(TOOLKIT))
 CC_NOWRAP = $(CC_$(MPILIB))
 CC_WRAP = cc
 CCOMP = $(CC_$(WRAP))
@@ -53,8 +57,10 @@ CPP_GNU = g++
 CPP_PGI = pgc++
 CPP_INTEL = icc
 CPP_CRAY = CC
+CPP_IBM = xlC_r
 CPP_MPICH = $(PATH_MPICH)/bin/mpic++
 CPP_OPENMPI = $(PATH_OPENMPI)/bin/mpic++
+CPP_NONE = $(CPP_$(TOOLKIT))
 CPP_NOWRAP = $(CPP_$(MPILIB))
 CPP_WRAP = CC
 CPPCOMP = $(CPP_$(WRAP))
@@ -86,6 +92,7 @@ endif
 #MPI INCLUDES:
 MPI_INC_MPICH = -I$(PATH_MPICH)/include
 MPI_INC_OPENMPI = -I$(PATH_OPENMPI)/include
+MPI_INC_NONE = -I.
 MPI_INC_NOWRAP = $(MPI_INC_$(MPILIB))
 MPI_INC_WRAP = -I.
 MPI_INC = $(MPI_INC_$(WRAP))
@@ -93,6 +100,7 @@ MPI_INC = $(MPI_INC_$(WRAP))
 #MPI LIBS:
 MPI_LINK_MPICH = -L$(PATH_MPICH)/lib
 MPI_LINK_OPENMPI = -L$(PATH_OPENMPI)/lib
+MPI_LINK_NONE = -L.
 MPI_LINK_NOWRAP = $(MPI_LINK_$(MPILIB))
 MPI_LINK_WRAP = -L.
 MPI_LINK = $(MPI_LINK_$(WRAP))
@@ -150,6 +158,8 @@ FFLAGS_GNU_DEV = -c -fopenmp -fbacktrace -fcheck=bounds -fcheck=array-temps -fch
 FFLAGS_GNU_OPT = -c -fopenmp -O3 $(NO_ACCEL)
 FFLAGS_PGI_DEV = -c -mp -Mcache_align -Mbounds -Mchkptr -Mstandard -g $(NO_ACCEL)
 FFLAGS_PGI_OPT = -c -mp -Mcache_align -Mstandard -O3 $(NO_ACCEL)
+FFLAGS_IBM_DEV = -c -qsmp=omp $(NO_ACCEL)
+FFLAGS_IBM_OPT = -c -qsmp=omp -O3 $(NO_ACCEL)
 FFLAGS = $(FFLAGS_$(TOOLKIT)_$(BUILD_TYPE)) -D$(EXA_OS)
 
 #THREADS:
@@ -157,6 +167,7 @@ LTHREAD_GNU   = -lgomp
 LTHREAD_PGI   = -lpthread
 LTHREAD_INTEL = -liomp5
 LTHREAD_CRAY  = -L.
+LTHREAD_IBM   = -L.
 LTHREAD = $(LTHREAD_$(TOOLKIT))
 
 #LINKING:
