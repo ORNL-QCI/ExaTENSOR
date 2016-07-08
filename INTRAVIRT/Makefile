@@ -171,11 +171,14 @@ LTHREAD = $(LTHREAD_$(TOOLKIT))
 #LINKING:
 LFLAGS = $(LIB) $(LTHREAD) $(MPI_LINK) $(LA_LINK) $(CUDA_LINK)
 
-OBJS = ./OBJ/virta.o
+OBJS = ./OBJ/pack_prim.o ./OBJ/virta.o
 #./OBJ/c_process.o
 
 $(NAME): $(OBJS)
 	ar cr lib$(NAME).a $(OBJS) ../GFC/libgfc.a ../DDSS/libddss.a ../TALSH/libtalsh.a
+
+./OBJ/pack_prim.o: pack_prim.F90 ../DDSS/OBJ/stsubs.o
+	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(FFLAGS) pack_prim.F90 -o ./OBJ/pack_prim.o
 
 ./OBJ/virta.o: virta.F90
 	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(FFLAGS) virta.F90 -o ./OBJ/virta.o
