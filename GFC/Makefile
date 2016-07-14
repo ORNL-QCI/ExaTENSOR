@@ -14,7 +14,7 @@ export BLASLIB ?= ATLAS
 #Operating system: [LINUX|NO_LINUX]:
 export EXA_OS ?= LINUX
 
-#SET YOUR LOCAL PATHS (for unwrapped build):
+#SET YOUR LOCAL PATHS (for unwrapped builds):
 # MPI path:
 export PATH_MPICH ?= /usr/local/mpich3.2
 export PATH_OPENMPI ?= /usr/local/openmpi1.10.1

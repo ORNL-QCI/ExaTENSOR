@@ -1,7 +1,6 @@
 NAME = ddss
 
 #ADJUST THE FOLLOWING ACCORDINGLY:
-
 #Cross-compiling wrappers: [WRAP|NOWRAP]:
 export WRAP ?= NOWRAP
 #Compiler: [GNU|PGI|INTEL|CRAY]:
@@ -17,8 +16,7 @@ export GPU_CUDA ?= NOCUDA
 #Operating system: [LINUX|NO_LINUX]:
 export EXA_OS ?= LINUX
 
-#SET YOUR LOCAL PATHS (for unwrapped build):
-
+#SET YOUR LOCAL PATHS (for unwrapped builds):
 # MPI path:
 export PATH_MPICH ?= /usr/local/mpich3.2
 export PATH_OPENMPI ?= /usr/local/openmpi1.10.1

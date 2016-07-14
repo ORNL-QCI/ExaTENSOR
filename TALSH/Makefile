@@ -18,6 +18,10 @@ export GPU_SM_ARCH ?= 35
 #Operating system: [LINUX|NO_LINUX]:
 export EXA_OS ?= LINUX
 
+#WORKAROUNDS (ignore if you do not experience problems):
+#Fool CUDA 7.0 with GCC > 4.9: [YES|NO]:
+export FOOL_CUDA ?= NO
+
 #SET YOUR LOCAL PATHS (for unwrapped builds):
 # MPI path:
 export PATH_MPICH ?= /usr/local/mpich3.2
@@ -135,7 +139,11 @@ CUDA_FLAGS_DEV = --compile -arch=$(GPU_SM) -g -G -lineinfo -D DEBUG_GPU
 CUDA_FLAGS_OPT = --compile -arch=$(GPU_SM) -O3 -lineinfo
 CUDA_FLAGS_CUDA = $(CUDA_HOST) $(CUDA_FLAGS_$(BUILD_TYPE))
 CUDA_FLAGS_NOCUDA = -I.
+ifeq ($(FOOL_CUDA),NO)
 CUDA_FLAGS = $(CUDA_FLAGS_$(GPU_CUDA)) -D$(EXA_OS)
+else
+CUDA_FLAGS = $(CUDA_FLAGS_$(GPU_CUDA)) -D$(EXA_OS) -D__GNUC__=4
+endif
 
 #Accelerator support:
 NO_ACCEL_CUDA = -D NO_AMD -D NO_PHI -D CUDA_ARCH=$(GPU_ARCH)

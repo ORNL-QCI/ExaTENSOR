@@ -1,7 +1,6 @@
 NAME = ExaTensor
 
 #ADJUST THE FOLLOWING ACCORDINGLY:
-
 #Cross-compiling wrappers: [WRAP|NOWRAP]:
 export WRAP ?= NOWRAP
 #Compiler: [GNU|PGI|INTEL|CRAY]:
@@ -14,20 +13,25 @@ export MPILIB ?= MPICH
 export BLASLIB ?= ATLAS
 #Nvidia GPU via CUDA: [CUDA|NOCUDA]:
 export GPU_CUDA ?= CUDA
+#Nvidia GPU architecture:
+export GPU_SM_ARCH ?= 35
 #Operating system: [LINUX|NO_LINUX]:
 export EXA_OS ?= LINUX
 
-#SET YOUR LOCAL PATHS (for unwrapped build):
+#WORKAROUNDS (ignore if you do not experience problems):
+#Fool CUDA 7.0 with GCC > 4.9: [YES|NO]:
+export FOOL_CUDA ?= NO
 
-# MPI path:
+#SET YOUR LOCAL PATHS (for unwrapped builds):
+# MPI path (whichever MPI you have, set one):
 export PATH_MPICH ?= /usr/local/mpich3.2
 export PATH_OPENMPI ?= /usr/local/openmpi1.10.1
-# BLAS lib path:
+# BLAS lib path (whichever BLAS you have, set one):
 export PATH_BLAS_ATLAS ?= /usr/lib
 export PATH_BLAS_MKL ?= /ccs/compilers/intel/rh6-x86_64/16.0.0/compilers_and_libraries/linux/mkl/lib
 export PATH_BLAS_ACML ?= /usr/lib
 PATH_BLAS = $(PATH_BLAS_$(BLASLIB))
-# CUDA path:
+# CUDA path (if you have CUDA):
 export PATH_CUDA ?= /usr/local/cuda
 
 #YOU ARE DONE!
