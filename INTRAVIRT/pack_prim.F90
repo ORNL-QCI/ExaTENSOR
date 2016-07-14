@@ -1,6 +1,6 @@
 !Basic object packing/unpacking primitives.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2016/07/08
+!REVISION: 2016/07/13
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -20,6 +20,9 @@
 !You should have received a copy of the GNU Lesser General Public License
 !along with ExaTensor. If not, see <http://www.gnu.org/licenses/>.
 
+!DESCRIPTION:
+! This module provides basic primitives for packing objects of derived types
+! for a subsequent communication between MPI processes. It helps 
        module pack_prim
 #if 0
         use, intrinsic:: ISO_C_BINDING, only: C_PTR,C_INT,C_CHAR,C_NULL_PTR,c_loc,c_f_pointer
@@ -35,14 +38,14 @@
         integer, parameter, private:: INTD=4
         integer, parameter, private:: INTL=8
  !Error codes:
-        integer(INTD), parameter, public:: PACK_SUCCESS=0
-        integer(INTD), parameter, public:: PACK_ERROR=-666
-        integer(INTD), parameter, public:: PACK_NULL=-1
-        integer(INTD), parameter, public:: PACK_OVERFLOW=-2
-        integer(INTD), parameter, public:: PACK_INVALID_ARGS=-3
-        integer(INTD), parameter, public:: PACK_ALLOC_FAILED=-4
-        integer(INTD), parameter, public:: PACK_FREE_FAILED=-5
-        integer(INTD), parameter, public:: PACK_BUSY=-6
+        integer(INTD), parameter, public:: PACK_SUCCESS=0       !success
+        integer(INTD), parameter, public:: PACK_ERROR=-666      !generic error
+        integer(INTD), parameter, public:: PACK_NULL=-1         !null object
+        integer(INTD), parameter, public:: PACK_OVERFLOW=-2     !overflow
+        integer(INTD), parameter, public:: PACK_INVALID_ARGS=-3 !invalid arguments
+        integer(INTD), parameter, public:: PACK_ALLOC_FAILED=-4 !memory allocation failed
+        integer(INTD), parameter, public:: PACK_FREE_FAILED=-5  !memory deallocation failed
+        integer(INTD), parameter, public:: PACK_BUSY=-6         !object in use by others
  !Packet envelope:
         integer, parameter, private:: DEFAULT_MAX_PACKETS=1024 !default max number of packets per envelope
         integer, parameter, private:: DEFAULT_ENVELOPE_CAPACITY=1048576 !default envelope capacity
