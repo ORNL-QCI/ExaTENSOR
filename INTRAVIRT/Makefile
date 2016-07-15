@@ -58,7 +58,11 @@ CPP_PGI = pgc++
 CPP_INTEL = icc
 CPP_CRAY = CC
 CPP_MPICH = $(PATH_MPICH)/bin/mpic++
+ifeq ($(EXA_OS),LINUX)
 CPP_OPENMPI = $(PATH_OPENMPI)/bin/mpic++
+else
+CPP_OPENMPI = $(PATH_OPENMPI)/bin/mpicxx
+endif
 CPP_NOWRAP = $(CPP_$(MPILIB))
 CPP_WRAP = CC
 CPPCOMP = $(CPP_$(WRAP))

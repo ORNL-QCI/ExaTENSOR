@@ -1,6 +1,6 @@
 !This module provides general services for MPI parallel programs.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2016/03/24
+!REVISION: 2016/07/15
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -128,10 +128,12 @@
         public dil_global_comm_size
         public dil_global_comm_barrier
         public MPI_Get_Displacement
-        public get_memory_status
         public file_handle
         public quit
         private gpu_nvidia_probe
+#ifndef NO_LINUX
+        public get_memory_status
+#endif
 !       private intel_mic_probe
 !       private gpu_amd_probe
 
@@ -643,6 +645,7 @@
         return
         end subroutine quit
 !----------------------------------------------------------------------
+#ifndef NO_LINUX
         subroutine get_memory_status(total_ram,free_ram,used_swap,ierr)
 !This subroutine returns:
 ! - total_ram - total usable RAM available on the node in bytes;
@@ -655,5 +658,5 @@
         ierr=get_memory_stat(total_ram,free_ram,used_swap)
         return
         end subroutine get_memory_status
-
+#endif
        end module service_mpi

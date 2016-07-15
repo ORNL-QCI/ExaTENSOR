@@ -59,7 +59,11 @@ CPP_INTEL = icc
 CPP_CRAY = CC
 CPP_IBM = xlC_r
 CPP_MPICH = $(PATH_MPICH)/bin/mpic++
+ifeq ($(EXA_OS),LINUX)
 CPP_OPENMPI = $(PATH_OPENMPI)/bin/mpic++
+else
+CPP_OPENMPI = $(PATH_OPENMPI)/bin/mpicxx
+endif
 CPP_NONE = $(CPP_$(TOOLKIT))
 CPP_NOWRAP = $(CPP_$(MPILIB))
 CPP_WRAP = CC
