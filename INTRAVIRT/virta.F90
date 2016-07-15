@@ -1,6 +1,6 @@
 !ExaTensor: Parallel Virtual Processing for Scale-Adaptive Tensor Algebra
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2016/04/17
+!REVISION: 2016/07/15
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -24,7 +24,9 @@
         use dil_basic
         use talsh
         use distributed
+#ifndef NO_LINUX
         use service_mpi, only: get_memory_status
+#endif
         implicit none
         public
 !PARAMETERS:

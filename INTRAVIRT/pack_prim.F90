@@ -1,6 +1,6 @@
 !Basic object packing/unpacking primitives.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2016/07/13
+!REVISION: 2016/07/15
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -60,9 +60,11 @@
         integer(INTD), parameter, public:: PACK_ALLOC_FAILED=-4 !memory allocation failed
         integer(INTD), parameter, public:: PACK_FREE_FAILED=-5  !memory deallocation failed
         integer(INTD), parameter, public:: PACK_BUSY=-6         !object in use by others
+        integer(INTD), parameter, public:: PACK_IDLE=-7         !object is idle (not in use)
  !Packet envelope configuration:
         integer(INTD), parameter, private:: DEFAULT_MAX_PACKETS=1024 !default max number of packets per envelope
         integer(INTL), parameter, private:: DEFAULT_ENVELOPE_CAPACITY=1024_INTL*DEFAULT_MAX_PACKETS !default envelope capacity
+        integer(INTL), parameter, private:: DEFAULT_PACKET_TAG=0 !default packet tag
 !TYPES:
  !Packet:
         type, public:: obj_pack_t
@@ -72,13 +74,14 @@
           procedure, private:: construct=>ObjPackConstruct     !constructor
           procedure, private:: clean=>ObjPackClean             !cleaner
           procedure, public:: get_capacity=>ObjPackGetCapacity !returns the capacity of the buffer in bytes
+          procedure, public:: get_length=>ObjPackGetLength     !returns the current length of the packet in bytes
           procedure, public:: has_room=>ObjPackHasRoom         !.TRUE. means one can add data to the packet, .FALSE. otherwise
           procedure, public:: space_left=>ObjPackSpaceLeft     !frees space left in the buffer in bytes
         end type obj_pack_t
  !Packet envelope (communicable):
         type, public:: pack_env_t
          integer(INTL), private:: length=0      !used length of the packet envelope (bytes)
-         integer(INTL), private:: num_packets=0 !number of packets in the packet envelope
+         integer(INTD), private:: num_packets=0 !number of packets in the packet envelope
          class(obj_pack_t), pointer, private:: curr_packet=>NULL() !current packet
          logical, private:: busy=.FALSE.        !.TRUE. when there is an active packet being filled in (in use flag)
          integer(INTL), pointer, contiguous, private:: pack_offset(:)=>NULL() !offset of each packet in the envelope (byte)
@@ -153,7 +156,7 @@
            errc=PACK_INVALID_ARGS
           endif
          else
-          errc=PACK_BUSY
+          errc=PACK_BUSY !non-empty packet
          endif
          if(present(ierr)) ierr=errc
          return
@@ -180,13 +183,28 @@
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
 
-         errc=PACK_SUCCESS; bytes=0
+         errc=PACK_SUCCESS; bytes=0_INTL
          if(associated(this%buffer)) then
           bytes=size(this%buffer)
          endif
          if(present(ierr)) ierr=errc
          return
         end function ObjPackGetCapacity
+!--------------------------------------------------
+        function ObjPackGetLength() result(bytes)
+!Returns the current length of the packet in bytes.
+         implicit none
+         integer(INTL):: bytes                       !out: current packet length
+         class(obj_pack_t), intent(in):: this        !in: packet
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=PACK_SUCCESS; bytes=0_INTL
+         if(this%get_capacity().gt.0) bytes=this%length
+         if(bytes.lt.0) errc=PACK_ERROR
+         if(present(ierr)) ierr=errc
+         return
+        end function ObjPackGetLength
 !------------------------------------------------------
         function ObjPackHasRoom(this,ierr) result(answ)
 !Returns .TRUE. if the packet can be used for packing data, .FALSE. otherwise.
@@ -458,28 +476,33 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine PackEnvDestroy
-!-----------------------------------------------------
-        subroutine PackEnvAcquirePacket(this,pkt,ierr)
-!Acquires a packet space in the packet envelope.
+!--------------------------------------------------------------
+        subroutine PackEnvAcquirePacket(this,pkt,ierr,preclean)
+!Acquires a packet space in the packet envelope and returns
+!a packet object. The packet object must be clean on entrance,
+!otherwise a status PACK_BUSY will be returned. However, if
+!<preclean>=TRUE, the packet will be precleaned here.
          implicit none
          class(pack_env_t), intent(inout):: this     !inout: packet envelope
          class(obj_pack_t), intent(inout):: pkt      !out: clean packet
          integer(INTD), intent(out), optional:: ierr !out: error code
+         logical, intent(in), optional:: preclean    !in: if TRUE the packet will be cleaned here before use
          integer(INTD):: errc
          integer(INTL):: cap
          character(C_CHAR), pointer, contiguous:: chp(:)
 
          cap=this%get_capacity(errc)
-         if(cap.gt.0) then
+         if(cap.gt.0.and.errc.eq.PACK_SUCCESS) then
           if(this%is_healthy(errc)) then
            if(errc.eq.PACK_SUCCESS) then
             if(.not.this%busy) then
              if(this%length.lt.cap) then
+              if(present(preclean)) then; if(preclean) call pkt%clean(); endif !preclean the packet if asked for
               chp(1:cap-this%length)=>this%buffer(this%length+1:cap)
-              call pkt%construct(chp,errc)
+              call pkt%construct(chp,errc) !construct the packet
               if(errc.eq.PACK_SUCCESS) then
-               this%current_packet=>pkt
-               this%busy=.TRUE.
+               this%current_packet=>pkt !associate the packet with the packet envelope
+               this%busy=.TRUE. !mark the packet envelope as busy
               else
                call pkt%clean()
               endif
@@ -504,17 +527,118 @@
         subroutine PackEnvDiscardPacket(this,ierr,pack_num)
 !Discards a packet from the packet envelope. If <pack_num> is present,
 !that specific (sealed) packet will be discarded. Otherwise, the currently
-!active (unfinished) packet, if any, will be discarded.
+!active (unfinished) packet, if any, will be discarded. If <pack_num>
+!is present, the packet envelope shall not be in the in-use (busy) state.
+!If <pack_num> is absent, the packet envelope must be in the in-use state.
          implicit none
          class(pack_env_t), intent(inout):: this        !inout: packet envelope
          integer(INTD), intent(out), optional:: ierr    !out: error code
-         integer(INTL), intent(in), optional:: pack_num !in: packet number
-         integer(INTD):: errc
+         integer(INTL), intent(in), optional:: pack_num !in: packet number [1:MAX]
+         integer(INTD):: i,errc
+         integer(INTL):: bg,ln,l,cap
 
-         
-
+         cap=this%get_capacity(errc)
+         if(cap.gt.0.and.errc.eq.PACK_SUCCESS) then
+          if(this%is_healthy(errc)) then
+           if(errc.eq.PACK_SUCCESS) then
+            if(present(pack_num)) then !discard a sealed packet
+             if(.not.this%busy) then
+              if(pack_num.ge.1.and.pack_num.le.this%num_packets) then
+               bg=this%pack_offset(pack_num); ln=this%pack_len(pack_num)
+               do l=bg,this%length-ln; this%buffer(l)=this%buffer(l+ln); enddo
+               this%length=this%length-ln
+               do i=pack_num,this%num_packets-1
+                this%pack_offset(i)=this%pack_offset(i+1)-ln
+                this%pack_len(i)=this%pack_len(i+1)
+                this%pack_tag(i)=this%pack_tag(i+1)
+               enddo
+               this%num_packets=this%num_packets-1
+              else
+               errc=PACK_INVALID_ARGS
+              endif
+             else
+              errc=PACK_BUSY
+             endif
+            else !discard an unfinished (current) packet
+             if(this%busy) then
+              if(associated(this%curr_packet)) then
+               call this%curr_packet%clean(errc)
+               this%busy=.FALSE.
+              else
+               errc=PACK_ERROR
+              endif
+             else
+              errc=PACK_IDLE
+             endif
+            endif
+           endif
+          else
+           errc=PACK_ERROR
+          endif
+         else
+          if(errc.eq.PACK_SUCCESS) errc=PACK_NULL
+         endif
+         if(present(ierr)) ierr=errc
          return
         end subroutine PackEnvDiscardPacket
+!--------------------------------------------------
+        subroutine PackEnvSealPacket(this,ierr,tag)
+!Seals a packet in the packet envelope and releases the busy flag.
+!The packet will be cleaned automatically.
+         implicit none
+         class(pack_env_t), intent(inout):: this     !inout: packet envelope
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTL), intent(in), optional:: tag   !in: packet tag
+         integer(INTD):: n,errc
+         integer(INTL):: l,cap
+
+         cap=this%get_capacity(errc)
+         if(cap.gt.0.and.errc.eq.PACK_SUCCESS) then
+          if(this%is_healthy(errc)) then
+           if(errc.eq.PACK_SUCCESS) then
+            if(this%busy) then
+             if(this%length.le.cap) then
+              if(associated(this%curr_packet)) then
+               l=this%curr_packet%get_length(errc)
+               if(l.gt.0.and.errc.eq.PACK_SUCCESS) then !packet contains information
+                n=this%get_max_packets(errc)
+                if(this%num_packets.lt.n.and.errc.eq.PACK_SUCCESS) then
+                 this%num_packets=this%num_packets+1
+                 this%pack_offset(this%num_packets)=this%length+1_INTL
+                 this%pack_len(this%num_packets)=l
+                 if(present(tag)) then
+                  this%pack_tag(this%num_packets)=tag
+                 else
+                  this%pack_tag(this%num_packets)=DEFAULT_PACKET_TAG
+                 endif
+                 this%length=this%length+l
+                 call this%curr_packet%clean(); this%curr_packet=>NULL()
+                 this%busy=.FALSE.
+                else
+                 if(errc.eq.PACK_SUCCESS) errc=PACK_OVERFLOW
+                endif
+               else
+                if(errc.eq.PACK_SUCCESS) errc=PACK_NULL
+               endif
+              else
+               errc=PACK_ERROR
+              endif
+             else
+              errc=PACK_OVERFLOW
+             endif
+            else
+             errc=PACK_IDLE
+            endif
+           endif
+          else
+           errc=PACK_ERROR
+          endif
+         else
+          if(errc.eq.PACK_SUCCESS) errc=PACK_NULL
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine PackEnvSealPacket
 !================================================
 !PACKING/UNPACKING for built-in types:
         subroutine pack_integer1(packet,obj,ierr)
