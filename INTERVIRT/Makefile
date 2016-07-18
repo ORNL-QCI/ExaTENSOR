@@ -26,7 +26,8 @@ export PATH_BLAS_MKL ?= /ccs/compilers/intel/rh6-x86_64/16.0.0/compilers_and_lib
 export PATH_BLAS_ACML ?= /usr/lib
 PATH_BLAS = $(PATH_BLAS_$(BLASLIB))
 # CUDA path:
-export PATH_CUDA ?= /usr/local/cuda
+export PATH_CUDA_LIB ?= /usr/lib/x86_64-linux-gnu
+export PATH_CUDA_INC ?= /usr/include
 
 #YOU ARE DONE!
 
@@ -114,14 +115,14 @@ LA_LINK_NOWRAP = $(LA_LINK_$(BLASLIB))
 LA_LINK = $(LA_LINK_$(WRAP))
 
 #CUDA INCLUDES:
-CUDA_INC_CUDA = -I$(PATH_CUDA)/include
+CUDA_INC_CUDA = -I$(PATH_CUDA_INC)
 CUDA_INC_NOCUDA = -I.
 CUDA_INC_NOWRAP = $(CUDA_INC_$(GPU_CUDA))
 CUDA_INC_WRAP = -I.
 CUDA_INC = $(CUDA_INC_$(WRAP))
 
 #CUDA LIBS:
-CUDA_LINK_NOWRAP = -L$(PATH_CUDA)/lib64 -lcudart -lcublas
+CUDA_LINK_NOWRAP = -L$(PATH_CUDA_LIB) -lcudart -lcublas
 CUDA_LINK_WRAP = -lcudart -lcublas
 CUDA_LINK_CUDA = $(CUDA_LINK_$(WRAP))
 CUDA_LINK_NOCUDA = -L.
