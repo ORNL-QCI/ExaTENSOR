@@ -1,8 +1,9 @@
 #It is crucial to launch MPI processes consecutively within a node
 #if multiple MPI processes reside on the same node. In this case
 #the environment variable QF_PROCS_PER_NODE must be set appropriately!
+
 #export QF_PATH=/ccs/home/div/src/ExaTensor          #full path to ExaTensor
-export QF_PATH=/home/dima/Projects/QFORCE
+export QF_PATH=/home/dima/Projects/QFORCE           #full path to ExaTensor (QForce)
 export QF_NUM_PROCS=2                               #number of MPI processes
 export QF_PROCS_PER_NODE=2                          #number of MPI processes per node
 export QF_CORES_PER_PROC=2                          #number of cores per MPI process

@@ -1,6 +1,6 @@
 !Basic object packing/unpacking primitives.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2016/07/17
+!REVISION: 2016/07/18
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -33,8 +33,8 @@
 !  # Packet (obj_pack_t): Plain array which the data is packed into and unpacked from.
 !  # Packet envelope (pack_env_t): Container of packets with some
 !    additional layout information. A packet space is acquired from
-!    an existing packet container. Then the data is packed into
-!    that packet space and sealed. Then the packet container (envelope),
+!    an existing packet container. Then the data can be packed into
+!    the packet space and sealed. Then the packet container (envelope),
 !    which contains one or more packets, can be sent to a different MPI process which
 !    will be able to unpack any packet from the packet envelope back to an object.
        module pack_prim
@@ -71,19 +71,19 @@
          integer(INTL), private:: length=0 !used length of the packet buffer (bytes)
          character(C_CHAR), pointer, contiguous, private:: buffer(:)=>NULL() !buffer
          contains
-          procedure, private:: construct=>ObjPackConstruct     !packet constructor
-          procedure, private:: clean=>ObjPackClean             !packet cleaner
+          procedure, private:: construct=>ObjPackConstruct     !packet constructor (internal)
+          procedure, private:: clean=>ObjPackClean             !packet cleaner (internal)
           procedure, public:: get_capacity=>ObjPackGetCapacity !returns the capacity of the packet buffer in bytes
           procedure, public:: get_length=>ObjPackGetLength     !returns the current length of the packet in bytes
           procedure, public:: has_room=>ObjPackHasRoom         !.TRUE. means one can add data to the packet, .FALSE. otherwise
-          procedure, public:: space_left=>ObjPackSpaceLeft     !returns the amount of free space left in the buffer in bytes
+          procedure, public:: space_left=>ObjPackSpaceLeft     !returns the amount of free space left in the packet buffer in bytes
         end type obj_pack_t
  !Packet envelope (communicable):
         type, public:: pack_env_t
          integer(INTL), private:: length=0      !used length of the packet envelope (bytes)
          integer(INTD), private:: num_packets=0 !number of packets in the packet envelope
-         class(obj_pack_t), pointer, private:: curr_packet=>NULL() !current packet
-         logical, private:: busy=.FALSE.        !.TRUE. when there is an active packet being filled in (in use flag)
+         class(obj_pack_t), pointer, private:: curr_packet=>NULL() !current packet (set when in-use)
+         logical, private:: busy=.FALSE.        !.TRUE. when there is an active packet being filled in (in-use flag)
          integer(INTL), pointer, contiguous, private:: pack_offset(:)=>NULL() !offset of each packet in the envelope (byte)
          integer(INTL), pointer, contiguous, private:: pack_len(:)=>NULL()    !length of each packet present in the envelope (bytes)
          integer(INTL), pointer, contiguous, private:: pack_tag(:)=>NULL()    !tag for each packet present in the envelope
@@ -96,17 +96,26 @@
           procedure, public:: get_num_packets=>PackEnvGetNumPackets !get the current number of packets in the envelope
           procedure, public:: is_busy=>PackEnvIsBusy                !check whether the packet envelope is currently in use
           procedure, public:: is_healthy=>PackEnvIsHealthy          !check whether the object is healthy (consistent)
-          procedure, public:: reserve_mem=>PackEnvReserveMem        !reserve memory for the buffer
+          procedure, public:: reserve_mem=>PackEnvReserveMem        !reserve memory for the data buffer and/or layout tables
           procedure, public:: clean=>PackEnvClean                   !clean the packet envelope without releasing the memory
           procedure, public:: destroy=>PackEnvDestroy               !destroy the packet envelope completely
           procedure, public:: acquire_packet=>PackEnvAcquirePacket  !acquire a packet in the packet envelope
           procedure, public:: discard_packet=>PackEnvDiscardPacket  !discard a packet (either finished or unfinished)
           procedure, public:: seal_packet=>PackEnvSealPacket        !seal a packet (finalize)
-          procedure, public:: extract_packet=>PackEnvExtractPacket  !extract a packet from the envelope
+          procedure, public:: extract_packet=>PackEnvExtractPacket  !extract a packet from the packet envelope
           procedure, public:: send=>PackEnvSend                     !send a packet to another process
           procedure, public:: receive=>PackEnvReceive               !receive a packet from another process
           procedure, public:: comm_completed=>PackEnvCommCompleted  !test the completion of the send/receive operation
         end type pack_env_t
+ !Data communication handle:
+        type, public:: comm_handle_t
+         logical, private:: tested=.FALSE.                      !set to .TRUE. when an active communication handle has been tested at least once
+        contains
+         procedure, public:: construct=>PackCommHandleConstruct !construct the communication handle (internal)
+         procedure, public:: clean=>PackCommHandleClean         !clean the communication handle
+         procedure, public:: test=>PackCommHandleTest           !test the completion of the communication
+         procedure, public:: wait=>PackCommHandleWait           !wait upon the completion of the communication
+        end type comm_handle_t
 !INTERFACES:
  !Packing for built-in types:
         interface pack_builtin

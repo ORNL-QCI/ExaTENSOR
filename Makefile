@@ -183,6 +183,7 @@ $(NAME):
 	$(MAKE) -C ./INTRAVIRT
 	$(MAKE) -C ./INTERVIRT
 	$(MAKE) -C ./QFORCE
+	cp ./INTERVIRT/exatensor.mod ./
 	cp ./INTERVIRT/libExaTensor.a ./
 	cp ./QFORCE/Qforce.x ./
 	echo "Finished successfully!"
