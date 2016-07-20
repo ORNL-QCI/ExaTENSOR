@@ -1,6 +1,6 @@
 !Basic object packing/unpacking primitives.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2016/07/18
+!REVISION: 2016/07/20
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -28,7 +28,11 @@
 ! These public communication API may require packing/unpacking of data under the hood.
 ! Thus, the packing/unpacking primitives provided in this module are intended
 ! to facilitate the implementation of the .send() and .receive() methods
-! in Fortran classes.
+! in Fortran classes containing a number of (recursive) components of smaller size.
+! The size of the components being packed should be O(1). O(N) and larger
+! class components should be communicated directly in separate messages.
+! Thus, the main purpose of these packing/unpacking primitives is to
+! aggregate a number of small objects into a larger plain message.
 ! Basic abstractions:
 !  # Packet (obj_pack_t): Plain array which the data is packed into and unpacked from.
 !  # Packet envelope (pack_env_t): Container of packets with some
@@ -37,6 +41,32 @@
 !    the packet space and sealed. Then the packet container (envelope),
 !    which contains one or more packets, can be sent to a different MPI process which
 !    will be able to unpack any packet from the packet envelope back to an object.
+!  # Communication handle (comm_handle_t): Returned by asynchronous .send() and
+!    .receive() member procedures, and can later be used for checking
+!    the completion of the communication (on both sides separately).
+! Behavior:
+!  # In order to pack/unpack Fortran built-in and derived types, a packet envelope
+!    needs to be created first via the .reserve_mem() member procedure. Then a packet
+!    needs to be allocated in the packet envelope via the .acquire_packet() member
+!    procedure. The packet can subsequently be used for packing Fortran objects.
+!    Once the object of a built-in or derived type has been packed into the packet,
+!    the packet needs to be sealed via the .seal_packet() member procedure. If another
+!    object needs to be packed, a new packet should be acquired, filled in, and sealed.
+!    Once all objects have been packed into the packet envelope, the latter can be
+!    communicated between two MPI processes via the .send(), .receive(), and
+!    .test_completion() member procedures which follow asynchronous semantics. Once
+!    received by another process, any packet from the delivered packet envelope can
+!    be unpacked back into the original object of a built-in or derived type. Each
+!    packet in the packet envelope has an optional integer tag.
+!  # It may happen that the free space provided by a packet is insufficient for packing
+!    the object of interest. In this case, the .resize() member procedure needs to be
+!    invoked on the packet envelope the packet is part of. The packet envelope will
+!    be extended to a user-specified capacity, in turn resulting in a larger buffer
+!    in the packet that one is currently filling in with data. Similarly, if one
+!    exceeds the max number of packets that can be stored in the packet envelope,
+!    this resource can also be extended by calling the same member procedure .resize().
+!    The packet buffer space overflow occurs during packing data objects into the packet.
+!    The max-packets-per-envelope overflow occurs during sealing the packet.
        module pack_prim
 #if 0
         use, intrinsic:: ISO_C_BINDING, only: C_PTR,C_INT,C_CHAR,C_NULL_PTR,c_loc,c_f_pointer
@@ -59,7 +89,7 @@
         integer(INTD), parameter, public:: PACK_INVALID_ARGS=-3 !invalid arguments
         integer(INTD), parameter, public:: PACK_ALLOC_FAILED=-4 !memory allocation failed
         integer(INTD), parameter, public:: PACK_FREE_FAILED=-5  !memory deallocation failed
-        integer(INTD), parameter, public:: PACK_BUSY=-6         !object in use by others
+        integer(INTD), parameter, public:: PACK_BUSY=-6         !object is in use by others
         integer(INTD), parameter, public:: PACK_IDLE=-7         !object is idle (not in use)
  !Packet envelope configuration:
         integer(INTD), parameter, private:: DEFAULT_MAX_PACKETS=1024 !default max number of packets per envelope
@@ -105,7 +135,7 @@
           procedure, public:: extract_packet=>PackEnvExtractPacket  !extract a packet from the packet envelope
           procedure, public:: send=>PackEnvSend                     !send a packet to another process
           procedure, public:: receive=>PackEnvReceive               !receive a packet from another process
-          procedure, public:: comm_completed=>PackEnvCommCompleted  !test the completion of the send/receive operation
+          procedure, public:: test_completion=>PackEnvCommCompleted !test the completion of the send/receive operation
         end type pack_env_t
  !Data communication handle:
         type, public:: comm_handle_t
@@ -131,6 +161,7 @@
          module procedure pack_string
         end interface pack_builtin
         public pack_builtin
+        public pack_universal
  !Unpacking for built-in types:
         interface unpack_builtin
          module procedure unpack_integer1
@@ -145,6 +176,7 @@
          module procedure unpack_string
         end interface unpack_builtin
         public unpack_builtin
+        public unpack_universal
 
        contains
 !DEFINITION:
@@ -154,7 +186,7 @@
 !Constructs a packet.
          implicit none
          class(obj_pack_t), intent(inout):: this           !inout: packet (in: empty packet, out: allocated packet)
-         character(C_CHAR), pointer, contiguous:: buf_p(:) !in: buffer space
+         character(C_CHAR), pointer, contiguous:: buf_p(:) !in: external buffer space
          integer(INTD), intent(out), optional:: ierr       !out: error code
          integer(INTD):: errc
 
@@ -189,7 +221,7 @@
         function ObjPackGetCapacity(this,ierr) result(bytes)
 !Returns the packet capacity (max length) in bytes.
          implicit none
-         integer(INTL):: bytes                       !out: buffer capacity
+         integer(INTL):: bytes                       !out: packet buffer capacity
          class(obj_pack_t), intent(in):: this        !in: packet
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
@@ -201,8 +233,8 @@
          if(present(ierr)) ierr=errc
          return
         end function ObjPackGetCapacity
-!--------------------------------------------------
-        function ObjPackGetLength() result(bytes)
+!---------------------------------------------------------
+        function ObjPackGetLength(this,ierr) result(bytes)
 !Returns the current length of the packet in bytes.
          implicit none
          integer(INTL):: bytes                       !out: current packet length
@@ -219,6 +251,8 @@
 !------------------------------------------------------
         function ObjPackHasRoom(this,ierr) result(answ)
 !Returns .TRUE. if the packet can be used for packing data, .FALSE. otherwise.
+!A packet can be used for packing data if it has been assigned an external
+!buffer during construction.
          implicit none
          logical:: answ                              !out: answer
          class(obj_pack_t), intent(in):: this        !in: packet
@@ -237,10 +271,10 @@
         end function ObjPackHasRoom
 !---------------------------------------------------------
         function ObjPackSpaceLeft(this,ierr) result(bytes)
-!Returns the number of bytes left in the packet.
-!A negative return means that the packet is not reserved.
+!Returns the number of bytes left in the packet buffer.
+!A negative return means that the packet has not been constructed yet.
          implicit none
-         integer(INTL):: bytes                       !out: number of bytes left in the packet
+         integer(INTL):: bytes                       !out: number of bytes left in the packet buffer
          class(obj_pack_t), intent(in):: this        !in: packet
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
@@ -258,52 +292,57 @@
 !===============================================================
 !CLASS pack_env_t:
         subroutine PackEnvResize(this,ierr,buf_size,max_packets)
-!Resizes either the packet buffer or the tables or both.
+!Resizes either the packet buffer or the packet layout tables or both.
+!The buffer is used for storing data. The layout tables contain
+!bookeeping information and the size of these tables limits
+!the max number of packets that can be stored in the packet envelope.
+!The packet envelope passed into this procedure is allowed to be in
+!the in-use state (with an active open packet).
          implicit none
          class(pack_env_t), intent(inout):: this           !inout: packet envelope
          integer(INTD), intent(out), optional:: ierr       !out: error code
          integer(INTL), intent(in), optional:: buf_size    !in: new buffer size in bytes
          integer(INTD), intent(in), optional:: max_packets !in: new max limit on the number of packets stored
-         integer(INTD):: errc
          integer:: jerr
+         integer(INTD):: errc
+         integer(INTL):: fl
          character(C_CHAR), pointer, contiguous:: chp(:)
          integer(INTL), pointer, contiguous:: i8p(:)
 
          errc=PACK_SUCCESS
-         if(.not.this%busy) then
-          if(this%is_healthy(errc)) then
+         if(this%is_healthy(errc)) then
+          fl=this%length
+          if(associated(this%curr_packet)) fl=fl+this%curr_packet%get_length()
  !Buffer:
-           if(present(buf_size)) then
-            if(this%length.le.buf_size) then
-             allocate(chp(1:buf_size),STAT=jerr)
-             if(jerr.eq.0) then
-              chp(1:this%length)=this%buffer(1:this%length)
-              deallocate(this%buffer); this%buffer=>chp; chp=>NULL()
-             else
-              errc=PACK_ALLOC_FAILED
-             endif
+          if(present(buf_size)) then
+           if(fl.le.buf_size) then
+            allocate(chp(1:buf_size),STAT=jerr)
+            if(jerr.eq.0) then
+             chp(1:fl)=this%buffer(1:fl)
+             if(associated(this%curr_packet)) this%curr_packet%buffer(1:)=>chp(this%length+1_INTL:)
+             deallocate(this%buffer); this%buffer=>chp; chp=>NULL()
             else
-             errc=PACK_INVALID_ARGS
+             errc=PACK_ALLOC_FAILED
             endif
+           else
+            errc=PACK_INVALID_ARGS
            endif
+          endif
  !Tables:
-           if(present(max_packets)) then
-            if(this%num_packets.le.max_packets) then
+          if(present(max_packets)) then
+           if(this%num_packets.le.max_packets) then
+            allocate(i8p(1:max_packets),STAT=jerr)
+            if(jerr.eq.0) then
+             i8p(1:this%num_packets)=this%pack_offset(1:this%num_packets)
+             deallocate(this%pack_offset); this%pack_offset=>i8p; i8p=>NULL()
              allocate(i8p(1:max_packets),STAT=jerr)
              if(jerr.eq.0) then
-              i8p(1:this%num_packets)=this%pack_offset(1:this%num_packets)
-              deallocate(this%pack_offset); this%pack_offset=>i8p; i8p=>NULL()
-              allocate(i8p(1:max_packets),STAT=jerr)
+              i8p(1:this%num_packets)=this%pack_len(1:this%num_packets)
+              deallocate(this%pack_len); this%pack_len=>i8p; i8p=>NULL()
+              allocate(i8p(1:max_packets,STAT=jerr)
               if(jerr.eq.0) then
-               i8p(1:this%num_packets)=this%pack_len(1:this%num_packets)
-               deallocate(this%pack_len); this%pack_len=>i8p; i8p=>NULL()
-               allocate(i8p(1:max_packets,STAT=jerr)
-               if(jerr.eq.0) then
-                i8p(1:this%num_packets)=this%pack_tag(1:this%num_packets)
-                deallocate(this%pack_tag); this%pack_tag=>i8p; i8p=>NULL()
-               else
-                errc=PACK_ALLOC_FAILED
-               endif
+               i8p(1:this%num_packets)=this%pack_tag(1:this%num_packets)
+               deallocate(this%pack_tag); this%pack_tag=>i8p; i8p=>NULL()
               else
                errc=PACK_ALLOC_FAILED
               endif
@@ -311,12 +350,14 @@
               errc=PACK_ALLOC_FAILED
              endif
             else
-             errc=PACK_INVALID_ARGS
+             errc=PACK_ALLOC_FAILED
             endif
+           else
+            errc=PACK_INVALID_ARGS
            endif
           endif
          else
-          errc=PACK_BUSY
+          errc=PACK_ERROR
          endif
          if(present(ierr)) ierr=errc
          return
@@ -389,6 +430,8 @@
 !-----------------------------------------------------
         function PackEnvIsBusy(this,ierr) result(answ)
 !Returns .TRUE. if the envelope is blocked by an active packet.
+!An active packet is blocking the packet envelope until the packet
+!is sealed or discarded.
          implicit none
          logical:: answ                              !out: answer
          class(pack_env_t), intent(in):: this        !in: packet envelope
@@ -397,10 +440,7 @@
 
          answ=.TRUE.
          if(this%is_healthy(errc)) then
-          if(errc.eq.PACK_SUCCESS) then
-           answ=this%busy
-           if(answ.and.this%get_capacity().le.0) errc=PACK_ERROR
-          endif
+          if(errc.eq.PACK_SUCCESS) answ=this%busy
          else
           errc=PACK_ERROR
          endif
@@ -409,7 +449,8 @@
         end function PackEnvIsBusy
 !--------------------------------------------------------
         function PackEnvIsHealthy(this,ierr) result(answ)
-!Returns .TRUE. if the object is healthy, .FALSE. otherwise (corrupted).
+!Returns .TRUE. if the object is healthy, .FALSE. otherwise (corrupted or null).
+!Null packet envelopes are not considered healthy (<ierr> = PACK_NULL).
          implicit none
          logical:: answ                              !out: answer
          class(pack_env_t), intent(in):: this        !in: packet envelope
@@ -417,9 +458,15 @@
          integer(INTD):: errc
 
          answ=.FALSE.
-         if(this%get_capacity().lt.this%get_length(errc)) errc=PACK_ERROR
-         if(this%get_max_packets().lt.this%get_num_packets(errc)) errc=PACK_ERROR
-         if(errc.eq.PACK_SUCCESS) answ=.TRUE.
+         if(this%get_capacity().gt.0) then
+          if(this%get_capacity().lt.this%get_length()) errc=PACK_ERROR
+          if(this%get_max_packets().lt.this%get_num_packets()) errc=PACK_ERROR
+          if((this%busy.and.(.not.associated(this%curr_packet))).or.&
+             ((.not.this%busy).and.associated(this%curr_packet))) errc=PACK_ERROR
+          if(errc.eq.PACK_SUCCESS) answ=.TRUE.
+         else
+          errc=PACK_NULL
+         endif
          if(present(ierr)) ierr=errc
          return
         end function PackEnvIsHealthy
@@ -436,7 +483,7 @@
          integer(INTD), intent(out), optional:: ierr       !out: error code
          integer(INTL), intent(in), optional:: mem_size    !in: memory size to reserve for the buffer
          integer(INTD), intent(in), optional:: max_packets !in: max number of packets to assume
-         logical, intent(in), optional:: ignore_less       !in: if .TRUE. the resize will only occur if new > old (no error otherwise)
+         logical, intent(in), optional:: ignore_less       !in: if .TRUE., no error will be raised if new < old size
          integer(INTD):: errc
          integer(INTL), pointer, contiguous:: i8p(:),j8p(:),k8p(:)
          character(C_CHAR), pointer, contiguous:: chp(:)
@@ -526,7 +573,10 @@
           this%length=0
           this%num_packets=0
           this%busy=.FALSE.
-          this%curr_packet=>NULL()
+          if(associated(this%curr_packet)) then
+           call this%curr_packet%clean()
+           this%curr_packet=>NULL()
+          endif
          else
           errc=PACK_BUSY
          endif
@@ -561,7 +611,7 @@
 !<preclean>=TRUE, the packet will be precleaned on entrance.
          implicit none
          class(pack_env_t), intent(inout):: this     !inout: packet envelope
-         class(obj_pack_t), intent(inout):: pkt      !out: clean packet
+         class(obj_pack_t), intent(inout):: pkt      !inout: in:clean packet, out: active empty packet
          integer(INTD), intent(out), optional:: ierr !out: error code
          logical, intent(in), optional:: preclean    !in: if TRUE the packet will be cleaned here before use
          integer(INTD):: errc
@@ -575,10 +625,10 @@
             if(.not.this%busy) then
              if(this%length.lt.cap) then
               if(present(preclean)) then; if(preclean) call pkt%clean(); endif !preclean the packet if asked for
-              chp(1:cap-this%length)=>this%buffer(this%length+1:cap)
+              chp(1:cap-this%length)=>this%buffer(this%length+1_INTL:cap)
               call pkt%construct(chp,errc) !construct the packet
               if(errc.eq.PACK_SUCCESS) then
-               this%current_packet=>pkt !associate the packet with the packet envelope
+               this%curr_packet=>pkt !associate the packet with the packet envelope
                this%busy=.TRUE. !mark the packet envelope as busy
               else
                call pkt%clean()
@@ -595,7 +645,7 @@
            errc=PACK_ERROR
           endif
          else
-          errc=PACK_NULL
+          if(errc.eq.PACK_SUCCESS) errc=PACK_NULL
          endif
          if(present(ierr)) ierr=errc
          return
@@ -639,7 +689,7 @@
             else !discard an unfinished (current) packet
              if(this%busy) then
               if(associated(this%curr_packet)) then
-               call this%curr_packet%clean(errc)
+               call this%curr_packet%clean(errc); this%curr_packet=>NULL()
                this%busy=.FALSE.
               else
                errc=PACK_ERROR
@@ -661,7 +711,7 @@
 !--------------------------------------------------
         subroutine PackEnvSealPacket(this,ierr,tag)
 !Seals a packet in the packet envelope and releases the busy flag.
-!The packet will be cleaned automatically.
+!The packet object will be cleaned automatically at the end.
          implicit none
          class(pack_env_t), intent(inout):: this     !inout: packet envelope
          integer(INTD), intent(out), optional:: ierr !out: error code
