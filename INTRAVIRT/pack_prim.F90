@@ -1,6 +1,6 @@
 !Basic object packing/unpacking primitives.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2016/07/20
+!REVISION: 2016/07/21
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -180,21 +180,28 @@
 
        contains
 !DEFINITION:
-!===================================================
+!==========================================================
 !CLASS obj_pack_t:
-        subroutine ObjPackConstruct(this,buf_p,ierr)
-!Constructs a packet.
+        subroutine ObjPackConstruct(this,buf_p,ierr,length)
+!Constructs a packet (either empty or filled in).
          implicit none
          class(obj_pack_t), intent(inout):: this           !inout: packet (in: empty packet, out: allocated packet)
          character(C_CHAR), pointer, contiguous:: buf_p(:) !in: external buffer space
          integer(INTD), intent(out), optional:: ierr       !out: error code
+         integer(INTL), intent(in), optional:: length      !if present, the packet will be given this legnth (pre-existing data buffer)
          integer(INTD):: errc
 
          errc=PACK_SUCCESS
          if(this%get_capacity().le.0) then !empty packet
-          this%length=0
           if(associated(buf_p)) then
-           this%buffer(1:)=>buf_p(:)
+           this%buffer(1:)=>buf_p(:); this%length=0
+           if(present(length)) then !non-empty packet constructor (empty if <length> = 0)
+            if(length.ge.0.and.length.le.size(this%buffer)) then
+             this%length=length
+            else
+             errc=PACK_INVALID_ARGS
+            endif
+           endif
           else
            errc=PACK_INVALID_ARGS
           endif
@@ -766,6 +773,50 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine PackEnvSealPacket
+!--------------------------------------------------------------------------
+        subroutine PackEnvExtractPacket(this,pkt_num,pkt,ierr,tag,preclean)
+!Extracts a packet from a packet envelope. This means that
+!an object of class(obj_pack_t) will be returned and its buffer
+!will be associated with the corresponding part of the packet
+!envelope buffer. That is, the packet is returned by reference
+!and the packet data still resides in the packet envelope.
+!The packet must be clean on entrance. Since the extraction
+!is done by reference, a packet can be extracted even if the
+!packet envelope is marked as in-use (an unsealed active
+!packet is being currently filled in).
+         implicit none
+         class(pack_env_t), intent(in):: this        !in: packet envelope
+         integer(INTD), intent(in):: pkt_num         !in: packet number [1..MAX]
+         class(obj_pack_t), intent(inout):: pkt      !inout: packet (must be clean on entrance, unless <preclean> = TRUE)
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTL), intent(out), optional:: tag  !out: packet tag
+         logical, intent(in), optional:: preclean    !in: if TRUE the packet will be forcefully cleaned on entrance
+         integer(INTD):: errc
+         integer(INTL):: bg,ln
+
+         cap=this%get_capacity(errc)
+         if(cap.gt.0.and.errc.eq.PACK_SUCCESS) then
+          if(this%is_healthy(errc)) then
+           if(errc.eq.PACK_SUCCESS) then
+            if(present(preclean)) then; if(preclean) call pkt%clean(); endif
+            if(pkt_num.ge.1.and.pkt_num.le.this%get_num_packets()) then
+             if(present(tag)) tag=this%pack_tag(pkt_num)
+             bg=this%pack_offset(pkt_num); ln=this%pack_len(pkt_num)
+             call pkt%construct(this%buffer(bg:bg+ln-1_INTL),errc,ln)
+             if(errc.ne.PACK_SUCCESS) call pkt%clean()
+            else
+             errc=PACK_INVALID_ARGS
+            endif
+           endif
+          else
+           errc=PACK_ERROR
+          endif
+         else
+          if(errc.eq.PACK_SUCCESS) errc=PACK_NULL
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine PackEnvExtractPacket
 !================================================
 !PACKING/UNPACKING for built-in types:
         subroutine pack_integer1(packet,obj,ierr)
