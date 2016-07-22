@@ -1,6 +1,6 @@
 !Basic object packing/unpacking primitives.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2016/07/21
+!REVISION: 2016/07/22
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -71,8 +71,19 @@
 #if 0
         use, intrinsic:: ISO_C_BINDING, only: C_PTR,C_INT,C_CHAR,C_NULL_PTR,c_loc,c_f_pointer
         use stsubs, only: size_of
+#ifdef USE_MPI_MOD
+#ifdef FORTRAN2008
+        use mpi_f08      !MPI Fortran 2008 interface `This will not work
+#else
+        use mpi          !MPI Fortran interface
+#endif
         implicit none
         private
+#else
+        implicit none
+        private
+        include 'mpif.h' !MPI Fortran interface
+#endif
 !PARAMETERS:
  !General:
         integer, private:: CONS_OUT=6     !output device
@@ -81,6 +92,7 @@
  !Integers:
         integer, parameter, private:: INTD=4
         integer, parameter, private:: INTL=8
+        integer, parameter, private:: INT_MPI=INTD
  !Error codes:
         integer(INTD), parameter, public:: PACK_SUCCESS=0       !success
         integer(INTD), parameter, public:: PACK_ERROR=-666      !generic error
@@ -91,10 +103,13 @@
         integer(INTD), parameter, public:: PACK_FREE_FAILED=-5  !memory deallocation failed
         integer(INTD), parameter, public:: PACK_BUSY=-6         !object is in use by others
         integer(INTD), parameter, public:: PACK_IDLE=-7         !object is idle (not in use)
+        integer(INTD), parameter, public:: PACK_MPI_ERR=-8      !MPI communication error
  !Packet envelope configuration:
         integer(INTD), parameter, private:: DEFAULT_MAX_PACKETS=1024 !default max number of packets per envelope
         integer(INTL), parameter, private:: DEFAULT_ENVELOPE_CAPACITY=1024_INTL*DEFAULT_MAX_PACKETS !default envelope capacity
         integer(INTL), parameter, private:: DEFAULT_PACKET_TAG=0 !default packet tag
+ !MPI:
+        integer(INT_MPI), parameter, private:: DEFAULT_MPI_TAG=0
 !TYPES:
  !Packet:
         type, public:: obj_pack_t
@@ -139,12 +154,16 @@
         end type pack_env_t
  !Data communication handle:
         type, public:: comm_handle_t
-         logical, private:: tested=.FALSE.                      !set to .TRUE. when an active communication handle has been tested at least once
-        contains
-         procedure, public:: construct=>PackCommHandleConstruct !construct the communication handle (internal)
-         procedure, public:: clean=>PackCommHandleClean         !clean the communication handle
-         procedure, public:: test=>PackCommHandleTest           !test the completion of the communication
-         procedure, public:: wait=>PackCommHandleWait           !wait upon the completion of the communication
+         logical, private:: active=.FALSE.                 !switches to .TRUE. once the communication handle is associated with a message
+         integer(INT_MPI), private:: req=MPI_REQUEST_NULL  !MPI request handle
+         integer(INT_MPI), private:: comm=MPI_COMM_NULL    !MPI communicator
+         integer(INT_MPI), private:: stat(MPI_STATUS_SIZE) !MPI status
+         contains
+          procedure, private:: construct=>CommHandleConstruct !construct the communication handle (internal)
+          procedure, public:: clean=>CommHandleClean          !clean the communication handle
+          procedure, public:: is_active=>CommHandleIsActive   !tests whether the communication handle is associated with an active message
+          procedure, public:: test=>CommHandleTest            !test the completion of the communication
+          procedure, public:: wait=>CommHandleWait            !wait upon the completion of the communication
         end type comm_handle_t
 !INTERFACES:
  !Packing for built-in types:
@@ -180,23 +199,25 @@
 
        contains
 !DEFINITION:
-!==========================================================
+!========================================================
 !CLASS obj_pack_t:
-        subroutine ObjPackConstruct(this,buf_p,ierr,length)
+        subroutine ObjPackConstruct(this,buf,ierr,length)
 !Constructs a packet (either empty or filled in).
          implicit none
-         class(obj_pack_t), intent(inout):: this           !inout: packet (in: empty packet, out: allocated packet)
-         character(C_CHAR), pointer, contiguous:: buf_p(:) !in: external buffer space
-         integer(INTD), intent(out), optional:: ierr       !out: error code
-         integer(INTL), intent(in), optional:: length      !if present, the packet will be given this legnth (pre-existing data buffer)
+         class(obj_pack_t), intent(inout):: this         !inout: packet (in: empty packet, out: allocated packet)
+         character(C_CHAR), target, contiguous:: buf(1:) !in: external buffer space
+         integer(INTD), intent(out), optional:: ierr     !out: error code
+         integer(INTL), intent(in), optional:: length    !if present, the packet will be given this legnth (pre-existing data buffer)
          integer(INTD):: errc
+         integer(INTL):: bs
 
          errc=PACK_SUCCESS
          if(this%get_capacity().le.0) then !empty packet
-          if(associated(buf_p)) then
-           this%buffer(1:)=>buf_p(:); this%length=0
+          bs=size(buf)
+          if(bs.gt.0) then
+           this%buffer(1:)=>buf(:); this%length=0
            if(present(length)) then !non-empty packet constructor (empty if <length> = 0)
-            if(length.ge.0.and.length.le.size(this%buffer)) then
+            if(length.ge.0.and.length.le.bs) then
              this%length=length
             else
              errc=PACK_INVALID_ARGS
@@ -792,17 +813,19 @@
          integer(INTL), intent(out), optional:: tag  !out: packet tag
          logical, intent(in), optional:: preclean    !in: if TRUE the packet will be forcefully cleaned on entrance
          integer(INTD):: errc
-         integer(INTL):: bg,ln
+         integer(INTL):: cap,bg,ln
+         character(C_CHAR), pointer, contiguous:: buf_p=>NULL()
 
          cap=this%get_capacity(errc)
          if(cap.gt.0.and.errc.eq.PACK_SUCCESS) then
           if(this%is_healthy(errc)) then
            if(errc.eq.PACK_SUCCESS) then
-            if(present(preclean)) then; if(preclean) call pkt%clean(); endif
             if(pkt_num.ge.1.and.pkt_num.le.this%get_num_packets()) then
+             if(present(preclean)) then; if(preclean) call pkt%clean(); endif
              if(present(tag)) tag=this%pack_tag(pkt_num)
              bg=this%pack_offset(pkt_num); ln=this%pack_len(pkt_num)
-             call pkt%construct(this%buffer(bg:bg+ln-1_INTL),errc,ln)
+             buf_p=>this%buffer(bg:bg+ln-1_INTL)
+             call pkt%construct(buf_p,errc,ln)
              if(errc.ne.PACK_SUCCESS) call pkt%clean()
             else
              errc=PACK_INVALID_ARGS
@@ -817,6 +840,140 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine PackEnvExtractPacket
+!-----------------------------------------------------------------------
+        subroutine PackEnvSend(this,proc_rank,comm_handle,ierr,tag,comm)
+!Sends the packet envelope to the specified process. The packet
+!envelope must not have an unsealed (active) packet. The MPI message
+!contains the packet envelope data buffer as a plain CHARACTER array
+!succeeded by the data layout tables appended to the tail. The last
+!two 8-byte fields are: Length of the data buffer and Number of packets.
+         implicit none
+         class(pack_env_t), intent(in):: this              !in: packet envelope
+         integer(INT_MPI), intent(in):: proc_rank          !in: process rank
+         class(comm_handle_t), intent(inout):: comm_handle !out: communication handle (must be clean on entrance)
+         integer(INTD), intent(out), optional:: ierr       !out: error code
+         integer(INTD), intent(in), optional:: tag         !in: MPI message tag
+         integer(INT_MPI), intent(in), optional:: comm     !in: MPI communicator (default to MPI_COMM_WORLD)
+         integer(INTD):: errc
+         integer(INTL):: cap,fl
+         integer(INT_MPI):: tg,cm,rh,rk
+
+         cap=this%get_capacity(errc)
+         if(cap.gt.0.and.errc.eq.PACK_SUCCESS) then
+          if(this%is_healthy(errc)) then
+           if(errc.eq.PACK_SUCCESS) then
+            if(.not.this%busy) then
+             if(this%get_length().gt.0.and.this%get_num_packets().gt.0) then
+              if(proc_rank.ge.0) then
+               rk=proc_rank
+               if(.not.comm_handle%is_active(errc)) then
+                if(errc.eq.PACK_SUCCES) then
+                 if(present(tag)) then; tg=tag; else; tg=DEFAULT_MPI_TAG; endif
+                 if(present(comm)) then; cm=comm; else; cm=MPI_COMM_WORLD; endif
+                 call pack_layout_tables(fl,errc)
+                 if(errc.eq.PACK_SUCCESS) then
+                  call send_mpi_message(cm,rk,fl,this%buffer,tg,rh,errc)
+                  if(errc.eq.PACK_SUCCESS) call comm_handle%construct(cm,rh,errc)
+                 endif
+                endif
+               else
+                errc=PACK_INVALID_ARGS
+               endif
+              else
+               errc=PACK_INVALID_ARGS
+              endif
+             else
+              errc=PACK_NULL
+             endif
+            else
+             errc=PACK_BUSY
+            endif
+           endif
+          else
+           errc=PACK_ERROR
+          endif
+         else
+          if(errc.eq.PACK_SUCCESS) errc=PACK_NULL
+         endif
+         if(present(ierr)) ierr=errc
+         return
+
+         contains
+
+          subroutine pack_layout_tables(jl,jerr)
+           implicit none
+           integer(INTL), intent(out):: jl
+           integer(INTD), intent(out):: jerr
+           integer(INTD):: js
+           type(C_PTR):: cptr
+           integer(INTL), pointer:: j8p
+           character(C_CHAR), pointer, contiguous:: fptr(:)
+
+           jerr=PACK_SUCCESS; jl=0_INTL
+           js=size_of(jl) !size of integer(INTL) in bytes
+           jl=this%length+js*int(this%num_packets*3,INTL) !3 tables: .pack_offset, .pack_len, .pack_tag
+           jl=jl+js*2 !the last 2 INTL-byte words are this%length and this%num_packets
+           if(jl.gt.cap) then
+            call this%resize(jerr,jl)
+            if(jerr.eq.PACK_SUCCESS) cap=this%get_capacity(jerr)
+           endif
+           if(jerr.eq.PACK_SUCCESS) then
+            jl=this%length
+ !Packet offsets:
+            cptr=c_loc(this%pack_offset)
+            call c_f_pointer(cptr,fptr,(/js*this%num_packets/))
+            this%buffer(jl+1:jl+js*this%num_packets)=fptr(1:js*this%num_packets)
+            jl=jl+js*this%num_packets
+ !Packet lengths:
+            cptr=c_loc(this%pack_len)
+            call c_f_pointer(cptr,fptr,(/js*this%num_packets/))
+            this%buffer(jl+1:jl+js*this%num_packets)=fptr(1:js*this%num_packets)
+            jl=jl+js*this%num_packets
+ !Packet tags:
+            cptr=c_loc(this%pack_tag)
+            call c_f_pointer(cptr,fptr,(/js*this%num_packets/))
+            this%buffer(jl+1:jl+js*this%num_packets)=fptr(1:js*this%num_packets)
+            jl=jl+js*this%num_packets
+ !Length of the data buffer:
+            fptr(1:)=>this%buffer(jl+1:); c_ptr=c_loc(fptr)
+            call c_f_pointer(cptr,j8p); j8p=this%length; jl=jl+js
+ !Number of packets in the packet envelope:
+            fptr(1:)=>this%buffer(jl+1:); c_ptr=c_loc(fptr)
+            call c_f_pointer(cptr,j8p); j8p=int(this%num_packets,INTL); jl=jl+js
+           else
+            jl=0_INTL
+           endif
+           return
+          end subroutine pack_layout_tables
+
+          subroutine send_mpi_message(jc,jr,jl,jbuf,jtag,jreq,jerr)
+           implicit none
+           integer(INT_MPI), intent(in):: jc
+           integer(INT_MPI), intent(in):: jr
+           integer(INTL), intent(in):: jl
+           character(C_CHAR), intent(in):: jbuf(1:*)
+           integer(INT_MPI), intent(in):: jtag
+           integer(INT_MPI), intent(in):: jreq
+           integer(INTD), intent(out):: jerr
+           integer(INT_MPI):: jcnt,jcs,jer
+
+           jerr=PACK_SUCCESS; jcnt=0
+           call MPI_Comm_Size(cm,jcs,jer)
+           if(jer.eq.MPI_SUCCESS.and.jr.ge.0.and.jr.lt.jcs) then
+            if(jl.le.int(huge(jcnt),INTL)) then
+             jcnt=int(jl,INT_MPI)
+             call MPI_Isend(jbuf,jcnt,MPI_CHARACTER,jr,jtag,jc,jreq,jer)
+             if(jer.ne.MPI_SUCCESS) jerr=PACK_MPI_ERR
+            else
+             jerr=PACK_OVERFLOW
+            endif
+           else
+            jerr=PACK_INVALID_ARGS
+           endif
+           return
+          end subroutine send_mpi_message
+
+        end subroutine PackEnvSend
 !================================================
 !PACKING/UNPACKING for built-in types:
         subroutine pack_integer1(packet,obj,ierr)
