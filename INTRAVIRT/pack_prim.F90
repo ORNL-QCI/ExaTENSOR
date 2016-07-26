@@ -1,6 +1,6 @@
 !Basic object packing/unpacking primitives.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2016/07/22
+!REVISION: 2016/07/26
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -33,11 +33,14 @@
 ! class components should be communicated directly in separate messages.
 ! Thus, the main purpose of these packing/unpacking primitives is to
 ! aggregate a number of small objects into a larger plain message.
+! Both .send() and .receive() methods are non-blocking and require
+! additional synchronization.
 ! Basic abstractions:
-!  # Packet (obj_pack_t): Plain array which the data is packed into and unpacked from.
+!  # Packet (obj_pack_t): Plain array which the data is packed into and
+!    unpacked from. Normally a packet contains a single object.
 !  # Packet envelope (pack_env_t): Container of packets with some
-!    additional layout information. A packet space is acquired from
-!    an existing packet container. Then the data can be packed into
+!    additional layout information. A individual packet space is acquired
+!    from an existing packet container. Then the data can be packed into
 !    the packet space and sealed. Then the packet container (envelope),
 !    which contains one or more packets, can be sent to a different MPI process which
 !    will be able to unpack any packet from the packet envelope back to an object.
@@ -48,21 +51,24 @@
 !  # In order to pack/unpack Fortran built-in and derived types, a packet envelope
 !    needs to be created first via the .reserve_mem() member procedure. Then a packet
 !    needs to be allocated in the packet envelope via the .acquire_packet() member
-!    procedure. The packet can subsequently be used for packing Fortran objects.
-!    Once the object of a built-in or derived type has been packed into the packet,
+!    procedure. The packet can subsequently be used for packing a Fortran object.
+!    Once an object of a built-in or derived type has been packed into the packet,
 !    the packet needs to be sealed via the .seal_packet() member procedure. If another
-!    object needs to be packed, a new packet should be acquired, filled in, and sealed.
-!    Once all objects have been packed into the packet envelope, the latter can be
-!    communicated between two MPI processes via the .send(), .receive(), and
-!    .test_completion() member procedures which follow asynchronous semantics. Once
-!    received by another process, any packet from the delivered packet envelope can
-!    be unpacked back into the original object of a built-in or derived type. Each
-!    packet in the packet envelope has an optional integer tag.
+!    object needs to be packed, a new packet should be acquired in the packet envelope,
+!    filled in, and sealed. Once all objects have been packed into the packet envelope,
+!    the latter can be communicated between two MPI processes via the .send() and .receive()
+!    member procedures which follow non-blocking semantics. Each of the two procedures
+!    returns a communication handle that can be used for checking the completion
+!    of the corresponding communication. Once received, any packet from the delivered
+!    packet envelope can be unpacked back into the original object of a built-in or derived type.
+!    Each packet in the packet envelope has an optional integer tag. Packet envelopes
+!    participating in an active (non-blocking) communication must not be used for
+!    local packing/unpacking until that communication is completed on the caller's side.
 !  # It may happen that the free space provided by a packet is insufficient for packing
 !    the object of interest. In this case, the .resize() member procedure needs to be
 !    invoked on the packet envelope the packet is part of. The packet envelope will
 !    be extended to a user-specified capacity, in turn resulting in a larger buffer
-!    in the packet that one is currently filling in with data. Similarly, if one
+!    in the packet that one is currently filling in with data. Similarly if one
 !    exceeds the max number of packets that can be stored in the packet envelope,
 !    this resource can also be extended by calling the same member procedure .resize().
 !    The packet buffer space overflow occurs during packing data objects into the packet.
@@ -150,20 +156,23 @@
           procedure, public:: extract_packet=>PackEnvExtractPacket  !extract a packet from the packet envelope
           procedure, public:: send=>PackEnvSend                     !send a packet to another process
           procedure, public:: receive=>PackEnvReceive               !receive a packet from another process
-          procedure, public:: test_completion=>PackEnvCommCompleted !test the completion of the send/receive operation
+          procedure, private:: decode_mpi_msg=>PackEnvDecodeMPIMsg  !decodes the incoming MPI message back into the object
         end type pack_env_t
  !Data communication handle:
         type, public:: comm_handle_t
-         logical, private:: active=.FALSE.                 !switches to .TRUE. once the communication handle is associated with a message
-         integer(INT_MPI), private:: req=MPI_REQUEST_NULL  !MPI request handle
-         integer(INT_MPI), private:: comm=MPI_COMM_NULL    !MPI communicator
-         integer(INT_MPI), private:: stat(MPI_STATUS_SIZE) !MPI status
+         logical, private:: active=.FALSE.                  !switches to .TRUE. once the communication handle is associated with a message
+         integer(INT_MPI), private:: req=MPI_REQUEST_NULL   !MPI request handle
+         integer(INT_MPI), private:: comm=MPI_COMM_NULL     !MPI communicator
+         integer(INT_MPI), private:: stat(MPI_STATUS_SIZE)  !MPI status
+         class(pack_env_t), pointer:: recv_pack_env=>NULL() !a receive operation pointer to the packet envelope being received
          contains
           procedure, private:: construct=>CommHandleConstruct !construct the communication handle (internal)
           procedure, public:: clean=>CommHandleClean          !clean the communication handle
+          procedure, public:: is_clean=>CommHandleIsClean     !tests whether the communication handle is clean
           procedure, public:: is_active=>CommHandleIsActive   !tests whether the communication handle is associated with an active message
-          procedure, public:: test=>CommHandleTest            !test the completion of the communication
-          procedure, public:: wait=>CommHandleWait            !wait upon the completion of the communication
+          procedure, public:: test=>CommHandleTest            !tests the completion of the communication
+          procedure, public:: wait=>CommHandleWait            !waits upon the completion of the communication
+          procedure, private:: attach_pack_env=>CommHandleAttachPackEnv !attaches the parental packet envelope (for receive operations)
         end type comm_handle_t
 !INTERFACES:
  !Packing for built-in types:
@@ -325,26 +334,41 @@
 !bookeeping information and the size of these tables limits
 !the max number of packets that can be stored in the packet envelope.
 !The packet envelope passed into this procedure is allowed to be in
-!the in-use state (with an active open packet).
+!the in-use state (with an active open packet). If neither <buf_size>
+!nor <max_packets> is passed here, default values will be used for both.
          implicit none
          class(pack_env_t), intent(inout):: this           !inout: packet envelope
          integer(INTD), intent(out), optional:: ierr       !out: error code
          integer(INTL), intent(in), optional:: buf_size    !in: new buffer size in bytes
          integer(INTD), intent(in), optional:: max_packets !in: new max limit on the number of packets stored
          integer:: jerr
-         integer(INTD):: errc
-         integer(INTL):: fl
+         integer(INTD):: mpk,errc
+         integer(INTL):: fl,bfs
          character(C_CHAR), pointer, contiguous:: chp(:)
          integer(INTL), pointer, contiguous:: i8p(:)
 
-         errc=PACK_SUCCESS
          if(this%is_healthy(errc)) then
           fl=this%length
           if(associated(this%curr_packet)) fl=fl+this%curr_packet%get_length()
- !Buffer:
           if(present(buf_size)) then
-           if(fl.le.buf_size) then
-            allocate(chp(1:buf_size),STAT=jerr)
+           bfs=buf_size
+           if(present(max_packets)) then
+            mpk=max_packets
+           else
+            mpk=-1
+           endif
+          else
+           if(present(max_packets)) then
+            mpk=max_packets; bfs=-1_INTL
+           else
+            mpk=this%get_max_packets()+DEFAULT_MAX_PACKETS
+            bfs=this%get_capacity()+DEFAULT_ENVELOPE_CAPACITY
+           endif
+          endif
+ !Buffer:
+          if(bfs.ge.0) then
+           if(fl.le.bfs) then
+            allocate(chp(1:bfs),STAT=jerr)
             if(jerr.eq.0) then
              chp(1:fl)=this%buffer(1:fl)
              if(associated(this%curr_packet)) this%curr_packet%buffer(1:)=>chp(this%length+1_INTL:)
@@ -356,18 +380,18 @@
             errc=PACK_INVALID_ARGS
            endif
           endif
- !Tables:
-          if(present(max_packets)) then
-           if(this%num_packets.le.max_packets) then
-            allocate(i8p(1:max_packets),STAT=jerr)
+ !Layout tables:
+          if(mpk.ge.0) then
+           if(this%num_packets.le.mpk) then
+            allocate(i8p(1:mpk),STAT=jerr)
             if(jerr.eq.0) then
              i8p(1:this%num_packets)=this%pack_offset(1:this%num_packets)
              deallocate(this%pack_offset); this%pack_offset=>i8p; i8p=>NULL()
-             allocate(i8p(1:max_packets),STAT=jerr)
+             allocate(i8p(1:mpk),STAT=jerr)
              if(jerr.eq.0) then
               i8p(1:this%num_packets)=this%pack_len(1:this%num_packets)
               deallocate(this%pack_len); this%pack_len=>i8p; i8p=>NULL()
-              allocate(i8p(1:max_packets,STAT=jerr)
+              allocate(i8p(1:mpk,STAT=jerr)
               if(jerr.eq.0) then
                i8p(1:this%num_packets)=this%pack_tag(1:this%num_packets)
                deallocate(this%pack_tag); this%pack_tag=>i8p; i8p=>NULL()
@@ -842,21 +866,23 @@
         end subroutine PackEnvExtractPacket
 !-----------------------------------------------------------------------
         subroutine PackEnvSend(this,proc_rank,comm_handle,ierr,tag,comm)
-!Sends the packet envelope to the specified process. The packet
-!envelope must not have an unsealed (active) packet. The MPI message
-!contains the packet envelope data buffer as a plain CHARACTER array
+!Initiates a send of the packet envelope to the specified process. The packet
+!envelope must not contain an unsealed (active) packet. The MPI message
+!will contain the packet envelope data buffer as a plain CHARACTER array
 !succeeded by the data layout tables appended to the tail. The last
 !two 8-byte fields are: Length of the data buffer and Number of packets.
+!The communication handle must not be active on entrance.
+!This is a NON-BLOCKING method!
          implicit none
          class(pack_env_t), intent(in):: this              !in: packet envelope
          integer(INT_MPI), intent(in):: proc_rank          !in: process rank
-         class(comm_handle_t), intent(inout):: comm_handle !out: communication handle (must be clean on entrance)
+         class(comm_handle_t), intent(inout):: comm_handle !out: communication handle (must not be active on entrance)
          integer(INTD), intent(out), optional:: ierr       !out: error code
-         integer(INTD), intent(in), optional:: tag         !in: MPI message tag
-         integer(INT_MPI), intent(in), optional:: comm     !in: MPI communicator (default to MPI_COMM_WORLD)
+         integer(INT_MPI), intent(in), optional:: tag      !in: MPI message tag
+         integer(INT_MPI), intent(in), optional:: comm     !in: MPI communicator (defaults to MPI_COMM_WORLD)
          integer(INTD):: errc
          integer(INTL):: cap,fl
-         integer(INT_MPI):: tg,cm,rh,rk
+         integer(INT_MPI):: rk,tg,cm,rh
 
          cap=this%get_capacity(errc)
          if(cap.gt.0.and.errc.eq.PACK_SUCCESS) then
@@ -868,16 +894,19 @@
                rk=proc_rank
                if(.not.comm_handle%is_active(errc)) then
                 if(errc.eq.PACK_SUCCES) then
-                 if(present(tag)) then; tg=tag; else; tg=DEFAULT_MPI_TAG; endif
-                 if(present(comm)) then; cm=comm; else; cm=MPI_COMM_WORLD; endif
-                 call pack_layout_tables(fl,errc)
+                 call comm_handle%clean(errc) !clean the communication handle before usage
                  if(errc.eq.PACK_SUCCESS) then
-                  call send_mpi_message(cm,rk,fl,this%buffer,tg,rh,errc)
-                  if(errc.eq.PACK_SUCCESS) call comm_handle%construct(cm,rh,errc)
+                  if(present(tag)) then; tg=tag; else; tg=DEFAULT_MPI_TAG; endif
+                  if(present(comm)) then; cm=comm; else; cm=MPI_COMM_WORLD; endif
+                  call pack_layout_tables(fl,errc)
+                  if(errc.eq.PACK_SUCCESS) then
+                   call send_mpi_message(cm,rk,fl,this%buffer,tg,rh,errc)
+                   if(errc.eq.PACK_SUCCESS) call comm_handle%construct(cm,rh,errc)
+                  endif
                  endif
                 endif
                else
-                errc=PACK_INVALID_ARGS
+                errc=PACK_INVALID_ARGS !communication handle is active
                endif
               else
                errc=PACK_INVALID_ARGS
@@ -913,8 +942,9 @@
            js=size_of(jl) !size of integer(INTL) in bytes
            jl=this%length+js*int(this%num_packets*3,INTL) !3 tables: .pack_offset, .pack_len, .pack_tag
            jl=jl+js*2 !the last 2 INTL-byte words are this%length and this%num_packets
+ !Resize the buffer if needed:
            if(jl.gt.cap) then
-            call this%resize(jerr,jl)
+            call this%resize(jerr,buf_size=jl)
             if(jerr.eq.PACK_SUCCESS) cap=this%get_capacity(jerr)
            endif
            if(jerr.eq.PACK_SUCCESS) then
@@ -948,17 +978,17 @@
 
           subroutine send_mpi_message(jc,jr,jl,jbuf,jtag,jreq,jerr)
            implicit none
-           integer(INT_MPI), intent(in):: jc
-           integer(INT_MPI), intent(in):: jr
-           integer(INTL), intent(in):: jl
-           character(C_CHAR), intent(in):: jbuf(1:*)
-           integer(INT_MPI), intent(in):: jtag
-           integer(INT_MPI), intent(in):: jreq
-           integer(INTD), intent(out):: jerr
+           integer(INT_MPI), intent(in):: jc         !in: MPI communicator
+           integer(INT_MPI), intent(in):: jr         !in: MPI rank
+           integer(INTL), intent(in):: jl            !in: count
+           character(C_CHAR), intent(in):: jbuf(1:*) !in: buffer (C_CHAR)
+           integer(INT_MPI), intent(in):: jtag       !in: tag
+           integer(INT_MPI), intent(in):: jreq       !in: request handle
+           integer(INTD), intent(out):: jerr         !out: error code
            integer(INT_MPI):: jcnt,jcs,jer
 
            jerr=PACK_SUCCESS; jcnt=0
-           call MPI_Comm_Size(cm,jcs,jer)
+           call MPI_Comm_Size(jc,jcs,jer)
            if(jer.eq.MPI_SUCCESS.and.jr.ge.0.and.jr.lt.jcs) then
             if(jl.le.int(huge(jcnt),INTL)) then
              jcnt=int(jl,INT_MPI)
@@ -974,6 +1004,315 @@
           end subroutine send_mpi_message
 
         end subroutine PackEnvSend
+!------------------------------------------------------------------------------------------
+        function PackEnvReceive(this,comm_handle,ierr,proc_rank,tag,comm) result(delivered)
+!Initiates a receive of a packet envelope from some MPI process, either specified or any,
+!but only if the corresponding message is already available, otherwise simply returns FALSE.
+!The packet envelope passed into this subroutine must be clean on entrance (zero length).
+!The communication handle must not be active on entrance.
+!This is a NON-BLOCKING method!
+         implicit none
+         logical:: delivered                                !TRUE if the message is available for pickup, FALSE otherwise
+         class(pack_env_t), intent(inout):: this            !out: packet envelope (clean on entrance)
+         class(comm_handle_t), intent(inout):: comm_handle  !out: communication handle (must not be active on entrance)
+         integer(INTD), intent(out), optional:: ierr        !out: error code
+         integer(INT_MPI), intent(in), optional:: proc_rank !in: process rank (defaults to MPI_ANY_SOURCE)
+         integer(INT_MPI), intent(in), optional:: tag       !in: MPI message tag (defaults to MPI_ANY_TAG)
+         integer(INT_MPI), intent(in), optional:: comm      !in: MPI communicator (defaults to MPI_COMM_WORLD)
+         integer(INTD):: errc
+         integer(INTL):: cap,ml
+         integer(INT_MPI):: rk,tg,cm,rh,err_mpi
+
+         delivered=.FALSE.; cap=this%get_capacity(errc)
+         if(cap.gt.0.and.errc.eq.PACK_SUCCESS) then
+          if(this%get_length(errc).eq.0) then
+           if(this%get_num_packets(errc).eq.0) then
+            if(.not.this%is_busy(errc)) then
+             if(errc.eq.PACK_SUCCESS) then
+              if(.not.comm_handle%is_active(errc)) then
+               if(errc.eq.PACK_SUCCESS) then
+                call comm_handle%clean(errc) !clean the communication handle before usage
+                if(errc.eq.PACK_SUCCESS) then
+                 if(present(proc_rank)) then; rk=proc_rank; else; rk=MPI_ANY_SOURCE; endif
+                 if(present(tag)) then; tg=tag; else; tg=MPI_ANY_TAG; endif
+                 if(present(comm)) then; cm=comm; else; cm=MPI_COMM_WORLD; endif
+                 call MPI_Iprobe(rk,tg,cm,delivered,comm_handle%stat,err_mpi)
+                 if(err_mpi.eq.MPI_SUCCESS.and.delivered) then
+                  call MPI_Get_Count(comm_handle%stat,MPI_CHARACTER,ml,err_mpi)
+                  if(err_mpi.eq.MPI_SUCCESS) then
+                   if(cap.lt.ml) call this%resize(errc,buf_size=ml)
+                   if(errc.eq.PACK_SUCCESS) then
+                    call receive_mpi_message(cm,rk,ml,this%buffer,tg,rh,errc)
+                    if(errc.eq.PACK_SUCCESS) call comm_handle%construct(cm,rh,errc,this)
+                   endif
+                  else
+                   errc=PACK_MPI_ERR
+                  endif
+                 else
+                  if(err_mpi.ne.MPI_SUCCESS) errc=PACK_MPI_ERR
+                 endif
+                endif
+               endif
+              else
+               if(errc.eq.PACK_SUCCESS) errc=PACK_INVALID_ARGS
+              endif
+             endif
+            else
+             if(errc.eq.PACK_SUCCESS) errc=PACK_BUSY
+            endif
+           else
+            if(errc.eq.PACK_SUCCESS) errc=PACK_INVALID_ARGS
+           endif
+          else
+           if(errc.eq.PACK_SUCCESS) errc=PACK_INVALID_ARGS
+          endif
+         else
+          if(errc.eq.PACK_SUCCESS) errc=PACK_NULL
+         endif
+         if(present(ierr)) ierr=errc
+         return
+
+         contains
+
+          subroutine receive_mpi_message(jc,jr,jl,buf,jt,jreq,jerr)
+           implicit none
+           integer(INT_MPI), intent(in):: jc           !MPI communicator
+           integer(INT_MPI), intent(in):: jr           !MPI rank
+           integer(INTL), intent(in):: jl              !length of the buffer
+           character(C_CHAR), intent(inout):: buf(1:*) !buffer
+           integer(INT_MPI), intent(in):: jt           !MPI message tag
+           integer(INT_MPI), intent(inout):: jreq      !MPI request handle
+           integer(INTD), intent(out):: jerr           !error code
+           integer(INT_MPI):: jcnt,jer
+
+           jerr=PACK_SUCCESS
+           if(ml.le.int(huge(jcnt),INTL)) then
+            jcnt=int(ml,INT_MPI)
+            call MPI_Irecv(buf,jcnt,MPI_CHARACTER,jr,jt,jc,jreq,jer)
+            if(jer.ne.MPI_SUCCESS) jerr=PACK_MPI_ERR
+           else
+            jerr=PACK_OVERFLOW
+           endif
+           return
+          end subroutine receive_mpi_message
+
+        end function PackEnvReceive
+!--------------------------------------------------------
+        subroutine PackEnvDecodeMPIMsg(this,msg_len,ierr)
+!Decodes the received MPI message back into the <pack_env_t> object.
+!Namely, it decodes the layout tables stored in the tail of the message.
+         implicit none
+         class(pack_env_t), intent(inout):: this     !out: decoded packet envelope (must be empty on entrance)
+         integer(INTL), intent(in):: msg_len         !in: MPI message length
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+         integer(INTL):: cap
+
+         cap=this%get_capacity(errc)
+
+
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine PackEnvDecodeMPIMsg
+!=========================================================================
+!CLASS comm_handle_t:
+        subroutine CommHandleConstruct(this,comm,req_handle,ierr,pack_env)
+!Constructs a communication handle. The communication handle
+!must be clean on entrance. Note that upon construction the
+!communication handle automatically becomes active (pending message).
+!For receive operations, the <pack_env> argument is the packet envelope
+!for which the (receive) communication has just been initiated.
+         implicit none
+         class(comm_handle_t), intent(inout):: this  !inout: communication handle (must be clean on entrance)
+         integer(INT_MPI), intent(in):: comm         !in: MPI communicator
+         integer(INT_MPI), intent(in):: req_handle   !in: MPI request handle
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         class(pack_env_t), intent(in), target, optional:: pack_env !in: packet envelope (for receive operations only)
+         integer(INTD):: errc
+
+         if(.not.this%is_active(errc)) then
+          if(errc.eq.PACK_SUCCESS) then
+           if(this%is_clean(errc)) then
+            this%req=req_handle
+            this%comm=comm
+            if(present(pack_env)) this%recv_pack_env=>pack_env
+            this%active=.TRUE.
+           else
+            errc=MPI_INVALID_ARGS
+           endif
+          endif
+         else
+          errc=MPI_INVALID_ARGS
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine CommHandleConstruct
+!--------------------------------------------------------
+        subroutine CommHandleClean(this,ierr,force_clean)
+!Cleans an inactive communication handle. If <force_clean> = TRUE,
+!an active communication handle will be forcefully cleaned as well.
+         implicit none
+         class(comm_handle_t), intent(inout):: this  !inout: communication handle
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         logical, intent(in), optional:: force_clean !in: if TRUE, cleaning will be enforced
+         integer(INTD):: errc
+         logical:: fcl
+
+         errc=PACK_SUCCESS
+         if(present(force_clean)) then; fcl=force_clean; else; fcl=.FALSE.; endif
+         if(fcl.or.(.not.this%is_active(errc))) then
+          this%active=.FALSE.
+          this%req=MPI_REQUEST_NULL
+          this%comm=MPI_COMM_NULL
+          this%recv_pack_env=>NULL()
+         else
+          errc=PACK_INVALID_ARGS
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine CommHandleClean
+!---------------------------------------------------------
+        function CommHandleIsClean(this,ierr) result(answ)
+!Returns TRUE if the communication handle is clean, FALSE otherwise.
+         implicit none
+         logical:: answ                              !out: result
+         class(comm_handle_t), intent(in):: this     !in: communication handle
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=PACK_SUCCESS; answ=.TRUE.
+         if(this%comm.ne.MPI_COMM_NULL) then
+          answ=.FALSE.
+         else
+          if(this%active) errc=PACK_ERROR
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function CommHandleIsClean
+!----------------------------------------------------------
+        function CommHandleIsActive(this,ierr) result(answ)
+!Returns TRUE if the communication handle is active, FALSE otherwise.
+!An active communication handle is the one associated with an active
+!non-blocking MPI message.
+         implicit none
+         logical:: answ                              !out: result
+         class(comm_handle_t), intent(in):: this     !in: communication handle
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=PACK_SUCCESS; answ=.FALSE.
+         if(this%active) then
+          if(this%comm.ne.MPI_COMM_NULL) then
+           answ=.TRUE.
+          else
+           errc=PACK_ERROR
+          endif
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function CommHandleIsActive
+!------------------------------------------------------
+        function CommHandleTest(this,ierr) result(answ)
+!Tests the completion of an active communication. An error
+!code PACK_NULL is returned if the communication handle is clean.
+!If completed, the communication handle becomes inactive, but not clean.
+         implicit none
+         logical:: answ                              !out: result
+         class(comm_handle_t), intent(inout):: this  !inout: communication handle
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+         integer(INT_MPI):: err_mpi
+         integer(INT_MPI):: ml
+
+         errc=PACK_SUCCESS; answ=.FALSE.
+         if(.not.this%is_clean(errc)) then
+          if(errc.eq.PACK_SUCCESS) then
+           if(this%is_active(errc)) then !an active communication handle
+            if(errc.eq.PACK_SUCCESS) then
+             call MPI_Test(this%req,answ,this%stat,err_mpi)
+             if(err_mpi.eq.MPI_SUCCESS) then
+              if(answ.eq..TRUE.) then
+               if(associated(this%recv_pack_env)) then !receive operation required decoding
+                call MPI_Get_Count(this%stat,MPI_CHARACTER,ml,err_mpi)
+                if(err_mpi.eq.MPI_SUCCESS) then
+                 call this%recv_pack_env%decode_mpi_msg(ml,errc)
+                 if(errc.eq.PACK_SUCCESS) this%recv_pack_env=>NULL()
+                else
+                 errc=PACK_MPI_ERR
+                endif
+               endif
+               this%active=.FALSE.
+              endif
+             else
+              errc=PACK_MPI_ERR
+             endif
+            endif
+           else
+            answ=.TRUE. !already completed communication handle
+           endif
+          endif
+         else
+          errc=PACK_NULL !communication handle is clean
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function CommHandleTest
+!-------------------------------------------
+        subroutine CommHandleWait(this,ierr)
+!Waits for the completion of an active communication. An error
+!code PACK_NULL is returned if the communication handle is clean.
+!When completed, the communication handle becomes inactive, but not clean.
+         implicit none
+         class(comm_handle_t), intent(inout):: this  !inout: communication handle
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+         integer(INT_MPI):: err_mpi
+         integer(INT_MPI):: ml
+
+         errc=PACK_SUCCESS
+         if(.not.this%is_clean(errc)) then
+          if(errc.eq.PACK_SUCCESS) then
+           if(this%is_active(errc)) then !an active communication handle
+            if(errc.eq.PACK_SUCCESS) then
+             call MPI_Wait(this%req,this%stat,err_mpi)
+             if(err_mpi.eq.MPI_SUCCESS) then
+              if(associated(this%recv_pack_env)) then !receive operation required decoding
+               call MPI_Get_Count(this%stat,MPI_CHARACTER,ml,err_mpi)
+               if(err_mpi.eq.MPI_SUCCESS) then
+                call this%recv_pack_env%decode_mpi_msg(ml,errc)
+                if(errc.eq.PACK_SUCCESS) this%recv_pack_env=>NULL()
+               else
+                errc=PACK_MPI_ERR
+               endif
+              endif
+              this%active=.FALSE.
+             else
+              errc=PACK_MPI_ERR
+             endif
+            endif
+           endif
+          endif
+         else
+          errc=PACK_NULL !communication handle is clean
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine CommHandleWait
+!-------------------------------------------------------------
+        subroutine CommHandleAttachPackEnv(this,pack_env,ierr)
+!Attaches the parental packet envelope for each the receive operation
+!has just been initiated that corresponds to this communication handle.
+         implicit none
+         class(comm_handle_t), intent(inout):: this       !inout: communication handle
+         class(pack_env_t), target, intent(in):: pack_env !in: packet envelope
+         integer(INTD), intent(out), optional:: ierr      !out: error code
+         integer(INTD):: errc
+
+         errc=PACK_SUCCESS
+         this%recv_pack_env=>pack_env
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine CommHandleAttachPackEnv
 !================================================
 !PACKING/UNPACKING for built-in types:
         subroutine pack_integer1(packet,obj,ierr)
