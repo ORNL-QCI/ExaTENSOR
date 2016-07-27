@@ -1,6 +1,6 @@
 !Basic object packing/unpacking primitives.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2016/07/26
+!REVISION: 2016/07/27
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -74,7 +74,6 @@
 !    The packet buffer space overflow occurs during packing data objects into the packet.
 !    The max-packets-per-envelope overflow occurs during sealing the packet.
        module pack_prim
-#if 0
         use, intrinsic:: ISO_C_BINDING, only: C_PTR,C_INT,C_CHAR,C_NULL_PTR,c_loc,c_f_pointer
         use stsubs, only: size_of
 #ifdef USE_MPI_MOD
@@ -178,33 +177,33 @@
  !Packing for built-in types:
         interface pack_builtin
          module procedure pack_integer1
-         module procedure pack_integer2
-         module procedure pack_integer4
-         module procedure pack_integer8
-         module procedure pack_logical
-         module procedure pack_real4
-         module procedure pack_real8
-         module procedure pack_complex4
-         module procedure pack_complex8
-         module procedure pack_string
+!         module procedure pack_integer2
+!         module procedure pack_integer4
+!         module procedure pack_integer8
+!         module procedure pack_logical
+!         module procedure pack_real4
+!         module procedure pack_real8
+!         module procedure pack_complex4
+!         module procedure pack_complex8
+!         module procedure pack_string
         end interface pack_builtin
         public pack_builtin
-        public pack_universal
+!        public pack_universal
  !Unpacking for built-in types:
         interface unpack_builtin
-         module procedure unpack_integer1
-         module procedure unpack_integer2
-         module procedure unpack_integer4
-         module procedure unpack_integer8
-         module procedure unpack_logical
-         module procedure unpack_real4
-         module procedure unpack_real8
-         module procedure unpack_complex4
-         module procedure unpack_complex8
-         module procedure unpack_string
+!         module procedure unpack_integer1
+!         module procedure unpack_integer2
+!         module procedure unpack_integer4
+!         module procedure unpack_integer8
+!         module procedure unpack_logical
+!         module procedure unpack_real4
+!         module procedure unpack_real8
+!         module procedure unpack_complex4
+!         module procedure unpack_complex8
+!         module procedure unpack_string
         end interface unpack_builtin
         public unpack_builtin
-        public unpack_universal
+!        public unpack_universal
 
        contains
 !DEFINITION:
@@ -391,7 +390,7 @@
              if(jerr.eq.0) then
               i8p(1:this%num_packets)=this%pack_len(1:this%num_packets)
               deallocate(this%pack_len); this%pack_len=>i8p; i8p=>NULL()
-              allocate(i8p(1:mpk,STAT=jerr)
+              allocate(i8p(1:mpk),STAT=jerr)
               if(jerr.eq.0) then
                i8p(1:this%num_packets)=this%pack_tag(1:this%num_packets)
                deallocate(this%pack_tag); this%pack_tag=>i8p; i8p=>NULL()
@@ -420,7 +419,7 @@
          implicit none
          integer(INTL):: bytes                       !out: packet envelope capacity in bytes
          class(pack_env_t), intent(in):: this        !in: packet envelope
-         integer(INTL), intent(out), optional:: ierr !out: error code
+         integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
 
          errc=PACK_SUCCESS; bytes=0
@@ -662,10 +661,10 @@
 !otherwise a status PACK_BUSY will be returned. However, if
 !<preclean>=TRUE, the packet will be precleaned on entrance.
          implicit none
-         class(pack_env_t), intent(inout):: this     !inout: packet envelope
-         class(obj_pack_t), intent(inout):: pkt      !inout: in:clean packet, out: active empty packet
-         integer(INTD), intent(out), optional:: ierr !out: error code
-         logical, intent(in), optional:: preclean    !in: if TRUE the packet will be cleaned here before use
+         class(pack_env_t), intent(inout):: this        !inout: packet envelope
+         class(obj_pack_t), target, intent(inout):: pkt !inout: in:clean packet, out:active empty packet
+         integer(INTD), intent(out), optional:: ierr    !out: error code
+         logical, intent(in), optional:: preclean       !in: if TRUE the packet will be cleaned here before use
          integer(INTD):: errc
          integer(INTL):: cap
          character(C_CHAR), pointer, contiguous:: chp(:)
@@ -838,7 +837,7 @@
          logical, intent(in), optional:: preclean    !in: if TRUE the packet will be forcefully cleaned on entrance
          integer(INTD):: errc
          integer(INTL):: cap,bg,ln
-         character(C_CHAR), pointer, contiguous:: buf_p=>NULL()
+         character(C_CHAR), pointer, contiguous:: buf_p(:)=>NULL()
 
          cap=this%get_capacity(errc)
          if(cap.gt.0.and.errc.eq.PACK_SUCCESS) then
@@ -874,7 +873,7 @@
 !The communication handle must not be active on entrance.
 !This is a NON-BLOCKING method!
          implicit none
-         class(pack_env_t), intent(in):: this              !in: packet envelope
+         class(pack_env_t), intent(inout):: this           !in: packet envelope
          integer(INT_MPI), intent(in):: proc_rank          !in: process rank
          class(comm_handle_t), intent(inout):: comm_handle !out: communication handle (must not be active on entrance)
          integer(INTD), intent(out), optional:: ierr       !out: error code
@@ -893,7 +892,7 @@
               if(proc_rank.ge.0) then
                rk=proc_rank
                if(.not.comm_handle%is_active(errc)) then
-                if(errc.eq.PACK_SUCCES) then
+                if(errc.eq.PACK_SUCCESS) then
                  call comm_handle%clean(errc) !clean the communication handle before usage
                  if(errc.eq.PACK_SUCCESS) then
                   if(present(tag)) then; tg=tag; else; tg=DEFAULT_MPI_TAG; endif
@@ -965,10 +964,10 @@
             this%buffer(jl+1:jl+js*this%num_packets)=fptr(1:js*this%num_packets)
             jl=jl+js*this%num_packets
  !Length of the data buffer:
-            fptr(1:)=>this%buffer(jl+1:); c_ptr=c_loc(fptr)
+            fptr(1:)=>this%buffer(jl+1:); cptr=c_loc(fptr)
             call c_f_pointer(cptr,j8p); j8p=this%length; jl=jl+js
  !Number of packets in the packet envelope:
-            fptr(1:)=>this%buffer(jl+1:); c_ptr=c_loc(fptr)
+            fptr(1:)=>this%buffer(jl+1:); cptr=c_loc(fptr)
             call c_f_pointer(cptr,j8p); j8p=int(this%num_packets,INTL); jl=jl+js
            else
             jl=0_INTL
@@ -1105,12 +1104,52 @@
          class(pack_env_t), intent(inout):: this     !out: decoded packet envelope (must be empty on entrance)
          integer(INTL), intent(in):: msg_len         !in: MPI message length
          integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc
-         integer(INTL):: cap
+         integer(INTD):: npkts,errc
+         integer(INTL):: cap,sil,offs
+         character(C_CHAR), pointer, contiguous:: chp(:)
+         integer(INTL), pointer, contiguous:: j8p(:)
+         integer(INTL), pointer:: i8p
+         type(C_PTR):: cptr
 
          cap=this%get_capacity(errc)
-
-
+         if(cap.ge.msg_len.and.errc.eq.PACK_SUCCESS) then
+          if(this%get_length(errc).eq.0.and.msg_len.ge.int(1+3*1*8+2*8,INTL)) then !buffer (min 1 byte) + three tables (min 1 byte each) + two int(8) words
+           if(errc.eq.PACK_SUCCESS) then
+            sil=size_of(cap) !size of INTL integer
+ !Number of packets in the packet envelope:
+            chp(1:)=>this%buffer(msg_len-sil+1:msg_len)
+            cptr=c_loc(chp); call c_f_pointer(cptr,i8p); npkts=i8p
+ !Length of the data buffer:
+            chp(1:)=>this%buffer(msg_len-sil*2+1:msg_len-sil)
+            cptr=c_loc(chp); call c_f_pointer(cptr,i8p); this%length=i8p
+            i8p=>NULL()
+            if(npkts.gt.this%get_max_packets()) call this%resize(errc,max_packets=npkts)
+            if(errc.eq.PACK_SUCCESS) then
+             this%num_packets=npkts
+ !Packet tags:
+             offs=msg_len-sil*2-sil*npkts+1
+             chp(1:)=>this%buffer(offs:)
+             cptr=c_loc(chp); call c_f_pointer(cptr,j8p,(/npkts/))
+             this%pack_tag(1:npkts)=j8p(1:npkts)
+ !Packet lengths:
+             offs=offs-sil*npkts
+             chp(1:)=>this%buffer(offs:)
+             cptr=c_loc(chp); call c_f_pointer(cptr,j8p,(/npkts/))
+             this%pack_len(1:npkts)=j8p(1:npkts)
+ !Packet offsets:
+             offs=offs-sil*npkts
+             chp(1:)=>this%buffer(offs:)
+             cptr=c_loc(chp); call c_f_pointer(cptr,j8p,(/npkts/))
+             this%pack_offset(1:npkts)=j8p(1:npkts)
+             chp=>NULL(); j8p=>NULL()
+            endif
+           endif
+          else
+           errc=PACK_INVALID_ARGS !non-empty packet envelope or invalid message length
+          endif
+         else
+          errc=PACK_ERROR
+         endif
          if(present(ierr)) ierr=errc
          return
         end subroutine PackEnvDecodeMPIMsg
@@ -1138,11 +1177,11 @@
             if(present(pack_env)) this%recv_pack_env=>pack_env
             this%active=.TRUE.
            else
-            errc=MPI_INVALID_ARGS
+            errc=PACK_INVALID_ARGS
            endif
           endif
          else
-          errc=MPI_INVALID_ARGS
+          errc=PACK_INVALID_ARGS
          endif
          if(present(ierr)) ierr=errc
          return
@@ -1231,11 +1270,11 @@
             if(errc.eq.PACK_SUCCESS) then
              call MPI_Test(this%req,answ,this%stat,err_mpi)
              if(err_mpi.eq.MPI_SUCCESS) then
-              if(answ.eq..TRUE.) then
+              if(answ) then
                if(associated(this%recv_pack_env)) then !receive operation required decoding
                 call MPI_Get_Count(this%stat,MPI_CHARACTER,ml,err_mpi)
                 if(err_mpi.eq.MPI_SUCCESS) then
-                 call this%recv_pack_env%decode_mpi_msg(ml,errc)
+                 call this%recv_pack_env%decode_mpi_msg(int(ml,INTL),errc)
                  if(errc.eq.PACK_SUCCESS) this%recv_pack_env=>NULL()
                 else
                  errc=PACK_MPI_ERR
@@ -1279,7 +1318,7 @@
               if(associated(this%recv_pack_env)) then !receive operation required decoding
                call MPI_Get_Count(this%stat,MPI_CHARACTER,ml,err_mpi)
                if(err_mpi.eq.MPI_SUCCESS) then
-                call this%recv_pack_env%decode_mpi_msg(ml,errc)
+                call this%recv_pack_env%decode_mpi_msg(int(ml,INTL),errc)
                 if(errc.eq.PACK_SUCCESS) this%recv_pack_env=>NULL()
                else
                 errc=PACK_MPI_ERR
@@ -1323,6 +1362,7 @@
          integer(INTD):: obj_size,errc
          integer(INTL):: sl
          type(C_PTR):: cptr
+         character(C_CHAR), pointer, contiguous:: chp(:)
          integer(1), pointer:: fptr
 
          errc=PACK_SUCCESS
@@ -1331,8 +1371,8 @@
           sl=packet%space_left(errc)
           if(errc.eq.PACK_SUCCESS) then
            if(sl.ge.int(obj_size,INTL)) then
-            cptr=c_loc(packet%buffer(packet%length+1_INTL))
-            call c_f_pointer(cptr,fptr)
+            chp(1:)=>packet%buffer(packet%length+1_INTL:)
+            cptr=c_loc(chp); call c_f_pointer(cptr,fptr)
             fptr=obj; fptr=>NULL()
             packet%length=packet%length+obj_size
            else
@@ -1345,7 +1385,7 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine pack_integer1
-#endif
+
        end module pack_prim
 !===================================================================================
 !TESTING:
