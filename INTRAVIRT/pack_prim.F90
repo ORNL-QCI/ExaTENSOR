@@ -1,6 +1,6 @@
 !Basic object packing/unpacking primitives.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2016/07/27
+!REVISION: 2016/07/28
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -188,7 +188,6 @@
 !         module procedure pack_string
         end interface pack_builtin
         public pack_builtin
-!        public pack_universal
  !Unpacking for built-in types:
         interface unpack_builtin
 !         module procedure unpack_integer1
@@ -203,7 +202,6 @@
 !         module procedure unpack_string
         end interface unpack_builtin
         public unpack_builtin
-!        public unpack_universal
 
        contains
 !DEFINITION:
@@ -1355,6 +1353,7 @@
 !================================================
 !PACKING/UNPACKING for built-in types:
         subroutine pack_integer1(packet,obj,ierr)
+!Packs object <obj> into packet <packet>.
          implicit none
          class(obj_pack_t), intent(inout):: packet   !inout: packet
          integer(1), intent(in):: obj                !in: builtin type object
@@ -1385,8 +1384,72 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine pack_integer1
+!-------------------------------------------------
+#if 0
+        subroutine pack_universal(packet,obj,ierr)
+!Packs object <obj> into packet <packet>.
+         implicit none
+         class(obj_pack_t), intent(inout):: packet   !inout: packet
+         class(*), target, intent(in):: obj           !in: object of any type
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: obj_size,errc
+         integer(INTL):: sl
+         type(C_PTR):: cptr
+         character(C_CHAR), pointer, contiguous:: chp(:)
 
+         errc=PACK_SUCCESS
+         obj_size=size_of(obj) !size of the object in bytes
+         if(obj_size.gt.0) then
+          sl=packet%space_left(errc)
+          if(errc.eq.PACK_SUCCESS) then
+           if(sl.ge.int(obj_size,INTL)) then
+            cptr=c_loc(obj); call c_f_pointer(cptr,chp,(/obj_size/))
+            packet%buffer(packet%length+1:packet%length+obj_size)=chp(1:obj_size)
+            chp=>NULL(); packet%length=packet%length+obj_size
+           else
+            errc=PACK_OVERFLOW
+           endif
+          endif
+         else
+          errc=PACK_NULL
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine pack_universal
+!-------------------------------------------------------
+        subroutine unpack_universal(packet,pos,obj,ierr)
+!Unpacks object <obj> from packet <packet>. Argument <pos>
+!passes the initial position in the packet from where unpacking
+!should start and it is incremented at the end by the size of
+!the unpacked object.
+         implicit none
+         class(obj_pack_t), intent(in):: packet      !in: packet
+         integer(INTL), intent(inout):: pos          !inout: in:initial position; out: position of the next field
+         class(*), target, intent(inout):: obj        !out: object of any type
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: obj_size,errc
+         type(C_PTR):: cptr
+         character(C_CHAR), pointer, contiguous:: chp(:)
+
+         errc=PACK_SUCCESS
+         obj_size=size_of(obj) !size of the object in bytes
+         if(obj_size.gt.0) then
+          if(pos.gt.0.and.pos+obj_size-1.le.packet%length) then
+           cptr=c_loc(obj); call c_f_pointer(cptr,chp,(/obj_size/))
+           chp(1:obj_size)=packet%buffer(pos:pos+obj_size-1)
+           chp=>NULL(); pos=pos+obj_size
+          else
+           errc=PACK_INVALID_ARGS
+          endif
+         else
+          errc=PACK_NULL
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine unpack_universal
+#endif
        end module pack_prim
+!===================================================================================
 !===================================================================================
 !TESTING:
        module pack_prim_test
