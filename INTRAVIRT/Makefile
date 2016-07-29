@@ -174,17 +174,21 @@ LTHREAD = $(LTHREAD_$(TOOLKIT))
 #LINKING:
 LFLAGS = $(LIB) $(LTHREAD) $(MPI_LINK) $(LA_LINK) $(CUDA_LINK)
 
-OBJS = ./OBJ/pack_prim.o ./OBJ/virta.o
+OBJS = ./OBJ/pack_prim.o ./OBJ/virta.o ./OBJ/test_components.o
 #./OBJ/c_process.o
 
 $(NAME): $(OBJS)
 	ar cr lib$(NAME).a $(OBJS) ../GFC/libgfc.a ../DDSS/libddss.a ../TALSH/libtalsh.a
+	$(FCOMP) ./OBJ/test_components.o ../DDSS/OBJ/stsubs.o ./lib$(NAME).a $(LFLAGS) -o test_components.x
 
-./OBJ/pack_prim.o: pack_prim.F90 ../DDSS/OBJ/stsubs.o
+./OBJ/pack_prim.o: pack_prim.F90 ../DDSS/OBJ/stsubs.o ../DDSS/OBJ/dil_basic.o
 	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(FFLAGS) pack_prim.F90 -o ./OBJ/pack_prim.o
 
 ./OBJ/virta.o: virta.F90
 	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(FFLAGS) virta.F90 -o ./OBJ/virta.o
+
+./OBJ/test_components.o: test_components.F90 ./OBJ/pack_prim.o ../DDSS/OBJ/dil_basic.o
+	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(FFLAGS) test_components.F90 -o ./OBJ/test_components.o
 
 
 .PHONY: clean

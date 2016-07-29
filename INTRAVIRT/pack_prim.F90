@@ -1,6 +1,6 @@
 !Basic object packing/unpacking primitives.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2016/07/28
+!REVISION: 2016/07/29
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -76,6 +76,7 @@
        module pack_prim
         use, intrinsic:: ISO_C_BINDING, only: C_PTR,C_INT,C_CHAR,C_NULL_PTR,c_loc,c_f_pointer
         use stsubs, only: size_of
+        use dil_basic, only: INTD,INTL
 #ifdef USE_MPI_MOD
 #ifdef FORTRAN2008
         use mpi_f08      !MPI Fortran 2008 interface `This will not work
@@ -95,8 +96,8 @@
         logical, private:: VERBOSE=.TRUE. !verbosity for errors
         integer, private:: DEBUG=0        !debugging level (0:none)
  !Integers:
-        integer, parameter, private:: INTD=4
-        integer, parameter, private:: INTL=8
+!        integer, parameter, private:: INTD=4
+!        integer, parameter, private:: INTL=8
         integer, parameter, private:: INT_MPI=INTD
  !Error codes:
         integer(INTD), parameter, public:: PACK_SUCCESS=0       !success
@@ -1454,30 +1455,37 @@
 !TESTING:
        module pack_prim_test
         use pack_prim
+        use dil_basic, only: INTD,INTL
         implicit none
         private
         public test_pack_prim
 
        contains
 
-        function test_pack_prim() result(passed)
+        function test_pack_prim(errc) result(ierr)
          implicit none
-         logical:: passed
+         integer:: ierr
+         integer(INTD), intent(out):: errc
          real(4), parameter:: EPS4=1d-6
          real(8), parameter:: EPS8=1d-13
          integer(1), parameter:: i1=-63_1
          integer(2), parameter:: i2=-1645_2
          integer(4), parameter:: i4=-716894563_4
          integer(8), parameter:: i8=-1143557645657_8
-         logical, parameter:: l=.TRUE.
+         logical, parameter:: ld=.TRUE.
          real(4), parameter:: r4=-13.767357
          real(8), parameter:: r8=-0.8347853456D-5
          complex(4), parameter:: c4=cmplx(r4,-r4,4)
          complex(8), parameter:: c8=cmplx(r8,-r8,8)
          character(27), parameter:: s27='You better work correctly!!'
 
-         passed=.TRUE.
-         
+         type(pack_env_t):: envelope
+         type(obj_pack_t):: packet
+
+         ierr=0; errc=PACK_SUCCESS
+         call envelope%reserve_mem(errc); if(errc.ne.PACK_SUCCESS) then; ierr=1; return; endif
+
+         call envelope%destroy(errc); if(errc.ne.PACK_SUCCESS) then; ierr=2; return; endif
          return
         end function test_pack_prim
 
