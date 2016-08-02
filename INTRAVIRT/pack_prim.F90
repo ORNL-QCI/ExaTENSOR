@@ -1,6 +1,6 @@
 !Basic object packing/unpacking primitives.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2016/07/29
+!REVISION: 2016/08/02
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -507,7 +507,7 @@
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
 
-         answ=.FALSE.
+         answ=.FALSE.; errc=PACK_SUCCESS
          if(this%get_capacity().gt.0) then
           if(this%get_capacity().lt.this%get_length()) errc=PACK_ERROR
           if(this%get_max_packets().lt.this%get_num_packets()) errc=PACK_ERROR
@@ -543,69 +543,75 @@
          logical:: igless
 
          if(present(ignore_less)) then; igless=ignore_less; else; igless=.FALSE.; endif
-         if(this%is_healthy(errc)) then
+         if(this%get_capacity(errc).gt.0) then
           if(errc.eq.PACK_SUCCESS) then
-           if(.not.this%busy) then
-            if(present(mem_size)) then
-             if(mem_size.le.0) errc=PACK_INVALID_ARGS
-             buf_sz=mem_size
-            else
-             buf_sz=DEFAULT_ENVELOPE_CAPACITY
-            endif
-            if(present(max_packets)) then
-             if(max_packets.le.0) errc=PACK_INVALID_ARGS
-             max_pkts=max_packets
-            else
-             max_pkts=DEFAULT_MAX_PACKETS
-            endif
-            if(errc.eq.PACK_SUCCESS) then
+           if(.not.this%is_healthy(errc)) errc=PACK_ERROR
+          endif
+         endif
+         if(errc.eq.PACK_SUCCESS) then
+          if(.not.this%busy) then
+           if(present(mem_size)) then
+            if(mem_size.le.0) errc=PACK_INVALID_ARGS
+            buf_sz=mem_size
+           else
+            buf_sz=DEFAULT_ENVELOPE_CAPACITY
+           endif
+           if(present(max_packets)) then
+            if(max_packets.le.0) errc=PACK_INVALID_ARGS
+            max_pkts=max_packets
+           else
+            max_pkts=DEFAULT_MAX_PACKETS
+           endif
+           if(errc.eq.PACK_SUCCESS) then
  !Buffer:
-             if(buf_sz.gt.this%get_capacity()) then
-              allocate(chp(1:buf_sz),STAT=jerr)
-              if(jerr.eq.0) then
+            if(buf_sz.gt.this%get_capacity()) then
+             allocate(chp(1:buf_sz),STAT=jerr)
+             if(jerr.eq.0) then
+              if(this%get_capacity().gt.0) then
                chp(1:this%length)=this%buffer(1:this%length)
-               deallocate(this%buffer); this%buffer=>chp; chp=>NULL()
-              else
-               errc=PACK_ALLOC_FAILED
+               deallocate(this%buffer)
               endif
-             elseif((.not.igless).and.buf_sz.lt.this%get_capacity()) then
-              errc=PACK_INVALID_ARGS
+              this%buffer=>chp; chp=>NULL()
+             else
+              errc=PACK_ALLOC_FAILED
              endif
+            elseif((.not.igless).and.buf_sz.lt.this%get_capacity()) then
+             errc=PACK_INVALID_ARGS
+            endif
  !Tables:
-             if(max_pkts.gt.this%get_max_packets(errc)) then
-              if(errc.eq.PACK_SUCCESS) then
-               allocate(i8p(1:max_pkts),STAT=jerr)
+            if(max_pkts.gt.this%get_max_packets(errc)) then
+             if(errc.eq.PACK_SUCCESS) then
+              allocate(i8p(1:max_pkts),STAT=jerr)
+              if(jerr.eq.0) then
+               allocate(j8p(1:max_pkts),STAT=jerr)
                if(jerr.eq.0) then
-                allocate(j8p(1:max_pkts),STAT=jerr)
+                allocate(k8p(1:max_pkts),STAT=jerr)
                 if(jerr.eq.0) then
-                 allocate(k8p(1:max_pkts),STAT=jerr)
-                 if(jerr.eq.0) then
+                 if(this%get_max_packets().gt.0) then
                   i8p(1:this%num_packets)=this%pack_offset(1:this%num_packets)
                   j8p(1:this%num_packets)=this%pack_len(1:this%num_packets)
                   k8p(1:this%num_packets)=this%pack_tag(1:this%num_packets)
                   deallocate(this%pack_tag); deallocate(this%pack_len); deallocate(this%pack_offset)
-                  this%pack_offset=>i8p; this%pack_len=>j8p; this%pack_tag=>k8p
-                  i8p=>NULL(); j8p=>NULL(); k8p=>NULL()
-                 else
-                  deallocate(j8p); deallocate(i8p); errc=PACK_ALLOC_FAILED
                  endif
+                 this%pack_offset=>i8p; this%pack_len=>j8p; this%pack_tag=>k8p
+                 i8p=>NULL(); j8p=>NULL(); k8p=>NULL()
                 else
-                 deallocate(i8p); errc=PACK_ALLOC_FAILED
+                 deallocate(j8p); deallocate(i8p); errc=PACK_ALLOC_FAILED
                 endif
                else
-                errc=PACK_ALLOC_FAILED
+                deallocate(i8p); errc=PACK_ALLOC_FAILED
                endif
+              else
+               errc=PACK_ALLOC_FAILED
               endif
-             elseif((.not.igless).and.max_pkts.lt.this%get_max_packets(errc)) then
-              if(errc.eq.PACK_SUCCESS) errc=PACK_INVALID_ARGS
              endif
+            elseif((.not.igless).and.max_pkts.lt.this%get_max_packets(errc)) then
+             if(errc.eq.PACK_SUCCESS) errc=PACK_INVALID_ARGS
             endif
-           else
-            errc=PACK_BUSY
            endif
+          else
+           errc=PACK_BUSY
           endif
-         else
-          errc=PACK_ERROR
          endif
          if(present(ierr)) ierr=errc
          return
