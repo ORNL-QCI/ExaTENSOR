@@ -178,31 +178,33 @@
  !Packing for built-in types:
         interface pack_builtin
          module procedure pack_integer1
-!         module procedure pack_integer2
-!         module procedure pack_integer4
-!         module procedure pack_integer8
-!         module procedure pack_logical
-!         module procedure pack_real4
-!         module procedure pack_real8
-!         module procedure pack_complex4
-!         module procedure pack_complex8
-!         module procedure pack_string
+         module procedure pack_integer2
+         module procedure pack_integer4
+         module procedure pack_integer8
+         module procedure pack_logical
+         module procedure pack_real4
+         module procedure pack_real8
+         module procedure pack_complex4
+         module procedure pack_complex8
+         module procedure pack_string
         end interface pack_builtin
         public pack_builtin
+        public pack_string
  !Unpacking for built-in types:
         interface unpack_builtin
          module procedure unpack_integer1
-!         module procedure unpack_integer2
-!         module procedure unpack_integer4
-!         module procedure unpack_integer8
-!         module procedure unpack_logical
-!         module procedure unpack_real4
-!         module procedure unpack_real8
-!         module procedure unpack_complex4
-!         module procedure unpack_complex8
+         module procedure unpack_integer2
+         module procedure unpack_integer4
+         module procedure unpack_integer8
+         module procedure unpack_logical
+         module procedure unpack_real4
+         module procedure unpack_real8
+         module procedure unpack_complex4
+         module procedure unpack_complex8
 !         module procedure unpack_string
         end interface unpack_builtin
         public unpack_builtin
+        public unpack_string
 
        contains
 !DEFINITION:
@@ -1427,13 +1429,654 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine unpack_integer1
+!------------------------------------------------
+        subroutine pack_integer2(packet,obj,ierr)
+!Packs object <obj> into packet <packet>. The length of the packet
+!is increased by the storage size of the object in bytes.
+         implicit none
+         class(obj_pack_t), intent(inout):: packet   !inout: packet
+         integer(2), intent(in):: obj                !in: builtin type object
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: obj_size,errc
+         integer(INTL):: sl
+         type(C_PTR):: cptr
+         character(C_CHAR), pointer, contiguous:: chp(:)
+         integer(2), pointer:: fptr
+
+         errc=PACK_SUCCESS
+         obj_size=size_of(obj) !size of the object in bytes
+         if(obj_size.gt.0) then
+          sl=packet%space_left(errc)
+          if(errc.eq.PACK_SUCCESS) then
+           if(sl.ge.int(obj_size,INTL)) then
+            chp(1:)=>packet%buffer(packet%length+1_INTL:)
+            cptr=c_loc(chp); call c_f_pointer(cptr,fptr)
+            fptr=obj; fptr=>NULL()
+            packet%length=packet%length+obj_size
+           else
+            errc=PACK_OVERFLOW
+           endif
+          endif
+         else
+          errc=PACK_NULL
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine pack_integer2
+!---------------------------------------------------------
+        subroutine unpack_integer2(packet,obj,ierr,offset)
+!Unpacks object <obj> from packet <packet> starting at offset <offset>.
+!After unpacking, the offset is automatically incremented to the next field.
+         implicit none
+         class(obj_pack_t), intent(in):: packet          !in: packet
+         integer(2), intent(out):: obj                   !out: builtin type object
+         integer(INTD), intent(out), optional:: ierr     !out: error code
+         integer(INTL), intent(inout), optional:: offset !inout: starting offset in the packet buffer
+         integer(INTD):: obj_size,errc
+         integer(INTL):: ppos
+         type(C_PTR):: cptr
+         character(C_CHAR), pointer, contiguous:: chp(:)
+         integer(2), pointer:: fptr
+
+         errc=PACK_SUCCESS
+         obj_size=size_of(obj) !size of the object in bytes
+         if(obj_size.gt.0) then
+          if(present(offset)) then; ppos=offset; else; ppos=1_INTL; endif
+          if(ppos.gt.0_INTL.and.ppos+obj_size-1.le.packet%get_length(errc)) then
+           if(errc.eq.PACK_SUCCESS) then
+            chp(1:)=>packet%buffer(ppos:)
+            cptr=c_loc(chp); call c_f_pointer(cptr,fptr)
+            obj=fptr; fptr=>NULL(); ppos=ppos+obj_size
+            if(present(offset)) offset=ppos
+           endif
+          else
+           errc=PACK_INVALID_ARGS
+          endif
+         else
+          errc=PACK_NULL
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine unpack_integer2
+!------------------------------------------------
+        subroutine pack_integer4(packet,obj,ierr)
+!Packs object <obj> into packet <packet>. The length of the packet
+!is increased by the storage size of the object in bytes.
+         implicit none
+         class(obj_pack_t), intent(inout):: packet   !inout: packet
+         integer(4), intent(in):: obj                !in: builtin type object
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: obj_size,errc
+         integer(INTL):: sl
+         type(C_PTR):: cptr
+         character(C_CHAR), pointer, contiguous:: chp(:)
+         integer(4), pointer:: fptr
+
+         errc=PACK_SUCCESS
+         obj_size=size_of(obj) !size of the object in bytes
+         if(obj_size.gt.0) then
+          sl=packet%space_left(errc)
+          if(errc.eq.PACK_SUCCESS) then
+           if(sl.ge.int(obj_size,INTL)) then
+            chp(1:)=>packet%buffer(packet%length+1_INTL:)
+            cptr=c_loc(chp); call c_f_pointer(cptr,fptr)
+            fptr=obj; fptr=>NULL()
+            packet%length=packet%length+obj_size
+           else
+            errc=PACK_OVERFLOW
+           endif
+          endif
+         else
+          errc=PACK_NULL
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine pack_integer4
+!---------------------------------------------------------
+        subroutine unpack_integer4(packet,obj,ierr,offset)
+!Unpacks object <obj> from packet <packet> starting at offset <offset>.
+!After unpacking, the offset is automatically incremented to the next field.
+         implicit none
+         class(obj_pack_t), intent(in):: packet          !in: packet
+         integer(4), intent(out):: obj                   !out: builtin type object
+         integer(INTD), intent(out), optional:: ierr     !out: error code
+         integer(INTL), intent(inout), optional:: offset !inout: starting offset in the packet buffer
+         integer(INTD):: obj_size,errc
+         integer(INTL):: ppos
+         type(C_PTR):: cptr
+         character(C_CHAR), pointer, contiguous:: chp(:)
+         integer(4), pointer:: fptr
+
+         errc=PACK_SUCCESS
+         obj_size=size_of(obj) !size of the object in bytes
+         if(obj_size.gt.0) then
+          if(present(offset)) then; ppos=offset; else; ppos=1_INTL; endif
+          if(ppos.gt.0_INTL.and.ppos+obj_size-1.le.packet%get_length(errc)) then
+           if(errc.eq.PACK_SUCCESS) then
+            chp(1:)=>packet%buffer(ppos:)
+            cptr=c_loc(chp); call c_f_pointer(cptr,fptr)
+            obj=fptr; fptr=>NULL(); ppos=ppos+obj_size
+            if(present(offset)) offset=ppos
+           endif
+          else
+           errc=PACK_INVALID_ARGS
+          endif
+         else
+          errc=PACK_NULL
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine unpack_integer4
+!------------------------------------------------
+        subroutine pack_integer8(packet,obj,ierr)
+!Packs object <obj> into packet <packet>. The length of the packet
+!is increased by the storage size of the object in bytes.
+         implicit none
+         class(obj_pack_t), intent(inout):: packet   !inout: packet
+         integer(8), intent(in):: obj                !in: builtin type object
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: obj_size,errc
+         integer(INTL):: sl
+         type(C_PTR):: cptr
+         character(C_CHAR), pointer, contiguous:: chp(:)
+         integer(8), pointer:: fptr
+
+         errc=PACK_SUCCESS
+         obj_size=size_of(obj) !size of the object in bytes
+         if(obj_size.gt.0) then
+          sl=packet%space_left(errc)
+          if(errc.eq.PACK_SUCCESS) then
+           if(sl.ge.int(obj_size,INTL)) then
+            chp(1:)=>packet%buffer(packet%length+1_INTL:)
+            cptr=c_loc(chp); call c_f_pointer(cptr,fptr)
+            fptr=obj; fptr=>NULL()
+            packet%length=packet%length+obj_size
+           else
+            errc=PACK_OVERFLOW
+           endif
+          endif
+         else
+          errc=PACK_NULL
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine pack_integer8
+!---------------------------------------------------------
+        subroutine unpack_integer8(packet,obj,ierr,offset)
+!Unpacks object <obj> from packet <packet> starting at offset <offset>.
+!After unpacking, the offset is automatically incremented to the next field.
+         implicit none
+         class(obj_pack_t), intent(in):: packet          !in: packet
+         integer(8), intent(out):: obj                   !out: builtin type object
+         integer(INTD), intent(out), optional:: ierr     !out: error code
+         integer(INTL), intent(inout), optional:: offset !inout: starting offset in the packet buffer
+         integer(INTD):: obj_size,errc
+         integer(INTL):: ppos
+         type(C_PTR):: cptr
+         character(C_CHAR), pointer, contiguous:: chp(:)
+         integer(8), pointer:: fptr
+
+         errc=PACK_SUCCESS
+         obj_size=size_of(obj) !size of the object in bytes
+         if(obj_size.gt.0) then
+          if(present(offset)) then; ppos=offset; else; ppos=1_INTL; endif
+          if(ppos.gt.0_INTL.and.ppos+obj_size-1.le.packet%get_length(errc)) then
+           if(errc.eq.PACK_SUCCESS) then
+            chp(1:)=>packet%buffer(ppos:)
+            cptr=c_loc(chp); call c_f_pointer(cptr,fptr)
+            obj=fptr; fptr=>NULL(); ppos=ppos+obj_size
+            if(present(offset)) offset=ppos
+           endif
+          else
+           errc=PACK_INVALID_ARGS
+          endif
+         else
+          errc=PACK_NULL
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine unpack_integer8
+!-----------------------------------------------
+        subroutine pack_logical(packet,obj,ierr)
+!Packs object <obj> into packet <packet>. The length of the packet
+!is increased by the storage size of the object in bytes.
+         implicit none
+         class(obj_pack_t), intent(inout):: packet   !inout: packet
+         logical, intent(in):: obj                   !in: builtin type object
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: obj_size,errc
+         integer(INTL):: sl
+         type(C_PTR):: cptr
+         character(C_CHAR), pointer, contiguous:: chp(:)
+         logical, pointer:: fptr
+
+         errc=PACK_SUCCESS
+         obj_size=size_of(obj) !size of the object in bytes
+         if(obj_size.gt.0) then
+          sl=packet%space_left(errc)
+          if(errc.eq.PACK_SUCCESS) then
+           if(sl.ge.int(obj_size,INTL)) then
+            chp(1:)=>packet%buffer(packet%length+1_INTL:)
+            cptr=c_loc(chp); call c_f_pointer(cptr,fptr)
+            fptr=obj; fptr=>NULL()
+            packet%length=packet%length+obj_size
+           else
+            errc=PACK_OVERFLOW
+           endif
+          endif
+         else
+          errc=PACK_NULL
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine pack_logical
+!--------------------------------------------------------
+        subroutine unpack_logical(packet,obj,ierr,offset)
+!Unpacks object <obj> from packet <packet> starting at offset <offset>.
+!After unpacking, the offset is automatically incremented to the next field.
+         implicit none
+         class(obj_pack_t), intent(in):: packet          !in: packet
+         logical, intent(out):: obj                      !out: builtin type object
+         integer(INTD), intent(out), optional:: ierr     !out: error code
+         integer(INTL), intent(inout), optional:: offset !inout: starting offset in the packet buffer
+         integer(INTD):: obj_size,errc
+         integer(INTL):: ppos
+         type(C_PTR):: cptr
+         character(C_CHAR), pointer, contiguous:: chp(:)
+         logical, pointer:: fptr
+
+         errc=PACK_SUCCESS
+         obj_size=size_of(obj) !size of the object in bytes
+         if(obj_size.gt.0) then
+          if(present(offset)) then; ppos=offset; else; ppos=1_INTL; endif
+          if(ppos.gt.0_INTL.and.ppos+obj_size-1.le.packet%get_length(errc)) then
+           if(errc.eq.PACK_SUCCESS) then
+            chp(1:)=>packet%buffer(ppos:)
+            cptr=c_loc(chp); call c_f_pointer(cptr,fptr)
+            obj=fptr; fptr=>NULL(); ppos=ppos+obj_size
+            if(present(offset)) offset=ppos
+           endif
+          else
+           errc=PACK_INVALID_ARGS
+          endif
+         else
+          errc=PACK_NULL
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine unpack_logical
+!---------------------------------------------
+        subroutine pack_real4(packet,obj,ierr)
+!Packs object <obj> into packet <packet>. The length of the packet
+!is increased by the storage size of the object in bytes.
+         implicit none
+         class(obj_pack_t), intent(inout):: packet   !inout: packet
+         real(4), intent(in):: obj                   !in: builtin type object
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: obj_size,errc
+         integer(INTL):: sl
+         type(C_PTR):: cptr
+         character(C_CHAR), pointer, contiguous:: chp(:)
+         real(4), pointer:: fptr
+
+         errc=PACK_SUCCESS
+         obj_size=size_of(obj) !size of the object in bytes
+         if(obj_size.gt.0) then
+          sl=packet%space_left(errc)
+          if(errc.eq.PACK_SUCCESS) then
+           if(sl.ge.int(obj_size,INTL)) then
+            chp(1:)=>packet%buffer(packet%length+1_INTL:)
+            cptr=c_loc(chp); call c_f_pointer(cptr,fptr)
+            fptr=obj; fptr=>NULL()
+            packet%length=packet%length+obj_size
+           else
+            errc=PACK_OVERFLOW
+           endif
+          endif
+         else
+          errc=PACK_NULL
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine pack_real4
+!------------------------------------------------------
+        subroutine unpack_real4(packet,obj,ierr,offset)
+!Unpacks object <obj> from packet <packet> starting at offset <offset>.
+!After unpacking, the offset is automatically incremented to the next field.
+         implicit none
+         class(obj_pack_t), intent(in):: packet          !in: packet
+         real(4), intent(out):: obj                      !out: builtin type object
+         integer(INTD), intent(out), optional:: ierr     !out: error code
+         integer(INTL), intent(inout), optional:: offset !inout: starting offset in the packet buffer
+         integer(INTD):: obj_size,errc
+         integer(INTL):: ppos
+         type(C_PTR):: cptr
+         character(C_CHAR), pointer, contiguous:: chp(:)
+         real(4), pointer:: fptr
+
+         errc=PACK_SUCCESS
+         obj_size=size_of(obj) !size of the object in bytes
+         if(obj_size.gt.0) then
+          if(present(offset)) then; ppos=offset; else; ppos=1_INTL; endif
+          if(ppos.gt.0_INTL.and.ppos+obj_size-1.le.packet%get_length(errc)) then
+           if(errc.eq.PACK_SUCCESS) then
+            chp(1:)=>packet%buffer(ppos:)
+            cptr=c_loc(chp); call c_f_pointer(cptr,fptr)
+            obj=fptr; fptr=>NULL(); ppos=ppos+obj_size
+            if(present(offset)) offset=ppos
+           endif
+          else
+           errc=PACK_INVALID_ARGS
+          endif
+         else
+          errc=PACK_NULL
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine unpack_real4
+!---------------------------------------------
+        subroutine pack_real8(packet,obj,ierr)
+!Packs object <obj> into packet <packet>. The length of the packet
+!is increased by the storage size of the object in bytes.
+         implicit none
+         class(obj_pack_t), intent(inout):: packet   !inout: packet
+         real(8), intent(in):: obj                   !in: builtin type object
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: obj_size,errc
+         integer(INTL):: sl
+         type(C_PTR):: cptr
+         character(C_CHAR), pointer, contiguous:: chp(:)
+         real(8), pointer:: fptr
+
+         errc=PACK_SUCCESS
+         obj_size=size_of(obj) !size of the object in bytes
+         if(obj_size.gt.0) then
+          sl=packet%space_left(errc)
+          if(errc.eq.PACK_SUCCESS) then
+           if(sl.ge.int(obj_size,INTL)) then
+            chp(1:)=>packet%buffer(packet%length+1_INTL:)
+            cptr=c_loc(chp); call c_f_pointer(cptr,fptr)
+            fptr=obj; fptr=>NULL()
+            packet%length=packet%length+obj_size
+           else
+            errc=PACK_OVERFLOW
+           endif
+          endif
+         else
+          errc=PACK_NULL
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine pack_real8
+!------------------------------------------------------
+        subroutine unpack_real8(packet,obj,ierr,offset)
+!Unpacks object <obj> from packet <packet> starting at offset <offset>.
+!After unpacking, the offset is automatically incremented to the next field.
+         implicit none
+         class(obj_pack_t), intent(in):: packet          !in: packet
+         real(8), intent(out):: obj                      !out: builtin type object
+         integer(INTD), intent(out), optional:: ierr     !out: error code
+         integer(INTL), intent(inout), optional:: offset !inout: starting offset in the packet buffer
+         integer(INTD):: obj_size,errc
+         integer(INTL):: ppos
+         type(C_PTR):: cptr
+         character(C_CHAR), pointer, contiguous:: chp(:)
+         real(8), pointer:: fptr
+
+         errc=PACK_SUCCESS
+         obj_size=size_of(obj) !size of the object in bytes
+         if(obj_size.gt.0) then
+          if(present(offset)) then; ppos=offset; else; ppos=1_INTL; endif
+          if(ppos.gt.0_INTL.and.ppos+obj_size-1.le.packet%get_length(errc)) then
+           if(errc.eq.PACK_SUCCESS) then
+            chp(1:)=>packet%buffer(ppos:)
+            cptr=c_loc(chp); call c_f_pointer(cptr,fptr)
+            obj=fptr; fptr=>NULL(); ppos=ppos+obj_size
+            if(present(offset)) offset=ppos
+           endif
+          else
+           errc=PACK_INVALID_ARGS
+          endif
+         else
+          errc=PACK_NULL
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine unpack_real8
+!------------------------------------------------
+        subroutine pack_complex4(packet,obj,ierr)
+!Packs object <obj> into packet <packet>. The length of the packet
+!is increased by the storage size of the object in bytes.
+         implicit none
+         class(obj_pack_t), intent(inout):: packet   !inout: packet
+         complex(4), intent(in):: obj                !in: builtin type object
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: obj_size,errc
+         integer(INTL):: sl
+         type(C_PTR):: cptr
+         character(C_CHAR), pointer, contiguous:: chp(:)
+         complex(4), pointer:: fptr
+
+         errc=PACK_SUCCESS
+         obj_size=size_of(obj) !size of the object in bytes
+         if(obj_size.gt.0) then
+          sl=packet%space_left(errc)
+          if(errc.eq.PACK_SUCCESS) then
+           if(sl.ge.int(obj_size,INTL)) then
+            chp(1:)=>packet%buffer(packet%length+1_INTL:)
+            cptr=c_loc(chp); call c_f_pointer(cptr,fptr)
+            fptr=obj; fptr=>NULL()
+            packet%length=packet%length+obj_size
+           else
+            errc=PACK_OVERFLOW
+           endif
+          endif
+         else
+          errc=PACK_NULL
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine pack_complex4
+!---------------------------------------------------------
+        subroutine unpack_complex4(packet,obj,ierr,offset)
+!Unpacks object <obj> from packet <packet> starting at offset <offset>.
+!After unpacking, the offset is automatically incremented to the next field.
+         implicit none
+         class(obj_pack_t), intent(in):: packet          !in: packet
+         complex(4), intent(out):: obj                   !out: builtin type object
+         integer(INTD), intent(out), optional:: ierr     !out: error code
+         integer(INTL), intent(inout), optional:: offset !inout: starting offset in the packet buffer
+         integer(INTD):: obj_size,errc
+         integer(INTL):: ppos
+         type(C_PTR):: cptr
+         character(C_CHAR), pointer, contiguous:: chp(:)
+         complex(4), pointer:: fptr
+
+         errc=PACK_SUCCESS
+         obj_size=size_of(obj) !size of the object in bytes
+         if(obj_size.gt.0) then
+          if(present(offset)) then; ppos=offset; else; ppos=1_INTL; endif
+          if(ppos.gt.0_INTL.and.ppos+obj_size-1.le.packet%get_length(errc)) then
+           if(errc.eq.PACK_SUCCESS) then
+            chp(1:)=>packet%buffer(ppos:)
+            cptr=c_loc(chp); call c_f_pointer(cptr,fptr)
+            obj=fptr; fptr=>NULL(); ppos=ppos+obj_size
+            if(present(offset)) offset=ppos
+           endif
+          else
+           errc=PACK_INVALID_ARGS
+          endif
+         else
+          errc=PACK_NULL
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine unpack_complex4
+!------------------------------------------------
+        subroutine pack_complex8(packet,obj,ierr)
+!Packs object <obj> into packet <packet>. The length of the packet
+!is increased by the storage size of the object in bytes.
+         implicit none
+         class(obj_pack_t), intent(inout):: packet   !inout: packet
+         complex(8), intent(in):: obj                !in: builtin type object
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: obj_size,errc
+         integer(INTL):: sl
+         type(C_PTR):: cptr
+         character(C_CHAR), pointer, contiguous:: chp(:)
+         complex(8), pointer:: fptr
+
+         errc=PACK_SUCCESS
+         obj_size=size_of(obj) !size of the object in bytes
+         if(obj_size.gt.0) then
+          sl=packet%space_left(errc)
+          if(errc.eq.PACK_SUCCESS) then
+           if(sl.ge.int(obj_size,INTL)) then
+            chp(1:)=>packet%buffer(packet%length+1_INTL:)
+            cptr=c_loc(chp); call c_f_pointer(cptr,fptr)
+            fptr=obj; fptr=>NULL()
+            packet%length=packet%length+obj_size
+           else
+            errc=PACK_OVERFLOW
+           endif
+          endif
+         else
+          errc=PACK_NULL
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine pack_complex8
+!---------------------------------------------------------
+        subroutine unpack_complex8(packet,obj,ierr,offset)
+!Unpacks object <obj> from packet <packet> starting at offset <offset>.
+!After unpacking, the offset is automatically incremented to the next field.
+         implicit none
+         class(obj_pack_t), intent(in):: packet          !in: packet
+         complex(8), intent(out):: obj                   !out: builtin type object
+         integer(INTD), intent(out), optional:: ierr     !out: error code
+         integer(INTL), intent(inout), optional:: offset !inout: starting offset in the packet buffer
+         integer(INTD):: obj_size,errc
+         integer(INTL):: ppos
+         type(C_PTR):: cptr
+         character(C_CHAR), pointer, contiguous:: chp(:)
+         complex(8), pointer:: fptr
+
+         errc=PACK_SUCCESS
+         obj_size=size_of(obj) !size of the object in bytes
+         if(obj_size.gt.0) then
+          if(present(offset)) then; ppos=offset; else; ppos=1_INTL; endif
+          if(ppos.gt.0_INTL.and.ppos+obj_size-1.le.packet%get_length(errc)) then
+           if(errc.eq.PACK_SUCCESS) then
+            chp(1:)=>packet%buffer(ppos:)
+            cptr=c_loc(chp); call c_f_pointer(cptr,fptr)
+            obj=fptr; fptr=>NULL(); ppos=ppos+obj_size
+            if(present(offset)) offset=ppos
+           endif
+          else
+           errc=PACK_INVALID_ARGS
+          endif
+         else
+          errc=PACK_NULL
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine unpack_complex8
+!----------------------------------------------
+        subroutine pack_string(packet,obj,ierr)
+!Packs object <obj> into packet <packet>. The length of the packet
+!is increased by the storage size of the object in bytes.
+         implicit none
+         class(obj_pack_t), intent(inout):: packet   !inout: packet
+         character(*), intent(in):: obj              !in: builtin type object
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: obj_size,errc
+         integer(INTL):: sl
+         integer(8):: l,i
+
+         errc=PACK_SUCCESS; l=len(obj)
+         if(l.gt.0) then
+          obj_size=size_of(obj(1:1))
+          if(obj_size.eq.1) then
+           sl=packet%space_left(errc)
+           if(errc.eq.PACK_SUCCESS) then
+            if(sl.ge.int(8+l,INTL)) then !8 is the leading integer(8) that contains the length of the string
+             call pack_builtin(packet,l,errc)
+             if(errc.eq.PACK_SUCCESS) then
+              do i=1,l; packet%buffer(packet%length+i)=obj(i:i); enddo
+              packet%length=packet%length+l
+             endif
+            else
+             errc=PACK_OVERFLOW
+            endif
+           endif
+          else
+           write(*,'("#FATAL(pack_prim::pack_string): Fortran character size is not equal to 1: ",i11)') obj_size
+           stop
+          endif
+         else
+          errc=PACK_NULL
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine pack_string
+!-------------------------------------------------------
+        subroutine unpack_string(packet,obj,ierr,offset)
+!Unpacks object <obj> from packet <packet> starting at offset <offset>.
+!After unpacking, the offset is automatically incremented to the next field.
+         implicit none
+         class(obj_pack_t), intent(in):: packet          !in: packet
+         character(*), intent(inout):: obj               !out: builtin type object
+         integer(INTD), intent(out), optional:: ierr     !out: error code
+         integer(INTL), intent(inout), optional:: offset !inout: starting offset in the packet buffer
+         integer(INTD):: obj_size,errc
+         integer(INTL):: ppos
+         integer(8):: l,i
+
+         errc=PACK_SUCCESS
+         if(len(obj).gt.0) then
+          obj_size=size_of(obj(1:1)) !size of the object in bytes
+          if(obj_size.eq.1) then
+           if(present(offset)) then; ppos=offset; else; ppos=1_INTL; endif
+           if(ppos.gt.0_INTL) then
+            call unpack_builtin(packet,l,errc,offset=ppos)
+            if(errc.eq.PACK_SUCCESS) then
+             if(l.gt.0) then
+              if(l.le.len(obj)) then
+               if(ppos+l-1.le.packet%get_length(errc)) then
+                if(errc.eq.PACK_SUCCESS) then
+                 do i=1,l; obj(i:i)=packet%buffer(ppos+i-1_INTL); enddo
+                 ppos=ppos+l; if(present(offset)) offset=ppos
+                endif
+               else
+                errc=PACK_ERROR
+               endif
+              else
+               errc=PACK_OVERFLOW
+              endif
+             else
+              errc=PACK_ERROR
+             endif
+            endif
+           else
+            errc=PACK_INVALID_ARGS
+           endif
+          else
+           write(*,'("#FATAL(pack_prim::pack_string): Fortran character size is not equal to 1: ",i11)') obj_size
+           stop
+          endif
+         else
+          errc=PACK_INVALID_ARGS
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine unpack_string
 !-------------------------------------------------
 #if 0
         subroutine pack_universal(packet,obj,ierr) !`Will not work
 !Packs object <obj> into packet <packet>.
          implicit none
          class(obj_pack_t), intent(inout):: packet   !inout: packet
-         class(*), target, intent(in):: obj           !in: object of any type
+         class(*), target, intent(in):: obj          !in: object of any type
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: obj_size,errc
          integer(INTL):: sl
@@ -1468,7 +2111,7 @@
          implicit none
          class(obj_pack_t), intent(in):: packet      !in: packet
          integer(INTL), intent(inout):: pos          !inout: in:initial position; out: position of the next field
-         class(*), target, intent(inout):: obj        !out: object of any type
+         class(*), target, intent(inout):: obj       !out: object of any type
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: obj_size,errc
          type(C_PTR):: cptr
@@ -1541,6 +2184,7 @@
          real(8):: rr8
          complex(4):: cc4
          complex(8):: cc8
+         character(128):: str=' '
          integer(INTD):: my_rank,comm_size,i,n
          integer(INTL):: mtag
          logical:: delivered
@@ -1560,7 +2204,6 @@
           call envelope%acquire_packet(packet,errc); if(errc.ne.PACK_SUCCESS) then; ierr=5; return; endif
           call pack_builtin(packet,i1,errc); if(errc.ne.PACK_SUCCESS) then; ierr=6; return; endif
           call envelope%seal_packet(errc,tag=1_INTL); if(errc.ne.PACK_SUCCESS) then; ierr=7; return; endif
-#if 0
   !Pack integer2 -> packet 2:
           call envelope%acquire_packet(packet,errc); if(errc.ne.PACK_SUCCESS) then; ierr=8; return; endif
           call pack_builtin(packet,i2,errc); if(errc.ne.PACK_SUCCESS) then; ierr=9; return; endif
@@ -1593,91 +2236,98 @@
           call envelope%acquire_packet(packet,errc); if(errc.ne.PACK_SUCCESS) then; ierr=29; return; endif
           call pack_builtin(packet,c8,errc); if(errc.ne.PACK_SUCCESS) then; ierr=30; return; endif
           call envelope%seal_packet(errc,tag=9_INTL); if(errc.ne.PACK_SUCCESS) then; ierr=31; return; endif
-#endif
-  !Send the packet envelope to other MPI processes (9 packets):
+  !Pack string -> packet 10:
+          call envelope%acquire_packet(packet,errc); if(errc.ne.PACK_SUCCESS) then; ierr=32; return; endif
+          call pack_builtin(packet,s27,errc); if(errc.ne.PACK_SUCCESS) then; ierr=33; return; endif
+          call envelope%seal_packet(errc,tag=10_INTL); if(errc.ne.PACK_SUCCESS) then; ierr=34; return; endif
+  !Send the packet envelope to other MPI processes (10 packets):
           do i=1,comm_size-1
-           call envelope%send(i,comm_hl(i),errc,tag=9); if(errc.ne.PACK_SUCCESS) then; ierr=32; return; endif
+           call envelope%send(i,comm_hl(i),errc,tag=13); if(errc.ne.PACK_SUCCESS) then; ierr=35; return; endif
           enddo
   !Test the completion of all sends:
           n=comm_size-1
           do while(n.gt.0)
            do i=1,comm_size-1
             if(comm_hl(i)%is_active(errc)) then
-             if(errc.ne.PACK_SUCCESS) then; ierr=33; return; endif
+             if(errc.ne.PACK_SUCCESS) then; ierr=36; return; endif
              if(comm_hl(i)%test(errc)) then
-              if(errc.ne.PACK_SUCCESS) then; ierr=34; return; endif
+              if(errc.ne.PACK_SUCCESS) then; ierr=37; return; endif
               n=n-1; call comm_hl(i)%clean(errc)
-              if(errc.ne.PACK_SUCCESS) then; ierr=35; return; endif
+              if(errc.ne.PACK_SUCCESS) then; ierr=38; return; endif
              endif
             endif
-            if(errc.ne.PACK_SUCCESS) then; ierr=36; return; endif
+            if(errc.ne.PACK_SUCCESS) then; ierr=39; return; endif
            enddo
           enddo
           deallocate(comm_hl)
          else
  !Other processes are receiving the packet envelope from process 0:
-          allocate(comm_hl(1),STAT=ierr); if(ierr.ne.0) then; ierr=37; errc=-888; return; endif
+          allocate(comm_hl(1),STAT=ierr); if(ierr.ne.0) then; ierr=40; errc=-888; return; endif
   !Initiate a receive of the packet envelope:
           do while(.not.envelope%receive(comm_hl(1),errc,proc_rank=0)) !wait until the message has been initiated
-           if(errc.ne.PACK_SUCCESS) then; ierr=38; return; endif
+           if(errc.ne.PACK_SUCCESS) then; ierr=41; return; endif
           enddo
-          if(errc.ne.PACK_SUCCESS) then; ierr=39; return; endif
+          if(errc.ne.PACK_SUCCESS) then; ierr=42; return; endif
   !Wait upon the completion of the receive:
-          call comm_hl(1)%wait(errc); if(errc.ne.PACK_SUCCESS) then; ierr=40; return; endif
-  !Unpack packets from the envelope (9 packets):
-          n=0; n=envelope%get_num_packets(errc); if(errc.ne.PACK_SUCCESS) then; ierr=41; return; endif
-          if(n.ne.1) then; ierr=42; errc=-777; return; endif
+          call comm_hl(1)%wait(errc); if(errc.ne.PACK_SUCCESS) then; ierr=43; return; endif
+  !Unpack packets from the envelope (10 packets):
+          n=0; n=envelope%get_num_packets(errc); if(errc.ne.PACK_SUCCESS) then; ierr=44; return; endif
+          if(n.ne.10) then; ierr=45; errc=-777; return; endif
    !Unpack integer1 (packet 1):
           call envelope%extract_packet(1,packet,errc,tag=mtag,preclean=.TRUE.)
-          if(errc.ne.PACK_SUCCESS) then; ierr=43; return; endif
-          call unpack_builtin(packet,ii1,errc); if(errc.ne.PACK_SUCCESS) then; ierr=44; return; endif
-          if(ii1.ne.i1) then; ierr=45; errc=1001; return; endif
-          write(*,'("#DEBUG[",i3,"]: i1 = ",i11)') my_rank,ii1 !debug
-#if 0
+          if(errc.ne.PACK_SUCCESS) then; ierr=46; return; endif
+          call unpack_builtin(packet,ii1,errc); if(errc.ne.PACK_SUCCESS) then; ierr=47; return; endif
+          !write(*,'("#DEBUG[",i3,"]: i1 = ",i11)') my_rank,ii1 !debug
+          if(ii1.ne.i1) then; ierr=48; errc=1001; return; endif
    !Unpack integer2 (packet 2):
           call envelope%extract_packet(2,packet,errc,tag=mtag,preclean=.TRUE.)
-          if(errc.ne.PACK_SUCCESS) then; ierr=43; return; endif
-          call unpack_builtin(packet,ii2,errc); if(errc.ne.PACK_SUCCESS) then; ierr=44; return; endif
-          if(ii2.ne.i2) then; ierr=45; errc=1001; return; endif
+          if(errc.ne.PACK_SUCCESS) then; ierr=49; return; endif
+          call unpack_builtin(packet,ii2,errc); if(errc.ne.PACK_SUCCESS) then; ierr=50; return; endif
+          if(ii2.ne.i2) then; ierr=51; errc=1001; return; endif
    !Unpack integer4 (packet 3):
           call envelope%extract_packet(3,packet,errc,tag=mtag,preclean=.TRUE.)
-          if(errc.ne.PACK_SUCCESS) then; ierr=43; return; endif
-          call unpack_builtin(packet,ii4,errc); if(errc.ne.PACK_SUCCESS) then; ierr=44; return; endif
-          if(ii4.ne.i4) then; ierr=45; errc=1001; return; endif
+          if(errc.ne.PACK_SUCCESS) then; ierr=52; return; endif
+          call unpack_builtin(packet,ii4,errc); if(errc.ne.PACK_SUCCESS) then; ierr=53; return; endif
+          if(ii4.ne.i4) then; ierr=54; errc=1001; return; endif
    !Unpack integer8 (packet 4):
           call envelope%extract_packet(4,packet,errc,tag=mtag,preclean=.TRUE.)
-          if(errc.ne.PACK_SUCCESS) then; ierr=43; return; endif
-          call unpack_builtin(packet,ii8,errc); if(errc.ne.PACK_SUCCESS) then; ierr=44; return; endif
-          if(ii8.ne.i8) then; ierr=45; errc=1001; return; endif
+          if(errc.ne.PACK_SUCCESS) then; ierr=55; return; endif
+          call unpack_builtin(packet,ii8,errc); if(errc.ne.PACK_SUCCESS) then; ierr=56; return; endif
+          if(ii8.ne.i8) then; ierr=57; errc=1001; return; endif
    !Unpack logical (packet 5):
           call envelope%extract_packet(5,packet,errc,tag=mtag,preclean=.TRUE.)
-          if(errc.ne.PACK_SUCCESS) then; ierr=43; return; endif
-          call unpack_builtin(packet,lld,errc); if(errc.ne.PACK_SUCCESS) then; ierr=44; return; endif
-          if(lld.ne.ld) then; ierr=45; errc=1001; return; endif
+          if(errc.ne.PACK_SUCCESS) then; ierr=58; return; endif
+          call unpack_builtin(packet,lld,errc); if(errc.ne.PACK_SUCCESS) then; ierr=59; return; endif
+          if(lld.neqv.ld) then; ierr=60; errc=1001; return; endif
    !Unpack real4 (packet 6):
           call envelope%extract_packet(6,packet,errc,tag=mtag,preclean=.TRUE.)
-          if(errc.ne.PACK_SUCCESS) then; ierr=43; return; endif
-          call unpack_builtin(packet,rr4,errc); if(errc.ne.PACK_SUCCESS) then; ierr=44; return; endif
-          if(rr4.ne.r4) then; ierr=45; errc=1001; return; endif
+          if(errc.ne.PACK_SUCCESS) then; ierr=61; return; endif
+          call unpack_builtin(packet,rr4,errc); if(errc.ne.PACK_SUCCESS) then; ierr=62; return; endif
+          if(rr4.ne.r4) then; ierr=63; errc=1001; return; endif
    !Unpack real8 (packet 7):
           call envelope%extract_packet(7,packet,errc,tag=mtag,preclean=.TRUE.)
-          if(errc.ne.PACK_SUCCESS) then; ierr=43; return; endif
-          call unpack_builtin(packet,rr8,errc); if(errc.ne.PACK_SUCCESS) then; ierr=44; return; endif
-          if(rr8.ne.r8) then; ierr=45; errc=1001; return; endif
+          if(errc.ne.PACK_SUCCESS) then; ierr=64; return; endif
+          call unpack_builtin(packet,rr8,errc); if(errc.ne.PACK_SUCCESS) then; ierr=65; return; endif
+          if(rr8.ne.r8) then; ierr=66; errc=1001; return; endif
    !Unpack complex4 (packet 8):
           call envelope%extract_packet(8,packet,errc,tag=mtag,preclean=.TRUE.)
-          if(errc.ne.PACK_SUCCESS) then; ierr=43; return; endif
-          call unpack_builtin(packet,cc4,errc); if(errc.ne.PACK_SUCCESS) then; ierr=44; return; endif
-          if(cc4.ne.c4) then; ierr=45; errc=1001; return; endif
+          if(errc.ne.PACK_SUCCESS) then; ierr=67; return; endif
+          call unpack_builtin(packet,cc4,errc); if(errc.ne.PACK_SUCCESS) then; ierr=68; return; endif
+          if(cc4.ne.c4) then; ierr=69; errc=1001; return; endif
    !Unpack complex8 (packet 9):
           call envelope%extract_packet(9,packet,errc,tag=mtag,preclean=.TRUE.)
-          if(errc.ne.PACK_SUCCESS) then; ierr=43; return; endif
-          call unpack_builtin(packet,cc8,errc); if(errc.ne.PACK_SUCCESS) then; ierr=44; return; endif
-          if(cc8.ne.c8) then; ierr=45; errc=1001; return; endif
-#endif
+          if(errc.ne.PACK_SUCCESS) then; ierr=70; return; endif
+          call unpack_builtin(packet,cc8,errc); if(errc.ne.PACK_SUCCESS) then; ierr=71; return; endif
+          if(cc8.ne.c8) then; ierr=72; errc=1001; return; endif
+   !Unpack string (packet 10):
+          call envelope%extract_packet(10,packet,errc,tag=mtag,preclean=.TRUE.)
+          if(errc.ne.PACK_SUCCESS) then; ierr=73; return; endif
+          call unpack_string(packet,str,errc); if(errc.ne.PACK_SUCCESS) then; ierr=74; return; endif
+          !write(*,'("#DEBUG[",i3,"]: str = ",A27)') my_rank,str(1:27) !debug
+          if(str(1:len(s27)).ne.s27) then; ierr=75; errc=1001; return; endif
           deallocate(comm_hl)
          endif
-         call envelope%destroy(errc); if(errc.ne.PACK_SUCCESS) then; ierr=46; return; endif
+         call envelope%destroy(errc); if(errc.ne.PACK_SUCCESS) then; ierr=76; return; endif
          return
         end function test_pack_prim
 
