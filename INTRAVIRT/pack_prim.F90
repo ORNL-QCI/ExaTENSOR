@@ -1,6 +1,6 @@
 !Basic object packing/unpacking primitives.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2016/08/02
+!REVISION: 2016/08/03
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -34,7 +34,7 @@
 ! Thus, the main purpose of these packing/unpacking primitives is to
 ! aggregate a number of small objects into a larger plain message.
 ! Both .send() and .receive() methods are non-blocking and require
-! additional synchronization.
+! an additional synchronization via either test() or wait() methods.
 ! Basic abstractions:
 !  # Packet (obj_pack_t): Plain array which the data is packed into and
 !    unpacked from. Normally a packet contains a single object.
@@ -191,7 +191,7 @@
         public pack_builtin
  !Unpacking for built-in types:
         interface unpack_builtin
-!         module procedure unpack_integer1
+         module procedure unpack_integer1
 !         module procedure unpack_integer2
 !         module procedure unpack_integer4
 !         module procedure unpack_integer8
@@ -1360,7 +1360,8 @@
 !================================================
 !PACKING/UNPACKING for built-in types:
         subroutine pack_integer1(packet,obj,ierr)
-!Packs object <obj> into packet <packet>.
+!Packs object <obj> into packet <packet>. The length of the packet
+!is increased by the storage size of the object in bytes.
          implicit none
          class(obj_pack_t), intent(inout):: packet   !inout: packet
          integer(1), intent(in):: obj                !in: builtin type object
@@ -1391,9 +1392,44 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine pack_integer1
+!---------------------------------------------------------
+        subroutine unpack_integer1(packet,obj,ierr,offset)
+!Unpacks object <obj> from packet <packet> starting at offset <offset>.
+!After unpacking, the offset is automatically incremented to the next field.
+         implicit none
+         class(obj_pack_t), intent(in):: packet          !in: packet
+         integer(1), intent(out):: obj                   !out: builtin type object
+         integer(INTD), intent(out), optional:: ierr     !out: error code
+         integer(INTL), intent(inout), optional:: offset !inout: starting offset in the packet buffer
+         integer(INTD):: obj_size,errc
+         integer(INTL):: ppos
+         type(C_PTR):: cptr
+         character(C_CHAR), pointer, contiguous:: chp(:)
+         integer(1), pointer:: fptr
+
+         errc=PACK_SUCCESS
+         obj_size=size_of(obj) !size of the object in bytes
+         if(obj_size.gt.0) then
+          if(present(offset)) then; ppos=offset; else; ppos=1_INTL; endif
+          if(ppos.gt.0_INTL.and.ppos+obj_size-1.le.packet%get_length(errc)) then
+           if(errc.eq.PACK_SUCCESS) then
+            chp(1:)=>packet%buffer(ppos:)
+            cptr=c_loc(chp); call c_f_pointer(cptr,fptr)
+            obj=fptr; fptr=>NULL(); ppos=ppos+obj_size
+            if(present(offset)) offset=ppos
+           endif
+          else
+           errc=PACK_INVALID_ARGS
+          endif
+         else
+          errc=PACK_NULL
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine unpack_integer1
 !-------------------------------------------------
 #if 0
-        subroutine pack_universal(packet,obj,ierr)
+        subroutine pack_universal(packet,obj,ierr) !`Will not work
 !Packs object <obj> into packet <packet>.
          implicit none
          class(obj_pack_t), intent(inout):: packet   !inout: packet
@@ -1424,7 +1460,7 @@
          return
         end subroutine pack_universal
 !-------------------------------------------------------
-        subroutine unpack_universal(packet,pos,obj,ierr)
+        subroutine unpack_universal(packet,pos,obj,ierr) !`Will not work
 !Unpacks object <obj> from packet <packet>. Argument <pos>
 !passes the initial position in the packet from where unpacking
 !should start and it is incremented at the end by the size of
@@ -1462,8 +1498,19 @@
        module pack_prim_test
         use pack_prim
         use dil_basic, only: INTD,INTL
+#ifdef USE_MPI_MOD
+#ifdef FORTRAN2008
+        use mpi_f08      !MPI Fortran 2008 interface `This will not work
+#else
+        use mpi          !MPI Fortran interface
+#endif
         implicit none
         private
+#else
+        implicit none
+        private
+        include 'mpif.h' !MPI Fortran interface
+#endif
         public test_pack_prim
 
        contains
@@ -1484,14 +1531,153 @@
          complex(4), parameter:: c4=cmplx(r4,-r4,4)
          complex(8), parameter:: c8=cmplx(r8,-r8,8)
          character(27), parameter:: s27='You better work correctly!!'
-
+!--------------------------------------------------------------------
+         integer(1):: ii1
+         integer(2):: ii2
+         integer(4):: ii4
+         integer(8):: ii8
+         logical:: lld
+         real(4):: rr4
+         real(8):: rr8
+         complex(4):: cc4
+         complex(8):: cc8
+         integer(INTD):: my_rank,comm_size,i,n
+         integer(INTL):: mtag
+         logical:: delivered
          type(pack_env_t):: envelope
          type(obj_pack_t):: packet
+         type(comm_handle_t), allocatable:: comm_hl(:)
 
          ierr=0; errc=PACK_SUCCESS
-         call envelope%reserve_mem(errc); if(errc.ne.PACK_SUCCESS) then; ierr=1; return; endif
-
-         call envelope%destroy(errc); if(errc.ne.PACK_SUCCESS) then; ierr=2; return; endif
+         call MPI_Comm_Size(MPI_COMM_WORLD,comm_size,errc); if(errc.ne.PACK_SUCCESS) then; ierr=1; return; endif
+         if(comm_size.lt.2) then; ierr=-1; errc=-555; return; endif
+         call MPI_Comm_Rank(MPI_COMM_WORLD,my_rank,errc); if(errc.ne.PACK_SUCCESS) then; ierr=2; return; endif
+         call envelope%reserve_mem(errc); if(errc.ne.PACK_SUCCESS) then; ierr=3; return; endif
+         if(my_rank.eq.0) then
+ !Process 0 is packing built-in types and sending the envelope to other processes:
+          allocate(comm_hl(1:comm_size-1),STAT=ierr); if(ierr.ne.0) then; ierr=4; errc=-999; return; endif
+  !Pack integer1 -> packet 1:
+          call envelope%acquire_packet(packet,errc); if(errc.ne.PACK_SUCCESS) then; ierr=5; return; endif
+          call pack_builtin(packet,i1,errc); if(errc.ne.PACK_SUCCESS) then; ierr=6; return; endif
+          call envelope%seal_packet(errc,tag=1_INTL); if(errc.ne.PACK_SUCCESS) then; ierr=7; return; endif
+#if 0
+  !Pack integer2 -> packet 2:
+          call envelope%acquire_packet(packet,errc); if(errc.ne.PACK_SUCCESS) then; ierr=8; return; endif
+          call pack_builtin(packet,i2,errc); if(errc.ne.PACK_SUCCESS) then; ierr=9; return; endif
+          call envelope%seal_packet(errc,tag=2_INTL); if(errc.ne.PACK_SUCCESS) then; ierr=10; return; endif
+  !Pack integer4 -> packet 3:
+          call envelope%acquire_packet(packet,errc); if(errc.ne.PACK_SUCCESS) then; ierr=11; return; endif
+          call pack_builtin(packet,i4,errc); if(errc.ne.PACK_SUCCESS) then; ierr=12; return; endif
+          call envelope%seal_packet(errc,tag=3_INTL); if(errc.ne.PACK_SUCCESS) then; ierr=13; return; endif
+  !Pack integer8 -> packet 4:
+          call envelope%acquire_packet(packet,errc); if(errc.ne.PACK_SUCCESS) then; ierr=14; return; endif
+          call pack_builtin(packet,i8,errc); if(errc.ne.PACK_SUCCESS) then; ierr=15; return; endif
+          call envelope%seal_packet(errc,tag=4_INTL); if(errc.ne.PACK_SUCCESS) then; ierr=16; return; endif
+  !Pack logical -> packet 5:
+          call envelope%acquire_packet(packet,errc); if(errc.ne.PACK_SUCCESS) then; ierr=17; return; endif
+          call pack_builtin(packet,ld,errc); if(errc.ne.PACK_SUCCESS) then; ierr=18; return; endif
+          call envelope%seal_packet(errc,tag=5_INTL); if(errc.ne.PACK_SUCCESS) then; ierr=19; return; endif
+  !Pack real4 -> packet 6:
+          call envelope%acquire_packet(packet,errc); if(errc.ne.PACK_SUCCESS) then; ierr=20; return; endif
+          call pack_builtin(packet,r4,errc); if(errc.ne.PACK_SUCCESS) then; ierr=21; return; endif
+          call envelope%seal_packet(errc,tag=6_INTL); if(errc.ne.PACK_SUCCESS) then; ierr=22; return; endif
+  !Pack real8 -> packet 7:
+          call envelope%acquire_packet(packet,errc); if(errc.ne.PACK_SUCCESS) then; ierr=23; return; endif
+          call pack_builtin(packet,r8,errc); if(errc.ne.PACK_SUCCESS) then; ierr=24; return; endif
+          call envelope%seal_packet(errc,tag=7_INTL); if(errc.ne.PACK_SUCCESS) then; ierr=25; return; endif
+  !Pack complex4 -> packet 8:
+          call envelope%acquire_packet(packet,errc); if(errc.ne.PACK_SUCCESS) then; ierr=26; return; endif
+          call pack_builtin(packet,c4,errc); if(errc.ne.PACK_SUCCESS) then; ierr=27; return; endif
+          call envelope%seal_packet(errc,tag=8_INTL); if(errc.ne.PACK_SUCCESS) then; ierr=28; return; endif
+  !Pack complex8 -> packet 9:
+          call envelope%acquire_packet(packet,errc); if(errc.ne.PACK_SUCCESS) then; ierr=29; return; endif
+          call pack_builtin(packet,c8,errc); if(errc.ne.PACK_SUCCESS) then; ierr=30; return; endif
+          call envelope%seal_packet(errc,tag=9_INTL); if(errc.ne.PACK_SUCCESS) then; ierr=31; return; endif
+#endif
+  !Send the packet envelope to other MPI processes (9 packets):
+          do i=1,comm_size-1
+           call envelope%send(i,comm_hl(i),errc,tag=9); if(errc.ne.PACK_SUCCESS) then; ierr=32; return; endif
+          enddo
+  !Test the completion of all sends:
+          n=comm_size-1
+          do while(n.gt.0)
+           do i=1,comm_size-1
+            if(comm_hl(i)%is_active(errc)) then
+             if(errc.ne.PACK_SUCCESS) then; ierr=33; return; endif
+             if(comm_hl(i)%test(errc)) then
+              if(errc.ne.PACK_SUCCESS) then; ierr=34; return; endif
+              n=n-1; call comm_hl(i)%clean(errc)
+              if(errc.ne.PACK_SUCCESS) then; ierr=35; return; endif
+             endif
+            endif
+            if(errc.ne.PACK_SUCCESS) then; ierr=36; return; endif
+           enddo
+          enddo
+          deallocate(comm_hl)
+         else
+ !Other processes are receiving the packet envelope from process 0:
+          allocate(comm_hl(1),STAT=ierr); if(ierr.ne.0) then; ierr=37; errc=-888; return; endif
+  !Initiate a receive of the packet envelope:
+          do while(.not.envelope%receive(comm_hl(1),errc,proc_rank=0)) !wait until the message has been initiated
+           if(errc.ne.PACK_SUCCESS) then; ierr=38; return; endif
+          enddo
+          if(errc.ne.PACK_SUCCESS) then; ierr=39; return; endif
+  !Wait upon the completion of the receive:
+          call comm_hl(1)%wait(errc); if(errc.ne.PACK_SUCCESS) then; ierr=40; return; endif
+  !Unpack packets from the envelope (9 packets):
+          n=0; n=envelope%get_num_packets(errc); if(errc.ne.PACK_SUCCESS) then; ierr=41; return; endif
+          if(n.ne.1) then; ierr=42; errc=-777; return; endif
+   !Unpack integer1 (packet 1):
+          call envelope%extract_packet(1,packet,errc,tag=mtag,preclean=.TRUE.)
+          if(errc.ne.PACK_SUCCESS) then; ierr=43; return; endif
+          call unpack_builtin(packet,ii1,errc); if(errc.ne.PACK_SUCCESS) then; ierr=44; return; endif
+          if(ii1.ne.i1) then; ierr=45; errc=1001; return; endif
+          write(*,'("#DEBUG[",i3,"]: i1 = ",i11)') my_rank,ii1 !debug
+#if 0
+   !Unpack integer2 (packet 2):
+          call envelope%extract_packet(2,packet,errc,tag=mtag,preclean=.TRUE.)
+          if(errc.ne.PACK_SUCCESS) then; ierr=43; return; endif
+          call unpack_builtin(packet,ii2,errc); if(errc.ne.PACK_SUCCESS) then; ierr=44; return; endif
+          if(ii2.ne.i2) then; ierr=45; errc=1001; return; endif
+   !Unpack integer4 (packet 3):
+          call envelope%extract_packet(3,packet,errc,tag=mtag,preclean=.TRUE.)
+          if(errc.ne.PACK_SUCCESS) then; ierr=43; return; endif
+          call unpack_builtin(packet,ii4,errc); if(errc.ne.PACK_SUCCESS) then; ierr=44; return; endif
+          if(ii4.ne.i4) then; ierr=45; errc=1001; return; endif
+   !Unpack integer8 (packet 4):
+          call envelope%extract_packet(4,packet,errc,tag=mtag,preclean=.TRUE.)
+          if(errc.ne.PACK_SUCCESS) then; ierr=43; return; endif
+          call unpack_builtin(packet,ii8,errc); if(errc.ne.PACK_SUCCESS) then; ierr=44; return; endif
+          if(ii8.ne.i8) then; ierr=45; errc=1001; return; endif
+   !Unpack logical (packet 5):
+          call envelope%extract_packet(5,packet,errc,tag=mtag,preclean=.TRUE.)
+          if(errc.ne.PACK_SUCCESS) then; ierr=43; return; endif
+          call unpack_builtin(packet,lld,errc); if(errc.ne.PACK_SUCCESS) then; ierr=44; return; endif
+          if(lld.ne.ld) then; ierr=45; errc=1001; return; endif
+   !Unpack real4 (packet 6):
+          call envelope%extract_packet(6,packet,errc,tag=mtag,preclean=.TRUE.)
+          if(errc.ne.PACK_SUCCESS) then; ierr=43; return; endif
+          call unpack_builtin(packet,rr4,errc); if(errc.ne.PACK_SUCCESS) then; ierr=44; return; endif
+          if(rr4.ne.r4) then; ierr=45; errc=1001; return; endif
+   !Unpack real8 (packet 7):
+          call envelope%extract_packet(7,packet,errc,tag=mtag,preclean=.TRUE.)
+          if(errc.ne.PACK_SUCCESS) then; ierr=43; return; endif
+          call unpack_builtin(packet,rr8,errc); if(errc.ne.PACK_SUCCESS) then; ierr=44; return; endif
+          if(rr8.ne.r8) then; ierr=45; errc=1001; return; endif
+   !Unpack complex4 (packet 8):
+          call envelope%extract_packet(8,packet,errc,tag=mtag,preclean=.TRUE.)
+          if(errc.ne.PACK_SUCCESS) then; ierr=43; return; endif
+          call unpack_builtin(packet,cc4,errc); if(errc.ne.PACK_SUCCESS) then; ierr=44; return; endif
+          if(cc4.ne.c4) then; ierr=45; errc=1001; return; endif
+   !Unpack complex8 (packet 9):
+          call envelope%extract_packet(9,packet,errc,tag=mtag,preclean=.TRUE.)
+          if(errc.ne.PACK_SUCCESS) then; ierr=43; return; endif
+          call unpack_builtin(packet,cc8,errc); if(errc.ne.PACK_SUCCESS) then; ierr=44; return; endif
+          if(cc8.ne.c8) then; ierr=45; errc=1001; return; endif
+#endif
+          deallocate(comm_hl)
+         endif
+         call envelope%destroy(errc); if(errc.ne.PACK_SUCCESS) then; ierr=46; return; endif
          return
         end function test_pack_prim
 
