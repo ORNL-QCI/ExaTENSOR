@@ -2,7 +2,7 @@
     Parameters, derived types, and function prototypes
     used at the lower level of TAL-SH (device specific):
     CP-TAL, NV-TAL, XP-TAL, AM-TAL, etc.
-REVISION: 2016/07/01
+REVISION: 2016/08/11
 
 Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -149,6 +149,7 @@ FOR DEVELOPERS ONLY:
 #define BLAS_OFF 1
 #define EFF_TRN_OFF 0
 #define EFF_TRN_ON 1
+#define EFF_TRN_ON_CUTT 2
 #define DEVICE_UNABLE -546372819
 #define TRY_LATER -918273645
 #define NOT_CLEAN -192837465
@@ -367,7 +368,7 @@ int cuda_get_device_count(int * dev_count);
  int gpu_activate(int gpu_num);
 //  NV-TAL internal control:
  int gpu_set_shmem_width(int width);
- void gpu_set_transpose_algorithm(int alg);
+ void gpu_set_transpose_algorithm(int alg); //{EFF_TRN_OFF,EFF_TRN_ON,EFF_TRN_ON_CUTT}
  void gpu_set_matmult_algorithm(int alg);
  int gpu_print_stats(int gpu_num = -1);
 #endif

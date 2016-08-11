@@ -1,6 +1,6 @@
 /** Tensor Algebra Library for NVidia GPU: NV-TAL (CUDA based).
 AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-REVISION: 2016/07/01
+REVISION: 2016/08/11
 
 Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -24,6 +24,7 @@ OPTIONS:
  # -D CUDA_ARCH=350: target GPU compute capability (default is 130);
  # -D NO_GPU: disables GPU usage;
  # -D NO_BLAS: disables cuBLAS calls, they will be replaced by in-house routines (slower);
+ # -D USE_CUTT: enables an optimized tensor transpose via the cuTT library;
  # -D DEBUG_GPU: collection of debugging information will be activated;
 NOTES:
  # Minimal required compute capability is 1.1 (1.3 for double precision).
@@ -191,7 +192,11 @@ __device__ static int gpu_debug_dump[GPU_DEBUG_DUMP_SIZE]; //debug dump
 // Global CUDA event recording policy:
 static int PRINT_TIMING=1; //non-zero value enables time printing statements
 // Infrastructure for function <gpu_tensor_block_copy_dlf> (blocking and non-blocking):
-static int TRANS_SHMEM=1; //switch between shared-memory tensor transpose (1) and scatter tensor transpose (0)
+#ifdef USE_CUTT
+static int TRANS_SHMEM=EFF_TRN_ON_CUTT; //switch between shared-memory tensor transpose and scatter tensor transpose
+#else
+static int TRANS_SHMEM=EFF_TRN_ON; //switch between shared-memory tensor transpose and scatter tensor transpose
+#endif
 // Infrastructure for <gpu_tensor_block_contract_dlf> (non-blocking):
 #ifndef NO_BLAS
 static int DISABLE_BLAS=0; //non-zero value will disable cuBLAS usage (if it had been cuBLAS compiled/linked)
@@ -1039,9 +1044,16 @@ __host__ int gpu_set_shmem_width(int width){
  return 0;
 }
 
-__host__ void gpu_set_transpose_algorithm(int alg)
-/** Activates either the scatter or the shared-memory based tensor transpose algorithm. **/
-{if(alg == EFF_TRN_OFF){TRANS_SHMEM=EFF_TRN_OFF;}else{TRANS_SHMEM=EFF_TRN_ON;}; return;}
+__host__ void gpu_set_transpose_algorithm(int alg){
+/** Activates either the scatter or the shared-memory based tensor transpose algorithm.
+    Invalid <alg> values will activate the basic shared-memory algorithm (default). **/
+ if(alg == EFF_TRN_OFF){TRANS_SHMEM=EFF_TRN_OFF;}
+#ifdef USE_CUTT
+ else if(alg == EFF_TRN_ON_CUTT){TRANS_SHMEM=EFF_TRN_ON_CUTT;};
+#endif
+ else{TRANS_SHMEM=EFF_TRN_ON;}
+ return;
+}
 
 __host__ void gpu_set_matmult_algorithm(int alg){
 /** Activates either cuBLAS (fast) or my own (slow) BLAS CUDA kernels. **/
@@ -2722,7 +2734,7 @@ NOTES:
     }
 // Transpose:
     j=gpu_get_error_count();
-    if(TRANS_SHMEM != 0){
+    if(TRANS_SHMEM == EFF_TRN_ON){
      bx=1+(tsize-1)/THRDS_TENSOR_COPY; if(bx > MAX_CUDA_BLOCKS) bx=MAX_CUDA_BLOCKS;
      switch(tens_in->data_kind){
       case R4:
@@ -3440,7 +3452,7 @@ NOTES:
  }
 // Destination tensor transpose:
  if(perm_d == YEP){
-  if(TRANS_SHMEM != 0){
+  if(TRANS_SHMEM == EFF_TRN_ON){
    bx=1+(vol_d-1)/THRDS_TENSOR_COPY; if(bx > MAX_CUDA_BLOCKS) bx=MAX_CUDA_BLOCKS;
    switch(dtens->data_kind){
     case R4:
@@ -3454,7 +3466,11 @@ NOTES:
     default:
      errc=cuda_task_record(cuda_task,coh_ctrl,38); errc=gpu_activate(cur_gpu); return 38;
    }
-  }else{
+  }else if(TRANS_SHMEM == EFF_TRN_ON_CUTT){
+#ifdef USE_CUTT
+   //`cuTT
+#endif
+  }else if(TRANS_SHMEM == EFF_TRN_OFF){
    bx=1+(vol_d-1)/THRDS_TENSOR_COPY_SCAT; if(bx > MAX_CUDA_BLOCKS) bx=MAX_CUDA_BLOCKS;
    switch(dtens->data_kind){
     case R4:
@@ -3468,6 +3484,8 @@ NOTES:
     default:
      errc=cuda_task_record(cuda_task,coh_ctrl,39); errc=gpu_activate(cur_gpu); return 39;
    }
+  }else{
+   errc=cuda_task_record(cuda_task,coh_ctrl,59); errc=gpu_activate(cur_gpu); return 59;
   }
   darg=dtens->tmp_rsc->gmem_p;
  }else{
@@ -3475,7 +3493,7 @@ NOTES:
  }
 // Left tensor transpose:
  if(perm_l == YEP){
-  if(TRANS_SHMEM != 0){
+  if(TRANS_SHMEM == EFF_TRN_ON){
    bx=1+(vol_l-1)/THRDS_TENSOR_COPY; if(bx > MAX_CUDA_BLOCKS) bx=MAX_CUDA_BLOCKS;
    switch(ltens->data_kind){
     case R4:
@@ -3489,7 +3507,11 @@ NOTES:
     default:
      errc=cuda_task_record(cuda_task,coh_ctrl,40); errc=gpu_activate(cur_gpu); return 40;
    }
-  }else{
+  }else if(TRANS_SHMEM == EFF_TRN_ON_CUTT){
+#ifdef USE_CUTT
+   //`cuTT
+#endif
+  }else if(TRANS_SHMEM == EFF_TRN_OFF){
    bx=1+(vol_l-1)/THRDS_TENSOR_COPY_SCAT; if(bx > MAX_CUDA_BLOCKS) bx=MAX_CUDA_BLOCKS;
    switch(ltens->data_kind){
     case R4:
@@ -3503,6 +3525,8 @@ NOTES:
     default:
      errc=cuda_task_record(cuda_task,coh_ctrl,41); errc=gpu_activate(cur_gpu); return 41;
    }
+  }else{
+   errc=cuda_task_record(cuda_task,coh_ctrl,60); errc=gpu_activate(cur_gpu); return 60;
   }
   larg=ltens->tmp_rsc->gmem_p;
  }else{
@@ -3510,7 +3534,7 @@ NOTES:
  }
 // Right tensor transpose:
  if(perm_r == YEP){
-  if(TRANS_SHMEM != 0){
+  if(TRANS_SHMEM == EFF_TRN_ON){
    bx=1+(vol_r-1)/THRDS_TENSOR_COPY; if(bx > MAX_CUDA_BLOCKS) bx=MAX_CUDA_BLOCKS;
    switch(rtens->data_kind){
     case R4:
@@ -3524,7 +3548,11 @@ NOTES:
     default:
      errc=cuda_task_record(cuda_task,coh_ctrl,42); errc=gpu_activate(cur_gpu); return 42;
    }
-  }else{
+  }else if(TRANS_SHMEM == EFF_TRN_ON_CUTT){
+#ifdef USE_CUTT
+   //`cuTT
+#endif
+  }else if(TRANS_SHMEM == EFF_TRN_OFF){
    bx=1+(vol_r-1)/THRDS_TENSOR_COPY_SCAT; if(bx > MAX_CUDA_BLOCKS) bx=MAX_CUDA_BLOCKS;
    switch(rtens->data_kind){
     case R4:
@@ -3538,6 +3566,8 @@ NOTES:
     default:
      errc=cuda_task_record(cuda_task,coh_ctrl,43); errc=gpu_activate(cur_gpu); return 43;
    }
+  }else{
+   errc=cuda_task_record(cuda_task,coh_ctrl,61); errc=gpu_activate(cur_gpu); return 61;
   }
   rarg=rtens->tmp_rsc->gmem_p;
  }else{
@@ -3673,7 +3703,7 @@ NOTES:
  gpu_stats[gpu_num].flops+=2*lc*ll*lr;
 //Schedule the inverse tensor transpose for the destination tensor:
  if(perm_d == YEP){
-  if(TRANS_SHMEM != 0){
+  if(TRANS_SHMEM == EFF_TRN_ON){
    bx=1+(vol_d-1)/THRDS_TENSOR_COPY; if(bx > MAX_CUDA_BLOCKS) bx=MAX_CUDA_BLOCKS;
    switch(dtens->data_kind){
     case R4:
@@ -3687,7 +3717,11 @@ NOTES:
     default:
      errc=cuda_task_record(cuda_task,coh_ctrl,54); errc=gpu_activate(cur_gpu); return 54;
    }
-  }else{
+  }else if(TRANS_SHMEM == EFF_TRN_ON_CUTT){
+#ifdef USE_CUTT
+   //`cuTT
+#endif
+  }else if(TRANS_SHMEM == EFF_TRN_OFF){
    bx=1+(vol_d-1)/THRDS_TENSOR_COPY_SCAT; if(bx > MAX_CUDA_BLOCKS) bx=MAX_CUDA_BLOCKS;
    switch(dtens->data_kind){
     case R4:
@@ -3701,6 +3735,8 @@ NOTES:
     default:
      errc=cuda_task_record(cuda_task,coh_ctrl,55); errc=gpu_activate(cur_gpu); return 55;
    }
+  }else{
+   errc=cuda_task_record(cuda_task,coh_ctrl,62); errc=gpu_activate(cur_gpu); return 62;
   }
  }
 //Record a CUDA event (output ready on GPU):
