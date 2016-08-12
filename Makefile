@@ -13,10 +13,14 @@ export MPILIB ?= MPICH
 export BLASLIB ?= ATLAS
 #Nvidia GPU via CUDA: [CUDA|NOCUDA]:
 export GPU_CUDA ?= CUDA
-#Nvidia GPU architecture:
+#Nvidia GPU architecture (two digits):
 export GPU_SM_ARCH ?= 35
 #Operating system: [LINUX|NO_LINUX]:
 export EXA_OS ?= LINUX
+
+#EXTRAS:
+#Fast GPU tensor transpose (cuTT library): [YES|NO]:
+export WITH_CUTT ?= NO
 
 #WORKAROUNDS (ignore if you do not experience problems):
 #Fool CUDA 7.0 with GCC > 4.9: [YES|NO]:
@@ -34,6 +38,8 @@ PATH_BLAS = $(PATH_BLAS_$(BLASLIB))
 # CUDA path (if you have CUDA):
 export PATH_CUDA_LIB ?= /usr/lib/x86_64-linux-gnu
 export PATH_CUDA_INC ?= /usr/include
+# cuTT path (if you use cuTT library):
+export PATH_CUTT ?= /home/dima/src/cutt
 
 #YOU ARE DONE!
 

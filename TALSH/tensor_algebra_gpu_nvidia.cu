@@ -1,6 +1,6 @@
 /** Tensor Algebra Library for NVidia GPU: NV-TAL (CUDA based).
 AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-REVISION: 2016/08/11
+REVISION: 2016/08/12
 
 Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -99,6 +99,10 @@ TO BE FIXED:
 #endif
 
 #include "tensor_algebra.h"
+
+#ifdef USE_CUTT
+#include "cutt.h"
+#endif
 
 #ifndef NO_GPU
 //PARAMETERS:
@@ -1049,9 +1053,9 @@ __host__ void gpu_set_transpose_algorithm(int alg){
     Invalid <alg> values will activate the basic shared-memory algorithm (default). **/
  if(alg == EFF_TRN_OFF){TRANS_SHMEM=EFF_TRN_OFF;}
 #ifdef USE_CUTT
- else if(alg == EFF_TRN_ON_CUTT){TRANS_SHMEM=EFF_TRN_ON_CUTT;};
+ else if(alg == EFF_TRN_ON_CUTT){TRANS_SHMEM=EFF_TRN_ON_CUTT;}
 #endif
- else{TRANS_SHMEM=EFF_TRN_ON;}
+ else{TRANS_SHMEM=EFF_TRN_ON;} //any other value will result in the default setting
  return;
 }
 
@@ -3026,6 +3030,10 @@ NOTES:
 #ifndef NO_BLAS
  cublasStatus_t err_cublas;
 #endif
+#ifdef USE_CUTT
+ cuttHandle cutt_d,cutt_l,cutt_r;
+ cuttResult cutt_err;
+#endif
 
  //if(DEBUG) printf("\n#DEBUG(tensor_algebra_gpu_nvidia:gpu_tensor_block_contract_dlf): GPU Tensor Contraction:\n"); //debug
  stat=0; //return status in case of successful scheduling
@@ -3468,7 +3476,16 @@ NOTES:
    }
   }else if(TRANS_SHMEM == EFF_TRN_ON_CUTT){
 #ifdef USE_CUTT
-   //`cuTT
+   for(i=0;i<drank;++i) dprm[i]=cuda_task->tens_args[0].prmn_p[i]-1;
+   cutt_err=cuttPlan(&cutt_d,drank,(dtens->shape).dims,dprm,((size_t)tds_d),*cuda_stream);
+   if(cutt_err == CUTT_SUCCESS){
+    cutt_err=cuttExecute(cutt_d,dtens->dst_rsc->gmem_p,dtens->tmp_rsc->gmem_p);
+    if(cutt_err != CUTT_SUCCESS){errc=cuda_task_record(cuda_task,coh_ctrl,63); errc=gpu_activate(cur_gpu); return 63;};
+   }else{
+    errc=cuda_task_record(cuda_task,coh_ctrl,64); errc=gpu_activate(cur_gpu); return 64;
+   }
+#else
+   errc=cuda_task_record(cuda_task,coh_ctrl,65); errc=gpu_activate(cur_gpu); return 65;
 #endif
   }else if(TRANS_SHMEM == EFF_TRN_OFF){
    bx=1+(vol_d-1)/THRDS_TENSOR_COPY_SCAT; if(bx > MAX_CUDA_BLOCKS) bx=MAX_CUDA_BLOCKS;
@@ -3509,7 +3526,16 @@ NOTES:
    }
   }else if(TRANS_SHMEM == EFF_TRN_ON_CUTT){
 #ifdef USE_CUTT
-   //`cuTT
+   errc=prmn_convert(lrank,cuda_task->tens_args[1].prmn_p,lprm); for(i=0;i<lrank;++i) --(lprm[i]);
+   cutt_err=cuttPlan(&cutt_l,lrank,(ltens->shape).dims,lprm,((size_t)tds_l),*cuda_stream);
+   if(cutt_err == CUTT_SUCCESS){
+    cutt_err=cuttExecute(cutt_l,ltens->dst_rsc->gmem_p,ltens->tmp_rsc->gmem_p);
+    if(cutt_err != CUTT_SUCCESS){errc=cuda_task_record(cuda_task,coh_ctrl,66); errc=gpu_activate(cur_gpu); return 66;};
+   }else{
+    errc=cuda_task_record(cuda_task,coh_ctrl,67); errc=gpu_activate(cur_gpu); return 67;
+   }
+#else
+   errc=cuda_task_record(cuda_task,coh_ctrl,68); errc=gpu_activate(cur_gpu); return 68;
 #endif
   }else if(TRANS_SHMEM == EFF_TRN_OFF){
    bx=1+(vol_l-1)/THRDS_TENSOR_COPY_SCAT; if(bx > MAX_CUDA_BLOCKS) bx=MAX_CUDA_BLOCKS;
@@ -3550,7 +3576,16 @@ NOTES:
    }
   }else if(TRANS_SHMEM == EFF_TRN_ON_CUTT){
 #ifdef USE_CUTT
-   //`cuTT
+   errc=prmn_convert(rrank,cuda_task->tens_args[2].prmn_p,rprm); for(i=0;i<rrank;++i) --(rprm[i]);
+   cutt_err=cuttPlan(&cutt_r,rrank,(rtens->shape).dims,rprm,((size_t)tds_r),*cuda_stream);
+   if(cutt_err == CUTT_SUCCESS){
+    cutt_err=cuttExecute(cutt_r,rtens->dst_rsc->gmem_p,rtens->tmp_rsc->gmem_p);
+    if(cutt_err != CUTT_SUCCESS){errc=cuda_task_record(cuda_task,coh_ctrl,69); errc=gpu_activate(cur_gpu); return 69;};
+   }else{
+    errc=cuda_task_record(cuda_task,coh_ctrl,70); errc=gpu_activate(cur_gpu); return 70;
+   }
+#else
+   errc=cuda_task_record(cuda_task,coh_ctrl,71); errc=gpu_activate(cur_gpu); return 71;
 #endif
   }else if(TRANS_SHMEM == EFF_TRN_OFF){
    bx=1+(vol_r-1)/THRDS_TENSOR_COPY_SCAT; if(bx > MAX_CUDA_BLOCKS) bx=MAX_CUDA_BLOCKS;
@@ -3719,7 +3754,17 @@ NOTES:
    }
   }else if(TRANS_SHMEM == EFF_TRN_ON_CUTT){
 #ifdef USE_CUTT
-   //`cuTT
+   errc=prmn_convert(drank,cuda_task->tens_args[0].prmn_p,dprm); for(i=0;i<drank;++i) --(dprm[i]);
+   for(i=0;i<drank;++i) rprm[i]=(dtens->shape).dims[drank-i-1]; //inversed dimension order
+   cutt_err=cuttPlan(&cutt_d,drank,rprm,dprm,((size_t)tds_d),*cuda_stream);
+   if(cutt_err == CUTT_SUCCESS){
+    cutt_err=cuttExecute(cutt_d,dtens->dst_rsc->gmem_p,dtens->tmp_rsc->gmem_p);
+    if(cutt_err != CUTT_SUCCESS){errc=cuda_task_record(cuda_task,coh_ctrl,63); errc=gpu_activate(cur_gpu); return 63;};
+   }else{
+    errc=cuda_task_record(cuda_task,coh_ctrl,64); errc=gpu_activate(cur_gpu); return 64;
+   }
+#else
+   errc=cuda_task_record(cuda_task,coh_ctrl,65); errc=gpu_activate(cur_gpu); return 65;
 #endif
   }else if(TRANS_SHMEM == EFF_TRN_OFF){
    bx=1+(vol_d-1)/THRDS_TENSOR_COPY_SCAT; if(bx > MAX_CUDA_BLOCKS) bx=MAX_CUDA_BLOCKS;

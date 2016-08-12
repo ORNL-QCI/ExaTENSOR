@@ -13,10 +13,14 @@ export MPILIB ?= MPICH
 export BLASLIB ?= ATLAS
 #Nvidia GPU via CUDA: [CUDA|NOCUDA]:
 export GPU_CUDA ?= CUDA
-#Nvidia GPU architecture:
+#Nvidia GPU architecture (two digits):
 export GPU_SM_ARCH ?= 35
 #Operating system: [LINUX|NO_LINUX]:
 export EXA_OS ?= LINUX
+
+#EXTRAS:
+#Fast GPU tensor transpose (cuTT library): [YES|NO]:
+export WITH_CUTT ?= YES
 
 #WORKAROUNDS (ignore if you do not experience problems):
 #Fool CUDA 7.0 with GCC > 4.9: [YES|NO]:
@@ -34,6 +38,8 @@ PATH_BLAS = $(PATH_BLAS_$(BLASLIB))
 # CUDA path:
 export PATH_CUDA_LIB ?= /usr/lib/x86_64-linux-gnu
 export PATH_CUDA_INC ?= /usr/include
+# cuTT path (if you use cuTT library):
+export PATH_CUTT ?= /home/dima/src/cutt
 
 #YOU ARE DONE!
 
@@ -125,7 +131,11 @@ CUDA_INC_CUDA = -I$(PATH_CUDA_INC)
 CUDA_INC_NOCUDA = -I.
 CUDA_INC_NOWRAP = $(CUDA_INC_$(GPU_CUDA))
 CUDA_INC_WRAP = -I.
+ifeq ($(WITH_CUTT),YES)
+CUDA_INC = $(CUDA_INC_$(WRAP)) -I$(PATH_CUTT)/include
+else
 CUDA_INC = $(CUDA_INC_$(WRAP))
+endif
 
 #CUDA LIBS:
 CUDA_LINK_NOWRAP = -L$(PATH_CUDA_LIB) -lcudart -lcublas
@@ -145,9 +155,14 @@ CUDA_FLAGS_OPT = --compile -arch=$(GPU_SM) -O3 -lineinfo
 CUDA_FLAGS_CUDA = $(CUDA_HOST) $(CUDA_FLAGS_$(BUILD_TYPE))
 CUDA_FLAGS_NOCUDA = -I.
 ifeq ($(FOOL_CUDA),NO)
-CUDA_FLAGS = $(CUDA_FLAGS_$(GPU_CUDA)) -D$(EXA_OS)
+CUDA_FLAGS_PRE = $(CUDA_FLAGS_$(GPU_CUDA)) -D$(EXA_OS)
 else
-CUDA_FLAGS = $(CUDA_FLAGS_$(GPU_CUDA)) -D$(EXA_OS) -D__GNUC__=4
+CUDA_FLAGS_PRE = $(CUDA_FLAGS_$(GPU_CUDA)) -D$(EXA_OS) -D__GNUC__=4
+endif
+ifeq ($(WITH_CUTT),YES)
+CUDA_FLAGS = $(CUDA_FLAGS_PRE) -D USE_CUTT
+else
+CUDA_FLAGS = $(CUDA_FLAGS_PRE)
 endif
 
 #Accelerator support:
@@ -191,7 +206,15 @@ $(NAME): lib$(NAME).a ./OBJ/test.o ./OBJ/main.o
 	$(FCOMP) ./OBJ/main.o ./OBJ/test.o lib$(NAME).a $(LFLAGS) -o $(NAME).x
 
 lib$(NAME).a: $(OBJS)
+ifeq ($(WITH_CUTT),YES)
+	mkdir -p tmp_obj__
+	ar x $(PATH_CUTT)/lib/libcutt.a
+	mv *.o ./tmp_obj__
+	ar cr lib$(NAME).a $(OBJS) ./tmp_obj__/*.o
+	rm -rf ./tmp_obj__
+else
 	ar cr lib$(NAME).a $(OBJS)
+endif
 
 ./OBJ/dil_basic.o: dil_basic.F90
 	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) dil_basic.F90 -o ./OBJ/dil_basic.o
