@@ -40,8 +40,13 @@
 !        write(*,*)''
 #endif
 !Test TAL-SH Fortran API interface:
-        write(*,'("Testing TAL-SH Fortran API ...")')
-        call test_talsh_f(ierr)
+!        write(*,'("Testing TAL-SH Fortran API ...")')
+!        call test_talsh_f(ierr)
+!        write(*,'("Done: Status ",i5)') ierr
+!        if(ierr.ne.0) stop
+!Benchmark tensor contraction performance:
+        write(*,'("Benchmarking tensor contraction performance ...")')
+        call benchmark_tensor_cotractions(ierr)
         write(*,'("Done: Status ",i5)') ierr
         if(ierr.ne.0) stop
         stop
@@ -152,7 +157,7 @@
         write(*,'(1x,"Waiting upon completion of tensor contractions on all GPUs ... ")',ADVANCE='NO')
         ierr=talsh_tasks_wait(n,tsks,sts)
         write(*,'("Status ",i11," Completion =",8(1x,i8))') ierr,sts(1:n)
-        if(ierr.ne.TALSH_SUCCESS) then; ierr=9; return; endif
+        if(ierr.ne.TALSH_SUCCESS) then; ierr=8; return; endif
 !Printing results:
         do i=1,MAX_TENSORS,3
          call talsh_tensor_print_info(tens(i))
@@ -164,34 +169,105 @@
         write(*,'(1x,"Executing tensor contraction ",i2," on CPU ... ")',ADVANCE='NO') n
         ierr=talsh_tensor_contract('D(a,b,i,j)+=L(j,k,c,i)*R(c,b,k,a)',tens(1),tens(2),tens(3),&
                                   &dev_id=talsh_flat_dev_id(DEV_HOST,0),talsh_task=tsks(n))
-        write(*,'("Status ",i11)') ierr; if(ierr.ne.TALSH_SUCCESS) then; ierr=8; return; endif
+        write(*,'("Status ",i11)') ierr; if(ierr.ne.TALSH_SUCCESS) then; ierr=9; return; endif
 !       call talsh_task_print_info(tsks(n)) !debug
         write(*,'(1x,"Waiting upon completion of tensor contractions on CPU ... ")',ADVANCE='NO')
         ierr=talsh_tasks_wait(n,tsks,sts)
         write(*,'("Status ",i11," Completion =",8(1x,i8))') ierr,sts(1:n)
-        if(ierr.ne.TALSH_SUCCESS) then; ierr=9; return; endif
+        if(ierr.ne.TALSH_SUCCESS) then; ierr=10; return; endif
 #endif
 
 !Destruct TAL-SH task handles:
         do i=n,1,-1
          write(*,'(1x,"Destructing TAL-SH task handle ",i2," ... ")',ADVANCE='NO') i
          ierr=talsh_task_destruct(tsks(i))
-         write(*,'("Status ",i11)') ierr; if(ierr.ne.TALSH_SUCCESS) then; ierr=10; return; endif
+         write(*,'("Status ",i11)') ierr; if(ierr.ne.TALSH_SUCCESS) then; ierr=11; return; endif
         enddo
 
 !Destroy tensors:
         do i=MAX_TENSORS,1,-1
          write(*,'(1x,"Destructing tensor block ",i2," ... ")',ADVANCE='NO') i
          ierr=talsh_tensor_destruct(tens(i))
-         write(*,'("Status ",i11)') ierr; if(ierr.ne.TALSH_SUCCESS) then; ierr=11; return; endif
+         write(*,'("Status ",i11)') ierr; if(ierr.ne.TALSH_SUCCESS) then; ierr=12; return; endif
         enddo
 !Print run-time statistics:
         ierr=talsh_stats()
-        if(ierr.ne.TALSH_SUCCESS) then; ierr=12; return; endif
+        if(ierr.ne.TALSH_SUCCESS) then; ierr=13; return; endif
 !Shutdown TALSH:
         write(*,'(1x,"Shutting down TALSH ... ")',ADVANCE='NO')
         ierr=talsh_shutdown()
         write(*,'("Status ",i11)') ierr
-        if(ierr.ne.TALSH_SUCCESS) then; ierr=13; return; endif
+        if(ierr.ne.TALSH_SUCCESS) then; ierr=14; return; endif
         return
         end subroutine test_talsh_f
+!----------------------------------------------------
+        subroutine benchmark_tensor_cotractions(ierr)
+!Benchmarks tensor contraction performance.
+         use, intrinsic:: ISO_C_BINDING
+         use tensor_algebra
+         use talsh
+         use stsubs
+         implicit none
+         integer(C_INT), intent(out):: ierr
+         integer(C_SIZE_T), parameter:: BUF_SIZE=1_8*1024_8*1024_8*1024_8 !desired Host argument buffer size in bytes
+         integer, parameter:: MAX_TENS_RANK=8
+         integer(C_INT), parameter:: NUM_CONTRACTIONS=4
+         integer(C_INT), parameter:: NUM_TENS_SIZES=4
+         integer(C_INT):: i,m,n,num_gpus,host_arg_max,sts,ld,ll,lr,rd,rl,rr
+         integer(C_SIZE_T):: host_buf_size,max_tens_vol,vd,vl,vr
+         integer:: dmd(1:MAX_TENS_RANK),dml(1:MAX_TENS_RANK),dmr(1:MAX_TENS_RANK),cptrn(1:MAX_TENS_RANK*2)
+         type(talsh_tens_t):: dtens,ltens,rtens
+         type(talsh_task_t):: tsk
+         complex(8):: cval
+         character(256):: shd,shl,shr
+
+         ierr=0
+!Check Nvidia GPU availability:
+#ifndef NO_GPU
+         write(*,'(1x,"Checking Nvidia GPU availability ... ")',ADVANCE='NO')
+         ierr=cuda_get_device_count(num_gpus)
+         write(*,'("Status ",i11,": Number of GPUs = ",i3)') ierr,num_gpus
+         if(ierr.ne.TALSH_SUCCESS) then; ierr=1; return; endif
+#else
+         num_gpus=0
+#endif
+!Initialize TALSH runtime:
+         write(*,'(1x,"Initializing TALSH ... ")',ADVANCE='NO')
+         host_buf_size=BUF_SIZE
+#ifndef NO_GPU
+         ierr=talsh_init(host_buf_size,host_arg_max,gpu_list=(/(i,i=0,num_gpus-1)/))
+#else
+         ierr=talsh_init(host_buf_size,host_arg_max)
+#endif
+         write(*,'("Status ",i11,": Size (Bytes) = ",i13,": Max args in HAB = ",i7)') ierr,host_buf_size,host_arg_max
+         if(ierr.ne.TALSH_SUCCESS) then; ierr=3; return; endif
+         max_tens_vol=host_buf_size/4_C_SIZE_T/8_C_SIZE_T
+
+!Tensor contractions:
+         do m=1,NUM_TENS_SIZES
+          write(*,'(1x,"Benchmarking max tensor volume of ",i11)') max_tens_vol
+          do n=1,NUM_CONTRACTIONS
+           write(*,'(2x,"Tensor contraction ")',ADVANCE='NO')
+           call contr_pattern_rnd(MAX_TENS_RANK,max_tens_vol,shd,shl,shr,cptrn,ierr)
+           if(ierr.ne.TALSH_SUCCESS) then; ierr=3; return; endif
+           ld=index(shd,')'); ll=index(shl,')'); lr=index(shr,')')
+           rd=tensor_shape_rank(shd,ierr,dmd,vd); if(ierr.ne.TALSH_SUCCESS) then; ierr=3; return; endif
+           rl=tensor_shape_rank(shl,ierr,dml,vl); if(ierr.ne.TALSH_SUCCESS) then; ierr=3; return; endif
+           rr=tensor_shape_rank(shr,ierr,dmr,vr); if(ierr.ne.TALSH_SUCCESS) then; ierr=3; return; endif
+           call printl(6,shd(1:ld)//'+='//shl(1:ll)//'*'//shr(1:lr)//':',adv=.FALSE.)
+           write(*,'(32(1x,i3))') cptrn(1:rl+rr)
+
+          enddo
+          max_tens_vol=max_tens_vol/2_C_SIZE_T
+         enddo
+
+!Print run-time statistics:
+         ierr=talsh_stats()
+         if(ierr.ne.TALSH_SUCCESS) then; ierr=12; return; endif
+!Shutdown TALSH:
+         write(*,'(1x,"Shutting down TALSH ... ")',ADVANCE='NO')
+         ierr=talsh_shutdown()
+         write(*,'("Status ",i11)') ierr
+         if(ierr.ne.TALSH_SUCCESS) then; ierr=13; return; endif
+         return
+        end subroutine benchmark_tensor_cotractions

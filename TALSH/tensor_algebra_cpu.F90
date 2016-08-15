@@ -1,6 +1,6 @@
 !Tensor Algebra for Multi- and Many-core CPUs (OpenMP based).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2016/05/24
+!REVISION: 2016/08/15
 
 !Copyright (C) 2013-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -3371,12 +3371,12 @@
 	 stretch=(dble(tsz)/val)**(1d0/dble(tdm))
 	 do i=1,tdm
 	  val=dme(i)*stretch
-	  if(val.ge.1d0) then
+	  if(val.ge.2d0) then
 	   m=nint(val); if(i.lt.tdm) stretch=stretch*((val/dble(m))**(1d0/dble(tdm-i)))
 	  else
-	   m=1; if(i.lt.tdm) stretch=stretch*(val**(1d0/dble(tdm-i)))
+	   m=2; if(i.lt.tdm) stretch=stretch*(val**(1d0/dble(tdm-i)))
 	  endif
-	  if(m.lt.1) then; ierr=6; return; endif
+	  if(m.lt.2) then; ierr=6; return; endif
 	  call numchar(m,j,tsss(tsl+1:)); tsl=tsl+j+1; tsss(tsl:tsl)=','
 	 enddo
 	 tsss(tsl:tsl)=')'
@@ -3385,13 +3385,15 @@
 	endif
 	return
 	end subroutine tensor_shape_rnd
-!----------------------------------------------------
-        integer function tensor_shape_rank(tsss,ierr) !SERIAL
+!---------------------------------------------------------------------
+        integer function tensor_shape_rank(tsss,ierr,dim_ext,tens_vol) !SERIAL
 !This function returns the number of dimensions in a tensor shape specification string (TSSS).
         implicit none
-        character(*), intent(in):: tsss
-        integer, intent(inout):: ierr
-        integer i,j,l
+        character(*), intent(in):: tsss                 !in: tensor shape specificaton string
+        integer, intent(inout):: ierr                   !out: error code
+        integer, intent(inout), optional:: dim_ext(1:*) !out: tensor dimension extents
+        integer(8), intent(out), optional:: tens_vol    !out: tensor volume (total number of tensor elements)
+        integer i,j,l,dme(1:MAX_TENSOR_RANK)
 
         ierr=0; tensor_shape_rank=0
         if(tsss(1:1).eq.'(') then
@@ -3403,7 +3405,12 @@
             i=i+1; j=0
             do while(iachar(tsss(i+j:i+j)).ge.iachar('0').and.iachar(tsss(i+j:i+j)).le.iachar('9')); j=j+1; enddo
             if(j.gt.0) then; tensor_shape_rank=tensor_shape_rank+1; i=i+j; else; ierr=1; return; endif
+            dme(tensor_shape_rank)=icharnum(j,tsss(i:i+j-1))
            enddo
+          endif
+          if(present(dim_ext)) dim_ext(1:tensor_shape_rank)=dme(1:tensor_shape_rank)
+          if(present(tens_vol)) then
+           tens_vol=1_8; do i=1,tensor_shape_rank; tens_vol=tens_vol*dme(i); enddo
           endif
          else
           ierr=2
@@ -3698,7 +3705,8 @@
 ! - shape2 - shape string for the right tensor argument: '(..,..,..)';
 ! - cptrn(1:lrank+rrank) - contraction pattern.
         implicit none
-        integer, intent(in):: max_tens_arg_rank,max_tens_arg_size
+        integer, intent(in):: max_tens_arg_rank
+        integer(8), intent(in):: max_tens_arg_size
         character(*), intent(out):: shape0,shape1,shape2
         integer, intent(out):: cptrn(1:*)
         integer, intent(inout):: ierr

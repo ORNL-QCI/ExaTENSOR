@@ -167,7 +167,7 @@ __global__ void gpu_matrix_multiply_tn_r8__(size_t ll, size_t lr, size_t lc, con
 //------------------------------------------------------------------------------------------------------
 //PARAMETERS:
 static int VERBOSE=1; //verbosity for error messages
-static int DEBUG=1; //debugging mode
+static int DEBUG=0; //debugging mode
 #ifndef NO_GPU
 //GLOBAL DATA:
 // GPU control on the current MPI process:
