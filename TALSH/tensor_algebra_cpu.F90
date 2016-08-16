@@ -1,6 +1,6 @@
 !Tensor Algebra for Multi- and Many-core CPUs (OpenMP based).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2016/08/15
+!REVISION: 2016/08/16
 
 !Copyright (C) 2013-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -208,6 +208,7 @@
 	public tensor_shape_rank           !returns the number of dimensions in a tensor-shape-specification-string (TSSS)
 	public tensor_shape_str_create     !creates a tensor shape specification string
 	public get_contr_pattern           !converts a mnemonic contraction pattern into the digital form used by tensor_block_contract
+	public get_contr_pattern_sym       !converts a digital contraction pattern into a symbolic form
 	public get_contr_permutations      !given a digital contraction pattern, returns all tensor permutations necessary for the subsequent matrix multiplication
 	public contr_pattern_rnd           !returns a random tensor contraction pattern
 	public coherence_control_var       !returns a coherence control variable based on a mnemonic input
@@ -3604,6 +3605,57 @@
 	 end function index_label_ok
 
 	end subroutine get_contr_pattern
+!------------------------------------------------------------------------------------------
+        subroutine get_contr_pattern_sym(rank_left,rank_right,cptrn_dig,cptrn_sym,cpl,ierr) bind(c,name='get_contr_pattern_sym') !SERIAL
+!Converts a digital tensor contraction pattern into a symbolic form.
+        implicit none
+        integer(C_INT), intent(in):: rank_left                         !in: rank of the left tensor
+        integer(C_INT), intent(in):: rank_right                        !in: rank of the right tensor
+        integer(C_INT), intent(in):: cptrn_dig(1:rank_left+rank_right) !in: digital contraction pattern
+        character(C_CHAR), intent(inout):: cptrn_sym(1:*)              !out: symbolic contraction pattern
+        integer(C_INT), intent(out):: cpl                              !out: length of <cptrn_sym>
+        integer(C_INT), intent(out):: ierr                             !out: error code
+        integer(C_INT):: i,m,nu
+        character(C_CHAR):: left_lbl(1:MAX_TENSOR_RANK)
+
+        ierr=0; cpl=0
+        if(rank_left.ge.0.and.rank_right.ge.0) then
+         if(rank_left+rank_right.gt.0) then
+!Count uncontracted indices:
+          nu=0; do i=1,rank_left+rank_right; if(cptrn_dig(i).gt.0) nu=nu+1; enddo
+!Print the destination tensor:
+          cptrn_sym(1:len_trim('D('))=(/'D','('/); cpl=cpl+len_trim('D(')
+          m=iachar('a'); do i=1,nu; cptrn_sym(cpl+1:cpl+2)=(/achar(m),','/); cpl=cpl+2; m=m+1; enddo
+          if(cptrn_sym(cpl).eq.'(') cpl=cpl+1; cptrn_sym(cpl)=')'
+!Print the left tensor:
+          cptrn_sym(cpl+1:cpl+len_trim('+=L('))=(/'+','=','L','('/); cpl=cpl+len_trim('+=L(')
+          do i=1,rank_left
+           if(cptrn_dig(i).gt.0) then !uncontracted index
+            cptrn_sym(cpl+1:cpl+2)=(/achar(iachar('a')+cptrn_dig(i)-1),','/); cpl=cpl+2
+           else !contracted index
+            left_lbl(i)=achar(m)
+            cptrn_sym(cpl+1:cpl+2)=(/achar(m),','/); cpl=cpl+2; m=m+1
+           endif
+          enddo
+          if(cptrn_sym(cpl).eq.'(') cpl=cpl+1; cptrn_sym(cpl)=')'
+!Print the right tensor:
+          cptrn_sym(cpl+1:cpl+len_trim('*R('))=(/'*','R','('/); cpl=cpl+len_trim('*R(')
+          do i=1,rank_right
+           if(cptrn_dig(rank_left+i).gt.0) then !uncontracted index
+            cptrn_sym(cpl+1:cpl+2)=(/achar(iachar('a')+cptrn_dig(rank_left+i)-1),','/); cpl=cpl+2
+           else !contracted index
+            cptrn_sym(cpl+1:cpl+2)=(/left_lbl(-cptrn_dig(rank_left+i)),','/); cpl=cpl+2
+           endif
+          enddo
+          if(cptrn_sym(cpl).eq.'(') cpl=cpl+1; cptrn_sym(cpl)=')'
+         else
+          cpl=len_trim('D()+=L()*R()'); cptrn_sym(1:cpl)='D()+=L()*R()'
+         endif
+        else
+         ierr=1
+        endif
+        return
+        end subroutine get_contr_pattern_sym
 !-------------------------------------------------------------------------------------------
 	subroutine get_contr_permutations(lrank,rrank,cptrn,dprm,lprm,rprm,ncd,nlu,nru,ierr) bind(c,name='get_contr_permutations') !SERIAL
 !This subroutine returns all tensor index permutations necessary for the tensor

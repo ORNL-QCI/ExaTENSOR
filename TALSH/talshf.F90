@@ -1,5 +1,5 @@
 !ExaTensor::TAL-SH: Device-unified user-level API:
-!REVISION: 2016/08/15
+!REVISION: 2016/08/16
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -28,6 +28,8 @@
         public tensor_block_t    !tensor block (Fortran)
         public MAX_SHAPE_STR_LEN !max length of a shape-defining string
         public tensor_shape_rank
+        public get_contr_pattern
+        public get_contr_pattern_sym
         public contr_pattern_rnd
 !PARAMETERS:
  !Generic:
