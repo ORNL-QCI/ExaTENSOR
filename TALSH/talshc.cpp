@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level API.
-REVISION: 2016/06/17
+REVISION: 2016/08/16
 
 Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -1470,15 +1470,15 @@ int talshTaskComplete(talsh_task_t * talsh_task, int * stats, int * ierr)
  cudaTask_t *cuda_task_p;
 
  errc=NOPE;
- if(talsh_on == 0){*ierr=TALSH_NOT_INITIALIZED; return errc;}
  if(ierr == NULL) return TALSH_INVALID_ARGS;
+ if(talsh_on == 0){*ierr=TALSH_NOT_INITIALIZED; return errc;}
  if(talsh_task == NULL || stats == NULL){*ierr=TALSH_INVALID_ARGS; return errc;}
+ *ierr=TALSH_SUCCESS;
  if(talsh_task->task_error >= 0){ //already finalized
   if(talsh_task->task_error == 0){*stats=TALSH_TASK_COMPLETED;}else{*stats=TALSH_TASK_ERROR;}
   return YEP;
  }
  if(talsh_task->task_p == NULL){*ierr=TALSH_OBJECT_IS_EMPTY; return errc;}
- *ierr=TALSH_SUCCESS;
  switch(talsh_task->dev_kind){
   case DEV_HOST:
    host_task_p=((host_task_t*)(talsh_task->task_p));

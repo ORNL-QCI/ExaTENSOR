@@ -1077,7 +1077,7 @@
 
          ierr=0
          if(tensor_block_is_empty(tens)) then
-          if(tens_shape%num_dim.ge.0.and.tens_shape%num_dim.le.MAX_TENSOR_RANK.and.associated(tens_shape%dim_extent)) then
+          if(tens_shape%num_dim.ge.0.and.tens_shape%num_dim.le.MAX_TENSOR_RANK) then
            if(c_associated(tens_body)) then
             tens%ptr_alloc=0
             tens%tensor_shape=tens_shape !pointer components are pointer associated only
