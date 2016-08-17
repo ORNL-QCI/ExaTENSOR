@@ -216,12 +216,12 @@
          integer, parameter:: MAX_LARGE_DIM=64  !max extent of large dimensions
          integer, parameter:: MAX_SMALL_DIM=8   !max extent of small dimensions
          integer, parameter:: NUM_REPEATS=1     !number of repeated tensor contractions that differ in index mapping
-         real(C_DOUBLE), parameter:: CMP_ZERO=1d-8 !comparison threshold
+         real(C_DOUBLE), parameter:: CMP_ZERO=1d-7 !comparison threshold
          integer(C_INT):: i,j,k,l,m,n,num_gpus,host_arg_max,sts,rd,rl,rr,mnc,nc,ncl,ncs,nul,nus,cptrn(1:MAX_TENS_RANK*2)
          integer(C_INT):: pll(0:MAX_TENS_RANK),pls(0:MAX_TENS_RANK),prl(0:MAX_TENS_RANK),prs(0:MAX_TENS_RANK)
          integer(C_INT):: pdl(0:MAX_TENS_RANK),pds(0:MAX_TENS_RANK)
          integer(C_INT):: ddims(1:MAX_TENS_RANK),ldims(1:MAX_TENS_RANK),rdims(1:MAX_TENS_RANK)
-         integer(C_SIZE_T):: host_buf_size,max_buf_vol,vd,vl,vr,words
+         integer(C_SIZE_T):: host_buf_size,max_tens_vol,vd,vl,vr,words
          character(C_CHAR):: cptrn_sym(256)
          character(256):: str
          type(talsh_tens_t):: dtens,ltens,rtens
@@ -257,8 +257,8 @@
 #endif
          write(*,'("Status ",i11,": Size (Bytes) = ",i13,": Max args in HAB = ",i7)') ierr,host_buf_size,host_arg_max
          if(ierr.ne.TALSH_SUCCESS) then; ierr=2; return; endif
-         max_buf_vol=host_buf_size/3_C_SIZE_T/8_C_SIZE_T !max buffer volume for double precision
-         write(*,'(" Max host buffer volume (words) = ",i11)') max_buf_vol
+         max_tens_vol=host_buf_size/3_C_SIZE_T/8_C_SIZE_T !max tensor volume for double precision
+         write(*,'(" Max DP tensor volume (words) = ",i11)') max_tens_vol
 
 !Tensor contractions:
          n=0 !will be the total number of tensor contractions performed
@@ -281,7 +281,7 @@
               vl=1_C_SIZE_T; do i=1,rl; vl=vl*ldims(i); enddo !volume of the left tensor
               vr=1_C_SIZE_T; do i=1,rr; vr=vr*rdims(i); enddo !volume of the right tensor
               words=vd+vl+vr
-              if(words.le.max_buf_vol) exit
+              if(max(vd,max(vl,vr)).le.max_tens_vol) exit
               do i=1,rd; if(ddims(i).gt.MAX_SMALL_DIM) ddims(i)=ddims(i)-5; enddo
               do i=1,rl; if(ldims(i).gt.MAX_SMALL_DIM) ldims(i)=ldims(i)-5; enddo
               do i=1,rr; if(rdims(i).gt.MAX_SMALL_DIM) rdims(i)=rdims(i)-5; enddo
@@ -348,7 +348,7 @@
               ierr=talsh_task_wait(tsk,sts); if(ierr.ne.TALSH_SUCCESS.or.sts.ne.TALSH_TASK_COMPLETED) then; ierr=9; return; endif
               ierr=talsh_task_time(tsk,tm,tmc,tmi,tmo)
               if(ierr.ne.TALSH_SUCCESS) then; write(*,'("Error ",i11)') ierr; ierr=10; return; endif
-              write(*,'(": ",D8.2,1x,D8.2)') flops/tmc,flops/dble(words)
+              write(*,'(": ",D8.2,1x,D8.2)',ADVANCE='NO') flops/dble(words),flops/tmc
               gn1=talshTensorImageNorm1_cpu(dtens)!; write(*,'(1x,"Destination Norm1 (GPU) = ",D25.14)') gn1
    !Destruct task handle:
               ierr=talsh_task_destruct(tsk); if(ierr.ne.TALSH_SUCCESS) then; ierr=11; return; endif
@@ -356,17 +356,22 @@
               ierr=talsh_tensor_destruct(dtens); if(ierr.ne.TALSH_SUCCESS) then; ierr=12; return; endif
               cval=(1d-1,0d0); ierr=talsh_tensor_construct(dtens,R8,ddims(1:rd),init_val=cval)
               if(ierr.ne.TALSH_SUCCESS) then; ierr=13; return; endif
-              ierr=talsh_tensor_contract(str(1:l),dtens,ltens,rtens,dev_id=talsh_flat_dev_id(DEV_HOST,0))
+              ierr=talsh_tensor_contract(str(1:l),dtens,ltens,rtens,dev_id=talsh_flat_dev_id(DEV_HOST,0),talsh_task=tsk)
               if(ierr.ne.TALSH_SUCCESS) then; write(*,'("Error ",i11)') ierr; ierr=14; return; endif
+              ierr=talsh_task_wait(tsk,sts); if(ierr.ne.TALSH_SUCCESS.or.sts.ne.TALSH_TASK_COMPLETED) then; ierr=15; return; endif
+              ierr=talsh_task_time(tsk,tm,tmc,tmi,tmo)
+              if(ierr.ne.TALSH_SUCCESS) then; write(*,'("Error ",i11)') ierr; ierr=16; return; endif
+              write(*,'(1x,D8.2)') flops/tm
               cn1=talshTensorImageNorm1_cpu(dtens)!; write(*,'(1x,"Destination Norm1 (CPU) = ",D25.14)') cn1
               if(dabs(cn1-gn1).gt.CMP_ZERO) then
                write(*,'("FAILED: CPU/GPU result mismatch: 1-norms (CPU vs GPU): ",D25.14,2x,D25.14)') cn1,gn1
-               ierr=15; return
+               ierr=17; return
               endif
+              ierr=talsh_task_destruct(tsk); if(ierr.ne.TALSH_SUCCESS) then; ierr=18; return; endif
    !Destruct tensor blocks:
-              ierr=talsh_tensor_destruct(dtens); if(ierr.ne.TALSH_SUCCESS) then; ierr=16; return; endif
-              ierr=talsh_tensor_destruct(ltens); if(ierr.ne.TALSH_SUCCESS) then; ierr=17; return; endif
-              ierr=talsh_tensor_destruct(rtens); if(ierr.ne.TALSH_SUCCESS) then; ierr=18; return; endif
+              ierr=talsh_tensor_destruct(dtens); if(ierr.ne.TALSH_SUCCESS) then; ierr=19; return; endif
+              ierr=talsh_tensor_destruct(ltens); if(ierr.ne.TALSH_SUCCESS) then; ierr=20; return; endif
+              ierr=talsh_tensor_destruct(rtens); if(ierr.ne.TALSH_SUCCESS) then; ierr=21; return; endif
              enddo !m
             enddo !ncl
            enddo !nc
@@ -376,11 +381,11 @@
 
 !Print run-time statistics:
          ierr=talsh_stats()
-         if(ierr.ne.TALSH_SUCCESS) then; ierr=19; return; endif
+         if(ierr.ne.TALSH_SUCCESS) then; ierr=22; return; endif
 !Shutdown TALSH:
          write(*,'(1x,"Shutting down TALSH ... ")',ADVANCE='NO')
          ierr=talsh_shutdown()
          write(*,'("Status ",i11)') ierr
-         if(ierr.ne.TALSH_SUCCESS) then; ierr=20; return; endif
+         if(ierr.ne.TALSH_SUCCESS) then; ierr=23; return; endif
          return
         end subroutine benchmark_tensor_contractions

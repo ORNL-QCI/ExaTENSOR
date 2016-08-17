@@ -1582,8 +1582,9 @@ int talshTaskTime(talsh_task_t * talsh_task, double * total, double * comput, do
  }
  switch(talsh_task->dev_kind){
   case DEV_HOST:
-   tot_tm=(float)talsh_task->exec_time; in_tm=-1.0f; out_tm=-1.0f; comp_tm=-1.0f;
+   tot_tm=(float)(talsh_task->exec_time); in_tm=-1.0f; out_tm=-1.0f; comp_tm=-1.0f;
    if(tot_tm < 0.0f) errc=TALSH_FAILURE;
+   break;
   case DEV_NVIDIA_GPU:
 #ifndef NO_GPU
    cuda_task_p=(cudaTask_t*)(talsh_task->task_p);
@@ -1847,6 +1848,7 @@ int talshTensorContract(const char * cptrn,        //in: C-string: symbolic cont
  cudaTask_t * cuda_task;
  tensBlck_t *dctr,*lctr,*rctr;
  void *dftr,*lftr,*rftr;
+ clock_t ctm;
 
  if(talsh_on == 0) return TALSH_NOT_INITIALIZED;
  //Create a TAL-SH task:
@@ -1973,11 +1975,13 @@ int talshTensorContract(const char * cptrn,        //in: C-string: symbolic cont
    if(cohl == COPY_D || (cohl == COPY_M && ltens->dev_rsc[limg].dev_id != devid)) ltens->avail[limg] = NOPE;
    if(cohd == COPY_D || (cohd == COPY_M && dtens->dev_rsc[dimg].dev_id != devid)) dtens->avail[dimg] = NOPE;
    //Schedule the tensor operation via the device-specific runtime:
+   ctm=clock();
    errc=cpu_tensor_block_contract(contr_ptrn,lftr,rftr,dftr,scale_real,scale_imag); //blocking call
    if(talshTensorRank(dtens) == 0){ //an explicit update is needed for scalar destinations
     j=talsh_update_f_scalar(dftr,dtens->data_kind[dimg],dtens->dev_rsc[dimg].gmem_p);
     if(j) errc=TALSH_FAILURE;
    }
+   tsk->exec_time=((double)(clock()-ctm))/CLOCKS_PER_SEC;
    //Dissociate <tensor_block_t> objects:
    j=talsh_tensor_f_dissoc(rftr); if(j) errc=TALSH_FAILURE;
    j=talsh_tensor_f_dissoc(lftr); if(j) errc=TALSH_FAILURE;

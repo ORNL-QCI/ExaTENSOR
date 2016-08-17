@@ -145,8 +145,8 @@ __global__ void gpu_array_scale_r4__(size_t tsize, float* __restrict__ arr, cons
 __global__ void gpu_array_scale_r8__(size_t tsize, double* __restrict__ arr, const double* __restrict__ val_p);
 __global__ void gpu_array_add_r4__(size_t tsize, float* __restrict__ arr0, const float* __restrict__ arr1, float val);
 __global__ void gpu_array_add_r8__(size_t tsize, double* __restrict__ arr0, const double* __restrict__ arr1, double val);
-__global__ void gpu_array_dot_product_r4__(size_t tsize, const float *arr1, const float *arr2, volatile float *dprod);
-__global__ void gpu_array_dot_product_r8__(size_t tsize, const double *arr1, const double *arr2, volatile double *dprod);
+template <typename T>
+__global__ void gpu_array_dot_product__(size_t tsize, const T * arr1, const T * arr2, volatile T * dprod);
 __global__ void gpu_array_product_r4__(size_t tsize1, const float* __restrict__ arr1, size_t tsize2,
                                        const float* __restrict__ arr2, float* __restrict__ arr0);
 __global__ void gpu_array_product_r8__(size_t tsize1, const double* __restrict__ arr1, size_t tsize2,
@@ -167,7 +167,7 @@ __global__ void gpu_matrix_multiply_tn_r8__(size_t ll, size_t lr, size_t lc, con
 //------------------------------------------------------------------------------------------------------
 //PARAMETERS:
 static int VERBOSE=1; //verbosity for error messages
-static int DEBUG=1; //debugging mode
+static int DEBUG=0; //debugging mode
 #ifndef NO_GPU
 //GLOBAL DATA:
 // GPU control on the current MPI process:
@@ -226,8 +226,8 @@ __device__ __constant__ static cuDoubleComplex zgemm_alpha_; //alpha constant ZG
 __device__ __constant__ static cuDoubleComplex zgemm_beta_;  //beta constant ZGEMM
 // Infrastructure for functions <gpu_array_norm2_XX>:
 __device__ static int norm2_wr_lock=0; //write lock shared by all <gpu_array_norm2_XX> running on GPU
-// Infrastructure for kernels <gpu_array_dot_product_XX__>:
-__device__ static int dot_product_wr_lock=0; //write lock shared by all <gpu_array_dot_product_XX__> running on GPU
+// Infrastructure for kernels <gpu_array_dot_product__>:
+__device__ static int dot_product_wr_lock=0; //write lock shared by all <gpu_array_dot_product__> running on GPU
 #endif
 //-------------------------------------------------------------------------------------------------------------------
 //CUDA runtime (for Fortran):
@@ -3656,12 +3656,12 @@ NOTES:
   bx=1+(vol_l-1)/THRDS_ARRAY_SCALE; if(bx > MAX_CUDA_BLOCKS) bx=MAX_CUDA_BLOCKS;
   switch(ltens->data_kind){
    case R4:
-    gpu_array_dot_product_r4__<<<bx,THRDS_ARRAY_SCALE,THRDS_ARRAY_SCALE*sizeof(float),*cuda_stream>>>
-                                 (vol_l,(float*)larg,(float*)rarg,(float*)darg);
+    gpu_array_dot_product__<<<bx,THRDS_ARRAY_SCALE,THRDS_ARRAY_SCALE*sizeof(float),*cuda_stream>>>
+                             (vol_l,(float*)larg,(float*)rarg,(float*)darg);
     break;
    case R8:
-    gpu_array_dot_product_r8__<<<bx,THRDS_ARRAY_SCALE,THRDS_ARRAY_SCALE*sizeof(double),*cuda_stream>>>
-                                 (vol_l,(double*)larg,(double*)rarg,(double*)darg);
+    gpu_array_dot_product__<<<bx,THRDS_ARRAY_SCALE,THRDS_ARRAY_SCALE*sizeof(double),*cuda_stream>>>
+                             (vol_l,(double*)larg,(double*)rarg,(double*)darg);
     break;
    default:
     errc=cuda_task_record(cuda_task,coh_ctrl,47); errc=gpu_activate(cur_gpu); return 47;
@@ -3951,47 +3951,34 @@ __global__ void gpu_array_add_r8__(size_t tsize, double* __restrict__ arr0, cons
  for(size_t l=_ti;l<tsize;l+=_gd){arr0[l]+=(arr1[l]*val);}
  return;
 }
-//-------------------------------------------------------------------------------------------------------------------
-// ARRAY DOT-PRODUCT (R4):
-__global__ void gpu_array_dot_product_r4__(size_t tsize, const float *arr1, const float *arr2, volatile float *dprod)
+//-------------------------------------------------------------------------------------------------------
+// ARRAY DOT-PRODUCT:
+template <typename T>
+__global__ void gpu_array_dot_product__(size_t tsize, const T* arr1, const T* arr2, volatile T* dprod)
 /** Scalar (GPU) += arr1(:) * arr2(:) **/
 {
- extern __shared__ float dprs_r4[]; //volume = blockDim.x
+ extern __shared__ char sh_buf[]; //size = blockDim.x * sizeof(T)
+ T dpr;
+ T *dprs;
  size_t l;
- int i,j;
- float dpr;
- dpr=0.0f; for(l=blockIdx.x*blockDim.x+threadIdx.x;l<tsize;l+=gridDim.x*blockDim.x){dpr+=arr1[l]*arr2[l];}
- dprs_r4[threadIdx.x]=dpr;
+ int j,s;
+
+ dprs=(T*)(&sh_buf[0]); //dynamic shared memory buffer
+ dpr=static_cast<T>(0.0);
+ for(l=blockIdx.x*blockDim.x+threadIdx.x;l<tsize;l+=gridDim.x*blockDim.x){dpr+=arr1[l]*arr2[l];}
+ dprs[threadIdx.x]=dpr;
  __syncthreads();
- i=1; while(i < blockDim.x){j=threadIdx.x*(i*2); if(j+i < blockDim.x) dprs_r4[j]+=dprs_r4[j+i]; i*=2;}
- __syncthreads();
- if(threadIdx.x == 0){
-  i=1; while(i == 1){i=atomicMax(&dot_product_wr_lock,1);} //waiting for a lock to unlock, then lock
-  *dprod+=dprs_r4[0];
-  __threadfence();
-  i=atomicExch(&dot_product_wr_lock,0); //unlock
+ s=blockDim.x;
+ while(s > 1){
+  j=(s+1)/2;
+  if(threadIdx.x + j < s) dprs[threadIdx.x]+=dprs[threadIdx.x+j];
+  __syncthreads();
+  s=j;
  }
- __syncthreads();
- return;
-}
-//----------------------------------------------------------------------------------------------------------------------
-// ARRAY DOT-PRODUCT (R8):
-__global__ void gpu_array_dot_product_r8__(size_t tsize, const double *arr1, const double *arr2, volatile double *dprod)
-/** Scalar (GPU) += arr1(:) * arr2(:) **/
-{
- extern __shared__ double dprs_r8[]; //volume = blockDim.x
- size_t l;
- int i,j;
- double dpr;
- dpr=0.0; for(l=blockIdx.x*blockDim.x+threadIdx.x;l<tsize;l+=gridDim.x*blockDim.x){dpr+=arr1[l]*arr2[l];}
- dprs_r8[threadIdx.x]=dpr;
- __syncthreads();
- i=1; while(i < blockDim.x){j=threadIdx.x*(i*2); if(j+i < blockDim.x) dprs_r8[j]+=dprs_r8[j+i]; i*=2;}
- __syncthreads();
  if(threadIdx.x == 0){
-  j=1; while(j){i=atomicMax(&dot_product_wr_lock,1); if(i == 0){*dprod+=dprs_r8[0]; j=0;}}
+  j=1; while(j){s=atomicMax(&dot_product_wr_lock,1); if(s == 0){*dprod+=dprs[0]; j=0;}}
   __threadfence();
-  i=atomicExch(&dot_product_wr_lock,0); //unlock
+  s=atomicExch(&dot_product_wr_lock,0); //unlock
  }
  __syncthreads();
  return;
