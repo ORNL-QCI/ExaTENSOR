@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level API.
-REVISION: 2016/08/16
+REVISION: 2016/08/17
 
 Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -94,6 +94,7 @@ int talsh_get_contr_ptrn_str2dig(const char * c_str, int * dig_ptrn, int * dig_l
 // Fortran tensor block aliasing:
 int talsh_tensor_f_assoc(const talsh_tens_t * talsh_tens, int image_id, void ** tensF);
 int talsh_tensor_f_dissoc(void * tensF);
+int talsh_update_f_scalar(void * tensF, int data_kind, void * gmem_p);
 #ifdef __cplusplus
 }
 #endif
@@ -915,6 +916,12 @@ int talshTensorDestroy(talsh_tens_t * tens_block) //in: non-NULL pointer to a te
  errc=talshTensorDestruct(tens_block);
  free(tens_block);
  return errc;
+}
+
+int talshTensorRank(const talsh_tens_t * tens_block)
+/** Returns the tensor block rank (number of dimensions). **/
+{
+ return tensShape_rank(tens_block->shape_p);
 }
 
 size_t talshTensorVolume(const talsh_tens_t * tens_block) //in: tensor block
@@ -1967,6 +1974,11 @@ int talshTensorContract(const char * cptrn,        //in: C-string: symbolic cont
    if(cohd == COPY_D || (cohd == COPY_M && dtens->dev_rsc[dimg].dev_id != devid)) dtens->avail[dimg] = NOPE;
    //Schedule the tensor operation via the device-specific runtime:
    errc=cpu_tensor_block_contract(contr_ptrn,lftr,rftr,dftr,scale_real,scale_imag); //blocking call
+   if(talshTensorRank(dtens) == 0){ //an explicit update is needed for scalar destinations
+    j=talsh_update_f_scalar(dftr,dtens->data_kind[dimg],dtens->dev_rsc[dimg].gmem_p);
+    if(j) errc=TALSH_FAILURE;
+   }
+   //Dissociate <tensor_block_t> objects:
    j=talsh_tensor_f_dissoc(rftr); if(j) errc=TALSH_FAILURE;
    j=talsh_tensor_f_dissoc(lftr); if(j) errc=TALSH_FAILURE;
    j=talsh_tensor_f_dissoc(dftr); if(j) errc=TALSH_FAILURE;
