@@ -167,7 +167,7 @@ __global__ void gpu_matrix_multiply_tn_r8__(size_t ll, size_t lr, size_t lc, con
 //------------------------------------------------------------------------------------------------------
 //PARAMETERS:
 static int VERBOSE=1; //verbosity for error messages
-static int DEBUG=0; //debugging mode
+static int DEBUG=1; //debugging mode
 #ifndef NO_GPU
 //GLOBAL DATA:
 // GPU control on the current MPI process:
@@ -225,9 +225,9 @@ __device__ __constant__ static cuComplex cgemm_beta_;        //beta constant CGE
 __device__ __constant__ static cuDoubleComplex zgemm_alpha_; //alpha constant ZGEMM
 __device__ __constant__ static cuDoubleComplex zgemm_beta_;  //beta constant ZGEMM
 // Infrastructure for functions <gpu_array_norm2_XX>:
-__device__ static int norm2_wr_lock=0; //write lock (shared by all <gpu_array_norm2_XX> running on GPU)
+__device__ static int norm2_wr_lock=0; //write lock shared by all <gpu_array_norm2_XX> running on GPU
 // Infrastructure for kernels <gpu_array_dot_product_XX__>:
-__device__ static int dot_product_wr_lock=0; //write lock (shared by all <gpu_array_dot_product_XX__> running on GPU)
+__device__ static int dot_product_wr_lock=0; //write lock shared by all <gpu_array_dot_product_XX__> running on GPU
 #endif
 //-------------------------------------------------------------------------------------------------------------------
 //CUDA runtime (for Fortran):
@@ -3989,8 +3989,7 @@ __global__ void gpu_array_dot_product_r8__(size_t tsize, const double *arr1, con
  i=1; while(i < blockDim.x){j=threadIdx.x*(i*2); if(j+i < blockDim.x) dprs_r8[j]+=dprs_r8[j+i]; i*=2;}
  __syncthreads();
  if(threadIdx.x == 0){
-  i=1; while(i == 1){i=atomicMax(&dot_product_wr_lock,1);} //waiting for a lock to unlock, then lock
-  *dprod+=dprs_r8[0];
+  j=1; while(j){i=atomicMax(&dot_product_wr_lock,1); if(i == 0){*dprod+=dprs_r8[0]; j=0;}}
   __threadfence();
   i=atomicExch(&dot_product_wr_lock,0); //unlock
  }

@@ -46,7 +46,7 @@
 !        if(ierr.ne.0) stop
 !Benchmark tensor contraction performance:
         write(*,'("Benchmarking tensor contraction performance ...")')
-        call benchmark_tensor_cotractions(ierr)
+        call benchmark_tensor_contractions(ierr)
         write(*,'("Done: Status ",i5)') ierr
         if(ierr.ne.0) stop
         stop
@@ -201,7 +201,7 @@
         return
         end subroutine test_talsh_f
 !----------------------------------------------------
-        subroutine benchmark_tensor_cotractions(ierr)
+        subroutine benchmark_tensor_contractions(ierr)
 !Benchmarks tensor contraction performance.
          use, intrinsic:: ISO_C_BINDING
          use tensor_algebra
@@ -216,6 +216,7 @@
          integer, parameter:: MAX_LARGE_DIM=64  !max extent of large dimensions
          integer, parameter:: MAX_SMALL_DIM=8   !max extent of small dimensions
          integer, parameter:: NUM_REPEATS=1     !number of repeated tensor contractions that differ in index mapping
+         real(C_DOUBLE), parameter:: CMP_ZERO=1d-8 !comparison threshold
          integer(C_INT):: i,j,k,l,m,n,num_gpus,host_arg_max,sts,rd,rl,rr,mnc,nc,ncl,ncs,nul,nus,cptrn(1:MAX_TENS_RANK*2)
          integer(C_INT):: pll(0:MAX_TENS_RANK),pls(0:MAX_TENS_RANK),prl(0:MAX_TENS_RANK),prs(0:MAX_TENS_RANK)
          integer(C_INT):: pdl(0:MAX_TENS_RANK),pds(0:MAX_TENS_RANK)
@@ -348,7 +349,7 @@
               ierr=talsh_task_time(tsk,tm,tmc,tmi,tmo)
               if(ierr.ne.TALSH_SUCCESS) then; write(*,'("Error ",i11)') ierr; ierr=10; return; endif
               write(*,'(": ",D8.2,1x,D8.2)') flops/tmc,flops/dble(words)
-              gn1=talshTensorImageNorm1_cpu(dtens); write(*,'(1x,"Destination Norm1 (GPU) = ",D25.14)') gn1
+              gn1=talshTensorImageNorm1_cpu(dtens)!; write(*,'(1x,"Destination Norm1 (GPU) = ",D25.14)') gn1
    !Destruct task handle:
               ierr=talsh_task_destruct(tsk); if(ierr.ne.TALSH_SUCCESS) then; ierr=11; return; endif
    !Run tensor contraction on CPU:
@@ -357,11 +358,15 @@
               if(ierr.ne.TALSH_SUCCESS) then; ierr=13; return; endif
               ierr=talsh_tensor_contract(str(1:l),dtens,ltens,rtens,dev_id=talsh_flat_dev_id(DEV_HOST,0))
               if(ierr.ne.TALSH_SUCCESS) then; write(*,'("Error ",i11)') ierr; ierr=14; return; endif
-              cn1=talshTensorImageNorm1_cpu(dtens); write(*,'(1x,"Destination Norm1 (CPU) = ",D25.14)') cn1
+              cn1=talshTensorImageNorm1_cpu(dtens)!; write(*,'(1x,"Destination Norm1 (CPU) = ",D25.14)') cn1
+              if(dabs(cn1-gn1).gt.CMP_ZERO) then
+               write(*,'("FAILED: CPU/GPU result mismatch: 1-norms (CPU vs GPU): ",D25.14,2x,D25.14)') cn1,gn1
+               ierr=15; return
+              endif
    !Destruct tensor blocks:
-              ierr=talsh_tensor_destruct(dtens); if(ierr.ne.TALSH_SUCCESS) then; ierr=15; return; endif
-              ierr=talsh_tensor_destruct(ltens); if(ierr.ne.TALSH_SUCCESS) then; ierr=16; return; endif
-              ierr=talsh_tensor_destruct(rtens); if(ierr.ne.TALSH_SUCCESS) then; ierr=17; return; endif
+              ierr=talsh_tensor_destruct(dtens); if(ierr.ne.TALSH_SUCCESS) then; ierr=16; return; endif
+              ierr=talsh_tensor_destruct(ltens); if(ierr.ne.TALSH_SUCCESS) then; ierr=17; return; endif
+              ierr=talsh_tensor_destruct(rtens); if(ierr.ne.TALSH_SUCCESS) then; ierr=18; return; endif
              enddo !m
             enddo !ncl
            enddo !nc
@@ -371,11 +376,11 @@
 
 !Print run-time statistics:
          ierr=talsh_stats()
-         if(ierr.ne.TALSH_SUCCESS) then; ierr=18; return; endif
+         if(ierr.ne.TALSH_SUCCESS) then; ierr=19; return; endif
 !Shutdown TALSH:
          write(*,'(1x,"Shutting down TALSH ... ")',ADVANCE='NO')
          ierr=talsh_shutdown()
          write(*,'("Status ",i11)') ierr
-         if(ierr.ne.TALSH_SUCCESS) then; ierr=19; return; endif
+         if(ierr.ne.TALSH_SUCCESS) then; ierr=20; return; endif
          return
-        end subroutine benchmark_tensor_cotractions
+        end subroutine benchmark_tensor_contractions
