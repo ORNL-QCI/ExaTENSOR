@@ -1,5 +1,5 @@
 !ExaTensor::TAL-SH: Device-unified user-level API:
-!REVISION: 2016/08/17
+!REVISION: 2016/08/23
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -50,6 +50,7 @@
         integer(C_INT), parameter, public:: TALSH_IN_PROGRESS=1000006         !TAL-SH operation is still in progress (not finished)
         integer(C_INT), parameter, public:: TALSH_NOT_ALLOWED=1000007         !request is not allowed by TAL-SH
         integer(C_INT), parameter, public:: TALSH_LIMIT_EXCEEDED=1000008      !internal limit exceeded
+        integer(C_INT), parameter, public:: TALSH_NOT_FOUND=1000009           !requested object not found
  !TAL-SH task status:
         integer(C_INT), parameter, public:: TALSH_TASK_ERROR=1999999
         integer(C_INT), parameter, public:: TALSH_TASK_EMPTY=2000000
@@ -194,9 +195,17 @@
           type(talsh_tens_t), intent(in):: tens_block
           type(talsh_tens_shape_t), intent(inout):: tens_shape
          end function talshTensorShape
+  !Get the data kind of each tensor image:
+         integer(C_INT) function talshTensorDataKind(tens_block,num_images,data_kinds) bind(c,name='talshTensorDataKind')
+          import
+          implicit none
+          type(talsh_tens_t), intent(in):: tens_block
+          integer(C_INT), intent(out):: num_images
+          integer(C_INT), intent(inout):: data_kinds(*)
+         end function talshTensorDataKind
   !Query the presence of the tensor block on device(s):
          integer(C_INT) function talshTensorPresence_(tens_block,ncopies,copies,data_kinds,dev_kind,dev_id)&
-                                 bind(c,name='talshTensorPresence_')
+                                 &bind(c,name='talshTensorPresence_')
           import
           implicit none
           type(talsh_tens_t), intent(in):: tens_block
@@ -206,6 +215,17 @@
           integer(C_INT), value, intent(in):: dev_kind
           integer(C_INT), value, intent(in):: dev_id
          end function talshTensorPresence_
+  !Get access to the tensor body image for a subsequent initialization:
+         integer(C_INT) function talshTensorGetBodyAccess_(tens_block,body_p,data_kind,dev_id,dev_kind)&
+                                 &bind(c,name='talshTensorGetBodyAccess_')
+          import
+          implicit none
+          type(talsh_tens_t), intent(inout):: tens_block
+          type(C_PTR), intent(inout):: body_p
+          integer(C_INT), intent(in), value:: data_kind
+          integer(C_INT), intent(in), value:: dev_id
+          integer(C_INT), intent(in), value:: dev_kind
+         end function talshTensorGetBodyAccess_
   !Print information about a TAL-SH tensor:
          subroutine talsh_tensor_print_info(tens_block) bind(c,name='talshTensorPrintInfo')
           import
@@ -352,6 +372,7 @@
         public talsh_tensor_rank
         public talsh_tensor_volume
         public talsh_tensor_shape
+        public talsh_tensor_data_kind
         public talsh_tensor_presence
         public talsh_tensor_print_info
  !TAL-SH task API:
@@ -831,6 +852,16 @@
          ierr=talshTensorShape(tens_block,tens_shape)
          return
         end function talsh_tensor_shape
+!-------------------------------------------------------------------------------------
+        function talsh_tensor_data_kind(tens_block,num_images,data_kinds) result(ierr)
+         implicit none
+         integer(C_INT):: ierr                           !out: error code (0:success)
+         type(talsh_tens_t), intent(in):: tens_block     !in: tensor block
+         integer(C_INT), intent(out):: num_images        !out: number of tensor images
+         integer(C_INT), intent(inout):: data_kinds(1:*) !out: data kind of each tensor image
+         ierr=talshTensorDataKind(tens_block,num_images,data_kinds)
+         return
+        end function talsh_tensor_data_kind
 !--------------------------------------------------------------------------------------------------------
         function talsh_tensor_presence(tens_block,ncopies,copies,data_kinds,dev_kind,dev_id) result(ierr)
          implicit none
@@ -848,6 +879,21 @@
          ierr=talshTensorPresence_(tens_block,ncopies,copies,data_kinds,devk,devnum)
          return
         end function talsh_tensor_presence
+!------------------------------------------------------------------------------------------------------
+        function talsh_tensor_get_body_access(tens_block,body_p,data_kind,dev_id,dev_kind) result(ierr)
+         implicit none
+         integer(C_INT):: ierr                           !out: error code (0:success)
+         type(talsh_tens_t), intent(inout):: tens_block  !inout: tensor block
+         type(C_PTR), intent(inout):: body_p             !out: pointer to the tensor body image
+         integer(C_INT), intent(in):: data_kind          !in: requested data kind for the image
+         integer(C_INT), intent(in):: dev_id             !in: requested device id for the image, either kind-specific or flat
+         integer(C_INT), intent(in), optional:: dev_kind !in: requested device kind (if present <dev_id> is kind-specific, flat otherwise)
+         integer(C_INT):: devk
+
+         if(present(dev_kind)) then; devk=dev_kind; else; devk=DEV_NULL; endif
+         ierr=talshTensorGetBodyAccess_(tens_block,body_p,data_kind,dev_id,devk)
+         return
+        end function talsh_tensor_get_body_access
 !------------------------------------------------------------
         function talsh_task_destruct(talsh_task) result(ierr)
          implicit none
