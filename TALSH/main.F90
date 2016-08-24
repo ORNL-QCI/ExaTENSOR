@@ -200,7 +200,7 @@
         if(ierr.ne.TALSH_SUCCESS) then; ierr=14; return; endif
         return
         end subroutine test_talsh_f
-!----------------------------------------------------
+!-----------------------------------------------------
         subroutine benchmark_tensor_contractions(ierr)
 !Benchmarks tensor contraction performance.
          use, intrinsic:: ISO_C_BINDING
@@ -349,7 +349,12 @@
               ierr=talsh_task_wait(tsk,sts); if(ierr.ne.TALSH_SUCCESS.or.sts.ne.TALSH_TASK_COMPLETED) then; ierr=9; return; endif
               ierr=talsh_task_time(tsk,tm,tmc,tmi,tmo)
               if(ierr.ne.TALSH_SUCCESS) then; write(*,'("Error ",i11)') ierr; ierr=10; return; endif
-              write(*,'(": ",D8.2,1x,D8.2)',ADVANCE='NO') flops/dble(words),flops/tmc
+              write(*,'(": ",D8.2)',ADVANCE='NO') flops/dble(words) !compute intensity
+              if(tmc.gt.0d0) then
+               write(*,'(1x,D8.2)',ADVANCE='NO') flops/tmc !GPU Flop/s
+              else
+               write(*,'(" ???")',ADVANCE='NO')
+              endif
               gn1=talshTensorImageNorm1_cpu(dtens)!; write(*,'(1x,"Destination Norm1 (GPU) = ",D25.14)') gn1
    !Destruct task handle:
               ierr=talsh_task_destruct(tsk); if(ierr.ne.TALSH_SUCCESS) then; ierr=11; return; endif
@@ -364,7 +369,11 @@
               ierr=talsh_task_wait(tsk,sts); if(ierr.ne.TALSH_SUCCESS.or.sts.ne.TALSH_TASK_COMPLETED) then; ierr=15; return; endif
               ierr=talsh_task_time(tsk,tm,tmc,tmi,tmo)
               if(ierr.ne.TALSH_SUCCESS) then; write(*,'("Error ",i11)') ierr; ierr=16; return; endif
-              write(*,'(1x,D8.2)') flops/tm
+              if(tm.gt.0d0) then
+               write(*,'(1x,D8.2)') flops/tm !CPU Flop/s
+              else
+               write(*,'(" ???")')
+              endif
               cn1=talshTensorImageNorm1_cpu(dtens)!; write(*,'(1x,"Destination Norm1 (CPU) = ",D25.14)') cn1
 #ifndef NO_GPU
               if(dabs(cn1-gn1).gt.CMP_ZERO) then
