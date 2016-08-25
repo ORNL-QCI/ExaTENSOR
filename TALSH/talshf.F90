@@ -1,5 +1,5 @@
 !ExaTensor::TAL-SH: Device-unified user-level API:
-!REVISION: 2016/08/23
+!REVISION: 2016/08/25
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -276,7 +276,7 @@
           integer(C_INT), intent(out):: stats(*)
          end function talshTasksWait
   !Get the TAL-SH task timings:
-         integer(C_INT) function talshTaskTime_(talsh_task,total,comput,input,output) bind(c,name='talshTaskTime_')
+         integer(C_INT) function talshTaskTime_(talsh_task,total,comput,input,output,mmul) bind(c,name='talshTaskTime_')
           import
           implicit none
           type(talsh_task_t), intent(inout):: talsh_task
@@ -284,6 +284,7 @@
           real(C_DOUBLE), intent(out):: comput
           real(C_DOUBLE), intent(out):: input
           real(C_DOUBLE), intent(out):: output
+          real(C_DOUBLE), intent(out):: mmul
          end function talshTaskTime_
   !Print TAL-SH task info:
          subroutine talsh_task_print_info(talsh_task) bind(c,name='talshTaskPrint')
@@ -953,8 +954,8 @@
          ierr=talshTasksWait(ntasks,talsh_tasks,stats)
          return
         end function talsh_tasks_wait
-!----------------------------------------------------------------------------------
-        function talsh_task_time(talsh_task,total,comput,input,output) result(ierr)
+!---------------------------------------------------------------------------------------
+        function talsh_task_time(talsh_task,total,comput,input,output,mmul) result(ierr)
          implicit none
          integer(C_INT):: ierr                          !out: error code (0:success)
          type(talsh_task_t), intent(inout):: talsh_task !inout: TAL-SH task
@@ -962,11 +963,13 @@
          real(C_DOUBLE), intent(out), optional:: comput !out: time the computation took (sec)
          real(C_DOUBLE), intent(out), optional:: input  !out: time the ingoing data transfers took (sec)
          real(C_DOUBLE), intent(out), optional:: output !out: time the outgoing data transfers took (sec)
-         real(C_DOUBLE):: comp_tm,in_tm,out_tm
-         ierr=talshTaskTime_(talsh_task,total,comp_tm,in_tm,out_tm)
+         real(C_DOUBLE), intent(out), optional:: mmul   !out: time the matrix multiplication took (sec)
+         real(C_DOUBLE):: comp_tm,in_tm,out_tm,mmul_tm
+         ierr=talshTaskTime_(talsh_task,total,comp_tm,in_tm,out_tm,mmul_tm)
          if(present(comput)) comput=comp_tm
          if(present(input)) input=in_tm
          if(present(output)) output=out_tm
+         if(present(mmul)) mmul=mmul_tm
          return
         end function talsh_task_time
 !------------------------------------------------------------------------------------------

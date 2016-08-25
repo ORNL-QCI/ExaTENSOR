@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level API.
-REVISION: 2016/08/23
+REVISION: 2016/08/25
 
 Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -1630,11 +1630,11 @@ int talshTasksWait(int ntasks, talsh_task_t talsh_tasks[], int stats[])
  return TALSH_SUCCESS;
 }
 
-int talshTaskTime(talsh_task_t * talsh_task, double * total, double * comput, double * input, double * output)
+int talshTaskTime(talsh_task_t * talsh_task, double * total, double * comput, double * input, double * output, double * mmul)
 /** Returns the timing information for a given TAL-SH task. **/
 {
  int sts,errc;
- float tot_tm,in_tm,out_tm,comp_tm;
+ float tot_tm,in_tm,out_tm,comp_tm,mmul_tm;
  cudaTask_t *cuda_task_p;
 
  if(talsh_on == 0) return TALSH_NOT_INITIALIZED;
@@ -1646,13 +1646,13 @@ int talshTaskTime(talsh_task_t * talsh_task, double * total, double * comput, do
  }
  switch(talsh_task->dev_kind){
   case DEV_HOST:
-   tot_tm=(float)(talsh_task->exec_time); in_tm=-1.0f; out_tm=-1.0f; comp_tm=-1.0f;
+   tot_tm=(float)(talsh_task->exec_time); in_tm=-1.0f; out_tm=-1.0f; comp_tm=-1.0f; mmul_tm=-1.0f;
    if(tot_tm < 0.0f) errc=TALSH_FAILURE;
    break;
   case DEV_NVIDIA_GPU:
 #ifndef NO_GPU
    cuda_task_p=(cudaTask_t*)(talsh_task->task_p);
-   tot_tm=cuda_task_time(cuda_task_p,&in_tm,&out_tm,&comp_tm);
+   tot_tm=cuda_task_time(cuda_task_p,&in_tm,&out_tm,&comp_tm,&mmul_tm);
    if(tot_tm < 0.0f) errc=TALSH_FAILURE;
 #else
    return TALSH_NOT_AVAILABLE;
@@ -1679,12 +1679,13 @@ int talshTaskTime(talsh_task_t * talsh_task, double * total, double * comput, do
  if(comput != NULL) *comput=(double)comp_tm;
  if(input != NULL) *input=(double)in_tm;
  if(output != NULL) *output=(double)out_tm;
+ if(mmul != NULL) *mmul=(double)mmul_tm;
  return errc;
 }
 
-int talshTaskTime_(talsh_task_t * talsh_task, double * total, double * comput, double * input, double * output) //Fortran wrapper
+int talshTaskTime_(talsh_task_t * talsh_task, double * total, double * comput, double * input, double * output, double * mmul) //Fortran wrapper
 {
- return talshTaskTime(talsh_task,total,comput,input,output);
+ return talshTaskTime(talsh_task,total,comput,input,output,mmul);
 }
 
 void talshTaskPrint(const talsh_task_t * talsh_task)

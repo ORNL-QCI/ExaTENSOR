@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level API header.
-REVISION: 2016/08/23
+REVISION: 2016/08/25
 
 Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -205,8 +205,9 @@ extern "C"{
                    double * total,
                    double * comput = NULL,
                    double * input = NULL,
-                   double * output = NULL);
- int talshTaskTime_(talsh_task_t * talsh_task, double * total, double * comput, double * input, double * output);
+                   double * output = NULL,
+                   double * mmul = NULL);
+ int talshTaskTime_(talsh_task_t * talsh_task, double * total, double * comput, double * input, double * output, double * mmul);
 //  Print TAL-SH task info:
  void talshTaskPrint(const talsh_task_t * talsh_task);
 // TAL-SH tensor operations API:

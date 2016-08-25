@@ -1,6 +1,6 @@
 *** TAL-SH: Tensor Algebra Library for Shared Memory Computers ***
 AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-REVISION: 2016/08/23
+REVISION: 2016/08/25
 
 Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -377,6 +377,16 @@ API: Construct a tensor block:
    The intialization value, if provided, will only be used if the initialization method
    is absent (Fortran) or NULL (C/C++). If neither initialization method nor initialization
    value is provided, the tensor block will still be initialized to zero.
+
+   The interface of the user-defined initialization method may often be found
+   to be too restricive since no additional information can be provided. In this case,
+   an alternative solution is to simply construct a tensor block without any initialization
+   method and then use the function <talshTensorGetBodyAccess()> to obtain a C pointer
+   to the tensor image of proper data kind on a desired device. This C pointer can be
+   used for defining the value of that tensor image (all other images, if any, will
+   automatically be discarded by the TAL-SH runtime). This alternative method can be
+   used anytime, not necessarily right after the tensor construction. However, the
+   tensor is not expected to participate in any tensor operation at that point.
 
    NOTE: This function must only be called on clean tensor blocks (empty defined).
 
