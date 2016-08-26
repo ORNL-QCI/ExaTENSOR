@@ -1,6 +1,6 @@
 !ExaTensor: Massively Parallel Virtual Processor for Scale-Adaptive Tensor Algebra
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2016/03/29
+!REVISION: 2016/08/26
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -22,6 +22,7 @@
 
       module exatensor
        use hardware
+       use subspaces
        use virta
 !      use c_process
        use m_process
@@ -96,7 +97,7 @@
        if(ierr.eq.0) then
         call dil_global_comm_barrier(errc)
  !Assign roles:
-        my_role=EXA_WORKER !debug
+        call exa_set_process_role(EXA_WORKER,errc) !debug
  !Begin life:
         !...(ierr)
        endif

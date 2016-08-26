@@ -174,7 +174,7 @@ LTHREAD = $(LTHREAD_$(TOOLKIT))
 #LINKING:
 LFLAGS = $(LIB) $(LTHREAD) $(MPI_LINK) $(LA_LINK) $(CUDA_LINK)
 
-OBJS = ./OBJ/hardware.o ./OBJ/subspaces.o ./OBJ/task_recursive.o ./OBJ/m_process.o ./OBJ/g_process.o ./OBJ/exatensor.o
+OBJS = ./OBJ/hardware.o ./OBJ/subspaces.o ./OBJ/tensor_recursive.o ./OBJ/m_process.o ./OBJ/g_process.o ./OBJ/exatensor.o
 
 $(NAME): $(OBJS)
 	ar cr lib$(NAME).a $(OBJS) ../GFC/libgfc.a ../DDSS/libddss.a ../TALSH/libtalsh.a ../INTRAVIRT/libintravirt.a
@@ -185,8 +185,8 @@ $(NAME): $(OBJS)
 ./OBJ/subspaces.o: subspaces.F90 ../GFC/dil_basic.mod ../GFC/tree.mod ../GFC/dictionary.mod
 	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(FFLAGS) subspaces.F90 -o ./OBJ/subspaces.o
 
-./OBJ/task_recursive.o: task_recursive.F90 ./OBJ/hardware.o ./OBJ/subspaces.o ../INTRAVIRT/virta.mod
-	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(FFLAGS) task_recursive.F90 -o ./OBJ/task_recursive.o
+./OBJ/tensor_recursive.o: tensor_recursive.F90 ./OBJ/hardware.o ./OBJ/subspaces.o ../INTRAVIRT/virta.mod
+	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(FFLAGS) tensor_recursive.F90 -o ./OBJ/tensor_recursive.o
 
 ./OBJ/m_process.o: m_process.F90 ../INTRAVIRT/virta.mod
 	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(FFLAGS) m_process.F90 -o ./OBJ/m_process.o
@@ -194,7 +194,7 @@ $(NAME): $(OBJS)
 ./OBJ/g_process.o: g_process.F90 ./OBJ/m_process.o ../GFC/dil_basic.mod
 	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(FFLAGS) g_process.F90 -o ./OBJ/g_process.o
 
-./OBJ/exatensor.o: exatensor.F90 ./OBJ/hardware.o ./OBJ/m_process.o ./OBJ/g_process.o ../INTRAVIRT/virta.mod
+./OBJ/exatensor.o: exatensor.F90 ./OBJ/hardware.o ./OBJ/subspaces.o ./OBJ/m_process.o ./OBJ/g_process.o ../INTRAVIRT/virta.mod
 	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(FFLAGS) exatensor.F90 -o ./OBJ/exatensor.o
 
 

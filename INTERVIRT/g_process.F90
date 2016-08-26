@@ -1,6 +1,6 @@
-!ExaTensor::Global root.
+!ExaTensor::GlobalRoot.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2016/03/24
+!REVISION: 2016/08/26
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)

@@ -181,13 +181,13 @@ $(NAME): $(OBJS)
 	ar cr lib$(NAME).a $(OBJS) ../GFC/libgfc.a ../DDSS/libddss.a ../TALSH/libtalsh.a
 	$(FCOMP) ./OBJ/test_components.o ../DDSS/OBJ/stsubs.o ./lib$(NAME).a $(LFLAGS) -o test_components.x
 
-./OBJ/pack_prim.o: pack_prim.F90 ../DDSS/OBJ/stsubs.o ../DDSS/OBJ/dil_basic.o
+./OBJ/pack_prim.o: pack_prim.F90 ../DDSS/stsubs.mod ../DDSS/dil_basic.mod
 	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(FFLAGS) pack_prim.F90 -o ./OBJ/pack_prim.o
 
-./OBJ/virta.o: virta.F90
+./OBJ/virta.o: virta.F90 ../DDSS/dil_basic.mod ../DDSS/service_mpi.mod ../DDSS/distributed.mod ../TALSH/talsh.mod
 	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(FFLAGS) virta.F90 -o ./OBJ/virta.o
 
-./OBJ/test_components.o: test_components.F90 ./OBJ/pack_prim.o ../DDSS/OBJ/dil_basic.o
+./OBJ/test_components.o: test_components.F90 ./OBJ/pack_prim.o ../DDSS/dil_basic.mod
 	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(FFLAGS) test_components.F90 -o ./OBJ/test_components.o
 
 

@@ -1,11 +1,28 @@
-@nodes
-128
+#HARDWARE DESCRIPTION FILE
+#In each record (@), each description line has the the following format (<> is optional):
+#
+#ITEM_TYPE <ITEM_SUBTYPE> <ITEM_ATTRIBUTES> <ITEM_NAME>
+#
+#ITEM_TYPE: RAM,CPU,GPU,PHI,NIC,NVRAM,DISK,FPGA,ASIC
+#ITEM_SUBTYPE: INTEL,AMD,NVIDIA,CRAY_GEMINI,CRAY_ARIES,INFINIBAND,ETHERNET100G
+#ITEM_ATTRIBUTES: SZ(size),C(cores),HT(hardware threads),
+#                 FP(floating point units),FLOPS (Flop/s),
+#                 LT(latency),BW(bandwidth),NET(network).
+#The colon : separates the attribute name from its value.
+#An item may contain another item by including the name
+#of the latter with a preceding $.
+#Suffix K,M,G,T,P,E after a numeric value mean
+#kilo,mega,giga,tera,peta,exa, respectively.
 
-@architecture
-CPU, GPU*2
 
-@RAM per node
-26G, 6G 6G
+@node architecture [NodeTitan]
+ RAM SZ:32G [RAM_CPU]
+ RAM SZ:6G [RAM_NVIDIA0]
+ RAM SZ:6G [RAM_NVIDIA1]
+ CPU AMD C:16 HT:1 FP:8 FLOPS:140.8G $RAM_CPU [AMD6274]
+ GPU NVIDIA CC:3.5 FLOPS:1.30T $RAM_NVIDIA0 [NVIDIA_K20X_0]
+ GPU NVIDIA CC:3.5 FLOPS:1.30T $RAM_NVIDIA1 [NVIDIA_K20X_1]
+ NIC CRAY_GEMINI LT:100us BW:6.4G
 
-@FLOPS per node
-140G, 1.4T 1.4T
+@system architecture [Titan]
+ $NodeTitan*18688 NET:TORUS3D

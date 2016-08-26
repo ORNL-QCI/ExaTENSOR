@@ -1,6 +1,6 @@
 !Infrastructure for a recursive adaptive Hilbert space decomposition.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2016/03/24
+!REVISION: 2016/08/26
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -29,8 +29,8 @@
 !PARAMETERS:
  !Output:
         integer, private:: CONS_OUT=6     !default output for this module
-        logical, private:: VERBOSE=.true. !verbosity for errors
         integer, private:: DEBUG=0        !debugging mode level (0:none)
+        logical, private:: VERBOSE=.true. !verbosity for errors
  !Basis set kind:
         integer(INTD), parameter, public:: BASIS_NONE=0    !no basis set
         integer(INTD), parameter, public:: BASIS_GAUSS=1   !Gaussian basis set
