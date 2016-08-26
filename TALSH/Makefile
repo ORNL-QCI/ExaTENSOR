@@ -20,7 +20,7 @@ export EXA_OS ?= LINUX
 
 #EXTRAS:
 #Fast GPU tensor transpose (cuTT library): [YES|NO]:
-export WITH_CUTT ?= YES
+export WITH_CUTT ?= NO
 
 #WORKAROUNDS (ignore if you do not experience problems):
 #Fool CUDA 7.0 with GCC > 4.9: [YES|NO]:
