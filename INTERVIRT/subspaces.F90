@@ -1,6 +1,6 @@
-!Infrastructure for a recursive adaptive Hilbert space decomposition.
+!Infrastructure for a recursive adaptive vector space decomposition.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2016/08/26
+!REVISION: 2016/09/01
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -22,29 +22,30 @@
 
        module subspaces
         use dil_basic
-        use tree
-        use dictionary
+        use gfc_base
+        use gfc_tree
         implicit none
         private
 !PARAMETERS:
  !Output:
         integer, private:: CONS_OUT=6     !default output for this module
         integer, private:: DEBUG=0        !debugging mode level (0:none)
-        logical, private:: VERBOSE=.true. !verbosity for errors
+        logical, private:: VERBOSE=.TRUE. !verbosity for errors
  !Basis set kind:
-        integer(INTD), parameter, public:: BASIS_NONE=0    !no basis set
+        integer(INTD), parameter, public:: BASIS_NONE=0    !No basis set
         integer(INTD), parameter, public:: BASIS_GAUSS=1   !Gaussian basis set
-        integer(INTD), parameter, public:: BASIS_WAVELET=2 !wavelet basis set
+        integer(INTD), parameter, public:: BASIS_WAVELET=2 !Wavelet basis set
 !TYPES:
  !Abstract basis function:
         type, abstract, public:: AbsBasisFunc_t
          integer(INTD), private:: RealSpaceDim       !dimensionality of the real space where the basis functions reside
-         real(8), allocatable, private:: Center(:)   !coordinates of the effective function support center in the real space
+         real(8), allocatable, private:: Center(:)   !coordinates of the center of the effective function support in the real space
          real(8), allocatable, private:: Extent(:,:) !effective extents of the basis function support in each direction {positive/negative}x{dimensions}
         end type AbsBasisFunc_t
  !Gaussian basis function:
         type, extends(AbsBasisFunc_t), public:: BasisFuncGauss_t
          integer(INTD), private:: NumPrims=0              !number of contracted primitives
+         integer(INTD), private:: OrbMoment               !orbital momentum (0,1,2,3,...)
          real(8), allocatable, private:: Exponents(:)     !primitive exponents
          complex(8), allocatable, private:: ContrCoefs(:) !primitive contraction coefficients
         end type BasisFuncGauss_t
@@ -62,19 +63,18 @@
         type, public:: Subspace_t
          integer(INTL), private:: SubspaceID=-1      !subspace ID (registered ID): -1 means undefined
          integer(INTL), private:: MaxResLevel=0      !max resolution level (max dimension): 0 means undefined
-         real(8), allocatable, private:: Center(:)   !coordinates of the effective subspace support center in the real space
+         real(8), allocatable, private:: Center(:)   !coordinates of the center of the effective subspace support in the real space
          real(8), allocatable, private:: Extent(:,:) !effective extents of the subspace support in each direction {positive/negative}x{dimensions}
-         type(SubspaceBasis_t), allocatable, private:: Basis(:) !pointer to basis sets for each resolution level [1..MaxResLevel]: Defined only for the terminal subspaces (leaves)
+         type(SubspaceBasis_t), allocatable, private:: Basis(:) !pointer to basis sets for each resolution level [1..MaxResLevel]: Defined only for the terminal subspaces
         end type Subspace_t
- !Hierarchical component index:
+ !Hierarchical composite index:
         type, public:: HierIndex_t
-         integer(INTL), private:: SubspaceID=-1 !terminal subspace ID (registered ID): -1 means undefined
+         integer(INTL), private:: SubspaceID=-1 !subspace ID (registered ID): -1 means undefined
          integer(INTL), private:: ResLevel=0    !subspace resolution level 1<=ResLevel<=MaxResLevel: 0 means undefined
-         integer(INTL), private:: Component=0   !subspace component number at given level of resolution: [1..ResLevel], 0 means undefined
+         integer(INTL), private:: Component=0   !subspace component number at the given level of resolution: [1..ResLevel], 0 means undefined
         end type HierIndex_t
 !DATA:
- !Bank of basis sets:
-        type(dict_t), private:: BasisBank !KEY = Subspace ID, VALUE = type(SubspaceBasis_t): Specific subspace basis (multiresolution in general)
+
 !VISIBILITY:
 
         contains

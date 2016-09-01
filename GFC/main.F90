@@ -19,8 +19,8 @@
 program main
  use dil_basic
  use stack_test
- use tree_test
  use dictionary_test
+ use gfc_tree_test
  implicit none
  real(8):: perf
  integer(INTD):: dev_out,ierr

@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Linked list
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2016-03-18 (started 2016-02-28)
+!REVISION: 2016-09-01 (started 2016-02-28)
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -28,7 +28,7 @@
 !   can be accessed by both the original and the combined list iterators.
 !   Multiple iterators can be associated with a list at the same time.
 
-       module list
+       module gfc_list
         use gfc_base
         use timers
         implicit none
@@ -754,4 +754,4 @@
          return
         end function ListIterDeleteAll
 
-       end module list
+       end module gfc_list

@@ -179,10 +179,10 @@ OBJS = ./OBJ/hardware.o ./OBJ/subspaces.o ./OBJ/tensor_recursive.o ./OBJ/m_proce
 $(NAME): $(OBJS)
 	ar cr lib$(NAME).a $(OBJS) ../GFC/libgfc.a ../DDSS/libddss.a ../TALSH/libtalsh.a ../INTRAVIRT/libintravirt.a
 
-./OBJ/hardware.o: hardware.F90 ../GFC/dil_basic.mod ../GFC/gfc_base.mod ../GFC/tree.mod
+./OBJ/hardware.o: hardware.F90 ../GFC/dil_basic.mod ../GFC/gfc_base.mod ../GFC/gfc_tree.mod
 	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(FFLAGS) hardware.F90 -o ./OBJ/hardware.o
 
-./OBJ/subspaces.o: subspaces.F90 ../GFC/dil_basic.mod ../GFC/tree.mod ../GFC/dictionary.mod
+./OBJ/subspaces.o: subspaces.F90 ../GFC/dil_basic.mod ../GFC/gfc_base.mod ../GFC/gfc_tree.mod
 	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(FFLAGS) subspaces.F90 -o ./OBJ/subspaces.o
 
 ./OBJ/tensor_recursive.o: tensor_recursive.F90 ./OBJ/hardware.o ./OBJ/subspaces.o ../INTRAVIRT/virta.mod
