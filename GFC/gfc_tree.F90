@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Tree
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2016-03-29 (started 2016-02-17)
+!REVISION: 2016-09-01 (started 2016-02-17)
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -30,7 +30,7 @@
 !   via its own iterator or via the combined tree iterator. Multiple
 !   iterators can be associated with a tree at a time.
 
-       module tree
+       module gfc_tree
         use gfc_base
         use timers
         implicit none
@@ -828,12 +828,12 @@
          return
         end function TreeIterDeleteSubtree
 
-       end module tree
+       end module gfc_tree
 !=========================================
 !TESTING:
-       module tree_test
+       module gfc_tree_test
         use gfc_base
-        use tree
+        use gfc_tree
         use timers, only: thread_wtime
         implicit none
         private
@@ -953,4 +953,4 @@
          return
         end function dil_test_tree
 
-       end module tree_test
+       end module gfc_tree_test

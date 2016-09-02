@@ -12,7 +12,7 @@ export MPILIB ?= MPICH
 #BLAS: [ATLAS|MKL|ACML]:
 export BLASLIB ?= ATLAS
 #Nvidia GPU via CUDA: [CUDA|NOCUDA]:
-export GPU_CUDA ?= CUDA
+export GPU_CUDA ?= NOCUDA
 #Nvidia GPU architecture (two digits):
 export GPU_SM_ARCH ?= 35
 #Operating system: [LINUX|NO_LINUX]:
@@ -123,21 +123,27 @@ MPI_LINK = $(MPI_LINK_$(WRAP))
 
 #LINEAR ALGEBRA FLAGS:
 LA_LINK_ATLAS = -L$(PATH_BLAS) -lblas -llapack
+ifeq ($(TOOLKIT),GNU)
+LA_LINK_MKL = -L$(PATH_BLAS) -lmkl_intel_lp64 -lmkl_core -lmkl_gnu_thread -lpthread -lm -ldl
+else
 LA_LINK_MKL = -L$(PATH_BLAS) -lmkl_intel_lp64 -lmkl_core -lmkl_intel_thread -lpthread -lm -ldl
+endif
 LA_LINK_ACML = -L$(PATH_BLAS) -lacml_mp
 LA_LINK_WRAP = -L.
 LA_LINK_NOWRAP = $(LA_LINK_$(BLASLIB))
 LA_LINK = $(LA_LINK_$(WRAP))
 
 #CUDA INCLUDES:
-CUDA_INC_CUDA = -I$(PATH_CUDA_INC)
-CUDA_INC_NOCUDA = -I.
-CUDA_INC_NOWRAP = $(CUDA_INC_$(GPU_CUDA))
+ifeq ($(GPU_CUDA),CUDA)
+CUDA_INC_NOWRAP = -I$(PATH_CUDA_INC)
 CUDA_INC_WRAP = -I.
 ifeq ($(WITH_CUTT),YES)
 CUDA_INC = $(CUDA_INC_$(WRAP)) -I$(PATH_CUTT)/include
 else
 CUDA_INC = $(CUDA_INC_$(WRAP))
+endif
+else
+CUDA_INC = -I.
 endif
 
 #CUDA LIBS:
@@ -148,6 +154,7 @@ CUDA_LINK_NOCUDA = -L.
 CUDA_LINK = $(CUDA_LINK_$(GPU_CUDA))
 
 #CUDA FLAGS:
+ifeq ($(GPU_CUDA),CUDA)
 GPU_SM = sm_$(GPU_SM_ARCH)
 GPU_ARCH = $(GPU_SM_ARCH)0
 CUDA_HOST_NOWRAP = --compiler-bindir /usr/bin
@@ -155,12 +162,11 @@ CUDA_HOST_WRAP = -I.
 CUDA_HOST = $(CUDA_HOST_$(WRAP))
 CUDA_FLAGS_DEV = --compile -arch=$(GPU_SM) -g -G -lineinfo -D DEBUG_GPU
 CUDA_FLAGS_OPT = --compile -arch=$(GPU_SM) -O3 -lineinfo
-CUDA_FLAGS_CUDA = $(CUDA_HOST) $(CUDA_FLAGS_$(BUILD_TYPE))
-CUDA_FLAGS_NOCUDA = -I.
+CUDA_FLAGS_CUDA = $(CUDA_HOST) $(CUDA_FLAGS_$(BUILD_TYPE)) -D_FORCE_INLINES
 ifeq ($(FOOL_CUDA),NO)
-CUDA_FLAGS_PRE1 = $(CUDA_FLAGS_$(GPU_CUDA)) -D$(EXA_OS)
+CUDA_FLAGS_PRE1 = $(CUDA_FLAGS_CUDA) -D$(EXA_OS)
 else
-CUDA_FLAGS_PRE1 = $(CUDA_FLAGS_$(GPU_CUDA)) -D$(EXA_OS) -D__GNUC__=4
+CUDA_FLAGS_PRE1 = $(CUDA_FLAGS_CUDA) -D$(EXA_OS) -D__GNUC__=4
 endif
 ifeq ($(WITH_CUTT),YES)
 CUDA_FLAGS_PRE2 = $(CUDA_FLAGS_PRE1) -D USE_CUTT
@@ -171,6 +177,9 @@ ifeq ($(GPU_FINE_TIMING),YES)
 CUDA_FLAGS = $(CUDA_FLAGS_PRE2) -D GPU_FINE_TIMING
 else
 CUDA_FLAGS = $(CUDA_FLAGS_PRE2)
+endif
+else
+CUDA_FLAGS = -D_FORCE_INLINES
 endif
 
 #Accelerator support:
