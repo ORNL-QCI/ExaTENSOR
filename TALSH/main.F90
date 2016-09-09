@@ -511,7 +511,8 @@
            if(ierr.ne.TALSH_SUCCESS.or.sts.ne.TALSH_TASK_COMPLETED) then; ierr=7; return; endif
            ierr=talsh_task_time(tsk,tm,tmc,tmi,tmo,tmm)
            if(ierr.ne.TALSH_SUCCESS) then; write(*,'("Error ",i11)') ierr; ierr=8; return; endif
-           write(*,'(3x,"Compute intensity = ",F12.4)') flops/words
+           write(*,'(3x,"Total GFlops = ",F12.4,": Compute intensity = ",F12.4)')&
+                &flops/dble(1024*1024*1024),flops/words
            if(dev.eq.DEV_HOST) then
             write(*,'(3x,"Timings (total):",F8.4,": GFlop/s = ",F12.4)')&
                  &tm,flops/tm/dble(1024*1024*1024)
