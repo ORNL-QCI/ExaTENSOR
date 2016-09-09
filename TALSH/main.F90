@@ -437,7 +437,7 @@
          implicit none
          integer(C_INT), intent(out):: ierr
          integer(C_SIZE_T), parameter:: BUF_SIZE=1_8*1024_8*1024_8*1024_8 !desired Host argument buffer size in bytes
-         integer(C_INT), parameter:: EXEC_DEVICE=DEV_NVIDIA_GPU !device on which tensor contractions will be executed
+         integer(C_INT), parameter:: EXEC_DEVICE=DEV_HOST !device on which tensor contractions will be executed
          real(C_DOUBLE), parameter:: CMP_ZERO=1d-4 !comparison threshold (relative)
          !----------------------------------------
          integer(C_INT):: i,sl,rd,rl,rr,num_gpus,host_arg_max,dev,sts
@@ -511,9 +511,14 @@
            if(ierr.ne.TALSH_SUCCESS.or.sts.ne.TALSH_TASK_COMPLETED) then; ierr=7; return; endif
            ierr=talsh_task_time(tsk,tm,tmc,tmi,tmo,tmm)
            if(ierr.ne.TALSH_SUCCESS) then; write(*,'("Error ",i11)') ierr; ierr=8; return; endif
-           write(*,'(3x,"Timings (total,compute,mm):",3(F8.4),": GFlop/s = ",F12.4,": Overhead = ",F8.2,"%")')&
-                &tm,tmc,tmm,flops/tmc/dble(1024*1024*1024),max(tmc/tmm-1d0,0d0)*1d2
            write(*,'(3x,"Compute intensity = ",F12.4)') flops/words
+           if(dev.eq.DEV_HOST) then
+            write(*,'(3x,"Timings (total):",F8.4,": GFlop/s = ",F12.4)')&
+                 &tm,flops/tm/dble(1024*1024*1024)
+           else
+            write(*,'(3x,"Timings (total,compute,mm):",3(F8.4),": GFlop/s = ",F12.4,": Overhead = ",F8.2,"%")')&
+                 &tm,tmc,tmm,flops/tmc/dble(1024*1024*1024),max(tmc/tmm-1d0,0d0)*1d2
+           endif
   !Compute the destination tensor norm:
            dn1=talshTensorImageNorm1_cpu(dtens); write(*,'(3x,"Destination Norm1 = ",D25.14)') dn1
           else
