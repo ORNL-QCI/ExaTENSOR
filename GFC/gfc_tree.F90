@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Tree
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2016-09-01 (started 2016-02-17)
+!REVISION: 2016-09-21 (started 2016-02-17)
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -28,7 +28,7 @@
 !   a tree iterator associated with the tree. When attaching a tree
 !   to another tree, the attached tree elements can be accessed either
 !   via its own iterator or via the combined tree iterator. Multiple
-!   iterators can be associated with a tree at a time.
+!   iterators can be associated with a tree at the same time.
 
        module gfc_tree
         use gfc_base
@@ -38,7 +38,7 @@
 !PARAMETERS:
  !Basic:
         integer(INTD), private:: CONS_OUT=6 !output device
-        logical, private:: VERBOSE=.true.   !verbositiy for errors
+        logical, private:: VERBOSE=.TRUE.   !verbositiy for errors
         integer(INTD), private:: DEBUG=0    !debugging level (0:none)
  !Tree iterator directions:
         integer(INTD), parameter, private:: TREE_IT_DOWN=1  !downward direction
@@ -63,7 +63,7 @@
         end type tree_vertex_t
  !Tree (all operations on the tree are performend via an iterator):
         type, extends(gfc_container_t), public:: tree_t
-         class(tree_vertex_t), pointer, private:: root=>NULL() !root element (beginning)
+         class(tree_vertex_t), pointer, private:: root=>NULL() !root (boundary) element (beginning)
          contains
           procedure, public:: is_subtree=>TreeIsSubtree !returns TRUE if the tree is a subtree of a larger tree, FALSE otherwise
         end type tree_t
@@ -213,9 +213,9 @@
          logical:: res                    !out: result
          class(tree_t), intent(in):: this !in: tree
 
-         res=.false.
+         res=.FALSE.
          if(associated(this%root)) then
-          if(associated(this%root%parent)) res=.true.
+          if(associated(this%root%parent)) res=.TRUE.
          endif
          return
         end function TreeIsSubtree
@@ -246,8 +246,10 @@
 
          ierr=GFC_SUCCESS
          if(associated(this%container)) then
+          if(associated(this%current)) call this%current%decr_ref_()
           this%current=>this%container%root
           if(associated(this%current)) then
+           call this%current%incr_ref_()
            ierr=this%set_status_(GFC_IT_ACTIVE) !non-empty iterator/container
           else
            ierr=this%set_status_(GFC_IT_EMPTY) !empty iterator/container
@@ -266,6 +268,7 @@
          integer(INTD):: ierr                     !out: error code (0:success)
          class(tree_iter_t), intent(inout):: this !inout: iterator
 
+         if(associated(this%current)) call this%current%decr_ref_()
          this%current=>NULL(); this%container=>NULL()
          call this%reset_count(); ierr=this%set_status_(GFC_IT_NULL)
          return
@@ -321,8 +324,13 @@
            if(present(elem_p)) then
             elem_p=>tvp
            else
+            call this%current%decr_ref_()
             this%current=>tvp
-            if(.not.associated(tvp)) ierr=this%set_status_(GFC_IT_DONE)
+            if(associated(this%current)) then
+             call this%current%incr_ref_()
+            else
+             ierr=this%set_status_(GFC_IT_DONE)
+            endif
            endif
            if(.not.associated(tvp)) ierr=GFC_IT_DONE
            tvp=>NULL()
@@ -364,8 +372,13 @@
            if(present(elem_p)) then
             elem_p=>tvp
            else
+            call this%current%decr_ref_()
             this%current=>tvp
-            if(.not.associated(tvp)) ierr=this%set_status_(GFC_IT_DONE)
+            if(associated(this%current)) then
+             call this%current%incr_ref_()
+            else
+             ierr=this%set_status_(GFC_IT_DONE)
+            endif
            endif
            if(.not.associated(tvp)) ierr=GFC_IT_DONE
            tvp=>NULL()
@@ -389,21 +402,25 @@
          if(ierr.eq.GFC_IT_ACTIVE) then
           if(associated(this%current)) then
            if(.not.associated(this%current,this%container%root)) then
-            if(present(to_previous)) then; to_next=.not.to_previous; else; to_next=.true.; endif
+            if(present(to_previous)) then; to_next=.not.to_previous; else; to_next=.TRUE.; endif
             ierr=GFC_SUCCESS
             if(to_next) then
              tvp=>this%current%next_sibling
              if(associated(tvp,this%current%parent%first_child)) then
               ierr=GFC_NO_MOVE
              else
+              call this%current%decr_ref_()
               this%current=>tvp
+              if(associated(this%current)) call this%current%incr_ref_()
              endif
              tvp=>NULL()
             else
              if(associated(this%current,this%current%parent%first_child)) then
               ierr=GFC_NO_MOVE
              else
+              call this%current%decr_ref_()
               this%current=>this%current%prev_sibling
+              if(associated(this%current)) call this%current%incr_ref_()
              endif
             endif
            else
@@ -426,7 +443,9 @@
          if(ierr.eq.GFC_IT_ACTIVE) then
           if(associated(this%current)) then
            if(associated(this%current%first_child)) then
+            call this%current%decr_ref_()
             this%current=>this%current%first_child
+            call this%current%incr_ref_()
             ierr=GFC_SUCCESS
            else
             ierr=GFC_NO_MOVE
@@ -450,7 +469,9 @@
            if(associated(this%current,this%container%root)) then
             ierr=GFC_NO_MOVE
            else
+            call this%current%decr_ref_()
             this%current=>this%current%parent
+            if(associated(this%current)) call this%current%incr_ref_()
             ierr=GFC_SUCCESS
            endif
           else
@@ -503,8 +524,8 @@
          logical:: assoc,nomo
          integer(INTL):: nelems
 
-         if(present(assoc_only)) then; assoc=assoc_only; else; assoc=.false.; endif
-         if(present(no_move)) then; nomo=no_move; else; nomo=.false.; endif
+         if(present(assoc_only)) then; assoc=assoc_only; else; assoc=.FALSE.; endif
+         if(present(no_move)) then; nomo=no_move; else; nomo=.FALSE.; endif
          ierr=this%get_status()
          if(ierr.eq.GFC_IT_ACTIVE) then
           ierr=GFC_SUCCESS
@@ -560,7 +581,11 @@
             this%current%first_child%prev_sibling=>tvp
             this%current%num_child=this%current%num_child+1
             nelems=this%container%update_num_elems_(1_INTL,ierr); if(ierr.ne.GFC_SUCCESS) ierr=GFC_CORRUPTED_CONT
-            if(.not.nomo) this%current=>tvp
+            if(.not.nomo) then
+             call this%current%decr_ref_()
+             this%current=>tvp
+             if(associated(this%current)) call this%current%incr_ref_()
+            endif
            endif
            tvp=>NULL()
           else
@@ -617,12 +642,17 @@
           if(associated(this%current)) then
            ierr=GFC_SUCCESS; tvp=>this%current
            if(tvp%is_leaf().eq.GFC_TRUE) then
+            call this%current%decr_ref_()
             if(present(destruct_func)) then !destructs the value of the current element
              call tvp%destruct(errc,destruct_func)
             else
              call tvp%destruct(errc)
             endif
-            if(errc.ne.GFC_SUCCESS) ierr=NOT_CLEAN
+            if(errc.eq.GFC_IN_USE) then
+             call this%current%incr_ref_(); ierr=errc; return
+            else
+             if(errc.ne.GFC_SUCCESS) ierr=NOT_CLEAN
+            endif
             if(tvp%num_siblings(errc).gt.0) then
              if(errc.eq.GFC_SUCCESS) then
               if(associated(tvp%parent)) then
@@ -649,6 +679,7 @@
               else
                tvp%parent%num_child=tvp%parent%num_child-1
                this%current=>tvp%parent
+               if(associated(this%current)) call this%current%incr_ref_()
               endif
               deallocate(tvp,STAT=errc); if(errc.ne.0) ierr=NOT_CLEAN
              else
@@ -741,11 +772,13 @@
              endif
             endif
             if(ierr.eq.GFC_SUCCESS) then
+             call this%current%decr_ref_()
              if(associated(this%current,this%container%root)) then
               this%current=>NULL(); this%container%root=>NULL()
               ierr=this%set_status_(GFC_IT_EMPTY); if(ierr.ne.GFC_SUCCESS) ierr=GFC_CORRUPTED_CONT
              else
               this%current=>this%current%parent
+              if(associated(this%current)) call this%current%incr_ref_()
              endif
              if(ierr.eq.GFC_SUCCESS) then
               subtree%root%parent=>NULL()
@@ -798,25 +831,27 @@
          class(tree_vertex_t), pointer:: tvp
          logical:: subtree,dsf,ntcl
 
-         ierr=this%get_status(); ntcl=.false.
+         ierr=this%get_status(); ntcl=.FALSE.
          if(ierr.eq.GFC_IT_ACTIVE) then
           if(associated(this%current)) then
-           dsf=.false.; if(present(destruct_func)) dsf=.true.
+           dsf=.FALSE.; if(present(destruct_func)) dsf=.TRUE.
            if(associated(this%current%parent)) then
-            tvp=>this%current%parent; subtree=.true.
+            tvp=>this%current%parent; subtree=.TRUE.
            else
-            tvp=>NULL(); subtree=.false.
+            tvp=>NULL(); subtree=.FALSE.
            endif
            do while(associated(this%current))
             do while(associated(this%current%first_child)) !find a leaf
+             call this%current%decr_ref_()
              this%current=>this%current%first_child
+             call this%current%incr_ref_()
             enddo
             if(dsf) then
              ierr=this%delete_leaf(destruct_func)
             else
              ierr=this%delete_leaf()
             endif
-            if(ierr.eq.NOT_CLEAN) then; ntcl=.true.; ierr=GFC_SUCCESS; endif
+            if(ierr.eq.NOT_CLEAN) then; ntcl=.TRUE.; ierr=GFC_SUCCESS; endif
             if(ierr.ne.GFC_SUCCESS) exit
             if(subtree) then; if(associated(this%current,tvp)) exit; endif
            enddo
@@ -938,7 +973,7 @@
 !          tvp=>some_iter%pointee(); val_p=>tvp%get_value(); ierr=print_action(val_p) !debug: newly added
            i=i-1
           enddo
-          if(ierr.ne.GFC_SUCCESS.and.ierr.ne.GFC_IT_DONE) then; ierr=5; return; endif
+          if(ierr.ne.GFC_SUCCESS.and.ierr.ne.GFC_IT_DONE) then; print *,'ERROR ',ierr; ierr=5; return; endif
          enddo
 !        write(jo,'("Total number of elements in the tree = ",i9)') some_tree%num_elems_(ierr) !debug
          if(ierr.ne.GFC_SUCCESS) then; ierr=6; return; endif
