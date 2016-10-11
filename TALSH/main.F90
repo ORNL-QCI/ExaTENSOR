@@ -278,8 +278,12 @@
 #endif
          write(*,'("Status ",i11,": Size (Bytes) = ",i13,": Max args in HAB = ",i7)') ierr,host_buf_size,host_arg_max
          if(ierr.ne.TALSH_SUCCESS) then; ierr=2; return; endif
-         max_tens_vol=host_buf_size/9_C_SIZE_T/8_C_SIZE_T !max tensor volume for double precision
-         write(*,'(" Max tensor volume (words) = ",i11)') max_tens_vol
+         if(talsh_valid_data_kind(TENS_DATA_KIND,n).eq.YEP) then
+          max_tens_vol=host_buf_size/9_C_SIZE_T/int(n,C_SIZE_T) !max tensor volume
+          write(*,'(" Max tensor volume (words) = ",i11," (word size = ",i2,")")') max_tens_vol,n
+         else
+          ierr=25; return
+         endif
 
 !Tensor contractions:
          n=0 !will be the total number of tensor contractions performed
