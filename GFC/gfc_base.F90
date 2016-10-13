@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Base
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2016-09-21 (started 2016-02-17)
+!REVISION: 2016-10-13 (started 2016-02-17)
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -191,6 +191,11 @@
           procedure(gfc_it_next_i), deferred, public:: next       !proceeds to the next element of the container
           procedure(gfc_it_next_i), deferred, public:: previous   !proceeds to the previous element of the container
         end type gfc_iter_t
+ !Base functor:
+        type, abstract, public:: gfc_func_t
+         contains
+          procedure(gfc_func_act_i), deferred, public:: act !performs an action on an unlimited polymorphic object
+        end type gfc_func_t
 !ABSTRACT INTERFACES:
         abstract interface
  !Generics:
@@ -237,30 +242,37 @@
   !Deferred: GFC iterator: .init:
          function gfc_it_init_i(this,cont) result(ierr)
           import:: gfc_iter_t,gfc_container_t,INTD
-          integer(INTD):: ierr                              !error code
-          class(gfc_iter_t), intent(inout):: this           !GFC iterator
-          class(gfc_container_t), target, intent(in):: cont !GFC container
+          integer(INTD):: ierr                              !out: error code
+          class(gfc_iter_t), intent(inout):: this           !inout: GFC iterator
+          class(gfc_container_t), target, intent(in):: cont !in: GFC container
          end function gfc_it_init_i
   !Deferred: GFC iterator: .reset .release:
          function gfc_it_reset_i(this) result(ierr)
           import:: gfc_iter_t,INTD
-          integer(INTD):: ierr                    !error code
-          class(gfc_iter_t), intent(inout):: this !GFC iterator
+          integer(INTD):: ierr                    !out: error code
+          class(gfc_iter_t), intent(inout):: this !inout: GFC iterator
          end function gfc_it_reset_i
   !Deferred: GFC iterator: .pointee:
          function gfc_it_pointee_i(this,ierr) result(pntee)
           import:: gfc_iter_t,gfc_cont_elem_t,INTD
-          class(gfc_cont_elem_t), pointer:: pntee     !container element currently pointed to by the iterator
-          class(gfc_iter_t), intent(in):: this        !GFC iterator
-          integer(INTD), intent(out), optional:: ierr !error code
+          class(gfc_cont_elem_t), pointer:: pntee     !out: container element currently pointed to by the iterator
+          class(gfc_iter_t), intent(in):: this        !in: GFC iterator
+          integer(INTD), intent(out), optional:: ierr !out: error code
          end function gfc_it_pointee_i
   !Deferred: GFC iterator: .next .previous:
          function gfc_it_next_i(this,elem_p) result(ierr)
           import:: gfc_iter_t,gfc_cont_elem_t,INTD
-          integer(INTD):: ierr                                            !error code
-          class(gfc_iter_t), intent(inout):: this                         !GFC iterator
-          class(gfc_cont_elem_t), pointer, intent(out), optional:: elem_p !pointer to the container element
+          integer(INTD):: ierr                                            !out: error code
+          class(gfc_iter_t), intent(inout):: this                         !inout: GFC iterator
+          class(gfc_cont_elem_t), pointer, intent(out), optional:: elem_p !out: pointer to the container element
          end function gfc_it_next_i
+  !Deferred: GFC functor action: .act:
+         function gfc_func_act_i(this,obj) result(ierr)
+          import:: gfc_func_t,INTD
+          integer(INTD):: ierr                    !out: error code
+          class(gfc_func_t), intent(inout):: this !inout: GFC functor (may change its state)
+          class(*), intent(inout):: obj           !inout: arbitrary object the functor is acting upon
+         end function gfc_func_act_i
         end interface
 !VISIBILITY:
         private ContElemConstruct

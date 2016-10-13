@@ -6,7 +6,7 @@ export WRAP ?= NOWRAP
 #Compiler: [GNU|PGI|INTEL|CRAY|IBM]:
 export TOOLKIT ?= GNU
 #Optimization: [DEV|OPT]:
-export BUILD_TYPE ?= OPT
+export BUILD_TYPE ?= DEV
 #MPI Library: [MPICH|OPENMPI|NONE]:
 export MPILIB ?= NONE
 #BLAS: [ATLAS|MKL|ACML|NONE]:
@@ -235,7 +235,7 @@ LTHREAD = $(LTHREAD_$(TOOLKIT))
 LFLAGS = $(LIB) $(LTHREAD) $(MPI_LINK) $(LA_LINK) $(CUDA_LINK)
 
 OBJS =  ./OBJ/dil_basic.o ./OBJ/multords.o ./OBJ/timers.o ./OBJ/stack.o ./OBJ/lists.o ./OBJ/dictionary.o \
-	./OBJ/gfc_base.o ./OBJ/gfc_list.o  ./OBJ/gfc_tree.o
+	./OBJ/gfc_base.o ./OBJ/gfc_list.o  ./OBJ/gfc_tree.o ./OBJ/gfc_dictionary.o ./OBJ/gfc_unordered_map.o
 
 $(NAME): lib$(NAME).a ./OBJ/main.o
 	$(FCOMP) ./OBJ/main.o lib$(NAME).a $(LFLAGS) -o $(NAME).x
@@ -269,6 +269,12 @@ lib$(NAME).a: $(OBJS)
 
 ./OBJ/gfc_tree.o: gfc_tree.F90 ./OBJ/gfc_base.o ./OBJ/timers.o
 	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) gfc_tree.F90 -o ./OBJ/gfc_tree.o
+
+./OBJ/gfc_dictionary.o: gfc_dictionary.F90 ./OBJ/gfc_base.o ./OBJ/dictionary.o ./OBJ/timers.o
+	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) gfc_dictionary.F90 -o ./OBJ/gfc_dictionary.o
+
+./OBJ/gfc_unordered_map.o: gfc_unordered_map.F90 ./OBJ/gfc_base.o ./OBJ/timers.o
+	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) gfc_unordered_map.F90 -o ./OBJ/gfc_unordered_map.o
 
 ./OBJ/main.o: main.F90 ./OBJ/dil_basic.o ./OBJ/timers.o
 	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) main.F90 -o ./OBJ/main.o
