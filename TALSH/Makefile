@@ -9,7 +9,7 @@ export TOOLKIT ?= GNU
 export BUILD_TYPE ?= OPT
 #MPI Library: [MPICH|OPENMPI|NONE]:
 export MPILIB ?= NONE
-#BLAS: [ATLAS|MKL|ACML|NONE]:
+#BLAS: [ATLAS|MKL|ACML|ESSL|NONE]:
 export BLASLIB ?= ATLAS
 #Nvidia GPU via CUDA: [CUDA|NOCUDA]:
 export GPU_CUDA ?= NOCUDA
@@ -37,6 +37,7 @@ export PATH_OPENMPI ?= /usr/local/openmpi1.10.1
 export PATH_BLAS_ATLAS ?= /usr/lib
 export PATH_BLAS_MKL ?= /ccs/compilers/intel/rh6-x86_64/16.0.0/compilers_and_libraries/linux/mkl/lib
 export PATH_BLAS_ACML ?= /opt/acml/5.3.1/gfortran64_fma4_mp/lib
+export PATH_BLAS_ESSL ?= /sw/summitdev/essl/5.5.0/lib64
 # CUDA lib and include paths (if you build with CUDA):
 export PATH_CUDA_LIB ?= /usr/lib/x86_64-linux-gnu
 export PATH_CUDA_INC ?= /usr/include
@@ -153,6 +154,7 @@ else
 LA_LINK_MKL = -L$(PATH_BLAS_MKL) -lmkl_intel_lp64 -lmkl_core -lmkl_intel_thread -lpthread -lm -ldl
 endif
 LA_LINK_ACML = -L$(PATH_BLAS_ACML) -lacml_mp
+LA_LINK_ESSL = -L$(PATH_BLAS_ESSL) -lesslsmp
 ifeq ($(BLASLIB),NONE)
 LA_LINK_NOWRAP = -L.
 else
