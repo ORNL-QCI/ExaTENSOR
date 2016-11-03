@@ -94,13 +94,13 @@ LIB_GNU = -L.
 LIB_PGI = -L.
 LIB_INTEL = -L.
 LIB_CRAY = -L.
-LIB_IBM = -L.
+LIB_IBM = -L. -lxlsmp
 LIB_NOWRAP = $(LIB_$(TOOLKIT))
 LIB_WRAP = -L.
 ifeq ($(TOOLKIT),PGI)
  LIB = $(LIB_$(WRAP))
 else
- LIB = $(LIB_$(WRAP)) -lstdc++
+ LIB = $(LIB_$(WRAP))
 endif
 
 #MPI INCLUDES:
@@ -245,6 +245,7 @@ lib$(NAME).a: $(OBJS)
 	ar cr lib$(NAME).a $(OBJS)
 
 ./OBJ/dil_basic.o: dil_basic.F90
+	mkdir -p ./OBJ
 	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) dil_basic.F90 -o ./OBJ/dil_basic.o
 
 ./OBJ/multords.o: multords.F90

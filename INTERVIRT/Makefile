@@ -248,6 +248,7 @@ $(NAME): $(OBJS)
 	ar cr lib$(NAME).a $(OBJS) ../GFC/libgfc.a ../DDSS/libddss.a ../TALSH/libtalsh.a ../INTRAVIRT/libintravirt.a
 
 ./OBJ/hardware.o: hardware.F90 ../GFC/dil_basic.mod ../GFC/gfc_base.mod ../GFC/gfc_tree.mod
+	mkdir -p ./OBJ
 	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(FFLAGS) hardware.F90 -o ./OBJ/hardware.o
 
 ./OBJ/subspaces.o: subspaces.F90 ../GFC/dil_basic.mod ../GFC/gfc_base.mod ../GFC/gfc_tree.mod

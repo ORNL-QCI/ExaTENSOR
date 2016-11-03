@@ -253,6 +253,7 @@ lib$(NAME).a: $(OBJS)
 	ar cr lib$(NAME).a $(OBJS)
 
 ./OBJ/dil_basic.o: dil_basic.F90
+	mkdir -p ./OBJ
 	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) dil_basic.F90 -o ./OBJ/dil_basic.o
 
 ./OBJ/sys_service.o: sys_service.c sys_service.h

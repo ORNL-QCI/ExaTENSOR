@@ -250,6 +250,7 @@ $(NAME): $(OBJS)
 	$(FCOMP) ./OBJ/test_components.o ../DDSS/OBJ/stsubs.o ./lib$(NAME).a $(LFLAGS) -o test_components.x
 
 ./OBJ/pack_prim.o: pack_prim.F90 ../DDSS/stsubs.mod ../DDSS/dil_basic.mod
+	mkdir -p ./OBJ
 	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(FFLAGS) pack_prim.F90 -o ./OBJ/pack_prim.o
 
 ./OBJ/virta.o: virta.F90 ../DDSS/dil_basic.mod ../DDSS/service_mpi.mod ../DDSS/distributed.mod ../TALSH/talsh.mod

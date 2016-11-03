@@ -249,6 +249,7 @@ $(NAME): $(OBJS)
 	$(FCOMP) ./OBJ/main.o ./OBJ/qforce.o $(MY_LIBS) $(LFLAGS) -o $(NAME).x
 
 ./OBJ/qforce.o: qforce.F90 ../INTERVIRT/exatensor.mod
+	mkdir -p ./OBJ
 	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(FFLAGS) qforce.F90 -o ./OBJ/qforce.o
 
 ./OBJ/main.o: main.F90 ./OBJ/qforce.o ../INTERVIRT/exatensor.mod
