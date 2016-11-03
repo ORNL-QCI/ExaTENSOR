@@ -1,5 +1,5 @@
 !Generic implementation of a stack (OO Fortran 2003).
-!So far it is not derived from the GFC::Base.
+!This implementation is not derived from the GFC::Base.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
 !REVISION: 2016/03/16
 

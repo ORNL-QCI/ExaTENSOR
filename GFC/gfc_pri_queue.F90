@@ -1,6 +1,6 @@
-!Generic implementation of an unordered map (OO Fortran).
+!Generic Fortran Containers (GFC): Stack
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2016/10/13
+!REVISION: 2016/11/03
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -20,8 +20,9 @@
 !You should have received a copy of the GNU Lesser General Public License
 !along with ExaTensor. If not, see <http://www.gnu.org/licenses/>.
 
-       module gfc_unordered_map
+       module gfc_pri_queue
         use gfc_base
+        use gfc_tree
         use timers
         implicit none
         private
@@ -33,4 +34,4 @@
 !TYPES:
  !
 
-       end module gfc_unordered_map
+       end module gfc_pri_queue

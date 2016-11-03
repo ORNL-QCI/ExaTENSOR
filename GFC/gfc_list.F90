@@ -1,4 +1,4 @@
-!Generic Fortran Containers (GFC): Linked list
+!Generic Fortran Containers (GFC): Bi-directional linked list
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
 !REVISION: 2016-09-01 (started 2016-02-28)
 

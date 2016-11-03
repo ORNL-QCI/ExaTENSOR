@@ -1,4 +1,4 @@
-!Generic Fortran Containers (GFC): Dictionary (ordered map)
+!Generic Fortran Containers (GFC): Stack
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
 !REVISION: 2016/11/03
 
@@ -20,7 +20,7 @@
 !You should have received a copy of the GNU Lesser General Public License
 !along with ExaTensor. If not, see <http://www.gnu.org/licenses/>.
 
-       module gfc_dictionary
+       module gfc_stack
         use gfc_base
         use timers
         implicit none
@@ -33,4 +33,4 @@
 !TYPES:
  !
 
-       end module gfc_dictionary
+       end module gfc_stack

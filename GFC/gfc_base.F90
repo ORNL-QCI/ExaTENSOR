@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Base
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2016-10-13 (started 2016-02-17)
+!REVISION: 2016-11-03 (started 2016-02-17)
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -20,66 +20,6 @@
 !You should have received a copy of the GNU Lesser General Public License
 !along with ExaTensor. If not, see <http://www.gnu.org/licenses/>.
 
-!DESIGN:
-! # A GFC container is a structured collection of objects of any class;
-!   Objects of different classes can be stored in the same container.
-! # Objects can be added to the container either by value or by reference;
-!   The same container may have elements added both ways.
-!   When adding objects to the container by value, only allocatable components
-!   of derived types are recursively cloned whereas the pointer components
-!   are just pointer associated. To change this default behavior, one can
-!   supply a user-defined generic copy constructor (see interface below).
-! # A GFC subcontainer is a container linked as a part of another container.
-!   As a consequence, its boundary elements may have outside links.
-!   In this case, the larger container will be called a composite container.
-! # Each container has an associated iterator for scanning over its elements.
-!   The structure of the container determines the scanning sequence, that is,
-!   the way the elements of the container are traversed over.
-!   There are four major ways of scanning over a container:
-!    1) Unpredicated passive scan: The iterator returns each new encountered
-!       element of the container.
-!    2) Predicated passive scan: The iterator returns each new encountered
-!       element of the container that satisfies a certain condition.
-!    3) Unpredicated active scan: The iterator traverses the entire container
-!       or its part and applies a user-defined action to each element.
-!    4) Predicated active scan: The iterator traverses the entire container
-!       or its part and applies a user-defined action to each element that
-!       satisfies a certain condition.
-!   Additionally, active scans allow for a time-limited execution, in which
-!   the scan is interrupted after some time interval specified by a user.
-!   Each specific class of containers has its own iterator class because
-!   of different linkage between the elements of different containers.
-!   All insertion, deletion, and search operations are done via iterators,
-!   that is, the iterator methods provide the only possible way of accessing,
-!   updating, and performing other actions on the associated container.
-!   All relevant iterator methods are thread-safe, thus enabling
-!   a parallel execution of container scans (via OpenMP threads).
-!   However, it is the user responsibility to avoid race conditions
-!   when updating the value of container elements, that is, the structure
-!   of the container is protected from races by GFC, but the values of
-!   container elements are not protected. In the latter case, a thread
-!   is supposed to acquire an exclusive access to the container element
-!   if necessary for avoiding race conditions on container values.
-!   An iterator must not be shared among two or more threads!
-! # The container element deletion operation may require a user-defined
-!   destructor which will release all resources occupied by the object
-!   stored in that element, unless the object has FINAL methods defined
-!   (the interface for a user-defined generic destructor is provided below).
-!NOTES:
-! # This implementation of Generic Fortran containers heavily relies on
-!   dynamic polymorphism, thus introducing certain memory overhead which
-!   can be significant when storing small objects! Also dynamic type
-!   inferrence may decrease the efficiency when storing and operating
-!   on small objects. Thus, this implementation aims at providing a set
-!   of high-level abstractions for control logic and other high-level
-!   operations for which ultimate Flop/s efficiency is not required.
-!   The use of GFC containers in the inner loop of compute intensive kernels
-!   is highly discouraged (please resort to plain data, like arrays).
-! # Due to the limitations of Fortran class inheritence, public methods
-!   with a trailing underscore shall NEVER be used by the end user!
-! # Quick (constant time) element counting is deactivated when a container
-!   contains a subcontainer, in both the composite container and the subcontainer.
-!   The quick counting procedure is replaced by an order-N counting algorithm.
 !FOR DEVELOPERS ONLY:
 ! # The base SCAN method as well as the concrete container constructors need to update
 !   the reference count in the corresponding container element (in use). An element

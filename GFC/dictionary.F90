@@ -1,5 +1,5 @@
 !Generic dictionary implementation (OO Fortran) based on AVL BST.
-!So far it is not derived from GFC::Base.
+!This implementation is not derived from GFC::Base.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
 !REVISION: 2016/03/16
 
