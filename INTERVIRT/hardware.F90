@@ -1,6 +1,6 @@
 !Hardware abstraction module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2016/09/01
+!REVISION: 2016/11/09
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -53,7 +53,7 @@
   !Abstract compute unit:
         type, public:: compute_unit_t
          integer(INTL), private:: id=-1                              !compute unit id
-         integer(INTD), private:: dev_kind=DEV_NULL                  !compute unit kind (DEV_HOST, DEV_NVIDIA_GPU, DEV_INTEL_PHI, etc.)
+         integer(INTD), private:: dev_kind=DEV_NULL                  !compute unit kind (DEV_HOST, DEV_NVIDIA_GPU, DEV_INTEL_MIC, etc.)
          real(8), private:: max_flops=0d0                            !max flop/s count
          integer(INTD), private:: num_mem_units=0                    !number of attached memory units
          type(memory_access_t), allocatable, private:: mem_access(:) !description of each attached memory unit: [1..num_mem_units]

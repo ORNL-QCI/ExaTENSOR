@@ -1,13 +1,14 @@
 #HARDWARE DESCRIPTION FILE
 #In each record (@), each description line has the the following format (<> is optional):
 #
-#ITEM_TYPE <ITEM_SUBTYPE> <ITEM_ATTRIBUTES> <ITEM_NAME>
+#ITEM_TYPE <ITEM_SUBTYPE> <ITEM_ATTRIBUTES> <[ITEM_NAME]>
 #
 #ITEM_TYPE: RAM,CPU,GPU,PHI,NIC,NVRAM,DISK,FPGA,ASIC
 #ITEM_SUBTYPE: INTEL,AMD,NVIDIA,CRAY_GEMINI,CRAY_ARIES,INFINIBAND,ETHERNET100G
 #ITEM_ATTRIBUTES: SZ(size),C(cores),HT(hardware threads),
 #                 FP(floating point units),FLOPS (Flop/s),
 #                 LT(latency),BW(bandwidth),NET(network).
+#ITEM_NAME: Alphanumeric+underscore name.
 #The colon : separates the attribute name from its value.
 #An item may contain another item by including the name
 #of the latter with a preceding $.
