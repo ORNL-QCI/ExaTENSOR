@@ -1,4 +1,4 @@
-NAME = ExaTensor
+NAME = dsvp
 
 #ADJUST THE FOLLOWING ACCORDINGLY:
 #Cross-compiling wrappers: [WRAP|NOWRAP]:
@@ -6,39 +6,27 @@ export WRAP ?= NOWRAP
 #Compiler: [GNU|PGI|INTEL|CRAY|IBM]:
 export TOOLKIT ?= GNU
 #Optimization: [DEV|OPT]:
-export BUILD_TYPE ?= OPT
+export BUILD_TYPE ?= DEV
 #MPI Library: [MPICH|OPENMPI]:
 export MPILIB ?= MPICH
 #BLAS: [ATLAS|MKL|ACML|NONE]:
 export BLASLIB ?= ATLAS
 #Nvidia GPU via CUDA: [CUDA|NOCUDA]:
 export GPU_CUDA ?= CUDA
-#Nvidia GPU architecture (two digits):
-export GPU_SM_ARCH ?= 50
 #Operating system: [LINUX|NO_LINUX]:
 export EXA_OS ?= LINUX
 
-#EXTRAS:
-#Fast GPU tensor transpose (cuTT library): [YES|NO]:
-export WITH_CUTT ?= NO
-
-#WORKAROUNDS (ignore if you do not experience problems):
-#Fool CUDA 7.0 with GCC > 4.9: [YES|NO]:
-export FOOL_CUDA ?= NO
-
 #SET YOUR LOCAL PATHS (for unwrapped builds):
-# MPI path (whichever MPI you have, set one):
-export PATH_MPICH ?= /usr/local/mpi/mpich-3.2
+# MPI path (whichever you have chosen above):
+export PATH_MPICH ?= /usr/local/mpich3.2
 export PATH_OPENMPI ?= /usr/local/openmpi1.10.1
-# BLAS lib path (whichever BLAS you have, set one):
+# BLAS lib path (whichever you have chosen above):
 export PATH_BLAS_ATLAS ?= /usr/lib
 export PATH_BLAS_MKL ?= /ccs/compilers/intel/rh6-x86_64/16.0.0/compilers_and_libraries/linux/mkl/lib
 export PATH_BLAS_ACML ?= /opt/acml/5.3.1/gfortran64_fma4_mp/lib
 # CUDA lib and include paths (if you build with CUDA):
-export PATH_CUDA_LIB ?= /usr/local/cuda/lib64
-export PATH_CUDA_INC ?= /usr/local/cuda/include
-# cuTT path (if you use cuTT library):
-export PATH_CUTT ?= /home/div/src/cutt
+export PATH_CUDA_LIB ?= /usr/lib/x86_64-linux-gnu
+export PATH_CUDA_INC ?= /usr/include
 
 #YOU ARE DONE!
 
@@ -212,6 +200,9 @@ NO_ACCEL_CUDA = -D NO_AMD -D NO_PHI -D CUDA_ARCH=$(GPU_ARCH)
 NO_ACCEL_NOCUDA = -D NO_AMD -D NO_PHI -D NO_GPU
 NO_ACCEL = $(NO_ACCEL_$(GPU_CUDA))
 
+#ExaTensor includes:
+MY_INC = -I../DDSS
+
 #C FLAGS:
 CFLAGS_DEV = -c -g $(NO_ACCEL) -D_DEBUG
 CFLAGS_OPT = -c -O3 $(NO_ACCEL)
@@ -251,20 +242,16 @@ LTHREAD = $(LTHREAD_$(TOOLKIT))
 #LINKING:
 LFLAGS = $(LIB) $(LTHREAD) $(MPI_LINK) $(LA_LINK) $(CUDA_LINK)
 
-$(NAME):
-	$(MAKE) -C ./TALSH
-	$(MAKE) -C ./DDSS
-	$(MAKE) -C ./UTILITY
-	$(MAKE) -C ./GFC
-	$(MAKE) -C ./DSVP
-	$(MAKE) -C ./INTRAVIRT
-	$(MAKE) -C ./INTERVIRT
-	$(MAKE) -C ./QFORCE
-	cp ./INTERVIRT/exatensor.mod ./
-	cp ./INTERVIRT/libExaTensor.a ./
-	cp ./QFORCE/Qforce.x ./
-	echo "Finished successfully!"
+OBJS = ./OBJ/dsvp_base.o
+
+$(NAME): $(OBJS)
+	ar cr lib$(NAME).a $(OBJS)
+
+./OBJ/dsvp_base.o: dsvp_base.F90 ../DDSS/dil_basic.mod
+	mkdir -p ./OBJ
+	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(FFLAGS) dsvp_base.F90 -o ./OBJ/dsvp_base.o
+
 
 .PHONY: clean
 clean:
-	rm -f ./*.x ./*.a ./*.mod ./*/*.x ./*/*.a ./*/*.mod ./*/OBJ/*
+	rm -f *.x *.a ./OBJ/* *.mod *.modmic *.ptx *.log

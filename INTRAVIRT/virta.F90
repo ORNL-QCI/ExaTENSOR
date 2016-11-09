@@ -1,7 +1,7 @@
 !ExaTensor: Parallel Virtual Processing for Scale-Adaptive Tensor Algebra
 !This module provides the infrastructure for the tensor algebra processor.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2016/08/26
+!REVISION: 2016/11/09
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -23,18 +23,20 @@
 
        module virta
         use dil_basic
+        use pack_prim
         use talsh
         use distributed
 #ifndef NO_LINUX
         use service_mpi, only: get_memory_status
 #endif
+        use dsvp_base
         implicit none
         public
 !PARAMETERS:
  !Basic:
         integer(INTD), private:: CONS_OUT=6 !default output for this module
         integer(INTD), private:: DEBUG=0    !debugging mode
-        logical, private:: VERBOSE=.true.   !verbosity for errors2
+        logical, private:: VERBOSE=.true.   !verbosity for errors
  !Errors:
         integer(INTD), parameter, public:: EXA_SUCCESS=0              !success
         integer(INTD), parameter, public:: EXA_ERROR=-666             !generic error (or trap error)

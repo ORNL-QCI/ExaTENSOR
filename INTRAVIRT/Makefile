@@ -201,7 +201,7 @@ NO_ACCEL_NOCUDA = -D NO_AMD -D NO_PHI -D NO_GPU
 NO_ACCEL = $(NO_ACCEL_$(GPU_CUDA))
 
 #ExaTensor includes:
-MY_INC = -I../GFC -I../DDSS -I../TALSH
+MY_INC = -I../GFC -I../DDSS -I../TALSH -I../UTILITY -I../DSVP
 
 #C FLAGS:
 CFLAGS_DEV = -c -g $(NO_ACCEL) -D_DEBUG
@@ -242,22 +242,15 @@ LTHREAD = $(LTHREAD_$(TOOLKIT))
 #LINKING:
 LFLAGS = $(LIB) $(LTHREAD) $(MPI_LINK) $(LA_LINK) $(CUDA_LINK)
 
-OBJS = ./OBJ/pack_prim.o ./OBJ/virta.o ./OBJ/test_components.o
+OBJS = ./OBJ/virta.o
 #./OBJ/c_process.o
 
-$(NAME): $(OBJS)
-	ar cr lib$(NAME).a $(OBJS) ../GFC/libgfc.a ../DDSS/libddss.a ../TALSH/libtalsh.a
-	$(FCOMP) ./OBJ/test_components.o ../DDSS/OBJ/stsubs.o ./lib$(NAME).a $(LFLAGS) -o test_components.x
+$(NAME): $(OBJS) ../GFC/libgfc.a ../DDSS/libddss.a ../TALSH/libtalsh.a ../UTILITY/libutility.a ../DSVP/libdsvp.a
+	ar cr lib$(NAME).a $(OBJS) ../GFC/libgfc.a ../DDSS/libddss.a ../TALSH/libtalsh.a ../UTILITY/libutility.a ../DSVP/libdsvp.a
 
-./OBJ/pack_prim.o: pack_prim.F90 ../DDSS/stsubs.mod ../DDSS/dil_basic.mod
+./OBJ/virta.o: virta.F90 ../DDSS/dil_basic.mod ../DDSS/service_mpi.mod ../DDSS/distributed.mod ../TALSH/talsh.mod ../UTILITY/pack_prim.mod ../DSVP/dsvp_base.mod
 	mkdir -p ./OBJ
-	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(FFLAGS) pack_prim.F90 -o ./OBJ/pack_prim.o
-
-./OBJ/virta.o: virta.F90 ../DDSS/dil_basic.mod ../DDSS/service_mpi.mod ../DDSS/distributed.mod ../TALSH/talsh.mod
 	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(FFLAGS) virta.F90 -o ./OBJ/virta.o
-
-./OBJ/test_components.o: test_components.F90 ./OBJ/pack_prim.o ../DDSS/dil_basic.mod
-	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(FFLAGS) test_components.F90 -o ./OBJ/test_components.o
 
 
 .PHONY: clean
