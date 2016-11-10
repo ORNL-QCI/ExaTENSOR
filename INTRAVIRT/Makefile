@@ -12,21 +12,21 @@ export MPILIB ?= MPICH
 #BLAS: [ATLAS|MKL|ACML|NONE]:
 export BLASLIB ?= ATLAS
 #Nvidia GPU via CUDA: [CUDA|NOCUDA]:
-export GPU_CUDA ?= CUDA
+export GPU_CUDA ?= NOCUDA
 #Operating system: [LINUX|NO_LINUX]:
 export EXA_OS ?= LINUX
 
 #SET YOUR LOCAL PATHS (for unwrapped builds):
 # MPI path (whichever you have chosen above):
-export PATH_MPICH ?= /usr/local/mpich3.2
-export PATH_OPENMPI ?= /usr/local/openmpi1.10.1
+export PATH_MPICH ?= /usr/local/mpi/mpich-3.2
+export PATH_OPENMPI ?= /usr/local/mpi/openmpi-1.10.4
 # BLAS lib path (whichever you have chosen above):
 export PATH_BLAS_ATLAS ?= /usr/lib
 export PATH_BLAS_MKL ?= /ccs/compilers/intel/rh6-x86_64/16.0.0/compilers_and_libraries/linux/mkl/lib
 export PATH_BLAS_ACML ?= /opt/acml/5.3.1/gfortran64_fma4_mp/lib
 # CUDA lib and include paths (if you build with CUDA):
-export PATH_CUDA_LIB ?= /usr/lib/x86_64-linux-gnu
-export PATH_CUDA_INC ?= /usr/include
+export PATH_CUDA_LIB ?= /usr/local/cuda/lib64
+export PATH_CUDA_INC ?= /usr/local/cuda/include
 
 #YOU ARE DONE!
 
@@ -201,7 +201,7 @@ NO_ACCEL_NOCUDA = -D NO_AMD -D NO_PHI -D NO_GPU
 NO_ACCEL = $(NO_ACCEL_$(GPU_CUDA))
 
 #ExaTensor includes:
-MY_INC = -I../GFC -I../DDSS -I../TALSH -I../UTILITY -I../DSVP
+MY_INC = -I../UTILITY -I../GFC -I../DDSS -I../TALSH -I../DSVP
 
 #C FLAGS:
 CFLAGS_DEV = -c -g $(NO_ACCEL) -D_DEBUG
@@ -243,12 +243,11 @@ LTHREAD = $(LTHREAD_$(TOOLKIT))
 LFLAGS = $(LIB) $(LTHREAD) $(MPI_LINK) $(LA_LINK) $(CUDA_LINK)
 
 OBJS = ./OBJ/virta.o
-#./OBJ/c_process.o
 
-$(NAME): $(OBJS) ../GFC/libgfc.a ../DDSS/libddss.a ../TALSH/libtalsh.a ../UTILITY/libutility.a ../DSVP/libdsvp.a
-	ar cr lib$(NAME).a $(OBJS) ../GFC/libgfc.a ../DDSS/libddss.a ../TALSH/libtalsh.a ../UTILITY/libutility.a ../DSVP/libdsvp.a
+$(NAME): $(OBJS) ../UTILITY/libutility.a ../GFC/libgfc.a ../DDSS/libddss.a ../TALSH/libtalsh.a ../DSVP/libdsvp.a
+	ar cr lib$(NAME).a $(OBJS) ../UTILITY/libutility.a ../GFC/libgfc.a ../DDSS/libddss.a ../TALSH/libtalsh.a ../DSVP/libdsvp.a
 
-./OBJ/virta.o: virta.F90 ../DDSS/dil_basic.mod ../DDSS/service_mpi.mod ../DDSS/distributed.mod ../TALSH/talsh.mod ../UTILITY/pack_prim.mod ../DSVP/dsvp_base.mod
+./OBJ/virta.o: virta.F90 ../UTILITY/dil_basic.mod ../DDSS/service_mpi.mod ../DDSS/distributed.mod ../DDSS/pack_prim.mod ../TALSH/talsh.mod ../DSVP/dsvp_base.mod
 	mkdir -p ./OBJ
 	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(FFLAGS) virta.F90 -o ./OBJ/virta.o
 

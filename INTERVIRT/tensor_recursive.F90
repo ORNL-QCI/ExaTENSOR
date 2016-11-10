@@ -1,6 +1,6 @@
 !ExaTensor: Recursive data/task decomposition for tensors and tensor operations.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2016/03/24
+!REVISION: 2016/11/10
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -20,7 +20,7 @@
 !You should have received a copy of the GNU Lesser General Public License
 !along with ExaTensor. If not, see <http://www.gnu.org/licenses/>.
 
-       module task_recursive
+       module tensor_recursive
 !Acronyms:
 ! # NAT: Node Aggregation Tree.
 ! # SAT: Subspace Aggregation Tree.
@@ -71,4 +71,4 @@
 
         end subroutine TensOperSplit
 
-       end module task_recursive
+       end module tensor_recursive

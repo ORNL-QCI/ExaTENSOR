@@ -205,18 +205,18 @@ CFLAGS = $(CFLAGS_$(BUILD_TYPE)) -D$(EXA_OS)
 endif
 
 #FORTRAN FLAGS:
-FFLAGS_INTEL_DEV = -c -g -fpp -vec-threshold4 -qopenmp -mkl=parallel $(NO_ACCEL)
-#FFLAGS_INTEL_DEV = -c -g -fpp -vec-threshold4 -openmp $(NO_ACCEL)
-FFLAGS_INTEL_OPT = -c -O3 -fpp -vec-threshold4 -qopenmp -mkl=parallel $(NO_ACCEL)
-#FFLAGS_INTEL_OPT = -c -O3 -fpp -vec-threshold4 -openmp $(NO_ACCEL)
-FFLAGS_CRAY_DEV = -c -g $(NO_ACCEL)
-FFLAGS_CRAY_OPT = -c -O3 $(NO_ACCEL)
+FFLAGS_INTEL_DEV = -c -g -fpp -vec-threshold4 -qopenmp -mkl=parallel $(NO_ACCEL) -DNO_GNU
+#FFLAGS_INTEL_DEV = -c -g -fpp -vec-threshold4 -openmp $(NO_ACCEL) -DNO_GNU
+FFLAGS_INTEL_OPT = -c -O3 -fpp -vec-threshold4 -qopenmp -mkl=parallel $(NO_ACCEL) -DNO_GNU
+#FFLAGS_INTEL_OPT = -c -O3 -fpp -vec-threshold4 -openmp $(NO_ACCEL) -DNO_GNU
+FFLAGS_CRAY_DEV = -c -g $(NO_ACCEL) -DNO_GNU
+FFLAGS_CRAY_OPT = -c -O3 $(NO_ACCEL) -DNO_GNU
 FFLAGS_GNU_DEV = -c -fopenmp -fbacktrace -fcheck=bounds -fcheck=array-temps -fcheck=pointer -g $(NO_ACCEL)
 FFLAGS_GNU_OPT = -c -fopenmp -O3 $(NO_ACCEL)
-FFLAGS_PGI_DEV = -c -mp -Mcache_align -Mbounds -Mchkptr -Mstandard -g $(NO_ACCEL)
-FFLAGS_PGI_OPT = -c -mp -Mcache_align -Mstandard -O3 $(NO_ACCEL)
-FFLAGS_IBM_DEV = -c -qsmp=omp $(NO_ACCEL)
-FFLAGS_IBM_OPT = -c -qsmp=omp -O3 $(NO_ACCEL)
+FFLAGS_PGI_DEV = -c -mp -Mcache_align -Mbounds -Mchkptr -Mstandard -g $(NO_ACCEL) -DNO_GNU
+FFLAGS_PGI_OPT = -c -mp -Mcache_align -Mstandard -O3 $(NO_ACCEL) -DNO_GNU
+FFLAGS_IBM_DEV = -c -qsmp=omp $(NO_ACCEL) -DNO_GNU
+FFLAGS_IBM_OPT = -c -qsmp=omp -O3 $(NO_ACCEL) -DNO_GNU
 ifeq ($(BLASLIB),NONE)
 FFLAGS = $(FFLAGS_$(TOOLKIT)_$(BUILD_TYPE)) -D$(EXA_OS) -D NO_BLAS
 else

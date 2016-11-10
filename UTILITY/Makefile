@@ -7,26 +7,26 @@ export WRAP ?= NOWRAP
 export TOOLKIT ?= GNU
 #Optimization: [DEV|OPT]:
 export BUILD_TYPE ?= DEV
-#MPI Library: [MPICH|OPENMPI]:
-export MPILIB ?= MPICH
+#MPI Library: [MPICH|OPENMPI|NONE]:
+export MPILIB ?= NONE
 #BLAS: [ATLAS|MKL|ACML|NONE]:
-export BLASLIB ?= ATLAS
+export BLASLIB ?= NONE
 #Nvidia GPU via CUDA: [CUDA|NOCUDA]:
-export GPU_CUDA ?= CUDA
+export GPU_CUDA ?= NOCUDA
 #Operating system: [LINUX|NO_LINUX]:
 export EXA_OS ?= LINUX
 
 #SET YOUR LOCAL PATHS (for unwrapped builds):
 # MPI path (whichever you have chosen above):
-export PATH_MPICH ?= /usr/local/mpich3.2
-export PATH_OPENMPI ?= /usr/local/openmpi1.10.1
+export PATH_MPICH ?= /usr/local/mpi/mpich-3.2
+export PATH_OPENMPI ?= /usr/local/mpi/openmpi-1.10.4
 # BLAS lib path (whichever you have chosen above):
 export PATH_BLAS_ATLAS ?= /usr/lib
 export PATH_BLAS_MKL ?= /ccs/compilers/intel/rh6-x86_64/16.0.0/compilers_and_libraries/linux/mkl/lib
 export PATH_BLAS_ACML ?= /opt/acml/5.3.1/gfortran64_fma4_mp/lib
 # CUDA lib and include paths (if you build with CUDA):
-export PATH_CUDA_LIB ?= /usr/lib/x86_64-linux-gnu
-export PATH_CUDA_INC ?= /usr/include
+export PATH_CUDA_LIB ?= /usr/local/cuda/lib64
+export PATH_CUDA_INC ?= /usr/local/cuda/include
 
 #YOU ARE DONE!
 
@@ -201,7 +201,7 @@ NO_ACCEL_NOCUDA = -D NO_AMD -D NO_PHI -D NO_GPU
 NO_ACCEL = $(NO_ACCEL_$(GPU_CUDA))
 
 #ExaTensor includes:
-MY_INC = -I../GFC -I../DDSS -I../TALSH
+MY_INC = -I.
 
 #C FLAGS:
 CFLAGS_DEV = -c -g $(NO_ACCEL) -D_DEBUG
@@ -242,18 +242,23 @@ LTHREAD = $(LTHREAD_$(TOOLKIT))
 #LINKING:
 LFLAGS = $(LIB) $(LTHREAD) $(MPI_LINK) $(LA_LINK) $(CUDA_LINK)
 
-OBJS = ./OBJ/pack_prim.o
+OBJS = ./OBJ/dil_basic.o ./OBJ/stsubs.o ./OBJ/timers.o ./OBJ/combinatoric.o
 
-$(NAME): $(OBJS) ./OBJ/test_utility.o ../DDSS/OBJ/stsubs.o
+$(NAME): $(OBJS)
 	ar cr lib$(NAME).a $(OBJS)
-	$(FCOMP) ./OBJ/test_utility.o ../DDSS/OBJ/stsubs.o ./lib$(NAME).a $(LFLAGS) -o test_utility.x
 
-./OBJ/pack_prim.o: pack_prim.F90 ../DDSS/stsubs.mod ../DDSS/dil_basic.mod
+./OBJ/dil_basic.o: dil_basic.F90
 	mkdir -p ./OBJ
-	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(FFLAGS) pack_prim.F90 -o ./OBJ/pack_prim.o
+	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(FFLAGS) dil_basic.F90 -o ./OBJ/dil_basic.o
 
-./OBJ/test_utility.o: test_utility.F90 ./OBJ/pack_prim.o ../DDSS/dil_basic.mod
-	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(FFLAGS) test_utility.F90 -o ./OBJ/test_utility.o
+./OBJ/stsubs.o: stsubs.F90
+	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(FFLAGS) stsubs.F90 -o ./OBJ/stsubs.o
+
+./OBJ/timers.o: timers.F90
+	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(FFLAGS) timers.F90 -o ./OBJ/timers.o
+
+./OBJ/combinatoric.o: combinatoric.F90
+	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(FFLAGS) combinatoric.F90 -o ./OBJ/combinatoric.o
 
 
 .PHONY: clean

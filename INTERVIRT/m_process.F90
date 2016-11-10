@@ -1,6 +1,6 @@
 !ExaTensor::Managing process (manager).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2016/03/24
+!REVISION: 2016/11/10
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -22,6 +22,7 @@
 
        module m_process
         use virta
+        use tensor_recursive
         implicit none
         private
 !PARAMETERS:

@@ -6,7 +6,7 @@ export WRAP ?= NOWRAP
 #Compiler: [GNU|PGI|INTEL|CRAY|IBM]:
 export TOOLKIT ?= GNU
 #Optimization: [DEV|OPT]:
-export BUILD_TYPE ?= OPT
+export BUILD_TYPE ?= DEV
 #MPI Library: [MPICH|OPENMPI]:
 export MPILIB ?= MPICH
 #BLAS: [ATLAS|MKL|ACML|NONE]:
@@ -22,15 +22,15 @@ export FOOL_CUDA ?= NO
 
 #SET YOUR LOCAL PATHS (for unwrapped builds):
 # MPI path (whichever you have chosen above):
-export PATH_MPICH ?= /usr/local/mpich3.2
-export PATH_OPENMPI ?= /usr/local/openmpi1.10.1
+export PATH_MPICH ?= /usr/local/mpi/mpich-3.2
+export PATH_OPENMPI ?= /usr/local/mpi/openmpi-1.10.4
 # BLAS lib path (whichever you have chosen above):
 export PATH_BLAS_ATLAS ?= /usr/lib
 export PATH_BLAS_MKL ?= /ccs/compilers/intel/rh6-x86_64/16.0.0/compilers_and_libraries/linux/mkl/lib
 export PATH_BLAS_ACML ?= export PATH_BLAS_ACML ?= /opt/acml/5.3.1/gfortran64_fma4_mp/lib
 # CUDA lib and include paths (if you build with CUDA):
-export PATH_CUDA_LIB ?= /usr/lib/x86_64-linux-gnu
-export PATH_CUDA_INC ?= /usr/include
+export PATH_CUDA_LIB ?= /usr/local/cuda/lib64
+export PATH_CUDA_INC ?= /usr/local/cuda/include
 
 #YOU ARE DONE!
 
@@ -244,10 +244,11 @@ LTHREAD = $(LTHREAD_$(TOOLKIT))
 LFLAGS = $(LIB) $(LTHREAD) $(MPI_LINK) $(LA_LINK) $(CUDA_LINK)
 
 OBJS =  ./OBJ/dil_basic.o ./OBJ/sys_service.o ./OBJ/c2fortran.o ./OBJ/c2f_ifc.o ./OBJ/stsubs.o ./OBJ/timers.o \
-	./OBJ/mpi_fort.o ./OBJ/service_mpi.o ./OBJ/distributed.o
+	./OBJ/mpi_fort.o ./OBJ/service_mpi.o ./OBJ/distributed.o ./OBJ/pack_prim.o ./OBJ/test_pack_prim.o
 
-$(NAME): lib$(NAME).a ./OBJ/main.o
-	$(FCOMP) ./OBJ/main.o lib$(NAME).a $(LFLAGS) -o $(NAME).x
+$(NAME): lib$(NAME).a ./OBJ/main.o ./OBJ/test_pack_prim.o
+	$(FCOMP) ./OBJ/main.o lib$(NAME).a $(LFLAGS) -o test_$(NAME).x
+	$(FCOMP) ./OBJ/test_pack_prim.o ./OBJ/pack_prim.o ./OBJ/stsubs.o ./OBJ/dil_basic.o $(LFLAGS) -o test_pack_prim.x
 
 lib$(NAME).a: $(OBJS)
 	ar cr lib$(NAME).a $(OBJS)
@@ -286,7 +287,13 @@ endif
 ./OBJ/distributed.o: distributed.F90 ./OBJ/service_mpi.o ./OBJ/stsubs.o ./OBJ/c2f_ifc.o ./OBJ/timers.o
 	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) distributed.F90 -o ./OBJ/distributed.o
 
-./OBJ/main.o: main.F90 lib$(NAME).a
+./OBJ/pack_prim.o: pack_prim.F90 ./OBJ/stsubs.o ./OBJ/dil_basic.o
+	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) pack_prim.F90 -o ./OBJ/pack_prim.o
+
+./OBJ/test_pack_prim.o: test_pack_prim.F90 ./OBJ/pack_prim.o ./OBJ/dil_basic.o
+	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) test_pack_prim.F90 -o ./OBJ/test_pack_prim.o
+
+./OBJ/main.o: main.F90
 	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) main.F90 -o ./OBJ/main.o
 
 

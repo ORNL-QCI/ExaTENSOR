@@ -1,4 +1,4 @@
-       program test_components
+       program main
         use pack_prim_test
         use dil_basic, only: INTD,INTL
 #ifdef USE_MPI_MOD
@@ -34,4 +34,4 @@
          write(*,'("MPI initialization failed: Error ",i11)') ierr
         endif
         stop
-       end program test_components
+       end program main

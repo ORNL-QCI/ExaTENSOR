@@ -5,7 +5,8 @@
 #
 #ITEM_TYPE: RAM,CPU,GPU,PHI,NIC,NVRAM,DISK,FPGA,ASIC
 #ITEM_SUBTYPE: INTEL,AMD,NVIDIA,CRAY_GEMINI,CRAY_ARIES,INFINIBAND,ETHERNET100G
-#ITEM_ATTRIBUTES: SZ(size),C(cores),HT(hardware threads),
+#ITEM_ATTRIBUTES: ATTRIBUTE_NAME:ATTRIBUTE_VALUE
+# ATTRIBUTE_NAME: SZ(size),C(cores),HT(hardware threads),
 #                 FP(floating point units),FLOPS (Flop/s),
 #                 LT(latency),BW(bandwidth),NET(network).
 #ITEM_NAME: Alphanumeric+underscore name.

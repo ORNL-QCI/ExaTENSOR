@@ -9,12 +9,12 @@ export TOOLKIT ?= GNU
 export BUILD_TYPE ?= OPT
 #MPI Library: [MPICH|OPENMPI]:
 export MPILIB ?= MPICH
-#BLAS: [ATLAS|MKL|ACML|NONE]:
+#BLAS: [ATLAS|MKL|ACML|ESSL|NONE]:
 export BLASLIB ?= ATLAS
 #Nvidia GPU via CUDA: [CUDA|NOCUDA]:
-export GPU_CUDA ?= CUDA
+export GPU_CUDA ?= NOCUDA
 #Nvidia GPU architecture (two digits):
-export GPU_SM_ARCH ?= 50
+export GPU_SM_ARCH ?= 35
 #Operating system: [LINUX|NO_LINUX]:
 export EXA_OS ?= LINUX
 
@@ -29,11 +29,13 @@ export FOOL_CUDA ?= NO
 #SET YOUR LOCAL PATHS (for unwrapped builds):
 # MPI path (whichever MPI you have, set one):
 export PATH_MPICH ?= /usr/local/mpi/mpich-3.2
-export PATH_OPENMPI ?= /usr/local/openmpi1.10.1
+export PATH_OPENMPI ?= /usr/local/mpi/openmpi-1.10.4
 # BLAS lib path (whichever BLAS you have, set one):
 export PATH_BLAS_ATLAS ?= /usr/lib
 export PATH_BLAS_MKL ?= /ccs/compilers/intel/rh6-x86_64/16.0.0/compilers_and_libraries/linux/mkl/lib
 export PATH_BLAS_ACML ?= /opt/acml/5.3.1/gfortran64_fma4_mp/lib
+export PATH_BLAS_ESSL ?= /sw/summitdev/essl/5.5.0/lib64
+export PATH_BLAS_ESSL_DEP ?= /sw/summitdev/xl/161005/lib
 # CUDA lib and include paths (if you build with CUDA):
 export PATH_CUDA_LIB ?= /usr/local/cuda/lib64
 export PATH_CUDA_INC ?= /usr/local/cuda/include
@@ -150,6 +152,7 @@ else
 LA_LINK_MKL = -L$(PATH_BLAS_MKL) -lmkl_intel_lp64 -lmkl_core -lmkl_intel_thread -lpthread -lm -ldl
 endif
 LA_LINK_ACML = -L$(PATH_BLAS_ACML) -lacml_mp
+LA_LINK_ESSL = -L$(PATH_BLAS_ESSL) -lessl -L$(PATH_BLAS_ESSL_DEP) -lxlf90_r -lxlfmath
 ifeq ($(BLASLIB),NONE)
 LA_LINK_NOWRAP = -L.
 else
@@ -252,10 +255,10 @@ LTHREAD = $(LTHREAD_$(TOOLKIT))
 LFLAGS = $(LIB) $(LTHREAD) $(MPI_LINK) $(LA_LINK) $(CUDA_LINK)
 
 $(NAME):
-	$(MAKE) -C ./TALSH
-	$(MAKE) -C ./DDSS
 	$(MAKE) -C ./UTILITY
 	$(MAKE) -C ./GFC
+	$(MAKE) -C ./DDSS
+	$(MAKE) -C ./TALSH
 	$(MAKE) -C ./DSVP
 	$(MAKE) -C ./INTRAVIRT
 	$(MAKE) -C ./INTERVIRT

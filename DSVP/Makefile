@@ -7,12 +7,12 @@ export WRAP ?= NOWRAP
 export TOOLKIT ?= GNU
 #Optimization: [DEV|OPT]:
 export BUILD_TYPE ?= DEV
-#MPI Library: [MPICH|OPENMPI]:
-export MPILIB ?= MPICH
+#MPI Library: [MPICH|OPENMPI|NONE]:
+export MPILIB ?= NONE
 #BLAS: [ATLAS|MKL|ACML|NONE]:
-export BLASLIB ?= ATLAS
+export BLASLIB ?= NONE
 #Nvidia GPU via CUDA: [CUDA|NOCUDA]:
-export GPU_CUDA ?= CUDA
+export GPU_CUDA ?= NOCUDA
 #Operating system: [LINUX|NO_LINUX]:
 export EXA_OS ?= LINUX
 
@@ -247,7 +247,7 @@ OBJS = ./OBJ/dsvp_base.o
 $(NAME): $(OBJS)
 	ar cr lib$(NAME).a $(OBJS)
 
-./OBJ/dsvp_base.o: dsvp_base.F90 ../DDSS/dil_basic.mod
+./OBJ/dsvp_base.o: dsvp_base.F90 ../UTILITY/dil_basic.mod
 	mkdir -p ./OBJ
 	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(FFLAGS) dsvp_base.F90 -o ./OBJ/dsvp_base.o
 

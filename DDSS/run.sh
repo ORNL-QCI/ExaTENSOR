@@ -3,7 +3,7 @@
 #the environment variable QF_PROCS_PER_NODE must be set appropriately!
 export QF_PATH=/ccs/home/div/src/ExaTensor          #full path to ExaTensor
 #export QF_PATH=/home/dima/Projects/QFORCE
-export QF_NUM_PROCS=1                               #number of MPI processes
+export QF_NUM_PROCS=2                               #number of MPI processes
 export QF_CORES_PER_PROC=16                         #number of cores per MPI process
 export QF_PROCS_PER_NODE=1                          #number of MPI processes per node
 export OMP_NUM_THREADS=8                            #max number of OpenMP threads per process
@@ -35,7 +35,7 @@ export MPICH_MAX_THREAD_SAFETY=multiple             #CRAY: Required for MPI asyn
 export MPICH_GNI_ASYNC_PROGRESS_TIMEOUT=0           #CRAY:
 export MPICH_GNI_MALLOC_FALLBACK=enabled            #CRAY:
 export MPICH_RMA_OVER_DMAPP=1                       #CRAY: DMAPP backend for CRAY-MPICH
-export _DMAPPI_NDREG_ENTRIES=16384                  #CRAY: Max number of entries in UDREG memory registration cache
+#export _DMAPPI_NDREG_ENTRIES=16384                 #CRAY: Max number of entries in UDREG memory registration cache
 #export MPICH_ALLOC_MEM_HUGE_PAGES=1
 #export MPICH_ALLOC_MEM_HUGEPG_SZ=2M
 #export MPICH_ENV_DISPLAY=1
@@ -43,9 +43,6 @@ export _DMAPPI_NDREG_ENTRIES=16384                  #CRAY: Max number of entries
 #export MPICH_RANK_REORDER_DISPLAY=1
 
 rm *.tmp *.log *.out *.x
-cp $QF_PATH/qforce.v13.01.x ./
-aprun -n $QF_NUM_PROCS -N $QF_PROCS_PER_NODE -d $QF_CORES_PER_PROC -cc 0,2,4,6,8,10,12,14,1,3,5,7,9,11,13 -r1 ./Qforce.x #> qforce.log
-#mpiexec -n $QF_NUM_PROCS -npernode $QF_PROCS_PER_NODE ./Qforce.x #> qforce.log
-#nvprof --log-file nv_profile.log --print-gpu-trace ./Qforce.x # &> qforce.log &
-#nvprof --log-file nv_profile.log --print-gpu-trace --metrics branch_efficiency,gld_efficiency,gst_efficiency ./Qforce.x # &> qforce.log &
-#gprof ./Qforce.x gmon.out > profile.log
+cp $QF_PATH/DDSS/test_ddss.x ./
+aprun -n $QF_NUM_PROCS -N $QF_PROCS_PER_NODE -d $QF_CORES_PER_PROC -cc 0,2,4,6,8,10,12,14,1,3,5,7,9,11,13 -r1 ./test_ddss.x
+#mpiexec -n $QF_NUM_PROCS -npernode $QF_PROCS_PER_NODE ./test_ddss.x

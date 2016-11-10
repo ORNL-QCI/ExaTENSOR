@@ -1,7 +1,8 @@
-!ExaTensor: Parallel Virtual Processing for Scale-Adaptive Tensor Algebra
-!This module provides the infrastructure for the tensor algebra processor.
+!ExaTensor: Parallel Virtual Processing for Scale-Adaptive Tensor Algebra:
+!Derives from abstract domain-specific virtual processing.
+!This module provides the infrastructure for the tensor algebra virtual processor.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2016/11/09
+!REVISION: 2016/11/10
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
