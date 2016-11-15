@@ -1,7 +1,7 @@
 !Domain-specific virtual processor (DSVP): Abstract base module.
 !This module provides the infrastructure for the tensor algebra processor.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2016/11/12
+!REVISION: 2016/11/15
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -29,7 +29,7 @@
 !PARAMETERS:
  !Basic:
         integer(INTD), private:: CONS_OUT=6 !default output for this module
-        integer(INTD), private:: DEBUG=0    !debugging mode
+        integer(INTD), private:: DEBUG=1    !debugging mode
         logical, private:: VERBOSE=.TRUE.   !verbosity for errors
  !Error codes:
         integer(INTD), parameter, public:: DSVP_SUCCESS=SUCCESS       !success
@@ -45,31 +45,43 @@
         integer(INTD), parameter, public:: DS_OPRND_NO_COMM=0      !no pending communication on the domain-specific operand
         integer(INTD), parameter, public:: DS_OPRND_FETCHING=100   !domain-specific operand is being fetched
         integer(INTD), parameter, public:: DS_OPRND_UPLOADING=-100 !domain-specific operand is being uploaded
+ !DS instruction:
+        integer(INTD), parameter, public:: DS_INSTR_NOOP=-1        !no operation (all valid operation codes are non-negative)
 !DERIVED TYPES:
  !Domain-specific operand:
         type, abstract, public:: ds_oprnd_t
-         logical:: active=.FALSE.                                   !TRUE is the operand is defined (active), FALSE otherwise (undefined)
-         logical:: delivered=.FALSE.                                !TRUE when the domain-specific operand becomes locally available
-         integer(INTD):: in_route=DS_OPRND_NO_COMM                  !communication status: {DS_OPRND_NO_COMM,DS_OPRND_FETCHING,DS_OPRND_UPLOADING}
+         logical, private:: active=.FALSE.                          !TRUE is the operand is defined (active), FALSE otherwise (undefined)
+         logical, private:: delivered=.FALSE.                       !TRUE when the domain-specific operand becomes locally available
+         integer(INTD), private:: in_route=DS_OPRND_NO_COMM         !communication status: {DS_OPRND_NO_COMM,DS_OPRND_FETCHING,DS_OPRND_UPLOADING}
          contains
-          !public:
           procedure(ds_oprnd_self_i), deferred, public:: is_remote  !checks whether the domain-specific operand is local or remote
           procedure(ds_oprnd_self_i), deferred, public:: prefetch   !starts prefetching a remote domain-specific operand (acquires local resources!)
           procedure(ds_oprnd_self_i), deferred, public:: upload     !starts uploading the domain-specific operand to its remote location
-          procedure(ds_oprnd_self_i), deferred, public:: sync       !synchronizes the currently pending communication on the domain-specific operand
+          procedure(ds_oprnd_self_i), deferred, public:: sync       !synchronizes the currently pending communication on the domain-specific operand (either test or wait)
           procedure(ds_oprnd_self_i), deferred, public:: release    !destroys the local copy of the domain-specific operand (releases local resources!), but the operand will still be defined
           procedure, public:: is_active=>DSOprndIsActive            !returns TRUE if the domain-specific operand is active (defined)
           procedure, public:: is_delivered=>DSOprndIsDelivered      !returns TRUE if the domain-specific operand is locally available
-          !protected:
-          procedure, public:: mark_active_=>DSOprndMarkActive           !marks the domain-specific operand active (defined)
-          procedure, public:: mark_inactive_=>DSOprndMarkInactive       !marks the domain-specific operand inactive (undefined), local resources are released
-          procedure, public:: mark_delivered_=>DSOprndMarkDelivered     !marks the domain-specific operand locally available
-          procedure, public:: mark_undelivered_=>DSOprndMarkUndelivered !marks the domain-specific operand locally unavailable, local resources are released
-          procedure, public:: set_comm_stat_=>DSOprndSetCommStat        !sets the communication status
+          procedure, public:: mark_active=>DSOprndMarkActive           !marks the domain-specific operand active (defined)
+          procedure, public:: mark_inactive=>DSOprndMarkInactive       !marks the domain-specific operand inactive (undefined), local resources are released
+          procedure, public:: mark_delivered=>DSOprndMarkDelivered     !marks the domain-specific operand locally available
+          procedure, public:: mark_undelivered=>DSOprndMarkUndelivered !marks the domain-specific operand locally unavailable, local resources are released
+          procedure, public:: set_comm_stat=>DSOprndSetCommStat        !sets the communication status
         end type ds_oprnd_t
+ !Wrapped domain-specific operand:
+        type, private:: ds_oprnd_wrap_t
+         class(ds_oprnd_t), pointer, private:: oper_ptr=>NULL()      !pointer to a domain-specific operand
+        end type ds_oprnd_wrap_t
+ !Domain-specific instruction control field:
+        type, public:: ds_instr_ctrl_t
+        end type ds_instr_ctrl_t
  !Domain-specific instruction:
         type, abstract, public:: ds_instr_t
-         
+         integer(INTD), private:: code=DS_INSTR_NOOP                 !all valid instruction codes are non-negative (negative means no operation)
+         integer(INTD), private:: num_operands=0                     !number of domain-specific operands: Numeration:[0,1,2,3,...]
+         type(ds_oprnd_wrap_t), allocatable, private:: operand(:)    !domain-specific operands (wrapped)
+         contains
+          procedure, public:: get_operand=>DSInstrGetOperand         !returns a pointer to a specific operand of the domain-specific instruction
+          procedure, public:: set_operand=>DSInstrSetOperand         !associates a specific operand of the domain-specific instruction with its target
         end type ds_instr_t
  !Domain-specific virtual processor:
         type, abstract, public:: dsvp_t
@@ -81,24 +93,22 @@
          real(8), private:: time_start                        !start time stamp (sec)
          character(:), allocatable, private:: description     !symbolic description of the DSVP
          contains
-          !public:
-          procedure(dsvp_init_i), deferred, public:: init                               !initializes DSVP to an active state
-          procedure(dsvp_init_i), deferred, public:: shutdown                           !shutdowns DSVP
+          procedure(dsvp_self_i), deferred, public:: start                              !initializes DSVP to an active state and begins the life cycle
+          procedure(dsvp_self_i), deferred, public:: shutdown                           !shutdowns DSVP
           procedure(dsvp_comm_instr_i), deferred, public:: fetch_instructions           !fetches a block of domain-specific instructions from another DSVP
           procedure(dsvp_comm_instr_i), deferred, public:: return_retired_instructions  !returns back a block of retired instructions with their statuses
           procedure(dsvp_comm_instr_i), deferred, public:: send_instructions            !sends a block of domain-specific instructions to another DSVP for execution
           procedure(dsvp_comm_instr_i), deferred, public:: receive_retired_instructions !receives back a block of retired instructions with their statuses
           procedure, public:: set_description=>DSVPSetDescription                !sets DSVP ID and symbolic description
           procedure, public:: get_description=>DSVPGetDescription                !gets DSVP ID and symbolic description
+          procedure, public:: set_status=>DSVPSetStatus                          !sets the DSVP status
           procedure, public:: get_status=>DSVPGetStatus                          !returns the current status of the DSVP
           procedure, public:: time_active=>DSVPTimeActive                        !returns the time DSVP is active in seconds
-          !protected:
-          procedure, public:: start_time_=>DSVPStartTime                         !starts the time when DSVP is initialized
-          procedure, public:: clean_=>DSVPClean                                  !cleans the DSVP state after the destruction
-          procedure, public:: set_status_=>DSVPSetStatus                         !sets the DSVP status
-          procedure, public:: incr_recv_instr_counter_=>DSVPIncrRecvInstrCounter !increments the receieved instruction counter
-          procedure, public:: incr_rtrd_instr_counter_=>DSVPIncrRtrdInstrCounter !increments the processed (retired) instruction counter
-          procedure, public:: incr_fail_instr_counter_=>DSVPIncrFailInstrCounter !increments the failed instruction counter
+          procedure, public:: start_time=>DSVPStartTime                          !starts the time when DSVP is initialized
+          procedure, public:: clean=>DSVPClean                                   !cleans the DSVP state after the destruction
+          procedure, public:: incr_recv_instr_counter=>DSVPIncrRecvInstrCounter  !increments the receieved instruction counter
+          procedure, public:: incr_rtrd_instr_counter=>DSVPIncrRtrdInstrCounter  !increments the processed (retired) instruction counter
+          procedure, public:: incr_fail_instr_counter=>DSVPIncrFailInstrCounter  !increments the failed instruction counter
         end type dsvp_t
 !INTERFACES:
  !Abstract:
@@ -108,26 +118,24 @@
          subroutine ds_oprnd_self_i(this,ierr)
           import:: ds_oprnd_t,INTD
           implicit none
-          class(ds_oprnd_t), intent(inout):: this
-          integer(INTD), intent(out), optional:: ierr
+          class(ds_oprnd_t), intent(inout):: this      !inout: domain-specific operand
+          integer(INTD), intent(out), optional:: ierr  !out: error code
          end subroutine ds_oprnd_self_i
-  !ds_instr_t:
-
   !dsvp_t:
-   !init and shutdown:
-         subroutine dsvp_init_i(this,ierr)
+   !self:
+         subroutine dsvp_self_i(this,ierr)
           import:: dsvp_t,INTD
           implicit none
-          class(dsvp_t), intent(inout):: this
-          integer(INTD), intent(out), optional:: ierr
-         end subroutine dsvp_init_i
+          class(dsvp_t), intent(inout):: this          !inout: DSVP
+          integer(INTD), intent(out), optional:: ierr  !out: error code
+         end subroutine dsvp_self_i
    !instruction packet send/receive:
          subroutine dsvp_comm_instr_i(this,dsvp_id,ierr)
           import:: dsvp_t,INTD,INTL
           implicit none
-          class(dsvp_t), intent(inout):: this
-          integer(INTL), intent(in):: dsvp_id
-          integer(INTD), intent(out), optional:: ierr
+          class(dsvp_t), intent(inout):: this          !inout: DSVP
+          integer(INTL), intent(in):: dsvp_id          !in: ID of another DSVP
+          integer(INTD), intent(out), optional:: ierr  !out: error code
          end subroutine dsvp_comm_instr_i
         end interface
 !DATA:
@@ -142,7 +150,8 @@
         private DSOprndMarkUndelivered
         private DSOprndSetCommStat
  !ds_instr_t:
-        
+        private DSInstrGetOperand
+        private DSInstrSetOperand
  !dsvp_t:
         private DSVPStartTime
         private DSVPClean
@@ -197,7 +206,9 @@
          integer(INTD):: errc
 
          errc=DSVP_SUCCESS
-         this%active=.TRUE.
+         if(.not.this%is_active(errc)) then
+          if(errc.eq.DSVP_SUCCESS) this%active=.TRUE.
+         endif
          if(present(ierr)) ierr=errc
          return
         end subroutine DSOprndMarkActive
@@ -214,7 +225,7 @@
          if(this%is_active(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
            if(this%in_route.eq.DS_OPRND_NO_COMM) then
-            if(this%is_delivered(ier)) call this%mark_undelivered_(errc)
+            if(this%is_delivered(ier)) call this%mark_undelivered(errc)
             if(errc.eq.DSVP_SUCCESS) errc=ier
             this%active=.FALSE.
            else
@@ -236,7 +247,7 @@
          errc=DSVP_SUCCESS
          if(this%is_active(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
-           call this%set_comm_stat_(DS_OPRND_NO_COMM,errc)
+           call this%set_comm_stat(DS_OPRND_NO_COMM,errc)
            this%delivered=.TRUE.
           endif
          else
@@ -289,6 +300,82 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine DSOprndSetCommStat
+![ds_instr_t]======================================================
+        function DSInstrGetOperand(this,op_num,ierr) result(op_ptr)
+!Provides an access to a specific operand of the domain-specific instruction.
+         implicit none
+         class(ds_oprnd_t), pointer:: op_ptr          !out: pointer to a specific operand
+         class(ds_instr_t), intent(in):: this         !in: domain-specific instruction
+         integer(INTD), intent(in):: op_num           !in: operand number (0,1,2,...)
+         integer(INTD), intent(out), optional:: ierr  !out: error code
+         integer(INTD):: errc
+
+         errc=DSVP_SUCCESS; op_ptr=>NULL()
+         if(this%num_operands.gt.0) then
+          if(op_num.ge.0.and.op_num.lt.this%num_operands) then
+#ifdef DSVP_DEBUG
+           if(DEBUG.gt.0) then
+            if(allocated(this%operand)) then
+             if(lbound(this%operand,1).ne.0.or.ubound(this%operand,1)+1.ne.this%num_operands) errc=DSVP_ERROR
+            else
+             errc=DSVP_ERROR
+            endif
+           endif
+           if(errc.eq.DSVP_SUCCESS) then
+#endif
+            op_ptr=>this%operand(op_num)%oper_ptr
+#ifdef DSVP_DEBUG
+           endif
+#endif
+          else
+           errc=DSVP_ERR_INVALID_ARGS
+          endif
+         else
+          errc=DSVP_ERR_INVALID_REQ
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function DSInstrGetOperand
+!-----------------------------------------------------------
+        subroutine DSInstrSetOperand(this,op_num,oprnd,ierr)
+!Associates a specific operand of the domain-specific instruction with its target.
+         implicit none
+         class(ds_instr_t), intent(inout):: this       !inout: domain-specific instruction
+         integer(INTD), intent(in):: op_num            !in: operand number (0,1,2,...)
+         class(ds_oprnd_t), target, intent(in):: oprnd !in: actual domain-specific operand (target)
+         integer(INTD), intent(out), optional:: ierr   !out: error code
+         integer(INTD):: errc
+
+         errc=DSVP_SUCCESS
+         if(this%num_operands.gt.0) then
+          if(op_num.ge.0.and.op_num.lt.this%num_operands) then
+#ifdef DSVP_DEBUG
+           if(DEBUG.gt.0) then
+            if(allocated(this%operand)) then
+             if(lbound(this%operand,1).ne.0.or.ubound(this%operand,1)+1.ne.this%num_operands) errc=DSVP_ERROR
+            else
+             errc=DSVP_ERROR
+            endif
+           endif
+           if(errc.eq.DSVP_SUCCESS) then
+#endif
+            if(.not.associated(this%operand(op_num)%oper_ptr)) then
+             this%operand(op_num)%oper_ptr=>oprnd
+            else
+             errc=DSVP_ERR_INVALID_REQ
+            endif
+#ifdef DSVP_DEBUG
+           endif
+#endif
+          else
+           errc=DSVP_ERR_INVALID_ARGS
+          endif
+         else
+          errc=DSVP_ERR_INVALID_REQ
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine DSInstrSetOperand
 ![dsvp_t]==================================
         subroutine DSVPStartTime(this,ierr)
 !Starts the time after initializing the DSVP.
