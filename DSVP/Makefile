@@ -201,7 +201,7 @@ NO_ACCEL_NOCUDA = -D NO_AMD -D NO_PHI -D NO_GPU
 NO_ACCEL = $(NO_ACCEL_$(GPU_CUDA))
 
 #ExaTensor includes:
-MY_INC = -I../UTILITY
+MY_INC = -I../UTILITY -I../DDSS
 
 #C FLAGS:
 CFLAGS_DEV = -c -g $(NO_ACCEL) -D_DEBUG
@@ -247,7 +247,7 @@ OBJS = ./OBJ/dsvp_base.o
 $(NAME): $(OBJS)
 	ar cr lib$(NAME).a $(OBJS)
 
-./OBJ/dsvp_base.o: dsvp_base.F90 ../UTILITY/dil_basic.mod ../UTILITY/timers.mod
+./OBJ/dsvp_base.o: dsvp_base.F90 ../DDSS/pack_prim.mod ../UTILITY/dil_basic.mod ../UTILITY/timers.mod
 	mkdir -p ./OBJ
 	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(FFLAGS) dsvp_base.F90 -o ./OBJ/dsvp_base.o
 

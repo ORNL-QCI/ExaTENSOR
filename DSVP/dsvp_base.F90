@@ -1,7 +1,7 @@
 !Domain-specific virtual processor (DSVP): Abstract base module.
 !This module provides the infrastructure for the tensor algebra processor.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2016/11/16
+!REVISION: 2016/11/17
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -24,6 +24,7 @@
        module dsvp_base
         use dil_basic
         use timers
+        use pack_prim, only: obj_pack_t
         implicit none
         private
 !PARAMETERS:
@@ -37,6 +38,7 @@
         integer(INTD), parameter, public:: DSVP_ERR_INVALID_ARGS=1    !invalid procedure arguments
         integer(INTD), parameter, public:: DSVP_ERR_INVALID_REQ=2     !invalid request
         integer(INTD), parameter, public:: DSVP_ERR_MEM_ALLOC_FAIL=3  !failed memory allocation
+        integer(INTD), parameter, public:: DSVP_ERR_BROKEN_OBJ=4      !broken object
  !DSVP status:
         integer(INTD), parameter, public:: DSVP_STAT_OFF=0    !DSVP is off (either not initialized or turned off)
         integer(INTD), parameter, public:: DSVP_STAT_ACTIVE=1 !DSVP has been initialized and is active now
@@ -86,20 +88,19 @@
  !Domain-specific instruction:
         type, abstract, public:: ds_instr_t
          integer(INTD), private:: code=DS_INSTR_NOOP                !all valid instruction codes are non-negative (negative means no operation)
-         integer(INTD), private:: num_operands=0                    !number of domain-specific operands: Numeration:[0,1,2,3,...]
+         integer(INTD), private:: num_oprnds=0                      !number of domain-specific operands: Numeration:[0,1,2,3,...]
          integer(INTD), private:: stat=DS_INSTR_EMPTY               !status of the domain-specific instruction
          integer(INTD), private:: error_code                        !error code (success:DSVP_SUCCESS)
-         class(ds_instr_ctrl_t), pointer, private:: control=>NULL() !instruction control field
-         type(ds_oprnd_wrap_t), allocatable, private:: operand(:)   !domain-specific operands (wrapped)
-         procedure(ds_instr_decode_i), pass(this), pointer, public:: decode=>NULL()       !decoding procedure (dynamic binding): Unpacks raw bytes and constructs a domain-specific instruction
-         procedure(ds_instr_self_i), pass(this), pointer, public:: prefetch_input=>NULL() !starts prefetching input operands
-         procedure(ds_instr_self_i), pass(this), pointer, public:: sync_prefetch=>NULL()  !synchronizes the input prefetch (either test or wait)
-         procedure(ds_instr_self_i), pass(this), pointer, public:: execute=>NULL()        !executes the domain-specific instruction
-         procedure(ds_instr_self_i), pass(this), pointer, public:: sync_execution=>NULL() !synchronizes the execution (either test or wait)
-         procedure(ds_instr_self_i), pass(this), pointer, public:: upload_output=>NULL()  !starts uploading the output
-         procedure(ds_instr_self_i), pass(this), pointer, public:: sync_upload=>NULL()    !synchronizes the output upload (either test or wait)
-#if 0
+         class(ds_instr_ctrl_t), pointer, private:: control=>NULL() !instruction control field: set by decode
+         type(ds_oprnd_wrap_t), allocatable, private:: operand(:)   !domain-specific operands (wrapped pointers)
+         procedure(ds_instr_self_i), pass(this), pointer, public:: prefetch_input=>NULL() !starts prefetching input operands: dynamic binding set by decode
+         procedure(ds_instr_self_i), pass(this), pointer, public:: sync_prefetch=>NULL()  !synchronizes the input prefetch (either test or wait): dynamic binding set by decode
+         procedure(ds_instr_self_i), pass(this), pointer, public:: execute=>NULL()        !executes the domain-specific instruction: dynamic binding set by decode
+         procedure(ds_instr_self_i), pass(this), pointer, public:: sync_execution=>NULL() !synchronizes the execution (either test or wait): dynamic binding set by decode
+         procedure(ds_instr_self_i), pass(this), pointer, public:: upload_output=>NULL()  !starts uploading the output: dynamic binding set by decode
+         procedure(ds_instr_self_i), pass(this), pointer, public:: sync_upload=>NULL()    !synchronizes the output upload (either test or wait): dynamic binding set by decode
          contains
+          procedure(ds_instr_decode_i), deferred, public:: decode       !decoding procedure: Unpacks raw bytes and constructs a domain-specific instruction
           procedure, public:: is_empty=>DSInstrIsEmpty                  !returns TRUE if the domain-specific instruction is empty
           procedure, public:: is_retired=>DSInstrIsRetired              !returns TRUE if the domain-specific instruction is retired
           procedure, public:: is_active=>DSInstrIsActive                !returns TRUE if the domain-specific instruction is neither empty nor retired
@@ -114,10 +115,10 @@
           procedure, public:: dealloc_operands=>DSInstrDeallocOperands  !deallocates instruction operands
           procedure, public:: get_operand=>DSInstrGetOperand            !returns a pointer to a specific operand of the domain-specific instruction
           procedure, public:: set_operand=>DSInstrSetOperand            !associates a specific operand of the domain-specific instruction with its target
+          procedure, public:: free_operand=>DSInstrFreeOperand          !frees a specific instruction operand
           procedure, public:: num_operands=>DSInstrNumOperands          !returns the number of operands in the domain-specific instruction
           procedure, public:: all_set=>DSInstrAllSet                    !returns TRUE if all operands and control are set
           procedure, public:: clean=>DSInstrClean                       !resets the domain-specific instruction to an empty state (after it has been retired)
-#endif
         end type ds_instr_t
  !Domain-specific virtual processor:
         type, abstract, public:: dsvp_t
@@ -174,10 +175,10 @@
           integer(INTD), intent(out), optional:: ierr !out: error code
          end subroutine ds_instr_self_i
    !decode:
-         subroutine ds_instr_decode_i(this,instr_addr,ierr)
-          import:: ds_instr_t,INTD,c_ptr
+         subroutine ds_instr_decode_i(this,instr_pack,ierr)
+          import:: ds_instr_t,obj_pack_t,INTD,c_ptr
           class(ds_instr_t), intent(inout):: this     !inout: domain-specific instruction to be decoded
-          type(c_ptr), intent(in):: instr_addr        !in: raw byte instruction address
+          type(obj_pack_t), intent(in):: instr_pack   !in: instruction byte packet
           integer(INTD), intent(out), optional:: ierr !out: error code
          end subroutine ds_instr_decode_i
   !dsvp_t:
@@ -224,6 +225,7 @@
         private DSInstrDeallocOperands
         private DSInstrGetOperand
         private DSInstrSetOperand
+        private DSInstrFreeOperand
         private DSInstrNumOperands
         private DSInstrAllSet
         private DSInstrClean
@@ -397,7 +399,233 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine DSOprndSetCommStat
-![ds_instr_t]======================================================
+![ds_instr_t]=========================================
+        function DSInstrIsEmpty(this,ierr) result(res)
+!Returns TRUE if the domain-specific instruction is empty (undefined).
+         implicit none
+         logical:: res                               !out: answer
+         class(ds_instr_t), intent(in):: this        !in: domain-specific instruction
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=DSVP_SUCCESS; res=.TRUE.
+         if(this%stat.ne.DS_INSTR_EMPTY) then
+          if(this%code.ne.DS_INSTR_NOOP) then
+           res=.FALSE.
+          else
+           errc=DSVP_ERR_BROKEN_OBJ
+          endif
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function DSInstrIsEmpty
+!-------------------------------------------------------
+        function DSInstrIsRetired(this,ierr) result(res)
+!Returns TRUE if the domain-specific instruction is retired.
+         implicit none
+         logical:: res                               !out: answer
+         class(ds_instr_t), intent(in):: this        !in: domain-specific instruction
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=DSVP_SUCCESS; res=.FALSE.
+         if(this%stat.eq.DS_INSTR_RETIRED) then
+          if(this%code.ne.DS_INSTR_NOOP) then
+           res=.TRUE.
+          else
+           errc=DSVP_ERR_BROKEN_OBJ
+          endif
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function DSInstrIsRetired
+!------------------------------------------------------
+        function DSInstrIsActive(this,ierr) result(res)
+!Returns TRUE if the domain-specific instruction is active (defined).
+         implicit none
+         logical:: res                               !out: answer
+         class(ds_instr_t), intent(in):: this        !in: domain-specific instruction
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         res=.not.this%is_empty(errc)
+         if(present(ierr)) ierr=errc
+         return
+        end function DSInstrIsActive
+!------------------------------------------------------
+        function DSInstrGetCode(this,ierr) result(code)
+!Returns the instruction code. All valid codes are non-negative.
+!A negative code, e.g., DS_INSTR_NOOP=-1, means an empty instruction.
+         implicit none
+         integer(INTD):: code                        !out: instruction code
+         class(ds_instr_t), intent(in):: this        !in: domain-specific instruction
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=DSVP_SUCCESS
+         code=this%code
+         if(present(ierr)) ierr=errc
+         return
+        end function DSInstrGetCode
+!------------------------------------------------
+        subroutine DSInstrSetCode(this,code,ierr)
+!Sets the instruction code.
+         implicit none
+         class(ds_instr_t), intent(inout):: this     !inout: domain-specific instruction
+         integer(INTD), intent(in):: code            !in: instruction code
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=DSVP_SUCCESS
+         this%code=code
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine DSInstrSetCode
+!-------------------------------------------------------
+        function DSInstrGetStatus(this,ierr) result(sts)
+!Returns the instruction status.
+         implicit none
+         integer(INTD):: sts                         !out: instruction status
+         class(ds_instr_t), intent(in):: this        !in: domain-specific instruction
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=DSVP_SUCCESS
+         sts=this%stat
+         if(present(ierr)) ierr=errc
+         return
+        end function DSInstrGetStatus
+!--------------------------------------------------
+        subroutine DSInstrSetStatus(this,sts,ierr)
+!Sets the instruction status.
+         implicit none
+         class(ds_instr_t), intent(inout):: this     !inout: domain-specific instruction
+         integer(INTD), intent(in):: sts             !in: instruction status to be set
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=DSVP_SUCCESS
+         this%stat=sts
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine DSInstrSetStatus
+!---------------------------------------------------------
+        function DSInstrGetControl(this,ierr) result(ctrl)
+!Returns a pointer to the instruction control field.
+         implicit none
+         class(ds_instr_ctrl_t), pointer:: ctrl      !out: pointer to the instruction control field
+         class(ds_instr_t), intent(in):: this        !in: domain-specific instruction
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=DSVP_SUCCESS
+         if(associated(this%control)) then
+          ctrl=>this%control
+         else
+          errc=DSVP_ERR_INVALID_REQ
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function DSInstrGetControl
+!---------------------------------------------------
+        subroutine DSInstrSetControl(this,ctrl,ierr)
+!Associates the instruction control field.
+         implicit none
+         class(ds_instr_t), intent(inout):: this            !inout: domain-specific instruction
+         class(ds_instr_ctrl_t), pointer, intent(in):: ctrl !in: pointer to a control field (target)
+         integer(INTD), intent(out), optional:: ierr        !out: error code
+         integer(INTD):: errc
+
+         errc=DSVP_SUCCESS
+         if(associated(ctrl)) then
+          if(.not.associated(this%control)) then
+           this%control=>ctrl
+          else
+           errc=DSVP_ERR_INVALID_REQ
+          endif
+         else
+          errc=DSVP_ERR_INVALID_ARGS
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine DSInstrSetControl
+!-----------------------------------------------------------
+        subroutine DSInstrFreeControl(this,ierr,dissoc_only)
+!Frees the instructon control field. By default it will be deallocated,
+!but if <dissoc_only>=TRUE, only dissociation will happen.
+         implicit none
+         class(ds_instr_t), intent(inout):: this     !inout: domain-specific instruction
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         logical, intent(in), optional:: dissoc_only !in: if TRUE, only dissociation, no deallocation
+         integer(INTD):: errc
+
+         errc=DSVP_SUCCESS
+         if(associated(this%control)) then
+          if(present(dissoc_only)) then
+           if(.not.dissoc_only) deallocate(this%control)
+          endif
+          this%control=>NULL()
+         else
+          errc=DSVP_ERR_INVALID_REQ
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine DSInstrFreeControl
+!--------------------------------------------------------------
+        subroutine DSInstrAllocOperands(this,num_operands,ierr)
+!Allocates the operand pointer storage (to an empty state).
+         implicit none
+         class(ds_instr_t), intent(inout):: this     !inout: domain-specific instruction
+         integer(INTD), intent(in):: num_operands    !in: number of operands
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+         integer:: ier
+
+         errc=DSVP_SUCCESS
+         if(num_operands.gt.0) then
+          if(.not.allocated(this%operand)) then
+           allocate(this%operand(0:num_operands-1),STAT=ier)
+           if(ier.ne.0) errc=DSVP_ERR_MEM_ALLOC_FAIL
+           if(errc.eq.DSVP_SUCCESS) then
+            if(this%num_oprnds.ne.0) errc=DSVP_ERR_BROKEN_OBJ
+            this%num_oprnds=num_operands
+           endif
+          else
+           errc=DSVP_ERR_INVALID_REQ
+          endif
+         else
+          errc=DSVP_ERR_INVALID_ARGS
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine DSInstrAllocOperands
+!---------------------------------------------------
+        subroutine DSInstrDeallocOperands(this,ierr)
+!Deallocates the operand pointer storage.
+         implicit none
+         class(ds_instr_t), intent(inout):: this     !inout: domain-specific instruction
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc,i
+
+         errc=DSVP_SUCCESS
+         if(allocated(this%operand)) then
+          if(this%num_oprnds.gt.0) then
+           do i=this%num_oprnds-1,0,-1
+            call this%free_operand(i,errc); if(errc.ne.DSVP_SUCCESS) exit
+           enddo
+           if(errc.eq.DSVP_SUCCESS) then
+            deallocate(this%operand); this%num_oprnds=0
+           endif
+          else
+           errc=DSVP_ERR_BROKEN_OBJ
+          endif
+         else
+          errc=DSVP_ERR_INVALID_REQ
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine DSInstrDeallocOperands
+!------------------------------------------------------------------
         function DSInstrGetOperand(this,op_num,ierr) result(op_ptr)
 !Provides an access to a specific operand of the domain-specific instruction.
          implicit none
@@ -408,24 +636,28 @@
          integer(INTD):: errc
 
          errc=DSVP_SUCCESS; op_ptr=>NULL()
-         if(this%num_operands.gt.0) then
-          if(op_num.ge.0.and.op_num.lt.this%num_operands) then
+         if(this%is_active(errc)) then
+          if(this%num_oprnds.gt.0) then
+           if(op_num.ge.0.and.op_num.lt.this%num_oprnds) then
 #ifdef DSVP_DEBUG
-           if(DEBUG.gt.0) then
-            if(allocated(this%operand)) then
-             if(lbound(this%operand,1).ne.0.or.ubound(this%operand,1)+1.ne.this%num_operands) errc=DSVP_ERROR
-            else
-             errc=DSVP_ERROR
+            if(DEBUG.gt.0) then
+             if(allocated(this%operand)) then
+              if(lbound(this%operand,1).ne.0.or.ubound(this%operand,1)+1.ne.this%num_oprnds) errc=DSVP_ERR_BROKEN_OBJ
+             else
+              errc=DSVP_ERR_BROKEN_OBJ
+             endif
             endif
-           endif
-           if(errc.eq.DSVP_SUCCESS) then
+            if(errc.eq.DSVP_SUCCESS) then
 #endif
-            op_ptr=>this%operand(op_num)%oper_ptr
+             op_ptr=>this%operand(op_num)%oper_ptr
 #ifdef DSVP_DEBUG
-           endif
+            endif
 #endif
+           else
+            errc=DSVP_ERR_INVALID_ARGS
+           endif
           else
-           errc=DSVP_ERR_INVALID_ARGS
+           errc=DSVP_ERR_INVALID_REQ
           endif
          else
           errc=DSVP_ERR_INVALID_REQ
@@ -437,21 +669,21 @@
         subroutine DSInstrSetOperand(this,op_num,oprnd,ierr)
 !Associates a specific operand of the domain-specific instruction with its target.
          implicit none
-         class(ds_instr_t), intent(inout):: this       !inout: domain-specific instruction
-         integer(INTD), intent(in):: op_num            !in: operand number (0,1,2,...)
-         class(ds_oprnd_t), target, intent(in):: oprnd !in: actual domain-specific operand (target)
-         integer(INTD), intent(out), optional:: ierr   !out: error code
+         class(ds_instr_t), intent(inout):: this        !inout: domain-specific instruction
+         integer(INTD), intent(in):: op_num             !in: operand number (0,1,2,...)
+         class(ds_oprnd_t), pointer, intent(in):: oprnd !in: domain-specific operand (target)
+         integer(INTD), intent(out), optional:: ierr    !out: error code
          integer(INTD):: errc
 
          errc=DSVP_SUCCESS
-         if(this%num_operands.gt.0) then
-          if(op_num.ge.0.and.op_num.lt.this%num_operands) then
+         if(this%num_oprnds.gt.0) then
+          if(op_num.ge.0.and.op_num.lt.this%num_oprnds) then
 #ifdef DSVP_DEBUG
            if(DEBUG.gt.0) then
             if(allocated(this%operand)) then
-             if(lbound(this%operand,1).ne.0.or.ubound(this%operand,1)+1.ne.this%num_operands) errc=DSVP_ERROR
+             if(lbound(this%operand,1).ne.0.or.ubound(this%operand,1)+1.ne.this%num_oprnds) errc=DSVP_ERR_BROKEN_OBJ
             else
-             errc=DSVP_ERROR
+             errc=DSVP_ERR_BROKEN_OBJ
             endif
            endif
            if(errc.eq.DSVP_SUCCESS) then
@@ -473,6 +705,90 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine DSInstrSetOperand
+!------------------------------------------------------------------
+        subroutine DSInstrFreeOperand(this,op_num,ierr,dissoc_only)
+!Frees a specific instruction operand. By default the operand poiter will be
+!deallocated, unless <dissoc_only>=TRUE, which will only dissociate it.
+         implicit none
+         class(ds_instr_t), intent(inout):: this     !inout: domain-specific instruction
+         integer(INTD), intent(in):: op_num          !in: operand number (0,1,3,...)
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         logical, intent(in), optional:: dissoc_only !in: if TRUE, no pointer deallocation will be performed
+         integer(INTD):: errc
+         logical:: dis
+
+         errc=DSVP_SUCCESS
+         if(present(dissoc_only)) then; dis=dissoc_only; else; dis=.FALSE.; endif
+         if(this%num_oprnds.gt.0) then
+          if(op_num.ge.0.and.op_num.lt.this%num_oprnds) then
+           call this%operand(op_num)%oper_ptr%mark_empty(errc) !will call destructor
+           if(.not.dis) deallocate(this%operand(op_num)%oper_ptr)
+           this%operand(op_num)%oper_ptr=>NULL()
+          else
+           errc=DSVP_ERR_INVALID_ARGS
+          endif
+         else
+          errc=DSVP_ERR_INVALID_REQ
+          if(allocated(this%operand)) errc=DSVP_ERR_BROKEN_OBJ
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine DSInstrFreeOperand
+!------------------------------------------------------------------
+        function DSInstrNumOperands(this,ierr) result(num_operands)
+!Returns the number of instruction operands.
+         implicit none
+         integer(INTD):: num_operands                !out: number of operands
+         class(ds_instr_t), intent(in):: this        !in: domain-specific instruction
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=DSVP_SUCCESS
+         num_operands=this%num_oprnds
+         if(num_operands.lt.0) errc=DSVP_ERR_BROKEN_OBJ
+         if(present(ierr)) ierr=errc
+         return
+        end function DSInstrNumOperands
+!----------------------------------------------------
+        function DSInstrAllSet(this,ierr) result(res)
+!Returns TRUE if the domain-specific instruction is fully defined.
+         implicit none
+         logical:: res                               !out: answer
+         class(ds_instr_t), intent(in):: this        !in: domain-specific instruction
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc,i
+
+         errc=DSVP_SUCCESS; res=.FALSE.
+         if(this%code.eq.DS_INSTR_NOOP.or.this%stat.eq.DS_INSTR_EMPTY) return
+         if(.not.associated(this%control)) return
+         if(this%num_oprnds.gt.0) then
+          if(allocated(this%operand)) then
+           do i=0,this%num_oprnds-1
+            if(.not.associated(this%operand(i)%oper_ptr)) return
+           enddo
+          else
+           errc=DSVP_ERR_BROKEN_OBJ
+          endif
+         endif
+         if(errc.eq.DSVP_SUCCESS) res=.TRUE.
+         if(present(ierr)) ierr=errc
+         return
+        end function DSInstrAllSet
+!-----------------------------------------
+        subroutine DSInstrClean(this,ierr)
+!Resets the domain-specific instruction to an empty state.
+         implicit none
+         class(ds_instr_t), intent(inout):: this     !inout: domain-specific instruction
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc,ier
+
+         errc=DSVP_SUCCESS
+         call this%dealloc_operands(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.DSVP_SUCCESS) errc=ier
+         call this%free_control(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.DSVP_SUCCESS) errc=ier
+         this%code=DS_INSTR_NOOP; this%stat=DS_INSTR_EMPTY
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine DSInstrClean
 ![dsvp_t]==================================
         subroutine DSVPStartTime(this,ierr)
 !Starts the time after initializing the DSVP.
