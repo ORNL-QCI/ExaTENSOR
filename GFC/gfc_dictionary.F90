@@ -20,6 +20,15 @@
 !You should have received a copy of the GNU Lesser General Public License
 !along with ExaTensor. If not, see <http://www.gnu.org/licenses/>.
 
+!FOR DEVELOPERS ONLY:
+! # ISSUE: dictionary_t overrides the base constructor and destructor. The dictionary
+!   element constructor splits the dictionary element construction into two parts:
+!   base (value) construction and key construction. In the multi-threaded scenario
+!   this can lead to a situation where the value has been constructed successfully
+!   but the key consruction may return GFC_IN_USE as another thread has a chance
+!   to acquire the lock for this specific element in between the base construction
+!   and the key construction. This needs to be fixed!
+
        module gfc_dictionary
         use gfc_base
         use timers
@@ -54,21 +63,26 @@
           procedure, non_overridable, public:: is_root=>DictElemIsRoot !returns GFC_TRUE if the element is the root of the dictionary binary tree
           procedure, non_overridable, public:: is_leaf=>DictElemIsLeaf !returns GFC_TRUE if the element is a leaf of the dictionary binary tree
           procedure, non_overridable, public:: get_key=>DictElemGetKey !returns an unlimited polymorphic pointer to the element key
-          procedure, public:: construct=>DictElemConstruct             !constructs a dictionary element
+          procedure, nopass, public:: ContElemConstruct
+          procedure, public:: DictElemConstruct                        !constructs a dictionary element from a key-value pair
+          generic, public:: construct=>ContElemConstruct,DictElemConstruct
+#if 0
           procedure, public:: destruct=>DictElemDestruct               !destructs a dictionary element
           procedure, public:: predicate_key=>DictElemPredicateKey      !returns the result of predication on the element key
           procedure, public:: action_key=>DictElemActionKey            !performs a user-defined action on the element key
           procedure, public:: compare_key=>DictElemCompareKey          !compares the element key with another key
           procedure, public:: print_key=>DictElemPrintKey              !prints the element key
+#endif
         end type dict_elem_t
  !Dictionary (all operations on the dictionary are performed via an iterator):
         type, extends(gfc_container_t), public:: dictionary_t
-         class(dict_elem_t), pointer, private:: root=>NULL()       !root (boundary) element (beginning)
+         class(dict_elem_t), pointer, private:: root=>NULL()           !root (boundary) element (beginning)
         end type dictionary_t
  !Dictionary iterator:
+#if 0
         type, extends(gfc_iter_t), public:: dictionary_iter_t
-         class(dict_elem_t), pointer, private:: current=>NULL()    !currently pointed element of the container
-         class(dictionary_t), pointer, private:: container=>NULL() !container
+         class(dict_elem_t), pointer, private:: current=>NULL()        !currently pointed element of the container
+         class(dictionary_t), pointer, private:: container=>NULL()     !container
          contains
           procedure, public:: init=>DictionaryIterInit                 !associates the iterator with a container and positions it to the root element
           procedure, public:: reset=>DictionaryIterReset               !resets the iterator to the beginning of the container (root element)
@@ -80,6 +94,7 @@
           procedure, public:: prev_in_order=>DictionaryIterPrevInOrder !moves the iterator to the previous in order element, if any
           procedure, public:: search=>DictionaryIterSearch             !performs a key-based search in the dictionary
         end type dictionary_iter_t
+#endif
 !INTERFACES:
 
 !VISIBILITY:
@@ -88,12 +103,15 @@
         private DictElemIsLeaf
         private DictElemGetKey
         private DictElemConstruct
+#if 0
         private DictElemDestruct
         private DictElemPredicateKey
         private DictElemActionKey
         private DictElemCompareKey
         private DictElemPrintKey
+#endif
  !dictionary_iter_t:
+#if 0
         private DictionaryIterInit
         private DictionaryIterReset
         private DictionaryIterRelease
@@ -103,6 +121,7 @@
         private DictionaryIterNextInOrder
         private DictionaryIterPrevInOrder
         private DictionaryIterSearch
+#endif
 !DEFINITIONS:
        contains
 ![dict_elem_t]===================================
@@ -152,8 +171,68 @@
          if(present(ierr)) ierr=errc
          return
         end function DictElemGetKey
-![dictionary_t]=======================
+!----------------------------------------------------------------------------------------------------
+#ifdef NO_GNU
+        subroutine DictElemConstruct(this,key,val,ierr,assoc_val,key_copy_constr_f,val_copy_constr_f) !`GCC has a bug with this line
+#else
+        subroutine DictElemConstruct(this,key,val,ierr,assoc_val)
+#endif
+!Given a key-value pair, constructs an element of a dictionary.
+!If construction fails, the element may become underconstructed,
+!requiring a separate call to the destructor after return.
+         implicit none
+         class(dict_elem_t), intent(inout):: this             !inout: element of the container
+         class(*), target, intent(in):: key                   !in: key to be stored (by value only)
+         class(*), target, intent(in):: val                   !in: value to be stored (either by value or by reference)
+         integer(INTD), intent(out), optional:: ierr          !out: error code
+         logical, intent(in), optional:: assoc_val            !in: if TRUE, <val> will be stored by reference, otherwise by value (default)
+#ifdef NO_GNU
+         procedure(gfc_copy_i), optional:: key_copy_constr_f  !in: user-defined generic copy constructor for the key
+         procedure(gfc_copy_i), optional:: val_copy_constr_f  !in: user-defined generic copy constructor for the value
+#endif
+         integer(INTD):: errc
+         integer:: ier
+         logical:: assoc
 
-![dictionary_iter_t]==================
+         errc=GFC_SUCCESS
+         if(present(assoc_val)) then; assoc=assoc_val; else; assoc=.FALSE.; endif
+#ifdef NO_GNU
+         if(present(val_copy_constr_f)) then
+          call this%gfc_cont_elem_t%construct(val,errc,assoc_only=assoc,copy_constr_func=val_copy_constr_f)
+         else
+#endif
+          call this%gfc_cont_elem_t%construct(val,errc,assoc_only=assoc)
+#ifdef NO_GNU
+         endif
+#endif
+         if(errc.eq.GFC_SUCCESS) then !base constructor succeeded
+          if(this%in_use(errc,set_lock=.TRUE.,report_refs=.TRUE.).eq.GFC_FALSE) then
+           if(errc.eq.GFC_SUCCESS) then
+#ifdef NO_GNU
+            if(present(key_copy_constr_f)) then
+             this%key=>key_copy_constr_f(key,errc)
+            else
+#endif
+             allocate(this%key,SOURCE=key,STAT=ier)
+             if(ier.ne.0) errc=GFC_MEM_ALLOC_FAILED
+#ifdef NO_GNU
+            endif
+#endif
+           endif
+           if(errc.eq.GFC_SUCCESS) then
+            call this%release_lock_(errc)
+           else
+            call this%release_lock_()
+           endif
+          else
+           if(errc.eq.GFC_SUCCESS) errc=GFC_IN_USE
+          endif
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine DictElemConstruct
+![dictionary_t]=========================
+
+![dictionary_iter_t]====================
 
        end module gfc_dictionary

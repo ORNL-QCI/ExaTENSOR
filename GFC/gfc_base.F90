@@ -219,7 +219,7 @@
          end function gfc_func_act_i
         end interface
 !VISIBILITY:
-        private ContElemConstruct
+        public ContElemConstruct
         private ContElemDestruct
         private ContElemGetValue
         private ContElemIsEmpty
