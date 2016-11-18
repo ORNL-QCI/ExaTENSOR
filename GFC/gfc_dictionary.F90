@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Dictionary (ordered map)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2016/11/03
+!REVISION: 2016/11/18
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -31,6 +31,9 @@
         logical, private:: VERBOSE=.TRUE.   !verbosity for errors
         integer(INTD), private:: DEBUG=0    !debugging level (0:none)
 !TYPES:
- !
+ !Dictionary element:
+        type, extends(gfc_cont_elem_t), public:: dict_elem_t
+         
+        end type dict_elem_t
 
        end module gfc_dictionary
