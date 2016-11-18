@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Base
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2016-11-03 (started 2016-02-17)
+!REVISION: 2016-11-18 (started 2016-02-17)
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -68,6 +68,9 @@
  !Predicates (GFC_ERROR applies here as well):
         integer(INTD), parameter:: GFC_TRUE=1  !TRUE value
         integer(INTD), parameter:: GFC_FALSE=0 !FALSE value
+ !Search results (GFC_ERROR applies here as well):
+        integer(INTD), parameter:: GFC_FOUND=GFC_SUCCESS !element found
+        integer(INTD), parameter:: GFC_NOT_FOUND=1       !element not found
  !Comparison/relation (GFC_ERROR applies here as well):
         integer(INTD), parameter:: GFC_CMP_EQ=0      !equivalent objects
         integer(INTD), parameter:: GFC_CMP_LT=-1     !object1 < object2
@@ -95,6 +98,7 @@
           procedure, public:: destruct=>ContElemDestruct   !destructs an existing container element (releases memory occupied by value)
           procedure, public:: get_value=>ContElemGetValue  !returns a pointer to the element value (unlimited polymorphic)
           procedure, public:: is_empty=>ContElemIsEmpty    !returns TRUE if the element of the container is empty, FALSE otherwise
+          procedure, public:: stored_by_value=>ContElemStoredByValue !returns TRUE if the element value is stored by value, FALSE otherwise (stored by reference)
           procedure, public:: predicate=>ContElemPredicate !returns the value of a user-given predicate applied to the element
           procedure, public:: action=>ContElemAction       !acts on the element with a user-defined action
           procedure, public:: compare=>ContElemCompare     !compares the value of the element with the value of another element
@@ -219,6 +223,7 @@
         private ContElemDestruct
         private ContElemGetValue
         private ContElemIsEmpty
+        private ContElemStoredByValue
         private ContElemPredicate
         private ContElemAction
         private ContElemCompare
@@ -362,6 +367,24 @@
          empt=.not.associated(this%value_p)
          return
         end function ContElemIsEmpty
+!------------------------------------------------------------
+        function ContElemStoredByValue(this,ierr) result(res)
+!Returns TRUE if the element value is stored by value, FALSE otherwise (stored by reference).
+         implicit none
+         logical:: res                               !out: answer
+         class(gfc_cont_elem_t), intent(in):: this   !in: element of a container
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=GFC_SUCCESS; res=.FALSE.
+         if(.not.this%is_empty()) then
+          if(this%alloc.eq.GFC_TRUE) res=.TRUE.
+         else
+          errc=GFC_ELEM_EMPTY
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function ContElemStoredByValue
 !------------------------------------------------------------------
         function ContElemPredicate(this,predicat,ierr) result(pred)
 !Returns the value of a user-defined predicate evaluated on
