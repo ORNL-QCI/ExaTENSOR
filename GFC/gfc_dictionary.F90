@@ -66,7 +66,6 @@
          class(dict_elem_t), pointer, private:: root=>NULL()           !root (boundary) element (beginning)
         end type dictionary_t
  !Dictionary iterator:
-#if 0
         type, extends(gfc_iter_t), public:: dictionary_iter_t
          class(dict_elem_t), pointer, private:: current=>NULL()        !currently pointed element of the container
          class(dictionary_t), pointer, private:: container=>NULL()     !container
@@ -83,7 +82,6 @@
           procedure, public:: move_to_max=>DictionaryIterMoveToMax     !moves the iterator to the rightmost (maximal element)
           procedure, public:: search=>DictionaryIterSearch             !performs a key-based search in the dictionary
         end type dictionary_iter_t
-#endif
 !INTERFACES:
 
 !VISIBILITY:
@@ -96,7 +94,6 @@
         private DictElemCompareKey
         private DictElemPrintKey
  !dictionary_iter_t:
-#if 0
         private DictionaryIterInit
         private DictionaryIterReset
         private DictionaryIterRelease
@@ -108,7 +105,6 @@
         private DictionaryIterMoveToMin
         private DictionaryIterMoveToMax
         private DictionaryIterSearch
-#endif
 !DEFINITIONS:
        contains
 ![dict_elem_t]===================================================================================
@@ -281,6 +277,77 @@
         end subroutine DictElemPrintKey
 ![dictionary_t]=========================
 
-![dictionary_iter_t]====================
+![dictionary_iter_t]=======================================
+        function DictionaryIterInit(this,cont) result(ierr)
+!Initializes an iterator and resets it to the beginning of the container.
+         implicit none
+         integer(INTD):: ierr                           !out: error code
+         class(dictionary_iter_t), intent(inout):: this !inout: iterator
+         class(dictionary_t), target, intent(in):: cont !in: container
+
+         ierr=GFC_SUCCESS
+         select type(cont)
+         class is (dictionary_t)
+          this%container=>cont
+          ierr=this%reset()
+         class default
+          ierr=GFC_INVALID_ARGS
+         end select
+         return
+        end function DictionaryIterInit
+!------------------------------------------------------
+        function DictionaryIterReset(this) result(ierr)
+!Resets the iterator to the beginning (root element).
+         implicit none
+         integer(INTD):: ierr                           !out: error code
+         class(dictionary_iter_t), intent(inout):: this !inout: iterator
+
+         ierr=GFC_SUCCESS
+         if(associated(this%container)) then
+          if(associated(this%current)) call this%current%decr_ref_()
+          this%current=>this%container%root
+          if(associated(this%current)) then
+           call this%current%incr_ref_()
+           ierr=this%set_status_(GFC_IT_ACTIVE) !non-empty iterator/container
+          else
+           ierr=this%set_status_(GFC_IT_EMPTY) !empty iterator/container
+          endif
+          call this%reset_count() !reset all iteration counters
+         else
+          ierr=this%set_status_(GFC_IT_NULL)
+          ierr=GFC_IT_NULL
+         endif
+         return
+        end function DictionaryIterReset
+!--------------------------------------------------------
+        function DictionaryIterRelease(this) result(ierr)
+!Dissociates the iterator from its container.
+         implicit none
+         integer(INTD):: ierr                           !out: error code
+         class(dictionary_iter_t), intent(inout):: this !inout: iterator
+
+         if(associated(this%current)) call this%current%decr_ref_()
+         this%current=>NULL(); this%container=>NULL()
+         call this%reset_count(); ierr=this%set_status_(GFC_IT_NULL)
+         return
+        end function DictionaryIterRelease
+!--------------------------------------------------------------
+        function DictionaryIterPointee(this,ierr) result(pntee)
+!Returns the container element the iterator is currently pointing to.
+         implicit none
+         class(gfc_cont_elem_t), pointer:: pntee     !out: container element currently pointed to by the iterator
+         class(dictionary_iter_t), intent(in):: this !in: iterator
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=this%get_status()
+         if(errc.eq.GFC_IT_ACTIVE) then
+          pntee=>this%current; errc=GFC_SUCCESS
+         else
+          pntee=>NULL()
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function DictionaryIterPointee
 
        end module gfc_dictionary
