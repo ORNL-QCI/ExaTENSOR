@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Bi-directional linked list
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2016-09-01 (started 2016-02-28)
+!REVISION: 2016-11-19 (started 2016-02-28)
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -44,8 +44,9 @@
          class(list_elem_t), pointer, private:: next_elem=>NULL()
          class(list_elem_t), pointer, private:: prev_elem=>NULL()
         contains
-         procedure, public:: is_first=>ListElemIsFirst !returns GFC_TRUE if the element is the first in the list
-         procedure, public:: is_last=>ListElemIsLast   !returns GFC_TRUE if the element is the last in the list
+         procedure, public:: construct=>ListElemConstruct !constructs the contents of the list element
+         procedure, public:: is_first=>ListElemIsFirst    !returns GFC_TRUE if the element is the first in the list
+         procedure, public:: is_last=>ListElemIsLast      !returns GFC_TRUE if the element is the last in the list
         end type list_elem_t
  !Linked list:
         type, extends(gfc_container_t), public:: list_bi_t
@@ -76,6 +77,7 @@
         end type list_iter_t
 !INTERFACES:
 !VISIBILITY:
+        private ListElemConstruct
         private ListElemIsFirst
         private ListElemIsLast
         private ListIsSublist
@@ -95,6 +97,43 @@
 
        contains
 !IMPLEMENTATION:
+!-------------------------------------------------------------------------
+#ifdef NO_GNU
+        subroutine ListElemConstruct(this,obj,ierr,assoc_only,copy_ctor_f) !`GCC has a bug with this line
+#else
+        subroutine ListElemConstruct(this,obj,ierr,assoc_only)
+#endif
+!Constructs the content of the list element.
+         implicit none
+         class(list_elem_t), intent(inout):: this      !inout: element of a list
+         class(*), target, intent(in):: obj            !in: assigned value
+         integer(INTD), intent(out), optional:: ierr   !out: error code
+         logical, intent(in), optional:: assoc_only    !in: if TRUE, the value will be assigned by reference, otherwise by value (allocated): Defaults to FALSE
+#ifdef NO_GNU
+         procedure(gfc_copy_i), optional:: copy_ctor_f !in: generic copy constructor
+#endif
+         integer(INTD):: errc
+
+#ifdef NO_GNU
+         if(present(copy_ctor_f)) then
+          if(present(assoc_only)) then
+           call this%construct_base(obj,errc,assoc_only,copy_ctor_f)
+          else
+           call this%construct_base(obj,errc,copy_ctor_f=copy_ctor_f)
+          endif
+         else
+#endif
+          if(present(assoc_only)) then
+           call this%construct_base(obj,errc,assoc_only=assoc_only)
+          else
+           call this%construct_base(obj,errc)
+          endif
+#ifdef NO_GNU
+         endif
+#endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine ListElemConstruct
 !------------------------------------------------------
         function ListElemIsFirst(this,ierr) result(res)
 !Returns GFC_TRUE if this list element is the first in the list.

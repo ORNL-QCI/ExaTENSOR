@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Tree
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2016-09-21 (started 2016-02-17)
+!REVISION: 2016-11-19 (started 2016-02-17)
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -54,6 +54,7 @@
          class(tree_vertex_t), pointer, private:: first_child=>NULL()  !link to the first child vertex
          integer(INTL), private:: num_child=0                          !total number of children vertices
          contains
+          procedure, public:: construct=>TreeVertexConstruct                         !constructs the content of a tree vertex
           procedure, non_overridable, public:: num_children=>TreeVertexNumChildren   !returns the total number of children
           procedure, non_overridable, public:: num_siblings=>TreeVertexNumSiblings   !returns the total number of siblings
           procedure, non_overridable, public:: first_sibling=>TreeVertexFirstSibling !returns GFC_TRUE if the vertex is the first in the sibling (ring) list
@@ -91,6 +92,7 @@
 !GLOBAL DATA:
 !VISIBILITY:
  !Procedures:
+        private TreeVertexConstruct
         private TreeVertexNumChildren
         private TreeVertexNumSiblings
         private TreeVertexFirstSibling
@@ -116,6 +118,43 @@
 
        contains
 !IMPLEMENTATION:
+!---------------------------------------------------------------------------
+#ifdef NO_GNU
+        subroutine TreeVertexConstruct(this,obj,ierr,assoc_only,copy_ctor_f) !`GCC has a bug with this line
+#else
+        subroutine TreeVertexConstruct(this,obj,ierr,assoc_only)
+#endif
+!Constructs the content of the tree vertex.
+         implicit none
+         class(tree_vertex_t), intent(inout):: this    !inout: tree vertex
+         class(*), target, intent(in):: obj            !in: assigned value
+         integer(INTD), intent(out), optional:: ierr   !out: error code
+         logical, intent(in), optional:: assoc_only    !in: if TRUE, the value will be assigned by reference, otherwise by value (allocated): Defaults to FALSE
+#ifdef NO_GNU
+         procedure(gfc_copy_i), optional:: copy_ctor_f !in: generic copy constructor
+#endif
+         integer(INTD):: errc
+
+#ifdef NO_GNU
+         if(present(copy_ctor_f)) then
+          if(present(assoc_only)) then
+           call this%construct_base(obj,errc,assoc_only,copy_ctor_f)
+          else
+           call this%construct_base(obj,errc,copy_ctor_f=copy_ctor_f)
+          endif
+         else
+#endif
+          if(present(assoc_only)) then
+           call this%construct_base(obj,errc,assoc_only=assoc_only)
+          else
+           call this%construct_base(obj,errc)
+          endif
+#ifdef NO_GNU
+         endif
+#endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TreeVertexConstruct
 !---------------------------------------------------------------
         function TreeVertexNumChildren(this,ierr) result(nchild)
 !Returns the total number of children attached to the tree vertex.
