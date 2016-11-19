@@ -56,15 +56,10 @@
           procedure, public:: construct=>DictElemConstruct             !constructs a dictionary element from a key-value pair
           procedure, non_overridable, public:: is_root=>DictElemIsRoot !returns GFC_TRUE if the element is the root of the dictionary binary tree
           procedure, non_overridable, public:: is_leaf=>DictElemIsLeaf !returns GFC_TRUE if the element is a leaf of the dictionary binary tree
-          procedure, non_overridable, public:: get_key=>DictElemGetKey !returns an unlimited polymorphic pointer to the element key
-#if 0
+          procedure, public:: get_key=>DictElemGetKey                  !returns an unlimited polymorphic pointer to the element key
           procedure, public:: predicate_key=>DictElemPredicateKey      !returns the result of predication on the element key
-          procedure, public:: DictElemActionKey                        !performs a user-defined action on the element key via a function
-          procedure, public:: DictElemFunctorKey                       !performs a user-defined action on the element key via a functor
-          procedure, public:: action_key=>DictElemActionKey,DictElemFunctorKey !performs a user-defined action: generic overload
           procedure, public:: compare_key=>DictElemCompareKey          !compares the element key with another key
           procedure, public:: print_key=>DictElemPrintKey              !prints the element key
-#endif
         end type dict_elem_t
  !Dictionary (all operations on the dictionary are performed via an iterator):
         type, extends(gfc_container_t), public:: dictionary_t
@@ -97,13 +92,9 @@
         private DictElemIsRoot
         private DictElemIsLeaf
         private DictElemGetKey
-#if 0
         private DictElemPredicateKey
-        private DictElemActionKey
-        private DictElemFunctorKey
         private DictElemCompareKey
         private DictElemPrintKey
-#endif
  !dictionary_iter_t:
 #if 0
         private DictionaryIterInit
@@ -229,6 +220,65 @@
          if(present(ierr)) ierr=errc
          return
         end function DictElemGetKey
+!-----------------------------------------------------------------------
+        function DictElemPredicateKey(this,predicat_f,ierr) result(pred)
+!Evaluates a user-defined predicate on the key of a given dictionary element.
+         implicit none
+         integer(INTD):: pred                        !out: evaluated predicate value {GFC_TRUE,GFC_FALSE,GFC_ERROR}
+         class(dict_elem_t), intent(in):: this       !in: element of a dictionary
+         procedure(gfc_predicate_i):: predicat_f     !in: user-defined predicate
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=GFC_SUCCESS; pred=GFC_ERROR
+         if(.not.this%is_empty()) then
+          pred=predicat_f(this%key); if(pred.eq.GFC_ERROR) errc=GFC_ERROR
+         else
+          errc=GFC_ELEM_EMPTY
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function DictElemPredicateKey
+!-------------------------------------------------------------------------
+        function DictElemCompareKey(this,other_key,cmp_f,ierr) result(cmp)
+!Compares the dictionary element key (on the left) with another key (on the right).
+         implicit none
+         integer(INTD):: cmp                         !out: result of the comparison (see GFC_CMP_XXX in gfc_base.F90)
+         class(dict_elem_t), intent(in):: this       !in: element of a dictionary whose key is being compared
+         class(*), intent(in):: other_key            !in: the other value to be compared with
+         procedure(gfc_cmp_i):: cmp_f                !in: user-defined comparison function
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=GFC_SUCCESS; cmp=GFC_CMP_NA
+         if(.not.this%is_empty()) then
+          cmp=cmp_f(this%key,other_key); if(cmp.eq.GFC_ERROR) errc=GFC_ERROR
+         else
+          errc=GFC_ELEM_EMPTY
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function DictElemCompareKey
+!------------------------------------------------------------
+        subroutine DictElemPrintKey(this,print_f,ierr,dev_id)
+!Prints the key of a dictionary element using a user-defined print function.
+         implicit none
+         class(dict_elem_t), intent(in):: this        !in: element of a dictionary
+         procedure(gfc_print_i):: print_f             !in: user-defined printing function
+         integer(INTD), intent(out), optional:: ierr  !out: error code
+         integer(INTD), intent(in), optional:: dev_id !in: output device (default to screen, 6)
+         integer(INTD):: dev,errc
+
+         errc=GFC_SUCCESS
+         if(.not.this%is_empty()) then
+          if(present(dev_id)) then; dev=dev_id; else; dev=6; endif !defaults to screen
+          errc=print_f(this%key,dev); if(errc.ne.0) errc=GFC_ACTION_FAILED
+         else
+          errc=GFC_ELEM_EMPTY
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine DictElemPrintKey
 ![dictionary_t]=========================
 
 ![dictionary_iter_t]====================

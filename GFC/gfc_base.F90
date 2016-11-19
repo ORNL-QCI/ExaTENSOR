@@ -493,8 +493,7 @@
          procedure(gfc_print_i):: print_f             !in: user-defined printing function
          integer(INTD), intent(out), optional:: ierr  !out: error code (0:success)
          integer(INTD), intent(in), optional:: dev_id !in: output device (default to screen, 6)
-         integer(INTD):: dev
-         integer(INTD):: errc
+         integer(INTD):: dev,errc
 
          errc=GFC_SUCCESS
          if(.not.this%is_empty()) then
