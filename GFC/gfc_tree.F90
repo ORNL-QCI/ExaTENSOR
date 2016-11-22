@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Tree
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2016-11-21 (started 2016-02-17)
+!REVISION: 2016-11-22 (started 2016-02-17)
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -31,8 +31,6 @@
 !   iterators can be associated with a tree at the same time.
 
 !FOR DEVELOPERS ONLY:
-! # Tree iterator .previous method implementation needs to be double checked.
-!   It has to reproduce the inverse behavior with respect to the .next method.
 
        module gfc_tree
         use gfc_base
@@ -393,23 +391,22 @@
          class(tree_iter_t), intent(inout):: this                        !inout: iterator
          class(gfc_cont_elem_t), pointer, intent(out), optional:: elem_p !out: pointer to the container element
          class(tree_vertex_t), pointer:: tvp
-         logical:: on_root
 
          ierr=this%get_status()
          if(ierr.eq.GFC_IT_ACTIVE) then
           if(associated(this%current)) then
            ierr=GFC_SUCCESS
-           tvp=>this%current; on_root=associated(tvp,this%container%root)
-           if((.not.on_root).and.tvp%first_sibling().eq.GFC_TRUE) then
-            tvp=>tvp%parent
+           if(associated(this%current,this%container%root)) then !nothing precedes the root
+            tvp=>NULL()
            else
-            if(.not.on_root) tvp=>tvp%prev_sibling
-            if((.not.on_root).or.associated(tvp%first_child)) then
+            tvp=>this%current
+            if(tvp%first_sibling().eq.GFC_TRUE) then
+             tvp=>tvp%parent
+            else
+             tvp=>tvp%prev_sibling
              do while(associated(tvp%first_child))
               tvp=>tvp%first_child%prev_sibling !last sibling among the children (because of ring linking)
              enddo
-            else
-             tvp=>NULL()
             endif
            endif
            if(present(elem_p)) then

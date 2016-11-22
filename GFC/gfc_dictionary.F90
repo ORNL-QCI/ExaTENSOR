@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Dictionary (ordered map), AVL BST
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2016/11/21 (recycling my old dictionary implementation)
+!REVISION: 2016/11/22 (recycling my old dictionary implementation)
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -78,8 +78,8 @@
           procedure, public:: pointee=>DictionaryIterPointee           !returns a pointer to the container element currently in focus
           procedure, public:: next=>DictionaryIterNext                 !moves the iterator to the "next" element, if any (not necessarily in order)
           procedure, public:: previous=>DictionaryIterPrevious         !moves the iterator to the "previous" element, if any (not necessarily in order)
-#if 0
           procedure, public:: next_in_order=>DictionaryIterNextInOrder !moves the iterator to the next-in-order element, if any
+#if 0
           procedure, public:: prev_in_order=>DictionaryIterPrevInOrder !moves the iterator to the previous-in-order element, if any
           procedure, public:: move_to_min=>DictionaryIterMoveToMin     !moves the iterator to the leftmost (minimal element)
           procedure, public:: move_to_max=>DictionaryIterMoveToMax     !moves the iterator to the rightmost (maximal element)
@@ -104,8 +104,8 @@
         private DictionaryIterPointee
         private DictionaryIterNext
         private DictionaryIterPrevious
-#if 0
         private DictionaryIterNextInOrder
+#if 0
         private DictionaryIterPrevInOrder
         private DictionaryIterMoveToMin
         private DictionaryIterMoveToMax
@@ -463,5 +463,54 @@
          endif
          return
         end function DictionaryIterPrevious
+!-------------------------------------------------------------------
+        function DictionaryIterNextInOrder(this,elem_p) result(ierr)
+!Moves the iterator position to the next-in-order element.
+!If <elem_p> is absent, the iterator moves to the next-in-order element, if any.
+!If <elem_p> is present, the iterator simply returns the next-in-order element in <elem_p> without moving.
+!Complexity: O(1)...O(logN). No additional memory is used.
+         implicit none
+         integer(INTD):: ierr                                            !out: error code
+         class(dictionary_iter_t), intent(inout):: this                  !inout: iterator
+         class(gfc_cont_elem_t), pointer, intent(out), optional:: elem_p !out: pointer to the container element
+         class(dict_elem_t), pointer:: dp
+
+         ierr=this%get_status()
+         if(ierr.eq.GFC_IT_ACTIVE) then
+          if(associated(this%current)) then
+           ierr=GFC_SUCCESS
+           if(associated(this%current%child_gt)) then
+            dp=>this%current%child_gt
+            do while(associated(dp%child_lt)); dp=>dp%child_lt; enddo
+           else
+            ierr=GFC_IT_DONE; dp=>this%current
+            do while(associated(dp%parent))
+             if(associated(dp,dp%parent%child_lt)) then
+              dp=>dp%parent; exit
+             else
+              dp=>dp%parent
+             endif
+            enddo
+            if(ierr.eq.GFC_IT_DONE) dp=>NULL()
+           endif
+           if(present(elem_p)) then
+            elem_p=>dp
+           else
+            call this%current%decr_ref_()
+            this%current=>dp
+            if(associated(this%current)) then
+             call this%current%incr_ref_()
+            else
+             ierr=this%set_status_(GFC_IT_DONE)
+            endif
+           endif
+           if(.not.associated(dp)) ierr=GFC_IT_DONE
+           dp=>NULL()
+          else
+           ierr=GFC_CORRUPTED_CONT
+          endif
+         endif
+         return
+        end function DictionaryIterNextInOrder
 
        end module gfc_dictionary
