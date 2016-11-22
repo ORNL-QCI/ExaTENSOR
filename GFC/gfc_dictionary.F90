@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Dictionary (ordered map), AVL BST
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2016/11/19 (recycle of my old dictionary implementation)
+!REVISION: 2016/11/21 (recycling my old dictionary implementation)
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -53,17 +53,19 @@
          class(dict_elem_t), pointer, private:: parent=>NULL()   !parent element
          integer(INTD), private:: balance_fac                    !balance factor (for AVL BST)
          contains
-          procedure, public:: construct=>DictElemConstruct             !constructs a dictionary element from a key-value pair
-          procedure, non_overridable, public:: is_root=>DictElemIsRoot !returns GFC_TRUE if the element is the root of the dictionary binary tree
-          procedure, non_overridable, public:: is_leaf=>DictElemIsLeaf !returns GFC_TRUE if the element is a leaf of the dictionary binary tree
-          procedure, public:: get_key=>DictElemGetKey                  !returns an unlimited polymorphic pointer to the element key
-          procedure, public:: predicate_key=>DictElemPredicateKey      !returns the result of predication on the element key
-          procedure, public:: compare_key=>DictElemCompareKey          !compares the element key with another key
-          procedure, public:: print_key=>DictElemPrintKey              !prints the element key
+          procedure, public:: construct=>DictElemConstruct               !constructs a dictionary element from a key-value pair
+          procedure, non_overridable, public:: is_root=>DictElemIsRoot   !returns GFC_TRUE if the element is the root of the dictionary binary search tree
+          procedure, non_overridable, public:: is_leaf=>DictElemIsLeaf   !returns GFC_TRUE if the element is a leaf of the dictionary binary search tree
+          procedure, public:: get_key=>DictElemGetKey                    !returns an unlimited polymorphic pointer to the element key
+          procedure, public:: predicate_key=>DictElemPredicateKey        !returns the result of predication on the element key
+          procedure, public:: compare_key=>DictElemCompareKey            !compares the element key with another key
+          procedure, public:: print_key=>DictElemPrintKey                !prints the element key
         end type dict_elem_t
  !Dictionary (all operations on the dictionary are performed via an iterator):
         type, extends(gfc_container_t), public:: dictionary_t
-         class(dict_elem_t), pointer, private:: root=>NULL()           !root (boundary) element (beginning)
+         class(dict_elem_t), pointer, private:: root=>NULL()           !root of the AVL binary search tree (boundary element)
+         class(dict_elem_t), pointer, private:: first=>NULL()          !first element (boundary element)
+         class(dict_elem_t), pointer, private:: last=>NULL()           !last element (boundary element)
         end type dictionary_t
  !Dictionary iterator:
         type, extends(gfc_iter_t), public:: dictionary_iter_t
@@ -76,11 +78,13 @@
           procedure, public:: pointee=>DictionaryIterPointee           !returns a pointer to the container element currently in focus
           procedure, public:: next=>DictionaryIterNext                 !moves the iterator to the "next" element, if any (not necessarily in order)
           procedure, public:: previous=>DictionaryIterPrevious         !moves the iterator to the "previous" element, if any (not necessarily in order)
+#if 0
           procedure, public:: next_in_order=>DictionaryIterNextInOrder !moves the iterator to the next-in-order element, if any
           procedure, public:: prev_in_order=>DictionaryIterPrevInOrder !moves the iterator to the previous-in-order element, if any
           procedure, public:: move_to_min=>DictionaryIterMoveToMin     !moves the iterator to the leftmost (minimal element)
           procedure, public:: move_to_max=>DictionaryIterMoveToMax     !moves the iterator to the rightmost (maximal element)
           procedure, public:: search=>DictionaryIterSearch             !performs a key-based search in the dictionary
+#endif
         end type dictionary_iter_t
 !INTERFACES:
 
@@ -100,11 +104,13 @@
         private DictionaryIterPointee
         private DictionaryIterNext
         private DictionaryIterPrevious
+#if 0
         private DictionaryIterNextInOrder
         private DictionaryIterPrevInOrder
         private DictionaryIterMoveToMin
         private DictionaryIterMoveToMax
         private DictionaryIterSearch
+#endif
 !DEFINITIONS:
        contains
 ![dict_elem_t]===================================================================================
@@ -159,9 +165,9 @@
            errc=GFC_ELEM_NOT_EMPTY
           endif
           if(errc.eq.GFC_SUCCESS) then
-           call this%release_lock_(errc)
+           call this%release_lock(errc)
           else
-           call this%release_lock_()
+           call this%release_lock()
           endif
          else
           errc=GFC_IN_USE
@@ -281,9 +287,9 @@
         function DictionaryIterInit(this,cont) result(ierr)
 !Initializes an iterator and resets it to the beginning of the container.
          implicit none
-         integer(INTD):: ierr                           !out: error code
-         class(dictionary_iter_t), intent(inout):: this !inout: iterator
-         class(dictionary_t), target, intent(in):: cont !in: container
+         integer(INTD):: ierr                              !out: error code
+         class(dictionary_iter_t), intent(inout):: this    !inout: iterator
+         class(gfc_container_t), target, intent(in):: cont !in: container
 
          ierr=GFC_SUCCESS
          select type(cont)
@@ -349,5 +355,113 @@
          if(present(ierr)) ierr=errc
          return
         end function DictionaryIterPointee
+!------------------------------------------------------------
+        function DictionaryIterNext(this,elem_p) result(ierr)
+!Moves the iterator position to the next element (in some sense).
+!If <elem_p> is absent, the iterator moves to the next element, if any.
+!If <elem_p> is present, the iterator simply returns the next element in <elem_p> without moving.
+!Complexity: O(1)...O(logN). No additional memory is used.
+         implicit none
+         integer(INTD):: ierr                                            !out: error code
+         class(dictionary_iter_t), intent(inout):: this                  !inout: iterator
+         class(gfc_cont_elem_t), pointer, intent(out), optional:: elem_p !out: pointer to the container element
+         class(dict_elem_t), pointer:: dp
+
+         ierr=this%get_status()
+         if(ierr.eq.GFC_IT_ACTIVE) then
+          if(associated(this%current)) then
+           ierr=GFC_SUCCESS
+           dp=>this%current%child_lt
+           if(.not.associated(dp)) then
+            dp=>this%current%child_gt
+            if(.not.associated(dp)) then
+             dp=>this%current
+             do while(associated(dp))
+              if(.not.associated(dp,this%container%root)) then !root of a subdictionary may have a parent
+               if(associated(dp,dp%parent%child_lt)) then !moving up from the left
+                if(associated(dp%parent%child_gt)) then
+                 dp=>dp%parent%child_gt; exit
+                endif
+               endif
+               dp=>dp%parent
+              else
+               dp=>NULL()
+              endif
+             enddo
+            endif
+           endif
+           if(present(elem_p)) then
+            elem_p=>dp
+           else
+            call this%current%decr_ref_()
+            this%current=>dp
+            if(associated(this%current)) then
+             call this%current%incr_ref_()
+            else
+             ierr=this%set_status_(GFC_IT_DONE)
+            endif
+           endif
+           if(.not.associated(dp)) ierr=GFC_IT_DONE
+           dp=>NULL()
+          else
+           ierr=GFC_CORRUPTED_CONT
+          endif
+         endif
+         return
+        end function DictionaryIterNext
+!----------------------------------------------------------------
+        function DictionaryIterPrevious(this,elem_p) result(ierr)
+!Moves the iterator position to the previous element (in some sense).
+!If <elem_p> is absent, the iterator moves to the previous element, if any.
+!If <elem_p> is present, the iterator simply returns the previous element in <elem_p> without moving.
+!Complexity: O(1)...O(logN). No additional memory is used.
+         implicit none
+         integer(INTD):: ierr                                            !out: error code
+         class(dictionary_iter_t), intent(inout):: this                  !inout: iterator
+         class(gfc_cont_elem_t), pointer, intent(out), optional:: elem_p !out: pointer to the container element
+         class(dict_elem_t), pointer:: dp
+
+         ierr=this%get_status()
+         if(ierr.eq.GFC_IT_ACTIVE) then
+          if(associated(this%current)) then
+           ierr=GFC_SUCCESS
+           if(associated(this%current,this%container%root)) then
+            dp=>NULL()
+           else
+            dp=>this%current%parent
+            if(associated(this%current,dp%child_gt).and.associated(dp%child_lt)) then
+             dp=>dp%child_lt
+             do
+              if(associated(dp%child_gt)) then
+               dp=>dp%child_gt
+              else
+               if(associated(dp%child_lt)) then
+                dp=>dp%child_lt
+               else
+                exit
+               endif
+              endif
+             enddo
+            endif
+           endif
+           if(present(elem_p)) then
+            elem_p=>dp
+           else
+            call this%current%decr_ref_()
+            this%current=>dp
+            if(associated(this%current)) then
+             call this%current%incr_ref_()
+            else
+             ierr=this%set_status_(GFC_IT_DONE)
+            endif
+           endif
+           if(.not.associated(dp)) ierr=GFC_IT_DONE
+           dp=>NULL()
+          else
+           ierr=GFC_CORRUPTED_CONT
+          endif
+         endif
+         return
+        end function DictionaryIterPrevious
 
        end module gfc_dictionary

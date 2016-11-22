@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Tree
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2016-11-19 (started 2016-02-17)
+!REVISION: 2016-11-21 (started 2016-02-17)
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -29,6 +29,10 @@
 !   to another tree, the attached tree elements can be accessed either
 !   via its own iterator or via the combined tree iterator. Multiple
 !   iterators can be associated with a tree at the same time.
+
+!FOR DEVELOPERS ONLY:
+! # Tree iterator .previous method implementation needs to be double checked.
+!   It has to reproduce the inverse behavior with respect to the .next method.
 
        module gfc_tree
         use gfc_base
@@ -334,7 +338,7 @@
         function TreeIterNext(this,elem_p) result(ierr)
 !If <elem_p> is absent, the iterator moves to the next element, if any.
 !If <elem_p> is present, the iterator simply returns the next element in <elem_p> without moving.
-!Complexity: O(1)...O(N). No additional memory is used.
+!Complexity: O(1)...O(N), O(N) moving cost may occur in unbalanced trees. No additional memory is used.
          implicit none
          integer(INTD):: ierr                                            !out: error code (0:success)
          class(tree_iter_t), intent(inout):: this                        !inout: iterator
@@ -383,7 +387,7 @@
         function TreeIterPrevious(this,elem_p) result(ierr)
 !If <elem_p> is absent, the iterator moves to the previous element, if any.
 !If <elem_p> is present, the iterator simply returns the previous element in <elem_p> without moving.
-!Complexity: O(1)..O(N). No additional memory is used.
+!Complexity: O(1)..O(N), O(N) moving cost may occur in unbalanced trees. No additional memory is used.
          implicit none
          integer(INTD):: ierr                                            !out: error code (0:success)
          class(tree_iter_t), intent(inout):: this                        !inout: iterator

@@ -106,9 +106,9 @@
           procedure, public:: compare=>ContElemCompare          !compares the value of the element with the value of another element
           procedure, public:: print_it=>ContElemPrintIt         !prints the value of the element with a user-defined print function
           procedure, public:: in_use=>ContElemInUse             !returns TRUE if the element of the container is currently in use, hence cannot be deleted
-          procedure, public:: release_lock_=>ContElemReleaseLock !PRIVATE: releases the lock on the container element
-          procedure, public:: incr_ref_=>ContElemIncrRef         !PRIVATE: increments the reference count for the container element
-          procedure, public:: decr_ref_=>ContElemDecrRef         !PRIVATE: decrements the reference count for the container element
+          procedure, public:: release_lock=>ContElemReleaseLock !PRIVATE: releases the lock on the container element
+          procedure, public:: incr_ref_=>ContElemIncrRef        !PRIVATE: increments the reference count for the container element
+          procedure, public:: decr_ref_=>ContElemDecrRef        !PRIVATE: decrements the reference count for the container element
         end type gfc_cont_elem_t
  !Base container:
         type, abstract, public:: gfc_container_t
@@ -295,9 +295,9 @@
            endif
            if(.not.lckd) then
             if(errc.eq.GFC_SUCCESS) then
-             call this%release_lock_(errc)
+             call this%release_lock(errc)
             else
-             call this%release_lock_()
+             call this%release_lock()
             endif
            endif
           else
@@ -345,9 +345,9 @@
            endif
            if(.not.lckd) then
             if(errc.eq.GFC_SUCCESS) then
-             call this%release_lock_(errc)
+             call this%release_lock(errc)
             else
-             call this%release_lock_()
+             call this%release_lock()
             endif
            endif
           else

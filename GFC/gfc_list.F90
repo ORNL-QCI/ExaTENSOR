@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Bi-directional linked list
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2016-11-19 (started 2016-02-28)
+!REVISION: 2016-11-21 (started 2016-02-28)
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -27,6 +27,9 @@
 !   via the list iterator associated with the list. Elements of a sublist
 !   can be accessed by both the original and the combined list iterators.
 !   Multiple iterators can be associated with a list at the same time.
+
+!FOR DEVELOPERS ONLY:
+! # Boundary/current element reference counting needs to be implemented.
 
        module gfc_list
         use gfc_base
