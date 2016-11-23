@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Dictionary (ordered map), AVL BST
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2016/11/22 (recycling my old dictionary implementation)
+!REVISION: 2016/11/23 (recycling my old dictionary implementation)
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -79,10 +79,11 @@
           procedure, public:: next=>DictionaryIterNext                 !moves the iterator to the "next" element, if any (not necessarily in order)
           procedure, public:: previous=>DictionaryIterPrevious         !moves the iterator to the "previous" element, if any (not necessarily in order)
           procedure, public:: next_in_order=>DictionaryIterNextInOrder !moves the iterator to the next-in-order element, if any
-#if 0
           procedure, public:: prev_in_order=>DictionaryIterPrevInOrder !moves the iterator to the previous-in-order element, if any
-          procedure, public:: move_to_min=>DictionaryIterMoveToMin     !moves the iterator to the leftmost (minimal element)
-          procedure, public:: move_to_max=>DictionaryIterMoveToMax     !moves the iterator to the rightmost (maximal element)
+          procedure, public:: move_in_order=>DictionaryIterMoveInOrder !moves the iterator to either the next-in-order or previous-in-order element
+          procedure, public:: move_to_min=>DictionaryIterMoveToMin     !moves the iterator to the minimal element
+          procedure, public:: move_to_max=>DictionaryIterMoveToMax     !moves the iterator to the maximal element
+#if 0
           procedure, public:: search=>DictionaryIterSearch             !performs a key-based search in the dictionary
 #endif
         end type dictionary_iter_t
@@ -105,10 +106,11 @@
         private DictionaryIterNext
         private DictionaryIterPrevious
         private DictionaryIterNextInOrder
-#if 0
         private DictionaryIterPrevInOrder
+        private DictionaryIterMoveInOrder
         private DictionaryIterMoveToMin
         private DictionaryIterMoveToMax
+#if 0
         private DictionaryIterSearch
 #endif
 !DEFINITIONS:
@@ -512,5 +514,143 @@
          endif
          return
         end function DictionaryIterNextInOrder
+!-------------------------------------------------------------------
+        function DictionaryIterPrevInOrder(this,elem_p) result(ierr)
+!Moves the iterator position to the previous-in-order element.
+!If <elem_p> is absent, the iterator moves to the previous-in-order element, if any.
+!If <elem_p> is present, the iterator simply returns the previous-in-order element in <elem_p> without moving.
+!Complexity: O(1)...O(logN). No additional memory is used.
+         implicit none
+         integer(INTD):: ierr                                            !out: error code
+         class(dictionary_iter_t), intent(inout):: this                  !inout: iterator
+         class(gfc_cont_elem_t), pointer, intent(out), optional:: elem_p !out: pointer to the container element
+         class(dict_elem_t), pointer:: dp
+
+         ierr=this%get_status()
+         if(ierr.eq.GFC_IT_ACTIVE) then
+          if(associated(this%current)) then
+           ierr=GFC_SUCCESS
+           if(associated(this%current%child_lt)) then
+            dp=>this%current%child_lt
+            do while(associated(dp%child_gt)); dp=>dp%child_gt; enddo
+           else
+            ierr=GFC_IT_DONE; dp=>this%current
+            do while(associated(dp%parent))
+             if(associated(dp,dp%parent%child_gt)) then
+              dp=>dp%parent; exit
+             else
+              dp=>dp%parent
+             endif
+            enddo
+            if(ierr.eq.GFC_IT_DONE) dp=>NULL()
+           endif
+           if(present(elem_p)) then
+            elem_p=>dp
+           else
+            call this%current%decr_ref_()
+            this%current=>dp
+            if(associated(this%current)) then
+             call this%current%incr_ref_()
+            else
+             ierr=this%set_status_(GFC_IT_DONE)
+            endif
+           endif
+           if(.not.associated(dp)) ierr=GFC_IT_DONE
+           dp=>NULL()
+          else
+           ierr=GFC_CORRUPTED_CONT
+          endif
+         endif
+         return
+        end function DictionaryIterPrevInOrder
+!-----------------------------------------------------------------------------
+        function DictionaryIterMoveInOrder(this,direction,elem_p) result(ierr)
+!Moves the iterator position either to the next-in-order or previous-in-order element.
+!If <elem_p> is absent, the iterator moves to the corresponding in-order element, if any.
+!If <elem_p> is present, the iterator simply returns the corresponding in-order element
+!in <elem_p> without moving. Complexity: O(1)...O(logN). No additional memory is used.
+         implicit none
+         integer(INTD):: ierr                                            !out: error code
+         class(dictionary_iter_t), intent(inout):: this                  !inout: iterator
+         logical, intent(in):: direction                                 !direction: {GFC_DICT_SUCCESSOR,GFC_DICT_PREDECESSOR}
+         class(gfc_cont_elem_t), pointer, intent(out), optional:: elem_p !out: pointer to the container element
+
+         if(present(elem_p)) then
+          if(direction.eqv.GFC_DICT_SUCCESSOR) then
+           ierr=this%next_in_order(elem_p)
+          else
+           ierr=this%prev_in_order(elem_p)
+          endif
+         else
+          if(direction.eqv.GFC_DICT_SUCCESSOR) then
+           ierr=this%next_in_order()
+          else
+           ierr=this%prev_in_order()
+          endif
+         endif
+         return
+        end function DictionaryIterMoveInOrder
+!-----------------------------------------------------------------
+        function DictionaryIterMoveToMin(this,elem_p) result(ierr)
+!Moves the iterator position to the minimal element.
+!If <elem_p> is absent, the iterator moves to the minimal element.
+!If <elem_p> is present, the iterator simply returns the minimal element in <elem_p> without moving.
+!Complexity: O(logN). No additional memory is used.
+         implicit none
+         integer(INTD):: ierr                                            !out: error code
+         class(dictionary_iter_t), intent(inout):: this                  !inout: iterator
+         class(gfc_cont_elem_t), pointer, intent(out), optional:: elem_p !out: pointer to the container element
+         class(dict_elem_t), pointer:: dp
+
+         ierr=this%get_status()
+         if(ierr.eq.GFC_IT_ACTIVE) then
+          if(associated(this%container%root)) then
+           ierr=GFC_SUCCESS; dp=>this%container%root
+           do while(associated(dp%child_lt)); dp=>dp%child_lt; enddo
+           if(present(elem_p)) then
+            elem_p=>dp
+           else
+            call this%current%decr_ref_()
+            this%current=>dp
+            call this%current%incr_ref_()
+           endif
+           dp=>NULL()
+          else
+           ierr=GFC_CORRUPTED_CONT
+          endif
+         endif
+         return
+        end function DictionaryIterMoveToMin
+!-----------------------------------------------------------------
+        function DictionaryIterMoveToMax(this,elem_p) result(ierr)
+!Moves the iterator position to the maximal element.
+!If <elem_p> is absent, the iterator moves to the maximal element.
+!If <elem_p> is present, the iterator simply returns the maximal element in <elem_p> without moving.
+!Complexity: O(logN). No additional memory is used.
+         implicit none
+         integer(INTD):: ierr                                            !out: error code
+         class(dictionary_iter_t), intent(inout):: this                  !inout: iterator
+         class(gfc_cont_elem_t), pointer, intent(out), optional:: elem_p !out: pointer to the container element
+         class(dict_elem_t), pointer:: dp
+
+         ierr=this%get_status()
+         if(ierr.eq.GFC_IT_ACTIVE) then
+          if(associated(this%container%root)) then
+           ierr=GFC_SUCCESS; dp=>this%container%root
+           do while(associated(dp%child_gt)); dp=>dp%child_gt; enddo
+           if(present(elem_p)) then
+            elem_p=>dp
+           else
+            call this%current%decr_ref_()
+            this%current=>dp
+            call this%current%incr_ref_()
+           endif
+           dp=>NULL()
+          else
+           ierr=GFC_CORRUPTED_CONT
+          endif
+         endif
+         return
+        end function DictionaryIterMoveToMax
 
        end module gfc_dictionary
