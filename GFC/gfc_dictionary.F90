@@ -84,6 +84,9 @@
           procedure, public:: move_in_order=>DictionaryIterMoveInOrder !moves the iterator to either the next-in-order or previous-in-order element
           procedure, public:: move_to_min=>DictionaryIterMoveToMin     !moves the iterator to the minimal element
           procedure, public:: move_to_max=>DictionaryIterMoveToMax     !moves the iterator to the maximal element
+          procedure, public:: move_up=>DictionaryIterMoveUp            !moves the iterator up the binary search tree (to the parent element)
+          procedure, public:: move_down=>DictionaryIterMoveDown        !moves the iterator down the binary search tree, either left or right
+          procedure, public:: delete_all=>DictionaryIterDeleteAll      !deletes all elements of the dictionary
 #if 0
           procedure, public:: search=>DictionaryIterSearch             !performs a key-based search in the dictionary
 #endif
@@ -112,6 +115,9 @@
         private DictionaryIterMoveInOrder
         private DictionaryIterMoveToMin
         private DictionaryIterMoveToMax
+        private DictionaryIterMoveUp
+        private DictionaryIterMoveDown
+        private DictionaryIterDeleteAll
 #if 0
         private DictionaryIterSearch
 #endif
@@ -700,5 +706,171 @@
          endif
          return
         end function DictionaryIterMoveToMax
+!--------------------------------------------------------------
+        function DictionaryIterMoveUp(this,elem_p) result(ierr)
+!Moves the iterator position up the binary search tree (to the parental element).
+!If <elem_p> is absent, the iterator moves up.
+!If <elem_p> is present, the iterator simply returns the corresponding element in <elem_p> without moving.
+!Complexity: O(1). No additional memory is used.
+         implicit none
+         integer(INTD):: ierr                                            !out: error code
+         class(dictionary_iter_t), intent(inout):: this                  !inout: iterator
+         class(gfc_cont_elem_t), pointer, intent(out), optional:: elem_p !out: pointer to the container element
+         class(dict_elem_t), pointer:: dp
+
+         ierr=this%get_status()
+         if(ierr.eq.GFC_IT_ACTIVE) then
+          if(associated(this%current)) then
+           ierr=GFC_SUCCESS; dp=>NULL()
+           if(associated(this%current%parent)) then
+            dp=>this%current%parent
+           else
+            ierr=GFC_NO_MOVE
+           endif
+           if(present(elem_p)) then
+            elem_p=>dp
+           else
+            if(ierr.eq.GFC_SUCCESS) then
+             call this%current%decr_ref_()
+             this%current=>dp
+             call this%current%incr_ref_()
+            endif
+           endif
+           dp=>NULL()
+          else
+           ierr=GFC_CORRUPTED_CONT
+          endif
+         endif
+         return
+        end function DictionaryIterMoveUp
+!--------------------------------------------------------------------------
+        function DictionaryIterMoveDown(this,elem_p,direction) result(ierr)
+!Moves the iterator position down the binary search tree, either left or right.
+!If <elem_p> is absent, the iterator moves down.
+!If <elem_p> is present, the iterator simply returns the corresponding element in <elem_p> without moving.
+!Complexity: O(1). No additional memory is used.
+         implicit none
+         integer(INTD):: ierr                                            !out: error code
+         class(dictionary_iter_t), intent(inout):: this                  !inout: iterator
+         class(gfc_cont_elem_t), pointer, intent(out), optional:: elem_p !out: pointer to the container element
+         logical, intent(in), optional:: direction                       !in: direction: {GFC_DICT_LEFT,GFC_DICT_RIGHT}
+         class(dict_elem_t), pointer:: dp
+
+         ierr=this%get_status()
+         if(ierr.eq.GFC_IT_ACTIVE) then
+          if(associated(this%current)) then
+           ierr=GFC_SUCCESS; dp=>NULL()
+           if(present(direction)) then
+            if(direction.eqv.GFC_DICT_LEFT) then !move down left
+             if(associated(this%current%child_lt)) then
+              dp=>this%current%child_lt
+             else
+              ierr=GFC_NO_MOVE
+             endif
+            else !move down right
+             if(associated(this%current%child_gt)) then
+              dp=>this%current%child_gt
+             else
+              ierr=GFC_NO_MOVE
+             endif
+            endif
+           else !move left, if not left, move right
+            if(associated(this%current%child_lt)) then
+             dp=>this%current%child_lt
+            else
+             if(associated(this%current%child_gt)) then
+              dp=>this%current%child_gt
+             else
+              ierr=GFC_NO_MOVE
+             endif
+            endif
+           endif
+           if(present(elem_p)) then
+            elem_p=>dp
+           else
+            if(ierr.eq.GFC_SUCCESS) then
+             call this%current%decr_ref_()
+             this%current=>dp
+             call this%current%incr_ref_()
+            endif
+           endif
+           dp=>NULL()
+          else
+           ierr=GFC_CORRUPTED_CONT
+          endif
+         endif
+         return
+        end function DictionaryIterMoveDown
+!-----------------------------------------------------------
+        subroutine DictionaryIterDeleteAll(this,ierr,dtor_f)
+!Deletes all dictionary elements, leaving dictionary empty at the end.
+!Complexity: O(NLogN)
+         implicit none
+         class(dictionary_iter_t), intent(inout):: this !inout: dictionary iterator
+         integer(INTD), intent(out), optional:: ierr    !out: error code
+         procedure(gfc_destruct_i), optional:: dtor_f   !in: explicit destructor for the dictionary element value
+         integer(INTD):: errc,errcode
+         class(dict_elem_t), pointer:: dp
+         integer:: ier
+
+         errc=this%reset()
+         if(errc.eq.GFC_IT_ACTIVE) then
+          errc=GFC_SUCCESS
+          dloop: do
+           do while(errc.eq.GFC_SUCCESS); errc=this%move_down(); enddo
+           if(errc.eq.GFC_NO_MOVE.and.associated(this%current)) then
+            if(present(dtor_f)) then
+             call this%current%destruct(errc,dtor_f=dtor_f)
+            else
+             call this%current%destruct(errc)
+            endif
+            if(errc.eq.GFC_SUCCESS) then
+             if(associated(this%current,this%container%root)) then !last element (root)
+              if(associated(this%current%parent)) then
+               if(associated(this%current,this%current%parent%child_lt)) then
+                this%current%parent%child_lt=>NULL()
+               elseif(associated(this%current,this%current%parent%child_gt)) then
+                this%current%parent%child_gt=>NULL()
+               else
+                errc=GFC_CORRUPTED_CONT; exit dloop
+               endif
+              endif
+              call this%current%decr_ref_()
+              deallocate(this%current,STAT=ier)
+              if(ier.ne.0) errc=GFC_MEM_FREE_FAILED
+              this%current=>NULL(); errcode=this%set_status_(GFC_IT_EMPTY)
+              if(errc.eq.GFC_SUCCESS) errc=errcode
+              exit dloop
+             else
+              dp=>this%current
+              call this%current%decr_ref_()
+              this%current=>this%current%parent
+              call this%current%incr_ref_()
+              if(associated(this%current%child_lt,dp)) then
+               this%current%child_lt=>NULL()
+              elseif(associated(this%current%child_gt,dp)) then
+               this%current%child_gt=>NULL()
+              else
+               errc=GFC_CORRUPTED_CONT; exit dloop
+              endif
+              dp%parent=>NULL()
+              deallocate(dp,STAT=ier)
+              if(ier.ne.0) then; errc=GFC_MEM_FREE_FAILED; exit dloop; endif
+             endif
+            else
+             exit dloop
+            endif
+           else
+            errc=GFC_ERROR; exit dloop
+           endif
+          enddo dloop
+         elseif(errc.eq.GFC_IT_EMPTY) then
+          errc=GFC_EMPTY_CONT
+         else
+          errc=GFC_NULL_CONT
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine DictionaryIterDeleteAll
 
        end module gfc_dictionary
