@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Dictionary (ordered map), AVL BST
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2016/11/23 (recycling my old dictionary implementation)
+!REVISION: 2016/11/25 (recycling my old dictionary implementation)
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -54,6 +54,7 @@
          integer(INTD), private:: balance_fac                    !balance factor (for AVL BST)
          contains
           procedure, public:: construct=>DictElemConstruct               !constructs a dictionary element from a key-value pair
+          procedure, public:: destruct=>DictElemDestruct                 !destructs a dictionary element
           procedure, non_overridable, public:: is_root=>DictElemIsRoot   !returns GFC_TRUE if the element is the root of the dictionary binary search tree
           procedure, non_overridable, public:: is_leaf=>DictElemIsLeaf   !returns GFC_TRUE if the element is a leaf of the dictionary binary search tree
           procedure, public:: get_key=>DictElemGetKey                    !returns an unlimited polymorphic pointer to the element key
@@ -92,6 +93,7 @@
 !VISIBILITY:
  !dict_elem_t:
         private DictElemConstruct
+        private DictElemDestruct
         private DictElemIsRoot
         private DictElemIsLeaf
         private DictElemGetKey
@@ -131,8 +133,8 @@
          integer(INTD), intent(out), optional:: ierr        !out: error code
          logical, intent(in), optional:: assoc_val          !in: if TRUE, <val> will be stored by reference, otherwise by value (default)
 #ifdef NO_GNU
-         procedure(gfc_copy_i), optional:: key_copy_ctor_f  !in: user-defined generic copy constructor for the key
-         procedure(gfc_copy_i), optional:: val_copy_ctor_f  !in: user-defined generic copy constructor for the value
+         procedure(gfc_copy_i), optional:: key_copy_ctor_f  !in: user-defined generic copy constructor for the key (by value)
+         procedure(gfc_copy_i), optional:: val_copy_ctor_f  !in: user-defined generic copy constructor for the value (by value)
 #endif
          integer(INTD):: errc
          integer:: ier
@@ -177,6 +179,52 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine DictElemConstruct
+!-----------------------------------------------------------
+        subroutine DictElemDestruct(this,ierr,dtor_f,locked)
+!Destructs the key-value pair inside the dictionary element.
+!<dtor_f> provides an optional explicit destructor for the dictionary
+!element value, if needed. Alternatively, the value may have the final
+!subroutine defined. In contrast, the dictionary element key must
+!have the final subroutine defined if it requires a non-trivial destruction.
+         implicit none
+         class(dict_elem_t), intent(inout):: this     !inout: element of a dictionary
+         integer(INTD), intent(out), optional:: ierr  !out: error code
+         procedure(gfc_destruct_i), optional:: dtor_f !in: explicit destructor for the value
+         logical, intent(in), optional:: locked       !in: if TRUE, the dictionary element will be assumed already locked (defaults to FALSE)
+         integer(INTD):: errc
+         logical:: lckd,lck
+         integer:: ier
+
+         errc=GFC_SUCCESS
+         if(present(locked)) then; lckd=locked; else; lckd=.FALSE.; endif; lck=lckd
+         if(.not.lck) lck=(this%in_use(errc,set_lock=.TRUE.,report_refs=.FALSE.).eq.GFC_FALSE)
+         if(lck) then
+          if(errc.eq.GFC_SUCCESS) then
+           if(associated(this%key)) then
+            if(present(dtor_f)) then
+             call this%gfc_cont_elem_t%destruct(errc,dtor_f=dtor_f,locked=.TRUE.)
+            else
+             call this%gfc_cont_elem_t%destruct(errc,locked=.TRUE.)
+            endif
+            deallocate(this%key,STAT=ier)
+            if(ier.ne.0.and.errc.eq.GFC_SUCCESS) errc=GFC_MEM_FREE_FAILED
+           else
+            errc=GFC_CORRUPTED_CONT
+           endif
+          endif
+          if(.not.lckd) then
+           if(errc.eq.GFC_SUCCESS) then
+            call this%release_lock(errc)
+           else
+            call this%release_lock()
+           endif
+          endif
+         else
+          if(errc.eq.GFC_SUCCESS) errc=GFC_IN_USE
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine DictElemDestruct
 !------------------------------------------------
         function DictElemIsRoot(this) result(res)
          implicit none

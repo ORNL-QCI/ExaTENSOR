@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Base
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2016-11-19 (started 2016-02-17)
+!REVISION: 2016-11-25 (started 2016-02-17)
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -158,7 +158,7 @@
           class(*), intent(in):: obj1 !in: object 1
           class(*), intent(in):: obj2 !in: object 2
          end function gfc_cmp_i
-  !GFC generic copy constructor:
+  !GFC generic copy constructor (by value):
          function gfc_copy_i(obj,ierr) result(clone)
           import:: INTD
           class(*), pointer:: clone                   !out: clone
