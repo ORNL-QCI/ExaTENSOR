@@ -74,9 +74,8 @@ DESIGN AND FEATURES:
 
 NOTES:
  # This implementation of Generic Fortran Containers heavily relies on
-   dynamic polymorphism, thus introducing certain memory overhead which
-   can be significant when storing very small objects! Also dynamic type
-   inferrence may decrease the efficiency when storing and operating
+   dynamic polymorphism, thus introducing certain overhead! Also, dynamic
+   type inferrence may decrease the efficiency when storing and operating
    on small objects. Thus, this implementation aims at providing a set
    of higher-level abstractions for control logic and other high-level
    operations for which ultimate Flop/s efficiency is not required.
