@@ -18,7 +18,7 @@ GENERAL INFORMATION:
  Provided (and to be provided) Fortran containers:
  1. Bi-directional Linked List: gfc_list (GFC), lists (legacy);
  2. Tree: gfc_tree (GFC);
- 3  Stack: gfc_stack (under development), stack (legacy);
+ 3. Stack: gfc_stack (under development), stack (legacy);
  4. Dictionary (ordered map): gfc_dictionary (under development), dictionary (legacy);
  5. Queue: gfc_queue (under development);
  6. Priority queue: gfc_pri_queue (under development);
