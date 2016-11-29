@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Dictionary (ordered map), AVL BST
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2016/11/25 (recycling my old dictionary implementation)
+!REVISION: 2016/11/29 (recycling my old dictionary implementation)
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -47,7 +47,7 @@
 !TYPES:
  !Dictionary element:
         type, extends(gfc_cont_elem_t), public:: dict_elem_t
-         class(*), pointer, private:: key=>NULL()                !dictionary element key
+         class(*), pointer, private:: key=>NULL()                !dictionary element key (always allocated)
          class(dict_elem_t), pointer, private:: child_lt=>NULL() !lesser child element
          class(dict_elem_t), pointer, private:: child_gt=>NULL() !greater child element
          class(dict_elem_t), pointer, private:: parent=>NULL()   !parent element
@@ -65,14 +65,17 @@
  !Dictionary (all operations on the dictionary are performed via an iterator):
         type, extends(gfc_container_t), public:: dictionary_t
          class(dict_elem_t), pointer, private:: root=>NULL()           !root of the AVL binary search tree (boundary element)
-         class(dict_elem_t), pointer, private:: first=>NULL()          !first element (boundary element)
-         class(dict_elem_t), pointer, private:: last=>NULL()           !last element (boundary element)
+!        class(dict_elem_t), pointer, private:: first=>NULL()          !first element (boundary element) `Do I need this?
+!        class(dict_elem_t), pointer, private:: last=>NULL()           !last element (boundary element) `Do I need this?
+         contains
+          procedure, private:: reroot_=>DictionaryReroot               !changes the root of the dictionary
         end type dictionary_t
  !Dictionary iterator:
         type, extends(gfc_iter_t), public:: dictionary_iter_t
          class(dict_elem_t), pointer, private:: current=>NULL()        !currently pointed element of the container
          class(dictionary_t), pointer, private:: container=>NULL()     !container
          contains
+          procedure, private:: jump_=>DictionaryIterJump               !moves the iterator to an arbitrary position
           procedure, public:: init=>DictionaryIterInit                 !associates the iterator with a container and positions it to the root element
           procedure, public:: reset=>DictionaryIterReset               !resets the iterator to the beginning of the container (root element)
           procedure, public:: release=>DictionaryIterRelease           !dissociates the iterator from its container
@@ -87,9 +90,7 @@
           procedure, public:: move_up=>DictionaryIterMoveUp            !moves the iterator up the binary search tree (to the parent element)
           procedure, public:: move_down=>DictionaryIterMoveDown        !moves the iterator down the binary search tree, either left or right
           procedure, public:: delete_all=>DictionaryIterDeleteAll      !deletes all elements of the dictionary
-#if 0
           procedure, public:: search=>DictionaryIterSearch             !performs a key-based search in the dictionary
-#endif
         end type dictionary_iter_t
 !INTERFACES:
 
@@ -103,7 +104,10 @@
         private DictElemPredicateKey
         private DictElemCompareKey
         private DictElemPrintKey
+ !dictionary_t:
+        private DictionaryReroot
  !dictionary_iter_t:
+        private DictionaryIterJump
         private DictionaryIterInit
         private DictionaryIterReset
         private DictionaryIterRelease
@@ -118,9 +122,7 @@
         private DictionaryIterMoveUp
         private DictionaryIterMoveDown
         private DictionaryIterDeleteAll
-#if 0
         private DictionaryIterSearch
-#endif
 !DEFINITIONS:
        contains
 ![dict_elem_t]===================================================================================
@@ -337,9 +339,31 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine DictElemPrintKey
-![dictionary_t]=========================
+![dictionary_t]===================================
+        subroutine DictionaryReroot(this,new_root)
+!Changes the root of the dictionary.
+         implicit none
+         class(dictionary_t), intent(inout):: this             !inout: dictionary
+         class(dict_elem_t), pointer, intent(inout):: new_root !in: pointer to the new root or NULL()
 
-![dictionary_iter_t]=======================================
+         if(associated(this%root)) call this%root%decr_ref_()
+         this%root=>new_root
+         if(associated(this%root)) call this%root%incr_ref_()
+         return
+        end subroutine DictionaryReroot
+![dictionary_iter_t]================================
+        subroutine DictionaryIterJump(this,new_elem)
+!Moves the iterator to an arbitrary position.
+         implicit none
+         class(dictionary_iter_t), intent(inout):: this        !inout: dictionary iterator
+         class(dict_elem_t), pointer, intent(inout):: new_elem !in: pointer to the new element or NULL()
+
+         if(associated(this%current)) call this%current%decr_ref_()
+         this%current=>new_elem
+         if(associated(this%current)) call this%current%incr_ref_()
+         return
+        end subroutine DictionaryIterJump
+!----------------------------------------------------------
         function DictionaryIterInit(this,cont) result(ierr)
 !Initializes an iterator and resets it to the beginning of the container.
          implicit none
@@ -872,5 +896,558 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine DictionaryIterDeleteAll
+!-----------------------------------------------------------------------------------------------------------------------
+#ifdef NO_GNU
+        function DictionaryIterSearch(this,action,cmp_key_f,key,value_in,store_by,value_out,copy_ctor_val_f,dtor_val_f)& !`GCC bug
+        &result(dict_search)
+#else
+        function DictionaryIterSearch(this,action,cmp_key_f,key,value_in,store_by,value_out,dtor_val_f)&
+        &result(dict_search)
+#endif
+!Looks up a given key in the dictionary with optional actions. If the key is found (and not deleted)
+!or newly added, then the current iterator position will point to that item, otherwise it will not change.
+!The incoming iterator must have been initialized (either ACTIVE or EMPTY).
+         implicit none
+         integer(INTD):: dict_search                            !out: result: {GFC_FOUND,GFC_NOT_FOUND,specific errors}
+         class(dictionary_iter_t), intent(inout):: this         !inout: dictionary iterator
+         integer, intent(in):: action                           !in: requested action (see action parameters at the top of this module)
+         procedure(gfc_cmp_i):: cmp_key_f                       !in: key comparison function, returns: {GFC_CMP_LT,GFC_CMP_GT,GFC_CMP_EQ,GFC_CMP_ERR}
+         class(*), intent(in):: key                             !in: key being searched for
+         class(*), intent(in), optional:: value_in              !in: an optional value to be stored with the key
+         logical, intent(in), optional:: store_by               !in: storage type for newly added values: {GFC_BY_VAL,GFC_BY_REF}, defaults to GFC_BY_VAL
+         class(*), pointer, intent(out), optional:: value_out   !out: when fetching, this will point to the value found by the key (NULL otherwise)
+#ifdef NO_GNU
+         procedure(gfc_copy_i), optional:: copy_ctor_val_f      !in: explicit copy constructor for the element value, if needed
+#endif
+         procedure(gfc_destruct_i), optional:: dtor_val_f       !in: explicit destructor for the dictionary element value, if needed
+         class(dict_elem_t), pointer:: curr,old_cdp,leave,term,nullptr
+         class(dictionary_t), pointer:: dict
+         integer(INTD):: i,j,act,lev_p,grow,ierr
+
+         dict_search=this%get_status(); if(dict_search.ne.GFC_IT_ACTIVE.and.dict_search.ne.GFC_IT_EMPTY) return
+         dict_search=GFC_NOT_FOUND; if(present(value_out)) value_out=>NULL(); nullptr=>NULL()
+         if(associated(this%container)) then; dict=>this%container; else; dict_search=GFC_CORRUPTED_CONT; return; endif
+!Look up the key:
+         if(associated(dict%root)) then
+          curr=>dict%root; lev_p=0
+          sloop: do
+           i=cmp_key_f(key,curr%key)
+           if(i.eq.GFC_CMP_LT) then
+            if(associated(curr%child_lt)) then; curr=>curr%child_lt; lev_p=lev_p+1; else; exit sloop; endif
+           elseif(i.eq.GFC_CMP_GT) then
+            if(associated(curr%child_gt)) then; curr=>curr%child_gt; lev_p=lev_p+1; else; exit sloop; endif
+           elseif(i.eq.GFC_CMP_EQ) then
+            dict_search=GFC_FOUND; exit sloop
+           else
+            if(VERBOSE) write(CONS_OUT,'("#ERROR(gfc::dictionary::search): key comparison failed: error ",i11)') i
+            dict_search=GFC_CMP_ERR; curr=>NULL(); return
+           endif
+          enddo sloop
+         else
+          i=0; curr=>NULL(); lev_p=-1 !empty dictionary
+         endif
+!Action:
+         if(action.eq.GFC_DICT_ADD_OR_MODIFY) then
+          if(dict_search.eq.GFC_NOT_FOUND) then
+           act=GFC_DICT_ADD_IF_NOT_FOUND
+          elseif(dict_search.eq.GFC_FOUND) then
+           act=GFC_DICT_REPLACE_IF_FOUND
+          endif
+         else
+          act=action
+         endif
+         select case(act) !process the action
+         case(GFC_DICT_JUST_FIND) !no action
+          if(dict_search.eq.GFC_FOUND) call this%jump_(curr)
+         case(GFC_DICT_FETCH_IF_FOUND) !return the pointer to the stored <value> if found
+          if(dict_search.eq.GFC_FOUND) then
+           if(present(value_out)) then
+            value_out=>curr%get_value(ierr)
+            if(ierr.eq.GFC_SUCCESS) then; call this%jump_(curr); else; dict_search=ierr; endif
+           else
+            if(VERBOSE) write(CONS_OUT,'("#ERROR(gfc::dictionary::search): fetch: absent value return pointer!")')
+            dict_search=GFC_INVALID_ARGS; curr=>NULL(); return
+           endif
+          endif
+         case(GFC_DICT_REPLACE_IF_FOUND) !replace the stored <value> if found
+          if(dict_search.eq.GFC_FOUND) then
+           if(present(dtor_val_f)) then
+            call curr%gfc_cont_elem_t%destruct(ierr,dtor_f=dtor_val_f)
+           else
+            call curr%gfc_cont_elem_t%destruct(ierr)
+           endif
+           if(ierr.ne.GFC_SUCCESS) then
+            if(VERBOSE)&
+            &write(CONS_OUT,'("#ERROR(gfc::dictionary::search): replace: dictionary element value destruction failed!")')
+            dict_search=GFC_MEM_FREE_FAILED; curr=>NULL(); return
+           endif
+           if(present(value_in)) then
+            if(present(store_by)) then
+             call curr%gfc_cont_elem_t%construct_base(value_in,ierr,assoc_only=store_by)
+            else
+             call curr%gfc_cont_elem_t%construct_base(value_in,ierr)
+            endif
+            if(ierr.ne.GFC_SUCCESS) then
+             if(VERBOSE)&
+             &write(CONS_OUT,'("#ERROR(gfc::dictionary::search): replace: dictionary element value construction failed!")')
+             dict_search=GFC_MEM_ALLOC_FAILED; curr=>NULL(); return
+            endif
+           else
+            if(VERBOSE) write(CONS_OUT,'("#ERROR(gfc::dictionary::search): replace: absent input value!")')
+            dict_search=GFC_INVALID_ARGS; curr=>NULL(); return
+           endif
+           if(present(value_out)) then; value_out=>curr%get_value(ierr); else; ierr=GFC_SUCCESS; endif
+           if(ierr.eq.GFC_SUCCESS) then; call this%jump_(curr); else; dict_search=ierr; endif
+          endif
+         case(GFC_DICT_DELETE_IF_FOUND) !delete the item if found
+          if(dict_search.eq.GFC_FOUND) then
+           if(associated(this%current)) then
+            if(associated(this%current,curr)) then; old_cdp=>NULL(); else; old_cdp=>this%current; endif
+           else
+            old_cdp=>NULL()
+           endif
+           call this%jump_(curr)
+           if(associated(curr%child_lt).and.associated(curr%child_gt)) then !both subtrees are present
+            if(curr%balance_fac.le.0) then !right subtree is taller or equal
+             grow=-1; j=this%move_in_order(GFC_DICT_SUCCESSOR) !find in-order successor
+             if(j.eq.GFC_SUCCESS) then
+              if(associated(this%current%child_gt)) then
+               leave=>this%current%child_gt
+              else
+               leave=>NULL()
+              endif
+             else
+              if(VERBOSE) write(CONS_OUT,'("#ERROR(gfc::dictionary::search): delete: next in-order not found!")')
+              dict_search=GFC_CORRUPTED_CONT
+             endif
+            else !left subtree is taller
+             grow=+1; j=this%move_in_order(GFC_DICT_PREDECESSOR) !find in-order predecessor
+             if(j.eq.GFC_SUCCESS) then
+              if(associated(this%current%child_lt)) then
+               leave=>this%current%child_lt
+              else
+               leave=>NULL()
+              endif
+             else
+              if(VERBOSE) write(CONS_OUT,'("#ERROR(gfc::dictionary::search): delete: previous in-order not found!")')
+              dict_search=GFC_CORRUPTED_CONT
+             endif
+            endif
+            if(dict_search.eq.GFC_FOUND) then
+             if(associated(this%current%parent,curr)) then
+              term=>NULL()
+             else
+              term=>this%current%parent
+             endif
+             if(associated(curr%parent)) then
+              if(associated(curr%parent%child_lt,curr)) then
+               curr%parent%child_lt=>this%current
+              elseif(associated(curr%parent%child_gt,curr)) then
+               curr%parent%child_gt=>this%current
+              else
+               if(VERBOSE) write(CONS_OUT,'("#ERROR(gfc::dictionary::search): delete: lost parent!")')
+               dict_search=GFC_CORRUPTED_CONT
+              endif
+             else
+              if(associated(dict%root,curr)) then
+               call dict%reroot_(this%current)
+              else
+               if(VERBOSE) write(CONS_OUT,'("#ERROR(gfc::dictionary::search): delete: lost root!")')
+               dict_search=GFC_CORRUPTED_CONT
+              endif
+             endif
+             if(dict_search.eq.GFC_FOUND) then
+              if(grow.gt.0) then !reducing the left subtree
+               if(associated(term)) then
+                curr%child_lt%parent=>this%current
+                this%current%child_lt=>curr%child_lt
+                if(associated(leave)) then
+                 term%child_gt=>leave; leave%parent=>term
+                else
+                 term%child_gt=>NULL()
+                endif
+               endif
+               curr%child_gt%parent=>this%current
+               this%current%child_gt=>curr%child_gt
+              elseif(grow.lt.0) then !reducing the right subtree
+               if(associated(term)) then
+                curr%child_gt%parent=>this%current
+                this%current%child_gt=>curr%child_gt
+                if(associated(leave)) then
+                 term%child_lt=>leave; leave%parent=>term
+                else
+                 term%child_lt=>NULL()
+                endif
+               endif
+               curr%child_lt%parent=>this%current
+               this%current%child_lt=>curr%child_lt
+              endif
+              if(associated(curr%parent)) then
+               this%current%parent=>curr%parent
+              else
+               this%current%parent=>NULL()
+              endif
+              this%current%balance_fac=curr%balance_fac
+              if(associated(term)) then
+               call this%jump_(term); grow=-grow; term=>NULL()
+              endif
+              if(associated(leave)) leave=>NULL()
+             endif
+            endif
+           else !at least one subtree is absent
+            if(associated(curr%child_lt)) then !left subtree is present (a leave)
+             if(associated(curr%parent)) then
+              if(associated(curr%parent%child_lt,curr)) then
+               curr%parent%child_lt=>curr%child_lt; call this%jump_(curr%parent); grow=+1
+              elseif(associated(curr%parent%child_gt,curr)) then
+               curr%parent%child_gt=>curr%child_lt; call this%jump_(curr%parent); grow=-1
+              else
+               if(VERBOSE) write(CONS_OUT,'("#ERROR(gfc::dictionary::search): delete: lost parent!")')
+               dict_search=GFC_CORRUPTED_CONT
+              endif
+              curr%child_lt%parent=>curr%parent
+             else
+              if(associated(dict%root,curr)) then
+               call dict%reroot_(curr%child_lt)
+               dict%root%parent=>NULL(); grow=0
+              else
+               if(VERBOSE) write(CONS_OUT,'("#ERROR(gfc::dictionary::search): delete: lost root!")')
+               dict_search=GFc_CORRUPTED_CONT
+              endif
+             endif
+            elseif(associated(curr%child_gt)) then !right subtree is present (a leave)
+             if(associated(curr%parent)) then
+              if(associated(curr%parent%child_lt,curr)) then
+               curr%parent%child_lt=>curr%child_gt; call this%jump_(curr%parent); grow=+1
+              elseif(associated(curr%parent%child_gt,curr)) then
+               curr%parent%child_gt=>curr%child_gt; call this%jump_(curr%parent); grow=-1
+              else
+               if(VERBOSE) write(CONS_OUT,'("#ERROR(gfc::dictionary::search): delete: lost parent!")')
+               dict_search=GFC_CORRUPTED_CONT
+              endif
+              curr%child_gt%parent=>curr%parent
+             else
+              if(associated(dict%root,curr)) then
+               call dict%reroot_(curr%child_gt)
+               dict%root%parent=>NULL(); grow=0
+              else
+               if(VERBOSE) write(CONS_OUT,'("#ERROR(gfc::dictionary::search): delete: lost root!")')
+               dict_search=GFC_CORRUPTED_CONT
+              endif
+             endif
+            else !both subtrees are absent
+             if(associated(curr%parent)) then
+              if(associated(curr%parent%child_lt,curr)) then
+               curr%parent%child_lt=>NULL(); call this%jump_(curr%parent); grow=+1
+              elseif(associated(curr%parent%child_gt,curr)) then
+               curr%parent%child_gt=>NULL(); call this%jump_(curr%parent); grow=-1
+              else
+               if(VERBOSE) write(CONS_OUT,'("#ERROR(gfc::dictionary::search): delete: lost parent!")')
+               dict_search=GFC_CORRUPTED_CONT
+              endif
+             else
+              if(associated(dict%root,curr)) then
+               call dict%reroot_(nullptr)
+               call this%jump_(nullptr); grow=0
+              else
+               if(VERBOSE) write(CONS_OUT,'("#ERROR(gfc::dictionary::search): delete: lost root!")')
+               dict_search=GFC_CORRUPTED_CONT
+              endif
+             endif
+            endif
+           endif
+           if(present(dtor_val_f)) then
+            call curr%destruct(j,dtor_f=dtor_val_f)
+           else
+            call curr%destruct(j)
+           endif
+           if(j.ne.GFC_SUCCESS) then
+            if(VERBOSE) write(CONS_OUT,'("#ERROR(gfc::dictionary::search): delete: dictionary element destruction failed!")')
+            dict_search=GFC_MEM_FREE_FAILED
+           endif
+           deallocate(curr,STAT=j)
+           if(j.ne.0) then
+            if(VERBOSE) write(CONS_OUT,'("#ERROR(gfc::dictionary::search): delete: dictionary element deallocation failed!")')
+            dict_search=GFC_MEM_FREE_FAILED
+           endif
+           if(dict_search.eq.GFC_FOUND.and.grow.ne.0) then
+            ierr=-1; call rebalance(this%current,grow,ierr)
+            if(ierr.ne.0) then
+             if(VERBOSE) write(CONS_OUT,'("#ERROR(gfc::dictionary::search): delete: rebalancing failed: ",i11)') ierr
+             dict_search=GFC_CORRUPTED_CONT
+            endif
+           endif
+           if(associated(old_cdp)) then
+            call this%jump_(old_cdp); old_cdp=>NULL()
+           else
+            call this%jump_(nullptr)
+           endif
+          endif
+         case(GFC_DICT_ADD_IF_NOT_FOUND) !add a new item if the key is not found
+          if(dict_search.eq.GFC_NOT_FOUND) then
+           if(lev_p.ge.0) then
+            if(i.eq.GFC_CMP_LT) then
+             allocate(curr%child_lt,STAT=j)
+             if(j.ne.0) then
+              if(VERBOSE) write(CONS_OUT,'("#ERROR(gfc::dictionary::search): add: dictionary element allocation failed!")')
+              dict_search=GFC_MEM_ALLOC_FAILED; curr=>NULL(); return
+             endif
+             curr%child_lt%parent=>curr
+             grow=+1; curr=>curr%child_lt
+            elseif(i.eq.GFC_CMP_GT) then
+             allocate(curr%child_gt,STAT=j)
+             if(j.ne.0) then
+              if(VERBOSE) write(CONS_OUT,'("#ERROR(gfc::dictionary::search): add: dictionary element allocation failed!")')
+              dict_search=GFC_MEM_ALLOC_FAILED; curr=>NULL(); return
+             endif
+             curr%child_gt%parent=>curr
+             grow=-1; curr=>curr%child_gt
+            endif
+            curr%child_lt=>NULL(); curr%child_gt=>NULL(); curr%balance_fac=0
+            ierr=+1; call rebalance(curr%parent,grow,ierr)
+            if(ierr.ne.0) then
+             if(VERBOSE) write(CONS_OUT,'("#ERROR(gfc::dictionary::search): add: rebalancing failed: ",i11)') ierr
+             dict_search=GFC_CORRUPTED_CONT; curr=>NULL(); return
+            endif
+            if(present(value_in)) then
+             if(present(store_by)) then
+#ifdef NO_GNU
+              if(present(copy_ctor_val_f)) then
+               call curr%construct(key,value_in,j,assoc_val=store_by,val_copy_ctor_f=copy_ctor_val_f)
+              else
+#else
+               call curr%construct(key,value_in,j,assoc_val=store_by)
+#endif
+#ifdef NO_GNU
+              endif
+#endif
+             else
+#ifdef NO_GNU
+              if(present(copy_ctor_val_f)) then
+               call curr%construct(key,value_in,j,val_copy_ctor_f=copy_ctor_val_f)
+              else
+#else
+               call curr%construct(key,value_in,j)
+#endif
+#ifdef NO_GNU
+              endif
+#endif
+             endif
+             if(j.ne.GFC_SUCCESS) then
+              if(VERBOSE) write(CONS_OUT,'("#ERROR(gfc::dictionary::search): add: dictionary element construction failed!")')
+              dict_search=GFC_MEM_ALLOC_FAILED; curr=>NULL(); return
+             endif
+            else
+             if(VERBOSE) write(CONS_OUT,'("#ERROR(gfc::dictionary::search): add: absent input value!")')
+             dict_search=GFC_INVALID_ARGS; curr=>NULL(); return
+            endif
+            if(present(value_out)) then; value_out=>curr%get_value(ierr); else; ierr=GFC_SUCCESS; endif
+            if(ierr.eq.GFC_SUCCESS) then; call this%jump_(curr); else; dict_search=ierr; endif
+           else !empty dictionary
+            allocate(curr,STAT=j)
+            if(j.ne.0) then
+             if(VERBOSE) write(CONS_OUT,'("#ERROR(gfc::dictionary::search): add: dictionary root allocation failed!")')
+             dict_search=GFC_MEM_ALLOC_FAILED; curr=>NULL(); return
+            endif
+            curr%parent=>NULL(); curr%child_lt=>NULL(); curr%child_gt=>NULL(); curr%balance_fac=0
+            if(present(value_in)) then
+             if(present(store_by)) then
+#ifdef NO_GNU
+              if(present(copy_ctor_val_f)) then
+               call curr%construct(key,value_in,j,assoc_val=store_by,val_copy_ctor_f=copy_ctor_val_f)
+              else
+#else
+               call curr%construct(key,value_in,j,assoc_val=store_by)
+#endif
+#ifdef NO_GNU
+              endif
+#endif
+             else
+#ifdef NO_GNU
+              if(present(copy_ctor_val_f)) then
+               call curr%construct(key,value_in,j,val_copy_ctor_f=copy_ctor_val_f)
+              else
+#else
+               call curr%construct(key,value_in,j)
+#endif
+#ifdef NO_GNU
+              endif
+#endif
+             endif
+             if(j.ne.GFC_SUCCESS) then
+              if(VERBOSE) write(CONS_OUT,'("#ERROR(gfc::dictionary::search): add: dictionary root construction failed!")')
+              dict_search=GFC_MEM_ALLOC_FAILED; curr=>NULL(); return
+             endif
+            else
+             if(VERBOSE) write(CONS_OUT,'("#ERROR(gfc::dictionary::search): add: absent input value for root!")')
+             dict_search=GFC_INVALID_ARGS; curr=>NULL(); return
+            endif
+            call dict%reroot_(curr)
+            if(present(value_out)) then; value_out=>curr%get_value(ierr); else; ierr=GFC_SUCCESS; endif
+            if(ierr.eq.GFC_SUCCESS) then; call this%jump_(curr); else; dict_search=ierr; endif
+           endif
+          elseif(dict_search.eq.GFC_FOUND) then !return the found entry value (just in case)
+           if(present(value_out)) then; value_out=>curr%get_value(ierr); else; ierr=GFC_SUCCESS; endif
+           if(ierr.eq.GFC_SUCCESS) then; call this%jump_(curr); else; dict_search=ierr; endif
+          endif
+         case default
+          if(VERBOSE) write(CONS_OUT,'("#ERROR(gfc::dictionary::search): unknown search action request: ",i11)') action
+          dict_search=GFC_UNKNOWN_REQUEST; curr=>NULL(); return
+         end select
+         curr=>NULL()
+         return
+
+         contains
+
+          subroutine rebalance(cr,gr,ier)
+           class(dict_elem_t), pointer:: cr   !intermediate element on the way back to root
+           integer(INTD), intent(in):: gr     !in(right/left subtree change): {-1;+1}
+           integer(INTD), intent(inout):: ier !in(height decrease/increase): {-1;+1}; out: {0;{error_codes}}
+           class(dict_elem_t), pointer:: cr_ptr
+           integer(INTD):: jb,jc,jg,jd
+!          if(DEBUG) write(CONS_OUT,'("Entered rebalance:")') !debug
+           jd=ier; jg=gr; cr_ptr=>cr
+           do while(jg.ne.0)
+!           if(DEBUG) write(CONS_OUT,'(" Rebalance at level ",i3)') lev_p !debug
+            cr_ptr%balance_fac=cr_ptr%balance_fac+jg*jd
+            if(iabs(cr_ptr%balance_fac).ge.2) then !rotations needed
+             if(cr_ptr%balance_fac.eq.-2) then
+              jb=cr_ptr%child_gt%balance_fac
+              if(jb.gt.0) then !{+1}
+               jc=cr_ptr%child_gt%child_lt%balance_fac
+               call rotate_double_left(cr_ptr)
+               if(dict_search.ne.GFC_FOUND.and.dict_search.ne.GFC_NOT_FOUND) then; cr_ptr=>NULL(); ier=1; return; endif
+               cr_ptr%parent%balance_fac=0; if(jd.gt.0) jg=0
+               if(jc.gt.0) then
+                cr_ptr%balance_fac=0; cr_ptr%parent%child_gt%balance_fac=-1
+               elseif(jc.lt.0) then
+                cr_ptr%balance_fac=1; cr_ptr%parent%child_gt%balance_fac=0
+               else !jc=0
+                cr_ptr%balance_fac=0; cr_ptr%parent%child_gt%balance_fac=0
+               endif
+              else !{-1;0}
+               call rotate_simple_left(cr_ptr)
+               if(dict_search.ne.GFC_FOUND.and.dict_search.ne.GFC_NOT_FOUND) then; cr_ptr=>NULL(); ier=2; return; endif
+               if(jb.eq.0) then
+                cr_ptr%balance_fac=-1; cr_ptr%parent%balance_fac=1; if(jd.lt.0) jg=0
+               else
+                cr_ptr%balance_fac=0; cr_ptr%parent%balance_fac=0; if(jd.gt.0) jg=0
+               endif
+              endif
+              cr_ptr=>cr_ptr%parent
+             elseif(cr_ptr%balance_fac.eq.2) then
+              jb=cr_ptr%child_lt%balance_fac
+              if(jb.lt.0) then !{-1}
+               jc=cr_ptr%child_lt%child_gt%balance_fac
+               call rotate_double_right(cr_ptr)
+               if(dict_search.ne.GFC_FOUND.and.dict_search.ne.GFC_NOT_FOUND) then; cr_ptr=>NULL(); ier=3; return; endif
+               cr_ptr%parent%balance_fac=0; if(jd.gt.0) jg=0
+               if(jc.lt.0) then
+                cr_ptr%balance_fac=0; cr_ptr%parent%child_lt%balance_fac=1
+               elseif(jc.gt.0) then
+                cr_ptr%balance_fac=-1; cr_ptr%parent%child_lt%balance_fac=0
+               else !jc=0
+                cr_ptr%balance_fac=0; cr_ptr%parent%child_lt%balance_fac=0
+               endif
+              else !{0;+1}
+               call rotate_simple_right(cr_ptr)
+               if(dict_search.ne.GFC_FOUND.and.dict_search.ne.GFC_NOT_FOUND) then; cr_ptr=>NULL(); ier=4; return; endif
+               if(jb.eq.0) then
+                cr_ptr%balance_fac=+1; cr_ptr%parent%balance_fac=-1; if(jd.lt.0) jg=0
+               else
+                cr_ptr%balance_fac=0; cr_ptr%parent%balance_fac=0; if(jd.gt.0) jg=0
+               endif
+              endif
+              cr_ptr=>cr_ptr%parent
+             else
+              if(VERBOSE)&
+              &write(CONS_OUT,'("#ERROR(gfc::dictionary::search): rebalance: invalid balance factor: ",i11)') cr_ptr%balance_fac
+              cr_ptr=>NULL(); ier=5; return
+             endif
+            else !node balance factor changed to {-1;0;+1}
+             if(jd.gt.0) then
+              if(cr_ptr%balance_fac.eq.0) jg=0
+             elseif(jd.lt.0) then
+              if(cr_ptr%balance_fac.ne.0) jg=0
+             endif
+            endif
+            if(associated(cr_ptr%parent)) then
+             jg=iabs(jg); if(associated(cr_ptr%parent%child_gt,cr_ptr)) jg=-jg
+             cr_ptr=>cr_ptr%parent; lev_p=lev_p-1
+            else
+             call dict%reroot_(cr_ptr)
+             exit
+            endif
+           enddo
+           ier=0; cr_ptr=>NULL()
+!          if(DEBUG) write(CONS_OUT,'("Exited rebalance.")') !debug
+           return
+          end subroutine rebalance
+
+          subroutine rotate_double_left(cr)
+           class(dict_elem_t), pointer:: cr
+           call rotate_simple_right(cr%child_gt)
+           if(dict_search.ne.GFC_FOUND.and.dict_search.ne.GFC_NOT_FOUND) return
+           call rotate_simple_left(cr)
+           return
+          end subroutine rotate_double_left
+
+          subroutine rotate_double_right(cr)
+           class(dict_elem_t), pointer:: cr
+           call rotate_simple_left(cr%child_lt)
+           if(dict_search.ne.GFC_FOUND.and.dict_search.ne.GFC_NOT_FOUND) return
+           call rotate_simple_right(cr)
+           return
+          end subroutine rotate_double_right
+
+          subroutine rotate_simple_left(cr)
+           class(dict_elem_t), pointer:: cr
+           class(dict_elem_t), pointer:: jp,jq,js
+!          if(DEBUG) write(CONS_OUT,'("  Rotating left")') !debug
+           jp=>cr; jq=>cr%child_gt; js=>jq%child_lt !js may be null
+           jq%child_lt=>jp
+           if(associated(jp%parent)) then
+            if(associated(jp%parent%child_lt,jp)) then
+             jp%parent%child_lt=>jq
+            elseif(associated(jp%parent%child_gt,jp)) then
+             jp%parent%child_gt=>jq
+            else
+             if(VERBOSE) write(CONS_OUT,'("#ERROR(gfc::dictionary::search:rotate_simple_left): broken parental link!")')
+             dict_search=GFC_CORRUPTED_CONT; return
+            endif
+            jq%parent=>jp%parent
+           else
+            jq%parent=>NULL()
+           endif
+           jp%parent=>jq
+           jp%child_gt=>js; if(associated(js)) js%parent=>jp
+           return
+          end subroutine rotate_simple_left
+
+          subroutine rotate_simple_right(cr)
+           class(dict_elem_t), pointer:: cr
+           class(dict_elem_t), pointer:: jp,jq,js
+!          if(DEBUG) write(CONS_OUT,'("  Rotating right")') !debug
+           jp=>cr; jq=>cr%child_lt; js=>jq%child_gt !js may be null
+           jq%child_gt=>jp
+           if(associated(jp%parent)) then
+            if(associated(jp%parent%child_lt,jp)) then
+             jp%parent%child_lt=>jq
+            elseif(associated(jp%parent%child_gt,jp)) then
+             jp%parent%child_gt=>jq
+            else
+             if(VERBOSE) write(CONS_OUT,'("#ERROR(gfc::dictionary::search:rotate_simple_right): broken parental link!")')
+             dict_search=GFC_CORRUPTED_CONT; return
+            endif
+            jq%parent=>jp%parent
+           else
+            jq%parent=>NULL()
+           endif
+           jp%parent=>jq
+           jp%child_lt=>js; if(associated(js)) js%parent=>jp
+           return
+          end subroutine rotate_simple_right
+
+        end function DictionaryIterSearch
 
        end module gfc_dictionary
