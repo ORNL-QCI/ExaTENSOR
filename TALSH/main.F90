@@ -394,8 +394,8 @@
                if(ierr.ne.TALSH_SUCCESS) then; ierr=7; return; endif
                cval=(1d-3,0d0); ierr=talsh_tensor_construct(rtens,TENS_DATA_KIND,rdims(1:rr),in_hab=YEP,init_val=cval)
                if(ierr.ne.TALSH_SUCCESS) then; ierr=8; return; endif
-#ifndef NO_GPU
                dloop: do
+#ifndef NO_GPU
    !Schedule tensor contraction on GPU:
                 ierr=talsh_tensor_contract(str(1:l),dtens,ltens,rtens,&
                                           &copy_ctrl=COPY_TTT,dev_id=talsh_flat_dev_id(DEV_NVIDIA_GPU,0),talsh_task=tsk)

@@ -1,6 +1,6 @@
 !Tensor Algebra for Multi- and Many-core CPUs (OpenMP based).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2016/08/17
+!REVISION: 2016/12/02
 
 !Copyright (C) 2013-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -37,9 +37,9 @@
 !PREPROCESSOR:
 ! -D NO_OMP: Do not use OpenMP (serial);
 ! -D USE_OMP_MOD: Use OpenMP Fortran module;
-! -D NO_BLAS: Replace BLAS calls with in-house routines;
+! -D NO_BLAS: Replace BLAS calls with in-house routines (slower);
 ! -D USE_MKL: USE Intel MKL library for BLAS;
-! -D NO_PHI: Ignore Intel MIC;
+! -D NO_PHI: Ignore Intel MIC (Xeon Phi);
        module tensor_algebra_cpu
 !       use, intrinsic:: ISO_C_BINDING
 !       use dil_basic
@@ -69,53 +69,53 @@
 #endif
 !PARAMETERS:
  !Default output for the module procedures:
-	integer, private:: cons_out=6     !default output device for this module (also used for INTEL MIC TAL)
-	logical, private:: verbose=.true. !verbosity (also used for INTEL MIC TAL)
+        integer, private:: CONS_OUT=6     !default output device for this module (also used for INTEL MIC TAL)
+        logical, private:: VERBOSE=.true. !verbosity (also used for INTEL MIC TAL)
 #ifndef NO_PHI
-!DIR$ ATTRIBUTES OFFLOAD:mic:: cons_out,verbose
-!DIR$ ATTRIBUTES ALIGN:128:: cons_out,verbose
+!DIR$ ATTRIBUTES OFFLOAD:mic:: CONS_OUT,VERBOSE
+!DIR$ ATTRIBUTES ALIGN:128:: CONS_OUT,VERBOSE
 #endif
  !Global:
-	integer, parameter, public:: MAX_SHAPE_STR_LEN=1024 !max allowed length for a tensor shape specification string (TSSS)
-	integer, parameter, public:: LONGINT=INTL           !long integer size in bytes
-	integer, parameter, private:: MAX_THREADS=1024      !max allowed number of threads in this module
-	logical, private:: data_kind_sync=.true. !if .true., each tensor operation will syncronize all existing data kinds
-	logical, private:: trans_shmem=.true.    !cache-efficient (true) VS scatter (false) tensor transpose algorithm
+        integer, parameter, public:: MAX_SHAPE_STR_LEN=1024 !max allowed length for a tensor shape specification string (TSSS)
+        integer, parameter, public:: LONGINT=INTL           !long integer size in bytes
+        integer, parameter, private:: MAX_THREADS=1024      !max allowed number of threads in this module
+        logical, private:: DATA_KIND_SYNC=.true. !if .true., each tensor operation will syncronize all existing data kinds
+        logical, private:: TRANS_SHMEM=.true.    !cache-efficient (true) VS scatter (false) tensor transpose algorithm
 #ifndef NO_BLAS
-	logical, private:: disable_blas=.false.  !if .true. and BLAS is accessible, BLAS calls will be replaced by my own routines
+        logical, private:: DISABLE_BLAS=.false.  !if .true. and BLAS is accessible, BLAS calls will be replaced by my own routines
 #else
-        logical, private:: disable_blas=.true.   !if .true. and BLAS is accessible, BLAS calls will be replaced by my own routines
+        logical, private:: DISABLE_BLAS=.true.   !if .true. and BLAS is accessible, BLAS calls will be replaced by my own routines
 #endif
 #ifndef NO_PHI
-!DIR$ ATTRIBUTES OFFLOAD:mic:: MAX_SHAPE_STR_LEN,LONGINT,MAX_THREADS,data_kind_sync,trans_shmem,disable_blas
-!DIR$ ATTRIBUTES ALIGN:128:: MAX_SHAPE_STR_LEN,LONGINT,MAX_THREADS,data_kind_sync,trans_shmem,disable_blas
+!DIR$ ATTRIBUTES OFFLOAD:mic:: MAX_SHAPE_STR_LEN,LONGINT,MAX_THREADS,DATA_KIND_SYNC,TRANS_SHMEM,DISABLE_BLAS
+!DIR$ ATTRIBUTES ALIGN:128:: MAX_SHAPE_STR_LEN,LONGINT,MAX_THREADS,DATA_KIND_SYNC,TRANS_SHMEM,DISABLE_BLAS
 #endif
  !Numerical:
-	real(8), parameter, private:: ABS_CMP_THRESH=1d-13 !default absolute error threshold for numerical comparisons
-	real(8), parameter, private:: REL_CMP_THRESH=1d-2  !default relative error threshold for numerical comparisons
+        real(8), parameter, private:: ABS_CMP_THRESH=1d-13 !default absolute error threshold for numerical comparisons
+        real(8), parameter, private:: REL_CMP_THRESH=1d-2  !default relative error threshold for numerical comparisons
 #ifndef NO_PHI
 !DIR$ ATTRIBUTES OFFLOAD:mic:: ABS_CMP_THRESH,REL_CMP_THRESH
 !DIR$ ATTRIBUTES ALIGN:128:: ABS_CMP_THRESH,REL_CMP_THRESH
 #endif
 !DERIVED DATA TYPES:
  !Tensor shape (storage layout specification for a tensor block):
-	type, public:: tensor_shape_t
-	 integer:: num_dim=-1                      !total number of dimensions (num_dim=0 defines a scalar tensor).
-	 integer, pointer:: dim_extent(:)=>NULL()  !extent of each dimension (if num_dim>0): range=[0..extent-1].
-	 integer, pointer:: dim_divider(:)=>NULL() !divider for each dimension, i.e. the <Lm_segment_size> (ordered dimensions must have the same divider!): %dim_divider(1)=0 means that an alternative (neither dimension-led nor bricked) storage layout is used.
-	 integer, pointer:: dim_group(:)=>NULL()   !dimension grouping (default group 0 means no symmetry restrictions): if %dim_divider(1)=0, then %dim_group(1) regulates the alternative storage layout kind.
-	end type tensor_shape_t
+        type, public:: tensor_shape_t
+         integer:: num_dim=-1                      !total number of dimensions (num_dim=0 defines a scalar tensor).
+         integer, pointer:: dim_extent(:)=>NULL()  !extent of each dimension (if num_dim>0): range=[0..extent-1].
+         integer, pointer:: dim_divider(:)=>NULL() !divider for each dimension, i.e. the <Lm_segment_size> (ordered dimensions must have the same divider!): %dim_divider(1)=0 means that an alternative (neither dimension-led nor bricked) storage layout is used.
+         integer, pointer:: dim_group(:)=>NULL()   !dimension grouping (default group 0 means no symmetry restrictions): if %dim_divider(1)=0, then %dim_group(1) regulates the alternative storage layout kind.
+        end type tensor_shape_t
  !Tensor block:
-	type, public:: tensor_block_t
-	 integer(LONGINT):: tensor_block_size=0_LONGINT           !total number of elements in the tensor block (informal, set after creation)
-	 integer:: ptr_alloc=0                                    !pointer allocation status (bits set when pointers are getting allocated, not just associated)
-	 type(tensor_shape_t):: tensor_shape                      !shape of the tensor block (see above)
-	 complex(8):: scalar_value=cmplx(0d0,0d0,8)               !scalar value if the rank is zero, otherwise can be used for storing the norm of the tensor block
-	 real(4), pointer, contiguous:: data_real4(:)=>NULL()     !tensor block data (float)
-	 real(8), pointer, contiguous:: data_real8(:)=>NULL()     !tensor block data (double)
+        type, public:: tensor_block_t
+         integer(LONGINT):: tensor_block_size=0_LONGINT           !total number of elements in the tensor block (informal, set after creation)
+         integer:: ptr_alloc=0                                    !pointer allocation status (bits set when pointers are getting allocated, not just associated)
+         type(tensor_shape_t):: tensor_shape                      !shape of the tensor block (see above)
+         complex(8):: scalar_value=cmplx(0d0,0d0,8)               !scalar value if the rank is zero, otherwise can be used for storing the norm of the tensor block
+         real(4), pointer, contiguous:: data_real4(:)=>NULL()     !tensor block data (float)
+         real(8), pointer, contiguous:: data_real8(:)=>NULL()     !tensor block data (double)
 !        complex(4), pointer, contiguous:: data_cmplx4(:)=>NULL() !tensor block data (float complex) `Implement throughout
-	 complex(8), pointer, contiguous:: data_cmplx8(:)=>NULL() !tensor block data (double complex)
-	end type tensor_block_t
+         complex(8), pointer, contiguous:: data_cmplx8(:)=>NULL() !tensor block data (double complex)
+        end type tensor_block_t
 
 !GENERIC INTERFACES:
         interface tensor_block_shape_create
@@ -123,109 +123,109 @@
          module procedure tensor_block_shape_create_num
         end interface tensor_block_shape_create
 
-	interface tensor_block_slice_dlf
-	 module procedure tensor_block_slice_dlf_r4
-	 module procedure tensor_block_slice_dlf_r8
-	 module procedure tensor_block_slice_dlf_c8
-	end interface tensor_block_slice_dlf
+        interface tensor_block_slice_dlf
+         module procedure tensor_block_slice_dlf_r4
+         module procedure tensor_block_slice_dlf_r8
+         module procedure tensor_block_slice_dlf_c8
+        end interface tensor_block_slice_dlf
 
-	interface tensor_block_insert_dlf
-	 module procedure tensor_block_insert_dlf_r4
-	 module procedure tensor_block_insert_dlf_r8
-	 module procedure tensor_block_insert_dlf_c8
-	end interface tensor_block_insert_dlf
+        interface tensor_block_insert_dlf
+         module procedure tensor_block_insert_dlf_r4
+         module procedure tensor_block_insert_dlf_r8
+         module procedure tensor_block_insert_dlf_c8
+        end interface tensor_block_insert_dlf
 
-	interface tensor_block_copy_dlf
-	 module procedure tensor_block_copy_dlf_r4
-	 module procedure tensor_block_copy_dlf_r8
-	 module procedure tensor_block_copy_dlf_c8
-	end interface tensor_block_copy_dlf
+        interface tensor_block_copy_dlf
+         module procedure tensor_block_copy_dlf_r4
+         module procedure tensor_block_copy_dlf_r8
+         module procedure tensor_block_copy_dlf_c8
+        end interface tensor_block_copy_dlf
 
-	interface tensor_block_copy_scatter_dlf
-	 module procedure tensor_block_copy_scatter_dlf_r4
-	 module procedure tensor_block_copy_scatter_dlf_r8
-	 module procedure tensor_block_copy_scatter_dlf_c8
-	end interface tensor_block_copy_scatter_dlf
+        interface tensor_block_copy_scatter_dlf
+         module procedure tensor_block_copy_scatter_dlf_r4
+         module procedure tensor_block_copy_scatter_dlf_r8
+         module procedure tensor_block_copy_scatter_dlf_c8
+        end interface tensor_block_copy_scatter_dlf
 
-	interface tensor_block_fcontract_dlf
-	 module procedure tensor_block_fcontract_dlf_r4
-	 module procedure tensor_block_fcontract_dlf_r8
-	 module procedure tensor_block_fcontract_dlf_c8
-	end interface tensor_block_fcontract_dlf
+        interface tensor_block_fcontract_dlf
+         module procedure tensor_block_fcontract_dlf_r4
+         module procedure tensor_block_fcontract_dlf_r8
+         module procedure tensor_block_fcontract_dlf_c8
+        end interface tensor_block_fcontract_dlf
 
-	interface tensor_block_pcontract_dlf
-	 module procedure tensor_block_pcontract_dlf_r4
-	 module procedure tensor_block_pcontract_dlf_r8
-	 module procedure tensor_block_pcontract_dlf_c8
-	end interface tensor_block_pcontract_dlf
+        interface tensor_block_pcontract_dlf
+         module procedure tensor_block_pcontract_dlf_r4
+         module procedure tensor_block_pcontract_dlf_r8
+         module procedure tensor_block_pcontract_dlf_c8
+        end interface tensor_block_pcontract_dlf
 
-	interface tensor_block_ftrace_dlf
-	 module procedure tensor_block_ftrace_dlf_r4
-	 module procedure tensor_block_ftrace_dlf_r8
-	 module procedure tensor_block_ftrace_dlf_c8
-	end interface tensor_block_ftrace_dlf
+        interface tensor_block_ftrace_dlf
+         module procedure tensor_block_ftrace_dlf_r4
+         module procedure tensor_block_ftrace_dlf_r8
+         module procedure tensor_block_ftrace_dlf_c8
+        end interface tensor_block_ftrace_dlf
 
-	interface tensor_block_ptrace_dlf
-	 module procedure tensor_block_ptrace_dlf_r4
-	 module procedure tensor_block_ptrace_dlf_r8
-	 module procedure tensor_block_ptrace_dlf_c8
-	end interface tensor_block_ptrace_dlf
+        interface tensor_block_ptrace_dlf
+         module procedure tensor_block_ptrace_dlf_r4
+         module procedure tensor_block_ptrace_dlf_r8
+         module procedure tensor_block_ptrace_dlf_c8
+        end interface tensor_block_ptrace_dlf
 
 !FUNCTION VISIBILITY:
-	public set_data_kind_sync          !turns on/off data kind synchronization (0/1)
-	public set_transpose_algorithm     !switches between scatter (0) and shared-memory (1) tensor transpose algorithms
-	public set_matmult_algorithm       !switches between BLAS GEMM (0) and my OpenMP matmult kernels (1)
-	public cmplx8_to_real8             !returns the real approximate of a complex number (algorithm by D.I.L.)
+        public set_data_kind_sync          !turns on/off data kind synchronization (0/1)
+        public set_transpose_algorithm     !switches between scatter (0) and shared-memory (1) tensor transpose algorithms
+        public set_matmult_algorithm       !switches between BLAS GEMM (0) and my OpenMP matmult kernels (1)
+        public cmplx8_to_real8             !returns the real approximate of a complex number (algorithm by D.I.L.)
         public tensor_shape_assoc          !constructs a tensor shape object by pointer associating with external data
-	public tensor_block_layout         !returns the type of the storage layout for a given tensor block
-	public tensor_block_shape_size     !determines the tensor block size induced by its shape
-	public tensor_master_data_kind     !determines the master data kind present in a tensor block
-	public tensor_common_data_kind     !determines the common data kind present in two compatible tensor blocks
-	public tensor_block_compatible     !determines whether two tensor blocks are compatible (under an optional index permutation)
-	public tensor_block_mimic          !mimics the internal structure of a tensor block without copying the actual data
-	public tensor_block_create         !creates a tensor block based on the shape specification string (SSS)
-	public tensor_block_init           !initializes a tensor block with either a predefined value or random numbers
+        public tensor_block_layout         !returns the type of the storage layout for a given tensor block
+        public tensor_block_shape_size     !determines the tensor block size induced by its shape
+        public tensor_master_data_kind     !determines the master data kind present in a tensor block
+        public tensor_common_data_kind     !determines the common data kind present in two compatible tensor blocks
+        public tensor_block_compatible     !determines whether two tensor blocks are compatible (under an optional index permutation)
+        public tensor_block_mimic          !mimics the internal structure of a tensor block without copying the actual data
+        public tensor_block_create         !creates a tensor block based on the shape specification string (SSS)
+        public tensor_block_init           !initializes a tensor block with either a predefined value or random numbers
         public tensor_block_is_empty       !returns TRUE if the tensor block is empty, FALSE otherwise
         public tensor_block_assoc          !associates an empty <tensor_block_t> object with externally provided data
-	public tensor_block_destroy        !destroys a tensor block
-	public tensor_block_sync           !allocates and/or synchronizes different data kinds in a tensor block
-	public tensor_block_scale          !multiplies all elements of a tensor block by some factor
-	public tensor_block_norm1          !determines the 1-norm of a tensor block (the sum of moduli of all elements)
-	public tensor_block_norm2          !determines the squared Euclidean (Frobenius) 2-norm of a tensor block
-	public tensor_block_max            !determines the maximal (by modulus) tensor block element
-	public tensor_block_min            !determines the minimal (by modulus) tensor block element
-	public tensor_block_slice          !extracts a slice from a tensor block
-	public tensor_block_insert         !inserts a slice into a tensor block
-	public tensor_block_print          !prints a tensor block
-	public tensor_block_trace          !intra-tensor index contraction (accumulative trace)
-	public tensor_block_cmp            !compares two tensor blocks
-	public tensor_block_copy           !makes a copy of a tensor block (with an optional index permutation)
-	public tensor_block_add            !adds one tensor block to another
-	public tensor_block_contract       !inter-tensor index contraction (accumulative contraction)
+        public tensor_block_destroy        !destroys a tensor block
+        public tensor_block_sync           !allocates and/or synchronizes different data kinds in a tensor block
+        public tensor_block_scale          !multiplies all elements of a tensor block by some factor
+        public tensor_block_norm1          !determines the 1-norm of a tensor block (the sum of moduli of all elements)
+        public tensor_block_norm2          !determines the squared Euclidean (Frobenius) 2-norm of a tensor block
+        public tensor_block_max            !determines the maximal (by modulus) tensor block element
+        public tensor_block_min            !determines the minimal (by modulus) tensor block element
+        public tensor_block_slice          !extracts a slice from a tensor block
+        public tensor_block_insert         !inserts a slice into a tensor block
+        public tensor_block_print          !prints a tensor block
+        public tensor_block_trace          !intra-tensor index contraction (accumulative trace)
+        public tensor_block_cmp            !compares two tensor blocks
+        public tensor_block_copy           !makes a copy of a tensor block (with an optional index permutation)
+        public tensor_block_add            !adds one tensor block to another
+        public tensor_block_contract       !inter-tensor index contraction (accumulative contraction)
         public tensor_block_scalar_value   !returns the scalar value component of <tensor_block_t>
-	public get_mlndx_addr              !generates an array of addressing increments for the linearization map for symmetric multi-indices
-	public mlndx_value                 !returns the address associated with a (symmetric) multi-index, based on the array generated by <get_mlndx_addr>
-	public tensor_shape_rnd            !returns a random tensor-shape-specification-string (TSSS)
-	public tensor_shape_rank           !returns the number of dimensions in a tensor-shape-specification-string (TSSS)
-	public tensor_shape_str_create     !creates a tensor shape specification string
-	public get_contr_pattern           !converts a mnemonic contraction pattern into the digital form used by tensor_block_contract
-	public get_contr_pattern_sym       !converts a digital contraction pattern into a symbolic form
-	public get_contr_permutations      !given a digital contraction pattern, returns all tensor permutations necessary for the subsequent matrix multiplication
-	public contr_pattern_rnd           !returns a random tensor contraction pattern
-	public coherence_control_var       !returns a coherence control variable based on a mnemonic input
-	public tensor_block_shape_create   !generates the tensor shape based on either the tensor shape specification string (TSSS) or numeric arguments
+        public get_mlndx_addr              !generates an array of addressing increments for the linearization map for symmetric multi-indices
+        public mlndx_value                 !returns the address associated with a (symmetric) multi-index, based on the array generated by <get_mlndx_addr>
+        public tensor_shape_rnd            !returns a random tensor-shape-specification-string (TSSS)
+        public tensor_shape_rank           !returns the number of dimensions in a tensor-shape-specification-string (TSSS)
+        public tensor_shape_str_create     !creates a tensor shape specification string
+        public get_contr_pattern           !converts a mnemonic contraction pattern into the digital form used by tensor_block_contract
+        public get_contr_pattern_sym       !converts a digital contraction pattern into a symbolic form
+        public get_contr_permutations      !given a digital contraction pattern, returns all tensor permutations necessary for the subsequent matrix multiplication
+        public contr_pattern_rnd           !returns a random tensor contraction pattern
+        public coherence_control_var       !returns a coherence control variable based on a mnemonic input
+        public tensor_block_shape_create   !generates the tensor shape based on either the tensor shape specification string (TSSS) or numeric arguments
         public tensor_block_shape_create_sym !generates the tensor shape based on the tensor shape specification string (TSSS)
         public tensor_block_shape_create_num !generates the tensor shape based on the numeric arguments
-	public tensor_block_shape_ok       !checks the correctness of a tensor shape generated from a tensor shape specification string (TSSS)
-	public tensor_block_alloc          !sets/queries the allocation status of data pointers in a tensor block
-	private tensor_block_slice_dlf     !extracts a slice from a tensor block (Fortran-like dimension-led storage layout)
-	private tensor_block_insert_dlf    !inserts a slice into a tensor block (Fortran-like dimension-led storage layout)
-	private tensor_block_copy_dlf      !tensor transpose for dimension-led (Fortran-like-stored) dense tensor blocks
-	private tensor_block_copy_scatter_dlf !tensor transpose for dimension-led (Fortran-like-stored) dense tensor blocks (scattering variant)
-	private tensor_block_fcontract_dlf !multiplies two matrices derived from tensors to produce a scalar (left is transposed, right is normal)
-	private tensor_block_pcontract_dlf !multiplies two matrices derived from tensors to produce a third matrix (left is transposed, right is normal)
-	private tensor_block_ftrace_dlf    !takes a full trace of a tensor block
-	private tensor_block_ptrace_dlf    !takes a partial trace of a tensor block
+        public tensor_block_shape_ok       !checks the correctness of a tensor shape generated from a tensor shape specification string (TSSS)
+        public tensor_block_alloc          !sets/queries the allocation status of data pointers in a tensor block
+        private tensor_block_slice_dlf     !extracts a slice from a tensor block (Fortran-like dimension-led storage layout)
+        private tensor_block_insert_dlf    !inserts a slice into a tensor block (Fortran-like dimension-led storage layout)
+        private tensor_block_copy_dlf      !tensor transpose for dimension-led (Fortran-like-stored) dense tensor blocks
+        private tensor_block_copy_scatter_dlf !tensor transpose for dimension-led (Fortran-like-stored) dense tensor blocks (scattering variant)
+        private tensor_block_fcontract_dlf !multiplies two matrices derived from tensors to produce a scalar (left is transposed, right is normal)
+        private tensor_block_pcontract_dlf !multiplies two matrices derived from tensors to produce a third matrix (left is transposed, right is normal)
+        private tensor_block_ftrace_dlf    !takes a full trace of a tensor block
+        private tensor_block_ptrace_dlf    !takes a partial trace of a tensor block
 
        contains
 !-----------------
@@ -239,10 +239,10 @@
 	integer, intent(in):: alg
 	if(alg.eq.0) then
 !$OMP ATOMIC WRITE
-	 data_kind_sync=.false.
+	 DATA_KIND_SYNC=.false.
 	else
 !$OMP ATOMIC WRITE
-	 data_kind_sync=.true.
+	 DATA_KIND_SYNC=.true.
 	endif
 	return
 	end subroutine set_data_kind_sync
@@ -255,10 +255,10 @@
 	integer, intent(in):: alg
 	if(alg.eq.0) then
 !$OMP ATOMIC WRITE
-	 trans_shmem=.false.
+	 TRANS_SHMEM=.false.
 	else
 !$OMP ATOMIC WRITE
-	 trans_shmem=.true.
+	 TRANS_SHMEM=.true.
 	endif
 	return
 	end subroutine set_transpose_algorithm
@@ -272,10 +272,10 @@
 #ifndef NO_BLAS
 	if(alg.eq.0) then
 !$OMP ATOMIC WRITE
-	 disable_blas=.false.
+	 DISABLE_BLAS=.false.
 	else
 !$OMP ATOMIC WRITE
-	 disable_blas=.true.
+	 DISABLE_BLAS=.true.
 	endif
 #endif
 	return
@@ -872,7 +872,7 @@
 !$OMP END DO
 !$OMP END PARALLEL
 	  endif
-	  if(data_kind_sync) then
+	  if(DATA_KIND_SYNC) then
 	   valr8=tensor_block_norm2(tens_block,ierr,'r4'); if(ierr.ne.0) then; ierr=24; return; endif
 	   tens_block%scalar_value=cmplx(dsqrt(valr8),0d0,8)
 	  endif
@@ -944,7 +944,7 @@
 !$OMP END DO
 !$OMP END PARALLEL
 	  endif
-	  if(data_kind_sync) then
+	  if(DATA_KIND_SYNC) then
 	   valr8=tensor_block_norm2(tens_block,ierr,'r8'); if(ierr.ne.0) then; ierr=33; return; endif
 	   tens_block%scalar_value=cmplx(dsqrt(valr8),0d0,8)
 	  endif
@@ -1015,7 +1015,7 @@
 !$OMP END DO
 !$OMP END PARALLEL
 	  endif
-	  if(data_kind_sync) then
+	  if(DATA_KIND_SYNC) then
 	   valr8=tensor_block_norm2(tens_block,ierr,'c8'); if(ierr.ne.0) then; ierr=42; return; endif
 	   tens_block%scalar_value=cmplx(dsqrt(valr8),0d0,8)
 	  endif
@@ -1840,7 +1840,7 @@
 	    case default
 	     ierr=21; return !invalid tensor layout
 	    end select
-	    if(data_kind_sync) then
+	    if(DATA_KIND_SYNC) then
 	     call tensor_block_sync(slice,dtk,ierr); if(ierr.ne.0) then; ierr=22; return; endif
 	    endif
 	   else
@@ -1972,7 +1972,7 @@
 	    case default
 	     ierr=25; return !invalid tensor layout
 	    end select
-	    if(data_kind_sync) then
+	    if(DATA_KIND_SYNC) then
 	     call tensor_block_sync(tens,dtk,ierr); if(ierr.ne.0) then; ierr=26; return; endif
 	    endif
 	   else
@@ -2205,7 +2205,7 @@
 	  case default
 	   ierr=23; return
 	  end select
-	  if(data_kind_sync) then
+	  if(DATA_KIND_SYNC) then
 	   call tensor_block_sync(tens_out,dtk,ierr); if(ierr.ne.0) then; ierr=24; return; endif
 	  endif
 	  if(dlt.ne.'  ') then
@@ -2493,7 +2493,7 @@
  !REAL4:
 	  if(associated(tens_in%data_real4)) then
 	   if(tens_in%tensor_block_size.gt.1_LONGINT) then
-	    if(trans_shmem) then
+	    if(TRANS_SHMEM) then
 	     call tensor_block_copy_dlf(n,tens_in%tensor_shape%dim_extent,trn,tens_in%data_real4,tens_out%data_real4,ierr)
 	     if(ierr.ne.0) then; ierr=7; return; endif
 	    else
@@ -2509,7 +2509,7 @@
  !REAL8:
 	  if(associated(tens_in%data_real8)) then
 	   if(tens_in%tensor_block_size.gt.1_LONGINT) then
-	    if(trans_shmem) then
+	    if(TRANS_SHMEM) then
 	     call tensor_block_copy_dlf(n,tens_in%tensor_shape%dim_extent,trn,tens_in%data_real8,tens_out%data_real8,ierr)
 	     if(ierr.ne.0) then; ierr=10; return; endif
 	    else
@@ -2525,7 +2525,7 @@
  !COMPLEX8:
 	  if(associated(tens_in%data_cmplx8)) then
 	   if(tens_in%tensor_block_size.gt.1_LONGINT) then
-	    if(trans_shmem) then
+	    if(TRANS_SHMEM) then
 	     call tensor_block_copy_dlf(n,tens_in%tensor_shape%dim_extent,trn,tens_in%data_cmplx8,tens_out%data_cmplx8,ierr)
 	     if(ierr.ne.0) then; ierr=13; return; endif
 	    else
@@ -2700,7 +2700,7 @@
 	    endif
 !Sync the destination tensor:
 	    if(dtk.ne.'  ') then
-	     if(data_kind_sync) then
+	     if(DATA_KIND_SYNC) then
 	      call tensor_block_sync(tens0,dtk,ierr); if(ierr.ne.0) then; ierr=23; return; endif
 	     endif
 	    else
@@ -2810,26 +2810,26 @@
 	 contr_ok=contr_ptrn_ok(contr_ptrn,lrank,rrank,drank)
 	 if(present(ord_rest)) contr_ok=contr_ok.and.ord_rest_ok(ord_rest,contr_ptrn,lrank,rrank,drank)
 	 if(.not.contr_ok) then; ierr=7; return; endif
-!	 write(cons_out,'("DEBUG(tensor_algebra::tensor_block_contract): contraction pattern accepted:",128(1x,i2))') &
+!	 write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_contract): contraction pattern accepted:",128(1x,i2))') &
 !         contr_ptrn(1:lrank+rrank) !debug
-!	 write(cons_out,'("DEBUG(tensor_algebra::tensor_block_contract): tensor layouts (left, right, dest): ",i2,1x,i2,1x,i2)') &
+!	 write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_contract): tensor layouts (left, right, dest): ",i2,1x,i2,1x,i2)') &
 !         ltb,rtb,dtb !debug
  !Determine index permutations for all tensor operands together with the numbers of contracted/uncontraced indices (ncd/{nlu,nru}):
 	 call determine_index_permutations !sets {dtransp,ltransp,rtransp},{do2n,lo2n,ro2n},{ncd,nlu,nru}
-!	 write(cons_out,'("DEBUG(tensor_algebra::tensor_block_contract): left uncontr, right uncontr, contr dims: "&
+!	 write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_contract): left uncontr, right uncontr, contr dims: "&
 !         &,i2,1x,i2,1x,i2)') nlu,nru,ncd !debug
-!	 write(cons_out,'("DEBUG(tensor_algebra::tensor_block_contract): left index permutation (O2N)  :"&
+!	 write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_contract): left index permutation (O2N)  :"&
 !         &,128(1x,i2))') lo2n(1:lrank) !debug
-!	 write(cons_out,'("DEBUG(tensor_algebra::tensor_block_contract): right index permutation (O2N) :"&
+!	 write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_contract): right index permutation (O2N) :"&
 !         &,128(1x,i2))') ro2n(1:rrank) !debug
-!	 write(cons_out,'("DEBUG(tensor_algebra::tensor_block_contract): result index permutation (O2N):"&
+!	 write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_contract): result index permutation (O2N):"&
 !         &,128(1x,i2))') do2n(1:drank) !debug
  !Transpose the tensor arguments, if needed:
          nullify(ltp); nullify(rtp); nullify(dtp)
 	 do k=1,2 !left/right switch
 	  if(k.eq.1) then; tst=ltb; transp=ltransp; tens_in=>ltens; else; tst=rtb; transp=rtransp; tens_in=>rtens; endif
 	  if(tens_in%tensor_shape%num_dim.gt.0.and.transp) then !true tensor which requires a transpose
-!	   write(cons_out,'("DEBUG(tensor_algebra::tensor_block_contract): permutation to be performed for ",i2)') k !debug
+!	   write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_contract): permutation to be performed for ",i2)') k !debug
 	   if(k.eq.1) then; trn=>lo2n; tens_out=>lta; else; trn=>ro2n; tens_out=>rta; endif
 	   select case(tst)
 	   case(scalar_tensor)
@@ -2854,27 +2854,27 @@
 	  nullify(tens_in)
 	 enddo !k
 	 if(dtransp) then !a transpose required for the destination tensor
-!	  write(cons_out,'("DEBUG(tensor_algebra::tensor_block_contract): permutation to be performed for ",i2)') 0 !debug
+!	  write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_contract): permutation to be performed for ",i2)') 0 !debug
 	  dn2o(0)=+1; do k=1,drank; dn2o(do2n(k))=k; enddo
 	  call tensor_block_copy(dtens,dta,ierr,dn2o); if(ierr.ne.0) then; ierr=11; goto 999; endif
 	  dtp=>dta
 	 else !no transpose for the destination tensor
 	  dtp=>dtens
 	 endif
-!	 write(cons_out,'("DEBUG(tensor_algebra::tensor_block_contract): arguments are ready to be processed!")') !debug
+!	 write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_contract): arguments are ready to be processed!")') !debug
  !Calculate matrix dimensions:
-!	 write(cons_out,'("DEBUG(tensor_algebra::tensor_block_contract): argument pointer status (l,r,d): ",l1,1x,l1,1x,l1)') &
+!	 write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_contract): argument pointer status (l,r,d): ",l1,1x,l1,1x,l1)') &
 !         associated(ltp),associated(rtp),associated(dtp) !debug
-!	 write(cons_out,'("DEBUG(tensor_algebra::tensor_block_contract): left index extents  :",128(1x,i4))') &
+!	 write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_contract): left index extents  :",128(1x,i4))') &
 !         ltp%tensor_shape%dim_extent(1:lrank) !debug
-!	 write(cons_out,'("DEBUG(tensor_algebra::tensor_block_contract): right index extents :",128(1x,i4))') &
+!	 write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_contract): right index extents :",128(1x,i4))') &
 !         rtp%tensor_shape%dim_extent(1:rrank) !debug
-!	 write(cons_out,'("DEBUG(tensor_algebra::tensor_block_contract): result index extents:",128(1x,i4))') &
+!	 write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_contract): result index extents:",128(1x,i4))') &
 !         dtp%tensor_shape%dim_extent(1:drank) !debug
 	 call calculate_matrix_dimensions(dtb,nlu,nru,dtp,lld,lrd,ierr); if(ierr.ne.0) then; ierr=12; goto 999; endif
 	 call calculate_matrix_dimensions(ltb,ncd,nlu,ltp,lcd,l0,ierr); if(ierr.ne.0) then; ierr=13; goto 999; endif
 	 call calculate_matrix_dimensions(rtb,ncd,nru,rtp,l1,l2,ierr); if(ierr.ne.0) then; ierr=14; goto 999; endif
-!	 write(cons_out,'("DEBUG(tensor_algebra::tensor_block_contract): matrix dimensions (left,right,contr): "&
+!	 write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_contract): matrix dimensions (left,right,contr): "&
 !         &,i10,1x,i10,1x,i10)') lld,lrd,lcd !debug
 	 if(l0.ne.lld.or.l1.ne.lcd.or.l2.ne.lrd) then; ierr=15; goto 999; endif
  !Multiply two matrices (ltp & rtp):
@@ -2887,7 +2887,7 @@
 	   call tensor_block_pcontract_dlf(lld,lrd,lcd,ltp%data_real4,rtp%data_real4,dtp%data_real4,ierr)
 	   if(ierr.ne.0) then; ierr=16; goto 999; endif
 #else
-	   if(.not.disable_blas) then
+	   if(.not.DISABLE_BLAS) then
 	    call sgemm('T','N',int(lld,4),int(lrd,4),int(lcd,4),1.0,ltp%data_real4,int(lcd,4),rtp%data_real4,int(lcd,4),1.0,&
 	              &dtp%data_real4,int(lld,4))
 	   else
@@ -2900,7 +2900,7 @@
 	   call tensor_block_pcontract_dlf(lld,lrd,lcd,ltp%data_real8,rtp%data_real8,dtp%data_real8,ierr)
 	   if(ierr.ne.0) then; ierr=18; goto 999; endif
 #else
-	   if(.not.disable_blas) then
+	   if(.not.DISABLE_BLAS) then
 	    call dgemm('T','N',int(lld,4),int(lrd,4),int(lcd,4),1d0,ltp%data_real8,int(lcd,4),rtp%data_real8,int(lcd,4),1d0,&
 	              &dtp%data_real8,int(lld,4))
 	   else
@@ -2913,7 +2913,7 @@
 	   call tensor_block_pcontract_dlf(lld,lrd,lcd,ltp%data_cmplx8,rtp%data_cmplx8,dtp%data_cmplx8,ierr)
 	   if(ierr.ne.0) then; ierr=20; goto 999; endif
 #else
-	   if(.not.disable_blas) then
+	   if(.not.DISABLE_BLAS) then
 	    call zgemm('T','N',int(lld,4),int(lrd,4),int(lcd,4),1d0,ltp%data_cmplx8,int(lcd,4),rtp%data_cmplx8,int(lcd,4),1d0,&
 	              &dtp%data_cmplx8,int(lld,4))
 	   else
@@ -2951,13 +2951,13 @@
 	 case(multiply_scalars)
 	  dtp%scalar_value=dtp%scalar_value+ltp%scalar_value*rtp%scalar_value
 	 end select
-!	 write(cons_out,'("DEBUG(tensor_algebra::tensor_block_contract): GEMM time: ",F10.4)') thread_wtime(start_gemm) !debug
+!	 write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_contract): GEMM time: ",F10.4)') thread_wtime(start_gemm) !debug
  !Transpose the matrix-result into the output tensor:
 	 if(dtransp) then
-!	  write(cons_out,'("DEBUG(tensor_algebra::tensor_block_contract): permutation to be performed for ",i2)') 0 !debug
+!	  write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_contract): permutation to be performed for ",i2)') 0 !debug
 	  call tensor_block_copy(dtp,dtens,ierr,do2n); if(ierr.ne.0) then; ierr=28; goto 999; endif
 	 endif
-	 if(data_kind_sync) then
+	 if(DATA_KIND_SYNC) then
 	  call tensor_block_sync(dtens,dtk,ierr); if(ierr.ne.0) then; ierr=29; goto 999; endif
 	 endif
  !Destroy temporary tensor blocks:
@@ -2976,7 +2976,7 @@
 	else
 	 ierr=30
 	endif
-!	write(cons_out,'("DEBUG(tensor_algebra::tensor_block_contract): exit error code: ",i5)') ierr !debug
+!	write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_contract): exit error code: ",i5)') ierr !debug
 	return
 	contains
 
@@ -3188,12 +3188,12 @@
 	nii=min(id2,mnii) !actual number of inactive (leading minor) positions
 !Test arguments:
 	if(id1.lt.0.or.id2.lt.0.or.id2.gt.1+id1) then
-	 if(verbose) write(cons_out,'("ERROR(tensor_algebra::get_mlndx_addr): invalid or incompatible multiindex specification: "&
+	 if(VERBOSE) write(CONS_OUT,'("ERROR(tensor_algebra::get_mlndx_addr): invalid or incompatible multiindex specification: "&
 	             &,i1,1x,i6,1x,i2,1x,i2,1x,i6)') intyp,id1,id2,mnii,ia1
 	 ierr=1; return
 	endif
 	if(mnii.lt.0.or.ia1.lt.0.or.ia1.gt.id1.or.(intyp.eq.1.and.id2-nii.gt.id1-ia1+1).or.(intyp.eq.2.and.id2-nii.gt.ia1+1)) then
-	 if(verbose) write(cons_out,'("ERROR(tensor_algebra::get_mlndx_addr): invalid active space configuration: "&
+	 if(VERBOSE) write(CONS_OUT,'("ERROR(tensor_algebra::get_mlndx_addr): invalid active space configuration: "&
 	             &,i1,1x,i6,1x,i2,1x,i2,1x,i6)') intyp,id1,id2,mnii,ia1
 	 ierr=2; return
 	endif
@@ -3235,7 +3235,7 @@
 	  kv2=kv2+iba(ibnd(k,2),k); ivol(k)=kv2+1_LONGINT
 	 enddo
 	else
-	 if(verbose) write(cons_out,'("ERROR(tensor_algebra::get_mlndx_addr): invalid multiindex type requested: ",i2)') intyp
+	 if(VERBOSE) write(CONS_OUT,'("ERROR(tensor_algebra::get_mlndx_addr): invalid multiindex type requested: ",i2)') intyp
 	 ierr=3; return
 	endif
 !Testing IBA for multiindices of size <id2>:
@@ -3248,9 +3248,9 @@
   !init IM:
 	  im(1:id2)=ibnd(1:id2,2); mz=0_LONGINT; do k=1,id2; mz=mz+iba(im(k),k); enddo; l1=0_LONGINT
 	  iloop: do
-!	   write(cons_out,'("DEBUG(tensor_algebra::get_mlndx_addr): Curent MLNDX: ",i10,5x,128(1x,i4))') l1,im(1:id2) !debug
+!	   write(CONS_OUT,'("DEBUG(tensor_algebra::get_mlndx_addr): Curent MLNDX: ",i10,5x,128(1x,i4))') l1,im(1:id2) !debug
 	   if(mz.ne.l1) then
-	    if(verbose) write(cons_out,*)'ERROR(tensor_algebra::get_mlndx_addr): wrong i_MZ: ',l1,mz
+	    if(VERBOSE) write(CONS_OUT,*)'ERROR(tensor_algebra::get_mlndx_addr): wrong i_MZ: ',l1,mz
 	    ierr=4; return
 	   endif
 	   l1=l1+1_LONGINT
@@ -3266,7 +3266,7 @@
 	     k=k+1
 	    endif
 	   enddo
-!	   write(cons_out,'("DEBUG(tensor_algebra::get_mlndx_addr): TESTED i-VOLUME: ",i20)') l1 !debug
+!	   write(CONS_OUT,'("DEBUG(tensor_algebra::get_mlndx_addr): TESTED i-VOLUME: ",i20)') l1 !debug
 	   exit iloop
 	  enddo iloop
 	 else !intyp=2
@@ -3277,9 +3277,9 @@
   !init IM:
 	  im(1:id2)=ibnd(1:id2,1); mz=0_LONGINT; do k=1,id2; mz=mz+iba(im(k),k); enddo; l1=0_LONGINT
 	  aloop: do
-!	   write(cons_out,'("DEBUG(tensor_algebra::get_mlndx_addr): Curent MLNDX: ",i10,5x,128(1x,i4))') im(id2:1:-1) !debug
+!	   write(CONS_OUT,'("DEBUG(tensor_algebra::get_mlndx_addr): Curent MLNDX: ",i10,5x,128(1x,i4))') im(id2:1:-1) !debug
 	   if(mz.ne.l1) then
-	    if(verbose) write(cons_out,*)'ERROR(tensor_algebra::get_mlndx_addr): wrong a_MZ: ',l1,mz
+	    if(VERBOSE) write(CONS_OUT,*)'ERROR(tensor_algebra::get_mlndx_addr): wrong a_MZ: ',l1,mz
 	    ierr=5; return
 	   endif
 	   l1=l1+1_LONGINT
@@ -3295,7 +3295,7 @@
 	     k=k+1
 	    endif
 	   enddo
-!	   write(cons_out,'("DEBUG(tensor_algebra::get_mlndx_addr): TESTED a-VOLUME: ",i20)') l1 !debug
+!	   write(CONS_OUT,'("DEBUG(tensor_algebra::get_mlndx_addr): TESTED a-VOLUME: ",i20)') l1 !debug
 	   exit aloop
 	  enddo aloop
 	 endif
@@ -3373,10 +3373,10 @@
 	 call random_number(dme(1:tdm))
 	 val=dme(1); do i=2,tdm; val=min(val,dme(i)); enddo
 	 do i=1,tdm; dme(i)=dme(i)/val; enddo
-!	 write(cons_out,*) dme(1:tdm) !debug
+!	 write(CONS_OUT,*) dme(1:tdm) !debug
 	 val=dme(1); do i=2,tdm; val=max(val,dme(i)); enddo
 	 if(spr.ge.1) then; stretch=dlog10(dble(spr))/dlog10(val); do i=1,tdm; dme(i)=dme(i)**stretch; enddo; endif
-!	 write(cons_out,*) stretch; write(cons_out,*) dme(1:tdm) !debug
+!	 write(CONS_OUT,*) stretch; write(CONS_OUT,*) dme(1:tdm) !debug
 	 val=dme(1); do i=2,tdm; val=val*dme(i); enddo
 	 stretch=(dble(tsz)/val)**(1d0/dble(tdm))
 	 do i=1,tdm
@@ -3494,14 +3494,15 @@
         endif
         return
         end subroutine tensor_shape_str_create
-!--------------------------------------------------------------
-	subroutine get_contr_pattern(cptrn,contr_ptrn,cpl,ierr) !SERIAL
+!------------------------------------------------------------------------
+	subroutine get_contr_pattern(cptrn,contr_ptrn,cpl,ierr,conj_bits) !SERIAL
 !This subroutine converts a mnemonic contraction pattern into the digital form.
 !INPUT:
 ! - cptrn - mnemonic contraction pattern (e.g., "D(ia1,ib2)+=L(ib2,k2,c3)*R(c3,ia1,k2)" );
 !OUTPUT:
 ! - contr_ptrn(1:cpl) - digital contraction pattern (see, tensor_block_contract);
-! - ierr - error code (0:success).
+! - ierr - error code (0:success);
+! - conj_bits - (optional) conjugation bits: bit 0 for D, bit 1 for L, and bit 2 for R;
 !NOTES:
 ! - Index labels can only contain English letters and/or numbers.
 !   Indices are separated by commas. Parentheses are mandatory.
@@ -3510,23 +3511,28 @@
 	character(*), intent(in):: cptrn
 	integer, intent(out):: contr_ptrn(1:*),cpl
 	integer, intent(inout):: ierr
+	integer, intent(out), optional:: conj_bits
 	character(1), parameter:: dn1(0:9)=(/'0','1','2','3','4','5','6','7','8','9'/)
 	character(2), parameter:: dn2(0:49)=(/'00','01','02','03','04','05','06','07','08','09',&
 	                                     &'10','11','12','13','14','15','16','17','18','19',&
 	                                     &'20','21','22','23','24','25','26','27','28','29',&
 	                                     &'30','31','32','33','34','35','36','37','38','39',&
 	                                     &'40','41','42','43','44','45','46','47','48','49'/)
-	integer i,j,k,l,m,n,k0,k1,k2,k3,k4,k5,ks,kf,adims(0:2),tag_len
+	integer i,j,k,l,m,n,k0,k1,k2,k3,k4,k5,ks,kf,adims(0:2),tag_len,conj
 	character(2048) str !increase the length if needed (I doubt)
 
-	ierr=0; l=len_trim(cptrn); cpl=0
+	ierr=0; l=len_trim(cptrn); cpl=0; conj=0
 	if(l.gt.0) then
-!	 write(cons_out,*)'DEBUG(tensor_algebra::get_contr_pattern): '//cptrn(1:l) !debug
+!	 write(CONS_OUT,*)'DEBUG(tensor_algebra::get_contr_pattern): '//cptrn(1:l) !debug
 !Extract the index labels:
 	 tag_len=len('{000}')
 	 adims(:)=0; n=-1; m=0; ks=0; i=1
 	 aloop: do while(i.le.l)
-	  do while(cptrn(i:i).ne.'('); i=i+1; if(i.gt.l) exit aloop; enddo; ks=i; i=i+1; n=n+1; k=1 !find '(': beginning of an argument #n
+	  do while(cptrn(i:i).ne.'('); i=i+1; if(i.gt.l) exit aloop; enddo
+	  if(i.gt.2) then
+	   if(cptrn(i-1:i-1).eq.'+'.and.alphanumeric(cptrn(i-2:i-2))) conj=conj+(2**(n+1)) !tensor complex conjugation mark
+	  endif
+	  ks=i; i=i+1; n=n+1; k=1 !find '(': beginning of an argument #n
 	  if(n.gt.2) then; ierr=1; return; endif
 	  str(m+1:m+tag_len)='{'//dn1(n)//dn2(k)//'}'; m=m+tag_len
 	  do while(i.le.l)
@@ -3555,7 +3561,7 @@
 	 if(n.eq.2) then !contraction (three arguments)
  !Analyze the index labels:
 	  cpl=adims(1)+adims(2)
-!	  write(cons_out,*)'DEBUG(tensor_algebra::get_contr_pattern): str: '//str(1:m+1) !debug
+!	  write(CONS_OUT,*)'DEBUG(tensor_algebra::get_contr_pattern): str: '//str(1:m+1) !debug
 	  i=0
 	  do
 	   j=index(str(i+1:m),'}')+i; if(j.gt.i) then; i=j; else; exit; endif
@@ -3563,11 +3569,11 @@
 	   if(str(j:j).ne.'{'.or.j.gt.m-tag_len) then; ierr=7; return; endif
 	   k0=index(str(j+tag_len-1:m+1),str(i:j))+(j+tag_len-2)
 	   if(k0.gt.j+tag_len-2) then
-!	    write(cons_out,*)'DEBUG(tensor_algebra::get_contr_pattern): index match: '//str(i+1:j-1) !debug
+!	    write(CONS_OUT,*)'DEBUG(tensor_algebra::get_contr_pattern): index match: '//str(i+1:j-1) !debug
 	    k5=1; k1=icharnum(k5,str(i-tag_len+2:i-tag_len+2))
-            k5=2; k2=icharnum(k5,str(i-tag_len+3:i-tag_len+4))
+	    k5=2; k2=icharnum(k5,str(i-tag_len+3:i-tag_len+4))
 	    k5=1; k3=icharnum(k5,str(k0-tag_len+2:k0-tag_len+2))
-            k5=2; k4=icharnum(k5,str(k0-tag_len+3:k0-tag_len+4))
+	    k5=2; k4=icharnum(k5,str(k0-tag_len+3:k0-tag_len+4))
 	    if(k1.eq.0.and.k3.eq.1) then !open index
 	     contr_ptrn(k4)=k2
 	    elseif(k1.eq.0.and.k3.eq.2) then !open index
@@ -3589,7 +3595,8 @@
 	else !empty string
 	 ierr=11
 	endif
-!	write(cons_out,*)'DEBUG(tensor_algebra::get_contr_pattern): cpl,contr_ptrn: ',cpl,contr_ptrn(1:cpl) !debug
+	if(present(conj_bits)) conj_bits=conj
+!	write(CONS_OUT,*)'DEBUG(tensor_algebra::get_contr_pattern): cpl,contr_ptrn: ',cpl,contr_ptrn(1:cpl) !debug
 	return
 
 	contains
@@ -3814,10 +3821,10 @@
         if(rrank.gt.0) then
          if(ncd.lt.rrank) then
           call random_number(val); n=int(val*(dble(max_tens_arg_size)/dble(vcd)))+1
-!          write(cons_out,*)'DEBUG(tensor_algebra::contr_pattern_rnd): ',drank,lrank,rrank,ncd,vcd,n !debug
+!          write(CONS_OUT,*)'DEBUG(tensor_algebra::contr_pattern_rnd): ',drank,lrank,rrank,ncd,vcd,n !debug
           call tensor_shape_rnd(shape0,s0,j,int(n,LONGINT),rrank-ncd)
           if(j.ne.0) then
-           if(verbose) write(cons_out,'("ERROR(tensor_algebra::contr_pattern_rnd): random shape generation failed: ",i11)') j
+           if(VERBOSE) write(CONS_OUT,'("ERROR(tensor_algebra::contr_pattern_rnd): random shape generation failed: ",i11)') j
            ierr=4; return
           endif
          else
@@ -3826,7 +3833,7 @@
          if(ncd.gt.0) then
           call random_permutation(rrank,rprm) !the first ncd numbers will specify positions of contracted indices
           call merge_sort_int(ncd,rprm)
-!          write(cons_out,'("DEBUG(tensor_algebra::contr_pattern_rnd): R-contracted: ",64(1x,i2))') rprm(1:ncd) !debug
+!          write(CONS_OUT,'("DEBUG(tensor_algebra::contr_pattern_rnd): R-contracted: ",64(1x,i2))') rprm(1:ncd) !debug
           shape2(1:1)='('; s2=len('('); rprm(0)=0; m=1; l=len('(')+1
           do i=1,rrank
            if(m.gt.ncd) m=0
@@ -3932,7 +3939,7 @@
 
 	ierr=0; l=len_trim(shape_str)
 	if(l.gt.MAX_SHAPE_STR_LEN) then
-	 if(verbose) write(cons_out,*)'FATAL(tensor_algebra::tensor_block_shape_create_sym): '//&
+	 if(VERBOSE) write(CONS_OUT,*)'FATAL(tensor_algebra::tensor_block_shape_create_sym): '//&
 	             &'max length of a shape specification string exceeded: ',l
 	 ierr=1; return
 	endif
@@ -4224,7 +4231,7 @@
            if((.not.associated(tens%tensor_shape%dim_extent)).or.&
              &(.not.associated(tens%tensor_shape%dim_divider)).or.&
              &(.not.associated(tens%tensor_shape%dim_group))) then
-            if(verbose) write(cons_out,'("ERROR(tensor_algebra::tensor_block_alloc): disassociated shape marked allocated!")')
+            if(VERBOSE) write(CONS_OUT,'("ERROR(tensor_algebra::tensor_block_alloc): disassociated shape marked allocated!")')
             ierr=1; return
            endif
           elseif((.not.stex).and.(.not.stdv).and.(.not.stgr)) then !all .false.
@@ -4245,7 +4252,7 @@
           tensor_block_alloc=btest(tens%ptr_alloc,4)
           if(tensor_block_alloc) then
            if(.not.associated(tens%data_real4)) then
-            if(verbose) write(cons_out,'("ERROR(tensor_algebra::tensor_block_alloc): disassociated R4 marked allocated!")')
+            if(VERBOSE) write(CONS_OUT,'("ERROR(tensor_algebra::tensor_block_alloc): disassociated R4 marked allocated!")')
             ierr=3; return
            endif
           endif
@@ -4262,7 +4269,7 @@
           tensor_block_alloc=btest(tens%ptr_alloc,5)
           if(tensor_block_alloc) then
            if(.not.associated(tens%data_real8)) then
-            if(verbose) write(cons_out,'("ERROR(tensor_algebra::tensor_block_alloc): disassociated R8 marked allocated!")')
+            if(VERBOSE) write(CONS_OUT,'("ERROR(tensor_algebra::tensor_block_alloc): disassociated R8 marked allocated!")')
             ierr=4; return
            endif
           endif
@@ -4279,7 +4286,7 @@
           tensor_block_alloc=btest(tens%ptr_alloc,6)
           if(tensor_block_alloc) then
            if(.not.associated(tens%data_cmplx8)) then
-            if(verbose) write(cons_out,'("ERROR(tensor_algebra::tensor_block_alloc): disassociated C8 marked allocated!")')
+            if(VERBOSE) write(CONS_OUT,'("ERROR(tensor_algebra::tensor_block_alloc): disassociated C8 marked allocated!")')
             ierr=5; return
            endif
           endif
@@ -4359,7 +4366,7 @@
 	else
 	 ierr=1 !zero-rank tensor
 	endif
-!	write(cons_out,'("DEBUG(tensor_algebra::tensor_block_slice_dlf_r4): kernel time/error code: ",F10.4,1x,i3)') &
+!	write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_slice_dlf_r4): kernel time/error code: ",F10.4,1x,i3)') &
 !        thread_wtime(time_beg),ierr !debug
 	return
 	end subroutine tensor_block_slice_dlf_r4
@@ -4431,7 +4438,7 @@
 	else
 	 ierr=1 !zero-rank tensor
 	endif
-!	write(cons_out,'("DEBUG(tensor_algebra::tensor_block_slice_dlf_r8): kernel time/error code: ",F10.4,1x,i3)') &
+!	write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_slice_dlf_r8): kernel time/error code: ",F10.4,1x,i3)') &
 !        thread_wtime(time_beg),ierr !debug
 	return
 	end subroutine tensor_block_slice_dlf_r8
@@ -4503,7 +4510,7 @@
 	else
 	 ierr=1 !zero-rank tensor
 	endif
-!	write(cons_out,'("DEBUG(tensor_algebra::tensor_block_slice_dlf_c8): kernel time/error code: ",F10.4,1x,i3)') &
+!	write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_slice_dlf_c8): kernel time/error code: ",F10.4,1x,i3)') &
 !        thread_wtime(time_beg),ierr !debug
 	return
 	end subroutine tensor_block_slice_dlf_c8
@@ -4575,7 +4582,7 @@
 	else
 	 ierr=1 !zero-rank tensor
 	endif
-!	write(cons_out,'("DEBUG(tensor_algebra::tensor_block_insert_dlf_r4): kernel time/error code: ",F10.4,1x,i3)') &
+!	write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_insert_dlf_r4): kernel time/error code: ",F10.4,1x,i3)') &
 !        thread_wtime(time_beg),ierr !debug
 	return
 	end subroutine tensor_block_insert_dlf_r4
@@ -4647,7 +4654,7 @@
 	else
 	 ierr=1 !zero-rank tensor
 	endif
-!	write(cons_out,'("DEBUG(tensor_algebra::tensor_block_insert_dlf_r8): kernel time/error code: ",F10.4,1x,i3)') &
+!	write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_insert_dlf_r8): kernel time/error code: ",F10.4,1x,i3)') &
 !        thread_wtime(time_beg),ierr !debug
 	return
 	end subroutine tensor_block_insert_dlf_r8
@@ -4719,7 +4726,7 @@
 	else
 	 ierr=1 !zero-rank tensor
 	endif
-!	write(cons_out,'("DEBUG(tensor_algebra::tensor_block_insert_dlf_c8): kernel time/error code: ",F10.4,1x,i3)') &
+!	write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_insert_dlf_c8): kernel time/error code: ",F10.4,1x,i3)') &
 !        thread_wtime(time_beg),ierr !debug
 	return
 	end subroutine tensor_block_insert_dlf_c8
@@ -4864,11 +4871,11 @@
 	  ipr(dim_num+1)=dim_num+1 !special setting
 	 endif
 	 vol_ext=1_LONGINT; do j=kf+1,dim_num; vol_ext=vol_ext*dim_extents(ipr(j)); enddo !external volume
-!	 write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r4): extents:",99(1x,i5))') dim_extents(1:dim_num) !debug
-!	 write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r4): permutation:",99(1x,i2))') dim_transp(1:dim_num) !debug
-!	 write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r4): minor ",i3,": priority:",99(1x,i2))') &
+!	 write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r4): extents:",99(1x,i5))') dim_extents(1:dim_num) !debug
+!	 write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r4): permutation:",99(1x,i2))') dim_transp(1:dim_num) !debug
+!	 write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r4): minor ",i3,": priority:",99(1x,i2))') &
 !         kf,ipr(1:dim_num) !debug
-!        write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r4): vol_ext ",i11,": segs:",4(1x,i5))') &
+!        write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r4): vol_ext ",i11,": segs:",4(1x,i5))') &
 !         vol_ext,split_in,split_out,seg_in,seg_out !debug
  !Transpose:
 !$OMP PARALLEL DEFAULT(SHARED) PRIVATE(i,j,m,n,ks,l0,l1,l2,l3,ll,lb,le,ls,l_in,l_out,vol_min,im,dim_beg,dim_end)
@@ -4877,7 +4884,7 @@
 #else
 	 n=0; m=1 !serial execution
 #endif
-!	 if(n.eq.0) write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r4): number of threads = ",i5)') m !debug
+!	 if(n.eq.0) write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r4): number of threads = ",i5)') m !debug
          if(kf.lt.dim_num) then !external indices present
 !$OMP MASTER
 	  segs(0)=0_LONGINT; call divide_segment(vol_ext,int(m,LONGINT),segs(1:),i); do j=2,m; segs(j)=segs(j)+segs(j-1); enddo
@@ -4913,7 +4920,7 @@
 	     ks=ks-1; if(ks.lt.0) exit loop1
 	    enddo loop1
 	    if(lb.ne.0_LONGINT) then
-	     if(verbose) write(cons_out,'("ERROR(tensor_algebra::tensor_block_copy_dlf_r4): invalid remainder: ",i11,1x,i4)') lb,n
+	     if(VERBOSE) write(CONS_OUT,'("ERROR(tensor_algebra::tensor_block_copy_dlf_r4): invalid remainder: ",i11,1x,i4)') lb,n
 !$OMP ATOMIC WRITE
 	     ierr=2
 	     exit loop0
@@ -4960,7 +4967,7 @@
 !$OMP END PARALLEL
 	endif !trivial or not
 !       tm=thread_wtime(time_beg) !debug
-!	write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r4): Done: ",F10.4," sec, ",F10.4," GB/s, error ",i3)') &
+!	write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r4): Done: ",F10.4," sec, ",F10.4," GB/s, error ",i3)') &
 !        tm,dble(2_LONGINT*bs*real_kind)/(tm*1024d0*1024d0*1024d0),ierr !debug
 	return
 	end subroutine tensor_block_copy_dlf_r4
@@ -5105,11 +5112,11 @@
 	  ipr(dim_num+1)=dim_num+1 !special setting
 	 endif
 	 vol_ext=1_LONGINT; do j=kf+1,dim_num; vol_ext=vol_ext*dim_extents(ipr(j)); enddo !external volume
-!	 write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r8): extents:",99(1x,i5))') dim_extents(1:dim_num) !debug
-!	 write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r8): permutation:",99(1x,i2))') dim_transp(1:dim_num) !debug
-!	 write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r8): minor ",i3,": priority:",99(1x,i2))') &
+!	 write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r8): extents:",99(1x,i5))') dim_extents(1:dim_num) !debug
+!	 write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r8): permutation:",99(1x,i2))') dim_transp(1:dim_num) !debug
+!	 write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r8): minor ",i3,": priority:",99(1x,i2))') &
 !         kf,ipr(1:dim_num) !debug
-!        write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r8): vol_ext ",i11,": segs:",4(1x,i5))') &
+!        write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r8): vol_ext ",i11,": segs:",4(1x,i5))') &
 !         vol_ext,split_in,split_out,seg_in,seg_out !debug
  !Transpose:
 !$OMP PARALLEL DEFAULT(SHARED) PRIVATE(i,j,m,n,ks,l0,l1,l2,l3,ll,lb,le,ls,l_in,l_out,vol_min,im,dim_beg,dim_end)
@@ -5118,7 +5125,7 @@
 #else
 	 n=0; m=1 !serial execution
 #endif
-!	 if(n.eq.0) write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r8): number of threads = ",i5)') m !debug
+!	 if(n.eq.0) write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r8): number of threads = ",i5)') m !debug
          if(kf.lt.dim_num) then !external indices present
 !$OMP MASTER
 	  segs(0)=0_LONGINT; call divide_segment(vol_ext,int(m,LONGINT),segs(1:),i); do j=2,m; segs(j)=segs(j)+segs(j-1); enddo
@@ -5154,7 +5161,7 @@
 	     ks=ks-1; if(ks.lt.0) exit loop1
 	    enddo loop1
 	    if(lb.ne.0_LONGINT) then
-	     if(verbose) write(cons_out,'("ERROR(tensor_algebra::tensor_block_copy_dlf_r8): invalid remainder: ",i11,1x,i4)') lb,n
+	     if(VERBOSE) write(CONS_OUT,'("ERROR(tensor_algebra::tensor_block_copy_dlf_r8): invalid remainder: ",i11,1x,i4)') lb,n
 !$OMP ATOMIC WRITE
 	     ierr=2
 	     exit loop0
@@ -5201,7 +5208,7 @@
 !$OMP END PARALLEL
 	endif !trivial or not
 !       tm=thread_wtime(time_beg) !debug
-!	write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r8): Done: ",F10.4," sec, ",F10.4," GB/s, error ",i3)') &
+!	write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r8): Done: ",F10.4," sec, ",F10.4," GB/s, error ",i3)') &
 !        tm,dble(2_LONGINT*bs*real_kind)/(tm*1024d0*1024d0*1024d0),ierr !debug
 	return
 	end subroutine tensor_block_copy_dlf_r8
@@ -5346,11 +5353,11 @@
 	  ipr(dim_num+1)=dim_num+1 !special setting
 	 endif
 	 vol_ext=1_LONGINT; do j=kf+1,dim_num; vol_ext=vol_ext*dim_extents(ipr(j)); enddo !external volume
-!	 write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_c8): extents:",99(1x,i5))') dim_extents(1:dim_num) !debug
-!	 write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_c8): permutation:",99(1x,i2))') dim_transp(1:dim_num) !debug
-!	 write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_c8): minor ",i3,": priority:",99(1x,i2))') &
+!	 write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_c8): extents:",99(1x,i5))') dim_extents(1:dim_num) !debug
+!	 write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_c8): permutation:",99(1x,i2))') dim_transp(1:dim_num) !debug
+!	 write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_c8): minor ",i3,": priority:",99(1x,i2))') &
 !         kf,ipr(1:dim_num) !debug
-!        write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_c8): vol_ext ",i11,": segs:",4(1x,i5))') &
+!        write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_c8): vol_ext ",i11,": segs:",4(1x,i5))') &
 !         vol_ext,split_in,split_out,seg_in,seg_out !debug
  !Transpose:
 !$OMP PARALLEL DEFAULT(SHARED) PRIVATE(i,j,m,n,ks,l0,l1,l2,l3,ll,lb,le,ls,l_in,l_out,vol_min,im,dim_beg,dim_end)
@@ -5359,7 +5366,7 @@
 #else
 	 n=0; m=1 !serial execution
 #endif
-!	 if(n.eq.0) write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_c8): number of threads = ",i5)') m !debug
+!	 if(n.eq.0) write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_c8): number of threads = ",i5)') m !debug
          if(kf.lt.dim_num) then !external indices present
 !$OMP MASTER
 	  segs(0)=0_LONGINT; call divide_segment(vol_ext,int(m,LONGINT),segs(1:),i); do j=2,m; segs(j)=segs(j)+segs(j-1); enddo
@@ -5395,7 +5402,7 @@
 	     ks=ks-1; if(ks.lt.0) exit loop1
 	    enddo loop1
 	    if(lb.ne.0_LONGINT) then
-	     if(verbose) write(cons_out,'("ERROR(tensor_algebra::tensor_block_copy_dlf_c8): invalid remainder: ",i11,1x,i4)') lb,n
+	     if(VERBOSE) write(CONS_OUT,'("ERROR(tensor_algebra::tensor_block_copy_dlf_c8): invalid remainder: ",i11,1x,i4)') lb,n
 !$OMP ATOMIC WRITE
 	     ierr=2
 	     exit loop0
@@ -5442,7 +5449,7 @@
 !$OMP END PARALLEL
 	endif !trivial or not
 !       tm=thread_wtime(time_beg) !debug
-!	write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_c8): Done: ",F10.4," sec, ",F10.4," GB/s, error ",i3)') &
+!	write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_c8): Done: ",F10.4," sec, ",F10.4," GB/s, error ",i3)') &
 !        tm,dble(2_LONGINT*bs*real_kind*2_LONGINT)/(tm*1024d0*1024d0*1024d0),ierr !debug
 	return
 	end subroutine tensor_block_copy_dlf_c8
@@ -5503,7 +5510,7 @@
 	else
 	 ierr=1
 	endif
-!	write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_scatter_dlf_r4): kernel time/error code = ",F10.4,1x,i3)') &
+!	write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_copy_scatter_dlf_r4): kernel time/error code = ",F10.4,1x,i3)') &
 !        thread_wtime(time_beg),ierr !debug
 	return
 	end subroutine tensor_block_copy_scatter_dlf_r4
@@ -5565,7 +5572,7 @@
 	 ierr=1
 	endif
 !       tm=thread_wtime(time_beg)
-!        write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_scatter_dlf_r8): Done: ",F10.4," sec, ",F10.4," GB/s, error ",'&
+!        write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_copy_scatter_dlf_r8): Done: ",F10.4," sec, ",F10.4," GB/s, error ",'&
 !        &//'i3)') tm,dble(2_LONGINT*n*real_kind)/(tm*1024d0*1024d0*1024d0),ierr !debug
 	return
 	end subroutine tensor_block_copy_scatter_dlf_r8
@@ -5626,7 +5633,7 @@
 	else
 	 ierr=1
 	endif
-!	write(cons_out,'("DEBUG(tensor_algebra::tensor_block_copy_scatter_dlf_c8): kernel time/error code = ",F10.4,1x,i3)') &
+!	write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_copy_scatter_dlf_c8): kernel time/error code = ",F10.4,1x,i3)') &
 !        thread_wtime(time_beg),ierr !debug
 	return
 	end subroutine tensor_block_copy_scatter_dlf_c8
@@ -5656,7 +5663,7 @@
 
 	ierr=0
 !	time_beg=thread_wtime() !debug
-!	write(cons_out,'("DEBUG(tensor_algebra::tensor_block_fcontract_dlf_r4): dc: ",i9)') dc !debug
+!	write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_fcontract_dlf_r4): dc: ",i9)') dc !debug
 	if(dc.gt.0_LONGINT) then
 	 val=0.0
 !$OMP PARALLEL DO DEFAULT(SHARED) PRIVATE(l0) SCHEDULE(GUIDED) REDUCTION(+:val)
@@ -5667,7 +5674,7 @@
 	 ierr=1
 	endif
 !       tm=thread_wtime(time_beg) !debug
-!	write(cons_out,'("DEBUG(tensor_algebra::tensor_block_fcontract_dlf_r4): time/speed/error = ",2(F10.4,1x),i3)') &
+!	write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_fcontract_dlf_r4): time/speed/error = ",2(F10.4,1x),i3)') &
 !        tm,dble(dc)/(tm*1024d0*1024d0*1024d0),ierr !debug
 	return
 	end subroutine tensor_block_fcontract_dlf_r4
@@ -5697,7 +5704,7 @@
 
 	ierr=0
 !	time_beg=thread_wtime() !debug
-!	write(cons_out,'("DEBUG(tensor_algebra::tensor_block_fcontract_dlf_r8): dc: ",i9)') dc !debug
+!	write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_fcontract_dlf_r8): dc: ",i9)') dc !debug
 	if(dc.gt.0_LONGINT) then
 	 val=0d0
 !$OMP PARALLEL DO DEFAULT(SHARED) PRIVATE(l0) SCHEDULE(GUIDED) REDUCTION(+:val)
@@ -5708,7 +5715,7 @@
 	 ierr=1
 	endif
 !       tm=thread_wtime(time_beg) !debug
-!	write(cons_out,'("DEBUG(tensor_algebra::tensor_block_fcontract_dlf_r8): time/speed/error = ",2(F10.4,1x),i3)') &
+!	write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_fcontract_dlf_r8): time/speed/error = ",2(F10.4,1x),i3)') &
 !        tm,dble(dc)/(tm*1024d0*1024d0*1024d0),ierr !debug
 	return
 	end subroutine tensor_block_fcontract_dlf_r8
@@ -5738,7 +5745,7 @@
 
 	ierr=0
 !	time_beg=thread_wtime() !debug
-!	write(cons_out,'("DEBUG(tensor_algebra::tensor_block_fcontract_dlf_c8): dc: ",i9)') dc !debug
+!	write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_fcontract_dlf_c8): dc: ",i9)') dc !debug
 	if(dc.gt.0_LONGINT) then
 	 val=cmplx(0d0,0d0,real_kind)
 !$OMP PARALLEL DO DEFAULT(SHARED) PRIVATE(l0) SCHEDULE(GUIDED) REDUCTION(+:val)
@@ -5749,7 +5756,7 @@
 	 ierr=1
 	endif
 !       tm=thread_wtime(time_beg) !debug
-!	write(cons_out,'("DEBUG(tensor_algebra::tensor_block_fcontract_dlf_c8): time/speed/error = ",2(F10.4,1x),i3)') &
+!	write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_fcontract_dlf_c8): time/speed/error = ",2(F10.4,1x),i3)') &
 !        tm,dble(dc)/(tm*1024d0*1024d0*1024d0),ierr !debug
 	return
 	end subroutine tensor_block_fcontract_dlf_c8
@@ -5802,14 +5809,14 @@
 	 nthr=1
 #endif
 	 if(dr.ge.core_slope*nthr.and.(.not.no_case1)) then !the right dimension is large enough to be distributed
-!	  write(cons_out,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_r4): kernel case/scheme: 1/",i1)') ker1 !debug
+!	  write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_r4): kernel case/scheme: 1/",i1)') ker1 !debug
 	  select case(ker1)
 	  case(0)
 !SCHEME 0:
-	   cr=min(dr,max(core_slope*nthr,min_distr_seg_size))
-	   cc=min(dc,max(arg_cache_size*cdim_stretch/cr,1_LONGINT))
+	   cr=min(dr,int(max(core_slope*nthr,min_distr_seg_size),LONGINT))
+	   cc=min(dc,max((arg_cache_size*int(cdim_stretch,LONGINT))/cr,1_LONGINT))
 	   cl=min(dl,min(max(arg_cache_size/cc,1_LONGINT),max(arg_cache_size/cr,1_LONGINT)))
-!	   write(cons_out,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_r4): cl,cr,cc,dl,dr,dc:",6(1x,i9))') &
+!	   write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_r4): cl,cr,cc,dl,dr,dc:",6(1x,i9))') &
 !           cl,cr,cc,dl,dr,dc !debug
 !$OMP PARALLEL DEFAULT(SHARED) PRIVATE(b0,b1,b2,e0r,e0,e1,e2,l0,l1,l2,ll,lr,ld,vec)
 	   do b0=0_LONGINT,dc-1_LONGINT,cc
@@ -5854,7 +5861,7 @@
 	  case(1)
 !SCHEME 1:
 	   chunk=max(arg_cache_size/dc,1_LONGINT)
-!          write(cons_out,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_r4): chunk,dl,dr,dc:",4(1x,i9))') chunk,dl,dr,dc !debug
+!          write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_r4): chunk,dl,dr,dc:",4(1x,i9))') chunk,dl,dr,dc !debug
 !$OMP PARALLEL DEFAULT(SHARED) PRIVATE(l0,l1,l2,ll,lr,ld,ls,lf,val)
 	   do ls=0_LONGINT,dl-1_LONGINT,chunk
 	    lf=min(ls+chunk-1_LONGINT,dl-1_LONGINT)
@@ -5877,7 +5884,7 @@
 	   chunk=max(arg_cache_size/dc,1_LONGINT)
 	   if(mod(dl,chunk).ne.0) then; ls=dl/chunk+1_LONGINT; else; ls=dl/chunk; endif
 	   if(mod(dr,chunk).ne.0) then; lf=dr/chunk+1_LONGINT; else; lf=dr/chunk; endif
-!	   write(cons_out,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_r4): chunk,ls,lf,dl,dr,dc:",6(1x,i9))') &
+!	   write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_r4): chunk,ls,lf,dl,dr,dc:",6(1x,i9))') &
 !           chunk,ls,lf,dl,dr,dc !debug
 !$OMP PARALLEL DO DEFAULT(SHARED) PRIVATE(b0,b1,b2,l0,l1,l2,ll,lr,ld,val) SCHEDULE(GUIDED)
 	   do b0=0_LONGINT,lf*ls-1_LONGINT
@@ -5895,7 +5902,7 @@
 !$OMP END PARALLEL DO
 	  case(3)
 !SCHEME 3:
-!	   write(cons_out,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_r4): dl,dr,dc:",3(1x,i9))') dl,dr,dc !debug
+!	   write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_r4): dl,dr,dc:",3(1x,i9))') dl,dr,dc !debug
 !$OMP PARALLEL DO DEFAULT(SHARED) PRIVATE(l0,l1,l2,ll,lr,ld,val) SCHEDULE(DYNAMIC)
 	   do l2=0_LONGINT,dr-1_LONGINT
 	    lr=l2*dc; ld=l2*dl
@@ -5912,11 +5919,11 @@
 	  end select
 	 else !dr is small
 	  if(dl.ge.core_slope*nthr.and.(.not.no_case2)) then !the left dimension is large enough to be distributed
-!	   write(cons_out,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_r4): kernel case/scheme: 2/",i1)') ker2 !debug
+!	   write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_r4): kernel case/scheme: 2/",i1)') ker2 !debug
 	   select case(ker2)
 	   case(0)
 !SCHEME 0:
-!            write(cons_out,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_r4): dl,dr,dc:",3(1x,i9))') dl,dr,dc !debug
+!            write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_r4): dl,dr,dc:",3(1x,i9))') dl,dr,dc !debug
 !$OMP PARALLEL DEFAULT(SHARED) PRIVATE(l0,l1,l2,b2,ll,lr,ld,e0r,vec)
             e0r=mod(dc,8_LONGINT)
 	    do l2=0_LONGINT,dr-1_LONGINT
@@ -5964,11 +5971,11 @@
 	   end select
 	  else !dr & dl are both small
 	   if(dc.ge.core_slope*nthr.and.(.not.no_case3)) then !the contraction dimension is large enough to be distributed
-!	    write(cons_out,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_r4): kernel case/scheme: 3/",i1)') ker3 !debug
+!	    write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_r4): kernel case/scheme: 3/",i1)') ker3 !debug
 	    select case(ker3)
 	    case(0)
 !SCHEME 0:
-!            write(cons_out,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_r4): dl,dr,dc:",3(1x,i9))') dl,dr,dc !debug
+!            write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_r4): dl,dr,dc:",3(1x,i9))') dl,dr,dc !debug
              redm(:,:)=0E0_real_kind
              do b2=0_LONGINT,dr-1_LONGINT,red_mat_size
               e2=min(red_mat_size-1_LONGINT,dr-1_LONGINT-b2)
@@ -6005,8 +6012,8 @@
 	    end select
 	   else !dr & dl & dc are all small
 	    if(dr*dl.ge.core_slope*nthr.and.(.not.no_case4)) then !the destination matrix is large enough to be distributed
-!	     write(cons_out,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_r4): kernel case: 4")') !debug
-!	     write(cons_out,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_r4): dl,dr,dc:",3(1x,i9))') dl,dr,dc !debug
+!	     write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_r4): kernel case: 4")') !debug
+!	     write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_r4): dl,dr,dc:",3(1x,i9))') dl,dr,dc !debug
 !$OMP PARALLEL DO DEFAULT(SHARED) PRIVATE(l0,l1,l2,ll,lr,val) SCHEDULE(GUIDED) COLLAPSE(2)
 	     do l2=0_LONGINT,dr-1_LONGINT
 	      do l1=0_LONGINT,dl-1_LONGINT
@@ -6018,8 +6025,8 @@
 	     enddo
 !$OMP END PARALLEL DO
 	    else !all matrices are very small (serial execution)
-!	     write(cons_out,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_r4): kernel case: 5 (serial)")') !debug
-!	     write(cons_out,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_r4): dl,dr,dc:",3(1x,i9))') dl,dr,dc !debug
+!	     write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_r4): kernel case: 5 (serial)")') !debug
+!	     write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_r4): dl,dr,dc:",3(1x,i9))') dl,dr,dc !debug
 	     do l2=0_LONGINT,dr-1_LONGINT
 	      lr=l2*dc; ld=l2*dl
 	      do l1=0_LONGINT,dl-1_LONGINT
@@ -6037,7 +6044,7 @@
 	 ierr=4
 	endif
 !	tm=thread_wtime(time_beg) !debug
-!	write(cons_out,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_r4): time/speed/error = ",2(F10.4,1x),i3)') &
+!	write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_r4): time/speed/error = ",2(F10.4,1x),i3)') &
 !        tm,dble(dr*dl*dc)/(tm*1024d0*1024d0*1024d0),ierr !debug
 	return
 	end subroutine tensor_block_pcontract_dlf_r4
@@ -6090,14 +6097,14 @@
 	 nthr=1
 #endif
 	 if(dr.ge.core_slope*nthr.and.(.not.no_case1)) then !the right dimension is large enough to be distributed
-!	  write(cons_out,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_r8): kernel case/scheme: 1/",i1)') ker1 !debug
+!	  write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_r8): kernel case/scheme: 1/",i1)') ker1 !debug
 	  select case(ker1)
 	  case(0)
 !SCHEME 0:
-	   cr=min(dr,max(core_slope*nthr,min_distr_seg_size))
-	   cc=min(dc,max(arg_cache_size*cdim_stretch/cr,1_LONGINT))
+	   cr=min(dr,int(max(core_slope*nthr,min_distr_seg_size),LONGINT))
+	   cc=min(dc,max((arg_cache_size*int(cdim_stretch,LONGINT))/cr,1_LONGINT))
 	   cl=min(dl,min(max(arg_cache_size/cc,1_LONGINT),max(arg_cache_size/cr,1_LONGINT)))
-!	   write(cons_out,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_r8): cl,cr,cc,dl,dr,dc:",6(1x,i9))') &
+!	   write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_r8): cl,cr,cc,dl,dr,dc:",6(1x,i9))') &
 !           cl,cr,cc,dl,dr,dc !debug
 !$OMP PARALLEL DEFAULT(SHARED) PRIVATE(b0,b1,b2,e0r,e0,e1,e2,l0,l1,l2,ll,lr,ld,vec)
 	   do b0=0_LONGINT,dc-1_LONGINT,cc
@@ -6142,7 +6149,7 @@
 	  case(1)
 !SCHEME 1:
 	   chunk=max(arg_cache_size/dc,1_LONGINT)
-!          write(cons_out,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_r8): chunk,dl,dr,dc:",4(1x,i9))') chunk,dl,dr,dc !debug
+!          write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_r8): chunk,dl,dr,dc:",4(1x,i9))') chunk,dl,dr,dc !debug
 !$OMP PARALLEL DEFAULT(SHARED) PRIVATE(l0,l1,l2,ll,lr,ld,ls,lf,val)
 	   do ls=0_LONGINT,dl-1_LONGINT,chunk
 	    lf=min(ls+chunk-1_LONGINT,dl-1_LONGINT)
@@ -6165,7 +6172,7 @@
 	   chunk=max(arg_cache_size/dc,1_LONGINT)
 	   if(mod(dl,chunk).ne.0) then; ls=dl/chunk+1_LONGINT; else; ls=dl/chunk; endif
 	   if(mod(dr,chunk).ne.0) then; lf=dr/chunk+1_LONGINT; else; lf=dr/chunk; endif
-!	   write(cons_out,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_r8): chunk,ls,lf,dl,dr,dc:",6(1x,i9))') &
+!	   write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_r8): chunk,ls,lf,dl,dr,dc:",6(1x,i9))') &
 !           chunk,ls,lf,dl,dr,dc !debug
 !$OMP PARALLEL DO DEFAULT(SHARED) PRIVATE(b0,b1,b2,l0,l1,l2,ll,lr,ld,val) SCHEDULE(GUIDED)
 	   do b0=0_LONGINT,lf*ls-1_LONGINT
@@ -6183,7 +6190,7 @@
 !$OMP END PARALLEL DO
 	  case(3)
 !SCHEME 3:
-!	   write(cons_out,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_r8): dl,dr,dc:",3(1x,i9))') dl,dr,dc !debug
+!	   write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_r8): dl,dr,dc:",3(1x,i9))') dl,dr,dc !debug
 !$OMP PARALLEL DO DEFAULT(SHARED) PRIVATE(l0,l1,l2,ll,lr,ld,val) SCHEDULE(DYNAMIC)
 	   do l2=0_LONGINT,dr-1_LONGINT
 	    lr=l2*dc; ld=l2*dl
@@ -6200,11 +6207,11 @@
 	  end select
 	 else !dr is small
 	  if(dl.ge.core_slope*nthr.and.(.not.no_case2)) then !the left dimension is large enough to be distributed
-!	   write(cons_out,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_r8): kernel case/scheme: 2/",i1)') ker2 !debug
+!	   write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_r8): kernel case/scheme: 2/",i1)') ker2 !debug
 	   select case(ker2)
 	   case(0)
 !SCHEME 0:
-!           write(cons_out,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_r8): dl,dr,dc:",3(1x,i9))') dl,dr,dc !debug
+!           write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_r8): dl,dr,dc:",3(1x,i9))') dl,dr,dc !debug
 !$OMP PARALLEL DEFAULT(SHARED) PRIVATE(l0,l1,l2,b2,ll,lr,ld,e0r,vec)
             e0r=mod(dc,8_LONGINT)
 	    do l2=0_LONGINT,dr-1_LONGINT
@@ -6252,11 +6259,11 @@
 	   end select
 	  else !dr & dl are both small
 	   if(dc.ge.core_slope*nthr.and.(.not.no_case3)) then !the contraction dimension is large enough to be distributed
-!	    write(cons_out,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_r8): kernel case/scheme: 3/",i1)') ker3 !debug
+!	    write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_r8): kernel case/scheme: 3/",i1)') ker3 !debug
 	    select case(ker3)
 	    case(0)
 !SCHEME 0:
-!            write(cons_out,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_r8): dl,dr,dc:",3(1x,i9))') dl,dr,dc !debug
+!            write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_r8): dl,dr,dc:",3(1x,i9))') dl,dr,dc !debug
              redm(:,:)=0E0_real_kind
              do b2=0_LONGINT,dr-1_LONGINT,red_mat_size
               e2=min(red_mat_size-1_LONGINT,dr-1_LONGINT-b2)
@@ -6293,8 +6300,8 @@
 	    end select
 	   else !dr & dl & dc are all small
 	    if(dr*dl.ge.core_slope*nthr.and.(.not.no_case4)) then !the destination matrix is large enough to be distributed
-!	     write(cons_out,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_r8): kernel case: 4")') !debug
-!	     write(cons_out,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_r8): dl,dr,dc:",3(1x,i9))') dl,dr,dc !debug
+!	     write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_r8): kernel case: 4")') !debug
+!	     write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_r8): dl,dr,dc:",3(1x,i9))') dl,dr,dc !debug
 !$OMP PARALLEL DO DEFAULT(SHARED) PRIVATE(l0,l1,l2,ll,lr,val) SCHEDULE(GUIDED) COLLAPSE(2)
 	     do l2=0_LONGINT,dr-1_LONGINT
 	      do l1=0_LONGINT,dl-1_LONGINT
@@ -6306,8 +6313,8 @@
 	     enddo
 !$OMP END PARALLEL DO
 	    else !all matrices are very small (serial execution)
-!	     write(cons_out,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_r8): kernel case: 5 (serial)")') !debug
-!	     write(cons_out,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_r8): dl,dr,dc:",3(1x,i9))') dl,dr,dc !debug
+!	     write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_r8): kernel case: 5 (serial)")') !debug
+!	     write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_r8): dl,dr,dc:",3(1x,i9))') dl,dr,dc !debug
 	     do l2=0_LONGINT,dr-1_LONGINT
 	      lr=l2*dc; ld=l2*dl
 	      do l1=0_LONGINT,dl-1_LONGINT
@@ -6325,7 +6332,7 @@
 	 ierr=4
 	endif
 !	tm=thread_wtime(time_beg) !debug
-!	write(cons_out,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_r8): time/speed/error = ",2(F10.4,1x),i3)') &
+!	write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_r8): time/speed/error = ",2(F10.4,1x),i3)') &
 !        tm,dble(dr*dl*dc)/(tm*1024d0*1024d0*1024d0),ierr !debug
 	return
 	end subroutine tensor_block_pcontract_dlf_r8
@@ -6378,14 +6385,14 @@
 	 nthr=1
 #endif
 	 if(dr.ge.core_slope*nthr.and.(.not.no_case1)) then !the right dimension is large enough to be distributed
-!	  write(cons_out,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_c8): kernel case/scheme: 1/",i1)') ker1 !debug
+!	  write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_c8): kernel case/scheme: 1/",i1)') ker1 !debug
 	  select case(ker1)
 	  case(0)
 !SCHEME 0:
-	   cr=min(dr,max(core_slope*nthr,min_distr_seg_size))
-	   cc=min(dc,max(arg_cache_size*cdim_stretch/cr,1_LONGINT))
+	   cr=min(dr,int(max(core_slope*nthr,min_distr_seg_size),LONGINT))
+	   cc=min(dc,max((arg_cache_size*int(cdim_stretch,LONGINT))/cr,1_LONGINT))
 	   cl=min(dl,min(max(arg_cache_size/cc,1_LONGINT),max(arg_cache_size/cr,1_LONGINT)))
-!	   write(cons_out,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_c8): cl,cr,cc,dl,dr,dc:",6(1x,i9))') &
+!	   write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_c8): cl,cr,cc,dl,dr,dc:",6(1x,i9))') &
 !           cl,cr,cc,dl,dr,dc !debug
 !$OMP PARALLEL DEFAULT(SHARED) PRIVATE(b0,b1,b2,e0r,e0,e1,e2,l0,l1,l2,ll,lr,ld,vec)
 	   do b0=0_LONGINT,dc-1_LONGINT,cc
@@ -6430,7 +6437,7 @@
 	  case(1)
 !SCHEME 1:
 	   chunk=max(arg_cache_size/dc,1_LONGINT)
-!          write(cons_out,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_c8): chunk,dl,dr,dc:",4(1x,i9))') chunk,dl,dr,dc !debug
+!          write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_c8): chunk,dl,dr,dc:",4(1x,i9))') chunk,dl,dr,dc !debug
 !$OMP PARALLEL DEFAULT(SHARED) PRIVATE(l0,l1,l2,ll,lr,ld,ls,lf,val)
 	   do ls=0_LONGINT,dl-1_LONGINT,chunk
 	    lf=min(ls+chunk-1_LONGINT,dl-1_LONGINT)
@@ -6453,7 +6460,7 @@
 	   chunk=max(arg_cache_size/dc,1_LONGINT)
 	   if(mod(dl,chunk).ne.0) then; ls=dl/chunk+1_LONGINT; else; ls=dl/chunk; endif
 	   if(mod(dr,chunk).ne.0) then; lf=dr/chunk+1_LONGINT; else; lf=dr/chunk; endif
-!	   write(cons_out,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_c8): chunk,ls,lf,dl,dr,dc:",6(1x,i9))') &
+!	   write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_c8): chunk,ls,lf,dl,dr,dc:",6(1x,i9))') &
 !           chunk,ls,lf,dl,dr,dc !debug
 !$OMP PARALLEL DO DEFAULT(SHARED) PRIVATE(b0,b1,b2,l0,l1,l2,ll,lr,ld,val) SCHEDULE(GUIDED)
 	   do b0=0_LONGINT,lf*ls-1_LONGINT
@@ -6471,7 +6478,7 @@
 !$OMP END PARALLEL DO
 	  case(3)
 !SCHEME 3:
-!	   write(cons_out,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_c8): dl,dr,dc:",3(1x,i9))') dl,dr,dc !debug
+!	   write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_c8): dl,dr,dc:",3(1x,i9))') dl,dr,dc !debug
 !$OMP PARALLEL DO DEFAULT(SHARED) PRIVATE(l0,l1,l2,ll,lr,ld,val) SCHEDULE(DYNAMIC)
 	   do l2=0_LONGINT,dr-1_LONGINT
 	    lr=l2*dc; ld=l2*dl
@@ -6488,11 +6495,11 @@
 	  end select
 	 else !dr is small
 	  if(dl.ge.core_slope*nthr.and.(.not.no_case2)) then !the left dimension is large enough to be distributed
-!	   write(cons_out,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_c8): kernel case/scheme: 2/",i1)') ker2 !debug
+!	   write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_c8): kernel case/scheme: 2/",i1)') ker2 !debug
 	   select case(ker2)
 	   case(0)
 !SCHEME 0:
-!           write(cons_out,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_c8): dl,dr,dc:",3(1x,i9))') dl,dr,dc !debug
+!           write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_c8): dl,dr,dc:",3(1x,i9))') dl,dr,dc !debug
 !$OMP PARALLEL DEFAULT(SHARED) PRIVATE(l0,l1,l2,b2,ll,lr,ld,e0r,vec)
             e0r=mod(dc,8_LONGINT)
 	    do l2=0_LONGINT,dr-1_LONGINT
@@ -6540,11 +6547,11 @@
 	   end select
 	  else !dr & dl are both small
 	   if(dc.ge.core_slope*nthr.and.(.not.no_case3)) then !the contraction dimension is large enough to be distributed
-!	    write(cons_out,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_c8): kernel case/scheme: 3/",i1)') ker3 !debug
+!	    write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_c8): kernel case/scheme: 3/",i1)') ker3 !debug
 	    select case(ker3)
 	    case(0)
 !SCHEME 0:
-!            write(cons_out,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_c8): dl,dr,dc:",3(1x,i9))') dl,dr,dc !debug
+!            write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_c8): dl,dr,dc:",3(1x,i9))') dl,dr,dc !debug
              redm(:,:)=cmplx(0E0_real_kind,0E0_real_kind,real_kind)
              do b2=0_LONGINT,dr-1_LONGINT,red_mat_size
               e2=min(red_mat_size-1_LONGINT,dr-1_LONGINT-b2)
@@ -6581,8 +6588,8 @@
 	    end select
 	   else !dr & dl & dc are all small
 	    if(dr*dl.ge.core_slope*nthr.and.(.not.no_case4)) then !the destination matrix is large enough to be distributed
-!	     write(cons_out,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_c8): kernel case: 4")') !debug
-!	     write(cons_out,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_c8): dl,dr,dc:",3(1x,i9))') dl,dr,dc !debug
+!	     write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_c8): kernel case: 4")') !debug
+!	     write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_c8): dl,dr,dc:",3(1x,i9))') dl,dr,dc !debug
 !$OMP PARALLEL DO DEFAULT(SHARED) PRIVATE(l0,l1,l2,ll,lr,val) SCHEDULE(GUIDED) COLLAPSE(2)
 	     do l2=0_LONGINT,dr-1_LONGINT
 	      do l1=0_LONGINT,dl-1_LONGINT
@@ -6594,8 +6601,8 @@
 	     enddo
 !$OMP END PARALLEL DO
 	    else !all matrices are very small (serial execution)
-!	     write(cons_out,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_c8): kernel case: 5 (serial)")') !debug
-!	     write(cons_out,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_c8): dl,dr,dc:",3(1x,i9))') dl,dr,dc !debug
+!	     write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_c8): kernel case: 5 (serial)")') !debug
+!	     write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_c8): dl,dr,dc:",3(1x,i9))') dl,dr,dc !debug
 	     do l2=0_LONGINT,dr-1_LONGINT
 	      lr=l2*dc; ld=l2*dl
 	      do l1=0_LONGINT,dl-1_LONGINT
@@ -6613,7 +6620,7 @@
 	 ierr=4
 	endif
 !	tm=thread_wtime(time_beg) !debug
-!	write(cons_out,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_c8): time/speed/error = ",2(F10.4,1x),i3)') &
+!	write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_pcontract_dlf_c8): time/speed/error = ",2(F10.4,1x),i3)') &
 !        tm,dble(dr*dl*dc)/(tm*1024d0*1024d0*1024d0),ierr !debug
 	return
 	end subroutine tensor_block_pcontract_dlf_c8
@@ -6722,7 +6729,7 @@
 	else
 	 ierr=8 !negative or zero tensor rank
 	endif
-!	write(cons_out,'("DEBUG(tensor_algebra::tensor_block_ftrace_dlf_r4): kernel time/error code: ",F10.4,1x,i3)') &
+!	write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_ftrace_dlf_r4): kernel time/error code: ",F10.4,1x,i3)') &
 !        thread_wtime(time_beg),ierr !debug
 	return
 	end subroutine tensor_block_ftrace_dlf_r4
@@ -6831,7 +6838,7 @@
 	else
 	 ierr=8 !negative or zero tensor rank
 	endif
-!	write(cons_out,'("DEBUG(tensor_algebra::tensor_block_ftrace_dlf_r8): kernel time/error code: ",F10.4,1x,i3)') &
+!	write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_ftrace_dlf_r8): kernel time/error code: ",F10.4,1x,i3)') &
 !        thread_wtime(time_beg),ierr !debug
 	return
 	end subroutine tensor_block_ftrace_dlf_r8
@@ -6940,7 +6947,7 @@
 	else
 	 ierr=8 !negative or zero tensor rank
 	endif
-!	write(cons_out,'("DEBUG(tensor_algebra::tensor_block_ftrace_dlf_c8): kernel time/error code: ",F10.4,1x,i3)') &
+!	write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_ftrace_dlf_c8): kernel time/error code: ",F10.4,1x,i3)') &
 !        thread_wtime(time_beg),ierr !debug
 	return
 	end subroutine tensor_block_ftrace_dlf_c8
@@ -7099,7 +7106,7 @@
 	else
 	 ierr=11
 	endif
-!	write(cons_out,'("DEBUG(tensor_algebra::tensor_block_ptrace_dlf_r4): kernel time/error code: ",F10.4,1x,i3)') &
+!	write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_ptrace_dlf_r4): kernel time/error code: ",F10.4,1x,i3)') &
 !        thread_wtime(time_beg),ierr !debug
 	return
 	end subroutine tensor_block_ptrace_dlf_r4
@@ -7258,7 +7265,7 @@
 	else
 	 ierr=11
 	endif
-!	write(cons_out,'("DEBUG(tensor_algebra::tensor_block_ptrace_dlf_r8): kernel time/error code: ",F10.4,1x,i3)') &
+!	write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_ptrace_dlf_r8): kernel time/error code: ",F10.4,1x,i3)') &
 !        thread_wtime(time_beg),ierr !debug
 	return
 	end subroutine tensor_block_ptrace_dlf_r8
@@ -7417,7 +7424,7 @@
 	else
 	 ierr=11
 	endif
-!	write(cons_out,'("DEBUG(tensor_algebra::tensor_block_ptrace_dlf_c8): kernel time/error code: ",F10.4,1x,i3)') &
+!	write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_ptrace_dlf_c8): kernel time/error code: ",F10.4,1x,i3)') &
 !        thread_wtime(time_beg),ierr !debug
 	return
 	end subroutine tensor_block_ptrace_dlf_c8
