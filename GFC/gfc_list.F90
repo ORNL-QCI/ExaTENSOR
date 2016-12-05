@@ -443,7 +443,7 @@
             if(errc.eq.0) then
 #ifdef NO_GNU
              if(present(copy_ctor_f)) then
-              call this%container%first_elem%%construct(elem_val,ierr,assoc_only=assoc,copy_ctor_f=copy_ctor_f)
+              call this%container%first_elem%construct(elem_val,ierr,assoc_only=assoc,copy_ctor_f=copy_ctor_f)
              else
               call this%container%first_elem%construct(elem_val,ierr,assoc_only=assoc)
              endif
@@ -558,7 +558,7 @@
             if(errc.eq.0) then
 #ifdef NO_GNU
              if(present(copy_ctor_f)) then
-              call this%container%first_elem%%construct(elem_val,ierr,assoc_only=assoc,copy_ctor_f=copy_ctor_f)
+              call this%container%first_elem%construct(elem_val,ierr,assoc_only=assoc,copy_ctor_f=copy_ctor_f)
              else
               call this%container%first_elem%construct(elem_val,ierr,assoc_only=assoc)
              endif
