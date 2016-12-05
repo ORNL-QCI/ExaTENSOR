@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Tree
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2016-11-22 (started 2016-02-17)
+!REVISION: 2016-12-05 (started 2016-02-17)
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -542,9 +542,9 @@
          if(present(ierr)) ierr=errc
          return
         end function TreeIterMyParent
-!--------------------------------------------------------------------------------------------
+!------------------------------------------------------------------------------------------
 #ifdef NO_GNU
-        function TreeIterAddLeaf(this,elem_val,assoc_only,no_move,copy_constr_f) result(ierr) !`GCC/5.3.0 has a bug with this
+        function TreeIterAddLeaf(this,elem_val,assoc_only,no_move,copy_ctor_f) result(ierr) !`GCC/5.3.0 has a bug with this
 #else
         function TreeIterAddLeaf(this,elem_val,assoc_only,no_move) result(ierr)
 #endif
@@ -557,7 +557,7 @@
          logical, intent(in), optional:: assoc_only !in: TRUE: store by reference, FALSE: store by value (defaults to FALSE)
          logical, intent(in), optional:: no_move    !in: if TRUE, the iterator will not move to the newly added element (defaults to FALSE)
 #ifdef NO_GNU
-         procedure(gfc_copy_i), optional:: copy_constr_f !in: user-defined generic copy constructor
+         procedure(gfc_copy_i), optional:: copy_ctor_f !in: user-defined generic copy constructor
 #endif
          class(tree_vertex_t), pointer:: tvp
          integer:: errc
@@ -575,8 +575,8 @@
             allocate(tvp%next_sibling,STAT=errc)
             if(errc.eq.0) then
 #ifdef NO_GNU
-             if(present(copy_constr_f)) then
-              call tvp%next_sibling%construct(elem_val,ierr,assoc_only=assoc,copy_constr_func=copy_constr_f)
+             if(present(copy_ctor_f)) then
+              call tvp%next_sibling%construct(elem_val,ierr,assoc_only=assoc,copy_ctor_f=copy_ctor_f)
              else
               call tvp%next_sibling%construct(elem_val,ierr,assoc_only=assoc)
              endif
@@ -597,8 +597,8 @@
             allocate(this%current%first_child,STAT=errc)
             if(errc.eq.0) then
 #ifdef NO_GNU
-             if(present(copy_constr_f)) then
-              call this%current%first_child%construct(elem_val,ierr,assoc_only=assoc,copy_constr_func=copy_constr_f)
+             if(present(copy_ctor_f)) then
+              call this%current%first_child%construct(elem_val,ierr,assoc_only=assoc,copy_ctor_f=copy_ctor_f)
              else
               call this%current%first_child%construct(elem_val,ierr,assoc_only=assoc)
              endif
@@ -638,8 +638,8 @@
             allocate(this%container%root,STAT=errc)
             if(errc.eq.0) then
 #ifdef NO_GNU
-             if(present(copy_constr_f)) then
-              call this%container%root%construct(elem_val,ierr,assoc_only=assoc,copy_constr_func=copy_constr_f)
+             if(present(copy_ctor_f)) then
+              call this%container%root%construct(elem_val,ierr,assoc_only=assoc,copy_ctor_f=copy_ctor_f)
              else
               call this%container%root%construct(elem_val,ierr,assoc_only=assoc)
              endif

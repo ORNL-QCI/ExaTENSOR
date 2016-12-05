@@ -215,10 +215,14 @@ FFLAGS_GNU_DEV = -c -fopenmp -fbacktrace -fcheck=bounds -fcheck=array-temps -fch
 FFLAGS_GNU_OPT = -c -fopenmp -O3 $(NO_ACCEL)
 FFLAGS_PGI_DEV = -c -mp -Mcache_align -Mbounds -Mchkptr -Mstandard -g $(NO_ACCEL) -DNO_GNU
 FFLAGS_PGI_OPT = -c -mp -Mcache_align -Mstandard -O3 $(NO_ACCEL) -DNO_GNU
-FFLAGS_IBM_DEV = -c -qsmp=omp $(NO_ACCEL) -DNO_GNU
-FFLAGS_IBM_OPT = -c -qsmp=omp -O3 $(NO_ACCEL) -DNO_GNU
+FFLAGS_IBM_DEV = -c -qsmp=omp $(NO_ACCEL) -WF,-DNO_GNU
+FFLAGS_IBM_OPT = -c -qsmp=omp -O3 $(NO_ACCEL) -WF,-DNO_GNU
 ifeq ($(BLASLIB),NONE)
+ifeq ($(TOOLKIT),IBM)
+FFLAGS = $(FFLAGS_$(TOOLKIT)_$(BUILD_TYPE)) -WF,-D$(EXA_OS) -WF,-DNO_BLAS
+else
 FFLAGS = $(FFLAGS_$(TOOLKIT)_$(BUILD_TYPE)) -D$(EXA_OS) -D NO_BLAS
+endif
 else
 FFLAGS = $(FFLAGS_$(TOOLKIT)_$(BUILD_TYPE)) -D$(EXA_OS)
 endif

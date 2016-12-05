@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Bi-directional linked list
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2016-11-21 (started 2016-02-28)
+!REVISION: 2016-12-05 (started 2016-02-28)
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -346,9 +346,9 @@
          endif
          return
         end function ListIterPrevious
-!------------------------------------------------------------------------------------------
+!----------------------------------------------------------------------------------------
 #ifdef NO_GNU
-        function ListIterAppend(this,elem_val,at_top,assoc_only,copy_constr_f) result(ierr) !`GCC/5.3.0 has a bug with this
+        function ListIterAppend(this,elem_val,at_top,assoc_only,copy_ctor_f) result(ierr) !`GCC/5.3.0 has a bug with this
 #else
         function ListIterAppend(this,elem_val,at_top,assoc_only) result(ierr)
 #endif
@@ -362,7 +362,7 @@
          logical, intent(in), optional:: at_top     !in: TRUE:append at the top, FALSE:append at the end (default)
          logical, intent(in), optional:: assoc_only !in: storage type: TRUE:by reference, FALSE:by value (default)
 #ifdef NO_GNU
-         procedure(gfc_copy_i), optional:: copy_constr_f !user-defined generic copy constructor (when storing by value only)
+         procedure(gfc_copy_i), optional:: copy_ctor_f !user-defined generic copy constructor (when storing by value only)
 #endif
          logical:: assoc,top
          integer:: errc
@@ -387,8 +387,8 @@
             endif
             if(errc.eq.0) then
 #ifdef NO_GNU
-             if(present(copy_constr_f)) then
-              call lep%construct(elem_val,ierr,assoc_only=assoc,copy_constr_func=copy_constr_f)
+             if(present(copy_ctor_f)) then
+              call lep%construct(elem_val,ierr,assoc_only=assoc,copy_ctor_f=copy_ctor_f)
              else
               call lep%construct(elem_val,ierr,assoc_only=assoc)
              endif
@@ -442,8 +442,8 @@
             allocate(this%container%first_elem,STAT=errc)
             if(errc.eq.0) then
 #ifdef NO_GNU
-             if(present(copy_constr_f)) then
-              call this%container%first_elem%%construct(elem_val,ierr,assoc_only=assoc,copy_constr_func=copy_constr_f)
+             if(present(copy_ctor_f)) then
+              call this%container%first_elem%%construct(elem_val,ierr,assoc_only=assoc,copy_ctor_f=copy_ctor_f)
              else
               call this%container%first_elem%construct(elem_val,ierr,assoc_only=assoc)
              endif
@@ -477,7 +477,7 @@
         end function ListIterAppend
 !-------------------------------------------------------------------------------------------------------
 #ifdef NO_GNU
-        function ListIterInsertElem(this,elem_val,precede,assoc_only,no_move,copy_constr_f) result(ierr) !`GCC/5.3.0 has a bug with this
+        function ListIterInsertElem(this,elem_val,precede,assoc_only,no_move,copy_ctor_f) result(ierr) !`GCC/5.3.0 has a bug with this
 #else
         function ListIterInsertElem(this,elem_val,precede,assoc_only,no_move) result(ierr)
 #endif
@@ -485,14 +485,14 @@
 !either by value or by reference. If the iterator is empty it will be set to active
 !after inserting the value as the first element of the container.
          implicit none
-         integer(INTD):: ierr                            !out: error code (0:success)
-         class(list_iter_t), intent(inout):: this        !inout: iterator
-         class(*), target, intent(in):: elem_val         !in: value to be stored
-         logical, intent(in), optional:: precede         !in: TRUE:insert before, FALSE:insert after (default)
-         logical, intent(in), optional:: assoc_only      !in: storage type: TRUE:by reference, FALSE:by value (default)
-         logical, intent(in), optional:: no_move         !in: if TRUE, the iterator position does not change, FALSE it does move to the newly added element (default)
+         integer(INTD):: ierr                          !out: error code (0:success)
+         class(list_iter_t), intent(inout):: this      !inout: iterator
+         class(*), target, intent(in):: elem_val       !in: value to be stored
+         logical, intent(in), optional:: precede       !in: TRUE:insert before, FALSE:insert after (default)
+         logical, intent(in), optional:: assoc_only    !in: storage type: TRUE:by reference, FALSE:by value (default)
+         logical, intent(in), optional:: no_move       !in: if TRUE, the iterator position does not change, FALSE it does move to the newly added element (default)
 #ifdef NO_GNU
-         procedure(gfc_copy_i), optional:: copy_constr_f !user-defined generic copy constructor
+         procedure(gfc_copy_i), optional:: copy_ctor_f !user-defined generic copy constructor
 #endif
          logical:: assoc,before,move
          integer:: errc
@@ -510,8 +510,8 @@
             allocate(lep,STAT=errc)
             if(errc.eq.0) then
 #ifdef NO_GNU
-             if(present(copy_constr_f)) then
-              call lep%construct(elem_val,ierr,assoc_only=assoc,copy_constr_func=copy_constr_f)
+             if(present(copy_ctor_f)) then
+              call lep%construct(elem_val,ierr,assoc_only=assoc,copy_ctor_f=copy_ctor_f)
              else
               call lep%construct(elem_val,ierr,assoc_only=assoc)
              endif
@@ -557,8 +557,8 @@
             allocate(this%container%first_elem,STAT=errc)
             if(errc.eq.0) then
 #ifdef NO_GNU
-             if(present(copy_constr_f)) then
-              call this%container%first_elem%%construct(elem_val,ierr,assoc_only=assoc,copy_constr_func=copy_constr_f)
+             if(present(copy_ctor_f)) then
+              call this%container%first_elem%%construct(elem_val,ierr,assoc_only=assoc,copy_ctor_f=copy_ctor_f)
              else
               call this%container%first_elem%construct(elem_val,ierr,assoc_only=assoc)
              endif
