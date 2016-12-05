@@ -610,7 +610,7 @@
 	if(tens_out%tensor_shape%num_dim.ne.n.or.tens_out%tensor_block_size.ne.tens_in%tensor_block_size) then
 	 call tensor_block_destroy(tens_out,ierr); if(ierr.ne.0) then; ierr=1; return; endif
 !Allocate tensor shape:
-         if(n.gt.0) then
+	 if(n.gt.0) then
 	  allocate(tens_out%tensor_shape%dim_extent(1:n),STAT=ierr); if(ierr.ne.0) then; ierr=2; return; endif
 	  allocate(tens_out%tensor_shape%dim_divider(1:n),STAT=ierr); if(ierr.ne.0) then; ierr=3; return; endif
 	  allocate(tens_out%tensor_shape%dim_group(1:n),STAT=ierr); if(ierr.ne.0) then; ierr=4; return; endif
@@ -783,7 +783,7 @@
 	logical res
 
 	ierr=0; tens_block%tensor_block_size=tensor_block_shape_size(tens_block,ierr)
-        if(ierr.ne.0) then; ierr=1; return; endif
+	if(ierr.ne.0) then; ierr=1; return; endif
 	if(tens_block%tensor_block_size.le.0_LONGINT) then; ierr=2; return; endif
 	if(tens_block%tensor_shape%num_dim.eq.0) then !scalar tensor
 	 if(associated(tens_block%data_real4)) then
@@ -2825,7 +2825,7 @@
 !	 write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_contract): result index permutation (O2N):"&
 !         &,128(1x,i2))') do2n(1:drank) !debug
  !Transpose the tensor arguments, if needed:
-         nullify(ltp); nullify(rtp); nullify(dtp)
+	 nullify(ltp); nullify(rtp); nullify(dtp)
 	 do k=1,2 !left/right switch
 	  if(k.eq.1) then; tst=ltb; transp=ltransp; tens_in=>ltens; else; tst=rtb; transp=rtransp; tens_in=>rtens; endif
 	  if(tens_in%tensor_shape%num_dim.gt.0.and.transp) then !true tensor which requires a transpose
@@ -2978,6 +2978,7 @@
 	endif
 !	write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_contract): exit error code: ",i5)') ierr !debug
 	return
+
 	contains
 
 	 subroutine calculate_matrix_dimensions(tbst,nm,ns,tens,lm,ls,ier)

@@ -2,7 +2,7 @@
     Parameters, derived types, and function prototypes
     used at the lower level of TAL-SH (device specific):
     CP-TAL, NV-TAL, XP-TAL, AM-TAL, etc.
-REVISION: 2016/08/25
+REVISION: 2016/12/05
 
 Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -65,6 +65,26 @@ FOR DEVELOPERS ONLY:
 #define _TENSOR_ALGEBRA_H
 
 #include <time.h>
+
+#ifdef __cplusplus
+#include <complex>
+#endif
+
+#ifndef NO_GPU
+
+#include <cuda.h>
+#include <cuda_runtime.h>
+
+#ifndef NO_BLAS
+#include <cublas_v2.h>
+#endif
+
+#ifdef USE_CUTT
+#include "cutt.h"
+#endif
+
+#endif /*NO_GPU*/
+
 #include "mem_manager.h"
 
 //DEVICE COMPUTE CAPABILITY (for Host code, but use __CUDA_ARCH__ for device code):
@@ -264,6 +284,27 @@ FOR DEVELOPERS ONLY:
 #define MIN(a,b) (((a)<(b))?(a):(b))
 #define MAX(a,b) (((a)>(b))?(a):(b))
 
+//BASIC TYPES:
+// Complex number:
+#ifndef NO_GPU
+typedef cuFloatComplex talshComplex4;
+typedef cuDoubleComplex talshComplex8;
+#else
+#ifdef __cplusplus
+typedef std::complex<float> talshComplex4;
+typedef std::complex<double> talshComplex8;
+#else
+typedef struct{
+ float real;
+ float imag;
+} talshComplex4;
+typedef struct{
+ double real;
+ double imag;
+} talshComplex8;
+#endif
+#endif /*NO_GPU*/
+
 //DERIVED TYPES (keep consistent with tensor_algebra.F90):
 // Tensor shape:
 typedef struct{
@@ -379,7 +420,7 @@ int cuda_get_device_count(int * dev_count);
  void gpu_set_transpose_algorithm(int alg); //{EFF_TRN_OFF,EFF_TRN_ON,EFF_TRN_ON_CUTT}
  void gpu_set_matmult_algorithm(int alg);
  int gpu_print_stats(int gpu_num = -1);
-#endif
+#endif /*NO_GPU */
 //  NV-TAL tensor block API:
  int tensShape_create(talsh_tens_shape_t ** tshape);
  int tensShape_clean(talsh_tens_shape_t * tshape);
@@ -434,10 +475,9 @@ int cuda_get_device_count(int * dev_count);
  int gpu_tensor_block_place(tensBlck_t *ctens, int gpu_id, unsigned int coh_ctrl, cudaTask_t *cuda_task);
  int gpu_tensor_block_contract_dlf(const int *cptrn, tensBlck_t *ltens, tensBlck_t *rtens, tensBlck_t *dtens, unsigned int coh_ctrl,
                                    cudaTask_t *cuda_task, int gpu_id = -1, double alpha = 1.0, double beta = 1.0);
-#endif
+#endif /*NO_GPU */
 #ifdef __cplusplus
 }
 #endif
 
-//END OF _TENSOR_ALGEBRA_H
-#endif
+#endif /*END _TENSOR_ALGEBRA_H*/
