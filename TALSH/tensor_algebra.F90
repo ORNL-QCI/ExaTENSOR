@@ -32,6 +32,15 @@
 !DIR$ ATTRIBUTES ALIGN:128:: MAX_TENSOR_RANK,MAX_TENSOR_OPERANDS
 #endif
 
+!MEMORY ALLOCATION POLICY (keep consistent with tensor_algebra.h):
+        integer(C_INT), parameter, public:: MEM_ALLOC_REGULAR=0 !all large memory allocations are done via the regular Fortran allocator
+        integer(C_INT), parameter, public:: MEM_ALLOC_TMP_BUF=1 !large temporary memory allocations are done via the Host argument buffer
+        integer(C_INT), parameter, public:: MEM_ALLOC_ALL_BUF=2 !all large memory allocations are done via the Host argument buffer
+#ifndef NO_PHI
+!DIR$ ATTRIBUTES OFFLOAD:mic:: MEM_ALLOC_REGULAR,MEM_ALLOC_TMP_BUF,MEM_ALLOC_ALL_BUF
+!DIR$ ATTRIBUTES ALIGN:128:: MEM_ALLOC_REGULAR,MEM_ALLOC_TMP_BUF,MEM_ALLOC_ALL_BUF
+#endif
+
 !ALIASES (keep consistent with tensor_algebra.h):
         integer(C_INT), parameter, public:: BLAS_ON=0                   !enables BLAS
         integer(C_INT), parameter, public:: BLAS_OFF=1                  !disables BLAS

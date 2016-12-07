@@ -2,7 +2,7 @@
     Parameters, derived types, and function prototypes
     used at the lower level of TAL-SH (device specific):
     CP-TAL, NV-TAL, XP-TAL, AM-TAL, etc.
-REVISION: 2016/12/05
+REVISION: 2016/12/07
 
 Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -116,6 +116,11 @@ FOR DEVELOPERS ONLY:
 #define DEV_INTEL_MIC 2            //Intel Xeon Phi (as an accelerator)
 #define DEV_AMD_GPU 3              //AMD GPU (as an accelerator)
 #define DEV_MAX 1+MAX_GPUS_PER_NODE+MAX_MICS_PER_NODE+MAX_AMDS_PER_NODE
+
+//CP-TAL Host memory allocation policy (keep consistent with tensor_algebra.F90):
+#define MEM_ALLOC_REGULAR 0
+#define MEM_ALLOC_TMP_BUF 1
+#define MEM_ALLOC_ALL_BUF 2
 
 //KERNEL PARAMETERS for NVidia GPU:
 #if CUDA_ARCH >= 300

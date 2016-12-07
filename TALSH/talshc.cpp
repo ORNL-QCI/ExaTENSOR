@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level API.
-REVISION: 2016/10/11
+REVISION: 2016/12/07
 
 Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -95,6 +95,8 @@ int talsh_get_contr_ptrn_str2dig(const char * c_str, int * dig_ptrn, int * dig_l
 int talsh_tensor_f_assoc(const talsh_tens_t * talsh_tens, int image_id, void ** tensF);
 int talsh_tensor_f_dissoc(void * tensF);
 int talsh_update_f_scalar(void * tensF, int data_kind, void * gmem_p);
+// Host memory allocation policy in CP-TAL:
+void talsh_set_mem_alloc_policy_host(int mem_policy, int fallback, int * ierr);
 #ifdef __cplusplus
 }
 #endif
@@ -525,6 +527,11 @@ int talshInit(size_t * host_buf_size,    //inout: Host Argument Buffer size in b
 #else
  talsh_cpu=DEV_ON;
 #endif
+ talsh_set_mem_alloc_policy_host(TALSH_MEM_ALLOC_POLICY_HOST,TALSH_MEM_ALLOC_FALLBACK_HOST,&errc);
+ if(errc != 0){
+  printf("#FATAL(TALSH::talshInit): Host memory allocation policy setting failed: Error %d",errc);
+  return TALSH_FAILURE;
+ }
 //NVidia GPU accelerators:
 #ifndef NO_GPU
  if(ngpus > 0){

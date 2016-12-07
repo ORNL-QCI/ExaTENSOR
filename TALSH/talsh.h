@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level API header.
-REVISION: 2016/10/11
+REVISION: 2016/12/07
 
 Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -28,6 +28,8 @@ along with ExaTensor. If not, see <http://www.gnu.org/licenses/>.
 
 //TAL-SH PARAMETERS:
 #define TALSH_MAX_DEV_PRESENT 16 //max number of on-node devices the tensor block can be simultaneously present on
+#define TALSH_MEM_ALLOC_POLICY_HOST MEM_ALLOC_TMP_BUF //default Host memory allocation policy for CP-TAL (see tensor_algebra.h)
+#define TALSH_MEM_ALLOC_FALLBACK_HOST 1 //default memory allocation fallback to regular allocate() for CP-TAL: {0|1}
 
 //TAL-SH ERROR CODES (keep consistent with "talshf.F90"):
 #define TALSH_SUCCESS 0

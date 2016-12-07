@@ -75,14 +75,6 @@
 !DIR$ ATTRIBUTES OFFLOAD:mic:: CONS_OUT,VERBOSE
 !DIR$ ATTRIBUTES ALIGN:128:: CONS_OUT,VERBOSE
 #endif
- !Memory allocation policy:
-        integer, parameter, public:: MEM_ALLOC_REGULAR=0 !all large memory allocations are done via the regular Fortran allocator
-        integer, parameter, public:: MEM_ALLOC_TMP_BUF=1 !large temporary memory allocations are done via the Host argument buffer
-        integer, parameter, public:: MEM_ALLOC_ALL_BUF=2 !all large memory allocations are done via the Host argument buffer
-#ifndef NO_PHI
-!DIR$ ATTRIBUTES OFFLOAD:mic:: MEM_ALLOC_REGULAR,MEM_ALLOC_TMP_BUF,MEM_ALLOC_ALL_BUF
-!DIR$ ATTRIBUTES ALIGN:128:: MEM_ALLOC_REGULAR,MEM_ALLOC_TMP_BUF,MEM_ALLOC_ALL_BUF
-#endif
  !Global:
         integer, parameter, public:: MAX_SHAPE_STR_LEN=1024   !max allowed length for a tensor shape specification string (TSSS)
         integer, parameter, public:: LONGINT=INTL             !long integer size in bytes
