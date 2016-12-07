@@ -527,11 +527,6 @@ int talshInit(size_t * host_buf_size,    //inout: Host Argument Buffer size in b
 #else
  talsh_cpu=DEV_ON;
 #endif
- talsh_set_mem_alloc_policy_host(TALSH_MEM_ALLOC_POLICY_HOST,TALSH_MEM_ALLOC_FALLBACK_HOST,&errc);
- if(errc != 0){
-  printf("#FATAL(TALSH::talshInit): Host memory allocation policy setting failed: Error %d",errc);
-  return TALSH_FAILURE;
- }
 //NVidia GPU accelerators:
 #ifndef NO_GPU
  if(ngpus > 0){
@@ -552,7 +547,7 @@ int talshInit(size_t * host_buf_size,    //inout: Host Argument Buffer size in b
  }
 #endif
 //Intel Xeon Phi accelerators:
-#ifndef NO_MIC
+#ifndef NO_PHI
  if(nmics > 0){
   printf("#FATAL(TALSH::talshInit): Intel Xeon Phi is not fully supported yet!");
   return TALSH_NOT_IMPLEMENTED; //`Future
@@ -566,6 +561,13 @@ int talshInit(size_t * host_buf_size,    //inout: Host Argument Buffer size in b
  }
 #endif
  errc=arg_buf_allocate(host_buf_size,host_arg_max,gpu_beg,gpu_end); if(errc) return TALSH_FAILURE;
+ if(*host_buf_size >= TALSH_CPTAL_MIN_BUF_SIZE){ //Host argument buffer is big enough to be used in CP-TAL
+  talsh_set_mem_alloc_policy_host(TALSH_MEM_ALLOC_POLICY_HOST,TALSH_MEM_ALLOC_FALLBACK_HOST,&errc);
+  if(errc != 0){
+   printf("#FATAL(TALSH::talshInit): Host memory allocation policy setting failed: Error %d",errc);
+   return TALSH_FAILURE;
+  }
+ }
 #ifndef NO_GPU
  for(i=0;i<ngpus;i++){
   j=gpu_list[i]; if(j < 0 || j >= MAX_GPUS_PER_NODE) return TALSH_INVALID_ARGS;
@@ -584,6 +586,7 @@ int talshShutdown()
 
  if(talsh_on == 0) return TALSH_NOT_INITIALIZED;
  errc=arg_buf_deallocate(talsh_gpu_beg,talsh_gpu_end);
+ talsh_set_mem_alloc_policy_host(TALSH_MEM_ALLOC_POLICY_HOST,TALSH_MEM_ALLOC_FALLBACK_HOST,&i);
  talsh_gpu_beg=0; talsh_gpu_end=-1; talsh_on=0;
  talsh_cpu=DEV_OFF;
  for(i=0;i<MAX_GPUS_PER_NODE;i++) talsh_gpu[i]=DEV_OFF;

@@ -701,7 +701,9 @@
 	 if(associated(tens_in%data_real4)) then
 	  if(size(tens_in%data_real4).eq.tens_in%tensor_block_size) then
 	   if(.not.associated(tens_out%data_real4)) then
-	    allocate(tens_out%data_real4(0:tens_in%tensor_block_size-1),STAT=ierr); if(ierr.ne.0) then; ierr=6; return; endif
+!	    allocate(tens_out%data_real4(0:tens_in%tensor_block_size-1),STAT=ierr)
+	    ierr=array_alloc(tens_out%data_real4,tens_in%tensor_block_size,base=0_LONGINT)
+	    if(ierr.ne.0) then; ierr=6; return; endif
 	    res=tensor_block_alloc(tens_out,'r4',ierr,.true.); if(ierr.ne.0) then; ierr=7; return; endif
 	   endif
 	  else
@@ -712,7 +714,9 @@
 	 if(associated(tens_in%data_real8)) then
 	  if(size(tens_in%data_real8).eq.tens_in%tensor_block_size) then
 	   if(.not.associated(tens_out%data_real8)) then
-	    allocate(tens_out%data_real8(0:tens_in%tensor_block_size-1),STAT=ierr); if(ierr.ne.0) then; ierr=9; return; endif
+!	    allocate(tens_out%data_real8(0:tens_in%tensor_block_size-1),STAT=ierr)
+	    ierr=array_alloc(tens_out%data_real8,tens_in%tensor_block_size,base=0_LONGINT)
+	    if(ierr.ne.0) then; ierr=9; return; endif
 	    res=tensor_block_alloc(tens_out,'r8',ierr,.true.); if(ierr.ne.0) then; ierr=10; return; endif
 	   endif
 	  else
@@ -723,7 +727,9 @@
 	 if(associated(tens_in%data_cmplx8)) then
 	  if(size(tens_in%data_cmplx8).eq.tens_in%tensor_block_size) then
 	   if(.not.associated(tens_out%data_cmplx8)) then
-	    allocate(tens_out%data_cmplx8(0:tens_in%tensor_block_size-1),STAT=ierr); if(ierr.ne.0) then; ierr=12; return; endif
+!	    allocate(tens_out%data_cmplx8(0:tens_in%tensor_block_size-1),STAT=ierr)
+	    ierr=array_alloc(tens_out%data_cmplx8,tens_in%tensor_block_size,base=0_LONGINT)
+	    if(ierr.ne.0) then; ierr=12; return; endif
 	    res=tensor_block_alloc(tens_out,'c8',ierr,.true.); if(ierr.ne.0) then; ierr=13; return; endif
 	   endif
 	  else
@@ -861,7 +867,9 @@
 	 if(associated(tens_block%data_real4)) then
 	  if(tensor_block_alloc(tens_block,'r4',ierr)) then
 	   if(ierr.ne.0) then; ierr=3; return; endif
-	   deallocate(tens_block%data_real4,STAT=ierr); if(ierr.ne.0) then; ierr=4; return; endif
+!	   deallocate(tens_block%data_real4,STAT=ierr)
+	   call array_free(tens_block%data_real4,ierr)
+	   if(ierr.ne.0) then; ierr=4; return; endif
 	   res=tensor_block_alloc(tens_block,'r4',ierr,.false.); if(ierr.ne.0) then; ierr=5; return; endif
 	  else
 	   if(ierr.ne.0) then; ierr=6; return; endif
@@ -871,7 +879,9 @@
 	 if(associated(tens_block%data_real8)) then
 	  if(tensor_block_alloc(tens_block,'r8',ierr)) then
 	   if(ierr.ne.0) then; ierr=7; return; endif
-	   deallocate(tens_block%data_real8,STAT=ierr); if(ierr.ne.0) then; ierr=8; return; endif
+!	   deallocate(tens_block%data_real8,STAT=ierr)
+	   call array_free(tens_block%data_real8,ierr)
+	   if(ierr.ne.0) then; ierr=8; return; endif
 	   res=tensor_block_alloc(tens_block,'r8',ierr,.false.); if(ierr.ne.0) then; ierr=9; return; endif
 	  else
 	   if(ierr.ne.0) then; ierr=10; return; endif
@@ -881,7 +891,9 @@
 	 if(associated(tens_block%data_cmplx8)) then
 	  if(tensor_block_alloc(tens_block,'c8',ierr)) then
 	   if(ierr.ne.0) then; ierr=11; return; endif
-	   deallocate(tens_block%data_cmplx8,STAT=ierr); if(ierr.ne.0) then; ierr=12; return; endif
+!	   deallocate(tens_block%data_cmplx8,STAT=ierr)
+	   call array_free(tens_block%data_cmplx8,ierr)
+	   if(ierr.ne.0) then; ierr=12; return; endif
 	   res=tensor_block_alloc(tens_block,'c8',ierr,.false.); if(ierr.ne.0) then; ierr=13; return; endif
 	  else
 	   if(ierr.ne.0) then; ierr=14; return; endif
@@ -897,17 +909,23 @@
 	   if(size(tens_block%data_real4).ne.tens_block%tensor_block_size) then
 	    if(tensor_block_alloc(tens_block,'r4',ierr)) then
 	     if(ierr.ne.0) then; ierr=16; return; endif
-	     deallocate(tens_block%data_real4,STAT=ierr); if(ierr.ne.0) then; ierr=17; return; endif
+!	     deallocate(tens_block%data_real4,STAT=ierr)
+	     call array_free(tens_block%data_real4,ierr)
+	     if(ierr.ne.0) then; ierr=17; return; endif
 	     res=tensor_block_alloc(tens_block,'r4',ierr,.false.); if(ierr.ne.0) then; ierr=18; return; endif
 	    else
 	     if(ierr.ne.0) then; ierr=19; return; endif
 	     nullify(tens_block%data_real4)
 	    endif
-	    allocate(tens_block%data_real4(0:tens_block%tensor_block_size-1),STAT=ierr); if(ierr.ne.0) then; ierr=20; return; endif
+!	    allocate(tens_block%data_real4(0:tens_block%tensor_block_size-1),STAT=ierr)
+	    ierr=array_alloc(tens_block%data_real4,tens_block%tensor_block_size,base=0_LONGINT)
+	    if(ierr.ne.0) then; ierr=20; return; endif
 	    res=tensor_block_alloc(tens_block,'r4',ierr,.true.); if(ierr.ne.0) then; ierr=21; return; endif
 	   endif
 	  else
-	   allocate(tens_block%data_real4(0:tens_block%tensor_block_size-1),STAT=ierr); if(ierr.ne.0) then; ierr=22; return; endif
+!	   allocate(tens_block%data_real4(0:tens_block%tensor_block_size-1),STAT=ierr)
+	   ierr=array_alloc(tens_block%data_real4,tens_block%tensor_block_size,base=0_LONGINT)
+	   if(ierr.ne.0) then; ierr=22; return; endif
 	   res=tensor_block_alloc(tens_block,'r4',ierr,.true.); if(ierr.ne.0) then; ierr=23; return; endif
 	  endif
 	  if(present(val_r4).or.present(val_r8).or.present(val_c8)) then !constant fill
@@ -969,17 +987,23 @@
 	   if(size(tens_block%data_real8).ne.tens_block%tensor_block_size) then
 	    if(tensor_block_alloc(tens_block,'r8',ierr)) then
 	     if(ierr.ne.0) then; ierr=25; return; endif
-	     deallocate(tens_block%data_real8,STAT=ierr); if(ierr.ne.0) then; ierr=26; return; endif
+!	     deallocate(tens_block%data_real8,STAT=ierr)
+	     call array_free(tens_block%data_real8,ierr)
+	     if(ierr.ne.0) then; ierr=26; return; endif
 	     res=tensor_block_alloc(tens_block,'r8',ierr,.false.); if(ierr.ne.0) then; ierr=27; return; endif
 	    else
 	     if(ierr.ne.0) then; ierr=28; return; endif
 	     nullify(tens_block%data_real8)
 	    endif
-	    allocate(tens_block%data_real8(0:tens_block%tensor_block_size-1),STAT=ierr); if(ierr.ne.0) then; ierr=29; return; endif
+!	    allocate(tens_block%data_real8(0:tens_block%tensor_block_size-1),STAT=ierr)
+	    ierr=array_alloc(tens_block%data_real8,tens_block%tensor_block_size,base=0_LONGINT)
+	    if(ierr.ne.0) then; ierr=29; return; endif
 	    res=tensor_block_alloc(tens_block,'r8',ierr,.true.); if(ierr.ne.0) then; ierr=30; return; endif
 	   endif
 	  else
-	   allocate(tens_block%data_real8(0:tens_block%tensor_block_size-1),STAT=ierr); if(ierr.ne.0) then; ierr=31; return; endif
+!	   allocate(tens_block%data_real8(0:tens_block%tensor_block_size-1),STAT=ierr)
+	   ierr=array_alloc(tens_block%data_real8,tens_block%tensor_block_size,base=0_LONGINT)
+	   if(ierr.ne.0) then; ierr=31; return; endif
 	   res=tensor_block_alloc(tens_block,'r8',ierr,.true.); if(ierr.ne.0) then; ierr=32; return; endif
 	  endif
 	  if(present(val_r4).or.present(val_r8).or.present(val_c8)) then !constant fill
@@ -1041,17 +1065,23 @@
 	   if(size(tens_block%data_cmplx8).ne.tens_block%tensor_block_size) then
 	    if(tensor_block_alloc(tens_block,'c8',ierr)) then
 	     if(ierr.ne.0) then; ierr=34; return; endif
-	     deallocate(tens_block%data_cmplx8,STAT=ierr); if(ierr.ne.0) then; ierr=35; return; endif
+!	     deallocate(tens_block%data_cmplx8,STAT=ierr)
+	     call array_free(tens_block%data_cmplx8,ierr)
+	     if(ierr.ne.0) then; ierr=35; return; endif
 	     res=tensor_block_alloc(tens_block,'c8',ierr,.false.); if(ierr.ne.0) then; ierr=36; return; endif
 	    else
 	     if(ierr.ne.0) then; ierr=37; return; endif
 	     nullify(tens_block%data_cmplx8)
 	    endif
-	    allocate(tens_block%data_cmplx8(0:tens_block%tensor_block_size-1),STAT=ierr); if(ierr.ne.0) then; ierr=38; return; endif
+!	    allocate(tens_block%data_cmplx8(0:tens_block%tensor_block_size-1),STAT=ierr)
+	    ierr=array_alloc(tens_block%data_cmplx8,tens_block%tensor_block_size,base=0_LONGINT)
+	    if(ierr.ne.0) then; ierr=38; return; endif
 	    res=tensor_block_alloc(tens_block,'c8',ierr,.true.); if(ierr.ne.0) then; ierr=39; return; endif
 	   endif
 	  else
-	   allocate(tens_block%data_cmplx8(0:tens_block%tensor_block_size-1),STAT=ierr); if(ierr.ne.0) then; ierr=40; return; endif
+!	   allocate(tens_block%data_cmplx8(0:tens_block%tensor_block_size-1),STAT=ierr)
+	   ierr=array_alloc(tens_block%data_cmplx8,tens_block%tensor_block_size,base=0_LONGINT)
+	   if(ierr.ne.0) then; ierr=40; return; endif
 	   res=tensor_block_alloc(tens_block,'c8',ierr,.true.); if(ierr.ne.0) then; ierr=41; return; endif
 	  endif
 	  if(present(val_r4).or.present(val_r8).or.present(val_c8)) then !constant fill
@@ -1213,7 +1243,9 @@
 	if(associated(tens_block%data_real4)) then
 	 if(tensor_block_alloc(tens_block,'r4',ierr)) then
 	  if(ierr.ne.0) then; ierr=1; return; endif
-	  deallocate(tens_block%data_real4,STAT=ierr); if(ierr.ne.0) then; ierr=2; return; endif
+!	  deallocate(tens_block%data_real4,STAT=ierr)
+	  call array_free(tens_block%data_real4,ierr)
+	  if(ierr.ne.0) then; ierr=2; return; endif
 	  res=tensor_block_alloc(tens_block,'r4',ierr,.false.); if(ierr.ne.0) then; ierr=3; return; endif
 	 else
 	  if(ierr.ne.0) then; ierr=4; return; endif
@@ -1227,7 +1259,9 @@
 	if(associated(tens_block%data_real8)) then
 	 if(tensor_block_alloc(tens_block,'r8',ierr)) then
 	  if(ierr.ne.0) then; ierr=6; return; endif
-	  deallocate(tens_block%data_real8,STAT=ierr); if(ierr.ne.0) then; ierr=7; return; endif
+!	  deallocate(tens_block%data_real8,STAT=ierr)
+	  call array_free(tens_block%data_real8,ierr)
+	  if(ierr.ne.0) then; ierr=7; return; endif
 	  res=tensor_block_alloc(tens_block,'r8',ierr,.false.); if(ierr.ne.0) then; ierr=8; return; endif
 	 else
 	  if(ierr.ne.0) then; ierr=9; return; endif
@@ -1241,7 +1275,9 @@
 	if(associated(tens_block%data_cmplx8)) then
 	 if(tensor_block_alloc(tens_block,'c8',ierr)) then
 	  if(ierr.ne.0) then; ierr=11; return; endif
-	  deallocate(tens_block%data_cmplx8,STAT=ierr); if(ierr.ne.0) then; ierr=12; return; endif
+!	  deallocate(tens_block%data_cmplx8,STAT=ierr)
+	  call array_free(tens_block%data_cmplx8,ierr)
+	  if(ierr.ne.0) then; ierr=12; return; endif
 	  res=tensor_block_alloc(tens_block,'c8',ierr,.false.); if(ierr.ne.0) then; ierr=13; return; endif
 	 else
 	  if(ierr.ne.0) then; ierr=14; return; endif
@@ -1315,7 +1351,9 @@
 	    if(associated(tens%data_real8).or.associated(tens%data_cmplx8)) then
 	     if(tensor_block_alloc(tens,'r4',ierr)) then
 	      if(ierr.ne.0) then; ierr=2; return; endif
-	      deallocate(tens%data_real4,STAT=ierr); if(ierr.ne.0) then; ierr=3; return; endif
+!	      deallocate(tens%data_real4,STAT=ierr)
+	      call array_free(tens%data_real4,ierr)
+	      if(ierr.ne.0) then; ierr=3; return; endif
 	      res=tensor_block_alloc(tens,'r4',ierr,.false.); if(ierr.ne.0) then; ierr=4; return; endif
 	     else
 	      if(ierr.ne.0) then; ierr=5; return; endif
@@ -1328,7 +1366,9 @@
 	    if(associated(tens%data_real4).or.associated(tens%data_cmplx8)) then
 	     if(tensor_block_alloc(tens,'r8',ierr)) then
 	      if(ierr.ne.0) then; ierr=7; return; endif
-	      deallocate(tens%data_real8,STAT=ierr); if(ierr.ne.0) then; ierr=8; return; endif
+!	      deallocate(tens%data_real8,STAT=ierr)
+	      call array_free(tens%data_real8,ierr)
+	      if(ierr.ne.0) then; ierr=8; return; endif
 	      res=tensor_block_alloc(tens,'r8',ierr,.false.); if(ierr.ne.0) then; ierr=9; return; endif
 	     else
 	      if(ierr.ne.0) then; ierr=10; return; endif
@@ -1341,7 +1381,9 @@
 	    if(associated(tens%data_real4).or.associated(tens%data_real8)) then
 	     if(tensor_block_alloc(tens,'c8',ierr)) then
 	      if(ierr.ne.0) then; ierr=12; return; endif
-	      deallocate(tens%data_cmplx8,STAT=ierr); if(ierr.ne.0) then; ierr=13; return; endif
+!	      deallocate(tens%data_cmplx8,STAT=ierr)
+	      call array_free(tens%data_cmplx8,ierr)
+	      if(ierr.ne.0) then; ierr=13; return; endif
 	      res=tensor_block_alloc(tens,'c8',ierr,.false.); if(ierr.ne.0) then; ierr=14; return; endif
 	     else
 	      if(ierr.ne.0) then; ierr=15; return; endif
@@ -1360,7 +1402,9 @@
  !REAL4:
 	    if(slk.eq.'r4'.or.(mast_kind.ne.'r4'.and.slk.eq.'  '.and.associated(tens%data_real4))) then
 	     if(slk.ne.'  '.and.(.not.associated(tens%data_real4))) then
-	      allocate(tens%data_real4(0:ls-1),STAT=ierr); if(ierr.ne.0) then; ierr=18; return; endif
+!	      allocate(tens%data_real4(0:ls-1),STAT=ierr)
+	      ierr=array_alloc(tens%data_real4,ls,base=0_LONGINT)
+	      if(ierr.ne.0) then; ierr=18; return; endif
 	      res=tensor_block_alloc(tens,'r4',ierr,.true.); if(ierr.ne.0) then; ierr=19; return; endif
 	     endif
 	     if(size(tens%data_real4).eq.ls) then
@@ -1381,7 +1425,9 @@
  !REAL8:
 	    if(slk.eq.'r8'.or.(mast_kind.ne.'r8'.and.slk.eq.'  '.and.associated(tens%data_real8))) then
 	     if(slk.ne.'  '.and.(.not.associated(tens%data_real8))) then
-	      allocate(tens%data_real8(0:ls-1),STAT=ierr); if(ierr.ne.0) then; ierr=21; return; endif
+!	      allocate(tens%data_real8(0:ls-1),STAT=ierr)
+	      ierr=array_alloc(tens%data_real8,ls,base=0_LONGINT)
+	      if(ierr.ne.0) then; ierr=21; return; endif
 	      res=tensor_block_alloc(tens,'r8',ierr,.true.); if(ierr.ne.0) then; ierr=22; return; endif
 	     endif
 	     if(size(tens%data_real8).eq.ls) then
@@ -1402,7 +1448,9 @@
  !COMPLEX8:
 	    if(slk.eq.'c8'.or.(mast_kind.ne.'c8'.and.slk.eq.'  '.and.associated(tens%data_cmplx8))) then
 	     if(slk.ne.'  '.and.(.not.associated(tens%data_cmplx8))) then
-	      allocate(tens%data_cmplx8(0:ls-1),STAT=ierr); if(ierr.ne.0) then; ierr=24; return; endif
+!	      allocate(tens%data_cmplx8(0:ls-1),STAT=ierr)
+	      ierr=array_alloc(tens%data_cmplx8,ls,base=0_LONGINT)
+	      if(ierr.ne.0) then; ierr=24; return; endif
 	      res=tensor_block_alloc(tens,'c8',ierr,.true.); if(ierr.ne.0) then; ierr=25; return; endif
 	     endif
 	     if(size(tens%data_cmplx8).eq.ls) then
@@ -1856,19 +1904,25 @@
 	  case('r4')
 	   if(.not.associated(tens%data_real4)) then; ierr=4; return; endif
 	   if(.not.associated(slice%data_real4)) then
-	    allocate(slice%data_real4(0:ls-1),STAT=ierr); if(ierr.ne.0) then; ierr=5; return; endif
+!	    allocate(slice%data_real4(0:ls-1),STAT=ierr)
+	    ierr=array_alloc(slice%data_real4,ls,base=0_LONGINT)
+	    if(ierr.ne.0) then; ierr=5; return; endif
 	    res=tensor_block_alloc(slice,'r4',ierr,.true.); if(ierr.ne.0) then; ierr=6; return; endif
 	   endif
 	  case('r8')
 	   if(.not.associated(tens%data_real8)) then; ierr=7; return; endif
 	   if(.not.associated(slice%data_real8)) then
-	    allocate(slice%data_real8(0:ls-1),STAT=ierr); if(ierr.ne.0) then; ierr=8; return; endif
+!	    allocate(slice%data_real8(0:ls-1),STAT=ierr)
+	    ierr=array_alloc(slice%data_real8,ls,base=0_LONGINT)
+	    if(ierr.ne.0) then; ierr=8; return; endif
 	    res=tensor_block_alloc(slice,'r8',ierr,.true.); if(ierr.ne.0) then; ierr=9; return; endif
 	   endif
 	  case('c8')
 	   if(.not.associated(tens%data_cmplx8)) then; ierr=10; return; endif
 	   if(.not.associated(slice%data_cmplx8)) then
-	    allocate(slice%data_cmplx8(0:ls-1),STAT=ierr); if(ierr.ne.0) then; ierr=11; return; endif
+!	    allocate(slice%data_cmplx8(0:ls-1),STAT=ierr)
+	    ierr=array_alloc(slice%data_cmplx8,ls,base=0_LONGINT)
+	    if(ierr.ne.0) then; ierr=11; return; endif
 	    res=tensor_block_alloc(slice,'c8',ierr,.true.); if(ierr.ne.0) then; ierr=12; return; endif
 	   endif
 	  case default
