@@ -1,6 +1,6 @@
 !ExaTensor::TAL-SH: Parameters, types, C function interfaces:
 !Keep consistent with "tensor_algebra.h"!
-!REVISION: 2016/12/06
+!REVISION: 2016/12/07
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -193,6 +193,13 @@
 
 !C FUNCTION INTERFACES (for Fortran):
         interface
+ !Device management:
+         integer(C_INT) function encode_device_id(dev_kind,dev_num) bind(c,name='encode_device_id')
+          import
+          implicit none
+          integer(C_INT), intent(in), value:: dev_kind
+          integer(C_INT), intent(in), value:: dev_num
+         end function encode_device_id
  !Argument buffer memory management:
   !Initialize all argument buffers on Host and all Devices (GPU constant+global, MICs, etc):
          integer(C_INT) function arg_buf_allocate(host_mem,arg_max,gpu_beg,gpu_end) bind(c,name='arg_buf_allocate')

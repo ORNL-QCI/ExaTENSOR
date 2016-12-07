@@ -1,6 +1,6 @@
 !Tensor Algebra for Multi- and Many-core CPUs (OpenMP based).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2016/12/06
+!REVISION: 2016/12/07
 
 !Copyright (C) 2013-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -142,12 +142,12 @@
          module procedure array_alloc_c8
         end interface array_alloc
 
-!        interface array_free
-!         module procedure array_free_r4
-!         module procedure array_free_r8
-!         module procedure array_free_c4
-!         module procedure array_free_c8
-!        end interface array_free
+        interface array_free
+         module procedure array_free_r4
+         module procedure array_free_r8
+         module procedure array_free_c4
+         module procedure array_free_c8
+        end interface array_free
 
         interface tensor_block_slice_dlf
          module procedure tensor_block_slice_dlf_r4
@@ -198,6 +198,7 @@
         end interface tensor_block_ptrace_dlf
 
 !FUNCTION VISIBILITY:
+        public get_mem_alloc_policy        !gets the current memory allocation policy for sizeable arrays
         public set_mem_alloc_policy        !sets the memory allocation policy for sizeable arrays
         public set_data_kind_sync          !turns on/off data kind synchronization (0/1)
         public set_transpose_algorithm     !switches between scatter (0) and shared-memory (1) tensor transpose algorithms
@@ -250,11 +251,11 @@
         private array_alloc_r8             !allocates an array pointer R8
         private array_alloc_c4             !allocates an array pointer C4
         private array_alloc_c8             !allocates an array pointer C8
-!        private array_free                 !frees an array pointer {R4,R8,C4,C8}
-!        private array_free_r4              !frees an array pointer R4
-!        private array_free_r8              !frees an array pointer R8
-!        private array_free_c4              !frees an array pointer C4
-!        private array_free_c8              !frees an array pointer C8
+        private array_free                 !frees an array pointer {R4,R8,C4,C8}
+        private array_free_r4              !frees an array pointer R4
+        private array_free_r8              !frees an array pointer R8
+        private array_free_c4              !frees an array pointer C4
+        private array_free_c8              !frees an array pointer C8
         private tensor_block_slice_dlf     !extracts a slice from a tensor block (Fortran-like dimension-led storage layout)
         private tensor_block_insert_dlf    !inserts a slice into a tensor block (Fortran-like dimension-led storage layout)
         private tensor_block_copy_dlf      !tensor transpose for dimension-led (Fortran-like-stored) dense tensor blocks
@@ -267,6 +268,22 @@
        contains
 !-----------------
 !PUBLIC FUNCTIONS:
+!----------------------------------------------------------------------
+#ifndef NO_PHI
+!DIR$ ATTRIBUTES OFFLOAD:mic:: get_mem_alloc_policy
+#endif
+        function get_mem_alloc_policy(ierr,fallback) result(mem_policy) !SERIAL
+!Gets the current memory allocation policy.
+         implicit none
+         integer:: mem_policy                      !out: memory allocation policy
+         integer, intent(out), optional:: ierr     !out: error code
+         logical, intent(out), optional:: fallback !out: fallback status
+
+         mem_policy=MEM_ALLOC_POLICY
+         if(present(fallback)) fallback=MEM_ALLOC_FALLBACK
+         if(present(ierr)) ierr=0
+         return
+        end function get_mem_alloc_policy
 !----------------------------------------------------------------
 #ifndef NO_PHI
 !DIR$ ATTRIBUTES OFFLOAD:mic:: set_mem_alloc_policy
@@ -283,7 +300,7 @@
 !$OMP ATOMIC WRITE
           MEM_ALLOC_POLICY=mem_policy
          case default
-          if(present(ierr)) ierr=1
+          if(present(ierr)) ierr=1 !invalid policy
           return
          end select
          if(present(fallback)) then
@@ -4367,26 +4384,33 @@
 !Allocates an R4 1d pointer array either in regular Host memory or in the
 !Host argument buffer (<in_buffer>=.TRUE.). If the Host argument buffer cannot
 !accomdate the memory allocation request, either an error will be returned (<fallback>=.FALSE.)
-!or the regular Fortran memory allocator will be used (<fallback>=.TRUE.).
+!or the regular Fortran memory allocator will be used (<fallback>=.TRUE.). If neither
+!<in_buffer> nor <fallback> is provided, the default value will be inferred from
+!the current memory allocation policy.
          implicit none
          integer:: ierr                                !out: error code
          real(4), pointer, contiguous, intent(inout):: arr_p(:) !out: pointer array (must be NULL on entrance)
          integer(LONGINT), intent(in):: extent         !in: desired array extent (volume)
          integer(LONGINT), intent(in), optional:: base !in: array base (first element, defaults to 1)
-         logical, intent(in), optional:: in_buffer     !in: if .TRUE., the array will be allocated in Host argument buffer (defaults to .FALSE.)
-         logical, intent(in), optional:: fallback      !in: if .TRUE., an unsuccessful allocation in Host argument buffer will be mitigated by a regular allocation (defaults to .TRUE.)
+         logical, intent(in), optional:: in_buffer     !in: if .TRUE., the array will be allocated in the Host argument buffer
+         logical, intent(in), optional:: fallback      !in: if .TRUE., an unsuccessful allocation in the Host argument buffer will be mitigated by a regular allocation
          real(4), pointer, contiguous:: tmp(:)
          integer(LONGINT):: bs
          integer(C_SIZE_T):: arr_size
          type(C_PTR):: cptr
          integer(C_INT):: buf_entry
-         logical:: in_buf
+         logical:: in_buf,fallb
 
          ierr=0
          if(extent.gt.0) then
           if(.not.associated(arr_p)) then
            if(present(base)) then; bs=base; else; bs=1_LONGINT; endif
-           if(present(in_buffer)) then; in_buf=in_buffer; else; in_buf=.FALSE.; endif
+           if(present(in_buffer)) then
+            in_buf=in_buffer
+           else
+            if(MEM_ALLOC_POLICY.eq.MEM_ALLOC_REGULAR) then; in_buf=.FALSE.; else; in_buf=.TRUE.; endif
+           endif
+           if(present(fallback)) then; fallb=fallback; else; fallb=MEM_ALLOC_FALLBACK; endif
            if(in_buf) then !in buffer allocation
             arr_size=extent*int(size_of(R4_),LONGINT) !size in bytes
             ierr=get_buf_entry_host(arr_size,cptr,buf_entry)
@@ -4394,11 +4418,7 @@
              call c_f_pointer(cptr,tmp,(/extent/))
              arr_p(bs:)=>tmp(1:); tmp=>NULL()
             else
-             if(present(fallback)) then
-              if(fallback) in_buf=.FALSE.
-             else
-              in_buf=.FALSE.
-             endif
+             if(fallb) in_buf=.FALSE.
             endif
            endif
            if(.not.in_buf) allocate(arr_p(bs:bs+extent-1_LONGINT),STAT=ierr) !regular allocation
@@ -4415,26 +4435,33 @@
 !Allocates an R8 1d pointer array either in regular Host memory or in the
 !Host argument buffer (<in_buffer>=.TRUE.). If the Host argument buffer cannot
 !accomdate the memory allocation request, either an error will be returned (<fallback>=.FALSE.)
-!or the regular Fortran memory allocator will be used (<fallback>=.TRUE.).
+!or the regular Fortran memory allocator will be used (<fallback>=.TRUE.). If neither
+!<in_buffer> nor <fallback> is provided, the default value will be inferred from
+!the current memory allocation policy.
          implicit none
          integer:: ierr                                !out: error code
          real(8), pointer, contiguous, intent(inout):: arr_p(:) !out: pointer array (must be NULL on entrance)
          integer(LONGINT), intent(in):: extent         !in: desired array extent (volume)
          integer(LONGINT), intent(in), optional:: base !in: array base (first element, defaults to 1)
-         logical, intent(in), optional:: in_buffer     !in: if .TRUE., the array will be allocated in Host argument buffer (defaults to .FALSE.)
-         logical, intent(in), optional:: fallback      !in: if .TRUE., an unsuccessful allocation in Host argument buffer will be mitigated by a regular allocation (defaults to .TRUE.)
+         logical, intent(in), optional:: in_buffer     !in: if .TRUE., the array will be allocated in the Host argument buffer
+         logical, intent(in), optional:: fallback      !in: if .TRUE., an unsuccessful allocation in the Host argument buffer will be mitigated by a regular allocation
          real(8), pointer, contiguous:: tmp(:)
          integer(LONGINT):: bs
          integer(C_SIZE_T):: arr_size
          type(C_PTR):: cptr
          integer(C_INT):: buf_entry
-         logical:: in_buf
+         logical:: in_buf,fallb
 
          ierr=0
          if(extent.gt.0) then
           if(.not.associated(arr_p)) then
            if(present(base)) then; bs=base; else; bs=1_LONGINT; endif
-           if(present(in_buffer)) then; in_buf=in_buffer; else; in_buf=.FALSE.; endif
+           if(present(in_buffer)) then
+            in_buf=in_buffer
+           else
+            if(MEM_ALLOC_POLICY.eq.MEM_ALLOC_REGULAR) then; in_buf=.FALSE.; else; in_buf=.TRUE.; endif
+           endif
+           if(present(fallback)) then; fallb=fallback; else; fallb=MEM_ALLOC_FALLBACK; endif
            if(in_buf) then !in buffer allocation
             arr_size=extent*int(size_of(R8_),LONGINT) !size in bytes
             ierr=get_buf_entry_host(arr_size,cptr,buf_entry)
@@ -4442,11 +4469,7 @@
              call c_f_pointer(cptr,tmp,(/extent/))
              arr_p(bs:)=>tmp(1:); tmp=>NULL()
             else
-             if(present(fallback)) then
-              if(fallback) in_buf=.FALSE.
-             else
-              in_buf=.FALSE.
-             endif
+             if(fallb) in_buf=.FALSE.
             endif
            endif
            if(.not.in_buf) allocate(arr_p(bs:bs+extent-1_LONGINT),STAT=ierr) !regular allocation
@@ -4463,26 +4486,33 @@
 !Allocates an C4 1d pointer array either in regular Host memory or in the
 !Host argument buffer (<in_buffer>=.TRUE.). If the Host argument buffer cannot
 !accomdate the memory allocation request, either an error will be returned (<fallback>=.FALSE.)
-!or the regular Fortran memory allocator will be used (<fallback>=.TRUE.).
+!or the regular Fortran memory allocator will be used (<fallback>=.TRUE.). If neither
+!<in_buffer> nor <fallback> is provided, the default value will be inferred from
+!the current memory allocation policy.
          implicit none
          integer:: ierr                                !out: error code
          complex(4), pointer, contiguous, intent(inout):: arr_p(:) !out: pointer array (must be NULL on entrance)
          integer(LONGINT), intent(in):: extent         !in: desired array extent (volume)
          integer(LONGINT), intent(in), optional:: base !in: array base (first element, defaults to 1)
-         logical, intent(in), optional:: in_buffer     !in: if .TRUE., the array will be allocated in Host argument buffer (defaults to .FALSE.)
-         logical, intent(in), optional:: fallback      !in: if .TRUE., an unsuccessful allocation in Host argument buffer will be mitigated by a regular allocation (defaults to .TRUE.)
+         logical, intent(in), optional:: in_buffer     !in: if .TRUE., the array will be allocated in the Host argument buffer
+         logical, intent(in), optional:: fallback      !in: if .TRUE., an unsuccessful allocation in the Host argument buffer will be mitigated by a regular allocation
          complex(4), pointer, contiguous:: tmp(:)
          integer(LONGINT):: bs
          integer(C_SIZE_T):: arr_size
          type(C_PTR):: cptr
          integer(C_INT):: buf_entry
-         logical:: in_buf
+         logical:: in_buf,fallb
 
          ierr=0
          if(extent.gt.0) then
           if(.not.associated(arr_p)) then
            if(present(base)) then; bs=base; else; bs=1_LONGINT; endif
-           if(present(in_buffer)) then; in_buf=in_buffer; else; in_buf=.FALSE.; endif
+           if(present(in_buffer)) then
+            in_buf=in_buffer
+           else
+            if(MEM_ALLOC_POLICY.eq.MEM_ALLOC_REGULAR) then; in_buf=.FALSE.; else; in_buf=.TRUE.; endif
+           endif
+           if(present(fallback)) then; fallb=fallback; else; fallb=MEM_ALLOC_FALLBACK; endif
            if(in_buf) then !in buffer allocation
             arr_size=extent*int(size_of(C4_),LONGINT) !size in bytes
             ierr=get_buf_entry_host(arr_size,cptr,buf_entry)
@@ -4490,11 +4520,7 @@
              call c_f_pointer(cptr,tmp,(/extent/))
              arr_p(bs:)=>tmp(1:); tmp=>NULL()
             else
-             if(present(fallback)) then
-              if(fallback) in_buf=.FALSE.
-             else
-              in_buf=.FALSE.
-             endif
+             if(fallb) in_buf=.FALSE.
             endif
            endif
            if(.not.in_buf) allocate(arr_p(bs:bs+extent-1_LONGINT),STAT=ierr) !regular allocation
@@ -4511,26 +4537,33 @@
 !Allocates an C8 1d pointer array either in regular Host memory or in the
 !Host argument buffer (<in_buffer>=.TRUE.). If the Host argument buffer cannot
 !accomdate the memory allocation request, either an error will be returned (<fallback>=.FALSE.)
-!or the regular Fortran memory allocator will be used (<fallback>=.TRUE.).
+!or the regular Fortran memory allocator will be used (<fallback>=.TRUE.). If neither
+!<in_buffer> nor <fallback> is provided, the default value will be inferred from
+!the current memory allocation policy.
          implicit none
          integer:: ierr                                !out: error code
          complex(8), pointer, contiguous, intent(inout):: arr_p(:) !out: pointer array (must be NULL on entrance)
          integer(LONGINT), intent(in):: extent         !in: desired array extent (volume)
          integer(LONGINT), intent(in), optional:: base !in: array base (first element, defaults to 1)
-         logical, intent(in), optional:: in_buffer     !in: if .TRUE., the array will be allocated in Host argument buffer (defaults to .FALSE.)
-         logical, intent(in), optional:: fallback      !in: if .TRUE., an unsuccessful allocation in Host argument buffer will be mitigated by a regular allocation (defaults to .TRUE.)
+         logical, intent(in), optional:: in_buffer     !in: if .TRUE., the array will be allocated in the Host argument buffer
+         logical, intent(in), optional:: fallback      !in: if .TRUE., an unsuccessful allocation in the Host argument buffer will be mitigated by a regular allocation
          complex(8), pointer, contiguous:: tmp(:)
          integer(LONGINT):: bs
          integer(C_SIZE_T):: arr_size
          type(C_PTR):: cptr
          integer(C_INT):: buf_entry
-         logical:: in_buf
+         logical:: in_buf,fallb
 
          ierr=0
          if(extent.gt.0) then
           if(.not.associated(arr_p)) then
            if(present(base)) then; bs=base; else; bs=1_LONGINT; endif
-           if(present(in_buffer)) then; in_buf=in_buffer; else; in_buf=.FALSE.; endif
+           if(present(in_buffer)) then
+            in_buf=in_buffer
+           else
+            if(MEM_ALLOC_POLICY.eq.MEM_ALLOC_REGULAR) then; in_buf=.FALSE.; else; in_buf=.TRUE.; endif
+           endif
+           if(present(fallback)) then; fallb=fallback; else; fallb=MEM_ALLOC_FALLBACK; endif
            if(in_buf) then !in buffer allocation
             arr_size=extent*int(size_of(C8_),LONGINT) !size in bytes
             ierr=get_buf_entry_host(arr_size,cptr,buf_entry)
@@ -4538,11 +4571,7 @@
              call c_f_pointer(cptr,tmp,(/extent/))
              arr_p(bs:)=>tmp(1:); tmp=>NULL()
             else
-             if(present(fallback)) then
-              if(fallback) in_buf=.FALSE.
-             else
-              in_buf=.FALSE.
-             endif
+             if(fallb) in_buf=.FALSE.
             endif
            endif
            if(.not.in_buf) allocate(arr_p(bs:bs+extent-1_LONGINT),STAT=ierr) !regular allocation
@@ -4554,6 +4583,106 @@
          endif
          return
         end function array_alloc_c8
+!-------------------------------------------
+        subroutine array_free_r4(arr_p,ierr) !SERIAL
+!Deallocates an R4 1d pointer array which had been previously allocated
+!either via a regular allocate() or in the Host argument buffer.
+         implicit none
+         real(4), pointer, contiguous, intent(inout):: arr_p(:) !in: previously allocated pointer array
+         integer, intent(out), optional:: ierr                  !out: error code
+         integer(INTD):: i
+         integer:: errc
+
+         if(associated(arr_p)) then
+          i=get_buf_entry_from_address(encode_device_id(DEV_HOST,0),c_loc(arr_p))
+          if(i.ge.0) then !in buffer
+           errc=free_buf_entry_host(i); if(errc.eq.0) nullify(arr_p)
+          elseif(i.eq.-1) then !regular allocation
+           deallocate(arr_p,STAT=errc)
+          else !error
+           errc=i
+          endif
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine array_free_r4
+!-------------------------------------------
+        subroutine array_free_r8(arr_p,ierr) !SERIAL
+!Deallocates an R8 1d pointer array which had been previously allocated
+!either via a regular allocate() or in the Host argument buffer.
+         implicit none
+         real(8), pointer, contiguous, intent(inout):: arr_p(:) !in: previously allocated pointer array
+         integer, intent(out), optional:: ierr                  !out: error code
+         integer(INTD):: i
+         integer:: errc
+
+         if(associated(arr_p)) then
+          i=get_buf_entry_from_address(encode_device_id(DEV_HOST,0),c_loc(arr_p))
+          if(i.ge.0) then !in buffer
+           errc=free_buf_entry_host(i); if(errc.eq.0) nullify(arr_p)
+          elseif(i.eq.-1) then !regular allocation
+           deallocate(arr_p,STAT=errc)
+          else !error
+           errc=i
+          endif
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine array_free_r8
+!-------------------------------------------
+        subroutine array_free_c4(arr_p,ierr) !SERIAL
+!Deallocates an C4 1d pointer array which had been previously allocated
+!either via a regular allocate() or in the Host argument buffer.
+         implicit none
+         complex(4), pointer, contiguous, intent(inout):: arr_p(:) !in: previously allocated pointer array
+         integer, intent(out), optional:: ierr                     !out: error code
+         integer(INTD):: i
+         integer:: errc
+
+         if(associated(arr_p)) then
+          i=get_buf_entry_from_address(encode_device_id(DEV_HOST,0),c_loc(arr_p))
+          if(i.ge.0) then !in buffer
+           errc=free_buf_entry_host(i); if(errc.eq.0) nullify(arr_p)
+          elseif(i.eq.-1) then !regular allocation
+           deallocate(arr_p,STAT=errc)
+          else !error
+           errc=i
+          endif
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine array_free_c4
+!-------------------------------------------
+        subroutine array_free_c8(arr_p,ierr) !SERIAL
+!Deallocates an C8 1d pointer array which had been previously allocated
+!either via a regular allocate() or in the Host argument buffer.
+         implicit none
+         complex(8), pointer, contiguous, intent(inout):: arr_p(:) !in: previously allocated pointer array
+         integer, intent(out), optional:: ierr                     !out: error code
+         integer(INTD):: i
+         integer:: errc
+
+         if(associated(arr_p)) then
+          i=get_buf_entry_from_address(encode_device_id(DEV_HOST,0),c_loc(arr_p))
+          if(i.ge.0) then !in buffer
+           errc=free_buf_entry_host(i); if(errc.eq.0) nullify(arr_p)
+          elseif(i.eq.-1) then !regular allocation
+           deallocate(arr_p,STAT=errc)
+          else !error
+           errc=i
+          endif
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine array_free_c8
 !-----------------------------------------------------------------------------------------------
 #ifndef NO_PHI
 !DIR$ ATTRIBUTES OFFLOAD:mic:: tensor_block_slice_dlf_r4
