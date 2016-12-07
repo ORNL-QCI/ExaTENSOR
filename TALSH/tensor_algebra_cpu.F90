@@ -1,6 +1,6 @@
 !Tensor Algebra for Multi- and Many-core CPUs (OpenMP based).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2016/12/02
+!REVISION: 2016/12/06
 
 !Copyright (C) 2013-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -123,6 +123,20 @@
          module procedure tensor_block_shape_create_num
         end interface tensor_block_shape_create
 
+        interface array_alloc
+         module procedure array_alloc_r4
+!         module procedure array_alloc_r8
+!         module procedure array_alloc_c4
+!         module procedure array_alloc_c8
+        end interface array_alloc
+
+!        interface array_free
+!         module procedure array_free_r4
+!         module procedure array_free_r8
+!         module procedure array_free_c4
+!         module procedure array_free_c8
+!        end interface array_free
+
         interface tensor_block_slice_dlf
          module procedure tensor_block_slice_dlf_r4
          module procedure tensor_block_slice_dlf_r8
@@ -218,6 +232,16 @@
         public tensor_block_shape_create_num !generates the tensor shape based on the numeric arguments
         public tensor_block_shape_ok       !checks the correctness of a tensor shape generated from a tensor shape specification string (TSSS)
         public tensor_block_alloc          !sets/queries the allocation status of data pointers in a tensor block
+        private array_alloc                !allocates an array pointer {R4,R8,C4,C8}
+        private array_alloc_r4             !allocates an array pointer R4
+!        private array_alloc_r8             !allocates an array pointer R8
+!        private array_alloc_c4             !allocates an array pointer C4
+!        private array_alloc_c8             !allocates an array pointer C8
+!        private array_free                 !frees an array pointer {R4,R8,C4,C8}
+!        private array_free_r4              !frees an array pointer R4
+!        private array_free_r8              !frees an array pointer R8
+!        private array_free_c4              !frees an array pointer C4
+!        private array_free_c8              !frees an array pointer C8
         private tensor_block_slice_dlf     !extracts a slice from a tensor block (Fortran-like dimension-led storage layout)
         private tensor_block_insert_dlf    !inserts a slice into a tensor block (Fortran-like dimension-led storage layout)
         private tensor_block_copy_dlf      !tensor transpose for dimension-led (Fortran-like-stored) dense tensor blocks
@@ -4299,6 +4323,54 @@
         end function tensor_block_alloc
 !--------------------------------------
 !PRIVATE FUNCTIONS:
+!---------------------------------------------------------------------------------
+        function array_alloc_r4(arr_p,extent,base,in_buffer,fallback) result(ierr)
+!Allocates an R4 1d pointer array either in regular Host memory or in the
+!Host argument buffer (<in_buffer>=.TRUE.). If the Host argument buffer cannot
+!accomdate the memory allocation request, either an error will be returned (<fallback>=.FALSE.)
+!or the regular Fortran memory allocator will be used (<fallback>=.TRUE.).
+         implicit none
+         integer:: ierr                                !out: error code
+         real(4), pointer, contiguous, intent(inout):: arr_p(:) !out: pointer array (must be NULL on entrance)
+         integer(LONGINT), intent(in):: extent         !in: desired array extent (volume)
+         integer(LONGINT), intent(in), optional:: base !in: array base (first element, defaults to 1)
+         logical, intent(in), optional:: in_buffer     !in: if .TRUE., the array will be allocated in Host argument buffer (defaults to .FALSE.)
+         logical, intent(in), optional:: fallback      !in: if .TRUE., an unsuccessful allocation in Host argument buffer will be mitigated by a regular allocation (defaults to .TRUE.)
+         real(4), pointer, contiguous:: tmp(:)
+         integer(LONGINT):: bs
+         integer(C_SIZE_T):: arr_size
+         type(C_PTR):: cptr
+         integer(C_INT):: buf_entry
+         logical:: in_buf
+
+         ierr=0
+         if(extent.gt.0) then
+          if(.not.associated(arr_p)) then
+           if(present(base)) then; bs=base; else; bs=1_LONGINT; endif
+           if(present(in_buffer)) then; in_buf=in_buffer; else; in_buf=.FALSE.; endif
+           if(in_buf) then !in buffer allocation
+            arr_size=extent*int(size_of(R4_),LONGINT) !size in bytes
+            ierr=get_buf_entry_host(arr_size,cptr,buf_entry)
+            if(ierr.eq.0) then
+             call c_f_pointer(cptr,tmp,(/extent/))
+             arr_p(base:)=>tmp(1:); tmp=>NULL()
+            else
+             if(present(fallback)) then
+              if(fallback) in_buf=.FALSE.
+             else
+              in_buf=.FALSE.
+             endif
+            endif
+           endif
+           if(.not.in_buf) allocate(arr_p(base:base+extent-1_LONGINT),STAT=ierr) !regular allocation
+          else
+           ierr=2
+          endif
+         else
+          ierr=1
+         endif
+         return
+        end function array_alloc_r4
 !-----------------------------------------------------------------------------------------------
 #ifndef NO_PHI
 !DIR$ ATTRIBUTES OFFLOAD:mic:: tensor_block_slice_dlf_r4

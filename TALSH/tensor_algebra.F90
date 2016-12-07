@@ -1,6 +1,6 @@
 !ExaTensor::TAL-SH: Parameters, types, C function interfaces:
 !Keep consistent with "tensor_algebra.h"!
-!REVISION: 2016/09/01
+!REVISION: 2016/12/06
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -270,6 +270,13 @@
           integer(C_INT), value, intent(in):: entry_num
          end function free_buf_entry_gpu
 #endif
+  !Get the argument buffer entry number for pointers located in the TAL-SH argument buffer:
+         integer(C_INT) function get_buf_entry_from_address(dev_id,addr) bind(c,name='get_buf_entry_from_address')
+          import
+          implicit none
+          integer(C_INT), value, intent(in):: dev_id
+          type(C_PTR), value, intent(in):: addr
+         end function get_buf_entry_from_address
   !Query the free buffer space in bytes on a given device:
          integer(C_INT) function mem_free_left(dev_id,free_mem) bind(c,name='mem_free_left')
           import
