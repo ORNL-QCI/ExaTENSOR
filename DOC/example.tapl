@@ -34,7 +34,7 @@ scope my_tapl_program
  load T2: tag("My old tensor")              #this will load the full tensor (block-sparse in general)
  load T2(a0,a1,i0,i1): tag("My old tensor") #this will load only a tensor slice (block-sparse in general)
  V2(i0,i1,a0,a1)=method("2e Coulomb"): [i0<i1] [a0<a1] sparse("Scheme0") #this will generate the given tensor slice
- deferred V2(i0,i1,a0,a1): method("2e Coulomb")                          #this will defer the generator to upon necessity
+ V2(i0,i1,a0,a1)=>method("2e Coulomb")                                   #this will defer the generator to upon necessity
  Z2(a0,a1,i0,i1)=>Y(a0,p1,p2)*Y(a1,p2,p3)*Y(i0,p3,p4)*Y(i1,p4,p1) #impose a specific low-rank structure on the tensor (MPS here)
  Z2(a0,a1,i0,i1)=V2(i0,k0,a0,c0)*T2(c0,a1,k0,i1): [i0<i1] [a0<a1] sparse("Scheme1") #tensor contraction with restrictions
  save Z2(a0,a1,i0,i1): tag("My new tensor")              #save a tensor slice
