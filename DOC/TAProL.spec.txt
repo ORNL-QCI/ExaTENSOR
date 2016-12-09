@@ -1,6 +1,6 @@
 Specification: Tensor Algebra Programming Language (TAProL)
 Author: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-Revision: 12/08/2016
+Revision: 12/09/2016
 
 Copyright (C) 2016 Dmitry I. Liakh.
 Copyright (C) 2016 Oak Ridge National Laboratory, UT-Battelle, LLC.
@@ -8,7 +8,7 @@ Copyright (C) 2016 Oak Ridge National Laboratory, UT-Battelle, LLC.
 
 0. PREAMBULE
 
-TAProL is a user-friendly progamming language for expressing tensor algebra computations,
+TAProL is a high-level programming language for expressing tensor algebra computations,
 that is, numeric operations performed on individual tensors and their aggregates.
 
 
@@ -16,7 +16,7 @@ that is, numeric operations performed on individual tensors and their aggregates
 
 A TAProl program, written in one or more source files with extension .tapl, is a collection
 of "Scopes" with a single "Entry Point". The Entry Point specifies the first Scope to interpret.
-Each Scope contains TAProl code. A Scope can call another Scope which will return back to the
+Each Scope contains TAProl code. A Scope can call another Scope which will return to the
 next line after finishing. By default, the objects defined within a specfic Scope are only
 visible in that Scope. To pass objects from one Scope to another Scope the "Exchange Space"
 needs to be used. The Exchange Space contains named objects for exchange between Scopes,
@@ -24,10 +24,10 @@ together with their access permissions. An object can be Exported from one Scope
 Exchange Space with the user-defined permissions and subsequently Imported by another Scope,
 provided that the latter has matching access permissions. Thus, different Scopes may depend
 on each other only via data dependencies. In the following text, names in angle
-brackets <> are supposed to be replaced by the corresponding content. A list of
+brackets <> are supposed to be substituted by the corresponding content. A list of
 keywords separated by "|" within a pair of curly brackets {} provides alternatives
 among which a specific one needs to be chosen by the programmer. All user-defined
-names in TAProl must consist of alphanumeric characters plus underscore "_".
+names in TAProl may only contain alphanumeric characters and underscore "_".
 
 Scope specification:
  scope <scope_name> group(<group_name>,<group_name>,...)
@@ -47,7 +47,7 @@ Example:
 Entry Point specification:
  entry: <scope_name>
 
-The Entry Point must be specified before any Scope and only once.
+The Entry Point must be specified before any Scope and only once accross all source files.
 
 
 2. TAProl LANGUAGE CONSTRUCTS
@@ -55,29 +55,44 @@ The Entry Point must be specified before any Scope and only once.
 2.1. Basic declarations:
 
 Vector space specification:
- basis({real|complex}): <space_name0> = <range0>, <space_name0> = <range0>, ...
+ space({real|complex}): <space0_name> = <range0>, <space1_name> = <range1>, ...
  where
   {real|complex} is the selector between Real or Complex field;
-  <rangeX> is the dimension of the vector space <space_nameX> in the form [<first>:<last>],
+  <rangeX> is the dimension of the vector space <spaceX_name> in the form [<first>:<last>],
   where
    <first> and <last> define the numeration of the basis vectors, and the actual
    dimension of the space is (<last>-<first>+1). <first> and <last> can be either
    numeric literals or alphanumeric identifiers (with at least one letter).
    In the latter case, these identifiers will be dereferenced from the Exchange Space
    assuming that they are available there (if not, the program will fail).
+  Example:
+  space(complex): space1=[0:947], space2=[1:upper_limit2]
 
 Vector subspace specification:
- range(<space_name>): <subspace0_name> = <range0>, <subspace1_name> = <range1>, ...
+ subspace(<space_name>): <subspace0_name> = <range0>, <subspace1_name> = <range1>, ...
  where
-  <spaceX_name> is the name of the parental vector space defined by the "basis" statement;
+  <space_name> is the name of the parental vector space defined by the "space" statement;
   <rangeX> is the subrange of basis vectors which define the subspace being declared in
-  the form [<first>:<last>], analogously with the above description for the "basis" statement.
+  the form [<first>:<last>], analogously with the above description for the "space" statement.
+ Example:
+ space(real): space1=[0:947]
+ subspace(space1): subspace0=[13:134], subspace1=[lower1:upper1]
 
 Index specification (placeholder for a given subspace):
  index(<subspace_name>): <index_name>,<index_name>, ...
  where
-  <subspace_name> is the name of the corresponding subspace defined by the "range" statement.
-Each index defined in this way is subsequently associated with subspace <subspace_name>.
+  <subspace_name> is the name of the corresponding subspace defined by the "subspace" statement.
+ Each index defined in this way is associated with subspace <subspace_name>.
+ Example:
+ space(real): space1=[0:947]
+ subspace(space1): subspace0=[13:134], subspace1=[lower1:upper1]
+ index(subspace0): i,j,k,l1
+ index(subspace1): a1,b1,c2,d
+
+Index inheritance:
+ One can also define an index by inheriting the properies from another already defined index, like:
+ index: b1=a1, b2=a2
+ Here indices b1 and b2 will bind to the same subspaces as a1 and a2, respectively.
 
 2.2. Tensor creation and destruction:
 
@@ -85,10 +100,10 @@ A tensor is specified via its alphanumeric name (at least one letter) and a comm
 list of indices enclosed in parentheses: <tensor_name>(<index>,<index>,...). No space is
 allowed between the tensor name and the left parenthesis. A scalar tensor is specified as <scalar_name>().
 Each index associates its subspace with the corresponding tensor dimension. The total number of tensor
-dimensions (total number of indices) is called the tensor rank. The subspace associated with
+dimensions (total number of tensor indices) is called the tensor rank. The subspace associated with
 a specific tensor dimension determines the range of that tensor dimension. The dimension of
-the subspace determines the extent of the corresponding tensor dimension. Examples of tensors:
-S34(a1,b,c3), TT(i,j,k,l), SS1().
+the subspace determines the extent of the corresponding tensor dimension.
+Examples of tensors: S34(a1,b,c3), TT(i,j,k,l), SS1().
 
 Explicit creation with initialization:
  1) <tensor> = <numeric_value>
@@ -98,23 +113,23 @@ Explicit creation with initialization:
     T3(i1,u,w23,k) = 0
     W2(k,l,m) = init_value1
  2) <tensor> = method("<method_name>")
-    where "method_name" is a symbolic name of the corresponding user-defined function
+    where "<method_name>" is a symbolic name of the corresponding user-defined function
     used to initialize the tensor right after its creation. Example:
     RR(i,j,k,l,m) = method("Init_my_tensor")
  3) load <tensor>: tag("<stored_name>")
     This statement will either load a full tensor or a specific tensor slice from the
-    persistent storage space where the tensor is marked by its "stored_name". Examples:
+    persistent storage space where the tensor is marked by its "<stored_name>". Examples:
     load S2(i,j,k): tag("My old tensor")
     If a tensor index has already been defined, its range must match the stored value.
-    If a tensor index is undefined, it will become defined by the stored value.
+    If a tensor index is undefined, it will become defined from the stored value.
 
 Explicit creation without initialization:
  <tensor> =
  For example: T2(a,b,c,d) =
 
 Explicit creation with deferred initialization:
- <tensor> => method("method_name")
- The tensor is created, but its initialization by method "method_name" is
+ <tensor> => method("<method_name>")
+ The tensor is created, but its initialization by method "<method_name>" is
  postponed until it is used for the first time after its creation. Examples:
  Y12(j,m,n,k) => method("My deferred init method")
 
@@ -124,9 +139,9 @@ Explicit destruction:
  destroy {<tensor>|<tensor_name>},{<tensor>|<tensor_name>},...
  Both forms are equivalent, except the latter can be applied to multiple tensors simultaneously.
  If a tensor is specified by its <tensor_name>, then the entire tensor will be destroyed.
- Optionally, by providing tensor indices in <tensor>, only the specific slice can be destroyed.
+ Optionally, by providing tensor indices in <tensor>, only the specific slice will be destroyed.
  Examples:
- ~Y12
+ ~Y13
  ~T4(i,j,k)
  destroy R5
  destroy F3(m,n,k)
@@ -137,14 +152,18 @@ it is undefined while being the result of a tensor operation.
 
 A tensor can also be stored in the persistent storage by the following statement:
  save <tensor>: tag("<stored_name>")
- The tag <stored_name> associated with the tensor in the persistent storage can
- later be used for loading it via the load statement.
+ The tag "<stored_name>" associated with the tensor in the persistent storage can
+ later be used for loading it back via the "load" statement.
 
 2.3. Tensor operations:
 
 A tensor operation is a well-defined numeric primitive operating on tensors
-or tensor slices. The result tensor may be undefined in which case it will be
-created and defined as a result of the tensor operation.
+or tensor slices. The result tensor is allowed to be undefined beforehand,
+in which case it will be created and defined as a result of the tensor operation.
+Each tensor in a tensor operation may additionally be complex conjugated via
+adding "+" right after the tensor name prior to the left parenthesis, for example:
+S34+(a,b,c,d)
+
 Currently defined tensor operations:
 
  1) Assignment:
@@ -154,7 +173,7 @@ Currently defined tensor operations:
     T1(i,j,k,l) = 0
     T1(i,j,k,l) = new_value
     T1(i,j,k,l) = method("Init my tensor")
-    In the second example, new_value will be looked up in the Exchange Space.
+    In the second example, new_value will be looked up in the Exchange Space, if there.
 
  2) Permutation of tensor dimensions:
     <tensor0> = <tensor1>
@@ -166,7 +185,7 @@ Currently defined tensor operations:
     Examples:
     T1(i,j,k,l) *= 1.13
     T1(i,j,k,l) *= my_factor
-    In the second example, my_factor will be looked up in the Exchange Space.
+    In the second example, my_factor will be looked up in the Exchange Space, if there.
 
  4) Folding (dimension flattening):
     <tensor0> = <tensor1>
@@ -184,34 +203,43 @@ Currently defined tensor operations:
     <tensor0> += <tensor1> {|* <numeric_value>}
     Examples:
     T1(i,j,k,l) += S1(j,k,i,l)
-    T1(i,j,k,l) += S1(j,k,i,l) * -1.13
+    T1(i,j,k,l) += S1(i,j,k,l) * -1.13
     T1(i,j,k,l) += S1(j,k,i,l) * my_factor
-    In the third example, my_factor will be looked up in the Exchange Space.
+    In the third example, my_factor will be looked up in the Exchange Space, if there.
 
  7) Product:
     <tensor0> += <tensor1> * <tensor2> {|* <numeric_value>}
     where <tensor1> and <tensor2> do not have indices in common.
     Examples:
     T1(i,j,k,l) += S1(k,j) * S2(i,l)
-    T1(i,j,k,l) += S1(k,j) * S2(i,l) * -1.13
+    T1(i,j,k,l) += S1(i,j) * S2(k,l) * -1.13
     T1(i,j,k,l) += S1(k,j) * S2(i,l) * my_factor
-    In the third example, my_factor will be looked up in the Exchange Space.
+    In the third example, my_factor will be looked up in the Exchange Space, if there.
 
  8) Contraction:
     <tensor0> += <tensor1> * <tensor2> {|* <numeric_value>}
     where <tensor1> and <tensor2> have indices in common (contracted indices).
     Examples:
     T1(i,j,k,l) += S1(k,c,j,d) * S2(c,i,l,d)
-    T1(i,j,k,l) += S1(k,c,j,d) * S2(c,i,l,d) * -1.13
+    T1(i,j,k,l) += S1(k,c,j,d) * S2(d,i,c,l) * -1.13
     T1(i,j,k,l) += S1(k,c,j,d) * S2(c,i,l,d) * my_factor
-    In the third example, my_factor will be looked up in the Exchange Space.
+    In the third example, my_factor will be looked up in the Exchange Space, if there.
 
 2.4. Tensor network specification:
 
 A tensor network is a contraction of two or more tensors. It can be specified as (example):
  TN(i,j,k,l) => F1(i,a) * F2(a,j,b) * F3(b,k,c) * F4(c,l)
  Here TN(i,j,k,l) is just a placeholder for the tensor contraction defined on the r.h.s.
- Whenever TN(i,j,k,l) is encountered in a tensor expression, it will expanded accordingly.
+ Whenever TN(i,j,k,l) is encountered in a tensor expression, it will be expanded accordingly.
+
+A tensor network specification can be used for low-rank tensor decomposition, for example:
+ TN(i,j,k,l) = S13(i,j,k,l)
+ where TN(i,j,k,l) is a tensor network placeholder, for example the one above. This statement
+ will decompose the tensor S13(i,j,k,l) according to the structure of TN(i,j,k,l).
+ Example (SVD decomposition):
+ TN(i,j,k,l) => F1(i,j,d) * F2(d,k,l)
+ TN(i,j,k,l) = S13(i,j,k,l)
+ Here the tensor S13(i,j,k,l) will be decomposed into F1(i,j,d) * F2(d,k,l).
 
 
 2.5. Passing control to other Scopes and data exchange between Scopes:
@@ -222,12 +250,15 @@ A Scope can be invoked from another Scope by the following statement:
  statement following "invoke ...".
 
 To pass data between Scopes, the following statements are used:
- export <tensor>: tag("<external_tag>") to(<group_name>,<group_name>,...)
+ export <tensor>: tag("<external_tag>") to(<group_name>:<access>,<group_name>:<access>,...)
  This will expose a tensor (or tensor slice) <tensor> to the Exchange Space
- under the name <external_tag>. All Scopes belonging to either group from
- the comma-separated <group_name> list will be able to access the tensor
- via the "import" statement:
+ under a unique name <external_tag>. All Scopes belonging to either group from
+ the comma-separated list will be able to access the tensor via the "import" statement:
  import <tensor>: tag("<external_tag>")
  The "import" statement is semantically equivalent to the "load" statement,
- except that "import" only associates the data between two Scopes whereas
+ except that "import" only associates the data between different Scopes whereas
  "load" actually loads the data from the persistent storage.
+ <access> parameters in the "export" statement regulate the access permissions for each
+ group the tensor is exported to, taking the following possible values:
+ "r" which means Read Only;
+ "w" which means Read-and-Write;

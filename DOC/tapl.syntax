@@ -10,12 +10,13 @@ context default
     keyword whole entry white
     keyword whole scope white
     keyword whole end white
+    keyword whole group brightgreen
 
 # keywords
-    keyword whole basis green
-    keyword whole range green
+    keyword whole space green
+    keyword whole subspace green
     keyword whole index green
-    keyword whole deferred green
+    keyword whole external green
     keyword whole load green
     keyword whole save green
     keyword whole destroy green
@@ -28,9 +29,8 @@ context default
     keyword whole complex blue
     keyword whole tag brightblue
     keyword whole sparse brightblue
-    keyword whole method brightblue
     keyword whole to brightblue
-    keyword whole from brightblue
+    keyword whole method magenta
 
 # operators and syntax elements
     keyword ( brightcyan
