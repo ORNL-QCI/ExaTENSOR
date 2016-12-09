@@ -377,7 +377,7 @@
   !Contract tensors:
               if(transpose) then
                n=n+1 !tensor contraction number
-               if(n.ne.2933.and.n.ne.2934.and.n.ne.2935) cycle ploop !debug
+               !if(n.ne.2933.and.n.ne.2934.and.n.ne.2935) cycle ploop !debug
    !Get the symbolic contraction pattern:
                call get_contr_pattern_sym(rl,rr,cptrn,cptrn_sym,l,ierr); if(ierr.ne.0) then; ierr=5; return; endif
                do i=1,l; str(i:i)=cptrn_sym(i); enddo
@@ -433,7 +433,7 @@
                 ierr=talsh_task_destruct(tsk); if(ierr.ne.TALSH_SUCCESS) then; ierr=12; return; endif
    !Compute the destination tensor norm:
 !                gn1=talshTensorImageNorm1_cpu(dtens)!; write(*,'(1x,"Destination Norm1 (GPU) = ",D25.14)') gn1
-   !Destruct the destination tensor:
+   !Destruct/construct the destination tensor:
 !                ierr=talsh_tensor_destruct(dtens); if(ierr.ne.TALSH_SUCCESS) then; ierr=13; return; endif
 !                cval=(1d-1,0d0); ierr=talsh_tensor_construct(dtens,TENS_DATA_KIND,ddims(1:rd),init_val=cval)
 !                if(ierr.ne.TALSH_SUCCESS) then; ierr=14; return; endif
