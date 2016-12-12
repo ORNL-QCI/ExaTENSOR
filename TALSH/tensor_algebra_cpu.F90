@@ -5557,7 +5557,7 @@
 	 n=0; m=1 !serial execution
 #endif
 !	 if(n.eq.0) write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r8): number of threads = ",i5)') m !debug
-         if(kf.lt.dim_num) then !external indices present
+	 if(kf.lt.dim_num) then !external indices present
 !$OMP MASTER
 	  segs(0)=0_LONGINT; call divide_segment(vol_ext,int(m,LONGINT),segs(1:),i); do j=2,m; segs(j)=segs(j)+segs(j-1); enddo
 	  l0=1_LONGINT; do i=kf+1,dim_num; bases_pri(ipr(i))=l0; l0=l0*dim_extents(ipr(i)); enddo !priority bases
@@ -5565,7 +5565,7 @@
 !$OMP BARRIER
 !$OMP FLUSH(segs,bases_pri)
 	  dim_beg(1:dim_num)=0; dim_end(1:dim_num)=dim_extents(1:dim_num)-1
-          l2=dim_end(split_in); l3=dim_end(split_out); ls=bases_out(1)
+	  l2=dim_end(split_in); l3=dim_end(split_out); ls=bases_out(1)
 	  loop0: do l1=0_LONGINT,l3,seg_out !output dimension
 	   dim_beg(split_out)=l1; dim_end(split_out)=min(l1+seg_out-1_LONGINT,l3)
 	   do l0=0_LONGINT,l2,seg_in !input dimension
@@ -5638,9 +5638,9 @@
          endif
 !$OMP END PARALLEL
 	endif !trivial or not
-!       tm=thread_wtime(time_beg) !debug
-!	write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r8): Done: ",F10.4," sec, ",F10.4," GB/s, error ",i3)') &
-!        tm,dble(2_LONGINT*bs*real_kind)/(tm*1024d0*1024d0*1024d0),ierr !debug
+!	tm=thread_wtime(time_beg) !debug
+!	write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_copy_dlf_r8): Done: ",F10.4," sec, ",F10.4," GB/s, error ",i3)')&
+!	&tm,dble(2_LONGINT*bs*real_kind)/(tm*1024d0*1024d0*1024d0),ierr !debug
 	return
 	end subroutine tensor_block_copy_dlf_r8
 !------------------------------------------------------------------------------------------------

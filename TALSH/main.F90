@@ -439,6 +439,7 @@
 !                if(ierr.ne.TALSH_SUCCESS) then; ierr=14; return; endif
 #endif
    !Run tensor contraction on CPU:
+                !write(*,'("#DEBUG: Tensor contraction on CPU ...")') !debug
                 ierr=talsh_tensor_contract(str(1:l),dtens,ltens,rtens,dev_id=talsh_flat_dev_id(DEV_HOST,0),talsh_task=tsk)
                 if(ierr.ne.TALSH_SUCCESS) then; write(*,'("Error ",i11)') ierr; ierr=15; return; endif
                 ierr=talsh_task_wait(tsk,sts); if(ierr.ne.TALSH_SUCCESS.or.sts.ne.TALSH_TASK_COMPLETED) then; ierr=16; return; endif
