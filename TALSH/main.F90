@@ -228,14 +228,14 @@
          use combinatoric
          implicit none
          integer(C_INT), intent(out):: ierr
-         integer(C_SIZE_T), parameter:: BUF_SIZE=2_8*1024_8*1024_8*1024_8 !desired Host argument buffer size in bytes
+         integer(C_SIZE_T), parameter:: BUF_SIZE=64_8*1024_8*1024_8 !desired Host argument buffer size in bytes, use >=5GiB for exhaustive benchmarking
          integer(C_INT), parameter:: TENS_DATA_KIND=R8 !tensor data kind (R4,R8,C4,C8)
-         integer, parameter:: MAX_TENS_RANK=8          !max tensor rank (<= MAX_TENSOR_RANK)
+         integer, parameter:: MAX_TENS_RANK=4          !max tensor rank (<= MAX_TENSOR_RANK), use 8 for exhaustive benchmarking
          integer, parameter:: MAX_GEN_DIMS=4           !max number of large dimensions per tensor
          integer, parameter:: SMALL_DIM_EXT=8          !extent of small dimensions
          integer, parameter:: MAX_REPEATS=64           !number of repeated tensor contractions that differ in index mapping
          logical, parameter:: DO_TWICE=.FALSE.         !if .TRUE., each tensor contraction will be executed twice
-         real(C_DOUBLE), parameter:: CMP_ZERO=1d-4     !comparison threshold (relative)
+         real(C_DOUBLE), parameter:: CMP_ZERO=1D-4     !comparison threshold (relative)
          !----------------------------------------
          integer(C_INT):: i,j,k,l,m,n,num_gpus,host_arg_max,sts,rd,rl,rr,mnc,nc,ncl,ncs,nul,nus,cptrn(1:MAX_TENS_RANK*2)
          integer(C_INT):: pll(0:MAX_TENS_RANK),pls(0:MAX_TENS_RANK),prl(0:MAX_TENS_RANK),prs(0:MAX_TENS_RANK)
@@ -385,7 +385,7 @@
                write(*,'(") = (",16(1x,i8))',ADVANCE='NO') ldims(1:rl)
                write(*,'(") * (",16(1x,i8))',ADVANCE='NO') rdims(1:rr)
                call printl(6,'): '//str(1:l),adv=.FALSE.)
-!              write(*,'(":",32(1x,i3))',ADVANCE='NO') cptrn(1:rl+rr)
+!              write(*,'(":",32(1x,i3))',ADVANCE='NO') cptrn(1:rl+rr) !contraction pattern
                repeat=DO_TWICE
    !Construct tensor blocks:
                cval=(1d-1,0d0); ierr=talsh_tensor_construct(dtens,TENS_DATA_KIND,ddims(1:rd),in_hab=YEP,init_val=cval)
@@ -427,16 +427,16 @@
                  write(*,'(" ???")',ADVANCE='NO')
                  write(10,'(" ???")',ADVANCE='NO')
                 endif
-                write(*,'()')
-                write(10,'()')
+                !write(*,'()')
+                !write(10,'()')
    !Destruct task handle:
                 ierr=talsh_task_destruct(tsk); if(ierr.ne.TALSH_SUCCESS) then; ierr=12; return; endif
    !Compute the destination tensor norm:
-!                gn1=talshTensorImageNorm1_cpu(dtens)!; write(*,'(1x,"Destination Norm1 (GPU) = ",D25.14)') gn1
+                gn1=talshTensorImageNorm1_cpu(dtens)!; write(*,'(1x,"Destination Norm1 (GPU) = ",D25.14)') gn1
    !Destruct/construct the destination tensor:
-!                ierr=talsh_tensor_destruct(dtens); if(ierr.ne.TALSH_SUCCESS) then; ierr=13; return; endif
-!                cval=(1d-1,0d0); ierr=talsh_tensor_construct(dtens,TENS_DATA_KIND,ddims(1:rd),init_val=cval)
-!                if(ierr.ne.TALSH_SUCCESS) then; ierr=14; return; endif
+                ierr=talsh_tensor_destruct(dtens); if(ierr.ne.TALSH_SUCCESS) then; ierr=13; return; endif
+                cval=(1d-1,0d0); ierr=talsh_tensor_construct(dtens,TENS_DATA_KIND,ddims(1:rd),init_val=cval)
+                if(ierr.ne.TALSH_SUCCESS) then; ierr=14; return; endif
 #endif
    !Run tensor contraction on CPU:
                 !write(*,'("#DEBUG: Tensor contraction on CPU ...")') !debug
@@ -452,13 +452,13 @@
                  write(*,'(" ???")')
                  write(10,'(" ???")')
                 endif
-!                cn1=talshTensorImageNorm1_cpu(dtens)!; write(*,'(1x,"Destination Norm1 (CPU) = ",D25.14)') cn1
-!#ifndef NO_GPU
-!               if(dabs(1d0-cn1/max(cn1,gn1)).gt.CMP_ZERO) then
-!                write(*,'("FAILED: CPU/GPU result mismatch: 1-norms (CPU vs GPU): ",D25.14,2x,D25.14)') cn1,gn1
-!                ierr=18; return
-!               endif
-!#endif
+                cn1=talshTensorImageNorm1_cpu(dtens)!; write(*,'(1x,"Destination Norm1 (CPU) = ",D25.14)') cn1
+#ifndef NO_GPU
+                if(dabs(cn1-gn1)/max(cn1,gn1).gt.CMP_ZERO) then
+                 write(*,'("FAILED: CPU/GPU result mismatch: 1-norms (CPU vs GPU): ",D25.14,2x,D25.14)') cn1,gn1
+                 ierr=18; return
+                endif
+#endif
                 ierr=talsh_task_destruct(tsk); if(ierr.ne.TALSH_SUCCESS) then; ierr=19; return; endif
                 if(repeat) then; repeat=.FALSE.; else; exit dloop; endif
                enddo dloop

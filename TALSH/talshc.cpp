@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level API.
-REVISION: 2016/12/07
+REVISION: 2016/12/18
 
 Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -88,9 +88,9 @@ typedef struct{
 extern "C"{
 #endif
 // CPU tensor contraction:
-int cpu_tensor_block_contract(const int * contr_ptrn, void * lftr, void * rftr, void * dftr, double scale_real, double scale_imag);
+int cpu_tensor_block_contract(const int * contr_ptrn, void * lftr, void * rftr, void * dftr, double scale_real, double scale_imag, int arg_conj);
 // Contraction pattern conversion:
-int talsh_get_contr_ptrn_str2dig(const char * c_str, int * dig_ptrn, int * dig_len);
+int talsh_get_contr_ptrn_str2dig(const char * c_str, int * dig_ptrn, int * dig_len, int * conj_bits);
 // Fortran tensor block aliasing:
 int talsh_tensor_f_assoc(const talsh_tens_t * talsh_tens, int image_id, void ** tensF);
 int talsh_tensor_f_dissoc(void * tensF);
@@ -1922,7 +1922,7 @@ int talshTensorContract(const char * cptrn,        //in: C-string: symbolic cont
 /** Tensor contraction dispatcher. **/
 {
  int j,devid,dvk,dvn,dimg,limg,rimg,dcp,lcp,rcp,errc;
- int contr_ptrn[MAX_TENSOR_RANK*2],cpl;
+ int contr_ptrn[MAX_TENSOR_RANK*2],cpl,conj_bits;
  unsigned int coh_ctrl,coh,cohd,cohl,cohr;
  talsh_task_t * tsk;
  host_task_t * host_task;
@@ -1950,7 +1950,7 @@ int talshTensorContract(const char * cptrn,        //in: C-string: symbolic cont
   tsk->task_error=102; if(talsh_task == NULL) j=talshTaskDestroy(tsk); return TALSH_FAILURE;
  }
  //Check and parse the index contraction pattern:
- errc=talsh_get_contr_ptrn_str2dig(cptrn,contr_ptrn,&cpl);
+ errc=talsh_get_contr_ptrn_str2dig(cptrn,contr_ptrn,&cpl,&conj_bits);
  if(errc){tsk->task_error=103; if(talsh_task == NULL) j=talshTaskDestroy(tsk); return TALSH_INVALID_ARGS;}
  //Determine the execution device (devid:[dvk,dvn]):
  if(dev_kind == DEV_DEFAULT){ //device kind is not specified explicitly
@@ -2057,7 +2057,7 @@ int talshTensorContract(const char * cptrn,        //in: C-string: symbolic cont
    if(cohd == COPY_D || (cohd == COPY_M && dtens->dev_rsc[dimg].dev_id != devid)) dtens->avail[dimg] = NOPE;
    //Schedule the tensor operation via the device-specific runtime:
    ctm=clock();
-   errc=cpu_tensor_block_contract(contr_ptrn,lftr,rftr,dftr,scale_real,scale_imag); //blocking call
+   errc=cpu_tensor_block_contract(contr_ptrn,lftr,rftr,dftr,scale_real,scale_imag,conj_bits); //blocking call
    if(talshTensorRank(dtens) == 0){ //an explicit update is needed for scalar destinations
     j=talsh_update_f_scalar(dftr,dtens->data_kind[dimg],dtens->dev_rsc[dimg].gmem_p);
     if(j) errc=TALSH_FAILURE;

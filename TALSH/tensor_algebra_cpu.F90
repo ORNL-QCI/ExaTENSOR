@@ -1,6 +1,6 @@
 !Tensor Algebra for Multi- and Many-core CPUs (OpenMP based).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2016/12/07
+!REVISION: 2016/12/18
 
 !Copyright (C) 2013-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -2851,8 +2851,8 @@
 	endif
 	return
 	end subroutine tensor_block_add
-!---------------------------------------------------------------------------------------------
-	subroutine tensor_block_contract(contr_ptrn,ltens,rtens,dtens,ierr,data_kind,ord_rest) !PARALLEL
+!------------------------------------------------------------------------------------------------------
+	subroutine tensor_block_contract(contr_ptrn,ltens,rtens,dtens,ierr,arg_conj,data_kind,ord_rest) !PARALLEL
 !This subroutine contracts two tensor blocks and accumulates the result into another tensor block:
 !dtens(:)+=ltens(:)*rtens(:)
 !Author: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
@@ -2870,6 +2870,7 @@
 ! - ltens - left tensor argument (tensor block);
 ! - rtens - right tensor argument (tensor block);
 ! - dtens - initialized! destination tensor argument (tensor block);
+! - arg_conj - argument complex conjugation flags: Bit 0 -> Destination, Bit 1 -> Left, Bit 2 -> Right tensor argument;
 ! - data_kind - (optional) requested data kind, one of {'r4','r8','c8'};
 ! - ord_rest(1:left_rank+right_rank) - (optional) index ordering restrictions (for contracted indices only);
 !OUTPUT:
@@ -2878,79 +2879,104 @@
 !NOTES:
 ! - If <data_kind> is not specified then only the highest present data kind will be processed
 !   whereas the present lower-level data kinds of the destination tensor will be syncronized.
-	implicit none
-	integer, intent(in):: contr_ptrn(1:*)
-	integer, intent(in), optional:: ord_rest(1:*)
-	character(2), intent(in), optional:: data_kind
-	type(tensor_block_t), intent(inout), target:: ltens,rtens !(out) because of <tensor_block_layout> because of <tensor_block_shape_ok>
-	type(tensor_block_t), intent(inout), target:: dtens
-	integer, intent(inout):: ierr
+        implicit none
+        integer, intent(in):: contr_ptrn(1:*)                     !in: digital contraction pattern (see above)
+        type(tensor_block_t), intent(inout), target:: ltens,rtens !inout: left and right tensors: (out) because of <tensor_block_layout> because of <tensor_block_shape_ok>
+        type(tensor_block_t), intent(inout), target:: dtens       !inout: destination tensor
+        integer, intent(inout):: ierr                             !out: error code
+        integer, intent(in), optional:: arg_conj                  !in: argument complex conjugation (Bit 0 -> Destination, Bit 1 -> Left, Bit 2 -> Right)
+        character(2), intent(in), optional:: data_kind
+        integer, intent(in), optional:: ord_rest(1:*)
+!----------------------------------------------------
+        integer, parameter:: PARTIAL_CONTRACTION=1
+        integer, parameter:: FULL_CONTRACTION=2
+        integer, parameter:: ADD_TENSOR=3
+        integer, parameter:: MULTIPLY_SCALARS=4
 !------------------------------------------------
-	integer, parameter:: partial_contraction=1
-	integer, parameter:: full_contraction=2
-	integer, parameter:: add_tensor=3
-	integer, parameter:: multiply_scalars=4
-!------------------------------------------------
-	integer i,j,k,l,m,n,k0,k1,k2,k3,ks,kf
-	integer(LONGINT) l0,l1,l2,l3,lld,lrd,lcd
-	integer ltb,rtb,dtb,lrank,rrank,drank,nlu,nru,ncd,tst,contr_case,dn2o(0:max_tensor_rank)
-	integer, target:: lo2n(0:max_tensor_rank),ro2n(0:max_tensor_rank),do2n(0:max_tensor_rank)
-	integer, pointer:: trn(:)
-	type(tensor_block_t), pointer:: tens_in,tens_out,ltp,rtp,dtp
-	type(tensor_block_t), target:: lta,rta,dta
-	character(2) dtk
-	real(4) d_r4
-	real(8) d_r8,start_gemm
-	complex(8) d_c8
-	logical contr_ok,ltransp,rtransp,dtransp,transp
+        integer:: i,j,k,l,m,n,k0,k1,k2,k3,ks,kf
+        integer(LONGINT):: l0,l1,l2,l3,lld,lrd,lcd
+        integer:: ltb,rtb,dtb,lrank,rrank,drank,nlu,nru,ncd,tst,contr_case,dn2o(0:max_tensor_rank)
+        integer, target:: lo2n(0:max_tensor_rank),ro2n(0:max_tensor_rank),do2n(0:max_tensor_rank)
+        integer, pointer:: trn(:)
+        type(tensor_block_t), pointer:: tens_in,tens_out,ltp,rtp,dtp
+        type(tensor_block_t), target:: lta,rta,dta
+        character(2):: dtk
+        character(1):: ltrm,rtrm
+        real(4):: d_r4
+        real(8):: d_r8,start_gemm
+        complex(8):: d_c8,l_c8,r_c8
+        logical:: contr_ok,ltransp,rtransp,dtransp,transp,lconj,rconj,dconj,conj
 
-	ierr=0
+        ierr=0
 !Get the argument types:
-	ltb=tensor_block_layout(ltens,ierr); if(ierr.ne.0) then; ierr=1; return; endif !left-tensor storage layout type
-	rtb=tensor_block_layout(rtens,ierr); if(ierr.ne.0) then; ierr=2; return; endif !right-tensor storage layout type
-	dtb=tensor_block_layout(dtens,ierr); if(ierr.ne.0) then; ierr=3; return; endif !destination-tensor storage layout type
+        ltb=tensor_block_layout(ltens,ierr); if(ierr.ne.0) then; ierr=1; return; endif !left-tensor storage layout type
+        rtb=tensor_block_layout(rtens,ierr); if(ierr.ne.0) then; ierr=2; return; endif !right-tensor storage layout type
+        dtb=tensor_block_layout(dtens,ierr); if(ierr.ne.0) then; ierr=3; return; endif !destination-tensor storage layout type
 !Determine the contraction case:
-	if(ltb.eq.not_allocated.or.rtb.eq.not_allocated.or.dtb.eq.not_allocated) then; ierr=4; return; endif
-	if(ltb.eq.scalar_tensor.and.rtb.eq.scalar_tensor.and.dtb.eq.scalar_tensor) then !multiplication of scalars
-	 contr_case=multiply_scalars
-	elseif((ltb.ne.scalar_tensor.and.rtb.eq.scalar_tensor.and.dtb.ne.scalar_tensor).or.&
-	      &(ltb.eq.scalar_tensor.and.rtb.ne.scalar_tensor.and.dtb.ne.scalar_tensor)) then
-	 contr_case=add_tensor
-	elseif(ltb.ne.scalar_tensor.and.rtb.ne.scalar_tensor.and.dtb.eq.scalar_tensor) then
-	 contr_case=full_contraction
-	elseif(ltb.ne.scalar_tensor.and.rtb.ne.scalar_tensor.and.dtb.ne.scalar_tensor) then
-	 contr_case=partial_contraction
-	else
-	 ierr=5; return
-	endif
+        if(ltb.eq.not_allocated.or.rtb.eq.not_allocated.or.dtb.eq.not_allocated) then; ierr=4; return; endif
+        if(ltb.eq.scalar_tensor.and.rtb.eq.scalar_tensor.and.dtb.eq.scalar_tensor) then !multiplication of scalars
+         contr_case=MULTIPLY_SCALARS
+        elseif((ltb.ne.scalar_tensor.and.rtb.eq.scalar_tensor.and.dtb.ne.scalar_tensor).or.&
+              &(ltb.eq.scalar_tensor.and.rtb.ne.scalar_tensor.and.dtb.ne.scalar_tensor)) then
+         contr_case=ADD_TENSOR
+        elseif(ltb.ne.scalar_tensor.and.rtb.ne.scalar_tensor.and.dtb.eq.scalar_tensor) then
+         contr_case=FULL_CONTRACTION
+        elseif(ltb.ne.scalar_tensor.and.rtb.ne.scalar_tensor.and.dtb.ne.scalar_tensor) then
+         contr_case=PARTIAL_CONTRACTION
+        else
+         ierr=5; return
+        endif
 !Check tensor ranks:
-	lrank=ltens%tensor_shape%num_dim; rrank=rtens%tensor_shape%num_dim; drank=dtens%tensor_shape%num_dim
-	if(lrank.ge.0.and.lrank.le.max_tensor_rank.and.rrank.ge.0.and.rrank.le.max_tensor_rank.and.&
-	  &drank.ge.0.and.drank.le.max_tensor_rank) then
-	 if(present(data_kind)) then
-	  dtk=data_kind
-	 else
-	  call determine_data_kind(dtk,ierr); if(ierr.ne.0) then; ierr=6; return; endif
-	 endif
+        lrank=ltens%tensor_shape%num_dim; rrank=rtens%tensor_shape%num_dim; drank=dtens%tensor_shape%num_dim
+        if(lrank.ge.0.and.lrank.le.max_tensor_rank.and.rrank.ge.0.and.rrank.le.max_tensor_rank.and.&
+          &drank.ge.0.and.drank.le.max_tensor_rank) then
+         if(present(data_kind)) then
+          dtk=data_kind
+         else
+          call determine_data_kind(dtk,ierr); if(ierr.ne.0) then; ierr=6; return; endif
+         endif
  !Check the requested contraction pattern:
-	 contr_ok=contr_ptrn_ok(contr_ptrn,lrank,rrank,drank)
-	 if(present(ord_rest)) contr_ok=contr_ok.and.ord_rest_ok(ord_rest,contr_ptrn,lrank,rrank,drank)
-	 if(.not.contr_ok) then; ierr=7; return; endif
-!	 write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_contract): contraction pattern accepted:",128(1x,i2))') &
+         contr_ok=contr_ptrn_ok(contr_ptrn,lrank,rrank,drank)
+         if(present(ord_rest)) contr_ok=contr_ok.and.ord_rest_ok(ord_rest,contr_ptrn,lrank,rrank,drank)
+         if(.not.contr_ok) then; ierr=7; return; endif
+!        write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_contract): contraction pattern accepted:",128(1x,i2))') &
 !         contr_ptrn(1:lrank+rrank) !debug
-!	 write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_contract): tensor layouts (left, right, dest): ",i2,1x,i2,1x,i2)') &
+!        write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_contract): tensor layouts (left, right, dest): ",i2,1x,i2,1x,i2)') &
 !         ltb,rtb,dtb !debug
  !Determine index permutations for all tensor operands together with the numbers of contracted/uncontraced indices (ncd/{nlu,nru}):
-	 call determine_index_permutations !sets {dtransp,ltransp,rtransp},{do2n,lo2n,ro2n},{ncd,nlu,nru}
-!	 write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_contract): left uncontr, right uncontr, contr dims: "&
+         call determine_index_permutations !sets {dtransp,ltransp,rtransp},{do2n,lo2n,ro2n},{ncd,nlu,nru}
+!        write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_contract): left uncontr, right uncontr, contr dims: "&
 !         &,i2,1x,i2,1x,i2)') nlu,nru,ncd !debug
-!	 write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_contract): left index permutation (O2N)  :"&
+!        write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_contract): left index permutation (O2N)  :"&
 !         &,128(1x,i2))') lo2n(1:lrank) !debug
-!	 write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_contract): right index permutation (O2N) :"&
+!        write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_contract): right index permutation (O2N) :"&
 !         &,128(1x,i2))') ro2n(1:rrank) !debug
-!	 write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_contract): result index permutation (O2N):"&
+!        write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_contract): result index permutation (O2N):"&
 !         &,128(1x,i2))') do2n(1:drank) !debug
- !Transpose the tensor arguments, if needed:
+ !Determine complex conjugation for all tensor arguments:
+         ltrm='T'; rtrm='N'
+         if(dtk(1:1).eq.'c'.or.dtk(1:1).eq.'C') then !only complex data types (C4,C8)
+  !Determine the need for complex conjugation for all arguments:
+          k=arg_conj
+          dconj=(mod(k,2).eq.1); k=k/2
+          lconj=(mod(k,2).eq.1); k=k/2
+          rconj=(mod(k,2).eq.1)
+          if(dconj) then; dconj=.FALSE.; lconj=.not.lconj; rconj=.not.rconj; endif
+  !Modify right tensor index permutation if needed:
+          if(lconj) ltrm='C' !'T' -> 'C'
+          if(rconj) then     !'N' -> 'C'
+           if(ncd.gt.0.and.nru.gt.0) then
+            dn2o(0)=ro2n(0); do k=1,rrank; dn2o(ro2n(k))=k; enddo
+            do k=1,ncd; ro2n(dn2o(k))=nru+k; enddo
+            do k=ncd+1,rrank; ro2n(dn2o(k))=k-ncd; enddo
+            rtransp=.not.perm_trivial(rrank,ro2n)
+           endif
+           rtrm='C'
+          endif
+         else
+          dconj=.FALSE.; lconj=.FALSE.; rconj=.FALSE.
+         endif
+ !Transpose tensor arguments, if needed:
 	 nullify(ltp); nullify(rtp); nullify(dtp)
 	 do k=1,2 !left/right switch
 	  if(k.eq.1) then; tst=ltb; transp=ltransp; tens_in=>ltens; else; tst=rtb; transp=rtransp; tens_in=>rtens; endif
@@ -3006,7 +3032,7 @@
  !Multiply two matrices (ltp & rtp):
 !	 start_gemm=thread_wtime() !debug
 	 select case(contr_case)
-	 case(partial_contraction) !destination is an array
+	 case(PARTIAL_CONTRACTION) !destination is an array
 	  select case(dtk)
 	  case('r4')
 #ifdef NO_BLAS
@@ -3014,7 +3040,7 @@
 	   if(ierr.ne.0) then; ierr=16; goto 999; endif
 #else
 	   if(.not.DISABLE_BLAS) then
-	    call sgemm('T','N',int(lld,4),int(lrd,4),int(lcd,4),1.0,ltp%data_real4,int(lcd,4),rtp%data_real4,int(lcd,4),1.0,&
+	    call sgemm(ltrm,rtrm,int(lld,4),int(lrd,4),int(lcd,4),1.0,ltp%data_real4,int(lcd,4),rtp%data_real4,int(lcd,4),1.0,&
 	              &dtp%data_real4,int(lld,4))
 	   else
 	    call tensor_block_pcontract_dlf(lld,lrd,lcd,ltp%data_real4,rtp%data_real4,dtp%data_real4,ierr)
@@ -3027,7 +3053,7 @@
 	   if(ierr.ne.0) then; ierr=18; goto 999; endif
 #else
 	   if(.not.DISABLE_BLAS) then
-	    call dgemm('T','N',int(lld,4),int(lrd,4),int(lcd,4),1d0,ltp%data_real8,int(lcd,4),rtp%data_real8,int(lcd,4),1d0,&
+	    call dgemm(ltrm,rtrm,int(lld,4),int(lrd,4),int(lcd,4),1d0,ltp%data_real8,int(lcd,4),rtp%data_real8,int(lcd,4),1d0,&
 	              &dtp%data_real8,int(lld,4))
 	   else
 	    call tensor_block_pcontract_dlf(lld,lrd,lcd,ltp%data_real8,rtp%data_real8,dtp%data_real8,ierr)
@@ -3040,7 +3066,7 @@
 	   if(ierr.ne.0) then; ierr=20; goto 999; endif
 #else
 	   if(.not.DISABLE_BLAS) then
-	    call zgemm('T','N',int(lld,4),int(lrd,4),int(lcd,4),1d0,ltp%data_cmplx8,int(lcd,4),rtp%data_cmplx8,int(lcd,4),1d0,&
+	    call zgemm(ltrm,rtrm,int(lld,4),int(lrd,4),int(lcd,4),1d0,ltp%data_cmplx8,int(lcd,4),rtp%data_cmplx8,int(lcd,4),1d0,&
 	              &dtp%data_cmplx8,int(lld,4))
 	   else
 	    call tensor_block_pcontract_dlf(lld,lrd,lcd,ltp%data_cmplx8,rtp%data_cmplx8,dtp%data_cmplx8,ierr)
@@ -3048,7 +3074,7 @@
 	   endif
 #endif
 	  end select
-	 case(full_contraction) !destination is a scalar variable
+	 case(FULL_CONTRACTION) !destination is a scalar variable
 	  select case(dtk)
 	  case('r4')
 	   d_r4=0.0
@@ -3063,10 +3089,10 @@
 	  case('c8')
 	   d_c8=cmplx(0d0,0d0,8)
 	   call tensor_block_fcontract_dlf(lcd,ltp%data_cmplx8,rtp%data_cmplx8,d_c8,ierr)
-           if(ierr.ne.0) then; ierr=24; goto 999; endif
+	   if(ierr.ne.0) then; ierr=24; goto 999; endif
 	   dtp%scalar_value=dtp%scalar_value+d_c8
 	  end select
-	 case(add_tensor)
+	 case(ADD_TENSOR)
 	  if(ltb.ne.scalar_tensor.and.rtb.eq.scalar_tensor) then
 	   call tensor_block_add(dtp,ltp,ierr,rtp%scalar_value,dtk); if(ierr.ne.0) then; ierr=25; goto 999; endif
 	  elseif(ltb.eq.scalar_tensor.and.rtb.ne.scalar_tensor) then
@@ -3074,11 +3100,13 @@
 	  else
 	   ierr=27; goto 999
 	  endif
-	 case(multiply_scalars)
-	  dtp%scalar_value=dtp%scalar_value+ltp%scalar_value*rtp%scalar_value
+	 case(MULTIPLY_SCALARS)
+	  if(lconj) then; l_c8=conjg(ltp%scalar_value); else; l_c8=ltp%scalar_value; endif
+	  if(rconj) then; r_c8=conjg(rtp%scalar_value); else; r_c8=rtp%scalar_value; endif
+	  dtp%scalar_value=dtp%scalar_value+l_c8*r_c8
 	 end select
 !	 write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_contract): GEMM time: ",F10.4)') thread_wtime(start_gemm) !debug
- !Transpose the matrix-result into the output tensor:
+ !Transpose the matrix-result back into the output tensor:
 	 if(dtransp) then
 !	  write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_contract): permutation to be performed for ",i2)') 0 !debug
 	  call tensor_block_copy(dtp,dtens,ierr,do2n); if(ierr.ne.0) then; ierr=28; goto 999; endif
@@ -3089,15 +3117,15 @@
  !Destroy temporary tensor blocks:
 999	 nullify(ltp); nullify(rtp); nullify(dtp)
          select case(contr_case)
-	 case(partial_contraction)
+	 case(PARTIAL_CONTRACTION)
 	  if(ltransp) then; call tensor_block_destroy(lta,j); if(j.ne.0) ierr=ierr+100+j; endif
 	  if(rtransp) then; call tensor_block_destroy(rta,j); if(j.ne.0) ierr=ierr+200+j; endif
 	  if(dtransp) then; call tensor_block_destroy(dta,j); if(j.ne.0) ierr=ierr+500+j; endif
-	 case(full_contraction)
+	 case(FULL_CONTRACTION)
 	  if(ltransp) then; call tensor_block_destroy(lta,j); if(j.ne.0) ierr=ierr+1000+j; endif
-	 case(add_tensor)
+	 case(ADD_TENSOR)
 	  if(dtransp) then; call tensor_block_destroy(dta,j); if(j.ne.0) ierr=ierr+2000+j; endif
-	 case(multiply_scalars)
+	 case(MULTIPLY_SCALARS)
 	 end select
 	else
 	 ierr=30
@@ -3178,7 +3206,7 @@
 	 integer, intent(out):: ier
 	 ier=0
 	 select case(contr_case)
-	 case(partial_contraction)
+	 case(PARTIAL_CONTRACTION)
 	  if(associated(ltens%data_cmplx8).and.associated(rtens%data_cmplx8).and.associated(dtens%data_cmplx8)) then
 	   dtkd='c8'
 	  else
@@ -3192,7 +3220,7 @@
 	    endif
 	   endif
 	  endif
-	 case(full_contraction)
+	 case(FULL_CONTRACTION)
 	  if(associated(ltens%data_cmplx8).and.associated(rtens%data_cmplx8)) then
 	   dtkd='c8'
 	  else
@@ -3206,7 +3234,7 @@
 	    endif
 	   endif
 	  endif
-	 case(add_tensor)
+	 case(ADD_TENSOR)
 	  if(associated(ltens%data_cmplx8).or.associated(rtens%data_cmplx8)) then
 	   dtkd='c8'
 	  else
@@ -3220,7 +3248,7 @@
 	    endif
 	   endif
 	  endif
-	 case(multiply_scalars)
+	 case(MULTIPLY_SCALARS)
 	  dtkd='c8' !scalars are always complex(8)
 	 end select
 	 return
