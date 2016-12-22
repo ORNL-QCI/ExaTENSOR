@@ -241,6 +241,12 @@
           implicit none
           type(talsh_tens_t), intent(in):: tens_block
          end subroutine talsh_tensor_print_info
+  ![DEBUG]: Compute the 1-norm of a tensor on Host CPU:
+         real(C_DOUBLE) function talshTensorImageNorm1_cpu(talsh_tens) bind(c,name='talshTensorImageNorm1_cpu')
+          import
+          implicit none
+          type(talsh_tens_t), intent(in):: talsh_tens
+         end function talshTensorImageNorm1_cpu
  !TAL-SH task C/C++ API:
   !Destruct a TAL-SH task:
          integer(C_INT) function talshTaskDestruct(talsh_task) bind(c,name='talshTaskDestruct')
@@ -388,6 +394,7 @@
         public talsh_tensor_presence
         public talsh_tensor_get_body_access
         public talsh_tensor_print_info
+        public talshTensorImageNorm1_cpu
  !TAL-SH task API:
         public talsh_task_destruct
         public talsh_task_dev_id

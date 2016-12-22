@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level API header.
-REVISION: 2016/12/07
+REVISION: 2016/12/22
 
 Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -24,6 +24,7 @@ along with ExaTensor. If not, see <http://www.gnu.org/licenses/>.
 #ifndef _TALSH_H
 #define _TALSH_H
 
+#include <math.h>
 #include "tensor_algebra.h"
 
 //TAL-SH PARAMETERS:
@@ -92,6 +93,17 @@ typedef struct{
 #ifdef __cplusplus
 extern "C"{
 #endif
+// TAL-SH complex arithmetic:
+inline talshComplex4 talshComplex4Set(float real, float imag);
+inline talshComplex8 talshComplex8Set(double real, double imag);
+inline float talshComplex4Real(talshComplex4 cmplx);
+inline double talshComplex8Real(talshComplex8 cmplx);
+inline float talshComplex4Imag(talshComplex4 cmplx);
+inline double talshComplex8Imag(talshComplex8 cmplx);
+inline talshComplex4 talshComplex4Conjg(talshComplex4 cmplx);
+inline talshComplex8 talshComplex8Conjg(talshComplex8 cmplx);
+inline float talshComplex4Abs(talshComplex4 cmplx);
+inline double talshComplex8Abs(talshComplex8 cmplx);
 // TAL-SH helper functions:
 //  Check the validity of a data kind and get its size:
  int talshValidDataKind(int datk, int * datk_size);

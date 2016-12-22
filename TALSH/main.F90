@@ -23,7 +23,8 @@
         implicit none
         logical, parameter:: TEST_NVTAL=.FALSE.
         logical, parameter:: TEST_TALSH=.FALSE.
-        logical, parameter:: BENCH_TALSH_RND=.TRUE.
+        logical, parameter:: TEST_COMPLEX=.TRUE.
+        logical, parameter:: BENCH_TALSH_RND=.FALSE.
         logical, parameter:: BENCH_TALSH_CUSTOM=.FALSE.
 #ifndef NO_GPU
         interface
@@ -51,6 +52,15 @@
          call test_talsh_f(ierr)
          write(*,'("Done: Status ",i5)') ierr
          if(ierr.ne.0) stop
+         write(*,*)''
+        endif
+!Test TAL-SH complex field operations:
+        if(TEST_COMPLEX) then
+         write(*,'("Testing TAL-SH complex tensor operations ...")')
+         call test_talsh_cmplx_f(ierr)
+         write(*,'("Done: Status ",i5)') ierr
+         if(ierr.ne.0) stop
+         write(*,*)''
         endif
 !Benchmark tensor contraction performance:
  !Random test:
@@ -59,6 +69,7 @@
          call benchmark_tensor_contractions_rnd(ierr)
          write(*,'("Done: Status ",i5)') ierr
          if(ierr.ne.0) stop
+         write(*,*)''
         endif
  !Custom test:
         if(BENCH_TALSH_CUSTOM) then
@@ -66,6 +77,7 @@
          call benchmark_tensor_contractions_ctm(ierr)
          write(*,'("Done: Status ",i5)') ierr
          if(ierr.ne.0) stop
+         write(*,*)''
         endif
         stop
         end program main
@@ -87,14 +99,6 @@
         type(talsh_task_t):: tsks(MAX_TASKS)   !task handles
         type(talsh_tens_t):: tens(MAX_TENSORS) !tensors
         complex(8):: cval
-
-        interface
-         real(C_DOUBLE) function talshTensorImageNorm1_cpu(talsh_tens) bind(c,name='talshTensorImageNorm1_cpu')
-          import
-          implicit none
-          type(talsh_tens_t), intent(in):: talsh_tens
-         end function talshTensorImageNorm1_cpu
-        end interface
 
         ierr=0
 !Check GPU availability:
@@ -218,6 +222,94 @@
         if(ierr.ne.TALSH_SUCCESS) then; ierr=14; return; endif
         return
         end subroutine test_talsh_f
+!------------------------------------------
+        subroutine test_talsh_cmplx_f(ierr)
+!Testing TAL-SH complex tensor operations.
+        use, intrinsic:: ISO_C_BINDING
+        use tensor_algebra
+        use talsh
+        use stsubs
+        implicit none
+        integer(C_SIZE_T), parameter:: BUF_SIZE=1_8*1024_8*1024_8*1024_8 !desired Host argument buffer size in bytes
+        integer(C_INT), parameter:: DIM_EXT=31 !tensor dimension extent
+        integer(C_SIZE_T):: host_buf_size
+        integer(C_INT):: i,j,k,l,m,n,ierr,num_gpus,host_arg_max,sta,sts,shp(1:MAX_TENSOR_RANK)
+        type(talsh_tens_t):: ltens,rtens,ctens,dtens,ptens,ntens
+        type(talsh_task_t):: tsk0,tsk1
+        complex(8):: cval
+
+        ierr=0
+!Check GPU availability:
+#ifndef NO_GPU
+        write(*,'(1x,"Checking Nvidia GPU availability ... ")',ADVANCE='NO')
+        ierr=cuda_get_device_count(num_gpus)
+        write(*,'("Status ",i11,": Number of GPUs = ",i3)') ierr,num_gpus
+        if(ierr.ne.TALSH_SUCCESS) then; ierr=1; return; endif
+#else
+        num_gpus=0
+#endif
+!Initialize TALSH runtime:
+        write(*,'(1x,"Initializing TALSH ... ")',ADVANCE='NO')
+        host_buf_size=BUF_SIZE
+#ifndef NO_GPU
+        ierr=talsh_init(host_buf_size,host_arg_max,gpu_list=(/(i,i=0,num_gpus-1)/))
+#else
+        ierr=talsh_init(host_buf_size,host_arg_max)
+#endif
+        write(*,'("Status ",i11,": Size (Bytes) = ",i13,": Max args in HAB = ",i7)') ierr,host_buf_size,host_arg_max
+        if(ierr.ne.TALSH_SUCCESS) then; ierr=2; return; endif
+
+!Construct tensors:
+        write(*,'(1x,"Constructing TAL-SH tensors: Statuses: ")',ADVANCE='NO')
+        cval=(+1.234d-3,-3.985d-4); ierr=talsh_tensor_construct(ltens,C8,(/DIM_EXT,DIM_EXT,DIM_EXT,DIM_EXT/),init_val=cval)
+        write(*,'(i11)',ADVANCE='NO') ierr; if(ierr.ne.TALSH_SUCCESS) then; ierr=11; return; endif
+        cval=(-2.768d-4,+6.731d-3); ierr=talsh_tensor_construct(rtens,C8,(/DIM_EXT,DIM_EXT,DIM_EXT,DIM_EXT/),init_val=cval)
+        write(*,'(i11)',ADVANCE='NO') ierr; if(ierr.ne.TALSH_SUCCESS) then; ierr=11; return; endif
+        cval=(0d0,0d0); ierr=talsh_tensor_construct(ctens,C8,(/DIM_EXT,DIM_EXT,DIM_EXT,DIM_EXT/),init_val=cval)
+        write(*,'(i11)',ADVANCE='NO') ierr; if(ierr.ne.TALSH_SUCCESS) then; ierr=11; return; endif
+        cval=(0d0,0d0); ierr=talsh_tensor_construct(dtens,C8,(/DIM_EXT,DIM_EXT,DIM_EXT,DIM_EXT/),init_val=cval)
+        write(*,'(i11)',ADVANCE='NO') ierr; if(ierr.ne.TALSH_SUCCESS) then; ierr=11; return; endif
+        cval=(+1d0,0d0); ierr=talsh_tensor_construct(ptens,C8,shp(1:0),init_val=cval)
+        write(*,'(i11)',ADVANCE='NO') ierr; if(ierr.ne.TALSH_SUCCESS) then; ierr=11; return; endif
+        cval=(-1d0,0d0); ierr=talsh_tensor_construct(ntens,C8,shp(1:0),init_val=cval)
+        write(*,'(i11)',ADVANCE='NO') ierr; if(ierr.ne.TALSH_SUCCESS) then; ierr=11; return; endif
+        write(*,'()')
+
+
+!Destruct TAL-SH task handles:
+        write(*,'(1x,"Destructing task handles: Statuses: ")',ADVANCE='NO')
+        ierr=talsh_task_destruct(tsk1)
+        write(*,'(i11)',ADVANCE='NO') ierr; if(ierr.ne.TALSH_SUCCESS) then; ierr=11; return; endif
+        ierr=talsh_task_destruct(tsk0)
+        write(*,'(i11)',ADVANCE='NO') ierr; if(ierr.ne.TALSH_SUCCESS) then; ierr=11; return; endif
+        write(*,'()')
+!Destruct tensors:
+        write(*,'(1x,"Destructing tensors: Statuses: ")',ADVANCE='NO')
+        ierr=talsh_tensor_destruct(ntens)
+        write(*,'(i11)',ADVANCE='NO') ierr; if(ierr.ne.TALSH_SUCCESS) then; ierr=11; return; endif
+        ierr=talsh_tensor_destruct(ptens)
+        write(*,'(i11)',ADVANCE='NO') ierr; if(ierr.ne.TALSH_SUCCESS) then; ierr=11; return; endif
+        ierr=talsh_tensor_destruct(dtens)
+        write(*,'(i11)',ADVANCE='NO') ierr; if(ierr.ne.TALSH_SUCCESS) then; ierr=11; return; endif
+        ierr=talsh_tensor_destruct(ctens)
+        write(*,'(i11)',ADVANCE='NO') ierr; if(ierr.ne.TALSH_SUCCESS) then; ierr=11; return; endif
+        ierr=talsh_tensor_destruct(rtens)
+        write(*,'(i11)',ADVANCE='NO') ierr; if(ierr.ne.TALSH_SUCCESS) then; ierr=11; return; endif
+        ierr=talsh_tensor_destruct(ltens)
+        write(*,'(i11)',ADVANCE='NO') ierr; if(ierr.ne.TALSH_SUCCESS) then; ierr=11; return; endif
+        write(*,'()')
+
+!Print run-time statistics:
+        ierr=talsh_stats()
+        if(ierr.ne.TALSH_SUCCESS) then; ierr=13; return; endif
+!Shutdown TALSH:
+        write(*,'(1x,"Shutting down TALSH ... ")',ADVANCE='NO')
+        ierr=talsh_shutdown()
+        write(*,'("Status ",i11)') ierr
+        if(ierr.ne.TALSH_SUCCESS) then; ierr=14; return; endif
+        return
+
+        end subroutine test_talsh_cmplx_f
 !---------------------------------------------------------
         subroutine benchmark_tensor_contractions_rnd(ierr)
 !Benchmarks tensor contraction performance (random tensor contractions).
@@ -250,14 +342,6 @@
          complex(8):: cval
          real(C_DOUBLE):: flops,tm,tmc,tmi,tmo,tmm,gn1,cn1
          logical:: transpose,repeat
-
-         interface
-          real(C_DOUBLE) function talshTensorImageNorm1_cpu(talsh_tens) bind(c,name='talshTensorImageNorm1_cpu')
-           import
-           implicit none
-           type(talsh_tens_t), intent(in):: talsh_tens
-          end function talshTensorImageNorm1_cpu
-         end interface
 
          ierr=0
          open(10,file='benchmark_tens_contr.txt',form='FORMATTED',status='UNKNOWN')
@@ -508,14 +592,6 @@
          character(512):: str
          type(talsh_tens_t):: dtens,ltens,rtens
          type(talsh_task_t):: tsk
-
-         interface
-          real(C_DOUBLE) function talshTensorImageNorm1_cpu(talsh_tens) bind(c,name='talshTensorImageNorm1_cpu')
-           import
-           implicit none
-           type(talsh_tens_t), intent(in):: talsh_tens
-          end function talshTensorImageNorm1_cpu
-         end interface
 
          ierr=0
 #ifndef NO_GPU

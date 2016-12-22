@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level API.
-REVISION: 2016/12/18
+REVISION: 2016/12/22
 
 Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -235,6 +235,7 @@ static void host_task_print(const host_task_t * host_task)
  return;
 }
 
+// Tensor image API:
 int talsh_tensor_image_info(const talsh_tens_t * talsh_tens, int image_id,
                             int * dev_id, int * data_kind, void ** gmem_p, int * buf_entry)
 /** Returns the information on a specific tensor body image. A return status
@@ -504,6 +505,141 @@ static int talsh_choose_image_for_device(talsh_tens_t * tens, unsigned int coh_c
 }
 
 //EXPORTED FUNCTIONS:
+// Complex arithmetic:
+inline talshComplex4 talshComplex4Set(float real, float imag)
+{
+#ifndef NO_GPU
+ talshComplex4 result = make_cuFloatComplex(real,imag);
+#else
+#ifdef __cplusplus
+ talshComplex4 result(real,imag);
+#else
+ talshComplex4 result = {real,imag};
+#endif
+#endif
+ return result;
+}
+
+inline talshComplex8 talshComplex8Set(double real, double imag)
+{
+#ifndef NO_GPU
+ talshComplex8 result = make_cuDoubleComplex(real,imag);
+#else
+#ifdef __cplusplus
+ talshComplex8 result(real,imag);
+#else
+ talshComplex8 result = {real,imag};
+#endif
+#endif
+ return result;
+}
+
+inline float talshComplex4Real(talshComplex4 cmplx)
+{
+#ifndef NO_GPU
+ return cuCrealf(cmplx);
+#else
+#ifdef __cplusplus
+ return cmplx.real();
+#else
+ return cmplx.real;
+#endif
+#endif
+}
+
+inline double talshComplex8Real(talshComplex8 cmplx)
+{
+#ifndef NO_GPU
+ return cuCreal(cmplx);
+#else
+#ifdef __cplusplus
+ return cmplx.real();
+#else
+ return cmplx.real;
+#endif
+#endif
+}
+
+inline float talshComplex4Imag(talshComplex4 cmplx)
+{
+#ifndef NO_GPU
+ return cuCimagf(cmplx);
+#else
+#ifdef __cplusplus
+ return cmplx.imag();
+#else
+ return cmplx.imag;
+#endif
+#endif
+}
+
+inline double talshComplex8Imag(talshComplex8 cmplx)
+{
+#ifndef NO_GPU
+ return cuCimag(cmplx);
+#else
+#ifdef __cplusplus
+ return cmplx.imag();
+#else
+ return cmplx.imag;
+#endif
+#endif
+}
+
+inline talshComplex4 talshComplex4Conjg(talshComplex4 cmplx)
+{
+#ifndef NO_GPU
+ return cuConjf(cmplx);
+#else
+#ifdef __cplusplus
+ return std::conj(cmplx);
+#else
+ talshComplex4 result = {cmplx.real,-cmplx.imag};
+ return result;
+#endif
+#endif
+}
+
+inline talshComplex8 talshComplex8Conjg(talshComplex8 cmplx)
+{
+#ifndef NO_GPU
+ return cuConj(cmplx);
+#else
+#ifdef __cplusplus
+ return std::conj(cmplx);
+#else
+ talshComplex8 result = {cmplx.real,-cmplx.imag};
+ return result;
+#endif
+#endif
+}
+
+inline float talshComplex4Abs(talshComplex4 cmplx)
+{
+#ifndef NO_GPU
+ return cuCabsf(cmplx);
+#else
+#ifdef __cplusplus
+ return std::abs(cmplx);
+#else
+ return (float)sqrt((double)((cmplx.real)*(cmplx.real)) + (double)((cmplx.imag)*(cmplx.imag)));
+#endif
+#endif
+}
+
+inline double talshComplex8Abs(talshComplex8 cmplx)
+{
+#ifndef NO_GPU
+ return cuCabs(cmplx);
+#else
+#ifdef __cplusplus
+ return std::abs(cmplx);
+#else
+ return sqrt(((cmplx.real)*(cmplx.real)) + ((cmplx.imag)*(cmplx.imag)));
+#endif
+#endif
+}
+
 // TAL-SH helper functions:
 int talshValidDataKind(int datk, int * datk_size)
 /** Returns YEP if <datk> is a valid data kind (also returns its size in bytes in <datk_size>). **/
@@ -798,6 +934,8 @@ int talshTensorConstruct(talsh_tens_t * tens_block,     //inout: empty tensor bl
  float fval;
  float *fp;
  double *dp;
+ talshComplex4 *cfp,cfv;
+ talshComplex8 *cdp,cdv;
 
  if(talsh_on == 0) return TALSH_NOT_INITIALIZED;
  errc=TALSH_SUCCESS;
@@ -878,8 +1016,20 @@ int talshTensorConstruct(talsh_tens_t * tens_block,     //inout: empty tensor bl
 #pragma omp parallel for schedule(guided)
         for(size_t l=0; l < tvol; l++) dp[l]=init_val_real;
         break;
+       case C4:
+        cfv = talshComplex4Set(((float)init_val_real),((float)init_val_imag));
+        cfp = (talshComplex4*)(tens_block->dev_rsc[0].gmem_p);
+#pragma omp parallel for schedule(guided)
+        for(size_t l=0; l < tvol; l++) cfp[l]=cfv;
+        break;
+       case C8:
+        cdv = talshComplex8Set(init_val_real,init_val_imag);
+        cdp = (talshComplex8*)(tens_block->dev_rsc[0].gmem_p);
+#pragma omp parallel for schedule(guided)
+        for(size_t l=0; l < tvol; l++) cdp[l]=cdv;
+        break;
        default:
-        return NOT_CLEAN; //`Enable initialization for complex data kinds C4 and C8
+        return TALSH_FAILURE;
       }
      }
     }else{
