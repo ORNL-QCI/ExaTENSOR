@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level API.
-REVISION: 2016/12/22
+REVISION: 2016/12/27
 
 Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -2333,24 +2333,42 @@ int talshTensorContract_(const char * cptrn, talsh_tens_t * dtens, talsh_tens_t 
 double talshTensorImageNorm1_cpu(const talsh_tens_t * talsh_tens)
 /** Computes the 1-norm of the tensor body image residing on Host. **/
 {
- int i,j,n;
+ int i,nimg;
+ size_t j,n;
+ int dtk[TALSH_MAX_DEV_PRESENT];
  double norm1;
- double *image_p;
+ float *r4p;
+ double *r8p;
+ talshComplex4 *c4p;
+ talshComplex8 *c8p;
 
  norm1=-1.0;
  if(talsh_tens != NULL){
-  for(i=0;i<talsh_tens->ndev;++i){
-   if(talsh_tens->dev_rsc[i].dev_id == talshFlatDevId(DEV_HOST,0)){
-    n=talshTensorVolume(talsh_tens); norm1=0.0;
-    image_p=(double*)(talsh_tens->dev_rsc[i].gmem_p);
-    for(j=0;j<n;++j){
-     if(image_p[j] < 0){
-      norm1-=image_p[j];
-     }else{
-      norm1+=image_p[j];
+  i=talshTensorDataKind(talsh_tens,&nimg,dtk);
+  if(i == TALSH_SUCCESS){
+   for(i=0;i<talsh_tens->ndev;++i){
+    if(talsh_tens->dev_rsc[i].dev_id == talshFlatDevId(DEV_HOST,0)){
+     n=talshTensorVolume(talsh_tens); norm1=0.0;
+     switch(dtk[i]){
+      case R4:
+       r4p=(float*)(talsh_tens->dev_rsc[i].gmem_p);
+       for(j=0;j<n;++j){norm1+=(double)(ABS(r4p[j]));}
+       break;
+      case R8:
+       r8p=(double*)(talsh_tens->dev_rsc[i].gmem_p);
+       for(j=0;j<n;++j){norm1+=ABS(r8p[j]);}
+       break;
+      case C4:
+       c4p=(talshComplex4*)(talsh_tens->dev_rsc[i].gmem_p);
+       for(j=0;j<n;++j){norm1+=(double)(talshComplex4Abs(c4p[j]));}
+       break;
+      case C8:
+       c8p=(talshComplex8*)(talsh_tens->dev_rsc[i].gmem_p);
+       for(j=0;j<n;++j){norm1+=talshComplex8Abs(c8p[j]);}
+       break;
      }
+     break;
     }
-    break;
    }
   }
  }

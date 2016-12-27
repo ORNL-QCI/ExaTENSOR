@@ -237,6 +237,7 @@
         type(talsh_tens_t):: ltens,rtens,ctens,dtens,ptens,ntens
         type(talsh_task_t):: tsk0,tsk1
         complex(8):: cval
+        real(8):: cnrm,dnrm
 
         ierr=0
 !Check GPU availability:
@@ -275,6 +276,22 @@
         write(*,'(i11)',ADVANCE='NO') ierr; if(ierr.ne.TALSH_SUCCESS) then; ierr=11; return; endif
         write(*,'()')
 
+!Contract tensors:
+        write(*,'(1x,"Scheduling two tensor contractions: Statuses: ")',ADVANCE='NO')
+        ierr=talsh_tensor_contract('D(a,b,i,j)+=L+(j,k,c,i)*R(c,b,k,a)',ctens,ltens,rtens,&
+                                  &dev_id=talsh_flat_dev_id(DEV_HOST,0),talsh_task=tsk0)
+        write(*,'(i11,1x)',ADVANCE='NO') ierr; if(ierr.ne.TALSH_SUCCESS) then; ierr=9; return; endif
+        ierr=talsh_tensor_contract('D(a,b,i,j)+=L(j,k,c,i)*R+(c,b,k,a)',dtens,ltens,rtens,&
+                                  &dev_id=talsh_flat_dev_id(DEV_HOST,0),talsh_task=tsk1)
+        write(*,'(i11)') ierr; if(ierr.ne.TALSH_SUCCESS) then; ierr=9; return; endif
+        write(*,'(1x,"Waiting upon completion of tensor contraction 1 ... ")',ADVANCE='NO')
+        ierr=talsh_task_wait(tsk0,sts); write(*,'("Status ",i11," Completion = ",i8)') ierr,sts
+        if(ierr.ne.TALSH_SUCCESS) then; ierr=10; return; endif
+        write(*,'(1x,"Waiting upon completion of tensor contraction 2 ... ")',ADVANCE='NO')
+        ierr=talsh_task_wait(tsk1,sts); write(*,'("Status ",i11," Completion = ",i8)') ierr,sts
+        if(ierr.ne.TALSH_SUCCESS) then; ierr=10; return; endif
+        cnrm=talshTensorImageNorm1_cpu(ctens); dnrm=talshTensorImageNorm1_cpu(dtens)
+        write(*,'(1x,"Resulting tensor 1-norms: ",D25.14,1x,D25.14)') cnrm,dnrm
 
 !Destruct TAL-SH task handles:
         write(*,'(1x,"Destructing task handles: Statuses: ")',ADVANCE='NO')
@@ -283,6 +300,13 @@
         ierr=talsh_task_destruct(tsk0)
         write(*,'(i11)',ADVANCE='NO') ierr; if(ierr.ne.TALSH_SUCCESS) then; ierr=11; return; endif
         write(*,'()')
+
+!Add the resulting tensors with a "+" sign:
+        write(*,'(1x,"Adding the resulting tensors with a + sign: ")',ADVANCE='NO')
+        ierr=talsh_tensor_contract('D(a,b,i,j)+=L(a,b,i,j)*R()',ctens,dtens,ptens,&
+                                  &dev_id=talsh_flat_dev_id(DEV_HOST,0))
+        write(*,'("Status ",i11)') ierr
+
 !Destruct tensors:
         write(*,'(1x,"Destructing tensors: Statuses: ")',ADVANCE='NO')
         ierr=talsh_tensor_destruct(ntens)
