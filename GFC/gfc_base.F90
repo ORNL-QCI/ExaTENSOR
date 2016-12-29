@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Base
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2016-11-29 (started 2016-02-17)
+!REVISION: 2016-12-29 (started 2016-02-17)
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -21,20 +21,28 @@
 !along with ExaTensor. If not, see <http://www.gnu.org/licenses/>.
 
 !FOR DEVELOPERS ONLY:
-! # The base SCAN method as well as the concrete container constructors need to update
-!   the reference count in the corresponding container element (in use). An element
-!   of a container is considered IN USE if either it is a boundary element of some
-!   container/iterator or it is associated with the current position of some
-!   iterator or it is explicitly locked via the .in_use(errc,.TRUE.) method.
-!   If the element of a container is IN USE, it cannot be deleted or relinked.
-! # Inconsistency: When multiple iterators are associated with the same container,
-!   a deletion of a container element via one of the iterators may result in an
-!   undefined value for the boundary and/or current pointer in another iterator
-!   in case the deleted element is one of the boundary or the current element
-!   in that other iterator (also the other iterator's status may change to EMPTY).
-!   Also, some derived containers (e.g., list_bi_t) allow splitting the container
-!   into parts that can break other iterators associated with the same list.
-!   So far the solution is to make user liable for such illegal use of GFC.
+! # When implementing new containers derived from the abstract base container class,
+!   the following aspects have to be taken into account:
+!    a) All operations on a container are done via the corresponding iterator.
+!    b) The container iterator must be reset() upon addition of the first element.
+!    c) In general, an iterator may be associated with a subcontainer, that is,
+!       a part of a larger container carrying the same linkage topology, for example,
+!       sublist, subtree, subdictionary. Not every container class allows subcontaining.
+!    d) A subcontainer iterator must always stay within the boundaries of its subcontainer.
+!    e) Any relinking of container elements must be protected from races by GFC
+!       (the easiest way is OMP_CRITICAL). However, the race-free concurrent
+!       modification of the content of container elements is the user responsibility.
+!       Additionally, GFC will not allow deletion of container elements which are
+!       considered IN USE. An element of a container/subcontainer is considered IN USE
+!       if either it is a boundary element of the container/subcontainer, or it is associated
+!       with the current position of an iterator associated with the container/subcontainer,
+!       or it is explicitly locked via the member method .in_use(). The protection is implemented
+!       via locks and reference counting enabled for each individual container element.
+!       The reference count must be updated when an element of a container/subcontainer
+!       becomes/discontinues to be a boundary or current element of an iterator.
+!       Furthermore, changing the linkage of a container element which is IN USE
+!       should be done with special care or not done at all as it can change the
+!       status of the container element as a boundary in another iterator.
 ! # Quick counting does not work with composite containers and subcontainers
 !   and probably it should not be used at all. Currently gfc_container_t::num_elems_()
 !   will not return the total number of elements without quick counting. However, one
@@ -84,11 +92,14 @@
         integer(INTD), parameter:: GFC_CMP_NA=-6         !objects are not comparable
         integer(INTD), parameter:: GFC_CMP_ERR=GFC_ERROR !comparison error
  !GFC iterator status:
-        integer(INTD), parameter:: GFC_IT_NULL=1000   !uninitialized iterator
-        integer(INTD), parameter:: GFC_IT_EMPTY=1001  !empty initialized iterator
-        integer(INTD), parameter:: GFC_IT_ACTIVE=1002 !active (non-empty) iterator
-        integer(INTD), parameter:: GFC_IT_DONE=1003   !pass the end of the container (done), needs to be reset to continue
-        integer(INTD), parameter:: GFC_NO_MOVE=1004   !no move possible (for custom moves)
+        integer(INTD), parameter:: GFC_IT_NULL=1000      !uninitialized iterator
+        integer(INTD), parameter:: GFC_IT_EMPTY=1001     !empty initialized iterator
+        integer(INTD), parameter:: GFC_IT_ACTIVE=1002    !active (non-empty) iterator
+        integer(INTD), parameter:: GFC_IT_DONE=1003      !pass the end of the container (done), needs to be reset to continue
+        integer(INTD), parameter:: GFC_NO_MOVE=1004      !no move possible (for custom moves)
+ !GFC sorting:
+        integer(INTD), parameter:: GFC_ASCEND_ORDER=+1   !ascending order
+        integer(INTD), parameter:: GFC_DESCEND_ORDER=-1  !descending order
 !TYPES:
  !Element of a container:
         type, public:: gfc_cont_elem_t

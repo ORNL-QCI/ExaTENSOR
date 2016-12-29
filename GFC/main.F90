@@ -40,16 +40,16 @@ program main
  !Tree:
  ierr=test_gfc_tree(perf,dev_out)
  if(ierr.eq.0) then
-  write(*,*) 'GFC::tree testing status: ',ierr,'(PASSED): Performance: ',perf
+  write(*,*) 'gfc::tree testing status: ',ierr,'(PASSED): Performance: ',perf
  else
-  write(*,*) 'GFC::tree testing status: ',ierr,'(FAILED): Performance: ',perf
+  write(*,*) 'gfc::tree testing status: ',ierr,'(FAILED): Performance: ',perf
  endif
  !Dictionary:
  ierr=test_gfc_dictionary(perf,dev_out)
  if(ierr.eq.0) then
-  write(*,*) 'GFC::dictionary testing status: ',ierr,'(PASSED): Performance: ',perf
+  write(*,*) 'gfc::dictionary testing status: ',ierr,'(PASSED): Performance: ',perf
  else
-  write(*,*) 'GFC::dictionary testing status: ',ierr,'(FAILED): Performance: ',perf
+  write(*,*) 'gfc::dictionary testing status: ',ierr,'(FAILED): Performance: ',perf
  endif
 
 !Legacy containers:

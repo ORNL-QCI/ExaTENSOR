@@ -1,7 +1,7 @@
 !Generic dictionary implementation (OO Fortran) based on AVL BST.
 !This implementation is not derived from GFC::Base.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2016/03/16
+!REVISION: 2016/12/29
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -1137,7 +1137,7 @@
         implicit none
         private
 !PARAMETERS:
-        integer, parameter, private:: KEY_LEN=16
+        integer, parameter, private:: KEY_LEN=6
         integer, parameter, private:: MAX_IND_VAL=7
 !TYPES:
  !Key:
@@ -1219,6 +1219,7 @@
          enddo
          tm=thread_wtime(tm)
          perf=dble(MAX_ACTIONS)/tm
+         !write(jo,'("Found ",i11,"; Not found ",i11)') fnd,nfnd !debug
          return
 
          contains

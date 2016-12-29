@@ -24,6 +24,7 @@
 
        module gfc_dictionary
         use gfc_base
+        use gfc_list
         use timers
         implicit none
         private
@@ -91,6 +92,7 @@
           procedure, public:: move_down=>DictionaryIterMoveDown        !moves the iterator down the binary search tree, either left or right
           procedure, public:: delete_all=>DictionaryIterDeleteAll      !deletes all elements of the dictionary
           procedure, public:: search=>DictionaryIterSearch             !performs a key-based search in the dictionary
+          procedure, public:: sort_to_list=>DictionaryIterSortToList   !returns a list of references to dictionary elements in a sorted order
         end type dictionary_iter_t
 !INTERFACES:
 
@@ -123,6 +125,7 @@
         private DictionaryIterMoveDown
         private DictionaryIterDeleteAll
         private DictionaryIterSearch
+        private DictionaryIterSortToList
 !DEFINITIONS:
        contains
 ![dict_elem_t]===================================================================================
@@ -564,7 +567,7 @@
             do while(associated(dp%child_lt)); dp=>dp%child_lt; enddo
            else
             ierr=GFC_IT_DONE; dp=>this%current
-            do while(associated(dp%parent))
+            do while(associated(dp%parent).and.(.not.associated(dp,this%container%root)))
              if(associated(dp,dp%parent%child_lt)) then
               dp=>dp%parent; exit
              else
@@ -613,7 +616,7 @@
             do while(associated(dp%child_gt)); dp=>dp%child_gt; enddo
            else
             ierr=GFC_IT_DONE; dp=>this%current
-            do while(associated(dp%parent))
+            do while(associated(dp%parent).and.(.not.associated(dp,this%container%root)))
              if(associated(dp,dp%parent%child_gt)) then
               dp=>dp%parent; exit
              else
@@ -1456,6 +1459,59 @@
           end subroutine rotate_simple_right
 
         end function DictionaryIterSearch
+!---------------------------------------------------------------------
+        subroutine DictionaryIterSortToList(this,list_refs,ierr,order)
+!Returns a bidirectional linked list of references to dictionary elements in a sorted order.
+!The input dictionary iterator is allowed to be a subdictionary iterator.
+!The current dictionary iterator position is kept intact.
+!The bidirectional linked list must be empty on entrance.
+         implicit none
+         class(dictionary_iter_t), intent(inout):: this !in: dictionary (or subdictionary) iterator
+         class(list_bi_t), intent(inout):: list_refs    !out: bidirectional list of references to dictionary elements (in:empty,out:filled)
+         integer(INTD), intent(out), optional:: ierr    !out: error code
+         integer(INTD), intent(in), optional:: order    !in: sorting order: {GFC_ASCEND_ORDER,GFC_DESCEND_ORDER}, defaults to GFC_ASCEND_ORDER
+         integer(INTD):: errc,ier,ord
+         logical:: dir
+         type(list_iter_t):: list_it
+         class(dict_elem_t), pointer:: orig
+
+         errc=list_it%init(list_refs)
+         if(errc.eq.GFC_SUCCESS) then
+          if(list_it%get_status().eq.GFC_IT_EMPTY) then
+           errc=this%get_status()
+           if(errc.eq.GFC_IT_ACTIVE) then
+            if(present(order)) then; ord=order; else; ord=GFC_ASCEND_ORDER; endif
+            orig=>this%current !save the original iterator position
+            if(ord.eq.GFC_ASCEND_ORDER) then
+             errc=this%move_to_min(); dir=GFC_DICT_SUCCESSOR
+            else
+             errc=this%move_to_max(); dir=GFC_DICT_PREDECESSOR
+            endif
+            if(errc.eq.GFC_SUCCESS) then
+             sloop: do while(errc.eq.GFC_SUCCESS)
+              errc=list_it%append(this%current,at_top=.FALSE.,assoc_only=.TRUE.)
+              if(errc.ne.GFC_SUCCESS) exit sloop
+              errc=this%move_in_order(dir)
+             enddo sloop
+             if(errc.eq.GFC_IT_DONE) errc=GFC_SUCCESS
+            else
+             errc=GFC_CORRUPTED_CONT
+            endif
+            call this%jump_(orig) !return to the original iterator position
+           else
+            if(errc.ne.GFC_IT_EMPTY) errc=GFC_NULL_CONT
+           endif
+          else
+           errc=GFC_INVALID_ARGS
+          endif
+          ier=list_it%release()
+          if(errc.eq.GFC_SUCCESS.and.ier.ne.GFC_SUCCESS) errc=ier
+         else
+          errc=GFC_CORRUPTED_CONT
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine DictionaryIterSortToList
 
        end module gfc_dictionary
 !===============================
@@ -1468,7 +1524,7 @@
         implicit none
         private
 !PARAMETERS:
-        integer(INTD), parameter, private:: KEY_LEN=16
+        integer(INTD), parameter, private:: KEY_LEN=6
         integer(INTD), parameter, private:: MAX_IND_VAL=7
 !TYPES:
  !Key:
@@ -1553,6 +1609,7 @@
          enddo
          tm=thread_wtime(tms)
          perf=dble(MAX_ACTIONS)/tm
+         !write(jo,'("Found ",i11,"; Not found ",i11)') fnd,nfnd !debug
          call test_quit(GFC_SUCCESS)
          return
 
