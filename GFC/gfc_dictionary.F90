@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Dictionary (ordered map), AVL BST
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2016/11/29 (recycling my old dictionary implementation)
+!REVISION: 2016/12/29 (recycling my old dictionary implementation)
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -837,57 +837,61 @@
          class(dict_elem_t), pointer:: dp
          integer:: ier
 
-         errc=this%reset()
+         errc=this%get_status()
          if(errc.eq.GFC_IT_ACTIVE) then
-          errc=GFC_SUCCESS
-          dloop: do
-           do while(errc.eq.GFC_SUCCESS); errc=this%move_down(); enddo
-           if(errc.eq.GFC_NO_MOVE.and.associated(this%current)) then
-            if(present(dtor_f)) then
-             call this%current%destruct(errc,dtor_f=dtor_f)
-            else
-             call this%current%destruct(errc)
-            endif
-            if(errc.eq.GFC_SUCCESS) then
-             if(associated(this%current,this%container%root)) then !last element (root)
-              if(associated(this%current%parent)) then
-               if(associated(this%current,this%current%parent%child_lt)) then
-                this%current%parent%child_lt=>NULL()
-               elseif(associated(this%current,this%current%parent%child_gt)) then
-                this%current%parent%child_gt=>NULL()
+          errc=this%reset()
+          if(errc.eq.GFC_SUCCESS) then
+           dloop: do
+            do while(errc.eq.GFC_SUCCESS); errc=this%move_down(); enddo
+            if(errc.eq.GFC_NO_MOVE.and.associated(this%current)) then
+             if(present(dtor_f)) then
+              call this%current%destruct(errc,dtor_f=dtor_f)
+             else
+              call this%current%destruct(errc)
+             endif
+             if(errc.eq.GFC_SUCCESS) then
+              if(associated(this%current,this%container%root)) then !last element (root)
+               if(associated(this%current%parent)) then
+                if(associated(this%current,this%current%parent%child_lt)) then
+                 this%current%parent%child_lt=>NULL()
+                elseif(associated(this%current,this%current%parent%child_gt)) then
+                 this%current%parent%child_gt=>NULL()
+                else
+                 errc=GFC_CORRUPTED_CONT; exit dloop
+                endif
+               endif
+               call this%current%decr_ref_()
+               deallocate(this%current,STAT=ier)
+               if(ier.ne.0) errc=GFC_MEM_FREE_FAILED
+               this%current=>NULL(); errcode=this%set_status_(GFC_IT_EMPTY)
+               if(errc.eq.GFC_SUCCESS) errc=errcode
+               exit dloop
+              else
+               dp=>this%current
+               call this%current%decr_ref_()
+               this%current=>this%current%parent
+               call this%current%incr_ref_()
+               if(associated(this%current%child_lt,dp)) then
+                this%current%child_lt=>NULL()
+               elseif(associated(this%current%child_gt,dp)) then
+                this%current%child_gt=>NULL()
                else
                 errc=GFC_CORRUPTED_CONT; exit dloop
                endif
+               dp%parent=>NULL()
+               deallocate(dp,STAT=ier)
+               if(ier.ne.0) then; errc=GFC_MEM_FREE_FAILED; exit dloop; endif
               endif
-              call this%current%decr_ref_()
-              deallocate(this%current,STAT=ier)
-              if(ier.ne.0) errc=GFC_MEM_FREE_FAILED
-              this%current=>NULL(); errcode=this%set_status_(GFC_IT_EMPTY)
-              if(errc.eq.GFC_SUCCESS) errc=errcode
-              exit dloop
              else
-              dp=>this%current
-              call this%current%decr_ref_()
-              this%current=>this%current%parent
-              call this%current%incr_ref_()
-              if(associated(this%current%child_lt,dp)) then
-               this%current%child_lt=>NULL()
-              elseif(associated(this%current%child_gt,dp)) then
-               this%current%child_gt=>NULL()
-              else
-               errc=GFC_CORRUPTED_CONT; exit dloop
-              endif
-              dp%parent=>NULL()
-              deallocate(dp,STAT=ier)
-              if(ier.ne.0) then; errc=GFC_MEM_FREE_FAILED; exit dloop; endif
+              exit dloop
              endif
             else
-             exit dloop
+             errc=GFC_ERROR; exit dloop
             endif
-           else
-            errc=GFC_ERROR; exit dloop
-           endif
-          enddo dloop
+           enddo dloop
+          else
+           errc=GFC_ERROR
+          endif
          elseif(errc.eq.GFC_IT_EMPTY) then
           errc=GFC_EMPTY_CONT
          else
@@ -1282,9 +1286,12 @@
              if(VERBOSE) write(CONS_OUT,'("#ERROR(gfc::dictionary::search): add: absent input value for root!")')
              dict_search=GFC_INVALID_ARGS; curr=>NULL(); return
             endif
-            call dict%reroot_(curr)
-            if(present(value_out)) then; value_out=>curr%get_value(ierr); else; ierr=GFC_SUCCESS; endif
-            if(ierr.eq.GFC_SUCCESS) then; call this%jump_(curr); else; dict_search=ierr; endif
+            call dict%reroot_(curr); ierr=this%reset()
+            if(ierr.eq.GFC_SUCCESS) then
+             if(present(value_out)) then; value_out=>curr%get_value(ierr); if(ierr.ne.GFC_SUCCESS) dict_search=ierr; endif
+            else
+             dict_search=ierr
+            endif
            endif
           elseif(dict_search.eq.GFC_FOUND) then !return the found entry value (just in case)
            if(present(value_out)) then; value_out=>curr%get_value(ierr); else; ierr=GFC_SUCCESS; endif
@@ -1451,3 +1458,133 @@
         end function DictionaryIterSearch
 
        end module gfc_dictionary
+!===============================
+!TESTING:
+!--------------------------------
+       module gfc_dictionary_test
+        use gfc_base
+        use gfc_dictionary
+        use timers, only: thread_wtime
+        implicit none
+        private
+!PARAMETERS:
+        integer(INTD), parameter, private:: KEY_LEN=16
+        integer(INTD), parameter, private:: MAX_IND_VAL=7
+!TYPES:
+ !Key:
+        type, private:: key_t
+         integer(INTD):: rank=KEY_LEN
+         integer(INTD):: dims(1:KEY_LEN)
+        end type key_t
+ !Value:
+        type, private:: val_t
+         real(8):: my_array(1:KEY_LEN)
+         type(key_t):: key_stored
+        end type val_t
+!VISIBILITY:
+        private cmp_key_test
+        public test_gfc_dictionary
+
+       contains
+!-------------------------------------------------
+        function cmp_key_test(up1,up2) result(cmp)
+         implicit none
+         integer(INTD):: cmp
+         class(*), intent(in):: up1,up2
+         integer(INTD):: i
+
+         cmp=GFC_CMP_ERR
+         select type(up1)
+         class is(key_t)
+          select type(up2)
+          class is(key_t)
+           if(up1%rank.lt.up2%rank) then
+            cmp=GFC_CMP_LT
+           elseif(up1%rank.gt.up2%rank) then
+            cmp=GFC_CMP_GT
+           else
+            cmp=GFC_CMP_EQ
+            do i=1,up1%rank
+             if(up1%dims(i).lt.up2%dims(i)) then
+              cmp=GFC_CMP_LT; exit
+             elseif(up1%dims(i).gt.up2%dims(i)) then
+              cmp=GFC_CMP_GT; exit
+             endif
+            enddo
+           endif
+          end select
+         end select
+         return
+        end function cmp_key_test
+!--------------------------------------------------------------
+        function test_gfc_dictionary(perf,dev_out) result(ierr)
+         implicit none
+         integer(INTD):: ierr                          !out: error code (0:success)
+         real(8), intent(out):: perf                   !out: performance index
+         integer(INTD), intent(in), optional:: dev_out !in: default output device
+!-----------------------------------------------------
+         integer(INTD), parameter:: MAX_ACTIONS=1000000
+!------------------------------------------------------
+         integer(INTD):: jo,i,j,fnd,nfnd
+         type(key_t):: key
+         type(val_t):: val
+         type(dictionary_t), target:: some_dict
+         type(dictionary_iter_t):: dict_it
+         class(*), pointer:: uptr
+         real(8):: tms,tm
+
+         ierr=GFC_SUCCESS; perf=0d0; uptr=>NULL()
+         if(present(dev_out)) then; jo=dev_out; else; jo=6; endif
+         fnd=0; nfnd=0; key%rank=KEY_LEN
+         tms=thread_wtime()
+         j=dict_it%init(some_dict); if(j.ne.GFC_SUCCESS) then; call test_quit(1); return; endif
+         do i=1,MAX_ACTIONS
+          call get_rnd_key(key) !random key
+          val%my_array(1:KEY_LEN)=13.777d0; val%key_stored=key !value
+          j=dict_it%search(GFC_DICT_ADD_IF_NOT_FOUND,cmp_key_test,key,val,GFC_BY_VAL,uptr)
+          if(j.eq.GFC_FOUND) then
+           fnd=fnd+1
+           if(.not.associated(uptr)) then; call test_quit(2); return; endif
+          elseif(j.eq.GFC_NOT_FOUND) then
+           nfnd=nfnd+1
+          else
+           call test_quit(3)
+          endif
+         enddo
+         tm=thread_wtime(tms)
+         perf=dble(MAX_ACTIONS)/tm
+         call test_quit(GFC_SUCCESS)
+         return
+
+         contains
+
+          subroutine get_rnd_key(akey)
+           type(key_t), intent(inout):: akey
+           integer(INTD):: jj
+           real(8):: jv(1:KEY_LEN)
+           call random_number(jv(1:KEY_LEN))
+           do jj=1,akey%rank
+            akey%dims(jj)=nint(jv(jj)*dble(MAX_IND_VAL))
+           enddo
+           return
+          end subroutine get_rnd_key
+
+          subroutine test_quit(jerr)
+           integer(INTD), intent(in):: jerr
+           integer(INTD):: jj
+           ierr=jerr
+           if(ierr.ne.GFC_SUCCESS) then
+            write(jo,'("#ERROR(gfc::dictionary::test): Test failed: Error code ",i13)') ierr
+            write(jo,'("Please contact the developer at QUANT4ME@GMAIL.COM")')
+           endif
+           call dict_it%delete_all(jj); if(ierr.eq.GFC_SUCCESS.and.jj.ne.GFC_SUCCESS) ierr=4
+           if(jj.ne.GFC_SUCCESS) write(jo,'("#ERROR(gfc::dictionary::test): Dictionary destruction failed: Error code ",i13)') jj
+           jj=dict_it%release(); if(ierr.eq.GFC_SUCCESS.and.jj.ne.GFC_SUCCESS) ierr=5
+           if(jj.ne.GFC_SUCCESS) write(jo,'("#ERROR(gfc::dictionary::test): Dictionary iterator release failed: Error code ",i13)')&
+                                      &jj
+           return
+          end subroutine test_quit
+
+        end function test_gfc_dictionary
+
+       end module gfc_dictionary_test

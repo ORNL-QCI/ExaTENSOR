@@ -20,32 +20,52 @@ program main
  use dil_basic
  use stack_test
  use dictionary_test
+ !use gfc_list_test
  use gfc_tree_test
+ use gfc_dictionary_test
  implicit none
  real(8):: perf
  integer(INTD):: dev_out,ierr
 
- dev_out=6
+ dev_out=6 !output device (defaults to screen)
 
- ierr=dil_test_tree(perf,dev_out)
+!GFC containers:
+ !List:
+ !ierr=test_gfc_list(perf,dev_out)
+ !if(ierr.eq.0) then
+  !write(*,*) 'GFC::list testing status: ',ierr,'(PASSED): Performance: ',perf
+ !else
+  !write(*,*) 'GFC::list testing status: ',ierr,'(FAILED): Performance: ',perf
+ !endif
+ !Tree:
+ ierr=test_gfc_tree(perf,dev_out)
  if(ierr.eq.0) then
-  write(*,*) 'Tree testing status: ',ierr,'(PASSED): Performance: ',perf
+  write(*,*) 'GFC::tree testing status: ',ierr,'(PASSED): Performance: ',perf
  else
-  write(*,*) 'Tree testing status: ',ierr,'(FAILED): Performance: ',perf
+  write(*,*) 'GFC::tree testing status: ',ierr,'(FAILED): Performance: ',perf
+ endif
+ !Dictionary:
+ ierr=test_gfc_dictionary(perf,dev_out)
+ if(ierr.eq.0) then
+  write(*,*) 'GFC::dictionary testing status: ',ierr,'(PASSED): Performance: ',perf
+ else
+  write(*,*) 'GFC::dictionary testing status: ',ierr,'(FAILED): Performance: ',perf
  endif
 
+!Legacy containers:
+ !Stack:
  ierr=dil_test_stack(perf,dev_out)
  if(ierr.eq.0) then
-  write(*,*) 'Stack testing status: ',ierr,'(PASSED): Performance: ',perf
+  write(*,*) 'Legacy stack testing status: ',ierr,'(PASSED): Performance: ',perf
  else
-  write(*,*) 'Stack testing status: ',ierr,'(FAILED): Performance: ',perf
+  write(*,*) 'Legacy stack testing status: ',ierr,'(FAILED): Performance: ',perf
  endif
-
+ !Dictionary:
  ierr=dil_test_dictionary(perf,dev_out)
  if(ierr.eq.0) then
-  write(*,*) 'Dictionary testing status: ',ierr,'(PASSED): Performance: ',perf
+  write(*,*) 'Legacy dictionary testing status: ',ierr,'(PASSED): Performance: ',perf
  else
-  write(*,*) 'Dictionary testing status: ',ierr,'(FAILED): Performance: ',perf
+  write(*,*) 'Legacy dictionary testing status: ',ierr,'(FAILED): Performance: ',perf
  endif
 
  stop

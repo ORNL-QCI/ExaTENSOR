@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Tree
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2016-12-05 (started 2016-02-17)
+!REVISION: 2016-12-29 (started 2016-02-17)
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -904,8 +904,9 @@
         end function TreeIterDeleteSubtree
 
        end module gfc_tree
-!=========================================
+!=========================
 !TESTING:
+!--------------------------
        module gfc_tree_test
         use gfc_base
         use gfc_tree
@@ -913,7 +914,7 @@
         implicit none
         private
 
-        public dil_test_tree
+        public test_gfc_tree
 
         type, private:: some_t
          real(8):: some_real=0d0
@@ -982,7 +983,7 @@
          return
         end function some_predicate
 
-        function dil_test_tree(perf,dev_out) result(ierr)
+        function test_gfc_tree(perf,dev_out) result(ierr)
          implicit none
          integer(INTD):: ierr
          real(8), intent(out):: perf
@@ -1026,6 +1027,6 @@
          ierr=some_iter%delete_subtree(some_destructor); if(ierr.ne.GFC_SUCCESS) then; ierr=11; return; endif
          tm=thread_wtime(tms); perf=dble(MAX_TREE_ELEMS)/tm
          return
-        end function dil_test_tree
+        end function test_gfc_tree
 
        end module gfc_tree_test
