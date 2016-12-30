@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Bi-directional linked list
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2016-12-05 (started 2016-02-28)
+!REVISION: 2016-12-30 (started 2016-02-28)
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -39,7 +39,7 @@
 !PARAMETERS:
 !Basic:
         integer(INTD), private:: CONS_OUT=6 !output device
-        logical, private:: VERBOSE=.true.   !verbositiy for errors
+        logical, private:: VERBOSE=.TRUE.   !verbositiy for errors
         integer(INTD), private:: DEBUG=0    !debugging level (0:none)
 !TYPES:
  !Linked list element:
@@ -47,7 +47,7 @@
          class(list_elem_t), pointer, private:: next_elem=>NULL()
          class(list_elem_t), pointer, private:: prev_elem=>NULL()
         contains
-         procedure, public:: construct=>ListElemConstruct !constructs the contents of the list element
+         procedure, public:: construct=>ListElemConstruct !constructs the content of the list element
          procedure, public:: is_first=>ListElemIsFirst    !returns GFC_TRUE if the element is the first in the list
          procedure, public:: is_last=>ListElemIsLast      !returns GFC_TRUE if the element is the last in the list
         end type list_elem_t
@@ -56,6 +56,7 @@
          class(list_elem_t), pointer, private:: first_elem=>NULL() !first element of the linked list
          class(list_elem_t), pointer, private:: last_elem=>NULL()  !last element of the linked list
         contains
+         procedure, public:: is_empty=>ListIsEmpty                 !returns GFC_TRUE if the list is empty, GFC_FALSE otherwise (or error code)
          procedure, public:: is_sublist=>ListIsSublist             !returns TRUE if the list is a sublist of a larger list, FALSE otherwise
         end type list_bi_t
  !List iterator:
@@ -75,15 +76,19 @@
          procedure, public:: insert_list=>ListIterInsertList    !inserts another linked list at the current position of the container
 !        generic, public:: insert=>insert_elem,insert_list      !generic (`Ambiguous)
          procedure, public:: split=>ListIterSplit               !splits the list into two parts at the current position
-         procedure, public:: delete=>ListIterDelete             !deletes an element in the current position
+         procedure, public:: delete=>ListIterDelete             !deletes the list element in the current position
          procedure, public:: delete_all=>ListIterDeleteAll      !deletes all elements (either prior, or after, or all of them)
         end type list_iter_t
 !INTERFACES:
 !VISIBILITY:
+ !list_elem_t:
         private ListElemConstruct
         private ListElemIsFirst
         private ListElemIsLast
+ !list_bi_t:
+        private ListIsEmpty
         private ListIsSublist
+ !list_iter_t:
         private ListIterInit
         private ListIterReset
         private ListIterResetBack
@@ -165,6 +170,28 @@
          if(present(ierr)) ierr=errc
          return
         end function ListElemIsLast
+!---------------------------------------------
+        function ListIsEmpty(this) result(res)
+!Returns GFC_TRUE if the list is empty, GFC_FALSE otherwise (or error code).
+         implicit none
+         integer(INTD):: res                 !out: result of query (or error code)
+         class(list_bi_t), intent(in):: this !in: list
+
+         if(associated(this%first_elem)) then
+          if(associated(this%last_elem)) then
+           res=GFC_FALSE
+          else
+           res=GFC_CORRUPTED_CONT
+          endif
+         else
+          if(associated(this%last_elem)) then
+           res=GFC_CORRUPTED_CONT
+          else
+           res=GFC_TRUE
+          endif
+         endif
+         return
+        end function ListIsEmpty
 !----------------------------------------------------
         function ListIsSublist(this,ierr) result(res)
 !Returns TRUE if the list is a sublist of another list, FALSE otherwise.
@@ -174,9 +201,9 @@
          integer(INTD), intent(out), optional:: ierr !out: error code (0:success)
          integer(INTD):: errc
 
-         errc=GFC_SUCCESS; res=.false.
+         errc=GFC_SUCCESS; res=.FALSE.
          if(associated(this%first_elem).and.associated(this%last_elem)) then
-          if(associated(this%first_elem%prev_elem).or.associated(this%last_elem%next_elem)) res=.true.
+          res=(associated(this%first_elem%prev_elem).or.associated(this%last_elem%next_elem))
          else
           if(associated(this%first_elem).or.associated(this%last_elem)) then
            errc=GFC_CORRUPTED_CONT
@@ -369,8 +396,8 @@
          integer(INTL):: nelems
          class(list_elem_t), pointer:: lep,oep
 
-         if(present(at_top)) then; top=at_top; else; top=.false.; endif
-         if(present(assoc_only)) then; assoc=assoc_only; else; assoc=.false.; endif
+         if(present(at_top)) then; top=at_top; else; top=.FALSE.; endif
+         if(present(assoc_only)) then; assoc=assoc_only; else; assoc=.FALSE.; endif
          ierr=this%get_status()
          if(ierr.eq.GFC_IT_ACTIVE.or.ierr.eq.GFC_IT_DONE) then !non-empty container
           if(associated(this%container)) then
@@ -499,9 +526,9 @@
          integer(INTL):: nelems
          class(list_elem_t), pointer:: lep
 
-         if(present(precede)) then; before=precede; else; before=.false.; endif
-         if(present(assoc_only)) then; assoc=assoc_only; else; assoc=.false.; endif
-         if(present(no_move)) then; move=.not.no_move; else; move=.true.; endif
+         if(present(precede)) then; before=precede; else; before=.FALSE.; endif
+         if(present(assoc_only)) then; assoc=assoc_only; else; assoc=.FALSE.; endif
+         if(present(no_move)) then; move=.not.no_move; else; move=.TRUE.; endif
          ierr=this%get_status()
          if(ierr.eq.GFC_IT_ACTIVE) then
           if(associated(this%container)) then
@@ -602,7 +629,7 @@
          logical:: before
          integer(INTL):: nelems,new_elems
 
-         if(present(precede)) then; before=precede; else; before=.false.; endif
+         if(present(precede)) then; before=precede; else; before=.FALSE.; endif
          ierr=this%get_status()
          if(ierr.eq.GFC_IT_ACTIVE) then
           if(associated(this%current)) then
@@ -647,43 +674,47 @@
          implicit none
          integer(INTD):: ierr                         !out: error code (0:success)
          class(list_iter_t), intent(inout):: this     !inout: list iterator (cannot be a sublist iterator)
-         class(list_bi_t), intent(out):: new_list     !out: new list (cut)
+         class(list_bi_t), intent(inout):: new_list   !out: new list (cut), must be empty on entrance
          logical, intent(in), optional:: keep_tail    !in: if TRUE, the tail part will be associated with the iterator (defaults to FALSE)
          logical:: keep_top
          class(list_elem_t), pointer:: homo,lumo
 
-         if(present(keep_tail)) then; keep_top=.not.keep_tail; else; keep_top=.true.; endif
+         if(present(keep_tail)) then; keep_top=.not.keep_tail; else; keep_top=.TRUE.; endif
          ierr=this%get_status()
          if(ierr.eq.GFC_IT_ACTIVE) then
           if(associated(this%current)) then
            if(.not.this%container%is_sublist(ierr)) then
             if(ierr.eq.GFC_SUCCESS) then
-             if(keep_top) then
-              homo=>this%current
-              lumo=>this%current%next_elem
-              if(associated(lumo)) then
-               new_list%first_elem=>lumo; new_list%first_elem%prev_elem=>NULL()
-               new_list%last_elem=>this%container%last_elem
-               this%container%last_elem=>homo; this%container%last_elem%next_elem=>NULL()
+             if(new_list%is_empty().eq.GFC_TRUE) then
+              if(keep_top) then
+               homo=>this%current
+               lumo=>this%current%next_elem
+               if(associated(lumo)) then
+                new_list%first_elem=>lumo; new_list%first_elem%prev_elem=>NULL()
+                new_list%last_elem=>this%container%last_elem
+                this%container%last_elem=>homo; this%container%last_elem%next_elem=>NULL()
+               else
+                ierr=GFC_INVALID_ARGS
+               endif
               else
-               ierr=GFC_INVALID_ARGS
+               homo=>this%current%prev_elem
+               lumo=>this%current
+               if(associated(homo)) then
+                new_list%first_elem=>this%container%first_elem
+                new_list%last_elem=>homo; new_list%last_elem%next_elem=>NULL()
+                this%container%first_elem=>lumo; this%container%first_elem%prev_elem=>NULL()
+               else
+                ierr=GFC_INVALID_ARGS
+               endif
               endif
+              if(ierr.eq.GFC_SUCCESS) then
+               call this%container%quick_counting_off_() !turn off quick element counting
+               call new_list%quick_counting_off_() !turn off quick element counting
+              endif
+              homo=>NULL(); lumo=>NULL()
              else
-              homo=>this%current%prev_elem
-              lumo=>this%current
-              if(associated(homo)) then
-               new_list%first_elem=>this%container%first_elem
-               new_list%last_elem=>homo; new_list%last_elem%next_elem=>NULL()
-               this%container%first_elem=>lumo; this%container%first_elem%prev_elem=>NULL()
-              else
-               ierr=GFC_INVALID_ARGS
-              endif
+              ierr=GFC_INVALID_ARGS
              endif
-             if(ierr.eq.GFC_SUCCESS) then
-              call this%container%quick_counting_off_() !turn off quick element counting
-              call new_list%quick_counting_off_() !turn off quick element counting
-             endif
-             homo=>NULL(); lumo=>NULL()
             else
              ierr=GFC_ERROR
             endif
@@ -715,8 +746,8 @@
          if(ierr.eq.GFC_IT_ACTIVE) then
           if(associated(this%current)) then
            ierr=GFC_SUCCESS; lep=>this%current
-           first=.false.; if(associated(this%current,this%container%first_elem)) first=.true.
-           last=.false.; if(associated(this%current,this%container%last_elem)) last=.true.
+           first=.FALSE.; if(associated(this%current,this%container%first_elem)) first=.TRUE.
+           last=.FALSE.; if(associated(this%current,this%container%last_elem)) last=.TRUE.
            if(associated(this%current%prev_elem)) then
             this%current%prev_elem%next_elem=>this%current%next_elem
             if(associated(this%current%next_elem)) then
@@ -766,7 +797,7 @@
          ierr=this%get_status()
          if(ierr.eq.GFC_SUCCESS) then
           if(associated(this%current)) then
-           if(present(backwards)) then; back=backwards; else; back=.false.; endif
+           if(present(backwards)) then; back=backwards; else; back=.FALSE.; endif
            lep=>this%current
            if(back) then
             this%current=>this%container%last_elem

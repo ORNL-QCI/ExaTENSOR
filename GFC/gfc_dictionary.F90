@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Dictionary (ordered map), AVL BST
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2016/12/29 (recycling my old dictionary implementation)
+!REVISION: 2016/12/30 (recycling my old dictionary implementation)
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -61,7 +61,8 @@
           procedure, public:: get_key=>DictElemGetKey                    !returns an unlimited polymorphic pointer to the element key
           procedure, public:: predicate_key=>DictElemPredicateKey        !returns the result of predication on the element key
           procedure, public:: compare_key=>DictElemCompareKey            !compares the element key with another key
-          procedure, public:: print_key=>DictElemPrintKey                !prints the element key
+          procedure, public:: print_key=>DictElemPrintKey                !prints the dictionary element key
+          procedure, public:: print_it=>DictElemPrintIt                  !prints the dictionary elemet (key,value)
         end type dict_elem_t
  !Dictionary (all operations on the dictionary are performed via an iterator):
         type, extends(gfc_container_t), public:: dictionary_t
@@ -69,7 +70,9 @@
 !        class(dict_elem_t), pointer, private:: first=>NULL()          !first element (boundary element) `Do I need this?
 !        class(dict_elem_t), pointer, private:: last=>NULL()           !last element (boundary element) `Do I need this?
          contains
-          procedure, private:: reroot_=>DictionaryReroot               !changes the root of the dictionary
+          procedure, public:: is_empty=>DictionaryIsEmpty                 !returns GFC_TRUE if the dictionary is empty, GFC_FALSE otherwise (or error code)
+          procedure, public:: is_subdictionary=>DictionaryIsSubdictionary !returns TRUE if the dictionary is subdictionary, FALSE otherwise
+          procedure, private:: reroot_=>DictionaryReroot                  !changes the root of the dictionary
         end type dictionary_t
  !Dictionary iterator:
         type, extends(gfc_iter_t), public:: dictionary_iter_t
@@ -106,7 +109,10 @@
         private DictElemPredicateKey
         private DictElemCompareKey
         private DictElemPrintKey
+        private DictElemPrintIt
  !dictionary_t:
+        private DictionaryIsEmpty
+        private DictionaryIsSubdictionary
         private DictionaryReroot
  !dictionary_iter_t:
         private DictionaryIterJump
@@ -335,6 +341,7 @@
          errc=GFC_SUCCESS
          if(.not.this%is_empty()) then
           if(present(dev_id)) then; dev=dev_id; else; dev=6; endif !defaults to screen
+          write(dev,'("#GFC container element key:")')
           errc=print_f(this%key,dev); if(errc.ne.0) errc=GFC_ACTION_FAILED
          else
           errc=GFC_ELEM_EMPTY
@@ -342,7 +349,62 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine DictElemPrintKey
-![dictionary_t]===================================
+!---------------------------------------------------------------------------
+        subroutine DictElemPrintIt(this,print_key_f,print_val_f,ierr,dev_id)
+!Prints the dictionary element (key,value).
+         implicit none
+         class(dict_elem_t), intent(in):: this        !in: dictionary element
+         procedure(gfc_print_i):: print_key_f         !in: key printing function
+         procedure(gfc_print_i):: print_val_f         !in: value printing function
+         integer(INTD), intent(out), optional:: ierr  !out: error code
+         integer(INTD), intent(in), optional:: dev_id !in: output device (defaults to screen, 6)
+         integer(INTD):: dev,errc
+
+         errc=GFC_SUCCESS
+         if(.not.this%is_empty()) then
+          if(present(dev_id)) then; dev=dev_id; else; dev=6; endif !defaults to screen
+          write(dev,'("#GFC dictionary element (key,value):")')
+          call this%print_key(print_key_f,errc,dev)
+          if(errc.eq.GFC_SUCCESS) call this%print_value(print_val_f,errc,dev)
+         else
+          errc=GFC_ELEM_EMPTY
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine DictElemPrintIt
+![dictionary_t]=====================================
+        function DictionaryIsEmpty(this) result(res)
+!Returns GFC_TRUE if the dictionary is empty, GFC_FALSE otherwise (or error code).
+         implicit none
+         integer(INTD):: res                    !out: result of query
+         class(dictionary_t), intent(in):: this !in: dictionary
+
+         if(associated(this%root)) then
+          res=GFC_FALSE
+         else
+          res=GFC_TRUE
+         endif
+         return
+        end function DictionaryIsEmpty
+!----------------------------------------------------------------
+        function DictionaryIsSubdictionary(this,ierr) result(res)
+!Returns TRUE if the dictionary is a subdictionary of a larger dictionary.
+         implicit none
+         logical:: res                               !out: result
+         class(dictionary_t), intent(in):: this      !in: dictionary
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=GFC_SUCCESS; res=.FALSE.
+         if(associated(this%root)) then
+          res=associated(this%root%parent)
+         else
+          errc=GFC_EMPTY_CONT
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function DictionaryIsSubdictionary
+!-------------------------------------------------
         subroutine DictionaryReroot(this,new_root)
 !Changes the root of the dictionary.
          implicit none
@@ -1572,6 +1634,24 @@
          end select
          return
         end function cmp_key_test
+!----------------------------------------------------
+        function print_key(obj,dev_id) result(ierr)
+         implicit none
+         integer(INTD):: ierr
+         class(*), intent(in):: obj
+         integer(INTD), intent(in), optional:: dev_id
+         integer(INTD):: dev
+
+         ierr=GFC_SUCCESS
+         if(present(dev_id)) then; dev=dev_id; else; dev=6; endif
+         select type(obj)
+         class is(key_t)
+          write(dev,'(32(1x,i9))') obj%dims(1:obj%rank)
+         class default
+          ierr=GFC_ACTION_FAILED
+         end select
+         return
+        end function print_key
 !--------------------------------------------------------------
         function test_gfc_dictionary(perf,dev_out) result(ierr)
          implicit none

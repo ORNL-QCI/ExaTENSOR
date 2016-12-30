@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Tree
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2016-12-29 (started 2016-02-17)
+!REVISION: 2016-12-30 (started 2016-02-17)
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -59,8 +59,8 @@
           procedure, public:: construct=>TreeVertexConstruct                         !constructs the content of a tree vertex
           procedure, non_overridable, public:: num_children=>TreeVertexNumChildren   !returns the total number of children
           procedure, non_overridable, public:: num_siblings=>TreeVertexNumSiblings   !returns the total number of siblings
-          procedure, non_overridable, public:: first_sibling=>TreeVertexFirstSibling !returns GFC_TRUE if the vertex is the first in the sibling (ring) list
-          procedure, non_overridable, public:: last_sibling=>TreeVertexLastSibling   !returns GFC_TRUE if the vertex is the last in the sibling (ring) list
+          procedure, non_overridable, public:: is_first_sibling=>TreeVertexIsFirstSibling !returns GFC_TRUE if the vertex is the first in the sibling (ring) list
+          procedure, non_overridable, public:: is_last_sibling=>TreeVertexIsLastSibling !returns GFC_TRUE if the vertex is the last in the sibling (ring) list
           procedure, non_overridable, public:: is_root=>TreeVertexIsRoot             !returns GFC_TRUE if the vertex is the root of the tree, GFC_FALSE otherwise
           procedure, non_overridable, public:: is_leaf=>TreeVertexIsLeaf             !returns GFC_TRUE if the vertex is a leaf, GFC_FALSE otherwise
         end type tree_vertex_t
@@ -68,6 +68,7 @@
         type, extends(gfc_container_t), public:: tree_t
          class(tree_vertex_t), pointer, private:: root=>NULL() !root (boundary) element (beginning)
          contains
+          procedure, public:: is_empty=>TreeIsEmpty     !returns GFC_TRUE is the tree is empty, GFC_FALSE otherwise (or error code)
           procedure, public:: is_subtree=>TreeIsSubtree !returns TRUE if the tree is a subtree of a larger tree, FALSE otherwise
         end type tree_t
  !Tree iterator:
@@ -81,9 +82,9 @@
           procedure, public:: pointee=>TreeIterPointee              !returns a pointer to the container element currently in focus
           procedure, public:: next=>TreeIterNext                    !moves the iterator to the next element, if any
           procedure, public:: previous=>TreeIterPrevious            !moves the iterator to the previous element, if any
-          procedure, public:: to_sibling=>TreeIterToSibling         !moves the iterator to the next/previous sibling, if any
-          procedure, public:: to_child=>TreeIterToChild             !moves the iterator to the first child, if any
-          procedure, public:: to_parent=>TreeIterToParent           !moves the iterator to the parent, if any
+          procedure, public:: move_to_sibling=>TreeIterMoveToSibling!moves the iterator to the next/previous sibling, if any
+          procedure, public:: move_to_child=>TreeIterMoveToChild    !moves the iterator to the first child, if any
+          procedure, public:: move_to_parent=>TreeIterMoveToParent  !moves the iterator to the parent, if any
           procedure, public:: my_parent=>TreeIterMyParent           !returns the parent of the current vertex
           procedure, public:: add_leaf=>TreeIterAddLeaf             !adds a new leaf element to the element of the container currently pointed to
           procedure, public:: delete_leaf=>TreeIterDeleteLeaf       !deletes the leaf pointed to by the iterator (if it is actually a leaf)
@@ -93,24 +94,27 @@
         end type tree_iter_t
 !GLOBAL DATA:
 !VISIBILITY:
- !Procedures:
+ !tree_vertex_t:
         private TreeVertexConstruct
         private TreeVertexNumChildren
         private TreeVertexNumSiblings
-        private TreeVertexFirstSibling
-        private TreeVertexLastSibling
+        private TreeVertexIsFirstSibling
+        private TreeVertexIsLastSibling
         private TreeVertexIsRoot
         private TreeVertexIsLeaf
+ !tree_t:
+        private TreeIsEmpty
         private TreeIsSubtree
+ !tree_iter_t:
         private TreeIterInit
         private TreeIterReset
         private TreeIterRelease
         private TreeIterPointee
         private TreeIterNext
         private TreeIterPrevious
-        private TreeIterToSibling
-        private TreeIterToChild
-        private TreeIterToParent
+        private TreeIterMoveToSibling
+        private TreeIterMoveToChild
+        private TreeIterMoveToParent
         private TreeIterMyParent
         private TreeIterAddLeaf
         private TreeIterDeleteLeaf
@@ -192,8 +196,8 @@
          if(present(ierr)) ierr=errc
          return
         end function TreeVertexNumSiblings
-!--------------------------------------------------------
-        function TreeVertexFirstSibling(this) result(res)
+!----------------------------------------------------------
+        function TreeVertexIsFirstSibling(this) result(res)
 !Returns GFC_TRUE if the tree vertex is the first vertex in the sibling list.
          implicit none
          integer(INTD):: res                             !out: result
@@ -206,9 +210,9 @@
           res=GFC_TRUE
          endif
          return
-        end function TreeVertexFirstSibling
-!-------------------------------------------------------
-        function TreeVertexLastSibling(this) result(res)
+        end function TreeVertexIsFirstSibling
+!---------------------------------------------------------
+        function TreeVertexIsLastSibling(this) result(res)
 !Returns GFC_TRUE if the tree vertex is the last vertex in the sibling list.
          implicit none
          integer(INTD):: res                     !out: result
@@ -221,7 +225,7 @@
           res=GFC_TRUE
          endif
          return
-        end function TreeVertexLastSibling
+        end function TreeVertexIsLastSibling
 !--------------------------------------------------
         function TreeVertexIsRoot(this) result(res)
 !Returns GFC_TRUE if the vertex is the root of the tree.
@@ -247,17 +251,36 @@
          if(.not.associated(this%first_child)) res=GFC_TRUE
          return
         end function TreeVertexIsLeaf
-!-----------------------------------------------
-        function TreeIsSubtree(this) result(res)
-!Returns TRUE if the tree is a subtree of a larger tree.
+!---------------------------------------------
+        function TreeIsEmpty(this) result(res)
+!Returns GFC_TRUE if the tree is empty, GFC_FALSE otherwise (or error code).
          implicit none
-         logical:: res                    !out: result
+         integer(INTD):: res              !out: result of query (or error code)
          class(tree_t), intent(in):: this !in: tree
 
-         res=.FALSE.
          if(associated(this%root)) then
-          if(associated(this%root%parent)) res=.TRUE.
+          res=GFC_FALSE
+         else
+          res=GFC_TRUE
          endif
+         return
+        end function TreeIsEmpty
+!----------------------------------------------------
+        function TreeIsSubtree(this,ierr) result(res)
+!Returns TRUE if the tree is a subtree of a larger tree.
+         implicit none
+         logical:: res                               !out: result
+         class(tree_t), intent(in):: this            !in: tree
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=GFC_SUCCESS; res=.FALSE.
+         if(associated(this%root)) then
+          res=associated(this%root%parent)
+         else
+          errc=GFC_EMPTY_CONT
+         endif
+         if(present(ierr)) ierr=errc
          return
         end function TreeIsSubtree
 !----------------------------------------------------
@@ -352,7 +375,7 @@
             tvp=>this%current
             do while(associated(tvp))
              if(.not.associated(tvp,this%container%root)) then !root of a subtree may have a parent
-              if(tvp%last_sibling().eq.GFC_FALSE) then !not the last sibling
+              if(tvp%is_last_sibling().eq.GFC_FALSE) then !not the last sibling
                tvp=>tvp%next_sibling; exit
               else
                tvp=>tvp%parent
@@ -400,7 +423,7 @@
             tvp=>NULL()
            else
             tvp=>this%current
-            if(tvp%first_sibling().eq.GFC_TRUE) then
+            if(tvp%is_first_sibling().eq.GFC_TRUE) then
              tvp=>tvp%parent
             else
              tvp=>tvp%prev_sibling
@@ -428,8 +451,8 @@
          endif
          return
         end function TreeIterPrevious
-!----------------------------------------------------------------
-        function TreeIterToSibling(this,to_previous) result(ierr)
+!--------------------------------------------------------------------
+        function TreeIterMoveToSibling(this,to_previous) result(ierr)
 !Moves the iterator either to the next or to the previous sibling.
          implicit none
          integer(INTD):: ierr                        !out: error code (0:success)
@@ -471,9 +494,9 @@
           endif
          endif
          return
-        end function TreeIterToSibling
-!--------------------------------------------------
-        function TreeIterToChild(this) result(ierr)
+        end function TreeIterMoveToSibling
+!------------------------------------------------------
+        function TreeIterMoveToChild(this) result(ierr)
 !Moves the iterator to the first child, if any.
          implicit none
          integer(INTD):: ierr                        !out: error code (0:success)
@@ -495,9 +518,9 @@
           endif
          endif
          return
-        end function TreeIterToChild
-!---------------------------------------------------
-        function TreeIterToParent(this) result(ierr)
+        end function TreeIterMoveToChild
+!-------------------------------------------------------
+        function TreeIterMoveToParent(this) result(ierr)
 !Moves the iterator to the parent, if any.
          implicit none
          integer(INTD):: ierr                        !out: error code (0:success)
@@ -519,7 +542,7 @@
           endif
          endif
          return
-        end function TreeIterToParent
+        end function TreeIterMoveToParent
 !----------------------------------------------------------
         function TreeIterMyParent(this,ierr) result(parent)
 !Returns the parent of the current vertex.
@@ -696,7 +719,7 @@
             if(tvp%num_siblings(errc).gt.0) then
              if(errc.eq.GFC_SUCCESS) then
               if(associated(tvp%parent)) then
-               if(tvp%first_sibling().eq.GFC_TRUE) tvp%parent%first_child=>tvp%next_sibling
+               if(tvp%is_first_sibling().eq.GFC_TRUE) tvp%parent%first_child=>tvp%next_sibling
               endif
               tvp%prev_sibling%next_sibling=>tvp%next_sibling
               tvp%next_sibling%prev_sibling=>tvp%prev_sibling
@@ -791,7 +814,7 @@
          implicit none
          integer(INTD):: ierr                     !out: error code (0:success)
          class(tree_iter_t), intent(inout):: this !inout: iterator
-         class(tree_t), intent(inout):: subtree   !inout: subtree (must be empty at entrance)
+         class(tree_t), intent(inout):: subtree   !inout: subtree (must be empty on entrance)
          class(tree_vertex_t), pointer:: psib,nsib
          type(tree_iter_t):: subtree_it
          integer(INTL):: nelems,totelems
@@ -799,7 +822,7 @@
          ierr=this%get_status()
          if(ierr.eq.GFC_IT_ACTIVE) then
           if(associated(this%current)) then
-           if(.not.associated(subtree%root)) then !subtree must be empty on entrance
+           if(subtree%is_empty().eq.GFC_TRUE) then !subtree must be empty on entrance
             ierr=GFC_SUCCESS
             psib=>this%current%prev_sibling; nsib=>this%current%next_sibling
             subtree%root=>this%current

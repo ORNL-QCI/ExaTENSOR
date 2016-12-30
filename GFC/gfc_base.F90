@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Base
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2016-12-29 (started 2016-02-17)
+!REVISION: 2016-12-30 (started 2016-02-17)
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -118,9 +118,9 @@
           procedure, public:: predicate=>ContElemPredicate      !returns the value of a user-given predicate applied to the element
           procedure, public:: ContElemAction                    !acts on the element with a user-defined action function
           procedure, public:: ContElemFunctor                   !acts on the element with a user-defined functor
-          generic, public:: action=>ContElemAction,ContElemFunctor !generic overload (acts on the container element value)
+          generic, public:: apply_action=>ContElemAction,ContElemFunctor !generic overload (acts on the container element value)
           procedure, public:: compare=>ContElemCompare          !compares the value of the element with the value of another element
-          procedure, public:: print_it=>ContElemPrintIt         !prints the value of the element with a user-defined print function
+          procedure, public:: print_value=>ContElemPrintValue   !prints the value of the element with a user-defined print function
           procedure, public:: in_use=>ContElemInUse             !returns TRUE if the element of the container is currently in use, hence cannot be deleted
           procedure, public:: release_lock=>ContElemReleaseLock !PRIVATE: releases the lock on the container element
           procedure, public:: incr_ref_=>ContElemIncrRef        !PRIVATE: increments the reference count for the container element
@@ -133,6 +133,7 @@
           procedure, non_overridable, public:: num_elems_=>ContNumElems !PRIVATE: returns the total number of elements in the container
           procedure, non_overridable, public:: update_num_elems_=>ContUpdateNumElems !PRIVATE: updates the number of elements
           procedure, non_overridable, public:: quick_counting_off_=>ContQuickCountingOff !PRIVATE: turns off quick element counting
+          procedure(gfc_cont_query_i), deferred, public:: is_empty !returns GFC_TRUE if container is empty, GFC_FALSE otherwise (or error code)
         end type gfc_container_t
  !Base iterator:
         type, abstract, public:: gfc_iter_t
@@ -201,6 +202,12 @@
           integer(INTD), intent(in), optional:: dev_id !in: output device id (defaults to screen: 6)
          end function gfc_print_i
  !Deferred:
+  !Deferred: GFC container: query:
+         function gfc_cont_query_i(this) result(res)
+          import:: gfc_container_t,INTD
+          integer(INTD):: res                       !out: result of query (or error code)
+          class(gfc_container_t), intent(in):: this !in: GFC container
+         end function gfc_cont_query_i
   !Deferred: GFC iterator: .init:
          function gfc_it_init_i(this,cont) result(ierr)
           import:: gfc_iter_t,gfc_container_t,INTD
@@ -232,7 +239,7 @@
          function gfc_func_act_i(this,obj) result(ierr)
           import:: gfc_func_t,INTD
           integer(INTD):: ierr                    !out: error code
-          class(gfc_func_t), intent(inout):: this !inout: GFC functor (may change its state)
+          class(gfc_func_t), intent(inout):: this !inout: GFC functor (may change its state!)
           class(*), intent(inout):: obj           !inout: arbitrary object the functor is acting upon
          end function gfc_func_act_i
         end interface
@@ -246,7 +253,7 @@
         private ContElemAction
         private ContElemFunctor
         private ContElemCompare
-        private ContElemPrintIt
+        private ContElemPrintValue
         private ContNumElems
         private ContUpdateNumElems
         private ContQuickCountingOff
@@ -467,13 +474,13 @@
 !when updating container element values!
          implicit none
          class(gfc_cont_elem_t), intent(inout):: this !inout: element of a container
-         class(gfc_func_t), intent(inout):: functor   !inout: functor (may change its state)
+         class(gfc_func_t), intent(inout):: functor   !inout: functor (may change its state!)
          integer(INTD), intent(out), optional:: ierr  !out: error code
          integer(INTD):: errc
 
          errc=GFC_SUCCESS
          if(.not.this%is_empty()) then
-          errc=functor%act(this); if(errc.ne.0) errc=GFC_ACTION_FAILED
+          errc=functor%act(this%value_p); if(errc.ne.0) errc=GFC_ACTION_FAILED
          else
           errc=GFC_ELEM_EMPTY
          endif
@@ -501,9 +508,9 @@
          if(present(ierr)) ierr=errc
          return
         end function ContElemCompare
-!-----------------------------------------------------------
-        subroutine ContElemPrintIt(this,print_f,ierr,dev_id)
-!Prints the given element of a container using a user-defined print function.
+!--------------------------------------------------------------
+        subroutine ContElemPrintValue(this,print_f,ierr,dev_id)
+!Prints the value of a given element of a container using a user-defined print function.
          implicit none
          class(gfc_cont_elem_t), intent(in):: this    !in: element of a container
          procedure(gfc_print_i):: print_f             !in: user-defined printing function
@@ -514,13 +521,14 @@
          errc=GFC_SUCCESS
          if(.not.this%is_empty()) then
           if(present(dev_id)) then; dev=dev_id; else; dev=6; endif !defaults to screen
+          write(dev,'("#GFC container element value:")')
           errc=print_f(this%value_p,dev); if(errc.ne.0) errc=GFC_ACTION_FAILED
          else
           errc=GFC_ELEM_EMPTY
          endif
          if(present(ierr)) ierr=errc
          return
-        end subroutine ContElemPrintIt
+        end subroutine ContElemPrintValue
 !----------------------------------------------------------------------------
         function ContElemInUse(this,ierr,set_lock,report_refs) result(in_use)
 !Returns GFC_TRUE if the element of the container is currently in use,
@@ -796,7 +804,7 @@
              if(pred_val.eq.GFC_TRUE) then
               this%pred_count=this%pred_count+1
               if(act) then
-               call curr%action(action_f,ierr); if(ierr.ne.0) then; ierr=GFC_ACTION_FAILED; exit; endif
+               call curr%apply_action(action_f,ierr); if(ierr.ne.0) then; ierr=GFC_ACTION_FAILED; exit; endif
               endif
               if(ret) then; ierr=GFC_IT_ACTIVE; exit; endif !intermediate return on passive scans
              endif
