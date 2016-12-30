@@ -1555,7 +1555,7 @@
               if(errc.ne.GFC_SUCCESS) exit sloop
               errc=this%move_in_order(dir)
              enddo sloop
-             if(errc.eq.GFC_IT_DONE) errc=GFC_SUCCESS
+             if(errc.eq.GFC_IT_DONE) errc=this%reset()
             else
              errc=GFC_CORRUPTED_CONT
             endif
@@ -1568,8 +1568,6 @@
           endif
           ier=list_it%release()
           if(errc.eq.GFC_SUCCESS.and.ier.ne.GFC_SUCCESS) errc=ier
-         else
-          errc=GFC_CORRUPTED_CONT
          endif
          if(present(ierr)) ierr=errc
          return
@@ -1581,6 +1579,7 @@
 !--------------------------------
        module gfc_dictionary_test
         use gfc_base
+        use gfc_list
         use gfc_dictionary
         use timers, only: thread_wtime
         implicit none
@@ -1652,6 +1651,24 @@
          end select
          return
         end function print_key
+!----------------------------------------------------
+        function print_value(obj,dev_id) result(ierr)
+         implicit none
+         integer(INTD):: ierr
+         class(*), intent(in):: obj
+         integer(INTD), intent(in), optional:: dev_id
+         integer(INTD):: dev
+
+         ierr=GFC_SUCCESS
+         if(present(dev_id)) then; dev=dev_id; else; dev=6; endif
+         select type(obj)
+         class is(val_t)
+          write(dev,'(32(1x,D15.7))') obj%my_array(1:obj%key_stored%rank)
+         class default
+          ierr=GFC_ACTION_FAILED
+         end select
+         return
+        end function print_value
 !--------------------------------------------------------------
         function test_gfc_dictionary(perf,dev_out) result(ierr)
          implicit none
@@ -1666,6 +1683,9 @@
          type(val_t):: val
          type(dictionary_t), target:: some_dict
          type(dictionary_iter_t):: dict_it
+         type(list_bi_t):: list_refs
+         type(list_iter_t):: list_it
+         class(gfc_cont_elem_t), pointer:: pntee
          class(*), pointer:: uptr
          real(8):: tms,tm
 
@@ -1673,6 +1693,7 @@
          if(present(dev_out)) then; jo=dev_out; else; jo=6; endif
          fnd=0; nfnd=0; key%rank=KEY_LEN
          tms=thread_wtime()
+!Lookups/insertions:
          j=dict_it%init(some_dict); if(j.ne.GFC_SUCCESS) then; call test_quit(1); return; endif
          do i=1,MAX_ACTIONS
           call get_rnd_key(key) !random key
@@ -1690,7 +1711,21 @@
          tm=thread_wtime(tms)
          perf=dble(MAX_ACTIONS)/tm
          !write(jo,'("Found ",i11,"; Not found ",i11)') fnd,nfnd !debug
-         call test_quit(GFC_SUCCESS)
+!Sorting:
+         call dict_it%sort_to_list(list_refs,j); if(j.ne.GFC_SUCCESS) then; call test_quit(4); return; endif
+         j=list_it%init(list_refs); pntee=>NULL(); uptr=>NULL()
+         do while(j.eq.GFC_SUCCESS)
+          pntee=>list_it%pointee(); uptr=>pntee%get_value()
+          select type(uptr)
+          class is(dict_elem_t)
+          class default
+           call test_quit(5); return
+          end select
+          j=list_it%next()
+         enddo
+         j=list_it%release()
+!Success:
+         call test_quit(j)
          return
 
          contains
@@ -1714,9 +1749,9 @@
             write(jo,'("#ERROR(gfc::dictionary::test): Test failed: Error code ",i13)') ierr
             write(jo,'("Please contact the developer at QUANT4ME@GMAIL.COM")')
            endif
-           call dict_it%delete_all(jj); if(ierr.eq.GFC_SUCCESS.and.jj.ne.GFC_SUCCESS) ierr=4
+           call dict_it%delete_all(jj); if(ierr.eq.GFC_SUCCESS.and.jj.ne.GFC_SUCCESS) ierr=6
            if(jj.ne.GFC_SUCCESS) write(jo,'("#ERROR(gfc::dictionary::test): Dictionary destruction failed: Error code ",i13)') jj
-           jj=dict_it%release(); if(ierr.eq.GFC_SUCCESS.and.jj.ne.GFC_SUCCESS) ierr=5
+           jj=dict_it%release(); if(ierr.eq.GFC_SUCCESS.and.jj.ne.GFC_SUCCESS) ierr=7
            if(jj.ne.GFC_SUCCESS) write(jo,'("#ERROR(gfc::dictionary::test): Dictionary iterator release failed: Error code ",i13)')&
                                       &jj
            return
