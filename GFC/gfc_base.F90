@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Base
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2016-12-30 (started 2016-02-17)
+!REVISION: 2017-01-02 (started 2016-02-17)
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -24,25 +24,28 @@
 ! # When implementing new containers derived from the abstract base container class,
 !   the following aspects have to be taken into account:
 !    a) All operations on a container are done via the corresponding iterator.
+!       The iterator is the only way to access and update the container.
 !    b) The container iterator must be reset() upon addition of the first element.
 !    c) In general, an iterator may be associated with a subcontainer, that is,
 !       a part of a larger container carrying the same linkage topology, for example,
 !       sublist, subtree, subdictionary. Not every container class allows subcontaining.
-!    d) A subcontainer iterator must always stay within the boundaries of its subcontainer.
-!    e) Any relinking of container elements must be protected from races by GFC
-!       (the easiest way is OMP_CRITICAL). However, the race-free concurrent
-!       modification of the content of container elements is the user responsibility.
-!       Additionally, GFC will not allow deletion of container elements which are
-!       considered IN USE. An element of a container/subcontainer is considered IN USE
-!       if either it is a boundary element of the container/subcontainer, or it is associated
-!       with the current position of an iterator associated with the container/subcontainer,
-!       or it is explicitly locked via the member method .in_use(). The protection is implemented
-!       via locks and reference counting enabled for each individual container element.
-!       The reference count must be updated when an element of a container/subcontainer
-!       becomes/discontinues to be a boundary or current element of an iterator.
-!       Furthermore, changing the linkage of a container element which is IN USE
-!       should be done with special care or not done at all as it can change the
-!       status of the container element as a boundary in another iterator.
+!       A subcontainer is linked to its host container solely via its boundary elements.
+!       A subcontainer iterator must always stay within the boundaries of its subcontainer.
+!    d) Thread safety considerations:
+!       * Each iterator can only be used by one thread at a time. Multiple concurrent
+!         threads will require multiple iterators.
+!       * Structural changes in a container must be protected by GFC, including addition
+!         of new elements, deletion of elements, and any other relinking inside the container.
+!         The simplest solution here is to use a dedicated lock per container. Additionally,
+!         when an element of a container is a boundary or current element of some iterator
+!         other than the one in focus, it cannot be deleted. This can be enforced by
+!         reference counting on individual container elements such that each association
+!         of the container element as a boundary or current element of an iterator will
+!         increment the reference counter, and each dissociation will decrement it.
+!       * Concurrent updates of the content of container elements must be protected
+!         by a user via the user-level lock provided for each container element.
+!         Whenever an exclusive (write) access is required, the content of the container
+!         element should be protected by the lock which can be acquired via GFC API.
 ! # Quick counting does not work with composite containers and subcontainers
 !   and probably it should not be used at all. Currently gfc_container_t::num_elems_()
 !   will not return the total number of elements without quick counting. However, one
