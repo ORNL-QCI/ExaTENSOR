@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Dictionary (ordered map), AVL BST
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2016/12/30 (recycling my old dictionary implementation)
+!REVISION: 2017/01/02 (recycling my old dictionary implementation)
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -631,7 +631,7 @@
             ierr=GFC_IT_DONE; dp=>this%current
             do while(associated(dp%parent).and.(.not.associated(dp,this%container%root)))
              if(associated(dp,dp%parent%child_lt)) then
-              dp=>dp%parent; exit
+              dp=>dp%parent; ierr=GFC_SUCCESS; exit
              else
               dp=>dp%parent
              endif
@@ -680,7 +680,7 @@
             ierr=GFC_IT_DONE; dp=>this%current
             do while(associated(dp%parent).and.(.not.associated(dp,this%container%root)))
              if(associated(dp,dp%parent%child_gt)) then
-              dp=>dp%parent; exit
+              dp=>dp%parent; ierr=GFC_SUCCESS; exit
              else
               dp=>dp%parent
              endif
@@ -1551,7 +1551,7 @@
             endif
             if(errc.eq.GFC_SUCCESS) then
              sloop: do while(errc.eq.GFC_SUCCESS)
-              errc=list_it%append(this%current,at_top=.FALSE.,assoc_only=.TRUE.)
+              errc=list_it%append(this%current,assoc_only=.TRUE.)
               if(errc.ne.GFC_SUCCESS) exit sloop
               errc=this%move_in_order(dir)
              enddo sloop
@@ -1675,10 +1675,10 @@
          integer(INTD):: ierr                          !out: error code (0:success)
          real(8), intent(out):: perf                   !out: performance index
          integer(INTD), intent(in), optional:: dev_out !in: default output device
-!-----------------------------------------------------
+!------------------------------------------------------
          integer(INTD), parameter:: MAX_ACTIONS=1000000
 !------------------------------------------------------
-         integer(INTD):: jo,i,j,fnd,nfnd
+         integer(INTD):: jo,i,j,nadd,ndel,nidl
          type(key_t):: key
          type(val_t):: val
          type(dictionary_t), target:: some_dict
@@ -1688,44 +1688,65 @@
          class(gfc_cont_elem_t), pointer:: pntee
          class(*), pointer:: uptr
          real(8):: tms,tm
+         logical:: del
 
          ierr=GFC_SUCCESS; perf=0d0; uptr=>NULL()
          if(present(dev_out)) then; jo=dev_out; else; jo=6; endif
-         fnd=0; nfnd=0; key%rank=KEY_LEN
-         tms=thread_wtime()
 !Lookups/insertions:
+         tms=thread_wtime()
+         nadd=0; ndel=0; nidl=0
          j=dict_it%init(some_dict); if(j.ne.GFC_SUCCESS) then; call test_quit(1); return; endif
          do i=1,MAX_ACTIONS
-          call get_rnd_key(key) !random key
-          val%my_array(1:KEY_LEN)=13.777d0; val%key_stored=key !value
-          j=dict_it%search(GFC_DICT_ADD_IF_NOT_FOUND,cmp_key_test,key,val,GFC_BY_VAL,uptr)
+          del=(mod(i,4).eq.3) !every fourth action will be a deletion
+          key%rank=KEY_LEN; call get_rnd_key(key) !random key
+          if(del) then !deletion (if found)
+           j=dict_it%search(GFC_DICT_DELETE_IF_FOUND,cmp_key_test,key)
+          else !insertion (if not found)
+           val%my_array(1:KEY_LEN)=13.777d0; val%key_stored=key !value
+           j=dict_it%search(GFC_DICT_ADD_IF_NOT_FOUND,cmp_key_test,key,val,GFC_BY_VAL,uptr)
+          endif
           if(j.eq.GFC_FOUND) then
-           fnd=fnd+1
-           if(.not.associated(uptr)) then; call test_quit(2); return; endif
+           if(del) then
+            ndel=ndel+1
+           else
+            nidl=nidl+1
+            if(.not.(associated(uptr))) then; call test_quit(2); return; endif
+           endif
           elseif(j.eq.GFC_NOT_FOUND) then
-           nfnd=nfnd+1
+           if(del) then
+            nidl=nidl+1
+           else
+            nadd=nadd+1
+            if(.not.(associated(uptr))) then; call test_quit(3); return; endif
+           endif
           else
-           call test_quit(3)
+           call test_quit(4)
           endif
          enddo
          tm=thread_wtime(tms)
          perf=dble(MAX_ACTIONS)/tm
-         !write(jo,'("Found ",i11,"; Not found ",i11)') fnd,nfnd !debug
-!Sorting:
-         call dict_it%sort_to_list(list_refs,j); if(j.ne.GFC_SUCCESS) then; call test_quit(4); return; endif
-         j=list_it%init(list_refs); pntee=>NULL(); uptr=>NULL()
+         !write(jo,'("Added ",i11,"; Deleted ",i11,"; Idle ",i11)') nadd,ndel,nidl !debug
+!Traversing the final dictionary as a sorted list:
+         tms=thread_wtime()
+         call dict_it%sort_to_list(list_refs,j); if(j.ne.GFC_SUCCESS) then; call test_quit(5); return; endif
+         j=list_it%init(list_refs); pntee=>NULL(); uptr=>NULL(); i=0
          do while(j.eq.GFC_SUCCESS)
           pntee=>list_it%pointee(); uptr=>pntee%get_value()
           select type(uptr)
           class is(dict_elem_t)
+           i=i+1
+           !call uptr%print_key(print_key,j,jo); if(j.ne.0) then; call test_quit(6); return; endif
           class default
-           call test_quit(5); return
+           call test_quit(7); return
           end select
           j=list_it%next()
          enddo
-         j=list_it%release()
+         if(j.ne.GFC_IT_DONE) then; call test_quit(8); return; endif
+         j=list_it%release(); if(j.ne.GFC_SUCCESS) then; call test_quit(9); return; endif
+         tm=thread_wtime(tms)
+         !write(jo,'("Traversing time for ",i11," elements is ",F10.4," sec")') i,tm !debug
 !Success:
-         call test_quit(j)
+         call test_quit(0)
          return
 
          contains
@@ -1749,9 +1770,9 @@
             write(jo,'("#ERROR(gfc::dictionary::test): Test failed: Error code ",i13)') ierr
             write(jo,'("Please contact the developer at QUANT4ME@GMAIL.COM")')
            endif
-           call dict_it%delete_all(jj); if(ierr.eq.GFC_SUCCESS.and.jj.ne.GFC_SUCCESS) ierr=6
+           call dict_it%delete_all(jj); if(ierr.eq.GFC_SUCCESS.and.jj.ne.GFC_SUCCESS) ierr=10
            if(jj.ne.GFC_SUCCESS) write(jo,'("#ERROR(gfc::dictionary::test): Dictionary destruction failed: Error code ",i13)') jj
-           jj=dict_it%release(); if(ierr.eq.GFC_SUCCESS.and.jj.ne.GFC_SUCCESS) ierr=7
+           jj=dict_it%release(); if(ierr.eq.GFC_SUCCESS.and.jj.ne.GFC_SUCCESS) ierr=11
            if(jj.ne.GFC_SUCCESS) write(jo,'("#ERROR(gfc::dictionary::test): Dictionary iterator release failed: Error code ",i13)')&
                                       &jj
            return
