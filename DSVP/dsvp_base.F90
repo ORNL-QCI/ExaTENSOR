@@ -1,6 +1,6 @@
 !Domain-specific virtual processor (DSVP): Abstract base module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/01/03
+!REVISION: 2017/01/04
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -82,7 +82,8 @@
         integer(INTD), parameter, public:: DSVP_ERR_INVALID_ARGS=-1   !invalid procedure arguments
         integer(INTD), parameter, public:: DSVP_ERR_INVALID_REQ=-2    !invalid request
         integer(INTD), parameter, public:: DSVP_ERR_MEM_ALLOC_FAIL=-3 !failed memory allocation
-        integer(INTD), parameter, public:: DSVP_ERR_BROKEN_OBJ=-4     !broken object
+        integer(INTD), parameter, public:: DSVP_ERR_MEM_FREE_FAIL=-4  !failed memory deallocation
+        integer(INTD), parameter, public:: DSVP_ERR_BROKEN_OBJ=-5     !broken object
  !DSVP status (negative numbers are specific error codes):
         integer(INTD), parameter, public:: DSVP_STAT_OFF=0    !DSVP is off (either not initialized or turned off)
         integer(INTD), parameter, public:: DSVP_STAT_ACTIVE=1 !DSVP has been initialized and is active now
@@ -361,7 +362,7 @@
          if(this%is_active(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
            if(this%in_route.eq.DS_OPRND_NO_COMM) then
-            if(this%is_delivered(ier)) call this%mark_undelivered(errc)
+            if(this%is_delivered(ier)) call this%mark_undelivered(errc) !will release local resources
             if(errc.eq.DSVP_SUCCESS) errc=ier
             this%stat=DS_OPRND_EMPTY
            else
@@ -386,7 +387,7 @@
           if(errc.eq.DSVP_SUCCESS) then
            if(.not.this%is_delivered(errc)) then
             call this%set_comm_stat(DS_OPRND_NO_COMM,errc)
-            this%stat=DS_OPRND_PRESENT
+            if(errc.eq.DSVP_SUCCESS) this%stat=DS_OPRND_PRESENT
            else
             errc=DSVP_ERR_INVALID_REQ
            endif
@@ -400,7 +401,7 @@
 !---------------------------------------------------
         subroutine DSOprndMarkUndelivered(this,ierr)
 !Marks the domain-specific operand as undelivered (locally unavailable).
-!The local resources will be automatically released, but the operand statys defined.
+!The local resources will automatically be released, but the operand statys defined.
 !It is allowed to call this procedure on an undelivered operand. However, trying to
 !mark undelivered an operand with a pending communication will cause an error.
          implicit none
@@ -412,9 +413,9 @@
          if(this%is_active(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
            if(this%in_route.eq.DS_OPRND_NO_COMM) then !no pending communication allowed
-            if(this%is_delivered(ier)) call this%release(errc)
+            if(this%is_delivered(ier)) call this%release(errc) !will release local resources
             if(errc.eq.DSVP_SUCCESS) errc=ier
-            this%stat=DS_OPRND_DEFINED
+            this%stat=DS_OPRND_DEFINED !status will be changed regardless the success of resource release
            else
             errc=DSVP_ERR_INVALID_REQ
            endif
@@ -435,18 +436,20 @@
          integer(INTD):: errc
 
          if(this%is_active(errc)) then
-          select case(sts)
-          case(DS_OPRND_NO_COMM)
-           this%in_route=sts
-          case(DS_OPRND_FETCHING,DS_OPRND_UPLOADING)
-           if(this%in_route.eq.DS_OPRND_NO_COMM) then
+          if(errc.eq.DSVP_SUCCESS) then
+           select case(sts)
+           case(DS_OPRND_NO_COMM)
             this%in_route=sts
-           else
-            errc=DSVP_ERR_INVALID_REQ
-           endif
-          case default
-           errc=DSVP_ERR_INVALID_ARGS
-          end select
+           case(DS_OPRND_FETCHING,DS_OPRND_UPLOADING)
+            if(this%in_route.eq.DS_OPRND_NO_COMM) then
+             this%in_route=sts
+            else
+             errc=DSVP_ERR_INVALID_REQ
+            endif
+           case default
+            errc=DSVP_ERR_INVALID_ARGS
+           end select
+          endif
          else
           errc=DSVP_ERR_INVALID_REQ
          endif
@@ -523,7 +526,8 @@
         end function DSInstrGetCode
 !------------------------------------------------
         subroutine DSInstrSetCode(this,code,ierr)
-!Sets the instruction code.
+!Sets the instruction code. All valid codes are non-negative.
+!A negative code, e.g., DS_INSTR_NOOP=-1, means an empty instruction.
          implicit none
          class(ds_instr_t), intent(inout):: this     !inout: domain-specific instruction
          integer(INTD), intent(in):: code            !in: instruction code
@@ -612,11 +616,13 @@
          integer(INTD), intent(out), optional:: ierr !out: error code
          logical, intent(in), optional:: dissoc_only !in: if TRUE, only dissociation, no deallocation
          integer(INTD):: errc
+         integer:: ier
 
          errc=DSVP_SUCCESS
          if(associated(this%control)) then
-          if(present(dissoc_only)) then
-           if(.not.dissoc_only) deallocate(this%control)
+          ier=1; if(present(dissoc_only)) then; if(dissoc_only) ier=0; endif
+          if(ier.ne.0) then
+           deallocate(this%control,STAT=ier); if(ier.ne.0) errc=DSVP_ERR_MEM_FREE_FAIL
           endif
           this%control=>NULL()
          else
@@ -627,7 +633,7 @@
         end subroutine DSInstrFreeControl
 !--------------------------------------------------------------
         subroutine DSInstrAllocOperands(this,num_operands,ierr)
-!Allocates the operand pointer storage (to an empty state).
+!Allocates the operands reference storage (to an empty state).
          implicit none
          class(ds_instr_t), intent(inout):: this     !inout: domain-specific instruction
          integer(INTD), intent(in):: num_operands    !in: number of operands
@@ -653,22 +659,28 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine DSInstrAllocOperands
-!---------------------------------------------------
-        subroutine DSInstrDeallocOperands(this,ierr)
-!Deallocates the operand pointer storage.
+!---------------------------------------------------------------
+        subroutine DSInstrDeallocOperands(this,ierr,dissoc_only)
+!Deallocates the operands reference storage. By default, a deallocation
+!will be performed on each operand, unless <dissoc_only>=TRUE.
          implicit none
          class(ds_instr_t), intent(inout):: this     !inout: domain-specific instruction
          integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc,i
+         logical, intent(in), optional:: dissoc_only !in: if TRUE, only dissociation will be performed on operands
+         integer(INTD):: errc,ier,i
+         integer:: j
+         logical:: dis
 
          errc=DSVP_SUCCESS
          if(allocated(this%operand)) then
           if(this%num_oprnds.gt.0) then
+           if(present(dissoc_only)) then; dis=dissoc_only; else; dis=.FALSE.; endif
            do i=this%num_oprnds-1,0,-1
-            call this%free_operand(i,errc); if(errc.ne.DSVP_SUCCESS) exit
+            call this%free_operand(i,ier,dis); if(ier.ne.DSVP_SUCCESS) errc=ier
            enddo
            if(errc.eq.DSVP_SUCCESS) then
-            deallocate(this%operand); this%num_oprnds=0
+            deallocate(this%operand,STAT=j); if(j.ne.0) errc=DSVP_ERR_MEM_FREE_FAIL
+            this%num_oprnds=0
            endif
           else
            errc=DSVP_ERR_BROKEN_OBJ
@@ -691,27 +703,29 @@
 
          errc=DSVP_SUCCESS; op_ptr=>NULL()
          if(this%is_active(errc)) then
-          if(this%num_oprnds.gt.0) then
-           if(op_num.ge.0.and.op_num.lt.this%num_oprnds) then
+          if(errc.eq.DSVP_SUCCESS) then
+           if(this%num_oprnds.gt.0) then
+            if(op_num.ge.0.and.op_num.lt.this%num_oprnds) then
 #ifdef DSVP_DEBUG
-            if(DEBUG.gt.0) then
-             if(allocated(this%operand)) then
-              if(lbound(this%operand,1).ne.0.or.ubound(this%operand,1)+1.ne.this%num_oprnds) errc=DSVP_ERR_BROKEN_OBJ
-             else
-              errc=DSVP_ERR_BROKEN_OBJ
+             if(DEBUG.gt.0) then
+              if(allocated(this%operand)) then
+               if(lbound(this%operand,1).ne.0.or.ubound(this%operand,1)+1.ne.this%num_oprnds) errc=DSVP_ERR_BROKEN_OBJ
+              else
+               errc=DSVP_ERR_BROKEN_OBJ
+              endif
              endif
-            endif
-            if(errc.eq.DSVP_SUCCESS) then
+             if(errc.eq.DSVP_SUCCESS) then
 #endif
-             op_ptr=>this%operand(op_num)%oper_ref
+              op_ptr=>this%operand(op_num)%oper_ref
 #ifdef DSVP_DEBUG
-            endif
+             endif
 #endif
+            else
+             errc=DSVP_ERR_INVALID_ARGS
+            endif
            else
-            errc=DSVP_ERR_INVALID_ARGS
+            errc=DSVP_ERR_INVALID_REQ
            endif
-          else
-           errc=DSVP_ERR_INVALID_REQ
           endif
          else
           errc=DSVP_ERR_INVALID_REQ
@@ -723,10 +737,10 @@
         subroutine DSInstrSetOperand(this,op_num,oprnd,ierr)
 !Associates a specific operand of the domain-specific instruction with its target.
          implicit none
-         class(ds_instr_t), intent(inout):: this        !inout: domain-specific instruction
-         integer(INTD), intent(in):: op_num             !in: operand number (0,1,2,...)
-         class(ds_oprnd_t), pointer, intent(in):: oprnd !in: domain-specific operand (target)
-         integer(INTD), intent(out), optional:: ierr    !out: error code
+         class(ds_instr_t), intent(inout):: this       !inout: domain-specific instruction
+         integer(INTD), intent(in):: op_num            !in: operand number (0,1,2,...)
+         class(ds_oprnd_t), target, intent(in):: oprnd !in: domain-specific operand (target)
+         integer(INTD), intent(out), optional:: ierr   !out: error code
          integer(INTD):: errc
 
          errc=DSVP_SUCCESS
@@ -769,14 +783,18 @@
          integer(INTD), intent(out), optional:: ierr !out: error code
          logical, intent(in), optional:: dissoc_only !in: if TRUE, no pointer deallocation will be performed
          integer(INTD):: errc
+         integer:: ier
          logical:: dis
 
          errc=DSVP_SUCCESS
          if(present(dissoc_only)) then; dis=dissoc_only; else; dis=.FALSE.; endif
          if(this%num_oprnds.gt.0) then
           if(op_num.ge.0.and.op_num.lt.this%num_oprnds) then
-           call this%operand(op_num)%oper_ref%mark_empty(errc) !will call destructor
-           if(.not.dis) deallocate(this%operand(op_num)%oper_ref)
+           call this%operand(op_num)%oper_ref%mark_empty(errc) !will call destructor (release local resources)
+           if(.not.dis) then
+            deallocate(this%operand(op_num)%oper_ref,STAT=ier)
+            if(ier.ne.0.and.errc.eq.DSVP_SUCCESS) errc=DSVP_ERR_MEM_FREE_FAIL
+           endif
            this%operand(op_num)%oper_ref=>NULL()
           else
            errc=DSVP_ERR_INVALID_ARGS
@@ -824,21 +842,33 @@
            errc=DSVP_ERR_BROKEN_OBJ
           endif
          endif
+         if(.not.associated(this%acquire_resource)) return
+         if(.not.associated(this%prefetch_input)) return
+         if(.not.associated(this%sync_prefetch)) return
+         if(.not.associated(this%execute)) return
+         if(.not.associated(this%sync_execution)) return
+         if(.not.associated(this%upload_output)) return
+         if(.not.associated(this%sync_upload)) return
+         if(.not.associated(this%release_resource)) return
          if(errc.eq.DSVP_SUCCESS) res=.TRUE.
          if(present(ierr)) ierr=errc
          return
         end function DSInstrAllSet
-!-----------------------------------------
-        subroutine DSInstrClean(this,ierr)
-!Resets the domain-specific instruction to an empty state.
+!-----------------------------------------------------
+        subroutine DSInstrClean(this,ierr,dissoc_only)
+!Resets the domain-specific instruction to an empty state. By default,
+!the instruction control field and instruction operands will be deallocated,
+!unless <dissoc_only>=TRUE, which will only dissociate the corresponing pointers.
          implicit none
          class(ds_instr_t), intent(inout):: this     !inout: domain-specific instruction
          integer(INTD), intent(out), optional:: ierr !out: error code
+         logical, intent(in), optional:: dissoc_only !in: if TRUE, the control and individual operands will simply be dissociated
          integer(INTD):: errc,ier
+         logical:: dis
 
-         errc=DSVP_SUCCESS
-         call this%dealloc_operands(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.DSVP_SUCCESS) errc=ier
-         call this%free_control(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.DSVP_SUCCESS) errc=ier
+         errc=DSVP_SUCCESS; if(present(dissoc_only)) then; dis=dissoc_only; else; dis=.FALSE.; endif
+         call this%dealloc_operands(ier,dis); if(ier.ne.DSVP_SUCCESS.and.errc.eq.DSVP_SUCCESS) errc=ier
+         call this%free_control(ier,dis); if(ier.ne.DSVP_SUCCESS.and.errc.eq.DSVP_SUCCESS) errc=ier
          this%code=DS_INSTR_NOOP; this%stat=DS_INSTR_EMPTY
          if(present(ierr)) ierr=errc
          return
@@ -858,11 +888,12 @@
         end subroutine DSVPStartTime
 !--------------------------------------
         subroutine DSVPClean(this,ierr)
-!Cleans the DSVP state after desctruction.
+!Cleans the DSVP state after destruction.
          implicit none
-         class(dsvp_t), intent(inout):: this         !inout: DSVP
+         class(dsvp_t), intent(inout):: this         !inout: destructed DSVP
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
+         integer:: ier
 
          errc=DSVP_SUCCESS
          if(this%get_status(errc).eq.DSVP_STAT_OFF) then
@@ -870,7 +901,10 @@
           this%instr_received=0
           this%instr_processed=0
           this%instr_failed=0
-          if(allocated(this%description)) deallocate(this%description)
+          if(allocated(this%description)) then
+           deallocate(this%description,STAT=ier)
+           if(ier.ne.0.and.errc.eq.DSVP_SUCCESS) errc=DSVP_ERR_MEM_FREE_FAIL
+          endif
          else
           errc=DSVP_ERR_INVALID_REQ
          endif
@@ -881,7 +915,7 @@
         subroutine DSVPSetDescription(this,id,descr,ierr)
 !Sets the DSVP ID and description.
          implicit none
-         class(dsvp_t), intent(inout):: this         !inout: DSVP
+         class(dsvp_t), intent(inout):: this         !inout: active DSVP
          integer(INTL), intent(in):: id              !in: unique ID
          character(*), intent(in):: descr            !in: symbolic description
          integer(INTD), intent(out), optional:: ierr !out: error code
@@ -890,7 +924,10 @@
 
          errc=DSVP_SUCCESS
          if(this%get_status(errc).ne.DSVP_STAT_OFF) then
-          if(allocated(this%description)) deallocate(this%description)
+          if(allocated(this%description)) then
+           deallocate(this%description,STAT=ier)
+           if(ier.ne.0.and.errc.eq.DSVP_SUCCESS) errc=DSVP_ERR_MEM_FREE_FAIL
+          endif
           l=len_trim(descr)
           if(l.gt.0) then
            allocate(character(len=l)::this%description,STAT=ier)
@@ -911,7 +948,7 @@
         subroutine DSVPGetDescription(this,id,descr,descr_len,ierr)
 !Gets the DSVP ID and description.
          implicit none
-         class(dsvp_t), intent(in):: this            !in: DSVP
+         class(dsvp_t), intent(in):: this            !in: active DSVP
          integer(INTL), intent(out):: id             !out: DSVP ID
          character(*), intent(inout):: descr         !out: symbolic description
          integer(INTD), intent(out):: descr_len      !out: length of the description string
@@ -920,10 +957,17 @@
 
          errc=DSVP_SUCCESS
          if(this%get_status(errc).ne.DSVP_STAT_OFF) then
-          descr_len=0
           if(allocated(this%description)) then
            descr_len=len_trim(this%description)
-           if(descr_len.gt.0) descr(1:descr_len)=this%description(1:descr_len)
+           if(descr_len.gt.0) then
+            if(len(descr).ge.descr_len) then
+             descr(1:descr_len)=this%description(1:descr_len)
+            else
+             errc=DSVP_ERR_INVALID_ARGS !insufficient length of <descr>
+            endif
+           endif
+          else
+           descr_len=0
           endif
           id=this%id
          else
@@ -989,10 +1033,12 @@
 
          errc=DSVP_SUCCESS
          if(this%get_status(errc).ne.DSVP_STAT_OFF) then
-          if(present(incr)) then
-           this%instr_received=this%instr_received+incr
-          else
-           this%instr_received=this%instr_received+1_INTL
+          if(errc.eq.DSVP_SUCCESS) then
+           if(present(incr)) then
+            this%instr_received=this%instr_received+incr
+           else
+            this%instr_received=this%instr_received+1_INTL
+           endif
           endif
          else
           errc=DSVP_ERR_INVALID_REQ
@@ -1011,10 +1057,12 @@
 
          errc=DSVP_SUCCESS
          if(this%get_status(errc).ne.DSVP_STAT_OFF) then
-          if(present(incr)) then
-           this%instr_processed=this%instr_processed+incr
-          else
-           this%instr_processed=this%instr_processed+1_INTL
+          if(errc.eq.DSVP_SUCCESS) then
+           if(present(incr)) then
+            this%instr_processed=this%instr_processed+incr
+           else
+            this%instr_processed=this%instr_processed+1_INTL
+           endif
           endif
          else
           errc=DSVP_ERR_INVALID_REQ
@@ -1033,10 +1081,12 @@
 
          errc=DSVP_SUCCESS
          if(this%get_status(errc).ne.DSVP_STAT_OFF) then
-          if(present(incr)) then
-           this%instr_failed=this%instr_failed+incr
-          else
-           this%instr_failed=this%instr_failed+1_INTL
+          if(errc.eq.DSVP_SUCCESS) then
+           if(present(incr)) then
+            this%instr_failed=this%instr_failed+incr
+           else
+            this%instr_failed=this%instr_failed+1_INTL
+           endif
           endif
          else
           errc=DSVP_ERR_INVALID_REQ
