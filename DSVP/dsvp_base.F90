@@ -101,15 +101,15 @@
   !Instruction code (valid codes must be non-negative):
         integer(INTD), parameter, public:: DS_INSTR_NOOP=-1        !no operation (all valid instruction codes are non-negative)
   !Instruction status (instruction pipeline):
-        integer(INTD), parameter, public:: DS_INSTR_EMPTY=-1        !empty instruction
-        integer(INTD), parameter, public:: DS_INSTR_NEW=0           !new (freshly decoded) instruction
-        integer(INTD), parameter, public:: DS_INSTR_RSC_WAIT=1      !waiting for resource allocation required by instruction operands (local resources are acquired)
-        integer(INTD), parameter, public:: DS_INSTR_INPUT_WAIT=2    !waiting for the (remote) input operands to be delivered
-        integer(INTD), parameter, public:: DS_INSTR_READY_TO_EXEC=3 !instruction is ready for execution
-        integer(INTD), parameter, public:: DS_INSTR_SCHEDULED=4     !instruction has been scheduled to a specific computing unit (specific queue)
-        integer(INTD), parameter, public:: DS_INSTR_ISSUED=5        !instruction has been issued for execution on a specific computing unit
-        integer(INTD), parameter, public:: DS_INSTR_COMPLETED=6     !instruction has completed execution (either successfully or with an error)
-        integer(INTD), parameter, public:: DS_INSTR_OUTPUT_WAIT=7   !waiting for the (remote) output operands to be uploaded back
+        integer(INTD), parameter, public:: DS_INSTR_EMPTY=0         !empty instruction
+        integer(INTD), parameter, public:: DS_INSTR_NEW=1           !new (freshly decoded) instruction
+        integer(INTD), parameter, public:: DS_INSTR_RSC_WAIT=2      !waiting for resource allocation required by instruction operands (local resources are acquired)
+        integer(INTD), parameter, public:: DS_INSTR_INPUT_WAIT=3    !waiting for the (remote) input operands to be delivered
+        integer(INTD), parameter, public:: DS_INSTR_READY_TO_EXEC=4 !instruction is ready for execution
+        integer(INTD), parameter, public:: DS_INSTR_SCHEDULED=5     !instruction has been scheduled to a specific computing unit (specific queue)
+        integer(INTD), parameter, public:: DS_INSTR_ISSUED=6        !instruction has been issued for execution on a specific computing unit
+        integer(INTD), parameter, public:: DS_INSTR_COMPLETED=7     !instruction has completed execution (either successfully or with an error)
+        integer(INTD), parameter, public:: DS_INSTR_OUTPUT_WAIT=8   !waiting for the (remote) output operands to be uploaded back
         integer(INTD), parameter, public:: DS_INSTR_RETIRED=9       !instruction retired (all temporary resources have been released)
 !DERIVED TYPES:
  !Domain-specific operand:

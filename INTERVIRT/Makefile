@@ -242,28 +242,19 @@ LTHREAD = $(LTHREAD_$(TOOLKIT))
 #LINKING:
 LFLAGS = $(LIB) $(LTHREAD) $(MPI_LINK) $(LA_LINK) $(CUDA_LINK)
 
-OBJS = ./OBJ/hardware.o ./OBJ/subspaces.o ./OBJ/tensor_recursive.o ./OBJ/m_process.o ./OBJ/g_process.o ./OBJ/exatensor.o
+OBJS = ./OBJ/m_process.o ./OBJ/g_process.o ./OBJ/exatensor.o
 
 $(NAME): $(OBJS) ../UTILITY/libutility.a ../GFC/libgfc.a ../DDSS/libddss.a ../TALSH/libtalsh.a ../INTRAVIRT/libintravirt.a
 	ar cr lib$(NAME).a $(OBJS) ../UTILITY/libutility.a ../GFC/libgfc.a ../DDSS/libddss.a ../TALSH/libtalsh.a ../INTRAVIRT/libintravirt.a
 
-./OBJ/hardware.o: hardware.F90 ../UTILITY/dil_basic.mod ../GFC/gfc_base.mod ../GFC/gfc_tree.mod
+./OBJ/m_process.o: m_process.F90 ../INTRAVIRT/virta.mod
 	mkdir -p ./OBJ
-	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(FFLAGS) hardware.F90 -o ./OBJ/hardware.o
-
-./OBJ/subspaces.o: subspaces.F90 ../UTILITY/dil_basic.mod ../GFC/gfc_base.mod ../GFC/gfc_tree.mod
-	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(FFLAGS) subspaces.F90 -o ./OBJ/subspaces.o
-
-./OBJ/tensor_recursive.o: tensor_recursive.F90 ./OBJ/hardware.o ./OBJ/subspaces.o ../INTRAVIRT/virta.mod
-	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(FFLAGS) tensor_recursive.F90 -o ./OBJ/tensor_recursive.o
-
-./OBJ/m_process.o: m_process.F90 ./OBJ/tensor_recursive.o ../INTRAVIRT/virta.mod
 	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(FFLAGS) m_process.F90 -o ./OBJ/m_process.o
 
-./OBJ/g_process.o: g_process.F90 ./OBJ/m_process.o ../UTILITY/dil_basic.mod
+./OBJ/g_process.o: g_process.F90 ../INTRAVIRT/virta.mod ./OBJ/m_process.o
 	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(FFLAGS) g_process.F90 -o ./OBJ/g_process.o
 
-./OBJ/exatensor.o: exatensor.F90 ./OBJ/hardware.o ./OBJ/subspaces.o ./OBJ/m_process.o ./OBJ/g_process.o ../INTRAVIRT/virta.mod
+./OBJ/exatensor.o: exatensor.F90 ../INTRAVIRT/virta.mod ./OBJ/m_process.o ./OBJ/g_process.o
 	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(FFLAGS) exatensor.F90 -o ./OBJ/exatensor.o
 
 

@@ -1,6 +1,6 @@
-!ExaTensor::Managing process (manager).
+!ExaTENSOR: Managing virtual processor (manager).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2016/11/10
+!REVISION: 2017/01/04
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -22,14 +22,14 @@
 
        module m_process
         use virta
-        use tensor_recursive
+        !use c_process
         implicit none
         private
 !PARAMETERS:
  !Basic:
         integer(INTD), private:: CONS_OUT=6
         integer(INTD), private:: DEBUG=0
-        logical, private:: VERBOSE=.true.
+        logical, private:: VERBOSE=.TRUE.
 !TYPES:
 !INTERFACES:
 !VISIBILITY

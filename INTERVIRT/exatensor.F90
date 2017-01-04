@@ -1,6 +1,7 @@
-!ExaTensor: Massively Parallel Virtual Processor for Scale-Adaptive Tensor Algebra
+!ExaTENSOR: Massively Parallel Virtual Processor for Scale-Adaptive Tensor Algebra
+!This is the top level API module of ExaTENSOR
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2016/08/26
+!REVISION: 2017/01/04
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -21,8 +22,6 @@
 !along with ExaTensor. If not, see <http://www.gnu.org/licenses/>.
 
       module exatensor
-       use hardware
-       use subspaces
        use virta
 !      use c_process
        use m_process
@@ -33,7 +32,7 @@
  !Basic:
        integer(INTD), private:: CONS_OUT=6 !output device
        integer(INTD), private:: DEBUG=0    !debugging level
-       logical, private:: VERBOSE=.true.   !verbosity
+       logical, private:: VERBOSE=.TRUE.   !verbosity for errors
 !TYPES:
 
 !INTERFACES:
