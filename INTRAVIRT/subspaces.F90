@@ -1,6 +1,6 @@
 !Infrastructure for a recursive adaptive vector space decomposition.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/01/04
+!REVISION: 2017/01/05
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -74,7 +74,7 @@
          integer(INTL), private:: subspace_id=-1                 !subspace ID (registered ID): must be non-negative, -1 means undefined
          integer(INTL), private:: max_resolution=0               !max resolution level (max dimension): 0 means undefined
          type(real_vec_t), private:: center                      !coordinates of the center of the effective subspace support in real space
-         type(extend1d_t, allocatable, private:: extent(:)       !effective extents of the subspace support in each real space dimension
+         type(extent1d_t), allocatable, private:: extent(:)      !effective extents of the subspace support in each real space dimension
          type(subspace_basis_t), allocatable, private:: basis(:) !pointer to basis sets for each resolution level [1..MaxResLevel]: Defined only for the terminal subspaces
         end type subspace_t
  !Hierarchical composite index:

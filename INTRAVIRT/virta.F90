@@ -85,12 +85,12 @@
         integer(INTD), parameter, public:: TENSOR_ISA_SIZE=17       !total number of non-negative tensor instruction codes
 !TYPES:
  !Tensor operand:
-        type, extends(ds_oprnd_t), public:: tens_oprnd_t
-         type(tensor_rcrsv_t), private:: tensor
-        end type tens_oprnd_t
+!        type, extends(ds_oprnd_t), public:: tens_oprnd_t
+!         type(tensor_rcrsv_t), private:: tensor
+!        end type tens_oprnd_t
  !Tensor instruction:
-        type, extends(ds_instr_t), public:: tens_instr_t
-        end type tens_instr_t
+!        type, extends(ds_instr_t), public:: tens_instr_t
+!        end type tens_instr_t
 !DATA:
  !Current role of the virtual processor:
         integer(INTD), protected:: my_role=EXA_NO_ROLE !role of this virtual processor (set at run-time)

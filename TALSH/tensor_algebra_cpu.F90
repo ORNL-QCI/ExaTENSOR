@@ -1,6 +1,6 @@
 !Tensor Algebra for Multi- and Many-core CPUs (OpenMP based).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2016/12/22
+!REVISION: 2017/01/05
 
 !Copyright (C) 2013-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -3078,9 +3078,9 @@
 #else
            if(lconj.and.((contr_case.eq.PARTIAL_CONTRACTION.and.DISABLE_BLAS).or.contr_case.eq.FULL_CONTRACTION)) then
 #endif
-            conj=0+1*2 !this conjugation mask will be used in tensor_block_copy()
+            conj=0+1*2 !this conjugation mask will be used in tensor_block_copy(): Bit X is a conjugation flag for argument X
            else
-            conj=0
+            conj=0 !all bits are zero => no argument conjugation
            endif
           else
            tst=rtb; transp=rtransp; tens_in=>rtens
@@ -3089,9 +3089,9 @@
 #else
            if(rconj.and.((contr_case.eq.PARTIAL_CONTRACTION.and.DISABLE_BLAS).or.contr_case.eq.FULL_CONTRACTION)) then
 #endif
-            conj=0+1*2 !this conjugation mask will be used in tensor_block_copy()
+            conj=0+1*2 !this conjugation mask will be used in tensor_block_copy(): Bit X is a conjugation flag for argument X
            else
-            conj=0
+            conj=0 !all bits are zero => no argument conjugation
            endif
           endif
           if(tens_in%tensor_shape%num_dim.gt.0.and.(transp.or.(conj.ne.0))) then !true tensor which requires a transpose
@@ -3152,7 +3152,11 @@
 !         dtp%tensor_shape%dim_extent(1:drank) !debug
 	 call calculate_matrix_dimensions(dtb,nlu,nru,dtp,lld,lrd,ierr); if(ierr.ne.0) then; ierr=12; goto 999; endif
 	 call calculate_matrix_dimensions(ltb,ncd,nlu,ltp,lcd,l0,ierr); if(ierr.ne.0) then; ierr=13; goto 999; endif
-	 call calculate_matrix_dimensions(rtb,ncd,nru,rtp,l1,l2,ierr); if(ierr.ne.0) then; ierr=14; goto 999; endif
+	 if(rtrm.eq.'C') then !R(r,c) matrix shape
+	  call calculate_matrix_dimensions(rtb,nru,ncd,rtp,l2,l1,ierr); if(ierr.ne.0) then; ierr=14; goto 999; endif
+	 else !R(c,r) matrix shape
+	  call calculate_matrix_dimensions(rtb,ncd,nru,rtp,l1,l2,ierr); if(ierr.ne.0) then; ierr=14; goto 999; endif
+	 endif
 !	 write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_contract): matrix dimensions (left,right,contr): "&
 !         &,i10,1x,i10,1x,i10)') lld,lrd,lcd !debug
 	 if(l0.ne.lld.or.l1.ne.lcd.or.l2.ne.lrd) then; ierr=15; goto 999; endif
