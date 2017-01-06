@@ -24,7 +24,7 @@
         logical, parameter:: TEST_NVTAL=.FALSE.
         logical, parameter:: TEST_TALSH=.FALSE.
         logical, parameter:: TEST_COMPLEX=.TRUE.
-        logical, parameter:: BENCH_TALSH_RND=.FALSE.
+        logical, parameter:: BENCH_TALSH_RND=.TRUE.
         logical, parameter:: BENCH_TALSH_CUSTOM=.FALSE.
 #ifndef NO_GPU
         interface

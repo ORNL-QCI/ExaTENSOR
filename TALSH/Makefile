@@ -161,7 +161,11 @@ LA_LINK_NOWRAP = -L.
 else
 LA_LINK_NOWRAP = $(LA_LINK_$(BLASLIB))
 endif
+ifeq ($(BLASLIB),MKL)
+LA_LINK_WRAP = $(LA_LINK_MKL)
+else
 LA_LINK_WRAP = -L.
+endif
 LA_LINK = $(LA_LINK_$(WRAP))
 
 #CUDA INCLUDES:
