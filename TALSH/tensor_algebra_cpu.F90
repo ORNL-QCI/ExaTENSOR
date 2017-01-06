@@ -1,6 +1,6 @@
 !Tensor Algebra for Multi- and Many-core CPUs (OpenMP based).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/01/05
+!REVISION: 2017/01/06
 
 !Copyright (C) 2013-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -3120,7 +3120,7 @@
           endif
           nullify(tens_in)
          enddo !k
-         if(dtransp) then !a transpose required for the destination tensor
+         if(dtransp) then !transpose the destination tensor
 !         write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_contract): permutation to be performed for ",i2)') 0 !debug
           dn2o(0)=+1; do k=1,drank; dn2o(do2n(k))=k; enddo
           select case(dtb)
@@ -3140,27 +3140,28 @@
          else !no transpose for the destination tensor
           dtp=>dtens
          endif
-!	 write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_contract): arguments are ready to be processed!")') !debug
+!        write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_contract): arguments are ready to be processed!")') !debug
  !Calculate matrix dimensions:
-!	 write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_contract): argument pointer status (l,r,d): ",l1,1x,l1,1x,l1)') &
+!        write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_contract): argument pointer status (l,r,d): ",l1,1x,l1,1x,l1)') &
 !         associated(ltp),associated(rtp),associated(dtp) !debug
-!	 write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_contract): left index extents  :",128(1x,i4))') &
+!        write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_contract): left index extents  :",128(1x,i4))') &
 !         ltp%tensor_shape%dim_extent(1:lrank) !debug
-!	 write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_contract): right index extents :",128(1x,i4))') &
+!        write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_contract): right index extents :",128(1x,i4))') &
 !         rtp%tensor_shape%dim_extent(1:rrank) !debug
-!	 write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_contract): result index extents:",128(1x,i4))') &
+!        write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_contract): result index extents:",128(1x,i4))') &
 !         dtp%tensor_shape%dim_extent(1:drank) !debug
-	 call calculate_matrix_dimensions(dtb,nlu,nru,dtp,lld,lrd,ierr); if(ierr.ne.0) then; ierr=12; goto 999; endif
-	 call calculate_matrix_dimensions(ltb,ncd,nlu,ltp,lcd,l0,ierr); if(ierr.ne.0) then; ierr=13; goto 999; endif
-	 if(rtrm.eq.'C') then !R(r,c) matrix shape
-	  call calculate_matrix_dimensions(rtb,nru,ncd,rtp,l2,l1,ierr); if(ierr.ne.0) then; ierr=14; goto 999; endif
-	 else !R(c,r) matrix shape
-	  call calculate_matrix_dimensions(rtb,ncd,nru,rtp,l1,l2,ierr); if(ierr.ne.0) then; ierr=14; goto 999; endif
-	 endif
-!	 write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_contract): matrix dimensions (left,right,contr): "&
+         call calculate_matrix_dimensions(dtb,nlu,nru,dtp,lld,lrd,ierr); if(ierr.ne.0) then; ierr=12; goto 999; endif
+         call calculate_matrix_dimensions(ltb,ncd,nlu,ltp,lcd,l0,ierr); if(ierr.ne.0) then; ierr=13; goto 999; endif
+         if(rtrm.eq.'C') then !R(r,c) matrix shape
+          call calculate_matrix_dimensions(rtb,nru,ncd,rtp,l2,l1,ierr); if(ierr.ne.0) then; ierr=14; goto 999; endif
+         else !R(c,r) matrix shape
+          call calculate_matrix_dimensions(rtb,ncd,nru,rtp,l1,l2,ierr); if(ierr.ne.0) then; ierr=14; goto 999; endif
+         endif
+!        write(CONS_OUT,'("DEBUG(tensor_algebra::tensor_block_contract): matrix dimensions (left,right,contr): "&
 !         &,i10,1x,i10,1x,i10)') lld,lrd,lcd !debug
-	 if(l0.ne.lld.or.l1.ne.lcd.or.l2.ne.lrd) then; ierr=15; goto 999; endif
- !Multiply two matrices (ltp & rtp):
+         if(l0.ne.lld.or.l1.ne.lcd.or.l2.ne.lrd) then; ierr=15; goto 999; endif
+         if(rtrm.eq.'C') then; l2=lrd; else; l2=lcd; endif !leading dimension for the right matrix
+ !Multiply two matrices (dtp += ltp * rtp):
 !	 start_gemm=thread_wtime() !debug
 	 select case(contr_case)
 	 case(PARTIAL_CONTRACTION) !destination is an array
@@ -3171,7 +3172,7 @@
 	   if(ierr.ne.0) then; ierr=16; goto 999; endif
 #else
 	   if(.not.DISABLE_BLAS) then
-	    call sgemm(ltrm,rtrm,int(lld,4),int(lrd,4),int(lcd,4),1.0,ltp%data_real4,int(lcd,4),rtp%data_real4,int(lcd,4),1.0,&
+	    call sgemm(ltrm,rtrm,int(lld,4),int(lrd,4),int(lcd,4),1.0,ltp%data_real4,int(lcd,4),rtp%data_real4,int(l2,4),1.0,&
 	              &dtp%data_real4,int(lld,4))
 	   else
 	    call tensor_block_pcontract_dlf(lld,lrd,lcd,ltp%data_real4,rtp%data_real4,dtp%data_real4,ierr)
@@ -3184,7 +3185,7 @@
 	   if(ierr.ne.0) then; ierr=18; goto 999; endif
 #else
 	   if(.not.DISABLE_BLAS) then
-	    call dgemm(ltrm,rtrm,int(lld,4),int(lrd,4),int(lcd,4),1d0,ltp%data_real8,int(lcd,4),rtp%data_real8,int(lcd,4),1d0,&
+	    call dgemm(ltrm,rtrm,int(lld,4),int(lrd,4),int(lcd,4),1d0,ltp%data_real8,int(lcd,4),rtp%data_real8,int(l2,4),1d0,&
 	              &dtp%data_real8,int(lld,4))
 	   else
 	    call tensor_block_pcontract_dlf(lld,lrd,lcd,ltp%data_real8,rtp%data_real8,dtp%data_real8,ierr)
@@ -3197,7 +3198,7 @@
 	   if(ierr.ne.0) then; ierr=20; goto 999; endif
 #else
 	   if(.not.DISABLE_BLAS) then
-	    call zgemm(ltrm,rtrm,int(lld,4),int(lrd,4),int(lcd,4),1d0,ltp%data_cmplx8,int(lcd,4),rtp%data_cmplx8,int(lcd,4),1d0,&
+	    call zgemm(ltrm,rtrm,int(lld,4),int(lrd,4),int(lcd,4),1d0,ltp%data_cmplx8,int(lcd,4),rtp%data_cmplx8,int(l2,4),1d0,&
 	              &dtp%data_cmplx8,int(lld,4))
 	   else
 	    call tensor_block_pcontract_dlf(lld,lrd,lcd,ltp%data_cmplx8,rtp%data_cmplx8,dtp%data_cmplx8,ierr)
