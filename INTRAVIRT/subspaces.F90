@@ -1,6 +1,6 @@
 !Infrastructure for a recursive adaptive vector space decomposition.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/01/05
+!REVISION: 2017/01/06
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -38,25 +38,26 @@
 !TYPES:
  !Real space vector:
         type, public:: real_vec_t
-         integer(INTD):: num_dim          !number of dimensions
-         real(8), allocatable:: coords(:) !components
+         integer(INTD):: num_dim         !number of dimensions
+         real(8), allocatable:: coord(:) !components
         end type real_vec_t
- !1D extent (segment[min_loc:max_loc]):
+ !1D extent (segment[min:max]):
         type, public:: extent1d_t
-         real(8):: min_loc !minimum
-         real(8):: max_loc !maximum
+         real(8):: min_coord !minimum
+         real(8):: max_coord !maximum
         end type extent1d_t
  !Abstract basis function:
         type, abstract, public:: basis_func_abs_t
+         integer(INTD), private:: supp_dim=0                !dimensionality of the real space support on which the basis function resides
          type(real_vec_t), private:: center                 !coordinates of the center of the effective function support in the real space
-         type(extent1d_t), allocatable, private:: extent(:) !effective extents of the basis function support in each dimension
+         type(extent1d_t), allocatable, private:: extent(:) !effective extents of the basis function support in each dimension of the real space
         end type basis_func_abs_t
  !Gaussian basis function:
         type, extends(basis_func_abs_t), public:: basis_func_gauss_t
-         integer(INTD), private:: num_prims=0         !number of contracted primitives
-         integer(INTD), private:: orb_moment=-1       !orbital momentum (0,1,2,3,...)
-         real(8), allocatable, private:: exponents(:) !primitive exponents
-         complex(8), allocatable, private:: coefs(:)  !primitive contraction coefficients
+         integer(INTD), private:: num_prims=0        !number of contracted primitives
+         integer(INTD), private:: orb_moment=-1      !orbital momentum (0,1,2,3,...)
+         real(8), allocatable, private:: exponent(:) !primitive exponents
+         complex(8), allocatable, private:: coef(:)  !primitive contraction coefficients
         end type basis_func_gauss_t
  !Typed basis function:
         type, public:: basis_func_t
@@ -65,24 +66,31 @@
         end type basis_func_t
  !Subspace basis:
         type, public:: subspace_basis_t
-         integer(INTD), private:: supp_dim=0                      !dimensionality of the real space support on which the basis functions reside
          integer(INTL), private:: space_dim=0                     !number of basis functions
-         type(basis_func_t), allocatable, private:: basis_func(:) !basis functions [1..space_dim]
+         type(basis_func_t), allocatable, private:: basis_func(:) !basis functions (components) [1..space_dim]
         end type subspace_basis_t
  !Subspace:
         type, public:: subspace_t
          integer(INTL), private:: subspace_id=-1                 !subspace ID (registered ID): must be non-negative, -1 means undefined
-         integer(INTL), private:: max_resolution=0               !max resolution level (max dimension): 0 means undefined
+         integer(INTD), private:: supp_dim=0                     !dimensionality of the real space support on which the basis functions reside
+         integer(INTL), private:: max_resolution=0               !max resolution level (max subspace dimension): 0 means undefined
          type(real_vec_t), private:: center                      !coordinates of the center of the effective subspace support in real space
          type(extent1d_t), allocatable, private:: extent(:)      !effective extents of the subspace support in each real space dimension
-         type(subspace_basis_t), allocatable, private:: basis(:) !pointer to basis sets for each resolution level [1..MaxResLevel]: Defined only for the terminal subspaces
+         type(subspace_basis_t), allocatable, private:: basis(:) !basis sets for each resolution level [1..MaxResLevel]: Defined only for the terminal subspaces
         end type subspace_t
  !Hierarchical composite index:
         type, public:: h_index_t
-         integer(INTL), private:: subspace_id=-1 !subspace ID (registered ID): -1 means undefined
+         integer(INTL), private:: subspace_id=-1 !subspace ID (registered ID): must be non-negative, -1 means undefined
          integer(INTL), private:: resolution=0   !subspace resolution level 1<=ResLevel<=MaxResLevel: 0 means undefined
          integer(INTL), private:: component=0    !subspace component number at the given level of resolution: [1..ResLevel], 0 means undefined
         end type h_index_t
+ !Hierarchical space representation:
+        type h_space_t
+         integer(INTL), private:: space_dim=0                 !original dimension of the vector space
+         integer(INTL), private:: num_subspaces=0             !number of defined subspaces
+         type(subspace_t), allocatable, private:: subspace(:) !subspaces
+         type(tree_t), private:: aggr_tree                    !subspace aggregation tree (SAT)
+        end type h_space_t
 !DATA:
 
 !VISIBILITY:
