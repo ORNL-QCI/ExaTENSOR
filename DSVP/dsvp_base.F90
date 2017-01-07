@@ -1,6 +1,6 @@
 !Domain-specific virtual processor (DSVP): Abstract base module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/01/04
+!REVISION: 2017/01/06
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -85,9 +85,9 @@
         integer(INTD), parameter, public:: DSVP_ERR_MEM_FREE_FAIL=-4  !failed memory deallocation
         integer(INTD), parameter, public:: DSVP_ERR_BROKEN_OBJ=-5     !broken object
  !DSVP status (negative numbers are specific error codes):
-        integer(INTD), parameter, public:: DSVP_STAT_OFF=0    !DSVP is off (either not initialized or turned off)
-        integer(INTD), parameter, public:: DSVP_STAT_ACTIVE=1 !DSVP has been initialized and is active now
-        integer(INTD), parameter, public:: DSVP_STAT_ERROR=-1 !DSVP encountered an error
+        integer(INTD), parameter, public:: DSVP_STAT_OFF=0         !DSVP is off (either not initialized or turned off)
+        integer(INTD), parameter, public:: DSVP_STAT_ACTIVE=1      !DSVP has been initialized and is active now
+        integer(INTD), parameter, public:: DSVP_STAT_ERROR=-1      !DSVP encountered an error
  !Domain-specific operand:
   !Operand status:
         integer(INTD), parameter, public:: DS_OPRND_EMPTY=0        !empty operand
@@ -100,7 +100,7 @@
  !Domain-specific instruction:
   !Instruction code (valid codes must be non-negative):
         integer(INTD), parameter, public:: DS_INSTR_NOOP=-1        !no operation (all valid instruction codes are non-negative)
-  !Instruction status (instruction pipeline):
+  !Instruction status (instruction pipeline stages):
         integer(INTD), parameter, public:: DS_INSTR_EMPTY=0         !empty instruction
         integer(INTD), parameter, public:: DS_INSTR_NEW=1           !new (freshly decoded) instruction
         integer(INTD), parameter, public:: DS_INSTR_RSC_WAIT=2      !waiting for resource allocation required by instruction operands (local resources are acquired)
@@ -123,6 +123,8 @@
           procedure(ds_oprnd_self_i), deferred, public:: upload      !starts uploading the domain-specific operand to its remote location
           procedure(ds_oprnd_query_i), deferred, public:: sync       !synchronizes the currently pending communication on the domain-specific operand (either test or wait)
           procedure(ds_oprnd_self_i), deferred, public:: release     !destroys the present local copy of the domain-specific operand (releases local resources!), but the operand will stay defined
+          procedure(ds_oprnd_pack_i), deferred, public:: pack        !packs the specification of the domain-specific operand into a plain byte packet
+          procedure(ds_oprnd_unpack_i), deferred, public:: unpack    !unpacks the specification of the domain-specific operand from a plain byte packet
           procedure, public:: is_active=>DSOprndIsActive               !returns TRUE if the domain-specific operand is active (defined)
           procedure, public:: is_delivered=>DSOprndIsDelivered         !returns TRUE if the domain-specific operand is locally available (present)
           procedure, public:: mark_active=>DSOprndMarkActive           !marks the domain-specific operand active (defined)
@@ -133,10 +135,13 @@
         end type ds_oprnd_t
  !Wrapped reference to a domain-specific operand:
         type, private:: ds_oprnd_ref_t
-         class(ds_oprnd_t), pointer, private:: oper_ref=>NULL() !pointer (reference) to a domain-specific operand
+         class(ds_oprnd_t), pointer, private:: oprnd_ref=>NULL() !pointer (reference) to a domain-specific operand
         end type ds_oprnd_ref_t
  !Domain-specific instruction control field:
         type, abstract, public:: ds_instr_ctrl_t
+         contains
+          procedure(ds_instr_ctrl_pack_i), deferred, public:: pack     !packs the domain-specific instruction control into a plain byte packet
+          procedure(ds_instr_ctrl_unpack_i), deferred, public:: unpack !unpacks the domain-specific instruction control from a plain byte packet
         end type ds_instr_ctrl_t
  !Domain-specific instruction:
         type, abstract, public:: ds_instr_t
@@ -157,6 +162,7 @@
          procedure(ds_instr_self_i), pass(this), pointer, public:: release_resource=>NULL() !releases local resources occupied by instruction operands
          contains
           procedure(ds_instr_decode_i), deferred, public:: decode       !decoding procedure: Unpacks the raw byte packet and constructs a domain-specific instruction
+          procedure(ds_instr_encode_i), deferred, public:: encode       !encoding procedure: Packs the domain-specific instruction into a raw byte packet
           procedure, public:: is_empty=>DSInstrIsEmpty                  !returns TRUE if the domain-specific instruction is empty
           procedure, public:: is_retired=>DSInstrIsRetired              !returns TRUE if the domain-specific instruction is retired
           procedure, public:: is_active=>DSInstrIsActive                !returns TRUE if the domain-specific instruction is neither empty nor retired
@@ -222,6 +228,37 @@
           class(ds_oprnd_t), intent(in):: this        !in: domain-specific operand
           integer(INTD), intent(out), optional:: ierr !out: error code
          end function ds_oprnd_query_i
+   !pack:
+         subroutine ds_oprnd_pack_i(this,packet,ierr)
+          import:: ds_oprnd_t,obj_pack_t,INTD
+          implicit none
+          class(ds_oprnd_t), intent(in):: this        !in: domain-specific operand
+          type(obj_pack_t), intent(inout):: packet    !out: packet
+          integer(INTD), intent(out), optional:: ierr !out: error code
+         end subroutine ds_oprnd_pack_i
+   !unpack:
+         subroutine ds_oprnd_unpack_i(this,packet,ierr)
+          import:: ds_oprnd_t,obj_pack_t,INTD
+          implicit none
+          class(ds_oprnd_t), intent(inout):: this     !out: domain-specific operand
+          type(obj_pack_t), intent(in):: packet       !in: packet
+          integer(INTD), intent(out), optional:: ierr !out: error code
+         end subroutine ds_oprnd_unpack_i
+  !ds_instr_ctrl_t:
+   !pack:
+         subroutine ds_instr_ctrl_pack_i(this,packet,ierr)
+          import:: ds_instr_ctrl_t,obj_pack_t,INTD
+          class(ds_instr_ctrl_t), intent(in):: this   !in: domain-specific instruction control
+          type(obj_pack_t), intent(inout):: packet    !out: packet
+          integer(INTD), intent(out), optional:: ierr !out: error code
+         end subroutine ds_instr_ctrl_pack_i
+   !unpack:
+         subroutine ds_instr_ctrl_unpack_i(this,packet,ierr)
+          import:: ds_instr_ctrl_t,obj_pack_t,INTD
+          class(ds_instr_ctrl_t), intent(inout):: this !out: domain-specific instruction control
+          type(obj_pack_t), intent(in):: packet        !in: packet
+          integer(INTD), intent(out), optional:: ierr  !out: error code
+         end subroutine ds_instr_ctrl_unpack_i
   !ds_instr_t:
    !self:
          subroutine ds_instr_self_i(this,ierr)
@@ -231,12 +268,19 @@
           integer(INTD), intent(out), optional:: ierr !out: error code
          end subroutine ds_instr_self_i
    !decode:
-         subroutine ds_instr_decode_i(this,instr_pack,ierr)
-          import:: ds_instr_t,obj_pack_t,INTD,c_ptr
+         subroutine ds_instr_decode_i(this,instr_packet,ierr)
+          import:: ds_instr_t,obj_pack_t,INTD
           class(ds_instr_t), intent(inout):: this     !inout: domain-specific instruction to be decoded
-          type(obj_pack_t), intent(in):: instr_pack   !in: instruction byte packet
+          type(obj_pack_t), intent(in):: instr_packet !in: instruction byte packet
           integer(INTD), intent(out), optional:: ierr !out: error code
          end subroutine ds_instr_decode_i
+   !encode:
+         subroutine ds_instr_encode_i(this,instr_packet,ierr)
+          import:: ds_instr_t,obj_pack_t,INTD
+          class(ds_instr_t), intent(in):: this           !in: domain-specific instruction to be encoded
+          type(obj_pack_t), intent(inout):: instr_packet !out: instruction byte packet
+          integer(INTD), intent(out), optional:: ierr    !out: error code
+         end subroutine ds_instr_encode_i
   !dsvp_t:
    !self:
          subroutine dsvp_self_i(this,ierr)
@@ -716,7 +760,7 @@
              endif
              if(errc.eq.DSVP_SUCCESS) then
 #endif
-              op_ptr=>this%operand(op_num)%oper_ref
+              op_ptr=>this%operand(op_num)%oprnd_ref
 #ifdef DSVP_DEBUG
              endif
 #endif
@@ -756,8 +800,8 @@
            endif
            if(errc.eq.DSVP_SUCCESS) then
 #endif
-            if(.not.associated(this%operand(op_num)%oper_ref)) then
-             this%operand(op_num)%oper_ref=>oprnd
+            if(.not.associated(this%operand(op_num)%oprnd_ref)) then
+             this%operand(op_num)%oprnd_ref=>oprnd
             else
              errc=DSVP_ERR_INVALID_REQ
             endif
@@ -790,12 +834,12 @@
          if(present(dissoc_only)) then; dis=dissoc_only; else; dis=.FALSE.; endif
          if(this%num_oprnds.gt.0) then
           if(op_num.ge.0.and.op_num.lt.this%num_oprnds) then
-           call this%operand(op_num)%oper_ref%mark_empty(errc) !will call destructor (release local resources)
+           call this%operand(op_num)%oprnd_ref%mark_empty(errc) !will call destructor (release local resources)
            if(.not.dis) then
-            deallocate(this%operand(op_num)%oper_ref,STAT=ier)
+            deallocate(this%operand(op_num)%oprnd_ref,STAT=ier)
             if(ier.ne.0.and.errc.eq.DSVP_SUCCESS) errc=DSVP_ERR_MEM_FREE_FAIL
            endif
-           this%operand(op_num)%oper_ref=>NULL()
+           this%operand(op_num)%oprnd_ref=>NULL()
           else
            errc=DSVP_ERR_INVALID_ARGS
           endif
@@ -836,7 +880,7 @@
          if(this%num_oprnds.gt.0) then
           if(allocated(this%operand)) then
            do i=0,this%num_oprnds-1
-            if(.not.associated(this%operand(i)%oper_ref)) return
+            if(.not.associated(this%operand(i)%oprnd_ref)) return
            enddo
           else
            errc=DSVP_ERR_BROKEN_OBJ
