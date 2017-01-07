@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Dictionary (ordered map), AVL BST
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017/01/02 (recycling my old dictionary implementation)
+!REVISION: 2017/01/06 (recycling my old dictionary implementation)
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -1720,7 +1720,7 @@
             if(.not.(associated(uptr))) then; call test_quit(3); return; endif
            endif
           else
-           call test_quit(4)
+           call test_quit(4); return
           endif
          enddo
          tm=thread_wtime(tms)
