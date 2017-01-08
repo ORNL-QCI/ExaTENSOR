@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Bi-directional linked list
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2016-12-30 (started 2016-02-28)
+!REVISION: 2017-01-08 (started 2016-02-28)
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -502,7 +502,7 @@
          endif
          return
         end function ListIterAppend
-!-------------------------------------------------------------------------------------------------------
+!-----------------------------------------------------------------------------------------------------
 #ifdef NO_GNU
         function ListIterInsertElem(this,elem_val,precede,assoc_only,no_move,copy_ctor_f) result(ierr) !`GCC/5.3.0 has a bug with this
 #else

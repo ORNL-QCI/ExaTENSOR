@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Dictionary (ordered map), AVL BST
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017/01/06 (recycling my old dictionary implementation)
+!REVISION: 2017/01/08 (recycling my old dictionary implementation)
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -1284,9 +1284,8 @@
               if(present(copy_ctor_val_f)) then
                call curr%construct(key,value_in,j,assoc_val=store_by,val_copy_ctor_f=copy_ctor_val_f)
               else
-#else
-               call curr%construct(key,value_in,j,assoc_val=store_by)
 #endif
+               call curr%construct(key,value_in,j,assoc_val=store_by)
 #ifdef NO_GNU
               endif
 #endif
@@ -1295,9 +1294,8 @@
               if(present(copy_ctor_val_f)) then
                call curr%construct(key,value_in,j,val_copy_ctor_f=copy_ctor_val_f)
               else
-#else
-               call curr%construct(key,value_in,j)
 #endif
+               call curr%construct(key,value_in,j)
 #ifdef NO_GNU
               endif
 #endif
@@ -1325,9 +1323,8 @@
               if(present(copy_ctor_val_f)) then
                call curr%construct(key,value_in,j,assoc_val=store_by,val_copy_ctor_f=copy_ctor_val_f)
               else
-#else
-               call curr%construct(key,value_in,j,assoc_val=store_by)
 #endif
+               call curr%construct(key,value_in,j,assoc_val=store_by)
 #ifdef NO_GNU
               endif
 #endif
@@ -1336,9 +1333,8 @@
               if(present(copy_ctor_val_f)) then
                call curr%construct(key,value_in,j,val_copy_ctor_f=copy_ctor_val_f)
               else
-#else
-               call curr%construct(key,value_in,j)
 #endif
+               call curr%construct(key,value_in,j)
 #ifdef NO_GNU
               endif
 #endif
@@ -1720,6 +1716,7 @@
             if(.not.(associated(uptr))) then; call test_quit(3); return; endif
            endif
           else
+           write(jo,'("#DEBUG(gfc::dictionary:test): Dictionary search failed with error ",i11)') j !debug
            call test_quit(4); return
           endif
          enddo
