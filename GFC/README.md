@@ -12,18 +12,16 @@ GENERAL INFORMATION:
  algorithm expression in object-oriented Fortran (2003 and later).
  It is still under development, but certain containers have already
  been implemented and tested. The GFC source also contains non-GFC
- based containers developed by me in the past prior to GFC. In future
- they will be fully replaced by their GFC-based reimplementations.
+ legacy containers developed by me in the past prior to GFC.
  All GFC-based containers are prefixed with "gfc_".
  Provided (and to be provided) Fortran containers:
  1. Bi-directional Linked List: gfc_list (GFC), lists (legacy);
  2. Tree: gfc_tree (GFC);
- 3. Stack: gfc_stack (under development), stack (legacy);
- 4. Dictionary (ordered map): gfc_dictionary (under development), dictionary (legacy);
- 5. Queue: gfc_queue (under development);
- 6. Priority queue: gfc_pri_queue (under development);
- Vector is not implemented due to the power of Fortran arrays,
- except resizability feature.
+ 3. Dictionary (ordered map): gfc_dictionary (GFC), dictionary (legacy);
+ 4. Vector: gfc_vector (GFC, under development);
+ 5. Stack: gfc_stack (GFC, under development), stack (legacy);
+ 6. Queue: gfc_queue (GFC, under development);
+ 7. Priority queue: gfc_pri_queue (GFC, under development);
 
 DESIGN AND FEATURES:
  # A GFC container is a structured collection of objects of any class;
@@ -33,7 +31,8 @@ DESIGN AND FEATURES:
    When storing objects in the container by value, only allocatable components
    of derived types are recursively cloned whereas the pointer components
    are just pointer associated. To change this default behavior, one can
-   supply a user-defined generic copy constructor (see interfaces in gfc_base.F90).
+   supply a user-defined non-member generic copy constructor (see interfaces
+   in gfc_base.F90).
  # A GFC subcontainer is a container linked as a part of another container.
    As a consequence, its boundary elements may have outside links.
    In this case, the larger container will be called a composite container.
@@ -69,8 +68,8 @@ DESIGN AND FEATURES:
  # The container element deletion operation may require a user-defined
    destructor which will release all resources occupied by the object
    stored in that element, unless the object has FINAL methods defined
-   (the interface for a user-defined generic destructor is provided in
-    gfc_base.F90).
+   (the interface for a user-defined non-member generic destructor is
+   provided in gfc_base.F90).
 
 NOTES:
  # This implementation of Generic Fortran Containers heavily relies on
@@ -81,5 +80,5 @@ NOTES:
    operations for which ultimate Flop/s efficiency is not required.
    The use of GFC containers in the inner loop of compute intensive kernels
    is highly discouraged (please resort to plain data, like arrays).
- # Due to the limitations of Fortran class inheritence, public methods
+ # Due to limitations of Fortran class inheritence, public methods
    with a trailing underscore shall NEVER be used by the end user!

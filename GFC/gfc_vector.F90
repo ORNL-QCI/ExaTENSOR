@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Vector
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017/01/08
+!REVISION: 2017/01/10
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -30,31 +30,43 @@
         integer(INTD), private:: CONS_OUT=6 !output device
         logical, private:: VERBOSE=.TRUE.   !verbosity for errors
         integer(INTD), private:: DEBUG=0    !debugging level (0:none)
+ !Vector length:
+        integer(INTL), parameter, public:: GFC_VECTOR_MAX_LENGTH=(2_INTL)**36 !default vector length limit
 !TYPES:
 #if 0
  !Vector element:
         type, extends(gfc_cont_elem_t), public:: vector_elem_t
         contains
          procedure, public:: construct=>VectorElemConstruct !constructs the content of the vector element
-         procedure, public:: is_first=>VectorElemIsFirst    !returns GFC_TRUE if the element is the first
-         procedure, public:: is_last=>VectorElemIsLast      !returns GFC_TRUE if the element is the last
         end type vector_elem_t
  !Vector segment:
         type, private:: vector_seg_t
-         integer(INTL), private:: max_seg_len=0_INTL             !max length of the vector segment
-         integer(INTL), private:: seg_len=0_INTL                 !current occupied length of the vector segment
-         type(vector_elem_t), allocatable, private:: seg_elem(:) !elements of the vector segment
+         integer(INTD), private:: max_elems=0                    !max length of the vector segment
+         integer(INTD), private:: num_elems=0                    !current occupied length of the vector segment
+         type(vector_elem_t), allocatable, private:: seg_elem(:) !elements of the vector segment: [0..max_elems-1]
+         contains
+          procedure, private:: construct=>VectorSegConstruct
+          final:: VectorSegDestruct
         end type vector_seg_t
+ !Vector segment batch:
+        type, private:: vector_batch_t
+         integer(INTD), private:: max_segs=0                     !max number of segments in the batch
+         integer(INTD), private:: num_segs=0                     !current number of active segments in the batch
+         type(vector_seg_t), allocatable, private:: batch_seg(:) !segments of the batch: [0..max_segs-1]
+         contains
+          procedure, private:: construct=>VectorBatchConstruct
+          final:: VectorBatchDestruct
+        end type vector_batch_t
  !Vector:
         type, extends(gfc_container_t), public:: vector_t
-         integer(INTL), private:: num_segments=0_INTL      !number of segments in the vector
-         integer(INTL), private:: segment_length=0_INTL    !length of each vector segment
-         integer(INTL), private:: lower_bound=0_INTL       !lower bound of the vector
-         integer(INTL), private:: upper_bound=-1_INTL      !upper bound of the vector
-         type(vector_seg_t), allocatable, private:: seg(:) !vector segments
+         integer(INTL), private:: lbnd=0_INTL                      !lower bound of the vector
+         integer(INTL), private:: ubnd=-1_INTL                     !upper bound of the vector
+         integer(INTD), private:: max_batches=0                    !max number of batches in the vector
+         integer(INTD), private:: num_batches=0                    !current number of active batches in the vector
+         type(vector_batch_t), allocatable, private:: vec_batch(:) !batches
          contains
-          procedure, public:: max_length=>VectorMaxLength   !maximal length of the vector
-          procedure, public:: length=>VectorLength          !current vector length
+          procedure, public:: capacity=>VectorCapacity      !maximal length of the vector
+          procedure, public:: length=>VectorLength          !current vector length = (upper_bound - lower_bound + 1)
           procedure, public:: lower_bound=>VectorLowerBound !vector lower bound
           procedure, public:: upper_bound=>VectorUpperBound !vector upper bound
         end type vector_t
@@ -72,9 +84,40 @@
           procedure, public:: previous=>VectorIterPrevious        !moves the iterator to the previous vector element
           procedure, public:: move_to=>VectorIterMoveTo           !moves the iterator to the specific vector element
           procedure, public:: append=>VectorIterAppend            !appends a new element at the end of the vector
-          procedure, public:: insert=>VectorIterInsert            !inserts a new element anywhere in the vector (current iterator position)
-          procedure, public:: delete=>VectorIterDelete            !deletes an element anywhere in the vector (current iterator position)
+          procedure, public:: insert=>VectorIterInsert            !inserts a new element at the current iterator position
+          procedure, public:: delete=>VectorIterDelete            !deletes an element at the current iterator position
           procedure, public:: delete_all=>VectorIterDeleteAll     !deletes all elements of the vector
         end type vector_iter_t
+!VISIBILITY:
+ !vector_elem_t:
+        private VectorElemConstruct
+ !vector_seg_t:
+        private VectorSegConstruct
+ !vector_batch_t:
+        private VectorBatchConstruct
+ !vector_t:
+        private VectorCapacity
+        private VectorLength
+        private VectorLowerBound
+        private VectorUpperBound
+ !vector_iter_t:
+        private VectorIterInit
+        private VectorIterReset
+        private VectorIterResetBack
+        private VectorIterRelease
+        private VectorIterPointee
+        private VectorIterNext
+        private VectorIterPrevious
+        private VectorIterMoveTo
+        private VectorIterAppend
+        private VectorIterInsert
+        private VectorIterDelete
+        private VectorIterDeleteAll
+
+       contains
+!IMPLEMENTATION:
+![vector_elem_t]=============================
+        subroutine VectorElemConstruct(this,)
+        end subroutine VectorElemConstruct
 #endif
        end module gfc_vector

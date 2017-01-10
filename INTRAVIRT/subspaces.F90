@@ -1,6 +1,6 @@
 !Infrastructure for a recursive adaptive vector space decomposition.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/01/06
+!REVISION: 2017/01/10
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -38,13 +38,24 @@
 !TYPES:
  !Real space vector:
         type, public:: real_vec_t
-         integer(INTD):: num_dim         !number of dimensions
-         real(8), allocatable:: coord(:) !components
+         integer(INTL), private:: num_dim=0      !number of dimensions (0 means empty)
+         real(8), allocatable, public:: coord(:) !components of the real space vector
+         contains
+          procedure, public:: create=>RealVecCreate !creates an empty real space vector
+          procedure, public:: dimsn=>RealVecDimsn   !returns dimension of the vector
+          procedure, public:: norm2=>RealVecNorm2   !returns the 2-norm of the vector
+          final:: RealVecDestroy                    !destroys the vector
         end type real_vec_t
  !1D extent (segment[min:max]):
         type, public:: extent1d_t
-         real(8):: min_coord !minimum
-         real(8):: max_coord !maximum
+         real(8), private:: min_coord=0d0 !minimum coordinate (lower bound)
+         real(8), private:: max_coord=0d0 !maximum coordinate (upper bound)
+         contains
+          procedure, public:: set=>Extent1dSet                !sets the extent (ctor)
+          procedure, public:: lower_bound=>Extent1dLowerBound !returns the extent lower bound
+          procedure, public:: upper_bound=>Extent1dUpperBound !returns the extent upper bound
+          procedure, public:: length=>Extent1dLength          !returns the extent length
+          procedure, public:: overlap=>Extent1dOverlap        !returns the overlap of two extents
         end type extent1d_t
  !Abstract basis function:
         type, abstract, public:: basis_func_abs_t
@@ -94,8 +105,150 @@
 !DATA:
 
 !VISIBILITY:
+ !real_vec_t:
+        private RealVecCreate
+        private RealVecDimsn
+        private RealVecNorm2
+ !extent1d_t:
+        private Extent1dSet
+        private Extent1dLowerBound
+        private Extent1dUpperBound
+        private Extent1dLength
+        private Extent1dOverlap
 
-        contains
+       contains
 !IMPLEMENTATION:
+![real_vec_t]====================================
+        subroutine RealVecCreate(this,dimsn,ierr)
+         implicit none
+         class(real_vec_t), intent(inout):: this     !out: empty real space vector
+         integer(INTL), intent(in):: dimsn           !in: desired vector dimension
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=0
+         if(.not.allocated(this%coord)) then
+          if(dimsn.gt.0) then
+           allocate(this%coord(1:dimsn),STAT=errc)
+           if(errc.eq.0) then; this%num_dim=dimsn; else; errc=3; endif
+          else
+           errc=2
+          endif
+         else
+          errc=1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine RealVecCreate
+!------------------------------------------------
+        function RealVecDimsn(this) result(dimsn)
+         implicit none
+         integer(INTL):: dimsn                       !out: vector dimension
+         class(real_vec_t), intent(in):: this        !in: real space vector
+
+         dimsn=this%num_dim
+         return
+        end function RealVecDimsn
+!-----------------------------------------------------
+        function RealVecNorm2(this,ierr) result(norm2)
+         implicit none
+         real(8):: norm2                             !out: vector 2-norm
+         class(real_vec_t), intent(in):: this        !in: real space vector
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         !------------------------------------------
+         integer(INTL), parameter:: LARGE_VECTOR=(2_INTL)**20
+         integer(INTD):: errc
+         integer(INTL):: i
+
+         errc=0; norm2=0d0
+         if(this%num_dim.ge.LARGE_VECTOR) then
+!$OMP PARALLEL DO DEFAULT(SHARED) PRIVATE(i) SCHEDULE(GUIDED) REDUCTION(+:norm2)
+          do i=1,this%num_dim
+           norm2=norm2+(this%coord(i))*(this%coord(i))
+          enddo
+!$OMP END PARALLEL DO
+         else
+          if(this%num_dim.gt.0) then
+           do i=1,this%num_dim
+            norm2=norm2+(this%coord(i))*(this%coord(i))
+           enddo
+          else
+           errc=1
+          endif
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function RealVecNorm2
+!--------------------------------------
+        subroutine RealVecDestroy(this)
+         implicit none
+         type(real_vec_t):: this
+
+         if(allocated(this%coord)) deallocate(this%coord)
+         this%num_dim=0
+         return
+        end subroutine RealVecDestroy
+![extent1d_t]========================================
+        subroutine Extent1dSet(this,lower,upper,ierr)
+         implicit none
+         class(extent1d_t), intent(inout):: this     !inout: extent
+         real(8), intent(in), optional:: lower       !in: new lower bound
+         real(8), intent(in), optional:: upper       !in: new upper bound
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+         real(8):: l,u
+
+         errc=0
+         if(present(lower)) then; l=lower; else; l=this%min_coord; endif
+         if(present(upper)) then; u=upper; else; u=this%max_coord; endif
+         if(l.le.u) then
+          this%min_coord=l; this%max_coord=u
+         else
+          errc=1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine Extent1dSet
+!---------------------------------------------------
+        function Extent1dLowerBound(this) result(lb)
+         implicit none
+         real(8):: lb
+         class(extent1d_t), intent(in):: this
+
+         lb=this%min_coord
+         return
+        end function Extent1dLowerBound
+!---------------------------------------------------
+        function Extent1dUpperBound(this) result(ub)
+         implicit none
+         real(8):: ub
+         class(extent1d_t), intent(in):: this
+
+         ub=this%max_coord
+         return
+        end function Extent1dUpperBound
+!--------------------------------------------------
+        function Extent1dLength(this) result(length)
+         implicit none
+         real(8):: length                     !out: extent length
+         class(extent1d_t), intent(in):: this !in: extent
+
+         length=this%max_coord-this%min_coord
+         return
+        end function Extent1dLength
+!---------------------------------------------------------------
+        function Extent1dOverlap(this,extent) result(res_extent)
+         implicit none
+         type(extent1d_t):: res_extent          !resulting extent (overlap)
+         class(extent1d_t), intent(in):: this   !in: extent 1
+         class(extent1d_t), intent(in):: extent !in: extent 2
+
+         if(this%max_coord.le.extent%min_coord.or.this%min_coord.ge.extent%max_coord) then
+          call res_extent%set(0d0,0d0)
+         else
+          call res_extent%set(max(this%min_coord,extent%min_coord),min(this%max_coord,extent%max_coord))
+         endif
+         return
+        end function Extent1dOverlap
 
        end module subspaces

@@ -1,6 +1,6 @@
 !Hardware abstraction module
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/01/06
+!REVISION: 2017/01/10
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -86,6 +86,8 @@
         end type comp_system_t
 !INTERFACES:
 !VISIBILITY:
+ !comp_system_t:
+        private CompSystemConstruct
 !DATA:
  !Computing system:
         type(comp_system_t), public:: comp_system
@@ -103,6 +105,7 @@
          integer(INTD):: errc
 
          errc=SUCCESS
+         !`Write
          if(present(ierr)) ierr=errc
          return
         end subroutine CompSystemConstruct
@@ -112,6 +115,7 @@
          implicit none
          type(comp_system_t):: this !inout: computing system representation
 
+         !`Write
          if(allocated(this%virt_node)) deallocate(this%virt_node)
          this%num_virt_nodes=0
          this%num_phys_nodes=0
