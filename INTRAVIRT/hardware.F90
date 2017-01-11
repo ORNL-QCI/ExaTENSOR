@@ -1,6 +1,6 @@
 !Hardware abstraction module
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/01/10
+!REVISION: 2017/01/11
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -84,13 +84,12 @@
           procedure, public:: construct=>CompSystemConstruct
           final:: CompSystemDestruct
         end type comp_system_t
-!INTERFACES:
-!VISIBILITY:
- !comp_system_t:
-        private CompSystemConstruct
 !DATA:
  !Computing system:
         type(comp_system_t), public:: comp_system
+!VISIBILITY:
+ !comp_system_t:
+        private CompSystemConstruct
 
        contains
 !IMPLEMENTATION:

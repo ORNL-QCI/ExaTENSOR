@@ -1,6 +1,6 @@
 !Infrastructure for a recursive adaptive vector space decomposition.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/01/10
+!REVISION: 2017/01/11
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -46,7 +46,7 @@
           procedure, public:: norm2=>RealVecNorm2   !returns the 2-norm of the vector
           final:: RealVecDestroy                    !destroys the vector
         end type real_vec_t
- !1D extent (segment[min:max]):
+ !Real space 1d extent (segment[min:max]):
         type, public:: extent1d_t
          real(8), private:: min_coord=0d0 !minimum coordinate (lower bound)
          real(8), private:: max_coord=0d0 !maximum coordinate (upper bound)
@@ -57,11 +57,30 @@
           procedure, public:: length=>Extent1dLength          !returns the extent length
           procedure, public:: overlap=>Extent1dOverlap        !returns the overlap of two extents
         end type extent1d_t
+ !Real space rectangular hypercube (orthotope):
+        type, public:: orthotope_t
+         integer(INTL), private:: num_dim=0                   !number of dimensions
+         type(extent1d_t), allocatable, private:: extent(:)   !extent of each dimension (min,max)
+         !contains
+          !procedure, public:: create=>OrthotopeCreate          !creates an empty orthotope
+          !procedure, public:: set_extent=>OrthotopeSetExtent   !sets extent along each dimension
+          !procedure, public:: lower_bound=>OrthotopeLowerBound !returns the lower bound of a specific extent
+          !procedure, public:: upper_bound=>OrthotopeUpperBound !returns the upper bound of a specific extent
+          !procedure, public:: length=>OrthotopeLength          !returns the length along a specific extent
+          !procedure, public:: volume=>OrthotopeVolume          !returns the volume of the orthotope
+          !procedure, public:: overlap=>OrthotopeOverlap        !returns the overlap of two orthotopes
+          !procedure, public:: union=>OrthotopeUnion            !returns the minimal orthotope containing two orthotopes
+          !final:: OrthotopeDestroy                             !destroys the orthotope
+        end type orthotope_t
+ !Symmetry:
+        type, public:: space_symmetry_t
+         integer(INTD), public:: irrep=0          !irreducible representation (non-negative, 0 means no symmetry)
+        end type space_symmetry_t
  !Abstract basis function:
         type, abstract, public:: basis_func_abs_t
-         integer(INTD), private:: supp_dim=0                !dimensionality of the real space support on which the basis function resides
-         type(real_vec_t), private:: center                 !coordinates of the center of the effective function support in the real space
-         type(extent1d_t), allocatable, private:: extent(:) !effective extents of the basis function support in each dimension of the real space
+         integer(INTD), private:: supp_dim=0      !dimensionality of the real space support on which the basis function resides
+         type(real_vec_t), private:: center       !center of the effective function support in the real space
+         type(orthotope_t), private:: supp_box    !supporting orthotope (multidimensional real space support)
         end type basis_func_abs_t
  !Gaussian basis function:
         type, extends(basis_func_abs_t), public:: basis_func_gauss_t
@@ -72,38 +91,40 @@
         end type basis_func_gauss_t
  !Typed basis function:
         type, public:: basis_func_t
-         integer(INTD), private:: basis_kind=BASIS_NONE                 !basis kind
+         integer(INTD), private:: basis_kind=BASIS_NONE                 !specific basis kind
          class(basis_func_abs_t), pointer, private:: basis_func=>NULL() !pointer to a basis function of this kind
         end type basis_func_t
  !Subspace basis:
         type, public:: subspace_basis_t
          integer(INTL), private:: space_dim=0                     !number of basis functions
-         type(basis_func_t), allocatable, private:: basis_func(:) !basis functions (components) [1..space_dim]
+         type(basis_func_t), allocatable, private:: basis_func(:) !basis functions [1..space_dim]
         end type subspace_basis_t
  !Subspace:
         type, public:: subspace_t
-         integer(INTL), private:: subspace_id=-1                 !subspace ID (registered ID): must be non-negative, -1 means undefined
+         integer(INTL), private:: subspace_id=-1                 !unique subspace ID (registered ID): must be non-negative, -1 means undefined
          integer(INTD), private:: supp_dim=0                     !dimensionality of the real space support on which the basis functions reside
          integer(INTL), private:: max_resolution=0               !max resolution level (max subspace dimension): 0 means undefined
-         type(real_vec_t), private:: center                      !coordinates of the center of the effective subspace support in real space
-         type(extent1d_t), allocatable, private:: extent(:)      !effective extents of the subspace support in each real space dimension
-         type(subspace_basis_t), allocatable, private:: basis(:) !basis sets for each resolution level [1..MaxResLevel]: Defined only for the terminal subspaces
+         type(space_symmetry_t), private:: symm                  !symmetry of the subspace (if any)
+         type(real_vec_t), private:: center                      !center of the effective subspace support in real space
+         type(orthotope_t), private:: supp_box                   !effective subspace support in real space (multidimensional orthotope)
+         type(subspace_basis_t), allocatable, private:: basis(:) !basis sets for each resolution level [1..max_resolution]: Defined only for terminal subspaces!
         end type subspace_t
  !Hierarchical composite index:
         type, public:: h_index_t
-         integer(INTL), private:: subspace_id=-1 !subspace ID (registered ID): must be non-negative, -1 means undefined
-         integer(INTL), private:: resolution=0   !subspace resolution level 1<=ResLevel<=MaxResLevel: 0 means undefined
-         integer(INTL), private:: component=0    !subspace component number at the given level of resolution: [1..ResLevel], 0 means undefined
+         integer(INTL), public:: subspace_id=-1 !subspace ID (registered ID): must be non-negative, -1 means undefined
+         integer(INTL), public:: resolution=0   !subspace resolution level 1<=resolution<=max_resolution: 0 means undefined
+         integer(INTL), public:: component=0    !subspace component number at the given level of resolution: [1..resolution], 0 means undefined
         end type h_index_t
  !Hierarchical space representation:
-        type h_space_t
+        type, public:: h_space_t
          integer(INTL), private:: space_dim=0                 !original dimension of the vector space
-         integer(INTL), private:: num_subspaces=0             !number of defined subspaces
+         integer(INTL), private:: num_subspaces=0             !number of subspaces in the direct-sum decomposition of the vector space
          type(subspace_t), allocatable, private:: subspace(:) !subspaces
          type(tree_t), private:: aggr_tree                    !subspace aggregation tree (SAT)
+         !contains
+          !procedure, public:: construct=>HSpaceConstruct
+          !final:: HSpaceDestruct
         end type h_space_t
-!DATA:
-
 !VISIBILITY:
  !real_vec_t:
         private RealVecCreate
@@ -115,6 +136,9 @@
         private Extent1dUpperBound
         private Extent1dLength
         private Extent1dOverlap
+ !orthotope_t:
+ !h_space_t:
+        !private HSpaceConstruct
 
        contains
 !IMPLEMENTATION:
@@ -244,7 +268,7 @@
          class(extent1d_t), intent(in):: extent !in: extent 2
 
          if(this%max_coord.le.extent%min_coord.or.this%min_coord.ge.extent%max_coord) then
-          call res_extent%set(0d0,0d0)
+          call res_extent%set(0d0,0d0) !no overlap
          else
           call res_extent%set(max(this%min_coord,extent%min_coord),min(this%max_coord,extent%max_coord))
          endif
