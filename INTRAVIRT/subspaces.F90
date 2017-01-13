@@ -801,7 +801,7 @@
          class(subspace_t), intent(inout):: this     !inout: subspace
          class(subspace_basis_t), intent(in):: basis !in: new subspace basis
          integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc
+         integer(INTD):: errc,ier
          type(list_iter_t):: basis_it
 
          if(this%subspace_id.ge.0) then
@@ -813,14 +813,15 @@
             if(errc.eq.GFC_SUCCESS) then
              call this%update_support(basis,errc)
             else
-             errc=4
+             errc=5
             endif
            else
-            errc=3
+            errc=4
            endif
           else
-           errc=2
+           errc=3
           endif
+          ier=basis_it%release(); if(ier.ne.GFC_SUCCESS) errc=2
          else
           errc=1
          endif
