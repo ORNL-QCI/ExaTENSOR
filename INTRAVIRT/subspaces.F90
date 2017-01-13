@@ -1,6 +1,6 @@
 !Infrastructure for a recursive adaptive vector space decomposition.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/01/12
+!REVISION: 2017/01/13
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -112,8 +112,8 @@
           procedure, public:: create=>SubspaceBasisCreate               !creates an empty subspace
           procedure, public:: dimsn=>SubspaceBasisDimsn                 !returns the dimension of the subspace
           procedure, public:: set_basis_func=>SubspaceBasisSetBasisFunc !sets a specific basis function
-          procedure, public:: get_basis_func=>SubpsaceBasisGetBasisFunc !returns a pointer to a specific basis function
-          final:: destroy=>SubspaceBasisDestroy                         !destructs the subspace basis
+          procedure, public:: get_basis_func=>SubspaceBasisGetBasisFunc !returns a pointer to a specific basis function
+          final:: SubspaceBasisDestroy                                  !destructs the subspace basis
         end type subspace_basis_t
  !Subspace:
         type, public:: subspace_t
@@ -705,7 +705,7 @@
          integer(INTD):: errc
 
          errc=0
-
+         id=this%subspace_id
          if(present(ierr)) ierr=errc
          return
         end function SubspaceGetId
@@ -718,7 +718,11 @@
          integer(INTD):: errc
 
          errc=0
-
+         if(this%subspace_id.ge.0) then
+          supp_dim=this%supp_dim
+         else
+          errc=1
+         endif
          if(present(ierr)) ierr=errc
          return
         end function SubspaceGetSuppDim
@@ -731,7 +735,11 @@
          integer(INTD):: errc
 
          errc=0
-
+         if(this%subspace_id.ge.0) then
+          max_res=this%max_resolution
+         else
+          errc=1
+         endif
          if(present(ierr)) ierr=errc
          return
         end function SubspaceGetMaxResolution
@@ -744,7 +752,11 @@
          integer(INTD):: errc
 
          errc=0
-
+         if(this%subspace_id.ge.0.and.this%max_resolution.gt.0) then
+          symm=this%symm
+         else
+          errc=1
+         endif
          if(present(ierr)) ierr=errc
          return
         end function SubspaceGetSymmetry
@@ -757,7 +769,11 @@
          integer(INTD):: errc
 
          errc=0
-
+         if(this%subspace_id.ge.0.and.this%max_resolution.gt.0) then
+          center=this%center
+         else
+          errc=1
+         endif
          if(present(ierr)) ierr=errc
          return
         end function SubspaceGetCenter
@@ -770,21 +786,87 @@
          integer(INTD):: errc
 
          errc=0
-
+         if(this%subspace_id.ge.0.and.this%max_resolution.gt.0) then
+          supp_box=this%supp_box
+         else
+          errc=1
+         endif
          if(present(ierr)) ierr=errc
          return
         end function SubspaceGetSupport
+!--------------------------------------------------------
+        subroutine SubspaceRegisterBasis(this,basis,ierr)
+!Registers a new subspace basis.
+         implicit none
+         class(subspace_t), intent(inout):: this     !inout: subspace
+         class(subspace_basis_t), intent(in):: basis !in: new subspace basis
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+         type(list_iter_t):: basis_it
+
+         if(this%subspace_id.ge.0) then
+          errc=basis_it%init(this%bases)
+          if(errc.eq.GFC_SUCCESS) then
+           errc=basis_it%reset()
+           if(errc.eq.GFC_SUCCESS) then
+            errc=basis_it%append(basis)
+            if(errc.eq.GFC_SUCCESS) then
+             call this%update_support(basis,errc)
+            else
+             errc=4
+            endif
+           else
+            errc=3
+           endif
+          else
+           errc=2
+          endif
+         else
+          errc=1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine SubspaceRegisterBasis
+!---------------------------------------------------------------
+        function SubspaceGetBasis(this,res,ierr) result(basis_p)
+!Returns the pointer to a subspace basis of a given resolution.
+         implicit none
+         class(subspace_basis_t), pointer:: basis_p   !out: pointer to the subspace basis
+         class(subspace_t), intent(in), target:: this !in: subspace
+         integer(INTD), intent(in):: res              !in: requested resolution
+         integer(INTD), intent(out), optional:: ierr  !out: error code
+         integer(INTD):: errc
+         type(list_iter_t):: basis_it
+
+         errc=basis_it%init(this%bases)
+         
+         if(present(ierr)) ierr=errc
+         return
+        end function SubspaceGetBasis
+!--------------------------------------------------------
+        subroutine SubspaceUpdateSupport(this,basis,ierr)
+         implicit none
+         class(subspace_t), intent(inout):: this     !inout: subspace
+         class(subspace_basis_t), intent(in):: basis !in: subspace basis
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=0
+         
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine SubspaceUpdateSupport
 !---------------------------------------
         subroutine SubspaceDestroy(this)
          implicit none
          type(subspace_t):: this
-         type(list_iter_t):: list_it
+         type(list_iter_t):: basis_it
          integer(INTD):: errc
 
-         errc=list_it%init(this%bases)
+         errc=basis_it%init(this%bases)
          if(errc.eq.GFC_SUCCESS) then
-          errc=list_it%reset(); if(errc.eq.GFC_SUCCESS) errc=list_it%delete_all()
-          errc=list_it%release()
+          errc=basis_it%reset(); if(errc.eq.GFC_SUCCESS) errc=basis_it%delete_all()
+          errc=basis_it%release()
          endif
          this%max_resolution=0
          this%supp_dim=0

@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Tree
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2016-12-30 (started 2016-02-17)
+!REVISION: 2017-01-13 (started 2016-02-17)
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -851,7 +851,7 @@
               if(this%container%num_elems_().gt.0) then !quick counting is still on
                ierr=subtree_it%init(subtree)
                if(ierr.eq.GFC_SUCCESS) then
-                ierr=subtree_it%scan()
+                ierr=subtree_it%scanp()
                 if(ierr.eq.GFC_SUCCESS) then
                  nelems=subtree_it%total_count()
                  totelems=subtree%update_num_elems_(nelems)
@@ -1030,7 +1030,7 @@
          do while(i.gt.0)
           ierr=some_iter%reset(); if(ierr.ne.GFC_SUCCESS) then; ierr=3; return; endif
           do while(i.gt.0)
-           ierr=some_iter%scan(.TRUE.,some_predicate,some_action); if(ierr.ne.GFC_IT_ACTIVE) exit
+           ierr=some_iter%scanp(.TRUE.,some_predicate,some_action); if(ierr.ne.GFC_IT_ACTIVE) exit
            call random_number(some_val%some_real); some_val%some_int=MAX_TREE_ELEMS-i+1
 !          tvp=>some_iter%pointee(); val_p=>tvp%get_value(); ierr=print_action(val_p) !debug: parent
            ierr=some_iter%add_leaf(some_val); if(ierr.ne.GFC_SUCCESS) then; ierr=4; return; endif
@@ -1042,7 +1042,7 @@
 !        write(jo,'("Total number of elements in the tree = ",i9)') some_tree%num_elems_(ierr) !debug
          if(ierr.ne.GFC_SUCCESS) then; ierr=6; return; endif
          ierr=some_iter%reset(); if(ierr.ne.GFC_SUCCESS) then; ierr=7; return; endif
-         ierr=some_iter%scan(); if(ierr.ne.GFC_IT_DONE) then; ierr=8; return; endif
+         ierr=some_iter%scanp(); if(ierr.ne.GFC_IT_DONE) then; ierr=8; return; endif
 !        write(jo,'("Total number of traversed elements   = ",i9)') some_iter%total_count() !debug
 !        if(some_tree%num_elems_().ne.some_iter%total_count()) then; ierr=9; return; endif
 !Delete the tree:

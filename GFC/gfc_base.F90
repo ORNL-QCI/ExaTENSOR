@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Base
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017-01-02 (started 2016-02-17)
+!REVISION: 2017-01-13 (started 2016-02-17)
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -118,7 +118,9 @@
           procedure, public:: get_value=>ContElemGetValue       !returns a pointer to the element value (unlimited polymorphic)
           procedure, public:: is_empty=>ContElemIsEmpty         !returns TRUE if the element of the container is empty, FALSE otherwise
           procedure, public:: stored_by_value=>ContElemStoredByValue !returns TRUE if the element value is stored by value, FALSE otherwise (stored by reference)
-          procedure, public:: predicate=>ContElemPredicate      !returns the value of a user-given predicate applied to the element
+          procedure, public:: ContElemPredicateProc
+          procedure, public:: ContElemPredicateFunc
+          generic, public:: predicate=>ContElemPredicateProc,ContElemPredicateFunc !returns the value of a user-given predicate applied to the element
           procedure, public:: ContElemAction                    !acts on the element with a user-defined action function
           procedure, public:: ContElemFunctor                   !acts on the element with a user-defined functor
           generic, public:: apply_action=>ContElemAction,ContElemFunctor !generic overload (acts on the container element value)
@@ -149,7 +151,8 @@
           procedure, public:: reset_count=>IterResetCount                 !resets all iteration counters to zero
           procedure, public:: total_count=>IterTotalCount                 !returns the total iteration count since the last reset
           procedure, public:: predicated_count=>IterPredicatedCount       !returns the TRUE predicated iteration count since the last reset
-          procedure, public:: scan=>IterScan                              !traverses the container with an optional action
+          procedure, public:: scanp=>IterScanProc                 !traverses the container with an optional action
+          procedure, public:: scanf=>IterScanFunc                 !traverses the container with an optional action
           procedure(gfc_it_init_i), deferred, public:: init       !initializes the iterator (associates it with a container and positions it on the root)
           procedure(gfc_it_reset_i), deferred, public:: reset     !resets the iterator to the beginning (root element)
           procedure(gfc_it_reset_i), deferred, public:: release   !dissociates the iterator from its container
@@ -157,11 +160,16 @@
           procedure(gfc_it_next_i), deferred, public:: next       !proceeds to the next element of the container
           procedure(gfc_it_next_i), deferred, public:: previous   !proceeds to the previous element of the container
         end type gfc_iter_t
+ !Base predicate:
+        type, abstract, public:: gfc_predicate_t
+         contains
+          procedure(gfc_pred_obj_i), deferred, public:: get_value !evaluates the predicate on a given object
+        end type gfc_predicate_t
  !Base functor:
-        type, abstract, public:: gfc_func_t
+        type, abstract, public:: gfc_functor_t
          contains
           procedure(gfc_func_act_i), deferred, public:: act !performs an action on an unlimited polymorphic object
-        end type gfc_func_t
+        end type gfc_functor_t
 !ABSTRACT INTERFACES:
         abstract interface
  !Generics:
@@ -238,12 +246,19 @@
           class(gfc_iter_t), intent(inout):: this                         !inout: GFC iterator
           class(gfc_cont_elem_t), pointer, intent(out), optional:: elem_p !out: pointer to the container element
          end function gfc_it_next_i
+  !Deferred: GFC predicate evaluation: .get_value:
+         function gfc_pred_obj_i(this,obj) result(res)
+          import:: gfc_predicate_t,INTD
+          integer(INTD):: res                          !out: result {GFC_TRUE,GFC_FALSE,GFC_ERROR}
+          class(gfc_predicate_t), intent(inout):: this !inout: predicate object (may change its state!)
+          class(*), intent(in):: obj                   !in: object on which the predicate is evaluated
+         end function gfc_pred_obj_i
   !Deferred: GFC functor action: .act:
          function gfc_func_act_i(this,obj) result(ierr)
-          import:: gfc_func_t,INTD
-          integer(INTD):: ierr                    !out: error code
-          class(gfc_func_t), intent(inout):: this !inout: GFC functor (may change its state!)
-          class(*), intent(inout):: obj           !inout: arbitrary object the functor is acting upon
+          import:: gfc_functor_t,INTD
+          integer(INTD):: ierr                       !out: error code
+          class(gfc_functor_t), intent(inout):: this !inout: GFC functor (may change its state!)
+          class(*), intent(inout):: obj              !inout: arbitrary object the functor is acting upon
          end function gfc_func_act_i
         end interface
 !VISIBILITY:
@@ -252,7 +267,8 @@
         private ContElemGetValue
         private ContElemIsEmpty
         private ContElemStoredByValue
-        private ContElemPredicate
+        private ContElemPredicateProc
+        private ContElemPredicateFunc
         private ContElemAction
         private ContElemFunctor
         private ContElemCompare
@@ -265,7 +281,8 @@
         private IterResetCount
         private IterTotalCount
         private IterPredicatedCount
-        private IterScan
+        private IterScanProc
+        private IterScanFunc
 
        contains
 !IMPLEMENTATION:
@@ -431,8 +448,8 @@
          if(present(ierr)) ierr=errc
          return
         end function ContElemStoredByValue
-!--------------------------------------------------------------------
-        function ContElemPredicate(this,predicat_f,ierr) result(pred)
+!------------------------------------------------------------------------
+        function ContElemPredicateProc(this,predicat_f,ierr) result(pred)
 !Evaluates a user-defined predicate on the value of a given container element.
          implicit none
          integer(INTD):: pred                        !out: evaluated predicate value {GFC_TRUE,GFC_FALSE,GFC_ERROR}
@@ -449,7 +466,26 @@
          endif
          if(present(ierr)) ierr=errc
          return
-        end function ContElemPredicate
+        end function ContElemPredicateProc
+!------------------------------------------------------------------------
+        function ContElemPredicateFunc(this,predicat_f,ierr) result(pred)
+!Evaluates a user-defined predicate on the value of a given container element.
+         implicit none
+         integer(INTD):: pred                               !out: evaluated predicate value {GFC_TRUE,GFC_FALSE,GFC_ERROR}
+         class(gfc_cont_elem_t), intent(in):: this          !in: element of a container
+         class(gfc_predicate_t), intent(inout):: predicat_f !in: user-defined predicate object
+         integer(INTD), intent(out), optional:: ierr        !out: error code (0:success)
+         integer(INTD):: errc
+
+         errc=GFC_SUCCESS; pred=GFC_ERROR
+         if(.not.this%is_empty()) then
+          pred=predicat_f%get_value(this%value_p); if(pred.eq.GFC_ERROR) errc=GFC_ERROR
+         else
+          errc=GFC_ELEM_EMPTY
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function ContElemPredicateFunc
 !----------------------------------------------------
         subroutine ContElemAction(this,action_f,ierr)
 !Performs a user-defined action on the value of a given element of a container
@@ -476,9 +512,9 @@
 !via a functor. It is the user responsibility to avoid race conditions
 !when updating container element values!
          implicit none
-         class(gfc_cont_elem_t), intent(inout):: this !inout: element of a container
-         class(gfc_func_t), intent(inout):: functor   !inout: functor (may change its state!)
-         integer(INTD), intent(out), optional:: ierr  !out: error code
+         class(gfc_cont_elem_t), intent(inout):: this  !inout: element of a container
+         class(gfc_functor_t), intent(inout):: functor !inout: functor (may change its state!)
+         integer(INTD), intent(out), optional:: ierr   !out: error code
          integer(INTD):: errc
 
          errc=GFC_SUCCESS
@@ -764,8 +800,8 @@
          if(present(ierr)) ierr=errc
          return
         end function IterPredicatedCount
-!-------------------------------------------------------------------------------------------------------------
-        function IterScan(this,return_each,predicate_f,action_f,backward,skip_current,time_limit) result(ierr)
+!-----------------------------------------------------------------------------------------------------------------
+        function IterScanProc(this,return_each,predicate_f,action_f,backward,skip_current,time_limit) result(ierr)
 !Traverses the container via an associated iterator beginning from the current position of the iterator.
 !Returns GFC_IT_DONE upon reaching the end of the container; returns GFC_IT_ACTIVE in intermediate returns.
 !If the active scan is time limited, at least one move of the iterator will be done before returning.
@@ -825,6 +861,68 @@
           enddo
          endif
          return
-        end function IterScan
+        end function IterScanProc
+!-----------------------------------------------------------------------------------------------------------------
+        function IterScanFunc(this,return_each,predicate_f,action_f,backward,skip_current,time_limit) result(ierr)
+!Traverses the container via an associated iterator beginning from the current position of the iterator.
+!Returns GFC_IT_DONE upon reaching the end of the container; returns GFC_IT_ACTIVE in intermediate returns.
+!If the active scan is time limited, at least one move of the iterator will be done before returning.
+         implicit none
+         integer(INTD):: ierr !out: error code (GFC_IT_ACTIVE:intermediate return, GFC_IT_DONE:done, Other:empty or error)
+         class(gfc_iter_t), intent(inout):: this !inout: iterator
+         logical, intent(in), optional:: return_each !in: if TRUE, each successful match will be returned (defaults to FALSE)
+         class(gfc_predicate_t), intent(inout), optional:: predicate_f !in: predicating object
+         class(gfc_functor_t), intent(inout), optional:: action_f !in: action functor
+         logical, intent(in), optional:: backward !in: if TRUE, the container will be traversed in the backward direction (defaults to FALSE)
+         logical, intent(in), optional:: skip_current !in: if TRUE, the current element of the container will be skipped (forces a move) (defaults to FALSE)
+         real(8), intent(in), optional:: time_limit !in: if specified, the active scan will be interrupted after this time limit (sec)
+         logical:: ret,pred,act,bkw,moved,skip
+         integer(INTD):: pred_val
+         class(*), pointer:: elem_val
+         class(gfc_cont_elem_t), pointer:: curr
+         real(8):: tml,tms
+
+         ierr=this%get_status()
+         if(ierr.eq.GFC_IT_ACTIVE) then
+          if(present(return_each)) then; ret=return_each; else; ret=.false.; endif
+          if(present(predicate_f)) then; pred=.true.; else; pred=.false.; endif
+          if(present(action_f)) then; act=.true.; else; act=.false.; endif
+          if(present(backward)) then; bkw=backward; else; bkw=.false.; endif
+          if(present(skip_current)) then; skip=skip_current; else; skip=.false.; endif
+          if(present(time_limit).and.(.not.ret)) then; tml=time_limit; else; tml=-1d0; endif
+          if(tml.gt.0d0) tms=thread_wtime()
+          ierr=GFC_SUCCESS; moved=.false.
+          do while(ierr.eq.GFC_SUCCESS)
+           curr=>this%pointee(ierr)
+           if(ierr.eq.GFC_SUCCESS.and.associated(curr)) then
+            elem_val=>curr%get_value(ierr)
+            if(ierr.eq.GFC_SUCCESS.and.associated(elem_val)) then
+             if(skip) then
+              pred_val=GFC_FALSE
+             else
+              pred_val=GFC_TRUE; if(pred) pred_val=curr%predicate(predicate_f)
+             endif
+             if(pred_val.eq.GFC_TRUE) then
+              this%pred_count=this%pred_count+1
+              if(act) then
+               call curr%apply_action(action_f,ierr); if(ierr.ne.0) then; ierr=GFC_ACTION_FAILED; exit; endif
+              endif
+              if(ret) then; ierr=GFC_IT_ACTIVE; exit; endif !intermediate return on passive scans
+             endif
+             if(tml.gt.0d0) then
+              if(thread_wtime(tms).gt.tml.and.moved) then; ierr=GFC_IT_ACTIVE; exit; endif !time limit exceeded (but at least one move done)
+             endif
+             if(bkw) then; ierr=this%previous(); else; ierr=this%next(); endif !move to the next/previous element
+             moved=.true.; skip=.false.; this%tot_count=this%tot_count+1 !register a move of the iterator
+            else
+             ierr=GFC_CORRUPTED_CONT
+            endif
+           else
+            ierr=GFC_CORRUPTED_CONT
+           endif
+          enddo
+         endif
+         return
+        end function IterScanFunc
 
        end module gfc_base
