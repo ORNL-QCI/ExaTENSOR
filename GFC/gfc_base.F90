@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Base
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017-01-13 (started 2016-02-17)
+!REVISION: 2017-01-16 (started 2016-02-17)
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -118,10 +118,10 @@
           procedure, public:: get_value=>ContElemGetValue       !returns a pointer to the element value (unlimited polymorphic)
           procedure, public:: is_empty=>ContElemIsEmpty         !returns TRUE if the element of the container is empty, FALSE otherwise
           procedure, public:: stored_by_value=>ContElemStoredByValue !returns TRUE if the element value is stored by value, FALSE otherwise (stored by reference)
-          procedure, public:: ContElemPredicateProc
-          procedure, public:: ContElemPredicateFunc
+          procedure, public:: ContElemPredicateProc             !predicate implemented as a function
+          procedure, public:: ContElemPredicateFunc             !predicate implemented as as functor
           generic, public:: predicate=>ContElemPredicateProc,ContElemPredicateFunc !returns the value of a user-given predicate applied to the element
-          procedure, public:: ContElemAction                    !acts on the element with a user-defined action function
+          procedure, public:: ContElemAction                    !acts on the element with a user-defined function
           procedure, public:: ContElemFunctor                   !acts on the element with a user-defined functor
           generic, public:: apply_action=>ContElemAction,ContElemFunctor !generic overload (acts on the container element value)
           procedure, public:: compare=>ContElemCompare          !compares the value of the element with the value of another element
@@ -151,8 +151,8 @@
           procedure, public:: reset_count=>IterResetCount                 !resets all iteration counters to zero
           procedure, public:: total_count=>IterTotalCount                 !returns the total iteration count since the last reset
           procedure, public:: predicated_count=>IterPredicatedCount       !returns the TRUE predicated iteration count since the last reset
-          procedure, public:: scanp=>IterScanProc                 !traverses the container with an optional action
-          procedure, public:: scanf=>IterScanFunc                 !traverses the container with an optional action
+          procedure, public:: scanp=>IterScanProc                 !traverses the container with an optional action implemented by a procedure
+          procedure, public:: scanf=>IterScanFunc                 !traverses the container with an optional action implemented by a functor
           procedure(gfc_it_init_i), deferred, public:: init       !initializes the iterator (associates it with a container and positions it on the root)
           procedure(gfc_it_reset_i), deferred, public:: reset     !resets the iterator to the beginning (root element)
           procedure(gfc_it_reset_i), deferred, public:: release   !dissociates the iterator from its container
@@ -163,7 +163,7 @@
  !Base predicate:
         type, abstract, public:: gfc_predicate_t
          contains
-          procedure(gfc_pred_obj_i), deferred, public:: get_value !evaluates the predicate on a given object
+          procedure(gfc_pred_obj_i), deferred, public:: evaluate !evaluates the predicate on a given object
         end type gfc_predicate_t
  !Base functor:
         type, abstract, public:: gfc_functor_t
@@ -246,7 +246,7 @@
           class(gfc_iter_t), intent(inout):: this                         !inout: GFC iterator
           class(gfc_cont_elem_t), pointer, intent(out), optional:: elem_p !out: pointer to the container element
          end function gfc_it_next_i
-  !Deferred: GFC predicate evaluation: .get_value:
+  !Deferred: GFC predicate evaluation: .evaluate:
          function gfc_pred_obj_i(this,obj) result(res)
           import:: gfc_predicate_t,INTD
           integer(INTD):: res                          !out: result {GFC_TRUE,GFC_FALSE,GFC_ERROR}
@@ -479,7 +479,7 @@
 
          errc=GFC_SUCCESS; pred=GFC_ERROR
          if(.not.this%is_empty()) then
-          pred=predicat_f%get_value(this%value_p); if(pred.eq.GFC_ERROR) errc=GFC_ERROR
+          pred=predicat_f%evaluate(this%value_p); if(pred.eq.GFC_ERROR) errc=GFC_ERROR
          else
           errc=GFC_ELEM_EMPTY
          endif

@@ -1,6 +1,6 @@
 !Infrastructure for a recursive adaptive vector space decomposition.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/01/13
+!REVISION: 2017/01/16
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -57,7 +57,7 @@
           procedure, public:: upper_bound=>Extent1dUpperBound !returns the extent upper bound
           procedure, public:: length=>Extent1dLength          !returns the extent length
           procedure, public:: overlap=>Extent1dOverlap        !returns the overlap of two extents
-          !procedure, public:: union=>Extent1dUnion            !returns the union of two extents
+          procedure, public:: union=>Extent1dUnion            !returns the union of two extents
         end type extent1d_t
  !Real space rectangular hypercube (orthotope):
         type, public:: orthotope_t
@@ -73,7 +73,7 @@
           procedure, public:: length=>OrthotopeLength          !returns the length along a specific extent
           procedure, public:: volume=>OrthotopeVolume          !returns the volume of the orthotope
           procedure, public:: overlap=>OrthotopeOverlap        !returns the overlap of two orthotopes
-          !procedure, public:: union=>OrthotopeUnion            !returns the minimal orthotope containing two orthotopes
+          procedure, public:: union=>OrthotopeUnion            !returns the minimal orthotope containing two orthotopes
           final:: OrthotopeDestroy                             !destroys the orthotope
         end type orthotope_t
  !Symmetry:
@@ -133,7 +133,7 @@
           procedure, public:: get_center=>SubspaceGetCenter                !returns the center of the subspace in the real space
           procedure, public:: get_support=>SubspaceGetSupport              !returns the supporting orthotope
           procedure, public:: register_basis=>SubspaceRegisterBasis        !registers a specific basis of the subspace
-          procedure, public:: get_basis=>SubspaceGetBasis                  !returns the subspace basis for a specific resolution
+          procedure, public:: get_basis=>SubspaceGetBasis                  !returns a pointer to the subspace basis satisfying certain condition
           procedure, private:: update_support=>SubspaceUpdateSupport       !updates the support information after adding new basis
           final:: SubspaceDestroy                                          !destroys the subspace
         end type subspace_t
@@ -164,7 +164,7 @@
         private Extent1dUpperBound
         private Extent1dLength
         private Extent1dOverlap
-        !private Extent1dUnion
+        private Extent1dUnion
  !orthotope_t:
         private OrthotopeCreate
         private OrthotopeDimsn
@@ -175,7 +175,7 @@
         private OrthotopeLength
         private OrthotopeVolume
         private OrthotopeOverlap
-        !private OrthotopeUnion
+        private OrthotopeUnion
  !basis_func_gauss_t:
         private BasisFuncGaussSet
  !basis_func_t:
@@ -324,7 +324,7 @@
 !---------------------------------------------------------------
         function Extent1dOverlap(this,extent) result(res_extent)
          implicit none
-         type(extent1d_t):: res_extent          !resulting extent (overlap)
+         type(extent1d_t):: res_extent          !out: resulting extent (overlap)
          class(extent1d_t), intent(in):: this   !in: extent 1
          class(extent1d_t), intent(in):: extent !in: extent 2
 
@@ -335,6 +335,16 @@
          endif
          return
         end function Extent1dOverlap
+!-------------------------------------------------------------
+        function Extent1dUnion(this,extent) result(res_extent)
+         implicit none
+         type(extent1d_t):: res_extent          !out: resulting extent (union)
+         class(extent1d_t), intent(in):: this   !in: extent 1
+         class(extent1d_t), intent(in):: extent !in: extent 2
+
+         call res_extent%set(min(this%min_coord,extent%min_coord),max(this%max_coord,extent%max_coord))
+         return
+        end function Extent1dUnion
 ![orthotope_t]=====================================
         subroutine OrthotopeCreate(this,dimsn,ierr)
 !Creates an empty orthotope. If the orthotope is defined in input,
@@ -503,6 +513,32 @@
          if(present(ierr)) ierr=errc
          return
         end function OrthotopeOverlap
+!-----------------------------------------------------------------
+        function OrthotopeUnion(this,orthotope,ierr) result(union)
+         implicit none
+         type(orthotope_t):: union                   !out: union (orthotope)
+         class(orthotope_t), intent(in):: this       !in: orthotope 1
+         class(orthotope_t), intent(in):: orthotope  !in: orthotope 2
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+         integer(INTL):: i,n
+
+         errc=0; n=this%num_dim
+         if(n.gt.0.and.n.eq.orthotope%num_dim) then
+          call union%create(n,errc)
+          if(errc.eq.0) then
+           do i=1,n
+            union%extent(i)=this%extent(i)%union(orthotope%extent(i))
+           enddo
+          else
+           errc=2
+          endif
+         else
+          errc=1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function OrthotopeUnion
 !----------------------------------------
         subroutine OrthotopeDestroy(this)
          implicit none
@@ -780,7 +816,7 @@
 !--------------------------------------------------------------
         function SubspaceGetSupport(this,ierr) result(supp_box)
          implicit none
-         type(orthotope_t):: supp_box                !out: subspace id
+         type(orthotope_t):: supp_box                !out: subspace support (orthotope)
          class(subspace_t), intent(in):: this        !in: subspace
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
@@ -801,7 +837,7 @@
          class(subspace_t), intent(inout):: this     !inout: subspace
          class(subspace_basis_t), intent(in):: basis !in: new subspace basis
          integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc
+         integer(INTD):: errc,ier
          type(list_iter_t):: basis_it
 
          if(this%subspace_id.ge.0) then
@@ -818,6 +854,7 @@
            else
             errc=3
            endif
+           ier=basis_it%release()
           else
            errc=2
           endif
@@ -827,19 +864,65 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine SubspaceRegisterBasis
-!---------------------------------------------------------------
-        function SubspaceGetBasis(this,res,ierr) result(basis_p)
-!Returns the pointer to a subspace basis of a given resolution.
+!----------------------------------------------------------------------
+        function SubspaceGetBasis(this,ierr,bas_pred_f) result(basis_p)
+!Returns a pointer to the subspace basis satisfying a certain (optional) condition.
+!The condition is specified via a GFC predicate object. If no condition is supplied,
+!the first basis will be returned.
          implicit none
-         class(subspace_basis_t), pointer:: basis_p   !out: pointer to the subspace basis
-         class(subspace_t), intent(in), target:: this !in: subspace
-         integer(INTD), intent(in):: res              !in: requested resolution
-         integer(INTD), intent(out), optional:: ierr  !out: error code
-         integer(INTD):: errc
+         class(subspace_basis_t), pointer:: basis_p                   !out: pointer to the subspace basis
+         class(subspace_t), intent(in):: this                         !in: subspace
+         integer(INTD), intent(out), optional:: ierr                  !out: error code
+         class(gfc_predicate_t), intent(inout), optional:: bas_pred_f !in: optional predicate for search
+         integer(INTD):: errc,ier
          type(list_iter_t):: basis_it
+         class(gfc_cont_elem_t), pointer:: cont_elem
+         class(*), pointer:: elem_value
 
-         errc=basis_it%init(this%bases)
-         
+         if(this%subspace_id.ge.0) then
+          if(this%max_resolution.gt.0) then
+           errc=basis_it%init(this%bases)
+           if(errc.eq.GFC_SUCCESS) then
+            errc=basis_it%reset()
+            if(errc.eq.GFC_SUCCESS) then
+             if(present(bas_pred_f)) then
+              ier=basis_it%scanf(return_each=.TRUE.,predicate_f=bas_pred_f)
+             else
+              ier=basis_it%scanf(return_each=.TRUE.)
+             endif
+             if(ier.eq.GFC_IT_ACTIVE) then !found
+              cont_elem=>basis_it%pointee(errc)
+              if(errc.eq.GFC_SUCCESS) then
+               elem_value=>cont_elem%get_value(errc)
+               if(errc.eq.GFC_SUCCESS) then
+                select type(elem_value)
+                class is(subspace_basis_t)
+                 basis_p=>elem_value
+                class default
+                 errc=8
+                end select
+               else
+                errc=7
+               endif
+              else
+               errc=6
+              endif
+             else !not found (or error)
+              errc=5
+             endif
+            else
+             errc=4
+            endif
+            ier=basis_it%release()
+           else
+            errc=3
+           endif
+          else
+           errc=2
+          endif
+         else
+          errc=1
+         endif
          if(present(ierr)) ierr=errc
          return
         end function SubspaceGetBasis
