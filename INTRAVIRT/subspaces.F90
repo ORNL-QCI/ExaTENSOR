@@ -42,10 +42,11 @@
          integer(INTL), private:: num_dim=0      !number of dimensions (0 means empty)
          real(8), allocatable, public:: coord(:) !components of the real space vector
          contains
-          procedure, public:: create=>RealVecCreate !creates an empty real space vector
-          procedure, public:: dimsn=>RealVecDimsn   !returns dimension of the vector
-          procedure, public:: norm2=>RealVecNorm2   !returns the 2-norm of the vector
-          final:: RealVecDestroy                    !destroys the vector
+          procedure, public:: create=>RealVecCreate   !creates an empty real space vector
+          procedure, public:: dimsn=>RealVecDimsn     !returns dimension of the vector
+          procedure, public:: norm2=>RealVecNorm2     !returns the 2-norm of the vector
+          procedure, public:: create_average=>RealVecCreateAverage !constructs an average of two real space vectors
+          final:: RealVecDestroy                      !destroys the vector
         end type real_vec_t
  !Real space 1d extent (segment[min:max]):
         type, public:: extent1d_t
@@ -57,7 +58,7 @@
           procedure, public:: upper_bound=>Extent1dUpperBound !returns the extent upper bound
           procedure, public:: length=>Extent1dLength          !returns the extent length
           procedure, public:: overlap=>Extent1dOverlap        !returns the overlap of two extents
-          procedure, public:: union=>Extent1dUnion            !returns the union of two extents
+          procedure, public:: union=>Extent1dUnion            !returns the minimal extent containing two given extents
         end type extent1d_t
  !Real space rectangular hypercube (orthotope):
         type, public:: orthotope_t
@@ -73,13 +74,13 @@
           procedure, public:: length=>OrthotopeLength          !returns the length along a specific extent
           procedure, public:: volume=>OrthotopeVolume          !returns the volume of the orthotope
           procedure, public:: overlap=>OrthotopeOverlap        !returns the overlap of two orthotopes
-          procedure, public:: union=>OrthotopeUnion            !returns the minimal orthotope containing two orthotopes
+          procedure, public:: union=>OrthotopeUnion            !returns the minimal orthotope containing two given orthotopes
           final:: OrthotopeDestroy                             !destroys the orthotope
         end type orthotope_t
  !Symmetry:
         type, abstract, public:: space_symmetry_t
          contains
-          procedure(space_symm_combine_i), deferred, public:: get_combined !combines group irreps (symmetry group multiplication)
+          procedure(space_symm_combine_i), deferred, public:: get_combined !combines symmetry group irreps
         end type space_symmetry_t
  !Abstract basis function:
         type, abstract, public:: basis_func_abs_t
@@ -119,6 +120,9 @@
           procedure, public:: set_basis_func=>SubspaceBasisSetBasisFunc !sets a specific basis function
           procedure, public:: get_basis_func=>SubspaceBasisGetBasisFunc !returns a pointer to a specific basis function
           procedure, public:: finalize=>SubspaceBasisFinalize           !finalizes the subspace basis (sets up the support and symmetry)
+          procedure, public:: get_symmetry=>SubspaceBasisGetSymmetry    !returns the symmetry of the subspace
+          procedure, public:: get_center=>SubspaceBasisGetCenter        !returns the center of the subspace in the real space
+          procedure, public:: get_support=>SubspaceBasisGetSupport      !returns the supporting orthotope
           final:: SubspaceBasisDestroy                                  !destructs the subspace basis
         end type subspace_basis_t
  !Subspace:
@@ -126,18 +130,14 @@
          integer(INTL), private:: subspace_id=-1   !unique subspace ID (registered ID): must be non-negative, -1 means undefined
          integer(INTD), private:: supp_dim=0       !dimensionality of the real space support on which the basis functions reside
          integer(INTL), private:: max_resolution=0 !max resolution level (max subspace dimension): 0 means undefined
-         class(subspace_basis_t), pointer, private:: curr_basis=>NULL() !currently set subspace basis
          type(list_bi_t), private:: bases          !basis sets (subspace_basis_t) for each registered resolution level
          contains
           procedure, public:: init=>SubspaceInit                           !initializes the subspace (id and support dimension only)
           procedure, public:: get_id=>SubspaceGetId                        !returns the subspace id
           procedure, public:: get_supp_dim=>SubspaceGetSuppDim             !returns the dimensionality of the subspace support
           procedure, public:: get_max_resolution=>SubspaceGetMaxResolution !returns the max resolution (dimension) of the subspace
-          procedure, public:: get_symmetry=>SubspaceGetSymmetry            !returns the current symmetry of the subspace
-          procedure, public:: get_center=>SubspaceGetCenter                !returns the current center of the subspace in the real space
-          procedure, public:: get_support=>SubspaceGetSupport              !returns the current supporting orthotope
           procedure, public:: register_basis=>SubspaceRegisterBasis        !registers a specific basis of the subspace
-          procedure, public:: set_basis=>SubspaceSetBasis                  !sets a specific subspace basis as current (based on some condition)
+          procedure, public:: resolve=>SubspaceResolve                     !resolves the subspace with a specific basis (based on some condition)
           final:: SubspaceDestroy                                          !destroys the subspace
         end type subspace_t
  !Hierarchical composite index:
@@ -160,11 +160,12 @@
  !space_symmetry_t:
         abstract interface
   !Deferred: .get_combined:
-         subroutine space_symm_combine_i(this,other_symm,ierr)
+         subroutine space_symm_combine_i(this,symm1,symm2,ierr)
           implicit none
           import:: space_symmetry_t,INTD
-          class(space_symmetry_t), intent(inout):: this
-          class(space_symmetry_t), intent(in):: other_symm
+          class(space_symmetry_t), intent(out):: this !out: combined symmetry
+          class(space_symmetry_t), intent(in):: symm1 !in: symmetry 1
+          class(space_symmetry_t), intent(in):: symm2 !in: symmetry 2
           integer(INTD), intent(out), optional:: ierr
          end subroutine space_symm_combine_i
         end interface
@@ -173,6 +174,7 @@
         private RealVecCreate
         private RealVecDimsn
         private RealVecNorm2
+        private RealVecCreateAverage
  !extent1d_t:
         private Extent1dSet
         private Extent1dLowerBound
@@ -201,17 +203,16 @@
         private SubspaceBasisSetBasisFunc
         private SubspaceBasisGetBasisFunc
         private SubspaceBasisFinalize
+        private SubspaceBasisGetSymmetry
+        private SubspaceBasisGetCenter
+        private SubspaceBasisGetSupport
  !subspace_t:
         private SubspaceInit
         private SubspaceGetId
         private SubspaceGetSuppDim
         private SubspaceGetMaxResolution
-        private SubspaceGetSymmetry
-        private SubspaceGetCenter
-        private SubspaceGetSupport
         private SubspaceRegisterBasis
-        private SubspaceGetBasis
-        private SubspaceUpdateSupport
+        private SubspaceResolve
  !h_space_t:
         private HSpaceConstruct
 
@@ -280,6 +281,44 @@
          if(present(ierr)) ierr=errc
          return
         end function RealVecNorm2
+!---------------------------------------------------------------------
+        subroutine RealVecCreateAverage(this,real_vec1,real_vec2,ierr)
+!Creates an average of two vectors. If the resulting vector is already defined
+!on input, it will automatically be destructed prior to redefinition.
+         implicit none
+         class(real_vec_t), intent(out):: this       !out: average real space vector
+         class(real_vec_t), intent(in):: real_vec1   !in: real space vector 1
+         class(real_vec_t), intent(in):: real_vec2   !in: real space vector 2
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         !---------------------------------------------------
+         integer(INTL), parameter:: LARGE_VECTOR=(2_INTL)**20
+         integer(INTD):: errc
+         integer(INTL):: i,n
+
+         errc=0; n=real_vec1%num_dim
+         if(n.gt.0.and.n.eq.real_vec2%num_dim) then
+          call this%create(n,errc)
+          if(errc.eq.0) then
+           if(n.ge.LARGE_VECTOR) then
+!$OMP PARALLEL DO DEFAULT(SHARED) PRIVATE(i) SCHEDULE(GUIDED)
+            do i=1,n
+             this%coord(i)=(real_vec1%coord(i)+real_vec2%coord(i))*0.5d0
+            enddo
+!$OMP END PARALLEL DO
+           else
+            do i=1,n
+             this%coord(i)=(real_vec1%coord(i)+real_vec2%coord(i))*0.5d0
+            enddo
+           endif
+          else
+           errc=2
+          endif
+         else
+          errc=1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine RealVecCreateAverage
 !--------------------------------------
         subroutine RealVecDestroy(this)
          implicit none
@@ -883,7 +922,7 @@
          return
         end subroutine SubspaceRegisterBasis
 !----------------------------------------------------------------------
-        function SubspaceGetBasis(this,ierr,bas_pred_f) result(basis_p)
+        function SubspaceSetBasis(this,ierr,bas_pred_f) result(basis_p)
 !Returns a pointer to the subspace basis satisfying a certain (optional) condition.
 !The condition is specified via a GFC predicate object. If no condition is supplied,
 !the first basis will be returned.
@@ -943,63 +982,7 @@
          endif
          if(present(ierr)) ierr=errc
          return
-        end function SubspaceGetBasis
-!--------------------------------------------------
-        subroutine SubspaceUpdateSupport(this,ierr)
-         implicit none
-         class(subspace_t), intent(inout):: this     !inout: subspace
-         class(subspace_basis_t), intent(in):: basis !in: subspace basis
-         integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc,ier
-         integer(INTL):: bf
-         type(list_iter_t):: basis_it
-         class(gfc_cont_elem_t), pointer:: cont_elem
-         class(*), pointer:: elem_value
-         class(subspace_basis_t), pointer:: basis_p
-
-         if(this%subspace_id.ge.0) then
-          if(this%max_resolution.gt.0) then
-           errc=basis_it%init(this%bases)
-           if(errc.eq.GFC_SUCCESS) then
-            errc=basis_it%reset()
-            if(errc.eq.GFC_SUCCESS) then
-             ier=basis_it%scanp(return_each=.TRUE.)
-             sloop: do while(ier.eq.GFC_IT_ACTIVE)
-              cont_elem=>basis_it%pointee(errc)
-              if(errc.eq.GFC_SUCCESS) then
-               elem_value=>cont_elem%get_value(errc)
-               if(errc.eq.GFC_SUCCESS) then
-                select type(elem_value)
-                class is(subspace_basis_t)
-                 basis_p=>elem_value
-                 !`
-                class default
-                 errc=7; exit sloop
-                end select
-               else
-                errc=6; exit sloop
-               endif
-              else
-               errc=5; exit sloop
-              endif
-              ier=basis_it%scanp(return_each=.TRUE.,skip_current=.TRUE.)
-             enddo sloop
-            else
-             errc=4
-            endif
-            ier=basis_it%release()
-           else
-            errc=3
-           endif
-          else
-           errc=2
-          endif
-         else
-          errc=1
-         endif
-         if(present(ierr)) ierr=errc
-         return
-        end subroutine SubspaceUpdateSupport
+        end function SubspaceSetBasis
 !---------------------------------------
         subroutine SubspaceDestroy(this)
          implicit none
