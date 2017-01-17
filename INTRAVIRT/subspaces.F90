@@ -1,6 +1,6 @@
 !Infrastructure for a recursive adaptive vector space decomposition.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/01/16
+!REVISION: 2017/01/17
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -77,8 +77,9 @@
           final:: OrthotopeDestroy                             !destroys the orthotope
         end type orthotope_t
  !Symmetry:
-        type, public:: space_symmetry_t
-         integer(INTD), public:: irrep=0 !irreducible representation (non-negative, 0 means no symmetry)
+        type, abstract, public:: space_symmetry_t
+         contains
+          procedure(space_symm_combine_i), deferred, public:: get_combined !combines group irreps (symmetry group multiplication)
         end type space_symmetry_t
  !Abstract basis function:
         type, abstract, public:: basis_func_abs_t
@@ -98,21 +99,26 @@
         end type basis_func_gauss_t
  !Typed basis function:
         type, public:: basis_func_t
-         integer(INTD), private:: basis_kind=BASIS_NONE                 !specific basis kind
-         type(space_symmetry_t), private:: symm                         !symmetry of the basis function (if any)
-         class(basis_func_abs_t), pointer, private:: basis_func=>NULL() !pointer to a basis function of this kind
+         integer(INTD), private:: basis_kind=BASIS_NONE                   !specific basis kind
+         class(space_symmetry_t), pointer, private:: symm=>NULL()         !symmetry of the basis function (if any)
+         class(basis_func_abs_t), pointer, private:: basis_func_p=>NULL() !pointer to a basis function of this kind
          contains
           procedure, public:: set=>BasisFuncSet !sets up the basis function
         end type basis_func_t
  !Subspace basis:
         type, public:: subspace_basis_t
          integer(INTL), private:: space_dim=0                     !number of basis functions
+         integer(INTD), private:: supp_dim=0                      !dimensionality of the real space support on which the basis functions reside
+         class(space_symmetry_t), pointer, private:: symm=>NULL() !symmetry of the subspace basis (if any)
+         type(real_vec_t), private:: center                       !center of the effective subspace basis support in real space
+         type(orthotope_t), private:: supp_box                    !effective subspace basis support in real space (multidimensional orthotope)
          type(basis_func_t), allocatable, private:: basis_func(:) !basis functions [1..space_dim]
          contains
           procedure, public:: create=>SubspaceBasisCreate               !creates an empty subspace
           procedure, public:: dimsn=>SubspaceBasisDimsn                 !returns the dimension of the subspace
           procedure, public:: set_basis_func=>SubspaceBasisSetBasisFunc !sets a specific basis function
           procedure, public:: get_basis_func=>SubspaceBasisGetBasisFunc !returns a pointer to a specific basis function
+          procedure, public:: finalize=>SubspaceBasisFinalize           !finalizes the subspace basis (sets up the support and symmetry)
           final:: SubspaceBasisDestroy                                  !destructs the subspace basis
         end type subspace_basis_t
  !Subspace:
@@ -120,21 +126,18 @@
          integer(INTL), private:: subspace_id=-1   !unique subspace ID (registered ID): must be non-negative, -1 means undefined
          integer(INTD), private:: supp_dim=0       !dimensionality of the real space support on which the basis functions reside
          integer(INTL), private:: max_resolution=0 !max resolution level (max subspace dimension): 0 means undefined
-         type(space_symmetry_t), private:: symm    !symmetry of the subspace (if any)
-         type(real_vec_t), private:: center        !center of the effective subspace support in real space
-         type(orthotope_t), private:: supp_box     !effective subspace support in real space (multidimensional orthotope)
-         type(list_bi_t), private:: bases          !basis sets for each resolution level
+         class(subspace_basis_t), pointer, private:: curr_basis=>NULL() !currently set subspace basis
+         type(list_bi_t), private:: bases          !basis sets (subspace_basis_t) for each registered resolution level
          contains
-          procedure, public:: set=>SubspaceSet                             !sets the subspace (id, support dimension only)
+          procedure, public:: init=>SubspaceInit                           !initializes the subspace (id and support dimension only)
           procedure, public:: get_id=>SubspaceGetId                        !returns the subspace id
-          procedure, public:: get_supp_dim=>SubspaceGetSuppDim             !returns the subspace support dimension
+          procedure, public:: get_supp_dim=>SubspaceGetSuppDim             !returns the dimensionality of the subspace support
           procedure, public:: get_max_resolution=>SubspaceGetMaxResolution !returns the max resolution (dimension) of the subspace
-          procedure, public:: get_symmetry=>SubspaceGetSymmetry            !returns the symmetry of the subspace
-          procedure, public:: get_center=>SubspaceGetCenter                !returns the center of the subspace in the real space
-          procedure, public:: get_support=>SubspaceGetSupport              !returns the supporting orthotope
+          procedure, public:: get_symmetry=>SubspaceGetSymmetry            !returns the current symmetry of the subspace
+          procedure, public:: get_center=>SubspaceGetCenter                !returns the current center of the subspace in the real space
+          procedure, public:: get_support=>SubspaceGetSupport              !returns the current supporting orthotope
           procedure, public:: register_basis=>SubspaceRegisterBasis        !registers a specific basis of the subspace
-          procedure, public:: get_basis=>SubspaceGetBasis                  !returns a pointer to the subspace basis satisfying certain condition
-          procedure, private:: update_support=>SubspaceUpdateSupport       !updates the support information after adding new basis
+          procedure, public:: set_basis=>SubspaceSetBasis                  !sets a specific subspace basis as current (based on some condition)
           final:: SubspaceDestroy                                          !destroys the subspace
         end type subspace_t
  !Hierarchical composite index:
@@ -153,6 +156,18 @@
           procedure, public:: construct=>HSpaceConstruct      !constructs a hierarchical representation of a vector space
           final:: HSpaceDestruct                              !destructs the hierarchical representation of a vector space
         end type h_space_t
+!INTERFACES:
+ !space_symmetry_t:
+        abstract interface
+  !Deferred: .get_combined:
+         subroutine space_symm_combine_i(this,other_symm,ierr)
+          implicit none
+          import:: space_symmetry_t,INTD
+          class(space_symmetry_t), intent(inout):: this
+          class(space_symmetry_t), intent(in):: other_symm
+          integer(INTD), intent(out), optional:: ierr
+         end subroutine space_symm_combine_i
+        end interface
 !VISIBILITY:
  !real_vec_t:
         private RealVecCreate
@@ -185,8 +200,9 @@
         private SubspaceBasisDimsn
         private SubspaceBasisSetBasisFunc
         private SubspaceBasisGetBasisFunc
+        private SubspaceBasisFinalize
  !subspace_t:
-        private SubspaceSet
+        private SubspaceInit
         private SubspaceGetId
         private SubspaceGetSuppDim
         private SubspaceGetMaxResolution
@@ -608,7 +624,7 @@
          errc=0
          if(basis_kind.ne.BASIS_NONE) then
           this%basis_kind=basis_kind
-          this%basis_func=>basis_func
+          this%basis_func_p=>basis_func
           if(present(symm)) this%symm=symm
          else
           this%basis_func=>NULL()
@@ -710,8 +726,8 @@
          this%space_dim=0
          return
         end subroutine SubspaceBasisDestroy
-![subspace_t]========================================
-        subroutine SubspaceSet(this,id,supp_dim,ierr)
+![subspace_t]=========================================
+        subroutine SubspaceInit(this,id,supp_dim,ierr)
 !Sets up a subspace. If the subspace is defined on input,
 !it will be automatically destructed prior to re-initialization.
          implicit none
@@ -731,7 +747,7 @@
          endif
          if(present(ierr)) ierr=errc
          return
-        end subroutine SubspaceSet
+        end subroutine SubspaceInit
 !---------------------------------------------------
         function SubspaceGetId(this,ierr) result(id)
          implicit none
@@ -847,7 +863,8 @@
            if(errc.eq.GFC_SUCCESS) then
             errc=basis_it%append(basis)
             if(errc.eq.GFC_SUCCESS) then
-             call this%update_support(basis,errc)
+             this%max_resolution=max(this%max_resolution,basis%space_dim)
+             call this%update_support(errc)
             else
              errc=5
             endif
@@ -927,16 +944,59 @@
          if(present(ierr)) ierr=errc
          return
         end function SubspaceGetBasis
-!--------------------------------------------------------
-        subroutine SubspaceUpdateSupport(this,basis,ierr)
+!--------------------------------------------------
+        subroutine SubspaceUpdateSupport(this,ierr)
          implicit none
          class(subspace_t), intent(inout):: this     !inout: subspace
          class(subspace_basis_t), intent(in):: basis !in: subspace basis
          integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc
+         integer(INTD):: errc,ier
+         integer(INTL):: bf
+         type(list_iter_t):: basis_it
+         class(gfc_cont_elem_t), pointer:: cont_elem
+         class(*), pointer:: elem_value
+         class(subspace_basis_t), pointer:: basis_p
 
-         errc=0
-         
+         if(this%subspace_id.ge.0) then
+          if(this%max_resolution.gt.0) then
+           errc=basis_it%init(this%bases)
+           if(errc.eq.GFC_SUCCESS) then
+            errc=basis_it%reset()
+            if(errc.eq.GFC_SUCCESS) then
+             ier=basis_it%scanp(return_each=.TRUE.)
+             sloop: do while(ier.eq.GFC_IT_ACTIVE)
+              cont_elem=>basis_it%pointee(errc)
+              if(errc.eq.GFC_SUCCESS) then
+               elem_value=>cont_elem%get_value(errc)
+               if(errc.eq.GFC_SUCCESS) then
+                select type(elem_value)
+                class is(subspace_basis_t)
+                 basis_p=>elem_value
+                 !`
+                class default
+                 errc=7; exit sloop
+                end select
+               else
+                errc=6; exit sloop
+               endif
+              else
+               errc=5; exit sloop
+              endif
+              ier=basis_it%scanp(return_each=.TRUE.,skip_current=.TRUE.)
+             enddo sloop
+            else
+             errc=4
+            endif
+            ier=basis_it%release()
+           else
+            errc=3
+           endif
+          else
+           errc=2
+          endif
+         else
+          errc=1
+         endif
          if(present(ierr)) ierr=errc
          return
         end subroutine SubspaceUpdateSupport
