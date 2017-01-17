@@ -900,16 +900,16 @@
                 class is(subspace_basis_t)
                  basis_p=>elem_value
                 class default
-                 errc=8
+                 errc=7
                 end select
                else
-                errc=7
+                errc=6
                endif
               else
-               errc=6
+               errc=5
               endif
              else !not found (or error)
-              errc=5
+              errc=2
              endif
             else
              errc=4
