@@ -243,7 +243,7 @@ OBJS =  ./OBJ/dil_basic.o ./OBJ/multords.o ./OBJ/timers.o ./OBJ/stack.o ./OBJ/li
 	./OBJ/gfc_queue.o ./OBJ/gfc_pri_queue.o ./OBJ/gfc_dictionary.o ./OBJ/gfc_hash_map.o ./OBJ/gfc_graph.o
 
 $(NAME): lib$(NAME).a ./OBJ/main.o
-	$(FCOMP) ./OBJ/main.o lib$(NAME).a $(LFLAGS) -o $(NAME).x
+	$(FCOMP) ./OBJ/main.o lib$(NAME).a $(LFLAGS) -o test_$(NAME).x
 
 lib$(NAME).a: $(OBJS)
 	ar cr lib$(NAME).a $(OBJS)

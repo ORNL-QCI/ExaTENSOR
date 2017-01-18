@@ -1,5 +1,5 @@
 !ExaTensor::TAL-SH: Device-unified user-level API:
-!REVISION: 2016/12/18
+!REVISION: 2017/01/18
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -36,7 +36,7 @@
  !Generic:
         integer(INTD), private:: CONS_OUT=6 !default output device for this module
         integer(INTD), private:: DEBUG=0    !debugging mode for this module
-        logical, private:: VERBOSE=.true.   !verbosity for errors
+        logical, private:: VERBOSE=.TRUE.   !verbosity for errors
  !Errors (keep consistent with "talsh.h"):
         integer(C_INT), parameter, public:: TALSH_SUCCESS=0                   !success
         integer(C_INT), parameter, public:: TALSH_FAILURE=-666                !generic failure
@@ -389,6 +389,7 @@
         public talsh_tensor_destruct
         public talsh_tensor_rank
         public talsh_tensor_volume
+        public talsh_tensor_dimensions
         public talsh_tensor_shape
         public talsh_tensor_data_kind
         public talsh_tensor_presence
@@ -879,6 +880,25 @@
          vol=talshTensorVolume(tens_block)
          return
         end function talsh_tensor_volume
+!------------------------------------------------------------------------------------
+        function talsh_tensor_dimensions(tens_block,tens_rank,tens_dims) result(ierr)
+         implicit none
+         integer(C_INT):: ierr                         !out: error code (0:success)
+         type(talsh_tens_t), intent(in):: tens_block   !in: tensor block
+         integer(INTD), intent(out):: tens_rank        !out: tensor rank
+         integer(INTD), intent(inout):: tens_dims(1:*) !out: tensor dimension extents
+         type(talsh_tens_shape_t):: tens_shape
+         integer(INTD), pointer:: tdims(:)
+         ierr=talshTensorShape(tens_block,tens_shape)
+         if(ierr.eq.TALSH_SUCCESS) then
+          tens_rank=tens_shape%num_dim
+          if(tens_rank.gt.0) then
+           call c_f_pointer(tens_shape%dims,tdims,(/tens_rank/))
+           tens_dims(1:tens_rank)=tdims(1:tens_rank)
+          endif
+         endif
+         return
+        end function talsh_tensor_dimensions
 !----------------------------------------------------------------------
         function talsh_tensor_shape(tens_block,tens_shape) result(ierr)
          implicit none
