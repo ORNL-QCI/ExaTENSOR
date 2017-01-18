@@ -1,6 +1,6 @@
 *** TAL-SH: Tensor Algebra Library for Shared Memory Computers ***
 AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-REVISION: 2016/08/25
+REVISION: 2017/01/18
 
 Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -260,6 +260,10 @@ Return statuses "TRY_LATER", "DEVICE_UNABLE", and "NOT_CLEAN" are generally not
 considered critical, although "NOT_CLEAN" may indicate a memory leak (not always).
 The former two return statuses mean that the chosen device is either temporarily ("TRY_LATER")
 or permanently ("DEVICE_UNABLE") unable to perform the requested function/operation.
+
+When passing <talsh_tens_t> as an argument to a Fortran procedure, the intent(inout)
+specifier must be used. Never use intent(out) with <talsh_tens_t> as it will destroy
+the internal state of the <talsh_tens_t> object, leaving it undefined.
 
 For developers only:
  Depending on the device, a tensor block is further specialized to one of the two internal types:

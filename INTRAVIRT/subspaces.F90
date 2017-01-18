@@ -1,6 +1,6 @@
 !Infrastructure for a recursive adaptive vector space decomposition.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/01/17
+!REVISION: 2017/01/18
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -101,8 +101,8 @@
  !Typed basis function:
         type, public:: basis_func_t
          integer(INTD), private:: basis_kind=BASIS_NONE                   !specific basis kind
-         class(space_symmetry_t), pointer, private:: symm=>NULL()         !symmetry of the basis function (if any)
          class(basis_func_abs_t), pointer, private:: basis_func_p=>NULL() !pointer to a basis function of this kind
+         class(space_symmetry_t), pointer, private:: symm=>NULL()         !symmetry of the basis function (if any)
          contains
           procedure, public:: set=>BasisFuncSet !sets up the basis function
         end type basis_func_t
@@ -110,9 +110,9 @@
         type, public:: subspace_basis_t
          integer(INTL), private:: space_dim=0                     !number of basis functions
          integer(INTD), private:: supp_dim=0                      !dimensionality of the real space support on which the basis functions reside
-         class(space_symmetry_t), pointer, private:: symm=>NULL() !symmetry of the subspace basis (if any)
          type(real_vec_t), private:: center                       !center of the effective subspace basis support in real space
          type(orthotope_t), private:: supp_box                    !effective subspace basis support in real space (multidimensional orthotope)
+         class(space_symmetry_t), pointer, private:: symm=>NULL() !symmetry of the subspace basis (if any)
          type(basis_func_t), allocatable, private:: basis_func(:) !basis functions [1..space_dim]
          contains
           procedure, public:: create=>SubspaceBasisCreate               !creates an empty subspace
@@ -244,6 +244,7 @@
         end subroutine RealVecCreate
 !------------------------------------------------
         function RealVecDimsn(this) result(dimsn)
+!Returns the dimension of the vector.
          implicit none
          integer(INTL):: dimsn                       !out: vector dimension
          class(real_vec_t), intent(in):: this        !in: real space vector
@@ -253,6 +254,7 @@
         end function RealVecDimsn
 !-----------------------------------------------------
         function RealVecNorm2(this,ierr) result(norm2)
+!Returns the 2-norm of the vector.
          implicit none
          real(8):: norm2                             !out: vector 2-norm
          class(real_vec_t), intent(in):: this        !in: real space vector
@@ -278,6 +280,7 @@
            errc=1
           endif
          endif
+         if(errc.eq.0) norm2=dsqrt(norm2)
          if(present(ierr)) ierr=errc
          return
         end function RealVecNorm2
@@ -330,6 +333,7 @@
         end subroutine RealVecDestroy
 ![extent1d_t]========================================
         subroutine Extent1dSet(this,lower,upper,ierr)
+!Extent ctor (defines or redefines the extent).
          implicit none
          class(extent1d_t), intent(inout):: this     !inout: extent
          real(8), intent(in), optional:: lower       !in: new lower bound
@@ -351,24 +355,27 @@
         end subroutine Extent1dSet
 !---------------------------------------------------
         function Extent1dLowerBound(this) result(lb)
+!Returns the extent lower bound.
          implicit none
-         real(8):: lb
-         class(extent1d_t), intent(in):: this
+         real(8):: lb                         !out: lower bound
+         class(extent1d_t), intent(in):: this !in: extent
 
          lb=this%min_coord
          return
         end function Extent1dLowerBound
 !---------------------------------------------------
         function Extent1dUpperBound(this) result(ub)
+!Returns the extent upper bound.
          implicit none
-         real(8):: ub
-         class(extent1d_t), intent(in):: this
+         real(8):: ub                         !out: upper bound
+         class(extent1d_t), intent(in):: this !in: extent
 
          ub=this%max_coord
          return
         end function Extent1dUpperBound
 !--------------------------------------------------
         function Extent1dLength(this) result(length)
+!Returns the length of the extent.
          implicit none
          real(8):: length                     !out: extent length
          class(extent1d_t), intent(in):: this !in: extent
@@ -376,34 +383,50 @@
          length=this%max_coord-this%min_coord
          return
         end function Extent1dLength
-!---------------------------------------------------------------
-        function Extent1dOverlap(this,extent) result(res_extent)
+!---------------------------------------------------------
+        subroutine Extent1dOverlap(this,extent,res_extent)
+!Returns the overlap of two extents. If <res_extent> is present,
+!it will contain the overlap. Otherwise, <this> will contain the result.
          implicit none
-         type(extent1d_t):: res_extent          !out: resulting extent (overlap)
-         class(extent1d_t), intent(in):: this   !in: extent 1
-         class(extent1d_t), intent(in):: extent !in: extent 2
+         class(extent1d_t), intent(inout):: this                !inout: extent 1 (can be updated)
+         class(extent1d_t), intent(in):: extent                 !in: extent 2
+         type(extent1d_t), intent(inout), optional:: res_extent !out: resulting extent
 
-         if(this%max_coord.le.extent%min_coord.or.this%min_coord.ge.extent%max_coord) then
-          call res_extent%set(0d0,0d0) !no overlap
-         else
-          call res_extent%set(max(this%min_coord,extent%min_coord),min(this%max_coord,extent%max_coord))
+         if(this%max_coord.le.extent%min_coord.or.this%min_coord.ge.extent%max_coord) then !no overlap
+          if(present(res_extent)) then
+           call res_extent%set(0d0,0d0)
+          else
+           call this%set(0d0,0d0)
+          endif
+         else !overlap
+          if(present(res_extent)) then
+           call res_extent%set(max(this%min_coord,extent%min_coord),min(this%max_coord,extent%max_coord))
+          else
+           call this%set(max(this%min_coord,extent%min_coord),min(this%max_coord,extent%max_coord))
+          endif
          endif
          return
         end function Extent1dOverlap
-!-------------------------------------------------------------
-        function Extent1dUnion(this,extent) result(res_extent)
+!-----------------------------------------------------
+        function Extent1dUnion(this,extent,res_extent)
+!Returns the union of two extents. If <res_extent> is present,
+!it will contain the union. Otherwise, <this> will contain the result.
          implicit none
-         type(extent1d_t):: res_extent          !out: resulting extent (union)
-         class(extent1d_t), intent(in):: this   !in: extent 1
-         class(extent1d_t), intent(in):: extent !in: extent 2
+         class(extent1d_t), intent(inout):: this                !inout: extent 1 (can be updated)
+         class(extent1d_t), intent(in):: extent                 !in: extent 2
+         type(extent1d_t), intent(inout), optional:: res_extent !out: resulting extent
 
-         call res_extent%set(min(this%min_coord,extent%min_coord),max(this%max_coord,extent%max_coord))
+         if(present(res_extent)) then
+          call res_extent%set(min(this%min_coord,extent%min_coord),max(this%max_coord,extent%max_coord))
+         else
+          call this%set(min(this%min_coord,extent%min_coord),max(this%max_coord,extent%max_coord))
+         endif
          return
         end function Extent1dUnion
 ![orthotope_t]=====================================
         subroutine OrthotopeCreate(this,dimsn,ierr)
-!Creates an empty orthotope. If the orthotope is defined in input,
-!it will be automatically destructed prior to the re-initialization.
+!Creates an empty orthotope. If the orthotope is defined on input,
+!it will automatically be destructed prior to redefinition.
          implicit none
          class(orthotope_t), intent(out):: this      !out: empty orthotope
          integer(INTL), intent(in):: dimsn           !in: real space dimension
@@ -426,6 +449,7 @@
         end subroutine OrthotopeCreate
 !--------------------------------------------------
         function OrthotopeDimsn(this) result(dimsn)
+!Returns the real space dimension the orthotope lives in.
          implicit none
          integer(INTL):: dimsn                       !out: real space dimension (0 means empty orthotope)
          class(orthotope_t), intent(in):: this       !in: orthotope
@@ -435,6 +459,7 @@
         end function OrthotopeDimsn
 !------------------------------------------------------------
         subroutine OrthotopeSetExtent(this,dimsn,extent,ierr)
+!Sets the orthotope extent along a specific dimension.
          implicit none
          class(orthotope_t), intent(inout):: this    !inout: orthotope
          integer(INTL), intent(in):: dimsn           !in: specific dimension to set extent over
@@ -453,6 +478,7 @@
         end subroutine OrthotopeSetExtent
 !------------------------------------------------------------------
         function OrthotopeGetExtent(this,dimsn,ierr) result(extent)
+!Returns the orthotope extent along a specific dimension.
          implicit none
          type(extent1d_t):: extent                   !out: extent of the specific dimension
          class(orthotope_t), intent(in):: this       !in: orthotope
@@ -471,6 +497,7 @@
         end function OrthotopeGetExtent
 !---------------------------------------------------------------
         function OrthotopeLowerBound(this,dimsn,ierr) result(lb)
+!Returns the orthotope extent lower bound over a specific dimension.
          implicit none
          real(8):: lb                                !out: extent lower bound
          class(orthotope_t), intent(in):: this       !in: orthotope
@@ -489,6 +516,7 @@
         end function OrthotopeLowerBound
 !---------------------------------------------------------------
         function OrthotopeUpperBound(this,dimsn,ierr) result(ub)
+!Returns the orthotope extent upper bound over a specific dimension.
          implicit none
          real(8):: ub                                !out: extent upper bound
          class(orthotope_t), intent(in):: this       !in: orthotope
@@ -507,6 +535,7 @@
         end function OrthotopeUpperBound
 !---------------------------------------------------------------
         function OrthotopeLength(this,dimsn,ierr) result(length)
+!Returns the orthotope length over a specific dimension.
          implicit none
          real(8):: length                            !out: length over a specific dimension
          class(orthotope_t), intent(in):: this       !in: orthotope
@@ -525,6 +554,7 @@
         end function OrthotopeLength
 !---------------------------------------------------------
         function OrthotopeVolume(this,ierr) result(volume)
+!Returns the volume of the orthotope.
          implicit none
          real(8):: volume                            !out: volume of the orthotope
          class(orthotope_t), intent(in):: this       !in: orthotope
@@ -542,25 +572,29 @@
          if(present(ierr)) ierr=errc
          return
         end function OrthotopeVolume
-!---------------------------------------------------------------------
-        function OrthotopeOverlap(this,orthotope,ierr) result(overlap)
+!-------------------------------------------------------------
+        function OrthotopeOverlap(this,orthotope,ierr,overlap)
+!Returns the overlap of two orthotopes. If <overlap> is present,
+!it will contain the result, otherwise <this> will contain the result.
          implicit none
-         type(orthotope_t):: overlap                 !out: overlap (orthotope)
-         class(orthotope_t), intent(in):: this       !in: orthotope 1
-         class(orthotope_t), intent(in):: orthotope  !in: orthotope 2
-         integer(INTD), intent(out), optional:: ierr !out: error code
+         class(orthotope_t), intent(inout):: this             !inout: orthotope 1 (can be updated)
+         class(orthotope_t), intent(in):: orthotope           !in: orthotope 2
+         integer(INTD), intent(out), optional:: ierr          !out: error code
+         type(orthotope_t), intent(inout), optional:: overlap !out: overlap (orthotope)
          integer(INTD):: errc
          integer(INTL):: i,n
 
          errc=0; n=this%num_dim
          if(n.gt.0.and.n.eq.orthotope%num_dim) then
-          call overlap%create(n,errc)
-          if(errc.eq.0) then
-           do i=1,n
-            overlap%extent(i)=this%extent(i)%overlap(orthotope%extent(i))
-           enddo
+          if(present(overlap)) then
+           if(overlap%num_dim.ne.n) call overlap%create(n,errc)
+           if(errc.eq.0) then
+            do i=1,n; call this%extent(i)%overlap(orthotope%extent(i),overlap%extent(i)); enddo
+           else
+            errc=2
+           endif
           else
-           errc=2
+           do i=1,n; call this%extent(i)%overlap(orthotope%extent(i)); enddo
           endif
          else
           errc=1
@@ -568,25 +602,29 @@
          if(present(ierr)) ierr=errc
          return
         end function OrthotopeOverlap
-!-----------------------------------------------------------------
-        function OrthotopeUnion(this,orthotope,ierr) result(union)
+!---------------------------------------------------------
+        function OrthotopeUnion(this,orthotope,ierr,union)
+!Returns the union of two orthotopes. If <union> is present,
+!it will contain the result, otherwise <this> will contain the result.
          implicit none
-         type(orthotope_t):: union                   !out: union (orthotope)
-         class(orthotope_t), intent(in):: this       !in: orthotope 1
-         class(orthotope_t), intent(in):: orthotope  !in: orthotope 2
-         integer(INTD), intent(out), optional:: ierr !out: error code
+         class(orthotope_t), intent(inout):: this           !inout: orthotope 1 (can be updated)
+         class(orthotope_t), intent(in):: orthotope         !in: orthotope 2
+         integer(INTD), intent(out), optional:: ierr        !out: error code
+         type(orthotope_t), intent(inout), optional:: union !out: union (orthotope)
          integer(INTD):: errc
          integer(INTL):: i,n
 
          errc=0; n=this%num_dim
          if(n.gt.0.and.n.eq.orthotope%num_dim) then
-          call union%create(n,errc)
-          if(errc.eq.0) then
-           do i=1,n
-            union%extent(i)=this%extent(i)%union(orthotope%extent(i))
-           enddo
+          if(present(union)) then
+           if(union%num_dim.ne.n) call union%create(n,errc)
+           if(errc.eq.0) then
+            do i=1,n; call this%extent(i)%union(orthotope%extent(i),union%extent(i)); enddo
+           else
+            errc=2
+           endif
           else
-           errc=2
+           do i=1,n; call this%extent(i)%union(orthotope%extent(i)); enddo
           endif
          else
           errc=1
@@ -605,7 +643,8 @@
         end subroutine OrthotopeDestroy
 ![basis_func_gauss_t]=====================================================
         subroutine BasisFuncGaussSet(this,orb_moment,exponents,coefs,ierr)
-!Sets the Gaussian basis function. If it is already defined, it will be reset.
+!Sets up a Gaussian basis function. If it is already defined on input,
+!it will automatically be destructed prior to redefinition.
          implicit none
          class(basis_func_gauss_t), intent(out):: this !out: basis function
          integer(INTD), intent(in):: orb_moment        !in: orbital momentum
@@ -616,7 +655,7 @@
 
          errc=0
          if(orb_moment.ge.0) then
-          np=size(exponents)
+          np=size(exponents) !number of primitives
           if(np.eq.size(coefs)) then
            allocate(this%exponent(1:np),STAT=errc)
            if(errc.eq.0) then
@@ -652,21 +691,24 @@
         end subroutine BasisFuncGaussDestroy
 ![basis_func_t]======================================================
         subroutine BasisFuncSet(this,basis_kind,basis_func,ierr,symm)
+!Sets up a basis function of a given kind. If the basis function is already set,
+!it will be redefined (no non-trivial destruction is assumed).
          implicit none
-         class(basis_func_t), intent(out):: this                  !out: basis function
-         integer(INTD), intent(in):: basis_kind                   !in: basis kind
-         class(basis_func_abs_t), intent(in), target:: basis_func !in: specific basis function
-         integer(INTD), intent(out), optional:: ierr              !out: error code
-         type(space_symmetry_t), intent(in), optional:: symm      !in: basis function symmetry
+         class(basis_func_t), intent(out):: this                      !out: basis function
+         integer(INTD), intent(in):: basis_kind                       !in: basis kind
+         class(basis_func_abs_t), intent(in), target:: basis_func     !in: specific basis function
+         integer(INTD), intent(out), optional:: ierr                  !out: error code
+         class(space_symmetry_t), intent(in), target, optional:: symm !in: basis function symmetry
          integer(INTD):: errc
 
          errc=0
          if(basis_kind.ne.BASIS_NONE) then
           this%basis_kind=basis_kind
           this%basis_func_p=>basis_func
-          if(present(symm)) this%symm=symm
+          if(present(symm)) this%symm=>symm
          else
-          this%basis_func=>NULL()
+          this%basis_func_p=>NULL()
+          this%symm=>NULL()
          endif
          if(present(ierr)) ierr=errc
          return
@@ -674,7 +716,7 @@
 ![subspace_basis_t]====================================
         subroutine SubspaceBasisCreate(this,dimsn,ierr)
 !Creates an empty subspace basis. If the subspace basis is defined on input,
-!it will be automatically destructed prior to the re-initialization.
+!it will automatically be destructed prior to redefinition.
          implicit none
          class(subspace_basis_t), intent(out):: this !out: empty subspace basis
          integer(INTL), intent(in):: dimsn           !in: dimension of the subspace
@@ -697,6 +739,7 @@
         end subroutine SubspaceBasisCreate
 !------------------------------------------------------
         function SubspaceBasisDimsn(this) result(dimsn)
+!Returns the dimension of the subspace basis.
          implicit none
          integer(INTL):: dimsn                      !out: subspace basis dimension
          class(subspace_basis_t), intent(in):: this !in: subspace basis
@@ -706,13 +749,14 @@
         end function SubspaceBasisDimsn
 !------------------------------------------------------------------------------------------
         subroutine SubspaceBasisSetBasisFunc(this,func_num,basis_kind,basis_func,ierr,symm)
+!Sets up a specific basis function in the subspace basis.
          implicit none
-         class(subspace_basis_t), intent(inout):: this            !inout: subspace basis
-         integer(INTL), intent(in):: func_num                     !in: basis function number in the subspace basis
-         integer(INTD), intent(in):: basis_kind                   !in: basis kind
-         class(basis_func_abs_t), intent(in), target:: basis_func !in: specific basis function
-         integer(INTD), intent(out), optional:: ierr              !out: error code
-         type(space_symmetry_t), intent(in), optional:: symm      !in: basis function symmetry
+         class(subspace_basis_t), intent(inout):: this                !inout: subspace basis
+         integer(INTL), intent(in):: func_num                         !in: basis function number in the subspace basis
+         integer(INTD), intent(in):: basis_kind                       !in: basis kind
+         class(basis_func_abs_t), intent(in), target:: basis_func     !in: specific basis function
+         integer(INTD), intent(out), optional:: ierr                  !out: error code
+         class(space_symmetry_t), intent(in), target, optional:: symm !in: basis function symmetry
          integer(INTD):: errc
          integer(INTL):: n
 
@@ -735,6 +779,7 @@
         end subroutine SubspaceBasisSetBasisFunc
 !--------------------------------------------------------------------------------
         function SubspaceBasisGetBasisFunc(this,func_num,ierr) result(basis_func)
+!Returns a pointer to a specific basis function in the subspace basis.
          implicit none
          class(basis_func_t), pointer:: basis_func          !out: pointer to a specific basis function
          class(subspace_basis_t), intent(in), target:: this !in: subspace basis
@@ -756,6 +801,49 @@
          if(present(ierr)) ierr=errc
          return
         end function SubspaceBasisGetBasisFunc
+!------------------------------------------------------------
+        subroutine SubspaceBasisFinalize(this,ierr,num_undef)
+!Finalizes the subspace basis setup after all basis functions have been set.
+!Computes the average center and support in the real space. Also computes
+!the overall symmetry group irrep. If not all basis functions were set,
+!the <num_undef> argument will return the number of unset basis functions.
+         implicit none
+         class(subspace_basis_t), intent(inout):: this    !inout: subspace basis
+         integer(INTD), intent(out), optional:: ierr      !out: error code
+         integer(INTD), intent(out), optional:: num_undef !out: number of undefined basis functions
+         integer(INTD):: errc
+         integer(INTL):: i,n,nun
+         class(basis_func_abs_t), pointer:: bas_func
+
+         errc=0; nun=-1; n=this%dimsn()
+         if(n.gt.0) then
+          nun=0
+          bloop: do i=1,n
+           bas_func=>this%basis_func(i)%basis_func_p
+           if(associated(bas_func)) then
+            if(bas_func%supp_dim.ne.this%supp_dim) then
+             if(this%supp_dim.eq.0) then
+              this%supp_dim=bas_func%supp_dim
+             else
+              errc=3; exit bloop
+             endif
+            endif
+            
+           else !undefined basis function
+            nun=nun+1
+           endif
+          enddo bloop
+          if(nun.ne.0.and.errc=0) errc=2
+         else
+          errc=1
+         endif
+         if(present(num_undef)) num_undef=nun
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine SubspaceBasisFinalize
+
+
+
 !--------------------------------------------
         subroutine SubspaceBasisDestroy(this)
          implicit none
