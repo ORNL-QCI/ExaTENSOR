@@ -82,7 +82,7 @@
  !Symmetry:
         type, abstract, public:: space_symmetry_t
          contains
-          procedure(space_symm_combine_i), deferred, public:: get_combined !combines symmetry group irreps
+          procedure(space_symm_combine_i), deferred, public:: combine !combines symmetry group irreps
         end type space_symmetry_t
  !Abstract basis function:
         type, abstract, public:: basis_func_abs_t
@@ -119,12 +119,13 @@
          contains
           procedure, public:: create=>SubspaceBasisCreate               !creates an empty subspace
           procedure, public:: dimsn=>SubspaceBasisDimsn                 !returns the dimension of the subspace
+          procedure, public:: supp_dimsn=>SubspaceBasisSuppDimsn        !returns the support space dimension
           procedure, public:: set_basis_func=>SubspaceBasisSetBasisFunc !sets a specific basis function
           procedure, public:: get_basis_func=>SubspaceBasisGetBasisFunc !returns a pointer to a specific basis function
           procedure, public:: finalize=>SubspaceBasisFinalize           !finalizes the subspace basis (sets up the support and symmetry)
-          procedure, public:: get_symmetry=>SubspaceBasisGetSymmetry    !returns the symmetry of the subspace
-          procedure, public:: get_center=>SubspaceBasisGetCenter        !returns the center of the subspace in the real space
-          procedure, public:: get_support=>SubspaceBasisGetSupport      !returns the supporting orthotope
+          procedure, public:: get_symmetry=>SubspaceBasisGetSymmetry    !returns a pointer to the subspace basis symmetry object
+          procedure, public:: get_center=>SubspaceBasisGetCenter        !returns a pointer to the center of the subspace basis in the real space
+          procedure, public:: get_support=>SubspaceBasisGetSupport      !returns a pointer to the supporting orthotope of the subspace basis
           final:: SubspaceBasisDestroy                                  !destructs the subspace basis
         end type subspace_basis_t
  !Subspace:
@@ -161,14 +162,13 @@
 !INTERFACES:
  !space_symmetry_t:
         abstract interface
-  !Deferred: .get_combined:
-         subroutine space_symm_combine_i(this,symm1,symm2,ierr)
-          implicit none
+  !Deferred: .combine:
+         subroutine space_symm_combine_i(this,symm,ierr)
           import:: space_symmetry_t,INTD
-          class(space_symmetry_t), intent(out):: this !out: combined symmetry
-          class(space_symmetry_t), intent(in):: symm1 !in: symmetry 1
-          class(space_symmetry_t), intent(in):: symm2 !in: symmetry 2
-          integer(INTD), intent(out), optional:: ierr
+          implicit none
+          class(space_symmetry_t), intent(inout):: this              !inout: symmetry 1 (updated)
+          class(space_symmetry_t), intent(in):: symm                 !in: symmetry 2
+          integer(INTD), intent(out), optional:: ierr                !out: error code
          end subroutine space_symm_combine_i
         end interface
 !VISIBILITY:
@@ -204,6 +204,7 @@
  !subspace_basis_t:
         private SubspaceBasisCreate
         private SubspaceBasisDimsn
+        private SubspaceBasisSuppDimsn
         private SubspaceBasisSetBasisFunc
         private SubspaceBasisGetBasisFunc
         private SubspaceBasisFinalize
@@ -369,6 +370,7 @@
          class(real_vec_t), intent(in):: real_vec            !in: real space vector 2
          integer(INTD), intent(out), optional:: ierr         !out: error code
          type(real_vec_t), intent(inout), optional:: res_vec !out: resulting vector
+         integer(INTD):: errc
 
          errc=0
          if(present(res_vec)) then
@@ -465,9 +467,9 @@
           endif
          endif
          return
-        end function Extent1dOverlap
-!-----------------------------------------------------
-        function Extent1dUnion(this,extent,res_extent)
+        end subroutine Extent1dOverlap
+!-------------------------------------------------------
+        subroutine Extent1dUnion(this,extent,res_extent)
 !Returns the union of two extents. If <res_extent> is present,
 !it will contain the union. Otherwise, <this> will contain the result.
          implicit none
@@ -481,7 +483,7 @@
           call this%set(min(this%min_coord,extent%min_coord),max(this%max_coord,extent%max_coord))
          endif
          return
-        end function Extent1dUnion
+        end subroutine Extent1dUnion
 ![orthotope_t]=====================================
         subroutine OrthotopeCreate(this,dimsn,ierr)
 !Creates an empty orthotope. If the orthotope is defined on input,
@@ -631,8 +633,8 @@
          if(present(ierr)) ierr=errc
          return
         end function OrthotopeVolume
-!-------------------------------------------------------------
-        function OrthotopeOverlap(this,orthotope,ierr,overlap)
+!---------------------------------------------------------------
+        subroutine OrthotopeOverlap(this,orthotope,ierr,overlap)
 !Returns the overlap of two orthotopes. If <overlap> is present,
 !it will contain the result, otherwise <this> will contain the result.
          implicit none
@@ -660,9 +662,9 @@
          endif
          if(present(ierr)) ierr=errc
          return
-        end function OrthotopeOverlap
-!---------------------------------------------------------
-        function OrthotopeUnion(this,orthotope,ierr,union)
+        end subroutine OrthotopeOverlap
+!-----------------------------------------------------------
+        subroutine OrthotopeUnion(this,orthotope,ierr,union)
 !Returns the union of two orthotopes. If <union> is present,
 !it will contain the result, otherwise <this> will contain the result.
          implicit none
@@ -690,7 +692,7 @@
          endif
          if(present(ierr)) ierr=errc
          return
-        end function OrthotopeUnion
+        end subroutine OrthotopeUnion
 !----------------------------------------
         subroutine OrthotopeDestroy(this)
          implicit none
@@ -806,6 +808,24 @@
          dimsn=this%space_dim
          return
         end function SubspaceBasisDimsn
+!------------------------------------------------------------------
+        function SubspaceBasisSuppDimsn(this,ierr) result(supp_dim)
+!Returns the dimension of the supporting real space.
+         implicit none
+         integer(INTD):: supp_dim                    !out: support dimension
+         class(subspace_basis_t), intent(in):: this  !in: subspace basis
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=0
+         if(this%space_dim.gt.0) then
+          supp_dim=this%supp_dim
+         else
+          errc=1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function SubspaceBasisSuppDimsn
 !------------------------------------------------------------------------------------------
         subroutine SubspaceBasisSetBasisFunc(this,func_num,basis_kind,basis_func,ierr,symm)
 !Sets up a specific basis function in the subspace basis.
@@ -822,10 +842,18 @@
          errc=0; n=this%dimsn()
          if(n.gt.0) then
           if(func_num.gt.0.and.func_num.le.n) then
-           if(present(symm)) then
-            call this%basis_func(func_num)%set(basis_kind,basis_func,errc,symm)
+           if(this%supp_dim.eq.0) then
+            if(basis_func%supp_dim.gt.0) this%supp_dim=basis_func%supp_dim
+           endif
+           if(this%supp_dim.eq.basis_func%supp_dim) then
+            if(present(symm)) then
+             call this%basis_func(func_num)%set(basis_kind,basis_func,errc,symm)
+            else
+             call this%basis_func(func_num)%set(basis_kind,basis_func,errc)
+            endif
+            if(errc.ne.0) errc=4
            else
-            call this%basis_func(func_num)%set(basis_kind,basis_func,errc)
+            errc=3
            endif
           else
            errc=2
@@ -874,6 +902,7 @@
          integer(INTD):: errc
          integer(INTL):: i,n,nun
          class(basis_func_abs_t), pointer:: bas_func
+         class(space_symmetry_t), pointer:: symm
          logical:: init
 
          errc=0; nun=-1; n=this%dimsn()
@@ -881,22 +910,30 @@
           nun=0; init=.FALSE.
           bloop: do i=1,n
            bas_func=>this%basis_func(i)%basis_func_p
+           symm=>this%basis_func(i)%symm
            if(associated(bas_func)) then
             if(.not.init) then
              this%supp_dim=bas_func%supp_dim
              call this%center%create(int(this%supp_dim,INTL),errc)
-             if(errc.ne.0) then; errc=7; exit bloop; endif
+             if(errc.ne.0) then; errc=8; exit bloop; endif
              this%center=bas_func%center
              call this%supp_box%create(int(this%supp_dim,INTL),errc)
-             if(errc.ne.0) then; errc=6; exit bloop; endif
+             if(errc.ne.0) then; errc=7; exit bloop; endif
              this%supp_box=bas_func%supp_box
+             this%symm=>symm
              init=.TRUE.
             else
              if(bas_func%supp_dim.eq.this%supp_dim) then
               call this%center%add(bas_func%center,errc)
-              if(errc.ne.0) then; errc=5; exit; bloop; endif
+              if(errc.ne.0) then; errc=6; exit; exit bloop; endif
               call this%supp_box%union(bas_func%supp_box,errc)
-              if(errc.ne.0) then; errc=4; exit; bloop; endif
+              if(errc.ne.0) then; errc=5; exit; exit bloop; endif
+              if(associated(this%symm).and.associated(symm)) then
+               call this%symm%combine(symm,errc)
+               if(errc.ne.0) then; this%symm=>NULL(); errc=4; exit bloop; endif
+              else
+               this%symm=>NULL()
+              endif
              else
               errc=3; exit bloop !support dimension mismatch
              endif
@@ -916,32 +953,85 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine SubspaceBasisFinalize
+!----------------------------------------------------------------
+        function SubspaceBasisGetSymmetry(this,ierr) result(symm)
+!Returns a pointer to the subspace basis symmetry object.
+         implicit none
+         class(space_symmetry_t), pointer:: symm     !out: subspace basis symmetry
+         class(subspace_basis_t), intent(in):: this  !in: subspace basis
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
 
+         errc=0
+         if(this%space_dim.gt.0) then
+          symm=>this%symm
+         else
+          errc=1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function SubspaceBasisGetSymmetry
+!----------------------------------------------------------------
+        function SubspaceBasisGetCenter(this,ierr) result(center)
+!Returns a pointer to the subspace basis center in real space.
+         implicit none
+         class(real_vec_t), pointer:: center                !out: effective center of the subspace basis support
+         class(subspace_basis_t), intent(in), target:: this !in: subspace basis
+         integer(INTD), intent(out), optional:: ierr        !out: error code
+         integer(INTD):: errc
+
+         errc=0
+         if(this%space_dim.gt.0.and.this%supp_dim.gt.0) then
+          center=>this%center
+         else
+          errc=1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function SubspaceBasisGetCenter
+!-------------------------------------------------------------------
+        function SubspaceBasisGetSupport(this,ierr) result(supp_box)
+!Returns a pointer to the subspace basis support box.
+         implicit none
+         class(orthotope_t), pointer:: supp_box             !out: subspace basis support (orthotope)
+         class(subspace_basis_t), intent(in), target:: this !in: subspace basis
+         integer(INTD), intent(out), optional:: ierr        !out: error code
+         integer(INTD):: errc
+
+         errc=0
+         if(this%space_dim.gt.0.and.this%supp_dim.gt.0) then
+          supp_box=>this%supp_box
+         else
+          errc=1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function SubspaceBasisGetSupport
 !--------------------------------------------
         subroutine SubspaceBasisDestroy(this)
          implicit none
          type(subspace_basis_t):: this
 
          if(allocated(this%basis_func)) deallocate(this%basis_func)
-         this%space_dim=0
+         this%symm=>NULL()
+         this%space_dim=0; this%supp_dim=0
          return
         end subroutine SubspaceBasisDestroy
-![subspace_t]=========================================
-        subroutine SubspaceInit(this,id,supp_dim,ierr)
-!Sets up a subspace. If the subspace is defined on input,
-!it will be automatically destructed prior to re-initialization.
+![subspace_t]================================
+        subroutine SubspaceInit(this,id,ierr)
+!Initializes a subspace. If the subspace is defined on input,
+!it will automatically be destructed prior to re-initialization.
          implicit none
          class(subspace_t), intent(out):: this       !out: empty subspace
          integer(INTL), intent(in):: id              !in: subspace id (must be non-negative)
-         integer(INTD), intent(in):: supp_dim        !in: subspace support dimension
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
 
          errc=0
-         if(id.ge.0.and.supp_dim.gt.0) then
+         if(id.ge.0) then
           this%subspace_id=id
-          this%supp_dim=supp_dim
-          this%max_resolution=0
+          this%supp_dim=0       !will be inferred from the first registered basis
+          this%max_resolution=0 !will be inferred from the first registered basis
          else
           errc=1
          endif
@@ -995,65 +1085,16 @@
          if(present(ierr)) ierr=errc
          return
         end function SubspaceGetMaxResolution
-!-----------------------------------------------------------
-        function SubspaceGetSymmetry(this,ierr) result(symm)
-         implicit none
-         type(space_symmetry_t):: symm               !out: subspace symmetry
-         class(subspace_t), intent(in):: this        !in: subspace
-         integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc
-
-         errc=0
-         if(this%subspace_id.ge.0.and.this%max_resolution.gt.0) then
-          symm=this%symm
-         else
-          errc=1
-         endif
-         if(present(ierr)) ierr=errc
-         return
-        end function SubspaceGetSymmetry
-!-----------------------------------------------------------
-        function SubspaceGetCenter(this,ierr) result(center)
-         implicit none
-         type(real_vec_t):: center                   !out: effective center of the subspace support
-         class(subspace_t), intent(in):: this        !in: subspace
-         integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc
-
-         errc=0
-         if(this%subspace_id.ge.0.and.this%max_resolution.gt.0) then
-          center=this%center
-         else
-          errc=1
-         endif
-         if(present(ierr)) ierr=errc
-         return
-        end function SubspaceGetCenter
-!--------------------------------------------------------------
-        function SubspaceGetSupport(this,ierr) result(supp_box)
-         implicit none
-         type(orthotope_t):: supp_box                !out: subspace support (orthotope)
-         class(subspace_t), intent(in):: this        !in: subspace
-         integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc
-
-         errc=0
-         if(this%subspace_id.ge.0.and.this%max_resolution.gt.0) then
-          supp_box=this%supp_box
-         else
-          errc=1
-         endif
-         if(present(ierr)) ierr=errc
-         return
-        end function SubspaceGetSupport
 !--------------------------------------------------------
         subroutine SubspaceRegisterBasis(this,basis,ierr)
-!Registers a new subspace basis.
+!Registers a new subspace basis. The new subspace basis must have
+!the same support dimension as any previously registered basis.
          implicit none
          class(subspace_t), intent(inout):: this     !inout: subspace
          class(subspace_basis_t), intent(in):: basis !in: new subspace basis
          integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc,ier
+         integer(INTD):: errc,ier,sd
+         integer(INTL):: n
          type(list_iter_t):: basis_it
 
          if(this%subspace_id.ge.0) then
@@ -1061,32 +1102,41 @@
           if(errc.eq.GFC_SUCCESS) then
            errc=basis_it%reset()
            if(errc.eq.GFC_SUCCESS) then
-            errc=basis_it%append(basis)
-            if(errc.eq.GFC_SUCCESS) then
-             this%max_resolution=max(this%max_resolution,basis%space_dim)
-             call this%update_support(errc)
+            n=basis%dimsn()
+            if(n.gt.0) then
+             sd=basis%supp_dimsn()
+             if(sd.gt.0.and.this%supp_dim.eq.0) this%supp_dim=sd
+             if(sd.eq.this%supp_dim) then
+              errc=basis_it%append(basis)
+              if(errc.eq.GFC_SUCCESS) then
+               this%max_resolution=max(this%max_resolution,n)
+              else
+               errc=6
+              endif
+             else
+              errc=5
+             endif
             else
-             errc=5
+             errc=4
             endif
            else
-            errc=4
+            errc=3
            endif
            ier=basis_it%release()
           else
-           errc=3
+           errc=2
           endif
-          ier=basis_it%release(); if(ier.ne.GFC_SUCCESS) errc=2
          else
           errc=1
          endif
          if(present(ierr)) ierr=errc
          return
         end subroutine SubspaceRegisterBasis
-!----------------------------------------------------------------------
-        function SubspaceSetBasis(this,ierr,bas_pred_f) result(basis_p)
+!---------------------------------------------------------------------
+        function SubspaceResolve(this,ierr,bas_pred_f) result(basis_p)
 !Returns a pointer to the subspace basis satisfying a certain (optional) condition.
 !The condition is specified via a GFC predicate object. If no condition is supplied,
-!the first basis will be returned.
+!the very first basis will be returned.
          implicit none
          class(subspace_basis_t), pointer:: basis_p                   !out: pointer to the subspace basis
          class(subspace_t), intent(in):: this                         !in: subspace
@@ -1125,8 +1175,8 @@
               else
                errc=5
               endif
-             else !not found (or error)
-              errc=2
+             else
+              errc=2 !not found
              endif
             else
              errc=4
@@ -1136,14 +1186,14 @@
             errc=3
            endif
           else
-           errc=2
+           errc=2 !not found
           endif
          else
           errc=1
          endif
          if(present(ierr)) ierr=errc
          return
-        end function SubspaceSetBasis
+        end function SubspaceResolve
 !---------------------------------------
         subroutine SubspaceDestroy(this)
          implicit none
@@ -1164,9 +1214,11 @@
 ![h_space_t]===========================================
         subroutine HSpaceConstruct(this,space_dim,ierr)
 !Constructs a hierarchical space representation with a subspace aggregation tree.
+!The original basis functions will be hierarchically aggregated into larger subspaces,
+!up to the full space.
          implicit none
-         class(h_space_t), intent(inout):: this      !out: hierarchical representation of a vector space (SAT)
-         integer(INTL), intent(in):: space_dim       !in: space dimension
+         class(h_space_t), intent(out):: this        !out: hierarchical representation of a vector space
+         integer(INTL), intent(in):: space_dim       !in: original space dimension
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
 
