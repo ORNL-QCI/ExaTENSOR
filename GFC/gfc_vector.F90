@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Vector
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017/01/10
+!REVISION: 2017/01/18
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -37,7 +37,7 @@
  !Vector element:
         type, extends(gfc_cont_elem_t), public:: vector_elem_t
         contains
-         procedure, public:: construct=>VectorElemConstruct !constructs the content of the vector element
+         procedure, public:: construct=>VectorElemConstruct !constructs the content (value) of the vector element
         end type vector_elem_t
  !Vector segment:
         type, private:: vector_seg_t
@@ -45,8 +45,8 @@
          integer(INTD), private:: num_elems=0                    !current occupied length of the vector segment
          type(vector_elem_t), allocatable, private:: seg_elem(:) !elements of the vector segment: [0..max_elems-1]
          contains
-          procedure, private:: construct=>VectorSegConstruct
-          final:: VectorSegDestruct
+          procedure, private:: construct=>VectorSegConstruct     !constructs a vector segment
+          final:: VectorSegDestruct                              !destructs a vector segment
         end type vector_seg_t
  !Vector segment batch:
         type, private:: vector_batch_t
@@ -54,8 +54,8 @@
          integer(INTD), private:: num_segs=0                     !current number of active segments in the batch
          type(vector_seg_t), allocatable, private:: batch_seg(:) !segments of the batch: [0..max_segs-1]
          contains
-          procedure, private:: construct=>VectorBatchConstruct
-          final:: VectorBatchDestruct
+          procedure, private:: construct=>VectorBatchConstruct   !constructs a vector batch
+          final:: VectorBatchDestruct                            !destructs a vector batch
         end type vector_batch_t
  !Vector:
         type, extends(gfc_container_t), public:: vector_t
@@ -116,8 +116,71 @@
 
        contains
 !IMPLEMENTATION:
-![vector_elem_t]=============================
-        subroutine VectorElemConstruct(this,)
+![vector_elem_t]============================================================
+#ifdef NO_GNU
+        subroutine VectorElemConstruct(this,obj,ierr,assoc_only,copy_ctor_f) !`GCC has a bug with this line
+#else
+        subroutine VectorElemConstruct(this,obj,ierr,assoc_only)
+#endif
+!Constructs the content of the vector element.
+         implicit none
+         class(vector_elem_t), intent(inout):: this     !inout: vector element
+         class(*), target, intent(in):: obj             !in: assigned value
+         integer(INTD), intent(out), optional:: ierr    !out: error code
+         logical, intent(in), optional:: assoc_only     !in: if TRUE, the value will be assigned by reference, otherwise by value (allocated): Defaults to FALSE
+#ifdef NO_GNU
+         procedure(gfc_copy_i), optional:: copy_ctor_f  !in: generic copy constructor
+#endif
+         integer(INTD):: errc
+
+#ifdef NO_GNU
+         if(present(copy_ctor_f)) then
+          if(present(assoc_only)) then
+           call this%construct_base(obj,errc,assoc_only,copy_ctor_f)
+          else
+           call this%construct_base(obj,errc,copy_ctor_f=copy_ctor_f)
+          endif
+         else
+#endif
+          if(present(assoc_only)) then
+           call this%construct_base(obj,errc,assoc_only=assoc_only)
+          else
+           call this%construct_base(obj,errc)
+          endif
+#ifdef NO_GNU
+         endif
+#endif
+         if(present(ierr)) ierr=errc
+         return
         end subroutine VectorElemConstruct
+!--------------------------------------------------------
+        subroutine VectorSegConstruct(this,capacity,ierr)
+         implicit none
+         class(vector_seg_t), intent(inout):: this   !out: vector segment
+         integer(INTD), intent(in):: capacity        !in: requested capacity
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=GFC_SUCCESS
+         if(this%max_elems.eq.0) then
+          if(capacity.gt.0) then
+           allocate(this%seg_elem(1:capacity),STAT=errc)
+           if(errc.eq.0) then
+            this%max_elems=capacity
+            this%num_elems=0
+           else
+            errc=GFC_MEM_ALLOC_FAILED
+           endif
+          else
+           errc=GFC_INVALID_ARGS
+          endif
+         else
+          errc=GFC_ERROR
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine VectorSegConstruct
+
+
 #endif
        end module gfc_vector
