@@ -45,7 +45,9 @@
           procedure, public:: create=>RealVecCreate   !creates an empty real space vector
           procedure, public:: dimsn=>RealVecDimsn     !returns dimension of the vector
           procedure, public:: norm2=>RealVecNorm2     !returns the 2-norm of the vector
-          procedure, public:: create_average=>RealVecCreateAverage !constructs an average of two real space vectors
+          procedure, public:: scale=>RealVecScale     !vector scaling by a scalar
+          procedure, public:: add=>RealVecAdd         !computes the sum of two tensors
+          procedure, public:: average=>RealVecAverage !computes an average of two real space vectors
           final:: RealVecDestroy                      !destroys the vector
         end type real_vec_t
  !Real space 1d extent (segment[min:max]):
@@ -174,7 +176,9 @@
         private RealVecCreate
         private RealVecDimsn
         private RealVecNorm2
-        private RealVecCreateAverage
+        private RealVecScale
+        private RealVecAdd
+        private RealVecAverage
  !extent1d_t:
         private Extent1dSet
         private Extent1dLowerBound
@@ -261,6 +265,7 @@
          integer(INTD), intent(out), optional:: ierr !out: error code
          !------------------------------------------
          integer(INTL), parameter:: LARGE_VECTOR=(2_INTL)**20
+         !---------------------------------------------------
          integer(INTD):: errc
          integer(INTL):: i
 
@@ -284,44 +289,98 @@
          if(present(ierr)) ierr=errc
          return
         end function RealVecNorm2
-!---------------------------------------------------------------------
-        subroutine RealVecCreateAverage(this,real_vec1,real_vec2,ierr)
-!Creates an average of two vectors. If the resulting vector is already defined
-!on input, it will automatically be destructed prior to redefinition.
+!------------------------------------------------
+        subroutine RealVecScale(this,scalar,ierr)
+!Multiplies a real space vector by a scalar.
          implicit none
-         class(real_vec_t), intent(out):: this       !out: average real space vector
-         class(real_vec_t), intent(in):: real_vec1   !in: real space vector 1
-         class(real_vec_t), intent(in):: real_vec2   !in: real space vector 2
+         class(real_vec_t), intent(inout):: this     !inout: real vector
+         real(8), intent(in):: scalar                !in: scalar factor
          integer(INTD), intent(out), optional:: ierr !out: error code
          !---------------------------------------------------
          integer(INTL), parameter:: LARGE_VECTOR=(2_INTL)**20
+         !---------------------------------------------------
          integer(INTD):: errc
          integer(INTL):: i,n
 
-         errc=0; n=real_vec1%num_dim
-         if(n.gt.0.and.n.eq.real_vec2%num_dim) then
-          call this%create(n,errc)
-          if(errc.eq.0) then
-           if(n.ge.LARGE_VECTOR) then
+         errc=0; n=this%num_dim
+         if(n.ge.LARGE_VECTOR) then
 !$OMP PARALLEL DO DEFAULT(SHARED) PRIVATE(i) SCHEDULE(GUIDED)
-            do i=1,n
-             this%coord(i)=(real_vec1%coord(i)+real_vec2%coord(i))*0.5d0
-            enddo
+          do i=1,n; this%coord(i)=this%coord(i)*scalar; enddo
 !$OMP END PARALLEL DO
+         elseif(n.le.0) then
+          errc=1
+         else
+          do i=1,n; this%coord(i)=this%coord(i)*scalar; enddo
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine RealVecScale
+!--------------------------------------------------------
+        subroutine RealVecAdd(this,real_vec,ierr,res_vec)
+!Adds two vectors. If <res_vec> is present, it will contain the result,
+!otherwise <this> will contain the result.
+         implicit none
+         class(real_vec_t), intent(inout):: this             !inout: real space vector 1 (can be updated)
+         class(real_vec_t), intent(in):: real_vec            !in: real space vector 2
+         integer(INTD), intent(out), optional:: ierr         !out: error code
+         type(real_vec_t), intent(inout), optional:: res_vec !out: resulting vector
+         !---------------------------------------------------
+         integer(INTL), parameter:: LARGE_VECTOR=(2_INTL)**20
+         !---------------------------------------------------
+         integer(INTD):: errc
+         integer(INTL):: i,n
+
+         errc=0; n=this%num_dim
+         if(n.gt.0.and.n.eq.real_vec%num_dim) then
+          if(present(res_vec)) then
+           if(res_vec%num_dim.ne.n) call res_vec%create(n,errc)
+           if(errc.eq.0) then
+            if(n.ge.LARGE_VECTOR) then
+!$OMP PARALLEL DO DEFAULT(SHARED) PRIVATE(i) SCHEDULE(GUIDED)
+             do i=1,n; res_vec%coord(i)=this%coord(i)+real_vec%coord(i); enddo
+!$OMP END PARALLEL DO
+            else
+             do i=1,n; res_vec%coord(i)=this%coord(i)+real_vec%coord(i); enddo
+            endif
            else
-            do i=1,n
-             this%coord(i)=(real_vec1%coord(i)+real_vec2%coord(i))*0.5d0
-            enddo
+            errc=2
            endif
           else
-           errc=2
+           if(n.ge.LARGE_VECTOR) then
+!$OMP PARALLEL DO DEFAULT(SHARED) PRIVATE(i) SCHEDULE(GUIDED)
+            do i=1,n; this%coord(i)=this%coord(i)+real_vec%coord(i); enddo
+!$OMP END PARALLEL DO
+           else
+            do i=1,n; this%coord(i)=this%coord(i)+real_vec%coord(i); enddo
+           endif
           endif
          else
           errc=1
          endif
          if(present(ierr)) ierr=errc
          return
-        end subroutine RealVecCreateAverage
+        end subroutine RealVecAdd
+!------------------------------------------------------------
+        subroutine RealVecAverage(this,real_vec,ierr,res_vec)
+!Computes the average of two vectors. If <res_vec> is present,
+!it will contain the result, otherwise <this> will contain the result.
+         implicit none
+         class(real_vec_t), intent(inout):: this             !inout: real space vector 1 (can be updated)
+         class(real_vec_t), intent(in):: real_vec            !in: real space vector 2
+         integer(INTD), intent(out), optional:: ierr         !out: error code
+         type(real_vec_t), intent(inout), optional:: res_vec !out: resulting vector
+
+         errc=0
+         if(present(res_vec)) then
+          call this%add(real_vec,errc,res_vec)
+          if(errc.eq.0) call res_vec%scale(0.5d0,errc)
+         else
+          call this%add(real_vec,errc)
+          if(errc.eq.0) call this%scale(0.5d0,errc)
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine RealVecAverage
 !--------------------------------------
         subroutine RealVecDestroy(this)
          implicit none
@@ -806,34 +865,50 @@
 !Finalizes the subspace basis setup after all basis functions have been set.
 !Computes the average center and support in the real space. Also computes
 !the overall symmetry group irrep. If not all basis functions were set,
-!the <num_undef> argument will return the number of unset basis functions.
+!the <num_undef> argument will return the number of unset basis functions
+!and error code.
          implicit none
          class(subspace_basis_t), intent(inout):: this    !inout: subspace basis
          integer(INTD), intent(out), optional:: ierr      !out: error code
-         integer(INTD), intent(out), optional:: num_undef !out: number of undefined basis functions
+         integer(INTL), intent(out), optional:: num_undef !out: number of undefined basis functions
          integer(INTD):: errc
          integer(INTL):: i,n,nun
          class(basis_func_abs_t), pointer:: bas_func
+         logical:: init
 
          errc=0; nun=-1; n=this%dimsn()
          if(n.gt.0) then
-          nun=0
+          nun=0; init=.FALSE.
           bloop: do i=1,n
            bas_func=>this%basis_func(i)%basis_func_p
            if(associated(bas_func)) then
-            if(bas_func%supp_dim.ne.this%supp_dim) then
-             if(this%supp_dim.eq.0) then
-              this%supp_dim=bas_func%supp_dim
+            if(.not.init) then
+             this%supp_dim=bas_func%supp_dim
+             call this%center%create(int(this%supp_dim,INTL),errc)
+             if(errc.ne.0) then; errc=7; exit bloop; endif
+             this%center=bas_func%center
+             call this%supp_box%create(int(this%supp_dim,INTL),errc)
+             if(errc.ne.0) then; errc=6; exit bloop; endif
+             this%supp_box=bas_func%supp_box
+             init=.TRUE.
+            else
+             if(bas_func%supp_dim.eq.this%supp_dim) then
+              call this%center%add(bas_func%center,errc)
+              if(errc.ne.0) then; errc=5; exit; bloop; endif
+              call this%supp_box%union(bas_func%supp_box,errc)
+              if(errc.ne.0) then; errc=4; exit; bloop; endif
              else
-              errc=3; exit bloop
+              errc=3; exit bloop !support dimension mismatch
              endif
             endif
-            
            else !undefined basis function
             nun=nun+1
            endif
           enddo bloop
-          if(nun.ne.0.and.errc=0) errc=2
+          if(errc.eq.0) then
+           if(nun.lt.n) call this%center%scale(1d0/real(n-nun,8),errc)
+           if(nun.ne.0) errc=2 !some basis functions are still undefined
+          endif
          else
           errc=1
          endif
@@ -841,8 +916,6 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine SubspaceBasisFinalize
-
-
 
 !--------------------------------------------
         subroutine SubspaceBasisDestroy(this)
