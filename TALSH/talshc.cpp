@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level API.
-REVISION: 2017/01/19
+REVISION: 2017/01/20
 
 Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -88,7 +88,7 @@ typedef struct{
 extern "C"{
 #endif
 // CP-TAL tensor operations:
-int cpu_tensor_block_add(void * lftr, void * dftr, double scale_real, double scale_imag, int arg_conj);
+int cpu_tensor_block_add(const int * contr_ptrn, void * lftr, void * dftr, double scale_real, double scale_imag, int arg_conj);
 int cpu_tensor_block_contract(const int * contr_ptrn, void * lftr, void * rftr, void * dftr, double scale_real, double scale_imag, int arg_conj);
 // Contraction pattern conversion:
 int talsh_get_contr_ptrn_str2dig(const char * c_str, int * dig_ptrn, int * dig_len, int * conj_bits);
@@ -2060,11 +2060,12 @@ int talshTensorDiscard_(talsh_tens_t * tens, int dev_id, int dev_kind) //Fortran
  return talshTensorDiscard(tens,dev_id,dev_kind);
 }
 
-int talshTensorAdd(talsh_tens_t * dtens, talsh_tens_t * ltens, double scale_real, double scale_imag,
+int talshTensorAdd(const char * cptrn, talsh_tens_t * dtens, talsh_tens_t * ltens, double scale_real, double scale_imag,
                    int dev_id, int dev_kind, int copy_ctrl, talsh_task_t * talsh_task)
 /** Tensor addition dispatcher **/
 {
- int j,devid,dvk,dvn,dimg,limg,dcp,lcp,errc,contr_ptrn[MAX_TENSOR_RANK*2];
+ int j,devid,dvk,dvn,dimg,limg,dcp,lcp,errc;
+ int contr_ptrn[MAX_TENSOR_RANK],cpl,conj_bits;
  unsigned int coh_ctrl,coh,cohd,cohl;
  talsh_task_t * tsk;
  host_task_t * host_task;
@@ -2091,6 +2092,9 @@ int talshTensorAdd(talsh_tens_t * dtens, talsh_tens_t * ltens, double scale_real
  if(talshTensorIsHealthy(dtens) != YEP || talshTensorIsHealthy(ltens) != YEP){
   tsk->task_error=102; if(talsh_task == NULL) j=talshTaskDestroy(tsk); return TALSH_FAILURE;
  }
+ //Check and parse the index correspondence pattern:
+ errc=talsh_get_contr_ptrn_str2dig(cptrn,contr_ptrn,&cpl,&conj_bits);
+ if(errc){tsk->task_error=103; if(talsh_task == NULL) j=talshTaskDestroy(tsk); return TALSH_INVALID_ARGS;}
  //Determine the execution device (devid:[dvk,dvn]):
  if(dev_kind == DEV_DEFAULT){ //device kind is not specified explicitly
   if(dev_id == DEV_DEFAULT){ //neither specific device nor device kind are specified: Find one
@@ -2177,7 +2181,7 @@ int talshTensorAdd(talsh_tens_t * dtens, talsh_tens_t * ltens, double scale_real
    if(cohd == COPY_D || (cohd == COPY_M && dtens->dev_rsc[dimg].dev_id != devid)) dtens->avail[dimg] = NOPE;
    //Schedule the tensor operation via the device-kind specific runtime:
    ctm=clock();
-   errc=cpu_tensor_block_add(lftr,dftr,scale_real,scale_imag,0); //blocking call
+   errc=cpu_tensor_block_add(contr_ptrn,lftr,dftr,scale_real,scale_imag,conj_bits); //blocking call
    if(talshTensorRank(dtens) == 0){ //an explicit update is needed for scalar destinations
     j=talsh_update_f_scalar(dftr,dtens->data_kind[dimg],dtens->dev_rsc[dimg].gmem_p);
     if(j) errc=TALSH_FAILURE;
@@ -2228,6 +2232,10 @@ int talshTensorAdd(talsh_tens_t * dtens, talsh_tens_t * ltens, double scale_real
    //Get the CUDA task alias:
    cuda_task=(cudaTask_t*)(tsk->task_p);
    //Schedule the operation via the device-kind specific runtime:
+   if(conj_bits != 0){ //`Add complex conjugation feature to NV-TAL
+    printf("#FATAL(talshc:talshTensorAdd): Complex conjugation feature is not implemented for GPU target!");
+    tsk->task_error=200; if(talsh_task == NULL) j=talshTaskDestroy(tsk); return TALSH_FAILURE;
+   }
    errc=gpu_tensor_block_add(contr_ptrn,lctr,dctr,coh_ctrl,cuda_task,dvn,scale_real); //non-blocking call
    dvn=cuda_task_gpu_id(cuda_task);
    if(errc || dvn < 0){ //in case of error, CUDA task has already been finalized (with error) without coherence control
@@ -2280,21 +2288,21 @@ int talshTensorAdd(talsh_tens_t * dtens, talsh_tens_t * ltens, double scale_real
  return errc;
 }
 
-int talshTensorAdd_(talsh_tens_t * dtens, talsh_tens_t * ltens, double scale_real, double scale_imag,
+int talshTensorAdd_(const char * cptrn, talsh_tens_t * dtens, talsh_tens_t * ltens, double scale_real, double scale_imag,
                     int dev_id, int dev_kind, int copy_ctrl, talsh_task_t * talsh_task) //Fortran wrapper
 {
- return talshTensorAdd(dtens,ltens,scale_real,scale_imag,dev_id,dev_kind,copy_ctrl,talsh_task);
+ return talshTensorAdd(cptrn,dtens,ltens,scale_real,scale_imag,dev_id,dev_kind,copy_ctrl,talsh_task);
 }
 
 int talshTensorContract(const char * cptrn,        //in: C-string: symbolic contraction pattern, e.g. "D(a,b,c,d)+=L(c,i,j,a)*R(b,j,d,i)"
                         talsh_tens_t * dtens,      //inout: destination tensor block
                         talsh_tens_t * ltens,      //inout: left source tensor block
                         talsh_tens_t * rtens,      //inout: right source tensor block
-                        int copy_ctrl,             //in: copy control (COPY_XXX), defaults to COPY_MTT
                         double scale_real,         //in: scaling value (real part), defaults to 1
                         double scale_imag,         //in: scaling value (imaginary part), defaults to 0
                         int dev_id,                //in: device id (flat or kind-specific)
                         int dev_kind,              //in: device kind (if present, <dev_id> is kind-specific)
+                        int copy_ctrl,             //in: copy control (COPY_XXX), defaults to COPY_MTT
                         talsh_task_t * talsh_task) //inout: TAL-SH task (must be clean on entrance)
 /** Tensor contraction dispatcher. **/
 {
@@ -2495,6 +2503,10 @@ int talshTensorContract(const char * cptrn,        //in: C-string: symbolic cont
    //Get the CUDA task alias:
    cuda_task=(cudaTask_t*)(tsk->task_p);
    //Schedule the operation via the device-kind specific runtime:
+   if(conj_bits != 0){ //`Add complex conjugation feature to NV-TAL
+    printf("#FATAL(talshc:talshTensorContract): Complex conjugation feature is not implemented for GPU target!");
+    tsk->task_error=200; if(talsh_task == NULL) j=talshTaskDestroy(tsk); return TALSH_FAILURE;
+   }
    errc=gpu_tensor_block_contract_dlf(contr_ptrn,lctr,rctr,dctr,coh_ctrl,cuda_task,dvn,scale_real); //non-blocking call
    dvn=cuda_task_gpu_id(cuda_task);
    if(errc || dvn < 0){ //in case of error, CUDA task has already been finalized (with error) without coherence control
@@ -2551,10 +2563,10 @@ int talshTensorContract(const char * cptrn,        //in: C-string: symbolic cont
  return errc;
 }
 
-int talshTensorContract_(const char * cptrn, talsh_tens_t * dtens, talsh_tens_t * ltens, talsh_tens_t * rtens, int copy_ctrl,
-                         double scale_real, double scale_imag, int dev_id, int dev_kind, talsh_task_t * talsh_task) //Fortran wrapper
+int talshTensorContract_(const char * cptrn, talsh_tens_t * dtens, talsh_tens_t * ltens, talsh_tens_t * rtens,
+                         double scale_real, double scale_imag, int dev_id, int dev_kind, int copy_ctrl, talsh_task_t * talsh_task) //Fortran wrapper
 {
- return talshTensorContract(cptrn,dtens,ltens,rtens,copy_ctrl,scale_real,scale_imag,dev_id,dev_kind,talsh_task);
+ return talshTensorContract(cptrn,dtens,ltens,rtens,scale_real,scale_imag,dev_id,dev_kind,copy_ctrl,talsh_task);
 }
 
 double talshTensorImageNorm1_cpu(const talsh_tens_t * talsh_tens)

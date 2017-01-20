@@ -1,8 +1,8 @@
 /** ExaTensor::TAL-SH: Device-unified user-level API header.
-REVISION: 2016/12/22
+REVISION: 2017/01/20
 
-Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
-Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
+Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
+Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
 
 This file is part of ExaTensor.
 
@@ -242,7 +242,8 @@ inline double talshComplex8Abs(talshComplex8 cmplx);
                         int dev_kind = DEV_NULL); //in: device kind (if present, <dev_id> is kind-specific)
  int talshTensorDiscard_(talsh_tens_t * tens, int dev_id, int dev_kind);
 //  Tensor addition:
- int talshTensorAdd(talsh_tens_t * dtens,                  //inout: destination tensor block
+ int talshTensorAdd(const char * cptrn,                    //in: C-string: symbolic addition pattern, e.g. "D(a,b,c,d)+=L(c,d,b,a)"
+                    talsh_tens_t * dtens,                  //inout: destination tensor block
                     talsh_tens_t * ltens,                  //inout: source tensor block
                     double scale_real = 1.0,               //in: scaling value (real part), defaults to 1
                     double scale_imag = 0.0,               //in: scaling value (imaginary part), defaults to 0
@@ -250,21 +251,21 @@ inline double talshComplex8Abs(talshComplex8 cmplx);
                     int dev_kind = DEV_DEFAULT,            //in: device kind (if present, <dev_id> is kind-specific)
                     int copy_ctrl = COPY_MT,               //in: copy control (COPY_XX), defaults to COPY_MT
                     talsh_task_t * talsh_task = NULL);     //inout: TAL-SH task handle
- int talshTensorAdd_(talsh_tens_t * dtens, talsh_tens_t * ltens, double scale_real, double scale_imag,
+ int talshTensorAdd_(const char * cptrn, talsh_tens_t * dtens, talsh_tens_t * ltens, double scale_real, double scale_imag,
                      int dev_id, int dev_kind, int copy_ctrl, talsh_task_t * talsh_task);
 //  Tensor contraction:
  int talshTensorContract(const char * cptrn,                //in: C-string: symbolic contraction pattern, e.g. "D(a,b,c,d)+=L(c,i,j,a)*R(b,j,d,i)"
                          talsh_tens_t * dtens,              //inout: destination tensor block
                          talsh_tens_t * ltens,              //inout: left source tensor block
                          talsh_tens_t * rtens,              //inout: right source tensor block
-                         int copy_ctrl = COPY_MTT,          //in: copy control (COPY_XXX), defaults to COPY_MTT
                          double scale_real = 1.0,           //in: scaling value (real part), defaults to 1
                          double scale_imag = 0.0,           //in: scaling value (imaginary part), defaults to 0
                          int dev_id = DEV_DEFAULT,          //in: device id (flat or kind-specific)
                          int dev_kind = DEV_DEFAULT,        //in: device kind (if present, <dev_id> is kind-specific)
+                         int copy_ctrl = COPY_MTT,          //in: copy control (COPY_XXX), defaults to COPY_MTT
                          talsh_task_t * talsh_task = NULL); ////inout: TAL-SH task (must be clean)
- int talshTensorContract_(const char * cptrn, talsh_tens_t * dtens, talsh_tens_t * ltens, talsh_tens_t * rtens, int copy_ctrl,
-                          double scale_real, double scale_imag, int dev_id, int dev_kind, talsh_task_t * talsh_task);
+ int talshTensorContract_(const char * cptrn, talsh_tens_t * dtens, talsh_tens_t * ltens, talsh_tens_t * rtens,
+                          double scale_real, double scale_imag, int dev_id, int dev_kind, int copy_ctrl, talsh_task_t * talsh_task);
 // TAL-SH debugging:
 //  1-norm of the tensor body image on Host:
  double talshTensorImageNorm1_cpu(const talsh_tens_t * talsh_tens);

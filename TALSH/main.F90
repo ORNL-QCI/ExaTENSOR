@@ -150,7 +150,7 @@
           n=n+1
           write(*,'(1x,"Scheduling tensor contraction ",i2," on GPU ",i2,"... ")',ADVANCE='NO') n,i
           ierr=talsh_tensor_contract('D(a,b,i,j)+=L(j,k,c,i)*R(c,b,k,a)',tens(j+1),tens(j+2),tens(j+3),&
-                                    &copy_ctrl=COPY_TTT,dev_id=talsh_flat_dev_id(DEV_NVIDIA_GPU,i),talsh_task=tsks(n))
+                                    &dev_id=talsh_flat_dev_id(DEV_NVIDIA_GPU,i),copy_ctrl=COPY_TTT,talsh_task=tsks(n))
           if(ierr.ne.TRY_LATER) then
            write(*,'("Status ",i11)') ierr
            if(ierr.ne.TALSH_SUCCESS) then; ierr=5; return; endif
@@ -530,7 +530,7 @@
 #ifndef NO_GPU
    !Schedule tensor contraction on GPU:
                 ierr=talsh_tensor_contract(str(1:l),dtens,ltens,rtens,&
-                                          &copy_ctrl=COPY_TTT,dev_id=talsh_flat_dev_id(DEV_NVIDIA_GPU,0),talsh_task=tsk)
+                                          &dev_id=talsh_flat_dev_id(DEV_NVIDIA_GPU,0),copy_ctrl=COPY_TTT,talsh_task=tsk)
                 if(ierr.ne.TALSH_SUCCESS) then; write(*,'("Error ",i11)') ierr; ierr=9; return; endif
    !Wait for GPU completion:
                 ierr=talsh_task_wait(tsk,sts); if(ierr.ne.TALSH_SUCCESS.or.sts.ne.TALSH_TASK_COMPLETED) then; ierr=10; return; endif
@@ -688,7 +688,7 @@
           flops=dsqrt(dble(vd)*dble(vl)*dble(vr))*2d0 !number of floating point operations
 
  !Schedule the tensor contraction:
-          ierr=talsh_tensor_contract(str(1:sl),dtens,ltens,rtens,copy_ctrl=COPY_TTT,dev_id=dev,talsh_task=tsk)
+          ierr=talsh_tensor_contract(str(1:sl),dtens,ltens,rtens,dev_id=dev,copy_ctrl=COPY_TTT,talsh_task=tsk)
           if(ierr.eq.TALSH_SUCCESS) then
   !Wait for completion:
            ierr=talsh_task_wait(tsk,sts)
