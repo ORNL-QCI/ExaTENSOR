@@ -1,9 +1,9 @@
 !Infrastructure for a recursive adaptive vector space decomposition.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/01/18
+!REVISION: 2017/01/20
 
-!Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
-!Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
+!Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
+!Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
 
 !This file is part of ExaTensor.
 
@@ -19,6 +19,27 @@
 
 !You should have received a copy of the GNU Lesser General Public License
 !along with ExaTensor. If not, see <http://www.gnu.org/licenses/>.
+
+!DESCRIPTION:
+! # Input: A vector space of dimension N with a specific basis.
+! # Subspacing: Each original basis function is a subspace.
+!   Existing subspaces are aggregated together to form larger subspaces,
+!   up to the full space, which can be represented by the subspace
+!   aggregation tree (SAT). In this process, the subspace dimension,
+!   called "max_resolution", is a sum of the dimensions of the children
+!   subspaces, and the subspace basis is a direct sum of the bases
+!   from the children subspaces. Additionally, each subspace may
+!   define one or more reduced basis sets of lower dimension/quality.
+!   The reduced basis sets can be defined in multiple ways:
+!    a) In an explicit form: Each basis function is specified analytically;
+!    b) In a superposition form: Each basis function is represented as a
+!       linear combination of the original basis vectors.
+! # Output: The subspace aggregation tree is constructed in which each
+!   subspace has a unique non-negative ID. A subspace overlap matrix
+!   shows which subspaces overlap. For orthogonal basis sets, two
+!   subspaces overlap if and only if they are releated in SAT.
+!   For non-orthogonal subspaces, two subspaces overlap if and
+!   only if their last level children subspaces (leaves) overlap.
 
        module subspaces
         use dil_basic
