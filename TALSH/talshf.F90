@@ -1,8 +1,8 @@
 !ExaTensor::TAL-SH: Device-unified user-level API:
-!REVISION: 2017/01/18
+!REVISION: 2017/01/19
 
-!Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
-!Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
+!Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
+!Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
 
 !This file is part of ExaTensor.
 
@@ -1109,6 +1109,38 @@
          endif
          return
         end function talsh_tensor_contract
+![CP-TAL]--------------------------------------------------------------------------------------------
+        integer(C_INT) function cpu_tensor_block_add(ltens_p,dtens_p,scale_real,scale_imag,arg_conj)&
+                                                    &bind(c,name='cpu_tensor_block_add')
+         implicit none
+         type(C_PTR), value:: ltens_p               !in: left tensor argument
+         type(C_PTR), value:: dtens_p               !inout: destination tensor argument
+         real(C_DOUBLE), value:: scale_real         !in: scaling prefactor (real part)
+         real(C_DOUBLE), value:: scale_imag         !in: scaling prefactor (imaginary part)
+         integer(C_INT), value:: arg_conj           !in: argument complex conjugation bits (0:D,1:L)
+         type(tensor_block_t), pointer:: dtp,ltp
+         complex(8):: scale_fac
+         integer:: conj_bits,ierr
+
+         cpu_tensor_block_add=0; conj_bits=arg_conj
+         if(c_associated(dtens_p).and.c_associated(ltens_p)) then
+          call c_f_pointer(dtens_p,dtp); call c_f_pointer(ltens_p,ltp)
+          if(associated(dtp).and.associated(ltp)) then
+           if(dabs(scale_real-1d0).gt.ZERO_THRESH.or.dabs(scale_imag-0d0).gt.ZERO_THRESH) then
+            scale_fac=cmplx(scale_real,scale_imag,8)
+            call tensor_block_add(dtp,ltp,ierr,scale_fac,conj_bits)
+           else
+            call tensor_block_add(dtp,ltp,ierr,arg_conj=conj_bits)
+           endif
+           cpu_tensor_block_add=ierr
+          else
+           cpu_tensor_block_add=-2
+          endif
+         else
+          cpu_tensor_block_add=-1
+         endif
+         return
+        end function cpu_tensor_block_add
 !----------------------------------------------------------------------------------------------------------------------------
         integer(C_INT) function cpu_tensor_block_contract(contr_ptrn,ltens_p,rtens_p,dtens_p,scale_real,scale_imag,arg_conj)&
                                                          &bind(c,name='cpu_tensor_block_contract')

@@ -241,6 +241,17 @@ inline double talshComplex8Abs(talshComplex8 cmplx);
                         int dev_id,               //in: device id (flat or kind-specific)
                         int dev_kind = DEV_NULL); //in: device kind (if present, <dev_id> is kind-specific)
  int talshTensorDiscard_(talsh_tens_t * tens, int dev_id, int dev_kind);
+//  Tensor addition:
+ int talshTensorAdd(talsh_tens_t * dtens,                  //inout: destination tensor block
+                    talsh_tens_t * ltens,                  //inout: source tensor block
+                    double scale_real = 1.0,               //in: scaling value (real part), defaults to 1
+                    double scale_imag = 0.0,               //in: scaling value (imaginary part), defaults to 0
+                    int dev_id = DEV_DEFAULT,              //in: device id (flat or kind-specific)
+                    int dev_kind = DEV_DEFAULT,            //in: device kind (if present, <dev_id> is kind-specific)
+                    int copy_ctrl = COPY_MT,               //in: copy control (COPY_XX), defaults to COPY_MT
+                    talsh_task_t * talsh_task = NULL);     //inout: TAL-SH task handle
+ int talshTensorAdd_(talsh_tens_t * dtens, talsh_tens_t * ltens, double scale_real, double scale_imag,
+                     int dev_id, int dev_kind, int copy_ctrl, talsh_task_t * talsh_task);
 //  Tensor contraction:
  int talshTensorContract(const char * cptrn,                //in: C-string: symbolic contraction pattern, e.g. "D(a,b,c,d)+=L(c,i,j,a)*R(b,j,d,i)"
                          talsh_tens_t * dtens,              //inout: destination tensor block

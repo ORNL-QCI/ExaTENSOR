@@ -1,9 +1,9 @@
 !Tensor Algebra for Multi- and Many-core CPUs (OpenMP based).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/01/06
+!REVISION: 2017/01/19
 
-!Copyright (C) 2013-2016 Dmitry I. Lyakh (Liakh)
-!Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
+!Copyright (C) 2013-2017 Dmitry I. Lyakh (Liakh)
+!Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
 
 !This file is part of ExaTensor.
 
@@ -4001,31 +4001,44 @@
 	integer(C_INT), intent(out):: dprm(0:*),lprm(0:*),rprm(0:*),ncd,nlu,nru
 	integer(C_INT), intent(inout):: ierr
 	integer(C_INT) i,j,k,drank,jkey(1:lrank+rrank),jtrn0(0:lrank+rrank),jtrn1(0:lrank+rrank)
-	logical pattern_ok
+	logical pattern_ok,simple
 
 	ierr=0
 	if(check_pattern) then; pattern_ok=contr_pattern_ok(); else; pattern_ok=.TRUE.; endif
 	if(pattern_ok.and.lrank.ge.0.and.rrank.ge.0) then
  !Destination operand:
-	 drank=0; dprm(0)=+1;
-	 do i=1,lrank+rrank; if(cptrn(i).gt.0) then; drank=drank+1; dprm(drank)=cptrn(i); endif; enddo
+	 drank=0; dprm(0)=+1
+	 do i=1,lrank; if(cptrn(i).gt.0) then; drank=drank+1; dprm(drank)=cptrn(i); endif; enddo
+	 nlu=drank; simple=(drank.ge.2) !number of the left uncontracted dimensions
+	 do i=lrank+1,lrank+rrank
+	  if(cptrn(i).gt.0) then
+	   drank=drank+1; dprm(drank)=cptrn(i)
+	   if(cptrn(i).le.nlu) simple=.FALSE.
+	  endif
+	 enddo
+	 if(simple) dprm(1:drank)=(/(j,j=1,drank)/)
  !Right tensor operand:
-	 nru=0; ncd=0; rprm(0)=+1; !numbers of the right uncontracted and contracted dimensions
+	 nru=0; ncd=0; rprm(0)=+1 !numbers of the right uncontracted and contracted dimensions
 	 if(rrank.gt.0) then
 	  j=0; do i=1,rrank; if(cptrn(lrank+i).lt.0) then; j=j+1; rprm(i)=j; endif; enddo; ncd=j !contracted dimensions
-	  do i=1,rrank; if(cptrn(lrank+i).gt.0) then; j=j+1; rprm(i)=j; endif; enddo; nru=j-ncd !uncontracted dimensions
+	  nru=rrank-ncd !uncontracted dimensions
+	  if(simple.and.nru.ge.2) then
+	   do i=1,rrank; if(cptrn(lrank+i).gt.0) rprm(i)=ncd+(cptrn(lrank+i)-nlu); enddo
+	  else
+	   do i=1,rrank; if(cptrn(lrank+i).gt.0) then; j=j+1; rprm(i)=j; endif; enddo
+	  endif
 	 endif
  !Left tensor operand:
-	 nlu=0; lprm(0)=+1; !number of the left uncontracted dimensions
+	 lprm(0)=+1 !number of the left uncontracted dimensions
 	 if(lrank.gt.0) then
-	  j=0
-	  do i=1,lrank
-	   if(cptrn(i).lt.0) then; j=j+1; jtrn1(j)=i; jkey(j)=abs(cptrn(i)); endif
-	  enddo
-	  ncd=j !contracted dimensions
+	  j=0; do i=1,lrank; if(cptrn(i).lt.0) then; j=j+1; jtrn1(j)=i; jkey(j)=abs(cptrn(i)); endif; enddo
 	  jtrn0(0:j)=(/+1,(k,k=1,j)/); if(j.ge.2) call merge_sort_key_int(j,jkey,jtrn0)
 	  do i=1,j; k=jtrn0(i); lprm(jtrn1(k))=i; enddo !contracted dimensions of the left operand are aligned to the corresponding dimensions of the right operand
-	  do i=1,lrank; if(cptrn(i).gt.0) then; j=j+1; lprm(i)=j; endif; enddo; nlu=j-ncd !uncontracted dimensions
+	  if(simple.and.nlu.ge.2) then
+	   do i=1,lrank; if(cptrn(i).gt.0) lprm(i)=ncd+cptrn(i); enddo
+	  else
+	   do i=1,lrank; if(cptrn(i).gt.0) then; j=j+1; lprm(i)=j; endif; enddo
+	  endif
 	 endif
 	else !invalid lrank or rrank or cptrn(:)
 	 ierr=1
