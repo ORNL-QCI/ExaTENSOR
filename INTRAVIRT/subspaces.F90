@@ -34,6 +34,12 @@
 !    a) In an explicit form: Each basis function is specified analytically;
 !    b) In a superposition form: Each basis function is represented as a
 !       linear combination of the original basis vectors.
+! # Subspace basis categories:
+!    a) Abstract: Only the basis function kind is specified;
+!    b) Real space supported: A support in the real space is specified as well;
+!    c) Symmetric: A symmetry is specified as well.
+!   Without any further specialization, a basis function is assumed
+!   to be some abstract basis function of a specific basis set kind.
 ! # Output: The subspace aggregation tree is constructed in which each
 !   subspace has a unique non-negative ID. A subspace overlap matrix
 !   shows which subspaces overlap. For orthogonal basis sets, two
@@ -54,9 +60,14 @@
         integer, private:: DEBUG=0        !debugging mode level (0:none)
         logical, private:: VERBOSE=.TRUE. !verbosity for errors
  !Basis set kind:
-        integer(INTD), parameter, public:: BASIS_NONE=0    !No basis set
-        integer(INTD), parameter, public:: BASIS_GAUSS=1   !Gaussian basis set
-        integer(INTD), parameter, public:: BASIS_WAVELET=2 !Wavelet basis set
+        integer(INTD), parameter, public:: BASIS_NONE=0      !no basis set
+        integer(INTD), parameter, public:: BASIS_ABSTRACT=1  !abstract basis set
+        integer(INTD), parameter, public:: BASIS_GAUSS=2     !Gaussian basis set
+        integer(INTD), parameter, public:: BASIS_SLATER=3    !Slater basis set
+        integer(INTD), parameter, public:: BASIS_PLANEWAVE=4 !planewave basis set
+        integer(INTD), parameter, public:: BASIS_HARMONIC=5  !harmonic basis set
+        integer(INTD), parameter, public:: BASIS_POLYNOM=6   !polynomial basis set
+        integer(INTD), parameter, public:: BASIS_WAVELET=7   !wavelet basis set
 !TYPES:
  !Real space vector:
         type, public:: real_vec_t
@@ -105,14 +116,14 @@
          contains
           procedure(space_symm_combine_i), deferred, public:: combine !combines symmetry group irreps
         end type space_symmetry_t
- !Abstract basis function:
-        type, abstract, public:: basis_func_abs_t
+ !Abstract basis function (basis function support only):
+        type, public:: basis_func_supp_t
          integer(INTD), private:: supp_dim=0      !dimensionality of the real space support on which the basis function resides
          type(real_vec_t), private:: center       !center of the effective function support in the real space
          type(orthotope_t), private:: supp_box    !supporting orthotope (multidimensional real space support)
-        end type basis_func_abs_t
+        end type basis_func_supp_t
  !Gaussian basis function:
-        type, extends(basis_func_abs_t), public:: basis_func_gauss_t
+        type, extends(basis_func_supp_t), public:: basis_func_gauss_t
          integer(INTD), private:: num_prims=0        !number of contracted primitives
          integer(INTD), private:: orb_moment=-1      !orbital momentum (0,1,2,3,...)
          real(8), allocatable, private:: exponent(:) !primitive exponents
@@ -123,9 +134,9 @@
         end type basis_func_gauss_t
  !Typed basis function:
         type, public:: basis_func_t
-         integer(INTD), private:: basis_kind=BASIS_NONE                   !specific basis kind
-         class(basis_func_abs_t), pointer, private:: basis_func_p=>NULL() !pointer to a basis function of this kind
-         class(space_symmetry_t), pointer, private:: symm=>NULL()         !symmetry of the basis function (if any)
+         integer(INTD), private:: basis_kind=BASIS_NONE                    !specific basis kind
+         class(basis_func_supp_t), pointer, private:: basis_func_p=>NULL() !pointer to a basis function of this kind
+         class(space_symmetry_t), pointer, private:: symm=>NULL()          !symmetry of the basis function (if any)
          contains
           procedure, public:: set=>BasisFuncSet !sets up the basis function
         end type basis_func_t
@@ -176,6 +187,8 @@
          integer(INTL), private:: num_subspaces=0             !number of subspaces defined in the vector space
          type(subspace_t), allocatable, private:: subspace(:) !hierarchical subspaces defined in the vector space
          type(tree_t), private:: aggr_tree                    !subspace aggregation tree (SAT): Hierarchical representation
+         complex(8), pointer, private:: metric(:,:)=>NULL()   !pointer to the original metric tensor: g12=<bf1|bf2>
+         real(8), allocatable, private:: overlap(:,:)         !subspace overlap matrix (extent of overlap between all subspaces)
          contains
           procedure, public:: construct=>HSpaceConstruct      !constructs a hierarchical representation of a vector space
           final:: HSpaceDestruct                              !destructs the hierarchical representation of a vector space
@@ -193,6 +206,9 @@
          end subroutine space_symm_combine_i
         end interface
 !VISIBILITY:
+ !Non-member:
+        public build_basis_hierarchy_abstract   !establishes a hierarchy for an abstract basis with possible symmetries
+        public build_basis_hierarchy_real_space !establishes a hierarchy for a real space supported basis with possible symmetries
  !real_vec_t:
         private RealVecCreate
         private RealVecDimsn
@@ -772,25 +788,24 @@
          return
         end subroutine BasisFuncGaussDestroy
 ![basis_func_t]======================================================
-        subroutine BasisFuncSet(this,basis_kind,basis_func,ierr,symm)
+        subroutine BasisFuncSet(this,basis_kind,ierr,basis_func,symm)
 !Sets up a basis function of a given kind. If the basis function is already set,
-!it will be redefined (no non-trivial destruction is assumed).
+!it will be redefined (no non-trivial destruction is assumed). If no basis
+!function is passed here, an abstract basis function of <basis_kind> is assumed.
          implicit none
-         class(basis_func_t), intent(out):: this                      !out: basis function
-         integer(INTD), intent(in):: basis_kind                       !in: basis kind
-         class(basis_func_abs_t), intent(in), target:: basis_func     !in: specific basis function
-         integer(INTD), intent(out), optional:: ierr                  !out: error code
-         class(space_symmetry_t), intent(in), target, optional:: symm !in: basis function symmetry
+         class(basis_func_t), intent(out):: this                             !out: basis function
+         integer(INTD), intent(in):: basis_kind                              !in: basis kind
+         integer(INTD), intent(out), optional:: ierr                         !out: error code
+         class(basis_func_supp_t), intent(in), target, optional:: basis_func !in: specific basis function
+         class(space_symmetry_t), intent(in), target, optional:: symm        !in: basis function symmetry
          integer(INTD):: errc
 
          errc=0
+         this%basis_func_p=>NULL(); this%symm=>NULL()
          if(basis_kind.ne.BASIS_NONE) then
           this%basis_kind=basis_kind
-          this%basis_func_p=>basis_func
+          if(present(basis_func)) this%basis_func_p=>basis_func
           if(present(symm)) this%symm=>symm
-         else
-          this%basis_func_p=>NULL()
-          this%symm=>NULL()
          endif
          if(present(ierr)) ierr=errc
          return
@@ -848,33 +863,43 @@
          return
         end function SubspaceBasisSuppDimsn
 !------------------------------------------------------------------------------------------
-        subroutine SubspaceBasisSetBasisFunc(this,func_num,basis_kind,basis_func,ierr,symm)
+        subroutine SubspaceBasisSetBasisFunc(this,func_num,basis_kind,ierr,basis_func,symm)
 !Sets up a specific basis function in the subspace basis.
          implicit none
-         class(subspace_basis_t), intent(inout):: this                !inout: subspace basis
-         integer(INTL), intent(in):: func_num                         !in: basis function number in the subspace basis
-         integer(INTD), intent(in):: basis_kind                       !in: basis kind
-         class(basis_func_abs_t), intent(in), target:: basis_func     !in: specific basis function
-         integer(INTD), intent(out), optional:: ierr                  !out: error code
-         class(space_symmetry_t), intent(in), target, optional:: symm !in: basis function symmetry
+         class(subspace_basis_t), intent(inout):: this                       !inout: subspace basis
+         integer(INTL), intent(in):: func_num                                !in: basis function number in the subspace basis
+         integer(INTD), intent(in):: basis_kind                              !in: basis kind
+         integer(INTD), intent(out), optional:: ierr                         !out: error code
+         class(basis_func_supp_t), intent(in), target, optional:: basis_func !in: specific basis function
+         class(space_symmetry_t), intent(in), target, optional:: symm        !in: basis function symmetry
          integer(INTD):: errc
          integer(INTL):: n
+         logical:: specific
 
-         errc=0; n=this%dimsn()
+         errc=0; n=this%dimsn(); specific=present(basis_func)
          if(n.gt.0) then
           if(func_num.gt.0.and.func_num.le.n) then
-           if(this%supp_dim.eq.0) then
+           if(this%supp_dim.eq.0.and.specific) then
             if(basis_func%supp_dim.gt.0) this%supp_dim=basis_func%supp_dim
            endif
-           if(this%supp_dim.eq.basis_func%supp_dim) then
-            if(present(symm)) then
-             call this%basis_func(func_num)%set(basis_kind,basis_func,errc,symm)
+           if(specific) then
+            if(this%supp_dim.eq.basis_func%supp_dim) then
+             if(present(symm)) then
+              call this%basis_func(func_num)%set(basis_kind,errc,basis_func,symm)
+             else
+              call this%basis_func(func_num)%set(basis_kind,errc,basis_func)
+             endif
+             if(errc.ne.0) errc=5
             else
-             call this%basis_func(func_num)%set(basis_kind,basis_func,errc)
+             errc=4
             endif
-            if(errc.ne.0) errc=4
            else
-            errc=3
+            if(present(symm)) then
+             call this%basis_func(func_num)%set(basis_kind,errc,symm=symm)
+            else
+             call this%basis_func(func_num)%set(basis_kind,errc)
+            endif
+            if(errc.ne.0) errc=3
            endif
           else
            errc=2
@@ -912,51 +937,56 @@
 !------------------------------------------------------------
         subroutine SubspaceBasisFinalize(this,ierr,num_undef)
 !Finalizes the subspace basis setup after all basis functions have been set.
-!Computes the average center and support in the real space. Also computes
-!the overall symmetry group irrep. If not all basis functions were set,
-!the <num_undef> argument will return the number of unset basis functions
-!and error code.
+!Computes the average center and support in the real space in case of
+!real space supported basis sets.  Also computes the overall symmetry group irrep.
+!If not all basis functions were set, the <num_undef> argument will return
+!the number of unset basis functions and an error code.
          implicit none
          class(subspace_basis_t), intent(inout):: this    !inout: subspace basis
          integer(INTD), intent(out), optional:: ierr      !out: error code
          integer(INTL), intent(out), optional:: num_undef !out: number of undefined basis functions
          integer(INTD):: errc
          integer(INTL):: i,n,nun
-         class(basis_func_abs_t), pointer:: bas_func
+         class(basis_func_supp_t), pointer:: bas_func
          class(space_symmetry_t), pointer:: symm
-         logical:: init
+         logical:: initb,inits
 
          errc=0; nun=-1; n=this%dimsn()
          if(n.gt.0) then
-          nun=0; init=.FALSE.
+          nun=0; initb=.FALSE.; inits=.FALSE.
           bloop: do i=1,n
-           bas_func=>this%basis_func(i)%basis_func_p
-           symm=>this%basis_func(i)%symm
-           if(associated(bas_func)) then
-            if(.not.init) then
-             this%supp_dim=bas_func%supp_dim
-             call this%center%create(int(this%supp_dim,INTL),errc)
-             if(errc.ne.0) then; errc=8; exit bloop; endif
-             this%center=bas_func%center
-             call this%supp_box%create(int(this%supp_dim,INTL),errc)
-             if(errc.ne.0) then; errc=7; exit bloop; endif
-             this%supp_box=bas_func%supp_box
-             this%symm=>symm
-             init=.TRUE.
-            else
-             if(bas_func%supp_dim.eq.this%supp_dim) then
-              call this%center%add(bas_func%center,errc)
-              if(errc.ne.0) then; errc=6; exit; exit bloop; endif
-              call this%supp_box%union(bas_func%supp_box,errc)
-              if(errc.ne.0) then; errc=5; exit; exit bloop; endif
-              if(associated(this%symm).and.associated(symm)) then
-               call this%symm%combine(symm,errc)
-               if(errc.ne.0) then; this%symm=>NULL(); errc=4; exit bloop; endif
-              else
-               this%symm=>NULL()
+           if(this%basis_func(i)%basis_kind.ne.BASIS_NONE) then
+            bas_func=>this%basis_func(i)%basis_func_p
+            symm=>this%basis_func(i)%symm
+            if(associated(bas_func)) then
+             if(.not.initb) then
+              this%supp_dim=bas_func%supp_dim
+              if(this%supp_dim.gt.0) then
+               call this%center%create(int(this%supp_dim,INTL),errc)
+               if(errc.ne.0) then; errc=8; exit bloop; endif
+               this%center=bas_func%center
+               call this%supp_box%create(int(this%supp_dim,INTL),errc)
+               if(errc.ne.0) then; errc=7; exit bloop; endif
+               this%supp_box=bas_func%supp_box
               endif
+              initb=.TRUE.
              else
-              errc=3; exit bloop !support dimension mismatch
+              if(bas_func%supp_dim.eq.this%supp_dim) then
+               call this%center%add(bas_func%center,errc)
+               if(errc.ne.0) then; errc=6; exit; exit bloop; endif
+               call this%supp_box%union(bas_func%supp_box,errc)
+               if(errc.ne.0) then; errc=5; exit; exit bloop; endif
+              else
+               errc=4; exit bloop !support dimension mismatch
+              endif
+             endif
+            endif
+            if(associated(symm)) then
+             if(.not.inits) then
+              this%symm=>symm; inits=.TRUE.
+             else
+              call this%symm%combine(symm,errc)
+              if(errc.ne.0) then; errc=3; exit bloop; endif
              endif
             endif
            else !undefined basis function
@@ -1051,7 +1081,7 @@
          errc=0
          if(id.ge.0) then
           this%subspace_id=id
-          this%supp_dim=0       !will be inferred from the first registered basis
+          this%supp_dim=0       !will be inferred from the first registered basis supported in real space
           this%max_resolution=0 !will be inferred from the first registered basis
          else
           errc=1
@@ -1232,19 +1262,42 @@
          this%subspace_id=-1
          return
         end subroutine SubspaceDestroy
-![h_space_t]===========================================
-        subroutine HSpaceConstruct(this,space_dim,ierr)
-!Constructs a hierarchical space representation with a subspace aggregation tree.
+![h_space_t]===================================================
+        subroutine HSpaceConstruct(this,full_basis,ierr,metric)
+!Constructs a hierarchical vector space representation with a subspace aggregation tree.
 !The original basis functions will be hierarchically aggregated into larger subspaces,
-!up to the full space.
+!up to the full space. Each subspace will have a unique id.
          implicit none
-         class(h_space_t), intent(out):: this        !out: hierarchical representation of a vector space
-         integer(INTL), intent(in):: space_dim       !in: original space dimension
-         integer(INTD), intent(out), optional:: ierr !out: error code
+         class(h_space_t), intent(out):: this                   !out: hierarchical representation of the vector space
+         class(subspace_basis_t), intent(in):: full_basis       !in: full basis of the vector space
+         integer(INTD), intent(out), optional:: ierr            !out: error code
+         complex(8), intent(in), optional, target:: metric(:,:) !in: metric tensor: g12=<bf1|bf2>: Hermitian matrix
          integer(INTD):: errc
+         integer(INTL):: n
+         type(tree_iter_t):: sat_it
 
          errc=0
-         !`Write
+!Construct the subspace aggregation tree (SAT) by recursion:
+         n=full_basis%dimsn()
+         if(n.gt.0) then
+          errc=sat_it%init(this%aggr_tree)
+          if(errc.eq.GFC_SUCCESS) then
+ !Add the root (full space):
+           
+ !Recursively split the full space into subspaces:
+           
+           errc=sat_it%release()
+!Construct the overlap matrix between all subspaces:
+           if(present(metric)) then
+            this%metric=>metric
+            !`Write
+           endif
+          else
+           errc=2
+          endif
+         else
+          errc=1
+         endif
          if(present(ierr)) ierr=errc
          return
         end subroutine HSpaceConstruct
@@ -1255,6 +1308,8 @@
          integer(INTD):: errc
          type(tree_iter_t):: tree_it
 
+         this%metric=>NULL()
+         if(allocated(this%overlap)) deallocate(this%overlap)
          if(allocated(this%subspace)) deallocate(this%subspace)
          errc=tree_it%init(this%aggr_tree)
          if(errc.eq.GFC_SUCCESS) then
@@ -1264,5 +1319,46 @@
          this%space_dim=0; this%num_subspaces=0
          return
         end subroutine HSpaceDestruct
+!-----------------------------------------------------------------------------
+        subroutine build_basis_hierarchy_abstract(basis,order,boundaries,ierr)
+!Sorts and recursively aggregates bases into a hierarchical representatation.
+         implicit none
+         class(subspace_basis_t), intent(in):: basis             !in: vector space basis
+         integer(INTL), intent(out), allocatable:: order(:)      !out: sorted order of basis vectors (old numbers)
+         integer(INTL), intent(out), allocatable:: boundaries(:) !out: subspace boundaries
+         integer(INTD), intent(out), optional:: ierr             !out: error code
+         integer(INTD):: errc
+         integer(INTL):: n,nsegs
+
+         errc=0; n=basis%dimsn()
+         if(n.gt.0) then
+          
+         else
+          errc=1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine build_basis_hierarchy_abstract
+!-------------------------------------------------------------------------------
+        subroutine build_basis_hierarchy_real_space(basis,order,boundaries,ierr)
+!Sorts and recursively aggregates bases into a hierarchical representatation
+!based on the support locality criteria.
+         implicit none
+         class(subspace_basis_t), intent(in):: basis             !in: vector space basis supported in real space
+         integer(INTL), intent(out), allocatable:: order(:)      !out: sorted order of basis vectors (old numbers)
+         integer(INTL), intent(out), allocatable:: boundaries(:) !out: subspace boundaries
+         integer(INTD), intent(out), optional:: ierr             !out: error code
+         integer(INTD):: errc
+         integer(INTL):: n,nsegs
+
+         errc=0; n=basis%dimsn()
+         if(n.gt.0) then
+          
+         else
+          errc=1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine build_basis_hierarchy_real_space
 
        end module subspaces
