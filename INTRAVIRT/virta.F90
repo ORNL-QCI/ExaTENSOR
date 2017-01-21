@@ -3,10 +3,10 @@
 !This module provides basic infrastructure for ExaTENSOR, a tensor-algebra virtual processor (TAVP).
 !The computing and logical tensor-algebra virtual processors (C-TAVP,L-TAVP) derive from this module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/01/04
+!REVISION: 2017/01/20
 
-!Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
-!Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
+!Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
+!Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
 
 !This file is part of ExaTensor.
 
@@ -32,7 +32,7 @@
         use service_mpi, only: get_memory_status !OS level API
 #endif
         use hardware                             !hardware abstraction
-        use subspaces                            !linear subspaces
+        use subspaces                            !hierarchical vector space representation
         use tensor_recursive                     !recursive tensors
         use dsvp_base                            !abstract domain-specific virtual processor (DSVP)
         implicit none
@@ -61,8 +61,6 @@
         real(8), public:: EXA_FLOPS_HEAVY=1d11 !minimal number of Flops to consider the operation as heavy-cost
         real(8), public:: EXA_COST_TO_SIZE=1d2 !minimal cost (Flops) to size (Words) ratio to consider the operation compute intensive
  !Tensor algebra virtual processor (TAVP):
-  !Tensor naming:
-        integer(INTD), parameter, public:: TENSOR_NAME_LEN=32    !max number of characters used for tensor names
   !Tensor instruction code (opcode), must be non-negative (consult TAProL spec):
         integer(INTD), parameter, public:: TENSOR_INSTR_NOOP=DS_INSTR_NOOP !no operation (empty instruction)
         integer(INTD), parameter, public:: TENSOR_INSTR_COMM=0      !tensor communication (get/put/accumulate)

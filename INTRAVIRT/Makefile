@@ -257,7 +257,7 @@ $(NAME): $(OBJS) ../UTILITY/libutility.a ../GFC/libgfc.a ../DDSS/libddss.a ../TA
 ./OBJ/subspaces.o: subspaces.F90 ../UTILITY/dil_basic.mod ../GFC/gfc_base.mod ../GFC/gfc_list.mod ../GFC/gfc_tree.mod
 	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(FFLAGS) subspaces.F90 -o ./OBJ/subspaces.o
 
-./OBJ/tensor_recursive.o: tensor_recursive.F90 ../UTILITY/dil_basic.mod ../GFC/gfc_base.mod ../GFC/gfc_tree.mod ./OBJ/subspaces.o
+./OBJ/tensor_recursive.o: tensor_recursive.F90 ../TALSH/tensor_algebra.mod ../GFC/gfc_base.mod ../GFC/gfc_tree.mod ./OBJ/subspaces.o
 	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(FFLAGS) tensor_recursive.F90 -o ./OBJ/tensor_recursive.o
 
 
