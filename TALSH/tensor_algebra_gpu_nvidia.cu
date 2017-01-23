@@ -2158,7 +2158,7 @@ __host__ static int cuda_task_finalize(cudaTask_t *cuda_task) //do not call this
 }
 //-------------------------------------------------
 //EXPORTED FUNCTIONS (callable from C/C++/Fortran):
-//------------------------------------------------------------------------------------------
+//---------------------------------------------------------------------------
 // MATRIX MULTIPLICATION 'TN' (blocking, slow):
 template <typename T>
 __host__ int gpu_matrix_multiply_tn(size_t ll, size_t lr, size_t lc,
@@ -2374,6 +2374,80 @@ __host__ int gpu_tensor_block_place(tensBlck_t *ctens, int gpu_id, unsigned int 
  if(nclean > 0 && errc == 0) errc=NOT_CLEAN;
  return errc;
 }
+//-------------------------------------------------------------------------------------------------------------------------
+// TENSOR INITIALIZATION (non-blocking):
+__host__ int gpu_tensor_block_init(tensBlck_t *dtens, double val, unsigned int coh_ctrl, cudaTask_t *cuda_task, int gpu_id)
+/**
+dtens(:)=scalar_value
+INPUT:
+ # val - initialization value;
+ # coh_ctrl - one of the COPY_X parameters regulating the data presence for each tensor argument;
+ # cuda_task - pointer to an empty (clean) CUDA task;
+ # gpu_id - suggested GPU ID on which the operation is to be scheduled (-1: defaults to the optimal one);
+OUTPUT:
+ # dtens - initialized destination tensor;
+ # cuda_task - recorded CUDA task (either successfully scheduled or failed).
+NOTES:
+ # If the tensor operation has been scheduled successfully, a recorded (active) CUDA task
+   will be returned along with zero return status. A scheduling error results in either
+   a negative (at early stages) or positive (at later stages) return status. In the former case
+   the CUDA task is left clean, while at the latter case it will be recorded as failed (error).
+ # Special return statuses TRY_LATER and DEVICE_UNABLE are not errors but merely indicators
+   of the current or permanent lack of resources, respectively. However, the CUDA task status
+   in these cases will still be set to an error (always check the function return status!).
+ # If <gpu_id> is out of the legitimate GPU range, it will be replaced by an optimal one,
+   based on argument residence and the current load of GPU(s).
+**/
+{
+ int i,j,drank,tds_d,gpu_d,gpu_num,cur_gpu,targ_dev,bx,errc,stat;
+ size_t vol_d,dsize;
+ unsigned int coh;
+ const unsigned int TWO_BITS_SET = 3; //two right bits are set
+ void *darg;
+ cudaStream_t *cuda_stream;
+ cudaEvent_t *cuda_start,*cuda_comput,*cuda_output,*cuda_finish,*dep_event;
+#ifdef GPU_FINE_TIMING
+ cudaEvent_t *cuda_mmbeg,*cuda_mmend;
+#endif
+ cudaError_t err;
+ const char *err_msg;
+
+ //if(DEBUG) printf("\n#DEBUG(tensor_algebra_gpu_nvidia:gpu_tensor_block_init): GPU Tensor Initialization:\n"); //debug
+ stat=0; //return status in case of successful scheduling
+//Check function arguments:
+ if(dtens == NULL || cuda_task == NULL) return -1;
+ if(tensBlck_present(dtens) != YEP) return -2; //tensor block must reside in some device memory
+ if(cuda_task_gpu_id(cuda_task) >= 0) return -3; //CUDA task is not clean (destruct/clean it first)
+//Check tensor arguments:
+ drank=(dtens->shape).num_dim; //destination tensor rank
+ if(drank < 0 || drank > MAX_TENSOR_RANK) return -4;
+ if(tens_valid_data_kind(dtens->data_kind,&tds_d) != YEP) return -5; //tds_d: destination tensor element size in bytes
+ if(dtens->data_kind <= 0) return -6; //tensor must have been previsously allocated with a certain data kind
+ if(dtens->src_rsc == NULL) return -7; //source resource must always be present
+ if(tensDevRsc_is_empty(dtens->src_rsc) != NOPE) return -8; //source resource must be present (tensor body)
+//Activate the right GPU:
+ if(gpu_id < 0 || gpu_id >= MAX_GPUS_PER_NODE){gpu_num=tens_op_best_gpu(dtens);}else{gpu_num=gpu_id;}
+ if(gpu_is_mine(gpu_num) <= GPU_OFF) return -28; //GPU is not mine or error
+ gpu_stats[gpu_num].tasks_submitted++;
+ gpu_d=decode_device_id(dtens->src_rsc->dev_id,&j); if(gpu_d < 0) return -29; //destination tensor source device id
+ if(j == DEV_NVIDIA_GPU){
+  err=cudaDeviceCanAccessPeer(&j,gpu_num,gpu_d); if(err != cudaSuccess || j == 0) return DEVICE_UNABLE; //peer access impossible for this GPU device
+ }else if(j == DEV_HOST){
+  gpu_d=-1; //data is in Host memory
+ }else{
+  return DEVICE_UNABLE; //data is not in Host or GPU memory
+ }
+ cur_gpu=gpu_in_focus(); //save the current GPU
+ if(gpu_num != cur_gpu){errc=gpu_activate(gpu_num); if(errc){errc=gpu_activate(cur_gpu); return -32;}} //activate the target GPU
+ err=cudaGetLastError(); err=cudaSuccess; //clear the GPU error status
+ targ_dev=encode_device_id(DEV_NVIDIA_GPU,gpu_num); //flat device id
+//Construct a CUDA task (acquire CUDA resources) for the target GPU:
+ errc=cuda_task_construct(cuda_task,gpu_num);
+ if(errc){i=gpu_activate(cur_gpu); if(errc == TRY_LATER || errc == DEVICE_UNABLE){return errc;}else{return -33;}}
+
+
+ return stat;
+}
 //--------------------------------------------------------------------------------------------------------------------
 // TENSOR ADDITION (non-blocking):
 __host__ int gpu_tensor_block_add(const int *cptrn, tensBlck_t *ltens, tensBlck_t *dtens,
@@ -2439,8 +2513,8 @@ NOTES:
     tens_valid_data_kind(ltens->data_kind,&tds_l) != YEP) return -5; //tds_l: left tensor element size in bytes
  if(!(dtens->data_kind > 0 && ltens->data_kind == dtens->data_kind)) return -6; //data kind mismatch
  if(dtens->src_rsc == NULL || ltens->src_rsc == NULL) return -7; //source resource must always be present
- if(tensDevRsc_is_empty(dtens->src_rsc) != NOPE) return -8;  //source resource must be present (tensor body)
- if(tensDevRsc_is_empty(ltens->src_rsc) != NOPE) return -9;  //source resource must be present (tensor body)
+ if(tensDevRsc_is_empty(dtens->src_rsc) != NOPE) return -8; //source resource must be present (tensor body)
+ if(tensDevRsc_is_empty(ltens->src_rsc) != NOPE) return -9; //source resource must be present (tensor body)
 //Check the contraction pattern and dimension extent correspondence:
  for(i=0;i<drank;i++) dprm[i]=0; for(i=0;i<lrank;i++) lprm[i]=0;
  for(i=0;i<lrank;i++){ //position in ltens

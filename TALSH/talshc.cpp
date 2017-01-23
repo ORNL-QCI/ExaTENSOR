@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level API.
-REVISION: 2017/01/20
+REVISION: 2017/01/23
 
 Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -88,6 +88,7 @@ typedef struct{
 extern "C"{
 #endif
 // CP-TAL tensor operations:
+int cpu_tensor_block_init(void * dftr, double val_real, double val_imag, int arg_conj);
 int cpu_tensor_block_add(const int * contr_ptrn, void * lftr, void * dftr, double scale_real, double scale_imag, int arg_conj);
 int cpu_tensor_block_contract(const int * contr_ptrn, void * lftr, void * rftr, void * dftr, double scale_real, double scale_imag, int arg_conj);
 // Contraction pattern conversion:
@@ -2058,6 +2059,20 @@ int talshTensorDiscard(talsh_tens_t * tens, int dev_id, int dev_kind)
 int talshTensorDiscard_(talsh_tens_t * tens, int dev_id, int dev_kind) //Fortran wrapper
 {
  return talshTensorDiscard(tens,dev_id,dev_kind);
+}
+
+int talshTensorInit(talsh_tens_t * tens, double val_real, double val_imag, int dev_id, int dev_kind,
+                    int copy_ctrl, talsh_task_t * talsh_task)
+/** Tensor initialization dispatcher **/
+{
+
+ return TALSH_SUCCESS;
+}
+
+int talshTensorInit_(talsh_tens_t * tens, double val_real, double val_imag, int dev_id, int dev_kind,
+                     int copy_ctrl, talsh_task_t * talsh_task) //Fortran wrapper
+{
+ return talshTensorInit(tens,val_real,val_imag,dev_id,dev_kind,copy_ctrl,talsh_task);
 }
 
 int talshTensorAdd(const char * cptrn, talsh_tens_t * dtens, talsh_tens_t * ltens, double scale_real, double scale_imag,
