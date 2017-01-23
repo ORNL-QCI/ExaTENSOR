@@ -589,6 +589,8 @@
                 if(dabs(cn1-gn1)/max(cn1,gn1).gt.CMP_ZERO) then
                  write(*,'("FAILED: CPU/GPU result mismatch: 1-norms (CPU vs GPU): ",D25.14,2x,D25.14)') cn1,gn1
                  ierr=18; return
+                !else
+                 !write(*,'("#DEBUG(TALSH:main): Norms: ",D25.14,1x,D25.14)') cn1,gn1 !debug
                 endif
 #endif
                 ierr=talsh_task_destruct(tsk); if(ierr.ne.TALSH_SUCCESS) then; ierr=19; return; endif

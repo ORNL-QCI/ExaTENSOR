@@ -1,6 +1,6 @@
 /** Tensor Algebra Library for NVidia GPU: NV-TAL (CUDA based).
 AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-REVISION: 2017/01/19
+REVISION: 2017/01/23
 
 Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -120,22 +120,21 @@ static int cuda_task_set_arg(cudaTask_t *cuda_task, unsigned int arg_num, tensBl
 static int cuda_task_record(cudaTask_t *cuda_task, unsigned int coh_ctrl, unsigned int err_code = 0);
 static int cuda_task_finalize(cudaTask_t *cuda_task);
 // CUDA KERNELS:
-__global__ void gpu_array_norm2_r4__(size_t arr_size, const float *arr, volatile float *bnorm2);
-__global__ void gpu_array_norm2_r8__(size_t arr_size, const double *arr, volatile double *bnorm2);
-__global__ void gpu_array_init_r4__(size_t tsize, float *arr, float val);
-__global__ void gpu_array_init_r8__(size_t tsize, double *arr, double val);
+template <typename T>
+__global__ void gpu_array_norm2__(size_t arr_size, const T * arr, volatile T * bnorm2);
+template <typename T>
+__global__ void gpu_array_init__(size_t tsize, T * arr, T val);
 template <typename T>
 __global__ void gpu_scalar_multiply__(const T * left_arg, const T * right_arg, T * dest_arg);
-__global__ void gpu_array_scale_r4__(size_t tsize, float* __restrict__ arr, const float* __restrict__ val_p);
-__global__ void gpu_array_scale_r8__(size_t tsize, double* __restrict__ arr, const double* __restrict__ val_p);
-__global__ void gpu_array_add_r4__(size_t tsize, float* __restrict__ arr0, const float* __restrict__ arr1, float val);
-__global__ void gpu_array_add_r8__(size_t tsize, double* __restrict__ arr0, const double* __restrict__ arr1, double val);
+template <typename T>
+__global__ void gpu_array_scale__(size_t tsize, T * __restrict__ arr, const T * __restrict__ val_p);
+template <typename T>
+__global__ void gpu_array_add__(size_t tsize, T * __restrict__ arr0, const T * __restrict__ arr1, T val);
 template <typename T>
 __global__ void gpu_array_dot_product__(size_t tsize, const T * arr1, const T * arr2, volatile T * dprod);
-__global__ void gpu_array_product_r4__(size_t tsize1, const float* __restrict__ arr1, size_t tsize2,
-                                       const float* __restrict__ arr2, float* __restrict__ arr0);
-__global__ void gpu_array_product_r8__(size_t tsize1, const double* __restrict__ arr1, size_t tsize2,
-                                       const double* __restrict__ arr2, double* __restrict__ arr0);
+template <typename T>
+__global__ void gpu_array_product__(size_t tsize1, const T * __restrict__ arr1, size_t tsize2, const T * __restrict__ arr2,
+                                    T * __restrict__ arr0);
 __global__ void gpu_tensor_block_copy_dlf_r4__(int dmo, int drc, int dim_num, int const_args_pos,
                                                const float* __restrict__ tens_in, float* __restrict__ tens_out);
 __global__ void gpu_tensor_block_copy_dlf_r8__(int dmo, int drc, int dim_num, int const_args_pos,
@@ -209,8 +208,8 @@ __device__ __constant__ static cuComplex cgemm_alpha_;       //alpha constant CG
 __device__ __constant__ static cuComplex cgemm_beta_;        //beta constant CGEMM
 __device__ __constant__ static cuDoubleComplex zgemm_alpha_; //alpha constant ZGEMM
 __device__ __constant__ static cuDoubleComplex zgemm_beta_;  //beta constant ZGEMM
-// Infrastructure for functions <gpu_array_norm2_XX>:
-__device__ static int norm2_wr_lock=0; //write lock shared by all <gpu_array_norm2_XX> running on GPU
+// Infrastructure for functions <gpu_array_norm2__>:
+__device__ static int norm2_wr_lock=0; //write lock shared by all <gpu_array_norm2__> running on GPU
 // Infrastructure for kernels <gpu_array_dot_product__>:
 __device__ static int dot_product_wr_lock=0; //write lock shared by all <gpu_array_dot_product__> running on GPU
 #endif /*NO_GPU*/
@@ -2164,18 +2163,6 @@ __host__ static int cuda_task_finalize(cudaTask_t *cuda_task) //do not call this
 //EXPORTED FUNCTIONS (callable from C/C++/Fortran):
 //-------------------------------------------------
 #if 0
-//------------------------------------------------------------------------------
-// SQUARED 2-NORM OF AN ARRAY (R4) RESIDING ON GPU (non-blocking):
-__host__ int gpu_array_norm2_r4(size_t arr_size, const float *arr, float *norm2)
-{
- return 0;
-}
-//--------------------------------------------------------------------------------
-// SQUARED 2-NORM OF AN ARRAY (R8) RESIDING ON GPU (non-blocking):
-__host__ int gpu_array_norm2_r8(size_t arr_size, const double *arr, double *norm2)
-{
- return 0;
-}
 //---------------------------------------------------------------------------------------
 // MATRIX MULTIPLICATION 'TN' (R4) (blocking):
 __host__ int gpu_matrix_multiply_tn_r4(size_t ll, size_t lr, size_t lc,
@@ -2306,10 +2293,10 @@ If <copy_back> = 0, no copy back to Host: One must use gpu_get_arg() explicitly:
       bx=1+(tsize-1)/THRDS_ARRAY_INIT; if(bx > MAX_CUDA_BLOCKS) bx=MAX_CUDA_BLOCKS;
       switch(ctens->data_kind){
        case R4:
-        gpu_array_init_r4__<<<bx,THRDS_ARRAY_INIT,0,cuda_stream>>>(tsize,(float*)(ctens->elems_d),(float)val);
+        gpu_array_init__<<<bx,THRDS_ARRAY_INIT,0,cuda_stream>>>(tsize,(float*)(ctens->elems_d),(float)val);
         break;
        case R8:
-        gpu_array_init_r8__<<<bx,THRDS_ARRAY_INIT,0,cuda_stream>>>(tsize,(double*)(ctens->elems_d),val);
+        gpu_array_init__<<<bx,THRDS_ARRAY_INIT,0,cuda_stream>>>(tsize,(double*)(ctens->elems_d),val);
         break;
        default:
         i=cuda_task_record(cuda_task,5,dev_num,cuda_stream,cuda_start,cuda_start,cuda_output,cuda_finish,0,NULL);
@@ -2407,10 +2394,10 @@ If <copy_back> = 0, no copy back to Host: One must use gpu_get_arg() explicitly:
       bx=1+(tsize-1)/THRDS_ARRAY_SCALE; if(bx > MAX_CUDA_BLOCKS) bx=MAX_CUDA_BLOCKS;
       switch(ctens->data_kind){
        case R4:
-        gpu_array_scale_r4__<<<bx,THRDS_ARRAY_SCALE,0,cuda_stream>>>(tsize,(float*)(ctens->elems_d),(float)val);
+        gpu_array_scale__<<<bx,THRDS_ARRAY_SCALE,0,cuda_stream>>>(tsize,(float*)(ctens->elems_d),(float)val);
         break;
        case R8:
-        gpu_array_scale_r8__<<<bx,THRDS_ARRAY_SCALE,0,cuda_stream>>>(tsize,(double*)(ctens->elems_d),val);
+        gpu_array_scale__<<<bx,THRDS_ARRAY_SCALE,0,cuda_stream>>>(tsize,(double*)(ctens->elems_d),val);
         break;
        default:
         i=cuda_task_record(cuda_task,7,dev_num,cuda_stream,cuda_start,cuda_comput,cuda_output,cuda_finish,0,NULL);
@@ -2517,12 +2504,12 @@ If <copy_back> = 0, no copy back to Host: One must use gpu_get_arg() explicitly:
       bx=1+(tsize-1)/THRDS_ARRAY_ADD; if(bx > MAX_CUDA_BLOCKS) bx=MAX_CUDA_BLOCKS;
       switch(ctens0->data_kind){
        case R4:
-        gpu_array_add_r4__<<<bx,THRDS_ARRAY_ADD,0,cuda_stream>>>(tsize,(float*)(ctens0->elems_d),
-                                                                       (float*)(ctens1->elems_d),(float)val);
+        gpu_array_add__<<<bx,THRDS_ARRAY_ADD,0,cuda_stream>>>(tsize,(float*)(ctens0->elems_d),
+                                                                    (float*)(ctens1->elems_d),(float)val);
         break;
        case R8:
-        gpu_array_add_r8__<<<bx,THRDS_ARRAY_ADD,0,cuda_stream>>>(tsize,(double*)(ctens0->elems_d),
-                                                                       (double*)(ctens1->elems_d),val);
+        gpu_array_add__<<<bx,THRDS_ARRAY_ADD,0,cuda_stream>>>(tsize,(double*)(ctens0->elems_d),
+                                                                    (double*)(ctens1->elems_d),val);
         break;
        default:
         i=cuda_task_record(cuda_task,9,dev_num,cuda_stream,cuda_start,cuda_comput,cuda_output,cuda_finish,0,NULL);
@@ -3491,10 +3478,10 @@ NOTES:
  switch(dtens->data_kind){
   case R4:
    falpha=(float)alpha;
-   gpu_array_add_r4__<<<bx,THRDS_ARRAY_ADD,0,*cuda_stream>>>(vol_d,(float*)darg,(float*)larg,falpha);
+   gpu_array_add__<<<bx,THRDS_ARRAY_ADD,0,*cuda_stream>>>(vol_d,(float*)darg,(float*)larg,falpha);
    break;
   case R8:
-   gpu_array_add_r8__<<<bx,THRDS_ARRAY_ADD,0,*cuda_stream>>>(vol_d,(double*)darg,(double*)larg,alpha);
+   gpu_array_add__<<<bx,THRDS_ARRAY_ADD,0,*cuda_stream>>>(vol_d,(double*)darg,(double*)larg,alpha);
    break;
   default:
    errc=cuda_task_record(cuda_task,coh_ctrl,48); errc=gpu_activate(cur_gpu); return 48;
@@ -4247,10 +4234,10 @@ NOTES:
   bx=1+(vol_r-1)/THRDS_ARRAY_SCALE; if(bx > MAX_CUDA_BLOCKS) bx=MAX_CUDA_BLOCKS;
   switch(rtens->data_kind){
    case R4:
-    gpu_array_scale_r4__<<<bx,THRDS_ARRAY_SCALE,0,*cuda_stream>>>(vol_r,(float*)(rarg),(float*)(larg));
+    gpu_array_scale__<<<bx,THRDS_ARRAY_SCALE,0,*cuda_stream>>>(vol_r,(float*)(rarg),(float*)(larg));
     break;
    case R8:
-    gpu_array_scale_r8__<<<bx,THRDS_ARRAY_SCALE,0,*cuda_stream>>>(vol_r,(double*)(rarg),(double*)(larg));
+    gpu_array_scale__<<<bx,THRDS_ARRAY_SCALE,0,*cuda_stream>>>(vol_r,(double*)(rarg),(double*)(larg));
     break;
    default:
     errc=cuda_task_record(cuda_task,coh_ctrl,45); errc=gpu_activate(cur_gpu); return 45;
@@ -4260,10 +4247,10 @@ NOTES:
   bx=1+(vol_l-1)/THRDS_ARRAY_SCALE; if(bx > MAX_CUDA_BLOCKS) bx=MAX_CUDA_BLOCKS;
   switch(ltens->data_kind){
    case R4:
-    gpu_array_scale_r4__<<<bx,THRDS_ARRAY_SCALE,0,*cuda_stream>>>(vol_l,(float*)(larg),(float*)(rarg));
+    gpu_array_scale__<<<bx,THRDS_ARRAY_SCALE,0,*cuda_stream>>>(vol_l,(float*)(larg),(float*)(rarg));
     break;
    case R8:
-    gpu_array_scale_r8__<<<bx,THRDS_ARRAY_SCALE,0,*cuda_stream>>>(vol_l,(double*)(larg),(double*)(rarg));
+    gpu_array_scale__<<<bx,THRDS_ARRAY_SCALE,0,*cuda_stream>>>(vol_l,(double*)(larg),(double*)(rarg));
     break;
    default:
     errc=cuda_task_record(cuda_task,coh_ctrl,46); errc=gpu_activate(cur_gpu); return 46;
@@ -4289,12 +4276,12 @@ NOTES:
   limit_cuda_blocks2d(MAX_CUDA_BLOCKS,&bx,&by); dim3 blcks(bx,by);
   switch(dtens->data_kind){
    case R4:
-    gpu_array_product_r4__<<<blcks,THRDS_ARRAY_PRODUCT,0,*cuda_stream>>>
-                             (vol_l,(float*)larg,vol_r,(float*)rarg,(float*)darg);
+    gpu_array_product__<<<blcks,THRDS_ARRAY_PRODUCT,0,*cuda_stream>>>
+                          (vol_l,(float*)larg,vol_r,(float*)rarg,(float*)darg);
     break;
    case R8:
-    gpu_array_product_r8__<<<blcks,THRDS_ARRAY_PRODUCT,0,*cuda_stream>>>
-                             (vol_l,(double*)larg,vol_r,(double*)rarg,(double*)darg);
+    gpu_array_product__<<<blcks,THRDS_ARRAY_PRODUCT,0,*cuda_stream>>>
+                          (vol_l,(double*)larg,vol_r,(double*)rarg,(double*)darg);
     break;
    default:
     errc=cuda_task_record(cuda_task,coh_ctrl,48); errc=gpu_activate(cur_gpu); return 48;
@@ -4445,10 +4432,11 @@ NOTES:
  if(gpu_num != cur_gpu) errc=gpu_activate(cur_gpu);
  return stat; //either 0 (success) or NOT_CLEAN (warning)
 }
-//---------------------------------------------------------------------------------------------
+//------------------------------------------------------------------------------------
 //CUDA KERNELS:
-// SUM OF THE SQUARES OF ALL ARRAY ELEMENTS (R4):
-__global__ void gpu_array_norm2_r4__(size_t arr_size, const float *arr, volatile float *bnorm2)
+// SUM OF THE SQUARES OF ALL ARRAY ELEMENTS:
+template <typename T>
+__global__ void gpu_array_norm2__(size_t arr_size, const T * arr, volatile T * bnorm2)
 /** Computes the squared 2-norm of array arr(0:arr_size-1)
 INPUT:
  # arr_size - size of the array;
@@ -4458,16 +4446,16 @@ OUTPUT:
 **/
 {
  size_t i,n;
- float _thread_norm2;
- extern __shared__ float thread_norms2_r4[];
+ T _thread_norm2;
+ extern __shared__ T thread_norms2[];
 
- n=gridDim.x*blockDim.x; _thread_norm2=0.0f;
+ n=gridDim.x*blockDim.x; _thread_norm2=static_cast<T>(0.0);
  for(i=blockIdx.x*blockDim.x+threadIdx.x;i<arr_size;i+=n){_thread_norm2+=arr[i]*arr[i];}
- thread_norms2_r4[threadIdx.x]=_thread_norm2;
+ thread_norms2[threadIdx.x]=_thread_norm2;
  __syncthreads();
  if(threadIdx.x == 0){
-  _thread_norm2=thread_norms2_r4[0]; for(i=1;i<blockDim.x;i++){_thread_norm2+=thread_norms2_r4[i];}
-  i=1; while(i == 1){i=atomicMax(&norm2_wr_lock,1);} //waiting for a lock to unlock, then lock
+  _thread_norm2=thread_norms2[0]; for(i=1;i<blockDim.x;i++){_thread_norm2+=thread_norms2[i];}
+  i=1; while(i == 1){i=atomicMax(&norm2_wr_lock,1);} //waiting for the lock to unlock, then lock
   *bnorm2+=_thread_norm2;
   __threadfence();
   i=atomicExch(&norm2_wr_lock,0); //unlock
@@ -4475,48 +4463,10 @@ OUTPUT:
  __syncthreads();
  return;
 }
-//-----------------------------------------------------------------------------------------------
-// SUM OF THE SQUARES OF ALL ARRAY ELEMENTS (R8):
-__global__ void gpu_array_norm2_r8__(size_t arr_size, const double *arr, volatile double *bnorm2)
-/** Computes the squared 2-norm of array arr(0:arr_size-1)
-INPUT:
- # arr_size - size of the array;
- # arr(0:arr_size-1) - array;
-OUTPUT:
- # bnorm2 - squared 2-norm of the array (resides on device as well);
-**/
-{
- size_t i,n;
- double _thread_norm2;
- extern __shared__ double thread_norms2_r8[];
-
- n=gridDim.x*blockDim.x; _thread_norm2=0.0;
- for(i=blockIdx.x*blockDim.x+threadIdx.x;i<arr_size;i+=n){_thread_norm2+=arr[i]*arr[i];}
- thread_norms2_r8[threadIdx.x]=_thread_norm2;
- __syncthreads();
- if(threadIdx.x == 0){
-  _thread_norm2=thread_norms2_r8[0]; for(i=1;i<blockDim.x;i++){_thread_norm2+=thread_norms2_r8[i];}
-  i=1; while(i == 1){i=atomicMax(&norm2_wr_lock,1);} //waiting for a lock to unlock, then lock
-  *bnorm2+=_thread_norm2;
-  __threadfence();
-  i=atomicExch(&norm2_wr_lock,0); //unlock
- }
- __syncthreads();
- return;
-}
-//----------------------------------------------------------------------
-// ARRAY INITIALIZATION (R4):
-__global__ void gpu_array_init_r4__(size_t tsize, float *arr, float val)
-/** arr(:)=val **/
-{
- size_t _ti = blockIdx.x*blockDim.x + threadIdx.x;
- size_t _gd = gridDim.x*blockDim.x;
- for(size_t l=_ti;l<tsize;l+=_gd){arr[l]=val;}
- return;
-}
-//------------------------------------------------------------------------
-// ARRAY INITIALIZATION (R8):
-__global__ void gpu_array_init_r8__(size_t tsize, double *arr, double val)
+//-----------------------------------------------------------
+// ARRAY INITIALIZATION:
+template <typename T>
+__global__ void gpu_array_init__(size_t tsize, T* arr, T val)
 /** arr(:)=val **/
 {
  size_t _ti = blockIdx.x*blockDim.x + threadIdx.x;
@@ -4535,41 +4485,22 @@ __global__ void gpu_scalar_multiply__(const T * left_arg, const T * right_arg, T
  }
  return;
 }
-//----------------------------------------------------------------------------------------------------------
-// ARRAY RESCALING (R4):
-__global__ void gpu_array_scale_r4__(size_t tsize, float* __restrict__ arr, const float* __restrict__ val_p)
+//-------------------------------------------------------------------------------------------------
+// ARRAY RESCALING:
+template <typename T>
+__global__ void gpu_array_scale__(size_t tsize, T * __restrict__ arr, const T * __restrict__ val_p)
 /** arr(:)*=val: val is in the GPU memory. **/
 {
- float val = *val_p;
+ T val = *val_p;
  size_t _ti = blockIdx.x*blockDim.x + threadIdx.x;
  size_t _gd = gridDim.x*blockDim.x;
  for(size_t l=_ti;l<tsize;l+=_gd){arr[l]*=val;}
  return;
 }
-//------------------------------------------------------------------------------------------------------------
-// ARRAY RESCALING (R8):
-__global__ void gpu_array_scale_r8__(size_t tsize, double* __restrict__ arr, const double* __restrict__ val_p)
-/** arr(:)*=val: val is in the GPU memory. **/
-{
- double val = *val_p;
- size_t _ti = blockIdx.x*blockDim.x + threadIdx.x;
- size_t _gd = gridDim.x*blockDim.x;
- for(size_t l=_ti;l<tsize;l+=_gd){arr[l]*=val;}
- return;
-}
-//-------------------------------------------------------------------------------------------------------------------
-// ARRAY ADDITION (R4):
-__global__ void gpu_array_add_r4__(size_t tsize, float* __restrict__ arr0, const float* __restrict__ arr1, float val)
-/** arr0(:)+=arr1(:)*val **/
-{
- size_t _ti = blockIdx.x*blockDim.x + threadIdx.x;
- size_t _gd = gridDim.x*blockDim.x;
- for(size_t l=_ti;l<tsize;l+=_gd){arr0[l]+=(arr1[l]*val);}
- return;
-}
-//----------------------------------------------------------------------------------------------------------------------
-// ARRAY ADDITION (R8):
-__global__ void gpu_array_add_r8__(size_t tsize, double* __restrict__ arr0, const double* __restrict__ arr1, double val)
+//------------------------------------------------------------------------------------------------------
+// ARRAY ADDITION:
+template <typename T>
+__global__ void gpu_array_add__(size_t tsize, T * __restrict__ arr0, const T * __restrict__ arr1, T val)
 /** arr0(:)+=arr1(:)*val **/
 {
  size_t _ti = blockIdx.x*blockDim.x + threadIdx.x;
@@ -4609,39 +4540,14 @@ __global__ void gpu_array_dot_product__(size_t tsize, const T* arr1, const T* ar
  __syncthreads();
  return;
 }
-//-------------------------------------------------------------------------------------------------------------
-// ARRAY PRODUCT (R4):
-__global__ void gpu_array_product_r4__(size_t tsize1, const float* __restrict__ arr1, size_t tsize2,
-                                                      const float* __restrict__ arr2, float* __restrict__ arr0)
+//----------------------------------------------------------------------------------------------------
+// ARRAY DIRECT PRODUCT:
+template <typename T>
+__global__ void gpu_array_product__(size_t tsize1, const T * __restrict__ arr1,
+                                    size_t tsize2, const T * __restrict__ arr2, T * __restrict__ arr0)
 /** arr0[0:tsize2-1][0:tsize1-1]+=arr1[0:tsize1-1]*arr2[0:tsize2-1] **/
 {
- __shared__ float lbuf[THRDS_ARRAY_PRODUCT+1],rbuf[THRDS_ARRAY_PRODUCT];
- size_t _ib,_in,_jb,_jn,_tx,_jc;
- _tx=(size_t)threadIdx.x;
-//if(tsize1 >= THRDS_ARRAY_PRODUCT){ //large or medium size L
-  for(_jb=blockIdx.y*THRDS_ARRAY_PRODUCT;_jb<tsize2;_jb+=gridDim.y*THRDS_ARRAY_PRODUCT){
-   if(_jb+THRDS_ARRAY_PRODUCT > tsize2){_jn=tsize2-_jb;}else{_jn=THRDS_ARRAY_PRODUCT;}
-   if(_tx < _jn) rbuf[_tx]=arr2[_jb+_tx];
-   for(_ib=blockIdx.x*THRDS_ARRAY_PRODUCT;_ib<tsize1;_ib+=gridDim.x*THRDS_ARRAY_PRODUCT){
-    if(_ib+THRDS_ARRAY_PRODUCT > tsize1){_in=tsize1-_ib;}else{_in=THRDS_ARRAY_PRODUCT;}
-    if(_tx < _in) lbuf[_tx]=arr1[_ib+_tx];
-    __syncthreads();
-    for(_jc=0;_jc<_jn;_jc++){if(_tx < _in) arr0[(_jb+_jc)*tsize1+_ib+_tx]+=lbuf[_tx]*rbuf[_jc];}
-    __syncthreads();
-   }
-  }
-//}else{ //small size L
-  //`Write
-//}
- return;
-}
-//---------------------------------------------------------------------------------------------------------------
-// ARRAY PRODUCT (R8):
-__global__ void gpu_array_product_r8__(size_t tsize1, const double* __restrict__ arr1, size_t tsize2,
-                                                      const double* __restrict__ arr2, double* __restrict__ arr0)
-/** arr0[0:tsize2-1][0:tsize1-1]+=arr1[0:tsize1-1]*arr2[0:tsize2-1] **/
-{
- __shared__ double lbuf[THRDS_ARRAY_PRODUCT+1],rbuf[THRDS_ARRAY_PRODUCT];
+ __shared__ T lbuf[THRDS_ARRAY_PRODUCT+1],rbuf[THRDS_ARRAY_PRODUCT];
  size_t _ib,_in,_jb,_jn,_tx,_jc;
  _tx=(size_t)threadIdx.x;
 //if(tsize1 >= THRDS_ARRAY_PRODUCT){ //large or medium size L
