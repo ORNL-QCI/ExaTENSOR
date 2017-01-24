@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level API.
-REVISION: 2017/01/23
+REVISION: 2017/01/24
 
 Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
