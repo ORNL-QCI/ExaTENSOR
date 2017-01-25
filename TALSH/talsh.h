@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level API header.
-REVISION: 2017/01/23
+REVISION: 2017/01/25
 
 Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -242,14 +242,14 @@ inline double talshComplex8Abs(talshComplex8 cmplx);
                         int dev_kind = DEV_NULL); //in: device kind (if present, <dev_id> is kind-specific)
  int talshTensorDiscard_(talsh_tens_t * tens, int dev_id, int dev_kind);
 //  Tensor initialization:
- int talshTensorInit(talsh_tens_t * tens,               //inout: tensor block
+ int talshTensorInit(talsh_tens_t * dtens,              //inout: tensor block
                      double val_real,                   //in: initialization value (real part)
                      double val_imag,                   //in: initialization value (complex part)
                      int dev_id = DEV_DEFAULT,          //in: device id (flat or kind-specific)
                      int dev_kind = DEV_DEFAULT,        //in: device kind (if present, <dev_id> is kind-specific)
                      int copy_ctrl = COPY_M,            //in: copy control (COPY_X), defaults to COPY_M
                      talsh_task_t * talsh_task = NULL); //inout: TAL-SH task handle
- int talshTensorInit_(talsh_tens_t * tens, double val_real, double val_imag, int dev_id, int dev_kind, int copy_ctrl, talsh_task_t * talsh_task);
+ int talshTensorInit_(talsh_tens_t * dtens, double val_real, double val_imag, int dev_id, int dev_kind, int copy_ctrl, talsh_task_t * talsh_task);
 //  Tensor addition:
  int talshTensorAdd(const char * cptrn,                    //in: C-string: symbolic addition pattern, e.g. "D(a,b,c,d)+=L(c,d,b,a)"
                     talsh_tens_t * dtens,                  //inout: destination tensor block
