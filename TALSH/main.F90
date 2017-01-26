@@ -24,7 +24,7 @@
         logical, parameter:: TEST_NVTAL=.FALSE.
         logical, parameter:: TEST_TALSH=.FALSE.
         logical, parameter:: TEST_COMPLEX=.TRUE.
-        logical, parameter:: BENCH_TALSH_RND=.TRUE.
+        logical, parameter:: BENCH_TALSH_RND=.FALSE.
         logical, parameter:: BENCH_TALSH_CUSTOM=.FALSE.
 #ifndef NO_GPU
         interface
@@ -239,7 +239,7 @@
         type(C_PTR):: body_p
         complex(8), pointer, contiguous:: tens_body(:)
         complex(8):: cval,prod
-        real(8):: cnrm,dnrm
+        real(8):: cnrm,dnrm,rl,cx,alpha,beta
 
         ierr=0
 !Check GPU availability:
@@ -318,18 +318,31 @@
         call c_f_pointer(body_p,tens_body,(/tens_vol/))
         write(*,'("Status ",i11,": Element value = (",(D20.14,1x,D20.14),")")') ierr,tens_body(lbound(tens_body,1))
         write(*,'(1x,"Reference value = (",(D20.14,1x,D20.14),")")') prod
+        rl=dble(prod); cx=dimag(prod)
+        alpha=(rl**2-cx**2)/(rl**2+cx**2); beta=-2d0*rl*cx/(rl**2+cx**2)
 
 !Add the resulting tensors with a "+" sign:
         write(*,'(1x,"Adding the resulting tensors with a + sign: ")',ADVANCE='NO')
-        ierr=talsh_tensor_contract('D(a,b,i,j)+=L(a,b,i,j)*R()',ctens,dtens,ptens,&
-                                  &dev_id=talsh_flat_dev_id(DEV_HOST,0))
+        ierr=talsh_tensor_contract('D(a,b,i,j)+=L(a,b,i,j)*R()',ctens,dtens,ptens,dev_id=talsh_flat_dev_id(DEV_HOST,0))
         write(*,'("Status ",i11)') ierr
-!Inspect individual tensor elements:
         write(*,'(1x,"Getting access to ctens tensor body: ")',ADVANCE='NO')
         ierr=talsh_tensor_get_body_access(ctens,body_p,C8,0,DEV_HOST)
         tens_vol=talsh_tensor_volume(ctens)
         call c_f_pointer(body_p,tens_body,(/tens_vol/))
         write(*,'("Status ",i11,": Element value = (",(D20.14,1x,D20.14),")")') ierr,tens_body(lbound(tens_body,1))
+!Redoing the same thing again, but via true tensor addition:
+        write(*,'(1x,"Initializing the resulting tensor to zero: ")',ADVANCE='NO')
+        ierr=talsh_tensor_init(ctens,(0d0,0d0),dev_id=talsh_flat_dev_id(DEV_HOST,0))
+        write(*,'("Status ",i11)') ierr
+        write(*,'(1x,"Adding the resulting tensors with a + sign: ")',ADVANCE='NO')
+        ierr=talsh_tensor_add('D(a,b,i,j)+=L(a,b,i,j)',ctens,dtens,scale=dcmplx(alpha,beta),dev_id=talsh_flat_dev_id(DEV_HOST,0))
+        write(*,'("Status ",i11)') ierr
+        write(*,'(1x,"Getting access to ctens tensor body: ")',ADVANCE='NO')
+        ierr=talsh_tensor_get_body_access(ctens,body_p,C8,0,DEV_HOST)
+        tens_vol=talsh_tensor_volume(ctens)
+        call c_f_pointer(body_p,tens_body,(/tens_vol/))
+        write(*,'("Status ",i11,": Element value   = (",(D20.14,1x,D20.14),")")') ierr,tens_body(lbound(tens_body,1))
+        write(*,'(1x,"Reference value = (",(D20.14,1x,D20.14),")")') prod
 
 !Destruct tensors:
         write(*,'(1x,"Destructing tensors: Statuses: ")',ADVANCE='NO')
