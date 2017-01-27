@@ -1,10 +1,10 @@
 !ExaTENSOR: Massively Parallel Virtual Processor for Scale-Adaptive Tensor Algebra
 !This is the top level API module of ExaTENSOR
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/01/06
+!REVISION: 2017/01/27
 
-!Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
-!Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
+!Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
+!Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
 
 !This file is part of ExaTensor.
 
@@ -93,8 +93,8 @@
         write(jo,'("Failed")')
         ierr=-4
        endif
-       if(ierr.eq.0) then
-        call dil_global_comm_barrier(errc)
+       call dil_global_comm_barrier(errc)
+       if(ierr.eq.0.and.errc.eq.0) then
  !Assign roles:
         call exa_set_processor_role(EXA_WORKER,errc) !debug
  !Begin life:

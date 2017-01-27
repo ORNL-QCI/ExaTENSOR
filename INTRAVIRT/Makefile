@@ -244,8 +244,9 @@ LFLAGS = $(LIB) $(LTHREAD) $(MPI_LINK) $(LA_LINK) $(CUDA_LINK)
 
 OBJS = ./OBJ/hardware.o ./OBJ/subspaces.o ./OBJ/tensor_recursive.o ./OBJ/virta.o
 
-$(NAME): $(OBJS) ../UTILITY/libutility.a ../GFC/libgfc.a ../DDSS/libddss.a ../TALSH/libtalsh.a ../DSVP/libdsvp.a
+$(NAME): $(OBJS) ./OBJ/test.o ../UTILITY/libutility.a ../GFC/libgfc.a ../DDSS/libddss.a ../TALSH/libtalsh.a ../DSVP/libdsvp.a
 	ar cr lib$(NAME).a $(OBJS) ../UTILITY/libutility.a ../GFC/libgfc.a ../DDSS/libddss.a ../TALSH/libtalsh.a ../DSVP/libdsvp.a
+	$(FCOMP) ./OBJ/test.o lib$(NAME).a ../UTILITY/libutility.a $(LFLAGS) -o test_$(NAME).x
 
 ./OBJ/virta.o: virta.F90 ../UTILITY/dil_basic.mod ../TALSH/talsh.mod ../DDSS/service_mpi.mod ../DDSS/pack_prim.mod ../DDSS/distributed.mod ../DSVP/dsvp_base.mod ./OBJ/hardware.o ./OBJ/subspaces.o ./OBJ/tensor_recursive.o
 	mkdir -p ./OBJ
@@ -257,8 +258,11 @@ $(NAME): $(OBJS) ../UTILITY/libutility.a ../GFC/libgfc.a ../DDSS/libddss.a ../TA
 ./OBJ/subspaces.o: subspaces.F90 ../UTILITY/dil_basic.mod ../GFC/gfc_base.mod ../GFC/gfc_list.mod ../GFC/gfc_tree.mod
 	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(FFLAGS) subspaces.F90 -o ./OBJ/subspaces.o
 
-./OBJ/tensor_recursive.o: tensor_recursive.F90 ../TALSH/tensor_algebra.mod ../GFC/gfc_base.mod ../GFC/gfc_tree.mod ./OBJ/subspaces.o ../DDSS/distributed.mod
+./OBJ/tensor_recursive.o: tensor_recursive.F90 ../TALSH/tensor_algebra.mod ../UTILITY/stsubs.mod ../GFC/gfc_base.mod ../GFC/gfc_tree.mod ./OBJ/subspaces.o ../DDSS/distributed.mod
 	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(FFLAGS) tensor_recursive.F90 -o ./OBJ/tensor_recursive.o
+
+./OBJ/test.o: test.F90 $(OBJS)
+	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(FFLAGS) test.F90 -o ./OBJ/test.o
 
 
 .PHONY: clean
