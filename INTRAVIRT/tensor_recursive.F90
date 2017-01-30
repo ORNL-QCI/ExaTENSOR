@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/01/27
+!REVISION: 2017/01/30
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -58,17 +58,18 @@
         integer(INTD), parameter, public:: TEREC_LAY_BRICK=5 !bricked storage layout (all bricks of the same size, padding if needed)
         integer(INTD), parameter, public:: TEREC_LAY_BSYMM=6 !bricked storage layour with permutational symmetry on the brick level (all bricks of the same size, padding if needed)
         integer(INTD), parameter, public:: TEREC_LAY_SPARS=7 !sparse tensor storage layout
- !Index restriction kinds:
+ !Index restriction kinds (must span a contiguous integer range!):
         integer(INTD), parameter, public:: TEREC_IND_RESTR_NONE=0 !no restrictions
         integer(INTD), parameter, public:: TEREC_IND_RESTR_LT=1   !indices within the group are < ordered: i1 < i2 < i3
         integer(INTD), parameter, public:: TEREC_IND_RESTR_GT=2   !indices within the group are > ordered: i1 > i2 > i3
         integer(INTD), parameter, public:: TEREC_IND_RESTR_LE=3   !indices within the group are <= ordered: i1 <= i2 <= i3
         integer(INTD), parameter, public:: TEREC_IND_RESTR_GE=4   !indices within the group are >= ordered i1 >= i2 >= i3
+        integer(INTD), parameter, public:: TEREC_NUM_IND_RESTR=5  !total number of index restrictions (0..max)
 !TYPES:
  !Tensor signature (unique tensor identifier):
         type, public:: tens_signature_t
          character(:), allocatable, private:: char_name     !character tensor name (alphanumeric_)
-         integer(INTD), private:: num_dim=-1                !number of tensor dimensions (tensor order, tensor rank)
+         integer(INTD), private:: num_dims=-1               !number of tensor dimensions (tensor order, tensor rank)
          integer(INTL), allocatable, private:: space_idx(:) !subspace id for each tensor dimension
          contains
           !initial:: tens_signature_ctor                     !ctor
@@ -76,28 +77,27 @@
           procedure, public:: get_name=>TensSignatureGetName !returns the alphanumeric_ tensor name
           procedure, public:: get_rank=>TensSignatureGetRank !returns the rank of the tensor (number of dimensions)
           procedure, public:: get_spec=>TensSignatureGetSpec !returns the tensor subspace multi-index (specification)
+          procedure, public:: print_it=>TensSignaturePrintIt !prints the tensor signature
           final:: tens_signature_dtor                        !dtor
         end type tens_signature_t
  !Tensor shape:
         type, public:: tens_shape_t
          integer(INTL), allocatable, private:: dim_extent(:) !tensor dimension extents (resolution)
          integer(INTD), allocatable, private:: dim_group(:)  !tensor dimension groups (group 0 is default with no restrictions)
-         integer(INTD), allocatable, private:: group_spec(:) !specification of the restriction kind for each index restriction group
-         integer(INTD), private:: num_dim=-1                 !number of tensor dimensions (tensor order, tensor rank)
+         integer(INTD), allocatable, private:: group_spec(:) !specification of the restriction kind for each index restriction group (not every defined group needs to be present in dim_group(:))
+         integer(INTD), private:: num_dims=-1                !number of tensor dimensions (tensor order, tensor rank)
          integer(INTD), private:: num_grps=0                 !number of defined (non-trivial) index restriction groups
-#if 0
          contains
-          procedure, public:: set_dims=>TensShapeSetDims     !sets tensor dimension extents and tensor rank (ctor)
-          procedure, public:: set_group=>TensShapeSetGroup   !creates a new index restriction group
+          !initial:: tens_shape_ctor                         !ctor
+          procedure, public:: set_groups=>TensShapeSetGroups !creates a new index restriction group
           procedure, public:: is_set=>TensShapeIsSet         !returns .TRUE. if the tensor shape is set
           procedure, public:: get_dims=>TensShapeGetDims     !returns tensor dimension extents
           procedure, public:: get_rank=>TensShapeGetRank     !return the rank of the tensor (number of dimensions)
-          procedure, public:: get_group=>TensShapeGetGroup   !returns the index restriction group number for given dimensions
+          procedure, public:: get_group=>TensShapeGetGroup   !returns the index restriction group (specific dimensions belonging to the specified group)
           procedure, public:: same_group=>TensShapeSameGroup !checks whether specific tensor dimensions belong to the same group
-          procedure, public:: num_groups=>TensShapeNumGroups !returns the total number of non-trivial index groups set on the shape
-          procedure, public:: clean=>TensShapeClean          !cleans the object (dtor)
-          final:: TensShapeFinal                             !dtor
-#endif
+          procedure, public:: num_groups=>TensShapeNumGroups !returns the total number of non-trivial index groups defined in the tensor shape
+          procedure, public:: print_it=>TensShapePrintIt     !prints the tensor shape
+          final:: tens_shape_dtor                            !dtor
         end type tens_shape_t
  !Tensor header (signature+shape):
         type, public:: tens_header_t
@@ -205,18 +205,20 @@
         private TensSignatureGetName
         private TensSignatureGetRank
         private TensSignatureGetSpec
+        private TensSignaturePrintIt
         public tens_signature_dtor
-#if 0
  !tens_shape_t:
-        private TensShapeSetDims
-        private TensShapeSetGroup
+        public tens_shape_ctor
+        private TensShapeSetGroups
         private TensShapeIsSet
         private TensShapeGetDims
         private TensShapeGetRank
         private TensShapeGetGroup
         private TensShapeSameGroup
         private TensShapeNumGroups
-        private TensShapeClean
+        private TensShapePrintIt
+        public tens_shape_dtor
+#if 0
  !tens_header_t:
         private TensHeaderSetAll
         private TensHeaderSetParts
@@ -255,7 +257,7 @@
 
        contains
 !IMPLEMENTATION:
-![tens_signature_t]--------------------------------------------------
+![tens_signature_t]==================================================
         subroutine tens_signature_ctor(this,subspaces,ierr,tens_name)
 !CTOR for tens_signature_t.
          implicit none
@@ -270,12 +272,13 @@
          if(n.gt.0) then
           allocate(this%space_idx(1:n),STAT=errc)
           if(errc.eq.0) then
-           this%num_dim=n !true tensor
+           this%space_idx(1:n)=subspaces(1:n)
+           this%num_dims=n !true tensor
           else
            errc=TEREC_MEM_ALLOC_FAILED
           endif
          else
-          this%num_dim=0 !scalar
+          this%num_dims=0 !scalar
          endif
          if(errc.eq.TEREC_SUCCESS.and.present(tens_name)) then
           if(alphanumeric_string(tens_name)) then
@@ -294,17 +297,19 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine tens_signature_ctor
-!---------------------------------------------------------
-        function TensSignatureIsSet(this,ierr) result(res)
-!Returns TRUE of the tensor_signature_t object is set, FALSE otherwise.
+!------------------------------------------------------------------
+        function TensSignatureIsSet(this,ierr,num_dims) result(res)
+!Returns TRUE if the tensor_signature_t object is set, FALSE otherwise.
          implicit none
-         logical:: res                               !out: result
-         class(tens_signature_t), intent(in):: this  !in: tensor signature
-         integer(INTD), intent(out), optional:: ierr !out: error code
+         logical:: res                                   !out: result
+         class(tens_signature_t), intent(in):: this      !in: tensor signature
+         integer(INTD), intent(out), optional:: ierr     !out: error code
+         integer(INTD), intent(out), optional:: num_dims !out: tensor rank (if set)
          integer(INTD):: errc
 
          errc=TEREC_SUCCESS
-         res=(this%num_dim.ge.0)
+         res=(this%num_dims.ge.0)
+         if(present(num_dims)) num_dims=this%num_dims
          if(present(ierr)) ierr=errc
          return
         end function TensSignatureIsSet
@@ -347,37 +352,64 @@
 
          errc=TEREC_SUCCESS
          if(this%is_set()) then
-          res=this%num_dim
+          res=this%num_dims
          else
           res=-1; errc=TEREC_INVALID_REQUEST
          endif
          if(present(ierr)) ierr=errc
          return
         end function TensSignatureGetRank
-!-------------------------------------------------------------------
-        subroutine TensSignatureGetSpec(this,subspaces,num_dim,ierr)
+!--------------------------------------------------------------------
+        subroutine TensSignatureGetSpec(this,subspaces,num_dims,ierr)
 !Returns the defining subspaces of the tensor (subspace multi-index).
          implicit none
          class(tens_signature_t), intent(in):: this   !in: tensor signature
          integer(INTL), intent(inout):: subspaces(1:) !out: defining subspaces (their IDs)
-         integer(INTD), intent(out):: num_dim         !out: number of tensor dimensions
+         integer(INTD), intent(out):: num_dims        !out: number of tensor dimensions
          integer(INTD), intent(out), optional:: ierr  !out: error code
          integer(INTD):: errc
 
          errc=TEREC_SUCCESS
          if(this%is_set()) then
-          num_dim=this%num_dim
-          if(size(subspaces).ge.num_dim) then
-           subspaces(1:num_dim)=this%space_idx(1:num_dim)
+          num_dims=this%num_dims
+          if(size(subspaces).ge.num_dims) then
+           subspaces(1:num_dims)=this%space_idx(1:num_dims)
           else
-           num_dim=-1; errc=TEREC_UNABLE_COMPLETE
+           errc=TEREC_UNABLE_COMPLETE
           endif
          else
-          num_dim=-1; errc=TEREC_INVALID_REQUEST
+          num_dims=-1; errc=TEREC_INVALID_REQUEST
          endif
          if(present(ierr)) ierr=errc
          return
         end subroutine TensSignatureGetSpec
+!----------------------------------------------------------------
+        subroutine TensSignaturePrintIt(this,ierr,dev_id,nspaces)
+!Prints the tensor signature.
+         implicit none
+         class(tens_signature_t), intent(in):: this    !in: tensor signature
+         integer(INTD), intent(out), optional:: ierr   !out: error code
+         integer(INTD), intent(in), optional:: dev_id  !in: output device handle (6:screen)
+         integer(INTD), intent(in), optional:: nspaces !in: number of preceding spaces (left alignment)
+         integer(INTD):: errc,i,dev
+
+         errc=TEREC_SUCCESS
+         if(present(dev_id)) then; dev=dev_id; else; dev=6; endif
+         if(present(nspaces)) then; do i=1,nspaces; write(dev,'(" ")',ADVANCE='NO'); enddo; endif
+         if(this%is_set()) then
+          call printl(dev,this%char_name,adv=.FALSE.)
+          write(dev,'("(")',ADVANCE='NO')
+          do i=1,this%num_dims
+           write(dev,'(i9)',ADVANCE='NO') this%space_idx(i)
+           if(i.lt.this%num_dims) write(dev,'(",")',ADVANCE='NO')
+          enddo
+          write(dev,'(")")')
+         else
+          write(dev,'("EMPTY TENSOR SIGNATURE")')
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensSignaturePrintIt
 !----------------------------------------------
         subroutine tens_signature_dtor(this)
 !DTOR for tens_signature_t.
@@ -386,9 +418,358 @@
 
          if(allocated(this%char_name)) deallocate(this%char_name)
          if(allocated(this%space_idx)) deallocate(this%space_idx)
-         this%num_dim=-1
+         this%num_dims=-1
          return
         end subroutine tens_signature_dtor
+![tens_shape_t]==============================================================
+        subroutine tens_shape_ctor(this,dim_extent,ierr,dim_group,group_spec)
+!CTOR for tens_shape_t.
+         implicit none
+         type(tens_shape_t), intent(out):: this               !out: tensor shape
+         integer(INTD), intent(out), optional:: ierr          !out: error code
+         integer(INTL), intent(in), optional:: dim_extent(1:) !in: tensor dimension extents
+         integer(INTD), intent(in), optional:: dim_group(1:)  !in: dimension grouping: dim_group(x)=y means dimension x belongs to group y>0 (group 0 is default)
+         integer(INTD), intent(in), optional:: group_spec(1:) !in: group specification: group_spec(x)=y means group x has restriction y (see on top)
+         integer(INTD):: errc,i,j,k,m,n
+         logical:: pr1,pr2
+
+         errc=TEREC_SUCCESS
+         n=0; if(present(dim_extent)) n=size(dim_extent)
+         if(n.gt.0) then !true tensor
+          do i=1,n; if(dim_extent(i).le.0_INTL) then; errc=TEREC_INVALID_ARGS; exit; endif; enddo
+          if(errc.eq.TEREC_SUCCESS) then
+           allocate(this%dim_extent(1:n),STAT=errc)
+           if(errc.eq.0) then
+            this%dim_extent(1:n)=dim_extent(1:n)
+            this%num_dims=n
+           else
+            errc=TEREC_MEM_ALLOC_FAILED
+           endif
+          endif
+         else !scalar
+          this%num_dims=0
+         endif
+         if(errc.eq.TEREC_SUCCESS) then
+          this%num_grps=0
+          pr1=present(dim_group); pr2=present(group_spec)
+          if(pr1.and.pr2) then
+           if(size(dim_group).eq.n) then
+            m=size(group_spec) !total number of non-trivial index groups
+            allocate(this%dim_group(1:n),STAT=errc)
+            if(errc.eq.0) then
+             allocate(this%group_spec(1:m),STAT=errc)
+             if(errc.eq.0) then
+              this%group_spec(1:m)=group_spec(1:m)
+              this%num_grps=m
+              do i=1,n
+               j=dim_group(i)
+               if(j.gt.0.and.j.le.m) then
+                k=group_spec(j) !restriction kind (see top)
+                if(k.lt.0.or.k.ge.TEREC_NUM_IND_RESTR) then; errc=TEREC_INVALID_ARGS; exit; endif
+               else
+                if(j.ne.0) then; errc=TEREC_INVALID_ARGS; exit; endif
+               endif
+               this%dim_group(i)=j
+              enddo
+             else
+              errc=TEREC_MEM_ALLOC_FAILED
+             endif
+            else
+             errc=TEREC_MEM_ALLOC_FAILED
+            endif
+           else
+            errc=TEREC_INVALID_ARGS
+           endif
+          else
+           if(pr1.or.pr2) errc=TEREC_INVALID_ARGS
+          endif
+         endif
+         if(errc.ne.TEREC_SUCCESS) call tens_shape_dtor(this)
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine tens_shape_ctor
+!--------------------------------------------------------------------
+        subroutine TensShapeSetGroups(this,dim_group,group_spec,ierr)
+!Sets group restrictions on tensor dimensions. If group restrictions
+!have already been previously set, it will return an error.
+         implicit none
+         class(tens_shape_t), intent(inout):: this   !inout: tensor shape
+         integer(INTD), intent(in):: dim_group(1:)   !in: dimension groups: dim_group(x)=y means dimension x belongs to group y>0 (0 is the default group)
+         integer(INTD), intent(in):: group_spec(1:)  !in: group specification: group_spec(x)=y means group x has restriction y (see on top)
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc,i,j,k,n,m
+
+         errc=TEREC_SUCCESS
+         if(this%is_set()) then
+          n=this%num_dims
+          if(n.gt.0) then
+           if(.not.allocated(this%group_spec)) then !groups have not been previously set up
+            if(size(dim_group).eq.n) then
+             m=size(group_spec)
+             do i=1,n
+              j=dim_group(i)
+              if(j.gt.0.and.j.le.m) then
+               k=group_spec(j)
+               if(k.lt.0.or.k.ge.TEREC_NUM_IND_RESTR) then; errc=TEREC_INVALID_ARGS; exit; endif
+              else
+               if(j.ne.0) then; errc=TEREC_INVALID_ARGS; exit; endif
+              endif
+             enddo
+             if(.not.allocated(this%dim_group)) then
+              allocate(this%dim_group(1:n),STAT=errc)
+              if(errc.eq.0) then; this%dim_group(1:n)=0; else; errc=TEREC_MEM_ALLOC_FAILED; endif
+             endif
+             if(errc.eq.TEREC_SUCCESS) then
+              allocate(this%group_spec(1:m),STAT=errc)
+              if(errc.eq.0) then
+               this%dim_group(1:n)=dim_group(1:n)
+               this%group_spec(1:m)=group_spec(1:m)
+               this%num_grps=m
+              else
+               errc=TEREC_MEM_ALLOC_FAILED
+              endif
+             endif
+            else
+             errc=TEREC_INVALID_ARGS
+            endif
+           else
+            errc=TEREC_INVALID_REQUEST
+           endif
+          else
+           errc=TEREC_INVALID_REQUEST
+          endif
+         else
+          errc=TEREC_INVALID_REQUEST
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensShapeSetGroups
+!------------------------------------------------------------------------
+        function TensShapeIsSet(this,ierr,num_dims,num_groups) result(res)
+!Returns TRUE if the tensor shape is set.
+         implicit none
+         logical:: res                                     !out: result
+         class(tens_shape_t), intent(in):: this            !in: tensor shape
+         integer(INTD), intent(out), optional:: ierr       !out: error code
+         integer(INTD), intent(out), optional:: num_dims   !out: number of dimensions
+         integer(INTD), intent(out), optional:: num_groups !out: number of dimension groups
+         integer(INTD):: errc
+
+         errc=TEREC_SUCCESS
+         res=(this%num_dims.ge.0)
+         if(present(num_dims)) num_dims=this%num_dims
+         if(present(num_groups)) num_groups=this%num_grps
+         if(present(ierr)) ierr=errc
+         return
+        end function TensShapeIsSet
+!-----------------------------------------------------------
+        subroutine TensShapeGetDims(this,dims,num_dims,ierr)
+!Returns tensor dimension extents together with the tensor rank.
+         implicit none
+         class(tens_shape_t), intent(in):: this      !in: tensor shape
+         integer(INTL), intent(inout):: dims(1:)     !out: tensor dimension extents
+         integer(INTD), intent(out):: num_dims       !out: number of tensor dimensions
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=TEREC_SUCCESS
+         if(this%is_set(num_dims=num_dims)) then
+          if(num_dims.gt.0) then
+           if(size(dims).ge.num_dims) then
+            dims(1:num_dims)=this%dim_extent(1:num_dims)
+           else
+            errc=TEREC_UNABLE_COMPLETE
+           endif
+          endif
+         else
+          errc=TEREC_INVALID_REQUEST
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensShapeGetDims
+!-------------------------------------------------------
+        function TensShapeGetRank(this,ierr) result(res)
+!Returns the tensor rank.
+         implicit none
+         integer(INTD):: res                         !out: tensor rank
+         class(tens_shape_t), intent(in):: this      !in: tensor shape
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=TEREC_SUCCESS
+         if(.not.this%is_set(num_dims=res)) errc=TEREC_INVALID_REQUEST
+         if(present(ierr)) ierr=errc
+         return
+        end function TensShapeGetRank
+!------------------------------------------------------------------------------------
+        subroutine TensShapeGetGroup(this,group,group_dims,num_dims,ierr,group_restr)
+!Returns the index restriction group (specific dimensions belonging to the specified group).
+         implicit none
+         class(tens_shape_t), intent(in):: this             !in: tensor shape
+         integer(INTD), intent(in):: group                  !in: requested dimension group
+         integer(INTD), intent(inout):: group_dims(1:)      !out: dimensions which belong to the requested dimension group
+         integer(INTD), intent(out):: num_dims              !out: number of dimensions in the group
+         integer(INTD), intent(out), optional:: ierr        !out: error code
+         integer(INTD), intent(out), optional:: group_restr !out: group restriction kind
+         integer(INTD):: errc,i,n,m
+
+         errc=TEREC_SUCCESS; num_dims=0
+         if(this%is_set(num_dims=n)) then
+          if(group.ge.0.and.group.le.this%num_grps) then
+           if(present(group_restr)) then
+            if(group.gt.0) then
+             group_restr=this%group_spec(group)
+            else
+             group_restr=TEREC_IND_RESTR_NONE !group 0 is default with no restrictions
+            endif
+           endif
+           m=size(group_dims)
+           do i=1,n
+            if(this%dim_group(i).eq.group) then
+             num_dims=num_dims+1
+             if(num_dims.le.m) then
+              group_dims(num_dims)=i
+             else
+              errc=TEREC_UNABLE_COMPLETE; exit
+             endif
+            endif
+           enddo
+          else
+           errc=TEREC_INVALID_ARGS
+          endif
+         else
+          errc=TEREC_INVALID_REQUEST
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensShapeGetGroup
+!----------------------------------------------------------------------------
+        function TensShapeSameGroup(this,dims,ierr,group_restr) result(group)
+!Returns the group number if the specified tensor dimensions belong to
+!the same group, -1 otherwise.
+         implicit none
+         integer(INTD):: group                              !out: group number (>=0)
+         class(tens_shape_t), intent(in):: this             !in: tensor shape
+         integer(INTD), intent(in):: dims(1:)               !in: tensor dimensions to check
+         integer(INTD), intent(out), optional:: ierr        !out: error code
+         integer(INTD), intent(out), optional:: group_restr !out: group restriction kind
+         integer(INTD):: errc,i,m,n
+
+         errc=TEREC_SUCCESS; group=-1
+         if(this%is_set(num_dims=n)) then
+          m=size(dims)
+          if(m.le.n) then
+           if(m.gt.0) then
+            do i=1,m; if(dims(i).lt.1.or.dims(i).gt.n) then; errc=TEREC_INVALID_ARGS; exit; endif; enddo
+            if(errc.eq.TEREC_SUCCESS) then
+             if(this%num_grps.gt.0) then !non-trivial grouping present
+              group=this%dim_group(dims(1))
+              do i=2,m
+               if(this%dim_group(dims(i)).ne.group) then; group=-1; exit; endif
+              enddo
+              if(present(group_restr)) then
+               if(group.eq.0) then
+                group_restr=TEREC_IND_RESTR_NONE
+               elseif(group.gt.0) then
+                if(group.le.this%num_grps) then
+                 group_restr=this%group_spec(group)
+                else
+                 errc=TEREC_OBJ_CORRUPTED
+                endif
+               endif
+              endif
+             else !only default group 0 (no restrictions)
+              group=0; if(present(group_restr)) group_restr=TEREC_IND_RESTR_NONE
+             endif
+            endif
+           else !dims(:) is empty
+            if(n.eq.0) then !scalar (0-dimensional tensor)
+             group=0; if(present(group_restr)) group_restr=TEREC_IND_RESTR_NONE
+            else
+             errc=TEREC_INVALID_ARGS
+            endif
+           endif
+          else
+           errc=TEREC_INVALID_ARGS
+          endif
+         else
+          errc=TEREC_INVALID_REQUEST
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function TensShapeSameGroup
+!----------------------------------------------------------------
+        function TensShapeNumGroups(this,ierr) result(num_groups)
+!Returns the total number of non-trivial index groups defined in the tensor shape.
+         implicit none
+         integer(INTD):: num_groups                  !out: number of non-trivial dimension groups
+         class(tens_shape_t), intent(in):: this      !in: tensor shape
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=TEREC_SUCCESS; num_groups=0
+         if(.not.this%is_set(num_groups=num_groups)) errc=TEREC_INVALID_REQUEST
+         if(present(ierr)) ierr=errc
+         return
+        end function TensShapeNumGroups
+!------------------------------------------------------------
+        subroutine TensShapePrintIt(this,ierr,dev_id,nspaces)
+!Prints the tensor shape.
+         implicit none
+         class(tens_shape_t), intent(in):: this        !in: tensor shape
+         integer(INTD), intent(out), optional:: ierr   !out: error code
+         integer(INTD), intent(in), optional:: dev_id  !in: output device handle (6:screen)
+         integer(INTD), intent(in), optional:: nspaces !in: number of preceding spaces (left alignment)
+         character(2), parameter:: rel_sign(0:TEREC_NUM_IND_RESTR-1)=(/'  ','< ','> ','<=','>='/)
+         integer(INTD):: errc,i,j,dev,ng,gr,gdims(1:MAX_TENSOR_RANK)
+
+         errc=TEREC_SUCCESS
+         if(present(dev_id)) then; dev=dev_id; else; dev=6; endif
+         if(present(nspaces)) then; do i=1,nspaces; write(dev,'(" ")',ADVANCE='NO'); enddo; endif
+         if(this%is_set()) then
+          write(dev,'("SHAPE")',ADVANCE='NO')
+          write(dev,'("(")',ADVANCE='NO')
+          if(this%num_groups().gt.0) then
+           do i=1,this%num_dims
+            write(dev,'(i9,":",i2)',ADVANCE='NO') this%dim_extent(i),this%dim_group(i)
+            if(i.lt.this%num_dims) write(dev,'(",")',ADVANCE='NO')
+           enddo
+           write(dev,'("):")',ADVANCE='NO')
+           do i=1,this%num_grps
+            write(dev,'(1x,i2,"[")',ADVANCE='NO') i
+            call this%get_group(i,gdims,ng,errc,gr); if(errc.ne.TEREC_SUCCESS) exit
+            do j=1,ng
+             write(dev,'(i2)',ADVANCE='NO') gdims(j)
+             if(j.lt.ng) write(dev,'(A2)',ADVANCE='NO') rel_sign(gr)
+            enddo
+            write(dev,'("]")',ADVANCE='NO')
+           enddo
+           write(dev,'()')
+          else
+           do i=1,this%num_dims
+            write(dev,'(i9)',ADVANCE='NO') this%dim_extent(i)
+            if(i.lt.this%num_dims) write(dev,'(",")',ADVANCE='NO')
+           enddo
+           write(dev,'(")")')
+          endif
+         else
+          write(dev,'("EMPTY TENSOR SHAPE")')
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensShapePrintIt
+!---------------------------------------
+        subroutine tens_shape_dtor(this)
+!DTOR for tens_shape_t.
+         implicit none
+         type(tens_shape_t):: this
+
+         if(allocated(this%group_spec)) deallocate(this%group_spec)
+         if(allocated(this%dim_group)) deallocate(this%dim_group)
+         if(allocated(this%dim_extent)) deallocate(this%dim_extent)
+         this%num_dims=-1; this%num_grps=0
+         return
+        end subroutine tens_shape_dtor
 
        end module tensor_recursive
 !==================================
@@ -404,13 +785,19 @@
          implicit none
          integer(INTD), intent(out):: ierr
 
-         call test_tens_signature(ierr); if(ierr.ne.0) return
+         write(*,'("Testing class tens_signature_t ... ")',ADVANCE='NO')
+         call test_tens_signature(ierr)
+         if(ierr.eq.0) then; write(*,'("PASSED")'); else; write(*,'("FAILED: Error ",i11)') ierr; return; endif
+         write(*,'("Testing class tens_shape_t ... ")',ADVANCE='NO')
+         call test_tens_shape(ierr)
+         if(ierr.eq.0) then; write(*,'("PASSED")'); else; write(*,'("FAILED: Error ",i11)') ierr; return; endif
+         return
         end subroutine test_tensor_recursive
 !-------------------------------------------
         subroutine test_tens_signature(ierr)
          implicit none
          integer(INTD), intent(out):: ierr
-         integer(INTD):: errc,n
+         integer(INTD):: n
          integer(INTL):: mlndx(1:MAX_TENSOR_RANK)
          character(32):: tname
          type(tens_signature_t):: tsigna
@@ -424,7 +811,7 @@
            if(ierr.eq.TEREC_SUCCESS.and.n.eq.3.and.&
              &mlndx(1).eq.3.and.mlndx(2).eq.4.and.mlndx(3).eq.2) then
             call tsigna%get_name(tname,n,ierr)
-            if(tname(1:n).ne.'Tensor') ierr=4
+            if(.not.(n.eq.len('Tensor').and.tname(1:n).eq.'Tensor')) ierr=4
            else
             ierr=3
            endif
@@ -437,5 +824,41 @@
          call tens_signature_dtor(tsigna)
          return
         end subroutine test_tens_signature
+!-----------------------------------------
+        subroutine test_tens_shape(ierr)
+         implicit none
+         integer(INTD), intent(out):: ierr
+         integer(INTD):: i,m,n
+         integer(INTL):: dims(1:MAX_TENSOR_RANK)
+         integer(INTD):: grps(1:MAX_TENSOR_RANK)
+         integer(INTD):: grp_spec(1:MAX_TENSOR_RANK)
+         type(tens_shape_t):: tshape
+
+         ierr=0
+         n=6; dims(1:n)=(/128_INTL,64_INTL,256_INTL,64_INTL,128_INTL,64_INTL/)
+         m=2; grps(1:n)=(/1,2,0,2,1,2/); grp_spec(1:m)=(/TEREC_IND_RESTR_LT,TEREC_IND_RESTR_GE/)
+         call tens_shape_ctor(tshape,dims(1:n),ierr,grps(1:n),grp_spec(1:m))
+         if(ierr.eq.TEREC_SUCCESS) then
+          !write(*,'()'); call tshape%print_it() !debug
+          grps(1:3)=(/2,4,6/)
+          if(tshape%same_group(grps(1:3),ierr,i).eq.2) then
+           if(ierr.eq.TEREC_SUCCESS.and.i.eq.TEREC_IND_RESTR_GE) then
+            if(tshape%num_groups(ierr).eq.m) then
+             if(ierr.ne.TEREC_SUCCESS) ierr=5
+            else
+             ierr=4
+            endif
+           else
+            ierr=3
+           endif
+          else
+           ierr=2
+          endif
+         else
+          ierr=1
+         endif
+         call tens_shape_dtor(tshape)
+         return
+        end subroutine test_tens_shape
 
        end module tensor_recursive_test
