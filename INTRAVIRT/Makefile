@@ -246,7 +246,7 @@ OBJS = ./OBJ/hardware.o ./OBJ/subspaces.o ./OBJ/tensor_recursive.o ./OBJ/virta.o
 
 $(NAME): $(OBJS) ./OBJ/test_intra.o ../UTILITY/libutility.a ../GFC/libgfc.a ../DDSS/libddss.a ../TALSH/libtalsh.a ../DSVP/libdsvp.a
 	ar cr lib$(NAME).a $(OBJS) ../UTILITY/libutility.a ../GFC/libgfc.a ../DDSS/libddss.a ../TALSH/libtalsh.a ../DSVP/libdsvp.a
-	$(FCOMP) ./OBJ/test_intra.o lib$(NAME).a ../UTILITY/libutility.a $(LFLAGS) -o test_$(NAME).x
+	$(FCOMP) ./OBJ/test_intra.o lib$(NAME).a ../UTILITY/libutility.a ../GFC/libgfc.a ../DDSS/libddss.a ../TALSH/libtalsh.a ../DSVP/libdsvp.a $(LFLAGS) -o test_$(NAME).x
 
 ./OBJ/virta.o: virta.F90 ../UTILITY/dil_basic.mod ../TALSH/talsh.mod ../DDSS/service_mpi.mod ../DDSS/pack_prim.mod ../DDSS/distributed.mod ../DSVP/dsvp_base.mod ./OBJ/hardware.o ./OBJ/subspaces.o ./OBJ/tensor_recursive.o
 	mkdir -p ./OBJ

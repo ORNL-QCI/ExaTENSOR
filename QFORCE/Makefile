@@ -201,8 +201,8 @@ NO_ACCEL_NOCUDA = -D NO_AMD -D NO_PHI -D NO_GPU
 NO_ACCEL = $(NO_ACCEL_$(GPU_CUDA))
 
 #ExaTensor includes:
-MY_INC = -I../UTILITY -I../GFC -I../DDSS -I../TALSH -I../INTRAVIRT -I../INTERVIRT
-MY_LIBS = ../INTERVIRT/libExaTensor.a ../INTRAVIRT/libintravirt.a ../TALSH/libtalsh.a ../DDSS/libddss.a ../GFC/libgfc.a ../UTILITY/libutility.a
+MY_INC = -I../UTILITY -I../GFC -I../DDSS -I../TALSH -I../DSVP -I../INTRAVIRT -I../INTERVIRT
+MY_LIBS = ../INTERVIRT/libExaTensor.a ../INTRAVIRT/libintravirt.a ../DSVP/libdsvp.a ../TALSH/libtalsh.a ../DDSS/libddss.a ../GFC/libgfc.a ../UTILITY/libutility.a
 
 #C FLAGS:
 CFLAGS_DEV = -c -g $(NO_ACCEL) -D_DEBUG
