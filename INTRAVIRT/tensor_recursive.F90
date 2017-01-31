@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/01/30
+!REVISION: 2017/01/31
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -850,40 +850,43 @@
          integer(INTD), intent(in), optional:: group_spec(1:) !in: dimension restriction group specification
          logical, intent(in), optional:: overwrite            !in: if TRUE, the exsiting shape will be overwritten, defaults to FALSE
          integer(INTD):: errc,n
-         logical:: overwr,proceed
+         logical:: overwr
 
          errc=TEREC_SUCCESS
          if(this%is_set(num_dims=n)) then
           if(present(overwrite)) then; overwr=overwrite; else; overwr=.FALSE.; endif
-          proceed=((.not.this%shape%is_set()).or.overwr)
-          if(present(dim_extent)) then
-           if(size(dim_extent).eq.n) then
-            if(n.gt.0) then
-             if(present(dim_group)) then
-              if(present(group_spec)) then
-               if(proceed) call tens_shape_ctor(this%shape,errc,dim_extent,dim_group,group_spec)
+          if((.not.this%shape%is_set()).or.overwr) then
+           if(present(dim_extent)) then
+            if(size(dim_extent).eq.n) then
+             if(n.gt.0) then
+              if(present(dim_group)) then
+               if(present(group_spec)) then
+                call tens_shape_ctor(this%shape,errc,dim_extent,dim_group,group_spec)
+               else
+                errc=TEREC_INVALID_ARGS
+               endif
               else
-               errc=TEREC_INVALID_ARGS
+               if(present(group_spec)) then
+                errc=TEREC_INVALID_ARGS
+               else
+                call tens_shape_ctor(this%shape,errc,dim_extent)
+               endif
               endif
-             else
-              if(present(group_spec)) then
-               errc=TEREC_INVALID_ARGS
-              else
-               if(proceed) call tens_shape_ctor(this%shape,errc,dim_extent)
-              endif
+             else !scalar shape
+              call tens_shape_ctor(this%shape,errc)
              endif
             else
-             if(proceed) call tens_shape_ctor(this%shape,errc)
+             errc=TEREC_INVALID_ARGS
             endif
-           else
-            errc=TEREC_INVALID_REQUEST
+           else !scalar shape
+            if(n.ne.0.or.present(dim_group).or.present(group_spec)) then
+             errc=TEREC_INVALID_ARGS
+            else
+             call tens_shape_ctor(this%shape,errc)
+            endif
            endif
-          else !scalar shape
-           if(n.ne.0.or.present(dim_group).or.present(group_spec)) then
-            errc=TEREC_INVALID_ARGS
-           else
-            if(proceed) call tens_shape_ctor(this%shape,errc)
-           endif
+          else
+           errc=TEREC_INVALID_REQUEST
           endif
          else
           errc=TEREC_INVALID_REQUEST
@@ -895,18 +898,19 @@
         function TensHeaderIsSet(this,ierr,num_dims,num_groups,shaped) result(res)
 !Returns TRUE if the tensor header is set (with or without shape).
          implicit none
+         logical:: res                                     !out: result
          class(tens_header_t), intent(in):: this           !in: tensor header
          integer(INTD), intent(out), optional:: ierr       !out: error code
          integer(INTD), intent(out), optional:: num_dims   !out: number of dimensions
          integer(INTD), intent(out), optional:: num_groups !out: number of restricted dimension groups
-         logical, intent(out, optional:: shaped            !out: TRUE if the tensor shape is set
+         logical, intent(out), optional:: shaped           !out: TRUE if the tensor shape is set
          integer(INTD):: errc,nd,ng
          logical:: shpd
 
-         res=this%signature%is_set(errc,nd)
+         res=this%signature%is_set(errc,num_dims=nd)
          if(present(num_dims)) num_dims=nd
          if(res.and.errc.eq.TEREC_SUCCESS) then
-          shpd=this%shape%is_set(errc,nd,ng)
+          shpd=this%shape%is_set(errc,num_dims=nd,num_groups=ng)
          else
           shpd=.FALSE.; ng=0
          endif
@@ -915,6 +919,157 @@
          if(present(ierr)) ierr=errc
          return
         end function TensHeaderIsSet
+!-----------------------------------------------------------------
+        subroutine TensHeaderGetName(this,tens_name,name_len,ierr)
+!Returns the alphanumeric_ name of the tensor.
+         implicit none
+         class(tens_header_t), intent(in):: this     !in: tensor header
+         character(*), intent(inout):: tens_name     !out: tensor name
+         integer(INTD), intent(out):: name_len       !out: length of the tensor name
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         call this%signature%get_name(tens_name,name_len,errc)
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensHeaderGetName
+!--------------------------------------------------------
+        function TensHeaderGetRank(this,ierr) result(res)
+!Returns the rank of the tensor (number of dimensions).
+         implicit none
+         integer(INTD):: res                         !out: result
+         class(tens_header_t), intent(in):: this     !in: tensor header
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         res=this%signature%get_rank(errc)
+         if(present(ierr)) ierr=errc
+         return
+        end function TensHeaderGetRank
+!-----------------------------------------------------------------
+        subroutine TensHeaderGetSpec(this,subspaces,num_dims,ierr)
+!Returns the defining subspaces of the tensor (subspace multi-index).
+         implicit none
+         class(tens_header_t), intent(in):: this      !in: tensor header
+         integer(INTL), intent(inout):: subspaces(1:) !out: defining subspaces (their IDs)
+         integer(INTD), intent(out):: num_dims        !out: number of tensor dimensions
+         integer(INTD), intent(out), optional:: ierr  !out: error code
+         integer(INTD):: errc
+
+         call this%signature%get_spec(subspaces,num_dims,errc)
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensHeaderGetSpec
+!------------------------------------------------------------
+        subroutine TensHeaderGetDims(this,dims,num_dims,ierr)
+!Returns tensor dimension extents together with the tensor rank.
+         implicit none
+         class(tens_header_t), intent(in):: this     !in: tensor header
+         integer(INTL), intent(inout):: dims(1:)     !out: tensor dimension extents
+         integer(INTD), intent(out):: num_dims       !out: number of tensor dimensions
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         call this%shape%get_dims(dims,num_dims,errc)
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensHeaderGetDims
+!-----------------------------------------------------------------
+        function TensHeaderNumGroups(this,ierr) result(num_groups)
+!Returns the total number of non-trivial index groups defined in the tensor header shape.
+         implicit none
+         integer(INTD):: num_groups                  !out: number of non-trivial dimension groups
+         class(tens_header_t), intent(in):: this     !in: tensor header
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         num_groups=this%shape%num_groups(errc)
+         if(present(ierr)) ierr=errc
+         return
+        end function TensHeaderNumGroups
+!-------------------------------------------------------------------------------------
+        subroutine TensHeaderGetGroup(this,group,group_dims,num_dims,ierr,group_restr)
+!Returns the index restriction group (specific dimensions belonging to the specified group).
+         implicit none
+         class(tens_header_t), intent(in):: this            !in: tensor header
+         integer(INTD), intent(in):: group                  !in: requested dimension group
+         integer(INTD), intent(inout):: group_dims(1:)      !out: dimensions which belong to the requested dimension group
+         integer(INTD), intent(out):: num_dims              !out: number of dimensions in the group
+         integer(INTD), intent(out), optional:: ierr        !out: error code
+         integer(INTD), intent(out), optional:: group_restr !out: group restriction kind
+         integer(INTD):: errc,gr
+
+         call this%shape%get_group(group,group_dims,num_dims,errc,gr)
+         if(present(group_restr)) group_restr=gr
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensHeaderGetGroup
+!-----------------------------------------------------------------------------
+        function TensHeaderSameGroup(this,dims,ierr,group_restr) result(group)
+!Returns the group number if the specified tensor dimensions belong to the same group, -1 otherwise.
+         implicit none
+         integer(INTD):: group                              !out: group number (>=0)
+         class(tens_header_t), intent(in):: this            !in: tensor header
+         integer(INTD), intent(in):: dims(1:)               !in: tensor dimensions to check
+         integer(INTD), intent(out), optional:: ierr        !out: error code
+         integer(INTD), intent(out), optional:: group_restr !out: group restriction kind
+         integer(INTD):: errc,gr
+
+         group=this%shape%same_group(dims,errc,gr)
+         if(present(group_restr)) group_restr=gr
+         if(present(ierr)) ierr=errc
+         return
+        end function TensHeaderSameGroup
+!---------------------------------------------------------------------
+        function TensHeaderGetSignature(this,ierr) result(signature_p)
+!Returns a pointer to the tensor header signature.
+         implicit none
+         type(tens_signature_t), pointer:: signature_p   !out: pointer to the tensor signature
+         class(tens_header_t), intent(in), target:: this !in: tensor header
+         integer(INTD), intent(out), optional:: ierr     !out: error code
+
+         signature_p=>this%signature
+         return
+        end function TensHeaderGetSignature
+!-------------------------------------------------------------
+        function TensHeaderGetShape(this,ierr) result(shape_p)
+!Returns a pointer to the tensor header shape.
+         implicit none
+         type(tens_shape_t), pointer:: shape_p           !out: pointer to the tensor shape
+         class(tens_header_t), intent(in), target:: this !in: tensor header
+         integer(INTD), intent(out), optional:: ierr     !out: error code
+
+         shape_p=>this%shape
+         return
+        end function TensHeaderGetShape
+!-------------------------------------------------------------
+        subroutine TensHeaderPrintIt(this,ierr,dev_id,nspaces)
+!Prints the tensor header.
+         implicit none
+         class(tens_header_t), intent(in):: this       !in: tensor header
+         integer(INTD), intent(out), optional:: ierr   !out: error code
+         integer(INTD), intent(in), optional:: dev_id  !in: output device id (6:screen)
+         integer(INTD), intent(in), optional:: nspaces !out: left alignment
+         integer(INTD):: errc,dev
+
+         errc=TEREC_SUCCESS
+         if(present(dev_id)) then; dev=dev_id; else; dev=6; endif
+         if(present(nspaces)) then
+          do i=1,nspaces; write(dev,'(" ")',ADVANCE='NO'); enddo
+          write(dev,'("TENSOR HEADER{")')
+          call this%signature%print_it(errc,dev,nspaces+1)
+          call this%shape%print_it(errc,dev,nspaces+1)
+          do i=1,nspaces; write(dev,'(" ")',ADVANCE='NO'); enddo
+          write(dev,'("}")')
+         else
+          write(dev,'("TENSOR HEADER{")')
+          call this%signature%print_it(errc,dev,1)
+          call this%shape%print_it(errc,dev,1)
+          write(dev,'("}")')
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensHeaderPrintIt
 !----------------------------------------
         subroutine tens_header_dtor(this)
 !DTOR for tens_header_t.
