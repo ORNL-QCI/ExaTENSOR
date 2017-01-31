@@ -116,8 +116,8 @@
           procedure, public:: same_group=>TensHeaderSameGroup        !checks whether specific tensor dimensions belong to the same group
           procedure, public:: get_signature=>TensHeaderGetSignature  !returns the pointer to the tensor signature
           procedure, public:: get_shape=>TensHeaderGetShape          !returns the pointer the the tensor shape
-          procedure, public:: print_it=>TensHeaderPrinIt             !prints the tensor header
-          final:: tens_header_dtor                                   !dtor
+          procedure, public:: print_it=>TensHeaderPrintIt            !prints the tensor header
+          !final:: tens_header_dtor                                   !dtor `GCC/5.4.0 bug
         end type tens_header_t
  !Simple (dense) tensor block (part):
         type, public:: tens_simple_part_t
@@ -232,7 +232,7 @@
         private TensHeaderSameGroup
         private TensHeaderGetSignature
         private TensHeaderGetShape
-        private TensHeaderPrinIt
+        private TensHeaderPrintIt
         public tens_header_dtor
 #if 0
  !tens_simple_part_t:
@@ -1050,7 +1050,7 @@
          integer(INTD), intent(out), optional:: ierr   !out: error code
          integer(INTD), intent(in), optional:: dev_id  !in: output device id (6:screen)
          integer(INTD), intent(in), optional:: nspaces !out: left alignment
-         integer(INTD):: errc,dev
+         integer(INTD):: errc,dev,i
 
          errc=TEREC_SUCCESS
          if(present(dev_id)) then; dev=dev_id; else; dev=6; endif
