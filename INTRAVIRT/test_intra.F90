@@ -5,6 +5,7 @@
          implicit none
          integer(INTD):: ierr
 
+!Module tensor_recursive:
          call test_tensor_recursive(ierr)
          stop
         end program test_intra

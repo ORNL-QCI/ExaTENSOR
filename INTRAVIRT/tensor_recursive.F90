@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/01/31
+!REVISION: 2017/02/01
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -117,7 +117,9 @@
           procedure, public:: get_signature=>TensHeaderGetSignature  !returns the pointer to the tensor signature
           procedure, public:: get_shape=>TensHeaderGetShape          !returns the pointer the the tensor shape
           procedure, public:: print_it=>TensHeaderPrintIt            !prints the tensor header
-          !final:: tens_header_dtor                                   !dtor `GCC/5.4.0 bug
+#ifdef NO_GNU
+          final:: tens_header_dtor                                   !dtor `GCC/5.4.0 bug
+#endif
         end type tens_header_t
  !Simple (dense) tensor block (part):
         type, public:: tens_simple_part_t
@@ -1076,8 +1078,10 @@
          implicit none
          type(tens_header_t):: this
 
+#ifndef NO_GNU
          call tens_shape_dtor(this%shape)
          call tens_signature_dtor(this%signature)
+#endif
          return
         end subroutine tens_header_dtor
 
@@ -1100,6 +1104,9 @@
          if(ierr.eq.0) then; write(*,'("PASSED")'); else; write(*,'("FAILED: Error ",i11)') ierr; return; endif
          write(*,'("Testing class tens_shape_t ... ")',ADVANCE='NO')
          call test_tens_shape(ierr)
+         if(ierr.eq.0) then; write(*,'("PASSED")'); else; write(*,'("FAILED: Error ",i11)') ierr; return; endif
+         write(*,'("Testing class tens_header_t ... ")',ADVANCE='NO')
+         call test_tens_header(ierr)
          if(ierr.eq.0) then; write(*,'("PASSED")'); else; write(*,'("FAILED: Error ",i11)') ierr; return; endif
          return
         end subroutine test_tensor_recursive
@@ -1170,5 +1177,39 @@
          call tens_shape_dtor(tshape)
          return
         end subroutine test_tens_shape
+!----------------------------------------
+        subroutine test_tens_header(ierr)
+         implicit none
+         integer(INTD), intent(out):: ierr
+         integer(INTD):: i,m,n
+         integer(INTL):: dims(1:MAX_TENSOR_RANK)
+         integer(INTD):: grps(1:MAX_TENSOR_RANK)
+         integer(INTD):: grp_spec(1:MAX_TENSOR_RANK)
+         type(tens_signature_t):: tsigna
+         type(tens_shape_t):: tshape
+         type(tens_header_t):: thead
+
+         ierr=0
+         n=6; dims(1:n)=(/128_INTL,64_INTL,256_INTL,64_INTL,128_INTL,64_INTL/)
+         m=2; grps(1:n)=(/1,2,0,2,1,2/); grp_spec(1:m)=(/TEREC_IND_RESTR_LT,TEREC_IND_RESTR_GE/)
+         call tens_header_ctor(thead,ierr,'Tensor',(/1_INTL,2_INTL,3_INTL,2_INTL,1_INTL,2_INTL/))
+         if(ierr.eq.TEREC_SUCCESS) then
+          call thead%add_shape(ierr,dims(1:n),grps(1:n),grp_spec(1:m))
+          if(ierr.eq.TEREC_SUCCESS) then
+           call thead%print_it(ierr)
+           if(ierr.eq.TEREC_SUCCESS) then
+            
+           else
+            ierr=3
+           endif
+          else
+           ierr=2
+          endif
+         else
+          ierr=1
+         endif
+         call tens_header_dtor(thead)
+         return
+        end subroutine test_tens_header
 
        end module tensor_recursive_test
