@@ -28,17 +28,17 @@ export FOOL_CUDA ?= NO
 
 #SET YOUR LOCAL PATHS (for unwrapped builds):
 # MPI path (whichever MPI you have, set one):
-export PATH_MPICH ?= /usr/local/mpi/mpich-3.2
-export PATH_OPENMPI ?= /usr/local/mpi/openmpi-1.10.4
+export PATH_MPICH ?= /sw/summitdev/spectrum_mpi/10.1.0.2-20161221
+export PATH_OPENMPI ?= /sw/summitdev/spectrum_mpi/10.1.0.2-20161130
 # BLAS lib path (whichever BLAS you have, set one):
 export PATH_BLAS_ATLAS ?= /usr/lib
 export PATH_BLAS_MKL ?= /ccs/compilers/intel/rh6-x86_64/16.0.0/compilers_and_libraries/linux/mkl/lib
 export PATH_BLAS_ACML ?= /opt/acml/5.3.1/gfortran64_fma4_mp/lib
 export PATH_BLAS_ESSL ?= /sw/summitdev/essl/5.5.0/lib64
-export PATH_BLAS_ESSL_DEP ?= /sw/summitdev/xl/161005/lib
+export PATH_BLAS_ESSL_DEP ?= /sw/summitdev/xl/20161123/xlf/15.1.5/lib
 # CUDA lib and include paths (if you build with CUDA):
-export PATH_CUDA_LIB ?= /usr/local/cuda/lib64
-export PATH_CUDA_INC ?= /usr/local/cuda/include
+export PATH_CUDA_LIB ?= /sw/summitdev/cuda/8.0.54/lib64
+export PATH_CUDA_INC ?= /sw/summitdev/cuda/8.0.54/include
 # cuTT path (if you use cuTT library):
 export PATH_CUTT ?= /home/div/src/cutt
 
@@ -117,9 +117,9 @@ LIB_IBM = -L.
 LIB_NOWRAP = $(LIB_$(TOOLKIT))
 LIB_WRAP = -L.
 ifeq ($(TOOLKIT),PGI)
- LIB = $(LIB_$(WRAP))
-else
  LIB = $(LIB_$(WRAP)) -lstdc++
+else
+ LIB = $(LIB_$(WRAP))
 endif
 
 #MPI INCLUDES:
@@ -263,7 +263,11 @@ $(NAME):
 	$(MAKE) -C ./INTRAVIRT
 	$(MAKE) -C ./INTERVIRT
 	$(MAKE) -C ./QFORCE
+ifeq ($(TOOLKIT),CRAY)
+	cp ./INTERVIRT/OBJ/EXATENSOR.mod ./
+else
 	cp ./INTERVIRT/exatensor.mod ./
+endif
 	cp ./INTERVIRT/libExaTensor.a ./
 	cp ./QFORCE/Qforce.x ./
 	echo "Finished successfully!"

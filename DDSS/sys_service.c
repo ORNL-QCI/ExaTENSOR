@@ -30,11 +30,13 @@ double accu_time(void){
  return (((double)timer.tv_sec)+((double)timer.tv_usec)*(1.0E-6));
 }
 
+/*
 double system_clock()
 {
  struct timespec tp;
  if(clock_gettime(CLOCK_MONOTONIC,&tp)) return -1.0;
  return (((double)tp.tv_sec)+((double)tp.tv_nsec)*(1.0E-9));
 }
+*/
 
 #endif

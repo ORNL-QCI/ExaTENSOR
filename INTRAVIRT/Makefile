@@ -103,7 +103,7 @@ LIB_IBM = -L.
 LIB_NOWRAP = $(LIB_$(TOOLKIT))
 LIB_WRAP = -L.
 ifeq ($(TOOLKIT),PGI)
- LIB = $(LIB_$(WRAP))
+ LIB = $(LIB_$(WRAP)) -lstdc++
 else
  LIB = $(LIB_$(WRAP)) -lstdc++
 endif
@@ -173,7 +173,7 @@ GPU_ARCH = $(GPU_SM_ARCH)0
 CUDA_HOST_NOWRAP = --compiler-bindir /usr/bin
 CUDA_HOST_WRAP = -I.
 CUDA_HOST = $(CUDA_HOST_$(WRAP))
-CUDA_FLAGS_DEV = --compile -arch=$(GPU_SM) -g -G -lineinfo -D DEBUG_GPU
+CUDA_FLAGS_DEV = --compile -arch=$(GPU_SM) -g -G -lineinfo -DDEBUG_GPU
 CUDA_FLAGS_OPT = --compile -arch=$(GPU_SM) -O3 -lineinfo
 CUDA_FLAGS_CUDA = $(CUDA_HOST) $(CUDA_FLAGS_$(BUILD_TYPE)) -D_FORCE_INLINES
 ifeq ($(FOOL_CUDA),NO)
@@ -182,12 +182,12 @@ else
 CUDA_FLAGS_PRE1 = $(CUDA_FLAGS_CUDA) -D$(EXA_OS) -D__GNUC__=4
 endif
 ifeq ($(WITH_CUTT),YES)
-CUDA_FLAGS_PRE2 = $(CUDA_FLAGS_PRE1) -D USE_CUTT
+CUDA_FLAGS_PRE2 = $(CUDA_FLAGS_PRE1) -DUSE_CUTT
 else
 CUDA_FLAGS_PRE2 = $(CUDA_FLAGS_PRE1)
 endif
 ifeq ($(GPU_FINE_TIMING),YES)
-CUDA_FLAGS = $(CUDA_FLAGS_PRE2) -D GPU_FINE_TIMING
+CUDA_FLAGS = $(CUDA_FLAGS_PRE2) -DGPU_FINE_TIMING
 else
 CUDA_FLAGS = $(CUDA_FLAGS_PRE2)
 endif
@@ -196,18 +196,21 @@ CUDA_FLAGS = -D_FORCE_INLINES
 endif
 
 #Accelerator support:
-NO_ACCEL_CUDA = -D NO_AMD -D NO_PHI -D CUDA_ARCH=$(GPU_ARCH)
-NO_ACCEL_NOCUDA = -D NO_AMD -D NO_PHI -D NO_GPU
+NO_ACCEL_CUDA = -DNO_AMD -DNO_PHI -DCUDA_ARCH=$(GPU_ARCH)
+NO_ACCEL_NOCUDA = -DNO_AMD -DNO_PHI -DNO_GPU
 NO_ACCEL = $(NO_ACCEL_$(GPU_CUDA))
 
 #ExaTensor includes:
-MY_INC = -I../UTILITY -I../GFC -I../DDSS -I../TALSH -I../DSVP
+MY_INC1 = -I../UTILITY -I../GFC -I../DDSS -I../TALSH -I../DSVP
+MY_INC2 = -I../UTILITY/OBJ -I../GFC/OBJ -I../DDSS/OBJ -I../TALSH/OBJ -I../DSVP/OBJ
+MY_INC = $(MY_INC1) $(MY_INC2)
+MY_LIB = ../DSVP/libdsvp.a ../TALSH/libtalsh.a ../DDSS/libddss.a ../GFC/libgfc.a ../UTILITY/libutility.a
 
 #C FLAGS:
 CFLAGS_DEV = -c -g $(NO_ACCEL) -D_DEBUG
 CFLAGS_OPT = -c -O3 $(NO_ACCEL)
 ifeq ($(BLASLIB),NONE)
-CFLAGS = $(CFLAGS_$(BUILD_TYPE)) -D$(EXA_OS) -D NO_BLAS
+CFLAGS = $(CFLAGS_$(BUILD_TYPE)) -D$(EXA_OS) -DNO_BLAS
 else
 CFLAGS = $(CFLAGS_$(BUILD_TYPE)) -D$(EXA_OS)
 endif
@@ -226,7 +229,7 @@ FFLAGS_PGI_OPT = -c -mp -Mcache_align -Mstandard -O3 $(NO_ACCEL)
 FFLAGS_IBM_DEV = -c -qsmp=omp $(NO_ACCEL)
 FFLAGS_IBM_OPT = -c -qsmp=omp -O3 $(NO_ACCEL)
 ifeq ($(BLASLIB),NONE)
-FFLAGS = $(FFLAGS_$(TOOLKIT)_$(BUILD_TYPE)) -D$(EXA_OS) -D NO_BLAS
+FFLAGS = $(FFLAGS_$(TOOLKIT)_$(BUILD_TYPE)) -D$(EXA_OS) -DNO_BLAS
 else
 FFLAGS = $(FFLAGS_$(TOOLKIT)_$(BUILD_TYPE)) -D$(EXA_OS)
 endif
@@ -240,25 +243,25 @@ LTHREAD_IBM   = -L.
 LTHREAD = $(LTHREAD_$(TOOLKIT))
 
 #LINKING:
-LFLAGS = $(LIB) $(LTHREAD) $(MPI_LINK) $(LA_LINK) $(CUDA_LINK)
+LFLAGS = $(LTHREAD) $(MPI_LINK) $(LA_LINK) $(CUDA_LINK) $(LIB)
 
 OBJS = ./OBJ/hardware.o ./OBJ/subspaces.o ./OBJ/tensor_recursive.o ./OBJ/virta.o
 
-$(NAME): $(OBJS) ./OBJ/test_intra.o ../UTILITY/libutility.a ../GFC/libgfc.a ../DDSS/libddss.a ../TALSH/libtalsh.a ../DSVP/libdsvp.a
-	ar cr lib$(NAME).a $(OBJS) ../UTILITY/libutility.a ../GFC/libgfc.a ../DDSS/libddss.a ../TALSH/libtalsh.a ../DSVP/libdsvp.a
-	$(FCOMP) ./OBJ/test_intra.o lib$(NAME).a ../UTILITY/libutility.a ../GFC/libgfc.a ../DDSS/libddss.a ../TALSH/libtalsh.a ../DSVP/libdsvp.a $(LFLAGS) -o test_$(NAME).x
+$(NAME): $(OBJS) ./OBJ/test_intra.o $(MY_LIB)
+	ar cr lib$(NAME).a $(OBJS) $(MY_LIB)
+	$(FCOMP) ./OBJ/test_intra.o lib$(NAME).a $(MY_LIB) $(LFLAGS) -o test_$(NAME).x
 
-./OBJ/virta.o: virta.F90 ../UTILITY/dil_basic.mod ../TALSH/talsh.mod ../DDSS/service_mpi.mod ../DDSS/pack_prim.mod ../DDSS/distributed.mod ../DSVP/dsvp_base.mod ./OBJ/hardware.o ./OBJ/subspaces.o ./OBJ/tensor_recursive.o
+./OBJ/virta.o: virta.F90 ../UTILITY/OBJ/dil_basic.o ../TALSH/OBJ/talshf.o ../DDSS/OBJ/service_mpi.o ../DDSS/OBJ/pack_prim.o ../DDSS/OBJ/distributed.o ../DSVP/OBJ/dsvp_base.o ./OBJ/hardware.o ./OBJ/subspaces.o ./OBJ/tensor_recursive.o
 	mkdir -p ./OBJ
 	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(FFLAGS) virta.F90 -o ./OBJ/virta.o
 
-./OBJ/hardware.o: hardware.F90 ../UTILITY/dil_basic.mod ../GFC/gfc_base.mod ../GFC/gfc_tree.mod
+./OBJ/hardware.o: hardware.F90 ../UTILITY/OBJ/dil_basic.o ../GFC/OBJ/gfc_base.o ../GFC/OBJ/gfc_tree.o
 	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(FFLAGS) hardware.F90 -o ./OBJ/hardware.o
 
-./OBJ/subspaces.o: subspaces.F90 ../UTILITY/dil_basic.mod ../GFC/gfc_base.mod ../GFC/gfc_list.mod ../GFC/gfc_tree.mod
+./OBJ/subspaces.o: subspaces.F90 ../UTILITY/OBJ/dil_basic.o ../GFC/OBJ/gfc_base.o ../GFC/OBJ/gfc_list.o ../GFC/OBJ/gfc_tree.o
 	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(FFLAGS) subspaces.F90 -o ./OBJ/subspaces.o
 
-./OBJ/tensor_recursive.o: tensor_recursive.F90 ../TALSH/tensor_algebra.mod ../UTILITY/stsubs.mod ../GFC/gfc_base.mod ../GFC/gfc_tree.mod ./OBJ/subspaces.o ../DDSS/distributed.mod
+./OBJ/tensor_recursive.o: tensor_recursive.F90 ../TALSH/OBJ/tensor_algebra.o ../UTILITY/OBJ/stsubs.o ../GFC/OBJ/gfc_base.o ../GFC/OBJ/gfc_tree.o ../DDSS/OBJ/distributed.o ./OBJ/subspaces.o
 	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(FFLAGS) tensor_recursive.F90 -o ./OBJ/tensor_recursive.o
 
 ./OBJ/test_intra.o: test_intra.F90 $(OBJS)

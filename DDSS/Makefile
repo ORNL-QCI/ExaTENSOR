@@ -10,7 +10,7 @@ export BUILD_TYPE ?= DEV
 #MPI Library: [MPICH|OPENMPI]:
 export MPILIB ?= MPICH
 #BLAS: [ATLAS|MKL|ACML|NONE]:
-export BLASLIB ?= NONE
+export BLASLIB = NONE
 #Nvidia GPU via CUDA: [CUDA|NOCUDA]:
 export GPU_CUDA ?= NOCUDA
 #Operating system: [LINUX|NO_LINUX]:
@@ -107,7 +107,7 @@ LIB_IBM = -L.
 LIB_NOWRAP = $(LIB_$(TOOLKIT))
 LIB_WRAP = -L.
 ifeq ($(TOOLKIT),PGI)
- LIB = $(LIB_$(WRAP))
+ LIB = $(LIB_$(WRAP)) -lstdc++
 else
  LIB = $(LIB_$(WRAP)) -lstdc++
 endif
@@ -177,7 +177,7 @@ GPU_ARCH = $(GPU_SM_ARCH)0
 CUDA_HOST_NOWRAP = --compiler-bindir /usr/bin
 CUDA_HOST_WRAP = -I.
 CUDA_HOST = $(CUDA_HOST_$(WRAP))
-CUDA_FLAGS_DEV = --compile -arch=$(GPU_SM) -g -G -lineinfo -D DEBUG_GPU
+CUDA_FLAGS_DEV = --compile -arch=$(GPU_SM) -g -G -lineinfo -DDEBUG_GPU
 CUDA_FLAGS_OPT = --compile -arch=$(GPU_SM) -O3 -lineinfo
 CUDA_FLAGS_CUDA = $(CUDA_HOST) $(CUDA_FLAGS_$(BUILD_TYPE)) -D_FORCE_INLINES
 ifeq ($(FOOL_CUDA),NO)
@@ -186,12 +186,12 @@ else
 CUDA_FLAGS_PRE1 = $(CUDA_FLAGS_CUDA) -D$(EXA_OS) -D__GNUC__=4
 endif
 ifeq ($(WITH_CUTT),YES)
-CUDA_FLAGS_PRE2 = $(CUDA_FLAGS_PRE1) -D USE_CUTT
+CUDA_FLAGS_PRE2 = $(CUDA_FLAGS_PRE1) -DUSE_CUTT
 else
 CUDA_FLAGS_PRE2 = $(CUDA_FLAGS_PRE1)
 endif
 ifeq ($(GPU_FINE_TIMING),YES)
-CUDA_FLAGS = $(CUDA_FLAGS_PRE2) -D GPU_FINE_TIMING
+CUDA_FLAGS = $(CUDA_FLAGS_PRE2) -DGPU_FINE_TIMING
 else
 CUDA_FLAGS = $(CUDA_FLAGS_PRE2)
 endif
@@ -200,15 +200,15 @@ CUDA_FLAGS = -D_FORCE_INLINES
 endif
 
 #Accelerator support:
-NO_ACCEL_CUDA = -D NO_AMD -D NO_PHI -D CUDA_ARCH=$(GPU_ARCH)
-NO_ACCEL_NOCUDA = -D NO_AMD -D NO_PHI -D NO_GPU
+NO_ACCEL_CUDA = -DNO_AMD -DNO_PHI -DCUDA_ARCH=$(GPU_ARCH)
+NO_ACCEL_NOCUDA = -DNO_AMD -DNO_PHI -DNO_GPU
 NO_ACCEL = $(NO_ACCEL_$(GPU_CUDA))
 
 #C FLAGS:
 CFLAGS_DEV = -c -g $(NO_ACCEL) -D_DEBUG
 CFLAGS_OPT = -c -O3 $(NO_ACCEL)
 ifeq ($(BLASLIB),NONE)
-CFLAGS = $(CFLAGS_$(BUILD_TYPE)) -D$(EXA_OS) -D NO_BLAS
+CFLAGS = $(CFLAGS_$(BUILD_TYPE)) -D$(EXA_OS) -DNO_BLAS
 else
 CFLAGS = $(CFLAGS_$(BUILD_TYPE)) -D$(EXA_OS)
 endif
@@ -227,7 +227,7 @@ FFLAGS_PGI_OPT = -c -mp -Mcache_align -Mstandard -O3 $(NO_ACCEL)
 FFLAGS_IBM_DEV = -c -qsmp=omp $(NO_ACCEL)
 FFLAGS_IBM_OPT = -c -qsmp=omp -O3 $(NO_ACCEL)
 ifeq ($(BLASLIB),NONE)
-FFLAGS = $(FFLAGS_$(TOOLKIT)_$(BUILD_TYPE)) -D$(EXA_OS) -D NO_BLAS
+FFLAGS = $(FFLAGS_$(TOOLKIT)_$(BUILD_TYPE)) -D$(EXA_OS) -DNO_BLAS
 else
 FFLAGS = $(FFLAGS_$(TOOLKIT)_$(BUILD_TYPE)) -D$(EXA_OS)
 endif
@@ -241,7 +241,7 @@ LTHREAD_IBM   = -L.
 LTHREAD = $(LTHREAD_$(TOOLKIT))
 
 #LINKING:
-LFLAGS = $(LIB) $(LTHREAD) $(MPI_LINK) $(LA_LINK) $(CUDA_LINK)
+LFLAGS = $(LTHREAD) $(MPI_LINK) $(LA_LINK) $(CUDA_LINK) $(LIB)
 
 OBJS =  ./OBJ/dil_basic.o ./OBJ/sys_service.o ./OBJ/c2fortran.o ./OBJ/c2f_ifc.o ./OBJ/stsubs.o ./OBJ/timers.o \
 	./OBJ/mpi_fort.o ./OBJ/service_mpi.o ./OBJ/distributed.o ./OBJ/pack_prim.o ./OBJ/test_pack_prim.o
