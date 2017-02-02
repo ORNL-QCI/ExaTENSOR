@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/02/01
+!REVISION: 2017/02/02
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -49,15 +49,16 @@
         integer(INTD), parameter, public:: TEREC_MEM_FREE_FAILED=-4
         integer(INTD), parameter, public:: TEREC_UNABLE_COMPLETE=-5
         integer(INTD), parameter, public:: TEREC_OBJ_CORRUPTED=-6
- !Storage layout for tensor blocks (locally stored tensors):
-        integer(INTD), parameter, public:: TEREC_LAY_NONE=0  !none
-        integer(INTD), parameter, public:: TEREC_LAY_RECUR=1 !storage layout is inferred from that of individual constituent tensors (recursive)
-        integer(INTD), parameter, public:: TEREC_LAY_FDIMS=2 !straightforward dimension lead storage layout (Fortran style)
-        integer(INTD), parameter, public:: TEREC_LAY_CDIMS=3 !straightforward dimension lead storage layout (C style)
-        integer(INTD), parameter, public:: TEREC_LAY_DSYMM=4 !dimension led storage layout with permutational symmetry
-        integer(INTD), parameter, public:: TEREC_LAY_BRICK=5 !bricked storage layout (all bricks of the same size, padding if needed)
-        integer(INTD), parameter, public:: TEREC_LAY_BSYMM=6 !bricked storage layour with permutational symmetry on the brick level (all bricks of the same size, padding if needed)
-        integer(INTD), parameter, public:: TEREC_LAY_SPARS=7 !sparse tensor storage layout
+ !Storage layout for tensor blocks for locally stored tensors (must span a contiguous integer range!):
+        integer(INTD), parameter, public:: TEREC_LAY_NONE=0    !none
+        integer(INTD), parameter, public:: TEREC_LAY_RECUR=1   !storage layout is inferred from that of individual constituent tensors (recursive)
+        integer(INTD), parameter, public:: TEREC_LAY_FDIMS=2   !straightforward dimension lead storage layout (Fortran style)
+        integer(INTD), parameter, public:: TEREC_LAY_CDIMS=3   !straightforward dimension lead storage layout (C style)
+        integer(INTD), parameter, public:: TEREC_LAY_DSYMM=4   !dimension led storage layout with permutational symmetry
+        integer(INTD), parameter, public:: TEREC_LAY_BRICK=5   !bricked storage layout (all bricks of the same size, padding if needed)
+        integer(INTD), parameter, public:: TEREC_LAY_BSYMM=6   !bricked storage layour with permutational symmetry on the brick level (all bricks of the same size, padding if needed)
+        integer(INTD), parameter, public:: TEREC_LAY_SPARS=7   !sparse tensor storage layout
+        integer(INTD), parameter, public:: TEREC_NUM_LAYOUTS=8 !total number of tensor layouts
  !Index restriction kinds (must span a contiguous integer range!):
         integer(INTD), parameter, public:: TEREC_IND_RESTR_NONE=0 !no restrictions
         integer(INTD), parameter, public:: TEREC_IND_RESTR_LT=1   !indices within the group are < ordered: i1 < i2 < i3
@@ -126,15 +127,13 @@
          type(tens_header_t), private:: header               !header of the constituent simple tensor block
          integer(INTL), private:: offset=-1_INTL             !offset of the constituent simple tensor block in the parental composite tensor block (locally stored)
          integer(INTD), private:: layout=TEREC_LAY_NONE      !simple storage layout: {TEREC_LAY_FDIMS,TEREC_LAY_CDIMS} only
-#if 0
          contains
-          procedure, public:: set=>TensSimplePartSet              !sets the tensor simple part (ctor)
-          procedure, public:: is_set=>TensSimplePartIsSet         !return .TRUE. if the simple part is set
+          !initial:: tens_simple_part_ctor                        !ctor
+          procedure, public:: is_set=>TensSimplePartIsSet         !return .TRUE. if the simple part is set (signature, shape, layout, offset)
           procedure, public:: get_offset=>TensSimplePartGetOffset !returns the offset of the simple part in the parental tensor block
-          procedure, public:: get_layout=>TensSimplePartGetLayout !returns the simple layout of the simple part: {TEREC_LAY_FDIMS,TEREC_LAY_CDIMS} only
+          procedure, public:: get_layout=>TensSimplePartGetLayout !returns the simple layout of the simple tensor part: {TEREC_LAY_FDIMS,TEREC_LAY_CDIMS} only
           procedure, public:: get_header=>TensSimplePartGetHeader !returns a pointer to the header of the simple tensor part
-          final:: TensSimplePartFinal                             !dtor
-#endif
+          final:: tens_simple_part_dtor                           !dtor
         end type tens_simple_part_t
  !Storage layout for locally stored blocks (abstract base):
         type, abstract, public:: tens_layout_t
@@ -142,9 +141,8 @@
          contains
           procedure(tens_layout_map_i), deferred, public:: map                       !maps a specific element of the tensor block (layout specific)
           procedure(tens_layout_extract_i), deferred, public:: extract_simple_blocks !creates a list of constituent simple (dense) parts of the tensor block
-#if 0
+          procedure, public:: is_set=>TensLayoutIsSet                                !returns TRUE if the tensor layout is set
           procedure, public:: get_layout=>TensLayoutGetLayout                        !returns the tensor storage layout kind
-#endif
         end type tens_layout_t
  !Tensor body:
         type, public:: tens_body_t
@@ -202,6 +200,7 @@
          end subroutine tens_layout_extract_i
         end interface
 !VISIBILITY:
+        public valid_tensor_layout
  !tens_signature_t:
         public tens_signature_ctor
         private TensSignatureIsSet
@@ -236,15 +235,17 @@
         private TensHeaderGetShape
         private TensHeaderPrintIt
         public tens_header_dtor
-#if 0
  !tens_simple_part_t:
-        private TensSimplePartSet
+        public tens_simple_part_ctor
         private TensSimplePartIsSet
         private TensSimplePartGetOffset
         private TensSimplePartGetLayout
         private TensSimplePartGetHeader
+        public tens_simple_part_dtor
  !tens_layout_t:
+        private TensLayoutIsSet
         private TensLayoutGetLayout
+#if 0
  !tens_body_t:
         private TensBodySetLocation
         private TensBodyAddSubtensor
@@ -265,6 +266,15 @@
 
        contains
 !IMPLEMENTATION:
+!=======================================================
+        function valid_tensor_layout(layout) result(res)
+!Returns TRUE if the tensor layout is valid.
+         logical:: res
+         integer(INTD), intent(in):: layout
+
+         res=(layout.ge.0.and.layout.lt.TEREC_NUM_LAYOUTS)
+         return
+        end function valid_tensor_layout
 ![tens_signature_t]==================================================
         subroutine tens_signature_ctor(this,ierr,subspaces,tens_name)
 !CTOR for tens_signature_t.
@@ -424,9 +434,11 @@
          implicit none
          type(tens_signature_t):: this
 
+         !write(*,'("#DEBUG: Entered tens_signature_dtor")') !debug
          if(allocated(this%char_name)) deallocate(this%char_name)
          if(allocated(this%space_idx)) deallocate(this%space_idx)
          this%num_dims=-1
+         !write(*,'("#DEBUG: Exited tens_signature_dtor")') !debug
          return
         end subroutine tens_signature_dtor
 ![tens_shape_t]==============================================================
@@ -772,10 +784,12 @@
          implicit none
          type(tens_shape_t):: this
 
+         !write(*,'("#DEBUG: Entered tens_shape_dtor")') !debug
          if(allocated(this%group_spec)) deallocate(this%group_spec)
          if(allocated(this%dim_group)) deallocate(this%dim_group)
          if(allocated(this%dim_extent)) deallocate(this%dim_extent)
          this%num_dims=-1; this%num_grps=0
+         !write(*,'("#DEBUG: Exited tens_shape_dtor")') !debug
          return
         end subroutine tens_shape_dtor
 ![tens_header_t]==================================================================================
@@ -1078,12 +1092,146 @@
          implicit none
          type(tens_header_t):: this
 
-#ifndef NO_GNU
-         call tens_shape_dtor(this%shape)
-         call tens_signature_dtor(this%signature)
-#endif
          return
         end subroutine tens_header_dtor
+![tens_simple_part_t]===================================================
+        subroutine tens_simple_part_ctor(this,header,layout,offset,ierr)
+!CTOR for tens_simple_part_t.
+         implicit none
+         type(tens_simple_part_t), intent(out):: this !out: tensor simple part
+         class(tens_header_t), intent(in):: header    !in: tensor header
+         integer(INTD), intent(in):: layout           !in: simple storage layout: {TEREC_LAY_FDIMS,TEREC_LAY_CDIMS}
+         integer(INTL), intent(in):: offset           !in: offset in the parental tensor block
+         integer(INTD), intent(out), optional:: ierr  !out: error code
+         integer(INTD):: errc
+         logical:: shpd
+
+         errc=TEREC_SUCCESS
+         if(header%is_set(errc,shaped=shpd)) then
+          if(errc.eq.TEREC_SUCCESS.and.shpd) then
+           if(layout.eq.TEREC_LAY_FDIMS.or.layout.eq.TEREC_LAY_CDIMS) then
+            this%header=header
+            this%offset=offset
+            this%layout=layout
+           else
+            errc=TEREC_INVALID_ARGS
+           endif
+          else
+           errc=TEREC_INVALID_ARGS
+          endif
+         else
+          errc=TEREC_INVALID_ARGS
+         endif
+         if(errc.ne.TEREC_SUCCESS) call tens_simple_part_dtor(this)
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine tens_simple_part_ctor
+!----------------------------------------------------------
+        function TensSimplePartIsSet(this,ierr) result(res)
+!Returns TRUE of the tensor simple part is set.
+         implicit none
+         logical:: res                                !out: result
+         class(tens_simple_part_t), intent(in):: this !in: tensor simple part
+         integer(INTD), intent(out), optional:: ierr  !out: error code
+         integer(INTD):: errc
+
+         errc=TEREC_SUCCESS
+         res=(this%layout.ne.TEREC_LAY_NONE)
+         if(present(ierr)) ierr=errc
+         return
+        end function TensSimplePartIsSet
+!-----------------------------------------------------------------
+        function TensSimplePartGetOffset(this,ierr) result(offset)
+!Returns the offset of the tensor simple part.
+         implicit none
+         integer(INTL):: offset                       !out: offset
+         class(tens_simple_part_t), intent(in):: this !in: tensor simple part
+         integer(INTD), intent(out), optional:: ierr  !out: error code
+         integer(INTD):: errc
+
+         errc=TEREC_SUCCESS
+         if(this%is_set()) then
+          offset=this%offset
+         else
+          errc=TEREC_INVALID_REQUEST
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function TensSimplePartGetOffset
+!-----------------------------------------------------------------
+        function TensSimplePartGetLayout(this,ierr) result(layout)
+!Returns the layout of the tensor simple part.
+         implicit none
+         integer(INTL):: layout                       !out: layout
+         class(tens_simple_part_t), intent(in):: this !in: tensor simple part
+         integer(INTD), intent(out), optional:: ierr  !out: error code
+         integer(INTD):: errc
+
+         errc=TEREC_SUCCESS
+         if(this%is_set()) then
+          layout=this%layout
+         else
+          errc=TEREC_INVALID_REQUEST
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function TensSimplePartGetLayout
+!-----------------------------------------------------------------
+        function TensSimplePartGetHeader(this,ierr) result(header)
+!Returns a pointer to the header of the tensor simple part.
+         implicit none
+         type(tens_header_t), pointer:: header                !out: pointer to the header
+         class(tens_simple_part_t), intent(in), target:: this !in: tensor simple part
+         integer(INTD), intent(out), optional:: ierr          !out: error code
+         integer(INTD):: errc
+
+         errc=TEREC_SUCCESS
+         if(this%is_set()) then
+          header=>this%header
+         else
+          errc=TEREC_INVALID_REQUEST
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function TensSimplePartGetHeader
+!---------------------------------------------
+        subroutine tens_simple_part_dtor(this)
+!DTOR for tens_simple_part_t.
+         implicit none
+         type(tens_simple_part_t):: this
+
+         this%offset=-1_INTL
+         this%layout=TEREC_LAY_NONE
+         return
+        end subroutine tens_simple_part_dtor
+![tens_layout_t]===============================
+        function TensLayoutIsSet(this,ierr) result(res)
+!Returns TRUE if the tensor layout is set.
+         implicit none
+         logical:: res                               !out: result
+         class(tens_layout_t), intent(in):: this     !in: tensor layout
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=TEREC_SUCCESS
+         res=(this%layout.ne.TEREC_LAY_NONE)
+         if(present(ierr)) ierr=errc
+         return
+        end function TensLayoutIsSet
+!-------------------------------------------------------------
+        function TensLayoutGetLayout(this,ierr) result(layout)
+!Returns the tensor layout.
+         implicit none
+         integer(INTD):: layout                      !out: tensor layout
+         class(tens_layout_t), intent(in):: this     !in: tensor layout
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=TEREC_SUCCESS
+         layout=this%layout
+         if(present(ierr)) ierr=errc
+         return
+        end function TensLayoutGetLayout
 
        end module tensor_recursive
 !==================================
@@ -1107,6 +1255,9 @@
          if(ierr.eq.0) then; write(*,'("PASSED")'); else; write(*,'("FAILED: Error ",i11)') ierr; return; endif
          write(*,'("Testing class tens_header_t ... ")',ADVANCE='NO')
          call test_tens_header(ierr)
+         if(ierr.eq.0) then; write(*,'("PASSED")'); else; write(*,'("FAILED: Error ",i11)') ierr; return; endif
+         write(*,'("Testing class tens_simple_part_t ... ")',ADVANCE='NO')
+         call test_tens_simple_part(ierr)
          if(ierr.eq.0) then; write(*,'("PASSED")'); else; write(*,'("FAILED: Error ",i11)') ierr; return; endif
          return
         end subroutine test_tensor_recursive
@@ -1138,7 +1289,7 @@
          else
           ierr=1
          endif
-         call tens_signature_dtor(tsigna)
+         !call tens_signature_dtor(tsigna)
          return
         end subroutine test_tens_signature
 !---------------------------------------
@@ -1174,20 +1325,21 @@
          else
           ierr=1
          endif
-         call tens_shape_dtor(tshape)
+         !call tens_shape_dtor(tshape)
          return
         end subroutine test_tens_shape
 !----------------------------------------
         subroutine test_tens_header(ierr)
          implicit none
          integer(INTD), intent(out):: ierr
-         integer(INTD):: i,m,n
+         integer(INTD):: i,l,m,n
          integer(INTL):: dims(1:MAX_TENSOR_RANK)
          integer(INTD):: grps(1:MAX_TENSOR_RANK)
          integer(INTD):: grp_spec(1:MAX_TENSOR_RANK)
          type(tens_signature_t):: tsigna
          type(tens_shape_t):: tshape
          type(tens_header_t):: thead
+         character(32):: tens_name
 
          ierr=0
          n=6; dims(1:n)=(/128_INTL,64_INTL,256_INTL,64_INTL,128_INTL,64_INTL/)
@@ -1196,9 +1348,24 @@
          if(ierr.eq.TEREC_SUCCESS) then
           call thead%add_shape(ierr,dims(1:n),grps(1:n),grp_spec(1:m))
           if(ierr.eq.TEREC_SUCCESS) then
-           call thead%print_it(ierr)
+           !call thead%print_it(ierr) !debug
            if(ierr.eq.TEREC_SUCCESS) then
-            
+            call thead%get_name(tens_name,l,ierr)
+            if(ierr.eq.TEREC_SUCCESS.and.tens_name(1:l).eq.'Tensor') then
+             if(thead%get_rank(ierr).eq.6) then
+              call thead%get_dims(dims,n,ierr)
+              if(ierr.eq.TEREC_SUCCESS.and.n.eq.6.and.dims(1).eq.128.and.dims(2).eq.64.and.&
+                                                     &dims(3).eq.256.and.dims(4).eq.64.and.&
+                                                     &dims(5).eq.128.and.dims(6).eq.64) then
+              else
+               ierr=6
+              endif
+             else
+              ierr=5
+             endif
+            else
+             ierr=4
+            endif
            else
             ierr=3
            endif
@@ -1208,8 +1375,98 @@
          else
           ierr=1
          endif
-         call tens_header_dtor(thead)
+         !call tens_header_dtor(thead)
          return
         end subroutine test_tens_header
+!---------------------------------------------
+        subroutine test_tens_simple_part(ierr)
+         implicit none
+         integer(INTD), intent(out):: ierr
+         integer(INTD):: i,l,m,n
+         integer(INTL):: dims(1:MAX_TENSOR_RANK)
+         integer(INTD):: grps(1:MAX_TENSOR_RANK)
+         integer(INTD):: grp_spec(1:MAX_TENSOR_RANK)
+         type(tens_signature_t):: tsigna
+         type(tens_shape_t):: tshape
+         type(tens_header_t):: thead
+         type(tens_header_t), pointer:: thp
+         character(32):: tens_name
+         type(tens_simple_part_t):: tpart
+
+         ierr=0
+         n=6; dims(1:n)=(/128_INTL,64_INTL,256_INTL,64_INTL,128_INTL,64_INTL/)
+         m=2; grps(1:n)=(/1,2,0,2,1,2/); grp_spec(1:m)=(/TEREC_IND_RESTR_LT,TEREC_IND_RESTR_GE/)
+         call tens_header_ctor(thead,ierr,'Tensor',(/1_INTL,2_INTL,3_INTL,2_INTL,1_INTL,2_INTL/))
+         if(ierr.eq.TEREC_SUCCESS) then
+          call thead%add_shape(ierr,dims(1:n),grps(1:n),grp_spec(1:m))
+          if(ierr.eq.TEREC_SUCCESS) then
+           !call thead%print_it(ierr) !debug
+           if(ierr.eq.TEREC_SUCCESS) then
+            call thead%get_name(tens_name,l,ierr)
+            if(ierr.eq.TEREC_SUCCESS.and.tens_name(1:l).eq.'Tensor') then
+             if(thead%get_rank(ierr).eq.6) then
+              dims(:)=0_INTL
+              call thead%get_dims(dims,n,ierr)
+              if(ierr.eq.TEREC_SUCCESS.and.n.eq.6.and.dims(1).eq.128.and.dims(2).eq.64.and.&
+                                                     &dims(3).eq.256.and.dims(4).eq.64.and.&
+                                                     &dims(5).eq.128.and.dims(6).eq.64) then
+               call tens_simple_part_ctor(tpart,thead,TEREC_LAY_FDIMS,4096_INTL,ierr)
+               if(ierr.eq.TEREC_SUCCESS) then
+                if(tpart%get_offset(ierr).eq.4096.and.tpart%get_layout(i).eq.TEREC_LAY_FDIMS) then
+                 if(ierr.eq.TEREC_SUCCESS.and.i.eq.TEREC_SUCCESS) then
+                  thp=>tpart%get_header(ierr)
+                  if(ierr.eq.TEREC_SUCCESS.and.associated(thp)) then
+                   tens_name=' '
+                   call thp%get_name(tens_name,l,ierr)
+                   if(ierr.eq.TEREC_SUCCESS.and.tens_name(1:l).eq.'Tensor') then
+                    if(thp%get_rank(ierr).eq.6) then
+                     dims(:)=0_INTL
+                     call thp%get_dims(dims,n,ierr)
+                     if(ierr.eq.TEREC_SUCCESS.and.n.eq.6.and.dims(1).eq.128.and.dims(2).eq.64.and.&
+                                                     &dims(3).eq.256.and.dims(4).eq.64.and.&
+                                                     &dims(5).eq.128.and.dims(6).eq.64) then
+                     else
+                      ierr=13
+                     endif
+                    else
+                     ierr=12
+                    endif
+                   else
+                    ierr=11
+                   endif
+                  else
+                   ierr=10
+                  endif
+                 else
+                  ierr=9
+                 endif
+                else
+                 ierr=8
+                endif
+               else
+                ierr=7
+               endif
+              else
+               ierr=6
+              endif
+             else
+              ierr=5
+             endif
+            else
+             ierr=4
+            endif
+           else
+            ierr=3
+           endif
+          else
+           ierr=2
+          endif
+         else
+          ierr=1
+         endif
+         !call tens_simple_part_dtor(tpart)
+         !call tens_header_dtor(thead)
+         return
+        end subroutine test_tens_simple_part
 
        end module tensor_recursive_test

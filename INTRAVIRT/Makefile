@@ -224,8 +224,8 @@ FFLAGS_CRAY_DEV = -c -g $(NO_ACCEL) -DNO_GNU
 FFLAGS_CRAY_OPT = -c -O3 $(NO_ACCEL) -DNO_GNU
 FFLAGS_GNU_DEV = -c -fopenmp -fbacktrace -fcheck=bounds -fcheck=array-temps -fcheck=pointer -g $(NO_ACCEL)
 FFLAGS_GNU_OPT = -c -fopenmp -O3 $(NO_ACCEL)
-FFLAGS_PGI_DEV = -c -mp -Mcache_align -Mbounds -Mchkptr -Mstandard -g $(NO_ACCEL) -DNO_GNU
-FFLAGS_PGI_OPT = -c -mp -Mcache_align -Mstandard -O3 $(NO_ACCEL) -DNO_GNU
+FFLAGS_PGI_DEV = -c -Mcache_align -Mbounds -Mchkptr -Mstandard -g $(NO_ACCEL) -DNO_GNU
+FFLAGS_PGI_OPT = -c -Mcache_align -Mstandard -O3 $(NO_ACCEL) -DNO_GNU
 FFLAGS_IBM_DEV = -c -qsmp=omp $(NO_ACCEL) -WF,-DNO_GNU
 FFLAGS_IBM_OPT = -c -qsmp=omp -O3 $(NO_ACCEL) -WF,-DNO_GNU
 ifeq ($(BLASLIB),NONE)
