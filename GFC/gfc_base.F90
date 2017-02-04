@@ -1,9 +1,9 @@
 !Generic Fortran Containers (GFC): Base
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017-01-16 (started 2016-02-17)
+!REVISION: 2017-02-03 (started 2016-02-17)
 
-!Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
-!Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
+!Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
+!Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
 
 !This file is part of ExaTensor.
 
@@ -75,8 +75,9 @@
         integer(INTD), parameter:: GFC_ELEM_NOT_EMPTY=-8    !element of the container is not empty
         integer(INTD), parameter:: GFC_ACTION_FAILED=-9     !user-defined action failed on an element
         integer(INTD), parameter:: GFC_METHOD_UNDEFINED=-10 !undefined method called on an object
-        integer(INTD), parameter:: GFC_UNKNOWN_REQUEST=-11  !unknown request
-        integer(INTD), parameter:: GFC_IN_USE=-12           !object is in use by others
+        integer(INTD), parameter:: GFC_OVERFLOW=-11         !overflow
+        integer(INTD), parameter:: GFC_UNKNOWN_REQUEST=-12  !unknown request
+        integer(INTD), parameter:: GFC_IN_USE=-13           !object is in use by others
  !Predicates (GFC_ERROR applies here as well):
         integer(INTD), parameter:: GFC_TRUE=1  !TRUE value
         integer(INTD), parameter:: GFC_FALSE=0 !FALSE value
@@ -130,6 +131,7 @@
           procedure, public:: release_lock=>ContElemReleaseLock !PRIVATE: releases the lock on the container element
           procedure, public:: incr_ref_=>ContElemIncrRef        !PRIVATE: increments the reference count for the container element
           procedure, public:: decr_ref_=>ContElemDecrRef        !PRIVATE: decrements the reference count for the container element
+          procedure, public:: clean_=>ContElemClean             !PRIVATE: cleans the container element without releasing the resources
         end type gfc_cont_elem_t
  !Base container:
         type, abstract, public:: gfc_container_t
@@ -666,6 +668,23 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine ContElemDecrRef
+!------------------------------------------
+        subroutine ContElemClean(this,ierr) !INTERNAL USE ONLY!
+!Cleans the container element without releasing the resources.
+         class(gfc_cont_elem_t), intent(inout):: this !inout: container element
+         integer(INTD), intent(out), optional:: ierr  !out: error code
+         integer(INTD):: errc
+
+         errc=GFC_SUCCESS
+         this%value_p=>NULL()
+         this%alloc=GFC_FALSE
+#ifndef NO_OMP
+         this%ref_count=0
+         this%lock=0
+#endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine ContElemClean
 !------------------------------------------------------
         function ContNumElems(this,ierr) result(nelems) !INTERNAL USE ONLY!
 !Returns the total number of elements stored in the container,

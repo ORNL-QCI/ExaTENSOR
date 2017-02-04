@@ -1,9 +1,9 @@
 !Generic Fortran Containers (GFC): Tree
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017-01-13 (started 2016-02-17)
+!REVISION: 2017-02-03 (started 2016-02-17)
 
-!Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
-!Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
+!Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
+!Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
 
 !This file is part of ExaTensor.
 
@@ -1048,6 +1048,7 @@
 !Delete the tree:
          ierr=some_iter%reset(); if(ierr.ne.GFC_SUCCESS) then; ierr=10; return; endif
          ierr=some_iter%delete_subtree(some_destructor); if(ierr.ne.GFC_SUCCESS) then; ierr=11; return; endif
+         ierr=some_iter%release(); if(ierr.ne.GFC_SUCCESS) then; ierr=12; return; endif
          tm=thread_wtime(tms); perf=dble(MAX_TREE_ELEMS)/tm
          return
         end function test_gfc_tree

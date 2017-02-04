@@ -20,6 +20,7 @@ program main
  use dil_basic
  use stack_test
  use dictionary_test
+ use gfc_vector_test
  !use gfc_list_test
  use gfc_tree_test
  use gfc_dictionary_test
@@ -30,6 +31,13 @@ program main
  dev_out=6 !output device (defaults to screen)
 
 !GFC containers:
+ !Vector:
+ ierr=test_gfc_vector(perf,dev_out)
+ if(ierr.eq.0) then
+  write(*,*) 'gfc::vector testing status: ',ierr,'(PASSED): Performance: ',perf
+ else
+  write(*,*) 'gfc::vector testing status: ',ierr,'(FAILED): Performance: ',perf
+ endif
  !List:
  !ierr=test_gfc_list(perf,dev_out)
  !if(ierr.eq.0) then
