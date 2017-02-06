@@ -47,9 +47,10 @@
          class(list_elem_t), pointer, private:: next_elem=>NULL()
          class(list_elem_t), pointer, private:: prev_elem=>NULL()
         contains
-         procedure, public:: construct=>ListElemConstruct !constructs the content of the list element
-         procedure, public:: is_first=>ListElemIsFirst    !returns GFC_TRUE if the element is the first in the list
-         procedure, public:: is_last=>ListElemIsLast      !returns GFC_TRUE if the element is the last in the list
+         procedure, private:: ListElemConstruct
+         generic, public:: list_elem_ctor=>ListElemConstruct !constructs the content of the list element
+         procedure, public:: is_first=>ListElemIsFirst       !returns GFC_TRUE if the element is the first in the list
+         procedure, public:: is_last=>ListElemIsLast         !returns GFC_TRUE if the element is the last in the list
         end type list_elem_t
  !Linked list:
         type, extends(gfc_container_t), public:: list_bi_t
@@ -415,10 +416,10 @@
             if(errc.eq.0) then
 #ifdef NO_GNU
              if(present(copy_ctor_f)) then
-              call lep%construct(elem_val,ierr,assoc_only=assoc,copy_ctor_f=copy_ctor_f)
+              call lep%list_elem_ctor(elem_val,ierr,assoc_only=assoc,copy_ctor_f=copy_ctor_f)
              else
 #endif
-              call lep%construct(elem_val,ierr,assoc_only=assoc)
+              call lep%list_elem_ctor(elem_val,ierr,assoc_only=assoc)
 #ifdef NO_GNU
              endif
 #endif
@@ -470,10 +471,10 @@
             if(errc.eq.0) then
 #ifdef NO_GNU
              if(present(copy_ctor_f)) then
-              call this%container%first_elem%construct(elem_val,ierr,assoc_only=assoc,copy_ctor_f=copy_ctor_f)
+              call this%container%first_elem%list_elem_ctor(elem_val,ierr,assoc_only=assoc,copy_ctor_f=copy_ctor_f)
              else
 #endif
-              call this%container%first_elem%construct(elem_val,ierr,assoc_only=assoc)
+              call this%container%first_elem%list_elem_ctor(elem_val,ierr,assoc_only=assoc)
 #ifdef NO_GNU
              endif
 #endif
@@ -538,10 +539,10 @@
             if(errc.eq.0) then
 #ifdef NO_GNU
              if(present(copy_ctor_f)) then
-              call lep%construct(elem_val,ierr,assoc_only=assoc,copy_ctor_f=copy_ctor_f)
+              call lep%list_elem_ctor(elem_val,ierr,assoc_only=assoc,copy_ctor_f=copy_ctor_f)
              else
 #endif
-              call lep%construct(elem_val,ierr,assoc_only=assoc)
+              call lep%list_elem_ctor(elem_val,ierr,assoc_only=assoc)
 #ifdef NO_GNU
              endif
 #endif
@@ -585,10 +586,10 @@
             if(errc.eq.0) then
 #ifdef NO_GNU
              if(present(copy_ctor_f)) then
-              call this%container%first_elem%construct(elem_val,ierr,assoc_only=assoc,copy_ctor_f=copy_ctor_f)
+              call this%container%first_elem%list_elem_ctor(elem_val,ierr,assoc_only=assoc,copy_ctor_f=copy_ctor_f)
              else
 #endif
-              call this%container%first_elem%construct(elem_val,ierr,assoc_only=assoc)
+              call this%container%first_elem%list_elem_ctor(elem_val,ierr,assoc_only=assoc)
 #ifdef NO_GNU
              endif
 #endif

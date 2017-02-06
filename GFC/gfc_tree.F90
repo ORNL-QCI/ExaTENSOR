@@ -56,7 +56,8 @@
          class(tree_vertex_t), pointer, private:: first_child=>NULL()  !link to the first child vertex
          integer(INTL), private:: num_child=0                          !total number of children vertices
          contains
-          procedure, public:: construct=>TreeVertexConstruct                         !constructs the content of a tree vertex
+          procedure, private:: TreeVertexConstruct
+          generic, public:: tree_vertex_ctor=>TreeVertexConstruct                    !constructs the content of a tree vertex
           procedure, non_overridable, public:: num_children=>TreeVertexNumChildren   !returns the total number of children
           procedure, non_overridable, public:: num_siblings=>TreeVertexNumSiblings   !returns the total number of siblings
           procedure, non_overridable, public:: is_first_sibling=>TreeVertexIsFirstSibling !returns GFC_TRUE if the vertex is the first in the sibling (ring) list
@@ -599,10 +600,10 @@
             if(errc.eq.0) then
 #ifdef NO_GNU
              if(present(copy_ctor_f)) then
-              call tvp%next_sibling%construct(elem_val,ierr,assoc_only=assoc,copy_ctor_f=copy_ctor_f)
+              call tvp%next_sibling%tree_vertex_ctor(elem_val,ierr,assoc_only=assoc,copy_ctor_f=copy_ctor_f)
              else
 #endif
-              call tvp%next_sibling%construct(elem_val,ierr,assoc_only=assoc)
+              call tvp%next_sibling%tree_vertex_ctor(elem_val,ierr,assoc_only=assoc)
 #ifdef NO_GNU
              endif
 #endif
@@ -621,10 +622,10 @@
             if(errc.eq.0) then
 #ifdef NO_GNU
              if(present(copy_ctor_f)) then
-              call this%current%first_child%construct(elem_val,ierr,assoc_only=assoc,copy_ctor_f=copy_ctor_f)
+              call this%current%first_child%tree_vertex_ctor(elem_val,ierr,assoc_only=assoc,copy_ctor_f=copy_ctor_f)
              else
 #endif
-              call this%current%first_child%construct(elem_val,ierr,assoc_only=assoc)
+              call this%current%first_child%tree_vertex_ctor(elem_val,ierr,assoc_only=assoc)
 #ifdef NO_GNU
              endif
 #endif
@@ -662,10 +663,10 @@
             if(errc.eq.0) then
 #ifdef NO_GNU
              if(present(copy_ctor_f)) then
-              call this%container%root%construct(elem_val,ierr,assoc_only=assoc,copy_ctor_f=copy_ctor_f)
+              call this%container%root%tree_vertex_ctor(elem_val,ierr,assoc_only=assoc,copy_ctor_f=copy_ctor_f)
              else
 #endif
-              call this%container%root%construct(elem_val,ierr,assoc_only=assoc)
+              call this%container%root%tree_vertex_ctor(elem_val,ierr,assoc_only=assoc)
 #ifdef NO_GNU
              endif
 #endif

@@ -1,9 +1,9 @@
 !Generic Fortran Containers (GFC): Dictionary (ordered map), AVL BST
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017/01/08 (recycling my old dictionary implementation)
+!REVISION: 2017/02/06 (recycling my old dictionary implementation)
 
-!Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
-!Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
+!Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
+!Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
 
 !This file is part of ExaTensor.
 
@@ -54,7 +54,8 @@
          class(dict_elem_t), pointer, private:: parent=>NULL()   !parent element
          integer(INTD), private:: balance_fac                    !balance factor (for AVL BST)
          contains
-          procedure, public:: construct=>DictElemConstruct               !constructs a dictionary element from a key-value pair
+          procedure, private:: DictElemConstruct
+          generic, public:: dict_elem_ctor=>DictElemConstruct            !constructs a dictionary element from a key-value pair
           procedure, public:: destruct=>DictElemDestruct                 !destructs a dictionary element
           procedure, non_overridable, public:: is_root=>DictElemIsRoot   !returns GFC_TRUE if the element is the root of the dictionary binary search tree
           procedure, non_overridable, public:: is_leaf=>DictElemIsLeaf   !returns GFC_TRUE if the element is a leaf of the dictionary binary search tree
@@ -1282,20 +1283,20 @@
              if(present(store_by)) then
 #ifdef NO_GNU
               if(present(copy_ctor_val_f)) then
-               call curr%construct(key,value_in,j,assoc_val=store_by,val_copy_ctor_f=copy_ctor_val_f)
+               call curr%dict_elem_ctor(key,value_in,j,assoc_val=store_by,val_copy_ctor_f=copy_ctor_val_f)
               else
 #endif
-               call curr%construct(key,value_in,j,assoc_val=store_by)
+               call curr%dict_elem_ctor(key,value_in,j,assoc_val=store_by)
 #ifdef NO_GNU
               endif
 #endif
              else
 #ifdef NO_GNU
               if(present(copy_ctor_val_f)) then
-               call curr%construct(key,value_in,j,val_copy_ctor_f=copy_ctor_val_f)
+               call curr%dict_elem_ctor(key,value_in,j,val_copy_ctor_f=copy_ctor_val_f)
               else
 #endif
-               call curr%construct(key,value_in,j)
+               call curr%dict_elem_ctor(key,value_in,j)
 #ifdef NO_GNU
               endif
 #endif
@@ -1321,20 +1322,20 @@
              if(present(store_by)) then
 #ifdef NO_GNU
               if(present(copy_ctor_val_f)) then
-               call curr%construct(key,value_in,j,assoc_val=store_by,val_copy_ctor_f=copy_ctor_val_f)
+               call curr%dict_elem_ctor(key,value_in,j,assoc_val=store_by,val_copy_ctor_f=copy_ctor_val_f)
               else
 #endif
-               call curr%construct(key,value_in,j,assoc_val=store_by)
+               call curr%dict_elem_ctor(key,value_in,j,assoc_val=store_by)
 #ifdef NO_GNU
               endif
 #endif
              else
 #ifdef NO_GNU
               if(present(copy_ctor_val_f)) then
-               call curr%construct(key,value_in,j,val_copy_ctor_f=copy_ctor_val_f)
+               call curr%dict_elem_ctor(key,value_in,j,val_copy_ctor_f=copy_ctor_val_f)
               else
 #endif
-               call curr%construct(key,value_in,j)
+               call curr%dict_elem_ctor(key,value_in,j)
 #ifdef NO_GNU
               endif
 #endif

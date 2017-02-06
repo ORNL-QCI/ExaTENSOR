@@ -1,9 +1,9 @@
 !Generic Fortran Containers (GFC): Graph
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017/01/08
+!REVISION: 2017/02/06
 
-!Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
-!Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
+!Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
+!Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
 
 !This file is part of ExaTensor.
 
@@ -22,6 +22,7 @@
 
        module gfc_graph
         use gfc_base
+        use gfc_vector
         use timers
         implicit none
         private
@@ -31,7 +32,42 @@
         logical, private:: VERBOSE=.TRUE.   !verbosity for errors
         integer(INTD), private:: DEBUG=0    !debugging level (0:none)
 !TYPES:
- !Graph vertex:
+#if 0
  !Graph edge:
+        type, public:: graph_edge_t
+         integer(INTL), private:: vertex=-1_INTL
+         contains
+          procedure, private:: GraphEdgeConstruct
+          generic, public:: graph_edge_ctor=>GraphEdgeConstruct
+        end type graph_edge_t
+ !Directed colored graph edge (general graph edge):
+        type, extends(graph_edge_t), public:: graph_edge_gen_t
+         integer(INTL), private:: color=0_INTL
+         contains
+          procedure, private:: GraphEdgeGenConstruct
+          generic, public:: graph_edge_gen_ctor=>GraphEdgeGenConstruct
+        end type graph_edge_gen_t
+ !Graph vertex:
+        type, public:: graph_vertex_t
+         integer(INTL), private:: color=0_INTL
+         integer(INTL), private:: num_edges=0_INTL
+         type(list_bi_t), private:: edges
+         contains
+          procedure, private:: GraphVertexConstruct
+          generic, public:: graph_vertex_ctor=>GraphVertexConstruct
+          final:: graph_vertex_dtor
+        end type graph_vertex_t
  !Graph:
+        type, extends(gfc_container_t), public:: graph_t
+         type(vector_t), private:: vertices
+         integer(INTL), private:: num_edges=0_INTL
+         contains
+          procedure, private:: is_empty=>GraphIsEmpty
+          procedure, private:: num_vertices=>GraphNumVertices
+          final:: graph_dtor
+        end type graph_t
+ !Graph iterator:
+        type, extends(gfc_iter_t), public:: graph_iter_t
+        end type graph_iter_t
+#endif
        end module gfc_graph

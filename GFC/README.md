@@ -2,8 +2,8 @@ GFC: Generic Fortran Containers: Implementation based on OOP Fortran-2003
      that heavily relies on dynamic polymorphism.
 Author: Dmitry I. Lyakh (Liakh): liakhdi@ornl.gov
 
-Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
-Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
+Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
+Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
 
 LICENSE: GNU Lesser General Public License v.3
 
@@ -18,10 +18,12 @@ GENERAL INFORMATION:
  1. Bi-directional Linked List: gfc_list (GFC), lists (legacy);
  2. Tree: gfc_tree (GFC);
  3. Dictionary (ordered map): gfc_dictionary (GFC), dictionary (legacy);
- 4. Vector: gfc_vector (GFC, under development);
+ 4. Vector: gfc_vector (GFC);
  5. Stack: gfc_stack (GFC, under development), stack (legacy);
  6. Queue: gfc_queue (GFC, under development);
  7. Priority queue: gfc_pri_queue (GFC, under development);
+ 8. Hash map (unordered map): gfc_hash_map (GFC, under development);
+ 9. Graph: gfc_graph (GFC, under development).
 
 DESIGN AND FEATURES:
  # A GFC container is a structured collection of objects of any class;
@@ -56,7 +58,7 @@ DESIGN AND FEATURES:
    All insertion, deletion, and search operations are done via iterators,
    that is, the iterator methods provide the only possible way of accessing,
    updating, and performing other actions on the associated container.
-   All relevant iterator methods are thread-safe, thus enabling
+ # All relevant iterator methods are thread-safe, thus enabling
    a parallel execution of container scans (via OpenMP threads).
    However, it is the user responsibility to avoid race conditions
    when updating the value of container elements, that is, the structure
@@ -66,10 +68,10 @@ DESIGN AND FEATURES:
    if necessary for avoiding race conditions on container values.
    An iterator must not be shared among two or more threads!
  # The container element deletion operation may require a user-defined
-   destructor which will release all resources occupied by the object
-   stored in that element, unless the object has FINAL methods defined
-   (the interface for a user-defined non-member generic destructor is
-   provided in gfc_base.F90).
+   non-member destructor which will release all resources occupied by
+   the object stored in that element, unless the object has FINAL methods
+   defined (the interface for a user-defined non-member generic destructor
+   is provided in gfc_base.F90).
 
 NOTES:
  # This implementation of Generic Fortran Containers heavily relies on
