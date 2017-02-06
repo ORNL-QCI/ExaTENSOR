@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Vector (non-contiguous)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017/02/03
+!REVISION: 2017/02/06
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -43,38 +43,26 @@
         end type vector_elem_t
  !Vector segment:
         type, private:: vector_seg_t
-         !integer(INTD), private:: max_elems=0                    !max length of the vector segment
-         !integer(INTD), private:: num_elems=0                    !current occupied length of the vector segment
          type(vector_elem_t), allocatable, private:: seg_elem(:) !elements of the vector segment: [0..max_elems-1]
          contains
           procedure, private:: VectorSegConstruct
           generic:: vector_seg_ctor=>VectorSegConstruct          !constructs a vector segment
-          !procedure, private:: is_empty=>VectorSegIsEmpty        !returns TRUE if the vector segment is empty
-          !procedure, private:: is_full=>VectorSegIsFull          !returns TRUE if the vector segment is full
           final:: vector_seg_dtor                                !destructs a vector segment
         end type vector_seg_t
  !Vector segment batch:
         type, private:: vector_batch_t
-         !integer(INTD), private:: max_segs=0                     !max number of segments in the batch
-         !integer(INTD), private:: num_segs=0                     !current number of active segments in the batch
          type(vector_seg_t), allocatable, private:: batch_seg(:) !segments of the batch: [0..max_segs-1]
          contains
           procedure, private:: VectorBatchConstruct
           generic:: vector_batch_ctor=>VectorBatchConstruct      !constructs a vector batch
-          !procedure, private:: is_empty=>VectorBatchIsEmpty      !returns TRUE if the vector batch is empty
-          !procedure, private:: is_full=>VectorBatchIsFull        !returns TRUE if the vector batch is full
           final:: vector_batch_dtor                              !destructs a vector batch
         end type vector_batch_t
  !Vector tile:
         type, private:: vector_tile_t
-         !integer(INTD), private:: max_batches=0                     !max number of batches in the tile
-         !integer(INTD), private:: num_batches=0                     !current number of active batches in the tile
          type(vector_batch_t), allocatable, private:: tile_batch(:) !batches of the tile: [0..max_batches-1]
          contains
           procedure, private:: VectorTileConstruct
           generic:: vector_tile_ctor=>VectorTileConstruct           !constructs a vector tile
-          !procedure, private:: is_empty=>VectorTileIsEmpty          !returns TRUE if the vector tile is empty
-          !procedure, private:: is_full=>VectorTileIsFull            !returns TRUE if the vector tile is full
           final:: vector_tile_dtor                                  !destructs a vector tile
         end type vector_tile_t
  !Vector:
@@ -82,8 +70,6 @@
          integer(INTL), private:: max_length=GFC_VECTOR_MAX_LENGTH !vector capacity (max possible number of elements)
          integer(INTL), private:: lbnd=0_INTL                      !lower bound of the vector
          integer(INTL), private:: ubnd=-1_INTL                     !upper bound of the vector
-         integer(INTD), private:: max_tiles=0                      !max number of batches in the vector
-         integer(INTD), private:: num_tiles=0                      !current number of active batches in the vector
          type(vector_tile_t), allocatable, private:: vec_tile(:)   !vector tiles: [0..max_tiles-1]
          contains
           procedure, public:: is_empty=>VectorIsEmpty       !returns GFC_TRUE of the vector is empty, GFC_FALSE otherwise (or error code)
@@ -92,9 +78,9 @@
           procedure, public:: length=>VectorLength          !returns current vector length = (upper_bound - lower_bound + 1)
           procedure, public:: lower_bound=>VectorLowerBound !returns vector lower bound
           procedure, public:: upper_bound=>VectorUpperBound !returns vector upper bound
-          procedure, private:: incr_len=>VectorIncrLen
-          procedure, private:: decr_len=>VectorDecrLen
-          procedure, private:: adjust_structure=>VectorAdjustStructure
+          procedure, private:: incr_len_=>VectorIncrLen
+          procedure, private:: decr_len_=>VectorDecrLen
+          procedure, private:: adjust_structure_=>VectorAdjustStructure
         end type vector_t
  !Vector iterator:
         type, extends(gfc_iter_t), public:: vector_iter_t
@@ -110,14 +96,12 @@
           procedure, public:: next=>VectorIterNext                !moves the iterator to the next vector element
           procedure, public:: previous=>VectorIterPrevious        !moves the iterator to the previous vector element
           procedure, public:: get_length=>VectorIterGetLength     !returns the current length of the vector
-          procedure, public:: get_offset=>VectorIterGetOffset     !returns of the offset of the current iterator position: [0..MAX]
+          procedure, public:: get_offset=>VectorIterGetOffset     !returns the offset of the current iterator position: [0..MAX]
           procedure, public:: move_to=>VectorIterMoveTo           !moves the iterator to the specific vector element
           procedure, public:: append=>VectorIterAppend            !appends a new element at the end of the vector
-#if 0
           procedure, public:: insert=>VectorIterInsert            !inserts a new element at the current iterator position
           procedure, public:: delete=>VectorIterDelete            !deletes an element at the current iterator position
           procedure, public:: delete_all=>VectorIterDeleteAll     !deletes all elements of the vector
-#endif
         end type vector_iter_t
 !VISIBILITY:
         private flat2quadruplet
@@ -126,16 +110,10 @@
         private VectorElemConstruct
  !vector_seg_t:
         private VectorSegConstruct
-        !private VectorSegIsEmpty
-        !private VectorSegIsFull
  !vector_batch_t:
         private VectorBatchConstruct
-        !private VectorBatchIsEmpty
-        !private VectorBatchIsFull
  !vector_tile_t:
         private VectorTileConstruct
-        !private VectorTileIsEmpty
-        !private VectorTileIsFull
  !vector_t:
         private VectorIsEmpty
         private VectorIsFull
@@ -158,18 +136,17 @@
         private VectorIterGetOffset
         private VectorIterMoveTo
         private VectorIterAppend
-#if 0
         private VectorIterInsert
         private VectorIterDelete
         private VectorIterDeleteAll
-#endif
+
        contains
 !IMPLEMENTATION:
 !==================================================
         subroutine flat2quadruplet(flat,quadruplet)
          implicit none
-         integer(INTL), intent(in):: flat               !flat offset (0..MAX)
-         integer(INTD), intent(inout):: quadruplet(1:4) !4-component representation with seniority 1->4
+         integer(INTL), intent(in):: flat               !in: flat offset (0..MAX)
+         integer(INTD), intent(inout):: quadruplet(1:4) !out: 4-component representation with seniority 1->4
          integer(INTL):: i,k
          integer(INTD):: j
 
@@ -188,8 +165,8 @@
 !--------------------------------------------------------
         function quadruplet2flat(quadruplet) result(flat)
          implicit none
-         integer(INTL):: flat
-         integer(INTD), intent(in):: quadruplet(1:4)
+         integer(INTL):: flat                        !out: flat offset
+         integer(INTD), intent(in):: quadruplet(1:4) !in: 4-component representation with seniority 1->4
          integer(INTD):: j
 
          flat=quadruplet(4)
@@ -206,7 +183,7 @@
 #endif
 !Constructs the content of the vector element.
          implicit none
-         class(vector_elem_t), intent(inout):: this     !inout: vector element
+         class(vector_elem_t), intent(inout):: this     !inout: vector element (empty on input)
          class(*), target, intent(in):: obj             !in: assigned value
          integer(INTD), intent(out), optional:: ierr    !out: error code
          logical, intent(in), optional:: assoc_only     !in: if TRUE, the value will be assigned by reference, otherwise by value (allocated): Defaults to FALSE
@@ -246,46 +223,19 @@
          errc=GFC_SUCCESS
          if(capacity.gt.0) then
           allocate(this%seg_elem(0:capacity-1),STAT=errc)
-          if(errc.eq.0) then
-           !this%max_elems=capacity
-           !this%num_elems=0
-          else
-           errc=GFC_MEM_ALLOC_FAILED
-          endif
+          if(errc.ne.0) errc=GFC_MEM_ALLOC_FAILED
          else
           errc=GFC_INVALID_ARGS
          endif
          if(present(ierr)) ierr=errc
          return
         end subroutine VectorSegConstruct
-#if 0
-!--------------------------------------------------
-        function VectorSegIsEmpty(this) result(res)
-         implicit none
-         logical:: res                          !out: result
-         class(vector_seg_t), intent(in):: this !in: vector segment
-
-         res=(this%num_elems.eq.0)
-         return
-        end function VectorSegIsEmpty
-!-------------------------------------------------
-        function VectorSegIsFull(this) result(res)
-         implicit none
-         logical:: res                          !out: result
-         class(vector_seg_t), intent(in):: this !in: vector segment
-
-         res=(this%num_elems.eq.this%max_elems)
-         return
-        end function VectorSegIsFull
-#endif
 !---------------------------------------
         subroutine vector_seg_dtor(this)
          implicit none
          type(vector_seg_t):: this
 
          if(allocated(this%seg_elem)) deallocate(this%seg_elem)
-         !this%max_elems=0
-         !this%num_elems=0
          return
         end subroutine vector_seg_dtor
 ![vector_batch_t]==========================================
@@ -299,47 +249,19 @@
          errc=GFC_SUCCESS
          if(capacity.gt.0) then
           allocate(this%batch_seg(0:capacity-1),STAT=errc)
-          if(errc.eq.0) then
-           !this%max_segs=capacity
-           !this%num_segs=0
-          else
-           errc=GFC_MEM_ALLOC_FAILED
-          endif
+          if(errc.ne.0) errc=GFC_MEM_ALLOC_FAILED
          else
           errc=GFC_INVALID_ARGS
          endif
          if(present(ierr)) ierr=errc
          return
         end subroutine VectorBatchConstruct
-#if 0
-!----------------------------------------------------
-        function VectorBatchIsEmpty(this) result(res)
-         implicit none
-         logical:: res                            !out: result
-         class(vector_batch_t), intent(in):: this !in: vector batch
-
-         res=(this%num_segs.eq.0)
-         return
-        end function VectorBatchIsEmpty
-!---------------------------------------------------
-        function VectorBatchIsFull(this) result(res)
-         implicit none
-         logical:: res                            !out: result
-         class(vector_batch_t), intent(in):: this !in: vector batch
-
-         res=.FALSE.
-         if(this%num_segs.eq.this%max_segs) res=this%batch_seg(this%num_segs-1)%is_full()
-         return
-        end function VectorBatchIsFull
-#endif
 !-----------------------------------------
         subroutine vector_batch_dtor(this)
          implicit none
          type(vector_batch_t):: this
 
          if(allocated(this%batch_seg)) deallocate(this%batch_seg)
-         !this%max_segs=0
-         !this%num_segs=0
          return
         end subroutine vector_batch_dtor
 ![vector_tile_t]==========================================
@@ -353,47 +275,19 @@
          errc=GFC_SUCCESS
          if(capacity.gt.0) then
           allocate(this%tile_batch(0:capacity-1),STAT=errc)
-          if(errc.eq.0) then
-           !this%max_batches=capacity
-           !this%num_batches=0
-          else
-           errc=GFC_MEM_ALLOC_FAILED
-          endif
+          if(errc.ne.0) errc=GFC_MEM_ALLOC_FAILED
          else
           errc=GFC_INVALID_ARGS
          endif
          if(present(ierr)) ierr=errc
          return
         end subroutine VectorTileConstruct
-#if 0
-!--------------------------------------------------
-        function VectorTileIsEmpty(this) result(res)
-         implicit none
-         logical:: res                           !out: result
-         class(vector_tile_t), intent(in):: this !in: vector tile
-
-         res=(this%num_batches.eq.0)
-         return
-        end function VectorTileIsEmpty
-!--------------------------------------------------
-        function VectorTileIsFull(this) result(res)
-         implicit none
-         logical:: res                           !out: result
-         class(vector_tile_t), intent(in):: this !in: vector tile
-
-         res=.FALSE.
-         if(this%num_batches.eq.this%max_batches) res=this%tile_batch(this%num_batches-1)%is_full()
-         return
-        end function VectorTileIsFull
-#endif
 !----------------------------------------
         subroutine vector_tile_dtor(this)
          implicit none
          type(vector_tile_t):: this
 
          if(allocated(this%tile_batch)) deallocate(this%tile_batch)
-         !this%max_batches=0
-         !this%num_batches=0
          return
         end subroutine vector_tile_dtor
 ![vector_t]=====================================
@@ -497,7 +391,7 @@
          implicit none
          integer(INTD):: ierr                         !out: error code
          class(vector_t), intent(inout):: this        !inout: vector
-         integer(INTL), intent(in):: offset           !in: offset in the vector
+         integer(INTL), intent(in):: offset           !in: offset in the vector (for insertion or deletion)
          logical, intent(in), optional:: for_deletion !in: if TRUE, activates adjustment after a deletion, defaults to FALSE (adjustment prior to insertion)
          logical:: fordel
          integer(INTL):: i,l
@@ -517,25 +411,32 @@
               &this%vec_tile(w(4))%tile_batch(w(3))%batch_seg(w(2))%seg_elem(w(1))
              enddo
             endif
-            call flat2quadruplet(l-1_INTL,q) !last element is now empty
+            call flat2quadruplet(l-1_INTL,q) !last vector element is now empty
             call this%vec_tile(q(4))%tile_batch(q(3))%batch_seg(q(2))%seg_elem(q(1))%clean_(ierr)
             if(q(2).eq.0.and.q(1).eq.0) then !batch has become empty, deallocate it
              do j=GFC_VECTOR_SEG_LENGTH-1,0,-1
-              deallocate(this%vec_tile(q(4))%tile_batch(q(3))%batch_seg(j)%seg_elem,STAT=errc)
+              if(allocated(this%vec_tile(q(4))%tile_batch(q(3))%batch_seg(j)%seg_elem))&
+               &deallocate(this%vec_tile(q(4))%tile_batch(q(3))%batch_seg(j)%seg_elem,STAT=errc)
               if(errc.ne.0) ierr=GFC_MEM_FREE_FAILED
+              !print *,'Deallocating ',q(4),q(3),j,' --> ',errc !debug
              enddo
              if(q(3).eq.0) then
               do j=GFC_VECTOR_SEG_LENGTH-1,0,-1
-               deallocate(this%vec_tile(q(4))%tile_batch(j)%batch_seg,STAT=errc)
+               if(allocated(this%vec_tile(q(4))%tile_batch(j)%batch_seg))&
+                &deallocate(this%vec_tile(q(4))%tile_batch(j)%batch_seg,STAT=errc)
                if(errc.ne.0) ierr=GFC_MEM_FREE_FAILED
+               !print *,'Deallocating ',q(4),j,' --> ',errc !debug
               enddo
-             endif
-             if(q(4).eq.0) then
-              do j=GFC_VECTOR_SEG_LENGTH-1,0,-1
-               deallocate(this%vec_tile(j)%tile_batch,STAT=errc)
-               if(errc.ne.0) ierr=GFC_MEM_FREE_FAILED
-              enddo
-              deallocate(this%vec_tile,STAT=errc); if(errc.ne.0) ierr=GFC_MEM_FREE_FAILED
+              if(q(4).eq.0) then !last element has been deleted: vector is empty
+               do j=GFC_VECTOR_SEG_LENGTH-1,0,-1
+                if(allocated(this%vec_tile(j)%tile_batch))&
+                 &deallocate(this%vec_tile(j)%tile_batch,STAT=errc)
+                if(errc.ne.0) ierr=GFC_MEM_FREE_FAILED
+                !print *,'Deallocating ',j,' --> ',errc !debug
+               enddo
+               deallocate(this%vec_tile,STAT=errc); if(errc.ne.0) ierr=GFC_MEM_FREE_FAILED
+               !print *,'Deallocating vec_tile --> ',errc !debug
+              endif
              endif
             endif
            else
@@ -561,9 +462,9 @@
                   this%vec_tile(q(4))%tile_batch(q(3))%batch_seg(q(2))%seg_elem(q(1))=&
                   &this%vec_tile(w(4))%tile_batch(w(3))%batch_seg(w(2))%seg_elem(w(1))
                  enddo
-                 call flat2quadruplet(offset,q) !element #<offset> is empty now
-                 call this%vec_tile(q(4))%tile_batch(q(3))%batch_seg(q(2))%seg_elem(q(1))%clean_(ierr)
                 endif
+                call flat2quadruplet(offset,q) !element #<offset> is empty now
+                call this%vec_tile(q(4))%tile_batch(q(3))%batch_seg(q(2))%seg_elem(q(1))%clean_(ierr)
                else
                 ierr=GFC_MEM_ALLOC_FAILED
                endif
@@ -823,7 +724,8 @@
 #else
         function VectorIterAppend(this,elem_val,assoc_only) result(ierr)
 #endif
-!Appends a vector element to the end of the vector. The iterator position is kept unchanged.
+!Appends a vector element to the end of the vector. The iterator position is kept unchanged,
+!unless the container is empty in which case it will be reset to the first element.
          implicit none
          integer(INTD):: ierr                       !out: error code
          class(vector_iter_t), intent(inout):: this !inout: iterator
@@ -833,16 +735,16 @@
          procedure(gfc_copy_i), optional:: copy_ctor_f !user-defined generic copy constructor (when storing by value only)
 #endif
          logical:: assoc
-         integer:: errc
          integer(INTL):: offset,nelems
          integer(INTD):: q(1:4)
 
          if(present(assoc_only)) then; assoc=assoc_only; else; assoc=.FALSE.; endif
          ierr=this%get_status()
-         if(ierr.eq.GFC_IT_ACTIVE.or.ierr.eq.GFC_IT_DONE) then !non-empty container
+         if(ierr.eq.GFC_IT_DONE) then; ierr=this%reset(); ierr=this%get_status(); endif
+         if(ierr.eq.GFC_IT_ACTIVE) then !non-empty container
           if(associated(this%container)) then
            offset=this%container%length()
-           ierr=this%container%adjust_structure(offset)
+           ierr=this%container%adjust_structure_(offset)
            if(ierr.eq.GFC_SUCCESS) then
             call flat2quadruplet(offset,q)
 #ifdef NO_GNU
@@ -857,7 +759,7 @@
             endif
 #endif
             if(ierr.eq.GFC_SUCCESS) then
-             call this%container%incr_len()
+             call this%container%incr_len_()
              if(this%container%num_elems_().ge.0) then !quick counting is on
               nelems=this%container%update_num_elems_(1_INTL,ierr); if(ierr.ne.GFC_SUCCESS) ierr=GFC_CORRUPTED_CONT
              endif
@@ -870,7 +772,7 @@
           if(associated(this%container)) then
            if(this%container%is_empty().eq.GFC_TRUE) then
             offset=0_INTL
-            ierr=this%container%adjust_structure(offset)
+            ierr=this%container%adjust_structure_(offset)
             if(ierr.eq.GFC_SUCCESS) then
              call flat2quadruplet(offset,q)
 #ifdef NO_GNU
@@ -885,7 +787,7 @@
              endif
 #endif
              if(ierr.eq.GFC_SUCCESS) then
-              call this%container%incr_len()
+              call this%container%incr_len_()
               ierr=this%reset() !reset the iterator to GFC_IT_ACTIVE
               if(this%container%num_elems_().ge.0) then !quick counting is on
                nelems=this%container%update_num_elems_(1_INTL,ierr); if(ierr.ne.GFC_SUCCESS) ierr=GFC_CORRUPTED_CONT
@@ -901,6 +803,164 @@
          endif
          return
         end function VectorIterAppend
+!-----------------------------------------------------------------------------------
+#ifdef NO_GNU
+        function VectorIterInsert(this,elem_val,assoc_only,copy_ctor_f) result(ierr) !`GCC has a bug with this
+#else
+        function VectorIterInsert(this,elem_val,assoc_only) result(ierr)
+#endif
+!Inserts a vector element at the current iterator position. The iterator position is kept unchanged,
+!unless the container is empty in which case it will be reset to the first element.
+         implicit none
+         integer(INTD):: ierr                       !out: error code
+         class(vector_iter_t), intent(inout):: this !inout: iterator
+         class(*), target, intent(in):: elem_val    !in: value to be stored
+         logical, intent(in), optional:: assoc_only !in: storage type: TRUE:by reference, FALSE:by value (default)
+#ifdef NO_GNU
+         procedure(gfc_copy_i), optional:: copy_ctor_f !user-defined generic copy constructor (when storing by value only)
+#endif
+         logical:: assoc
+         integer(INTL):: offset,nelems
+         integer(INTD):: q(1:4)
+
+         if(present(assoc_only)) then; assoc=assoc_only; else; assoc=.FALSE.; endif
+         ierr=this%get_status()
+         if(ierr.eq.GFC_IT_ACTIVE) then !non-empty container
+          if(associated(this%container).and.this%curr_offset.ge.0_INTL) then
+           offset=this%curr_offset
+           ierr=this%container%adjust_structure_(offset)
+           if(ierr.eq.GFC_SUCCESS) then
+            call flat2quadruplet(offset,q)
+#ifdef NO_GNU
+            if(present(copy_ctor_f)) then
+             call this%container%vec_tile(q(4))%tile_batch(q(3))%batch_seg(q(2))%seg_elem(q(1))%&
+                 &vector_elem_ctor(elem_val,ierr,assoc_only=assoc,copy_ctor_f=copy_ctor_f)
+            else
+#endif
+             call this%container%vec_tile(q(4))%tile_batch(q(3))%batch_seg(q(2))%seg_elem(q(1))%&
+                 &vector_elem_ctor(elem_val,ierr,assoc_only=assoc)
+#ifdef NO_GNU
+            endif
+#endif
+            if(ierr.eq.GFC_SUCCESS) then
+             this%current=>this%container%vec_tile(q(4))%tile_batch(q(3))%batch_seg(q(2))%seg_elem(q(1))
+             call this%container%incr_len_()
+             if(this%container%num_elems_().ge.0) then !quick counting is on
+              nelems=this%container%update_num_elems_(1_INTL,ierr); if(ierr.ne.GFC_SUCCESS) ierr=GFC_CORRUPTED_CONT
+             endif
+            endif
+           endif
+          else
+           ierr=GFC_CORRUPTED_CONT
+          endif
+         elseif(ierr.eq.GFC_IT_EMPTY) then !empty container
+          if(associated(this%container)) then
+           if(this%container%is_empty().eq.GFC_TRUE) then
+            offset=0_INTL
+            ierr=this%container%adjust_structure_(offset)
+            if(ierr.eq.GFC_SUCCESS) then
+             call flat2quadruplet(offset,q)
+#ifdef NO_GNU
+             if(present(copy_ctor_f)) then
+              call this%container%vec_tile(q(4))%tile_batch(q(3))%batch_seg(q(2))%seg_elem(q(1))%&
+                  &vector_elem_ctor(elem_val,ierr,assoc_only=assoc,copy_ctor_f=copy_ctor_f)
+             else
+#endif
+              call this%container%vec_tile(q(4))%tile_batch(q(3))%batch_seg(q(2))%seg_elem(q(1))%&
+                  &vector_elem_ctor(elem_val,ierr,assoc_only=assoc)
+#ifdef NO_GNU
+             endif
+#endif
+             if(ierr.eq.GFC_SUCCESS) then
+              call this%container%incr_len_()
+              ierr=this%reset() !reset the iterator to GFC_IT_ACTIVE
+              if(this%container%num_elems_().ge.0) then !quick counting is on
+               nelems=this%container%update_num_elems_(1_INTL,ierr); if(ierr.ne.GFC_SUCCESS) ierr=GFC_CORRUPTED_CONT
+              endif
+             endif
+            endif
+           else
+            ierr=GFC_CORRUPTED_CONT
+           endif
+          else
+           ierr=GFC_CORRUPTED_CONT
+          endif
+         endif
+         return
+        end function VectorIterInsert
+!--------------------------------------------------------------
+        function VectorIterDelete(this,destruct_f) result(ierr)
+!Deletes the element at the current iterator position.
+!The current iterator position is kept unchanged, pointing to the next
+!element. If there is no next element, it will point to the previous
+!element. If none, then the iterator will become empty.
+         integer(INTD):: ierr                             !out: error code
+         class(vector_iter_t), intent(inout):: this       !inout: iterator
+         procedure(gfc_destruct_i), optional:: destruct_f !in: element value destructor
+         integer(INTD):: errc,q(1:4)
+         integer(INTL):: l,nelems
+
+         ierr=this%get_status()
+         if(ierr.eq.GFC_IT_ACTIVE) then
+          if(associated(this%current).and.this%curr_offset.ge.0_INTL.and.this%curr_offset.lt.this%get_length()) then
+           !call flat2quadruplet(this%curr_offset,q); write(*,'("Deleting ",i7,4(1x,i4))') this%curr_offset,q(4:1:-1) !debug
+           if(present(destruct_f)) then
+            call this%current%destruct(ierr,destruct_f)
+           else
+            call this%current%destruct(ierr)
+           endif
+           if(ierr.ne.GFC_SUCCESS) ierr=NOT_CLEAN
+           errc=this%container%adjust_structure_(this%curr_offset,for_deletion=.TRUE.)
+           if(errc.ne.GFC_SUCCESS) ierr=GFC_ERROR
+           call this%container%decr_len_(); l=this%get_length()
+           if(l.gt.0_INTL) then
+            if(this%curr_offset.ge.l) this%curr_offset=l-1_INTL !reposition to the last element
+            call flat2quadruplet(this%curr_offset,q)
+            this%current=>this%container%vec_tile(q(4))%tile_batch(q(3))%batch_seg(q(2))%seg_elem(q(1))
+           else
+            this%current=>NULL(); this%curr_offset=-1_INTL
+            errc=this%reset()
+           endif
+           if(this%container%num_elems_().ge.0) then !quick counting is on
+            nelems=this%container%update_num_elems_(-1_INTL,errc); if(errc.ne.GFC_SUCCESS.and.ierr.eq.GFC_SUCCESS) ierr=NOT_CLEAN
+           endif
+          else
+           ierr=GFC_CORRUPTED_CONT
+          endif
+         endif
+         !if(ierr.ne.GFC_SUCCESS) print *,'D: ',ierr !debug
+         return
+        end function VectorIterDelete
+!-----------------------------------------------------------------
+        function VectorIterDeleteAll(this,destruct_f) result(ierr)
+!Deletes all elements of the vector, leaving it empty.
+         implicit none
+         integer(INTD):: ierr                             !out: error code
+         class(vector_iter_t), intent(inout):: this       !inout: iterator
+         procedure(gfc_destruct_i), optional:: destruct_f !in: element value destructor
+         integer(INTD):: errc
+
+         ierr=this%reset_back()
+         if(ierr.eq.GFC_SUCCESS) then
+          ierr=this%get_status()
+          if(ierr.eq.GFC_IT_ACTIVE) then
+           ierr=GFC_SUCCESS
+           if(present(destruct_f)) then
+            do while(this%get_length().gt.0_INTL)
+             errc=this%delete(destruct_f); if(errc.ne.GFC_SUCCESS) ierr=NOT_CLEAN
+            enddo
+           else
+            do while(this%get_length().gt.0_INTL)
+             errc=this%delete(); if(errc.ne.GFC_SUCCESS) ierr=NOT_CLEAN
+            enddo
+           endif
+          else
+           if(ierr.eq.GFC_IT_EMPTY) ierr=GFC_SUCCESS
+          endif
+         endif
+         !if(ierr.ne.GFC_SUCCESS) print *,'DA: ',ierr
+         return
+        end function VectorIterDeleteAll
 
        end module gfc_vector
 !TESTING=====================
@@ -944,7 +1004,10 @@
         enddo
         if(some_iter%get_length(ierr).ne.MAX_VEC_ELEMS) then; ierr=3; return; endif
         if(ierr.ne.GFC_SUCCESS) then; ierr=4; return; endif
-        ierr=some_iter%release(); if(ierr.ne.GFC_SUCCESS) then; ierr=5; return; endif
+        ierr=some_iter%delete_all(); if(ierr.ne.GFC_SUCCESS) then; ierr=5; return; endif
+        if(some_iter%get_length(ierr).ne.0) then; ierr=6; return; endif
+        if(ierr.ne.GFC_SUCCESS) then; ierr=7; return; endif
+        ierr=some_iter%release(); if(ierr.ne.GFC_SUCCESS) then; ierr=8; return; endif
         tm=thread_wtime(tms); perf=dble(MAX_VEC_ELEMS)/tm
         return
        end function test_gfc_vector

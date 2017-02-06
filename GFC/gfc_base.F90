@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Base
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017-02-03 (started 2016-02-17)
+!REVISION: 2017-02-06 (started 2016-02-17)
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -676,7 +676,7 @@
          integer(INTD):: errc
 
          errc=GFC_SUCCESS
-         this%value_p=>NULL()
+         this%value_p=>NULL() !no deallocation!
          this%alloc=GFC_FALSE
 #ifndef NO_OMP
          this%ref_count=0

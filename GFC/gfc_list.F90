@@ -1,9 +1,9 @@
 !Generic Fortran Containers (GFC): Bi-directional linked list
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017-01-08 (started 2016-02-28)
+!REVISION: 2017-02-06 (started 2016-02-28)
 
-!Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
-!Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
+!Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
+!Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
 
 !This file is part of ExaTensor.
 
@@ -417,10 +417,10 @@
              if(present(copy_ctor_f)) then
               call lep%construct(elem_val,ierr,assoc_only=assoc,copy_ctor_f=copy_ctor_f)
              else
+#endif
               call lep%construct(elem_val,ierr,assoc_only=assoc)
+#ifdef NO_GNU
              endif
-#else
-             call lep%construct(elem_val,ierr,assoc_only=assoc)
 #endif
              if(ierr.eq.GFC_SUCCESS) then
               if(top) then
@@ -472,10 +472,10 @@
              if(present(copy_ctor_f)) then
               call this%container%first_elem%construct(elem_val,ierr,assoc_only=assoc,copy_ctor_f=copy_ctor_f)
              else
+#endif
               call this%container%first_elem%construct(elem_val,ierr,assoc_only=assoc)
+#ifdef NO_GNU
              endif
-#else
-             call this%container%first_elem%construct(elem_val,ierr,assoc_only=assoc)
 #endif
              if(ierr.eq.GFC_SUCCESS) then
               this%container%first_elem%prev_elem=>NULL()
@@ -540,10 +540,10 @@
              if(present(copy_ctor_f)) then
               call lep%construct(elem_val,ierr,assoc_only=assoc,copy_ctor_f=copy_ctor_f)
              else
+#endif
               call lep%construct(elem_val,ierr,assoc_only=assoc)
+#ifdef NO_GNU
              endif
-#else
-             call lep%construct(elem_val,ierr,assoc_only=assoc)
 #endif
              if(ierr.eq.GFC_SUCCESS) then
               if(before) then
@@ -587,10 +587,10 @@
              if(present(copy_ctor_f)) then
               call this%container%first_elem%construct(elem_val,ierr,assoc_only=assoc,copy_ctor_f=copy_ctor_f)
              else
+#endif
               call this%container%first_elem%construct(elem_val,ierr,assoc_only=assoc)
+#ifdef NO_GNU
              endif
-#else
-             call this%container%first_elem%construct(elem_val,ierr,assoc_only=assoc)
 #endif
              if(ierr.eq.GFC_SUCCESS) then
               this%container%first_elem%prev_elem=>NULL()
@@ -795,7 +795,7 @@
          class(list_elem_t), pointer:: lep
 
          ierr=this%get_status()
-         if(ierr.eq.GFC_SUCCESS) then
+         if(ierr.eq.GFC_IT_ACTIVE) then
           if(associated(this%current)) then
            if(present(backwards)) then; back=backwards; else; back=.FALSE.; endif
            lep=>this%current

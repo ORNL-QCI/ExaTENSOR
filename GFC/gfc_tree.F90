@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Tree
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017-02-03 (started 2016-02-17)
+!REVISION: 2017-02-06 (started 2016-02-17)
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -601,10 +601,10 @@
              if(present(copy_ctor_f)) then
               call tvp%next_sibling%construct(elem_val,ierr,assoc_only=assoc,copy_ctor_f=copy_ctor_f)
              else
+#endif
               call tvp%next_sibling%construct(elem_val,ierr,assoc_only=assoc)
+#ifdef NO_GNU
              endif
-#else
-             call tvp%next_sibling%construct(elem_val,ierr,assoc_only=assoc)
 #endif
              if(ierr.eq.GFC_SUCCESS) then
               tvp%next_sibling%prev_sibling=>tvp
@@ -623,10 +623,10 @@
              if(present(copy_ctor_f)) then
               call this%current%first_child%construct(elem_val,ierr,assoc_only=assoc,copy_ctor_f=copy_ctor_f)
              else
+#endif
               call this%current%first_child%construct(elem_val,ierr,assoc_only=assoc)
+#ifdef NO_GNU
              endif
-#else
-             call this%current%first_child%construct(elem_val,ierr,assoc_only=assoc)
 #endif
              if(ierr.eq.GFC_SUCCESS) then
               tvp=>this%current%first_child
@@ -664,10 +664,10 @@
              if(present(copy_ctor_f)) then
               call this%container%root%construct(elem_val,ierr,assoc_only=assoc,copy_ctor_f=copy_ctor_f)
              else
+#endif
               call this%container%root%construct(elem_val,ierr,assoc_only=assoc)
+#ifdef NO_GNU
              endif
-#else
-             call this%container%root%construct(elem_val,ierr,assoc_only=assoc)
 #endif
              if(ierr.eq.GFC_SUCCESS) then
               ierr=this%reset() !move to the just added first element regardless of <no_move> and change the EMPTY status to ACTIVE
