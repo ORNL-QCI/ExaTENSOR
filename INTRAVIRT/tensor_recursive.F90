@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/02/02
+!REVISION: 2017/02/07
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -69,15 +69,17 @@
 !TYPES:
  !Tensor signature (unique tensor identifier):
         type, public:: tens_signature_t
-         character(:), allocatable, private:: char_name     !character tensor name (alphanumeric_)
-         integer(INTD), private:: num_dims=-1               !number of tensor dimensions (tensor order, tensor rank)
-         integer(INTL), allocatable, private:: space_idx(:) !subspace id for each tensor dimension
+         character(:), allocatable, private:: char_name         !character tensor name (alphanumeric_)
+         integer(INTD), private:: num_dims=-1                   !number of tensor dimensions (tensor order, tensor rank)
+         integer(INTL), allocatable, private:: space_idx(:)     !subspace id for each tensor dimension
+         class(h_space_t), pointer, private:: h_space_p=>NULL() !pointer to the underlying hierarchical vector space
          contains
           !initial:: tens_signature_ctor                     !ctor
           procedure, public:: is_set=>TensSignatureIsSet     !returns .TRUE. if the tensor signature is set
           procedure, public:: get_name=>TensSignatureGetName !returns the alphanumeric_ tensor name
           procedure, public:: get_rank=>TensSignatureGetRank !returns the rank of the tensor (number of dimensions)
           procedure, public:: get_spec=>TensSignatureGetSpec !returns the tensor subspace multi-index (specification)
+          procedure, public:: compare=>TensSignatureCompare  !compares the tensor signature with another tensor signature
           procedure, public:: print_it=>TensSignaturePrintIt !prints the tensor signature
           final:: tens_signature_dtor                        !dtor
         end type tens_signature_t
@@ -97,6 +99,7 @@
           procedure, public:: get_group=>TensShapeGetGroup   !returns a restricted index group (specific dimensions belonging to the specified group)
           procedure, public:: same_group=>TensShapeSameGroup !checks whether specific tensor dimensions belong to the same group
           procedure, public:: num_groups=>TensShapeNumGroups !returns the total number of non-trivial index groups defined in the tensor shape
+          procedure, public:: compare=>TensShapeCompare      !compares the tensor shape with another tensor shape
           procedure, public:: print_it=>TensShapePrintIt     !prints the tensor shape
           final:: tens_shape_dtor                            !dtor
         end type tens_shape_t
@@ -117,6 +120,7 @@
           procedure, public:: same_group=>TensHeaderSameGroup        !checks whether specific tensor dimensions belong to the same group
           procedure, public:: get_signature=>TensHeaderGetSignature  !returns the pointer to the tensor signature
           procedure, public:: get_shape=>TensHeaderGetShape          !returns the pointer the the tensor shape
+          procedure, public:: compare=>TensHeaderCompare             !compares the tensor header with another tensor header
           procedure, public:: print_it=>TensHeaderPrintIt            !prints the tensor header
 #ifdef NO_GNU
           final:: tens_header_dtor                                   !dtor `GCC/5.4.0 bug
@@ -201,12 +205,14 @@
         end interface
 !VISIBILITY:
         public valid_tensor_layout
+        public cmp_tens_headers
  !tens_signature_t:
         public tens_signature_ctor
         private TensSignatureIsSet
         private TensSignatureGetName
         private TensSignatureGetRank
         private TensSignatureGetSpec
+        private TensSignatureCompare
         private TensSignaturePrintIt
         public tens_signature_dtor
  !tens_shape_t:
@@ -218,6 +224,7 @@
         private TensShapeGetGroup
         private TensShapeSameGroup
         private TensShapeNumGroups
+        private TensShapeCompare
         private TensShapePrintIt
         public tens_shape_dtor
  !tens_header_t:
@@ -233,6 +240,7 @@
         private TensHeaderSameGroup
         private TensHeaderGetSignature
         private TensHeaderGetShape
+        private TensHeaderCompare
         private TensHeaderPrintIt
         public tens_header_dtor
  !tens_simple_part_t:
@@ -275,25 +283,50 @@
          res=(layout.ge.0.and.layout.lt.TEREC_NUM_LAYOUTS)
          return
         end function valid_tensor_layout
-![tens_signature_t]==================================================
-        subroutine tens_signature_ctor(this,ierr,subspaces,tens_name)
+!-----------------------------------------------------
+        function cmp_tens_headers(th1,th2) result(cmp)
+!Compares two tensor headers.
+         implicit none
+         integer(INTD):: cmp                !out: result of comparison (see GFC/gfc_base.F90)
+         class(*), intent(in), target:: th1 !in: tensor header 1
+         class(*), intent(in), target:: th2 !in: tensor header 2
+         class(tens_header_t), pointer:: thp1,thp2
+
+         thp1=>NULL(); thp2=>NULL()
+         select type(th1); class is(tens_header_t); thp1=>th1; end select
+         select type(th2); class is(tens_header_t); thp2=>th2; end select
+         if(associated(thp1).and.associated(thp2)) then
+          cmp=thp1%compare(thp2)
+         else
+          cmp=GFC_CMP_ERR
+         endif
+         return
+        end function cmp_tens_headers
+![tens_signature_t]==========================================================
+        subroutine tens_signature_ctor(this,ierr,subspaces,tens_name,h_space)
 !CTOR for tens_signature_t.
          implicit none
-         type(tens_signature_t), intent(out):: this          !out: tensor signature
-         integer(INTD), intent(out), optional:: ierr         !out: error code
-         integer(INTL), intent(in), optional:: subspaces(1:) !in: multi-index of subspaces
-         character(*), intent(in), optional:: tens_name      !in: alphanumeric_ tensor name (no spaces allowed!)
+         type(tens_signature_t), intent(out):: this               !out: tensor signature
+         integer(INTD), intent(out), optional:: ierr              !out: error code
+         integer(INTL), intent(in), optional:: subspaces(1:)      !in: multi-index of subspaces
+         character(*), intent(in), optional:: tens_name           !in: alphanumeric_ tensor name (no spaces allowed!)
+         class(h_space_t), intent(in), target, optional:: h_space !in: underlying hierarchical vector space
          integer(INTD):: errc,n
 
          errc=TEREC_SUCCESS
          n=0; if(present(subspaces)) n=size(subspaces)
          if(n.gt.0) then
-          allocate(this%space_idx(1:n),STAT=errc)
-          if(errc.eq.0) then
-           this%space_idx(1:n)=subspaces(1:n)
-           this%num_dims=n !true tensor
+          if(present(h_space)) then
+           allocate(this%space_idx(1:n),STAT=errc)
+           if(errc.eq.0) then
+            this%space_idx(1:n)=subspaces(1:n)
+            this%num_dims=n !true tensor
+            this%h_space_p=>h_space
+           else
+            errc=TEREC_MEM_ALLOC_FAILED
+           endif
           else
-           errc=TEREC_MEM_ALLOC_FAILED
+           errc=TEREC_INVALID_ARGS
           endif
          else
           this%num_dims=0 !scalar
@@ -401,6 +434,69 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensSignatureGetSpec
+!--------------------------------------------------------------
+        function TensSignatureCompare(this,another) result(cmp)
+!Compares the tensor signature with another tensor signature.
+         implicit none
+         integer(INTD):: cmp                           !out: comparison result: {GFC_CMP_EQ,GFC_CMP_LT,GFC_CMP_GT,GFC_CMP_PARENT,GFC_CMP_CHILD,GFC_CMP_NA,GFC_CMP_ERR}
+         class(tens_signature_t), intent(in):: this    !in: tensor signature 1
+         class(tens_signature_t), intent(in):: another !in: tensor signature 2
+         integer(INTD):: nl1,nl2,ch1,ch2,i,rel,errc
+         integer(INTL):: s1,s2
+         class(subspace_t), pointer:: sb1,sb2
+
+         errc=0
+         if(this%is_set().and.another%is_set()) then
+          cmp=GFC_CMP_EQ
+!Compare names:
+          nl1=len(this%char_name); nl2=len(another%char_name)
+          if(nl1.lt.nl2) then; cmp=GFC_CMP_LT; elseif(nl1.gt.nl2) then; cmp=GFC_CMP_GT; endif
+          if(cmp.eq.GFC_CMP_EQ) then
+           do i=1,nl1
+            ch1=iachar(this%char_name(i:i))
+            ch2=iachar(another%char_name(i:i))
+            if(ch1.lt.ch2) then; cmp=GFC_CMP_LT; exit; elseif(ch1.gt.ch2) then; cmp=GFC_CMP_GT; exit; endif
+           enddo
+           if(cmp.eq.GFC_CMP_EQ) then
+            if(associated(this%h_space_p,another%h_space_p)) then
+!Compare specs:
+             if(this%num_dims.lt.another%num_dims) then
+              cmp=GFC_CMP_LT
+             elseif(this%num_dims.gt.another%num_dims) then
+              cmp=GFC_CMP_GT
+             else
+              do i=1,this%num_dims
+               s1=this%space_idx(i); s2=another%space_idx(i)
+               sb1=>this%h_space_p%get_subspace(s1,errc); if(errc.ne.0) exit
+               sb2=>this%h_space_p%get_subspace(s2,errc); if(errc.ne.0) exit
+               rel=sb1%relate(sb2,this%h_space_p)
+               if(rel.eq.GFC_CMP_LT.or.rel.eq.GFC_CMP_GT) then
+                cmp=rel; exit
+               else
+                if(rel.eq.GFC_CMP_PARENT.or.rel.eq.GFC_CMP_CHILD) then
+                 if(cmp.eq.GFC_CMP_EQ) then
+                  cmp=rel
+                 else
+                  if(rel.ne.cmp) then; cmp=GFC_CMP_NA; exit; endif
+                 endif
+                else
+                 if(rel.ne.GFC_CMP_EQ) then; cmp=rel; exit; endif
+                endif
+               endif
+              enddo
+              if(errc.ne.0) cmp=GFC_CMP_ERR
+              sb1=>NULL(); sb2=>NULL()
+             endif
+            else
+             cmp=GFC_CMP_ERR !tensors with the same name cannot reside in differe hierarchical spaces
+            endif
+           endif
+          endif
+         else
+          cmp=GFC_CMP_ERR
+         endif
+         return
+        end function TensSignatureCompare
 !----------------------------------------------------------------
         subroutine TensSignaturePrintIt(this,ierr,dev_id,nspaces)
 !Prints the tensor signature.
@@ -437,7 +533,7 @@
          !write(*,'("#DEBUG: Entered tens_signature_dtor")') !debug
          if(allocated(this%char_name)) deallocate(this%char_name)
          if(allocated(this%space_idx)) deallocate(this%space_idx)
-         this%num_dims=-1
+         this%num_dims=-1; this%h_space_p=>NULL()
          !write(*,'("#DEBUG: Exited tens_signature_dtor")') !debug
          return
         end subroutine tens_signature_dtor
@@ -732,6 +828,79 @@
          if(present(ierr)) ierr=errc
          return
         end function TensShapeNumGroups
+!-------------------------------------------------------------------------
+        function TensShapeCompare(this,another,compare_groups) result(cmp)
+!Compares the given tensor shape with another tensor shape.
+         implicit none
+         integer(INTD):: cmp                            !out: comparison result: {GFC_CMP_EQ,GFC_CMP_LT,GFC_CMP_GT,GFC_CMP_ERR}
+         class(tens_shape_t), intent(in):: this         !in: tensor shape 1
+         class(tens_shape_t), intent(in):: another      !in: tensor shape 2
+         logical, intent(in), optional:: compare_groups !in: if FALSE, dimension groups will not be taken into account (defaults to TRUE)
+         integer(INTD):: i,g1,g2,gmap(MAX_TENSOR_RANK)
+         logical:: comp_grps
+
+         if(present(compare_groups)) then; comp_grps=compare_groups; else; comp_grps=.TRUE.; endif
+         if(this%is_set().and.another%is_set()) then
+          if(this%num_dims.lt.another%num_dims) then
+           cmp=GFC_CMP_LT
+          elseif(this%num_dims.gt.another%num_dims) then
+           cmp=GFC_CMP_GT
+          else
+           cmp=GFC_CMP_EQ
+           do i=1,this%num_dims
+            if(this%dim_extent(i).lt.another%dim_extent(i)) then
+             cmp=GFC_CMP_LT; exit
+            elseif(this%dim_extent(i).gt.another%dim_extent(i)) then
+             cmp=GFC_CMP_GT; exit
+            endif
+           enddo
+           if(cmp.eq.GFC_CMP_EQ.and.comp_grps) then
+            if(this%num_grps.lt.another%num_grps) then
+             cmp=GFC_CMP_LT
+            elseif(this%num_grps.gt.another%num_grps) then
+             cmp=GFC_CMP_GT
+            else
+             if(this%num_grps.gt.0) then
+              if(this%num_grps.le.MAX_TENSOR_RANK) then
+               gmap(1:this%num_grps)=0
+               do i=1,this%num_dims
+                g1=this%dim_group(i); g2=another%dim_group(i)
+                if(g1.gt.0.and.g2.gt.0) then !both groups are non-trivial
+                 if(this%group_spec(g1).lt.another%group_spec(g2)) then
+                  cmp=GFC_CMP_LT; exit
+                 elseif(this%group_spec(g1).gt.another%group_spec(g2)) then
+                  cmp=GFC_CMP_GT; exit
+                 else
+                  if(gmap(g1).gt.0) then
+                   if(gmap(g1).lt.g2) then
+                    cmp=GFC_CMP_LT; exit
+                   elseif(gmap(g1).gt.g2) then
+                    cmp=GFC_CMP_GT; exit
+                   endif
+                  else
+                   gmap(g1)=g2
+                  endif
+                 endif
+                else
+                 if(g1.lt.g2) then
+                  cmp=GFC_CMP_LT; exit
+                 elseif(g1.gt.g2) then
+                  cmp=GFC_CMP_GT; exit
+                 endif
+                endif
+               enddo
+              else
+               cmp=GFC_CMP_ERR
+              endif
+             endif
+            endif
+           endif
+          endif
+         else
+          cmp=GFC_CMP_ERR
+         endif
+         return
+        end function TensShapeCompare
 !------------------------------------------------------------
         subroutine TensShapePrintIt(this,ierr,dev_id,nspaces)
 !Prints the tensor shape.
@@ -1058,6 +1227,25 @@
          shape_p=>this%shape
          return
         end function TensHeaderGetShape
+!--------------------------------------------------------------------------
+        function TensHeaderCompare(this,another,compare_groups) result(cmp)
+!Compares the given tensor header with another tensor header.
+         implicit none
+         integer(INTD):: cmp                            !out: comparison result: {GFC_CMP_EQ,GFC_CMP_LT,GFC_CMP_GT,GFC_CMP_PARENT,GFC_CMP_CHILD,GFC_CMP_NA,GFC_CMP_ERR}
+         class(tens_header_t), intent(in):: this        !in: tensor header 1
+         class(tens_header_t), intent(in):: another     !in: tensor header 2
+         logical, intent(in), optional:: compare_groups !in: if FALSE, the shape dimension groups will not be taken into account (defaults to TRUE)
+
+         cmp=this%signature%compare(another%signature)
+         if(cmp.eq.GFC_CMP_EQ) then
+          if(present(compare_groups)) then
+           cmp=this%shape%compare(another%shape,compare_groups=compare_groups)
+          else
+           cmp=this%shape%compare(another%shape)
+          endif
+         endif
+         return
+        end function TensHeaderCompare
 !-------------------------------------------------------------
         subroutine TensHeaderPrintIt(this,ierr,dev_id,nspaces)
 !Prints the tensor header.

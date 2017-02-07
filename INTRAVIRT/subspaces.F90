@@ -1,6 +1,6 @@
 !Infrastructure for a recursive adaptive vector space decomposition.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/01/20
+!REVISION: 2017/02/07
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -173,6 +173,7 @@
           procedure, public:: get_max_resolution=>SubspaceGetMaxResolution !returns the max resolution (dimension) of the subspace
           procedure, public:: register_basis=>SubspaceRegisterBasis        !registers a specific basis of the subspace
           procedure, public:: resolve=>SubspaceResolve                     !resolves the subspace with a specific basis (based on some condition)
+          procedure, public:: relate=>SubspaceRelate                       !relates the subspaces to another subspace
           final:: SubspaceDestroy                                          !destroys the subspace
         end type subspace_t
  !Hierarchical composite index:
@@ -185,12 +186,14 @@
         type, public:: h_space_t
          integer(INTL), private:: space_dim=0                 !dimension of the vector space
          integer(INTL), private:: num_subspaces=0             !number of subspaces defined in the vector space
-         type(subspace_t), allocatable, private:: subspace(:) !hierarchical subspaces defined in the vector space
+         type(subspace_t), allocatable, private:: subspace(:) !hierarchical subspaces defined in the vector space: [0..num_subspaces-1]
          type(tree_t), private:: aggr_tree                    !subspace aggregation tree (SAT): Hierarchical representation
          complex(8), pointer, private:: metric(:,:)=>NULL()   !pointer to the original metric tensor: g12=<bf1|bf2>
          real(8), allocatable, private:: overlap(:,:)         !subspace overlap matrix (extent of overlap between all subspaces)
          contains
           procedure, public:: construct=>HSpaceConstruct      !constructs a hierarchical representation of a vector space
+          procedure, public:: is_set=>HSpaceIsSet             !return TRUE if the hierarchical vector space is set
+          procedure, public:: get_subspace=>HSpaceGetSubspace !returns a pointer to the required subspace of the hierarchical vector space
           final:: HSpaceDestruct                              !destructs the hierarchical representation of a vector space
         end type h_space_t
 !INTERFACES:
@@ -200,9 +203,9 @@
          subroutine space_symm_combine_i(this,symm,ierr)
           import:: space_symmetry_t,INTD
           implicit none
-          class(space_symmetry_t), intent(inout):: this              !inout: symmetry 1 (updated)
-          class(space_symmetry_t), intent(in):: symm                 !in: symmetry 2
-          integer(INTD), intent(out), optional:: ierr                !out: error code
+          class(space_symmetry_t), intent(inout):: this       !inout: symmetry 1 (updated)
+          class(space_symmetry_t), intent(in):: symm          !in: symmetry 2
+          integer(INTD), intent(out), optional:: ierr         !out: error code
          end subroutine space_symm_combine_i
         end interface
 !VISIBILITY:
@@ -255,8 +258,11 @@
         private SubspaceGetMaxResolution
         private SubspaceRegisterBasis
         private SubspaceResolve
+        private SubspaceRelate
  !h_space_t:
         private HSpaceConstruct
+        private HSpaceIsSet
+        private HSpaceGetSubspace
 
        contains
 !IMPLEMENTATION:
@@ -1245,6 +1251,19 @@
          if(present(ierr)) ierr=errc
          return
         end function SubspaceResolve
+!----------------------------------------------------------------
+        function SubspaceRelate(this,another,h_space) result(cmp)
+!Relates the given subspace with another subspace in the given subspace hierarchy.
+         implicit none
+         integer(INTD):: cmp                     !out: relation: {GFC_CMP_EQ,GFC_CMP_LT,GFC_CMP_GT,GFC_CMP_CHILD,GFC_CMP_PARENT,GFC_CMP_ERR}
+         class(subspace_t), intent(in):: this    !in: subspace 1
+         class(subspace_t), intent(in):: another !in: subspace 2
+         class(h_space_t), intent(in):: h_space  !in: hierarchical subspace representation
+
+         cmp=GFC_CMP_EQ
+         !`Finish
+         return
+        end function SubspaceRelate
 !---------------------------------------
         subroutine SubspaceDestroy(this)
          implicit none
@@ -1283,7 +1302,7 @@
           errc=sat_it%init(this%aggr_tree)
           if(errc.eq.GFC_SUCCESS) then
  !Add the root (full space):
-           
+           !`Finish
  !Recursively split the full space into subspaces:
            
            errc=sat_it%release()
@@ -1301,6 +1320,42 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine HSpaceConstruct
+!--------------------------------------------------
+        function HSpaceIsSet(this,ierr) result(res)
+!Returns TRUE if the hierarchical vector space is set.
+         implicit none
+         logical:: res                               !out: result
+         class(h_space_t), intent(in):: this         !in: hierarchical vector space
+         integer(INTD), intent(out), optional:: ierr !out: eror code
+         integer(INTD):: errc
+
+         errc=0; res=(this%space_dim.gt.0)
+         if(present(ierr)) ierr=errc
+         return
+        end function HSpaceIsSet
+!---------------------------------------------------------------------------
+        function HSpaceGetSubspace(this,subspace_id,ierr) result(subspace_p)
+!Returns a pointer to the requested subspace from the hierarchical vector space.
+         implicit none
+         class(subspace_t), pointer:: subspace_p      !out: pointer to the requested subspace
+         class(h_space_t), intent(in), target:: this  !in: hierarchical vector space
+         integer(INTL), intent(in):: subspace_id      !in: requested subspace id
+         integer(INTD), intent(out), optional:: ierr  !out: error code
+         integer(INTD):: errc
+
+         errc=0
+         if(this%is_set()) then
+          if(subspace_id.ge.0.and.subspace_id.lt.this%num_subspaces) then
+           subspace_p=>this%subspace(subspace_id)
+          else
+           errc=2
+          endif
+         else
+          errc=1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function HSpaceGetSubspace
 !--------------------------------------
         subroutine HSpaceDestruct(this)
          implicit none
@@ -1332,7 +1387,7 @@
 
          errc=0; n=basis%dimsn()
          if(n.gt.0) then
-          
+          !`Finish
          else
           errc=1
          endif
@@ -1353,7 +1408,7 @@
 
          errc=0; n=basis%dimsn()
          if(n.gt.0) then
-          
+          !`Finish
          else
           errc=1
          endif

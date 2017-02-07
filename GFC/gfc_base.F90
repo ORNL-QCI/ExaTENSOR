@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Base
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017-02-06 (started 2016-02-17)
+!REVISION: 2017-02-07 (started 2016-02-17)
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -93,6 +93,7 @@
         integer(INTD), parameter:: GFC_CMP_GT=+1         !object1 > object2
         integer(INTD), parameter:: GFC_CMP_CHILD=-2      !object1 is a child of object2
         integer(INTD), parameter:: GFC_CMP_PARENT=+2     !object1 is a parent of object2
+        integer(INTD), parameter:: GFC_CMP_CROSS=-5      !objects overlap (in some sense)
         integer(INTD), parameter:: GFC_CMP_NA=-6         !objects are not comparable
         integer(INTD), parameter:: GFC_CMP_ERR=GFC_ERROR !comparison error
  !GFC iterator status:
@@ -170,7 +171,7 @@
  !Base functor:
         type, abstract, public:: gfc_functor_t
          contains
-          procedure(gfc_func_act_i), deferred, public:: act !performs an action on an unlimited polymorphic object
+          procedure(gfc_func_act_i), deferred, public:: apply !performs an action on an unlimited polymorphic object
         end type gfc_functor_t
 !ABSTRACT INTERFACES:
         abstract interface
@@ -521,7 +522,7 @@
 
          errc=GFC_SUCCESS
          if(.not.this%is_empty()) then
-          errc=functor%act(this%value_p); if(errc.ne.0) errc=GFC_ACTION_FAILED
+          errc=functor%apply(this%value_p); if(errc.ne.0) errc=GFC_ACTION_FAILED
          else
           errc=GFC_ELEM_EMPTY
          endif
