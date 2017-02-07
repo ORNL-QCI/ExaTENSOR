@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Vector (non-contiguous)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017/02/06
+!REVISION: 2017/02/07
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -100,6 +100,7 @@
           procedure, public:: move_to=>VectorIterMoveTo           !moves the iterator to the specific vector element
           procedure, public:: append=>VectorIterAppend            !appends a new element at the end of the vector
           procedure, public:: insert=>VectorIterInsert            !inserts a new element at the current iterator position
+          procedure, public:: swap_last=>VectorIterSwapLast       !swaps the currently pointed to element with the last element of the vector
           procedure, public:: delete=>VectorIterDelete            !deletes an element at the current iterator position
           procedure, public:: delete_all=>VectorIterDeleteAll     !deletes all elements of the vector
         end type vector_iter_t
@@ -137,6 +138,7 @@
         private VectorIterMoveTo
         private VectorIterAppend
         private VectorIterInsert
+        private VectorIterSwapLast
         private VectorIterDelete
         private VectorIterDeleteAll
 
@@ -888,6 +890,35 @@
          endif
          return
         end function VectorIterInsert
+!-----------------------------------------------------
+        function VectorIterSwapLast(this) result(ierr)
+!Swaps the currently pointed to element with the last element of the vector.
+!The iterator position is unchanged.
+         implicit none
+         integer(INTD):: ierr                       !out: error code
+         class(vector_iter_t), intent(inout):: this !inout: (active) iterator
+         integer(INTL):: last
+         integer(INTD):: q(1:4),w(1:4)
+         type(vector_elem_t):: vec_elem
+
+         ierr=this%get_status()
+         if(ierr.eq.GFC_IT_ACTIVE) then
+          ierr=GFC_SUCCESS; last=this%get_length()-1_INTL
+          if(last.ge.0_INTL.and.this%curr_offset.ge.0_INTL) then
+           if(this%curr_offset.ne.last) then
+            call flat2quadruplet(this%curr_offset,q); call flat2quadruplet(last,w)
+            vec_elem=this%container%vec_tile(w(4))%tile_batch(w(3))%batch_seg(w(2))%seg_elem(w(1))
+            this%container%vec_tile(w(4))%tile_batch(w(3))%batch_seg(w(2))%seg_elem(w(1))=&
+            &this%container%vec_tile(q(4))%tile_batch(q(3))%batch_seg(q(2))%seg_elem(q(1))
+            this%container%vec_tile(q(4))%tile_batch(q(3))%batch_seg(q(2))%seg_elem(q(1))=vec_elem
+            this%current=>this%container%vec_tile(q(4))%tile_batch(q(3))%batch_seg(q(2))%seg_elem(q(1))
+           endif
+          else
+           ierr=GFC_CORRUPTED_CONT
+          endif
+         endif
+         return
+        end function VectorIterSwapLast
 !--------------------------------------------------------------
         function VectorIterDelete(this,destruct_f) result(ierr)
 !Deletes the element at the current iterator position.
