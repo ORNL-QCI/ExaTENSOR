@@ -288,7 +288,7 @@ lib$(NAME).a: $(OBJS)
 ./OBJ/gfc_pri_queue.o: gfc_pri_queue.F90 ./OBJ/gfc_base.o ./OBJ/gfc_tree.o ./OBJ/timers.o
 	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) gfc_pri_queue.F90 -o ./OBJ/gfc_pri_queue.o
 
-./OBJ/gfc_dictionary.o: gfc_dictionary.F90 ./OBJ/gfc_base.o ./OBJ/dictionary.o ./OBJ/timers.o
+./OBJ/gfc_dictionary.o: gfc_dictionary.F90 ./OBJ/gfc_base.o ./OBJ/gfc_list.o ./OBJ/gfc_vector.o ./OBJ/timers.o
 	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) gfc_dictionary.F90 -o ./OBJ/gfc_dictionary.o
 
 ./OBJ/gfc_hash_map.o: gfc_hash_map.F90 ./OBJ/gfc_base.o ./OBJ/timers.o

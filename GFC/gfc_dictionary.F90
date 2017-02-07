@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Dictionary (ordered map), AVL BST
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017/02/06 (recycling my old dictionary implementation)
+!REVISION: 2017/02/07 (recycling my old dictionary implementation)
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -25,6 +25,7 @@
        module gfc_dictionary
         use gfc_base
         use gfc_list
+        use gfc_vector
         use timers
         implicit none
         private
@@ -48,7 +49,7 @@
 !TYPES:
  !Dictionary element:
         type, extends(gfc_cont_elem_t), public:: dict_elem_t
-         class(*), pointer, private:: key=>NULL()                !dictionary element key (always allocated)
+         class(*), pointer, private:: key=>NULL()                !dictionary element key
          class(dict_elem_t), pointer, private:: child_lt=>NULL() !lesser child element
          class(dict_elem_t), pointer, private:: child_gt=>NULL() !greater child element
          class(dict_elem_t), pointer, private:: parent=>NULL()   !parent element
@@ -80,23 +81,24 @@
          class(dict_elem_t), pointer, private:: current=>NULL()        !currently pointed element of the container
          class(dictionary_t), pointer, private:: container=>NULL()     !container
          contains
-          procedure, private:: jump_=>DictionaryIterJump               !moves the iterator to an arbitrary position
-          procedure, public:: init=>DictionaryIterInit                 !associates the iterator with a container and positions it to the root element
-          procedure, public:: reset=>DictionaryIterReset               !resets the iterator to the beginning of the container (root element)
-          procedure, public:: release=>DictionaryIterRelease           !dissociates the iterator from its container
-          procedure, public:: pointee=>DictionaryIterPointee           !returns a pointer to the container element currently in focus
-          procedure, public:: next=>DictionaryIterNext                 !moves the iterator to the "next" element, if any (not necessarily in order)
-          procedure, public:: previous=>DictionaryIterPrevious         !moves the iterator to the "previous" element, if any (not necessarily in order)
-          procedure, public:: next_in_order=>DictionaryIterNextInOrder !moves the iterator to the next-in-order element, if any
-          procedure, public:: prev_in_order=>DictionaryIterPrevInOrder !moves the iterator to the previous-in-order element, if any
-          procedure, public:: move_in_order=>DictionaryIterMoveInOrder !moves the iterator to either the next-in-order or previous-in-order element
-          procedure, public:: move_to_min=>DictionaryIterMoveToMin     !moves the iterator to the minimal element
-          procedure, public:: move_to_max=>DictionaryIterMoveToMax     !moves the iterator to the maximal element
-          procedure, public:: move_up=>DictionaryIterMoveUp            !moves the iterator up the binary search tree (to the parent element)
-          procedure, public:: move_down=>DictionaryIterMoveDown        !moves the iterator down the binary search tree, either left or right
-          procedure, public:: delete_all=>DictionaryIterDeleteAll      !deletes all elements of the dictionary
-          procedure, public:: search=>DictionaryIterSearch             !performs a key-based search in the dictionary
-          procedure, public:: sort_to_list=>DictionaryIterSortToList   !returns a list of references to dictionary elements in a sorted order
+          procedure, private:: jump_=>DictionaryIterJump                 !moves the iterator to an arbitrary position
+          procedure, public:: init=>DictionaryIterInit                   !associates the iterator with a container and positions it to the root element
+          procedure, public:: reset=>DictionaryIterReset                 !resets the iterator to the beginning of the container (root element)
+          procedure, public:: release=>DictionaryIterRelease             !dissociates the iterator from its container
+          procedure, public:: pointee=>DictionaryIterPointee             !returns a pointer to the container element currently in focus
+          procedure, public:: next=>DictionaryIterNext                   !moves the iterator to the "next" element, if any (not necessarily in order)
+          procedure, public:: previous=>DictionaryIterPrevious           !moves the iterator to the "previous" element, if any (not necessarily in order)
+          procedure, public:: next_in_order=>DictionaryIterNextInOrder   !moves the iterator to the next-in-order element, if any
+          procedure, public:: prev_in_order=>DictionaryIterPrevInOrder   !moves the iterator to the previous-in-order element, if any
+          procedure, public:: move_in_order=>DictionaryIterMoveInOrder   !moves the iterator to either the next-in-order or previous-in-order element
+          procedure, public:: move_to_min=>DictionaryIterMoveToMin       !moves the iterator to the minimal element
+          procedure, public:: move_to_max=>DictionaryIterMoveToMax       !moves the iterator to the maximal element
+          procedure, public:: move_up=>DictionaryIterMoveUp              !moves the iterator up the binary search tree (to the parent element)
+          procedure, public:: move_down=>DictionaryIterMoveDown          !moves the iterator down the binary search tree, either left or right
+          procedure, public:: delete_all=>DictionaryIterDeleteAll        !deletes all elements of the dictionary
+          procedure, public:: search=>DictionaryIterSearch               !performs a key-based search in the dictionary
+          procedure, public:: sort_to_list=>DictionaryIterSortToList     !returns a list of references to dictionary elements in a sorted (by key) order
+          procedure, public:: sort_to_vector=>DictionaryIterSortToVector !returns a vector of references to dictionary elements in a sorted *by key) order
         end type dictionary_iter_t
 !INTERFACES:
 
@@ -133,6 +135,7 @@
         private DictionaryIterDeleteAll
         private DictionaryIterSearch
         private DictionaryIterSortToList
+        private DictionaryIterSortToVector
 !DEFINITIONS:
        contains
 ![dict_elem_t]===================================================================================
@@ -1522,7 +1525,8 @@
         subroutine DictionaryIterSortToList(this,list_refs,ierr,order)
 !Returns a bidirectional linked list of references to dictionary elements in a sorted order.
 !The input dictionary iterator is allowed to be a subdictionary iterator.
-!The current dictionary iterator position is kept intact.
+!The current dictionary iterator position is kept intact, unless the
+!iterator in the GFC_IT_DONE state, in which case it will be reset.
 !The bidirectional linked list must be empty on entrance.
          implicit none
          class(dictionary_iter_t), intent(inout):: this !in: dictionary (or subdictionary) iterator
@@ -1538,6 +1542,7 @@
          if(errc.eq.GFC_SUCCESS) then
           if(list_it%get_status().eq.GFC_IT_EMPTY) then
            errc=this%get_status()
+           if(errc.eq.GFC_IT_DONE) then; errc=this%reset(); errc=this%get_status(); endif
            if(errc.eq.GFC_IT_ACTIVE) then
             if(present(order)) then; ord=order; else; ord=GFC_ASCEND_ORDER; endif
             orig=>this%current !save the original iterator position
@@ -1569,6 +1574,59 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine DictionaryIterSortToList
+!----------------------------------------------------------------------
+        subroutine DictionaryIterSortToVector(this,vec_refs,ierr,order)
+!Returns a vector of references to dictionary elements in a sorted order.
+!The input dictionary iterator is allowed to be a subdictionary iterator.
+!The current dictionary iterator position is kept intact, unless the
+!iterator in the GFC_IT_DONE state, in which case it will be reset.
+!The vector must be empty on entrance.
+         implicit none
+         class(dictionary_iter_t), intent(inout):: this !in: dictionary (or subdictionary) iterator
+         class(vector_t), intent(inout):: vec_refs      !out: vector of references to dictionary elements (in:empty,out:filled)
+         integer(INTD), intent(out), optional:: ierr    !out: error code
+         integer(INTD), intent(in), optional:: order    !in: sorting order: {GFC_ASCEND_ORDER,GFC_DESCEND_ORDER}, defaults to GFC_ASCEND_ORDER
+         integer(INTD):: errc,ier,ord
+         logical:: dir
+         type(vector_iter_t):: vec_it
+         class(dict_elem_t), pointer:: orig
+
+         errc=vec_it%init(vec_refs)
+         if(errc.eq.GFC_SUCCESS) then
+          if(vec_it%get_status().eq.GFC_IT_EMPTY) then
+           errc=this%get_status()
+           if(errc.eq.GFC_IT_DONE) then; errc=this%reset(); errc=this%get_status(); endif
+           if(errc.eq.GFC_IT_ACTIVE) then
+            if(present(order)) then; ord=order; else; ord=GFC_ASCEND_ORDER; endif
+            orig=>this%current !save the original iterator position
+            if(ord.eq.GFC_ASCEND_ORDER) then
+             errc=this%move_to_min(); dir=GFC_DICT_SUCCESSOR
+            else
+             errc=this%move_to_max(); dir=GFC_DICT_PREDECESSOR
+            endif
+            if(errc.eq.GFC_SUCCESS) then
+             sloop: do while(errc.eq.GFC_SUCCESS)
+              errc=vec_it%append(this%current,assoc_only=.TRUE.)
+              if(errc.ne.GFC_SUCCESS) exit sloop
+              errc=this%move_in_order(dir)
+             enddo sloop
+             if(errc.eq.GFC_IT_DONE) errc=this%reset()
+            else
+             errc=GFC_CORRUPTED_CONT
+            endif
+            call this%jump_(orig) !return to the original iterator position
+           else
+            if(errc.ne.GFC_IT_EMPTY) errc=GFC_NULL_CONT
+           endif
+          else
+           errc=GFC_INVALID_ARGS
+          endif
+          ier=vec_it%release()
+          if(errc.eq.GFC_SUCCESS.and.ier.ne.GFC_SUCCESS) errc=ier
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine DictionaryIterSortToVector
 
        end module gfc_dictionary
 !===============================
