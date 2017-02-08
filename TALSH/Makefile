@@ -218,36 +218,53 @@ CUDA_FLAGS = -D_FORCE_INLINES
 endif
 
 #Accelerator support:
-NO_ACCEL_CUDA = -DNO_AMD -DNO_PHI -DCUDA_ARCH=$(GPU_ARCH)
-NO_ACCEL_NOCUDA = -DNO_AMD -DNO_PHI -DNO_GPU
+ifeq ($(TOOLKIT),IBM)
+NO_ACCEL_CUDA = -WF,-D$(EXA_OS) -WF,-DNO_AMD -WF,-DNO_PHI -WF,-DCUDA_ARCH=$(GPU_ARCH)
+NO_ACCEL_NOCUDA = -WF,-D$(EXA_OS) -WF,-DNO_AMD -WF,-DNO_PHI -WF,-DNO_GPU
+else
+NO_ACCEL_CUDA = -D$(EXA_OS) -DNO_AMD -DNO_PHI -DCUDA_ARCH=$(GPU_ARCH)
+NO_ACCEL_NOCUDA = -D$(EXA_OS) -DNO_AMD -DNO_PHI -DNO_GPU
+endif
 NO_ACCEL = $(NO_ACCEL_$(GPU_CUDA))
 
 #C FLAGS:
-CFLAGS_DEV = -c -g $(NO_ACCEL) -D_DEBUG
-CFLAGS_OPT = -c -O3 $(NO_ACCEL)
-ifeq ($(BLASLIB),NONE)
-CFLAGS = $(CFLAGS_$(BUILD_TYPE)) -D$(EXA_OS) -DNO_BLAS
+ifeq ($(TOOLKIT),IBM)
+CFLAGS_DEV = -c -g -WF,-D_DEBUG
 else
-CFLAGS = $(CFLAGS_$(BUILD_TYPE)) -D$(EXA_OS)
+CFLAGS_DEV = -c -g -D_DEBUG
+endif
+CFLAGS_OPT = -c -O3
+ifeq ($(BLASLIB),NONE)
+ifeq ($(TOOLKIT),IBM)
+CFLAGS = $(CFLAGS_$(BUILD_TYPE)) $(NO_ACCEL) -WF,-DNO_BLAS
+else
+CFLAGS = $(CFLAGS_$(BUILD_TYPE)) $(NO_ACCEL) -DNO_BLAS
+endif
+else
+CFLAGS = $(CFLAGS_$(BUILD_TYPE)) $(NO_ACCEL)
 endif
 
 #FORTRAN FLAGS:
-FFLAGS_INTEL_DEV = -c -g -fpp -vec-threshold4 -qopenmp -mkl=parallel $(NO_ACCEL)
-#FFLAGS_INTEL_DEV = -c -g -fpp -vec-threshold4 -openmp $(NO_ACCEL)
-FFLAGS_INTEL_OPT = -c -O3 -fpp -vec-threshold4 -qopenmp -mkl=parallel $(NO_ACCEL)
-#FFLAGS_INTEL_OPT = -c -O3 -fpp -vec-threshold4 -openmp $(NO_ACCEL)
-FFLAGS_CRAY_DEV = -c -g $(NO_ACCEL)
-FFLAGS_CRAY_OPT = -c -O3 $(NO_ACCEL)
-FFLAGS_GNU_DEV = -c -fopenmp -fbacktrace -fcheck=bounds -fcheck=array-temps -fcheck=pointer -g $(NO_ACCEL)
-FFLAGS_GNU_OPT = -c -fopenmp -O3 $(NO_ACCEL)
-FFLAGS_PGI_DEV = -c -mp -Mcache_align -Mbounds -Mchkptr -Mstandard -g $(NO_ACCEL)
-FFLAGS_PGI_OPT = -c -mp -Mcache_align -Mstandard -O3 $(NO_ACCEL)
-FFLAGS_IBM_DEV = -c -qsmp=omp $(NO_ACCEL)
-FFLAGS_IBM_OPT = -c -qsmp=omp -O3 $(NO_ACCEL)
+FFLAGS_INTEL_DEV = -c -g -fpp -vec-threshold4 -qopenmp -mkl=parallel
+#FFLAGS_INTEL_DEV = -c -g -fpp -vec-threshold4 -openmp
+FFLAGS_INTEL_OPT = -c -O3 -fpp -vec-threshold4 -qopenmp -mkl=parallel
+#FFLAGS_INTEL_OPT = -c -O3 -fpp -vec-threshold4 -openmp
+FFLAGS_CRAY_DEV = -c -g
+FFLAGS_CRAY_OPT = -c -O3
+FFLAGS_GNU_DEV = -c -fopenmp -fbacktrace -fcheck=bounds -fcheck=array-temps -fcheck=pointer -g
+FFLAGS_GNU_OPT = -c -fopenmp -O3
+FFLAGS_PGI_DEV = -c -mp -Mcache_align -Mbounds -Mchkptr -Mstandard -g
+FFLAGS_PGI_OPT = -c -mp -Mcache_align -Mstandard -O3
+FFLAGS_IBM_DEV = -c -qsmp=omp
+FFLAGS_IBM_OPT = -c -qsmp=omp -O3
 ifeq ($(BLASLIB),NONE)
-FFLAGS = $(FFLAGS_$(TOOLKIT)_$(BUILD_TYPE)) -D$(EXA_OS) -DNO_BLAS
+ifeq ($(TOOLKIT),IBM)
+FFLAGS = $(FFLAGS_$(TOOLKIT)_$(BUILD_TYPE)) $(NO_ACCEL) -WF,-DNO_BLAS
 else
-FFLAGS = $(FFLAGS_$(TOOLKIT)_$(BUILD_TYPE)) -D$(EXA_OS)
+FFLAGS = $(FFLAGS_$(TOOLKIT)_$(BUILD_TYPE)) $(NO_ACCEL) -DNO_BLAS
+endif
+else
+FFLAGS = $(FFLAGS_$(TOOLKIT)_$(BUILD_TYPE)) $(NO_ACCEL)
 endif
 
 #THREADS:
