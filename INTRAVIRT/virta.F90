@@ -3,7 +3,7 @@
 !This module provides basic infrastructure for ExaTENSOR, a tensor-algebra virtual processor (TAVP).
 !The computing and logical tensor-algebra virtual processors (C-TAVP,L-TAVP) derive from this module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/01/20
+!REVISION: 2017/02/08
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -29,7 +29,9 @@
         use pack_prim                            !object packing primitives
         use distributed                          !distributed communication layer
 #ifndef NO_LINUX
-        use service_mpi, only: get_memory_status !OS level API
+        use service_mpi, only: get_memory_status,MPI_COMM_NULL
+#else
+        use service_mpi, only: MPI_COMM_NULL
 #endif
         use hardware                             !hardware abstraction
         use subspaces                            !hierarchical vector space representation
@@ -57,9 +59,9 @@
         integer(INTD), parameter, public:: EXA_HELPER=3    !helper process
         integer(INTD), public:: EXA_MAX_WORK_GROUP_SIZE=64 !maximal size of a work group (max number of workers per manager)
  !Elementary tensor instruction (ETI) granularity classification:
-        real(8), public:: EXA_FLOPS_MEDIUM=1d9 !minimal number of Flops to consider the operation as medium-cost
-        real(8), public:: EXA_FLOPS_HEAVY=1d11 !minimal number of Flops to consider the operation as heavy-cost
-        real(8), public:: EXA_COST_TO_SIZE=1d2 !minimal cost (Flops) to size (Words) ratio to consider the operation compute intensive
+        real(8), public:: EXA_FLOPS_MEDIUM=1d10 !minimal number of Flops to consider the operation as medium-cost
+        real(8), public:: EXA_FLOPS_HEAVY=1d12  !minimal number of Flops to consider the operation as heavy-cost
+        real(8), public:: EXA_COST_TO_SIZE=1d2  !minimal cost (Flops) to size (Words) ratio to consider the operation compute intensive
  !Tensor algebra virtual processor (TAVP):
   !Tensor instruction code (opcode), must be non-negative (consult TAProL spec):
         integer(INTD), parameter, public:: TENSOR_INSTR_NOOP=DS_INSTR_NOOP !no operation (empty instruction)
@@ -84,27 +86,27 @@
 !TYPES:
  !Tensor operand:
 !        type, extends(ds_oprnd_t), public:: tens_oprnd_t
-!         type(tensor_rcrsv_t), private:: tensor
 !        end type tens_oprnd_t
  !Tensor instruction:
 !        type, extends(ds_instr_t), public:: tens_instr_t
 !        end type tens_instr_t
 !DATA:
- !Current role of the virtual processor:
-        integer(INTD), protected:: my_role=EXA_NO_ROLE !role of this virtual processor (set at run-time)
-        integer(INTD), protected:: my_group=-1         !computing group the process belongs to (set at run-time): [0..MAX]
-        integer(INTD), protected:: my_group_size=0     !size of the computing group the process belongs to (set at runtime): [1..EXA_MAX_WORK_GROUP_SIZE]
-        integer(INTD), protected:: my_group_index=-1   !process ID within its computing group (set at run-time): [0..my_group_size-1]
+ !Current role of the tensor alegbra virtual processor:
+        integer(INTD), protected:: my_role=EXA_NO_ROLE         !role of this virtual processor (set at run-time)
+        integer(INTD), protected:: my_group=-1                 !computing group the process belongs to (set at run-time): [0..MAX]
+        integer(INTD), protected:: my_group_size=0             !size of the computing group the process belongs to (set at runtime): [1..EXA_MAX_WORK_GROUP_SIZE]
+        integer(INTD), protected:: my_group_index=-1           !process ID within its computing group (set at run-time): [0..my_group_size-1]
+        integer(INTD), protected:: my_group_comm=MPI_COMM_NULL !group MPI communicator (if any)
 !VISIBILITY:
-        public exa_set_processor_role
+        public tavp_establish_role
 
        contains
 !IMPLEMENTATION:
-!---------------------------------------------------
-        subroutine exa_set_processor_role(role,ierr)
-!Sets virtual processor role.
+![Non-member]====================================
+        subroutine tavp_establish_role(role,ierr)
+!Specializes a tensor algebra virtual processor (TAVP).
          implicit none
-         integer(INTD), intent(in):: role  !in: role of the current virtual processor
+         integer(INTD), intent(in):: role  !in: specific role of the tensor algebra virtual processor
          integer(INTD), intent(out):: ierr !out: error code
 
          ierr=EXA_SUCCESS
@@ -117,6 +119,6 @@
           ierr=EXA_ERR_INVALID_ARGS
          end select
          return
-        end subroutine exa_set_processor_role
+        end subroutine tavp_establish_role
 
        end module virta

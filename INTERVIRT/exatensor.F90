@@ -96,7 +96,7 @@
        call dil_global_comm_barrier(errc)
        if(ierr.eq.0.and.errc.eq.0) then
  !Assign roles:
-        call exa_set_processor_role(EXA_WORKER,errc) !debug
+        call tavp_establish_role(EXA_WORKER,errc) !debug
  !Begin life:
         !...(ierr)
        endif

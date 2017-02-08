@@ -27,6 +27,7 @@ program main
  implicit none
  real(8):: perf
  integer(INTD):: dev_out,ierr
+ real(8), external:: dil_test_infer_overhead
 
  dev_out=6 !output device (defaults to screen)
 
@@ -76,5 +77,68 @@ program main
   write(*,*) 'Legacy dictionary testing status: ',ierr,'(FAILED): Performance: ',perf
  endif
 
+!Dynamic type inferrence overhead:
+ write(*,'(1x,"Dynamic type inferrence slowdown: ")',ADVANCE='NO')
+ perf=dil_test_infer_overhead(2**23)
+ write(*,*) perf
+
  stop
+ contains
+
 end program main
+
+subroutine my_add(a,b,c)
+ class(*), intent(in):: a
+ class(*), intent(in):: b
+ class(*), intent(inout):: c
+ real(8), pointer:: ap,bp,cp
+
+ select type(a); type is(real(8)); ap=>a; end select
+ select type(b); type is(real(8)); bp=>b; end select
+ select type(c); type is(real(8)); cp=>c; end select
+ cp=cp+ap+bp
+ return
+end subroutine my_add
+
+function dil_test_infer_overhead(n) result(slowdown)
+ real(8):: slowdown
+ integer, intent(in):: n
+ integer:: i,j
+ real(8), allocatable:: a(:),b(:)
+ real(8):: c,tm,tm1,tm2
+
+ interface
+  subroutine my_add(a,b,c)
+   class(*), intent(in):: a
+   class(*), intent(in):: b
+   class(*), intent(inout):: c
+  end subroutine my_add
+ end interface
+
+ allocate(a(n),b(n))
+ call random_number(a)
+ call random_number(b)
+!Direct:
+ call cpu_time(tm)
+ c=0d0
+ do j=1,8
+  do i=1,n
+   c=c+a(i)+b(i)
+  enddo
+ enddo
+ call cpu_time(tm1); tm1=tm1-tm
+ write(*,'(F8.4,1x,F20.7,1x)',ADVANCE='NO') tm1,c
+!Indirect:
+ call cpu_time(tm)
+ c=0d0
+ do j=1,8
+  do i=1,n
+   call my_add(a(i),b(i),c)
+  enddo
+ enddo
+ call cpu_time(tm2); tm2=tm2-tm
+ write(*,'(F8.4,1x,F20.7,1x)',ADVANCE='NO') tm2,c
+ slowdown=tm2/tm1
+ deallocate(a,b)
+ return
+end function dil_test_infer_overhead
