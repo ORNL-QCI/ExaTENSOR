@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/02/07
+!REVISION: 2017/02/08
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -74,14 +74,15 @@
          integer(INTL), allocatable, private:: space_idx(:)     !subspace id for each tensor dimension
          class(h_space_t), pointer, private:: h_space_p=>NULL() !pointer to the underlying hierarchical vector space
          contains
-          !initial:: tens_signature_ctor                     !ctor
-          procedure, public:: is_set=>TensSignatureIsSet     !returns .TRUE. if the tensor signature is set
-          procedure, public:: get_name=>TensSignatureGetName !returns the alphanumeric_ tensor name
-          procedure, public:: get_rank=>TensSignatureGetRank !returns the rank of the tensor (number of dimensions)
-          procedure, public:: get_spec=>TensSignatureGetSpec !returns the tensor subspace multi-index (specification)
-          procedure, public:: compare=>TensSignatureCompare  !compares the tensor signature with another tensor signature
-          procedure, public:: print_it=>TensSignaturePrintIt !prints the tensor signature
-          final:: tens_signature_dtor                        !dtor
+          procedure, private:: TensSignatureCtor
+          generic, public:: tens_signature_ctor=>TensSignatureCtor !ctor
+          procedure, public:: is_set=>TensSignatureIsSet           !returns .TRUE. if the tensor signature is set
+          procedure, public:: get_name=>TensSignatureGetName       !returns the alphanumeric_ tensor name
+          procedure, public:: get_rank=>TensSignatureGetRank       !returns the rank of the tensor (number of dimensions)
+          procedure, public:: get_spec=>TensSignatureGetSpec       !returns the tensor subspace multi-index (specification)
+          procedure, public:: compare=>TensSignatureCompare        !compares the tensor signature with another tensor signature
+          procedure, public:: print_it=>TensSignaturePrintIt       !prints the tensor signature
+          final:: tens_signature_dtor                              !dtor
         end type tens_signature_t
  !Tensor shape:
         type, public:: tens_shape_t
@@ -91,7 +92,8 @@
          integer(INTD), private:: num_dims=-1                !number of tensor dimensions (tensor order, tensor rank)
          integer(INTD), private:: num_grps=0                 !number of defined (non-trivial) index restriction groups
          contains
-          !initial:: tens_shape_ctor                         !ctor
+          procedure, private:: TensShapeCtor
+          generic, public:: tens_shape_ctor=>TensShapeCtor   !ctor
           procedure, public:: set_groups=>TensShapeSetGroups !creates a new index restriction group
           procedure, public:: is_set=>TensShapeIsSet         !returns .TRUE. if the tensor shape is set
           procedure, public:: get_dims=>TensShapeGetDims     !returns tensor dimension extents
@@ -108,7 +110,8 @@
          type(tens_signature_t), private:: signature         !tensor signature
          type(tens_shape_t), private:: shape                 !tensor shape
          contains
-          !initial:: tens_header_ctor                                !ctor
+          procedure, private:: TensHeaderCtor
+          generic, public:: tens_header_ctor=>TensHeaderCtor         !ctor
           procedure, public:: add_shape=>TensHeaderAddShape          !ctor for a deferred tensor shape specification
           procedure, public:: is_set=>TensHeaderIsSet                !returns .TRUE. if the tensor header is set (with or without shape)
           procedure, public:: get_name=>TensHeaderGetName            !returns the alphanumeric_ tensor name
@@ -132,12 +135,13 @@
          integer(INTL), private:: offset=-1_INTL             !offset of the constituent simple tensor block in the parental composite tensor block (locally stored)
          integer(INTD), private:: layout=TEREC_LAY_NONE      !simple storage layout: {TEREC_LAY_FDIMS,TEREC_LAY_CDIMS} only
          contains
-          !initial:: tens_simple_part_ctor                        !ctor
-          procedure, public:: is_set=>TensSimplePartIsSet         !return .TRUE. if the simple part is set (signature, shape, layout, offset)
-          procedure, public:: get_offset=>TensSimplePartGetOffset !returns the offset of the simple part in the parental tensor block
-          procedure, public:: get_layout=>TensSimplePartGetLayout !returns the simple layout of the simple tensor part: {TEREC_LAY_FDIMS,TEREC_LAY_CDIMS} only
-          procedure, public:: get_header=>TensSimplePartGetHeader !returns a pointer to the header of the simple tensor part
-          final:: tens_simple_part_dtor                           !dtor
+          procedure, private:: TensSimplePartCtor
+          generic, public:: tens_simple_part_ctor=>TensSimplePartCtor !ctor
+          procedure, public:: is_set=>TensSimplePartIsSet             !return .TRUE. if the simple part is set (signature, shape, layout, offset)
+          procedure, public:: get_offset=>TensSimplePartGetOffset     !returns the offset of the simple part in the parental tensor block
+          procedure, public:: get_layout=>TensSimplePartGetLayout     !returns the simple layout of the simple tensor part: {TEREC_LAY_FDIMS,TEREC_LAY_CDIMS} only
+          procedure, public:: get_header=>TensSimplePartGetHeader     !returns a pointer to the header of the simple tensor part
+          final:: tens_simple_part_dtor                               !dtor
         end type tens_simple_part_t
  !Storage layout for locally stored blocks (abstract base):
         type, abstract, public:: tens_layout_t
@@ -207,7 +211,7 @@
         public valid_tensor_layout
         public cmp_tens_headers
  !tens_signature_t:
-        public tens_signature_ctor
+        private TensSignatureCtor
         private TensSignatureIsSet
         private TensSignatureGetName
         private TensSignatureGetRank
@@ -216,7 +220,7 @@
         private TensSignaturePrintIt
         public tens_signature_dtor
  !tens_shape_t:
-        public tens_shape_ctor
+        private TensShapeCtor
         private TensShapeSetGroups
         private TensShapeIsSet
         private TensShapeGetDims
@@ -228,7 +232,7 @@
         private TensShapePrintIt
         public tens_shape_dtor
  !tens_header_t:
-        public tens_header_ctor
+        private TensHeaderCtor
         private TensHeaderAddShape
         private TensHeaderIsSet
         private TensHeaderGetName
@@ -244,7 +248,7 @@
         private TensHeaderPrintIt
         public tens_header_dtor
  !tens_simple_part_t:
-        public tens_simple_part_ctor
+        private TensSimplePartCtor
         private TensSimplePartIsSet
         private TensSimplePartGetOffset
         private TensSimplePartGetLayout
@@ -274,7 +278,7 @@
 
        contains
 !IMPLEMENTATION:
-!=======================================================
+![Non-member]===========================================
         function valid_tensor_layout(layout) result(res)
 !Returns TRUE if the tensor layout is valid.
          logical:: res
@@ -283,6 +287,30 @@
          res=(layout.ge.0.and.layout.lt.TEREC_NUM_LAYOUTS)
          return
         end function valid_tensor_layout
+!--------------------------------------------------------
+        function cmp_tens_signatures(ts1,ts2) result(cmp)
+!Compares two tensor signatures.
+         implicit none
+         integer(INTD):: cmp                !out: result of comparison (see GFC/gfc_base.F90)
+         class(*), intent(in), target:: ts1 !in: tensor signature 1
+         class(*), intent(in), target:: ts2 !in: tensor signature 2
+         class(tens_signature_t), pointer:: tsp1,tsp2
+
+         tsp1=>NULL(); tsp2=>NULL()
+         select type(ts1); class is(tens_signature_t); tsp1=>ts1; end select
+         select type(ts2); class is(tens_signature_t); tsp2=>ts2; end select
+         if(associated(tsp1).and.associated(tsp2)) then
+          cmp=tsp1%compare(tsp2)
+          if(cmp.eq.GFC_CMP_PARENT) then
+           cmp=GFC_CMP_GT
+          elseif(cmp.eq.GFC_CMP_CHILD) then
+           cmp=GFC_CMP_LT
+          endif
+         else
+          cmp=GFC_CMP_ERR
+         endif
+         return
+        end function cmp_tens_signatures
 !-----------------------------------------------------
         function cmp_tens_headers(th1,th2) result(cmp)
 !Compares two tensor headers.
@@ -297,16 +325,21 @@
          select type(th2); class is(tens_header_t); thp2=>th2; end select
          if(associated(thp1).and.associated(thp2)) then
           cmp=thp1%compare(thp2)
+          if(cmp.eq.GFC_CMP_PARENT) then
+           cmp=GFC_CMP_GT
+          elseif(cmp.eq.GFC_CMP_CHILD) then
+           cmp=GFC_CMP_LT
+          endif
          else
           cmp=GFC_CMP_ERR
          endif
          return
         end function cmp_tens_headers
-![tens_signature_t]==========================================================
-        subroutine tens_signature_ctor(this,ierr,subspaces,tens_name,h_space)
+![tens_signature_t]========================================================
+        subroutine TensSignatureCtor(this,ierr,subspaces,tens_name,h_space)
 !CTOR for tens_signature_t.
          implicit none
-         type(tens_signature_t), intent(out):: this               !out: tensor signature
+         class(tens_signature_t), intent(out):: this              !out: tensor signature
          integer(INTD), intent(out), optional:: ierr              !out: error code
          integer(INTL), intent(in), optional:: subspaces(1:)      !in: multi-index of subspaces
          character(*), intent(in), optional:: tens_name           !in: alphanumeric_ tensor name (no spaces allowed!)
@@ -347,7 +380,7 @@
          if(errc.ne.TEREC_SUCCESS) call tens_signature_dtor(this)
          if(present(ierr)) ierr=errc
          return
-        end subroutine tens_signature_ctor
+        end subroutine TensSignatureCtor
 !------------------------------------------------------------------
         function TensSignatureIsSet(this,ierr,num_dims) result(res)
 !Returns TRUE if the tensor_signature_t object is set, FALSE otherwise.
@@ -537,11 +570,11 @@
          !write(*,'("#DEBUG: Exited tens_signature_dtor")') !debug
          return
         end subroutine tens_signature_dtor
-![tens_shape_t]==============================================================
-        subroutine tens_shape_ctor(this,ierr,dim_extent,dim_group,group_spec)
+![tens_shape_t]============================================================
+        subroutine TensShapeCtor(this,ierr,dim_extent,dim_group,group_spec)
 !CTOR for tens_shape_t.
          implicit none
-         type(tens_shape_t), intent(out):: this               !out: tensor shape
+         class(tens_shape_t), intent(out):: this              !out: tensor shape
          integer(INTD), intent(out), optional:: ierr          !out: error code
          integer(INTL), intent(in), optional:: dim_extent(1:) !in: tensor dimension extents
          integer(INTD), intent(in), optional:: dim_group(1:)  !in: dimension grouping: dim_group(x)=y means dimension x belongs to group y>0 (group 0 is default)
@@ -603,7 +636,7 @@
          if(errc.ne.TEREC_SUCCESS) call tens_shape_dtor(this)
          if(present(ierr)) ierr=errc
          return
-        end subroutine tens_shape_ctor
+        end subroutine TensShapeCtor
 !--------------------------------------------------------------------
         subroutine TensShapeSetGroups(this,dim_group,group_spec,ierr)
 !Sets group restrictions on tensor dimensions. If group restrictions
@@ -961,61 +994,73 @@
          !write(*,'("#DEBUG: Exited tens_shape_dtor")') !debug
          return
         end subroutine tens_shape_dtor
-![tens_header_t]==================================================================================
-        subroutine tens_header_ctor(this,ierr,tens_name,subspaces,dim_extent,dim_group,group_spec)
+![tens_header_t]========================================================================================
+        subroutine TensHeaderCtor(this,ierr,tens_name,subspaces,h_space,dim_extent,dim_group,group_spec)
 !CTOR for tens_header_t. Each subsequent optional argument implies the existence of all preceding
 !optional arguments, except <ierr> and <tens_name>. If no optional arguments are present, except
 !maybe <tens_name> and/or <ierr>, a scalar header will be constructed. <dim_group> and <group_spec>
 !must either be both present or both absent. More specifically:
 ! # Constructing a scalar tensor header: Do not pass any optional arguments except <tens_name> and/or <ierr>;
-! # Constructing a true tensor header without shape: Pass only <subspaces> and, optionally, <tens_name> and/or <ierr>;
-! # Constructing a true tensor header with a shape: Pass <subspaces> and <dim_extent> with all other arguments optional.
+! # Constructing a true tensor header without shape: Pass only <subspaces>, <h_space>, and optionally <tens_name> and/or <ierr>;
+! # Constructing a true tensor header with a shape: Pass <subspaces>, <h_space>, and <dim_extent> with all other arguments optional.
          implicit none
-         type(tens_header_t), intent(out):: this              !out: tensor header
+         class(tens_header_t), intent(out):: this             !out: tensor header
          integer(INTD), intent(out), optional:: ierr          !out: error code
          character(*), intent(in), optional:: tens_name       !in: alphanumeric_ tensor name
          integer(INTL), intent(in), optional:: subspaces(1:)  !in: subspace multi-index (specification): Length = tensor rank
+         class(h_space_t), intent(in), optional:: h_space     !in: underlying hierarchical vector space
          integer(INTL), intent(in), optional:: dim_extent(1:) !in: dimension extents: Length = tensor rank
          integer(INTD), intent(in), optional:: dim_group(1:)  !in: dimension restriction groups: Length = tensor rank
          integer(INTD), intent(in), optional:: group_spec(1:) !in: dimension restriction group specification
-         integer(INTD):: errc
-         logical:: pr_nam,pr_sub,pr_dim,pr_grp,pr_grs
+         integer(INTD):: errc,m
+         logical:: pr_nam,pr_sub,pr_hsp,pr_dim,pr_grp,pr_grs
 
          errc=TEREC_SUCCESS
          pr_nam=present(tens_name)
          pr_sub=present(subspaces)
+         pr_hsp=present(h_space)
          pr_dim=present(dim_extent)
          pr_grp=present(dim_group)
          pr_grs=present(group_spec)
+         if(pr_sub.and.(.not.pr_hsp)) errc=TEREC_INVALID_ARGS
          if(pr_dim.and.(.not.pr_sub)) errc=TEREC_INVALID_ARGS
          if((pr_grp.or.pr_grs).and.(.not.pr_dim)) errc=TEREC_INVALID_ARGS
          if((pr_grp.and.(.not.pr_grs)).or.(pr_grs.and.(.not.pr_grp))) errc=TEREC_INVALID_ARGS
          if(pr_sub.and.pr_dim) then
-          if(size(subspaces).ne.size(dim_extent)) errc=TEREC_INVALID_ARGS
+          m=size(subspaces); if(m.ne.size(dim_extent)) errc=TEREC_INVALID_ARGS
+          if(m.le.0) then; pr_sub=.FALSE.; pr_dim=.FALSE.; endif
          endif
          if(errc.eq.TEREC_SUCCESS) then
  !tensor signature:
           if(pr_sub) then !explicit tensor
            if(pr_nam) then
-            call tens_signature_ctor(this%signature,errc,subspaces,tens_name)
+            if(pr_hsp) then
+             call this%signature%tens_signature_ctor(errc,subspaces,tens_name,h_space)
+            else
+             call this%signature%tens_signature_ctor(errc,subspaces,tens_name)
+            endif
            else
-            call tens_signature_ctor(this%signature,errc,subspaces)
+            if(pr_hsp) then
+             call this%signature%tens_signature_ctor(errc,subspaces,h_space=h_space)
+            else
+             call this%signature%tens_signature_ctor(errc,subspaces)
+            endif
            endif
           else !scalar
            if(pr_nam) then
-            call tens_signature_ctor(this%signature,errc,tens_name=tens_name)
+            call this%signature%tens_signature_ctor(errc,tens_name=tens_name)
            else
-            call tens_signature_ctor(this%signature,errc)
+            call this%signature%tens_signature_ctor(errc)
            endif
-           if(errc.eq.TEREC_SUCCESS) call tens_shape_ctor(this%shape,errc)
+           if(errc.eq.TEREC_SUCCESS) call this%shape%tens_shape_ctor(errc)
           endif
  !tensor shape (optional):
           if(errc.eq.TEREC_SUCCESS) then
            if(pr_dim) then
             if(pr_grp) then
-             call tens_shape_ctor(this%shape,errc,dim_extent,dim_group,group_spec)
+             call this%shape%tens_shape_ctor(errc,dim_extent,dim_group,group_spec)
             else
-             call tens_shape_ctor(this%shape,errc,dim_extent)
+             call this%shape%tens_shape_ctor(errc,dim_extent)
             endif
            endif
           endif
@@ -1023,7 +1068,7 @@
          if(errc.ne.TEREC_SUCCESS) call tens_header_dtor(this)
          if(present(ierr)) ierr=errc
          return
-        end subroutine tens_header_ctor
+        end subroutine TensHeaderCtor
 !-----------------------------------------------------------------------------------------
         subroutine TensHeaderAddShape(this,ierr,dim_extent,dim_group,group_spec,overwrite)
 !Sets the tensor header shape in case it has not been set initially.
@@ -1046,7 +1091,7 @@
              if(n.gt.0) then
               if(present(dim_group)) then
                if(present(group_spec)) then
-                call tens_shape_ctor(this%shape,errc,dim_extent,dim_group,group_spec)
+                call this%shape%tens_shape_ctor(errc,dim_extent,dim_group,group_spec)
                else
                 errc=TEREC_INVALID_ARGS
                endif
@@ -1054,11 +1099,11 @@
                if(present(group_spec)) then
                 errc=TEREC_INVALID_ARGS
                else
-                call tens_shape_ctor(this%shape,errc,dim_extent)
+                call this%shape%tens_shape_ctor(errc,dim_extent)
                endif
               endif
              else !scalar shape
-              call tens_shape_ctor(this%shape,errc)
+              call this%shape%tens_shape_ctor(errc)
              endif
             else
              errc=TEREC_INVALID_ARGS
@@ -1067,7 +1112,7 @@
             if(n.ne.0.or.present(dim_group).or.present(group_spec)) then
              errc=TEREC_INVALID_ARGS
             else
-             call tens_shape_ctor(this%shape,errc)
+             call this%shape%tens_shape_ctor(errc)
             endif
            endif
           else
@@ -1282,15 +1327,15 @@
 
          return
         end subroutine tens_header_dtor
-![tens_simple_part_t]===================================================
-        subroutine tens_simple_part_ctor(this,header,layout,offset,ierr)
+![tens_simple_part_t]================================================
+        subroutine TensSimplePartCtor(this,header,layout,offset,ierr)
 !CTOR for tens_simple_part_t.
          implicit none
-         type(tens_simple_part_t), intent(out):: this !out: tensor simple part
-         class(tens_header_t), intent(in):: header    !in: tensor header
-         integer(INTD), intent(in):: layout           !in: simple storage layout: {TEREC_LAY_FDIMS,TEREC_LAY_CDIMS}
-         integer(INTL), intent(in):: offset           !in: offset in the parental tensor block
-         integer(INTD), intent(out), optional:: ierr  !out: error code
+         class(tens_simple_part_t), intent(out):: this !out: tensor simple part
+         class(tens_header_t), intent(in):: header     !in: tensor header
+         integer(INTD), intent(in):: layout            !in: simple storage layout: {TEREC_LAY_FDIMS,TEREC_LAY_CDIMS}
+         integer(INTL), intent(in):: offset            !in: offset in the parental tensor block
+         integer(INTD), intent(out), optional:: ierr   !out: error code
          integer(INTD):: errc
          logical:: shpd
 
@@ -1313,7 +1358,7 @@
          if(errc.ne.TEREC_SUCCESS) call tens_simple_part_dtor(this)
          if(present(ierr)) ierr=errc
          return
-        end subroutine tens_simple_part_ctor
+        end subroutine TensSimplePartCtor
 !----------------------------------------------------------
         function TensSimplePartIsSet(this,ierr) result(res)
 !Returns TRUE of the tensor simple part is set.
@@ -1425,6 +1470,7 @@
 !==================================
        module tensor_recursive_test
         use tensor_algebra
+        use subspaces
         use tensor_recursive
         implicit none
         private
@@ -1457,9 +1503,10 @@
          integer(INTL):: mlndx(1:MAX_TENSOR_RANK)
          character(32):: tname
          type(tens_signature_t):: tsigna
+         type(h_space_t):: h_space
 
          ierr=0
-         call tens_signature_ctor(tsigna,ierr,(/3_INTL,4_INTL,2_INTL/),'Tensor')
+         call tsigna%tens_signature_ctor(ierr,(/3_INTL,4_INTL,2_INTL/),'Tensor',h_space)
          if(ierr.eq.TEREC_SUCCESS.and.tsigna%is_set()) then
           n=tsigna%get_rank(ierr)
           if(ierr.eq.TEREC_SUCCESS.and.n.eq.3) then
@@ -1493,7 +1540,7 @@
          ierr=0
          n=6; dims(1:n)=(/128_INTL,64_INTL,256_INTL,64_INTL,128_INTL,64_INTL/)
          m=2; grps(1:n)=(/1,2,0,2,1,2/); grp_spec(1:m)=(/TEREC_IND_RESTR_LT,TEREC_IND_RESTR_GE/)
-         call tens_shape_ctor(tshape,ierr,dims(1:n),grps(1:n),grp_spec(1:m))
+         call tshape%tens_shape_ctor(ierr,dims(1:n),grps(1:n),grp_spec(1:m))
          if(ierr.eq.TEREC_SUCCESS) then
           !write(*,'()'); call tshape%print_it() !debug
           grps(1:3)=(/2,4,6/)
@@ -1527,12 +1574,13 @@
          type(tens_signature_t):: tsigna
          type(tens_shape_t):: tshape
          type(tens_header_t):: thead
+         type(h_space_t):: h_space
          character(32):: tens_name
 
          ierr=0
          n=6; dims(1:n)=(/128_INTL,64_INTL,256_INTL,64_INTL,128_INTL,64_INTL/)
          m=2; grps(1:n)=(/1,2,0,2,1,2/); grp_spec(1:m)=(/TEREC_IND_RESTR_LT,TEREC_IND_RESTR_GE/)
-         call tens_header_ctor(thead,ierr,'Tensor',(/1_INTL,2_INTL,3_INTL,2_INTL,1_INTL,2_INTL/))
+         call thead%tens_header_ctor(ierr,'Tensor',(/1_INTL,2_INTL,3_INTL,2_INTL,1_INTL,2_INTL/),h_space)
          if(ierr.eq.TEREC_SUCCESS) then
           call thead%add_shape(ierr,dims(1:n),grps(1:n),grp_spec(1:m))
           if(ierr.eq.TEREC_SUCCESS) then
@@ -1578,13 +1626,14 @@
          type(tens_shape_t):: tshape
          type(tens_header_t):: thead
          type(tens_header_t), pointer:: thp
+         type(h_space_t):: h_space
          character(32):: tens_name
          type(tens_simple_part_t):: tpart
 
          ierr=0
          n=6; dims(1:n)=(/128_INTL,64_INTL,256_INTL,64_INTL,128_INTL,64_INTL/)
          m=2; grps(1:n)=(/1,2,0,2,1,2/); grp_spec(1:m)=(/TEREC_IND_RESTR_LT,TEREC_IND_RESTR_GE/)
-         call tens_header_ctor(thead,ierr,'Tensor',(/1_INTL,2_INTL,3_INTL,2_INTL,1_INTL,2_INTL/))
+         call thead%tens_header_ctor(ierr,'Tensor',(/1_INTL,2_INTL,3_INTL,2_INTL,1_INTL,2_INTL/),h_space)
          if(ierr.eq.TEREC_SUCCESS) then
           call thead%add_shape(ierr,dims(1:n),grps(1:n),grp_spec(1:m))
           if(ierr.eq.TEREC_SUCCESS) then
@@ -1598,7 +1647,7 @@
               if(ierr.eq.TEREC_SUCCESS.and.n.eq.6.and.dims(1).eq.128.and.dims(2).eq.64.and.&
                                                      &dims(3).eq.256.and.dims(4).eq.64.and.&
                                                      &dims(5).eq.128.and.dims(6).eq.64) then
-               call tens_simple_part_ctor(tpart,thead,TEREC_LAY_FDIMS,4096_INTL,ierr)
+               call tpart%tens_simple_part_ctor(thead,TEREC_LAY_FDIMS,4096_INTL,ierr)
                if(ierr.eq.TEREC_SUCCESS) then
                 if(tpart%get_offset(ierr).eq.4096.and.tpart%get_layout(i).eq.TEREC_LAY_FDIMS) then
                  if(ierr.eq.TEREC_SUCCESS.and.i.eq.TEREC_SUCCESS) then
