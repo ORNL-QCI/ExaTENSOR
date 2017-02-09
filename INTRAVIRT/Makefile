@@ -235,7 +235,7 @@ FFLAGS_GNU_DEV = -c -fopenmp -fbacktrace -fcheck=bounds -fcheck=array-temps -fch
 FFLAGS_GNU_OPT = -c -fopenmp -O3
 FFLAGS_PGI_DEV = -c -Mcache_align -Mbounds -Mchkptr -Mstandard -g
 FFLAGS_PGI_OPT = -c -Mcache_align -Mstandard -O3
-FFLAGS_IBM_DEV = -c -qsmp=omp
+FFLAGS_IBM_DEV = -c -qsmp=omp -g -qkeepparm
 FFLAGS_IBM_OPT = -c -qsmp=omp -O3
 FFLAGS = $(FFLAGS_$(TOOLKIT)_$(BUILD_TYPE)) $(DF)$(NO_GPU) $(DF)$(NO_AMD) $(DF)$(NO_PHI) $(DF)$(NO_BLAS) $(DF)-D$(EXA_OS) $(DF)$(NO_GNU)
 
@@ -250,7 +250,7 @@ LTHREAD_GNU   = -lgomp
 LTHREAD_PGI   = -lpthread
 LTHREAD_INTEL = -liomp5
 LTHREAD_CRAY  = -L.
-LTHREAD_IBM   = -L.
+LTHREAD_IBM   = -lxlsmp
 LTHREAD = $(LTHREAD_$(TOOLKIT))
 
 #LINKING:

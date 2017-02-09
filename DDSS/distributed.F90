@@ -447,7 +447,7 @@
 
         cptr=c_loc(packet(0)); call c_f_pointer(cptr,len_p) !body length has integer kind INT_COUNT
         plen=1+len_p !full length (header + body)
-        if(present(body_len)) body_len=max(0,len_p) !body length (in packing integers)
+        if(present(body_len)) body_len=max(0_INT_COUNT,len_p) !body length (in packing integers)
         nullify(len_p)
         return
         end function packet_full_len
@@ -929,7 +929,7 @@
 
         errc=0
         if(.not.c_associated(loc_ptr,C_NULL_PTR)) then
-         if(loc_size.gt.0.and.mod(loc_size,DDSS_BUFFER_ALIGN).eq.0) then
+         if(loc_size.gt.0.and.mod(loc_size,int(DDSS_BUFFER_ALIGN,INT_ADDR)).eq.0) then
           vol=loc_size/4 !volume in 4-byte (32-bit) words
           if(this%WinSize.ge.0) then !data window has been initialized
            call c_f_pointer(loc_ptr,r4_ptr,(/vol/))
@@ -980,7 +980,7 @@
 
         errc=0
         if(.not.c_associated(loc_ptr,C_NULL_PTR)) then
-         if(loc_size.gt.0.and.mod(loc_size,DDSS_BUFFER_ALIGN).eq.0) then
+         if(loc_size.gt.0.and.mod(loc_size,int(DDSS_BUFFER_ALIGN,INT_ADDR)).eq.0) then
           vol=loc_size/4 !volume in 4-byte words
           if(this%WinSize.ge.loc_size) then
            call c_f_pointer(loc_ptr,r4_ptr,(/vol/))
