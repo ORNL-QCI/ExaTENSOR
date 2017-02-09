@@ -459,7 +459,7 @@
 	endif
 	L=IOSL
 	do while(K.NE.0)
-	 K1=mod(K,10); K=K/10
+	 K1=mod(K,10_8); K=K/10_8
 	 L=L+1; OS(L:L)=A(K1)
 	enddo
 	K1=L-IOSL; if(mod(K1,2).eq.1) K1=K1-1; K1=K1/2
