@@ -10,11 +10,11 @@ export BUILD_TYPE ?= OPT
 #MPI Library: [MPICH|OPENMPI]:
 export MPILIB ?= MPICH
 #BLAS: [ATLAS|MKL|ACML|ESSL|NONE]:
-export BLASLIB ?= ATLAS
+export BLASLIB ?= MKL
 #Nvidia GPU via CUDA: [CUDA|NOCUDA]:
-export GPU_CUDA ?= NOCUDA
+export GPU_CUDA ?= CUDA
 #Nvidia GPU architecture (two digits):
-export GPU_SM_ARCH ?= 35
+export GPU_SM_ARCH ?= 52
 #Operating system: [LINUX|NO_LINUX]:
 export EXA_OS ?= LINUX
 
@@ -28,17 +28,18 @@ export FOOL_CUDA ?= NO
 
 #SET YOUR LOCAL PATHS (for unwrapped builds):
 # MPI path (whichever MPI you have, set one):
-export PATH_MPICH ?= /sw/summitdev/spectrum_mpi/10.1.0.2-20161221
-export PATH_OPENMPI ?= /sw/summitdev/spectrum_mpi/10.1.0.2-20161130
+export PATH_MPICH ?= /usr/local/mpi/mpich-3.2
+export PATH_OPENMPI ?= /usr/local/mpi/openmpi-1.10.4
 # BLAS lib path (whichever BLAS you have, set one):
 export PATH_BLAS_ATLAS ?= /usr/lib
-export PATH_BLAS_MKL ?= /ccs/compilers/intel/rh6-x86_64/16.0.0/compilers_and_libraries/linux/mkl/lib
+export PATH_BLAS_MKL ?= /opt/intel/mkl/lib/intel64
+export PATH_BLAS_MKL_DEP ?= /opt/intel/compilers_and_libraries/linux/lib/intel64_lin
 export PATH_BLAS_ACML ?= /opt/acml/5.3.1/gfortran64_fma4_mp/lib
 export PATH_BLAS_ESSL ?= /sw/summitdev/essl/5.5.0/lib64
 export PATH_BLAS_ESSL_DEP ?= /sw/summitdev/xl/20161123/xlf/15.1.5/lib
 # CUDA lib and include paths (if you build with CUDA):
-export PATH_CUDA_LIB ?= /sw/summitdev/cuda/8.0.54/lib64
-export PATH_CUDA_INC ?= /sw/summitdev/cuda/8.0.54/include
+export PATH_CUDA_LIB ?= /usr/local/cuda/lib64
+export PATH_CUDA_INC ?= /usr/local/cuda/include
 # cuTT path (if you use cuTT library):
 export PATH_CUTT ?= /home/div/src/cutt
 
@@ -211,44 +212,50 @@ CUDA_FLAGS = -D_FORCE_INLINES
 endif
 
 #Accelerator support:
-NO_ACCEL_CUDA = -D NO_AMD -D NO_PHI -D CUDA_ARCH=$(GPU_ARCH)
-NO_ACCEL_NOCUDA = -D NO_AMD -D NO_PHI -D NO_GPU
-NO_ACCEL = $(NO_ACCEL_$(GPU_CUDA))
+ifeq ($(TOOLKIT),IBM)
+DF := -WF,
+else
+DF :=
+endif
+ifeq ($(BLASLIB),NONE)
+NO_BLAS = -DNO_BLAS
+else
+NO_BLAS :=
+endif
+ifeq ($(GPU_CUDA),CUDA)
+NO_GPU = -DCUDA_ARCH=$(GPU_ARCH)
+else
+NO_GPU = -DNO_GPU
+endif
+NO_AMD = -DNO_AMD
+NO_PHI = -DNO_PHI
 
 #C FLAGS:
-CFLAGS_DEV = -c -g $(NO_ACCEL) -D_DEBUG
-CFLAGS_OPT = -c -O3 $(NO_ACCEL)
-ifeq ($(BLASLIB),NONE)
-CFLAGS = $(CFLAGS_$(BUILD_TYPE)) -D$(EXA_OS) -D NO_BLAS
-else
-CFLAGS = $(CFLAGS_$(BUILD_TYPE)) -D$(EXA_OS)
-endif
+CFLAGS_DEV = -c -g -D_DEBUG
+CFLAGS_OPT = -c -O3
+CFLAGS = $(CFLAGS_$(BUILD_TYPE)) $(NO_GPU) $(NO_AMD) $(NO_PHI) $(NO_BLAS) -D$(EXA_OS)
 
 #FORTRAN FLAGS:
-FFLAGS_INTEL_DEV = -c -g -fpp -vec-threshold4 -qopenmp -mkl=parallel $(NO_ACCEL)
-#FFLAGS_INTEL_DEV = -c -g -fpp -vec-threshold4 -openmp $(NO_ACCEL)
-FFLAGS_INTEL_OPT = -c -O3 -fpp -vec-threshold4 -qopenmp -mkl=parallel $(NO_ACCEL)
-#FFLAGS_INTEL_OPT = -c -O3 -fpp -vec-threshold4 -openmp $(NO_ACCEL)
-FFLAGS_CRAY_DEV = -c -g $(NO_ACCEL)
-FFLAGS_CRAY_OPT = -c -O3 $(NO_ACCEL)
-FFLAGS_GNU_DEV = -c -fopenmp -fbacktrace -fcheck=bounds -fcheck=array-temps -fcheck=pointer -g $(NO_ACCEL)
-FFLAGS_GNU_OPT = -c -fopenmp -O3 $(NO_ACCEL)
-FFLAGS_PGI_DEV = -c -mp -Mcache_align -Mbounds -Mchkptr -Mstandard -g $(NO_ACCEL)
-FFLAGS_PGI_OPT = -c -mp -Mcache_align -Mstandard -O3 $(NO_ACCEL)
-FFLAGS_IBM_DEV = -c -qsmp=omp $(NO_ACCEL)
-FFLAGS_IBM_OPT = -c -qsmp=omp -O3 $(NO_ACCEL)
-ifeq ($(BLASLIB),NONE)
-FFLAGS = $(FFLAGS_$(TOOLKIT)_$(BUILD_TYPE)) -D$(EXA_OS) -D NO_BLAS
-else
-FFLAGS = $(FFLAGS_$(TOOLKIT)_$(BUILD_TYPE)) -D$(EXA_OS)
-endif
+FFLAGS_INTEL_DEV = -c -g -fpp -vec-threshold4 -qopenmp -mkl=parallel
+#FFLAGS_INTEL_DEV = -c -g -fpp -vec-threshold4 -openmp
+FFLAGS_INTEL_OPT = -c -O3 -fpp -vec-threshold4 -qopenmp -mkl=parallel
+#FFLAGS_INTEL_OPT = -c -O3 -fpp -vec-threshold4 -openmp
+FFLAGS_CRAY_DEV = -c -g
+FFLAGS_CRAY_OPT = -c -O3
+FFLAGS_GNU_DEV = -c -fopenmp -fbacktrace -fcheck=bounds -fcheck=array-temps -fcheck=pointer -g
+FFLAGS_GNU_OPT = -c -fopenmp -O3
+FFLAGS_PGI_DEV = -c -mp -Mcache_align -Mbounds -Mchkptr -Mstandard -g
+FFLAGS_PGI_OPT = -c -mp -Mcache_align -Mstandard -O3
+FFLAGS_IBM_DEV = -c -qsmp=omp -g -qkeepparm
+FFLAGS_IBM_OPT = -c -qsmp=omp -O3
+FFLAGS = $(FFLAGS_$(TOOLKIT)_$(BUILD_TYPE)) $(DF)$(NO_GPU) $(DF)$(NO_AMD) $(DF)$(NO_PHI) $(DF)$(NO_BLAS) $(DF)-D$(EXA_OS)
 
 #THREADS:
 LTHREAD_GNU   = -lgomp
 LTHREAD_PGI   = -lpthread
 LTHREAD_INTEL = -liomp5
 LTHREAD_CRAY  = -L.
-LTHREAD_IBM   = -L.
+LTHREAD_IBM   = -lxlsmp
 LTHREAD = $(LTHREAD_$(TOOLKIT))
 
 #LINKING:

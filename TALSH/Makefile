@@ -6,13 +6,13 @@ export WRAP ?= NOWRAP
 #Compiler: [GNU|PGI|INTEL|CRAY|IBM]:
 export TOOLKIT ?= GNU
 #Optimization: [DEV|OPT]:
-export BUILD_TYPE ?= DEV
+export BUILD_TYPE ?= OPT
 #MPI Library: [MPICH|OPENMPI|NONE]:
 export MPILIB ?= NONE
 #BLAS: [ATLAS|MKL|ACML|ESSL|NONE]:
-export BLASLIB ?= ATLAS
+export BLASLIB ?= MKL
 #Nvidia GPU via CUDA: [CUDA|NOCUDA]:
-export GPU_CUDA ?= NOCUDA
+export GPU_CUDA ?= CUDA
 #Nvidia GPU architecture (two digits):
 export GPU_SM_ARCH ?= 35
 #Operating system: [LINUX|NO_LINUX]:
@@ -35,7 +35,8 @@ export PATH_MPICH ?= /usr/local/mpi/mpich-3.2
 export PATH_OPENMPI ?= /usr/local/mpi/openmpi-1.10.4
 # BLAS lib path (whichever you have chosen above):
 export PATH_BLAS_ATLAS ?= /usr/lib
-export PATH_BLAS_MKL ?= /ccs/compilers/intel/rh6-x86_64/16.0.0/compilers_and_libraries/linux/mkl/lib
+export PATH_BLAS_MKL ?= /opt/intel/mkl/lib/intel64
+export PATH_BLAS_MKL_DEP ?= /opt/intel/compilers_and_libraries/linux/lib/intel64_lin
 export PATH_BLAS_ACML ?= /opt/acml/5.3.1/gfortran64_fma4_mp/lib
 export PATH_BLAS_ESSL ?= /sw/summitdev/essl/5.5.0/lib64
 export PATH_BLAS_ESSL_DEP ?= /sw/summitdev/xl/161005/lib
@@ -150,9 +151,9 @@ MPI_LINK = $(MPI_LINK_$(WRAP))
 #LINEAR ALGEBRA FLAGS:
 LA_LINK_ATLAS = -L$(PATH_BLAS_ATLAS) -lblas -llapack
 ifeq ($(TOOLKIT),GNU)
-LA_LINK_MKL = -L$(PATH_BLAS_MKL) -lmkl_intel_lp64 -lmkl_core -lmkl_gnu_thread -lpthread -lm -ldl
+LA_LINK_MKL = -L$(PATH_BLAS_MKL) -lmkl_intel_lp64 -lmkl_gnu_thread -lmkl_core -lpthread -lm -ldl
 else
-LA_LINK_MKL = -L$(PATH_BLAS_MKL) -lmkl_intel_lp64 -lmkl_core -lmkl_intel_thread -lpthread -lm -ldl
+LA_LINK_MKL = -L$(PATH_BLAS_MKL) -lmkl_intel_lp64 -lmkl_intel_thread -lmkl_core -lpthread -lm -ldl -L$(PATH_BLAS_MKL_DEP) -liomp5
 endif
 LA_LINK_ACML = -L$(PATH_BLAS_ACML) -lacml_mp
 LA_LINK_ESSL = -L$(PATH_BLAS_ESSL) -lessl -L$(PATH_BLAS_ESSL_DEP) -lxlf90_r -lxlfmath
@@ -195,8 +196,8 @@ GPU_ARCH = $(GPU_SM_ARCH)0
 CUDA_HOST_NOWRAP = --compiler-bindir /usr/bin
 CUDA_HOST_WRAP = -I.
 CUDA_HOST = $(CUDA_HOST_$(WRAP))
-CUDA_FLAGS_DEV = --compile -arch=$(GPU_SM) -g -G -lineinfo -DDEBUG_GPU
-CUDA_FLAGS_OPT = --compile -arch=$(GPU_SM) -O3 -lineinfo
+CUDA_FLAGS_DEV = --compile -arch=$(GPU_SM) -g -G -lineinfo -DDEBUG_GPU -w
+CUDA_FLAGS_OPT = --compile -arch=$(GPU_SM) -O3 -lineinfo -w
 CUDA_FLAGS_CUDA = $(CUDA_HOST) $(CUDA_FLAGS_$(BUILD_TYPE)) -D_FORCE_INLINES
 ifeq ($(FOOL_CUDA),NO)
 CUDA_FLAGS_PRE1 = $(CUDA_FLAGS_CUDA) -D$(EXA_OS)
@@ -237,8 +238,13 @@ NO_AMD = -DNO_AMD
 NO_PHI = -DNO_PHI
 
 #C FLAGS:
+ifeq ($(TOOLKIT),PGI)
+CFLAGS_DEV = -c -g -D_DEBUG -silent -w
+CFLAGS_OPT = -c -O3 -silent -w
+else
 CFLAGS_DEV = -c -g -D_DEBUG
 CFLAGS_OPT = -c -O3
+endif
 CFLAGS = $(CFLAGS_$(BUILD_TYPE)) $(NO_GPU) $(NO_AMD) $(NO_PHI) $(NO_BLAS) -D$(EXA_OS)
 
 #FORTRAN FLAGS:
@@ -265,7 +271,7 @@ LTHREAD_IBM   = -lxlsmp
 LTHREAD = $(LTHREAD_$(TOOLKIT))
 
 #LINKING:
-LFLAGS = $(LTHREAD) $(MPI_LINK) $(LA_LINK) $(CUDA_LINK) $(LIB)
+LFLAGS = $(MPI_LINK) $(LA_LINK) $(LTHREAD) $(CUDA_LINK) $(LIB)
 
 OBJS =  ./OBJ/dil_basic.o ./OBJ/stsubs.o ./OBJ/combinatoric.o ./OBJ/symm_index.o ./OBJ/timers.o \
 	./OBJ/tensor_algebra.o ./OBJ/tensor_algebra_cpu.o ./OBJ/tensor_algebra_cpu_phi.o ./OBJ/tensor_dil_omp.o \
