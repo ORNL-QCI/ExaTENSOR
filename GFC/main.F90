@@ -107,9 +107,9 @@ function dil_test_infer_overhead(n) result(slowdown)
 
  interface
   subroutine my_add(a,b,c)
-   class(*), intent(in):: a
-   class(*), intent(in):: b
-   class(*), intent(inout):: c
+   class(*), intent(in), target:: a
+   class(*), intent(in), target:: b
+   class(*), intent(inout), target:: c
   end subroutine my_add
  end interface
 
