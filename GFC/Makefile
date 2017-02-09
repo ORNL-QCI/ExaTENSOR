@@ -192,38 +192,37 @@ endif
 
 #Accelerator support:
 ifeq ($(TOOLKIT),IBM)
-NO_ACCEL_CUDA = -WF,-D$(EXA_OS) -WF,-DNO_AMD -WF,-DNO_PHI -WF,-DCUDA_ARCH=$(GPU_ARCH)
-NO_ACCEL_NOCUDA = -WF,-D$(EXA_OS) -WF,-DNO_AMD -WF,-DNO_PHI -WF,-DNO_GPU
+DF := -WF,
 else
-NO_ACCEL_CUDA = -D$(EXA_OS) -DNO_AMD -DNO_PHI -DCUDA_ARCH=$(GPU_ARCH)
-NO_ACCEL_NOCUDA = -D$(EXA_OS) -DNO_AMD -DNO_PHI -DNO_GPU
+DF :=
 endif
 ifeq ($(TOOLKIT),GNU)
-NO_ACCEL = $(NO_ACCEL_$(GPU_CUDA))
+NO_GNU :=
 else
-ifeq ($(TOOLKIT),IBM)
-NO_ACCEL = $(NO_ACCEL_$(GPU_CUDA)) -WF,-DNO_GNU
+NO_GNU := -DNO_GNU
+endif
+ifeq ($(TOOLKIT),PGI)
+NO_PGI :=
 else
-NO_ACCEL = $(NO_ACCEL_$(GPU_CUDA)) -DNO_GNU
+NO_PGI := -DNO_PGI
 endif
+ifeq ($(BLASLIB),NONE)
+NO_BLAS = -DNO_BLAS
+else
+NO_BLAS :=
 endif
+ifeq ($(GPU_CUDA),CUDA)
+NO_GPU = -DCUDA_ARCH=$(GPU_ARCH)
+else
+NO_GPU = -DNO_GPU
+endif
+NO_AMD = -DNO_AMD
+NO_PHI = -DNO_PHI
 
 #C FLAGS:
-ifeq ($(TOOLKIT),IBM)
-CFLAGS_DEV = -c -g -WF,-D_DEBUG
-else
 CFLAGS_DEV = -c -g -D_DEBUG
-endif
 CFLAGS_OPT = -c -O3
-ifeq ($(BLASLIB),NONE)
-ifeq ($(TOOLKIT),IBM)
-CFLAGS = $(CFLAGS_$(BUILD_TYPE)) $(NO_ACCEL) -WF,-DNO_BLAS
-else
-CFLAGS = $(CFLAGS_$(BUILD_TYPE)) $(NO_ACCEL) -DNO_BLAS
-endif
-else
-CFLAGS = $(CFLAGS_$(BUILD_TYPE)) $(NO_ACCEL)
-endif
+CFLAGS = $(CFLAGS_$(BUILD_TYPE)) $(NO_GPU) $(NO_AMD) $(NO_PHI) $(NO_BLAS) -D$(EXA_OS)
 
 #FORTRAN FLAGS:
 FFLAGS_INTEL_DEV = -c -g -fpp -vec-threshold4 -qopenmp -mkl=parallel
@@ -238,15 +237,7 @@ FFLAGS_PGI_DEV = -c -mp -Mcache_align -Mbounds -Mchkptr -Mstandard -g
 FFLAGS_PGI_OPT = -c -mp -Mcache_align -Mstandard -O3
 FFLAGS_IBM_DEV = -c -qsmp=omp
 FFLAGS_IBM_OPT = -c -qsmp=omp -O3
-ifeq ($(BLASLIB),NONE)
-ifeq ($(TOOLKIT),IBM)
-FFLAGS = $(FFLAGS_$(TOOLKIT)_$(BUILD_TYPE)) $(NO_ACCEL) -WF,-DNO_BLAS
-else
-FFLAGS = $(FFLAGS_$(TOOLKIT)_$(BUILD_TYPE)) $(NO_ACCEL) -DNO_BLAS
-endif
-else
-FFLAGS = $(FFLAGS_$(TOOLKIT)_$(BUILD_TYPE)) $(NO_ACCEL)
-endif
+FFLAGS = $(FFLAGS_$(TOOLKIT)_$(BUILD_TYPE)) $(DF)$(NO_GPU) $(DF)$(NO_AMD) $(DF)$(NO_PHI) $(DF)$(NO_BLAS) $(DF)-D$(EXA_OS) $(DF)$(NO_GNU) $(DF)$(NO_PGI)
 
 #THREADS:
 LTHREAD_GNU   = -lgomp

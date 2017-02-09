@@ -77,14 +77,12 @@ program main
   write(*,*) 'Legacy dictionary testing status: ',ierr,'(FAILED): Performance: ',perf
  endif
 
-!Dynamic type inferrence overhead:
+!Dynamic type inferrence overhead:`PGI compiler bug
  write(*,'(1x,"Dynamic type inferrence slowdown: ")',ADVANCE='NO')
  perf=dil_test_infer_overhead(2**23)
  write(*,*) perf
 
  stop
- contains
-
 end program main
 
 subroutine my_add(a,b,c)
