@@ -88,9 +88,9 @@ program main
 end program main
 
 subroutine my_add(a,b,c)
- class(*), intent(in):: a
- class(*), intent(in):: b
- class(*), intent(inout):: c
+ class(*), intent(in), target:: a
+ class(*), intent(in), target:: b
+ class(*), intent(inout), target:: c
  real(8), pointer:: ap,bp,cp
 
  select type(a); type is(real(8)); ap=>a; end select
