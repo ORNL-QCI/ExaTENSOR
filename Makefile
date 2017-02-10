@@ -29,7 +29,7 @@ export FOOL_CUDA ?= NO
 #SET YOUR LOCAL PATHS (for unwrapped builds):
 # MPI path (whichever MPI you have, set one):
 export PATH_MPICH ?= /usr/local/mpi/mpich-3.2
-export PATH_OPENMPI ?= /usr/local/mpi/openmpi-1.10.4
+export PATH_OPENMPI ?= /usr/local/mpi/openmpi-2.0.1
 # BLAS lib path (whichever BLAS you have, set one):
 export PATH_BLAS_ATLAS ?= /usr/lib
 export PATH_BLAS_MKL ?= /opt/intel/mkl/lib/intel64
