@@ -1,9 +1,9 @@
 !This module provides general services for MPI parallel programs.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2016/07/15
+!REVISION: 2017/02/10
 
-!Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
-!Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
+!Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
+!Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
 
 !This file is part of ExaTensor.
 
@@ -505,11 +505,15 @@
           endif
          enddo
          call restrict_gpu_amount(ierr) !restrict usable GPUs range when multiple MPI processes run on a node
-         if(ierr.ne.0) then
-          ierr=3; write(jo,'("#ERROR(gpu_nvidia_probe): Unable to restrict the amount of GPUs per MPI process!")')
-          gpu_count=0; gpu_start=0
+         if(ierr.eq.0) then
+          if(gpu_count.gt.0) then
+           write(jo,'("Range of GPUs assigned to process  : ",i4," -",i4)') gpu_start,gpu_start+gpu_count-1
+          else
+           write(jo,'("Range of GPUs assigned to process  :       None")')
+          endif
+         else
+          ierr=3; write(jo,'("#ERROR(gpu_nvidia_probe): Unable to properly assign GPUs to MPI processes!")')
          endif
-         write(jo,'("Range of GPUs assigned to process  : ",i4," -",i4)') gpu_start,gpu_start+gpu_count-1
          write(jo,'("Ok")')
         elseif(gpus_found.lt.0) then !invalid (negative) number of GPUs found
          gpus_found=0; gpu_count=0; ierr=4
@@ -535,7 +539,7 @@
            gpu_start=gpu_start+j0
           endif
          else
-          ier=1 !mpi_procs_per_node has not been specified
+          gpu_start=0; gpu_count=0; ier=1 !mpi_procs_per_node has not been specified
          endif
          return
          end subroutine restrict_gpu_amount

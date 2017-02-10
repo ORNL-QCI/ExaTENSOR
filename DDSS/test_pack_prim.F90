@@ -28,6 +28,7 @@
           write(*,'(" Process ",i3," passed")') my_rank
          else
           write(*,'(" Process ",i3," failed: Error codes ",i11," -> ",i11)') my_rank,ierr,errc
+          call MPI_Abort(MPI_COMM_WORLD,-1,ierr)
          endif
          call MPI_Finalize(ierr)
         else
