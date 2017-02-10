@@ -10,9 +10,9 @@ export BUILD_TYPE ?= OPT
 #MPI Library: [MPICH|OPENMPI|NONE]:
 export MPILIB ?= NONE
 #BLAS: [ATLAS|MKL|ACML|ESSL|NONE]:
-export BLASLIB ?= MKL
+export BLASLIB ?= NONE
 #Nvidia GPU via CUDA: [CUDA|NOCUDA]:
-export GPU_CUDA ?= CUDA
+export GPU_CUDA ?= NOCUDA
 #Nvidia GPU architecture (two digits):
 export GPU_SM_ARCH ?= 35
 #Operating system: [LINUX|NO_LINUX]:
@@ -240,7 +240,7 @@ NO_PHI = -DNO_PHI
 #C FLAGS:
 ifeq ($(TOOLKIT),PGI)
 CFLAGS_DEV = -c -g -D_DEBUG -silent -w
-CFLAGS_OPT = -c -O3 -silent -w
+CFLAGS_OPT = -c -O3 -silent -w -Mnovect
 else
 CFLAGS_DEV = -c -g -D_DEBUG
 CFLAGS_OPT = -c -O3

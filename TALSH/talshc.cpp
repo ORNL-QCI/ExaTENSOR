@@ -1006,7 +1006,6 @@ int talshTensorConstruct(talsh_tens_t * tens_block,     //inout: empty tensor bl
       init_method(tens_block->dev_rsc[0].gmem_p,data_kind,tens_rank,tens_dims,&errc);
       if(errc) errc=NOT_CLEAN; //initialization failed, tensor block value is undefined, but one may continue
      }else{
-      //printf("\n#DBG\n %llu",tvol); //debug
       switch(data_kind){
        case R4:
         fval = (float)init_val_real;
