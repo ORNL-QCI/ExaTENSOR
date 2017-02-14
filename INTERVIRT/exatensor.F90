@@ -77,7 +77,7 @@
         if(my_rank.eq.0) then
  !Build NAT:
          write(jo,'("#MSG(exatensor): Building the Node Aggregation Tree (NAT) ... ")',ADVANCE='NO')
-         call comp_system%construct('hardware_specs.exaconf',error_code)
+         call comp_system%comp_system_ctor('hardware_specs.exaconf',error_code)
  !Build SAT:
          if(error_code.eq.0) then
           write(jo,'("Ok")')

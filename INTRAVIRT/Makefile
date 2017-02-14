@@ -266,7 +266,7 @@ $(NAME): $(OBJS) ./OBJ/test_intra.o $(MY_LIB)
 	mkdir -p ./OBJ
 	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(FFLAGS) virta.F90 -o ./OBJ/virta.o
 
-./OBJ/hardware.o: hardware.F90 ../UTILITY/OBJ/dil_basic.o ../GFC/OBJ/gfc_base.o ../GFC/OBJ/gfc_tree.o
+./OBJ/hardware.o: hardware.F90 ../UTILITY/OBJ/dil_basic.o ../UTILITY/OBJ/stsubs.o ../UTILITY/OBJ/parse_prim.o ../GFC/OBJ/gfc_base.o ../GFC/OBJ/gfc_tree.o
 	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(FFLAGS) hardware.F90 -o ./OBJ/hardware.o
 
 ./OBJ/subspaces.o: subspaces.F90 ../UTILITY/OBJ/dil_basic.o ../GFC/OBJ/gfc_base.o ../GFC/OBJ/gfc_list.o ../GFC/OBJ/gfc_tree.o

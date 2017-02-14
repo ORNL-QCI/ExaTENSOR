@@ -245,7 +245,7 @@ LTHREAD = $(LTHREAD_$(TOOLKIT))
 #LINKING:
 LFLAGS = $(LTHREAD) $(MPI_LINK) $(LA_LINK) $(CUDA_LINK) $(LIB)
 
-OBJS = ./OBJ/dil_basic.o ./OBJ/stsubs.o ./OBJ/timers.o ./OBJ/combinatoric.o
+OBJS = ./OBJ/dil_basic.o ./OBJ/stsubs.o ./OBJ/timers.o ./OBJ/combinatoric.o ./OBJ/parse_prim.o
 
 $(NAME): $(OBJS)
 	ar cr lib$(NAME).a $(OBJS)
@@ -262,6 +262,9 @@ $(NAME): $(OBJS)
 
 ./OBJ/combinatoric.o: combinatoric.F90
 	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) combinatoric.F90 -o ./OBJ/combinatoric.o
+
+./OBJ/parse_prim.o: parse_prim.F90 ./OBJ/stsubs.o
+	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) parse_prim.F90 -o ./OBJ/parse_prim.o
 
 
 .PHONY: clean

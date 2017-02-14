@@ -1,6 +1,6 @@
 !Hardware abstraction module
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/01/11
+!REVISION: 2017/02/14
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -22,6 +22,8 @@
 
        module hardware
         use dil_basic
+        use stsubs
+        use parse_prim
         use gfc_base
         use gfc_tree
         implicit none
@@ -36,7 +38,7 @@
   !Abstract memory unit:
         type, public:: memory_t
          integer(INTL), private:: id=-1  !memory unit id (non-negative)
-         real(8), private:: capacity=0d0 !memory unit capacity in bytes
+         real(8), private:: capacity=0d0 !memory unit capacity in bytes (approx.)
         end type memory_t
   !Abstract data transfer link:
         type, public:: memory_channel_t
@@ -46,7 +48,7 @@
         end type memory_channel_t
   !Attached memory unit:
         type, public:: memory_access_t
-         type(memory_t), pointer, private:: memory=>NULL() !memory unit description
+         type(memory_t), pointer, private:: memory=>NULL() !pointer to the memory unit description
          type(memory_channel_t), private:: channel         !memory channel description
          logical, private:: remote                         !TRUE if the memory is not directly accessible, FALSE otherwise
         end type memory_access_t
@@ -74,51 +76,77 @@
          type(compute_unit_t), allocatable, private:: comp_unit(:)   !compute units
          type(nic_t), allocatable, private:: nic_unit(:)             !NIC units
         end type compute_node_t
- !Hierarchical system representation:
+ !Hierarchical computing system representation:
         type, public:: comp_system_t
          integer(INTL), private:: num_phys_nodes=0                 !number of physical nodes in the system
-         integer(INTL), private:: num_virt_nodes=0                 !number of virtual nodes in the system
+         integer(INTL), private:: num_virt_nodes=0                 !number of virtual (aggregated) nodes in the system
          type(compute_node_t), allocatable, private:: virt_node(:) !virtual nodes: first <num_phys_nodes> are physical, rest are their aggregates (virtual)
          type(tree_t), private:: aggr_tree                         !node aggregation tree (NAT)
          contains
-          procedure, public:: construct=>CompSystemConstruct
-          final:: CompSystemDestruct
+          procedure, private:: CompSystemCtorSimple
+          generic, public:: comp_system_ctor=>CompSystemCtorSimple
+          final:: comp_system_dtor
         end type comp_system_t
-!DATA:
+!GLOBAL:
  !Computing system:
         type(comp_system_t), public:: comp_system
 !VISIBILITY:
  !comp_system_t:
-        private CompSystemConstruct
+        private CompSystemCtorSimple
+        public comp_system_dtor
 
        contains
 !IMPLEMENTATION:
-![comp_system_t]===============================================
-        subroutine CompSystemConstruct(this,hardware_spec,ierr)
+![comp_system_t]================================================
+        subroutine CompSystemCtorSimple(this,hardware_spec,ierr)
 !Constructs a hierarchical (virtual) representation of a computing system
-!by reading its configuration from a file.
+!by reading its configuration from a specification file. Simple dichotomy:
+!Finds how many nodes the HPC system consists of and creates the NAT.
          implicit none
-         class(comp_system_t), intent(inout):: this  !out: hierarchical virtual representation of the computing system
-         character(*), intent(in):: hardware_spec    !in: system specification file
+         class(comp_system_t), intent(out):: this    !out: hierarchical virtual representation of the computing system
+         character(*), intent(in):: hardware_spec    !in: computing system specification file
          integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc
+         integer(INTD):: errc,l,m
+         character(1024):: str
 
-         errc=SUCCESS
-         !`Write
+         errc=0
+         open(10,file=hardware_spec(1:len_trim(hardware_spec)),form='FORMATTED',status='OLD',err=2000)
+          str=' '
+          do
+           read(10,'(A1024)',end=100) str; l=len_trim(str)
+           if(match_composite_statement(str(1:l),'@node architecture',m,errc)) then
+            if(errc.ne.0) exit
+
+           elseif(match_composite_statement(str(1:l),'@system architecture',m,errc)) then
+            if(errc.ne.0) exit
+
+           endif
+           str(1:l)=' '
+          enddo
+100      close(10)
          if(present(ierr)) ierr=errc
          return
-        end subroutine CompSystemConstruct
-!------------------------------------------
-        subroutine CompSystemDestruct(this)
-!Destructs <comp_system_t> object.
+!--------------
+2000     write(CONS_OUT,*)'#ERROR(ExaTENSOR::hardware): Unable to open the hardware specification file: '//&
+         &hardware_spec(1:len_trim(hardware_spec)); errc=-1
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine CompSystemCtorSimple
+!----------------------------------------
+        subroutine comp_system_dtor(this)
+!Destructor for <comp_system_t>.
          implicit none
          type(comp_system_t):: this !inout: computing system representation
+         type(tree_iter_t):: tree_it
+         integer(INTD):: ierr
 
-         !`Write
+         ierr=tree_it%init(this%aggr_tree)
+         if(ierr.eq.GFC_SUCCESS) ierr=tree_it%delete_subtree()
+         ierr=tree_it%release()
          if(allocated(this%virt_node)) deallocate(this%virt_node)
          this%num_virt_nodes=0
          this%num_phys_nodes=0
          return
-        end subroutine CompSystemDestruct
+        end subroutine comp_system_dtor
 
        end module hardware
