@@ -1,5 +1,5 @@
 !ExaTensor::TAL-SH: Device-unified user-level API:
-!REVISION: 2017/02/13
+!REVISION: 2017/02/15
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -240,6 +240,15 @@
           integer(C_INT), intent(in), value:: dev_id
           integer(C_INT), intent(in), value:: dev_kind
          end function talshTensorGetBodyAccess_
+  !Get the scalar value of the rank-0 tensor:
+         integer(C_INT) function talshTensorGetScalar_(tens_block,scalar_real,scalar_imag)&
+                                 &bind(c,name='talshTensorGetScalar_')
+          import
+          implicit none
+          type(talsh_tens_t), intent(inout):: tens_block
+          real(C_DOUBLE), intent(out):: scalar_real
+          real(C_DOUBLE), intent(out):: scalar_imag
+         end function talshTensorGetScalar_
   !Print information about a TAL-SH tensor:
          subroutine talsh_tensor_print_info(tens_block) bind(c,name='talshTensorPrintInfo')
           import
@@ -427,6 +436,7 @@
         public talsh_tensor_data_kind
         public talsh_tensor_presence
         public talsh_tensor_get_body_access
+        public talsh_tensor_get_scalar
         public talsh_tensor_print_info
         public talshTensorImageNorm1_cpu
  !TAL-SH task API:
@@ -1030,6 +1040,18 @@
          ierr=talshTensorGetBodyAccess_(tens_block,body_p,data_kind,dev_id,devk)
          return
         end function talsh_tensor_get_body_access
+!-------------------------------------------------------------------------------
+        function talsh_tensor_get_scalar(tens_block,scalar_complex) result(ierr)
+         implicit none
+         integer(C_INT):: ierr                          !out: error code
+         type(talsh_tens_t), intent(inout):: tens_block !in: tensor block (rank-0)
+         complex(8), intent(out):: scalar_complex       !out: complex scalar value
+         real(C_DOUBLE):: sreal,simag
+
+         ierr=talshTensorGetScalar_(tens_block,sreal,simag)
+         if(ierr.eq.TALSH_SUCCESS) scalar_complex=cmplx(sreal,simag,8)
+         return
+        end function talsh_tensor_get_scalar
 !------------------------------------------------------------
         function talsh_task_destruct(talsh_task) result(ierr)
          implicit none

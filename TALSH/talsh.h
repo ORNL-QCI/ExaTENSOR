@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level API header.
-REVISION: 2017/01/25
+REVISION: 2017/02/15
 
 Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -187,6 +187,10 @@ inline double talshComplex8Abs(talshComplex8 cmplx);
                               int data_kind,
                               int dev_id,
                               int dev_kind = DEV_NULL);
+//  Get the scalar value of the rank-0 tensor:
+ int talshTensorGetScalar(talsh_tens_t * tens_block,
+                          talshComplex8 * scalar_complex);
+ int talshTensorGetScalar_(talsh_tens_t * tens_block, double * scalar_real, double * scalar_imag);
  int talshTensorGetBodyAccess_(talsh_tens_t * tens_block, void ** body_p, int data_kind, int dev_id, int dev_kind);
 //  Print the information on a tensor block:
  void talshTensorPrintInfo(const talsh_tens_t * tens_block);

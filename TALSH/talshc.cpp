@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level API.
-REVISION: 2017/02/09
+REVISION: 2017/02/15
 
 Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -1227,6 +1227,61 @@ int talshTensorGetBodyAccess(talsh_tens_t * tens_block,
 int talshTensorGetBodyAccess_(talsh_tens_t * tens_block, void ** body_p, int data_kind, int dev_id, int dev_kind)
 {
  return talshTensorGetBodyAccess(tens_block,body_p,data_kind,dev_id,dev_kind);
+}
+
+int talshTensorGetScalar(talsh_tens_t * tens_block, talshComplex8 * scalar_complex)
+{
+ int errc;
+ double sreal,simag;
+
+ errc=talshTensorGetScalar_(tens_block,&sreal,&simag);
+ if(errc == TALSH_SUCCESS) *scalar_complex = talshComplex8Set(sreal,simag);
+ return errc;
+}
+
+int talshTensorGetScalar_(talsh_tens_t * tens_block, double * scalar_real, double * scalar_imag)
+{
+ int errc,i,j,n,dh,dev[TALSH_MAX_DEV_PRESENT],dtk[TALSH_MAX_DEV_PRESENT];
+ void * body_p;
+ talshComplex4 cx4;
+ talshComplex8 cx8;
+
+ if(talsh_on == 0) return TALSH_NOT_INITIALIZED;
+ if(tens_block == NULL || scalar_real == NULL || scalar_imag == NULL) return TALSH_INVALID_ARGS;
+ if(talshTensorIsEmpty(tens_block) != NOPE) return TALSH_OBJECT_IS_EMPTY;
+ if(talshTensorIsHealthy(tens_block) != YEP) return TALSH_FAILURE;
+ if(talshTensorRank(tens_block) != 0) return TALSH_INVALID_ARGS;
+ dh=talshFlatDevId(DEV_HOST,0); j=-1;
+ errc=talshTensorPresence(tens_block,&n,dev,dtk);
+ if(errc == TALSH_SUCCESS && n > 0){
+  for(i=0; i<n; ++i){if(dev[i] == dh){j=i; break;}}
+  if(j < 0){
+   errc=talshTensorPlace(tens_block,0,DEV_HOST);
+   if(errc == TALSH_SUCCESS){
+    errc=talshTensorPresence(tens_block,&n,dev,dtk);
+    if(errc == TALSH_SUCCESS && n > 0){
+     for(i=0; i<n; ++i){if(dev[i] == dh){j=i; break;}}
+     if(j < 0) errc=TALSH_FAILURE;
+    }else{
+     errc=TALSH_FAILURE;
+    }
+   }
+  }
+  if(errc == TALSH_SUCCESS){
+   errc=talshTensorGetBodyAccess(tens_block,&body_p,dtk[j],0,DEV_HOST);
+   if(errc == TALSH_SUCCESS){
+    switch(dtk[j]){
+     case R4: *scalar_real = (double)(*((float*)body_p)); *scalar_imag = 0.0; break;
+     case R8: *scalar_real = *((double*)body_p); *scalar_imag = 0.0; break;
+     case C4: cx4 = *((talshComplex4*)body_p); *scalar_real = (double)talshComplex4Real(cx4); *scalar_imag = (double)talshComplex4Imag(cx4); break;
+     case C8: cx8 = *((talshComplex8*)body_p); *scalar_real = talshComplex8Real(cx8); *scalar_imag = talshComplex8Imag(cx8); break;
+    }
+   }
+  }
+ }else{
+  errc=TALSH_FAILURE;
+ }
+ return errc;
 }
 
 static int talshTensorIsHealthy(const talsh_tens_t * talsh_tens)
