@@ -256,24 +256,24 @@ LTHREAD = $(LTHREAD_$(TOOLKIT))
 #LINKING:
 LFLAGS = $(LTHREAD) $(MPI_LINK) $(LA_LINK) $(CUDA_LINK) $(LIB)
 
-OBJS = ./OBJ/hardware.o ./OBJ/subspaces.o ./OBJ/tensor_recursive.o ./OBJ/virta.o
+OBJS = ./OBJ/subspaces.o ./OBJ/hardware.o ./OBJ/tensor_recursive.o ./OBJ/virta.o
 
 $(NAME): $(OBJS) ./OBJ/test_intra.o $(MY_LIB)
 	ar cr lib$(NAME).a $(OBJS) $(MY_LIB)
 	$(FCOMP) ./OBJ/test_intra.o lib$(NAME).a $(MY_LIB) $(LFLAGS) -o test_$(NAME).x
 
-./OBJ/virta.o: virta.F90 ../UTILITY/OBJ/dil_basic.o ../TALSH/OBJ/talshf.o ../DDSS/OBJ/service_mpi.o ../DDSS/OBJ/pack_prim.o ../DDSS/OBJ/distributed.o ../DSVP/OBJ/dsvp_base.o ./OBJ/hardware.o ./OBJ/subspaces.o ./OBJ/tensor_recursive.o
-	mkdir -p ./OBJ
-	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(FFLAGS) virta.F90 -o ./OBJ/virta.o
-
-./OBJ/hardware.o: hardware.F90 ../UTILITY/OBJ/dil_basic.o ../UTILITY/OBJ/stsubs.o ../UTILITY/OBJ/parse_prim.o ../GFC/OBJ/gfc_base.o ../GFC/OBJ/gfc_tree.o
-	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(FFLAGS) hardware.F90 -o ./OBJ/hardware.o
-
 ./OBJ/subspaces.o: subspaces.F90 ../UTILITY/OBJ/dil_basic.o ../GFC/OBJ/gfc_base.o ../GFC/OBJ/gfc_list.o ../GFC/OBJ/gfc_tree.o
 	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(FFLAGS) subspaces.F90 -o ./OBJ/subspaces.o
 
+./OBJ/hardware.o: hardware.F90 ../UTILITY/OBJ/dil_basic.o ../UTILITY/OBJ/stsubs.o ../UTILITY/OBJ/parse_prim.o ../GFC/OBJ/gfc_base.o ../GFC/OBJ/gfc_tree.o ./OBJ/subspaces.o
+	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(FFLAGS) hardware.F90 -o ./OBJ/hardware.o
+
 ./OBJ/tensor_recursive.o: tensor_recursive.F90 ../TALSH/OBJ/tensor_algebra.o ../UTILITY/OBJ/stsubs.o ../GFC/OBJ/gfc_base.o ../GFC/OBJ/gfc_tree.o ../DDSS/OBJ/distributed.o ./OBJ/subspaces.o
 	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(FFLAGS) tensor_recursive.F90 -o ./OBJ/tensor_recursive.o
+
+./OBJ/virta.o: virta.F90 ../UTILITY/OBJ/dil_basic.o ../TALSH/OBJ/talshf.o ../DDSS/OBJ/service_mpi.o ../DDSS/OBJ/pack_prim.o ../DDSS/OBJ/distributed.o ../DSVP/OBJ/dsvp_base.o ./OBJ/hardware.o ./OBJ/subspaces.o ./OBJ/tensor_recursive.o
+	mkdir -p ./OBJ
+	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(FFLAGS) virta.F90 -o ./OBJ/virta.o
 
 ./OBJ/test_intra.o: test_intra.F90 $(OBJS)
 	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(FFLAGS) test_intra.F90 -o ./OBJ/test_intra.o

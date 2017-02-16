@@ -1,6 +1,6 @@
 !Hardware abstraction module
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/02/14
+!REVISION: 2017/02/16
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -26,6 +26,7 @@
         use parse_prim
         use gfc_base
         use gfc_tree
+        use subspaces
         implicit none
         private
 !PARAMETERS:
