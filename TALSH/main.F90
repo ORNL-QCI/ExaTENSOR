@@ -280,6 +280,8 @@
         cval=(-1d0,0d0); ierr=talsh_tensor_construct(ntens,C8,shp(1:0),init_val=cval)
         write(*,'(i11)',ADVANCE='NO') ierr; if(ierr.ne.TALSH_SUCCESS) then; ierr=8; return; endif
         write(*,'()')
+        cnrm=talshTensorImageNorm1_cpu(ltens); dnrm=talshTensorImageNorm1_cpu(rtens)
+        write(*,'(1x,"Initial tensor 1-norms: ",D25.14,1x,D25.14)') cnrm,dnrm
         ierr=talsh_tensor_get_scalar(ntens,cval); if(ierr.ne.TALSH_SUCCESS) then; ierr=9; return; endif
         write(*,*) cval
 
