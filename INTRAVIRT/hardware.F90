@@ -115,10 +115,10 @@
           str=' '
           do
            read(10,'(A1024)',end=100) str; l=len_trim(str)
-           if(match_composite_statement(str(1:l),'@node architecture',m,errc)) then
+           if(begins_with(str(1:l),'@node architecture',m,errc)) then
             if(errc.ne.0) exit
 
-           elseif(match_composite_statement(str(1:l),'@system architecture',m,errc)) then
+           elseif(begins_with(str(1:l),'@system architecture',m,errc)) then
             if(errc.ne.0) exit
 
            endif

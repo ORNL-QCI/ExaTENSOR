@@ -1,12 +1,13 @@
 !Useful parsing primitives.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017-02-14
+!REVISION: 2017-02-17
        module parse_prim
         use stsubs
         implicit none
         private
 !PARAMETERS:
  !Limits:
+        integer, parameter, public:: MAX_PARSE_RECUR_LEN=8192
         integer, parameter, public:: MAX_TENSOR_RANK=32
         integer, parameter, public:: MAX_TENSOR_OPERANDS=4
         integer, parameter, public:: MAX_TENSOR_NAME_LEN=512
@@ -46,7 +47,8 @@
         public is_this_real_number
         public are_these_letters
         public are_these_alphanumeric
-        public match_composite_statement
+        public begins_with
+        public match_symb_pattern
         public is_this_index_label
         public match_index_label
         public is_this_tensor
@@ -217,8 +219,8 @@
          endif
          return
         end function are_these_alphanumeric
-!-----------------------------------------------------------------------------
-        logical function match_composite_statement(str,comp_stmt,end_pos,ierr)
+!---------------------------------------------------------------
+        logical function begins_with(str,comp_stmt,end_pos,ierr)
 !Matches a specific statement consisting of multiple words delimited by spaces,
 !starting from the first non-blank position in <str>. That is, it is trying
 !to see if <str> looks like this:
@@ -232,7 +234,7 @@
          integer, intent(out), optional:: ierr !out: error code
          integer:: b0,e0,b1,e1,i,j,errc
 
-         match_composite_statement=.FALSE.; end_pos=-1; errc=0
+         begins_with=.FALSE.; end_pos=-1; errc=0
          call skip_blanks(str,b0,e0)
          call skip_blanks(comp_stmt,b1,e1)
          if(b0.le.e0.and.b1.le.e1) then
@@ -248,7 +250,7 @@
            else
             if(str(i:i).eq.comp_stmt(j:j)) then
              i=i+1; j=j+1
-             if(j.gt.e1) then; match_composite_statement=.TRUE.; exit; endif
+             if(j.gt.e1) then; begins_with=.TRUE.; exit; endif
             else
              exit
             endif
@@ -259,7 +261,111 @@
          endif
          if(present(ierr)) ierr=errc
          return
-        end function match_composite_statement
+        end function begins_with
+!------------------------------------------------------------------------------------------------
+        function match_symb_pattern(str,pattern,num_pred,pred_offset,pred_len,ierr) result(match)
+!Matches a symbolic pattern. ` is a special placeholder symbol for predicates (can be empty).
+!The matching is ambiguous in general (the same string may be matched in multiple ways with the same pattern).
+!Always the first matching alternative will be returned. The proper matching may then be achieved by more
+!elaborated patterns.
+!Example:
+! Pattern: multiply `(`)`
+! Match 1: multiply T12(a1,d1)*S23(a2)*2.0
+!          `1 = T12
+!          `2 = a1,d1
+!          `3 = *S23(a2)*2.0
+! Match 2: multiply T12(a1,d1)*S23(a2)*2.0
+!          `1 = T12
+!          `2 = a1,d1)*S23(a2
+!          `3 = *2.0
+! Better pattern: multiply `(`)*`(`)`
+! Unambiguous:
+!          `1 = T12
+!          `2 = a1,d1
+!          `3 = S23
+!          `4 = a2
+!          `5 = *2.0
+! If we remove "*2.0", that is, "multiply T12(a1,d1)*S23(a2)",
+! then `5 = '' (empty).
+         implicit none
+         logical:: match                          !out: TRUE if matched, FALSE otherwise
+         character(*), intent(in):: str           !in: input string
+         character(*), intent(in):: pattern       !in: symbolic pattern being matched
+         integer, intent(out):: num_pred          !out: number of predicates (each substring of <str> corresponding to each ` in the <pattern>)
+         integer, intent(inout):: pred_offset(1:) !out: predicate offsets in str
+         integer, intent(inout):: pred_len(1:)    !out: predicate lengths in str
+         integer, intent(out), optional:: ierr    !out: error code
+         integer:: errc,bs,es,bp,ep,sp,pp
+         integer:: pred,ffe,pos_stack(4,0:MAX_PARSE_RECUR_LEN-1)
+
+         errc=0; match=.FALSE.; num_pred=0
+         call skip_blanks(str,bs,es)
+         call skip_blanks(pattern,bp,ep)
+         if(ep.ge.bp.and.es.ge.bs) then
+          pred=0; ffe=0; sp=bs; pp=bp
+          do while(pp.le.ep)
+ !Are we at the new predicate boundary?:
+           if(pattern(pp:pp).eq.'`') then
+            if(pp.lt.ep) then !pattern has more symbols to be matched
+             call open_predicate(); pp=pp+1
+             if(pattern(pp:pp).eq.'`') then; errc=2; exit; endif !mulitple placeholders ` are not allowed in the pattern
+            else !pattern is over
+             num_pred=num_pred+1
+             if(sp.le.es) then
+              do while(is_this_blank(str(sp:sp))); sp=sp+1; enddo
+              pred_offset(num_pred)=sp; pred_len(num_pred)=es-sp+1
+             else
+              pred_offset(num_pred)=es+1; pred_len(num_pred)=0
+             endif
+             match=.TRUE.; exit
+            endif
+           endif
+           if(is_this_blank(pattern(pp:pp))) then
+            if(is_this_blank(str(sp:sp))) then !match: both blanks
+             if(pred.gt.0) call close_predicate()
+             do while(is_this_blank(str(sp:sp))); sp=sp+1; enddo
+             do while(is_this_blank(pattern(pp:pp))); pp=pp+1; enddo
+            else
+             if(pred.gt.0) then
+              sp=sp+1; if(sp.gt.es) call restore_previous()
+             else
+              call restore_previous() !no match along this path
+             endif
+            endif
+           else
+            if(str(sp:sp).eq.pattern(pp:pp)) then !match: symbols matched
+             if(pred.gt.0) call close_predicate()
+            else
+             if(pred.gt.0) then
+              sp=sp+1; if(sp.gt.es) call restore_previous()
+             else
+              call restore_previous() !no match along this path
+             endif
+            endif
+           endif
+          enddo
+          if(errc.eq.0) then
+           if(pred.gt.0) call close_predicate()
+          endif
+         else
+          errc=1
+         endif
+         if(.not.match) num_pred=0
+         if(present(ierr)) ierr=errc
+         return
+
+         contains
+
+          subroutine open_predicate()
+          end subroutine open_predicate
+
+          subroutine close_predicate()
+          end subroutine close_predicate
+
+          subroutine restore_previous()
+          end subroutine restore_previous
+
+        end function match_symb_pattern
 !---------------------------------------------------------
         logical function is_this_index_label(str,so_or_mo)
 !Recognizes an index label.
