@@ -1,6 +1,6 @@
 !Hardware abstraction module
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/02/16
+!REVISION: 2017/02/22
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -107,23 +107,35 @@
          class(comp_system_t), intent(out):: this    !out: hierarchical virtual representation of the computing system
          character(*), intent(in):: hardware_spec    !in: computing system specification file
          integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc,l,m
-         character(1024):: str
+         integer(INTD):: errc,l,m,npr,offs(1:64),lens(1:64)
+         character(1024):: str,nodarch,sysarch
+         logical:: match,nodarch_found,sysarch_found
 
          errc=0
          open(10,file=hardware_spec(1:len_trim(hardware_spec)),form='FORMATTED',status='OLD',err=2000)
-          str=' '
-          do
-           read(10,'(A1024)',end=100) str; l=len_trim(str)
-           if(begins_with(str(1:l),'@node architecture',m,errc)) then
-            if(errc.ne.0) exit
-
-           elseif(begins_with(str(1:l),'@system architecture',m,errc)) then
-            if(errc.ne.0) exit
-
+         str=' '; nodarch=' '; sysarch=' '
+         nodarch_found=.FALSE.; sysarch_found=.FALSE.
+         do
+          read(10,'(A1024)',end=100) str; l=len_trim(str)
+          if(l.gt.0) then
+           match=match_symb_pattern(str(1:l),'@node architecture [`]',npr,offs,lens,errc); if(errc.ne.0) exit
+           if(match.and.npr.eq.1) then; nodarch=str(offs(1):offs(1)+lens(1)-1); nodarch_found=.TRUE.; cycle; endif
+           match=match_symb_pattern(str(1:l),'@system architecture [`]',npr,offs,lens,errc); if(errc.ne.0) exit
+           if(match.and.npr.eq.1) then; sysarch=str(offs(1):offs(1)+lens(1)-1); sysarch_found=.TRUE.; cycle; endif
+           if(nodarch_found.and.sysarch_found) then
+            match=match_symb_pattern(str(1:l),'$'//nodarch(1:len_trim(nodarch))//'*` `',npr,offs,lens,errc); if(errc.ne.0) exit
+            if(match) then
+             if(is_this_integer(str(offs(1):offs(1)+lens(1)-1),no_sign=.TRUE.)) then
+              this%num_phys_nodes=icharnum(lens(1),str(offs(1):offs(1)+lens(1)-1))
+              write(*,'(i8," nodes specified ... ")',ADVANCE='NO') this%num_phys_nodes
+             else
+              errc=-1; exit
+             endif
+            endif
            endif
            str(1:l)=' '
-          enddo
+          endif
+         enddo
 100      close(10)
          if(present(ierr)) ierr=errc
          return

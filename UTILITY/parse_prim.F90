@@ -1,6 +1,6 @@
 !Useful parsing primitives.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017-02-17
+!REVISION: 2017-02-22
        module parse_prim
         use stsubs
         implicit none
@@ -262,8 +262,8 @@
          if(present(ierr)) ierr=errc
          return
         end function begins_with
-!------------------------------------------------------------------------------------------------
-        function match_symb_pattern(str,pattern,num_pred,pred_offset,pred_len,ierr) result(match)
+!---------------------------------------------------------------------------------------------------
+        function match_symb_pattern(str,pattern,num_pred,pred_offset,pred_length,ierr) result(match)
 !Matches a symbolic pattern. ` is a special placeholder symbol for predicates (can be empty).
 !The matching is ambiguous in general (the same string may be matched in multiple ways with the same pattern).
 !Always the first matching alternative will be returned. The proper matching may then be achieved by more
@@ -293,16 +293,17 @@
          character(*), intent(in):: pattern       !in: symbolic pattern being matched
          integer, intent(out):: num_pred          !out: number of predicates (each substring of <str> corresponding to each ` in the <pattern>)
          integer, intent(inout):: pred_offset(1:) !out: predicate offsets in str
-         integer, intent(inout):: pred_len(1:)    !out: predicate lengths in str
+         integer, intent(inout):: pred_length(1:) !out: predicate lengths in str
          integer, intent(out), optional:: ierr    !out: error code
          integer:: errc,bs,es,bp,ep,sp,pp
-         integer:: pred,ffe,pos_stack(4,0:MAX_PARSE_RECUR_LEN-1)
+         integer:: pred,stp,pos_stk(2,1:MAX_PARSE_RECUR_LEN)
+         logical:: over
 
          errc=0; match=.FALSE.; num_pred=0
          call skip_blanks(str,bs,es)
          call skip_blanks(pattern,bp,ep)
          if(ep.ge.bp.and.es.ge.bs) then
-          pred=0; ffe=0; sp=bs; pp=bp
+          pred=0; stp=0; sp=bs; pp=bp
           do while(pp.le.ep)
  !Are we at the new predicate boundary?:
            if(pattern(pp:pp).eq.'`') then
@@ -313,9 +314,9 @@
              num_pred=num_pred+1
              if(sp.le.es) then
               do while(is_this_blank(str(sp:sp))); sp=sp+1; enddo
-              pred_offset(num_pred)=sp; pred_len(num_pred)=es-sp+1
+              pred_offset(num_pred)=sp; pred_length(num_pred)=es-sp+1
              else
-              pred_offset(num_pred)=es+1; pred_len(num_pred)=0
+              pred_offset(num_pred)=es+1; pred_length(num_pred)=0
              endif
              match=.TRUE.; exit
             endif
@@ -327,26 +328,33 @@
              do while(is_this_blank(pattern(pp:pp))); pp=pp+1; enddo
             else
              if(pred.gt.0) then
-              sp=sp+1; if(sp.gt.es) call restore_previous()
+              sp=sp+1
+              if(sp.gt.es) then; call restore_previous(over); if(over) exit; endif
              else
-              call restore_previous() !no match along this path
+              call restore_previous(over); if(over) exit !no match along this path
              endif
             endif
            else
             if(str(sp:sp).eq.pattern(pp:pp)) then !match: symbols matched
              if(pred.gt.0) call close_predicate()
+             pp=pp+1; sp=sp+1
+             if(pp.gt.ep) then
+              if(sp.gt.es) match=.TRUE.
+             else
+              if(sp.gt.es.and.(pp.lt.ep.or.pattern(pp:pp).ne.'`')) then
+               call restore_previous(over); if(over) exit
+              endif
+             endif
             else
              if(pred.gt.0) then
-              sp=sp+1; if(sp.gt.es) call restore_previous()
+              sp=sp+1
+              if(sp.gt.es) then; call restore_previous(over); if(over) exit; endif
              else
-              call restore_previous() !no match along this path
+              call restore_previous(over); if(over) exit !no match along this path
              endif
             endif
            endif
           enddo
-          if(errc.eq.0) then
-           if(pred.gt.0) call close_predicate()
-          endif
          else
           errc=1
          endif
@@ -357,12 +365,33 @@
          contains
 
           subroutine open_predicate()
+           pred=sp; stp=stp+1; pos_stk(:,stp)=(/pp,sp/)
+           return
           end subroutine open_predicate
 
           subroutine close_predicate()
+           num_pred=num_pred+1
+           pred_offset(num_pred)=pred
+           pred_length(num_pred)=sp-pred
+           pred=0
+           return
           end subroutine close_predicate
 
-          subroutine restore_previous()
+          subroutine restore_previous(done)
+           logical, intent(out):: done
+           done=.FALSE.
+           if(pred.gt.0) then
+            pred=0; stp=stp-1; call restore_previous(done)
+           else
+            if(stp.gt.0) then
+             pp=pos_stk(1,stp)+1; pred=pos_stk(2,stp)
+             sp=pred_offset(num_pred)+pred_length(num_pred)+1; num_pred=num_pred-1
+             if(sp.gt.es) call restore_previous(done)
+            else
+             done=.TRUE.
+            endif
+           endif
+           return
           end subroutine restore_previous
 
         end function match_symb_pattern
@@ -735,3 +764,55 @@
         end subroutine translate_index_labels
 
        end module parse_prim
+![TESTING]=========================================
+       module parse_prim_test
+        use stsubs
+        use parse_prim
+        implicit none
+
+        public test_parse_prim
+
+       contains
+!----------------------------------------------
+        function test_parse_prim() result(ierr)
+         implicit none
+         integer:: i,ierr,npred,offs(1:128),lens(1:128)
+         character(128):: str,ind1,ind2,ind3
+         logical:: match
+
+         ierr=0
+         write(*,'("Testing symbolic parsing ... ")',ADVANCE='NO')
+         !write(*,'()') !debug
+         str='D12(a1,b1)+=L451(k1,b1,l1)*R6(a1,l1,k1)*0.34'
+         match=match_symb_pattern(str,'`(`)+=`(`)*`(`)*`',npred,offs,lens,ierr)
+         if(match.and.ierr.eq.0) then
+          !do i=1,npred; call printl(6,str(offs(i):offs(i)+lens(i)-1)); enddo !debug
+          ind1=str(offs(2):offs(2)+lens(2)-1)
+          ind2=str(offs(4):offs(4)+lens(4)-1)
+          ind3=str(offs(6):offs(6)+lens(6)-1)
+          match=match_symb_pattern(ind1,'`,`',npred,offs,lens,ierr)
+          if(match.and.ierr.eq.0) then
+           !do i=1,npred; call printl(6,ind1(offs(i):offs(i)+lens(i)-1)); enddo !debug
+           match=match_symb_pattern(ind2,'`,`',npred,offs,lens,ierr)
+           if(match.and.ierr.eq.0) then
+            !do i=1,npred; call printl(6,ind2(offs(i):offs(i)+lens(i)-1)); enddo !debug
+            match=match_symb_pattern(ind3,'`,`',npred,offs,lens,ierr)
+            if(match.and.ierr.eq.0) then
+             !do i=1,npred; call printl(6,ind3(offs(i):offs(i)+lens(i)-1)); enddo !debug
+             write(*,'("PASSED")')
+            else
+             write(*,'("FAILED")'); ierr=4
+            endif
+           else
+            write(*,'("FAILED")'); ierr=3
+           endif
+          else
+           write(*,'("FAILED")'); ierr=2
+          endif
+         else
+          write(*,'("FAILED")'); ierr=1
+         endif
+         return
+        end function test_parse_prim
+
+       end module parse_prim_test

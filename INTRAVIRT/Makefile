@@ -275,7 +275,7 @@ $(NAME): $(OBJS) ./OBJ/test_intra.o $(MY_LIB)
 	mkdir -p ./OBJ
 	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(FFLAGS) virta.F90 -o ./OBJ/virta.o
 
-./OBJ/test_intra.o: test_intra.F90 $(OBJS)
+./OBJ/test_intra.o: test_intra.F90 $(OBJS) ../TALSH/OBJ/tensor_algebra.o ../UTILITY/OBJ/parse_prim.o
 	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(FFLAGS) test_intra.F90 -o ./OBJ/test_intra.o
 
 

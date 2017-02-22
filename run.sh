@@ -7,7 +7,7 @@ export QF_PATH=/home/dima/Projects/QFORCE           #full path to ExaTensor (QFo
 export QF_NUM_PROCS=2                               #number of MPI processes
 export QF_PROCS_PER_NODE=2                          #number of MPI processes per node
 export QF_CORES_PER_PROC=2                          #number of cores per MPI process
-export OMP_NUM_THREADS=4                            #max number of OpenMP threads per process
+export OMP_NUM_THREADS=2                            #max number of OpenMP threads per process
 export QF_GPUS_PER_PROCESS=1                        #number of Nvidia GPU's per process (optional)
 export QF_MICS_PER_PROCESS=0                        #number of Intel Xeon Phi's per process (optional)
 export QF_AMDS_PER_PROCESS=0                        #number of AMD GPU's per process (optional)
@@ -47,7 +47,7 @@ rm *.tmp *.log *.out *.x
 cp $QF_PATH/Qforce.x ./
 #aprun -n $QF_NUM_PROCS -N $QF_PROCS_PER_NODE -d $QF_CORES_PER_PROC -cc 0,2,4,6,8,10,12,14,1,3,5,7,9,11,13 -r1 ./Qforce.x #> qforce.log
 #mpiexec -n $QF_NUM_PROCS -npernode $QF_PROCS_PER_NODE ./Qforce.x #> qforce.log
-/usr/local/mpich3.2/bin/mpiexec.hydra -n $QF_NUM_PROCS ./Qforce.x > qforce.log
+mpiexec -n $QF_NUM_PROCS ./Qforce.x #> qforce.log
 #/usr/local/openmpi1.10.1/bin/mpiexec -n $QF_NUM_PROCS ./Qforce.x > qforce.log
 #nvprof --log-file nv_profile.log --print-gpu-trace ./Qforce.x # &> qforce.log &
 #nvprof --log-file nv_profile.log --print-gpu-trace --metrics branch_efficiency,gld_efficiency,gst_efficiency ./Qforce.x # &> qforce.log &
