@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Base
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017-02-07 (started 2016-02-17)
+!REVISION: 2017-02-24 (started 2016-02-17)
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -151,6 +151,7 @@
          contains
           procedure, non_overridable, public:: get_status=>IterGetStatus  !returns the status of the iterator
           procedure, non_overridable, public:: set_status_=>IterSetStatus !PRIVATE: sets the status of the iterator
+          procedure, non_overridable, public:: get_value=>IterGetValue    !returns a pointer to the value of the current container position
           procedure, public:: reset_count=>IterResetCount                 !resets all iteration counters to zero
           procedure, public:: total_count=>IterTotalCount                 !returns the total iteration count since the last reset
           procedure, public:: predicated_count=>IterPredicatedCount       !returns the TRUE predicated iteration count since the last reset
@@ -281,6 +282,7 @@
         private ContQuickCountingOff
         private IterGetStatus
         private IterSetStatus
+        private IterGetValue
         private IterResetCount
         private IterTotalCount
         private IterPredicatedCount
@@ -775,6 +777,21 @@
          end select
          return
         end function IterSetStatus
+!-----------------------------------------------------
+        function IterGetValue(this,ierr) result(val_p)
+!Returns a pointer to the value of the current container position.
+         implicit none
+         class(*), pointer:: val_p                   !out: pointer to the value
+         class(gfc_iter_t), intent(in):: this        !in: iterator
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+         class(gfc_cont_elem_t), pointer:: gep
+
+         gep=>this%pointee(errc)
+         if(errc.eq.GFC_SUCCESS) val_p=>gep%get_value(errc)
+         if(present(ierr)) ierr=errc
+         return
+        end function IterGetValue
 !-------------------------------------------
         subroutine IterResetCount(this,ierr)
 !Resets all iteration counters.

@@ -1,9 +1,9 @@
 #HARDWARE DESCRIPTION FILE
-#In each record (@), each description line has the the following format (<> is optional):
+#In each record (@), each description line has the the following format (<> means optional):
 #
 #ITEM_TYPE <ITEM_SUBTYPE> <ITEM_ATTRIBUTES> <[ITEM_NAME]>
 #
-#ITEM_TYPE: RAM,CPU,GPU,PHI,NIC,NVRAM,DISK,FPGA,ASIC
+#ITEM_TYPE: RAM,CPU,GPU,PHI,FPGA,ASIC,NIC,NVRAM,DISK
 #ITEM_SUBTYPE: INTEL,AMD,NVIDIA,CRAY_GEMINI,CRAY_ARIES,INFINIBAND,ETHERNET100G
 #ITEM_ATTRIBUTES: ATTRIBUTE_NAME:ATTRIBUTE_VALUE
 # ATTRIBUTE_NAME: SZ(size),C(cores),HT(hardware threads),

@@ -1,6 +1,6 @@
 !Infrastructure for a recursive adaptive vector space decomposition.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/02/07
+!REVISION: 2017/02/24
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -82,22 +82,36 @@
           procedure, public:: average=>RealVecAverage !computes an average of two real space vectors
           final:: RealVecDestroy                      !destroys the vector
         end type real_vec_t
- !Real space 1d extent (segment[min:max]):
-        type, public:: extent1d_t
+ !Real space 1d range (segment[min:max]):
+        type, public:: range1d_t
          real(8), private:: min_coord=0d0 !minimum coordinate (lower bound)
          real(8), private:: max_coord=0d0 !maximum coordinate (upper bound)
          contains
-          procedure, public:: set=>Extent1dSet                !sets the extent (ctor)
-          procedure, public:: lower_bound=>Extent1dLowerBound !returns the extent lower bound
-          procedure, public:: upper_bound=>Extent1dUpperBound !returns the extent upper bound
-          procedure, public:: length=>Extent1dLength          !returns the extent length
-          procedure, public:: overlap=>Extent1dOverlap        !returns the overlap of two extents
-          procedure, public:: union=>Extent1dUnion            !returns the minimal extent containing two given extents
-        end type extent1d_t
+          procedure, public:: set=>Range1dSet                !sets the range (ctor)
+          procedure, public:: lower_bound=>Range1dLowerBound !returns the range lower bound
+          procedure, public:: upper_bound=>Range1dUpperBound !returns the range upper bound
+          procedure, public:: length=>Range1dLength          !returns the range length
+          procedure, public:: overlap=>Range1dOverlap        !returns the overlap of two ranges
+          procedure, public:: union=>Range1dUnion            !returns the minimal range containing two given ranges
+          procedure, public:: split=>Range1dSplit            !splits the range
+        end type range1d_t
+ !Integer range (segment[min:max]):
+        type, public:: seg_int_t
+         integer(INTL), private:: min_coord=0 !minimum coordinate (lower bound)
+         integer(INTL), private:: max_coord=0 !maximum coordinate (upper bound)
+         contains
+          procedure, public:: set=>SegIntSet                !sets the range (ctor)
+          procedure, public:: lower_bound=>SegIntLowerBound !returns the range lower bound
+          procedure, public:: upper_bound=>SegIntUpperBound !returns the range upper bound
+          procedure, public:: length=>SegIntLength          !returns the range length
+          procedure, public:: overlap=>SegIntOverlap        !returns the overlap of two ranges
+          procedure, public:: union=>SegIntUnion            !returns the minimal range containing two given ranges
+          procedure, public:: split=>SegIntSplit            !splits the range
+        end type seg_int_t
  !Real space rectangular hypercube (orthotope):
         type, public:: orthotope_t
-         integer(INTL), private:: num_dim=0                   !number of dimensions
-         type(extent1d_t), allocatable, private:: extent(:)   !extent of each dimension (min,max)
+         integer(INTL), private:: num_dim=0                    !number of dimensions
+         type(range1d_t), allocatable, private:: extent(:)     !extent of each dimension (min,max)
          contains
           procedure, public:: create=>OrthotopeCreate          !creates an empty orthotope
           procedure, public:: dimsn=>OrthotopeDimsn            !returns the real space dimension orthotope resides in
@@ -219,13 +233,22 @@
         private RealVecScale
         private RealVecAdd
         private RealVecAverage
- !extent1d_t:
-        private Extent1dSet
-        private Extent1dLowerBound
-        private Extent1dUpperBound
-        private Extent1dLength
-        private Extent1dOverlap
-        private Extent1dUnion
+ !range1d_t:
+        private Range1dSet
+        private Range1dLowerBound
+        private Range1dUpperBound
+        private Range1dLength
+        private Range1dOverlap
+        private Range1dUnion
+        private Range1dSplit
+ !seg_int_t:
+        private SegIntSet
+        private SegIntLowerBound
+        private SegIntUpperBound
+        private SegIntLength
+        private SegIntOverlap
+        private SegIntUnion
+        private SegIntSplit
  !orthotope_t:
         private OrthotopeCreate
         private OrthotopeDimsn
@@ -435,11 +458,11 @@
          this%num_dim=0
          return
         end subroutine RealVecDestroy
-![extent1d_t]========================================
-        subroutine Extent1dSet(this,lower,upper,ierr)
-!Extent ctor (defines or redefines the extent).
+![range1d_t]========================================
+        subroutine Range1dSet(this,lower,upper,ierr)
+!Range ctor (defines or redefines the range).
          implicit none
-         class(extent1d_t), intent(inout):: this     !inout: extent
+         class(range1d_t), intent(inout):: this      !inout: range
          real(8), intent(in), optional:: lower       !in: new lower bound
          real(8), intent(in), optional:: upper       !in: new upper bound
          integer(INTD), intent(out), optional:: ierr !out: error code
@@ -456,77 +479,361 @@
          endif
          if(present(ierr)) ierr=errc
          return
-        end subroutine Extent1dSet
-!---------------------------------------------------
-        function Extent1dLowerBound(this) result(lb)
-!Returns the extent lower bound.
+        end subroutine Range1dSet
+!--------------------------------------------------
+        function Range1dLowerBound(this) result(lb)
+!Returns the range lower bound.
          implicit none
-         real(8):: lb                         !out: lower bound
-         class(extent1d_t), intent(in):: this !in: extent
+         real(8):: lb                        !out: lower bound
+         class(range1d_t), intent(in):: this !in: range
 
          lb=this%min_coord
          return
-        end function Extent1dLowerBound
-!---------------------------------------------------
-        function Extent1dUpperBound(this) result(ub)
-!Returns the extent upper bound.
+        end function Range1dLowerBound
+!--------------------------------------------------
+        function Range1dUpperBound(this) result(ub)
+!Returns the range upper bound.
          implicit none
-         real(8):: ub                         !out: upper bound
-         class(extent1d_t), intent(in):: this !in: extent
+         real(8):: ub                        !out: upper bound
+         class(range1d_t), intent(in):: this !in: range
 
          ub=this%max_coord
          return
-        end function Extent1dUpperBound
+        end function Range1dUpperBound
 !--------------------------------------------------
-        function Extent1dLength(this) result(length)
-!Returns the length of the extent.
+        function Range1dLength(this) result(length)
+!Returns the length of the range.
          implicit none
-         real(8):: length                     !out: extent length
-         class(extent1d_t), intent(in):: this !in: extent
+         real(8):: length                    !out: length of the range
+         class(range1d_t), intent(in):: this !in: range
 
          length=this%max_coord-this%min_coord
          return
-        end function Extent1dLength
-!---------------------------------------------------------
-        subroutine Extent1dOverlap(this,extent,res_extent)
-!Returns the overlap of two extents. If <res_extent> is present,
+        end function Range1dLength
+!------------------------------------------------------
+        subroutine Range1dOverlap(this,range,res_range)
+!Returns the overlap of two ranges. If <res_range> is present,
 !it will contain the overlap. Otherwise, <this> will contain the result.
          implicit none
-         class(extent1d_t), intent(inout):: this                !inout: extent 1 (can be updated)
-         class(extent1d_t), intent(in):: extent                 !in: extent 2
-         type(extent1d_t), intent(inout), optional:: res_extent !out: resulting extent
+         class(range1d_t), intent(inout):: this                !inout: range 1 (can be updated)
+         class(range1d_t), intent(in):: range                  !in: range 2
+         type(range1d_t), intent(inout), optional:: res_range  !out: resulting range
 
-         if(this%max_coord.le.extent%min_coord.or.this%min_coord.ge.extent%max_coord) then !no overlap
-          if(present(res_extent)) then
-           call res_extent%set(0d0,0d0)
+         if(this%max_coord.le.range%min_coord.or.this%min_coord.ge.range%max_coord) then !no overlap
+          if(present(res_range)) then
+           call res_range%set(0d0,0d0)
           else
            call this%set(0d0,0d0)
           endif
          else !overlap
-          if(present(res_extent)) then
-           call res_extent%set(max(this%min_coord,extent%min_coord),min(this%max_coord,extent%max_coord))
+          if(present(res_range)) then
+           call res_range%set(max(this%min_coord,range%min_coord),min(this%max_coord,range%max_coord))
           else
-           call this%set(max(this%min_coord,extent%min_coord),min(this%max_coord,extent%max_coord))
+           call this%set(max(this%min_coord,range%min_coord),min(this%max_coord,range%max_coord))
           endif
          endif
          return
-        end subroutine Extent1dOverlap
-!-------------------------------------------------------
-        subroutine Extent1dUnion(this,extent,res_extent)
-!Returns the union of two extents. If <res_extent> is present,
+        end subroutine Range1dOverlap
+!----------------------------------------------------
+        subroutine Range1dUnion(this,range,res_range)
+!Returns the union of two ranges. If <res_range> is present,
 !it will contain the union. Otherwise, <this> will contain the result.
          implicit none
-         class(extent1d_t), intent(inout):: this                !inout: extent 1 (can be updated)
-         class(extent1d_t), intent(in):: extent                 !in: extent 2
-         type(extent1d_t), intent(inout), optional:: res_extent !out: resulting extent
+         class(range1d_t), intent(inout):: this               !inout: range 1 (can be updated)
+         class(range1d_t), intent(in):: range                 !in: range 2
+         type(range1d_t), intent(inout), optional:: res_range !out: resulting range
 
-         if(present(res_extent)) then
-          call res_extent%set(min(this%min_coord,extent%min_coord),max(this%max_coord,extent%max_coord))
+         if(present(res_range)) then
+          call res_range%set(min(this%min_coord,range%min_coord),max(this%max_coord,range%max_coord))
          else
-          call this%set(min(this%min_coord,extent%min_coord),max(this%max_coord,extent%max_coord))
+          call this%set(min(this%min_coord,range%min_coord),max(this%max_coord,range%max_coord))
          endif
          return
-        end subroutine Extent1dUnion
+        end subroutine Range1dUnion
+!-------------------------------------------------------------
+        subroutine Range1dSplit(this,num_segs,segs,ierr,align)
+!Splits the range in a number of contiguous segments with an optional alignment.
+!If present, align(:) must contain strictly positive real offsets within the range
+!ordered in an ascending order.
+         implicit none
+         class(range1d_t), intent(in):: this          !in: input range
+         integer(INTD), intent(in):: num_segs         !in: number of segments to split the range into
+         class(range1d_t), intent(inout):: segs(1:)   !out: segments (subranges)
+         integer(INTD), intent(out), optional:: ierr  !out: error code
+         real(8), intent(inout), optional:: align(1:) !in: inner alignment boundaries (>0) relative to the beginning of the range, excluding beginning and end of the range
+         integer(INTD):: errc,nbnd,nchnk,i,j,k,l,left,left2,right
+         real(8):: rl,incr,lb,ub
+         logical:: next
+
+         errc=0
+         if(num_segs.gt.0.and.num_segs.le.size(segs)) then
+          rl=this%length()
+          if(rl.gt.0d0) then
+           if(present(align)) then; nbnd=size(align); else; nbnd=0; endif
+           if(nbnd.gt.0) then !aligned splitting
+            if(num_segs.le.nbnd) then
+             ub=this%upper_bound()
+             nchnk=nbnd+1 !number of alignment chunks
+             do while(nchnk.gt.num_segs)
+ !Find the smallest alignment chunk:
+              left=0; left2=0; right=0
+              j=0; k=0; l=0; lb=0d0; next=.TRUE.
+              do i=1,nbnd
+               if(align(i).gt.0d0) then !boundary is still active
+                if(.not.next) then; right=i; next=.TRUE.; endif
+                if(j.eq.0) then
+                 incr=align(i)-lb; j=i; left=k; left2=l; next=.FALSE.
+                else
+                 if(align(i)-lb.lt.incr) then; incr=align(i)-lb; j=i; left=k; left2=l; next=.FALSE.; endif
+                endif
+                lb=align(i); l=k; k=i
+               endif
+              enddo
+              if(.not.next) then; right=nbnd+1; next=.TRUE.; endif
+              if(ub-lb.lt.incr) then; incr=ub-lb; j=nbnd+1; left=k; left2=l; right=0; endif
+ !Merge the smallest alignment chunk with its left or right neighbor:
+              if(left2.gt.0.and.right.gt.0) then
+               if(align(left)-align(left2).lt.align(right)-align(j)) then
+                align(left)=-align(left) !deactivate the boundary due to merge
+               else
+                align(j)=-align(j) !deactivate the boundary due to merge
+               endif
+              else
+               if(right.gt.0) then
+                align(j)=-align(j) !deactivate the boundary due to merge
+               else
+                align(left)=-align(left) !deactivate the boundary due to merge
+               endif
+              endif
+              nchnk=nchnk-1
+             enddo
+ !Set the final boundaries:
+             lb=this%lower_bound(); ub=lb; j=0
+             do i=1,nbnd
+              if(align(i).gt.0d0) then
+               j=j+1; call segs(j)%set(ub,lb+align(i),errc); if(errc.ne.0) exit
+               ub=lb+align(i)
+              else
+               align(i)=-align(i)
+              endif
+             enddo
+             if(errc.eq.0) call segs(num_segs)%set(ub,this%upper_bound(),errc)
+            elseif(num_segs.eq.nbnd+1) then
+             lb=this%lower_bound(); call segs(1)%set(lb,lb+align(1),errc)
+             if(errc.eq.0) then
+              do i=2,num_segs-1
+               call segs(i)%set(lb+align(i-1),lb+align(i),errc); if(errc.ne.0) exit
+              enddo
+              if(errc.eq.0) call segs(num_segs)%set(lb+align(nbnd),this%upper_bound(),errc)
+             endif
+            else
+             errc=3
+            endif
+           else !unaligned splitting
+            lb=this%lower_bound(); incr=rl/real(num_segs,8)
+            do i=1,num_segs-1
+             ub=lb+incr
+             call segs(i)%set(lb,ub,errc); if(errc.ne.0) exit
+             lb=ub
+            enddo
+            if(errc.eq.0) call segs(num_segs)%set(lb,this%upper_bound(),errc)
+           endif
+          else
+           errc=2
+          endif
+         else
+          errc=1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine Range1dSplit
+![seg_int_t]=======================================
+        subroutine SegIntSet(this,lower,upper,ierr)
+!seg_int_t ctor (defines or redefines the integer range).
+         implicit none
+         class(seg_int_t), intent(inout):: this      !inout: integer range
+         integer(INTL), intent(in), optional:: lower !in: new lower bound
+         integer(INTL), intent(in), optional:: upper !in: new upper bound
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+         integer(INTL):: l,u
+
+         errc=0
+         if(present(lower)) then; l=lower; else; l=this%min_coord; endif
+         if(present(upper)) then; u=upper; else; u=this%max_coord; endif
+         if(l.le.u) then
+          this%min_coord=l; this%max_coord=u
+         else
+          errc=1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine SegIntSet
+!-------------------------------------------------
+        function SegIntLowerBound(this) result(lb)
+!Returns the lower bound of the integer range.
+         implicit none
+         integer(INTL):: lb                  !out: lower bound
+         class(seg_int_t), intent(in):: this !in: integer range
+
+         lb=this%min_coord
+         return
+        end function SegIntLowerBound
+!-------------------------------------------------
+        function SegIntUpperBound(this) result(ub)
+!Returns the upper bound of the integer range.
+         implicit none
+         integer(INTL):: ub                  !out: upper bound
+         class(seg_int_t), intent(in):: this !in: integer range
+
+         ub=this%max_coord
+         return
+        end function SegIntUpperBound
+!-------------------------------------------------
+        function SegIntLength(this) result(length)
+!Returns the length of the integer range.
+         implicit none
+         integer(INTL):: length              !out: length of the integer range
+         class(seg_int_t), intent(in):: this !in: integer range
+
+         length=this%max_coord-this%min_coord
+         return
+        end function SegIntLength
+!-----------------------------------------------------
+        subroutine SegIntOverlap(this,range,res_range)
+!Returns the overlap of two integer ranges. If <res_range> is present,
+!it will contain the overlap. Otherwise, <this> will contain the result.
+         implicit none
+         class(seg_int_t), intent(inout):: this                !inout: integer range 1 (can be updated)
+         class(seg_int_t), intent(in):: range                  !in: integer range 2
+         type(seg_int_t), intent(inout), optional:: res_range  !out: resulting integer range
+
+         if(this%max_coord.le.range%min_coord.or.this%min_coord.ge.range%max_coord) then !no overlap
+          if(present(res_range)) then
+           call res_range%set(0_INTL,0_INTL)
+          else
+           call this%set(0_INTL,0_INTL)
+          endif
+         else !overlap
+          if(present(res_range)) then
+           call res_range%set(max(this%min_coord,range%min_coord),min(this%max_coord,range%max_coord))
+          else
+           call this%set(max(this%min_coord,range%min_coord),min(this%max_coord,range%max_coord))
+          endif
+         endif
+         return
+        end subroutine SegIntOverlap
+!---------------------------------------------------
+        subroutine SegIntUnion(this,range,res_range)
+!Returns the union of two integer ranges. If <res_range> is present,
+!it will contain the union. Otherwise, <this> will contain the result.
+         implicit none
+         class(seg_int_t), intent(inout):: this               !inout: integer range 1 (can be updated)
+         class(seg_int_t), intent(in):: range                 !in: integer range 2
+         type(seg_int_t), intent(inout), optional:: res_range !out: resulting integer range
+
+         if(present(res_range)) then
+          call res_range%set(min(this%min_coord,range%min_coord),max(this%max_coord,range%max_coord))
+         else
+          call this%set(min(this%min_coord,range%min_coord),max(this%max_coord,range%max_coord))
+         endif
+         return
+        end subroutine SegIntUnion
+!------------------------------------------------------------
+        subroutine SegIntSplit(this,num_segs,segs,ierr,align)
+!Splits the integer range in a number of integer segments with an optional alignment.
+!If present, align(:) must contain strictly positive integer offsets within the range
+!ordered in an ascending order.
+         implicit none
+         class(seg_int_t), intent(in):: this                !in: input integer range
+         integer(INTD), intent(in):: num_segs               !in: number of segments to split the integer range into
+         class(seg_int_t), intent(inout):: segs(1:)         !out: integer segments (subranges)
+         integer(INTD), intent(out), optional:: ierr        !out: error code
+         integer(INTL), intent(inout), optional:: align(1:) !in: inner alignment boundaries (>0) relative to the beginning of the range, excluding beginning and end of the range
+         integer(INTD):: errc,nbnd,nchnk,i,j,k,l,left,left2,right
+         integer(INTL):: rl,incr,rem,lb,ub
+         logical:: next
+
+         errc=0; rl=this%length()
+         if(num_segs.gt.0.and.num_segs.le.size(segs).and.num_segs.le.rl) then
+          if(rl.gt.0) then
+           if(present(align)) then; nbnd=size(align); else; nbnd=0; endif
+           if(nbnd.gt.0) then !aligned splitting
+            if(num_segs.le.nbnd) then
+             ub=this%upper_bound()
+             nchnk=nbnd+1 !number of alignment chunks
+             do while(nchnk.gt.num_segs)
+ !Find the smallest alignment chunk:
+              left=0; left2=0; right=0
+              j=0; k=0; l=0; lb=0d0; next=.TRUE.
+              do i=1,nbnd
+               if(align(i).gt.0) then !boundary is still active
+                if(.not.next) then; right=i; next=.TRUE.; endif
+                if(j.eq.0) then
+                 incr=align(i)-lb; j=i; left=k; left2=l; next=.FALSE.
+                else
+                 if(align(i)-lb.lt.incr) then; incr=align(i)-lb; j=i; left=k; left2=l; next=.FALSE.; endif
+                endif
+                lb=align(i); l=k; k=i
+               endif
+              enddo
+              if(.not.next) then; right=nbnd+1; next=.TRUE.; endif
+              if(ub-lb.lt.incr) then; incr=ub-lb; j=nbnd+1; left=k; left2=l; right=0; endif
+ !Merge the smallest alignment chunk with its left or right neighbor:
+              if(left2.gt.0.and.right.gt.0) then
+               if(align(left)-align(left2).lt.align(right)-align(j)) then
+                align(left)=-align(left) !deactivate the boundary due to merge
+               else
+                align(j)=-align(j) !deactivate the boundary due to merge
+               endif
+              else
+               if(right.gt.0) then
+                align(j)=-align(j) !deactivate the boundary due to merge
+               else
+                align(left)=-align(left) !deactivate the boundary due to merge
+               endif
+              endif
+              nchnk=nchnk-1
+             enddo
+ !Set the final boundaries:
+             lb=this%lower_bound(); ub=lb; j=0
+             do i=1,nbnd
+              if(align(i).gt.0) then
+               j=j+1; call segs(j)%set(ub,lb+align(i),errc); if(errc.ne.0) exit
+               ub=lb+align(i)
+              else
+               align(i)=-align(i)
+              endif
+             enddo
+             if(errc.eq.0) call segs(num_segs)%set(ub,this%upper_bound(),errc)
+            elseif(num_segs.eq.nbnd+1) then
+             lb=this%lower_bound(); call segs(1)%set(lb,lb+align(1),errc)
+             if(errc.eq.0) then
+              do i=2,num_segs-1
+               call segs(i)%set(lb+align(i-1),lb+align(i),errc); if(errc.ne.0) exit
+              enddo
+              if(errc.eq.0) call segs(num_segs)%set(lb+align(nbnd),this%upper_bound(),errc)
+             endif
+            else
+             errc=3
+            endif
+           else !unaligned splitting
+            lb=this%lower_bound(); incr=rl/int(num_segs,INTL); rem=rl-incr*int(num_segs,INTL)
+            do i=1,num_segs
+             ub=lb+incr; if(i.le.rem) ub=ub+1_INTL
+             call segs(i)%set(lb,ub,errc); if(errc.ne.0) exit
+             lb=ub
+            enddo
+           endif
+          else
+           errc=2
+          endif
+         else
+          errc=1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine SegIntSplit
 ![orthotope_t]=====================================
         subroutine OrthotopeCreate(this,dimsn,ierr)
 !Creates an empty orthotope. If the orthotope is defined on input,
@@ -567,7 +874,7 @@
          implicit none
          class(orthotope_t), intent(inout):: this    !inout: orthotope
          integer(INTL), intent(in):: dimsn           !in: specific dimension to set extent over
-         type(extent1d_t), intent(in):: extent       !in: extent
+         type(range1d_t), intent(in):: extent        !in: extent
          integer(INTD), intent(out), optional:: ierr !error code
          integer(INTD):: errc
 
@@ -584,7 +891,7 @@
         function OrthotopeGetExtent(this,dimsn,ierr) result(extent)
 !Returns the orthotope extent along a specific dimension.
          implicit none
-         type(extent1d_t):: extent                   !out: extent of the specific dimension
+         type(range1d_t):: extent                    !out: extent of the specific dimension
          class(orthotope_t), intent(in):: this       !in: orthotope
          integer(INTL), intent(in):: dimsn           !in: specific dimension
          integer(INTD), intent(out), optional:: ierr !out: error code

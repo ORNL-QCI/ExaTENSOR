@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Vector (non-contiguous)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017/02/07
+!REVISION: 2017/02/27
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -97,6 +97,7 @@
           procedure, public:: previous=>VectorIterPrevious        !moves the iterator to the previous vector element
           procedure, public:: get_length=>VectorIterGetLength     !returns the current length of the vector
           procedure, public:: get_offset=>VectorIterGetOffset     !returns the offset of the current iterator position: [0..MAX]
+          procedure, public:: element=>VectorIterElement          !returns a pointer to the specific vector element
           procedure, public:: move_to=>VectorIterMoveTo           !moves the iterator to the specific vector element
           procedure, public:: append=>VectorIterAppend            !appends a new element at the end of the vector
           procedure, public:: insert=>VectorIterInsert            !inserts a new element at the current iterator position
@@ -135,6 +136,7 @@
         private VectorIterPrevious
         private VectorIterGetLength
         private VectorIterGetOffset
+        private VectorIterElement
         private VectorIterMoveTo
         private VectorIterAppend
         private VectorIterInsert
@@ -698,6 +700,29 @@
          if(present(ierr)) ierr=errc
          return
         end function VectorIterGetOffset
+!------------------------------------------------------------------
+        function VectorIterElement(this,offset,ierr) result(elem_p)
+!Returns a pointer to the specific vector element.
+         implicit none
+         class(gfc_cont_elem_t), pointer:: elem_p    !out: pointer to the specific vector element
+         class(vector_iter_t), intent(in):: this     !in: vector iterator
+         integer(INTL), intent(in):: offset          !in: vector element offset
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: q(4),errc
+
+         elem_p=>NULL(); errc=this%get_status()
+         if(errc.eq.GFC_IT_ACTIVE.or.errc.eq.GFC_IT_DONE) then
+          if(offset.ge.0_INTL.and.offset.lt.this%container%length()) then
+           errc=GFC_SUCCESS
+           call flat2quadruplet(offset,q)
+           elem_p=>this%container%vec_tile(q(4))%tile_batch(q(3))%batch_seg(q(2))%seg_elem(q(1))
+          else
+           errc=GFC_INVALID_ARGS
+          endif
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function VectorIterElement
 !----------------------------------------------------------
         function VectorIterMoveTo(this,offset) result(ierr)
 !Moves the iterator to the given vector position.

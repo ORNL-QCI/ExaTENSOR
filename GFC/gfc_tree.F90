@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Tree
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017-02-06 (started 2016-02-17)
+!REVISION: 2017-02-27 (started 2016-02-17)
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -86,6 +86,7 @@
           procedure, public:: move_to_sibling=>TreeIterMoveToSibling!moves the iterator to the next/previous sibling, if any
           procedure, public:: move_to_child=>TreeIterMoveToChild    !moves the iterator to the first child, if any
           procedure, public:: move_to_parent=>TreeIterMoveToParent  !moves the iterator to the parent, if any
+          procedure, public:: move_to_cousin=>TreeIterMoveToCousin  !moves the iterator to the next/previous cousin (within the tree level)
           procedure, public:: my_parent=>TreeIterMyParent           !returns the parent of the current vertex
           procedure, public:: add_leaf=>TreeIterAddLeaf             !adds a new leaf element to the element of the container currently pointed to
           procedure, public:: delete_leaf=>TreeIterDeleteLeaf       !deletes the leaf pointed to by the iterator (if it is actually a leaf)
@@ -116,6 +117,7 @@
         private TreeIterMoveToSibling
         private TreeIterMoveToChild
         private TreeIterMoveToParent
+        private TreeIterMoveToCousin
         private TreeIterMyParent
         private TreeIterAddLeaf
         private TreeIterDeleteLeaf
@@ -544,6 +546,57 @@
          endif
          return
         end function TreeIterMoveToParent
+!-------------------------------------------------------------------
+        function TreeIterMoveToCousin(this,to_previous) result(ierr)
+!Moves the iterator either to the next or to the previous cousin.
+!A cousin is a tree vertex at the same tree level.
+         implicit none
+         integer(INTD):: ierr                        !out: error code (0:success)
+         class(tree_iter_t), intent(inout):: this    !inout: iterator
+         logical, intent(in), optional:: to_previous !in: if TRUE, the iterator will move to the previous cousin (defaults to FALSE)
+         class(tree_vertex_t), pointer:: tvp
+         logical:: to_prev
+         integer(INTD):: n,m
+
+         ierr=this%get_status()
+         if(ierr.eq.GFC_IT_ACTIVE) then
+          if(associated(this%current)) then
+           tvp=>this%current
+           if(present(to_previous)) then; to_prev=to_previous; else; to_prev=.FALSE.; endif
+           ierr=GFC_SUCCESS; n=0
+           mloop: do while(.not.associated(this%current,this%container%root))
+            ierr=this%move_to_sibling(to_prev)
+            if(ierr.eq.GFC_SUCCESS) then
+             m=n
+             do while(m.gt.0)
+              ierr=this%move_to_child(); if(ierr.ne.GFC_SUCCESS) exit
+              m=m-1
+             enddo
+             if(ierr.eq.GFC_NO_MOVE) then
+              do while(m.lt.n); ierr=this%move_to_parent(); m=m+1; enddo
+             else
+              exit mloop
+             endif
+            else
+             if(ierr.ne.GFC_NO_MOVE) exit mloop
+             ierr=this%move_to_parent(); if(ierr.ne.GFC_SUCCESS) exit mloop
+             n=n+1
+            endif
+           enddo mloop
+           if(associated(this%current,this%container%root)) then
+            if(ierr.eq.GFC_SUCCESS) then
+             call this%current%decr_ref_()
+             this%current=>tvp
+             call this%current%incr_ref_()
+             ierr=GFC_NO_MOVE
+            endif
+           endif
+          else
+           ierr=GFC_CORRUPTED_CONT
+          endif
+         endif
+         return
+        end function TreeIterMoveToCousin
 !----------------------------------------------------------
         function TreeIterMyParent(this,ierr) result(parent)
 !Returns the parent of the current vertex.

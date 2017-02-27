@@ -1,6 +1,6 @@
 !This module provides general services for MPI parallel programs.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/02/10
+!REVISION: 2017/02/23
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -275,11 +275,6 @@
         end select
 #endif
         write(jo,'("Max number of threads/process      :       ",i4)') max_threads
-#ifndef NO_BLAS
-        write(jo,'("BLAS/LAPACK is not disabled.")')
-#else
-        write(jo,'("BLAS/LAPACK is disabled.")')
-#endif
         call MPI_GET_PROCESSOR_NAME(proc_name,proc_name_len,errc)
         if(errc.ne.0) then
          ierr=10

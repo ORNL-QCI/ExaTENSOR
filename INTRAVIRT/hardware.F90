@@ -1,6 +1,6 @@
 !Hardware abstraction module
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/02/22
+!REVISION: 2017/02/27
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -80,7 +80,7 @@
  !Hierarchical computing system representation:
         type, public:: comp_system_t
          integer(INTL), private:: num_phys_nodes=0                 !number of physical nodes in the system
-         integer(INTL), private:: num_virt_nodes=0                 !number of virtual (aggregated) nodes in the system
+         integer(INTL), private:: num_virt_nodes=0                 !number of virtual (simple + aggregated) nodes in the system
          type(compute_node_t), allocatable, private:: virt_node(:) !virtual nodes: first <num_phys_nodes> are physical, rest are their aggregates (virtual)
          type(tree_t), private:: aggr_tree                         !node aggregation tree (NAT)
          contains
@@ -98,20 +98,27 @@
 
        contains
 !IMPLEMENTATION:
-![comp_system_t]================================================
-        subroutine CompSystemCtorSimple(this,hardware_spec,ierr)
+![comp_system_t]===========================================================
+        subroutine CompSystemCtorSimple(this,hardware_spec,ierr,branch_fac)
 !Constructs a hierarchical (virtual) representation of a computing system
 !by reading its configuration from a specification file. Simple dichotomy:
-!Finds how many nodes the HPC system consists of and creates the NAT.
+!Finds how many nodes the HPC system consists of and creates the NAT by
+!recursively splitting the node range into two (or more) parts.
          implicit none
-         class(comp_system_t), intent(out):: this    !out: hierarchical virtual representation of the computing system
-         character(*), intent(in):: hardware_spec    !in: computing system specification file
-         integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc,l,m,npr,offs(1:64),lens(1:64)
+         class(comp_system_t), intent(out):: this         !out: hierarchical virtual representation of the computing system
+         character(*), intent(in):: hardware_spec         !in: computing system specification file
+         integer(INTD), intent(out), optional:: ierr      !out: error code
+         integer(INTD), intent(in), optional:: branch_fac !in: tree branching factor (>=2)
+         integer(INTD):: errc,l,m,npr,brf,offs(1:32),lens(1:32)
          character(1024):: str,nodarch,sysarch
          logical:: match,nodarch_found,sysarch_found
+         type(tree_iter_t):: nit
+         type(seg_int_t), allocatable:: segs(:)
+         class(seg_int_t), pointer:: rp
+         class(*), pointer:: up
 
          errc=0
+!Read the HPC system hardware specification:
          open(10,file=hardware_spec(1:len_trim(hardware_spec)),form='FORMATTED',status='OLD',err=2000)
          str=' '; nodarch=' '; sysarch=' '
          nodarch_found=.FALSE.; sysarch_found=.FALSE.
@@ -127,9 +134,10 @@
             if(match) then
              if(is_this_integer(str(offs(1):offs(1)+lens(1)-1),no_sign=.TRUE.)) then
               this%num_phys_nodes=icharnum(lens(1),str(offs(1):offs(1)+lens(1)-1))
-              write(*,'(i8," nodes specified ... ")',ADVANCE='NO') this%num_phys_nodes
+              write(*,'(i8," physical nodes -> ")',ADVANCE='NO') this%num_phys_nodes
+              exit
              else
-              errc=-1; exit
+              errc=-4; exit
              endif
             endif
            endif
@@ -137,6 +145,56 @@
           endif
          enddo
 100      close(10)
+!Build the virtual HPC system representation:
+         this%num_virt_nodes=this%num_phys_nodes !the first this%num_phys_nodes are the original physical nodes
+         if(errc.eq.0) then
+          if(present(branch_fac)) then; brf=branch_fac; else; brf=2; endif
+          if(brf.ge.2) then
+           allocate(segs(1:brf),STAT=errc)
+           if(errc.eq.0) then
+            call segs(1)%set(0_INTL,this%num_phys_nodes,errc) !full range
+            if(errc.eq.0) then
+             errc=nit%init(this%aggr_tree)
+             if(errc.eq.GFC_SUCCESS) then
+              !write(*,*)'initial node range: ',segs(1)%lower_bound(),segs(1)%upper_bound() !debug
+              errc=nit%add_leaf(segs(1)) !root (full range)
+              if(errc.eq.GFC_SUCCESS) then
+ !Recursive splitting (building a tree):
+               tloop: do
+                do while(errc.eq.GFC_SUCCESS)
+  !Process current tree vertex;
+                 up=>nit%get_value(errc); if(errc.ne.GFC_SUCCESS) exit tloop
+                 select type(up); class is(seg_int_t); rp=>up; end select
+                 if(.not.associated(rp)) then; errc=-3; exit tloop; endif
+                 m=int(min(rp%length(),int(brf,INTL)),INTD)
+                 if(m.gt.1) then
+                  call rp%split(m,segs,errc); if(errc.ne.0) exit tloop
+                  do l=1,m
+                   !write(*,*)'adding new subrange: ',segs(l)%lower_bound(),segs(l)%upper_bound() !debug
+                   errc=nit%add_leaf(segs(l),no_move=.TRUE.); if(errc.ne.GFC_SUCCESS) exit tloop
+                  enddo
+                  this%num_virt_nodes=this%num_virt_nodes+1 !each node aggregate is added as a virtual node
+                 endif
+  !Move to the right sibling:
+                 errc=nit%move_to_cousin()
+                enddo
+                if(errc.eq.GFC_NO_MOVE) then; errc=GFC_SUCCESS; else; exit tloop; endif
+  !Move to the children level:
+                do while(errc.eq.GFC_SUCCESS); errc=nit%move_to_cousin(to_previous=.TRUE.); enddo
+                if(errc.eq.GFC_NO_MOVE) then; errc=GFC_SUCCESS; else; exit tloop; endif
+                errc=nit%move_to_child(); if(errc.ne.GFC_SUCCESS) exit tloop
+               enddo tloop
+               if(errc.eq.GFC_NO_MOVE) errc=GFC_SUCCESS
+               write(*,'(i8," virtual nodes. ")',ADVANCE='NO') this%num_virt_nodes
+              endif
+             endif
+            endif
+            if(allocated(segs)) deallocate(segs)
+           endif
+          else
+           errc=-2
+          endif
+         endif
          if(present(ierr)) ierr=errc
          return
 !--------------
