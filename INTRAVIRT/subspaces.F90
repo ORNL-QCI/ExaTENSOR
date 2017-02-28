@@ -145,16 +145,19 @@
          real(8), allocatable, private:: exponent(:) !primitive exponents
          complex(8), allocatable, private:: coef(:)  !primitive contraction coefficients
          contains
-          procedure, public:: set=>BasisFuncGaussSet !sets up the basis function
-          final:: BasisFuncGaussDestroy              !destructs the basis function
+          procedure, private:: BasisFuncGaussCtor
+          generic, public:: basis_func_gauss_ctor=>BasisFuncGaussCtor !sets up the basis function (ctor)
+          final:: basis_func_gauss_dtor                               !destructs the basis function (dtor)
         end type basis_func_gauss_t
  !Typed basis function:
         type, public:: basis_func_t
          integer(INTD), private:: basis_kind=BASIS_NONE                    !specific basis kind
          class(basis_func_supp_t), pointer, private:: basis_func_p=>NULL() !pointer to a basis function of this kind
-         class(space_symmetry_t), pointer, private:: symm=>NULL()          !symmetry of the basis function (if any)
+         class(space_symmetry_t), pointer, private:: symm_p=>NULL()        !pointer to the symmetry of the basis function (if any)
          contains
-          procedure, public:: set=>BasisFuncSet !sets up the basis function
+          procedure, private:: BasisFuncCtor
+          generic, public:: basis_func_ctor=>BasisFuncCtor !sets up the basis function (ctor)
+          final:: basis_func_dtor                          !destructs the basis function (dtor)
         end type basis_func_t
  !Subspace basis:
         type, public:: subspace_basis_t
@@ -162,10 +165,11 @@
          integer(INTD), private:: supp_dim=0                      !dimensionality of the real space support on which the basis functions reside
          type(real_vec_t), private:: center                       !center of the effective subspace basis support in real space
          type(orthotope_t), private:: supp_box                    !effective subspace basis support in real space (multidimensional orthotope)
-         class(space_symmetry_t), pointer, private:: symm=>NULL() !symmetry of the subspace basis (if any)
+         class(space_symmetry_t), allocatable, private:: symm     !symmetry of the subspace basis (if any, for all basis functions)
          type(basis_func_t), allocatable, private:: basis_func(:) !basis functions [1..space_dim]
          contains
-          procedure, public:: create=>SubspaceBasisCreate               !creates an empty subspace
+          procedure, private:: SubspaceBasisCtor
+          generic, public:: subspace_basis_ctor=>SubspaceBasisCtor      !creates an empty subspace (ctor)
           procedure, public:: dimsn=>SubspaceBasisDimsn                 !returns the dimension of the subspace
           procedure, public:: supp_dimsn=>SubspaceBasisSuppDimsn        !returns the support space dimension
           procedure, public:: set_basis_func=>SubspaceBasisSetBasisFunc !sets a specific basis function
@@ -174,7 +178,7 @@
           procedure, public:: get_symmetry=>SubspaceBasisGetSymmetry    !returns a pointer to the subspace basis symmetry object
           procedure, public:: get_center=>SubspaceBasisGetCenter        !returns a pointer to the center of the subspace basis in the real space
           procedure, public:: get_support=>SubspaceBasisGetSupport      !returns a pointer to the supporting orthotope of the subspace basis
-          final:: SubspaceBasisDestroy                                  !destructs the subspace basis
+          final:: subspace_basis_dtor                                   !destructs the subspace basis (dtor)
         end type subspace_basis_t
  !Subspace:
         type, public:: subspace_t
@@ -229,12 +233,13 @@
         public build_basis_hierarchy_abstract   !establishes a hierarchy for an abstract basis with possible symmetries
         public build_basis_hierarchy_real_space !establishes a hierarchy for a real space supported basis with possible symmetries
  !real_vec_t:
-        private RealVecCreate
+        private RealVecCtor
         private RealVecDimsn
         private RealVecNorm2
         private RealVecScale
         private RealVecAdd
         private RealVecAverage
+        public real_vec_dtor
  !range1d_t:
         private Range1dSet
         private Range1dLowerBound
@@ -252,7 +257,7 @@
         private SegIntUnion
         private SegIntSplit
  !orthotope_t:
-        private OrthotopeCreate
+        private OrthotopeCtor
         private OrthotopeDimsn
         private OrthotopeSetExtent
         private OrthotopeGetExtent
@@ -262,12 +267,15 @@
         private OrthotopeVolume
         private OrthotopeOverlap
         private OrthotopeUnion
+        public orthotope_dtor
  !basis_func_gauss_t:
-        private BasisFuncGaussSet
+        private BasisFuncGaussCtor
+        public basis_func_gauss_dtor
  !basis_func_t:
-        private BasisFuncSet
+        private BasisFuncCtor
+        public basis_func_dtor
  !subspace_basis_t:
-        private SubspaceBasisCreate
+        private SubspaceBasisCtor
         private SubspaceBasisDimsn
         private SubspaceBasisSuppDimsn
         private SubspaceBasisSetBasisFunc
@@ -276,6 +284,7 @@
         private SubspaceBasisGetSymmetry
         private SubspaceBasisGetCenter
         private SubspaceBasisGetSupport
+        public subspace_basis_dtor
  !subspace_t:
         private SubspaceInit
         private SubspaceGetId
@@ -291,8 +300,8 @@
 
        contains
 !IMPLEMENTATION:
-![real_vec_t]====================================
-        subroutine RealVecCreate(this,dimsn,ierr)
+![real_vec_t]==================================
+        subroutine RealVecCtor(this,dimsn,ierr)
 !Creates an empty real space vector. If the vector is defined on input,
 !it will be automatically destructed prior to the re-initialization.
          implicit none
@@ -314,7 +323,7 @@
          endif
          if(present(ierr)) ierr=errc
          return
-        end subroutine RealVecCreate
+        end subroutine RealVecCtor
 !------------------------------------------------
         function RealVecDimsn(this) result(dimsn)
 !Returns the dimension of the vector.
@@ -402,7 +411,7 @@
          errc=0; n=this%num_dim
          if(n.gt.0.and.n.eq.real_vec%num_dim) then
           if(present(res_vec)) then
-           if(res_vec%num_dim.ne.n) call res_vec%create(n,errc)
+           if(res_vec%num_dim.ne.n) call res_vec%real_vec_ctor(n,errc)
            if(errc.eq.0) then
             if(n.ge.LARGE_VECTOR) then
 !$OMP PARALLEL DO DEFAULT(SHARED) PRIVATE(i) SCHEDULE(GUIDED)
@@ -451,15 +460,15 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine RealVecAverage
-!--------------------------------------
-        subroutine RealVecDestroy(this)
+!-------------------------------------
+        subroutine real_vec_dtor(this)
          implicit none
          type(real_vec_t):: this
 
          if(allocated(this%coord)) deallocate(this%coord)
          this%num_dim=0
          return
-        end subroutine RealVecDestroy
+        end subroutine real_vec_dtor
 ![range1d_t]========================================
         subroutine Range1dSet(this,lower,upper,ierr)
 !Range ctor (defines or redefines the range).
@@ -836,8 +845,8 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine SegIntSplit
-![orthotope_t]=====================================
-        subroutine OrthotopeCreate(this,dimsn,ierr)
+![orthotope_t]===================================
+        subroutine OrthotopeCtor(this,dimsn,ierr)
 !Creates an empty orthotope. If the orthotope is defined on input,
 !it will automatically be destructed prior to redefinition.
          implicit none
@@ -859,7 +868,7 @@
          endif
          if(present(ierr)) ierr=errc
          return
-        end subroutine OrthotopeCreate
+        end subroutine OrthotopeCtor
 !--------------------------------------------------
         function OrthotopeDimsn(this) result(dimsn)
 !Returns the real space dimension the orthotope lives in.
@@ -1000,7 +1009,7 @@
          errc=0; n=this%num_dim
          if(n.gt.0.and.n.eq.orthotope%num_dim) then
           if(present(overlap)) then
-           if(overlap%num_dim.ne.n) call overlap%create(n,errc)
+           if(overlap%num_dim.ne.n) call overlap%orthotope_ctor(n,errc)
            if(errc.eq.0) then
             do i=1,n; call this%extent(i)%overlap(orthotope%extent(i),overlap%extent(i)); enddo
            else
@@ -1030,7 +1039,7 @@
          errc=0; n=this%num_dim
          if(n.gt.0.and.n.eq.orthotope%num_dim) then
           if(present(union)) then
-           if(union%num_dim.ne.n) call union%create(n,errc)
+           if(union%num_dim.ne.n) call union%orthotope_ctor(n,errc)
            if(errc.eq.0) then
             do i=1,n; call this%extent(i)%union(orthotope%extent(i),union%extent(i)); enddo
            else
@@ -1045,17 +1054,17 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine OrthotopeUnion
-!----------------------------------------
-        subroutine OrthotopeDestroy(this)
+!--------------------------------------
+        subroutine orthotope_dtor(this)
          implicit none
          type(orthotope_t):: this
 
          if(allocated(this%extent)) deallocate(this%extent)
          this%num_dim=0
          return
-        end subroutine OrthotopeDestroy
-![basis_func_gauss_t]=====================================================
-        subroutine BasisFuncGaussSet(this,orb_moment,exponents,coefs,ierr)
+        end subroutine orthotope_dtor
+![basis_func_gauss_t]======================================================
+        subroutine BasisFuncGaussCtor(this,orb_moment,exponents,coefs,ierr)
 !Sets up a Gaussian basis function. If it is already defined on input,
 !it will automatically be destructed prior to redefinition.
          implicit none
@@ -1091,9 +1100,9 @@
          endif
          if(present(ierr)) ierr=errc
          return
-        end subroutine BasisFuncGaussSet
+        end subroutine BasisFuncGaussCtor
 !---------------------------------------------
-        subroutine BasisFuncGaussDestroy(this)
+        subroutine basis_func_gauss_dtor(this)
          implicit none
          type(basis_func_gauss_t):: this
 
@@ -1101,9 +1110,9 @@
          if(allocated(this%exponent)) deallocate(this%exponent)
          this%num_prims=0; this%orb_moment=-1
          return
-        end subroutine BasisFuncGaussDestroy
-![basis_func_t]======================================================
-        subroutine BasisFuncSet(this,basis_kind,ierr,basis_func,symm)
+        end subroutine basis_func_gauss_dtor
+![basis_func_t]=======================================================
+        subroutine BasisFuncCtor(this,basis_kind,ierr,basis_func,symm)
 !Sets up a basis function of a given kind. If the basis function is already set,
 !it will be redefined (no non-trivial destruction is assumed). If no basis
 !function is passed here, an abstract basis function of <basis_kind> is assumed.
@@ -1116,17 +1125,28 @@
          integer(INTD):: errc
 
          errc=0
-         this%basis_func_p=>NULL(); this%symm=>NULL()
+         this%basis_func_p=>NULL(); this%symm_p=>NULL()
          if(basis_kind.ne.BASIS_NONE) then
           this%basis_kind=basis_kind
           if(present(basis_func)) this%basis_func_p=>basis_func
-          if(present(symm)) this%symm=>symm
+          if(present(symm)) this%symm_p=>symm
          endif
          if(present(ierr)) ierr=errc
          return
-        end subroutine BasisFuncSet
-![subspace_basis_t]====================================
-        subroutine SubspaceBasisCreate(this,dimsn,ierr)
+        end subroutine BasisFuncCtor
+!---------------------------------------
+        subroutine basis_func_dtor(this)
+!DTOR for basis_func_t.
+         implicit none
+         type(basis_func_t):: this
+
+         this%basis_kind=BASIS_NONE
+         this%basis_func_p=>NULL()
+         this%symm_p=>NULL()
+         return
+        end subroutine basis_func_dtor
+![subspace_basis_t]==================================
+        subroutine SubspaceBasisCtor(this,dimsn,ierr)
 !Creates an empty subspace basis. If the subspace basis is defined on input,
 !it will automatically be destructed prior to redefinition.
          implicit none
@@ -1148,7 +1168,7 @@
          endif
          if(present(ierr)) ierr=errc
          return
-        end subroutine SubspaceBasisCreate
+        end subroutine SubspaceBasisCtor
 !------------------------------------------------------
         function SubspaceBasisDimsn(this) result(dimsn)
 !Returns the dimension of the subspace basis.
@@ -1200,9 +1220,9 @@
            if(specific) then
             if(this%supp_dim.eq.basis_func%supp_dim) then
              if(present(symm)) then
-              call this%basis_func(func_num)%set(basis_kind,errc,basis_func,symm)
+              call this%basis_func(func_num)%basis_func_ctor(basis_kind,errc,basis_func,symm)
              else
-              call this%basis_func(func_num)%set(basis_kind,errc,basis_func)
+              call this%basis_func(func_num)%basis_func_ctor(basis_kind,errc,basis_func)
              endif
              if(errc.ne.0) errc=5
             else
@@ -1210,9 +1230,9 @@
             endif
            else
             if(present(symm)) then
-             call this%basis_func(func_num)%set(basis_kind,errc,symm=symm)
+             call this%basis_func(func_num)%basis_func_ctor(basis_kind,errc,symm=symm)
             else
-             call this%basis_func(func_num)%set(basis_kind,errc)
+             call this%basis_func(func_num)%basis_func_ctor(basis_kind,errc)
             endif
             if(errc.ne.0) errc=3
            endif
@@ -1264,41 +1284,42 @@
          integer(INTL):: i,n,nun
          class(basis_func_supp_t), pointer:: bas_func
          class(space_symmetry_t), pointer:: symm
-         logical:: initb,inits
+         logical:: initb
 
          errc=0; nun=-1; n=this%dimsn()
          if(n.gt.0) then
-          nun=0; initb=.FALSE.; inits=.FALSE.
+          nun=0; initb=.FALSE.
           bloop: do i=1,n
            if(this%basis_func(i)%basis_kind.ne.BASIS_NONE) then
             bas_func=>this%basis_func(i)%basis_func_p
-            symm=>this%basis_func(i)%symm
+            symm=>this%basis_func(i)%symm_p
             if(associated(bas_func)) then
              if(.not.initb) then
               this%supp_dim=bas_func%supp_dim
               if(this%supp_dim.gt.0) then
-               call this%center%create(int(this%supp_dim,INTL),errc)
-               if(errc.ne.0) then; errc=8; exit bloop; endif
+               call this%center%real_vec_ctor(int(this%supp_dim,INTL),errc)
+               if(errc.ne.0) then; errc=9; exit bloop; endif
                this%center=bas_func%center
-               call this%supp_box%create(int(this%supp_dim,INTL),errc)
-               if(errc.ne.0) then; errc=7; exit bloop; endif
+               call this%supp_box%orthotope_ctor(int(this%supp_dim,INTL),errc)
+               if(errc.ne.0) then; errc=8; exit bloop; endif
                this%supp_box=bas_func%supp_box
               endif
               initb=.TRUE.
              else
               if(bas_func%supp_dim.eq.this%supp_dim) then
                call this%center%add(bas_func%center,errc)
-               if(errc.ne.0) then; errc=6; exit; exit bloop; endif
+               if(errc.ne.0) then; errc=7; exit bloop; endif
                call this%supp_box%union(bas_func%supp_box,errc)
-               if(errc.ne.0) then; errc=5; exit; exit bloop; endif
+               if(errc.ne.0) then; errc=6; exit bloop; endif
               else
-               errc=4; exit bloop !support dimension mismatch
+               errc=5; exit bloop !support dimension mismatch
               endif
              endif
             endif
             if(associated(symm)) then
-             if(.not.inits) then
-              this%symm=>symm; inits=.TRUE.
+             if(.not.allocated(this%symm)) then
+              allocate(this%symm,source=symm,STAT=errc)
+              if(errc.ne.0) then; errc=4; exit bloop; endif
              else
               call this%symm%combine(symm,errc)
               if(errc.ne.0) then; errc=3; exit bloop; endif
@@ -1323,14 +1344,14 @@
         function SubspaceBasisGetSymmetry(this,ierr) result(symm)
 !Returns a pointer to the subspace basis symmetry object.
          implicit none
-         class(space_symmetry_t), pointer:: symm     !out: subspace basis symmetry
-         class(subspace_basis_t), intent(in):: this  !in: subspace basis
-         integer(INTD), intent(out), optional:: ierr !out: error code
+         class(space_symmetry_t), pointer:: symm            !out: subspace basis symmetry
+         class(subspace_basis_t), intent(in), target:: this !in: subspace basis
+         integer(INTD), intent(out), optional:: ierr        !out: error code
          integer(INTD):: errc
 
          errc=0
          if(this%space_dim.gt.0) then
-          symm=>this%symm
+          symm=>NULL(); if(allocated(this%symm)) symm=>this%symm
          else
           errc=1
          endif
@@ -1373,16 +1394,16 @@
          if(present(ierr)) ierr=errc
          return
         end function SubspaceBasisGetSupport
-!--------------------------------------------
-        subroutine SubspaceBasisDestroy(this)
+!-------------------------------------------
+        subroutine subspace_basis_dtor(this)
          implicit none
          type(subspace_basis_t):: this
 
          if(allocated(this%basis_func)) deallocate(this%basis_func)
-         this%symm=>NULL()
+         if(allocated(this%symm)) deallocate(this%symm)
          this%space_dim=0; this%supp_dim=0
          return
-        end subroutine SubspaceBasisDestroy
+        end subroutine subspace_basis_dtor
 ![subspace_t]================================
         subroutine SubspaceInit(this,id,ierr)
 !Initializes a subspace. If the subspace is defined on input,
