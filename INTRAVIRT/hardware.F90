@@ -98,18 +98,19 @@
 
        contains
 !IMPLEMENTATION:
-![comp_system_t]===========================================================
-        subroutine CompSystemCtorSimple(this,hardware_spec,ierr,branch_fac)
+![comp_system_t]=========================================================================
+        subroutine CompSystemCtorSimple(this,hardware_spec,ierr,branch_fac,max_aggr_size)
 !Constructs a hierarchical (virtual) representation of a computing system
 !by reading its configuration from a specification file. Simple dichotomy:
 !Finds how many nodes the HPC system consists of and creates the NAT by
 !recursively splitting the node range into two (or more) parts.
          implicit none
-         class(comp_system_t), intent(out):: this         !out: hierarchical virtual representation of the computing system
-         character(*), intent(in):: hardware_spec         !in: computing system specification file
-         integer(INTD), intent(out), optional:: ierr      !out: error code
-         integer(INTD), intent(in), optional:: branch_fac !in: tree branching factor (>=2)
-         integer(INTD):: errc,l,m,npr,brf,offs(1:32),lens(1:32)
+         class(comp_system_t), intent(out):: this            !out: hierarchical virtual representation of the computing system
+         character(*), intent(in):: hardware_spec            !in: computing system specification file
+         integer(INTD), intent(out), optional:: ierr         !out: error code
+         integer(INTD), intent(in), optional:: branch_fac    !in: tree branching factor (>=2)
+         integer(INTD), intent(in), optional:: max_aggr_size !in: max allowed number of physical nodes that does not cause splitting (defaults to 1)
+         integer(INTD):: errc,l,m,npr,brf,mas,offs(1:32),lens(1:32)
          character(1024):: str,nodarch,sysarch
          logical:: match,nodarch_found,sysarch_found
          type(tree_iter_t):: nit
@@ -146,6 +147,7 @@
          enddo
 100      close(10)
 !Build the virtual HPC system representation:
+         if(present(max_aggr_size)) then; mas=max_aggr_size; else; mas=1; endif !aggregate splitting stops at <mas>
          this%num_virt_nodes=this%num_phys_nodes !the first this%num_phys_nodes are the original physical nodes
          if(errc.eq.0) then
           if(present(branch_fac)) then; brf=branch_fac; else; brf=2; endif
@@ -159,7 +161,7 @@
               !write(*,*)'initial node range: ',segs(1)%lower_bound(),segs(1)%upper_bound() !debug
               errc=nit%add_leaf(segs(1)) !root (full range)
               if(errc.eq.GFC_SUCCESS) then
- !Recursive splitting (building a tree):
+ !Recursive splitting (building the virtual node tree):
                tloop: do
                 do while(errc.eq.GFC_SUCCESS)
   !Process current tree vertex;
@@ -167,7 +169,7 @@
                  select type(up); class is(seg_int_t); rp=>up; end select
                  if(.not.associated(rp)) then; errc=-3; exit tloop; endif
                  m=int(min(rp%length(),int(brf,INTL)),INTD)
-                 if(m.gt.1) then
+                 if(rp%length().gt.int(mas,INTL).and.m.gt.1) then
                   call rp%split(m,segs,errc); if(errc.ne.0) exit tloop
                   do l=1,m
                    !write(*,*)'adding new subrange: ',segs(l)%lower_bound(),segs(l)%upper_bound() !debug
@@ -175,7 +177,7 @@
                   enddo
                   this%num_virt_nodes=this%num_virt_nodes+1 !each node aggregate is added as a virtual node
                  endif
-  !Move to the right sibling:
+  !Move to the right cousin (within the current tree level):
                  errc=nit%move_to_cousin()
                 enddo
                 if(errc.eq.GFC_NO_MOVE) then; errc=GFC_SUCCESS; else; exit tloop; endif

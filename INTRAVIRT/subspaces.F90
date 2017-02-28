@@ -1,6 +1,6 @@
 !Infrastructure for a recursive adaptive vector space decomposition.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/02/24
+!REVISION: 2017/02/28
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -74,46 +74,48 @@
          integer(INTL), private:: num_dim=0      !number of dimensions (0 means empty)
          real(8), allocatable, public:: coord(:) !components of the real space vector
          contains
-          procedure, public:: create=>RealVecCreate   !creates an empty real space vector
-          procedure, public:: dimsn=>RealVecDimsn     !returns dimension of the vector
-          procedure, public:: norm2=>RealVecNorm2     !returns the 2-norm of the vector
-          procedure, public:: scale=>RealVecScale     !vector scaling by a scalar
-          procedure, public:: add=>RealVecAdd         !computes the sum of two tensors
-          procedure, public:: average=>RealVecAverage !computes an average of two real space vectors
-          final:: RealVecDestroy                      !destroys the vector
+          procedure, private:: RealVecCtor
+          generic, public:: real_vec_ctor=>RealVecCtor !real space vector ctor
+          procedure, public:: dimsn=>RealVecDimsn      !returns dimension of the vector
+          procedure, public:: norm2=>RealVecNorm2      !returns the 2-norm of the vector
+          procedure, public:: scale=>RealVecScale      !vector scaling by a scalar
+          procedure, public:: add=>RealVecAdd          !computes the sum of two tensors
+          procedure, public:: average=>RealVecAverage  !computes an average of two real space vectors
+          final:: real_vec_dtor                        !real space vector dtor
         end type real_vec_t
- !Real space 1d range (segment[min:max]):
+ !Real space 1d range  = segment[min:max]:
         type, public:: range1d_t
          real(8), private:: min_coord=0d0 !minimum coordinate (lower bound)
          real(8), private:: max_coord=0d0 !maximum coordinate (upper bound)
          contains
-          procedure, public:: set=>Range1dSet                !sets the range (ctor)
-          procedure, public:: lower_bound=>Range1dLowerBound !returns the range lower bound
-          procedure, public:: upper_bound=>Range1dUpperBound !returns the range upper bound
-          procedure, public:: length=>Range1dLength          !returns the range length
-          procedure, public:: overlap=>Range1dOverlap        !returns the overlap of two ranges
-          procedure, public:: union=>Range1dUnion            !returns the minimal range containing two given ranges
-          procedure, public:: split=>Range1dSplit            !splits the range
+          procedure, public:: set=>Range1dSet                !sets the real range (ctor)
+          procedure, public:: lower_bound=>Range1dLowerBound !returns the real range lower bound
+          procedure, public:: upper_bound=>Range1dUpperBound !returns the real range upper bound
+          procedure, public:: length=>Range1dLength          !returns the real range length = (upper - lower)
+          procedure, public:: overlap=>Range1dOverlap        !returns the overlap of two real ranges
+          procedure, public:: union=>Range1dUnion            !returns the minimal real range containing two given real ranges
+          procedure, public:: split=>Range1dSplit            !splits the real range
         end type range1d_t
- !Integer range (segment[min:max]):
+ !Integer range = semi-interval(min:max]:
         type, public:: seg_int_t
          integer(INTL), private:: min_coord=0 !minimum coordinate (lower bound)
          integer(INTL), private:: max_coord=0 !maximum coordinate (upper bound)
          contains
-          procedure, public:: set=>SegIntSet                !sets the range (ctor)
-          procedure, public:: lower_bound=>SegIntLowerBound !returns the range lower bound
-          procedure, public:: upper_bound=>SegIntUpperBound !returns the range upper bound
-          procedure, public:: length=>SegIntLength          !returns the range length
-          procedure, public:: overlap=>SegIntOverlap        !returns the overlap of two ranges
-          procedure, public:: union=>SegIntUnion            !returns the minimal range containing two given ranges
-          procedure, public:: split=>SegIntSplit            !splits the range
+          procedure, public:: set=>SegIntSet                !sets the integer range (ctor)
+          procedure, public:: lower_bound=>SegIntLowerBound !returns the integer range lower bound
+          procedure, public:: upper_bound=>SegIntUpperBound !returns the integer range upper bound
+          procedure, public:: length=>SegIntLength          !returns the integer range length = (upper - lower)
+          procedure, public:: overlap=>SegIntOverlap        !returns the overlap of two integer ranges
+          procedure, public:: union=>SegIntUnion            !returns the minimal integer range containing two given integer ranges
+          procedure, public:: split=>SegIntSplit            !splits the integer range
         end type seg_int_t
  !Real space rectangular hypercube (orthotope):
         type, public:: orthotope_t
          integer(INTL), private:: num_dim=0                    !number of dimensions
          type(range1d_t), allocatable, private:: extent(:)     !extent of each dimension (min,max)
          contains
-          procedure, public:: create=>OrthotopeCreate          !creates an empty orthotope
+          procedure, private:: OrthotopeCtor
+          generic, public:: orthotope_ctor=>OrthotopeCtor      !orthotope ctor
           procedure, public:: dimsn=>OrthotopeDimsn            !returns the real space dimension orthotope resides in
           procedure, public:: set_extent=>OrthotopeSetExtent   !sets the extent along a specific dimension
           procedure, public:: get_extent=>OrthotopeGetExtent   !returns the extent of a specific dimension
@@ -123,7 +125,7 @@
           procedure, public:: volume=>OrthotopeVolume          !returns the volume of the orthotope
           procedure, public:: overlap=>OrthotopeOverlap        !returns the overlap of two orthotopes
           procedure, public:: union=>OrthotopeUnion            !returns the minimal orthotope containing two given orthotopes
-          final:: OrthotopeDestroy                             !destroys the orthotope
+          final:: orthotope_dtor                               !orthotope dtor
         end type orthotope_t
  !Symmetry:
         type, abstract, public:: space_symmetry_t
