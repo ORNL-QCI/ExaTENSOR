@@ -265,7 +265,7 @@ $(NAME): $(OBJS) ./OBJ/test_intra.o $(MY_LIB)
 ./OBJ/subspaces.o: subspaces.F90 ../UTILITY/OBJ/dil_basic.o ../GFC/OBJ/gfc_base.o ../GFC/OBJ/gfc_list.o ../GFC/OBJ/gfc_tree.o
 	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(FFLAGS) subspaces.F90 -o ./OBJ/subspaces.o
 
-./OBJ/hardware.o: hardware.F90 ../UTILITY/OBJ/dil_basic.o ../UTILITY/OBJ/stsubs.o ../UTILITY/OBJ/parse_prim.o ../GFC/OBJ/gfc_base.o ../GFC/OBJ/gfc_tree.o ./OBJ/subspaces.o
+./OBJ/hardware.o: hardware.F90 ../UTILITY/OBJ/dil_basic.o ../UTILITY/OBJ/stsubs.o ../UTILITY/OBJ/parse_prim.o ../GFC/OBJ/gfc_base.o ../GFC/OBJ/gfc_vector.o ../GFC/OBJ/gfc_tree.o ./OBJ/subspaces.o
 	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(FFLAGS) hardware.F90 -o ./OBJ/hardware.o
 
 ./OBJ/tensor_recursive.o: tensor_recursive.F90 ../TALSH/OBJ/tensor_algebra.o ../UTILITY/OBJ/stsubs.o ../GFC/OBJ/gfc_base.o ../GFC/OBJ/gfc_tree.o ../DDSS/OBJ/distributed.o ./OBJ/subspaces.o
