@@ -189,7 +189,7 @@
          type(real_vec_t), private:: center                       !center of the effective subspace basis support in real space
          type(orthotope_t), private:: supp_box                    !effective subspace basis support in real space (multidimensional orthotope)
          class(symmetry_t), allocatable, private:: symm           !symmetry of the subspace basis (if any, for all basis functions)
-         type(basis_func_t), allocatable, private:: basis_func(:) !basis functions [1..space_dim]
+         type(basis_func_t), allocatable, private:: basis_func(:) !basis functions specified by reference: [1..space_dim]
          contains
           procedure, private:: SubspaceBasisCtor                        !creates an empty subspace (ctor)
           generic, public:: subspace_basis_ctor=>SubspaceBasisCtor
@@ -231,12 +231,12 @@
          integer(INTL), private:: space_dim=0                 !dimension of the vector space
          integer(INTL), private:: num_subspaces=0             !number of subspaces defined in the vector space
          type(vector_t), private:: subspaces                  !subspaces defined in the vector space: [0..num_subspaces-1]
-         type(tree_t), private:: aggr_tree                    !subspace aggregation tree (SAT): Hierarchical representation
+         type(tree_t), private:: aggr_tree                    !subspace aggregation tree (SAT): Hierarchical representation of subspaces
          complex(8), pointer, private:: metric_p(:,:)=>NULL() !pointer to the original metric tensor: g12=<bf1|bf2>
-         real(8), allocatable, private:: overlap(:,:)         !subspace support overlap matrix (extent of support overlap between subspaces)
+         real(8), allocatable, private:: overlap(:,:)         !subspace overlap matrix (extent of overlap between all subspaces)
          contains
-          procedure, private:: HSpaceCtor                     !constructs a hierarchical representation of a vector space (ctor)
-          generic, public:: h_space_ctor=>HSpaceCtor
+          procedure, private:: HSpaceCtorSimple               !constructs a simple hierarchical representation of a vector space (ctor)
+          generic, public:: h_space_ctor=>HSpaceCtorSimple
           procedure, public:: is_set=>HSpaceIsSet             !returns TRUE if the hierarchical vector space is set
           procedure, public:: get_subspace=>HSpaceGetSubspace !returns a pointer to the requested subspace of the hierarchical vector space
           final:: h_space_dtor                                !destructs the hierarchical representation of a vector space
@@ -331,7 +331,7 @@
         private SubspaceRelate
         public subspace_dtor
  !h_space_t:
-        private HSpaceCtor
+        private HSpaceCtorSimple
         private HSpaceIsSet
         private HSpaceGetSubspace
         public h_space_dtor
@@ -1780,33 +1780,35 @@
          this%subspace_id=-1
          return
         end subroutine subspace_dtor
-![h_space_t]==============================================
-        subroutine HSpaceCtor(this,full_basis,ierr,metric)
-!Constructs a hierarchical vector space representation with a subspace aggregation tree.
+![h_space_t]====================================================
+        subroutine HSpaceCtorSimple(this,full_basis,ierr,metric)
+!Constructs a simple hierarchical vector space representation with a subspace aggregation tree.
 !The original basis functions will be hierarchically aggregated into larger subspaces,
 !up to the full space. Each subspace will have a unique id.
          implicit none
          class(h_space_t), intent(out):: this                   !out: hierarchical representation of the vector space
-         class(subspace_basis_t), intent(in):: full_basis       !in: full basis of the vector space
+         class(subspace_basis_t), intent(in):: full_basis       !in: full basis of the vector space, {Psi_i}
          integer(INTD), intent(out), optional:: ierr            !out: error code
-         complex(8), intent(in), optional, target:: metric(:,:) !in: metric tensor: g12=<bf1|bf2>: Hermitian matrix
+         complex(8), intent(in), optional, target:: metric(:,:) !in: metric tensor: g_ij=<Psi_i|Psi_j>: Hermitian matrix
          integer(INTD):: errc
          integer(INTL):: n
          type(vector_iter_t):: vec_it
          type(tree_iter_t):: sat_it
 
          errc=0
-!Construct the subspace aggregation tree (SAT) by recursion:
          n=full_basis%dimsn()
          if(n.gt.0) then
+!Determine same symmetry contiguous suspaces and set principal boundaries:
+
+!Construct the subspace aggregation tree (SAT) by recursive splitting:
           errc=sat_it%init(this%aggr_tree)
           if(errc.eq.GFC_SUCCESS) then
  !Add the root (full space):
            !`Finish
- !Recursively split the full space into subspaces:
-           
+ !Recursively split the full space into subspaces while respecting boundaries:
+           !`Finish
            errc=sat_it%release()
-!Construct the support overlap matrix between all subspaces:
+!Construct the overlap matrix between all subspaces:
            if(present(metric)) then
             this%metric_p=>metric
             !`Write
@@ -1819,7 +1821,7 @@
          endif
          if(present(ierr)) ierr=errc
          return
-        end subroutine HSpaceCtor
+        end subroutine HSpaceCtorSimple
 !--------------------------------------------------
         function HSpaceIsSet(this,ierr) result(res)
 !Returns TRUE if the hierarchical vector space is set.
