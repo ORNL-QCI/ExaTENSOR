@@ -377,7 +377,7 @@
            return
           end subroutine close_predicate
 
-          subroutine restore_previous(done)
+          recursive subroutine restore_previous(done)
            logical, intent(out):: done
            done=.FALSE.
            if(pred.gt.0) then
