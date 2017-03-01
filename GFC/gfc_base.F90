@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Base
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017-02-24 (started 2016-02-17)
+!REVISION: 2017-03-01 (started 2016-02-17)
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -88,14 +88,14 @@
         logical, parameter:: GFC_BY_VAL=.FALSE.          !storage by value
         logical, parameter:: GFC_BY_REF=.TRUE.           !storage by reference
  !Comparison/relation (GFC_ERROR applies here as well):
-        integer(INTD), parameter:: GFC_CMP_EQ=0          !equivalent objects
-        integer(INTD), parameter:: GFC_CMP_LT=-1         !object1 < object2
-        integer(INTD), parameter:: GFC_CMP_GT=+1         !object1 > object2
-        integer(INTD), parameter:: GFC_CMP_CHILD=-2      !object1 is a child of object2
-        integer(INTD), parameter:: GFC_CMP_PARENT=+2     !object1 is a parent of object2
-        integer(INTD), parameter:: GFC_CMP_CROSS=-5      !objects overlap (in some sense)
-        integer(INTD), parameter:: GFC_CMP_NA=-6         !objects are not comparable
-        integer(INTD), parameter:: GFC_CMP_ERR=GFC_ERROR !comparison error
+        integer(INTD), parameter:: GFC_CMP_EQ=CMP_EQ     !equivalent objects
+        integer(INTD), parameter:: GFC_CMP_LT=CMP_LT     !object1 < object2
+        integer(INTD), parameter:: GFC_CMP_GT=CMP_GT     !object1 > object2
+        integer(INTD), parameter:: GFC_CMP_CHILD=CMP_IN  !object1 is a child of object2
+        integer(INTD), parameter:: GFC_CMP_PARENT=CMP_CN !object1 is a parent of object2
+        integer(INTD), parameter:: GFC_CMP_CROSS=CMP_OV  !objects overlap (in some sense)
+        integer(INTD), parameter:: GFC_CMP_NA=CMP_NC     !objects are not comparable
+        integer(INTD), parameter:: GFC_CMP_ERR=CMP_ER    !comparison error
  !GFC iterator status:
         integer(INTD), parameter:: GFC_IT_NULL=1000      !uninitialized iterator
         integer(INTD), parameter:: GFC_IT_EMPTY=1001     !empty initialized iterator

@@ -133,7 +133,8 @@
  !Symmetry (abstract):
         type, abstract, public:: symmetry_t
          contains
-          procedure(symm_combine_i), deferred, public:: combine !combines symmetry group irreps
+          procedure(symm_compare_i), deferred, public:: compare !compares two symmetries
+          procedure(symm_combine_i), deferred, public:: combine !combines two symmetries
         end type symmetry_t
  !Spherical symmetry (orbital momentum):
         type, extends(symmetry_t), public:: spher_symmetry_t
@@ -143,7 +144,8 @@
           procedure, private:: SpherSymmetryCtor                     !constructor
           generic, public:: spher_symmetry_ctor=>SpherSymmetryCtor
           procedure, public:: orb_momentum=>SpherSymmetryOrbMomentum !returns the total orbital momentum and its Z-axis projection
-          procedure, public:: combine=>SpherSymmetryCombine          !combines spherical symmetry irreps (common lower irrep, if any)
+          procedure, public:: compare=>SpherSymmetryCompare          !compares two spherical symmetries
+          procedure, public:: combine=>SpherSymmetryCombine          !combines two spherical symmetries (common lower irrep, if any)
           final:: spher_symmetry_dtor                                !destructor
         end type spher_symmetry_t
  !Abstract basis function (basis function support only):
@@ -178,9 +180,10 @@
          class(basis_func_supp_t), pointer, private:: basis_func_p=>NULL() !pointer to a basis function of this kind
          class(symmetry_t), pointer, private:: symm_p=>NULL()              !pointer to the symmetry of the basis function (if any)
          contains
-          procedure, private:: BasisFuncCtor               !sets up the basis function (ctor)
+          procedure, private:: BasisFuncCtor                         !sets up the basis function (ctor)
           generic, public:: basis_func_ctor=>BasisFuncCtor
-          final:: basis_func_dtor                          !destructs the basis function (dtor)
+          procedure, private:: get_basis_func=>BasisFuncGetBasisFunc !returns a polymorphic pointer to the basis function description
+          final:: basis_func_dtor                                    !destructs the basis function (dtor)
         end type basis_func_t
  !Subspace basis:
         type, public:: subspace_basis_t
@@ -244,6 +247,14 @@
 !INTERFACES:
  !symmetry_t:
         abstract interface
+  !Deferred: .compare:
+         function symm_compare_i(this,symm) result(cmp)
+          import:: symmetry_t,INTD
+          implicit none
+          integer(INTD):: cmp                  !out: comparison result (see module dil_basic)
+          class(symmetry_t), intent(in):: this !in: symmetry 1
+          class(symmetry_t), intent(in):: symm !in: symmetry 2
+         end function symm_compare_i
   !Deferred: .combine:
          subroutine symm_combine_i(this,symm,ierr)
           import:: symmetry_t,INTD
@@ -296,6 +307,7 @@
  !spher_symmetry_t:
         private SpherSymmetryCtor
         private SpherSymmetryOrbMomentum
+        private SpherSymmetryCompare
         private SpherSymmetryCombine
         public spher_symmetry_dtor
  !basis_func_supp_t:
@@ -309,6 +321,7 @@
         public basis_func_gauss_dtor
  !basis_func_t:
         private BasisFuncCtor
+        private BasisFuncGetBasisFunc
         public basis_func_dtor
  !subspace_basis_t:
         private SubspaceBasisCtor
@@ -1136,6 +1149,37 @@
          if(res.ge.0.and.present(z_proj)) z_proj=this%orb_z_proj
          return
         end function SpherSymmetryOrbMomentum
+!-----------------------------------------------------------
+        function SpherSymmetryCompare(this,symm) result(cmp)
+!Compares two symmetries.
+         implicit none
+         integer(INTD):: cmp                        !out: comparison result (see module dil_basic)
+         class(spher_symmetry_t), intent(in):: this !inout: spherical symmetry object
+         class(symmetry_t), intent(in):: symm       !in: another spherical symmetry object
+         integer(INTD):: om1,om2,mz1,mz2
+
+         cmp=CMP_NC
+         select type(symm)
+         class is(spher_symmetry_t)
+          om1=this%orb_momentum(mz1); om2=symm%orb_momentum(mz2)
+          if(om1.lt.om2) then
+           cmp=CMP_LT
+          elseif(om1.gt.om2) then
+           cmp=CMP_GT
+          else
+           if(mz1.lt.mz2) then
+            cmp=CMP_LT
+           elseif(mz1.gt.mz2) then
+            cmp=CMP_GT
+           else
+            cmp=CMP_EQ
+           endif
+          endif
+         class default
+          cmp=CMP_ER
+         end select
+         return
+        end function SpherSymmetryCompare
 !------------------------------------------------------
         subroutine SpherSymmetryCombine(this,symm,ierr)
 !Combines two symmetries by finding a common lower symmetry.
@@ -1303,6 +1347,20 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine BasisFuncCtor
+!----------------------------------------------------------------------------------
+        function BasisFuncGetBasisFunc(this,symm_p,basis_kind) result(basis_func_p)
+!Returns a polymorphic pointer to the basis function description.
+         implicit none
+         class(basis_func_supp_t), pointer:: basis_func_p  !out: polymorphic pointer to the basis function description
+         class(basis_func_t), intent(in):: this            !in: basis function
+         class(symmetry_t), pointer, optional:: symm_p     !out: polymorphic pointer to the basis function symmetry (if any)
+         integer(INTD), intent(out), optional:: basis_kind !out: basis kind
+
+         basis_func_p=>this%basis_func_p
+         if(present(symm_p)) symm_p=>this%symm_p
+         if(present(basis_kind)) basis_kind=this%basis_kind
+         return
+        end function BasisFuncGetBasisFunc
 !---------------------------------------
         subroutine basis_func_dtor(this)
 !DTOR for basis_func_t.
@@ -1791,7 +1849,11 @@
          integer(INTD), intent(out), optional:: ierr            !out: error code
          complex(8), intent(in), optional, target:: metric(:,:) !in: metric tensor: g_ij=<Psi_i|Psi_j>: Hermitian matrix
          integer(INTD):: errc
-         integer(INTL):: n
+         integer(INTL):: i,n,nb
+         integer(INTL), allocatable:: bndr(:)
+         class(basis_func_t), pointer:: bfp
+         class(basis_func_supp_t), pointer:: bfsp
+         class(symmetry_t), pointer:: curr_symm,next_symm
          type(vector_iter_t):: vec_it
          type(tree_iter_t):: sat_it
 
@@ -1799,22 +1861,38 @@
          n=full_basis%dimsn()
          if(n.gt.0) then
 !Determine same symmetry contiguous suspaces and set principal boundaries:
-
+          allocate(bndr(1:n),STAT=errc)
+          if(errc.eq.0) then
+           nb=0_INTL !will be the number of boundaries
+           do i=1,n-1
+            bfp=>full_basis%get_basis_func(i,errc); bfsp=>bfp%get_basis_func(curr_symm)
+            bfp=>full_basis%get_basis_func(i+1_INTL,errc); bfsp=>bfp%get_basis_func(next_symm)
+            if(curr_symm%compare(next_symm).ne.CMP_EQ) then; nb=nb+1_INTL; bndr(nb)=i; endif
+           enddo
 !Construct the subspace aggregation tree (SAT) by recursive splitting:
-          errc=sat_it%init(this%aggr_tree)
-          if(errc.eq.GFC_SUCCESS) then
+           errc=vec_it%init(this%subspaces)
+           if(errc.eq.GFC_SUCCESS) then
+            errc=sat_it%init(this%aggr_tree)
+            if(errc.eq.GFC_SUCCESS) then
  !Add the root (full space):
-           !`Finish
+             !`Finish
  !Recursively split the full space into subspaces while respecting boundaries:
-           !`Finish
-           errc=sat_it%release()
+             !`Finish
+             errc=sat_it%release()
 !Construct the overlap matrix between all subspaces:
-           if(present(metric)) then
-            this%metric_p=>metric
-            !`Write
+             if(present(metric)) then
+              this%metric_p=>metric
+              !`Write
+             endif
+            else
+             errc=2
+            endif
+           else
+            errc=1
            endif
+           if(allocated(bndr)) deallocate(bndr)
           else
-           errc=2
+           errc=1
           endif
          else
           errc=1
