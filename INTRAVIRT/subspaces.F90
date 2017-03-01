@@ -69,6 +69,8 @@
         integer(INTD), parameter, public:: BASIS_HARMONIC=5  !harmonic basis set
         integer(INTD), parameter, public:: BASIS_POLYNOM=6   !polynomial basis set
         integer(INTD), parameter, public:: BASIS_WAVELET=7   !wavelet basis set
+ !Symmetry:
+        integer(INTD), parameter, public:: SYMMETRY_NONE=-1  !no symmetry
 !TYPES:
  !Real space vector:
         type, public:: real_vec_t
@@ -128,11 +130,22 @@
           procedure, public:: union=>OrthotopeUnion            !returns the minimal orthotope containing two given orthotopes
           final:: orthotope_dtor                               !orthotope dtor
         end type orthotope_t
- !Symmetry:
-        type, abstract, public:: space_symmetry_t
+ !Symmetry (abstract):
+        type, abstract, public:: symmetry_t
          contains
-          procedure(space_symm_combine_i), deferred, public:: combine !combines symmetry group irreps
-        end type space_symmetry_t
+          procedure(symm_combine_i), deferred, public:: combine !combines symmetry group irreps
+        end type symmetry_t
+ !Spherical symmetry (orbital momentum):
+        type, extends(symmetry_t), public:: spher_symmetry_t
+         integer(INTD), private:: orb_moment=SYMMETRY_NONE   !total orbital momentum: [0,1,2,...)
+         integer(INTD), private:: orb_z_proj                 !Z-axis projection of the total orbital momentum: [-L...+L], if defined
+         contains
+          procedure, private:: SpherSymmetryCtor                     !constructor
+          generic, public:: spher_symmetry_ctor=>SpherSymmetryCtor
+          procedure, public:: orb_momentum=>SpherSymmetryOrbMomentum !returns the total orbital momentum and its Z-axis projection
+          procedure, public:: combine=>SpherSymmetryCombine          !combines spherical symmetry irreps (common lower irrep, if any)
+          final:: spher_symmetry_dtor                                !destructor
+        end type spher_symmetry_t
  !Abstract basis function (basis function support only):
         type, public:: basis_func_supp_t
          integer(INTD), private:: supp_dim=-1     !dimensionality of the real space support on which the basis function resides
@@ -163,7 +176,7 @@
         type, public:: basis_func_t
          integer(INTD), private:: basis_kind=BASIS_NONE                    !specific basis kind
          class(basis_func_supp_t), pointer, private:: basis_func_p=>NULL() !pointer to a basis function of this kind
-         class(space_symmetry_t), pointer, private:: symm_p=>NULL()        !pointer to the symmetry of the basis function (if any)
+         class(symmetry_t), pointer, private:: symm_p=>NULL()              !pointer to the symmetry of the basis function (if any)
          contains
           procedure, private:: BasisFuncCtor               !sets up the basis function (ctor)
           generic, public:: basis_func_ctor=>BasisFuncCtor
@@ -175,7 +188,7 @@
          integer(INTD), private:: supp_dim=0                      !dimensionality of the real space support on which the basis functions reside
          type(real_vec_t), private:: center                       !center of the effective subspace basis support in real space
          type(orthotope_t), private:: supp_box                    !effective subspace basis support in real space (multidimensional orthotope)
-         class(space_symmetry_t), allocatable, private:: symm     !symmetry of the subspace basis (if any, for all basis functions)
+         class(symmetry_t), allocatable, private:: symm           !symmetry of the subspace basis (if any, for all basis functions)
          type(basis_func_t), allocatable, private:: basis_func(:) !basis functions [1..space_dim]
          contains
           procedure, private:: SubspaceBasisCtor                        !creates an empty subspace (ctor)
@@ -229,16 +242,16 @@
           final:: h_space_dtor                                !destructs the hierarchical representation of a vector space
         end type h_space_t
 !INTERFACES:
- !space_symmetry_t:
+ !symmetry_t:
         abstract interface
   !Deferred: .combine:
-         subroutine space_symm_combine_i(this,symm,ierr)
-          import:: space_symmetry_t,INTD
+         subroutine symm_combine_i(this,symm,ierr)
+          import:: symmetry_t,INTD
           implicit none
-          class(space_symmetry_t), intent(inout):: this       !inout: symmetry 1 (updated)
-          class(space_symmetry_t), intent(in):: symm          !in: symmetry 2
-          integer(INTD), intent(out), optional:: ierr         !out: error code
-         end subroutine space_symm_combine_i
+          class(symmetry_t), intent(inout):: this     !inout: symmetry 1 (updated)
+          class(symmetry_t), intent(in):: symm        !in: symmetry 2
+          integer(INTD), intent(out), optional:: ierr !out: error code
+         end subroutine symm_combine_i
         end interface
 !VISIBILITY:
  !Non-member:
@@ -280,6 +293,11 @@
         private OrthotopeOverlap
         private OrthotopeUnion
         public orthotope_dtor
+ !spher_symmetry_t:
+        private SpherSymmetryCtor
+        private SpherSymmetryOrbMomentum
+        private SpherSymmetryCombine
+        public spher_symmetry_dtor
  !basis_func_supp_t:
         private BasisFuncSuppCtorEmpty
         private BasisFuncSuppCtorReal
@@ -1083,6 +1101,69 @@
          this%num_dim=0
          return
         end subroutine orthotope_dtor
+![spher_symmetry_t]==================================================
+        subroutine SpherSymmetryCtor(this,orb_mom_tot,orb_mom_z,ierr)
+!CTOR for spher_symmetry_t.
+         implicit none
+         class(spher_symmetry_t), intent(out):: this !out: spherical symmetry object
+         integer(INTD), intent(in):: orb_mom_tot     !in: total orbital momentum (>=0), SYMMETRY_NONE means no symmetry
+         integer(INTD), intent(in):: orb_mom_z       !in: Z-axis projection of the total orbital momentum, if defined
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=0
+         if(orb_mom_tot.ge.0.and.abs(orb_mom_z).le.orb_mom_tot) then !symmetry
+          this%orb_moment=orb_mom_tot
+          this%orb_z_proj=orb_mom_z
+         elseif(orb_mom_tot.eq.SYMMETRY_NONE) then !no symmetry
+          this%orb_moment=orb_mom_tot
+          this%orb_z_proj=0
+         else
+          errc=1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine SpherSymmetryCtor
+!-----------------------------------------------------------------
+        function SpherSymmetryOrbMomentum(this,z_proj) result(res)
+!Returns the total orbital momentum and its Z-axis projection.
+         implicit none
+         integer(INTD):: res                           !out: total orbital momentum
+         class(spher_symmetry_t), intent(in):: this    !in: spherical symmetry object
+         integer(INTD), intent(out), optional:: z_proj !out: Z-axis projection of the total orbital momentum
+
+         res=this%orb_moment
+         if(res.ge.0.and.present(z_proj)) z_proj=this%orb_z_proj
+         return
+        end function SpherSymmetryOrbMomentum
+!------------------------------------------------------
+        subroutine SpherSymmetryCombine(this,symm,ierr)
+!Combines two symmetries by finding a common lower symmetry.
+         implicit none
+         class(spher_symmetry_t), intent(inout):: this !inout: spherical symmetry object
+         class(symmetry_t), intent(in):: symm          !in: another spherical symmetry object
+         integer(INTD), intent(out), optional:: ierr   !out: error code
+         integer(INTD):: errc
+
+         errc=0
+         select type(symm)
+         class is(spher_symmetry_t)
+          if(symm%orb_momentum().ne.this%orb_momentum()) call this%spher_symmetry_ctor(SYMMETRY_NONE,0,errc)
+         class default
+          errc=1
+         end select
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine SpherSymmetryCombine
+!-------------------------------------------
+        subroutine spher_symmetry_dtor(this)
+!DTOR for spher_symmetry_t.
+         implicit none
+         type(spher_symmetry_t):: this
+
+         this%orb_moment=SYMMETRY_NONE; this%orb_z_proj=0
+         return
+        end subroutine spher_symmetry_dtor
 ![basis_func_supp_t]================================
         subroutine BasisFuncSuppCtorEmpty(this,ierr)
 !Constructs an empty basis function support.
@@ -1209,7 +1290,7 @@
          integer(INTD), intent(in):: basis_kind                              !in: basis kind
          integer(INTD), intent(out), optional:: ierr                         !out: error code
          class(basis_func_supp_t), intent(in), target, optional:: basis_func !in: specific basis function
-         class(space_symmetry_t), intent(in), target, optional:: symm        !in: basis function symmetry
+         class(symmetry_t), intent(in), target, optional:: symm              !in: basis function symmetry
          integer(INTD):: errc
 
          errc=0
@@ -1294,7 +1375,7 @@
          integer(INTD), intent(in):: basis_kind                              !in: basis kind
          integer(INTD), intent(out), optional:: ierr                         !out: error code
          class(basis_func_supp_t), intent(in), target, optional:: basis_func !in: specific basis function
-         class(space_symmetry_t), intent(in), target, optional:: symm        !in: basis function symmetry
+         class(symmetry_t), intent(in), target, optional:: symm              !in: basis function symmetry
          integer(INTD):: errc
          integer(INTL):: n
          logical:: specific
@@ -1371,7 +1452,7 @@
          integer(INTD):: errc
          integer(INTL):: i,n,nun
          class(basis_func_supp_t), pointer:: bas_func
-         class(space_symmetry_t), pointer:: symm
+         class(symmetry_t), pointer:: symm
          logical:: initb
 
          errc=0; nun=-1; n=this%dimsn()
@@ -1432,7 +1513,7 @@
         function SubspaceBasisGetSymmetry(this,ierr) result(symm)
 !Returns a pointer to the subspace basis symmetry object.
          implicit none
-         class(space_symmetry_t), pointer:: symm            !out: subspace basis symmetry
+         class(symmetry_t), pointer:: symm                  !out: subspace basis symmetry
          class(subspace_basis_t), intent(in), target:: this !in: subspace basis
          integer(INTD), intent(out), optional:: ierr        !out: error code
          integer(INTD):: errc
