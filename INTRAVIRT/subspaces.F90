@@ -1,6 +1,6 @@
 !Infrastructure for a recursive adaptive vector space decomposition.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/02/28
+!REVISION: 2017/03/01
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -50,6 +50,7 @@
        module subspaces
         use dil_basic
         use gfc_base
+        use gfc_vector
         use gfc_list
         use gfc_tree
         implicit none
@@ -74,8 +75,8 @@
          integer(INTL), private:: num_dim=0      !number of dimensions (0 means empty)
          real(8), allocatable, public:: coord(:) !components of the real space vector
          contains
-          procedure, private:: RealVecCtor
-          generic, public:: real_vec_ctor=>RealVecCtor !real space vector ctor
+          procedure, private:: RealVecCtor             !real space vector ctor
+          generic, public:: real_vec_ctor=>RealVecCtor
           procedure, public:: dimsn=>RealVecDimsn      !returns dimension of the vector
           procedure, public:: norm2=>RealVecNorm2      !returns the 2-norm of the vector
           procedure, public:: scale=>RealVecScale      !vector scaling by a scalar
@@ -114,8 +115,8 @@
          integer(INTL), private:: num_dim=0                    !number of dimensions
          type(range1d_t), allocatable, private:: extent(:)     !extent of each dimension (min,max)
          contains
-          procedure, private:: OrthotopeCtor
-          generic, public:: orthotope_ctor=>OrthotopeCtor      !orthotope ctor
+          procedure, private:: OrthotopeCtor                   !orthotope ctor
+          generic, public:: orthotope_ctor=>OrthotopeCtor
           procedure, public:: dimsn=>OrthotopeDimsn            !returns the real space dimension orthotope resides in
           procedure, public:: set_extent=>OrthotopeSetExtent   !sets the extent along a specific dimension
           procedure, public:: get_extent=>OrthotopeGetExtent   !returns the extent of a specific dimension
@@ -134,9 +135,18 @@
         end type space_symmetry_t
  !Abstract basis function (basis function support only):
         type, public:: basis_func_supp_t
-         integer(INTD), private:: supp_dim=0      !dimensionality of the real space support on which the basis function resides
+         integer(INTD), private:: supp_dim=-1     !dimensionality of the real space support on which the basis function resides
          type(real_vec_t), private:: center       !center of the effective function support in the real space
          type(orthotope_t), private:: supp_box    !supporting orthotope (multidimensional real space support)
+         contains
+          procedure, private:: BasisFuncSuppCtorEmpty               !constructs a trivial basis function support (ctor)
+          procedure, private:: BasisFuncSuppCtorReal                !constructs a non-trivial basis function support (ctor)
+          generic, public:: basis_func_supp_ctor=>BasisFuncSuppCtorEmpty,BasisFuncSuppCtorReal
+          procedure, public:: is_set=>BasisFuncSuppIsSet            !returns .TRUE. if the basis function support is set
+          procedure, public:: supp_dimsn=>BasisFuncSuppDimsn        !returns the support dimension (>=0), 0 is trivial (no real support)
+#ifdef NO_GNU
+          final:: basis_func_supp_dtor                              !dtor `GCC/5.4.0 bug
+#endif
         end type basis_func_supp_t
  !Gaussian basis function:
         type, extends(basis_func_supp_t), public:: basis_func_gauss_t
@@ -145,8 +155,8 @@
          real(8), allocatable, private:: exponent(:) !primitive exponents
          complex(8), allocatable, private:: coef(:)  !primitive contraction coefficients
          contains
-          procedure, private:: BasisFuncGaussCtor
-          generic, public:: basis_func_gauss_ctor=>BasisFuncGaussCtor !sets up the basis function (ctor)
+          procedure, private:: BasisFuncGaussCtor                     !sets up the basis function (ctor)
+          generic, public:: basis_func_gauss_ctor=>BasisFuncGaussCtor
           final:: basis_func_gauss_dtor                               !destructs the basis function (dtor)
         end type basis_func_gauss_t
  !Typed basis function:
@@ -155,8 +165,8 @@
          class(basis_func_supp_t), pointer, private:: basis_func_p=>NULL() !pointer to a basis function of this kind
          class(space_symmetry_t), pointer, private:: symm_p=>NULL()        !pointer to the symmetry of the basis function (if any)
          contains
-          procedure, private:: BasisFuncCtor
-          generic, public:: basis_func_ctor=>BasisFuncCtor !sets up the basis function (ctor)
+          procedure, private:: BasisFuncCtor               !sets up the basis function (ctor)
+          generic, public:: basis_func_ctor=>BasisFuncCtor
           final:: basis_func_dtor                          !destructs the basis function (dtor)
         end type basis_func_t
  !Subspace basis:
@@ -168,8 +178,8 @@
          class(space_symmetry_t), allocatable, private:: symm     !symmetry of the subspace basis (if any, for all basis functions)
          type(basis_func_t), allocatable, private:: basis_func(:) !basis functions [1..space_dim]
          contains
-          procedure, private:: SubspaceBasisCtor
-          generic, public:: subspace_basis_ctor=>SubspaceBasisCtor      !creates an empty subspace (ctor)
+          procedure, private:: SubspaceBasisCtor                        !creates an empty subspace (ctor)
+          generic, public:: subspace_basis_ctor=>SubspaceBasisCtor
           procedure, public:: dimsn=>SubspaceBasisDimsn                 !returns the dimension of the subspace
           procedure, public:: supp_dimsn=>SubspaceBasisSuppDimsn        !returns the support space dimension
           procedure, public:: set_basis_func=>SubspaceBasisSetBasisFunc !sets a specific basis function
@@ -187,14 +197,15 @@
          integer(INTL), private:: max_resolution=0 !max resolution level (max subspace dimension): 0 means undefined
          type(list_bi_t), private:: bases          !basis sets (subspace_basis_t) for each registered resolution level
          contains
-          procedure, public:: init=>SubspaceInit                           !initializes the subspace (id and support dimension only)
+          procedure, private:: SubspaceCtorBase                            !initializes a subspace with id and real space support dimension only (ctor)
+          generic, public:: subspace_ctor=>SubspaceCtorBase
           procedure, public:: get_id=>SubspaceGetId                        !returns the subspace id
           procedure, public:: get_supp_dim=>SubspaceGetSuppDim             !returns the dimensionality of the subspace support
           procedure, public:: get_max_resolution=>SubspaceGetMaxResolution !returns the max resolution (dimension) of the subspace
           procedure, public:: register_basis=>SubspaceRegisterBasis        !registers a specific basis of the subspace
           procedure, public:: resolve=>SubspaceResolve                     !resolves the subspace with a specific basis (based on some condition)
           procedure, public:: relate=>SubspaceRelate                       !relates the subspaces to another subspace
-          final:: SubspaceDestroy                                          !destroys the subspace
+          final:: subspace_dtor                                            !destroys the subspace (dtor)
         end type subspace_t
  !Hierarchical composite index:
         type, public:: h_index_t
@@ -206,15 +217,16 @@
         type, public:: h_space_t
          integer(INTL), private:: space_dim=0                 !dimension of the vector space
          integer(INTL), private:: num_subspaces=0             !number of subspaces defined in the vector space
-         type(subspace_t), allocatable, private:: subspace(:) !hierarchical subspaces defined in the vector space: [0..num_subspaces-1]
+         type(vector_t), private:: subspaces                  !subspaces defined in the vector space: [0..num_subspaces-1]
          type(tree_t), private:: aggr_tree                    !subspace aggregation tree (SAT): Hierarchical representation
-         complex(8), pointer, private:: metric(:,:)=>NULL()   !pointer to the original metric tensor: g12=<bf1|bf2>
-         real(8), allocatable, private:: overlap(:,:)         !subspace overlap matrix (extent of overlap between all subspaces)
+         complex(8), pointer, private:: metric_p(:,:)=>NULL() !pointer to the original metric tensor: g12=<bf1|bf2>
+         real(8), allocatable, private:: overlap(:,:)         !subspace support overlap matrix (extent of support overlap between subspaces)
          contains
-          procedure, public:: construct=>HSpaceConstruct      !constructs a hierarchical representation of a vector space
-          procedure, public:: is_set=>HSpaceIsSet             !return TRUE if the hierarchical vector space is set
-          procedure, public:: get_subspace=>HSpaceGetSubspace !returns a pointer to the required subspace of the hierarchical vector space
-          final:: HSpaceDestruct                              !destructs the hierarchical representation of a vector space
+          procedure, private:: HSpaceCtor                     !constructs a hierarchical representation of a vector space (ctor)
+          generic, public:: h_space_ctor=>HSpaceCtor
+          procedure, public:: is_set=>HSpaceIsSet             !returns TRUE if the hierarchical vector space is set
+          procedure, public:: get_subspace=>HSpaceGetSubspace !returns a pointer to the requested subspace of the hierarchical vector space
+          final:: h_space_dtor                                !destructs the hierarchical representation of a vector space
         end type h_space_t
 !INTERFACES:
  !space_symmetry_t:
@@ -268,6 +280,12 @@
         private OrthotopeOverlap
         private OrthotopeUnion
         public orthotope_dtor
+ !basis_func_supp_t:
+        private BasisFuncSuppCtorEmpty
+        private BasisFuncSuppCtorReal
+        private BasisFuncSuppIsSet
+        private BasisFuncSuppDimsn
+        public basis_func_supp_dtor
  !basis_func_gauss_t:
         private BasisFuncGaussCtor
         public basis_func_gauss_dtor
@@ -286,17 +304,19 @@
         private SubspaceBasisGetSupport
         public subspace_basis_dtor
  !subspace_t:
-        private SubspaceInit
+        private SubspaceCtorBase
         private SubspaceGetId
         private SubspaceGetSuppDim
         private SubspaceGetMaxResolution
         private SubspaceRegisterBasis
         private SubspaceResolve
         private SubspaceRelate
+        public subspace_dtor
  !h_space_t:
-        private HSpaceConstruct
+        private HSpaceCtor
         private HSpaceIsSet
         private HSpaceGetSubspace
+        public h_space_dtor
 
        contains
 !IMPLEMENTATION:
@@ -1063,6 +1083,74 @@
          this%num_dim=0
          return
         end subroutine orthotope_dtor
+![basis_func_supp_t]================================
+        subroutine BasisFuncSuppCtorEmpty(this,ierr)
+!Constructs an empty basis function support.
+         implicit none
+         class(basis_func_supp_t), intent(out):: this !out: basis function support
+         integer(INTD), intent(out), optional:: ierr  !out: error code
+         integer(INTD):: errc
+
+         errc=0; this%supp_dim=0
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine BasisFuncSuppCtorEmpty
+!---------------------------------------------------------------------
+        subroutine BasisFuncSuppCtorReal(this,center,support_box,ierr)
+!Constructs a real basis function support.
+         implicit none
+         class(basis_func_supp_t), intent(out):: this !out: basis function support
+         type(real_vec_t), intent(in):: center        !in: effective center of the basis function support
+         type(orthotope_t), intent(in):: support_box  !in: containing box (support)
+         integer(INTD), intent(out), optional:: ierr  !out: error code
+         integer(INTD):: errc,n
+
+         n=center%dimsn()
+         if(n.ge.0.and.support_box%dimsn().eq.n) then
+          this%supp_dim=n
+          this%center=center
+          this%supp_box=support_box
+         else
+          errc=1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine BasisFuncSuppCtorReal
+!---------------------------------------------------------
+        function BasisFuncSuppIsSet(this,ierr) result(ans)
+!Returns TRUE if the basis function support is set.
+         implicit none
+         logical:: ans                               !out: answer
+         class(basis_func_supp_t), intent(in):: this !in: basis function support
+         integer(INTD), intent(out), optional:: ierr !out: error code
+
+         ans=(this%supp_dim.ge.0)
+         if(present(ierr)) ierr=0
+         return
+        end function BasisFuncSuppIsSet
+!-----------------------------------------------------------
+        function BasisFuncSuppDimsn(this,ierr) result(dimsn)
+!Returns the support dimension (>=0).
+         implicit none
+         integer(INTD):: dimsn                       !out: support space dimension
+         class(basis_func_supp_t), intent(in):: this !in: basis function support
+         integer(INTD), intent(out), optional:: ierr !out: error code
+
+         dimsn=this%supp_dim
+         if(present(ierr)) then
+          if(dimsn.lt.0) ierr=1
+         endif
+         return
+        end function BasisFuncSuppDimsn
+!--------------------------------------------
+        subroutine basis_func_supp_dtor(this)
+!DTOR for basis_func_supp_t.
+         implicit none
+         type(basis_func_supp_t):: this
+
+         this%supp_dim=-1
+         return
+        end subroutine basis_func_supp_dtor
 ![basis_func_gauss_t]======================================================
         subroutine BasisFuncGaussCtor(this,orb_moment,exponents,coefs,ierr)
 !Sets up a Gaussian basis function. If it is already defined on input,
@@ -1404,8 +1492,8 @@
          this%space_dim=0; this%supp_dim=0
          return
         end subroutine subspace_basis_dtor
-![subspace_t]================================
-        subroutine SubspaceInit(this,id,ierr)
+![subspace_t]====================================
+        subroutine SubspaceCtorBase(this,id,ierr)
 !Initializes a subspace. If the subspace is defined on input,
 !it will automatically be destructed prior to re-initialization.
          implicit none
@@ -1424,7 +1512,7 @@
          endif
          if(present(ierr)) ierr=errc
          return
-        end subroutine SubspaceInit
+        end subroutine SubspaceCtorBase
 !---------------------------------------------------
         function SubspaceGetId(this,ierr) result(id)
          implicit none
@@ -1594,8 +1682,8 @@
          !`Finish
          return
         end function SubspaceRelate
-!---------------------------------------
-        subroutine SubspaceDestroy(this)
+!-------------------------------------
+        subroutine subspace_dtor(this)
          implicit none
          type(subspace_t):: this
          type(list_iter_t):: basis_it
@@ -1610,9 +1698,9 @@
          this%supp_dim=0
          this%subspace_id=-1
          return
-        end subroutine SubspaceDestroy
-![h_space_t]===================================================
-        subroutine HSpaceConstruct(this,full_basis,ierr,metric)
+        end subroutine subspace_dtor
+![h_space_t]==============================================
+        subroutine HSpaceCtor(this,full_basis,ierr,metric)
 !Constructs a hierarchical vector space representation with a subspace aggregation tree.
 !The original basis functions will be hierarchically aggregated into larger subspaces,
 !up to the full space. Each subspace will have a unique id.
@@ -1623,6 +1711,7 @@
          complex(8), intent(in), optional, target:: metric(:,:) !in: metric tensor: g12=<bf1|bf2>: Hermitian matrix
          integer(INTD):: errc
          integer(INTL):: n
+         type(vector_iter_t):: vec_it
          type(tree_iter_t):: sat_it
 
          errc=0
@@ -1636,9 +1725,9 @@
  !Recursively split the full space into subspaces:
            
            errc=sat_it%release()
-!Construct the overlap matrix between all subspaces:
+!Construct the support overlap matrix between all subspaces:
            if(present(metric)) then
-            this%metric=>metric
+            this%metric_p=>metric
             !`Write
            endif
           else
@@ -1649,7 +1738,7 @@
          endif
          if(present(ierr)) ierr=errc
          return
-        end subroutine HSpaceConstruct
+        end subroutine HSpaceCtor
 !--------------------------------------------------
         function HSpaceIsSet(this,ierr) result(res)
 !Returns TRUE if the hierarchical vector space is set.
@@ -1669,14 +1758,32 @@
          implicit none
          class(subspace_t), pointer:: subspace_p      !out: pointer to the requested subspace
          class(h_space_t), intent(in), target:: this  !in: hierarchical vector space
-         integer(INTL), intent(in):: subspace_id      !in: requested subspace id
+         integer(INTL), intent(in):: subspace_id      !in: requested subspace id: [0..max]
          integer(INTD), intent(out), optional:: ierr  !out: error code
-         integer(INTD):: errc
+         integer(INTD):: errc,i
+         class(*), pointer:: up
+         type(gfc_cont_elem_t), pointer:: vep
+         type(vector_iter_t):: vec_it
 
          errc=0
          if(this%is_set()) then
           if(subspace_id.ge.0.and.subspace_id.lt.this%num_subspaces) then
-           subspace_p=>this%subspace(subspace_id)
+           errc=vec_it%init(this%subspaces)
+           if(errc.eq.GFC_SUCCESS) then
+            vep=>vec_it%element(subspace_id,errc)
+            if(errc.eq.GFC_SUCCESS) then
+             up=>vep%get_value(errc)
+             if(errc.eq.GFC_SUCCESS) then
+              select type(up)
+              class is(subspace_t)
+               subspace_p=>up
+              class default
+               errc=3
+              end select
+             endif
+            endif
+            i=vec_it%release(); if(errc.eq.0.and.i.ne.GFC_SUCCESS) errc=i
+           endif
           else
            errc=2
           endif
@@ -1686,24 +1793,29 @@
          if(present(ierr)) ierr=errc
          return
         end function HSpaceGetSubspace
-!--------------------------------------
-        subroutine HSpaceDestruct(this)
+!------------------------------------
+        subroutine h_space_dtor(this)
          implicit none
          type(h_space_t):: this
          integer(INTD):: errc
+         type(vector_iter_t):: vec_it
          type(tree_iter_t):: tree_it
 
-         this%metric=>NULL()
+         this%metric_p=>NULL()
          if(allocated(this%overlap)) deallocate(this%overlap)
-         if(allocated(this%subspace)) deallocate(this%subspace)
          errc=tree_it%init(this%aggr_tree)
          if(errc.eq.GFC_SUCCESS) then
           errc=tree_it%reset(); if(errc.eq.GFC_SUCCESS) errc=tree_it%delete_subtree()
           errc=tree_it%release()
          endif
-         this%space_dim=0; this%num_subspaces=0
+         errc=vec_it%init(this%subspaces)
+         if(errc.eq.GFC_SUCCESS) then
+          errc=vec_it%reset(); if(errc.eq.GFC_SUCCESS) errc=vec_it%delete_all()
+          errc=vec_it%release()
+         endif
+         this%num_subspaces=0; this%space_dim=0
          return
-        end subroutine HSpaceDestruct
+        end subroutine h_space_dtor
 !-----------------------------------------------------------------------------
         subroutine build_basis_hierarchy_abstract(basis,order,boundaries,ierr)
 !Sorts and recursively aggregates bases into a hierarchical representatation.

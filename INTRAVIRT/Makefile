@@ -262,7 +262,7 @@ $(NAME): $(OBJS) ./OBJ/test_intra.o $(MY_LIB)
 	ar cr lib$(NAME).a $(OBJS) $(MY_LIB)
 	$(FCOMP) ./OBJ/test_intra.o lib$(NAME).a $(MY_LIB) $(LFLAGS) -o test_$(NAME).x
 
-./OBJ/subspaces.o: subspaces.F90 ../UTILITY/OBJ/dil_basic.o ../GFC/OBJ/gfc_base.o ../GFC/OBJ/gfc_list.o ../GFC/OBJ/gfc_tree.o
+./OBJ/subspaces.o: subspaces.F90 ../UTILITY/OBJ/dil_basic.o ../GFC/OBJ/gfc_base.o ../GFC/OBJ/gfc_vector.o ../GFC/OBJ/gfc_list.o ../GFC/OBJ/gfc_tree.o
 	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(FFLAGS) subspaces.F90 -o ./OBJ/subspaces.o
 
 ./OBJ/hardware.o: hardware.F90 ../UTILITY/OBJ/dil_basic.o ../UTILITY/OBJ/stsubs.o ../UTILITY/OBJ/parse_prim.o ../GFC/OBJ/gfc_base.o ../GFC/OBJ/gfc_vector.o ../GFC/OBJ/gfc_tree.o ./OBJ/subspaces.o
