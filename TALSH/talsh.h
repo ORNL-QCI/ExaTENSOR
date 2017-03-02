@@ -89,10 +89,7 @@ typedef struct{
  double exec_time; //execution time in seconds (information)
 } talsh_task_t;
 
-//EXPORTED FUNCTIONS:
-#ifdef __cplusplus
-extern "C"{
-#endif
+//INTERNAL PROTOTYPES:
 // TAL-SH complex arithmetic:
 inline talshComplex4 talshComplex4Set(float real, float imag);
 inline talshComplex8 talshComplex8Set(double real, double imag);
@@ -104,6 +101,11 @@ inline talshComplex4 talshComplex4Conjg(talshComplex4 cmplx);
 inline talshComplex8 talshComplex8Conjg(talshComplex8 cmplx);
 inline float talshComplex4Abs(talshComplex4 cmplx);
 inline double talshComplex8Abs(talshComplex8 cmplx);
+
+//EXPORTED FUNCTIONS:
+#ifdef __cplusplus
+extern "C"{
+#endif
 // TAL-SH helper functions:
 //  Check the validity of a data kind and get its size:
  int talshValidDataKind(int datk, int * datk_size);
