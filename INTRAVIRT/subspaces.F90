@@ -1,6 +1,6 @@
 !Infrastructure for a recursive adaptive vector space decomposition.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/03/01
+!REVISION: 2017/03/02
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -194,13 +194,13 @@
          class(symmetry_t), allocatable, private:: symm           !symmetry of the subspace basis (if any, for all basis functions)
          type(basis_func_t), allocatable, private:: basis_func(:) !basis functions specified by reference: [1..space_dim]
          contains
-          procedure, private:: SubspaceBasisCtor                        !creates an empty subspace (ctor)
+          procedure, private:: SubspaceBasisCtor                        !creates an abstract subspace without specific basis functions (ctor)
           generic, public:: subspace_basis_ctor=>SubspaceBasisCtor
           procedure, public:: dimsn=>SubspaceBasisDimsn                 !returns the dimension of the subspace
           procedure, public:: supp_dimsn=>SubspaceBasisSuppDimsn        !returns the support space dimension
-          procedure, public:: set_basis_func=>SubspaceBasisSetBasisFunc !sets a specific basis function
+          procedure, public:: set_basis_func=>SubspaceBasisSetBasisFunc !sets a specific basis function (builder)
           procedure, public:: get_basis_func=>SubspaceBasisGetBasisFunc !returns a pointer to a specific basis function
-          procedure, public:: finalize=>SubspaceBasisFinalize           !finalizes the subspace basis (sets up the support and symmetry)
+          procedure, public:: finalize=>SubspaceBasisFinalize           !finalizes the subspace basis (sets up the support and overall symmetry)
           procedure, public:: get_symmetry=>SubspaceBasisGetSymmetry    !returns a pointer to the subspace basis symmetry object
           procedure, public:: get_center=>SubspaceBasisGetCenter        !returns a pointer to the center of the subspace basis in the real space
           procedure, public:: get_support=>SubspaceBasisGetSupport      !returns a pointer to the supporting orthotope of the subspace basis
@@ -1343,22 +1343,34 @@
           this%basis_kind=basis_kind
           if(present(basis_func)) this%basis_func_p=>basis_func
           if(present(symm)) this%symm_p=>symm
+         else
+          errc=1
          endif
          if(present(ierr)) ierr=errc
          return
         end subroutine BasisFuncCtor
-!----------------------------------------------------------------------------------
-        function BasisFuncGetBasisFunc(this,symm_p,basis_kind) result(basis_func_p)
+!---------------------------------------------------------------------------------------
+        function BasisFuncGetBasisFunc(this,ierr,symm_p,basis_kind) result(basis_func_p)
 !Returns a polymorphic pointer to the basis function description.
          implicit none
          class(basis_func_supp_t), pointer:: basis_func_p  !out: polymorphic pointer to the basis function description
          class(basis_func_t), intent(in):: this            !in: basis function
+         integer(INTD), intent(out), optional:: ierr       !out: error code
          class(symmetry_t), pointer, optional:: symm_p     !out: polymorphic pointer to the basis function symmetry (if any)
          integer(INTD), intent(out), optional:: basis_kind !out: basis kind
+         integer(INTD):: errc
 
-         basis_func_p=>this%basis_func_p
-         if(present(symm_p)) symm_p=>this%symm_p
+         errc=0
          if(present(basis_kind)) basis_kind=this%basis_kind
+         if(this%basis_kind.ne.BASIS_NONE) then
+          if(present(symm_p)) symm_p=>this%symm_p
+          basis_func_p=>this%basis_func_p
+         else
+          if(present(symm_p)) symm_p=>NULL()
+          basis_func_p=>NULL()
+          errc=1
+         endif
+         if(present(ierr)) ierr=errc
          return
         end function BasisFuncGetBasisFunc
 !---------------------------------------
@@ -1838,54 +1850,107 @@
          this%subspace_id=-1
          return
         end subroutine subspace_dtor
-![h_space_t]====================================================
-        subroutine HSpaceCtorSimple(this,full_basis,ierr,metric)
+![h_space_t]===============================================================
+        subroutine HSpaceCtorSimple(this,full_basis,ierr,branch_fac,metric)
 !Constructs a simple hierarchical vector space representation with a subspace aggregation tree.
 !The original basis functions will be hierarchically aggregated into larger subspaces,
-!up to the full space. Each subspace will have a unique id.
+!up to the full space. Each subspace will have a unique id. If symmetry is present,
+!the subspaces will be aligned to symmetry boundaries. Each subspace in the subspace
+!aggregation tree will have its unique id and an associated full-resolution basis,
+!the latter consisting of a subset of the original full basis (later on, reduced
+!basis sets can be defined for any subspace). Each subspace can also be directly
+!accessed by its id in the vector <this%subspaces>.
+!Storage complexity O(NlogN), where N is the original full space dimension.
          implicit none
          class(h_space_t), intent(out):: this                   !out: hierarchical representation of the vector space
          class(subspace_basis_t), intent(in):: full_basis       !in: full basis of the vector space, {Psi_i}
          integer(INTD), intent(out), optional:: ierr            !out: error code
+         integer(INTD), intent(in), optional:: branch_fac       !in: tree branching factor (defaults to 2)
          complex(8), intent(in), optional, target:: metric(:,:) !in: metric tensor: g_ij=<Psi_i|Psi_j>: Hermitian matrix
-         integer(INTD):: errc
-         integer(INTL):: i,n,nb
+         integer(INTD):: errc,brf
+         integer(INTL):: i,n,nbnd
          integer(INTL), allocatable:: bndr(:)
          class(basis_func_t), pointer:: bfp
          class(basis_func_supp_t), pointer:: bfsp
          class(symmetry_t), pointer:: curr_symm,next_symm
          type(vector_iter_t):: vec_it
          type(tree_iter_t):: sat_it
+         type(seg_int_t), allocatable:: segs(:)
+         type(subspace_basis_t):: basis
+         type(subspace_t):: subspace
 
-         errc=0
+         errc=0; this%num_subspaces=0
          n=full_basis%dimsn()
          if(n.gt.0) then
 !Determine same symmetry contiguous suspaces and set principal boundaries:
           allocate(bndr(1:n),STAT=errc)
           if(errc.eq.0) then
-           nb=0_INTL !will be the number of boundaries
+           nbnd=0_INTL !will be the number of boundaries
            do i=1,n-1
-            bfp=>full_basis%get_basis_func(i,errc); bfsp=>bfp%get_basis_func(curr_symm)
-            bfp=>full_basis%get_basis_func(i+1_INTL,errc); bfsp=>bfp%get_basis_func(next_symm)
-            if(curr_symm%compare(next_symm).ne.CMP_EQ) then; nb=nb+1_INTL; bndr(nb)=i; endif
-           enddo
-!Construct the subspace aggregation tree (SAT) by recursive splitting:
-           errc=vec_it%init(this%subspaces)
-           if(errc.eq.GFC_SUCCESS) then
-            errc=sat_it%init(this%aggr_tree)
-            if(errc.eq.GFC_SUCCESS) then
- !Add the root (full space):
-             !`Finish
- !Recursively split the full space into subspaces while respecting boundaries:
-             !`Finish
-             errc=sat_it%release()
-!Construct the overlap matrix between all subspaces:
-             if(present(metric)) then
-              this%metric_p=>metric
-              !`Write
+            bfp=>full_basis%get_basis_func(i,errc); if(errc.ne.0) exit
+            bfsp=>bfp%get_basis_func(errc,curr_symm); if(errc.ne.0) exit
+            bfp=>full_basis%get_basis_func(i+1_INTL,errc); if(errc.ne.0) exit
+            bfsp=>bfp%get_basis_func(errc,next_symm); if(errc.ne.0) exit
+            if(associated(curr_symm)) then
+             if(associated(next_symm)) then
+              if(curr_symm%compare(next_symm).ne.CMP_EQ) then; nbnd=nbnd+1_INTL; bndr(nbnd)=i; endif !symmetry change boundary
+             else
+              nbnd=nbnd+1_INTL; bndr(nbnd)=i !symmetry change boundary
              endif
             else
-             errc=2
+             if(associated(next_symm)) then; nbnd=nbnd+1_INTL; bndr(nbnd)=i; endif !symmetry change boundary
+            endif
+           enddo
+!Construct the subspace aggregation tree (SAT) by recursive splitting:
+           if(errc.eq.0) then
+            if(present(branch_fac)) then; brf=branch_fac; else; brf=2; endif
+            if(brf.ge.2) then
+             allocate(segs(1:brf),STAT=errc)
+             if(errc.eq.0) then
+              errc=vec_it%init(this%subspaces)
+              if(errc.eq.GFC_SUCCESS) then
+               errc=sat_it%init(this%aggr_tree)
+               if(errc.eq.GFC_SUCCESS) then
+ !Add the root (full vector space):
+                call segs(1)%set(0_INTL,n) !integer segment [1:n] is equivalent to integer semi-interval (0:n]
+                call construct_subspace_basis(basis,segs(1),nbnd,bndr,errc)
+                if(errc.eq.0) then
+                 this%num_subspaces=this%num_subspaces+1_INTL
+                 call subspace%subspace_ctor(this%num_subspaces,errc)
+                 if(errc.eq.0) then
+                  call subspace%register_basis(basis,errc)
+                  if(errc.eq.0) then
+                   !`Finish
+ !Recursively split the full space into subspaces while respecting boundaries:
+                   !`Finish
+!Construct the overlap matrix between all subspaces:
+                   if(present(metric)) then
+                    this%metric_p=>metric
+                    !`Write
+                   endif
+                  else
+                   errc=1
+                  endif
+                 else
+                  errc=3
+                 endif
+                else
+                 errc=1
+                endif
+                errc=sat_it%release()
+               else
+                errc=2
+               endif
+               errc=vec_it%release()
+              else
+               errc=1
+              endif
+              if(allocated(segs)) deallocate(segs)
+             else
+              errc=1
+             endif
+            else
+             errc=1
             endif
            else
             errc=1
@@ -1897,8 +1962,57 @@
          else
           errc=1
          endif
+         if(errc.ne.0) call h_space_dtor(this)
          if(present(ierr)) ierr=errc
          return
+
+        contains
+
+         subroutine construct_subspace_basis(bas,sgs,nb,bnd,jerr)
+          implicit none
+          type(subspace_basis_t), intent(inout):: bas !out: subspace basis to be constructed
+          type(seg_int_t), intent(in):: sgs           !in: defining integer semi-interval (subset of basis functions)
+          integer(INTL), intent(in):: nb              !in: number of symmetry boundaries in the semi-interval, if any
+          integer(INTL), intent(in):: bnd(1:)         !in: symmetry boundaries in the semi-interval (if any)
+          integer(INTD), intent(out):: jerr           !out: error code
+          integer(INTD):: jbfk
+          integer(INTL):: jdim,jl,ju,jj
+          class(basis_func_t), pointer:: jbfp
+          class(basis_func_supp_t), pointer:: jbfsp
+          class(symmetry_t), pointer:: jsmp
+
+          jerr=0; jdim=sgs%length()
+          if(jdim.gt.0) then
+           jl=sgs%lower_bound()+1_INTL; ju=sgs%upper_bound()
+           call bas%subspace_basis_ctor(jdim,jerr)
+           if(jerr.eq.0) then
+            do jj=jl,ju
+             jbfp=>full_basis%get_basis_func(jj,jerr); if(jerr.ne.0) exit
+             jbfsp=>jbfp%get_basis_func(jerr,jsmp,jbfk); if(jerr.ne.0) exit
+             if(associated(jbfsp)) then
+              if(associated(jsmp)) then
+               call bas%set_basis_func(jj-jl+1_INTL,jbfk,jerr,jbfsp,jsmp)
+              else
+               call bas%set_basis_func(jj-jl+1_INTL,jbfk,jerr,jbfsp)
+              endif
+             else
+              if(associated(jsmp)) then
+               call bas%set_basis_func(jj-jl+1_INTL,jbfk,jerr,symm=jsmp)
+              else
+               call bas%set_basis_func(jj-jl+1_INTL,jbfk,jerr)
+              endif
+             endif
+             if(jerr.ne.0) exit
+            enddo
+            if(jerr.eq.0) call bas%finalize(jerr)
+           endif
+          else
+           jerr=1
+          endif
+          if(jerr.ne.0) call subspace_basis_dtor(bas)
+          return
+         end subroutine construct_subspace_basis
+
         end subroutine HSpaceCtorSimple
 !--------------------------------------------------
         function HSpaceIsSet(this,ierr) result(res)
