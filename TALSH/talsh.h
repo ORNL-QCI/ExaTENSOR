@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level API header.
-REVISION: 2017/02/15
+REVISION: 2017/03/03
 
 Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -189,6 +189,12 @@ extern "C"{
                               int data_kind,
                               int dev_id,
                               int dev_kind = DEV_NULL);
+//  Get access to the tensor body image read-only:
+ int talshTensorGetBodyAccessConst(const talsh_tens_t * tens_block,
+                                   const void ** body_p,
+                                   int data_kind,
+                                   int dev_id,
+                                   int dev_kind = DEV_NULL);
 //  Get the scalar value of the rank-0 tensor:
  int talshTensorGetScalar(talsh_tens_t * tens_block,
                           talshComplex8 * scalar_complex);
@@ -196,6 +202,8 @@ extern "C"{
  int talshTensorGetBodyAccess_(talsh_tens_t * tens_block, void ** body_p, int data_kind, int dev_id, int dev_kind);
 //  Print the information on a tensor block:
  void talshTensorPrintInfo(const talsh_tens_t * tens_block);
+//  Print tensor elements larger by absolute value than some threshold:
+ void talshTensorPrintBody(const talsh_tens_t * tens_block, double thresh);
 // TAL-SH task API:
 //  Create a clean (defined-empty) TAL-SH task:
  int talshTaskCreate(talsh_task_t ** talsh_task);

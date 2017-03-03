@@ -1,5 +1,5 @@
 !ExaTensor::TAL-SH: Device-unified user-level API:
-!REVISION: 2017/02/15
+!REVISION: 2017/03/03
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -255,6 +255,13 @@
           implicit none
           type(talsh_tens_t), intent(in):: tens_block
          end subroutine talsh_tensor_print_info
+  !Print tensor elements larger by absolute value than some threshold:
+         subroutine talsh_tensor_print_body(tens_block,thresh) bind(c,name='talshTensorPrintBody')
+          import
+          implicit none
+          type(talsh_tens_t), intent(in):: tens_block
+          real(C_DOUBLE), intent(in), value:: thresh
+         end subroutine talsh_tensor_print_body
   ![DEBUG]: Compute the 1-norm of a tensor on Host CPU:
          real(C_DOUBLE) function talshTensorImageNorm1_cpu(talsh_tens) bind(c,name='talshTensorImageNorm1_cpu')
           import
@@ -438,6 +445,7 @@
         public talsh_tensor_get_body_access
         public talsh_tensor_get_scalar
         public talsh_tensor_print_info
+        public talsh_tensor_print_body
         public talshTensorImageNorm1_cpu
  !TAL-SH task API:
         public talsh_task_destruct
