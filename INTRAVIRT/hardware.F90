@@ -1,6 +1,6 @@
 !Hardware abstraction module
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/02/28
+!REVISION: 2017/03/03
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -185,9 +185,9 @@
                     tloop: do while(match)
                      match=.FALSE.
                      do while(errc.eq.GFC_SUCCESS)
-  !Process current tree vertex;
+  !Process the current tree vertex;
                       up=>nit%get_value(errc); if(errc.ne.GFC_SUCCESS) exit tloop
-                      select type(up); class is(seg_int_t); rp=>up; end select
+                      rp=>NULL(); select type(up); class is(seg_int_t); rp=>up; end select
                       if(.not.associated(rp)) then; errc=-11; exit tloop; endif
                       m=int(min(rp%length(),int(brf,INTL)),INTD)
                       if(rp%length().gt.int(mas,INTL).and.m.gt.1) then

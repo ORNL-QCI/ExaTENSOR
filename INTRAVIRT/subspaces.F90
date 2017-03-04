@@ -1,6 +1,6 @@
 !Infrastructure for a recursive adaptive vector space decomposition.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/03/02
+!REVISION: 2017/03/03
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -99,10 +99,10 @@
           procedure, public:: union=>Range1dUnion            !returns the minimal real range containing two given real ranges
           procedure, public:: split=>Range1dSplit            !splits the real range
         end type range1d_t
- !Integer range = semi-interval(min:max]:
+ !Integer semi-interval (min:max] = Integer range [min+1:max]:
         type, public:: seg_int_t
-         integer(INTL), private:: min_coord=0 !minimum coordinate (lower bound)
-         integer(INTL), private:: max_coord=0 !maximum coordinate (upper bound)
+         integer(INTL), private:: min_coord=0 !minimum coordinate (lower bound): does not belong to the integer range
+         integer(INTL), private:: max_coord=0 !maximum coordinate (upper bound): belongs to the integer range
          contains
           procedure, public:: set=>SegIntSet                !sets the integer range (ctor)
           procedure, public:: lower_bound=>SegIntLowerBound !returns the integer range lower bound
@@ -236,7 +236,7 @@
          type(vector_t), private:: subspaces                  !subspaces defined in the vector space: [0..num_subspaces-1]
          type(tree_t), private:: aggr_tree                    !subspace aggregation tree (SAT): Hierarchical representation of subspaces
          complex(8), pointer, private:: metric_p(:,:)=>NULL() !pointer to the original metric tensor: g12=<bf1|bf2>
-         real(8), allocatable, private:: overlap(:,:)         !subspace overlap matrix (extent of overlap between all subspaces)
+         real(8), allocatable, private:: overlap(:,:)         !subspace support overlap matrix (extent of support overlap between all subspaces)
          contains
           procedure, private:: HSpaceCtorSimple               !constructs a simple hierarchical representation of a vector space (ctor)
           generic, public:: h_space_ctor=>HSpaceCtorSimple
@@ -1762,7 +1762,7 @@
         function SubspaceResolve(this,ierr,bas_pred_f) result(basis_p)
 !Returns a pointer to the subspace basis satisfying a certain (optional) condition.
 !The condition is specified via a GFC predicate object. If no condition is supplied,
-!the very first basis will be returned.
+!the very first basis will be returned (max resolution basis).
          implicit none
          class(subspace_basis_t), pointer:: basis_p                   !out: pointer to the subspace basis
          class(subspace_t), intent(in):: this                         !in: subspace
@@ -1854,12 +1854,11 @@
         subroutine HSpaceCtorSimple(this,full_basis,ierr,branch_fac,metric)
 !Constructs a simple hierarchical vector space representation with a subspace aggregation tree.
 !The original basis functions will be hierarchically aggregated into larger subspaces,
-!up to the full space. Each subspace will have a unique id. If symmetry is present,
-!the subspaces will be aligned to symmetry boundaries. Each subspace in the subspace
-!aggregation tree will have its unique id and an associated full-resolution basis,
-!the latter consisting of a subset of the original full basis (later on, reduced
-!basis sets can be defined for any subspace). Each subspace can also be directly
-!accessed by its id in the vector <this%subspaces>.
+!up to the full space. If symmetry is present, the subspaces will be aligned to the
+!symmetry boundaries. Each subspace in the subspace aggregation tree will have its
+!unique id and an associated max-resolution basis, the latter consisting of a subset
+!of the original full basis (later on, reduced basis sets can be defined for any subspace).
+!Each subspace can also be directly accessed by its id in the vector <this%subspaces>.
 !Storage complexity O(NlogN), where N is the original full space dimension.
          implicit none
          class(h_space_t), intent(out):: this                   !out: hierarchical representation of the vector space
@@ -1867,88 +1866,117 @@
          integer(INTD), intent(out), optional:: ierr            !out: error code
          integer(INTD), intent(in), optional:: branch_fac       !in: tree branching factor (defaults to 2)
          complex(8), intent(in), optional, target:: metric(:,:) !in: metric tensor: g_ij=<Psi_i|Psi_j>: Hermitian matrix
+         logical:: split
          integer(INTD):: errc,brf
-         integer(INTL):: i,n,nbnd
+         integer(INTL):: m,n,nbnd
          integer(INTL), allocatable:: bndr(:)
-         class(basis_func_t), pointer:: bfp
-         class(basis_func_supp_t), pointer:: bfsp
-         class(symmetry_t), pointer:: curr_symm,next_symm
          type(vector_iter_t):: vec_it
          type(tree_iter_t):: sat_it
+         type(seg_int_t):: seg
          type(seg_int_t), allocatable:: segs(:)
          type(subspace_basis_t):: basis
+         class(subspace_basis_t), pointer:: basp
          type(subspace_t):: subspace
+         class(subspace_t), pointer:: ssp
+         class(*), pointer:: up
 
          errc=0; this%num_subspaces=0
          n=full_basis%dimsn()
          if(n.gt.0) then
-!Determine same symmetry contiguous suspaces and set principal boundaries:
           allocate(bndr(1:n),STAT=errc)
+!Construct the subspace aggregation tree (SAT) by recursive basis splitting:
           if(errc.eq.0) then
-           nbnd=0_INTL !will be the number of boundaries
-           do i=1,n-1
-            bfp=>full_basis%get_basis_func(i,errc); if(errc.ne.0) exit
-            bfsp=>bfp%get_basis_func(errc,curr_symm); if(errc.ne.0) exit
-            bfp=>full_basis%get_basis_func(i+1_INTL,errc); if(errc.ne.0) exit
-            bfsp=>bfp%get_basis_func(errc,next_symm); if(errc.ne.0) exit
-            if(associated(curr_symm)) then
-             if(associated(next_symm)) then
-              if(curr_symm%compare(next_symm).ne.CMP_EQ) then; nbnd=nbnd+1_INTL; bndr(nbnd)=i; endif !symmetry change boundary
-             else
-              nbnd=nbnd+1_INTL; bndr(nbnd)=i !symmetry change boundary
-             endif
-            else
-             if(associated(next_symm)) then; nbnd=nbnd+1_INTL; bndr(nbnd)=i; endif !symmetry change boundary
-            endif
-           enddo
-!Construct the subspace aggregation tree (SAT) by recursive splitting:
-           if(errc.eq.0) then
-            if(present(branch_fac)) then; brf=branch_fac; else; brf=2; endif
-            if(brf.ge.2) then
-             allocate(segs(1:brf),STAT=errc)
-             if(errc.eq.0) then
-              errc=vec_it%init(this%subspaces)
+           if(present(branch_fac)) then; brf=branch_fac; else; brf=2; endif
+           if(brf.ge.2) then
+            allocate(segs(1:brf),STAT=errc)
+            if(errc.eq.0) then
+             errc=vec_it%init(this%subspaces)
+             if(errc.eq.GFC_SUCCESS) then
+              errc=sat_it%init(this%aggr_tree)
               if(errc.eq.GFC_SUCCESS) then
-               errc=sat_it%init(this%aggr_tree)
-               if(errc.eq.GFC_SUCCESS) then
  !Add the root (full vector space):
-                call segs(1)%set(0_INTL,n) !integer segment [1:n] is equivalent to integer semi-interval (0:n]
-                call construct_subspace_basis(basis,segs(1),nbnd,bndr,errc)
-                if(errc.eq.0) then
-                 this%num_subspaces=this%num_subspaces+1_INTL
-                 call subspace%subspace_ctor(this%num_subspaces,errc)
-                 if(errc.eq.0) then
-                  call subspace%register_basis(basis,errc)
-                  if(errc.eq.0) then
-                   !`Finish
- !Recursively split the full space into subspaces while respecting boundaries:
-                   !`Finish
-!Construct the overlap matrix between all subspaces:
-                   if(present(metric)) then
-                    this%metric_p=>metric
-                    !`Write
+               this%num_subspaces=this%num_subspaces+1_INTL
+               call subspace%subspace_ctor(this%num_subspaces,errc)
+               if(errc.eq.0) then
+                errc=vec_it%append(subspace)
+                if(errc.eq.GFC_SUCCESS) then
+                 errc=vec_it%reset_back(); up=>vec_it%get_value(errc)
+                 if(errc.eq.GFC_SUCCESS) then
+                  ssp=>NULL(); select type(up); class is(subspace_t); ssp=>up; end select
+                  if(associated(ssp)) then
+                   call ssp%register_basis(full_basis,errc)
+                   if(errc.eq.0) then
+                    errc=sat_it%add_leaf(ssp,assoc_only=.TRUE.) !root (full basis)
+                    if(errc.eq.GFC_SUCCESS) then
+ !Recursively split the full space into subspaces while respecting symmetry boundaries:
+                     if(n.gt.1) then !more than one basis function in the full space
+                      split=.TRUE.
+                      tloop: do while(split)
+                       split=.FALSE.
+                       do while(errc.eq.GFC_SUCCESS)
+  !Process the current tree vertex:
+                        up=>sat_it%get_value(errc); if(errc.ne.GFC_SUCCESS) exit tloop
+                        ssp=>NULL(); select type(up); class is(subspace_t); ssp=>up; end select
+                        if(.not.associated(ssp)) then; errc=1; exit tloop; endif
+                        m=ssp%get_max_resolution(errc); if(errc.ne.0) exit tloop
+                        if(m.gt.1) then
+                         call seg%set(0_INTL,m,errc); if(errc.ne.0) exit tloop
+                         basp=>ssp%resolve(errc); if(errc.ne.0) exit tloop
+                         if(associated(basp)) then
+                          call set_symmetry_boundaries(basp,nbnd,bndr,errc); if(errc.ne.0) exit tloop
+                         else
+                          errc=1; exit tloop
+                         endif
+                        endif
+  !Move to the right cousin (within the current tree level):
+                        errc=sat_it%move_to_cousin()
+                       enddo
+                       if(errc.eq.GFC_NO_MOVE) then; errc=GFC_SUCCESS; else; exit tloop; endif
+  !Move to the children level:
+                       do while(errc.eq.GFC_SUCCESS); errc=sat_it%move_to_cousin(to_previous=.TRUE.); enddo
+                       if(errc.eq.GFC_NO_MOVE) then; errc=GFC_SUCCESS; else; exit tloop; endif
+                       cloop: do
+                        errc=sat_it%move_to_child(); if(errc.eq.GFC_SUCCESS) exit cloop
+                        if(errc.eq.GFC_NO_MOVE) then
+                         errc=sat_it%move_to_cousin(); if(errc.eq.GFC_SUCCESS) cycle cloop
+                         if(errc.eq.GFC_NO_MOVE.and.(.not.split)) errc=GFC_SUCCESS
+                        endif
+                        exit tloop
+                       enddo cloop
+                      enddo tloop
+                     endif
+!Construct the support overlap matrix between all subspaces:
+                     if(errc.eq.0.and.present(metric)) then
+                      this%metric_p=>metric
+                      !`Write
+                     endif
+                    else
+                     errc=1
+                    endif
+                   else
+                    errc=1
                    endif
                   else
                    errc=1
                   endif
                  else
-                  errc=3
+                  errc=1
                  endif
                 else
                  errc=1
                 endif
-                errc=sat_it%release()
                else
-                errc=2
+                errc=3
                endif
-               errc=vec_it%release()
+               errc=sat_it%release()
               else
-               errc=1
+               errc=2
               endif
-              if(allocated(segs)) deallocate(segs)
+              errc=vec_it%release()
              else
               errc=1
              endif
+             if(allocated(segs)) deallocate(segs)
             else
              errc=1
             endif
@@ -1968,13 +1996,45 @@
 
         contains
 
-         subroutine construct_subspace_basis(bas,sgs,nb,bnd,jerr)
+         subroutine set_symmetry_boundaries(bas,jnbnd,jbnd,jerr)
+          class(subspace_basis_t), intent(in):: bas
+          integer(INTL), intent(out):: jnbnd
+          integer(INTL), intent(inout):: jbnd(1:)
+          integer(INTD), intent(out):: jerr
+          class(basis_func_t), pointer:: bfp
+          class(basis_func_supp_t), pointer:: bfsp
+          class(symmetry_t), pointer:: curr_symm,next_symm
+          integer(INTL):: jdim,ji
+
+          jdim=bas%dimsn(); jnbnd=0_INTL !will be the number of boundaries
+          if(jdim.gt.0) then
+           do ji=1,jdim-1
+            bfp=>bas%get_basis_func(ji,jerr); if(jerr.ne.0) exit
+            bfsp=>bfp%get_basis_func(jerr,curr_symm); if(jerr.ne.0) exit
+            bfp=>bas%get_basis_func(ji+1_INTL,jerr); if(jerr.ne.0) exit
+            bfsp=>bfp%get_basis_func(jerr,next_symm); if(jerr.ne.0) exit
+            if(associated(curr_symm)) then
+             if(associated(next_symm)) then
+              if(curr_symm%compare(next_symm).ne.CMP_EQ) then; jnbnd=jnbnd+1_INTL; jbnd(jnbnd)=ji; endif !symmetry change boundary
+             else
+              jnbnd=jnbnd+1_INTL; jbnd(jnbnd)=ji !symmetry change boundary
+             endif
+            else
+             if(associated(next_symm)) then; jnbnd=jnbnd+1_INTL; jbnd(jnbnd)=ji; endif !symmetry change boundary
+            endif
+           enddo
+          else
+           jerr=1
+          endif
+          return
+         end subroutine set_symmetry_boundaries
+
+         subroutine construct_subspace_basis(parbas,sgs,bas,jerr)
           implicit none
-          type(subspace_basis_t), intent(inout):: bas !out: subspace basis to be constructed
-          type(seg_int_t), intent(in):: sgs           !in: defining integer semi-interval (subset of basis functions)
-          integer(INTL), intent(in):: nb              !in: number of symmetry boundaries in the semi-interval, if any
-          integer(INTL), intent(in):: bnd(1:)         !in: symmetry boundaries in the semi-interval (if any)
-          integer(INTD), intent(out):: jerr           !out: error code
+          class(subspace_basis_t), intent(in):: parbas !in: parental basis
+          type(seg_int_t), intent(in):: sgs            !in: defining integer semi-interval (subset of consecutive basis functions)
+          type(subspace_basis_t), intent(inout):: bas  !out: subspace basis being constructed based on <sgs> subrange
+          integer(INTD), intent(out):: jerr            !out: error code
           integer(INTD):: jbfk
           integer(INTL):: jdim,jl,ju,jj
           class(basis_func_t), pointer:: jbfp
