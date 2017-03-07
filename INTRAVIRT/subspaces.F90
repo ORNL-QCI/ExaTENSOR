@@ -1,6 +1,6 @@
 !Infrastructure for a recursive adaptive vector space decomposition.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/03/03
+!REVISION: 2017/03/07
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -232,8 +232,8 @@
  !Hierarchical space representation:
         type, public:: h_space_t
          integer(INTL), private:: space_dim=0                 !dimension of the vector space
-         integer(INTL), private:: num_subspaces=0             !number of subspaces defined in the vector space
-         type(vector_t), private:: subspaces                  !subspaces defined in the vector space: [0..num_subspaces-1]
+         integer(INTL), private:: num_subspaces=0             !number of subspaces defined in the vector space: [0..space_dim-1] are original basis functions, [space_dim..num_subspaces-1] are their aggregates
+         type(vector_t), private:: subspaces                  !subspaces defined in the vector space: [0..space_dim-1] are original basis functions, [space_dim..num_subspaces-1] are their aggregates
          type(tree_t), private:: aggr_tree                    !subspace aggregation tree (SAT): Hierarchical representation of subspaces
          complex(8), pointer, private:: metric_p(:,:)=>NULL() !pointer to the original metric tensor: g12=<bf1|bf2>
          real(8), allocatable, private:: overlap(:,:)         !subspace support overlap matrix (extent of support overlap between all subspaces)
@@ -1864,10 +1864,10 @@
          class(h_space_t), intent(out):: this                   !out: hierarchical representation of the vector space
          class(subspace_basis_t), intent(in):: full_basis       !in: full basis of the vector space, {Psi_i}
          integer(INTD), intent(out), optional:: ierr            !out: error code
-         integer(INTD), intent(in), optional:: branch_fac       !in: tree branching factor (defaults to 2)
+         integer(INTD), intent(in), optional:: branch_fac       !in: aggregation tree branching factor (defaults to 2)
          complex(8), intent(in), optional, target:: metric(:,:) !in: metric tensor: g_ij=<Psi_i|Psi_j>: Hermitian matrix
          logical:: split
-         integer(INTD):: errc,brf
+         integer(INTD):: i,errc,brf
          integer(INTL):: m,n,nbnd
          integer(INTL), allocatable:: bndr(:)
          type(vector_iter_t):: vec_it
@@ -1880,7 +1880,7 @@
          class(subspace_t), pointer:: ssp
          class(*), pointer:: up
 
-         errc=0; this%num_subspaces=0
+         errc=0; this%num_subspaces=0_INTL
          n=full_basis%dimsn()
          if(n.gt.0) then
           allocate(bndr(1:n),STAT=errc)
@@ -1894,7 +1894,7 @@
              if(errc.eq.GFC_SUCCESS) then
               errc=sat_it%init(this%aggr_tree)
               if(errc.eq.GFC_SUCCESS) then
- !Add the root (full vector space):
+ !Add the root (full vector space defined by the provided full basis):
                this%num_subspaces=this%num_subspaces+1_INTL
                call subspace%subspace_ctor(this%num_subspaces,errc)
                if(errc.eq.0) then
@@ -1968,11 +1968,11 @@
                else
                 errc=3
                endif
-               errc=sat_it%release()
+               i=sat_it%release(); if(errc.eq.0.and.i.ne.GFC_SUCCESS) errc=1
               else
                errc=2
               endif
-              errc=vec_it%release()
+              i=vec_it%release(); if(errc.eq.0.and.i.ne.GFC_SUCCESS) errc=1
              else
               errc=1
              endif

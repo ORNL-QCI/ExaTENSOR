@@ -5,7 +5,7 @@ Author: Dmitry I. Lyakh (Liakh): liakhdi@ornl.gov
 Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
 
-LICENSE: GNU Lesser General Public License v.3
+LICENSE: GNU Lesser General Public License v.3 (LGPLv3)
 
 GENERAL INFORMATION:
  GFC provides a number of heterogeneous containers for higher-level
@@ -40,7 +40,7 @@ DESIGN AND FEATURES:
    In this case, the larger container will be called a composite container.
  # Each container has an associated iterator for scanning over its elements.
    The structure of the container determines the scanning sequence, that is,
-   the way the elements of the container are traversed over.
+   the path the elements of the container are traversed over.
    There are four major ways of scanning a container:
     1) Unpredicated passive scan: The iterator returns each new encountered
        element of the container.
@@ -51,6 +51,9 @@ DESIGN AND FEATURES:
     4) Predicated active scan: The iterator traverses the entire container
        or its part and applies a user-defined action to each element that
        satisfies a certain condition.
+   Active scans require a user-specified action defined either as a procedure
+   with a specific generic interface (stateless) or a Fortran function object,
+   both defined in file gfc_base.F90.
    Additionally, active scans allow for a time-limited execution, in which
    the scan is interrupted after some time interval specified by a user.
    Each specific class of containers has its own iterator class because
@@ -58,6 +61,18 @@ DESIGN AND FEATURES:
    All insertion, deletion, and search operations are done via iterators,
    that is, the iterator methods provide the only possible way of accessing,
    updating, and performing other actions on the associated container.
+ # The container element deletion operation may require a user-defined
+   non-member destructor which will release all resources occupied by
+   the object stored in that element, unless the object has FINAL methods
+   defined (the interface for a user-defined non-member generic destructor
+   is provided in gfc_base.F90).
+ FEATURES UNDER DEVELOPMENT:
+ # Currently, containers as a whole do not support cloning (copy construction
+   and copy assignment), but they will provide appropriate methods in future.
+ # Currently SCAN is the only global operation defined on any container and
+   provided by the corresponding iterator class. Equipped with a proper user-defined
+   function object, it can deliver broad functionality (transforms, reductions, etc.).
+   In future, however, other predefined global methods are expected to be added.
  # All relevant iterator methods are thread-safe, thus enabling
    a parallel execution of container scans (via OpenMP threads).
    However, it is the user responsibility to avoid race conditions
@@ -67,11 +82,6 @@ DESIGN AND FEATURES:
    is supposed to acquire an exclusive access to the container element
    if necessary for avoiding race conditions on container values.
    An iterator must not be shared among two or more threads!
- # The container element deletion operation may require a user-defined
-   non-member destructor which will release all resources occupied by
-   the object stored in that element, unless the object has FINAL methods
-   defined (the interface for a user-defined non-member generic destructor
-   is provided in gfc_base.F90).
 
 NOTES:
  # This implementation of Generic Fortran Containers heavily relies on
