@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Vector (non-contiguous)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017/02/27
+!REVISION: 2017/03/08
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -88,22 +88,23 @@
          class(vector_t), pointer, private:: container=>NULL()    !vector associated with the iterator
          integer(INTL), private:: curr_offset=-1_INTL             !current element offset in the vector
          contains
-          procedure, public:: init=>VectorIterInit                !initializes the iterator by associating it with a vector
-          procedure, public:: reset=>VectorIterReset              !resets the iterator to the beginning of the vector
-          procedure, public:: reset_back=>VectorIterResetBack     !resets the iterator to the end of the vector
-          procedure, public:: release=>VectorIterRelease          !releases the iterator (dissocaites it from its container)
-          procedure, public:: pointee=>VectorIterPointee          !returns the container element currently pointed to by the iterator
-          procedure, public:: next=>VectorIterNext                !moves the iterator to the next vector element
-          procedure, public:: previous=>VectorIterPrevious        !moves the iterator to the previous vector element
-          procedure, public:: get_length=>VectorIterGetLength     !returns the current length of the vector
-          procedure, public:: get_offset=>VectorIterGetOffset     !returns the offset of the current iterator position: [0..MAX]
-          procedure, public:: element=>VectorIterElement          !returns a pointer to the specific vector element
-          procedure, public:: move_to=>VectorIterMoveTo           !moves the iterator to the specific vector element
-          procedure, public:: append=>VectorIterAppend            !appends a new element at the end of the vector
-          procedure, public:: insert=>VectorIterInsert            !inserts a new element at the current iterator position
-          procedure, public:: swap_last=>VectorIterSwapLast       !swaps the currently pointed to element with the last element of the vector
-          procedure, public:: delete=>VectorIterDelete            !deletes an element at the current iterator position
-          procedure, public:: delete_all=>VectorIterDeleteAll     !deletes all elements of the vector
+          procedure, public:: init=>VectorIterInit                  !initializes the iterator by associating it with a vector
+          procedure, public:: reset=>VectorIterReset                !resets the iterator to the beginning of the vector
+          procedure, public:: reset_back=>VectorIterResetBack       !resets the iterator to the end of the vector
+          procedure, public:: release=>VectorIterRelease            !releases the iterator (dissocaites it from its container)
+          procedure, public:: pointee=>VectorIterPointee            !returns the container element currently pointed to by the iterator
+          procedure, public:: next=>VectorIterNext                  !moves the iterator to the next vector element
+          procedure, public:: previous=>VectorIterPrevious          !moves the iterator to the previous vector element
+          procedure, public:: get_length=>VectorIterGetLength       !returns the current length of the vector
+          procedure, public:: get_offset=>VectorIterGetOffset       !returns the offset of the current iterator position: [0..MAX]
+          procedure, public:: element=>VectorIterElement            !returns a pointer to the specific vector element
+          procedure, public:: element_value=>VectorIterElementValue !returns an unlimited polymorphic pointer to the value of a specific vector element
+          procedure, public:: move_to=>VectorIterMoveTo             !moves the iterator to the specific vector element
+          procedure, public:: append=>VectorIterAppend              !appends a new element at the end of the vector
+          procedure, public:: insert=>VectorIterInsert              !inserts a new element at the current iterator position
+          procedure, public:: swap_last=>VectorIterSwapLast         !swaps the currently pointed to element with the last element of the vector
+          procedure, public:: delete=>VectorIterDelete              !deletes an element at the current iterator position
+          procedure, public:: delete_all=>VectorIterDeleteAll       !deletes all elements of the vector
         end type vector_iter_t
 !VISIBILITY:
         private flat2quadruplet
@@ -137,6 +138,7 @@
         private VectorIterGetLength
         private VectorIterGetOffset
         private VectorIterElement
+        private VectorIterElementValue
         private VectorIterMoveTo
         private VectorIterAppend
         private VectorIterInsert
@@ -723,6 +725,22 @@
          if(present(ierr)) ierr=errc
          return
         end function VectorIterElement
+!----------------------------------------------------------------------
+        function VectorIterElementValue(this,offset,ierr) result(val_p)
+!Returns a pointer to the value of a specific vector element.
+         implicit none
+         class(*), pointer:: val_p                   !out: pointer to the value of a specific vector element
+         class(vector_iter_t), intent(in):: this     !in: vector iterator
+         integer(INTL), intent(in):: offset          !in: vector element offset
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+         class(gfc_cont_elem_t), pointer:: cep
+
+         cep=>this%element(offset,errc)
+         if(errc.eq.GFC_SUCCESS) val_p=>cep%get_value(errc)
+         if(present(ierr)) ierr=errc
+         return
+        end function VectorIterElementValue
 !----------------------------------------------------------
         function VectorIterMoveTo(this,offset) result(ierr)
 !Moves the iterator to the given vector position.

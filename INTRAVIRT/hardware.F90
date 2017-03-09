@@ -1,6 +1,6 @@
 !Hardware abstraction module
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/03/03
+!REVISION: 2017/03/08
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -80,8 +80,8 @@
         end type compute_node_t
  !Hierarchical computing system representation:
         type, public:: comp_system_t
-         integer(INTL), private:: num_phys_nodes=0 !number of physical nodes in the system
-         integer(INTL), private:: num_virt_nodes=0 !number of virtual (simple + aggregated) nodes in the system
+         integer(INTL), private:: num_phys_nodes=0 !number of physical nodes in the system, N: [1:N]
+         integer(INTL), private:: num_virt_nodes=0 !number of virtual (simple + aggregated) nodes in the system, M: [0:M-1] = [0:N-1] + [N:M-1]
          type(vector_t), private:: virt_nodes      !virtual nodes: first <num_phys_nodes> are physical, rest are their aggregates (virtual)
          type(tree_t), private:: aggr_tree         !node aggregation tree (NAT)
          contains
@@ -138,6 +138,7 @@
              if(is_this_integer(str(offs(1):offs(1)+lens(1)-1),no_sign=.TRUE.)) then
               this%num_phys_nodes=icharnum(lens(1),str(offs(1):offs(1)+lens(1)-1))
               write(*,'(i8," physical nodes -> ")',ADVANCE='NO') this%num_phys_nodes
+              if(this%num_phys_nodes.le.0) errc=-13
               exit
              else
               errc=-12; exit
@@ -170,7 +171,7 @@
               errc=nit%init(this%aggr_tree)
               if(errc.eq.GFC_SUCCESS) then
                if(this%num_phys_nodes.gt.1) then
-                call segs(1)%set(0_INTL,this%num_phys_nodes,errc) !full range of physical nodes
+                call segs(1)%set(0_INTL,this%num_phys_nodes,errc) !full range of physical nodes: (0:N] = [1:N]
                 !write(*,*)'initial node range: ',segs(1)%lower_bound(),segs(1)%upper_bound() !debug
                 if(errc.eq.0) then
                  errc=vit%append(segs(1))
@@ -189,16 +190,23 @@
                       up=>nit%get_value(errc); if(errc.ne.GFC_SUCCESS) exit tloop
                       rp=>NULL(); select type(up); class is(seg_int_t); rp=>up; end select
                       if(.not.associated(rp)) then; errc=-11; exit tloop; endif
-                      m=int(min(rp%length(),int(brf,INTL)),INTD)
-                      if(rp%length().gt.int(mas,INTL).and.m.gt.1) then
+                      if(rp%length().lt.int(mas*brf,INTL)) then
+                       m=int(rp%length(),INTD)
+                      else
+                       m=brf
+                      endif
+                      if(m.gt.1) then
                        call rp%split(m,segs,errc); if(errc.ne.0) exit tloop
                        do l=1,m
                         !write(*,*)'adding new subrange: ',segs(l)%lower_bound(),segs(l)%upper_bound() !debug
                         if(segs(l)%length().gt.1_INTL) then !has to be an aggregate to be added as a new virtual node
-                         if(segs(l)%length().gt.mas) match=.TRUE.
+                         match=.TRUE.
                          errc=vit%append(segs(l)); if(errc.ne.GFC_SUCCESS) exit tloop
                          this%num_virt_nodes=this%num_virt_nodes+1_INTL !each node aggregate is added as a virtual node
                          errc=vit%reset_back(); up=>vit%get_value(errc); if(errc.ne.GFC_SUCCESS) exit tloop
+                         errc=nit%add_leaf(up,assoc_only=.TRUE.,no_move=.TRUE.); if(errc.ne.GFC_SUCCESS) exit tloop
+                        else
+                         up=>vit%element_value(segs(l)%lower_bound(),errc); if(errc.ne.GFC_SUCCESS) exit tloop
                          errc=nit%add_leaf(up,assoc_only=.TRUE.,no_move=.TRUE.); if(errc.ne.GFC_SUCCESS) exit tloop
                         endif
                        enddo
@@ -230,6 +238,11 @@
                  endif
                 else
                  errc=-7
+                endif
+               else !only one physical node in the system (already registered)
+                up=>vit%get_value(errc)
+                if(errc.eq.GFC_SUCCESS) then
+                 errc=nit%add_leaf(up,assoc_only=.TRUE.); if(errc.ne.GFC_SUCCESS) errc=1
                 endif
                endif
                if(errc.eq.0) then
