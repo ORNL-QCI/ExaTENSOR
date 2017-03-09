@@ -100,7 +100,7 @@
        contains
 !IMPLEMENTATION:
 ![comp_system_t]=========================================================================
-        subroutine CompSystemCtorSimple(this,hardware_spec,ierr,branch_fac,max_aggr_size)
+        subroutine CompSystemCtorSimple(this,hardware_spec,ierr,branch_fac,min_aggr_size)
 !Constructs a hierarchical (virtual) representation of a computing system
 !by reading its configuration from a specification file. Simple dichotomy:
 !Finds how many nodes the HPC system consists of and creates the NAT by
@@ -110,7 +110,7 @@
          character(*), intent(in):: hardware_spec            !in: computing system specification file
          integer(INTD), intent(out), optional:: ierr         !out: error code
          integer(INTD), intent(in), optional:: branch_fac    !in: tree branching factor (>=2)
-         integer(INTD), intent(in), optional:: max_aggr_size !in: max allowed number of physical nodes that does not cause splitting (defaults to 1)
+         integer(INTD), intent(in), optional:: min_aggr_size !in: min node aggregate size after which the aggregate will be fully split into individual nodes (default to 1)
          integer(INTD):: errc,l,m,npr,brf,mas,offs(1:32),lens(1:32)
          character(1024):: str,nodarch,sysarch
          logical:: match,nodarch_found,sysarch_found
@@ -138,10 +138,10 @@
              if(is_this_integer(str(offs(1):offs(1)+lens(1)-1),no_sign=.TRUE.)) then
               this%num_phys_nodes=icharnum(lens(1),str(offs(1):offs(1)+lens(1)-1))
               write(*,'(i8," physical nodes -> ")',ADVANCE='NO') this%num_phys_nodes
-              if(this%num_phys_nodes.le.0) errc=-13
+              if(this%num_phys_nodes.le.0) errc=-17
               exit
              else
-              errc=-12; exit
+              errc=-16; exit
              endif
             endif
            endif
@@ -152,12 +152,12 @@
 !Build the hierarchical virtual HPC system representation:
          this%num_virt_nodes=0_INTL
          if(errc.eq.0) then
-          if(present(max_aggr_size)) then; mas=max_aggr_size; else; mas=1; endif !node aggregate splitting stops at <mas> (defaults to 1)
-          if(present(branch_fac)) then; brf=branch_fac; else; brf=2; endif !tree branching factor (defaults to 2)
+          if(present(min_aggr_size)) then; mas=min_aggr_size; else; mas=1; endif
+          if(present(branch_fac)) then; brf=branch_fac; else; brf=2; endif
           if(mas.ge.1.and.brf.ge.2) then
-           allocate(segs(1:brf),STAT=errc)
+           allocate(segs(1:max(brf,mas)),STAT=errc)
            if(errc.eq.0) then
- !Register physical nodes first (virt node # = phys node # in [1..max]):
+ !Register physical nodes first (virt node # = (phys node # - 1) in [1..max]):
             errc=vit%init(this%virt_nodes)
             if(errc.eq.GFC_SUCCESS) then
              do while(this%num_virt_nodes.lt.this%num_phys_nodes)
@@ -189,7 +189,7 @@
   !Process the current tree vertex;
                       up=>nit%get_value(errc); if(errc.ne.GFC_SUCCESS) exit tloop
                       rp=>NULL(); select type(up); class is(seg_int_t); rp=>up; end select
-                      if(.not.associated(rp)) then; errc=-11; exit tloop; endif
+                      if(.not.associated(rp)) then; errc=-15; exit tloop; endif
                       if(rp%length().lt.int(mas*brf,INTL)) then
                        m=int(rp%length(),INTD)
                       else
@@ -228,34 +228,38 @@
                      enddo cloop
                     enddo tloop
                    else
-                    errc=-10
+                    errc=-14
                    endif
                   else
-                   errc=-9
+                   errc=-13
                   endif
                  else
-                  errc=-8
+                  errc=-12
                  endif
                 else
-                 errc=-7
+                 errc=-11
                 endif
                else !only one physical node in the system (already registered)
                 up=>vit%get_value(errc)
                 if(errc.eq.GFC_SUCCESS) then
-                 errc=nit%add_leaf(up,assoc_only=.TRUE.); if(errc.ne.GFC_SUCCESS) errc=1
+                 errc=nit%add_leaf(up,assoc_only=.TRUE.); if(errc.ne.GFC_SUCCESS) errc=-10
+                else
+                 errc=-9
                 endif
                endif
+               m=nit%release(); if(errc.eq.0.and.m.ne.0) errc=-8
                if(errc.eq.0) then
                 write(*,'(i8," virtual nodes. ")',ADVANCE='NO') this%num_virt_nodes
                else
                 write(*,'(" FAILED. ")',ADVANCE='NO')
                endif
               else
-               errc=-6
+               errc=-7
               endif
              else
-              errc=-5
+              errc=-6
              endif
+             m=vit%release(); if(errc.eq.0.and.m.ne.0) errc=-5
             else
              errc=-4
             endif
@@ -267,6 +271,7 @@
            errc=-2
           endif
          endif
+         if(errc.ne.0) call comp_system_dtor(this)
          if(present(ierr)) ierr=errc
          return
 !--------------
