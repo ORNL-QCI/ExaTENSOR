@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Dictionary (ordered map), AVL BST
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017/02/07 (recycling my old dictionary implementation)
+!REVISION: 2017/03/13 (recycling my old dictionary implementation)
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -422,14 +422,25 @@
         end subroutine DictionaryReroot
 ![dictionary_iter_t]================================
         subroutine DictionaryIterJump(this,new_elem)
-!Moves the iterator to an arbitrary position.
+!Moves the iterator to an arbitrary specified position.
          implicit none
          class(dictionary_iter_t), intent(inout):: this        !inout: dictionary iterator
          class(dict_elem_t), pointer, intent(inout):: new_elem !in: pointer to the new element or NULL()
+         integer(INTD):: errc,sts
 
-         if(associated(this%current)) call this%current%decr_ref_()
+         if(associated(this%current)) then
+          call this%current%decr_ref_()
+          sts=GFC_IT_DONE
+         else
+          sts=GFC_IT_EMPTY
+         endif
          this%current=>new_elem
-         if(associated(this%current)) call this%current%incr_ref_()
+         if(associated(this%current)) then
+          call this%current%incr_ref_()
+          errc=this%set_status_(GFC_IT_ACTIVE)
+!        else
+!         errc=this%set_status_(sts) !`Does not work
+         endif
          return
         end subroutine DictionaryIterJump
 !----------------------------------------------------------

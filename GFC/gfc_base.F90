@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Base
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017-03-01 (started 2016-02-17)
+!REVISION: 2017-03-13 (started 2016-02-17)
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -151,7 +151,7 @@
          contains
           procedure, non_overridable, public:: get_status=>IterGetStatus  !returns the status of the iterator
           procedure, non_overridable, public:: set_status_=>IterSetStatus !PRIVATE: sets the status of the iterator
-          procedure, non_overridable, public:: get_value=>IterGetValue    !returns a pointer to the value of the current container position
+          procedure, public:: get_value=>IterGetValue                     !returns a pointer to the value of the current container element
           procedure, public:: reset_count=>IterResetCount                 !resets all iteration counters to zero
           procedure, public:: total_count=>IterTotalCount                 !returns the total iteration count since the last reset
           procedure, public:: predicated_count=>IterPredicatedCount       !returns the TRUE predicated iteration count since the last reset

@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Vector (non-contiguous)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017/03/08
+!REVISION: 2017/03/13
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -72,7 +72,7 @@
          integer(INTL), private:: ubnd=-1_INTL                     !upper bound of the vector
          type(vector_tile_t), allocatable, private:: vec_tile(:)   !vector tiles: [0..max_tiles-1]
          contains
-          procedure, public:: is_empty=>VectorIsEmpty       !returns GFC_TRUE of the vector is empty, GFC_FALSE otherwise (or error code)
+          procedure, public:: is_empty=>VectorIsEmpty       !returns GFC_TRUE if the vector is empty, GFC_FALSE otherwise (or error code)
           procedure, public:: is_full=>VectorIsFull         !returns GFC_TRUE if the vector is full, GFC_FALSE otherwise (or error code)
           procedure, public:: capacity=>VectorCapacity      !returns maximal length of the vector
           procedure, public:: length=>VectorLength          !returns current vector length = (upper_bound - lower_bound + 1)

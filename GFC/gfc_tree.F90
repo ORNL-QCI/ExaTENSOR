@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Tree
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017-02-27 (started 2016-02-17)
+!REVISION: 2017-03-13 (started 2016-02-17)
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -93,6 +93,7 @@
           procedure, public:: attach_subtree=>TreeIterAttachSubtree !attaches a subtree to the element of the container currently pointed to as the last child
           procedure, public:: detach_subtree=>TreeIterDetachSubtree !detaches a subtree beginning from the currently pointed element of the container
           procedure, public:: delete_subtree=>TreeIterDeleteSubtree !deletes a subtree beginning from the currently pointed element of the container
+          procedure, public:: jump_=>TreeIterJump                   !PRIVATE: moves the iterator to a specific tree vertex
         end type tree_iter_t
 !GLOBAL DATA:
 !VISIBILITY:
@@ -124,6 +125,7 @@
         private TreeIterAttachSubtree
         private TreeIterDetachSubtree
         private TreeIterDeleteSubtree
+        private TreeIterJump
 
        contains
 !IMPLEMENTATION:
@@ -979,6 +981,29 @@
          if(ntcl.and.ierr.eq.GFC_SUCCESS) ierr=NOT_CLEAN
          return
         end function TreeIterDeleteSubtree
+!---------------------------------------------
+        subroutine TreeIterJump(this,new_elem)
+!Moves the iterator to an arbitrary specified tree vertex.
+         implicit none
+         class(tree_iter_t), intent(inout):: this                !inout: tree iterator
+         class(tree_vertex_t), pointer, intent(inout):: new_elem !in: pointer to the new element or NULL()
+         integer(INTD):: errc,sts
+
+         if(associated(this%current)) then
+          call this%current%decr_ref_()
+          sts=GFC_IT_DONE
+         else
+          sts=GFC_IT_EMPTY
+         endif
+         this%current=>new_elem
+         if(associated(this%current)) then
+          call this%current%incr_ref_()
+          errc=this%set_status_(GFC_IT_ACTIVE)
+         else
+          errc=this%set_status_(sts)
+         endif
+         return
+        end subroutine TreeIterJump
 
        end module gfc_tree
 !=========================
