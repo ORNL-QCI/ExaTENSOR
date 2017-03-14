@@ -21,17 +21,24 @@
         program main
         use, intrinsic:: ISO_C_BINDING
         implicit none
-        logical, parameter:: TEST_NVTAL=.TRUE.
+        logical, parameter:: TEST_NVTAL=.FALSE.
         logical, parameter:: TEST_TALSH=.TRUE.
-        logical, parameter:: TEST_COMPLEX=.TRUE.
+        logical, parameter:: TEST_COMPLEX=.FALSE.
         logical, parameter:: BENCH_TALSH_RND=.FALSE.
         logical, parameter:: BENCH_TALSH_CUSTOM=.FALSE.
 #ifndef NO_GPU
         interface
+
          subroutine test_nvtal_c(ierr) bind(c)
           import
           integer(C_INT), intent(out):: ierr
          end subroutine test_nvtal_c
+
+         subroutine test_talsh_c(ierr) bind(c)
+          import
+          integer(C_INT), intent(out):: ierr
+         end subroutine test_talsh_c
+
         end interface
 #endif
         integer(C_INT):: ierr
@@ -48,6 +55,11 @@
 #endif
 !Test TAL-SH Fortran API interface:
         if(TEST_TALSH) then
+         write(*,'("Testing TAL-SH C/C++ API ...")')
+         call test_talsh_c(ierr)
+         write(*,'("Done: Status ",i5)') ierr
+         if(ierr.ne.0) stop
+         write(*,*)''
          write(*,'("Testing TAL-SH Fortran API ...")')
          call test_talsh_f(ierr)
          write(*,'("Done: Status ",i5)') ierr
