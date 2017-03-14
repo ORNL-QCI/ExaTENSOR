@@ -25,17 +25,18 @@
 
 #include "talsh.h"
 
-#ifndef NO_GPU
-
 #ifdef __cplusplus
 extern "C"{
 #endif
+#ifndef NO_GPU
 void test_nvtal_c(int * ierr);
+#endif
 void test_talsh_c(int * ierr);
 #ifdef __cplusplus
 }
 #endif
 
+#ifndef NO_GPU
 void test_nvtal_c(int * ierr)
 {
  int host_arg_max,errc;
@@ -161,6 +162,7 @@ void test_nvtal_c(int * ierr)
  printf(" Status: %d\n",errc); if(errc){*ierr=1; return;}
  return;
 }
+#endif //NO_GPU
 
 void test_talsh_c(int * ierr)
 {
@@ -274,5 +276,3 @@ void test_talsh_c(int * ierr)
 
  return;
 }
-
-#endif //NO_GPU

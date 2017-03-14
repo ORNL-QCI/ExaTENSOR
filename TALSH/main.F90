@@ -26,21 +26,21 @@
         logical, parameter:: TEST_COMPLEX=.FALSE.
         logical, parameter:: BENCH_TALSH_RND=.FALSE.
         logical, parameter:: BENCH_TALSH_CUSTOM=.FALSE.
-#ifndef NO_GPU
-        interface
 
+        interface
+#ifndef NO_GPU
          subroutine test_nvtal_c(ierr) bind(c)
           import
           integer(C_INT), intent(out):: ierr
          end subroutine test_nvtal_c
-
+#endif
          subroutine test_talsh_c(ierr) bind(c)
           import
           integer(C_INT), intent(out):: ierr
          end subroutine test_talsh_c
 
         end interface
-#endif
+
         integer(C_INT):: ierr
 
 !Test NV-TAL C/C++ API interface:
