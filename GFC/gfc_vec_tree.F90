@@ -2,7 +2,7 @@
 !The elements are initially inserted in a vector with an option to be
 !later added in a tree, thus imposing a tree relationship on them.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017/03/13
+!REVISION: 2017/03/14
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -77,7 +77,6 @@
           procedure, public:: pointee=>VecTreeIterPointee               !returns a pointer to the container element currently pointed to
           procedure, public:: next=>VecTreeIterNext                     !moves the iterator to the next container element (only the vector part if tree is not fully built)
           procedure, public:: previous=>VecTreeIterPrevious             !moves the iterator to the previous container element (only the vector part if tree is not fully built)
-#if 0
           procedure, public:: get_length=>VecTreeIterGetLength          !returns the current length of the container
           procedure, public:: get_offset=>VecTreeIterGetOffset          !returns the current offset in the container
           procedure, public:: move_to=>VecTreeIterMoveTo                !moves the iterator to the specific container element by its sequential number
@@ -86,6 +85,7 @@
           procedure, public:: move_to_parent=>VecTreeIterMoveToParent   !moves the iterator to the parent of the current element in the tree
           procedure, public:: move_to_cousin=>VecTreeIterMoveToCousin   !moves the iterator to the next/previous cousin of the current element in the tree (same tree level)
           procedure, public:: append=>VecTreeIterAppend                 !appends a new element at the end of the container
+#if 0
           procedure, public:: delete=>VecTreeIterDelete                 !deletes an element at the current iterator position
           procedure, public:: add_leaf=>VecTreeIterAddLeaf              !appends a new child element to the tree vertex currently pointed to
           procedure, public:: delete_leaf=>VecTreeIterDeleteLeaf        !deletes the tree leaf element currently pointed to by the iterator
@@ -108,7 +108,6 @@
         private VecTreeIterPointee
         private VecTreeIterNext
         private VecTreeIterPrevious
-#if 0
         private VecTreeIterGetLength
         private VecTreeIterGetOffset
         private VecTreeIterMoveTo
@@ -117,6 +116,7 @@
         private VecTreeIterMoveToParent
         private VecTreeIterMoveToCousin
         private VecTreeIterAppend
+#if 0
         private VecTreeIterDelete
         private VecTreeIterAddLeaf
         private VecTreeIterDeleteLeaf
@@ -246,13 +246,7 @@
            up=>this%pos_it%get_value(ierr)
            if(ierr.eq.GFC_SUCCESS.and.associated(up)) then
             select type(up); class is(tree_pos_t); tpp=>up; class default; ierr=GFC_ERROR; end select
-            if(ierr.eq.GFC_SUCCESS) then
-             if(associated(tpp%pos)) then
-              call this%tree_it%jump_(tpp%pos)
-             else !the first vector element is not in the tree yet
-              ierr=this%tree_it%set_status_(GFC_IT_DONE)
-             endif
-            endif
+            if(ierr.eq.GFC_SUCCESS) call this%tree_it%jump_(tpp%pos)
            else
             ierr=GFC_CORRUPTED_CONT
            endif
@@ -278,13 +272,7 @@
            up=>this%pos_it%get_value(ierr)
            if(ierr.eq.GFC_SUCCESS.and.associated(up)) then
             select type(up); class is(tree_pos_t); tpp=>up; class default; ierr=GFC_ERROR; end select
-            if(ierr.eq.GFC_SUCCESS) then
-             if(associated(tpp%pos)) then
-              call this%tree_it%jump_(tpp%pos)
-             else !the last vector element is not in the tree yet
-              ierr=this%tree_it%set_status_(GFC_IT_DONE)
-             endif
-            endif
+            if(ierr.eq.GFC_SUCCESS) call this%tree_it%jump_(tpp%pos)
            else
             ierr=GFC_CORRUPTED_CONT
            endif
@@ -346,13 +334,7 @@
             up=>this%pos_it%get_value(ierr)
             if(ierr.eq.GFC_SUCCESS.and.associated(up)) then
              select type(up); class is(tree_pos_t); tpp=>up; class default; ierr=GFC_ERROR; end select
-             if(ierr.eq.GFC_SUCCESS) then
-              if(associated(tpp%pos)) then
-               call this%tree_it%jump_(tpp%pos)
-              else !the vector element is not in the tree yet
-               ierr=this%tree_it%set_status_(GFC_IT_DONE)
-              endif
-             endif
+             if(ierr.eq.GFC_SUCCESS) call this%tree_it%jump_(tpp%pos)
             else
              ierr=GFC_CORRUPTED_CONT
             endif
@@ -383,13 +365,7 @@
             up=>this%pos_it%get_value(ierr)
             if(ierr.eq.GFC_SUCCESS.and.associated(up)) then
              select type(up); class is(tree_pos_t); tpp=>up; class default; ierr=GFC_ERROR; end select
-             if(ierr.eq.GFC_SUCCESS) then
-              if(associated(tpp%pos)) then
-               call this%tree_it%jump_(tpp%pos)
-              else !the vector element is not in the tree yet
-               ierr=this%tree_it%set_status_(GFC_IT_DONE)
-              endif
-             endif
+             if(ierr.eq.GFC_SUCCESS) call this%tree_it%jump_(tpp%pos)
             else
              ierr=GFC_CORRUPTED_CONT
             endif
@@ -398,5 +374,211 @@
          endif
          return
         end function VecTreeIterPrevious
+!--------------------------------------------------------------
+        function VecTreeIterGetLength(this,ierr) result(length)
+!Returns the current length of the associated vector tree container.
+         implicit none
+         integer(INTL):: length                      !out: length of the vector tree
+         class(vec_tree_iter_t), intent(in):: this   !in: vector tree iterator
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         if(associated(this%container)) then
+          length=this%container%length(errc)
+         else
+          length=-1_INTL; errc=GFC_NULL_CONT
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function VecTreeIterGetLength
+!--------------------------------------------------------------
+        function VecTreeIterGetOffset(this,ierr) result(offset)
+!Returns the current offset (position) in the vector part of a vector tree.
+         implicit none
+         integer(INTL):: offset                      !out: offset
+         class(vec_tree_iter_t), intent(in):: this   !in: vector tree iterator
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         offset=this%val_it%get_offset(errc)
+         if(present(ierr)) ierr=errc
+         return
+        end function VecTreeIterGetOffset
+!-----------------------------------------------------------
+        function VecTreeIterMoveTo(this,offset) result(ierr)
+!Moves the iterator to a specific vector position.
+         implicit none
+         integer(INTD):: ierr                         !out: error code
+         class(vec_tree_iter_t), intent(inout):: this !inout: vector tree iterator
+         integer(INTL), intent(in):: offset           !in: offset
+         class(*), pointer:: up
+         class(tree_pos_t), pointer:: tpp
+
+         ierr=this%val_it%move_to(offset)
+         if(ierr.eq.GFC_SUCCESS) then
+          ierr=this%pos_it%move_to(offset)
+          if(ierr.eq.GFC_SUCCESS) then
+           up=>this%pos_it%get_value(ierr)
+           if(ierr.eq.GFC_SUCCESS.and.associated(up)) then
+            select type(up); class is(tree_pos_t); tpp=>up; class default; ierr=GFC_ERROR; end select
+            if(ierr.eq.GFC_SUCCESS) call this%tree_it%jump_(tpp%pos)
+           else
+            ierr=GFC_CORRUPTED_CONT
+           endif
+          endif
+         endif
+         return
+        end function VecTreeIterMoveTo
+!-----------------------------------------------------------------------
+        function VecTreeIterMoveToSibling(this,to_previous) result(ierr)
+!Moves the iterator either to the next or to the previous sibling in the tree.
+         implicit none
+         integer(INTD):: ierr                         !out: error code
+         class(vec_tree_iter_t), intent(inout):: this !inout: vector tree iterator
+         logical, intent(in), optional:: to_previous  !in: if TRUE, the iterator will move to the previous sibling (defaults to FALSE)
+         class(*), pointer:: up
+         integer(INTL):: offset
+
+         if(present(to_previous)) then
+          ierr=this%tree_it%move_to_sibling(to_previous)
+         else
+          ierr=this%tree_it%move_to_sibling()
+         endif
+         if(ierr.eq.GFC_SUCCESS) then
+          up=>this%tree_it%get_value(ierr)
+          if(ierr.eq.GFC_SUCCESS.and.associated(up)) then
+           select type(up); type is(integer(INTL)); offset=up; class default; ierr=GFC_ERROR; end select
+           if(ierr.eq.GFC_SUCCESS) then
+            ierr=this%val_it%move_to(offset)
+            if(ierr.eq.GFC_SUCCESS) ierr=this%pos_it%move_to(offset)
+           endif
+          else
+           ierr=GFC_CORRUPTED_CONT
+          endif
+         endif
+         return
+        end function VecTreeIterMoveToSibling
+!---------------------------------------------------------
+        function VecTreeIterMoveToChild(this) result(ierr)
+!Moves the iterator to the first child in the tree.
+         implicit none
+         integer(INTD):: ierr                         !out: error code
+         class(vec_tree_iter_t), intent(inout):: this !inout: vector tree iterator
+         class(*), pointer:: up
+         integer(INTL):: offset
+
+         ierr=this%tree_it%move_to_child()
+         if(ierr.eq.GFC_SUCCESS) then
+          up=>this%tree_it%get_value(ierr)
+          if(ierr.eq.GFC_SUCCESS.and.associated(up)) then
+           select type(up); type is(integer(INTL)); offset=up; class default; ierr=GFC_ERROR; end select
+           if(ierr.eq.GFC_SUCCESS) then
+            ierr=this%val_it%move_to(offset)
+            if(ierr.eq.GFC_SUCCESS) ierr=this%pos_it%move_to(offset)
+           endif
+          else
+           ierr=GFC_CORRUPTED_CONT
+          endif
+         endif
+         return
+        end function VecTreeIterMoveToChild
+!----------------------------------------------------------
+        function VecTreeIterMoveToParent(this) result(ierr)
+!Moves the iterator to the parent in the tree.
+         implicit none
+         integer(INTD):: ierr                         !out: error code
+         class(vec_tree_iter_t), intent(inout):: this !inout: vector tree iterator
+         class(*), pointer:: up
+         integer(INTL):: offset
+
+         ierr=this%tree_it%move_to_parent()
+         if(ierr.eq.GFC_SUCCESS) then
+          up=>this%tree_it%get_value(ierr)
+          if(ierr.eq.GFC_SUCCESS.and.associated(up)) then
+           select type(up); type is(integer(INTL)); offset=up; class default; ierr=GFC_ERROR; end select
+           if(ierr.eq.GFC_SUCCESS) then
+            ierr=this%val_it%move_to(offset)
+            if(ierr.eq.GFC_SUCCESS) ierr=this%pos_it%move_to(offset)
+           endif
+          else
+           ierr=GFC_CORRUPTED_CONT
+          endif
+         endif
+         return
+        end function VecTreeIterMoveToParent
+!----------------------------------------------------------------------
+        function VecTreeIterMoveToCousin(this,to_previous) result(ierr)
+!Moves the iterator either to the next or to the previous cousin in the tree.
+!A cousin is a tree vertex at the same tree level.
+         implicit none
+         integer(INTD):: ierr                         !out: error code
+         class(vec_tree_iter_t), intent(inout):: this !inout: vector tree iterator
+         logical, intent(in), optional:: to_previous  !in: if TRUE, the iterator will move to the previous sibling (defaults to FALSE)
+         class(*), pointer:: up
+         integer(INTL):: offset
+
+         if(present(to_previous)) then
+          ierr=this%tree_it%move_to_cousin(to_previous)
+         else
+          ierr=this%tree_it%move_to_cousin()
+         endif
+         if(ierr.eq.GFC_SUCCESS) then
+          up=>this%tree_it%get_value(ierr)
+          if(ierr.eq.GFC_SUCCESS.and.associated(up)) then
+           select type(up); type is(integer(INTL)); offset=up; class default; ierr=GFC_ERROR; end select
+           if(ierr.eq.GFC_SUCCESS) then
+            ierr=this%val_it%move_to(offset)
+            if(ierr.eq.GFC_SUCCESS) ierr=this%pos_it%move_to(offset)
+           endif
+          else
+           ierr=GFC_CORRUPTED_CONT
+          endif
+         endif
+         return
+        end function VecTreeIterMoveToCousin
+!------------------------------------------------------------------------------------
+#ifdef NO_GNU
+        function VecTreeIterAppend(this,elem_val,assoc_only,copy_ctor_f) result(ierr) !`GCC bug
+#else
+        function VecTreeIterAppend(this,elem_val,assoc_only) result(ierr) !`GCC bug
+#endif
+!Appends a new element to the end of the vector. The iterator position is kept unchanged,
+!unless the container is empty in which case it will be reset to the first element.
+!The tree iterator will be set to GFC_IT_DONE.
+         implicit none
+         integer(INTD):: ierr                         !out: error code
+         class(vec_tree_iter_t), intent(inout):: this !inout: vector tree iterator
+         class(*), target, intent(in):: elem_val      !in: value to be stored
+         logical, intent(in), optional:: assoc_only   !in: storage type: TRUE:by reference, FALSE:by value (default)
+#ifdef NO_GNU
+         procedure(gfc_copy_i), optional:: copy_ctor_f !user-defined generic copy constructor (when storing by value only)
+#endif
+         type(tree_pos_t):: trpos
+         logical:: assoc
+
+         if(present(assoc_only)) then; assoc=assoc_only; else; assoc=.FALSE.; endif
+#ifdef NO_GNU
+         if(present(copy_ctor_f)) then
+          ierr=this%val_it%append(elem_val,assoc,copy_ctor_f)
+         else
+#endif
+          ierr=this%val_it%append(elem_val,assoc)
+#ifdef NO_GNU
+         endif
+#endif
+         if(ierr.eq.GFC_SUCCESS) then
+          ierr=this%pos_it%append(trpos)
+          if(ierr.eq.GFC_SUCCESS) then
+           ierr=this%tree_it%reset(); ierr=GFC_SUCCESS
+           ierr=this%tree_it%get_status()
+           if(ierr.eq.GFC_IT_ACTIVE) then
+            ierr=this%tree_it%set_status_(GFC_IT_DONE)
+           else
+            ierr=GFC_SUCCESS
+           endif
+          endif
+         endif
+         return
+        end function VecTreeIterAppend
 
        end module gfc_vec_tree
