@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Tree
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017-03-13 (started 2016-02-17)
+!REVISION: 2017-03-14 (started 2016-02-17)
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -989,18 +989,17 @@
          class(tree_vertex_t), pointer, intent(inout):: new_elem !in: pointer to the new element or NULL()
          integer(INTD):: errc,sts
 
-         if(associated(this%current)) then
-          call this%current%decr_ref_()
-          sts=GFC_IT_DONE
-         else
-          sts=GFC_IT_EMPTY
-         endif
+         if(associated(this%current)) call this%current%decr_ref_()
          this%current=>new_elem
          if(associated(this%current)) then
           call this%current%incr_ref_()
           errc=this%set_status_(GFC_IT_ACTIVE)
          else
-          errc=this%set_status_(sts)
+          if(associated(this%container%root)) then
+           errc=this%set_status_(GFC_IT_DONE)
+          else
+           errc=this%set_status_(GFC_IT_EMPTY)
+          endif
          endif
          return
         end subroutine TreeIterJump

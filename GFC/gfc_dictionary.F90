@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Dictionary (ordered map), AVL BST
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017/03/13 (recycling my old dictionary implementation)
+!REVISION: 2017/03/14 (recycling my old dictionary implementation)
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -74,14 +74,14 @@
          contains
           procedure, public:: is_empty=>DictionaryIsEmpty                 !returns GFC_TRUE if the dictionary is empty, GFC_FALSE otherwise (or error code)
           procedure, public:: is_subdictionary=>DictionaryIsSubdictionary !returns TRUE if the dictionary is subdictionary, FALSE otherwise
-          procedure, private:: reroot_=>DictionaryReroot                  !changes the root of the dictionary
+          procedure, private:: reroot_=>DictionaryReroot                  !PRIVATE: changes the root of the dictionary
         end type dictionary_t
  !Dictionary iterator:
         type, extends(gfc_iter_t), public:: dictionary_iter_t
          class(dict_elem_t), pointer, private:: current=>NULL()        !currently pointed element of the container
          class(dictionary_t), pointer, private:: container=>NULL()     !container
          contains
-          procedure, private:: jump_=>DictionaryIterJump                 !moves the iterator to an arbitrary position
+          procedure, private:: jump_=>DictionaryIterJump                 !PRIVATE: moves the iterator to an arbitrary position
           procedure, public:: init=>DictionaryIterInit                   !associates the iterator with a container and positions it to the root element
           procedure, public:: reset=>DictionaryIterReset                 !resets the iterator to the beginning of the container (root element)
           procedure, public:: release=>DictionaryIterRelease             !dissociates the iterator from its container
@@ -428,18 +428,17 @@
          class(dict_elem_t), pointer, intent(inout):: new_elem !in: pointer to the new element or NULL()
          integer(INTD):: errc,sts
 
-         if(associated(this%current)) then
-          call this%current%decr_ref_()
-          sts=GFC_IT_DONE
-         else
-          sts=GFC_IT_EMPTY
-         endif
+         if(associated(this%current)) call this%current%decr_ref_()
          this%current=>new_elem
          if(associated(this%current)) then
           call this%current%incr_ref_()
           errc=this%set_status_(GFC_IT_ACTIVE)
-!        else
-!         errc=this%set_status_(sts) !`Does not work
+         else
+          if(associated(this%container%root)) then
+           errc=this%set_status_(GFC_IT_DONE)
+          else
+           errc=this%set_status_(GFC_IT_EMPTY)
+          endif
          endif
          return
         end subroutine DictionaryIterJump
@@ -1008,7 +1007,12 @@
          class(dictionary_t), pointer:: dict
          integer(INTD):: i,j,act,lev_p,grow,ierr
 
-         dict_search=this%get_status(); if(dict_search.ne.GFC_IT_ACTIVE.and.dict_search.ne.GFC_IT_EMPTY) return
+         dict_search=this%get_status()
+         if(dict_search.eq.GFC_IT_DONE) then
+          dict_search=this%reset(); if(dict_search.ne.GFC_SUCCESS) return
+          dict_search=this%get_status()
+         endif
+         if(dict_search.ne.GFC_IT_ACTIVE.and.dict_search.ne.GFC_IT_EMPTY) return
          dict_search=GFC_NOT_FOUND; if(present(value_out)) value_out=>NULL(); nullptr=>NULL()
          if(associated(this%container)) then; dict=>this%container; else; dict_search=GFC_CORRUPTED_CONT; return; endif
 !Look up the key:
