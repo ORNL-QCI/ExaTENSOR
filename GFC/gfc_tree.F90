@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Tree
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017-03-14 (started 2016-02-17)
+!REVISION: 2017-03-15 (started 2016-02-17)
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -87,12 +87,14 @@
           procedure, public:: move_to_child=>TreeIterMoveToChild    !moves the iterator to the first child, if any
           procedure, public:: move_to_parent=>TreeIterMoveToParent  !moves the iterator to the parent, if any
           procedure, public:: move_to_cousin=>TreeIterMoveToCousin  !moves the iterator to the next/previous cousin (within the tree level)
-          procedure, public:: my_parent=>TreeIterMyParent           !returns the parent of the current vertex
+          procedure, public:: get_parent=>TreeIterGetParent         !returns a pointer to the parent of the current vertex
+          procedure, public:: get_child=>TreeIterGetChild           !returns a pointer to the specific child of the current vertex
           procedure, public:: add_leaf=>TreeIterAddLeaf             !adds a new leaf element to the element of the container currently pointed to
           procedure, public:: delete_leaf=>TreeIterDeleteLeaf       !deletes the leaf pointed to by the iterator (if it is actually a leaf)
           procedure, public:: attach_subtree=>TreeIterAttachSubtree !attaches a subtree to the element of the container currently pointed to as the last child
           procedure, public:: detach_subtree=>TreeIterDetachSubtree !detaches a subtree beginning from the currently pointed element of the container
           procedure, public:: delete_subtree=>TreeIterDeleteSubtree !deletes a subtree beginning from the currently pointed element of the container
+          procedure, public:: delete_all=>TreeIterDeleteAll         !deletes all tree vertices
           procedure, public:: jump_=>TreeIterJump                   !PRIVATE: moves the iterator to a specific tree vertex
         end type tree_iter_t
 !GLOBAL DATA:
@@ -119,12 +121,14 @@
         private TreeIterMoveToChild
         private TreeIterMoveToParent
         private TreeIterMoveToCousin
-        private TreeIterMyParent
+        private TreeIterGetParent
+        private TreeIterGetChild
         private TreeIterAddLeaf
         private TreeIterDeleteLeaf
         private TreeIterAttachSubtree
         private TreeIterDetachSubtree
         private TreeIterDeleteSubtree
+        private TreeIterDeleteAll
         private TreeIterJump
 
        contains
@@ -599,11 +603,11 @@
          endif
          return
         end function TreeIterMoveToCousin
-!----------------------------------------------------------
-        function TreeIterMyParent(this,ierr) result(parent)
-!Returns the parent of the current vertex.
+!-----------------------------------------------------------
+        function TreeIterGetParent(this,ierr) result(parent)
+!Returns a pointer to the parent of the current vertex.
          implicit none
-         class(gfc_cont_elem_t), pointer:: parent    !out: parent element of the current vertex
+         class(gfc_cont_elem_t), pointer:: parent    !out: pointer to the parent
          class(tree_iter_t), intent(in):: this       !in: iterator
          integer(INTD), intent(out), optional:: ierr !out: error code (0:success)
          integer(INTD):: errc
@@ -620,7 +624,65 @@
          endif
          if(present(ierr)) ierr=errc
          return
-        end function TreeIterMyParent
+        end function TreeIterGetParent
+!-------------------------------------------------------------------
+        function TreeIterGetChild(this,child_num,ierr) result(child)
+!Returns a pointer to the specific child of the current vertex.
+         implicit none
+         class(gfc_cont_elem_t), pointer:: child     !out: pointer to the specific child
+         class(tree_iter_t), intent(in):: this       !in: iterator
+         integer(INTD), intent(in):: child_num       !in: child number: [1..last], negative means counting from the last child: -1:last, -2:one before last, etc.
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc,n
+         class(tree_vertex_t), pointer:: tvp
+
+         errc=this%get_status(); child=>NULL()
+         if(errc.eq.GFC_IT_ACTIVE) then
+          errc=GFC_SUCCESS
+          if(associated(this%current)) then
+           if(child_num.gt.0) then
+            n=child_num-1; tvp=>this%current%first_child
+            if(associated(tvp)) then
+             do while(n.gt.0)
+              if(tvp%is_last_sibling().eq.GFC_TRUE) exit
+              tvp=>tvp%next_sibling
+              n=n-1
+             enddo
+             if(n.eq.0.and.associated(tvp)) then
+              child=>tvp; tvp=>NULL()
+             else
+              errc=GFC_INVALID_ARGS
+             endif
+            else
+             errc=GFC_INVALID_ARGS
+            endif
+           elseif(child_num.lt.0) then
+            n=-child_num-1; tvp=>this%current%first_child
+            if(associated(tvp)) then
+             tvp=>tvp%prev_sibling !last child
+             do while(n.gt.0)
+              if(tvp%is_first_sibling().eq.GFC_TRUE) exit
+              tvp=>tvp%prev_sibling
+              n=n-1
+             enddo
+             if(n.eq.0.and.associated(tvp)) then
+              child=>tvp; tvp=>NULL()
+             else
+              errc=GFC_INVALID_ARGS
+             endif
+            else
+             errc=GFC_INVALID_ARGS
+            endif
+           else
+            errc=GFC_INVALID_ARGS
+           endif
+          else
+           errc=GFC_CORRUPTED_CONT
+          endif
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function TreeIterGetChild
 !------------------------------------------------------------------------------------------
 #ifdef NO_GNU
         function TreeIterAddLeaf(this,elem_val,assoc_only,no_move,copy_ctor_f) result(ierr) !`GCC/5.3.0 has a bug with this
@@ -745,13 +807,13 @@
          endif
          return
         end function TreeIterAddLeaf
-!-------------------------------------------------------------------
-        function TreeIterDeleteLeaf(this,destruct_func) result(ierr)
+!------------------------------------------------------------
+        function TreeIterDeleteLeaf(this,dtor_f) result(ierr)
 !Deletes a leaf from a tree and moves the iterator to its parent.
          implicit none
-         integer(INTD):: ierr                                !out: error code (0:success)
-         class(tree_iter_t), intent(inout):: this            !inout: iterator
-         procedure(gfc_destruct_i), optional:: destruct_func !in: value destructor
+         integer(INTD):: ierr                         !out: error code (0:success)
+         class(tree_iter_t), intent(inout):: this     !inout: iterator
+         procedure(gfc_destruct_i), optional:: dtor_f !in: value destructor
          integer(INTL):: totelems
          integer(INTD):: errc
          class(tree_vertex_t), pointer:: tvp
@@ -762,8 +824,8 @@
            ierr=GFC_SUCCESS; tvp=>this%current
            if(tvp%is_leaf().eq.GFC_TRUE) then
             call this%current%decr_ref_()
-            if(present(destruct_func)) then !destructs the value of the current element
-             call tvp%destruct(errc,destruct_func)
+            if(present(dtor_f)) then !destructs the value of the current element
+             call tvp%destruct(errc,dtor_f)
             else
              call tvp%destruct(errc)
             endif
@@ -938,22 +1000,22 @@
          endif
          return
         end function TreeIterDetachSubtree
-!----------------------------------------------------------------------
-        function TreeIterDeleteSubtree(this,destruct_func) result(ierr)
+!---------------------------------------------------------------
+        function TreeIterDeleteSubtree(this,dtor_f) result(ierr)
 !Completely deletes a subtree starting from the current iterator position.
 !The iterator is moved to the parent at the end. A return status NOT_CLEAN
 !indicates that some memory deallocation and/or object destruction failed.
          implicit none
-         integer(INTD):: ierr                                !out: error code (0:success)
-         class(tree_iter_t), intent(inout):: this            !inout: iterator
-         procedure(gfc_destruct_i), optional:: destruct_func !in: value destruction function
+         integer(INTD):: ierr                         !out: error code (0:success)
+         class(tree_iter_t), intent(inout):: this     !inout: iterator
+         procedure(gfc_destruct_i), optional:: dtor_f !in: value destruction function
          class(tree_vertex_t), pointer:: tvp
          logical:: subtree,dsf,ntcl
 
          ierr=this%get_status(); ntcl=.FALSE.
          if(ierr.eq.GFC_IT_ACTIVE) then
           if(associated(this%current)) then
-           dsf=.FALSE.; if(present(destruct_func)) dsf=.TRUE.
+           dsf=.FALSE.; if(present(dtor_f)) dsf=.TRUE.
            if(associated(this%current%parent)) then
             tvp=>this%current%parent; subtree=.TRUE.
            else
@@ -966,7 +1028,7 @@
              call this%current%incr_ref_()
             enddo
             if(dsf) then
-             ierr=this%delete_leaf(destruct_func)
+             ierr=this%delete_leaf(dtor_f)
             else
              ierr=this%delete_leaf()
             endif
@@ -981,6 +1043,24 @@
          if(ntcl.and.ierr.eq.GFC_SUCCESS) ierr=NOT_CLEAN
          return
         end function TreeIterDeleteSubtree
+!-----------------------------------------------------------
+        function TreeIterDeleteAll(this,dtor_f) result(ierr)
+!Deletes all tree vertices.
+         implicit none
+         integer(INTD):: ierr                         !out: error code
+         class(tree_iter_t), intent(inout):: this     !inout: iterator
+         procedure(gfc_destruct_i), optional:: dtor_f !in: value destruction function
+
+         ierr=this%reset()
+         if(ierr.eq.GFC_SUCCESS) then
+          if(present(dtor_f)) then
+           ierr=this%delete_subtree(dtor_f)
+          else
+           ierr=this%delete_subtree()
+          endif
+         endif
+         return
+        end function TreeIterDeleteAll
 !---------------------------------------------
         subroutine TreeIterJump(this,new_elem)
 !Moves the iterator to an arbitrary specified tree vertex.

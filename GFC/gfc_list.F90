@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Bi-directional linked list
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017-02-06 (started 2016-02-28)
+!REVISION: 2017-03-15 (started 2016-02-28)
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -728,16 +728,16 @@
          endif
          return
         end function ListIterSplit
-!------------------------------------------------------------
-        function ListIterDelete(this,destruct_f) result(ierr)
+!--------------------------------------------------------
+        function ListIterDelete(this,dtor_f) result(ierr)
 !Deletes the element in the current iterator position. The current
 !iterator position moves to the preious element, unless there is none.
 !In the latter case, it moves to the next element, unless there is none.
 !In the latter case, the iterator/container becomes empty.
          implicit none
-         integer(INTD):: ierr                             !out: error code (0:success)
-         class(list_iter_t), intent(inout):: this         !inout: iterator
-         procedure(gfc_destruct_i), optional:: destruct_f !in: element value destructor
+         integer(INTD):: ierr                         !out: error code (0:success)
+         class(list_iter_t), intent(inout):: this     !inout: iterator
+         procedure(gfc_destruct_i), optional:: dtor_f !in: element value destructor
          class(list_elem_t), pointer:: lep
          integer(INTD):: errc
          integer(INTL):: nelems
@@ -770,8 +770,8 @@
              this%current=>this%current%prev_elem
             endif
            endif
-           if(present(destruct_f)) then
-            call lep%destruct(errc,destruct_f)
+           if(present(dtor_f)) then
+            call lep%destruct(errc,dtor_f)
            else
             call lep%destruct(errc)
            endif
@@ -783,14 +783,14 @@
          endif
          return
         end function ListIterDelete
-!-------------------------------------------------------------------------
-        function ListIterDeleteAll(this,destruct_f,backwards) result(ierr)
+!---------------------------------------------------------------------
+        function ListIterDeleteAll(this,dtor_f,backwards) result(ierr)
 !Deletes all elements in the list starting from the current iterator position.
          implicit none
-         integer(INTD):: ierr                             !out: error code (0:success)
-         class(list_iter_t), intent(inout):: this         !inout: list iterator
-         procedure(gfc_destruct_i), optional:: destruct_f !in: element value destructor
-         logical, intent(in), optional:: backwards !in: if TRUE, all preceding elements will be deleted instead of subsequent ones (defaults to FALSE)
+         integer(INTD):: ierr                         !out: error code (0:success)
+         class(list_iter_t), intent(inout):: this     !inout: list iterator
+         procedure(gfc_destruct_i), optional:: dtor_f !in: element value destructor
+         logical, intent(in), optional:: backwards    !in: if TRUE, all preceding elements will be deleted instead of subsequent ones (defaults to FALSE)
          integer(INTD):: errc
          logical:: back
          class(list_elem_t), pointer:: lep
@@ -806,11 +806,11 @@
             this%current=>this%container%first_elem
            endif
            if(associated(this%current)) then
-            if(present(destruct_f)) then
+            if(present(dtor_f)) then
              do while(.not.associated(this%current,lep))
-              errc=this%delete(destruct_f); if(errc.ne.GFC_SUCCESS) ierr=NOT_CLEAN
+              errc=this%delete(dtor_f); if(errc.ne.GFC_SUCCESS) ierr=NOT_CLEAN
              enddo
-             errc=this%delete(destruct_f); if(errc.ne.GFC_SUCCESS) ierr=NOT_CLEAN
+             errc=this%delete(dtor_f); if(errc.ne.GFC_SUCCESS) ierr=NOT_CLEAN
             else
              do while(.not.associated(this%current,lep))
               errc=this%delete(); if(errc.ne.GFC_SUCCESS) ierr=NOT_CLEAN

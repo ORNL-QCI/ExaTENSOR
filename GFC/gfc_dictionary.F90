@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Dictionary (ordered map), AVL BST
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017/03/14 (recycling my old dictionary implementation)
+!REVISION: 2017/03/15 (recycling my old dictionary implementation)
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -98,7 +98,7 @@
           procedure, public:: delete_all=>DictionaryIterDeleteAll        !deletes all elements of the dictionary
           procedure, public:: search=>DictionaryIterSearch               !performs a key-based search in the dictionary
           procedure, public:: sort_to_list=>DictionaryIterSortToList     !returns a list of references to dictionary elements in a sorted (by key) order
-          procedure, public:: sort_to_vector=>DictionaryIterSortToVector !returns a vector of references to dictionary elements in a sorted *by key) order
+          procedure, public:: sort_to_vector=>DictionaryIterSortToVector !returns a vector of references to dictionary elements in a sorted (by key) order
         end type dictionary_iter_t
 !INTERFACES:
 

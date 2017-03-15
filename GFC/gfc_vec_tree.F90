@@ -2,7 +2,7 @@
 !The elements are initially inserted in a vector with an option to be
 !later added in a tree, thus imposing a tree relationship on them.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017/03/14
+!REVISION: 2017/03/15
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -85,12 +85,8 @@
           procedure, public:: move_to_parent=>VecTreeIterMoveToParent   !moves the iterator to the parent of the current element in the tree
           procedure, public:: move_to_cousin=>VecTreeIterMoveToCousin   !moves the iterator to the next/previous cousin of the current element in the tree (same tree level)
           procedure, public:: append=>VecTreeIterAppend                 !appends a new element at the end of the container
-#if 0
-          procedure, public:: delete=>VecTreeIterDelete                 !deletes an element at the current iterator position
           procedure, public:: add_leaf=>VecTreeIterAddLeaf              !appends a new child element to the tree vertex currently pointed to
-          procedure, public:: delete_leaf=>VecTreeIterDeleteLeaf        !deletes the tree leaf element currently pointed to by the iterator
           procedure, public:: delete_all=>VecTreeIterDeleteAll          !deletes all container elements
-#endif
         end type vec_tree_iter_t
 !VISIBILITY:
  !vec_tree_t:
@@ -116,12 +112,8 @@
         private VecTreeIterMoveToParent
         private VecTreeIterMoveToCousin
         private VecTreeIterAppend
-#if 0
-        private VecTreeIterDelete
         private VecTreeIterAddLeaf
-        private VecTreeIterDeleteLeaf
         private VecTreeIterDeleteAll
-#endif
 !IMPLEMENTATION:
        contains
 ![vec_tree_t]====================================
@@ -580,5 +572,83 @@
          endif
          return
         end function VecTreeIterAppend
+!----------------------------------------------------------------------
+        function VecTreeIterAddLeaf(this,elem_num,no_move) result(ierr)
+!Adds a specific vector element as a leaf to the tree. The iterator position
+!will move to the newly added element, unless <no_move>=TRUE.
+         implicit none
+         integer(INTD):: ierr                         !out: error code
+         class(vec_tree_iter_t), intent(inout):: this !inout: vector tree iterator
+         integer(INTL), intent(in):: elem_num         !in: vector element number: [0..max]
+         logical, intent(in), optional:: no_move      !in: if TRUE, the iterator position will not change (defaults to FALSE)
+         logical:: nmove
+         class(*), pointer:: up
+         class(tree_pos_t), pointer:: tpp
+         class(gfc_cont_elem_t), pointer:: gep
+
+         ierr=this%get_status()
+         if(ierr.eq.GFC_IT_DONE) then; ierr=this%reset(); ierr=this%get_status(); endif
+         if(ierr.eq.GFC_IT_ACTIVE) then
+          ierr=GFC_SUCCESS
+          if(present(no_move)) then; nmove=no_move; else; nmove=.FALSE.; endif
+          if(elem_num.ge.0_INTL.and.elem_num.lt.this%get_length()) then
+           up=>this%pos_it%element_value(elem_num,ierr)
+           if(ierr.eq.GFC_SUCCESS) then
+            if(associated(up)) then
+             select type(up); class is(tree_pos_t); tpp=>up; class default; ierr=GFC_ERROR; end select
+             if(ierr.eq.GFC_SUCCESS) then
+              if(.not.associated(tpp%pos)) then !vector element is not in the tree
+               ierr=this%tree_it%add_leaf(elem_num,no_move=nmove)
+               if(ierr.eq.GFC_SUCCESS) then
+                if(nmove) then
+                 gep=>this%tree_it%get_child(-1,ierr) !-1:last child
+                else
+                 gep=>this%tree_it%pointee(ierr)
+                endif
+                if(ierr.eq.GFC_SUCCESS) then
+                 select type(gep); class is(tree_vertex_t); tpp%pos=>gep; class default; ierr=GFC_ERROR; end select
+                 if(ierr.eq.GFC_SUCCESS.and.(.not.nmove)) then
+                  ierr=this%pos_it%move_to(elem_num)
+                  if(ierr.eq.GFC_SUCCESS) ierr=this%val_it%move_to(elem_num)
+                 endif
+                endif
+                gep=>NULL()
+               endif
+              else
+               ierr=GFC_INVALID_ARGS
+              endif
+             endif
+             tpp=>NULL()
+            else
+             ierr=GFC_ERROR
+            endif
+           endif
+          else
+           ierr=GFC_INVALID_ARGS
+          endif
+         endif
+         return
+        end function VecTreeIterAddLeaf
+!--------------------------------------------------------------
+        function VecTreeIterDeleteAll(this,dtor_f) result(ierr)
+!Deletes all elements of the vector tree, resetting it to an empty state.
+         implicit none
+         integer(INTD):: ierr                         !out: error code
+         class(vec_tree_iter_t), intent(inout):: this !inout: vector tree iterator
+         procedure(gfc_destruct_i), optional:: dtor_f !in: explicit container value destructor
+         integer(INTD):: errc
+
+         ierr=this%reset()
+         if(ierr.eq.GFC_SUCCESS) then
+          errc=this%tree_it%delete_all(); if(errc.ne.GFC_SUCCESS.and.ierr.eq.GFC_SUCCESS) ierr=errc
+          errc=this%pos_it%delete_all(); if(errc.ne.GFC_SUCCESS.and.ierr.eq.GFC_SUCCESS) ierr=errc
+          if(present(dtor_f)) then
+           errc=this%val_it%delete_all(dtor_f); if(errc.ne.GFC_SUCCESS.and.ierr.eq.GFC_SUCCESS) ierr=errc
+          else
+           errc=this%val_it%delete_all(); if(errc.ne.GFC_SUCCESS.and.ierr.eq.GFC_SUCCESS) ierr=errc
+          endif
+         endif
+         return
+        end function VecTreeIterDeleteAll
 
        end module gfc_vec_tree

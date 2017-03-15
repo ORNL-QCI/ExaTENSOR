@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Vector (non-contiguous)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017/03/13
+!REVISION: 2017/03/15
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -962,15 +962,15 @@
          endif
          return
         end function VectorIterSwapLast
-!--------------------------------------------------------------
-        function VectorIterDelete(this,destruct_f) result(ierr)
+!----------------------------------------------------------
+        function VectorIterDelete(this,dtor_f) result(ierr)
 !Deletes the element at the current iterator position.
 !The current iterator position is kept unchanged, pointing to the next
 !element. If there is no next element, it will point to the previous
 !element. If none, then the iterator will become empty.
-         integer(INTD):: ierr                             !out: error code
-         class(vector_iter_t), intent(inout):: this       !inout: iterator
-         procedure(gfc_destruct_i), optional:: destruct_f !in: element value destructor
+         integer(INTD):: ierr                         !out: error code
+         class(vector_iter_t), intent(inout):: this   !inout: iterator
+         procedure(gfc_destruct_i), optional:: dtor_f !in: element value destructor
          integer(INTD):: errc,q(1:4)
          integer(INTL):: l,nelems
 
@@ -978,8 +978,8 @@
          if(ierr.eq.GFC_IT_ACTIVE) then
           if(associated(this%current).and.this%curr_offset.ge.0_INTL.and.this%curr_offset.lt.this%get_length()) then
            !call flat2quadruplet(this%curr_offset,q); write(*,'("Deleting ",i7,4(1x,i4))') this%curr_offset,q(4:1:-1) !debug
-           if(present(destruct_f)) then
-            call this%current%destruct(ierr,destruct_f)
+           if(present(dtor_f)) then
+            call this%current%destruct(ierr,dtor_f)
            else
             call this%current%destruct(ierr)
            endif
@@ -1002,16 +1002,15 @@
            ierr=GFC_CORRUPTED_CONT
           endif
          endif
-         !if(ierr.ne.GFC_SUCCESS) print *,'D: ',ierr !debug
          return
         end function VectorIterDelete
-!-----------------------------------------------------------------
-        function VectorIterDeleteAll(this,destruct_f) result(ierr)
+!-------------------------------------------------------------
+        function VectorIterDeleteAll(this,dtor_f) result(ierr)
 !Deletes all elements of the vector, leaving it empty.
          implicit none
-         integer(INTD):: ierr                             !out: error code
-         class(vector_iter_t), intent(inout):: this       !inout: iterator
-         procedure(gfc_destruct_i), optional:: destruct_f !in: element value destructor
+         integer(INTD):: ierr                         !out: error code
+         class(vector_iter_t), intent(inout):: this   !inout: iterator
+         procedure(gfc_destruct_i), optional:: dtor_f !in: element value destructor
          integer(INTD):: errc
 
          ierr=this%reset_back()
@@ -1019,9 +1018,9 @@
           ierr=this%get_status()
           if(ierr.eq.GFC_IT_ACTIVE) then
            ierr=GFC_SUCCESS
-           if(present(destruct_f)) then
+           if(present(dtor_f)) then
             do while(this%get_length().gt.0_INTL)
-             errc=this%delete(destruct_f); if(errc.ne.GFC_SUCCESS) ierr=NOT_CLEAN
+             errc=this%delete(dtor_f); if(errc.ne.GFC_SUCCESS) ierr=NOT_CLEAN
             enddo
            else
             do while(this%get_length().gt.0_INTL)
