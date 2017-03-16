@@ -19,11 +19,12 @@ GENERAL INFORMATION:
  2. Tree: gfc_tree (GFC);
  3. Dictionary (ordered map): gfc_dictionary (GFC), dictionary (legacy);
  4. Vector: gfc_vector (GFC);
- 5. Stack: gfc_stack (GFC, under development), stack (legacy);
- 6. Queue: gfc_queue (GFC, under development);
- 7. Priority queue: gfc_pri_queue (GFC, under development);
- 8. Hash map (unordered map): gfc_hash_map (GFC, under development);
- 9. Graph: gfc_graph (GFC, under development).
+ 5. Vector tree: gfc_vec_tree (GFC): Vector with an imposed tree structure;
+ 6. Stack: gfc_stack (GFC, under development), stack (legacy);
+ 7. Queue: gfc_queue (GFC, under development);
+ 8. Priority queue: gfc_pri_queue (GFC, under development);
+ 9. Hash map (unordered map): gfc_hash_map (GFC, under development);
+10. Graph: gfc_graph (GFC, under development).
 
 DESIGN AND FEATURES:
  # A GFC container is a structured collection of objects of any class;
@@ -34,10 +35,12 @@ DESIGN AND FEATURES:
    of derived types are recursively cloned whereas the pointer components
    are just pointer associated. To change this default behavior, one can
    supply a user-defined non-member generic copy constructor (see interfaces
-   in gfc_base.F90).
+   in gfc_base.F90). As a general rule, objects with allocated pointer components
+   will have to provide an explicit non-member copy constructor to make sure
+   those pointer components are cloned by value instead of pointer association.
  # A GFC subcontainer is a container linked as a part of another container.
    As a consequence, its boundary elements may have outside links.
-   In this case, the larger container will be called a composite container.
+   In this case, the larger container will be called the host container.
  # Each container has an associated iterator for scanning over its elements.
    The structure of the container determines the scanning sequence, that is,
    the path the elements of the container are traversed over.
@@ -51,8 +54,8 @@ DESIGN AND FEATURES:
     4) Predicated active scan: The iterator traverses the entire container
        or its part and applies a user-defined action to each element that
        satisfies a certain condition.
-   Active scans require a user-specified action defined either as a procedure
-   with a specific generic interface (stateless) or a Fortran function object,
+   Active scans require a user-specified action defined either as a stateless
+   procedure with a specific generic interface or a Fortran function object,
    both defined in file gfc_base.F90.
    Additionally, active scans allow for a time-limited execution, in which
    the scan is interrupted after some time interval specified by a user.
@@ -62,17 +65,20 @@ DESIGN AND FEATURES:
    that is, the iterator methods provide the only possible way of accessing,
    updating, and performing other actions on the associated container.
  # The container element deletion operation may require a user-defined
-   non-member destructor which will release all resources occupied by
-   the object stored in that element, unless the object has FINAL methods
+   non-member destructor which will properly release all resources occupied
+   by the object stored in that element, unless the object has FINAL methods
    defined (the interface for a user-defined non-member generic destructor
    is provided in gfc_base.F90).
+
  FEATURES UNDER DEVELOPMENT:
  # Currently, containers as a whole do not support cloning (copy construction
-   and copy assignment), but they will provide appropriate methods in future.
+   and copy assignment), but the appropriate methods will be provided in future.
  # Currently SCAN is the only global operation defined on any container and
    provided by the corresponding iterator class. Equipped with a proper user-defined
    function object, it can deliver broad functionality (transforms, reductions, etc.).
    In future, however, other predefined global methods are expected to be added.
+ # Subcontainer feature is not available for all containers, and even when it is
+   available it has not been carefully tested yet.
  # All relevant iterator methods are thread-safe, thus enabling
    a parallel execution of container scans (via OpenMP threads).
    However, it is the user responsibility to avoid race conditions
@@ -80,8 +86,8 @@ DESIGN AND FEATURES:
    of the container is protected from races by GFC, but the values of
    container elements are not protected. In the latter case, a thread
    is supposed to acquire an exclusive access to the container element
-   if necessary for avoiding race conditions on container values.
-   An iterator must not be shared among two or more threads!
+   via a GFC lock, if necessary for avoiding race conditions on container
+   values. An iterator must never be shared between multiple OpenMP threads!
 
 NOTES:
  # This implementation of Generic Fortran Containers heavily relies on

@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Vector (non-contiguous)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017/03/15
+!REVISION: 2017/03/16
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -736,7 +736,7 @@
          integer(INTD):: errc
          class(gfc_cont_elem_t), pointer:: cep
 
-         cep=>this%element(offset,errc)
+         val_p=>NULL(); cep=>this%element(offset,errc)
          if(errc.eq.GFC_SUCCESS) val_p=>cep%get_value(errc)
          if(present(ierr)) ierr=errc
          return
@@ -756,9 +756,9 @@
            this%curr_offset=offset
            call flat2quadruplet(offset,q)
            this%current=>this%container%vec_tile(q(4))%tile_batch(q(3))%batch_seg(q(2))%seg_elem(q(1))
-           if(ierr.eq.GFC_IT_DONE) ierr=this%set_status_(GFC_IT_ACTIVE)
+           if(ierr.eq.GFC_IT_DONE) then; ierr=this%set_status_(GFC_IT_ACTIVE); else; ierr=GFC_SUCCESS; endif
           else
-           ierr=GFC_NO_MOVE
+           ierr=GFC_INVALID_ARGS
           endif
          endif
          return
@@ -1031,7 +1031,6 @@
            if(ierr.eq.GFC_IT_EMPTY) ierr=GFC_SUCCESS
           endif
          endif
-         !if(ierr.ne.GFC_SUCCESS) print *,'DA: ',ierr
          return
         end function VectorIterDeleteAll
 

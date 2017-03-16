@@ -1,6 +1,6 @@
 !Infrastructure for a recursive adaptive vector space decomposition.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/03/07
+!REVISION: 2017/03/16
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -111,6 +111,7 @@
           procedure, public:: overlap=>SegIntOverlap        !returns the overlap of two integer ranges
           procedure, public:: union=>SegIntUnion            !returns the minimal integer range containing two given integer ranges
           procedure, public:: split=>SegIntSplit            !splits the integer range
+          procedure, public:: print_range=>SegIntPrintRange !prints the integer range
         end type seg_int_t
  !Real space rectangular hypercube (orthotope):
         type, public:: orthotope_t
@@ -292,6 +293,8 @@
         private SegIntOverlap
         private SegIntUnion
         private SegIntSplit
+        private SegIntPrintRange
+        public seg_int_print_range !debug
  !orthotope_t:
         private OrthotopeCtor
         private OrthotopeDimsn
@@ -896,6 +899,35 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine SegIntSplit
+!------------------------------------------------
+        subroutine SegIntPrintRange(this,dev_out)
+!Prints the integer range.
+         implicit none
+         class(seg_int_t), intent(in):: this           !in: integer range
+         integer(INTD), intent(in), optional:: dev_out !in: output device (defaults to screen)
+         integer(INTD):: devo
+
+         if(present(dev_out)) then; devo=dev_out; else; devo=6; endif
+         write(devo,*) 'Range [',this%lower_bound()+1_INTL,this%upper_bound(),']'
+         return
+        end subroutine SegIntPrintRange
+!-----------------------------------------------------
+        function seg_int_print_range(obj) result(ierr) !debug
+!Non-member generic printing action for use in GFC.
+         implicit none
+         integer(INTD):: ierr                  !out: error code
+         class(*), intent(inout), target:: obj !in: seg_int_t object
+         class(seg_int_t), pointer:: obp
+
+         ierr=0; obp=>NULL()
+         select type(obj); class is(seg_int_t); obp=>obj; end select
+         if(associated(obp)) then
+          call obp%print_range()
+         else
+          ierr=-1
+         endif
+         return
+        end function seg_int_print_range
 ![orthotope_t]===================================
         subroutine OrthotopeCtor(this,dimsn,ierr)
 !Creates an empty orthotope. If the orthotope is defined on input,

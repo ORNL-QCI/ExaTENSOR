@@ -1,7 +1,7 @@
 !ExaTENSOR: Massively Parallel Virtual Processor for Scale-Adaptive Tensor Algebra
 !This is the top level API module of ExaTENSOR
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/02/27
+!REVISION: 2017/03/16
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -77,7 +77,7 @@
         if(my_rank.eq.0) then
  !Build NAT:
          write(jo,'("#MSG(exatensor): Building the Node Aggregation Tree (NAT) ... ")',ADVANCE='NO')
-         call comp_system%comp_system_ctor('hardware.exaconf',error_code)
+         call comp_system%comp_system_ctor('hardware.exaconf',dil_global_comm_size(),error_code)
  !Build SAT:
          if(error_code.eq.0) then
           write(jo,'("Ok")')

@@ -1,6 +1,6 @@
 !Hardware abstraction module
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/03/08
+!REVISION: 2017/03/16
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -25,8 +25,7 @@
         use stsubs
         use parse_prim
         use gfc_base
-        use gfc_vector
-        use gfc_tree
+        use gfc_vec_tree
         use subspaces
         implicit none
         private
@@ -82,12 +81,12 @@
         type, public:: comp_system_t
          integer(INTL), private:: num_phys_nodes=0 !number of physical nodes in the system, N: [1:N]
          integer(INTL), private:: num_virt_nodes=0 !number of virtual (simple + aggregated) nodes in the system, M: [0:M-1] = [0:N-1] + [N:M-1]
-         type(vector_t), private:: virt_nodes      !virtual nodes: first <num_phys_nodes> are physical, rest are their aggregates (virtual)
-         type(tree_t), private:: aggr_tree         !node aggregation tree (NAT)
+         type(vec_tree_t), private:: virt_nodes    !virtual nodes: first <num_phys_nodes> are physical, rest are their aggregates (virtual)
          contains
-          procedure, private:: CompSystemCtorSimple
-          generic, public:: comp_system_ctor=>CompSystemCtorSimple
-          final:: comp_system_dtor
+          procedure, private:: CompSystemCtorSimple                 !simple dichotomy ctor
+          generic, public:: comp_system_ctor=>CompSystemCtorSimple  !ctors
+          procedure, public:: print_it=>CompSystemPrintIt           !prints the node aggregation tree
+          final:: comp_system_dtor                                  !dtor
         end type comp_system_t
 !GLOBAL:
  !Computing system:
@@ -99,34 +98,35 @@
 
        contains
 !IMPLEMENTATION:
-![comp_system_t]=========================================================================
-        subroutine CompSystemCtorSimple(this,hardware_spec,ierr,branch_fac,min_aggr_size)
+![comp_system_t]===================================================================================
+        subroutine CompSystemCtorSimple(this,hardware_spec,num_procs,ierr,branch_fac,min_aggr_size)
 !Constructs a hierarchical (virtual) representation of a computing system
-!by reading its configuration from a specification file. Simple dichotomy:
-!Finds how many nodes the HPC system consists of and creates the NAT by
-!recursively splitting the node range into two (or more) parts.
+!by reading its configuration from the provided specification file. Simple dichotomy:
+!Finds how many nodes the HPC system consists of and creates the node aggregation tree (NAT)
+!by recursively splitting the node range into two (or more) parts.
          implicit none
          class(comp_system_t), intent(out):: this            !out: hierarchical virtual representation of the computing system
          character(*), intent(in):: hardware_spec            !in: computing system specification file
+         integer(INTD), intent(in):: num_procs               !in: number of MPI processes running on the computing system (must be multiple of the number of compute nodes)
          integer(INTD), intent(out), optional:: ierr         !out: error code
          integer(INTD), intent(in), optional:: branch_fac    !in: tree branching factor (>=2)
          integer(INTD), intent(in), optional:: min_aggr_size !in: min node aggregate size after which the aggregate will be fully split into individual nodes (default to 1)
          integer(INTD):: errc,l,m,npr,brf,mas,offs(1:32),lens(1:32)
          character(1024):: str,nodarch,sysarch
          logical:: match,nodarch_found,sysarch_found
-         type(tree_iter_t):: nit
-         type(vector_iter_t):: vit
+         type(vec_tree_iter_t):: vt_it
          type(seg_int_t), allocatable:: segs(:)
          class(seg_int_t), pointer:: rp
          class(*), pointer:: up
 
          errc=0
-!Read the HPC system hardware specification:
+!Read the computing system hardware specification:
          open(10,file=hardware_spec(1:len_trim(hardware_spec)),form='FORMATTED',status='OLD',err=2000)
          str=' '; nodarch=' '; sysarch=' '
          nodarch_found=.FALSE.; sysarch_found=.FALSE.
          do
-          read(10,'(A1024)',end=100) str; l=len_trim(str)
+          read(10,'(A1024)',IOSTAT=errc) str; if(errc.ne.0) then; errc=max(0,errc); exit; endif
+          l=len_trim(str)
           if(l.gt.0) then
            match=match_symb_pattern(str(1:l),'@node architecture [`]',npr,offs,lens,errc); if(errc.ne.0) exit
            if(match.and.npr.eq.1) then; nodarch=str(offs(1):offs(1)+lens(1)-1); nodarch_found=.TRUE.; cycle; endif
@@ -138,18 +138,18 @@
              if(is_this_integer(str(offs(1):offs(1)+lens(1)-1),no_sign=.TRUE.)) then
               this%num_phys_nodes=icharnum(lens(1),str(offs(1):offs(1)+lens(1)-1))
               write(*,'(i8," physical nodes -> ")',ADVANCE='NO') this%num_phys_nodes
-              if(this%num_phys_nodes.le.0) errc=-17
+              if(this%num_phys_nodes.le.0) errc=-13
               exit
              else
-              errc=-16; exit
+              errc=-12; exit
              endif
             endif
            endif
            str(1:l)=' '
           endif
          enddo
-100      close(10)
-!Build the hierarchical virtual HPC system representation:
+         close(10)
+!Build the hierarchical virtual computing system representation for <num_phys_nodes> nodes:
          this%num_virt_nodes=0_INTL
          if(errc.eq.0) then
           if(present(min_aggr_size)) then; mas=min_aggr_size; else; mas=1; endif
@@ -157,109 +157,85 @@
           if(mas.ge.1.and.brf.ge.2) then
            allocate(segs(1:max(brf,mas)),STAT=errc)
            if(errc.eq.0) then
- !Register physical nodes first (virt node # = (phys node # - 1) in [1..max]):
-            errc=vit%init(this%virt_nodes)
+ !Register physical nodes first (virt node # = (phys node # - 1) in [1..num_phys_nodes]):
+            errc=vt_it%init(this%virt_nodes)
             if(errc.eq.GFC_SUCCESS) then
              do while(this%num_virt_nodes.lt.this%num_phys_nodes)
               call segs(1)%set(this%num_virt_nodes,this%num_virt_nodes+1_INTL,errc); if(errc.ne.0) exit
-              errc=vit%append(segs(1)); if(errc.ne.GFC_SUCCESS) exit
-              errc=vit%reset_back(); if(errc.ne.GFC_SUCCESS) exit
+              errc=vt_it%append(segs(1)); if(errc.ne.GFC_SUCCESS) exit
               this%num_virt_nodes=this%num_virt_nodes+1_INTL
              enddo
- !Register node aggregates (new virt nodes):
+ !Register node aggregates (new virtual nodes):
              if(errc.eq.0) then
-              errc=nit%init(this%aggr_tree)
-              if(errc.eq.GFC_SUCCESS) then
-               if(this%num_phys_nodes.gt.1) then
-                call segs(1)%set(0_INTL,this%num_phys_nodes,errc) !full range of physical nodes: (0:N] = [1:N]
-                !write(*,*)'initial node range: ',segs(1)%lower_bound(),segs(1)%upper_bound() !debug
-                if(errc.eq.0) then
-                 errc=vit%append(segs(1))
+              if(this%num_phys_nodes.gt.1) then
+               call segs(1)%set(0_INTL,this%num_phys_nodes,errc) !full range of physical nodes: (0:N] = [1:N]
+               !write(*,*)'initial node range: ',segs(1)%lower_bound(),segs(1)%upper_bound() !debug
+               if(errc.eq.0) then
+                errc=vt_it%append(segs(1))
+                if(errc.eq.GFC_SUCCESS) then
+                 errc=vt_it%add_leaf(this%num_virt_nodes) !root (full range of nodes)
                  if(errc.eq.GFC_SUCCESS) then
                   this%num_virt_nodes=this%num_virt_nodes+1_INTL
-                  errc=vit%reset_back(); up=>vit%get_value(errc)
-                  if(errc.eq.GFC_SUCCESS) then
-                   errc=nit%add_leaf(up,assoc_only=.TRUE.) !root (full range)
-                   if(errc.eq.GFC_SUCCESS) then
- !Recursive splitting (building the virtual node tree):
-                    match=.TRUE.
-                    tloop: do while(match)
-                     match=.FALSE.
-                     do while(errc.eq.GFC_SUCCESS)
+ !Recursive decomposition (building the virtual node tree):
+                  match=.TRUE.
+                  tloop: do while(match)
+                   match=.FALSE.
+                   do while(errc.eq.GFC_SUCCESS)
   !Process the current tree vertex;
-                      up=>nit%get_value(errc); if(errc.ne.GFC_SUCCESS) exit tloop
-                      rp=>NULL(); select type(up); class is(seg_int_t); rp=>up; end select
-                      if(.not.associated(rp)) then; errc=-15; exit tloop; endif
-                      if(rp%length().lt.int(mas*brf,INTL)) then
-                       m=int(rp%length(),INTD)
-                      else
-                       m=brf
+                    up=>vt_it%get_value(errc); if(errc.ne.GFC_SUCCESS) exit tloop
+                    rp=>NULL(); select type(up); class is(seg_int_t); rp=>up; end select
+                    if(.not.associated(rp)) then; errc=-11; exit tloop; endif
+                    if(rp%length().lt.int(mas*brf,INTL)) then
+                     m=int(rp%length(),INTD)
+                    else
+                     m=brf
+                    endif
+                    if(m.gt.1) then
+                     call rp%split(m,segs,errc); if(errc.ne.0) exit tloop
+                     do l=1,m
+                      !write(*,*)'adding new subrange: ',segs(l)%lower_bound(),segs(l)%upper_bound() !debug
+                      if(segs(l)%length().gt.1_INTL) then !has to be an aggregate to be added as a new virtual node
+                       errc=vt_it%append(segs(l)); if(errc.ne.GFC_SUCCESS) exit tloop
+                       errc=vt_it%add_leaf(this%num_virt_nodes,no_move=.TRUE.); if(errc.ne.GFC_SUCCESS) exit tloop
+                       this%num_virt_nodes=this%num_virt_nodes+1_INTL !each node aggregate is added as a virtual node
+                       match=.TRUE.
+                      else !individual node
+                       errc=vt_it%add_leaf(segs(l)%lower_bound(),no_move=.TRUE.); if(errc.ne.GFC_SUCCESS) exit tloop
                       endif
-                      if(m.gt.1) then
-                       call rp%split(m,segs,errc); if(errc.ne.0) exit tloop
-                       do l=1,m
-                        !write(*,*)'adding new subrange: ',segs(l)%lower_bound(),segs(l)%upper_bound() !debug
-                        if(segs(l)%length().gt.1_INTL) then !has to be an aggregate to be added as a new virtual node
-                         match=.TRUE.
-                         errc=vit%append(segs(l)); if(errc.ne.GFC_SUCCESS) exit tloop
-                         this%num_virt_nodes=this%num_virt_nodes+1_INTL !each node aggregate is added as a virtual node
-                         errc=vit%reset_back(); up=>vit%get_value(errc); if(errc.ne.GFC_SUCCESS) exit tloop
-                         errc=nit%add_leaf(up,assoc_only=.TRUE.,no_move=.TRUE.); if(errc.ne.GFC_SUCCESS) exit tloop
-                        else
-                         up=>vit%element_value(segs(l)%lower_bound(),errc); if(errc.ne.GFC_SUCCESS) exit tloop
-                         errc=nit%add_leaf(up,assoc_only=.TRUE.,no_move=.TRUE.); if(errc.ne.GFC_SUCCESS) exit tloop
-                        endif
-                       enddo
-                      endif
-  !Move to the right cousin (within the current tree level):
-                      errc=nit%move_to_cousin()
                      enddo
-                     if(errc.eq.GFC_NO_MOVE) then; errc=GFC_SUCCESS; else; exit tloop; endif
+                    endif
+  !Move to the right cousin (within the current tree level):
+                    errc=vt_it%move_to_cousin()
+                   enddo
+                   if(errc.eq.GFC_NO_MOVE) then; errc=GFC_SUCCESS; else; exit tloop; endif
   !Move to the children level:
-                     do while(errc.eq.GFC_SUCCESS); errc=nit%move_to_cousin(to_previous=.TRUE.); enddo
-                     if(errc.eq.GFC_NO_MOVE) then; errc=GFC_SUCCESS; else; exit tloop; endif
-                     cloop: do
-                      errc=nit%move_to_child(); if(errc.eq.GFC_SUCCESS) exit cloop
-                      if(errc.eq.GFC_NO_MOVE) then
-                       errc=nit%move_to_cousin(); if(errc.eq.GFC_SUCCESS) cycle cloop
-                       if(errc.eq.GFC_NO_MOVE.and.(.not.match)) errc=GFC_SUCCESS
-                      endif
-                      exit tloop
-                     enddo cloop
-                    enddo tloop
-                   else
-                    errc=-14
-                   endif
-                  else
-                   errc=-13
-                  endif
+                   do while(errc.eq.GFC_SUCCESS); errc=vt_it%move_to_cousin(to_previous=.TRUE.); enddo
+                   if(errc.eq.GFC_NO_MOVE) then; errc=GFC_SUCCESS; else; exit tloop; endif
+                   cloop: do
+                    errc=vt_it%move_to_child(); if(errc.eq.GFC_SUCCESS) exit cloop
+                    if(errc.eq.GFC_NO_MOVE) then
+                     errc=vt_it%move_to_cousin(); if(errc.eq.GFC_SUCCESS) cycle cloop
+                     if(errc.eq.GFC_NO_MOVE.and.(.not.match)) errc=GFC_SUCCESS
+                    endif
+                    exit tloop
+                   enddo cloop
+                  enddo tloop
                  else
-                  errc=-12
+                  errc=-10
                  endif
-                else
-                 errc=-11
-                endif
-               else !only one physical node in the system (already registered)
-                up=>vit%get_value(errc)
-                if(errc.eq.GFC_SUCCESS) then
-                 errc=nit%add_leaf(up,assoc_only=.TRUE.); if(errc.ne.GFC_SUCCESS) errc=-10
                 else
                  errc=-9
                 endif
-               endif
-               m=nit%release(); if(errc.eq.0.and.m.ne.0) errc=-8
-               if(errc.eq.0) then
-                write(*,'(i8," virtual nodes. ")',ADVANCE='NO') this%num_virt_nodes
                else
-                write(*,'(" FAILED. ")',ADVANCE='NO')
+                errc=-8
                endif
-              else
-               errc=-7
+              else !only one physical node in the computing system (already registered as virtual node 0)
+               errc=vt_it%add_leaf(0_INTL); if(errc.ne.GFC_SUCCESS) errc=-7
               endif
              else
               errc=-6
              endif
-             m=vit%release(); if(errc.eq.0.and.m.ne.0) errc=-5
+             m=vt_it%release(); if(errc.eq.0.and.m.ne.0) errc=-5
             else
              errc=-4
             endif
@@ -271,7 +247,13 @@
            errc=-2
           endif
          endif
-         if(errc.ne.0) call comp_system_dtor(this)
+         if(errc.eq.0) then
+          write(*,'(i8," virtual nodes. ")',ADVANCE='NO') this%num_virt_nodes
+          !call this%print_it() !debug
+         else
+          write(*,'(" Error ",i4,1x)',ADVANCE='NO') errc
+          call comp_system_dtor(this)
+         endif
          if(present(ierr)) ierr=errc
          return
 !--------------
@@ -280,21 +262,30 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine CompSystemCtorSimple
+!-----------------------------------------
+        subroutine CompSystemPrintIt(this)
+!Prints the node aggregation tree imposed on the computing system.
+         implicit none
+         class(comp_system_t), intent(in):: this       !in: hierarchical computing system representation
+         integer(INTD):: errc
+         type(vec_tree_iter_t):: vt_it
+
+         errc=vt_it%init(this%virt_nodes)
+         if(errc.eq.GFC_SUCCESS) errc=vt_it%scanp(action_f=seg_int_print_range)
+         errc=vt_it%release()
+         return
+        end subroutine CompSystemPrintIt
 !----------------------------------------
         subroutine comp_system_dtor(this)
 !Destructor for <comp_system_t>.
          implicit none
          type(comp_system_t):: this !inout: computing system representation
-         type(tree_iter_t):: tree_it
-         type(vector_iter_t):: vec_it
+         type(vec_tree_iter_t):: vt_it
          integer(INTD):: ierr
 
-         ierr=tree_it%init(this%aggr_tree)
-         if(ierr.eq.GFC_SUCCESS) ierr=tree_it%delete_subtree()
-         ierr=tree_it%release()
-         ierr=vec_it%init(this%virt_nodes)
-         if(ierr.eq.GFC_SUCCESS) ierr=vec_it%delete_all()
-         ierr=vec_it%release()
+         ierr=vt_it%init(this%virt_nodes)
+         if(ierr.eq.GFC_SUCCESS) ierr=vt_it%delete_all()
+         ierr=vt_it%release()
          this%num_virt_nodes=0
          this%num_phys_nodes=0
          return

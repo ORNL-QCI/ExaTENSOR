@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Base
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017-03-13 (started 2016-02-17)
+!REVISION: 2017-03-16 (started 2016-02-17)
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -149,20 +149,20 @@
          integer(INTL), private:: tot_count=0_INTL  !total number of iterations after the last reset
          integer(INTL), private:: pred_count=0_INTL !number of iterations with a TRUE predicate after the last reset
          contains
-          procedure, non_overridable, public:: get_status=>IterGetStatus  !returns the status of the iterator
-          procedure, non_overridable, public:: set_status_=>IterSetStatus !PRIVATE: sets the status of the iterator
-          procedure, public:: get_value=>IterGetValue                     !returns a pointer to the value of the current container element
-          procedure, public:: reset_count=>IterResetCount                 !resets all iteration counters to zero
-          procedure, public:: total_count=>IterTotalCount                 !returns the total iteration count since the last reset
-          procedure, public:: predicated_count=>IterPredicatedCount       !returns the TRUE predicated iteration count since the last reset
-          procedure, public:: scanp=>IterScanProc                 !traverses the container with an optional action implemented by a procedure
-          procedure, public:: scanf=>IterScanFunc                 !traverses the container with an optional action implemented by a functor
-          procedure(gfc_it_init_i), deferred, public:: init       !initializes the iterator (associates it with a container and positions it on the root)
-          procedure(gfc_it_reset_i), deferred, public:: reset     !resets the iterator to the beginning (root element)
-          procedure(gfc_it_reset_i), deferred, public:: release   !dissociates the iterator from its container
-          procedure(gfc_it_pointee_i), deferred, public:: pointee !returns the element currently pointed to
-          procedure(gfc_it_next_i), deferred, public:: next       !proceeds to the next element of the container
-          procedure(gfc_it_next_i), deferred, public:: previous   !proceeds to the previous element of the container
+          procedure, public:: set_status_=>IterSetStatus            !PRIVATE: sets the status of the iterator
+          procedure, public:: get_status=>IterGetStatus             !returns the status of the iterator
+          procedure, public:: get_value=>IterGetValue               !returns a pointer to the value of the current container element
+          procedure, public:: reset_count=>IterResetCount           !resets all iteration counters to zero
+          procedure, public:: total_count=>IterTotalCount           !returns the total iteration count since the last reset
+          procedure, public:: predicated_count=>IterPredicatedCount !returns the TRUE predicated iteration count since the last reset
+          procedure, public:: scanp=>IterScanProc                   !traverses the container with an optional action implemented by a procedure
+          procedure, public:: scanf=>IterScanFunc                   !traverses the container with an optional action implemented by a functor
+          procedure(gfc_it_init_i), deferred, public:: init         !initializes the iterator (associates it with a container and positions it on the root)
+          procedure(gfc_it_reset_i), deferred, public:: reset       !resets the iterator to the beginning (root element)
+          procedure(gfc_it_reset_i), deferred, public:: release     !dissociates the iterator from its container
+          procedure(gfc_it_pointee_i), deferred, public:: pointee   !returns the element currently pointed to
+          procedure(gfc_it_next_i), deferred, public:: next         !proceeds to the next element of the container
+          procedure(gfc_it_next_i), deferred, public:: previous     !proceeds to the previous element of the container
         end type gfc_iter_t
  !Base predicate:
         type, abstract, public:: gfc_predicate_t
@@ -280,8 +280,8 @@
         private ContNumElems
         private ContUpdateNumElems
         private ContQuickCountingOff
-        private IterGetStatus
         private IterSetStatus
+        private IterGetStatus
         private IterGetValue
         private IterResetCount
         private IterTotalCount
@@ -747,20 +747,6 @@
          return
         end subroutine ContQuickCountingOff
 !----------------------------------------------------
-        function IterGetStatus(this,ierr) result(sts)
-!Returns the status of the iterator.
-         implicit none
-         integer(INTD):: sts                         !out: current status of the iterator
-         class(gfc_iter_t), intent(in):: this        !in: iterator
-         integer(INTD), intent(out), optional:: ierr !out: error code (0:success)
-         integer(INTD):: errc
-
-         errc=GFC_SUCCESS
-         sts=this%state
-         if(present(ierr)) ierr=errc
-         return
-        end function IterGetStatus
-!----------------------------------------------------
         function IterSetStatus(this,sts) result(ierr) !INTERNAL USE ONLY!
 !Sets the status of the iterator.
          implicit none
@@ -777,6 +763,20 @@
          end select
          return
         end function IterSetStatus
+!----------------------------------------------------
+        function IterGetStatus(this,ierr) result(sts)
+!Returns the status of the iterator.
+         implicit none
+         integer(INTD):: sts                         !out: current status of the iterator
+         class(gfc_iter_t), intent(in):: this        !in: iterator
+         integer(INTD), intent(out), optional:: ierr !out: error code (0:success)
+         integer(INTD):: errc
+
+         errc=GFC_SUCCESS
+         sts=this%state
+         if(present(ierr)) ierr=errc
+         return
+        end function IterGetStatus
 !-----------------------------------------------------
         function IterGetValue(this,ierr) result(val_p)
 !Returns a pointer to the value of the current container position.
@@ -787,7 +787,7 @@
          integer(INTD):: errc
          class(gfc_cont_elem_t), pointer:: gep
 
-         gep=>this%pointee(errc)
+         val_p=>NULL(); gep=>this%pointee(errc)
          if(errc.eq.GFC_SUCCESS) val_p=>gep%get_value(errc)
          if(present(ierr)) ierr=errc
          return
