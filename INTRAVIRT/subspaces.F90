@@ -214,7 +214,9 @@
          contains
           procedure, private:: SubspaceCtorBase                            !initializes a subspace with id and real space support dimension only (ctor)
           generic, public:: subspace_ctor=>SubspaceCtorBase
+          procedure, public:: is_set=>SubspaceIsSet                        !returns TRUE if the subspace is set (constructed)
           procedure, public:: get_id=>SubspaceGetId                        !returns the subspace id
+          procedure, public:: get_basis_subrange=>SubspaceGetBasisSubrange !returns the subspace basis subrange
           procedure, public:: get_supp_dim=>SubspaceGetSuppDim             !returns the dimensionality of the subspace support
           procedure, public:: get_max_resolution=>SubspaceGetMaxResolution !returns the max resolution (dimension) of the subspace
           procedure, public:: register_basis=>SubspaceRegisterBasis        !registers a specific basis of the subspace
@@ -336,7 +338,9 @@
         public subspace_basis_dtor
  !subspace_t:
         private SubspaceCtorBase
+        private SubspaceIsSet
         private SubspaceGetId
+        private SubspaceGetBasisSubrange
         private SubspaceGetSuppDim
         private SubspaceGetMaxResolution
         private SubspaceRegisterBasis
@@ -1695,6 +1699,18 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine SubspaceCtorBase
+!----------------------------------------------------
+        function SubspaceIsSet(this,ierr) result(ans)
+!Returns TRUE if the subspace is set.
+         implicit none
+         logical:: ans                               !out: answer
+         class(subspace_t), intent(in):: this        !in: subspace
+         integer(INTD), intent(out), optional:: ierr !out: error code
+
+         ans=(this%subspace_id.ge.0)
+         if(present(ierr)) ierr=0
+         return
+        end function SubspaceIsSet
 !---------------------------------------------------
         function SubspaceGetId(this,ierr) result(id)
          implicit none
@@ -1708,6 +1724,24 @@
          if(present(ierr)) ierr=errc
          return
         end function SubspaceGetId
+!--------------------------------------------------------------------
+        function SubspaceGetBasisSubrange(this,ierr) result(subrange)
+!Returns the subspace basis subrange.
+         implicit none
+         type(seg_int_t):: subrange                  !out: subrange
+         class(subspace_t), intent(in):: this        !in: subspace
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         if(this%is_set()) then
+          subrange=this%basis_subrange
+         else
+          call subrange%set(0_INTL,0_INTL)
+          errc=1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function SubspaceGetBasisSubrange
 !--------------------------------------------------------------
         function SubspaceGetSuppDim(this,ierr) result(supp_dim)
          implicit none
@@ -1898,8 +1932,8 @@
          integer(INTD), intent(in), optional:: branch_fac       !in: aggregation tree branching factor (defaults to 2)
          complex(8), intent(in), optional, target:: metric(:,:) !in: metric tensor: g_ij=<Psi_i|Psi_j>: Hermitian complex matrix
          logical:: split
-         integer(INTD):: i,errc,brf
-         integer(INTL):: m,nbnd
+         integer(INTD):: i,l,m,brf,errc
+         integer(INTL):: nbnd
          integer(INTL), allocatable:: bndr(:)
          type(vec_tree_iter_t):: vt_it
          type(seg_int_t):: seg
@@ -1941,13 +1975,13 @@
                 call seg%set(0_INTL,this%space_dim,errc) !full space: (0:N] = [1:N]
                 if(errc.eq.0) call subspace%subspace_ctor(this%num_subspaces,errc,seg)
                 if(errc.eq.0) errc=vt_it%append(subspace)
-                if(errc.eq.GFC_SUCCESS) errc=vt_it%reset_back()
                 if(errc.eq.GFC_SUCCESS) up=>vt_it%get_value(errc)
                 if(errc.eq.GFC_SUCCESS) then
                  subsp=>NULL(); select type(up); class is(subspace_t); subsp=>up; end select
                  if(associated(subsp)) then
                   call subsp%register_basis(full_basis,errc)
-                  if(errc.eq.0) this%num_subspaces=this%num_subspaces+1_INTL
+                  if(errc.eq.0) errc=vt_it%add_leaf(this%num_subspaces)
+                  if(errc.eq.GFC_SUCCESS) this%num_subspaces=this%num_subspaces+1_INTL
                  else
                   errc=1
                  endif
@@ -1962,17 +1996,35 @@
                    up=>vt_it%get_value(errc); if(errc.ne.GFC_SUCCESS) exit tloop
                    subsp=>NULL(); select type(up); class is(subspace_t); subsp=>up; end select
                    if(.not.associated(subsp)) then; errc=1; exit tloop; endif
-                   m=subsp%get_max_resolution(errc); if(errc.ne.0) exit tloop
-                   if(m.gt.1) then !aggregate subspace
-                    call seg%set(0_INTL,m,errc); if(errc.ne.0) exit tloop
+                   m=int(min(subsp%get_max_resolution(errc),int(brf,INTL)),INTD); if(errc.ne.0) exit tloop
+                   if(m.gt.1) then !aggregate subspace, thus can be split further
+                    seg=subsp%get_basis_subrange(errc); if(errc.ne.0) exit tloop
                     basp=>subsp%resolve(errc); if(errc.ne.0) exit tloop
                     if(associated(basp)) then
                      call set_symmetry_boundaries(basp,nbnd,bndr,errc); if(errc.ne.0) exit tloop
                     else
                      errc=1; exit tloop
                     endif
-                   else !1-dimensional subspace
-                    
+                    if(nbnd.gt.0) then
+                     call seg%split(m,segs,errc,bndr(1:nbnd))
+                    else
+                     call seg%split(m,segs,errc)
+                    endif
+                    do l=1,m
+                     if(segs(l)%length().gt.1_INTL) then !aggregate subspace
+                      call construct_subspace_basis(full_basis,segs(l),basis,errc); if(errc.ne.0) exit tloop
+                      call subspace%subspace_ctor(this%num_subspaces,errc,segs(l)); if(errc.ne.0) exit tloop
+                      errc=vt_it%append(subspace); if(errc.ne.GFC_SUCCESS) exit tloop
+                      up=>vt_it%get_value(errc); if(errc.ne.GFC_SUCCESS) exit tloop
+                      subsp=>NULL(); select type(up); class is(subspace_t); subsp=>up; end select
+                      if(.not.associated(subsp)) then; errc=1; exit tloop; endif
+                      call subsp%register_basis(basis,errc); if(errc.ne.0) exit tloop
+                      errc=vt_it%add_leaf(this%num_subspaces,no_move=.TRUE.); if(errc.ne.GFC_SUCCESS) exit tloop
+                      this%num_subspaces=this%num_subspaces+1_INTL
+                     else !1-dimensional subspace
+                      errc=vt_it%add_leaf(segs(l)%lower_bound(),no_move=.TRUE.); if(errc.ne.GFC_SUCCESS) exit tloop
+                     endif
+                    enddo
                    endif
   !Move to the right cousin (within the current tree level):
                    errc=vt_it%move_to_cousin()
