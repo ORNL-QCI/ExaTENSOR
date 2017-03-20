@@ -1,7 +1,7 @@
 #Tensor Algebra Programming Language (TAProL) syntax (.tapl)
 #AUTHOR: Dmitry I. Lyakh: quant4me@gmail.com
 #TAPL complements QMDL (Quantum Method Design Language)
-#developed by D.I.Lyakh in 2009-2013 at QTP.
+#developed by D.I.Lyakh in 2009-2013 while at QTP.
 
 #Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 #Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -34,15 +34,15 @@ scope my_tapl_program group(CC)
  load T2(a0,a1,i0,i1): tag("My old tensor")              #this will load a tensor (block-sparse in general)
  V2(i0,i1,a0,a1)=method("2e Coulomb"): [i0<i1] [a0<a1] sparse("Scheme0") #this will generate the given tensor slice
  V2(i0,i1,a0,a1)=>method("2e Coulomb")                                   #this will defer the generator to upon necessity
- Z2(a0,a1,i0,i1)=>Y(a0,p1,p2)*Y(a1,p2,p3)*Y(i0,p3,p4)*Y(i1,p4,p1) #impose a specific low-rank structure on the tensor (MPS here)
+ Z2(a0,a1,i0,i1)=>Y(a0,p1,p2)*Y(a1,p2,p3)*Y(i0,p3,p4)*Y(i1,p4,p1) #impose a specific factorized structure on the tensor (MPS here)
  Z3(a0,a1,i0,i1)=V2(i0,k0,a0,c0)*T2(c0,a1,k0,i1): [i0<i1] [a0<a1] sparse("Scheme1") #tensor contraction with restrictions
  save Z3(a0,a1,i0,i1): tag("My new tensor")              #save a tensor slice
  save V2: tag("My integrals")                            #save the full tensor
- destroy V2,T2,Z3(a0,a1,i0,i1)                           #destroy full V2 and T2, and a slice of Z2
- export Z4(a0,a1,i0,i1): tag("My Z4")                    #this will expose the Z2 slice to other scoping units
- export Z4(a0,a1,i0,i1): tag("My Z4") to(CC:w)           #this will expose the Z2 slice to the scoping group CC with write permissions
+ destroy V2,T2,Z3(a0,a1,i0,i1)                           #destroy full V2 and T2, and a slice of Z3
+ export Z4(a0,a1,i0,i1): tag("My Z4")                    #this will expose a Z4 slice to other scoping units
+ export Z4(a0,a1,i0,i1): tag("My Z4") to(CC:w)           #this will expose a Z4 slice to the scoping group CC with write permissions
  invoke DIIS_algorithm                                   #invoke another scoping unit
- import C0(): tag("Scalar")                              #import the result from DIIS_algorithm
+ import C0(): tag("Scalar")                              #import the result from another scoping unit
 end scope my_tapl_program
 
 scope DIIS_algrithm group(CC)

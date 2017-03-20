@@ -1,7 +1,7 @@
 !ExaTENSOR: Massively Parallel Virtual Processor for Scale-Adaptive Tensor Algebra
 !This is the top level API module of ExaTENSOR
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/03/16
+!REVISION: 2017/03/20
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -40,12 +40,23 @@
 !DATA:
 
 !VISIBILITY:
-       public exa_tensor !entry point into ExaTensor
-
+ !Control API:
+       public exa_tensor                    !entry point into ExaTensor (debug)
+#if 0
+       public exatns_start                  !starts the ExaTENSOR DSVP
+       public exatns_stop                   !stops the ExaTENSOR DSVP
+ !Hierarchical vector space:
+       public exatns_space_register         !registers a vector space
+       public exatns_space_unregister       !unregisters a vector space
+       public exatns_subspace_register      !registers a subspace in a vector space
+       public exatns_subspace_unregister    !unregisters a subspace in a vector space
+       public exatns_index_register         !assigns an index label to a specific space/subspace
+       public exatns_index_unregister       !unregisters an index label
+#endif
       contains
 !IMPLEMENTATION:
 !------------------------------------------
-       subroutine exa_tensor(ierr,ext_comm)
+       subroutine exa_tensor(ierr,ext_comm) !debug
 !ExaTensor entry point: Starts a process, assigns a role to it, lives it, ends the process.
 !If an existing MPI communicator <ext_comm> is passed here, it will be used. Otherwise,
 !the MPI_COMM_WORLD will be initialized, subsequently used, and finalized at the end.
