@@ -2,7 +2,7 @@
 !The elements are initially inserted in a vector with an option to be
 !later added in a tree, thus imposing a tree relationship on them.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017/03/16
+!REVISION: 2017/03/20
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -80,6 +80,7 @@
           procedure, public:: previous=>VecTreeIterPrevious             !moves the iterator to the previous container element (only the vector part if tree is not fully built)
           procedure, public:: get_length=>VecTreeIterGetLength          !returns the current length of the container
           procedure, public:: get_offset=>VecTreeIterGetOffset          !returns the current offset in the container
+          procedure, public:: element_value=>VecTreeIterElementValue    !returns a pointer to the value of a specific element
           procedure, public:: move_to=>VecTreeIterMoveTo                !moves the iterator to the specific container element by its sequential number
           procedure, public:: move_to_sibling=>VecTreeIterMoveToSibling !moves the iterator to the next/previous sibling of the current element in the tree
           procedure, public:: move_to_child=>VecTreeIterMoveToChild     !moves the iterator to the first child of the current element in the tree
@@ -108,6 +109,7 @@
         private VecTreeIterPrevious
         private VecTreeIterGetLength
         private VecTreeIterGetOffset
+        private VecTreeIterElementValue
         private VecTreeIterMoveTo
         private VecTreeIterMoveToSibling
         private VecTreeIterMoveToChild
@@ -421,6 +423,20 @@
          if(present(ierr)) ierr=errc
          return
         end function VecTreeIterGetOffset
+!-----------------------------------------------------------------------
+        function VecTreeIterElementValue(this,offset,ierr) result(val_p)
+!Returns a pointer to the value of a specific element.
+         implicit none
+         class(*), pointer:: val_p                   !out: pointer to the value of a specific element
+         class(vec_tree_iter_t), intent(in):: this   !in: vector tree iterator
+         integer(INTL), intent(in):: offset          !in: offset of the element in the vector
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         val_p=>this%val_it%element_value(offset,errc)
+         if(present(ierr)) ierr=errc
+         return
+        end function VecTreeIterElementValue
 !-----------------------------------------------------------
         function VecTreeIterMoveTo(this,offset) result(ierr)
 !Moves the iterator to a specific vector position.

@@ -68,6 +68,10 @@
        integer(INT_MPI), intent(in), optional:: ext_comm !in: existing MPI communicator (defaults to MPI_COMM_WORLD)
        integer(INT_MPI):: errc,i,my_rank
        integer(INTD):: error_code
+       integer(INTL), parameter:: TEST_SPACE_DIM=20    !debug
+       type(spher_symmetry_t):: symm(1:TEST_SPACE_DIM) !debug
+       type(subspace_basis_t):: full_basis             !debug
+       type(h_space_t):: vec_space                     !debug
 
 !Start the (MPI) process and init its services:
        ierr=0; errc=0
@@ -89,11 +93,11 @@
  !Build NAT:
          write(jo,'("#MSG(exatensor): Building the Node Aggregation Tree (NAT) ... ")',ADVANCE='NO')
          call comp_system%comp_system_ctor('hardware.exaconf',dil_global_comm_size(),error_code)
- !Build SAT:
+ !Build SAT (debug):
          if(error_code.eq.0) then
           write(jo,'("Ok")')
           write(jo,'("#MSG(exatensor): Building the Subspace Aggregation Tree (SAT) ... ")',ADVANCE='NO')
-          !...(error_code)
+          call register_test_space(error_code)
           if(error_code.eq.0) then; write(jo,'("Ok")'); else; write(jo,'("Failed")'); ierr=-2; endif
          else
           write(jo,'("Failed")')
@@ -120,6 +124,28 @@
 !Finish the (MPI) process:
        call dil_process_finish(errc); if(errc.ne.0) ierr=-5
        return
+
+       contains
+
+        subroutine register_test_space(jerr)
+         implicit none
+         integer(INTD), intent(out):: jerr
+         integer(INTL):: jj
+
+         jerr=0
+         call full_basis%subspace_basis_ctor(TEST_SPACE_DIM,jerr); if(jerr.ne.0) return
+         do jj=1,TEST_SPACE_DIM
+          call symm(jj)%spher_symmetry_ctor(int((jj-1)/5,INTD),0,jerr); if(jerr.ne.0) return
+          call full_basis%set_basis_func(jj,BASIS_ABSTRACT,jerr,symm=symm(jj)); if(jerr.ne.0) return
+         enddo
+         call full_basis%finalize(jerr); if(jerr.ne.0) return
+         call vec_space%h_space_ctor(full_basis,jerr); if(jerr.ne.0) return
+         write(*,'(i9,"-dimensional full space -> ",i9," subspaces ")',ADVANCE='NO')&
+              &vec_space%get_space_dim(),vec_space%get_num_subspaces() !debug
+         !call vec_space%print_it() !debug
+         return
+        end subroutine register_test_space
+
        end subroutine exa_tensor
 
       end module exatensor

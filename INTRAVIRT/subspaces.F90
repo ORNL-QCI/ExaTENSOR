@@ -1,7 +1,7 @@
 !Infrastructure for a recursive adaptive vector space decomposition
 !and hierarchical vector space representation.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/03/17
+!REVISION: 2017/03/20
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -139,12 +139,13 @@
          integer(INTD), private:: orb_moment=SYMMETRY_NONE   !total orbital momentum: [0,1,2,...)
          integer(INTD), private:: orb_z_proj                 !Z-axis projection of the total orbital momentum: [-L...+L], if defined
          contains
-          procedure, private:: SpherSymmetryCtor                     !constructor
+          procedure, private:: SpherSymmetryCtor                            !constructor
           generic, public:: spher_symmetry_ctor=>SpherSymmetryCtor
-          procedure, public:: orb_momentum=>SpherSymmetryOrbMomentum !returns the total orbital momentum and its Z-axis projection
-          procedure, public:: compare=>SpherSymmetryCompare          !compares two spherical symmetries
-          procedure, public:: combine=>SpherSymmetryCombine          !combines two spherical symmetries (common lower irrep, if any)
-          final:: spher_symmetry_dtor                                !destructor
+          procedure, public:: get_orb_momentum=>SpherSymmetryGetOrbMomentum !returns the total orbital momentum and its Z-axis projection
+          procedure, public:: compare=>SpherSymmetryCompare                 !compares two spherical symmetries
+          procedure, public:: combine=>SpherSymmetryCombine                 !combines two spherical symmetries (common lower irrep, if any)
+          procedure, public:: print_it=>SpherSymmetryPrintIt                !prints the symmetry information
+          final:: spher_symmetry_dtor                                       !destructor
         end type spher_symmetry_t
  !Abstract basis function (basis function support only):
         type, public:: basis_func_supp_t
@@ -174,9 +175,9 @@
         end type basis_func_gauss_t
  !Typed basis function:
         type, public:: basis_func_t
-         integer(INTD), private:: basis_kind=BASIS_NONE                    !specific basis kind
-         class(basis_func_supp_t), pointer, private:: basis_func_p=>NULL() !pointer to a basis function of this kind
-         class(symmetry_t), pointer, private:: symm_p=>NULL()              !pointer to the symmetry of the basis function (if any)
+         integer(INTD), private:: basis_kind=BASIS_NONE                    !specific basis kind (mandatory)
+         class(basis_func_supp_t), pointer, private:: basis_func_p=>NULL() !pointer to a basis function of this kind (optional)
+         class(symmetry_t), pointer, private:: symm_p=>NULL()              !pointer to the symmetry of the basis function (optional)
          contains
           procedure, private:: BasisFuncCtor                         !sets up the basis function (ctor)
           generic, public:: basis_func_ctor=>BasisFuncCtor
@@ -222,6 +223,7 @@
           procedure, public:: register_basis=>SubspaceRegisterBasis        !registers a specific basis of the subspace
           procedure, public:: resolve=>SubspaceResolve                     !resolves the subspace with a specific basis (based on some condition)
           procedure, public:: relate=>SubspaceRelate                       !relates the subspaces to another subspace
+          procedure, public:: print_it=>SubspacePrintIt                    !prints the subspace information
           final:: subspace_dtor                                            !destroys the subspace (dtor)
         end type subspace_t
  !Hierarchical composite index:
@@ -238,11 +240,14 @@
          complex(8), pointer, private:: metric_p(:,:)=>NULL() !pointer to the original metric tensor: g12=<bf1|bf2>
          real(8), allocatable, private:: overlap(:,:)         !subspace support overlap matrix (extent of support overlap between all subspaces)
          contains
-          procedure, private:: HSpaceCtorSimple               !constructs a simple hierarchical representation of a vector space (ctor)
-          generic, public:: h_space_ctor=>HSpaceCtorSimple    !ctors
-          procedure, public:: is_set=>HSpaceIsSet             !returns TRUE if the hierarchical vector space is set
-          procedure, public:: get_subspace=>HSpaceGetSubspace !returns a pointer to the requested subspace of the hierarchical vector space
-          final:: h_space_dtor                                !destructs the hierarchical representation of a vector space
+          procedure, private:: HSpaceCtorSimple                        !constructs a simple hierarchical representation of a vector space (ctor)
+          generic, public:: h_space_ctor=>HSpaceCtorSimple             !ctors
+          procedure, public:: is_set=>HSpaceIsSet                      !returns TRUE if the hierarchical vector space is set
+          procedure, public:: get_space_dim=>HSpaceGetSpaceDim         !returns the dimension of the vector space
+          procedure, public:: get_num_subspaces=>HSpaceGetNumSubspaces !returns the total number of defined subspaces in the vector space
+          procedure, public:: get_subspace=>HSpaceGetSubspace          !returns a pointer to the requested subspace of the hierarchical vector space
+          procedure, public:: print_it=>HSpacePrintIt                  !prints the hierarchical vector space
+          final:: h_space_dtor                                         !destructs the hierarchical representation of a vector space
         end type h_space_t
 !INTERFACES:
  !symmetry_t:
@@ -308,9 +313,10 @@
         public orthotope_dtor
  !spher_symmetry_t:
         private SpherSymmetryCtor
-        private SpherSymmetryOrbMomentum
+        private SpherSymmetryGetOrbMomentum
         private SpherSymmetryCompare
         private SpherSymmetryCombine
+        private SpherSymmetryPrintIt
         public spher_symmetry_dtor
  !basis_func_supp_t:
         private BasisFuncSuppCtorEmpty
@@ -346,11 +352,15 @@
         private SubspaceRegisterBasis
         private SubspaceResolve
         private SubspaceRelate
+        private SubspacePrintIt
         public subspace_dtor
  !h_space_t:
         private HSpaceCtorSimple
         private HSpaceIsSet
+        private HSpaceGetSpaceDim
+        private HSpaceGetNumSubspaces
         private HSpaceGetSubspace
+        private HSpacePrintIt
         public h_space_dtor
 
        contains
@@ -1170,8 +1180,8 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine SpherSymmetryCtor
-!-----------------------------------------------------------------
-        function SpherSymmetryOrbMomentum(this,z_proj) result(res)
+!--------------------------------------------------------------------
+        function SpherSymmetryGetOrbMomentum(this,z_proj) result(res)
 !Returns the total orbital momentum and its Z-axis projection.
          implicit none
          integer(INTD):: res                           !out: total orbital momentum
@@ -1181,7 +1191,7 @@
          res=this%orb_moment
          if(res.ge.0.and.present(z_proj)) z_proj=this%orb_z_proj
          return
-        end function SpherSymmetryOrbMomentum
+        end function SpherSymmetryGetOrbMomentum
 !-----------------------------------------------------------
         function SpherSymmetryCompare(this,symm) result(cmp)
 !Compares two symmetries.
@@ -1194,7 +1204,7 @@
          cmp=CMP_NC
          select type(symm)
          class is(spher_symmetry_t)
-          om1=this%orb_momentum(mz1); om2=symm%orb_momentum(mz2)
+          om1=this%get_orb_momentum(mz1); om2=symm%get_orb_momentum(mz2)
           if(om1.lt.om2) then
            cmp=CMP_LT
           elseif(om1.gt.om2) then
@@ -1214,7 +1224,7 @@
          return
         end function SpherSymmetryCompare
 !------------------------------------------------------
-        subroutine SpherSymmetryCombine(this,symm,ierr)
+        subroutine SpherSymmetryCombine(this,symm,ierr) !`Reimplement properly
 !Combines two symmetries by finding a common lower symmetry.
          implicit none
          class(spher_symmetry_t), intent(inout):: this !inout: spherical symmetry object
@@ -1225,13 +1235,25 @@
          errc=0
          select type(symm)
          class is(spher_symmetry_t)
-          if(symm%orb_momentum().ne.this%orb_momentum()) call this%spher_symmetry_ctor(SYMMETRY_NONE,0,errc)
+          if(symm%get_orb_momentum().ne.this%get_orb_momentum()) call this%spher_symmetry_ctor(SYMMETRY_NONE,0,errc)
          class default
           errc=1
          end select
          if(present(ierr)) ierr=errc
          return
         end subroutine SpherSymmetryCombine
+!----------------------------------------------------
+        subroutine SpherSymmetryPrintIt(this,dev_out)
+!Prints the symmetry information.
+         implicit none
+         class(spher_symmetry_t), intent(in):: this    !in: spherical symmetry object
+         integer(INTD), intent(in), optional:: dev_out !in: output device (defaults to screen)
+         integer(INTD):: devo
+
+         devo=6; if(present(dev_out)) devo=dev_out
+         write(devo,'("Spherical Symmetry (total,Z): ",i5,1x,i5)') this%orb_moment,this%orb_z_proj
+         return
+        end subroutine SpherSymmetryPrintIt
 !-------------------------------------------
         subroutine spher_symmetry_dtor(this)
 !DTOR for spher_symmetry_t.
@@ -1545,7 +1567,7 @@
         subroutine SubspaceBasisFinalize(this,ierr,num_undef)
 !Finalizes the subspace basis setup after all basis functions have been set.
 !Computes the average center and support in the real space in case of
-!real space supported basis sets.  Also computes the overall symmetry group irrep.
+!real space supported basis sets. Also computes the overall symmetry group irrep.
 !If not all basis functions were set, the <num_undef> argument will return
 !the number of unset basis functions and an error code.
          implicit none
@@ -1602,7 +1624,7 @@
            endif
           enddo bloop
           if(errc.eq.0) then
-           if(nun.lt.n) call this%center%scale(1d0/real(n-nun,8),errc)
+           if(nun.lt.n.and.this%supp_dim.gt.0) call this%center%scale(1d0/real(n-nun,8),errc)
            if(nun.ne.0) errc=2 !some basis functions are still undefined
           endif
          else
@@ -1728,11 +1750,12 @@
         function SubspaceGetBasisSubrange(this,ierr) result(subrange)
 !Returns the subspace basis subrange.
          implicit none
-         type(seg_int_t):: subrange                  !out: subrange
+         type(seg_int_t):: subrange                  !out: basis subrange
          class(subspace_t), intent(in):: this        !in: subspace
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
 
+         errc=0
          if(this%is_set()) then
           subrange=this%basis_subrange
          else
@@ -1898,6 +1921,19 @@
          !`Finish
          return
         end function SubspaceRelate
+!-----------------------------------------------
+        subroutine SubspacePrintIt(this,dev_out)
+!Prints the subspace information.
+         implicit none
+         class(subspace_t), intent(in):: this          !in: subspace
+         integer(INTD), intent(in), optional:: dev_out !in: output device (defaults to screen)
+         integer(INTD):: devo
+
+         devo=6; if(present(dev_out)) devo=dev_out
+         write(devo,'("Subspace ",i10,": [",i9,":",i9,"] -> ",i9," (dim max)")') this%subspace_id,&
+              &this%basis_subrange%lower_bound()+1_INTL,this%basis_subrange%upper_bound(),this%max_resolution
+         return
+        end subroutine SubspacePrintIt
 !-------------------------------------
         subroutine subspace_dtor(this)
          implicit none
@@ -1975,6 +2011,7 @@
                 call seg%set(0_INTL,this%space_dim,errc) !full space: (0:N] = [1:N]
                 if(errc.eq.0) call subspace%subspace_ctor(this%num_subspaces,errc,seg)
                 if(errc.eq.0) errc=vt_it%append(subspace)
+                if(errc.eq.GFC_SUCCESS) errc=vt_it%reset_back();
                 if(errc.eq.GFC_SUCCESS) up=>vt_it%get_value(errc)
                 if(errc.eq.GFC_SUCCESS) then
                  subsp=>NULL(); select type(up); class is(subspace_t); subsp=>up; end select
@@ -1983,7 +2020,7 @@
                   if(errc.eq.0) errc=vt_it%add_leaf(this%num_subspaces)
                   if(errc.eq.GFC_SUCCESS) this%num_subspaces=this%num_subspaces+1_INTL
                  else
-                  errc=1
+                  errc=2
                  endif
                 endif
  !Recursively split the full space into subspaces while respecting symmetry boundaries, if any:
@@ -1995,7 +2032,7 @@
   !Process the current tree vertex:
                    up=>vt_it%get_value(errc); if(errc.ne.GFC_SUCCESS) exit tloop
                    subsp=>NULL(); select type(up); class is(subspace_t); subsp=>up; end select
-                   if(.not.associated(subsp)) then; errc=1; exit tloop; endif
+                   if(.not.associated(subsp)) then; errc=3; exit tloop; endif
                    m=int(min(subsp%get_max_resolution(errc),int(brf,INTL)),INTD); if(errc.ne.0) exit tloop
                    if(m.gt.1) then !aggregate subspace, thus can be split further
                     seg=subsp%get_basis_subrange(errc); if(errc.ne.0) exit tloop
@@ -2003,21 +2040,25 @@
                     if(associated(basp)) then
                      call set_symmetry_boundaries(basp,nbnd,bndr,errc); if(errc.ne.0) exit tloop
                     else
-                     errc=1; exit tloop
+                     errc=4; exit tloop
                     endif
+                    !write(*,'("Range ")',ADVANCE='NO'); call seg%print_range() !debug
+                    !print *,'To be split into ',m !debug
+                    !print *,'With boundaries ',nbnd,bndr(1:nbnd) !debug
                     if(nbnd.gt.0) then
                      call seg%split(m,segs,errc,bndr(1:nbnd))
                     else
                      call seg%split(m,segs,errc)
                     endif
                     do l=1,m
+                     !write(*,'("Subrange ",i3,": ")',ADVANCE='NO') l; call segs(l)%print_range() !debug
                      if(segs(l)%length().gt.1_INTL) then !aggregate subspace
                       call construct_subspace_basis(full_basis,segs(l),basis,errc); if(errc.ne.0) exit tloop
                       call subspace%subspace_ctor(this%num_subspaces,errc,segs(l)); if(errc.ne.0) exit tloop
                       errc=vt_it%append(subspace); if(errc.ne.GFC_SUCCESS) exit tloop
-                      up=>vt_it%get_value(errc); if(errc.ne.GFC_SUCCESS) exit tloop
+                      up=>vt_it%element_value(this%num_subspaces,errc); if(errc.ne.GFC_SUCCESS) exit tloop
                       subsp=>NULL(); select type(up); class is(subspace_t); subsp=>up; end select
-                      if(.not.associated(subsp)) then; errc=1; exit tloop; endif
+                      if(.not.associated(subsp)) then; errc=5; exit tloop; endif
                       call subsp%register_basis(basis,errc); if(errc.ne.0) exit tloop
                       errc=vt_it%add_leaf(this%num_subspaces,no_move=.TRUE.); if(errc.ne.GFC_SUCCESS) exit tloop
                       this%num_subspaces=this%num_subspaces+1_INTL
@@ -2025,6 +2066,7 @@
                       errc=vt_it%add_leaf(segs(l)%lower_bound(),no_move=.TRUE.); if(errc.ne.GFC_SUCCESS) exit tloop
                      endif
                     enddo
+                    split=.TRUE.
                    endif
   !Move to the right cousin (within the current tree level):
                    errc=vt_it%move_to_cousin()
@@ -2043,26 +2085,26 @@
                   enddo cloop
                  enddo tloop
                 else
-                 errc=2
+                 errc=6
                 endif
                endif
               else
-               errc=2
+               errc=7
               endif
-              i=vt_it%release(); if(errc.eq.0.and.i.ne.GFC_SUCCESS) errc=1
+              i=vt_it%release(); if(errc.eq.0.and.i.ne.GFC_SUCCESS) errc=8
              else
-              errc=1
+              errc=9
              endif
              if(allocated(segs)) deallocate(segs)
             else
-             errc=1
+             errc=10
             endif
            else
-            errc=1
+            errc=11
            endif
            if(allocated(bndr)) deallocate(bndr)
           else
-           errc=1
+           errc=12
           endif
 !Construct the support overlap matrix between all subspaces:
           if(errc.eq.0.and.present(metric)) then
@@ -2070,7 +2112,7 @@
            !`Construct overlaps
           endif
          else
-          errc=1
+          errc=13
          endif
          if(errc.ne.0) call h_space_dtor(this)
          if(present(ierr)) ierr=errc
@@ -2096,6 +2138,8 @@
             curr_bfk=bfp%get_basis_func(jerr,bfsp,curr_symm); if(jerr.ne.0) exit
             bfp=>bas%get_basis_func(ji+1_INTL,jerr); if(jerr.ne.0) exit
             next_bfk=bfp%get_basis_func(jerr,bfsp,next_symm); if(jerr.ne.0) exit
+            !select type(curr_symm); class is(spher_symmetry_t); call curr_symm%print_it(); end select !debug
+            !select type(next_symm); class is(spher_symmetry_t); call next_symm%print_it(); end select !debug
             if(curr_bfk.eq.next_bfk) then
              if(associated(curr_symm)) then
               if(associated(next_symm)) then
@@ -2174,6 +2218,42 @@
          if(present(ierr)) ierr=errc
          return
         end function HSpaceIsSet
+!--------------------------------------------------------
+        function HSpaceGetSpaceDim(this,ierr) result(res)
+!Returns the dimension of the vector space.
+         implicit none
+         integer(INTL):: res                         !out: vector space dimension
+         class(h_space_t), intent(in):: this         !in: hierarchical vector space representation
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=0
+         if(this%space_dim.gt.0) then
+          res=this%space_dim
+         else
+          res=0_INTL; errc=1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function HSpaceGetSpaceDim
+!------------------------------------------------------------
+        function HSpaceGetNumSubspaces(this,ierr) result(res)
+!Returns the total number of defined subspaces in the vector space.
+         implicit none
+         integer(INTL):: res                         !out: total number of subspaces, including the 1-dimensional basis subspaces
+         class(h_space_t), intent(in):: this         !in: hierarchical vector space representation
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=0
+         if(this%num_subspaces.gt.0) then
+          res=this%num_subspaces
+         else
+          res=0_INTL; errc=1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function HSpaceGetNumSubspaces
 !---------------------------------------------------------------------------
         function HSpaceGetSubspace(this,subspace_id,ierr) result(subspace_p)
 !Returns a pointer to the requested subspace from the hierarchical vector space.
@@ -2220,6 +2300,36 @@
          if(present(ierr)) ierr=errc
          return
         end function HSpaceGetSubspace
+!--------------------------------------------------
+        subroutine HSpacePrintIt(this,ierr,dev_out)
+!Prints the hierarchical vector space representation.
+         implicit none
+         class(h_space_t), intent(in):: this           !in: hierarchical vector space
+         integer(INTD), intent(out), optional:: ierr   !out: error code
+         integer(INTD), intent(in), optional:: dev_out !in: output device (defaults to screen)
+         integer(INTD):: errc,devo
+         class(*), pointer:: up
+         class(subspace_t), pointer:: ssp
+         type(vec_tree_iter_t):: vt_it
+
+         devo=6; if(present(dev_out)) devo=dev_out
+         errc=vt_it%init(this%subspaces)
+         if(errc.eq.GFC_SUCCESS) then
+          errc=GFC_IT_ACTIVE; ssp=>NULL()
+          do while(errc.eq.GFC_IT_ACTIVE)
+           up=>vt_it%get_value(errc); if(errc.ne.GFC_SUCCESS) exit
+           select type(up); class is(subspace_t); ssp=>up; end select
+           if(.not.associated(ssp)) then; errc=2; exit; endif
+           call ssp%print_it(devo); ssp=>NULL()
+           errc=vt_it%scanp(return_each=.TRUE.,skip_current=.TRUE.)
+          enddo
+          if(errc.eq.GFC_IT_DONE) errc=vt_it%release()
+         else
+          errc=1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine HSpacePrintIt
 !------------------------------------
         subroutine h_space_dtor(this)
          implicit none
