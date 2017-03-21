@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/02/08
+!REVISION: 2017/03/21
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -301,13 +301,13 @@
          select type(ts2); class is(tens_signature_t); tsp2=>ts2; end select
          if(associated(tsp1).and.associated(tsp2)) then
           cmp=tsp1%compare(tsp2)
-          if(cmp.eq.GFC_CMP_PARENT) then
-           cmp=GFC_CMP_GT
-          elseif(cmp.eq.GFC_CMP_CHILD) then
-           cmp=GFC_CMP_LT
+          if(cmp.eq.CMP_CN) then
+           cmp=CMP_GT
+          elseif(cmp.eq.CMP_IN) then
+           cmp=CMP_LT
           endif
          else
-          cmp=GFC_CMP_ERR
+          cmp=CMP_ER
          endif
          return
         end function cmp_tens_signatures
@@ -325,13 +325,13 @@
          select type(th2); class is(tens_header_t); thp2=>th2; end select
          if(associated(thp1).and.associated(thp2)) then
           cmp=thp1%compare(thp2)
-          if(cmp.eq.GFC_CMP_PARENT) then
-           cmp=GFC_CMP_GT
-          elseif(cmp.eq.GFC_CMP_CHILD) then
-           cmp=GFC_CMP_LT
+          if(cmp.eq.CMP_CN) then
+           cmp=CMP_GT
+          elseif(cmp.eq.CMP_IN) then
+           cmp=CMP_LT
           endif
          else
-          cmp=GFC_CMP_ERR
+          cmp=CMP_ER
          endif
          return
         end function cmp_tens_headers
@@ -471,62 +471,50 @@
         function TensSignatureCompare(this,another) result(cmp)
 !Compares the tensor signature with another tensor signature.
          implicit none
-         integer(INTD):: cmp                           !out: comparison result: {GFC_CMP_EQ,GFC_CMP_LT,GFC_CMP_GT,GFC_CMP_PARENT,GFC_CMP_CHILD,GFC_CMP_NA,GFC_CMP_ERR}
+         integer(INTD):: cmp                           !out: comparison result (see subspaces.F90)
          class(tens_signature_t), intent(in):: this    !in: tensor signature 1
          class(tens_signature_t), intent(in):: another !in: tensor signature 2
          integer(INTD):: nl1,nl2,ch1,ch2,i,rel,errc
          integer(INTL):: s1,s2
-         class(subspace_t), pointer:: sb1,sb2
 
          errc=0
          if(this%is_set().and.another%is_set()) then
-          cmp=GFC_CMP_EQ
+          cmp=CMP_EQ
 !Compare names:
           nl1=len(this%char_name); nl2=len(another%char_name)
-          if(nl1.lt.nl2) then; cmp=GFC_CMP_LT; elseif(nl1.gt.nl2) then; cmp=GFC_CMP_GT; endif
-          if(cmp.eq.GFC_CMP_EQ) then
+          if(nl1.lt.nl2) then; cmp=CMP_LT; elseif(nl1.gt.nl2) then; cmp=CMP_GT; endif
+          if(cmp.eq.CMP_EQ) then
            do i=1,nl1
             ch1=iachar(this%char_name(i:i))
             ch2=iachar(another%char_name(i:i))
-            if(ch1.lt.ch2) then; cmp=GFC_CMP_LT; exit; elseif(ch1.gt.ch2) then; cmp=GFC_CMP_GT; exit; endif
+            if(ch1.lt.ch2) then; cmp=CMP_LT; exit; elseif(ch1.gt.ch2) then; cmp=CMP_GT; exit; endif
            enddo
-           if(cmp.eq.GFC_CMP_EQ) then
+           if(cmp.eq.CMP_EQ) then
             if(associated(this%h_space_p,another%h_space_p)) then
 !Compare specs:
              if(this%num_dims.lt.another%num_dims) then
-              cmp=GFC_CMP_LT
+              cmp=CMP_LT
              elseif(this%num_dims.gt.another%num_dims) then
-              cmp=GFC_CMP_GT
+              cmp=CMP_GT
              else
               do i=1,this%num_dims
                s1=this%space_idx(i); s2=another%space_idx(i)
-               sb1=>this%h_space_p%get_subspace(s1,errc); if(errc.ne.0) exit
-               sb2=>this%h_space_p%get_subspace(s2,errc); if(errc.ne.0) exit
-               rel=sb1%relate(sb2,this%h_space_p)
-               if(rel.eq.GFC_CMP_LT.or.rel.eq.GFC_CMP_GT) then
+               rel=this%h_space_p%relate_subspaces(s1,s2,errc); if(errc.ne.0) exit
+               if(rel.eq.CMP_LT.or.rel.eq.CMP_GT) then
                 cmp=rel; exit
                else
-                if(rel.eq.GFC_CMP_PARENT.or.rel.eq.GFC_CMP_CHILD) then
-                 if(cmp.eq.GFC_CMP_EQ) then
-                  cmp=rel
-                 else
-                  if(rel.ne.cmp) then; cmp=GFC_CMP_NA; exit; endif
-                 endif
-                else
-                 if(rel.ne.GFC_CMP_EQ) then; cmp=rel; exit; endif
-                endif
+                !`Figure out
                endif
               enddo
-              if(errc.ne.0) cmp=GFC_CMP_ERR
-              sb1=>NULL(); sb2=>NULL()
+              if(errc.ne.0) cmp=CMP_ER
              endif
             else
-             cmp=GFC_CMP_ERR !tensors with the same name cannot reside in differe hierarchical spaces
+             cmp=CMP_ER !tensors with the same name cannot reside in differe hierarchical spaces
             endif
            endif
           endif
          else
-          cmp=GFC_CMP_ERR
+          cmp=CMP_ER
          endif
          return
         end function TensSignatureCompare
@@ -865,7 +853,7 @@
         function TensShapeCompare(this,another,compare_groups) result(cmp)
 !Compares the given tensor shape with another tensor shape.
          implicit none
-         integer(INTD):: cmp                            !out: comparison result: {GFC_CMP_EQ,GFC_CMP_LT,GFC_CMP_GT,GFC_CMP_ERR}
+         integer(INTD):: cmp                            !out: comparison result: {CMP_EQ,CMP_LT,CMP_GT,CMP_ER}
          class(tens_shape_t), intent(in):: this         !in: tensor shape 1
          class(tens_shape_t), intent(in):: another      !in: tensor shape 2
          logical, intent(in), optional:: compare_groups !in: if FALSE, dimension groups will not be taken into account (defaults to TRUE)
@@ -875,23 +863,23 @@
          if(present(compare_groups)) then; comp_grps=compare_groups; else; comp_grps=.TRUE.; endif
          if(this%is_set().and.another%is_set()) then
           if(this%num_dims.lt.another%num_dims) then
-           cmp=GFC_CMP_LT
+           cmp=CMP_LT
           elseif(this%num_dims.gt.another%num_dims) then
-           cmp=GFC_CMP_GT
+           cmp=CMP_GT
           else
-           cmp=GFC_CMP_EQ
+           cmp=CMP_EQ
            do i=1,this%num_dims
             if(this%dim_extent(i).lt.another%dim_extent(i)) then
-             cmp=GFC_CMP_LT; exit
+             cmp=CMP_LT; exit
             elseif(this%dim_extent(i).gt.another%dim_extent(i)) then
-             cmp=GFC_CMP_GT; exit
+             cmp=CMP_GT; exit
             endif
            enddo
-           if(cmp.eq.GFC_CMP_EQ.and.comp_grps) then
+           if(cmp.eq.CMP_EQ.and.comp_grps) then
             if(this%num_grps.lt.another%num_grps) then
-             cmp=GFC_CMP_LT
+             cmp=CMP_LT
             elseif(this%num_grps.gt.another%num_grps) then
-             cmp=GFC_CMP_GT
+             cmp=CMP_GT
             else
              if(this%num_grps.gt.0) then
               if(this%num_grps.le.MAX_TENSOR_RANK) then
@@ -900,15 +888,15 @@
                 g1=this%dim_group(i); g2=another%dim_group(i)
                 if(g1.gt.0.and.g2.gt.0) then !both groups are non-trivial
                  if(this%group_spec(g1).lt.another%group_spec(g2)) then
-                  cmp=GFC_CMP_LT; exit
+                  cmp=CMP_LT; exit
                  elseif(this%group_spec(g1).gt.another%group_spec(g2)) then
-                  cmp=GFC_CMP_GT; exit
+                  cmp=CMP_GT; exit
                  else
                   if(gmap(g1).gt.0) then
                    if(gmap(g1).lt.g2) then
-                    cmp=GFC_CMP_LT; exit
+                    cmp=CMP_LT; exit
                    elseif(gmap(g1).gt.g2) then
-                    cmp=GFC_CMP_GT; exit
+                    cmp=CMP_GT; exit
                    endif
                   else
                    gmap(g1)=g2
@@ -916,21 +904,21 @@
                  endif
                 else
                  if(g1.lt.g2) then
-                  cmp=GFC_CMP_LT; exit
+                  cmp=CMP_LT; exit
                  elseif(g1.gt.g2) then
-                  cmp=GFC_CMP_GT; exit
+                  cmp=CMP_GT; exit
                  endif
                 endif
                enddo
               else
-               cmp=GFC_CMP_ERR
+               cmp=CMP_ER
               endif
              endif
             endif
            endif
           endif
          else
-          cmp=GFC_CMP_ERR
+          cmp=CMP_ER
          endif
          return
         end function TensShapeCompare
@@ -1276,13 +1264,13 @@
         function TensHeaderCompare(this,another,compare_groups) result(cmp)
 !Compares the given tensor header with another tensor header.
          implicit none
-         integer(INTD):: cmp                            !out: comparison result: {GFC_CMP_EQ,GFC_CMP_LT,GFC_CMP_GT,GFC_CMP_PARENT,GFC_CMP_CHILD,GFC_CMP_NA,GFC_CMP_ERR}
+         integer(INTD):: cmp                            !out: comparison result (see subspaces.F90)
          class(tens_header_t), intent(in):: this        !in: tensor header 1
          class(tens_header_t), intent(in):: another     !in: tensor header 2
          logical, intent(in), optional:: compare_groups !in: if FALSE, the shape dimension groups will not be taken into account (defaults to TRUE)
 
          cmp=this%signature%compare(another%signature)
-         if(cmp.eq.GFC_CMP_EQ) then
+         if(cmp.eq.CMP_EQ) then
           if(present(compare_groups)) then
            cmp=this%shape%compare(another%shape,compare_groups=compare_groups)
           else

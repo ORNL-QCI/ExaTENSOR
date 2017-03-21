@@ -1,7 +1,7 @@
 !Infrastructure for a recursive adaptive vector space decomposition
 !and hierarchical vector space representation.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/03/20
+!REVISION: 2017/03/21
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -68,6 +68,14 @@
         integer(INTD), parameter, public:: BASIS_WAVELET=7   !wavelet basis set
  !Symmetry:
         integer(INTD), parameter, public:: SYMMETRY_NONE=-1  !no symmetry
+ !Subspace relationship:
+        integer(INTD), parameter, public:: SUBSPACE_SAME=CMP_EQ      !subspace 1 and subspace 2 are the same
+        integer(INTD), parameter, public:: SUBSPACE_LESS=CMP_LT      !subspace 1 is on the left of subspace 2
+        integer(INTD), parameter, public:: SUBSPACE_GREATER=CMP_GT   !subspace 1 is on the right of subspace 2
+        integer(INTD), parameter, public:: SUBSPACE_PARENT=CMP_CN    !subspace 1 is a parent of subspace 2
+        integer(INTD), parameter, public:: SUBSPACE_CHILD=CMP_IN     !subspace 1 is a child of subspace 2
+        integer(INTD), parameter, public:: SUBSPACE_SIBLING=CMP_OV   !subspace 1 and subspace 2 have the same parent
+        integer(INTD), parameter, public:: SUBSPACE_UNRELATED=CMP_NC !subspace 1 and subspace 2 are unrelated
 !TYPES:
  !Real space vector:
         type, public:: real_vec_t
@@ -222,7 +230,6 @@
           procedure, public:: get_max_resolution=>SubspaceGetMaxResolution !returns the max resolution (dimension) of the subspace
           procedure, public:: register_basis=>SubspaceRegisterBasis        !registers a specific basis of the subspace
           procedure, public:: resolve=>SubspaceResolve                     !resolves the subspace with a specific basis (based on some condition)
-          procedure, public:: relate=>SubspaceRelate                       !relates the subspaces to another subspace
           procedure, public:: print_it=>SubspacePrintIt                    !prints the subspace information
           final:: subspace_dtor                                            !destroys the subspace (dtor)
         end type subspace_t
@@ -246,6 +253,7 @@
           procedure, public:: get_space_dim=>HSpaceGetSpaceDim         !returns the dimension of the vector space
           procedure, public:: get_num_subspaces=>HSpaceGetNumSubspaces !returns the total number of defined subspaces in the vector space
           procedure, public:: get_subspace=>HSpaceGetSubspace          !returns a pointer to the requested subspace of the hierarchical vector space
+          procedure, public:: relate_subspaces=>HSpaceRelateSubspaces  !relates two subspaces from the hierarchical vector space
           procedure, public:: print_it=>HSpacePrintIt                  !prints the hierarchical vector space
           final:: h_space_dtor                                         !destructs the hierarchical representation of a vector space
         end type h_space_t
@@ -351,7 +359,6 @@
         private SubspaceGetMaxResolution
         private SubspaceRegisterBasis
         private SubspaceResolve
-        private SubspaceRelate
         private SubspacePrintIt
         public subspace_dtor
  !h_space_t:
@@ -360,6 +367,7 @@
         private HSpaceGetSpaceDim
         private HSpaceGetNumSubspaces
         private HSpaceGetSubspace
+        private HSpaceRelateSubspaces
         private HSpacePrintIt
         public h_space_dtor
 
@@ -1908,19 +1916,6 @@
          if(present(ierr)) ierr=errc
          return
         end function SubspaceResolve
-!----------------------------------------------------------------
-        function SubspaceRelate(this,another,h_space) result(cmp)
-!Relates the given subspace with another subspace in the given subspace hierarchy.
-         implicit none
-         integer(INTD):: cmp                     !out: relation: {GFC_CMP_EQ,GFC_CMP_LT,GFC_CMP_GT,GFC_CMP_CHILD,GFC_CMP_PARENT,GFC_CMP_ERR}
-         class(subspace_t), intent(in):: this    !in: subspace 1
-         class(subspace_t), intent(in):: another !in: subspace 2
-         class(h_space_t), intent(in):: h_space  !in: hierarchical subspace representation
-
-         cmp=GFC_CMP_EQ
-         !`Finish
-         return
-        end function SubspaceRelate
 !-----------------------------------------------
         subroutine SubspacePrintIt(this,dev_out)
 !Prints the subspace information.
@@ -2300,6 +2295,81 @@
          if(present(ierr)) ierr=errc
          return
         end function HSpaceGetSubspace
+!-------------------------------------------------------------------------
+        function HSpaceRelateSubspaces(this,id1,id2,ierr) result(relation)
+!Relates two subspaces from the hierarchical vector space.
+         implicit none
+         integer(INTD):: relation                    !out: relation of subspace 1 to subspace 2: {CMP_XX from dil_basic.F90}
+         class(h_space_t), intent(in):: this         !in: hierarhical vector space
+         integer(INTL), intent(in):: id1             !in: subspace 1 id
+         integer(INTL), intent(in):: id2             !in: subspace 2 id
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc,i
+         integer(INTL):: sid,pid1,pid2
+         type(vec_tree_iter_t):: vt_it
+
+         errc=0; relation=CMP_NC
+         if(id1.ge.0.and.id2.ge.0) then
+          if(id1.eq.id2) then
+           relation=CMP_EQ
+          else
+           errc=vt_it%init(this%subspaces)
+           if(errc.eq.GFC_SUCCESS) then
+            pid1=-1_INTL; pid2=-2_INTL
+ !Try "subspace 1 is a parent of subspace 2":
+            errc=vt_it%move_to(id2)
+            if(errc.eq.GFC_SUCCESS) then
+             do while(errc.eq.GFC_SUCCESS)
+              errc=vt_it%move_to_parent(); if(errc.ne.GFC_SUCCESS) exit
+              sid=vt_it%get_offset(errc); if(errc.ne.GFC_SUCCESS) exit
+              if(sid.eq.id1) then; relation=CMP_CN; exit; endif
+              if(pid2.lt.0_INTL) pid2=sid
+             enddo
+             if(errc.eq.GFC_NO_MOVE) errc=GFC_SUCCESS
+ !Try "subspace 1 is a child of subspace 2":
+             if(errc.eq.GFC_SUCCESS.and.relation.eq.CMP_NC) then
+              errc=vt_it%move_to(id1)
+              if(errc.eq.GFC_SUCCESS) then
+               do while(errc.eq.GFC_SUCCESS)
+                errc=vt_it%move_to_parent(); if(errc.ne.GFC_SUCCESS) exit
+                sid=vt_it%get_offset(errc); if(errc.ne.GFC_SUCCESS) exit
+                if(sid.eq.id2) then; relation=CMP_IN; exit; endif
+                if(pid1.lt.0_INTL) pid1=sid
+               enddo
+               if(errc.eq.GFC_NO_MOVE) errc=GFC_SUCCESS
+ !Try "subspace 1 and subspace 2 are siblings":
+               if(errc.eq.GFC_SUCCESS.and.relation.eq.CMP_NC) then
+                if(pid1.eq.pid2) relation=CMP_OV !siblings
+                if(errc.eq.GFC_SUCCESS.and.relation.eq.CMP_NC) then
+                 if(id1.lt.this%space_dim.and.id2.lt.this%space_dim) then !1-dimensional basis subspaces
+                  if(id1.lt.id2) then; relation=CMP_LT; else; relation=CMP_GT; endif
+                 elseif(id1.ge.this%space_dim.and.id2.ge.this%space_dim) then !aggregate subspaces
+                  if(id1.lt.id2) then; relation=CMP_GT; else; relation=CMP_LT; endif
+                 elseif(id1.lt.this%space_dim.and.id2.ge.this%space_dim) then
+                  relation=CMP_LT
+                 else
+                  relation=CMP_GT
+                 endif
+                endif
+               endif
+              else
+               errc=4
+              endif
+             endif
+            else
+             errc=3
+            endif
+            i=vt_it%release()
+           else
+            errc=2
+           endif
+          endif
+         else
+          errc=1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function HSpaceRelateSubspaces
 !--------------------------------------------------
         subroutine HSpacePrintIt(this,ierr,dev_out)
 !Prints the hierarchical vector space representation.
