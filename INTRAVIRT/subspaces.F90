@@ -1,7 +1,7 @@
 !Infrastructure for a recursive adaptive vector space decomposition
 !and hierarchical vector space representation.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/03/21
+!REVISION: 2017/03/22
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -247,15 +247,16 @@
          complex(8), pointer, private:: metric_p(:,:)=>NULL() !pointer to the original metric tensor: g12=<bf1|bf2>
          real(8), allocatable, private:: overlap(:,:)         !subspace support overlap matrix (extent of support overlap between all subspaces)
          contains
-          procedure, private:: HSpaceCtorSimple                        !constructs a simple hierarchical representation of a vector space (ctor)
-          generic, public:: h_space_ctor=>HSpaceCtorSimple             !ctors
-          procedure, public:: is_set=>HSpaceIsSet                      !returns TRUE if the hierarchical vector space is set
-          procedure, public:: get_space_dim=>HSpaceGetSpaceDim         !returns the dimension of the vector space
-          procedure, public:: get_num_subspaces=>HSpaceGetNumSubspaces !returns the total number of defined subspaces in the vector space
-          procedure, public:: get_subspace=>HSpaceGetSubspace          !returns a pointer to the requested subspace of the hierarchical vector space
-          procedure, public:: relate_subspaces=>HSpaceRelateSubspaces  !relates two subspaces from the hierarchical vector space
-          procedure, public:: print_it=>HSpacePrintIt                  !prints the hierarchical vector space
-          final:: h_space_dtor                                         !destructs the hierarchical representation of a vector space
+          procedure, private:: HSpaceCtorSimple                         !constructs a simple hierarchical representation of a vector space (ctor)
+          generic, public:: h_space_ctor=>HSpaceCtorSimple              !ctors
+          procedure, public:: is_set=>HSpaceIsSet                       !returns TRUE if the hierarchical vector space is set
+          procedure, public:: get_space_dim=>HSpaceGetSpaceDim          !returns the dimension of the vector space
+          procedure, public:: get_num_subspaces=>HSpaceGetNumSubspaces  !returns the total number of defined subspaces in the vector space
+          procedure, public:: get_subspace=>HSpaceGetSubspace           !returns a pointer to the requested subspace of the hierarchical vector space
+          procedure, public:: compare_subspaces=>HSpaceCompareSubspaces !compares two subspaces from the hierarchical vector space: {CMP_EQ,CMP_LT,CMP_GT,CMP_ER}
+          procedure, public:: relate_subspaces=>HSpaceRelateSubspaces   !relates two subspaces from the hierarchical vector space: {CMP_EQ,CMP_CN,CMP_IN,CMP_OV,CMP_NC}
+          procedure, public:: print_it=>HSpacePrintIt                   !prints the hierarchical vector space
+          final:: h_space_dtor                                          !destructs the hierarchical representation of a vector space
         end type h_space_t
 !INTERFACES:
  !symmetry_t:
@@ -367,6 +368,7 @@
         private HSpaceGetSpaceDim
         private HSpaceGetNumSubspaces
         private HSpaceGetSubspace
+        private HSpaceCompareSubspaces
         private HSpaceRelateSubspaces
         private HSpacePrintIt
         public h_space_dtor
@@ -2295,11 +2297,43 @@
          if(present(ierr)) ierr=errc
          return
         end function HSpaceGetSubspace
+!---------------------------------------------------------------------
+        function HSpaceCompareSubspaces(this,id1,id2,ierr) result(cmp)
+!Compares two subspaces from the hierarchical vector space.
+         implicit none
+         integer(INTD):: cmp                         !out: comparison result: {CMP_EQ,CMP_LT,CMP_GT,CMP_ER}
+         class(h_space_t), intent(in):: this         !in: hierarchical vector space
+         integer(INTL), intent(in):: id1             !in: subspace 1 id
+         integer(INTL), intent(in):: id2             !in: subspace 2 id
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=0; cmp=CMP_ER
+         if(id1.ge.0.and.id1.lt.this%num_subspaces.and.id2.ge.0.and.id2.lt.this%num_subspaces) then
+          if(id1.eq.id2) then
+           cmp=CMP_EQ
+          else
+           if(id1.lt.this%space_dim.and.id2.lt.this%space_dim) then
+            if(id1.lt.id2) then; cmp=CMP_LT; else; cmp=CMP_GT; endif
+           elseif(id1.ge.this%space_dim.and.id2.ge.this%space_dim) then
+            if(id1.lt.id2) then; cmp=CMP_GT; else; cmp=CMP_LT; endif
+           elseif(id1.lt.this%space_dim.and.id2.ge.this%space_dim) then
+            cmp=CMP_LT
+           else
+            cmp=CMP_GT
+           endif
+          endif
+         else
+          errc=1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function HSpaceCompareSubspaces
 !-------------------------------------------------------------------------
         function HSpaceRelateSubspaces(this,id1,id2,ierr) result(relation)
 !Relates two subspaces from the hierarchical vector space.
          implicit none
-         integer(INTD):: relation                    !out: relation of subspace 1 to subspace 2: {CMP_XX from dil_basic.F90}
+         integer(INTD):: relation                    !out: relation of subspace 1 to subspace 2: {CMP_EQ,CMP_CN,CMP_IN,CMP_OV,CMP_NC}
          class(h_space_t), intent(in):: this         !in: hierarhical vector space
          integer(INTL), intent(in):: id1             !in: subspace 1 id
          integer(INTL), intent(in):: id2             !in: subspace 2 id
@@ -2309,7 +2343,7 @@
          type(vec_tree_iter_t):: vt_it
 
          errc=0; relation=CMP_NC
-         if(id1.ge.0.and.id2.ge.0) then
+         if(id1.ge.0.and.id1.lt.this%num_subspaces.and.id2.ge.0.and.id2.lt.this%num_subspaces) then
           if(id1.eq.id2) then
            relation=CMP_EQ
           else
@@ -2340,26 +2374,15 @@
  !Try "subspace 1 and subspace 2 are siblings":
                if(errc.eq.GFC_SUCCESS.and.relation.eq.CMP_NC) then
                 if(pid1.eq.pid2) relation=CMP_OV !siblings
-                if(errc.eq.GFC_SUCCESS.and.relation.eq.CMP_NC) then
-                 if(id1.lt.this%space_dim.and.id2.lt.this%space_dim) then !1-dimensional basis subspaces
-                  if(id1.lt.id2) then; relation=CMP_LT; else; relation=CMP_GT; endif
-                 elseif(id1.ge.this%space_dim.and.id2.ge.this%space_dim) then !aggregate subspaces
-                  if(id1.lt.id2) then; relation=CMP_GT; else; relation=CMP_LT; endif
-                 elseif(id1.lt.this%space_dim.and.id2.ge.this%space_dim) then
-                  relation=CMP_LT
-                 else
-                  relation=CMP_GT
-                 endif
-                endif
                endif
               else
-               errc=4
+               errc=5
               endif
              endif
             else
-             errc=3
+             errc=4
             endif
-            i=vt_it%release()
+            i=vt_it%release(); if(i.ne.GFC_SUCCESS.and.errc.eq.GFC_SUCCESS) errc=3
            else
             errc=2
            endif

@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/03/21
+!REVISION: 2017/03/22
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -38,8 +38,6 @@
         integer(INTD), private:: CONS_OUT=6 !output device
         integer(INTD), private:: DEBUG=0    !debugging level
         logical, private:: VERBOSE=.TRUE.   !verbosity for errors
- !Tensor naming:
-        integer(INTD), parameter, public:: TEREC_MAX_TENSOR_NAME_LEN=32 !max length of an alphanumeric_ tensor name
  !Error codes:
         integer(INTD), parameter, public:: TEREC_SUCCESS=SUCCESS
         integer(INTD), parameter, public:: TEREC_ERROR=GENERIC_ERROR
@@ -52,8 +50,8 @@
  !Storage layout for tensor blocks for locally stored tensors (must span a contiguous integer range!):
         integer(INTD), parameter, public:: TEREC_LAY_NONE=0    !none
         integer(INTD), parameter, public:: TEREC_LAY_RECUR=1   !storage layout is inferred from that of individual constituent tensors (recursive)
-        integer(INTD), parameter, public:: TEREC_LAY_FDIMS=2   !straightforward dimension lead storage layout (Fortran style)
-        integer(INTD), parameter, public:: TEREC_LAY_CDIMS=3   !straightforward dimension lead storage layout (C style)
+        integer(INTD), parameter, public:: TEREC_LAY_FDIMS=2   !straightforward dimension led storage layout (Fortran style)
+        integer(INTD), parameter, public:: TEREC_LAY_CDIMS=3   !straightforward dimension led storage layout (C style)
         integer(INTD), parameter, public:: TEREC_LAY_DSYMM=4   !dimension led storage layout with permutational symmetry
         integer(INTD), parameter, public:: TEREC_LAY_BRICK=5   !bricked storage layout (all bricks of the same size, padding if needed)
         integer(INTD), parameter, public:: TEREC_LAY_BSYMM=6   !bricked storage layour with permutational symmetry on the brick level (all bricks of the same size, padding if needed)
@@ -70,9 +68,9 @@
  !Tensor signature (unique tensor identifier):
         type, public:: tens_signature_t
          character(:), allocatable, private:: char_name         !character tensor name (alphanumeric_)
-         integer(INTD), private:: num_dims=-1                   !number of tensor dimensions (tensor order, tensor rank)
+         integer(INTD), private:: num_dims=-1                   !number of tensor dimensions (aka tensor order in math or tensor rank in physics)
          integer(INTL), allocatable, private:: space_idx(:)     !subspace id for each tensor dimension
-         class(h_space_t), pointer, private:: h_space_p=>NULL() !pointer to the underlying hierarchical vector space
+         class(h_space_t), pointer, private:: h_space_p=>NULL() !pointer to the underlying hierarchical vector space specification
          contains
           procedure, private:: TensSignatureCtor
           generic, public:: tens_signature_ctor=>TensSignatureCtor !ctor
@@ -80,7 +78,8 @@
           procedure, public:: get_name=>TensSignatureGetName       !returns the alphanumeric_ tensor name
           procedure, public:: get_rank=>TensSignatureGetRank       !returns the rank of the tensor (number of dimensions)
           procedure, public:: get_spec=>TensSignatureGetSpec       !returns the tensor subspace multi-index (specification)
-          procedure, public:: compare=>TensSignatureCompare        !compares the tensor signature with another tensor signature
+          procedure, public:: relate=>TensSignatureRelate          !relates the tensor signature to another tensor signature: {CMP_EQ,CMP_CN,CMP_IN,CMP_OV,CMP_NC}
+          procedure, public:: compare=>TensSignatureCompare        !compares the tensor signature with another tensor signature: {CMP_EQ,CMP_LT,CMP_GT,CMP_ER}
           procedure, public:: print_it=>TensSignaturePrintIt       !prints the tensor signature
           final:: tens_signature_dtor                              !dtor
         end type tens_signature_t
@@ -89,7 +88,7 @@
          integer(INTL), allocatable, private:: dim_extent(:) !tensor dimension extents (resolution)
          integer(INTD), allocatable, private:: dim_group(:)  !tensor dimension groups (group 0 is default with no restrictions)
          integer(INTD), allocatable, private:: group_spec(:) !specification of the restriction kind for each index restriction group (not every defined group needs to be present in dim_group(:))
-         integer(INTD), private:: num_dims=-1                !number of tensor dimensions (tensor order, tensor rank)
+         integer(INTD), private:: num_dims=-1                !number of tensor dimensions (aka tensor order or tensor rank)
          integer(INTD), private:: num_grps=0                 !number of defined (non-trivial) index restriction groups
          contains
           procedure, private:: TensShapeCtor
@@ -101,7 +100,7 @@
           procedure, public:: get_group=>TensShapeGetGroup   !returns a restricted index group (specific dimensions belonging to the specified group)
           procedure, public:: same_group=>TensShapeSameGroup !checks whether specific tensor dimensions belong to the same group
           procedure, public:: num_groups=>TensShapeNumGroups !returns the total number of non-trivial index groups defined in the tensor shape
-          procedure, public:: compare=>TensShapeCompare      !compares the tensor shape with another tensor shape
+          procedure, public:: compare=>TensShapeCompare      !compares the tensor shape with another tensor shape: {CMP_EQ,CMP_LT,CMP_GT,CMP_ER}
           procedure, public:: print_it=>TensShapePrintIt     !prints the tensor shape
           final:: tens_shape_dtor                            !dtor
         end type tens_shape_t
@@ -123,7 +122,7 @@
           procedure, public:: same_group=>TensHeaderSameGroup        !checks whether specific tensor dimensions belong to the same group
           procedure, public:: get_signature=>TensHeaderGetSignature  !returns the pointer to the tensor signature
           procedure, public:: get_shape=>TensHeaderGetShape          !returns the pointer the the tensor shape
-          procedure, public:: compare=>TensHeaderCompare             !compares the tensor header with another tensor header
+          procedure, public:: compare=>TensHeaderCompare             !compares the tensor header with another tensor header: {CMP_EQ,CMP_LT,CMP_GT,CMP_ER}
           procedure, public:: print_it=>TensHeaderPrintIt            !prints the tensor header
 #ifdef NO_GNU
           final:: tens_header_dtor                                   !dtor `GCC/5.4.0 bug
@@ -145,28 +144,41 @@
         end type tens_simple_part_t
  !Storage layout for locally stored blocks (abstract base):
         type, abstract, public:: tens_layout_t
-         integer(INTD), private:: layout=TEREC_LAY_NONE      !tensor block storage layout (see above), either simple or composite
+         integer(INTD), private:: layout=TEREC_LAY_NONE        !tensor block storage layout (see above), either simple or composite
+         class(DataDescr_t), allocatable, private:: data_descr !DDSS data descriptor for physically stored tensor body
          contains
-          procedure(tens_layout_map_i), deferred, public:: map                       !maps a specific element of the tensor block (layout specific)
-          procedure(tens_layout_extract_i), deferred, public:: extract_simple_blocks !creates a list of constituent simple (dense) parts of the tensor block
-          procedure, public:: is_set=>TensLayoutIsSet                                !returns TRUE if the tensor layout is set
-          procedure, public:: get_layout=>TensLayoutGetLayout                        !returns the tensor storage layout kind
+          procedure(tens_layout_map_i), deferred, public:: map                      !maps a specific element of the tensor block (layout specific)
+          procedure(tens_layout_extract_i), deferred, public:: extract_simple_parts !creates a list of constituent simple (dense) parts of the tensor block
+          procedure, public:: is_set=>TensLayoutIsSet                               !returns TRUE if the tensor layout is set
+          procedure, private:: set_location=>TensLayoutSetLocation                  !sets the phyiscal location of the data
+          procedure, public:: get_layout=>TensLayoutGetLayout                       !returns the tensor storage layout kind
+          procedure, public:: get_body_ptr=>TensLayoutGetBodyPtr                    !returns a pointer to the tensor body
+          procedure, public:: get_body_size=>TensLayoutGetBodySize                  !returns the size of the stored tensor body in bytes
         end type tens_layout_t
+ !Concrete storage layout "Fortran dimension led":
+        type, extends(tens_layout_t), public:: tens_layout_fdims_t
+         contains
+          procedure, private:: TensLayoutFdimsCtor
+          generic, public:: tens_layout_fdims_ctor=>TensLayoutFdimsCtor
+          procedure, public:: map=>TensLayoutFdimsMap
+          procedure, public:: extract_simple_parts=>TensLayoutFdimsExtract
+          final:: tens_layout_fdims_dtor
+        end type tens_layout_fdims_t
  !Tensor body:
         type, public:: tens_body_t
-         type(DataDescr_t), allocatable, private:: data_descr !DDSS data descriptor (if physically stored as a whole)
          class(tens_layout_t), allocatable, private:: layout  !tensor block storage layout (if physically stored as a whole)
          type(list_bi_t), allocatable, private:: subtensors   !list of constituent tensors in terms of tensor headers
-#if 0
          contains
+#if 0
+          procedure, private:: TensBodyCtorBase                     !basic ctor
+          generic, public:: tens_body_ctor=>TensBodyCtorBase        !ctors
           procedure, public:: set_location=>TensBodySetLocation     !sets the data location and storage layout if physically stored as a whole (builder ctor)
-          procedure, public:: add_subtensor=>TensBodyAddSubtensor   !registers a constituent subtensor (builder ctor)
+          procedure, public:: add_subtensor=>TensBodyAddSubtensor   !registers a constituent subtensor (builder ctor) by providing its tensor header
           procedure, public:: get_data_descr=>TensBodyGetDataDescr  !returns a pointer to the DDSS data descriptor
           procedure, public:: get_layout=>TensBodyGetLayout         !returns a pointer to the storage layout
           procedure, public:: get_subtensors=>TensBodyGetSubtensors !returns a pointer to the list of constituent subtensors (each subtensor is represented by a tensor header)
           procedure, public:: is_mapped=>TensBodyIsMapped           !returns .TRUE. if the tensor body is mapped (stored as a whole)
-          procedure, public:: clean=>TensBodyClean                  !resets the object to an empty state (dtor)
-          final:: TensBodyFinal                                     !dtor
+          final:: tens_body_dtor                                    !dtor
 #endif
         end type tens_body_t
  !Recursive tensor:
@@ -197,13 +209,13 @@
           integer(INTL), intent(in):: mlndx(1:)       !in: input multi-index specifying the individual tensor element
           integer(INTD), intent(out), optional:: ierr !out: error code
          end function tens_layout_map_i
-  !tens_layout_t: .extract_simple_blocks():
-         subroutine tens_layout_extract_i(this,num_parts,part,ierr)
+  !tens_layout_t: .extract_simple_parts():
+         subroutine tens_layout_extract_i(this,num_parts,parts,ierr)
           import:: INTD,INTL,list_bi_t,tens_layout_t
           implicit none
           class(tens_layout_t), intent(in):: this     !in: tensor block storage layout
           integer(INTL), intent(out):: num_parts      !out: number of constituent simple (dense) blocks
-          type(list_bi_t), intent(inout):: part       !out: list of the constituent simple (dense) blocks with their signatures and pointers
+          type(list_bi_t), intent(inout):: parts      !out: list of the constituent simple (dense) blocks with their headers and offsets
           integer(INTD), intent(out), optional:: ierr !out: error code
          end subroutine tens_layout_extract_i
         end interface
@@ -216,6 +228,7 @@
         private TensSignatureGetName
         private TensSignatureGetRank
         private TensSignatureGetSpec
+        private TensSignatureRelate
         private TensSignatureCompare
         private TensSignaturePrintIt
         public tens_signature_dtor
@@ -256,7 +269,15 @@
         public tens_simple_part_dtor
  !tens_layout_t:
         private TensLayoutIsSet
+        private TensLayoutSetLocation
         private TensLayoutGetLayout
+        private TensLayoutGetBodyPtr
+        private TensLayoutGetBodySize
+ !tens_layout_fdims_t:
+        private TensLayoutFdimsCtor
+        private TensLayoutFdimsMap
+        private TensLayoutFdimsExtract
+        public tens_layout_fdims_dtor
 #if 0
  !tens_body_t:
         private TensBodySetLocation
@@ -467,14 +488,70 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensSignatureGetSpec
+!------------------------------------------------------------------
+        function TensSignatureRelate(this,another) result(relation)
+!Relates the tensor signature to another tensor signature.
+         implicit none
+         integer(INTD):: relation                      !out: relation: {CMP_EQ,CMP_CN,CMP_IN,CMP_OV,CMP_NC}
+         class(tens_signature_t), intent(in):: this    !in: tensor signature 1
+         class(tens_signature_t), intent(in):: another !in: tensor signature 2
+         integer(INTD):: nl1,nl2,ch1,ch2,i,cmp,errc
+         integer(INTL):: s1,s2
+
+         errc=0
+         if(this%is_set().and.another%is_set()) then
+          relation=CMP_EQ
+!Compare names:
+          nl1=len(this%char_name); nl2=len(another%char_name)
+          if(nl1.ne.nl2) relation=CMP_NC
+          if(relation.eq.CMP_EQ) then
+           do i=1,nl1
+            ch1=iachar(this%char_name(i:i))
+            ch2=iachar(another%char_name(i:i))
+            if(ch1.ne.ch2) then; relation=CMP_NC; exit; endif
+           enddo
+           if(relation.eq.CMP_EQ) then
+            if(associated(this%h_space_p)) then
+             if(associated(this%h_space_p,another%h_space_p)) then
+!Compare specs:
+              if(this%num_dims.ne.another%num_dims) then
+               relation=CMP_NC
+              else
+               do i=1,this%num_dims
+                s1=this%space_idx(i); s2=another%space_idx(i)
+                cmp=this%h_space_p%relate_subspaces(s1,s2,errc); if(errc.ne.0) exit
+                if(cmp.eq.CMP_ER.or.cmp.eq.CMP_NC) then; relation=cmp; exit; endif
+                if(cmp.ne.CMP_EQ) then
+                 if(relation.eq.CMP_EQ) then
+                  relation=cmp
+                 else
+                  if(cmp.ne.relation) then; relation=CMP_NC; exit; endif
+                 endif
+                endif
+               enddo
+               if(errc.ne.0) relation=CMP_ER
+              endif
+             else
+              relation=CMP_ER !tensors with the same name cannot reside in differe hierarchical spaces
+             endif
+            else
+             relation=CMP_ER
+            endif
+           endif
+          endif
+         else
+          cmp=CMP_ER
+         endif
+         return
+        end function TensSignatureRelate
 !--------------------------------------------------------------
         function TensSignatureCompare(this,another) result(cmp)
 !Compares the tensor signature with another tensor signature.
          implicit none
-         integer(INTD):: cmp                           !out: comparison result (see subspaces.F90)
+         integer(INTD):: cmp                           !out: comparison result: {CMP_EQ,CMP_LT,CMP_GT,CMP_ER}
          class(tens_signature_t), intent(in):: this    !in: tensor signature 1
          class(tens_signature_t), intent(in):: another !in: tensor signature 2
-         integer(INTD):: nl1,nl2,ch1,ch2,i,rel,errc
+         integer(INTD):: nl1,nl2,ch1,ch2,i,errc
          integer(INTL):: s1,s2
 
          errc=0
@@ -490,26 +567,26 @@
             if(ch1.lt.ch2) then; cmp=CMP_LT; exit; elseif(ch1.gt.ch2) then; cmp=CMP_GT; exit; endif
            enddo
            if(cmp.eq.CMP_EQ) then
-            if(associated(this%h_space_p,another%h_space_p)) then
+            if(associated(this%h_space_p)) then
+             if(associated(this%h_space_p,another%h_space_p)) then
 !Compare specs:
-             if(this%num_dims.lt.another%num_dims) then
-              cmp=CMP_LT
-             elseif(this%num_dims.gt.another%num_dims) then
-              cmp=CMP_GT
+              if(this%num_dims.lt.another%num_dims) then
+               cmp=CMP_LT
+              elseif(this%num_dims.gt.another%num_dims) then
+               cmp=CMP_GT
+              else
+               do i=1,this%num_dims
+                s1=this%space_idx(i); s2=another%space_idx(i)
+                cmp=this%h_space_p%compare_subspaces(s1,s2,errc)
+                if(cmp.ne.CMP_EQ.or.errc.ne.0) exit
+               enddo
+               if(errc.ne.0) cmp=CMP_ER
+              endif
              else
-              do i=1,this%num_dims
-               s1=this%space_idx(i); s2=another%space_idx(i)
-               rel=this%h_space_p%relate_subspaces(s1,s2,errc); if(errc.ne.0) exit
-               if(rel.eq.CMP_LT.or.rel.eq.CMP_GT) then
-                cmp=rel; exit
-               else
-                !`Figure out
-               endif
-              enddo
-              if(errc.ne.0) cmp=CMP_ER
+              cmp=CMP_ER !tensors with the same name cannot reside in differe hierarchical spaces
              endif
             else
-             cmp=CMP_ER !tensors with the same name cannot reside in differe hierarchical spaces
+             cmp=CMP_ER
             endif
            endif
           endif
@@ -1264,7 +1341,7 @@
         function TensHeaderCompare(this,another,compare_groups) result(cmp)
 !Compares the given tensor header with another tensor header.
          implicit none
-         integer(INTD):: cmp                            !out: comparison result (see subspaces.F90)
+         integer(INTD):: cmp                            !out: comparison result: {CMP_EQ,CMP_LT,CMP_GT,CMP_ER}
          class(tens_header_t), intent(in):: this        !in: tensor header 1
          class(tens_header_t), intent(in):: another     !in: tensor header 2
          logical, intent(in), optional:: compare_groups !in: if FALSE, the shape dimension groups will not be taken into account (defaults to TRUE)
@@ -1425,7 +1502,7 @@
          this%layout=TEREC_LAY_NONE
          return
         end subroutine tens_simple_part_dtor
-![tens_layout_t]===============================
+![tens_layout_t]=======================================
         function TensLayoutIsSet(this,ierr) result(res)
 !Returns TRUE if the tensor layout is set.
          implicit none
@@ -1440,6 +1517,28 @@
          return
         end function TensLayoutIsSet
 !-------------------------------------------------------------
+        subroutine TensLayoutSetLocation(this,data_descr,ierr)
+!Sets the phyiscal location of the tensor body.
+         implicit none
+         class(tens_layout_t), intent(inout):: this  !inout: tensor layout
+         class(DataDescr_t), intent(in):: data_descr !in: DDSS data descriptor for the tensor body
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=TEREC_SUCCESS
+         if(this%layout.ne.TEREC_LAY_NONE) then
+          if(data_descr%is_set().and.(.not.allocated(this%data_descr))) then
+           allocate(this%data_descr,SOURCE=data_descr,STAT=errc); if(errc.ne.0) errc=TEREC_MEM_ALLOC_FAILED
+          else
+           errc=TEREC_INVALID_ARGS
+          endif
+         else
+          errc=TEREC_INVALID_ARGS
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensLayoutSetLocation
+!-------------------------------------------------------------
         function TensLayoutGetLayout(this,ierr) result(layout)
 !Returns the tensor layout.
          implicit none
@@ -1453,6 +1552,103 @@
          if(present(ierr)) ierr=errc
          return
         end function TensLayoutGetLayout
+!--------------------------------------------------------------
+        function TensLayoutGetBodyPtr(this,ierr) result(body_p)
+!Returns a C pointer to the stored tensor body.
+         implicit none
+         type(C_PTR):: body_p                        !out: C pointer to the tensor body
+         class(tens_layout_t), intent(in):: this     !in: tensor layout
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         body_p=C_NULL_PTR
+         if(this%is_set(errc)) then
+          if(this%data_descr%is_set()) then
+           body_p=this%data_descr%get_data_ptr(errc)
+          else
+           errc=TEREC_INVALID_REQUEST
+          endif
+         else
+          errc=TEREC_INVALID_ARGS
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function TensLayoutGetBodyPtr
+!------------------------------------------------------------------
+        function TensLayoutGetBodySize(this,ierr) result(body_size)
+!Returns the size of the stored tensor body in bytes.
+         implicit none
+         integer(INTL):: body_size                   !out: tensor body size in bytes
+         class(tens_layout_t), intent(in):: this     !in: tensor layout
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         body_size=0
+         if(this%is_set(errc)) then
+          if(this%data_descr%is_set()) then
+           body_size=this%data_descr%data_size(errc)
+          else
+           errc=TEREC_INVALID_REQUEST
+          endif
+         else
+          errc=TEREC_INVALID_ARGS
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function TensLayoutGetBodySize
+![tens_layout_fdims_t]======================================
+        subroutine TensLayoutFdimsCtor(this,data_descr,ierr)
+!Constructs the "Fortran dimension led" tensor body layout.
+         implicit none
+         class(tens_layout_fdims_t), intent(out):: this !out: tensor body layout
+         class(DataDescr_t), intent(in):: data_descr    !in: DDSS data descriptor for the tensor body
+         integer(INTD), intent(out), optional:: ierr    !out: error code
+         integer(INTD):: errc
+
+         errc=TEREC_SUCCESS
+         this%layout=TEREC_LAY_FDIMS
+         call this%set_location(data_descr,errc)
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensLayoutFdimsCtor
+!------------------------------------------------------------------
+        function TensLayoutFdimsMap(this,mlndx,ierr) result(offset)
+         implicit none
+         integer(INTL):: offset
+         class(tens_layout_fdims_t), intent(in):: this
+         integer(INTL), intent(in):: mlndx(1:)
+         integer(INTD), intent(out), optional:: ierr
+         integer(INTD):: errc
+
+         errc=TEREC_SUCCESS; offset=-1_INTL
+         !`Write
+         if(present(ierr)) ierr=errc
+         return
+        end function TensLayoutFdimsMap
+!-------------------------------------------------------------------
+        subroutine TensLayoutFdimsExtract(this,num_parts,parts,ierr)
+         implicit none
+         class(tens_layout_fdims_t), intent(in):: this
+         integer(INTL), intent(out):: num_parts
+         type(list_bi_t), intent(inout):: parts
+         integer(INTD), intent(out), optional:: ierr
+         integer(INTD):: errc
+
+         errc=TEREC_SUCCESS; num_parts=0
+         !`Write
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensLayoutFdimsExtract
+!---------------------------------------------
+        subroutine tens_layout_fdims_dtor(this)
+         implicit none
+         type(tens_layout_fdims_t):: this
+
+         !`Finish
+         if(allocated(this%data_descr)) deallocate(this%data_descr)
+         this%layout=TEREC_LAY_NONE
+         return
+        end subroutine tens_layout_fdims_dtor
 
        end module tensor_recursive
 !==================================

@@ -1,6 +1,6 @@
 !Distributed data storage service (DDSS).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2016/03/14 (started 2015/03/18)
+!REVISION: 2016/03/22 (started 2015/03/18)
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -203,34 +203,36 @@
         end type DistrSpace_t
  !Global data location descriptor:
         type, public:: DataDescr_t
-         type(C_PTR), private:: LocPtr          !local C pointer to the original data buffer (internal use only)
-         integer(INT_MPI), private:: RankMPI=-1 !MPI rank on which the data resides
-         type(WinMPI_t), private:: WinMPI       !info on the MPI window the data is exposed with
-         integer(INT_ADDR), private:: Offset    !offset in the MPI window (in displacement units)
-         integer(INT_COUNT), private:: DataVol  !data volume (number of typed elements)
-         integer(INT_MPI), private:: DataType   !data type of each element: {R4,R8,C4,C8,...}, see <tensor_algebra.F90>
-         integer(8), private:: TransID          !data transfer request ID (sequential data transfer number within this process)
-         integer(INT_MPI), private:: StatMPI    !status of the data transfer request (see MPI_STAT_XXX parameters above)
-         integer(INT_MPI), private:: ReqHandle  !MPI request handle (for MPI communications with a request handle)
+         type(C_PTR), private:: LocPtr=C_NULL_PTR !local C pointer to the original data buffer
+         integer(INT_MPI), private:: RankMPI=-1   !MPI rank on which the data resides
+         type(WinMPI_t), private:: WinMPI         !info on the MPI window the data is exposed with
+         integer(INT_ADDR), private:: Offset      !offset in the MPI window (in displacement units)
+         integer(INT_COUNT), private:: DataVol    !data volume (number of typed elements)
+         integer(INT_MPI), private:: DataType     !data type of each element: {R4,R8,C4,C8,...}, see <tensor_algebra.F90>
+         integer(8), private:: TransID            !data transfer request ID (sequential data transfer number within this process)
+         integer(INT_MPI), private:: StatMPI      !status of the data transfer request (see MPI_STAT_XXX parameters above)
+         integer(INT_MPI), private:: ReqHandle    !MPI request handle (for MPI communications with a request handle)
          contains
-          procedure, private:: clean=>DataDescrClean         !clean a data descriptor
-          procedure, private:: init=>DataDescrInit           !set up a data descriptor (initialization)
-          procedure, public:: data_type=>DataDescrDataType   !returns the type of the data associated with the data descriptor
-          procedure, public:: data_volume=>DataDescrDataVol  !returns the data volume associated with the data descriptor
-          procedure, public:: data_size=>DataDescrDataSize   !returns the data size in bytes
-          procedure, public:: flush_data=>DataDescrFlushData !completes an outstanding data transfer request
-          procedure, public:: sync_data=>DataDescrSyncData   !synchronizes the private and public data views (in case the data was modified locally)
-          procedure, public:: test_data=>DataDescrTestData   !tests whether the data has been transferred to/from the origin (request based)
-          procedure, public:: wait_data=>DataDescrWaitData   !waits until the data has been transferred to/from the origin (request based)
-          procedure, public:: get_data=>DataDescrGetData     !loads data referred to by a data descriptor into a local buffer
-          procedure, public:: acc_data=>DataDescrAccData     !accumulates data from a local buffer to the location specified by a data descriptor
-          procedure, private:: DataDescrPack                 !packs the DataDescr_t object into SimplePack_t (simple packet)
-          procedure, private:: DataDescrPackInt              !packs the DataDescr_t object into a plain integer packet (simple packet)
+          procedure, private:: clean=>DataDescrClean            !clean a data descriptor
+          procedure, private:: init=>DataDescrInit              !set up a data descriptor (initialization)
+          procedure, public:: is_set=>DataDescrIsSet            !returns TRUE if the data descriptor is set, FALSE otherwise
+          procedure, public:: data_type=>DataDescrDataType      !returns the type of the data associated with the data descriptor
+          procedure, public:: data_volume=>DataDescrDataVol     !returns the data volume associated with the data descriptor
+          procedure, public:: data_size=>DataDescrDataSize      !returns the data size in bytes
+          procedure, public:: get_data_ptr=>DataDescrGetDataPtr !returns a C pointer to the local data buffer
+          procedure, public:: flush_data=>DataDescrFlushData    !completes an outstanding data transfer request
+          procedure, public:: sync_data=>DataDescrSyncData      !synchronizes the private and public data views (in case the data was modified locally)
+          procedure, public:: test_data=>DataDescrTestData      !tests whether the data has been transferred to/from the origin (request based)
+          procedure, public:: wait_data=>DataDescrWaitData      !waits until the data has been transferred to/from the origin (request based)
+          procedure, public:: get_data=>DataDescrGetData        !loads data referred to by a data descriptor into a local buffer
+          procedure, public:: acc_data=>DataDescrAccData        !accumulates data from a local buffer to the location specified by a data descriptor
+          procedure, private:: DataDescrPack                    !packs the DataDescr_t object into SimplePack_t (simple packet)
+          procedure, private:: DataDescrPackInt                 !packs the DataDescr_t object into a plain integer packet (simple packet)
           generic, public:: pack=>DataDescrPack,DataDescrPackInt !generic packing
-          procedure, private:: DataDescrUnpack               !unpacks the DataDescr_t object from SimplePack_t (simple packet)
-          procedure, private:: DataDescrUnpackInt            !unpacks the DataDescr_t object from a plain integer packet (simple packet)
+          procedure, private:: DataDescrUnpack                  !unpacks the DataDescr_t object from SimplePack_t (simple packet)
+          procedure, private:: DataDescrUnpackInt               !unpacks the DataDescr_t object from a plain integer packet (simple packet)
           generic, public:: unpack=>DataDescrUnpack,DataDescrUnpackInt !generic unpacking
-          procedure, public:: print_it=>DataDescrPrint       !prints the data descriptor
+          procedure, public:: print_it=>DataDescrPrint          !prints the data descriptor
         end type DataDescr_t
         integer(INT_MPI), parameter, private:: DataDescr_PACK_LEN=6+WinMPI_PACK_LEN !packed length of DataDescr_t (in packing integers)
  !Simple packet (plain integer array):
@@ -320,9 +322,11 @@
  !DataDescr_t:
         private DataDescrClean
         private DataDescrInit
+        private DataDescrIsSet
         private DataDescrDataType
         private DataDescrDataVol
         private DataDescrDataSize
+        private DataDescrGetDataPtr
         private DataDescrFlushData
         private DataDescrSyncData
         private DataDescrTestData
@@ -1323,6 +1327,18 @@
         if(present(ierr)) ierr=errc
         return
         end subroutine DataDescrInit
+!-----------------------------------------------------
+        function DataDescrIsSet(this,ierr) result(ans)
+!Returns TRUE if the data descriptor is set, FALSE otherwise.
+         implicit none
+         logical:: ans                               !out: answer
+         class(DataDescr_t), intent(in):: this       !in: data descriptor
+         integer(INTD), intent(out), optional:: ierr !out: error code (0:success)
+
+         ans=(this%RankMPI.ge.0)
+         if(present(ierr)) ierr=0
+         return
+        end function DataDescrIsSet
 !-------------------------------------------------------------
         function DataDescrDataType(this,ierr) result(data_typ)
 !Returns the type of the data associated with the data descriptor.
@@ -1378,6 +1394,25 @@
         if(present(ierr)) ierr=errc
         return
         end function DataDescrDataSize
+!---------------------------------------------------------------
+        function DataDescrGetDataPtr(this,ierr) result(data_ptr)
+!Returns a C pointer to the local data buffer. If the data descriptor
+!corresponds to remote data, the result is undefined.
+         implicit none
+         type(C_PTR):: data_ptr                         !out: data pointer
+         class(DataDescr_t), intent(in):: this          !in: data descriptor
+         integer(INT_MPI), intent(out), optional:: ierr !out: error code (0:success)
+         integer(INT_MPI):: errc
+
+         errc=0
+         if(this%RankMPI.ge.0) then
+          data_ptr=this%LocPtr
+         else
+          data_ptr=C_NULL_PTR; errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function DataDescrGetDataPtr
 !-----------------------------------------------------
         subroutine DataDescrFlushData(this,ierr,local)
 !Completes an MPI one-sided communication specified by a given data descriptor.
