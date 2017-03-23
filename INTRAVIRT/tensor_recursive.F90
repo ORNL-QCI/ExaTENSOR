@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/03/22
+!REVISION: 2017/03/23
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -136,7 +136,7 @@
          contains
           procedure, private:: TensSimplePartCtor
           generic, public:: tens_simple_part_ctor=>TensSimplePartCtor !ctor
-          procedure, public:: is_set=>TensSimplePartIsSet             !return .TRUE. if the simple part is set (signature, shape, layout, offset)
+          procedure, public:: is_set=>TensSimplePartIsSet             !return TRUE if the simple part is set (signature, shape, layout, offset)
           procedure, public:: get_offset=>TensSimplePartGetOffset     !returns the offset of the simple part in the parental tensor block
           procedure, public:: get_layout=>TensSimplePartGetLayout     !returns the simple layout of the simple tensor part: {TEREC_LAY_FDIMS,TEREC_LAY_CDIMS} only
           procedure, public:: get_header=>TensSimplePartGetHeader     !returns a pointer to the header of the simple tensor part
@@ -144,22 +144,27 @@
         end type tens_simple_part_t
  !Storage layout for locally stored blocks (abstract base):
         type, abstract, public:: tens_layout_t
-         integer(INTD), private:: layout=TEREC_LAY_NONE        !tensor block storage layout (see above), either simple or composite
-         class(DataDescr_t), allocatable, private:: data_descr !DDSS data descriptor for physically stored tensor body
+         integer(INTD), private:: layout=TEREC_LAY_NONE          !tensor block storage layout (see above), either simple or composite
+         integer(INTD), private:: data_type=NO_TYPE              !data type of tensor elements: {R4,R8,C4,C8}
+         class(DataDescr_t), allocatable, private:: data_descr   !DDSS data descriptor for physically stored tensor body (tensor elements)
          contains
+          procedure, private:: set_location=>TensLayoutSetLocation                  !sets the phyiscal location of the data via a DDSS data descriptor
+          procedure, public:: is_set=>TensLayoutIsSet                               !returns TRUE if the tensor layout is set
+          procedure, public:: get_data_type=>TensLayoutGetDataType                  !returns the data type of the stored tensor elements
+          procedure, public:: get_layout_kind=>TensLayoutGetLayoutKind              !returns the tensor storage layout kind
+          procedure, public:: get_body_ptr=>TensLayoutGetBodyPtr                    !returns a C pointer to the tensor body
+          procedure, public:: get_body_size=>TensLayoutGetBodySize                  !returns the size of the stored tensor body in bytes
+          procedure(tens_layout_volume_i), deferred, public:: get_volume            !returns the physical volume of the tensor block (number of physically stored elements)
           procedure(tens_layout_map_i), deferred, public:: map                      !maps a specific element of the tensor block (layout specific)
           procedure(tens_layout_extract_i), deferred, public:: extract_simple_parts !creates a list of constituent simple (dense) parts of the tensor block
-          procedure, public:: is_set=>TensLayoutIsSet                               !returns TRUE if the tensor layout is set
-          procedure, private:: set_location=>TensLayoutSetLocation                  !sets the phyiscal location of the data
-          procedure, public:: get_layout=>TensLayoutGetLayout                       !returns the tensor storage layout kind
-          procedure, public:: get_body_ptr=>TensLayoutGetBodyPtr                    !returns a pointer to the tensor body
-          procedure, public:: get_body_size=>TensLayoutGetBodySize                  !returns the size of the stored tensor body in bytes
         end type tens_layout_t
  !Concrete storage layout "Fortran dimension led":
         type, extends(tens_layout_t), public:: tens_layout_fdims_t
+         class(tens_header_t), pointer, private:: header=>NULL() !pointer to the tensor header
          contains
           procedure, private:: TensLayoutFdimsCtor
           generic, public:: tens_layout_fdims_ctor=>TensLayoutFdimsCtor
+          procedure, public:: get_volume=>TensLayoutFdimsGetVolume
           procedure, public:: map=>TensLayoutFdimsMap
           procedure, public:: extract_simple_parts=>TensLayoutFdimsExtract
           final:: tens_layout_fdims_dtor
@@ -200,14 +205,20 @@
 !INTERFACES:
  !Abstract:
         abstract interface
+  !tens_layout_t: .volume():
+         function tens_layout_volume_i(this) result(vol)
+          import:: INTL,tens_layout_t
+          implicit none
+          integer(INTL):: vol                         !out: physical volume (number of tensor elements physically stored)
+          class(tens_layout_t), intent(in):: this     !in: tensor block storage layout
+         end function tens_layout_volume_i
   !tens_layout_t: .map():
-         function tens_layout_map_i(this,mlndx,ierr) result(offset)
-          import:: INTD,INTL,tens_layout_t
+         function tens_layout_map_i(this,mlndx) result(offset)
+          import:: INTL,tens_layout_t
           implicit none
           integer(INTL):: offset                      !out: offset of the requested tensor element
           class(tens_layout_t), intent(in):: this     !in: tensor block storage layout
           integer(INTL), intent(in):: mlndx(1:)       !in: input multi-index specifying the individual tensor element
-          integer(INTD), intent(out), optional:: ierr !out: error code
          end function tens_layout_map_i
   !tens_layout_t: .extract_simple_parts():
          subroutine tens_layout_extract_i(this,num_parts,parts,ierr)
@@ -268,13 +279,15 @@
         private TensSimplePartGetHeader
         public tens_simple_part_dtor
  !tens_layout_t:
-        private TensLayoutIsSet
         private TensLayoutSetLocation
-        private TensLayoutGetLayout
+        private TensLayoutIsSet
+        private TensLayoutGetDataType
+        private TensLayoutGetLayoutKind
         private TensLayoutGetBodyPtr
         private TensLayoutGetBodySize
  !tens_layout_fdims_t:
         private TensLayoutFdimsCtor
+        private TensLayoutFdimsGetVolume
         private TensLayoutFdimsMap
         private TensLayoutFdimsExtract
         public tens_layout_fdims_dtor
@@ -312,7 +325,7 @@
         function cmp_tens_signatures(ts1,ts2) result(cmp)
 !Compares two tensor signatures.
          implicit none
-         integer(INTD):: cmp                !out: result of comparison (see GFC/gfc_base.F90)
+         integer(INTD):: cmp                !out: result of comparison: {CMP_EQ,CMP_LT,CMP_GT,CMP_ER}
          class(*), intent(in), target:: ts1 !in: tensor signature 1
          class(*), intent(in), target:: ts2 !in: tensor signature 2
          class(tens_signature_t), pointer:: tsp1,tsp2
@@ -322,11 +335,6 @@
          select type(ts2); class is(tens_signature_t); tsp2=>ts2; end select
          if(associated(tsp1).and.associated(tsp2)) then
           cmp=tsp1%compare(tsp2)
-          if(cmp.eq.CMP_CN) then
-           cmp=CMP_GT
-          elseif(cmp.eq.CMP_IN) then
-           cmp=CMP_LT
-          endif
          else
           cmp=CMP_ER
          endif
@@ -336,7 +344,7 @@
         function cmp_tens_headers(th1,th2) result(cmp)
 !Compares two tensor headers.
          implicit none
-         integer(INTD):: cmp                !out: result of comparison (see GFC/gfc_base.F90)
+         integer(INTD):: cmp                !out: result of comparison: {CMP_EQ,CMP_LT,CMP_GT,CMP_ER}
          class(*), intent(in), target:: th1 !in: tensor header 1
          class(*), intent(in), target:: th2 !in: tensor header 2
          class(tens_header_t), pointer:: thp1,thp2
@@ -346,11 +354,6 @@
          select type(th2); class is(tens_header_t); thp2=>th2; end select
          if(associated(thp1).and.associated(thp2)) then
           cmp=thp1%compare(thp2)
-          if(cmp.eq.CMP_CN) then
-           cmp=CMP_GT
-          elseif(cmp.eq.CMP_IN) then
-           cmp=CMP_LT
-          endif
          else
           cmp=CMP_ER
          endif
@@ -1502,25 +1505,11 @@
          this%layout=TEREC_LAY_NONE
          return
         end subroutine tens_simple_part_dtor
-![tens_layout_t]=======================================
-        function TensLayoutIsSet(this,ierr) result(res)
-!Returns TRUE if the tensor layout is set.
-         implicit none
-         logical:: res                               !out: result
-         class(tens_layout_t), intent(in):: this     !in: tensor layout
-         integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc
-
-         errc=TEREC_SUCCESS
-         res=(this%layout.ne.TEREC_LAY_NONE)
-         if(present(ierr)) ierr=errc
-         return
-        end function TensLayoutIsSet
-!-------------------------------------------------------------
+![tens_layout_t]==============================================
         subroutine TensLayoutSetLocation(this,data_descr,ierr)
 !Sets the phyiscal location of the tensor body.
          implicit none
-         class(tens_layout_t), intent(inout):: this  !inout: tensor layout
+         class(tens_layout_t), intent(inout):: this  !inout: tensor body layout
          class(DataDescr_t), intent(in):: data_descr !in: DDSS data descriptor for the tensor body
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
@@ -1533,16 +1522,49 @@
            errc=TEREC_INVALID_ARGS
           endif
          else
-          errc=TEREC_INVALID_ARGS
+          errc=TEREC_INVALID_REQUEST
          endif
          if(present(ierr)) ierr=errc
          return
         end subroutine TensLayoutSetLocation
-!-------------------------------------------------------------
-        function TensLayoutGetLayout(this,ierr) result(layout)
-!Returns the tensor layout.
+!--------------------------------------------------------------
+        function TensLayoutIsSet(this,ierr,located) result(res)
+!Returns TRUE if the tensor layout is set.
          implicit none
-         integer(INTD):: layout                      !out: tensor layout
+         logical:: res                               !out: result
+         class(tens_layout_t), intent(in):: this     !in: tensor layout
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         logical, intent(out), optional:: located    !out: returns TRUE if the tensor body has physical location
+         integer(INTD):: errc
+
+         errc=TEREC_SUCCESS
+         res=(this%layout.ne.TEREC_LAY_NONE)
+         if(present(located)) located=allocated(this%data_descr)
+         if(present(ierr)) ierr=errc
+         return
+        end function TensLayoutIsSet
+!------------------------------------------------------------------
+        function TensLayoutGetDataType(this,ierr) result(data_type)
+!Returns the data type of stored tensor elements.
+         implicit none
+         integer(INTD):: data_type                   !out: data type
+         class(tens_layout_t), intent(in):: this     !in: tensor layout
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         if(this%is_set(errc)) then
+          data_type=this%data_type
+         else
+          errc=TEREC_INVALID_REQUEST
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function TensLayoutGetDataType
+!-----------------------------------------------------------------
+        function TensLayoutGetLayoutKind(this,ierr) result(layout)
+!Returns the tensor layout kind.
+         implicit none
+         integer(INTD):: layout                      !out: tensor layout kind
          class(tens_layout_t), intent(in):: this     !in: tensor layout
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
@@ -1551,7 +1573,7 @@
          layout=this%layout
          if(present(ierr)) ierr=errc
          return
-        end function TensLayoutGetLayout
+        end function TensLayoutGetLayoutKind
 !--------------------------------------------------------------
         function TensLayoutGetBodyPtr(this,ierr) result(body_p)
 !Returns a C pointer to the stored tensor body.
@@ -1560,16 +1582,21 @@
          class(tens_layout_t), intent(in):: this     !in: tensor layout
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
+         logical:: locd
 
          body_p=C_NULL_PTR
-         if(this%is_set(errc)) then
-          if(this%data_descr%is_set()) then
-           body_p=this%data_descr%get_data_ptr(errc)
+         if(this%is_set(errc,locd)) then
+          if(locd) then
+           if(this%data_descr%is_set()) then
+            body_p=this%data_descr%get_data_ptr(errc)
+           else
+            errc=TEREC_INVALID_REQUEST
+           endif
           else
            errc=TEREC_INVALID_REQUEST
           endif
          else
-          errc=TEREC_INVALID_ARGS
+          errc=TEREC_INVALID_REQUEST
          endif
          if(present(ierr)) ierr=errc
          return
@@ -1582,11 +1609,137 @@
          class(tens_layout_t), intent(in):: this     !in: tensor layout
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
+         logical:: locd
 
-         body_size=0
-         if(this%is_set(errc)) then
-          if(this%data_descr%is_set()) then
-           body_size=this%data_descr%data_size(errc)
+         body_size=0_INTL
+         if(this%is_set(errc,locd)) then
+          if(locd) then
+           if(this%data_descr%is_set()) then
+            body_size=this%data_descr%data_size(errc)
+           else
+            errc=TEREC_INVALID_REQUEST
+           endif
+          else
+           errc=TEREC_INVALID_REQUEST
+          endif
+         else
+          errc=TEREC_INVALID_REQUEST
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function TensLayoutGetBodySize
+![tens_layout_fdims_t]=================================================
+        subroutine TensLayoutFdimsCtor(this,tens_header,data_type,ierr)
+!Constructs the "Fortran dimension led" tensor body layout.
+         implicit none
+         class(tens_layout_fdims_t), intent(out):: this         !out: tensor body layout
+         class(tens_header_t), intent(in), target:: tens_header !in: tensor header (logical tensor spec for which the physical layout is constructed)
+         integer(INTD), intent(in):: data_type                  !in: data type for tensor elements: {R4,R8,C4,C8}
+         integer(INTD), intent(out), optional:: ierr            !out: error code
+         integer(INTD):: errc,ds
+
+         errc=TEREC_SUCCESS
+         if(tens_header%is_set()) then
+          if(tens_valid_data_kind(data_type,ds).eq.YEP) then
+           if(ds.gt.0) then
+            this%layout=TEREC_LAY_FDIMS
+            this%data_type=data_type
+            this%header=>tens_header
+           else
+            errc=TEREC_INVALID_REQUEST
+           endif
+          else
+           errc=TEREC_INVALID_ARGS
+          endif
+         else
+          errc=TEREC_INVALID_ARGS
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensLayoutFdimsCtor
+!----------------------------------------------------------
+        function TensLayoutFdimsGetVolume(this) result(vol)
+         implicit none
+         integer(INTL):: vol                           !out: physical volume of the tensor body (number of stored tensor elements)
+         class(tens_layout_fdims_t), intent(in):: this !in: tensor layout
+         integer(INTL):: dims(1:MAX_TENSOR_RANK)
+         integer(INTD):: i,n,errc
+
+         vol=0_INTL
+         if(associated(this%header)) then
+          call this%header%get_dims(dims,n,errc)
+          if(errc.eq.TEREC_SUCCESS) then
+           vol=1_INTL; do i=1,n; vol=vol*dims(i); enddo
+          else
+           vol=-1_INTL
+          endif
+         endif
+         return
+        end function TensLayoutFdimsGetVolume
+!-------------------------------------------------------------
+        function TensLayoutFdimsMap(this,mlndx) result(offset)
+!Given a multi-index position of the tensor element inside tensor body,
+!returns its linear offset in the tensor body. The multi-index position
+!is specified relative to the tensor body and index numeration starts from 1.
+         implicit none
+         integer(INTL):: offset                        !out: linear tensor element offset
+         class(tens_layout_fdims_t), intent(in):: this !in: tensor layout
+         integer(INTL), intent(in):: mlndx(1:)         !in: multi-index position of the tensor element
+         integer(INTL):: dims(1:MAX_TENSOR_RANK)
+         integer(INTD):: i,n,errc
+
+         offset=-1_INTL
+         if(associated(this%header)) then
+          call this%header%get_dims(dims,n,errc)
+          if(errc.eq.TEREC_SUCCESS) then
+           if(n.gt.0) then
+            offset=(mlndx(n)-1_INTL)
+            do i=n-1,1,-1
+             offset=offset*dims(i)+(mlndx(i)-1_INTL)
+            enddo
+           else
+            offset=0_INTL
+           endif
+          endif
+         endif
+         return
+        end function TensLayoutFdimsMap
+!-------------------------------------------------------------------
+        subroutine TensLayoutFdimsExtract(this,num_parts,parts,ierr)
+         implicit none
+         class(tens_layout_fdims_t), intent(in):: this !in: tensor layout
+         integer(INTL), intent(out):: num_parts        !out: number of simple parts extracted from the tensor layout
+         type(list_bi_t), intent(inout):: parts        !list of the simple parts extracted from the tensor layout
+         integer(INTD), intent(out), optional:: ierr   !out: error code
+         integer(INTD):: i,errc
+         logical:: locd
+         type(list_iter_t):: lit
+         type(tens_simple_part_t):: tsp
+
+         num_parts=0_INTL
+         if(this%is_set(errc,locd)) then
+          if(locd) then
+           errc=lit%init(parts)
+           if(errc.eq.GFC_SUCCESS) then
+            errc=lit%get_status()
+            if(errc.eq.GFC_IT_EMPTY) then
+             call tsp%tens_simple_part_ctor(this%header,TEREC_LAY_FDIMS,0_INTL,errc)
+             if(errc.eq.TEREC_SUCCESS) then
+              errc=lit%append(tsp)
+              if(errc.eq.GFC_SUCCESS) then
+               num_parts=num_parts+1_INTL
+              else
+               errc=TEREC_UNABLE_COMPLETE
+              endif
+             endif
+             call tens_simple_part_dtor(tsp)
+            else
+             errc=TEREC_INVALID_ARGS
+            endif
+            i=lit%release()
+           else
+            errc=TEREC_UNABLE_COMPLETE
+           endif
           else
            errc=TEREC_INVALID_REQUEST
           endif
@@ -1595,57 +1748,15 @@
          endif
          if(present(ierr)) ierr=errc
          return
-        end function TensLayoutGetBodySize
-![tens_layout_fdims_t]======================================
-        subroutine TensLayoutFdimsCtor(this,data_descr,ierr)
-!Constructs the "Fortran dimension led" tensor body layout.
-         implicit none
-         class(tens_layout_fdims_t), intent(out):: this !out: tensor body layout
-         class(DataDescr_t), intent(in):: data_descr    !in: DDSS data descriptor for the tensor body
-         integer(INTD), intent(out), optional:: ierr    !out: error code
-         integer(INTD):: errc
-
-         errc=TEREC_SUCCESS
-         this%layout=TEREC_LAY_FDIMS
-         call this%set_location(data_descr,errc)
-         if(present(ierr)) ierr=errc
-         return
-        end subroutine TensLayoutFdimsCtor
-!------------------------------------------------------------------
-        function TensLayoutFdimsMap(this,mlndx,ierr) result(offset)
-         implicit none
-         integer(INTL):: offset
-         class(tens_layout_fdims_t), intent(in):: this
-         integer(INTL), intent(in):: mlndx(1:)
-         integer(INTD), intent(out), optional:: ierr
-         integer(INTD):: errc
-
-         errc=TEREC_SUCCESS; offset=-1_INTL
-         !`Write
-         if(present(ierr)) ierr=errc
-         return
-        end function TensLayoutFdimsMap
-!-------------------------------------------------------------------
-        subroutine TensLayoutFdimsExtract(this,num_parts,parts,ierr)
-         implicit none
-         class(tens_layout_fdims_t), intent(in):: this
-         integer(INTL), intent(out):: num_parts
-         type(list_bi_t), intent(inout):: parts
-         integer(INTD), intent(out), optional:: ierr
-         integer(INTD):: errc
-
-         errc=TEREC_SUCCESS; num_parts=0
-         !`Write
-         if(present(ierr)) ierr=errc
-         return
         end subroutine TensLayoutFdimsExtract
 !---------------------------------------------
         subroutine tens_layout_fdims_dtor(this)
          implicit none
          type(tens_layout_fdims_t):: this
 
-         !`Finish
          if(allocated(this%data_descr)) deallocate(this%data_descr)
+         this%header=>NULL()
+         this%data_type=NO_TYPE
          this%layout=TEREC_LAY_NONE
          return
         end subroutine tens_layout_fdims_dtor
