@@ -1,7 +1,7 @@
 !Infrastructure for a recursive adaptive vector space decomposition
 !and hierarchical vector space representation.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/03/22
+!REVISION: 2017/03/23
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -2400,7 +2400,7 @@
          class(h_space_t), intent(in):: this           !in: hierarchical vector space
          integer(INTD), intent(out), optional:: ierr   !out: error code
          integer(INTD), intent(in), optional:: dev_out !in: output device (defaults to screen)
-         integer(INTD):: errc,devo
+         integer(INTD):: i,errc,devo
          class(*), pointer:: up
          class(subspace_t), pointer:: ssp
          type(vec_tree_iter_t):: vt_it
@@ -2416,7 +2416,11 @@
            call ssp%print_it(devo); ssp=>NULL()
            errc=vt_it%scanp(return_each=.TRUE.,skip_current=.TRUE.)
           enddo
-          if(errc.eq.GFC_IT_DONE) errc=vt_it%release()
+          if(errc.eq.GFC_IT_DONE) then
+           errc=vt_it%release()
+          else
+           i=vt_it%release()
+          endif
          else
           errc=1
          endif

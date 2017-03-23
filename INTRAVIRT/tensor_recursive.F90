@@ -93,7 +93,8 @@
          contains
           procedure, private:: TensShapeCtor
           generic, public:: tens_shape_ctor=>TensShapeCtor   !ctor
-          procedure, public:: set_groups=>TensShapeSetGroups !creates a new index restriction group
+          procedure, public:: set_dims=>TensShapeSetDims     !sets dimension extents (if they have not been set previously)
+          procedure, public:: set_groups=>TensShapeSetGroups !creates new index restriction groups
           procedure, public:: is_set=>TensShapeIsSet         !returns .TRUE. if the tensor shape is set
           procedure, public:: get_dims=>TensShapeGetDims     !returns tensor dimension extents
           procedure, public:: get_rank=>TensShapeGetRank     !return the rank of the tensor (number of dimensions)
@@ -112,6 +113,7 @@
           procedure, private:: TensHeaderCtor
           generic, public:: tens_header_ctor=>TensHeaderCtor         !ctor
           procedure, public:: add_shape=>TensHeaderAddShape          !ctor for a deferred tensor shape specification
+          procedure, public:: set_dims=>TensHeaderSetDims            !sets dimension extents (if they have not been set previously)
           procedure, public:: is_set=>TensHeaderIsSet                !returns .TRUE. if the tensor header is set (with or without shape)
           procedure, public:: get_name=>TensHeaderGetName            !returns the alphanumeric_ tensor name
           procedure, public:: get_rank=>TensHeaderGetRank            !returns the rank of the tensor (number of dimensions)
@@ -189,17 +191,22 @@
  !Recursive tensor:
         type, public:: tens_rcrsv_t
          type(tens_header_t), private:: header                !tensor header (signature + shape)
-         type(tens_body_t), private:: body                    !tensor body (data location and storage layout)
-#if 0
+         type(tens_body_t), private:: body                    !tensor body (recursive composition, data location and storage layout)
          contains
-          procedure, public:: set_header=>TensRcrsvSetHeader  !sets the tensor header (builder ctor)
-          procedure, public:: set_body=>TensRcrsvSetBody      !sets the tensor body (builder ctor)
-          procedure, public:: set=>TensRcrsvSet               !sets the tensor (ctor)
-          procedure, public:: is_set=>TensRcrsvIsSet          !returns .TRUE. is the tensor is set
-          procedure, public:: get_header=>TensRcrsvGetHeader  !returns a pointer to the tensor header
-          procedure, public:: get_body=>TensRcrsvGetBody      !returns a pointer to the tensor body
-          procedure, public:: clean=>TensRcrsvClean           !resets the object to an empty state (dtor)
-          final:: TensRcrsvFinal                              !dtor
+          procedure, private:: TensRcrsvCtorSigna                    !ctor by tensor signature and optionally tensor shape
+          procedure, private:: TensRcrsvCtorHead                     !ctor by tensor header
+          generic, public:: tens_rcrsv_ctor=>TensRcrsvCtorSigna,TensRcrsvCtorHead
+          procedure, public:: is_set=>TensRcrsvIsSet                 !returns TRUE if the tensor is set (signature defined) plus other info
+          procedure, public:: add_subtensor=>TensRcrsvAddSubtensor   !registers a constituent subtensor by providing its tensor header
+          procedure, public:: add_subtensors=>TensRcrsvAddSubtensors !registers constituent subtensors by providing a list of their tensor headers
+          procedure, public:: set_shape=>TensRcrsvSetShape           !sets the tensor shape (if it has not been set yet)
+#if 0
+          procedure, public:: set_layout=>TensRcrsvSetLayout         !sets the tensor storage layout
+          procedure, public:: set_location=>TensRcrsvSetLocation     !sets the physical location of the tensor body data
+          procedure, public:: get_header=>TensRcrsvGetHeader         !returns a pointer to the tensor header
+          procedure, public:: get_body=>TensRcrsvGetBody             !returns a pointer to the tensor body
+          procedure, public:: decompose=>TensRcrsvDecompose          !decomposes the tensor into subtensors (a list of subtensors)
+          final:: tens_rcrsv_dtor                                    !dtor
 #endif
         end type tens_rcrsv_t
 !INTERFACES:
@@ -245,6 +252,7 @@
         public tens_signature_dtor
  !tens_shape_t:
         private TensShapeCtor
+        private TensShapeSetDims
         private TensShapeSetGroups
         private TensShapeIsSet
         private TensShapeGetDims
@@ -258,6 +266,7 @@
  !tens_header_t:
         private TensHeaderCtor
         private TensHeaderAddShape
+        private TensHeaderSetDims
         private TensHeaderIsSet
         private TensHeaderGetName
         private TensHeaderGetRank
@@ -301,14 +310,20 @@
         private TensBodyGetNumSubtensors
         private TensBodyGetSubtensors
         public tens_body_dtor
-#if 0
  !tens_rcrsv_t:
-        private TensRcrsvSetHeader
-        private TensRcrsvSetBody
-        private TensRcrsvSet
+        private TensRcrsvCtorSigna
+        private TensRcrsvCtorHead
+        private TensRcrsvIsSet
+        private TensRcrsvAddSubtensor
+        private TensRcrsvAddSubtensors
+        private TensRcrsvSetShape
+#if 0
+        private TensRcrsvSetLayout
+        private TensRcrsvSetLocation
         private TensRcrsvGetHeader
         private TensRcrsvGetBody
-        private TensRcrsvClean
+        private TensRcrsvDecompose
+        public tens_rcrsv_dtor
 #endif
 !DATA:
 
@@ -646,7 +661,7 @@
          implicit none
          class(tens_shape_t), intent(out):: this              !out: tensor shape
          integer(INTD), intent(out), optional:: ierr          !out: error code
-         integer(INTL), intent(in), optional:: dim_extent(1:) !in: tensor dimension extents
+         integer(INTL), intent(in), optional:: dim_extent(1:) !in: tensor dimension extents (dimension extent of 0 means an unresolved dimension)
          integer(INTD), intent(in), optional:: dim_group(1:)  !in: dimension grouping: dim_group(x)=y means dimension x belongs to group y>0 (group 0 is default)
          integer(INTD), intent(in), optional:: group_spec(1:) !in: group specification: group_spec(x)=y means group x has restriction y (see on top)
          integer(INTD):: errc,i,j,k,m,n
@@ -655,7 +670,7 @@
          errc=TEREC_SUCCESS
          n=0; if(present(dim_extent)) n=size(dim_extent)
          if(n.gt.0) then !true tensor
-          do i=1,n; if(dim_extent(i).le.0_INTL) then; errc=TEREC_INVALID_ARGS; exit; endif; enddo
+          do i=1,n; if(dim_extent(i).lt.0_INTL) then; errc=TEREC_INVALID_ARGS; exit; endif; enddo
           if(errc.eq.TEREC_SUCCESS) then
            allocate(this%dim_extent(1:n),STAT=errc)
            if(errc.eq.0) then
@@ -707,6 +722,36 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensShapeCtor
+!--------------------------------------------------------
+        subroutine TensShapeSetDims(this,dim_extent,ierr)
+!Sets dimension extents (if they have not been set previously).
+!An attempt to set an already resolved tensor dimension will raise an error.
+         implicit none
+         class(tens_shape_t), intent(inout):: this   !inout: tensor shape
+         integer(INTL), intent(in):: dim_extent(1:)  !in: dimension extents (those equal to 0 will be ignored)
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: i,n,errc
+
+         if(this%is_set(errc,n)) then
+          if(size(dim_extent).eq.n) then
+           do i=1,n
+            if(dim_extent(i).gt.0) then
+             if(this%dim_extent(i).eq.0) then !unresolved dimension
+              this%dim_extent(i)=dim_extent(i)
+             else
+              errc=TEREC_INVALID_REQUEST; exit
+             endif
+            endif
+           enddo
+          else
+           errc=TEREC_INVALID_ARGS
+          endif
+         else
+          errc=TEREC_INVALID_REQUEST
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensShapeSetDims
 !--------------------------------------------------------------------
         subroutine TensShapeSetGroups(this,dim_group,group_spec,ierr)
 !Sets group restrictions on tensor dimensions. If group restrictions
@@ -763,21 +808,30 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensShapeSetGroups
-!------------------------------------------------------------------------
-        function TensShapeIsSet(this,ierr,num_dims,num_groups) result(res)
-!Returns TRUE if the tensor shape is set.
+!------------------------------------------------------------------------------------
+        function TensShapeIsSet(this,ierr,num_dims,num_groups,unresolved) result(res)
+!Returns TRUE if the tensor shape is set, plus additional info.
          implicit none
          logical:: res                                     !out: result
          class(tens_shape_t), intent(in):: this            !in: tensor shape
          integer(INTD), intent(out), optional:: ierr       !out: error code
          integer(INTD), intent(out), optional:: num_dims   !out: number of dimensions
          integer(INTD), intent(out), optional:: num_groups !out: number of dimension groups
-         integer(INTD):: errc
+         integer(INTD), intent(out), optional:: unresolved !number of unresolved tensor dimensions
+         integer(INTD):: i,errc
 
          errc=TEREC_SUCCESS
          res=(this%num_dims.ge.0)
          if(present(num_dims)) num_dims=this%num_dims
          if(present(num_groups)) num_groups=this%num_grps
+         if(present(unresolved)) then
+          unresolved=0
+          if(res) then
+           do i=1,this%num_dims
+            if(this%dim_extent(i).eq.0_INTL) unresolved=unresolved+1 !unresolved tensor dimension
+           enddo
+          endif
+         endif
          if(present(ierr)) ierr=errc
          return
         end function TensShapeIsSet
@@ -1073,12 +1127,13 @@
 ! # Constructing a scalar tensor header: Do not pass any optional arguments except <tens_name> and/or <ierr>;
 ! # Constructing a true tensor header without shape: Pass only <subspaces>, <h_space>, and optionally <tens_name> and/or <ierr>;
 ! # Constructing a true tensor header with a shape: Pass <subspaces>, <h_space>, and <dim_extent> with all other arguments optional.
+!   Note that it is ok to pass dimension extents equal to 0 for unresolved tensor dimensions (to be set later).
          implicit none
          class(tens_header_t), intent(out):: this             !out: tensor header
          integer(INTD), intent(out), optional:: ierr          !out: error code
          character(*), intent(in), optional:: tens_name       !in: alphanumeric_ tensor name
          integer(INTL), intent(in), optional:: subspaces(1:)  !in: subspace multi-index (specification): Length = tensor rank
-         class(h_space_t), intent(in), optional:: h_space     !in: underlying hierarchical vector space
+         class(h_space_t), intent(in), target, optional:: h_space !in: underlying hierarchical vector space
          integer(INTL), intent(in), optional:: dim_extent(1:) !in: dimension extents: Length = tensor rank
          integer(INTD), intent(in), optional:: dim_group(1:)  !in: dimension restriction groups: Length = tensor rank
          integer(INTD), intent(in), optional:: group_spec(1:) !in: dimension restriction group specification
@@ -1092,7 +1147,7 @@
          pr_dim=present(dim_extent)
          pr_grp=present(dim_group)
          pr_grs=present(group_spec)
-         if(pr_sub.and.(.not.pr_hsp)) errc=TEREC_INVALID_ARGS
+         if((pr_sub.and.(.not.pr_hsp)).or.((.not.pr_sub).and.pr_hsp)) errc=TEREC_INVALID_ARGS
          if(pr_dim.and.(.not.pr_sub)) errc=TEREC_INVALID_ARGS
          if((pr_grp.or.pr_grs).and.(.not.pr_dim)) errc=TEREC_INVALID_ARGS
          if((pr_grp.and.(.not.pr_grs)).or.(pr_grs.and.(.not.pr_grp))) errc=TEREC_INVALID_ARGS
@@ -1194,9 +1249,27 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensHeaderAddShape
-!---------------------------------------------------------------------------------
-        function TensHeaderIsSet(this,ierr,num_dims,num_groups,shaped) result(res)
-!Returns TRUE if the tensor header is set (with or without shape).
+!---------------------------------------------------------
+        subroutine TensHeaderSetDims(this,dim_extent,ierr)
+!Sets dimension extents (if they have not been set previously).
+!An attempt to reset an already resolved tensor dimension will raise an error.
+         implicit none
+         class(tens_header_t), intent(inout):: this  !inout: tensor header
+         integer(INTL), intent(in):: dim_extent(1:)  !in: dimension extents (those equal to 0 will be ignored)
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer:: errc
+
+         if(this%is_set(errc)) then
+          call this%shape%set_dims(dim_extent,errc)
+         else
+          errc=TEREC_INVALID_REQUEST
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensHeaderSetDims
+!--------------------------------------------------------------------------------------------
+        function TensHeaderIsSet(this,ierr,num_dims,num_groups,shaped,unresolved) result(res)
+!Returns TRUE if the tensor header is set (with or without shape), plus additional info.
          implicit none
          logical:: res                                     !out: result
          class(tens_header_t), intent(in):: this           !in: tensor header
@@ -1204,18 +1277,20 @@
          integer(INTD), intent(out), optional:: num_dims   !out: number of dimensions
          integer(INTD), intent(out), optional:: num_groups !out: number of restricted dimension groups
          logical, intent(out), optional:: shaped           !out: TRUE if the tensor shape is set
-         integer(INTD):: errc,nd,ng
+         integer(INTD), intent(out), optional:: unresolved !out: number of unresolved tensor dimensions
+         integer(INTD):: errc,nd,ng,unres
          logical:: shpd
 
          res=this%signature%is_set(errc,num_dims=nd)
          if(present(num_dims)) num_dims=nd
          if(res.and.errc.eq.TEREC_SUCCESS) then
-          shpd=this%shape%is_set(errc,num_dims=nd,num_groups=ng)
+          shpd=this%shape%is_set(errc,num_dims=nd,num_groups=ng,unresolved=unres)
          else
           shpd=.FALSE.; ng=0
          endif
          if(present(num_groups)) num_groups=ng
          if(present(shaped)) shaped=shpd
+         if(present(unresolved)) unresolved=unres
          if(present(ierr)) ierr=errc
          return
         end function TensHeaderIsSet
@@ -1996,6 +2071,168 @@
          this%num_subtensors=0
          return
         end subroutine tens_body_dtor
+![tens_rcrsv_t]=============================================================================================
+        subroutine TensRcrsvCtorSigna(this,tens_name,subspaces,h_space,ierr,dim_extent,dim_group,group_spec)
+!Constructs a tensor by specifying a tensor signature and optionally a shape.
+!See TensHeaderCtor for restrictions.
+         implicit none
+         class(tens_rcrsv_t), intent(out):: this              !out: tensor
+         character(*), intent(in):: tens_name                 !in: alphanumeric_ tensor name
+         integer(INTL), intent(in):: subspaces(1:)            !in: subspace multi-index (signature)
+         class(h_space_t), intent(in), target:: h_space       !in: hierarchical vector space
+         integer(INTD), intent(out), optional:: ierr          !out: error code
+         integer(INTL), intent(in), optional:: dim_extent(1:) !in: dimension extents (those equal to 0 are unresolved)
+         integer(INTD), intent(in), optional:: dim_group(1:)  !in: dimension restriction groups
+         integer(INTD), intent(in), optional:: group_spec(1:) !in: restriction groups specification
+         integer(INTD):: errc
+
+         if(present(dim_extent)) then
+          if(present(dim_group)) then
+           if(present(group_spec)) then
+            call this%header%tens_header_ctor(errc,tens_name,subspaces,h_space,dim_extent,dim_group,group_spec)
+           else
+            errc=TEREC_INVALID_ARGS
+           endif
+          else
+           if(.not.present(group_spec)) then
+            call this%header%tens_header_ctor(errc,tens_name,subspaces,h_space,dim_extent)
+           else
+            errc=TEREC_INVALID_ARGS
+           endif
+          endif
+         else
+          if(.not.(present(dim_group).or.present(group_spec))) then
+           call this%header%tens_header_ctor(errc,tens_name,subspaces,h_space)
+          else
+           errc=TEREC_INVALID_ARGS
+          endif
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensRcrsvCtorSigna
+!-----------------------------------------------------
+        subroutine TensRcrsvCtorHead(this,header,ierr)
+!Constructs a tensor by specifying a tensor header.
+         implicit none
+         class(tens_rcrsv_t), intent(out):: this     !out: tensor
+         type(tens_header_t), intent(in):: header    !in: existing tensor header
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         if(header%is_set(errc)) then
+          this%header=header
+         else
+          errc=TEREC_INVALID_ARGS
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensRcrsvCtorHead
+!-------------------------------------------------------------------------------------
+        function TensRcrsvIsSet(this,ierr,shaped,unresolved,layed,located) result(res)
+!Returns TRUE if the tensor is set, plus additional info.
+         implicit none
+         logical:: res                                     !out: result
+         class(tens_rcrsv_t), intent(in):: this            !in: tensor
+         integer(INTD), intent(out), optional:: ierr       !out: error code
+         logical, intent(out), optional:: shaped           !out: TRUE if tensor shape is set (even with unresolved dimensions)
+         integer(INTD), intent(out), optional:: unresolved !out: number of unresolved tensor dimensions
+         logical, intent(out), optional:: layed            !out: TRUE if the tensor body storage layout is set
+         logical, intent(out), optional:: located          !out: TRUE if the physical location for tensor body data is set
+         integer(INTD):: errc,unres
+         logical:: shpd,layd,locd
+
+         res=this%header%is_set(errc,shaped=shpd,unresolved=unres)
+         if(present(shaped)) shaped=shpd
+         if(present(unresolved)) unresolved=unres
+         if(res) then
+          shpd=this%body%is_set(errc,layd,locd)
+          if(present(layed)) layed=layd
+          if(present(located)) located=locd
+         else
+          if(present(layed)) layed=.FALSE.
+          if(present(located)) located=.FALSE.
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function TensRcrsvIsSet
+!------------------------------------------------------------
+        subroutine TensRcrsvAddSubtensor(this,subtensor,ierr)
+!Registers a constituent subtensor by providing its tensor header.
+         implicit none
+         class(tens_rcrsv_t), intent(inout):: this    !inout: tensor
+         class(tens_header_t), intent(in):: subtensor !in: subtensor
+         integer(INTD), intent(out), optional:: ierr  !out: error code
+         integer(INTD):: errc
+
+         if(this%is_set(errc)) then
+          if(errc.eq.TEREC_SUCCESS) call this%body%add_subtensor(subtensor,errc)
+         else
+          errc=TEREC_INVALID_REQUEST
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensRcrsvAddSubtensor
+!--------------------------------------------------------------
+        subroutine TensRcrsvAddSubtensors(this,subtensors,ierr)
+!Registers constituent subtensors by providing a list of their tensor headers.
+         implicit none
+         class(tens_rcrsv_t), intent(inout):: this   !inout: tensor
+         type(list_bi_t), intent(in):: subtensors    !in: list of subtensors (their tensor headers)
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: i,errc
+         type(list_iter_t):: lit
+         class(tens_header_t), pointer:: thp
+         class(*), pointer:: up
+
+         if(this%is_set(errc)) then
+          if(errc.eq.TEREC_SUCCESS) then
+           errc=lit%init(subtensors)
+           if(errc.eq.GFC_SUCCESS) then
+            errc=GFC_IT_ACTIVE; thp=>NULL()
+            do while(errc.eq.GFC_IT_ACTIVE)
+             up=>lit%get_value(errc); if(errc.ne.GFC_SUCCESS) exit
+             select type(up); class is(tens_header_t); thp=>up; end select
+             if(.not.associated(thp)) then; errc=TEREC_ERROR; exit; endif
+             call this%body%add_subtensor(thp,errc); if(errc.ne.TEREC_SUCCESS) exit
+             thp=>NULL()
+             errc=lit%scanp(return_each=.TRUE.,skip_current=.TRUE.)
+            enddo
+            if(errc.eq.GFC_IT_DONE) then
+             errc=lit%release()
+            else
+             errc=lit%release()
+             errc=TEREC_UNABLE_COMPLETE
+            endif
+           else
+            errc=TEREC_UNABLE_COMPLETE
+           endif
+          endif
+         else
+          errc=TEREC_INVALID_REQUEST
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensRcrsvAddSubtensors
+!------------------------------------------------------------------------------
+        subroutine TensRcrsvSetShape(this,dim_extent,ierr,dim_group,group_spec)
+!Sets the tensor shape (if it has not been set yet).
+         implicit none
+         class(tens_rcrsv_t), intent(inout):: this            !inout: tensor
+         integer(INTL), intent(in):: dim_extent(1:)           !in: dimension extents
+         integer(INTD), intent(out), optional:: ierr          !out: error code
+         integer(INTD), intent(in), optional:: dim_group(1:)  !in: index restriction groups
+         integer(INTD), intent(in), optional:: group_spec(1:) !in: restriction groups specification
+         integer(INTD):: errc,unres
+         logical:: shpd
+
+         if(this%is_set(errc,shaped=shpd,unresolved=unres)) then
+          
+         else
+          errc=TEREC_INVALID_REQUEST
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensRcrsvSetShape
 
        end module tensor_recursive
 !==================================
