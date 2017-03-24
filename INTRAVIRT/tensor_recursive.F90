@@ -97,7 +97,8 @@
           procedure, public:: set_groups=>TensShapeSetGroups !creates new index restriction groups
           procedure, public:: is_set=>TensShapeIsSet         !returns .TRUE. if the tensor shape is set
           procedure, public:: get_dims=>TensShapeGetDims     !returns tensor dimension extents
-          procedure, public:: get_rank=>TensShapeGetRank     !return the rank of the tensor (number of dimensions)
+          procedure, public:: get_rank=>TensShapeGetRank     !returns the rank of the tensor (number of dimensions)
+          procedure, public:: get_dim_group=>TensShapeGetDimGroup !returns the restriction group for a specific tensor dimension (0: no restrictions)
           procedure, public:: get_group=>TensShapeGetGroup   !returns a restricted index group (specific dimensions belonging to the specified group)
           procedure, public:: same_group=>TensShapeSameGroup !checks whether specific tensor dimensions belong to the same group
           procedure, public:: num_groups=>TensShapeNumGroups !returns the total number of non-trivial index groups defined in the tensor shape
@@ -111,24 +112,25 @@
          type(tens_shape_t), private:: shape                 !tensor shape
          contains
           procedure, private:: TensHeaderCtor
-          generic, public:: tens_header_ctor=>TensHeaderCtor         !ctor
-          procedure, public:: add_shape=>TensHeaderAddShape          !ctor for a deferred tensor shape specification
-          procedure, public:: set_dims=>TensHeaderSetDims            !sets dimension extents (if they have not been set previously)
-          procedure, public:: set_groups=>TensHeaderSetGroups        !sets index restriction groups if they have not been previously set
-          procedure, public:: is_set=>TensHeaderIsSet                !returns .TRUE. if the tensor header is set (with or without shape)
-          procedure, public:: get_name=>TensHeaderGetName            !returns the alphanumeric_ tensor name
-          procedure, public:: get_rank=>TensHeaderGetRank            !returns the rank of the tensor (number of dimensions)
-          procedure, public:: get_spec=>TensHeaderGetSpec            !returns the tensor subspace multi-index (specification)
-          procedure, public:: get_dims=>TensHeaderGetDims            !returns tensor dimension extents
-          procedure, public:: num_groups=>TensHeaderNumGroups        !returns the total number of non-trivial index groups defined in the tensor shape
-          procedure, public:: get_group=>TensHeaderGetGroup          !returns a restricted index group (specific dimensions belonging to the specified group)
-          procedure, public:: same_group=>TensHeaderSameGroup        !checks whether specific tensor dimensions belong to the same group
-          procedure, public:: get_signature=>TensHeaderGetSignature  !returns the pointer to the tensor signature
-          procedure, public:: get_shape=>TensHeaderGetShape          !returns the pointer the the tensor shape
-          procedure, public:: compare=>TensHeaderCompare             !compares the tensor header with another tensor header: {CMP_EQ,CMP_LT,CMP_GT,CMP_ER}
-          procedure, public:: print_it=>TensHeaderPrintIt            !prints the tensor header
+          generic, public:: tens_header_ctor=>TensHeaderCtor        !ctor
+          procedure, public:: add_shape=>TensHeaderAddShape         !ctor for a deferred tensor shape specification
+          procedure, public:: set_dims=>TensHeaderSetDims           !sets dimension extents (if they have not been set previously)
+          procedure, public:: set_groups=>TensHeaderSetGroups       !sets index restriction groups if they have not been previously set
+          procedure, public:: is_set=>TensHeaderIsSet               !returns .TRUE. if the tensor header is set (with or without shape)
+          procedure, public:: get_name=>TensHeaderGetName           !returns the alphanumeric_ tensor name
+          procedure, public:: get_rank=>TensHeaderGetRank           !returns the rank of the tensor (number of dimensions)
+          procedure, public:: get_spec=>TensHeaderGetSpec           !returns the tensor subspace multi-index (specification)
+          procedure, public:: get_dims=>TensHeaderGetDims           !returns tensor dimension extents
+          procedure, public:: num_groups=>TensHeaderNumGroups       !returns the total number of non-trivial index groups defined in the tensor shape
+          procedure, public:: get_dim_group=>TensHeaderGetDimGroup  !returns the restriction group for a specific tensor dimension
+          procedure, public:: get_group=>TensHeaderGetGroup         !returns a restricted index group (specific dimensions belonging to the specified group)
+          procedure, public:: same_group=>TensHeaderSameGroup       !checks whether specific tensor dimensions belong to the same group
+          procedure, public:: get_signature=>TensHeaderGetSignature !returns the pointer to the tensor signature
+          procedure, public:: get_shape=>TensHeaderGetShape         !returns the pointer the the tensor shape
+          procedure, public:: compare=>TensHeaderCompare            !compares the tensor header with another tensor header: {CMP_EQ,CMP_LT,CMP_GT,CMP_ER}
+          procedure, public:: print_it=>TensHeaderPrintIt           !prints the tensor header
 #ifdef NO_GNU
-          final:: tens_header_dtor                                   !dtor `GCC/5.4.0 bug
+          final:: tens_header_dtor                                  !dtor `GCC/5.4.0 bug
 #endif
         end type tens_header_t
  !Simple (dense) tensor block (part):
@@ -256,6 +258,7 @@
         private TensShapeIsSet
         private TensShapeGetDims
         private TensShapeGetRank
+        private TensShapeGetDimGroup
         private TensShapeGetGroup
         private TensShapeSameGroup
         private TensShapeNumGroups
@@ -273,6 +276,7 @@
         private TensHeaderGetSpec
         private TensHeaderGetDims
         private TensHeaderNumGroups
+        private TensHeaderGetDimGroup
         private TensHeaderGetGroup
         private TensHeaderSameGroup
         private TensHeaderGetSignature
@@ -482,14 +486,15 @@
          if(present(ierr)) ierr=errc
          return
         end function TensSignatureGetRank
-!--------------------------------------------------------------------
-        subroutine TensSignatureGetSpec(this,subspaces,num_dims,ierr)
+!------------------------------------------------------------------------------
+        subroutine TensSignatureGetSpec(this,subspaces,num_dims,ierr,h_space_p)
 !Returns the defining subspaces of the tensor (subspace multi-index).
          implicit none
-         class(tens_signature_t), intent(in):: this   !in: tensor signature
-         integer(INTL), intent(inout):: subspaces(1:) !out: defining subspaces (their IDs)
-         integer(INTD), intent(out):: num_dims        !out: number of tensor dimensions
-         integer(INTD), intent(out), optional:: ierr  !out: error code
+         class(tens_signature_t), intent(in):: this                   !in: tensor signature
+         integer(INTL), intent(inout):: subspaces(1:)                 !out: defining subspaces (their IDs)
+         integer(INTD), intent(out):: num_dims                        !out: number of tensor dimensions
+         integer(INTD), intent(out), optional:: ierr                  !out: error code
+         class(h_space_t), intent(out), pointer, optional:: h_space_p !out: pointer to the underlying hierarchical vector space
          integer(INTD):: errc
 
          errc=TEREC_SUCCESS
@@ -497,6 +502,7 @@
           num_dims=this%num_dims
           if(size(subspaces).ge.num_dims) then
            subspaces(1:num_dims)=this%space_idx(1:num_dims)
+           if(present(h_space_p)) h_space_p=>this%h_space_p
           else
            errc=TEREC_UNABLE_COMPLETE
           endif
@@ -872,6 +878,35 @@
          if(present(ierr)) ierr=errc
          return
         end function TensShapeGetRank
+!-------------------------------------------------------------------------------
+        function TensShapeGetDimGroup(this,dimsn,group_restr,ierr) result(group)
+!Returns the restriction group number and type of restriction for a specific tensor dimension.
+         implicit none
+         integer(INTD):: group                       !out: restriction group number (0:default group with no restrictions)
+         class(tens_shape_t), intent(in):: this      !in: tensor shape
+         integer(INTD), intent(in):: dimsn           !in: tensor dimension
+         integer(INTD), intent(out):: group_restr    !out: type of index restriction (see top for TEREC_IND_RESTR_XXX)
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: n,errc
+
+         group=0; group_restr=TEREC_IND_RESTR_NONE
+         if(this%is_set(errc,num_dims=n)) then
+          if(errc.eq.TEREC_SUCCESS) then
+           if(dimsn.gt.0.and.dimsn.le.n) then
+            if(this%num_grps.gt.0) then
+             group=this%dim_group(dimsn)
+             if(group.gt.0) group_restr=this%group_spec(group)
+            endif
+           else
+            errc=TEREC_INVALID_ARGS
+           endif
+          endif
+         else
+          errc=TEREC_INVALID_REQUEST
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function TensShapeGetDimGroup
 !------------------------------------------------------------------------------------
         subroutine TensShapeGetGroup(this,group,group_dims,num_dims,ierr,group_restr)
 !Returns the index restriction group (specific dimensions belonging to the specified group).
@@ -1338,17 +1373,22 @@
          if(present(ierr)) ierr=errc
          return
         end function TensHeaderGetRank
-!-----------------------------------------------------------------
-        subroutine TensHeaderGetSpec(this,subspaces,num_dims,ierr)
+!---------------------------------------------------------------------------
+        subroutine TensHeaderGetSpec(this,subspaces,num_dims,ierr,h_space_p)
 !Returns the defining subspaces of the tensor (subspace multi-index).
          implicit none
-         class(tens_header_t), intent(in):: this      !in: tensor header
-         integer(INTL), intent(inout):: subspaces(1:) !out: defining subspaces (their IDs)
-         integer(INTD), intent(out):: num_dims        !out: number of tensor dimensions
-         integer(INTD), intent(out), optional:: ierr  !out: error code
+         class(tens_header_t), intent(in):: this                      !in: tensor header
+         integer(INTL), intent(inout):: subspaces(1:)                 !out: defining subspaces (their IDs)
+         integer(INTD), intent(out):: num_dims                        !out: number of tensor dimensions
+         integer(INTD), intent(out), optional:: ierr                  !out: error code
+         class(h_space_t), intent(out), pointer, optional:: h_space_p !out: pointer to the underlying hierarchical vector space
          integer(INTD):: errc
 
-         call this%signature%get_spec(subspaces,num_dims,errc)
+         if(present(h_space_p)) then
+          call this%signature%get_spec(subspaces,num_dims,errc,h_space_p)
+         else
+          call this%signature%get_spec(subspaces,num_dims,errc)
+         endif
          if(present(ierr)) ierr=errc
          return
         end subroutine TensHeaderGetSpec
@@ -1379,6 +1419,21 @@
          if(present(ierr)) ierr=errc
          return
         end function TensHeaderNumGroups
+!--------------------------------------------------------------------------------
+        function TensHeaderGetDimGroup(this,dimsn,group_restr,ierr) result(group)
+!Returns the restriction group for a specific tensor dimension.
+         implicit none
+         integer(INTD):: group                       !out: restriction group
+         class(tens_header_t), intent(in):: this     !in: tensor header
+         integer(INTD), intent(in):: dimsn           !in: specific tensor dimension
+         integer(INTD), intent(out):: group_restr    !out: type of restriction
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         group=this%shape%get_dim_group(dimsn,group_restr,errc)
+         if(present(ierr)) ierr=errc
+         return
+        end function TensHeaderGetDimGroup
 !-------------------------------------------------------------------------------------
         subroutine TensHeaderGetGroup(this,group,group_dims,num_dims,ierr,group_restr)
 !Returns the index restriction group (specific dimensions belonging to the specified group).
@@ -2375,11 +2430,33 @@
          integer(INTD), intent(in):: split_dims(1:)  !in: tensor dimensions to be split
          type(list_bi_t), intent(inout):: subtensors !out: list of subtensors specified by their tensor headers
          integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc
+         integer(INTD):: i,j,nd,sd,errc,dim_group(1:MAX_TENSOR_RANK)
+         integer(INTL):: sidx(1:MAX_TENSOR_RANK)
+         class(h_space_t), pointer:: hsp
+         type(list_iter_t):: lit
+         type(tens_header_t):: thead
+         logical:: shpd
 
-         if(this%is_set(errc)) then
+         if(this%is_set(errc,shaped=shpd)) then
           if(errc.eq.TEREC_SUCCESS) then
-           
+           hsp=>NULL()
+           call this%header%get_spec(sidx,nd,errc,hsp)
+           if(errc.eq.TEREC_SUCCESS) then
+            if(nd.gt.0.and.associated(hsp)) then !true tensor on hierarchical vector space
+             sd=size(split_dims) !number of dimensions to split
+             if(sd.gt.0.and.sd.le.nd) then
+              
+             else
+              if(sd.gt.nd) errc=TEREC_INVALID_ARGS
+             endif
+            else
+             if(nd.eq.0) then
+              errc=TEREC_INVALID_REQUEST !scalars cannot be split further
+             else
+              errc=TEREC_ERROR !unable to retrieve the hierarhical vector space
+             endif
+            endif
+           endif
           endif
          else
           errc=TEREC_INVALID_REQUEST

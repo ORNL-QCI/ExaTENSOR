@@ -1,7 +1,7 @@
 !Infrastructure for a recursive adaptive vector space decomposition
 !and hierarchical vector space representation.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/03/23
+!REVISION: 2017/03/24
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -228,6 +228,7 @@
           procedure, public:: get_basis_subrange=>SubspaceGetBasisSubrange !returns the subspace basis subrange
           procedure, public:: get_supp_dim=>SubspaceGetSuppDim             !returns the dimensionality of the subspace support
           procedure, public:: get_max_resolution=>SubspaceGetMaxResolution !returns the max resolution (dimension) of the subspace
+          procedure, public:: compare_range=>SubspaceCompareRange          !compares ranges of two subspaces: {CMP_EQ,CMP_LT,CMP_GT,CMP_OV,CMP_ER}
           procedure, public:: register_basis=>SubspaceRegisterBasis        !registers a specific basis of the subspace
           procedure, public:: resolve=>SubspaceResolve                     !resolves the subspace with a specific basis (based on some condition)
           procedure, public:: print_it=>SubspacePrintIt                    !prints the subspace information
@@ -255,6 +256,7 @@
           procedure, public:: get_subspace=>HSpaceGetSubspace           !returns a pointer to the requested subspace of the hierarchical vector space
           procedure, public:: compare_subspaces=>HSpaceCompareSubspaces !compares two subspaces from the hierarchical vector space: {CMP_EQ,CMP_LT,CMP_GT,CMP_ER}
           procedure, public:: relate_subspaces=>HSpaceRelateSubspaces   !relates two subspaces from the hierarchical vector space: {CMP_EQ,CMP_CN,CMP_IN,CMP_OV,CMP_NC}
+          procedure, public:: compare_subranges=>HSpaceCompareSubranges !compares basis subranges of two subspaces from the hierarchical vector space: {CMP_EQ,CMP_LT,CMP_GT,CMP_OV,CMP_ER}
           procedure, public:: print_it=>HSpacePrintIt                   !prints the hierarchical vector space
           final:: h_space_dtor                                          !destructs the hierarchical representation of a vector space
         end type h_space_t
@@ -358,6 +360,7 @@
         private SubspaceGetBasisSubrange
         private SubspaceGetSuppDim
         private SubspaceGetMaxResolution
+        private SubspaceCompareRange
         private SubspaceRegisterBasis
         private SubspaceResolve
         private SubspacePrintIt
@@ -370,6 +373,7 @@
         private HSpaceGetSubspace
         private HSpaceCompareSubspaces
         private HSpaceRelateSubspaces
+        private HSpaceCompareSubranges
         private HSpacePrintIt
         public h_space_dtor
 
@@ -1809,6 +1813,30 @@
          if(present(ierr)) ierr=errc
          return
         end function SubspaceGetMaxResolution
+!--------------------------------------------------------------
+        function SubspaceCompareRange(this,another) result(cmp)
+!Compares the basis range of the current subspace with another subspace.
+         implicit none
+         integer(INTD):: cmp                     !out: comparison result: {CMP_EQ,CMP_LT,CMP_GT,CMP_OV,CMP_ER}
+         class(subspace_t), intent(in):: this    !in: subspace 1
+         class(subspace_t), intent(in):: another !in: subspace 2
+         integer(INTL):: l1,u1,l2,u2
+
+         if(this%is_set().and.another%is_set()) then
+          l1=this%basis_subrange%lower_bound()+1_INTL; u1=this%basis_subrange%upper_bound()
+          l2=another%basis_subrange%lower_bound()+1_INTL; u2=another%basis_subrange%upper_bound()
+          if(l1.lt.l2) then
+           if(u1.lt.l2) then; cmp=CMP_LT; else; cmp=CMP_OV; endif
+          elseif(l1.gt.l2) then
+           if(u2.lt.l1) then; cmp=CMP_GT; else; cmp=CMP_OV; endif
+          else
+           if(u1.eq.u2) then; cmp=CMP_EQ; else; cmp=CMP_OV; endif
+          endif
+         else
+          cmp=CMP_ER
+         endif
+         return
+        end function SubspaceCompareRange
 !--------------------------------------------------------
         subroutine SubspaceRegisterBasis(this,basis,ierr)
 !Registers a new subspace basis. The new subspace basis must have
@@ -2393,6 +2421,50 @@
          if(present(ierr)) ierr=errc
          return
         end function HSpaceRelateSubspaces
+!---------------------------------------------------------------------
+        function HSpaceCompareSubranges(this,id1,id2,ierr) result(cmp)
+!Compares the basis subranges of two subspaces from the hierarhical vector space.
+         implicit none
+         integer(INTD):: cmp                         !out: comparison result: {CMP_EQ,CMP_LT,CMP_GT,CMP_OV,CMP_ER}
+         class(h_space_t), intent(in):: this         !in: hierarchical vector space
+         integer(INTL), intent(in):: id1             !in: subspace 1 id
+         integer(INTL), intent(in):: id2             !in: subspace 2 id
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         type(vec_tree_iter_t):: vt_it
+         integer(INTD):: i,errc
+         class(*), pointer:: up
+         class(subspace_t), pointer:: sp1,sp2
+
+         errc=0; cmp=CMP_ER
+         if(id1.ge.0.and.id1.lt.this%num_subspaces.and.id2.ge.0.and.id2.lt.this%num_subspaces) then
+          errc=vt_it%init(this%subspaces)
+          if(errc.eq.GFC_SUCCESS) then
+           up=>vt_it%element_value(id1,errc)
+           if(errc.eq.GFC_SUCCESS) then
+            sp1=>NULL(); select type(up); class is(subspace_t); sp1=>up; end select
+            if(associated(sp1)) then
+             up=>vt_it%element_value(id2,errc)
+             if(errc.eq.GFC_SUCCESS) then
+              sp2=>NULL(); select type(up); class is(subspace_t); sp2=>up; end select
+              if(associated(sp2)) then
+               cmp=sp1%compare_range(sp2); if(cmp.eq.CMP_ER) errc=4
+              else
+               errc=3
+              endif
+             endif
+            else
+             errc=2
+            endif
+           endif
+           i=vt_it%release(); if(i.ne.GFC_SUCCESS.and.errc.eq.GFC_SUCCESS) errc=i
+          endif
+         else
+          errc=1
+         endif
+         up=>NULL(); sp1=>NULL(); sp2=>NULL()
+         if(present(ierr)) ierr=errc
+         return
+        end function HSpaceCompareSubranges
 !--------------------------------------------------
         subroutine HSpacePrintIt(this,ierr,dev_out)
 !Prints the hierarchical vector space representation.
