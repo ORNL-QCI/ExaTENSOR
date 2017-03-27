@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/03/24
+!REVISION: 2017/03/27
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -28,7 +28,7 @@
         use stsubs
         use gfc_base
         use gfc_list
-        use gfc_tree
+        use gfc_vec_tree
         use subspaces
         use distributed
         implicit none
@@ -70,7 +70,7 @@
          character(:), allocatable, private:: char_name         !character tensor name (alphanumeric_)
          integer(INTD), private:: num_dims=-1                   !number of tensor dimensions (aka tensor order in math or tensor rank in physics)
          integer(INTL), allocatable, private:: space_idx(:)     !subspace id for each tensor dimension
-         class(h_space_t), pointer, private:: h_space_p=>NULL() !pointer to the underlying hierarchical vector space specification
+         class(h_space_t), pointer, private:: h_space_p=>NULL() !pointer to the underlying hierarchical vector space specification (external target!)
          contains
           procedure, private:: TensSignatureCtor
           generic, public:: tens_signature_ctor=>TensSignatureCtor !ctor
@@ -122,7 +122,7 @@
           procedure, public:: get_spec=>TensHeaderGetSpec           !returns the tensor subspace multi-index (specification)
           procedure, public:: get_dims=>TensHeaderGetDims           !returns tensor dimension extents
           procedure, public:: num_groups=>TensHeaderNumGroups       !returns the total number of non-trivial index groups defined in the tensor shape
-          procedure, public:: get_dim_group=>TensHeaderGetDimGroup  !returns the restriction group for a specific tensor dimension
+          procedure, public:: get_dim_group=>TensHeaderGetDimGroup  !returns the restriction group for a specific tensor dimension (0: no restrictions)
           procedure, public:: get_group=>TensHeaderGetGroup         !returns a restricted index group (specific dimensions belonging to the specified group)
           procedure, public:: same_group=>TensHeaderSameGroup       !checks whether specific tensor dimensions belong to the same group
           procedure, public:: get_signature=>TensHeaderGetSignature !returns the pointer to the tensor signature
@@ -1785,23 +1785,29 @@
          class(tens_header_t), intent(in), target:: tens_header !in: tensor header (logical tensor spec for which the physical layout is constructed)
          integer(INTD), intent(in):: data_type                  !in: data type for tensor elements: {R4,R8,C4,C8}
          integer(INTD), intent(out), optional:: ierr            !out: error code
-         integer(INTD):: errc,ds
+         integer(INTD):: errc,ds,unres
+         logical:: shpd
 
-         errc=TEREC_SUCCESS
-         if(tens_header%is_set()) then
-          if(tens_valid_data_kind(data_type,ds).eq.YEP) then
-           if(ds.gt.0) then
-            this%layout=TEREC_LAY_FDIMS
-            this%data_type=data_type
-            this%header=>tens_header
+         if(tens_header%is_set(errc,shaped=shpd,unresolved=unres)) then
+          if(errc.eq.TEREC_SUCCESS) then
+           if(shpd.and.unres.eq.0) then
+            if(tens_valid_data_kind(data_type,ds).eq.YEP) then
+             if(ds.gt.0) then
+              this%layout=TEREC_LAY_FDIMS
+              this%data_type=data_type
+              this%header=>tens_header
+             else
+              errc=TEREC_INVALID_ARGS
+             endif
+            else
+             errc=TEREC_INVALID_ARGS
+            endif
            else
             errc=TEREC_INVALID_REQUEST
            endif
-          else
-           errc=TEREC_INVALID_ARGS
           endif
          else
-          errc=TEREC_INVALID_ARGS
+          errc=TEREC_INVALID_REQUEST
          endif
          if(present(ierr)) ierr=errc
          return
@@ -2422,47 +2428,132 @@
          if(present(ierr)) ierr=errc
          return
         end function TensRcrsvGetBody
-!-----------------------------------------------------------------
-        subroutine TensRcrsvSplit(this,split_dims,subtensors,ierr)
-!Splits the tensor into subtensors (a list of subtensors by their headers).
+!--------------------------------------------------------------------------------
+        subroutine TensRcrsvSplit(this,split_dims,subtensors,ierr,num_subtensors)
+!Splits the given tensor into subtensors and appends those to a list of subtensors (by their headers).
          implicit none
          class(tens_rcrsv_t), intent(in):: this      !in: parental tensor
          integer(INTD), intent(in):: split_dims(1:)  !in: tensor dimensions to be split
          type(list_bi_t), intent(inout):: subtensors !out: list of subtensors specified by their tensor headers
          integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: i,j,nd,sd,errc,dim_group(1:MAX_TENSOR_RANK)
-         integer(INTL):: sidx(1:MAX_TENSOR_RANK)
+         integer(INTD), intent(out), optional:: num_subtensors !out: number of subtensors generated
+         integer(INTD):: i,j,nb,nd,sd,nsubt,ngr,errc
+         integer(INTL):: sidx(1:MAX_TENSOR_RANK)       !parental subspace multi-index
+         integer(INTL):: midx(1:MAX_TENSOR_RANK)       !subspace iterator register
+         integer(INTL), allocatable:: sbuf(:)          !temporary buffer for holding subspace id's
+         integer(INTD):: firo(1:MAX_TENSOR_RANK)       !first offset in sbuf()
+         integer(INTD):: swid(1:MAX_TENSOR_RANK)       !number of children subspaces for each dimension in sbuf()
+         integer(INTD):: deps(1:MAX_TENSOR_RANK)       !dimension dependencies
+         integer(INTD):: depk(1:MAX_TENSOR_RANK)       !dependency kinds
+         integer(INTD):: dim_group(1:MAX_TENSOR_RANK)  !dimension groups
+         integer(INTD):: group_spec(1:MAX_TENSOR_RANK) !dimension group restriction kinds
          class(h_space_t), pointer:: hsp
          type(list_iter_t):: lit
          type(tens_header_t):: thead
          logical:: shpd
 
+         nsubt=0 !number of generated subtensors
          if(this%is_set(errc,shaped=shpd)) then
           if(errc.eq.TEREC_SUCCESS) then
            hsp=>NULL()
-           call this%header%get_spec(sidx,nd,errc,hsp)
+           call this%header%get_spec(sidx,nd,errc,hsp) !nd: total number of tensor dimensions; sidx(1:nd): subspace id's
            if(errc.eq.TEREC_SUCCESS) then
-            if(nd.gt.0.and.associated(hsp)) then !true tensor on hierarchical vector space
-             sd=size(split_dims) !number of dimensions to split
-             if(sd.gt.0.and.sd.le.nd) then
-              
+            errc=lit%init(subtensors)
+            if(errc.eq.GFC_SUCCESS) then
+             if(nd.gt.0.and.associated(hsp)) then !true tensor on hierarchical vector space
+              sd=size(split_dims) !sd: number of tensor dimensions to split
+              if(sd.gt.0.and.sd.le.nd) then !true splitting
+               call extract_subspaces_to_sbuf(errc)
+               if(errc.eq.TEREC_SUCCESS) then
+                
+               endif
+              elseif(sd.eq.0) then !no splitting, return the original header
+               thead=this%header; errc=lit%append(thead)
+               if(errc.eq.GFC_SUCCESS) then; nsubt=nsubt+1; else; errc=TEREC_UNABLE_COMPLETE; endif
+              else
+               errc=TEREC_INVALID_ARGS
+              endif
              else
-              if(sd.gt.nd) errc=TEREC_INVALID_ARGS
+              if(nd.eq.0) then
+               errc=TEREC_INVALID_REQUEST !scalars cannot be split further
+              else
+               errc=TEREC_ERROR !unable to retrieve the hierarhical vector space info
+              endif
              endif
+             i=lit%release(); if(i.ne.GFC_SUCCESS.and.errc.eq.TEREC_SUCCESS) errc=TEREC_ERROR
             else
-             if(nd.eq.0) then
-              errc=TEREC_INVALID_REQUEST !scalars cannot be split further
-             else
-              errc=TEREC_ERROR !unable to retrieve the hierarhical vector space
-             endif
+             errc=TEREC_ERROR
             endif
            endif
           endif
          else
           errc=TEREC_INVALID_REQUEST
          endif
+         if(allocated(sbuf)) deallocate(sbuf)
+         if(present(num_subtensors)) num_subtensors=nsubt
          if(present(ierr)) ierr=errc
          return
+
+         contains
+
+          subroutine extract_subspaces_to_sbuf(jerr)
+           implicit none
+           integer(INTD), intent(out):: jerr
+           integer(INTD):: jj,js,jd
+           type(vec_tree_iter_t):: vt_it
+           class(*), pointer:: jup
+           class(subspace_t), pointer:: jssp
+
+           jerr=vt_it%init(hsp%get_aggr_tree(nb))
+           if(jerr.eq.GFC_SUCCESS.and.nb.eq.0) then
+ !Count:
+            do jj=1,sd !loop over the dimensions to split
+             jerr=vt_it%move_to(sidx(split_dims(jj))); if(jerr.ne.GFC_SUCCESS) exit
+             js=vt_it%get_num_children(jerr); if(jerr.ne.GFC_SUCCESS) exit
+             if(js.gt.0) then !splitting will occur
+              nb=nb+js !place for children subspaces
+             else !no children -> splitting is impossible
+              nb=nb+1 !place for the parental subspace
+             endif
+            enddo
+            if(jerr.eq.GFC_SUCCESS) then
+ !Set up:
+             allocate(sbuf(1:nb),STAT=jerr)
+             if(jerr.eq.0) then
+              nb=1; firo(1:nd)=0; swid(1:nd)=1
+              sloop: do jj=1,sd !loop over the dimensions to split
+               jd=split_dims(jj) !dimension to split
+               jerr=vt_it%move_to(sidx(jd)); if(jerr.ne.GFC_SUCCESS) exit sloop
+               js=vt_it%get_num_children(jerr); if(jerr.ne.GFC_SUCCESS) exit sloop
+               firo(jd)=nb
+               if(js.gt.0) then
+                swid(jd)=js
+                jerr=vt_it%move_to_child()
+                do while(js.gt.0.and.jerr.eq.GFC_SUCCESS)
+                 jup=>vt_it%get_value(jerr); if(jerr.ne.GFC_SUCCESS) exit
+                 select type(jup); class is(subspace_t); jssp=>jup; end select
+                 sbuf(nb)=jssp%get_id(jerr); if(jerr.ne.GFC_SUCCESS) exit
+                 nb=nb+1; js=js-1; if(js.gt.0) jerr=vt_it%move_to_sibling()
+                enddo
+                if(jerr.ne.GFC_SUCCESS) exit sloop
+               else
+                sbuf(nb)=sidx(jd)
+                nb=nb+1
+               endif
+              enddo sloop
+             else
+              jerr=TEREC_MEM_ALLOC_FAILED
+             endif
+            else
+             jerr=TEREC_ERROR
+            endif
+            jj=vt_it%release(); if(jj.ne.GFC_SUCCESS.and.jerr.eq.TEREC_SUCCESS) jerr=TEREC_ERROR
+           else
+            jerr=TEREC_ERROR
+           endif
+           return
+          end subroutine extract_subspaces_to_sbuf
+
         end subroutine TensRcrsvSplit
 !---------------------------------------
         subroutine tens_rcrsv_dtor(this)

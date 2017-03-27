@@ -1,7 +1,7 @@
 !Infrastructure for a recursive adaptive vector space decomposition
 !and hierarchical vector space representation.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/03/24
+!REVISION: 2017/03/27
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -254,6 +254,7 @@
           procedure, public:: get_space_dim=>HSpaceGetSpaceDim          !returns the dimension of the vector space
           procedure, public:: get_num_subspaces=>HSpaceGetNumSubspaces  !returns the total number of defined subspaces in the vector space
           procedure, public:: get_subspace=>HSpaceGetSubspace           !returns a pointer to the requested subspace of the hierarchical vector space
+          procedure, public:: get_aggr_tree=>HSpaceGetAggrTree          !returns a pointer to the subspace aggregation tree (->subspaces)
           procedure, public:: compare_subspaces=>HSpaceCompareSubspaces !compares two subspaces from the hierarchical vector space: {CMP_EQ,CMP_LT,CMP_GT,CMP_ER}
           procedure, public:: relate_subspaces=>HSpaceRelateSubspaces   !relates two subspaces from the hierarchical vector space: {CMP_EQ,CMP_CN,CMP_IN,CMP_OV,CMP_NC}
           procedure, public:: compare_subranges=>HSpaceCompareSubranges !compares basis subranges of two subspaces from the hierarchical vector space: {CMP_EQ,CMP_LT,CMP_GT,CMP_OV,CMP_ER}
@@ -371,6 +372,7 @@
         private HSpaceGetSpaceDim
         private HSpaceGetNumSubspaces
         private HSpaceGetSubspace
+        private HSpaceGetAggrTree
         private HSpaceCompareSubspaces
         private HSpaceRelateSubspaces
         private HSpaceCompareSubranges
@@ -2325,6 +2327,24 @@
          if(present(ierr)) ierr=errc
          return
         end function HSpaceGetSubspace
+!----------------------------------------------------------------
+        function HSpaceGetAggrTree(this,ierr) result(aggr_tree_p)
+!Returns a pointer to the subspace aggregation tree.
+         implicit none
+         class(vec_tree_t), pointer:: aggr_tree_p    !out: pointer to the subspace aggregation tree
+         class(h_space_t), intent(in), target:: this !in: hierarchical vector space
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=0; aggr_tree_p=>NULL()
+         if(this%is_set()) then
+          aggr_tree_p=>this%subspaces
+         else
+          errc=1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function HSpaceGetAggrTree
 !---------------------------------------------------------------------
         function HSpaceCompareSubspaces(this,id1,id2,ierr) result(cmp)
 !Compares two subspaces from the hierarchical vector space.

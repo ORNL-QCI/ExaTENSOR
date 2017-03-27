@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Tree
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017-03-15 (started 2016-02-17)
+!REVISION: 2017-03-27 (started 2016-02-17)
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -87,6 +87,10 @@
           procedure, public:: move_to_child=>TreeIterMoveToChild    !moves the iterator to the first child, if any
           procedure, public:: move_to_parent=>TreeIterMoveToParent  !moves the iterator to the parent, if any
           procedure, public:: move_to_cousin=>TreeIterMoveToCousin  !moves the iterator to the next/previous cousin (within the tree level)
+          procedure, public:: get_num_children=>TreeIterGetNumChildren !returns the total number of children at the current iterator position
+          procedure, public:: get_num_siblings=>TreeIterGetNumSiblings !returns the total number of siblings at the current iterator position
+          procedure, public:: on_first_sibling=>TreeIterOnFirstSibling !returns GFC_TRUE if positioned on the first sibling
+          procedure, public:: on_last_sibling=>TreeIterOnLastSibling   !returns GFC_TRUE if positioned on the last sibling
           procedure, public:: get_parent=>TreeIterGetParent         !returns a pointer to the parent of the current vertex
           procedure, public:: get_child=>TreeIterGetChild           !returns a pointer to the specific child of the current vertex
           procedure, public:: add_leaf=>TreeIterAddLeaf             !adds a new leaf element to the element of the container currently pointed to
@@ -121,6 +125,10 @@
         private TreeIterMoveToChild
         private TreeIterMoveToParent
         private TreeIterMoveToCousin
+        private TreeIterGetNumChildren
+        private TreeIterGetNumSiblings
+        private TreeIterOnFirstSibling
+        private TreeIterOnLastSibling
         private TreeIterGetParent
         private TreeIterGetChild
         private TreeIterAddLeaf
@@ -209,7 +217,7 @@
         function TreeVertexIsFirstSibling(this) result(res)
 !Returns GFC_TRUE if the tree vertex is the first vertex in the sibling list.
          implicit none
-         integer(INTD):: res                             !out: result
+         integer(INTD):: res                             !out: result {GFC_TRUE,GFC_FALSE}
          class(tree_vertex_t), target, intent(in):: this !in: tree vertex
 
          res=GFC_FALSE
@@ -224,7 +232,7 @@
         function TreeVertexIsLastSibling(this) result(res)
 !Returns GFC_TRUE if the tree vertex is the last vertex in the sibling list.
          implicit none
-         integer(INTD):: res                     !out: result
+         integer(INTD):: res                     !out: result {GFC_TRUE,GFC_FALSE}
          class(tree_vertex_t), intent(in):: this !in: tree vertex
 
          res=GFC_FALSE
@@ -603,6 +611,66 @@
          endif
          return
         end function TreeIterMoveToCousin
+!----------------------------------------------------------------
+        function TreeIterGetNumChildren(this,ierr) result(nchild)
+!Returns the total number of children at the current iterator position.
+         implicit none
+         integer(INTL):: nchild                      !out: number of children
+         class(tree_iter_t), intent(in):: this       !in: tree iterator
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         nchild=0_INTL; errc=this%get_status()
+         if(errc.eq.GFC_IT_ACTIVE) nchild=this%current%num_children(errc)
+         if(present(ierr)) ierr=errc
+         return
+        end function TreeIterGetNumChildren
+!---------------------------------------------------------------
+        function TreeIterGetNumSiblings(this,ierr) result(nsibl)
+!Returns the total number of siblings at the current iterator position.
+         implicit none
+         integer(INTL):: nsibl                       !out: number of siblings
+         class(tree_iter_t), intent(in):: this       !in: tree iterator
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         nsibl=0_INTL; errc=this%get_status()
+         if(errc.eq.GFC_IT_ACTIVE) nsibl=this%current%num_siblings(errc)
+         if(present(ierr)) ierr=errc
+         return
+        end function TreeIterGetNumSiblings
+!-------------------------------------------------------------
+        function TreeIterOnFirstSibling(this,ierr) result(res)
+!Returns GFC_TRUE if the iterator is positioned on the first sibling.
+         implicit none
+         integer(INTD):: res                         !out: {GFC_TRUE,GFC_FALSE,GFC_ERROR}
+         class(tree_iter_t), intent(in):: this       !in: tree iterator
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         res=GFC_ERROR; errc=this%get_status()
+         if(errc.eq.GFC_IT_ACTIVE) then
+          errc=GFC_SUCCESS; res=this%current%is_first_sibling()
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function TreeIterOnFirstSibling
+!----------------------------------------------------------
+        function TreeIterOnLastSibling(this,ierr) result(res)
+!Returns GFC_TRUE if the iterator is positioned on the last sibling.
+         implicit none
+         integer(INTD):: res                         !out: {GFC_TRUE,GFC_FALSE,GFC_ERROR}
+         class(tree_iter_t), intent(in):: this       !in: tree iterator
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         res=GFC_ERROR; errc=this%get_status()
+         if(errc.eq.GFC_IT_ACTIVE) then
+          errc=GFC_SUCCESS; res=this%current%is_last_sibling()
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function TreeIterOnLastSibling
 !-----------------------------------------------------------
         function TreeIterGetParent(this,ierr) result(parent)
 !Returns a pointer to the parent of the current vertex.

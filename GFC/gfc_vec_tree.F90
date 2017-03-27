@@ -2,7 +2,7 @@
 !The elements are initially inserted in a vector with an option to be
 !later added in a tree, thus imposing a tree relationship on them.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017/03/20
+!REVISION: 2017/03/27
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -80,6 +80,10 @@
           procedure, public:: previous=>VecTreeIterPrevious             !moves the iterator to the previous container element (only the vector part if tree is not fully built)
           procedure, public:: get_length=>VecTreeIterGetLength          !returns the current length of the container
           procedure, public:: get_offset=>VecTreeIterGetOffset          !returns the current offset in the container
+          procedure, public:: get_num_children=>VecTreeIterGetNumChildren !returns the total number of children in the current (tree) iterator position
+          procedure, public:: get_num_siblings=>VecTreeIterGetNumSiblings !returns the total number of siblings in the current (tree) iterator position
+          procedure, public:: on_first_sibling=>VecTreeIterOnFirstSibling !returns GFC_TRUE if tree is positioned on the first sibling
+          procedure, public:: on_last_sibling=>VecTreeIterOnLastSibling   !returns GFC_TRUE if tree is positioned on the last sibling
           procedure, public:: element_value=>VecTreeIterElementValue    !returns a pointer to the value of a specific element
           procedure, public:: move_to=>VecTreeIterMoveTo                !moves the iterator to the specific container element by its sequential number
           procedure, public:: move_to_sibling=>VecTreeIterMoveToSibling !moves the iterator to the next/previous sibling of the current element in the tree
@@ -109,6 +113,10 @@
         private VecTreeIterPrevious
         private VecTreeIterGetLength
         private VecTreeIterGetOffset
+        private VecTreeIterGetNumChildren
+        private VecTreeIterGetNumSiblings
+        private VecTreeIterOnFirstSibling
+        private VecTreeIterOnLastSibling
         private VecTreeIterElementValue
         private VecTreeIterMoveTo
         private VecTreeIterMoveToSibling
@@ -423,6 +431,58 @@
          if(present(ierr)) ierr=errc
          return
         end function VecTreeIterGetOffset
+!-------------------------------------------------------------------
+        function VecTreeIterGetNumChildren(this,ierr) result(nchild)
+!Returns the total number of children at the current (tree) iterator position.
+         implicit none
+         integer(INTL):: nchild                      !out: number of children
+         class(vec_tree_iter_t), intent(in):: this   !in: vector tree iterator
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         nchild=this%tree_it%get_num_children(errc)
+         if(present(ierr)) ierr=errc
+         return
+        end function VecTreeIterGetNumChildren
+!------------------------------------------------------------------
+        function VecTreeIterGetNumSiblings(this,ierr) result(nsibl)
+!Returns the total number of siblings at the current (tree) iterator position.
+         implicit none
+         integer(INTL):: nsibl                       !out: number of siblings
+         class(vec_tree_iter_t), intent(in):: this   !in: vector tree iterator
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         nsibl=this%tree_it%get_num_siblings(errc)
+         if(present(ierr)) ierr=errc
+         return
+        end function VecTreeIterGetNumSiblings
+!----------------------------------------------------------------
+        function VecTreeIterOnFirstSibling(this,ierr) result(res)
+!Returns GFC_TRUE if the iterator is positioned on the first sibling.
+         implicit none
+         integer(INTD):: res                         !out: {GFC_TRUE,GFC_FALSE,GFC_ERROR}
+         class(vec_tree_iter_t), intent(in):: this   !in: vector tree iterator
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         res=this%tree_it%on_first_sibling(errc)
+         if(present(ierr)) ierr=errc
+         return
+        end function VecTreeIterOnFirstSibling
+!---------------------------------------------------------------
+        function VecTreeIterOnLastSibling(this,ierr) result(res)
+!Returns GFC_TRUE if the iterator is positioned on the last sibling.
+         implicit none
+         integer(INTD):: res                         !out: {GFC_TRUE,GFC_FALSE,GFC_ERROR}
+         class(vec_tree_iter_t), intent(in):: this   !in: vector tree iterator
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         res=this%tree_it%on_last_sibling(errc)
+         if(present(ierr)) ierr=errc
+         return
+        end function VecTreeIterOnLastSibling
 !-----------------------------------------------------------------------
         function VecTreeIterElementValue(this,offset,ierr) result(val_p)
 !Returns a pointer to the value of a specific element.
