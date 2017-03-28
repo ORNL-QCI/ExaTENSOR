@@ -309,7 +309,7 @@ lib$(NAME).a: $(OBJS)
 ./OBJ/gfc_hash_map.o: gfc_hash_map.F90 ./OBJ/gfc_base.o ./OBJ/timers.o
 	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) gfc_hash_map.F90 -o ./OBJ/gfc_hash_map.o
 
-./OBJ/gfc_graph.o: gfc_graph.F90 ./OBJ/gfc_base.o ./OBJ/gfc_vector.o ./OBJ/timers.o
+./OBJ/gfc_graph.o: gfc_graph.F90 ./OBJ/gfc_base.o ./OBJ/gfc_vector.o ./OBJ/gfc_list.o ./OBJ/gfc_dictionary.o ./OBJ/timers.o
 	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) gfc_graph.F90 -o ./OBJ/gfc_graph.o
 
 ./OBJ/main.o: main.F90 ./OBJ/dil_basic.o ./OBJ/timers.o
