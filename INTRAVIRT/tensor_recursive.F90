@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/03/27
+!REVISION: 2017/03/28
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -2431,22 +2431,25 @@
 !--------------------------------------------------------------------------------
         subroutine TensRcrsvSplit(this,split_dims,subtensors,ierr,num_subtensors)
 !Splits the given tensor into subtensors and appends those to a list of subtensors (by their headers).
+!ASSUMPTION: Restricted tensors dimensions belonging to the same group are supposed to depend on
+!each other from left to right, e.g., T(a,b,c,d,e): [a<c<e],[b<d]. Thus, the first restricted index
+!on the left in each group is actually independent.
          implicit none
          class(tens_rcrsv_t), intent(in):: this      !in: parental tensor
          integer(INTD), intent(in):: split_dims(1:)  !in: tensor dimensions to be split
          type(list_bi_t), intent(inout):: subtensors !out: list of subtensors specified by their tensor headers
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD), intent(out), optional:: num_subtensors !out: number of subtensors generated
-         integer(INTD):: i,j,nb,nd,sd,nsubt,ngr,errc
+         integer(INTD):: i,j,n,nsb,nd,sd,nsubt,ngroups,errc
          integer(INTL):: sidx(1:MAX_TENSOR_RANK)       !parental subspace multi-index
-         integer(INTL):: midx(1:MAX_TENSOR_RANK)       !subspace iterator register
-         integer(INTL), allocatable:: sbuf(:)          !temporary buffer for holding subspace id's
-         integer(INTD):: firo(1:MAX_TENSOR_RANK)       !first offset in sbuf()
+         integer(INTL), allocatable:: sbuf(:)          !temporary buffer for holding children subspace id's
+         integer(INTD):: midx(1:MAX_TENSOR_RANK)       !subspace iterator register
+         integer(INTD):: firo(1:MAX_TENSOR_RANK)       !base offset in sbuf() for each tensor dimension
          integer(INTD):: swid(1:MAX_TENSOR_RANK)       !number of children subspaces for each dimension in sbuf()
-         integer(INTD):: deps(1:MAX_TENSOR_RANK)       !dimension dependencies
-         integer(INTD):: depk(1:MAX_TENSOR_RANK)       !dependency kinds
+         integer(INTD):: deps(1:MAX_TENSOR_RANK)       !dimension dependencies (grouping)
+         integer(INTD):: depk(1:MAX_TENSOR_RANK)       !dimension dependency kinds
          integer(INTD):: dim_group(1:MAX_TENSOR_RANK)  !dimension groups
-         integer(INTD):: group_spec(1:MAX_TENSOR_RANK) !dimension group restriction kinds
+         integer(INTD):: group_spec(1:MAX_TENSOR_RANK) !dimension group restriction specs
          class(h_space_t), pointer:: hsp
          type(list_iter_t):: lit
          type(tens_header_t):: thead
@@ -2463,12 +2466,20 @@
              if(nd.gt.0.and.associated(hsp)) then !true tensor on hierarchical vector space
               sd=size(split_dims) !sd: number of tensor dimensions to split
               if(sd.gt.0.and.sd.le.nd) then !true splitting
-               call extract_subspaces_to_sbuf(errc)
+               call extract_subspaces_to_sbuf(errc) !sbuf(1:nsb),firo(1:nd),swid(1:nd)
                if(errc.eq.TEREC_SUCCESS) then
-                
+                call setup_index_dependencies(errc)
+                if(errc.eq.TEREC_SUCCESS) then
+                 midx(1:nd)=-1; n=2
+                 do while(n.gt.0)
+                  call get_next_subtensor(n,thead,errc); if(errc.ne.TEREC_SUCCESS) exit
+                  errc=lit%append(thead); if(errc.eq.GFC_SUCCESS) then; nsubt=nsubt+1; else; exit; endif
+                 enddo
+                 if(errc.ne.TEREC_SUCCESS) errc=TEREC_UNABLE_COMPLETE
+                endif
                endif
               elseif(sd.eq.0) then !no splitting, return the original header
-               thead=this%header; errc=lit%append(thead)
+               errc=lit%append(this%header)
                if(errc.eq.GFC_SUCCESS) then; nsubt=nsubt+1; else; errc=TEREC_UNABLE_COMPLETE; endif
               else
                errc=TEREC_INVALID_ARGS
@@ -2496,7 +2507,7 @@
 
          contains
 
-          subroutine extract_subspaces_to_sbuf(jerr)
+          subroutine extract_subspaces_to_sbuf(jerr) !sets: sbuf(1:nsb),firo(1:nd),swid(1:nd)
            implicit none
            integer(INTD), intent(out):: jerr
            integer(INTD):: jj,js,jd
@@ -2504,43 +2515,48 @@
            class(*), pointer:: jup
            class(subspace_t), pointer:: jssp
 
-           jerr=vt_it%init(hsp%get_aggr_tree(nb))
-           if(jerr.eq.GFC_SUCCESS.and.nb.eq.0) then
+           jerr=vt_it%init(hsp%get_aggr_tree(nsb))
+           if(jerr.eq.GFC_SUCCESS.and.nsb.eq.0) then
  !Count:
             do jj=1,sd !loop over the dimensions to split
              jerr=vt_it%move_to(sidx(split_dims(jj))); if(jerr.ne.GFC_SUCCESS) exit
              js=vt_it%get_num_children(jerr); if(jerr.ne.GFC_SUCCESS) exit
              if(js.gt.0) then !splitting will occur
-              nb=nb+js !place for children subspaces
+              nsb=nsb+js !place for children subspaces
              else !no children -> splitting is impossible
-              nb=nb+1 !place for the parental subspace
+              nsb=nsb+1 !place for the parental subspace
              endif
             enddo
             if(jerr.eq.GFC_SUCCESS) then
  !Set up:
-             allocate(sbuf(1:nb),STAT=jerr)
+             allocate(sbuf(1:nsb),STAT=jerr)
              if(jerr.eq.0) then
-              nb=1; firo(1:nd)=0; swid(1:nd)=1
+              nsb=1; firo(1:nd)=0; swid(1:nd)=1
               sloop: do jj=1,sd !loop over the dimensions to split
                jd=split_dims(jj) !dimension to split
                jerr=vt_it%move_to(sidx(jd)); if(jerr.ne.GFC_SUCCESS) exit sloop
                js=vt_it%get_num_children(jerr); if(jerr.ne.GFC_SUCCESS) exit sloop
-               firo(jd)=nb
+               firo(jd)=nsb
                if(js.gt.0) then
                 swid(jd)=js
                 jerr=vt_it%move_to_child()
                 do while(js.gt.0.and.jerr.eq.GFC_SUCCESS)
                  jup=>vt_it%get_value(jerr); if(jerr.ne.GFC_SUCCESS) exit
                  select type(jup); class is(subspace_t); jssp=>jup; end select
-                 sbuf(nb)=jssp%get_id(jerr); if(jerr.ne.GFC_SUCCESS) exit
-                 nb=nb+1; js=js-1; if(js.gt.0) jerr=vt_it%move_to_sibling()
+                 sbuf(nsb)=jssp%get_id(jerr); if(jerr.ne.0) exit
+                 nsb=nsb+1; js=js-1; if(js.gt.0) jerr=vt_it%move_to_sibling()
                 enddo
                 if(jerr.ne.GFC_SUCCESS) exit sloop
-               else
-                sbuf(nb)=sidx(jd)
-                nb=nb+1
+               else !no children subspaces
+                sbuf(nsb)=sidx(jd)
+                nsb=nsb+1
                endif
               enddo sloop
+              if(jerr.eq.GFC_SUCCESS) then
+               nsb=nsb-1 !nsb is the size of sbuf(:)
+              else
+               jerr=TEREC_UNABLE_COMPLETE
+              endif
              else
               jerr=TEREC_MEM_ALLOC_FAILED
              endif
@@ -2553,6 +2569,86 @@
            endif
            return
           end subroutine extract_subspaces_to_sbuf
+
+          subroutine setup_index_dependencies(jerr) !sets: ngroups,deps(1:nd),depk(1:nd)
+           implicit none
+           integer(INTD), intent(out):: jerr
+           integer(INTD):: jj,ji,jn,jr
+
+           deps(1:nd)=0; depk(1:nd)=TEREC_IND_RESTR_NONE !no dependencies by default
+           ngroups=this%header%num_groups(jerr) !number of non-trivial index restriction groups
+           if(jerr.eq.TEREC_SUCCESS) then
+            if(ngroups.gt.0) then
+             do jj=1,ngroups
+              call this%header%get_group(jj,dim_group,jn,jerr,jr); if(jerr.ne.TEREC_SUCCESS) exit
+              !deps(dim_group(1))=dim_group(1); depk(dim_group(1))=jr
+              do ji=2,jn
+               deps(dim_group(ji))=dim_group(ji-1)
+               depk(dim_group(ji))=jr
+              enddo
+             enddo
+            endif
+           endif
+           return
+          end subroutine setup_index_dependencies
+
+          subroutine get_next_subtensor(np,thd,jerr)
+           implicit none
+           integer(INTD), intent(inout):: np        !inout: first dimension to change: {2,nd+1,0}
+           type(tens_header_t), intent(inout):: thd !out: next tensor header
+           integer(INTD), intent(out):: jerr        !out: error code
+
+           jerr=TEREC_SUCCESS; np=np-1
+           mloop: do while(np.gt.0.and.np.le.nd)
+            if(midx(np).ge.0) then
+             if(midx(np)+1.lt.swid(np)) then !not the last value
+              midx(np)=midx(np)+1
+              if(deps(np).gt.0) then !dependent dimension: acceptance check
+               if(restr_move_rejected(np,jerr)) cycle mloop
+               if(jerr.ne.TEREC_SUCCESS) exit mloop
+              endif
+              np=np+1
+             else !the last value
+              midx(np)=-1; np=np-1
+             endif
+            else
+             midx(np)=0 !first value
+             if(deps(np).gt.0) then !dependent dimension: acceptance check
+              if(restr_move_rejected(np,jerr)) cycle mloop
+              if(jerr.ne.TEREC_SUCCESS) exit mloop
+             endif
+             np=np+1
+            endif
+           enddo mloop
+           return
+          end subroutine get_next_subtensor
+
+          function restr_move_rejected(np,jerr) result(rejected)
+           implicit none
+           logical:: rejected
+           integer(INTD), intent(in):: np
+           integer(INTD), intent(out):: jerr
+           integer(INTD):: jd,jcmp
+           integer(INTL):: js1,js2
+
+           rejected=.FALSE.; jerr=TEREC_SUCCESS
+           jd=deps(np) !dimension which dimension np depends on
+           js1=sbuf(firo(np)+midx(np)) !subspace 2 (dependent)
+           js2=sbuf(firo(jd)+midx(jd)) !subspace 1
+           jcmp=hsp%compare_subranges(js1,js2,jerr)
+           if(jerr.eq.0) then
+            if(depk(np).eq.TEREC_IND_RESTR_LT.or.depk(np).eq.TEREC_IND_RESTR_LE) then
+             if(jcmp.eq.CMP_GT) rejected=.TRUE.
+            elseif(depk(np).eq.TEREC_IND_RESTR_GT.or.depk(np).eq.TEREC_IND_RESTR_GE) then
+             if(jcmp.eq.CMP_LT) rejected=.TRUE.
+            else
+             jerr=TEREC_UNABLE_COMPLETE
+            endif
+           else
+            jerr=TEREC_ERROR
+           endif
+           return
+          end function restr_move_rejected
 
         end subroutine TensRcrsvSplit
 !---------------------------------------
