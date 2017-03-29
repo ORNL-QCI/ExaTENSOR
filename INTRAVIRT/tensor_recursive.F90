@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/03/28
+!REVISION: 2017/03/29
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -408,16 +408,20 @@
           this%num_dims=0 !scalar
          endif
          if(errc.eq.TEREC_SUCCESS.and.present(tens_name)) then
-          if(alphanumeric_string(tens_name)) then
-           n=len(tens_name)
-           allocate(character(len=n)::this%char_name,STAT=errc)
-           if(errc.eq.0) then
-            this%char_name=tens_name
+          if(len(tens_name).gt.0) then
+           if(alphanumeric_string(tens_name)) then
+            n=len(tens_name)
+            allocate(character(len=n)::this%char_name,STAT=errc)
+            if(errc.eq.0) then
+             this%char_name=tens_name
+            else
+             errc=TEREC_MEM_ALLOC_FAILED
+            endif
            else
-            errc=TEREC_MEM_ALLOC_FAILED
+            errc=TEREC_INVALID_ARGS
            endif
-          else
-           errc=TEREC_INVALID_ARGS
+         !else
+          !errc=TEREC_INVALID_ARGS
           endif
          endif
          if(errc.ne.TEREC_SUCCESS) call tens_signature_dtor(this)
@@ -2431,23 +2435,29 @@
 !--------------------------------------------------------------------------------
         subroutine TensRcrsvSplit(this,split_dims,subtensors,ierr,num_subtensors)
 !Splits the given tensor into subtensors and appends those to a list of subtensors (by their headers).
-!ASSUMPTION: Restricted tensors dimensions belonging to the same group are supposed to depend on
-!each other from left to right, e.g., T(a,b,c,d,e): [a<c<e],[b<d]. Thus, the first restricted index
-!on the left in each group is actually independent.
+!If the input parental tensor is shaped with concrete dimension extents, the children subtensors
+!will not carry concrete dimension extents, but deferred dimension extents instead. However,
+!they will obey the parental dimension restriction grouping with the following assumption:
+!ASSUMPTION: Restricted tensor dimensions belonging to the same group are supposed to depend on
+!each other from right to left, e.g., in {T(a,b,c,d,e):[a<c<e],[b<d]}, a dependent index
+!on the right always depends on some of the previous indices on the left. The first
+!restricted index on the left in each group is actually independent (e.g., "a" and "b" above).
          implicit none
-         class(tens_rcrsv_t), intent(in):: this      !in: parental tensor
-         integer(INTD), intent(in):: split_dims(1:)  !in: tensor dimensions to be split
-         type(list_bi_t), intent(inout):: subtensors !out: list of subtensors specified by their tensor headers
-         integer(INTD), intent(out), optional:: ierr !out: error code
+         class(tens_rcrsv_t), intent(in):: this                !in: parental tensor (either shaped or unshaped)
+         integer(INTD), intent(in):: split_dims(1:)            !in: tensor dimensions to be split (at least one)
+         type(list_bi_t), intent(inout):: subtensors           !out: list of subtensors specified by their tensor headers
+         integer(INTD), intent(out), optional:: ierr           !out: error code
          integer(INTD), intent(out), optional:: num_subtensors !out: number of subtensors generated
-         integer(INTD):: i,j,n,nsb,nd,sd,nsubt,ngroups,errc
+         integer(INTD):: i,j,n,tnl,nsb,nd,sd,nsubt,ngroups,errc
+         character(128):: tens_name
          integer(INTL):: sidx(1:MAX_TENSOR_RANK)       !parental subspace multi-index
          integer(INTL), allocatable:: sbuf(:)          !temporary buffer for holding children subspace id's
          integer(INTD):: midx(1:MAX_TENSOR_RANK)       !subspace iterator register
-         integer(INTD):: firo(1:MAX_TENSOR_RANK)       !base offset in sbuf() for each tensor dimension
-         integer(INTD):: swid(1:MAX_TENSOR_RANK)       !number of children subspaces for each dimension in sbuf()
+         integer(INTD):: firo(0:MAX_TENSOR_RANK)       !base offset in sbuf() for each tensor dimension
+         integer(INTD):: swid(0:MAX_TENSOR_RANK)       !number of children subspaces for each dimension in sbuf()
          integer(INTD):: deps(1:MAX_TENSOR_RANK)       !dimension dependencies (grouping)
          integer(INTD):: depk(1:MAX_TENSOR_RANK)       !dimension dependency kinds
+         integer(INTD):: tmpd(1:MAX_TENSOR_RANK)       !temporary (reduced subtensor dimension dependencies)
          integer(INTD):: dim_group(1:MAX_TENSOR_RANK)  !dimension groups
          integer(INTD):: group_spec(1:MAX_TENSOR_RANK) !dimension group restriction specs
          class(h_space_t), pointer:: hsp
@@ -2456,44 +2466,48 @@
          logical:: shpd
 
          nsubt=0 !number of generated subtensors
-         if(this%is_set(errc,shaped=shpd)) then
+         if(this%is_set(errc,shaped=shpd)) then !shaped tensors with deferred dimension extents are expected
           if(errc.eq.TEREC_SUCCESS) then
-           hsp=>NULL()
-           call this%header%get_spec(sidx,nd,errc,hsp) !nd: total number of tensor dimensions; sidx(1:nd): subspace id's
+           call this%header%get_name(tens_name,tnl,errc)
            if(errc.eq.TEREC_SUCCESS) then
-            errc=lit%init(subtensors)
-            if(errc.eq.GFC_SUCCESS) then
-             if(nd.gt.0.and.associated(hsp)) then !true tensor on hierarchical vector space
-              sd=size(split_dims) !sd: number of tensor dimensions to split
-              if(sd.gt.0.and.sd.le.nd) then !true splitting
-               call extract_subspaces_to_sbuf(errc) !sbuf(1:nsb),firo(1:nd),swid(1:nd)
-               if(errc.eq.TEREC_SUCCESS) then
-                call setup_index_dependencies(errc)
+            hsp=>NULL()
+            call this%header%get_spec(sidx,nd,errc,hsp) !nd: total number of tensor dimensions; sidx(1:nd): subspace id's
+            if(errc.eq.TEREC_SUCCESS) then
+             errc=lit%init(subtensors)
+             if(errc.eq.GFC_SUCCESS) then
+              if(nd.gt.0.and.associated(hsp)) then !true tensor on hierarchical vector space
+               sd=size(split_dims) !sd: number of tensor dimensions to split
+               if(sd.gt.0.and.sd.le.nd) then !true splitting
+                call extract_subspaces_to_sbuf(errc) !sbuf(1:nsb),firo(1:nd),swid(1:nd)
                 if(errc.eq.TEREC_SUCCESS) then
-                 midx(1:nd)=-1; n=2
-                 do while(n.gt.0)
-                  call get_next_subtensor(n,thead,errc); if(errc.ne.TEREC_SUCCESS) exit
-                  errc=lit%append(thead); if(errc.eq.GFC_SUCCESS) then; nsubt=nsubt+1; else; exit; endif
-                 enddo
-                 if(errc.ne.TEREC_SUCCESS) errc=TEREC_UNABLE_COMPLETE
+                 call setup_index_dependencies(errc)
+                 if(errc.eq.TEREC_SUCCESS) then
+                  midx(1:nd)=-1; n=2 !n=2 is a special setting to start iterating midx(:)
+                  do
+                   call get_next_midx(n,errc); if(errc.ne.TEREC_SUCCESS.or.n.le.0) exit
+                   call construct_subtensor_header(thead,errc); if(errc.ne.TEREC_SUCCESS) exit
+                   errc=lit%append(thead); if(errc.eq.GFC_SUCCESS) then; nsubt=nsubt+1; else; exit; endif
+                  enddo
+                  if(errc.ne.TEREC_SUCCESS) errc=TEREC_UNABLE_COMPLETE
+                 endif
                 endif
+               elseif(sd.eq.0) then !no splitting, return the original header
+                errc=lit%append(this%header)
+                if(errc.eq.GFC_SUCCESS) then; nsubt=nsubt+1; else; errc=TEREC_UNABLE_COMPLETE; endif
+               else
+                errc=TEREC_INVALID_ARGS
                endif
-              elseif(sd.eq.0) then !no splitting, return the original header
-               errc=lit%append(this%header)
-               if(errc.eq.GFC_SUCCESS) then; nsubt=nsubt+1; else; errc=TEREC_UNABLE_COMPLETE; endif
               else
-               errc=TEREC_INVALID_ARGS
+               if(nd.eq.0) then
+                errc=TEREC_INVALID_REQUEST !scalars cannot be split further
+               else
+                errc=TEREC_ERROR !unable to retrieve the hierarhical vector space info
+               endif
               endif
+              i=lit%release(); if(i.ne.GFC_SUCCESS.and.errc.eq.TEREC_SUCCESS) errc=TEREC_ERROR
              else
-              if(nd.eq.0) then
-               errc=TEREC_INVALID_REQUEST !scalars cannot be split further
-              else
-               errc=TEREC_ERROR !unable to retrieve the hierarhical vector space info
-              endif
+              errc=TEREC_ERROR
              endif
-             i=lit%release(); if(i.ne.GFC_SUCCESS.and.errc.eq.TEREC_SUCCESS) errc=TEREC_ERROR
-            else
-             errc=TEREC_ERROR
             endif
            endif
           endif
@@ -2507,7 +2521,7 @@
 
          contains
 
-          subroutine extract_subspaces_to_sbuf(jerr) !sets: sbuf(1:nsb),firo(1:nd),swid(1:nd)
+          subroutine extract_subspaces_to_sbuf(jerr) !sets sbuf(1:nsb),firo(1:nd),swid(1:nd)
            implicit none
            integer(INTD), intent(out):: jerr
            integer(INTD):: jj,js,jd
@@ -2518,45 +2532,54 @@
            jerr=vt_it%init(hsp%get_aggr_tree(nsb))
            if(jerr.eq.GFC_SUCCESS.and.nsb.eq.0) then
  !Count:
+            nsb=0; firo(0:nd)=0; swid(0:nd)=1
             do jj=1,sd !loop over the dimensions to split
-             jerr=vt_it%move_to(sidx(split_dims(jj))); if(jerr.ne.GFC_SUCCESS) exit
+             jd=split_dims(jj)
+             jerr=vt_it%move_to(sidx(jd)); if(jerr.ne.GFC_SUCCESS) exit
              js=vt_it%get_num_children(jerr); if(jerr.ne.GFC_SUCCESS) exit
+             firo(jd)=nsb+1
              if(js.gt.0) then !splitting will occur
-              nsb=nsb+js !place for children subspaces
+              swid(jd)=-js; nsb=nsb+js !place for children subspaces
              else !no children -> splitting is impossible
-              nsb=nsb+1 !place for the parental subspace
+              swid(jd)=-1; nsb=nsb+1 !place for the parental subspace
              endif
             enddo
             if(jerr.eq.GFC_SUCCESS) then
+ !Insert unsplit dimensions:
+             jj=0
+             do jd=1,nd
+              if(firo(jd).gt.0) then
+               firo(jd)=firo(jd)+jj
+              else
+               firo(jd)=firo(jd-1)+abs(swid(jd-1)); jj=jj+1
+              endif
+             enddo
+             nsb=nsb+jj
  !Set up:
              allocate(sbuf(1:nsb),STAT=jerr)
              if(jerr.eq.0) then
-              nsb=1; firo(1:nd)=0; swid(1:nd)=1
-              sloop: do jj=1,sd !loop over the dimensions to split
-               jd=split_dims(jj) !dimension to split
-               jerr=vt_it%move_to(sidx(jd)); if(jerr.ne.GFC_SUCCESS) exit sloop
-               js=vt_it%get_num_children(jerr); if(jerr.ne.GFC_SUCCESS) exit sloop
-               firo(jd)=nsb
-               if(js.gt.0) then
-                swid(jd)=js
-                jerr=vt_it%move_to_child()
-                do while(js.gt.0.and.jerr.eq.GFC_SUCCESS)
-                 jup=>vt_it%get_value(jerr); if(jerr.ne.GFC_SUCCESS) exit
-                 select type(jup); class is(subspace_t); jssp=>jup; end select
-                 sbuf(nsb)=jssp%get_id(jerr); if(jerr.ne.0) exit
-                 nsb=nsb+1; js=js-1; if(js.gt.0) jerr=vt_it%move_to_sibling()
-                enddo
-                if(jerr.ne.GFC_SUCCESS) exit sloop
-               else !no children subspaces
-                sbuf(nsb)=sidx(jd)
-                nsb=nsb+1
+              sloop: do jd=1,nd
+               jj=firo(jd)
+               if(swid(jd).lt.0) then !split dimension
+                swid(jd)=-swid(jd); js=swid(jd)
+                jerr=vt_it%move_to(sidx(jd)); if(jerr.ne.GFC_SUCCESS) exit sloop
+                if(js.gt.0) then
+                 jerr=vt_it%move_to_child()
+                 do while(js.gt.0.and.jerr.eq.GFC_SUCCESS)
+                  jup=>vt_it%get_value(jerr); if(jerr.ne.GFC_SUCCESS) exit
+                  select type(jup); class is(subspace_t); jssp=>jup; end select
+                  sbuf(jj)=jssp%get_id(jerr); if(jerr.ne.0) exit
+                  jj=jj+1; js=js-1; if(js.gt.0) jerr=vt_it%move_to_sibling()
+                 enddo
+                 if(jerr.ne.GFC_SUCCESS) exit sloop
+                else !no children subspaces
+                 sbuf(jj)=sidx(jd)
+                endif
+               else !unsplit dimension
+                sbuf(jj)=sidx(jd)
                endif
               enddo sloop
-              if(jerr.eq.GFC_SUCCESS) then
-               nsb=nsb-1 !nsb is the size of sbuf(:)
-              else
-               jerr=TEREC_UNABLE_COMPLETE
-              endif
+              if(jerr.ne.GFC_SUCCESS) jerr=TEREC_UNABLE_COMPLETE
              else
               jerr=TEREC_MEM_ALLOC_FAILED
              endif
@@ -2570,33 +2593,38 @@
            return
           end subroutine extract_subspaces_to_sbuf
 
-          subroutine setup_index_dependencies(jerr) !sets: ngroups,deps(1:nd),depk(1:nd)
+          subroutine setup_index_dependencies(jerr) !sets ngroups,deps(1:nd),depk(1:nd)
            implicit none
            integer(INTD), intent(out):: jerr
            integer(INTD):: jj,ji,jn,jr
 
+           jerr=TEREC_SUCCESS
            deps(1:nd)=0; depk(1:nd)=TEREC_IND_RESTR_NONE !no dependencies by default
-           ngroups=this%header%num_groups(jerr) !number of non-trivial index restriction groups
-           if(jerr.eq.TEREC_SUCCESS) then
-            if(ngroups.gt.0) then
-             do jj=1,ngroups
-              call this%header%get_group(jj,dim_group,jn,jerr,jr); if(jerr.ne.TEREC_SUCCESS) exit
-              !deps(dim_group(1))=dim_group(1); depk(dim_group(1))=jr
-              do ji=2,jn
-               deps(dim_group(ji))=dim_group(ji-1)
-               depk(dim_group(ji))=jr
+           if(shpd) then
+            ngroups=this%header%num_groups(jerr) !number of non-trivial index restriction groups
+            if(jerr.eq.TEREC_SUCCESS) then
+             if(ngroups.gt.0) then
+              do jj=1,ngroups
+               call this%header%get_group(jj,dim_group,jn,jerr,jr); if(jerr.ne.TEREC_SUCCESS) exit
+               if(jn.gt.0) then
+                depk(dim_group(1))=jr
+                do ji=2,jn
+                 deps(dim_group(ji))=dim_group(ji-1); depk(dim_group(ji))=jr
+                enddo
+               endif
               enddo
-             enddo
+             endif
             endif
+           else
+            ngroups=0
            endif
            return
           end subroutine setup_index_dependencies
 
-          subroutine get_next_subtensor(np,thd,jerr)
+          subroutine get_next_midx(np,jerr) !iterates midx(1:nd)
            implicit none
-           integer(INTD), intent(inout):: np        !inout: first dimension to change: {2,nd+1,0}
-           type(tens_header_t), intent(inout):: thd !out: next tensor header
-           integer(INTD), intent(out):: jerr        !out: error code
+           integer(INTD), intent(inout):: np
+           integer(INTD), intent(out):: jerr
 
            jerr=TEREC_SUCCESS; np=np-1
            mloop: do while(np.gt.0.and.np.le.nd)
@@ -2621,34 +2649,99 @@
             endif
            enddo mloop
            return
-          end subroutine get_next_subtensor
+          end subroutine get_next_midx
 
-          function restr_move_rejected(np,jerr) result(rejected)
+          function restr_move_rejected(np,jerr) result(rejected) !rejects non-conforming midx(:) values
            implicit none
-           logical:: rejected
-           integer(INTD), intent(in):: np
-           integer(INTD), intent(out):: jerr
+           logical:: rejected                !out: rejection decision
+           integer(INTD), intent(in):: np    !in: specific dimension that has just changed its value
+           integer(INTD), intent(out):: jerr !out: error code
            integer(INTD):: jd,jcmp
            integer(INTL):: js1,js2
 
            rejected=.FALSE.; jerr=TEREC_SUCCESS
-           jd=deps(np) !dimension which dimension np depends on
-           js1=sbuf(firo(np)+midx(np)) !subspace 2 (dependent)
-           js2=sbuf(firo(jd)+midx(jd)) !subspace 1
-           jcmp=hsp%compare_subranges(js1,js2,jerr)
-           if(jerr.eq.0) then
-            if(depk(np).eq.TEREC_IND_RESTR_LT.or.depk(np).eq.TEREC_IND_RESTR_LE) then
-             if(jcmp.eq.CMP_GT) rejected=.TRUE.
-            elseif(depk(np).eq.TEREC_IND_RESTR_GT.or.depk(np).eq.TEREC_IND_RESTR_GE) then
-             if(jcmp.eq.CMP_LT) rejected=.TRUE.
-            else
-             jerr=TEREC_UNABLE_COMPLETE
+           jd=deps(np) !dimension which dimension np depends on (must be on the left of np)
+           if(jd.lt.np) then
+            if(jd.gt.0) then
+             js1=sbuf(firo(jd)+midx(jd)) !left subspace id
+             js2=sbuf(firo(np)+midx(np)) !right subspace id (dependent)
+             jcmp=hsp%compare_subranges(js1,js2,jerr)
+             if(jerr.eq.0) then
+              if(depk(np).eq.TEREC_IND_RESTR_LT.or.depk(np).eq.TEREC_IND_RESTR_LE) then
+               if(jcmp.eq.CMP_GT) rejected=.TRUE.
+              elseif(depk(np).eq.TEREC_IND_RESTR_GT.or.depk(np).eq.TEREC_IND_RESTR_GE) then
+               if(jcmp.eq.CMP_LT) rejected=.TRUE.
+              else
+               jerr=TEREC_UNABLE_COMPLETE
+              endif
+             else
+              jerr=TEREC_ERROR
+             endif
             endif
            else
             jerr=TEREC_ERROR
            endif
            return
           end function restr_move_rejected
+
+          subroutine construct_subtensor_header(thd,jerr) !constructs the next subtensor header, builds tmpd(1:nd), dim_group(1:nd), group_spec(1:) prior to that
+           implicit none
+           type(tens_header_t), intent(inout):: thd !out: subtensor header
+           integer(INTD), intent(out):: jerr        !out: error code
+           integer(INTD):: jd,jp,jgr,jcmp
+           integer(INTL):: js1,js2
+
+           jerr=TEREC_SUCCESS
+ !Set children subspace multi-index (reuse sidx(:)):
+           do jd=1,nd; sidx(jd)=sbuf(firo(jd)+midx(jd)); enddo
+ !Set index restriction groups, if needed:
+           if(ngroups.gt.0) then
+  !Remove unneeded dimension dependencies:
+            do jd=1,nd
+             jp=deps(jd); tmpd(jd)=jp
+             if(jp.gt.0) then !dependent dimension in the parental tensor: jd->jp
+              if(jp.ge.jd) then; jerr=TEREC_ERROR; exit; endif !strict right-on-the-left dependency order
+              js1=sbuf(firo(jp)+midx(jp)) !left subspace id
+              js2=sbuf(firo(jd)+midx(jd)) !right subspace id
+              jcmp=hsp%compare_subranges(js1,js2,jerr); if(jerr.ne.0) then; jerr=TEREC_ERROR; exit; endif
+              if(depk(jd).eq.TEREC_IND_RESTR_LT.or.depk(jd).eq.TEREC_IND_RESTR_LE) then
+               if(jcmp.eq.CMP_LT) tmpd(jd)=0 !dependency is automatically satisfied on (disjoint) children subspaces
+              elseif(depk(jd).eq.TEREC_IND_RESTR_GT.or.depk(jd).eq.TEREC_IND_RESTR_GE) then
+               if(jcmp.eq.CMP_GT) tmpd(jd)=0 !dependency is automatically satisfied on (disjoint) children subspaces
+              else
+               jerr=TEREC_UNABLE_COMPLETE; exit
+              endif
+             endif
+            enddo
+  !Mark first (independent) dimension in each restriction group:
+            if(jerr.eq.TEREC_SUCCESS) then
+             do jd=1,nd
+              jp=tmpd(jd)
+              if(jp.gt.0) then
+               if(tmpd(jp).eq.0) tmpd(jp)=-1
+              endif
+             enddo
+  !Create dim_group(:) and group_spec(:):
+             jgr=0 !number of index restriction groups in the current subtensor
+             do jd=1,nd
+              jp=tmpd(jd)
+              if(jp.gt.0) then
+               dim_group(jd)=dim_group(jp)
+              elseif(jp.lt.0) then !the 1st dimension of a new restriction group
+               jgr=jgr+1; dim_group(jd)=jgr; group_spec(jgr)=depk(jd)
+              else
+               dim_group(jd)=0
+              endif
+             enddo
+  !Construct a new subtensor with index restrictions:
+             call thd%tens_header_ctor(jerr,tens_name(1:tnl),sidx(1:nd),hsp,(/(0_INTL,jd=1,nd)/),dim_group(1:nd),group_spec(1:jgr))
+            endif
+           else
+  !Construct a new subtensor without index restrictions:
+            call thd%tens_header_ctor(jerr,tens_name(1:tnl),sidx(1:nd),hsp,(/(0_INTL,jd=1,nd)/))
+           endif
+           return
+          end subroutine construct_subtensor_header
 
         end subroutine TensRcrsvSplit
 !---------------------------------------
