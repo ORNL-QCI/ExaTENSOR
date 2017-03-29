@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level API.
-REVISION: 2017/03/14
+REVISION: 2017/03/29
 
 Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -2660,7 +2660,7 @@ int talshTensorAdd(const char * cptrn, talsh_tens_t * dtens, talsh_tens_t * lten
     printf("#FATAL(talshc:talshTensorAdd): Complex conjugation feature is not implemented for GPU target!");
     tsk->task_error=200; if(talsh_task == NULL) j=talshTaskDestroy(tsk); return TALSH_FAILURE;
    }
-   errc=gpu_tensor_block_add(contr_ptrn,lctr,dctr,coh_ctrl,cuda_task,dvn,scale_real); //non-blocking call
+   errc=gpu_tensor_block_add(contr_ptrn,lctr,dctr,coh_ctrl,cuda_task,dvn,scale_real,scale_imag); //non-blocking call
    dvn=cuda_task_gpu_id(cuda_task);
    if(errc || dvn < 0){ //in case of error, CUDA task has already been finalized (with error) without coherence control
     if(errc != TRY_LATER && errc != DEVICE_UNABLE) errc=TALSH_FAILURE;
@@ -2933,7 +2933,7 @@ int talshTensorContract(const char * cptrn,        //in: C-string: symbolic cont
     printf("#FATAL(talshc:talshTensorContract): Complex conjugation feature is not implemented for GPU target!");
     tsk->task_error=200; if(talsh_task == NULL) j=talshTaskDestroy(tsk); return TALSH_FAILURE;
    }
-   errc=gpu_tensor_block_contract_dlf(contr_ptrn,lctr,rctr,dctr,coh_ctrl,cuda_task,dvn,scale_real); //non-blocking call
+   errc=gpu_tensor_block_contract_dlf(contr_ptrn,lctr,rctr,dctr,coh_ctrl,cuda_task,dvn,scale_real,scale_imag); //non-blocking call
    dvn=cuda_task_gpu_id(cuda_task);
    if(errc || dvn < 0){ //in case of error, CUDA task has already been finalized (with error) without coherence control
     if(errc != TRY_LATER && errc != DEVICE_UNABLE) errc=TALSH_FAILURE;

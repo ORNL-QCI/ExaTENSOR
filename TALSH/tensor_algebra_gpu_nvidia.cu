@@ -1,6 +1,6 @@
 /** Tensor Algebra Library for NVidia GPU: NV-TAL (CUDA based).
 AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-REVISION: 2017/03/23
+REVISION: 2017/03/29
 
 Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -78,7 +78,7 @@ TO BE FIXED:
  # Invoke cudaDeviceCanAccessPeer() in tensor operations to check whether
    two devices of the same kind can access each other's memory.
  # Account for implicit data transfers to/from peer GPUs in their statistics.
- # User-provided Alpha/Beta factors for gpu_tensor_block_contract() and
+ # User-provided Alpha factors for gpu_tensor_block_contract() and
    gpu_tensor_block_add() reside on Host, thus requiring a slab in GPU
    memory (either global or constant) as a temporary for BLAS references.
 **/
@@ -197,14 +197,6 @@ __device__ __constant__ static cuComplex cgemm_alpha={1.0f,0.0f};     //default 
 __device__ __constant__ static cuComplex cgemm_beta={1.0f,0.0f};      //default beta constant CGEMM
 __device__ __constant__ static cuDoubleComplex zgemm_alpha={1.0,0.0}; //default alpha constant ZGEMM
 __device__ __constant__ static cuDoubleComplex zgemm_beta={1.0,0.0};  //default beta constant ZGEMM
-__device__ __constant__ static float sgemm_alpha_;           //alpha constant for SGEMM
-__device__ __constant__ static float sgemm_beta_;            //beta constant SGEMM
-__device__ __constant__ static double dgemm_alpha_;          //alpha constant for DGEMM
-__device__ __constant__ static double dgemm_beta_;           //beta constant DGEMM
-__device__ __constant__ static cuComplex cgemm_alpha_;       //alpha constant CGEMM
-__device__ __constant__ static cuComplex cgemm_beta_;        //beta constant CGEMM
-__device__ __constant__ static cuDoubleComplex zgemm_alpha_; //alpha constant ZGEMM
-__device__ __constant__ static cuDoubleComplex zgemm_beta_;  //beta constant ZGEMM
 // Infrastructure for functions <gpu_array_norm2__>:
 __device__ static int norm2_wr_lock=0; //write lock shared by all <gpu_array_norm2__> running on GPU
 // Infrastructure for kernels <gpu_array_dot_product__>:
@@ -2659,10 +2651,10 @@ NOTES:
  if(gpu_num != cur_gpu) errc=gpu_activate(cur_gpu);
  return stat; //either 0 (success) or NOT_CLEAN (warning)
 }
-//--------------------------------------------------------------------------------------------------------------------
+//-------------------------------------------------------------------------------------------------------------------------------
 // TENSOR ADDITION (non-blocking):
 __host__ int gpu_tensor_block_add(const int *cptrn, tensBlck_t *ltens, tensBlck_t *dtens,
-                                  unsigned int coh_ctrl, cudaTask_t *cuda_task, int gpu_id, double alpha, double beta)
+                                  unsigned int coh_ctrl, cudaTask_t *cuda_task, int gpu_id, double scale_real, double scale_imag)
 /**
 dtens(:)+=ltens(:)*scalar
 INPUT:
@@ -2673,8 +2665,8 @@ INPUT:
  # coh_ctrl - one of the COPY_XX parameters regulating the data presence for each tensor argument;
  # cuda_task - pointer to an empty (clean) CUDA task;
  # gpu_id - suggested GPU ID on which the operation is to be scheduled (-1: defaults to the optimal one);
- # alpha - GEMM alpha coefficient (defaults to 1.0);
- # beta - GEMM beta coefficient (defaults to 1.0);
+ # scale_real - real part of the GEMM alpha coefficient (defaults to 1.0);
+ # scale_imag - imaginary part of the GEMM alpha coefficient (defaults to 0.0);
 OUTPUT:
  # dtens - updated destination tensor;
  # cuda_task - recorded CUDA task (either successfully scheduled or failed).
@@ -3123,11 +3115,11 @@ NOTES:
  bx=1+(vol_d-1)/THRDS_ARRAY_ADD; if(bx > MAX_CUDA_BLOCKS) bx=MAX_CUDA_BLOCKS;
  switch(dtens->data_kind){
   case R4:
-   falpha=(float)alpha;
+   falpha=(float)scale_real;
    gpu_array_add__<<<bx,THRDS_ARRAY_ADD,0,*cuda_stream>>>(vol_d,(float*)darg,(float*)larg,falpha);
    break;
   case R8:
-   gpu_array_add__<<<bx,THRDS_ARRAY_ADD,0,*cuda_stream>>>(vol_d,(double*)darg,(double*)larg,alpha);
+   gpu_array_add__<<<bx,THRDS_ARRAY_ADD,0,*cuda_stream>>>(vol_d,(double*)darg,(double*)larg,scale_real);
    break;
   default:
    errc=cuda_task_record(cuda_task,coh_ctrl,48); errc=gpu_activate(cur_gpu); return 48;
@@ -3221,10 +3213,10 @@ NOTES:
  if(gpu_num != cur_gpu) errc=gpu_activate(cur_gpu);
  return stat; //either 0 (success) or NOT_CLEAN (warning)
 }
-//-----------------------------------------------------------------------------------------------------------------------------
+//----------------------------------------------------------------------------------------------------------------------------------------
 // TENSOR CONTRACTION (non-blocking):
 __host__ int gpu_tensor_block_contract_dlf(const int *cptrn, tensBlck_t *ltens, tensBlck_t *rtens, tensBlck_t *dtens,
-                                           unsigned int coh_ctrl, cudaTask_t *cuda_task, int gpu_id, double alpha, double beta)
+                                           unsigned int coh_ctrl, cudaTask_t *cuda_task, int gpu_id, double scale_real, double scale_imag)
 /**
 dtens(:)+=ltens(:)*rtens(:)
 INPUT:
@@ -3236,8 +3228,8 @@ INPUT:
  # coh_ctrl - one of the COPY_XXX parameters regulating the data presence for each tensor argument;
  # cuda_task - pointer to an empty (clean) CUDA task;
  # gpu_id - suggested GPU ID on which the operation is to be scheduled (-1: defaults to the optimal one);
- # alpha - GEMM alpha coefficient (defaults to 1.0);
- # beta - GEMM beta coefficient (defaults to 1.0);
+ # scale_real - real part of the GEMM alpha coefficient (defaults to 1.0);
+ # scale_imag - imaginary part of the GEMM alpha coefficient (defaults to 0.0);
 OUTPUT:
  # dtens - updated destination tensor;
  # cuda_task - recorded CUDA task (either successfully scheduled or failed).
@@ -3940,16 +3932,12 @@ NOTES:
    errc=0;
    switch(dtens->data_kind){
     case R4:
-     if(alpha == 1.0){err=cudaGetSymbolAddress(&alpha_p,sgemm_alpha);}else{err=cudaGetSymbolAddress(&alpha_p,sgemm_alpha_);}
-     if(err != cudaSuccess) errc++;
-     if(beta == 1.0){err=cudaGetSymbolAddress(&beta_p,sgemm_beta);}else{err=cudaGetSymbolAddress(&beta_p,sgemm_beta_);}
-     if(err != cudaSuccess) errc++;
+     err=cudaGetSymbolAddress(&alpha_p,sgemm_alpha); if(err != cudaSuccess) errc++;
+     err=cudaGetSymbolAddress(&beta_p,sgemm_beta); if(err != cudaSuccess) errc++;
      break;
     case R8:
-     if(alpha == 1.0){err=cudaGetSymbolAddress(&alpha_p,dgemm_alpha);}else{err=cudaGetSymbolAddress(&alpha_p,dgemm_alpha_);}
-     if(err != cudaSuccess) errc++;
-     if(beta == 1.0){err=cudaGetSymbolAddress(&beta_p,dgemm_beta);}else{err=cudaGetSymbolAddress(&beta_p,dgemm_beta_);}
-     if(err != cudaSuccess) errc++;
+     err=cudaGetSymbolAddress(&alpha_p,dgemm_alpha); if(err != cudaSuccess) errc++;
+     err=cudaGetSymbolAddress(&beta_p,dgemm_beta); if(err != cudaSuccess) errc++;
      break;
     default:
      errc++;
