@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/03/29
+!REVISION: 2017/03/30
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -240,7 +240,9 @@
         end interface
 !VISIBILITY:
         public valid_tensor_layout
+        public cmp_tens_signatures
         public cmp_tens_headers
+        public print_tens_header_f
  !tens_signature_t:
         private TensSignatureCtor
         private TensSignatureIsSet
@@ -378,6 +380,21 @@
          endif
          return
         end function cmp_tens_headers
+!-----------------------------------------------------
+        function print_tens_header_f(obj) result(ierr)
+!Prints a tensor header (for GFC use).
+         integer(INTD):: ierr
+         class(*), intent(inout):: obj
+
+         ierr=GFC_SUCCESS
+         select type(obj)
+         class is(tens_header_t)
+          call obj%print_it(ierr)
+         class default
+          ierr=GFC_ACTION_FAILED
+         end select
+         return
+        end function print_tens_header_f
 ![tens_signature_t]========================================================
         subroutine TensSignatureCtor(this,ierr,subspaces,tens_name,h_space)
 !CTOR for tens_signature_t.
@@ -2756,6 +2773,8 @@
 !==================================
        module tensor_recursive_test
         use tensor_algebra
+        use gfc_base
+        use gfc_list
         use subspaces
         use tensor_recursive
         implicit none
@@ -2778,6 +2797,9 @@
          if(ierr.eq.0) then; write(*,'("PASSED")'); else; write(*,'("FAILED: Error ",i11)') ierr; return; endif
          write(*,'("Testing class tens_simple_part_t ... ")',ADVANCE='NO')
          call test_tens_simple_part(ierr)
+         if(ierr.eq.0) then; write(*,'("PASSED")'); else; write(*,'("FAILED: Error ",i11)') ierr; return; endif
+         write(*,'("Testing class tens_rcrsv_t ... ")',ADVANCE='NO')
+         call test_tens_rcrsv(ierr)
          if(ierr.eq.0) then; write(*,'("PASSED")'); else; write(*,'("FAILED: Error ",i11)') ierr; return; endif
          return
         end subroutine test_tensor_recursive
@@ -2991,5 +3013,68 @@
          !call tens_header_dtor(thead)
          return
         end subroutine test_tens_simple_part
+!---------------------------------------
+        subroutine test_tens_rcrsv(ierr)
+         implicit none
+         integer(INTD), intent(out):: ierr
+         integer(INTD), parameter:: tens_rank=4          !tensor rank
+         integer(INTL), parameter:: TEST_SPACE_DIM=33    !vector space dimension
+         type(spher_symmetry_t):: symm(1:TEST_SPACE_DIM) !symmetry of each basis vector
+         type(subspace_basis_t):: full_basis             !full vector space basis
+         type(h_space_t):: hspace                        !hierarchical representation of the vector space
+         integer(INTL):: spcx(1:MAX_TENSOR_RANK),dims(1:MAX_TENSOR_RANK),space_id,max_res
+         integer(INTD):: dimg(1:MAX_TENSOR_RANK),grps(1:MAX_TENSOR_RANK),num_subtensors
+         type(tens_header_t), pointer:: thp
+         type(tens_rcrsv_t):: tensor
+         type(list_bi_t):: subtensors
+         type(list_iter_t):: lit
+         class(subspace_t), pointer:: ssp
+         class(*), pointer:: up
+
+ !Build a hierarchical representation for a test vector space:
+         call register_test_space(ierr); if(ierr.ne.TEREC_SUCCESS) then; ierr=1; return; endif
+ !Create the full tensor (over the full space):
+  !Get full space id and its max resolution:
+         space_id=hspace%get_common_subspace(0_INTL,TEST_SPACE_DIM-1_INTL,ierr); if(ierr.ne.0) then; ierr=2; return; endif
+         ssp=>hspace%get_subspace(space_id,ierr); if(ierr.ne.0) then; ierr=3; return; endif
+         if(.not.associated(ssp)) then; ierr=4; return; endif
+         max_res=ssp%get_max_resolution(ierr); if(ierr.ne.0) then; ierr=5; return; endif
+         !write(*,*) 'Space ID = ',space_id,': Max resolution = ',max_res !debug
+  !Create a tensor over the full space:
+         spcx(1:tens_rank)=space_id
+         dims(1:tens_rank)=max_res
+         dimg(1:tens_rank)=(/1,1,2,2/); grps(1:2)=(/TEREC_IND_RESTR_LT,TEREC_IND_RESTR_GT/)
+         call tensor%tens_rcrsv_ctor('T2',spcx(1:tens_rank),hspace,ierr,dims(1:tens_rank),dimg(1:tens_rank),grps(1:2))
+         if(ierr.ne.0) then; ierr=6; return; endif
+ !Split the tensor into subtensors:
+         call tensor%split((/1,2,3,4/),subtensors,ierr,num_subtensors); if(ierr.ne.0) then; ierr=7; return; endif
+         !write(*,*) 'Number of subtensors generated = ',num_subtensors !debug
+         ierr=lit%init(subtensors); if(ierr.ne.0) then; ierr=8; return; endif
+         !ierr=lit%scanp(action_f=print_tens_header_f); if(ierr.eq.GFC_IT_DONE) ierr=0 !debug
+         ierr=lit%delete_all(); if(ierr.ne.0) then; ierr=9; return; endif
+         ierr=lit%release(); if(ierr.ne.0) then; ierr=10; return; endif
+
+         return
+
+         contains
+
+          subroutine register_test_space(jerr)
+           implicit none
+           integer(INTD), intent(out):: jerr
+           integer(INTL):: jj
+
+           jerr=0
+           call full_basis%subspace_basis_ctor(TEST_SPACE_DIM,jerr); if(jerr.ne.0) return
+           do jj=1,TEST_SPACE_DIM
+            call symm(jj)%spher_symmetry_ctor(int((jj-1)/5,INTD),0,jerr); if(jerr.ne.0) return
+            call full_basis%set_basis_func(jj,BASIS_ABSTRACT,jerr,symm=symm(jj)); if(jerr.ne.0) return
+           enddo
+           call full_basis%finalize(jerr); if(jerr.ne.0) return
+           call hspace%h_space_ctor(full_basis,jerr); if(jerr.ne.0) return
+           !call hspace%print_it() !debug
+           return
+          end subroutine register_test_space
+
+        end subroutine test_tens_rcrsv
 
        end module tensor_recursive_test

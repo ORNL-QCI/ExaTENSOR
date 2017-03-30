@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Bi-directional linked list
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017-03-15 (started 2016-02-28)
+!REVISION: 2017-03-30 (started 2016-02-28)
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -797,6 +797,7 @@
 
          ierr=this%get_status()
          if(ierr.eq.GFC_IT_ACTIVE) then
+          ierr=GFC_SUCCESS
           if(associated(this%current)) then
            if(present(backwards)) then; back=backwards; else; back=.FALSE.; endif
            lep=>this%current

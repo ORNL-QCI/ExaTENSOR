@@ -1,7 +1,7 @@
 !Infrastructure for a recursive adaptive vector space decomposition
 !and hierarchical vector space representation.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/03/27
+!REVISION: 2017/03/30
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -258,6 +258,7 @@
           procedure, public:: compare_subspaces=>HSpaceCompareSubspaces !compares two subspaces from the hierarchical vector space: {CMP_EQ,CMP_LT,CMP_GT,CMP_ER}
           procedure, public:: relate_subspaces=>HSpaceRelateSubspaces   !relates two subspaces from the hierarchical vector space: {CMP_EQ,CMP_CN,CMP_IN,CMP_OV,CMP_NC}
           procedure, public:: compare_subranges=>HSpaceCompareSubranges !compares basis subranges of two subspaces from the hierarchical vector space: {CMP_EQ,CMP_LT,CMP_GT,CMP_OV,CMP_ER}
+          procedure, public:: get_common_subspace=>HSpaceGetCommonSubspace !returns the minimal (registered) subspace containing two given subspaces
           procedure, public:: print_it=>HSpacePrintIt                   !prints the hierarchical vector space
           final:: h_space_dtor                                          !destructs the hierarchical representation of a vector space
         end type h_space_t
@@ -376,6 +377,7 @@
         private HSpaceCompareSubspaces
         private HSpaceRelateSubspaces
         private HSpaceCompareSubranges
+        private HSpaceGetCommonSubspace
         private HSpacePrintIt
         public h_space_dtor
 
@@ -2485,6 +2487,56 @@
          if(present(ierr)) ierr=errc
          return
         end function HSpaceCompareSubranges
+!------------------------------------------------------------------------------
+        function HSpaceGetCommonSubspace(this,id1,id2,ierr) result(subspace_id)
+!Returns the minimal (registered) subspace containing two given subspaces.
+         implicit none
+         integer(INTL):: subspace_id                 !out: common (registered) subspace id
+         class(h_space_t), intent(in):: this         !in: hierarchical vector space
+         integer(INTL), intent(in):: id1             !in: input subspace id 1
+         integer(INTL), intent(in):: id2             !in: input subspace id 2
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: i,cmp,errc
+         type(vec_tree_iter_t):: vt_it
+
+         if(this%is_set(errc)) then
+          if(errc.eq.0) then
+           if(id1.ge.0.and.id1.lt.this%num_subspaces.and.id2.ge.0.and.id2.lt.this%num_subspaces) then
+            errc=vt_it%init(this%subspaces)
+            if(errc.eq.GFC_SUCCESS) then
+             subspace_id=id1; errc=vt_it%move_to(subspace_id)
+             if(errc.eq.GFC_SUCCESS) then
+              cmp=this%relate_subspaces(subspace_id,id2,errc)
+              if(errc.eq.0) then
+               do while(cmp.ne.CMP_CN)
+                errc=vt_it%move_to_parent(); if(errc.ne.GFC_SUCCESS) exit
+                subspace_id=vt_it%get_offset(errc); if(errc.ne.GFC_SUCCESS) exit
+                cmp=this%relate_subspaces(subspace_id,id2,errc); if(errc.ne.GFC_SUCCESS) exit
+               enddo
+               if(errc.ne.GFC_SUCCESS) errc=8
+              else
+               errc=7
+              endif
+             else
+              errc=6
+             endif
+             i=vt_it%release(); if(i.ne.GFC_SUCCESS.and.errc.eq.0) errc=5
+            else
+             errc=4
+            endif
+           else
+            errc=3
+           endif
+          else
+           errc=2
+          endif
+         else
+          errc=1
+         endif
+         if(errc.ne.0) subspace_id=-1_INTL
+         if(present(ierr)) ierr=errc
+         return
+        end function HSpaceGetCommonSubspace
 !--------------------------------------------------
         subroutine HSpacePrintIt(this,ierr,dev_out)
 !Prints the hierarchical vector space representation.
