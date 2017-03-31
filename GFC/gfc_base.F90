@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Base
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017-03-16 (started 2016-02-17)
+!REVISION: 2017-03-31 (started 2016-02-17)
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -77,7 +77,8 @@
         integer(INTD), parameter:: GFC_METHOD_UNDEFINED=-10 !undefined method called on an object
         integer(INTD), parameter:: GFC_OVERFLOW=-11         !overflow
         integer(INTD), parameter:: GFC_UNKNOWN_REQUEST=-12  !unknown request
-        integer(INTD), parameter:: GFC_IN_USE=-13           !object is in use by others
+        integer(INTD), parameter:: GFC_INVALID_REQUEST=-13  !invalid request
+        integer(INTD), parameter:: GFC_IN_USE=-14           !object is in use by others
  !Predicates (GFC_ERROR applies here as well):
         integer(INTD), parameter:: GFC_TRUE=1  !TRUE value
         integer(INTD), parameter:: GFC_FALSE=0 !FALSE value

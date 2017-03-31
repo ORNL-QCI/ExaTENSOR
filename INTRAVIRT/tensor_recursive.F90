@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/03/30
+!REVISION: 2017/03/31
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -344,7 +344,7 @@
         end function valid_tensor_layout
 !--------------------------------------------------------
         function cmp_tens_signatures(ts1,ts2) result(cmp)
-!Compares two tensor signatures.
+!Comparator for tensor signatures.
          implicit none
          integer(INTD):: cmp                !out: result of comparison: {CMP_EQ,CMP_LT,CMP_GT,CMP_ER}
          class(*), intent(in), target:: ts1 !in: tensor signature 1
@@ -363,7 +363,7 @@
         end function cmp_tens_signatures
 !-----------------------------------------------------
         function cmp_tens_headers(th1,th2) result(cmp)
-!Compares two tensor headers.
+!Comparator for tensor headers.
          implicit none
          integer(INTD):: cmp                !out: result of comparison: {CMP_EQ,CMP_LT,CMP_GT,CMP_ER}
          class(*), intent(in), target:: th1 !in: tensor header 1

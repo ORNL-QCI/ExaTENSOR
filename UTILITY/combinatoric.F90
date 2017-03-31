@@ -1,7 +1,7 @@
        module combinatoric
 !Combinatoric Procedures.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!Revision: 2016/08/16
+!Revision: 2017/03/31
 
 !Copyright (C) 2007-2016 Dmitry I. Lyakh (Liakh)
 
@@ -47,6 +47,7 @@
 ! - RANDOM_COMPOSITION(l:ordered,i:irange,i:ni,i[1]:trn): returns a random sequence of ni natural numbers from the range [1..irange] without repeats.
 ! - MERGE_SORT_INT(i:ni,i[1]:trn): fast sorting algorithm for an integer array (default integer).
 ! - MERGE_SORT_KEY_INT(i:ni,i[1]:key,i[1]:trn): fast sorting algorithm for an integer array, based on integer keys (default integer).
+! - MERGE_SORT_INT8_S(i8:ni,i8[1]:trn): fast sorting algorithm for an integer*8 array (returns the permuation sign separately).
 ! - MERGE_SORT_INT8(i8:ni,i8[1]:trn): fast sorting algorithm for an integer*8 array.
 ! - MERGE_SORT_KEY_INT8(i8:ni,i8[1]:key,i8[1]:trn): fast sorting algorithm for an integer*8 array, based on integer keys (integer*8).
 ! - MERGE_SORT_REAL8(i:ni,r8[1]:trn): fast sorting algorithm for a real*8 array.
@@ -66,6 +67,19 @@
          module procedure divide_segment_i4
          module procedure divide_segment_i8
         end interface divide_segment
+        interface merge_sort
+         module procedure merge_sort_int
+         module procedure merge_sort_int8_s
+         module procedure merge_sort_int8
+         module procedure merge_sort_real8
+         module procedure merge_sort_cmplx8
+        end interface merge_sort
+        interface merge_sort_key
+         module procedure merge_sort_key_int
+         module procedure merge_sort_key_int8
+         module procedure merge_sort_key_real8
+         module procedure merge_sort_key_cmplx8
+        end interface merge_sort_key
 !PROCEDURE VISIBILITY:
         public trng
         public trsign
@@ -93,8 +107,11 @@
         public random_permutation
         public random_permutation_int8
         public random_composition
+        public merge_sort
+        public merge_sort_key
         public merge_sort_int
         public merge_sort_key_int
+        public merge_sort_int8_s
         public merge_sort_int8
         public merge_sort_key_int8
         public merge_sort_real8
@@ -1272,6 +1289,61 @@
 	endif
 	return
 	end subroutine merge_sort_key_int
+!-----------------------------------------------
+	subroutine merge_sort_int8_s(ni,trn,sgn)
+!This subroutine sorts an array of NI items in a non-descending order.
+!The algorithm was suggested by Johann von Neumann.
+!INPUT:
+! - ni - number of items;
+! - trn(1:ni) - items (arbitrary integer*8 numbers);
+!OUTPUT:
+! - trn(1:ni) - sorted items;
+! - sgn - permutation sign;
+!NOTES:
+! - In order to accelerate the procedure use flip/flop for TRN(:)||PRM(:).
+	implicit none
+	integer(8), intent(in):: ni
+	integer(8), intent(inout):: trn(1:ni)
+	integer(4), intent(out):: sgn
+	integer(8):: i,j,k,l,m,n,k0,k1,k2,k3,k4,k5,k6,k7,ks,kf,ierr
+	integer(8), allocatable:: prm(:)
+
+	sgn=+1
+	if(ni.gt.1_8) then
+	 allocate(prm(1_8:ni))
+	 n=1_8
+	 do while(n.lt.ni)
+	  m=n*2_8
+	  do i=1_8,ni,m
+	   k1=i; k2=i+n
+	   if(k2.gt.ni) then
+	    k2=ni+1_8; k3=0_8; k4=0_8 !no right block, only left block
+	   else
+	    k3=i+n; k4=min(ni+1_8,i+m) !right block present
+	   endif
+	   kf=min(ni+1_8,i+m)-i; l=0_8
+	   do while(l.lt.kf)
+	    if(k3.ge.k4) then !right block is over
+	     prm(i+l:i+kf-1_8)=trn(k1:k2-1_8); l=kf
+	    elseif(k1.ge.k2) then !left block is over
+	     prm(i+l:i+kf-1_8)=trn(k3:k4-1_8); l=kf
+	    else
+	     if(trn(k1)-trn(k3).gt.0_8) then
+	      prm(i+l)=trn(k3); k3=k3+1_8; sgn=sgn*(1-2*int(mod(k2-k1,2_8),4))
+	     else
+	      prm(i+l)=trn(k1); k1=k1+1_8
+	     endif
+	     l=l+1_8
+	    endif
+	   enddo
+	  enddo
+	  trn(1_8:ni)=prm(1_8:ni)
+	  n=m
+	 enddo
+	 deallocate(prm)
+	endif
+	return
+	end subroutine merge_sort_int8_s
 !-----------------------------------------
 	subroutine merge_sort_int8(ni,trn)
 !This subroutine sorts an array of NI items in a non-descending order.
