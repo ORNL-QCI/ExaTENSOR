@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Graph
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017/03/31
+!REVISION: 2017/04/03
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -19,6 +19,11 @@
 
 !You should have received a copy of the GNU Lesser General Public License
 !along with ExaTensor. If not, see <http://www.gnu.org/licenses/>.
+
+!FOR DEVELOPERS:
+! # Currently gfc::dictionary does not allow storing dictionary keys by reference.
+!   Once this feature is enabled, the method VertLinkRefsAddLink of the vert_link_refs_t
+!   class will require slight modifiction (to store newly added keys by reference).
 
        module gfc_graph
         use gfc_base
@@ -43,8 +48,8 @@
         type, public:: graph_vertex_t
          integer(INTL), private:: color=0_INTL !vertex color
          contains
-          procedure, private:: GraphVertexCtor
-          generic, public:: graph_vertex_ctor=>GraphVertexCtor !ctor
+          procedure, private:: GraphVertexCtor                 !ctor
+          generic, public:: graph_vertex_ctor=>GraphVertexCtor !ctors
           procedure, public:: get_color=>GraphVertexGetColor   !returns the color of the graph vertex
           procedure, public:: compare=>GraphVertexCompare      !comparator
           final:: graph_vertex_dtor                            !dtor
@@ -56,8 +61,8 @@
          integer(INTD), private:: rank=0                !number of vertices in the link (2 for ordinary graphs, >2 for hypergraphs)
          integer(INTL), allocatable, private:: verts(:) !vertices participating in the link
          contains
-          procedure, private:: GraphLinkCtor
-          generic, public:: graph_link_ctor=>GraphLinkCtor !ctor
+          procedure, private:: GraphLinkCtor               !ctor
+          generic, public:: graph_link_ctor=>GraphLinkCtor !ctors
           procedure, public:: is_set=>GraphLinkIsSet       !returns TRUE if the graph link is set
           procedure, public:: get_color=>GraphLinkGetColor !returns the link color
           procedure, public:: get_rank=>GraphLinkGetRank   !returns the number of vertices in the link (2 for ordinary edges, >2 for hyperedges)
@@ -71,14 +76,13 @@
          contains
           procedure, private:: VertLinkRefsCtor                      !ctor
           generic, public:: vert_link_refs_ctor=>VertLinkRefsCtor    !ctors
-          procedure, public:: get_num_links=>VertLinkRefsGetNumLinks !returns the number of links
+          procedure, public:: get_num_links=>VertLinkRefsGetNumLinks !returns the number of links attached to the corresponding vertex
           procedure, public:: find_link=>VertLinkRefsFindLink        !finds a specific vertex link
           procedure, public:: add_link=>VertLinkRefsAddLink          !adds a link reference to the vertex
           procedure, public:: delete_link=>VertLinkRefsDeleteLink    !deletes a link reference from the vertex
           procedure, public:: delete_all=>VertLinkRefsDeleteAll      !deletes all link references on the vertex
           final:: vert_link_refs_dtor                                !dtor
         end type vert_link_refs_t
-#if 0
  !Graph container:
         type, extends(gfc_container_t), public:: graph_t
          type(vector_t), private:: vertices                !graph vertices stored by value: [0..N-1], N is graph cardinality
@@ -87,10 +91,12 @@
          integer(INTL), private:: num_links=0_INTL         !total number of links in the graph
          contains
           procedure, public:: is_empty=>GraphIsEmpty                !returns TRUE if the graph is empty
+          procedure, public:: is_set=>GraphIsSet                    !returns GFC_TRUE if the graph is set, plus additional info
           procedure, public:: get_num_vertices=>GraphGetNumVertices !returns the total number of vertices in the graph (graph cardinality)
           procedure, public:: get_num_links=>GraphGetNumLinks       !returns the total number of links in the graph
           final:: graph_dtor                                        !dtor
         end type graph_t
+#if 0
  !Graph iterator:
         type, extends(gfc_iter_t), public:: graph_iter_t
          integer(INTL), private:: curr_vertex=-1_INTL              !current vertex number: [0..max]
@@ -140,12 +146,13 @@
         private VertLinkRefsDeleteLink
         private VertLinkRefsDeleteAll
         public vert_link_refs_dtor
-#if 0
  !graph_t:
         private GraphIsEmpty
+        private GraphIsSet
         private GraphGetNumVertices
         private GraphGetNumLinks
         public graph_dtor
+#if 0
  !graph_iter_t:
         private GraphIterInit
         private GraphIterReset
@@ -185,7 +192,7 @@
          endif
          return
         end function cmp_graph_links
-![graph_vertex_t]=====================
+![graph_vertex_t]==================================
         subroutine GraphVertexCtor(this,color,ierr)
 !Ctor.
          implicit none
@@ -285,9 +292,11 @@
          logical:: res                               !out: result
          class(graph_link_t), intent(in):: this      !in: graph link
          integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
 
-         res=(this%rank.ge.2)
-         if(present(ierr)) ierr=GFC_SUCCESS
+         errc=GFC_SUCCESS; res=(this%rank.ge.2)
+         if(this%rank.eq.1) errc=GFC_CORRUPTED_CONT
+         if(present(ierr)) ierr=errc
          return
         end function GraphLinkIsSet
 !----------------------------------------------------------
@@ -424,27 +433,50 @@
          if(present(ierr)) ierr=errc
          return
         end function VertLinkRefsFindLink
-!-----------------------------------------------------------
-        function VertLinkRefsAddLink(this,link) result(ierr)
+!------------------------------------------------------------------------------
+        function VertLinkRefsAddLink(this,link,link_attr,store_by) result(ierr)
 !Adds a graph link to the vertex info object.
          implicit none
-         integer(INTD):: ierr                          !out: error code
-         class(vert_link_refs_t), intent(inout):: this !inout: vertex info
-         class(graph_link_t), intent(in):: link        !in: graph link
+         integer(INTD):: ierr                               !out: error code
+         class(vert_link_refs_t), intent(inout):: this      !inout: vertex info
+         class(graph_link_t), intent(in):: link             !in: graph link
+         class(*), intent(in), target, optional:: link_attr !in: optional link attributes
+         logical, intent(in), optional:: store_by           !in: how to store link attributes: {GFC_BY_VAL,GFC_BY_REF}, default is GFC_BY_VAL
          integer(INTD):: i
          type(dictionary_iter_t):: dit
 
          if(link%is_set(ierr)) then
-          ierr=dit%init(this%vert_links)
           if(ierr.eq.GFC_SUCCESS) then
-           i=0 !`dummy value, because a gfc::dictionary is used instead of gfc::set
-           ierr=dit%search(GFC_DICT_ADD_IF_NOT_FOUND,cmp_graph_links,link,i) !`the key <link> should be added by reference in future (when gfc::set is avaliable)
-           if(ierr.ne.GFC_NOT_FOUND) then
-            if(ierr.eq.GFC_FOUND) ierr=GFC_INVALID_REQUEST
-           else
-            ierr=GFC_SUCCESS
+           ierr=dit%init(this%vert_links)
+           if(ierr.eq.GFC_SUCCESS) then
+            if(present(link_attr)) then
+             if(present(store_by)) then
+              ierr=dit%search(GFC_DICT_ADD_IF_NOT_FOUND,cmp_graph_links,link,link_attr,store_by) !`the key <link> should be added by reference in future!
+             else
+              ierr=dit%search(GFC_DICT_ADD_IF_NOT_FOUND,cmp_graph_links,link,link_attr) !`the key <link> should be added by reference in future!
+             endif
+             if(ierr.ne.GFC_NOT_FOUND) then
+              if(ierr.eq.GFC_FOUND) ierr=GFC_INVALID_REQUEST !link already exists
+             else
+              this%num_links=this%num_links+1_INTL
+              ierr=GFC_SUCCESS
+             endif
+            else
+             if(.not.present(store_by)) then
+              i=0 !dummy value
+              ierr=dit%search(GFC_DICT_ADD_IF_NOT_FOUND,cmp_graph_links,link,i) !`the key <link> should be added by reference in future!
+              if(ierr.ne.GFC_NOT_FOUND) then
+               if(ierr.eq.GFC_FOUND) ierr=GFC_INVALID_REQUEST !link already exists
+              else
+               this%num_links=this%num_links+1_INTL
+               ierr=GFC_SUCCESS
+              endif
+             else
+              ierr=GFC_INVALID_REQUEST
+             endif
+            endif
+            i=dit%release(); if(i.ne.GFC_SUCCESS.and.ierr.eq.GFC_SUCCESS) ierr=i
            endif
-           i=dit%release(); if(i.ne.GFC_SUCCESS.and.ierr.eq.GFC_SUCCESS) ierr=i
           endif
          else
           ierr=GFC_INVALID_ARGS
@@ -462,19 +494,22 @@
          type(dictionary_iter_t):: dit
 
          if(link%is_set(ierr)) then
-          if(this%num_links.gt.0) then
-           ierr=dit%init(this%vert_links)
-           if(ierr.eq.GFC_SUCCESS) then
-            ierr=dit%search(GFC_DICT_DELETE_IF_FOUND,cmp_graph_links,link)
-            if(ierr.ne.GFC_FOUND) then
-             if(ierr.eq.GFC_NOT_FOUND) ierr=GFC_INVALID_REQUEST
-            else
-             ierr=GFC_SUCCESS
+          if(ierr.eq.GFC_SUCCESS) then
+           if(this%num_links.gt.0) then
+            ierr=dit%init(this%vert_links)
+            if(ierr.eq.GFC_SUCCESS) then
+             ierr=dit%search(GFC_DICT_DELETE_IF_FOUND,cmp_graph_links,link)
+             if(ierr.ne.GFC_FOUND) then
+              if(ierr.eq.GFC_NOT_FOUND) ierr=GFC_INVALID_REQUEST
+             else
+              this%num_links=this%num_links-1_INTL
+              ierr=GFC_SUCCESS
+             endif
+             i=dit%release(); if(i.ne.GFC_SUCCESS.and.ierr.eq.GFC_SUCCESS) ierr=i
             endif
-            i=dit%release(); if(i.ne.GFC_SUCCESS.and.ierr.eq.GFC_SUCCESS) ierr=i
+           else
+            ierr=GFC_INVALID_REQUEST
            endif
-          else
-           ierr=GFC_INVALID_REQUEST
           endif
          else
           ierr=GFC_INVALID_ARGS
@@ -506,8 +541,80 @@
          errc=this%delete_all(); this%num_links=0_INTL
          return
         end subroutine vert_link_refs_dtor
-![graph_t]============================
+![graph_t]=====================================
+        function GraphIsEmpty(this) result(res)
+!Returns TRUE if the graph is empty.
+         implicit none
+         integer(INTD):: res               !out: result: {GFC_TRUE,GFC_FALSE,error}
+         class(graph_t), intent(in):: this !in: graph
+         integer(INTL):: nv
 
+         nv=this%get_num_vertices(res)
+         if(res.eq.GFC_SUCCESS) then
+          if(nv.gt.0_INTL) then; res=GFC_FALSE; else; res=GFC_TRUE; endif
+         endif
+         return
+        end function GraphIsEmpty
+!------------------------------------------------------------------------
+        function GraphIsSet(this,ierr,num_vertices,num_links) result(res)
+!Returns TRUE if the graph is set, plus additional info.
+         implicit none
+         logical:: res                                       !out: result
+         class(graph_t), intent(in):: this                   !in: graph
+         integer(INTD), intent(out), optional:: ierr         !out: error code
+         integer(INTL), intent(out), optional:: num_vertices !out: number of vertices in the graph
+         integer(INTL), intent(out), optional:: num_links    !out: number of (unique) links in the graph
+         integer(INTD):: errc
+         integer(INTL):: nv
+
+         res=.FALSE.; nv=this%get_num_vertices(errc)
+         if(errc.eq.GFC_SUCCESS) then
+          res=(nv.gt.0_INTL)
+          if(present(num_vertices)) num_vertices=nv
+          if(present(num_links)) num_links=this%num_links
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function GraphIsSet
+!-------------------------------------------------------------------
+        function GraphGetNumVertices(this,ierr) result(num_vertices)
+!Returns the total number of vertices in the graph.
+         implicit none
+         integer(INTL):: num_vertices                !out: number of vertices
+         class(graph_t), intent(in):: this           !in: graph
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         num_vertices=this%vertices%length(errc)
+         if(present(ierr)) ierr=errc
+         return
+        end function GraphGetNumVertices
+!-------------------------------------------------------------
+        function GraphGetNumLinks(this,ierr) result(num_links)
+!Returns the total number of (unique) links in the graph.
+!Each (hyper-)link between two or more vertices is counted only once.
+         implicit none
+         integer(INTL):: num_links                   !out: number of links
+         class(graph_t), intent(in):: this           !in: graph
+         integer(INTD), intent(out), optional:: ierr !out: error code
+
+         num_links=this%num_links
+         if(present(ierr)) ierr=GFC_SUCCESS
+         return
+        end function GraphGetNumLinks
+!----------------------------------
+        subroutine graph_dtor(this)
+!Dtor.
+         implicit none
+         type(graph_t):: this
+         integer(INTD):: errc
+!         type(graph_iter_t):: git
+
+!         errc=git%init(this)
+!         if(errc.eq.GFC_SUCCESS) errc=git%delete_all()
+!         errc=git%release()
+         return
+        end subroutine graph_dtor
 ![graph_iter_t]=======================
 
        end module gfc_graph
