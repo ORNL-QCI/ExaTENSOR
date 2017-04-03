@@ -16,13 +16,14 @@ context default
     keyword whole space green
     keyword whole subspace green
     keyword whole index green
-    keyword whole external green
     keyword whole load green
     keyword whole save green
     keyword whole destroy green
     keyword whole export green
     keyword whole import green
-    keyword whole invoke green
+    keyword whole invoke brightred
+    keyword whole external red
+    keyword whole data red
 
 # modifiers
     keyword whole real blue

@@ -3,8 +3,8 @@
 #TAPL complements QMDL (Quantum Method Design Language)
 #developed by D.I.Lyakh in 2009-2013 while at QTP.
 
-#Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
-#Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
+#Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
+#Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
 
 #This file is part of ExaTensor.
 
@@ -24,9 +24,9 @@
 entry: my_tapl_program #first scoping unit to execute
 
 scope my_tapl_program group(CC)
-#Declarations and definitions:
+#Declarations:
  space(real|complex): basis0=[1:970],basis1=[0:893]      #define vector spaces
- subspace(basis0): occ=[1:90],virt=[91:970],full=[1:970] #define subspaces
+ subspace(basis0): occ=[1:90],virt=[91:970],full=[1:970] #define subspaces of a vector space
  index(occ): i0,i1,k0,k1                                 #assign index labels to the defined subspaces
  index(virt): a0,a1,c0,c1                                #assign index labels to the defined subspaces
  index(full): p1,p2,p3,p4                                #assign index labels to the defined subspaces
@@ -46,7 +46,7 @@ scope my_tapl_program group(CC)
 end scope my_tapl_program
 
 scope DIIS_algrithm group(CC)
- import S2(a0,a1,i0,i1): tag("My Z2")           #this will import a tensor exported by another scoping unit, the indices will become defined automatically
+ import S2(a0,a1,i0,i1): tag("My Z4")           #this will import a tensor exported by another scoping unit, the indices will become defined automatically
  index: a2=a1,i2=i1                             #indices a2 and i2 will be assigned the same subranges as a1 and i1, respectively
  D0()=S2(a0,a1,i0,i1)*S2(a0,a1,i0,i1)           #full tensor contraction
  export D0(): tag("Scalar") to(CC:r)            #export the result to the scoping group CC with read-only permissions

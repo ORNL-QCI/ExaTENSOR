@@ -20,6 +20,11 @@
 !You should have received a copy of the GNU Lesser General Public License
 !along with ExaTensor. If not, see <http://www.gnu.org/licenses/>.
 
+!NOTES:
+! # GFC::graph contains graph vertices (<graph_vertex_t>) and graph links (<graph_link_t>).
+!   Graph vertices are internally stored in a gfc::vector, making the dynamic type of the
+!   pointer returned by the graph iterator (method .pointee) to be <vector_elem_t>.
+
 !FOR DEVELOPERS:
 ! # Currently gfc::dictionary does not allow storing dictionary keys by reference.
 !   Once this feature is enabled, the method VertLinkRefsAddLink of the vert_link_refs_t
@@ -86,8 +91,8 @@
  !Graph container:
         type, extends(gfc_container_t), public:: graph_t
          type(vector_t), private:: vertices                !graph vertices stored by value: [0..N-1], N is graph cardinality
-         type(list_bi_t), private:: links                  !links between vertices stored by value: Each unique (generally ordered) combination of vertices may only have one link
-         type(vector_t), private:: link_refs               !vector of <vert_link_refs_t> objects for all vertices
+         type(vector_t), private:: link_refs               !vector of <vert_link_refs_t> objects containing link references for all vertices
+         type(list_bi_t), private:: links                  !links (stored by value): Each unique (generally ordered) combination of vertices may only have one link
          integer(INTL), private:: num_links=0_INTL         !total number of links in the graph
          contains
           procedure, public:: is_empty=>GraphIsEmpty                !returns TRUE if the graph is empty
@@ -96,19 +101,21 @@
           procedure, public:: get_num_links=>GraphGetNumLinks       !returns the total number of links in the graph
           final:: graph_dtor                                        !dtor
         end type graph_t
-#if 0
  !Graph iterator:
         type, extends(gfc_iter_t), public:: graph_iter_t
-         integer(INTL), private:: curr_vertex=-1_INTL              !current vertex number: [0..max]
-         class(graph_vertex_t), pointer, private:: current=>NULL() !pointer to the current vertex
-         class(graph_t), pointer, private:: container=>NULL()      !pointer to the graph container
+         class(graph_t), pointer, private:: container=>NULL()       !pointer to the graph container
+         type(vector_iter_t), private:: vert_it                     !vertex iterator
+         type(vector_iter_t), private:: vert_ln_it                  !vertex links iterator
+         type(list_iter_t), private:: link_it                       !graph links iterator
          contains
+          procedure, private:: update_status_=>GraphIterUpdateStatus    !PRIVATE: updates graph iterator status ater component updates
           procedure, public:: init=>GraphIterInit                       !initializes the iterator by associating it with a graph container
           procedure, public:: reset=>GraphIterReset                     !resets the iterator to the first graph vertex (vertex 0)
           procedure, public:: release=>GraphIterRelease                 !releases the iterator by dissociating it from its container
-          procedure, public:: pointee=>GraphIterPointee                 !returns a pointer to the current graph container element
+          procedure, public:: pointee=>GraphIterPointee                 !returns a pointer to the current graph container element (<vector_elem_t>)
           procedure, public:: next=>GraphIterNext                       !moves the iterator to the next graph vertex
           procedure, public:: previous=>GraphIterPrevious               !moves the iterator to the previous graph vertex
+          procedure, public:: get_vertex=>GraphIterGetVertex            !returns a pointer to a specified graph vertex (<graph_vertex_t>)
           procedure, public:: get_num_vertices=>GraphIterGetNumVertices !returns the total number of vertices in the graph
           procedure, public:: get_num_links=>GraphIterGetNumLinks       !returns the total number of links in the graph
           procedure, public:: get_links=>GraphIterGetLinks              !returns the list of links (by reference) for specific graph vertices
@@ -122,7 +129,6 @@
           procedure, public:: merge_vertices=>GraphIterMergeVertices    !merges two or more graph vertices into a single vertex
          !procedure, public:: split_vertex=>GraphIterSplitVertex        !splits a graph vertex into two or more vertices
         end type graph_iter_t
-#endif
 !VISIBILITY:
  !non-member:
         public cmp_graph_links
@@ -152,14 +158,15 @@
         private GraphGetNumVertices
         private GraphGetNumLinks
         public graph_dtor
-#if 0
  !graph_iter_t:
+        private GraphIterUpdateStatus
         private GraphIterInit
         private GraphIterReset
         private GraphIterRelease
         private GraphIterPointee
         private GraphIterNext
         private GraphIterPrevious
+        private GraphIterGetVertex
         private GraphIterGetNumVertices
         private GraphIterGetNumLinks
         private GraphIterGetLinks
@@ -171,7 +178,6 @@
         private GraphIterDeleteLink
         private GraphIterDeleteAll
         private GraphIterMergeVertices
-#endif
 !IMPLEMENTATION:
        contains
 ![non-member]==========================================
@@ -406,24 +412,43 @@
          if(present(ierr)) ierr=GFC_SUCCESS
          return
         end function VertLinkRefsGetNumLinks
-!------------------------------------------------------------------
-        function VertLinkRefsFindLink(this,link,ierr) result(found)
-!Searches for a specific link in the vertex info object.
+!------------------------------------------------------------------------------
+        function VertLinkRefsFindLink(this,link,ierr,list_link_p) result(found)
+!Searches for a specific graph link in the vertex info object.
          implicit none
          logical:: found                             !out: TRUE if found
          class(vert_link_refs_t), intent(in):: this  !in: vertex info
          class(graph_link_t), intent(in):: link      !in: graph link
          integer(INTD), intent(out), optional:: ierr !out: error code
+         class(list_elem_t), intent(out), pointer, optional:: list_link_p !out: pointer to the list element containing the graph link
          integer(INTD):: i,errc
          type(dictionary_iter_t):: dit
+         class(*), pointer:: up
 
          errc=GFC_SUCCESS; found=.FALSE.
          if(link%is_set()) then
           if(this%num_links.gt.0) then
            errc=dit%init(this%vert_links)
            if(errc.eq.GFC_SUCCESS) then
-            errc=dit%search(GFC_DICT_JUST_FIND,cmp_graph_links,link)
-            found=(errc.eq.GFC_FOUND); if(errc.eq.GFC_NOT_FOUND.or.found) errc=GFC_SUCCESS
+            up=>NULL()
+            errc=dit%search(GFC_DICT_JUST_FIND,cmp_graph_links,link,value_out=up)
+            found=(errc.eq.GFC_FOUND)
+            if(errc.eq.GFC_NOT_FOUND.or.found) then
+             errc=GFC_SUCCESS
+             if(found.and.present(list_link_p) then
+              if(associated(up)) then
+               select type(up)
+               class is(list_elem_t)
+                list_link_p=>up
+               class default
+                errc=GFC_CORRUPTED_CONT
+               end select
+              else
+               errc=GFC_ERROR
+              endif
+             endif
+            endif
+            up=>NULL()
             i=dit%release(); if(i.ne.GFC_SUCCESS.and.errc.eq.GFC_SUCCESS) errc=i
            endif
           endif
@@ -433,15 +458,14 @@
          if(present(ierr)) ierr=errc
          return
         end function VertLinkRefsFindLink
-!------------------------------------------------------------------------------
-        function VertLinkRefsAddLink(this,link,link_attr,store_by) result(ierr)
+!--------------------------------------------------------------------
+        function VertLinkRefsAddLink(this,link,link_ref) result(ierr)
 !Adds a graph link to the vertex info object.
          implicit none
-         integer(INTD):: ierr                               !out: error code
-         class(vert_link_refs_t), intent(inout):: this      !inout: vertex info
-         class(graph_link_t), intent(in):: link             !in: graph link
-         class(*), intent(in), target, optional:: link_attr !in: optional link attributes
-         logical, intent(in), optional:: store_by           !in: how to store link attributes: {GFC_BY_VAL,GFC_BY_REF}, default is GFC_BY_VAL
+         integer(INTD):: ierr                                !out: error code
+         class(vert_link_refs_t), intent(inout):: this       !inout: vertex info
+         class(graph_link_t), intent(in), target:: link      !in: graph link
+         class(list_elem_t), intent(in), pointer:: link_ref  !in: pointer to the list element where value <link> is stored by value
          integer(INTD):: i
          type(dictionary_iter_t):: dit
 
@@ -449,31 +473,12 @@
           if(ierr.eq.GFC_SUCCESS) then
            ierr=dit%init(this%vert_links)
            if(ierr.eq.GFC_SUCCESS) then
-            if(present(link_attr)) then
-             if(present(store_by)) then
-              ierr=dit%search(GFC_DICT_ADD_IF_NOT_FOUND,cmp_graph_links,link,link_attr,store_by) !`the key <link> should be added by reference in future!
-             else
-              ierr=dit%search(GFC_DICT_ADD_IF_NOT_FOUND,cmp_graph_links,link,link_attr) !`the key <link> should be added by reference in future!
-             endif
-             if(ierr.ne.GFC_NOT_FOUND) then
-              if(ierr.eq.GFC_FOUND) ierr=GFC_INVALID_REQUEST !link already exists
-             else
-              this%num_links=this%num_links+1_INTL
-              ierr=GFC_SUCCESS
-             endif
+            ierr=dit%search(GFC_DICT_ADD_IF_NOT_FOUND,cmp_graph_links,link,link_ref,GFC_BY_REF) !`the key <link> should be stored by reference as well in future!
+            if(ierr.eq.GFC_NOT_FOUND) then
+             this%num_links=this%num_links+1_INTL
+             ierr=GFC_SUCCESS
             else
-             if(.not.present(store_by)) then
-              i=0 !dummy value
-              ierr=dit%search(GFC_DICT_ADD_IF_NOT_FOUND,cmp_graph_links,link,i) !`the key <link> should be added by reference in future!
-              if(ierr.ne.GFC_NOT_FOUND) then
-               if(ierr.eq.GFC_FOUND) ierr=GFC_INVALID_REQUEST !link already exists
-              else
-               this%num_links=this%num_links+1_INTL
-               ierr=GFC_SUCCESS
-              endif
-             else
-              ierr=GFC_INVALID_REQUEST
-             endif
+             if(ierr.eq.GFC_FOUND) ierr=GFC_INVALID_REQUEST !link already exists
             endif
             i=dit%release(); if(i.ne.GFC_SUCCESS.and.ierr.eq.GFC_SUCCESS) ierr=i
            endif
@@ -608,13 +613,411 @@
          implicit none
          type(graph_t):: this
          integer(INTD):: errc
-!         type(graph_iter_t):: git
+         type(graph_iter_t):: git
 
-!         errc=git%init(this)
-!         if(errc.eq.GFC_SUCCESS) errc=git%delete_all()
-!         errc=git%release()
+         errc=git%init(this)
+         if(errc.eq.GFC_SUCCESS) errc=git%delete_all()
+         errc=git%release()
          return
         end subroutine graph_dtor
-![graph_iter_t]=======================
+![graph_iter_t]===============================
+        subroutine GraphIterUpdateStatus(this)
+!Updates the iterator status after component updates.
+         implicit none
+         class(graph_iter_t), intent(inout):: this !inout: iterator
+         integer(INTD):: errc
+
+         errc=this%set_status_(this%vert_it%get_status())
+         return
+        end subroutine GraphIterUpdateStatus
+!-----------------------------------------------------
+        function GraphIterInit(this,cont) result(ierr)
+!Initializes the iterator with its container and resets it to the beginning.
+         implicit none
+         integer(INTD):: ierr                              !out: error code
+         class(graph_iter_t), intent(inout):: this         !inout: iterator
+         class(gfc_container_t), target, intent(in):: cont !in: container
+
+         select type(cont)
+         class is(graph_t)
+          this%container=>cont
+          ierr=this%vert_it%init(this%container%vertices)
+          if(ierr.eq.GFC_SUCCESS) then
+           ierr=this%vert_ln_it%init(this%container%link_refs)
+           if(ierr.eq.GFC_SUCCESS) then
+            ierr=this%link_it%init(this%container%links)
+            if(ierr.eq.GFC_SUCCESS) ierr=this%reset()
+           endif
+          endif
+         class default
+          ierr=GFC_INVALID_ARGS
+         end select
+         return
+        end function GraphIterInit
+!-------------------------------------------------
+        function GraphIterReset(this) result(ierr)
+!Resets the iterator to the beginning of the container.
+         implicit none
+         integer(INTD):: ierr                      !out: error code
+         class(graph_iter_t), intent(inout):: this !inout: iterator
+
+         ierr=this%vert_it%reset()
+         if(ierr.eq.GFC_SUCCESS) then
+          ierr=this%vert_ln_it%reset()
+          if(ierr.eq.GFC_SUCCESS) ierr=this%link_it%reset()
+          call this%reset_count()
+         endif
+         call this%update_status_()
+         return
+        end function GraphIterReset
+!---------------------------------------------------
+        function GraphIterRelease(this) result(ierr)
+!Dissociates the iterator from its container.
+         implicit none
+         integer(INTD):: ierr                      !out: error code
+         class(graph_iter_t), intent(inout):: this !inout: iterator
+         integer(INTD):: errc
+
+         call this%reset_count()
+         ierr=this%link_it%release()
+         errc=this%vert_ln_it%release(); if(ierr.eq.GFC_SUCCESS.and.errc.ne.GFC_SUCCESS) ierr=errc
+         errc=this%link_it%release(); if(ierr.eq.GFC_SUCCESS.and.errc.ne.GFC_SUCCESS) ierr=errc
+         this%container=>NULL()
+         errc=this%set_status_(GFC_IT_NULL); if(ierr.eq.GFC_SUCCESS.and.errc.ne.GFC_SUCCESS) ierr=errc
+         return
+        end function GraphIterRelease
+!---------------------------------------------------------
+        function GraphIterPointee(this,ierr) result(pntee)
+!Returns a pointer to the current container element.
+!Note that the dynamic type of the returned pointer is <vector_elem_t>
+!since the graph vertices (<graph_vertex_t>) are stored in a vector.
+         implicit none
+         class(gfc_cont_elem_t), pointer:: pntee     !out: container element currently pointed to by the iterator
+         class(graph_iter_t), intent(in):: this      !in: iterator
+         integer(INTD), intent(out), optional:: ierr !out: error code
+
+         pntee=>NULL()
+         if(present(ierr)) then
+          pntee=>this%vert_it%pointee(ierr)
+         else
+          pntee=>this%vert_it%pointee()
+         endif
+         return
+        end function GraphIterPointee
+!-------------------------------------------------------
+        function GraphIterNext(this,elem_p) result(ierr)
+!Moves the iterator to the next element of the graph. If <elem_p> is present,
+!the next element will be returned in <elem_p> without moving the iterator.
+         implicit none
+         integer(INTD):: ierr                                            !out: error code
+         class(graph_iter_t), intent(inout):: this                       !inout: iterator
+         class(gfc_cont_elem_t), pointer, intent(out), optional:: elem_p !out: pointer to the container element
+
+         if(present(elem_p)) then
+          ierr=this%vert_it%next(elem_p)
+         else
+          ierr=this%vert_it%next()
+          if(ierr.eq.GFC_SUCCESS) ierr=this%vert_ln_it%next()
+         endif
+         call this%update_status_()
+         return
+        end function GraphIterNext
+!-----------------------------------------------------------
+        function GraphIterPrevious(this,elem_p) result(ierr)
+!Moves the iterator to the previous element of the graph. If <elem_p> is present,
+!the previous element will be returned in <elem_p> without moving the iterator.
+         implicit none
+         integer(INTD):: ierr                                            !out: error code
+         class(graph_iter_t), intent(inout):: this                       !inout: iterator
+         class(gfc_cont_elem_t), pointer, intent(out), optional:: elem_p !out: pointer to the container element
+
+         if(present(elem_p)) then
+          ierr=this%vert_it%previous(elem_p)
+         else
+          ierr=this%vert_it%previous()
+          if(ierr.eq.GFC_SUCCESS) ierr=this%vert_ln_it%previous()
+         endif
+         call this%update_status_()
+         return
+        end function GraphIterPrevious
+!----------------------------------------------------------------------
+        function GraphIterGetVertex(this,vert_id,ierr) result(vertex_p)
+!Returns a pointer to a specific graph vertex.
+         implicit none
+         class(graph_vertex_t), pointer:: vertex_p   !out: pointer to the specified graph vertex
+         class(graph_iter_t), intent(in):: this      !in: iterator
+         integer(INTL), intent(in):: vert_id         !in: vertex id: [0..max]
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+         class(*), pointer:: up
+
+         vertex_p=>NULL()
+         up=>this%vert_it%element_value(vert_id,errc)
+         if(errc.eq.GFC_SUCCESS) then
+          if(associated(up)) then
+           select type(up); class is(graph_vertex_t); vertex_p=>up; end select
+           if(.not.associated(vertex_p)) errc=GFC_CORRUPTED_CONT
+           up=>NULL()
+          else
+           errc=GFC_ERROR
+          endif
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function GraphIterGetVertex
+!-----------------------------------------------------------------------
+        function GraphIterGetNumVertices(this,ierr) result(num_vertices)
+!Returns the total number of vertices in the graph.
+         implicit none
+         integer(INTL):: num_vertices                !out: number of vertices
+         class(graph_iter_t), intent(in):: this      !in: iterator
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         num_vertices=0_INTL; errc=this%get_status()
+         if(errc.eq.GFC_IT_ACTIVE.or.errc.eq.GFC_IT_DONE) then
+          num_vertices=this%container%get_num_vertices(errc)
+         elseif(errc.eq.GFC_IT_EMPTY) then
+          errc=GFC_SUCCESS
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function GraphIterGetNumVertices
+!-----------------------------------------------------------------
+        function GraphIterGetNumLinks(this,ierr) result(num_links)
+!Returns the total number of (unique) links in the graph.
+         implicit none
+         integer(INTL):: num_links                   !out: number of links
+         class(graph_iter_t), intent(in):: this      !in: iterator
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         num_links=0_INTL; errc=this%get_status()
+         if(errc.eq.GFC_IT_ACTIVE.or.errc.eq.GFC_IT_DONE) then
+          num_links=this%container%get_num_links(errc)
+         elseif(errc.eq.GFC_IT_EMPTY) then
+          errc=GFC_SUCCESS
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function GraphIterGetNumLinks
+!---------------------------------------------------------------------------
+        subroutine GraphIterGetLinks(this,vertices,link_list,num_links,ierr)
+!Returns a list of graph links (by reference) for specific graph vertices.
+!<link_list> is allowed to be non-empty on input (will be appended).
+!The iterator position is kept intact.
+         implicit none
+         class(graph_iter_t), intent(in):: this      !in: graph iterator
+         integer(INTL), intent(in):: vertices(1:)    !in: vertices of interest (vertex id's): vertex id = [0..max]
+         type(list_bi_t), intent(inout):: link_list  !inout: list of graph links (by reference) attached to the specified graph vertices
+         integer(INTL), intent(out):: num_links      !out: number of links extracted from the graph
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: i,n,errc
+         class(*), pointer:: up
+         class(vert_link_refs_t), pointer:: vlrp
+         type(list_iter_t):: lit
+         type(dictionary_iter_t):: dit
+
+         num_links=0_INTL; errc=this%get_status()
+         if(errc.eq.GFC_IT_ACTIVE.or.errc.eq.GFC_IT_DONE) then
+          errc=lit%init(link_list)
+          if(errc.eq.GFC_SUCCESS) then
+           n=size(vertices)
+           aloop: do i=1,n
+            up=>this%vert_ln_it%element_value(vertices(i),errc); if(errc.ne.GFC_SUCCESS) exit aloop !up => <vert_link_refs_t>
+            if(.not.associated(up))) then; errc=GFC_ERROR; exit aloop; endif
+            select type(up); class is(vert_link_refs_t); vlrp=>up; end select
+            if(.not.associated(vlrp)) then; errc=GFC_CORRUPTED_CONT; exit aloop; endif
+            if(vlrp%num_links.gt.0_INTL) then
+             errc=dit%init(vlrp%vert_links); if(errc.ne.GFC_SUCCESS) exit aloop
+             do while(errc.eq.GFC_SUCCESS)
+              up=>dit%get_key(errc); if(.not.associated(up)) errc=GFC_ERROR
+              if(errc.eq.GFC_SUCCESS) then
+               num_links=num_links+1_INTL
+               errc=lit%append(up,assoc_only=.TRUE.) !up => <graph_link_t>
+               if(errc.eq.GFC_SUCCESS) errc=dit%move_in_order(GFC_DICT_SUCCESSOR)
+              endif
+             enddo
+             if(errc.ne.GFC_IT_DONE) exit aloop
+             errc=dit%release(); if(errc.ne.GFC_SUCCESS) exit aloop
+            endif
+           enddo aloop
+           i=lit%release(); if(i.ne.GFC_SUCCESS.and.errc.eq.GFC_SUCCESS) errc=i
+           vlrp=>NULL(); up=>NULL()
+          endif
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine GraphIterGetLinks
+!------------------------------------------------------------
+        function GraphIterMoveTo(this,vertex_id) result(ierr)
+!Moves the graph iterator to a specific graph vertex.
+         implicit none
+         integer(INTD):: ierr                      !out: error code: {GFC_SUCCESS,errors}
+         class(graph_iter_t), intent(inout):: this !inout: graph iterator
+         integer(INTL), intent(in):: vertex_id     !in: vertex id: [0..max]
+
+         ierr=this%vert_it%move_to(vertex_id)
+         if(ierr.eq.GFC_SUCCESS) ierr=this%vert_ln_it%move_to(vertex_id)
+         call this%update_status_()
+         return
+        end function GraphIterMoveTo
+!---------------------------------------------------------------
+        function GraphIterFindLink(this,link,ierr) result(found)
+!Finds a specific link in the graph.
+         implicit none
+         logical:: found                             !out: found or not: {TRUE|FALSE}
+         class(graph_iter_t), intent(in):: this      !in: graph iterator
+         class(graph_link_t), intent(in):: link      !in: graph link being searched for
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+         integer(INTL):: vid
+         class(*), pointer:: up
+         class(vert_link_refs_t), pointer:: vlrp
+
+         found=.FALSE.; errc=this%get_status()
+         if(errc.eq.GFC_IT_ACTIVE.or.errc.eq.GFC_IT_DONE) then
+          if(link%is_set(errc)) then
+           if(errc.eq.GFC_SUCCESS) then
+            vid=link%vertices(1) !first vertex of the link
+            up=>this%vert_ln_it%element_value(vid,errc)
+            if(errc.eq.GFC_SUCCESS) then
+             if(associated(up)) then
+              select type(up); class is(vert_link_refs_t); vlrp=>up; end select
+              if(associated(vlrp)) then
+               found=vlrp%find_link(link,errc)
+              else
+               errc=GFC_CORRUPTED_CONT
+              endif
+             else
+              errc=GFC_ERROR
+             endif
+            endif
+            vlrp=>NULL(); up=>NULL()
+           endif
+          else
+           errc=GFC_INVALID_ARGS
+          endif
+         elseif(errc.eq.GFC_IT_EMPTY) then
+          if(.not.link%is_set(errc)) errc=GFC_INVALID_ARGS
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function GraphIterFindLink
+!---------------------------------------------------------------
+        function GraphIterAppendVertex(this,vertex) result(ierr)
+!Appends a new vertex to the graph.
+         implicit none
+         integer(INTD):: ierr                               !out: error code
+         class(graph_iter_t), intent(inout):: this          !inout: graph iterator
+         class(graph_vertex_t), intent(in), target:: vertex !in: new vertex
+         type(vert_link_ref_t):: vlr
+
+         ierr=this%vert_it%append(vertex)
+         if(ierr.eq.GFC_SUCCESS) ierr=this%vert_ln_it%append(vlr)
+         call this%update_status_()
+         return
+        end function GraphIterAppendVertex
+!-----------------------------------------------------------
+        function GraphIterAppendLink(this,link) result(ierr)
+!Appends a new link to the graph.
+         implicit none
+         integer(INTD):: ierr                      !out: error code
+         class(graph_iter_t), intent(inout):: this !inout: graph iterator
+         class(graph_link_t), intent(in):: link    !in: new graph link
+         integer(INTD):: i
+         integer(INTL):: vid
+         class(gfc_cont_elem_t), pointer:: gcp
+         class(list_elem_t), pointer:: lep
+         class(*), pointer:: up
+         class(vert_link_refs_t), pointer:: vlrp
+
+         ierr=this%get_status()
+         if(ierr.eq.GFC_IT_ACTIVE.or.ierr.eq.GFC_IT_DONE) then
+          if(link%is_set(ierr)) then
+           if(ierr.eq.GFC_SUCCESS) then
+            ierr=this%link_it%append(link) !append the new graph link to the list of graph links (by value)
+            if(ierr.eq.GFC_SUCCESS) then
+             ierr=this%link_it%reset_back()
+             if(ierr.eq.GFC_SUCCESS) then
+              gcp=>this%link_it%pointee(ierr)
+              if(.not.associated(gcp)) ierr=GFC_ERROR
+              if(ierr.eq.GFC_SUCCESS) then
+               select type(gcp)
+               class is(list_elem_t)
+                lep=>gcp
+                do i=1,link%rank !loop over participating vertices
+                 vid=link%vertices(i)
+                 up=>this%vert_ln_it%element_value(vid,ierr); if(ierr.ne.GFC_SUCCESS) exit
+                 if(associated(up)) then
+                  select type(up); class is(vert_link_refs_t); vlrp=>up; end select
+                  if(associated(vlrp)) then
+                   ierr=vlrp%add_link(link,lep) !add a reference to the graph link to each participating vertex
+                  else
+                   ierr=GFC_CORRUPTED_CONT; exit
+                  endif
+                 else
+                  ierr=GFC_ERROR; exit
+                 endif
+                enddo
+                vlrp=>NULL(); up=>NULL(); lep=>NULL()
+               class default
+                ierr=GFC_CORRUPTED_CONT
+               end select
+               gcp=>NULL()
+              endif
+              gcp=>NULL()
+             endif
+            endif
+           endif
+          else
+           ierr=GFC_INVALID_ARGS
+          endif
+         endif
+         call this%update_status_()
+         return
+        end function GraphIterAppendLink
+!-----------------------------------------------------------
+        function GraphIterDeleteLink(this,link) result(ierr)
+!Deletes a specific graph link.
+         implicit none
+         integer(INTD):: ierr                      !out: error code
+         class(graph_iter_t), intent(inout):: this !inout: graph iterator
+         class(graph_link_t), intent(in):: link    !in: graph link to delete
+         integer(INTL):: vid
+         class(*), pointer:: up
+         class(vert_link_refs_t), pointer:: vlrp
+         class(list_elem_t), pointer:: lep
+         type(dictionary_iter_t):: dit
+
+         ierr=this%get_status()
+         if(ierr.eq.GFC_IT_ACTIVE.or.ierr.eq.GFC_IT_DONE) then
+          if(link%is_set(ierr)) then
+           if(ierr.eq.GFC_SUCCESS) then
+            vloop: do i=1,link%rank
+             vid=link%vertices(i)
+             up=>this%vert_ln_it%element_value(vid,ierr)
+             if(.not.associated(up)) ierr=GFC_ERROR
+             if(ierr.eq.GFC_SUCCESS) then
+              select type(up); class is(vert_link_refs_t); vlrp=>up; end select
+              if(associated(vlrp) then
+               ierr=dit%init(vlrp%vert_links); if(ierr.ne.GFC_SUCCESS) exit vloop
+               ierr=dit%search(GFC_DICT_DELETE_IF_FOUND,
+               ierr=dit%release(); if(ierr.ne.GFC_SUCCESS) exit vloop
+              else
+               ierr=GFC_CORRUPTED_CONT; exit vloop
+              endif
+             else
+              exit vloop
+             endif
+            enddo vloop
+           endif
+          else
+           ierr=GFC_INVALID_ARGS
+          endif
+         endif
+         call this%update_status_()
+         return
+        end function GraphIterDeleteLink
 
        end module gfc_graph

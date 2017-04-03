@@ -1,6 +1,6 @@
 Tensor Algebra Programming Language (TAProL) Specification
 AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-REVISION: 2017-03-20
+REVISION: 2017-04-03
 
 Copyright (C) 2016 Dmitry I. Liakh.
 Copyright (C) 2016 Oak Ridge National Laboratory, UT-Battelle, LLC.
@@ -102,6 +102,7 @@ Index inheritance:
  index: b1=a1, b2=a2
  Here indices b1 and b2 will bind to the same subspaces as a1 and a2, respectively.
 
+
 2.2. Tensor creation and destruction:
 
 A tensor is specified via its alphanumeric name (at least one letter) and a comma-separated
@@ -148,6 +149,23 @@ Explicit creation with deferred initialization:
  postponed until it is used for the first time after its creation. Examples:
  Y12(j,m,n,k) => method("My deferred init method")
 
+ Besides explicit construction, a tensor will be constructed implicitly when
+ it is undefined while being the result of a tensor operation.
+
+Index symmetry restrictions:
+
+ Optionally, one can specify index symmetry restrictions during tensor creation,
+ except for the "load" statement. The index symmetry restrictions are appended
+ at the end of the creation/initalization statement after a colon, for example:
+
+ T2(a,b,i,j,k) = 0: [a<b] [i<j<k]
+ MM(a,b) = 0: [a<b]
+
+ In this case, only the tensor parts satisfying these conditions will be created.
+ In particular, MM(a,b) will be created as a triangular matrix. Index symmetry
+ restrictions can also be specified during indirect tensor creation in a tensor
+ operation (when a previously undefined tensor appears as a result of the operation).
+
 Explicit destruction:
 
  ~{<tensor>|<tensor_name>}
@@ -166,15 +184,13 @@ Explicit destruction:
  destroy F3(m,n,k)
  destroy C4,TT(i,j,l)
 
-Besides explicit construction, a tensor will be constructed implicitly when
-it is undefined while being the result of a tensor operation.
-
-A tensor can also be stored in the persistent storage by the following statement:
+A tensor can be stored in persistent storage by the following statement:
 
  save <tensor>: tag("<stored_name>")
 
  The tag "<stored_name>" associated with the tensor in the persistent storage can
  later be used for loading it back via the "load" statement.
+
 
 2.3. Tensor operations:
 
@@ -214,7 +230,7 @@ Currently defined tensor operations:
     S1(a,k) = T1(i,j,k,l)
     Here dimensions i, j, l of T1 will be combined into dimension a=(i,j,l) of S1.
 
- 5) Unfolding:
+ 5) Unfolding (dimension expansion):
     <tensor0> = <tensor1>
     Examples:
     T1(i,j,k,l) = S1(a,k)
@@ -245,6 +261,7 @@ Currently defined tensor operations:
     T1(i,j,k,l) += S1(k,c,j,d) * S2(d,i,c,l) * -1.13
     T1(i,j,k,l) += S1(k,c,j,d) * S2(c,i,l,d) * my_factor
     In the third example, my_factor will be looked up in the Exchange Space, if there.
+
 
 2.4. Tensor network specification:
 

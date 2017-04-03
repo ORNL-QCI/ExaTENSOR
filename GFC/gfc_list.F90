@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Bi-directional linked list
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017-03-30 (started 2016-02-28)
+!REVISION: 2017-04-03 (started 2016-02-28)
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -79,6 +79,7 @@
          procedure, public:: split=>ListIterSplit               !splits the list into two parts at the current position
          procedure, public:: delete=>ListIterDelete             !deletes the list element in the current position
          procedure, public:: delete_all=>ListIterDeleteAll      !deletes all elements (either prior, or after, or all of them)
+         procedure, public:: jump_=>ListIterJump                !PRIVATE: moves the iterator to a specified list element
         end type list_iter_t
 !INTERFACES:
 !VISIBILITY:
@@ -103,6 +104,7 @@
         private ListIterSplit
         private ListIterDelete
         private ListIterDeleteAll
+        private ListIterJump
 
        contains
 !IMPLEMENTATION:
@@ -658,7 +660,7 @@
             call this%container%quick_counting_off_() !turn off quick element counting
             call sublist%quick_counting_off_() !turn off quick element counting
            else
-            ierr=GFC_EMPTY_CONT
+            ierr=GFC_INVALID_ARGS
            endif
           else
            ierr=GFC_CORRUPTED_CONT
@@ -828,5 +830,27 @@
          endif
          return
         end function ListIterDeleteAll
+!---------------------------------------------
+        subroutine ListIterJump(this,new_elem)
+!Moves the iterator to an arbitrary specified list element.
+         implicit none
+         class(list_iter_t), intent(inout):: this              !inout: list iterator
+         class(list_elem_t), pointer, intent(inout):: new_elem !in: pointer to the new element or NULL()
+         integer(INTD):: errc,sts
+
+         if(associated(this%current)) call this%current%decr_ref_()
+         this%current=>new_elem
+         if(associated(this%current)) then
+          call this%current%incr_ref_()
+          errc=this%set_status_(GFC_IT_ACTIVE)
+         else
+          if(associated(this%container%root)) then
+           errc=this%set_status_(GFC_IT_DONE)
+          else
+           errc=this%set_status_(GFC_IT_EMPTY)
+          endif
+         endif
+         return
+        end subroutine ListIterJump
 
        end module gfc_list

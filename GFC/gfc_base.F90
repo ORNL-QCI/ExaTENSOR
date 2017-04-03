@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Base
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017-03-31 (started 2016-02-17)
+!REVISION: 2017-04-03 (started 2016-02-17)
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -25,13 +25,14 @@
 !   the following aspects have to be taken into account:
 !    a) All operations on a container are done via the corresponding iterator.
 !       The iterator is the only way to access and update the container.
-!    b) The container iterator must be reset() upon addition of the first element.
-!    c) In general, an iterator may be associated with a subcontainer, that is,
+!    b) The iterator reset() method must set the proper status and reset count.
+!    c) The container iterator must be reset() upon addition of the first element.
+!    d) In general, an iterator may be associated with a subcontainer, that is,
 !       a part of a larger container carrying the same linkage topology, for example,
 !       sublist, subtree, subdictionary. Not every container class allows subcontaining.
 !       A subcontainer is linked to its host container solely via its boundary elements.
 !       A subcontainer iterator must always stay within the boundaries of its subcontainer.
-!    d) Thread safety considerations:
+!    e) Thread safety considerations:
 !       * Each iterator can only be used by one thread at a time. Multiple concurrent
 !         threads will require multiple iterators.
 !       * Structural changes in a container must be protected by GFC, including addition
@@ -43,7 +44,7 @@
 !         of the container element as a boundary or current element of an iterator will
 !         increment the reference counter, and each dissociation will decrement it.
 !       * Concurrent updates of the content of container elements must be protected
-!         by a user via the user-level lock provided for each container element.
+!         by a user via the user-level lock provided for each container element by GFC.
 !         Whenever an exclusive (write) access is required, the content of the container
 !         element should be protected by the lock which can be acquired via GFC API.
 ! # Quick counting does not work with composite containers and subcontainers

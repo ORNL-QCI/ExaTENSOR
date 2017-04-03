@@ -2,7 +2,7 @@
 !The elements are initially inserted in a vector with an option to be
 !later added in a tree, thus imposing a tree relationship on them.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017/03/27
+!REVISION: 2017/04/03
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -252,7 +252,6 @@
          class(vec_tree_iter_t), intent(inout):: this !inout: iterator
          class(*), pointer:: up
          class(tree_pos_t), pointer:: tpp
-         integer(INTD):: errc
 
          ierr=this%val_it%reset()
          if(ierr.eq.GFC_SUCCESS) then
@@ -269,6 +268,8 @@
            else
             ierr=this%tree_it%set_status_(GFC_IT_EMPTY)
            endif
+           call this%tree_it%reset_count()
+           call this%reset_count() !reset all iteration counters
           endif
          endif
          call this%update_status_()
@@ -300,6 +301,8 @@
            else
             ierr=this%tree_it%set_status_(GFC_IT_EMPTY)
            endif
+           call this%tree_it%reset_count()
+           call this%reset_count() !reset all iteration counters
           endif
          endif
          call this%update_status_()
@@ -325,7 +328,7 @@
         function VecTreeIterPointee(this,ierr) result(pntee)
 !Returns a pointer to the current container element.
          implicit none
-         class(gfc_cont_elem_t), pointer:: pntee     !out: container element currently pointed to be the iterator
+         class(gfc_cont_elem_t), pointer:: pntee     !out: container element currently pointed to by the iterator
          class(vec_tree_iter_t), intent(in):: this   !in: iterator
          integer(INTD), intent(out), optional:: ierr !out: error code
 

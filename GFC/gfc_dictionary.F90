@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Dictionary (ordered map), AVL BST
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017/03/15 (recycling my old dictionary implementation)
+!REVISION: 2017/04/03 (recycling my old dictionary implementation)
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -95,6 +95,7 @@
           procedure, public:: move_to_max=>DictionaryIterMoveToMax       !moves the iterator to the maximal element
           procedure, public:: move_up=>DictionaryIterMoveUp              !moves the iterator up the binary search tree (to the parent element)
           procedure, public:: move_down=>DictionaryIterMoveDown          !moves the iterator down the binary search tree, either left or right
+          procedure, public:: get_key=>DictionaryIterGetKey              !returns a pointer to the key in the current iterator position
           procedure, public:: delete_all=>DictionaryIterDeleteAll        !deletes all elements of the dictionary
           procedure, public:: search=>DictionaryIterSearch               !performs a key-based search in the dictionary
           procedure, public:: sort_to_list=>DictionaryIterSortToList     !returns a list of references to dictionary elements in a sorted (by key) order
@@ -132,6 +133,7 @@
         private DictionaryIterMoveToMax
         private DictionaryIterMoveUp
         private DictionaryIterMoveDown
+        private DictionaryIterGetKey
         private DictionaryIterDeleteAll
         private DictionaryIterSearch
         private DictionaryIterSortToList
@@ -904,6 +906,26 @@
          endif
          return
         end function DictionaryIterMoveDown
+!-------------------------------------------------------------
+        function DictionaryIterGetKey(this,ierr) result(key_p)
+!Returns a pointer to the key in the current iterator position.
+         implicit none
+         class(*), pointer:: key_p                   !out: pointer to the current position key
+         class(dictionary_iter_t), intent(in):: this !in: dictionary iterator
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         key_p=>NULL(); errc=this%get_status()
+         if(errc.eq.GFC_IT_ACTIVE) then
+          if(associated(this%current)) then
+           key_p=>this%current%get_key(errc)
+          else
+           errc=GFC_ERROR
+          endif
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function DictionaryIterGetKey
 !-----------------------------------------------------------
         subroutine DictionaryIterDeleteAll(this,ierr,dtor_f)
 !Deletes all dictionary elements, leaving dictionary empty at the end.
