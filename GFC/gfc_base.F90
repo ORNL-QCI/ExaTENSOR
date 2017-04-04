@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Base
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017-04-03 (started 2016-02-17)
+!REVISION: 2017-04-04 (started 2016-02-17)
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -182,40 +182,40 @@
   !GFC generic predicate:
          function gfc_predicate_i(obj) result(pred)
           import:: INTD
-          integer(INTD):: pred       !out: predicate value: {GFC_TRUE, GFC_FALSE, GFC_ERROR, other integers}
-          class(*), intent(in):: obj !in: arbitrary object
+          integer(INTD):: pred               !out: predicate value: {GFC_TRUE, GFC_FALSE, GFC_ERROR, other integers}
+          class(*), intent(in), target:: obj !in: arbitrary object
          end function gfc_predicate_i
   !GFC generic relation:
          function gfc_cmp_i(obj1,obj2) result(cmp)
           import:: INTD
-          integer(INTD):: cmp         !out: result of the comparison (relation): See CMP parameters above
-          class(*), intent(in):: obj1 !in: object 1
-          class(*), intent(in):: obj2 !in: object 2
+          integer(INTD):: cmp                 !out: result of the comparison (relation): See CMP parameters above
+          class(*), intent(in), target:: obj1 !in: object 1
+          class(*), intent(in), target:: obj2 !in: object 2
          end function gfc_cmp_i
   !GFC generic copy constructor (by value):
          function gfc_copy_i(obj,ierr) result(clone)
           import:: INTD
           class(*), pointer:: clone                   !out: clone
-          class(*), intent(in):: obj                  !in: original object
+          class(*), intent(in), target:: obj          !in: original object
           integer(INTD), intent(out), optional:: ierr !out: error code (0:success)
          end function gfc_copy_i
   !GFC generic destructor (destructs the inner state of an object, but does not DEALLOCATE the object):
          function gfc_destruct_i(obj) result(ierr)
           import:: INTD
-          integer(INTD):: ierr          !out: error code (0:success)
-          class(*), intent(inout):: obj !inout: object for destruction
+          integer(INTD):: ierr                  !out: error code (0:success)
+          class(*), intent(inout), target:: obj !inout: object for destruction
          end function gfc_destruct_i
   !GFC generic action:
          function gfc_action_i(obj) result(ierr)
           import:: INTD
-          integer(INTD):: ierr          !out: error code (0:success)
-          class(*), intent(inout):: obj !inout: object to be acted on
+          integer(INTD):: ierr                  !out: error code (0:success)
+          class(*), intent(inout), target:: obj !inout: object to be acted on
          end function gfc_action_i
   !GFC generic printing:
          function gfc_print_i(obj,dev_id) result(ierr)
           import:: INTD
           integer(INTD):: ierr                         !out: error code (0:success)
-          class(*), intent(in):: obj                   !in: arbitrary object
+          class(*), intent(in), target:: obj           !in: arbitrary object
           integer(INTD), intent(in), optional:: dev_id !in: output device id (defaults to screen: 6)
          end function gfc_print_i
  !Deferred:
@@ -257,14 +257,14 @@
           import:: gfc_predicate_t,INTD
           integer(INTD):: res                          !out: result {GFC_TRUE,GFC_FALSE,GFC_ERROR}
           class(gfc_predicate_t), intent(inout):: this !inout: predicate object (may change its state!)
-          class(*), intent(in):: obj                   !in: object on which the predicate is evaluated
+          class(*), intent(in), target:: obj           !in: object on which the predicate is evaluated
          end function gfc_pred_obj_i
   !Deferred: GFC functor action: .act:
          function gfc_func_act_i(this,obj) result(ierr)
           import:: gfc_functor_t,INTD
           integer(INTD):: ierr                       !out: error code
           class(gfc_functor_t), intent(inout):: this !inout: GFC functor (may change its state!)
-          class(*), intent(inout):: obj              !inout: arbitrary object the functor is acting upon
+          class(*), intent(inout), target:: obj      !inout: arbitrary object the functor is acting upon
          end function gfc_func_act_i
         end interface
 !VISIBILITY:

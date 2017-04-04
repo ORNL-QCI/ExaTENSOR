@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Tree
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017-03-27 (started 2016-02-17)
+!REVISION: 2017-04-04 (started 2016-02-17)
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -1181,7 +1181,7 @@
         function some_destructor(obj) result(ierr)
          implicit none
          integer(INTD):: ierr
-         class(*), intent(inout):: obj
+         class(*), intent(inout), target:: obj
          ierr=1
          select type(obj)
          class is(some_t)
@@ -1196,7 +1196,7 @@
         function some_action(obj) result(ierr)
          implicit none
          integer(INTD):: ierr
-         class(*), intent(inout):: obj
+         class(*), intent(inout), target:: obj
          ierr=1
          select type(obj)
          class is(some_t)
@@ -1210,7 +1210,7 @@
         function print_action(obj) result(ierr)
          implicit none
          integer(INTD):: ierr
-         class(*), intent(inout):: obj
+         class(*), intent(inout), target:: obj
          ierr=1
          select type(obj)
          class is(some_t)
@@ -1223,7 +1223,7 @@
         function some_predicate(obj) result(pred)
          implicit none
          integer(INTD):: pred
-         class(*), intent(in):: obj
+         class(*), intent(in), target:: obj
          pred=GFC_FALSE
          select type(obj)
          class is(some_t)

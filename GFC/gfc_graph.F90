@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Graph
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017/04/03
+!REVISION: 2017/04/04
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -79,14 +79,15 @@
          integer(INTL), private:: num_links=0_INTL  !number of links the vertex participates in
          type(dictionary_t), private:: vert_links   !vertex link references organized as an ordered associative container
          contains
-          procedure, private:: VertLinkRefsCtor                      !ctor
-          generic, public:: vert_link_refs_ctor=>VertLinkRefsCtor    !ctors
-          procedure, public:: get_num_links=>VertLinkRefsGetNumLinks !returns the number of links attached to the corresponding vertex
-          procedure, public:: find_link=>VertLinkRefsFindLink        !finds a specific vertex link
-          procedure, public:: add_link=>VertLinkRefsAddLink          !adds a link reference to the vertex
-          procedure, public:: delete_link=>VertLinkRefsDeleteLink    !deletes a link reference from the vertex
-          procedure, public:: delete_all=>VertLinkRefsDeleteAll      !deletes all link references on the vertex
-          final:: vert_link_refs_dtor                                !dtor
+          procedure, private:: VertLinkRefsCtor                        !ctor
+          generic, public:: vert_link_refs_ctor=>VertLinkRefsCtor      !ctors
+          procedure, public:: get_num_links=>VertLinkRefsGetNumLinks   !returns the number of links attached to the corresponding vertex
+          procedure, public:: get_links_iter=>VertLinkRefsGetLinksIter !returns a dictionary iterator to the vertex links
+          procedure, public:: find_link=>VertLinkRefsFindLink          !finds a specific vertex link
+          procedure, public:: add_link=>VertLinkRefsAddLink            !adds a link reference to the vertex
+          procedure, public:: delete_link=>VertLinkRefsDeleteLink      !deletes a link reference from the vertex
+          procedure, public:: delete_all=>VertLinkRefsDeleteAll        !deletes all link references on the vertex
+          final:: vert_link_refs_dtor                                  !dtor
         end type vert_link_refs_t
  !Graph container:
         type, extends(gfc_container_t), public:: graph_t
@@ -95,6 +96,8 @@
          type(list_bi_t), private:: links                  !links (stored by value): Each unique (generally ordered) combination of vertices may only have one link
          integer(INTL), private:: num_links=0_INTL         !total number of links in the graph
          contains
+          procedure, private:: incr_num_links_=>GraphIncrNumLinks   !PRIVATE: increments the number of graph links by one
+          procedure, private:: decr_num_links_=>GraphDecrNumLinks   !PRIVATE: decrements the number of graph links by one
           procedure, public:: is_empty=>GraphIsEmpty                !returns TRUE if the graph is empty
           procedure, public:: is_set=>GraphIsSet                    !returns GFC_TRUE if the graph is set, plus additional info
           procedure, public:: get_num_vertices=>GraphGetNumVertices !returns the total number of vertices in the graph (graph cardinality)
@@ -109,6 +112,7 @@
          type(list_iter_t), private:: link_it                       !graph links iterator
          contains
           procedure, private:: update_status_=>GraphIterUpdateStatus    !PRIVATE: updates graph iterator status ater component updates
+          procedure, private:: renumber_=>GraphIterRenumber             !PRIVATE: renumbers graph vertices in graph links in case of vertex deletion
           procedure, public:: init=>GraphIterInit                       !initializes the iterator by associating it with a graph container
           procedure, public:: reset=>GraphIterReset                     !resets the iterator to the first graph vertex (vertex 0)
           procedure, public:: release=>GraphIterRelease                 !releases the iterator by dissociating it from its container
@@ -123,11 +127,10 @@
           procedure, public:: find_link=>GraphIterFindLink              !finds a specific link in the graph
           procedure, public:: append_vertex=>GraphIterAppendVertex      !appends a new vertex to the graph
           procedure, public:: append_link=>GraphIterAppendLink          !appends a new link between two or more graph vertices
-          procedure, public:: delete_vertex=>GraphIterDeleteVertex      !deletes a specific graph vertex
           procedure, public:: delete_link=>GraphIterDeleteLink          !deletes a specific graph link
+          procedure, public:: delete_vertex=>GraphIterDeleteVertex      !deletes a specific graph vertex
           procedure, public:: delete_all=>GraphIterDeleteAll            !deletes all graph vertices and links
           procedure, public:: merge_vertices=>GraphIterMergeVertices    !merges two or more graph vertices into a single vertex
-         !procedure, public:: split_vertex=>GraphIterSplitVertex        !splits a graph vertex into two or more vertices
         end type graph_iter_t
 !VISIBILITY:
  !non-member:
@@ -147,12 +150,15 @@
  !vert_link_refs_t
         private VertLinkRefsCtor
         private VertLinkRefsGetNumLinks
+        private VertLinkRefsGetLinksIter
         private VertLinkRefsFindLink
         private VertLinkRefsAddLink
         private VertLinkRefsDeleteLink
         private VertLinkRefsDeleteAll
         public vert_link_refs_dtor
  !graph_t:
+        private GraphIncrNumLinks
+        private GraphDecrNumLinks
         private GraphIsEmpty
         private GraphIsSet
         private GraphGetNumVertices
@@ -160,6 +166,7 @@
         public graph_dtor
  !graph_iter_t:
         private GraphIterUpdateStatus
+        private GraphIterRenumber
         private GraphIterInit
         private GraphIterReset
         private GraphIterRelease
@@ -174,8 +181,8 @@
         private GraphIterFindLink
         private GraphIterAppendVertex
         private GraphIterAppendLink
-        private GraphIterDeleteVertex
         private GraphIterDeleteLink
+        private GraphIterDeleteVertex
         private GraphIterDeleteAll
         private GraphIterMergeVertices
 !IMPLEMENTATION:
@@ -412,6 +419,18 @@
          if(present(ierr)) ierr=GFC_SUCCESS
          return
         end function VertLinkRefsGetNumLinks
+!---------------------------------------------------------------------
+        function VertLinkRefsGetLinksIter(this,dict_iter) result(ierr)
+!Returns a dictionary iterator to the vertex links.
+         implicit none
+         integer(INTD):: ierr                                !out: error code
+         class(vert_link_refs_t), intent(in):: this          !in: vertex info
+         class(dictionary_iter_t), intent(inout):: dict_iter !inout: dictionary iterator
+
+         ierr=dict_iter%get_status()
+         if(ierr.eq.GFC_IT_NULL) ierr=dict_iter%init(this%vert_links)
+         return
+        end function VertLinkRefsGetLinksIter
 !------------------------------------------------------------------------------
         function VertLinkRefsFindLink(this,link,ierr,list_link_p) result(found)
 !Searches for a specific graph link in the vertex info object.
@@ -504,11 +523,11 @@
             ierr=dit%init(this%vert_links)
             if(ierr.eq.GFC_SUCCESS) then
              ierr=dit%search(GFC_DICT_DELETE_IF_FOUND,cmp_graph_links,link)
-             if(ierr.ne.GFC_FOUND) then
-              if(ierr.eq.GFC_NOT_FOUND) ierr=GFC_INVALID_REQUEST
-             else
+             if(ierr.eq.GFC_FOUND) then
               this%num_links=this%num_links-1_INTL
               ierr=GFC_SUCCESS
+             else
+              if(ierr.eq.GFC_NOT_FOUND) ierr=GFC_INVALID_REQUEST !link not found at the vertex
              endif
              i=dit%release(); if(i.ne.GFC_SUCCESS.and.ierr.eq.GFC_SUCCESS) ierr=i
             endif
@@ -546,7 +565,23 @@
          errc=this%delete_all(); this%num_links=0_INTL
          return
         end subroutine vert_link_refs_dtor
-![graph_t]=====================================
+![graph_t]================================
+        subroutine GraphIncrNumLinks(this)
+         implicit none
+         class(graph_t), intent(inout):: this !inout: graph
+
+         this%num_links=this%num_links+1_INTL
+         return
+        end subroutine GraphIncrNumLinks
+!-----------------------------------------
+        subroutine GraphDecrNumLinks(this)
+         implicit none
+         class(graph_t), intent(inout):: this !inout: graph
+
+         this%num_links=this%num_links-1_INTL
+         return
+        end subroutine GraphDecrNumLinks
+!----------------------------------------------
         function GraphIsEmpty(this) result(res)
 !Returns TRUE if the graph is empty.
          implicit none
@@ -630,6 +665,21 @@
          errc=this%set_status_(this%vert_it%get_status())
          return
         end subroutine GraphIterUpdateStatus
+!--------------------------------------------------------
+        subroutine GraphIterRenumber(this,vertex_id,ierr)
+!Renumbers graph vertices in graph links in case of vertex deletion.
+!All vertex id's larger than <vertex_id> will be decremented by one.
+         implicit none
+         class(graph_iter_t), intent(inout):: this   !inout: graph iterator
+         integer(INTL), intent(in):: vertex_id       !in: deleted vertex id
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=GFC_SUCCESS
+         
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine GraphIterRenumber
 !-----------------------------------------------------
         function GraphIterInit(this,cont) result(ierr)
 !Initializes the iterator with its container and resets it to the beginning.
@@ -692,7 +742,7 @@
 !Note that the dynamic type of the returned pointer is <vector_elem_t>
 !since the graph vertices (<graph_vertex_t>) are stored in a vector.
          implicit none
-         class(gfc_cont_elem_t), pointer:: pntee     !out: container element currently pointed to by the iterator
+         class(gfc_cont_elem_t), pointer:: pntee     !out: container element currently pointed to by the iterator: <vector_elem_t>
          class(graph_iter_t), intent(in):: this      !in: iterator
          integer(INTD), intent(out), optional:: ierr !out: error code
 
@@ -864,7 +914,8 @@
         end function GraphIterMoveTo
 !---------------------------------------------------------------
         function GraphIterFindLink(this,link,ierr) result(found)
-!Finds a specific link in the graph.
+!Finds a specific link in the graph. Passing an empty graph here
+!will not raise an error.
          implicit none
          logical:: found                             !out: found or not: {TRUE|FALSE}
          class(graph_iter_t), intent(in):: this      !in: graph iterator
@@ -911,7 +962,7 @@
          integer(INTD):: ierr                               !out: error code
          class(graph_iter_t), intent(inout):: this          !inout: graph iterator
          class(graph_vertex_t), intent(in), target:: vertex !in: new vertex
-         type(vert_link_ref_t):: vlr
+         type(vert_link_ref_t):: vlr !empty <vert_link_refs_t>
 
          ierr=this%vert_it%append(vertex)
          if(ierr.eq.GFC_SUCCESS) ierr=this%vert_ln_it%append(vlr)
@@ -938,6 +989,7 @@
            if(ierr.eq.GFC_SUCCESS) then
             ierr=this%link_it%append(link) !append the new graph link to the list of graph links (by value)
             if(ierr.eq.GFC_SUCCESS) then
+             call this%container%incr_num_links_()
              ierr=this%link_it%reset_back()
              if(ierr.eq.GFC_SUCCESS) then
               gcp=>this%link_it%pointee(ierr)
@@ -984,26 +1036,37 @@
          integer(INTD):: ierr                      !out: error code
          class(graph_iter_t), intent(inout):: this !inout: graph iterator
          class(graph_link_t), intent(in):: link    !in: graph link to delete
+         integer(INTD):: i
          integer(INTL):: vid
          class(*), pointer:: up
          class(vert_link_refs_t), pointer:: vlrp
          class(list_elem_t), pointer:: lep
-         type(dictionary_iter_t):: dit
+         logical:: found
 
          ierr=this%get_status()
          if(ierr.eq.GFC_IT_ACTIVE.or.ierr.eq.GFC_IT_DONE) then
           if(link%is_set(ierr)) then
            if(ierr.eq.GFC_SUCCESS) then
-            vloop: do i=1,link%rank
-             vid=link%vertices(i)
+            lep=>NULL()
+            vloop: do i=link%rank,1,-1 !loop over the vertices participating in the link
+             vid=link%vertices(i) !vertex id
              up=>this%vert_ln_it%element_value(vid,ierr)
              if(.not.associated(up)) ierr=GFC_ERROR
              if(ierr.eq.GFC_SUCCESS) then
               select type(up); class is(vert_link_refs_t); vlrp=>up; end select
               if(associated(vlrp) then
-               ierr=dit%init(vlrp%vert_links); if(ierr.ne.GFC_SUCCESS) exit vloop
-               ierr=dit%search(GFC_DICT_DELETE_IF_FOUND,
-               ierr=dit%release(); if(ierr.ne.GFC_SUCCESS) exit vloop
+               found=vlrp%find_link(link,ierr,lep)
+               if(found.and.ierr.eq.GFC_SUCCESS) then
+                ierr=vlrp%delete_link(link); if(ierr.ne.GFC_SUCCESS) exit vloop !delete the link reference from each vertex
+                if(i.eq.1) then !last vertex
+                 call this%link_it%jump_(lep) !jump to the list element to be deleted
+                 ierr=this%link_it%delete()   !delete that list element from the list
+                 if(ierr.ne.GFC_SUCCESS) exit vloop
+                 call this%container%decr_num_links_()
+                endif
+               else
+                ierr=GFC_CORRUPTED_CONT; exit vloop
+               endif
               else
                ierr=GFC_CORRUPTED_CONT; exit vloop
               endif
@@ -1011,6 +1074,7 @@
               exit vloop
              endif
             enddo vloop
+            lep=>NULL(); vlrp=>NULL(); up=>NULL()
            endif
           else
            ierr=GFC_INVALID_ARGS
@@ -1019,5 +1083,55 @@
          call this%update_status_()
          return
         end function GraphIterDeleteLink
+!------------------------------------------------------------------
+        function GraphIterDeleteVertex(this,vertex_id) result(ierr)
+!Deletes a specific graph vertex (and all its links).
+         implicit none
+         integer(INTD):: ierr                      !out: error code
+         class(graph_iter_t), intent(inout):: this !inout: graph iterator
+         integer(INTL), intent(in):: vertex_id     !in: vertex id
+         class(*), pointer:: up
+         class(vert_link_refs_t), pointer:: vlrp
+         type(dictionary_iter_t):: dit
+         class(graph_link_t), pointer:: glp
+
+         ierr=this%get_status()
+         if(ierr.eq.GFC_IT_ACTIVE.or.ierr.eq.GFC_IT_DONE) then
+          ierr=this%vert_it%move_to(vertex_id)
+          if(ierr.eq.GFC_SUCCESS) then
+           ierr=this%vert_ln_it%move_to(vertex_id)
+           if(ierr.eq.GFC_SUCCESS) then
+            up=>this%vert_ln_it%get_value(ierr)
+            if(ierr.eq.GFC_SUCCESS) then
+             if(associated(up)) then
+              select type(up); class is(vert_link_refs_t); vlrp=>up; end select
+              if(associated(vlrp)) then
+               ierr=vlrp%get_links_iter(dit)
+               dloop: do while(ierr.eq.GFC_SUCCESS)
+                up=>dit%get_key(ierr); if(ierr.ne.GFC_SUCCESS) exit dloop
+                if(.not.associated(up)) then; ierr=GFC_ERROR; exit dloop; endif
+                select type(up); class is(graph_link_t); glp=>up; end select
+                ierr=this%delete_link(glp); if(ierr.ne.GFC_SUCCESS) exit dloop
+                ierr=dit%next()
+               enddo dloop
+               if(ierr.eq.GFC_NO_MOVE) then
+                ierr=dit%release()
+                if(ierr.eq.GFC_SUCCESS) ierr=this%vert_ln_it%delete()
+                if(ierr.eq.GFC_SUCCESS) ierr=this%vert_it%delete()
+               endif
+              else
+               ierr=GFC_CORRUPTED_CONT
+              endif
+             else
+              ierr=GFC_ERROR
+             endif
+            endif
+            glp=>NULL(); vlrp=>NULL(); up=>NULL()
+           endif
+          endif
+         endif
+         call this%update_status_()
+         return
+        end function GraphIterDeleteVertex
 
        end module gfc_graph
