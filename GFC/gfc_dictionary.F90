@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Dictionary (ordered map), AVL BST
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017/04/03 (recycling my old dictionary implementation)
+!REVISION: 2017/04/05 (recycling my old dictionary implementation)
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -57,7 +57,7 @@
          contains
           procedure, private:: DictElemConstruct
           generic, public:: dict_elem_ctor=>DictElemConstruct            !constructs a dictionary element from a key-value pair
-          procedure, public:: destruct=>DictElemDestruct                 !destructs a dictionary element
+          procedure, public:: destruct_keyval=>DictElemDestruct          !destructs a dictionary element (both key and value)
           procedure, non_overridable, public:: is_root=>DictElemIsRoot   !returns GFC_TRUE if the element is the root of the dictionary binary search tree
           procedure, non_overridable, public:: is_leaf=>DictElemIsLeaf   !returns GFC_TRUE if the element is a leaf of the dictionary binary search tree
           procedure, public:: get_key=>DictElemGetKey                    !returns an unlimited polymorphic pointer to the element key
@@ -71,9 +71,11 @@
          class(dict_elem_t), pointer, private:: root=>NULL()           !root of the AVL binary search tree (boundary element)
 !        class(dict_elem_t), pointer, private:: first=>NULL()          !first element (boundary element) `Do I need this?
 !        class(dict_elem_t), pointer, private:: last=>NULL()           !last element (boundary element) `Do I need this?
+         logical, private:: key_storage=GFC_BY_VAL                     !dictionary key storage policy
          contains
           procedure, public:: is_empty=>DictionaryIsEmpty                 !returns GFC_TRUE if the dictionary is empty, GFC_FALSE otherwise (or error code)
           procedure, public:: is_subdictionary=>DictionaryIsSubdictionary !returns TRUE if the dictionary is subdictionary, FALSE otherwise
+          procedure, public:: set_key_storage=>DictionarySetKeyStorage    !sets the key storage policy (by value or by reference), the dictionary must be empty
           procedure, private:: reroot_=>DictionaryReroot                  !PRIVATE: changes the root of the dictionary
         end type dictionary_t
  !Dictionary iterator:
@@ -117,6 +119,7 @@
  !dictionary_t:
         private DictionaryIsEmpty
         private DictionaryIsSubdictionary
+        private DictionarySetKeyStorage
         private DictionaryReroot
  !dictionary_iter_t:
         private DictionaryIterJump
@@ -140,11 +143,11 @@
         private DictionaryIterSortToVector
 !DEFINITIONS:
        contains
-![dict_elem_t]===================================================================================
+![dict_elem_t]=============================================================================================
 #ifdef NO_GNU
-        subroutine DictElemConstruct(this,key,val,ierr,assoc_val,key_copy_ctor_f,val_copy_ctor_f) !`GCC has a bug with this line
+        subroutine DictElemConstruct(this,key,val,ierr,assoc_key,assoc_val,key_copy_ctor_f,val_copy_ctor_f) !`GCC has a bug with this line
 #else
-        subroutine DictElemConstruct(this,key,val,ierr,assoc_val)
+        subroutine DictElemConstruct(this,key,val,ierr,assoc_key,assoc_val)
 #endif
 !Given a key-value pair, constructs an element of a dictionary. Note
 !that if construction fails, the element may be left underconstructed,
@@ -154,6 +157,7 @@
          class(*), target, intent(in):: key                 !in: key to be stored (by value only)
          class(*), target, intent(in):: val                 !in: value to be stored (either by value or by reference)
          integer(INTD), intent(out), optional:: ierr        !out: error code
+         logical, intent(in), optional:: assoc_key          !in: if TRUE, <key> will be stored by reference, otherwise by value (default)
          logical, intent(in), optional:: assoc_val          !in: if TRUE, <val> will be stored by reference, otherwise by value (default)
 #ifdef NO_GNU
          procedure(gfc_copy_i), optional:: key_copy_ctor_f  !in: user-defined generic copy constructor for the key (by value)
@@ -161,32 +165,37 @@
 #endif
          integer(INTD):: errc
          integer:: ier
-         logical:: assoc
+         logical:: assk,assv
 
          errc=GFC_SUCCESS
-         if(present(assoc_val)) then; assoc=assoc_val; else; assoc=.FALSE.; endif
+         if(present(assoc_key)) then; assk=assoc_key; else; assk=.FALSE.; endif
+         if(present(assoc_val)) then; assv=assoc_val; else; assv=.FALSE.; endif
          if(this%in_use(errc,set_lock=.TRUE.,report_refs=.FALSE.).eq.GFC_FALSE) then
           if(this%is_empty()) then
 #ifdef NO_GNU
            if(present(val_copy_ctor_f)) then
-            call this%construct_base(val,errc,assoc_only=assoc,copy_ctor_f=val_copy_ctor_f,locked=.TRUE.)
+            call this%construct_base(val,errc,assoc_only=assv,copy_ctor_f=val_copy_ctor_f,locked=.TRUE.)
            else
 #endif
-            call this%construct_base(val,errc,assoc_only=assoc,locked=.TRUE.)
+            call this%construct_base(val,errc,assoc_only=assv,locked=.TRUE.)
 #ifdef NO_GNU
            endif
 #endif
            if(errc.eq.GFC_SUCCESS) then !base constructor succeeded
-#ifdef NO_GNU
-            if(present(key_copy_ctor_f)) then
-             this%key=>key_copy_ctor_f(key,errc)
+            if(assk) then
+             this%key=>key
             else
-#endif
-             allocate(this%key,SOURCE=key,STAT=ier)
-             if(ier.ne.0) errc=GFC_MEM_ALLOC_FAILED
 #ifdef NO_GNU
-            endif
+             if(present(key_copy_ctor_f)) then
+              this%key=>key_copy_ctor_f(key,errc)
+             else
 #endif
+              allocate(this%key,SOURCE=key,STAT=ier)
+              if(ier.ne.0) errc=GFC_MEM_ALLOC_FAILED
+#ifdef NO_GNU
+             endif
+#endif
+            endif
            endif
           else
            errc=GFC_ELEM_NOT_EMPTY
@@ -202,8 +211,8 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine DictElemConstruct
-!-----------------------------------------------------------
-        subroutine DictElemDestruct(this,ierr,dtor_f,locked)
+!---------------------------------------------------------------------
+        subroutine DictElemDestruct(this,ierr,key_assoc,dtor_f,locked)
 !Destructs the key-value pair inside the dictionary element.
 !<dtor_f> provides an optional explicit destructor for the dictionary
 !element value, if needed. Alternatively, the value may have the final
@@ -212,25 +221,30 @@
          implicit none
          class(dict_elem_t), intent(inout):: this     !inout: element of a dictionary
          integer(INTD), intent(out), optional:: ierr  !out: error code
+         logical, intent(in), optional:: key_assoc    !in: if TRUE, the key will be assumed stored by reference
          procedure(gfc_destruct_i), optional:: dtor_f !in: explicit destructor for the value
          logical, intent(in), optional:: locked       !in: if TRUE, the dictionary element will be assumed already locked (defaults to FALSE)
          integer(INTD):: errc
-         logical:: lckd,lck
+         logical:: assk,lckd,lck
          integer:: ier
 
          errc=GFC_SUCCESS
+         if(present(key_assoc)) then; assk=key_assoc; else; assk=.FALSE.; endif
          if(present(locked)) then; lckd=locked; else; lckd=.FALSE.; endif; lck=lckd
          if(.not.lck) lck=(this%in_use(errc,set_lock=.TRUE.,report_refs=.FALSE.).eq.GFC_FALSE)
          if(lck) then
           if(errc.eq.GFC_SUCCESS) then
            if(associated(this%key)) then
-            if(present(dtor_f)) then
-             call this%gfc_cont_elem_t%destruct(errc,dtor_f=dtor_f,locked=.TRUE.)
-            else
-             call this%gfc_cont_elem_t%destruct(errc,locked=.TRUE.)
+            if(.not.assk) then
+             if(present(dtor_f)) then
+              call this%gfc_cont_elem_t%destruct(errc,dtor_f=dtor_f,locked=.TRUE.)
+             else
+              call this%gfc_cont_elem_t%destruct(errc,locked=.TRUE.)
+             endif
+             deallocate(this%key,STAT=ier)
+             if(ier.ne.0.and.errc.eq.GFC_SUCCESS) errc=GFC_MEM_FREE_FAILED
             endif
-            deallocate(this%key,STAT=ier)
-            if(ier.ne.0.and.errc.eq.GFC_SUCCESS) errc=GFC_MEM_FREE_FAILED
+            this%key=>NULL()
            else
             errc=GFC_CORRUPTED_CONT
            endif
@@ -410,6 +424,24 @@
          if(present(ierr)) ierr=errc
          return
         end function DictionaryIsSubdictionary
+!-----------------------------------------------------------
+        subroutine DictionarySetKeyStorage(this,policy,ierr)
+!Sets the key storage policy.
+         implicit none
+         class(dictionary_t), intent(inout):: this   !inout: dictionary (must be empty)
+         logical, intent(in):: policy                !in: storage policy: {GFC_BY_VAL,GFC_BY_REF}
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=GFC_SUCCESS
+         if(.not.associated(this%root)) then
+          this%key_storage=policy
+         else
+          errc=GFC_INVALID_REQUEST
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine DictionarySetKeyStorage
 !-------------------------------------------------
         subroutine DictionaryReroot(this,new_root)
 !Changes the root of the dictionary.
@@ -946,9 +978,9 @@
             do while(errc.eq.GFC_SUCCESS); errc=this%move_down(); enddo
             if(errc.eq.GFC_NO_MOVE.and.associated(this%current)) then
              if(present(dtor_f)) then
-              call this%current%destruct(errc,dtor_f=dtor_f)
+              call this%current%destruct_keyval(errc,key_assoc=this%container%key_storage,dtor_f=dtor_f)
              else
-              call this%current%destruct(errc)
+              call this%current%destruct_keyval(errc,key_assoc=this%container%key_storage)
              endif
              if(errc.eq.GFC_SUCCESS) then
               if(associated(this%current,this%container%root)) then !last element (root)
@@ -1267,9 +1299,9 @@
             endif
            endif
            if(present(dtor_val_f)) then
-            call curr%destruct(j,dtor_f=dtor_val_f)
+            call curr%destruct_keyval(j,key_assoc=dict%key_storage,dtor_f=dtor_val_f)
            else
-            call curr%destruct(j)
+            call curr%destruct_keyval(j,key_assoc=dict%key_storage)
            endif
            if(j.ne.GFC_SUCCESS) then
             if(VERBOSE) write(CONS_OUT,'("#ERROR(gfc::dictionary::search): delete: dictionary element destruction failed!")')
@@ -1323,20 +1355,21 @@
              if(present(store_by)) then
 #ifdef NO_GNU
               if(present(copy_ctor_val_f)) then
-               call curr%dict_elem_ctor(key,value_in,j,assoc_val=store_by,val_copy_ctor_f=copy_ctor_val_f)
+               call curr%dict_elem_ctor(key,value_in,j,assoc_key=dict%key_storage,assoc_val=store_by,&
+                                       &val_copy_ctor_f=copy_ctor_val_f)
               else
 #endif
-               call curr%dict_elem_ctor(key,value_in,j,assoc_val=store_by)
+               call curr%dict_elem_ctor(key,value_in,j,assoc_key=dict%key_storage,assoc_val=store_by)
 #ifdef NO_GNU
               endif
 #endif
              else
 #ifdef NO_GNU
               if(present(copy_ctor_val_f)) then
-               call curr%dict_elem_ctor(key,value_in,j,val_copy_ctor_f=copy_ctor_val_f)
+               call curr%dict_elem_ctor(key,value_in,j,assoc_key=dict%key_storage,val_copy_ctor_f=copy_ctor_val_f)
               else
 #endif
-               call curr%dict_elem_ctor(key,value_in,j)
+               call curr%dict_elem_ctor(key,value_in,j,assoc_key=dict%key_storage)
 #ifdef NO_GNU
               endif
 #endif
@@ -1362,20 +1395,21 @@
              if(present(store_by)) then
 #ifdef NO_GNU
               if(present(copy_ctor_val_f)) then
-               call curr%dict_elem_ctor(key,value_in,j,assoc_val=store_by,val_copy_ctor_f=copy_ctor_val_f)
+               call curr%dict_elem_ctor(key,value_in,j,assoc_key=dict%key_storage,assoc_val=store_by,&
+                                       &val_copy_ctor_f=copy_ctor_val_f)
               else
 #endif
-               call curr%dict_elem_ctor(key,value_in,j,assoc_val=store_by)
+               call curr%dict_elem_ctor(key,value_in,j,assoc_key=dict%key_storage,assoc_val=store_by)
 #ifdef NO_GNU
               endif
 #endif
              else
 #ifdef NO_GNU
               if(present(copy_ctor_val_f)) then
-               call curr%dict_elem_ctor(key,value_in,j,val_copy_ctor_f=copy_ctor_val_f)
+               call curr%dict_elem_ctor(key,value_in,j,assoc_key=dict%key_storage,val_copy_ctor_f=copy_ctor_val_f)
               else
 #endif
-               call curr%dict_elem_ctor(key,value_in,j)
+               call curr%dict_elem_ctor(key,value_in,j,assoc_key=dict%key_storage)
 #ifdef NO_GNU
               endif
 #endif

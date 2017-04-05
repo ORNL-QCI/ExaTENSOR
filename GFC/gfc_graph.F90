@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Graph
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017/04/04
+!REVISION: 2017/04/05
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -61,10 +61,10 @@
         end type graph_vertex_t
  !Link between vertices (directed/undirected edge or hyperedge):
         type, public:: graph_link_t
-         integer(INTL), private:: color=0_INTL          !link color
-         logical, private:: directed=.FALSE.            !directed or not (if directed, the order of vertices will matter)
-         integer(INTD), private:: rank=0                !number of vertices in the link (2 for ordinary graphs, >2 for hypergraphs)
-         integer(INTL), allocatable, private:: verts(:) !vertices participating in the link
+         integer(INTL), private:: color=0_INTL             !link color
+         logical, private:: directed=.FALSE.               !directed or not (if directed, the order of vertices will matter)
+         integer(INTD), private:: rank=0                   !number of vertices in the link (2 for ordinary graphs, >2 for hypergraphs)
+         integer(INTL), allocatable, private:: vertices(:) !vertices participating in the link
          contains
           procedure, private:: GraphLinkCtor               !ctor
           generic, public:: graph_link_ctor=>GraphLinkCtor !ctors
@@ -274,18 +274,18 @@
          errc=GFC_SUCCESS
          this%rank=size(vertices)
          if(this%rank.ge.2) then !2 for graphs, >2 for hypergraphs
-          allocate(this%verts(1:this%rank),STAT=errc)
+          allocate(this%vertices(1:this%rank),STAT=errc)
           if(errc.eq.0) then
-           this%verts(:)=vertices(:)
+           this%vertices(:)=vertices(:)
            if(present(color)) then; this%color=color; else; this%color=0_INTL; endif
            if(present(directed)) then; this%directed=directed; else; this%directed=.FALSE.; endif
            if(.not.this%directed) then !undirected links need to be ordered
             if(this%rank.eq.2) then
-             if(this%verts(1).gt.this%verts(2)) then
-              ax=this%verts(1); this%verts(1)=this%verts(2); this%verts(2)=ax
+             if(this%vertices(1).gt.this%vertices(2)) then
+              ax=this%vertices(1); this%vertices(1)=this%vertices(2); this%vertices(2)=ax
              endif
             else
-             call merge_sort(int(this%rank,INTL),this%verts(1:this%rank),sgn)
+             call merge_sort(int(this%rank,INTL),this%vertices(1:this%rank),sgn)
             endif
            endif
           else
@@ -367,9 +367,9 @@
             cmp=CMP_GT
            else
             do i=1,this%rank
-             if(this%verts(i).lt.another%verts(i)) then
+             if(this%vertices(i).lt.another%vertices(i)) then
               cmp=CMP_LT; exit
-             elseif(this%verts(i).gt.another%verts(i)) then
+             elseif(this%vertices(i).gt.another%vertices(i)) then
               cmp=CMP_GT; exit
              endif
             enddo
@@ -393,7 +393,7 @@
          implicit none
          type(graph_link_t):: this
 
-         if(allocated(this%verts)) deallocate(this%verts)
+         if(allocated(this%vertices)) deallocate(this%vertices)
          this%rank=0; this%color=0_INTL; this%directed=.FALSE.
          return
         end subroutine graph_link_dtor
@@ -401,10 +401,13 @@
         subroutine VertLinkRefsCtor(this,ierr)
 !Ctor.
          implicit none
-         class(vert_link_refs_t), intent(out):: this
-         integer(INTD), intent(out), optional:: ierr
+         class(vert_link_refs_t), intent(out):: this !out: vertex info
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
 
-         if(present(ierr)) ierr=GFC_SUCCESS
+         this%num_links=0_INTL
+         call this%vert_links%set_key_storage(GFC_BY_REF,errc)
+         if(present(ierr)) ierr=errc
          return
         end subroutine VertLinkRefsCtor
 !--------------------------------------------------------------------
@@ -454,7 +457,7 @@
             found=(errc.eq.GFC_FOUND)
             if(errc.eq.GFC_NOT_FOUND.or.found) then
              errc=GFC_SUCCESS
-             if(found.and.present(list_link_p) then
+             if(found.and.present(list_link_p)) then
               if(associated(up)) then
                select type(up)
                class is(list_elem_t)
@@ -492,7 +495,7 @@
           if(ierr.eq.GFC_SUCCESS) then
            ierr=dit%init(this%vert_links)
            if(ierr.eq.GFC_SUCCESS) then
-            ierr=dit%search(GFC_DICT_ADD_IF_NOT_FOUND,cmp_graph_links,link,link_ref,GFC_BY_REF) !`the key <link> should be stored by reference as well in future!
+            ierr=dit%search(GFC_DICT_ADD_IF_NOT_FOUND,cmp_graph_links,link,link_ref,GFC_BY_REF)
             if(ierr.eq.GFC_NOT_FOUND) then
              this%num_links=this%num_links+1_INTL
              ierr=GFC_SUCCESS
@@ -551,7 +554,7 @@
 
          ierr=dit%init(this%vert_links)
          if(ierr.eq.GFC_SUCCESS) then
-          call dit%delete_all(ierr)
+          call dit%delete_all(ierr); if(ierr.eq.GFC_SUCCESS) this%num_links=0_INTL
           i=dit%release(); if(i.ne.GFC_SUCCESS.and.ierr.eq.GFC_SUCCESS) ierr=i
          endif
          return
@@ -673,10 +676,41 @@
          class(graph_iter_t), intent(inout):: this   !inout: graph iterator
          integer(INTL), intent(in):: vertex_id       !in: deleted vertex id
          integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc
+         integer(INTD):: i,errc
+         integer(INTL):: vlv,vll,vid
+         class(*), pointer:: up
+         class(graph_link_t), pointer:: glp
 
-         errc=GFC_SUCCESS
-         
+         if(vertex_id.ge.0_INTL) then
+          vlv=this%vert_it%get_length(errc)
+          if(errc.eq.GFC_SUCCESS) then
+           vll=this%vert_ln_it%get_length(errc)
+           if(errc.eq.GFC_SUCCESS) then
+            if(vlv.eq.vll) then
+             if(vlv.gt.0_INTL.and.vertex_id.lt.vlv.and.this%get_num_links().gt.0_INTL) then
+              errc=this%link_it%reset()
+              lloop: do while(errc.eq.GFC_SUCCESS)
+               up=>this%link_it%get_value(errc); if(errc.ne.GFC_SUCCESS) exit lloop
+               if(.not.associated(up)) then; errc=GFC_ERROR; exit lloop; endif
+               select type(up); class is(graph_link_t); glp=>up; end select
+               if(.not.associated(glp)) then; errc=GFC_CORRUPTED_CONT; exit lloop; endif
+               do i=1,glp%rank
+                vid=glp%vertices(i); if(vid.eq.vertex_id) then; errc=GFC_ERROR; exit lloop; endif
+                if(vid.gt.vertex_id) glp%vertices(i)=vid-1_INTL
+               enddo
+               errc=this%link_it%next()
+              enddo lloop
+              if(errc.eq.GFC_NO_MOVE) errc=this%link_it%reset()
+              glp=>NULL(); up=>NULL()
+             endif
+            else
+             errc=GFC_CORRUPTED_CONT
+            endif
+           endif
+          endif
+         else
+          errc=GFC_INVALID_ARGS
+         endif
          if(present(ierr)) ierr=errc
          return
         end subroutine GraphIterRenumber
@@ -875,7 +909,7 @@
            n=size(vertices)
            aloop: do i=1,n
             up=>this%vert_ln_it%element_value(vertices(i),errc); if(errc.ne.GFC_SUCCESS) exit aloop !up => <vert_link_refs_t>
-            if(.not.associated(up))) then; errc=GFC_ERROR; exit aloop; endif
+            if(.not.associated(up)) then; errc=GFC_ERROR; exit aloop; endif
             select type(up); class is(vert_link_refs_t); vlrp=>up; end select
             if(.not.associated(vlrp)) then; errc=GFC_CORRUPTED_CONT; exit aloop; endif
             if(vlrp%num_links.gt.0_INTL) then
@@ -962,10 +996,13 @@
          integer(INTD):: ierr                               !out: error code
          class(graph_iter_t), intent(inout):: this          !inout: graph iterator
          class(graph_vertex_t), intent(in), target:: vertex !in: new vertex
-         type(vert_link_ref_t):: vlr !empty <vert_link_refs_t>
+         type(vert_link_refs_t):: vlr
 
          ierr=this%vert_it%append(vertex)
-         if(ierr.eq.GFC_SUCCESS) ierr=this%vert_ln_it%append(vlr)
+         if(ierr.eq.GFC_SUCCESS) then
+          call vlr%vert_link_refs_ctor(ierr)
+          if(ierr.eq.GFC_SUCCESS) ierr=this%vert_ln_it%append(vlr)
+         endif
          call this%update_status_()
          return
         end function GraphIterAppendVertex
@@ -1054,7 +1091,7 @@
              if(.not.associated(up)) ierr=GFC_ERROR
              if(ierr.eq.GFC_SUCCESS) then
               select type(up); class is(vert_link_refs_t); vlrp=>up; end select
-              if(associated(vlrp) then
+              if(associated(vlrp)) then
                found=vlrp%find_link(link,ierr,lep)
                if(found.and.ierr.eq.GFC_SUCCESS) then
                 ierr=vlrp%delete_link(link); if(ierr.ne.GFC_SUCCESS) exit vloop !delete the link reference from each vertex
@@ -1085,11 +1122,18 @@
         end function GraphIterDeleteLink
 !------------------------------------------------------------------
         function GraphIterDeleteVertex(this,vertex_id) result(ierr)
-!Deletes a specific graph vertex (and all its links).
+!Deletes a specific graph vertex (and all its links). If the vertex
+!being deleted is not the last vertex, all subsequent graph vertices
+!will be renumbered by one less. The graph links will be renumbered as well.
+!The iterator position will not change, unless the iterator is positioned
+!on the vertex being deleted, in which case the iterator will acquire
+!a status of GFC_IT_DONE.
          implicit none
          integer(INTD):: ierr                      !out: error code
          class(graph_iter_t), intent(inout):: this !inout: graph iterator
-         integer(INTL), intent(in):: vertex_id     !in: vertex id
+         integer(INTL), intent(in):: vertex_id     !in: id of the vertex to be deleted: [0..max]
+         integer(INTD):: i
+         integer(INTL):: vid
          class(*), pointer:: up
          class(vert_link_refs_t), pointer:: vlrp
          type(dictionary_iter_t):: dit
@@ -1097,6 +1141,7 @@
 
          ierr=this%get_status()
          if(ierr.eq.GFC_IT_ACTIVE.or.ierr.eq.GFC_IT_DONE) then
+          vid=this%vert_it%get_offset() !save current iterator position, -1 for GFC_IT_DONE
           ierr=this%vert_it%move_to(vertex_id)
           if(ierr.eq.GFC_SUCCESS) then
            ierr=this%vert_ln_it%move_to(vertex_id)
@@ -1118,6 +1163,9 @@
                 ierr=dit%release()
                 if(ierr.eq.GFC_SUCCESS) ierr=this%vert_ln_it%delete()
                 if(ierr.eq.GFC_SUCCESS) ierr=this%vert_it%delete()
+                if(ierr.eq.GFC_SUCCESS) call this%renumber_(vertex_id,ierr)
+               else
+                i=dit%release()
                endif
               else
                ierr=GFC_CORRUPTED_CONT
@@ -1128,10 +1176,70 @@
             endif
             glp=>NULL(); vlrp=>NULL(); up=>NULL()
            endif
+           if(vid.ge.0_INTL.and.vid.ne.vertex_id) then
+            if(vid.gt.vertex_id) vid=vid-1_INTL !vertex numeration shift by one
+            i=this%vert_it%move_to(vid); if(i.ne.GFC_SUCCESS.and.ierr.eq.GFC_SUCCESS) ierr=i
+            i=this%vert_ln_it%move_to(vid); if(i.ne.GFC_SUCCESS.and.ierr.eq.GFC_SUCCESS) ierr=i
+           else
+            i=this%vert_it%set_status_(GFC_IT_DONE); if(i.ne.GFC_SUCCESS.and.ierr.eq.GFC_SUCCESS) ierr=i
+            i=this%vert_ln_it%set_status_(GFC_IT_DONE); if(i.ne.GFC_SUCCESS.and.ierr.eq.GFC_SUCCESS) ierr=i
+           endif
           endif
          endif
          call this%update_status_()
          return
         end function GraphIterDeleteVertex
+!-----------------------------------------------------
+        function GraphIterDeleteAll(this) result(ierr)
+!Deletes all graph vertices (and links).
+         implicit none
+         integer(INTD):: ierr                      !out: error code
+         class(graph_iter_t), intent(inout):: this !inout: graph iterator
+         class(*), pointer:: up
+         class(graph_link_t), pointer:: glp
+         integer(INTD):: errc
+
+         ierr=this%get_status()
+         if(ierr.eq.GFC_IT_DONE) then
+          ierr=this%reset(); if(ierr.eq.GFC_SUCCESS) ierr=this%get_status()
+         endif
+         if(ierr.eq.GFC_IT_ACTIVE) then
+          ierr=GFC_SUCCESS
+          if(this%get_num_links().gt.0_INTL) then
+           ierr=this%link_it%reset()
+           do while(ierr.eq.GFC_SUCCESS)
+            up=>this%link_it%get_value(ierr); if(ierr.ne.GFC_SUCCESS) exit
+            if(.not.associated(up)) then; ierr=GFC_ERROR; exit; endif
+            select type(up); class is(graph_link_t); glp=>up; end select
+            if(.not.associated(glp)) then; ierr=GFC_CORRUPTED_CONT; exit; endif
+            ierr=this%delete_link(glp); if(ierr.ne.GFC_SUCCESS) exit
+            ierr=this%link_it%next()
+           enddo
+           if(ierr.eq.GFC_NO_MOVE) ierr=GFC_SUCCESS
+           glp=>NULL(); up=>NULL()
+          endif
+          errc=this%vert_ln_it%delete_all(); if(errc.ne.GFC_SUCCESS.and.ierr.eq.GFC_SUCCESS) ierr=errc
+          errc=this%vert_it%delete_all(); if(errc.ne.GFC_SUCCESS.and.ierr.eq.GFC_SUCCESS) ierr=errc
+         elseif(ierr.eq.GFC_IT_EMPTY) then
+          ierr=GFC_SUCCESS
+         endif
+         call this%update_status_()
+         return
+        end function GraphIterDeleteAll
+!-------------------------------------------------------------------
+        subroutine GraphIterMergeVertices(this,vertex1,vertex2,ierr)
+!Merges two graph vertices into a single one. The vertex numeration
+!may change, in which case all relevant graph links will be updated.
+         class(graph_iter_t), intent(inout):: this   !inout: graph iterator
+         integer(INTL), intent(in):: vertex1         !in: vertex id 1
+         integer(INTL), intent(in):: vertex2         !in: vertex id 2
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=GFC_SUCCESS
+         !`Write
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine GraphIterMergeVertices
 
        end module gfc_graph

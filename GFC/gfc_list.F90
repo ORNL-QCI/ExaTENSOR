@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Bi-directional linked list
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017-04-03 (started 2016-02-28)
+!REVISION: 2017-04-05 (started 2016-02-28)
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -844,10 +844,10 @@
           call this%current%incr_ref_()
           errc=this%set_status_(GFC_IT_ACTIVE)
          else
-          if(associated(this%container%root)) then
-           errc=this%set_status_(GFC_IT_DONE)
-          else
+          if(this%container%is_empty().eq.GFC_TRUE) then
            errc=this%set_status_(GFC_IT_EMPTY)
+          else
+           errc=this%set_status_(GFC_IT_DONE)
           endif
          endif
          return
