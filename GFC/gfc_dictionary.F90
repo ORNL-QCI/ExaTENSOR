@@ -1733,7 +1733,7 @@
         function cmp_key_test(up1,up2) result(cmp)
          implicit none
          integer(INTD):: cmp
-         class(*), intent(in):: up1,up2
+         class(*), intent(in), target:: up1,up2
          integer(INTD):: i
 
          cmp=GFC_CMP_ERR
