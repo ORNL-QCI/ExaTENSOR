@@ -1,9 +1,9 @@
 !Basic object packing/unpacking primitives.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2016/08/03
+!REVISION: 2017/04/06
 
-!Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
-!Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
+!Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
+!Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
 
 !This file is part of ExaTensor.
 
@@ -39,7 +39,7 @@
 !  # Packet (obj_pack_t): Plain array which the data is packed into and
 !    unpacked from. Normally a packet contains a single object.
 !  # Packet envelope (pack_env_t): Container of packets with some
-!    additional layout information. A individual packet space is acquired
+!    additional layout information. An individual packet space is acquired
 !    from an existing packet container. Then the data can be packed into
 !    the packet space and sealed. Then the packet container (envelope),
 !    which contains one or more packets, can be sent to a different MPI process which
@@ -62,13 +62,13 @@
 !    of the corresponding communication. Once received, any packet from the delivered
 !    packet envelope can be unpacked back into the original object of a built-in or derived type.
 !    Each packet in the packet envelope has an optional integer tag. Packet envelopes
-!    participating in an active (non-blocking) communication must not be used for
-!    local packing/unpacking until that communication is completed on the caller's side.
+!    participating in an on-going (non-blocking) communication must not be used for
+!    local packing/unpacking until that communication is completed.
 !  # It may happen that the free space provided by a packet is insufficient for packing
 !    the object of interest. In this case, the .resize() member procedure needs to be
 !    invoked on the packet envelope the packet is part of. The packet envelope will
 !    be extended to a user-specified capacity, in turn resulting in a larger buffer
-!    in the packet that one is currently filling in with data. Similarly if one
+!    in the packet one is currently filling in with data. Similarly if one
 !    exceeds the max number of packets that can be stored in the packet envelope,
 !    this resource can also be extended by calling the same member procedure .resize().
 !    The packet buffer space overflow occurs during packing data objects into the packet.
@@ -79,7 +79,7 @@
         use dil_basic, only: INTD,INTL
 #ifdef USE_MPI_MOD
 #ifdef FORTRAN2008
-        use mpi_f08      !MPI Fortran 2008 interface `This will not work
+        use mpi_f08      !MPI Fortran 2008 interface `Will not work
 #else
         use mpi          !MPI Fortran interface
 #endif
@@ -96,8 +96,6 @@
         logical, private:: VERBOSE=.TRUE. !verbosity for errors
         integer, private:: DEBUG=0        !debugging level (0:none)
  !Integers:
-!        integer, parameter, private:: INTD=4
-!        integer, parameter, private:: INTL=8
         integer, parameter, private:: INT_MPI=INTD
  !Error codes:
         integer(INTD), parameter, public:: PACK_SUCCESS=0       !success
@@ -111,13 +109,14 @@
         integer(INTD), parameter, public:: PACK_IDLE=-7         !object is idle (not in use)
         integer(INTD), parameter, public:: PACK_MPI_ERR=-8      !MPI communication error
  !Packet envelope configuration:
-        integer(INTD), parameter, private:: DEFAULT_MAX_PACKETS=1024 !default max number of packets per envelope
-        integer(INTL), parameter, private:: DEFAULT_ENVELOPE_CAPACITY=1024_INTL*DEFAULT_MAX_PACKETS !default envelope capacity
+        integer(INTD), parameter, private:: DEFAULT_MAX_PACKETS=1024      !default max number of packets per envelope
+        integer(INTD), parameter, private:: DEFAULT_AVERAGE_PACK_VOL=1024 !default average packet volume
+        integer(INTL), parameter, private:: DEFAULT_ENVELOPE_CAPACITY=DEFAULT_AVERAGE_PACK_VOL*DEFAULT_MAX_PACKETS !default envelope capacity
         integer(INTL), parameter, private:: DEFAULT_PACKET_TAG=0 !default packet tag
  !MPI:
         integer(INT_MPI), parameter, private:: DEFAULT_MPI_TAG=0
 !TYPES:
- !Packet:
+ !Packet (local):
         type, public:: obj_pack_t
          integer(INTL), private:: length=0 !used length of the packet buffer (bytes)
          character(C_CHAR), pointer, contiguous, private:: buffer(:)=>NULL() !buffer
@@ -131,7 +130,7 @@
         end type obj_pack_t
  !Packet envelope (communicable):
         type, public:: pack_env_t
-         integer(INTL), private:: length=0      !used length of the packet envelope (bytes)
+         integer(INTL), private:: length=0      !in-use length of the packet envelope (bytes)
          integer(INTD), private:: num_packets=0 !number of packets in the packet envelope
          class(obj_pack_t), pointer, private:: curr_packet=>NULL() !current packet (set when in-use)
          logical, private:: busy=.FALSE.        !.TRUE. when there is an active packet being filled in (in-use flag)
@@ -164,7 +163,7 @@
          integer(INT_MPI), private:: req=MPI_REQUEST_NULL   !MPI request handle
          integer(INT_MPI), private:: comm=MPI_COMM_NULL     !MPI communicator
          integer(INT_MPI), private:: stat(MPI_STATUS_SIZE)  !MPI status
-         class(pack_env_t), pointer:: recv_pack_env=>NULL() !a receive operation pointer to the packet envelope being received
+         class(pack_env_t), pointer:: recv_pack_env=>NULL() !receive operation pointer to the packet envelope being received
          contains
           procedure, private:: construct=>CommHandleConstruct !construct the communication handle (internal)
           procedure, public:: clean=>CommHandleClean          !clean the communication handle
@@ -201,7 +200,7 @@
          module procedure unpack_real8
          module procedure unpack_complex4
          module procedure unpack_complex8
-!         module procedure unpack_string
+         module procedure unpack_string
         end interface unpack_builtin
         public unpack_builtin
         public unpack_string
@@ -2070,70 +2069,7 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine unpack_string
-!-------------------------------------------------
-#if 0
-        subroutine pack_universal(packet,obj,ierr) !`Will not work
-!Packs object <obj> into packet <packet>.
-         implicit none
-         class(obj_pack_t), intent(inout):: packet   !inout: packet
-         class(*), target, intent(in):: obj          !in: object of any type
-         integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: obj_size,errc
-         integer(INTL):: sl
-         type(C_PTR):: cptr
-         character(C_CHAR), pointer, contiguous:: chp(:)
 
-         errc=PACK_SUCCESS
-         obj_size=size_of(obj) !size of the object in bytes
-         if(obj_size.gt.0) then
-          sl=packet%space_left(errc)
-          if(errc.eq.PACK_SUCCESS) then
-           if(sl.ge.int(obj_size,INTL)) then
-            cptr=c_loc(obj); call c_f_pointer(cptr,chp,(/obj_size/))
-            packet%buffer(packet%length+1:packet%length+obj_size)=chp(1:obj_size)
-            chp=>NULL(); packet%length=packet%length+obj_size
-           else
-            errc=PACK_OVERFLOW
-           endif
-          endif
-         else
-          errc=PACK_NULL
-         endif
-         if(present(ierr)) ierr=errc
-         return
-        end subroutine pack_universal
-!-------------------------------------------------------
-        subroutine unpack_universal(packet,pos,obj,ierr) !`Will not work
-!Unpacks object <obj> from packet <packet>. Argument <pos>
-!passes the initial position in the packet from where unpacking
-!should start and it is incremented at the end by the size of
-!the unpacked object.
-         implicit none
-         class(obj_pack_t), intent(in):: packet      !in: packet
-         integer(INTL), intent(inout):: pos          !inout: in:initial position; out: position of the next field
-         class(*), target, intent(inout):: obj       !out: object of any type
-         integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: obj_size,errc
-         type(C_PTR):: cptr
-         character(C_CHAR), pointer, contiguous:: chp(:)
-
-         errc=PACK_SUCCESS
-         obj_size=size_of(obj) !size of the object in bytes
-         if(obj_size.gt.0) then
-          if(pos.gt.0.and.pos+obj_size-1.le.packet%length) then
-           cptr=c_loc(obj); call c_f_pointer(cptr,chp,(/obj_size/))
-           chp(1:obj_size)=packet%buffer(pos:pos+obj_size-1)
-           chp=>NULL(); pos=pos+obj_size
-          else
-           errc=PACK_INVALID_ARGS
-          endif
-         else
-          errc=PACK_NULL
-         endif
-         if(present(ierr)) ierr=errc
-         return
-        end subroutine unpack_universal
-#endif
        end module pack_prim
 !===================================================================================
 !===================================================================================
@@ -2143,7 +2079,7 @@
         use dil_basic, only: INTD,INTL
 #ifdef USE_MPI_MOD
 #ifdef FORTRAN2008
-        use mpi_f08      !MPI Fortran 2008 interface `This will not work
+        use mpi_f08      !MPI Fortran 2008 interface `Will not work
 #else
         use mpi          !MPI Fortran interface
 #endif
@@ -2322,7 +2258,7 @@
    !Unpack string (packet 10):
           call envelope%extract_packet(10,packet,errc,tag=mtag,preclean=.TRUE.)
           if(errc.ne.PACK_SUCCESS) then; ierr=73; return; endif
-          call unpack_string(packet,str,errc); if(errc.ne.PACK_SUCCESS) then; ierr=74; return; endif
+          call unpack_builtin(packet,str,errc); if(errc.ne.PACK_SUCCESS) then; ierr=74; return; endif
           !write(*,'("#DEBUG[",i3,"]: str = ",A27)') my_rank,str(1:27) !debug
           if(str(1:len(s27)).ne.s27) then; ierr=75; errc=1001; return; endif
           deallocate(comm_hl)
