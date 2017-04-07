@@ -1,6 +1,6 @@
 !Basic object packing/unpacking primitives.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/04/06
+!REVISION: 2017/04/07
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -108,6 +108,8 @@
         integer(INTD), parameter, public:: PACK_BUSY=-6         !object is in use by others
         integer(INTD), parameter, public:: PACK_IDLE=-7         !object is idle (not in use)
         integer(INTD), parameter, public:: PACK_MPI_ERR=-8      !MPI communication error
+ !Packet:
+        integer(INTL), parameter, public:: PACK_BASE=1_INTL     !first offset in a packet is 1 (not 0)
  !Packet envelope configuration:
         integer(INTD), parameter, private:: DEFAULT_MAX_PACKETS=1024      !default max number of packets per envelope
         integer(INTD), parameter, private:: DEFAULT_AVERAGE_PACK_VOL=1024 !default average packet volume

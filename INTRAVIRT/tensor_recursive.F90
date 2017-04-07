@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/03/31
+!REVISION: 2017/04/07
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -30,6 +30,7 @@
         use gfc_list
         use gfc_vec_tree
         use subspaces
+        use pack_prim
         use distributed
         implicit none
         private
@@ -73,7 +74,8 @@
          class(h_space_t), pointer, private:: h_space_p=>NULL() !pointer to the underlying hierarchical vector space specification (external target!)
          contains
           procedure, private:: TensSignatureCtor
-          generic, public:: tens_signature_ctor=>TensSignatureCtor !ctor
+          procedure, private:: TensSignatureCtorUnpack
+          generic, public:: tens_signature_ctor=>TensSignatureCtor,TensSignatureCtorUnpack
           procedure, public:: is_set=>TensSignatureIsSet           !returns .TRUE. if the tensor signature is set
           procedure, public:: get_name=>TensSignatureGetName       !returns the alphanumeric_ tensor name
           procedure, public:: get_rank=>TensSignatureGetRank       !returns the rank of the tensor (number of dimensions)
@@ -245,6 +247,7 @@
         public print_tens_header_f
  !tens_signature_t:
         private TensSignatureCtor
+        private TensSignatureCtorUnpack
         private TensSignatureIsSet
         private TensSignatureGetName
         private TensSignatureGetRank
@@ -445,6 +448,37 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensSignatureCtor
+!------------------------------------------------------------------
+        subroutine TensSignatureCtorUnpack(this,packet,ierr,offset)
+!Ctor by unpacking.
+         implicit none
+         class(tens_signature_t), intent(out):: this     !out: tensor signature
+         class(obj_pack_t), intent(in):: packet          !in: packet
+         integer(INTD), intent(out), optional:: ierr     !out: error code
+         integer(INTL), intent(inout), optional:: offset !inout: offset in the packet
+         integer(INTD):: i,errc
+         integer(INTL):: l
+
+         errc=TEREC_SUCCESS
+         if(present(offset)) then; l=offset; else; l=PACK_BASE; endif
+         call unpack_builtin(packet,this%char_name,errc,l)
+         if(errc.eq.PACK_SUCCESS) call unpack_builtin(packet,this%num_dims,errc,l)
+         if(errc.eq.PACK_SUCCESS) then
+          if(this%num_dims.gt.0) then
+           allocate(this%space_idx(1:this%num_dims),STAT=i)
+           if(i.eq.0) then
+            do i=1,this%num_dims
+             call unpack_builtin(packet,this%space_idx(i),errc,l); if(errc.ne.PACK_SUCCESS) exit
+            enddo
+           else
+            errc=TEREC_MEM_ALLOC_FAILED
+           endif
+          endif
+         endif
+         if(present(offset).and.errc.eq.TEREC_SUCCESS) offset=l
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensSignatureCtorUnpack
 !------------------------------------------------------------------
         function TensSignatureIsSet(this,ierr,num_dims) result(res)
 !Returns TRUE if the tensor_signature_t object is set, FALSE otherwise.
