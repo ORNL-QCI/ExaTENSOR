@@ -73,7 +73,7 @@
          character(:), allocatable, private:: char_name         !character tensor name (alphanumeric_)
          integer(INTD), private:: num_dims=-1                   !number of tensor dimensions (aka tensor order in math or tensor rank in physics)
          integer(INTL), allocatable, private:: space_idx(:)     !subspace id for each tensor dimension
-         !`Unpacked:
+         !`Not packed:
          class(h_space_t), pointer, private:: h_space_p=>NULL() !pointer to the underlying hierarchical vector space specification (external target!)
          contains
           procedure, private:: TensSignatureCtor                   !ctor
@@ -119,8 +119,10 @@
          type(tens_signature_t), private:: signature         !tensor signature
          type(tens_shape_t), private:: shape                 !tensor shape
          contains
-          procedure, private:: TensHeaderCtor
-          generic, public:: tens_header_ctor=>TensHeaderCtor        !ctor
+          procedure, private:: TensHeaderCtor                       !ctor
+          procedure, private:: TensHeaderCtorUnpack                 !ctor by unpacking
+          generic, public:: tens_header_ctor=>TensHeaderCtor,TensHeaderCtorUnpack
+          procedure, public:: pack=>TensHeaderPack                  !packs the object into a packet
           procedure, public:: add_shape=>TensHeaderAddShape         !ctor for a deferred tensor shape specification
           procedure, public:: set_dims=>TensHeaderSetDims           !sets dimension extents (if they have not been set previously)
           procedure, public:: set_groups=>TensHeaderSetGroups       !sets index restriction groups if they have not been previously set
@@ -147,8 +149,10 @@
          integer(INTL), private:: offset=-1_INTL             !offset of the constituent simple tensor block in the parental composite tensor block (locally stored)
          integer(INTD), private:: layout=TEREC_LAY_NONE      !simple storage layout: {TEREC_LAY_FDIMS,TEREC_LAY_CDIMS} only
          contains
-          procedure, private:: TensSimplePartCtor
-          generic, public:: tens_simple_part_ctor=>TensSimplePartCtor !ctor
+          procedure, private:: TensSimplePartCtor                     !ctor
+          procedure, private:: TensSimplePartCtorUnpack               !ctor by unpacking
+          generic, public:: tens_simple_part_ctor=>TensSimplePartCtor,TensSimplePartCtorUnpack
+          procedure, public:: pack=>TensSimplePartPack                !packs the object into a packet
           procedure, public:: is_set=>TensSimplePartIsSet             !return TRUE if the simple part is set (signature, shape, layout, offset)
           procedure, public:: get_offset=>TensSimplePartGetOffset     !returns the offset of the simple part in the parental tensor block
           procedure, public:: get_layout=>TensSimplePartGetLayout     !returns the simple layout of the simple tensor part: {TEREC_LAY_FDIMS,TEREC_LAY_CDIMS} only
@@ -281,6 +285,8 @@
         public tens_shape_dtor
  !tens_header_t:
         private TensHeaderCtor
+        private TensHeaderCtorUnpack
+        private TensHeaderPack
         private TensHeaderAddShape
         private TensHeaderSetDims
         private TensHeaderSetGroups
@@ -300,6 +306,8 @@
         public tens_header_dtor
  !tens_simple_part_t:
         private TensSimplePartCtor
+        private TensSimplePartCtorUnpack
+        private TensSimplePartPack
         private TensSimplePartIsSet
         private TensSimplePartGetOffset
         private TensSimplePartGetLayout
@@ -1447,6 +1455,47 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensHeaderCtor
+!--------------------------------------------------------
+        subroutine TensHeaderCtorUnpack(this,packet,ierr)
+!Ctor by unpacking.
+         implicit none
+         class(tens_header_t), intent(out):: this    !out: tensor header
+         class(obj_pack_t), intent(inout):: packet   !inout: packet
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+         logical:: shaped
+
+         call unpack_builtin(packet,shaped,errc)
+         if(errc.eq.PACK_SUCCESS) call this%signature%tens_signature_ctor(packet,errc)
+         if(errc.eq.PACK_SUCCESS.and.shaped) call this%shape%tens_shape_ctor(packet,errc)
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensHeaderCtorUnpack
+!--------------------------------------------------
+        subroutine TensHeaderPack(this,packet,ierr)
+!Packs the object into a packet:
+! + logical {TRUE|FALSE}: whether the tensor header shape is set or not
+! + this%signature;
+! + [OPTIONAL]: this%shape;
+         implicit none
+         class(tens_header_t), intent(in):: this     !in: tensor header
+         class(obj_pack_t), intent(inout):: packet   !inout: packet
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+         logical:: shpd
+
+         if(this%is_set(errc,shaped=shpd)) then
+          if(errc.eq.TEREC_SUCCESS) then
+           call pack_builtin(packet,shpd,errc)
+           if(errc.eq.PACK_SUCCESS) call this%signature%pack(packet,errc)
+           if(errc.eq.PACK_SUCCESS.and.shpd) call this%shape%pack(packet,errc)
+          endif
+         else
+          if(errc.eq.TEREC_SUCCESS) errc=TEREC_INVALID_REQUEST
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensHeaderPack
 !-----------------------------------------------------------------------------------------
         subroutine TensHeaderAddShape(this,ierr,dim_extent,dim_group,group_spec,overwrite)
 !Sets the tensor header shape in case it has not been set initially.
@@ -1796,6 +1845,45 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensSimplePartCtor
+!------------------------------------------------------------
+        subroutine TensSimplePartCtorUnpack(this,packet,ierr)
+!Ctor by unpacking.
+         implicit none
+         class(tens_simple_part_t), intent(out):: this !out: tensor simple part
+         class(obj_pack_t), intent(inout):: packet     !inout: packet
+         integer(INTD), intent(out), optional:: ierr   !out: error code
+         integer(INTD):: errc
+
+         call this%header%tens_header_ctor(packet,errc)
+         if(errc.eq.PACK_SUCCESS) call unpack_builtin(packet,this%offset,errc)
+         if(errc.eq.PACK_SUCCESS) call unpack_builtin(packet,this%layout,errc)
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensSimplePartCtorUnpack
+!------------------------------------------------------
+        subroutine TensSimplePartPack(this,packet,ierr)
+!Packs the object into a packet:
+! + this%header;
+! + this%offset;
+! + this%layout.
+         implicit none
+         class(tens_simple_part_t), intent(in):: this !in: tensor simple part
+         class(obj_pack_t), intent(inout):: packet    !inout: packet
+         integer(INTD), intent(out), optional:: ierr  !out: error code
+         integer(INTD):: errc
+
+         if(this%is_set(errc)) then
+          if(errc.eq.TEREC_SUCCESS) then
+           call this%header%pack(packet,errc)
+           if(errc.eq.PACK_SUCCESS) call pack_builtin(packet,this%offset,errc)
+           if(errc.eq.PACK_SUCCESS) call pack_builtin(packet,this%layout,errc)
+          endif
+         else
+          if(errc.eq.TEREC_SUCCESS) errc=TEREC_INVALID_REQUEST
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensSimplePartPack
 !----------------------------------------------------------
         function TensSimplePartIsSet(this,ierr) result(res)
 !Returns TRUE of the tensor simple part is set.
