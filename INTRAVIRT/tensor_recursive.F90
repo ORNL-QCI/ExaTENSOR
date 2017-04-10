@@ -48,6 +48,8 @@
         integer(INTD), parameter, public:: TEREC_MEM_FREE_FAILED=-4
         integer(INTD), parameter, public:: TEREC_UNABLE_COMPLETE=-5
         integer(INTD), parameter, public:: TEREC_OBJ_CORRUPTED=-6
+ !Symbolic tensor name:
+        integer(INTD), parameter, public:: TEREC_MAX_TENS_NAME_LEN=64 !max length of the tensor name (alphanumeric_ string)
  !Storage layout for tensor blocks for locally stored tensors (must span a contiguous integer range!):
         integer(INTD), parameter, public:: TEREC_LAY_NONE=0    !none
         integer(INTD), parameter, public:: TEREC_LAY_RECUR=1   !storage layout is inferred from that of individual constituent tensors (recursive)
@@ -71,11 +73,13 @@
          character(:), allocatable, private:: char_name         !character tensor name (alphanumeric_)
          integer(INTD), private:: num_dims=-1                   !number of tensor dimensions (aka tensor order in math or tensor rank in physics)
          integer(INTL), allocatable, private:: space_idx(:)     !subspace id for each tensor dimension
+         !`Unpacked:
          class(h_space_t), pointer, private:: h_space_p=>NULL() !pointer to the underlying hierarchical vector space specification (external target!)
          contains
-          procedure, private:: TensSignatureCtor
-          procedure, private:: TensSignatureCtorUnpack
+          procedure, private:: TensSignatureCtor                   !ctor
+          procedure, private:: TensSignatureCtorUnpack             !ctor by unpacking
           generic, public:: tens_signature_ctor=>TensSignatureCtor,TensSignatureCtorUnpack
+          procedure, public:: pack=>TensSignaturePack              !packs the object into a packet
           procedure, public:: is_set=>TensSignatureIsSet           !returns .TRUE. if the tensor signature is set
           procedure, public:: get_name=>TensSignatureGetName       !returns the alphanumeric_ tensor name
           procedure, public:: get_rank=>TensSignatureGetRank       !returns the rank of the tensor (number of dimensions)
@@ -93,8 +97,10 @@
          integer(INTD), private:: num_dims=-1                !number of tensor dimensions (aka tensor order or tensor rank)
          integer(INTD), private:: num_grps=0                 !number of defined (non-trivial) index restriction groups
          contains
-          procedure, private:: TensShapeCtor
-          generic, public:: tens_shape_ctor=>TensShapeCtor   !ctor
+          procedure, private:: TensShapeCtor                 !ctor
+          procedure, private:: TensShapeCtorUnpack           !ctor by unpacking
+          generic, public:: tens_shape_ctor=>TensShapeCtor,TensShapeCtorUnpack
+          procedure, public:: pack=>TensShapePack            !packs the object into a packet
           procedure, public:: set_dims=>TensShapeSetDims     !sets dimension extents (if they have not been set previously)
           procedure, public:: set_groups=>TensShapeSetGroups !creates new index restriction groups
           procedure, public:: is_set=>TensShapeIsSet         !returns .TRUE. if the tensor shape is set
@@ -248,6 +254,7 @@
  !tens_signature_t:
         private TensSignatureCtor
         private TensSignatureCtorUnpack
+        private TensSignaturePack
         private TensSignatureIsSet
         private TensSignatureGetName
         private TensSignatureGetRank
@@ -258,6 +265,8 @@
         public tens_signature_dtor
  !tens_shape_t:
         private TensShapeCtor
+        private TensShapeCtorUnpack
+        private TensShapePack
         private TensShapeSetDims
         private TensShapeSetGroups
         private TensShapeIsSet
@@ -455,26 +464,82 @@
          class(tens_signature_t), intent(out):: this     !out: tensor signature
          class(obj_pack_t), intent(inout):: packet       !in: packet
          integer(INTD), intent(out), optional:: ierr     !out: error code
-         integer(INTD):: i,errc
+         integer(INTD):: i,nd,errc
+         integer(INTL):: sidx(1:MAX_TENSOR_RANK)
+         character(TEREC_MAX_TENS_NAME_LEN):: tname
+         logical:: pcn
 
-         errc=TEREC_SUCCESS
-         call unpack_builtin(packet,this%char_name,errc)
-         if(errc.eq.PACK_SUCCESS) call unpack_builtin(packet,this%num_dims,errc)
+         tname=' '
+         call unpack_builtin(packet,nd,errc)
+         if(errc.eq.PACK_SUCCESS) call unpack_builtin(packet,pcn,errc)
          if(errc.eq.PACK_SUCCESS) then
-          if(this%num_dims.gt.0) then
-           allocate(this%space_idx(1:this%num_dims),STAT=i)
-           if(i.eq.0) then
-            do i=1,this%num_dims
-             call unpack_builtin(packet,this%space_idx(i),errc); if(errc.ne.PACK_SUCCESS) exit
-            enddo
+          if(nd.gt.0) then
+           do i=1,nd
+            call unpack_builtin(packet,sidx(i),errc); if(errc.ne.PACK_SUCCESS) exit
+           enddo
+          endif
+          if(errc.eq.PACK_SUCCESS.and.pcn) call unpack_builtin(packet,tname,errc)
+          if(errc.eq.PACK_SUCCESS) then
+           if(nd.gt.0) then
+            if(pcn) then
+             call this%tens_signature_ctor(errc,sidx(1:nd),tname(1:len_trim(tname)))
+            else
+             call this%tens_signature_ctor(errc,sidx(1:nd))
+            endif
+           elseif(nd.eq.0) then
+            if(pcn) then
+             call this%tens_signature_ctor(errc,tens_name=tname(1:len_trim(tname)))
+            else
+             call this%tens_signature_ctor(errc)
+            endif
            else
-            errc=TEREC_MEM_ALLOC_FAILED
+            errc=TEREC_ERROR
            endif
           endif
          endif
          if(present(ierr)) ierr=errc
          return
         end subroutine TensSignatureCtorUnpack
+!-----------------------------------------------------
+        subroutine TensSignaturePack(this,packet,ierr)
+!Packs the object into a packet:
+! + this%num_dims;
+! + logical {TRUE/FALSE}: whether or not the tensor is named;
+! + [OPTIONAL]: this%space_idx(1:this%num_dims);
+! + [OPTIONAL]: this%char_name;
+         implicit none
+         class(tens_signature_t), intent(in):: this  !in: tensor signature
+         class(obj_pack_t), intent(inout):: packet   !inout: packet
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: i,errc
+         logical:: pcn
+
+         if(this%is_set(errc)) then
+          if(errc.eq.TEREC_SUCCESS) then
+           call pack_builtin(packet,this%num_dims,errc)
+           if(errc.eq.PACK_SUCCESS) then
+            pcn=allocated(this%char_name)
+            call pack_builtin(packet,pcn,errc)
+            if(errc.eq.PACK_SUCCESS) then
+             if(this%num_dims.gt.0) then
+              if(allocated(this%space_idx)) then
+               do i=1,this%num_dims
+                call pack_builtin(packet,this%space_idx(i),errc); if(errc.ne.PACK_SUCCESS) exit
+               enddo
+              else
+               errc=TEREC_ERROR
+              endif
+             endif
+             if(errc.eq.PACK_SUCCESS.and.pcn) call pack_builtin(packet,this%char_name,errc)
+            endif
+           endif
+          endif
+         else
+          if(errc.eq.TEREC_SUCCESS) errc=TEREC_INVALID_REQUEST
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensSignaturePack
 !------------------------------------------------------------------
         function TensSignatureIsSet(this,ierr,num_dims) result(res)
 !Returns TRUE if the tensor_signature_t object is set, FALSE otherwise.
@@ -777,6 +842,110 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensShapeCtor
+!-------------------------------------------------------
+        subroutine TensShapeCtorUnpack(this,packet,ierr)
+!Ctor by unpacking.
+         implicit none
+         class(tens_shape_t), intent(out):: this     !out: tensor shape
+         class(obj_pack_t), intent(inout):: packet   !inout: packet
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: nd,ng,i,errc
+         integer(INTL):: dim_ext(1:MAX_TENSOR_RANK)
+         integer(INTD):: dim_grp(1:MAX_TENSOR_RANK),grp_spc(1:MAX_TENSOR_RANK)
+         logical:: dpr
+
+         call unpack_builtin(packet,nd,errc)
+         if(errc.eq.PACK_SUCCESS) call unpack_builtin(packet,ng,errc)
+         if(errc.eq.PACK_SUCCESS) then
+          if(nd.gt.0) then
+           call unpack_builtin(packet,dpr,errc)
+           if(errc.eq.PACK_SUCCESS) then
+            if(dpr) then
+             do i=1,nd
+              call unpack_builtin(packet,dim_ext(i),errc); if(errc.ne.PACK_SUCCESS) exit
+             enddo
+            else
+             dim_ext(1:nd)=0_INTL !deferred dimension extents
+            endif
+            if(errc.eq.PACK_SUCCESS.and.ng.gt.0) then
+             do i=1,nd
+              call unpack_builtin(packet,dim_grp(i),errc); if(errc.ne.PACK_SUCCESS) exit
+             enddo
+             if(errc.eq.PACK_SUCCESS) then
+              do i=1,ng
+               call unpack_builtin(packet,grp_spc(i),errc); if(errc.ne.PACK_SUCCESS) exit
+              enddo
+             endif
+            endif
+            if(errc.eq.PACK_SUCCESS) then
+             if(ng.gt.0) then
+              call this%tens_shape_ctor(errc,dim_ext(1:nd),dim_grp(1:nd),grp_spc(1:ng))
+             elseif(ng.eq.0) then
+              call this%tens_shape_ctor(errc,dim_ext(1:nd))
+             else
+              errc=TEREC_ERROR
+             endif
+            endif
+           endif
+          elseif(nd.eq.0) then
+           call this%tens_shape_ctor(errc)
+          else
+           errc=TEREC_ERROR
+          endif
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensShapeCtorUnpack
+!-------------------------------------------------
+        subroutine TensShapePack(this,packet,ierr)
+!Packs the object into a packet:
+! + this%num_dims;
+! + this%num_grps;
+! + [OPTIONAL]: logical {TRUE/FALSE}: TRUE if this%dim_extent(:) is allocated;
+! + [OPTIONAL]: this%dim_extent(1:this%num_dims);
+! + [OPTIONAL]: this%dim_group(1:this%num_dims);
+! + [OPTIONAL]: this%group_spec(1:this%num_grps).
+         implicit none
+         class(tens_shape_t), intent(in):: this      !in: tensor shape
+         class(obj_pack_t), intent(inout):: packet   !inout: packet
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: i,errc,nd,ng
+         logical:: dpr
+
+         if(this%is_set(errc,nd,ng)) then
+          if(errc.eq.TEREC_SUCCESS) then
+           call pack_builtin(packet,nd,errc)
+           if(errc.eq.PACK_SUCCESS) call pack_builtin(packet,ng,errc)
+           if(errc.eq.PACK_SUCCESS) then
+            if(nd.gt.0) then
+             dpr=allocated(this%dim_extent)
+             call pack_builtin(packet,dpr,errc) !flag: presence of dimension extents
+             if(errc.eq.PACK_SUCCESS) then
+              if(dpr) then
+               do i=1,nd
+                call pack_builtin(packet,this%dim_extent(i),errc); if(errc.ne.PACK_SUCCESS) exit
+               enddo
+              endif
+              if(errc.eq.PACK_SUCCESS.and.ng.gt.0) then
+               do i=1,nd
+                call pack_builtin(packet,this%dim_group(i),errc); if(errc.ne.PACK_SUCCESS) exit
+               enddo
+               if(errc.eq.PACK_SUCCESS) then
+                do i=1,ng
+                 call pack_builtin(packet,this%group_spec(i),errc); if(errc.ne.PACK_SUCCESS) exit
+                enddo
+               endif
+              endif
+             endif
+            endif
+           endif
+          endif
+         else
+          if(errc.eq.TEREC_SUCCESS) errc=TEREC_INVALID_REQUEST
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensShapePack
 !--------------------------------------------------------
         subroutine TensShapeSetDims(this,dim_extent,ierr)
 !Sets dimension extents (if they have not been set previously).

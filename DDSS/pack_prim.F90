@@ -73,6 +73,15 @@
 !    this resource can also be extended by calling the same member procedure .resize().
 !    The packet buffer space overflow occurs during packing data objects into the packet.
 !    The max-packets-per-envelope overflow occurs during sealing the packet.
+! #  As mentioned, the packing/unpacking primitives are intended for remote cloning
+!    of Fortran objects, which is done by value. However, Fortran objects containing
+!    non-allocated pointer components associated with local targets cannot be cloned
+!    in this way. In order to clone such Fortran objects, the object needs to be
+!    constructed in multiple stages on the remote side (builder), based on the
+!    information received from the other MPI process. All dependencies have to be
+!    constructed, possibly in multiple stages. Then the pointer components can
+!    be associated with local targets on the remote process.
+
        module pack_prim
         use, intrinsic:: ISO_C_BINDING, only: C_PTR,C_INT,C_CHAR,C_NULL_PTR,c_loc,c_f_pointer
         use stsubs, only: size_of
