@@ -167,7 +167,7 @@ void test_nvtal_c(int * ierr)
 void test_talsh_c(int * ierr)
 {
  int errc;
- size_t small_buffer_size=1048576; //bytes (1MB)
+ size_t small_buffer_size=TALSH_NO_HOST_BUFFER;
  int gpu_list[MAX_GPUS_PER_NODE];
 
  *ierr=0;
