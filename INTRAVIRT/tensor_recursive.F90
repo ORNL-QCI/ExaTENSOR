@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/04/10
+!REVISION: 2017/04/11
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -179,11 +179,13 @@
         type, extends(tens_layout_t), public:: tens_layout_fdims_t
          class(tens_header_t), pointer, private:: header=>NULL() !pointer to the defining tensor header
          contains
-          procedure, private:: TensLayoutFdimsCtor
-          generic, public:: tens_layout_fdims_ctor=>TensLayoutFdimsCtor
-          procedure, public:: get_volume=>TensLayoutFdimsGetVolume
-          procedure, public:: map=>TensLayoutFdimsMap
-          procedure, public:: extract_simple_parts=>TensLayoutFdimsExtract
+          procedure, private:: TensLayoutFdimsCtor                          !ctor
+          procedure, private:: TensLayoutFdimsCtorUnpack                    !ctor by unpacking
+          generic, public:: tens_layout_fdims_ctor=>TensLayoutFdimsCtor,TensLayoutFdimsCtorUnpack
+          procedure, public:: pack=>TensLayoutFdimsPack                     !packs the object into a packet
+          procedure, public:: get_volume=>TensLayoutFdimsGetVolume          !returns the physical tensor volume (number of elements stored)
+          procedure, public:: map=>TensLayoutFdimsMap                       !addresses a specific tensor element
+          procedure, public:: extract_simple_parts=>TensLayoutFdimsExtract  !extracts simpe dense tensor parts (bricks) from the tensor block
           final:: tens_layout_fdims_dtor
         end type tens_layout_fdims_t
  !Tensor body:
@@ -193,7 +195,9 @@
          class(tens_layout_t), allocatable, private:: layout  !tensor block storage layout (if physically stored as a whole)
          contains
           procedure, private:: TensBodyCtorBase                     !basic ctor (layout + data type)
-          generic, public:: tens_body_ctor=>TensBodyCtorBase        !ctors
+          procedure, private:: TensBodyCtorUnpack                   !ctor by unpacking
+          generic, public:: tens_body_ctor=>TensBodyCtorBase,TensBodyCtorUnpack
+          procedure, public:: pack=>TensBodyPack                   !packs the object into a packet
           procedure, public:: is_set=>TensBodyIsSet                 !returns TRUE if the tensor body is set (plus additional info)
           procedure, public:: add_subtensor=>TensBodyAddSubtensor   !registers a constituent subtensor by providing its tensor header
           procedure, public:: set_layout=>TensBodySetLayout         !sets the tensor body storage layout if physically stored as a whole
@@ -322,12 +326,16 @@
         private TensLayoutGetBodySize
  !tens_layout_fdims_t:
         private TensLayoutFdimsCtor
+        private TensLayoutFdimsCtorUnpack
+        private TensLayoutFdimsPack
         private TensLayoutFdimsGetVolume
         private TensLayoutFdimsMap
         private TensLayoutFdimsExtract
         public tens_layout_fdims_dtor
  !tens_body_t:
         private TensBodyCtorBase
+        private TensBodyCtorUnpack
+        private TensBodyPack
         private TensBodyIsSet
         private TensBodyAddSubtensor
         private TensBodySetLayout
@@ -2120,6 +2128,36 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensLayoutFdimsCtor
+!-------------------------------------------------------------
+        subroutine TensLayoutFdimsCtorUnpack(this,packet,ierr)
+!Unpacks the object from a packet.
+         implicit none
+         class(tens_layout_fdims_t), intent(out):: this !out: tensor body layout
+         class(obj_pack_t), intent(inout):: packet      !inout: packet
+         integer(INTD), intent(out), optional:: ierr    !out: error code
+         integer(INTD):: errc
+
+         call unpack_builtin(packet,this%layout,errc)
+         if(errc.eq.PACK_SUCCESS) call unpack_builtin(packet,this%data_type,errc)
+         if(errc.eq.PACK_SUCCESS) call this%data_descr%unpack(packet,errc)
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensLayoutFdimsCtorUnpack
+!-------------------------------------------------------
+        subroutine TensLayoutFdimsPack(this,packet,ierr)
+!Packs the object into a packet.
+         implicit none
+         class(tens_layout_fdims_t), intent(in):: this !in: tensor body layout
+         class(obj_pack_t), intent(inout):: packet     !inout: packet
+         integer(INTD), intent(out), optional:: ierr   !out: error code
+         integer(INTD):: errc
+
+         call pack_builtin(packet,this%layout,errc)
+         if(errc.eq.PACK_SUCCESS) call pack_builtin(packet,this%data_type,errc)
+         if(errc.eq.PACK_SUCCESS) call this%data_descr%pack(packet,errc)
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensLayoutFdimsPack
 !----------------------------------------------------------
         function TensLayoutFdimsGetVolume(this) result(vol)
          implicit none
@@ -2233,6 +2271,97 @@
          if(present(ierr)) ierr=TEREC_SUCCESS
          return
         end subroutine TensBodyCtorBase
+!------------------------------------------------------
+        subroutine TensBodyCtorUnpack(this,packet,ierr)
+!Unpacks the object from a packet.
+         implicit none
+         class(tens_body_t), intent(out):: this      !out: tensor body
+         class(obj_pack_t), intent(inout):: packet   !inout: packet
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: i,n,lay,errc
+         type(list_iter_t):: lit
+         type(tens_header_t):: thp
+         class(tens_layout_fdims_t), pointer:: fl
+         logical:: laid
+
+         call unpack_builtin(packet,laid,errc)
+         if(errc.eq.PACK_SUCCESS) call unpack_builtin(packet,this%num_subtensors,errc)
+         if(errc.eq.PACK_SUCCESS.and.laid) then
+          call unpack_builtin(packet,lay,errc)
+          if(errc.eq.PACK_SUCCESS) then
+           if(.not.allocated(this%layout)) then
+            select case(lay)
+            case(TEREC_LAY_FDIMS)
+             allocate(tens_layout_fdims_t::this%layout,STAT=i)
+             if(i.eq.0) then
+              select type(lat=>this%layout)
+              type is(tens_layout_fdims_t)
+               call lat%tens_layout_fdims_ctor(packet,errc)
+              end select
+             else
+              errc=TEREC_MEM_ALLOC_FAILED
+             endif
+            case default
+             errc=TEREC_ERROR
+            end select
+           else
+            errc=TEREC_ERROR
+           endif
+          endif
+         endif
+         if(errc.eq.PACK_SUCCESS.and.this%num_subtensors.gt.0) then
+          errc=lit%init(this%subtensors); n=this%num_subtensors
+          do while(n.gt.0)
+           call thp%tens_header_ctor(packet,errc); if(errc.ne.PACK_SUCCESS) exit
+           errc=lit%append(thp); if(errc.ne.GFC_SUCCESS) exit
+           n=n-1
+          enddo
+          i=lit%release(); if(i.ne.GFC_SUCCESS.and.errc.eq.GFC_SUCCESS) errc=i
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensBodyCtorUnpack
+!------------------------------------------------
+        subroutine TensBodyPack(this,packet,ierr)
+!Packs the object into a packet.
+         implicit none
+         class(tens_body_t), intent(in):: this       !in: tensor body
+         class(obj_pack_t), intent(inout):: packet   !inout: packet
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: i,errc
+         type(list_iter_t):: lit
+         class(tens_header_t), pointer:: thp
+         class(*), pointer:: up
+         logical:: laid
+
+         laid=allocated(this%layout); call pack_builtin(packet,laid,errc)
+         if(errc.eq.PACK_SUCCESS) call pack_builtin(packet,this%num_subtensors,errc)
+         if(errc.eq.PACK_SUCCESS.and.laid) then
+          call pack_builtin(packet,this%layout%layout,errc)
+          if(errc.eq.PACK_SUCCESS) then
+           select type(lat=>this%layout)
+           type is(tens_layout_fdims_t)
+            call lat%pack(packet,errc)
+           class default
+            errc=TEREC_ERROR
+           end select
+          endif
+         endif
+         if(errc.eq.PACK_SUCCESS.and.this%num_subtensors.gt.0) then
+          errc=lit%init(this%subtensors)
+          do while(errc.eq.GFC_SUCCESS)
+           up=>lit%get_value(errc); if(errc.ne.GFC_SUCCESS) exit
+           select type(up); class is(tens_header_t); thp=>up; end select
+           if(.not.associated(thp)) then; errc=GFC_ERROR; exit; endif
+           call thp%pack(packet,errc); if(errc.ne.PACK_SUCCESS) then; errc=GFC_ERROR; exit; endif
+           errc=lit%scanp(return_each=.TRUE.,skip_current=.TRUE.)
+          enddo
+          if(errc.eq.GFC_NO_MOVE) errc=GFC_SUCCESS
+          i=lit%release(); if(i.ne.GFC_SUCCESS.and.errc.eq.GFC_SUCCESS) errc=i
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensBodyPack
 !------------------------------------------------------------------
         function TensBodyIsSet(this,ierr,layed,located) result(res)
 !Returns TRUE if the tensor body is set (plus additional info), that is,

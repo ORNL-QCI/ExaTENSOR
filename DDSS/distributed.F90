@@ -1,9 +1,9 @@
 !Distributed data storage service (DDSS).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2016/03/22 (started 2015/03/18)
+!REVISION: 2017/04/11 (started 2015/03/18)
 
-!Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
-!Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
+!Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
+!Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
 
 !This file is part of ExaTensor.
 
@@ -84,6 +84,7 @@
        module distributed
 !       use, intrinsic:: ISO_C_BINDING
         use service_mpi !includes ISO_C_BINDING & MPI & dil_basic
+        use pack_prim
 !       Depends on stsubs.F90, timers.F90, extern_names.F90 in some procedures
         implicit none
         private
@@ -167,12 +168,14 @@
          logical, private:: Dynamic                    !.true. if the MPI window is dynamic, .false. otherwise
          contains
           procedure, private:: clean=>WinMPIClean                 !clean MPI window info
-          procedure, private:: WinMPIPack                         !packs the object into SimplePack_t
+          procedure, private:: WinMPIPackNew                      !packs the object into a packet (obj_pack_t)
           procedure, private:: WinMPIPackInt                      !packs the object into a plain integer packet
-          generic, private:: pack=>WinMPIPack,WinMPIPackInt       !generic packing
-          procedure, private:: WinMPIUnpack                       !unpacks the object from SimplePack_t
+          procedure, private:: WinMPIPack                         !packs the object into SimplePack_t
+          generic, private:: pack=>WinMPIPackNew,WinMPIPackInt,WinMPIPack
+          procedure, private:: WinMPIUnpackNew                    !unpacks the object from a packet (obj_pack_t)
           procedure, private:: WinMPIUnpackInt                    !unpacks the object from a plain integer packet
-          generic, private:: unpack=>WinMPIUnpack,WinMPIUnpackInt !generic unpacking
+          procedure, private:: WinMPIUnpack                       !unpacks the object from SimplePack_t
+          generic, private:: unpack=>WinMPIUnpackNew,WinMPIUnpackInt,WinMPIUnpack
           procedure, private:: print_it=>WinMPIPrint              !prints the object data
         end type WinMPI_t
         integer(INT_MPI), parameter, private:: WinMPI_PACK_LEN=4  !packed length of WinMPI_t (in packing integers)
@@ -208,7 +211,7 @@
          type(WinMPI_t), private:: WinMPI         !info on the MPI window the data is exposed with
          integer(INT_ADDR), private:: Offset      !offset in the MPI window (in displacement units)
          integer(INT_COUNT), private:: DataVol    !data volume (number of typed elements)
-         integer(INT_MPI), private:: DataType     !data type of each element: {R4,R8,C4,C8,...}, see <tensor_algebra.F90>
+         integer(INT_MPI), private:: DataType     !data type of each element: {R4,R8,C4,C8,...}, see <dil_basic.F90>
          integer(8), private:: TransID            !data transfer request ID (sequential data transfer number within this process)
          integer(INT_MPI), private:: StatMPI      !status of the data transfer request (see MPI_STAT_XXX parameters above)
          integer(INT_MPI), private:: ReqHandle    !MPI request handle (for MPI communications with a request handle)
@@ -226,12 +229,14 @@
           procedure, public:: wait_data=>DataDescrWaitData      !waits until the data has been transferred to/from the origin (request based)
           procedure, public:: get_data=>DataDescrGetData        !loads data referred to by a data descriptor into a local buffer
           procedure, public:: acc_data=>DataDescrAccData        !accumulates data from a local buffer to the location specified by a data descriptor
-          procedure, private:: DataDescrPack                    !packs the DataDescr_t object into SimplePack_t (simple packet)
+          procedure, private:: DataDescrPackNew                 !packs the DataDescr_t object into a packet (obj_pack_t)
           procedure, private:: DataDescrPackInt                 !packs the DataDescr_t object into a plain integer packet (simple packet)
-          generic, public:: pack=>DataDescrPack,DataDescrPackInt !generic packing
-          procedure, private:: DataDescrUnpack                  !unpacks the DataDescr_t object from SimplePack_t (simple packet)
+          procedure, private:: DataDescrPack                    !packs the DataDescr_t object into SimplePack_t (simple packet)
+          generic, public:: pack=>DataDescrPackNew,DataDescrPackInt,DataDescrPack
+          procedure, private:: DataDescrUnpackNew               !unpacks the DataDescr_t object from a packet (obj_pack_t)
           procedure, private:: DataDescrUnpackInt               !unpacks the DataDescr_t object from a plain integer packet (simple packet)
-          generic, public:: unpack=>DataDescrUnpack,DataDescrUnpackInt !generic unpacking
+          procedure, private:: DataDescrUnpack                  !unpacks the DataDescr_t object from SimplePack_t (simple packet)
+          generic, public:: unpack=>DataDescrUnpackNew,DataDescrUnpackInt,DataDescrUnpack
           procedure, public:: print_it=>DataDescrPrint          !prints the data descriptor
         end type DataDescr_t
         integer(INT_MPI), parameter, private:: DataDescr_PACK_LEN=6+WinMPI_PACK_LEN !packed length of DataDescr_t (in packing integers)
@@ -301,10 +306,12 @@
         private RankWinListPrint
  !WinMPI_t:
         private WinMPIClean
-        private WinMPIPack
+        private WinMPIPackNew
         private WinMPIPackInt
-        private WinMPIUnpack
+        private WinMPIPack
+        private WinMPIUnpackNew
         private WinMPIUnpackInt
+        private WinMPIUnpack
         private WinMPIPrint
  !DataWin_t:
         private DataWinClean
@@ -333,10 +340,12 @@
         private DataDescrWaitData
         private DataDescrGetData
         private DataDescrAccData
-        private DataDescrPack
+        private DataDescrPackNew
         private DataDescrPackInt
-        private DataDescrUnpack
+        private DataDescrPack
+        private DataDescrUnpackNew
         private DataDescrUnpackInt
+        private DataDescrUnpack
         private DataDescrPrint
  !SimplePack_t:
         private SimplePackReserve
@@ -698,6 +707,22 @@
         if(present(ierr)) ierr=errc
         return
         end subroutine WinMPIClean
+!------------------------------------------------
+       subroutine WinMPIPackNew(this,packet,ierr)
+!Packs the WinMPI_t object into a packet.
+        implicit none
+        class(WinMPI_t), intent(in):: this             !in: WinMPI_t object
+        class(obj_pack_t), intent(inout):: packet      !inout: packet
+        integer(INT_MPI), intent(out), optional:: ierr !out: error code
+        integer(INT_MPI):: errc
+
+        call pack_builtin(packet,this%Window,errc)
+        if(errc.eq.PACK_SUCCESS) call pack_builtin(packet,this%DispUnit,errc)
+        if(errc.eq.PACK_SUCCESS) call pack_builtin(packet,this%CommMPI,errc)
+        if(errc.eq.PACK_SUCCESS) call pack_builtin(packet,this%Dynamic,errc)
+        if(present(ierr)) ierr=errc
+        return
+       end subroutine WinMPIPackNew
 !----------------------------------------------------------
         subroutine WinMPIPackInt(this,packet,ierr,pack_len)
 !Packs a WinMPI_t object into a plain integer packet <packet>.
@@ -755,6 +780,22 @@
         if(present(ierr)) ierr=errc
         return
         end subroutine WinMPIPack
+!---------------------------------------------------
+        subroutine WinMPIUnpackNew(this,packet,ierr)
+!Unpacks a WinMPI_t object from a packet.
+         implicit none
+         class(WinMPI_t), intent(out):: this            !out: WinMPI_t object
+         class(obj_pack_t), intent(inout):: packet      !inout: packet
+         integer(INT_MPI), intent(out), optional:: ierr !out: error code
+         integer(INT_MPI):: errc
+
+         call unpack_builtin(packet,this%Window,errc)
+         if(errc.eq.PACK_SUCCESS) call unpack_builtin(packet,this%DispUnit,errc)
+         if(errc.eq.PACK_SUCCESS) call unpack_builtin(packet,this%CommMPI,errc)
+         if(errc.eq.PACK_SUCCESS) call unpack_builtin(packet,this%Dynamic,errc)
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine WinMPIUnpackNew
 !------------------------------------------------------------
         subroutine WinMPIUnpackInt(this,packet,ierr,pack_len)
 !Unpacks a WinMPI_t object from a plain integer packet <packet>.
@@ -2139,6 +2180,61 @@
          end subroutine start_acc_c8
 
         end subroutine DataDescrAccData
+!-------------------------------------------------------------
+        subroutine DataDescrPackInt(this,packet,ierr,pack_len)
+!Packs a data descriptor into a plain packet of integers of kind ELEM_PACK_SIZE.
+!The first integer in the packet is always the useful length of the packet,
+!that is, the number of following integer elements carrying the information.
+!It is the user responsibility to provide a large enough packet buffer.
+        use extern_names, only: c_ptr_value
+        implicit none
+        class(DataDescr_t), intent(in):: this                        !in: data descriptor
+        integer(ELEM_PACK_SIZE), intent(inout), contiguous, target:: packet(0:) !out: plain integer packet (length + descriptor data)
+        integer(INT_MPI), intent(inout), optional:: ierr             !out: error code (0:success)
+        integer(INT_COUNT), intent(out), optional:: pack_len         !out: total packet length (in packing integers)
+        integer(INT_MPI):: errc
+        integer(INT_COUNT):: pl,wl
+        integer(C_SIZE_T), pointer:: isize_p
+        integer(INT_ADDR), pointer:: iaddr_p
+        integer(INT_MPI), pointer:: impi_p
+        integer(INT_COUNT), pointer:: len_p
+        type(C_PTR):: cptr
+
+        errc=0; if(present(pack_len)) pack_len=0
+        packet(0)=0; pl=0
+        pl=pl+1; packet(pl)=0; cptr=c_loc(packet(pl)); call c_f_pointer(cptr,isize_p); isize_p=c_ptr_value(this%LocPtr)
+        pl=pl+1; packet(pl)=0; cptr=c_loc(packet(pl)); call c_f_pointer(cptr,impi_p); impi_p=this%RankMPI
+        pl=pl+1; call this%WinMPI%pack(packet(pl:),errc,wl)
+        if(errc.eq.0) then
+         pl=pl+wl; packet(pl)=0; cptr=c_loc(packet(pl)); call c_f_pointer(cptr,iaddr_p); iaddr_p=this%Offset
+         pl=pl+1; packet(pl)=0; cptr=c_loc(packet(pl)); call c_f_pointer(cptr,len_p); len_p=this%DataVol
+         pl=pl+1; packet(pl)=0; cptr=c_loc(packet(pl)); call c_f_pointer(cptr,impi_p); impi_p=this%DataType
+         cptr=c_loc(packet(0)); call c_f_pointer(cptr,len_p); len_p=pl !packet body length
+         len_p=>NULL(); impi_p=>NULL(); iaddr_p=>NULL(); isize_p=>NULL()
+         if(present(pack_len)) pack_len=1+pl !header integer + packet body
+        else
+         errc=1
+        endif
+        if(present(ierr)) ierr=errc
+        return
+        end subroutine DataDescrPackInt
+!----------------------------------------------------
+        subroutine DataDescrPackNew(this,packet,ierr)
+!Packs an object into a packet.
+         implicit none
+         class(DataDescr_t), intent(in):: this          !in: data descriptor
+         class(obj_pack_t), intent(inout):: packet      !inout: packet
+         integer(INT_MPI), intent(out), optional:: ierr !out: error code
+         integer(INT_MPI):: errc
+
+         call pack_builtin(packet,this%RankMPI,errc)
+         if(errc.eq.PACK_SUCCESS) call this%WinMPI%pack(packet,errc)
+         if(errc.eq.PACK_SUCCESS) call pack_builtin(packet,this%Offset,errc)
+         if(errc.eq.PACK_SUCCESS) call pack_builtin(packet,this%DataVol,errc)
+         if(errc.eq.PACK_SUCCESS) call pack_builtin(packet,this%DataType,errc)
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine DataDescrPackNew
 !----------------------------------------------------------
         subroutine DataDescrPack(this,packet,ierr,pack_len)
 !Packs a data descriptor into a plain packet of integers of kind ELEM_PACK_SIZE.
@@ -2187,18 +2283,34 @@
         if(present(ierr)) ierr=errc
         return
         end subroutine DataDescrPack
-!-------------------------------------------------------------
-        subroutine DataDescrPackInt(this,packet,ierr,pack_len)
-!Packs a data descriptor into a plain packet of integers of kind ELEM_PACK_SIZE.
-!The first integer in the packet is always the useful length of the packet,
-!that is, the number of following integer elements carrying the information.
-!It is the user responsibility to provide a large enough packet buffer.
-        use extern_names, only: c_ptr_value
+!------------------------------------------------------
+        subroutine DataDescrUnpackNew(this,packet,ierr)
+!Unpacks an object from a packet.
+         implicit none
+         class(DataDescr_t), intent(inout):: this       !out: data descriptor
+         class(obj_pack_t), intent(inout):: packet      !inout: packet
+         integer(INT_MPI), intent(out), optional:: ierr !out: error code
+         integer(INT_MPI):: errc
+
+         if(.not.this%is_set(errc)) then
+          if(errc.eq.0) call unpack_builtin(packet,this%RankMPI,errc)
+          if(errc.eq.PACK_SUCCESS) call this%WinMPI%unpack(packet,errc)
+          if(errc.eq.PACK_SUCCESS) call unpack_builtin(packet,this%Offset,errc)
+          if(errc.eq.PACK_SUCCESS) call unpack_builtin(packet,this%DataVol,errc)
+          if(errc.eq.PACK_SUCCESS) call unpack_builtin(packet,this%DataType,errc)
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine DataDescrUnpackNew
+!---------------------------------------------------------------
+        subroutine DataDescrUnpackInt(this,packet,ierr,pack_len)
+!Unpacks a data descriptor from a plain integer packet.
+        use extern_names, only: c_ptr_set
         implicit none
-        class(DataDescr_t), intent(in):: this                        !in: data descriptor
-        integer(ELEM_PACK_SIZE), intent(inout), contiguous, target:: packet(0:) !out: plain integer packet (length + descriptor data)
-        integer(INT_MPI), intent(inout), optional:: ierr             !out: error code (0:success)
-        integer(INT_COUNT), intent(out), optional:: pack_len         !out: total packet length (in packing integers)
+        class(DataDescr_t), intent(inout):: this                  !out: unpacked data descriptor
+        integer(ELEM_PACK_SIZE), intent(in), contiguous, target:: packet(0:) !in: plain integer packet containing the data descriptor information
+        integer(INT_MPI), intent(inout), optional:: ierr          !out: error code (0:success)
+        integer(INT_COUNT), intent(out), optional:: pack_len      !out: total packet length (in packing integers)
         integer(INT_MPI):: errc
         integer(INT_COUNT):: pl,wl
         integer(C_SIZE_T), pointer:: isize_p
@@ -2207,24 +2319,28 @@
         integer(INT_COUNT), pointer:: len_p
         type(C_PTR):: cptr
 
-        errc=0; if(present(pack_len)) pack_len=0
-        packet(0)=0; pl=0
-        pl=pl+1; packet(pl)=0; cptr=c_loc(packet(pl)); call c_f_pointer(cptr,isize_p); isize_p=c_ptr_value(this%LocPtr)
-        pl=pl+1; packet(pl)=0; cptr=c_loc(packet(pl)); call c_f_pointer(cptr,impi_p); impi_p=this%RankMPI
-        pl=pl+1; call this%WinMPI%pack(packet(pl:),errc,wl)
-        if(errc.eq.0) then
-         pl=pl+wl; packet(pl)=0; cptr=c_loc(packet(pl)); call c_f_pointer(cptr,iaddr_p); iaddr_p=this%Offset
-         pl=pl+1; packet(pl)=0; cptr=c_loc(packet(pl)); call c_f_pointer(cptr,len_p); len_p=this%DataVol
-         pl=pl+1; packet(pl)=0; cptr=c_loc(packet(pl)); call c_f_pointer(cptr,impi_p); impi_p=this%DataType
-         cptr=c_loc(packet(0)); call c_f_pointer(cptr,len_p); len_p=pl !packet body length
+        errc=0
+        cptr=c_loc(packet(0)); call c_f_pointer(cptr,len_p)
+        if(present(pack_len)) pack_len=1+len_p
+        if(len_p.eq.DataDescr_PACK_LEN) then
+         call this%clean(); pl=0
+         pl=pl+1; cptr=c_loc(packet(pl)); call c_f_pointer(cptr,isize_p); call c_ptr_set(isize_p,this%LocPtr)
+         pl=pl+1; cptr=c_loc(packet(pl)); call c_f_pointer(cptr,impi_p); this%RankMPI=impi_p
+         pl=pl+1; call this%WinMPI%unpack(packet(pl:),errc,wl)
+         if(errc.eq.0) then
+          pl=pl+wl; cptr=c_loc(packet(pl)); call c_f_pointer(cptr,iaddr_p); this%Offset=iaddr_p
+          pl=pl+1; cptr=c_loc(packet(pl)); call c_f_pointer(cptr,len_p); this%DataVol=len_p
+          pl=pl+1; cptr=c_loc(packet(pl)); call c_f_pointer(cptr,impi_p); this%DataType=impi_p
+         else
+          errc=2
+         endif
          len_p=>NULL(); impi_p=>NULL(); iaddr_p=>NULL(); isize_p=>NULL()
-         if(present(pack_len)) pack_len=1+pl !header integer + packet body
         else
          errc=1
         endif
         if(present(ierr)) ierr=errc
         return
-        end subroutine DataDescrPackInt
+        end subroutine DataDescrUnpackInt
 !------------------------------------------------------------
         subroutine DataDescrUnpack(this,packet,ierr,pack_len)
 !Unpacks a data descriptor from a plain integer packet.
@@ -2268,45 +2384,6 @@
         if(present(ierr)) ierr=errc
         return
         end subroutine DataDescrUnpack
-!---------------------------------------------------------------
-        subroutine DataDescrUnpackInt(this,packet,ierr,pack_len)
-!Unpacks a data descriptor from a plain integer packet.
-        use extern_names, only: c_ptr_set
-        implicit none
-        class(DataDescr_t), intent(inout):: this                  !out: unpacked data descriptor
-        integer(ELEM_PACK_SIZE), intent(in), contiguous, target:: packet(0:) !in: plain integer packet containing the data descriptor information
-        integer(INT_MPI), intent(inout), optional:: ierr          !out: error code (0:success)
-        integer(INT_COUNT), intent(out), optional:: pack_len      !out: total packet length (in packing integers)
-        integer(INT_MPI):: errc
-        integer(INT_COUNT):: pl,wl
-        integer(C_SIZE_T), pointer:: isize_p
-        integer(INT_ADDR), pointer:: iaddr_p
-        integer(INT_MPI), pointer:: impi_p
-        integer(INT_COUNT), pointer:: len_p
-        type(C_PTR):: cptr
-
-        errc=0
-        cptr=c_loc(packet(0)); call c_f_pointer(cptr,len_p)
-        if(present(pack_len)) pack_len=1+len_p
-        if(len_p.eq.DataDescr_PACK_LEN) then
-         call this%clean(); pl=0
-         pl=pl+1; cptr=c_loc(packet(pl)); call c_f_pointer(cptr,isize_p); call c_ptr_set(isize_p,this%LocPtr)
-         pl=pl+1; cptr=c_loc(packet(pl)); call c_f_pointer(cptr,impi_p); this%RankMPI=impi_p
-         pl=pl+1; call this%WinMPI%unpack(packet(pl:),errc,wl)
-         if(errc.eq.0) then
-          pl=pl+wl; cptr=c_loc(packet(pl)); call c_f_pointer(cptr,iaddr_p); this%Offset=iaddr_p
-          pl=pl+1; cptr=c_loc(packet(pl)); call c_f_pointer(cptr,len_p); this%DataVol=len_p
-          pl=pl+1; cptr=c_loc(packet(pl)); call c_f_pointer(cptr,impi_p); this%DataType=impi_p
-         else
-          errc=2
-         endif
-         len_p=>NULL(); impi_p=>NULL(); iaddr_p=>NULL(); isize_p=>NULL()
-        else
-         errc=1
-        endif
-        if(present(ierr)) ierr=errc
-        return
-        end subroutine DataDescrUnpackInt
 !----------------------------------------------------
         subroutine DataDescrPrint(this,dev_out,space)
 !Prints object data.

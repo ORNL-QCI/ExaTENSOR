@@ -290,7 +290,7 @@ endif
 ./OBJ/service_mpi.o: service_mpi.F90 ./OBJ/mpi_fort.o ./OBJ/stsubs.o ./OBJ/c2f_ifc.o ./OBJ/dil_basic.o ./OBJ/timers.o
 	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) service_mpi.F90 -o ./OBJ/service_mpi.o
 
-./OBJ/distributed.o: distributed.F90 ./OBJ/service_mpi.o ./OBJ/stsubs.o ./OBJ/c2f_ifc.o ./OBJ/timers.o
+./OBJ/distributed.o: distributed.F90 ./OBJ/service_mpi.o ./OBJ/stsubs.o ./OBJ/c2f_ifc.o ./OBJ/timers.o ./OBJ/pack_prim.o
 	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) distributed.F90 -o ./OBJ/distributed.o
 
 ./OBJ/pack_prim.o: pack_prim.F90 ./OBJ/stsubs.o ./OBJ/dil_basic.o
