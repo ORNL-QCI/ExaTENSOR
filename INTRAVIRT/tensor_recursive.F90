@@ -214,7 +214,9 @@
          contains
           procedure, private:: TensRcrsvCtorSigna                    !ctor by tensor signature and optionally tensor shape
           procedure, private:: TensRcrsvCtorHead                     !ctor by tensor header
-          generic, public:: tens_rcrsv_ctor=>TensRcrsvCtorSigna,TensRcrsvCtorHead
+          procedure, private:: TensRcrsvCtorUnpack                   !ctor by unpacking
+          generic, public:: tens_rcrsv_ctor=>TensRcrsvCtorSigna,TensRcrsvCtorHead,TensRcrsvCtorUnpack
+          procedure, public:: pack=>TensRcrsvPack                    !packs the object into a packet
           procedure, public:: is_set=>TensRcrsvIsSet                 !returns TRUE if the tensor is set (signature defined) plus other info
           procedure, public:: add_subtensor=>TensRcrsvAddSubtensor   !registers a constituent subtensor by providing its tensor header
           procedure, public:: add_subtensors=>TensRcrsvAddSubtensors !registers constituent subtensors by providing a list of their tensor headers
@@ -347,6 +349,8 @@
  !tens_rcrsv_t:
         private TensRcrsvCtorSigna
         private TensRcrsvCtorHead
+        private TensRcrsvCtorUnpack
+        private TensRcrsvPack
         private TensRcrsvIsSet
         private TensRcrsvAddSubtensor
         private TensRcrsvAddSubtensors
@@ -2643,6 +2647,34 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensRcrsvCtorHead
+!-------------------------------------------------------
+        subroutine TensRcrsvCtorUnpack(this,packet,ierr)
+!Unpacks the object from a packet.
+         implicit none
+         class(tens_rcrsv_t), intent(out):: this     !out: tensor
+         class(obj_pack_t), intent(inout):: packet   !inout: packet
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         call this%header%tens_header_ctor(packet,errc)
+         if(errc.eq.PACK_SUCCESS) call this%body%tens_body_ctor(packet,errc)
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensRcrsvCtorUnpack
+!-------------------------------------------------
+        subroutine TensRcrsvPack(this,packet,ierr)
+!Packs the object into a packet.
+         implicit none
+         class(tens_rcrsv_t), intent(in):: this      !in: tensor
+         class(obj_pack_t), intent(inout):: packet   !inout: packet
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         call this%header%pack(packet,errc)
+         if(errc.eq.PACK_SUCCESS) call this%body%pack(packet,errc)
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensRcrsvPack
 !-------------------------------------------------------------------------------------
         function TensRcrsvIsSet(this,ierr,shaped,unresolved,layed,located) result(res)
 !Returns TRUE if the tensor is set, plus additional info.
