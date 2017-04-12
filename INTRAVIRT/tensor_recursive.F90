@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/04/11
+!REVISION: 2017/04/12
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -28,7 +28,9 @@
         use stsubs
         use gfc_base
         use gfc_list
+        use gfc_vector
         use gfc_vec_tree
+        use gfc_dictionary
         use subspaces
         use pack_prim
         use distributed
@@ -68,6 +70,36 @@
         integer(INTD), parameter, public:: TEREC_IND_RESTR_GE=4   !indices within the group are >= ordered i1 >= i2 >= i3
         integer(INTD), parameter, public:: TEREC_NUM_IND_RESTR=5  !total number of index restrictions (0..max)
 !TYPES:
+ !Register of hierarchical spaces:
+        type, private:: hspace_register_t
+         logical, private:: initialized=.FALSE.        !initialization status
+         type(dictionary_t), private:: name2id         !symbolic name -> id map
+         type(vector_t), private:: hspaces             !vector of h_space_t objects
+         type(dictionary_iter_t), private:: name2id_it !name2id iterator
+         type(vector_iter_t), private:: hspaces_it     !hspaces iterator
+         contains
+          procedure, private:: init=>HspaceRegisterInit                   !initializes the register
+          procedure, public:: register_space=>HspaceRegisterRegisterSpace !registers a new hierarchical vector space
+          procedure, public:: get_space_id=>HspaceRegisterGetSpaceId      !returns the registered id of the space by its name
+          procedure, private:: HspaceRegisterGetSpaceByName               !returns a pointer to the hierarchical space by its name
+          procedure, private:: HspaceRegisterGetSpaceById                 !returns a pointer to the hierarchical space by its id
+          generic, public:: get_space=>HspaceRegisterGetSpaceByName,HspaceRegisterGetSpaceById !returns a pointer to the hierarchical space
+          final:: hspace_register_dtor                                    !dtor
+        end type hspace_register_t
+ !Registered hierarchical space:
+        type, private:: hspace_reg_t
+         integer(INTD), private:: space_id=-1                  !registered space id: [0..max]
+         class(h_space_t), pointer, private:: hspace_p=>NULL() !pointer to the hierarchical space definition
+         contains
+          procedure, private:: HspaceRegCtor                     !ctor
+          procedure, private:: HspaceRegCtorUnpack               !ctor by unpacking
+          generic, private:: hspace_reg_ctor=>HspaceRegCtor,HspaceRegCtorUnpack
+          procedure, private:: pack=>HspaceRegPack               !packs the object into a packet
+          procedure, private:: is_set=>HspaceRegIsSet            !returns TRUE if the object is set
+          procedure, private:: get_space_id=>HspaceRegGetSpaceId !returns the registered space id: [0..max]
+          procedure, private:: get_space=>HspaceRegGetSpace      !returns a pointer to the hierarchical space definition
+          final:: hspace_reg_dtor                                !dtor
+        end type hspace_reg_t
  !Tensor signature (unique tensor identifier):
         type, public:: tens_signature_t
          character(:), allocatable, private:: char_name         !character tensor name (alphanumeric_)
@@ -257,10 +289,27 @@
          end subroutine tens_layout_extract_i
         end interface
 !VISIBILITY:
+ !non-member:
         public valid_tensor_layout
+        public cmp_strings
         public cmp_tens_signatures
         public cmp_tens_headers
         public print_tens_header_f
+ !hspace_register_t:
+        private HspaceRegisterInit
+        private HspaceRegisterRegisterSpace
+        private HspaceRegisterGetSpaceId
+        private HspaceRegisterGetSpaceByName
+        private HspaceRegisterGetSpaceById
+        public hspace_register_dtor
+ !hspace_reg_t:
+        private HspaceRegCtor
+        private HspaceRegCtorUnpack
+        private HspaceRegPack
+        private HspaceRegIsSet
+        private HspaceRegGetSpaceId
+        private HspaceRegGetSpace
+        public hspace_reg_dtor
  !tens_signature_t:
         private TensSignatureCtor
         private TensSignatureCtorUnpack
@@ -362,18 +411,39 @@
         private TensRcrsvSplit
         public tens_rcrsv_dtor
 !DATA:
+ !Register of hierarchical vector spaces (only these spaces can be used):
+        type(hspace_register_t), public:: hspace_register
 
        contains
 !IMPLEMENTATION:
 ![Non-member]===========================================
         function valid_tensor_layout(layout) result(res)
 !Returns TRUE if the tensor layout is valid.
+         implicit none
          logical:: res
          integer(INTD), intent(in):: layout
 
          res=(layout.ge.0.and.layout.lt.TEREC_NUM_LAYOUTS)
          return
         end function valid_tensor_layout
+!--------------------------------------------------
+        function cmp_strings(str1,str2) result(cmp)
+!Comparator for strings.
+         implicit none
+         integer(INTD):: cmp                 !out: result of comparison: {CMP_EQ,CMP_LT,CMP_GT,CMP_ER}
+         class(*), intent(in), target:: str1 !in: string 1
+         class(*), intent(in), target:: str2 !in: string 2
+
+         cmp=CMP_ER
+         select type(str1)
+         type is(character(*))
+          select type(str2)
+          type is(character(*))
+           cmp=str_cmp(str1,str2)
+          end select
+         end select
+         return
+        end function cmp_strings
 !--------------------------------------------------------
         function cmp_tens_signatures(ts1,ts2) result(cmp)
 !Comparator for tensor signatures.
@@ -427,6 +497,248 @@
          end select
          return
         end function print_tens_header_f
+![hspace_register_t]=========================================================================
+        subroutine HspaceRegisterInit(this,ierr)
+!Initializes the register of hierarchical vector spaces.
+         implicit none
+         class(hspace_register_t), intent(inout):: this !inout: register of hierarchical vector spaces
+         integer(INTD), intent(out), optional:: ierr    !out: error code
+         integer(INTD):: errc
+
+         if(this%initialized) then
+          errc=TEREC_INVALID_REQUEST
+         else
+          errc=this%name2id_it%init(this%name2id)
+          if(errc.eq.GFC_SUCCESS) then
+           errc=this%hspaces_it%init(this%hspaces)
+           if(errc.eq.GFC_SUCCESS) this%initialized=.TRUE.
+          endif
+         endif
+         if(errc.ne.TEREC_SUCCESS) call hspace_register_dtor(this)
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine HspaceRegisterInit
+!--------------------------------------------------------------------------------------------
+        function HspaceRegisterRegisterSpace(this,space_name,ierr,hspace_p) result(hspace_id)
+!Registers an empty hierarchical vector space under the name <space_name> and, optionally,
+!returns a pointer to the just registered space for a subsequent definition.
+         implicit none
+         integer(INTD):: hspace_id                                   !out: registered id of the hierarchical vector space: [0..max]
+         class(hspace_register_t), intent(inout):: this              !inout: register of hierarchical vector spaces
+         character(*), intent(in), target:: space_name               !in: space name
+         integer(INTD), intent(out), optional:: ierr                 !out: error code
+         class(h_space_t), pointer, intent(out), optional:: hspace_p !out: pointer to the just registered empty hierarchical vector space (for further construction)
+         integer(INTD):: errc
+         type(h_space_t):: hspace_empty
+         class(*), pointer:: up
+
+         errc=TEREC_SUCCESS
+         if(.not.this%initialized) call this%init(errc)
+         if(errc.eq.TEREC_SUCCESS) then
+          hspace_id=this%hspaces_it%get_length(errc)
+          if(errc.eq.GFC_SUCCESS) then
+           hspace_id=hspace_id+1
+           errc=this%name2id_it%search(GFC_DICT_ADD_IF_NOT_FOUND,cmp_strings,space_name,hspace_id)
+           if(errc.eq.GFC_NOT_FOUND) then
+            errc=this%hspaces_it%append(hspace_empty)
+            if(errc.eq.GFC_SUCCESS) then
+             if(present(hspace_p)) then
+              hspace_p=>NULL()
+              up=>this%hspaces_it%element_value(int(hspace_id,INTL),errc)
+              if(errc.eq.GFC_SUCCESS) then
+               select type(up); class is(h_space_t); hspace_p=>up; end select
+               if(.not.associated(hspace_p)) errc=TEREC_ERROR
+              endif
+             endif
+            endif
+           else
+            errc=TEREC_INVALID_REQUEST
+           endif
+          endif
+         endif
+         if(errc.ne.TEREC_SUCCESS) hspace_id=-1
+         if(present(ierr)) ierr=errc
+         return
+        end function HspaceRegisterRegisterSpace
+!--------------------------------------------------------------------------------
+        function HspaceRegisterGetSpaceId(this,space_name,ierr) result(hspace_id)
+!Given the name of a registered hierarchical space, returns its id.
+         implicit none
+         integer(INTD):: hspace_id                      !out: space id
+         class(hspace_register_t), intent(inout):: this !in: register of hierarchical spaces
+         character(*), intent(in), target:: space_name  !in: name of the hierarchical space
+         integer(INTD), intent(out), optional:: ierr    !out: error code
+         integer(INTD):: errc
+         class(*), pointer:: up
+
+         errc=TEREC_SUCCESS; hspace_id=-1
+         if(.not.this%initialized) call this%init(errc)
+         if(errc.eq.TEREC_SUCCESS) then
+          errc=this%name2id_it%search(GFC_DICT_JUST_FIND,cmp_strings,space_name,value_out=up)
+          if(errc.eq.GFC_FOUND) then
+           !if(associated(up)) then
+            select type(up); type is(integer); hspace_id=int(up,INTD); class default; errc=TEREC_ERROR; end select
+           !else
+            !errc=TEREC_ERROR
+           !endif
+          else
+           errc=TEREC_INVALID_ARGS
+          endif
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function HspaceRegisterGetSpaceId
+!---------------------------------------------------------------------------------------------
+        function HspaceRegisterGetSpaceByName(this,space_name,ierr,hspace_id) result(hspace_p)
+!Given the name of a registered hierarchical space, returns a pointer to the stored space itself.
+         implicit none
+         class(h_space_t), pointer:: hspace_p             !out: pointer to the stored hierarchical vector space
+         class(hspace_register_t), intent(inout):: this   !in: register of hierarchical vector spaces
+         character(*), intent(in), target:: space_name    !in: space name
+         integer(INTD), intent(out), optional:: ierr      !out: error code
+         integer(INTD), intent(out), optional:: hspace_id !out: registered space id: [0..max], -1:unregistered
+         integer(INTD):: errc,hid
+         class(*), pointer:: up
+
+         hspace_p=>NULL(); hid=this%get_space_id(space_name,errc)
+         if(errc.eq.TEREC_SUCCESS) then
+          up=>this%hspaces_it%element_value(int(hid,INTL),errc)
+          if(errc.eq.GFC_SUCCESS) then
+           select type(up); class is(h_space_t); hspace_p=>up; end select
+           if(.not.associated(hspace_p)) errc=TEREC_ERROR
+          endif
+         endif
+         if(present(hspace_id)) hspace_id=hid
+         if(present(ierr)) ierr=errc
+         return
+        end function HspaceRegisterGetSpaceByName
+!-------------------------------------------------------------------------------
+        function HspaceRegisterGetSpaceById(this,space_id,ierr) result(hspace_p)
+!Returns a pointer to a hierarchical vector space stored in the register with id <space_id>.
+         implicit none
+         class(h_space_t), pointer:: hspace_p             !out: pointer to the stored hierarchical vector space
+         class(hspace_register_t), intent(inout):: this   !in: register of hierarchical vector spaces
+         integer(INTD), intent(in):: space_id             !in: registered space id
+         integer(INTD), intent(out), optional:: ierr      !out: error code
+         integer(INTD):: errc
+         class(*), pointer:: up
+
+         errc=TEREC_SUCCESS; hspace_p=>NULL()
+         if(.not.this%initialized) call this%init(errc)
+         if(errc.eq.TEREC_SUCCESS) then
+          up=>this%hspaces_it%element_value(int(space_id,INTL),errc)
+          if(errc.eq.GFC_SUCCESS) then
+           select type(up); class is(h_space_t); hspace_p=>up; end select
+           if(.not.associated(hspace_p)) errc=TEREC_ERROR
+          endif
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function HspaceRegisterGetSpaceById
+!--------------------------------------------
+        subroutine hspace_register_dtor(this)
+         implicit none
+         type(hspace_register_t):: this
+         integer(INTD):: errc
+
+         errc=this%name2id_it%get_status()
+         if(errc.ne.GFC_IT_NULL) then
+          call this%name2id_it%delete_all(errc)
+          errc=this%name2id_it%release()
+         endif
+         errc=this%hspaces_it%get_status()
+         if(errc.ne.GFC_IT_NULL) then
+          errc=this%hspaces_it%delete_all()
+          errc=this%hspaces_it%release()
+         endif
+         this%initialized=.FALSE.
+         return
+        end subroutine hspace_register_dtor
+![hspace_reg_t]=====================================
+        subroutine HspaceRegCtor(this,space_id,ierr)
+         implicit none
+         class(hspace_reg_t), intent(out):: this     !out: registered hierarchical space
+         integer(INTD), intent(in):: space_id        !in: registered space id
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         this%space_id=space_id
+         this%hspace_p=>hspace_register%get_space(space_id,errc)
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine HspaceRegCtor
+!-------------------------------------------------------
+        subroutine HspaceRegCtorUnpack(this,packet,ierr)
+!Unpacks an object from the packet.
+         implicit none
+         class(hspace_reg_t), intent(out):: this     !out: registered hierarchical space
+         class(obj_pack_t), intent(inout):: packet   !inout: packet
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc,hid
+
+         call unpack_builtin(packet,hid,errc)
+         if(errc.eq.PACK_SUCCESS) call this%hspace_reg_ctor(hid,errc)
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine HspaceRegCtorUnpack
+!-------------------------------------------------
+        subroutine HspaceRegPack(this,packet,ierr)
+!Packs the object into a packet.
+         implicit none
+         class(hspace_reg_t), intent(in):: this      !in: registered hierarchical space
+         class(obj_pack_t), intent(inout):: packet   !inout: packet
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         call pack_builtin(packet,this%space_id,errc)
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine HspaceRegPack
+!-----------------------------------------------------
+        function HspaceRegIsSet(this,ierr) result(ans)
+!Returns TRUE if the object is set.
+         implicit none
+         logical:: ans                               !out: answer
+         class(hspace_reg_t), intent(in):: this      !in: registered hierarchical space
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=TEREC_SUCCESS; ans=(this%space_id.ge.0)
+         if(present(ierr)) ierr=errc
+         return
+        end function HspaceRegIsSet
+!----------------------------------------------------------------
+        function HspaceRegGetSpaceId(this,ierr) result(hspace_id)
+!Returns the registered id of the hierarchical space.
+         implicit none
+         integer(INTD):: hspace_id                   !out: space id
+         class(hspace_reg_t), intent(in):: this      !in: registered hierarchical space
+         integer(INTD), intent(out), optional:: ierr !out: error code
+
+         hspace_id=this%space_id
+         if(present(ierr).and.hspace_id.lt.0) ierr=TEREC_INVALID_REQUEST
+         return
+        end function HspaceRegGetSpaceId
+!-------------------------------------------------------------
+        function HspaceRegGetSpace(this,ierr) result(hspace_p)
+!Returns a pointer to the stored hierarchical vector space.
+         implicit none
+         class(h_space_t), pointer:: hspace_p        !out: pointer to the hierarchical space
+         class(hspace_reg_t), intent(in):: this      !in: registered hierarchical space
+         integer(INTD), intent(out), optional:: ierr !out: error code
+
+         hspace_p=>this%hspace_p
+         if(present(ierr).and.(.not.associated(hspace_p))) ierr=TEREC_INVALID_REQUEST
+         return
+        end function HspaceRegGetSpace
+!---------------------------------------
+        subroutine hspace_reg_dtor(this)
+         implicit none
+         type(hspace_reg_t):: this
+
+         this%space_id=-1; this%hspace_p=>NULL()
+         return
+        end subroutine hspace_reg_dtor
 ![tens_signature_t]========================================================
         subroutine TensSignatureCtor(this,ierr,subspaces,tens_name,h_space)
 !CTOR for tens_signature_t.
