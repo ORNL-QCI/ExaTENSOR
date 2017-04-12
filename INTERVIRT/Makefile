@@ -133,17 +133,22 @@ MPI_LINK = $(MPI_LINK_$(WRAP))
 #LINEAR ALGEBRA FLAGS:
 LA_LINK_ATLAS = -L$(PATH_BLAS_ATLAS) -lblas -llapack
 ifeq ($(TOOLKIT),GNU)
-LA_LINK_MKL = -L$(PATH_BLAS_MKL) -lmkl_intel_lp64 -lmkl_core -lmkl_gnu_thread -lpthread -lm -ldl
+LA_LINK_MKL = -L$(PATH_BLAS_MKL) -lmkl_intel_lp64 -lmkl_gnu_thread -lmkl_core -lpthread -lm -ldl
 else
-LA_LINK_MKL = -L$(PATH_BLAS_MKL) -lmkl_intel_lp64 -lmkl_core -lmkl_intel_thread -lpthread -lm -ldl
+LA_LINK_MKL = -L$(PATH_BLAS_MKL) -lmkl_intel_lp64 -lmkl_intel_thread -lmkl_core -lpthread -lm -ldl -L$(PATH_BLAS_MKL_DEP) -liomp5
 endif
 LA_LINK_ACML = -L$(PATH_BLAS_ACML) -lacml_mp
+LA_LINK_ESSL = -L$(PATH_BLAS_ESSL) -lessl -L$(PATH_BLAS_ESSL_DEP) -lxlf90_r -lxlfmath
 ifeq ($(BLASLIB),NONE)
 LA_LINK_NOWRAP = -L.
 else
 LA_LINK_NOWRAP = $(LA_LINK_$(BLASLIB))
 endif
+ifeq ($(BLASLIB),MKL)
+LA_LINK_WRAP = $(LA_LINK_MKL)
+else
 LA_LINK_WRAP = -L.
+endif
 LA_LINK = $(LA_LINK_$(WRAP))
 
 #CUDA INCLUDES:
