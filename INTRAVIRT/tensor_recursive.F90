@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/04/12
+!REVISION: 2017/04/13
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -87,26 +87,25 @@
           final:: hspace_register_dtor                                    !dtor
         end type hspace_register_t
  !Registered hierarchical space:
-        type, private:: hspace_reg_t
+        type, public:: hspace_reg_t
          integer(INTD), private:: space_id=-1                  !registered space id: [0..max]
          class(h_space_t), pointer, private:: hspace_p=>NULL() !pointer to the hierarchical space definition
          contains
-          procedure, private:: HspaceRegCtor                     !ctor
-          procedure, private:: HspaceRegCtorUnpack               !ctor by unpacking
-          generic, private:: hspace_reg_ctor=>HspaceRegCtor,HspaceRegCtorUnpack
-          procedure, private:: pack=>HspaceRegPack               !packs the object into a packet
-          procedure, private:: is_set=>HspaceRegIsSet            !returns TRUE if the object is set
-          procedure, private:: get_space_id=>HspaceRegGetSpaceId !returns the registered space id: [0..max]
-          procedure, private:: get_space=>HspaceRegGetSpace      !returns a pointer to the hierarchical space definition
-          final:: hspace_reg_dtor                                !dtor
+          procedure, private:: HspaceRegCtor                    !ctor
+          procedure, private:: HspaceRegCtorUnpack              !ctor by unpacking
+          generic, public:: hspace_reg_ctor=>HspaceRegCtor,HspaceRegCtorUnpack
+          procedure, public:: pack=>HspaceRegPack               !packs the object into a packet
+          procedure, public:: is_set=>HspaceRegIsSet            !returns TRUE if the object is set
+          procedure, public:: get_space_id=>HspaceRegGetSpaceId !returns the registered space id: [0..max]
+          procedure, public:: get_space=>HspaceRegGetSpace      !returns a pointer to the hierarchical space definition
+          final:: hspace_reg_dtor                               !dtor
         end type hspace_reg_t
  !Tensor signature (unique tensor identifier):
         type, public:: tens_signature_t
-         character(:), allocatable, private:: char_name         !character tensor name (alphanumeric_)
-         integer(INTD), private:: num_dims=-1                   !number of tensor dimensions (aka tensor order in math or tensor rank in physics)
-         integer(INTL), allocatable, private:: space_idx(:)     !subspace id for each tensor dimension
-         !`Not packed:
-         class(h_space_t), pointer, private:: h_space_p=>NULL() !pointer to the underlying hierarchical vector space specification (external target!)
+         character(:), allocatable, private:: char_name       !character tensor name (alphanumeric_)
+         integer(INTD), private:: num_dims=-1                 !number of tensor dimensions (aka tensor order in math or tensor rank in physics)
+         integer(INTL), allocatable, private:: space_idx(:)   !subspace id for each tensor dimension
+         type(hspace_reg_t), allocatable, private:: hspace(:) !hierarchical vector space id for each tensor dimension (optional)
          contains
           procedure, private:: TensSignatureCtor                   !ctor
           procedure, private:: TensSignatureCtorUnpack             !ctor by unpacking
@@ -159,6 +158,7 @@
           procedure, public:: set_dims=>TensHeaderSetDims           !sets dimension extents (if they have not been set previously)
           procedure, public:: set_groups=>TensHeaderSetGroups       !sets index restriction groups if they have not been previously set
           procedure, public:: is_set=>TensHeaderIsSet               !returns .TRUE. if the tensor header is set (with or without shape)
+          procedure, public:: is_valid=>TensHeaderIsValid           !returns .TRUE. if the set tensor header is valid
           procedure, public:: get_name=>TensHeaderGetName           !returns the alphanumeric_ tensor name
           procedure, public:: get_rank=>TensHeaderGetRank           !returns the rank of the tensor (number of dimensions)
           procedure, public:: get_spec=>TensHeaderGetSpec           !returns the tensor subspace multi-index (specification)
@@ -346,6 +346,7 @@
         private TensHeaderSetDims
         private TensHeaderSetGroups
         private TensHeaderIsSet
+        private TensHeaderIsValid
         private TensHeaderGetName
         private TensHeaderGetRank
         private TensHeaderGetSpec
@@ -537,7 +538,6 @@
          if(errc.eq.TEREC_SUCCESS) then
           hspace_id=this%hspaces_it%get_length(errc)
           if(errc.eq.GFC_SUCCESS) then
-           hspace_id=hspace_id+1
            errc=this%name2id_it%search(GFC_DICT_ADD_IF_NOT_FOUND,cmp_strings,space_name,hspace_id)
            if(errc.eq.GFC_NOT_FOUND) then
             errc=this%hspaces_it%append(hspace_empty)
@@ -552,11 +552,14 @@
              endif
             endif
            else
-            errc=TEREC_INVALID_REQUEST
+            if(errc.eq.GFC_FOUND) errc=TEREC_INVALID_REQUEST
            endif
           endif
          endif
-         if(errc.ne.TEREC_SUCCESS) hspace_id=-1
+         if(errc.ne.TEREC_SUCCESS) then
+          if(present(hspace_p)) hspace_p=>NULL()
+          hspace_id=-1
+         endif
          if(present(ierr)) ierr=errc
          return
         end function HspaceRegisterRegisterSpace
@@ -740,33 +743,38 @@
          return
         end subroutine hspace_reg_dtor
 ![tens_signature_t]========================================================
-        subroutine TensSignatureCtor(this,ierr,subspaces,tens_name,h_space)
+        subroutine TensSignatureCtor(this,ierr,subspaces,tens_name,hspaces)
 !CTOR for tens_signature_t.
          implicit none
          class(tens_signature_t), intent(out):: this              !out: tensor signature
          integer(INTD), intent(out), optional:: ierr              !out: error code
          integer(INTL), intent(in), optional:: subspaces(1:)      !in: multi-index of subspaces
          character(*), intent(in), optional:: tens_name           !in: alphanumeric_ tensor name (no spaces allowed!)
-         class(h_space_t), intent(in), target, optional:: h_space !in: underlying hierarchical vector space
-         integer(INTD):: errc,n
+         integer(INTD), intent(in), optional:: hspaces(1:)        !in: hierarchical vector spaces id's
+         integer(INTD):: errc,n,i
 
          errc=TEREC_SUCCESS
          n=0; if(present(subspaces)) n=size(subspaces)
-         if(n.gt.0) then
-          if(present(h_space)) then
-           allocate(this%space_idx(1:n),STAT=errc)
+         if(n.gt.0) then !true tensor
+          allocate(this%space_idx(1:n),STAT=errc)
+          if(errc.eq.0) then
+           this%space_idx(1:n)=subspaces(1:n)
+           this%num_dims=n
+          else
+           errc=TEREC_MEM_ALLOC_FAILED
+          endif
+          if(errc.eq.TEREC_SUCCESS.and.present(hspaces)) then
+           allocate(this%hspace(1:n),STAT=errc)
            if(errc.eq.0) then
-            this%space_idx(1:n)=subspaces(1:n)
-            this%num_dims=n !true tensor
-            this%h_space_p=>h_space
+            do i=1,n
+             call this%hspace(i)%hspace_reg_ctor(hspaces(i),errc); if(errc.ne.TEREC_SUCCESS) exit
+            enddo
            else
             errc=TEREC_MEM_ALLOC_FAILED
            endif
-          else
-           errc=TEREC_INVALID_ARGS
           endif
-         else
-          this%num_dims=0 !scalar
+         else !scalar tensor
+          this%num_dims=0
          endif
          if(errc.eq.TEREC_SUCCESS.and.present(tens_name)) then
           if(len(tens_name).gt.0) then
@@ -796,27 +804,43 @@
          class(tens_signature_t), intent(out):: this     !out: tensor signature
          class(obj_pack_t), intent(inout):: packet       !in: packet
          integer(INTD), intent(out), optional:: ierr     !out: error code
-         integer(INTD):: i,nd,errc
+         integer(INTD):: i,nd,errc,hidx(1:MAX_TENSOR_RANK)
          integer(INTL):: sidx(1:MAX_TENSOR_RANK)
          character(TEREC_MAX_TENS_NAME_LEN):: tname
-         logical:: pcn
+         logical:: pcn,hsn
 
          tname=' '
          call unpack_builtin(packet,nd,errc)
          if(errc.eq.PACK_SUCCESS) call unpack_builtin(packet,pcn,errc)
          if(errc.eq.PACK_SUCCESS) then
           if(nd.gt.0) then
-           do i=1,nd
-            call unpack_builtin(packet,sidx(i),errc); if(errc.ne.PACK_SUCCESS) exit
-           enddo
+           call unpack_builtin(packet,hsn,errc)
+           if(errc.eq.PACK_SUCCESS) then
+            do i=1,nd
+             call unpack_builtin(packet,sidx(i),errc); if(errc.ne.PACK_SUCCESS) exit
+            enddo
+            if(errc.eq.PACK_SUCCESS.and.hsn) then
+             do i=1,nd
+              call unpack_builtin(packet,hidx(i),errc); if(errc.ne.PACK_SUCCESS) exit
+             enddo
+            endif
+           endif
           endif
           if(errc.eq.PACK_SUCCESS.and.pcn) call unpack_builtin(packet,tname,errc)
           if(errc.eq.PACK_SUCCESS) then
            if(nd.gt.0) then
             if(pcn) then
-             call this%tens_signature_ctor(errc,sidx(1:nd),tname(1:len_trim(tname)))
+             if(hsn) then
+              call this%tens_signature_ctor(errc,sidx(1:nd),tname(1:len_trim(tname)),hidx(1:nd))
+             else
+              call this%tens_signature_ctor(errc,sidx(1:nd),tname(1:len_trim(tname)))
+             endif
             else
-             call this%tens_signature_ctor(errc,sidx(1:nd))
+             if(hsn) then
+              call this%tens_signature_ctor(errc,sidx(1:nd),hspaces=hidx(1:nd))
+             else
+              call this%tens_signature_ctor(errc,sidx(1:nd))
+             endif
             endif
            elseif(nd.eq.0) then
             if(pcn) then
@@ -836,15 +860,17 @@
         subroutine TensSignaturePack(this,packet,ierr)
 !Packs the object into a packet:
 ! + this%num_dims;
-! + logical {TRUE/FALSE}: whether or not the tensor is named;
+! + logical {TRUE|FALSE}: whether or not the tensor is named;
+! + [OPTIONAL]: logical {TRUE|FALSE}: whether or not .hspace(:) is present;
 ! + [OPTIONAL]: this%space_idx(1:this%num_dims);
+! + [OPTIONAL]: this%hspace(1:this%num_dims)%space_id;
 ! + [OPTIONAL]: this%char_name;
          implicit none
          class(tens_signature_t), intent(in):: this  !in: tensor signature
          class(obj_pack_t), intent(inout):: packet   !inout: packet
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: i,errc
-         logical:: pcn
+         logical:: pcn,hsn
 
          if(this%is_set(errc)) then
           if(errc.eq.TEREC_SUCCESS) then
@@ -854,12 +880,21 @@
             call pack_builtin(packet,pcn,errc)
             if(errc.eq.PACK_SUCCESS) then
              if(this%num_dims.gt.0) then
-              if(allocated(this%space_idx)) then
-               do i=1,this%num_dims
-                call pack_builtin(packet,this%space_idx(i),errc); if(errc.ne.PACK_SUCCESS) exit
-               enddo
-              else
-               errc=TEREC_ERROR
+              hsn=allocated(this%hspace)
+              call pack_builtin(packet,hsn,errc)
+              if(errc.eq.PACK_SUCCESS) then
+               if(allocated(this%space_idx)) then
+                do i=1,this%num_dims
+                 call pack_builtin(packet,this%space_idx(i),errc); if(errc.ne.PACK_SUCCESS) exit
+                enddo
+               else
+                errc=TEREC_ERROR
+               endif
+               if(errc.eq.PACK_SUCCESS.and.hsn) then
+                do i=1,this%num_dims
+                 call pack_builtin(packet,this%hspace(i)%space_id,errc); if(errc.ne.PACK_SUCCESS) exit
+                enddo
+               endif
               endif
              endif
              if(errc.eq.PACK_SUCCESS.and.pcn) call pack_builtin(packet,this%char_name,errc)
@@ -872,19 +907,21 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensSignaturePack
-!------------------------------------------------------------------
-        function TensSignatureIsSet(this,ierr,num_dims) result(res)
+!--------------------------------------------------------------------------
+        function TensSignatureIsSet(this,ierr,num_dims,hspaced) result(res)
 !Returns TRUE if the tensor_signature_t object is set, FALSE otherwise.
          implicit none
          logical:: res                                   !out: result
          class(tens_signature_t), intent(in):: this      !in: tensor signature
          integer(INTD), intent(out), optional:: ierr     !out: error code
          integer(INTD), intent(out), optional:: num_dims !out: tensor rank (if set)
+         logical, intent(out), optional:: hspaced        !out: TRUE if the tensor signature is defined over hierarchical vector spaces
          integer(INTD):: errc
 
          errc=TEREC_SUCCESS
          res=(this%num_dims.ge.0)
          if(present(num_dims)) num_dims=this%num_dims
+         if(present(hspaced)) hspaced=allocated(this%hspace)
          if(present(ierr)) ierr=errc
          return
         end function TensSignatureIsSet
@@ -934,15 +971,15 @@
          if(present(ierr)) ierr=errc
          return
         end function TensSignatureGetRank
-!------------------------------------------------------------------------------
-        subroutine TensSignatureGetSpec(this,subspaces,num_dims,ierr,h_space_p)
+!----------------------------------------------------------------------------
+        subroutine TensSignatureGetSpec(this,subspaces,num_dims,ierr,hspaces)
 !Returns the defining subspaces of the tensor (subspace multi-index).
          implicit none
-         class(tens_signature_t), intent(in):: this                   !in: tensor signature
-         integer(INTL), intent(inout):: subspaces(1:)                 !out: defining subspaces (their IDs)
-         integer(INTD), intent(out):: num_dims                        !out: number of tensor dimensions
-         integer(INTD), intent(out), optional:: ierr                  !out: error code
-         class(h_space_t), intent(out), pointer, optional:: h_space_p !out: pointer to the underlying hierarchical vector space
+         class(tens_signature_t), intent(in):: this                !in: tensor signature
+         integer(INTL), intent(inout):: subspaces(1:)              !out: defining subspaces (their IDs)
+         integer(INTD), intent(out):: num_dims                     !out: number of tensor dimensions
+         integer(INTD), intent(out), optional:: ierr               !out: error code
+         type(hspace_reg_t), intent(inout), optional:: hspaces(1:) !out: hierarchical vector spaces for each dimension
          integer(INTD):: errc
 
          errc=TEREC_SUCCESS
@@ -950,7 +987,13 @@
           num_dims=this%num_dims
           if(size(subspaces).ge.num_dims) then
            subspaces(1:num_dims)=this%space_idx(1:num_dims)
-           if(present(h_space_p)) h_space_p=>this%h_space_p
+           if(present(hspaces)) then
+            if(size(hspaces).ge.num_dims) then
+             hspaces(1:num_dims)=this%hspace(1:num_dims)
+            else
+             errc=TEREC_UNABLE_COMPLETE
+            endif
+           endif
           else
            errc=TEREC_UNABLE_COMPLETE
           endif
@@ -963,102 +1006,119 @@
 !------------------------------------------------------------------
         function TensSignatureRelate(this,another) result(relation)
 !Relates the tensor signature to another tensor signature.
+!Both signatures must be associated with hierarchical vector spaces.
          implicit none
          integer(INTD):: relation                      !out: relation: {CMP_EQ,CMP_CN,CMP_IN,CMP_OV,CMP_NC}
          class(tens_signature_t), intent(in):: this    !in: tensor signature 1
          class(tens_signature_t), intent(in):: another !in: tensor signature 2
-         integer(INTD):: nl1,nl2,ch1,ch2,i,cmp,errc
+         integer(INTD):: n1,n2,nl1,nl2,ch1,ch2,i,cmp,errc
          integer(INTL):: s1,s2
+         logical:: hs1,hs2
 
          errc=0
-         if(this%is_set().and.another%is_set()) then
-          relation=CMP_EQ
+         if(this%is_set(num_dims=n1,hspaced=hs1).and.another%is_set(num_dims=n2,hspaced=hs2)) then
+          if(hs1.and.hs2.and.n1.eq.n2) then
+           relation=CMP_EQ
 !Compare names:
-          nl1=len(this%char_name); nl2=len(another%char_name)
-          if(nl1.ne.nl2) relation=CMP_NC
-          if(relation.eq.CMP_EQ) then
-           do i=1,nl1
-            ch1=iachar(this%char_name(i:i))
-            ch2=iachar(another%char_name(i:i))
-            if(ch1.ne.ch2) then; relation=CMP_NC; exit; endif
-           enddo
-           if(relation.eq.CMP_EQ) then
-            if(associated(this%h_space_p)) then
-             if(associated(this%h_space_p,another%h_space_p)) then
+           nl1=len(this%char_name); nl2=len(another%char_name)
+           if(nl1.eq.nl2) then
+            do i=1,nl1
+             ch1=iachar(this%char_name(i:i)); ch2=iachar(another%char_name(i:i))
+             if(ch1.ne.ch2) then; relation=CMP_NC; exit; endif
+            enddo
+            if(relation.eq.CMP_EQ) then
 !Compare specs:
-              if(this%num_dims.ne.another%num_dims) then
-               relation=CMP_NC
-              else
-               do i=1,this%num_dims
-                s1=this%space_idx(i); s2=another%space_idx(i)
-                cmp=this%h_space_p%relate_subspaces(s1,s2,errc); if(errc.ne.0) exit
-                if(cmp.eq.CMP_ER.or.cmp.eq.CMP_NC) then; relation=cmp; exit; endif
-                if(cmp.ne.CMP_EQ) then
-                 if(relation.eq.CMP_EQ) then
-                  relation=cmp
-                 else
-                  if(cmp.ne.relation) then; relation=CMP_NC; exit; endif
-                 endif
-                endif
-               enddo
-               if(errc.ne.0) relation=CMP_ER
+ !Compare spaces:
+             do i=1,n1
+              if(this%hspace(i)%space_id.lt.0) then; relation=CMP_ER; exit; endif
+              if(.not.associated(this%hspace(i)%hspace_p)) then; relation=CMP_ER; exit; endif !trap
+              if(this%hspace(i)%space_id.ne.another%hspace(i)%space_id) then
+               relation=CMP_NC; exit
               endif
-             else
-              relation=CMP_ER !tensors with the same name cannot reside in differe hierarchical spaces
+             enddo
+ !Compare subspaces:
+             if(relation.eq.CMP_EQ) then
+              do i=1,n1
+               s1=this%space_idx(i); s2=another%space_idx(i)
+               cmp=this%hspace(i)%hspace_p%relate_subspaces(s1,s2,errc)
+               if(errc.ne.0) then; cmp=CMP_ER; else; if(cmp.eq.CMP_OV) cmp=CMP_NC; endif
+               if(cmp.eq.CMP_ER.or.cmp.eq.CMP_NC) then; relation=cmp; exit; endif
+               if(cmp.ne.CMP_EQ) then !{CMP_CN,CMP_IN}
+                if(relation.eq.CMP_EQ) then
+                 relation=cmp
+                else
+                 if(cmp.ne.relation) relation=CMP_OV !overlap
+                endif
+               endif
+              enddo
              endif
-            else
-             relation=CMP_ER
             endif
+           else
+            relation=CMP_NC
            endif
+          else
+           relation=CMP_NC
           endif
          else
-          cmp=CMP_ER
+          relation=CMP_ER
          endif
          return
         end function TensSignatureRelate
 !--------------------------------------------------------------
         function TensSignatureCompare(this,another) result(cmp)
-!Compares the tensor signature with another tensor signature.
+!Compares the tensor signature with another tensor signature (formal comparator).
          implicit none
          integer(INTD):: cmp                           !out: comparison result: {CMP_EQ,CMP_LT,CMP_GT,CMP_ER}
          class(tens_signature_t), intent(in):: this    !in: tensor signature 1
          class(tens_signature_t), intent(in):: another !in: tensor signature 2
-         integer(INTD):: nl1,nl2,ch1,ch2,i,errc
+         integer(INTD):: n1,n2,nl1,nl2,ch1,ch2,i,errc
          integer(INTL):: s1,s2
+         logical:: hs1,hs2
 
          errc=0
-         if(this%is_set().and.another%is_set()) then
+         if(this%is_set(num_dims=n1,hspaced=hs1).and.another%is_set(num_dims=n2,hspaced=hs2)) then
           cmp=CMP_EQ
 !Compare names:
           nl1=len(this%char_name); nl2=len(another%char_name)
           if(nl1.lt.nl2) then; cmp=CMP_LT; elseif(nl1.gt.nl2) then; cmp=CMP_GT; endif
           if(cmp.eq.CMP_EQ) then
            do i=1,nl1
-            ch1=iachar(this%char_name(i:i))
-            ch2=iachar(another%char_name(i:i))
+            ch1=iachar(this%char_name(i:i)); ch2=iachar(another%char_name(i:i))
             if(ch1.lt.ch2) then; cmp=CMP_LT; exit; elseif(ch1.gt.ch2) then; cmp=CMP_GT; exit; endif
            enddo
            if(cmp.eq.CMP_EQ) then
-            if(associated(this%h_space_p)) then
-             if(associated(this%h_space_p,another%h_space_p)) then
 !Compare specs:
-              if(this%num_dims.lt.another%num_dims) then
-               cmp=CMP_LT
-              elseif(this%num_dims.gt.another%num_dims) then
-               cmp=CMP_GT
-              else
+            if(n1.lt.n2) then
+             cmp=CMP_LT
+            elseif(n1.gt.n2) then
+             cmp=CMP_GT
+            else
+             if(hs1.and.hs2) then !both signatures are over hierarchical spaces
+              do i=1,this%num_dims
+               if(this%hspace(i)%space_id.lt.another%hspace(i)%space_id) then
+                cmp=CMP_LT; exit
+               elseif(this%hspace(i)%space_id.gt.another%hspace(i)%space_id) then
+                cmp=CMP_GT; exit
+               endif
+              enddo
+              if(cmp.eq.CMP_EQ) then
                do i=1,this%num_dims
                 s1=this%space_idx(i); s2=another%space_idx(i)
-                cmp=this%h_space_p%compare_subspaces(s1,s2,errc)
-                if(cmp.ne.CMP_EQ.or.errc.ne.0) exit
+                cmp=this%hspace(i)%hspace_p%compare_subspaces(s1,s2,errc); if(errc.ne.0) cmp=CMP_ER
+                if(cmp.ne.CMP_EQ) exit
                enddo
-               if(errc.ne.0) cmp=CMP_ER
               endif
+             elseif(.not.(hs1.or.hs2)) then !both signatures are over the default space
+              do i=1,this%num_dims
+               if(this%space_idx(i).lt.another%space_idx(i)) then
+                cmp=CMP_LT; exit
+               elseif(this%space_idx(i).gt.another%space_idx(i)) then
+                cmp=CMP_GT; exit
+               endif
+              enddo
              else
-              cmp=CMP_ER !tensors with the same name cannot reside in differe hierarchical spaces
+              if(hs1) then; cmp=CMP_LT; else; cmp=CMP_GT; endif
              endif
-            else
-             cmp=CMP_ER
             endif
            endif
           endif
@@ -1101,9 +1161,10 @@
          type(tens_signature_t):: this
 
          !write(*,'("#DEBUG: Entered tens_signature_dtor")') !debug
+         if(allocated(this%hspace)) deallocate(this%hspace)
          if(allocated(this%char_name)) deallocate(this%char_name)
          if(allocated(this%space_idx)) deallocate(this%space_idx)
-         this%num_dims=-1; this%h_space_p=>NULL()
+         this%num_dims=-1
          !write(*,'("#DEBUG: Exited tens_signature_dtor")') !debug
          return
         end subroutine tens_signature_dtor
@@ -1704,21 +1765,21 @@
          return
         end subroutine tens_shape_dtor
 ![tens_header_t]========================================================================================
-        subroutine TensHeaderCtor(this,ierr,tens_name,subspaces,h_space,dim_extent,dim_group,group_spec)
+        subroutine TensHeaderCtor(this,ierr,tens_name,subspaces,hspaces,dim_extent,dim_group,group_spec)
 !CTOR for tens_header_t. Each subsequent optional argument implies the existence of all preceding
 !optional arguments, except <ierr> and <tens_name>. If no optional arguments are present, except
 !maybe <tens_name> and/or <ierr>, a scalar header will be constructed. <dim_group> and <group_spec>
 !must either be both present or both absent. More specifically:
 ! # Constructing a scalar tensor header: Do not pass any optional arguments except <tens_name> and/or <ierr>;
-! # Constructing a true tensor header without shape: Pass only <subspaces>, <h_space>, and optionally <tens_name> and/or <ierr>;
-! # Constructing a true tensor header with a shape: Pass <subspaces>, <h_space>, and <dim_extent> with all other arguments optional.
+! # Constructing a true tensor header without shape: Pass only <subspaces>, <hspaces>, and optionally <tens_name> and/or <ierr>;
+! # Constructing a true tensor header with a shape: Pass <subspaces>, <hspaces>, and <dim_extent> with all other arguments optional.
 !   Note that it is ok to pass dimension extents equal to 0 for unresolved tensor dimensions (to be set later).
          implicit none
          class(tens_header_t), intent(out):: this             !out: tensor header
          integer(INTD), intent(out), optional:: ierr          !out: error code
          character(*), intent(in), optional:: tens_name       !in: alphanumeric_ tensor name
          integer(INTL), intent(in), optional:: subspaces(1:)  !in: subspace multi-index (specification): Length = tensor rank
-         class(h_space_t), intent(in), target, optional:: h_space !in: underlying hierarchical vector space
+         integer(INTD), intent(in), optional:: hspaces(1:)    !in: hierarchical vector space id for each tensor dimension
          integer(INTL), intent(in), optional:: dim_extent(1:) !in: dimension extents: Length = tensor rank
          integer(INTD), intent(in), optional:: dim_group(1:)  !in: dimension restriction groups: Length = tensor rank
          integer(INTD), intent(in), optional:: group_spec(1:) !in: dimension restriction group specification
@@ -1728,30 +1789,31 @@
          errc=TEREC_SUCCESS
          pr_nam=present(tens_name)
          pr_sub=present(subspaces)
-         pr_hsp=present(h_space)
+         pr_hsp=present(hspaces)
          pr_dim=present(dim_extent)
          pr_grp=present(dim_group)
          pr_grs=present(group_spec)
-         if(pr_sub.and.(.not.pr_hsp)) errc=TEREC_INVALID_ARGS
+         if(pr_hsp.and.(.not.pr_sub)) errc=TEREC_INVALID_ARGS
          if(pr_dim.and.(.not.pr_sub)) errc=TEREC_INVALID_ARGS
          if((pr_grp.or.pr_grs).and.(.not.pr_dim)) errc=TEREC_INVALID_ARGS
          if((pr_grp.and.(.not.pr_grs)).or.(pr_grs.and.(.not.pr_grp))) errc=TEREC_INVALID_ARGS
-         if(pr_sub.and.pr_dim) then
-          m=size(subspaces); if(m.ne.size(dim_extent)) errc=TEREC_INVALID_ARGS
-          if(m.le.0) then; pr_sub=.FALSE.; pr_dim=.FALSE.; endif
+         if(pr_sub) then
+          m=size(subspaces)
+          if(m.le.0) then; pr_sub=.FALSE.; pr_hsp=.FALSE.; pr_dim=.FALSE.; pr_grp=.FALSE.; pr_grs=.FALSE.; endif
+          if(pr_dim) then; if(m.ne.size(dim_extent)) errc=TEREC_INVALID_ARGS; endif
          endif
          if(errc.eq.TEREC_SUCCESS) then
  !tensor signature:
           if(pr_sub) then !explicit tensor
            if(pr_nam) then
             if(pr_hsp) then
-             call this%signature%tens_signature_ctor(errc,subspaces,tens_name,h_space)
+             call this%signature%tens_signature_ctor(errc,subspaces,tens_name,hspaces)
             else
              call this%signature%tens_signature_ctor(errc,subspaces,tens_name) !`this will never happen
             endif
            else
             if(pr_hsp) then
-             call this%signature%tens_signature_ctor(errc,subspaces,h_space=h_space)
+             call this%signature%tens_signature_ctor(errc,subspaces,hspaces=hspaces)
             else
              call this%signature%tens_signature_ctor(errc,subspaces) !`this will never happen
             endif
@@ -1912,8 +1974,8 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensHeaderSetGroups
-!--------------------------------------------------------------------------------------------
-        function TensHeaderIsSet(this,ierr,num_dims,num_groups,shaped,unresolved) result(res)
+!----------------------------------------------------------------------------------------------------
+        function TensHeaderIsSet(this,ierr,num_dims,num_groups,shaped,unresolved,hspaced) result(res)
 !Returns TRUE if the tensor header is set (with or without shape), plus additional info.
          implicit none
          logical:: res                                     !out: result
@@ -1923,22 +1985,78 @@
          integer(INTD), intent(out), optional:: num_groups !out: number of restricted dimension groups
          logical, intent(out), optional:: shaped           !out: TRUE if the tensor shape is set
          integer(INTD), intent(out), optional:: unresolved !out: number of unresolved tensor dimensions
+         logical, intent(out), optional:: hspaced          !out: TRUE if the tensor dimensions are over hierarchical spaces
          integer(INTD):: errc,nd,ng,unres
-         logical:: shpd
+         logical:: shpd,hspc
 
-         res=this%signature%is_set(errc,num_dims=nd)
+         res=this%signature%is_set(errc,num_dims=nd,hspaced=hspc)
          if(present(num_dims)) num_dims=nd
          if(res.and.errc.eq.TEREC_SUCCESS) then
           shpd=this%shape%is_set(errc,num_dims=nd,num_groups=ng,unresolved=unres)
          else
-          shpd=.FALSE.; ng=0; unres=-1
+          shpd=.FALSE.; hspc=.FALSE.; ng=0; unres=-1
          endif
          if(present(num_groups)) num_groups=ng
          if(present(shaped)) shaped=shpd
          if(present(unresolved)) unresolved=unres
+         if(present(hspaced)) hspaced=hspc
          if(present(ierr)) ierr=errc
          return
         end function TensHeaderIsSet
+!--------------------------------------------------------
+        function TensHeaderIsValid(this,ierr) result(ans)
+!Returns TRUE if the set tensor header is valid.
+         implicit none
+         logical:: ans                               !out: answer
+         class(tens_header_t), intent(in):: this     !in: tensor header
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc,nd,ng,unres,i,j,fl(1:MAX_TENSOR_RANK)
+         logical:: shpd,hspc
+
+         ans=.FALSE.
+         if(this%is_set(errc,nd,ng,shpd,unres,hspc)) then
+          if(errc.eq.TEREC_SUCCESS) then
+           if(nd.gt.0) then
+ !Signature check:
+            if(allocated(this%signature%space_idx)) then
+             do i=1,nd; if(this%signature%space_idx(i).lt.0_INTL) return; enddo
+             if(allocated(this%signature%hspace)) then
+              do i=1,nd
+               if(this%signature%hspace(i)%space_id.lt.0) return
+               if(.not.associated(this%signature%hspace(i)%hspace_p)) return
+              enddo
+             endif
+ !Shape:
+             if(shpd) then
+              do i=1,nd; if(this%shape%dim_extent(i).lt.0) return; enddo
+ !Shape/signature consistency:
+              if(ng.gt.0) then
+               if(ng.gt.MAX_TENSOR_RANK) return
+               do i=1,nd; if(this%shape%dim_group(i).lt.0) return; enddo
+               if(hspc) then
+                fl(1:ng)=-1
+                do i=1,nd
+                 j=this%shape%dim_group(i)
+                 if(j.gt.0) then
+                  if(fl(j).lt.0) then
+                   fl(j)=this%signature%hspace(i)%space_id
+                  else
+                   if(fl(j).ne.this%signature%hspace(i)%space_id) return
+                  endif
+                 endif
+                enddo
+               endif
+              endif
+             endif
+            endif
+           else !scalar
+            if(ng.le.0.and.unres.le.0) ans=.TRUE.
+           endif
+          endif
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function TensHeaderIsValid
 !-----------------------------------------------------------------
         subroutine TensHeaderGetName(this,tens_name,name_len,ierr)
 !Returns the alphanumeric_ name of the tensor.
@@ -1966,19 +2084,19 @@
          if(present(ierr)) ierr=errc
          return
         end function TensHeaderGetRank
-!---------------------------------------------------------------------------
-        subroutine TensHeaderGetSpec(this,subspaces,num_dims,ierr,h_space_p)
+!-------------------------------------------------------------------------
+        subroutine TensHeaderGetSpec(this,subspaces,num_dims,ierr,hspaces)
 !Returns the defining subspaces of the tensor (subspace multi-index).
          implicit none
-         class(tens_header_t), intent(in):: this                      !in: tensor header
-         integer(INTL), intent(inout):: subspaces(1:)                 !out: defining subspaces (their IDs)
-         integer(INTD), intent(out):: num_dims                        !out: number of tensor dimensions
-         integer(INTD), intent(out), optional:: ierr                  !out: error code
-         class(h_space_t), intent(out), pointer, optional:: h_space_p !out: pointer to the underlying hierarchical vector space
+         class(tens_header_t), intent(in):: this                   !in: tensor header
+         integer(INTL), intent(inout):: subspaces(1:)              !out: defining subspaces (their IDs)
+         integer(INTD), intent(out):: num_dims                     !out: number of tensor dimensions
+         integer(INTD), intent(out), optional:: ierr               !out: error code
+         type(hspace_reg_t), intent(inout), optional:: hspaces(1:) !out: hierarchical vector space for each tensor dimension
          integer(INTD):: errc
 
-         if(present(h_space_p)) then
-          call this%signature%get_spec(subspaces,num_dims,errc,h_space_p)
+         if(present(hspaces)) then
+          call this%signature%get_spec(subspaces,num_dims,errc,hspaces)
          else
           call this%signature%get_spec(subspaces,num_dims,errc)
          endif
@@ -2903,14 +3021,14 @@
          return
         end subroutine tens_body_dtor
 ![tens_rcrsv_t]=============================================================================================
-        subroutine TensRcrsvCtorSigna(this,tens_name,subspaces,h_space,ierr,dim_extent,dim_group,group_spec)
+        subroutine TensRcrsvCtorSigna(this,tens_name,subspaces,hspaces,ierr,dim_extent,dim_group,group_spec)
 !Constructs a tensor by specifying a tensor signature and optionally a shape.
 !See TensHeaderCtor for restrictions.
          implicit none
          class(tens_rcrsv_t), intent(out):: this              !out: tensor
          character(*), intent(in):: tens_name                 !in: alphanumeric_ tensor name
          integer(INTL), intent(in):: subspaces(1:)            !in: subspace multi-index (signature)
-         class(h_space_t), intent(in), target:: h_space       !in: hierarchical vector space (externally persistent)
+         integer(INTD), intent(in):: hspaces(1:)              !in: hierarchical vector space id for each tensor dimension
          integer(INTD), intent(out), optional:: ierr          !out: error code
          integer(INTL), intent(in), optional:: dim_extent(1:) !in: dimension extents (those equal to 0 are unresolved)
          integer(INTD), intent(in), optional:: dim_group(1:)  !in: dimension restriction groups
@@ -2920,20 +3038,20 @@
          if(present(dim_extent)) then !signature + shape (possibly with unresolved dimensions, those equal to 0)
           if(present(dim_group)) then
            if(present(group_spec)) then
-            call this%header%tens_header_ctor(errc,tens_name,subspaces,h_space,dim_extent,dim_group,group_spec)
+            call this%header%tens_header_ctor(errc,tens_name,subspaces,hspaces,dim_extent,dim_group,group_spec)
            else
             errc=TEREC_INVALID_ARGS
            endif
           else
            if(.not.present(group_spec)) then
-            call this%header%tens_header_ctor(errc,tens_name,subspaces,h_space,dim_extent)
+            call this%header%tens_header_ctor(errc,tens_name,subspaces,hspaces,dim_extent)
            else
             errc=TEREC_INVALID_ARGS
            endif
           endif
          else !signature only
           if(.not.(present(dim_group).or.present(group_spec))) then
-           call this%header%tens_header_ctor(errc,tens_name,subspaces,h_space)
+           call this%header%tens_header_ctor(errc,tens_name,subspaces,hspaces)
           else
            errc=TEREC_INVALID_ARGS
           endif
@@ -2987,8 +3105,8 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensRcrsvPack
-!-------------------------------------------------------------------------------------
-        function TensRcrsvIsSet(this,ierr,shaped,unresolved,layed,located) result(res)
+!---------------------------------------------------------------------------------------------
+        function TensRcrsvIsSet(this,ierr,shaped,unresolved,hspaced,layed,located) result(res)
 !Returns TRUE if the tensor is set, plus additional info.
          implicit none
          logical:: res                                     !out: result
@@ -2996,14 +3114,16 @@
          integer(INTD), intent(out), optional:: ierr       !out: error code
          logical, intent(out), optional:: shaped           !out: TRUE if tensor shape is set (even with unresolved dimensions)
          integer(INTD), intent(out), optional:: unresolved !out: number of unresolved tensor dimensions
+         logical, intent(out), optional:: hspaced          !out: TRUE if the tensor dimensions are over hierarchical spaces
          logical, intent(out), optional:: layed            !out: TRUE if the tensor body storage layout is set
          logical, intent(out), optional:: located          !out: TRUE if the physical location for tensor body data is set
          integer(INTD):: errc,unres
-         logical:: shpd,layd,locd
+         logical:: shpd,hspc,layd,locd
 
-         res=this%header%is_set(errc,shaped=shpd,unresolved=unres)
+         res=this%header%is_set(errc,shaped=shpd,unresolved=unres,hspaced=hspc)
          if(present(shaped)) shaped=shpd
          if(present(unresolved)) unresolved=unres
+         if(present(hspaced)) hspaced=hspc
          if(res) then
           shpd=this%body%is_set(errc,layd,locd)
           if(present(layed)) layed=layd
@@ -3213,8 +3333,8 @@
         subroutine TensRcrsvSplit(this,split_dims,subtensors,ierr,num_subtensors)
 !Splits the given tensor into subtensors and appends those to a list of subtensors (by their headers).
 !If the input parental tensor is shaped with concrete dimension extents, the children subtensors
-!will not carry concrete dimension extents, but deferred dimension extents instead. However,
-!they will obey the parental dimension restriction grouping with the following assumption:
+!in contrast will not carry concrete dimension extents, but deferred dimension extents instead.
+!However, they will obey the parental dimension restriction grouping with the following assumption:
 !ASSUMPTION: Restricted tensor dimensions belonging to the same group are supposed to depend on
 !each other from right to left, e.g., in {T(a,b,c,d,e):[a<c<e],[b<d]}, a dependent index
 !on the right always depends on some of the previous indices on the left. The first
@@ -3237,22 +3357,21 @@
          integer(INTD):: tmpd(1:MAX_TENSOR_RANK)       !temporary (reduced subtensor dimension dependencies)
          integer(INTD):: dim_group(1:MAX_TENSOR_RANK)  !dimension groups
          integer(INTD):: group_spec(1:MAX_TENSOR_RANK) !dimension group restriction specs
-         class(h_space_t), pointer:: hsp
+         type(hspace_reg_t):: hsreg(1:MAX_TENSOR_RANK) !hierarchical space for each tensor dimension
          type(list_iter_t):: lit
          type(tens_header_t):: thead
-         logical:: shpd
+         logical:: shpd,hspc
 
          nsubt=0 !number of generated subtensors
-         if(this%is_set(errc,shaped=shpd)) then !shaped tensors with deferred dimension extents are expected
-          if(errc.eq.TEREC_SUCCESS) then
+         if(this%is_set(errc,shaped=shpd,hspaced=hspc)) then !shaped tensors over hierarchical vector spaces are expected
+          if(errc.eq.TEREC_SUCCESS.and.hspc) then
            call this%header%get_name(tens_name,tnl,errc)
            if(errc.eq.TEREC_SUCCESS) then
-            hsp=>NULL()
-            call this%header%get_spec(sidx,nd,errc,hsp) !nd: total number of tensor dimensions; sidx(1:nd): subspace id's
+            call this%header%get_spec(sidx,nd,errc,hsreg) !nd: total number of tensor dimensions; sidx(1:nd): subspace id's
             if(errc.eq.TEREC_SUCCESS) then
              errc=lit%init(subtensors)
              if(errc.eq.GFC_SUCCESS) then
-              if(nd.gt.0.and.associated(hsp)) then !true tensor on hierarchical vector space
+              if(nd.gt.0) then !true tensor over hierarchical vector spaces
                sd=size(split_dims) !sd: number of tensor dimensions to split
                if(sd.gt.0.and.sd.le.nd) then !true splitting
                 call extract_subspaces_to_sbuf(errc) !sbuf(1:nsb),firo(1:nd),swid(1:nd)
@@ -3287,6 +3406,8 @@
              endif
             endif
            endif
+          else
+           if(errc.eq.TEREC_SUCCESS) errc=TEREC_INVALID_REQUEST
           endif
          else
           errc=TEREC_INVALID_REQUEST
@@ -3301,19 +3422,24 @@
           subroutine extract_subspaces_to_sbuf(jerr) !sets sbuf(1:nsb),firo(1:nd),swid(1:nd)
            implicit none
            integer(INTD), intent(out):: jerr
-           integer(INTD):: jj,js,jd
-           type(vec_tree_iter_t):: vt_it
+           integer(INTD):: jj,js,jd,je
+           type(vec_tree_iter_t):: vt_it(1:MAX_TENSOR_RANK)
            class(*), pointer:: jup
            class(subspace_t), pointer:: jssp
 
-           jerr=vt_it%init(hsp%get_aggr_tree(nsb))
-           if(jerr.eq.GFC_SUCCESS.and.nsb.eq.0) then
+ !Init:
+           do jj=1,sd
+            jd=split_dims(jj)
+            jerr=vt_it(jd)%init(hsreg(jd)%hspace_p%get_aggr_tree(nsb))
+            if(jerr.ne.GFC_SUCCESS.or.nsb.ne.0) exit
+           enddo
  !Count:
+           if(jerr.eq.GFC_SUCCESS.and.nsb.eq.0) then
             nsb=0; firo(0:nd)=0; swid(0:nd)=1
             do jj=1,sd !loop over the dimensions to split
              jd=split_dims(jj)
-             jerr=vt_it%move_to(sidx(jd)); if(jerr.ne.GFC_SUCCESS) exit
-             js=vt_it%get_num_children(jerr); if(jerr.ne.GFC_SUCCESS) exit
+             jerr=vt_it(jd)%move_to(sidx(jd)); if(jerr.ne.GFC_SUCCESS) exit
+             js=vt_it(jd)%get_num_children(jerr); if(jerr.ne.GFC_SUCCESS) exit
              firo(jd)=nsb+1
              if(js.gt.0) then !splitting will occur
               swid(jd)=-js; nsb=nsb+js !place for children subspaces
@@ -3339,14 +3465,14 @@
                jj=firo(jd)
                if(swid(jd).lt.0) then !split dimension
                 swid(jd)=-swid(jd); js=swid(jd)
-                jerr=vt_it%move_to(sidx(jd)); if(jerr.ne.GFC_SUCCESS) exit sloop
+                jerr=vt_it(jd)%move_to(sidx(jd)); if(jerr.ne.GFC_SUCCESS) exit sloop
                 if(js.gt.0) then
-                 jerr=vt_it%move_to_child()
+                 jerr=vt_it(jd)%move_to_child()
                  do while(js.gt.0.and.jerr.eq.GFC_SUCCESS)
-                  jup=>vt_it%get_value(jerr); if(jerr.ne.GFC_SUCCESS) exit
+                  jup=>vt_it(jd)%get_value(jerr); if(jerr.ne.GFC_SUCCESS) exit
                   select type(jup); class is(subspace_t); jssp=>jup; end select
                   sbuf(jj)=jssp%get_id(jerr); if(jerr.ne.0) exit
-                  jj=jj+1; js=js-1; if(js.gt.0) jerr=vt_it%move_to_sibling()
+                  jj=jj+1; js=js-1; if(js.gt.0) jerr=vt_it(jd)%move_to_sibling()
                  enddo
                  if(jerr.ne.GFC_SUCCESS) exit sloop
                 else !no children subspaces
@@ -3363,7 +3489,10 @@
             else
              jerr=TEREC_ERROR
             endif
-            jj=vt_it%release(); if(jj.ne.GFC_SUCCESS.and.jerr.eq.TEREC_SUCCESS) jerr=TEREC_ERROR
+            do jj=1,sd
+             jd=split_dims(jj)
+             je=vt_it(jd)%release(); if(je.ne.GFC_SUCCESS.and.jerr.eq.TEREC_SUCCESS) jerr=TEREC_ERROR
+            enddo
            else
             jerr=TEREC_ERROR
            endif
@@ -3442,7 +3571,7 @@
             if(jd.gt.0) then
              js1=sbuf(firo(jd)+midx(jd)) !left subspace id
              js2=sbuf(firo(np)+midx(np)) !right subspace id (dependent)
-             jcmp=hsp%compare_subranges(js1,js2,jerr)
+             jcmp=hsreg(np)%hspace_p%compare_subranges(js1,js2,jerr)
              if(jerr.eq.0) then
               if(depk(np).eq.TEREC_IND_RESTR_LT.or.depk(np).eq.TEREC_IND_RESTR_LE) then
                if(jcmp.eq.CMP_GT) rejected=.TRUE.
@@ -3480,7 +3609,7 @@
               if(jp.ge.jd) then; jerr=TEREC_ERROR; exit; endif !strict right-on-the-left dependency order
               js1=sbuf(firo(jp)+midx(jp)) !left subspace id
               js2=sbuf(firo(jd)+midx(jd)) !right subspace id
-              jcmp=hsp%compare_subranges(js1,js2,jerr); if(jerr.ne.0) then; jerr=TEREC_ERROR; exit; endif
+              jcmp=hsreg(jd)%hspace_p%compare_subranges(js1,js2,jerr); if(jerr.ne.0) then; jerr=TEREC_ERROR; exit; endif
               if(depk(jd).eq.TEREC_IND_RESTR_LT.or.depk(jd).eq.TEREC_IND_RESTR_LE) then
                if(jcmp.eq.CMP_LT) tmpd(jd)=0 !dependency is automatically satisfied on (disjoint) children subspaces
               elseif(depk(jd).eq.TEREC_IND_RESTR_GT.or.depk(jd).eq.TEREC_IND_RESTR_GE) then
@@ -3511,11 +3640,12 @@
               endif
              enddo
   !Construct a new subtensor with index restrictions:
-             call thd%tens_header_ctor(jerr,tens_name(1:tnl),sidx(1:nd),hsp,(/(0_INTL,jd=1,nd)/),dim_group(1:nd),group_spec(1:jgr))
+             call thd%tens_header_ctor(jerr,tens_name(1:tnl),sidx(1:nd),hsreg(1:nd)%space_id,&
+                                     &(/(0_INTL,jd=1,nd)/),dim_group(1:nd),group_spec(1:jgr))
             endif
            else
   !Construct a new subtensor without index restrictions:
-            call thd%tens_header_ctor(jerr,tens_name(1:tnl),sidx(1:nd),hsp,(/(0_INTL,jd=1,nd)/))
+            call thd%tens_header_ctor(jerr,tens_name(1:tnl),sidx(1:nd),hsreg(1:nd)%space_id,(/(0_INTL,jd=1,nd)/))
            endif
            return
           end subroutine construct_subtensor_header
@@ -3571,10 +3701,9 @@
          integer(INTL):: mlndx(1:MAX_TENSOR_RANK)
          character(32):: tname
          type(tens_signature_t):: tsigna
-         type(h_space_t):: h_space
 
          ierr=0
-         call tsigna%tens_signature_ctor(ierr,(/3_INTL,4_INTL,2_INTL/),'Tensor',h_space)
+         call tsigna%tens_signature_ctor(ierr,(/3_INTL,4_INTL,2_INTL/),'Tensor')
          if(ierr.eq.TEREC_SUCCESS.and.tsigna%is_set()) then
           n=tsigna%get_rank(ierr)
           if(ierr.eq.TEREC_SUCCESS.and.n.eq.3) then
@@ -3642,13 +3771,12 @@
          type(tens_signature_t):: tsigna
          type(tens_shape_t):: tshape
          type(tens_header_t):: thead
-         type(h_space_t):: h_space
          character(32):: tens_name
 
          ierr=0
          n=6; dims(1:n)=(/128_INTL,64_INTL,256_INTL,64_INTL,128_INTL,64_INTL/)
          m=2; grps(1:n)=(/1,2,0,2,1,2/); grp_spec(1:m)=(/TEREC_IND_RESTR_LT,TEREC_IND_RESTR_GE/)
-         call thead%tens_header_ctor(ierr,'Tensor',(/1_INTL,2_INTL,3_INTL,2_INTL,1_INTL,2_INTL/),h_space)
+         call thead%tens_header_ctor(ierr,'Tensor',(/1_INTL,2_INTL,3_INTL,2_INTL,1_INTL,2_INTL/))
          if(ierr.eq.TEREC_SUCCESS) then
           call thead%add_shape(ierr,dims(1:n),grps(1:n),grp_spec(1:m))
           if(ierr.eq.TEREC_SUCCESS) then
@@ -3694,14 +3822,13 @@
          type(tens_shape_t):: tshape
          type(tens_header_t):: thead
          type(tens_header_t), pointer:: thp
-         type(h_space_t):: h_space
          character(32):: tens_name
          type(tens_simple_part_t):: tpart
 
          ierr=0
          n=6; dims(1:n)=(/128_INTL,64_INTL,256_INTL,64_INTL,128_INTL,64_INTL/)
          m=2; grps(1:n)=(/1,2,0,2,1,2/); grp_spec(1:m)=(/TEREC_IND_RESTR_LT,TEREC_IND_RESTR_GE/)
-         call thead%tens_header_ctor(ierr,'Tensor',(/1_INTL,2_INTL,3_INTL,2_INTL,1_INTL,2_INTL/),h_space)
+         call thead%tens_header_ctor(ierr,'Tensor',(/1_INTL,2_INTL,3_INTL,2_INTL,1_INTL,2_INTL/))
          if(ierr.eq.TEREC_SUCCESS) then
           call thead%add_shape(ierr,dims(1:n),grps(1:n),grp_spec(1:m))
           if(ierr.eq.TEREC_SUCCESS) then
@@ -3781,9 +3908,9 @@
          integer(INTL), parameter:: TEST_SPACE_DIM=33    !vector space dimension
          type(spher_symmetry_t):: symm(1:TEST_SPACE_DIM) !symmetry of each basis vector
          type(subspace_basis_t):: full_basis             !full vector space basis
-         type(h_space_t):: hspace                        !hierarchical representation of the vector space
+         class(h_space_t), pointer:: hspace              !hierarchical representation of the vector space
          integer(INTL):: spcx(1:MAX_TENSOR_RANK),dims(1:MAX_TENSOR_RANK),space_id,max_res
-         integer(INTD):: dimg(1:MAX_TENSOR_RANK),grps(1:MAX_TENSOR_RANK),num_subtensors
+         integer(INTD):: dimg(1:MAX_TENSOR_RANK),grps(1:MAX_TENSOR_RANK),num_subtensors,hsid,j
          type(tens_header_t), pointer:: thp
          type(tens_rcrsv_t):: tensor
          type(list_bi_t):: subtensors
@@ -3792,27 +3919,30 @@
          class(*), pointer:: up
 
  !Build a hierarchical representation for a test vector space:
-         call register_test_space(ierr); if(ierr.ne.TEREC_SUCCESS) then; ierr=1; return; endif
+         hsid=hspace_register%register_space('MySpace',ierr,hspace); if(ierr.ne.TEREC_SUCCESS) then; ierr=1; return; endif
+         call register_test_space(ierr); if(ierr.ne.TEREC_SUCCESS) then; ierr=2; return; endif
  !Create the full tensor (over the full space):
   !Get full space id and its max resolution:
-         space_id=hspace%get_common_subspace(0_INTL,TEST_SPACE_DIM-1_INTL,ierr); if(ierr.ne.0) then; ierr=2; return; endif
-         ssp=>hspace%get_subspace(space_id,ierr); if(ierr.ne.0) then; ierr=3; return; endif
-         if(.not.associated(ssp)) then; ierr=4; return; endif
-         max_res=ssp%get_max_resolution(ierr); if(ierr.ne.0) then; ierr=5; return; endif
+         space_id=hspace%get_common_subspace(0_INTL,TEST_SPACE_DIM-1_INTL,ierr); if(ierr.ne.0) then; ierr=3; return; endif
+         ssp=>hspace%get_subspace(space_id,ierr); if(ierr.ne.0) then; ierr=4; return; endif
+         if(.not.associated(ssp)) then; ierr=5; return; endif
+         max_res=ssp%get_max_resolution(ierr); if(ierr.ne.0) then; ierr=6; return; endif
          !write(*,*) 'Space ID = ',space_id,': Max resolution = ',max_res !debug
   !Create a tensor over the full space:
          spcx(1:tens_rank)=space_id
          dims(1:tens_rank)=max_res
          dimg(1:tens_rank)=(/1,1,2,2/); grps(1:2)=(/TEREC_IND_RESTR_LT,TEREC_IND_RESTR_GT/)
-         call tensor%tens_rcrsv_ctor('T2',spcx(1:tens_rank),hspace,ierr,dims(1:tens_rank),dimg(1:tens_rank),grps(1:2))
-         if(ierr.ne.0) then; ierr=6; return; endif
+         call tensor%tens_rcrsv_ctor('T2',spcx(1:tens_rank),(/(hsid,j=1,tens_rank)/),ierr,&
+                                    &dims(1:tens_rank),dimg(1:tens_rank),grps(1:2))
+         if(ierr.ne.0) then; ierr=7; return; endif
  !Split the tensor into subtensors:
-         call tensor%split((/1,2,3,4/),subtensors,ierr,num_subtensors); if(ierr.ne.0) then; ierr=7; return; endif
+         call tensor%split((/1,2,3,4/),subtensors,ierr,num_subtensors); if(ierr.ne.0) then; ierr=8; return; endif
          !write(*,*) 'Number of subtensors generated = ',num_subtensors !debug
-         ierr=lit%init(subtensors); if(ierr.ne.0) then; ierr=8; return; endif
-         !ierr=lit%scanp(action_f=print_tens_header_f); if(ierr.eq.GFC_IT_DONE) ierr=0 !debug
-         ierr=lit%delete_all(); if(ierr.ne.0) then; ierr=9; return; endif
-         ierr=lit%release(); if(ierr.ne.0) then; ierr=10; return; endif
+         ierr=lit%init(subtensors); if(ierr.ne.0) then; ierr=9; return; endif
+         !ierr=lit%scanp(action_f=print_tens_header_f); if(ierr.eq.GFC_IT_DONE) ierr=lit%reset() !debug
+         !if(ierr.ne.0) then; ierr=10; return; endif !debug
+         ierr=lit%delete_all(); if(ierr.ne.0) then; ierr=11; return; endif
+         ierr=lit%release(); if(ierr.ne.0) then; ierr=12; return; endif
 
          return
 

@@ -96,7 +96,8 @@
        integer(INTL), parameter:: TEST_SPACE_DIM=20    !debug
        type(spher_symmetry_t):: symm(1:TEST_SPACE_DIM) !debug
        type(subspace_basis_t):: full_basis             !debug
-       type(h_space_t):: vec_space                     !debug
+       class(h_space_t), pointer:: vec_space           !debug
+       integer(INTD):: hsid                            !debug
 
 !Start the (MPI) process and init its services:
        ierr=0; errc=0
@@ -122,6 +123,7 @@
          if(error_code.eq.0) then
           write(jo,'("Ok")')
           write(jo,'("#MSG(exatensor): Building the Subspace Aggregation Tree (SAT) ... ")',ADVANCE='NO')
+          hsid=hspace_register%register_space('OrbSpace',ierr,vec_space)
           call register_test_space(error_code)
           if(error_code.eq.0) then; write(jo,'("Ok")'); else; write(jo,'("Failed")'); ierr=-2; endif
          else
