@@ -1,7 +1,7 @@
 !Infrastructure for a recursive adaptive vector space decomposition
 !and hierarchical vector space representation.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/03/30
+!REVISION: 2017/04/13
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -1972,7 +1972,7 @@
 
          errc=basis_it%init(this%bases)
          if(errc.eq.GFC_SUCCESS) then
-          errc=basis_it%reset(); if(errc.eq.GFC_SUCCESS) errc=basis_it%delete_all()
+          errc=basis_it%delete_all()
           errc=basis_it%release()
          endif
          this%max_resolution=0
@@ -2582,7 +2582,7 @@
          if(allocated(this%overlap)) deallocate(this%overlap)
          errc=vt_it%init(this%subspaces)
          if(errc.eq.GFC_SUCCESS) then
-          errc=vt_it%reset(); if(errc.eq.GFC_SUCCESS) errc=vt_it%delete_all()
+          errc=vt_it%delete_all()
           errc=vt_it%release()
          endif
          this%num_subspaces=0; this%space_dim=0

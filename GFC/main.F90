@@ -24,6 +24,7 @@ program main
  !use gfc_list_test
  use gfc_tree_test
  use gfc_dictionary_test
+ use gfc_graph_test
  implicit none
  real(8):: perf
  integer(INTD):: dev_out,ierr
@@ -32,44 +33,51 @@ program main
  dev_out=6 !output device (defaults to screen)
 
 !GFC containers:
- !Vector:
+! Vector:
  ierr=test_gfc_vector(perf,dev_out)
  if(ierr.eq.0) then
   write(*,*) 'gfc::vector testing status: ',ierr,'(PASSED): Performance: ',perf
  else
   write(*,*) 'gfc::vector testing status: ',ierr,'(FAILED): Performance: ',perf
  endif
- !List:
+! List:
  !ierr=test_gfc_list(perf,dev_out)
  !if(ierr.eq.0) then
   !write(*,*) 'GFC::list testing status: ',ierr,'(PASSED): Performance: ',perf
  !else
   !write(*,*) 'GFC::list testing status: ',ierr,'(FAILED): Performance: ',perf
  !endif
- !Tree:
+! Tree:
  ierr=test_gfc_tree(perf,dev_out)
  if(ierr.eq.0) then
   write(*,*) 'gfc::tree testing status: ',ierr,'(PASSED): Performance: ',perf
  else
   write(*,*) 'gfc::tree testing status: ',ierr,'(FAILED): Performance: ',perf
  endif
- !Dictionary:
+! Dictionary:
  ierr=test_gfc_dictionary(perf,dev_out)
  if(ierr.eq.0) then
   write(*,*) 'gfc::dictionary testing status: ',ierr,'(PASSED): Performance: ',perf
  else
   write(*,*) 'gfc::dictionary testing status: ',ierr,'(FAILED): Performance: ',perf
  endif
+! Graph:
+ ierr=test_gfc_graph(perf,dev_out)
+ if(ierr.eq.0) then
+  write(*,*) 'gfc::graph testing status: ',ierr,'(PASSED): Performance: ',perf
+ else
+  write(*,*) 'gfc::graph testing status: ',ierr,'(FAILED): Performance: ',perf
+ endif
 
 !Legacy containers:
- !Stack:
+! Stack:
  ierr=dil_test_stack(perf,dev_out)
  if(ierr.eq.0) then
   write(*,*) 'Legacy stack testing status: ',ierr,'(PASSED): Performance: ',perf
  else
   write(*,*) 'Legacy stack testing status: ',ierr,'(FAILED): Performance: ',perf
  endif
- !Dictionary:
+! Dictionary:
  ierr=dil_test_dictionary(perf,dev_out)
  if(ierr.eq.0) then
   write(*,*) 'Legacy dictionary testing status: ',ierr,'(PASSED): Performance: ',perf

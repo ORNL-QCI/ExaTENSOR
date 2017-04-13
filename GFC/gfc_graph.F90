@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Graph
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017/04/05
+!REVISION: 2017/04/13
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -24,11 +24,6 @@
 ! # GFC::graph contains graph vertices (<graph_vertex_t>) and graph links (<graph_link_t>).
 !   Graph vertices are internally stored in a gfc::vector, making the dynamic type of the
 !   pointer returned by the graph iterator (method .pointee) to be <vector_elem_t>.
-
-!FOR DEVELOPERS:
-! # Currently gfc::dictionary does not allow storing dictionary keys by reference.
-!   Once this feature is enabled, the method VertLinkRefsAddLink of the vert_link_refs_t
-!   class will require slight modifiction (to store newly added keys by reference).
 
        module gfc_graph
         use gfc_base
@@ -57,6 +52,7 @@
           generic, public:: graph_vertex_ctor=>GraphVertexCtor !ctors
           procedure, public:: get_color=>GraphVertexGetColor   !returns the color of the graph vertex
           procedure, public:: compare=>GraphVertexCompare      !comparator
+          procedure, public:: print_it=>GraphVertexPrintIt     !prints the graph vertex info
           final:: graph_vertex_dtor                            !dtor
         end type graph_vertex_t
  !Link between vertices (directed/undirected edge or hyperedge):
@@ -72,6 +68,7 @@
           procedure, public:: get_color=>GraphLinkGetColor !returns the link color
           procedure, public:: get_rank=>GraphLinkGetRank   !returns the number of vertices in the link (2 for ordinary edges, >2 for hyperedges)
           procedure, public:: compare=>GraphLinkCompare    !comparator
+          procedure, public:: print_it=>GraphLinkPrintIt   !prints the graph link info
           final:: graph_link_dtor                          !dtor
         end type graph_link_t
  !Graph vertex links:
@@ -102,6 +99,7 @@
           procedure, public:: is_set=>GraphIsSet                    !returns GFC_TRUE if the graph is set, plus additional info
           procedure, public:: get_num_vertices=>GraphGetNumVertices !returns the total number of vertices in the graph (graph cardinality)
           procedure, public:: get_num_links=>GraphGetNumLinks       !returns the total number of links in the graph
+          procedure, public:: print_it=>GraphPrintIt                !prints the graph
           final:: graph_dtor                                        !dtor
         end type graph_t
  !Graph iterator:
@@ -139,6 +137,7 @@
         private GraphVertexCtor
         private GraphVertexGetColor
         private GraphVertexCompare
+        private GraphVertexPrintIt
         public graph_vertex_dtor
  !graph_link_t:
         private GraphLinkCtor
@@ -146,6 +145,7 @@
         private GraphLinkGetColor
         private GraphLinkGetRank
         private GraphLinkCompare
+        private GraphLinkPrintIt
         public graph_link_dtor
  !vert_link_refs_t
         private VertLinkRefsCtor
@@ -163,6 +163,7 @@
         private GraphIsSet
         private GraphGetNumVertices
         private GraphGetNumLinks
+        private GraphPrintIt
         public graph_dtor
  !graph_iter_t:
         private GraphIterUpdateStatus
@@ -200,6 +201,7 @@
          glp2=>NULL(); select type(obj2); class is(graph_link_t); glp2=>obj2; end select
          if(associated(glp1).and.associated(glp2)) then
           cmp=glp1%compare(glp2)
+          print *,'FUK: ',cmp,glp1%rank,glp2%rank !debug
          else
           cmp=GFC_CMP_ERR
          endif
@@ -250,6 +252,17 @@
          endif
          return
         end function GraphVertexCompare
+!-----------------------------------------------
+        subroutine GraphVertexPrintIt(this,ierr)
+!Prints the graph vertex info.
+         implicit none
+         class(graph_vertex_t), intent(in):: this    !in: graph vertex
+         integer(INTD), intent(out), optional:: ierr !out: error code
+
+         write(*,'("Vertex color = ",i13)') this%color
+         if(present(ierr)) ierr=GFC_SUCCESS
+         return
+        end subroutine GraphVertexPrintIt
 !-----------------------------------------
         subroutine graph_vertex_dtor(this)
 !Dtor.
@@ -387,6 +400,26 @@
          endif
          return
         end function GraphLinkCompare
+!---------------------------------------------
+        subroutine GraphLinkPrintIt(this,ierr)
+!Prints the graph link.
+         implicit none
+         class(graph_link_t), intent(in):: this      !in: graph link
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         if(this%is_set(errc)) then
+          if(this%directed) then
+           write(*,'("Link (directed, color = ",i13,"):",16(1x,i13))') this%color,this%vertices(1:this%rank)
+          else
+           write(*,'("Link (color = ",i13,"):",16(1x,i13))') this%color,this%vertices(1:this%rank)
+          endif
+         else
+          errc=GFC_ELEM_EMPTY
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine GraphLinkPrintIt
 !---------------------------------------
         subroutine graph_link_dtor(this)
 !Dtor.
@@ -645,6 +678,55 @@
          if(present(ierr)) ierr=GFC_SUCCESS
          return
         end function GraphGetNumLinks
+!-----------------------------------------
+        subroutine GraphPrintIt(this,ierr)
+!Prints the graph.
+         implicit none
+         class(graph_t), intent(in), target:: this   !in: graph
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: i,errc
+         integer(INTL):: nv,nl,l
+         type(graph_iter_t):: git
+         class(graph_vertex_t), pointer:: gvp
+         class(graph_link_t), pointer:: glp
+         type(list_bi_t):: links
+         type(list_iter_t):: lit
+         class(*), pointer:: up
+
+         write(*,'("#Printing graph:")')
+         errc=git%init(this)
+         if(errc.eq.GFC_SUCCESS) then
+          nv=git%get_num_vertices(errc)
+          if(errc.eq.GFC_SUCCESS.and.nv.gt.0) then
+           do l=0_INTL,nv-1_INTL !loop over vertices
+            gvp=>git%get_vertex(l,errc); if(errc.ne.GFC_SUCCESS) exit
+            write(*,'("Vertex ",i13,1x)',ADVANCE='NO') l; call gvp%print_it()
+            call git%get_links((/l/),links,nl,errc); if(errc.ne.GFC_SUCCESS) exit
+            if(nl.gt.0) then
+             errc=lit%init(links)
+             do while(errc.eq.GFC_SUCCESS)
+              up=>lit%get_value(errc); if(errc.ne.GFC_SUCCESS) exit
+              glp=>NULL(); select type(up); class is(graph_link_t); glp=>up; end select
+              if(.not.associated(glp)) then; errc=GFC_ERROR; exit; endif
+              write(*,'(1x)',ADVANCE='NO'); call glp%print_it(errc); if(errc.ne.GFC_SUCCESS) exit
+              errc=lit%next()
+             enddo
+             if(errc.eq.GFC_IT_DONE) errc=GFC_SUCCESS
+             i=lit%delete_all(); if(i.ne.GFC_SUCCESS.and.errc.eq.GFC_SUCCESS) errc=i
+             if(errc.eq.GFC_SUCCESS) then
+              errc=lit%release(); if(errc.ne.GFC_SUCCESS) exit
+             else
+              exit
+             endif
+            endif
+           enddo
+          endif
+          i=git%release(); if(i.ne.GFC_SUCCESS.and.errc.eq.GFC_SUCCESS) errc=i
+         endif
+         write(*,'("#End of printing")')
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine GraphPrintIt
 !----------------------------------
         subroutine graph_dtor(this)
 !Dtor.
@@ -1042,6 +1124,7 @@
                   select type(up); class is(vert_link_refs_t); vlrp=>up; end select
                   if(associated(vlrp)) then
                    ierr=vlrp%add_link(link,lep) !add a reference to the graph link to each participating vertex
+                   if(ierr.ne.GFC_SUCCESS) exit
                   else
                    ierr=GFC_CORRUPTED_CONT; exit
                   endif
@@ -1243,3 +1326,55 @@
         end subroutine GraphIterMergeVertices
 
        end module gfc_graph
+!TESTING====================
+       module gfc_graph_test
+        use gfc_base
+        use gfc_graph
+        use timers, only: thread_wtime
+        implicit none
+        private
+
+        public test_gfc_graph
+
+       contains
+
+        function test_gfc_graph(perf,dev_out) result(ierr)
+         implicit none
+         integer(INTD):: ierr
+         real(8), intent(out):: perf
+         integer(INTD), intent(in), optional:: dev_out
+         integer(INTD), parameter:: MAX_VERTICES=10
+         integer(INTD):: jo,i
+         integer(INTL):: v0,v1,v2
+         type(graph_vertex_t):: vrt
+         type(graph_link_t):: lnk
+         type(graph_t):: graph
+         type(graph_iter_t):: git
+         real(8):: tms,tm
+
+         if(present(dev_out)) then; jo=dev_out; else; jo=6; endif
+         perf=0d0; tms=thread_wtime()
+         ierr=git%init(graph); if(ierr.ne.GFC_SUCCESS) then; ierr=1; return; endif
+         call vrt%graph_vertex_ctor(5_INTL,ierr); if(ierr.ne.GFC_SUCCESS) then; ierr=2; return; endif
+         do i=0,MAX_VERTICES-1
+          ierr=git%append_vertex(vrt); if(ierr.ne.GFC_SUCCESS) then; ierr=3; return; endif
+         enddo
+         do i=0,MAX_VERTICES-1
+          v0=int(i,INTL)
+          v1=int(mod(i+1,MAX_VERTICES),INTL)
+          v2=int(mod(i+2,MAX_VERTICES),INTL)
+          call lnk%graph_link_ctor((/v0,v1/),ierr); if(ierr.ne.GFC_SUCCESS) then; ierr=4; return; endif
+          print *,'Ctored link:'; call lnk%print_it() !debug
+          ierr=git%append_link(lnk); if(ierr.ne.GFC_SUCCESS) then; ierr=5; return; endif
+          call lnk%graph_link_ctor((/v0,v2/),ierr); if(ierr.ne.GFC_SUCCESS) then; ierr=6; return; endif
+          print *,'Ctored link:'; call lnk%print_it() !debug
+          ierr=git%append_link(lnk); if(ierr.ne.GFC_SUCCESS) then; ierr=7; return; endif
+         enddo
+         call graph%print_it(ierr); if(ierr.ne.GFC_SUCCESS) then; ierr=8; return; endif !debug
+         ierr=git%delete_all(); if(ierr.ne.GFC_SUCCESS) then; ierr=9; return; endif
+         ierr=git%release(); if(ierr.ne.GFC_SUCCESS) then; ierr=10; return; endif
+         tm=thread_wtime(tms); perf=dble(MAX_VERTICES)/tm
+         return
+        end function test_gfc_graph
+
+       end module gfc_graph_test
