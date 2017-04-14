@@ -100,7 +100,6 @@
           procedure, public:: get_num_vertices=>GraphGetNumVertices !returns the total number of vertices in the graph (graph cardinality)
           procedure, public:: get_num_links=>GraphGetNumLinks       !returns the total number of links in the graph
           procedure, public:: print_it=>GraphPrintIt                !prints the graph
-         !final:: graph_dtor                                        !`dtor
         end type graph_t
  !Graph iterator:
         type, extends(gfc_iter_t), public:: graph_iter_t
@@ -133,6 +132,8 @@
 !VISIBILITY:
  !non-member:
         public cmp_graph_links
+        public print_graph_link
+        public print_graph_link_from_list
  !graph_vertex_t:
         private GraphVertexCtor
         private GraphVertexGetColor
@@ -164,7 +165,6 @@
         private GraphGetNumVertices
         private GraphGetNumLinks
         private GraphPrintIt
-        public graph_dtor
  !graph_iter_t:
         private GraphIterUpdateStatus
         private GraphIterRenumber
@@ -201,12 +201,48 @@
          glp2=>NULL(); select type(obj2); class is(graph_link_t); glp2=>obj2; end select
          if(associated(glp1).and.associated(glp2)) then
           cmp=glp1%compare(glp2)
-          print *,'cmp_links: ',cmp,glp1%rank,glp2%rank; if(cmp.eq.GFC_CMP_ERR) call crash() !debug
+          print *,'cmp_graph_links: ',cmp,glp1%rank,glp2%rank !debug
+          if(cmp.eq.GFC_CMP_EQ) then; call glp1%print_it(); call glp2%print_it(); endif !debug
+          if(cmp.eq.GFC_CMP_ERR) call crash() !debug
          else
           cmp=GFC_CMP_ERR
          endif
          return
         end function cmp_graph_links
+!--------------------------------------------------
+        function print_graph_link(obj) result(ierr)
+!Prints graph_link_t.
+         implicit none
+         integer(INTD):: ierr                  !out: error code
+         class(*), intent(inout), target:: obj !in: graph_link_t object
+
+         ierr=GFC_SUCCESS
+         select type(obj)
+         class is(graph_link_t)
+          call obj%print_it()
+         class default
+          ierr=GFC_ACTION_FAILED
+         end select
+         return
+        end function print_graph_link
+!------------------------------------------------------------
+        function print_graph_link_from_list(obj) result(ierr)
+!Prints graph_link_t from the list of links.
+         implicit none
+         integer(INTD):: ierr                  !out: error code
+         class(*), intent(inout), target:: obj !in: graph_link_t object
+         class(*), pointer:: up
+
+         ierr=GFC_SUCCESS
+         select type(obj)
+         class is(list_elem_t)
+          up=>obj%get_value(ierr)
+          if(ierr.eq.GFC_SUCCESS) ierr=print_graph_link(up)
+         class default
+          ierr=GFC_ACTION_FAILED
+         end select
+         return
+        end function print_graph_link_from_list
 ![graph_vertex_t]==================================
         subroutine GraphVertexCtor(this,color,ierr)
 !Ctor.
@@ -528,7 +564,12 @@
           if(ierr.eq.GFC_SUCCESS) then
            ierr=dit%init(this%vert_links)
            if(ierr.eq.GFC_SUCCESS) then
+            write(*,'("-----------Vertex link dictionary---------------")') !debug
+            i=dit%scanp(action_f=print_graph_link_from_list) !debug
+            write(*,'("----------------end dictionary------------------")') !debug
+            write(*,'("VertLinkRefsAddLink:dictionary.search:link: ")',ADVANCE='NO'); call link%print_it() !debug
             ierr=dit%search(GFC_DICT_ADD_IF_NOT_FOUND,cmp_graph_links,link,link_ref,GFC_BY_REF)
+            write(*,'("VertLinkRefsAddLink:dictionary.search:ierr = ",i9)') ierr !debug
             if(ierr.eq.GFC_NOT_FOUND) then
              this%num_links=this%num_links+1_INTL
              ierr=GFC_SUCCESS
@@ -727,19 +768,6 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine GraphPrintIt
-!----------------------------------
-        subroutine graph_dtor(this)
-!Dtor.
-         implicit none
-         type(graph_t):: this
-         integer(INTD):: errc
-         type(graph_iter_t):: git
-
-         errc=git%init(this)
-         if(errc.eq.GFC_SUCCESS) errc=git%delete_all()
-         errc=git%release()
-         return
-        end subroutine graph_dtor
 ![graph_iter_t]===============================
         subroutine GraphIterUpdateStatus(this)
 !Updates the iterator status after component updates.
@@ -1107,7 +1135,7 @@
           if(link%is_set(ierr)) then
            if(ierr.eq.GFC_SUCCESS) then
             ierr=this%link_it%append(link) !append the new graph link to the list of graph links (by value)
-            write(*,'("FUK1: ",i7)',ADVANCE='NO') ierr; call link%print_it() !debug[-666]
+            write(*,'("GraphIterAppendLink:link_list.append:ierr = ",i9,1x)',ADVANCE='NO') ierr; call link%print_it() !debug[-666]
             if(ierr.eq.GFC_SUCCESS) then
              call this%container%incr_num_links_()
              ierr=this%link_it%reset_back()
@@ -1125,7 +1153,7 @@
                   select type(up); class is(vert_link_refs_t); vlrp=>up; end select
                   if(associated(vlrp)) then
                    ierr=vlrp%add_link(link,lep) !add a reference to the graph link to each participating vertex
-                   write(*,'("FUK1: ",i7)',ADVANCE='NO') ierr; call link%print_it() !debug[-13]
+                   write(*,'("GraphIterAppendLink:vert_info.add_link:ierr = ",i9,1x)',ADVANCE='NO') ierr; call link%print_it() !debug[-13]
                    if(ierr.ne.GFC_SUCCESS) exit
                   else
                    ierr=GFC_CORRUPTED_CONT; exit
@@ -1366,10 +1394,10 @@
           v1=int(mod(i+1,MAX_VERTICES),INTL)
           v2=int(mod(i+2,MAX_VERTICES),INTL)
           call lnk%graph_link_ctor((/v0,v1/),ierr); if(ierr.ne.GFC_SUCCESS) then; ierr=4; return; endif
-          write(*,'("Vertex",i7,": link: ")',ADVANCE='NO') i; call lnk%print_it() !debug
+          write(*,*); write(*,'("New Vertex",i7,": link: ")',ADVANCE='NO') i; call lnk%print_it() !debug
           ierr=git%append_link(lnk); if(ierr.ne.GFC_SUCCESS) then; print *,ierr; ierr=5; return; endif
           call lnk%graph_link_ctor((/v0,v2/),ierr); if(ierr.ne.GFC_SUCCESS) then; ierr=6; return; endif
-          write(*,'("Vertex",i7,": link: ")',ADVANCE='NO') i; call lnk%print_it() !debug
+          write(*,*); write(*,'("New Vertex",i7,": link: ")',ADVANCE='NO') i; call lnk%print_it() !debug
           ierr=git%append_link(lnk); if(ierr.ne.GFC_SUCCESS) then; print *,ierr; ierr=7; return; endif
          enddo
          call graph%print_it(ierr); if(ierr.ne.GFC_SUCCESS) then; ierr=8; return; endif !debug

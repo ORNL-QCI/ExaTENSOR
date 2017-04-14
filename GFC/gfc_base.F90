@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Base
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017-04-04 (started 2016-02-17)
+!REVISION: 2017-04-14 (started 2016-02-17)
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -314,6 +314,7 @@
          integer(INTD):: errc
          integer:: errcode
          logical:: assoc,lckd,lck
+         character(256):: errmesg
 
          errc=GFC_SUCCESS
          if(present(assoc_only)) then; assoc=assoc_only; else; assoc=.FALSE.; endif
@@ -331,8 +332,16 @@
               this%value_p=>copy_ctor_f(obj,errc)
              else
 #endif
-              allocate(this%value_p,SOURCE=obj,STAT=errcode)
-              if(errcode.ne.0) errc=GFC_MEM_ALLOC_FAILED
+              !print *,'VALUE_P allocation status = ',associated(this%value_p) !debug
+              allocate(this%value_p,SOURCE=obj,STAT=errcode,ERRMSG=errmesg)
+              if(errcode.ne.0) then
+               write(*,*)'#ERROR(GFC::base:ContElemConstruct): allocate() failed: '//errmesg
+               if(errmesg(1:39).eq.'Attempt to allocate an allocated object') then !debug
+                deallocate(this%value_p,STAT=errcode,ERRMSG=errmesg) !debug
+                if(errcode.ne.0) print *,'deallocate() failure: '//errmesg !debug
+               endif !debug
+               errc=GFC_MEM_ALLOC_FAILED
+              endif
 #ifdef NO_GNU
              endif
 #endif
