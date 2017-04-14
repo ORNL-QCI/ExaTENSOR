@@ -33,6 +33,7 @@ program main
  dev_out=6 !output device (defaults to screen)
 
 !GFC containers:
+#if 0
 ! Vector:
  ierr=test_gfc_vector(perf,dev_out)
  if(ierr.eq.0) then
@@ -61,6 +62,7 @@ program main
  else
   write(*,*) 'gfc::dictionary testing status: ',ierr,'(FAILED): Performance: ',perf
  endif
+#endif
 ! Graph:
  ierr=test_gfc_graph(perf,dev_out)
  if(ierr.eq.0) then
@@ -68,6 +70,7 @@ program main
  else
   write(*,*) 'gfc::graph testing status: ',ierr,'(FAILED): Performance: ',perf
  endif
+ stop
 
 !Legacy containers:
 ! Stack:
