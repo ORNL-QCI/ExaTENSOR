@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Dictionary (ordered map), AVL BST
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017/04/05 (recycling my old dictionary implementation)
+!REVISION: 2017/04/16 (recycling my old dictionary implementation)
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -1049,8 +1049,8 @@
          class(dictionary_iter_t), intent(inout):: this         !inout: dictionary iterator
          integer, intent(in):: action                           !in: requested action (see action parameters at the top of this module)
          procedure(gfc_cmp_i):: cmp_key_f                       !in: key comparison function, returns: {GFC_CMP_LT,GFC_CMP_GT,GFC_CMP_EQ,GFC_CMP_ERR}
-         class(*), intent(in):: key                             !in: key being searched for
-         class(*), intent(in), optional:: value_in              !in: an optional value to be stored with the key
+         class(*), intent(in), target:: key                     !in: key being searched for
+         class(*), intent(in), target, optional:: value_in      !in: an optional value to be stored with the key
          logical, intent(in), optional:: store_by               !in: storage type for newly added values: {GFC_BY_VAL,GFC_BY_REF}, defaults to GFC_BY_VAL
          class(*), pointer, intent(out), optional:: value_out   !out: when fetching, this will point to the value found by the key (NULL otherwise)
 #ifdef NO_GNU

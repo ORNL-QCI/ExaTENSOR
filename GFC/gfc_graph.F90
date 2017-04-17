@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Graph
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017/04/13
+!REVISION: 2017/04/16
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -201,43 +201,46 @@
          glp2=>NULL(); select type(obj2); class is(graph_link_t); glp2=>obj2; end select
          if(associated(glp1).and.associated(glp2)) then
           cmp=glp1%compare(glp2)
-          print *,'cmp_graph_links: ',cmp,glp1%rank,glp2%rank !debug
-          if(cmp.eq.GFC_CMP_EQ) then; call glp1%print_it(); call glp2%print_it(); endif !debug
-          if(cmp.eq.GFC_CMP_ERR) call crash() !debug
          else
           cmp=GFC_CMP_ERR
          endif
          return
         end function cmp_graph_links
-!--------------------------------------------------
-        function print_graph_link(obj) result(ierr)
+!---------------------------------------------------------
+        function print_graph_link(obj,dev_id) result(ierr)
 !Prints graph_link_t.
          implicit none
-         integer(INTD):: ierr                  !out: error code
-         class(*), intent(inout), target:: obj !in: graph_link_t object
+         integer(INTD):: ierr                         !out: error code
+         class(*), intent(in), target:: obj           !in: graph_link_t object
+         integer(INTD), intent(in), optional:: dev_id !in: output device (default to screen)
+         integer(INTD):: devo
 
          ierr=GFC_SUCCESS
+         if(present(dev_id)) then; devo=dev_id; else; devo=6; endif
          select type(obj)
          class is(graph_link_t)
-          call obj%print_it()
+          call obj%print_it(ierr,devo)
          class default
           ierr=GFC_ACTION_FAILED
          end select
          return
         end function print_graph_link
-!------------------------------------------------------------
-        function print_graph_link_from_list(obj) result(ierr)
+!-------------------------------------------------------------------
+        function print_graph_link_from_list(obj,dev_id) result(ierr)
 !Prints graph_link_t from the list of links.
          implicit none
-         integer(INTD):: ierr                  !out: error code
-         class(*), intent(inout), target:: obj !in: graph_link_t object
+         integer(INTD):: ierr                         !out: error code
+         class(*), intent(in), target:: obj           !in: list_elem_t<graph_link_t> object
+         integer(INTD), intent(in), optional:: dev_id !in: output device (default to screen)
          class(*), pointer:: up
+         integer(INTD):: devo
 
          ierr=GFC_SUCCESS
+         if(present(dev_id)) then; devo=dev_id; else; devo=6; endif
          select type(obj)
          class is(list_elem_t)
           up=>obj%get_value(ierr)
-          if(ierr.eq.GFC_SUCCESS) ierr=print_graph_link(up)
+          if(ierr.eq.GFC_SUCCESS) ierr=print_graph_link(up,devo)
          class default
           ierr=GFC_ACTION_FAILED
          end select
@@ -436,19 +439,21 @@
          endif
          return
         end function GraphLinkCompare
-!---------------------------------------------
-        subroutine GraphLinkPrintIt(this,ierr)
+!----------------------------------------------------
+        subroutine GraphLinkPrintIt(this,ierr,dev_id)
 !Prints the graph link.
          implicit none
-         class(graph_link_t), intent(in):: this      !in: graph link
-         integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc
+         class(graph_link_t), intent(in):: this       !in: graph link
+         integer(INTD), intent(out), optional:: ierr  !out: error code
+         integer(INTD), intent(in), optional:: dev_id !in: output device (defaults to screen)
+         integer(INTD):: errc,devo
 
+         if(present(dev_id)) then; devo=dev_id; else; devo=6; endif
          if(this%is_set(errc)) then
           if(this%directed) then
-           write(*,'("Link (directed, color = ",i13,"):",16(1x,i13))') this%color,this%vertices(1:this%rank)
+           write(devo,'("Link (directed, color = ",i13,"):",16(1x,i13))') this%color,this%vertices(1:this%rank)
           else
-           write(*,'("Link (color = ",i13,"):",16(1x,i13))') this%color,this%vertices(1:this%rank)
+           write(devo,'("Link (color = ",i13,"):",16(1x,i13))') this%color,this%vertices(1:this%rank)
           endif
          else
           errc=GFC_ELEM_EMPTY
@@ -564,17 +569,14 @@
           if(ierr.eq.GFC_SUCCESS) then
            ierr=dit%init(this%vert_links)
            if(ierr.eq.GFC_SUCCESS) then
-            write(*,'("-----------Vertex link dictionary---------------")') !debug
-            i=dit%scanp(action_f=print_graph_link_from_list) !debug
-            write(*,'("----------------end dictionary------------------")') !debug
-            write(*,'("VertLinkRefsAddLink:dictionary.search:link: ")',ADVANCE='NO'); call link%print_it() !debug
             ierr=dit%search(GFC_DICT_ADD_IF_NOT_FOUND,cmp_graph_links,link,link_ref,GFC_BY_REF)
-            write(*,'("VertLinkRefsAddLink:dictionary.search:ierr = ",i9)') ierr !debug
             if(ierr.eq.GFC_NOT_FOUND) then
              this%num_links=this%num_links+1_INTL
              ierr=GFC_SUCCESS
             else
-             if(ierr.eq.GFC_FOUND) ierr=GFC_INVALID_REQUEST !link already exists
+             if(ierr.eq.GFC_FOUND) then
+              ierr=GFC_INVALID_REQUEST !link already exists
+             endif
             endif
             i=dit%release(); if(i.ne.GFC_SUCCESS.and.ierr.eq.GFC_SUCCESS) ierr=i
            endif
@@ -1128,6 +1130,7 @@
          class(gfc_cont_elem_t), pointer:: gcp
          class(list_elem_t), pointer:: lep
          class(*), pointer:: up
+         class(graph_link_t), pointer:: glp
          class(vert_link_refs_t), pointer:: vlrp
 
          ierr=this%get_status()
@@ -1135,7 +1138,7 @@
           if(link%is_set(ierr)) then
            if(ierr.eq.GFC_SUCCESS) then
             ierr=this%link_it%append(link) !append the new graph link to the list of graph links (by value)
-            write(*,'("GraphIterAppendLink:link_list.append:ierr = ",i9,1x)',ADVANCE='NO') ierr; call link%print_it() !debug[-666]
+            !write(*,'("GraphIterAppendLink:link_list.append:ierr = ",i9,1x)',ADVANCE='NO') ierr; call link%print_it() !debug[-666]
             if(ierr.eq.GFC_SUCCESS) then
              call this%container%incr_num_links_()
              ierr=this%link_it%reset_back()
@@ -1143,30 +1146,38 @@
               gcp=>this%link_it%pointee(ierr)
               if(.not.associated(gcp)) ierr=GFC_ERROR
               if(ierr.eq.GFC_SUCCESS) then
-               select type(gcp)
-               class is(list_elem_t)
-                lep=>gcp
-                do i=1,link%rank !loop over participating vertices
-                 vid=link%vertices(i)
-                 up=>this%vert_ln_it%element_value(vid,ierr); if(ierr.ne.GFC_SUCCESS) exit
-                 if(associated(up)) then
-                  select type(up); class is(vert_link_refs_t); vlrp=>up; end select
-                  if(associated(vlrp)) then
-                   ierr=vlrp%add_link(link,lep) !add a reference to the graph link to each participating vertex
-                   write(*,'("GraphIterAppendLink:vert_info.add_link:ierr = ",i9,1x)',ADVANCE='NO') ierr; call link%print_it() !debug[-13]
-                   if(ierr.ne.GFC_SUCCESS) exit
-                  else
-                   ierr=GFC_CORRUPTED_CONT; exit
-                  endif
-                 else
-                  ierr=GFC_ERROR; exit
-                 endif
-                enddo
-                vlrp=>NULL(); up=>NULL(); lep=>NULL()
-               class default
-                ierr=GFC_CORRUPTED_CONT
-               end select
-               gcp=>NULL()
+               up=>gcp%get_value(ierr) !graph_link_t
+               if(.not.associated(up).and.ierr.eq.GFC_SUCCESS) ierr=GFC_ERROR
+               if(ierr.eq.GFC_SUCCESS) then
+                glp=>NULL(); select type(up); class is(graph_link_t); glp=>up; end select
+                if(associated(glp)) then
+                 select type(gcp)
+                 class is(list_elem_t)
+                  lep=>gcp
+                  do i=1,glp%rank !loop over participating vertices
+                   vid=glp%vertices(i)
+                   up=>this%vert_ln_it%element_value(vid,ierr); if(ierr.ne.GFC_SUCCESS) exit
+                   if(associated(up)) then
+                    select type(up); class is(vert_link_refs_t); vlrp=>up; end select
+                    if(associated(vlrp)) then
+                     ierr=vlrp%add_link(glp,lep) !add a reference to the graph link to each participating vertex
+                     if(ierr.ne.GFC_SUCCESS) exit
+                    else
+                     ierr=GFC_CORRUPTED_CONT; exit
+                    endif
+                   else
+                    ierr=GFC_ERROR; exit
+                   endif
+                  enddo
+                  vlrp=>NULL(); up=>NULL(); lep=>NULL()
+                 class default
+                  ierr=GFC_CORRUPTED_CONT
+                 end select
+                 glp=>NULL()
+                else
+                 ierr=GFC_CORRUPTED_CONT
+                endif
+               endif
               endif
               gcp=>NULL()
              endif
@@ -1394,10 +1405,10 @@
           v1=int(mod(i+1,MAX_VERTICES),INTL)
           v2=int(mod(i+2,MAX_VERTICES),INTL)
           call lnk%graph_link_ctor((/v0,v1/),ierr); if(ierr.ne.GFC_SUCCESS) then; ierr=4; return; endif
-          write(*,*); write(*,'("New Vertex",i7,": link: ")',ADVANCE='NO') i; call lnk%print_it() !debug
+          !write(*,*); write(*,'("New Vertex",i7,": link: ")',ADVANCE='NO') i; call lnk%print_it() !debug
           ierr=git%append_link(lnk); if(ierr.ne.GFC_SUCCESS) then; print *,ierr; ierr=5; return; endif
           call lnk%graph_link_ctor((/v0,v2/),ierr); if(ierr.ne.GFC_SUCCESS) then; ierr=6; return; endif
-          write(*,*); write(*,'("New Vertex",i7,": link: ")',ADVANCE='NO') i; call lnk%print_it() !debug
+          !write(*,*); write(*,'("New Vertex",i7,": link: ")',ADVANCE='NO') i; call lnk%print_it() !debug
           ierr=git%append_link(lnk); if(ierr.ne.GFC_SUCCESS) then; print *,ierr; ierr=7; return; endif
          enddo
          call graph%print_it(ierr); if(ierr.ne.GFC_SUCCESS) then; ierr=8; return; endif !debug
