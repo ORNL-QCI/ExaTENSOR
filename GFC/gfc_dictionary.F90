@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Dictionary (ordered map), AVL BST
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017/04/16 (recycling my old dictionary implementation)
+!REVISION: 2017/04/17 (recycling my old dictionary implementation)
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -594,7 +594,7 @@
              ierr=this%set_status_(GFC_IT_DONE)
             endif
            endif
-           if(.not.associated(dp)) ierr=GFC_IT_DONE
+           if(.not.associated(dp)) ierr=GFC_NO_MOVE
            dp=>NULL()
           else
            ierr=GFC_CORRUPTED_CONT
@@ -648,7 +648,7 @@
              ierr=this%set_status_(GFC_IT_DONE)
             endif
            endif
-           if(.not.associated(dp)) ierr=GFC_IT_DONE
+           if(.not.associated(dp)) ierr=GFC_NO_MOVE
            dp=>NULL()
           else
            ierr=GFC_CORRUPTED_CONT
@@ -676,7 +676,7 @@
             dp=>this%current%child_gt
             do while(associated(dp%child_lt)); dp=>dp%child_lt; enddo
            else
-            ierr=GFC_IT_DONE; dp=>this%current
+            ierr=GFC_NO_MOVE; dp=>this%current
             do while(associated(dp%parent).and.(.not.associated(dp,this%container%root)))
              if(associated(dp,dp%parent%child_lt)) then
               dp=>dp%parent; ierr=GFC_SUCCESS; exit
@@ -684,7 +684,7 @@
               dp=>dp%parent
              endif
             enddo
-            if(ierr.eq.GFC_IT_DONE) dp=>NULL()
+            if(ierr.eq.GFC_NO_MOVE) dp=>NULL()
            endif
            if(present(elem_p)) then
             elem_p=>dp
@@ -697,7 +697,7 @@
              ierr=this%set_status_(GFC_IT_DONE)
             endif
            endif
-           if(.not.associated(dp)) ierr=GFC_IT_DONE
+           if(.not.associated(dp)) ierr=GFC_NO_MOVE
            dp=>NULL()
           else
            ierr=GFC_CORRUPTED_CONT
@@ -725,7 +725,7 @@
             dp=>this%current%child_lt
             do while(associated(dp%child_gt)); dp=>dp%child_gt; enddo
            else
-            ierr=GFC_IT_DONE; dp=>this%current
+            ierr=GFC_NO_MOVE; dp=>this%current
             do while(associated(dp%parent).and.(.not.associated(dp,this%container%root)))
              if(associated(dp,dp%parent%child_gt)) then
               dp=>dp%parent; ierr=GFC_SUCCESS; exit
@@ -733,7 +733,7 @@
               dp=>dp%parent
              endif
             enddo
-            if(ierr.eq.GFC_IT_DONE) dp=>NULL()
+            if(ierr.eq.GFC_NO_MOVE) dp=>NULL()
            endif
            if(present(elem_p)) then
             elem_p=>dp
@@ -746,7 +746,7 @@
              ierr=this%set_status_(GFC_IT_DONE)
             endif
            endif
-           if(.not.associated(dp)) ierr=GFC_IT_DONE
+           if(.not.associated(dp)) ierr=GFC_NO_MOVE
            dp=>NULL()
           else
            ierr=GFC_CORRUPTED_CONT
@@ -1099,7 +1099,7 @@
           act=action
          endif
          select case(act) !process the action
-         case(GFC_DICT_JUST_FIND) !no action
+         case(GFC_DICT_JUST_FIND) !no action, no return of the found value
           if(dict_search.eq.GFC_FOUND) call this%jump_(curr)
          case(GFC_DICT_FETCH_IF_FOUND) !return the pointer to the stored <value> if found
           if(dict_search.eq.GFC_FOUND) then
@@ -1628,7 +1628,7 @@
               if(errc.ne.GFC_SUCCESS) exit sloop
               errc=this%move_in_order(dir)
              enddo sloop
-             if(errc.eq.GFC_IT_DONE) errc=this%reset()
+             if(errc.eq.GFC_NO_MOVE) errc=this%reset()
             else
              errc=GFC_CORRUPTED_CONT
             endif
@@ -1681,7 +1681,7 @@
               if(errc.ne.GFC_SUCCESS) exit sloop
               errc=this%move_in_order(dir)
              enddo sloop
-             if(errc.eq.GFC_IT_DONE) errc=this%reset()
+             if(errc.eq.GFC_NO_MOVE) errc=this%reset()
             else
              errc=GFC_CORRUPTED_CONT
             endif
@@ -1868,7 +1868,7 @@
           end select
           j=list_it%next()
          enddo
-         if(j.ne.GFC_IT_DONE) then; call test_quit(8); return; endif
+         if(j.ne.GFC_NO_MOVE) then; call test_quit(8); return; endif
          j=list_it%release(); if(j.ne.GFC_SUCCESS) then; call test_quit(9); return; endif
          tm=thread_wtime(tms)
          !write(jo,'("Traversing time for ",i11," elements is ",F10.4," sec")') i,tm !debug

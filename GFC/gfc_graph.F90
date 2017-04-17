@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Graph
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017/04/16
+!REVISION: 2017/04/17
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -527,7 +527,7 @@
            errc=dit%init(this%vert_links)
            if(errc.eq.GFC_SUCCESS) then
             up=>NULL()
-            errc=dit%search(GFC_DICT_JUST_FIND,cmp_graph_links,link,value_out=up)
+            errc=dit%search(GFC_DICT_FETCH_IF_FOUND,cmp_graph_links,link,value_out=up)
             found=(errc.eq.GFC_FOUND)
             if(errc.eq.GFC_NOT_FOUND.or.found) then
              errc=GFC_SUCCESS
@@ -754,7 +754,7 @@
               write(*,'(1x)',ADVANCE='NO'); call glp%print_it(errc); if(errc.ne.GFC_SUCCESS) exit
               errc=lit%next()
              enddo
-             if(errc.eq.GFC_IT_DONE) errc=GFC_SUCCESS
+             if(errc.eq.GFC_NO_MOVE) errc=GFC_SUCCESS
              i=lit%delete_all(); if(i.ne.GFC_SUCCESS.and.errc.eq.GFC_SUCCESS) errc=i
              if(errc.eq.GFC_SUCCESS) then
               errc=lit%release(); if(errc.ne.GFC_SUCCESS) exit
@@ -1034,7 +1034,7 @@
                if(errc.eq.GFC_SUCCESS) errc=dit%move_in_order(GFC_DICT_SUCCESSOR)
               endif
              enddo
-             if(errc.ne.GFC_IT_DONE) exit aloop
+             if(errc.ne.GFC_NO_MOVE) exit aloop
              errc=dit%release(); if(errc.ne.GFC_SUCCESS) exit aloop
             endif
            enddo aloop
@@ -1214,7 +1214,7 @@
              up=>this%vert_ln_it%element_value(vid,ierr)
              if(.not.associated(up)) ierr=GFC_ERROR
              if(ierr.eq.GFC_SUCCESS) then
-              select type(up); class is(vert_link_refs_t); vlrp=>up; end select
+              vlrp=>NULL(); select type(up); class is(vert_link_refs_t); vlrp=>up; end select
               if(associated(vlrp)) then
                found=vlrp%find_link(link,ierr,lep)
                if(found.and.ierr.eq.GFC_SUCCESS) then
@@ -1334,7 +1334,7 @@
            do while(ierr.eq.GFC_SUCCESS)
             up=>this%link_it%get_value(ierr); if(ierr.ne.GFC_SUCCESS) exit
             if(.not.associated(up)) then; ierr=GFC_ERROR; exit; endif
-            select type(up); class is(graph_link_t); glp=>up; end select
+            glp=>NULL(); select type(up); class is(graph_link_t); glp=>up; end select
             if(.not.associated(glp)) then; ierr=GFC_CORRUPTED_CONT; exit; endif
             ierr=this%delete_link(glp); if(ierr.ne.GFC_SUCCESS) exit
             ierr=this%link_it%next()
@@ -1384,7 +1384,7 @@
          integer(INTD):: ierr
          real(8), intent(out):: perf
          integer(INTD), intent(in), optional:: dev_out
-         integer(INTD), parameter:: MAX_VERTICES=10
+         integer(INTD), parameter:: MAX_VERTICES=1000000
          integer(INTD):: jo,i
          integer(INTL):: v0,v1,v2
          type(graph_vertex_t):: vrt
@@ -1411,7 +1411,7 @@
           !write(*,*); write(*,'("New Vertex",i7,": link: ")',ADVANCE='NO') i; call lnk%print_it() !debug
           ierr=git%append_link(lnk); if(ierr.ne.GFC_SUCCESS) then; print *,ierr; ierr=7; return; endif
          enddo
-         call graph%print_it(ierr); if(ierr.ne.GFC_SUCCESS) then; ierr=8; return; endif !debug
+         !call graph%print_it(ierr); if(ierr.ne.GFC_SUCCESS) then; ierr=8; return; endif !debug
          ierr=git%delete_all(); if(ierr.ne.GFC_SUCCESS) then; ierr=9; return; endif
          ierr=git%release(); if(ierr.ne.GFC_SUCCESS) then; ierr=10; return; endif
          tm=thread_wtime(tms); perf=dble(MAX_VERTICES)/tm

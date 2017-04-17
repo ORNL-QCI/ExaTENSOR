@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Vector (non-contiguous)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017/03/16
+!REVISION: 2017/04/17
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -623,7 +623,7 @@
             ierr=this%set_status_(GFC_IT_DONE)
             vep=>NULL()
            endif
-           if(.not.associated(vep)) then; ierr=GFC_IT_DONE; else; vep=>NULL(); endif
+           if(.not.associated(vep)) then; ierr=GFC_NO_MOVE; else; vep=>NULL(); endif
           else
            ierr=GFC_CORRUPTED_CONT
           endif
@@ -661,7 +661,7 @@
             ierr=this%set_status_(GFC_IT_DONE)
             vep=>NULL()
            endif
-           if(.not.associated(vep)) then; ierr=GFC_IT_DONE; else; vep=>NULL(); endif
+           if(.not.associated(vep)) then; ierr=GFC_NO_MOVE; else; vep=>NULL(); endif
           else
            ierr=GFC_CORRUPTED_CONT
           endif

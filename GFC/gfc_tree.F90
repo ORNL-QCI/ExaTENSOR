@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Tree
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017-04-04 (started 2016-02-17)
+!REVISION: 2017-04-17 (started 2016-02-17)
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -413,7 +413,7 @@
              ierr=this%set_status_(GFC_IT_DONE)
             endif
            endif
-           if(.not.associated(tvp)) ierr=GFC_IT_DONE
+           if(.not.associated(tvp)) ierr=GFC_NO_MOVE
            tvp=>NULL()
           else
            ierr=GFC_CORRUPTED_CONT
@@ -460,7 +460,7 @@
              ierr=this%set_status_(GFC_IT_DONE)
             endif
            endif
-           if(.not.associated(tvp)) ierr=GFC_IT_DONE
+           if(.not.associated(tvp)) ierr=GFC_NO_MOVE
            tvp=>NULL()
           else
            ierr=GFC_CORRUPTED_CONT

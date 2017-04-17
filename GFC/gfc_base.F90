@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Base
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017-04-16 (started 2016-02-17)
+!REVISION: 2017-04-17 (started 2016-02-17)
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -103,7 +103,8 @@
         integer(INTD), parameter:: GFC_IT_EMPTY=1001     !empty initialized iterator
         integer(INTD), parameter:: GFC_IT_ACTIVE=1002    !active (non-empty) iterator
         integer(INTD), parameter:: GFC_IT_DONE=1003      !pass the end of the container (done), needs to be reset to continue
-        integer(INTD), parameter:: GFC_NO_MOVE=1004      !no move possible (for custom moves)
+ !GFC iterator no move:
+        integer(INTD), parameter:: GFC_NO_MOVE=1004      !no move possible (for custom moves), not an iterator status!
  !GFC sorting:
         integer(INTD), parameter:: GFC_ASCEND_ORDER=+1   !ascending order
         integer(INTD), parameter:: GFC_DESCEND_ORDER=-1  !descending order
@@ -899,7 +900,8 @@
               if(thread_wtime(tms).gt.tml.and.moved) then; ierr=GFC_IT_ACTIVE; exit; endif !time limit exceeded (but at least one move done)
              endif
              if(bkw) then; ierr=this%previous(); else; ierr=this%next(); endif !move to the next/previous element
-             moved=.true.; skip=.false.; this%tot_count=this%tot_count+1 !register a move of the iterator
+             moved=.true.; skip=.false.
+             this%tot_count=this%tot_count+1 !register a move of the iterator
             else
              ierr=GFC_CORRUPTED_CONT
             endif
@@ -907,6 +909,7 @@
             ierr=GFC_CORRUPTED_CONT
            endif
           enddo
+          if(ierr.eq.GFC_NO_MOVE) ierr=GFC_IT_DONE
          endif
          return
         end function IterScanProc
@@ -961,7 +964,8 @@
               if(thread_wtime(tms).gt.tml.and.moved) then; ierr=GFC_IT_ACTIVE; exit; endif !time limit exceeded (but at least one move done)
              endif
              if(bkw) then; ierr=this%previous(); else; ierr=this%next(); endif !move to the next/previous element
-             moved=.true.; skip=.false.; this%tot_count=this%tot_count+1 !register a move of the iterator
+             moved=.true.; skip=.false.
+             this%tot_count=this%tot_count+1 !register a move of the iterator
             else
              ierr=GFC_CORRUPTED_CONT
             endif
@@ -969,6 +973,7 @@
             ierr=GFC_CORRUPTED_CONT
            endif
           enddo
+          if(ierr.eq.GFC_NO_MOVE) ierr=GFC_IT_DONE
          endif
          return
         end function IterScanFunc
