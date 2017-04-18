@@ -20,11 +20,11 @@ GENERAL INFORMATION:
  3. Dictionary (ordered map): gfc_dictionary (GFC), dictionary (legacy);
  4. Vector: gfc_vector (GFC);
  5. Vector tree: gfc_vec_tree (GFC): Vector with an imposed tree structure;
- 6. Stack: gfc_stack (GFC, under development), stack (legacy);
- 7. Queue: gfc_queue (GFC, under development);
- 8. Priority queue: gfc_pri_queue (GFC, under development);
- 9. Hash map (unordered map): gfc_hash_map (GFC, under development);
-10. Graph: gfc_graph (GFC, under development).
+ 6. Graph: gfc_graph (GFC): Generic graph/hypergraph, a bit slow;
+ 7. Stack: gfc_stack (GFC, under development), stack (legacy);
+ 8. Queue: gfc_queue (GFC, under development);
+ 9. Priority queue: gfc_pri_queue (GFC, under development);
+ 10. Hash map (unordered map): gfc_hash_map (GFC, under development);
 
 DESIGN AND FEATURES:
  # A GFC container is a structured collection of objects of any class;
@@ -79,23 +79,23 @@ DESIGN AND FEATURES:
    In future, however, other predefined global methods are expected to be added.
  # Subcontainer feature is not available for all containers, and even when it is
    available it has not been carefully tested yet.
- # All relevant iterator methods are thread-safe, thus enabling
-   a parallel execution of container scans (via OpenMP threads).
+ # Multi-threading support in future: All relevant iterator methods will be thread-safe,
+   thus enabling a parallel execution of container operations (via OpenMP threads).
    However, it is the user responsibility to avoid race conditions
-   when updating the value of container elements, that is, the structure
-   of the container is protected from races by GFC, but the values of
-   container elements are not protected. In the latter case, a thread
-   is supposed to acquire an exclusive access to the container element
-   via a GFC lock, if necessary for avoiding race conditions on container
-   values. An iterator must never be shared between multiple OpenMP threads!
+   when updating the values of container elements, that is, the structure
+   of the container will be protected from races by GFC, but the values of
+   container elements are not protected automatically. A thread is supposed to
+   acquire an exclusive access to the container element via GFC lock API,
+   if necessary for avoiding race conditions on container values.
+   An iterator must never be shared between multiple OpenMP threads!
 
 NOTES:
  # This implementation of Generic Fortran Containers heavily relies on
-   dynamic polymorphism, thus introducing certain overhead! Also, dynamic
-   type inferrence may decrease the efficiency when storing and operating
-   on small objects. Thus, this implementation aims at providing a set
-   of higher-level abstractions for control logic and other high-level
-   operations for which ultimate Flop/s efficiency is not required.
+   dynamic polymorphism (and RTTI), thus introducing certain overhead! Also,
+   dynamic type inferrence may decrease the efficiency when storing and
+   operating on small objects. Thus, this implementation aims at providing
+   a set of higher-level abstractions for control logic and other high-level
+   operations for which ultimate numeric Flop/s efficiency is not required.
    The use of GFC containers in the inner loop of compute intensive kernels
    is highly discouraged (please resort to plain data, like arrays).
  # Due to limitations of Fortran class inheritence, public methods
