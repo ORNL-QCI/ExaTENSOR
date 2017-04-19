@@ -1,9 +1,9 @@
-!ExaTENSOR: Parallel Virtual Processing for Scale-Adaptive Tensor Algebra
+!ExaTENSOR: Parallel Virtual Processing for Scale-Adaptive Hierarchical Tensor Algebra:
 !Derives from abstract domain-specific virtual processing (DSVP).
-!This module provides basic infrastructure for ExaTENSOR, a tensor-algebra virtual processor (TAVP).
-!The computing and logical tensor-algebra virtual processors (C-TAVP,L-TAVP) derive from this module.
+!This module provides basic infrastructure for ExaTENSOR, tensor algebra virtual processor (TAVP).
+!The logical and numerical tensor algebra virtual processors (L-TAVP, N-TAVP) derive from this module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/02/08
+!REVISION: 2017/04/19
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -84,20 +84,45 @@
         integer(INTD), parameter, public:: TENSOR_INSTR_CONTRACT=16 !tensot contraction (also includes tensor product, tensor addition, and tensor scaling)
         integer(INTD), parameter, public:: TENSOR_ISA_SIZE=17       !total number of non-negative tensor instruction codes
 !TYPES:
+#if 0
  !Tensor operand:
-!        type, extends(ds_oprnd_t), public:: tens_oprnd_t
-!        end type tens_oprnd_t
+        type, extends(ds_oprnd_t), public:: tens_oprnd_t
+         class(tens_rcrsv_t), pointer, private:: tensor=>NULL() !pointer to a recursive tensor
+         contains
+          procedure, private:: TensOprndCtor                    !ctor
+          generic, public:: tens_oprnd_ctor=>TensOprndCtor,TensOprndUnpack
+          procedure, public:: is_remote=>TensOprndIsRemote      !returns TRUE if the tensor operand is remote
+          procedure, public:: acquire_rsc=>TensOprndAcquireRsc  !explicitly acquires local resources for the tensor operand
+          procedure, public:: prefetch=>TensOprndPrefetch       !starts prefetching the remote tensor operand (acquires local resources!)
+          procedure, public:: upload=>TensOprndUpload           !starts uploading the tensor operand to its remote location
+          procedure, public:: sync=>TensOprndSync               !synchronizes the currently pending communication on the tensor operand
+          procedure, public:: release=>TensOprndRelease         !destroys the present local copy of the tensor operand (releases local resources!), but the operand stays defined
+          procedure, public:: pack=>TensOprndPack               !packs the specification of the tensor operand into a plain byte packet
+          procedure, public:: unpack=>TensOprndUnpack           !unpacks the specification of the tensor operand from a plain byte packet
+        end type tens_oprnd_t
+ !Tensor instruction control fields:
+  !Tensor copy/addition control field:
+        type, extends(ds_instr_ctrl_t), public:: tens_add_ctrl_t
+
+        end type tens_add_ctrl_t
+  !Tensor contraction control field:
+        type, extends(ds_instr_ctrl_t), public:: tens_contr_ctrl_t
+
+        end type tens_contr_ctrl_t
  !Tensor instruction:
-!        type, extends(ds_instr_t), public:: tens_instr_t
-!        end type tens_instr_t
+        type, extends(ds_instr_t), public:: tens_instr_t
+
+        end type tens_instr_t
+#endif
 !DATA:
  !Current role of the tensor alegbra virtual processor:
         integer(INTD), protected:: my_role=EXA_NO_ROLE         !role of this virtual processor (set at run-time)
-        integer(INTD), protected:: my_group=-1                 !computing group the process belongs to (set at run-time): [0..MAX]
-        integer(INTD), protected:: my_group_size=0             !size of the computing group the process belongs to (set at runtime): [1..EXA_MAX_WORK_GROUP_SIZE]
-        integer(INTD), protected:: my_group_index=-1           !process ID within its computing group (set at run-time): [0..my_group_size-1]
+        integer(INTD), protected:: my_group=-1                 !computing group the virtual processor belongs to (set at run-time): [0..MAX]
+        integer(INTD), protected:: my_group_size=0             !size of the computing group the virtual processor belongs to (set at runtime): [1..EXA_MAX_WORK_GROUP_SIZE]
+        integer(INTD), protected:: my_group_index=-1           !virtual processor ID within its computing group (set at run-time): [0..my_group_size-1]
         integer(INTD), protected:: my_group_comm=MPI_COMM_NULL !group MPI communicator (if any)
 !VISIBILITY:
+ !non-member:
         public tavp_establish_role
 
        contains
