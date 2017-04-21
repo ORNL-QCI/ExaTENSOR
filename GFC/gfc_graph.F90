@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Graph
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017/04/17
+!REVISION: 2017/04/21
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -1384,7 +1384,7 @@
          integer(INTD):: ierr
          real(8), intent(out):: perf
          integer(INTD), intent(in), optional:: dev_out
-         integer(INTD), parameter:: MAX_VERTICES=1000000
+         integer(INTD), parameter:: MAX_VERTICES=100000
          integer(INTD):: jo,i
          integer(INTL):: v0,v1,v2
          type(graph_vertex_t):: vrt

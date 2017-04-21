@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Bi-directional linked list
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017-04-17 (started 2016-02-28)
+!REVISION: 2017-04-21 (started 2016-02-28)
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -746,6 +746,7 @@
          integer(INTD):: errc
          integer(INTL):: nelems
          logical:: first,last
+         character(256):: errmesg !debug
 
          ierr=this%get_status()
          if(ierr.eq.GFC_IT_ACTIVE) then
@@ -780,7 +781,11 @@
             call lep%destruct(errc)
            endif
            if(errc.ne.0) ierr=NOT_CLEAN
-           deallocate(lep,STAT=errc); if(errc.ne.0) ierr=NOT_CLEAN
+           deallocate(lep,STAT=errc,ERRMSG=errmesg)
+           if(errc.ne.0) then
+            write(CONS_OUT,*)'GFC::list:ListIterDelete: deallocate(lep) failed: ',errc,': '//errmesg(1:len_trim(errmesg))
+            ierr=NOT_CLEAN
+           endif
           else
            ierr=GFC_CORRUPTED_CONT
           endif

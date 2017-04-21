@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/04/20
+!REVISION: 2017/04/21
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -265,6 +265,7 @@
          class(tens_rcrsv_t), pointer, private:: tens_p=>NULL() !pointer to a tensor
          contains
           procedure, private:: set=>TensArgumentSet             !sets up the tensor argument (ctor)
+          procedure, private:: is_set=>TensArgumentIsSet        !returns TRUE if the tensor argument is set, plus additional info
         end type tens_argument_t
  !Tensor operation:
         type, abstract, public:: tens_operation_t
@@ -281,9 +282,9 @@
         end type tens_operation_t
  !Extended digital tensor contraction pattern:
         type, public:: contr_ptrn_ext_t
-         integer(INTD), private:: ddim=0                      !destination tensor rank
-         integer(INTD), private:: ldim=0                      !left tensor rank
-         integer(INTD), private:: rdim=0                      !right tensor rank
+         integer(INTD), private:: ddim=-1                     !destination tensor rank
+         integer(INTD), private:: ldim=-1                     !left tensor rank
+         integer(INTD), private:: rdim=-1                     !right tensor rank
          logical, private:: ind_restr_set=.FALSE.             !TRUE if index permutational restrictions were set
          integer(INTD), private:: dind_pos(1:MAX_TENSOR_RANK) !corresponding positions for indices of the destination tensor
          integer(INTD), private:: lind_pos(1:MAX_TENSOR_RANK) !corresponding positions for indices of the left tensor
@@ -295,6 +296,7 @@
           procedure, public:: set_index_corr=>ContrPtrnExtSetIndexCorr !sets index correspondence pattern (contraction pattern)
           procedure, public:: set_store_symm=>ContrPtrnExtSetStoreSymm !sets index permutational symmetry restrictions due to tensor storage
           procedure, public:: set_operl_symm=>ContrPtrnExtSetOperlSymm !sets index permutational symmetry restrictions due to tensor operation
+          procedure, public:: is_set=>ContrPtrnExtIsSet                !returns TRUE of the tensor contraction pattern is set
           procedure, public:: get_contr_ptrn=>ContrPtrnExtGetContrPtrn !returns the classical (basic) digital contraction pattern used by TAL-SH for example
         end type contr_ptrn_ext_t
  !Tensor contraction:
@@ -303,11 +305,9 @@
          contains
           procedure, public:: is_set=>TensContractionIsSet                !returns TRUE if the tensor contraction is fully set
           procedure, public:: args_full=>TensContractionArgsFull          !returns TRUE if all tensor contraction arguments have been set
-#if 0
           procedure, public:: set_contr_ptrn=>TensContractionSetContrPtrn !sets the tensor contraction pattern (all tensor arguments must have been set already)
           procedure, public:: set_operl_symm=>TensContractionSetOperlSymm !sets index permutational symmetry restrictions due to tensor operation (both contraction pattern and arguments must have been set already)
-          procedure, public:: split=>TensContractionSplit                 !splits the tensor contraction into a list of subtensor contractions based on the pre-existing lists of argument subtensors
-#endif
+         !procedure, public:: split=>TensContractionSplit                 !splits the tensor contraction into a list of subtensor contractions based on the pre-existing lists of argument subtensors
         end type tens_contraction_t
 !INTERFACES:
  !Abstract:
@@ -470,6 +470,7 @@
         public tens_rcrsv_dtor
  !tens_argument_t:
         private TensArgumentSet
+        private TensArgumentIsSet
  !tens_operation_t:
         private TensOperationClean
         private TensOperationSetArgument
@@ -480,15 +481,14 @@
         private ContrPtrnExtSetIndexCorr
         private ContrPtrnExtSetStoreSymm
         private ContrPtrnExtSetOperlSymm
+        private ContrPtrnExtIsSet
         private ContrPtrnExtGetContrPtrn
  !tens_contraction_t:
         private TensContractionIsSet
         private TensContractionArgsFull
-#if 0
         private TensContractionSetContrPtrn
         private TensContractionSetOperlSymm
-        private TensContractionSplit
-#endif
+       !private TensContractionSplit
 !DATA:
  !Register of hierarchical vector spaces (only these spaces can be used):
         type(hspace_register_t), public:: hspace_register
@@ -3183,22 +3183,24 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensRcrsvPack
-!---------------------------------------------------------------------------------------------
-        function TensRcrsvIsSet(this,ierr,shaped,unresolved,hspaced,layed,located) result(res)
+!------------------------------------------------------------------------------------------------------
+        function TensRcrsvIsSet(this,ierr,num_dims,shaped,unresolved,hspaced,layed,located) result(res)
 !Returns TRUE if the tensor is set, plus additional info.
          implicit none
          logical:: res                                     !out: result
          class(tens_rcrsv_t), intent(in):: this            !in: tensor
          integer(INTD), intent(out), optional:: ierr       !out: error code
+         integer(INTD), intent(out), optional:: num_dims   !out: number of tensor dimensions
          logical, intent(out), optional:: shaped           !out: TRUE if tensor shape is set (even with unresolved dimensions)
          integer(INTD), intent(out), optional:: unresolved !out: number of unresolved tensor dimensions
          logical, intent(out), optional:: hspaced          !out: TRUE if the tensor dimensions are over hierarchical spaces
          logical, intent(out), optional:: layed            !out: TRUE if the tensor body storage layout is set
          logical, intent(out), optional:: located          !out: TRUE if the physical location for tensor body data is set
-         integer(INTD):: errc,unres
+         integer(INTD):: errc,nd,unres
          logical:: shpd,hspc,layd,locd
 
-         res=this%header%is_set(errc,shaped=shpd,unresolved=unres,hspaced=hspc)
+         res=this%header%is_set(errc,num_dims=nd,shaped=shpd,unresolved=unres,hspaced=hspc)
+         if(present(num_dims)) num_dims=nd
          if(present(shaped)) shaped=shpd
          if(present(unresolved)) unresolved=unres
          if(present(hspaced)) hspaced=hspc
@@ -3753,6 +3755,23 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensArgumentSet
+!-----------------------------------------------------------------
+        function TensArgumentIsSet(this,ierr,num_dims) result(ans)
+!Returns TRUE if the tensor argument is set, plus additional info.
+         implicit none
+         logical:: ans                                   !out: answer
+         class(tens_argument_t), intent(in):: this       !in: tensor argument
+         integer(INTD), intent(out), optional:: ierr     !out: error code
+         integer(INTD), intent(out), optional:: num_dims !out: tensor rank
+         integer(INTD):: errc
+
+         errc=TEREC_SUCCESS; ans=associated(this%tens_p)
+         if(ans) then
+          
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function TensArgumentIsSet
 ![tens_operation_t]=============================
         subroutine TensOperationClean(this,ierr)
 !Cleans the tensor operation.
@@ -3890,7 +3909,9 @@
         end subroutine ContrPtrnExtSetIndexCorr
 !-------------------------------------------------------------------------
         subroutine ContrPtrnExtSetStoreSymm(this,tens_num,restr_inds,ierr)
-!Sets index permutational symmetries due to tensor storage.
+!Sets index permutational symmetries due to tensor storage. At least two
+!tensor dimensions must be passed here to set up a dimension symmetry dependency.
+!Previously set dimension symmetries are kept intact.
          implicit none
          class(contr_ptrn_ext_t), intent(inout), target:: this !inout: extended contraction pattern spec
          integer(INTD), intent(in):: tens_num                  !in: tensor number (0:D,1:L,2:R)
@@ -3899,104 +3920,127 @@
          integer(INTD):: errc,n,m,i,j0,j1
          integer(INTD), pointer:: ind_res(:)
 
-         errc=TEREC_SUCCESS
-         if(tens_num.eq.0) then
-          n=this%ddim; ind_res=>this%dind_res
-         elseif(tens_num.eq.1) then
-          n=this%ldim; ind_res=>this%lind_res
-         elseif(tens_num.eq.2) then
-          n=this%rdim; ind_res=>this%rind_res
-         else
-          errc=TEREC_INVALID_ARGS
-         endif
-         if(errc.eq.TEREC_SUCCESS) then
-          m=size(restr_inds)
-          if(m.ge.2) then !at least two index positions are expected
-           if(m.le.n) then
-            do i=2,m
-             j0=restr_inds(i-1); j1=restr_inds(i)
-             if(j0.gt.0.and.j0.lt.n.and.j1.gt.1.and.j1.le.n.and.j0.lt.j1) then
-              ind_res(j1)=j0 !index j1 on the right depends on index j0 on the left
-             else
-              errc=TEREC_INVALID_ARGS; exit
-             endif
-            enddo
-            ind_res(restr_inds(1))=-1 !first restricted index mark
-            if(errc.eq.TEREC_SUCCESS) this%ind_restr_set=.TRUE.
-           else
-            errc=TEREC_INVALID_ARGS
-           endif
-          elseif(m.eq.1) then
-           errc=TEREC_INVALID_REQUEST
+         if(this%is_set(errc)) then
+          if(tens_num.eq.0) then
+           n=this%ddim; ind_res=>this%dind_res
+          elseif(tens_num.eq.1) then
+           n=this%ldim; ind_res=>this%lind_res
+          elseif(tens_num.eq.2) then
+           n=this%rdim; ind_res=>this%rind_res
+          else
+           errc=TEREC_INVALID_ARGS
           endif
+          if(errc.eq.TEREC_SUCCESS) then
+           m=size(restr_inds)
+           if(m.ge.2) then !at least two index positions are expected
+            if(m.le.n) then
+             do i=2,m
+              j0=restr_inds(i-1); j1=restr_inds(i)
+              if(j0.gt.0.and.j0.lt.n.and.j1.gt.1.and.j1.le.n.and.j0.lt.j1) then
+               ind_res(j1)=j0 !index j1 on the right depends on index j0 on the left
+              else
+               errc=TEREC_INVALID_ARGS; exit
+              endif
+             enddo
+             ind_res(restr_inds(1))=-1 !first restricted index mark
+             if(errc.eq.TEREC_SUCCESS) this%ind_restr_set=.TRUE.
+            else
+             errc=TEREC_INVALID_ARGS
+            endif
+           elseif(m.eq.1) then
+            errc=TEREC_INVALID_REQUEST
+           endif
+          endif
+         else
+          if(errc.eq.TEREC_SUCCESS) errc=TEREC_INVALID_REQUEST
          endif
          if(present(ierr)) ierr=errc
          return
         end subroutine ContrPtrnExtSetStoreSymm
 !-------------------------------------------------------------------------
         subroutine ContrPtrnExtSetOperlSymm(this,tens_num,restr_inds,ierr)
-!Sets index permutational symmetries due to tensor operation.
+!Sets index permutational symmetries due to tensor operation. At least one
+!tensor dimension must be passed here. If a tensor dimension is a part
+!of a pre-exsiting symmetry group, the group will be destroyed. To set up
+!a new symmetry group, at least two tensor dimensions must be passed here.
          implicit none
          class(contr_ptrn_ext_t), intent(inout), target:: this !inout: extended contraction pattern spec
-         integer(INTD), intent(in):: tens_num                  !in: tensor number (0:D,1:L,2:R)
+         integer(INTD), intent(in):: tens_num                  !in: tensor argument number (0:D,1:L,2:R)
          integer(INTD), intent(in):: restr_inds(1:)            !in: restricted index positions in tensor <tens_num>
          integer(INTD), intent(out), optional:: ierr           !out: error code
          integer(INTD):: errc,n,m,i,j0,j1
          integer(INTD), pointer:: ind_res(:)
 
-         errc=TEREC_SUCCESS
-         if(tens_num.eq.0) then
-          n=this%ddim; ind_res=>this%dind_res
-         elseif(tens_num.eq.1) then
-          n=this%ldim; ind_res=>this%lind_res
-         elseif(tens_num.eq.2) then
-          n=this%rdim; ind_res=>this%rind_res
-         else
-          errc=TEREC_INVALID_ARGS
-         endif
-         if(errc.eq.TEREC_SUCCESS) then
-          m=size(restr_inds)
-          if(m.ge.2) then !at least two index positions are expected
-           if(m.le.n) then
- !Check:
-            do i=2,m
-             j0=restr_inds(i-1); j1=restr_inds(i)
-             if(.not.(j0.gt.0.and.j0.lt.n.and.j1.gt.1.and.j1.le.n.and.j0.lt.j1)) then
-              errc=TEREC_INVALID_ARGS; exit
-             endif
-            enddo
-            if(errc.eq.TEREC_SUCCESS) then
- !Destroy previous symmetry group:
-             do i=1,m
-              j0=restr_inds(i)
-              do while(ind_res(j0).gt.0)
-               j1=ind_res(j0); ind_res(j0)=0; j0=j1
-              enddo
-              ind_res(j0)=0
-              j0=restr_inds(i)
-              do j1=restr_inds(i)+1,n
-               if(ind_res(j1).eq.j0) then
-                ind_res(j1)=0; j0=j1
-               endif
-              enddo
-             enddo
- !Construct new symmetry group:
-             do i=2,m
-              ind_res(restr_inds(i))=restr_inds(i-1)
-             enddo
-             ind_res(restr_inds(1))=-1 !first restricted index mark
-             if(errc.eq.TEREC_SUCCESS) this%ind_restr_set=.TRUE.
-            endif
-           else
-            errc=TEREC_INVALID_ARGS
-           endif
-          elseif(m.eq.1) then
-           errc=TEREC_INVALID_REQUEST
+         if(this%is_set(errc)) then
+          if(tens_num.eq.0) then
+           n=this%ddim; ind_res=>this%dind_res
+          elseif(tens_num.eq.1) then
+           n=this%ldim; ind_res=>this%lind_res
+          elseif(tens_num.eq.2) then
+           n=this%rdim; ind_res=>this%rind_res
+          else
+           errc=TEREC_INVALID_ARGS
           endif
+          if(errc.eq.TEREC_SUCCESS) then
+           m=size(restr_inds)
+           if(m.ge.1) then
+            if(m.le.n) then
+ !Check:
+             do i=2,m
+              j0=restr_inds(i-1); j1=restr_inds(i)
+              if(.not.(j0.gt.0.and.j0.lt.n.and.j1.gt.1.and.j1.le.n.and.j0.lt.j1)) then
+               errc=TEREC_INVALID_ARGS; exit
+              endif
+             enddo
+             if(errc.eq.TEREC_SUCCESS) then
+ !Destroy previous symmetry group:
+              do i=1,m
+               j0=restr_inds(i)
+               do while(ind_res(j0).gt.0)
+                j1=ind_res(j0); ind_res(j0)=0; j0=j1
+               enddo
+               ind_res(j0)=0
+               j0=restr_inds(i)
+               do j1=restr_inds(i)+1,n
+                if(ind_res(j1).eq.j0) then
+                 ind_res(j1)=0; j0=j1
+                endif
+               enddo
+              enddo
+ !Construct new symmetry group:
+              do i=2,m
+               ind_res(restr_inds(i))=restr_inds(i-1)
+              enddo
+              if(m.gt.1) ind_res(restr_inds(1))=-1 !first restricted index mark
+              if(errc.eq.TEREC_SUCCESS) this%ind_restr_set=.TRUE.
+             endif
+            else
+             errc=TEREC_INVALID_ARGS
+            endif
+           endif
+          endif
+         else
+          if(errc.eq.TEREC_SUCCESS) errc=TEREC_INVALID_REQUEST
          endif
          if(present(ierr)) ierr=errc
          return
         end subroutine ContrPtrnExtSetOperlSymm
+!--------------------------------------------------------------
+        function ContrPtrnExtIsSet(this,ierr,restr) result(ans)
+!Returns TRUE if the extended tensor contraction pattern is set.
+         implicit none
+         logical:: ans                               !out: answer
+         class(contr_ptrn_ext_t), intent(in):: this  !in: extended tensor contraction pattern
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         logical, intent(out), optional:: restr      !out: TRUE of index permutational symmetries are present
+         integer(INTD):: errc
+
+         errc=TEREC_SUCCESS
+         ans=(this%ddim.ge.0.and.this%ldim.ge.0.and.this%rdim.ge.0)
+         if(present(restr)) restr=ans.and.this%ind_restr_set
+         if(present(ierr)) ierr=errc
+         return
+        end function ContrPtrnExtIsSet
 !----------------------------------------------------------------------
         subroutine ContrPtrnExtGetContrPtrn(this,nl,nr,contr_ptrn,ierr)
 !Returns the basic digital tensor contraction pattern used by TAL-SH.
@@ -4008,10 +4052,15 @@
          integer(INTD), intent(out), optional:: ierr    !out: error code
          integer(INTD):: errc,i
 
-         errc=TEREC_SUCCESS
-         nl=this%ldim; nr=this%rdim
-         do i=1,nl; contr_ptrn(i)=-this%lind_pos(i); enddo
-         do i=1,nr; contr_ptrn(nl+i)=-this%rind_pos(i); enddo
+         if(this%is_set(errc)) then
+          if(errc.eq.TEREC_SUCCESS) then
+           nl=this%ldim; nr=this%rdim
+           do i=1,nl; contr_ptrn(i)=-this%lind_pos(i); enddo
+           do i=1,nr; contr_ptrn(nl+i)=-this%rind_pos(i); enddo
+          endif
+         else
+          if(errc.eq.TEREC_SUCCESS) errc=TEREC_INVALID_REQUEST
+         endif
          if(present(ierr)) ierr=errc
          return
         end subroutine ContrPtrnExtGetContrPtrn
@@ -4024,33 +4073,23 @@
          integer(INTD), intent(out), optional:: ierr  !out: error code
          integer(INTD):: errc,n
          class(tens_rcrsv_t), pointer:: trp
-         class(tens_header_t), pointer:: thp
 
          ans=.FALSE.
          if(this%get_num_args(errc).eq.3) then !tensor contraction has 3 tensor arguments
           if(errc.eq.TEREC_SUCCESS) then
            trp=>this%get_argument(0,errc) !destination tensor
            if(errc.eq.TEREC_SUCCESS) then
-            thp=>trp%get_header(errc)
-            if(errc.eq.TEREC_SUCCESS) then
-             if(thp%is_set(errc,num_dims=n)) then
-              if(errc.eq.TEREC_SUCCESS.and.n.eq.this%contr_ptrn%ddim) then
-               trp=>this%get_argument(1,errc) !left tensor
-               if(errc.eq.TEREC_SUCCESS) then
-                thp=>trp%get_header(errc)
-                if(errc.eq.TEREC_SUCCESS) then
-                 if(thp%is_set(errc,num_dims=n)) then
-                  if(errc.eq.TEREC_SUCCESS.and.n.eq.this%contr_ptrn%ldim) then
-                   trp=>this%get_argument(2,errc) !right tensor
-                   if(errc.eq.TEREC_SUCCESS) then
-                    thp=>trp%get_header(errc)
-                    if(errc.eq.TEREC_SUCCESS) then
-                     if(thp%is_set(errc,num_dims=n)) then
-                      if(errc.eq.TEREC_SUCCESS.and.n.eq.this%contr_ptrn%rdim) then
-                       ans=.TRUE.
-                      endif
-                     endif
-                    endif
+            if(trp%is_set(errc,num_dims=n)) then
+             if(errc.eq.TEREC_SUCCESS.and.n.eq.this%contr_ptrn%ddim) then
+              trp=>this%get_argument(1,errc) !left tensor
+              if(errc.eq.TEREC_SUCCESS) then
+               if(trp%is_set(errc,num_dims=n)) then
+                if(errc.eq.TEREC_SUCCESS.and.n.eq.this%contr_ptrn%ldim) then
+                 trp=>this%get_argument(2,errc) !right tensor
+                 if(errc.eq.TEREC_SUCCESS) then
+                  if(trp%is_set(errc,num_dims=n)) then
+                   if(errc.eq.TEREC_SUCCESS.and.n.eq.this%contr_ptrn%rdim) then
+                    ans=.TRUE.
                    endif
                   endif
                  endif
@@ -4075,9 +4114,122 @@
          integer(INTD):: errc
 
          ans=(this%get_num_args(errc).eq.3)
+         ans=ans.and.(errc.eq.TEREC_SUCCESS)
          if(present(ierr)) ierr=errc
          return
         end function TensContractionArgsFull
+!-------------------------------------------------------------------
+        subroutine TensContractionSetContrPtrn(this,contr_ptrn,ierr)
+!Sets the extended tensor contraction pattern (all tensor arguments must have been set already).
+!Additionally, if tensor arguments have permutational symmetries, they will be incorporated into
+!the extended tensor contraction pattern. Later, those can be relaxed or reset by calling
+!tens_contraction_t.SetOperlSymm().
+         implicit none
+         class(tens_contraction_t), intent(inout):: this !inout: tensor contraction
+         integer(INTD), intent(in):: contr_ptrn(1:*)     !in: basic digital tensor contraction pattern (see TAL-SH specs)
+         integer(INTD), intent(out), optional:: ierr     !out: error code
+         integer(INTD):: errc,nd,nl,nr,m,i,l,grs,restr_dims(1:MAX_TENSOR_RANK)
+         class(tens_rcrsv_t), pointer:: dtrp,ltrp,rtrp
+         class(tens_header_t), pointer:: thp
+
+         if(this%args_full(errc)) then !all tensor arguments must have been set already
+          if(errc.eq.TEREC_SUCCESS) then
+           dtrp=>this%get_argument(0,errc)
+           if(errc.eq.TEREC_SUCCESS) then
+            if(dtrp%is_set(errc,num_dims=nd)) then
+             ltrp=>this%get_argument(1,errc)
+             if(errc.eq.TEREC_SUCCESS) then
+              if(ltrp%is_set(errc,num_dims=nl)) then
+               rtrp=>this%get_argument(2,errc)
+               if(errc.eq.TEREC_SUCCESS) then
+                if(rtrp%is_set(errc,num_dims=nr)) then
+ !Basic contraction pattern:
+                 call this%contr_ptrn%set_index_corr(nd,nl,nr,contr_ptrn,errc)
+ !Destination tensor storage symmetries:
+                 if(errc.eq.TEREC_SUCCESS) then
+                  thp=>dtrp%get_header(errc)
+                  if(errc.eq.TEREC_SUCCESS) then
+                   m=thp%num_groups(errc)
+                   if(errc.eq.TEREC_SUCCESS.and.m.gt.0) then
+                    do i=1,m
+                     call thp%get_group(i,restr_dims,l,errc,grs); if(errc.ne.TEREC_SUCCESS) exit
+                     if(l.ge.2) then
+                      call this%contr_ptrn%set_store_symm(0,restr_dims(1:l),errc); if(errc.ne.TEREC_SUCCESS) exit
+                     endif
+                    enddo
+                   endif
+                  endif
+                 endif
+ !Left tensor storage symmetries:
+                 if(errc.eq.TEREC_SUCCESS) then
+                  thp=>ltrp%get_header(errc)
+                  if(errc.eq.TEREC_SUCCESS) then
+                   m=thp%num_groups(errc)
+                   if(errc.eq.TEREC_SUCCESS.and.m.gt.0) then
+                    do i=1,m
+                     call thp%get_group(i,restr_dims,l,errc,grs); if(errc.ne.TEREC_SUCCESS) exit
+                     if(l.ge.2) then
+                      call this%contr_ptrn%set_store_symm(1,restr_dims(1:l),errc); if(errc.ne.TEREC_SUCCESS) exit
+                     endif
+                    enddo
+                   endif
+                  endif
+                 endif
+ !Right tensor storage symmetries:
+                 if(errc.eq.TEREC_SUCCESS) then
+                  thp=>rtrp%get_header(errc)
+                  if(errc.eq.TEREC_SUCCESS) then
+                   m=thp%num_groups(errc)
+                   if(errc.eq.TEREC_SUCCESS.and.m.gt.0) then
+                    do i=1,m
+                     call thp%get_group(i,restr_dims,l,errc,grs); if(errc.ne.TEREC_SUCCESS) exit
+                     if(l.ge.2) then
+                      call this%contr_ptrn%set_store_symm(2,restr_dims(1:l),errc); if(errc.ne.TEREC_SUCCESS) exit
+                     endif
+                    enddo
+                   endif
+                  endif
+                 endif
+                else
+                 if(errc.eq.TEREC_SUCCESS) errc=TEREC_INVALID_REQUEST
+                endif
+               endif
+              else
+               if(errc.eq.TEREC_SUCCESS) errc=TEREC_INVALID_REQUEST
+              endif
+             endif
+            else
+             if(errc.eq.TEREC_SUCCESS) errc=TEREC_INVALID_REQUEST
+            endif
+           endif
+          endif
+         else
+          if(errc.eq.TEREC_SUCCESS) errc=TEREC_INVALID_REQUEST
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensContractionSetContrPtrn
+!----------------------------------------------------------------------------
+        subroutine TensContractionSetOperlSymm(this,tens_num,restr_inds,ierr)
+!Sets index permutational symmetry restrictions due to tensor operation
+!(both contraction pattern and arguments must have been set already).
+!If any of the given tensor dimensions already belongs to a symmetry group,
+!the entire group will be detroyed and reset according to the current input.
+         implicit none
+         class(tens_contraction_t), intent(inout):: this !inout: tensor contraction
+         integer(INTD), intent(in):: tens_num            !in: specific tensor argument (0:D,1:L,2:R)
+         integer(INTD), intent(in):: restr_inds(1:)      !in: restricted tensor dimensions
+         integer(INTD), intent(out), optional:: ierr     !out: error code
+         integer(INTD):: errc
+
+         if(this%is_set(errc)) then
+          if(errc.eq.TEREC_SUCCESS) call this%contr_ptrn%set_operl_symm(tens_num,restr_inds,errc)
+         else
+          if(errc.eq.TEREC_SUCCESS) errc=TEREC_INVALID_REQUEST
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensContractionSetOperlSymm
 
        end module tensor_recursive
 !==================================
