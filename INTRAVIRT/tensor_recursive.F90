@@ -52,6 +52,8 @@
         integer(INTD), parameter, public:: TEREC_OBJ_CORRUPTED=-6
  !Symbolic tensor name:
         integer(INTD), parameter, public:: TEREC_MAX_TENS_NAME_LEN=64 !max length of the tensor name (alphanumeric_ string)
+ !Tensor contraction generator:
+        integer(INTD), parameter, public:: TEREC_TCG_BUF_SIZE=1048576 !max number of subtensors per parental tensor split and potential symmetry unfolding
  !Storage layout for tensor blocks for locally stored tensors (must span a contiguous integer range!):
         integer(INTD), parameter, public:: TEREC_LAY_NONE=0    !none
         integer(INTD), parameter, public:: TEREC_LAY_RECUR=1   !storage layout is inferred from that of individual constituent tensors (recursive)
@@ -508,8 +510,12 @@
         private TensContractionPrintIt
         private TensContractionSplit
 !DATA:
- !Register of hierarchical vector spaces (only these spaces can be used):
+ !Register of hierarchical vector spaces (only these spaces can be used in tensors):
         type(hspace_register_t), public:: hspace_register
+ !Tensor contraction generator: subtensor buffer:
+        integer(INTL), allocatable, private:: tcg_ind_buf(:,:) !subtensor index buffer
+        integer(INTL), allocatable, private:: tcg_num_buf(:)   !subtensor number buffer
+!$OMP THREADPRIVATE(tcg_ind_buf,tcg_num_buf)
 
        contains
 !IMPLEMENTATION:
@@ -4348,15 +4354,28 @@
          integer(INTD), intent(out), optional:: ierr       !out: error code
          integer(INTD), intent(out), optional:: num_subops !out: number of subcontractions generated from the parental tensor contraction
          integer(INTD):: errc,nsub,i
-         type(list_iter_t):: lit
+         type(list_bi_t):: dsubs,lsubs,rsubs
+         type(list_iter_t):: slit,dlit,llit,rlit
 
          nsub=0
          if(this%is_set(errc)) then
           if(errc.eq.TEREC_SUCCESS) then
-           errc=lit%init(subops)
+           errc=slit%init(subops)
            if(errc.eq.GFC_SUCCESS) then
-            
-            i=lit%release(); if(i.ne.GFC_SUCCESS.and.errc.eq.TEREC_SUCCESS) errc=TEREC_ERROR
+            !call generate_subtensors(errc) !generates dsubs, lsubs, and rsubs, and associates them with list iterators (dlit,llit,rlit)
+            if(errc.eq.TEREC_SUCCESS) then
+             !call build_descriptors(errc) !generates lists of subtensor descriptors for each tensor argument
+             if(errc.eq.TEREC_SUCCESS) then
+              !call generate_subcontractions(errc) !generates subtensor contractions by matching descriptor lists
+             endif
+             i=rlit%delete_all(); if(i.ne.GFC_SUCCESS.and.errc.eq.TEREC_SUCCESS) errc=TEREC_ERROR
+             i=rlit%release(); if(i.ne.GFC_SUCCESS.and.errc.eq.TEREC_SUCCESS) errc=TEREC_ERROR
+             i=llit%delete_all(); if(i.ne.GFC_SUCCESS.and.errc.eq.TEREC_SUCCESS) errc=TEREC_ERROR
+             i=llit%release(); if(i.ne.GFC_SUCCESS.and.errc.eq.TEREC_SUCCESS) errc=TEREC_ERROR
+             i=dlit%delete_all(); if(i.ne.GFC_SUCCESS.and.errc.eq.TEREC_SUCCESS) errc=TEREC_ERROR
+             i=dlit%release(); if(i.ne.GFC_SUCCESS.and.errc.eq.TEREC_SUCCESS) errc=TEREC_ERROR
+            endif
+            i=slit%release(); if(i.ne.GFC_SUCCESS.and.errc.eq.TEREC_SUCCESS) errc=TEREC_ERROR
            endif
           endif
          else
@@ -4367,6 +4386,28 @@
          endif
          if(present(ierr)) ierr=errc
          return
+
+         contains
+
+          function check_allocate_buffers() result(jsts)
+           implicit none
+           logical:: jsts
+           logical:: jfi,jfn
+           integer(INTD):: jerr
+
+           jfi=allocated(tcg_ind_buf); jfn=allocated(tcg_num_buf)
+           if(.not.jfi) then
+            allocate(tcg_ind_buf(1:MAX_TENSOR_RANK,1:TEREC_TCG_BUF_SIZE*2),STAT=jerr) !twice memory for sorting
+            if(jerr.eq.0) jfi=.TRUE.
+           endif
+           if(.not.jfn) then
+            allocate(tcg_num_buf(1:TEREC_TCG_BUF_SIZE*2),STAT=jerr) !twice memory for sorting
+            if(jerr.eq.0) jfn=.TRUE.
+           endif
+           jsts=jfi.and.jfn
+           return
+          end function check_allocate_buffers
+
         end subroutine TensContractionSplit
 
        end module tensor_recursive
