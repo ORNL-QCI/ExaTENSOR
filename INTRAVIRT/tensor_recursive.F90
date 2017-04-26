@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/04/24
+!REVISION: 2017/04/26
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -26,6 +26,7 @@
 ! # MUD: Maximally Uniform Distribution.
         use tensor_algebra !includes dil_basic
         use stsubs
+        use combinatoric
         use gfc_base
         use gfc_list
         use gfc_vector
@@ -140,6 +141,7 @@
           procedure, public:: get_dims=>TensShapeGetDims     !returns tensor dimension extents
           procedure, public:: get_rank=>TensShapeGetRank     !returns the rank of the tensor (number of dimensions)
           procedure, public:: get_dim_group=>TensShapeGetDimGroup !returns the restriction group for a specific tensor dimension (0: no restrictions)
+          procedure, public:: get_groups=>TensShapeGetGroups !returns dimension groups and group restrictions
           procedure, public:: get_group=>TensShapeGetGroup   !returns a restricted index group (specific dimensions belonging to the specified group)
           procedure, public:: same_group=>TensShapeSameGroup !checks whether specific tensor dimensions belong to the same group
           procedure, public:: num_groups=>TensShapeNumGroups !returns the total number of non-trivial index groups defined in the tensor shape
@@ -167,6 +169,7 @@
           procedure, public:: get_dims=>TensHeaderGetDims           !returns tensor dimension extents
           procedure, public:: num_groups=>TensHeaderNumGroups       !returns the total number of non-trivial index groups defined in the tensor shape
           procedure, public:: get_dim_group=>TensHeaderGetDimGroup  !returns the restriction group for a specific tensor dimension (0: no restrictions)
+          procedure, public:: get_groups=>TensHeaderGetGroups       !returns dimension groups and group restrictions
           procedure, public:: get_group=>TensHeaderGetGroup         !returns a restricted index group (specific dimensions belonging to the specified group)
           procedure, public:: same_group=>TensHeaderSameGroup       !checks whether specific tensor dimensions belong to the same group
           procedure, public:: get_signature=>TensHeaderGetSignature !returns the pointer to the tensor signature
@@ -406,6 +409,7 @@
         private TensShapeGetDims
         private TensShapeGetRank
         private TensShapeGetDimGroup
+        private TensShapeGetGroups
         private TensShapeGetGroup
         private TensShapeSameGroup
         private TensShapeNumGroups
@@ -427,6 +431,7 @@
         private TensHeaderGetDims
         private TensHeaderNumGroups
         private TensHeaderGetDimGroup
+        private TensHeaderGetGroups
         private TensHeaderGetGroup
         private TensHeaderSameGroup
         private TensHeaderGetSignature
@@ -1622,6 +1627,30 @@
          if(present(ierr)) ierr=errc
          return
         end function TensShapeGetDimGroup
+!------------------------------------------------------------------------------------------
+        subroutine TensShapeGetGroups(this,num_dims,num_groups,dim_groups,ierr,group_restr)
+!Returns symmetric dimension groups and group restrictions.
+         implicit none
+         class(tens_shape_t), intent(in):: this                   !in: tensor shape
+         integer(INTD), intent(out):: num_dims                    !out: tensor rank
+         integer(INTD), intent(out):: num_groups                  !out: number of index groups
+         integer(INTD), intent(inout):: dim_groups(1:)            !out: dimension groups
+         integer(INTD), intent(out), optional:: ierr              !out: error code
+         integer(INTD), intent(inout), optional:: group_restr(1:) !out: group restrictions
+         integer(INTD):: errc
+
+         if(this%is_set(errc,num_dims=num_dims)) then
+          if(errc.eq.TEREC_SUCCESS) then
+           num_groups=this%num_grps
+           dim_groups(1:num_dims)=this%dim_group(1:num_dims)
+           if(present(group_restr).and.num_groups.gt.0) group_restr=this%group_spec(1:num_groups)
+          endif
+         else
+          if(errc.eq.TEREC_SUCCESS) errc=TEREC_INVALID_REQUEST
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensShapeGetGroups
 !------------------------------------------------------------------------------------
         subroutine TensShapeGetGroup(this,group,group_dims,num_dims,ierr,group_restr)
 !Returns the index restriction group (specific dimensions belonging to the specified group).
@@ -2247,6 +2276,26 @@
          if(present(ierr)) ierr=errc
          return
         end function TensHeaderGetDimGroup
+!-------------------------------------------------------------------------------------------
+        subroutine TensHeaderGetGroups(this,num_dims,num_groups,dim_groups,ierr,group_restr)
+!Returns symmetric dimension groups and group restrictions.
+         implicit none
+         class(tens_header_t), intent(in):: this                  !in: tensor header
+         integer(INTD), intent(out):: num_dims                    !out: tensor rank
+         integer(INTD), intent(out):: num_groups                  !out: number of groups
+         integer(INTD), intent(inout):: dim_groups(1:)            !out: dimension groups
+         integer(INTD), intent(out), optional:: ierr              !out: error code
+         integer(INTD), intent(inout), optional:: group_restr(1:) !out: group restrictions
+         integer(INTD):: errc
+
+         if(present(group_restr)) then
+          call this%shape%get_groups(num_dims,num_groups,dim_groups,errc,group_restr)
+         else
+          call this%shape%get_groups(num_dims,num_groups,dim_groups,errc)
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensHeaderGetGroups
 !-------------------------------------------------------------------------------------
         subroutine TensHeaderGetGroup(this,group,group_dims,num_dims,ierr,group_restr)
 !Returns the index restriction group (specific dimensions belonging to the specified group).
@@ -4353,29 +4402,33 @@
          type(list_bi_t), intent(inout):: subops           !inout: list of subcontractions
          integer(INTD), intent(out), optional:: ierr       !out: error code
          integer(INTD), intent(out), optional:: num_subops !out: number of subcontractions generated from the parental tensor contraction
-         integer(INTD):: errc,nsub,i
+         integer(INTD):: errc,drank,lrank,nsub,tcgl,rrank,dstart,dfinish,lstart,lfinish,rstart,rfinish,i
          type(list_bi_t):: dsubs,lsubs,rsubs
-         type(list_iter_t):: slit,dlit,llit,rlit
+         type(list_iter_t):: dlit,llit,rlit,slit
 
-         nsub=0
+         nsub=0 !number of generated subcontractions
          if(this%is_set(errc)) then
           if(errc.eq.TEREC_SUCCESS) then
-           errc=slit%init(subops)
-           if(errc.eq.GFC_SUCCESS) then
-            !call generate_subtensors(errc) !generates dsubs, lsubs, and rsubs, and associates them with list iterators (dlit,llit,rlit)
-            if(errc.eq.TEREC_SUCCESS) then
-             !call build_descriptors(errc) !generates lists of subtensor descriptors for each tensor argument
+           if(check_allocate_buffers()) then !checks/allocates sorting buffers tcg_ind_buf/tcg_num_buf
+            errc=slit%init(subops)
+            if(errc.eq.GFC_SUCCESS) then
+             call generate_subtensors(errc) !generates dsubs, lsubs, and rsubs, and associates them with list iterators (dlit,llit,rlit)
              if(errc.eq.TEREC_SUCCESS) then
-              !call generate_subcontractions(errc) !generates subtensor contractions by matching descriptor lists
+              call build_descriptors(errc) !generates lists of subtensor descriptors in tcg_ind_buf/tcg_num_buf for each tensor argument
+              if(errc.eq.TEREC_SUCCESS) then
+               call generate_subcontractions(errc) !generates subtensor contractions by matching descriptor lists
+              endif
+              i=rlit%delete_all(); if(i.ne.GFC_SUCCESS.and.errc.eq.TEREC_SUCCESS) errc=TEREC_ERROR
+              i=rlit%release(); if(i.ne.GFC_SUCCESS.and.errc.eq.TEREC_SUCCESS) errc=TEREC_ERROR
+              i=llit%delete_all(); if(i.ne.GFC_SUCCESS.and.errc.eq.TEREC_SUCCESS) errc=TEREC_ERROR
+              i=llit%release(); if(i.ne.GFC_SUCCESS.and.errc.eq.TEREC_SUCCESS) errc=TEREC_ERROR
+              i=dlit%delete_all(); if(i.ne.GFC_SUCCESS.and.errc.eq.TEREC_SUCCESS) errc=TEREC_ERROR
+              i=dlit%release(); if(i.ne.GFC_SUCCESS.and.errc.eq.TEREC_SUCCESS) errc=TEREC_ERROR
              endif
-             i=rlit%delete_all(); if(i.ne.GFC_SUCCESS.and.errc.eq.TEREC_SUCCESS) errc=TEREC_ERROR
-             i=rlit%release(); if(i.ne.GFC_SUCCESS.and.errc.eq.TEREC_SUCCESS) errc=TEREC_ERROR
-             i=llit%delete_all(); if(i.ne.GFC_SUCCESS.and.errc.eq.TEREC_SUCCESS) errc=TEREC_ERROR
-             i=llit%release(); if(i.ne.GFC_SUCCESS.and.errc.eq.TEREC_SUCCESS) errc=TEREC_ERROR
-             i=dlit%delete_all(); if(i.ne.GFC_SUCCESS.and.errc.eq.TEREC_SUCCESS) errc=TEREC_ERROR
-             i=dlit%release(); if(i.ne.GFC_SUCCESS.and.errc.eq.TEREC_SUCCESS) errc=TEREC_ERROR
+             i=slit%release(); if(i.ne.GFC_SUCCESS.and.errc.eq.TEREC_SUCCESS) errc=TEREC_ERROR
             endif
-            i=slit%release(); if(i.ne.GFC_SUCCESS.and.errc.eq.TEREC_SUCCESS) errc=TEREC_ERROR
+           else
+            errc=TEREC_MEM_ALLOC_FAILED
            endif
           endif
          else
@@ -4403,10 +4456,105 @@
            if(.not.jfn) then
             allocate(tcg_num_buf(1:TEREC_TCG_BUF_SIZE*2),STAT=jerr) !twice memory for sorting
             if(jerr.eq.0) jfn=.TRUE.
+            if((.not.jfn).and.allocated(tcg_ind_buf)) then; deallocate(tcg_ind_buf); jfi=.FALSE.; endif
            endif
            jsts=jfi.and.jfn
+           if(jsts) then; tcg_ind_buf(:,:)=0; tcg_num_buf(:)=0; endif !`Is it really necessary?
            return
           end function check_allocate_buffers
+
+          subroutine generate_subtensors(jerr)
+           implicit none
+           integer(INTD), intent(out):: jerr
+           class(tens_rcrsv_t), pointer:: jtrp
+           integer(INTD):: jn
+
+           jerr=TEREC_SUCCESS
+ !Destination tensor argument:
+           jn=0; jtrp=>this%get_argument(0,jerr)
+           if(jerr.eq.TEREC_SUCCESS) then
+            jerr=tens_split_f(jtrp,dsubs,jn); if(jn.le.0.and.jerr.eq.TEREC_SUCCESS) jerr=TEREC_ERROR
+           endif
+ !Left tensor argument:
+           if(jerr.eq.TEREC_SUCCESS) then
+            jn=0; jtrp=>this%get_argument(1,jerr)
+            if(jerr.eq.TEREC_SUCCESS) then
+             jerr=tens_split_f(jtrp,lsubs,jn); if(jn.le.0.and.jerr.eq.TEREC_SUCCESS) jerr=TEREC_ERROR
+            endif
+           endif
+ !Right tensor argument:
+           if(jerr.eq.TEREC_SUCCESS) then
+            jn=0; jtrp=>this%get_argument(2,jerr)
+            if(jerr.eq.TEREC_SUCCESS) then
+             jerr=tens_split_f(jtrp,rsubs,jn); if(jn.le.0.and.jerr.eq.TEREC_SUCCESS) jerr=TEREC_ERROR
+            endif
+           endif
+ !Init iterators:
+           if(jerr.eq.TEREC_SUCCESS) jerr=dlit%init(dsubs)
+           if(jerr.eq.TEREC_SUCCESS) jerr=llit%init(lsubs)
+           if(jerr.eq.TEREC_SUCCESS) jerr=rlit%init(rsubs)
+           return
+          end subroutine generate_subtensors
+
+          subroutine build_descriptors(jerr)
+           implicit none
+           integer(INTD), intent(out):: jerr
+           integer(INTD):: grd(1:MAX_TENSOR_RANK),grs(1:MAX_TENSOR_RANK),n2o(0:MAX_TENSOR_RANK)
+           integer(INTD):: js,jn,jng,jg,jgs,jj,ji
+           integer(INTL):: sidx(1:MAX_TENSOR_RANK)
+           class(tens_header_t), pointer:: jthp
+           class(*), pointer:: jup
+
+           jerr=TEREC_SUCCESS; tcgl=0
+ !Destination subtensors:
+           dstart=tcgl+1; jn=0; jerr=dlit%reset()
+  !Iterate over subtensors:
+           sloop: do while(jerr.eq.GFC_SUCCESS)
+   !Get subtensor header:
+            jup=>dlit%get_value(jerr); if(jerr.ne.GFC_SUCCESS) exit sloop
+            jthp=>NULL(); select type(jup); class is(tens_header_t); jthp=>jup; end select
+            if(.not.associated(jthp)) then; jerr=TEREC_OBJ_CORRUPTED; exit sloop; endif !trap
+            call jthp%get_spec(sidx,drank,jerr); if(jerr.ne.TEREC_SUCCESS) exit sloop
+            jn=jn+1 !new subtensor
+   !Append subtensor info to the sorting list:
+            tcgl=tcgl+1; js=tcgl; tcg_num_buf(tcgl)=int(jn,INTL); tcg_ind_buf(1:drank,tcgl)=sidx(1:drank) !subtensor number, subspace multi-index
+   !(Partially) decouple symmetric storage groups if needed:
+            if(drank.gt.0) then
+    !Get the number of symmetric groups:
+             jng=jthp%num_groups(jerr); if(jerr.ne.TEREC_SUCCESS) exit sloop
+    !Process each symmetric dimension group:
+             do jg=1,jng !loop over groups
+              call jthp%get_group(jg,grd,jgs,jerr); if(jerr.ne.TEREC_SUCCESS) exit sloop
+              if(jgs.ge.2) then
+     !Determine relaxed symmetry:
+               
+               do jj=2,jgs
+                
+               enddo
+               n2o(0:jgs)=(/+1,(jj,jj=1,jgs)/)
+               call merge_sort_key_int(jgs,grs,n2o) !n2o: sequence of old index numbers that makes groups contiguous
+     !Generate decoupled multi-indices:
+               do jj=js,tcgl
+                
+               enddo
+              endif
+             enddo
+            endif
+            jerr=dlit%next() !next subtensor
+           enddo sloop
+           if(jerr.eq.GFC_NO_MOVE) jerr=TEREC_SUCCESS
+           dfinish=tcgl
+
+           return
+          end subroutine build_descriptors
+
+          subroutine generate_subcontractions(jerr)
+           implicit none
+           integer(INTD), intent(out):: jerr
+
+           jerr=TEREC_SUCCESS
+           return
+          end subroutine generate_subcontractions
 
         end subroutine TensContractionSplit
 
