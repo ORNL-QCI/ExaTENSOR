@@ -780,10 +780,13 @@
            else
             call lep%destruct(errc)
            endif
-           if(errc.ne.0) ierr=NOT_CLEAN
+           if(errc.ne.0) then
+            write(CONS_OUT,*)'GFC::list:ListIterDelete: element value destruction failed with error ',errc !debug
+            ierr=NOT_CLEAN
+           endif
            deallocate(lep,STAT=errc,ERRMSG=errmesg)
            if(errc.ne.0) then
-            write(CONS_OUT,*)'GFC::list:ListIterDelete: deallocate(lep) failed: ',errc,': '//errmesg(1:len_trim(errmesg))
+            write(CONS_OUT,*)'GFC::list:ListIterDelete: deallocate(lep) failed: ',errc,': '//errmesg(1:len_trim(errmesg)) !debug
             ierr=NOT_CLEAN
            endif
           else
