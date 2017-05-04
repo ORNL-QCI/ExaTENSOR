@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/04/26
+!REVISION: 2017/05/04
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -34,7 +34,7 @@
         use gfc_dictionary
         use subspaces
         use pack_prim
-        use distributed
+        use distributed, only: DataDescr_t
         implicit none
         private
 !PARAMETERS:
@@ -4166,20 +4166,53 @@
          integer(INTD), intent(out), optional:: ierr   !out: error code
          integer(INTD), intent(in), optional:: dev_id  !in: output device id (defaults to screeen)
          integer(INTD), intent(in), optional:: nspaces !in: number of leading spaces
-         integer(INTD):: errc,devo,nsp,i
+         integer(INTD):: errc,devo,nsp,i,l
+         character(4):: num_pos
 
          devo=6; if(present(dev_id)) devo=dev_id
          nsp=0; if(present(nspaces)) nsp=nspaces
          if(this%is_set(errc)) then
           do i=1,nsp; write(devo,'(" ")',ADVANCE='NO'); enddo
-          write(devo,'("{",i3,15(1x,i3),"}=")',ADVANCE='NO') this%dind_pos(1:this%ddim)
-          write(devo,'("{",i3,15(1x,i3),"}*")',ADVANCE='NO') this%lind_pos(1:this%ldim)
-          write(devo,'("{",i3,15(1x,i3),"}")',ADVANCE='NO') this%rind_pos(1:this%rdim)
-          if(this%ind_restr_set) then
-           write(devo,'("{",i2,15(1x,i2),"}=")',ADVANCE='NO') this%dind_res(1:this%ddim)
-           write(devo,'("{",i2,15(1x,i2),"}*")',ADVANCE='NO') this%lind_res(1:this%ldim)
-           write(devo,'("{",i2,15(1x,i2),"}")') this%rind_res(1:this%rdim)
+          if(this%ddim.gt.0) then
+           call numchar(this%ddim,l,num_pos)
+           write(devo,'("{"'//num_pos(1:l)//'(1x,i3),"}=")',ADVANCE='NO') this%dind_pos(1:this%ddim)
+          else
+           write(devo,'("{}=")',ADVANCE='NO')
           endif
+          if(this%ldim.gt.0) then
+           call numchar(this%ldim,l,num_pos)
+           write(devo,'("{"'//num_pos(1:l)//'(1x,i3),"}*")',ADVANCE='NO') this%lind_pos(1:this%ldim)
+          else
+           write(devo,'("{}*")',ADVANCE='NO')
+          endif
+          if(this%rdim.gt.0) then
+           call numchar(this%rdim,l,num_pos)
+           write(devo,'("{"'//num_pos(1:l)//'(1x,i3),"}")',ADVANCE='NO') this%rind_pos(1:this%rdim)
+          else
+           write(devo,'("{}")',ADVANCE='NO')
+          endif
+          if(this%ind_restr_set) then
+           write(devo,'(":     ")',ADVANCE='NO')
+           if(this%ddim.gt.0) then
+            call numchar(this%ddim,l,num_pos)
+            write(devo,'("{"'//num_pos(1:l)//'(1x,i2),"}=")',ADVANCE='NO') this%dind_res(1:this%ddim)
+           else
+            write(devo,'("{}=")',ADVANCE='NO')
+           endif
+           if(this%ldim.gt.0) then
+            call numchar(this%ldim,l,num_pos)
+            write(devo,'("{"'//num_pos(1:l)//'(1x,i2),"}*")',ADVANCE='NO') this%lind_res(1:this%ldim)
+           else
+            write(devo,'("{}*")',ADVANCE='NO')
+           endif
+           if(this%rdim.gt.0) then
+            call numchar(this%rdim,l,num_pos)
+            write(devo,'("{"'//num_pos(1:l)//'(1x,i2),"}")',ADVANCE='NO') this%rind_res(1:this%rdim)
+           else
+            write(devo,'("{}")',ADVANCE='NO')
+           endif
+          endif
+          write(devo,'()')
          else
           do i=1,nsp; write(devo,'(" ")',ADVANCE='NO'); enddo
           write(devo,'("{Empty/invalid extended tensor contraction}")')
@@ -4342,7 +4375,7 @@
 !Sets index permutational symmetry restrictions due to tensor operation
 !(both contraction pattern and arguments must have been set already).
 !If any of the given tensor dimensions already belongs to a symmetry group,
-!the entire group will be detroyed and reset according to the current input.
+!the entire group will be destroyed and reset according to the current input.
          implicit none
          class(tens_contraction_t), intent(inout):: this !inout: tensor contraction
          integer(INTD), intent(in):: tens_num            !in: specific tensor argument (0:D,1:L,2:R)
@@ -4376,7 +4409,7 @@
          if(this%is_set(errc)) then
           call this%contr_ptrn%print_it(j,devo,nsp+1); if(errc.eq.TEREC_SUCCESS.and.j.ne.TEREC_SUCCESS) errc=j
           do i=1,nsp+1; write(devo,'(" ")',ADVANCE='NO'); enddo
-          write(devo,'("Prefactor = ",D21.14)') this%alpha
+          write(devo,'("Complex Prefactor = (",D21.14,",",D21.14,")")') this%alpha
           n=this%get_num_args(j); if(errc.eq.TEREC_SUCCESS.and.j.ne.TEREC_SUCCESS) errc=j
           do i=0,n-1
            trp=>NULL(); trp=>this%get_argument(i,j)
@@ -4398,10 +4431,10 @@
 !Splits a defined tensor contraction into subcontractions.
          implicit none
          class(tens_contraction_t), intent(in):: this      !in: parental tensor contraction
-         procedure(tens_rcrsv_split_i):: tens_split_f      !in: tensor splitting function (splits a tensor into subtensors)
-         type(list_bi_t), intent(inout):: subops           !inout: list of subcontractions
+         procedure(tens_rcrsv_split_i):: tens_split_f      !in: tensor splitting function (splits a tensor into a list of subtensors)
+         type(list_bi_t), intent(inout):: subops           !inout: list of subtensor contractions
          integer(INTD), intent(out), optional:: ierr       !out: error code
-         integer(INTD), intent(out), optional:: num_subops !out: number of subcontractions generated from the parental tensor contraction
+         integer(INTD), intent(out), optional:: num_subops !out: number of subcontractions generated from the parental tensor contraction here
          integer(INTD):: errc,drank,lrank,nsub,tcgl,rrank,dstart,dfinish,lstart,lfinish,rstart,rfinish,i
          type(list_bi_t):: dsubs,lsubs,rsubs
          type(list_iter_t):: dlit,llit,rlit,slit
@@ -4451,15 +4484,14 @@
            jfi=allocated(tcg_ind_buf); jfn=allocated(tcg_num_buf)
            if(.not.jfi) then
             allocate(tcg_ind_buf(1:MAX_TENSOR_RANK,1:TEREC_TCG_BUF_SIZE*2),STAT=jerr) !twice memory for sorting
-            if(jerr.eq.0) jfi=.TRUE.
+            if(jerr.eq.0) then; jfi=.TRUE.; tcg_ind_buf(:,:)=0; endif
            endif
            if(.not.jfn) then
             allocate(tcg_num_buf(1:TEREC_TCG_BUF_SIZE*2),STAT=jerr) !twice memory for sorting
-            if(jerr.eq.0) jfn=.TRUE.
+            if(jerr.eq.0) then; jfn=.TRUE.; tcg_num_buf(:)=0; endif
             if((.not.jfn).and.allocated(tcg_ind_buf)) then; deallocate(tcg_ind_buf); jfi=.FALSE.; endif
            endif
            jsts=jfi.and.jfn
-           if(jsts) then; tcg_ind_buf(:,:)=0; tcg_num_buf(:)=0; endif !`Is it really necessary?
            return
           end function check_allocate_buffers
 
@@ -4500,7 +4532,7 @@
            implicit none
            integer(INTD), intent(out):: jerr
            integer(INTD):: grd(1:MAX_TENSOR_RANK),grs(1:MAX_TENSOR_RANK),n2o(0:MAX_TENSOR_RANK)
-           integer(INTD):: js,jn,jng,jg,jgs,jj,ji
+           integer(INTD):: js,jn,jng,jg,jgs,jj,ji,jf,jctrl,cil(0:1,0:MAX_TENSOR_RANK)
            integer(INTL):: sidx(1:MAX_TENSOR_RANK)
            class(tens_header_t), pointer:: jthp
            class(*), pointer:: jup
@@ -4516,29 +4548,36 @@
             if(.not.associated(jthp)) then; jerr=TEREC_OBJ_CORRUPTED; exit sloop; endif !trap
             call jthp%get_spec(sidx,drank,jerr); if(jerr.ne.TEREC_SUCCESS) exit sloop
             jn=jn+1 !new subtensor
-   !Append subtensor info to the sorting list:
+   !Append the subtensor multi-index (descriptor) into the sorting list:
             tcgl=tcgl+1; js=tcgl; tcg_num_buf(tcgl)=int(jn,INTL); tcg_ind_buf(1:drank,tcgl)=sidx(1:drank) !subtensor number, subspace multi-index
-   !(Partially) decouple symmetric storage groups if needed:
+   !Partially or fully decouple symmetric storage groups, if needed:
             if(drank.gt.0) then
-    !Get the number of symmetric groups:
+    !Get the number of symmetric groups in the tensor:
              jng=jthp%num_groups(jerr); if(jerr.ne.TEREC_SUCCESS) exit sloop
     !Process each symmetric dimension group:
-             do jg=1,jng !loop over groups
+             do jg=1,jng !loop over symmetric groups
               call jthp%get_group(jg,grd,jgs,jerr); if(jerr.ne.TEREC_SUCCESS) exit sloop
-              if(jgs.ge.2) then
+              if(jgs.ge.2) then !group size >= 2 (non-trivial)
      !Determine relaxed symmetry:
-               
+               ji=1; grs(1)=ji
                do jj=2,jgs
-                
+                if(this%contr_ptrn%dind_res(grd(jj)).le.0) ji=ji+1
+                grs(jj)=ji
                enddo
-               n2o(0:jgs)=(/+1,(jj,jj=1,jgs)/)
-               call merge_sort_key_int(jgs,grs,n2o) !n2o: sequence of old index numbers that makes groups contiguous
-     !Generate decoupled multi-indices:
-               do jj=js,tcgl
-                
-               enddo
+     !Process all unique permutations:
+               jctrl=1; call gpgen(jctrl,jgs,grs,n2o,cil) !skip first permutation
+               do while(jctrl.eq.0) !loop over non-trivial permutations inside the group
+                call gpgen(jctrl,jgs,grs,n2o,cil)
+                if(jctrl.eq.0) then !process next permutation
+      !Generate further decoupled descriptors from the previous set:
+                 jf=tcgl
+                 do jj=js,jf !loop over the existing batch of descriptors generated for the current subtensor
+                  
+                 enddo
+                endif
+               enddo !loop over permutations
               endif
-             enddo
+             enddo !jg: loop over symmetric groups
             endif
             jerr=dlit%next() !next subtensor
            enddo sloop
@@ -4553,6 +4592,7 @@
            integer(INTD), intent(out):: jerr
 
            jerr=TEREC_SUCCESS
+           !`Write
            return
           end subroutine generate_subcontractions
 
@@ -4589,6 +4629,9 @@
          if(ierr.eq.0) then; write(*,'("PASSED")'); else; write(*,'("FAILED: Error ",i11)') ierr; return; endif
          write(*,'("Testing class tens_rcrsv_t ... ")',ADVANCE='NO')
          call test_tens_rcrsv(ierr)
+         if(ierr.eq.0) then; write(*,'("PASSED")'); else; write(*,'("FAILED: Error ",i11)') ierr; return; endif
+         write(*,'("Testing class tens_contraction_t ... ")',ADVANCE='NO')
+         call test_tens_contraction(ierr)
          if(ierr.eq.0) then; write(*,'("PASSED")'); else; write(*,'("FAILED: Error ",i11)') ierr; return; endif
          return
         end subroutine test_tensor_recursive
@@ -4819,7 +4862,7 @@
 
  !Build a hierarchical representation for a test vector space:
          hsid=hspace_register%register_space('MySpace',ierr,hspace); if(ierr.ne.TEREC_SUCCESS) then; ierr=1; return; endif
-         call register_test_space(ierr); if(ierr.ne.TEREC_SUCCESS) then; ierr=2; return; endif
+         call create_test_space(ierr); if(ierr.ne.TEREC_SUCCESS) then; ierr=2; return; endif
  !Create the full tensor (over the full space):
   !Get full space id and its max resolution:
          space_id=hspace%get_common_subspace(0_INTL,TEST_SPACE_DIM-1_INTL,ierr); if(ierr.ne.0) then; ierr=3; return; endif
@@ -4847,7 +4890,7 @@
 
          contains
 
-          subroutine register_test_space(jerr)
+          subroutine create_test_space(jerr)
            implicit none
            integer(INTD), intent(out):: jerr
            integer(INTL):: jj
@@ -4862,8 +4905,96 @@
            call hspace%h_space_ctor(full_basis,jerr); if(jerr.ne.0) return
            !call hspace%print_it() !debug
            return
-          end subroutine register_test_space
+          end subroutine create_test_space
 
         end subroutine test_tens_rcrsv
+!---------------------------------------------
+        subroutine test_tens_contraction(ierr)
+         implicit none
+         integer(INTD), intent(out):: ierr
+         integer(INTD), parameter:: tens_rank=4          !tensor rank
+         integer(INTL), parameter:: TEST_SPACE_DIM=33    !vector space dimension
+         type(spher_symmetry_t):: symm(1:TEST_SPACE_DIM) !symmetry of each basis vector
+         type(subspace_basis_t):: full_basis             !full vector space basis
+         class(h_space_t), pointer:: hspace              !hierarchical representation of the vector space
+         integer(INTL):: spcx(1:MAX_TENSOR_RANK),dims(1:MAX_TENSOR_RANK),space_id,max_res
+         integer(INTD):: dimg(1:MAX_TENSOR_RANK),grps(1:MAX_TENSOR_RANK),contr_ptrn(1:MAX_TENSOR_RANK*2)
+         integer(INTD):: hsid,j
+         class(subspace_t), pointer:: ssp
+         type(tens_rcrsv_t):: dtens,ltens,rtens
+         type(tens_contraction_t):: tens_contr
+         type(list_bi_t):: subcontractions
+         type(list_iter_t):: lit
+
+ !Build a hierarchical representation for a test vector space:
+         hsid=hspace_register%register_space('NewSpace',ierr,hspace); if(ierr.ne.TEREC_SUCCESS) then; ierr=1; return; endif
+         call create_test_space(ierr); if(ierr.ne.TEREC_SUCCESS) then; ierr=2; return; endif
+ !Create tensor arguments (over the full space):
+  !Get full space id and its max resolution:
+         space_id=hspace%get_common_subspace(0_INTL,TEST_SPACE_DIM-1_INTL,ierr); if(ierr.ne.0) then; ierr=3; return; endif
+         ssp=>hspace%get_subspace(space_id,ierr); if(ierr.ne.0) then; ierr=4; return; endif
+         if(.not.associated(ssp)) then; ierr=5; return; endif
+         max_res=ssp%get_max_resolution(ierr); if(ierr.ne.0) then; ierr=6; return; endif
+         !write(*,*) 'Space ID = ',space_id,': Max resolution = ',max_res !debug
+  !Create a tensor over the full space:
+         spcx(1:tens_rank)=space_id
+         dims(1:tens_rank)=max_res
+         dimg(1:tens_rank)=(/1,1,2,2/); grps(1:2)=(/TEREC_IND_RESTR_LT,TEREC_IND_RESTR_LT/)
+         call dtens%tens_rcrsv_ctor('Z2',spcx(1:tens_rank),(/(hsid,j=1,tens_rank)/),ierr,&
+                                   &dims(1:tens_rank),dimg(1:tens_rank),grps(1:2))
+         if(ierr.ne.0) then; ierr=7; return; endif
+  !Create a tensor over the full space:
+         spcx(1:tens_rank)=space_id
+         dims(1:tens_rank)=max_res
+         dimg(1:tens_rank)=(/1,1,2,2/); grps(1:2)=(/TEREC_IND_RESTR_LT,TEREC_IND_RESTR_LT/)
+         call ltens%tens_rcrsv_ctor('H2',spcx(1:tens_rank),(/(hsid,j=1,tens_rank)/),ierr,&
+                                   &dims(1:tens_rank),dimg(1:tens_rank),grps(1:2))
+         if(ierr.ne.0) then; ierr=8; return; endif
+  !Create a tensor over the full space:
+         spcx(1:tens_rank)=space_id
+         dims(1:tens_rank)=max_res
+         dimg(1:tens_rank)=(/1,1,2,2/); grps(1:2)=(/TEREC_IND_RESTR_LT,TEREC_IND_RESTR_LT/)
+         call rtens%tens_rcrsv_ctor('T2',spcx(1:tens_rank),(/(hsid,j=1,tens_rank)/),ierr,&
+                                   &dims(1:tens_rank),dimg(1:tens_rank),grps(1:2))
+         if(ierr.ne.0) then; ierr=9; return; endif
+ !Create the full tensor contraction specification: Z2(a,b,i,j)+=H2(i,k,a,c)*T2(b,c,j,k):
+  !Set tensor contraction arguments:
+         call tens_contr%set_argument(dtens,ierr); if(ierr.ne.0) then; ierr=10; return; endif
+         call tens_contr%set_argument(ltens,ierr); if(ierr.ne.0) then; ierr=11; return; endif
+         call tens_contr%set_argument(rtens,ierr); if(ierr.ne.0) then; ierr=12; return; endif
+         !print *,'Tensor contraction (args_set,fully set): ',tens_contr%args_full(),tens_contr%is_set() !debug
+  !Set the tensor contraction pattern:
+         contr_ptrn(1:tens_rank+tens_rank)=(/3,-4,1,-2, 2,-4,4,-2/)
+         call tens_contr%set_contr_ptrn(contr_ptrn,ierr); if(ierr.ne.0) then; ierr=13; return; endif
+  !Relax symmetries, if needed:
+         call tens_contr%set_operl_symm(1,(/1/),ierr); if(ierr.ne.0) then; ierr=14; return; endif
+         call tens_contr%set_operl_symm(1,(/3/),ierr); if(ierr.ne.0) then; ierr=15; return; endif
+         call tens_contr%set_operl_symm(2,(/1/),ierr); if(ierr.ne.0) then; ierr=16; return; endif
+         call tens_contr%set_operl_symm(2,(/3/),ierr); if(ierr.ne.0) then; ierr=17; return; endif
+         !call tens_contr%print_it() !debug
+ !Split the tensor contraction into a list of subtensor contractions:
+         !`Finish
+         return
+
+         contains
+
+          subroutine create_test_space(jerr)
+           implicit none
+           integer(INTD), intent(out):: jerr
+           integer(INTL):: jj
+
+           jerr=0
+           call full_basis%subspace_basis_ctor(TEST_SPACE_DIM,jerr); if(jerr.ne.0) return
+           do jj=1,TEST_SPACE_DIM
+            call symm(jj)%spher_symmetry_ctor(int((jj-1)/5,INTD),0,jerr); if(jerr.ne.0) return
+            call full_basis%set_basis_func(jj,BASIS_ABSTRACT,jerr,symm=symm(jj)); if(jerr.ne.0) return
+           enddo
+           call full_basis%finalize(jerr); if(jerr.ne.0) return
+           call hspace%h_space_ctor(full_basis,jerr); if(jerr.ne.0) return
+           !call hspace%print_it() !debug
+           return
+          end subroutine create_test_space
+
+        end subroutine test_tens_contraction
 
        end module tensor_recursive_test
