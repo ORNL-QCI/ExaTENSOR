@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/05/04
+!REVISION: 2017/05/05
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -3600,7 +3600,6 @@
            type(vec_tree_iter_t):: vt_it(1:MAX_TENSOR_RANK)
            class(*), pointer:: jup
            class(subspace_t), pointer:: jssp
-
  !Init:
            do jj=1,sd
             jd=split_dims(jj)
@@ -3860,8 +3859,10 @@
          integer(INTD):: errc
 
          errc=TEREC_SUCCESS; ans=associated(this%tens_p)
-         if(ans) then
-          
+         if(ans.and.present(num_dims)) then
+          if(.not.this%tens_p%is_set(errc,num_dims=num_dims)) then
+           if(errc.eq.TEREC_SUCCESS) errc=TEREC_OBJ_CORRUPTED
+          endif
          endif
          if(present(ierr)) ierr=errc
          return
@@ -3882,7 +3883,7 @@
 !Sets the next tensor operation argument.
          implicit none
          class(tens_operation_t), intent(inout):: this    !inout: tensor operation
-         class(tens_rcrsv_t), intent(in), target:: tensor !in: tensor to be set as the argument
+         class(tens_rcrsv_t), intent(in), target:: tensor !in: tensor to be set as an argument
          integer(INTD), intent(out), optional:: ierr      !out: error code
          integer(INTD):: errc
 
@@ -4015,11 +4016,11 @@
          integer(INTD), pointer:: ind_res(:)
 
          if(this%is_set(errc)) then
-          if(tens_num.eq.0) then
+          if(tens_num.eq.0) then !destination tensor
            n=this%ddim; ind_res=>this%dind_res
-          elseif(tens_num.eq.1) then
+          elseif(tens_num.eq.1) then !left input tensor
            n=this%ldim; ind_res=>this%lind_res
-          elseif(tens_num.eq.2) then
+          elseif(tens_num.eq.2) then !right input tensor
            n=this%rdim; ind_res=>this%rind_res
           else
            errc=TEREC_INVALID_ARGS
@@ -4036,7 +4037,7 @@
                errc=TEREC_INVALID_ARGS; exit
               endif
              enddo
-             ind_res(restr_inds(1))=-1 !first restricted index mark
+             ind_res(restr_inds(1))=-1 !first restricted index mark (-1)
              if(errc.eq.TEREC_SUCCESS) this%ind_restr_set=.TRUE.
             else
              errc=TEREC_INVALID_ARGS
@@ -4051,62 +4052,77 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine ContrPtrnExtSetStoreSymm
-!-------------------------------------------------------------------------
-        subroutine ContrPtrnExtSetOperlSymm(this,tens_num,restr_inds,ierr)
-!Sets index permutational symmetries due to tensor operation. At least one
-!tensor dimension must be passed here. If a tensor dimension is a part
-!of a pre-exsiting symmetry group, the group will be destroyed. To set up
-!a new symmetry group, at least two tensor dimensions must be passed here.
+!--------------------------------------------------------------------------------------
+        subroutine ContrPtrnExtSetOperlSymm(this,tens_num,restr_inds,ierr,destroy_symm)
+!Sets index permutational symmetries due to tensor operation. At least one tensor
+!dimension must be passed here. Provided that <destroy_symm>=TRUE, if a tensor
+!dimension is a part of a pre-exsiting symmetry group, the group will be destroyed.
+!To set up a new symmetry group, at least two tensor dimensions must be passed here.
          implicit none
          class(contr_ptrn_ext_t), intent(inout), target:: this !inout: extended contraction pattern spec
          integer(INTD), intent(in):: tens_num                  !in: tensor argument number (0:D,1:L,2:R)
          integer(INTD), intent(in):: restr_inds(1:)            !in: restricted index positions in tensor <tens_num>
          integer(INTD), intent(out), optional:: ierr           !out: error code
+         logical, intent(in), optional:: destroy_symm          !in: if TRUE, an attempt to reset up an existing symmetric group will destroy it first (defaults to FALSE)
          integer(INTD):: errc,n,m,i,j0,j1
          integer(INTD), pointer:: ind_res(:)
+         logical:: destr
 
          if(this%is_set(errc)) then
-          if(tens_num.eq.0) then
+          if(tens_num.eq.0) then !destination tensor
            n=this%ddim; ind_res=>this%dind_res
-          elseif(tens_num.eq.1) then
+          elseif(tens_num.eq.1) then !left input tensor
            n=this%ldim; ind_res=>this%lind_res
-          elseif(tens_num.eq.2) then
+          elseif(tens_num.eq.2) then !right input tensor
            n=this%rdim; ind_res=>this%rind_res
           else
            errc=TEREC_INVALID_ARGS
           endif
           if(errc.eq.TEREC_SUCCESS) then
+           destr=.FALSE.; if(present(destroy_symm)) destr=destroy_symm
            m=size(restr_inds)
            if(m.ge.1) then
             if(m.le.n) then
  !Check:
              do i=2,m
               j0=restr_inds(i-1); j1=restr_inds(i)
-              if(.not.(j0.gt.0.and.j0.lt.n.and.j1.gt.1.and.j1.le.n.and.j0.lt.j1)) then
+              if(.not.(j0.ge.1.and.j0.lt.n.and.j1.ge.2.and.j1.le.n.and.j0.lt.j1)) then
                errc=TEREC_INVALID_ARGS; exit
               endif
              enddo
-             if(errc.eq.TEREC_SUCCESS) then
+             if(errc.eq.TEREC_SUCCESS.and.(.not.destr)) then
+              if(m.ge.2) then
+               do i=1,m
+                if(ind_res(restr_inds(i)).ne.0) then; errc=TEREC_INVALID_REQUEST; exit; endif
+               enddo
+              else
+               errc=TEREC_INVALID_REQUEST
+              endif
+             else
  !Destroy previous symmetry group:
-              do i=1,m
-               j0=restr_inds(i)
-               do while(ind_res(j0).gt.0)
-                j1=ind_res(j0); ind_res(j0)=0; j0=j1
+              if(errc.eq.TEREC_SUCCESS) then
+               do i=1,m
+                j0=restr_inds(i)
+                do while(ind_res(j0).gt.0)
+                 j1=ind_res(j0); ind_res(j0)=0; j0=j1
+                enddo
+                ind_res(j0)=0
+                j0=restr_inds(i)
+                do j1=restr_inds(i)+1,n
+                 if(ind_res(j1).eq.j0) then; ind_res(j1)=0; j0=j1; endif
+                enddo
                enddo
-               ind_res(j0)=0
-               j0=restr_inds(i)
-               do j1=restr_inds(i)+1,n
-                if(ind_res(j1).eq.j0) then
-                 ind_res(j1)=0; j0=j1
-                endif
-               enddo
-              enddo
+              endif
+             endif
+             if(errc.eq.TEREC_SUCCESS) then
  !Construct new symmetry group:
               do i=2,m
                ind_res(restr_inds(i))=restr_inds(i-1)
               enddo
-              if(m.gt.1) ind_res(restr_inds(1))=-1 !first restricted index mark
-              if(errc.eq.TEREC_SUCCESS) this%ind_restr_set=.TRUE.
+              if(m.gt.1) then
+               ind_res(restr_inds(1))=-1 !first restricted index mark (-1)
+               this%ind_restr_set=.TRUE.
+              endif
              endif
             else
              errc=TEREC_INVALID_ARGS
@@ -4278,13 +4294,13 @@
         subroutine TensContractionSetContrPtrn(this,contr_ptrn,ierr,alpha)
 !Sets the extended tensor contraction pattern (all tensor arguments must have been set already).
 !Additionally, if tensor arguments have permutational symmetries, they will be incorporated into
-!the extended tensor contraction pattern. Later, those can be relaxed or reset by calling
-!tens_contraction_t.SetOperlSymm(). An optional tensor contraction prefactor <alpha> can be supplied.
+!the extended tensor contraction pattern. Later on, additional permutational symmetries can be
+!imposed onto non-symmetric indices. An optional tensor contraction prefactor <alpha> can be supplied.
          implicit none
          class(tens_contraction_t), intent(inout):: this !inout: tensor contraction
          integer(INTD), intent(in):: contr_ptrn(1:*)     !in: basic digital tensor contraction pattern (see TAL-SH specs)
          integer(INTD), intent(out), optional:: ierr     !out: error code
-         complex(8), intent(in), optional:: alpha        !in: tensor contraction perfactor (defaults to 1.0)
+         complex(8), intent(in), optional:: alpha        !in: complex tensor contraction perfactor (defaults to 1.0)
          integer(INTD):: errc,nd,nl,nr,m,i,l,grs,restr_dims(1:MAX_TENSOR_RANK)
          class(tens_rcrsv_t), pointer:: dtrp,ltrp,rtrp
          class(tens_header_t), pointer:: thp
@@ -4374,8 +4390,8 @@
         subroutine TensContractionSetOperlSymm(this,tens_num,restr_inds,ierr)
 !Sets index permutational symmetry restrictions due to tensor operation
 !(both contraction pattern and arguments must have been set already).
-!If any of the given tensor dimensions already belongs to a symmetry group,
-!the entire group will be destroyed and reset according to the current input.
+!If any of the given tensor dimensions already belongs to a symmetric group,
+!an error will be returned.
          implicit none
          class(tens_contraction_t), intent(inout):: this !inout: tensor contraction
          integer(INTD), intent(in):: tens_num            !in: specific tensor argument (0:D,1:L,2:R)
@@ -4428,14 +4444,18 @@
         end subroutine TensContractionPrintIt
 !--------------------------------------------------------------------------------
         subroutine TensContractionSplit(this,tens_split_f,subops,ierr,num_subops)
-!Splits a defined tensor contraction into subcontractions.
+!Splits a defined tensor contraction into a list of subcontractions. The splitting
+!is driven by the tensor argument decomposition into unique subtensors. More precisely,
+!each tensor argument is represented as a direct sum of its unique children subtensors.
+!Then all possible non-zero combinations of those subtensors that match the tensor
+!contraction pattern will form the list of subcontractions.
          implicit none
          class(tens_contraction_t), intent(in):: this      !in: parental tensor contraction
-         procedure(tens_rcrsv_split_i):: tens_split_f      !in: tensor splitting function (splits a tensor into a list of subtensors)
+         procedure(tens_rcrsv_split_i):: tens_split_f      !in: tensor splitting function (splits a tensor into a list of unique subtensors)
          type(list_bi_t), intent(inout):: subops           !inout: list of subtensor contractions
          integer(INTD), intent(out), optional:: ierr       !out: error code
          integer(INTD), intent(out), optional:: num_subops !out: number of subcontractions generated from the parental tensor contraction here
-         integer(INTD):: errc,drank,lrank,nsub,tcgl,rrank,dstart,dfinish,lstart,lfinish,rstart,rfinish,i
+         integer(INTD):: i,errc,nsub,tcgl,drank,lrank,rrank,dsn,lsn,rsn,dstart,dfinish,lstart,lfinish,rstart,rfinish
          type(list_bi_t):: dsubs,lsubs,rsubs
          type(list_iter_t):: dlit,llit,rlit,slit
 
@@ -4482,10 +4502,12 @@
            integer(INTD):: jerr
 
            jfi=allocated(tcg_ind_buf); jfn=allocated(tcg_num_buf)
+ !Allocate tcg_ind_buf(:,:), if not allocated:
            if(.not.jfi) then
             allocate(tcg_ind_buf(1:MAX_TENSOR_RANK,1:TEREC_TCG_BUF_SIZE*2),STAT=jerr) !twice memory for sorting
             if(jerr.eq.0) then; jfi=.TRUE.; tcg_ind_buf(:,:)=0; endif
            endif
+ !Allocate tcg_num_buf(:), if not allocated:
            if(.not.jfn) then
             allocate(tcg_num_buf(1:TEREC_TCG_BUF_SIZE*2),STAT=jerr) !twice memory for sorting
             if(jerr.eq.0) then; jfn=.TRUE.; tcg_num_buf(:)=0; endif
@@ -4505,20 +4527,20 @@
  !Destination tensor argument:
            jn=0; jtrp=>this%get_argument(0,jerr)
            if(jerr.eq.TEREC_SUCCESS) then
-            jerr=tens_split_f(jtrp,dsubs,jn); if(jn.le.0.and.jerr.eq.TEREC_SUCCESS) jerr=TEREC_ERROR
+            jerr=tens_split_f(jtrp,dsubs,dsn); if(jn.le.0.and.jerr.eq.TEREC_SUCCESS) jerr=TEREC_ERROR
            endif
  !Left tensor argument:
            if(jerr.eq.TEREC_SUCCESS) then
             jn=0; jtrp=>this%get_argument(1,jerr)
             if(jerr.eq.TEREC_SUCCESS) then
-             jerr=tens_split_f(jtrp,lsubs,jn); if(jn.le.0.and.jerr.eq.TEREC_SUCCESS) jerr=TEREC_ERROR
+             jerr=tens_split_f(jtrp,lsubs,lsn); if(jn.le.0.and.jerr.eq.TEREC_SUCCESS) jerr=TEREC_ERROR
             endif
            endif
  !Right tensor argument:
            if(jerr.eq.TEREC_SUCCESS) then
             jn=0; jtrp=>this%get_argument(2,jerr)
             if(jerr.eq.TEREC_SUCCESS) then
-             jerr=tens_split_f(jtrp,rsubs,jn); if(jn.le.0.and.jerr.eq.TEREC_SUCCESS) jerr=TEREC_ERROR
+             jerr=tens_split_f(jtrp,rsubs,rsn); if(jn.le.0.and.jerr.eq.TEREC_SUCCESS) jerr=TEREC_ERROR
             endif
            endif
  !Init iterators:
@@ -4531,15 +4553,14 @@
           subroutine build_descriptors(jerr)
            implicit none
            integer(INTD), intent(out):: jerr
-           integer(INTD):: grd(1:MAX_TENSOR_RANK),grs(1:MAX_TENSOR_RANK),n2o(0:MAX_TENSOR_RANK)
-           integer(INTD):: js,jn,jng,jg,jgs,jj,ji,jf,jctrl,cil(0:1,0:MAX_TENSOR_RANK)
            integer(INTL):: sidx(1:MAX_TENSOR_RANK)
            class(tens_header_t), pointer:: jthp
            class(*), pointer:: jup
 
-           jerr=TEREC_SUCCESS; tcgl=0
+           jerr=TEREC_SUCCESS; tcgl=0 !tcgl: current length of the tcg_ind_buf/tcg_num_buf
  !Destination subtensors:
-           dstart=tcgl+1; jn=0; jerr=dlit%reset()
+           dstart=tcgl+1 !dstart: start offset of the destination tensor descriptors
+           jerr=dlit%reset()
   !Iterate over subtensors:
            sloop: do while(jerr.eq.GFC_SUCCESS)
    !Get subtensor header:
@@ -4547,42 +4568,13 @@
             jthp=>NULL(); select type(jup); class is(tens_header_t); jthp=>jup; end select
             if(.not.associated(jthp)) then; jerr=TEREC_OBJ_CORRUPTED; exit sloop; endif !trap
             call jthp%get_spec(sidx,drank,jerr); if(jerr.ne.TEREC_SUCCESS) exit sloop
-            jn=jn+1 !new subtensor
    !Append the subtensor multi-index (descriptor) into the sorting list:
-            tcgl=tcgl+1; js=tcgl; tcg_num_buf(tcgl)=int(jn,INTL); tcg_ind_buf(1:drank,tcgl)=sidx(1:drank) !subtensor number, subspace multi-index
-   !Partially or fully decouple symmetric storage groups, if needed:
-            if(drank.gt.0) then
-    !Get the number of symmetric groups in the tensor:
-             jng=jthp%num_groups(jerr); if(jerr.ne.TEREC_SUCCESS) exit sloop
-    !Process each symmetric dimension group:
-             do jg=1,jng !loop over symmetric groups
-              call jthp%get_group(jg,grd,jgs,jerr); if(jerr.ne.TEREC_SUCCESS) exit sloop
-              if(jgs.ge.2) then !group size >= 2 (non-trivial)
-     !Determine relaxed symmetry:
-               ji=1; grs(1)=ji
-               do jj=2,jgs
-                if(this%contr_ptrn%dind_res(grd(jj)).le.0) ji=ji+1
-                grs(jj)=ji
-               enddo
-     !Process all unique permutations:
-               jctrl=1; call gpgen(jctrl,jgs,grs,n2o,cil) !skip first permutation
-               do while(jctrl.eq.0) !loop over non-trivial permutations inside the group
-                call gpgen(jctrl,jgs,grs,n2o,cil)
-                if(jctrl.eq.0) then !process next permutation
-      !Generate further decoupled descriptors from the previous set:
-                 jf=tcgl
-                 do jj=js,jf !loop over the existing batch of descriptors generated for the current subtensor
-                  
-                 enddo
-                endif
-               enddo !loop over permutations
-              endif
-             enddo !jg: loop over symmetric groups
-            endif
+            tcgl=tcgl+1; tcg_num_buf(tcgl)=int(tcgl-dstart,INTL); tcg_ind_buf(1:drank,tcgl)=sidx(1:drank) !subtensor number, subspace multi-index
+            !`Finish
             jerr=dlit%next() !next subtensor
            enddo sloop
            if(jerr.eq.GFC_NO_MOVE) jerr=TEREC_SUCCESS
-           dfinish=tcgl
+           dfinish=tcgl !dfinish: end offset of the destination tensor descriptors
 
            return
           end subroutine build_descriptors
@@ -4939,9 +4931,8 @@
   !Create a tensor over the full space:
          spcx(1:tens_rank)=space_id
          dims(1:tens_rank)=max_res
-         dimg(1:tens_rank)=(/1,1,2,2/); grps(1:2)=(/TEREC_IND_RESTR_LT,TEREC_IND_RESTR_LT/)
          call dtens%tens_rcrsv_ctor('Z2',spcx(1:tens_rank),(/(hsid,j=1,tens_rank)/),ierr,&
-                                   &dims(1:tens_rank),dimg(1:tens_rank),grps(1:2))
+                                   &dims(1:tens_rank))
          if(ierr.ne.0) then; ierr=7; return; endif
   !Create a tensor over the full space:
          spcx(1:tens_rank)=space_id
@@ -4967,10 +4958,8 @@
          contr_ptrn(1:tens_rank+tens_rank)=(/3,-4,1,-2, 2,-4,4,-2/)
          call tens_contr%set_contr_ptrn(contr_ptrn,ierr); if(ierr.ne.0) then; ierr=13; return; endif
   !Relax symmetries, if needed:
-         call tens_contr%set_operl_symm(1,(/1/),ierr); if(ierr.ne.0) then; ierr=14; return; endif
-         call tens_contr%set_operl_symm(1,(/3/),ierr); if(ierr.ne.0) then; ierr=15; return; endif
-         call tens_contr%set_operl_symm(2,(/1/),ierr); if(ierr.ne.0) then; ierr=16; return; endif
-         call tens_contr%set_operl_symm(2,(/3/),ierr); if(ierr.ne.0) then; ierr=17; return; endif
+         call tens_contr%set_operl_symm(0,(/1,2/),ierr); if(ierr.ne.0) then; ierr=14; return; endif
+         call tens_contr%set_operl_symm(0,(/3,4/),ierr); if(ierr.ne.0) then; ierr=15; return; endif
          !call tens_contr%print_it() !debug
  !Split the tensor contraction into a list of subtensor contractions:
          !`Finish
