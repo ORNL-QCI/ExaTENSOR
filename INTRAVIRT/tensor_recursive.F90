@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/05/05
+!REVISION: 2017/05/06
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -4455,7 +4455,7 @@
          type(list_bi_t), intent(inout):: subops           !inout: list of subtensor contractions
          integer(INTD), intent(out), optional:: ierr       !out: error code
          integer(INTD), intent(out), optional:: num_subops !out: number of subcontractions generated from the parental tensor contraction here
-         integer(INTD):: i,errc,nsub,tcgl,drank,lrank,rrank,dsn,lsn,rsn,dstart,dfinish,lstart,lfinish,rstart,rfinish
+         integer(INTD):: i,errc,nsub,tcgl,drank,lrank,rrank,dsl,lsl,rsl,dstart,dfinish,lstart,lfinish,rstart,rfinish
          type(list_bi_t):: dsubs,lsubs,rsubs
          type(list_iter_t):: dlit,llit,rlit,slit
 
@@ -4521,29 +4521,28 @@
            implicit none
            integer(INTD), intent(out):: jerr
            class(tens_rcrsv_t), pointer:: jtrp
-           integer(INTD):: jn
 
            jerr=TEREC_SUCCESS
  !Destination tensor argument:
-           jn=0; jtrp=>this%get_argument(0,jerr)
+           jtrp=>this%get_argument(0,jerr)
            if(jerr.eq.TEREC_SUCCESS) then
-            jerr=tens_split_f(jtrp,dsubs,dsn); if(jn.le.0.and.jerr.eq.TEREC_SUCCESS) jerr=TEREC_ERROR
+            jerr=tens_split_f(jtrp,dsubs,dsl); if(dsl.le.0.and.jerr.eq.TEREC_SUCCESS) jerr=TEREC_ERROR
            endif
  !Left tensor argument:
            if(jerr.eq.TEREC_SUCCESS) then
-            jn=0; jtrp=>this%get_argument(1,jerr)
+            jtrp=>this%get_argument(1,jerr)
             if(jerr.eq.TEREC_SUCCESS) then
-             jerr=tens_split_f(jtrp,lsubs,lsn); if(jn.le.0.and.jerr.eq.TEREC_SUCCESS) jerr=TEREC_ERROR
+             jerr=tens_split_f(jtrp,lsubs,lsl); if(lsl.le.0.and.jerr.eq.TEREC_SUCCESS) jerr=TEREC_ERROR
             endif
            endif
  !Right tensor argument:
            if(jerr.eq.TEREC_SUCCESS) then
-            jn=0; jtrp=>this%get_argument(2,jerr)
+            jtrp=>this%get_argument(2,jerr)
             if(jerr.eq.TEREC_SUCCESS) then
-             jerr=tens_split_f(jtrp,rsubs,rsn); if(jn.le.0.and.jerr.eq.TEREC_SUCCESS) jerr=TEREC_ERROR
+             jerr=tens_split_f(jtrp,rsubs,rsl); if(rsl.le.0.and.jerr.eq.TEREC_SUCCESS) jerr=TEREC_ERROR
             endif
            endif
- !Init iterators:
+ !Init list iterators:
            if(jerr.eq.TEREC_SUCCESS) jerr=dlit%init(dsubs)
            if(jerr.eq.TEREC_SUCCESS) jerr=llit%init(lsubs)
            if(jerr.eq.TEREC_SUCCESS) jerr=rlit%init(rsubs)
@@ -4570,6 +4569,7 @@
             call jthp%get_spec(sidx,drank,jerr); if(jerr.ne.TEREC_SUCCESS) exit sloop
    !Append the subtensor multi-index (descriptor) into the sorting list:
             tcgl=tcgl+1; tcg_num_buf(tcgl)=int(tcgl-dstart,INTL); tcg_ind_buf(1:drank,tcgl)=sidx(1:drank) !subtensor number, subspace multi-index
+            
             !`Finish
             jerr=dlit%next() !next subtensor
            enddo sloop

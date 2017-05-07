@@ -25,6 +25,7 @@ program main
  use gfc_tree_test
  use gfc_dictionary_test
  use gfc_graph_test
+ use multords_test
  implicit none
  real(8):: perf
  integer(INTD):: dev_out,ierr
@@ -83,6 +84,14 @@ program main
   write(*,*) 'Legacy dictionary testing status: ',ierr,'(PASSED): Performance: ',perf
  else
   write(*,*) 'Legacy dictionary testing status: ',ierr,'(FAILED): Performance: ',perf
+ endif
+
+!Linear-scaling sort:
+ ierr=test_multord_sort(perf,dev_out)
+ if(ierr.eq.0) then
+  write(*,*) 'Multi-index sort testing status: ',ierr,'(PASSED): Performance: ',perf
+ else
+  write(*,*) 'Multi-index sort testing status: ',ierr,'(FAILED): Performance: ',perf
  endif
 
 !Dynamic type inferrence overhead:`PGI compiler bug
