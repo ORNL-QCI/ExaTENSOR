@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/05/06
+!REVISION: 2017/05/09
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -4857,7 +4857,7 @@
          call create_test_space(ierr); if(ierr.ne.TEREC_SUCCESS) then; ierr=2; return; endif
  !Create the full tensor (over the full space):
   !Get full space id and its max resolution:
-         space_id=hspace%get_common_subspace(0_INTL,TEST_SPACE_DIM-1_INTL,ierr); if(ierr.ne.0) then; ierr=3; return; endif
+         space_id=hspace%get_root_id(ierr); if(ierr.ne.0) then; ierr=3; return; endif
          ssp=>hspace%get_subspace(space_id,ierr); if(ierr.ne.0) then; ierr=4; return; endif
          if(.not.associated(ssp)) then; ierr=5; return; endif
          max_res=ssp%get_max_resolution(ierr); if(ierr.ne.0) then; ierr=6; return; endif
@@ -4923,7 +4923,7 @@
          call create_test_space(ierr); if(ierr.ne.TEREC_SUCCESS) then; ierr=2; return; endif
  !Create tensor arguments (over the full space):
   !Get full space id and its max resolution:
-         space_id=hspace%get_common_subspace(0_INTL,TEST_SPACE_DIM-1_INTL,ierr); if(ierr.ne.0) then; ierr=3; return; endif
+         space_id=hspace%get_root_id(ierr); if(ierr.ne.0) then; ierr=3; return; endif
          ssp=>hspace%get_subspace(space_id,ierr); if(ierr.ne.0) then; ierr=4; return; endif
          if(.not.associated(ssp)) then; ierr=5; return; endif
          max_res=ssp%get_max_resolution(ierr); if(ierr.ne.0) then; ierr=6; return; endif

@@ -2,7 +2,7 @@
 !The elements are initially inserted in a vector with an option to be
 !later added in a tree, thus imposing a tree relationship on them.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017/04/17
+!REVISION: 2017/05/09
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -80,6 +80,7 @@
           procedure, public:: previous=>VecTreeIterPrevious             !moves the iterator to the previous container element (only the vector part if tree is not fully built)
           procedure, public:: get_length=>VecTreeIterGetLength          !returns the current length of the container
           procedure, public:: get_offset=>VecTreeIterGetOffset          !returns the current offset in the container
+          procedure, public:: get_root_id=>VecTreeIterGetRootId         !returns the offset of the tree root node
           procedure, public:: get_num_children=>VecTreeIterGetNumChildren !returns the total number of children in the current (tree) iterator position
           procedure, public:: get_num_siblings=>VecTreeIterGetNumSiblings !returns the total number of siblings in the current (tree) iterator position
           procedure, public:: on_first_sibling=>VecTreeIterOnFirstSibling !returns GFC_TRUE if tree is positioned on the first sibling
@@ -113,6 +114,7 @@
         private VecTreeIterPrevious
         private VecTreeIterGetLength
         private VecTreeIterGetOffset
+        private VecTreeIterGetRootId
         private VecTreeIterGetNumChildren
         private VecTreeIterGetNumSiblings
         private VecTreeIterOnFirstSibling
@@ -434,6 +436,30 @@
          if(present(ierr)) ierr=errc
          return
         end function VecTreeIterGetOffset
+!--------------------------------------------------------------
+        function VecTreeIterGetRootId(this,ierr) result(offset)
+!Returns the offset of the tree root node.
+         implicit none
+         integer(INTL):: offset                      !out: offset of the tree root node
+         class(vec_tree_iter_t), intent(in):: this   !in: vector tree iterator
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+         class(gfc_cont_elem_t), pointer:: gep
+         class(*), pointer:: up
+
+         offset=-1_INTL; gep=>this%tree_it%get_root(errc)
+         if(errc.eq.GFC_SUCCESS.and.associated(gep)) then
+          up=>gep%get_value(errc)
+          if(errc.eq.GFC_SUCCESS) then
+           select type(up); type is(integer(INTL)); offset=up; end select
+           if(offset.lt.0_INTL) errc=GFC_CORRUPTED_CONT
+          endif
+         else
+          if(errc.eq.GFC_SUCCESS) errc=GFC_EMPTY_CONT
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function VecTreeIterGetRootId
 !-------------------------------------------------------------------
         function VecTreeIterGetNumChildren(this,ierr) result(nchild)
 !Returns the total number of children at the current (tree) iterator position.

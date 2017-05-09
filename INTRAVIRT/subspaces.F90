@@ -1,7 +1,7 @@
 !Infrastructure for a recursive adaptive vector space decomposition
 !and hierarchical vector space representation.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/04/13
+!REVISION: 2017/05/09
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -253,6 +253,7 @@
           procedure, public:: is_set=>HSpaceIsSet                       !returns TRUE if the hierarchical vector space is set
           procedure, public:: get_space_dim=>HSpaceGetSpaceDim          !returns the dimension of the vector space
           procedure, public:: get_num_subspaces=>HSpaceGetNumSubspaces  !returns the total number of defined subspaces in the vector space
+          procedure, public:: get_root_id=>HSpaceGetRootId              !returns the id of the full space (root of the subspace aggregation tree)
           procedure, public:: get_subspace=>HSpaceGetSubspace           !returns a pointer to the requested subspace of the hierarchical vector space
           procedure, public:: get_aggr_tree=>HSpaceGetAggrTree          !returns a pointer to the subspace aggregation tree (->subspaces)
           procedure, public:: compare_subspaces=>HSpaceCompareSubspaces !compares two subspaces from the hierarchical vector space: {CMP_EQ,CMP_LT,CMP_GT,CMP_ER}
@@ -372,6 +373,7 @@
         private HSpaceIsSet
         private HSpaceGetSpaceDim
         private HSpaceGetNumSubspaces
+        private HSpaceGetRootId
         private HSpaceGetSubspace
         private HSpaceGetAggrTree
         private HSpaceCompareSubspaces
@@ -2283,6 +2285,24 @@
          if(present(ierr)) ierr=errc
          return
         end function HSpaceGetNumSubspaces
+!----------------------------------------------------------
+        function HSpaceGetRootId(this,ierr) result(root_id)
+!Returns the id of the full space (root of the subspace aggregation tree).
+         implicit none
+         integer(INTL):: root_id                     !out: root id (sequential offset)
+         class(h_space_t), intent(in):: this         !in: hierarchical vector space
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc,i
+         type(vec_tree_iter_t):: vtit
+
+         root_id=-1_INTL; errc=vtit%init(this%subspaces)
+         if(errc.eq.GFC_SUCCESS) then
+          root_id=vtit%get_root_id(errc)
+          i=vtit%release(); if(i.ne.GFC_SUCCESS.and.errc.eq.GFC_SUCCESS) errc=i
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function HSpaceGetRootId
 !---------------------------------------------------------------------------
         function HSpaceGetSubspace(this,subspace_id,ierr) result(subspace_p)
 !Returns a pointer to the requested subspace from the hierarchical vector space.

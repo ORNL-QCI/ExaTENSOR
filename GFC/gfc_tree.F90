@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Tree
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017-04-17 (started 2016-02-17)
+!REVISION: 2017-05-09 (started 2016-02-17)
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -91,6 +91,7 @@
           procedure, public:: get_num_siblings=>TreeIterGetNumSiblings !returns the total number of siblings at the current iterator position
           procedure, public:: on_first_sibling=>TreeIterOnFirstSibling !returns GFC_TRUE if positioned on the first sibling
           procedure, public:: on_last_sibling=>TreeIterOnLastSibling   !returns GFC_TRUE if positioned on the last sibling
+          procedure, public:: get_root=>TreeIterGetRoot             !returns a pointer to the tree root
           procedure, public:: get_parent=>TreeIterGetParent         !returns a pointer to the parent of the current vertex
           procedure, public:: get_child=>TreeIterGetChild           !returns a pointer to the specific child of the current vertex
           procedure, public:: add_leaf=>TreeIterAddLeaf             !adds a new leaf element to the element of the container currently pointed to
@@ -129,6 +130,7 @@
         private TreeIterGetNumSiblings
         private TreeIterOnFirstSibling
         private TreeIterOnLastSibling
+        private TreeIterGetRoot
         private TreeIterGetParent
         private TreeIterGetChild
         private TreeIterAddLeaf
@@ -655,7 +657,7 @@
          if(present(ierr)) ierr=errc
          return
         end function TreeIterOnFirstSibling
-!----------------------------------------------------------
+!------------------------------------------------------------
         function TreeIterOnLastSibling(this,ierr) result(res)
 !Returns GFC_TRUE if the iterator is positioned on the last sibling.
          implicit none
@@ -671,6 +673,27 @@
          if(present(ierr)) ierr=errc
          return
         end function TreeIterOnLastSibling
+!-------------------------------------------------------
+        function TreeIterGetRoot(this,ierr) result(root)
+!Returns a pointer to the tree root.
+         implicit none
+         class(gfc_cont_elem_t), pointer:: root      !out: pointer to the tree root
+         class(tree_iter_t), intent(in):: this       !in: iterator
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         root=>NULL(); errc=this%get_status()
+         if(errc.eq.GFC_IT_ACTIVE.or.errc.eq.GFC_IT_DONE) then
+          if(associated(this%container)) then
+           errc=GFC_SUCCESS; root=>this%container%root
+           if(.not.associated(root)) errc=GFC_CORRUPTED_CONT
+          else
+           errc=GFC_CORRUPTED_CONT
+          endif
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function TreeIterGetRoot
 !-----------------------------------------------------------
         function TreeIterGetParent(this,ierr) result(parent)
 !Returns a pointer to the parent of the current vertex.
@@ -704,7 +727,7 @@
          integer(INTD):: errc,n
          class(tree_vertex_t), pointer:: tvp
 
-         errc=this%get_status(); child=>NULL()
+         child=>NULL(); errc=this%get_status()
          if(errc.eq.GFC_IT_ACTIVE) then
           errc=GFC_SUCCESS
           if(associated(this%current)) then
