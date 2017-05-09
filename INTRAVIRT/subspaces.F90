@@ -254,6 +254,7 @@
           procedure, public:: get_space_dim=>HSpaceGetSpaceDim          !returns the dimension of the vector space
           procedure, public:: get_num_subspaces=>HSpaceGetNumSubspaces  !returns the total number of defined subspaces in the vector space
           procedure, public:: get_root_id=>HSpaceGetRootId              !returns the id of the full space (root of the subspace aggregation tree)
+          procedure, public:: get_ancestor_id=>HSpaceGetAncestorId      !returns the id of a specific ancestor subspace
           procedure, public:: get_subspace_level=>HSpaceGetSubspaceLevel!returns the distance from the root for the specific subspace
           procedure, public:: get_subspace=>HSpaceGetSubspace           !returns a pointer to the requested subspace of the hierarchical vector space
           procedure, public:: get_aggr_tree=>HSpaceGetAggrTree          !returns a pointer to the subspace aggregation tree (->subspaces)
@@ -375,6 +376,7 @@
         private HSpaceGetSpaceDim
         private HSpaceGetNumSubspaces
         private HSpaceGetRootId
+        private HSpaceGetAncestorId
         private HSpaceGetSubspaceLevel
         private HSpaceGetSubspace
         private HSpaceGetAggrTree
@@ -2305,6 +2307,36 @@
          if(present(ierr)) ierr=errc
          return
         end function HSpaceGetRootId
+!------------------------------------------------------------------------------------------------
+        function HSpaceGetAncestorId(this,subspace_id,ancestor_distance,ierr) result(ancestor_id)
+!Returns the id of a specific ancestor subspace.
+         implicit none
+         integer(INTL):: ancestor_id                   !out: ancestor id (sequential offset)
+         class(h_space_t), intent(in):: this           !in: hierarchical vector space
+         integer(INTL), intent(in):: subspace_id       !in: subspace id
+         integer(INTD), intent(in):: ancestor_distance !in: distance to the requested ancestor (1:parent,2,3,...)
+         integer(INTD), intent(out), optional:: ierr   !out: error code
+         integer(INTD):: errc,i
+         type(vec_tree_iter_t):: vtit
+         class(*), pointer:: up
+
+         ancestor_id=-1_INTL
+         if(ancestor_distance.gt.0) then
+          errc=vtit%init(this%subspaces)
+          if(errc.eq.GFC_SUCCESS) then
+           errc=vtit%move_to(subspace_id)
+           if(errc.eq.GFC_SUCCESS) then
+            errc=vtit%move_up(ancestor_distance)
+            if(errc.eq.GFC_SUCCESS) ancestor_id=vtit%get_offset(errc)
+           endif
+           i=vtit%release(); if(i.ne.GFC_SUCCESS.and.errc.eq.GFC_SUCCESS) errc=i
+          endif
+         else
+          errc=1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function HSpaceGetAncestorId
 !---------------------------------------------------------------------------
         function HSpaceGetSubspaceLevel(this,subspace_id,ierr) result(level)
 !Returns the distance from the root for a specific subspace.

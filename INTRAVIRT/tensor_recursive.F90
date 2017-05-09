@@ -518,8 +518,8 @@
  !Register of hierarchical vector spaces (only these spaces can be used in tensors):
         type(hspace_register_t), public:: hspace_register
  !Tensor contraction generator: subtensor buffer:
-        integer(INTL), allocatable, private:: tcg_ind_buf(:,:) !subtensor index buffer
-        integer(INTL), allocatable, private:: tcg_num_buf(:)   !subtensor number buffer
+        integer(INTL), allocatable, private:: tcg_ind_buf(:,:) !subtensor index buffer (private to each OpenMP thread)
+        integer(INTL), allocatable, private:: tcg_num_buf(:)   !subtensor number buffer (private to each OpenMP thread)
 !$OMP THREADPRIVATE(tcg_ind_buf,tcg_num_buf)
 
        contains
@@ -4495,7 +4495,7 @@
 
          contains
 
-          function check_allocate_buffers() result(jsts)
+          function check_allocate_buffers() result(jsts) !allocates thread private work buffers
            implicit none
            logical:: jsts
            logical:: jfi,jfn
@@ -4556,25 +4556,25 @@
            class(tens_header_t), pointer:: jthp
            class(*), pointer:: jup
 
-           jerr=TEREC_SUCCESS; tcgl=0 !tcgl: current length of the tcg_ind_buf/tcg_num_buf
- !Destination subtensors:
-           dstart=tcgl+1 !dstart: start offset of the destination tensor descriptors
-           jerr=dlit%reset()
+           jerr=TEREC_SUCCESS; tcgl=0 !tcgl: current length of the tcg_ind_buf(:)/tcg_num_buf(:)
+ !Left subtensors:
+           lstart=tcgl+1 !start offset of the tensor descriptors
+           jerr=llit%reset()
   !Iterate over subtensors:
            sloop: do while(jerr.eq.GFC_SUCCESS)
    !Get subtensor header:
-            jup=>dlit%get_value(jerr); if(jerr.ne.GFC_SUCCESS) exit sloop
+            jup=>llit%get_value(jerr); if(jerr.ne.GFC_SUCCESS) exit sloop
             jthp=>NULL(); select type(jup); class is(tens_header_t); jthp=>jup; end select
             if(.not.associated(jthp)) then; jerr=TEREC_OBJ_CORRUPTED; exit sloop; endif !trap
-            call jthp%get_spec(sidx,drank,jerr); if(jerr.ne.TEREC_SUCCESS) exit sloop
+            call jthp%get_spec(sidx,lrank,jerr); if(jerr.ne.TEREC_SUCCESS) exit sloop
    !Append the subtensor multi-index (descriptor) into the sorting list:
-            tcgl=tcgl+1; tcg_num_buf(tcgl)=int(tcgl-dstart,INTL); tcg_ind_buf(1:drank,tcgl)=sidx(1:drank) !subtensor number, subspace multi-index
+            tcgl=tcgl+1; tcg_num_buf(tcgl)=int(tcgl-lstart,INTL); tcg_ind_buf(1:lrank,tcgl)=sidx(1:lrank) !subtensor number, subspace multi-index
             
             !`Finish
-            jerr=dlit%next() !next subtensor
+            jerr=llit%next() !next subtensor
            enddo sloop
            if(jerr.eq.GFC_NO_MOVE) jerr=TEREC_SUCCESS
-           dfinish=tcgl !dfinish: end offset of the destination tensor descriptors
+           lfinish=tcgl !dfinish: end offset of the destination tensor descriptors
 
            return
           end subroutine build_descriptors

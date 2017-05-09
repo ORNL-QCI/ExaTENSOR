@@ -91,6 +91,7 @@
           procedure, public:: move_to_sibling=>VecTreeIterMoveToSibling !moves the iterator to the next/previous sibling of the current element in the tree
           procedure, public:: move_to_child=>VecTreeIterMoveToChild     !moves the iterator to the first child of the current element in the tree
           procedure, public:: move_to_parent=>VecTreeIterMoveToParent   !moves the iterator to the parent of the current element in the tree
+          procedure, public:: move_up=>VecTreeIterMoveUp                !moves the iterator towrards the tree root a specific number of hops
           procedure, public:: move_to_cousin=>VecTreeIterMoveToCousin   !moves the iterator to the next/previous cousin of the current element in the tree (same tree level)
           procedure, public:: append=>VecTreeIterAppend                 !appends a new element at the end of the container
           procedure, public:: add_leaf=>VecTreeIterAddLeaf              !appends a new child element to the tree vertex currently pointed to
@@ -126,6 +127,7 @@
         private VecTreeIterMoveToSibling
         private VecTreeIterMoveToChild
         private VecTreeIterMoveToParent
+        private VecTreeIterMoveUp
         private VecTreeIterMoveToCousin
         private VecTreeIterAppend
         private VecTreeIterAddLeaf
@@ -647,6 +649,27 @@
          call this%update_status_()
          return
         end function VecTreeIterMoveToParent
+!-------------------------------------------------------------
+        function VecTreeIterMoveUp(this,num_hops) result(ierr)
+!Moves the iterator towards the tree root a specific number of hops.
+         implicit none
+         integer(INTD):: ierr                         !out: error code
+         class(vec_tree_iter_t), intent(inout):: this !inout: vector tree iterator
+         integer(INTD), intent(in):: num_hops         !in: number of hops to move up
+         integer(INTD):: n
+
+         ierr=GFC_SUCCESS
+         if(num_hops.ge.0) then
+          n=num_hops
+          do while(n.gt.0)
+           ierr=this%move_to_parent(); if(ierr.ne.GFC_SUCCESS) exit
+           n=n-1
+          enddo
+         else
+          ierr=GFC_INVALID_ARGS
+         endif
+         return
+        end function VecTreeIterMoveUp
 !----------------------------------------------------------------------
         function VecTreeIterMoveToCousin(this,to_previous) result(ierr)
 !Moves the iterator either to the next or to the previous cousin in the tree.

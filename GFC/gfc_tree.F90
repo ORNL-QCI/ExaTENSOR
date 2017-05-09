@@ -86,6 +86,7 @@
           procedure, public:: move_to_sibling=>TreeIterMoveToSibling!moves the iterator to the next/previous sibling, if any
           procedure, public:: move_to_child=>TreeIterMoveToChild    !moves the iterator to the first child, if any
           procedure, public:: move_to_parent=>TreeIterMoveToParent  !moves the iterator to the parent, if any
+          procedure, public:: move_up=>TreeIterMoveUp               !moves the iterator towards the root a specific number of hops
           procedure, public:: move_to_cousin=>TreeIterMoveToCousin  !moves the iterator to the next/previous cousin (within the tree level)
           procedure, public:: get_num_children=>TreeIterGetNumChildren !returns the total number of children at the current iterator position
           procedure, public:: get_num_siblings=>TreeIterGetNumSiblings !returns the total number of siblings at the current iterator position
@@ -126,6 +127,7 @@
         private TreeIterMoveToSibling
         private TreeIterMoveToChild
         private TreeIterMoveToParent
+        private TreeIterMoveUp
         private TreeIterMoveToCousin
         private TreeIterGetNumChildren
         private TreeIterGetNumSiblings
@@ -564,6 +566,27 @@
          endif
          return
         end function TreeIterMoveToParent
+!----------------------------------------------------------
+        function TreeIterMoveUp(this,num_hops) result(ierr)
+!Moves the iterator towards the root a specific number of hops.
+         implicit none
+         integer(INTD):: ierr                     !out: error code
+         class(tree_iter_t), intent(inout):: this !inout: tree iterator
+         integer(INTD), intent(in):: num_hops     !in: number of hops to move
+         integer(INTD):: n
+
+         ierr=GFC_SUCCESS
+         if(num_hops.ge.0) then
+          n=num_hops
+          do while(n.gt.0)
+           ierr=this%move_to_parent(); if(ierr.ne.GFC_SUCCESS) exit
+           n=n-1
+          enddo
+         else
+          ierr=GFC_INVALID_ARGS
+         endif
+         return
+        end function TreeIterMoveUp
 !-------------------------------------------------------------------
         function TreeIterMoveToCousin(this,to_previous) result(ierr)
 !Moves the iterator either to the next or to the previous cousin.
