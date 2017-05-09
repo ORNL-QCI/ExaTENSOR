@@ -250,7 +250,7 @@ LTHREAD = $(LTHREAD_$(TOOLKIT))
 #LINKING:
 LFLAGS = $(LTHREAD) $(MPI_LINK) $(LA_LINK) $(CUDA_LINK) $(LIB)
 
-OBJS =  ./OBJ/dil_basic.o ./OBJ/multords.o ./OBJ/combinatoric.o ./OBJ/timers.o ./OBJ/stack.o ./OBJ/lists.o ./OBJ/dictionary.o \
+OBJS =  ./OBJ/dil_basic.o ./OBJ/timers.o ./OBJ/multords.o ./OBJ/combinatoric.o ./OBJ/stack.o ./OBJ/lists.o ./OBJ/dictionary.o \
 	./OBJ/gfc_base.o ./OBJ/gfc_list.o ./OBJ/gfc_tree.o ./OBJ/gfc_stack.o ./OBJ/gfc_vector.o ./OBJ/gfc_vec_tree.o \
 	./OBJ/gfc_queue.o ./OBJ/gfc_pri_queue.o ./OBJ/gfc_dictionary.o ./OBJ/gfc_hash_map.o ./OBJ/gfc_graph.o
 
