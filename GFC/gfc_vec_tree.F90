@@ -80,6 +80,7 @@
           procedure, public:: previous=>VecTreeIterPrevious             !moves the iterator to the previous container element (only the vector part if tree is not fully built)
           procedure, public:: get_length=>VecTreeIterGetLength          !returns the current length of the container
           procedure, public:: get_offset=>VecTreeIterGetOffset          !returns the current offset in the container
+          procedure, public:: get_level=>VecTreeIterGetLevel            !returns the distance from the tree root for the current iterator position
           procedure, public:: get_root_id=>VecTreeIterGetRootId         !returns the offset of the tree root node
           procedure, public:: get_num_children=>VecTreeIterGetNumChildren !returns the total number of children in the current (tree) iterator position
           procedure, public:: get_num_siblings=>VecTreeIterGetNumSiblings !returns the total number of siblings in the current (tree) iterator position
@@ -114,6 +115,7 @@
         private VecTreeIterPrevious
         private VecTreeIterGetLength
         private VecTreeIterGetOffset
+        private VecTreeIterGetLevel
         private VecTreeIterGetRootId
         private VecTreeIterGetNumChildren
         private VecTreeIterGetNumSiblings
@@ -436,6 +438,19 @@
          if(present(ierr)) ierr=errc
          return
         end function VecTreeIterGetOffset
+!------------------------------------------------------------
+        function VecTreeIterGetLevel(this,ierr) result(level)
+!Returns the distance from the tree root for the current iterator position.
+         implicit none
+         integer(INTD):: level                        !out: distance from the tree root
+         class(vec_tree_iter_t), intent(inout):: this !in: vector tree iterator
+         integer(INTD), intent(out), optional:: ierr  !out: error code
+         integer(INTD):: errc
+
+         level=this%tree_it%get_level(errc)
+         if(present(ierr)) ierr=errc
+         return
+        end function VecTreeIterGetLevel
 !--------------------------------------------------------------
         function VecTreeIterGetRootId(this,ierr) result(offset)
 !Returns the offset of the tree root node.

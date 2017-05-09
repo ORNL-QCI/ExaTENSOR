@@ -4900,23 +4900,48 @@
           end subroutine create_test_space
 
         end subroutine test_tens_rcrsv
+!------------------------------------------------------------------------------
+        function tens_split_func(tensor,subtensors,num_subtensors) result(ierr)
+         implicit none
+         integer(INTD):: ierr                        !out: error code
+         class(tens_rcrsv_t), intent(in):: tensor    !in: tensor
+         type(list_bi_t), intent(inout):: subtensors !out: list of subtensors
+         integer(INTD), intent(out):: num_subtensors !out: number of generated subtensors
+         integer(INTD):: i,nd
+
+         num_subtensors=0
+         if(tensor%is_set(ierr,num_dims=nd)) then
+          if(ierr.eq.TEREC_SUCCESS.and.nd.gt.0) then
+           call tensor%split((/(i,i=1,nd)/),subtensors,ierr,num_subtensors)
+          else
+           if(ierr.eq.TEREC_SUCCESS) ierr=TEREC_INVALID_REQUEST
+          endif
+         else
+          ierr=TEREC_INVALID_REQUEST
+         endif
+         return
+        end function tens_split_func
 !---------------------------------------------
         subroutine test_tens_contraction(ierr)
          implicit none
          integer(INTD), intent(out):: ierr
+         !-------------------------------------
          integer(INTD), parameter:: tens_rank=4          !tensor rank
-         integer(INTL), parameter:: TEST_SPACE_DIM=33    !vector space dimension
+         integer(INTL), parameter:: TEST_SPACE_DIM=33    !full vector space dimension
+         !-------------------------------------------
          type(spher_symmetry_t):: symm(1:TEST_SPACE_DIM) !symmetry of each basis vector
          type(subspace_basis_t):: full_basis             !full vector space basis
          class(h_space_t), pointer:: hspace              !hierarchical representation of the vector space
          integer(INTL):: spcx(1:MAX_TENSOR_RANK),dims(1:MAX_TENSOR_RANK),space_id,max_res
          integer(INTD):: dimg(1:MAX_TENSOR_RANK),grps(1:MAX_TENSOR_RANK),contr_ptrn(1:MAX_TENSOR_RANK*2)
-         integer(INTD):: hsid,j
+         integer(INTD):: j,hsid,num_subcontractions
          class(subspace_t), pointer:: ssp
          type(tens_rcrsv_t):: dtens,ltens,rtens
          type(tens_contraction_t):: tens_contr
+         type(tens_contraction_t), pointer:: subcontr_p
          type(list_bi_t):: subcontractions
          type(list_iter_t):: lit
+         class(*), pointer:: up
 
  !Build a hierarchical representation for a test vector space:
          hsid=hspace_register%register_space('NewSpace',ierr,hspace); if(ierr.ne.TEREC_SUCCESS) then; ierr=1; return; endif
@@ -4948,7 +4973,8 @@
          call rtens%tens_rcrsv_ctor('T2',spcx(1:tens_rank),(/(hsid,j=1,tens_rank)/),ierr,&
                                    &dims(1:tens_rank),dimg(1:tens_rank),grps(1:2))
          if(ierr.ne.0) then; ierr=9; return; endif
- !Create the full tensor contraction specification: Z2(a,b,i,j)+=H2(i,k,a,c)*T2(b,c,j,k):
+ !Create the full tensor contraction specification for
+ !Z2(a,b,i,j)+=H2(i,k,a,c)*T2(b,c,j,k): [a<b] [i<j]
   !Set tensor contraction arguments:
          call tens_contr%set_argument(dtens,ierr); if(ierr.ne.0) then; ierr=10; return; endif
          call tens_contr%set_argument(ltens,ierr); if(ierr.ne.0) then; ierr=11; return; endif
@@ -4958,11 +4984,25 @@
          contr_ptrn(1:tens_rank+tens_rank)=(/3,-4,1,-2, 2,-4,4,-2/)
          call tens_contr%set_contr_ptrn(contr_ptrn,ierr); if(ierr.ne.0) then; ierr=13; return; endif
   !Relax symmetries, if needed:
-         call tens_contr%set_operl_symm(0,(/1,2/),ierr); if(ierr.ne.0) then; ierr=14; return; endif
-         call tens_contr%set_operl_symm(0,(/3,4/),ierr); if(ierr.ne.0) then; ierr=15; return; endif
+         call tens_contr%set_operl_symm(0,(/1,2/),ierr); if(ierr.ne.0) then; ierr=14; return; endif ![a<b]
+         call tens_contr%set_operl_symm(0,(/3,4/),ierr); if(ierr.ne.0) then; ierr=15; return; endif ![i<j]
          !call tens_contr%print_it() !debug
  !Split the tensor contraction into a list of subtensor contractions:
-         !`Finish
+         call tens_contr%split(tens_split_func,subcontractions,ierr,num_subcontractions)
+         if(ierr.ne.0) then; ierr=16; return; endif
+         write(*,*) 'Number of subtensor contractions = ',num_subcontractions !debug
+ !Print subcontractions (debug):
+         ierr=lit%init(subcontractions); if(ierr.ne.GFC_SUCCESS) then; ierr=17; return; endif
+         do j=1,num_subcontractions
+          write(*,'("Subtensor contraction ",i7,":")') j
+          up=>lit%get_value(ierr); if(ierr.ne.GFC_SUCCESS) then; ierr=18; return; endif
+          subcontr_p=>NULL(); select type(up); class is(tens_contraction_t); subcontr_p=>up; end select
+          if(.not.associated(subcontr_p)) then; ierr=19; return; endif
+          call subcontr_p%print_it(ierr,nspaces=1)
+          ierr=lit%next(); if(ierr.ne.GFC_SUCCESS.and.j.lt.num_subcontractions) then; ierr=20; return; endif
+         enddo
+         if(ierr.ne.GFC_NO_MOVE) then; ierr=21; return; endif
+         ierr=lit%release(); if(ierr.ne.GFC_SUCCESS) then; ierr=22; return; endif
          return
 
          contains

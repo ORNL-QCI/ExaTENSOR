@@ -94,6 +94,7 @@
           procedure, public:: get_root=>TreeIterGetRoot             !returns a pointer to the tree root
           procedure, public:: get_parent=>TreeIterGetParent         !returns a pointer to the parent of the current vertex
           procedure, public:: get_child=>TreeIterGetChild           !returns a pointer to the specific child of the current vertex
+          procedure, public:: get_level=>TreeIterGetLevel           !returns the distance from the root for the current tree vertex
           procedure, public:: add_leaf=>TreeIterAddLeaf             !adds a new leaf element to the element of the container currently pointed to
           procedure, public:: delete_leaf=>TreeIterDeleteLeaf       !deletes the leaf pointed to by the iterator (if it is actually a leaf)
           procedure, public:: attach_subtree=>TreeIterAttachSubtree !attaches a subtree to the element of the container currently pointed to as the last child
@@ -133,6 +134,7 @@
         private TreeIterGetRoot
         private TreeIterGetParent
         private TreeIterGetChild
+        private TreeIterGetLevel
         private TreeIterAddLeaf
         private TreeIterDeleteLeaf
         private TreeIterAttachSubtree
@@ -774,6 +776,29 @@
          if(present(ierr)) ierr=errc
          return
         end function TreeIterGetChild
+!---------------------------------------------------------
+        function TreeIterGetLevel(this,ierr) result(level)
+!Returns the distance from the tree root for the current tree vertex.
+         implicit none
+         integer(INTD):: level                       !out: distance from the tree root (in hops)
+         class(tree_iter_t), intent(inout):: this    !in: tree iterator
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+         class(tree_vertex_t), pointer:: tvp
+
+         level=-1; errc=this%get_status()
+         if(errc.eq.GFC_IT_ACTIVE) then
+          errc=GFC_SUCCESS; tvp=>this%current
+          do while(errc.eq.GFC_SUCCESS)
+           level=level+1
+           errc=this%move_to_parent()
+          enddo
+          if(errc.eq.GFC_NO_MOVE) errc=GFC_SUCCESS
+          call this%jump_(tvp) !restore the original iterator position
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function TreeIterGetLevel
 !------------------------------------------------------------------------------------------
 #ifdef NO_GNU
         function TreeIterAddLeaf(this,elem_val,assoc_only,no_move,copy_ctor_f) result(ierr) !`GCC/5.3.0 has a bug with this

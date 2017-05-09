@@ -254,6 +254,7 @@
           procedure, public:: get_space_dim=>HSpaceGetSpaceDim          !returns the dimension of the vector space
           procedure, public:: get_num_subspaces=>HSpaceGetNumSubspaces  !returns the total number of defined subspaces in the vector space
           procedure, public:: get_root_id=>HSpaceGetRootId              !returns the id of the full space (root of the subspace aggregation tree)
+          procedure, public:: get_subspace_level=>HSpaceGetSubspaceLevel!returns the distance from the root for the specific subspace
           procedure, public:: get_subspace=>HSpaceGetSubspace           !returns a pointer to the requested subspace of the hierarchical vector space
           procedure, public:: get_aggr_tree=>HSpaceGetAggrTree          !returns a pointer to the subspace aggregation tree (->subspaces)
           procedure, public:: compare_subspaces=>HSpaceCompareSubspaces !compares two subspaces from the hierarchical vector space: {CMP_EQ,CMP_LT,CMP_GT,CMP_ER}
@@ -374,6 +375,7 @@
         private HSpaceGetSpaceDim
         private HSpaceGetNumSubspaces
         private HSpaceGetRootId
+        private HSpaceGetSubspaceLevel
         private HSpaceGetSubspace
         private HSpaceGetAggrTree
         private HSpaceCompareSubspaces
@@ -2303,6 +2305,26 @@
          if(present(ierr)) ierr=errc
          return
         end function HSpaceGetRootId
+!---------------------------------------------------------------------------
+        function HSpaceGetSubspaceLevel(this,subspace_id,ierr) result(level)
+!Returns the distance from the root for a specific subspace.
+         implicit none
+         integer(INTD):: level                       !out: distance from the root (in hops)
+         class(h_space_t), intent(inout):: this      !in: hierarchical vector space
+         integer(INTL), intent(in):: subspace_id     !in: subspace id
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc,i
+         type(vec_tree_iter_t):: vtit
+
+         level=-1; errc=vtit%init(this%subspaces)
+         if(errc.eq.GFC_SUCCESS) then
+          errc=vtit%move_to(subspace_id)
+          if(errc.eq.GFC_SUCCESS) level=vtit%get_level(errc)
+          i=vtit%release(); if(i.ne.GFC_SUCCESS.and.errc.eq.GFC_SUCCESS) errc=i
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function HSpaceGetSubspaceLevel
 !---------------------------------------------------------------------------
         function HSpaceGetSubspace(this,subspace_id,ierr) result(subspace_p)
 !Returns a pointer to the requested subspace from the hierarchical vector space.
