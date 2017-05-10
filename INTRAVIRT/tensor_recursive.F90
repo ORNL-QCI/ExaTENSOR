@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/05/09
+!REVISION: 2017/05/10
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -32,6 +32,7 @@
         use gfc_vector
         use gfc_vec_tree
         use gfc_dictionary
+        use multords, only: multord_i8e
         use subspaces
         use pack_prim
         use distributed, only: DataDescr_t
@@ -317,6 +318,7 @@
           procedure, public:: args_full=>TensContractionArgsFull          !returns TRUE if all tensor contraction arguments have been set
           procedure, public:: set_contr_ptrn=>TensContractionSetContrPtrn !sets the tensor contraction pattern (all tensor arguments must have been set already)
           procedure, public:: set_operl_symm=>TensContractionSetOperlSymm !sets index permutational symmetry restrictions due to tensor operation (both contraction pattern and arguments must have been set already)
+          procedure, public:: get_contr_ptrn=>TensContractionGetContrPtrn !returns the classical (basic) digital contraction pattern used by TAL-SH for example
           procedure, public:: print_it=>TensContractionPrintIt            !prints the tensor contraction info
           procedure, public:: split=>TensContractionSplit                 !splits the tensor contraction into a list of subtensor contractions based on the pre-existing lists of argument subtensors
         end type tens_contraction_t
@@ -372,6 +374,7 @@
         public cmp_tens_signatures
         public cmp_tens_headers
         public print_tens_header_f
+        public print_tcg_buffer
  !hspace_register_t:
         private HspaceRegisterInit
         private HspaceRegisterRegisterSpace
@@ -512,14 +515,15 @@
         private TensContractionArgsFull
         private TensContractionSetContrPtrn
         private TensContractionSetOperlSymm
+        private TensContractionGetContrPtrn
         private TensContractionPrintIt
         private TensContractionSplit
 !DATA:
  !Register of hierarchical vector spaces (only these spaces can be used in tensors):
         type(hspace_register_t), public:: hspace_register
  !Tensor contraction generator: subtensor buffer:
-        integer(INTL), allocatable, private:: tcg_ind_buf(:,:) !subtensor index buffer (private to each OpenMP thread)
-        integer(INTL), allocatable, private:: tcg_num_buf(:)   !subtensor number buffer (private to each OpenMP thread)
+        integer(INTL), allocatable, target, private:: tcg_ind_buf(:,:) !subtensor index buffer (private to each OpenMP thread)
+        integer(INTL), allocatable, target, private:: tcg_num_buf(:)   !subtensor number buffer (private to each OpenMP thread)
 !$OMP THREADPRIVATE(tcg_ind_buf,tcg_num_buf)
 
        contains
@@ -605,6 +609,26 @@
          end select
          return
         end function print_tens_header_f
+!-------------------------------------------------------
+        subroutine print_tcg_buffer(start,finish,length)
+!Dumps the current content of the TCG buffer.
+         implicit none
+         integer(INTD), intent(in):: start
+         integer(INTD), intent(in):: finish
+         integer(INTD), intent(in):: length
+         integer(INTD):: i
+
+         write(CONS_OUT,'("PRINTING TCG BUFFER: ",i8," - ",i8)') start,finish
+         if(allocated(tcg_num_buf)) then
+          if(start.ge.lbound(tcg_num_buf,1).and.finish.le.ubound(tcg_num_buf,1)) then
+           do i=start,finish
+            write(CONS_OUT,'(i8,3x,32(1x,i5))') tcg_num_buf(i),tcg_ind_buf(1:length,i)
+           enddo
+          endif
+         endif
+         write(CONS_OUT,'("END OF PRINTING")')
+         return
+        end subroutine print_tcg_buffer
 ![hspace_register_t]=========================================================================
         subroutine HspaceRegisterInit(this,ierr)
 !Initializes the register of hierarchical vector spaces.
@@ -4407,6 +4431,21 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensContractionSetOperlSymm
+!-------------------------------------------------------------------------
+        subroutine TensContractionGetContrPtrn(this,nl,nr,contr_ptrn,ierr)
+!Returns the basic digital tensor contraction pattern used by TAL-SH.
+         implicit none
+         class(tens_contraction_t), intent(in):: this   !in: tensor contraction
+         integer(INTD), intent(out):: nl                !out: left tensor rank
+         integer(INTD), intent(out):: nr                !out: right tensor rank
+         integer(INTD), intent(inout):: contr_ptrn(1:*) !out: basic digital tensor contraction pattern
+         integer(INTD), intent(out), optional:: ierr    !out: error code
+         integer(INTD):: errc
+
+         call this%contr_ptrn%get_contr_ptrn(nl,nr,contr_ptrn,errc)
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensContractionGetContrPtrn
 !------------------------------------------------------------------
         subroutine TensContractionPrintIt(this,ierr,dev_id,nspaces)
 !Prints the tensor contraction info.
@@ -4455,30 +4494,39 @@
          type(list_bi_t), intent(inout):: subops           !inout: list of subtensor contractions
          integer(INTD), intent(out), optional:: ierr       !out: error code
          integer(INTD), intent(out), optional:: num_subops !out: number of subcontractions generated from the parental tensor contraction here
-         integer(INTD):: i,errc,nsub,tcgl,drank,lrank,rrank,dsl,lsl,rsl,dstart,dfinish,lstart,lfinish,rstart,rfinish
-         type(list_bi_t):: dsubs,lsubs,rsubs
-         type(list_iter_t):: dlit,llit,rlit,slit
+         integer(INTD):: i,errc,nsub,tcgl
+         integer(INTD):: drank,lrank,rrank,dsl,lsl,rsl,dstart,dfinish,lstart,lfinish,rstart,rfinish,pstart,pfinish
+         integer(INTD):: nci,cptrn(1:MAX_TENSOR_RANK*2)  !basic tensor contraction pattern (as specified by TAL-SH)
+         integer(INTD):: ord(1:MAX_TENSOR_RANK,0:2)      !N2O dimension order (0:destination,1:left,2:right)
+         integer(INTD):: adj(1:MAX_TENSOR_RANK,0:2)      !tree level adjustment for dimensions of tensor arguments (0:destination,1:left,2:right)
+         type(hspace_reg_t):: ths(1:MAX_TENSOR_RANK,0:2) !h_space of each dimension of each tensor argument (0:destination,1:left,2:right)
+         type(list_bi_t):: dsubs,lsubs,rsubs             !subtensor lists
+         type(list_iter_t):: dlit,llit,rlit,slit         !list iterators
+         integer(INTL):: dmsi,lmsi,rmsi                  !maximum subspace id in the sorting lists for D,L,R
 
          nsub=0 !number of generated subcontractions
          if(this%is_set(errc)) then
           if(errc.eq.TEREC_SUCCESS) then
            if(check_allocate_buffers()) then !checks/allocates sorting buffers tcg_ind_buf/tcg_num_buf
-            errc=slit%init(subops)
-            if(errc.eq.GFC_SUCCESS) then
-             call generate_subtensors(errc) !generates dsubs, lsubs, and rsubs, and associates them with list iterators (dlit,llit,rlit)
+            call generate_subtensors(errc) !generates dsubs, lsubs, and rsubs, and associates them with list iterators (dlit,llit,rlit)
+            if(errc.eq.TEREC_SUCCESS) then
+             call align_levels(errc) !sets cptrn(:), ths(:,:), and adj(:,:) for all tensor arguments (SAT level adjustment for tensor dimensions)
              if(errc.eq.TEREC_SUCCESS) then
               call build_descriptors(errc) !generates lists of subtensor descriptors in tcg_ind_buf/tcg_num_buf for each tensor argument
               if(errc.eq.TEREC_SUCCESS) then
-               call generate_subcontractions(errc) !generates subtensor contractions by matching descriptor lists
+               errc=slit%init(subops) !iterator for the list of subcontractions
+               if(errc.eq.GFC_SUCCESS) then
+                call generate_subcontractions(errc) !generates subtensor contractions by matching descriptor lists
+                i=slit%release(); if(i.ne.GFC_SUCCESS.and.errc.eq.TEREC_SUCCESS) errc=TEREC_ERROR
+               endif
+               i=rlit%delete_all(); if(i.ne.GFC_SUCCESS.and.errc.eq.TEREC_SUCCESS) errc=TEREC_ERROR
+               i=rlit%release(); if(i.ne.GFC_SUCCESS.and.errc.eq.TEREC_SUCCESS) errc=TEREC_ERROR
+               i=llit%delete_all(); if(i.ne.GFC_SUCCESS.and.errc.eq.TEREC_SUCCESS) errc=TEREC_ERROR
+               i=llit%release(); if(i.ne.GFC_SUCCESS.and.errc.eq.TEREC_SUCCESS) errc=TEREC_ERROR
+               i=dlit%delete_all(); if(i.ne.GFC_SUCCESS.and.errc.eq.TEREC_SUCCESS) errc=TEREC_ERROR
+               i=dlit%release(); if(i.ne.GFC_SUCCESS.and.errc.eq.TEREC_SUCCESS) errc=TEREC_ERROR
               endif
-              i=rlit%delete_all(); if(i.ne.GFC_SUCCESS.and.errc.eq.TEREC_SUCCESS) errc=TEREC_ERROR
-              i=rlit%release(); if(i.ne.GFC_SUCCESS.and.errc.eq.TEREC_SUCCESS) errc=TEREC_ERROR
-              i=llit%delete_all(); if(i.ne.GFC_SUCCESS.and.errc.eq.TEREC_SUCCESS) errc=TEREC_ERROR
-              i=llit%release(); if(i.ne.GFC_SUCCESS.and.errc.eq.TEREC_SUCCESS) errc=TEREC_ERROR
-              i=dlit%delete_all(); if(i.ne.GFC_SUCCESS.and.errc.eq.TEREC_SUCCESS) errc=TEREC_ERROR
-              i=dlit%release(); if(i.ne.GFC_SUCCESS.and.errc.eq.TEREC_SUCCESS) errc=TEREC_ERROR
              endif
-             i=slit%release(); if(i.ne.GFC_SUCCESS.and.errc.eq.TEREC_SUCCESS) errc=TEREC_ERROR
             endif
            else
             errc=TEREC_MEM_ALLOC_FAILED
@@ -4549,42 +4597,310 @@
            return
           end subroutine generate_subtensors
 
+          subroutine align_levels(jerr)
+           implicit none
+           integer(INTD), intent(out):: jerr
+           class(*), pointer:: jup
+           class(tens_header_t), pointer:: lthp,rthp
+           class(h_space_t), pointer:: lhsp,rhsp
+           integer(INTD):: j1,j2,jl1,jl2
+           integer(INTL):: jts(1:MAX_TENSOR_RANK,0:2)
+
+           drank=0; lrank=0; rrank=0
+ !Destination tensor argument (just get h_spaces):
+           jerr=dlit%reset()
+           if(jerr.eq.GFC_SUCCESS) then
+            jup=>dlit%get_value(jerr)
+            if(jerr.eq.GFC_SUCCESS) then
+             lthp=>NULL(); select type(jup); class is(tens_header_t); lthp=>jup; end select
+             if(associated(lthp)) then
+              call lthp%get_spec(jts(:,0),drank,jerr,ths(:,0))
+             else
+              jerr=TEREC_OBJ_CORRUPTED
+             endif
+            endif
+           endif
+ !Left and right tensor arguments (get h_spaces and set SAT level adjustment for all):
+           if(jerr.eq.TEREC_SUCCESS) then
+            jerr=llit%reset()
+            if(jerr.eq.GFC_SUCCESS) then
+             jup=>llit%get_value(jerr)
+             if(jerr.eq.GFC_SUCCESS) then
+              lthp=>NULL(); select type(jup); class is(tens_header_t); lthp=>jup; end select
+              if(associated(lthp)) then
+               call lthp%get_spec(jts(:,1),lrank,jerr,ths(:,1))
+               if(jerr.eq.TEREC_SUCCESS) then
+                jerr=rlit%reset()
+                if(jerr.eq.GFC_SUCCESS) then
+                 jup=>rlit%get_value(jerr)
+                 if(jerr.eq.GFC_SUCCESS) then
+                  rthp=>NULL(); select type(jup); class is(tens_header_t); rthp=>jup; end select
+                  if(associated(rthp)) then
+                   call rthp%get_spec(jts(:,2),rrank,jerr,ths(:,2))
+                   if(jerr.eq.TEREC_SUCCESS) then
+                    adj(1:drank,0)=0; adj(1:lrank,1)=0; adj(1:rrank,2)=0
+                    call this%get_contr_ptrn(j1,j2,cptrn,jerr) !get basic contraction pattern
+                    if(jerr.eq.TEREC_SUCCESS) then
+                     if(lrank+rrank.gt.0) then
+                      do j1=1,lrank !dimensions of the left tensor
+                       j2=cptrn(j1)
+                       if(j2.lt.0) then !contracted dimension: abs(j2) = position in the right tensor
+                        j2=-j2 !corresponding dimension in the right tensor
+                        lhsp=>ths(j1,1)%get_space(jerr); if(jerr.ne.TEREC_SUCCESS) exit
+                        jl1=lhsp%get_subspace_level(jts(j1,1),jerr); if(jerr.ne.TEREC_SUCCESS) exit
+                        rhsp=>ths(j2,2)%get_space(jerr); if(jerr.ne.TEREC_SUCCESS) exit
+                        jl2=rhsp%get_subspace_level(jts(j2,2),jerr); if(jerr.ne.TEREC_SUCCESS) exit
+                        if(jl1.lt.jl2) then; adj(j2,2)=jl2-jl1; elseif(jl1.gt.jl2) then; adj(j1,1)=jl1-jl2; endif
+                       else !uncontracted dimension: j2 = position in the destination tensor
+                        lhsp=>ths(j1,1)%get_space(jerr); if(jerr.ne.TEREC_SUCCESS) exit
+                        jl1=lhsp%get_subspace_level(jts(j1,1),jerr); if(jerr.ne.TEREC_SUCCESS) exit
+                        rhsp=>ths(j2,0)%get_space(jerr); if(jerr.ne.TEREC_SUCCESS) exit
+                        jl2=rhsp%get_subspace_level(jts(j2,0),jerr); if(jerr.ne.TEREC_SUCCESS) exit
+                        if(jl1.lt.jl2) then; adj(j2,0)=jl2-jl1; elseif(jl1.gt.jl2) then; adj(j1,1)=jl1-jl2; endif
+                       endif
+                      enddo
+                      do j1=1,rrank !dimensions of the right tensor
+                       j2=cptrn(lrank+j1)
+                       if(j2.gt.0) then !uncontracted dimension: j2 = position in the destination tensor
+                        lhsp=>ths(j1,2)%get_space(jerr); if(jerr.ne.TEREC_SUCCESS) exit
+                        jl1=lhsp%get_subspace_level(jts(j1,2),jerr); if(jerr.ne.TEREC_SUCCESS) exit
+                        rhsp=>ths(j2,0)%get_space(jerr); if(jerr.ne.TEREC_SUCCESS) exit
+                        jl2=rhsp%get_subspace_level(jts(j2,0),jerr); if(jerr.ne.TEREC_SUCCESS) exit
+                        if(jl1.lt.jl2) then; adj(j2,0)=jl2-jl1; elseif(jl1.gt.jl2) then; adj(j1,2)=jl1-jl2; endif
+                       endif
+                      enddo
+                     endif
+                    endif
+                   endif
+                  else
+                   jerr=TEREC_OBJ_CORRUPTED
+                  endif
+                 endif
+                endif
+               endif
+              else
+               jerr=TEREC_OBJ_CORRUPTED
+              endif
+             endif
+            endif
+           endif
+           nci=(lrank+rrank-drank)/2 !number of contracted indices
+           return
+          end subroutine align_levels
+
           subroutine build_descriptors(jerr)
            implicit none
            integer(INTD), intent(out):: jerr
            integer(INTL):: sidx(1:MAX_TENSOR_RANK)
            class(tens_header_t), pointer:: jthp
            class(*), pointer:: jup
+           integer(INTD):: ji,ja
+           class(h_space_t), pointer:: jhsp
 
            jerr=TEREC_SUCCESS; tcgl=0 !tcgl: current length of the tcg_ind_buf(:)/tcg_num_buf(:)
  !Left subtensors:
-           lstart=tcgl+1 !start offset of the tensor descriptors
+           lstart=tcgl+1; lmsi=0_INTL !start offset of the tensor descriptors and maximum subspace id
            jerr=llit%reset()
   !Iterate over subtensors:
-           sloop: do while(jerr.eq.GFC_SUCCESS)
+           lloop: do while(jerr.eq.GFC_SUCCESS)
    !Get subtensor header:
-            jup=>llit%get_value(jerr); if(jerr.ne.GFC_SUCCESS) exit sloop
+            jup=>llit%get_value(jerr); if(jerr.ne.GFC_SUCCESS) exit lloop
             jthp=>NULL(); select type(jup); class is(tens_header_t); jthp=>jup; end select
-            if(.not.associated(jthp)) then; jerr=TEREC_OBJ_CORRUPTED; exit sloop; endif !trap
-            call jthp%get_spec(sidx,lrank,jerr); if(jerr.ne.TEREC_SUCCESS) exit sloop
-   !Append the subtensor multi-index (descriptor) into the sorting list:
-            tcgl=tcgl+1; tcg_num_buf(tcgl)=int(tcgl-lstart,INTL); tcg_ind_buf(1:lrank,tcgl)=sidx(1:lrank) !subtensor number, subspace multi-index
-            
-            !`Finish
+            if(.not.associated(jthp)) then; jerr=TEREC_OBJ_CORRUPTED; exit lloop; endif !trap
+            call jthp%get_spec(sidx,lrank,jerr); if(jerr.ne.TEREC_SUCCESS) exit lloop
+   !Append the subtensor multi-index (descriptor) into the sorting list (adjust dimension SAT level, if needed):
+            tcgl=tcgl+1; tcg_num_buf(tcgl)=int(tcgl-lstart,INTL) !subtensor number: [0..max]
+            do ji=1,lrank
+             if(adj(ji,1).gt.0) then !promotion to an ancestor SAT level is needed
+              jhsp=>ths(ji,1)%get_space(jerr); if(jerr.ne.TEREC_SUCCESS) exit lloop
+              tcg_ind_buf(ji,tcgl)=jhsp%get_ancestor_id(sidx(ji),adj(ji,1),jerr); if(jerr.ne.TEREC_SUCCESS) exit lloop
+             else
+              tcg_ind_buf(ji,tcgl)=sidx(ji)
+             endif
+            enddo
+            do ji=1,lrank; lmsi=max(lmsi,tcg_ind_buf(ji,tcgl)); enddo
             jerr=llit%next() !next subtensor
-           enddo sloop
+           enddo lloop
            if(jerr.eq.GFC_NO_MOVE) jerr=TEREC_SUCCESS
            lfinish=tcgl !dfinish: end offset of the destination tensor descriptors
-
+           !call print_tcg_buffer(lstart,lfinish,lrank) !debug
+ !Right subtensors:
+           rstart=tcgl+1; rmsi=0_INTL !start offset of the tensor descriptors and maximum subspace id
+           jerr=rlit%reset()
+  !Iterate over subtensors:
+           rloop: do while(jerr.eq.GFC_SUCCESS)
+   !Get subtensor header:
+            jup=>rlit%get_value(jerr); if(jerr.ne.GFC_SUCCESS) exit rloop
+            jthp=>NULL(); select type(jup); class is(tens_header_t); jthp=>jup; end select
+            if(.not.associated(jthp)) then; jerr=TEREC_OBJ_CORRUPTED; exit rloop; endif !trap
+            call jthp%get_spec(sidx,rrank,jerr); if(jerr.ne.TEREC_SUCCESS) exit rloop
+   !Append the subtensor multi-index (descriptor) into the sorting list (adjust dimension SAT level, if needed):
+            tcgl=tcgl+1; tcg_num_buf(tcgl)=int(tcgl-rstart,INTL) !subtensor number: [0..max]
+            do ji=1,rrank
+             if(adj(ji,2).gt.0) then !promotion to an ancestor SAT level is needed
+              jhsp=>ths(ji,2)%get_space(jerr); if(jerr.ne.TEREC_SUCCESS) exit rloop
+              tcg_ind_buf(ji,tcgl)=jhsp%get_ancestor_id(sidx(ji),adj(ji,2),jerr); if(jerr.ne.TEREC_SUCCESS) exit rloop
+             else
+              tcg_ind_buf(ji,tcgl)=sidx(ji)
+             endif
+            enddo
+            do ji=1,rrank; rmsi=max(rmsi,tcg_ind_buf(ji,tcgl)); enddo
+            jerr=rlit%next() !next subtensor
+           enddo rloop
+           if(jerr.eq.GFC_NO_MOVE) jerr=TEREC_SUCCESS
+           rfinish=tcgl !dfinish: end offset of the destination tensor descriptors
+           !call print_tcg_buffer(rstart,rfinish,rrank) !debug
+ !Destination subtensors:
+           dstart=tcgl+1; dmsi=0_INTL !start offset of the tensor descriptors and maximum subspace id
+           jerr=dlit%reset()
+  !Iterate over subtensors:
+           dloop: do while(jerr.eq.GFC_SUCCESS)
+   !Get subtensor header:
+            jup=>dlit%get_value(jerr); if(jerr.ne.GFC_SUCCESS) exit dloop
+            jthp=>NULL(); select type(jup); class is(tens_header_t); jthp=>jup; end select
+            if(.not.associated(jthp)) then; jerr=TEREC_OBJ_CORRUPTED; exit dloop; endif !trap
+            call jthp%get_spec(sidx,drank,jerr); if(jerr.ne.TEREC_SUCCESS) exit dloop
+   !Append the subtensor multi-index (descriptor) into the sorting list (adjust dimension SAT level, if needed):
+            tcgl=tcgl+1; tcg_num_buf(tcgl)=int(tcgl-dstart,INTL) !subtensor number: [0..max]
+            do ji=1,drank
+             if(adj(ji,0).gt.0) then !promotion to an ancestor SAT level is needed
+              jhsp=>ths(ji,0)%get_space(jerr); if(jerr.ne.TEREC_SUCCESS) exit dloop
+              tcg_ind_buf(ji,tcgl)=jhsp%get_ancestor_id(sidx(ji),adj(ji,0),jerr); if(jerr.ne.TEREC_SUCCESS) exit dloop
+             else
+              tcg_ind_buf(ji,tcgl)=sidx(ji)
+             endif
+            enddo
+            do ji=1,drank; dmsi=max(dmsi,tcg_ind_buf(ji,tcgl)); enddo
+            jerr=dlit%next() !next subtensor
+           enddo dloop
+           if(jerr.eq.GFC_NO_MOVE) jerr=TEREC_SUCCESS
+           dfinish=tcgl !dfinish: end offset of the destination tensor descriptors
+           !call print_tcg_buffer(dstart,dfinish,drank) !debug
            return
           end subroutine build_descriptors
 
           subroutine generate_subcontractions(jerr)
            implicit none
            integer(INTD), intent(out):: jerr
+           integer(INTL), pointer, contiguous:: ext_buf(:),iv(:,:),v(:)
+           integer(INTD):: j1,j2,jn,ji,jj,jif,jjf,jnc,jnu,jprm(1:MAX_TENSOR_RANK)
+           integer(INTL):: jub
 
            jerr=TEREC_SUCCESS
-           !`Write
+ !Determine dimension order:
+           jnc=0; jnu=0
+           do ji=1,lrank
+            jj=cptrn(ji)
+            if(jj.lt.0) then !contracted index
+             jj=-jj; jnc=jnc+1; ord(jnc,1)=ji; ord(jnc,2)=jj
+            else !uncontracted index
+             jnu=jnu+1; ord(nci+jnu,1)=ji; ord(jnu,0)=jj
+            endif
+           enddo
+           jnc=0
+           do ji=1,rrank
+            jj=cptrn(lrank+ji)
+            if(jj.gt.0) then !uncontracted index
+             jnc=jnc+1; ord(nci+jnc,2)=ji; jnu=jnu+1; ord(jnu,0)=jj
+            endif
+           enddo
+           write(CONS_OUT,'("D dimension order:",32(1x,i2))') ord(1:drank,0) !debug: position in D
+           write(CONS_OUT,'("L dimension order:",32(1x,i2))') ord(1:lrank,1) !debug: N2O for L
+           write(CONS_OUT,'("R dimension order:",32(1x,i2))') ord(1:rrank,2) !debug: N2O for R
+ !Sort tensor descriptors:
+  !Use the rest of the TCG buffer as an external buffer:
+           jub=(int(ubound(tcg_ind_buf,2),INTL)-tcgl)*int(size(tcg_ind_buf,1),INTL)
+           ext_buf(1:jub)=>tcg_ind_buf(:,tcgl+1:) !`Does this introduce a temporary copy?
+  !Sort left descriptors:
+           if(lrank.gt.0) then
+            iv=>tcg_ind_buf(:,lstart:lfinish)
+            v=>tcg_num_buf(lstart:lfinish)
+            call multord_i8e(lrank,lmsi,int(lfinish-lstart+1,INTL),ord(1:lrank,1),iv,v,ext_buf)
+            call print_tcg_buffer(lstart,lfinish,lrank) !debug
+           endif
+  !Sort right descriptors:
+           if(rrank.gt.0) then
+            iv=>tcg_ind_buf(:,rstart:rfinish)
+            v=>tcg_num_buf(rstart:rfinish)
+            call multord_i8e(rrank,rmsi,int(rfinish-rstart+1,INTL),ord(1:rrank,2),iv,v,ext_buf)
+            call print_tcg_buffer(rstart,rfinish,rrank) !debug
+           endif
+  !Sort destination descriptors:
+           if(drank.gt.0) then
+            iv=>tcg_ind_buf(:,dstart:dfinish)
+            v=>tcg_num_buf(dstart:dfinish)
+            call multord_i8e(drank,dmsi,int(dfinish-dstart+1,INTL),(/(ji,ji=1,drank)/),iv,v,ext_buf)
+            call print_tcg_buffer(dstart,dfinish,drank) !debug
+           endif
+  !Match contracted multi-indices:
+           pstart=tcgl+1; ji=lstart; jj=rstart
+           do while(ji.le.lfinish.and.jj.le.rfinish)
+   !Check first match:
+            if(nci.gt.0) then
+             jnc=multindx_cmp(nci,tcg_ind_buf(ord(1:nci,1),ji),nci,tcg_ind_buf(ord(1:nci,2),jj))
+            else
+             jnc=0
+            endif
+            if(jnc.eq.0) then
+             if(nci.gt.0) then
+   !Determine the size of the left block:
+              jif=ji+1
+              do while(jif.le.lfinish)
+               jnu=multindx_cmp(nci,tcg_ind_buf(ord(1:nci,1),ji),nci,tcg_ind_buf(ord(1:nci,1),jif))
+               if(jnu.ne.0) exit
+               jif=jif+1
+              enddo
+              jif=jif-1
+   !Determine the size of the right block:
+              jjf=jj+1
+              do while(jjf.le.rfinish)
+               jnu=multindx_cmp(nci,tcg_ind_buf(ord(1:nci,2),jj),nci,tcg_ind_buf(ord(1:nci,2),jjf))
+               if(jnu.ne.0) exit
+               jjf=jjf+1
+              enddo
+              jjf=jjf-1
+             else
+              jif=lfinish; jjf=rfinish
+             endif
+   !Take Cartesian product of the blocks:
+             jn=0
+             do j2=jj,jjf
+              jn=tcg_num_buf(j2)*lsl
+              if(drank.gt.0) then
+               do j1=ji,jif
+                tcgl=tcgl+1; tcg_num_buf(tcgl)=jn+tcg_num_buf(j1)
+                tcg_ind_buf(1:drank,tcgl)=(/tcg_ind_buf(ord(nci+1:lrank,1),j1),tcg_ind_buf(ord(nci+1:rrank,2),j2)/)
+               enddo
+              else
+               do j1=ji,jif
+                tcgl=tcgl+1; tcg_num_buf(tcgl)=jn+tcg_num_buf(j1)
+               enddo
+              endif
+             enddo
+   !Proceed further:
+             ji=jif+1; jj=jjf+1
+            else
+             if(jnc.lt.0) then; ji=ji+1; else; jj=jj+1; endif
+            endif
+           enddo
+           pfinish=tcgl
+           call print_tcg_buffer(pstart,pfinish,drank) !debug
+  !Filter with the destination multi-indices:
+           if(drank.gt.0) then
+   !Use the rest of the TCG buffer as an external buffer:
+            jub=(int(ubound(tcg_ind_buf,2),INTL)-tcgl)*int(size(tcg_ind_buf,1),INTL)
+            ext_buf(1:jub)=>tcg_ind_buf(:,tcgl+1:) !`Does this introduce a temporary copy?
+   !Sort the Cartesian products:
+            jprm(ord(1:drank,0))=(/(ji,ji=1,drank)/)
+            iv=>tcg_ind_buf(:,pstart:pfinish)
+            v=>tcg_num_buf(pstart:pfinish)
+            call multord_i8e(drank,max(lmsi,rmsi),int(pfinish-pstart+1,INTL),jprm(1:drank),iv,v,ext_buf)
+            call print_tcg_buffer(pstart,pfinish,drank) !debug
+   !Filter with the destination:
+            
+           endif
+  !Append the resulting subtensor contractions to the output list:
+           
            return
           end subroutine generate_subcontractions
 

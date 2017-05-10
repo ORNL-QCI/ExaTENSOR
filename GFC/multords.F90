@@ -1,6 +1,6 @@
 !Linear-scaling sorting subroutines operating with multi-index keys.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/05/06 (origin 2005 PhD work, used in Mol.Phys.2007)
+!REVISION: 2017/05/10 (origin 2005 PhD work, used in Mol.Phys.2007)
 
 !Copyright (C) 2005 Dmitry I. Lyakh (Liakh)
 
@@ -565,12 +565,12 @@
 !--------------------------------------------------------
         subroutine multord_i8e(n,nl,mov,ip1,iv,v,ext_buf)
         implicit none
-        integer(4), intent(in):: n                      !in: number of indices in the multi-index keys
-        integer(8), intent(in):: nl                     !in: the largest index value encountered in the multi-index keys (the smallest is zero)
-        integer(8), intent(in):: mov                    !in: number of items to be sorted
-        integer(4), intent(in):: ip1(1:n)               !in: index place priorities (first encountered 0 terminates sorting, thus allowing partial key comparison)
-        integer(8), intent(inout), target:: iv(1:n,1:*) !inout: multi-index keys
-        integer(8), intent(inout), target:: v(1:*)      !inout: items
+        integer(4), intent(in):: n        !in: number of indices in the multi-index keys
+        integer(8), intent(in):: nl       !in: the largest index value encountered in the multi-index keys (the smallest is zero)
+        integer(8), intent(in):: mov      !in: number of items to be sorted
+        integer(4), intent(in):: ip1(1:n) !in: index place priorities (first encountered 0 terminates sorting, thus allowing partial key comparison)
+        integer(8), intent(inout), contiguous, target:: iv(1:,1:) !inout: multi-index keys
+        integer(8), intent(inout), contiguous, target:: v(1:)     !inout: items
         integer(8), intent(in), contiguous, target, optional:: ext_buf(1:) !in: external buffer (to avoid memory allocation)
         !-----------------------------------------------------------------
         integer(8), parameter:: INDEX_BASE=2**6 !base for index splitting: MUST BE EVEN!

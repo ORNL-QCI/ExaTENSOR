@@ -1,7 +1,7 @@
        module combinatoric
 !Combinatoric Procedures.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!Revision: 2017/04/26
+!Revision: 2017/05/10
 
 !Copyright (C) 2007-2017 Dmitry I. Lyakh (Liakh)
 
@@ -38,6 +38,7 @@
 ! - i:HASH_ARR_INT8(i:hash_range,i:ni,i8[1]:arr): returns a hash-mask for an integer*8 array.
 ! - i:CMP_MULTINDS(i:ml1,i[1]:m1,i:ml2,i[1]:m2): compares two integer multiindices.
 ! - i:CMP_MULTINDS_INT8(i:ml1,i8[1]:m1,i:ml2,i8[1]:m2): compares two integer*8 multiindices.
+! - MULTINDX_CMP(i:ml1,i[1]:m1,i:ml2,i[1]:m2,i:ierr,i[1]:prm1,i[2]:prm2): compares two multi-indices: {-1,0,+1}
 ! - MULTINDX_MERGE(i:ml1,i[1]:m1,i:ml2,i[1]:m2,i:mlr,i[1]:mr,i:sign_corr): merges two multiindices, providing a potential sign correction.
 ! - i:CMP_ARRAYS_INT(l:preorder,i:ml1,i[1]:m1,i:ml2,i[1]:m2,i[1]:trn): compares two integer arrays with an optional preodering.
 ! - i:CMP_ARRAYS_INT8(l:preorder,i:ml1,i8[1]:m1,i:ml2,i8[1]:m2,i[1]:trn): compares two integer(8) arrays with an optional preodering.
@@ -112,6 +113,7 @@
         public hash_arr_int8
         public cmp_multinds
         public cmp_multinds_int8
+        public multindx_cmp
         public multindx_merge
         public cmp_arrays_int
         public cmp_arrays_int8
@@ -777,6 +779,66 @@
 	endif
 	return
 	end function cmp_multinds_int8
+!-----------------------------------------------------------------
+        function multindx_cmp(ml1,m1,ml2,m2,prm1,prm2) result(cmp)
+!Compares two multi-indices. Optional permutations specify index priorities for both multi-indices:
+!prmX(1) is the first index to compare, prmX(2) is the second, and so on.
+         implicit none
+         integer:: cmp                    !out: comparison result: -1:m1<m2, 0:m1=m2, +1:m1>m2
+         integer(4), intent(in):: ml1     !in: length of multi-index 1
+         integer(8), intent(in):: m1(1:*) !in: multi-index 1
+         integer(4), intent(in):: ml2     !in: length of multi-index 2
+         integer(8), intent(in):: m2(1:*) !in: multi-index 2
+         integer(4), intent(in), optional:: prm1(1:ml1) !in: permutation for multi-index 1
+         integer(4), intent(in), optional:: prm2(1:ml2) !in: permutation for multi-index 2
+         integer(4):: i
+
+         cmp=0
+         if(present(prm1)) then
+          if(present(prm2)) then
+           if(ml1.lt.ml2) then
+            cmp=-1
+           elseif(ml1.gt.ml2) then
+            cmp=+1
+           else
+            do i=1,ml1
+             if(m1(prm1(i)).ne.m2(prm2(i))) then; cmp=int(sign(1_8,m1(prm1(i))-m2(prm2(i))),4); exit; endif
+            enddo
+           endif
+          else
+           if(ml1.lt.ml2) then
+            cmp=-1
+           elseif(ml1.gt.ml2) then
+            cmp=+1
+           else
+            do i=1,ml1
+             if(m1(prm1(i)).ne.m2(i)) then; cmp=int(sign(1_8,m1(prm1(i))-m2(i)),4); exit; endif
+            enddo
+           endif
+          endif
+         elseif(present(prm2)) then
+          if(ml1.lt.ml2) then
+           cmp=-1
+          elseif(ml1.gt.ml2) then
+           cmp=+1
+          else
+           do i=1,ml1
+            if(m1(i).ne.m2(prm2(i))) then; cmp=int(sign(1_8,m1(i)-m2(prm2(i))),4); exit; endif
+           enddo
+          endif
+         else
+          if(ml1.lt.ml2) then
+           cmp=-1
+          elseif(ml1.gt.ml2) then
+           cmp=+1
+          else
+           do i=1,ml1
+            if(m1(i).ne.m2(i)) then; cmp=int(sign(1_8,m1(i)-m2(i)),4); exit; endif
+           enddo
+          endif
+         endif
+         return
+        end function multindx_cmp
 !----------------------------------------------------------------
 	subroutine multindx_merge(ml1,m1,ml2,m2,mlr,mr,sign_corr)
 !This subroutine merges two multiindices (with index reodering).
