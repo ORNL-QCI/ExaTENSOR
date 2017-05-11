@@ -125,8 +125,11 @@
 !Constructs the content of the list element.
          implicit none
          class(list_elem_t), intent(inout):: this      !inout: element of a list
-        !class(*), target, intent(in):: obj            !in: value to be stored
+#ifdef ARG_PTR
          class(*), pointer, intent(in):: obj           !in: value to be stored
+#else
+         class(*), target, intent(in):: obj            !in: value to be stored
+#endif
          integer(INTD), intent(out), optional:: ierr   !out: error code
          logical, intent(in), optional:: assoc_only    !in: if TRUE, the value will be assigned by reference, otherwise by value (allocated): Defaults to FALSE
 #ifdef NO_GNU

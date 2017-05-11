@@ -154,10 +154,13 @@
 !requiring a separate call to the destructor after return.
          implicit none
          class(dict_elem_t), intent(inout):: this           !inout: element of the dictionary
-        !class(*), target, intent(in):: key                 !in: key to be stored
+#ifdef ARG_PTR
          class(*), pointer, intent(in):: key                !in: key to be stored
-        !class(*), target, intent(in):: val                 !in: value to be stored (either by value or by reference)
          class(*), pointer, intent(in):: val                !in: value to be stored (either by value or by reference)
+#else
+         class(*), target, intent(in):: key                 !in: key to be stored
+         class(*), target, intent(in):: val                 !in: value to be stored (either by value or by reference)
+#endif
          integer(INTD), intent(out), optional:: ierr        !out: error code
          logical, intent(in), optional:: assoc_key          !in: if TRUE, <key> will be stored by reference, otherwise by value (default)
          logical, intent(in), optional:: assoc_val          !in: if TRUE, <val> will be stored by reference, otherwise by value (default)
@@ -1051,8 +1054,13 @@
          class(dictionary_iter_t), intent(inout):: this         !inout: dictionary iterator
          integer, intent(in):: action                           !in: requested action (see action parameters at the top of this module)
          procedure(gfc_cmp_i):: cmp_key_f                       !in: key comparison function, returns: {GFC_CMP_LT,GFC_CMP_GT,GFC_CMP_EQ,GFC_CMP_ERR}
+#ifdef ARG_PTR
+         class(*), intent(in), pointer:: key                    !in: key being searched for
+         class(*), intent(in), pointer, optional:: value_in     !in: an optional value to be stored with the key
+#else
          class(*), intent(in), target:: key                     !in: key being searched for
          class(*), intent(in), target, optional:: value_in      !in: an optional value to be stored with the key
+#endif
          logical, intent(in), optional:: store_by               !in: storage type for newly added values: {GFC_BY_VAL,GFC_BY_REF}, defaults to GFC_BY_VAL
          class(*), pointer, intent(out), optional:: value_out   !out: when fetching, this will point to the value found by the key (NULL otherwise)
 #ifdef NO_GNU

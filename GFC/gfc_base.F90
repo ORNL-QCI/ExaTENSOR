@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Base
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017-05-03 (started 2016-02-17)
+!REVISION: 2017-05-11 (started 2016-02-17)
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -305,8 +305,11 @@
 !as well as an element pointed to by a container iterator.
          implicit none
          class(gfc_cont_elem_t), intent(inout):: this  !inout: element of a container
-        !class(*), target, intent(in):: obj            !in: value to be stored in this element
+#ifdef ARG_PTR
          class(*), pointer, intent(in):: obj           !in: value to be stored in this element
+#else
+         class(*), target, intent(in):: obj            !in: value to be stored in this element
+#endif
          integer(INTD), intent(out), optional:: ierr   !out: error code (0:success)
          logical, intent(in), optional:: assoc_only    !in: if TRUE, <obj> will be stored by reference, otherwise by value (default)
 #ifdef NO_GNU
