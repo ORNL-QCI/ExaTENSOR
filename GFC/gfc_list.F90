@@ -302,7 +302,8 @@
          procedure(gfc_copy_i), optional:: copy_ctor_f !in: optional copy constructor (may be needed when duplicating by value)
 #endif
          integer(INTD):: errc
-         type(list_iter_t):: ilit,ovit
+         type(list_iter_t):: ilit
+         type(vector_iter_t):: ovit
          class(*), pointer:: up
          logical:: assoc
 
