@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Bi-directional linked list
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017-04-21 (started 2016-02-28)
+!REVISION: 2017-05-10 (started 2016-02-28)
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -33,6 +33,7 @@
 
        module gfc_list
         use gfc_base
+        use gfc_vector
         use timers
         implicit none
         private
@@ -59,6 +60,9 @@
         contains
          procedure, public:: is_empty=>ListIsEmpty                 !returns GFC_TRUE if the list is empty, GFC_FALSE otherwise (or error code)
          procedure, public:: is_sublist=>ListIsSublist             !returns TRUE if the list is a sublist of a larger list, FALSE otherwise
+         procedure, private:: ListDuplicateToList                  !duplicates a list into another list either by value or by reference
+         procedure, private:: ListDuplicateToVector                !duplicates a list into a vector either by value or by reference
+         generic, public:: duplicate=>ListDuplicateToList,ListDuplicateToVector
         end type list_bi_t
  !List iterator:
         type, extends(gfc_iter_t), public:: list_iter_t
@@ -91,6 +95,8 @@
  !list_bi_t:
         private ListIsEmpty
         private ListIsSublist
+        private ListDuplicateToList
+        private ListDuplicateToVector
  !list_iter_t:
         private ListIterInit
         private ListIterReset
@@ -219,6 +225,126 @@
          if(present(ierr)) ierr=errc
          return
         end function ListIsSublist
+!----------------------------------------------------------------------------------
+#ifdef NO_GNU
+        function ListDuplicateToList(this,list,assoc_only,copy_ctor_f) result(ierr) !`GCC bug
+#else
+        function ListDuplicateToList(this,list,assoc_only) result(ierr)
+#endif
+!Duplicates a list into another list either by value or by reference.
+         implicit none
+         integer(INTD):: ierr                          !out: error code
+         class(list_bi_t), intent(in):: this           !in: input list (must be non-empty on input)
+         class(list_bi_t), intent(inout):: list        !out: output duplicate list (must be empty on input)
+         logical, intent(in), optional:: assoc_only    !in: if TRUE, the list will be duplicated by reference, otherwise by value (default)
+#ifdef NO_GNU
+         procedure(gfc_copy_i), optional:: copy_ctor_f !in: optional copy constructor (may be needed when duplicating by value)
+#endif
+         integer(INTD):: errc
+         type(list_iter_t):: ilit,olit
+         class(*), pointer:: up
+         logical:: assoc
+
+         ierr=GFC_SUCCESS
+         if(this%is_empty().eq.GFC_FALSE) then
+          if(list%is_empty().eq.GFC_TRUE) then
+           ierr=ilit%init(this)
+           if(ierr.eq.GFC_SUCCESS) then
+            ierr=olit%init(list)
+            if(ierr.eq.GFC_SUCCESS) then
+             assoc=.FALSE.; if(present(assoc_only)) assoc=assoc_only
+             errc=GFC_SUCCESS
+#ifdef NO_GNU
+             if(present(copy_ctor_f)) then
+              do while(errc.eq.GFC_SUCCESS)
+               up=>ilit%get_value(ierr); if(ierr.ne.GFC_SUCCESS) exit
+               ierr=olit%append(up,.FALSE.,assoc,copy_ctor_f)
+               errc=ilit%next()
+              enddo
+             else
+#endif
+              do while(errc.eq.GFC_SUCCESS)
+               up=>ilit%get_value(ierr); if(ierr.ne.GFC_SUCCESS) exit
+               ierr=olit%append(up,.FALSE.,assoc)
+               errc=ilit%next()
+              enddo
+#ifdef NO_GNU
+             endif
+#endif
+             if(errc.eq.GFC_NO_MOVE) errc=GFC_SUCCESS
+             if(errc.ne.GFC_SUCCESS) ierr=errc
+             errc=olit%release(); if(errc.ne.GFC_SUCCESS.and.ierr.eq.GFC_SUCCESS) ierr=errc
+            endif
+            errc=ilit%release(); if(errc.ne.GFC_SUCCESS.and.ierr.eq.GFC_SUCCESS) ierr=errc
+           endif
+          else
+           ierr=GFC_INVALID_ARGS
+          endif
+         else
+          ierr=GFC_EMPTY_CONT
+         endif
+         return
+        end function ListDuplicateToList
+!--------------------------------------------------------------------------------------
+#ifdef NO_GNU
+        function ListDuplicateToVector(this,vector,assoc_only,copy_ctor_f) result(ierr) !`GCC bug
+#else
+        function ListDuplicateToVector(this,vector,assoc_only) result(ierr)
+#endif
+!Duplicates a list into a vector either by value or by reference.
+         implicit none
+         integer(INTD):: ierr                          !out: error code
+         class(list_bi_t), intent(in):: this           !in: input list (must be non-empty on input)
+         class(vector_t), intent(inout):: vector       !out: output vector (must be empty on input)
+         logical, intent(in), optional:: assoc_only    !in: if TRUE, the list will be duplicated by reference, otherwise by value (default)
+#ifdef NO_GNU
+         procedure(gfc_copy_i), optional:: copy_ctor_f !in: optional copy constructor (may be needed when duplicating by value)
+#endif
+         integer(INTD):: errc
+         type(list_iter_t):: ilit,ovit
+         class(*), pointer:: up
+         logical:: assoc
+
+         ierr=GFC_SUCCESS
+         if(this%is_empty().eq.GFC_FALSE) then
+          if(vector%is_empty().eq.GFC_TRUE) then
+           ierr=ilit%init(this)
+           if(ierr.eq.GFC_SUCCESS) then
+            ierr=ovit%init(vector)
+            if(ierr.eq.GFC_SUCCESS) then
+             assoc=.FALSE.; if(present(assoc_only)) assoc=assoc_only
+             errc=GFC_SUCCESS
+#ifdef NO_GNU
+             if(present(copy_ctor_f)) then
+              do while(errc.eq.GFC_SUCCESS)
+               up=>ilit%get_value(ierr); if(ierr.ne.GFC_SUCCESS) exit
+               ierr=ovit%append(up,assoc,copy_ctor_f)
+               errc=ilit%next()
+              enddo
+             else
+#endif
+              do while(errc.eq.GFC_SUCCESS)
+               up=>ilit%get_value(ierr); if(ierr.ne.GFC_SUCCESS) exit
+               ierr=ovit%append(up,assoc)
+               errc=ilit%next()
+              enddo
+#ifdef NO_GNU
+             endif
+#endif
+             if(errc.eq.GFC_NO_MOVE) errc=GFC_SUCCESS
+             if(errc.ne.GFC_SUCCESS) ierr=errc
+             errc=ovit%release(); if(errc.ne.GFC_SUCCESS.and.ierr.eq.GFC_SUCCESS) ierr=errc
+            endif
+            errc=ilit%release(); if(errc.ne.GFC_SUCCESS.and.ierr.eq.GFC_SUCCESS) ierr=errc
+           endif
+          else
+           ierr=GFC_INVALID_ARGS
+          endif
+         else
+          ierr=GFC_EMPTY_CONT
+         endif
+         return
+        end function ListDuplicateToVector
 !----------------------------------------------------
         function ListIterInit(this,cont) result(ierr)
 !Initializes the iterator and resets it to the beginning of the container.

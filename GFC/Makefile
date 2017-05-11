@@ -251,7 +251,7 @@ LTHREAD = $(LTHREAD_$(TOOLKIT))
 LFLAGS = $(LTHREAD) $(MPI_LINK) $(LA_LINK) $(CUDA_LINK) $(LIB)
 
 OBJS =  ./OBJ/dil_basic.o ./OBJ/timers.o ./OBJ/multords.o ./OBJ/combinatoric.o ./OBJ/stack.o ./OBJ/lists.o ./OBJ/dictionary.o \
-	./OBJ/gfc_base.o ./OBJ/gfc_list.o ./OBJ/gfc_tree.o ./OBJ/gfc_stack.o ./OBJ/gfc_vector.o ./OBJ/gfc_vec_tree.o \
+	./OBJ/gfc_base.o ./OBJ/gfc_vector.o ./OBJ/gfc_list.o ./OBJ/gfc_tree.o ./OBJ/gfc_stack.o ./OBJ/gfc_vec_tree.o \
 	./OBJ/gfc_queue.o ./OBJ/gfc_pri_queue.o ./OBJ/gfc_dictionary.o ./OBJ/gfc_hash_map.o ./OBJ/gfc_graph.o
 
 $(NAME): lib$(NAME).a ./OBJ/main.o
@@ -282,7 +282,7 @@ lib$(NAME).a: $(OBJS)
 ./OBJ/lists.o: lists.F90 ./OBJ/timers.o
 	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) lists.F90 -o ./OBJ/lists.o
 
-./OBJ/gfc_list.o: gfc_list.F90 ./OBJ/gfc_base.o ./OBJ/timers.o
+./OBJ/gfc_list.o: gfc_list.F90 ./OBJ/gfc_base.o ./OBJ/gfc_vector.o ./OBJ/timers.o
 	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) gfc_list.F90 -o ./OBJ/gfc_list.o
 
 ./OBJ/dictionary.o: dictionary.F90 ./OBJ/timers.o
