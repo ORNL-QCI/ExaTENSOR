@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Vector (non-contiguous)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017/04/17
+!REVISION: 2017/05/11
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -190,7 +190,8 @@
 !Constructs the content of the vector element.
          implicit none
          class(vector_elem_t), intent(inout):: this     !inout: vector element (empty on input)
-         class(*), target, intent(in):: obj             !in: assigned value
+        !class(*), target, intent(in):: obj             !in: value to be stored
+         class(*), pointer, intent(in):: obj            !in: value to be stored
          integer(INTD), intent(out), optional:: ierr    !out: error code
          logical, intent(in), optional:: assoc_only     !in: if TRUE, the value will be assigned by reference, otherwise by value (allocated): Defaults to FALSE
 #ifdef NO_GNU

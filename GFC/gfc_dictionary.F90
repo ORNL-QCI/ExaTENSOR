@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Dictionary (ordered map), AVL BST
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017/04/17 (recycling my old dictionary implementation)
+!REVISION: 2017/05/11 (recycling my old dictionary implementation)
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -154,8 +154,10 @@
 !requiring a separate call to the destructor after return.
          implicit none
          class(dict_elem_t), intent(inout):: this           !inout: element of the dictionary
-         class(*), target, intent(in):: key                 !in: key to be stored (by value only)
-         class(*), target, intent(in):: val                 !in: value to be stored (either by value or by reference)
+        !class(*), target, intent(in):: key                 !in: key to be stored
+         class(*), pointer, intent(in):: key                !in: key to be stored
+        !class(*), target, intent(in):: val                 !in: value to be stored (either by value or by reference)
+         class(*), pointer, intent(in):: val                !in: value to be stored (either by value or by reference)
          integer(INTD), intent(out), optional:: ierr        !out: error code
          logical, intent(in), optional:: assoc_key          !in: if TRUE, <key> will be stored by reference, otherwise by value (default)
          logical, intent(in), optional:: assoc_val          !in: if TRUE, <val> will be stored by reference, otherwise by value (default)
