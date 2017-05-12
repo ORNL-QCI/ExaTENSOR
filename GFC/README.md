@@ -27,7 +27,7 @@ GENERAL INFORMATION:
  10. Hash map (unordered map): gfc_hash_map (GFC, under development);
 
 DESIGN AND FEATURES:
- # A GFC container is a structured collection of objects of any class;
+ # A GFC container is a structured collection of scalar objects of any class;
    Objects of different classes can be stored in the same container.
  # Objects can be stored in the container either by value or by reference;
    The same container may have elements stored both ways.
@@ -64,6 +64,8 @@ DESIGN AND FEATURES:
    All insertion, deletion, and search operations are done via iterators,
    that is, the iterator methods provide the only possible way of accessing,
    updating, and performing other actions on the associated container.
+   The only exception is the duplication of containers as a whole,
+   either by value or by reference (e.g., list-to-list, list-to-vector).
  # The container element deletion operation may require a user-defined
    non-member destructor which will properly release all resources occupied
    by the object stored in that element, unless the object has FINAL methods
@@ -71,8 +73,6 @@ DESIGN AND FEATURES:
    is provided in gfc_base.F90).
 
  FEATURES UNDER DEVELOPMENT:
- # Currently, containers as a whole do not support cloning (copy construction
-   and copy assignment), but the appropriate methods will be provided in future.
  # Currently SCAN is the only global operation defined on any container and
    provided by the corresponding iterator class. Equipped with a proper user-defined
    function object, it can deliver broad functionality (transforms, reductions, etc.).
@@ -93,10 +93,15 @@ NOTES:
  # This implementation of Generic Fortran Containers heavily relies on
    dynamic polymorphism (and RTTI), thus introducing certain overhead! Also,
    dynamic type inferrence may decrease the efficiency when storing and
-   operating on small objects. Thus, this implementation aims at providing
-   a set of higher-level abstractions for control logic and other high-level
-   operations for which ultimate numeric Flop/s efficiency is not required.
-   The use of GFC containers in the inner loop of compute intensive kernels
-   is highly discouraged (please resort to plain data, like arrays).
+   operating on small objects. Thus, this implementation aims at providing a set
+   of rather expensive higher-level abstractions for control logic and other
+   high-level operations for which ultimate numeric Flop/s efficiency is not
+   required. The use of GFC containers in the inner loop of compute intensive
+   kernels is highly discouraged (please resort to plain data, like arrays).
  # Due to limitations of Fortran class inheritence, public methods
    with a trailing underscore shall NEVER be used by the end user!
+ # Currently an insertion of an allocated pointer variable into a GFC container
+   by reference will result in the loss of the allocated status of the stored
+   pointer in case it was allocated. Consequently, the stored pointer cannot
+   later be used for deallocating the corresponding target, although some
+   compilers ignore this.
