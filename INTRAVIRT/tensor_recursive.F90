@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/05/12
+!REVISION: 2017/05/13
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -93,7 +93,7 @@
  !Registered hierarchical space:
         type, public:: hspace_reg_t
          integer(INTD), private:: space_id=-1                  !registered space id: [0..max]
-         class(h_space_t), pointer, private:: hspace_p=>NULL() !pointer to the hierarchical space definition
+         class(h_space_t), pointer, private:: hspace_p=>NULL() !pointer to a persistent hierarchical vector space definition
          contains
           procedure, private:: HspaceRegCtor                    !ctor
           procedure, private:: HspaceRegCtorUnpack              !ctor by unpacking
@@ -263,17 +263,17 @@
           procedure, public:: set_location=>TensRcrsvSetLocation     !sets the physical location of the tensor body data
           procedure, public:: get_header=>TensRcrsvGetHeader         !returns a pointer to the tensor header
           procedure, public:: get_body=>TensRcrsvGetBody             !returns a pointer to the tensor body
-          procedure, public:: print_it=>TensRcrsvPrintIt             !prints the tensor info
           procedure, private:: TensRcrsvSplitList                    !splits the tensor into subtensors (a list of subtensors by their headers)
           procedure, private:: TensRcrsvSplitVector                  !splits the tensor into subtensors (a vector of subtensors by their headers)
           generic, public:: split=>TensRcrsvSplitList,TensRcrsvSplitVector
+          procedure, public:: print_it=>TensRcrsvPrintIt             !prints the tensor info
 #ifdef NO_GNU
           final:: tens_rcrsv_dtor                                    !dtor `GCC/5.4.0 bug
 #endif
         end type tens_rcrsv_t
  !Tensor argument (reference to a recursive tensor):
         type, private:: tens_argument_t
-         class(tens_rcrsv_t), pointer, private:: tens_p=>NULL() !pointer to a tensor
+         class(tens_rcrsv_t), pointer, private:: tens_p=>NULL() !pointer to a persistent tensor
          contains
           procedure, private:: set=>TensArgumentSet             !sets up the tensor argument (ctor)
           procedure, private:: is_set=>TensArgumentIsSet        !returns TRUE if the tensor argument is set, plus additional info
@@ -318,14 +318,16 @@
          type(contr_ptrn_ext_t), private:: contr_ptrn                     !extended tensor contraction pattern
          complex(8), private:: alpha=(1d0,0d0)                            !alpha factor
          contains
+          procedure, private:: TensContractionAssign                      !copy assignment
+          generic, public:: assignment(=)=>TensContractionAssign
           procedure, public:: is_set=>TensContractionIsSet                !returns TRUE if the tensor contraction is fully set
           procedure, public:: args_full=>TensContractionArgsFull          !returns TRUE if all tensor contraction arguments have been set
           procedure, public:: set_contr_ptrn=>TensContractionSetContrPtrn !sets the tensor contraction pattern (all tensor arguments must have been set already)
           procedure, public:: set_operl_symm=>TensContractionSetOperlSymm !sets index permutational symmetry restrictions due to tensor operation (both contraction pattern and arguments must have been set already)
           procedure, public:: get_contr_ptrn=>TensContractionGetContrPtrn !returns the classical (basic) digital contraction pattern used by TAL-SH for example
-          procedure, public:: print_it=>TensContractionPrintIt            !prints the tensor contraction info
-          procedure, public:: import_replace=>TensContractionImportReplace!creates a new tensor contraction by replacing tensor arguments in an existing tensor contraction (plus symmetry adjustment)
+          procedure, private:: import_replace=>TensContractionImportReplace!creates a new tensor contraction by replacing tensor arguments in an existing tensor contraction (plus symmetry adjustment)
           procedure, public:: split=>TensContractionSplit                 !splits the tensor contraction into a list of subtensor contractions based on the pre-existing lists of argument subtensors
+          procedure, public:: print_it=>TensContractionPrintIt            !prints the tensor contraction info
         end type tens_contraction_t
 !INTERFACES:
  !Abstract:
@@ -496,9 +498,9 @@
         private TensRcrsvSetLocation
         private TensRcrsvGetHeader
         private TensRcrsvGetBody
-        private TensRcrsvPrintIt
         private TensRcrsvSplitList
         private TensRcrsvSplitVector
+        private TensRcrsvPrintIt
         public tens_rcrsv_dtor
  !tens_argument_t:
         private TensArgumentSet
@@ -519,14 +521,15 @@
         private ContrPtrnExtGetDimSymmetry
         private ContrPtrnExtPrintIt
  !tens_contraction_t:
+        private TensContractionAssign
         private TensContractionIsSet
         private TensContractionArgsFull
         private TensContractionSetContrPtrn
         private TensContractionSetOperlSymm
         private TensContractionGetContrPtrn
-        private TensContractionPrintIt
         private TensContractionImportReplace
         private TensContractionSplit
+        private TensContractionPrintIt
 !DATA:
  !Register of hierarchical vector spaces (only these spaces can be used in tensors):
         type(hspace_register_t), public:: hspace_register
@@ -3515,43 +3518,23 @@
          if(present(ierr)) ierr=errc
          return
         end function TensRcrsvGetBody
-!------------------------------------------------------------
-        subroutine TensRcrsvPrintIt(this,ierr,dev_id,nspaces)
-!Prints the tensor info.
-         implicit none
-         class(tens_rcrsv_t), intent(in):: this        !in: tensor
-         integer(INTD), intent(out), optional:: ierr   !out: error code
-         integer(INTD), intent(in), optional:: dev_id  !in: output device (defaults to screen)
-         integer(INTD), intent(in), optional:: nspaces !in: number of leading spaces
-         integer(INTD):: errc,devo,nsp,i
-
-         devo=6; if(present(dev_id)) devo=dev_id
-         nsp=0; if(present(nspaces)) nsp=nspaces
-         do i=1,nsp; write(devo,'(" ")',ADVANCE='NO'); enddo
-         write(devo,'("TENSOR{")')
-         call this%header%print_it(errc,devo,nsp+1)
-         !`Print tensor body as well
-         do i=1,nsp; write(devo,'(" ")',ADVANCE='NO'); enddo
-         write(devo,'("}")')
-         if(present(ierr)) ierr=errc
-         return
-        end subroutine TensRcrsvPrintIt
-!------------------------------------------------------------------------------------
-        subroutine TensRcrsvSplitList(this,split_dims,subtensors,ierr,num_subtensors)
-!Splits the given tensor into subtensors and appends those to a list of subtensors (by their headers).
-!If the input parental tensor is shaped with concrete dimension extents, the children subtensors
-!in contrast will not carry concrete dimension extents, but deferred dimension extents instead.
-!However, they will obey the parental dimension restriction grouping with the following assumption:
-!ASSUMPTION: Restricted tensor dimensions belonging to the same group are supposed to depend on
+!-------------------------------------------------------------------------------------------------
+        subroutine TensRcrsvSplitList(this,split_dims,subtensors,ierr,num_subtensors,headers_only)
+!Splits the given tensor into subtensors and appends those to a list of subtensors, either as
+!tensors or as headers only. If the input parental tensor is shaped with concrete dimension extents,
+!the children subtensors in contrast will not carry concrete dimension extents, but deferred dimension
+!extents instead. However, they will obey the parental dimension restriction grouping with the following
+!assumption: Restricted tensor dimensions belonging to the same group are supposed to depend on
 !each other from right to left, e.g., in {T(a,b,c,d,e):[a<c<e],[b<d]}, a dependent index
 !on the right always depends on some of the previous indices on the left. The first
 !restricted index on the left in each group is actually independent (e.g., "a" and "b" above).
          implicit none
          class(tens_rcrsv_t), intent(in):: this                !in: parental tensor (either shaped or unshaped)
          integer(INTD), intent(in):: split_dims(1:)            !in: tensor dimensions to be split (at least one)
-         type(list_bi_t), intent(inout):: subtensors           !out: list of subtensors specified by their tensor headers
+         type(list_bi_t), intent(inout):: subtensors           !out: list of subtensors
          integer(INTD), intent(out), optional:: ierr           !out: error code
          integer(INTD), intent(out), optional:: num_subtensors !out: number of subtensors generated
+         logical, intent(in), optional:: headers_only          !in: if TRUE, the output list will contain tensor headers only (not full tensors)
          integer(INTD):: i,j,n,tnl,nsb,nd,sd,nsubt,ngroups,errc
          character(128):: tens_name
          integer(INTL):: sidx(1:MAX_TENSOR_RANK)       !parental subspace multi-index
@@ -3567,9 +3550,11 @@
          type(hspace_reg_t):: hsreg(1:MAX_TENSOR_RANK) !hierarchical space for each tensor dimension
          type(list_iter_t):: lit
          type(tens_header_t):: thead
-         logical:: shpd,hspc
+         type(tens_rcrsv_t):: subtens
+         logical:: shpd,hspc,head_only
 
          nsubt=0 !number of generated subtensors
+         head_only=.FALSE.; if(present(headers_only)) head_only=headers_only
          if(this%is_set(errc,shaped=shpd,hspaced=hspc)) then !shaped tensors over hierarchical vector spaces are expected
           if(errc.eq.TEREC_SUCCESS.and.hspc) then
            call this%header%get_name(tens_name,tnl,errc)
@@ -3589,13 +3574,24 @@
                   do
                    call get_next_midx(n,errc); if(errc.ne.TEREC_SUCCESS.or.n.le.0) exit
                    call construct_subtensor_header(thead,errc); if(errc.ne.TEREC_SUCCESS) exit
-                   errc=lit%append(thead); if(errc.eq.GFC_SUCCESS) then; nsubt=nsubt+1; else; exit; endif
+                   if(head_only) then
+                    errc=lit%append(thead)
+                   else
+                    call subtens%tens_rcrsv_ctor(thead,errc)
+                    if(errc.eq.TEREC_SUCCESS) errc=lit%append(subtens)
+                   endif
+                   if(errc.eq.GFC_SUCCESS) then; nsubt=nsubt+1; else; exit; endif
                   enddo
                   if(errc.ne.TEREC_SUCCESS) errc=TEREC_UNABLE_COMPLETE
                  endif
                 endif
                elseif(sd.eq.0) then !no splitting, return the original header
-                errc=lit%append(this%header)
+                if(head_only) then
+                 errc=lit%append(this%header)
+                else
+                 call subtens%tens_rcrsv_ctor(this%header,errc)
+                 if(errc.eq.TEREC_SUCCESS) errc=lit%append(subtens)
+                endif
                 if(errc.eq.GFC_SUCCESS) then; nsubt=nsubt+1; else; errc=TEREC_UNABLE_COMPLETE; endif
                else
                 errc=TEREC_INVALID_ARGS
@@ -3857,22 +3853,23 @@
           end subroutine construct_subtensor_header
 
         end subroutine TensRcrsvSplitList
-!--------------------------------------------------------------------------------------
-        subroutine TensRcrsvSplitVector(this,split_dims,subtensors,ierr,num_subtensors)
-!Splits the given tensor into subtensors and appends those to a vector of subtensors (by their headers).
-!If the input parental tensor is shaped with concrete dimension extents, the children subtensors
-!in contrast will not carry concrete dimension extents, but deferred dimension extents instead.
-!However, they will obey the parental dimension restriction grouping with the following assumption:
-!ASSUMPTION: Restricted tensor dimensions belonging to the same group are supposed to depend on
+!---------------------------------------------------------------------------------------------------
+        subroutine TensRcrsvSplitVector(this,split_dims,subtensors,ierr,num_subtensors,headers_only)
+!Splits the given tensor into subtensors and appends those to a vector of subtensors, either as
+!tensors or as headers only. If the input parental tensor is shaped with concrete dimension extents,
+!the children subtensors in contrast will not carry concrete dimension extents, but deferred dimension
+!extents instead. However, they will obey the parental dimension restriction grouping with the following
+!assumption: Restricted tensor dimensions belonging to the same group are supposed to depend on
 !each other from right to left, e.g., in {T(a,b,c,d,e):[a<c<e],[b<d]}, a dependent index
 !on the right always depends on some of the previous indices on the left. The first
 !restricted index on the left in each group is actually independent (e.g., "a" and "b" above).
          implicit none
          class(tens_rcrsv_t), intent(in):: this                !in: parental tensor (either shaped or unshaped)
          integer(INTD), intent(in):: split_dims(1:)            !in: tensor dimensions to be split (at least one)
-         type(vector_t), intent(inout):: subtensors            !out: vector of subtensors specified by their tensor headers
+         type(vector_t), intent(inout):: subtensors            !out: vector of subtensors
          integer(INTD), intent(out), optional:: ierr           !out: error code
          integer(INTD), intent(out), optional:: num_subtensors !out: number of subtensors generated
+         logical, intent(in), optional:: headers_only          !in: if TRUE, the output list will contain tensor headers only (not full tensors)
          integer(INTD):: i,j,n,tnl,nsb,nd,sd,nsubt,ngroups,errc
          character(128):: tens_name
          integer(INTL):: sidx(1:MAX_TENSOR_RANK)       !parental subspace multi-index
@@ -3888,9 +3885,11 @@
          type(hspace_reg_t):: hsreg(1:MAX_TENSOR_RANK) !hierarchical space for each tensor dimension
          type(vector_iter_t):: vit
          type(tens_header_t):: thead
-         logical:: shpd,hspc
+         type(tens_rcrsv_t):: subtens
+         logical:: shpd,hspc,head_only
 
          nsubt=0 !number of generated subtensors
+         head_only=.FALSE.; if(present(headers_only)) head_only=headers_only
          if(this%is_set(errc,shaped=shpd,hspaced=hspc)) then !shaped tensors over hierarchical vector spaces are expected
           if(errc.eq.TEREC_SUCCESS.and.hspc) then
            call this%header%get_name(tens_name,tnl,errc)
@@ -3910,13 +3909,24 @@
                   do
                    call get_next_midx(n,errc); if(errc.ne.TEREC_SUCCESS.or.n.le.0) exit
                    call construct_subtensor_header(thead,errc); if(errc.ne.TEREC_SUCCESS) exit
-                   errc=vit%append(thead); if(errc.eq.GFC_SUCCESS) then; nsubt=nsubt+1; else; exit; endif
+                   if(head_only) then
+                    errc=vit%append(thead)
+                   else
+                    call subtens%tens_rcrsv_ctor(thead,errc)
+                    if(errc.eq.TEREC_SUCCESS) errc=vit%append(subtens)
+                   endif
+                   if(errc.eq.GFC_SUCCESS) then; nsubt=nsubt+1; else; exit; endif
                   enddo
                   if(errc.ne.TEREC_SUCCESS) errc=TEREC_UNABLE_COMPLETE
                  endif
                 endif
                elseif(sd.eq.0) then !no splitting, return the original header
-                errc=vit%append(this%header)
+                if(head_only) then
+                 errc=vit%append(this%header)
+                else
+                 call subtens%tens_rcrsv_ctor(this%header,errc)
+                 if(errc.eq.TEREC_SUCCESS) errc=vit%append(subtens)
+                endif
                 if(errc.eq.GFC_SUCCESS) then; nsubt=nsubt+1; else; errc=TEREC_UNABLE_COMPLETE; endif
                else
                 errc=TEREC_INVALID_ARGS
@@ -4178,6 +4188,27 @@
           end subroutine construct_subtensor_header
 
         end subroutine TensRcrsvSplitVector
+!------------------------------------------------------------
+        subroutine TensRcrsvPrintIt(this,ierr,dev_id,nspaces)
+!Prints the tensor info.
+         implicit none
+         class(tens_rcrsv_t), intent(in):: this        !in: tensor
+         integer(INTD), intent(out), optional:: ierr   !out: error code
+         integer(INTD), intent(in), optional:: dev_id  !in: output device (defaults to screen)
+         integer(INTD), intent(in), optional:: nspaces !in: number of leading spaces
+         integer(INTD):: errc,devo,nsp,i
+
+         devo=6; if(present(dev_id)) devo=dev_id
+         nsp=0; if(present(nspaces)) nsp=nspaces
+         do i=1,nsp; write(devo,'(" ")',ADVANCE='NO'); enddo
+         write(devo,'("TENSOR{")')
+         call this%header%print_it(errc,devo,nsp+1)
+         !`Print tensor body as well
+         do i=1,nsp; write(devo,'(" ")',ADVANCE='NO'); enddo
+         write(devo,'("}")')
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensRcrsvPrintIt
 !---------------------------------------
         subroutine tens_rcrsv_dtor(this)
          implicit none
@@ -4494,10 +4525,10 @@
         subroutine ContrPtrnExtBreakDimSymm(this,tens_num,dim_num,ierr)
 !Breaks permutational symmetry on a specific tensor dimension.
          implicit none
-         class(contr_ptrn_ext_t), intent(inout):: this !inout: extended tensor contraction pattern
-         integer(INTD), intent(in):: tens_num          !in: tensor argument number (0:D,1:L,2:R)
-         integer(INTD), intent(in):: dim_num           !in: tensor dimension number: [1:rank]
-         integer(INTD), intent(out), optional:: ierr   !out: error code
+         class(contr_ptrn_ext_t), intent(inout), target:: this !inout: extended tensor contraction pattern
+         integer(INTD), intent(in):: tens_num                  !in: tensor argument number (0:D,1:L,2:R)
+         integer(INTD), intent(in):: dim_num                   !in: tensor dimension number: [1:rank]
+         integer(INTD), intent(out), optional:: ierr           !out: error code
          integer(INTD):: errc,n,i
          integer(INTD), pointer:: ind_res(:)
          logical:: last
@@ -4516,11 +4547,21 @@
            if(errc.eq.TEREC_SUCCESS) then
             if(dim_num.gt.0.and.dim_num.le.n) then
              if(this%ind_restr_set) then
-              last=.TRUE.
-              do i=dim_num+1,n
-               if(ind_res(i).eq.dim_num) then; last=.FALSE.; exit; endif
-              enddo
-              if(last) then; ind_res(dim_num)=0; else; ind_res(dim_num)=-1; endif
+              i=ind_res(dim_num)
+              if(i.gt.0) then
+               if(i.lt.dim_num) then
+                if(ind_res(i).lt.0) ind_res(i)=0 !first dimension from a symmetric group
+               else
+                errc=TEREC_OBJ_CORRUPTED
+               endif
+              endif
+              if(errc.eq.TEREC_SUCCESS) then
+               last=.TRUE.
+               do i=dim_num+1,n
+                if(ind_res(i).eq.dim_num) then; last=.FALSE.; exit; endif
+               enddo
+               if(last) then; ind_res(dim_num)=0; else; ind_res(dim_num)=-1; endif
+              endif
              endif
             else
              errc=TEREC_INVALID_ARGS
@@ -4668,7 +4709,20 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine ContrPtrnExtPrintIt
-![tens_contraction_t]=======================================
+![tens_contraction_t]=============================
+        subroutine TensContractionAssign(this,src)
+!Copy assignment.
+         implicit none
+         class(tens_contraction_t), intent(out):: this !out: copy
+         type(tens_contraction_t), intent(in):: src    !in: source
+
+         this%num_args=src%num_args
+         this%tens_arg(0:src%num_args-1)=src%tens_arg(0:src%num_args-1)
+         this%contr_ptrn=src%contr_ptrn
+         this%alpha=src%alpha
+         return
+        end subroutine TensContractionAssign
+!-----------------------------------------------------------
         function TensContractionIsSet(this,ierr) result(ans)
 !Returns TRUE if the tensor contraction is fully set.
          implicit none
@@ -4854,67 +4908,95 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensContractionGetContrPtrn
-!------------------------------------------------------------------
-        subroutine TensContractionPrintIt(this,ierr,dev_id,nspaces)
-!Prints the tensor contraction info.
-         implicit none
-         class(tens_contraction_t), intent(in):: this  !in: tensor contraction
-         integer(INTD), intent(out), optional:: ierr   !out: error code
-         integer(INTD), intent(in), optional:: dev_id  !in: output device (defaults to screen)
-         integer(INTD), intent(in), optional:: nspaces !in: number of leading spaces
-         integer(INTD):: errc,devo,nsp,n,i,j
-         class(tens_rcrsv_t), pointer:: trp
-
-         devo=6; if(present(dev_id)) devo=dev_id
-         nsp=0; if(present(nspaces)) nsp=nspaces
-         do i=1,nsp; write(devo,'(" ")',ADVANCE='NO'); enddo
-         write(devo,'("TENSOR CONTRACTION{")')
-         if(this%is_set(errc)) then
-          call this%contr_ptrn%print_it(j,devo,nsp+1); if(errc.eq.TEREC_SUCCESS.and.j.ne.TEREC_SUCCESS) errc=j
-          do i=1,nsp+1; write(devo,'(" ")',ADVANCE='NO'); enddo
-          write(devo,'("Complex Prefactor = (",D21.14,",",D21.14,")")') this%alpha
-          n=this%get_num_args(j); if(errc.eq.TEREC_SUCCESS.and.j.ne.TEREC_SUCCESS) errc=j
-          do i=0,n-1
-           trp=>NULL(); trp=>this%get_argument(i,j)
-           if(errc.eq.TEREC_SUCCESS.and.j.ne.TEREC_SUCCESS) errc=j
-           call trp%print_it(j,devo,nsp+1)
-           if(errc.eq.TEREC_SUCCESS.and.j.ne.TEREC_SUCCESS) errc=j
-          enddo
-         else
-          do i=1,nsp+1; write(devo,'(" ")',ADVANCE='NO'); enddo
-          write(devo,'("Empty/invalid tensor contraction")')
-         endif
-         do i=1,nsp; write(devo,'(" ")',ADVANCE='NO'); enddo
-         write(devo,'("}")')
-         if(present(ierr)) ierr=errc
-         return
-        end subroutine TensContractionPrintIt
 !--------------------------------------------------------------------------------------
-        subroutine TensContractionImportReplace(this,ierr,tens_contr,dtens,ltens,rtens)
+        subroutine TensContractionImportReplace(this,tens_contr,ierr,dtens,ltens,rtens)
 !Creates a new tensor contraction by replacing tensor arguments in
 !an existing tensor contraction (plus symmetry adjustment).
          implicit none
-         class(tens_contraction_t), intent(out):: this     !out: derived tensor contraction
-         type(tens_contraction_t), intent(in):: tens_contr !in: parental tensor contraction
-         integer(INTD), intent(out), optional:: ierr       !out: error code
-         type(tens_rcrsv_t), intent(in), optional:: dtens  !in: new destination tensor argument
-         type(tens_rcrsv_t), intent(in), optional:: ltens  !in: new left tensor argument
-         type(tens_rcrsv_t), intent(in), optional:: rtens  !in: new right tensor argument
-         integer(INTD):: errc
+         class(tens_contraction_t), intent(out):: this            !out: derived tensor contraction
+         type(tens_contraction_t), intent(in):: tens_contr        !in: parental tensor contraction
+         integer(INTD), intent(out), optional:: ierr              !out: error code
+         type(tens_rcrsv_t), intent(in), target, optional:: dtens !in: new destination tensor argument
+         type(tens_rcrsv_t), intent(in), target, optional:: ltens !in: new left tensor argument
+         type(tens_rcrsv_t), intent(in), target, optional:: rtens !in: new right tensor argument
+         integer(INTD):: i,errc,nd,cmp
+         integer(INTL):: sidx(1:MAX_TENSOR_RANK)
+         type(tens_header_t), pointer:: thp
+         type(hspace_reg_t):: ths(1:MAX_TENSOR_RANK)
+         type(h_space_t), pointer:: hsp
 
-         errc=TEREC_SUCCESS
-         if(tens_contr%is_set()) then
-          this=tens_contr !clone the parental tensor contraction
+         if(tens_contr%is_set(errc)) then
+          if(errc.eq.TEREC_SUCCESS) then
+           this=tens_contr !clone the parental tensor contraction
  !Destination tensor replacement:
-          if(present(dtens)) then
-           call this%reset_argument(dtens,0,errc)
-           if(errc.eq.TEREC_SUCCESS) then
-            !`Correct symmetry by inspecting tensor dimension subspaces versus .ind_res(:)
-            !`Use contr_ptrn_ext_t.break_dim_symm() method when finding non-overlapping pairs
+           if(present(dtens)) then
+            call this%reset_argument(dtens,0,errc)
+            if(errc.eq.TEREC_SUCCESS) then
+             thp=>dtens%get_header(errc)
+             if(errc.eq.TEREC_SUCCESS) then
+              call thp%get_spec(sidx,nd,errc,ths)
+              if(errc.eq.TEREC_SUCCESS) then
+               do i=2,nd
+                if(ths(i-1)%get_space_id().eq.ths(i)%get_space_id()) then
+                 hsp=>ths(i)%get_space(errc); if(errc.ne.TEREC_SUCCESS) exit
+                 cmp=hsp%compare_subranges(sidx(i-1),sidx(i))
+                 if(cmp.eq.CMP_ER) then; errc=TEREC_ERROR; exit; endif
+                 if(cmp.eq.CMP_LT) then !`I assume LT ordering in a tensor contraction
+                  call this%contr_ptrn%break_dim_symm(0,i,errc); if(errc.ne.TEREC_SUCCESS) exit
+                 endif
+                endif
+               enddo
+              endif
+             endif
+            endif
+           endif
+ !Left tensor replacement:
+           if(present(ltens).and.errc.eq.TEREC_SUCCESS) then
+            call this%reset_argument(ltens,1,errc)
+            if(errc.eq.TEREC_SUCCESS) then
+             thp=>ltens%get_header(errc)
+             if(errc.eq.TEREC_SUCCESS) then
+              call thp%get_spec(sidx,nd,errc,ths)
+              if(errc.eq.TEREC_SUCCESS) then
+               do i=2,nd
+                if(ths(i-1)%get_space_id().eq.ths(i)%get_space_id()) then
+                 hsp=>ths(i)%get_space(errc); if(errc.ne.TEREC_SUCCESS) exit
+                 cmp=hsp%compare_subranges(sidx(i-1),sidx(i))
+                 if(cmp.eq.CMP_ER) then; errc=TEREC_ERROR; exit; endif
+                 if(cmp.eq.CMP_LT) then !`I assume LT ordering in a tensor contraction
+                  call this%contr_ptrn%break_dim_symm(1,i,errc); if(errc.ne.TEREC_SUCCESS) exit
+                 endif
+                endif
+               enddo
+              endif
+             endif
+            endif
+           endif
+ !Right tensor replacement:
+           if(present(rtens).and.errc.eq.TEREC_SUCCESS) then
+            call this%reset_argument(rtens,2,errc)
+            if(errc.eq.TEREC_SUCCESS) then
+             thp=>rtens%get_header(errc)
+             if(errc.eq.TEREC_SUCCESS) then
+              call thp%get_spec(sidx,nd,errc,ths)
+              if(errc.eq.TEREC_SUCCESS) then
+               do i=2,nd
+                if(ths(i-1)%get_space_id().eq.ths(i)%get_space_id()) then
+                 hsp=>ths(i)%get_space(errc); if(errc.ne.TEREC_SUCCESS) exit
+                 cmp=hsp%compare_subranges(sidx(i-1),sidx(i))
+                 if(cmp.eq.CMP_ER) then; errc=TEREC_ERROR; exit; endif
+                 if(cmp.eq.CMP_LT) then !`I assume LT ordering in a tensor contraction
+                  call this%contr_ptrn%break_dim_symm(2,i,errc); if(errc.ne.TEREC_SUCCESS) exit
+                 endif
+                endif
+               enddo
+              endif
+             endif
+            endif
            endif
           endif
          else
-          errc=TEREC_INVALID_REQUEST
+          if(errc.eq.TEREC_SUCCESS) errc=TEREC_INVALID_REQUEST
          endif
          if(present(ierr)) ierr=errc
          return
@@ -5040,6 +5122,7 @@
            implicit none
            integer(INTD), intent(out):: jerr
            class(*), pointer:: jup
+           class(tens_rcrsv_t), pointer:: ltrp,rtrp
            class(tens_header_t), pointer:: lthp,rthp
            class(h_space_t), pointer:: lhsp,rhsp
            integer(INTD):: j1,j2,jl1,jl2
@@ -5051,8 +5134,9 @@
            if(jerr.eq.GFC_SUCCESS) then
             jup=>dvit%get_value(jerr)
             if(jerr.eq.GFC_SUCCESS) then
-             lthp=>NULL(); select type(jup); class is(tens_header_t); lthp=>jup; end select
-             if(associated(lthp)) then
+             ltrp=>NULL(); select type(jup); class is(tens_rcrsv_t); ltrp=>jup; end select
+             if(associated(ltrp)) then
+              lthp=>ltrp%get_header()
               call lthp%get_spec(jts(:,0),drank,jerr,ths(:,0))
              else
               jerr=TEREC_OBJ_CORRUPTED
@@ -5065,16 +5149,18 @@
             if(jerr.eq.GFC_SUCCESS) then
              jup=>lvit%get_value(jerr)
              if(jerr.eq.GFC_SUCCESS) then
-              lthp=>NULL(); select type(jup); class is(tens_header_t); lthp=>jup; end select
-              if(associated(lthp)) then
+              ltrp=>NULL(); select type(jup); class is(tens_rcrsv_t); ltrp=>jup; end select
+              if(associated(ltrp)) then
+               lthp=>ltrp%get_header()
                call lthp%get_spec(jts(:,1),lrank,jerr,ths(:,1))
                if(jerr.eq.TEREC_SUCCESS) then
                 jerr=rvit%reset()
                 if(jerr.eq.GFC_SUCCESS) then
                  jup=>rvit%get_value(jerr)
                  if(jerr.eq.GFC_SUCCESS) then
-                  rthp=>NULL(); select type(jup); class is(tens_header_t); rthp=>jup; end select
-                  if(associated(rthp)) then
+                  rtrp=>NULL(); select type(jup); class is(tens_rcrsv_t); rtrp=>jup; end select
+                  if(associated(rtrp)) then
+                   rthp=>rtrp%get_header()
                    call rthp%get_spec(jts(:,2),rrank,jerr,ths(:,2))
                    if(jerr.eq.TEREC_SUCCESS) then
                     adj(1:drank,0)=0; adj(1:lrank,1)=0; adj(1:rrank,2)=0
@@ -5131,6 +5217,7 @@
            implicit none
            integer(INTD), intent(out):: jerr
            integer(INTL):: sidx(1:MAX_TENSOR_RANK)
+           class(tens_rcrsv_t), pointer:: jtrp
            class(tens_header_t), pointer:: jthp
            class(*), pointer:: jup
            integer(INTD):: ji,ja,jl,jc,jnd,dim_restr(1:MAX_TENSOR_RANK)
@@ -5147,7 +5234,9 @@
             lloop: do while(jerr.eq.GFC_SUCCESS)
    !Get subtensor header:
              jup=>lvit%get_value(jerr); if(jerr.ne.GFC_SUCCESS) exit lloop
-             jthp=>NULL(); select type(jup); class is(tens_header_t); jthp=>jup; end select
+             jtrp=>NULL(); select type(jup); class is(tens_rcrsv_t); jtrp=>jup; end select
+             if(.not.associated(jtrp)) then; jerr=TEREC_OBJ_CORRUPTED; exit lloop; endif !trap
+             jthp=>jtrp%get_header()
              if(.not.associated(jthp)) then; jerr=TEREC_OBJ_CORRUPTED; exit lloop; endif !trap
              call jthp%get_spec(sidx,lrank,jerr); if(jerr.ne.TEREC_SUCCESS) exit lloop
    !Append the subtensor multi-index (descriptor) into the sorting list (adjust dimension SAT level, if needed):
@@ -5188,7 +5277,9 @@
             rloop: do while(jerr.eq.GFC_SUCCESS)
    !Get subtensor header:
              jup=>rvit%get_value(jerr); if(jerr.ne.GFC_SUCCESS) exit rloop
-             jthp=>NULL(); select type(jup); class is(tens_header_t); jthp=>jup; end select
+             jtrp=>NULL(); select type(jup); class is(tens_rcrsv_t); jtrp=>jup; end select
+             if(.not.associated(jtrp)) then; jerr=TEREC_OBJ_CORRUPTED; exit rloop; endif !trap
+             jthp=>jtrp%get_header()
              if(.not.associated(jthp)) then; jerr=TEREC_OBJ_CORRUPTED; exit rloop; endif !trap
              call jthp%get_spec(sidx,rrank,jerr); if(jerr.ne.TEREC_SUCCESS) exit rloop
    !Append the subtensor multi-index (descriptor) into the sorting list (adjust dimension SAT level, if needed):
@@ -5229,7 +5320,9 @@
             dloop: do while(jerr.eq.GFC_SUCCESS)
    !Get subtensor header:
              jup=>dvit%get_value(jerr); if(jerr.ne.GFC_SUCCESS) exit dloop
-             jthp=>NULL(); select type(jup); class is(tens_header_t); jthp=>jup; end select
+             jtrp=>NULL(); select type(jup); class is(tens_rcrsv_t); jtrp=>jup; end select
+             if(.not.associated(jtrp)) then; jerr=TEREC_OBJ_CORRUPTED; exit dloop; endif !trap
+             jthp=>jtrp%get_header()
              if(.not.associated(jthp)) then; jerr=TEREC_OBJ_CORRUPTED; exit dloop; endif !trap
              call jthp%get_spec(sidx,drank,jerr); if(jerr.ne.TEREC_SUCCESS) exit dloop
    !Append the subtensor multi-index (descriptor) into the sorting list (adjust dimension SAT level, if needed):
@@ -5417,40 +5510,75 @@
            integer(INTD):: jdn,jln,jrn,ji
            type(tens_contraction_t):: tcontr
            type(tens_contraction_t), pointer:: jtcp
-           class(tens_header_t), pointer:: dthp,lthp,rthp
+           class(tens_rcrsv_t), pointer:: dtrp,ltrp,rtrp
            class(*), pointer:: jup
 
            jerr=TEREC_SUCCESS
  !Associate destination tensor header:
            jdn=tcg_num_buf(ds) !destination subtensor number
            jup=>dvit%element_value(int(jdn,INTL),jerr); if(jerr.ne.GFC_SUCCESS) return
-           select type(jup); class is(tens_header_t); dthp=>jup; end select
-           if(.not.associated(dthp)) then; jerr=TEREC_ERROR; return; endif !trap
+           dtrp=>NULL(); select type(jup); class is(tens_rcrsv_t); dtrp=>jup; end select
+           if(.not.associated(dtrp)) then; jerr=TEREC_ERROR; return; endif !trap
            do ji=ps,pf
             jrn=tcg_num_buf(ji)/lsl     !right subtensor number
             jln=tcg_num_buf(ji)-jrn*lsl !left subtensor number
             !write(CONS_OUT,'("New subcontraction: ",i4," = ",i4," * ",i4)') jdn,jln,jrn !debug
  !Associate left tensor header:
             jup=>lvit%element_value(int(jln,INTL),jerr); if(jerr.ne.GFC_SUCCESS) exit
-            select type(jup); class is(tens_header_t); lthp=>jup; end select
-            if(.not.associated(lthp)) then; jerr=TEREC_ERROR; exit; endif !trap
+            ltrp=>NULL(); select type(jup); class is(tens_rcrsv_t); ltrp=>jup; end select
+            if(.not.associated(ltrp)) then; jerr=TEREC_ERROR; exit; endif !trap
  !Associate right tensor header:
             jup=>rvit%element_value(int(jrn,INTL),jerr); if(jerr.ne.GFC_SUCCESS) exit
-            select type(jup); class is(tens_header_t); rthp=>jup; end select
-            if(.not.associated(rthp)) then; jerr=TEREC_ERROR; exit; endif !trap
+            rtrp=>NULL(); select type(jup); class is(tens_rcrsv_t); rtrp=>jup; end select
+            if(.not.associated(rtrp)) then; jerr=TEREC_ERROR; exit; endif !trap
  !Construct and record a subcontraction:
             jerr=slit%append(tcontr); if(jerr.ne.GFC_SUCCESS) exit
             jerr=slit%reset_back(); if(jerr.ne.GFC_SUCCESS) exit
             jup=>slit%get_value(jerr); if(jerr.ne.GFC_SUCCESS) exit
-            select type(jup); class is(tens_contraction_t); jtcp=>jup; end select
+            jtcp=>NULL(); select type(jup); class is(tens_contraction_t); jtcp=>jup; end select
             if(.not.associated(jtcp)) then; jerr=TEREC_ERROR; exit; endif !trap
-            call jtcp%import_replace(this,jerr,dthp,lthp,rthp); if(jerr.ne.TEREC_SUCCESS) exit
-            nsub=nsub+1
+            call jtcp%import_replace(this,jerr,dtrp,ltrp,rtrp); if(jerr.ne.TEREC_SUCCESS) exit
+            nsub=nsub+1; jtcp=>NULL()
            enddo
            return
           end subroutine record_subcontractions
 
         end subroutine TensContractionSplit
+!------------------------------------------------------------------
+        subroutine TensContractionPrintIt(this,ierr,dev_id,nspaces)
+!Prints the tensor contraction info.
+         implicit none
+         class(tens_contraction_t), intent(in):: this  !in: tensor contraction
+         integer(INTD), intent(out), optional:: ierr   !out: error code
+         integer(INTD), intent(in), optional:: dev_id  !in: output device (defaults to screen)
+         integer(INTD), intent(in), optional:: nspaces !in: number of leading spaces
+         integer(INTD):: errc,devo,nsp,n,i,j
+         class(tens_rcrsv_t), pointer:: trp
+
+         devo=6; if(present(dev_id)) devo=dev_id
+         nsp=0; if(present(nspaces)) nsp=nspaces
+         do i=1,nsp; write(devo,'(" ")',ADVANCE='NO'); enddo
+         write(devo,'("TENSOR CONTRACTION{")')
+         if(this%is_set(errc)) then
+          call this%contr_ptrn%print_it(j,devo,nsp+1); if(errc.eq.TEREC_SUCCESS.and.j.ne.TEREC_SUCCESS) errc=j
+          do i=1,nsp+1; write(devo,'(" ")',ADVANCE='NO'); enddo
+          write(devo,'("Complex Prefactor = (",D21.14,",",D21.14,")")') this%alpha
+          n=this%get_num_args(j); if(errc.eq.TEREC_SUCCESS.and.j.ne.TEREC_SUCCESS) errc=j
+          do i=0,n-1
+           trp=>NULL(); trp=>this%get_argument(i,j)
+           if(errc.eq.TEREC_SUCCESS.and.j.ne.TEREC_SUCCESS) errc=j
+           call trp%print_it(j,devo,nsp+1)
+           if(errc.eq.TEREC_SUCCESS.and.j.ne.TEREC_SUCCESS) errc=j
+          enddo
+         else
+          do i=1,nsp+1; write(devo,'(" ")',ADVANCE='NO'); enddo
+          write(devo,'("Empty/invalid tensor contraction")')
+         endif
+         do i=1,nsp; write(devo,'(" ")',ADVANCE='NO'); enddo
+         write(devo,'("}")')
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensContractionPrintIt
 
        end module tensor_recursive
 !==================================
@@ -5733,7 +5861,7 @@
                                     &dims(1:tens_rank),dimg(1:tens_rank),grps(1:2))
          if(ierr.ne.0) then; ierr=7; return; endif
  !Split the tensor into subtensors:
-         call tensor%split((/1,2,3,4/),subtensors,ierr,num_subtensors); if(ierr.ne.0) then; ierr=8; return; endif
+         call tensor%split((/1,2,3,4/),subtensors,ierr,num_subtensors,.TRUE.); if(ierr.ne.0) then; ierr=8; return; endif
          !write(*,*) 'Number of subtensors generated = ',num_subtensors !debug
          ierr=lit%init(subtensors); if(ierr.ne.0) then; ierr=9; return; endif
          !ierr=lit%scanp(action_f=print_tens_header_f); if(ierr.eq.GFC_IT_DONE) ierr=lit%reset() !debug
