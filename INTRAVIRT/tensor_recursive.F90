@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/05/13
+!REVISION: 2017/05/15
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -5592,6 +5592,9 @@
         implicit none
         private
         public test_tensor_recursive
+!GLOBAL DATA:
+        type(vector_t), private:: subtensor_storage !persistent storage for subtensors
+
        contains
 !---------------------------------------------
         subroutine test_tensor_recursive(ierr)
@@ -5899,11 +5902,40 @@
          type(vector_t), intent(inout):: subtensors  !out: vector of subtensors
          integer(INTD), intent(out):: num_subtensors !out: number of generated subtensors
          integer(INTD):: i,nd
+         integer(INTL):: first,last
+         type(vector_iter_t):: vit,rvit
+         class(*), pointer:: up
 
          num_subtensors=0
          if(tensor%is_set(ierr,num_dims=nd)) then
           if(ierr.eq.TEREC_SUCCESS.and.nd.gt.0) then
-           call tensor%split((/(i,i=1,nd)/),subtensors,ierr,num_subtensors)
+           ierr=vit%init(subtensor_storage)
+           if(ierr.eq.GFC_SUCCESS) then
+            first=vit%get_length()
+            call tensor%split((/(i,i=1,nd)/),subtensor_storage,ierr,num_subtensors)
+            last=vit%get_length()-1_INTL
+            if(first.le.last) then
+             ierr=vit%reset() !update iterator status
+             if(ierr.eq.GFC_SUCCESS) then
+              ierr=vit%move_to(first)
+              if(ierr.eq.GFC_SUCCESS) then
+               ierr=rvit%init(subtensors)
+               if(ierr.eq.GFC_SUCCESS) then
+                do
+                 up=>NULL(); up=>vit%get_value(); if(.not.associated(up)) then; ierr=TEREC_OBJ_CORRUPTED; exit; endif
+                 ierr=rvit%append(up,assoc_only=.TRUE.); if(ierr.ne.GFC_SUCCESS) exit
+                 ierr=vit%next(); if(ierr.ne.GFC_SUCCESS) exit
+                enddo
+                if(ierr.eq.GFC_NO_MOVE) ierr=GFC_SUCCESS
+                i=rvit%release(); if(i.ne.GFC_SUCCESS.and.ierr.eq.TEREC_SUCCESS) ierr=TEREC_ERROR
+               endif
+              endif
+             endif
+            else
+             ierr=TEREC_ERROR
+            endif
+            i=vit%release(); if(i.ne.GFC_SUCCESS.and.ierr.eq.TEREC_SUCCESS) ierr=TEREC_ERROR
+           endif
           else
            if(ierr.eq.TEREC_SUCCESS) ierr=TEREC_INVALID_REQUEST
           endif
@@ -5932,6 +5964,7 @@
          type(tens_contraction_t), pointer:: subcontr_p
          type(list_bi_t):: subcontractions
          type(list_iter_t):: lit
+         type(vector_iter_t):: vit
          class(*), pointer:: up
 
  !Build a hierarchical representation for a test vector space:
@@ -5994,6 +6027,9 @@
          enddo
          if(ierr.ne.GFC_NO_MOVE) then; ierr=21; return; endif
          ierr=lit%release(); if(ierr.ne.GFC_SUCCESS) then; ierr=22; return; endif
+         ierr=vit%init(subtensor_storage); if(ierr.ne.GFC_SUCCESS) then; ierr=23; return; endif
+         ierr=vit%delete_all(); if(ierr.ne.GFC_SUCCESS) then; ierr=24; return; endif
+         ierr=vit%release(); if(ierr.ne.GFC_SUCCESS) then; ierr=25; return; endif
          return
 
          contains
