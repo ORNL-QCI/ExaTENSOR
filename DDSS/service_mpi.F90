@@ -1,6 +1,6 @@
 !This module provides general services for MPI parallel programs.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/02/28
+!REVISION: 2017/05/15
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -461,7 +461,7 @@
          do active_gpu=0,gpus_found-1
           call cudaSetDevice(active_gpu,err_code)
           if(err_code.eq.0) then
-           write(jo,'("Info on GPU device                 : ",i10,":")') active_gpu
+           write(jo,'("Info on GPU device                 : ",i12,":")') active_gpu
            call cudaGetDeviceProperties(active_gpu,gpu_info(active_gpu)%totalGlobalMem,gpu_info(active_gpu)%sharedMemPerBlock,&
                                        &gpu_info(active_gpu)%regsPerBlock,gpu_info(active_gpu)%warpSize,&
                                        &gpu_info(active_gpu)%maxThreadsPerBlock,gpu_info(active_gpu)%maxThreadsDim,&
@@ -473,25 +473,25 @@
                                        &gpu_info(active_gpu)%memoryBusWidth,gpu_info(active_gpu)%maxThreadsPerMultiProcessor,&
                                        &err_code)
            if(err_code.eq.0) then
-            write(jo,'(1x,"GPU major revision number         : ",i10)') gpu_info(active_gpu)%major
-            write(jo,'(1x,"GPU minor revision number         : ",i10)') gpu_info(active_gpu)%minor
-            write(jo,'(1x,"GPU total global memory (B)       : ",i10)') gpu_info(active_gpu)%totalGlobalMem
-            write(jo,'(1x,"GPU shared memory per SM (B)      : ",i10)') gpu_info(active_gpu)%sharedMemPerBlock
-            write(jo,'(1x,"GPU constant memory (B)           : ",i10)') gpu_info(active_gpu)%totalConstMem
-            write(jo,'(1x,"GPU registers per block           : ",i10)') gpu_info(active_gpu)%regsPerBlock
-            write(jo,'(1x,"GPU warp size                     : ",i10)') gpu_info(active_gpu)%warpSize
-            write(jo,'(1x,"GPU max threads per block         : ",i10)') gpu_info(active_gpu)%maxThreadsPerBlock
-            write(jo,'(1x,"GPU max threads along each dim    : ",i10,1x,i10,1x,i10)') gpu_info(active_gpu)%maxThreadsDim(1:3)
-            write(jo,'(1x,"GPU max blocks along each dim     : ",i10,1x,i10,1x,i10)') gpu_info(active_gpu)%maxGridSize(1:3)
-            write(jo,'(1x,"GPU amount of multiprocessors     : ",i10)') gpu_info(active_gpu)%multiProcessorCount
-            write(jo,'(1x,"GPU max threads per multiprocessor: ",i10)') gpu_info(active_gpu)%maxThreadsPerMultiProcessor
-            write(jo,'(1x,"GPU copy/computation overlap      : ",i10)') gpu_info(active_gpu)%deviceOverlap
-            write(jo,'(1x,"GPU number of transfer engines    : ",i10)') gpu_info(active_gpu)%asyncEngineCount
-            write(jo,'(1x,"GPU kernel concurrency            : ",i10)') gpu_info(active_gpu)%concurrentKernels
-            write(jo,'(1x,"GPU ECC status                    : ",i10)') gpu_info(active_gpu)%ECCEnabled
-            write(jo,'(1x,"GPU clock rate (KHz)              : ",i10)') gpu_info(active_gpu)%clockRate
-            write(jo,'(1x,"GPU memory clock rate (KHz)       : ",i10)') gpu_info(active_gpu)%memoryClockRate
-            write(jo,'(1x,"GPU memory bus width (b)          : ",i10)') gpu_info(active_gpu)%memoryBusWidth
+            write(jo,'(1x,"GPU major revision number         : ",i12)') gpu_info(active_gpu)%major
+            write(jo,'(1x,"GPU minor revision number         : ",i12)') gpu_info(active_gpu)%minor
+            write(jo,'(1x,"GPU total global memory (B)       : ",i12)') gpu_info(active_gpu)%totalGlobalMem
+            write(jo,'(1x,"GPU shared memory per SM (B)      : ",i12)') gpu_info(active_gpu)%sharedMemPerBlock
+            write(jo,'(1x,"GPU constant memory (B)           : ",i12)') gpu_info(active_gpu)%totalConstMem
+            write(jo,'(1x,"GPU registers per block           : ",i12)') gpu_info(active_gpu)%regsPerBlock
+            write(jo,'(1x,"GPU warp size                     : ",i12)') gpu_info(active_gpu)%warpSize
+            write(jo,'(1x,"GPU max threads per block         : ",i12)') gpu_info(active_gpu)%maxThreadsPerBlock
+            write(jo,'(1x,"GPU max threads along each dim    : ",i12,1x,i12,1x,i12)') gpu_info(active_gpu)%maxThreadsDim(1:3)
+            write(jo,'(1x,"GPU max blocks along each dim     : ",i12,1x,i12,1x,i12)') gpu_info(active_gpu)%maxGridSize(1:3)
+            write(jo,'(1x,"GPU amount of multiprocessors     : ",i12)') gpu_info(active_gpu)%multiProcessorCount
+            write(jo,'(1x,"GPU max threads per multiprocessor: ",i12)') gpu_info(active_gpu)%maxThreadsPerMultiProcessor
+            write(jo,'(1x,"GPU copy/computation overlap      : ",i12)') gpu_info(active_gpu)%deviceOverlap
+            write(jo,'(1x,"GPU number of transfer engines    : ",i12)') gpu_info(active_gpu)%asyncEngineCount
+            write(jo,'(1x,"GPU kernel concurrency            : ",i12)') gpu_info(active_gpu)%concurrentKernels
+            write(jo,'(1x,"GPU ECC status                    : ",i12)') gpu_info(active_gpu)%ECCEnabled
+            write(jo,'(1x,"GPU clock rate (KHz)              : ",i12)') gpu_info(active_gpu)%clockRate
+            write(jo,'(1x,"GPU memory clock rate (KHz)       : ",i12)') gpu_info(active_gpu)%memoryClockRate
+            write(jo,'(1x,"GPU memory bus width (b)          : ",i12)') gpu_info(active_gpu)%memoryBusWidth
            else
             write(jo,'("#WARNING(gpu_nvidia_probe): Unable to get properties for GPU #",i3)') active_gpu
            endif
