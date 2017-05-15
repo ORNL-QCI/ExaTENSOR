@@ -26,6 +26,7 @@
 ! # MUD: Maximally Uniform Distribution.
         use tensor_algebra !includes dil_basic
         use stsubs
+        use timers
         use combinatoric
         use gfc_base
         use gfc_list
@@ -5024,7 +5025,9 @@
          type(vector_t):: dsubs,lsubs,rsubs              !vector of subtensors for each tensor argument
          type(vector_iter_t):: dvit,lvit,rvit            !vector iterator for each tensor argument
          type(list_iter_t):: slit                        !list iterator for the list of subcontractions
+         real(8):: tms,tm
 
+         tms=thread_wtime()
          nsub=0 !number of generated subcontractions
          if(this%is_set(errc)) then
           if(errc.eq.TEREC_SUCCESS) then
@@ -5060,6 +5063,8 @@
           if(errc.eq.TEREC_SUCCESS) then; num_subops=nsub; else; num_subops=-1; endif
          endif
          if(present(ierr)) ierr=errc
+         tm=thread_wtime(tms)
+         !write(CONS_OUT,*)'TensContractionSplit call time (msec) = ',tm*1d3 !debug
          return
 
          contains
@@ -5382,9 +5387,9 @@
              jnc=jnc+1; ord(nci+jnc,2)=ji; jnu=jnu+1; ord(jnu,0)=jj
             endif
            enddo
-           write(CONS_OUT,'("D dimension order:",32(1x,i2))') ord(1:drank,0) !debug: position in D
-           write(CONS_OUT,'("L dimension order:",32(1x,i2))') ord(1:lrank,1) !debug: N2O for L
-           write(CONS_OUT,'("R dimension order:",32(1x,i2))') ord(1:rrank,2) !debug: N2O for R
+           !write(CONS_OUT,'("D dimension order:",32(1x,i2))') ord(1:drank,0) !debug: position in D
+           !write(CONS_OUT,'("L dimension order:",32(1x,i2))') ord(1:lrank,1) !debug: N2O for L
+           !write(CONS_OUT,'("R dimension order:",32(1x,i2))') ord(1:rrank,2) !debug: N2O for R
  !Sort tensor descriptors:
   !Use the rest of the TCG buffer as an external buffer:
            jub=(int(ubound(tcg_ind_buf,2),INTL)-tcgl)*int(size(tcg_ind_buf,1),INTL)
@@ -5394,21 +5399,21 @@
             iv=>tcg_ind_buf(:,lstart:lfinish)
             v=>tcg_num_buf(lstart:lfinish)
             call multord_i8e(lrank,lmsi,int(lfinish-lstart+1,INTL),ord(1:lrank,1),iv,v,ext_buf)
-            call print_tcg_buffer(lstart,lfinish,lrank) !debug
+            !call print_tcg_buffer(lstart,lfinish,lrank) !debug
            endif
   !Sort right descriptors:
            if(rrank.gt.0) then
             iv=>tcg_ind_buf(:,rstart:rfinish)
             v=>tcg_num_buf(rstart:rfinish)
             call multord_i8e(rrank,rmsi,int(rfinish-rstart+1,INTL),ord(1:rrank,2),iv,v,ext_buf)
-            call print_tcg_buffer(rstart,rfinish,rrank) !debug
+            !call print_tcg_buffer(rstart,rfinish,rrank) !debug
            endif
   !Sort destination descriptors:
            if(drank.gt.0) then
             iv=>tcg_ind_buf(:,dstart:dfinish)
             v=>tcg_num_buf(dstart:dfinish)
             call multord_i8e(drank,dmsi,int(dfinish-dstart+1,INTL),(/(ji,ji=1,drank)/),iv,v,ext_buf)
-            call print_tcg_buffer(dstart,dfinish,drank) !debug
+            !call print_tcg_buffer(dstart,dfinish,drank) !debug
            endif
   !Match contracted multi-indices:
            pstart=tcgl+1; ji=lstart; jj=rstart
@@ -5462,7 +5467,7 @@
             endif
            enddo
            pfinish=tcgl
-           call print_tcg_buffer(pstart,pfinish,drank) !debug
+           !call print_tcg_buffer(pstart,pfinish,drank) !debug
   !Filter with the destination multi-indices:
            if(drank.gt.0) then
    !Use the rest of the TCG buffer as an external buffer:
@@ -5473,7 +5478,7 @@
             iv=>tcg_ind_buf(:,pstart:pfinish)
             v=>tcg_num_buf(pstart:pfinish)
             call multord_i8e(drank,max(lmsi,rmsi),int(pfinish-pstart+1,INTL),jprm(1:drank),iv,v,ext_buf)
-            call print_tcg_buffer(pstart,pfinish,drank) !debug
+            !call print_tcg_buffer(pstart,pfinish,drank) !debug
    !Filter with the destination multi-index:
             ji=dstart; jj=pstart
             do while(ji.le.dfinish.and.jj.le.pfinish)
@@ -6014,9 +6019,10 @@
  !Split the tensor contraction into a list of subtensor contractions:
          call tens_contr%split(tens_split_func,subcontractions,ierr,num_subcontractions)
          if(ierr.ne.0) then; ierr=16; return; endif
-         write(*,*) 'Number of subtensor contractions = ',num_subcontractions !debug
- !Print subcontractions (debug):
+         !write(*,*) 'Number of subtensor contractions = ',num_subcontractions !debug
          ierr=lit%init(subcontractions); if(ierr.ne.GFC_SUCCESS) then; ierr=17; return; endif
+#if 0
+ !Print subcontractions (debug):
          do j=1,num_subcontractions
           write(*,'("Subtensor contraction ",i7,":")') j
           up=>lit%get_value(ierr); if(ierr.ne.GFC_SUCCESS) then; ierr=18; return; endif
@@ -6026,10 +6032,14 @@
           ierr=lit%next(); if(ierr.ne.GFC_SUCCESS.and.j.lt.num_subcontractions) then; ierr=20; return; endif
          enddo
          if(ierr.ne.GFC_NO_MOVE) then; ierr=21; return; endif
-         ierr=lit%release(); if(ierr.ne.GFC_SUCCESS) then; ierr=22; return; endif
-         ierr=vit%init(subtensor_storage); if(ierr.ne.GFC_SUCCESS) then; ierr=23; return; endif
-         ierr=vit%delete_all(); if(ierr.ne.GFC_SUCCESS) then; ierr=24; return; endif
-         ierr=vit%release(); if(ierr.ne.GFC_SUCCESS) then; ierr=25; return; endif
+#endif
+ !Destroy subcontractions:
+         ierr=lit%delete_all(); if(ierr.ne.GFC_SUCCESS) then; ierr=22; return; endif
+         ierr=lit%release(); if(ierr.ne.GFC_SUCCESS) then; ierr=23; return; endif
+ !Release global resources:
+         ierr=vit%init(subtensor_storage); if(ierr.ne.GFC_SUCCESS) then; ierr=24; return; endif
+         ierr=vit%delete_all(); if(ierr.ne.GFC_SUCCESS) then; ierr=25; return; endif
+         ierr=vit%release(); if(ierr.ne.GFC_SUCCESS) then; ierr=26; return; endif
          return
 
          contains
