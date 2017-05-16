@@ -2,7 +2,7 @@
 implementation of the tensor algebra library TAL-SH:
 CP-TAL (TAL for CPU), NV-TAL (TAL for NVidia GPU),
 XP-TAL (TAL for Intel Xeon Phi), AM-TAL (TAL for AMD GPU).
-REVISION: 2017/02/17
+REVISION: 2017/05/16
 
 Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -95,6 +95,8 @@ static size_t args_size_gpu[MAX_GPUS_PER_NODE]={0}; //total size (bytes) of all 
 static int miBank[MAX_GPU_ARGS*MAX_MLNDS_PER_TENS][MAX_TENSOR_RANK]; //All active .dims[], .divs[], .grps[], .prmn[] will be stored here
 static int miFreeHandle[MAX_GPU_ARGS*MAX_MLNDS_PER_TENS]; //free entries for storing multi-indices
 static int miFFE=0; //number of free handles left in miBank
+// Slab for prefactors for tensor operations on GPU (pinned mapped Host memory):
+static slab_t prefactors; //NVIDIA GPU will access prefactors in mapped Host memory directly
 
 //LOCAL (PRIVATE) FUNCTION PROTOTYPES:
 static int const_args_link_init(int gpu_beg, int gpu_end);
@@ -240,19 +242,22 @@ OUTPUT:
 //Initialize the multi-index entry bank (slab) in pinned Host memory:
   err_code=mi_entry_init(); if(err_code) return 3;
 #ifndef NO_GPU
+//Initialize prefactors bank for usage on GPU:
+  err_code=slab_clean(&prefactors); if(err_code) return 4;
+  err_code=slab_construct(&prefactors,sizeof(talshComplex8),(size_t)(MAX_CUDA_TASKS*MAX_GPUS_PER_NODE),sizeof(talshComplex8),1U); if(err_code) return 5;
 //Allocate GPUs buffers, if needed:
   if(gpu_beg >= 0 && gpu_end >= gpu_beg){ //GPU exist for this MPI process
-   err=cudaGetDeviceCount(&i); if(err != cudaSuccess) return 4;
+   err=cudaGetDeviceCount(&i); if(err != cudaSuccess) return 6;
    if(gpu_end < MAX_GPUS_PER_NODE && gpu_end < i){
-    err_code=init_gpus(gpu_beg,gpu_end); if(err_code < 0) return 5;
+    err_code=init_gpus(gpu_beg,gpu_end); if(err_code < 0) return 7;
 // Constant memory banks for all GPUs:
-    err_code=const_args_link_init(gpu_beg,gpu_end); if(err_code != 0) return 6;
+    err_code=const_args_link_init(gpu_beg,gpu_end); if(err_code != 0) return 8;
 // Global memory banks for each GPU:
     mem_alloc_dec=MEM_ALIGN*BLCK_BUF_TOP_GPU; for(i=1;i<BLCK_BUF_DEPTH_GPU;i++) mem_alloc_dec*=BLCK_BUF_BRANCH_GPU;
     for(i=gpu_beg;i<=gpu_end;i++){
      if(gpu_is_mine(i) != 0){ //Initialize only my GPUs
-      err=cudaSetDevice(i); if(err != cudaSuccess) return 7;
-      err=cudaMemGetInfo(&hsize,&total); if(err != cudaSuccess) return 8;
+      err=cudaSetDevice(i); if(err != cudaSuccess) return 9;
+      err=cudaMemGetInfo(&hsize,&total); if(err != cudaSuccess) return 10;
       hsize=(size_t)(float(hsize)/100.0f*float(GPU_MEM_PART_USED)); hsize-=hsize%mem_alloc_dec; err_code=1;
       while(hsize > mem_alloc_dec){
        err=cudaMalloc(&arg_buf_gpu[i],hsize);
@@ -273,24 +278,24 @@ OUTPUT:
         blck_sizes_gpu[i][j]=blck_sizes_gpu[i][j-1]/BLCK_BUF_BRANCH_GPU; max_args_gpu[i]*=BLCK_BUF_BRANCH_GPU;
         hsize+=max_args_gpu[i];
        }
-       if(max_args_gpu[i] > MAX_GPU_ARGS) return 9; //Increase MAX_GPU_ARGS and recompile
+       if(max_args_gpu[i] > MAX_GPU_ARGS) return 11; //Increase MAX_GPU_ARGS and recompile
 // Initialize each GPU argument buffer occupancy tables:
-       abg_occ[i]=(size_t*)malloc(hsize*sizeof(size_t)); if(abg_occ[i] == NULL) return 10; //GPU#i buffer occupancy table
+       abg_occ[i]=(size_t*)malloc(hsize*sizeof(size_t)); if(abg_occ[i] == NULL) return 12; //GPU#i buffer occupancy table
        abg_occ_size[i]=hsize;
        for(hsize=0;hsize<abg_occ_size[i];hsize++){abg_occ[i][hsize]=0;} //initialize each buffer entry to zero occupancy
        num_args_gpu[i]=0; occ_size_gpu[i]=0; args_size_gpu[i]=0; //clear GPU memory statistics
       }else{
-       return 11;
+       return 13;
       }
      }
     }
    }else{
-    return 12;
+    return 14;
    }
   }
 #endif /*NO_GPU*/
  }else{
-  return 13;
+  return 15;
  }
  bufs_ready=1; //mark the Host and GPU argument buffers as ready
  return 0;
@@ -311,12 +316,13 @@ int arg_buf_deallocate(int gpu_beg, int gpu_end)
   if(abg_occ[i] != NULL) free(abg_occ[i]); abg_occ[i]=NULL; abg_occ_size[i]=0; max_args_gpu[i]=0;
  }
  arg_buf_host_size=0; num_args_host=0; occ_size_host=0; args_size_host=0; //clear Host memory statistics
- i=mi_entry_stop(); if(i != 0) err_code+=10000; //deactivate multi-index bank
+ i=mi_entry_stop(); if(i != 0) err_code+=100000; //deactivate multi-index bank
 #ifndef NO_GPU
+ i=slab_destruct(&prefactors); if(i != 0) err_code+=10000;
  err=cudaFreeHost(arg_buf_host);
  if(err != cudaSuccess){
   if(VERBOSE) printf("\n#ERROR(mem_manager:arg_buf_deallocate): Host argument buffer deallocation failed!");
-  err_code=1;
+  err_code+=1000;
  }
  if(gpu_beg >= 0 && gpu_end >= gpu_beg){
   for(i=gpu_beg;i<=gpu_end;i++){
@@ -338,7 +344,7 @@ int arg_buf_deallocate(int gpu_beg, int gpu_end)
     err_code++;
    }
   }
-  i=free_gpus(gpu_beg,gpu_end); if(i != 0) err_code+=1000;
+  i=free_gpus(gpu_beg,gpu_end); if(i != 0) err_code+=100;
  }
 #else
  free(arg_buf_host); arg_buf_host=NULL;
@@ -816,14 +822,28 @@ int slab_create(slab_t ** slab)
 /** Allocates an empty slab object on heap. **/
 {
  *slab=NULL; *slab=(slab_t*)malloc(sizeof(slab_t)); if(*slab == NULL) return -1;
- (*slab)->max_entries=0; (*slab)->entry_size=0; (*slab)->slab_base=NULL; (*slab)->free_entries=NULL;
+ return slab_clean(*slab);
+}
+
+int slab_clean(slab_t * slab)
+/** Cleans a statically declared (undefined) slab_t to an empty state.
+    Do not call this function on a non-empty slab_t, use slab_destruct() instead! **/
+{
+ slab->max_entries=0; slab->entry_size=0; slab->slab_base=NULL; slab->free_entries=NULL;
  return 0;
 }
 
+#ifndef NO_GPU
+int slab_construct(slab_t * slab, size_t slab_entry_size, size_t slab_max_entries, size_t align, int mapped)
+#else
 int slab_construct(slab_t * slab, size_t slab_entry_size, size_t slab_max_entries, size_t align)
+#endif
 /** Constructs a user-defined slab. **/
 {
  size_t j,l;
+#ifndef NO_GPU
+ cudaError_t err;
+#endif
  if(slab == NULL || slab_entry_size == 0 || slab_max_entries == 0) return -1;
  slab->slab_base=NULL; slab->free_entries=NULL; slab->max_entries=0;
  if(align == 0){
@@ -835,16 +855,29 @@ int slab_construct(slab_t * slab, size_t slab_entry_size, size_t slab_max_entrie
    slab->entry_size = slab_entry_size;
   }
  }
- slab->slab_base=(void*)malloc((slab->entry_size)*slab_max_entries);
- if(slab->slab_base == NULL){slab->entry_size=0; return 1;}
  slab->free_entries=(void**)malloc(sizeof(void*)*slab_max_entries);
- if(slab->free_entries == NULL){free(slab->slab_base); slab->entry_size=0; return 2;}
- slab->max_entries=slab_max_entries;
- slab->alignment=MAX(align,1);
- slab->first_free=0; j=0;
- for(l=0;l<slab_max_entries;l++){
-  slab->free_entries[l]=(void*)(&(((char*)(slab->slab_base))[j]));
-  j=j+slab->entry_size;
+ if(slab->free_entries == NULL){slab->entry_size=0; return 1;}
+#ifndef NO_GPU
+ if(mapped == 0){
+  slab->slab_base=(void*)malloc((slab->entry_size)*slab_max_entries);
+  slab->mem_mapped=0;
+ }else{
+  err=cudaHostAlloc(&(slab->slab_base),(slab->entry_size)*slab_max_entries,cudaHostAllocPortable|cudaHostAllocMapped);
+  if(err == cudaSuccess){slab->mem_mapped=1;}else{slab->slab_base=NULL;}
+ }
+#else
+ slab->slab_base=(void*)malloc((slab->entry_size)*slab_max_entries);
+#endif
+ if(slab->slab_base == NULL){
+  free(slab->free_entries); slab->entry_size=0; return 2;
+ }else{
+  slab->max_entries=slab_max_entries;
+  slab->alignment=MAX(align,1);
+  slab->first_free=0; j=0;
+  for(l=0;l<slab_max_entries;l++){
+   slab->free_entries[l]=(void*)(&(((char*)(slab->slab_base))[j]));
+   j=j+slab->entry_size;
+  }
  }
  return 0;
 }
@@ -865,8 +898,12 @@ int slab_entry_get(slab_t * slab, void ** slab_entry)
 int slab_entry_release(slab_t * slab, void * slab_entry)
 /** Releases a slab entry. **/
 {
+ size_t addr,base;
+
  if(slab == NULL) return -1;
  if(slab->max_entries == 0 || slab->slab_base == NULL || slab->free_entries == NULL) return -2;
+ base=(size_t)(slab->slab_base); addr=(size_t)(slab_entry);
+ if(addr < base || addr >= base + (slab->max_entries)*(slab->entry_size) || (addr-base)%(slab->alignment) != 0) return -3;
  if(slab->first_free > 0 && slab->first_free <= slab->max_entries){
   slab->free_entries[--(slab->first_free)]=slab_entry;
  }else{
@@ -878,19 +915,32 @@ int slab_entry_release(slab_t * slab, void * slab_entry)
 int slab_destruct(slab_t * slab)
 /** Destructs a slab. **/
 {
- int errc=0;
+ int errc;
+#ifndef NO_GPU
+ cudaError_t err;
+#endif
+ errc=0;
  if(slab == NULL) return -1;
  if(slab->slab_base != NULL){
   if(slab->max_entries == 0) errc=NOT_CLEAN;
+#ifndef NO_GPU
+  if(slab->mem_mapped == 0){
+   free(slab->slab_base); slab->slab_base=NULL;
+  }else{
+   err=cudaFreeHost(slab->slab_base);
+   if(err != cudaSuccess) errc=NOT_CLEAN;
+  }
+#else
   free(slab->slab_base); slab->slab_base=NULL;
+#endif
  }else{
-  if(slab->max_entries > 0) errc=NOT_CLEAN;
+  if(slab->max_entries > 0){slab->max_entries=0; errc=NOT_CLEAN;}
  }
  if(slab->free_entries != NULL){
   if(slab->max_entries == 0) errc=NOT_CLEAN;
   free(slab->free_entries); slab->free_entries=NULL;
  }else{
-  if(slab->max_entries > 0) errc=NOT_CLEAN;
+  if(slab->max_entries > 0){slab->max_entries=0; errc=NOT_CLEAN;}
  }
  slab->max_entries=0;
  slab->entry_size=0;

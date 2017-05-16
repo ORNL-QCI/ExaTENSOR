@@ -1,6 +1,6 @@
 /** Tensor Algebra Library for NVidia GPU: NV-TAL (CUDA based).
 AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-REVISION: 2017/03/29
+REVISION: 2017/05/16
 
 Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -145,7 +145,7 @@ template <typename T>
 __global__ void gpu_matrix_multiply_tn__(size_t ll, size_t lr, size_t lc, const T * __restrict__ arg1,
                                          const T * __restrict__ arg2, T * __restrict__ arg0);
 #endif /*NO_GPU*/
-//------------------------------------------------------------------------------------------------------
+//-------------------------------------------------------------------------------------------
 //PARAMETERS:
 static int VERBOSE=1; //verbosity for error messages
 static int DEBUG=0; //debugging mode
