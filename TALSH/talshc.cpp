@@ -496,7 +496,7 @@ static int talsh_choose_image_for_device(talsh_tens_t * tens, unsigned int coh_c
     case COPY_K: coh=COPY_K; break;
     default: return -1;
    }
-   i=talshTensorPlace(tens,0,DEV_HOST,coh); if(i) return -1;
+   i=talshTensorPlace(tens,0,DEV_HOST,NULL,coh); if(i) return -1;
    *copied=1; image_id=tens->ndev-1;
    if(tens->dev_rsc[image_id].dev_id != talshFlatDevId(DEV_HOST,0)) return -1;
   }else{
@@ -1974,7 +1974,7 @@ void talshTaskPrint(const talsh_task_t * talsh_task)
 }
 
 // TAL-SH tensor operations API:
-int talshTensorPlace(talsh_tens_t * tens, int dev_id, int dev_kind, int copy_ctrl, talsh_task_t * talsh_task)
+int talshTensorPlace(talsh_tens_t * tens, int dev_id, int dev_kind, void * dev_mem, int copy_ctrl, talsh_task_t * talsh_task)
 /** Places a tensor block body image on a specific device. **/
 {
  int i,j,dn,dk,errc,devid,dvk,dvn,image_id,host_image,runtime;
@@ -2015,7 +2015,7 @@ int talshTensorPlace(talsh_tens_t * tens, int dev_id, int dev_kind, int copy_ctr
  if(dvk != DEV_HOST){ //the destination device is an accelerator
   if(image_id < 0){ //no device of requested kind holds an image
    if(host_image < 0){ //image is absent on Host as well => a blocking copy will be required
-    errc=talshTensorPlace(tens,0,DEV_HOST,copy_ctrl); //clone/move the image to Host (blocking call!)
+    errc=talshTensorPlace(tens,0,DEV_HOST,dev_mem,copy_ctrl); //clone/move the image to Host (blocking call!)
     if(errc != TALSH_SUCCESS){tsk->task_error=106; if(talsh_task == NULL) j=talshTaskDestroy(tsk); return errc;}
     image_id=tens->ndev-1; //the last image is now residing on Host
     if(tens->dev_rsc[image_id].dev_id != talshFlatDevId(DEV_HOST,0)){
@@ -2065,7 +2065,7 @@ int talshTensorPlace(talsh_tens_t * tens, int dev_id, int dev_kind, int copy_ctr
     j=talsh_tensor_c_dissoc(ctens); ctens=NULL;
     tsk->task_error=113; if(talsh_task == NULL) j=talshTaskDestroy(tsk); return TALSH_FAILURE;
    }
-   errc=gpu_tensor_block_place(ctens,j,(unsigned int)copy_ctrl,cuda_task); //if source == destination, no transfer will be initiated (ok)
+   errc=gpu_tensor_block_place(ctens,j,(unsigned int)copy_ctrl,cuda_task,dev_mem); //if source == destination, no transfer will be initiated (ok)
    if(errc){ //in case of error, CUDA task has already been finalized (with error) without coherence control
     if(errc != TRY_LATER && errc != DEVICE_UNABLE) errc=TALSH_FAILURE;
     j=talsh_tensor_c_dissoc(ctens); if(j) errc=TALSH_FAILURE;
@@ -2078,7 +2078,9 @@ int talshTensorPlace(talsh_tens_t * tens, int dev_id, int dev_kind, int copy_ctr
     }
    }
    if(talsh_task == NULL){ //blocking call
+    tensBlck_print(ctens); printf("\nFinalizing task\n"); //`debug
     errc=talshTaskWait(tsk,&j); if(errc == TALSH_SUCCESS && j != TALSH_TASK_COMPLETED) errc=TALSH_TASK_ERROR;
+    printf("\nTALSH task error = %d\n",errc); tensBlck_print(ctens); //`debug
     j=talsh_tensor_c_dissoc(ctens); if(j) errc=TALSH_FAILURE;
     j=talshTaskDestroy(tsk); if(j != TALSH_SUCCESS && errc == TALSH_SUCCESS) errc=j;
    }
@@ -2112,9 +2114,9 @@ int talshTensorPlace(talsh_tens_t * tens, int dev_id, int dev_kind, int copy_ctr
  return errc;
 }
 
-int talshTensorPlace_(talsh_tens_t * tens, int dev_id, int dev_kind, int copy_ctrl, talsh_task_t * talsh_task) //Fortran wrapper
+int talshTensorPlace_(talsh_tens_t * tens, int dev_id, int dev_kind, void * dev_mem, int copy_ctrl, talsh_task_t * talsh_task) //Fortran wrapper
 {
- return talshTensorPlace(tens,dev_id,dev_kind,copy_ctrl,talsh_task);
+ return talshTensorPlace(tens,dev_id,dev_kind,dev_mem,copy_ctrl,talsh_task);
 }
 
 int talshTensorDiscard(talsh_tens_t * tens, int dev_id, int dev_kind)

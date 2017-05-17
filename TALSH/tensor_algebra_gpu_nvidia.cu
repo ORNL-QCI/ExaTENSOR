@@ -2226,6 +2226,7 @@ __host__ static int cuda_task_finalize(cudaTask_t *cuda_task) //do not call this
    if(tens_arg->const_mem_entry >= 0){
     errc=const_args_entry_free(cuda_task->gpu_id,tens_arg->const_mem_entry); if(errc) ret_stat=NOT_CLEAN; tens_arg->const_mem_entry=0;
    }
+   tensBlck_print(tens_arg->tens_p); //`debug
   }else{
    if(cuda_task->task_error == 0) return -4; //successfully completed CUDA tasks must have all tensor arguments associated
   }
@@ -2288,13 +2289,14 @@ All matrices are in Host memory. Executed on the currently set GPU device. **/
  }
  return 0;
 }
-//--------------------------------------------------------------------------------------------------------------
+//-----------------------------------------------------------------------------------------------------------------------------
 // TENSOR BODY CLONING (non-blocking):
-__host__ int gpu_tensor_block_place(tensBlck_t *ctens, int gpu_id, unsigned int coh_ctrl, cudaTask_t *cuda_task)
+__host__ int gpu_tensor_block_place(tensBlck_t *ctens, int gpu_id, unsigned int coh_ctrl, cudaTask_t *cuda_task, void *dev_mem)
 /** Copies/moves the tensor body to a different GPU (gpu_id >= 0) or Host (gpu_id < 0).
-    A non-zero return status indicates an error. If the error code is negative, the CUDA task
-    was not recorded. For positive error codes, the CUDA task was recorded. If the source device
-    where the tensor body resides coincides with the destination device, no transfer will be scheduled.
+    If <dev_mem> is a valid target device memory pointer, it will be used for storage, otherwise buffer memory will be allocated.
+    A non-zero return status indicates an error. If the error code is negative, the CUDA task was not recorded.
+    For positive error codes, the CUDA task was recorded. If the source device where the tensor body resides
+    coincides with the destination device, no transfer will be scheduled.
     The source tensor body must reside either on Host or on Nvidia GPU. **/
 {
  int j,tds,gpu_ex,src_gpu,devk,cur_gpu,devid,nclean,errc;
@@ -2379,7 +2381,11 @@ __host__ int gpu_tensor_block_place(tensBlck_t *ctens, int gpu_id, unsigned int 
    }else{
     if(tensDevRsc_is_empty(ctens->dst_rsc) == NOPE){errc=tensDevRsc_release_all(ctens->dst_rsc); if(errc) ++nclean;}
    }
-   errc=tensDevRsc_allocate_mem(ctens->dst_rsc,devid,tsize,YEP);
+   if(dev_mem == NULL){
+    errc=tensDevRsc_allocate_mem(ctens->dst_rsc,devid,tsize,YEP); //device memory is allocated in the device argument buffer
+   }else{
+    errc=tensDevRsc_attach_mem(ctens->dst_rsc,devid,dev_mem); //externally provided device memory will be used for storage
+   }
    if(errc){
     if(errc == TRY_LATER || errc == DEVICE_UNABLE){
      j=cuda_task_record(cuda_task,coh_ctrl,NVTAL_DEFERRED); j=gpu_activate(cur_gpu);

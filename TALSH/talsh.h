@@ -238,9 +238,10 @@ extern "C"{
  int talshTensorPlace(talsh_tens_t * tens,               //inout: tensor block
                       int dev_id,                        //in: device id (flat or kind-specific)
                       int dev_kind = DEV_NULL,           //in: device kind (if present, <dev_id> is kind-specific)
+                      void * dev_mem = NULL,             //in: externally provided target device memory pointer
                       int copy_ctrl = COPY_M,            //in: copy control (COPY_X), defaults to COPY_M
                       talsh_task_t * talsh_task = NULL); //inout: TAL-SH task handle
- int talshTensorPlace_(talsh_tens_t * tens, int dev_id, int dev_kind, int copy_ctrl, talsh_task_t * talsh_task);
+ int talshTensorPlace_(talsh_tens_t * tens, int dev_id, int dev_kind, void * dev_mem, int copy_ctrl, talsh_task_t * talsh_task);
 //  Discard a tensor block on a specific device:
  int talshTensorDiscard(talsh_tens_t * tens,      //inout: tensor block
                         int dev_id,               //in: device id (flat or kind-specific)
