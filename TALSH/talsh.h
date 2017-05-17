@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level API header.
-REVISION: 2017/04/10
+REVISION: 2017/05/17
 
 Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -89,19 +89,6 @@ typedef struct{
  double flops;     //number of floating point operations (information)
  double exec_time; //execution time in seconds (information)
 } talsh_task_t;
-
-//INTERNAL PROTOTYPES:
-// TAL-SH complex arithmetic:
-inline talshComplex4 talshComplex4Set(float real, float imag);
-inline talshComplex8 talshComplex8Set(double real, double imag);
-inline float talshComplex4Real(talshComplex4 cmplx);
-inline double talshComplex8Real(talshComplex8 cmplx);
-inline float talshComplex4Imag(talshComplex4 cmplx);
-inline double talshComplex8Imag(talshComplex8 cmplx);
-inline talshComplex4 talshComplex4Conjg(talshComplex4 cmplx);
-inline talshComplex8 talshComplex8Conjg(talshComplex8 cmplx);
-inline float talshComplex4Abs(talshComplex4 cmplx);
-inline double talshComplex8Abs(talshComplex8 cmplx);
 
 //EXPORTED FUNCTIONS:
 #ifdef __cplusplus
@@ -262,7 +249,7 @@ extern "C"{
 //  Tensor initialization:
  int talshTensorInit(talsh_tens_t * dtens,              //inout: tensor block
                      double val_real,                   //in: initialization value (real part)
-                     double val_imag,                   //in: initialization value (complex part)
+                     double val_imag,                   //in: initialization value (imaginary part)
                      int dev_id = DEV_DEFAULT,          //in: device id (flat or kind-specific)
                      int dev_kind = DEV_DEFAULT,        //in: device kind (if present, <dev_id> is kind-specific)
                      int copy_ctrl = COPY_M,            //in: copy control (COPY_X), defaults to COPY_M

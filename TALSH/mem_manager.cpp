@@ -2,7 +2,7 @@
 implementation of the tensor algebra library TAL-SH:
 CP-TAL (TAL for CPU), NV-TAL (TAL for NVidia GPU),
 XP-TAL (TAL for Intel Xeon Phi), AM-TAL (TAL for AMD GPU).
-REVISION: 2017/05/16
+REVISION: 2017/05/17
 
 Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -35,11 +35,6 @@ FOR DEVELOPERS ONLY:
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
-
-#ifndef NO_GPU
-#include <cuda.h>
-#include <cuda_runtime.h>
-#endif
 
 #include "tensor_algebra.h"
 
@@ -95,8 +90,6 @@ static size_t args_size_gpu[MAX_GPUS_PER_NODE]={0}; //total size (bytes) of all 
 static int miBank[MAX_GPU_ARGS*MAX_MLNDS_PER_TENS][MAX_TENSOR_RANK]; //All active .dims[], .divs[], .grps[], .prmn[] will be stored here
 static int miFreeHandle[MAX_GPU_ARGS*MAX_MLNDS_PER_TENS]; //free entries for storing multi-indices
 static int miFFE=0; //number of free handles left in miBank
-// Slab for prefactors for tensor operations on GPU (pinned mapped Host memory):
-static slab_t prefactors; //NVIDIA GPU will access prefactors in mapped Host memory directly
 
 //LOCAL (PRIVATE) FUNCTION PROTOTYPES:
 static int const_args_link_init(int gpu_beg, int gpu_end);
@@ -242,9 +235,6 @@ OUTPUT:
 //Initialize the multi-index entry bank (slab) in pinned Host memory:
   err_code=mi_entry_init(); if(err_code) return 3;
 #ifndef NO_GPU
-//Initialize prefactors bank for usage on GPU:
-  err_code=slab_clean(&prefactors); if(err_code) return 4;
-  err_code=slab_construct(&prefactors,sizeof(talshComplex8),(size_t)(MAX_CUDA_TASKS*MAX_GPUS_PER_NODE),sizeof(talshComplex8),1U); if(err_code) return 5;
 //Allocate GPUs buffers, if needed:
   if(gpu_beg >= 0 && gpu_end >= gpu_beg){ //GPU exist for this MPI process
    err=cudaGetDeviceCount(&i); if(err != cudaSuccess) return 6;
@@ -318,7 +308,6 @@ int arg_buf_deallocate(int gpu_beg, int gpu_end)
  arg_buf_host_size=0; num_args_host=0; occ_size_host=0; args_size_host=0; //clear Host memory statistics
  i=mi_entry_stop(); if(i != 0) err_code+=100000; //deactivate multi-index bank
 #ifndef NO_GPU
- i=slab_destruct(&prefactors); if(i != 0) err_code+=10000;
  err=cudaFreeHost(arg_buf_host);
  if(err != cudaSuccess){
   if(VERBOSE) printf("\n#ERROR(mem_manager:arg_buf_deallocate): Host argument buffer deallocation failed!");
@@ -908,6 +897,56 @@ int slab_entry_release(slab_t * slab, void * slab_entry)
   slab->free_entries[--(slab->first_free)]=slab_entry;
  }else{
   return 1; //no slab entries were in use or corrupted
+ }
+ return 0;
+}
+
+int slab_get_base_ptr(slab_t * slab, void ** base_ptr)
+/** Returns the slab base pointer. **/
+{
+ if(slab == NULL) return -1;
+ if(slab->slab_base == NULL) return -2;
+ if(base_ptr == NULL) return -3;
+ *base_ptr=slab->slab_base;
+ return 0;
+}
+
+int slab_get_max_entries(slab_t * slab, size_t * max_entries)
+/** Returns the max number of entries in the slab (capacity). **/
+{
+ if(slab == NULL) return -1;
+ if(slab->slab_base == NULL) return -2;
+ if(max_entries == NULL) return -3;
+ *max_entries=slab->max_entries;
+ return 0;
+}
+
+int slab_get_entry_size(slab_t * slab, size_t * entry_size)
+/** Returns the slab entry size in bytes. **/
+{
+ if(slab == NULL) return -1;
+ if(slab->slab_base == NULL) return -2;
+ if(entry_size == NULL) return -3;
+ *entry_size=slab->entry_size;
+ return 0;
+}
+
+int slab_get_entry_offset(slab_t * slab, void * slab_entry_p, size_t * entry_offset)
+/** Returns the byte offset of a given slab entry from the slab base. **/
+{
+ size_t base,addr;
+
+ if(slab == NULL) return -1;
+ if(slab->max_entries == 0 || slab->slab_base == NULL) return -2;
+ if(slab_entry_p == NULL) return -3;
+ if(entry_offset == NULL) return -4;
+ base=(size_t)(slab->slab_base);
+ addr=(size_t)(slab_entry_p);
+ if(addr >= base && addr < base + (slab->max_entries)*(slab->entry_size)){
+  *entry_offset=addr-base;
+  if((*entry_offset)%(slab->alignment) != 0) return -5;
+ }else{
+  return -6;
  }
  return 0;
 }

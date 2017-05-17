@@ -2,7 +2,7 @@
     Parameters, derived types, and function prototypes
     used at the lower level of TAL-SH (device specific):
     CP-TAL, NV-TAL, XP-TAL, AM-TAL, etc.
-REVISION: 2017/04/20
+REVISION: 2017/05/17
 
 Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -66,10 +66,6 @@ FOR DEVELOPERS ONLY:
 
 #include <time.h>
 
-#ifdef __cplusplus
-#include <complex>
-#endif
-
 #ifndef NO_GPU
 
 #include <cuda.h>
@@ -82,6 +78,8 @@ FOR DEVELOPERS ONLY:
 #endif
 
 #endif /*NO_GPU*/
+
+#include "talsh_complex.h"
 
 #include "mem_manager.h"
 
@@ -292,21 +290,6 @@ FOR DEVELOPERS ONLY:
 #define ENTERED(x) printf("\n#DEBUG: ENTERED %s\n",#x);
 #define EXITED(x) printf("\n#DEBUG: EXITED %s\n",#x);
 
-//BASIC TYPES:
-// Complex number:
-#ifndef NO_GPU
-typedef cuFloatComplex talshComplex4;
-typedef cuDoubleComplex talshComplex8;
-#else
-#ifdef __cplusplus
-typedef std::complex<float> talshComplex4;
-typedef std::complex<double> talshComplex8;
-#else
-typedef struct{float real; float imag;} talshComplex4;
-typedef struct{double real; double imag;} talshComplex8;
-#endif
-#endif /*NO_GPU*/
-
 //DERIVED TYPES (keep consistent with tensor_algebra.F90):
 // Tensor shape:
 typedef struct{
@@ -356,6 +339,7 @@ typedef struct{
  unsigned int coherence; //coherence control for this task (see COPY_X, COPY_XX, and COPY_XXX constants)
  unsigned int num_args;  //number of tensor arguments participating in the tensor operation
  cudaTensArg_t tens_args[MAX_TENSOR_OPERANDS]; //tensor arguments participating in the tensor operation
+ void * pref_ptr;        //tensor operation prefactor location
 } cudaTask_t;
 //Note: Adding new CUDA events will require adjustment of NUM_EVENTS_PER_TASK.
 

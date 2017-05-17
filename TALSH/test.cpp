@@ -233,13 +233,13 @@ void test_talsh_c(int * ierr)
  int dev_num = 0; //CPU Host is always a single device (but multicore)
 #endif
  //Schedule:
- errc=talshTensorContract("D(a,b,i,j)+=L(a,b,c,d)*R(c,i,d,j)",&tens0,&tens1,&tens2,1.0,0.0,dev_num,dev_kind,COPY_TTT,&task0);
+ errc=talshTensorContract("D(a,b,i,j)+=L(a,b,c,d)*R(c,i,d,j)",&tens0,&tens1,&tens2,0.5,0.0,dev_num,dev_kind,COPY_TTT,&task0);
  printf(" Tensor contraction has been scheduled for execution: Status %d\n",errc); if(errc){*ierr=6; return;};
  //Test for completion:
  int sts,done=NOPE;
  while(done != YEP && errc == TALSH_SUCCESS){done=talshTaskComplete(&task0,&sts,&errc);}
  if(errc == TALSH_SUCCESS){
-  printf(" Tensor contraction has completed successfully: Status %d\n",sts);
+  printf(" Tensor contraction has completed successfully: Status %d. Norm1 = %E\n",sts,talshTensorImageNorm1_cpu(&tens0));
  }else{
   printf(" Tensor contraction has failed: Status %d: Error %d\n",sts,errc);
   *ierr=7; return;
