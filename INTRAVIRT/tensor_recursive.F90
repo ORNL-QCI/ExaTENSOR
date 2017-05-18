@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/05/15
+!REVISION: 2017/05/18
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -317,7 +317,7 @@
  !Tensor contraction:
         type, extends(tens_operation_t), public:: tens_contraction_t
          type(contr_ptrn_ext_t), private:: contr_ptrn                     !extended tensor contraction pattern
-         complex(8), private:: alpha=(1d0,0d0)                            !alpha factor
+         complex(8), private:: alpha=(1d0,0d0)                            !alpha prefactor
          contains
           procedure, private:: TensContractionAssign                      !copy assignment
           generic, public:: assignment(=)=>TensContractionAssign
@@ -3557,7 +3557,7 @@
          nsubt=0 !number of generated subtensors
          head_only=.FALSE.; if(present(headers_only)) head_only=headers_only
          if(this%is_set(errc,shaped=shpd,hspaced=hspc)) then !shaped tensors over hierarchical vector spaces are expected
-          if(errc.eq.TEREC_SUCCESS.and.hspc) then
+          if(errc.eq.TEREC_SUCCESS) then
            call this%header%get_name(tens_name,tnl,errc)
            if(errc.eq.TEREC_SUCCESS) then
             call this%header%get_spec(sidx,nd,errc,hsreg) !nd: total number of tensor dimensions; sidx(1:nd): subspace id's
@@ -3567,24 +3567,28 @@
               if(nd.gt.0) then !true tensor over hierarchical vector spaces
                sd=size(split_dims) !sd: number of tensor dimensions to split
                if(sd.gt.0.and.sd.le.nd) then !true splitting
-                call extract_subspaces_to_sbuf(errc) !sbuf(1:nsb),firo(1:nd),swid(1:nd)
-                if(errc.eq.TEREC_SUCCESS) then
-                 call setup_index_dependencies(errc)
+                if(hspc) then
+                 call extract_subspaces_to_sbuf(errc) !sbuf(1:nsb),firo(1:nd),swid(1:nd)
                  if(errc.eq.TEREC_SUCCESS) then
-                  midx(1:nd)=-1; n=2 !n=2 is a special setting to start iterating midx(:)
-                  do
-                   call get_next_midx(n,errc); if(errc.ne.TEREC_SUCCESS.or.n.le.0) exit
-                   call construct_subtensor_header(thead,errc); if(errc.ne.TEREC_SUCCESS) exit
-                   if(head_only) then
-                    errc=lit%append(thead)
-                   else
-                    call subtens%tens_rcrsv_ctor(thead,errc)
-                    if(errc.eq.TEREC_SUCCESS) errc=lit%append(subtens)
-                   endif
-                   if(errc.eq.GFC_SUCCESS) then; nsubt=nsubt+1; else; exit; endif
-                  enddo
-                  if(errc.ne.TEREC_SUCCESS) errc=TEREC_UNABLE_COMPLETE
+                  call setup_index_dependencies(errc)
+                  if(errc.eq.TEREC_SUCCESS) then
+                   midx(1:nd)=-1; n=2 !n=2 is a special setting to start iterating midx(:)
+                   do
+                    call get_next_midx(n,errc); if(errc.ne.TEREC_SUCCESS.or.n.le.0) exit
+                    call construct_subtensor_header(thead,errc); if(errc.ne.TEREC_SUCCESS) exit
+                    if(head_only) then
+                     errc=lit%append(thead)
+                    else
+                     call subtens%tens_rcrsv_ctor(thead,errc)
+                     if(errc.eq.TEREC_SUCCESS) errc=lit%append(subtens)
+                    endif
+                    if(errc.eq.GFC_SUCCESS) then; nsubt=nsubt+1; else; exit; endif
+                   enddo
+                   if(errc.ne.TEREC_SUCCESS) errc=TEREC_UNABLE_COMPLETE
+                  endif
                  endif
+                else
+                 errc=TEREC_INVALID_REQUEST
                 endif
                elseif(sd.eq.0) then !no splitting, return the original header
                 if(head_only) then
@@ -3597,12 +3601,16 @@
                else
                 errc=TEREC_INVALID_ARGS
                endif
-              else
-               if(nd.eq.0) then
-                errc=TEREC_INVALID_REQUEST !scalars cannot be split further
+              elseif(nd.eq.0) then !scalar
+               if(head_only) then
+                errc=lit%append(this%header)
                else
-                errc=TEREC_ERROR !unable to retrieve the hierarhical vector space info
+                call subtens%tens_rcrsv_ctor(this%header,errc)
+                if(errc.eq.TEREC_SUCCESS) errc=lit%append(subtens)
                endif
+               if(errc.eq.GFC_SUCCESS) then; nsubt=nsubt+1; else; errc=TEREC_UNABLE_COMPLETE; endif
+              else
+               errc=TEREC_OBJ_CORRUPTED
               endif
               i=lit%release(); if(i.ne.GFC_SUCCESS.and.errc.eq.TEREC_SUCCESS) errc=TEREC_ERROR
              else
@@ -3610,8 +3618,6 @@
              endif
             endif
            endif
-          else
-           if(errc.eq.TEREC_SUCCESS) errc=TEREC_INVALID_REQUEST
           endif
          else
           errc=TEREC_INVALID_REQUEST
@@ -3892,7 +3898,7 @@
          nsubt=0 !number of generated subtensors
          head_only=.FALSE.; if(present(headers_only)) head_only=headers_only
          if(this%is_set(errc,shaped=shpd,hspaced=hspc)) then !shaped tensors over hierarchical vector spaces are expected
-          if(errc.eq.TEREC_SUCCESS.and.hspc) then
+          if(errc.eq.TEREC_SUCCESS) then
            call this%header%get_name(tens_name,tnl,errc)
            if(errc.eq.TEREC_SUCCESS) then
             call this%header%get_spec(sidx,nd,errc,hsreg) !nd: total number of tensor dimensions; sidx(1:nd): subspace id's
@@ -3902,24 +3908,28 @@
               if(nd.gt.0) then !true tensor over hierarchical vector spaces
                sd=size(split_dims) !sd: number of tensor dimensions to split
                if(sd.gt.0.and.sd.le.nd) then !true splitting
-                call extract_subspaces_to_sbuf(errc) !sbuf(1:nsb),firo(1:nd),swid(1:nd)
-                if(errc.eq.TEREC_SUCCESS) then
-                 call setup_index_dependencies(errc)
+                if(hspc) then
+                 call extract_subspaces_to_sbuf(errc) !sbuf(1:nsb),firo(1:nd),swid(1:nd)
                  if(errc.eq.TEREC_SUCCESS) then
-                  midx(1:nd)=-1; n=2 !n=2 is a special setting to start iterating midx(:)
-                  do
-                   call get_next_midx(n,errc); if(errc.ne.TEREC_SUCCESS.or.n.le.0) exit
-                   call construct_subtensor_header(thead,errc); if(errc.ne.TEREC_SUCCESS) exit
-                   if(head_only) then
-                    errc=vit%append(thead)
-                   else
-                    call subtens%tens_rcrsv_ctor(thead,errc)
-                    if(errc.eq.TEREC_SUCCESS) errc=vit%append(subtens)
-                   endif
-                   if(errc.eq.GFC_SUCCESS) then; nsubt=nsubt+1; else; exit; endif
-                  enddo
-                  if(errc.ne.TEREC_SUCCESS) errc=TEREC_UNABLE_COMPLETE
+                  call setup_index_dependencies(errc)
+                  if(errc.eq.TEREC_SUCCESS) then
+                   midx(1:nd)=-1; n=2 !n=2 is a special setting to start iterating midx(:)
+                   do
+                    call get_next_midx(n,errc); if(errc.ne.TEREC_SUCCESS.or.n.le.0) exit
+                    call construct_subtensor_header(thead,errc); if(errc.ne.TEREC_SUCCESS) exit
+                    if(head_only) then
+                     errc=vit%append(thead)
+                    else
+                     call subtens%tens_rcrsv_ctor(thead,errc)
+                     if(errc.eq.TEREC_SUCCESS) errc=vit%append(subtens)
+                    endif
+                    if(errc.eq.GFC_SUCCESS) then; nsubt=nsubt+1; else; exit; endif
+                   enddo
+                   if(errc.ne.TEREC_SUCCESS) errc=TEREC_UNABLE_COMPLETE
+                  endif
                  endif
+                else
+                 errc=TEREC_INVALID_REQUEST
                 endif
                elseif(sd.eq.0) then !no splitting, return the original header
                 if(head_only) then
@@ -3932,12 +3942,16 @@
                else
                 errc=TEREC_INVALID_ARGS
                endif
-              else
-               if(nd.eq.0) then
-                errc=TEREC_INVALID_REQUEST !scalars cannot be split further
+              elseif(nd.eq.0) then !scalar
+               if(head_only) then
+                errc=vit%append(this%header)
                else
-                errc=TEREC_ERROR !unable to retrieve the hierarhical vector space info
+                call subtens%tens_rcrsv_ctor(this%header,errc)
+                if(errc.eq.TEREC_SUCCESS) errc=vit%append(subtens)
                endif
+               if(errc.eq.GFC_SUCCESS) then; nsubt=nsubt+1; else; errc=TEREC_UNABLE_COMPLETE; endif
+              else
+               errc=TEREC_OBJ_CORRUPTED
               endif
               i=vit%release(); if(i.ne.GFC_SUCCESS.and.errc.eq.TEREC_SUCCESS) errc=TEREC_ERROR
              else
@@ -3945,8 +3959,6 @@
              endif
             endif
            endif
-          else
-           if(errc.eq.TEREC_SUCCESS) errc=TEREC_INVALID_REQUEST
           endif
          else
           errc=TEREC_INVALID_REQUEST
@@ -5025,23 +5037,42 @@
          type(vector_t):: dsubs,lsubs,rsubs              !vector of subtensors for each tensor argument
          type(vector_iter_t):: dvit,lvit,rvit            !vector iterator for each tensor argument
          type(list_iter_t):: slit                        !list iterator for the list of subcontractions
-         real(8):: tms,tm
+         real(8):: tm(0:6),tmf
 
-         tms=thread_wtime()
+         tm(0)=thread_wtime(); tm(1:)=tm(0)
          nsub=0 !number of generated subcontractions
          if(this%is_set(errc)) then
           if(errc.eq.TEREC_SUCCESS) then
            if(check_allocate_buffers()) then !checks/allocates sorting buffers tcg_ind_buf/tcg_num_buf
+            tm(1)=thread_wtime(tm(0))
             call generate_subtensors(errc) !generates dsubs, lsubs, and rsubs, and associates them with iterators (dvit,lvit,rvit)
             if(errc.eq.TEREC_SUCCESS) then
+             tm(2)=thread_wtime(tm(0))
              call align_levels(errc) !sets cptrn(:), ths(:,:), and adj(:,:) for all tensor arguments (SAT level adjustment for tensor dimensions)
              if(errc.eq.TEREC_SUCCESS) then
+              tm(3)=thread_wtime(tm(0))
               call build_descriptors(errc) !generates lists of subtensor descriptors in tcg_ind_buf/tcg_num_buf for each tensor argument
               if(errc.eq.TEREC_SUCCESS) then
+               tm(4)=thread_wtime(tm(0))
                errc=slit%init(subops) !iterator for the list of subcontractions
                if(errc.eq.GFC_SUCCESS) then
+#if 0
+                i=0; errc=slit%reset()
+                do while(errc.eq.GFC_SUCCESS)
+                 i=i+1; errc=slit%next()
+                enddo
+                print *,'Su',errc,i,nsub; errc=GFC_SUCCESS
+#endif
                 call generate_subcontractions(errc) !generates subtensor contractions by matching descriptor lists
+#if 0
+                i=0; errc=slit%reset()
+                do while(errc.eq.GFC_SUCCESS)
+                 i=i+1; errc=slit%next()
+                enddo
+                print *,'Fu',errc,i,nsub; errc=GFC_SUCCESS
+#endif
                 i=slit%release(); if(i.ne.GFC_SUCCESS.and.errc.eq.TEREC_SUCCESS) errc=TEREC_ERROR
+                tm(5)=thread_wtime(tm(0))
                endif
                i=rvit%delete_all(); if(i.ne.GFC_SUCCESS.and.errc.eq.TEREC_SUCCESS) errc=TEREC_ERROR
                i=rvit%release(); if(i.ne.GFC_SUCCESS.and.errc.eq.TEREC_SUCCESS) errc=TEREC_ERROR
@@ -5049,6 +5080,7 @@
                i=lvit%release(); if(i.ne.GFC_SUCCESS.and.errc.eq.TEREC_SUCCESS) errc=TEREC_ERROR
                i=dvit%delete_all(); if(i.ne.GFC_SUCCESS.and.errc.eq.TEREC_SUCCESS) errc=TEREC_ERROR
                i=dvit%release(); if(i.ne.GFC_SUCCESS.and.errc.eq.TEREC_SUCCESS) errc=TEREC_ERROR
+               tm(6)=thread_wtime(tm(0))
               endif
              endif
             endif
@@ -5063,8 +5095,9 @@
           if(errc.eq.TEREC_SUCCESS) then; num_subops=nsub; else; num_subops=-1; endif
          endif
          if(present(ierr)) ierr=errc
-         tm=thread_wtime(tms)
-         !write(CONS_OUT,*)'TensContractionSplit call time (msec) = ',tm*1d3 !debug
+         tmf=thread_wtime(tm(0))
+         write(CONS_OUT,'("#DEBUG(TensContractionSplit): Timings (msec): ",F8.3,":",6(1x,F8.3))')&
+              &tmf*1d3,tm(1)*1d3,(tm(2)-tm(1))*1d3,(tm(3)-tm(2))*1d3,(tm(4)-tm(3))*1d3,(tm(5)-tm(4))*1d3,(tm(6)-tm(5))*1d3 !debug
          return
 
          contains
@@ -5901,6 +5934,7 @@
         end subroutine test_tens_rcrsv
 !------------------------------------------------------------------------------
         function tens_split_func(tensor,subtensors,num_subtensors) result(ierr)
+!Testing only: Returns a list of subtensors for a given tensor.
          implicit none
          integer(INTD):: ierr                        !out: error code
          class(tens_rcrsv_t), intent(in):: tensor    !in: tensor
@@ -5913,36 +5947,36 @@
 
          num_subtensors=0
          if(tensor%is_set(ierr,num_dims=nd)) then
-          if(ierr.eq.TEREC_SUCCESS.and.nd.gt.0) then
+          if(ierr.eq.TEREC_SUCCESS) then
            ierr=vit%init(subtensor_storage)
            if(ierr.eq.GFC_SUCCESS) then
             first=vit%get_length()
-            call tensor%split((/(i,i=1,nd)/),subtensor_storage,ierr,num_subtensors)
-            last=vit%get_length()-1_INTL
-            if(first.le.last) then
+            call tensor%split((/(i,i=1,nd)/),subtensor_storage,ierr,num_subtensors) !subtensor_storage is a global vector
+            if(ierr.eq.TEREC_SUCCESS) then
              ierr=vit%reset() !update iterator status
              if(ierr.eq.GFC_SUCCESS) then
-              ierr=vit%move_to(first)
-              if(ierr.eq.GFC_SUCCESS) then
-               ierr=rvit%init(subtensors)
+              last=vit%get_length()-1_INTL
+              if(first.le.last) then
+               ierr=vit%move_to(first)
                if(ierr.eq.GFC_SUCCESS) then
-                do
-                 up=>NULL(); up=>vit%get_value(); if(.not.associated(up)) then; ierr=TEREC_OBJ_CORRUPTED; exit; endif
-                 ierr=rvit%append(up,assoc_only=.TRUE.); if(ierr.ne.GFC_SUCCESS) exit
-                 ierr=vit%next(); if(ierr.ne.GFC_SUCCESS) exit
-                enddo
-                if(ierr.eq.GFC_NO_MOVE) ierr=GFC_SUCCESS
-                i=rvit%release(); if(i.ne.GFC_SUCCESS.and.ierr.eq.TEREC_SUCCESS) ierr=TEREC_ERROR
+                ierr=rvit%init(subtensors)
+                if(ierr.eq.GFC_SUCCESS) then
+                 do
+                  up=>NULL(); up=>vit%get_value(); if(.not.associated(up)) then; ierr=TEREC_OBJ_CORRUPTED; exit; endif
+                  ierr=rvit%append(up,assoc_only=.TRUE.); if(ierr.ne.GFC_SUCCESS) exit
+                  ierr=vit%next(); if(ierr.ne.GFC_SUCCESS) exit
+                 enddo
+                 if(ierr.eq.GFC_NO_MOVE) ierr=GFC_SUCCESS
+                 i=rvit%release(); if(i.ne.GFC_SUCCESS.and.ierr.eq.TEREC_SUCCESS) ierr=TEREC_ERROR
+                endif
                endif
+              else
+               ierr=TEREC_ERROR
               endif
              endif
-            else
-             ierr=TEREC_ERROR
             endif
             i=vit%release(); if(i.ne.GFC_SUCCESS.and.ierr.eq.TEREC_SUCCESS) ierr=TEREC_ERROR
            endif
-          else
-           if(ierr.eq.TEREC_SUCCESS) ierr=TEREC_INVALID_REQUEST
           endif
          else
           ierr=TEREC_INVALID_REQUEST
@@ -5961,10 +5995,10 @@
          type(subspace_basis_t):: full_basis             !full vector space basis
          class(h_space_t), pointer:: hspace              !hierarchical representation of the vector space
          integer(INTL):: spcx(1:MAX_TENSOR_RANK),dims(1:MAX_TENSOR_RANK),space_id,max_res
-         integer(INTD):: dimg(1:MAX_TENSOR_RANK),grps(1:MAX_TENSOR_RANK),contr_ptrn(1:MAX_TENSOR_RANK*2)
+         integer(INTD):: dimg(1:MAX_TENSOR_RANK),grps(1:MAX_TENSOR_RANK)
          integer(INTD):: j,hsid,num_subcontractions
          class(subspace_t), pointer:: ssp
-         type(tens_rcrsv_t):: dtens,ltens,rtens
+         type(tens_rcrsv_t):: dtens,ltens,rtens,stens
          type(tens_contraction_t):: tens_contr
          type(tens_contraction_t), pointer:: subcontr_p
          type(list_bi_t):: subcontractions
@@ -5972,74 +6006,115 @@
          type(vector_iter_t):: vit
          class(*), pointer:: up
 
- !Build a hierarchical representation for a test vector space:
+!Build a hierarchical representation for a test vector space:
          hsid=hspace_register%register_space('NewSpace',ierr,hspace); if(ierr.ne.TEREC_SUCCESS) then; ierr=1; return; endif
          call create_test_space(ierr); if(ierr.ne.TEREC_SUCCESS) then; ierr=2; return; endif
- !Create tensor arguments (over the full space):
-  !Get full space id and its max resolution:
+
+!Create tensor arguments (over the full space):
+ !Get full space id and its max resolution:
          space_id=hspace%get_root_id(ierr); if(ierr.ne.0) then; ierr=3; return; endif
          ssp=>hspace%get_subspace(space_id,ierr); if(ierr.ne.0) then; ierr=4; return; endif
          if(.not.associated(ssp)) then; ierr=5; return; endif
          max_res=ssp%get_max_resolution(ierr); if(ierr.ne.0) then; ierr=6; return; endif
          !write(*,*) 'Space ID = ',space_id,': Max resolution = ',max_res !debug
-  !Create a tensor over the full space:
+ !Create a tensor over the full space:
          spcx(1:tens_rank)=space_id
          dims(1:tens_rank)=max_res
          call dtens%tens_rcrsv_ctor('Z2',spcx(1:tens_rank),(/(hsid,j=1,tens_rank)/),ierr,&
                                    &dims(1:tens_rank))
          if(ierr.ne.0) then; ierr=7; return; endif
-  !Create a tensor over the full space:
+ !Create a tensor over the full space:
          spcx(1:tens_rank)=space_id
          dims(1:tens_rank)=max_res
          dimg(1:tens_rank)=(/1,1,2,2/); grps(1:2)=(/TEREC_IND_RESTR_LT,TEREC_IND_RESTR_LT/)
          call ltens%tens_rcrsv_ctor('H2',spcx(1:tens_rank),(/(hsid,j=1,tens_rank)/),ierr,&
                                    &dims(1:tens_rank),dimg(1:tens_rank),grps(1:2))
          if(ierr.ne.0) then; ierr=8; return; endif
-  !Create a tensor over the full space:
+ !Create a tensor over the full space:
          spcx(1:tens_rank)=space_id
          dims(1:tens_rank)=max_res
          dimg(1:tens_rank)=(/1,1,2,2/); grps(1:2)=(/TEREC_IND_RESTR_LT,TEREC_IND_RESTR_LT/)
          call rtens%tens_rcrsv_ctor('T2',spcx(1:tens_rank),(/(hsid,j=1,tens_rank)/),ierr,&
                                    &dims(1:tens_rank),dimg(1:tens_rank),grps(1:2))
          if(ierr.ne.0) then; ierr=9; return; endif
- !Create the full tensor contraction specification for
- !Z2(a,b,i,j)+=H2(i,k,a,c)*T2(b,c,j,k): [a<b] [i<j]
+  !Create a scalar tensor:
+         call stens%tens_rcrsv_ctor('dE',spcx(1:0),(/(hsid,j=1,0)/),ierr)
+         if(ierr.ne.0) then; ierr=10; return; endif
+#if 0
+!Tensor contraction 1:
+ !Create the full tensor contraction specification for Z2(a,b,i,j)+=H2(i,k,a,c)*T2(b,c,j,k): [a<b] [i<j]:
+         call tens_contr%clean(ierr); if(ierr.ne.0) then; ierr=11; return; endif
   !Set tensor contraction arguments:
-         call tens_contr%set_argument(dtens,ierr); if(ierr.ne.0) then; ierr=10; return; endif
-         call tens_contr%set_argument(ltens,ierr); if(ierr.ne.0) then; ierr=11; return; endif
-         call tens_contr%set_argument(rtens,ierr); if(ierr.ne.0) then; ierr=12; return; endif
+         call tens_contr%set_argument(dtens,ierr); if(ierr.ne.0) then; ierr=12; return; endif
+         call tens_contr%set_argument(ltens,ierr); if(ierr.ne.0) then; ierr=13; return; endif
+         call tens_contr%set_argument(rtens,ierr); if(ierr.ne.0) then; ierr=14; return; endif
          !print *,'Tensor contraction (args_set,fully set): ',tens_contr%args_full(),tens_contr%is_set() !debug
   !Set the tensor contraction pattern:
-         contr_ptrn(1:tens_rank+tens_rank)=(/3,-4,1,-2, 2,-4,4,-2/)
-         call tens_contr%set_contr_ptrn(contr_ptrn,ierr); if(ierr.ne.0) then; ierr=13; return; endif
-  !Relax symmetries, if needed:
-         call tens_contr%set_operl_symm(0,(/1,2/),ierr); if(ierr.ne.0) then; ierr=14; return; endif ![a<b]
-         call tens_contr%set_operl_symm(0,(/3,4/),ierr); if(ierr.ne.0) then; ierr=15; return; endif ![i<j]
+         call tens_contr%set_contr_ptrn((/3,-4,1,-2, 2,-4,4,-2/),ierr); if(ierr.ne.0) then; ierr=15; return; endif
+  !Impose additional symmetries, if needed:
+         call tens_contr%set_operl_symm(0,(/1,2/),ierr); if(ierr.ne.0) then; ierr=16; return; endif ![a<b]
+         call tens_contr%set_operl_symm(0,(/3,4/),ierr); if(ierr.ne.0) then; ierr=17; return; endif ![i<j]
          !call tens_contr%print_it() !debug
  !Split the tensor contraction into a list of subtensor contractions:
          call tens_contr%split(tens_split_func,subcontractions,ierr,num_subcontractions)
-         if(ierr.ne.0) then; ierr=16; return; endif
+         if(ierr.ne.0) then; ierr=18; return; endif
          !write(*,*) 'Number of subtensor contractions = ',num_subcontractions !debug
-         ierr=lit%init(subcontractions); if(ierr.ne.GFC_SUCCESS) then; ierr=17; return; endif
-#if 0
+         ierr=lit%init(subcontractions); if(ierr.ne.GFC_SUCCESS) then; ierr=19; return; endif
  !Print subcontractions (debug):
+#if 0
          do j=1,num_subcontractions
           write(*,'("Subtensor contraction ",i7,":")') j
-          up=>lit%get_value(ierr); if(ierr.ne.GFC_SUCCESS) then; ierr=18; return; endif
+          up=>lit%get_value(ierr); if(ierr.ne.GFC_SUCCESS) then; ierr=20; return; endif
           subcontr_p=>NULL(); select type(up); class is(tens_contraction_t); subcontr_p=>up; end select
-          if(.not.associated(subcontr_p)) then; ierr=19; return; endif
-          call subcontr_p%print_it(ierr,nspaces=1)
-          ierr=lit%next(); if(ierr.ne.GFC_SUCCESS.and.j.lt.num_subcontractions) then; ierr=20; return; endif
+          if(.not.associated(subcontr_p)) then; ierr=21; return; endif
+          call subcontr_p%print_it(ierr,nspaces=1); if(ierr.ne.TEREC_SUCCESS) then; ierr=22; return; endif
+          ierr=lit%next(); if(ierr.ne.GFC_SUCCESS.and.j.lt.num_subcontractions) then; ierr=23; return; endif
          enddo
-         if(ierr.ne.GFC_NO_MOVE) then; ierr=21; return; endif
+         if(ierr.ne.GFC_NO_MOVE) then; ierr=24; return; endif
 #endif
  !Destroy subcontractions:
-         ierr=lit%delete_all(); if(ierr.ne.GFC_SUCCESS) then; ierr=22; return; endif
-         ierr=lit%release(); if(ierr.ne.GFC_SUCCESS) then; ierr=23; return; endif
+         ierr=lit%delete_all(); if(ierr.ne.GFC_SUCCESS) then; ierr=25; return; endif
+         ierr=lit%release(); if(ierr.ne.GFC_SUCCESS) then; ierr=26; return; endif
+#endif
+#if 1
+!Tensor contraction 2:
+ !Create the full tensor contraction specification for dE()+=H2(i,k,a,c)*T2(a,c,i,k):
+         call tens_contr%clean(ierr); if(ierr.ne.0) then; ierr=27; return; endif
+  !Set tensor contraction arguments:
+         call tens_contr%set_argument(stens,ierr); if(ierr.ne.0) then; ierr=28; return; endif
+         call tens_contr%set_argument(ltens,ierr); if(ierr.ne.0) then; ierr=29; return; endif
+         call tens_contr%set_argument(rtens,ierr); if(ierr.ne.0) then; ierr=30; return; endif
+         !print *,'Tensor contraction (args_set,fully set): ',tens_contr%args_full(),tens_contr%is_set() !debug
+  !Set the tensor contraction pattern:
+         call tens_contr%set_contr_ptrn((/-3,-4,-1,-2, -3,-4,-1,-2/),ierr); if(ierr.ne.0) then; ierr=31; return; endif
+  !Impose additional symmetries, if needed:
+         !call tens_contr%print_it() !debug
+ !Split the tensor contraction into a list of subtensor contractions:
+         call tens_contr%split(tens_split_func,subcontractions,ierr,num_subcontractions)
+         if(ierr.ne.0) then; ierr=32; return; endif
+         !write(*,*) 'Number of subtensor contractions = ',num_subcontractions !debug
+         ierr=lit%init(subcontractions); if(ierr.ne.GFC_SUCCESS) then; ierr=33; return; endif
+ !Print subcontractions (debug):
+#if 1
+         do j=1,num_subcontractions
+          write(*,'("Subtensor contraction ",i7,":")') j
+          up=>lit%get_value(ierr); if(ierr.ne.GFC_SUCCESS) then; ierr=34; return; endif
+          subcontr_p=>NULL(); select type(up); class is(tens_contraction_t); subcontr_p=>up; end select
+          if(.not.associated(subcontr_p)) then; ierr=35; return; endif
+          call subcontr_p%print_it(ierr,nspaces=1); if(ierr.ne.TEREC_SUCCESS) then; ierr=36; return; endif
+          ierr=lit%next(); if(ierr.ne.GFC_SUCCESS.and.j.lt.num_subcontractions) then; ierr=37; return; endif
+         enddo
+         if(ierr.ne.GFC_NO_MOVE) then; ierr=38; return; endif
+#endif
+ !Destroy subcontractions:
+         ierr=lit%delete_all(); if(ierr.ne.GFC_SUCCESS) then; ierr=39; return; endif
+         ierr=lit%release(); if(ierr.ne.GFC_SUCCESS) then; ierr=40; return; endif
+#endif
+
  !Release global resources:
-         ierr=vit%init(subtensor_storage); if(ierr.ne.GFC_SUCCESS) then; ierr=24; return; endif
-         ierr=vit%delete_all(); if(ierr.ne.GFC_SUCCESS) then; ierr=25; return; endif
-         ierr=vit%release(); if(ierr.ne.GFC_SUCCESS) then; ierr=26; return; endif
+         ierr=vit%init(subtensor_storage); if(ierr.ne.GFC_SUCCESS) then; ierr=100; return; endif
+         ierr=vit%delete_all(); if(ierr.ne.GFC_SUCCESS) then; ierr=101; return; endif
+         ierr=vit%release(); if(ierr.ne.GFC_SUCCESS) then; ierr=102; return; endif
          return
 
          contains
