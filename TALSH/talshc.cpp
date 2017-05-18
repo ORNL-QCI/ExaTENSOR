@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level API.
-REVISION: 2017/05/17
+REVISION: 2017/05/18
 
 Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -352,8 +352,10 @@ static int talsh_tensor_c_dissoc(tensBlck_t * tensC) //inout: <tensBlck_t> creat
 
  if(talsh_on == 0) return TALSH_NOT_INITIALIZED;
  if(tensC == NULL) return TALSH_INVALID_ARGS;
- if(tensBlck_volume(tensC) == 0) return TALSH_OBJECT_IS_EMPTY;
- errc=tensBlck_destroy(tensC); if(errc){if(errc != NOT_CLEAN) errc=TALSH_FAILURE;}
+ errc=TALSH_SUCCESS;
+ if(tensBlck_volume(tensC) > 0){
+  errc=tensBlck_destroy(tensC); if(errc){if(errc != NOT_CLEAN) errc=TALSH_FAILURE;}
+ }
  return errc;
 }
 
@@ -1829,6 +1831,7 @@ int talshTaskComplete(talsh_task_t * talsh_task, int * stats, int * ierr)
     default:
      *stats=TALSH_FAILURE; *ierr=TALSH_FAILURE;
    }
+   //if(errc == YEP){printf("\n#DEBUG(TALSH::talshTaskComplete): CUDA task completed:"); cuda_task_print(cuda_task_p);} //debug
 #else
    *ierr=TALSH_NOT_AVAILABLE;
 #endif
@@ -2078,9 +2081,7 @@ int talshTensorPlace(talsh_tens_t * tens, int dev_id, int dev_kind, void * dev_m
     }
    }
    if(talsh_task == NULL){ //blocking call
-    tensBlck_print(ctens); printf("\nFinalizing task\n"); //`debug
     errc=talshTaskWait(tsk,&j); if(errc == TALSH_SUCCESS && j != TALSH_TASK_COMPLETED) errc=TALSH_TASK_ERROR;
-    printf("\nTALSH task error = %d\n",errc); tensBlck_print(ctens); //`debug
     j=talsh_tensor_c_dissoc(ctens); if(j) errc=TALSH_FAILURE;
     j=talshTaskDestroy(tsk); if(j != TALSH_SUCCESS && errc == TALSH_SUCCESS) errc=j;
    }

@@ -251,8 +251,9 @@ void test_talsh_c(int * ierr)
  //Destruct the task handle:
  errc=talshTaskDestruct(&task0); if(errc){*ierr=9; return;};
 #ifndef NO_GPU
- //If executed on GPU, COPY_MTT parameter means that the destination tensor image
- //was moved to GPU device (letter M means MOVE). So, let's move it back to Host:
+ //If executed on GPU, COPY_MTT parameter in the tensor contraction call above means that the
+ //destination tensor image was moved to GPU device (letter M means MOVE).
+ //So, let's move it back to Host (to a user-specified memory location):
  errc=talshTensorPlace(&tens0,0,DEV_HOST,(void*)tblock0,COPY_M); //this will move the resulting tensor block back to Host (letter M means MOVE)
  if(errc){*ierr=10; return;};
  printf(" Tensor result was moved back to Host: Norm1 = %E\n",talshTensorImageNorm1_cpu(&tens0));

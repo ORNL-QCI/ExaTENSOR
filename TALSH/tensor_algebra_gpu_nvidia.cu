@@ -1,6 +1,6 @@
 /** Tensor Algebra Library for NVidia GPU: NV-TAL (CUDA based).
 AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-REVISION: 2017/05/17
+REVISION: 2017/05/18
 
 Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -2071,6 +2071,7 @@ void cuda_task_print(const cudaTask_t *cuda_task)
   if(cuda_task->num_args <= MAX_TENSOR_OPERANDS){
    for(int i=0; i < cuda_task->num_args; ++i){
     printf("  Tensor argument #%d address: %p\n",i,cuda_task->tens_args[i].tens_p);
+    tensBlck_print(cuda_task->tens_args[i].tens_p);
    }
   }else{
    printf(" ERROR: Invalid number of arguments!!!\n");
@@ -2226,7 +2227,7 @@ __host__ static int cuda_task_finalize(cudaTask_t *cuda_task) //do not call this
    if(tens_arg->const_mem_entry >= 0){
     errc=const_args_entry_free(cuda_task->gpu_id,tens_arg->const_mem_entry); if(errc) ret_stat=NOT_CLEAN; tens_arg->const_mem_entry=0;
    }
-   tensBlck_print(tens_arg->tens_p); //`debug
+   //printf("\n#DEBUG(NV-TAL::cuda_task_finalize): tensBlck_t argument %d end state:\n",i); tensBlck_print(tens_arg->tens_p); //debug
   }else{
    if(cuda_task->task_error == 0) return -4; //successfully completed CUDA tasks must have all tensor arguments associated
   }
