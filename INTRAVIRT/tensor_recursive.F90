@@ -5056,21 +5056,7 @@
                tm(4)=thread_wtime(tm(0))
                errc=slit%init(subops) !iterator for the list of subcontractions
                if(errc.eq.GFC_SUCCESS) then
-#if 0
-                i=0; errc=slit%reset()
-                do while(errc.eq.GFC_SUCCESS)
-                 i=i+1; errc=slit%next()
-                enddo
-                print *,'Su',errc,i,nsub; errc=GFC_SUCCESS
-#endif
                 call generate_subcontractions(errc) !generates subtensor contractions by matching descriptor lists
-#if 0
-                i=0; errc=slit%reset()
-                do while(errc.eq.GFC_SUCCESS)
-                 i=i+1; errc=slit%next()
-                enddo
-                print *,'Fu',errc,i,nsub; errc=GFC_SUCCESS
-#endif
                 i=slit%release(); if(i.ne.GFC_SUCCESS.and.errc.eq.TEREC_SUCCESS) errc=TEREC_ERROR
                 tm(5)=thread_wtime(tm(0))
                endif
@@ -5096,8 +5082,8 @@
          endif
          if(present(ierr)) ierr=errc
          tmf=thread_wtime(tm(0))
-         write(CONS_OUT,'("#DEBUG(TensContractionSplit): Timings (msec): ",F8.3,":",6(1x,F8.3))')&
-              &tmf*1d3,tm(1)*1d3,(tm(2)-tm(1))*1d3,(tm(3)-tm(2))*1d3,(tm(4)-tm(3))*1d3,(tm(5)-tm(4))*1d3,(tm(6)-tm(5))*1d3 !debug
+         !write(CONS_OUT,'("#DEBUG(TensContractionSplit): Timings (msec): ",F8.3,":",6(1x,F8.3))')&
+              !&tmf*1d3,tm(1)*1d3,(tm(2)-tm(1))*1d3,(tm(3)-tm(2))*1d3,(tm(4)-tm(3))*1d3,(tm(5)-tm(4))*1d3,(tm(6)-tm(5))*1d3 !debug
          return
 
          contains
@@ -6040,7 +6026,7 @@
   !Create a scalar tensor:
          call stens%tens_rcrsv_ctor('dE',spcx(1:0),(/(hsid,j=1,0)/),ierr)
          if(ierr.ne.0) then; ierr=10; return; endif
-#if 0
+#if 1
 !Tensor contraction 1:
  !Create the full tensor contraction specification for Z2(a,b,i,j)+=H2(i,k,a,c)*T2(b,c,j,k): [a<b] [i<j]:
          call tens_contr%clean(ierr); if(ierr.ne.0) then; ierr=11; return; endif
@@ -6059,6 +6045,7 @@
          call tens_contr%split(tens_split_func,subcontractions,ierr,num_subcontractions)
          if(ierr.ne.0) then; ierr=18; return; endif
          !write(*,*) 'Number of subtensor contractions = ',num_subcontractions !debug
+         if(num_subcontractions.ne.16) then; ierr=50; return; endif
          ierr=lit%init(subcontractions); if(ierr.ne.GFC_SUCCESS) then; ierr=19; return; endif
  !Print subcontractions (debug):
 #if 0
@@ -6093,9 +6080,10 @@
          call tens_contr%split(tens_split_func,subcontractions,ierr,num_subcontractions)
          if(ierr.ne.0) then; ierr=32; return; endif
          !write(*,*) 'Number of subtensor contractions = ',num_subcontractions !debug
+         if(num_subcontractions.ne.9) then; ierr=60; return; endif
          ierr=lit%init(subcontractions); if(ierr.ne.GFC_SUCCESS) then; ierr=33; return; endif
  !Print subcontractions (debug):
-#if 1
+#if 0
          do j=1,num_subcontractions
           write(*,'("Subtensor contraction ",i7,":")') j
           up=>lit%get_value(ierr); if(ierr.ne.GFC_SUCCESS) then; ierr=34; return; endif
