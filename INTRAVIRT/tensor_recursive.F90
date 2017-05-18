@@ -4677,19 +4677,19 @@
           do i=1,nsp; write(devo,'(" ")',ADVANCE='NO'); enddo
           if(this%ddim.gt.0) then
            call numchar(this%ddim,l,num_pos)
-           write(devo,'("{"'//num_pos(1:l)//'(1x,i3),"}=")',ADVANCE='NO') this%dind_pos(1:this%ddim)
+           write(devo,'("{",'//num_pos(1:l)//'(1x,i3),"}=")',ADVANCE='NO') this%dind_pos(1:this%ddim)
           else
            write(devo,'("{}=")',ADVANCE='NO')
           endif
           if(this%ldim.gt.0) then
            call numchar(this%ldim,l,num_pos)
-           write(devo,'("{"'//num_pos(1:l)//'(1x,i3),"}*")',ADVANCE='NO') this%lind_pos(1:this%ldim)
+           write(devo,'("{",'//num_pos(1:l)//'(1x,i3),"}*")',ADVANCE='NO') this%lind_pos(1:this%ldim)
           else
            write(devo,'("{}*")',ADVANCE='NO')
           endif
           if(this%rdim.gt.0) then
            call numchar(this%rdim,l,num_pos)
-           write(devo,'("{"'//num_pos(1:l)//'(1x,i3),"}")',ADVANCE='NO') this%rind_pos(1:this%rdim)
+           write(devo,'("{",'//num_pos(1:l)//'(1x,i3),"}")',ADVANCE='NO') this%rind_pos(1:this%rdim)
           else
            write(devo,'("{}")',ADVANCE='NO')
           endif
@@ -4697,19 +4697,19 @@
            write(devo,'(":     ")',ADVANCE='NO')
            if(this%ddim.gt.0) then
             call numchar(this%ddim,l,num_pos)
-            write(devo,'("{"'//num_pos(1:l)//'(1x,i2),"}=")',ADVANCE='NO') this%dind_res(1:this%ddim)
+            write(devo,'("{",'//num_pos(1:l)//'(1x,i2),"}=")',ADVANCE='NO') this%dind_res(1:this%ddim)
            else
             write(devo,'("{}=")',ADVANCE='NO')
            endif
            if(this%ldim.gt.0) then
             call numchar(this%ldim,l,num_pos)
-            write(devo,'("{"'//num_pos(1:l)//'(1x,i2),"}*")',ADVANCE='NO') this%lind_res(1:this%ldim)
+            write(devo,'("{",'//num_pos(1:l)//'(1x,i2),"}*")',ADVANCE='NO') this%lind_res(1:this%ldim)
            else
             write(devo,'("{}*")',ADVANCE='NO')
            endif
            if(this%rdim.gt.0) then
             call numchar(this%rdim,l,num_pos)
-            write(devo,'("{"'//num_pos(1:l)//'(1x,i2),"}")',ADVANCE='NO') this%rind_res(1:this%rdim)
+            write(devo,'("{",'//num_pos(1:l)//'(1x,i2),"}")',ADVANCE='NO') this%rind_res(1:this%rdim)
            else
             write(devo,'("{}")',ADVANCE='NO')
            endif
