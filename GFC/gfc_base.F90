@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Base
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017-05-11 (started 2016-02-17)
+!REVISION: 2017-05-19 (started 2016-02-17)
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -319,6 +319,7 @@
          integer(INTD):: errc
          integer:: errcode
          logical:: assoc,lckd,lck
+         class(*), pointer:: new_el
          character(256):: errmesg
 
          errc=GFC_SUCCESS
@@ -328,35 +329,41 @@
           if(.not.lck) lck=(this%in_use(errc,set_lock=.TRUE.,report_refs=.FALSE.).eq.GFC_FALSE)
           if(lck) then
            if(errc.eq.GFC_SUCCESS) then
-            if(assoc) then
-             this%value_p=>obj
-             this%alloc=GFC_FALSE
-            else
-#ifdef NO_GNU
-             if(present(copy_ctor_f)) then
-              this%value_p=>copy_ctor_f(obj,errc)
+            if(.not.associated(this%value_p)) then
+             if(assoc) then
+              this%value_p=>obj
+              this%alloc=GFC_FALSE
              else
+#ifdef NO_GNU
+              if(present(copy_ctor_f)) then
+               this%value_p=>copy_ctor_f(obj,errc)
+              else
 #endif
-              !print *,'VALUE_P allocation status = ',associated(this%value_p) !debug
-              allocate(this%value_p,SOURCE=obj,STAT=errcode,ERRMSG=errmesg)
-              if(errcode.ne.0) then
-               write(*,*)'#ERROR(GFC::base:ContElemConstruct): allocate() failed: '//errmesg
-               if(errmesg(1:39).eq.'Attempt to allocate an allocated object') then !debug
-                write(*,*)'Object (pointer) association status = ',associated(this%value_p) !debug
-                deallocate(this%value_p,STAT=errcode,ERRMSG=errmesg) !debug
-                if(errcode.ne.0) write(*,*)'deallocate() failure: '//errmesg !debug
-                !call crash()
-               endif !debug
-               errc=GFC_MEM_ALLOC_FAILED
+               new_el=>NULL()
+               allocate(new_el,SOURCE=obj,STAT=errcode,ERRMSG=errmesg)
+               if(errcode.eq.0) then
+                this%value_p=>new_el
+               else
+                write(*,*)'#ERROR(GFC::base:ContElemConstruct): allocate() failed: '//errmesg
+                if(errmesg(1:39).eq.'Attempt to allocate an allocated object') then !debug
+                 write(*,*)'Object (pointer) association status = ',associated(this%value_p) !debug
+                 deallocate(this%value_p,STAT=errcode,ERRMSG=errmesg) !debug
+                 if(errcode.ne.0) write(*,*)'deallocate() failure: '//errmesg !debug
+                 !call crash()
+                endif !debug
+                errc=GFC_MEM_ALLOC_FAILED
+               endif
+#ifdef NO_GNU
               endif
-#ifdef NO_GNU
-             endif
 #endif
-             if(errc.eq.GFC_SUCCESS) then
-              this%alloc=GFC_TRUE
-             else
-              this%value_p=>NULL()
+              if(errc.eq.GFC_SUCCESS) then
+               this%alloc=GFC_TRUE
+              else
+               this%value_p=>NULL()
+              endif
              endif
+            else
+             errc=GFC_ELEM_NOT_EMPTY
             endif
            endif
            if(.not.lckd) then
