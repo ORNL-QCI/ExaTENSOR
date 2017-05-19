@@ -1,7 +1,7 @@
 !Infrastructure for a recursive adaptive vector space decomposition
 !and hierarchical vector space representation.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/05/09
+!REVISION: 2017/05/18
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -662,7 +662,7 @@
          integer(INTD), intent(out), optional:: ierr  !out: error code
          real(8), intent(inout), optional:: align(1:) !in: inner alignment boundaries (>0) relative to the beginning of the range, excluding beginning and end of the range
          integer(INTD):: errc,nbnd,nchnk,i,j,k,l,left,left2,right
-         real(8):: rl,incr,lb,ub
+         real(8):: rl,incr,lb,ub,rb
          logical:: next
 
          errc=0
@@ -693,7 +693,8 @@
               if(ub-lb.lt.incr) then; incr=ub-lb; j=nbnd+1; left=k; left2=l; right=0; endif
  !Merge the smallest alignment chunk with its left or right neighbor:
               if(left2.gt.0.and.right.gt.0) then
-               if(align(left)-align(left2).lt.align(right)-align(j)) then
+               if(right.le.nbnd) then; rb=align(right); else; rb=ub; endif
+               if(align(left)-align(left2).lt.rb-align(j)) then
                 align(left)=-align(left) !deactivate the boundary due to merge
                else
                 align(j)=-align(j) !deactivate the boundary due to merge
@@ -858,6 +859,7 @@
          if(num_segs.gt.0.and.num_segs.le.size(segs).and.num_segs.le.rl) then
           if(rl.gt.0) then
            if(present(align)) then; nbnd=size(align); else; nbnd=0; endif
+           !write(CONS_OUT,'("#DEBUG(seg_int_t:split): align(:) array size = ",i11)') nbnd !debug
            if(nbnd.gt.0) then !aligned splitting
             if(num_segs.le.nbnd) then
              ub=this%upper_bound()
@@ -865,7 +867,7 @@
              do while(nchnk.gt.num_segs)
  !Find the smallest alignment chunk:
               left=0; left2=0; right=0
-              j=0; k=0; l=0; lb=0d0; next=.TRUE.
+              j=0; k=0; l=0; lb=0; next=.TRUE.
               do i=1,nbnd
                if(align(i).gt.0) then !boundary is still active
                 if(.not.next) then; right=i; next=.TRUE.; endif
@@ -881,7 +883,8 @@
               if(ub-lb.lt.incr) then; incr=ub-lb; j=nbnd+1; left=k; left2=l; right=0; endif
  !Merge the smallest alignment chunk with its left or right neighbor:
               if(left2.gt.0.and.right.gt.0) then
-               if(align(left)-align(left2).lt.align(right)-align(j)) then
+               if(right.le.nbnd) then; i=align(right); else; i=ub; endif
+               if(align(left)-align(left2).lt.i-align(j)) then
                 align(left)=-align(left) !deactivate the boundary due to merge
                else
                 align(j)=-align(j) !deactivate the boundary due to merge
@@ -2078,8 +2081,8 @@
                      errc=4; exit tloop
                     endif
                     !write(*,'("Range ")',ADVANCE='NO'); call seg%print_range() !debug
-                    !print *,'To be split into ',m !debug
-                    !print *,'With boundaries ',nbnd,bndr(1:nbnd) !debug
+                    !print *,'to be split into ',m,' segments' !debug
+                    !print *,'with boundaries ',bndr(1:nbnd) !debug
                     if(nbnd.gt.0) then
                      call seg%split(m,segs,errc,bndr(1:nbnd))
                     else

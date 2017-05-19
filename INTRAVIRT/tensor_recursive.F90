@@ -6045,58 +6045,66 @@
          call tens_contr%split(tens_split_func,subcontractions,ierr,num_subcontractions)
          if(ierr.ne.0) then; ierr=18; return; endif
          !write(*,*) 'Number of subtensor contractions = ',num_subcontractions !debug
-         if(num_subcontractions.ne.16) then; ierr=50; return; endif
-         ierr=lit%init(subcontractions); if(ierr.ne.GFC_SUCCESS) then; ierr=19; return; endif
+         if(num_subcontractions.ne.16) then; ierr=19; return; endif
+         ierr=lit%init(subcontractions); if(ierr.ne.GFC_SUCCESS) then; ierr=20; return; endif
+  !Check the GFC list (debug):
+         ierr=lit%reset(); if(ierr.ne.GFC_SUCCESS) then; ierr=21; return; endif
+         ierr=lit%scanp(); if(ierr.ne.GFC_IT_DONE) then; ierr=22; return; endif
+         if(lit%total_count(ierr).ne.num_subcontractions) then; ierr=23; return; endif
  !Print subcontractions (debug):
 #if 0
          do j=1,num_subcontractions
           write(*,'("Subtensor contraction ",i7,":")') j
-          up=>lit%get_value(ierr); if(ierr.ne.GFC_SUCCESS) then; ierr=20; return; endif
+          up=>lit%get_value(ierr); if(ierr.ne.GFC_SUCCESS) then; ierr=24; return; endif
           subcontr_p=>NULL(); select type(up); class is(tens_contraction_t); subcontr_p=>up; end select
-          if(.not.associated(subcontr_p)) then; ierr=21; return; endif
-          call subcontr_p%print_it(ierr,nspaces=1); if(ierr.ne.TEREC_SUCCESS) then; ierr=22; return; endif
-          ierr=lit%next(); if(ierr.ne.GFC_SUCCESS.and.j.lt.num_subcontractions) then; ierr=23; return; endif
+          if(.not.associated(subcontr_p)) then; ierr=25; return; endif
+          call subcontr_p%print_it(ierr,nspaces=1); if(ierr.ne.TEREC_SUCCESS) then; ierr=26; return; endif
+          ierr=lit%next(); if(ierr.ne.GFC_SUCCESS.and.j.lt.num_subcontractions) then; ierr=27; return; endif
          enddo
-         if(ierr.ne.GFC_NO_MOVE) then; ierr=24; return; endif
+         if(ierr.ne.GFC_NO_MOVE) then; ierr=28; return; endif
 #endif
  !Destroy subcontractions:
-         ierr=lit%delete_all(); if(ierr.ne.GFC_SUCCESS) then; ierr=25; return; endif
-         ierr=lit%release(); if(ierr.ne.GFC_SUCCESS) then; ierr=26; return; endif
+         ierr=lit%delete_all(); if(ierr.ne.GFC_SUCCESS) then; ierr=29; return; endif
+         ierr=lit%release(); if(ierr.ne.GFC_SUCCESS) then; ierr=30; return; endif
 #endif
 #if 1
 !Tensor contraction 2:
  !Create the full tensor contraction specification for dE()+=H2(i,k,a,c)*T2(a,c,i,k):
-         call tens_contr%clean(ierr); if(ierr.ne.0) then; ierr=27; return; endif
+         call tens_contr%clean(ierr); if(ierr.ne.0) then; ierr=31; return; endif
   !Set tensor contraction arguments:
-         call tens_contr%set_argument(stens,ierr); if(ierr.ne.0) then; ierr=28; return; endif
-         call tens_contr%set_argument(ltens,ierr); if(ierr.ne.0) then; ierr=29; return; endif
-         call tens_contr%set_argument(rtens,ierr); if(ierr.ne.0) then; ierr=30; return; endif
+         call tens_contr%set_argument(stens,ierr); if(ierr.ne.0) then; ierr=32; return; endif
+         call tens_contr%set_argument(ltens,ierr); if(ierr.ne.0) then; ierr=33; return; endif
+         call tens_contr%set_argument(rtens,ierr); if(ierr.ne.0) then; ierr=34; return; endif
          !print *,'Tensor contraction (args_set,fully set): ',tens_contr%args_full(),tens_contr%is_set() !debug
   !Set the tensor contraction pattern:
-         call tens_contr%set_contr_ptrn((/-3,-4,-1,-2, -3,-4,-1,-2/),ierr); if(ierr.ne.0) then; ierr=31; return; endif
+         call tens_contr%set_contr_ptrn((/-3,-4,-1,-2, -3,-4,-1,-2/),ierr); if(ierr.ne.0) then; ierr=35; return; endif
   !Impose additional symmetries, if needed:
          !call tens_contr%print_it() !debug
  !Split the tensor contraction into a list of subtensor contractions:
          call tens_contr%split(tens_split_func,subcontractions,ierr,num_subcontractions)
-         if(ierr.ne.0) then; ierr=32; return; endif
+         if(ierr.ne.0) then; ierr=36; return; endif
          !write(*,*) 'Number of subtensor contractions = ',num_subcontractions !debug
-         if(num_subcontractions.ne.9) then; ierr=60; return; endif
-         ierr=lit%init(subcontractions); if(ierr.ne.GFC_SUCCESS) then; ierr=33; return; endif
+         if(num_subcontractions.ne.9) then; ierr=37; return; endif
+         ierr=lit%init(subcontractions); if(ierr.ne.GFC_SUCCESS) then; ierr=38; return; endif
+  !Check the GFC list (debug):
+         ierr=lit%reset(); if(ierr.ne.GFC_SUCCESS) then; ierr=39; return; endif
+         ierr=lit%scanp(); if(ierr.ne.GFC_IT_DONE) then; ierr=40; return; endif
+         if(lit%total_count(ierr).ne.num_subcontractions) then; ierr=41; return; endif
  !Print subcontractions (debug):
 #if 0
          do j=1,num_subcontractions
           write(*,'("Subtensor contraction ",i7,":")') j
-          up=>lit%get_value(ierr); if(ierr.ne.GFC_SUCCESS) then; ierr=34; return; endif
+          up=>lit%get_value(ierr); if(ierr.ne.GFC_SUCCESS) then; ierr=42; return; endif
           subcontr_p=>NULL(); select type(up); class is(tens_contraction_t); subcontr_p=>up; end select
-          if(.not.associated(subcontr_p)) then; ierr=35; return; endif
-          call subcontr_p%print_it(ierr,nspaces=1); if(ierr.ne.TEREC_SUCCESS) then; ierr=36; return; endif
-          ierr=lit%next(); if(ierr.ne.GFC_SUCCESS.and.j.lt.num_subcontractions) then; ierr=37; return; endif
+          if(.not.associated(subcontr_p)) then; ierr=43; return; endif
+          call subcontr_p%print_it(ierr,nspaces=1); if(ierr.ne.TEREC_SUCCESS) then; ierr=44; return; endif
+          ierr=lit%next(); if(ierr.ne.GFC_SUCCESS.and.j.lt.num_subcontractions) then; ierr=45; return; endif
          enddo
-         if(ierr.ne.GFC_NO_MOVE) then; ierr=38; return; endif
+         if(ierr.ne.GFC_NO_MOVE) then; ierr=46; return; endif
 #endif
  !Destroy subcontractions:
-         ierr=lit%delete_all(); if(ierr.ne.GFC_SUCCESS) then; ierr=39; return; endif
-         ierr=lit%release(); if(ierr.ne.GFC_SUCCESS) then; ierr=40; return; endif
+         ierr=lit%delete_all(); if(ierr.ne.GFC_SUCCESS) then; ierr=47; return; endif
+         ierr=lit%release(); if(ierr.ne.GFC_SUCCESS) then; ierr=48; return; endif
 #endif
 
  !Release global resources:
