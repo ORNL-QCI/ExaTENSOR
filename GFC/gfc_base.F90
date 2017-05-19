@@ -342,8 +342,10 @@
               if(errcode.ne.0) then
                write(*,*)'#ERROR(GFC::base:ContElemConstruct): allocate() failed: '//errmesg
                if(errmesg(1:39).eq.'Attempt to allocate an allocated object') then !debug
+                write(*,*)'Object (pointer) association status = ',associated(this%value_p) !debug
                 deallocate(this%value_p,STAT=errcode,ERRMSG=errmesg) !debug
-                if(errcode.ne.0) print *,'deallocate() failure: '//errmesg !debug
+                if(errcode.ne.0) write(*,*)'deallocate() failure: '//errmesg !debug
+                !call crash()
                endif !debug
                errc=GFC_MEM_ALLOC_FAILED
               endif
