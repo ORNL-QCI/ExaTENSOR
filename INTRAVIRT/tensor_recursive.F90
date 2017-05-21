@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/05/18
+!REVISION: 2017/05/21
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -3048,26 +3048,41 @@
 
          if(this%is_set(errc,layd,locd)) then
           if(errc.eq.TEREC_SUCCESS.and.(.not.layd)) then
-           lselect: select case(layout_kind)
+           select case(layout_kind)
            case(TEREC_LAY_RECUR) !all constituent subtensors are mapped sequentially to a contiguous chunk of local memory
             stop !`Implement
            case(TEREC_LAY_FDIMS) !a single subtensor is mapped as "Fortran-dimension-led"
             if(this%num_subtensors.eq.1) then
-             errc=lit%init(this%subtensors); if(errc.ne.GFC_SUCCESS) then; errc=TEREC_UNABLE_COMPLETE; exit lselect; endif
-             up=>lit%get_value(errc); if(errc.ne.GFC_SUCCESS) then; errc=TEREC_UNABLE_COMPLETE; exit lselect; endif
-             select type(up); class is(tens_header_t); thp=>up; end select
-             if(.not.associated(thp)) then; errc=TEREC_UNABLE_COMPLETE; exit lselect; endif
-             errc=lit%release(); if(errc.ne.GFC_SUCCESS) then; errc=TEREC_UNABLE_COMPLETE; exit lselect; endif
-             allocate(tens_layout_fdims_t::this%layout,STAT=errc)
-             if(errc.eq.0) then
-              select type(layout=>this%layout)
-              class is(tens_layout_fdims_t)
-               call layout%tens_layout_fdims_ctor(thp,data_type,errc)
-              class default
-               errc=TEREC_ERROR
-              end select
+             errc=lit%init(this%subtensors)
+             if(errc.eq.GFC_SUCCESS) then
+              up=>lit%get_value(errc)
+              if(errc.eq.GFC_SUCCESS) then
+               thp=>NULL(); select type(up); class is(tens_header_t); thp=>up; end select
+               if(associated(thp)) then
+                errc=lit%release()
+                if(errc.eq.GFC_SUCCESS) then
+                 allocate(tens_layout_fdims_t::this%layout,STAT=errc)
+                 if(errc.eq.0) then
+                  select type(layout=>this%layout)
+                  class is(tens_layout_fdims_t)
+                   call layout%tens_layout_fdims_ctor(thp,data_type,errc)
+                  class default
+                   errc=TEREC_ERROR
+                  end select
+                 else
+                  errc=TEREC_MEM_ALLOC_FAILED
+                 endif
+                else
+                 errc=TEREC_ERROR
+                endif
+               else
+                errc=TEREC_UNABLE_COMPLETE
+               endif
+              else
+               errc=TEREC_UNABLE_COMPLETE
+              endif
              else
-              errc=TEREC_MEM_ALLOC_FAILED
+              errc=TEREC_UNABLE_COMPLETE
              endif
             else
              errc=TEREC_INVALID_REQUEST
@@ -3108,7 +3123,7 @@
             endif
            case default
             errc=TEREC_INVALID_ARGS
-           end select lselect
+           end select
           else
            errc=TEREC_INVALID_REQUEST
           endif
