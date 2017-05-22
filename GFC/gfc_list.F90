@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Bi-directional linked list
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017-05-11 (started 2016-02-28)
+!REVISION: 2017-05-21 (started 2016-02-28)
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -945,9 +945,9 @@
            if(present(backwards)) then; back=backwards; else; back=.FALSE.; endif
            lep=>this%current
            if(back) then
-            this%current=>this%container%last_elem
-           else
             this%current=>this%container%first_elem
+           else
+            this%current=>this%container%last_elem
            endif
            if(associated(this%current)) then
             if(present(dtor_f)) then
@@ -979,14 +979,19 @@
          class(list_iter_t), intent(inout):: this     !inout: list iterator
          procedure(gfc_destruct_i), optional:: dtor_f !in: element value destructor
 
-         ierr=this%reset()
-         if(ierr.eq.GFC_SUCCESS) then
-          if(present(dtor_f)) then
-           ierr=this%delete_sublist(dtor_f)
-          else
-           ierr=this%delete_sublist()
+         ierr=this%get_status()
+         if(ierr.ne.GFC_IT_NULL) then
+          ierr=this%reset()
+          if(ierr.eq.GFC_SUCCESS) then
+           if(present(dtor_f)) then
+            ierr=this%delete_sublist(dtor_f)
+           else
+            ierr=this%delete_sublist()
+           endif
+           if(ierr.eq.GFC_IT_EMPTY) ierr=GFC_SUCCESS
+           this%container%first_elem=>NULL()
+           this%container%last_elem=>NULL()
           endif
-          if(ierr.eq.GFC_IT_EMPTY) ierr=GFC_SUCCESS
          endif
          return
         end function ListIterDeleteAll

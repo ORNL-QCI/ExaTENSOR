@@ -6068,7 +6068,7 @@
          if(lit%total_count(ierr).ne.num_subcontractions) then; ierr=23; return; endif
          ierr=lit%reset(); if(ierr.ne.GFC_SUCCESS) then; ierr=21; return; endif
  !Print subcontractions (debug):
-#if 0
+#if 1
          do j=1,num_subcontractions
           write(*,'("Subtensor contraction ",i7,":")') j
           up=>lit%get_value(ierr); if(ierr.ne.GFC_SUCCESS) then; ierr=24; return; endif
@@ -6108,7 +6108,7 @@
          if(lit%total_count(ierr).ne.num_subcontractions) then; ierr=41; return; endif
          ierr=lit%reset(); if(ierr.ne.GFC_SUCCESS) then; ierr=39; return; endif
  !Print subcontractions (debug):
-#if 0
+#if 1
          do j=1,num_subcontractions
           write(*,'("Subtensor contraction ",i7,":")') j
           up=>lit%get_value(ierr); if(ierr.ne.GFC_SUCCESS) then; ierr=42; return; endif
