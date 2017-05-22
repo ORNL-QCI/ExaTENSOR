@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Dictionary (ordered map), AVL BST
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017/05/11 (recycling my old dictionary implementation)
+!REVISION: 2017/05/22 (recycling my old dictionary implementation)
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -1317,6 +1317,7 @@
             if(VERBOSE) write(CONS_OUT,'("#ERROR(gfc::dictionary::search): delete: dictionary element destruction failed!")')
             dict_search=GFC_MEM_FREE_FAILED
            endif
+           if(associated(this%current,curr)) this%current=>NULL()
            deallocate(curr,STAT=j)
            if(j.ne.0) then
             if(VERBOSE) write(CONS_OUT,'("#ERROR(gfc::dictionary::search): delete: dictionary element deallocation failed!")')
