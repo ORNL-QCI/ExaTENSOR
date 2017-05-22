@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/05/21
+!REVISION: 2017/05/22
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -6068,7 +6068,7 @@
          if(lit%total_count(ierr).ne.num_subcontractions) then; ierr=23; return; endif
          ierr=lit%reset(); if(ierr.ne.GFC_SUCCESS) then; ierr=21; return; endif
  !Print subcontractions (debug):
-#if 1
+#if 0
          do j=1,num_subcontractions
           write(*,'("Subtensor contraction ",i7,":")') j
           up=>lit%get_value(ierr); if(ierr.ne.GFC_SUCCESS) then; ierr=24; return; endif
@@ -6108,7 +6108,7 @@
          if(lit%total_count(ierr).ne.num_subcontractions) then; ierr=41; return; endif
          ierr=lit%reset(); if(ierr.ne.GFC_SUCCESS) then; ierr=39; return; endif
  !Print subcontractions (debug):
-#if 1
+#if 0
          do j=1,num_subcontractions
           write(*,'("Subtensor contraction ",i7,":")') j
           up=>lit%get_value(ierr); if(ierr.ne.GFC_SUCCESS) then; ierr=42; return; endif

@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Tree
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017-05-11 (started 2016-02-17)
+!REVISION: 2017-05-22 (started 2016-02-17)
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -347,6 +347,7 @@
           endif
           call this%reset_count() !reset all iteration counters
          else
+          this%current=>NULL()
           ierr=this%set_status_(GFC_IT_NULL)
           ierr=GFC_IT_NULL
          endif

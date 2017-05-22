@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Bi-directional linked list
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017-05-21 (started 2016-02-28)
+!REVISION: 2017-05-22 (started 2016-02-28)
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -902,8 +902,10 @@
            else
             if(first) then
              this%current=>this%current%next_elem
+             this%container%first_elem=>this%current
             else
              this%current=>this%current%prev_elem
+             if(last) this%container%last_elem=>this%current
             endif
            endif
            if(present(dtor_f)) then
@@ -912,12 +914,13 @@
             call lep%destruct(errc)
            endif
            if(errc.ne.0) then
-            write(CONS_OUT,*)'GFC::list:ListIterDelete: element value destruction failed with error ',errc !debug
+            if(VERBOSE) write(CONS_OUT,*)'GFC::list:ListIterDelete: element value destruction failed with error ',errc !debug
             ierr=NOT_CLEAN
            endif
            deallocate(lep,STAT=errc,ERRMSG=errmesg)
            if(errc.ne.0) then
-            write(CONS_OUT,*)'GFC::list:ListIterDelete: deallocate(lep) failed: ',errc,': '//errmesg(1:len_trim(errmesg)) !debug
+            if(VERBOSE) write(CONS_OUT,*)'GFC::list:ListIterDelete: deallocate(lep) failed: ',errc,': '//&
+                         &errmesg(1:len_trim(errmesg)) !debug
             ierr=NOT_CLEAN
            endif
           else
@@ -989,8 +992,6 @@
             ierr=this%delete_sublist()
            endif
            if(ierr.eq.GFC_IT_EMPTY) ierr=GFC_SUCCESS
-           this%container%first_elem=>NULL()
-           this%container%last_elem=>NULL()
           endif
          endif
          return
