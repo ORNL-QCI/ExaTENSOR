@@ -27,6 +27,7 @@ program main
  use gfc_graph_test
  use multords_test
  implicit none
+ logical, parameter:: TEST_LEGACY=.FALSE.
  real(8):: perf
  integer(INTD):: dev_out,ierr
  real(8), external:: dil_test_infer_overhead
@@ -34,13 +35,6 @@ program main
  dev_out=6 !output device (defaults to screen)
 
 !GFC containers:
-! Graph:
- ierr=test_gfc_graph(perf,dev_out)
- if(ierr.eq.0) then
-  write(*,*) 'gfc::graph testing status: ',ierr,'(PASSED): Performance: ',perf
- else
-  write(*,*) 'gfc::graph testing status: ',ierr,'(FAILED): Performance: ',perf
- endif
 ! Vector:
  ierr=test_gfc_vector(perf,dev_out)
  if(ierr.eq.0) then
@@ -69,21 +63,30 @@ program main
  else
   write(*,*) 'gfc::dictionary testing status: ',ierr,'(FAILED): Performance: ',perf
  endif
+! Graph:
+ ierr=test_gfc_graph(perf,dev_out)
+ if(ierr.eq.0) then
+  write(*,*) 'gfc::graph testing status: ',ierr,'(PASSED): Performance: ',perf
+ else
+  write(*,*) 'gfc::graph testing status: ',ierr,'(FAILED): Performance: ',perf
+ endif
 
 !Legacy containers:
+ if(TEST_LEGACY) then
 ! Stack:
- ierr=dil_test_stack(perf,dev_out)
- if(ierr.eq.0) then
-  write(*,*) 'Legacy stack testing status: ',ierr,'(PASSED): Performance: ',perf
- else
-  write(*,*) 'Legacy stack testing status: ',ierr,'(FAILED): Performance: ',perf
- endif
+  ierr=dil_test_stack(perf,dev_out)
+  if(ierr.eq.0) then
+   write(*,*) 'Legacy stack testing status: ',ierr,'(PASSED): Performance: ',perf
+  else
+   write(*,*) 'Legacy stack testing status: ',ierr,'(FAILED): Performance: ',perf
+  endif
 ! Dictionary:
- ierr=dil_test_dictionary(perf,dev_out)
- if(ierr.eq.0) then
-  write(*,*) 'Legacy dictionary testing status: ',ierr,'(PASSED): Performance: ',perf
- else
-  write(*,*) 'Legacy dictionary testing status: ',ierr,'(FAILED): Performance: ',perf
+  ierr=dil_test_dictionary(perf,dev_out)
+  if(ierr.eq.0) then
+   write(*,*) 'Legacy dictionary testing status: ',ierr,'(PASSED): Performance: ',perf
+  else
+   write(*,*) 'Legacy dictionary testing status: ',ierr,'(FAILED): Performance: ',perf
+  endif
  endif
 
 !Linear-scaling sort:
@@ -94,7 +97,7 @@ program main
   write(*,*) 'Multi-index sort testing status: ',ierr,'(FAILED): Performance: ',perf
  endif
 
-!Dynamic type inferrence overhead:`PGI compiler bug
+!Dynamic type inferrence overhead:
  write(*,'(1x,"Dynamic type inferrence slowdown: ")',ADVANCE='NO')
  perf=dil_test_infer_overhead(2**23)
  write(*,*) perf
