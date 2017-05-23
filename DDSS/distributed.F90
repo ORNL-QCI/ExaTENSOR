@@ -1,6 +1,6 @@
 !Distributed data storage service (DDSS).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/04/11 (started 2015/03/18)
+!REVISION: 2017/05/23 (started 2015/03/18)
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -266,7 +266,7 @@
          contains
           procedure, public:: clean=>CommHandleClean !clean the commmunication handle
           procedure, public:: wait=>CommHandleWait   !wait upon completion of the communication associated with the handle
-          procedure, public:: test=>CommHandleTest   !test the completion of the communication associated with the handle
+          procedure, public:: test=>CommHandleTest_  !test the completion of the communication associated with the handle
         end type CommHandle_t
  !Data packet container (collection of plain data packets):
         type, public:: PackCont_t
@@ -357,7 +357,7 @@
  !CommHandle_t:
         private CommHandleClean
         private CommHandleWait
-        private CommHandleTest
+        private CommHandleTest_
  !PackCont_t:
         private PackContClean
         private PackContReserve
@@ -2608,7 +2608,7 @@
         return
         end subroutine CommHandleWait
 !---------------------------------------------------------------------
-        function CommHandleTest(this,ierr,ignore_old) result(msg_stat)
+        function CommHandleTest_(this,ierr,ignore_old) result(msg_stat)
 !Tests an active communication for a completion. It is safe to test for
 !completion the same already completed message twice and more, unless <ignore_old>=TRUE.
 !Possible successful return statuses:
@@ -2654,7 +2654,7 @@
         endif
         if(present(ierr)) ierr=errc
         return
-        end function CommHandleTest
+        end function CommHandleTest_
 !======================================================
         subroutine PackContClean(this,ierr,keep_buffer)
 !Cleans a data packet container. If <keep_buffer>=TRUE,
