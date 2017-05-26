@@ -1,6 +1,6 @@
 !Basic object packing/unpacking primitives.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/04/10
+!REVISION: 2017/05/26
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -192,6 +192,7 @@
          module procedure pack_integer1
          module procedure pack_integer2
          module procedure pack_integer4
+         module procedure pack_integer4_arr1
          module procedure pack_integer8
          module procedure pack_logical
          module procedure pack_real4
@@ -207,6 +208,7 @@
          module procedure unpack_integer1
          module procedure unpack_integer2
          module procedure unpack_integer4
+         module procedure unpack_integer4_arr1
          module procedure unpack_integer8
          module procedure unpack_logical
          module procedure unpack_real4
@@ -1553,6 +1555,43 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine pack_integer4
+!---------------------------------------------------------------
+        subroutine pack_integer4_arr1(packet,objs,num_objs,ierr)
+!Packs <num_objs> objects <objs> into packet <packet>. The length
+!of the packet is increased by the storage size of all objects in bytes.
+         implicit none
+         class(obj_pack_t), intent(inout):: packet   !inout: packet
+         integer(4), intent(in):: objs(1:)           !in: builtin type objects
+         integer(4), intent(in):: num_objs           !in: number of objects to pack
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: obj_size,errc,i
+         integer(INTL):: sl
+         type(C_PTR):: cptr
+         character(C_CHAR), pointer, contiguous:: chp(:)
+         integer(4), pointer:: fptr
+
+         errc=PACK_SUCCESS
+         obj_size=size_of(objs(1)) !size of the object in bytes
+         if(obj_size.gt.0) then
+          sl=packet%space_left(errc)
+          if(errc.eq.PACK_SUCCESS) then
+           if(sl.ge.int(obj_size,INTL)*int(num_objs,INTL)) then
+            do i=1,num_objs
+             chp(1:)=>packet%buffer(packet%length+1_INTL:)
+             cptr=c_loc(chp); call c_f_pointer(cptr,fptr)
+             fptr=objs(i); fptr=>NULL()
+             packet%length=packet%length+obj_size
+            enddo
+           else
+            errc=PACK_OVERFLOW
+           endif
+          endif
+         else
+          errc=PACK_NULL
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine pack_integer4_arr1
 !--------------------------------------------------
         subroutine unpack_integer4(packet,obj,ierr)
 !Unpacks object <obj> from packet <packet>. After unpacking, the internal
@@ -1587,6 +1626,44 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine unpack_integer4
+!-----------------------------------------------------------------
+        subroutine unpack_integer4_arr1(packet,objs,num_objs,ierr)
+!Unpacks <num_objs> objects <objs> from packet <packet>. After unpacking,
+!the internal packet offset is automatically incremented to the next field.
+         implicit none
+         class(obj_pack_t), intent(inout):: packet       !inout: packet
+         integer(4), intent(inout):: objs(1:)            !out: builtin type objects
+         integer(4), intent(in):: num_objs               !in: number of objects to unpack
+         integer(INTD), intent(out), optional:: ierr     !out: error code
+         integer(INTD):: obj_size,errc,i
+         integer(INTL):: ppos
+         type(C_PTR):: cptr
+         character(C_CHAR), pointer, contiguous:: chp(:)
+         integer(4), pointer:: fptr
+
+         errc=PACK_SUCCESS
+         obj_size=size_of(objs(1)) !size of the object in bytes
+         if(obj_size.gt.0) then
+          ppos=PACK_BASE+packet%offset
+          if(ppos.gt.0_INTL.and.ppos+(obj_size*num_objs)-1.le.packet%get_length(errc)) then
+           if(errc.eq.PACK_SUCCESS) then
+            do i=1,num_objs
+             chp(1:)=>packet%buffer(ppos:)
+             cptr=c_loc(chp); call c_f_pointer(cptr,fptr)
+             objs(i)=fptr; fptr=>NULL()
+             packet%offset=packet%offset+obj_size
+             ppos=PACK_BASE+packet%offset
+            enddo
+           endif
+          else
+           errc=PACK_OVERFLOW
+          endif
+         else
+          errc=PACK_NULL
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine unpack_integer4_arr1
 !------------------------------------------------
         subroutine pack_integer8(packet,obj,ierr)
 !Packs object <obj> into packet <packet>. The length of the packet

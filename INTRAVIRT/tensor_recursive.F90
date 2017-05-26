@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/05/23
+!REVISION: 2017/05/26
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -309,7 +309,9 @@
           procedure, public:: set_store_symm=>ContrPtrnExtSetStoreSymm !sets index permutational symmetry restrictions due to tensor storage: post-ctor
           procedure, public:: set_operl_symm=>ContrPtrnExtSetOperlSymm !sets index permutational symmetry restrictions due to tensor operation: post-ctor
           procedure, public:: break_dim_symm=>ContrPtrnExtBreakDimSymm !breaks the dimension symmetry for a specific tensor dimension
+          procedure, public:: unpack=>ContrPtrnExtUnpack               !unpacks the object from a packet
           procedure, public:: is_set=>ContrPtrnExtIsSet                !returns TRUE of the tensor contraction pattern is set
+          procedure, public:: pack=>ContrPtrnExtPack                   !packs the object into a packet
           procedure, public:: get_contr_ptrn=>ContrPtrnExtGetContrPtrn !returns the classical (basic) digital contraction pattern used by TAL-SH for example
           procedure, public:: get_dim_symmetry=>ContrPtrnExtGetDimSymmetry !returns the symmetric restrictions for a specific tensor argument
           procedure, public:: print_it=>ContrPtrnExtPrintIt            !prints the extended tensor contraction
@@ -517,7 +519,9 @@
         private ContrPtrnExtSetStoreSymm
         private ContrPtrnExtSetOperlSymm
         private ContrPtrnExtBreakDimSymm
+        private ContrPtrnExtUnpack
         private ContrPtrnExtIsSet
+        private ContrPtrnExtPack
         private ContrPtrnExtGetContrPtrn
         private ContrPtrnExtGetDimSymmetry
         private ContrPtrnExtPrintIt
@@ -4261,14 +4265,15 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensArgumentSet
-!-----------------------------------------------------------------
-        function TensArgumentIsSet(this,ierr,num_dims) result(ans)
+!------------------------------------------------------------------------
+        function TensArgumentIsSet(this,ierr,num_dims,tens_p) result(ans)
 !Returns TRUE if the tensor argument is set, plus additional info.
          implicit none
          logical:: ans                                   !out: answer
          class(tens_argument_t), intent(in):: this       !in: tensor argument
          integer(INTD), intent(out), optional:: ierr     !out: error code
          integer(INTD), intent(out), optional:: num_dims !out: tensor rank
+         class(tens_rcrsv_t), pointer, intent(inout), optional:: tens_p !out: pointer to the tensor
          integer(INTD):: errc
 
          errc=TEREC_SUCCESS; ans=associated(this%tens_p)
@@ -4277,6 +4282,7 @@
            if(errc.eq.TEREC_SUCCESS) errc=TEREC_OBJ_CORRUPTED
           endif
          endif
+         if(present(tens_p)) tens_p=>this%tens_p
          if(present(ierr)) ierr=errc
          return
         end function TensArgumentIsSet
@@ -4602,6 +4608,28 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine ContrPtrnExtBreakDimSymm
+!------------------------------------------------------
+        subroutine ContrPtrnExtUnpack(this,packet,ierr)
+!Unpacks an object from a packet.
+         implicit none
+         class(contr_ptrn_ext_t), intent(inout):: this !out: extended tensor contraction pattern
+         class(obj_pack_t), intent(inout):: packet     !inout: packet
+         integer(INTD), intent(out), optional:: ierr   !out: error code
+         integer(INTD):: errc
+
+         call unpack_builtin(packet,this%ddim,errc)
+         if(errc.eq.PACK_SUCCESS) call unpack_builtin(packet,this%ldim,errc)
+         if(errc.eq.PACK_SUCCESS) call unpack_builtin(packet,this%rdim,errc)
+         if(errc.eq.PACK_SUCCESS) call unpack_builtin(packet,this%ind_restr_set,errc)
+         if(errc.eq.PACK_SUCCESS) call unpack_builtin(packet,this%dind_pos,this%ddim,errc)
+         if(errc.eq.PACK_SUCCESS) call unpack_builtin(packet,this%lind_pos,this%ldim,errc)
+         if(errc.eq.PACK_SUCCESS) call unpack_builtin(packet,this%rind_pos,this%rdim,errc)
+         if(errc.eq.PACK_SUCCESS) call unpack_builtin(packet,this%dind_res,this%ddim,errc)
+         if(errc.eq.PACK_SUCCESS) call unpack_builtin(packet,this%lind_res,this%ldim,errc)
+         if(errc.eq.PACK_SUCCESS) call unpack_builtin(packet,this%rind_res,this%rdim,errc)
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine ContrPtrnExtUnpack
 !--------------------------------------------------------------
         function ContrPtrnExtIsSet(this,ierr,restr) result(ans)
 !Returns TRUE if the extended tensor contraction pattern is set.
@@ -4618,6 +4646,28 @@
          if(present(ierr)) ierr=errc
          return
         end function ContrPtrnExtIsSet
+!----------------------------------------------------
+        subroutine ContrPtrnExtPack(this,packet,ierr)
+!Packs the object into a packet.
+         implicit none
+         class(contr_ptrn_ext_t), intent(in):: this  !in: extended tensor contraction pattern
+         class(obj_pack_t), intent(inout):: packet   !inout: packet
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         call pack_builtin(packet,this%ddim,errc)
+         if(errc.eq.PACK_SUCCESS) call pack_builtin(packet,this%ldim,errc)
+         if(errc.eq.PACK_SUCCESS) call pack_builtin(packet,this%rdim,errc)
+         if(errc.eq.PACK_SUCCESS) call pack_builtin(packet,this%ind_restr_set,errc)
+         if(errc.eq.PACK_SUCCESS) call pack_builtin(packet,this%dind_pos,this%ddim,errc)
+         if(errc.eq.PACK_SUCCESS) call pack_builtin(packet,this%lind_pos,this%ldim,errc)
+         if(errc.eq.PACK_SUCCESS) call pack_builtin(packet,this%rind_pos,this%rdim,errc)
+         if(errc.eq.PACK_SUCCESS) call pack_builtin(packet,this%dind_res,this%ddim,errc)
+         if(errc.eq.PACK_SUCCESS) call pack_builtin(packet,this%lind_res,this%ldim,errc)
+         if(errc.eq.PACK_SUCCESS) call pack_builtin(packet,this%rind_res,this%rdim,errc)
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine ContrPtrnExtPack
 !----------------------------------------------------------------------
         subroutine ContrPtrnExtGetContrPtrn(this,nl,nr,contr_ptrn,ierr)
 !Returns the basic digital tensor contraction pattern used by TAL-SH.
