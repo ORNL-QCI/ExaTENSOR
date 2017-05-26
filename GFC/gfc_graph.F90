@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Graph
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017/05/11
+!REVISION: 2017/05/26
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -1331,16 +1331,19 @@
           ierr=GFC_SUCCESS
           if(this%get_num_links().gt.0_INTL) then
            ierr=this%link_it%reset()
-           do while(ierr.eq.GFC_SUCCESS)
-            up=>this%link_it%get_value(ierr); if(ierr.ne.GFC_SUCCESS) exit
-            if(.not.associated(up)) then; ierr=GFC_ERROR; exit; endif
-            glp=>NULL(); select type(up); class is(graph_link_t); glp=>up; end select
-            if(.not.associated(glp)) then; ierr=GFC_CORRUPTED_CONT; exit; endif
-            ierr=this%delete_link(glp); if(ierr.ne.GFC_SUCCESS) exit
-            ierr=this%link_it%next()
-           enddo
-           if(ierr.eq.GFC_NO_MOVE) ierr=GFC_SUCCESS
-           glp=>NULL(); up=>NULL()
+           if(ierr.eq.GFC_SUCCESS) then
+            ierr=this%link_it%get_status()
+            do while(ierr.eq.GFC_IT_ACTIVE)
+             up=>this%link_it%get_value(ierr); if(ierr.ne.GFC_SUCCESS) exit
+             if(.not.associated(up)) then; ierr=GFC_ERROR; exit; endif
+             glp=>NULL(); select type(up); class is(graph_link_t); glp=>up; end select
+             if(.not.associated(glp)) then; ierr=GFC_CORRUPTED_CONT; exit; endif
+             ierr=this%delete_link(glp); if(ierr.ne.GFC_SUCCESS) exit
+             ierr=this%link_it%get_status()
+            enddo
+            if(ierr.eq.GFC_IT_EMPTY) ierr=GFC_SUCCESS
+            glp=>NULL(); up=>NULL()
+           endif
           endif
           errc=this%vert_ln_it%delete_all(); if(errc.ne.GFC_SUCCESS.and.ierr.eq.GFC_SUCCESS) ierr=errc
           errc=this%vert_it%delete_all(); if(errc.ne.GFC_SUCCESS.and.ierr.eq.GFC_SUCCESS) ierr=errc
