@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/05/26
+!REVISION: 2017/05/30
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -386,6 +386,7 @@
         public cmp_strings
         public cmp_tens_signatures
         public cmp_tens_headers
+        public build_test_hspace
         public print_tens_header_f
         public print_tcg_buffer
  !hspace_register_t:
@@ -544,6 +545,10 @@
 !DATA:
  !Register of hierarchical vector spaces (only these spaces can be used in tensors):
         type(hspace_register_t), public:: hspace_register
+ ![TESTING]: prerequisites for building a test hierarchical space:
+        integer(INTL), parameter, public:: TEST_HSPACE_DIM=20                        !vector space dimension
+        type(spher_symmetry_t), target, public:: test_hspace_symm(1:TEST_HSPACE_DIM) !symmetry of basis vectors
+        type(subspace_basis_t), public:: test_hspace_basis                           !vector space basis
  !Tensor contraction generator: subtensor buffer:
         integer(INTL), allocatable, target, private:: tcg_ind_buf(:,:) !subtensor index buffer (private to each OpenMP thread)
         integer(INTL), allocatable, target, private:: tcg_num_buf(:)   !subtensor number buffer (private to each OpenMP thread)
@@ -617,6 +622,41 @@
          endif
          return
         end function cmp_tens_headers
+!---------------------------------------------------------------------------
+        function build_test_hspace(space_name,ierr,space_p) result(space_id)
+!Builds a hierarchical vector space for testing/debugging.
+         implicit none
+         integer(INTD):: space_id                                   !out: registered space id
+         character(*), intent(in):: space_name                      !in: vector space name
+         integer(INTD), intent(out), optional:: ierr                !out: error code
+         class(h_space_t), pointer, intent(out), optional:: space_p !out: pointer to the hierarchical vector space
+         class(h_space_t), pointer:: hsp
+         integer(INTD):: errc
+         integer(INTL):: l
+
+         hsp=>NULL()
+         space_id=hspace_register%register_space(space_name,errc,hsp)
+         if(errc.eq.TEREC_SUCCESS) then
+          call test_hspace_basis%subspace_basis_ctor(TEST_HSPACE_DIM,errc)
+          if(errc.eq.0) then
+           do l=1_INTL,TEST_HSPACE_DIM
+            call test_hspace_symm(l)%spher_symmetry_ctor(int((l-1)/5,INTD),0,errc); if(errc.ne.0) exit
+            call test_hspace_basis%set_basis_func(l,BASIS_ABSTRACT,errc,symm=test_hspace_symm(l)); if(errc.ne.0) exit
+           enddo
+           if(errc.eq.0) then
+            call test_hspace_basis%finalize(errc)
+            if(errc.eq.0) then
+             call hsp%h_space_ctor(test_hspace_basis,errc)
+             !write(*,'(i9,"-dimensional full space -> ",i9," subspaces:")') hsp%get_space_dim(),hsp%get_num_subspaces() !debug
+             !call hsp%print_it() !debug
+            endif
+           endif
+          endif
+         endif
+         if(present(space_p)) space_p=>hsp
+         if(present(ierr)) ierr=errc
+         return
+        end function build_test_hspace
 !-----------------------------------------------------
         function print_tens_header_f(obj) result(ierr)
 !Prints a tensor header (for GFC use).
@@ -5990,11 +6030,8 @@
         subroutine test_tens_rcrsv(ierr)
          implicit none
          integer(INTD), intent(out):: ierr
-         integer(INTD), parameter:: tens_rank=4          !tensor rank
-         integer(INTL), parameter:: TEST_SPACE_DIM=33    !vector space dimension
-         type(spher_symmetry_t):: symm(1:TEST_SPACE_DIM) !symmetry of each basis vector
-         type(subspace_basis_t):: full_basis             !full vector space basis
-         class(h_space_t), pointer:: hspace              !hierarchical representation of the vector space
+         integer(INTD), parameter:: tens_rank=4 !tensor rank
+         class(h_space_t), pointer:: hspace     !hierarchical representation of the vector space
          integer(INTL):: spcx(1:MAX_TENSOR_RANK),dims(1:MAX_TENSOR_RANK),space_id,max_res
          integer(INTD):: dimg(1:MAX_TENSOR_RANK),grps(1:MAX_TENSOR_RANK),num_subtensors,hsid,j
          type(tens_header_t), pointer:: thp
@@ -6005,8 +6042,7 @@
          class(*), pointer:: up
 
  !Build a hierarchical representation for a test vector space:
-         hsid=hspace_register%register_space('MySpace',ierr,hspace); if(ierr.ne.TEREC_SUCCESS) then; ierr=1; return; endif
-         call create_test_space(ierr); if(ierr.ne.TEREC_SUCCESS) then; ierr=2; return; endif
+         hsid=build_test_hspace('TestSpace0',ierr,hspace); if(ierr.ne.TEREC_SUCCESS) then; ierr=1; return; endif
  !Create the full tensor (over the full space):
   !Get full space id and its max resolution:
          space_id=hspace%get_root_id(ierr); if(ierr.ne.0) then; ierr=3; return; endif
@@ -6029,28 +6065,7 @@
          !if(ierr.ne.0) then; ierr=10; return; endif !debug
          ierr=lit%delete_all(); if(ierr.ne.0) then; ierr=11; return; endif
          ierr=lit%release(); if(ierr.ne.0) then; ierr=12; return; endif
-
          return
-
-         contains
-
-          subroutine create_test_space(jerr)
-           implicit none
-           integer(INTD), intent(out):: jerr
-           integer(INTL):: jj
-
-           jerr=0
-           call full_basis%subspace_basis_ctor(TEST_SPACE_DIM,jerr); if(jerr.ne.0) return
-           do jj=1,TEST_SPACE_DIM
-            call symm(jj)%spher_symmetry_ctor(int((jj-1)/5,INTD),0,jerr); if(jerr.ne.0) return
-            call full_basis%set_basis_func(jj,BASIS_ABSTRACT,jerr,symm=symm(jj)); if(jerr.ne.0) return
-           enddo
-           call full_basis%finalize(jerr); if(jerr.ne.0) return
-           call hspace%h_space_ctor(full_basis,jerr); if(jerr.ne.0) return
-           !call hspace%print_it() !debug
-           return
-          end subroutine create_test_space
-
         end subroutine test_tens_rcrsv
 !------------------------------------------------------------------------------
         function tens_split_func(tensor,subtensors,num_subtensors) result(ierr)
@@ -6108,12 +6123,9 @@
          implicit none
          integer(INTD), intent(out):: ierr
          !-------------------------------------
-         integer(INTD), parameter:: tens_rank=4          !tensor rank
-         integer(INTL), parameter:: TEST_SPACE_DIM=33    !full vector space dimension
-         !-------------------------------------------
-         type(spher_symmetry_t):: symm(1:TEST_SPACE_DIM) !symmetry of each basis vector
-         type(subspace_basis_t):: full_basis             !full vector space basis
-         class(h_space_t), pointer:: hspace              !hierarchical representation of the vector space
+         integer(INTD), parameter:: tens_rank=4 !tensor rank
+         !-------------------------------------
+         class(h_space_t), pointer:: hspace     !hierarchical representation of the vector space
          integer(INTL):: spcx(1:MAX_TENSOR_RANK),dims(1:MAX_TENSOR_RANK),space_id,max_res
          integer(INTD):: dimg(1:MAX_TENSOR_RANK),grps(1:MAX_TENSOR_RANK)
          integer(INTD):: j,hsid,num_subcontractions
@@ -6127,8 +6139,7 @@
          class(*), pointer:: up
 
 !Build a hierarchical representation for a test vector space:
-         hsid=hspace_register%register_space('NewSpace',ierr,hspace); if(ierr.ne.TEREC_SUCCESS) then; ierr=1; return; endif
-         call create_test_space(ierr); if(ierr.ne.TEREC_SUCCESS) then; ierr=2; return; endif
+         hsid=build_test_hspace('TestSpace1',ierr,hspace); if(ierr.ne.TEREC_SUCCESS) then; ierr=1; return; endif
 
 !Create tensor arguments (over the full space):
  !Get full space id and its max resolution:
@@ -6248,26 +6259,6 @@
          ierr=vit%delete_all(); if(ierr.ne.GFC_SUCCESS) then; ierr=101; return; endif
          ierr=vit%release(); if(ierr.ne.GFC_SUCCESS) then; ierr=102; return; endif
          return
-
-         contains
-
-          subroutine create_test_space(jerr)
-           implicit none
-           integer(INTD), intent(out):: jerr
-           integer(INTL):: jj
-
-           jerr=0
-           call full_basis%subspace_basis_ctor(TEST_SPACE_DIM,jerr); if(jerr.ne.0) return
-           do jj=1,TEST_SPACE_DIM
-            call symm(jj)%spher_symmetry_ctor(int((jj-1)/5,INTD),0,jerr); if(jerr.ne.0) return
-            call full_basis%set_basis_func(jj,BASIS_ABSTRACT,jerr,symm=symm(jj)); if(jerr.ne.0) return
-           enddo
-           call full_basis%finalize(jerr); if(jerr.ne.0) return
-           call hspace%h_space_ctor(full_basis,jerr); if(jerr.ne.0) return
-           !call hspace%print_it() !debug
-           return
-          end subroutine create_test_space
-
         end subroutine test_tens_contraction
 
        end module tensor_recursive_test

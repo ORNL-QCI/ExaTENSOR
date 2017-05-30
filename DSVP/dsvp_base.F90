@@ -1,9 +1,9 @@
 !Domain-specific virtual processor (DSVP): Abstract base module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/01/06
+!REVISION: 2017/05/30
 
-!Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
-!Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
+!Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
+!Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
 
 !This file is part of ExaTensor.
 
@@ -23,7 +23,7 @@
 !NOTES:
 ! # A domain-specific virtual processor (DSVP) is an abstract processor
 !   of domain-specific instructions operating on domain-specific operands.
-!   It is an abstract class intended for further specialization to a concrete
+!   It is an abstract class intended for a further specialization to a concrete
 !   domain-specific virtual processor via inheritance from the domain-specific operand
 !   class, domain-specific instruction class, and domain-specific virtual processor class,
 !   all provided by this module.
@@ -735,17 +735,17 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine DSInstrDeallocOperands
-!------------------------------------------------------------------
-        function DSInstrGetOperand(this,op_num,ierr) result(op_ptr)
+!-------------------------------------------------------------------
+        function DSInstrGetOperand(this,op_num,ierr) result(oprnd_p)
 !Provides an access to a specific operand of the domain-specific instruction.
          implicit none
-         class(ds_oprnd_t), pointer:: op_ptr          !out: pointer to a specific operand
+         class(ds_oprnd_t), pointer:: oprnd_p         !out: pointer to a specific operand
          class(ds_instr_t), intent(in):: this         !in: domain-specific instruction
          integer(INTD), intent(in):: op_num           !in: operand number (0,1,2,...)
          integer(INTD), intent(out), optional:: ierr  !out: error code
          integer(INTD):: errc
 
-         errc=DSVP_SUCCESS; op_ptr=>NULL()
+         errc=DSVP_SUCCESS; oprnd_p=>NULL()
          if(this%is_active(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
            if(this%num_oprnds.gt.0) then
@@ -760,7 +760,7 @@
              endif
              if(errc.eq.DSVP_SUCCESS) then
 #endif
-              op_ptr=>this%operand(op_num)%oprnd_ref
+              oprnd_p=>this%operand(op_num)%oprnd_ref
 #ifdef DSVP_DEBUG
              endif
 #endif
@@ -781,38 +781,42 @@
         subroutine DSInstrSetOperand(this,op_num,oprnd,ierr)
 !Associates a specific operand of the domain-specific instruction with its target.
          implicit none
-         class(ds_instr_t), intent(inout):: this       !inout: domain-specific instruction
-         integer(INTD), intent(in):: op_num            !in: operand number (0,1,2,...)
-         class(ds_oprnd_t), target, intent(in):: oprnd !in: domain-specific operand (target)
-         integer(INTD), intent(out), optional:: ierr   !out: error code
+         class(ds_instr_t), intent(inout):: this        !inout: domain-specific instruction
+         integer(INTD), intent(in):: op_num             !in: operand number (0,1,2,...)
+         class(ds_oprnd_t), pointer, intent(in):: oprnd !in: domain-specific operand (target)
+         integer(INTD), intent(out), optional:: ierr    !out: error code
          integer(INTD):: errc
 
          errc=DSVP_SUCCESS
-         if(this%num_oprnds.gt.0) then
-          if(op_num.ge.0.and.op_num.lt.this%num_oprnds) then
+         if(associated(oprnd)) then
+          if(this%num_oprnds.gt.0) then
+           if(op_num.ge.0.and.op_num.lt.this%num_oprnds) then
 #ifdef DSVP_DEBUG
-           if(DEBUG.gt.0) then
-            if(allocated(this%operand)) then
-             if(lbound(this%operand,1).ne.0.or.ubound(this%operand,1)+1.ne.this%num_oprnds) errc=DSVP_ERR_BROKEN_OBJ
-            else
-             errc=DSVP_ERR_BROKEN_OBJ
+            if(DEBUG.gt.0) then
+             if(allocated(this%operand)) then
+              if(lbound(this%operand,1).ne.0.or.ubound(this%operand,1)+1.ne.this%num_oprnds) errc=DSVP_ERR_BROKEN_OBJ
+             else
+              errc=DSVP_ERR_BROKEN_OBJ
+             endif
             endif
-           endif
-           if(errc.eq.DSVP_SUCCESS) then
+            if(errc.eq.DSVP_SUCCESS) then
 #endif
-            if(.not.associated(this%operand(op_num)%oprnd_ref)) then
-             this%operand(op_num)%oprnd_ref=>oprnd
-            else
-             errc=DSVP_ERR_INVALID_REQ
-            endif
+             if(.not.associated(this%operand(op_num)%oprnd_ref)) then
+              this%operand(op_num)%oprnd_ref=>oprnd
+             else
+              errc=DSVP_ERR_INVALID_REQ
+             endif
 #ifdef DSVP_DEBUG
-           endif
+            endif
 #endif
+           else
+            errc=DSVP_ERR_INVALID_ARGS
+           endif
           else
-           errc=DSVP_ERR_INVALID_ARGS
+           errc=DSVP_ERR_INVALID_REQ
           endif
          else
-          errc=DSVP_ERR_INVALID_REQ
+          errc=DSVP_ERR_INVALID_ARGS
          endif
          if(present(ierr)) ierr=errc
          return
