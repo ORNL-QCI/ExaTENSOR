@@ -1,6 +1,6 @@
 !Domain-specific virtual processor (DSVP): Abstract base module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/05/30
+!REVISION: 2017/05/31
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -87,7 +87,9 @@
  !DSVP status (negative numbers are specific error codes):
         integer(INTD), parameter, public:: DSVP_STAT_OFF=0         !DSVP is off (either not initialized or turned off)
         integer(INTD), parameter, public:: DSVP_STAT_ACTIVE=1      !DSVP has been initialized and is active now
-        integer(INTD), parameter, public:: DSVP_STAT_ERROR=-1      !DSVP encountered an error
+        integer(INTD), parameter, public:: DSVP_STAT_ERROR=-1      !DSVP encountered an error (generic)
+ !DSVP specific kind (valid specific kinds must be non-negative):
+        integer(INTD), parameter, public:: DSVP_NO_KIND=-1         !no specficic kind
  !Domain-specific operand:
   !Operand status:
         integer(INTD), parameter, public:: DS_OPRND_EMPTY=0        !empty operand
@@ -121,7 +123,7 @@
           procedure(ds_oprnd_self_i), deferred, public:: acquire_rsc !explicitly acquires local resources for the domain-specific operand
           procedure(ds_oprnd_self_i), deferred, public:: prefetch    !starts prefetching a remote domain-specific operand (acquires local resources!)
           procedure(ds_oprnd_self_i), deferred, public:: upload      !starts uploading the domain-specific operand to its remote location
-          procedure(ds_oprnd_query_i), deferred, public:: sync       !synchronizes the currently pending communication on the domain-specific operand (either test or wait)
+          procedure(ds_oprnd_sync_i), deferred, public:: sync        !synchronizes the currently pending communication on the domain-specific operand (either test or wait)
           procedure(ds_oprnd_self_i), deferred, public:: release     !destroys the present local copy of the domain-specific operand (releases local resources!), but the operand will stay defined
           procedure(ds_oprnd_pack_i), deferred, public:: pack        !packs the specification of the domain-specific operand into a plain byte packet
           procedure(ds_oprnd_unpack_i), deferred, public:: unpack    !unpacks the specification of the domain-specific operand from a plain byte packet
@@ -178,13 +180,14 @@
           procedure, public:: get_operand=>DSInstrGetOperand            !returns a pointer to a specific operand of the domain-specific instruction
           procedure, public:: set_operand=>DSInstrSetOperand            !associates a specific operand of the domain-specific instruction with its target
           procedure, public:: free_operand=>DSInstrFreeOperand          !frees a specific instruction operand
-          procedure, public:: num_operands=>DSInstrNumOperands          !returns the number of operands in the domain-specific instruction
+          procedure, public:: get_num_operands=>DSInstrGetNumOperands   !returns the number of operands in the domain-specific instruction
           procedure, public:: all_set=>DSInstrAllSet                    !returns TRUE if all operands and control are set
           procedure, public:: clean=>DSInstrClean                       !resets the domain-specific instruction to an empty state (after it has been retired)
         end type ds_instr_t
  !Domain-specific virtual processor:
         type, abstract, public:: dsvp_t
          integer(INTD), private:: stat=DSVP_STAT_OFF          !current DSVP status: {DSVP_STAT_OFF,DSVP_STAT_ACTIVE,negative integers = errors}
+         integer(INTD), private:: spec_kind=DSVP_NO_KIND      !specific kind of DSVP (to be specilized)
          integer(INTL), private:: id=-1                       !DSVP unique ID
          integer(INTL), private:: instr_received=0_INTL       !total number of received domain-specific instructions
          integer(INTL), private:: instr_processed=0_INTL      !total number of processed (retired) instructions (both successful and failed)
@@ -199,9 +202,9 @@
           procedure(dsvp_comm_instr_i), deferred, public:: send_instructions            !sends a block of domain-specific instructions to another DSVP for execution
           procedure(dsvp_comm_instr_i), deferred, public:: receive_retired_instructions !receives back a block of retired instructions with their statuses
           procedure, public:: start_time=>DSVPStartTime                          !starts the time when DSVP is initialized
-          procedure, public:: clean=>DSVPClean                                   !cleans the DSVP state after the destruction
-          procedure, public:: set_description=>DSVPSetDescription                !sets DSVP ID and symbolic description
-          procedure, public:: get_description=>DSVPGetDescription                !gets DSVP ID and symbolic description
+          procedure, public:: clean=>DSVPClean                                   !cleans the DSVP state after destruction
+          procedure, public:: set_description=>DSVPSetDescription                !sets DSVP ID, kind, and symbolic description
+          procedure, public:: get_description=>DSVPGetDescription                !gets DSVP ID, kind, and symbolic description
           procedure, public:: set_status=>DSVPSetStatus                          !sets the DSVP status
           procedure, public:: get_status=>DSVPGetStatus                          !returns the current status of the DSVP
           procedure, public:: time_active=>DSVPTimeActive                        !returns the time DSVP is active in seconds
@@ -228,12 +231,21 @@
           class(ds_oprnd_t), intent(in):: this        !in: domain-specific operand
           integer(INTD), intent(out), optional:: ierr !out: error code
          end function ds_oprnd_query_i
+   !sync:
+         function ds_oprnd_sync_i(this,ierr,wait) result(res)
+          import:: ds_oprnd_t,INTD
+          implicit none
+          logical:: res                               !out: result
+          class(ds_oprnd_t), intent(in):: this        !in: domain-specific operand
+          integer(INTD), intent(out), optional:: ierr !out: error code
+          logical, intent(in), optional:: wait        !in: TRUE activates WAIT instead of TEST synchronization
+         end function ds_oprnd_sync_i
    !pack:
          subroutine ds_oprnd_pack_i(this,packet,ierr)
           import:: ds_oprnd_t,obj_pack_t,INTD
           implicit none
           class(ds_oprnd_t), intent(in):: this        !in: domain-specific operand
-          type(obj_pack_t), intent(inout):: packet    !out: packet
+          class(obj_pack_t), intent(inout):: packet   !out: packet
           integer(INTD), intent(out), optional:: ierr !out: error code
          end subroutine ds_oprnd_pack_i
    !unpack:
@@ -241,7 +253,7 @@
           import:: ds_oprnd_t,obj_pack_t,INTD
           implicit none
           class(ds_oprnd_t), intent(inout):: this     !out: domain-specific operand
-          type(obj_pack_t), intent(in):: packet       !in: packet
+          class(obj_pack_t), intent(inout):: packet   !in: packet
           integer(INTD), intent(out), optional:: ierr !out: error code
          end subroutine ds_oprnd_unpack_i
   !ds_instr_ctrl_t:
@@ -249,14 +261,14 @@
          subroutine ds_instr_ctrl_pack_i(this,packet,ierr)
           import:: ds_instr_ctrl_t,obj_pack_t,INTD
           class(ds_instr_ctrl_t), intent(in):: this   !in: domain-specific instruction control
-          type(obj_pack_t), intent(inout):: packet    !out: packet
+          class(obj_pack_t), intent(inout):: packet   !out: packet
           integer(INTD), intent(out), optional:: ierr !out: error code
          end subroutine ds_instr_ctrl_pack_i
    !unpack:
          subroutine ds_instr_ctrl_unpack_i(this,packet,ierr)
           import:: ds_instr_ctrl_t,obj_pack_t,INTD
           class(ds_instr_ctrl_t), intent(inout):: this !out: domain-specific instruction control
-          type(obj_pack_t), intent(in):: packet        !in: packet
+          class(obj_pack_t), intent(inout):: packet    !in: packet
           integer(INTD), intent(out), optional:: ierr  !out: error code
          end subroutine ds_instr_ctrl_unpack_i
   !ds_instr_t:
@@ -270,16 +282,16 @@
    !decode:
          subroutine ds_instr_decode_i(this,instr_packet,ierr)
           import:: ds_instr_t,obj_pack_t,INTD
-          class(ds_instr_t), intent(inout):: this     !inout: domain-specific instruction to be decoded
-          type(obj_pack_t), intent(in):: instr_packet !in: instruction byte packet
-          integer(INTD), intent(out), optional:: ierr !out: error code
+          class(ds_instr_t), intent(inout):: this         !inout: domain-specific instruction to be decoded
+          class(obj_pack_t), intent(inout):: instr_packet !in: instruction byte packet
+          integer(INTD), intent(out), optional:: ierr     !out: error code
          end subroutine ds_instr_decode_i
    !encode:
          subroutine ds_instr_encode_i(this,instr_packet,ierr)
           import:: ds_instr_t,obj_pack_t,INTD
-          class(ds_instr_t), intent(in):: this           !in: domain-specific instruction to be encoded
-          type(obj_pack_t), intent(inout):: instr_packet !out: instruction byte packet
-          integer(INTD), intent(out), optional:: ierr    !out: error code
+          class(ds_instr_t), intent(in):: this            !in: domain-specific instruction to be encoded
+          class(obj_pack_t), intent(inout):: instr_packet !out: instruction byte packet
+          integer(INTD), intent(out), optional:: ierr     !out: error code
          end subroutine ds_instr_encode_i
   !dsvp_t:
    !self:
@@ -325,7 +337,7 @@
         private DSInstrGetOperand
         private DSInstrSetOperand
         private DSInstrFreeOperand
-        private DSInstrNumOperands
+        private DSInstrGetNumOperands
         private DSInstrAllSet
         private DSInstrClean
  !dsvp_t:
@@ -854,8 +866,8 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine DSInstrFreeOperand
-!------------------------------------------------------------------
-        function DSInstrNumOperands(this,ierr) result(num_operands)
+!---------------------------------------------------------------------
+        function DSInstrGetNumOperands(this,ierr) result(num_operands)
 !Returns the number of instruction operands.
          implicit none
          integer(INTD):: num_operands                !out: number of operands
@@ -868,7 +880,7 @@
          if(num_operands.lt.0) errc=DSVP_ERR_BROKEN_OBJ
          if(present(ierr)) ierr=errc
          return
-        end function DSInstrNumOperands
+        end function DSInstrGetNumOperands
 !----------------------------------------------------
         function DSInstrAllSet(this,ierr) result(res)
 !Returns TRUE if the domain-specific instruction is fully defined.
@@ -945,6 +957,7 @@
 
          errc=DSVP_SUCCESS
          if(this%get_status(errc).eq.DSVP_STAT_OFF) then
+          this%spec_kind=DSVP_NO_KIND
           this%id=-1
           this%instr_received=0
           this%instr_processed=0
@@ -959,14 +972,15 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine DSVPClean
-!--------------------------------------------------------
-        subroutine DSVPSetDescription(this,id,descr,ierr)
-!Sets the DSVP ID and description.
+!------------------------------------------------------------------
+        subroutine DSVPSetDescription(this,id,descr,ierr,spec_kind)
+!Sets the DSVP ID, kind, and symbolic description.
          implicit none
-         class(dsvp_t), intent(inout):: this         !inout: active DSVP
-         integer(INTL), intent(in):: id              !in: unique ID
-         character(*), intent(in):: descr            !in: symbolic description
-         integer(INTD), intent(out), optional:: ierr !out: error code
+         class(dsvp_t), intent(inout):: this             !inout: active DSVP
+         integer(INTL), intent(in):: id                  !in: unique ID
+         character(*), intent(in):: descr                !in: symbolic description
+         integer(INTD), intent(out), optional:: ierr     !out: error code
+         integer(INTD), intent(in), optional:: spec_kind !in: specific kind of DSVP
          integer(INTD):: errc,l
          integer:: ier
 
@@ -986,21 +1000,23 @@
            endif
           endif
           this%id=id
+          if(present(spec_kind)) this%spec_kind=spec_kind
          else
           errc=DSVP_ERR_INVALID_REQ
          endif
          if(present(ierr)) ierr=errc
          return
         end subroutine DSVPSetDescription
-!------------------------------------------------------------------
-        subroutine DSVPGetDescription(this,id,descr,descr_len,ierr)
-!Gets the DSVP ID and description.
+!----------------------------------------------------------------------------
+        subroutine DSVPGetDescription(this,id,descr,descr_len,ierr,spec_kind)
+!Gets the DSVP ID, kind, and symbolic description.
          implicit none
-         class(dsvp_t), intent(in):: this            !in: active DSVP
-         integer(INTL), intent(out):: id             !out: DSVP ID
-         character(*), intent(inout):: descr         !out: symbolic description
-         integer(INTD), intent(out):: descr_len      !out: length of the description string
-         integer(INTD), intent(out), optional:: ierr !out: error code
+         class(dsvp_t), intent(in):: this                 !in: active DSVP
+         integer(INTL), intent(out):: id                  !out: DSVP ID
+         character(*), intent(inout):: descr              !out: symbolic description
+         integer(INTD), intent(out):: descr_len           !out: length of the description string
+         integer(INTD), intent(out), optional:: ierr      !out: error code
+         integer(INTD), intent(out), optional:: spec_kind !out: specific kind of DSVP
          integer(INTD):: errc,l
 
          errc=DSVP_SUCCESS
@@ -1018,6 +1034,7 @@
            descr_len=0
           endif
           id=this%id
+          if(present(spec_kind)) spec_kind=this%spec_kind
          else
           errc=DSVP_ERR_INVALID_REQ
          endif

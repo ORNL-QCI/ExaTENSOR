@@ -3,7 +3,7 @@
 !This module provides basic infrastructure for ExaTENSOR, tensor algebra virtual processor (TAVP).
 !The logical and numerical tensor algebra virtual processors (L-TAVP, N-TAVP) derive from this module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/05/30
+!REVISION: 2017/05/31
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -84,7 +84,6 @@
         integer(INTD), parameter, public:: TENSOR_INSTR_CONTRACT=16 !tensot contraction (also includes tensor product, tensor addition, and tensor scaling)
         integer(INTD), parameter, public:: TENSOR_ISA_SIZE=17       !total number of non-negative tensor instruction codes
 !TYPES:
-#if 0
  !Tensor operand:
         type, extends(ds_oprnd_t), public:: tens_oprnd_t
          class(tens_rcrsv_t), pointer, private:: tensor=>NULL() !pointer to a recursive tensor
@@ -99,22 +98,41 @@
           procedure, public:: release=>TensOprndRelease         !destroys the present local copy of the tensor operand (releases local resources!), but the operand stays defined
           procedure, public:: pack=>TensOprndPack               !packs the specification of the tensor operand into a plain byte packet
           procedure, public:: unpack=>TensOprndUnpack           !unpacks the specification of the tensor operand from a plain byte packet
+          procedure, public:: destruct=>TensOprndDestruct       !dtor
         end type tens_oprnd_t
  !Tensor instruction control fields:
   !Tensor copy/addition control field:
-        type, extends(ds_instr_ctrl_t), public:: tens_add_ctrl_t
-
-        end type tens_add_ctrl_t
+        type, extends(ds_instr_ctrl_t), public:: ctrl_tens_add_t
+         type(permutation_t), private:: prmn                    !tensor dimension permutation
+         complex(8), private:: alpha                            !alpha prefactor
+         contains
+          procedure, private:: CtrlTensAddCtor                  !ctor
+          generic, public:: ctrl_tens_add_ctor=>CtrlTensAddCtor,CtrlTensAddUnpack
+          procedure, public:: pack=>CtrlTensAddPack             !pack the instruction control field in a plain byte packet
+          procedure, public:: unpack=>CtrlTensAddUnpack         !unpacks the instruction control field from a plain byte packet
+          final:: ctrl_tens_add_dtor                            !dtor
+        end type ctrl_tens_add_t
   !Tensor contraction control field:
-        type, extends(ds_instr_ctrl_t), public:: tens_contr_ctrl_t
-
-        end type tens_contr_ctrl_t
+        type, extends(ds_instr_ctrl_t), public:: ctrl_tens_contr_t
+         type(contr_ptrn_ext_t), private:: contr_ptrn           !extended tensor contraction pattern
+         complex(8), private:: alpha                            !alpha prefactor
+         contains
+          procedure, private:: CtrlTensContrCtor                !ctor
+          generic, public:: ctrl_tens_contr_ctor=>CtrlTensContrCtor,CtrlTensContrUnpack
+          procedure, public:: pack=>CtrlTensContrPack           !pack the instruction control field in a plain byte packet
+          procedure, public:: unpack=>CtrlTensContrUnpack       !unpacks the instruction control field from a plain byte packet
+          final:: ctrl_tens_contr_dtor                          !dtor
+        end type ctrl_tens_contr_t
  !Tensor instruction:
         type, extends(ds_instr_t), public:: tens_instr_t
-
+        contains
+         procedure, private:: TensInstrCtor                     !ctor
+         generic, public:: tens_instr_ctor=>TensInstrCtor
+         procedure, public:: decode=>TensInstrDecode            !decoding procedure: Unpacks the raw byte packet and constructs a TAVP instruction
+         procedure, public:: encode=>TensInstrEncode            !encoding procedure: Packs the TAVP instruction into a raw byte packet
+         final:: tens_instr_dtor                                !dtor
         end type tens_instr_t
-#endif
-!DATA:
+!DATA`Remove:
  !Current role of the tensor alegbra virtual processor:
         integer(INTD), protected:: my_role=EXA_NO_ROLE         !role of this virtual processor (set at run-time)
         integer(INTD), protected:: my_group=-1                 !computing group the virtual processor belongs to (set at run-time): [0..MAX]
@@ -123,7 +141,33 @@
         integer(INTD), protected:: my_group_comm=MPI_COMM_NULL !group MPI communicator (if any)
 !VISIBILITY:
  !non-member:
-        public tavp_establish_role
+        public tavp_establish_role !`Remove
+ !tens_oprnd_t:
+        private TensOprndCtor
+        private TensOprndIsRemote
+        private TensOprndAcquireRsc
+        private TensOprndPrefetch
+        private TensOprndUpload
+        private TensOprndSync
+        private TensOprndRelease
+        private TensOprndPack
+        private TensOprndUnpack
+        private TensOprndDestruct
+ !ctrl_tens_add_t:
+        private CtrlTensAddCtor
+        private CtrlTensAddPack
+        private CtrlTensAddUnpack
+        public ctrl_tens_add_dtor
+ !ctrl_tens_contr_t:
+        private CtrlTensContrCtor
+        private CtrlTensContrPack
+        private CtrlTensContrUnpack
+        public ctrl_tens_contr_dtor
+ !tens_instr_t:
+        private TensInstrCtor
+        private TensInstrDecode
+        private TensInstrEncode
+        public tens_instr_dtor
 
        contains
 !IMPLEMENTATION:
@@ -145,5 +189,103 @@
          end select
          return
         end subroutine tavp_establish_role
+![tens_oprnd_t]===================================
+        subroutine TensOprndCtor(this,tensor,ierr)
+!Constructs a tensor operand.
+         implicit none
+         class(tens_oprnd_t), intent(inout):: this         !inout: tensor operand
+         class(tens_rcrsv_t), pointer, intent(in):: tensor !in: tensor
+         integer(INTD), intent(out), optional:: ierr       !out: error code
+         integer(INTD):: errc
+
+         errc=0
+         if(.not.this%is_active(errc)) then
+          if(errc.eq.DSVP_SUCCESS) then
+           if(associated(tensor)) then
+            if(tensor%is_set(errc)) then
+             if(errc.eq.TEREC_SUCCESS) then
+              this%tensor=>tensor
+              call this%mark_active(errc)
+              if(errc.ne.DSVP_SUCCESS) errc=-1
+             else
+              errc=-2
+             endif
+            else
+             errc=-3
+            endif
+           else
+            errc=-4
+           endif
+          else
+           errc=-5
+          endif
+         else
+          errc=-6
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensOprndCtor
+!-------------------------------------------------
+        subroutine TensOprndPack(this,packet,ierr)
+!Packs the tensor operand into a packet.
+         implicit none
+         class(tens_oprnd_t), intent(in):: this      !in: tensor operand
+         class(obj_pack_t), intent(inout):: packet   !inout: packet
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=0
+         if(this%is_active(errc)) then
+          if(errc.eq.DSVP_SUCCESS) then
+           if(associated(this%tensor)) then
+            call this%tensor%pack(packet,errc)
+            if(errc.ne.TEREC_SUCCESS) errc=-1
+           else
+            errc=-2
+           endif
+          else
+           errc=-3
+          endif
+         else
+          errc=-4
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensOprndPack
+!---------------------------------------------------
+        subroutine TensOprndUnpack(this,packet,ierr)
+!Unpacks the tensor operand from a packet (ctor).
+         implicit none
+         class(tens_oprnd_t), intent(inout):: this   !inout: tensor operand
+         class(obj_pack_t), intent(inout):: packet   !in: packet
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=0
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensOprndUnpack
+!----------------------------------------------
+        subroutine TensOprndDestruct(this,ierr)
+!Destructs the tensor operand.
+         implicit none
+         class(tens_oprnd_t), intent(inout):: this   !inout: tensor operand
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc,ier
+         logical:: delivered
+
+         errc=0
+         if(this%is_active(errc)) then
+          if(errc.eq.DSVP_SUCCESS) then
+           delivered=this%sync(errc,wait=.TRUE.)
+           if(.not.delivered.or.errc.ne.DSVP_SUCCESS) errc=-1
+           call this%mark_empty(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-2
+          else
+           errc=-3
+          endif
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensOprndDestruct
 
        end module virta
