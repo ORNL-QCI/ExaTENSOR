@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/05/30
+!REVISION: 2017/05/31
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -279,7 +279,7 @@
           procedure, private:: set=>TensArgumentSet             !sets up the tensor argument (ctor)
           procedure, private:: is_set=>TensArgumentIsSet        !returns TRUE if the tensor argument is set, plus additional info
         end type tens_argument_t
- !Tensor operation:
+ !Tensor operation (abstract):
         type, abstract, public:: tens_operation_t
          integer(INTD), private:: num_args=0                                !number of tensor arguments
          type(tens_argument_t), private:: tens_arg(0:MAX_TENSOR_OPERANDS-1) !tensor arguments: [0..num_args-1], argument 0 is always the destination tensor
@@ -293,6 +293,18 @@
           procedure, public:: get_argument=>TensOperationGetArgument      !returns a pointer to the specific tensor argument (tens_rcrsv_t)
           procedure, public:: allocate_argument=>TensOperationAllocateArgument !allocates an argument
         end type tens_operation_t
+ !Tensor dimension permutation:
+        type, public:: permutation_t
+         integer(INTD), private:: length=0
+         integer(INTD), allocatable, private:: prm(:) !prm(1:length) is the permutation itself, prm(0) is the current sign of the permutation
+         contains
+          procedure, public:: reset=>PermutationReset          !resets (constructs) the permutation
+          procedure, public:: get_access=>PermutationGetAccess !returns a pointer to the permutation array, with or without the sign
+          procedure, public:: get_sign=>PermutationGetSign     !returns the current sign of the permutation
+          procedure, public:: set_sign=>PermutationSetSign     !sets a new sign to the permutation
+          procedure, public:: invert=>PermutationInvert        !inverts the permutation (in-place)
+          final:: permutation_dtor                             !dtor
+        end type permutation_t
  !Extended digital tensor contraction pattern:
         type, public:: contr_ptrn_ext_t
          integer(INTD), private:: ddim=-1                     !destination tensor rank
@@ -519,6 +531,13 @@
         private TensOperationGetNumArgs
         private TensOperationGetArgument
         private TensOperationAllocateArgument
+ !permutation_t:
+        private PermutationReset
+        private PermutationGetAccess
+        private PermutationGetSign
+        private PermutationSetSign
+        private PermutationInvert
+        public permutation_dtor
  !contr_ptrn_ext_t:
         private ContrPtrnExtSetIndexCorr
         private ContrPtrnExtSetStoreSymm
@@ -4437,6 +4456,164 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensOperationAllocateArgument
+![permutation_t]=====================================
+        subroutine PermutationReset(this,length,ierr)
+!Resets the permutation (ctor).
+         implicit none
+         class(permutation_t), intent(inout):: this  !inout: permutation
+         integer(INTD), intent(in):: length          !in: new length of the permutation
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=TEREC_SUCCESS
+         if(length.gt.0) then
+          if(allocated(this%prm)) then
+           if(size(this%prm).lt.1+length) then
+            deallocate(this%prm)
+            allocate(this%prm(0:length),STAT=errc)
+           endif
+          else
+           allocate(this%prm(0:length),STAT=errc)
+          endif
+          if(errc.eq.0) then
+           this%length=length; this%prm(0)=0
+          else
+           this%length=0; errc=TEREC_MEM_ALLOC_FAILED
+          endif
+         elseif(length.eq.0) then
+          if(allocated(this%prm)) deallocate(this%prm)
+          this%length=0
+         else
+          errc=TEREC_INVALID_ARGS
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine PermutationReset
+!-------------------------------------------------------------------------------
+        function PermutationGetAccess(this,length,ierr,with_sign) result(perm_p)
+!Returns a pointer to the permutation body, with or without the sign.
+         implicit none
+         integer(INTD), pointer:: perm_p(:)              !out: ponter to the permutation body
+         class(permutation_t), intent(in), target:: this !in: permutation
+         integer(INTD), intent(out):: length             !out: length of the permutation
+         integer(INTD), intent(out), optional:: ierr     !out: error code
+         logical, intent(in), optional:: with_sign       !in: with or without sign (default is without)
+         integer(INTD):: errc
+         logical:: ws
+
+         errc=TEREC_SUCCESS; perm_p=>NULL(); length=0
+         if(this%length.gt.0) then
+          ws=.FALSE.; if(present(with_sign)) ws=with_sign
+          if(ws) then
+           perm_p(0:this%length)=>this%prm(0:this%length) !perm_p(0) is the sign, perm_p(1:length) is the permutation itself
+          else
+           perm_p(1:this%length)=>this%prm(1:this%length)
+          endif
+          length=this%length
+         else
+          errc=TEREC_INVALID_REQUEST
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function PermutationGetAccess
+!---------------------------------------------------------------
+        function PermutationGetSign(this,ierr) result(perm_sign)
+!Returns the currently set sign of the permutation. If the sign
+!has not been set previously, it will be recomputed, which
+!is O(NlogN) operation.
+         implicit none
+         integer(INTD):: perm_sign                   !out: permutation sign: {-1,+1}
+         class(permutation_t), intent(inout):: this  !inout: permutation
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=TEREC_SUCCESS; perm_sign=0
+         if(this%length.gt.0) then
+          if(abs(this%prm(0)).eq.1) then
+           perm_sign=this%prm(0)
+          else
+           call this%set_sign(errc)
+           if(errc.eq.TEREC_SUCCESS) perm_sign=this%prm(0)
+          endif
+         else
+          errc=TEREC_INVALID_REQUEST
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function PermutationGetSign
+!--------------------------------------------------------
+        subroutine PermutationSetSign(this,ierr,new_sign)
+!Sets either a user-defined sign or computes one from the permutation.
+         implicit none
+         class(permutation_t), intent(inout):: this     !inout: permutation
+         integer(INTD), intent(out), optional:: ierr    !out: error code
+         integer(INTD), intent(in), optional:: new_sign !in: new sign (by user)
+         integer(INTD):: errc,i
+         integer(INTD), allocatable:: trn(:)
+
+         errc=TEREC_SUCCESS
+         if(this%length.gt.1) then
+          allocate(trn(0:this%length),STAT=errc)
+          if(errc.eq.0) then
+           trn(0:this%length)=(/+1,(i,i=1,this%length)/)
+           call merge_sort_key_int(this%length,this%prm(1:this%length),trn(0:this%length))
+           if(abs(trn(0)).eq.1) then
+            this%prm(0)=trn(0)
+           else
+            errc=TEREC_UNABLE_COMPLETE
+           endif
+           deallocate(trn)
+          else
+           errc=TEREC_MEM_ALLOC_FAILED
+          endif
+         elseif(this%length.eq.1) then
+          this%prm(0)=+1
+         else
+          errc=TEREC_INVALID_REQUEST
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine PermutationSetSign
+!----------------------------------------------
+        subroutine PermutationInvert(this,ierr)
+!Inverts the permutation.
+         implicit none
+         class(permutation_t), intent(inout):: this  !inout: permutation (in:original, out:inverted)
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: trn(1:this%length)
+         integer(INTD):: errc,i,j
+
+         errc=TEREC_SUCCESS
+         if(this%length.gt.0) then
+          trn(1:this%length)=this%prm(1:this%length)
+          this%prm(1:this%length)=0
+          do i=1,this%length
+           j=trn(i)
+           if(j.gt.0.and.j.le.this%length) then
+            if(this%prm(j).eq.0) then
+             this%prm(j)=i
+            else
+             errc=TEREC_OBJ_CORRUPTED; exit
+            endif
+           else
+            errc=TEREC_OBJ_CORRUPTED; exit
+           endif
+          enddo
+         else
+          errc=TEREC_INVALID_REQUEST
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine PermutationInvert
+!----------------------------------------
+        subroutine permutation_dtor(this)
+         implicit none
+         type(permutation_t):: this
+
+         if(allocated(this%prm)) deallocate(this%prm)
+         this%length=0
+         return
+        end subroutine permutation_dtor
 ![contr_ptrn_ext_t]=======================================================
         subroutine ContrPtrnExtSetIndexCorr(this,nd,nl,nr,contr_ptrn,ierr)
 !Sets tensor dimension correspondence in a tensor contraction (contraction pattern).
