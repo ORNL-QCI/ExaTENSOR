@@ -349,7 +349,7 @@
                  write(*,*)'Object (pointer) association status = ',associated(this%value_p) !debug
                  deallocate(this%value_p,STAT=errcode,ERRMSG=errmesg) !debug
                  if(errcode.ne.0) write(*,*)'deallocate() failure: '//errmesg !debug
-                 !call crash()
+                 call crash()
                 endif !debug
                 errc=GFC_MEM_ALLOC_FAILED
                endif

@@ -1,6 +1,6 @@
 !Domain-specific virtual processor (DSVP): Abstract base module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/05/31
+!REVISION: 2017/06/01
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -30,6 +30,7 @@
 ! # The abstract domain-specific processor classes provide basic instruction processing
 !   primitives, relevant deferred interfaces, and other bookkeeping:
 !   a) Domain-specific operand class:
+!      * Acquire local resources;
 !      * Prefetch operand;
 !      * Upload operand;
 !      * Sync operand prefetching/uploading;
@@ -125,14 +126,13 @@
           procedure(ds_oprnd_self_i), deferred, public:: upload      !starts uploading the domain-specific operand to its remote location
           procedure(ds_oprnd_sync_i), deferred, public:: sync        !synchronizes the currently pending communication on the domain-specific operand (either test or wait)
           procedure(ds_oprnd_self_i), deferred, public:: release     !destroys the present local copy of the domain-specific operand (releases local resources!), but the operand will stay defined
-          procedure(ds_oprnd_pack_i), deferred, public:: pack        !packs the specification of the domain-specific operand into a plain byte packet
-          procedure(ds_oprnd_unpack_i), deferred, public:: unpack    !unpacks the specification of the domain-specific operand from a plain byte packet
-          procedure, public:: is_active=>DSOprndIsActive               !returns TRUE if the domain-specific operand is active (defined)
+          procedure(ds_oprnd_self_i), deferred, public:: destruct    !performs complete destruction back to an empty (undefined) state
+          procedure, public:: is_active=>DSOprndIsActive               !returns TRUE if the domain-specific operand is active (defined, present)
           procedure, public:: is_delivered=>DSOprndIsDelivered         !returns TRUE if the domain-specific operand is locally available (present)
           procedure, public:: mark_active=>DSOprndMarkActive           !marks the domain-specific operand active (defined)
           procedure, public:: mark_empty=>DSOprndMarkEmpty             !marks the domain-specific operand inactive (empty), local resources are released
           procedure, public:: mark_delivered=>DSOprndMarkDelivered     !marks the domain-specific operand locally available (present)
-          procedure, public:: mark_undelivered=>DSOprndMarkUndelivered !marks the domain-specific operand locally unavailable, local resources are released
+          procedure, public:: mark_undelivered=>DSOprndMarkUndelivered !marks the domain-specific operand locally unavailable (but defined), local resources are released
           procedure, public:: set_comm_stat=>DSOprndSetCommStat        !sets the communication status
         end type ds_oprnd_t
  !Wrapped reference to a domain-specific operand:
@@ -163,8 +163,8 @@
          procedure(ds_instr_self_i), pass(this), pointer, public:: sync_upload=>NULL()      !synchronizes the output upload (either test or wait): dynamic binding set by decode
          procedure(ds_instr_self_i), pass(this), pointer, public:: release_resource=>NULL() !releases local resources occupied by instruction operands
          contains
-          procedure(ds_instr_decode_i), deferred, public:: decode       !decoding procedure: Unpacks the raw byte packet and constructs a domain-specific instruction
-          procedure(ds_instr_encode_i), deferred, public:: encode       !encoding procedure: Packs the domain-specific instruction into a raw byte packet
+          procedure(ds_instr_decode_i), deferred, public:: decode       !decoding procedure: Unpacks the raw byte packet (bytecode) and constructs a domain-specific instruction
+          procedure(ds_instr_encode_i), deferred, public:: encode       !encoding procedure: Packs the domain-specific instruction into a raw byte packet (bytecode)
           procedure, public:: is_empty=>DSInstrIsEmpty                  !returns TRUE if the domain-specific instruction is empty
           procedure, public:: is_retired=>DSInstrIsRetired              !returns TRUE if the domain-specific instruction is retired
           procedure, public:: is_active=>DSInstrIsActive                !returns TRUE if the domain-specific instruction is neither empty nor retired
@@ -236,7 +236,7 @@
           import:: ds_oprnd_t,INTD
           implicit none
           logical:: res                               !out: result
-          class(ds_oprnd_t), intent(in):: this        !in: domain-specific operand
+          class(ds_oprnd_t), intent(inout):: this     !in: domain-specific operand
           integer(INTD), intent(out), optional:: ierr !out: error code
           logical, intent(in), optional:: wait        !in: TRUE activates WAIT instead of TEST synchronization
          end function ds_oprnd_sync_i

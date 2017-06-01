@@ -3,7 +3,7 @@
 !This module provides basic infrastructure for ExaTENSOR, tensor algebra virtual processor (TAVP).
 !The logical and numerical tensor algebra virtual processors (L-TAVP, N-TAVP) derive from this module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/05/31
+!REVISION: 2017/06/01
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -89,17 +89,16 @@
          class(tens_rcrsv_t), pointer, private:: tensor=>NULL() !pointer to a recursive tensor
          contains
           procedure, private:: TensOprndCtor                    !ctor
-          generic, public:: tens_oprnd_ctor=>TensOprndCtor,TensOprndUnpack
+          generic, public:: tens_oprnd_ctor=>TensOprndCtor
           procedure, public:: is_remote=>TensOprndIsRemote      !returns TRUE if the tensor operand is remote
           procedure, public:: acquire_rsc=>TensOprndAcquireRsc  !explicitly acquires local resources for the tensor operand
           procedure, public:: prefetch=>TensOprndPrefetch       !starts prefetching the remote tensor operand (acquires local resources!)
           procedure, public:: upload=>TensOprndUpload           !starts uploading the tensor operand to its remote location
           procedure, public:: sync=>TensOprndSync               !synchronizes the currently pending communication on the tensor operand
           procedure, public:: release=>TensOprndRelease         !destroys the present local copy of the tensor operand (releases local resources!), but the operand stays defined
-          procedure, public:: pack=>TensOprndPack               !packs the specification of the tensor operand into a plain byte packet
-          procedure, public:: unpack=>TensOprndUnpack           !unpacks the specification of the tensor operand from a plain byte packet
-          procedure, public:: destruct=>TensOprndDestruct       !dtor
+          procedure, public:: destruct=>TensOprndDestruct       !performs complete destruction back to an empty (undefined) state
         end type tens_oprnd_t
+#if 0
  !Tensor instruction control fields:
   !Tensor copy/addition control field:
         type, extends(ds_instr_ctrl_t), public:: ctrl_tens_add_t
@@ -108,7 +107,7 @@
          contains
           procedure, private:: CtrlTensAddCtor                  !ctor
           generic, public:: ctrl_tens_add_ctor=>CtrlTensAddCtor,CtrlTensAddUnpack
-          procedure, public:: pack=>CtrlTensAddPack             !pack the instruction control field in a plain byte packet
+          procedure, public:: pack=>CtrlTensAddPack             !packs the instruction control field into a plain byte packet
           procedure, public:: unpack=>CtrlTensAddUnpack         !unpacks the instruction control field from a plain byte packet
           final:: ctrl_tens_add_dtor                            !dtor
         end type ctrl_tens_add_t
@@ -119,7 +118,7 @@
          contains
           procedure, private:: CtrlTensContrCtor                !ctor
           generic, public:: ctrl_tens_contr_ctor=>CtrlTensContrCtor,CtrlTensContrUnpack
-          procedure, public:: pack=>CtrlTensContrPack           !pack the instruction control field in a plain byte packet
+          procedure, public:: pack=>CtrlTensContrPack           !packs the instruction control field into a plain byte packet
           procedure, public:: unpack=>CtrlTensContrUnpack       !unpacks the instruction control field from a plain byte packet
           final:: ctrl_tens_contr_dtor                          !dtor
         end type ctrl_tens_contr_t
@@ -128,10 +127,11 @@
         contains
          procedure, private:: TensInstrCtor                     !ctor
          generic, public:: tens_instr_ctor=>TensInstrCtor
-         procedure, public:: decode=>TensInstrDecode            !decoding procedure: Unpacks the raw byte packet and constructs a TAVP instruction
-         procedure, public:: encode=>TensInstrEncode            !encoding procedure: Packs the TAVP instruction into a raw byte packet
+         procedure, public:: decode=>TensInstrDecode            !decoding procedure: Unpacks the raw byte packet (bytecode) and constructs a TAVP instruction
+         procedure, public:: encode=>TensInstrEncode            !encoding procedure: Packs the TAVP instruction into a raw byte packet (bytecode)
          final:: tens_instr_dtor                                !dtor
         end type tens_instr_t
+#endif
 !DATA`Remove:
  !Current role of the tensor alegbra virtual processor:
         integer(INTD), protected:: my_role=EXA_NO_ROLE         !role of this virtual processor (set at run-time)
@@ -150,9 +150,8 @@
         private TensOprndUpload
         private TensOprndSync
         private TensOprndRelease
-        private TensOprndPack
-        private TensOprndUnpack
         private TensOprndDestruct
+#if 0
  !ctrl_tens_add_t:
         private CtrlTensAddCtor
         private CtrlTensAddPack
@@ -168,7 +167,7 @@
         private TensInstrDecode
         private TensInstrEncode
         public tens_instr_dtor
-
+#endif
        contains
 !IMPLEMENTATION:
 ![Non-member]====================================
@@ -225,46 +224,81 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensOprndCtor
-!-------------------------------------------------
-        subroutine TensOprndPack(this,packet,ierr)
-!Packs the tensor operand into a packet.
+!--------------------------------------------------------
+        function TensOprndIsRemote(this,ierr) result(res)
+!Returns TRUE if the tensor operand is remote, FALSE otherwise.
          implicit none
+         logical:: res                               !out: result
          class(tens_oprnd_t), intent(in):: this      !in: tensor operand
-         class(obj_pack_t), intent(inout):: packet   !inout: packet
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
 
          errc=0
-         if(this%is_active(errc)) then
-          if(errc.eq.DSVP_SUCCESS) then
-           if(associated(this%tensor)) then
-            call this%tensor%pack(packet,errc)
-            if(errc.ne.TEREC_SUCCESS) errc=-1
-           else
-            errc=-2
-           endif
-          else
-           errc=-3
-          endif
-         else
-          errc=-4
-         endif
          if(present(ierr)) ierr=errc
          return
-        end subroutine TensOprndPack
-!---------------------------------------------------
-        subroutine TensOprndUnpack(this,packet,ierr)
-!Unpacks the tensor operand from a packet (ctor).
+        end function TensOprndIsRemote
+!------------------------------------------------
+        subroutine TensOprndAcquireRsc(this,ierr)
+!Acquires local resources for the tensor operand.
          implicit none
          class(tens_oprnd_t), intent(inout):: this   !inout: tensor operand
-         class(obj_pack_t), intent(inout):: packet   !in: packet
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
 
          errc=0
          if(present(ierr)) ierr=errc
          return
-        end subroutine TensOprndUnpack
+        end subroutine TensOprndAcquireRsc
+!----------------------------------------------
+        subroutine TensOprndPrefetch(this,ierr)
+!Starts prefetching the (remote) tensor operand.
+         implicit none
+         class(tens_oprnd_t), intent(inout):: this   !inout: tensor operand
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=0
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensOprndPrefetch
+!--------------------------------------------
+        subroutine TensOprndUpload(this,ierr)
+!Starts uploading the (remote) tensor operand.
+         implicit none
+         class(tens_oprnd_t), intent(inout):: this   !inout: tensor operand
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=0
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensOprndUpload
+!---------------------------------------------------------
+        function TensOprndSync(this,ierr,wait) result(res)
+!Synchronizes the pending prefetch/upload, either TEST or WAIT.
+         implicit none
+         logical:: res                               !out: TRUE on communication completion
+         class(tens_oprnd_t), intent(inout):: this   !inout: tensor operand
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         logical, intent(in), optional:: wait        !in: TRUE activates WAIT instead of TEST synchronization
+         integer(INTD):: errc
+
+         errc=0
+         if(present(ierr)) ierr=errc
+         return
+        end function TensOprndSync
+!---------------------------------------------
+        subroutine TensOprndRelease(this,ierr)
+!Release local resources occupied by the tensor operand.
+         implicit none
+         class(tens_oprnd_t), intent(inout):: this   !inout: tensor operand
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=0
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensOprndRelease
 !----------------------------------------------
         subroutine TensOprndDestruct(this,ierr)
 !Destructs the tensor operand.
@@ -280,6 +314,7 @@
            delivered=this%sync(errc,wait=.TRUE.)
            if(.not.delivered.or.errc.ne.DSVP_SUCCESS) errc=-1
            call this%mark_empty(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-2
+           this%tensor=>NULL()
           else
            errc=-3
           endif
