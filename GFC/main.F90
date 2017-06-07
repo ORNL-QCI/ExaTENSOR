@@ -27,7 +27,14 @@ program main
  use gfc_graph_test
  use multords_test
  implicit none
+ logical, parameter:: TEST_VECTOR=.FALSE.
+ logical, parameter:: TEST_LIST=.FALSE.
+ logical, parameter:: TEST_TREE=.FALSE.
+ logical, parameter:: TEST_DICTIONARY=.FALSE.
+ logical, parameter:: TEST_GRAPH=.TRUE.
  logical, parameter:: TEST_LEGACY=.FALSE.
+ logical, parameter:: TEST_SORT=.FALSE.
+ logical, parameter:: TEST_DYNAMIC=.FALSE.
  real(8):: perf
  integer(INTD):: dev_out,ierr
  real(8), external:: dil_test_infer_overhead
@@ -36,39 +43,49 @@ program main
 
 !GFC containers:
 ! Vector:
- ierr=test_gfc_vector(perf,dev_out)
- if(ierr.eq.0) then
-  write(*,*) 'gfc::vector testing status: ',ierr,'(PASSED): Performance: ',perf
- else
-  write(*,*) 'gfc::vector testing status: ',ierr,'(FAILED): Performance: ',perf
+ if(TEST_VECTOR) then
+  ierr=test_gfc_vector(perf,dev_out)
+  if(ierr.eq.0) then
+   write(*,*) 'gfc::vector testing status: ',ierr,'(PASSED): Performance: ',perf
+  else
+   write(*,*) 'gfc::vector testing status: ',ierr,'(FAILED): Performance: ',perf
+  endif
  endif
 ! List:
- !ierr=test_gfc_list(perf,dev_out)
- !if(ierr.eq.0) then
-  !write(*,*) 'GFC::list testing status: ',ierr,'(PASSED): Performance: ',perf
- !else
-  !write(*,*) 'GFC::list testing status: ',ierr,'(FAILED): Performance: ',perf
- !endif
+ if(TEST_LIST) then
+  !ierr=test_gfc_list(perf,dev_out)
+  if(ierr.eq.0) then
+   write(*,*) 'GFC::list testing status: ',ierr,'(PASSED): Performance: ',perf
+  else
+   write(*,*) 'GFC::list testing status: ',ierr,'(FAILED): Performance: ',perf
+  endif
+ endif
 ! Tree:
- ierr=test_gfc_tree(perf,dev_out)
- if(ierr.eq.0) then
-  write(*,*) 'gfc::tree testing status: ',ierr,'(PASSED): Performance: ',perf
- else
-  write(*,*) 'gfc::tree testing status: ',ierr,'(FAILED): Performance: ',perf
+ if(TEST_TREE) then
+  ierr=test_gfc_tree(perf,dev_out)
+  if(ierr.eq.0) then
+   write(*,*) 'gfc::tree testing status: ',ierr,'(PASSED): Performance: ',perf
+  else
+   write(*,*) 'gfc::tree testing status: ',ierr,'(FAILED): Performance: ',perf
+  endif
  endif
 ! Dictionary:
- ierr=test_gfc_dictionary(perf,dev_out)
- if(ierr.eq.0) then
-  write(*,*) 'gfc::dictionary testing status: ',ierr,'(PASSED): Performance: ',perf
- else
-  write(*,*) 'gfc::dictionary testing status: ',ierr,'(FAILED): Performance: ',perf
+ if(TEST_DICTIONARY) then
+  ierr=test_gfc_dictionary(perf,dev_out)
+  if(ierr.eq.0) then
+   write(*,*) 'gfc::dictionary testing status: ',ierr,'(PASSED): Performance: ',perf
+  else
+   write(*,*) 'gfc::dictionary testing status: ',ierr,'(FAILED): Performance: ',perf
+  endif
  endif
 ! Graph:
- ierr=test_gfc_graph(perf,dev_out)
- if(ierr.eq.0) then
-  write(*,*) 'gfc::graph testing status: ',ierr,'(PASSED): Performance: ',perf
- else
-  write(*,*) 'gfc::graph testing status: ',ierr,'(FAILED): Performance: ',perf
+ if(TEST_GRAPH) then
+  ierr=test_gfc_graph(perf,dev_out)
+  if(ierr.eq.0) then
+   write(*,*) 'gfc::graph testing status: ',ierr,'(PASSED): Performance: ',perf
+  else
+   write(*,*) 'gfc::graph testing status: ',ierr,'(FAILED): Performance: ',perf
+  endif
  endif
 
 !Legacy containers:
@@ -90,17 +107,21 @@ program main
  endif
 
 !Linear-scaling sort:
- ierr=test_multord_sort(perf,dev_out)
- if(ierr.eq.0) then
-  write(*,*) 'Multi-index sort testing status: ',ierr,'(PASSED): Performance: ',perf
- else
-  write(*,*) 'Multi-index sort testing status: ',ierr,'(FAILED): Performance: ',perf
+ if(TEST_SORT) then
+  ierr=test_multord_sort(perf,dev_out)
+  if(ierr.eq.0) then
+   write(*,*) 'Multi-index sort testing status: ',ierr,'(PASSED): Performance: ',perf
+  else
+   write(*,*) 'Multi-index sort testing status: ',ierr,'(FAILED): Performance: ',perf
+  endif
  endif
 
 !Dynamic type inferrence overhead:
- write(*,'(1x,"Dynamic type inferrence slowdown: ")',ADVANCE='NO')
- perf=dil_test_infer_overhead(2**23)
- write(*,*) perf
+ if(TEST_DYNAMIC) then
+  write(*,'(1x,"Dynamic type inferrence slowdown: ")',ADVANCE='NO')
+  perf=dil_test_infer_overhead(2**23)
+  write(*,*) perf
+ endif
 
  stop
 end program main
