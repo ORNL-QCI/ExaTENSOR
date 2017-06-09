@@ -3,7 +3,7 @@
 !This module provides basic infrastructure for ExaTENSOR, tensor algebra virtual processor (TAVP).
 !The logical and numerical tensor algebra virtual processors (L-TAVP, N-TAVP) derive from this module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/06/01
+!REVISION: 2017/06/09
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -29,9 +29,9 @@
         use pack_prim                            !object packing primitives
         use distributed                          !distributed communication layer
 #ifndef NO_LINUX
-        use service_mpi, only: get_memory_status,MPI_COMM_NULL
+        use service_mpi, only: get_memory_status,INT_MPI,MPI_COMM_NULL
 #else
-        use service_mpi, only: MPI_COMM_NULL
+        use service_mpi, only: INT_MPI,MPI_COMM_NULL
 #endif
         use hardware                             !hardware abstraction
         use subspaces                            !hierarchical vector space representation

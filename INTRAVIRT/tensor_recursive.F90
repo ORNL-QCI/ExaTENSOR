@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/05/31
+!REVISION: 2017/06/09
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -564,10 +564,10 @@
 !DATA:
  !Register of hierarchical vector spaces (only these spaces can be used in tensors):
         type(hspace_register_t), public:: hspace_register
- ![TESTING]: prerequisites for building a test hierarchical space:
-        integer(INTL), parameter, public:: TEST_HSPACE_DIM=20                        !vector space dimension
-        type(spher_symmetry_t), target, public:: test_hspace_symm(1:TEST_HSPACE_DIM) !symmetry of basis vectors
-        type(subspace_basis_t), public:: test_hspace_basis                           !vector space basis
+ ![TESTING]: prerequisites for building a hierarchical space:
+        integer(INTL), parameter, public:: HSPACE_DIM_=20                    !vector space dimension
+        type(spher_symmetry_t), target, public:: hspace_symm_(1:HSPACE_DIM_) !symmetry of basis vectors
+        type(subspace_basis_t), public:: hspace_basis_                       !vector space basis
  !Tensor contraction generator: subtensor buffer:
         integer(INTL), allocatable, target, private:: tcg_ind_buf(:,:) !subtensor index buffer (private to each OpenMP thread)
         integer(INTL), allocatable, target, private:: tcg_num_buf(:)   !subtensor number buffer (private to each OpenMP thread)
@@ -656,16 +656,16 @@
          hsp=>NULL()
          space_id=hspace_register%register_space(space_name,errc,hsp)
          if(errc.eq.TEREC_SUCCESS) then
-          call test_hspace_basis%subspace_basis_ctor(TEST_HSPACE_DIM,errc)
+          call hspace_basis_%subspace_basis_ctor(HSPACE_DIM_,errc)
           if(errc.eq.0) then
-           do l=1_INTL,TEST_HSPACE_DIM
-            call test_hspace_symm(l)%spher_symmetry_ctor(int((l-1)/5,INTD),0,errc); if(errc.ne.0) exit
-            call test_hspace_basis%set_basis_func(l,BASIS_ABSTRACT,errc,symm=test_hspace_symm(l)); if(errc.ne.0) exit
+           do l=1_INTL,HSPACE_DIM_
+            call hspace_symm_(l)%spher_symmetry_ctor(int((l-1)/5,INTD),0,errc); if(errc.ne.0) exit
+            call hspace_basis_%set_basis_func(l,BASIS_ABSTRACT,errc,symm=hspace_symm_(l)); if(errc.ne.0) exit
            enddo
            if(errc.eq.0) then
-            call test_hspace_basis%finalize(errc)
+            call hspace_basis_%finalize(errc)
             if(errc.eq.0) then
-             call hsp%h_space_ctor(test_hspace_basis,errc)
+             call hsp%h_space_ctor(hspace_basis_,errc)
              !write(*,'(i9,"-dimensional full space -> ",i9," subspaces:")') hsp%get_space_dim(),hsp%get_num_subspaces() !debug
              !call hsp%print_it() !debug
             endif
