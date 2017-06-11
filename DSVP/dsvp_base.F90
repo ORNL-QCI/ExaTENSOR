@@ -1,6 +1,6 @@
 !Domain-specific virtual processor (DSVP): Abstract base module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/06/01
+!REVISION: 2017/06/11
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -78,17 +78,18 @@
         integer(INTD), private:: DEBUG=1    !debugging mode
         logical, private:: VERBOSE=.TRUE.   !verbosity for errors
  !Error codes:
-        integer(INTD), parameter, public:: DSVP_SUCCESS=SUCCESS       !success
-        integer(INTD), parameter, public:: DSVP_ERROR=GENERIC_ERROR   !generic error code
-        integer(INTD), parameter, public:: DSVP_ERR_INVALID_ARGS=-1   !invalid procedure arguments
-        integer(INTD), parameter, public:: DSVP_ERR_INVALID_REQ=-2    !invalid request
-        integer(INTD), parameter, public:: DSVP_ERR_MEM_ALLOC_FAIL=-3 !failed memory allocation
-        integer(INTD), parameter, public:: DSVP_ERR_MEM_FREE_FAIL=-4  !failed memory deallocation
-        integer(INTD), parameter, public:: DSVP_ERR_BROKEN_OBJ=-5     !broken object
- !DSVP status (negative numbers are specific error codes):
+        integer(INTD), parameter, public:: DSVP_SUCCESS=SUCCESS        !success
+        integer(INTD), parameter, public:: DSVP_ERROR=GENERIC_ERROR    !generic error code
+        integer(INTD), parameter, public:: DSVP_ERR_INVALID_ARGS=-1    !invalid arguments passed
+        integer(INTD), parameter, public:: DSVP_ERR_INVALID_REQ=-2     !invalid request
+        integer(INTD), parameter, public:: DSVP_ERR_MEM_ALLOC_FAIL=-3  !failed memory allocation
+        integer(INTD), parameter, public:: DSVP_ERR_MEM_FREE_FAIL=-4   !failed memory deallocation
+        integer(INTD), parameter, public:: DSVP_ERR_BROKEN_OBJ=-5      !broken object
+        integer(INTD), parameter, public:: DSVP_ERR_UNABLE_COMPLETE=-6 !unable to complete
+ !DSVP state (negative numbers are specific error codes):
         integer(INTD), parameter, public:: DSVP_STAT_OFF=0         !DSVP is off (either not initialized or turned off)
-        integer(INTD), parameter, public:: DSVP_STAT_ACTIVE=1      !DSVP has been initialized and is active now
-        integer(INTD), parameter, public:: DSVP_STAT_ERROR=-1      !DSVP encountered an error (generic)
+        integer(INTD), parameter, public:: DSVP_STAT_ON=1          !DSVP has been initialized and is active now
+        integer(INTD), parameter, public:: DSVP_STAT_ERR=-1        !DSVP encountered an error (generic)
  !DSVP specific kind (valid specific kinds must be non-negative):
         integer(INTD), parameter, public:: DSVP_NO_KIND=-1         !no specficic kind
  !Domain-specific operand:
@@ -186,7 +187,7 @@
         end type ds_instr_t
  !Domain-specific virtual processor:
         type, abstract, public:: dsvp_t
-         integer(INTD), private:: stat=DSVP_STAT_OFF          !current DSVP status: {DSVP_STAT_OFF,DSVP_STAT_ACTIVE,negative integers = errors}
+         integer(INTD), private:: stat=DSVP_STAT_OFF          !current DSVP status: {DSVP_STAT_OFF, DSVP_STAT_ON, negative integers = errors}
          integer(INTD), private:: spec_kind=DSVP_NO_KIND      !specific kind of DSVP (to be specilized)
          integer(INTL), private:: id=-1                       !DSVP unique ID
          integer(INTL), private:: instr_received=0_INTL       !total number of received domain-specific instructions

@@ -3,7 +3,7 @@
 !This module provides basic infrastructure for ExaTENSOR, tensor algebra virtual processor (TAVP).
 !The logical and numerical tensor algebra virtual processors (L-TAVP, N-TAVP) derive from this module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/06/09
+!REVISION: 2017/06/11
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -45,13 +45,14 @@
         integer(INTD), private:: DEBUG=0    !debugging mode
         logical, private:: VERBOSE=.TRUE.   !verbosity for errors
  !Errors (ExaTENSOR aliases of DSVP errors):
-        integer(INTD), parameter, public:: EXA_SUCCESS=DSVP_SUCCESS                       !success
-        integer(INTD), parameter, public:: EXA_ERROR=DSVP_ERROR                           !generic error
-        integer(INTD), parameter, public:: EXA_ERR_INVALID_ARGS=DSVP_ERR_INVALID_ARGS     !invalid arguments passed to a procedure
-        integer(INTD), parameter, public:: EXA_ERR_INVALID_REQ=DSVP_ERR_INVALID_REQ       !invalid request
-        integer(INTD), parameter, public:: EXA_ERR_MEM_ALLOC_FAIL=DSVP_ERR_MEM_ALLOC_FAIL !memory allocation failed
-        integer(INTD), parameter, public:: EXA_ERR_MEM_FREE_FAIL=DSVP_ERR_MEM_FREE_FAIL   !memory deallocation failed
-        integer(INTD), parameter, public:: EXA_ERR_BROKEN_OBJ=DSVP_ERR_BROKEN_OBJ         !broken object
+        integer(INTD), parameter, public:: EXA_SUCCESS=DSVP_SUCCESS                         !success
+        integer(INTD), parameter, public:: EXA_ERROR=DSVP_ERROR                             !generic error
+        integer(INTD), parameter, public:: EXA_ERR_INVALID_ARGS=DSVP_ERR_INVALID_ARGS       !invalid arguments passed
+        integer(INTD), parameter, public:: EXA_ERR_INVALID_REQ=DSVP_ERR_INVALID_REQ         !invalid request
+        integer(INTD), parameter, public:: EXA_ERR_MEM_ALLOC_FAIL=DSVP_ERR_MEM_ALLOC_FAIL   !memory allocation failed
+        integer(INTD), parameter, public:: EXA_ERR_MEM_FREE_FAIL=DSVP_ERR_MEM_FREE_FAIL     !memory deallocation failed
+        integer(INTD), parameter, public:: EXA_ERR_BROKEN_OBJ=DSVP_ERR_BROKEN_OBJ           !broken object
+        integer(INTD), parameter, public:: EXA_ERR_UNABLE_COMPLETE=DSVP_ERR_UNABLE_COMPLETE !unable to complete
  !Tensor-algebra virtual processor kinds (roles):
         integer(INTD), parameter, public:: EXA_NO_ROLE=0   !undefined role
         integer(INTD), parameter, public:: EXA_MANAGER=1   !manager process (global root is a manager as well)

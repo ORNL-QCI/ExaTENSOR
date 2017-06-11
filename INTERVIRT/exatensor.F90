@@ -1,7 +1,7 @@
 !ExaTENSOR: Massively Parallel Virtual Processor for Scale-Adaptive Tensor Algebra
 !This is the top level API module of ExaTENSOR (user space API)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/06/09
+!REVISION: 2017/06/11
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -29,24 +29,38 @@
        implicit none
        private
 !PARAMETERS:
- !Error codes:
-       public EXA_SUCCESS,EXA_ERROR,EXA_ERR_INVALID_ARGS,EXA_ERR_INVALID_REQ
-       public EXA_ERR_MEM_ALLOC_FAIL,EXA_ERR_MEM_FREE_FAIL,EXA_ERR_BROKEN_OBJ
- !ExaTENSOR status:
-       integer(INTD), parameter, public:: EXATNS_STAT_OFF=0  !ExaTENSOR status: OFF
-       integer(INTD), parameter, public:: EXATNS_STAT_ON=1   !ExaTENSOR status: ON
-       integer(INTD), parameter, public:: EXATNS_STAT_ERR=-1 !ExaTENSOR status: ERROR
  !Basic:
        integer(INTD), private:: CONS_OUT=6 !output device
        integer(INTD), private:: DEBUG=0    !debugging level
        logical, private:: VERBOSE=.TRUE.   !verbosity for errors
+ !Error codes:
+       public EXA_SUCCESS,&
+             &EXA_ERROR,&
+             &EXA_ERR_INVALID_ARGS,&
+             &EXA_ERR_INVALID_REQ,&
+             &EXA_ERR_MEM_ALLOC_FAIL,&
+             &EXA_ERR_MEM_FREE_FAIL,&
+             &EXA_ERR_BROKEN_OBJ,&
+             &EXA_ERR_UNABLE_COMPLETE
 !TYPES:
- !ExaTENSOR status:
-       type, public:: exatns_status_t
-        integer(INTD):: state=EXATNS_STAT_OFF
-        integer(INTD):: error_code=-1
-        integer(INTD):: num_procs=0
-       end type exatns_status_t
+ !ExaTENSOR runtime status:
+       type, public:: exatns_rt_status_t
+        integer(INTD), public:: state=DSVP_STAT_OFF !state (see parameters above)
+        integer(INTD), public:: error_code=-1       !specific error code (0 means no error)
+        integer(INTD), public:: num_procs=0         !number of MPI processes involved
+       end type exatns_rt_status_t
+ !Vector space status:
+       type, public:: exa_space_status_t
+        logical, public:: built=.FALSE.               !whether or not the hierarchical (tree) structure has been imposed
+        integer(INTL), public:: full_dimension=0_INTL !full dimension of the vector space (number of basis vectors)
+        integer(INTD), public:: num_subspaces=0       !number of registered subspaces
+       end type exa_space_status_t
+ !Tensor status:
+       type, public:: exa_tensor_status_t
+        logical, public:: created=.FALSE. !TRUE if the tensor has been created, FALSE otherwise
+        logical, public:: defined=.FALSE. !TRUE if the tensor value has been defined, FALSE otherwise
+        logical, public:: in_use=.FALSE.  !TRUE if the tensor is currently participating in a computation, FALSE otherwise
+       end type exa_tensor_status_t
 !INTERFACES:
       abstract interface
  !External method (tensor operation):
@@ -58,6 +72,13 @@
         complex(8), intent(inout), optional:: scal_args(0:) !inout: scalar arguments
        end function ext_method_i
       end interface
+ !Overloads:
+#if 0
+      interface exatns_tensor_init
+       module procedure exatns_tensor_init_scalar
+       module procedure exatns_tensor_init_method
+      end interface exatns_tensor_init
+#endif
 !DATA:
 
 !VISIBILITY:
@@ -66,14 +87,14 @@
        public exatns_start                !starts the ExaTENSOR DSVP
        public exatns_stop                 !stops the ExaTENSOR DSVP
        public exatns_status               !returns the status of the ExaTENSOR DSVP (plus statistics, if needed)
- !Symbols:
+ !Parser/interpreter:
+       public exatns_interpret            !interprets TAProL code (string of TAProL statements)
        public exatns_symbol_exists        !checks whether a specific identifier is registered (if yes, returns its attributes)
  !External methods/data:
        public exatns_method_register      !registers an external method (it has to adhere to a predefined interface)
        public exatns_method_unregister    !unregisters an external method
        public exatns_data_register        !registers external data (for future references)
        public exatns_data_unregister      !unregisters external data
-#if 0
  !Hierarchical vector space:
        public exatns_space_register       !registers a vector space
        public exatns_space_unregister     !unregisters a vector space
@@ -90,6 +111,7 @@
        public exatns_tensor_save          !saves a tensor to persistent storage
        public exatns_tensor_status        !returns the status of the tensor (e.g., empty, initialized, being updated, etc.)
  !Tensor operations:
+#if 0
        public exatns_tensor_init          !initializes the tensor to a real/complex value or invokes an initialization method
        public exatns_tensor_copy          !copies a tensor into another tensor, possibly with permutation, slicing, or insertion
        public exatns_tensor_fold          !produces a new tensor by folding multiple tensor dimensions into a single one
@@ -98,7 +120,10 @@
        public exatns_tensor_add           !adds a tensor to another tensor, possibly with permutation, slicing, or insertion
        public exatns_tensor_contract      !contracts two tensors to produce another tensor (tensor product is included as a special case)
        public exatns_tensor_operation     !custom tensor operation via user-defined (external) methods
+       private exatns_tensor_init_scalar
+       private exatns_tensor_init_method
 #endif
+
       contains
 !IMPLEMENTATION:
 !------------------------------------------
@@ -168,11 +193,19 @@
        call dil_process_finish(errc); if(errc.ne.0.and.ierr.eq.0) ierr=-6
        return
        end subroutine exa_tensor
-![ExaTENSOR API]-------------------------------------------
-       function exatns_start(mpi_communicator) result(ierr)
+![ExaTENSOR Control API]-----------------------------------
+       function exatns_start(mpi_communicator) result(ierr) !called by all MPI processes
 !Starts the ExaTENSOR runtime within the given MPI communicator.
 !This function must be called by every MPI process from <mpi_communicator>,
-!but only the master process 0 will return.
+!but only the Master process 0 will return. Actions performed:
+! # Initializes MPI services;
+! # Determines how many TAVPs of different kinds will be spawn (log-TAVP, num-TAVP, dat-TAVP, etc.);
+! # Establishes a hierarchy for num-TAVPs and maps the corresponding computing domains to log-TAVPs;
+! # Each MPI process is assigned a single TAVP of a specific kind, starts its TAVP BIOS code (init);
+! # The Master MPI process returns while all other MPI processes begin their active life cycle,
+!   until terminated by the Master MPI process (root-TAVP).
+!This is the only ExaTENSOR API function called by all MPI processes,
+!the rest are to be called by the Master MPI process only.
         implicit none
         integer(INTD):: ierr                                      !out: error code
         integer(INT_MPI), intent(in), optional:: mpi_communicator !in: MPI communicator (defaults to MPI_COMM_WORLD)
@@ -193,29 +226,40 @@
        function exatns_status(sts) result(ierr)
 !Returns the current status of the ExaTENSOR runtime.
         implicit none
-        integer(INTD):: ierr                     !out: error code
-        type(exatns_status_t), intent(out):: sts !out: status of the ExaTENSOR runtime
+        integer(INTD):: ierr                        !out: error code
+        type(exatns_rt_status_t), intent(out):: sts !out: current status of the ExaTENSOR runtime
 
         ierr=EXA_SUCCESS
         return
        end function exatns_status
-!-------------------------------------------------
-       function exatns_symbol_exists() result(ans)
+![ExaTENSOR Parser/Interpreter API]------------------
+       function exatns_interpret(taprol) result(ierr)
+!Interprets TAProL code.
+        implicit none
+        integer(INTD):: ierr              !out: error code
+        character(*), intent(in):: taprol !in: TAProL code (string of TAProL statements)
+
+        ierr=EXA_SUCCESS
+        return
+       end function exatns_interpret
+!-------------------------------------------------------
+       function exatns_symbol_exists(symbol) result(ans)
 !Checks whether a specific identifier is registered with ExaTENSOR.
         implicit none
-        logical:: ans !out: answer {TRUE|FALSE}
+        logical:: ans                     !out: answer {TRUE|FALSE}
+        character(*), intent(in):: symbol !in: specific symbolic identifier
 
         ans=.FALSE.
         return
        end function exatns_symbol_exists
-!---------------------------------------------------------------------------------
+![ExaTENSOR External Method/Data API]---------------------------------------------
        function exatns_method_register(method,method_name,method_tag) result(ierr)
 !Registers an external method (tensor operation) with ExaTENSOR.
         implicit none
         integer(INTD):: ierr                    !out: error code
         procedure(ext_method_i):: method        !in: external method (tensor operation)
         character(*), intent(in):: method_name  !in: symbolic method name
-        integer(INTD), intent(out):: method_tag !out: method tag
+        integer(INTD), intent(out):: method_tag !out: method tag (non-negative on success)
 
         ierr=EXA_SUCCESS; method_tag=-1
         return
@@ -235,9 +279,9 @@
 !Registers an external data with ExaTENSOR.
         implicit none
         integer(INTD):: ierr                  !out: error code
-        type(C_PTR), intent(in):: data_ptr    !in: pointer to the external data
+        type(C_PTR), intent(in):: data_ptr    !in: pointer to the external data (local)
         character(*), intent(in):: data_name  !in: symbolic data name
-        integer(INTD), intent(out):: data_tag !out: data tag
+        integer(INTD), intent(out):: data_tag !out: data tag (non-negative on success)
 
         ierr=EXA_SUCCESS; data_tag=-1
         return
@@ -252,5 +296,170 @@
         ierr=EXA_SUCCESS
         return
        end function exatns_data_unregister
+![ExaTENSOR Hierarchical Vector Space API]-----------------------------------------
+       function exatns_space_register(space_name,space_basis,space_id) result(ierr)
+!Registers a vector space.
+        implicit none
+        integer(INTD):: ierr                              !out: error code
+        character(*), intent(in):: space_name             !in: vector space symbolic name
+        class(subspace_basis_t), intent(in):: space_basis !in: vector space basis (fully defined)
+        integer(INTD), intent(out):: space_id             !out: vector space id (non-negative)
+
+        ierr=EXA_SUCCESS; space_id=-1
+        return
+       end function exatns_space_register
+!---------------------------------------------------------------
+       function exatns_space_unregister(space_name) result(ierr)
+!Unregisters a registered vector space.
+        implicit none
+        integer(INTD):: ierr                  !out: error code
+        character(*), intent(in):: space_name !in: vector space symbolic name
+
+        ierr=EXA_SUCCESS
+        return
+       end function exatns_space_unregister
+!---------------------------------------------------------------
+       function exatns_space_build_tree(space_name) result(ierr)
+!Builds a hierarchical representation on a registered vector space.
+        implicit none
+        integer(INTD):: ierr                  !out: error code
+        character(*), intent(in):: space_name !in: vector space symbolic name
+
+        ierr=EXA_SUCCESS
+        return
+       end function exatns_space_build_tree
+!---------------------------------------------------------------
+       function exatns_space_status(space_name,sts) result(ierr)
+!Returns the status of a registered vector space.
+        implicit none
+        integer(INTD):: ierr                        !out: error code
+        character(*), intent(in):: space_name       !in: vector space symbolic name
+        type(exa_space_status_t), intent(out):: sts !out: vector space status
+
+        ierr=EXA_SUCCESS
+        return
+       end function exatns_space_status
+!------------------------------------------------------------------------------------------------------------------
+       function exatns_subspace_register(space_name,subspace_name,basis_subrange,subspace_id,space_id) result(ierr)
+!Registers a subspace within a registered vector space.
+        implicit none
+        integer(INTD):: ierr                            !out: error code
+        character(*), intent(in):: space_name           !in: parental space symbolic name
+        character(*), intent(in):: subspace_name        !in: subspace symbolic name
+        class(seg_int_t), intent(in):: basis_subrange   !in: defining subrange of basis vectors
+        integer(INTL), intent(out):: subspace_id        !out: subspace id within the parental vector space
+        integer(INTD), intent(out), optional:: space_id !out: vector space id
+        integer(INTD):: hspid
+
+        ierr=EXA_SUCCESS; subspace_id=-1_INTL; hspid=-1
+        if(present(space_id)) space_id=hspid
+        return
+       end function exatns_subspace_register
+!---------------------------------------------------------------------
+       function exatns_subspace_unregister(subspace_name) result(ierr)
+!Unregisters a registered subspace.
+        implicit none
+        integer(INTD):: ierr                     !out: error code
+        character(*), intent(in):: subspace_name !in: subspace symbolic name
+
+        ierr=EXA_SUCCESS
+        return
+       end function exatns_subspace_unregister
+!------------------------------------------------------------------------
+       function exatns_index_register(space_name,index_name) result(ierr)
+!Registers an index by associating it with a specific space/subspace.
+        implicit none
+        integer(INTD):: ierr                  !out: error code
+        character(*), intent(in):: space_name !in: space/subspace symbolic name
+        character(*), intent(in):: index_name !in: index symbolic name
+
+        ierr=EXA_SUCCESS
+        return
+       end function exatns_index_register
+!---------------------------------------------------------------
+       function exatns_index_unregister(index_name) result(ierr)
+!Unregisters a registers index.
+        implicit none
+        integer(INTD):: ierr                  !out: error code
+        character(*), intent(in):: index_name !in: index symbolic name
+
+        ierr=EXA_SUCCESS
+        return
+       end function exatns_index_unregister
+![ExaTENSOR Tensor API]--------------------------------------------------------------------------------------------
+       function exatns_tensor_create(tensor,tens_name,hspace,subspace,dim_extent,dim_group,group_spec) result(ierr)
+!Creates a tensor.
+        implicit none
+        integer(INTD):: ierr                                 !out: error code
+        type(tens_rcrsv_t), intent(inout):: tensor           !out: tensor
+        character(*), intent(in):: tens_name                 !in: symbolic tensor name
+        integer(INTD), intent(in):: hspace(1:)               !in: hierarchical vector space registered id for each tensor dimension
+        integer(INTL), intent(in):: subspace(1:)             !in: defining subspace registered id for each tensor dimension
+        integer(INTD), intent(in), optional:: dim_extent(1:) !in: dimension extent for each tensor dimension (0 means deferred)
+        integer(INTD), intent(in), optional:: dim_group(1:)  !in: symmetric group (>=0) for each tensor dimension (0 means default)
+        integer(INTD), intent(in), optional:: group_spec(1:) !in: symmetric group specification for non-trivial symmetric groups (see tensor_recursive.F90)
+        integer(INTD):: trank
+
+        ierr=EXA_SUCCESS
+        trank=size(hspace)
+        if(size(subspace).eq.trank) then
+         
+        else
+         ierr=EXA_ERR_INVALID_ARGS
+        endif
+        return
+       end function exatns_tensor_create
+!---------------------------------------------------------
+       function exatns_tensor_destroy(tensor) result(ierr)
+!Destroys a tensor.
+        implicit none
+        integer(INTD):: ierr                       !out: error code
+        type(tens_rcrsv_t), intent(inout):: tensor !inout: tensor
+
+        ierr=EXA_SUCCESS
+        return
+       end function exatns_tensor_destroy
+!---------------------------------------------------------------
+       function exatns_tensor_load(tensor,filename) result(ierr)
+!Loads a tensor from an external storage.
+        implicit none
+        integer(INTD):: ierr                       !out: error code
+        type(tens_rcrsv_t), intent(inout):: tensor !out: tensor
+        character(*), intent(in):: filename        !in: file name
+
+        ierr=EXA_SUCCESS
+        return
+       end function exatns_tensor_load
+!---------------------------------------------------------------
+       function exatns_tensor_save(tensor,filename) result(ierr)
+!Saves a tensor in an external storage.
+        implicit none
+        integer(INTD):: ierr                       !out: error code
+        type(tens_rcrsv_t), intent(inout):: tensor !in: tensor
+        character(*), intent(in):: filename        !in: file name
+
+        ierr=EXA_SUCCESS
+        return
+       end function exatns_tensor_save
+!------------------------------------------------------------
+       function exatns_tensor_status(tensor,sts) result(ierr)
+!Returns the current status of a tensor.
+        implicit none
+        integer(INTD):: ierr                         !out: error code
+        type(tens_rcrsv_t), intent(in):: tensor      !in: tensor
+        type(exa_tensor_status_t), intent(out):: sts !out: current tensor status
+
+        ierr=EXA_SUCCESS
+        return
+       end function exatns_tensor_status
+![ExaTENSOR Tensor Operation API]------------------------------------
+#if 0
+       function exatns_tensor_init_scalar(tensor,scalar) result(ierr)
+!Initializes all tensor elements to a given scalar value. If <scalar> is
+!absent, tensor elements will be initialized to random values.
+        implicit none
+        
+       end function exatns_tensor_init_scalar
+#endif
 
       end module exatensor
