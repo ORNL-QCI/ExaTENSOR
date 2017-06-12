@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/06/09
+!REVISION: 2017/06/12
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -210,6 +210,7 @@
           procedure, public:: get_layout_kind=>TensLayoutGetLayoutKind              !returns the tensor storage layout kind
           procedure, public:: get_body_ptr=>TensLayoutGetBodyPtr                    !returns a C pointer to the tensor body
           procedure, public:: get_body_size=>TensLayoutGetBodySize                  !returns the size of the stored tensor body in bytes
+          procedure, public:: get_data_descr=>TensLayoutGetDataDescr                !returns a pointer to the DDSS data descriptor
           procedure(tens_layout_volume_i), deferred, public:: get_volume            !returns the physical volume of the tensor block (number of physically stored elements)
           procedure(tens_layout_map_i), deferred, public:: map                      !maps a specific element of the tensor block (layout specific)
           procedure(tens_layout_extract_i), deferred, public:: extract_simple_parts !creates a list of constituent simple (dense) parts of the tensor block
@@ -484,6 +485,7 @@
         private TensLayoutGetLayoutKind
         private TensLayoutGetBodyPtr
         private TensLayoutGetBodySize
+        private TensLayoutGetDataDescr
  !tens_layout_fdims_t:
         private TensLayoutFdimsCtor
         private TensLayoutFdimsCtorUnpack
@@ -2784,6 +2786,29 @@
          if(present(ierr)) ierr=errc
          return
         end function TensLayoutGetBodySize
+!-----------------------------------------------------------------
+        function TensLayoutGetDataDescr(this,ierr) result(descr_p)
+!Returns a pointer to the DDSS data descriptor.
+         implicit none
+         class(DataDescr_t), pointer:: descr_p           !out: pointer to the DDSS data descriptor
+         class(tens_layout_t), intent(in), target:: this !in: tensor layout
+         integer(INTD), intent(out), optional:: ierr     !out: error code
+         integer(INTD):: errc
+         logical:: locd
+
+         errc=TEREC_SUCCESS; descr_p=>NULL()
+         if(this%is_set(errc,locd)) then
+          if(locd) then
+           if(errc.eq.TEREC_SUCCESS) descr_p=>this%data_descr
+          else
+           errc=TEREC_INVALID_REQUEST
+          endif
+         else
+          errc=TEREC_INVALID_REQUEST
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function TensLayoutGetDataDescr
 ![tens_layout_fdims_t]=================================================
         subroutine TensLayoutFdimsCtor(this,tens_header,data_type,ierr)
 !Constructs the "Fortran dimension led" tensor body layout.

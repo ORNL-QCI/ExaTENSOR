@@ -1,6 +1,6 @@
 !Domain-specific virtual processor (DSVP): Abstract base module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/06/11
+!REVISION: 2017/06/12
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -128,8 +128,8 @@
           procedure(ds_oprnd_sync_i), deferred, public:: sync        !synchronizes the currently pending communication on the domain-specific operand (either test or wait)
           procedure(ds_oprnd_self_i), deferred, public:: release     !destroys the present local copy of the domain-specific operand (releases local resources!), but the operand will stay defined
           procedure(ds_oprnd_self_i), deferred, public:: destruct    !performs complete destruction back to an empty (undefined) state
-          procedure, public:: is_active=>DSOprndIsActive               !returns TRUE if the domain-specific operand is active (defined, present)
-          procedure, public:: is_delivered=>DSOprndIsDelivered         !returns TRUE if the domain-specific operand is locally available (present)
+          procedure, public:: is_active=>DSOprndIsActive               !returns TRUE if the domain-specific operand is active (defined and maybe present)
+          procedure, public:: is_present=>DSOprndIsPresent             !returns TRUE if the domain-specific operand is locally available (present)
           procedure, public:: mark_active=>DSOprndMarkActive           !marks the domain-specific operand active (defined)
           procedure, public:: mark_empty=>DSOprndMarkEmpty             !marks the domain-specific operand inactive (empty), local resources are released
           procedure, public:: mark_delivered=>DSOprndMarkDelivered     !marks the domain-specific operand locally available (present)
@@ -316,7 +316,7 @@
 !VISIBILITY:
  !ds_oprnd_t:
         private DSOprndIsActive
-        private DSOprndIsDelivered
+        private DSOprndIsPresent
         private DSOprndMarkActive
         private DSOprndMarkEmpty
         private DSOprndMarkDelivered
@@ -368,8 +368,8 @@
          if(present(ierr)) ierr=errc
          return
         end function DSOprndIsActive
-!---------------------------------------------------------
-        function DSOprndIsDelivered(this,ierr) result(res)
+!-------------------------------------------------------
+        function DSOprndIsPresent(this,ierr) result(res)
 !Returns TRUE if the domain-specific operand is locally available (present).
 !The input domain-specific operand must have already been defined.
          implicit none
@@ -386,7 +386,7 @@
          endif
          if(present(ierr)) ierr=errc
          return
-        end function DSOprndIsDelivered
+        end function DSOprndIsPresent
 !----------------------------------------------
         subroutine DSOprndMarkActive(this,ierr)
 !Marks the domain-specific operand active (defined).
@@ -419,7 +419,7 @@
          if(this%is_active(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
            if(this%in_route.eq.DS_OPRND_NO_COMM) then
-            if(this%is_delivered(ier)) call this%mark_undelivered(errc) !will release local resources
+            if(this%is_present(ier)) call this%mark_undelivered(errc) !will release local resources
             if(errc.eq.DSVP_SUCCESS) errc=ier
             this%stat=DS_OPRND_EMPTY
            else
@@ -442,7 +442,7 @@
          errc=DSVP_SUCCESS
          if(this%is_active(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
-           if(.not.this%is_delivered(errc)) then
+           if(.not.this%is_present(errc)) then
             call this%set_comm_stat(DS_OPRND_NO_COMM,errc)
             if(errc.eq.DSVP_SUCCESS) this%stat=DS_OPRND_PRESENT
            else
@@ -470,7 +470,7 @@
          if(this%is_active(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
            if(this%in_route.eq.DS_OPRND_NO_COMM) then !no pending communication allowed
-            if(this%is_delivered(ier)) call this%release(errc) !will release local resources
+            if(this%is_present(ier)) call this%release(errc) !will release local resources
             if(errc.eq.DSVP_SUCCESS) errc=ier
             this%stat=DS_OPRND_DEFINED !status will be changed regardless the success of resource release
            else

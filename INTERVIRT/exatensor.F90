@@ -177,8 +177,6 @@
         call dil_process_finish(errc)
         ierr=-4; return
        endif
- !Assign roles:
-       call tavp_establish_role(EXA_WORKER,errc) !debug
  !Begin life:
        !...(ierr)
 !Sync everyone:

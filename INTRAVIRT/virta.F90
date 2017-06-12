@@ -3,7 +3,7 @@
 !This module provides basic infrastructure for ExaTENSOR, tensor algebra virtual processor (TAVP).
 !The logical and numerical tensor algebra virtual processors (L-TAVP, N-TAVP) derive from this module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/06/11
+!REVISION: 2017/06/12
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -29,9 +29,9 @@
         use pack_prim                            !object packing primitives
         use distributed                          !distributed communication layer
 #ifndef NO_LINUX
-        use service_mpi, only: get_memory_status,INT_MPI,MPI_COMM_NULL
+        use service_mpi, only: get_memory_status,INT_MPI,MPI_COMM_NULL,impis,impir,quit
 #else
-        use service_mpi, only: INT_MPI,MPI_COMM_NULL
+        use service_mpi, only: INT_MPI,MPI_COMM_NULL,impis,impir,quit
 #endif
         use hardware                             !hardware abstraction
         use subspaces                            !hierarchical vector space representation
@@ -54,10 +54,10 @@
         integer(INTD), parameter, public:: EXA_ERR_BROKEN_OBJ=DSVP_ERR_BROKEN_OBJ           !broken object
         integer(INTD), parameter, public:: EXA_ERR_UNABLE_COMPLETE=DSVP_ERR_UNABLE_COMPLETE !unable to complete
  !Tensor-algebra virtual processor kinds (roles):
-        integer(INTD), parameter, public:: EXA_NO_ROLE=0   !undefined role
-        integer(INTD), parameter, public:: EXA_MANAGER=1   !manager process (global root is a manager as well)
-        integer(INTD), parameter, public:: EXA_WORKER=2    !worker process (aka C-process)
-        integer(INTD), parameter, public:: EXA_HELPER=3    !helper process
+        integer(INTD), parameter, public:: EXA_NO_ROLE=DSVP_NO_KIND !undefined role
+        integer(INTD), parameter, public:: EXA_MANAGER=0            !manager (logic) process (global root is a manager as well)
+        integer(INTD), parameter, public:: EXA_WORKER=1             !worker (numeric) process (aka C-process)
+        integer(INTD), parameter, public:: EXA_HELPER=2             !helper (auxiliary) process
         integer(INTD), public:: EXA_MAX_WORK_GROUP_SIZE=64 !maximal size of a work group (max number of workers per manager)
  !Elementary tensor instruction (ETI) granularity classification:
         real(8), public:: EXA_FLOPS_MEDIUM=1d10 !minimal number of Flops to consider the operation as medium-cost
@@ -98,6 +98,7 @@
           procedure, public:: sync=>TensOprndSync               !synchronizes the currently pending communication on the tensor operand
           procedure, public:: release=>TensOprndRelease         !destroys the present local copy of the tensor operand (releases local resources!), but the operand stays defined
           procedure, public:: destruct=>TensOprndDestruct       !performs complete destruction back to an empty (undefined) state
+          final:: tens_oprnd_dtor                               !dtor
         end type tens_oprnd_t
 #if 0
  !Tensor instruction control fields:
@@ -133,16 +134,7 @@
          final:: tens_instr_dtor                                !dtor
         end type tens_instr_t
 #endif
-!DATA`Remove:
- !Current role of the tensor alegbra virtual processor:
-        integer(INTD), protected:: my_role=EXA_NO_ROLE         !role of this virtual processor (set at run-time)
-        integer(INTD), protected:: my_group=-1                 !computing group the virtual processor belongs to (set at run-time): [0..MAX]
-        integer(INTD), protected:: my_group_size=0             !size of the computing group the virtual processor belongs to (set at runtime): [1..EXA_MAX_WORK_GROUP_SIZE]
-        integer(INTD), protected:: my_group_index=-1           !virtual processor ID within its computing group (set at run-time): [0..my_group_size-1]
-        integer(INTD), protected:: my_group_comm=MPI_COMM_NULL !group MPI communicator (if any)
 !VISIBILITY:
- !non-member:
-        public tavp_establish_role !`Remove
  !tens_oprnd_t:
         private TensOprndCtor
         private TensOprndIsRemote
@@ -152,6 +144,7 @@
         private TensOprndSync
         private TensOprndRelease
         private TensOprndDestruct
+        public tens_oprnd_dtor
 #if 0
  !ctrl_tens_add_t:
         private CtrlTensAddCtor
@@ -171,24 +164,6 @@
 #endif
        contains
 !IMPLEMENTATION:
-![Non-member]====================================
-        subroutine tavp_establish_role(role,ierr)
-!Specializes a tensor algebra virtual processor (TAVP).
-         implicit none
-         integer(INTD), intent(in):: role  !in: specific role of the tensor algebra virtual processor
-         integer(INTD), intent(out):: ierr !out: error code
-
-         ierr=EXA_SUCCESS
-         select case(role)
-         case(EXA_MANAGER,EXA_WORKER,EXA_HELPER)
-          my_role=role
-         case(EXA_NO_ROLE)
-          ierr=EXA_ERROR
-         case default
-          ierr=EXA_ERR_INVALID_ARGS
-         end select
-         return
-        end subroutine tavp_establish_role
 ![tens_oprnd_t]===================================
         subroutine TensOprndCtor(this,tensor,ierr)
 !Constructs a tensor operand.
@@ -233,20 +208,79 @@
          class(tens_oprnd_t), intent(in):: this      !in: tensor operand
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
+         integer(INT_MPI):: host_proc_rank
+         class(tens_body_t), pointer:: body_p
+         class(tens_layout_t), pointer:: layout_p
+         class(DataDescr_t), pointer:: descr_p
 
          errc=0
+         body_p=>this%tensor%get_body(errc)
+         if(errc.eq.TEREC_SUCCESS.and.associated(body_p)) then
+          layout_p=>body_p%get_layout(errc)
+          if(errc.eq.TEREC_SUCCESS.and.associated(layout_p)) then
+           descr_p=>layout_p%get_data_descr(errc)
+           if(errc.eq.TEREC_SUCCESS.and.associated(descr_p)) then
+            if(descr_p%is_set(errc,host_proc_rank)) then
+             res=.not.(host_proc_rank.eq.impir)
+            else
+             errc=-1
+            endif
+           else
+            errc=-2
+           endif
+          else
+           errc=-3
+          endif
+         else
+          errc=-4
+         endif
          if(present(ierr)) ierr=errc
          return
         end function TensOprndIsRemote
 !------------------------------------------------
         subroutine TensOprndAcquireRsc(this,ierr)
-!Acquires local resources for the tensor operand.
+!Acquires local resources for the remote tensor operand.
          implicit none
          class(tens_oprnd_t), intent(inout):: this   !inout: tensor operand
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
+         integer(INTL):: buf_size
+         integer(INT_MPI):: host_proc_rank
+         class(tens_body_t), pointer:: body_p
+         class(tens_layout_t), pointer:: layout_p
+         class(DataDescr_t), pointer:: descr_p
 
          errc=0
+         body_p=>this%tensor%get_body(errc)
+         if(errc.eq.TEREC_SUCCESS.and.associated(body_p)) then
+          layout_p=>body_p%get_layout(errc)
+          if(errc.eq.TEREC_SUCCESS.and.associated(layout_p)) then
+           descr_p=>layout_p%get_data_descr(errc)
+           if(errc.eq.TEREC_SUCCESS.and.associated(descr_p)) then
+            if(descr_p%is_set(errc,host_proc_rank)) then
+             if(host_proc_rank.ne.impir) then !remote tensor operand
+              buf_size=descr_p%data_size(errc)
+              if(errc.eq.0) then
+               !`Allocate local buffer
+              else
+               errc=-1
+              endif
+             else
+              if(VERBOSE)&
+                &write(CONS_OUT,'("WARNING(virta:tens_oprnd_t:acquire_rsc): Attempt to acquire resources for a local operand!")')
+             endif
+            else
+             errc=-2
+            endif
+           else
+            errc=-3
+           endif
+          else
+           errc=-4
+          endif
+         else
+          errc=-5
+         endif
          if(present(ierr)) ierr=errc
          return
         end subroutine TensOprndAcquireRsc
@@ -278,10 +312,10 @@
         function TensOprndSync(this,ierr,wait) result(res)
 !Synchronizes the pending prefetch/upload, either TEST or WAIT.
          implicit none
-         logical:: res                               !out: TRUE on communication completion
+         logical:: res                               !out: TRUE on communication completion, FALSE otherwise
          class(tens_oprnd_t), intent(inout):: this   !inout: tensor operand
          integer(INTD), intent(out), optional:: ierr !out: error code
-         logical, intent(in), optional:: wait        !in: TRUE activates WAIT instead of TEST synchronization
+         logical, intent(in), optional:: wait        !in: TRUE activates WAIT instead of TEST synchronization (default)
          integer(INTD):: errc
 
          errc=0
@@ -323,5 +357,15 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensOprndDestruct
+!---------------------------------------
+        subroutine tens_oprnd_dtor(this)
+         implicit none
+         type(tens_oprnd_t):: this
+         integer(INTD):: errc
+
+         call this%destruct(errc)
+         if(errc.ne.0) call quit(errc,'#FATAL(virta:tens_oprnd_dtor): Destructor failed!')
+         return
+        end subroutine tens_oprnd_dtor
 
        end module virta

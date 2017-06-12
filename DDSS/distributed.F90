@@ -1,6 +1,6 @@
 !Distributed data storage service (DDSS).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/05/23 (started 2015/03/18)
+!REVISION: 2017/06/12 (started 2015/03/18)
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -1368,15 +1368,17 @@
         if(present(ierr)) ierr=errc
         return
         end subroutine DataDescrInit
-!-----------------------------------------------------
-        function DataDescrIsSet(this,ierr) result(ans)
+!---------------------------------------------------------------
+        function DataDescrIsSet(this,ierr,proc_rank) result(ans)
 !Returns TRUE if the data descriptor is set, FALSE otherwise.
          implicit none
-         logical:: ans                               !out: answer
-         class(DataDescr_t), intent(in):: this       !in: data descriptor
-         integer(INTD), intent(out), optional:: ierr !out: error code (0:success)
+         logical:: ans                                       !out: answer
+         class(DataDescr_t), intent(in):: this               !in: data descriptor
+         integer(INT_MPI), intent(out), optional:: ierr      !out: error code (0:success)
+         integer(INT_MPI), intent(out), optional:: proc_rank !out: MPI process rank
 
          ans=(this%RankMPI.ge.0)
+         if(ans.and.present(proc_rank)) proc_rank=this%RankMPI
          if(present(ierr)) ierr=0
          return
         end function DataDescrIsSet
