@@ -1117,8 +1117,8 @@ int mem_free(int dev_id, void ** mem_ptr)
  int dev_num,dev_kind,buf_entry,errc;
 
  if(mem_ptr == NULL) return -1;
- dev_num=decode_device_id(dev_id,&dev_kind); if(dev_num < 0) return -2; //invalid device id
- buf_entry=get_buf_entry_from_address(dev_id,*mem_ptr); if(buf_entry < -1) return -3;
+ buf_entry=get_buf_entry_from_address(dev_id,*mem_ptr); if(buf_entry < -1) return -2;
+ dev_num=decode_device_id(dev_id,&dev_kind); if(dev_num < 0) return -3; //invalid device id
  switch(dev_kind){
   case DEV_HOST:
    if(buf_entry >= 0){ //in buffer
@@ -1132,7 +1132,7 @@ int mem_free(int dev_id, void ** mem_ptr)
    if(buf_entry >= 0){ //in buffer
     errc=free_buf_entry_gpu(dev_num,buf_entry); if(errc != 0) return -6;
    }else if(buf_entry == -1){ //in system
-    errc=gpu_mem_free(dev_num,*mem_ptr); if(errc != 0) return -7;
+    errc=gpu_mem_free(*mem_ptr,dev_num); if(errc != 0) return -7;
    }
    break;
 #endif
@@ -1147,6 +1147,7 @@ int mem_free(int dev_id, void ** mem_ptr)
   default:
    return -10; //invalid device kind
  }
+ *mem_ptr=NULL;
  return 0;
 }
 

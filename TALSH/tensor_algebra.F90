@@ -342,6 +342,22 @@
           implicit none
           type(C_PTR), value:: cptr
          end function host_mem_unregister
+  !Universal allocate (any device, either via a buffer or via OS):
+         integer(C_INT) function mem_allocate(dev_id,bytes,in_buffer,mem_ptr) bind(c,name='mem_allocate')
+          import
+          implicit none
+          integer(C_INT), value, intent(in):: dev_id
+          integer(C_SIZE_T), value, intent(in):: bytes
+          integer(C_INT), value, intent(in):: in_buffer
+          type(C_PTR):: mem_ptr
+         end function mem_allocate
+  !Universal free:
+         integer(C_INT) function mem_free(dev_id,mem_ptr) bind(c,name='mem_free')
+          import
+          implicit none
+          integer(C_INT), value, intent(in):: dev_id
+          type(C_PTR):: mem_ptr
+         end function mem_free
 #ifndef NO_GPU
  !NV-TAL debugging:
   !Get the current GPU error count:
