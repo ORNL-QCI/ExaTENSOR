@@ -1,6 +1,6 @@
 !ExaTensor::TAL-SH: Parameters, types, C function interfaces:
 !Keep consistent with "tensor_algebra.h"!
-!REVISION: 2017/03/23
+!REVISION: 2017/06/13
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
