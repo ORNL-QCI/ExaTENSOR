@@ -1,7 +1,7 @@
 !ExaTENSOR: Massively Parallel Virtual Processor for Scale-Adaptive Tensor Algebra
-!This is the top level API module of ExaTENSOR (user-space API)
+!This is the top level API module of ExaTENSOR (user-level API)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017/06/12
+!REVISION: 2017/06/15
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -78,9 +78,13 @@
        module procedure exatns_tensor_init_method
       end interface exatns_tensor_init
 !DATA:
-
+ !ExaTENSOR state:
+      type(exatns_rt_status_t), protected:: exatns_rt_status
+ !TAVP composition:
+      integer(INTD), protected:: exa_num_workers=0  !number of worker processes
+      integer(INTD), protected:: exa_num_managers=0 !number of manager processes
+      integer(INTD), protected:: exa_num_helpers=0  !number of helper processes
 !VISIBILITY:
-       public exa_tensor                  !entry point into ExaTensor (debug)
  !Control:
        public exatns_start                !starts the ExaTENSOR DSVP
        public exatns_stop                 !stops the ExaTENSOR DSVP
@@ -124,79 +128,17 @@
 
       contains
 !IMPLEMENTATION:
-!------------------------------------------
-       subroutine exa_tensor(ierr,ext_comm) !debug
-!ExaTensor entry point: Starts a process, assigns a role to it, lives it, ends the process.
-!If an existing MPI communicator <ext_comm> is passed here, it will be used. Otherwise,
-!the MPI_COMM_WORLD will be initialized, subsequently used, and finalized at the end.
-       use service_mpi, only: dil_process_start,dil_process_finish,&
-                             &dil_global_comm_size,dil_global_process_id,&
-                             &dil_global_comm_barrier,INT_MPI,jo
-       implicit none
-       integer, intent(out):: ierr                       !out: error code (0:success)
-       integer(INT_MPI), intent(in), optional:: ext_comm !in: existing MPI communicator (defaults to MPI_COMM_WORLD)
-       integer(INT_MPI):: errc,my_rank
-       integer(INTD):: error_code
-
-       ierr=0; errc=0
-!Start the (MPI) process and init its services:
-       if(present(ext_comm)) then
-        call dil_process_start(errc,ext_comm)
-       else
-        call dil_process_start(errc)
-       endif
-       if(errc.ne.0) then !failed to start an MPI process
-        call dil_process_finish(errc)
-        ierr=-1; return
-       endif
-!Sync everyone:
-       my_rank=dil_global_process_id()
-       write(jo,'("###EXATENSOR LAUNCHED PROCESS ",i9,"/",i9,": Syncing ... ")',ADVANCE='NO')&
-            &my_rank,dil_global_comm_size()
-       call dil_global_comm_barrier(errc)
-       if(errc.ne.0) then
-        write(jo,'("Failed")')
-        call dil_process_finish(errc)
-        ierr=-2; return
-       endif
-!Root builds NAT and assigns roles to all processes:
-       write(jo,'("Ok")')
-       if(my_rank.eq.0) then
- !Build NAT:
-        write(jo,'("#MSG(exatensor): Building the Node Aggregation Tree (NAT) ... ")',ADVANCE='NO')
-        call comp_system%comp_system_ctor('hardware.exaconf',dil_global_comm_size(),error_code)
-        if(error_code.ne.0) then
-         write(jo,'("Failed")')
-         call dil_process_finish(errc)
-         ierr=-3; return
-        endif
-       endif
-!Sync all processes:
-       call dil_global_comm_barrier(errc)
-       if(errc.ne.0) then
-        call dil_process_finish(errc)
-        ierr=-4; return
-       endif
- !Begin life:
-       !...(ierr)
-!Sync everyone:
-       write(jo,'()')
-       write(jo,'("###EXATENSOR FINISHED PROCESS ",i9,"/",i9,": Status = ",i4,": Syncing ... ")',ADVANCE='NO')&
-            &my_rank,dil_global_comm_size(),ierr
-       call dil_global_comm_barrier(errc)
-       if(errc.eq.0) then; write(jo,'("Ok")'); else; write(jo,'("Failed")'); ierr=-5; endif
-!Finish the (MPI) process:
-       call dil_process_finish(errc); if(errc.ne.0.and.ierr.eq.0) ierr=-6
-       return
-       end subroutine exa_tensor
 ![ExaTENSOR Control API]-----------------------------------
        function exatns_start(mpi_communicator) result(ierr) !called by all MPI processes
 !Starts the ExaTENSOR runtime within the given MPI communicator.
 !This function must be called by every MPI process from <mpi_communicator>,
-!but only the Master process 0 will return. Actions performed:
+!however only the Master process 0 (interpreter) will return. The other MPI
+!processes will receive their active role as workers, managers, helpers, etc.
+!Actions performed:
 ! # Initializes MPI services;
-! # Determines how many TAVPs of different kinds will be spawn (log-TAVP, num-TAVP, dat-TAVP, etc.);
+! # Determines how many TAVPs of different kinds to spawn (log-TAVP, num-TAVP, dat-TAVP, etc.);
 ! # Establishes a hierarchy for num-TAVPs and maps the corresponding computing domains to log-TAVPs;
+! # Creates dedicated MPI communicators for log-TAVPs and for num-TAVPs;
 ! # Each MPI process is assigned a single TAVP of a specific kind, starts its TAVP BIOS code (init);
 ! # The Master MPI process returns while all other MPI processes begin their active life cycle,
 !   until terminated by the Master MPI process (root-TAVP).
@@ -205,9 +147,101 @@
         implicit none
         integer(INTD):: ierr                                      !out: error code
         integer(INT_MPI), intent(in), optional:: mpi_communicator !in: MPI communicator (defaults to MPI_COMM_WORLD)
+        integer(INT_MPI):: errc,num_procs,my_rank
+        integer(INTD):: error_code
 
         ierr=EXA_SUCCESS
+        if(exatns_rt_status%state.ne.DSVP_STAT_OFF) then; ierr=-1; return; endif
+!Start the (MPI) process and init its distributed services:
+        if(present(mpi_communicator)) then
+         call dil_process_start(errc,mpi_communicator)
+        else
+         call dil_process_start(errc)
+        endif
+        if(errc.ne.0) then !failed to start an MPI process
+         call dil_process_finish(errc)
+         ierr=-2; return
+        endif
+!Sync everyone:
+        num_procs=dil_global_comm_size(); my_rank=dil_global_process_id()
+        if(num_procs.lt.3) then
+         write(jo,'("#FATAL(exatensor): ExaTENSOR requires at least three MPI processes!")')
+         call dil_process_finish(errc)
+         ierr=-3; return
+        endif
+        write(jo,'("###EXATENSOR LAUNCHED PROCESS ",i9,"/",i9,": Syncing ... ")',ADVANCE='NO') my_rank,num_procs
+        call dil_global_comm_barrier(errc)
+        if(errc.eq.0) then
+         write(jo,'("Ok")')
+        else
+         write(jo,'("Failed")')
+         call dil_process_finish(errc)
+         ierr=-4; return
+        endif
+!Determine the roles of MPI processes:
+        write(jo,'("#MSG(exatensor): Determining the role of the process ... ")',ADVANCE='NO')
+        call determine_process_role()
+        write(jo,'(" Done: Role = ",i4,": Group rank/size = ",i9,"/",i9)') process_role,group_rank,group_size
+        write(jo,'("#MSG(exatensor): Creating role specific MPI communicators ... ")',ADVANCE='NO')
+        call MPI_Comm_split(GLOBAL_MPI_COMM,process_role,group_rank,group_comm,errc)
+        if(errc.eq.0) then
+         write(jo,'("Done")')
+        else
+         write(jo,'("Failed")')
+         call dil_process_finish(errc)
+         ierr=-5; return
+        endif
+!Build the Node Aggregation Tree (NAT) for compute nodes:
+        if(process_role.eq.EXA_MANAGER) then
+         write(jo,'("#MSG(exatensor): Building the Node Aggregation Tree (NAT) ... ")',ADVANCE='NO')
+         call comp_system%comp_system_ctor('hardware.exaconf',exa_num_workers,error_code)
+         if(error_code.eq.0) then
+          write(jo,'("Done")')
+         else
+          write(jo,'("Failed")')
+          call dil_process_finish(errc)
+          ierr=-6; return
+         endif
+        endif
+!Sync all MPI processes:
+        call dil_global_comm_barrier(errc)
+        if(errc.ne.0) then
+         call dil_process_finish(errc)
+         ierr=-7; return
+        endif
+!Activate:
+        exatns_rt_status=exatns_rt_status_t(DSVP_STAT_ON,EXA_SUCCESS,num_procs)
+!Life:
+        ierr=EXA_SUCCESS
+!Deactivate:
+        exatns_rt_status=exatns_rt_status_t(DSVP_STAT_OFF,ierr,0)
+!Sync everyone:
+        write(jo,'()')
+        write(jo,'("###EXATENSOR FINISHED PROCESS ",i9,"/",i9,": Status = ",i4,": Syncing ... ")',ADVANCE='NO')&
+             &dil_global_process_id(),dil_global_comm_size(),ierr
+        call dil_global_comm_barrier(errc)
+        if(errc.eq.0) then; write(jo,'("Ok")'); else; write(jo,'("Failed")'); ierr=-8; endif
+!Free role specific communicators:
+        call MPI_Comm_free(group_comm,errc); if(errc.ne.0.and.ierr.eq.0) ierr=-9
+!Finish the (MPI) process:
+        call dil_process_finish(errc); if(errc.ne.0.and.ierr.eq.0) ierr=-10
         return
+
+        contains
+
+         subroutine determine_process_role()
+          exa_num_workers=num_procs-2
+          exa_num_managers=1
+          if(my_rank.eq.0) then
+           process_role=EXA_PARSER; group_size=1; group_rank=0
+          elseif(my_rank.eq.1) then
+           process_role=EXA_MANAGER; group_size=exa_num_managers; group_rank=0
+          else
+           process_role=EXA_WORKER; group_size=exa_num_workers; group_rank=my_rank-2
+          endif
+          return
+         end subroutine determine_process_role
+
        end function exatns_start
 !-----------------------------------------
        function exatns_stop() result(ierr)

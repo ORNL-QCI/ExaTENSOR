@@ -3,7 +3,7 @@
 !This module provides basic infrastructure for ExaTENSOR, tensor algebra virtual processor (TAVP).
 !The logical and numerical tensor algebra virtual processors (L-TAVP, N-TAVP) derive from this module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/06/12
+!REVISION: 2017/06/15
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -25,17 +25,13 @@
 
        module virta !VIRtual Tensor Algebra
         use dil_basic                            !basic constants
-        use talsh                                !on-node numeric tensor algebra
-        use pack_prim                            !object packing primitives
-        use distributed                          !distributed communication layer
-#ifndef NO_LINUX
-        use service_mpi, only: get_memory_status,INT_MPI,MPI_COMM_NULL,impis,impir,quit
-#else
-        use service_mpi, only: INT_MPI,MPI_COMM_NULL,impis,impir,quit
-#endif
+        use talsh                                !on-node heterogeneous numeric tensor algebra
+        use pack_prim                            !object packing/unpacking primitives
+        use distributed                          !distributed one-sided communication layer
+        use service_mpi                          !basic MPI service
         use hardware                             !hardware abstraction
         use subspaces                            !hierarchical vector space representation
-        use tensor_recursive                     !recursive tensors
+        use tensor_recursive                     !recursive (hierarchical) tensors
         use dsvp_base                            !abstract domain-specific virtual processor (DSVP)
         implicit none
         public
@@ -55,9 +51,10 @@
         integer(INTD), parameter, public:: EXA_ERR_UNABLE_COMPLETE=DSVP_ERR_UNABLE_COMPLETE !unable to complete
  !Tensor-algebra virtual processor kinds (roles):
         integer(INTD), parameter, public:: EXA_NO_ROLE=DSVP_NO_KIND !undefined role
-        integer(INTD), parameter, public:: EXA_MANAGER=0            !manager (logic) process (global root is a manager as well)
-        integer(INTD), parameter, public:: EXA_WORKER=1             !worker (numeric) process (aka C-process)
-        integer(INTD), parameter, public:: EXA_HELPER=2             !helper (auxiliary) process
+        integer(INTD), parameter, public:: EXA_PARSER=0             !domain-specific parser process (not a TAVP)
+        integer(INTD), parameter, public:: EXA_WORKER=1             !worker (numeric) process (TAVP)
+        integer(INTD), parameter, public:: EXA_MANAGER=2            !manager (logic) process (TAVP)
+        integer(INTD), parameter, public:: EXA_HELPER=3             !helper (auxiliary) process (TAVP)
         integer(INTD), public:: EXA_MAX_WORK_GROUP_SIZE=64 !maximal size of a work group (max number of workers per manager)
  !Elementary tensor instruction (ETI) granularity classification:
         real(8), public:: EXA_FLOPS_MEDIUM=1d10 !minimal number of Flops to consider the operation as medium-cost
@@ -134,6 +131,12 @@
          final:: tens_instr_dtor                                !dtor
         end type tens_instr_t
 #endif
+!DATA:
+ !MPI process specialization (TAVP role):
+        integer(INT_MPI), public:: process_role=EXA_NO_ROLE !TAVP role
+        integer(INT_MPI), public:: group_comm=MPI_COMM_NULL !role specific MPI communicator
+        integer(INT_MPI), public:: group_size=0             !size of the role specific MPI communicator
+        integer(INT_MPI), public:: group_rank=-1            !process rank within the role specific MPI communicator
 !VISIBILITY:
  !tens_oprnd_t:
         private TensOprndCtor

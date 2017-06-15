@@ -1,6 +1,6 @@
 !This module provides general services for MPI parallel programs.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/05/15
+!REVISION: 2017/06/15
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -361,7 +361,7 @@
            call quit(ierr,'#ERROR(ExaTensor::service_mpi::dil_process_finish): Final MPI_BARRIER failure!',comm_imported)
           endif
          endif
-         call quit(exec_status,'###ExaTensor exited:',comm_imported)
+         call quit(exec_status,'###ExaTENSOR exited:',comm_imported)
         else
          ierr=ierr+7
         endif
@@ -627,9 +627,9 @@
 !Error message:
         l=len_trim(error_msg); if(l.gt.0.and.(error_code.ne.0.or.impir.eq.0)) call printl(jo,error_msg(1:l))
         if(error_code.eq.0) then
-         write(jo,'(''###ExaTensor Process '',i9,'': Success: Wall Time (sec): '',f12.2)') impir,time_end-time_begin
+         write(jo,'(''###ExaTENSOR Process '',i9,'': Success: Wall Time (sec): '',f12.2)') impir,time_end-time_begin
         else
-         write(jo,'(''###ExaTensor Process '',i9,'': Error '',i12,'': Wall Time (sec): '',f12.2)')&
+         write(jo,'(''###ExaTENSOR Process '',i9,'': Error '',i12,'': Wall Time (sec): '',f12.2)')&
           &impir,error_code,time_end-time_begin
         endif
         flush(jo)

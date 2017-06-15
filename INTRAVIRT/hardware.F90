@@ -1,6 +1,6 @@
 !Hardware abstraction module
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/03/16
+!REVISION: 2017/06/15
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -120,6 +120,7 @@
          class(*), pointer:: up
 
          errc=0
+#if 0
 !Read the computing system hardware specification:
          open(10,file=hardware_spec(1:len_trim(hardware_spec)),form='FORMATTED',status='OLD',err=2000)
          str=' '; nodarch=' '; sysarch=' '
@@ -137,7 +138,6 @@
             if(match) then
              if(is_this_integer(str(offs(1):offs(1)+lens(1)-1),no_sign=.TRUE.)) then
               this%num_phys_nodes=icharnum(lens(1),str(offs(1):offs(1)+lens(1)-1))
-              write(*,'(i8," physical nodes -> ")',ADVANCE='NO') this%num_phys_nodes
               if(this%num_phys_nodes.le.0) errc=-13
               exit
              else
@@ -149,6 +149,9 @@
           endif
          enddo
          close(10)
+#endif
+         this%num_phys_nodes=num_procs; if(this%num_phys_nodes.le.0) errc=-13
+         write(*,'(i8," physical nodes -> ")',ADVANCE='NO') this%num_phys_nodes
 !Build the hierarchical virtual computing system representation for <num_phys_nodes> nodes:
          this%num_virt_nodes=0_INTL
          if(errc.eq.0) then

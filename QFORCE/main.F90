@@ -1,7 +1,7 @@
 !PROJECT Q-FORCE: Massively Parallel Quantum Many-Body Methodology on Heterogeneous HPC systems.
 !BASE: ExaTensor: Massively Parallel Tensor Algebra Virtual Processor for Heterogeneous HPC systems.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/05/30
+!REVISION: 2017/06/15
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -48,11 +48,11 @@
         use exatensor
         implicit none
         integer:: ierr
-        ierr=0
-        call exa_tensor(ierr)
-        if(ierr.ne.0) then
-         write(*,*) 'ExaTensor terminated with an error: ',ierr
-        !else
-         !write(*,*) 'ExaTensor finished successfully!'
+
+        ierr=exatns_start()
+        if(ierr.ne.EXA_SUCCESS) then
+         write(*,*) 'ExaTENSOR terminated with an error: ',ierr
+        else
+         ierr=exatns_stop()
         endif
        end program main
