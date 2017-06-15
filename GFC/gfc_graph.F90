@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Graph
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017/05/26
+!REVISION: 2017/06/15
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -1122,9 +1122,9 @@
         function GraphIterAppendLink(this,link) result(ierr)
 !Appends a new link to the graph.
          implicit none
-         integer(INTD):: ierr                      !out: error code
-         class(graph_iter_t), intent(inout):: this !inout: graph iterator
-         class(graph_link_t), intent(in):: link    !in: new graph link
+         integer(INTD):: ierr                           !out: error code
+         class(graph_iter_t), intent(inout):: this      !inout: graph iterator
+         class(graph_link_t), intent(in), target:: link !in: new graph link
          integer(INTD):: i
          integer(INTL):: vid
          class(gfc_cont_elem_t), pointer:: gcp

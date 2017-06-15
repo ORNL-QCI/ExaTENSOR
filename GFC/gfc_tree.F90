@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Tree
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017-05-22 (started 2016-02-17)
+!REVISION: 2017-06-15 (started 2016-02-17)
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -156,11 +156,7 @@
 !Constructs the content of the tree vertex.
          implicit none
          class(tree_vertex_t), intent(inout):: this    !inout: tree vertex
-#ifdef ARG_PTR
-         class(*), pointer, intent(in):: obj           !in: value to be stored
-#else
          class(*), target, intent(in):: obj            !in: value to be stored
-#endif
          integer(INTD), intent(out), optional:: ierr   !out: error code
          logical, intent(in), optional:: assoc_only    !in: if TRUE, the value will be assigned by reference, otherwise by value (allocated): Defaults to FALSE
 #ifdef NO_GNU

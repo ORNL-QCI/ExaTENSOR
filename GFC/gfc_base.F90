@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Base
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017-05-19 (started 2016-02-17)
+!REVISION: 2017-06-15 (started 2016-02-17)
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -119,6 +119,7 @@
 #endif
          contains
           procedure, public:: construct_base=>ContElemConstruct !constructs a new container element, either by reference or by value
+          procedure, public:: construct_base_ref=>ContElemConstructRef !constructs a new container element by reference only from a pointer
           procedure, public:: destruct=>ContElemDestruct        !destructs an existing container element (releases memory occupied by its value)
           procedure, public:: get_value=>ContElemGetValue       !returns a pointer to the element value (unlimited polymorphic)
           procedure, public:: is_empty=>ContElemIsEmpty         !returns TRUE if the element of the container is empty, FALSE otherwise
@@ -270,6 +271,7 @@
         end interface
 !VISIBILITY:
         private ContElemConstruct
+        private ContElemConstructRef
         private ContElemDestruct
         private ContElemGetValue
         private ContElemIsEmpty
@@ -305,11 +307,7 @@
 !as well as an element pointed to by a container iterator.
          implicit none
          class(gfc_cont_elem_t), intent(inout):: this  !inout: element of a container
-#ifdef ARG_PTR
-         class(*), pointer, intent(in):: obj           !in: value to be stored in this element
-#else
          class(*), target, intent(in):: obj            !in: value to be stored in this element
-#endif
          integer(INTD), intent(out), optional:: ierr   !out: error code (0:success)
          logical, intent(in), optional:: assoc_only    !in: if TRUE, <obj> will be stored by reference, otherwise by value (default)
 #ifdef NO_GNU
@@ -382,6 +380,48 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine ContElemConstruct
+!------------------------------------------------------------
+        subroutine ContElemConstructRef(this,obj,ierr,locked)
+!Constructs the base part of the element of a container (sets its value).
+!The constructor is allowed to construct the value of a boundary element
+!as well as an element pointed to by a container iterator.
+         implicit none
+         class(gfc_cont_elem_t), intent(inout):: this  !inout: element of a container
+         class(*), pointer, intent(in):: obj           !in: value to be stored in this element
+         integer(INTD), intent(out), optional:: ierr   !out: error code (0:success)
+         logical, intent(in), optional:: locked        !in: if TRUE, the container element will be assumed already locked (defaults to FALSE)
+         integer(INTD):: errc
+         logical:: lckd,lck
+
+         errc=GFC_SUCCESS
+         if(present(locked)) then; lckd=locked; else; lckd=.FALSE.; endif; lck=lckd
+         if(this%is_empty()) then
+          if(.not.lck) lck=(this%in_use(errc,set_lock=.TRUE.,report_refs=.FALSE.).eq.GFC_FALSE)
+          if(lck) then
+           if(errc.eq.GFC_SUCCESS) then
+            if(.not.associated(this%value_p)) then
+             this%value_p=>obj
+             this%alloc=GFC_FALSE
+            else
+             errc=GFC_ELEM_NOT_EMPTY
+            endif
+           endif
+           if(.not.lckd) then
+            if(errc.eq.GFC_SUCCESS) then
+             call this%release_lock(errc)
+            else
+             call this%release_lock()
+            endif
+           endif
+          else
+           if(errc.eq.GFC_SUCCESS) errc=GFC_IN_USE
+          endif
+         else
+          errc=GFC_ELEM_NOT_EMPTY
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine ContElemConstructRef
 !-----------------------------------------------------------
         subroutine ContElemDestruct(this,ierr,dtor_f,locked)
 !Destructs the value of an element of a container (not the element itself).
