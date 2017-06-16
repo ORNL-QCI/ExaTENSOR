@@ -1,6 +1,6 @@
 !Domain-specific virtual processor (DSVP): Abstract base module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/06/12
+!REVISION: 2017/06/16
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -116,13 +116,18 @@
         integer(INTD), parameter, public:: DS_INSTR_OUTPUT_WAIT=8   !waiting for the (remote) output operands to be uploaded back
         integer(INTD), parameter, public:: DS_INSTR_RETIRED=9       !instruction retired (all temporary resources have been released)
 !DERIVED TYPES:
+ !Domain-specific resource:
+        type, abstract, public:: ds_resrc_t
+         contains
+         procedure(ds_resrc_query_i), deferred, public:: is_empty  !returns TRUE if the resource is empty, FALSE otherwise
+        end type ds_resrc_t
  !Domain-specific operand:
         type, abstract, public:: ds_oprnd_t
          integer(INTD), private:: stat=DS_OPRND_EMPTY              !current status of the domain-specific operand: {DS_OPRND_EMPTY,DS_OPRND_DEFINED,DS_OPRND_PRESENT}
          integer(INTD), private:: in_route=DS_OPRND_NO_COMM        !communication status: {DS_OPRND_NO_COMM,DS_OPRND_FETCHING,DS_OPRND_UPLOADING}
          contains
           procedure(ds_oprnd_query_i), deferred, public:: is_remote  !checks whether the domain-specific operand is local or remote
-          procedure(ds_oprnd_self_i), deferred, public:: acquire_rsc !explicitly acquires local resources for the domain-specific operand
+          procedure(ds_oprnd_ares_i), deferred, public:: acquire_rsc !explicitly acquires local resources for the domain-specific operand
           procedure(ds_oprnd_self_i), deferred, public:: prefetch    !starts prefetching a remote domain-specific operand (acquires local resources!)
           procedure(ds_oprnd_self_i), deferred, public:: upload      !starts uploading the domain-specific operand to its remote location
           procedure(ds_oprnd_sync_i), deferred, public:: sync        !synchronizes the currently pending communication on the domain-specific operand (either test or wait)
@@ -216,6 +221,13 @@
 !INTERFACES:
  !Abstract:
         abstract interface
+  !ds_resrc_t:
+         function ds_resrc_query_i(this) result(ans)
+          import:: ds_resrc_t
+          implicit none
+          logical:: ans                               !out: answer
+          class(ds_resrc_t), intent(in):: this        !in: domain-specific resource
+         end function ds_resrc_query_i
   !ds_oprnd_t:
    !self:
          subroutine ds_oprnd_self_i(this,ierr)
@@ -232,6 +244,14 @@
           class(ds_oprnd_t), intent(in):: this        !in: domain-specific operand
           integer(INTD), intent(out), optional:: ierr !out: error code
          end function ds_oprnd_query_i
+   !resource:
+         subroutine ds_oprnd_ares_i(this,resource,ierr)
+          import:: ds_oprnd_t,ds_resrc_t,INTD
+          implicit none
+          class(ds_oprnd_t), intent(in):: this                 !in: domain-specific operand
+          class(ds_resrc_t), pointer, intent(inout):: resource !inout: domain-specific resource
+          integer(INTD), intent(out), optional:: ierr          !out: error code
+         end subroutine ds_oprnd_ares_i
    !sync:
          function ds_oprnd_sync_i(this,ierr,wait) result(res)
           import:: ds_oprnd_t,INTD

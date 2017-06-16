@@ -85,16 +85,16 @@
         integer(INTD), parameter, public:: TAVP_INSTR_CONTRACT=116 !tensot contraction (also includes tensor product, tensor addition, and tensor scaling)
 !TYPES:
  !Tensor resource (local resource):
-        type, public:: tens_resource_t
+        type, extends(ds_resrc_t), public:: tens_resrc_t
          type(C_PTR), private:: base_addr=C_NULL_PTR   !local buffer address for tensor body storage
          integer(C_SIZE_T), private:: bytes=0_C_SIZE_T !size of the tensor body storage buffer in bytes
          logical, private:: pinned=.FALSE.             !whether or not the buffer is pinned
          integer(C_INT), private:: dev_id=DEV_NULL     !flat device id
          contains
-          procedure, public:: is_empty=>TensResourceIsEmpty               !returns TRUE of the tensor resource is empty (unallocated)
-          procedure, public:: allocate_buffer=>TensResourceAllocateBuffer !allocates a local buffer for tensor body storage
-          procedure, public:: free_buffer=>TensResourceFreeBuffer         !frees the local buffer
-        end type tens_resource_t
+          procedure, public:: is_empty=>TensResrcIsEmpty               !returns TRUE of the tensor resource is empty (unallocated)
+          procedure, public:: allocate_buffer=>TensResrcAllocateBuffer !allocates a local buffer for tensor body storage
+          procedure, public:: free_buffer=>TensResrcFreeBuffer         !frees the local buffer
+        end type tens_resrc_t
  !Tensor operand:
         type, extends(ds_oprnd_t), public:: tens_oprnd_t
          class(tens_rcrsv_t), pointer, private:: tensor=>NULL() !pointer to a recursive tensor
@@ -151,10 +151,10 @@
         integer(INT_MPI), public:: role_size=0              !size of the role specific MPI communicator
         integer(INT_MPI), public:: role_rank=-1             !process rank within the role specific MPI communicator
 !VISIBILITY:
- !tens_resource_t:
-        private TensResourceIsEmpty
-        private TensResourceAllocateBuffer
-        private TensResourceFreeBuffer
+ !tens_resrc_t:
+        private TensResrcIsEmpty
+        private TensResrcAllocateBuffer
+        private TensResrcFreeBuffer
  !tens_oprnd_t:
         private TensOprndCtor
         private TensOprndIsRemote
@@ -184,21 +184,21 @@
 #endif
        contains
 !IMPLEMENTATION:
-!tens_resource_t]=====================================
-        function TensResourceIsEmpty(this) result(ans)
+!tens_resrc_t]=====================================
+        function TensResrcIsEmpty(this) result(ans)
 !Returns TRUE if the tensor resource is empty.
          implicit none
-         logical:: ans                             !out: answer
-         class(tens_resource_t), intent(in):: this !in: tensor resource
+         logical:: ans                          !out: answer
+         class(tens_resrc_t), intent(in):: this !in: tensor resource
 
          ans=(this%bytes.le.0_C_SIZE_T)
          return
-        end function TensResourceIsEmpty
-!------------------------------------------------------------------------------
-        subroutine TensResourceAllocateBuffer(this,bytes,ierr,in_buffer,dev_id)
+        end function TensResrcIsEmpty
+!---------------------------------------------------------------------------
+        subroutine TensResrcAllocateBuffer(this,bytes,ierr,in_buffer,dev_id)
 !Allocates local memory either from a system or from a custom buffer.
          implicit none
-         class(tens_resource_t), intent(inout):: this !inout: tensor resource
+         class(tens_resrc_t), intent(inout):: this    !inout: tensor resource
          integer(INTL), intent(in):: bytes            !in: size in bytes
          integer(INTD), intent(out), optional:: ierr  !out: error code
          logical, intent(in), optional:: in_buffer    !in: if TRUE the memory will be allocated from a custom buffer, FALSE from the system
@@ -229,12 +229,12 @@
          endif
          if(present(ierr)) ierr=errc
          return
-        end subroutine TensResourceAllocateBuffer
-!---------------------------------------------------
-        subroutine TensResourceFreeBuffer(this,ierr)
+        end subroutine TensResrcAllocateBuffer
+!------------------------------------------------
+        subroutine TensResrcFreeBuffer(this,ierr)
 !Frees the tensor resource buffer.
          implicit none
-         class(tens_resource_t), intent(inout):: this !inout: tensor resource
+         class(tens_resrc_t), intent(inout):: this    !inout: tensor resource
          integer(INTD), intent(out), optional:: ierr  !out: error code
          integer(INTD):: errc
 
@@ -250,7 +250,7 @@
          endif
          if(present(ierr)) ierr=errc
          return
-        end subroutine TensResourceFreeBuffer
+        end subroutine TensResrcFreeBuffer
 ![tens_oprnd_t]===================================
         subroutine TensOprndCtor(this,tensor,ierr)
 !Constructs a tensor operand.
@@ -295,7 +295,7 @@
          class(tens_oprnd_t), intent(in):: this      !in: tensor operand
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
-         integer(INT_MPI):: host_proc_rank
+         integer(INT_MPI):: host_proc_rank,mpi_comm,my_rank
          class(tens_body_t), pointer:: body_p
          class(tens_layout_t), pointer:: layout_p
          class(DataDescr_t), pointer:: descr_p
@@ -307,29 +307,39 @@
           if(errc.eq.TEREC_SUCCESS.and.associated(layout_p)) then
            descr_p=>layout_p%get_data_descr(errc)
            if(errc.eq.TEREC_SUCCESS.and.associated(descr_p)) then
-            if(descr_p%is_set(errc,host_proc_rank)) then
-             res=.not.(host_proc_rank.eq.impir)
+            if(descr_p%is_set(errc,host_proc_rank,mpi_comm)) then
+             if(errc.eq.0) then
+              call MPI_Comm_Rank(mpi_comm,my_rank,errc)
+              if(errc.eq.0) then
+               res=.not.(host_proc_rank.eq.my_rank)
+              else
+               errc=-1
+              endif
+             else
+              errc=-2
+             endif
             else
-             errc=-1
+             errc=-3
             endif
            else
-            errc=-2
+            errc=-4
            endif
           else
-           errc=-3
+           errc=-5
           endif
          else
-          errc=-4
+          errc=-6
          endif
          if(present(ierr)) ierr=errc
          return
         end function TensOprndIsRemote
-!------------------------------------------------
-        subroutine TensOprndAcquireRsc(this,ierr)
+!---------------------------------------------------------
+        subroutine TensOprndAcquireRsc(this,resource,ierr)
 !Acquires local resources for the remote tensor operand.
          implicit none
-         class(tens_oprnd_t), intent(inout):: this   !inout: tensor operand
-         integer(INTD), intent(out), optional:: ierr !out: error code
+         class(tens_oprnd_t), intent(in):: this               !inout: tensor operand
+         class(ds_resrc_t), pointer, intent(inout):: resource !inout: tensor resource (tens_resrc_t)
+         integer(INTD), intent(out), optional:: ierr          !out: error code
          integer(INTD):: errc
          integer(INTL):: buf_size
          integer(INT_MPI):: host_proc_rank
@@ -344,29 +354,33 @@
           if(errc.eq.TEREC_SUCCESS.and.associated(layout_p)) then
            descr_p=>layout_p%get_data_descr(errc)
            if(errc.eq.TEREC_SUCCESS.and.associated(descr_p)) then
-            if(descr_p%is_set(errc,host_proc_rank)) then
-             if(host_proc_rank.ne.impir) then !remote tensor operand
+            if(descr_p%is_set(errc)) then
+             if(errc.eq.0) then
               buf_size=descr_p%data_size(errc)
               if(errc.eq.0) then
-               !`Allocate local buffer
+               select type(resource)
+               class is(tens_resrc_t)
+                call resource%allocate_buffer(buf_size,errc); if(errc.ne.0) errc=-1
+               class default
+                errc=-2
+               end select
               else
-               errc=-1
+               errc=-3
               endif
              else
-              if(VERBOSE)&
-                &write(CONS_OUT,'("WARNING(virta:tens_oprnd_t:acquire_rsc): Attempt to acquire resources for a local operand!")')
+              errc=-4
              endif
             else
-             errc=-2
+             errc=-5
             endif
            else
-            errc=-3
+            errc=-6
            endif
           else
-           errc=-4
+           errc=-7
           endif
          else
-          errc=-5
+          errc=-8
          endif
          if(present(ierr)) ierr=errc
          return
