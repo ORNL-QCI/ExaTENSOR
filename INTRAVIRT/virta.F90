@@ -61,27 +61,40 @@
         real(8), public:: EXA_FLOPS_HEAVY=1d12  !minimal number of Flops to consider the operation as heavy-cost
         real(8), public:: EXA_COST_TO_SIZE=1d2  !minimal cost (Flops) to size (Words) ratio to consider the operation compute intensive
  !Tensor algebra virtual processor (TAVP):
-  !Tensor instruction code (opcode), must be non-negative (consult TAProL spec):
-        integer(INTD), parameter, public:: TENSOR_INSTR_NOOP=DS_INSTR_NOOP !no operation (empty instruction)
-        integer(INTD), parameter, public:: TENSOR_INSTR_COMM=0      !tensor communication (get/put/accumulate)
-        integer(INTD), parameter, public:: TENSOR_INSTR_INIT=1      !tensor initialization (assignement to a value)
-        integer(INTD), parameter, public:: TENSOR_INSTR_NORM1=2     !tensor 1-norm
-        integer(INTD), parameter, public:: TENSOR_INSTR_NORM2=3     !tensor 2-norm
-        integer(INTD), parameter, public:: TENSOR_INSTR_MIN=4       !tensor min element
-        integer(INTD), parameter, public:: TENSOR_INSTR_MAX=5       !tensor max element
-        integer(INTD), parameter, public:: TENSOR_INSTR_FOLD=6      !tensor dimension folding
-        integer(INTD), parameter, public:: TENSOR_INSTR_UNFOLD=7    !tensor dimension unfolding
-        integer(INTD), parameter, public:: TENSOR_INSTR_SCALE=8     !tensor scaling (multiplication by a number)
-        integer(INTD), parameter, public:: TENSOR_INSTR_SLICE=9     !tensor slicing (taking a slice of a tensor)
-        integer(INTD), parameter, public:: TENSOR_INSTR_INSERT=10   !tensor insertion (inserting a tensor slice in a tensor)
-        integer(INTD), parameter, public:: TENSOR_INSTR_PERMUTE=11  !tensor dimension permutation (in-place)
-        integer(INTD), parameter, public:: TENSOR_INSTR_COPY=12     !tensor copy (copying a tensor into another tensor with an optional index permutation)
-        integer(INTD), parameter, public:: TENSOR_INSTR_ADD=13      !tensor addition
-        integer(INTD), parameter, public:: TENSOR_INSTR_TRACE=14    !tensor trace (tracing over some/all tensor indices)
-        integer(INTD), parameter, public:: TENSOR_INSTR_PRODUCT=15  !tensor direct (Cartesian) product
-        integer(INTD), parameter, public:: TENSOR_INSTR_CONTRACT=16 !tensot contraction (also includes tensor product, tensor addition, and tensor scaling)
-        integer(INTD), parameter, public:: TENSOR_ISA_SIZE=17       !total number of non-negative tensor instruction codes
+  !TAVP instruction code (opcode), must be non-negative (consult TAProL spec):
+        integer(INTD), parameter, public:: TAVP_INSTR_NOOP=DS_INSTR_NOOP !no operation (empty instruction)
+        integer(INTD), parameter, public:: TAVP_INSTR_STOP=0       !stop TAVP
+        integer(INTD), parameter, public:: TAVP_INSTR_PAUSE=1      !pause TAVP execution
+        integer(INTD), parameter, public:: TAVP_INSTR_RESUME=2     !resume TAVP execution
+        integer(INTD), parameter, public:: TAVP_INSTR_COMM=100     !tensor communication (get/put/accumulate)
+        integer(INTD), parameter, public:: TAVP_INSTR_INIT=101     !tensor initialization (assignement to a value)
+        integer(INTD), parameter, public:: TAVP_INSTR_NORM1=102    !tensor 1-norm
+        integer(INTD), parameter, public:: TAVP_INSTR_NORM2=103    !tensor 2-norm
+        integer(INTD), parameter, public:: TAVP_INSTR_MIN=104      !tensor min element
+        integer(INTD), parameter, public:: TAVP_INSTR_MAX=105      !tensor max element
+        integer(INTD), parameter, public:: TAVP_INSTR_FOLD=106     !tensor dimension folding
+        integer(INTD), parameter, public:: TAVP_INSTR_UNFOLD=107   !tensor dimension unfolding
+        integer(INTD), parameter, public:: TAVP_INSTR_SLICE=108    !tensor slicing (taking a slice of a tensor)
+        integer(INTD), parameter, public:: TAVP_INSTR_INSERT=109   !tensor insertion (inserting a tensor slice in a tensor)
+        integer(INTD), parameter, public:: TAVP_INSTR_PERMUTE=110  !tensor dimension permutation (in-place)
+        integer(INTD), parameter, public:: TAVP_INSTR_COPY=111     !tensor copy (copying a tensor into another tensor with an optional index permutation)
+        integer(INTD), parameter, public:: TAVP_INSTR_SCALE=112    !tensor scaling (multiplication by a number)
+        integer(INTD), parameter, public:: TAVP_INSTR_ADD=113      !tensor addition
+        integer(INTD), parameter, public:: TAVP_INSTR_TRACE=114    !tensor trace (tracing over some/all tensor indices)
+        integer(INTD), parameter, public:: TAVP_INSTR_PRODUCT=115  !tensor direct (Cartesian) product
+        integer(INTD), parameter, public:: TAVP_INSTR_CONTRACT=116 !tensot contraction (also includes tensor product, tensor addition, and tensor scaling)
 !TYPES:
+ !Tensor resource (local resource):
+        type, public:: tens_resource_t
+         type(C_PTR), private:: base_addr=C_NULL_PTR   !local buffer address for tensor body storage
+         integer(C_SIZE_T), private:: bytes=0_C_SIZE_T !size of the tensor body storage buffer in bytes
+         logical, private:: pinned=.FALSE.             !whether or not the buffer is pinned
+         integer(C_INT), private:: dev_id=DEV_NULL     !flat device id
+         contains
+          procedure, public:: is_empty=>TensResourceIsEmpty               !returns TRUE of the tensor resource is empty (unallocated)
+          procedure, public:: allocate_buffer=>TensResourceAllocateBuffer !allocates a local buffer for tensor body storage
+          procedure, public:: free_buffer=>TensResourceFreeBuffer         !frees the local buffer
+        end type tens_resource_t
  !Tensor operand:
         type, extends(ds_oprnd_t), public:: tens_oprnd_t
          class(tens_rcrsv_t), pointer, private:: tensor=>NULL() !pointer to a recursive tensor
@@ -138,6 +151,10 @@
         integer(INT_MPI), public:: role_size=0              !size of the role specific MPI communicator
         integer(INT_MPI), public:: role_rank=-1             !process rank within the role specific MPI communicator
 !VISIBILITY:
+ !tens_resource_t:
+        private TensResourceIsEmpty
+        private TensResourceAllocateBuffer
+        private TensResourceFreeBuffer
  !tens_oprnd_t:
         private TensOprndCtor
         private TensOprndIsRemote
@@ -167,6 +184,73 @@
 #endif
        contains
 !IMPLEMENTATION:
+!tens_resource_t]=====================================
+        function TensResourceIsEmpty(this) result(ans)
+!Returns TRUE if the tensor resource is empty.
+         implicit none
+         logical:: ans                             !out: answer
+         class(tens_resource_t), intent(in):: this !in: tensor resource
+
+         ans=(this%bytes.le.0_C_SIZE_T)
+         return
+        end function TensResourceIsEmpty
+!------------------------------------------------------------------------------
+        subroutine TensResourceAllocateBuffer(this,bytes,ierr,in_buffer,dev_id)
+!Allocates local memory either from a system or from a custom buffer.
+         implicit none
+         class(tens_resource_t), intent(inout):: this !inout: tensor resource
+         integer(INTL), intent(in):: bytes            !in: size in bytes
+         integer(INTD), intent(out), optional:: ierr  !out: error code
+         logical, intent(in), optional:: in_buffer    !in: if TRUE the memory will be allocated from a custom buffer, FALSE from the system
+         integer(INTD), intent(in), optional:: dev_id !in: flat device id (defaults to Host)
+         integer(INTD):: errc
+         integer(C_INT):: in_buf,dev
+         type(C_PTR):: addr
+
+         errc=0
+         if(this%is_empty()) then
+          if(bytes.gt.0_INTL) then
+           in_buf=NOPE; if(present(in_buffer)) then; if(in_buffer) in_buf=YEP; endif
+           dev=talsh_flat_dev_id(DEV_HOST,0); if(present(dev_id)) dev=dev_id
+           errc=mem_allocate(dev,int(bytes,C_SIZE_T),in_buf,addr)
+           if(errc.eq.0) then
+            this%base_addr=addr
+            this%bytes=bytes
+            this%pinned=(in_buf.ne.NOPE)
+            this%dev_id=dev
+           else
+            errc=-1
+           endif
+          else
+           errc=-2
+          endif
+         else
+          errc=-3
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensResourceAllocateBuffer
+!---------------------------------------------------
+        subroutine TensResourceFreeBuffer(this,ierr)
+!Frees the tensor resource buffer.
+         implicit none
+         class(tens_resource_t), intent(inout):: this !inout: tensor resource
+         integer(INTD), intent(out), optional:: ierr  !out: error code
+         integer(INTD):: errc
+
+         errc=0
+         if(.not.this%is_empty()) then !free only allocated resources
+          errc=mem_free(this%dev_id,this%base_addr)
+          if(errc.eq.0) then
+           this%base_addr=C_NULL_PTR
+           this%bytes=0_C_SIZE_T
+           this%pinned=.FALSE.
+           this%dev_id=DEV_NULL
+          endif
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensResourceFreeBuffer
 ![tens_oprnd_t]===================================
         subroutine TensOprndCtor(this,tensor,ierr)
 !Constructs a tensor operand.
