@@ -1,7 +1,7 @@
 !PROJECT Q-FORCE: Massively Parallel Quantum Many-Body Methodology on Heterogeneous HPC systems.
 !BASE: ExaTensor: Massively Parallel Tensor Algebra Virtual Processor for Heterogeneous HPC systems.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/06/15
+!REVISION: 2017/06/16
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -46,13 +46,18 @@
 ! - device_id = [MAX_GPUS_PER_NODE+MAX_MICS_PER_NODE+1:MAX_GPUS_PER_NODE+MAX_MICS_PER_NODE+MAX_AMDS_PER_NODE]: AMD GPUs;
        program main
         use exatensor
+        use service_mpi
         implicit none
-        integer:: ierr
+        integer:: ierr,my_rank
 
-        ierr=exatns_start()
-        if(ierr.ne.EXA_SUCCESS) then
-         write(*,*) 'ExaTENSOR terminated with an error: ',ierr
-        else
-         ierr=exatns_stop()
-        endif
+!Application initializes MPI:
+        call MPI_Init(ierr)
+        call MPI_Comm_rank(MPI_COMM_WORLD,my_rank,ierr)
+!Application runs ExaTENSOR within MPI_COMM_WORLD:
+        ierr=exatns_start(MPI_COMM_WORLD)
+        if(ierr.ne.EXA_SUCCESS) write(*,*) 'Process ',my_rank,' terminated with error ',ierr
+!Master process stop ExaTENSOR:
+        if(my_rank.eq.0.and.ierr.eq.0) ierr=exatns_stop()
+!Application finalizes MPI:
+        call MPI_Finalize(ierr)
        end program main

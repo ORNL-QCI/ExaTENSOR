@@ -3,7 +3,7 @@
 !This module provides basic infrastructure for ExaTENSOR, tensor algebra virtual processor (TAVP).
 !The logical and numerical tensor algebra virtual processors (L-TAVP, N-TAVP) derive from this module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/06/15
+!REVISION: 2017/06/16
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -29,7 +29,7 @@
         use pack_prim                            !object packing/unpacking primitives
         use distributed                          !distributed one-sided communication layer
         use service_mpi                          !basic MPI service
-        use hardware                             !hardware abstraction
+        use hardware                             !hardware abstraction and aggregation
         use subspaces                            !hierarchical vector space representation
         use tensor_recursive                     !recursive (hierarchical) tensors
         use dsvp_base                            !abstract domain-specific virtual processor (DSVP)
@@ -51,9 +51,9 @@
         integer(INTD), parameter, public:: EXA_ERR_UNABLE_COMPLETE=DSVP_ERR_UNABLE_COMPLETE !unable to complete
  !Tensor-algebra virtual processor kinds (roles):
         integer(INTD), parameter, public:: EXA_NO_ROLE=DSVP_NO_KIND !undefined role
-        integer(INTD), parameter, public:: EXA_PARSER=0             !domain-specific parser process (not a TAVP)
-        integer(INTD), parameter, public:: EXA_WORKER=1             !worker (numeric) process (TAVP)
-        integer(INTD), parameter, public:: EXA_MANAGER=2            !manager (logic) process (TAVP)
+        integer(INTD), parameter, public:: EXA_DRIVER=0             !domain-specific driver process (not a TAVP)
+        integer(INTD), parameter, public:: EXA_MANAGER=1            !manager (logic) process (TAVP)
+        integer(INTD), parameter, public:: EXA_WORKER=2             !worker (numeric) process (TAVP)
         integer(INTD), parameter, public:: EXA_HELPER=3             !helper (auxiliary) process (TAVP)
         integer(INTD), public:: EXA_MAX_WORK_GROUP_SIZE=64 !maximal size of a work group (max number of workers per manager)
  !Elementary tensor instruction (ETI) granularity classification:
@@ -133,10 +133,10 @@
 #endif
 !DATA:
  !MPI process specialization (TAVP role):
-        integer(INT_MPI), public:: process_role=EXA_NO_ROLE !TAVP role
-        integer(INT_MPI), public:: group_comm=MPI_COMM_NULL !role specific MPI communicator
-        integer(INT_MPI), public:: group_size=0             !size of the role specific MPI communicator
-        integer(INT_MPI), public:: group_rank=-1            !process rank within the role specific MPI communicator
+        integer(INT_MPI), public:: process_role=EXA_NO_ROLE !MPI process role
+        integer(INT_MPI), public:: role_comm=MPI_COMM_NULL  !role specific MPI communicator
+        integer(INT_MPI), public:: role_size=0              !size of the role specific MPI communicator
+        integer(INT_MPI), public:: role_rank=-1             !process rank within the role specific MPI communicator
 !VISIBILITY:
  !tens_oprnd_t:
         private TensOprndCtor

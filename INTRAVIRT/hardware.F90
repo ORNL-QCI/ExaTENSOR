@@ -1,6 +1,6 @@
 !Hardware abstraction module
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/06/15
+!REVISION: 2017/06/16
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -151,7 +151,7 @@
          close(10)
 #endif
          this%num_phys_nodes=num_procs; if(this%num_phys_nodes.le.0) errc=-13
-         write(*,'(i8," physical nodes -> ")',ADVANCE='NO') this%num_phys_nodes
+         !write(CONS_OUT,'(i8," physical nodes -> ")',ADVANCE='NO') this%num_phys_nodes
 !Build the hierarchical virtual computing system representation for <num_phys_nodes> nodes:
          this%num_virt_nodes=0_INTL
          if(errc.eq.0) then
@@ -172,7 +172,7 @@
              if(errc.eq.0) then
               if(this%num_phys_nodes.gt.1) then
                call segs(1)%set(0_INTL,this%num_phys_nodes,errc) !full range of physical nodes: (0:N] = [1:N]
-               !write(*,*)'initial node range: ',segs(1)%lower_bound(),segs(1)%upper_bound() !debug
+               !write(CONS_OUT,*)'initial node range: ',segs(1)%lower_bound(),segs(1)%upper_bound() !debug
                if(errc.eq.0) then
                 errc=vt_it%append(segs(1))
                 if(errc.eq.GFC_SUCCESS) then
@@ -196,7 +196,7 @@
                     if(m.gt.1) then
                      call rp%split(m,segs,errc); if(errc.ne.0) exit tloop
                      do l=1,m
-                      !write(*,*)'adding new subrange: ',segs(l)%lower_bound(),segs(l)%upper_bound() !debug
+                      !write(CONS_OUT,*)'adding new subrange: ',segs(l)%lower_bound(),segs(l)%upper_bound() !debug
                       if(segs(l)%length().gt.1_INTL) then !has to be an aggregate to be added as a new virtual node
                        errc=vt_it%append(segs(l)); if(errc.ne.GFC_SUCCESS) exit tloop
                        errc=vt_it%add_leaf(this%num_virt_nodes,no_move=.TRUE.); if(errc.ne.GFC_SUCCESS) exit tloop
@@ -251,10 +251,10 @@
           endif
          endif
          if(errc.eq.0) then
-          write(*,'(i8," virtual nodes. ")',ADVANCE='NO') this%num_virt_nodes
+          !write(CONS_OUT,'(i8," virtual nodes. ")',ADVANCE='NO') this%num_virt_nodes
           !call this%print_it() !debug
          else
-          write(*,'(" Error ",i4,1x)',ADVANCE='NO') errc
+          !write(CONS_OUT,'(" Error ",i4,1x)',ADVANCE='NO') errc
           call comp_system_dtor(this)
          endif
          if(present(ierr)) ierr=errc

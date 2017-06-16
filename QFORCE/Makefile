@@ -265,7 +265,7 @@ $(NAME): $(OBJS) $(MY_LIB)
 	mkdir -p ./OBJ
 	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(FFLAGS) qforce.F90 -o ./OBJ/qforce.o
 
-./OBJ/main.o: main.F90 ./OBJ/qforce.o ../INTERVIRT/OBJ/exatensor.o
+./OBJ/main.o: main.F90 ./OBJ/qforce.o ../INTERVIRT/OBJ/exatensor.o ../DDSS/OBJ/service_mpi.o
 	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(FFLAGS) main.F90 -o ./OBJ/main.o
 
 
