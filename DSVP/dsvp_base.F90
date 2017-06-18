@@ -1,6 +1,6 @@
 !Domain-specific virtual processor (DSVP): Abstract base module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/06/16
+!REVISION: 2017/06/18
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -127,7 +127,7 @@
          integer(INTD), private:: in_route=DS_OPRND_NO_COMM        !communication status: {DS_OPRND_NO_COMM,DS_OPRND_FETCHING,DS_OPRND_UPLOADING}
          contains
           procedure(ds_oprnd_query_i), deferred, public:: is_remote  !checks whether the domain-specific operand is local or remote
-          procedure(ds_oprnd_ares_i), deferred, public:: acquire_rsc !explicitly acquires local resources for the domain-specific operand
+          procedure(ds_oprnd_self_i), deferred, public:: acquire_rsc !explicitly acquires local resources for the domain-specific operand
           procedure(ds_oprnd_self_i), deferred, public:: prefetch    !starts prefetching a remote domain-specific operand (acquires local resources!)
           procedure(ds_oprnd_self_i), deferred, public:: upload      !starts uploading the domain-specific operand to its remote location
           procedure(ds_oprnd_sync_i), deferred, public:: sync        !synchronizes the currently pending communication on the domain-specific operand (either test or wait)
@@ -139,6 +139,7 @@
           procedure, public:: mark_empty=>DSOprndMarkEmpty             !marks the domain-specific operand inactive (empty), local resources are released
           procedure, public:: mark_delivered=>DSOprndMarkDelivered     !marks the domain-specific operand locally available (present)
           procedure, public:: mark_undelivered=>DSOprndMarkUndelivered !marks the domain-specific operand locally unavailable (but defined), local resources are released
+          procedure, public:: get_comm_stat=>DSOprndGetCommStat        !gets the communication status
           procedure, public:: set_comm_stat=>DSOprndSetCommStat        !sets the communication status
         end type ds_oprnd_t
  !Wrapped reference to a domain-specific operand:
@@ -244,14 +245,6 @@
           class(ds_oprnd_t), intent(in):: this        !in: domain-specific operand
           integer(INTD), intent(out), optional:: ierr !out: error code
          end function ds_oprnd_query_i
-   !resource:
-         subroutine ds_oprnd_ares_i(this,resource,ierr)
-          import:: ds_oprnd_t,ds_resrc_t,INTD
-          implicit none
-          class(ds_oprnd_t), intent(in):: this                 !in: domain-specific operand
-          class(ds_resrc_t), pointer, intent(inout):: resource !inout: domain-specific resource
-          integer(INTD), intent(out), optional:: ierr          !out: error code
-         end subroutine ds_oprnd_ares_i
    !sync:
          function ds_oprnd_sync_i(this,ierr,wait) result(res)
           import:: ds_oprnd_t,INTD
@@ -341,6 +334,7 @@
         private DSOprndMarkEmpty
         private DSOprndMarkDelivered
         private DSOprndMarkUndelivered
+        private DsOprndGetCommStat
         private DSOprndSetCommStat
  !ds_instr_t:
         private DSInstrIsEmpty
@@ -503,6 +497,18 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine DSOprndMarkUndelivered
+!---------------------------------------------------------------
+        function DSOprndGetCommStat(this,ierr) result(comm_stat)
+!Gets the current communication status on the domain-specific operand.
+         implicit none
+         integer(INTD):: comm_stat                   !out: current communication status
+         class(ds_oprnd_t), intent(in):: this        !in: domain-specific operand
+         integer(INTD), intent(out), optional:: ierr !out: error code
+
+         comm_stat=this%stat
+         if(present(ierr)) ierr=DSVP_SUCCESS
+         return
+        end function DSOprndGetCommStat
 !---------------------------------------------------
         subroutine DSOprndSetCommStat(this,sts,ierr)
 !Sets the communication status on the domain-specific operand.

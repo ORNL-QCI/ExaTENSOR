@@ -3,7 +3,7 @@
 !This module provides basic infrastructure for ExaTENSOR, tensor algebra virtual processor (TAVP).
 !The logical and numerical tensor algebra virtual processors (L-TAVP, N-TAVP) derive from this module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/06/16
+!REVISION: 2017/06/18
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -90,14 +90,18 @@
          integer(C_SIZE_T), private:: bytes=0_C_SIZE_T !size of the tensor body storage buffer in bytes
          logical, private:: pinned=.FALSE.             !whether or not the buffer is pinned
          integer(C_INT), private:: dev_id=DEV_NULL     !flat device id
+         integer(C_INT), private:: ref_count=0         !reference count
          contains
           procedure, public:: is_empty=>TensResrcIsEmpty               !returns TRUE of the tensor resource is empty (unallocated)
           procedure, public:: allocate_buffer=>TensResrcAllocateBuffer !allocates a local buffer for tensor body storage
           procedure, public:: free_buffer=>TensResrcFreeBuffer         !frees the local buffer
+          procedure, private:: incr_ref_count=>TensResrcIncrRefCount   !increments the reference count
+          procedure, private:: decr_ref_count=>TensResrcDecrRefCount   !decrements the reference count
         end type tens_resrc_t
  !Tensor operand:
         type, extends(ds_oprnd_t), public:: tens_oprnd_t
-         class(tens_rcrsv_t), pointer, private:: tensor=>NULL() !pointer to a recursive tensor
+         class(tens_rcrsv_t), pointer, private:: tensor=>NULL()   !pointer to a recursive tensor
+         class(tens_resrc_t), pointer, private:: resource=>NULL() !pointer to the local tensor resource
          contains
           procedure, private:: TensOprndCtor                    !ctor
           generic, public:: tens_oprnd_ctor=>TensOprndCtor
@@ -155,6 +159,8 @@
         private TensResrcIsEmpty
         private TensResrcAllocateBuffer
         private TensResrcFreeBuffer
+        private TensResrcIncrRefCount
+        private TensResrcDecrRefCount
  !tens_oprnd_t:
         private TensOprndCtor
         private TensOprndIsRemote
@@ -251,13 +257,33 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensResrcFreeBuffer
-![tens_oprnd_t]===================================
-        subroutine TensOprndCtor(this,tensor,ierr)
-!Constructs a tensor operand.
+!---------------------------------------------
+        subroutine TensResrcIncrRefCount(this)
+!Increments the reference count.
          implicit none
-         class(tens_oprnd_t), intent(inout):: this         !inout: tensor operand
-         class(tens_rcrsv_t), pointer, intent(in):: tensor !in: tensor
-         integer(INTD), intent(out), optional:: ierr       !out: error code
+         class(tens_resrc_t), intent(inout):: this !inout: tensor resource
+
+         this%ref_count=this%ref_count+1
+         return
+        end subroutine TensResrcIncrRefCount
+!---------------------------------------------
+        subroutine TensResrcDecrRefCount(this)
+!Decrements the reference count.
+         implicit none
+         class(tens_resrc_t), intent(inout):: this !inout: tensor resource
+
+         this%ref_count=this%ref_count-1
+         return
+        end subroutine TensResrcDecrRefCount
+![tens_oprnd_t]=================================================
+        subroutine TensOprndCtor(this,tensor,tens_resource,ierr)
+!Constructs a tensor operand. The <tensor> must be set.
+!The associated tensor resource may still be empty.
+         implicit none
+         class(tens_oprnd_t), intent(inout):: this                   !inout: tensor operand
+         class(tens_rcrsv_t), pointer, intent(in):: tensor           !in: tensor
+         class(tens_resrc_t), pointer, intent(inout):: tens_resource !in: associated tensor resource (local), may still be empty
+         integer(INTD), intent(out), optional:: ierr                 !out: error code
          integer(INTD):: errc
 
          errc=0
@@ -267,22 +293,28 @@
             if(tensor%is_set(errc)) then
              if(errc.eq.TEREC_SUCCESS) then
               this%tensor=>tensor
-              call this%mark_active(errc)
-              if(errc.ne.DSVP_SUCCESS) errc=-1
+              if(associated(tens_resource)) then
+               call tens_resource%incr_ref_count()
+               this%resource=>tens_resource
+               call this%mark_active(errc)
+               if(errc.ne.DSVP_SUCCESS) errc=-1
+              else
+               errc=-2
+              endif
              else
-              errc=-2
+              errc=-3
              endif
             else
-             errc=-3
+             errc=-4
             endif
            else
-            errc=-4
+            errc=-5
            endif
           else
-           errc=-5
+           errc=-6
           endif
          else
-          errc=-6
+          errc=-7
          endif
          if(present(ierr)) ierr=errc
          return
@@ -333,13 +365,13 @@
          if(present(ierr)) ierr=errc
          return
         end function TensOprndIsRemote
-!---------------------------------------------------------
-        subroutine TensOprndAcquireRsc(this,resource,ierr)
+!------------------------------------------------
+        subroutine TensOprndAcquireRsc(this,ierr)
 !Acquires local resources for the remote tensor operand.
+!If the resources have already been allocated, does nothing.
          implicit none
-         class(tens_oprnd_t), intent(in):: this               !inout: tensor operand
-         class(ds_resrc_t), pointer, intent(inout):: resource !inout: tensor resource (tens_resrc_t)
-         integer(INTD), intent(out), optional:: ierr          !out: error code
+         class(tens_oprnd_t), intent(inout):: this   !inout: tensor operand
+         integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
          integer(INTL):: buf_size
          integer(INT_MPI):: host_proc_rank
@@ -357,37 +389,34 @@
             if(descr_p%is_set(errc)) then
              if(errc.eq.0) then
               buf_size=descr_p%data_size(errc)
-              if(errc.eq.0) then
-               select type(resource)
-               class is(tens_resrc_t)
-                call resource%allocate_buffer(buf_size,errc); if(errc.ne.0) errc=-1
-               class default
-                errc=-2
-               end select
+              if(errc.eq.0.and.buf_size.gt.0_INTL) then
+               if(this%resource%is_empty()) then
+                call this%resource%allocate_buffer(buf_size,errc); if(errc.ne.0) errc=-1
+               endif
               else
-               errc=-3
+               errc=-2
               endif
              else
-              errc=-4
+              errc=-3
              endif
             else
-             errc=-5
+             errc=-4
             endif
            else
-            errc=-6
+            errc=-5
            endif
           else
-           errc=-7
+           errc=-6
           endif
          else
-          errc=-8
+          errc=-7
          endif
          if(present(ierr)) ierr=errc
          return
         end subroutine TensOprndAcquireRsc
 !----------------------------------------------
         subroutine TensOprndPrefetch(this,ierr)
-!Starts prefetching the (remote) tensor operand.
+!Starts prefetching the (remote) tensor operand using the local tensor resource.
          implicit none
          class(tens_oprnd_t), intent(inout):: this   !inout: tensor operand
          integer(INTD), intent(out), optional:: ierr !out: error code
@@ -399,7 +428,7 @@
         end subroutine TensOprndPrefetch
 !--------------------------------------------
         subroutine TensOprndUpload(this,ierr)
-!Starts uploading the (remote) tensor operand.
+!Starts uploading the (remote) tensor operand from the local tensor resource.
          implicit none
          class(tens_oprnd_t), intent(inout):: this   !inout: tensor operand
          integer(INTD), intent(out), optional:: ierr !out: error code
@@ -425,13 +454,30 @@
         end function TensOprndSync
 !---------------------------------------------
         subroutine TensOprndRelease(this,ierr)
-!Release local resources occupied by the tensor operand.
+!Releases local tensor resources occupied by the tensor operand,
+!unless the reference count is non-zero.
          implicit none
          class(tens_oprnd_t), intent(inout):: this   !inout: tensor operand
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
+         logical:: delivered
 
          errc=0
+         if(this%is_active(errc)) then
+          if(errc.eq.DSVP_SUCCESS) then
+           if(this%get_comm_stat().ne.DS_OPRND_NO_COMM) then
+            delivered=this%sync(errc,wait=.TRUE.)
+            if(.not.delivered.or.errc.ne.DSVP_SUCCESS) errc=-1
+           endif
+           if(this%resource%ref_count.eq.1) then !only one tensor operand is associated with this resource
+            call this%resource%free_buffer(errc); if(errc.ne.0) errc=-2
+           endif
+          else
+           errc=-3
+          endif
+         else
+          if(errc.ne.DSVP_SUCCESS) errc=-4
+         endif
          if(present(ierr)) ierr=errc
          return
         end subroutine TensOprndRelease
@@ -447,13 +493,19 @@
          errc=0
          if(this%is_active(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
-           delivered=this%sync(errc,wait=.TRUE.)
-           if(.not.delivered.or.errc.ne.DSVP_SUCCESS) errc=-1
+           if(this%get_comm_stat().ne.DS_OPRND_NO_COMM) then
+            delivered=this%sync(errc,wait=.TRUE.)
+            if(.not.delivered.or.errc.ne.DSVP_SUCCESS) errc=-1
+           endif
            call this%mark_empty(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-2
+           call this%resource%decr_ref_count()
+           this%resource=>NULL()
            this%tensor=>NULL()
           else
            errc=-3
           endif
+         else
+          if(errc.ne.DSVP_SUCCESS) errc=-4
          endif
          if(present(ierr)) ierr=errc
          return

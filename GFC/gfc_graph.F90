@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Graph
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017/06/15
+!REVISION: 2017/06/18
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -516,7 +516,7 @@
          class(vert_link_refs_t), intent(in):: this  !in: vertex info
          class(graph_link_t), intent(in):: link      !in: graph link
          integer(INTD), intent(out), optional:: ierr !out: error code
-         class(list_elem_t), intent(out), pointer, optional:: list_link_p !out: pointer to the list element containing the graph link
+         type(list_pos_t), intent(out), pointer, optional:: list_link_p !out: pointer to the list element containing the graph link
          integer(INTD):: i,errc
          type(dictionary_iter_t):: dit
          class(*), pointer:: up
@@ -534,7 +534,7 @@
              if(found.and.present(list_link_p)) then
               if(associated(up)) then
                select type(up)
-               class is(list_elem_t)
+               type is(list_pos_t)
                 list_link_p=>up
                class default
                 errc=GFC_CORRUPTED_CONT
@@ -558,10 +558,10 @@
         function VertLinkRefsAddLink(this,link,link_ref) result(ierr)
 !Adds a graph link to the vertex info object.
          implicit none
-         integer(INTD):: ierr                                !out: error code
-         class(vert_link_refs_t), intent(inout):: this       !inout: vertex info
-         class(graph_link_t), intent(in), target:: link      !in: graph link
-         class(list_elem_t), intent(in), pointer:: link_ref  !in: pointer to the list element where value <link> is stored by value
+         integer(INTD):: ierr                           !out: error code
+         class(vert_link_refs_t), intent(inout):: this  !inout: vertex info
+         class(graph_link_t), intent(in), target:: link !in: graph link
+         type(list_pos_t), intent(in):: link_ref        !in: pointer to the list element where value <link> is stored by value
          integer(INTD):: i
          type(dictionary_iter_t):: dit
 
@@ -569,7 +569,7 @@
           if(ierr.eq.GFC_SUCCESS) then
            ierr=dit%init(this%vert_links)
            if(ierr.eq.GFC_SUCCESS) then
-            ierr=dit%search(GFC_DICT_ADD_IF_NOT_FOUND,cmp_graph_links,link,link_ref,GFC_BY_REF)
+            ierr=dit%search(GFC_DICT_ADD_IF_NOT_FOUND,cmp_graph_links,link,link_ref)
             if(ierr.eq.GFC_NOT_FOUND) then
              this%num_links=this%num_links+1_INTL
              ierr=GFC_SUCCESS
@@ -1128,10 +1128,10 @@
          integer(INTD):: i
          integer(INTL):: vid
          class(gfc_cont_elem_t), pointer:: gcp
-         class(list_elem_t), pointer:: lep
          class(*), pointer:: up
          class(graph_link_t), pointer:: glp
          class(vert_link_refs_t), pointer:: vlrp
+         type(list_pos_t):: list_pos
 
          ierr=this%get_status()
          if(ierr.eq.GFC_IT_ACTIVE.or.ierr.eq.GFC_IT_DONE) then
@@ -1143,24 +1143,22 @@
              call this%container%incr_num_links_()
              ierr=this%link_it%reset_back()
              if(ierr.eq.GFC_SUCCESS) then
-              gcp=>this%link_it%pointee(ierr)
-              if(.not.associated(gcp)) ierr=GFC_ERROR
+              ierr=this%link_it%bookmark(list_pos)
               if(ierr.eq.GFC_SUCCESS) then
-               up=>gcp%get_value(ierr) !graph_link_t
-               if(.not.associated(up).and.ierr.eq.GFC_SUCCESS) ierr=GFC_ERROR
+               gcp=>this%link_it%pointee(ierr); if(.not.associated(gcp)) ierr=GFC_ERROR
                if(ierr.eq.GFC_SUCCESS) then
-                glp=>NULL(); select type(up); class is(graph_link_t); glp=>up; end select
-                if(associated(glp)) then
-                 select type(gcp)
-                 class is(list_elem_t)
-                  lep=>gcp
+                up=>gcp%get_value(ierr) !graph_link_t
+                if(.not.associated(up).and.ierr.eq.GFC_SUCCESS) ierr=GFC_ERROR
+                if(ierr.eq.GFC_SUCCESS) then
+                 glp=>NULL(); select type(up); class is(graph_link_t); glp=>up; end select
+                 if(associated(glp)) then
                   do i=1,glp%rank !loop over participating vertices
                    vid=glp%vertices(i)
                    up=>this%vert_ln_it%element_value(vid,ierr); if(ierr.ne.GFC_SUCCESS) exit
                    if(associated(up)) then
                     select type(up); class is(vert_link_refs_t); vlrp=>up; end select
                     if(associated(vlrp)) then
-                     ierr=vlrp%add_link(glp,lep) !add a reference to the graph link to each participating vertex
+                     ierr=vlrp%add_link(glp,list_pos) !add a reference to the graph link to each participating vertex
                      if(ierr.ne.GFC_SUCCESS) exit
                     else
                      ierr=GFC_CORRUPTED_CONT; exit
@@ -1169,17 +1167,14 @@
                     ierr=GFC_ERROR; exit
                    endif
                   enddo
-                  vlrp=>NULL(); up=>NULL(); lep=>NULL()
-                 class default
+                  vlrp=>NULL(); up=>NULL(); glp=>NULL()
+                 else
                   ierr=GFC_CORRUPTED_CONT
-                 end select
-                 glp=>NULL()
-                else
-                 ierr=GFC_CORRUPTED_CONT
+                 endif
                 endif
                endif
+               gcp=>NULL()
               endif
-              gcp=>NULL()
              endif
             endif
            endif
@@ -1201,7 +1196,8 @@
          integer(INTL):: vid
          class(*), pointer:: up
          class(vert_link_refs_t), pointer:: vlrp
-         class(list_elem_t), pointer:: lep
+         type(list_pos_t), pointer:: lep
+         type(list_pos_t):: list_pos
          logical:: found
 
          ierr=this%get_status()
@@ -1218,10 +1214,12 @@
               if(associated(vlrp)) then
                found=vlrp%find_link(link,ierr,lep)
                if(found.and.ierr.eq.GFC_SUCCESS) then
+                list_pos=lep; lep=>NULL()
                 ierr=vlrp%delete_link(link); if(ierr.ne.GFC_SUCCESS) exit vloop !delete the link reference from each vertex
                 if(i.eq.1) then !last vertex
-                 call this%link_it%jump_(lep) !jump to the list element to be deleted
-                 ierr=this%link_it%delete()   !delete that list element from the list
+                 ierr=this%link_it%jump(list_pos) !jump to the list element to be deleted
+                 if(ierr.ne.GFC_SUCCESS) exit vloop
+                 ierr=this%link_it%delete()  !delete that list element from the list
                  if(ierr.ne.GFC_SUCCESS) exit vloop
                  call this%container%decr_num_links_()
                 endif
@@ -1235,7 +1233,7 @@
               exit vloop
              endif
             enddo vloop
-            lep=>NULL(); vlrp=>NULL(); up=>NULL()
+            vlrp=>NULL(); up=>NULL()
            endif
           else
            ierr=GFC_INVALID_ARGS

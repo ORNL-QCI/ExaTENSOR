@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Bi-directional linked list
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017-06-15 (started 2016-02-28)
+!REVISION: 2017-06-18 (started 2016-02-28)
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -53,6 +53,13 @@
          procedure, public:: is_first=>ListElemIsFirst       !returns GFC_TRUE if the element is the first in the list
          procedure, public:: is_last=>ListElemIsLast         !returns GFC_TRUE if the element is the last in the list
         end type list_elem_t
+ !Iterator position in the linked list:
+        type, public:: list_pos_t
+         class(list_elem_t), pointer, private:: elem_p=>NULL() !pointer to a list element
+         contains
+          procedure, public:: is_set=>ListPosIsSet !returns TRUE of the list position is set
+          procedure, public:: clean=>ListPosClean  !resets the list position to NULL
+        end type list_pos_t
  !Linked list:
         type, extends(gfc_container_t), public:: list_bi_t
          class(list_elem_t), pointer, private:: first_elem=>NULL() !first element of the linked list
@@ -70,7 +77,7 @@
          class(list_bi_t), pointer, private:: container=>NULL() !linked list associated with the iterator
         contains
          procedure, public:: init=>ListIterInit                   !initializes the iterator by associating it with a list and resetting to the beginning
-         procedure, public:: reset=>ListIterReset                 !resets the iterator to the beginning of the list
+          procedure, public:: reset=>ListIterReset                 !resets the iterator to the beginning of the list
          procedure, public:: reset_back=>ListIterResetBack        !resets the iterator to the end of the list
          procedure, public:: release=>ListIterRelease             !releases the iterator (dissociates it from the container)
          procedure, public:: pointee=>ListIterPointee             !returns the container element currently pointed to by the iterator
@@ -84,7 +91,9 @@
          procedure, public:: delete=>ListIterDelete               !deletes the list element in the current position
          procedure, public:: delete_sublist=>ListIterDeleteSublist!deletes all elements either prior or after the current iterator position
          procedure, public:: delete_all=>ListIterDeleteAll        !deletes all list elements
-         procedure, public:: jump_=>ListIterJump                  !PRIVATE: moves the iterator to a specified list element
+         procedure, public:: bookmark=>ListIterBookmark           !bookmarks the current iterator position
+         procedure, public:: jump=>ListIterJump                   !jumps to a previously bookmarked iterator position
+         procedure, public:: jump_=>ListIterJump_                 !PRIVATE: moves the iterator to a specified list element
         end type list_iter_t
 !INTERFACES:
 !VISIBILITY:
@@ -92,6 +101,9 @@
         private ListElemConstruct
         private ListElemIsFirst
         private ListElemIsLast
+ !list_pos_t:
+        private ListPosIsSet
+        private ListPosClean
  !list_bi_t:
         private ListIsEmpty
         private ListIsSublist
@@ -112,7 +124,9 @@
         private ListIterDelete
         private ListIterDeleteSublist
         private ListIterDeleteAll
+        private ListIterBookmark
         private ListIterJump
+        private ListIterJump_
 
        contains
 !IMPLEMENTATION:
@@ -181,6 +195,25 @@
          if(present(ierr)) ierr=errc
          return
         end function ListElemIsLast
+![list_pos_t]==================================
+        function ListPosIsSet(this) result(ans)
+!Returns TRUE if the list position is set, FALSE otherwise
+         implicit none
+         logical:: ans                        !out: answer
+         class(list_pos_t), intent(in):: this !in: list position
+
+         ans=associated(this%elem_p)
+         return
+        end function ListPosIsSet
+!------------------------------------
+        subroutine ListPosClean(this)
+!Resets the list position to an empty state.
+         implicit none
+         class(list_pos_t), intent(inout):: this !inout: list position
+
+         this%elem_p=>NULL()
+         return
+        end subroutine ListPosClean
 !---------------------------------------------
         function ListIsEmpty(this) result(res)
 !Returns GFC_TRUE if the list is empty, GFC_FALSE otherwise (or error code).
@@ -992,12 +1025,43 @@
          endif
          return
         end function ListIterDeleteAll
-!---------------------------------------------
-        subroutine ListIterJump(this,new_elem)
+!------------------------------------------------------------
+        function ListIterBookmark(this,bookmark) result(ierr)
+!Bookmarks the current iterator position.
+         implicit none
+         integer(INTD):: ierr                        !out: error code
+         class(list_iter_t), intent(in):: this       !in: list iterator
+         class(list_pos_t), intent(out):: bookmark   !out: bookmarked list position
+
+         ierr=this%get_status()
+         if(ierr.eq.GFC_IT_ACTIVE) then
+          ierr=GFC_SUCCESS
+          bookmark%elem_p=>this%current
+         endif
+         return
+        end function ListIterBookmark
+!--------------------------------------------------------
+        function ListIterJump(this,bookmark) result(ierr)
+!Moves the iterator to a previously bookmarked iterator position.
+         implicit none
+         integer(INTD):: ierr                     !out: error code
+         class(list_iter_t), intent(inout):: this !inout: list iterator
+         class(list_pos_t), intent(in):: bookmark !in: bookmark
+
+         ierr=GFC_SUCCESS
+         if(associated(bookmark%elem_p)) then
+          call this%jump_(bookmark%elem_p)
+         else
+          ierr=GFC_NO_MOVE
+         endif
+         return
+        end function ListIterJump
+!----------------------------------------------
+        subroutine ListIterJump_(this,new_elem)
 !Moves the iterator to an arbitrary specified list element.
          implicit none
-         class(list_iter_t), intent(inout):: this              !inout: list iterator
-         class(list_elem_t), pointer, intent(inout):: new_elem !in: pointer to the new element or NULL()
+         class(list_iter_t), intent(inout):: this           !inout: list iterator
+         class(list_elem_t), pointer, intent(in):: new_elem !in: pointer to the new element or NULL()
          integer(INTD):: errc,sts
 
          if(associated(this%current)) call this%current%decr_ref_()
@@ -1013,6 +1077,6 @@
           endif
          endif
          return
-        end subroutine ListIterJump
+        end subroutine ListIterJump_
 
        end module gfc_list
