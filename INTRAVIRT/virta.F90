@@ -3,7 +3,7 @@
 !This module provides basic infrastructure for ExaTENSOR, tensor algebra virtual processor (TAVP).
 !The logical and numerical tensor algebra virtual processors (L-TAVP, N-TAVP) derive from this module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/06/18
+!REVISION: 2017/06/20
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -333,65 +333,20 @@
          class(DataDescr_t), pointer:: descr_p
 
          errc=0
-         body_p=>this%tensor%get_body(errc)
-         if(errc.eq.TEREC_SUCCESS.and.associated(body_p)) then
-          layout_p=>body_p%get_layout(errc)
-          if(errc.eq.TEREC_SUCCESS.and.associated(layout_p)) then
-           descr_p=>layout_p%get_data_descr(errc)
-           if(errc.eq.TEREC_SUCCESS.and.associated(descr_p)) then
-            if(descr_p%is_set(errc,host_proc_rank,mpi_comm)) then
-             if(errc.eq.0) then
-              call MPI_Comm_Rank(mpi_comm,my_rank,errc)
+         if(this%is_active()) then
+          body_p=>this%tensor%get_body(errc)
+          if(errc.eq.TEREC_SUCCESS.and.associated(body_p)) then
+           layout_p=>body_p%get_layout(errc)
+           if(errc.eq.TEREC_SUCCESS.and.associated(layout_p)) then
+            descr_p=>layout_p%get_data_descr(errc)
+            if(errc.eq.TEREC_SUCCESS.and.associated(descr_p)) then
+             if(descr_p%is_set(errc,host_proc_rank,mpi_comm)) then
               if(errc.eq.0) then
-               res=.not.(host_proc_rank.eq.my_rank)
-              else
-               errc=-1
-              endif
-             else
-              errc=-2
-             endif
-            else
-             errc=-3
-            endif
-           else
-            errc=-4
-           endif
-          else
-           errc=-5
-          endif
-         else
-          errc=-6
-         endif
-         if(present(ierr)) ierr=errc
-         return
-        end function TensOprndIsRemote
-!------------------------------------------------
-        subroutine TensOprndAcquireRsc(this,ierr)
-!Acquires local resources for the remote tensor operand.
-!If the resources have already been allocated, does nothing.
-         implicit none
-         class(tens_oprnd_t), intent(inout):: this   !inout: tensor operand
-         integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc
-         integer(INTL):: buf_size
-         integer(INT_MPI):: host_proc_rank
-         class(tens_body_t), pointer:: body_p
-         class(tens_layout_t), pointer:: layout_p
-         class(DataDescr_t), pointer:: descr_p
-
-         errc=0
-         body_p=>this%tensor%get_body(errc)
-         if(errc.eq.TEREC_SUCCESS.and.associated(body_p)) then
-          layout_p=>body_p%get_layout(errc)
-          if(errc.eq.TEREC_SUCCESS.and.associated(layout_p)) then
-           descr_p=>layout_p%get_data_descr(errc)
-           if(errc.eq.TEREC_SUCCESS.and.associated(descr_p)) then
-            if(descr_p%is_set(errc)) then
-             if(errc.eq.0) then
-              buf_size=descr_p%data_size(errc)
-              if(errc.eq.0.and.buf_size.gt.0_INTL) then
-               if(this%resource%is_empty()) then
-                call this%resource%allocate_buffer(buf_size,errc); if(errc.ne.0) errc=-1
+               call MPI_Comm_Rank(mpi_comm,my_rank,errc)
+               if(errc.eq.0) then
+                res=.not.(host_proc_rank.eq.my_rank)
+               else
+                errc=-1
                endif
               else
                errc=-2
@@ -413,16 +368,109 @@
          endif
          if(present(ierr)) ierr=errc
          return
-        end subroutine TensOprndAcquireRsc
-!----------------------------------------------
-        subroutine TensOprndPrefetch(this,ierr)
-!Starts prefetching the (remote) tensor operand using the local tensor resource.
+        end function TensOprndIsRemote
+!------------------------------------------------
+        subroutine TensOprndAcquireRsc(this,ierr)
+!Acquires local resources for the remote tensor operand.
+!If the resources have already been allocated, does nothing.
          implicit none
          class(tens_oprnd_t), intent(inout):: this   !inout: tensor operand
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
+         integer(INTL):: buf_size
+         integer(INT_MPI):: host_proc_rank
+         class(tens_body_t), pointer:: body_p
+         class(tens_layout_t), pointer:: layout_p
+         class(DataDescr_t), pointer:: descr_p
 
          errc=0
+         if(this%is_active()) then
+          body_p=>this%tensor%get_body(errc)
+          if(errc.eq.TEREC_SUCCESS.and.associated(body_p)) then
+           layout_p=>body_p%get_layout(errc)
+           if(errc.eq.TEREC_SUCCESS.and.associated(layout_p)) then
+            descr_p=>layout_p%get_data_descr(errc)
+            if(errc.eq.TEREC_SUCCESS.and.associated(descr_p)) then
+             if(descr_p%is_set(errc)) then
+              if(errc.eq.0) then
+               buf_size=descr_p%data_size(errc)
+               if(errc.eq.0.and.buf_size.gt.0_INTL) then
+                if(this%resource%is_empty()) then
+                 call this%resource%allocate_buffer(buf_size,errc); if(errc.ne.0) errc=-1
+                endif
+               else
+                errc=-2
+               endif
+              else
+               errc=-3
+              endif
+             else
+              errc=-4
+             endif
+            else
+             errc=-5
+            endif
+           else
+            errc=-6
+           endif
+          else
+           errc=-7
+          endif
+         else
+          errc=-8
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensOprndAcquireRsc
+!----------------------------------------------
+        subroutine TensOprndPrefetch(this,ierr)
+!Starts prefetching the (remote) tensor operand using the local tensor resource.
+!If the local resource has not been allocated, it will be allocated here.
+         implicit none
+         class(tens_oprnd_t), intent(inout):: this   !inout: tensor operand
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+         class(tens_body_t), pointer:: body_p
+         class(tens_layout_t), pointer:: layout_p
+         class(DataDescr_t), pointer:: descr_p
+         type(C_PTR):: cptr
+
+         errc=0
+         if(this%is_active()) then
+          body_p=>this%tensor%get_body(errc)
+          if(errc.eq.TEREC_SUCCESS.and.associated(body_p)) then
+           layout_p=>body_p%get_layout(errc)
+           if(errc.eq.TEREC_SUCCESS.and.associated(layout_p)) then
+            descr_p=>layout_p%get_data_descr(errc)
+            if(errc.eq.TEREC_SUCCESS.and.associated(descr_p)) then
+             if(descr_p%is_set(errc)) then
+              if(errc.eq.0) then
+               if(this%resource%is_empty()) call this%acquire_rsc(errc)
+               if(errc.eq.0) then
+                cptr=this%resource%base_addr
+                call descr_p%get_data(cptr,errc,MPI_ASYNC_REQ)
+                if(errc.ne.0.and.errc.ne.TRY_LATER) errc=-1
+               else
+                errc=-2
+               endif
+              else
+               errc=-3
+              endif
+             else
+              errc=-4
+             endif
+            else
+             errc=-5
+            endif
+           else
+            errc=-6
+           endif
+          else
+           errc=-7
+          endif
+         else
+          errc=-8
+         endif
          if(present(ierr)) ierr=errc
          return
         end subroutine TensOprndPrefetch
@@ -433,8 +481,46 @@
          class(tens_oprnd_t), intent(inout):: this   !inout: tensor operand
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
+         class(tens_body_t), pointer:: body_p
+         class(tens_layout_t), pointer:: layout_p
+         class(DataDescr_t), pointer:: descr_p
+         type(C_PTR):: cptr
 
          errc=0
+         if(this%is_present()) then
+          body_p=>this%tensor%get_body(errc)
+          if(errc.eq.TEREC_SUCCESS.and.associated(body_p)) then
+           layout_p=>body_p%get_layout(errc)
+           if(errc.eq.TEREC_SUCCESS.and.associated(layout_p)) then
+            descr_p=>layout_p%get_data_descr(errc)
+            if(errc.eq.TEREC_SUCCESS.and.associated(descr_p)) then
+             if(descr_p%is_set(errc)) then
+              if(errc.eq.0) then
+               if(.not.this%resource%is_empty()) then !trap
+                cptr=this%resource%base_addr
+                call descr_p%acc_data(cptr,errc,MPI_ASYNC_REQ)
+                if(errc.ne.0.and.errc.ne.TRY_LATER) errc=-1
+               else
+                errc=-2
+               endif
+              else
+               errc=-3
+              endif
+             else
+              errc=-4
+             endif
+            else
+             errc=-5
+            endif
+           else
+            errc=-6
+           endif
+          else
+           errc=-7
+          endif
+         else
+          errc=-8
+         endif
          if(present(ierr)) ierr=errc
          return
         end subroutine TensOprndUpload
@@ -447,15 +533,64 @@
          integer(INTD), intent(out), optional:: ierr !out: error code
          logical, intent(in), optional:: wait        !in: TRUE activates WAIT instead of TEST synchronization (default)
          integer(INTD):: errc
+         class(tens_body_t), pointer:: body_p
+         class(tens_layout_t), pointer:: layout_p
+         class(DataDescr_t), pointer:: descr_p
+         logical:: tw
 
-         errc=0
+         errc=0; res=.FALSE.
+         tw=.FALSE.; if(present(wait)) tw=wait
+         if(this%is_active()) then
+          body_p=>this%tensor%get_body(errc)
+          if(errc.eq.TEREC_SUCCESS.and.associated(body_p)) then
+           layout_p=>body_p%get_layout(errc)
+           if(errc.eq.TEREC_SUCCESS.and.associated(layout_p)) then
+            descr_p=>layout_p%get_data_descr(errc)
+            if(errc.eq.TEREC_SUCCESS.and.associated(descr_p)) then
+             if(descr_p%is_set(errc)) then
+              if(errc.eq.0) then
+               if(this%get_comm_stat(errc).ne.DS_OPRND_NO_COMM) then
+                if(errc.eq.DSVP_SUCCESS) then
+                 if(tw) then
+                  call descr_p%wait_data(errc); if(errc.eq.0) then; res=.TRUE.; else; errc=-1; endif
+                 else
+                  res=descr_p%test_data(errc); if(errc.ne.0) errc=-2
+                 endif
+                 if(res) then
+                  call this%mark_delivered(errc); if(errc.ne.0) errc=-3
+                 endif
+                else
+                 errc=-4
+                endif
+               else
+                errc=-5
+               endif
+              else
+               errc=-6
+              endif
+             else
+              errc=-7
+             endif
+            else
+             errc=-8
+            endif
+           else
+            errc=-9
+           endif
+          else
+           errc=-10
+          endif
+         else
+          errc=-11
+         endif
          if(present(ierr)) ierr=errc
          return
         end function TensOprndSync
 !---------------------------------------------
         subroutine TensOprndRelease(this,ierr)
 !Releases local tensor resources occupied by the tensor operand,
-!unless the reference count is non-zero.
+!unless there are other active tensor operands sharing the same resource.
+!In the latter case, nothing will be done and no error raised.
          implicit none
          class(tens_oprnd_t), intent(inout):: this   !inout: tensor operand
          integer(INTD), intent(out), optional:: ierr !out: error code
@@ -469,7 +604,7 @@
             delivered=this%sync(errc,wait=.TRUE.)
             if(.not.delivered.or.errc.ne.DSVP_SUCCESS) errc=-1
            endif
-           if(this%resource%ref_count.eq.1) then !only one tensor operand is associated with this resource
+           if(this%resource%ref_count.eq.1) then !only one (last) tensor operand is associated with this resource
             call this%resource%free_buffer(errc); if(errc.ne.0) errc=-2
            endif
           else
