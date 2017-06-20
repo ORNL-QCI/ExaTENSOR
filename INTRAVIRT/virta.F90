@@ -278,7 +278,7 @@
 ![tens_oprnd_t]=================================================
         subroutine TensOprndCtor(this,tensor,tens_resource,ierr)
 !Constructs a tensor operand. The <tensor> must be set.
-!The associated tensor resource may still be empty.
+!The associated tensor resource may still be empty (unallocated).
          implicit none
          class(tens_oprnd_t), intent(inout):: this                   !inout: tensor operand
          class(tens_rcrsv_t), pointer, intent(in):: tensor           !in: tensor
@@ -426,138 +426,38 @@
         subroutine TensOprndPrefetch(this,ierr)
 !Starts prefetching the (remote) tensor operand using the local tensor resource.
 !If the local resource has not been allocated, it will be allocated here.
+!If the tensor operand has been delivered before, does nothing.
+!If there is a pending communication on the tensor operand, returns an error.
          implicit none
          class(tens_oprnd_t), intent(inout):: this   !inout: tensor operand
-         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD), intent(out), optional:: ierr !out: error code, may return TRY_LATER
          integer(INTD):: errc
          class(tens_body_t), pointer:: body_p
          class(tens_layout_t), pointer:: layout_p
          class(DataDescr_t), pointer:: descr_p
          type(C_PTR):: cptr
 
-         errc=0
-         if(this%is_active()) then
-          body_p=>this%tensor%get_body(errc)
-          if(errc.eq.TEREC_SUCCESS.and.associated(body_p)) then
-           layout_p=>body_p%get_layout(errc)
-           if(errc.eq.TEREC_SUCCESS.and.associated(layout_p)) then
-            descr_p=>layout_p%get_data_descr(errc)
-            if(errc.eq.TEREC_SUCCESS.and.associated(descr_p)) then
-             if(descr_p%is_set(errc)) then
-              if(errc.eq.0) then
-               if(this%resource%is_empty()) call this%acquire_rsc(errc)
+         if(.not.this%is_present(errc)) then
+          if(errc.eq.DSVP_SUCCESS) then
+           body_p=>this%tensor%get_body(errc)
+           if(errc.eq.TEREC_SUCCESS.and.associated(body_p)) then
+            layout_p=>body_p%get_layout(errc)
+            if(errc.eq.TEREC_SUCCESS.and.associated(layout_p)) then
+             descr_p=>layout_p%get_data_descr(errc)
+             if(errc.eq.TEREC_SUCCESS.and.associated(descr_p)) then
+              if(descr_p%is_set(errc)) then
                if(errc.eq.0) then
-                cptr=this%resource%base_addr
-                call descr_p%get_data(cptr,errc,MPI_ASYNC_REQ)
-                if(errc.ne.0.and.errc.ne.TRY_LATER) errc=-1
-               else
-                errc=-2
-               endif
-              else
-               errc=-3
-              endif
-             else
-              errc=-4
-             endif
-            else
-             errc=-5
-            endif
-           else
-            errc=-6
-           endif
-          else
-           errc=-7
-          endif
-         else
-          errc=-8
-         endif
-         if(present(ierr)) ierr=errc
-         return
-        end subroutine TensOprndPrefetch
-!--------------------------------------------
-        subroutine TensOprndUpload(this,ierr)
-!Starts uploading the (remote) tensor operand from the local tensor resource.
-         implicit none
-         class(tens_oprnd_t), intent(inout):: this   !inout: tensor operand
-         integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc
-         class(tens_body_t), pointer:: body_p
-         class(tens_layout_t), pointer:: layout_p
-         class(DataDescr_t), pointer:: descr_p
-         type(C_PTR):: cptr
-
-         errc=0
-         if(this%is_present()) then
-          body_p=>this%tensor%get_body(errc)
-          if(errc.eq.TEREC_SUCCESS.and.associated(body_p)) then
-           layout_p=>body_p%get_layout(errc)
-           if(errc.eq.TEREC_SUCCESS.and.associated(layout_p)) then
-            descr_p=>layout_p%get_data_descr(errc)
-            if(errc.eq.TEREC_SUCCESS.and.associated(descr_p)) then
-             if(descr_p%is_set(errc)) then
-              if(errc.eq.0) then
-               if(.not.this%resource%is_empty()) then !trap
-                cptr=this%resource%base_addr
-                call descr_p%acc_data(cptr,errc,MPI_ASYNC_REQ)
-                if(errc.ne.0.and.errc.ne.TRY_LATER) errc=-1
-               else
-                errc=-2
-               endif
-              else
-               errc=-3
-              endif
-             else
-              errc=-4
-             endif
-            else
-             errc=-5
-            endif
-           else
-            errc=-6
-           endif
-          else
-           errc=-7
-          endif
-         else
-          errc=-8
-         endif
-         if(present(ierr)) ierr=errc
-         return
-        end subroutine TensOprndUpload
-!---------------------------------------------------------
-        function TensOprndSync(this,ierr,wait) result(res)
-!Synchronizes the pending prefetch/upload, either TEST or WAIT.
-         implicit none
-         logical:: res                               !out: TRUE on communication completion, FALSE otherwise
-         class(tens_oprnd_t), intent(inout):: this   !inout: tensor operand
-         integer(INTD), intent(out), optional:: ierr !out: error code
-         logical, intent(in), optional:: wait        !in: TRUE activates WAIT instead of TEST synchronization (default)
-         integer(INTD):: errc
-         class(tens_body_t), pointer:: body_p
-         class(tens_layout_t), pointer:: layout_p
-         class(DataDescr_t), pointer:: descr_p
-         logical:: tw
-
-         errc=0; res=.FALSE.
-         tw=.FALSE.; if(present(wait)) tw=wait
-         if(this%is_active()) then
-          body_p=>this%tensor%get_body(errc)
-          if(errc.eq.TEREC_SUCCESS.and.associated(body_p)) then
-           layout_p=>body_p%get_layout(errc)
-           if(errc.eq.TEREC_SUCCESS.and.associated(layout_p)) then
-            descr_p=>layout_p%get_data_descr(errc)
-            if(errc.eq.TEREC_SUCCESS.and.associated(descr_p)) then
-             if(descr_p%is_set(errc)) then
-              if(errc.eq.0) then
-               if(this%get_comm_stat(errc).ne.DS_OPRND_NO_COMM) then
-                if(errc.eq.DSVP_SUCCESS) then
-                 if(tw) then
-                  call descr_p%wait_data(errc); if(errc.eq.0) then; res=.TRUE.; else; errc=-1; endif
+                if(this%resource%is_empty()) call this%acquire_rsc(errc)
+                if(errc.eq.0) then
+                 if(this%get_comm_stat().eq.DS_OPRND_NO_COMM) then
+                  cptr=this%resource%base_addr
+                  call descr_p%get_data(cptr,errc,MPI_ASYNC_REQ)
+                  if(errc.ne.0.and.errc.ne.TRY_LATER) errc=-1
+                  if(errc.eq.0) then
+                   call this%set_comm_stat(DS_OPRND_FETCHING,errc); if(errc.ne.DSVP_SUCCESS) errc=-2
+                  endif
                  else
-                  res=descr_p%test_data(errc); if(errc.ne.0) errc=-2
-                 endif
-                 if(res) then
-                  call this%mark_delivered(errc); if(errc.ne.0) errc=-3
+                  errc=-3
                  endif
                 else
                  errc=-4
@@ -582,6 +482,130 @@
           endif
          else
           errc=-11
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensOprndPrefetch
+!--------------------------------------------
+        subroutine TensOprndUpload(this,ierr)
+!Starts uploading the (remote) tensor operand from the local tensor resource.
+!The tensor operand must be marked as delivered (present), even if it is local.
+!If there is a pending communication on the tensor operand, returns an error.
+         implicit none
+         class(tens_oprnd_t), intent(inout):: this   !inout: tensor operand
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+         class(tens_body_t), pointer:: body_p
+         class(tens_layout_t), pointer:: layout_p
+         class(DataDescr_t), pointer:: descr_p
+         type(C_PTR):: cptr
+
+         if(this%is_present(errc)) then
+          if(errc.eq.DSVP_SUCCESS) then
+           body_p=>this%tensor%get_body(errc)
+           if(errc.eq.TEREC_SUCCESS.and.associated(body_p)) then
+            layout_p=>body_p%get_layout(errc)
+            if(errc.eq.TEREC_SUCCESS.and.associated(layout_p)) then
+             descr_p=>layout_p%get_data_descr(errc)
+             if(errc.eq.TEREC_SUCCESS.and.associated(descr_p)) then
+              if(descr_p%is_set(errc)) then
+               if(errc.eq.0) then
+                if(.not.this%resource%is_empty()) then !trap
+                 if(this%get_comm_stat().eq.DS_OPRND_NO_COMM) then
+                  cptr=this%resource%base_addr
+                  call descr_p%acc_data(cptr,errc,MPI_ASYNC_REQ)
+                  if(errc.ne.0.and.errc.ne.TRY_LATER) errc=-1
+                  if(errc.eq.0) then
+                   call this%set_comm_stat(DS_OPRND_UPLOADING,errc); if(errc.ne.DSVP_SUCCESS) errc=-2
+                  endif
+                 else
+                  errc=-3
+                 endif
+                else
+                 errc=-4
+                endif
+               else
+                errc=-5
+               endif
+              else
+               errc=-6
+              endif
+             else
+              errc=-7
+             endif
+            else
+             errc=-8
+            endif
+           else
+            errc=-9
+           endif
+          else
+           errc=-10
+          endif
+         else
+          errc=-11
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensOprndUpload
+!---------------------------------------------------------
+        function TensOprndSync(this,ierr,wait) result(res)
+!Synchronizes the pending prefetch/upload, either TEST or WAIT.
+!A successful synchronization on prefetch will mark the tensor operand
+!as delivered (present). A successful synchronization on upload will
+!not change the status of the tensor operand (which is present).
+         implicit none
+         logical:: res                               !out: TRUE on communication completion, FALSE otherwise
+         class(tens_oprnd_t), intent(inout):: this   !inout: tensor operand
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         logical, intent(in), optional:: wait        !in: TRUE activates WAIT instead of TEST synchronization (default)
+         integer(INTD):: errc,sts
+         class(tens_body_t), pointer:: body_p
+         class(tens_layout_t), pointer:: layout_p
+         class(DataDescr_t), pointer:: descr_p
+         logical:: tw
+
+         errc=0; res=.FALSE.
+         tw=.FALSE.; if(present(wait)) tw=wait
+         if(this%is_active()) then
+          body_p=>this%tensor%get_body(errc)
+          if(errc.eq.TEREC_SUCCESS.and.associated(body_p)) then
+           layout_p=>body_p%get_layout(errc)
+           if(errc.eq.TEREC_SUCCESS.and.associated(layout_p)) then
+            descr_p=>layout_p%get_data_descr(errc)
+            if(errc.eq.TEREC_SUCCESS.and.associated(descr_p)) then
+             if(descr_p%is_set(errc)) then
+              if(errc.eq.0) then
+               sts=this%get_comm_stat()
+               if(sts.ne.DS_OPRND_NO_COMM) then
+                if(tw) then
+                 call descr_p%wait_data(errc); if(errc.eq.0) then; res=.TRUE.; else; errc=-1; endif
+                else
+                 res=descr_p%test_data(errc); if(errc.ne.0) errc=-2
+                endif
+                if(sts.eq.DS_OPRND_FETCHING.and.res) then
+                 call this%mark_delivered(errc); if(errc.ne.0) errc=-3
+                endif
+               else
+                errc=-4
+               endif
+              else
+               errc=-5
+              endif
+             else
+              errc=-6
+             endif
+            else
+             errc=-7
+            endif
+           else
+            errc=-8
+           endif
+          else
+           errc=-9
+          endif
+         else
+          errc=-10
          endif
          if(present(ierr)) ierr=errc
          return

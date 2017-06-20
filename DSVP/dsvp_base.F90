@@ -1,6 +1,6 @@
 !Domain-specific virtual processor (DSVP): Abstract base module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/06/18
+!REVISION: 2017/06/20
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -497,15 +497,15 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine DSOprndMarkUndelivered
-!---------------------------------------------------------------
-        function DSOprndGetCommStat(this,ierr) result(comm_stat)
+!---------------------------------------------------------
+        function DSOprndGetCommStat(this,ierr) result(sts)
 !Gets the current communication status on the domain-specific operand.
          implicit none
-         integer(INTD):: comm_stat                   !out: current communication status
+         integer(INTD):: sts                         !out: current communication status
          class(ds_oprnd_t), intent(in):: this        !in: domain-specific operand
          integer(INTD), intent(out), optional:: ierr !out: error code
 
-         comm_stat=this%stat
+         sts=this%stat
          if(present(ierr)) ierr=DSVP_SUCCESS
          return
         end function DSOprndGetCommStat
