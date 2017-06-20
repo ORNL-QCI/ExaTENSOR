@@ -114,12 +114,12 @@
           procedure, public:: destruct=>TensOprndDestruct       !performs complete destruction back to an empty (undefined) state
           final:: tens_oprnd_dtor                               !dtor
         end type tens_oprnd_t
-#if 0
  !Tensor instruction control fields:
+#if 0
   !Tensor copy/addition control field:
         type, extends(ds_instr_ctrl_t), public:: ctrl_tens_add_t
          type(permutation_t), private:: prmn                    !tensor dimension permutation
-         complex(8), private:: alpha                            !alpha prefactor
+         complex(8), private:: alpha=(1d0,0d0)                  !alpha prefactor
          contains
           procedure, private:: CtrlTensAddCtor                  !ctor
           generic, public:: ctrl_tens_add_ctor=>CtrlTensAddCtor,CtrlTensAddUnpack
@@ -127,17 +127,19 @@
           procedure, public:: unpack=>CtrlTensAddUnpack         !unpacks the instruction control field from a plain byte packet
           final:: ctrl_tens_add_dtor                            !dtor
         end type ctrl_tens_add_t
+#endif
   !Tensor contraction control field:
         type, extends(ds_instr_ctrl_t), public:: ctrl_tens_contr_t
          type(contr_ptrn_ext_t), private:: contr_ptrn           !extended tensor contraction pattern
-         complex(8), private:: alpha                            !alpha prefactor
+         complex(8), private:: alpha=(1d0,0d0)                  !alpha prefactor
          contains
           procedure, private:: CtrlTensContrCtor                !ctor
-          generic, public:: ctrl_tens_contr_ctor=>CtrlTensContrCtor,CtrlTensContrUnpack
+          generic, public:: ctrl_tens_contr_ctor=>CtrlTensContrCtor
           procedure, public:: pack=>CtrlTensContrPack           !packs the instruction control field into a plain byte packet
           procedure, public:: unpack=>CtrlTensContrUnpack       !unpacks the instruction control field from a plain byte packet
           final:: ctrl_tens_contr_dtor                          !dtor
         end type ctrl_tens_contr_t
+#if 0
  !Tensor instruction:
         type, extends(ds_instr_t), public:: tens_instr_t
         contains
@@ -177,11 +179,13 @@
         private CtrlTensAddPack
         private CtrlTensAddUnpack
         public ctrl_tens_add_dtor
+#endif
  !ctrl_tens_contr_t:
         private CtrlTensContrCtor
         private CtrlTensContrPack
         private CtrlTensContrUnpack
         public ctrl_tens_contr_dtor
+#if 0
  !tens_instr_t:
         private TensInstrCtor
         private TensInstrDecode
@@ -679,5 +683,80 @@
          if(errc.ne.0) call quit(errc,'#FATAL(virta:tens_oprnd_dtor): Destructor failed!')
          return
         end subroutine tens_oprnd_dtor
+![ctrl_tens_contr_t]============================================
+        subroutine CtrlTensContrCtor(this,contr_ptrn,ierr,alpha)
+!CTOR.
+         implicit none
+         class(ctrl_tens_contr_t), intent(out):: this    !out: tensor contraction control field
+         type(contr_ptrn_ext_t), intent(in):: contr_ptrn !in: extended tensor contraction pattern
+         integer(INTD), intent(out), optional:: ierr     !out: error code
+         complex(8), intent(in), optional:: alpha        !in: scalar prefactor
+         integer(INTD):: errc
+
+         if(contr_ptrn%is_set(errc)) then
+          if(errc.eq.TEREC_SUCCESS) then
+           this%contr_ptrn=contr_ptrn
+           if(present(alpha)) this%alpha=alpha
+          else
+           errc=-1
+          endif
+         else
+          errc=-2
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine CtrlTensContrCtor
+!-----------------------------------------------------
+        subroutine CtrlTensContrPack(this,packet,ierr)
+!Packer.
+         implicit none
+         class(ctrl_tens_contr_t), intent(in):: this !in: tensor contraction control field
+         class(obj_pack_t), intent(inout):: packet   !inout: packet
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         if(this%contr_ptrn%is_set(errc)) then
+          if(errc.eq.TEREC_SUCCESS) then
+           call this%contr_ptrn%pack(packet,errc)
+           if(errc.eq.TEREC_SUCCESS) then
+            call pack_builtin(packet,this%alpha,errc); if(errc.ne.0) errc=-1
+           else
+            errc=-2
+           endif
+          else
+           errc=-3
+          endif
+         else
+          errc=-4
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine CtrlTensContrPack
+!-------------------------------------------------------
+        subroutine CtrlTensContrUnpack(this,packet,ierr)
+!Unpacker.
+         implicit none
+         class(ctrl_tens_contr_t), intent(inout):: this !out: tensor contraction control field
+         class(obj_pack_t), intent(inout):: packet      !inout: packet
+         integer(INTD), intent(out), optional:: ierr    !out: error code
+         integer(INTD):: errc
+
+         call this%contr_ptrn%unpack(packet,errc)
+         if(errc.eq.TEREC_SUCCESS) then
+          call unpack_builtin(packet,this%alpha,errc); if(errc.ne.0) errc=-1
+         else
+          errc=-2
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine CtrlTensContrUnpack
+!--------------------------------------------
+        subroutine ctrl_tens_contr_dtor(this)
+!DTOR.
+         implicit none
+         type(ctrl_tens_contr_t):: this
+
+         return
+        end subroutine ctrl_tens_contr_dtor
 
        end module virta
