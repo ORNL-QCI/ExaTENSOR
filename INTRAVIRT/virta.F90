@@ -145,8 +145,8 @@
         contains
          procedure, private:: TensInstrCtor                     !ctor
          generic, public:: tens_instr_ctor=>TensInstrCtor
-         procedure, public:: decode=>TensInstrDecode            !decoding procedure: Unpacks the raw byte packet (bytecode) and constructs a TAVP instruction
          procedure, public:: encode=>TensInstrEncode            !encoding procedure: Packs the TAVP instruction into a raw byte packet (bytecode)
+         procedure, public:: decode=>TensInstrDecode            !decoding procedure: Unpacks the raw byte packet (bytecode) and constructs a TAVP instruction
          final:: tens_instr_dtor                                !dtor
         end type tens_instr_t
 #endif
@@ -188,10 +188,11 @@
 #if 0
  !tens_instr_t:
         private TensInstrCtor
-        private TensInstrDecode
         private TensInstrEncode
+        private TensInstrDecode
         public tens_instr_dtor
 #endif
+
        contains
 !IMPLEMENTATION:
 !tens_resrc_t]=====================================
@@ -758,5 +759,21 @@
 
          return
         end subroutine ctrl_tens_contr_dtor
+![tens_instr_t]==================================================
+#if 0
+        subroutine TensInstrCtor(this,opcode,ierr,tens_operation)
+!Constructs a tensor instruction realizing the given tensor operation.
+         implicit none
+         class(tens_instr_t), intent(inout):: this                      !out: tensor instruction
+         integer(INTD), intent(in):: opcode                             !in: instruction code (see top)
+         integer(INTD), intent(out), optional:: ierr                    !out: error code
+         class(tens_operation_t), intent(in), optional:: tens_operation !in: tensor operation
+         integer(INTD):: errc
+
+         errc=0
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensInstrCtor
+#endif
 
        end module virta
