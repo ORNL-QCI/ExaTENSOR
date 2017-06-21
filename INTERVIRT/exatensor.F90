@@ -1,7 +1,7 @@
-!ExaTENSOR: Massively Parallel Virtual Processor for Scale-Adaptive Tensor Algebra
+!ExaTENSOR: Massively Parallel Virtual Processor for Scale-Adaptive Hierarchical Tensor Algebra
 !This is the top level API module of ExaTENSOR (user-level API)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017/06/16
+!REVISION: 2017/06/21
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -23,9 +23,9 @@
 
       module exatensor
        use virta
-!      use c_process
-       use m_process
-       use g_process
+       use tavp_driver
+       use tavp_manager
+       use tavp_worker
        implicit none
        private
 !PARAMETERS:

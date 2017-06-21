@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/06/12
+!REVISION: 2017/06/21
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -276,9 +276,13 @@
  !Tensor argument (reference to a recursive tensor):
         type, private:: tens_argument_t
          class(tens_rcrsv_t), pointer, private:: tens_p=>NULL() !pointer to a persistent tensor
+         logical, private:: alloc=.FALSE.                       !TRUE if the tensor argument was allocated, FALSE if associated
          contains
-          procedure, private:: set=>TensArgumentSet             !sets up the tensor argument (ctor)
-          procedure, private:: is_set=>TensArgumentIsSet        !returns TRUE if the tensor argument is set, plus additional info
+          procedure, private:: set_tensor=>TensArgumentSetTensor           !sets up the tensor argument (ctor) by pointer association
+          procedure, private:: allocate_tensor=>TensArgumentAllocateTensor !allocates an empty tensor for a subsequent definition
+          procedure, private:: is_set=>TensArgumentIsSet                   !returns TRUE if the tensor argument is set, plus additional info
+          procedure, private:: free_tensor=>TensArgumentFreeTensor         !frees the tensor (either by deallocation or by dissociation only)
+          final:: tens_argument_dtor                                       !dtor
         end type tens_argument_t
  !Tensor operation (abstract):
         type, abstract, public:: tens_operation_t
@@ -288,11 +292,12 @@
           procedure(tens_operation_query_i), deferred, public:: is_set    !returns TRUE if the tensor operation is fully set
           procedure(tens_operation_query_i), deferred, public:: args_full !returns TRUE if all required tensor arguments are set
           procedure, public:: clean=>TensOperationClean                   !cleans the tensor operation to an empty state
-          procedure, public:: set_argument=>TensOperationSetArgument      !sets up the next tensor argument
+          procedure, public:: set_argument=>TensOperationSetArgument      !sets up the next tensor argument by pointer association
           procedure, public:: reset_argument=>TensOperationResetArgument  !resets an already set argument
           procedure, public:: get_num_args=>TensOperationGetNumArgs       !returns the number of set arguments
           procedure, public:: get_argument=>TensOperationGetArgument      !returns a pointer to the specific tensor argument (tens_rcrsv_t)
-          procedure, public:: allocate_argument=>TensOperationAllocateArgument !allocates an argument
+          procedure, private:: allocate_argument=>TensOperationAllocateArgument !allocates the next tensor argument for a subsequent setup
+          procedure, private:: free_arguments=>TensOperationFreeArguments       !deallocates/dissociates all arguments
         end type tens_operation_t
  !Tensor dimension permutation:
         type, public:: permutation_t
@@ -524,8 +529,11 @@
         private TensRcrsvPrintIt
         public tens_rcrsv_dtor
  !tens_argument_t:
-        private TensArgumentSet
+        private TensArgumentSetTensor
+        private TensArgumentAllocateTensor
         private TensArgumentIsSet
+        private TensArgumentFreeTensor
+        private tens_argument_dtor
  !tens_operation_t:
         private TensOperationClean
         private TensOperationSetArgument
@@ -533,6 +541,7 @@
         private TensOperationGetNumArgs
         private TensOperationGetArgument
         private TensOperationAllocateArgument
+        private TensOperationFreeArguments
  !permutation_t:
         private PermutationReset
         private PermutationGetAccess
@@ -4338,25 +4347,46 @@
 
          return
         end subroutine tens_rcrsv_dtor
-![tens_argument_t]==================================
-        subroutine TensArgumentSet(this,tensor,ierr)
-!Sets the tensor argument.
+![tens_argument_t]========================================
+        subroutine TensArgumentSetTensor(this,tensor,ierr)
+!Sets the tensor argument by pointer association.
          implicit none
          class(tens_argument_t), intent(inout):: this     !inout: tensor argument
          class(tens_rcrsv_t), intent(in), target:: tensor !in: tensor target (tens_rcrsv_t)
          integer(INTD), intent(out), optional:: ierr      !out: error code
          integer(INTD):: errc
 
-         if(tensor%is_set(errc)) then
-          if(errc.eq.TEREC_SUCCESS) this%tens_p=>tensor
+         if(.not.this%alloc) then
+          if(tensor%is_set(errc)) then
+           if(errc.eq.TEREC_SUCCESS) this%tens_p=>tensor
+          else
+           if(errc.eq.TEREC_SUCCESS) errc=TEREC_INVALID_ARGS
+          endif
          else
-          if(errc.eq.TEREC_SUCCESS) errc=TEREC_INVALID_ARGS
+          errc=TEREC_INVALID_REQUEST
          endif
          if(present(ierr)) ierr=errc
          return
-        end subroutine TensArgumentSet
-!------------------------------------------------------------------------
-        function TensArgumentIsSet(this,ierr,num_dims,tens_p) result(ans)
+        end subroutine TensArgumentSetTensor
+!-------------------------------------------------------
+        subroutine TensArgumentAllocateTensor(this,ierr)
+!Allocates an empty tensor for a subsequent definition.
+         implicit none
+         class(tens_argument_t), intent(inout):: this !inout: tensor argument
+         integer(INTD), intent(out), optional:: ierr  !out: error code
+         integer(INTD):: errc
+
+         if(.not.this%alloc) then
+          allocate(this%tens_p,STAT=errc)
+          if(errc.eq.0) then; this%alloc=.TRUE.; else; errc=TEREC_MEM_ALLOC_FAILED; endif
+         else
+          errc=TEREC_INVALID_REQUEST
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensArgumentAllocateTensor
+!------------------------------------------------------------------------------
+        function TensArgumentIsSet(this,ierr,num_dims,tens_p,alloc) result(ans)
 !Returns TRUE if the tensor argument is set, plus additional info.
          implicit none
          logical:: ans                                   !out: answer
@@ -4364,18 +4394,51 @@
          integer(INTD), intent(out), optional:: ierr     !out: error code
          integer(INTD), intent(out), optional:: num_dims !out: tensor rank
          class(tens_rcrsv_t), pointer, intent(inout), optional:: tens_p !out: pointer to the tensor
+         logical, intent(out), optional:: alloc          !out: allocation status of the tensor pointer (TRUE:allocated; FALSE:associated)
          integer(INTD):: errc
+         logical:: alcd
 
-         errc=TEREC_SUCCESS; ans=associated(this%tens_p)
+         errc=TEREC_SUCCESS; ans=associated(this%tens_p); alcd=this%alloc
          if(ans.and.present(num_dims)) then
           if(.not.this%tens_p%is_set(errc,num_dims=num_dims)) then
            if(errc.eq.TEREC_SUCCESS) errc=TEREC_OBJ_CORRUPTED
           endif
          endif
          if(present(tens_p)) tens_p=>this%tens_p
+         if(present(alloc)) alloc=alcd
          if(present(ierr)) ierr=errc
          return
         end function TensArgumentIsSet
+!---------------------------------------------------
+        subroutine TensArgumentFreeTensor(this,ierr)
+!Frees the tensor (deallocation or dissociation).
+         implicit none
+         class(tens_argument_t), intent(inout):: this !inout: tensor argument
+         integer(INTD), intent(out), optional:: ierr  !out: error code
+         integer(INTD):: errc
+
+         errc=TEREC_SUCCESS
+         if(associated(this%tens_p)) then
+          if(this%alloc) then
+           deallocate(this%tens_p,STAT=errc); if(errc.ne.0) errc=TEREC_MEM_FREE_FAILED
+           this%alloc=.FALSE.
+          endif
+          this%tens_p=>NULL()
+         else
+          errc=TEREC_INVALID_REQUEST
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensArgumentFreeTensor
+!------------------------------------------
+        subroutine tens_argument_dtor(this)
+         implicit none
+         type(tens_argument_t):: this
+         integer(INTD):: errc
+
+         call this%free_tensor(errc)
+         return
+        end subroutine tens_argument_dtor
 ![tens_operation_t]=============================
         subroutine TensOperationClean(this,ierr)
 !Cleans the tensor operation.
@@ -4399,7 +4462,7 @@
          if(.not.this%args_full(errc)) then
           if(errc.eq.TEREC_SUCCESS) then
            if(this%num_args.lt.MAX_TENSOR_OPERANDS) then
-            call this%tens_arg(this%num_args)%set(tensor,errc)
+            call this%tens_arg(this%num_args)%set_tensor(tensor,errc)
             if(errc.eq.TEREC_SUCCESS) this%num_args=this%num_args+1
            else
             errc=TEREC_INVALID_REQUEST
@@ -4423,7 +4486,7 @@
 
          errc=TEREC_SUCCESS
          if(arg_num.ge.0.and.arg_num.lt.this%num_args) then
-          call this%tens_arg(arg_num)%set(tensor,errc)
+          call this%tens_arg(arg_num)%set_tensor(tensor,errc)
          else
           errc=TEREC_INVALID_ARGS
          endif
@@ -4473,14 +4536,30 @@
 
          errc=TEREC_SUCCESS
          if(this%num_args.lt.MAX_TENSOR_OPERANDS) then
-          allocate(this%tens_arg(this%num_args)%tens_p,STAT=errc)
-          if(errc.ne.0) errc=TEREC_MEM_ALLOC_FAILED
+          call this%tens_arg(this%num_args)%allocate_tensor(errc)
          else
           errc=TEREC_UNABLE_COMPLETE
          endif
          if(present(ierr)) ierr=errc
          return
         end subroutine TensOperationAllocateArgument
+!-------------------------------------------------------
+        subroutine TensOperationFreeArguments(this,ierr)
+!Frees all arguments in the tensor operation.
+         implicit none
+         class(tens_operation_t), intent(inout):: this !inout: tensor operation
+         integer(INTD), intent(out), optional:: ierr   !out: error code
+         integer(INTD):: errc,ier
+
+         errc=TEREC_SUCCESS
+         do while(this%num_args.gt.0)
+          this%num_args=this%num_args-1
+          call this%tens_arg(this%num_args)%free_tensor(ier)
+          if(ier.ne.TEREC_SUCCESS.and.errc.eq.TEREC_SUCCESS) errc=ier
+         enddo
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensOperationFreeArguments
 ![permutation_t]=====================================
         subroutine PermutationReset(this,length,ierr)
 !Resets the permutation (ctor).

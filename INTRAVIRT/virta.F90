@@ -1,9 +1,9 @@
 !ExaTENSOR: Parallel Virtual Processing for Scale-Adaptive Hierarchical Tensor Algebra:
 !Derives from abstract domain-specific virtual processing (DSVP).
 !This module provides basic infrastructure for ExaTENSOR, tensor algebra virtual processor (TAVP).
-!The logical and numerical tensor algebra virtual processors (L-TAVP, N-TAVP) derive from this module.
+!Different specializations (roles) of tensor algebra virtual processors derive from this module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/06/20
+!REVISION: 2017/06/21
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -56,33 +56,36 @@
         integer(INTD), parameter, public:: EXA_WORKER=2             !worker (numeric) process (TAVP)
         integer(INTD), parameter, public:: EXA_HELPER=3             !helper (auxiliary) process (TAVP)
         integer(INTD), public:: EXA_MAX_WORK_GROUP_SIZE=64 !maximal size of a work group (max number of workers per manager)
- !Elementary tensor instruction (ETI) granularity classification:
-        real(8), public:: EXA_FLOPS_MEDIUM=1d10 !minimal number of Flops to consider the operation as medium-cost
-        real(8), public:: EXA_FLOPS_HEAVY=1d12  !minimal number of Flops to consider the operation as heavy-cost
-        real(8), public:: EXA_COST_TO_SIZE=1d2  !minimal cost (Flops) to size (Words) ratio to consider the operation compute intensive
  !Tensor algebra virtual processor (TAVP):
   !TAVP instruction code (opcode), must be non-negative (consult TAProL spec):
+   !NOOP:
         integer(INTD), parameter, public:: TAVP_INSTR_NOOP=DS_INSTR_NOOP !no operation (empty instruction)
-        integer(INTD), parameter, public:: TAVP_INSTR_STOP=0       !stop TAVP
-        integer(INTD), parameter, public:: TAVP_INSTR_PAUSE=1      !pause TAVP execution
-        integer(INTD), parameter, public:: TAVP_INSTR_RESUME=2     !resume TAVP execution
-        integer(INTD), parameter, public:: TAVP_INSTR_COMM=100     !tensor communication (get/put/accumulate)
-        integer(INTD), parameter, public:: TAVP_INSTR_INIT=101     !tensor initialization (assignement to a value)
-        integer(INTD), parameter, public:: TAVP_INSTR_NORM1=102    !tensor 1-norm
-        integer(INTD), parameter, public:: TAVP_INSTR_NORM2=103    !tensor 2-norm
-        integer(INTD), parameter, public:: TAVP_INSTR_MIN=104      !tensor min element
-        integer(INTD), parameter, public:: TAVP_INSTR_MAX=105      !tensor max element
-        integer(INTD), parameter, public:: TAVP_INSTR_FOLD=106     !tensor dimension folding
-        integer(INTD), parameter, public:: TAVP_INSTR_UNFOLD=107   !tensor dimension unfolding
-        integer(INTD), parameter, public:: TAVP_INSTR_SLICE=108    !tensor slicing (taking a slice of a tensor)
-        integer(INTD), parameter, public:: TAVP_INSTR_INSERT=109   !tensor insertion (inserting a tensor slice in a tensor)
-        integer(INTD), parameter, public:: TAVP_INSTR_PERMUTE=110  !tensor dimension permutation (in-place)
-        integer(INTD), parameter, public:: TAVP_INSTR_COPY=111     !tensor copy (copying a tensor into another tensor with an optional index permutation)
-        integer(INTD), parameter, public:: TAVP_INSTR_SCALE=112    !tensor scaling (multiplication by a number)
-        integer(INTD), parameter, public:: TAVP_INSTR_ADD=113      !tensor addition
-        integer(INTD), parameter, public:: TAVP_INSTR_TRACE=114    !tensor trace (tracing over some/all tensor indices)
-        integer(INTD), parameter, public:: TAVP_INSTR_PRODUCT=115  !tensor direct (Cartesian) product
-        integer(INTD), parameter, public:: TAVP_INSTR_CONTRACT=116 !tensot contraction (also includes tensor product, tensor addition, and tensor scaling)
+   !General control [0-15]:
+        integer(INTD), parameter, public:: TAVP_INSTR_STOP=0      !stop TAVP
+        integer(INTD), parameter, public:: TAVP_INSTR_PAUSE=1     !pause TAVP execution
+        integer(INTD), parameter, public:: TAVP_INSTR_RESUME=2    !resume TAVP execution
+   !Tensor operations [16-255]:
+        integer(INTD), parameter, public:: TAVP_INSTR_CREATE=16   !tensor creation
+        integer(INTD), parameter, public:: TAVP_INSTR_DESTROY=17  !tensor destruction
+        integer(INTD), parameter, public:: TAVP_INSTR_LOAD=18     !tensor loading from persistent storage
+        integer(INTD), parameter, public:: TAVP_INSTR_SAVE=19     !tensor saving in persistent storage
+        integer(INTD), parameter, public:: TAVP_INSTR_COMM=20     !tensor communication (get/put/accumulate)
+        integer(INTD), parameter, public:: TAVP_INSTR_INIT=21     !tensor initialization (assignement to a value)
+        integer(INTD), parameter, public:: TAVP_INSTR_NORM1=22    !tensor 1-norm
+        integer(INTD), parameter, public:: TAVP_INSTR_NORM2=23    !tensor 2-norm
+        integer(INTD), parameter, public:: TAVP_INSTR_MIN=24      !tensor min element
+        integer(INTD), parameter, public:: TAVP_INSTR_MAX=25      !tensor max element
+        integer(INTD), parameter, public:: TAVP_INSTR_FOLD=26     !tensor dimension folding
+        integer(INTD), parameter, public:: TAVP_INSTR_UNFOLD=27   !tensor dimension unfolding
+        integer(INTD), parameter, public:: TAVP_INSTR_SLICE=28    !tensor slicing (taking a slice of a tensor with an optional index permutation)
+        integer(INTD), parameter, public:: TAVP_INSTR_INSERT=29   !tensor insertion (inserting a tensor slice in a tensor with an optional index permutation)
+        integer(INTD), parameter, public:: TAVP_INSTR_PERMUTE=30  !tensor dimension permutation (in-place)
+        integer(INTD), parameter, public:: TAVP_INSTR_COPY=31     !tensor copy (copying a tensor into another tensor with an optional index permutation)
+        integer(INTD), parameter, public:: TAVP_INSTR_SCALE=32    !tensor scaling (multiplication by a number)
+        integer(INTD), parameter, public:: TAVP_INSTR_ADD=33      !tensor addition (with an optional index permutation)
+        integer(INTD), parameter, public:: TAVP_INSTR_TRACE=34    !tensor trace (tracing over some/all tensor indices)
+        integer(INTD), parameter, public:: TAVP_INSTR_PRODUCT=35  !tensor direct product (with an optional index permutation)
+        integer(INTD), parameter, public:: TAVP_INSTR_CONTRACT=36 !tensot contraction (also includes tensor product, tensor addition, and tensor scaling)
 !TYPES:
  !Tensor resource (local resource):
         type, extends(ds_resrc_t), public:: tens_resrc_t
@@ -116,7 +119,7 @@
         end type tens_oprnd_t
  !Tensor instruction control fields:
 #if 0
-  !Tensor copy/addition control field:
+  !Tensor addition/copy/slice/insert control field:
         type, extends(ds_instr_ctrl_t), public:: ctrl_tens_add_t
          type(permutation_t), private:: prmn                    !tensor dimension permutation
          complex(8), private:: alpha=(1d0,0d0)                  !alpha prefactor
@@ -139,17 +142,6 @@
           procedure, public:: unpack=>CtrlTensContrUnpack       !unpacks the instruction control field from a plain byte packet
           final:: ctrl_tens_contr_dtor                          !dtor
         end type ctrl_tens_contr_t
-#if 0
- !Tensor instruction:
-        type, extends(ds_instr_t), public:: tens_instr_t
-        contains
-         procedure, private:: TensInstrCtor                     !ctor
-         generic, public:: tens_instr_ctor=>TensInstrCtor
-         procedure, public:: encode=>TensInstrEncode            !encoding procedure: Packs the TAVP instruction into a raw byte packet (bytecode)
-         procedure, public:: decode=>TensInstrDecode            !decoding procedure: Unpacks the raw byte packet (bytecode) and constructs a TAVP instruction
-         final:: tens_instr_dtor                                !dtor
-        end type tens_instr_t
-#endif
 !DATA:
  !MPI process specialization (TAVP role):
         integer(INT_MPI), public:: process_role=EXA_NO_ROLE !MPI process role
@@ -185,13 +177,6 @@
         private CtrlTensContrPack
         private CtrlTensContrUnpack
         public ctrl_tens_contr_dtor
-#if 0
- !tens_instr_t:
-        private TensInstrCtor
-        private TensInstrEncode
-        private TensInstrDecode
-        public tens_instr_dtor
-#endif
 
        contains
 !IMPLEMENTATION:
@@ -753,27 +738,10 @@
         end subroutine CtrlTensContrUnpack
 !--------------------------------------------
         subroutine ctrl_tens_contr_dtor(this)
-!DTOR.
          implicit none
          type(ctrl_tens_contr_t):: this
 
          return
         end subroutine ctrl_tens_contr_dtor
-![tens_instr_t]==================================================
-#if 0
-        subroutine TensInstrCtor(this,opcode,ierr,tens_operation)
-!Constructs a tensor instruction realizing the given tensor operation.
-         implicit none
-         class(tens_instr_t), intent(inout):: this                      !out: tensor instruction
-         integer(INTD), intent(in):: opcode                             !in: instruction code (see top)
-         integer(INTD), intent(out), optional:: ierr                    !out: error code
-         class(tens_operation_t), intent(in), optional:: tens_operation !in: tensor operation
-         integer(INTD):: errc
-
-         errc=0
-         if(present(ierr)) ierr=errc
-         return
-        end subroutine TensInstrCtor
-#endif
 
        end module virta

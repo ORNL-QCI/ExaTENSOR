@@ -1,9 +1,9 @@
-!ExaTENSOR: Managing virtual processor (manager).
+!ExaTENSOR: TAVP Driver
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/01/04
+!REVISION: 2017/06/21
 
-!Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
-!Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
+!Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
+!Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
 
 !This file is part of ExaTensor.
 
@@ -20,9 +20,8 @@
 !You should have received a copy of the GNU Lesser General Public License
 !along with ExaTensor. If not, see <http://www.gnu.org/licenses/>.
 
-       module m_process
+       module tavp_driver
         use virta
-        !use c_process
         implicit none
         private
 !PARAMETERS:
@@ -32,7 +31,7 @@
         logical, private:: VERBOSE=.TRUE.
 !TYPES:
 !INTERFACES:
-!VISIBILITY
+!VISIBILITY:
 !IMPLEMENTATION:
 
-       end module m_process
+       end module tavp_driver

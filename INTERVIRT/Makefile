@@ -256,19 +256,22 @@ LTHREAD = $(LTHREAD_$(TOOLKIT))
 #LINKING:
 LFLAGS = $(LTHREAD) $(MPI_LINK) $(LA_LINK) $(CUDA_LINK) $(LIB)
 
-OBJS = ./OBJ/m_process.o ./OBJ/g_process.o ./OBJ/exatensor.o
+OBJS = ./OBJ/tavp_worker.o ./OBJ/tavp_manager.o ./OBJ/tavp_driver.o ./OBJ/exatensor.o
 
 $(NAME): $(OBJS) $(MY_LIB)
 	ar cr lib$(NAME).a $(OBJS) $(MY_LIB)
 
-./OBJ/m_process.o: m_process.F90 ../INTRAVIRT/OBJ/virta.o
+./OBJ/tavp_worker.o: tavp_worker.F90 ../INTRAVIRT/OBJ/virta.o
 	mkdir -p ./OBJ
-	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(FFLAGS) m_process.F90 -o ./OBJ/m_process.o
+	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(FFLAGS) tavp_worker.F90 -o ./OBJ/tavp_worker.o
 
-./OBJ/g_process.o: g_process.F90 ../INTRAVIRT/OBJ/virta.o ./OBJ/m_process.o
-	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(FFLAGS) g_process.F90 -o ./OBJ/g_process.o
+./OBJ/tavp_manager.o: tavp_manager.F90 ../INTRAVIRT/OBJ/virta.o
+	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(FFLAGS) tavp_manager.F90 -o ./OBJ/tavp_manager.o
 
-./OBJ/exatensor.o: exatensor.F90 ../INTRAVIRT/OBJ/virta.o ./OBJ/m_process.o ./OBJ/g_process.o
+./OBJ/tavp_driver.o: tavp_driver.F90 ../INTRAVIRT/OBJ/virta.o
+	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(FFLAGS) tavp_driver.F90 -o ./OBJ/tavp_driver.o
+
+./OBJ/exatensor.o: exatensor.F90 ../INTRAVIRT/OBJ/virta.o ./OBJ/tavp_driver.o ./OBJ/tavp_manager.o ./OBJ/tavp_worker.o
 	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(FFLAGS) exatensor.F90 -o ./OBJ/exatensor.o
 
 

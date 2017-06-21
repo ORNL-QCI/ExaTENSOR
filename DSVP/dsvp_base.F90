@@ -1,6 +1,6 @@
 !Domain-specific virtual processor (DSVP): Abstract base module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/06/20
+!REVISION: 2017/06/21
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -116,12 +116,12 @@
         integer(INTD), parameter, public:: DS_INSTR_OUTPUT_WAIT=8   !waiting for the (remote) output operands to be uploaded back
         integer(INTD), parameter, public:: DS_INSTR_RETIRED=9       !instruction retired (all temporary resources have been released)
 !DERIVED TYPES:
- !Domain-specific resource:
+ !Domain-specific resource (normally local):
         type, abstract, public:: ds_resrc_t
          contains
          procedure(ds_resrc_query_i), deferred, public:: is_empty  !returns TRUE if the resource is empty, FALSE otherwise
         end type ds_resrc_t
- !Domain-specific operand:
+ !Domain-specific operand (will contain domain-specific data):
         type, abstract, public:: ds_oprnd_t
          integer(INTD), private:: stat=DS_OPRND_EMPTY              !current status of the domain-specific operand: {DS_OPRND_EMPTY,DS_OPRND_DEFINED,DS_OPRND_PRESENT}
          integer(INTD), private:: in_route=DS_OPRND_NO_COMM        !communication status: {DS_OPRND_NO_COMM,DS_OPRND_FETCHING,DS_OPRND_UPLOADING}
@@ -152,7 +152,7 @@
           procedure(ds_instr_ctrl_pack_i), deferred, public:: pack     !packs the domain-specific instruction control into a plain byte packet
           procedure(ds_instr_ctrl_unpack_i), deferred, public:: unpack !unpacks the domain-specific instruction control from a plain byte packet
         end type ds_instr_ctrl_t
- !Domain-specific instruction:
+ !Domain-specific instruction (realization of a domain-specific operation for DSVP):
         type, abstract, public:: ds_instr_t
          integer(INTD), private:: code=DS_INSTR_NOOP                !all valid instruction codes are non-negative (negative means no operation)
          integer(INTD), private:: num_oprnds=0                      !number of domain-specific operands: Numeration:[0,1,2,3,...]
@@ -174,7 +174,7 @@
           procedure(ds_instr_encode_i), deferred, public:: encode       !encoding procedure: Packs the domain-specific instruction into a raw byte packet (bytecode)
           procedure, public:: is_empty=>DSInstrIsEmpty                  !returns TRUE if the domain-specific instruction is empty
           procedure, public:: is_retired=>DSInstrIsRetired              !returns TRUE if the domain-specific instruction is retired
-          procedure, public:: is_active=>DSInstrIsActive                !returns TRUE if the domain-specific instruction is neither empty nor retired
+          procedure, public:: is_active=>DSInstrIsActive                !returns TRUE if the domain-specific instruction is active (defined)
           procedure, public:: get_code=>DSInstrGetCode                  !returns the instruction code
           procedure, public:: set_code=>DSInstrSetCode                  !sets the instruction code
           procedure, public:: get_status=>DSInstrGetStatus              !returns the current status of the domain-specific instruction and error code
@@ -191,7 +191,7 @@
           procedure, public:: all_set=>DSInstrAllSet                    !returns TRUE if all operands and control are set
           procedure, public:: clean=>DSInstrClean                       !resets the domain-specific instruction to an empty state (after it has been retired)
         end type ds_instr_t
- !Domain-specific virtual processor:
+ !Domain-specific virtual processor (DSVP):
         type, abstract, public:: dsvp_t
          integer(INTD), private:: stat=DSVP_STAT_OFF          !current DSVP status: {DSVP_STAT_OFF, DSVP_STAT_ON, negative integers = errors}
          integer(INTD), private:: spec_kind=DSVP_NO_KIND      !specific kind of DSVP (to be specilized)
