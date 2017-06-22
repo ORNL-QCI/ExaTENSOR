@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP Worker
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/06/21
+!REVISION: 2017/06/22
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -34,6 +34,20 @@
         real(8), public:: EXA_FLOPS_HEAVY=1d12  !minimal number of Flops to consider the operation as heavy-cost
         real(8), public:: EXA_COST_TO_SIZE=1d2  !minimal cost (Flops) to size (Words) ratio to consider the operation arithmetically intensive
 !TYPES:
+ !Tensor cache entry:
+        type, private:: tens_entry_t
+         class(tens_rcrsv_t), pointer, private:: tensor=>NULL()   !tensor (either allocated or associated)
+         class(tens_resrc_t), pointer, private:: resource=>NULL() !resource (either allocated or associated)
+         logical, private:: tens_alloc=.FALSE.                    !TRUE if the tensor pointer is allocated
+         logical, private:: res_alloc=.FALSE.                     !TRUE if the resource pointer is allocated
+         contains
+          procedure, private:: TensEntryCtor                      !ctor
+          generic, public:: tens_entry_ctor=>TensEntryCtor
+          procedure, public:: is_set=>TensEntryIsSet              !returns TRUE if the tensor cache entry is set
+          procedure, public:: get_tensor=>TensEntryGetTensor      !returns a pointer to the tensor
+          procedure, public:: get_resource=>TensEntryGetResource  !returns a pointer to the resource
+          final:: tens_entry_dtor                                 !dtor
+        end type tens_entry_t
  !Tensor instruction (realization of a tensor operation for a specific TAVP):
         type, extends(ds_instr_t), private:: tens_instr_t
         contains
@@ -45,6 +59,12 @@
         end type tens_instr_t
 !INTERFACES:
 !VISIBILITY:
+ !tens_entry_t:
+        private TensEntryCtor
+        private TensEntryIsSet
+        private TensEntryGetTensor
+        private TensEntryGetResource
+        private tens_entry_dtor
  !tens_instr_t:
         private TensInstrCtor
         private TensInstrDecode
@@ -53,6 +73,96 @@
 
 !IMPLEMENTATION:
        contains
+![tens_entry_t]============================================
+        subroutine TensEntryCtor(this,ierr,tensor,resource)
+!CTOR: If either <tensor> or <resource> are not present,
+!the corresponding components of <this> will be allocated,
+!otherwise pointer associated.
+         implicit none
+         class(tens_entry_t), intent(out):: this                       !out: tensor cache entry
+         integer(INTD), intent(out), optional:: ierr                   !out: error code
+         class(tens_rcrsv_t), intent(in), pointer, optional:: tensor   !in: pointer to the tensor
+         class(tens_resrc_t), intent(in), pointer, optional:: resource !in: pointer to the resource
+         integer(INTD):: errc
+
+         errc=0
+         if(present(tensor)) then
+          if(associated(tensor)) then
+           this%tensor=>tensor; this%tens_alloc=.FALSE.
+          else
+           errc=-1
+          endif
+         else
+          allocate(this%tensor,STAT=errc)
+          if(errc.eq.0) then; this%tens_alloc=.TRUE.; else; errc=-2; endif
+         endif
+         if(errc.eq.0) then
+          if(present(resource)) then
+           if(associated(resource)) then
+            this%resource=>resource; this%res_alloc=.FALSE.
+           else
+            errc=-3
+           endif
+          else
+           allocate(this%resource,STAT=errc)
+           if(errc.eq.0) then; this%res_alloc=.TRUE.; else; errc=-4; endif
+          endif
+         endif
+         if(errc.ne.0) call tens_entry_dtor(this)
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensEntryCtor
+!-----------------------------------------------------
+        function TensEntryIsSet(this,ierr) result(ans)
+         implicit none
+         logical:: ans                               !out: answer
+         class(tens_entry_t), intent(in):: this      !in: tensor cache entry
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=0
+         ans=associated(this%tensor)
+         if(present(ierr)) ierr=errc
+         return
+        end function TensEntryIsSet
+!--------------------------------------------------------------
+        function TensEntryGetTensor(this,ierr) result(tensor_p)
+         implicit none
+         class(tens_rcrsv_t), pointer:: tensor_p     !out: pointer to the tensor
+         class(tens_entry_t), intent(in):: this      !in: tensor cache entry
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=0
+         tensor_p=>this%tensor
+         if(.not.associated(tensor_p)) errc=-1
+         if(present(ierr)) ierr=errc
+         return
+        end function TensEntryGetTensor
+!------------------------------------------------------------------
+        function TensEntryGetResource(this,ierr) result(resource_p)
+         implicit none
+         class(tens_resrc_t), pointer:: resource_p   !out: pointer to the resource
+         class(tens_entry_t), intent(in):: this      !in: tensor cache entry
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=0
+         resource_p=>this%resource
+         if(.not.associated(resource_p)) errc=-1
+         if(present(ierr)) ierr=errc
+         return
+        end function TensEntryGetResource
+!---------------------------------------
+        subroutine tens_entry_dtor(this)
+         implicit none
+         type(tens_entry_t):: this
+
+         if(associated(this%tensor).and.this%tens_alloc) deallocate(this%tensor)
+         if(associated(this%resource).and.this%res_alloc) deallocate(this%resource)
+         this%tens_alloc=.FALSE.; this%res_alloc=.FALSE.
+         return
+        end subroutine tens_entry_dtor
 ![tens_instr_t]============================================
         subroutine TensInstrCtor(this,op_code,ierr,op_spec)
 !Constructs a tensor instruction from a given tensor operation.
