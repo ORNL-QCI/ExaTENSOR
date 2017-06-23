@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP Worker
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/06/22
+!REVISION: 2017/06/23
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -72,14 +72,14 @@
         end type tens_instr_t
  !TAVP instruction microcode binding:
         type, private:: microcode_bind_t
-         procedure(ds_instr_self_i), pointer:: acquire_resource=>NULL() !acquires local resources for instruction operands
-         procedure(ds_instr_self_i), pointer:: prefetch_input=>NULL()   !starts prefetching input operands
-         procedure(ds_instr_self_i), pointer:: sync_prefetch=>NULL()    !synchronizes the input prefetch (either test or wait)
-         procedure(ds_instr_self_i), pointer:: execute=>NULL()          !executes the domain-specific instruction
-         procedure(ds_instr_self_i), pointer:: sync_execution=>NULL()   !synchronizes the execution (either test or wait)
-         procedure(ds_instr_self_i), pointer:: upload_output=>NULL()    !starts uploading the output
-         procedure(ds_instr_self_i), pointer:: sync_upload=>NULL()      !synchronizes the output upload (either test or wait)
-         procedure(ds_instr_self_i), pointer:: release_resource=>NULL() !releases local resources occupied by instruction operands
+         procedure(ds_instr_self_i), nopass, pointer:: acquire_resource=>NULL() !acquires local resources for instruction operands
+         procedure(ds_instr_self_i), nopass, pointer:: prefetch_input=>NULL()   !starts prefetching input operands
+         procedure(ds_instr_self_i), nopass, pointer:: sync_prefetch=>NULL()    !synchronizes the input prefetch (either test or wait)
+         procedure(ds_instr_self_i), nopass, pointer:: execute=>NULL()          !executes the domain-specific instruction
+         procedure(ds_instr_self_i), nopass, pointer:: sync_execution=>NULL()   !synchronizes the execution (either test or wait)
+         procedure(ds_instr_self_i), nopass, pointer:: upload_output=>NULL()    !starts uploading the output
+         procedure(ds_instr_self_i), nopass, pointer:: sync_upload=>NULL()      !synchronizes the output upload (either test or wait)
+         procedure(ds_instr_self_i), nopass, pointer:: release_resource=>NULL() !releases local resources occupied by instruction operands
         end type microcode_bind_t
 !INTERFACES:
 !DATA:
