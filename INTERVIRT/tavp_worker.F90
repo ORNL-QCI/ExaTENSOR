@@ -70,7 +70,7 @@
           procedure, private:: set_microcode=>TensInstrSetMicrocode !sets up instruction dynamic bindings to the corresponding microcode
           final:: tens_instr_dtor                                   !dtor
         end type tens_instr_t
- !TAVP instruction microcode binding:
+ !TAVP instruction microcode binding (set by the TAVP initialization):
         type, private:: microcode_bind_t
          procedure(ds_instr_self_i), nopass, pointer:: acquire_resource=>NULL() !acquires local resources for instruction operands
          procedure(ds_instr_self_i), nopass, pointer:: prefetch_input=>NULL()   !starts prefetching input operands
@@ -85,7 +85,7 @@
 !DATA:
  !Tensor cache (both persistent and temporary tensors):
         type(tens_cache_t), private:: tens_cache
- !TAVP instruction microcode bindings:
+ !TAVP instruction microcode bindings (set by the TAVP initialization):
         type(microcode_bind_t), private:: microcode(0:TAVP_ISA_SIZE-1)
 !VISIBILITY:
  !tens_entry_t:
@@ -337,7 +337,7 @@
         end function TensCacheEvict
 !-------------------------------------------
         subroutine TensCacheErase(this,ierr)
-!Erases the tensor cache fully and unconditionally.
+!Erases the tensor cache completely and unconditionally.
          implicit none
          class(tens_cache_t), intent(inout):: this   !inout: tensor cache
          integer(INTD), intent(out), optional:: ierr !out: error code
@@ -364,11 +364,12 @@
          integer(INTD), intent(in):: op_code              !in: instruction code (see top)
          integer(INTD), intent(out), optional:: ierr      !out: error code
          class(*), intent(in), target, optional:: op_spec !in: formal operation specification
-         integer(INTD):: errc
-         class(tens_oprnd_t), pointer:: oprnd_p
-         class(tens_rcrsv_t), pointer:: tens_p
-         class(tens_contraction_t), pointer:: tens_contr_p
-         class(contr_ptrn_ext_t), pointer:: contr_ptrn_p
+         integer(INTD):: errc,i
+         class(tens_oprnd_t), pointer:: oprnd
+         class(tens_rcrsv_t), pointer:: tensor
+         class(tens_contraction_t), pointer:: tens_contr
+         class(contr_ptrn_ext_t), pointer:: contr_ptrn
+         class(ctrl_tens_contr_t), pointer:: tens_contr_ctrl
 
          if(this%is_empty(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
@@ -378,44 +379,72 @@
            case(TAVP_INSTR_STOP)
             !`Implement
            case(TAVP_INSTR_CREATE,TAVP_INSTR_DESTROY)
-            tens_p=>NULL()
-            select type(op_spec); class is(tens_rcrsv_t); tens_p=>op_spec; end select
-            if(associated(tens_p)) then
-             if(tens_p%is_set()) then
+            tensor=>NULL()
+            select type(op_spec); class is(tens_rcrsv_t); tensor=>op_spec; end select
+            if(associated(tensor)) then
+             if(tensor%is_set()) then
               call this%alloc_operands(1,errc)
               if(errc.eq.DSVP_SUCCESS) then
-               allocate(oprnd_p,STAT=errc)
+               allocate(oprnd,STAT=errc)
                if(errc.eq.0) then
-                call oprnd_p%tens_oprnd_ctor(tens_p,errc)
+                call oprnd%tens_oprnd_ctor(tensor,errc); tensor=>NULL()
                 if(errc.eq.0) then
-                 call this%set_operand(0,oprnd_p,errc)
-                 if(errc.ne.DSVP_SUCCESS) errc=-1
+                 call this%set_operand(0,oprnd,errc); oprnd=>NULL() !pointer target was saved in the tensor instruction
+                 if(errc.ne.DSVP_SUCCESS) errc=-18
                 else
-                 errc=-1
+                 errc=-17
                 endif
                else
-                errc=-1
+                errc=-16
                endif
               else
-               errc=-1
+               errc=-15
               endif
              else
-              errc=-1
+              errc=-14
              endif
             else
-             errc=-1
+             errc=-13
             endif
            case(TAVP_INSTR_CONTRACT)
-            tens_contr_p=>NULL()
-            select type(op_spec); class is(tens_contraction_t); tens_contr_p=>op_spec; end select
-            if(associated(tens_contr_p)) then
-             if(tens_contr_p%is_set()) then
-              
+            tens_contr=>NULL()
+            select type(op_spec); class is(tens_contraction_t); tens_contr=>op_spec; end select
+            if(associated(tens_contr)) then
+             if(tens_contr%is_set()) then
+              contr_ptrn=>tens_contr%get_ext_contr_ptrn(errc)
+              if(errc.eq.TEREC_SUCCESS) then
+               allocate(tens_contr_ctrl,STAT=errc)
+               if(errc.eq.0) then
+                call tens_contr_ctrl%ctrl_tens_contr_ctor(contr_ptrn,errc,tens_contr%get_prefactor()); contr_ptrn=>NULL()
+                if(errc.eq.0) then
+                 call this%set_control(tens_contr_ctrl,errc); tens_contr_ctrl=>NULL() !pointer target was saved in the tensor instruction
+                 if(errc.eq.DSVP_SUCCESS) then
+                  call this%alloc_operands(3,errc)
+                  if(errc.eq.DSVP_SUCCESS) then
+                   do i=0,2
+                    tensor=>tens_contr%get_argument(i,errc); if(errc.ne.TEREC_SUCCESS) exit
+                    allocate(oprnd,STAT=errc); if(errc.ne.0) exit
+                    call oprnd%tens_oprnd_ctor(tensor,errc); tensor=>NULL(); if(errc.ne.0) exit
+                    call this%set_operand(i,oprnd,errc); oprnd=>NULL(); if(errc.ne.DSVP_SUCCESS) exit
+                   enddo
+                  endif
+                 else
+                  errc=-12
+                 endif
+                else
+                 errc=-11
+                endif
+               else
+                errc=-10
+               endif
+              else
+               errc=-9
+              endif
              else
-              errc=-1
+              errc=-8
              endif
             else
-             errc=-1
+             errc=-7
             endif
            case default
             errc=-6 !invalid operation (or not implemented)

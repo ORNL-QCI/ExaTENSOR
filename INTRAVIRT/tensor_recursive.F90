@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/06/22
+!REVISION: 2017/06/23
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -348,6 +348,7 @@
           procedure, public:: set_operl_symm=>TensContractionSetOperlSymm  !sets index permutational symmetry restrictions due to tensor operation (both contraction pattern and arguments must have been set already)
           procedure, public:: unpack=>TensContractionUnpack                !unpacks the object from a packet
           procedure, public:: pack=>TensContractionPack                    !packs the object into a packet
+          procedure, public:: get_prefactor=>TensContractionGetPrefactor   !returns the scalar prefactor
           procedure, public:: get_ext_contr_ptrn=>TensContractionGetExtContrPtrn !returns a pointer to the extended tensor contraction pattern
           procedure, public:: get_contr_ptrn=>TensContractionGetContrPtrn  !returns the classical (basic) digital contraction pattern used by TAL-SH for example
           procedure, private:: import_replace=>TensContractionImportReplace!creates a new tensor contraction by replacing tensor arguments in an existing tensor contraction (plus symmetry adjustment)
@@ -569,6 +570,7 @@
         private TensContractionSetOperlSymm
         private TensContractionUnpack
         private TensContractionPack
+        private TensContractionGetPrefactor
         private TensContractionGetExtContrPtrn
         private TensContractionGetContrPtrn
         private TensContractionImportReplace
@@ -5363,6 +5365,20 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensContractionPack
+!------------------------------------------------------------------------
+        function TensContractionGetPrefactor(this,ierr) result(prefactor)
+!Returns the scalar prefactor.
+         implicit none
+         complex(8):: prefactor                       !out: tensor contraction prefactor
+         class(tens_contraction_t), intent(in):: this !in: tensor contraction
+         integer(INTD), intent(out), optional:: ierr  !out: error code
+         integer(INTD):: errc
+
+         prefactor=this%alpha
+         if(.not.this%is_set(errc)) errc=TEREC_INVALID_REQUEST
+         if(present(ierr)) ierr=errc
+         return
+        end function TensContractionGetPrefactor
 !------------------------------------------------------------------------------
         function TensContractionGetExtContrPtrn(this,ierr) result(contr_ptrn_p)
 !Returns a pointer to the extended tensor contraction pattern.
@@ -5372,7 +5388,7 @@
          integer(INTD), intent(out), optional:: ierr          !out: error code
          integer(INTD):: errc
 
-         errc=TEREC_SUCCESS
+         errc=TEREC_SUCCESS; contr_ptrn_p=>NULL()
          if(this%is_set()) then
           contr_ptrn_p=>this%contr_ptrn
          else
