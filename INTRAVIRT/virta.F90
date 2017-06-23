@@ -3,7 +3,7 @@
 !This module provides basic infrastructure for ExaTENSOR, tensor algebra virtual processor (TAVP).
 !Different specializations (roles) of tensor algebra virtual processors derive from this module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/06/22
+!REVISION: 2017/06/23
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -111,6 +111,7 @@
           procedure, private:: TensOprndCtor                    !ctor
           generic, public:: tens_oprnd_ctor=>TensOprndCtor
           procedure, public:: set_resource=>TensOprndSetResource!sets the resource component if it has not been set via constructor
+          procedure, public:: get_tensor=>TensOprndGetTensor    !returns a pointer to the tensor
           procedure, public:: is_remote=>TensOprndIsRemote      !returns TRUE if the tensor operand is remote
           procedure, public:: acquire_rsc=>TensOprndAcquireRsc  !explicitly acquires local resources for the tensor operand
           procedure, public:: prefetch=>TensOprndPrefetch       !starts prefetching the remote tensor operand (acquires local resources!)
@@ -161,6 +162,7 @@
  !tens_oprnd_t:
         private TensOprndCtor
         private TensOprndSetResource
+        private TensOprndGetTensor
         private TensOprndIsRemote
         private TensOprndAcquireRsc
         private TensOprndPrefetch
@@ -333,6 +335,20 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensOprndSetResource
+!------------------------------------------------------------
+        function TensOprndGetTensor(this,ierr) result(tens_p)
+!Returns a pointer to the tensor.
+         implicit none
+         type(tens_rcrsv_t), pointer:: tens_p        !out: pointer to the tensor
+         class(tens_oprnd_t), intent(in):: this      !in: active tensor operand
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=0; tens_p=>this%tensor
+         if(.not.associated(tens_p)) errc=-1
+         if(present(ierr)) ierr=errc
+         return
+        end function TensOprndGetTensor
 !--------------------------------------------------------
         function TensOprndIsRemote(this,ierr) result(res)
 !Returns TRUE if the tensor operand is remote, FALSE otherwise.
