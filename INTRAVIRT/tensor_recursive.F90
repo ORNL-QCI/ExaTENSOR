@@ -1,6 +1,6 @@
-!ExaTENSOR: Recursive tensors
+!ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/06/21
+!REVISION: 2017/06/22
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -340,18 +340,19 @@
          type(contr_ptrn_ext_t), private:: contr_ptrn                     !extended tensor contraction pattern
          complex(8), private:: alpha=(1d0,0d0)                            !alpha prefactor
          contains
-          procedure, private:: TensContractionAssign                      !copy assignment
+          procedure, private:: TensContractionAssign                       !copy assignment
           generic, public:: assignment(=)=>TensContractionAssign
-          procedure, public:: is_set=>TensContractionIsSet                !returns TRUE if the tensor contraction is fully set
-          procedure, public:: args_full=>TensContractionArgsFull          !returns TRUE if all tensor contraction arguments have been set
-          procedure, public:: set_contr_ptrn=>TensContractionSetContrPtrn !sets the tensor contraction pattern (all tensor arguments must have been set already)
-          procedure, public:: set_operl_symm=>TensContractionSetOperlSymm !sets index permutational symmetry restrictions due to tensor operation (both contraction pattern and arguments must have been set already)
-          procedure, public:: unpack=>TensContractionUnpack               !unpacks the object from a packet
-          procedure, public:: pack=>TensContractionPack                   !packs the object into a packet
-          procedure, public:: get_contr_ptrn=>TensContractionGetContrPtrn !returns the classical (basic) digital contraction pattern used by TAL-SH for example
+          procedure, public:: is_set=>TensContractionIsSet                 !returns TRUE if the tensor contraction is fully set
+          procedure, public:: args_full=>TensContractionArgsFull           !returns TRUE if all tensor contraction arguments have been set
+          procedure, public:: set_contr_ptrn=>TensContractionSetContrPtrn  !sets the tensor contraction pattern (all tensor arguments must have been set already)
+          procedure, public:: set_operl_symm=>TensContractionSetOperlSymm  !sets index permutational symmetry restrictions due to tensor operation (both contraction pattern and arguments must have been set already)
+          procedure, public:: unpack=>TensContractionUnpack                !unpacks the object from a packet
+          procedure, public:: pack=>TensContractionPack                    !packs the object into a packet
+          procedure, public:: get_ext_contr_ptrn=>TensContractionGetExtContrPtrn !returns a pointer to the extended tensor contraction pattern
+          procedure, public:: get_contr_ptrn=>TensContractionGetContrPtrn  !returns the classical (basic) digital contraction pattern used by TAL-SH for example
           procedure, private:: import_replace=>TensContractionImportReplace!creates a new tensor contraction by replacing tensor arguments in an existing tensor contraction (plus symmetry adjustment)
-          procedure, public:: split=>TensContractionSplit                 !splits the tensor contraction into a list of subtensor contractions based on the pre-existing lists of argument subtensors
-          procedure, public:: print_it=>TensContractionPrintIt            !prints the tensor contraction info
+          procedure, public:: split=>TensContractionSplit                  !splits the tensor contraction into a list of subtensor contractions based on the pre-existing lists of argument subtensors
+          procedure, public:: print_it=>TensContractionPrintIt             !prints the tensor contraction info
         end type tens_contraction_t
 !INTERFACES:
  !Abstract:
@@ -568,6 +569,7 @@
         private TensContractionSetOperlSymm
         private TensContractionUnpack
         private TensContractionPack
+        private TensContractionGetExtContrPtrn
         private TensContractionGetContrPtrn
         private TensContractionImportReplace
         private TensContractionSplit
@@ -5316,28 +5318,6 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensContractionSetOperlSymm
-!-------------------------------------------------------
-        subroutine TensContractionPack(this,packet,ierr)
-!Packs the object into a packet.
-         implicit none
-         class(tens_contraction_t), intent(in):: this !in: tensor contraction
-         class(obj_pack_t), intent(inout):: packet    !inout: packet
-         integer(INTD), intent(out), optional:: ierr  !out: error code
-         integer(INTD):: errc,i
-         class(tens_rcrsv_t), pointer:: tens_p
-
-         call pack_builtin(packet,this%num_args,errc)
-         if(errc.eq.PACK_SUCCESS) then
-          do i=0,this%num_args-1
-           tens_p=>this%get_argument(i,errc); if(errc.ne.TEREC_SUCCESS) exit
-           call tens_p%pack(packet,errc); if(errc.ne.TEREC_SUCCESS) exit
-          enddo
-          if(errc.eq.PACK_SUCCESS) call this%contr_ptrn%pack(packet,errc)
-          if(errc.eq.PACK_SUCCESS) call pack_builtin(packet,this%alpha,errc)
-         endif
-         if(present(ierr)) ierr=errc
-         return
-        end subroutine TensContractionPack
 !---------------------------------------------------------
         subroutine TensContractionUnpack(this,packet,ierr)
 !Unpacks the object from a packet.
@@ -5361,6 +5341,46 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensContractionUnpack
+!-------------------------------------------------------
+        subroutine TensContractionPack(this,packet,ierr)
+!Packs the object into a packet.
+         implicit none
+         class(tens_contraction_t), intent(in):: this !in: tensor contraction
+         class(obj_pack_t), intent(inout):: packet    !inout: packet
+         integer(INTD), intent(out), optional:: ierr  !out: error code
+         integer(INTD):: errc,i
+         class(tens_rcrsv_t), pointer:: tens_p
+
+         call pack_builtin(packet,this%num_args,errc)
+         if(errc.eq.PACK_SUCCESS) then
+          do i=0,this%num_args-1
+           tens_p=>this%get_argument(i,errc); if(errc.ne.TEREC_SUCCESS) exit
+           call tens_p%pack(packet,errc); if(errc.ne.TEREC_SUCCESS) exit
+          enddo
+          if(errc.eq.PACK_SUCCESS) call this%contr_ptrn%pack(packet,errc)
+          if(errc.eq.PACK_SUCCESS) call pack_builtin(packet,this%alpha,errc)
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensContractionPack
+!------------------------------------------------------------------------------
+        function TensContractionGetExtContrPtrn(this,ierr) result(contr_ptrn_p)
+!Returns a pointer to the extended tensor contraction pattern.
+         implicit none
+         class(contr_ptrn_ext_t), pointer:: contr_ptrn_p      !out: pointer to the extended tensor contraction pattern
+         class(tens_contraction_t), target, intent(in):: this !in: tensor contraction
+         integer(INTD), intent(out), optional:: ierr          !out: error code
+         integer(INTD):: errc
+
+         errc=TEREC_SUCCESS
+         if(this%is_set()) then
+          contr_ptrn_p=>this%contr_ptrn
+         else
+          errc=TEREC_INVALID_REQUEST
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function TensContractionGetExtContrPtrn
 !-------------------------------------------------------------------------
         subroutine TensContractionGetContrPtrn(this,nl,nr,contr_ptrn,ierr)
 !Returns the basic digital tensor contraction pattern used by TAL-SH.

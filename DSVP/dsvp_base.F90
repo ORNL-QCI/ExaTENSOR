@@ -1,6 +1,6 @@
 !Domain-specific virtual processor (DSVP): Abstract base module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/06/21
+!REVISION: 2017/06/22
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -145,6 +145,7 @@
  !Wrapped reference to a domain-specific operand:
         type, private:: ds_oprnd_ref_t
          class(ds_oprnd_t), pointer, private:: oprnd_ref=>NULL() !pointer (reference) to a domain-specific operand
+        !logical, private:: alloc=.FALSE.                        !TRUE if <oprnd_ref> is allocated, otherwise FALSE (simply associated or NULL)
         end type ds_oprnd_ref_t
  !Domain-specific instruction control field:
         type, abstract, public:: ds_instr_ctrl_t
@@ -355,6 +356,7 @@
         private DSInstrGetNumOperands
         private DSInstrAllSet
         private DSInstrClean
+        public ds_instr_self_i
  !dsvp_t:
         private DSVPStartTime
         private DSVPClean
@@ -636,17 +638,19 @@
          if(present(ierr)) ierr=errc
          return
         end function DSInstrGetStatus
-!--------------------------------------------------
-        subroutine DSInstrSetStatus(this,sts,ierr)
-!Sets the instruction status.
+!------------------------------------------------------------
+        subroutine DSInstrSetStatus(this,sts,ierr,error_code)
+!Sets the instruction status and (optionally) error code.
          implicit none
-         class(ds_instr_t), intent(inout):: this     !inout: domain-specific instruction
-         integer(INTD), intent(in):: sts             !in: instruction status to be set
-         integer(INTD), intent(out), optional:: ierr !out: error code
+         class(ds_instr_t), intent(inout):: this          !inout: domain-specific instruction
+         integer(INTD), intent(in):: sts                  !in: instruction status to be set
+         integer(INTD), intent(out), optional:: ierr      !out: error code
+         integer(INTD), intent(in), optional:: error_code !in: instruction error code to set
          integer(INTD):: errc
 
          errc=DSVP_SUCCESS
          this%stat=sts
+         if(present(error_code)) this%error_code=error_code
          if(present(ierr)) ierr=errc
          return
         end subroutine DSInstrSetStatus
@@ -957,6 +961,14 @@
          call this%dealloc_operands(ier,dis); if(ier.ne.DSVP_SUCCESS.and.errc.eq.DSVP_SUCCESS) errc=ier
          call this%free_control(ier,dis); if(ier.ne.DSVP_SUCCESS.and.errc.eq.DSVP_SUCCESS) errc=ier
          this%code=DS_INSTR_NOOP; this%stat=DS_INSTR_EMPTY
+         this%acquire_resource=>NULL()
+         this%prefetch_input=>NULL()
+         this%sync_prefetch=>NULL()
+         this%execute=>NULL()
+         this%sync_execution=>NULL()
+         this%upload_output=>NULL()
+         this%sync_upload=>NULL()
+         this%release_resource=>NULL()
          if(present(ierr)) ierr=errc
          return
         end subroutine DSInstrClean

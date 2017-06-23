@@ -12,23 +12,22 @@ LICENSE: GNU Lesser General Public License v.3
 PROGRAMMING MODEL: OOP FORTRAN 2003+, C/C++, OpenMP 3+, MPI 3+, CUDA.
 
 DESCRIPTION: The project is still UNDER ACTIVE DEVELOPMENT although
-             multiple components are ready for production. The ExaTENSOR
+             multiple components are already in production. The ExaTENSOR
              framework further elaborates on the idea of domain-specific
-             processing, that is, it introduces an intermediate virtual
-             processing layer that can interpret domain-specific codes
-             which express numeric TENSOR ALGEBRA workloads in our case.
-             It is important to emphasize that ExaTENSOR is not tied to
-             a specific science domain. Instead it can be used in any
-             science domain which relies on tensor computations. So far,
-             the ExaTENSOR framework aims at adaptive block-sparse tensor
-             algebra workloads (includes dense and block-sparse tensor algebra).
+             virtual processing, that is, it introduces an intermediate
+             virtual processing layer which can interpret a domain-specific
+             code that expresses a numeric TENSOR ALGEBRA workload in our case.
+             ExaTENSOR is not tied to any specific scientific domain and
+             can be used for arbitrary numeric tensor computations. So far
+             the ExaTENSOR framework has been aiming at adaptive hierarchical
+             tensor algebra (includes dense and block-sparse tensor algebra).
 
              The distinguishing key design elements:
              a) Fully formalized domain-specific virtualization of heterogeneous
-                compute nodes;
+                compute nodes and HPC systems;
              b) Support of new accelerators via the device-unified API layer;
              c) Recursive virtualization of the HPC system;
              d) Support of multiple kinds of domain-specific virtual processors
                 cooperating with each other;
-             e) Recursive data decomposition and task scheduling;
-             f) Adaptive data representation.
+             e) Recursive (hierarchical) data decomposition and task scheduling;
+             f) Adaptive hierarchical tensor representation.

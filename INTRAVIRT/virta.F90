@@ -49,15 +49,17 @@
         integer(INTD), parameter, public:: EXA_ERR_MEM_FREE_FAIL=DSVP_ERR_MEM_FREE_FAIL     !memory deallocation failed
         integer(INTD), parameter, public:: EXA_ERR_BROKEN_OBJ=DSVP_ERR_BROKEN_OBJ           !broken object
         integer(INTD), parameter, public:: EXA_ERR_UNABLE_COMPLETE=DSVP_ERR_UNABLE_COMPLETE !unable to complete
- !Tensor-algebra virtual processor kinds (roles):
+ !Tensor-algebra virtual processor (TAVP) kinds (roles):
         integer(INTD), parameter, public:: EXA_NO_ROLE=DSVP_NO_KIND !undefined role
         integer(INTD), parameter, public:: EXA_DRIVER=0             !domain-specific driver process (not a TAVP)
         integer(INTD), parameter, public:: EXA_MANAGER=1            !manager (logic) process (TAVP)
         integer(INTD), parameter, public:: EXA_WORKER=2             !worker (numeric) process (TAVP)
         integer(INTD), parameter, public:: EXA_HELPER=3             !helper (auxiliary) process (TAVP)
         integer(INTD), public:: EXA_MAX_WORK_GROUP_SIZE=64 !maximal size of a work group (max number of workers per manager)
+ !TAVP ISA size:
+        integer(INTD), parameter, public:: TAVP_ISA_SIZE=256 !max number of TAVP instructions
  !Tensor algebra virtual processor (TAVP):
-  !TAVP instruction code (opcode), must be non-negative (consult TAProL spec):
+  !TAVP instruction code (opcode), must be non-negative (consult TAProL spec), limited by TAVP_ISA_SIZE:
    !NOOP:
         integer(INTD), parameter, public:: TAVP_INSTR_NOOP=DS_INSTR_NOOP !no operation (empty instruction)
    !General control [0-15]:
@@ -103,11 +105,12 @@
         end type tens_resrc_t
  !Tensor operand:
         type, extends(ds_oprnd_t), public:: tens_oprnd_t
-         class(tens_rcrsv_t), pointer, private:: tensor=>NULL()   !pointer to a recursive tensor
-         class(tens_resrc_t), pointer, private:: resource=>NULL() !pointer to the local tensor resource
+         class(tens_rcrsv_t), pointer, private:: tensor=>NULL()   !pointer to a persistent recursive tensor
+         class(tens_resrc_t), pointer, private:: resource=>NULL() !pointer to a persistent local tensor resource
          contains
           procedure, private:: TensOprndCtor                    !ctor
           generic, public:: tens_oprnd_ctor=>TensOprndCtor
+          procedure, public:: set_resource=>TensOprndSetResource!sets the resource component if it has not been set via constructor
           procedure, public:: is_remote=>TensOprndIsRemote      !returns TRUE if the tensor operand is remote
           procedure, public:: acquire_rsc=>TensOprndAcquireRsc  !explicitly acquires local resources for the tensor operand
           procedure, public:: prefetch=>TensOprndPrefetch       !starts prefetching the remote tensor operand (acquires local resources!)
@@ -157,6 +160,7 @@
         private TensResrcDecrRefCount
  !tens_oprnd_t:
         private TensOprndCtor
+        private TensOprndSetResource
         private TensOprndIsRemote
         private TensOprndAcquireRsc
         private TensOprndPrefetch
@@ -266,49 +270,69 @@
          return
         end subroutine TensResrcDecrRefCount
 ![tens_oprnd_t]=================================================
-        subroutine TensOprndCtor(this,tensor,tens_resource,ierr)
+        subroutine TensOprndCtor(this,tensor,ierr,tens_resource)
 !Constructs a tensor operand. The <tensor> must be set.
-!The associated tensor resource may still be empty (unallocated).
+!The associated tensor resource is optional and may still be empty.
          implicit none
-         class(tens_oprnd_t), intent(inout):: this                   !inout: tensor operand
-         class(tens_rcrsv_t), pointer, intent(in):: tensor           !in: tensor
-         class(tens_resrc_t), pointer, intent(inout):: tens_resource !in: associated tensor resource (local), may still be empty
-         integer(INTD), intent(out), optional:: ierr                 !out: error code
+         class(tens_oprnd_t), intent(inout):: this                            !inout: tensor operand
+         class(tens_rcrsv_t), target, intent(in):: tensor                     !in: tensor
+         integer(INTD), intent(out), optional:: ierr                          !out: error code
+         class(tens_resrc_t), target, intent(inout), optional:: tens_resource !in: local tensor resource, may still be empty
          integer(INTD):: errc
 
          errc=0
          if(.not.this%is_active(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
-           if(associated(tensor)) then
-            if(tensor%is_set(errc)) then
-             if(errc.eq.TEREC_SUCCESS) then
-              this%tensor=>tensor
-              if(associated(tens_resource)) then
-               call tens_resource%incr_ref_count()
-               this%resource=>tens_resource
-               call this%mark_active(errc)
-               if(errc.ne.DSVP_SUCCESS) errc=-1
-              else
-               errc=-2
-              endif
-             else
-              errc=-3
+           if(tensor%is_set(errc)) then
+            if(errc.eq.TEREC_SUCCESS) then
+             this%tensor=>tensor
+             if(present(tens_resource)) then
+              call tens_resource%incr_ref_count()
+              this%resource=>tens_resource
              endif
+             call this%mark_active(errc)
+             if(errc.ne.DSVP_SUCCESS) errc=-1
             else
-             errc=-4
+             errc=-2
             endif
            else
-            errc=-5
+            errc=-3
            endif
           else
-           errc=-6
+           errc=-4
           endif
          else
-          errc=-7
+          errc=-5
          endif
          if(present(ierr)) ierr=errc
          return
         end subroutine TensOprndCtor
+!---------------------------------------------------------------
+        subroutine TensOprndSetResource(this,tens_resource,ierr)
+!Sets the resource component if it has not been set via constructor.
+         implicit none
+         class(tens_oprnd_t), intent(inout):: this                  !inout: active tensor operand
+         class(tens_resrc_t), target, intent(inout):: tens_resource !inout: tensor resource (may be empty)
+         integer(INTD), intent(out), optional:: ierr                !out: error code
+         integer(INTD):: errc
+
+         if(this%is_active(errc)) then
+          if(errc.eq.0) then
+           if(.not.associated(this%resource)) then
+            call tens_resource%incr_ref_count()
+            this%resource=>tens_resource
+           else
+            errc=-1
+           endif
+          else
+           errc=-2
+          endif
+         else
+          errc=-3
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensOprndSetResource
 !--------------------------------------------------------
         function TensOprndIsRemote(this,ierr) result(res)
 !Returns TRUE if the tensor operand is remote, FALSE otherwise.
@@ -363,8 +387,9 @@
         subroutine TensOprndAcquireRsc(this,ierr)
 !Acquires local resources for the remote tensor operand.
 !If the resources have already been allocated, does nothing.
+!If the resource component is not set, an error will be returned.
          implicit none
-         class(tens_oprnd_t), intent(inout):: this   !inout: tensor operand
+         class(tens_oprnd_t), intent(inout):: this   !inout: tensor operand (with an associated resource component)
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
          integer(INTL):: buf_size
@@ -375,39 +400,43 @@
 
          errc=0
          if(this%is_active()) then
-          body_p=>this%tensor%get_body(errc)
-          if(errc.eq.TEREC_SUCCESS.and.associated(body_p)) then
-           layout_p=>body_p%get_layout(errc)
-           if(errc.eq.TEREC_SUCCESS.and.associated(layout_p)) then
-            descr_p=>layout_p%get_data_descr(errc)
-            if(errc.eq.TEREC_SUCCESS.and.associated(descr_p)) then
-             if(descr_p%is_set(errc)) then
-              if(errc.eq.0) then
-               buf_size=descr_p%data_size(errc)
-               if(errc.eq.0.and.buf_size.gt.0_INTL) then
-                if(this%resource%is_empty()) then
-                 call this%resource%allocate_buffer(buf_size,errc); if(errc.ne.0) errc=-1
+          if(associated(this%resource)) then
+           body_p=>this%tensor%get_body(errc)
+           if(errc.eq.TEREC_SUCCESS.and.associated(body_p)) then
+            layout_p=>body_p%get_layout(errc)
+            if(errc.eq.TEREC_SUCCESS.and.associated(layout_p)) then
+             descr_p=>layout_p%get_data_descr(errc)
+             if(errc.eq.TEREC_SUCCESS.and.associated(descr_p)) then
+              if(descr_p%is_set(errc)) then
+               if(errc.eq.0) then
+                buf_size=descr_p%data_size(errc)
+                if(errc.eq.0.and.buf_size.gt.0_INTL) then
+                 if(this%resource%is_empty()) then
+                  call this%resource%allocate_buffer(buf_size,errc); if(errc.ne.0) errc=-1
+                 endif
+                else
+                 errc=-2
                 endif
                else
-                errc=-2
+                errc=-3
                endif
               else
-               errc=-3
+               errc=-4
               endif
              else
-              errc=-4
+              errc=-5
              endif
             else
-             errc=-5
+             errc=-6
             endif
            else
-            errc=-6
+            errc=-7
            endif
           else
-           errc=-7
+           errc=-8
           endif
          else
-          errc=-8
+          errc=-9
          endif
          if(present(ierr)) ierr=errc
          return
@@ -415,11 +444,12 @@
 !----------------------------------------------
         subroutine TensOprndPrefetch(this,ierr)
 !Starts prefetching the (remote) tensor operand using the local tensor resource.
+!If the resource component has not been set, an error will be returned.
 !If the local resource has not been allocated, it will be allocated here.
 !If the tensor operand has been delivered before, does nothing.
 !If there is a pending communication on the tensor operand, returns an error.
          implicit none
-         class(tens_oprnd_t), intent(inout):: this   !inout: tensor operand
+         class(tens_oprnd_t), intent(inout):: this   !inout: tensor operand (with an associated resource component)
          integer(INTD), intent(out), optional:: ierr !out: error code, may return TRY_LATER
          integer(INTD):: errc
          class(tens_body_t), pointer:: body_p
@@ -429,49 +459,53 @@
 
          if(.not.this%is_present(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
-           body_p=>this%tensor%get_body(errc)
-           if(errc.eq.TEREC_SUCCESS.and.associated(body_p)) then
-            layout_p=>body_p%get_layout(errc)
-            if(errc.eq.TEREC_SUCCESS.and.associated(layout_p)) then
-             descr_p=>layout_p%get_data_descr(errc)
-             if(errc.eq.TEREC_SUCCESS.and.associated(descr_p)) then
-              if(descr_p%is_set(errc)) then
-               if(errc.eq.0) then
-                if(this%resource%is_empty()) call this%acquire_rsc(errc)
+           if(associated(this%resource)) then
+            body_p=>this%tensor%get_body(errc)
+            if(errc.eq.TEREC_SUCCESS.and.associated(body_p)) then
+             layout_p=>body_p%get_layout(errc)
+             if(errc.eq.TEREC_SUCCESS.and.associated(layout_p)) then
+              descr_p=>layout_p%get_data_descr(errc)
+              if(errc.eq.TEREC_SUCCESS.and.associated(descr_p)) then
+               if(descr_p%is_set(errc)) then
                 if(errc.eq.0) then
-                 if(this%get_comm_stat().eq.DS_OPRND_NO_COMM) then
-                  cptr=this%resource%base_addr
-                  call descr_p%get_data(cptr,errc,MPI_ASYNC_REQ)
-                  if(errc.ne.0.and.errc.ne.TRY_LATER) errc=-1
-                  if(errc.eq.0) then
-                   call this%set_comm_stat(DS_OPRND_FETCHING,errc); if(errc.ne.DSVP_SUCCESS) errc=-2
+                 if(this%resource%is_empty()) call this%acquire_rsc(errc)
+                 if(errc.eq.0) then
+                  if(this%get_comm_stat().eq.DS_OPRND_NO_COMM) then
+                   cptr=this%resource%base_addr
+                   call descr_p%get_data(cptr,errc,MPI_ASYNC_REQ)
+                   if(errc.ne.0.and.errc.ne.TRY_LATER) errc=-1
+                   if(errc.eq.0) then
+                    call this%set_comm_stat(DS_OPRND_FETCHING,errc); if(errc.ne.DSVP_SUCCESS) errc=-2
+                   endif
+                  else
+                   errc=-3
                   endif
                  else
-                  errc=-3
+                  errc=-4
                  endif
                 else
-                 errc=-4
+                 errc=-5
                 endif
                else
-                errc=-5
+                errc=-6
                endif
               else
-               errc=-6
+               errc=-7
               endif
              else
-              errc=-7
+              errc=-8
              endif
             else
-             errc=-8
+             errc=-9
             endif
            else
-            errc=-9
+            errc=-10
            endif
           else
-           errc=-10
+           errc=-11
           endif
          else
-          errc=-11
+          errc=-12
          endif
          if(present(ierr)) ierr=errc
          return
@@ -490,7 +524,7 @@
          class(DataDescr_t), pointer:: descr_p
          type(C_PTR):: cptr
 
-         if(this%is_present(errc)) then
+         if(this%is_present(errc)) then !assumes that the local resource is allocated
           if(errc.eq.DSVP_SUCCESS) then
            body_p=>this%tensor%get_body(errc)
            if(errc.eq.TEREC_SUCCESS.and.associated(body_p)) then
@@ -605,6 +639,7 @@
 !Releases local tensor resources occupied by the tensor operand,
 !unless there are other active tensor operands sharing the same resource.
 !In the latter case, nothing will be done and no error raised.
+!Also, if the resource component is not set, nothing will be done either.
          implicit none
          class(tens_oprnd_t), intent(inout):: this   !inout: tensor operand
          integer(INTD), intent(out), optional:: ierr !out: error code
@@ -614,12 +649,14 @@
          errc=0
          if(this%is_active(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
-           if(this%get_comm_stat().ne.DS_OPRND_NO_COMM) then
-            delivered=this%sync(errc,wait=.TRUE.)
-            if(.not.delivered.or.errc.ne.DSVP_SUCCESS) errc=-1
-           endif
-           if(this%resource%ref_count.eq.1) then !only one (last) tensor operand is associated with this resource
-            call this%resource%free_buffer(errc); if(errc.ne.0) errc=-2
+           if(associated(this%resource)) then
+            if(this%get_comm_stat().ne.DS_OPRND_NO_COMM) then
+             delivered=this%sync(errc,wait=.TRUE.)
+             if(.not.delivered.or.errc.ne.DSVP_SUCCESS) errc=-1
+            endif
+            if(this%resource%ref_count.eq.1) then !only one (last) tensor operand is associated with this resource
+             call this%resource%free_buffer(errc); if(errc.ne.0) errc=-2
+            endif
            endif
           else
            errc=-3
@@ -647,8 +684,10 @@
             if(.not.delivered.or.errc.ne.DSVP_SUCCESS) errc=-1
            endif
            call this%mark_empty(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-2
-           call this%resource%decr_ref_count()
-           this%resource=>NULL()
+           if(associated(this%resource)) then
+            call this%resource%decr_ref_count()
+            this%resource=>NULL()
+           endif
            this%tensor=>NULL()
           else
            errc=-3

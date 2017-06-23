@@ -63,16 +63,30 @@
  !Tensor instruction (realization of a tensor operation for a specific TAVP):
         type, extends(ds_instr_t), private:: tens_instr_t
          contains
-          procedure, private:: TensInstrCtor                     !ctor: constructs a tensor instruction from the specification of a tensor operation
+          procedure, private:: TensInstrCtor                        !ctor: constructs a tensor instruction from the specification of a tensor operation
           generic, public:: tens_instr_ctor=>TensInstrCtor
-          procedure, public:: decode=>TensInstrDecode            !decoding procedure: Unpacks the raw byte packet (bytecode) and constructs a TAVP instruction
-          procedure, public:: encode=>TensInstrEncode            !encoding procedure: Packs the TAVP instruction into a raw byte packet (bytecode)
-          final:: tens_instr_dtor                                !dtor
+          procedure, public:: decode=>TensInstrDecode               !decoding procedure: Unpacks the raw byte packet (bytecode) and constructs a TAVP instruction
+          procedure, public:: encode=>TensInstrEncode               !encoding procedure: Packs the TAVP instruction into a raw byte packet (bytecode)
+          procedure, private:: set_microcode=>TensInstrSetMicrocode !sets up instruction dynamic bindings to the corresponding microcode
+          final:: tens_instr_dtor                                   !dtor
         end type tens_instr_t
+ !TAVP instruction microcode binding:
+        type, private:: microcode_bind_t
+         procedure(ds_instr_self_i), pointer:: acquire_resource=>NULL() !acquires local resources for instruction operands
+         procedure(ds_instr_self_i), pointer:: prefetch_input=>NULL()   !starts prefetching input operands
+         procedure(ds_instr_self_i), pointer:: sync_prefetch=>NULL()    !synchronizes the input prefetch (either test or wait)
+         procedure(ds_instr_self_i), pointer:: execute=>NULL()          !executes the domain-specific instruction
+         procedure(ds_instr_self_i), pointer:: sync_execution=>NULL()   !synchronizes the execution (either test or wait)
+         procedure(ds_instr_self_i), pointer:: upload_output=>NULL()    !starts uploading the output
+         procedure(ds_instr_self_i), pointer:: sync_upload=>NULL()      !synchronizes the output upload (either test or wait)
+         procedure(ds_instr_self_i), pointer:: release_resource=>NULL() !releases local resources occupied by instruction operands
+        end type microcode_bind_t
 !INTERFACES:
 !DATA:
- !Tensor cache:
+ !Tensor cache (both persistent and temporary tensors):
         type(tens_cache_t), private:: tens_cache
+ !TAVP instruction microcode bindings:
+        type(microcode_bind_t), private:: microcode(0:TAVP_ISA_SIZE-1)
 !VISIBILITY:
  !tens_entry_t:
         private TensEntryCtor
@@ -89,6 +103,7 @@
         private TensInstrCtor
         private TensInstrDecode
         private TensInstrEncode
+        private TensInstrSetMicrocode
         private tens_instr_dtor
 
 !IMPLEMENTATION:
@@ -342,50 +357,93 @@
 ![tens_instr_t]============================================
         subroutine TensInstrCtor(this,op_code,ierr,op_spec)
 !Constructs a tensor instruction from a given tensor operation.
-!The tensor instruction is a realization of the given tensor operation for TAVP.
+!The tensor instruction is a realization of a given tensor operation
+!for a specific TAVP kind.
          implicit none
          class(tens_instr_t), intent(inout):: this        !out: tensor instruction (must be empty on entrance)
          integer(INTD), intent(in):: op_code              !in: instruction code (see top)
          integer(INTD), intent(out), optional:: ierr      !out: error code
-         class(*), intent(in), target, optional:: op_spec !in: operation specification
+         class(*), intent(in), target, optional:: op_spec !in: formal operation specification
          integer(INTD):: errc
+         class(tens_oprnd_t), pointer:: oprnd_p
+         class(tens_rcrsv_t), pointer:: tens_p
+         class(tens_contraction_t), pointer:: tens_contr_p
+         class(contr_ptrn_ext_t), pointer:: contr_ptrn_p
 
          if(this%is_empty(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
-!Construct instruction fields:
+!Construct the instruction:
            select case(op_code)
            case(TAVP_INSTR_NOOP)
            case(TAVP_INSTR_STOP)
-
+            !`Implement
            case(TAVP_INSTR_CREATE,TAVP_INSTR_DESTROY)
-            select type(op_spec)
-            class is(tens_rcrsv_t)
-             
-            class default
+            tens_p=>NULL()
+            select type(op_spec); class is(tens_rcrsv_t); tens_p=>op_spec; end select
+            if(associated(tens_p)) then
+             if(tens_p%is_set()) then
+              call this%alloc_operands(1,errc)
+              if(errc.eq.DSVP_SUCCESS) then
+               allocate(oprnd_p,STAT=errc)
+               if(errc.eq.0) then
+                call oprnd_p%tens_oprnd_ctor(tens_p,errc)
+                if(errc.eq.0) then
+                 call this%set_operand(0,oprnd_p,errc)
+                 if(errc.ne.DSVP_SUCCESS) errc=-1
+                else
+                 errc=-1
+                endif
+               else
+                errc=-1
+               endif
+              else
+               errc=-1
+              endif
+             else
+              errc=-1
+             endif
+            else
              errc=-1
-            end select
+            endif
            case(TAVP_INSTR_CONTRACT)
-
+            tens_contr_p=>NULL()
+            select type(op_spec); class is(tens_contraction_t); tens_contr_p=>op_spec; end select
+            if(associated(tens_contr_p)) then
+             if(tens_contr_p%is_set()) then
+              
+             else
+              errc=-1
+             endif
+            else
+             errc=-1
+            endif
            case default
-            errc=-5 !invalid operation (or not implemented)
+            errc=-6 !invalid operation (or not implemented)
            end select
 !Activate the instruction:
            if(errc.eq.0) then
             call this%set_code(op_code,errc)
             if(errc.eq.DSVP_SUCCESS) then
-             call this%set_status(DS_INSTR_NEW,errc)
-             if(errc.ne.DSVP_SUCCESS) then
-              call this%set_status(DS_INSTR_RETIRED)
+             call this%set_microcode(errc)
+             if(errc.eq.0) then
+              call this%set_status(DS_INSTR_NEW,errc,DSVP_SUCCESS)
+              if(errc.ne.DSVP_SUCCESS) then
+               call this%set_status(DS_INSTR_RETIRED,errc,-1)
+               call tens_instr_dtor(this)
+               errc=-5
+              endif
+             else
+              call this%set_status(DS_INSTR_RETIRED,errc,-1)
               call tens_instr_dtor(this)
               errc=-4
              endif
             else
-             call this%set_status(DS_INSTR_RETIRED)
+             call this%set_status(DS_INSTR_RETIRED,errc,-1)
              call tens_instr_dtor(this)
              errc=-3
             endif
            else
-            call this%set_status(DS_INSTR_RETIRED)
+            call this%set_status(DS_INSTR_RETIRED,errc,-1)
             call tens_instr_dtor(this)
            endif
           else
@@ -439,10 +497,38 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensInstrEncode
+!--------------------------------------------------
+        subroutine TensInstrSetMicrocode(this,ierr)
+!Sets up instruction dynamic bindings to the corresponding microcode.
+         implicit none
+         class(tens_instr_t), intent(inout):: this   !inout: defined tensor instruction
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc,op_code
+
+         op_code=this%get_code(errc)
+         if(errc.eq.DSVP_SUCCESS) then
+          if(op_code.ge.0.and.op_code.lt.TAVP_ISA_SIZE) then
+           this%acquire_resource=>microcode(op_code)%acquire_resource
+           this%prefetch_input=>microcode(op_code)%prefetch_input
+           this%sync_prefetch=>microcode(op_code)%sync_prefetch
+           this%execute=>microcode(op_code)%execute
+           this%sync_execution=>microcode(op_code)%sync_execution
+           this%upload_output=>microcode(op_code)%upload_output
+           this%sync_upload=>microcode(op_code)%sync_upload
+           this%release_resource=>microcode(op_code)%release_resource
+          else
+           errc=-2
+          endif
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensInstrSetMicrocode
 !---------------------------------------
         subroutine tens_instr_dtor(this)
          implicit none
-         type(tens_instr_t):: this
+         type(tens_instr_t):: this !inout: empty or retired tensor instruction
          integer(INTD):: sts,errc
 
          sts=this%get_status(errc)
