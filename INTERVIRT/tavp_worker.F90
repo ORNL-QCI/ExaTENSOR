@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP Worker
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/06/23
+!REVISION: 2017/06/27
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -502,36 +502,58 @@
         subroutine TensInstrDecode(this,instr_packet,ierr)
 !Decodes a tensor instruction from the bytecode packet.
          implicit none
-         class(tens_instr_t), intent(inout):: this       !out: tensor instruction
+         class(tens_instr_t), intent(inout):: this       !out: empty tensor instruction
          class(obj_pack_t), intent(inout):: instr_packet !in: instruction bytecode packet
          integer(INTD), intent(out), optional:: ierr     !out: error code
          integer(INTD):: errc,op_code
 
-         errc=0
+         if(this%is_empty(errc)) then
 !Read the instruction op_code:
-         call unpack_builtin(instr_packet,op_code,errc)
+          call unpack_builtin(instr_packet,op_code,errc)
 !Select TAVP microcode to execute:
-         if(errc.eq.0) then
-          select case(op_code)
-          case(TAVP_INSTR_NOOP)
-          case(TAVP_INSTR_STOP)
-          case(TAVP_INSTR_CREATE,TAVP_INSTR_DESTROY)
-          case(TAVP_INSTR_CONTRACT)
-          case default
-           errc=-3 !unknown instruction (or not implemented)
-          end select
-!Activate the instruction:
           if(errc.eq.0) then
-           call this%activate(op_code,errc); if(errc.ne.0) errc=-2
+           select case(op_code)
+           case(TAVP_INSTR_NOOP)
+           case(TAVP_INSTR_STOP)
+           case(TAVP_INSTR_CREATE,TAVP_INSTR_DESTROY)
+            call decode_instr_create(errc); if(errc.ne.0) errc=-1
+           case(TAVP_INSTR_CONTRACT)
+            call decode_instr_contract(errc); if(errc.ne.0) errc=-1
+           case default
+            errc=-3 !unknown instruction (or not implemented)
+           end select
+!Activate the instruction:
+           if(errc.eq.0) then
+            call this%activate(op_code,errc); if(errc.ne.0) errc=-2
+           else
+            call this%set_status(DS_INSTR_RETIRED,errc,-1)
+            call tens_instr_dtor(this)
+           endif
           else
-           call this%set_status(DS_INSTR_RETIRED,errc,-1)
-           call tens_instr_dtor(this)
+           errc=-1
           endif
          else
           errc=-1
          endif
          if(present(ierr)) ierr=errc
          return
+
+         contains
+
+          subroutine decode_instr_create(jerr)
+           integer(INTD), intent(out):: jerr
+
+           jerr=0
+           return
+          end subroutine decode_instr_create
+
+          subroutine decode_instr_contract(jerr)
+           integer(INTD), intent(out):: jerr
+
+           jerr=0
+           return
+          end subroutine decode_instr_contract
+
         end subroutine TensInstrDecode
 !---------------------------------------------------------
         subroutine TensInstrEncode(this,instr_packet,ierr)

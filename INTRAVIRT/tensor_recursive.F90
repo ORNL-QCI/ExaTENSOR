@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/06/23
+!REVISION: 2017/06/27
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -265,6 +265,7 @@
           procedure, public:: set_location=>TensRcrsvSetLocation     !sets the physical location of the tensor body data
           procedure, public:: get_header=>TensRcrsvGetHeader         !returns a pointer to the tensor header
           procedure, public:: get_body=>TensRcrsvGetBody             !returns a pointer to the tensor body
+          procedure, public:: get_descriptor=>TensRcrsvGetDescriptor !returns a tensor descriptor uniquely characterizing tensor signature, shape, layout, and location
           procedure, private:: TensRcrsvSplitList                    !splits the tensor into subtensors (a list of subtensors by their headers)
           procedure, private:: TensRcrsvSplitVector                  !splits the tensor into subtensors (a vector of subtensors by their headers)
           generic, public:: split=>TensRcrsvSplitList,TensRcrsvSplitVector
@@ -273,6 +274,12 @@
           final:: tens_rcrsv_dtor                                    !dtor `GCC/5.4.0 bug
 #endif
         end type tens_rcrsv_t
+ !Tensor descriptor:
+        type, public:: tens_descr_t
+         character(:), allocatable, private:: char_name !symbolic tensor name
+         integer(INTL), allocatable, private:: info(:)  !combined: space_idx,subspace_idx,dim_extent,dim_group,dim_group_restr,layout_kind,volume,location
+         integer(INTD), private:: rank=-1               !tensor rank (number of dimensions)
+        end type tens_descr_t
  !Tensor argument (reference to a recursive tensor):
         type, private:: tens_argument_t
          class(tens_rcrsv_t), pointer, private:: tens_p=>NULL() !pointer to a persistent tensor
@@ -526,6 +533,7 @@
         private TensRcrsvSetLocation
         private TensRcrsvGetHeader
         private TensRcrsvGetBody
+        private TensRcrsvGetDescriptor
         private TensRcrsvSplitList
         private TensRcrsvSplitVector
         private TensRcrsvPrintIt
@@ -3641,6 +3649,47 @@
          if(present(ierr)) ierr=errc
          return
         end function TensRcrsvGetBody
+!--------------------------------------------------------------------
+        function TensRcrsvGetDescriptor(this,ierr) result(tens_descr)
+!Returns a tensor descriptor uniquely characterizing tensor signature, shape, layout, and location.
+!tens_descr.info format:
+! 1. hspace_idx(1:rank);
+! 2. subspace_idx(1:rank);
+! 3. dim_extent(1:rank);
+! 4. dim_group(1:rank);
+! 5. dim_group_restriction(1:rank);
+! 6. Layout kind;
+! 7. Volume;
+! 8. Location (process id).
+!TOTAL size = (5*rank)+1+1+1 = 5*rank+3 [elements]
+         implicit none
+         type(tens_descr_t):: tens_descr             !out: tensor descriptor
+         class(tens_rcrsv_t), intent(in):: this      !in: tensor
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc,num_dims,unresolved
+         logical:: shaped,hspaced,layed,located
+
+         if(this%is_set(errc,num_dims,shaped,unresolved,hspaced,layed,located)) then
+          if(errc.eq.TEREC_SUCCESS) then
+           if(unresolved.eq.0.and.shaped.and.layed.and.located) then
+            tens_descr%rank=num_dims
+            tens_descr%char_name=this%header%signature%char_name
+            allocate(tens_descr%info(num_dims*5+3))
+            if(num_dims.gt.0) then !true tensor
+             
+            elseif(num_dims.eq.0) then !scalar
+             
+            endif
+           else
+            errc=TEREC_INVALID_ARGS
+           endif
+          endif
+         else
+          if(errc.eq.TEREC_SUCCESS) errc=TEREC_INVALID_REQUEST
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function TensRcrsvGetDescriptor
 !-------------------------------------------------------------------------------------------------
         subroutine TensRcrsvSplitList(this,split_dims,subtensors,ierr,num_subtensors,headers_only)
 !Splits the given tensor into subtensors and appends those to a list of subtensors, either as

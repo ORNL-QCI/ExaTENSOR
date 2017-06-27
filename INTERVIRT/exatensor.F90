@@ -1,7 +1,7 @@
 !ExaTENSOR: Massively Parallel Virtual Processor for Scale-Adaptive Hierarchical Tensor Algebra
 !This is the top level API module of ExaTENSOR (user-level API)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017/06/21
+!REVISION: 2017/06/27
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -60,30 +60,31 @@
         logical, public:: created=.FALSE. !TRUE if the tensor has been created, FALSE otherwise
         logical, public:: defined=.FALSE. !TRUE if the tensor value has been defined, FALSE otherwise
         logical, public:: in_use=.FALSE.  !TRUE if the tensor is currently participating in a computation, FALSE otherwise
+        logical, public:: updated=.FALSE. !TRUE if the tensor is currently being updated in a computation, FALSE otherwise
        end type exa_tensor_status_t
 !INTERFACES:
-      abstract interface
+       abstract interface
  !External method (tensor operation):
-       function ext_method_i(tens_args,scal_args) result(ierr)
-        import:: INTD,tens_rcrsv_t
-        implicit none
-        integer(INTD):: ierr                                !out: error code
-        class(tens_rcrsv_t), intent(inout):: tens_args(0:)  !inout: tensor arguments
-        complex(8), intent(inout), optional:: scal_args(0:) !inout: scalar arguments
-       end function ext_method_i
-      end interface
+        function ext_method_i(tens_args,scal_args) result(ierr)
+         import:: INTD,tens_rcrsv_t
+         implicit none
+         integer(INTD):: ierr                                !out: error code
+         class(tens_rcrsv_t), intent(inout):: tens_args(0:)  !inout: tensor arguments
+         complex(8), intent(inout), optional:: scal_args(0:) !inout: scalar arguments
+        end function ext_method_i
+       end interface
  !Overloads:
-      interface exatns_tensor_init
-       module procedure exatns_tensor_init_scalar
-       module procedure exatns_tensor_init_method
-      end interface exatns_tensor_init
+       interface exatns_tensor_init
+        module procedure exatns_tensor_init_scalar
+        module procedure exatns_tensor_init_method
+       end interface exatns_tensor_init
 !DATA:
  !ExaTENSOR runtime status:
-      type(exatns_rt_status_t), protected:: exatns_rt_status
+       type(exatns_rt_status_t), protected:: exatns_rt_status
  !TAVP composition:
-      integer(INTD), protected:: exa_num_workers=0  !number of worker processes
-      integer(INTD), protected:: exa_num_managers=0 !number of manager processes
-      integer(INTD), protected:: exa_num_helpers=0  !number of helper processes
+       integer(INTD), protected:: exa_num_workers=0  !number of worker processes
+       integer(INTD), protected:: exa_num_managers=0 !number of manager processes
+       integer(INTD), protected:: exa_num_helpers=0  !number of helper processes
 !VISIBILITY:
  !Control:
        public exatns_start                !starts the ExaTENSOR DSVP
@@ -288,7 +289,7 @@
        end function exatns_interpret
 !-------------------------------------------------------
        function exatns_symbol_exists(symbol) result(ans)
-!Checks whether a specific identifier is registered with ExaTENSOR.
+!Checks whether a specific symbolic identifier is registered with ExaTENSOR.
         implicit none
         logical:: ans                     !out: answer {TRUE|FALSE}
         character(*), intent(in):: symbol !in: specific symbolic identifier
@@ -297,12 +298,12 @@
         return
        end function exatns_symbol_exists
 ![ExaTENSOR External Method/Data API]---------------------------------------------
-       function exatns_method_register(method,method_name,method_tag) result(ierr)
+       function exatns_method_register(method_name,method,method_tag) result(ierr)
 !Registers an external method (tensor operation) with ExaTENSOR.
         implicit none
         integer(INTD):: ierr                    !out: error code
-        procedure(ext_method_i):: method        !in: external method (tensor operation)
         character(*), intent(in):: method_name  !in: symbolic method name
+        procedure(ext_method_i):: method        !in: external method (tensor operation)
         integer(INTD), intent(out):: method_tag !out: method tag (non-negative on success)
 
         ierr=EXA_SUCCESS; method_tag=-1
@@ -319,12 +320,12 @@
         return
        end function exatns_method_unregister
 !-----------------------------------------------------------------------------
-       function exatns_data_register(data_ptr,data_name,data_tag) result(ierr)
+       function exatns_data_register(data_name,data_ptr,data_tag) result(ierr)
 !Registers an external data with ExaTENSOR.
         implicit none
         integer(INTD):: ierr                  !out: error code
-        type(C_PTR), intent(in):: data_ptr    !in: pointer to the external data (local)
         character(*), intent(in):: data_name  !in: symbolic data name
+        type(C_PTR), intent(in):: data_ptr    !in: pointer to the external data (local)
         integer(INTD), intent(out):: data_tag !out: data tag (non-negative on success)
 
         ierr=EXA_SUCCESS; data_tag=-1
@@ -384,12 +385,12 @@
         return
        end function exatns_space_status
 !------------------------------------------------------------------------------------------------------------------
-       function exatns_subspace_register(space_name,subspace_name,basis_subrange,subspace_id,space_id) result(ierr)
+       function exatns_subspace_register(subspace_name,space_name,basis_subrange,subspace_id,space_id) result(ierr)
 !Registers a subspace within a registered vector space.
         implicit none
         integer(INTD):: ierr                            !out: error code
-        character(*), intent(in):: space_name           !in: parental space symbolic name
         character(*), intent(in):: subspace_name        !in: subspace symbolic name
+        character(*), intent(in):: space_name           !in: parental space symbolic name
         class(seg_int_t), intent(in):: basis_subrange   !in: defining subrange of basis vectors
         integer(INTL), intent(out):: subspace_id        !out: subspace id within the parental vector space
         integer(INTD), intent(out), optional:: space_id !out: vector space id
@@ -410,12 +411,12 @@
         return
        end function exatns_subspace_unregister
 !------------------------------------------------------------------------
-       function exatns_index_register(space_name,index_name) result(ierr)
+       function exatns_index_register(index_name,space_name) result(ierr)
 !Registers an index by associating it with a specific space/subspace.
         implicit none
         integer(INTD):: ierr                  !out: error code
-        character(*), intent(in):: space_name !in: space/subspace symbolic name
         character(*), intent(in):: index_name !in: index symbolic name
+        character(*), intent(in):: space_name !in: space/subspace symbolic name
 
         ierr=EXA_SUCCESS
         return
@@ -520,38 +521,41 @@
         ierr=EXA_SUCCESS
         return
        end function exatns_tensor_init_method
-!--------------------------------------------------------------------
-       function exatns_tensor_copy(tensor_in,tensor_out) result(ierr)
+!----------------------------------------------------------------------------
+       function exatns_tensor_copy(tensor_out,tensor_in,pattern) result(ierr)
 !Copies the content of one tensor into another tensor with an option of permutation,
 !and/or slicing or insertion.
         implicit none
         integer(INTD):: ierr                           !out: error code
-        type(tens_rcrsv_t), intent(inout):: tensor_in  !in: input tensor
         type(tens_rcrsv_t), intent(inout):: tensor_out !inout: output tensor
+        type(tens_rcrsv_t), intent(inout):: tensor_in  !in: input tensor
+        character(*), intent(in), optional:: pattern   !in: symbolic permutation pattern
 
         ierr=EXA_SUCCESS
         return
        end function exatns_tensor_copy
-!--------------------------------------------------------------------
-       function exatns_tensor_fold(tensor_in,tensor_out) result(ierr)
+!----------------------------------------------------------------------------
+       function exatns_tensor_fold(tensor_out,tensor_in,pattern) result(ierr)
 !Folds two or more dimensions of the input tensor, producing an output tensor
 !of a lower rank (lower order). In other words, flattening.
         implicit none
         integer(INTD):: ierr                           !out: error code
-        type(tens_rcrsv_t), intent(inout):: tensor_in  !in: input tensor
         type(tens_rcrsv_t), intent(inout):: tensor_out !inout: output tensor
+        type(tens_rcrsv_t), intent(inout):: tensor_in  !in: input tensor
+        character(*), intent(in):: pattern             !in: symbolic folding pattern
 
         ierr=EXA_SUCCESS
         return
        end function exatns_tensor_fold
-!----------------------------------------------------------------------
-       function exatns_tensor_unfold(tensor_in,tensor_out) result(ierr)
+!------------------------------------------------------------------------------
+       function exatns_tensor_unfold(tensor_out,tensor_in,pattern) result(ierr)
 !Unfolds dimensions of the input tensor, producing an output tensor
 !of a higher rank (higher order).
         implicit none
         integer(INTD):: ierr                           !out: error code
-        type(tens_rcrsv_t), intent(inout):: tensor_in  !in: input tensor
         type(tens_rcrsv_t), intent(inout):: tensor_out !inout: output tensor
+        type(tens_rcrsv_t), intent(inout):: tensor_in  !in: input tensor
+        character(*), intent(in):: pattern             !in: symbolic unfolding pattern
 
         ierr=EXA_SUCCESS
         return
@@ -567,27 +571,28 @@
         ierr=EXA_SUCCESS
         return
        end function exatns_tensor_scale
-!---------------------------------------------------------------------
-       function exatns_tensor_add(tensor0,tensor1,factor) result(ierr)
+!-----------------------------------------------------------------------------
+       function exatns_tensor_add(tensor0,tensor1,pattern,factor) result(ierr)
 !Operation: tensor0 += tensor1 * factor
         implicit none
-        integer(INTD):: ierr                        !out: error code
-        type(tens_rcrsv_t), intent(inout):: tensor0 !inout: tensor
-        type(tens_rcrsv_t), intent(inout):: tensor1 !in: tensor
-        complex(8), intent(in), optional:: factor   !in: scalar factor
+        integer(INTD):: ierr                         !out: error code
+        type(tens_rcrsv_t), intent(inout):: tensor0  !inout: tensor
+        type(tens_rcrsv_t), intent(inout):: tensor1  !in: tensor
+        character(*), intent(in), optional:: pattern !in: symbolic permutation pattern
+        complex(8), intent(in), optional:: factor    !in: scalar factor
 
         ierr=EXA_SUCCESS
         return
        end function exatns_tensor_add
-!-------------------------------------------------------------------------------------------------------------
-       function exatns_tensor_contract(tensor0,tensor1,tensor2,contr_pattern,factor,restrictions) result(ierr)
+!-------------------------------------------------------------------------------------------------------
+       function exatns_tensor_contract(tensor0,tensor1,tensor2,pattern,factor,restrictions) result(ierr)
 !Operation: tensor0 += tensor1 * tensor2 * factor
         implicit none
         integer(INTD):: ierr
         type(tens_rcrsv_t), intent(inout):: tensor0       !inout: tensor
         type(tens_rcrsv_t), intent(inout):: tensor1       !in: tensor
         type(tens_rcrsv_t), intent(inout):: tensor2       !in: tensor
-        character(*), intent(in):: contr_pattern          !in: symbolic contraction pattern
+        character(*), intent(in):: pattern                !in: symbolic contraction pattern
         complex(8), intent(in), optional:: factor         !in: scalar factor
         character(*), intent(in), optional:: restrictions !in: symbolic index restrictions
 
