@@ -282,6 +282,7 @@
          contains
           procedure, public:: print_it=>TensDescrPrintIt !prints the object
           procedure, public:: compare=>TensDescrCompare  !compares with another instance
+          final:: tens_descr_dtor                        !dtor
         end type tens_descr_t
  !Tensor argument (reference to a recursive tensor):
         type, private:: tens_argument_t
@@ -545,6 +546,7 @@
  !tens_descr_t:
         private TensDescrPrintIt
         private TensDescrCompare
+        public tens_descr_dtor
  !tens_argument_t:
         private TensArgumentSetTensor
         private TensArgumentAllocateTensor
@@ -3678,9 +3680,10 @@
          return
         end function TensRcrsvGetBody
 !--------------------------------------------------------------------
-        function TensRcrsvGetDescriptor(this,ierr) result(tens_descr) !`This function violates encapsulation
-!Returns a tensor descriptor uniquely characterizing tensor signature,
-!shape, layout kind, and location.
+        function TensRcrsvGetDescriptor(this,ierr) result(tens_descr)
+!Returns a tensor descriptor <tens_descr_t> object uniquely characterizing
+!tensor signature, shape, layout kind, data kind, and location.
+!Essentially, this function is an indirect CTOR for <tens_descr_t>.
 !tens_descr.info(:) format:
 ! 1. hspace_idx(1:rank);
 ! 2. subspace_idx(1:rank);
@@ -3692,6 +3695,11 @@
 ! 8. body size in bytes;
 ! 9. location (global process id).
 !TOTAL size = 5*rank + 1 + 1 + 1 + 1 = 5*rank + 4 [elements]
+!`Note: This function violates object encapsulation by
+!directly accessing data members of the data members
+!of the <tens_rcrsv_t> class. However, since it is a read-only
+!access and all accessed data members are defined in the same
+!module, it should not cause a problem.
          implicit none
          type(tens_descr_t):: tens_descr             !out: tensor descriptor
          class(tens_rcrsv_t), intent(in):: this      !in: tensor
@@ -4526,6 +4534,16 @@
          endif
          return
         end function TensDescrCompare
+!---------------------------------------
+        subroutine tens_descr_dtor(this)
+         implicit none
+         type(tens_descr_t):: this
+
+         if(allocated(this%info)) deallocate(this%info)
+         if(allocated(this%char_name)) deallocate(this%char_name)
+         this%rank=-1
+         return
+        end subroutine tens_descr_dtor
 ![tens_argument_t]========================================
         subroutine TensArgumentSetTensor(this,tensor,ierr)
 !Sets the tensor argument by pointer association.

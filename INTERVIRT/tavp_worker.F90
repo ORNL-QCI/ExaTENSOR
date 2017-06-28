@@ -365,7 +365,7 @@
            case(TAVP_INSTR_NOOP)
            case(TAVP_INSTR_STOP)
            case(TAVP_INSTR_CREATE,TAVP_INSTR_DESTROY)
-            call construct_instr_create(errc); if(errc.ne.0) errc=-6
+            call construct_instr_create_destroy(errc); if(errc.ne.0) errc=-6
            case(TAVP_INSTR_CONTRACT)
             call construct_instr_contract(errc); if(errc.ne.0) errc=-5
            case default
@@ -389,7 +389,7 @@
 
         contains
 
-         subroutine construct_instr_create(jerr)
+         subroutine construct_instr_create_destroy(jerr)
           !op_spec={tens_rcrsv_t}
           integer(INTD), intent(out):: jerr
           class(tens_oprnd_t), pointer:: oprnd
@@ -426,7 +426,7 @@
            jerr=-1
           endif
           return
-         end subroutine construct_instr_create
+         end subroutine construct_instr_create_destroy
 
          subroutine construct_instr_contract(jerr)
           !op_spec={tens_contraction_t}
@@ -498,7 +498,7 @@
          integer(INTD):: errc,op_code
 
          if(this%is_empty(errc)) then
-!Read the instruction op_code:
+!Extract the instruction op_code:
           call unpack_builtin(instr_packet,op_code,errc)
 !Select TAVP microcode to execute:
           if(errc.eq.0) then
@@ -506,7 +506,7 @@
            case(TAVP_INSTR_NOOP)
            case(TAVP_INSTR_STOP)
            case(TAVP_INSTR_CREATE,TAVP_INSTR_DESTROY)
-            call decode_instr_create(errc); if(errc.ne.0) errc=-1
+            call decode_instr_create_destroy(errc); if(errc.ne.0) errc=-1
            case(TAVP_INSTR_CONTRACT)
             call decode_instr_contract(errc); if(errc.ne.0) errc=-1
            case default
@@ -530,12 +530,43 @@
 
          contains
 
-          subroutine decode_instr_create(jerr)
+          subroutine decode_instr_create_destroy(jerr)
            integer(INTD), intent(out):: jerr
+           class(tens_rcrsv_t), pointer:: tensor
+           class(tens_entry_t), pointer:: tens_entry
 
            jerr=0
+           allocate(tensor,STAT=jerr)
+           if(jerr.eq.0) then
+            call tensor%tens_rcrsv_ctor(instr_packet,jerr)
+            if(jerr.eq.TEREC_SUCCESS) then
+             tens_entry=>tens_cache%lookup(tensor,jerr)
+             if(jerr.eq.0) then
+              select case(op_code)
+              case(TAVP_INSTR_CREATE)
+               if(.not.associated(tens_entry)) then
+                
+               else
+                !`Throw exception
+               endif
+              case(TAVP_INSTR_DESTROY)
+               if(associated(tens_entry)) then
+                
+               else
+                !`Throw exception
+               endif
+              end select
+             else
+              jerr=-3
+             endif
+            else
+             jerr=-2
+            endif
+           else
+            jerr=-1
+           endif
            return
-          end subroutine decode_instr_create
+          end subroutine decode_instr_create_destroy
 
           subroutine decode_instr_contract(jerr)
            integer(INTD), intent(out):: jerr
@@ -565,7 +596,7 @@
             case(TAVP_INSTR_NOOP)
             case(TAVP_INSTR_STOP)
             case(TAVP_INSTR_CREATE,TAVP_INSTR_DESTROY)
-             call encode_instr_create(errc); if(errc.ne.0) errc=-6
+             call encode_instr_create_destroy(errc); if(errc.ne.0) errc=-6
             case(TAVP_INSTR_CONTRACT)
              call encode_instr_contract(errc); if(errc.ne.0) errc=-5
             case default
@@ -585,7 +616,7 @@
 
         contains
 
-         subroutine encode_instr_create(jerr)
+         subroutine encode_instr_create_destroy(jerr)
           !Packet format: {op_code|tensor}
           integer(INTD), intent(out):: jerr
           class(ds_oprnd_t), pointer:: oprnd
@@ -616,7 +647,7 @@
            jerr=-1
           endif
           return
-         end subroutine encode_instr_create
+         end subroutine encode_instr_create_destroy
 
          subroutine encode_instr_contract(jerr)
           !Packed format: {op_code|ctrl_tens_contr_t|tensor0,tensor1,tensor2}
@@ -642,7 +673,7 @@
              select type(oprnd)
              class is(tens_oprnd_t)
               tensor=>oprnd%get_tensor(jerr); if(jerr.ne.0) then; jerr=-5; exit; endif
-              if(.not.tensor%is_set()) then; jerr=-4; exit; endif
+              if(.not.tensor%is_set()) then; jerr=-4; exit; endif !trap
               call tensor%pack(instr_packet,jerr); if(jerr.ne.0) then; jerr=-3; exit; endif
              class default
               jerr=-2; exit
