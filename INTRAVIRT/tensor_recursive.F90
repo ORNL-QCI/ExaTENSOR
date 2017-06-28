@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/06/27
+!REVISION: 2017/06/28
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -237,7 +237,7 @@
           procedure, private:: TensBodyCtorBase                     !basic ctor (layout + data type)
           procedure, private:: TensBodyCtorUnpack                   !ctor by unpacking
           generic, public:: tens_body_ctor=>TensBodyCtorBase,TensBodyCtorUnpack
-          procedure, public:: pack=>TensBodyPack                   !packs the object into a packet
+          procedure, public:: pack=>TensBodyPack                    !packs the object into a packet
           procedure, public:: is_set=>TensBodyIsSet                 !returns TRUE if the tensor body is set (plus additional info)
           procedure, public:: add_subtensor=>TensBodyAddSubtensor   !registers a constituent subtensor by providing its tensor header
           procedure, public:: set_layout=>TensBodySetLayout         !sets the tensor body storage layout if physically stored as a whole
@@ -279,6 +279,9 @@
          character(:), allocatable, private:: char_name !symbolic tensor name
          integer(INTL), allocatable, private:: info(:)  !combined: space_idx,subspace_idx,dim_extent,dim_group,dim_group_restr,layout_kind,volume,location
          integer(INTD), private:: rank=-1               !tensor rank (number of dimensions)
+         contains
+          procedure, public:: print_it=>TensDescrPrintIt !prints the object
+          procedure, public:: compare=>TensDescrCompare  !compares with another instance
         end type tens_descr_t
  !Tensor argument (reference to a recursive tensor):
         type, private:: tens_argument_t
@@ -413,6 +416,7 @@
         public cmp_strings
         public cmp_tens_signatures
         public cmp_tens_headers
+        public cmp_tens_descriptors
         public build_test_hspace
         public print_tens_header_f
         public print_tcg_buffer
@@ -538,6 +542,9 @@
         private TensRcrsvSplitVector
         private TensRcrsvPrintIt
         public tens_rcrsv_dtor
+ !tens_descr_t:
+        private TensDescrPrintIt
+        private TensDescrCompare
  !tens_argument_t:
         private TensArgumentSetTensor
         private TensArgumentAllocateTensor
@@ -664,6 +671,25 @@
          endif
          return
         end function cmp_tens_headers
+!---------------------------------------------------------
+        function cmp_tens_descriptors(td1,td2) result(cmp)
+!Comparator for tensor descriptors.
+         implicit none
+         integer(INTD):: cmp                !out: result of comparison: {CMP_EQ,CMP_LT,CMP_GT,CMP_ER}
+         class(*), intent(in), target:: td1 !in: tensor descriptor 1
+         class(*), intent(in), target:: td2 !in: tensor descriptor 2
+         class(tens_descr_t), pointer:: tdp1,tdp2
+
+         tdp1=>NULL(); tdp2=>NULL()
+         select type(td1); class is(tens_descr_t); tdp1=>td1; end select
+         select type(td2); class is(tens_descr_t); tdp2=>td2; end select
+         if(associated(tdp1).and.associated(tdp2)) then
+          cmp=tdp1%compare(tdp2)
+         else
+          cmp=CMP_ER
+         endif
+         return
+        end function cmp_tens_descriptors
 !---------------------------------------------------------------------------
         function build_test_hspace(space_name,ierr,space_p) result(space_id)
 !Builds a hierarchical vector space for testing/debugging.
@@ -3423,8 +3449,8 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensRcrsvPack
-!------------------------------------------------------------------------------------------------------
-        function TensRcrsvIsSet(this,ierr,num_dims,shaped,unresolved,hspaced,layed,located) result(res)
+!----------------------------------------------------------------------------------------------------------------
+        function TensRcrsvIsSet(this,ierr,num_dims,shaped,unresolved,hspaced,layed,located,symmetric) result(res)
 !Returns TRUE if the tensor is set, plus additional info.
          implicit none
          logical:: res                                     !out: result
@@ -3436,14 +3462,16 @@
          logical, intent(out), optional:: hspaced          !out: TRUE if the tensor dimensions are over hierarchical spaces
          logical, intent(out), optional:: layed            !out: TRUE if the tensor body storage layout is set
          logical, intent(out), optional:: located          !out: TRUE if the physical location for tensor body data is set
-         integer(INTD):: errc,nd,unres
+         logical, intent(out), optional:: symmetric        !out: TRUE if the tensor has symmetric dimensions, FALSE otherwise
+         integer(INTD):: errc,nd,ng,unres
          logical:: shpd,hspc,layd,locd
 
-         res=this%header%is_set(errc,num_dims=nd,shaped=shpd,unresolved=unres,hspaced=hspc)
+         res=this%header%is_set(errc,num_dims=nd,num_groups=ng,shaped=shpd,unresolved=unres,hspaced=hspc)
          if(present(num_dims)) num_dims=nd
          if(present(shaped)) shaped=shpd
          if(present(unresolved)) unresolved=unres
          if(present(hspaced)) hspaced=hspc
+         if(present(symmetric)) symmetric=(ng.gt.0)
          if(res) then
           shpd=this%body%is_set(errc,layd,locd)
           if(present(layed)) layed=layd
@@ -3650,36 +3678,67 @@
          return
         end function TensRcrsvGetBody
 !--------------------------------------------------------------------
-        function TensRcrsvGetDescriptor(this,ierr) result(tens_descr)
-!Returns a tensor descriptor uniquely characterizing tensor signature, shape, layout, and location.
-!tens_descr.info format:
+        function TensRcrsvGetDescriptor(this,ierr) result(tens_descr) !`This function violates encapsulation
+!Returns a tensor descriptor uniquely characterizing tensor signature,
+!shape, layout kind, and location.
+!tens_descr.info(:) format:
 ! 1. hspace_idx(1:rank);
 ! 2. subspace_idx(1:rank);
 ! 3. dim_extent(1:rank);
 ! 4. dim_group(1:rank);
 ! 5. dim_group_restriction(1:rank);
-! 6. Layout kind;
-! 7. Volume;
-! 8. Location (process id).
-!TOTAL size = (5*rank)+1+1+1 = 5*rank+3 [elements]
+! 6. layout kind;
+! 7. data type;
+! 8. body size in bytes;
+! 9. location (global process id).
+!TOTAL size = 5*rank + 1 + 1 + 1 + 1 = 5*rank + 4 [elements]
          implicit none
          type(tens_descr_t):: tens_descr             !out: tensor descriptor
          class(tens_rcrsv_t), intent(in):: this      !in: tensor
          integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc,num_dims,unresolved
-         logical:: shaped,hspaced,layed,located
+         integer(INTD):: errc,num_dims,unresolved,i,n
+         logical:: shaped,hspaced,layed,located,symmetric
+         class(DataDescr_t), pointer:: descr_p
+         !real(8):: tms
 
-         if(this%is_set(errc,num_dims,shaped,unresolved,hspaced,layed,located)) then
+         !tms=thread_wtime()
+         if(this%is_set(errc,num_dims,shaped,unresolved,hspaced,layed,located,symmetric)) then
           if(errc.eq.TEREC_SUCCESS) then
            if(unresolved.eq.0.and.shaped.and.layed.and.located) then
             tens_descr%rank=num_dims
             tens_descr%char_name=this%header%signature%char_name
-            allocate(tens_descr%info(num_dims*5+3))
-            if(num_dims.gt.0) then !true tensor
-             
-            elseif(num_dims.eq.0) then !scalar
-             
+            allocate(tens_descr%info(num_dims*5+4)) !see the format right above
+            i=0
+            if(num_dims.gt.0) then
+             tens_descr%info(i+1:i+num_dims)=this%header%signature%hspace(1:num_dims)%space_id; i=i+num_dims
+             tens_descr%info(i+1:i+num_dims)=this%header%signature%space_idx(1:num_dims); i=i+num_dims
+             tens_descr%info(i+1:i+num_dims)=this%header%shape%dim_extent(1:num_dims); i=i+num_dims
+             if(symmetric) then
+              tens_descr%info(i+1:i+num_dims)=this%header%shape%dim_group(1:num_dims); i=i+num_dims
+              do n=1,num_dims
+               i=i+1; tens_descr%info(i)=this%header%shape%group_spec(this%header%shape%dim_group(n))
+              enddo
+             else
+              tens_descr%info(i+1:i+num_dims)=0; i=i+num_dims
+              tens_descr%info(i+1:i+num_dims)=TEREC_IND_RESTR_NONE; i=i+num_dims
+             endif
             endif
+            i=i+1; tens_descr%info(i)=this%body%layout%get_layout_kind()
+            i=i+1; tens_descr%info(i)=this%body%layout%get_data_type()
+            i=i+1; tens_descr%info(i)=this%body%layout%get_body_size()
+            descr_p=>this%body%layout%get_data_descr(errc)
+            if(errc.eq.TEREC_SUCCESS) then
+             if(descr_p%is_set(errc,proc_rank=n)) then
+              if(errc.eq.0) then
+               i=i+1; tens_descr%info(i)=n
+              else
+               errc=TEREC_OBJ_CORRUPTED
+              endif
+             else
+              errc=TEREC_OBJ_CORRUPTED
+             endif
+            endif
+            descr_p=>NULL()
            else
             errc=TEREC_INVALID_ARGS
            endif
@@ -3688,6 +3747,7 @@
           if(errc.eq.TEREC_SUCCESS) errc=TEREC_INVALID_REQUEST
          endif
          if(present(ierr)) ierr=errc
+         !write(CONS_OUT,*)'#MSG: tens_rcrsv_t.get_descriptor() timing: ',thread_wtime(tms) !timing
          return
         end function TensRcrsvGetDescriptor
 !-------------------------------------------------------------------------------------------------
@@ -4400,6 +4460,72 @@
 
          return
         end subroutine tens_rcrsv_dtor
+![tens_descr_t]======================================
+        subroutine TensDescrPrintIt(this,ierr,dev_id)
+         implicit none
+         class(tens_descr_t), intent(in):: this        !in: tensor descriptor
+         integer(INTD), intent(out), optional:: ierr   !out: error code
+         integer(INTD), intent(in), optional:: dev_id  !in: output device (defaults to screen)
+         integer(INTD):: errc,devo,i,l,n
+
+         errc=TEREC_SUCCESS
+         devo=6; if(present(dev_id)) devo=dev_id
+         write(devo,'("TENSOR_DESCRIPTOR{")')
+         write(devo,'(1x,i4)') this%rank
+         write(devo,*) this%char_name
+         l=0; n=this%rank
+         do i=1,5
+          write(devo,'(64(1x,i6))') this%info(l+1:l+n); l=l+n
+         enddo
+         do i=1,4
+          l=l+1; write(devo,'(1x,i11)') this%info(l)
+         enddo
+         write(devo,'("}")')
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensDescrPrintIt
+!----------------------------------------------------------
+        function TensDescrCompare(this,another) result(cmp)
+         implicit none
+         integer(INTD):: cmp                               !out: comparison result: {CMP_EQ,CMP_LT,CMP_GT,CMP_ER}
+         class(tens_descr_t), intent(in), target:: this    !in: tensor descriptor 1
+         class(tens_descr_t), intent(in), target:: another !in: tensor descriptor 2
+         integer(INTD):: l1,l2,i1,i2
+
+         cmp=CMP_EQ
+         if(this%rank.lt.another%rank) then
+          cmp=CMP_LT
+         elseif(this%rank.gt.another%rank) then
+          cmp=CMP_GT
+         else
+          l1=len(this%char_name); l2=len(another%char_name)
+          if(l1.lt.l2) then
+           cmp=CMP_LT
+          elseif(l1.gt.l2) then
+           cmp=CMP_GT
+          else
+           do l2=1,l1
+            i1=iachar(this%char_name(l2:l2)); i2=iachar(another%char_name(l2:l2))
+            if(i1.lt.i2) then; cmp=CMP_LT; exit; elseif(i1.gt.i2) then; cmp=CMP_GT; exit; endif
+           enddo
+           if(cmp.eq.CMP_EQ) then
+            l1=size(this%info)
+            if(size(another%info).eq.l1) then !trap
+             do l2=1,l1
+              if(this%info(l2).lt.another%info(l2)) then
+               cmp=CMP_LT; exit
+              elseif(this%info(l2).gt.another%info(l2)) then
+               cmp=CMP_GT; exit
+              endif
+             enddo
+            else
+             cmp=CMP_ER
+            endif
+           endif
+          endif
+         endif
+         return
+        end function TensDescrCompare
 ![tens_argument_t]========================================
         subroutine TensArgumentSetTensor(this,tensor,ierr)
 !Sets the tensor argument by pointer association.
@@ -6153,6 +6279,7 @@
         use gfc_vector
         use subspaces
         use tensor_recursive
+        use distributed, only: DataDescr_t,data_descr_rnd_
         implicit none
         private
         public test_tensor_recursive
@@ -6405,6 +6532,7 @@
          type(list_bi_t):: subtensors
          type(list_iter_t):: lit
          class(subspace_t), pointer:: ssp
+         type(tens_descr_t):: tdescr
          class(*), pointer:: up
 
  !Build a hierarchical representation for a test vector space:
@@ -6423,14 +6551,21 @@
          call tensor%tens_rcrsv_ctor('T2',spcx(1:tens_rank),(/(hsid,j=1,tens_rank)/),ierr,&
                                     &dims(1:tens_rank),dimg(1:tens_rank),grps(1:2))
          if(ierr.ne.0) then; ierr=7; return; endif
+ !Check the tensor descriptor:
+         thp=>tensor%get_header(ierr); if(ierr.ne.0) then; ierr=8; return; endif
+         call tensor%add_subtensor(thp,ierr); thp=>NULL(); if(ierr.ne.0) then; ierr=9; return; endif
+         call tensor%set_layout(TEREC_LAY_FDIMS,R8,ierr); if(ierr.ne.0) then; ierr=10; return; endif
+         call tensor%set_location(data_descr_rnd_,ierr); if(ierr.ne.0) then; ierr=11; return; endif
+         tdescr=tensor%get_descriptor(ierr); if(ierr.ne.0) then; ierr=12; return; endif
+         !call tdescr%print_it() !debug
  !Split the tensor into subtensors:
-         call tensor%split((/1,2,3,4/),subtensors,ierr,num_subtensors,.TRUE.); if(ierr.ne.0) then; ierr=8; return; endif
+         call tensor%split((/1,2,3,4/),subtensors,ierr,num_subtensors,.TRUE.); if(ierr.ne.0) then; ierr=13; return; endif
          !write(*,*) 'Number of subtensors generated = ',num_subtensors !debug
-         ierr=lit%init(subtensors); if(ierr.ne.0) then; ierr=9; return; endif
+         ierr=lit%init(subtensors); if(ierr.ne.0) then; ierr=14; return; endif
          !ierr=lit%scanp(action_f=print_tens_header_f); if(ierr.eq.GFC_IT_DONE) ierr=lit%reset() !debug
-         !if(ierr.ne.0) then; ierr=10; return; endif !debug
-         ierr=lit%delete_all(); if(ierr.ne.0) then; ierr=11; return; endif
-         ierr=lit%release(); if(ierr.ne.0) then; ierr=12; return; endif
+         !if(ierr.ne.0) then; ierr=15; return; endif !debug
+         ierr=lit%delete_all(); if(ierr.ne.0) then; ierr=16; return; endif
+         ierr=lit%release(); if(ierr.ne.0) then; ierr=17; return; endif
          return
         end subroutine test_tens_rcrsv
 !------------------------------------------------------------------------------
