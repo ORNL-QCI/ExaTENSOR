@@ -1,6 +1,6 @@
-!ExaTENSOR: TAVP Worker
+!ExaTENSOR: TAVP "Worker" implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/06/27
+!REVISION: 2017/06/28
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -201,29 +201,35 @@
          this%tens_alloc=.FALSE.; this%res_alloc=.FALSE.
          return
         end subroutine tens_entry_dtor
-![tens_cache_t]================================================================
-        function TensCacheLookup(this,tens_signature,ierr) result(tens_entry_p)
-!Looks up a given tensor signature in the tensor cache. If found, returns
-!a pointer to the corresponding tensor cache entry. If not found, returns NULL.
+![tens_cache_t]========================================================
+        function TensCacheLookup(this,tensor,ierr) result(tens_entry_p)
+!Looks up a given tensor in the tensor cache. If found, returns a pointer
+!to the corresponding tensor cache entry. If not found, returns NULL.
          implicit none
-         class(tens_entry_t), pointer:: tens_entry_p                  !out: pointer to the tensor cache entry or NULL
-         class(tens_cache_t), intent(in):: this                       !in: tensor cache
-         class(tens_signature_t), intent(in), target:: tens_signature !in: tensor signature to look up
-         integer(INTD), intent(out), optional:: ierr                  !out: error code
+         class(tens_entry_t), pointer:: tens_entry_p !out: pointer to the tensor cache entry or NULL
+         class(tens_cache_t), intent(in):: this      !in: tensor cache
+         class(tens_rcrsv_t), intent(in):: tensor    !in: tensor to look up (via its descriptor as the key)
+         integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc,res
          class(*), pointer:: uptr
          type(dictionary_iter_t):: dit
+         type(tens_descr_t):: tens_descr
 
          tens_entry_p=>NULL()
          errc=dit%init(this%map)
          if(errc.eq.GFC_SUCCESS) then
           uptr=>NULL()
-          res=dit%search(GFC_DICT_FETCH_IF_FOUND,cmp_tens_signatures,tens_signature,value_out=uptr)
-          if(res.eq.GFC_FOUND) then
-           select type(uptr); class is(tens_entry_t); tens_entry_p=>uptr; end select
-           if(.not.associated(tens_entry_p)) errc=-4
+          tens_descr=tensor%get_descriptor(errc)
+          if(errc.eq.TEREC_SUCCESS) then
+           res=dit%search(GFC_DICT_FETCH_IF_FOUND,cmp_tens_descriptors,tens_descr,value_out=uptr)
+           if(res.eq.GFC_FOUND) then
+            select type(uptr); class is(tens_entry_t); tens_entry_p=>uptr; end select
+            if(.not.associated(tens_entry_p)) errc=-5 !trap
+           else
+            if(res.ne.GFC_NOT_FOUND) errc=-4
+           endif
           else
-           if(res.ne.GFC_NOT_FOUND) errc=-3
+           errc=-3
           endif
           res=dit%release(); if(res.ne.GFC_SUCCESS.and.errc.eq.0) errc=-2
          else
@@ -248,39 +254,29 @@
          class(tens_entry_t), pointer, intent(out), optional:: tens_entry_p !out: tensor cache entry (new or existing)
          integer(INTD):: errc,res
          class(*), pointer:: uptr
-         class(tens_header_t), pointer:: thp
-         class(tens_signature_t), pointer:: tsp
          type(dictionary_iter_t):: dit
+         type(tens_descr_t):: tens_descr
          type(tens_entry_t):: tens_entry
 
          stored=.FALSE.
          errc=dit%init(this%map)
          if(errc.eq.GFC_SUCCESS) then
           if(associated(tensor)) then
-           if(tensor%is_set()) then
-            thp=>tensor%get_header(errc)
-            if(errc.eq.TEREC_SUCCESS) then
-             tsp=>thp%get_signature(errc)
-             if(errc.eq.TEREC_SUCCESS) then
-              if(present(resource)) then
-               call tens_entry%tens_entry_ctor(errc,tensor,resource)
-              else
-               call tens_entry%tens_entry_ctor(errc,tensor)
-              endif
-              if(errc.eq.0) then
-               uptr=>NULL()
-               res=dit%search(GFC_DICT_ADD_IF_NOT_FOUND,cmp_tens_signatures,tsp,tens_entry,GFC_BY_VAL,value_out=uptr)
-               if(res.eq.GFC_NOT_FOUND) then; stored=.TRUE.; else; if(res.ne.GFC_FOUND) errc=-9; endif
-               if(present(tens_entry_p).and.errc.eq.0) then
-                tens_entry_p=>NULL()
-                select type(uptr); class is(tens_entry_t); tens_entry_p=>uptr; end select
-                if(.not.associated(tens_entry_p)) errc=-8
-               endif
-              else
-               errc=-7
-              endif
-             else
-              errc=-6
+           tens_descr=tensor%get_descriptor(errc)
+           if(errc.eq.TEREC_SUCCESS) then
+            if(present(resource)) then
+             call tens_entry%tens_entry_ctor(errc,tensor,resource)
+            else
+             call tens_entry%tens_entry_ctor(errc,tensor)
+            endif
+            if(errc.eq.0) then
+             uptr=>NULL()
+             res=dit%search(GFC_DICT_ADD_IF_NOT_FOUND,cmp_tens_descriptors,tens_descr,tens_entry,GFC_BY_VAL,value_out=uptr)
+             if(res.eq.GFC_NOT_FOUND) then; stored=.TRUE.; else; if(res.ne.GFC_FOUND) errc=-7; endif
+             if(present(tens_entry_p).and.errc.eq.0) then
+              tens_entry_p=>NULL()
+              select type(uptr); class is(tens_entry_t); tens_entry_p=>uptr; end select
+              if(.not.associated(tens_entry_p)) errc=-6 !trap
              endif
             else
              errc=-5
@@ -301,32 +297,24 @@
 !----------------------------------------------------------------
         function TensCacheEvict(this,tensor,ierr) result(evicted)
 !Evicts a specific tensor cache entry from the tensor cache.
+!If the corresponding tensor cache entry is not found,
+!no error is risen, but <evicted>=FALSE.
          implicit none
-         logical:: evicted                                !TRUE if the tensor cache entry was found and evicted, FALSE otherwise
-         class(tens_cache_t), intent(inout):: this        !inout: tensor cache
-         class(tens_rcrsv_t), intent(in), target:: tensor !in: tensor to find and evict from the cache
-         integer(INTD), intent(out), optional:: ierr      !out: error code
+         logical:: evicted                           !TRUE if the tensor cache entry was found and evicted, FALSE otherwise
+         class(tens_cache_t), intent(inout):: this   !inout: tensor cache
+         class(tens_rcrsv_t), intent(in):: tensor    !in: tensor to find and evict from the cache
+         integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc,res
-         class(tens_header_t), pointer:: thp
-         class(tens_signature_t), pointer:: tsp
          type(dictionary_iter_t):: dit
+         type(tens_descr_t):: tens_descr
 
          evicted=.FALSE.
          errc=dit%init(this%map)
          if(errc.eq.GFC_SUCCESS) then
-          if(tensor%is_set()) then
-           thp=>tensor%get_header(errc)
-           if(errc.eq.TEREC_SUCCESS) then
-            tsp=>thp%get_signature(errc)
-            if(errc.eq.TEREC_SUCCESS) then
-             res=dit%search(GFC_DICT_DELETE_IF_FOUND,cmp_tens_signatures,tsp)
-             if(res.eq.GFC_FOUND) then; evicted=.TRUE.; else; if(res.ne.GFC_NOT_FOUND) errc=-6; endif
-            else
-             errc=-5
-            endif
-           else
-            errc=-4
-           endif
+          tens_descr=tensor%get_descriptor(errc)
+          if(errc.eq.TEREC_SUCCESS) then
+           res=dit%search(GFC_DICT_DELETE_IF_FOUND,cmp_tens_descriptors,tens_descr)
+           if(res.eq.GFC_FOUND) then; evicted=.TRUE.; else; if(res.ne.GFC_NOT_FOUND) errc=-4; endif
           else
            errc=-3
           endif
@@ -340,6 +328,8 @@
 !-------------------------------------------
         subroutine TensCacheErase(this,ierr)
 !Erases the tensor cache completely and unconditionally.
+!In particular, if some resource objects are still in use,
+!their deallocation will probably cause a crash.
          implicit none
          class(tens_cache_t), intent(inout):: this   !inout: tensor cache
          integer(INTD), intent(out), optional:: ierr !out: error code
