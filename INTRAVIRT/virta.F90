@@ -2,8 +2,13 @@
 !Derives from abstract domain-specific virtual processing (DSVP).
 !This module provides basic infrastructure for ExaTENSOR, tensor algebra virtual processor (TAVP).
 !Different specializations (roles) of tensor algebra virtual processors derive from this module.
+!Note that, in general, different specializations (roles) of the domain-specific virtual processor
+!may have differing instruction sets (non-overlapping, overlapping, or identical). The instruction
+!codes provided in this module are common for all specializations of the tensor algebra virtual processor.
+!However, different specializations always have different microcodes, even for the same instruction code.
+
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/06/23
+!REVISION: 2017/06/29
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -40,7 +45,7 @@
         integer(INTD), private:: CONS_OUT=6 !default output for this module
         integer(INTD), private:: DEBUG=0    !debugging mode
         logical, private:: VERBOSE=.TRUE.   !verbosity for errors
- !Errors (ExaTENSOR aliases of DSVP errors):
+ !Runtime errors (ExaTENSOR aliases of basic DSVP errors):
         integer(INTD), parameter, public:: EXA_SUCCESS=DSVP_SUCCESS                         !success
         integer(INTD), parameter, public:: EXA_ERROR=DSVP_ERROR                             !generic error
         integer(INTD), parameter, public:: EXA_ERR_INVALID_ARGS=DSVP_ERR_INVALID_ARGS       !invalid arguments passed
@@ -56,6 +61,15 @@
         integer(INTD), parameter, public:: EXA_WORKER=2             !worker (numeric) process (TAVP)
         integer(INTD), parameter, public:: EXA_HELPER=3             !helper (auxiliary) process (TAVP)
         integer(INTD), public:: EXA_MAX_WORK_GROUP_SIZE=64 !maximal size of a work group (max number of workers per manager)
+ !TAVP instruction error codes:
+        integer(INTD), parameter, public:: TAVP_ERR_GEN_FAILURE=-1     !unspecified generic failure
+        integer(INTD), parameter, public:: TAVP_ERR_BTC_BAD=-2         !bad instruction bytecode
+        integer(INTD), parameter, public:: TAVP_ERR_CHE_FAILURE=-3     !argument cache failure
+        integer(INTD), parameter, public:: TAVP_ERR_ARG_UNDEFINED=-4   !instruction argument is undefined in the argument cache
+        integer(INTD), parameter, public:: TAVP_ERR_ARG_DEFINED=-5     !instrcution argument is already defined in the argument cache
+        integer(INTD), parameter, public:: TAVP_ERR_RSC_UNAVAILABLE=-6 !instruction is unable to obtain needed resources
+        integer(INTD), parameter, public:: TAVP_ERR_COM_FAILURE=-7     !instruction communication failed
+        integer(INTD), parameter, public:: TAVP_ERR_EXC_FAILURE=-8     !instruction execution (computation) failed
  !TAVP ISA size:
         integer(INTD), parameter, public:: TAVP_ISA_SIZE=256 !max number of TAVP instructions
  !Tensor algebra virtual processor (TAVP):
@@ -152,6 +166,8 @@
         integer(INT_MPI), public:: role_comm=MPI_COMM_NULL  !role specific MPI communicator
         integer(INT_MPI), public:: role_size=0              !size of the role specific MPI communicator
         integer(INT_MPI), public:: role_rank=-1             !process rank within the role specific MPI communicator
+ !TAVP address space:
+        type(DistrSpace_t), public:: tavp_addr_space        !shared DDSS address space among processes of the same role
 !VISIBILITY:
  !tens_resrc_t:
         private TensResrcIsEmpty

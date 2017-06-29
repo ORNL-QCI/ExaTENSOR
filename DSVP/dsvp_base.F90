@@ -1,6 +1,6 @@
 !Domain-specific virtual processor (DSVP): Abstract base module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/06/22
+!REVISION: 2017/06/29
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -90,7 +90,7 @@
         integer(INTD), parameter, public:: DSVP_STAT_OFF=0         !DSVP is off (either not initialized or turned off)
         integer(INTD), parameter, public:: DSVP_STAT_ON=1          !DSVP has been initialized and is active now
         integer(INTD), parameter, public:: DSVP_STAT_ERR=-1        !DSVP encountered an error (generic)
- !DSVP specific kind (valid specific kinds must be non-negative):
+ !DSVP specific kind (valid specific DSVP kinds must be non-negative):
         integer(INTD), parameter, public:: DSVP_NO_KIND=-1         !no specficic kind
  !Domain-specific operand:
   !Operand status:
@@ -119,12 +119,12 @@
  !Domain-specific resource (normally local):
         type, abstract, public:: ds_resrc_t
          contains
-         procedure(ds_resrc_query_i), deferred, public:: is_empty  !returns TRUE if the resource is empty, FALSE otherwise
+          procedure(ds_resrc_query_i), deferred, public:: is_empty  !returns TRUE if the resource is empty, FALSE otherwise
         end type ds_resrc_t
  !Domain-specific operand (will contain domain-specific data):
         type, abstract, public:: ds_oprnd_t
-         integer(INTD), private:: stat=DS_OPRND_EMPTY              !current status of the domain-specific operand: {DS_OPRND_EMPTY,DS_OPRND_DEFINED,DS_OPRND_PRESENT}
-         integer(INTD), private:: in_route=DS_OPRND_NO_COMM        !communication status: {DS_OPRND_NO_COMM,DS_OPRND_FETCHING,DS_OPRND_UPLOADING}
+         integer(INTD), private:: stat=DS_OPRND_EMPTY       !current status of the domain-specific operand: {DS_OPRND_EMPTY,DS_OPRND_DEFINED,DS_OPRND_PRESENT}
+         integer(INTD), private:: in_route=DS_OPRND_NO_COMM !communication status: {DS_OPRND_NO_COMM,DS_OPRND_FETCHING,DS_OPRND_UPLOADING}
          contains
           procedure(ds_oprnd_query_i), deferred, public:: is_remote  !checks whether the domain-specific operand is local or remote
           procedure(ds_oprnd_self_i), deferred, public:: acquire_rsc !explicitly acquires local resources for the domain-specific operand
@@ -190,6 +190,7 @@
           procedure, public:: free_operand=>DSInstrFreeOperand          !frees a specific instruction operand
           procedure, public:: get_num_operands=>DSInstrGetNumOperands   !returns the number of operands in the domain-specific instruction
           procedure, public:: all_set=>DSInstrAllSet                    !returns TRUE if all operands and control are set
+          procedure, public:: terminate=>DSInstrTerminate               !terminates the normal instruction execution workflow, but leaves instruction defined (retired)
           procedure, public:: clean=>DSInstrClean                       !resets the domain-specific instruction to an empty state (after it has been retired)
         end type ds_instr_t
  !Domain-specific virtual processor (DSVP):
@@ -355,6 +356,7 @@
         private DSInstrFreeOperand
         private DSInstrGetNumOperands
         private DSInstrAllSet
+        private DSInstrTerminate
         private DSInstrClean
         public ds_instr_self_i
  !dsvp_t:
@@ -471,21 +473,29 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine DSOprndMarkDelivered
-!---------------------------------------------------
-        subroutine DSOprndMarkUndelivered(this,ierr)
+!--------------------------------------------------------
+        subroutine DSOprndMarkUndelivered(this,ierr,sync)
 !Marks the domain-specific operand as undelivered (locally unavailable).
-!The local resources will automatically be released, but the operand statys defined.
+!The local resources are automatically released, but the operand stays defined.
 !It is allowed to call this procedure on an undelivered operand. However, trying to
-!mark undelivered an operand with a pending communication will cause an error.
+!mark undelivered an operand with a pending communication will cause an error,
+!unless the optional parameter <sync> is set to TRUE (will enforce synchronization).
          implicit none
          class(ds_oprnd_t), intent(inout):: this     !inout: domain-specific operand
          integer(INTD), intent(out), optional:: ierr !out: error code
+         logical, intent(in), optional:: sync        !in: if TRUE, a possible pending communication will be completed before resource release
          integer(INTD):: errc,ier
+         logical:: compl_comm,dirty
 
-         errc=DSVP_SUCCESS
+         errc=DSVP_SUCCESS; dirty=.FALSE.
          if(this%is_active(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
-           if(this%in_route.eq.DS_OPRND_NO_COMM) then !no pending communication allowed
+           compl_comm=.FALSE.; if(present(sync)) compl_comm=sync
+           if(compl_comm) then
+            compl_comm=this%sync(errc,wait=.TRUE.); dirty=(errc.ne.DSVP_SUCCESS)
+            errc=DSVP_SUCCESS
+           endif
+           if((this%in_route.eq.DS_OPRND_NO_COMM).or.dirty) then !no pending communication check
             if(this%is_present(ier)) call this%release(errc) !will release local resources
             if(errc.eq.DSVP_SUCCESS) errc=ier
             this%stat=DS_OPRND_DEFINED !status will be changed regardless the success of resource release
@@ -494,8 +504,9 @@
            endif
           endif
          else
-          errc=DSVP_ERR_INVALID_REQ
+          if(errc.eq.DSVP_SUCCESS) errc=DSVP_ERR_INVALID_REQ
          endif
+         if(dirty) errc=NOT_CLEAN
          if(present(ierr)) ierr=errc
          return
         end subroutine DSOprndMarkUndelivered
@@ -945,6 +956,54 @@
          if(present(ierr)) ierr=errc
          return
         end function DSInstrAllSet
+!--------------------------------------------------------
+        subroutine DSInstrTerminate(this,error_code,ierr)
+!Terminates the normal instruction execution workflow,
+!but leaves the instruction defined (active).
+!The instruction status will set to DS_INSTR_RETIRED with
+!a given <error_code>.
+         implicit none
+         class(ds_instr_t), intent(inout):: this     !inout: domain-specific instruction
+         integer(INTD), intent(in):: error_code      !in: instruction error code to set
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc,ier,sts
+         logical:: nostat
+
+         if(this%is_active(errc)) then
+          sts=this%get_status(errc)
+          if(errc.eq.DSVP_SUCCESS) then
+           if(sts.ge.DS_INSTR_INPUT_WAIT) then
+            if(sts.ge.DS_INSTR_READY_TO_EXEC) then
+             if(sts.ge.DS_INSTR_OUTPUT_WAIT) then
+              if(sts.lt.DS_INSTR_RETIRED) then
+               call this%sync_upload(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.DSVP_SUCCESS) errc=ier
+              endif
+             else
+              if(sts.ge.DS_INSTR_SCHEDULED) then
+               call this%sync_execution(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.DSVP_SUCCESS) errc=ier
+              endif
+             endif
+            else
+             call this%sync_prefetch(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.DSVP_SUCCESS) errc=ier
+            endif
+           endif
+           if(sts.ge.DS_INSTR_RSC_WAIT) then
+            call this%release_resource(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.DSVP_SUCCESS) errc=ier
+           endif
+          else !instruction status unknown
+           call this%sync_prefetch(ier)
+           call this%sync_execution(ier)
+           call this%sync_upload(ier)
+           call this%release_resource(ier)
+          endif
+          call this%set_status(DS_INSTR_RETIRED,ier,error_code)
+          if(ier.ne.DSVP_SUCCESS.and.errc.eq.DSVP_SUCCESS) errc=ier
+         else
+          if(errc.eq.DSVP_SUCCESS) errc=DSVP_ERR_INVALID_REQ
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine DSInstrTerminate
 !-----------------------------------------------------
         subroutine DSInstrClean(this,ierr,dissoc_only)
 !Resets the domain-specific instruction to an empty state. By default,
