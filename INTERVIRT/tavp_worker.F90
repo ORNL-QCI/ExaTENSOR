@@ -447,6 +447,7 @@
                jerr=-5
               endif
               oprnd=>NULL() !<oprnd> pointer was saved in the tensor instruction and will later be deallocated
+              tens_oprnd=>NULL()
              else
               jerr=-4
              endif
@@ -468,11 +469,13 @@
           !op_spec={tens_contraction_t}
           integer(INTD), intent(out):: jerr
           integer(INTD):: jj
+          class(ds_oprnd_t), pointer:: oprnd
+          class(ds_instr_ctrl_t), pointer:: instr_ctrl
           class(contr_ptrn_ext_t), pointer:: contr_ptrn
           class(tens_contraction_t), pointer:: tens_contr
           class(ctrl_tens_contr_t), pointer:: tens_contr_ctrl
           class(tens_rcrsv_t), pointer:: tensor
-          class(tens_oprnd_t), pointer:: oprnd
+          class(tens_oprnd_t), pointer:: tens_oprnd
 
           jerr=0
           tens_contr=>NULL()
@@ -485,16 +488,18 @@
              if(jerr.eq.0) then
               call tens_contr_ctrl%ctrl_tens_contr_ctor(contr_ptrn,jerr,tens_contr%get_prefactor()) !contraction pattern is cloned by value
               if(jerr.eq.0) then
-               call this%set_control(tens_contr_ctrl,jerr)
+               instr_ctrl=>tens_contr_ctrl
+               call this%set_control(instr_ctrl,jerr)
                if(jerr.eq.DSVP_SUCCESS) then
                 call this%alloc_operands(3,jerr)
                 if(jerr.eq.DSVP_SUCCESS) then
                  do jj=0,2
                   tensor=>tens_contr%get_argument(jj,jerr); if(jerr.ne.TEREC_SUCCESS) exit
-                  allocate(oprnd,STAT=jerr); if(jerr.ne.0) exit
-                  call oprnd%tens_oprnd_ctor(tensor,jerr); if(jerr.ne.0) exit
+                  allocate(tens_oprnd,STAT=jerr); if(jerr.ne.0) exit
+                  call tens_oprnd%tens_oprnd_ctor(tensor,jerr); if(jerr.ne.0) exit
+                  oprnd=>tens_oprnd
                   call this%set_operand(jj,oprnd,jerr); if(jerr.ne.DSVP_SUCCESS) exit
-                  tensor=>NULL(); oprnd=>NULL() !<oprnd> pointer was saved in the tensor instruction and will later be deallocated
+                  tensor=>NULL(); tens_oprnd=>NULL(); oprnd=>NULL() !<oprnd> pointer was saved in the tensor instruction and will later be deallocated
                  enddo
                 else
                  jerr=-7
@@ -505,7 +510,7 @@
               else
                jerr=-5
               endif
-              tens_contr_ctrl=>NULL() !<tens_contr_ctrl> pointer was saved in the tensor instruction and will later be deallocated
+              instr_ctrl=>NULL(); tens_contr_ctrl=>NULL() !<tens_contr_ctrl> pointer was saved in the tensor instruction and will later be deallocated
              else
               jerr=-4
              endif
@@ -567,7 +572,8 @@
            class(tens_rcrsv_t), pointer:: tensor
            class(tens_entry_t), pointer:: tens_entry
            class(tens_resrc_t), pointer:: tens_resource
-           class(tens_oprnd_t), pointer:: oprnd
+           class(tens_oprnd_t), pointer:: tens_oprnd
+           class(ds_oprnd_t), pointer:: oprnd
            logical:: res
 
            jerr=0
@@ -587,10 +593,11 @@
                  tens_resource=>tens_entry%get_resource()
                  call this%alloc_operands(1,jerr)
                  if(jerr.eq.DSVP_SUCCESS) then
-                  oprnd=>NULL(); allocate(oprnd,STAT=jerr)
+                  tens_oprnd=>NULL(); allocate(tens_oprnd,STAT=jerr)
                   if(jerr.eq.0) then
-                   call oprnd%tens_oprnd_ctor(tensor,jerr,tens_resource) !tensor and tens_resource are stored in tensor cache
+                   call tens_oprnd%tens_oprnd_ctor(tensor,jerr,tens_resource) !tensor and tens_resource are stored in tensor cache
                    if(jerr.eq.0) then
+                    oprnd=>tens_oprnd
                     call this%set_operand(0,oprnd,jerr)
                     if(jerr.ne.DSVP_SUCCESS) then
                      call this%terminate(TAVP_ERR_GEN_FAILURE,jerr)
@@ -624,10 +631,11 @@
                 tens_resource=>tens_entry%get_resource()
                 call this%alloc_operands(1,jerr)
                 if(jerr.eq.DSVP_SUCCESS) then
-                 oprnd=>NULL(); allocate(oprnd,STAT=jerr)
+                 tens_oprnd=>NULL(); allocate(tens_oprnd,STAT=jerr)
                  if(jerr.eq.0) then
-                  call oprnd%tens_oprnd_ctor(tensor,jerr,tens_resource) !tensor and tens_resource are from tensor cache
+                  call tens_oprnd%tens_oprnd_ctor(tensor,jerr,tens_resource) !tensor and tens_resource are from tensor cache
                   if(jerr.eq.0) then
+                   oprnd=>tens_oprnd
                    call this%set_operand(0,oprnd,jerr)
                    if(jerr.ne.DSVP_SUCCESS) then
                     call this%terminate(TAVP_ERR_GEN_FAILURE,jerr)
@@ -668,11 +676,13 @@
           subroutine decode_instr_contract(jerr)
            !CONTRACT two tensors
            integer(INTD), intent(out):: jerr
+           class(ds_instr_ctrl_t), pointer:: instr_ctrl
            class(ctrl_tens_contr_t), pointer:: tens_contr_ctrl
            class(tens_rcrsv_t), pointer:: tensor
            class(tens_resrc_t), pointer:: tens_resource
            class(tens_entry_t), pointer:: tens_entry
-           class(tens_oprnd_t), pointer:: oprnd
+           class(tens_oprnd_t), pointer:: tens_oprnd
+           class(ds_oprnd_t), pointer:: oprnd
            integer(INTD):: jj
 
            jerr=0
@@ -680,7 +690,8 @@
            if(jerr.eq.0) then
             call tens_contr_ctrl%unpack(instr_packet,jerr)
             if(jerr.eq.0) then
-             call this%set_control(tens_contr_ctrl,jerr)
+             instr_ctrl=>tens_contr_ctrl
+             call this%set_control(instr_ctrl,jerr)
              if(jerr.eq.DSVP_SUCCESS) then
               call this%alloc_operands(3,jerr)
               if(jerr.eq.DSVP_SUCCESS) then
@@ -696,10 +707,11 @@
                 tensor=>tens_entry%get_tensor()    !the same tensor from the tensor cache
                 tens_resource=>NULL()              !as well as its associated resource
                 tens_resource=>tens_entry%get_resource()
-                oprnd=>NULL(); allocate(oprnd,STAT=jerr)
+                tens_oprnd=>NULL(); allocate(tens_oprnd,STAT=jerr)
                 if(jerr.ne.0) then; call this%terminate(TAVP_ERR_RSC_UNAVAILABLE,jerr); jerr=-7; exit; endif
-                call oprnd%tens_oprnd_ctor(tensor,jerr,tens_resource) !tensor and tens_resource are stored in tensor cache
+                call tens_oprnd%tens_oprnd_ctor(tensor,jerr,tens_resource) !tensor and tens_resource are stored in tensor cache
                 if(jerr.ne.0) then; call this%terminate(TAVP_ERR_GEN_FAILURE,jerr); jerr=-6; exit; endif
+                oprnd=>tens_oprnd
                 call this%set_operand(jj,oprnd,jerr)
                 if(jerr.ne.DSVP_SUCCESS) then; call this%terminate(TAVP_ERR_GEN_FAILURE,jerr); jerr=-5; exit; endif
                enddo
