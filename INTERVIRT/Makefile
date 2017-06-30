@@ -261,7 +261,7 @@ OBJS = ./OBJ/tavp_worker.o ./OBJ/tavp_manager.o ./OBJ/tavp_driver.o ./OBJ/exaten
 $(NAME): $(OBJS) $(MY_LIB)
 	ar cr lib$(NAME).a $(OBJS) $(MY_LIB)
 
-./OBJ/tavp_worker.o: tavp_worker.F90 ../INTRAVIRT/OBJ/virta.o ../GFC/OBJ/gfc_base.o ../GFC/OBJ/gfc_list.o ../GFC/OBJ/gfc_dictionary.o
+./OBJ/tavp_worker.o: tavp_worker.F90 ../INTRAVIRT/OBJ/virta.o ../GFC/OBJ/gfc_base.o ../GFC/OBJ/gfc_list.o ../GFC/OBJ/gfc_vector.o ../GFC/OBJ/gfc_dictionary.o
 	mkdir -p ./OBJ
 	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(FFLAGS) tavp_worker.F90 -o ./OBJ/tavp_worker.o
 

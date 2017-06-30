@@ -24,6 +24,7 @@
         use virta
         use gfc_base
         use gfc_list
+        use gfc_vector
         use gfc_dictionary
         implicit none
         private
@@ -82,12 +83,27 @@
          procedure(ds_instr_self_i), nopass, pointer:: sync_upload=>NULL()      !synchronizes the output upload (either test or wait)
          procedure(ds_instr_self_i), nopass, pointer:: release_resource=>NULL() !releases local resources occupied by instruction operands
         end type microcode_bind_t
+ !TAVP specialization "Worker":
+        type, extends(dsvp_t), private:: tavp_worker_t
+         type(tens_cache_t), private:: tens_cache       !tensor cache (both persistent and temporary tensors)
+         type(list_bi_t), private:: instr_queue         !instruction queue
+         type(list_iter_t), private:: instr_it          !instruction queue iterator
+         type(vector_t), private:: events               !events for dependency enforcement
+         type(vector_iter_t), private:: event_it        !events iterator
+         contains
+          procedure, public:: start=>TAVPWorkerStart                                             !initializes TAVP to an active state
+          procedure, public:: shutdown=>TAVPWorkerShutdown                                       !shuts down TAVP
+          procedure, public:: fetch_instructions=>TAVPWorkerFetchInstructions                    !fetches a block of tensor instructions from TAVP "Manager"
+          procedure, public:: return_retired_instructions=>TAVPWorkerReturnRetiredInstructions   !returns back a block of retired tensor instructions to TAVP "Manager"
+          procedure, public:: send_instructions=>TAVPWorkerSendInstructions                      !N/A (dummy)
+          procedure, public:: receive_retired_instructions=>TAVPWorkerReceiveRetiredInstructions !N/A (dummy)
+        end type tavp_worker_t
 !INTERFACES:
 !DATA:
- !Tensor cache (both persistent and temporary tensors):
-        type(tens_cache_t), private:: tens_cache
  !TAVP instruction microcode bindings (set by the TAVP initialization):
         type(microcode_bind_t), private:: microcode(0:TAVP_ISA_SIZE-1)
+ !TAVP "Worker":
+        type(tavp_worker_t), protected:: tavpWorker
 !VISIBILITY:
  !tens_entry_t:
         private TensEntryCtor
@@ -107,6 +123,13 @@
         private TensInstrSetMicrocode
         private TensInstrActivate
         private tens_instr_dtor
+ !tavp_worker_t:
+        private TAVPWorkerStart
+        private TAVPWorkerShutdown
+        private TAVPWorkerFetchInstructions
+        private TAVPWorkerReturnRetiredInstructions
+        private TAVPWorkerSendInstructions
+        private TAVPWorkerReceiveRetiredInstructions
 
 !IMPLEMENTATION:
        contains
@@ -551,12 +574,12 @@
             call tensor%tens_rcrsv_ctor(instr_packet,jerr)
             if(jerr.eq.TEREC_SUCCESS) then
              tens_entry=>NULL()
-             tens_entry=>tens_cache%lookup(tensor,jerr)
+             tens_entry=>tavpWorker%tens_cache%lookup(tensor,jerr)
              if(jerr.eq.0) then
               select case(op_code)
               case(TAVP_INSTR_CREATE) !CREATE a tensor
                if(.not.associated(tens_entry)) then
-                res=tens_cache%store(tensor,jerr,tens_entry_p=tens_entry)
+                res=tavpWorker%tens_cache%store(tensor,jerr,tens_entry_p=tens_entry)
                 if(res.and.(jerr.eq.0).and.associated(tens_entry)) then
                  tens_resource=>NULL()
                  tens_resource=>tens_entry%get_resource()
@@ -564,7 +587,7 @@
                  if(jerr.eq.DSVP_SUCCESS) then
                   oprnd=>NULL(); allocate(oprnd,STAT=jerr)
                   if(jerr.eq.0) then
-                   call oprnd%tens_oprnd_ctor(tensor,jerr,tens_resource) !tensor and tens_resource are stored in tens_cache
+                   call oprnd%tens_oprnd_ctor(tensor,jerr,tens_resource) !tensor and tens_resource are stored in tensor cache
                    if(jerr.eq.0) then
                     call this%set_operand(0,oprnd,jerr)
                     if(jerr.ne.DSVP_SUCCESS) then
@@ -601,7 +624,7 @@
                 if(jerr.eq.DSVP_SUCCESS) then
                  oprnd=>NULL(); allocate(oprnd,STAT=jerr)
                  if(jerr.eq.0) then
-                  call oprnd%tens_oprnd_ctor(tensor,jerr,tens_resource) !tensor and tens_resource are from tens_cache
+                  call oprnd%tens_oprnd_ctor(tensor,jerr,tens_resource) !tensor and tens_resource are from tensor cache
                   if(jerr.eq.0) then
                    call this%set_operand(0,oprnd,jerr)
                    if(jerr.ne.DSVP_SUCCESS) then
@@ -664,7 +687,7 @@
                 if(jerr.ne.0) then; call this%terminate(TAVP_ERR_RSC_UNAVAILABLE,jerr); jerr=-11; exit; endif
                 call tensor%tens_rcrsv_ctor(instr_packet,jerr)
                 if(jerr.ne.TEREC_SUCCESS) then; call this%terminate(TAVP_ERR_BTC_BAD,jerr); jerr=-10; exit; endif
-                tens_entry=>tens_cache%lookup(tensor,jerr)
+                tens_entry=>tavpWorker%tens_cache%lookup(tensor,jerr)
                 if(jerr.ne.0) then; call this%terminate(TAVP_ERR_CHE_FAILURE,jerr); jerr=-9; exit; endif
                 if(.not.associated(tens_entry)) then; call this%terminate(TAVP_ERR_ARG_UNDEFINED,jerr); jerr=-8; exit; endif
                 deallocate(tensor); tensor=>NULL() !deallocate the temporary tensor and use
@@ -673,7 +696,7 @@
                 tens_resource=>tens_entry%get_resource()
                 oprnd=>NULL(); allocate(oprnd,STAT=jerr)
                 if(jerr.ne.0) then; call this%terminate(TAVP_ERR_RSC_UNAVAILABLE,jerr); jerr=-7; exit; endif
-                call oprnd%tens_oprnd_ctor(tensor,jerr,tens_resource) !tensor and tens_resource are stored in tens_cache
+                call oprnd%tens_oprnd_ctor(tensor,jerr,tens_resource) !tensor and tens_resource are stored in tensor cache
                 if(jerr.ne.0) then; call this%terminate(TAVP_ERR_GEN_FAILURE,jerr); jerr=-6; exit; endif
                 call this%set_operand(jj,oprnd,jerr)
                 if(jerr.ne.DSVP_SUCCESS) then; call this%terminate(TAVP_ERR_GEN_FAILURE,jerr); jerr=-5; exit; endif
@@ -887,5 +910,81 @@
          endif
          return
         end subroutine tens_instr_dtor
+![tavp_worker_t]=============================
+        subroutine TAVPWorkerStart(this,ierr)
+!Initializes TAVP "Worker".
+         implicit none
+         class(tavp_worker_t), intent(inout):: this  !inout: TAVP "Worker"
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=0
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TAVPWorkerStart
+!-----------------------------------------------
+        subroutine TAVPWorkerShutdown(this,ierr)
+!Shuts down TAVP "Worker".
+         implicit none
+         class(tavp_worker_t), intent(inout):: this  !inout: TAVP "Worker"
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=0
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TAVPWorkerShutdown
+!----------------------------------------------------------------
+        subroutine TAVPWorkerFetchInstructions(this,dsvp_id,ierr)
+!Fetches a block of tensor instructions from TAVP "Manager".
+         implicit none
+         class(tavp_worker_t), intent(inout):: this  !inout: TAVP "Worker"
+         integer(INTD), intent(in):: dsvp_id         !in: ID of the sender TAVP (or TAVP_ANY_ID wildcard)
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=0
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TAVPWorkerFetchInstructions
+!------------------------------------------------------------------------
+        subroutine TAVPWorkerReturnRetiredInstructions(this,dsvp_id,ierr)
+!Returns a block of retired tensor instructions back to TAVP "Manager".
+         implicit none
+         class(tavp_worker_t), intent(inout):: this  !inout: TAVP "Worker"
+         integer(INTD), intent(in):: dsvp_id         !in: ID of the receiver TAVP
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=0
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TAVPWorkerReturnRetiredInstructions
+!---------------------------------------------------------------
+        subroutine TAVPWorkerSendInstructions(this,dsvp_id,ierr) !dummy
+!Sends a block of tensor instructions to another TAVP.
+         implicit none
+         class(tavp_worker_t), intent(inout):: this  !inout: TAVP "Worker"
+         integer(INTD), intent(in):: dsvp_id         !in: ID of the receiver TAVP
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=0
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TAVPWorkerSendInstructions
+!-------------------------------------------------------------------------
+        subroutine TAVPWorkerReceiveRetiredInstructions(this,dsvp_id,ierr) !dummy
+!Receives a block of retired tensor instructions from another TAVP.
+         implicit none
+         class(tavp_worker_t), intent(inout):: this  !inout: TAVP "Worker"
+         integer(INTD), intent(in):: dsvp_id         !in: ID of the sender TAVP (or TAVP_ANY_ID wildcard)
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=0
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TAVPWorkerReceiveRetiredInstructions
 
        end module tavp_worker

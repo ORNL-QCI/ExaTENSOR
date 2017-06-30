@@ -1,6 +1,6 @@
 !Domain-specific virtual processor (DSVP): Abstract base module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/06/29
+!REVISION: 2017/06/30
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -322,7 +322,7 @@
           import:: dsvp_t,INTD,INTL
           implicit none
           class(dsvp_t), intent(inout):: this          !inout: DSVP
-          integer(INTL), intent(in):: dsvp_id          !in: ID of another DSVP
+          integer(INTD), intent(in):: dsvp_id          !in: ID of another DSVP
           integer(INTD), intent(out), optional:: ierr  !out: error code
          end subroutine dsvp_comm_instr_i
         end interface
