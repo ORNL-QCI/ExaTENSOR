@@ -425,7 +425,8 @@
           !CREATE/DESTROY a tensor:
           !op_spec={tens_rcrsv_t}
           integer(INTD), intent(out):: jerr
-          class(tens_oprnd_t), pointer:: oprnd
+          class(ds_oprnd_t), pointer:: oprnd
+          class(tens_oprnd_t), pointer:: tens_oprnd
           class(tens_rcrsv_t), pointer:: tensor
 
           jerr=0
@@ -435,10 +436,11 @@
            if(tensor%is_set()) then
             call this%alloc_operands(1,jerr)
             if(jerr.eq.DSVP_SUCCESS) then
-             allocate(oprnd,STAT=jerr)
+             allocate(tens_oprnd,STAT=jerr)
              if(jerr.eq.0) then
-              call oprnd%tens_oprnd_ctor(tensor,jerr)
+              call tens_oprnd%tens_oprnd_ctor(tensor,jerr)
               if(jerr.eq.0) then
+               oprnd=>tens_oprnd
                call this%set_operand(0,oprnd,jerr)
                if(jerr.ne.DSVP_SUCCESS) jerr=-6
               else
