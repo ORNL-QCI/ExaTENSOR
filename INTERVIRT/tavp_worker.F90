@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP "Worker" implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/06/29
+!REVISION: 2017/06/30
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -443,11 +443,11 @@
           !op_spec={tens_contraction_t}
           integer(INTD), intent(out):: jerr
           integer(INTD):: jj
-          class(tens_oprnd_t), pointer:: oprnd
-          class(tens_rcrsv_t), pointer:: tensor
-          class(tens_contraction_t), pointer:: tens_contr
           class(contr_ptrn_ext_t), pointer:: contr_ptrn
+          class(tens_contraction_t), pointer:: tens_contr
           class(ctrl_tens_contr_t), pointer:: tens_contr_ctrl
+          class(tens_rcrsv_t), pointer:: tensor
+          class(tens_oprnd_t), pointer:: oprnd
 
           jerr=0
           tens_contr=>NULL()
@@ -564,7 +564,7 @@
                  if(jerr.eq.DSVP_SUCCESS) then
                   oprnd=>NULL(); allocate(oprnd,STAT=jerr)
                   if(jerr.eq.0) then
-                   call oprnd%tens_oprnd_ctor(tensor,jerr,tens_resource)
+                   call oprnd%tens_oprnd_ctor(tensor,jerr,tens_resource) !tensor and tens_resource are stored in tens_cache
                    if(jerr.eq.0) then
                     call this%set_operand(0,oprnd,jerr)
                     if(jerr.ne.DSVP_SUCCESS) then
@@ -593,15 +593,15 @@
                endif
               case(TAVP_INSTR_DESTROY) !DESTROY a tensor
                if(associated(tens_entry)) then
-                deallocate(tensor); tensor=>NULL() !deallocate the temporary tensor and
-                tensor=>tens_entry%get_tensor()    !use the tensor from the tensor cache
-                tens_resource=>NULL()
+                deallocate(tensor); tensor=>NULL() !deallocate the temporary tensor and use
+                tensor=>tens_entry%get_tensor()    !the same tensor from the tensor cache
+                tens_resource=>NULL()              !as well as its associated resource
                 tens_resource=>tens_entry%get_resource()
                 call this%alloc_operands(1,jerr)
                 if(jerr.eq.DSVP_SUCCESS) then
                  oprnd=>NULL(); allocate(oprnd,STAT=jerr)
                  if(jerr.eq.0) then
-                  call oprnd%tens_oprnd_ctor(tensor,jerr,tens_resource)
+                  call oprnd%tens_oprnd_ctor(tensor,jerr,tens_resource) !tensor and tens_resource are from tens_cache
                   if(jerr.eq.0) then
                    call this%set_operand(0,oprnd,jerr)
                    if(jerr.ne.DSVP_SUCCESS) then
@@ -643,8 +643,57 @@
           subroutine decode_instr_contract(jerr)
            !CONTRACT two tensors
            integer(INTD), intent(out):: jerr
+           class(ctrl_tens_contr_t), pointer:: tens_contr_ctrl
+           class(tens_rcrsv_t), pointer:: tensor
+           class(tens_resrc_t), pointer:: tens_resource
+           class(tens_entry_t), pointer:: tens_entry
+           class(tens_oprnd_t), pointer:: oprnd
+           integer(INTD):: jj
 
            jerr=0
+           tens_contr_ctrl=>NULL(); allocate(tens_contr_ctrl,STAT=jerr)
+           if(jerr.eq.0) then
+            call tens_contr_ctrl%unpack(instr_packet,jerr)
+            if(jerr.eq.0) then
+             call this%set_control(tens_contr_ctrl,jerr)
+             if(jerr.eq.DSVP_SUCCESS) then
+              call this%alloc_operands(3,jerr)
+              if(jerr.eq.DSVP_SUCCESS) then
+               do jj=0,2
+                tensor=>NULL(); allocate(tensor,STAT=jerr)
+                if(jerr.ne.0) then; call this%terminate(TAVP_ERR_RSC_UNAVAILABLE,jerr); jerr=-11; exit; endif
+                call tensor%tens_rcrsv_ctor(instr_packet,jerr)
+                if(jerr.ne.TEREC_SUCCESS) then; call this%terminate(TAVP_ERR_BTC_BAD,jerr); jerr=-10; exit; endif
+                tens_entry=>tens_cache%lookup(tensor,jerr)
+                if(jerr.ne.0) then; call this%terminate(TAVP_ERR_CHE_FAILURE,jerr); jerr=-9; exit; endif
+                if(.not.associated(tens_entry)) then; call this%terminate(TAVP_ERR_ARG_UNDEFINED,jerr); jerr=-8; exit; endif
+                deallocate(tensor); tensor=>NULL() !deallocate the temporary tensor and use
+                tensor=>tens_entry%get_tensor()    !the same tensor from the tensor cache
+                tens_resource=>NULL()              !as well as its associated resource
+                tens_resource=>tens_entry%get_resource()
+                oprnd=>NULL(); allocate(oprnd,STAT=jerr)
+                if(jerr.ne.0) then; call this%terminate(TAVP_ERR_RSC_UNAVAILABLE,jerr); jerr=-7; exit; endif
+                call oprnd%tens_oprnd_ctor(tensor,jerr,tens_resource) !tensor and tens_resource are stored in tens_cache
+                if(jerr.ne.0) then; call this%terminate(TAVP_ERR_GEN_FAILURE,jerr); jerr=-6; exit; endif
+                call this%set_operand(jj,oprnd,jerr)
+                if(jerr.ne.DSVP_SUCCESS) then; call this%terminate(TAVP_ERR_GEN_FAILURE,jerr); jerr=-5; exit; endif
+               enddo
+              else
+               call this%terminate(TAVP_ERR_RSC_UNAVAILABLE,jerr)
+               jerr=-4
+              endif
+             else
+              call this%terminate(TAVP_ERR_GEN_FAILURE,jerr)
+              jerr=-3
+             endif
+            else
+             call this%terminate(TAVP_ERR_BTC_BAD,jerr)
+             jerr=-2
+            endif
+           else
+            call this%terminate(TAVP_ERR_RSC_UNAVAILABLE,jerr)
+            jerr=-1
+           endif
            return
           end subroutine decode_instr_contract
 
@@ -832,9 +881,9 @@
          sts=this%get_status(errc)
          if((sts.eq.DS_INSTR_EMPTY.or.sts.eq.DS_INSTR_RETIRED).and.errc.eq.DSVP_SUCCESS) then
           call this%clean(errc)
-          if(errc.ne.0) call quit(errc,'#ERROR(tavp_worker:tens_instr_dtor): Tensor instruction destruction failed!')
+          if(errc.ne.0) call quit(errc,'#FATAL(tavp_worker:tens_instr_dtor): Tensor instruction destruction failed!')
          else
-          call quit(-1,'#ERROR(tavp_worker:tens_instr_dtor): Attempt to destroy an active TAVP instruction!')
+          call quit(-1,'#FATAL(tavp_worker:tens_instr_dtor): Attempt to destroy an active TAVP instruction!')
          endif
          return
         end subroutine tens_instr_dtor
