@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP "Worker" implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/06/30
+!REVISION: 2017/07/03
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -63,6 +63,7 @@
         end type tens_cache_t
  !Tensor instruction (realization of a tensor operation for a specific TAVP):
         type, extends(ds_instr_t), private:: tens_instr_t
+         type(talsh_task_t), private:: talsh_task                   !TAL-SH task
          contains
           procedure, private:: TensInstrCtor                        !ctor: constructs a tensor instruction from the specification of a tensor operation
           generic, public:: tens_instr_ctor=>TensInstrCtor

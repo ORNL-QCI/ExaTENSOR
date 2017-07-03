@@ -8,7 +8,7 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/06/30
+!REVISION: 2017/07/03
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -116,6 +116,7 @@
           procedure, public:: is_empty=>TensResrcIsEmpty               !returns TRUE of the tensor resource is empty (unallocated)
           procedure, public:: allocate_buffer=>TensResrcAllocateBuffer !allocates a local buffer for tensor body storage
           procedure, public:: free_buffer=>TensResrcFreeBuffer         !frees the local buffer
+          procedure, public:: get_mem_ptr=>TensResrcGetMemPtr          !returns a C pointer to the local memory buffer
           procedure, private:: incr_ref_count=>TensResrcIncrRefCount   !increments the reference count
           procedure, private:: decr_ref_count=>TensResrcDecrRefCount   !decrements the reference count
         end type tens_resrc_t
@@ -123,11 +124,13 @@
         type, extends(ds_oprnd_t), public:: tens_oprnd_t
          class(tens_rcrsv_t), pointer, private:: tensor=>NULL()   !pointer to a persistent recursive tensor
          class(tens_resrc_t), pointer, private:: resource=>NULL() !pointer to a persistent local tensor resource
+         type(talsh_tens_t), private:: talsh_tens                 !TAL-SH tensor object
          contains
           procedure, private:: TensOprndCtor                    !ctor
           generic, public:: tens_oprnd_ctor=>TensOprndCtor
           procedure, public:: set_resource=>TensOprndSetResource!sets the resource component if it has not been set via constructor
           procedure, public:: get_tensor=>TensOprndGetTensor    !returns a pointer to the tensor
+          procedure, public:: set_talsh_tens=>TensOprndSetTalshTens !sets up the TAL-SH tensor object for further processing with TAL-SH
           procedure, public:: is_remote=>TensOprndIsRemote      !returns TRUE if the tensor operand is remote
           procedure, public:: acquire_rsc=>TensOprndAcquireRsc  !explicitly acquires local resources for the tensor operand
           procedure, public:: prefetch=>TensOprndPrefetch       !starts prefetching the remote tensor operand (acquires local resources!)
@@ -175,12 +178,14 @@
         private TensResrcIsEmpty
         private TensResrcAllocateBuffer
         private TensResrcFreeBuffer
+        private TensResrcGetMemPtr
         private TensResrcIncrRefCount
         private TensResrcDecrRefCount
  !tens_oprnd_t:
         private TensOprndCtor
         private TensOprndSetResource
         private TensOprndGetTensor
+        private TensOprndSetTalshTens
         private TensOprndIsRemote
         private TensOprndAcquireRsc
         private TensOprndPrefetch
@@ -271,6 +276,26 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensResrcFreeBuffer
+!-----------------------------------------------------------------
+        function TensResrcGetMemPtr(this,ierr,bytes) result(mem_p)
+!Returns a C pointer to the local memory buffer used by the resource.
+         implicit none
+         type(C_PTR):: mem_p                          !out: C pointer
+         class(tens_resrc_t), intent(in):: this       !in: tensor resource
+         integer(INTD), intent(out), optional:: ierr  !out: error code
+         integer(INTL), intent(out), optional:: bytes !out: number of bytes
+         integer(INTD):: errc
+
+         mem_p=C_NULL_PTR
+         if(.not.this%is_empty()) then
+          mem_p=this%base_addr
+          if(present(bytes)) bytes=this%bytes
+         else
+          if(present(bytes)) bytes=0_INTL
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function TensResrcGetMemPtr
 !---------------------------------------------
         subroutine TensResrcIncrRefCount(this)
 !Increments the reference count.
@@ -367,6 +392,92 @@
          if(present(ierr)) ierr=errc
          return
         end function TensOprndGetTensor
+!--------------------------------------------------
+        subroutine TensOprndSetTalshTens(this,ierr)
+!Sets up the TAL-SH tensor object for further processing with TAL-SH.
+!The local tensor body location is imported from the tensor resource.
+         implicit none
+         class(tens_oprnd_t), intent(inout):: this   !inout: active tensor operand
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc,nd,unres,lay,data_kind,dims(1:MAX_TENSOR_RANK)
+         integer(INTL):: dim_ext(1:MAX_TENSOR_RANK)
+         logical:: shpd,layd,locd
+         type(C_PTR):: mem_p
+         class(tens_rcrsv_t), pointer:: tens_p
+         class(tens_body_t), pointer:: body_p
+         class(tens_layout_t), pointer:: layout_p
+         class(tens_header_t), pointer:: header_p
+
+         if(this%is_active(errc)) then
+          if(errc.eq.0) then
+           if(talsh_tensor_is_empty(this%talsh_tens)) then
+            tens_p=>this%tensor
+            if(tens_p%is_set(errc,num_dims=nd,shaped=shpd,unresolved=unres,layed=layd,located=locd)) then
+             if((errc.eq.0).and.(unres.eq.0).and.shpd.and.layd) then
+              body_p=>tens_p%get_body(errc)
+              if(errc.eq.TEREC_SUCCESS) then
+               layout_p=>body_p%get_layout(errc)
+               if(errc.eq.TEREC_SUCCESS) then
+                lay=layout_p%get_layout_kind(errc)
+                if(errc.eq.TEREC_SUCCESS.and.lay.eq.TEREC_LAY_FDIMS) then
+                 data_kind=layout_p%get_data_type(errc)
+                 if(errc.eq.TEREC_SUCCESS) then
+                  if(.not.this%resource%is_empty()) then
+                   mem_p=this%resource%get_mem_ptr(errc)
+                   if(errc.eq.0) then
+                    header_p=>tens_p%get_header(errc)
+                    if(errc.eq.TEREC_SUCCESS) then
+                     call header_p%get_dims(dim_ext,nd,errc)
+                     if(errc.eq.TEREC_SUCCESS) then
+                      dims(1:nd)=dim_ext(1:nd)
+                      errc=talsh_tensor_construct(this%talsh_tens,data_kind,dims(1:nd),ext_mem=mem_p)
+                      if(errc.ne.TALSH_SUCCESS) errc=-14
+                     else
+                      errc=-13
+                     endif
+                    else
+                     errc=-12
+                    endif
+                    header_p=>NULL()
+                   else
+                    errc=-11
+                   endif
+                  else
+                   errc=-10
+                  endif
+                 else
+                  errc=-9
+                 endif
+                else
+                 errc=-8
+                endif
+               else
+                errc=-7
+               endif
+               layout_p=>NULL()
+              else
+               errc=-6
+              endif
+              body_p=>NULL()
+             else
+              errc=-5
+             endif
+            else
+             errc=-4
+            endif
+            tens_p=>NULL()
+           else
+            errc=-3
+           endif
+          else
+           errc=-2
+          endif
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensOprndSetTalshTens
 !--------------------------------------------------------
         function TensOprndIsRemote(this,ierr) result(res)
 !Returns TRUE if the tensor operand is remote, FALSE otherwise.
@@ -718,16 +829,20 @@
             if(.not.delivered.or.errc.ne.DSVP_SUCCESS) errc=-1
            endif
            call this%mark_empty(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-2
+           if(.not.talsh_tensor_is_empty(this%talsh_tens)) then
+            ier=talsh_tensor_destruct(this%talsh_tens)
+            if(ier.ne.TALSH_SUCCESS.and.errc.eq.0) errc=-3
+           endif
            if(associated(this%resource)) then
             call this%resource%decr_ref_count()
             this%resource=>NULL()
            endif
            this%tensor=>NULL()
           else
-           errc=-3
+           errc=-4
           endif
          else
-          if(errc.ne.DSVP_SUCCESS) errc=-4
+          if(errc.ne.DSVP_SUCCESS) errc=-5
          endif
          if(present(ierr)) ierr=errc
          return
