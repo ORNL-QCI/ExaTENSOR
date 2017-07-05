@@ -1,6 +1,6 @@
 !Domain-specific virtual processor (DSVP): Abstract base module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/06/30
+!REVISION: 2017/07/07
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -164,11 +164,11 @@
          !dynamic methods (dynamically bound by the DECODE procedure):
          procedure(ds_instr_self_i), pass(this), pointer, public:: acquire_resource=>NULL() !acquires local resources for instruction operands
          procedure(ds_instr_self_i), pass(this), pointer, public:: prefetch_input=>NULL()   !starts prefetching input operands: dynamic binding set by decode
-         procedure(ds_instr_self_i), pass(this), pointer, public:: sync_prefetch=>NULL()    !synchronizes the input prefetch (either test or wait): dynamic binding set by decode
+         procedure(ds_instr_sync_i), pass(this), pointer, public:: sync_prefetch=>NULL()    !synchronizes the input prefetch (either test or wait): dynamic binding set by decode
          procedure(ds_instr_self_i), pass(this), pointer, public:: execute=>NULL()          !executes the domain-specific instruction: dynamic binding set by decode
-         procedure(ds_instr_self_i), pass(this), pointer, public:: sync_execution=>NULL()   !synchronizes the execution (either test or wait): dynamic binding set by decode
+         procedure(ds_instr_sync_i), pass(this), pointer, public:: sync_execution=>NULL()   !synchronizes the execution (either test or wait): dynamic binding set by decode
          procedure(ds_instr_self_i), pass(this), pointer, public:: upload_output=>NULL()    !starts uploading the output: dynamic binding set by decode
-         procedure(ds_instr_self_i), pass(this), pointer, public:: sync_upload=>NULL()      !synchronizes the output upload (either test or wait): dynamic binding set by decode
+         procedure(ds_instr_sync_i), pass(this), pointer, public:: sync_upload=>NULL()      !synchronizes the output upload (either test or wait): dynamic binding set by decode
          procedure(ds_instr_self_i), pass(this), pointer, public:: release_resource=>NULL() !releases local resources occupied by instruction operands
          contains
           procedure(ds_instr_decode_i), deferred, public:: decode       !decoding procedure: Unpacks the raw byte packet (bytecode) and constructs a domain-specific instruction
@@ -295,6 +295,15 @@
           class(ds_instr_t), intent(inout):: this     !inout: domain-specific instruction
           integer(INTD), intent(out), optional:: ierr !out: error code
          end subroutine ds_instr_self_i
+   !sync:
+         function ds_instr_sync_i(this,ierr,wait) result(res)
+          import:: ds_instr_t,INTD
+          implicit none
+          logical:: res                               !out: TRUE if synchronized
+          class(ds_instr_t), intent(inout):: this     !inout: domain-specific instruction
+          integer(INTD), intent(out), optional:: ierr !out: error code
+          logical, intent(in), optional:: wait        !in: WAIT versus TEST (defaults to WAIT)
+         end function ds_instr_sync_i
    !decode:
          subroutine ds_instr_decode_i(this,instr_packet,ierr)
           import:: ds_instr_t,obj_pack_t,INTD
@@ -329,6 +338,8 @@
 !DATA:
 
 !VISIBILITY:
+ !ds_resrc_t:
+        public ds_resrc_query_i
  !ds_oprnd_t:
         private DSOprndIsActive
         private DSOprndIsPresent
@@ -338,6 +349,14 @@
         private DSOprndMarkUndelivered
         private DsOprndGetCommStat
         private DSOprndSetCommStat
+        public ds_oprnd_self_i
+        public ds_oprnd_query_i
+        public ds_oprnd_sync_i
+        public ds_oprnd_pack_i
+        public ds_oprnd_unpack_i
+ !ds_instr_ctrl_t:
+        public ds_instr_ctrl_pack_i
+        public ds_instr_ctrl_unpack_i
  !ds_instr_t:
         private DSInstrIsEmpty
         private DSInstrIsRetired
@@ -359,6 +378,9 @@
         private DSInstrTerminate
         private DSInstrClean
         public ds_instr_self_i
+        public ds_instr_sync_i
+        public ds_instr_decode_i
+        public ds_instr_encode_i
  !dsvp_t:
         private DSVPStartTime
         private DSVPClean
@@ -370,6 +392,8 @@
         private DSVPIncrRecvInstrCounter
         private DSVPIncrRtrdInstrCounter
         private DSVPIncrFailInstrCounter
+        public dsvp_self_i
+        public dsvp_comm_instr_i
 !IMPLEMENTATION:
        contains
 ![ds_oprnd_t]==========================================
@@ -967,7 +991,7 @@
          integer(INTD), intent(in):: error_code      !in: instruction error code to set
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc,ier,sts
-         logical:: nostat
+         logical:: nostat,res
 
          if(this%is_active(errc)) then
           sts=this%get_status(errc)
@@ -976,24 +1000,24 @@
             if(sts.ge.DS_INSTR_READY_TO_EXEC) then
              if(sts.ge.DS_INSTR_OUTPUT_WAIT) then
               if(sts.lt.DS_INSTR_RETIRED) then
-               call this%sync_upload(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.DSVP_SUCCESS) errc=ier
+               res=this%sync_upload(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.DSVP_SUCCESS) errc=ier
               endif
              else
               if(sts.ge.DS_INSTR_SCHEDULED) then
-               call this%sync_execution(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.DSVP_SUCCESS) errc=ier
+               res=this%sync_execution(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.DSVP_SUCCESS) errc=ier
               endif
              endif
             else
-             call this%sync_prefetch(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.DSVP_SUCCESS) errc=ier
+             res=this%sync_prefetch(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.DSVP_SUCCESS) errc=ier
             endif
            endif
            if(sts.ge.DS_INSTR_RSC_WAIT) then
             call this%release_resource(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.DSVP_SUCCESS) errc=ier
            endif
           else !instruction status unknown
-           call this%sync_prefetch(ier)
-           call this%sync_execution(ier)
-           call this%sync_upload(ier)
+           res=this%sync_prefetch(ier)
+           res=this%sync_execution(ier)
+           res=this%sync_upload(ier)
            call this%release_resource(ier)
           endif
           call this%set_status(DS_INSTR_RETIRED,ier,error_code)
