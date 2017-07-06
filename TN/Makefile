@@ -250,7 +250,7 @@ OBJS = ./OBJ/tensor_expression.o
 $(NAME): $(OBJS)
 	ar cr lib$(NAME).a $(OBJS)
 	$(CPPCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(CFLAGS) main.cpp -o ./OBJ/main.o
-	$(CPPCOMP) $(LFLAGS) ./OBJ/main.o lib$(NAME).a -o test_$(NAME).x
+	$(CPPCOMP) ./OBJ/main.o $(OBJS) $(LFLAGS) -o test_$(NAME).x
 
 ./OBJ/tensor_expression.o: tensor_expression.hpp tensor_expression.cpp
 	mkdir -p ./OBJ

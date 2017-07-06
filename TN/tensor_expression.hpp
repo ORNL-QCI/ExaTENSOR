@@ -27,58 +27,186 @@
 #define _TENSOR_EXPRESSION_H
 
 #include <memory>
+#include <vector>
+#include <assert.h>
+#include <iostream>
+
+#define _DEBUG_DIL
 
 namespace exatensor {
 
+/** Simple dense tensor wrapper with imported body **/
 template <typename T>
-class TensorAdpt{
+class TensorDenseAdpt{
 
 private:
 
  unsigned int Rank;                        //VAL: tensor rank (number of dimensions)
  std::unique_ptr<std::size_t[]> DimExtent; //VAL: tensor dimension extents
- std::shared_ptr<T> Body;                  //REF: pointer to the tensor body (tensor elements)
+ std::shared_ptr<T> Body;                  //REF: pointer to the imported tensor body (tensor elements)
 
 public:
 
  //Life cycle:
- TensorAdpt(unsigned int rank, std::size_t dimExtent[], std::shared_ptr<T> data):
+ TensorDenseAdpt(unsigned int rank, std::size_t dimExtent[], std::shared_ptr<T> data):
  Rank(rank), DimExtent(new std::size_t[rank]), Body(data){
   for(unsigned int i=0; i<rank; ++i) DimExtent[i]=dimExtent[i];
  }
 
- TensorAdpt(const TensorAdpt & tensor):
- Rank(tensor.Rank), DimExtent(new std::size_t[tensor.rank]), Body(tensor.Body){
-  for(unsigned int i=0; i<tensor.rank; ++i) DimExtent[i]=tensor.DimExtent[i];
+ TensorDenseAdpt(const TensorDenseAdpt & tensor):
+ Rank(tensor.Rank), DimExtent(new std::size_t[tensor.Rank]), Body(tensor.Body){
+  for(unsigned int i=0; i<tensor.Rank; ++i) DimExtent[i]=tensor.DimExtent[i];
  }
 
- TensorAdpt & operator=(const TensorAdpt & tensor){
+ TensorDenseAdpt & operator=(const TensorDenseAdpt & tensor){
   if(&tensor == this) return *this;
   if(tensor.Rank != Rank){
    DimExtent.reset(new std::size_t[tensor.Rank]);
    Rank=tensor.Rank;
   }
-  std::copy(&tensor.DimExtent[0],&tensor.DimExtent[0]+Rank,&DimExtent[0]);
+  std::copy(&tensor.DimExtent[0],&tensor.DimExtent[0]+tensor.Rank,&DimExtent[0]);
   Body=tensor.Body;
   return *this;
  }
 
- virtual ~TensorAdpt(){}
+ virtual ~TensorDenseAdpt(){}
 
  //Accessors:
- unsigned int getRank(){return Rank;}
+ unsigned int getRank() const {return Rank;}
 
- const std::size_t * getDimExtents(){return DimExtent.get();}
+ std::size_t getDimExtent(unsigned int dimension) const{
+#ifdef _DEBUG_DIL
+  assert(dimension < Rank);
+#endif
+  return DimExtent[dimension];
+ }
 
- std::shared_ptr<T> & getBodyAccess(){return Body;}
+ const std::size_t * getDimExtents() const {return DimExtent.get();}
 
- std::size_t getVolume(){
+ std::shared_ptr<T> & getBodyAccess() const {return Body;}
+
+ std::size_t getVolume() const{
   std::size_t vol=1;
   for(unsigned int i=0; i<Rank; ++i) vol*=DimExtent[i];
   return vol;
  }
 
- std::size_t getSize(){return (this->getVolume())*sizeof(T);}
+ std::size_t getSize() const {return (this->getVolume())*sizeof(T);}
+
+ //Print:
+ void printIt() const{
+  //std::cout << std::endl;
+  std::cout << "TensorDenseAdpt{" << std::endl;
+  std::cout << " Rank = " << Rank << std::endl;
+  std::cout << " Dim extents:";
+  for(unsigned int i=0; i<Rank; ++i) std::cout << " " << DimExtent[i];
+  std::cout << std::endl;
+  std::cout << " Data pointer: " << Body.get() << std::endl;
+  std::cout << "}" << std::endl;
+  return;
+ }
+
+};
+
+
+/** Tensor leg **/
+class TensorLeg{
+
+private:
+
+ unsigned int TensorId; //tensor id: 0 is output tensor, >0 is input tensor
+ unsigned int DimesnId; //tensor dimension id: [0..rank-1]
+
+public:
+
+ TensorLeg():TensorId(0),DimesnId(0){}
+
+ TensorLeg(unsigned int tensorId, unsigned int dimesnId):
+ TensorId(tensorId), DimesnId(dimesnId){}
+
+ unsigned int getTensorId() const {return TensorId;}
+ unsigned int getDimensionId() const {return DimesnId;}
+
+ void printIt() const{
+  std::cout << "{" << TensorId << ":" << DimesnId << "}";
+  return;
+ }
+
+};
+
+
+/** Tensor connected to other tensors via tensor legs **/
+template<typename T>
+class TensorConn{
+
+private:
+
+ TensorDenseAdpt<T> Tensor;  //tensor
+ std::vector<TensorLeg> Leg; //tensor legs (connections to other tensors): [1..rank]
+
+public:
+
+ TensorConn(const TensorDenseAdpt<T> & tensor, const std::vector<TensorLeg> & connections):
+ Tensor(tensor), Leg(connections){
+#ifdef _DEBUG_DIL
+  assert(tensor.getRank() == connections.size());
+#endif
+ }
+
+ virtual ~TensorConn(){}
+
+ std::size_t getDimExtent(unsigned int dimension) const{
+  return Tensor.getDimExtent(dimension);
+ }
+
+ const TensorLeg & getTensorLeg(unsigned int leg) const{
+#ifdef _DEBUG_DIL
+  assert(leg < Tensor.getRank());
+#endif
+  return Leg.at(leg);
+ }
+
+ unsigned int getNumLegs(){return Tensor.getRank();}
+
+ void printIt() const{
+  //std::cout << std::endl;
+  std::cout << "TensorConn{" << std::endl;
+  Tensor.printIt();
+  std::cout << "Legs:";
+  for(unsigned int i=0; i<Tensor.getRank(); ++i){std::cout << " "; Leg.at(i).printIt();}
+  std::cout << std::endl << "}" << std::endl;
+  return;
+ }
+
+};
+
+
+/** Tensor network (contraction of multiple tensors) **/
+template<typename T>
+class TensorNetwork{
+
+private:
+
+ unsigned int NumInputTensors; //number of input tensors: [1..NumInputTensors], tensor 0 is always output
+ std::vector<TensorConn<T>> Tensors; //tensors: [0;1..NumInpTensors]
+
+public:
+
+ TensorNetwork(): NumInputTensors(0){}
+
+ TensorNetwork(unsigned int numInputTensors):NumInputTensors(numInputTensors){}
+
+ void appendTensor(const TensorDenseAdpt<T> & tensor, const std::vector<TensorLeg> & connections);
+
+ virtual ~TensorNetwork(){}
+
+ void printIt() const{
+  std::cout << "TensorNetwork{" << std::endl;
+  std::cout << " Number of input tensors = " << NumInputTensors << std::endl;
+  for(unsigned int i = 0; i <= NumInputTensors; ++i) Tensors[i].printIt();
+  std::cout << "}" << std::endl;
+  return;
+ }
 
 };
 
