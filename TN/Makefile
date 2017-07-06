@@ -1,4 +1,4 @@
-NAME = ExaTensor
+NAME = tensornet
 
 #ADJUST THE FOLLOWING ACCORDINGLY:
 #Cross-compiling wrappers: [WRAP|NOWRAP]:
@@ -6,42 +6,27 @@ export WRAP ?= NOWRAP
 #Compiler: [GNU|PGI|INTEL|CRAY|IBM]:
 export TOOLKIT ?= GNU
 #Optimization: [DEV|OPT]:
-export BUILD_TYPE ?= OPT
-#MPI Library: [MPICH|OPENMPI]:
-export MPILIB ?= MPICH
-#BLAS: [ATLAS|MKL|ACML|ESSL|NONE]:
-export BLASLIB ?= MKL
+export BUILD_TYPE ?= DEV
+#MPI Library: [MPICH|OPENMPI|NONE]:
+export MPILIB = NONE
+#BLAS: [ATLAS|MKL|ACML|NONE]:
+export BLASLIB = NONE
 #Nvidia GPU via CUDA: [CUDA|NOCUDA]:
-export GPU_CUDA ?= CUDA
-#Nvidia GPU architecture (two digits):
-export GPU_SM_ARCH ?= 35
+export GPU_CUDA ?= NOCUDA
 #Operating system: [LINUX|NO_LINUX]:
 export EXA_OS ?= LINUX
 
-#EXTRAS:
-#Fast GPU tensor transpose (cuTT library): [YES|NO]:
-export WITH_CUTT ?= NO
-
-#WORKAROUNDS (ignore if you do not experience problems):
-#Fool CUDA 7.0 with GCC > 4.9: [YES|NO]:
-export FOOL_CUDA ?= NO
-
 #SET YOUR LOCAL PATHS (for unwrapped builds):
-# MPI path (whichever MPI you have, set one):
+# MPI path (whichever you have chosen above):
 export PATH_MPICH ?= /usr/local/mpi/mpich-3.2
-export PATH_OPENMPI ?= /usr/local/mpi/openmpi-2.0.1
-# BLAS lib path (whichever BLAS you have, set one):
+export PATH_OPENMPI ?= /usr/local/mpi/openmpi-1.10.4
+# BLAS lib path (whichever you have chosen above):
 export PATH_BLAS_ATLAS ?= /usr/lib
-export PATH_BLAS_MKL ?= /opt/intel/mkl/lib/intel64
-export PATH_BLAS_MKL_DEP ?= /opt/intel/compilers_and_libraries/linux/lib/intel64_lin
+export PATH_BLAS_MKL ?= /ccs/compilers/intel/rh6-x86_64/16.0.0/compilers_and_libraries/linux/mkl/lib
 export PATH_BLAS_ACML ?= /opt/acml/5.3.1/gfortran64_fma4_mp/lib
-export PATH_BLAS_ESSL ?= /sw/summitdev/essl/5.5.0/lib64
-export PATH_BLAS_ESSL_DEP ?= /sw/summitdev/xl/20161123/xlf/15.1.5/lib
 # CUDA lib and include paths (if you build with CUDA):
 export PATH_CUDA_LIB ?= /usr/local/cuda/lib64
 export PATH_CUDA_INC ?= /usr/local/cuda/include
-# cuTT path (if you use cuTT library):
-export PATH_CUTT ?= /home/div/src/cutt
 
 #YOU ARE DONE!
 
@@ -120,7 +105,7 @@ LIB_WRAP = -L.
 ifeq ($(TOOLKIT),PGI)
  LIB = $(LIB_$(WRAP)) -lstdc++
 else
- LIB = $(LIB_$(WRAP))
+ LIB = $(LIB_$(WRAP)) -lstdc++
 endif
 
 #MPI INCLUDES:
@@ -153,7 +138,6 @@ else
 LA_LINK_MKL = -L$(PATH_BLAS_MKL) -lmkl_intel_lp64 -lmkl_core -lmkl_intel_thread -lpthread -lm -ldl
 endif
 LA_LINK_ACML = -L$(PATH_BLAS_ACML) -lacml_mp
-LA_LINK_ESSL = -L$(PATH_BLAS_ESSL) -lessl -L$(PATH_BLAS_ESSL_DEP) -lxlf90_r -lxlfmath
 ifeq ($(BLASLIB),NONE)
 LA_LINK_NOWRAP = -L.
 else
@@ -189,7 +173,7 @@ GPU_ARCH = $(GPU_SM_ARCH)0
 CUDA_HOST_NOWRAP = --compiler-bindir /usr/bin
 CUDA_HOST_WRAP = -I.
 CUDA_HOST = $(CUDA_HOST_$(WRAP))
-CUDA_FLAGS_DEV = --compile -arch=$(GPU_SM) -g -G -lineinfo -D DEBUG_GPU
+CUDA_FLAGS_DEV = --compile -arch=$(GPU_SM) -g -G -lineinfo -DDEBUG_GPU
 CUDA_FLAGS_OPT = --compile -arch=$(GPU_SM) -O3 -lineinfo
 CUDA_FLAGS_CUDA = $(CUDA_HOST) $(CUDA_FLAGS_$(BUILD_TYPE)) -D_FORCE_INLINES
 ifeq ($(FOOL_CUDA),NO)
@@ -198,12 +182,12 @@ else
 CUDA_FLAGS_PRE1 = $(CUDA_FLAGS_CUDA) -D$(EXA_OS) -D__GNUC__=4
 endif
 ifeq ($(WITH_CUTT),YES)
-CUDA_FLAGS_PRE2 = $(CUDA_FLAGS_PRE1) -D USE_CUTT
+CUDA_FLAGS_PRE2 = $(CUDA_FLAGS_PRE1) -DUSE_CUTT
 else
 CUDA_FLAGS_PRE2 = $(CUDA_FLAGS_PRE1)
 endif
 ifeq ($(GPU_FINE_TIMING),YES)
-CUDA_FLAGS = $(CUDA_FLAGS_PRE2) -D GPU_FINE_TIMING
+CUDA_FLAGS = $(CUDA_FLAGS_PRE2) -DGPU_FINE_TIMING
 else
 CUDA_FLAGS = $(CUDA_FLAGS_PRE2)
 endif
@@ -231,8 +215,8 @@ NO_AMD = -DNO_AMD
 NO_PHI = -DNO_PHI
 
 #C FLAGS:
-CFLAGS_DEV = -c -g -D_DEBUG
-CFLAGS_OPT = -c -O3
+CFLAGS_DEV = -c -g -std=c++11 -D_DEBUG
+CFLAGS_OPT = -c -O3 -std=c++11
 CFLAGS = $(CFLAGS_$(BUILD_TYPE)) $(NO_GPU) $(NO_AMD) $(NO_PHI) $(NO_BLAS) -D$(EXA_OS)
 
 #FORTRAN FLAGS:
@@ -259,27 +243,19 @@ LTHREAD_IBM   = -lxlsmp
 LTHREAD = $(LTHREAD_$(TOOLKIT))
 
 #LINKING:
-LFLAGS = $(LIB) $(LTHREAD) $(MPI_LINK) $(LA_LINK) $(CUDA_LINK)
+LFLAGS = $(LTHREAD) $(MPI_LINK) $(LA_LINK) $(CUDA_LINK) $(LIB)
 
-$(NAME):
-	$(MAKE) -C ./UTILITY
-	$(MAKE) -C ./GFC
-	$(MAKE) -C ./DDSS
-	$(MAKE) -C ./TALSH
-	$(MAKE) -C ./DSVP
-	$(MAKE) -C ./INTRAVIRT
-	$(MAKE) -C ./INTERVIRT
-	$(MAKE) -C ./TN
-	$(MAKE) -C ./QFORCE
-ifeq ($(TOOLKIT),CRAY)
-	cp ./INTERVIRT/OBJ/EXATENSOR.mod ./
-else
-	cp ./INTERVIRT/exatensor.mod ./
-endif
-	cp ./INTERVIRT/libExaTensor.a ./
-	cp ./QFORCE/Qforce.x ./
-	echo "Finished successfully!"
+OBJS = ./OBJ/tensor_expression.o
+
+$(NAME): $(OBJS)
+	ar cr lib$(NAME).a $(OBJS)
+	$(CPPCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(CFLAGS) main.cpp -o ./OBJ/main.o
+	$(CPPCOMP) $(LFLAGS) ./OBJ/main.o lib$(NAME).a -o test_$(NAME).x
+
+./OBJ/tensor_expression.o: tensor_expression.hpp tensor_expression.cpp
+	mkdir -p ./OBJ
+	$(CPPCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(CFLAGS) tensor_expression.cpp -o ./OBJ/tensor_expression.o
 
 .PHONY: clean
 clean:
-	rm -f ./*.x ./*.a ./*.mod ./*/*.x ./*/*.a ./*/*.mod ./*/OBJ/*
+	rm -f *.x *.a ./OBJ/* *.mod *.modmic *.ptx *.log
