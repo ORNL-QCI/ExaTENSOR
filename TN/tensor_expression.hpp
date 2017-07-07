@@ -119,14 +119,17 @@ private:
 
 public:
 
+ //Life cycle:
  TensorLeg():TensorId(0),DimesnId(0){}
 
  TensorLeg(unsigned int tensorId, unsigned int dimesnId):
  TensorId(tensorId), DimesnId(dimesnId){}
 
+ //Accesors:
  unsigned int getTensorId() const {return TensorId;}
  unsigned int getDimensionId() const {return DimesnId;}
 
+ //Print:
  void printIt() const{
   std::cout << "{" << TensorId << ":" << DimesnId << "}";
   return;
@@ -146,6 +149,7 @@ private:
 
 public:
 
+ //Life cycle:
  TensorConn(const TensorDenseAdpt<T> & tensor, const std::vector<TensorLeg> & connections):
  Tensor(tensor), Leg(connections){
 #ifdef _DEBUG_DIL
@@ -155,6 +159,7 @@ public:
 
  virtual ~TensorConn(){}
 
+ //Accessors:
  std::size_t getDimExtent(unsigned int dimension) const{
   return Tensor.getDimExtent(dimension);
  }
@@ -166,8 +171,9 @@ public:
   return Leg.at(leg);
  }
 
- unsigned int getNumLegs(){return Tensor.getRank();}
+ unsigned int getNumLegs() const {return Tensor.getRank();}
 
+ //Print:
  void printIt() const{
   //std::cout << std::endl;
   std::cout << "TensorConn{" << std::endl;
@@ -192,12 +198,14 @@ private:
 
 public:
 
+ //Life cycle:
  TensorNetwork(): NumInputTensors(0){}
 
  TensorNetwork(unsigned int numInputTensors):NumInputTensors(numInputTensors){}
 
  virtual ~TensorNetwork(){}
 
+ //Mutators:
  void appendTensor(const TensorDenseAdpt<T> & tensor, const std::vector<TensorLeg> & connections){
   auto num_tens = Tensors.size(); //current total number of tensors set in the tensor network
   //Check the consistency of the new tensor candidate:
@@ -230,12 +238,17 @@ public:
   return;
  }
 
+ //Transforms:
  int contractTensors(unsigned int tensor1, unsigned int tensor2, TensorNetwork<T> * tensornet){
-  assert(NumInputTensors > 0);
+#ifdef _DEBUG_DIL
+  assert(NumInputTensors > 0 && tensor1 > 0 && tensor2 > 0);
+#endif
+  if(tensor1 > tensor2) std::swap(tensor1,tensor2);
   tensornet = new TensorNetwork<T>(NumInputTensors-1);
   return 0;
  }
 
+ //Print:
  void printIt() const{
   std::cout << "TensorNetwork{" << std::endl;
   std::cout << "Number of input tensors = " << NumInputTensors << std::endl;
