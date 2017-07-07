@@ -1,7 +1,7 @@
 !ExaTENSOR: Massively Parallel Virtual Processor for Scale-Adaptive Hierarchical Tensor Algebra
 !This is the top level API module of ExaTENSOR (user-level API)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017/06/27
+!REVISION: 2017/07/07
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -81,10 +81,12 @@
 !DATA:
  !ExaTENSOR runtime status:
        type(exatns_rt_status_t), protected:: exatns_rt_status
- !TAVP composition:
+ !TAVP global composition:
        integer(INTD), protected:: exa_num_workers=0  !number of worker processes
        integer(INTD), protected:: exa_num_managers=0 !number of manager processes
        integer(INTD), protected:: exa_num_helpers=0  !number of helper processes
+ !TAVP instance:
+       class(dsvp_t), allocatable:: tavp
 !VISIBILITY:
  !Control:
        public exatns_start                !starts the ExaTENSOR DSVP
@@ -185,8 +187,9 @@
         write(jo,'(" Done: Role = ",i4,": Role rank/size = ",i9,"/",i9)') process_role,role_rank,role_size
         write(jo,'("#MSG(exatensor): Creating role specific MPI communicators ... ")',ADVANCE='NO')
         call MPI_Comm_split(GLOBAL_MPI_COMM,process_role,role_rank,role_comm,errc)
+        write(*,*) my_rank,process_role,role_rank,role_comm,MPI_COMM_NULL !debug
         if(errc.eq.0) then
-         write(jo,'("Done")')
+         write(jo,'("Done (",i11,")")') role_comm
         else
          write(jo,'("Failed")')
          call dil_process_finish(errc)
@@ -212,11 +215,20 @@
         endif
 !Mark ExaTENSOR runtime active:
         exatns_rt_status=exatns_rt_status_t(DSVP_STAT_ON,EXA_SUCCESS,num_procs)
-        if(process_role.eq.EXA_DRIVER) return !interpreter process returns
 !Live TAVP life:
         ierr=EXA_SUCCESS
+        if(process_role.eq.EXA_DRIVER) then
+         !return !interpreter process returns immediately
+        elseif(process_role.eq.EXA_MANAGER) then
+         !allocate(tavp_manager_t::tavp)
+         !call tavp%start(ierr)
+        elseif(process_role.eq.EXA_WORKER) then
+         allocate(tavp_worker_t::tavp)
+         !call tavp%start(ierr)
+        endif
 !Mark ExaTENSOR runtime is off:
         exatns_rt_status=exatns_rt_status_t(DSVP_STAT_OFF,ierr,0)
+        if(allocated(tavp)) deallocate(tavp)
 !Sync everyone:
         write(jo,'()')
         write(jo,'("###EXATENSOR FINISHED PROCESS ",i9,"/",i9,": Status = ",i4,": Syncing ... ")',ADVANCE='NO')&

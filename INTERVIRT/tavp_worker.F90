@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP "Worker" implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/07/05
+!REVISION: 2017/07/07
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -33,6 +33,11 @@
         integer(INTD), private:: CONS_OUT=6
         integer(INTD), private:: DEBUG=0
         logical, private:: VERBOSE=.TRUE.
+ !Distributed memory space (for workers):
+        integer(INTD), parameter, private:: TAVP_WORKER_NUM_WINS=1 !number of MPI windows in the distributed space
+ !On-node pinned Host memory buffer:
+        integer(INTL), protected:: tavp_worker_host_buf_size=1_INTL*(1024_INTL*1024_INTL*1024_INTL) !size in bytes
+        integer(INTD), private:: tavp_worker_host_arg_max=0 !set later: max number of tensors in the pinned Host buffer
  !Elementary tensor instruction granularity classification:
         real(8), public:: EXA_FLOPS_MEDIUM=1d10 !minimal number of Flops to consider the operation as medium-cost
         real(8), public:: EXA_FLOPS_HEAVY=1d12  !minimal number of Flops to consider the operation as heavy-cost
@@ -83,9 +88,11 @@
          procedure(ds_instr_self_i), nopass, pointer:: upload_output=>NULL()    !starts uploading the output
          procedure(ds_instr_sync_i), nopass, pointer:: sync_upload=>NULL()      !synchronizes the output upload (either test or wait)
          procedure(ds_instr_self_i), nopass, pointer:: release_resource=>NULL() !releases local resources occupied by instruction operands
+         contains
+          procedure, private:: reset=>MicrocodeBindReset
         end type microcode_bind_t
  !TAVP specialization "Worker":
-        type, extends(dsvp_t), private:: tavp_worker_t
+        type, extends(dsvp_t), public:: tavp_worker_t
          type(tens_cache_t), private:: tens_cache       !tensor cache (both persistent and temporary tensors)
          type(list_bi_t), private:: instr_queue         !instruction queue
          type(list_iter_t), private:: instr_it          !instruction queue iterator
@@ -142,6 +149,8 @@
         private TensInstrSetMicrocode
         private TensInstrActivate
         private tens_instr_dtor
+ !microcode_bind_t:
+        private MicrocodeBindReset
  !tavp_worker_t:
         private TAVPWorkerStart
         private TAVPWorkerShutdown
@@ -1142,6 +1151,21 @@
          endif
          return
         end subroutine tens_instr_dtor
+![microcode_bind_t]========================
+        subroutine MicrocodeBindReset(this)
+         implicit none
+         class(microcode_bind_t), intent(inout):: this !inout: microcode binding
+
+         this%acquire_resource=>NULL()
+         this%prefetch_input=>NULL()
+         this%sync_prefetch=>NULL()
+         this%execute=>NULL()
+         this%sync_execution=>NULL()
+         this%upload_output=>NULL()
+         this%sync_upload=>NULL()
+         this%release_resource=>NULL()
+         return
+        end subroutine MicrocodeBindReset
 ![tavp_worker_t]=============================
         subroutine TAVPWorkerStart(this,ierr)
 !Initializes TAVP "Worker".
@@ -1151,14 +1175,48 @@
          integer(INTD):: errc
 
          errc=0
+         call init_talsh(errc)
+         if(errc.eq.0) then
+          call init_distributed_space(errc)
+          if(errc.eq.0) then
+           call init_microcode(errc)
+           if(errc.eq.0) then
+            call this%shutdown(errc) !`debug
+           else
+            errc=-3
+           endif
+          else
+           errc=-2
+          endif
+         else
+          errc=-1
+         endif
          if(present(ierr)) ierr=errc
          return
 
         contains
 
+         subroutine init_talsh(jerr)
+          implicit none
+          integer(INTD), intent(out):: jerr
+          integer(INTD):: jj
+
+          jerr=talsh_init(tavp_worker_host_buf_size,tavp_worker_host_arg_max,(/(jj,jj=gpu_start,gpu_start+gpu_count-1)/))
+          return
+         end subroutine init_talsh
+
+         subroutine init_distributed_space(jerr)
+          implicit none
+          integer(INTD), intent(out):: jerr
+
+          jerr=0
+          call tavp_addr_space%create(role_comm,TAVP_WORKER_NUM_WINS,'WorkAddressSpace',jerr)
+          return
+         end subroutine init_distributed_space
+
          subroutine init_microcode(jerr)
           implicit none
-          integer(INTD), intent(out), optional:: jerr
+          integer(INTD), intent(out):: jerr
 
           jerr=0
  !TENSOR CREATE:
@@ -1172,8 +1230,22 @@
           microcode(TAVP_INSTR_CREATE)%release_resource=>release_resource_basic
  !TENSOR DESTROY:
           microcode(TAVP_INSTR_DESTROY)%acquire_resource=>acquire_resource_empty
+          microcode(TAVP_INSTR_DESTROY)%prefetch_input=>prefetch_input_empty
+          microcode(TAVP_INSTR_DESTROY)%sync_prefetch=>sync_prefetch_empty
+          microcode(TAVP_INSTR_DESTROY)%execute=>execute_tensor_destroy
+          microcode(TAVP_INSTR_DESTROY)%sync_execution=>sync_execution_empty
+          microcode(TAVP_INSTR_DESTROY)%upload_output=>upload_output_empty
+          microcode(TAVP_INSTR_DESTROY)%sync_upload=>sync_upload_empty
+          microcode(TAVP_INSTR_DESTROY)%release_resource=>release_resource_basic
  !TENSOR CONTRACT:
           microcode(TAVP_INSTR_CONTRACT)%acquire_resource=>acquire_resource_basic
+          microcode(TAVP_INSTR_CONTRACT)%prefetch_input=>prefetch_input_basic
+          microcode(TAVP_INSTR_CONTRACT)%sync_prefetch=>sync_prefetch_basic
+          microcode(TAVP_INSTR_CONTRACT)%execute=>execute_tensor_contract
+          microcode(TAVP_INSTR_CONTRACT)%sync_execution=>sync_execution_basic
+          microcode(TAVP_INSTR_CONTRACT)%upload_output=>upload_output_basic
+          microcode(TAVP_INSTR_CONTRACT)%sync_upload=>sync_upload_basic
+          microcode(TAVP_INSTR_CONTRACT)%release_resource=>release_resource_basic
           return
          end subroutine init_microcode
 
@@ -1187,8 +1259,54 @@
          integer(INTD):: errc
 
          errc=0
+         call null_microcode(errc)
+         if(errc.eq.0) then
+          call stop_distributed_space(errc)
+          if(errc.eq.0) then
+           call stop_talsh(errc)
+           if(errc.eq.0) then
+           else
+            errc=-1
+           endif
+          else
+           errc=-2
+          endif
+         else
+          errc=-3
+         endif
          if(present(ierr)) ierr=errc
          return
+
+        contains
+
+         subroutine stop_talsh(jerr)
+          implicit none
+          integer(INTD), intent(out):: jerr
+
+          jerr=talsh_shutdown()
+          return
+         end subroutine stop_talsh
+
+         subroutine stop_distributed_space(jerr)
+          implicit none
+          integer(INTD), intent(out):: jerr
+
+          call tavp_addr_space%destroy(jerr)
+          return
+         end subroutine stop_distributed_space
+
+         subroutine null_microcode(jerr)
+          implicit none
+          integer(INTD), intent(out):: jerr
+          integer(INTD):: jj
+
+          jerr=0
+          do jj=0,TAVP_ISA_SIZE-1
+           call microcode(jj)%reset()
+          enddo
+          return
+         end subroutine null_microcode
+
         end subroutine TAVPWorkerShutdown
 !----------------------------------------------------------------
         subroutine TAVPWorkerFetchInstructions(this,dsvp_id,ierr)
