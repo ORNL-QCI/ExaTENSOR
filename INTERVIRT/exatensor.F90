@@ -187,7 +187,7 @@
         write(jo,'(" Done: Role = ",i4,": Role rank/size = ",i9,"/",i9)') process_role,role_rank,role_size
         write(jo,'("#MSG(exatensor): Creating role specific MPI communicators ... ")',ADVANCE='NO')
         call MPI_Comm_split(GLOBAL_MPI_COMM,process_role,role_rank,role_comm,errc)
-        write(*,*) my_rank,process_role,role_rank,role_comm,MPI_COMM_NULL !debug
+        !write(*,*) my_rank,process_role,role_rank,role_comm,MPI_COMM_NULL !debug
         if(errc.eq.0) then
          write(jo,'("Done (",i11,")")') role_comm
         else
@@ -218,13 +218,13 @@
 !Live TAVP life:
         ierr=EXA_SUCCESS
         if(process_role.eq.EXA_DRIVER) then
-         !return !interpreter process returns immediately
+         return !interpreter process returns immediately
         elseif(process_role.eq.EXA_MANAGER) then
          !allocate(tavp_manager_t::tavp)
-         !call tavp%start(ierr)
+         !call tavp%start(ierr) !will later call .shutdown()
         elseif(process_role.eq.EXA_WORKER) then
          allocate(tavp_worker_t::tavp)
-         !call tavp%start(ierr)
+         call tavp%start(ierr) !will later call .shutdown()
         endif
 !Mark ExaTENSOR runtime is off:
         exatns_rt_status=exatns_rt_status_t(DSVP_STAT_OFF,ierr,0)
