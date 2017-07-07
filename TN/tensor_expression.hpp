@@ -208,7 +208,7 @@ public:
   for(auto it=connections.cbegin(); it != connections.cend(); ++it){
    const TensorLeg & leg = *it; //new tensor leg
    auto tens_id = leg.getTensorId(); //tensor to which the new leg is connected
-   assert(tens_id <= NumInputTensors);
+   assert(tens_id <= NumInputTensors); //that tensor id is within constructed bounds
    if(tens_id < num_tens){ //that tensor has already been appended into the tensor network
     TensorConn<T> & tensconn = Tensors[tens_id]; //reference to that tensor
     auto dimsn = leg.getDimensionId(); //specific dimension of that tensor
@@ -228,6 +228,12 @@ public:
   //append the new tensor into the tensor network:
   Tensors.push_back(TensorConn<T>(tensor,connections));
   return;
+ }
+
+ int contractTensors(unsigned int tensor1, unsigned int tensor2, TensorNetwork<T> * tensornet){
+  assert(NumInputTensors > 0);
+  tensornet = new TensorNetwork<T>(NumInputTensors-1);
+  return 0;
  }
 
  void printIt() const{
