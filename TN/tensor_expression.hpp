@@ -196,13 +196,43 @@ public:
 
  TensorNetwork(unsigned int numInputTensors):NumInputTensors(numInputTensors){}
 
- void appendTensor(const TensorDenseAdpt<T> & tensor, const std::vector<TensorLeg> & connections);
-
  virtual ~TensorNetwork(){}
+
+ void appendTensor(const TensorDenseAdpt<T> & tensor, const std::vector<TensorLeg> & connections){
+  auto num_tens = Tensors.size(); //current total number of tensors set in the tensor network
+  //Check the consistency of the new tensor candidate:
+#ifdef _DEBUG_DIL
+  assert(num_tens < (1 + NumInputTensors));
+  assert(tensor.getRank() == connections.size());
+  unsigned int i=0;
+  for(auto it=connections.cbegin(); it != connections.cend(); ++it){
+   const TensorLeg & leg = *it; //new tensor leg
+   auto tens_id = leg.getTensorId(); //tensor to which the new leg is connected
+   assert(tens_id <= NumInputTensors);
+   if(tens_id < num_tens){ //that tensor has already been appended into the tensor network
+    TensorConn<T> & tensconn = Tensors[tens_id]; //reference to that tensor
+    auto dimsn = leg.getDimensionId(); //specific dimension of that tensor
+    const TensorLeg & other_leg = tensconn.getTensorLeg(dimsn); //leg on the other side
+    assert(other_leg.getTensorId() == num_tens && other_leg.getDimensionId() == i); //legs connectivity must match
+    assert(tensor.getDimExtent(i) == tensconn.getDimExtent(dimsn)); //dimension extents must match as well
+   }else if(tens_id == num_tens){ //self-contraction
+    auto dimsn = leg.getDimensionId(); //specific dimension of the same tensor
+    assert(dimsn != i); //dimension of a tensor cannot be contracted with itself
+    const TensorLeg & other_leg = connections.at(dimsn); //other leg of the same tensor (loop)
+    assert(other_leg.getTensorId() == num_tens && other_leg.getDimensionId() == i); //legs connectivity must match
+    assert(tensor.getDimExtent(i) == tensor.getDimExtent(dimsn)); //dimension extents must match as well
+   }
+   ++i;
+  }
+#endif
+  //append the new tensor into the tensor network:
+  Tensors.push_back(TensorConn<T>(tensor,connections));
+  return;
+ }
 
  void printIt() const{
   std::cout << "TensorNetwork{" << std::endl;
-  std::cout << " Number of input tensors = " << NumInputTensors << std::endl;
+  std::cout << "Number of input tensors = " << NumInputTensors << std::endl;
   for(unsigned int i = 0; i <= NumInputTensors; ++i) Tensors[i].printIt();
   std::cout << "}" << std::endl;
   return;

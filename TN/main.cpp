@@ -84,22 +84,24 @@ int test_tensor_expression(){
  legs.push_back(TensorLeg(1,0));
  legs.push_back(TensorLeg(2,1));
  legs.push_back(TensorLeg(2,2));
- //tensnet.appendTensor(tensor0,legs);
+ tensnet.appendTensor(tensor0,legs);
  //Legs of tensor 1:
  legs.clear();
  legs.push_back(TensorLeg(0,1));
  legs.push_back(TensorLeg(2,3));
  legs.push_back(TensorLeg(2,0));
  legs.push_back(TensorLeg(0,0));
- //tensnet.appendTensor(tensor1,legs);
+ tensnet.appendTensor(tensor1,legs);
  //Legs of tensor 2:
  legs.clear();
  legs.push_back(TensorLeg(1,2));
  legs.push_back(TensorLeg(0,2));
  legs.push_back(TensorLeg(0,3));
  legs.push_back(TensorLeg(1,1));
- //tensnet.appendTensor(tensor2,legs);
+ tensnet.appendTensor(tensor2,legs);
  legs.clear();
+ //Print the tensor network:
+ tensnet.printIt();
 
  //Free dimension extents:
  delete[] dims;
