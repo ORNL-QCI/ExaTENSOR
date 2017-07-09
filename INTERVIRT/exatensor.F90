@@ -1,7 +1,7 @@
 !ExaTENSOR: Massively Parallel Virtual Processor for Scale-Adaptive Hierarchical Tensor Algebra
 !This is the top level API module of ExaTENSOR (user-level API)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017/07/07
+!REVISION: 2017/07/09
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -31,7 +31,7 @@
 !PARAMETERS:
  !Basic:
        integer(INTD), private:: CONS_OUT=6 !output device
-       integer(INTD), private:: DEBUG=0    !debugging level
+       integer(INTD), private:: DEBUG=1    !debugging level
        logical, private:: VERBOSE=.TRUE.   !verbosity for errors
  !Error codes:
        public EXA_SUCCESS,&
@@ -42,6 +42,16 @@
              &EXA_ERR_MEM_FREE_FAIL,&
              &EXA_ERR_BROKEN_OBJ,&
              &EXA_ERR_UNABLE_COMPLETE
+ !Subspaces:
+       public seg_int_t,orthotope_t,symmetry_t,spher_symmetry_t,&
+             &basis_func_supp_t,basis_func_gauss_t,basis_func_t,&
+             &subspace_basis_t,subspace_t,h_index_t,h_space_t,&
+             &BASIS_ABSTRACT
+ !Tensors:
+       public hspace_reg_t,tens_signature_t,tens_shape_t,tens_header_t,&
+             &tens_simple_part_t,tens_layout_t,tens_layout_fdims_t,&
+             &tens_body_t,tens_rcrsv_t,tens_operation_t,permutation_t,&
+             &contr_ptrn_ext_t,tens_contraction_t
 !TYPES:
  !ExaTENSOR runtime status:
        type, public:: exatns_rt_status_t
@@ -189,7 +199,7 @@
         call MPI_Comm_split(GLOBAL_MPI_COMM,process_role,role_rank,role_comm,errc)
         !write(*,*) my_rank,process_role,role_rank,role_comm,MPI_COMM_NULL !debug
         if(errc.eq.0) then
-         write(jo,'("Done (",i11,")")') role_comm
+         write(jo,'("Done [",i11,"]")') role_comm
         else
          write(jo,'("Failed")')
          call dil_process_finish(errc)
@@ -355,14 +365,34 @@
        end function exatns_data_unregister
 ![ExaTENSOR Hierarchical Vector Space API]-----------------------------------------
        function exatns_space_register(space_name,space_basis,space_id) result(ierr)
-!Registers a vector space.
+!Registers a vector space based on the provided space basis.
         implicit none
         integer(INTD):: ierr                              !out: error code
         character(*), intent(in):: space_name             !in: vector space symbolic name
         class(subspace_basis_t), intent(in):: space_basis !in: vector space basis (fully defined)
         integer(INTD), intent(out):: space_id             !out: vector space id (non-negative)
+        class(h_space_t), pointer:: hspace
 
         ierr=EXA_SUCCESS; space_id=-1
+        if(space_basis%dimsn().gt.0.and.len(space_name).gt.0) then
+         space_id=hspace_register%register_space(space_name,ierr,hspace)
+         if(ierr.eq.TEREC_SUCCESS.and.associated(hspace)) then
+          call hspace%h_space_ctor(space_basis,ierr)
+          if(ierr.eq.0) then
+           if(DEBUG.gt.0) then
+            write(CONS_OUT,'("#MSG(exatensor): Registered new vector space [id = ",i5,"; dim = ",i9,"]:")',ADVANCE='NO')&
+                 &space_id,hspace%get_space_dim()
+            write(CONS_OUT,*) space_name
+           endif
+          else
+           ierr=EXA_ERR_UNABLE_COMPLETE
+          endif
+         else
+          space_id=-1; ierr=EXA_ERR_UNABLE_COMPLETE
+         endif
+        else
+         ierr=EXA_ERR_INVALID_ARGS
+        endif
         return
        end function exatns_space_register
 !---------------------------------------------------------------
@@ -373,6 +403,7 @@
         character(*), intent(in):: space_name !in: vector space symbolic name
 
         ierr=EXA_SUCCESS
+        write(CONS_OUT,*)'WARNING(exatensor:space_unregister): Not implemented yet!' !`Implement
         return
        end function exatns_space_unregister
 !---------------------------------------------------------------
@@ -443,28 +474,22 @@
         ierr=EXA_SUCCESS
         return
        end function exatns_index_unregister
-![ExaTENSOR Tensor API]------------------------------------------------------------------------------------------------------
-       function exatns_tensor_create(tensor,data_kind,tens_name,hspace,subspace,dim_extent,dim_group,group_spec) result(ierr)
+![ExaTENSOR Tensor API]-----------------------------------------------------------------------------------------------
+       function exatns_tensor_create(tensor,data_kind,tens_name,subspace,dim_extent,dim_group,group_spec) result(ierr)
 !Creates a tensor.
         implicit none
         integer(INTD):: ierr                                 !out: error code
         type(tens_rcrsv_t), intent(inout):: tensor           !out: tensor
         integer(INTD), intent(in):: data_kind                !in: data kind of tensor elements: {R4,R8,C4,C8}
         character(*), intent(in):: tens_name                 !in: symbolic tensor name
-        integer(INTD), intent(in):: hspace(1:)               !in: hierarchical vector space registered id for each tensor dimension
-        integer(INTL), intent(in):: subspace(1:)             !in: defining subspace registered id for each tensor dimension
+        integer(INTD), intent(in):: subspace(1:)             !in: defining subspace registered id for each tensor dimension
         integer(INTD), intent(in), optional:: dim_extent(1:) !in: dimension extent for each tensor dimension (0 means deferred)
         integer(INTD), intent(in), optional:: dim_group(1:)  !in: symmetric group (>=0) for each tensor dimension (0 means default)
         integer(INTD), intent(in), optional:: group_spec(1:) !in: symmetric group specification for non-trivial symmetric groups (see tensor_recursive.F90)
         integer(INTD):: trank
 
         ierr=EXA_SUCCESS
-        trank=size(hspace)
-        if(size(subspace).eq.trank) then
-         
-        else
-         ierr=EXA_ERR_INVALID_ARGS
-        endif
+        trank=size(subspace) !tensor rank
         return
        end function exatns_tensor_create
 !---------------------------------------------------------

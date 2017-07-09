@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP "Worker" implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/07/07
+!REVISION: 2017/07/08
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -89,7 +89,7 @@
          procedure(ds_instr_sync_i), nopass, pointer:: sync_upload=>NULL()      !synchronizes the output upload (either test or wait)
          procedure(ds_instr_self_i), nopass, pointer:: release_resource=>NULL() !releases local resources occupied by instruction operands
          contains
-          procedure, private:: reset=>MicrocodeBindReset
+          procedure, private:: reset=>MicrocodeBindReset !resets microcode binding to NULL
         end type microcode_bind_t
  !TAVP specialization "Worker":
         type, extends(dsvp_t), public:: tavp_worker_t

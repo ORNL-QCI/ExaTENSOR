@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/06/28
+!REVISION: 2017/07/09
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -3696,10 +3696,14 @@
 ! 9. location (global process id).
 !TOTAL size = 5*rank + 1 + 1 + 1 + 1 = 5*rank + 4 [elements]
 !`Note: This function violates object encapsulation by
-!directly accessing data members of the data members
-!of the <tens_rcrsv_t> class. However, since it is a read-only
-!access and all accessed data members are defined in the same
-!module, it should not cause a problem.
+! directly accessing data members of the data members
+! of the <tens_rcrsv_t> class. However, since it is a read-only
+! access and all accessed data members are defined in the same
+! module, it should not cause a problem.
+!`Problem: Currently .dim_group() has to be identical in order
+! for two identical tensors to produce identical descriptors.
+! Simply modifying the group number will change the descriptor.
+! Solution: Use dimension dependency instead of group number.
          implicit none
          type(tens_descr_t):: tens_descr             !out: tensor descriptor
          class(tens_rcrsv_t), intent(in):: this      !in: tensor

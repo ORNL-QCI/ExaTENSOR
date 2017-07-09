@@ -1,7 +1,7 @@
 !Infrastructure for a recursive adaptive vector space decomposition
 !and hierarchical vector space representation.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/05/18
+!REVISION: 2017/07/09
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -1855,9 +1855,9 @@
 !Registers a new subspace basis. The new subspace basis must have
 !the same support dimension as any previously registered basis.
          implicit none
-         class(subspace_t), intent(inout):: this     !inout: subspace
-         class(subspace_basis_t), intent(in):: basis !in: new subspace basis
-         integer(INTD), intent(out), optional:: ierr !out: error code
+         class(subspace_t), intent(inout):: this             !inout: subspace
+         class(subspace_basis_t), intent(in), target:: basis !in: new subspace basis
+         integer(INTD), intent(out), optional:: ierr         !out: error code
          integer(INTD):: errc,ier,sd
          integer(INTL):: n
          type(list_iter_t):: basis_it
