@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP "Worker" implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/07/08
+!REVISION: 2017/07/10
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -65,6 +65,7 @@
           procedure, public:: store=>TensCacheStore               !stores a given tensor in the cache
           procedure, public:: evict=>TensCacheEvict               !evicts a given tensor from the cache
           procedure, public:: erase=>TensCacheErase               !erases everything from the cache (regardless of MPI communications)
+          final:: tens_cache_dtor                                 !dtor
         end type tens_cache_t
  !Tensor instruction (realization of a tensor operation for a specific TAVP):
         type, extends(ds_instr_t), private:: tens_instr_t
@@ -114,6 +115,7 @@
         type(tavp_worker_t), protected:: tavpWorker
 !VISIBILITY:
  !non-member:
+        private tavp_worker_set_host_buf_size
         private acquire_resource_empty
         private acquire_resource_basic
         private prefetch_input_empty
@@ -128,6 +130,7 @@
         private release_resource_basic
         private sync_execution_empty
         private sync_execution_basic
+        private execute_empty
         private execute_tensor_create
         private execute_tensor_destroy
         private execute_tensor_contract
@@ -142,6 +145,7 @@
         private TensCacheStore
         private TensCacheEvict
         private TensCacheErase
+        public tens_cache_dtor
  !tens_instr_t:
         private TensInstrCtor
         private TensInstrDecode
@@ -161,8 +165,26 @@
 
 !IMPLEMENTATION:
        contains
-![non-member]=======================================
+![non-member]===============================================
+        subroutine tavp_worker_set_host_buf_size(bytes,ierr)
+!Changes the default size of the pinned Host buffer.
+         implicit none
+         integer(INTL), intent(in):: bytes           !in: size in bytes
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=0
+         if(bytes.gt.0_INTL) then
+          tavp_worker_host_buf_size=bytes
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine tavp_worker_set_host_buf_size
+!---------------------------------------------------
         subroutine acquire_resource_empty(this,ierr)
+!Dummy procedure for acquiring no resource.
          implicit none
          class(ds_instr_t), intent(inout):: this     !inout: tensor instruction
          integer(INTD), intent(out), optional:: ierr !out: error code
@@ -174,17 +196,44 @@
         end subroutine acquire_resource_empty
 !---------------------------------------------------
         subroutine acquire_resource_basic(this,ierr)
+!Acquires resource for each tensor instruction operand.
+!If some resources cannot be acquired now, returns TRY_LATER.
+!In that case, the successfully acquired resources will be kept,
+!unless an error other than TRY_LATER occurred.
          implicit none
          class(ds_instr_t), intent(inout):: this     !inout: tensor instruction
-         integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc
+         integer(INTD), intent(out), optional:: ierr !out: error code, possibly TRY_LATER
+         integer(INTD):: errc,ier,n
+         class(ds_oprnd_t), pointer:: oprnd
 
-         errc=0
+         n=this%get_num_operands(errc)
+         if(errc.eq.DSVP_SUCCESS) then
+          do while(n.gt.0)
+           oprnd=>this%get_operand(n-1,ier)
+           if(ier.eq.DSVP_SUCCESS) then
+            call oprnd%acquire_rsc(ier)
+            if(ier.ne.0) then
+             if(ier.eq.TRY_LATER) then
+              errc=ier
+             else
+              errc=-3; exit
+             endif
+            endif
+           else
+            errc=-2; exit
+           endif
+           n=n-1
+          enddo
+          if(errc.ne.0.and.errc.ne.TRY_LATER) call this%release_resource(n)
+         else
+          errc=-1
+         endif
          if(present(ierr)) ierr=errc
          return
         end subroutine acquire_resource_basic
 !-------------------------------------------------
         subroutine prefetch_input_empty(this,ierr)
+!Dummy procedure for prefetching no input.
          implicit none
          class(ds_instr_t), intent(inout):: this     !inout: tensor instruction
          integer(INTD), intent(out), optional:: ierr !out: error code
@@ -196,17 +245,34 @@
         end subroutine prefetch_input_empty
 !-------------------------------------------------
         subroutine prefetch_input_basic(this,ierr)
+!Starts prefetching input tensor operands.
          implicit none
          class(ds_instr_t), intent(inout):: this     !inout: tensor instruction
          integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc
+         integer(INTD):: errc,ier,n
+         class(ds_oprnd_t), pointer:: oprnd
 
-         errc=0
+         n=this%get_num_operands(errc)
+         if(errc.eq.DSVP_SUCCESS) then
+          do while(n.gt.1) !operand 0 is output
+           n=n-1
+           oprnd=>this%get_operand(n,ier)
+           if(ier.eq.DSVP_SUCCESS) then
+            call oprnd%prefetch(ier)
+            if(ier.ne.0.and.errc.eq.0) errc=-3
+           else
+            if(errc.eq.0) errc=-2
+           endif
+          enddo
+         else
+          errc=-1
+         endif
          if(present(ierr)) ierr=errc
          return
         end subroutine prefetch_input_basic
 !---------------------------------------------------------------
         function sync_prefetch_empty(this,ierr,wait) result(res)
+!Dummy procedure for syncing no input prefetch.
          implicit none
          logical:: res                               !out: TRUE if synchronized
          class(ds_instr_t), intent(inout):: this     !inout: tensor instruction
@@ -220,19 +286,40 @@
         end function sync_prefetch_empty
 !---------------------------------------------------------------
         function sync_prefetch_basic(this,ierr,wait) result(res)
+!Synchronization on the input prefetch, either WAIT or TEST.
          implicit none
-         logical:: res                               !out: TRUE if synchronized
+         logical:: res                               !out: TRUE if synchronized (all input operands)
          class(ds_instr_t), intent(inout):: this     !inout: tensor instruction
          integer(INTD), intent(out), optional:: ierr !out: error code
          logical, intent(in), optional:: wait        !in: WAIT or TEST (defaults to WAIT)
-         integer(INTD):: errc
+         integer(INTD):: errc,ier,n
+         class(ds_oprnd_t), pointer:: oprnd
+         logical:: wt
 
          errc=0; res=.FALSE.
+         wt=.TRUE.; if(present(wait)) wt=wait
+         n=this%get_num_operands(errc)
+         if(errc.eq.DSVP_SUCCESS) then
+          res=.TRUE.
+          do while(n.gt.1)
+           n=n-1
+           oprnd=>this%get_operand(n,ier)
+           if(ier.eq.DSVP_SUCCESS) then
+            res=res.and.oprnd%sync(ier,wt)
+            if(ier.ne.0.and.errc.eq.0) then; res=.FALSE.; errc=-3; endif
+           else
+            res=.FALSE.; if(errc.eq.0) errc=-2
+           endif
+          enddo
+         else
+          errc=-1
+         endif
          if(present(ierr)) ierr=errc
          return
         end function sync_prefetch_basic
 !------------------------------------------------
         subroutine upload_output_empty(this,ierr)
+!Dummy procedure for uploading no output.
          implicit none
          class(ds_instr_t), intent(inout):: this     !inout: tensor instruction
          integer(INTD), intent(out), optional:: ierr !out: error code
@@ -244,17 +331,25 @@
         end subroutine upload_output_empty
 !------------------------------------------------
         subroutine upload_output_basic(this,ierr)
+!Starts uploading the output tensor operand 0.
          implicit none
          class(ds_instr_t), intent(inout):: this     !inout: tensor instruction
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
+         class(ds_oprnd_t), pointer:: oprnd
 
-         errc=0
+         oprnd=>this%get_operand(0,errc) !output operand
+         if(errc.eq.DSVP_SUCCESS) then
+          call oprnd%upload(errc); if(errc.ne.0) errc=-2
+         else
+          errc=-1
+         endif
          if(present(ierr)) ierr=errc
          return
         end subroutine upload_output_basic
 !-------------------------------------------------------------
         function sync_upload_empty(this,ierr,wait) result(res)
+!Dummy procedure for syncing no output upload.
          implicit none
          logical:: res                               !out: TRUE if synchronized
          class(ds_instr_t), intent(inout):: this     !inout: tensor instruction
@@ -268,19 +363,30 @@
         end function sync_upload_empty
 !-------------------------------------------------------------
         function sync_upload_basic(this,ierr,wait) result(res)
+!Synchronization on the output upload.
          implicit none
          logical:: res                               !out: TRUE if synchronized
          class(ds_instr_t), intent(inout):: this     !inout: tensor instruction
          integer(INTD), intent(out), optional:: ierr !out: error code
          logical, intent(in), optional:: wait        !in: WAIT or TEST (defaults to WAIT)
          integer(INTD):: errc
+         class(ds_oprnd_t), pointer:: oprnd
+         logical:: wt
 
          errc=0; res=.FALSE.
+         wt=.TRUE.; if(present(wait)) wt=wait
+         oprnd=>this%get_operand(0,errc)
+         if(errc.eq.DSVP_SUCCESS) then
+          res=oprnd%sync(errc,wt); if(errc.ne.0) then; res=.FALSE.; errc=-2; endif
+         else
+          errc=-1
+         endif
          if(present(ierr)) ierr=errc
          return
         end function sync_upload_basic
 !---------------------------------------------------
         subroutine release_resource_empty(this,ierr)
+!Dummy procedure for releasing no resource.
          implicit none
          class(ds_instr_t), intent(inout):: this     !inout: tensor instruction
          integer(INTD), intent(out), optional:: ierr !out: error code
@@ -292,17 +398,40 @@
         end subroutine release_resource_empty
 !---------------------------------------------------
         subroutine release_resource_basic(this,ierr)
+!Releases resources occupied by tensor instruction operands,
+!but the operands stay defined.
          implicit none
          class(ds_instr_t), intent(inout):: this     !inout: tensor instruction
          integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc
+         integer(INTD):: errc,ier,n
+         class(ds_oprnd_t), pointer:: oprnd
 
-         errc=0
+         n=this%get_num_operands(errc)
+         if(errc.eq.DSVP_SUCCESS) then
+          do while(n.gt.0)
+           n=n-1
+           oprnd=>this%get_operand(n,ier)
+           if(ier.eq.DSVP_SUCCESS) then
+            call oprnd%release(ier)
+            if(ier.ne.0.and.errc.eq.0) errc=-4
+           else
+            if(errc.eq.0) errc=-3
+           endif
+          enddo
+          select type(this)
+          class is(tens_instr_t)
+           ier=talsh_task_destruct(this%talsh_task)
+           if(ier.ne.TALSH_SUCCESS.and.errc.eq.0) errc=-2
+          end select
+         else
+          errc=-1
+         endif
          if(present(ierr)) ierr=errc
          return
         end subroutine release_resource_basic
 !----------------------------------------------------------------
         function sync_execution_empty(this,ierr,wait) result(res)
+!Dummy procedure for syncing no execution.
          implicit none
          logical:: res                               !out: TRUE if synchronized
          class(ds_instr_t), intent(inout):: this     !inout: tensor instruction
@@ -316,19 +445,34 @@
         end function sync_execution_empty
 !----------------------------------------------------------------
         function sync_execution_basic(this,ierr,wait) result(res)
+!Synchronization on the tensor instruction execution.
          implicit none
          logical:: res                               !out: TRUE if synchronized
          class(ds_instr_t), intent(inout):: this     !inout: tensor instruction
          integer(INTD), intent(out), optional:: ierr !out: error code
          logical, intent(in), optional:: wait        !in: WAIT or TEST (defaults to WAIT)
-         integer(INTD):: errc
+         integer(INTD):: errc,sts,ans
+         logical:: wt
 
          errc=0; res=.FALSE.
+         wt=.TRUE.; if(present(wait)) wt=wait
+         select type(this)
+         class is(tens_instr_t)
+          if(wt) then !WAIT
+           errc=talsh_task_wait(this%talsh_task,sts)
+           res=(errc.eq.TALSH_SUCCESS.and.(sts.eq.TALSH_TASK_COMPLETED.or.sts.eq.TALSH_TASK_ERROR))
+          else !TEST
+           ans=talsh_task_complete(this%talsh_task,sts,errc)
+           res=(ans.eq.YEP.and.errc.eq.0)
+          endif
+          if(sts.eq.TALSH_TASK_ERROR.and.errc.eq.0) errc=-1
+         end select
          if(present(ierr)) ierr=errc
          return
         end function sync_execution_basic
-!--------------------------------------------------
-        subroutine execute_tensor_create(this,ierr)
+!------------------------------------------
+        subroutine execute_empty(this,ierr)
+!Dummy procedure for executing nothing.
          implicit none
          class(ds_instr_t), intent(inout):: this     !inout: tensor instruction
          integer(INTD), intent(out), optional:: ierr !out: error code
@@ -337,9 +481,39 @@
          errc=0
          if(present(ierr)) ierr=errc
          return
+        end subroutine execute_empty
+!--------------------------------------------------
+        subroutine execute_tensor_create(this,ierr)
+!Executes tensor creation.
+         implicit none
+         class(ds_instr_t), intent(inout):: this     !inout: tensor instruction
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+         class(ds_oprnd_t), pointer:: oprnd
+         class(tens_resrc_t), pointer:: resource
+
+         oprnd=>this%get_operand(0,errc)
+         if(errc.eq.DSVP_SUCCESS) then
+          select type(oprnd)
+          class is(tens_oprnd_t)
+           resource=>oprnd%get_resource(errc)
+           if(errc.eq.0) then
+            
+           else
+            errc=-3
+           endif
+          class default
+           errc=-2
+          end select
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
         end subroutine execute_tensor_create
 !---------------------------------------------------
         subroutine execute_tensor_destroy(this,ierr)
+!Executes tensor destruction.
          implicit none
          class(ds_instr_t), intent(inout):: this     !inout: tensor instruction
          integer(INTD), intent(out), optional:: ierr !out: error code
@@ -351,6 +525,7 @@
         end subroutine execute_tensor_destroy
 !----------------------------------------------------
         subroutine execute_tensor_contract(this,ierr)
+!Executes a tensor contraction operation.
          implicit none
          class(ds_instr_t), intent(inout):: this     !inout: tensor instruction
          integer(INTD), intent(out), optional:: ierr !out: error code
@@ -605,6 +780,14 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensCacheErase
+!---------------------------------------
+        subroutine tens_cache_dtor(this)
+         implicit none
+         type(tens_cache_t):: this
+
+         call this%erase()
+         return
+        end subroutine tens_cache_dtor
 ![tens_instr_t]============================================
         subroutine TensInstrCtor(this,op_code,ierr,op_spec)
 !Constructs a tensor instruction from a given tensor operation.
@@ -1227,7 +1410,7 @@
           microcode(TAVP_INSTR_CREATE)%sync_execution=>sync_execution_empty
           microcode(TAVP_INSTR_CREATE)%upload_output=>upload_output_empty
           microcode(TAVP_INSTR_CREATE)%sync_upload=>sync_upload_empty
-          microcode(TAVP_INSTR_CREATE)%release_resource=>release_resource_basic
+          microcode(TAVP_INSTR_CREATE)%release_resource=>release_resource_empty
  !TENSOR DESTROY:
           microcode(TAVP_INSTR_DESTROY)%acquire_resource=>acquire_resource_empty
           microcode(TAVP_INSTR_DESTROY)%prefetch_input=>prefetch_input_empty

@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/07/09
+!REVISION: 2017/07/10
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -599,7 +599,7 @@
  ![TESTING]: prerequisites for building a hierarchical space:
         integer(INTL), parameter, public:: HSPACE_DIM_=20                    !vector space dimension
         type(spher_symmetry_t), target, public:: hspace_symm_(1:HSPACE_DIM_) !symmetry of basis vectors
-        type(subspace_basis_t), public:: hspace_basis_                       !vector space basis
+        type(subspace_basis_t), target, public:: hspace_basis_               !vector space basis
  !Tensor contraction generator: subtensor buffer:
         integer(INTL), allocatable, target, private:: tcg_ind_buf(:,:) !subtensor index buffer (private to each OpenMP thread)
         integer(INTL), allocatable, target, private:: tcg_num_buf(:)   !subtensor number buffer (private to each OpenMP thread)

@@ -1,7 +1,7 @@
 !ExaTENSOR: Massively Parallel Virtual Processor for Scale-Adaptive Hierarchical Tensor Algebra
 !This is the top level API module of ExaTENSOR (user-level API)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017/07/09
+!REVISION: 2017/07/10
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -113,7 +113,6 @@
  !Hierarchical vector space:
        public exatns_space_register       !registers a vector space
        public exatns_space_unregister     !unregisters a vector space
-       public exatns_space_build_tree     !builds the subspace aggregation tree (SAT) in a vector space
        public exatns_space_status         !returns the status of the vector space
        public exatns_subspace_register    !registers a subspace in a vector space
        public exatns_subspace_unregister  !unregisters a subspace in a vector space
@@ -297,6 +296,7 @@
         type(exatns_rt_status_t), intent(out):: sts !out: current status of the ExaTENSOR runtime
 
         ierr=EXA_SUCCESS
+        write(CONS_OUT,*)'FATAL(exatensor:status): Not implemented yet!' !`Implement
         return
        end function exatns_status
 ![ExaTENSOR Parser/Interpreter API]------------------
@@ -307,6 +307,7 @@
         character(*), intent(in):: taprol !in: TAProL code (string of TAProL statements)
 
         ierr=EXA_SUCCESS
+        write(CONS_OUT,*)'FATAL(exatensor:interpret): Not implemented yet!' !`Implement
         return
        end function exatns_interpret
 !-------------------------------------------------------
@@ -317,6 +318,7 @@
         character(*), intent(in):: symbol !in: specific symbolic identifier
 
         ans=.FALSE.
+        write(CONS_OUT,*)'FATAL(exatensor:symbol_exists): Not implemented yet!' !`Implement
         return
        end function exatns_symbol_exists
 ![ExaTENSOR External Method/Data API]---------------------------------------------
@@ -329,6 +331,7 @@
         integer(INTD), intent(out):: method_tag !out: method tag (non-negative on success)
 
         ierr=EXA_SUCCESS; method_tag=-1
+        write(CONS_OUT,*)'FATAL(exatensor:method_register): Not implemented yet!' !`Implement
         return
        end function exatns_method_register
 !-----------------------------------------------------------------
@@ -339,6 +342,7 @@
         character(*), intent(in):: method_name !in: method name
 
         ierr=EXA_SUCCESS
+        write(CONS_OUT,*)'FATAL(exatensor:method_unregister): Not implemented yet!' !`Implement
         return
        end function exatns_method_unregister
 !-----------------------------------------------------------------------------
@@ -351,6 +355,7 @@
         integer(INTD), intent(out):: data_tag !out: data tag (non-negative on success)
 
         ierr=EXA_SUCCESS; data_tag=-1
+        write(CONS_OUT,*)'FATAL(exatensor:data_register): Not implemented yet!' !`Implement
         return
        end function exatns_data_register
 !-------------------------------------------------------------
@@ -361,16 +366,17 @@
         character(*), intent(in):: data_name !in: data name
 
         ierr=EXA_SUCCESS
+        write(CONS_OUT,*)'FATAL(exatensor:data_unregister): Not implemented yet!' !`Implement
         return
        end function exatns_data_unregister
 ![ExaTENSOR Hierarchical Vector Space API]-----------------------------------------
        function exatns_space_register(space_name,space_basis,space_id) result(ierr)
 !Registers a vector space based on the provided space basis.
         implicit none
-        integer(INTD):: ierr                              !out: error code
-        character(*), intent(in):: space_name             !in: vector space symbolic name
-        class(subspace_basis_t), intent(in):: space_basis !in: vector space basis (fully defined)
-        integer(INTD), intent(out):: space_id             !out: vector space id (non-negative)
+        integer(INTD):: ierr                                      !out: error code
+        character(*), intent(in):: space_name                     !in: vector space symbolic name
+        class(subspace_basis_t), intent(in), target:: space_basis !in: vector space basis (fully defined)
+        integer(INTD), intent(out):: space_id                     !out: vector space id (non-negative)
         class(h_space_t), pointer:: hspace
 
         ierr=EXA_SUCCESS; space_id=-1
@@ -403,19 +409,9 @@
         character(*), intent(in):: space_name !in: vector space symbolic name
 
         ierr=EXA_SUCCESS
-        write(CONS_OUT,*)'WARNING(exatensor:space_unregister): Not implemented yet!' !`Implement
+        write(CONS_OUT,*)'FATAL(exatensor:space_unregister): Not implemented yet!' !`Implement
         return
        end function exatns_space_unregister
-!---------------------------------------------------------------
-       function exatns_space_build_tree(space_name) result(ierr)
-!Builds a hierarchical representation on a registered vector space.
-        implicit none
-        integer(INTD):: ierr                  !out: error code
-        character(*), intent(in):: space_name !in: vector space symbolic name
-
-        ierr=EXA_SUCCESS
-        return
-       end function exatns_space_build_tree
 !---------------------------------------------------------------
        function exatns_space_status(space_name,sts) result(ierr)
 !Returns the status of a registered vector space.
@@ -425,6 +421,7 @@
         type(exa_space_status_t), intent(out):: sts !out: vector space status
 
         ierr=EXA_SUCCESS
+        write(CONS_OUT,*)'FATAL(exatensor:space_status): Not implemented yet!' !`Implement
         return
        end function exatns_space_status
 !------------------------------------------------------------------------------------------------------------------
@@ -440,6 +437,7 @@
         integer(INTD):: hspid
 
         ierr=EXA_SUCCESS; subspace_id=-1_INTL; hspid=-1
+        write(CONS_OUT,*)'FATAL(exatensor:subspace_register): Not implemented yet!' !`Implement
         if(present(space_id)) space_id=hspid
         return
        end function exatns_subspace_register
@@ -451,6 +449,7 @@
         character(*), intent(in):: subspace_name !in: subspace symbolic name
 
         ierr=EXA_SUCCESS
+        write(CONS_OUT,*)'FATAL(exatensor:subspace_unregister): Not implemented yet!' !`Implement
         return
        end function exatns_subspace_unregister
 !------------------------------------------------------------------------
@@ -462,6 +461,7 @@
         character(*), intent(in):: space_name !in: space/subspace symbolic name
 
         ierr=EXA_SUCCESS
+        write(CONS_OUT,*)'FATAL(exatensor:index_register): Not implemented yet!' !`Implement
         return
        end function exatns_index_register
 !---------------------------------------------------------------
@@ -472,6 +472,7 @@
         character(*), intent(in):: index_name !in: index symbolic name
 
         ierr=EXA_SUCCESS
+        write(CONS_OUT,*)'FATAL(exatensor:index_unregister): Not implemented yet!' !`Implement
         return
        end function exatns_index_unregister
 ![ExaTENSOR Tensor API]-----------------------------------------------------------------------------------------------
@@ -490,6 +491,7 @@
 
         ierr=EXA_SUCCESS
         trank=size(subspace) !tensor rank
+        write(CONS_OUT,*)'FATAL(exatensor:tensor_create): Not implemented yet!' !`Implement
         return
        end function exatns_tensor_create
 !---------------------------------------------------------
@@ -500,6 +502,7 @@
         type(tens_rcrsv_t), intent(inout):: tensor !inout: tensor
 
         ierr=EXA_SUCCESS
+        write(CONS_OUT,*)'FATAL(exatensor:tensor_destroy): Not implemented yet!' !`Implement
         return
        end function exatns_tensor_destroy
 !---------------------------------------------------------------
@@ -511,6 +514,7 @@
         character(*), intent(in):: filename        !in: file name
 
         ierr=EXA_SUCCESS
+        write(CONS_OUT,*)'FATAL(exatensor:tensor_load): Not implemented yet!' !`Implement
         return
        end function exatns_tensor_load
 !---------------------------------------------------------------
@@ -522,6 +526,7 @@
         character(*), intent(in):: filename        !in: file name
 
         ierr=EXA_SUCCESS
+        write(CONS_OUT,*)'FATAL(exatensor:tensor_save): Not implemented yet!' !`Implement
         return
        end function exatns_tensor_save
 !------------------------------------------------------------
@@ -533,6 +538,7 @@
         type(exa_tensor_status_t), intent(out):: sts !out: current tensor status
 
         ierr=EXA_SUCCESS
+        write(CONS_OUT,*)'FATAL(exatensor:tensor_status): Not implemented yet!' !`Implement
         return
        end function exatns_tensor_status
 ![ExaTENSOR Tensor Operation API]------------------------------------
@@ -545,6 +551,7 @@
         complex(8), intent(in), optional:: scalar  !in: scalar
 
         ierr=EXA_SUCCESS
+        write(CONS_OUT,*)'FATAL(exatensor:tensor_init_scalar): Not implemented yet!' !`Implement
         return
        end function exatns_tensor_init_scalar
 !--------------------------------------------------------------------
@@ -556,6 +563,7 @@
         character(*), intent(in):: method          !in: registered method name
 
         ierr=EXA_SUCCESS
+        write(CONS_OUT,*)'FATAL(exatensor:tensor_init_method): Not implemented yet!' !`Implement
         return
        end function exatns_tensor_init_method
 !----------------------------------------------------------------------------
@@ -569,6 +577,7 @@
         character(*), intent(in), optional:: pattern   !in: symbolic permutation pattern
 
         ierr=EXA_SUCCESS
+        write(CONS_OUT,*)'FATAL(exatensor:tensor_copy): Not implemented yet!' !`Implement
         return
        end function exatns_tensor_copy
 !----------------------------------------------------------------------------
@@ -582,6 +591,7 @@
         character(*), intent(in):: pattern             !in: symbolic folding pattern
 
         ierr=EXA_SUCCESS
+        write(CONS_OUT,*)'FATAL(exatensor:tensor_fold): Not implemented yet!' !`Implement
         return
        end function exatns_tensor_fold
 !------------------------------------------------------------------------------
@@ -595,6 +605,7 @@
         character(*), intent(in):: pattern             !in: symbolic unfolding pattern
 
         ierr=EXA_SUCCESS
+        write(CONS_OUT,*)'FATAL(exatensor:tensor_unfold): Not implemented yet!' !`Implement
         return
        end function exatns_tensor_unfold
 !--------------------------------------------------------------
@@ -619,6 +630,7 @@
         complex(8), intent(in), optional:: factor    !in: scalar factor
 
         ierr=EXA_SUCCESS
+        write(CONS_OUT,*)'FATAL(exatensor:tensor_add): Not implemented yet!' !`Implement
         return
        end function exatns_tensor_add
 !-------------------------------------------------------------------------------------------------------
@@ -634,6 +646,7 @@
         character(*), intent(in), optional:: restrictions !in: symbolic index restrictions
 
         ierr=EXA_SUCCESS
+        write(CONS_OUT,*)'FATAL(exatensor:tensor_contract): Not implemented yet!' !`Implement
         return
        end function exatns_tensor_contract
 !---------------------------------------------------------------------------------
@@ -647,6 +660,7 @@
         class(*), intent(in), optional:: control    !in: control field
 
         ierr=EXA_SUCCESS
+        write(CONS_OUT,*)'FATAL(exatensor:tensor_unary_op): Not implemented yet!' !`Implement
         return
        end function exatns_tensor_unary_op
 !------------------------------------------------------------------------------------------
@@ -661,6 +675,7 @@
         class(*), intent(in), optional:: control    !in: control field
 
         ierr=EXA_SUCCESS
+        write(CONS_OUT,*)'FATAL(exatensor:tensor_binary_op): Not implemented yet!' !`Implement
         return
        end function exatns_tensor_binary_op
 !---------------------------------------------------------------------------------------------------
@@ -676,6 +691,7 @@
         class(*), intent(in), optional:: control    !in: control field
 
         ierr=EXA_SUCCESS
+        write(CONS_OUT,*)'FATAL(exatensor:tensor_ternary_op): Not implemented yet!' !`Implement
         return
        end function exatns_tensor_ternary_op
 

@@ -1,7 +1,7 @@
 !PROJECT Q-FORCE: Massively Parallel Quantum Many-Body Methodology on Heterogeneous HPC systems.
 !BASE: ExaTensor: Massively Parallel Tensor Algebra Virtual Processor for Heterogeneous HPC systems.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/06/16
+!REVISION: 2017/07/10
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -66,7 +66,7 @@
         if(my_rank.eq.0) then
          call basis%subspace_basis_ctor(TEST_SPACE_DIM,ierr)
          if(ierr.ne.0) call quit(ierr,'subspace_basis_t.subspace_basis_ctor() failed!')
-         do l=1_INTL,TEST_SPACE_DIM
+         do l=1_INTL,TEST_SPACE_DIM !set basis functions
           call basis_symmetry(l)%spher_symmetry_ctor(int((l-1)/5,INTD),0,ierr)
           if(ierr.ne.0) call quit(ierr,'spher_symmetry_t.spher_symmetry_ctor() failed!')
           call basis%set_basis_func(l,BASIS_ABSTRACT,ierr,symm=basis_symmetry(l))
@@ -75,7 +75,7 @@
          call basis%finalize(ierr)
          if(ierr.ne.0) call quit(ierr,'subspace_basis_t.finalize() failed!')
 !Register a vector space:
-         ierr=exatns_space_register('MySpace',basis,space_id)
+         ierr=exatns_space_register('AO_space',basis,space_id)
          if(ierr.ne.0) call quit(ierr,'exatns_space_register() failed!')
 !Create tensors:
          ierr=exatns_tensor_create(dtens,R8,'dtens',(/(space_id,i=1,4)/))

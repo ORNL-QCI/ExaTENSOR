@@ -8,7 +8,7 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/07/03
+!REVISION: 2017/07/10
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -129,6 +129,7 @@
           procedure, private:: TensOprndCtor                    !ctor
           generic, public:: tens_oprnd_ctor=>TensOprndCtor
           procedure, public:: set_resource=>TensOprndSetResource!sets the resource component if it has not been set via constructor
+          procedure, public:: get_resource=>TensOprndGetResource!returns a pointer to the tensor resource
           procedure, public:: get_tensor=>TensOprndGetTensor    !returns a pointer to the tensor
           procedure, public:: set_talsh_tens=>TensOprndSetTalshTens !sets up the TAL-SH tensor object for further processing with TAL-SH
           procedure, public:: is_remote=>TensOprndIsRemote      !returns TRUE if the tensor operand is remote
@@ -184,6 +185,7 @@
  !tens_oprnd_t:
         private TensOprndCtor
         private TensOprndSetResource
+        private TensOprndGetResource
         private TensOprndGetTensor
         private TensOprndSetTalshTens
         private TensOprndIsRemote
@@ -378,6 +380,20 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensOprndSetResource
+!------------------------------------------------------------------
+        function TensOprndGetResource(this,ierr) result(resource_p)
+!Returns a pointer to the tensor resource.
+         implicit none
+         type(tens_resrc_t), pointer:: resource_p    !out: pointer to the tensor resource
+         class(tens_oprnd_t), intent(in):: this      !in: active tensor operand
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=0; resource_p=>this%resource
+         if(.not.associated(resource_p)) errc=-1
+         if(present(ierr)) ierr=errc
+         return
+        end function TensOprndGetResource
 !------------------------------------------------------------
         function TensOprndGetTensor(this,ierr) result(tens_p)
 !Returns a pointer to the tensor.

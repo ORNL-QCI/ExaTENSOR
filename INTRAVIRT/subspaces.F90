@@ -1,7 +1,7 @@
 !Infrastructure for a recursive adaptive vector space decomposition
 !and hierarchical vector space representation.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/07/09
+!REVISION: 2017/07/10
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -43,7 +43,16 @@
 !   to be some abstract basis function of a specific basis set kind.
 ! # Output: The subspace aggregation tree is constructed in which each
 !   subspace has a unique non-negative ID. A subspace overlap matrix
-!   shows the overlap of subspace supports.
+!   shows the overlap of the subspace supports.
+! # Use:
+!    1) Construct an empty subspace_basis_t object of specified dimension.
+!    2) OPTIONAL: Define an array of specific basis functions (basis_func_supp_t).
+!    3) OPTIONAL: Define an array of symmetries for the basis functions.
+!    4) Set up each basis function in the subspace_basis_t object using
+!       the two arrays created above.
+!    5) Finalize the subspace_basis_t object via the .finalize() method.
+!    6) Construct the hierarchical vector space object (h_space_t) using
+!       the subspace_basis_t object.
 
        module subspaces
         use dil_basic
@@ -1415,8 +1424,8 @@
          class(basis_func_t), intent(out):: this                             !out: basis function
          integer(INTD), intent(in):: basis_kind                              !in: basis kind
          integer(INTD), intent(out), optional:: ierr                         !out: error code
-         class(basis_func_supp_t), intent(in), target, optional:: basis_func !in: specific basis function
-         class(symmetry_t), intent(in), target, optional:: symm              !in: basis function symmetry
+         class(basis_func_supp_t), intent(in), target, optional:: basis_func !in: specification of the basis function (external)
+         class(symmetry_t), intent(in), target, optional:: symm              !in: optional basis function symmetry (external)
          integer(INTD):: errc
 
          errc=0
@@ -1526,8 +1535,8 @@
          integer(INTL), intent(in):: func_num                                !in: basis function number in the subspace basis
          integer(INTD), intent(in):: basis_kind                              !in: basis kind
          integer(INTD), intent(out), optional:: ierr                         !out: error code
-         class(basis_func_supp_t), intent(in), target, optional:: basis_func !in: specific basis function
-         class(symmetry_t), intent(in), target, optional:: symm              !in: basis function symmetry
+         class(basis_func_supp_t), intent(in), target, optional:: basis_func !in: specific basis function (external)
+         class(symmetry_t), intent(in), target, optional:: symm              !in: basis function symmetry (external)
          integer(INTD):: errc
          integer(INTL):: n
          logical:: specific
