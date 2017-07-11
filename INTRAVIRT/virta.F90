@@ -8,7 +8,7 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/07/10
+!REVISION: 2017/07/11
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -117,6 +117,7 @@
           procedure, public:: allocate_buffer=>TensResrcAllocateBuffer !allocates a local buffer for tensor body storage
           procedure, public:: free_buffer=>TensResrcFreeBuffer         !frees the local buffer
           procedure, public:: get_mem_ptr=>TensResrcGetMemPtr          !returns a C pointer to the local memory buffer
+          procedure, public:: get_mem_size=>TensResrcGetMemSize        !returns the size of the memory buffer in bytes
           procedure, private:: incr_ref_count=>TensResrcIncrRefCount   !increments the reference count
           procedure, private:: decr_ref_count=>TensResrcDecrRefCount   !decrements the reference count
         end type tens_resrc_t
@@ -180,6 +181,7 @@
         private TensResrcAllocateBuffer
         private TensResrcFreeBuffer
         private TensResrcGetMemPtr
+        private TensResrcGetMemSize
         private TensResrcIncrRefCount
         private TensResrcDecrRefCount
  !tens_oprnd_t:
@@ -288,16 +290,34 @@
          integer(INTL), intent(out), optional:: bytes !out: number of bytes
          integer(INTD):: errc
 
-         mem_p=C_NULL_PTR
+         errc=0; mem_p=C_NULL_PTR
          if(.not.this%is_empty()) then
           mem_p=this%base_addr
           if(present(bytes)) bytes=this%bytes
          else
           if(present(bytes)) bytes=0_INTL
+          errc=-1
          endif
          if(present(ierr)) ierr=errc
          return
         end function TensResrcGetMemPtr
+!------------------------------------------------------------
+        function TensResrcGetMemSize(this,ierr) result(bytes)
+!Returns the size of the memory buffer in bytes.
+         implicit none
+         integer(INTL):: bytes                       !out: size in bytes
+         class(tens_resrc_t), intent(in):: this      !in: tensor resource
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         if(.not.this%is_empty()) then
+          bytes=this%bytes; errc=0
+         else
+          bytes=0_INTL; errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function TensResrcGetMemSize
 !---------------------------------------------
         subroutine TensResrcIncrRefCount(this)
 !Increments the reference count.
@@ -557,7 +577,6 @@
          integer(INT_MPI):: host_proc_rank
          class(tens_body_t), pointer:: body_p
          class(tens_layout_t), pointer:: layout_p
-         class(DataDescr_t), pointer:: descr_p
 
          errc=0
          if(this%is_active()) then
@@ -566,38 +585,33 @@
            if(errc.eq.TEREC_SUCCESS.and.associated(body_p)) then
             layout_p=>body_p%get_layout(errc)
             if(errc.eq.TEREC_SUCCESS.and.associated(layout_p)) then
-             descr_p=>layout_p%get_data_descr(errc)
-             if(errc.eq.TEREC_SUCCESS.and.associated(descr_p)) then
-              if(descr_p%is_set(errc)) then
-               if(errc.eq.0) then
-                buf_size=descr_p%data_size(errc)
-                if(errc.eq.0.and.buf_size.gt.0_INTL) then
-                 if(this%resource%is_empty()) then
-                  call this%resource%allocate_buffer(buf_size,errc); if(errc.ne.0) errc=-1
-                 endif
-                else
-                 errc=-2
+             if(layout_p%is_set(errc)) then
+              if(errc.eq.TEREC_SUCCESS) then
+               buf_size=layout_p%get_body_size(errc)
+               if(errc.eq.TEREC_SUCCESS.and.buf_size.gt.0_INTL) then
+                if(this%resource%is_empty()) then
+                 call this%resource%allocate_buffer(buf_size,errc); if(errc.ne.0) errc=-1
                 endif
                else
-                errc=-3
+                errc=-2
                endif
               else
-               errc=-4
+               errc=-3
               endif
              else
-              errc=-5
+              errc=-4
              endif
             else
-             errc=-6
+             errc=-5
             endif
            else
-            errc=-7
+            errc=-6
            endif
           else
-           errc=-8
+           errc=-7
           endif
          else
-          errc=-9
+          errc=-8
          endif
          if(present(ierr)) ierr=errc
          return

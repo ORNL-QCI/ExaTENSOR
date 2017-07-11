@@ -2859,19 +2859,26 @@
          integer(INTL):: body_size                   !out: tensor body size in bytes
          class(tens_layout_t), intent(in):: this     !in: tensor layout
          integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc
+         integer(INTD):: errc,dtk,dts
          logical:: locd
 
          body_size=0_INTL
          if(this%is_set(errc,locd)) then
-          if(locd) then
+          if(locd) then !located tensor
            if(this%data_descr%is_set()) then
             body_size=this%data_descr%data_size(errc)
            else
             errc=TEREC_INVALID_REQUEST
            endif
-          else
-           errc=TEREC_INVALID_REQUEST
+          else !not located (only laid out)
+           dtk=this%get_data_type(errc)
+           if(errc.eq.TEREC_SUCCESS) then
+            if(tens_valid_data_kind(dtk,dts).eq.YEP) then
+             body_size=this%get_volume()*dts
+            else
+             errc=TEREC_OBJ_CORRUPTED
+            endif
+           endif
           endif
          else
           errc=TEREC_INVALID_REQUEST

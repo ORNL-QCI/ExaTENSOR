@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP "Worker" implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/07/10
+!REVISION: 2017/07/11
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -224,7 +224,7 @@
            endif
            n=n-1
           enddo
-          if(errc.ne.0.and.errc.ne.TRY_LATER) call this%release_resource(n)
+          if(errc.ne.0.and.errc.ne.TRY_LATER) call this%release_resource(n) !n is error code here
          else
           errc=-1
          endif
@@ -484,13 +484,20 @@
         end subroutine execute_empty
 !--------------------------------------------------
         subroutine execute_tensor_create(this,ierr)
-!Executes tensor creation.
+!Executes tensor creation. The tensor layout is assumed already defined.
+!The tensor body location is set here via the newly created DDSS descriptor.
          implicit none
          class(ds_instr_t), intent(inout):: this     !inout: tensor instruction
          integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc
+         integer(INTD):: errc,dtk
+         integer(INTL):: bytes,vol
          class(ds_oprnd_t), pointer:: oprnd
+         class(tens_rcrsv_t), pointer:: tensor
          class(tens_resrc_t), pointer:: resource
+         class(tens_body_t), pointer:: tens_body
+         class(tens_layout_t), pointer:: tens_layout
+         type(DataDescr_t):: descr
+         type(C_PTR):: mem_p
 
          oprnd=>this%get_operand(0,errc)
          if(errc.eq.DSVP_SUCCESS) then
@@ -498,7 +505,43 @@
           class is(tens_oprnd_t)
            resource=>oprnd%get_resource(errc)
            if(errc.eq.0) then
-            
+            if(.not.resource%is_empty()) then
+             tensor=>oprnd%get_tensor(errc)
+             if(errc.eq.0) then
+              tens_body=>tensor%get_body(errc)
+              if(errc.eq.TEREC_SUCCESS) then
+               tens_layout=>tens_body%get_layout(errc)
+               if(errc.eq.TEREC_SUCCESS) then
+                dtk=tens_layout%get_data_type(errc)
+                if(errc.eq.TEREC_SUCCESS) then
+                 mem_p=resource%get_mem_ptr(errc,bytes)
+                 if(errc.eq.0) then
+                  vol=tens_layout%get_volume() !bytes = vol * sizeof(data_kind)
+                  call tavp_addr_space%attach(mem_p,dtk,vol,descr,errc)
+                  if(errc.eq.0) then
+                   call tensor%set_location(descr,errc) !tensor has been located
+                   if(errc.ne.TEREC_SUCCESS) errc=-11
+                  else
+                   errc=-10
+                  endif
+                 else
+                  errc=-9
+                 endif
+                else
+                 errc=-8
+                endif
+               else
+                errc=-7
+               endif
+              else
+               errc=-6
+              endif
+             else
+              errc=-5
+             endif
+            else
+             errc=-4
+            endif
            else
             errc=-3
            endif
