@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/07/10
+!REVISION: 2017/07/11
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -94,7 +94,7 @@
  !Registered hierarchical space:
         type, public:: hspace_reg_t
          integer(INTD), private:: space_id=-1                  !registered space id: [0..max]
-         class(h_space_t), pointer, private:: hspace_p=>NULL() !pointer to a persistent hierarchical vector space definition
+         class(h_space_t), pointer, private:: hspace_p=>NULL() !#pointer to a persistent hierarchical vector space definition
          contains
           procedure, private:: HspaceRegCtor                    !ctor
           procedure, private:: HspaceRegCtorUnpack              !ctor by unpacking
@@ -206,6 +206,8 @@
          contains
           procedure, private:: set_location=>TensLayoutSetLocation                  !sets the phyiscal location of the data via a DDSS data descriptor
           procedure, public:: is_set=>TensLayoutIsSet                               !returns TRUE if the tensor layout is set
+          procedure, public:: unpack_base=>TensLayoutUnpackBase                     !unpacks the object from a packet
+          procedure, public:: pack_base=>TensLayoutPackBase                         !packs the object into a packet
           procedure, public:: get_data_type=>TensLayoutGetDataType                  !returns the data type of the stored tensor elements
           procedure, public:: get_layout_kind=>TensLayoutGetLayoutKind              !returns the tensor storage layout kind
           procedure, public:: get_body_ptr=>TensLayoutGetBodyPtr                    !returns a C pointer to the tensor body
@@ -217,7 +219,7 @@
         end type tens_layout_t
  !Concrete storage layout "Fortran-dimension-led":
         type, extends(tens_layout_t), public:: tens_layout_fdims_t
-         class(tens_header_t), pointer, private:: header=>NULL() !pointer to the defining tensor header
+         class(tens_header_t), pointer, private:: header=>NULL() !#pointer to the defining tensor header
          contains
           procedure, private:: TensLayoutFdimsCtor                          !ctor
           procedure, private:: TensLayoutFdimsCtorUnpack                    !ctor by unpacking
@@ -500,6 +502,8 @@
  !tens_layout_t:
         private TensLayoutSetLocation
         private TensLayoutIsSet
+        private TensLayoutUnpackBase
+        private TensLayoutPackBase
         private TensLayoutGetDataType
         private TensLayoutGetLayoutKind
         private TensLayoutGetBodyPtr
@@ -2717,7 +2721,7 @@
 !Sets the phyiscal location of the tensor body.
          implicit none
          class(tens_layout_t), intent(inout):: this  !inout: tensor body layout
-         class(DataDescr_t), intent(in):: data_descr !in: DDSS data descriptor for the tensor body
+         class(DataDescr_t), intent(in):: data_descr !in: DDSS data descriptor for the tensor body (will be cloned)
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
 
@@ -2750,6 +2754,46 @@
          if(present(ierr)) ierr=errc
          return
         end function TensLayoutIsSet
+!--------------------------------------------------------
+        subroutine TensLayoutUnpackBase(this,packet,ierr)
+!Unpacks the object from a packet.
+         implicit none
+         class(tens_layout_t), intent(out):: this    !out: tensor body layout
+         class(obj_pack_t), intent(inout):: packet   !inout: packet
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+         logical:: dda
+
+         call unpack_builtin(packet,this%layout,errc)
+         if(errc.eq.PACK_SUCCESS) call unpack_builtin(packet,this%data_type,errc)
+         if(errc.eq.PACK_SUCCESS) call unpack_builtin(packet,dda,errc)
+         if(errc.eq.PACK_SUCCESS.and.dda) then
+          if(.not.allocated(this%data_descr)) allocate(this%data_descr)
+          call this%data_descr%unpack(packet,errc)
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensLayoutUnpackBase
+!------------------------------------------------------
+        subroutine TensLayoutPackBase(this,packet,ierr)
+!Packs the object into a packet.
+         implicit none
+         class(tens_layout_t), intent(in):: this     !in: tensor body layout
+         class(obj_pack_t), intent(inout):: packet   !inout: packet
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+         logical:: dda
+
+         call pack_builtin(packet,this%layout,errc)
+         if(errc.eq.PACK_SUCCESS) call pack_builtin(packet,this%data_type,errc)
+         if(errc.eq.PACK_SUCCESS) then
+          dda=allocated(this%data_descr)
+          call pack_builtin(packet,dda,errc)
+          if(errc.eq.PACK_SUCCESS.and.dda) call this%data_descr%pack(packet,errc)
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensLayoutPackBase
 !------------------------------------------------------------------
         function TensLayoutGetDataType(this,ierr) result(data_type)
 !Returns the data type of stored tensor elements.
@@ -2902,9 +2946,8 @@
          integer(INTD), intent(out), optional:: ierr    !out: error code
          integer(INTD):: errc
 
-         call unpack_builtin(packet,this%layout,errc)
-         if(errc.eq.PACK_SUCCESS) call unpack_builtin(packet,this%data_type,errc)
-         if(errc.eq.PACK_SUCCESS) call this%data_descr%unpack(packet,errc)
+         call this%unpack_base(packet,errc)
+         this%header=>NULL() !header will need to be set separately (locally)
          if(present(ierr)) ierr=errc
          return
         end subroutine TensLayoutFdimsCtorUnpack
@@ -2917,9 +2960,7 @@
          integer(INTD), intent(out), optional:: ierr   !out: error code
          integer(INTD):: errc
 
-         call pack_builtin(packet,this%layout,errc)
-         if(errc.eq.PACK_SUCCESS) call pack_builtin(packet,this%data_type,errc)
-         if(errc.eq.PACK_SUCCESS) call this%data_descr%pack(packet,errc)
+         call this%pack_base(packet,errc)
          if(present(ierr)) ierr=errc
          return
         end subroutine TensLayoutFdimsPack
@@ -3281,7 +3322,7 @@
 !Sets the physical location of the tensor body via a DDSS data descriptor.
          implicit none
          class(tens_body_t), intent(inout):: this    !inout: tensor body
-         class(DataDescr_t), intent(in):: data_descr !in: DDSS data descriptor for tensor body data
+         class(DataDescr_t), intent(in):: data_descr !in: DDSS data descriptor for tensor body (will be cloned)
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
          logical:: layd,locd
@@ -3624,7 +3665,7 @@
 !Sets the physical location of the tensor body data via a DDSS data descriptor.
          implicit none
          class(tens_rcrsv_t), intent(inout):: this   !inout: tensor
-         class(DataDescr_t), intent(in):: data_descr !in: DDSS data descriptor for tensor body data
+         class(DataDescr_t), intent(in):: data_descr !in: DDSS data descriptor for tensor body (will be cloned)
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc,unres
          logical:: shpd,layd,locd
