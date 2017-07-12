@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP "Worker" implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/07/11
+!REVISION: 2017/07/12
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -79,19 +79,6 @@
           procedure, private:: activate=>TensInstrActivate          !activates the instruction
           final:: tens_instr_dtor                                   !dtor
         end type tens_instr_t
- !TAVP instruction microcode binding (set by the TAVP initialization):
-        type, private:: microcode_bind_t
-         procedure(ds_instr_self_i), nopass, pointer:: acquire_resource=>NULL() !acquires local resources for instruction operands
-         procedure(ds_instr_self_i), nopass, pointer:: prefetch_input=>NULL()   !starts prefetching input operands
-         procedure(ds_instr_sync_i), nopass, pointer:: sync_prefetch=>NULL()    !synchronizes the input prefetch (either test or wait)
-         procedure(ds_instr_self_i), nopass, pointer:: execute=>NULL()          !executes the domain-specific instruction
-         procedure(ds_instr_sync_i), nopass, pointer:: sync_execution=>NULL()   !synchronizes the execution (either test or wait)
-         procedure(ds_instr_self_i), nopass, pointer:: upload_output=>NULL()    !starts uploading the output
-         procedure(ds_instr_sync_i), nopass, pointer:: sync_upload=>NULL()      !synchronizes the output upload (either test or wait)
-         procedure(ds_instr_self_i), nopass, pointer:: release_resource=>NULL() !releases local resources occupied by instruction operands
-         contains
-          procedure, private:: reset=>MicrocodeBindReset !resets microcode binding to NULL
-        end type microcode_bind_t
  !TAVP specialization "Worker":
         type, extends(dsvp_t), public:: tavp_worker_t
          type(tens_cache_t), private:: tens_cache       !tensor cache (both persistent and temporary tensors)
@@ -153,8 +140,6 @@
         private TensInstrSetMicrocode
         private TensInstrActivate
         private tens_instr_dtor
- !microcode_bind_t:
-        private MicrocodeBindReset
  !tavp_worker_t:
         private TAVPWorkerStart
         private TAVPWorkerShutdown
@@ -1377,21 +1362,6 @@
          endif
          return
         end subroutine tens_instr_dtor
-![microcode_bind_t]========================
-        subroutine MicrocodeBindReset(this)
-         implicit none
-         class(microcode_bind_t), intent(inout):: this !inout: microcode binding
-
-         this%acquire_resource=>NULL()
-         this%prefetch_input=>NULL()
-         this%sync_prefetch=>NULL()
-         this%execute=>NULL()
-         this%sync_execution=>NULL()
-         this%upload_output=>NULL()
-         this%sync_upload=>NULL()
-         this%release_resource=>NULL()
-         return
-        end subroutine MicrocodeBindReset
 ![tavp_worker_t]=============================
         subroutine TAVPWorkerStart(this,ierr)
 !Initializes TAVP "Worker".

@@ -1,7 +1,7 @@
 !ExaTENSOR: Massively Parallel Virtual Processor for Scale-Adaptive Hierarchical Tensor Algebra
 !This is the top level API module of ExaTENSOR (user-level API)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017/07/10
+!REVISION: 2017/07/12
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -238,6 +238,7 @@
 !Mark ExaTENSOR runtime is off:
         exatns_rt_status=exatns_rt_status_t(DSVP_STAT_OFF,ierr,0)
         if(allocated(tavp)) deallocate(tavp)
+        if(allocated(managers)) deallocate(managers)
 !Sync everyone:
         write(jo,'()')
         write(jo,'("###EXATENSOR FINISHED PROCESS ",i9,"/",i9,": Status = ",i4,": Syncing ... ")',ADVANCE='NO')&
@@ -252,9 +253,13 @@
 
         contains
 
-         subroutine determine_process_role()
+         subroutine determine_process_role() !all in
+          integer(INTD):: jj
           exa_num_managers=1
           exa_num_workers=num_procs-(1+exa_num_managers)
+          allocate(managers(0:exa_num_managers-1))
+          driver_mpi_process=0
+          managers(0:exa_num_managers-1)=(/(jj,jj=1,exa_num_managers)/)
           if(my_rank.eq.0) then
            process_role=EXA_DRIVER; role_size=1; role_rank=0
           elseif(my_rank.eq.1) then
@@ -276,6 +281,7 @@
         ierr=EXA_SUCCESS
 !Mark ExaTENSOR runtime is off:
         exatns_rt_status=exatns_rt_status_t(DSVP_STAT_OFF,ierr,0)
+        if(allocated(managers)) deallocate(managers)
 !Sync with others:
         write(jo,'()')
         write(jo,'("###EXATENSOR FINISHED PROCESS ",i9,"/",i9,": Status = ",i4,": Syncing ... ")',ADVANCE='NO')&

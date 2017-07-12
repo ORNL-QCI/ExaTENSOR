@@ -8,7 +8,7 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/07/11
+!REVISION: 2017/07/12
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -167,12 +167,27 @@
           procedure, public:: unpack=>CtrlTensContrUnpack       !unpacks the instruction control field from a plain byte packet
           final:: ctrl_tens_contr_dtor                          !dtor
         end type ctrl_tens_contr_t
+ !TAVP instruction microcode binding (set by the TAVP initialization):
+        type, public:: microcode_bind_t
+         procedure(ds_instr_self_i), nopass, pointer, public:: acquire_resource=>NULL() !acquires local resources for instruction operands
+         procedure(ds_instr_self_i), nopass, pointer, public:: prefetch_input=>NULL()   !starts prefetching input operands
+         procedure(ds_instr_sync_i), nopass, pointer, public:: sync_prefetch=>NULL()    !synchronizes the input prefetch (either test or wait)
+         procedure(ds_instr_self_i), nopass, pointer, public:: execute=>NULL()          !executes the domain-specific instruction
+         procedure(ds_instr_sync_i), nopass, pointer, public:: sync_execution=>NULL()   !synchronizes the execution (either test or wait)
+         procedure(ds_instr_self_i), nopass, pointer, public:: upload_output=>NULL()    !starts uploading the output
+         procedure(ds_instr_sync_i), nopass, pointer, public:: sync_upload=>NULL()      !synchronizes the output upload (either test or wait)
+         procedure(ds_instr_self_i), nopass, pointer, public:: release_resource=>NULL() !releases local resources occupied by instruction operands
+         contains
+          procedure, public:: reset=>MicrocodeBindReset !resets microcode binding to NULL
+        end type microcode_bind_t
 !DATA:
  !MPI process specialization (TAVP role):
-        integer(INT_MPI), public:: process_role=EXA_NO_ROLE !MPI process role
-        integer(INT_MPI), public:: role_comm=MPI_COMM_NULL  !role specific MPI communicator
-        integer(INT_MPI), public:: role_size=0              !size of the role specific MPI communicator
-        integer(INT_MPI), public:: role_rank=-1             !process rank within the role specific MPI communicator
+        integer(INT_MPI), public:: process_role=EXA_NO_ROLE !MPI process role (see above)
+        integer(INT_MPI), public:: role_comm=MPI_COMM_NULL  !role-specific MPI communicator
+        integer(INT_MPI), public:: role_size=0              !size of the role-specific MPI communicator
+        integer(INT_MPI), public:: role_rank=-1             !process rank within the role-specific MPI communicator
+        integer(INT_MPI), public:: driver_mpi_process=0     !MPI rank of the Driver process (normally process 0)
+        integer(INT_MPI), allocatable, public:: managers(:) !ordered list of MPI processes serving as managers (ranks in MPI_COMM_WORLD)
  !TAVP address space:
         type(DistrSpace_t), public:: tavp_addr_space        !shared DDSS address space among processes of the same role
 !VISIBILITY:
@@ -210,6 +225,8 @@
         private CtrlTensContrPack
         private CtrlTensContrUnpack
         public ctrl_tens_contr_dtor
+ !microcode_bind_t:
+        private MicrocodeBindReset
 
        contains
 !IMPLEMENTATION:
@@ -961,5 +978,20 @@
 
          return
         end subroutine ctrl_tens_contr_dtor
+![microcode_bind_t]========================
+        subroutine MicrocodeBindReset(this)
+         implicit none
+         class(microcode_bind_t), intent(inout):: this !inout: microcode binding
+ 
+         this%acquire_resource=>NULL()
+         this%prefetch_input=>NULL()
+         this%sync_prefetch=>NULL()
+         this%execute=>NULL()
+         this%sync_execution=>NULL()
+         this%upload_output=>NULL()
+         this%sync_upload=>NULL()
+         this%release_resource=>NULL()
+         return
+        end subroutine MicrocodeBindReset
 
        end module virta
