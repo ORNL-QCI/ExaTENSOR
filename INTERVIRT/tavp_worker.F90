@@ -102,6 +102,7 @@
         type(tavp_worker_t), protected:: tavpWorker
 !VISIBILITY:
  !non-member:
+        private test_carma
         private tavp_worker_set_host_buf_size
         private acquire_resource_empty
         private acquire_resource_basic
@@ -150,7 +151,103 @@
 
 !IMPLEMENTATION:
        contains
-![non-member]===============================================
+![non-member]======================
+        subroutine test_carma(ierr)
+         implicit none
+         integer(INTD), intent(out):: ierr
+         integer(INTD), parameter:: TENS_RANK=4
+         integer(INTD), parameter:: DIM_SEG_SIZE=8
+         integer(INTD), parameter:: DIM_NUM_LEVELS=4
+         integer(INTD), parameter:: SPLIT_BASE=2**TENS_RANK
+         integer(INTD), parameter:: TOTAL_BLOCKS=SPLIT_BASE**(DIM_NUM_LEVELS-1)
+         integer(INTD), parameter:: BLOCK_VOL=DIM_SEG_SIZE**TENS_RANK
+         integer(INTD):: num_procs,num_blocks,i,j
+         type(DataDescr_t), allocatable:: ddes(:),ldes(:),rdes(:),ddesa(:),ldesa(:),rdesa(:)
+         real(8), allocatable, target:: dtens(:),ltens(:),rtens(:)
+         type(pack_env_t):: packenv
+         type(obj_pack_t):: packet
+         type(comm_handle_t):: chl
+         real(8), pointer, contiguous:: block_p(:)
+         type(C_PTR):: mem_p
+
+         ierr=0
+         num_procs=role_size
+         if(ierr.ne.0) call quit(-1,'Bad CARMA!')
+         if(mod(TOTAL_BLOCKS,num_procs).ne.0) call quit(-2,'Bad CARMA!')
+         num_blocks=TOTAL_BLOCKS/num_procs
+!Create tensor blocks on each process:
+         allocate(dtens(0:BLOCK_VOL*num_blocks-1)); allocate(ddes(0:num_blocks-1))
+         do i=0,num_blocks-1
+          block_p(0:)=>dtens(BLOCK_VOL*i:BLOCK_VOL*(i+1)-1); mem_p=c_loc(block_p)
+          call tavp_addr_space%attach(mem_p,R8,int(BLOCK_VOL,8),ddes(i),ierr)
+          if(ierr.ne.0) call quit(-3,'Bad CARMA!')
+         enddo
+         allocate(ltens(0:BLOCK_VOL*num_blocks-1)); allocate(ldes(0:num_blocks-1))
+         do i=0,num_blocks-1
+          block_p(0:)=>ltens(BLOCK_VOL*i:BLOCK_VOL*(i+1)-1); mem_p=c_loc(block_p)
+          call tavp_addr_space%attach(mem_p,R8,int(BLOCK_VOL,8),ldes(i),ierr)
+          if(ierr.ne.0) call quit(-4,'Bad CARMA!')
+         enddo
+         allocate(rtens(0:BLOCK_VOL*num_blocks-1)); allocate(rdes(0:num_blocks-1))
+         do i=0,num_blocks-1
+          block_p(0:)=>rtens(BLOCK_VOL*i:BLOCK_VOL*(i+1)-1); mem_p=c_loc(block_p)
+          call tavp_addr_space%attach(mem_p,R8,int(BLOCK_VOL,8),rdes(i),ierr)
+          if(ierr.ne.0) call quit(-5,'Bad CARMA!')
+         enddo
+!Root collects data descriptors from all other processes:
+         if(role_rank.eq.0) then
+          allocate(ddesa(0:TOTAL_BLOCKS-1))
+          do i=1,num_procs-1
+           call packenv%reserve_mem(ierr); if(ierr.ne.0) call quit(-6,'Bad CARMA!')
+           do while(.not.packenv%receive(chl,ierr))
+            if(ierr.ne.0) call quit(-7,'Bad CARMA!')
+           enddo
+           call chl%wait(ierr); if(ierr.ne.0) call quit(-8,'Bad CARMA!')
+           call chl%clean()
+           call packenv%destroy(ierr); if(ierr.ne.0) call quit(-9,'Bad CARMA!')
+          enddo
+         else
+          call packenv%reserve_mem(ierr); if(ierr.ne.0) call quit(-10,'Bad CARMA!')
+          do i=0,num_blocks-1
+           call packenv%acquire_packet(packet,ierr); if(ierr.ne.0) call quit(-11,'Bad CARMA!')
+           call ddes(i)%pack(packet,ierr); if(ierr.ne.0) call quit(-12,'Bad CARMA!')
+           call packenv%seal_packet(ierr); if(ierr.ne.0) call quit(-13,'Bad CARMA!')
+          enddo
+          call packenv%send(0,chl,ierr); if(ierr.ne.0) call quit(-14,'Bad CARMA!')
+          call chl%wait(ierr); if(ierr.ne.0) call quit(-15,'Bad CARMA!')
+          call chl%clean()
+          call packenv%destroy(ierr); if(ierr.ne.0) call quit(-16,'Bad CARMA!')
+         endif
+!Root creates tasks for all processes:
+
+!Root communicates tasks to other processes:
+
+!All processes synchronize:
+
+!All processes execute their tasks:
+
+!Detach tensor blocks:
+         do i=0,num_blocks-1
+          call tavp_addr_space%detach(rdes(i),ierr)
+          if(ierr.ne.0) call quit(-4,'Bad CARMA!')
+         enddo
+         if(allocated(rdesa)) deallocate(rdesa)
+         deallocate(rdes); deallocate(rtens)
+         do i=0,num_blocks-1
+          call tavp_addr_space%detach(ldes(i),ierr)
+          if(ierr.ne.0) call quit(-4,'Bad CARMA!')
+         enddo
+         if(allocated(ldesa)) deallocate(ldesa)
+         deallocate(ldes); deallocate(ltens)
+         do i=0,num_blocks-1
+          call tavp_addr_space%detach(ddes(i),ierr)
+          if(ierr.ne.0) call quit(-4,'Bad CARMA!')
+         enddo
+         if(allocated(ddesa)) deallocate(ddesa)
+         deallocate(ddes); deallocate(dtens)
+         return
+        end subroutine test_carma
+!-----------------------------------------------------------
         subroutine tavp_worker_set_host_buf_size(bytes,ierr)
 !Changes the default size of the pinned Host buffer.
          implicit none
@@ -1377,15 +1474,18 @@
           if(errc.eq.0) then
            call init_microcode(errc)
            if(errc.eq.0) then
-            call this%shutdown(errc) !`debug
+            call test_carma(errc) !`remove
+            call this%shutdown(errc) !`debug: move
            else
             errc=-3
            endif
           else
            errc=-2
+           call quit(errc,'FATAL(TAVP-Worker:start): Failed to initialize distributed address space!')
           endif
          else
           errc=-1
+          call quit(errc,'FATAL(TAVP-Worker:start): Failed to initialize TAL-SH!')
          endif
          if(present(ierr)) ierr=errc
          return

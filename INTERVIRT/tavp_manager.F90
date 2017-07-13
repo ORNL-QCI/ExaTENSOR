@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP Manager
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/06/21
+!REVISION: 2017/07/12
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -30,6 +30,10 @@
         integer(INTD), private:: DEBUG=0
         logical, private:: VERBOSE=.TRUE.
 !TYPES:
+ !Tensor cache entry:
+        type, private:: tens_entry_t
+
+        end type tens_entry_t
  !Tensor instruction (realization of a tensor operation for a specific TAVP):
         type, extends(ds_instr_t), private:: tens_instr_t
         contains
