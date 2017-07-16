@@ -134,7 +134,7 @@
          integer(INTL), private:: offset=0_INTL !current offset during unpacking
          contains
           procedure, private:: construct=>ObjPackConstruct     !packet constructor (internal)
-          procedure, private:: clean=>ObjPackClean             !packet cleaner (internal)
+          procedure, public:: clean=>ObjPackClean              !packet cleaner
           procedure, public:: get_capacity=>ObjPackGetCapacity !returns the capacity of the packet buffer in bytes
           procedure, public:: get_length=>ObjPackGetLength     !returns the current length of the packet in bytes
           procedure, public:: has_room=>ObjPackHasRoom         !.TRUE. means one can add data to the packet, .FALSE. otherwise

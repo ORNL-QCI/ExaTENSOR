@@ -158,10 +158,14 @@
          integer(INTD), parameter:: TENS_RANK=4
          integer(INTD), parameter:: DIM_SEG_SIZE=8
          integer(INTD), parameter:: DIM_NUM_LEVELS=4
+         integer(INTD), parameter:: NUM_DIM_SEGS=2**(DIM_NUM_LEVELS-1)
          integer(INTD), parameter:: SPLIT_BASE=2**TENS_RANK
          integer(INTD), parameter:: TOTAL_BLOCKS=SPLIT_BASE**(DIM_NUM_LEVELS-1)
          integer(INTD), parameter:: BLOCK_VOL=DIM_SEG_SIZE**TENS_RANK
-         integer(INTD):: num_procs,num_blocks,i,j
+         integer(INTD):: num_procs,num_blocks,i,j,k,l,n,lid,rid
+         integer(INTD):: dsg(1:TENS_RANK),lsg(1:TENS_RANK),rsg(1:TENS_RANK)
+         integer(INTL):: tg
+         type(DataDescr_t):: dd,ld,rd
          type(DataDescr_t), allocatable:: ddes(:),ldes(:),rdes(:)
          type(DataDescr_t), allocatable:: ddesa(:),ldesa(:),rdesa(:) !root only
          real(8), allocatable, target:: dtens(:),ltens(:),rtens(:)
@@ -169,7 +173,7 @@
          type(obj_pack_t):: packet
          type(comm_handle_t):: chl
          real(8), pointer, contiguous:: block_p(:)
-         type(C_PTR):: mem_p
+         type(C_PTR):: mem_p,lmem_p,rmem_p
 
          ierr=0
          num_procs=role_size
@@ -177,18 +181,21 @@
          if(mod(TOTAL_BLOCKS,num_procs).ne.0) call quit(-2,'Bad CARMA!')
          num_blocks=TOTAL_BLOCKS/num_procs !number of tensor blocks per process
 !Create <num_blocks> tensor blocks on each process:
+ !Destination tensor:
          allocate(dtens(0:BLOCK_VOL*num_blocks-1)); allocate(ddes(0:num_blocks-1))
          do i=0,num_blocks-1
           block_p(0:)=>dtens(BLOCK_VOL*i:BLOCK_VOL*(i+1)-1); mem_p=c_loc(block_p)
           call tavp_addr_space%attach(mem_p,R8,int(BLOCK_VOL,8),ddes(i),ierr)
           if(ierr.ne.0) call quit(-3,'Bad CARMA!')
          enddo
+ !Left tensor:
          allocate(ltens(0:BLOCK_VOL*num_blocks-1)); allocate(ldes(0:num_blocks-1))
          do i=0,num_blocks-1
           block_p(0:)=>ltens(BLOCK_VOL*i:BLOCK_VOL*(i+1)-1); mem_p=c_loc(block_p)
           call tavp_addr_space%attach(mem_p,R8,int(BLOCK_VOL,8),ldes(i),ierr)
           if(ierr.ne.0) call quit(-4,'Bad CARMA!')
          enddo
+ !Right tensor:
          allocate(rtens(0:BLOCK_VOL*num_blocks-1)); allocate(rdes(0:num_blocks-1))
          do i=0,num_blocks-1
           block_p(0:)=>rtens(BLOCK_VOL*i:BLOCK_VOL*(i+1)-1); mem_p=c_loc(block_p)
@@ -196,52 +203,195 @@
           if(ierr.ne.0) call quit(-5,'Bad CARMA!')
          enddo
 !Root collects data descriptors from all other processes:
+ !Destination tensor:
          if(role_rank.eq.0) then
           allocate(ddesa(0:TOTAL_BLOCKS-1))
-          do i=1,num_procs-1
+          do i=1,num_procs-1 !remote descriptors
            call packenv%reserve_mem(ierr); if(ierr.ne.0) call quit(-6,'Bad CARMA!')
            do while(.not.packenv%receive(chl,ierr,comm=role_comm))
             if(ierr.ne.0) call quit(-7,'Bad CARMA!')
            enddo
            if(ierr.ne.0) call quit(-8,'Bad CARMA!')
            call chl%wait(ierr); if(ierr.ne.0) call quit(-9,'Bad CARMA!')
-           call chl%clean(ierr); if(ierr.ne.0) call quit(-10,'Bad CARMA!')
-           call packenv%destroy(ierr); if(ierr.ne.0) call quit(-11,'Bad CARMA!')
+           n=packenv%get_num_packets(ierr); if(ierr.ne.0) call quit(-10,'Bad CARMA!')
+           do j=1,n
+            call packenv%extract_packet(j,packet,ierr,tg,preclean=.TRUE.); if(ierr.ne.0) call quit(-11,'Bad CARMA!')
+            call ddesa(tg)%unpack(packet,ierr); if(ierr.ne.0) call quit(-12,'Bad CARMA!')
+            call packet%clean(ierr); if(ierr.ne.0) call quit(-13,'Bad CARMA!')
+           enddo
+           call chl%clean(ierr); if(ierr.ne.0) call quit(-14,'Bad CARMA!')
+           call packenv%destroy(ierr); if(ierr.ne.0) call quit(-15,'Bad CARMA!')
+          enddo
+          do i=0,num_blocks-1 !local descriptors
+           ddesa(i)=ddes(i)
           enddo
          else
-          call packenv%reserve_mem(ierr); if(ierr.ne.0) call quit(-12,'Bad CARMA!')
+          call packenv%reserve_mem(ierr); if(ierr.ne.0) call quit(-16,'Bad CARMA!')
           do i=0,num_blocks-1
-           call packenv%acquire_packet(packet,ierr); if(ierr.ne.0) call quit(-13,'Bad CARMA!')
-           call ddes(i)%pack(packet,ierr); if(ierr.ne.0) call quit(-14,'Bad CARMA!')
-           call packenv%seal_packet(ierr); if(ierr.ne.0) call quit(-15,'Bad CARMA!')
+           call packenv%acquire_packet(packet,ierr); if(ierr.ne.0) call quit(-17,'Bad CARMA!')
+           call ddes(i)%pack(packet,ierr); if(ierr.ne.0) call quit(-18,'Bad CARMA!')
+           call packenv%seal_packet(ierr,tag=int(role_rank*num_blocks+i,INTL)); if(ierr.ne.0) call quit(-19,'Bad CARMA!')
           enddo
-          call packenv%send(0,chl,ierr,comm=role_comm); if(ierr.ne.0) call quit(-16,'Bad CARMA!')
-          call chl%wait(ierr); if(ierr.ne.0) call quit(-17,'Bad CARMA!')
-          call chl%clean(ierr); if(ierr.ne.0) call quit(-18,'Bad CARMA!')
-          call packenv%destroy(ierr); if(ierr.ne.0) call quit(-19,'Bad CARMA!')
+          call packenv%send(0,chl,ierr,comm=role_comm); if(ierr.ne.0) call quit(-20,'Bad CARMA!')
+          call chl%wait(ierr); if(ierr.ne.0) call quit(-21,'Bad CARMA!')
+          call chl%clean(ierr); if(ierr.ne.0) call quit(-22,'Bad CARMA!')
+          call packenv%destroy(ierr); if(ierr.ne.0) call quit(-23,'Bad CARMA!')
          endif
          call role_barrier()
-!Root creates tasks for all processes:
+ !Left tensor:
+         if(role_rank.eq.0) then
+          allocate(ldesa(0:TOTAL_BLOCKS-1))
+          do i=1,num_procs-1 !remote descriptors
+           call packenv%reserve_mem(ierr); if(ierr.ne.0) call quit(-24,'Bad CARMA!')
+           do while(.not.packenv%receive(chl,ierr,comm=role_comm))
+            if(ierr.ne.0) call quit(-25,'Bad CARMA!')
+           enddo
+           if(ierr.ne.0) call quit(-26,'Bad CARMA!')
+           call chl%wait(ierr); if(ierr.ne.0) call quit(-27,'Bad CARMA!')
+           n=packenv%get_num_packets(ierr); if(ierr.ne.0) call quit(-28,'Bad CARMA!')
+           do j=1,n
+            call packenv%extract_packet(j,packet,ierr,tg,preclean=.TRUE.); if(ierr.ne.0) call quit(-29,'Bad CARMA!')
+            call ldesa(tg)%unpack(packet,ierr); if(ierr.ne.0) call quit(-30,'Bad CARMA!')
+            call packet%clean(ierr); if(ierr.ne.0) call quit(-31,'Bad CARMA!')
+           enddo
+           call chl%clean(ierr); if(ierr.ne.0) call quit(-32,'Bad CARMA!')
+           call packenv%destroy(ierr); if(ierr.ne.0) call quit(-33,'Bad CARMA!')
+          enddo
+          do i=0,num_blocks-1 !local descriptors
+           ldesa(i)=ldes(i)
+          enddo
+         else
+          call packenv%reserve_mem(ierr); if(ierr.ne.0) call quit(-34,'Bad CARMA!')
+          do i=0,num_blocks-1
+           call packenv%acquire_packet(packet,ierr); if(ierr.ne.0) call quit(-35,'Bad CARMA!')
+           call ldes(i)%pack(packet,ierr); if(ierr.ne.0) call quit(-36,'Bad CARMA!')
+           call packenv%seal_packet(ierr,tag=int(role_rank*num_blocks+i,INTL)); if(ierr.ne.0) call quit(-37,'Bad CARMA!')
+          enddo
+          call packenv%send(0,chl,ierr,comm=role_comm); if(ierr.ne.0) call quit(-38,'Bad CARMA!')
+          call chl%wait(ierr); if(ierr.ne.0) call quit(-39,'Bad CARMA!')
+          call chl%clean(ierr); if(ierr.ne.0) call quit(-40,'Bad CARMA!')
+          call packenv%destroy(ierr); if(ierr.ne.0) call quit(-41,'Bad CARMA!')
+         endif
+         call role_barrier()
+ !Right tensor:
+         if(role_rank.eq.0) then
+          allocate(rdesa(0:TOTAL_BLOCKS-1))
+          do i=1,num_procs-1 !remote descriptors
+           call packenv%reserve_mem(ierr); if(ierr.ne.0) call quit(-42,'Bad CARMA!')
+           do while(.not.packenv%receive(chl,ierr,comm=role_comm))
+            if(ierr.ne.0) call quit(-43,'Bad CARMA!')
+           enddo
+           if(ierr.ne.0) call quit(-44,'Bad CARMA!')
+           call chl%wait(ierr); if(ierr.ne.0) call quit(-45,'Bad CARMA!')
+           n=packenv%get_num_packets(ierr); if(ierr.ne.0) call quit(-46,'Bad CARMA!')
+           do j=1,n
+            call packenv%extract_packet(j,packet,ierr,tg,preclean=.TRUE.); if(ierr.ne.0) call quit(-47,'Bad CARMA!')
+            call rdesa(tg)%unpack(packet,ierr); if(ierr.ne.0) call quit(-48,'Bad CARMA!')
+            call packet%clean(ierr); if(ierr.ne.0) call quit(-49,'Bad CARMA!')
+           enddo
+           call chl%clean(ierr); if(ierr.ne.0) call quit(-50,'Bad CARMA!')
+           call packenv%destroy(ierr); if(ierr.ne.0) call quit(-51,'Bad CARMA!')
+          enddo
+          do i=0,num_blocks-1 !local descriptors
+           rdesa(i)=rdes(i)
+          enddo
+         else
+          call packenv%reserve_mem(ierr); if(ierr.ne.0) call quit(-52,'Bad CARMA!')
+          do i=0,num_blocks-1
+           call packenv%acquire_packet(packet,ierr); if(ierr.ne.0) call quit(-53,'Bad CARMA!')
+           call rdes(i)%pack(packet,ierr); if(ierr.ne.0) call quit(-54,'Bad CARMA!')
+           call packenv%seal_packet(ierr,tag=int(role_rank*num_blocks+i,INTL)); if(ierr.ne.0) call quit(-55,'Bad CARMA!')
+          enddo
+          call packenv%send(0,chl,ierr,comm=role_comm); if(ierr.ne.0) call quit(-56,'Bad CARMA!')
+          call chl%wait(ierr); if(ierr.ne.0) call quit(-57,'Bad CARMA!')
+          call chl%clean(ierr); if(ierr.ne.0) call quit(-58,'Bad CARMA!')
+          call packenv%destroy(ierr); if(ierr.ne.0) call quit(-59,'Bad CARMA!')
+         endif
+         call role_barrier()
+!Root creates and sends tasks to all processes:
+         if(role_rank.eq.0) then
+          do i=1,num_procs-1 !process rank
+           call packenv%reserve_mem(ierr,mem_size=16*1048576_INTL,max_packets=65536); if(ierr.ne.0) call quit(-60,'Bad CARMA!')
+           do j=i*num_blocks,(i+1)*num_blocks-1 !destination block flat id
+            do k=0,NUM_DIM_SEGS-1
+             do l=0,NUM_DIM_SEGS-1
+              call flat2signa(j,dsg)
+              lsg(1:TENS_RANK)=(/dsg(4),k,dsg(2),l/); lid=signa2flat(lsg)
+              rsg(1:TENS_RANK)=(/dsg(3),l,dsg(1),k/); rid=signa2flat(rsg)
+              call packenv%acquire_packet(packet,ierr); if(ierr.ne.0) call quit(-61,'Bad CARMA!')
+              call ddesa(j)%pack(packet,ierr); if(ierr.ne.0) call quit(-62,'Bad CARMA!')
+              call ldesa(lid)%pack(packet,ierr); if(ierr.ne.0) call quit(-63,'Bad CARMA!')
+              call rdesa(rid)%pack(packet,ierr); if(ierr.ne.0) call quit(-64,'Bad CARMA!')
+              call packenv%seal_packet(ierr); if(ierr.ne.0) then; print *,ierr; call quit(-65,'Bad CARMA!'); endif
+             enddo
+            enddo
+           enddo
+           call packenv%send(i,chl,ierr,comm=role_comm); if(ierr.ne.0) call quit(-66,'Bad CARMA!')
+           call chl%wait(ierr); if(ierr.ne.0) call quit(-67,'Bad CARMA!')
+           call chl%clean(ierr); if(ierr.ne.0) call quit(-68,'Bad CARMA!')
+           call packenv%destroy(ierr); if(ierr.ne.0) call quit(-69,'Bad CARMA!')
+          enddo
+          call packenv%reserve_mem(ierr,mem_size=16*1048576_INTL,max_packets=65536); if(ierr.ne.0) call quit(-70,'Bad CARMA!')
+          do j=0,num_blocks-1
+           do k=0,NUM_DIM_SEGS-1
+            do l=0,NUM_DIM_SEGS-1
+             call flat2signa(j,dsg)
+             lsg(1:TENS_RANK)=(/dsg(4),k,dsg(2),l/); lid=signa2flat(lsg)
+             rsg(1:TENS_RANK)=(/dsg(3),l,dsg(1),k/); rid=signa2flat(rsg)
+             call packenv%acquire_packet(packet,ierr); if(ierr.ne.0) call quit(-71,'Bad CARMA!')
+             call ddesa(j)%pack(packet,ierr); if(ierr.ne.0) call quit(-72,'Bad CARMA!')
+             call ldesa(lid)%pack(packet,ierr); if(ierr.ne.0) call quit(-73,'Bad CARMA!')
+             call rdesa(rid)%pack(packet,ierr); if(ierr.ne.0) call quit(-74,'Bad CARMA!')
+             call packenv%seal_packet(ierr); if(ierr.ne.0) then; print *,ierr; call quit(-75,'Bad CARMA!'); endif
+            enddo
+           enddo
+          enddo
+         else
+          call packenv%reserve_mem(ierr,mem_size=16*1048576_INTL,max_packets=65536); if(ierr.ne.0) call quit(-76,'Bad CARMA!')
+          do while(.not.packenv%receive(chl,ierr,comm=role_comm))
+           if(ierr.ne.0) call quit(-77,'Bad CARMA!')
+          enddo
+          if(ierr.ne.0) call quit(-78,'Bad CARMA!')
+          call chl%wait(ierr); if(ierr.ne.0) call quit(-79,'Bad CARMA!')
+          call chl%clean(ierr); if(ierr.ne.0) call quit(-80,'Bad CARMA!')
+         endif
+         call role_barrier()
+!All processes synchronize and execute their tasks:
+         n=packenv%get_num_packets(ierr); if(ierr.ne.0) call quit(-81,'Bad CARMA!'); print *,role_rank,n
+         ierr=mem_allocate(talsh_flat_dev_id(DEV_HOST,0),int(BLOCK_VOL*8,C_SIZE_T),YEP,lmem_p)
+         if(ierr.ne.0) call quit(-82,'Bad CARMA!')
+         ierr=mem_allocate(talsh_flat_dev_id(DEV_HOST,0),int(BLOCK_VOL*8,C_SIZE_T),YEP,rmem_p)
+         if(ierr.ne.0) call quit(-83,'Bad CARMA!')
+         call role_barrier()
+         do i=1,n
+          call packenv%extract_packet(i,packet,ierr,preclean=.TRUE.); if(ierr.ne.0) call quit(-84,'Bad CARMA!')
+          call dd%unpack(packet,ierr); if(ierr.ne.0) call quit(-85,'Bad CARMA!')
+          call ld%unpack(packet,ierr); if(ierr.ne.0) call quit(-86,'Bad CARMA!')
+          call rd%unpack(packet,ierr); if(ierr.ne.0) call quit(-87,'Bad CARMA!')
+          call ld%get_data(lmem_p,ierr); if(ierr.ne.0) call quit(-88,'Bad CARMA!')
+          call rd%get_data(rmem_p,ierr); if(ierr.ne.0) call quit(-89,'Bad CARMA!')
 
-!Root communicates tasks to other processes:
-
-!All processes synchronize:
-
-!All processes execute their tasks:
-
+         enddo
+         call role_barrier()
+         ierr=mem_free(talsh_flat_dev_id(DEV_HOST,0),rmem_p); if(ierr.ne.0) call quit(-90,'Bad CARMA!')
+         ierr=mem_free(talsh_flat_dev_id(DEV_HOST,0),lmem_p); if(ierr.ne.0) call quit(-91,'Bad CARMA!')
+         call packenv%destroy(ierr); if(ierr.ne.0) call quit(-92,'Bad CARMA!')
 !Detach tensor blocks:
+ !Right tensor:
          do i=0,num_blocks-1
           call tavp_addr_space%detach(rdes(i),ierr)
           if(ierr.ne.0) call quit(-4,'Bad CARMA!')
          enddo
          if(allocated(rdesa)) deallocate(rdesa)
          deallocate(rdes); deallocate(rtens)
+ !Left tensor:
          do i=0,num_blocks-1
           call tavp_addr_space%detach(ldes(i),ierr)
           if(ierr.ne.0) call quit(-4,'Bad CARMA!')
          enddo
          if(allocated(ldesa)) deallocate(ldesa)
          deallocate(ldes); deallocate(ltens)
+ !Destination tensor:
          do i=0,num_blocks-1
           call tavp_addr_space%detach(ddes(i),ierr)
           if(ierr.ne.0) call quit(-4,'Bad CARMA!')
@@ -318,6 +468,45 @@
           enddo
           return
          end subroutine tuple2signa
+
+         subroutine signa2tuple(signa,tuple)
+          implicit none
+          integer(INTD), intent(in):: signa(1:*)
+          integer(INTD), intent(inout):: tuple(1:*)
+          integer(INTD):: i,j,m
+
+          tuple(1:DIM_NUM_LEVELS-1)=0
+          do i=TENS_RANK,1,-1
+           m=signa(i)
+           do j=DIM_NUM_LEVELS-1,1,-1
+            tuple(j)=tuple(j)*2+mod(m,2)
+            m=m/2
+           enddo
+          enddo
+          return
+         end subroutine signa2tuple
+
+         subroutine flat2signa(flat,signa)
+          implicit none
+          integer(INTD), intent(in):: flat
+          integer(INTD), intent(inout):: signa(1:*)
+          integer(INTD):: tuple(1:DIM_NUM_LEVELS-1)
+
+          call flat2tuple(flat,tuple)
+          call tuple2signa(tuple,signa)
+          return
+         end subroutine flat2signa
+
+         function signa2flat(signa) result(flat)
+          implicit none
+          integer(INTD):: flat
+          integer(INTD), intent(in):: signa(1:*)
+          integer(INTD):: tuple(1:DIM_NUM_LEVELS-1)
+
+          call signa2tuple(signa,tuple)
+          flat=tuple2flat(tuple)
+          return
+         end function signa2flat
 
         end subroutine test_carma
 !-----------------------------------------------------------
