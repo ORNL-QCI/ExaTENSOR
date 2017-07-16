@@ -176,7 +176,7 @@
          type(C_PTR):: mem_p,dmem_p,lmem_p,rmem_p
          type(talsh_tens_t):: dtns,ltns,rtns
          type(talsh_task_t):: tsk0
-         real(8):: tms,tm,tcs,tc
+         real(8):: tms,tm,tcs,tc,tts,tt
 
          ierr=0
          num_procs=role_size
@@ -369,14 +369,16 @@
          ierr=mem_allocate(talsh_flat_dev_id(DEV_HOST,0),int(BLOCK_VOL*8,C_SIZE_T),YEP,rmem_p)
          if(ierr.ne.0) call quit(-83,'Bad CARMA!')
          call role_barrier()
-         tc=0d0; tms=thread_wtime()
+         tc=0d0; tt=0d0; tms=thread_wtime()
          do i=1,n
           call packenv%extract_packet(i,packet,ierr,preclean=.TRUE.); if(ierr.ne.0) call quit(-84,'Bad CARMA!')
           call dd%unpack(packet,ierr); if(ierr.ne.0) call quit(-85,'Bad CARMA!')
           call ld%unpack(packet,ierr); if(ierr.ne.0) call quit(-86,'Bad CARMA!')
           call rd%unpack(packet,ierr); if(ierr.ne.0) call quit(-87,'Bad CARMA!')
+          tts=thread_wtime()
           call ld%get_data(lmem_p,ierr); if(ierr.ne.0) call quit(-88,'Bad CARMA!')
           call rd%get_data(rmem_p,ierr); if(ierr.ne.0) call quit(-89,'Bad CARMA!')
+          tt=tt+thread_wtime(tts)
           dmem_p=dd%get_data_ptr(ierr); if(ierr.ne.0) call quit(-90,'Bad CARMA!')
           ierr=talsh_tensor_construct(dtns,R8,(/DIM_SEG_SIZE,DIM_SEG_SIZE,DIM_SEG_SIZE,DIM_SEG_SIZE/),&
                                      &talsh_flat_dev_id(DEV_HOST,0),dmem_p)
@@ -395,7 +397,7 @@
           ierr=talsh_tensor_destruct(ltns); if(ierr.ne.0) call quit(-95,'Bad CARMA!')
           ierr=talsh_tensor_destruct(dtns); if(ierr.ne.0) call quit(-96,'Bad CARMA!')
          enddo
-         tm=thread_wtime(tms); print *,'Rank ',role_rank,': CPU time ',tm,' sec: Contraction ',tc,' sec'
+         tm=thread_wtime(tms); print *,'Rank ',role_rank,': Total time ',tm,' s: Contraction ',tc,' s: Comm ',tt,' s'
          call role_barrier()
          ierr=mem_free(talsh_flat_dev_id(DEV_HOST,0),rmem_p); if(ierr.ne.0) call quit(-97,'Bad CARMA!')
          ierr=mem_free(talsh_flat_dev_id(DEV_HOST,0),lmem_p); if(ierr.ne.0) call quit(-98,'Bad CARMA!')
