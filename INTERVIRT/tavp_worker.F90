@@ -176,7 +176,7 @@
          type(C_PTR):: mem_p,dmem_p,lmem_p,rmem_p
          type(talsh_tens_t):: dtns,ltns,rtns
          type(talsh_task_t):: tsk0
-         real(8):: tms,tm
+         real(8):: tms,tm,tcs,tc
 
          ierr=0
          num_procs=role_size
@@ -369,7 +369,7 @@
          ierr=mem_allocate(talsh_flat_dev_id(DEV_HOST,0),int(BLOCK_VOL*8,C_SIZE_T),YEP,rmem_p)
          if(ierr.ne.0) call quit(-83,'Bad CARMA!')
          call role_barrier()
-         tms=thread_wtime()
+         tc=0d0; tms=thread_wtime()
          do i=1,n
           call packenv%extract_packet(i,packet,ierr,preclean=.TRUE.); if(ierr.ne.0) call quit(-84,'Bad CARMA!')
           call dd%unpack(packet,ierr); if(ierr.ne.0) call quit(-85,'Bad CARMA!')
@@ -386,14 +386,16 @@
           ierr=talsh_tensor_construct(rtns,R8,(/DIM_SEG_SIZE,DIM_SEG_SIZE,DIM_SEG_SIZE,DIM_SEG_SIZE/),&
                                      &talsh_flat_dev_id(DEV_HOST,0),rmem_p)
           if(ierr.ne.0) call quit(-92,'Bad CARMA!')
+          tcs=thread_wtime()
           ierr=talsh_tensor_contract('D(a,b,c,d)+=L(d,i,b,j)*R(c,j,a,i)',dtns,ltns,rtns,dev_id=0,dev_kind=DEV_HOST,&
                                     &copy_ctrl=COPY_TTT)
+          tc=tc+thread_wtime(tcs)
           if(ierr.ne.0) call quit(-93,'Bad CARMA!')
           ierr=talsh_tensor_destruct(rtns); if(ierr.ne.0) call quit(-94,'Bad CARMA!')
           ierr=talsh_tensor_destruct(ltns); if(ierr.ne.0) call quit(-95,'Bad CARMA!')
           ierr=talsh_tensor_destruct(dtns); if(ierr.ne.0) call quit(-96,'Bad CARMA!')
          enddo
-         tm=thread_wtime(tms); print *,'Rank ',role_rank,': Time ',tm,' sec'
+         tm=thread_wtime(tms); print *,'Rank ',role_rank,': CPU time ',tm,' sec: Contraction ',tc,' sec'
          call role_barrier()
          ierr=mem_free(talsh_flat_dev_id(DEV_HOST,0),rmem_p); if(ierr.ne.0) call quit(-97,'Bad CARMA!')
          ierr=mem_free(talsh_flat_dev_id(DEV_HOST,0),lmem_p); if(ierr.ne.0) call quit(-98,'Bad CARMA!')
