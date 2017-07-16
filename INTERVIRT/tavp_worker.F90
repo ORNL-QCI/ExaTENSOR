@@ -173,7 +173,10 @@
          type(obj_pack_t):: packet
          type(comm_handle_t):: chl
          real(8), pointer, contiguous:: block_p(:)
-         type(C_PTR):: mem_p,lmem_p,rmem_p
+         type(C_PTR):: mem_p,dmem_p,lmem_p,rmem_p
+         type(talsh_tens_t):: dtns,ltns,rtns
+         type(talsh_task_t):: tsk0
+         real(8):: tms,tm
 
          ierr=0
          num_procs=role_size
@@ -183,6 +186,7 @@
 !Create <num_blocks> tensor blocks on each process:
  !Destination tensor:
          allocate(dtens(0:BLOCK_VOL*num_blocks-1)); allocate(ddes(0:num_blocks-1))
+         dtens(:)=0d0
          do i=0,num_blocks-1
           block_p(0:)=>dtens(BLOCK_VOL*i:BLOCK_VOL*(i+1)-1); mem_p=c_loc(block_p)
           call tavp_addr_space%attach(mem_p,R8,int(BLOCK_VOL,8),ddes(i),ierr)
@@ -190,6 +194,7 @@
          enddo
  !Left tensor:
          allocate(ltens(0:BLOCK_VOL*num_blocks-1)); allocate(ldes(0:num_blocks-1))
+         ltens(:)=1d-3
          do i=0,num_blocks-1
           block_p(0:)=>ltens(BLOCK_VOL*i:BLOCK_VOL*(i+1)-1); mem_p=c_loc(block_p)
           call tavp_addr_space%attach(mem_p,R8,int(BLOCK_VOL,8),ldes(i),ierr)
@@ -197,6 +202,7 @@
          enddo
  !Right tensor:
          allocate(rtens(0:BLOCK_VOL*num_blocks-1)); allocate(rdes(0:num_blocks-1))
+         rtens(:)=1d-4
          do i=0,num_blocks-1
           block_p(0:)=>rtens(BLOCK_VOL*i:BLOCK_VOL*(i+1)-1); mem_p=c_loc(block_p)
           call tavp_addr_space%attach(mem_p,R8,int(BLOCK_VOL,8),rdes(i),ierr)
@@ -363,6 +369,7 @@
          ierr=mem_allocate(talsh_flat_dev_id(DEV_HOST,0),int(BLOCK_VOL*8,C_SIZE_T),YEP,rmem_p)
          if(ierr.ne.0) call quit(-83,'Bad CARMA!')
          call role_barrier()
+         tms=thread_wtime()
          do i=1,n
           call packenv%extract_packet(i,packet,ierr,preclean=.TRUE.); if(ierr.ne.0) call quit(-84,'Bad CARMA!')
           call dd%unpack(packet,ierr); if(ierr.ne.0) call quit(-85,'Bad CARMA!')
@@ -370,11 +377,26 @@
           call rd%unpack(packet,ierr); if(ierr.ne.0) call quit(-87,'Bad CARMA!')
           call ld%get_data(lmem_p,ierr); if(ierr.ne.0) call quit(-88,'Bad CARMA!')
           call rd%get_data(rmem_p,ierr); if(ierr.ne.0) call quit(-89,'Bad CARMA!')
-
+          dmem_p=dd%get_data_ptr(ierr); if(ierr.ne.0) call quit(-90,'Bad CARMA!')
+          ierr=talsh_tensor_construct(dtns,R8,(/DIM_SEG_SIZE,DIM_SEG_SIZE,DIM_SEG_SIZE,DIM_SEG_SIZE/),&
+                                     &talsh_flat_dev_id(DEV_HOST,0),dmem_p)
+          ierr=talsh_tensor_construct(ltns,R8,(/DIM_SEG_SIZE,DIM_SEG_SIZE,DIM_SEG_SIZE,DIM_SEG_SIZE/),&
+                                     &talsh_flat_dev_id(DEV_HOST,0),lmem_p)
+          if(ierr.ne.0) call quit(-91,'Bad CARMA!')
+          ierr=talsh_tensor_construct(rtns,R8,(/DIM_SEG_SIZE,DIM_SEG_SIZE,DIM_SEG_SIZE,DIM_SEG_SIZE/),&
+                                     &talsh_flat_dev_id(DEV_HOST,0),rmem_p)
+          if(ierr.ne.0) call quit(-92,'Bad CARMA!')
+          ierr=talsh_tensor_contract('D(a,b,c,d)+=L(d,i,b,j)*R(c,j,a,i)',dtns,ltns,rtns,dev_id=0,dev_kind=DEV_HOST,&
+                                    &copy_ctrl=COPY_TTT)
+          if(ierr.ne.0) call quit(-93,'Bad CARMA!')
+          ierr=talsh_tensor_destruct(rtns); if(ierr.ne.0) call quit(-94,'Bad CARMA!')
+          ierr=talsh_tensor_destruct(ltns); if(ierr.ne.0) call quit(-95,'Bad CARMA!')
+          ierr=talsh_tensor_destruct(dtns); if(ierr.ne.0) call quit(-96,'Bad CARMA!')
          enddo
+         tm=thread_wtime(tms); print *,'Rank ',role_rank,': Time ',tm,' sec'
          call role_barrier()
-         ierr=mem_free(talsh_flat_dev_id(DEV_HOST,0),rmem_p); if(ierr.ne.0) call quit(-90,'Bad CARMA!')
-         ierr=mem_free(talsh_flat_dev_id(DEV_HOST,0),lmem_p); if(ierr.ne.0) call quit(-91,'Bad CARMA!')
+         ierr=mem_free(talsh_flat_dev_id(DEV_HOST,0),rmem_p); if(ierr.ne.0) call quit(-97,'Bad CARMA!')
+         ierr=mem_free(talsh_flat_dev_id(DEV_HOST,0),lmem_p); if(ierr.ne.0) call quit(-98,'Bad CARMA!')
          call packenv%destroy(ierr); if(ierr.ne.0) call quit(-92,'Bad CARMA!')
 !Detach tensor blocks:
  !Right tensor:

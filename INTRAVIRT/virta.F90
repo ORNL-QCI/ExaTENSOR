@@ -29,7 +29,7 @@
 !along with ExaTensor. If not, see <http://www.gnu.org/licenses/>.
 
        module virta !VIRtual Tensor Algebra
-        use dil_basic                            !basic constants
+        use tensor_algebra                       !basic constants
         use talsh                                !on-node heterogeneous numeric tensor algebra
         use pack_prim                            !object packing/unpacking primitives
         use distributed                          !distributed one-sided communication layer
