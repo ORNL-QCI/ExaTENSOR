@@ -1,6 +1,6 @@
 !Basic object packing/unpacking primitives.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/05/26
+!REVISION: 2017/07/16
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -185,6 +185,7 @@
           procedure, public:: test=>CommHandleTest            !tests the completion of the communication
           procedure, public:: wait=>CommHandleWait            !waits upon the completion of the communication
           procedure, private:: attach_pack_env=>CommHandleAttachPackEnv !attaches the parental packet envelope (for receive operations)
+          procedure, public:: print_it=>CommHandlePrintIt     !prints the communication handle info
         end type comm_handle_t
 !INTERFACES:
  !Packing for built-in types:
@@ -1052,8 +1053,8 @@
          integer(INT_MPI), intent(in), optional:: tag       !in: MPI message tag (defaults to MPI_ANY_TAG)
          integer(INT_MPI), intent(in), optional:: comm      !in: MPI communicator (defaults to MPI_COMM_WORLD)
          integer(INTD):: errc
-         integer(INTL):: cap,ml
-         integer(INT_MPI):: rk,tg,cm,rh,err_mpi
+         integer(INTL):: cap
+         integer(INT_MPI):: rk,tg,cm,rh,ml,err_mpi
 
          delivered=.FALSE.; cap=this%get_capacity(errc)
          if(cap.gt.0.and.errc.eq.PACK_SUCCESS) then
@@ -1072,7 +1073,7 @@
                  if(err_mpi.eq.MPI_SUCCESS.and.delivered) then
                   call MPI_Get_Count(comm_handle%stat,MPI_CHARACTER,ml,err_mpi)
                   if(err_mpi.eq.MPI_SUCCESS) then
-                   if(cap.lt.ml) call this%resize(errc,buf_size=ml)
+                   if(cap.lt.int(ml,INTL)) call this%resize(errc,buf_size=int(ml,INTL))
                    if(errc.eq.PACK_SUCCESS) then
                     call receive_mpi_message(cm,rk,ml,this%buffer,tg,rh,errc)
                     if(errc.eq.PACK_SUCCESS) call comm_handle%construct(cm,rh,errc,this)
@@ -1110,17 +1111,16 @@
            implicit none
            integer(INT_MPI), intent(in):: jc           !MPI communicator
            integer(INT_MPI), intent(in):: jr           !MPI rank
-           integer(INTL), intent(in):: jl              !length of the buffer
+           integer(INT_MPI), intent(in):: jl           !length of the buffer
            character(C_CHAR), intent(inout):: buf(1:*) !buffer
            integer(INT_MPI), intent(in):: jt           !MPI message tag
            integer(INT_MPI), intent(inout):: jreq      !MPI request handle
            integer(INTD), intent(out):: jerr           !error code
-           integer(INT_MPI):: jcnt,jer
+           integer(INT_MPI):: jer
 
            jerr=PACK_SUCCESS
-           if(ml.le.int(huge(jcnt),INTL)) then
-            jcnt=int(ml,INT_MPI)
-            call MPI_Irecv(buf,jcnt,MPI_CHARACTER,jr,jt,jc,jreq,jer)
+           if(jl.ge.0) then
+            call MPI_Irecv(buf,jl,MPI_CHARACTER,jr,jt,jc,jreq,jer)
             if(jer.ne.MPI_SUCCESS) jerr=PACK_MPI_ERR
            else
             jerr=PACK_OVERFLOW
@@ -1384,6 +1384,14 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine CommHandleAttachPackEnv
+!-----------------------------------------
+        subroutine CommHandlePrintIt(this)
+         implicit none
+         class(comm_handle_t), intent(in):: this
+
+         write(CONS_OUT,'("comm_handle_t{",l1,1x,i11,1x,i11,"}")') this%active,this%req,this%comm
+         return
+        end subroutine CommHandlePrintIt
 ![non-member]====================================
 !PACKING/UNPACKING for built-in types:
         subroutine pack_integer1(packet,obj,ierr)

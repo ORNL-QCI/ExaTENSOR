@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP Manager
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/07/14
+!REVISION: 2017/07/16
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -37,6 +37,7 @@
         type, private:: tens_owner_t
          class(tens_header_t), pointer, private:: tens_header=>NULL() !pointer to the tensor header
          integer(INTD), private:: owner_id=-1                         !non-negative tensor owner id
+         type(tens_status_t), private:: tens_status                   !tensor status
          contains
           procedure, private:: TensOwnerCtor                          !ctor
           generic, public:: tens_owner_ctor=>TensOwnerCtor
@@ -49,6 +50,7 @@
         type, private:: tens_entry_t
          class(tens_rcrsv_t), pointer, private:: tensor=>NULL() !composite tensor (consists of subtensors specified by their headers)
          type(list_bi_t), private:: owner_list                  !list of subtensor owners (tens_owner_t)
+         type(tens_status_t), private:: tens_status             !tensor status
          logical, private:: tens_alloc=.FALSE.                  !TRUE if the tensor was allocated, FALSE if associated
          contains
           procedure, private:: TensEntryCtor                        !ctor

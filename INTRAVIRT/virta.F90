@@ -8,7 +8,7 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/07/12
+!REVISION: 2017/07/16
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -105,6 +105,13 @@
         integer(INTD), parameter, public:: TAVP_INSTR_PRODUCT=35  !tensor direct product (with an optional index permutation)
         integer(INTD), parameter, public:: TAVP_INSTR_CONTRACT=36 !tensot contraction (also includes tensor product, tensor addition, and tensor scaling)
 !TYPES:
+ !Tensor status:
+        type, public:: tens_status_t
+         logical, public:: created=.FALSE. !TRUE if the tensor has been created, FALSE otherwise
+         logical, public:: defined=.FALSE. !TRUE if the tensor value has been defined, FALSE otherwise
+         logical, public:: in_use=.FALSE.  !TRUE if the tensor is currently participating in a computation, FALSE otherwise
+         logical, public:: updated=.FALSE. !TRUE if the tensor is currently being updated in a computation, FALSE otherwise
+        end type tens_status_t
  !Tensor resource (local resource):
         type, extends(ds_resrc_t), public:: tens_resrc_t
          type(C_PTR), private:: base_addr=C_NULL_PTR   !local buffer address for tensor body storage
@@ -191,6 +198,8 @@
  !TAVP address space:
         type(DistrSpace_t), public:: tavp_addr_space        !shared DDSS address space among processes of the same role
 !VISIBILITY:
+ !non-member:
+        public role_barrier
  !tens_resrc_t:
         private TensResrcIsEmpty
         private TensResrcAllocateBuffer
@@ -230,6 +239,17 @@
 
        contains
 !IMPLEMENTATION:
+![non-member]========================
+        subroutine role_barrier(ierr)
+!MPI barrier for the role communicator.
+         implicit none
+         integer(INTD), intent(out), optional:: ierr
+         integer(INT_MPI):: errc
+
+         call MPI_Barrier(role_comm,errc)
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine role_barrier
 !tens_resrc_t]=====================================
         function TensResrcIsEmpty(this) result(ans)
 !Returns TRUE if the tensor resource is empty.

@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP "Worker" implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/07/12
+!REVISION: 2017/07/16
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -162,7 +162,8 @@
          integer(INTD), parameter:: TOTAL_BLOCKS=SPLIT_BASE**(DIM_NUM_LEVELS-1)
          integer(INTD), parameter:: BLOCK_VOL=DIM_SEG_SIZE**TENS_RANK
          integer(INTD):: num_procs,num_blocks,i,j
-         type(DataDescr_t), allocatable:: ddes(:),ldes(:),rdes(:),ddesa(:),ldesa(:),rdesa(:)
+         type(DataDescr_t), allocatable:: ddes(:),ldes(:),rdes(:)
+         type(DataDescr_t), allocatable:: ddesa(:),ldesa(:),rdesa(:) !root only
          real(8), allocatable, target:: dtens(:),ltens(:),rtens(:)
          type(pack_env_t):: packenv
          type(obj_pack_t):: packet
@@ -174,8 +175,8 @@
          num_procs=role_size
          if(ierr.ne.0) call quit(-1,'Bad CARMA!')
          if(mod(TOTAL_BLOCKS,num_procs).ne.0) call quit(-2,'Bad CARMA!')
-         num_blocks=TOTAL_BLOCKS/num_procs
-!Create tensor blocks on each process:
+         num_blocks=TOTAL_BLOCKS/num_procs !number of tensor blocks per process
+!Create <num_blocks> tensor blocks on each process:
          allocate(dtens(0:BLOCK_VOL*num_blocks-1)); allocate(ddes(0:num_blocks-1))
          do i=0,num_blocks-1
           block_p(0:)=>dtens(BLOCK_VOL*i:BLOCK_VOL*(i+1)-1); mem_p=c_loc(block_p)
@@ -199,25 +200,27 @@
           allocate(ddesa(0:TOTAL_BLOCKS-1))
           do i=1,num_procs-1
            call packenv%reserve_mem(ierr); if(ierr.ne.0) call quit(-6,'Bad CARMA!')
-           do while(.not.packenv%receive(chl,ierr))
+           do while(.not.packenv%receive(chl,ierr,comm=role_comm))
             if(ierr.ne.0) call quit(-7,'Bad CARMA!')
            enddo
-           call chl%wait(ierr); if(ierr.ne.0) call quit(-8,'Bad CARMA!')
-           call chl%clean()
-           call packenv%destroy(ierr); if(ierr.ne.0) call quit(-9,'Bad CARMA!')
+           if(ierr.ne.0) call quit(-8,'Bad CARMA!')
+           call chl%wait(ierr); if(ierr.ne.0) call quit(-9,'Bad CARMA!')
+           call chl%clean(ierr); if(ierr.ne.0) call quit(-10,'Bad CARMA!')
+           call packenv%destroy(ierr); if(ierr.ne.0) call quit(-11,'Bad CARMA!')
           enddo
          else
-          call packenv%reserve_mem(ierr); if(ierr.ne.0) call quit(-10,'Bad CARMA!')
+          call packenv%reserve_mem(ierr); if(ierr.ne.0) call quit(-12,'Bad CARMA!')
           do i=0,num_blocks-1
-           call packenv%acquire_packet(packet,ierr); if(ierr.ne.0) call quit(-11,'Bad CARMA!')
-           call ddes(i)%pack(packet,ierr); if(ierr.ne.0) call quit(-12,'Bad CARMA!')
-           call packenv%seal_packet(ierr); if(ierr.ne.0) call quit(-13,'Bad CARMA!')
+           call packenv%acquire_packet(packet,ierr); if(ierr.ne.0) call quit(-13,'Bad CARMA!')
+           call ddes(i)%pack(packet,ierr); if(ierr.ne.0) call quit(-14,'Bad CARMA!')
+           call packenv%seal_packet(ierr); if(ierr.ne.0) call quit(-15,'Bad CARMA!')
           enddo
-          call packenv%send(0,chl,ierr); if(ierr.ne.0) call quit(-14,'Bad CARMA!')
-          call chl%wait(ierr); if(ierr.ne.0) call quit(-15,'Bad CARMA!')
-          call chl%clean()
-          call packenv%destroy(ierr); if(ierr.ne.0) call quit(-16,'Bad CARMA!')
+          call packenv%send(0,chl,ierr,comm=role_comm); if(ierr.ne.0) call quit(-16,'Bad CARMA!')
+          call chl%wait(ierr); if(ierr.ne.0) call quit(-17,'Bad CARMA!')
+          call chl%clean(ierr); if(ierr.ne.0) call quit(-18,'Bad CARMA!')
+          call packenv%destroy(ierr); if(ierr.ne.0) call quit(-19,'Bad CARMA!')
          endif
+         call role_barrier()
 !Root creates tasks for all processes:
 
 !Root communicates tasks to other processes:
@@ -246,6 +249,76 @@
          if(allocated(ddesa)) deallocate(ddesa)
          deallocate(ddes); deallocate(dtens)
          return
+
+        contains
+
+         subroutine flat2tuple(flat,tuple)
+          implicit none
+          integer(INTD), intent(in):: flat
+          integer(INTD), intent(inout):: tuple(1:*)
+          integer(INTD):: i,n
+
+          n=flat
+          do i=DIM_NUM_LEVELS-1,1,-1
+           tuple(i)=mod(n,SPLIT_BASE)
+           n=n/SPLIT_BASE
+          enddo
+          return
+         end subroutine flat2tuple
+
+         function tuple2flat(tuple) result(flat)
+          implicit none
+          integer(INTD):: flat
+          integer(INTD), intent(in):: tuple(1:*)
+          integer(INTD):: i
+
+          flat=0
+          do i=1,DIM_NUM_LEVELS-1
+           flat=flat*SPLIT_BASE+tuple(i)
+          enddo
+          return
+         end function tuple2flat
+
+         function tuple2segment(tuple,dimsn) result(segment)
+          implicit none
+          integer(INTD):: segment
+          integer(INTD), intent(in):: tuple(1:*)
+          integer(INTD), intent(in):: dimsn
+          integer(INTD):: i,j,m
+
+          segment=0
+          do i=1,DIM_NUM_LEVELS-1
+           m=tuple(i)
+           do j=1,dimsn-1; m=m/2; enddo
+           segment=segment*2+mod(m,2)
+          enddo
+          return
+         end function tuple2segment
+
+         function flat2segment(flat,dimsn) result(segment)
+          implicit none
+          integer(INTD):: segment
+          integer(INTD), intent(in):: flat
+          integer(INTD), intent(in):: dimsn
+          integer(INTD):: tuple(1:DIM_NUM_LEVELS-1)
+
+          call flat2tuple(flat,tuple)
+          segment=tuple2segment(tuple,dimsn)
+          return
+         end function flat2segment
+
+         subroutine tuple2signa(tuple,signa)
+          implicit none
+          integer(INTD), intent(in):: tuple(1:*)
+          integer(INTD), intent(inout):: signa(1:*)
+          integer(INTD):: i
+
+          do i=1,TENS_RANK
+           signa(i)=tuple2segment(tuple,i)
+          enddo
+          return
+         end subroutine tuple2signa
+
         end subroutine test_carma
 !-----------------------------------------------------------
         subroutine tavp_worker_set_host_buf_size(bytes,ierr)

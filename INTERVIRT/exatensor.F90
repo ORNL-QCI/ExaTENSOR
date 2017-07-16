@@ -1,7 +1,7 @@
 !ExaTENSOR: Massively Parallel Virtual Processor for Scale-Adaptive Hierarchical Tensor Algebra
 !This is the top level API module of ExaTENSOR (user-level API)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017/07/12
+!REVISION: 2017/07/16
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -65,13 +65,6 @@
         integer(INTL), public:: full_dimension=0_INTL !full dimension of the vector space (number of basis vectors)
         integer(INTD), public:: num_subspaces=0       !number of registered subspaces
        end type exa_space_status_t
- !Tensor status:
-       type, public:: exa_tensor_status_t
-        logical, public:: created=.FALSE. !TRUE if the tensor has been created, FALSE otherwise
-        logical, public:: defined=.FALSE. !TRUE if the tensor value has been defined, FALSE otherwise
-        logical, public:: in_use=.FALSE.  !TRUE if the tensor is currently participating in a computation, FALSE otherwise
-        logical, public:: updated=.FALSE. !TRUE if the tensor is currently being updated in a computation, FALSE otherwise
-       end type exa_tensor_status_t
 !INTERFACES:
        abstract interface
  !External method (tensor operation):
@@ -539,9 +532,9 @@
        function exatns_tensor_status(tensor,sts) result(ierr)
 !Returns the current status of a tensor.
         implicit none
-        integer(INTD):: ierr                         !out: error code
-        type(tens_rcrsv_t), intent(in):: tensor      !in: tensor
-        type(exa_tensor_status_t), intent(out):: sts !out: current tensor status
+        integer(INTD):: ierr                    !out: error code
+        type(tens_rcrsv_t), intent(in):: tensor !in: tensor
+        type(tens_status_t), intent(out):: sts  !out: current tensor status
 
         ierr=EXA_SUCCESS
         write(CONS_OUT,*)'FATAL(exatensor:tensor_status): Not implemented yet!' !`Implement
