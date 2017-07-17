@@ -176,7 +176,7 @@
          type(C_PTR):: mem_p,dmem_p,lmem_p,rmem_p
          type(talsh_tens_t):: dtns,ltns,rtns
          type(talsh_task_t):: tsk0
-         real(8):: tms,tm,tcs,tc,tts,tt
+         real(8):: tms,tm,tcs,tc,tts,tt,tas,ta
 
          ierr=0
          num_procs=role_size
@@ -369,9 +369,10 @@
          ierr=mem_allocate(talsh_flat_dev_id(DEV_HOST,0),int(BLOCK_VOL*8,C_SIZE_T),YEP,rmem_p)
          if(ierr.ne.0) call quit(-83,'Bad CARMA!')
          call role_barrier()
-         tc=0d0; tt=0d0; tms=thread_wtime()
+         tc=0d0; tt=0d0; ta=0d0; tms=thread_wtime()
          do i=1,n
-          call packenv%extract_packet(i,packet,ierr,preclean=.TRUE.); if(ierr.ne.0) call quit(-84,'Bad CARMA!')
+          j=mod((i-1)+role_rank**2,n)+1
+          call packenv%extract_packet(j,packet,ierr,preclean=.TRUE.); if(ierr.ne.0) call quit(-84,'Bad CARMA!')
           call dd%unpack(packet,ierr); if(ierr.ne.0) call quit(-85,'Bad CARMA!')
           call ld%unpack(packet,ierr); if(ierr.ne.0) call quit(-86,'Bad CARMA!')
           call rd%unpack(packet,ierr); if(ierr.ne.0) call quit(-87,'Bad CARMA!')
@@ -379,6 +380,7 @@
           call ld%get_data(lmem_p,ierr); if(ierr.ne.0) call quit(-88,'Bad CARMA!')
           call rd%get_data(rmem_p,ierr); if(ierr.ne.0) call quit(-89,'Bad CARMA!')
           tt=tt+thread_wtime(tts)
+          tas=thread_wtime()
           dmem_p=dd%get_data_ptr(ierr); if(ierr.ne.0) call quit(-90,'Bad CARMA!')
           ierr=talsh_tensor_construct(dtns,R8,(/DIM_SEG_SIZE,DIM_SEG_SIZE,DIM_SEG_SIZE,DIM_SEG_SIZE/),&
                                      &talsh_flat_dev_id(DEV_HOST,0),dmem_p)
@@ -388,39 +390,46 @@
           ierr=talsh_tensor_construct(rtns,R8,(/DIM_SEG_SIZE,DIM_SEG_SIZE,DIM_SEG_SIZE,DIM_SEG_SIZE/),&
                                      &talsh_flat_dev_id(DEV_HOST,0),rmem_p)
           if(ierr.ne.0) call quit(-92,'Bad CARMA!')
+          ta=ta+thread_wtime(tas)
+!          tts=thread_wtime()
+!          call ld%flush_data(ierr,local=.FALSE.); if(ierr.ne.0) call quit(-93,'Bad CARMA!')
+!          call rd%flush_data(ierr,local=.FALSE.); if(ierr.ne.0) call quit(-94,'Bad CARMA!')
+!          tt=tt+thread_wtime(tts)
           tcs=thread_wtime()
           ierr=talsh_tensor_contract('D(a,b,c,d)+=L(d,i,b,j)*R(c,j,a,i)',dtns,ltns,rtns,dev_id=0,dev_kind=DEV_HOST,&
                                     &copy_ctrl=COPY_TTT)
+          if(ierr.ne.0) call quit(-95,'Bad CARMA!')
           tc=tc+thread_wtime(tcs)
-          if(ierr.ne.0) call quit(-93,'Bad CARMA!')
-          ierr=talsh_tensor_destruct(rtns); if(ierr.ne.0) call quit(-94,'Bad CARMA!')
-          ierr=talsh_tensor_destruct(ltns); if(ierr.ne.0) call quit(-95,'Bad CARMA!')
-          ierr=talsh_tensor_destruct(dtns); if(ierr.ne.0) call quit(-96,'Bad CARMA!')
+          tas=thread_wtime()
+          ierr=talsh_tensor_destruct(rtns); if(ierr.ne.0) call quit(-96,'Bad CARMA!')
+          ierr=talsh_tensor_destruct(ltns); if(ierr.ne.0) call quit(-97,'Bad CARMA!')
+          ierr=talsh_tensor_destruct(dtns); if(ierr.ne.0) call quit(-98,'Bad CARMA!')
+          ta=ta+thread_wtime(tas)
          enddo
-         tm=thread_wtime(tms); print *,'Rank ',role_rank,': Total time ',tm,' s: Contraction ',tc,' s: Comm ',tt,' s'
+         tm=thread_wtime(tms); print *,'Rank ',role_rank,': Total ',tm,' s: Contract ',tc,' s: Comm ',tt,' s: Alloc ',ta,' s'
          call role_barrier()
-         ierr=mem_free(talsh_flat_dev_id(DEV_HOST,0),rmem_p); if(ierr.ne.0) call quit(-97,'Bad CARMA!')
-         ierr=mem_free(talsh_flat_dev_id(DEV_HOST,0),lmem_p); if(ierr.ne.0) call quit(-98,'Bad CARMA!')
-         call packenv%destroy(ierr); if(ierr.ne.0) call quit(-92,'Bad CARMA!')
+         ierr=mem_free(talsh_flat_dev_id(DEV_HOST,0),rmem_p); if(ierr.ne.0) call quit(-99,'Bad CARMA!')
+         ierr=mem_free(talsh_flat_dev_id(DEV_HOST,0),lmem_p); if(ierr.ne.0) call quit(-100,'Bad CARMA!')
+         call packenv%destroy(ierr); if(ierr.ne.0) call quit(-101,'Bad CARMA!')
 !Detach tensor blocks:
  !Right tensor:
          do i=0,num_blocks-1
           call tavp_addr_space%detach(rdes(i),ierr)
-          if(ierr.ne.0) call quit(-4,'Bad CARMA!')
+          if(ierr.ne.0) call quit(-102,'Bad CARMA!')
          enddo
          if(allocated(rdesa)) deallocate(rdesa)
          deallocate(rdes); deallocate(rtens)
  !Left tensor:
          do i=0,num_blocks-1
           call tavp_addr_space%detach(ldes(i),ierr)
-          if(ierr.ne.0) call quit(-4,'Bad CARMA!')
+          if(ierr.ne.0) call quit(-103,'Bad CARMA!')
          enddo
          if(allocated(ldesa)) deallocate(ldesa)
          deallocate(ldes); deallocate(ltens)
  !Destination tensor:
          do i=0,num_blocks-1
           call tavp_addr_space%detach(ddes(i),ierr)
-          if(ierr.ne.0) call quit(-4,'Bad CARMA!')
+          if(ierr.ne.0) call quit(-104,'Bad CARMA!')
          enddo
          if(allocated(ddesa)) deallocate(ddesa)
          deallocate(ddes); deallocate(dtens)
