@@ -1,7 +1,7 @@
 /** C++ adapters for ExaTENSOR: Header
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/07/06
+!REVISION: 2017/07/17
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -109,13 +109,13 @@ public:
 };
 
 
-/** Tensor leg **/
+/** Tensor leg: Connection to another tensor **/
 class TensorLeg{
 
 private:
 
- unsigned int TensorId; //tensor id: 0 is output tensor, >0 is input tensor
- unsigned int DimesnId; //tensor dimension id: [0..rank-1]
+ unsigned int TensorId; //connected tensor id: 0 is output tensor (lhs), >0 is input tensor (rhs)
+ unsigned int DimesnId; //connected tensor dimension: [0..rank-1], where "rank" is the rank of the connected tensor
 
 public:
 
@@ -144,14 +144,14 @@ class TensorConn{
 
 private:
 
- TensorDenseAdpt<T> Tensor;  //tensor
- std::vector<TensorLeg> Leg; //tensor legs (connections to other tensors): [1..rank]
+ TensorDenseAdpt<T> Tensor;   //tensor
+ std::vector<TensorLeg> Legs; //tensor legs (connections to other tensors): [1..rank]
 
 public:
 
  //Life cycle:
  TensorConn(const TensorDenseAdpt<T> & tensor, const std::vector<TensorLeg> & connections):
- Tensor(tensor), Leg(connections){
+ Tensor(tensor), Legs(connections){
 #ifdef _DEBUG_DIL
   assert(tensor.getRank() == connections.size());
 #endif
@@ -168,7 +168,7 @@ public:
 #ifdef _DEBUG_DIL
   assert(leg < Tensor.getRank());
 #endif
-  return Leg.at(leg);
+  return Legs.at(leg);
  }
 
  unsigned int getNumLegs() const {return Tensor.getRank();}
@@ -179,7 +179,7 @@ public:
   std::cout << "TensorConn{" << std::endl;
   Tensor.printIt();
   std::cout << "Legs:";
-  for(unsigned int i=0; i<Tensor.getRank(); ++i){std::cout << " "; Leg.at(i).printIt();}
+  for(unsigned int i=0; i<Tensor.getRank(); ++i){std::cout << " "; Legs.at(i).printIt();}
   std::cout << std::endl << "}" << std::endl;
   return;
  }
@@ -187,36 +187,50 @@ public:
 };
 
 
-/** Tensor network (contraction of multiple tensors) **/
+/** Tensor network (contraction of multiple tensors):
+ A tensor network consists of tensors numerated from 0.
+ Tensor 0 is always the output (lhs) tensor consisting of
+ uncontracted legs. Tensors [1..max] are input (rhs) tensors.
+ Legs of the input tensors that are left uncontracted define
+ the output tensor (tensor 0) by definition. **/
 template<typename T>
 class TensorNetwork{
 
 private:
 
- unsigned int NumInputTensors; //number of input tensors: [1..NumInputTensors], tensor 0 is always output
- std::vector<TensorConn<T>> Tensors; //tensors: [0;1..NumInpTensors]
+ std::vector<TensorConn<T>> Tensors; //tensors: [0;1..num_rhs_tensors]
 
 public:
 
  //Life cycle:
- TensorNetwork(): NumInputTensors(0){}
 
- TensorNetwork(unsigned int numInputTensors):NumInputTensors(numInputTensors){}
+ TensorNetwork(){}
 
  virtual ~TensorNetwork(){}
 
+ //Accessors:
+
+ /** Returns the number of r.h.s. tensors in the tensor network.
+     Note that the output (l.h.s.) tensor 0 is not counted here. **/
+ unsigned int getNumTensors() const
+ {
+  return (unsigned int)(Tensors.size()-1);
+ }
+
  //Mutators:
- void appendTensor(const TensorDenseAdpt<T> & tensor, const std::vector<TensorLeg> & connections){
-  auto num_tens = Tensors.size(); //current total number of tensors set in the tensor network
+
+ /** Appends a tensor to the tensor network **/
+ void appendTensor(const TensorDenseAdpt<T> & tensor,          //in: new tensor
+                   const std::vector<TensorLeg> & connections) //in: connections of the new tensor to other tensors
+ {
+  auto num_tens = Tensors.size(); //current total number of tensors in the tensor network
   //Check the consistency of the new tensor candidate:
 #ifdef _DEBUG_DIL
-  assert(num_tens < (1 + NumInputTensors));
   assert(tensor.getRank() == connections.size());
   unsigned int i=0;
   for(auto it=connections.cbegin(); it != connections.cend(); ++it){
    const TensorLeg & leg = *it; //new tensor leg
    auto tens_id = leg.getTensorId(); //tensor to which the new leg is connected
-   assert(tens_id <= NumInputTensors); //that tensor id is within constructed bounds
    if(tens_id < num_tens){ //that tensor has already been appended into the tensor network
     TensorConn<T> & tensconn = Tensors[tens_id]; //reference to that tensor
     auto dimsn = leg.getDimensionId(); //specific dimension of that tensor
@@ -239,18 +253,31 @@ public:
  }
 
  //Transforms:
- int contractTensors(unsigned int tensor1, unsigned int tensor2, TensorNetwork<T> * tensornet){
-#ifdef _DEBUG_DIL
-  assert(NumInputTensors > 0 && tensor1 > 0 && tensor2 > 0);
-#endif
-  if(tensor1 > tensor2) std::swap(tensor1,tensor2);
-  tensornet = new TensorNetwork<T>(NumInputTensors-1);
-  return 0;
+
+ /** Contracts two tensors in a given tensor network and returns the result as a new tensor network. **/
+ TensorNetwork<T> * contractTensors(unsigned int tens_id1, //in: id of the 1st tensor: [1..max]
+                                    unsigned int tens_id2) //in: id of the 2nd tensor: [1..max]
+ {
+  if(tens_id1 > tens_id2) std::swap(tens_id1,tens_id2);
+  auto tensornet = new TensorNetwork<T>();
+
+  return tensornet;
+ }
+
+ /** Appends another tensor network into the current tensor network. **/
+ void appendNetwork(const TensorNetwork<T> & tensornet, //in: tensor network
+                    const unsigned int dims0[],         //in: list of output dimensions of the curent tensor network
+                    const unsigned int dims1[])         //in: list of matching output dimensions of the appended tensor network
+ {
+
+  return;
  }
 
  //Print:
- void printIt() const{
+ void printIt() const
+ {
   std::cout << "TensorNetwork{" << std::endl;
+  unsigned int NumInputTensors = this->getNumTensors();
   std::cout << "Number of input tensors = " << NumInputTensors << std::endl;
   for(unsigned int i = 0; i <= NumInputTensors; ++i) Tensors[i].printIt();
   std::cout << "}" << std::endl;

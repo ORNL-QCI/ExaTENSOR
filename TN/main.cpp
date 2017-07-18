@@ -76,8 +76,8 @@ int test_tensor_expression(){
  //Print tensor 2:
  tensor2.printIt();
 
- //Create a tensor network of two tensors:
- TensorNetwork tensnet(2);
+ //Create an empty tensor network:
+ TensorNetwork tensnet;
  //Legs of tensor 0:
  std::vector<TensorLeg> legs;
  legs.push_back(TensorLeg(1,3));
