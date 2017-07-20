@@ -1,7 +1,7 @@
 /** C++ adapters for ExaTENSOR: Header
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/07/18
+!REVISION: 2017/07/20
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -35,7 +35,7 @@
 
 namespace exatensor {
 
-/** Simple dense tensor wrapper with imported body. **/
+/** Simple dense tensor wrapper with imported (external) body. **/
 template <typename T>
 class TensorDenseAdpt{
 
@@ -50,7 +50,7 @@ public:
  //Life cycle:
 
  /** Constructs TensorDenseAdpt without a body (shape only). **/
- TensorDenseAdpt(unsigned int rank, std::size_t dimExtent[]):
+ TensorDenseAdpt(unsigned int rank, const std::size_t dimExtent[]):
  Rank(rank), DimExtent(new std::size_t[rank]), Body(nullptr)
  {
   for(unsigned int i=0; i<rank; ++i) DimExtent[i]=dimExtent[i];
@@ -103,10 +103,10 @@ public:
  /** Returns a pointer to the tensor dimension extents. **/
  const std::size_t * getDimExtents() const {return DimExtent.get();}
 
- /** Returns a shared pointer to the tensor body, NULL if there is no body. **/
- std::shared_ptr<T> & getBodyAccess() const {return Body;}
+ /** Returns a reference to a shared pointer to the tensor body, NULL if there is no body. **/
+ const std::shared_ptr<T> & getBodyAccess() const {return Body;}
 
- /** Returns tensor volume (total number of elements). **/
+ /** Returns the tensor volume (total number of elements). **/
  std::size_t getVolume() const
  {
   std::size_t vol=1;
@@ -114,7 +114,7 @@ public:
   return vol;
  }
 
- /** Returns tensor size in bytes. **/
+ /** Returns the tensor size in bytes. **/
  std::size_t getSize() const {return (this->getVolume())*sizeof(T);}
 
  /** Prints. **/
@@ -150,6 +150,20 @@ public:
   return;
  }
 
+ /** Reshapes the tensor to a different shape.
+     The tensor is not allowed to have a body. **/
+ void reshape(unsigned int rank,       //in: new tensor rank
+              std::size_t dimExtent[]) //in: new tensor dimension extents
+ {
+#ifdef _DEBUG_DIL
+  assert(!Body);
+#endif
+  DimExtent.reset(new std::size_t[rank]);
+  for(unsigned int i=0; i<rank; ++i) DimExtent[i]=dimExtent[i];
+  Rank=rank;
+  return;
+ }
+
 };
 
 
@@ -165,13 +179,10 @@ public:
 
  //Life cycle:
 
- /** Default constructor (empty connection). **/
- TensorLeg():TensorId(0),DimesnId(0){}
-
  /** Leg (connection) constructor. **/
  TensorLeg(unsigned int tensorId,  //connected tensor id in the tensor network
            unsigned int dimesnId): //connected tensor dimension
- TensorId(tensorId), DimesnId(dimesnId){}
+          TensorId(tensorId), DimesnId(dimesnId){}
 
  //Accesors:
 
@@ -188,6 +199,29 @@ public:
   return;
  }
 
+ //Mutators:
+
+ /** Resets the tensor leg to another connection. **/
+ void resetConnection(unsigned int tensorId, unsigned int dimesnId)
+ {
+  TensorId=tensorId; DimesnId=dimesnId;
+  return;
+ }
+
+ /** Resets the tensor id in the tensor leg. **/
+ void resetTensorId(unsigned int tensorId)
+ {
+  TensorId=tensorId;
+  return;
+ }
+
+ /** Resets the tensor dimension id in the tensor leg. **/
+ void resetDimensionId(unsigned int dimesnId)
+ {
+  DimesnId=dimesnId;
+  return;
+ }
+
 };
 
 
@@ -198,7 +232,7 @@ class TensorConn{
 private:
 
  TensorDenseAdpt<T> Tensor;   //tensor
- std::vector<TensorLeg> Legs; //tensor legs (connections to other tensors): [1..rank]
+ std::vector<TensorLeg> Legs; //tensor legs (connections to other tensors)
 
 public:
 
@@ -219,6 +253,9 @@ public:
 
  //Accessors:
 
+ /** Returns the tensor rank. **/
+ unsigned int getTensorRank() const {return Tensor.getRank();}
+
  /** Returns the extent of a specific tensor dimension. **/
  std::size_t getDimExtent(unsigned int dimension) const
  {
@@ -235,7 +272,7 @@ public:
  }
 
  /** Returns the total number of tensor legs (connections). **/
- unsigned int getNumLegs() const {return Tensor.getRank();}
+ unsigned int getNumLegs() const {return Legs.size();}
 
  /** Prints. **/
  void printIt() const
@@ -246,6 +283,51 @@ public:
   std::cout << "Legs:";
   for(unsigned int i=0; i<Tensor.getRank(); ++i){std::cout << " "; Legs.at(i).printIt();}
   std::cout << std::endl << "}" << std::endl;
+  return;
+ }
+
+ //Mutators:
+
+ /** Resets connection (leg). **/
+ void resetConnection(unsigned int legId, const TensorLeg & tensorLeg)
+ {
+#ifdef _DEBUG_DIL
+  assert(legId < Legs.size());
+#endif
+  Legs[legId].resetConnection(tensorLeg.getTensorId(),tensorLeg.getDimensionId());
+  return;
+ }
+
+ /** Deletes the specified tensor dimension. **/
+ void deleteDimension(unsigned int dimesn)
+ {
+  auto oldTensRank = Tensor.getRank();
+#ifdef _DEBUG_DIL
+  assert(dimesn < oldTensRank);
+#endif
+  auto newTensRank = oldTensRank - 1;
+  const std::size_t * oldDims = Tensor.getDimExtents();
+  std:size_t newDims[newTensRank];
+  unsigned int j=0;
+  for(unsigned int i = 0; i < oldTensRank; ++i){
+   if(i != dimesn) newDims[j++] = oldDims[i];
+  }
+  Tensor.reshape(newTensRank,newDims);
+  Legs.erase(Legs.begin()+dimesn);
+  return;
+ }
+
+ /** Appends a new dimension to the connected tensor as the last dimension. **/
+ void appendDimension(std::size_t dimExtent, const TensorLeg & leg)
+ {
+  auto oldTensRank = Tensor.getRank();
+  auto newTensRank = oldTensRank + 1;
+  const std::size_t * oldDims = Tensor.getDimExtents();
+  std:size_t newDims[newTensRank];
+  for(unsigned int i = 0; i < oldTensRank; ++i) newDims[i] = oldDims[i];
+  newDims[newTensRank-1]=dimExtent;
+  Tensor.reshape(newTensRank,newDims);
+  Legs.push_back(leg);
   return;
  }
 
@@ -281,7 +363,7 @@ public:
      Note that the output (l.h.s.) tensor 0 is not counted here. **/
  unsigned int getNumTensors() const
  {
-  return (unsigned int)(Tensors.size()-1);
+  return (unsigned int)(Tensors.size()-1); //not counting the output tensor
  }
 
  /** Prins. **/
@@ -297,11 +379,11 @@ public:
 
  //Mutators:
 
- /** Appends a tensor to the tensor network, either input or output.
-     The output (lhs) tensor must be appended first (tensor 0). Each
-     next appended tensor will be considered an input (rhs) tensor. **/
- void appendTensor(const TensorDenseAdpt<T> & tensor,          //in: new tensor, either input or output
-                   const std::vector<TensorLeg> & connections) //in: connections of the new tensor to other tensors
+ /** Explicitly appends a tensor to the tensor network, either input or
+     output. The output (lhs) tensor must be appended first (tensor 0).
+     Each next appended tensor will be considered an input (rhs) tensor. **/
+ void appendTensor(const TensorDenseAdpt<T> & tensor,          //in: new tensor, either input (rhs) or output (lhs)
+                   const std::vector<TensorLeg> & connections) //in: connections of the new tensor to other tensors via legs
  {
   auto num_tens = Tensors.size(); //current total number of tensors in the tensor network
   //Check the consistency of the new tensor candidate:
@@ -332,21 +414,63 @@ public:
   return;
  }
 
- /** Appends a tensor to the tensor network by matching some or all of its
-     dimensions, specified in dimsTens[], with the uncontracted dimensions
-     of the tensor network. The input argument dimsNetw[] allows selecting
-     specific uncontracted dimensions of the tensor network to connect to. **/
- void appendTensor(const TensorDenseAdpt<T> & tensor,       //in: tensor being appended
-                   const unsigned int numConnections,       //in: number of connections between the tensor and tensor network
-                   const unsigned int dimsTens[] = nullptr, //in: list of connected dimensions of the appended tensor
-                   const unsigned int dimsNetw[] = nullptr) //in: list of matching output dimensions of the tensor network
+ /** Appends a tensor to the tensor network by pairing some or all of its
+     dimensions with the uncontracted dimensions of the tensor network. **/
+ void appendTensor(const TensorDenseAdpt<T> & tensor, //in: tensor being appended
+                   const std::vector<std::pair<unsigned int, unsigned int>> & legPairs) //in: leg pairing: pair(tensor network leg id, tensor leg id)
  {
-  auto tensRank = tensor.getRank();
-  if(Tensors.size() > 0){ //non-empty tensor network
-   auto & outTensor = Tensors[0]; //output (l.h.s.) tensor of the tensor network
-   
-  }else{ //empty tensor network
-   
+  auto tensRank = tensor.getRank(); //rank of the new tensor
+  auto numLegs = legPairs.size(); //number of newly formed connections
+  auto nextTensorId = Tensors.size(); //id of the new tensor in the tensor network
+#ifdef _DEBUG_DIL
+  assert(numLegs <= tensRank);
+#endif
+  if(nextTensorId > 0){ //non-empty tensor network (at least the output and one input tensor)
+   //get the current output tensor:
+   auto & outTensor = Tensors[0]; //output (l.h.s.) tensor of the tensor network (TensorConn)
+   auto outTensorRank = outTensor.getTensorRank(); //current rank of the output tensor
+#ifdef _DEBUG_DIL
+   assert(numLegs <= outTensorRank);
+#endif
+   std::vector<TensorLeg> legs(tensRank,TensorLeg(0,0)); //legs of the appended tensor
+   //process all specified leg pairs:
+   for(auto & legPair : legPairs){
+    auto ouLegId = legPair.first; //leg id in the tensor network
+    auto inLegId = legPair.second; //leg id in the appended tensor
+    const auto & ouLeg = outTensor.getTensorLeg(ouLegId); //leg of the output tensor
+    auto tnTensorId = ouLeg.getTensorId(); //input tensor id in the tensor network that is connected to the output tensor
+    auto tnTensorLegId = ouLeg.getDimensionId(); //specific tensor leg of that input tensor
+    Tensors[tnTensorId].resetConnection(tnTensorLegId,TensorLeg(nextTensorId,inLegId)); //leg of the corresponding input tensor in the tensor network
+    legs[inLegId].resetConnection(tnTensorId,tnTensorLegId); //connect the appended tensor to the tensor in the tensor network
+    Tensors[0].deleteDimension(ouLegId); //delete the processed dimension of the output tensor
+   }
+   //join the uncontracted dimensions of the appended tensor to the tensor network output tensor:
+   auto outRank = Tensors[0].getTensorRank();
+   for(unsigned int i = 0; i < tensRank; ++i){ //dimensions of the appended tensor
+    auto & leg = legs[i];
+    if(leg.getTensorId() == 0){ //uncontracted dimension
+     Tensors[0].appendDimension(tensor.getDimExtent(i),TensorLeg(nextTensorId,i));
+     leg.resetDimensionId(outRank);
+     outRank = Tensors[0].getTensorRank();
+    }
+   }
+   //append the input tensor to the tensor network:
+   this->appendTensor(tensor,legs);
+  }else{ //empty tensor network: two tensors will be appended (output and input)
+#ifdef _DEBUG_DIL
+   assert(legPairs.size() == 0);
+#endif
+   //construct the output tensor without body (deferred):
+   TensorDenseAdpt<T> outTensor(tensRank,tensor.getDimExtents());
+   //construct the vector of legs for the output tensor:
+   std::vector<TensorLeg> legs;
+   for(unsigned int i = 0; i < tensRank; ++i) legs.push_back(TensorLeg(1,i));
+   //append the output tensor to the tensor network:
+   this->appendTensor(outTensor,legs);
+   //construct the vector of legs for the 1st input tensor:
+   for(auto & leg : legs) leg.resetTensorId(0);
+   //append the input tensor to the tensor network:
+   this->appendTensor(tensor,legs);
   }
   return;
  }
@@ -364,7 +488,7 @@ public:
  /** Associates the output (lhs) tensor with its externally provided body. **/
  void setOutputBody(std::shared_ptr<T> body)
  {
-#ifdef _DIL_DEBUG
+#ifdef _DEBUG_DIL
   assert(Tensors.size() > 0 && body);
 #endif
   Tensors[0].setBody(body);

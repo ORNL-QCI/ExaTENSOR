@@ -1,7 +1,7 @@
 /** C++ adapters for ExaTENSOR: Testing
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/07/06
+!REVISION: 2017/07/20
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -31,27 +31,30 @@
 
 int test_tensor_expression(){
 
+ //Parameters:
+ const std::size_t TENS_DIM_EXT=8;
+
  //Type aliases:
- using TensData = std::complex<double>;
- using Tensor = exatensor::TensorDenseAdpt<TensData>;
+ using TensDataType = std::complex<double>;
+ using Tensor = exatensor::TensorDenseAdpt<TensDataType>;
  using TensorLeg = exatensor::TensorLeg;
- using TensorConn = exatensor::TensorConn<TensData>;
- using TensorNetwork = exatensor::TensorNetwork<TensData>;
+ using TensorConn = exatensor::TensorConn<TensDataType>;
+ using TensorNetwork = exatensor::TensorNetwork<TensDataType>;
 
  //Tensor dimension extents:
  unsigned int rank = 4;
- auto dims = new std::size_t[rank];
- for(unsigned int i=0; i<rank; ++i) dims[i]=8;
+ size_t dims[rank];
+ for(unsigned int i=0; i<rank; ++i) dims[i]=TENS_DIM_EXT;
 
  //Tensor volume:
  std::size_t vol = 1;
  for(unsigned int i=0; i<rank; ++i) vol*=dims[i];
 
- //Tensor body:
- std::shared_ptr<TensData> body(new TensData[vol],[](TensData * p){delete[] p;});
+ //Persistent tensor body:
+ std::shared_ptr<TensDataType> body(new TensDataType[vol],[](TensDataType * p){delete[] p;});
 
  //Tensor 0:
- Tensor tensor0(rank,dims,body);
+ Tensor tensor0(rank,dims);
 
  //Tensor 0 accessors:
  std::cout << "Rank = " << tensor0.getRank() << std::endl;
@@ -77,34 +80,40 @@ int test_tensor_expression(){
  tensor2.printIt();
 
  //Create an empty tensor network:
- TensorNetwork tensnet;
+ TensorNetwork tensnet0;
  //Legs of tensor 0:
  std::vector<TensorLeg> legs;
  legs.push_back(TensorLeg(1,3));
  legs.push_back(TensorLeg(1,0));
  legs.push_back(TensorLeg(2,1));
  legs.push_back(TensorLeg(2,2));
- tensnet.appendTensor(tensor0,legs);
+ tensnet0.appendTensor(tensor0,legs);
  //Legs of tensor 1:
  legs.clear();
  legs.push_back(TensorLeg(0,1));
  legs.push_back(TensorLeg(2,3));
  legs.push_back(TensorLeg(2,0));
  legs.push_back(TensorLeg(0,0));
- tensnet.appendTensor(tensor1,legs);
+ tensnet0.appendTensor(tensor1,legs);
  //Legs of tensor 2:
  legs.clear();
  legs.push_back(TensorLeg(1,2));
  legs.push_back(TensorLeg(0,2));
  legs.push_back(TensorLeg(0,3));
  legs.push_back(TensorLeg(1,1));
- tensnet.appendTensor(tensor2,legs);
+ tensnet0.appendTensor(tensor2,legs);
  legs.clear();
  //Print the tensor network:
- tensnet.printIt();
+ tensnet0.printIt();
 
- //Free dimension extents:
- delete[] dims;
+ //Create another tensor and append it to the tensor network:
+ Tensor tensor3(tensor2);
+ std::vector<std::pair<unsigned int, unsigned int>> legPairs;
+ legPairs.push_back(std::pair<unsigned int, unsigned int>(0,3));
+ legPairs.push_back(std::pair<unsigned int, unsigned int>(3,0));
+ tensnet0.appendTensor(tensor3,legPairs);
+ //Print the tensor network:
+ tensnet0.printIt();
 
  //Done:
  return 0;
