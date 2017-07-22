@@ -104,6 +104,7 @@ int test_tensor_expression(){
  tensnet0.appendTensor(tensor2,legs);
  legs.clear();
  //Print the tensor network:
+ std::cout << std::endl;
  tensnet0.printIt();
 
  //Create another tensor and append it to the tensor network:
@@ -113,7 +114,14 @@ int test_tensor_expression(){
  legPairs.push_back(std::pair<unsigned int, unsigned int>(3,0));
  tensnet0.appendTensor(tensor3,legPairs);
  //Print the tensor network:
+ std::cout << std::endl;
  tensnet0.printIt();
+
+ //Contract tensors 1 and 2:
+ auto * tensnet1 = tensnet0.contractTensors(1,2);
+ //Print the new tensor network:
+ std::cout << std::endl;
+ tensnet1->printIt();
 
  //Done:
  return 0;

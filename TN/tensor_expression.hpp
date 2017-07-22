@@ -1,7 +1,7 @@
 /** C++ adapters for ExaTENSOR: Header
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/07/21
+!REVISION: 2017/07/22
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -30,6 +30,8 @@
 #include <vector>
 #include <assert.h>
 #include <iostream>
+
+#include "type_deduct.hpp"
 
 #define _DEBUG_DIL
 
@@ -257,13 +259,13 @@ public:
  unsigned int getTensorRank() const {return Tensor.getRank();}
 
  /** Returns the extent of a specific tensor dimension. **/
- std::size_t getDimExtent(unsigned int dimension) const
+ std::size_t getDimExtent(const unsigned int dimension) const
  {
   return Tensor.getDimExtent(dimension);
  }
 
  /** Returns a specific tensor leg (connection to other tensors). **/
- const TensorLeg & getTensorLeg(unsigned int leg) const
+ const TensorLeg & getTensorLeg(const unsigned int leg) const
  {
 #ifdef _DEBUG_DIL
   assert(leg < Tensor.getRank());
@@ -289,7 +291,7 @@ public:
  //Mutators:
 
  /** Resets connection (leg). **/
- void resetConnection(unsigned int legId, const TensorLeg & tensorLeg)
+ void resetConnection(const unsigned int legId, const TensorLeg & tensorLeg)
  {
 #ifdef _DEBUG_DIL
   assert(legId < Legs.size());
@@ -299,7 +301,7 @@ public:
  }
 
  /** Deletes the specified tensor dimension. **/
- void deleteDimension(unsigned int dimesn)
+ void deleteDimension(const unsigned int dimesn)
  {
   auto oldTensRank = Tensor.getRank();
 #ifdef _DEBUG_DIL
@@ -318,7 +320,7 @@ public:
  }
 
  /** Appends a new dimension to the connected tensor as the last dimension. **/
- void appendDimension(std::size_t dimExtent, const TensorLeg & leg)
+ void appendDimension(const std::size_t dimExtent, const TensorLeg & leg)
  {
   auto oldTensRank = Tensor.getRank();
   auto newTensRank = oldTensRank + 1;
@@ -420,7 +422,7 @@ public:
      the tensor network, in which case they will simply be appended to
      the output tensor of the tensor network. **/
  void appendTensor(const TensorDenseAdpt<T> & tensor, //in: tensor being appended to the tensor network
-                   const std::vector<std::pair<unsigned int, unsigned int>> & legPairs) //in: leg pairing: pair(tensor network leg id, tensor leg id)
+                   const std::vector<std::pair<unsigned int, unsigned int>> & legPairs) //in: leg pairing: pair<tensor network leg id, tensor leg id>
  {
   auto tensRank = tensor.getRank(); //rank of the new tensor
   auto numLegs = legPairs.size(); //number of newly formed connections, can be zero
@@ -503,13 +505,11 @@ public:
   return;
  }
 
- /** Appends another tensor network into the current tensor network. **/
- void appendNetwork(const TensorNetwork<T> & tensornet,     //in: another tensor network
-                    const unsigned int numConnections,      //in: number of connections between tensor networks
-                    const unsigned int dimsNew[] = nullptr, //in: list of the output dimensions of the appended tensor network to connect with
-                    const unsigned int dimsOld[] = nullptr) //in: list of the matching output dimensions of the current tensor network
+ /** Appends another tensor network into the current tensor network
+     by pairing the dimensions of the output tensors of both. **/
+ void appendNetwork(const TensorNetwork<T> & tensornet, //in: another tensor network
+                    const std::vector<std::pair<unsigned int, unsigned int>> & legPairs) //in: leg pairing: pair<output leg id, output leg id>, may be empty
  {
-
   return;
  }
 
@@ -525,18 +525,74 @@ public:
 
  //Transforms:
 
- /** Contracts two tensors in a given tensor network and returns the result as a new tensor network. **/
- TensorNetwork<T> * contractTensors(unsigned int tens_id1, //in: id of the 1st tensor in the tensor network: [1..max]
-                                    unsigned int tens_id2) //in: id of the 2nd tensor in the tensor network: [1..max]
+ /** Contracts two tensors in a given tensor network and returns the result as a new tensor network.
+     Always the tensor with a smaller id will be replaced by a contracted product while the tensor
+     with a larger id will be deleted from the tensor network, causing a shift in the tensor numeration
+     that will affect all tensors with id > "tensId2". **/
+ TensorNetwork<T> * contractTensors(unsigned int tensId1, //in: id of the 1st tensor in the tensor network: [1..max]
+                                    unsigned int tensId2) //in: id of the 2nd tensor in the tensor network: [1..max]
  {
 #ifdef _DEBUG_DIL
-  assert((tens_id1 > 0 && tens_id1 <= this->getNumTensors()) && (tens_id2 > 0 && tens_id2 <= this->getNumTensors()));
+  assert((tensId1 >= 1 && tensId1 <= this->getNumTensors()) && (tensId2 >= 1 && tensId2 <= this->getNumTensors()));
+  assert(tensId1 != tensId2);
 #endif
-  if(tens_id1 > tens_id2){unsigned int tmp = tens_id1; tens_id1 = tens_id2; tens_id2 = tmp;}
-  auto tensornet = new TensorNetwork<T>();
-  auto output = (this->Tensors)[0];
-  for(unsigned int i = 0; i < tens_id1; ++i){
-   
+  if(tensId1 > tensId2){auto tmp = tensId1; tensId1 = tensId2; tensId2 = tmp;}
+  auto tensornet = new TensorNetwork<T>(); //new tensor network
+  //Remove contracted legs from the 1st tensor:
+  auto & tensor1 = Tensors[tensId1]; //1st contracted tensor
+  auto rank1 = tensor1.getTensorRank(); //rank of the 1st tensor
+  unsigned int j = 0; //number of removed legs
+  for(unsigned int i = 0; i < rank1; ++i){
+   auto legId = i - j;
+   const auto & leg = tensor1.getTensorLeg(legId);
+   const auto connTensId = leg.getTensorId();
+   const auto connTensLegId = leg.getDimensionId();
+   if(connTensId == tensId2){ //contracted dimension (remove)
+    tensor1.deleteDimension(legId);
+    ++j;
+   }else{
+    Tensors[connTensId].resetConnection(connTensLegId,TensorLeg(tensId1,legId));
+   }
+  }
+  rank1 = tensor1.getTensorRank(); //updated rank of the 1st tensor
+  //Remove contracted legs from the 2nd tensor:
+  auto & tensor2 = Tensors[tensId2]; //2nd contracted tensor
+  auto rank2 = tensor2.getTensorRank(); //rank of the 2nd tensor
+  j = 0; //number of removed legs
+  for(unsigned int i = 0; i < rank2; ++i){
+   auto legId = i - j;
+   const auto & leg = tensor2.getTensorLeg(legId);
+   const auto connTensId = leg.getTensorId();
+   const auto connTensLegId = leg.getDimensionId();
+   if(connTensId == tensId1){ //contracted dimension (remove)
+    tensor2.deleteDimension(legId);
+    ++j;
+   }else{
+    Tensors[connTensId].resetConnection(connTensLegId,TensorLeg(tensId2,legId));
+   }
+  }
+  rank2 = tensor2.getTensorRank(); //updated rank of the 2nd tensor
+  //Append legs of the 2nd tensor to the 1st tensor:
+  for(unsigned int i = 0; i < rank2; ++i){
+   const auto & leg = tensor2.getTensorLeg(i);
+   const auto connTensId = leg.getTensorId();
+   const auto connTensLegId = leg.getDimensionId();
+   Tensors[connTensId].resetConnection(connTensLegId,TensorLeg(tensId1,rank1));
+   tensor1.appendDimension(tensor2.getDimExtent(i),leg);
+   rank1 = tensor1.getTensorRank(); //updated rank of the 1st tensor
+  }
+  //Delete the 2nd tensor and adjust tensor numeration in the tensor network:
+  Tensors.erase(Tensors.begin()+tensId2);
+  for(j = 0; j < Tensors.size(); ++j){
+   auto & tensor = Tensors[j];
+   for(unsigned int i = 0; i < tensor.getNumLegs(); ++i){
+    const auto & leg = tensor.getTensorLeg(i);
+    auto connTensId = leg.getTensorId();
+#ifdef _DEBUG_DIL
+    assert(connTensId != tensId2);
+#endif
+    if(connTensId > tensId2) tensor.resetConnection(i,TensorLeg(connTensId-1,leg.getDimensionId()));
+   }
   }
   return tensornet;
  }
