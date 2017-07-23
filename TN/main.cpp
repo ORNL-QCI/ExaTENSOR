@@ -118,10 +118,10 @@ int test_tensor_expression(){
  tensnet0.printIt();
 
  //Contract tensors 1 and 2:
- auto * tensnet1 = tensnet0.contractTensors(1,2);
+ tensnet0.contractTensors(1,2);
  //Print the new tensor network:
  std::cout << std::endl;
- tensnet1->printIt();
+ tensnet0.printIt();
 
  //Done:
  return 0;

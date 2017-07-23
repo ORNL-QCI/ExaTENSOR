@@ -529,15 +529,14 @@ public:
      Always the tensor with a smaller id will be replaced by a contracted product while the tensor
      with a larger id will be deleted from the tensor network, causing a shift in the tensor numeration
      that will affect all tensors with id > "tensId2". **/
- TensorNetwork<T> * contractTensors(unsigned int tensId1, //in: id of the 1st tensor in the tensor network: [1..max]
-                                    unsigned int tensId2) //in: id of the 2nd tensor in the tensor network: [1..max]
+ void contractTensors(unsigned int tensId1, //in: id of the 1st tensor in the tensor network: [1..max]
+                      unsigned int tensId2) //in: id of the 2nd tensor in the tensor network: [1..max]
  {
 #ifdef _DEBUG_DIL
   assert((tensId1 >= 1 && tensId1 <= this->getNumTensors()) && (tensId2 >= 1 && tensId2 <= this->getNumTensors()));
   assert(tensId1 != tensId2);
 #endif
   if(tensId1 > tensId2){auto tmp = tensId1; tensId1 = tensId2; tensId2 = tmp;}
-  auto tensornet = new TensorNetwork<T>(); //new tensor network
   //Remove contracted legs from the 1st tensor:
   auto & tensor1 = Tensors[tensId1]; //1st contracted tensor
   auto rank1 = tensor1.getTensorRank(); //rank of the 1st tensor
@@ -594,7 +593,7 @@ public:
     if(connTensId > tensId2) tensor.resetConnection(i,TensorLeg(connTensId-1,leg.getDimensionId()));
    }
   }
-  return tensornet;
+  return;
  }
 
 };
