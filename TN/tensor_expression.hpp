@@ -356,6 +356,10 @@ public:
  /** Constructs an empty tensor network **/
  TensorNetwork(){}
 
+ /** Copy constructor. **/
+ TensorNetwork(const TensorNetwork<T> & tensNetwork):
+               Tensors(tensNetwork.Tensors){}
+
  /** Destructor. **/
  virtual ~TensorNetwork(){}
 
@@ -525,10 +529,9 @@ public:
 
  //Transforms:
 
- /** Contracts two tensors in a given tensor network and returns the result as a new tensor network.
-     Always the tensor with a smaller id will be replaced by a contracted product while the tensor
-     with a larger id will be deleted from the tensor network, causing a shift in the tensor numeration
-     that will affect all tensors with id > "tensId2". **/
+ /** Contracts two tensors in a given tensor network. Always the tensor with a smaller id will be replaced
+     by a contracted product while the tensor with a larger id will be deleted from the tensor network,
+     causing a shift in the tensor numeration that will affect all tensors with id > "tensId2". **/
  void contractTensors(unsigned int tensId1, //in: id of the 1st tensor in the tensor network: [1..max]
                       unsigned int tensId2) //in: id of the 2nd tensor in the tensor network: [1..max]
  {
@@ -593,6 +596,19 @@ public:
     if(connTensId > tensId2) tensor.resetConnection(i,TensorLeg(connTensId-1,leg.getDimensionId()));
    }
   }
+  return;
+ }
+
+ /** Contracts two tensors in a given tensor network and returns the result as a new tensor network.
+     Always the tensor with a smaller id will be replaced by a contracted product while the tensor
+     with a larger id will be deleted from the tensor network, causing a shift in the tensor numeration
+     that will affect all tensors with id > "tensId2". **/
+ void contractTensors(unsigned int tensId1, //in: id of the 1st tensor in the tensor network: [1..max]
+                      unsigned int tensId2, //in: id of the 2nd tensor in the tensor network: [1..max]
+                      TensorNetwork<T> ** resultNetwork) //out: result tensor network
+ {
+  *resultNetwork = new TensorNetwork<T>(*this);
+  (*resultNetwork)->contractTensors(tensId1,tensId2);
   return;
  }
 
