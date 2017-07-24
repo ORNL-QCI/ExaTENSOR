@@ -1,7 +1,7 @@
 /** C++ adapters for ExaTENSOR: Header
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/07/22
+!REVISION: 2017/07/24
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -257,6 +257,9 @@ public:
 
  /** Returns the tensor rank. **/
  unsigned int getTensorRank() const {return Tensor.getRank();}
+
+ /** Returns the tensor volume (number of elements). **/
+ std::size_t getVolume() const {return Tensor.getVolume();}
 
  /** Returns the extent of a specific tensor dimension. **/
  std::size_t getDimExtent(const unsigned int dimension) const
@@ -514,6 +517,7 @@ public:
  void appendNetwork(const TensorNetwork<T> & tensornet, //in: another tensor network
                     const std::vector<std::pair<unsigned int, unsigned int>> & legPairs) //in: leg pairing: pair<output leg id, output leg id>, may be empty
  {
+  //`Finish
   return;
  }
 
@@ -605,11 +609,48 @@ public:
      that will affect all tensors with id > "tensId2". **/
  void contractTensors(unsigned int tensId1, //in: id of the 1st tensor in the tensor network: [1..max]
                       unsigned int tensId2, //in: id of the 2nd tensor in the tensor network: [1..max]
-                      TensorNetwork<T> ** resultNetwork) //out: result tensor network
+                      TensorNetwork<T> ** resultNetwork) //out: tensor network result (returns a pointer to it)
  {
   *resultNetwork = new TensorNetwork<T>(*this);
   (*resultNetwork)->contractTensors(tensId1,tensId2);
   return;
+ }
+
+ /** Returns the computational cost of the specified contraction of two tensors. **/
+ double getContractionCost(const unsigned int tensId1, const unsigned int tensId2, double * arithmIntensity = nullptr, bool rescale = false)
+ {
+#ifdef _DEBUG_DIL
+  assert((tensId1 >= 1 && tensId1 <= this->getNumTensors()) && (tensId2 >= 1 && tensId2 <= this->getNumTensors()));
+  assert(tensId1 != tensId2);
+#endif
+  //Compute Flop count:
+  const auto & tensor1 = Tensors[tensId1];
+  double lTensVol = static_cast<double>(tensor1.getVolume());
+  double cost = lTensVol;
+  double cVol = 1.0;
+  double lVol = 1.0;
+  double rVol = 1.0;
+  const auto & tensor2 = Tensors[tensId2];
+  const auto rank2 = tensor2.getTensorRank();
+  for(unsigned int legId = 0; legId < rank2; ++legId){
+   const auto & leg = tensor2.getTensorLeg(legId);
+   double legVol = (static_cast<double>(tensor2.getDimExtent(legId)));
+   if(leg.getTensorId() != tensId1){ //right leg
+    rVol*=legVol; cost*=legVol;
+   }else{ //contracted leg
+    cVol*=legVol;
+   }
+  }
+  lVol = lTensVol / cVol;
+  double rTensVol = cVol * rVol;
+  double dTensVol = lVol * rVol;
+  double arithInt = cost / (dTensVol + lTensVol + rTensVol);
+  if(arithmIntensity != nullptr) *arithmIntensity = arithInt;
+  //Rescale the cost due to arithmetic intensity:
+  if(rescale){
+   //`Finish
+  }
+  return cost;
  }
 
 };

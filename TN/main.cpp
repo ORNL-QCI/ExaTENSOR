@@ -118,6 +118,9 @@ int test_tensor_expression(){
  tensnet0.printIt();
 
  //Contract tensors 1 and 2:
+ double ai;
+ std::cout << std::endl << "Contraction cost = " << tensnet0.getContractionCost(1,2,&ai);
+ std::cout << "; Arithmetic intensity = " << ai;
  tensnet0.contractTensors(1,2);
  //Print the new tensor network:
  std::cout << std::endl;
