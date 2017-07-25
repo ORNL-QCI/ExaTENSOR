@@ -1,6 +1,6 @@
 !Domain-specific virtual processor (DSVP): Abstract base module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/07/07
+!REVISION: 2017/07/25
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -36,7 +36,6 @@
 !      * Sync operand prefetching/uploading;
 !      * Release local resources.
 !   b) Domain-specific instruction:
-!      * Decode: Deferred binding to the domain-specific microcode selector;
 !      * Acquire resource: Acquires local resources for instruction operands;
 !      * Prefetch input: Starts prefetching (remote) input operands;
 !      * Sync prefetch: Synchronizes input prefetch;
@@ -44,27 +43,28 @@
 !      * Sync execution: Synchronizes instruction execution (completion or error);
 !      * Upload output: Starts uploading (remote) output operands;
 !      * Sync upload: Synchronizes output upload;
-!      * Release resource: Releases local resources occupied by instruction operands.
+!      * Release resource: Releases local resources occupied by instruction operands;
+!      * Encode: Encodes a domain-specific instruction into the bytecode packet.
 !   c) Domain-specific virtual processor:
 !      * Start;
 !      * Shutdown;
 !      * Fetch instructions for local execution;
 !      * Return retired instructions after local execution;
 !      * Send instructions for remote execution;
-!      * Receive retired instructions after remote execution.
+!      * Receive retired instructions after remote execution;
+!      * Decode: Unpacks the instruction bytecode into a domain-specific instruction.
 ! # A concrete domain-specific virtual processor derives from the abstract classes
 !   specified in this module. The derivative concrete classes have to provide implementation
-!   of all deferred type-bound procedures. The concrete domain-specific instruction class
-!   must also define the microcode for each concrete domain-specific instruction and override
-!   the .decode() method in the domain-specific instruction abstract class. The .decode()
-!   method is supposed to unpack the instruction code from a raw byte packet (incoming instruction)
-!   and, based on that code, execute the instruction setup microcode which will associate all
-!   dynamic bindings (dynamic methods) of the instruction object as well as unpack the instruction
-!   control field and instruction operands. After a domain-specific instruction has been succesfully
-!   decoded, it is ready for use in the domain-specific virtual processor pipeline implemented by
-!   the concrete domain-specific virtual processor class. The concrete domain-specific virtual
-!   processor is free to introduce additional virtual processing/storage elements, for example,
-!   a virtual cache hierarchy, virtual persistent storage, etc.
+!   of all deferred type-bound procedures. The concrete domain-specific virtual processor class
+!   must define the microcode for each concrete domain-specific instruction and override
+!   the .decode() method. The .decode() method is supposed to unpack the instruction code
+!   from a raw bytecode packet (incoming instruction) and, based on that code, execute the instruction
+!   setup microcode which will associate all dynamic bindings (dynamic methods) of the instruction object
+!   as well as unpack the instruction control field and instruction operands. After a domain-specific
+!   instruction has been succesfully decoded, it is ready for use in the domain-specific virtual processor
+!   pipeline implemented by the concrete domain-specific virtual processor class. The concrete
+!   domain-specific virtual processor is free to introduce additional virtual processing/storage elements,
+!   for example, a virtual cache hierarchy, virtual persistent storage, etc.
 
        module dsvp_base
         use dil_basic
@@ -162,17 +162,17 @@
          class(ds_instr_ctrl_t), pointer, private:: control=>NULL() !instruction control field: set up by the DECODE procedure
          type(ds_oprnd_ref_t), allocatable, private:: operand(:)    !domain-specific operands (wrapped pointers): set up by the DECODE procedure
          !dynamic methods (dynamically bound by the DECODE procedure):
-         procedure(ds_instr_self_i), pass(this), pointer, public:: acquire_resource=>NULL() !acquires local resources for instruction operands
+         procedure(ds_instr_self_i), pass(this), pointer, public:: acquire_resource=>NULL() !acquires local resources for instruction operands: dynamic binding set by decode
          procedure(ds_instr_self_i), pass(this), pointer, public:: prefetch_input=>NULL()   !starts prefetching input operands: dynamic binding set by decode
          procedure(ds_instr_sync_i), pass(this), pointer, public:: sync_prefetch=>NULL()    !synchronizes the input prefetch (either test or wait): dynamic binding set by decode
          procedure(ds_instr_self_i), pass(this), pointer, public:: execute=>NULL()          !executes the domain-specific instruction: dynamic binding set by decode
          procedure(ds_instr_sync_i), pass(this), pointer, public:: sync_execution=>NULL()   !synchronizes the execution (either test or wait): dynamic binding set by decode
          procedure(ds_instr_self_i), pass(this), pointer, public:: upload_output=>NULL()    !starts uploading the output: dynamic binding set by decode
          procedure(ds_instr_sync_i), pass(this), pointer, public:: sync_upload=>NULL()      !synchronizes the output upload (either test or wait): dynamic binding set by decode
-         procedure(ds_instr_self_i), pass(this), pointer, public:: release_resource=>NULL() !releases local resources occupied by instruction operands
+         procedure(ds_instr_self_i), pass(this), pointer, public:: release_resource=>NULL() !releases local resources occupied by instruction operands: dynamic binding set by decode
          contains
-          procedure(ds_instr_decode_i), deferred, public:: decode       !decoding procedure: Unpacks the raw byte packet (bytecode) and constructs a domain-specific instruction
           procedure(ds_instr_encode_i), deferred, public:: encode       !encoding procedure: Packs the domain-specific instruction into a raw byte packet (bytecode)
+          procedure(ds_instr_self_i), deferred, private:: set_microcode !sets dynamic microcode bindings above (called by .activate())
           procedure, public:: is_empty=>DSInstrIsEmpty                  !returns TRUE if the domain-specific instruction is empty
           procedure, public:: is_retired=>DSInstrIsRetired              !returns TRUE if the domain-specific instruction is retired
           procedure, public:: is_active=>DSInstrIsActive                !returns TRUE if the domain-specific instruction is active (defined)
@@ -190,6 +190,7 @@
           procedure, public:: free_operand=>DSInstrFreeOperand          !frees a specific instruction operand
           procedure, public:: get_num_operands=>DSInstrGetNumOperands   !returns the number of operands in the domain-specific instruction
           procedure, public:: all_set=>DSInstrAllSet                    !returns TRUE if all operands and control are set
+          procedure, public:: activate=>DSInstrActivate                 !activates the domain-specific instruction in the final stage of decoding (sets up dynamic microcode bindings, opcode and status)
           procedure, public:: terminate=>DSInstrTerminate               !terminates the normal instruction execution workflow, but leaves instruction defined (retired)
           procedure, public:: clean=>DSInstrClean                       !resets the domain-specific instruction to an empty state (after it has been retired)
         end type ds_instr_t
@@ -210,6 +211,7 @@
           procedure(dsvp_comm_instr_i), deferred, public:: return_retired_instructions  !returns back a block of retired instructions with their statuses
           procedure(dsvp_comm_instr_i), deferred, public:: send_instructions            !sends a block of domain-specific instructions to another DSVP for execution
           procedure(dsvp_comm_instr_i), deferred, public:: receive_retired_instructions !receives back a block of retired instructions with their statuses
+          procedure(dsvp_instr_decode_i), deferred, public:: decode_instruction  !decoding procedure: Unpacks the raw byte packet (instruction bytecode) and constructs a domain-specific instruction
           procedure, public:: start_time=>DSVPStartTime                          !starts the time when DSVP is initialized
           procedure, public:: clean=>DSVPClean                                   !cleans the DSVP state after destruction
           procedure, public:: set_description=>DSVPSetDescription                !sets DSVP ID, kind, and symbolic description
@@ -304,18 +306,11 @@
           integer(INTD), intent(out), optional:: ierr !out: error code
           logical, intent(in), optional:: wait        !in: WAIT versus TEST (defaults to WAIT)
          end function ds_instr_sync_i
-   !decode:
-         subroutine ds_instr_decode_i(this,instr_packet,ierr)
-          import:: ds_instr_t,obj_pack_t,INTD
-          class(ds_instr_t), intent(inout):: this         !inout: domain-specific instruction to be decoded
-          class(obj_pack_t), intent(inout):: instr_packet !in: instruction byte packet
-          integer(INTD), intent(out), optional:: ierr     !out: error code
-         end subroutine ds_instr_decode_i
    !encode:
          subroutine ds_instr_encode_i(this,instr_packet,ierr)
           import:: ds_instr_t,obj_pack_t,INTD
           class(ds_instr_t), intent(in):: this            !in: domain-specific instruction to be encoded
-          class(obj_pack_t), intent(inout):: instr_packet !out: instruction byte packet
+          class(obj_pack_t), intent(inout):: instr_packet !out: instruction byte packet (bytecode)
           integer(INTD), intent(out), optional:: ierr     !out: error code
          end subroutine ds_instr_encode_i
   !dsvp_t:
@@ -334,9 +329,15 @@
           integer(INTD), intent(in):: dsvp_id          !in: ID of another DSVP
           integer(INTD), intent(out), optional:: ierr  !out: error code
          end subroutine dsvp_comm_instr_i
+   !decode instruction:
+         subroutine dsvp_instr_decode_i(this,instr_packet,ds_instr,ierr)
+          import:: dsvp_t,ds_instr_t,obj_pack_t,INTD
+          class(dsvp_t), intent(inout):: this                 !inout: DSVP
+          class(obj_pack_t), intent(inout):: instr_packet     !in: instruction byte packet (bytecode)
+          class(ds_instr_t), intent(inout), target:: ds_instr !out: decoded domain-specific instruction ready for DS pipeline
+          integer(INTD), intent(out), optional:: ierr         !out: error code
+         end subroutine dsvp_instr_decode_i
         end interface
-!DATA:
-
 !VISIBILITY:
  !ds_resrc_t:
         public ds_resrc_query_i
@@ -375,11 +376,11 @@
         private DSInstrFreeOperand
         private DSInstrGetNumOperands
         private DSInstrAllSet
+        private DSInstrActivate
         private DSInstrTerminate
         private DSInstrClean
         public ds_instr_self_i
         public ds_instr_sync_i
-        public ds_instr_decode_i
         public ds_instr_encode_i
  !dsvp_t:
         private DSVPStartTime
@@ -394,6 +395,7 @@
         private DSVPIncrFailInstrCounter
         public dsvp_self_i
         public dsvp_comm_instr_i
+        public dsvp_instr_decode_i
 !IMPLEMENTATION:
        contains
 ![ds_oprnd_t]==========================================
@@ -980,6 +982,40 @@
          if(present(ierr)) ierr=errc
          return
         end function DSInstrAllSet
+!----------------------------------------------------
+        subroutine DSInstrActivate(this,op_code,ierr)
+!Activates the domain-specific instruction after it has been constructed or decoded.
+         implicit none
+         class(ds_instr_t), intent(inout):: this     !inout: domain-specific instruction
+         integer(INTD), intent(in):: op_code         !in: instruction code
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         call this%set_code(op_code,errc)
+         if(errc.eq.DSVP_SUCCESS) then
+          if(this%get_status().eq.DS_INSTR_EMPTY) then
+           call this%set_microcode(errc)
+           if(errc.eq.0) then
+            call this%set_status(DS_INSTR_NEW,errc,DSVP_SUCCESS)
+            if(errc.ne.DSVP_SUCCESS) then
+             call this%set_status(DS_INSTR_RETIRED,errc,DSVP_ERROR)
+             errc=-4
+            endif
+           else
+            call this%set_status(DS_INSTR_RETIRED,errc,DSVP_ERR_INVALID_ARGS)
+            errc=-3
+           endif
+          else
+           call this%set_status(DS_INSTR_RETIRED,errc,DSVP_ERR_INVALID_REQ)
+           errc=-2
+          endif
+         else
+          call this%set_status(DS_INSTR_RETIRED,errc,DSVP_ERR_UNABLE_COMPLETE)
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine DSInstrActivate
 !--------------------------------------------------------
         subroutine DSInstrTerminate(this,error_code,ierr)
 !Terminates the normal instruction execution workflow,

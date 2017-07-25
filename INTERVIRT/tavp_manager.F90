@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP Manager
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/07/16
+!REVISION: 2017/07/25
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -49,7 +49,7 @@
  !Tensor cache entry:
         type, private:: tens_entry_t
          class(tens_rcrsv_t), pointer, private:: tensor=>NULL() !composite tensor (consists of subtensors specified by their headers)
-         type(list_bi_t), private:: owner_list                  !list of subtensor owners (tens_owner_t)
+         type(list_bi_t), private:: owner_list                  !list of the owners (tens_owner_t) of subtensors
          type(tens_status_t), private:: tens_status             !tensor status
          logical, private:: tens_alloc=.FALSE.                  !TRUE if the tensor was allocated, FALSE if associated
          contains
@@ -63,11 +63,11 @@
  !Tensor instruction (realization of a tensor operation for a specific TAVP):
         type, extends(ds_instr_t), private:: tens_instr_t
         contains
-         procedure, private:: TensInstrCtor                     !ctor: constructs a tensor instruction from the specification of a tensor operation
+         procedure, private:: TensInstrCtor                        !ctor: constructs a tensor instruction from the specification of a tensor operation
          generic, public:: tens_instr_ctor=>TensInstrCtor
-         procedure, public:: decode=>TensInstrDecode            !decoding procedure: Unpacks the raw byte packet (bytecode) and constructs a TAVP instruction
-         procedure, public:: encode=>TensInstrEncode            !encoding procedure: Packs the TAVP instruction into a raw byte packet (bytecode)
-         final:: tens_instr_dtor                                !dtor
+         procedure, public:: encode=>TensInstrEncode               !encodes a tensor instruction into a bytecode packet
+         procedure, private:: set_microcode=>TensInstrSetMicrocode !sets up instruction dynamic microcode bindings
+         final:: tens_instr_dtor                                   !dtor
         end type tens_instr_t
 !INTERFACES:
 !VISIBILITY:
@@ -85,8 +85,8 @@
         private tens_entry_dtor
  !tens_instr_t:
         private TensInstrCtor
-        private TensInstrDecode
         private TensInstrEncode
+        private TensInstrSetMicrocode
         private tens_instr_dtor
 
 !IMPLEMENTATION:
@@ -304,31 +304,39 @@
          return
         end subroutine TensInstrCtor
 !---------------------------------------------------------
-        subroutine TensInstrDecode(this,instr_packet,ierr)
-!Decodes a tensor instruction from the bytecode packet.
-         implicit none
-         class(tens_instr_t), intent(inout):: this       !out: tensor instruction
-         class(obj_pack_t), intent(inout):: instr_packet !in: instruction bytecode packet
-         integer(INTD), intent(out), optional:: ierr     !out: error code
-         integer(INTD):: errc
-
-         errc=0
-         if(present(ierr)) ierr=errc
-         return
-        end subroutine TensInstrDecode
-!---------------------------------------------------------
         subroutine TensInstrEncode(this,instr_packet,ierr)
-!Encodes a tensor instruction into the bytecode packet.
+!Encodes a tensor instruction into a bytecode packet.
          implicit none
-         class(tens_instr_t), intent(in):: this          !in: tensor instruction
+         class(tens_instr_t), intent(in):: this          !in: tensor instruction (must be non-empty)
          class(obj_pack_t), intent(inout):: instr_packet !out: instruction bytecode packet
          integer(INTD), intent(out), optional:: ierr     !out: error code
          integer(INTD):: errc
 
-         errc=0
+         if(.not.this%is_empty(errc)) then
+          if(errc.eq.DSVP_SUCCESS) then
+           !`Finish
+          else
+           errc=-2
+          endif
+         else
+          errc=-1
+         endif
          if(present(ierr)) ierr=errc
          return
         end subroutine TensInstrEncode
+!--------------------------------------------------
+        subroutine TensInstrSetMicrocode(this,ierr)
+!Sets up instruction dynamic bindings.
+         implicit none
+         class(tens_instr_t), intent(inout):: this   !inout: defined tensor instruction
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc,op_code
+
+         op_code=this%get_code(errc)
+         !`Finish
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensInstrSetMicrocode
 !---------------------------------------
         subroutine tens_instr_dtor(this)
          implicit none

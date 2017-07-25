@@ -1,7 +1,7 @@
 !ExaTENSOR: Massively Parallel Virtual Processor for Scale-Adaptive Hierarchical Tensor Algebra
 !This is the top level API module of ExaTENSOR (user-level API)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017/07/16
+!REVISION: 2017/07/25
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -50,8 +50,8 @@
  !Tensors:
        public hspace_reg_t,tens_signature_t,tens_shape_t,tens_header_t,&
              &tens_simple_part_t,tens_layout_t,tens_layout_fdims_t,&
-             &tens_body_t,tens_rcrsv_t,tens_operation_t,permutation_t,&
-             &contr_ptrn_ext_t,tens_contraction_t
+             &tens_body_t,tens_rcrsv_t,permutation_t,contr_ptrn_ext_t,&
+             &tens_status_t
 !TYPES:
  !ExaTENSOR runtime status:
        type, public:: exatns_rt_status_t
@@ -60,22 +60,23 @@
         integer(INTD), public:: num_procs=0         !number of MPI processes involved
        end type exatns_rt_status_t
  !Vector space status:
-       type, public:: exa_space_status_t
+       type, public:: exatns_space_status_t
         logical, public:: built=.FALSE.               !whether or not the hierarchical (tree) structure has been imposed
         integer(INTL), public:: full_dimension=0_INTL !full dimension of the vector space (number of basis vectors)
         integer(INTD), public:: num_subspaces=0       !number of registered subspaces
-       end type exa_space_status_t
+       end type exatns_space_status_t
 !INTERFACES:
        abstract interface
  !External method (tensor operation):
-        function ext_method_i(tens_args,scal_args) result(ierr)
+        function exatns_method_i(tens_args,scal_args) result(ierr)
          import:: INTD,tens_rcrsv_t
          implicit none
          integer(INTD):: ierr                                !out: error code
          class(tens_rcrsv_t), intent(inout):: tens_args(0:)  !inout: tensor arguments
          complex(8), intent(inout), optional:: scal_args(0:) !inout: scalar arguments
-        end function ext_method_i
+        end function exatns_method_i
        end interface
+       public exatns_method_i
  !Overloads:
        interface exatns_tensor_init
         module procedure exatns_tensor_init_scalar
@@ -89,7 +90,7 @@
        integer(INTD), protected:: exa_num_managers=0 !number of manager processes
        integer(INTD), protected:: exa_num_helpers=0  !number of helper processes
  !TAVP instance:
-       class(dsvp_t), allocatable:: tavp
+       class(dsvp_t), allocatable, private:: tavp
 !VISIBILITY:
  !Control:
        public exatns_start                !starts the ExaTENSOR DSVP
@@ -294,8 +295,7 @@
         integer(INTD):: ierr                        !out: error code
         type(exatns_rt_status_t), intent(out):: sts !out: current status of the ExaTENSOR runtime
 
-        ierr=EXA_SUCCESS
-        write(CONS_OUT,*)'FATAL(exatensor:status): Not implemented yet!' !`Implement
+        ierr=EXA_SUCCESS; sts=exatns_rt_status
         return
        end function exatns_status
 ![ExaTENSOR Parser/Interpreter API]------------------
@@ -326,7 +326,7 @@
         implicit none
         integer(INTD):: ierr                    !out: error code
         character(*), intent(in):: method_name  !in: symbolic method name
-        procedure(ext_method_i):: method        !in: external method (tensor operation)
+        procedure(exatns_method_i):: method     !in: external method (tensor operation)
         integer(INTD), intent(out):: method_tag !out: method tag (non-negative on success)
 
         ierr=EXA_SUCCESS; method_tag=-1
@@ -415,9 +415,9 @@
        function exatns_space_status(space_name,sts) result(ierr)
 !Returns the status of a registered vector space.
         implicit none
-        integer(INTD):: ierr                        !out: error code
-        character(*), intent(in):: space_name       !in: vector space symbolic name
-        type(exa_space_status_t), intent(out):: sts !out: vector space status
+        integer(INTD):: ierr                           !out: error code
+        character(*), intent(in):: space_name          !in: vector space symbolic name
+        type(exatns_space_status_t), intent(out):: sts !out: vector space status
 
         ierr=EXA_SUCCESS
         write(CONS_OUT,*)'FATAL(exatensor:space_status): Not implemented yet!' !`Implement
