@@ -74,14 +74,14 @@
           procedure, private:: TensInstrCtor                        !ctor: constructs a tensor instruction from the specification of a tensor operation
           generic, public:: tens_instr_ctor=>TensInstrCtor
           procedure, public:: encode=>TensInstrEncode               !encoding procedure: Packs the TAVP instruction into a raw byte packet (bytecode)
-          procedure, private:: set_microcode=>TensInstrSetMicrocode !sets up instruction dynamic microcode bindings, opcode and status
+          procedure, private:: set_microcode=>TensInstrSetMicrocode !sets up instruction dynamic microcode bindings
           final:: tens_instr_dtor                                   !dtor
         end type tens_instr_t
  !TAVP specialization "Worker":
         type, extends(dsvp_t), public:: tavp_worker_t
-         type(tens_cache_t), private:: tens_cache       !tensor cache (both persistent and temporary tensors)
-         type(list_bi_t), private:: instr_queue         !instruction queue
-         type(list_iter_t), private:: instr_it          !instruction queue iterator
+         type(tens_cache_t), private:: tens_cache                   !tensor cache (both persistent and temporary tensors)
+         type(list_bi_t), private:: instr_queue                     !global instruction queue
+         type(list_iter_t), private:: instr_it                      !global instruction queue iterator
          contains
           procedure, public:: start=>TAVPWorkerStart                                             !initializes TAVP to an active state
           procedure, public:: shutdown=>TAVPWorkerShutdown                                       !shuts down TAVP
