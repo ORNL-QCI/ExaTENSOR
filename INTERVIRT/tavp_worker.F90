@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP "Worker" implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/07/25
+!REVISION: 2017/07/29
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -34,10 +34,10 @@
         integer(INTD), private:: DEBUG=0
         logical, private:: VERBOSE=.TRUE.
  !Distributed memory space (for workers):
-        integer(INTD), parameter, private:: TAVP_WORKER_NUM_WINS=1 !number of MPI windows in the distributed space
+        integer(INTD), parameter, private:: TAVP_WORKER_NUM_WINS=1 !number of MPI windows in the DDSS distributed space
  !On-node pinned Host memory buffer:
-        integer(INTL), protected:: tavp_worker_host_buf_size=1_INTL*(1024_INTL*1024_INTL*1024_INTL) !size in bytes
-        integer(INTD), private:: tavp_worker_host_arg_max=0 !set later: max number of tensors in the pinned Host buffer
+        integer(INTL), protected:: tavp_worker_host_buf_size=1_INTL*(1024_INTL*1024_INTL*1024_INTL) !buffer size in bytes
+        integer(INTD), private:: tavp_worker_host_arg_max=0 !set later: max number of tensors in the pinned Host buffer (initialized by TAL-SH)
  !Elementary tensor instruction granularity classification:
         real(8), public:: EXA_FLOPS_MEDIUM=1d10 !minimal number of Flops to consider the operation as medium-cost
         real(8), public:: EXA_FLOPS_HEAVY=1d12  !minimal number of Flops to consider the operation as heavy-cost
@@ -59,7 +59,7 @@
         end type tens_entry_t
  !Tensor cache:
         type, private:: tens_cache_t
-         type(dictionary_t), private:: map                        !cache dictionary: <tens_descr_t->tens_entry_t>
+         type(dictionary_t), private:: map                        !cache dictionary: <tens_descr_t --> tens_entry_t>
          contains
           procedure, public:: lookup=>TensCacheLookup             !looks up a given tensor in the cache
           procedure, public:: store=>TensCacheStore               !stores a given tensor in the cache
@@ -80,8 +80,8 @@
  !TAVP specialization "Worker":
         type, extends(dsvp_t), public:: tavp_worker_t
          type(tens_cache_t), private:: tens_cache                   !tensor cache (both persistent and temporary tensors)
-         type(list_bi_t), private:: instr_queue                     !global instruction queue
-         type(list_iter_t), private:: instr_it                      !global instruction queue iterator
+         type(list_bi_t), private:: instr_queue                     !global tensor instruction queue
+         type(list_iter_t), private:: instr_it                      !global tensor instruction queue iterator (instruction pointer)
          contains
           procedure, public:: start=>TAVPWorkerStart                                             !initializes TAVP to an active state
           procedure, public:: shutdown=>TAVPWorkerShutdown                                       !shuts down TAVP
@@ -958,7 +958,7 @@
 !otherwise pointer associated. However, <tensor_alloc> and
 !<resource_alloc> flags can be used to mark the corresponding
 !associated objects as allocated in case they will need to be
-!deallocated later from here.
+!deallocated later from here (passed ownership).
          implicit none
          class(tens_entry_t), intent(out):: this                       !out: tensor cache entry
          integer(INTD), intent(out), optional:: ierr                   !out: error code
@@ -1529,17 +1529,17 @@
            call init_microcode(errc)
            if(errc.eq.0) then
             !call test_carma(errc) !debug: initial brute-force distributed benchmark
-            call this%shutdown(errc) !`debug: move
+            call this%shutdown(errc) !`debug: remove
            else
             errc=-3
            endif
           else
            errc=-2
-           call quit(errc,'FATAL(TAVP-Worker:start): Failed to initialize distributed address space!')
+           call quit(errc,'FATAL(TAVP-Worker:start): Failed to initialize the distributed address space service!')
           endif
          else
           errc=-1
-          call quit(errc,'FATAL(TAVP-Worker:start): Failed to initialize TAL-SH!')
+          call quit(errc,'FATAL(TAVP-Worker:start): Failed to initialize the numerical tensor algebra service!')
          endif
          if(present(ierr)) ierr=errc
          return
@@ -1559,7 +1559,6 @@
           implicit none
           integer(INTD), intent(out):: jerr
 
-          jerr=0
           call tavp_addr_space%create(role_comm,TAVP_WORKER_NUM_WINS,'WorkAddressSpace',jerr)
           return
          end subroutine init_distributed_space

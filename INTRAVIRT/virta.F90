@@ -8,7 +8,7 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/07/25
+!REVISION: 2017/07/29
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -79,16 +79,16 @@
    !NOOP:
         integer(INTD), parameter, public:: TAVP_INSTR_NOOP=DS_INSTR_NOOP !no operation (empty instruction)
    !General control [0-15]:
-        integer(INTD), parameter, public:: TAVP_INSTR_STOP=0      !stop TAVP
-        integer(INTD), parameter, public:: TAVP_INSTR_PAUSE=1     !pause TAVP execution
-        integer(INTD), parameter, public:: TAVP_INSTR_RESUME=2    !resume TAVP execution
+        integer(INTD), parameter, public:: TAVP_INSTR_STOP=0      !stop TAVP (finishes current instructions and shutdowns TAVP)
+        integer(INTD), parameter, public:: TAVP_INSTR_PAUSE=1     !pause TAVP execution (finishes active instructions and pauses TAVP)
+        integer(INTD), parameter, public:: TAVP_INSTR_RESUME=2    !resume TAVP execution (resumes TAVP execution pipeline)
    !Tensor operations [16-255]:
         integer(INTD), parameter, public:: TAVP_INSTR_CREATE=16   !tensor creation
         integer(INTD), parameter, public:: TAVP_INSTR_DESTROY=17  !tensor destruction
         integer(INTD), parameter, public:: TAVP_INSTR_LOAD=18     !tensor loading from persistent storage
         integer(INTD), parameter, public:: TAVP_INSTR_SAVE=19     !tensor saving in persistent storage
         integer(INTD), parameter, public:: TAVP_INSTR_COMM=20     !tensor communication (get/put/accumulate)
-        integer(INTD), parameter, public:: TAVP_INSTR_INIT=21     !tensor initialization (assignement to a value)
+        integer(INTD), parameter, public:: TAVP_INSTR_INIT=21     !tensor initialization (assignement of a value)
         integer(INTD), parameter, public:: TAVP_INSTR_NORM1=22    !tensor 1-norm
         integer(INTD), parameter, public:: TAVP_INSTR_NORM2=23    !tensor 2-norm
         integer(INTD), parameter, public:: TAVP_INSTR_MIN=24      !tensor min element
@@ -133,7 +133,7 @@
         type, extends(ds_oprnd_t), public:: tens_oprnd_t
          class(tens_rcrsv_t), pointer, private:: tensor=>NULL()   !pointer to a persistent recursive tensor
          class(tens_resrc_t), pointer, private:: resource=>NULL() !pointer to a persistent local tensor resource
-         type(talsh_tens_t), private:: talsh_tens                 !TAL-SH tensor object
+         type(talsh_tens_t), private:: talsh_tens                 !TAL-SH tensor object (for performing actual computations)
          contains
           procedure, private:: TensOprndCtor                    !ctor
           generic, public:: tens_oprnd_ctor=>TensOprndCtor
@@ -147,7 +147,7 @@
           procedure, public:: upload=>TensOprndUpload           !starts uploading the tensor operand to its remote location
           procedure, public:: sync=>TensOprndSync               !synchronizes the currently pending communication on the tensor operand
           procedure, public:: release=>TensOprndRelease         !destroys the present local copy of the tensor operand (releases local resources!), but the operand stays defined
-          procedure, public:: destruct=>TensOprndDestruct       !performs complete destruction back to an empty (undefined) state
+          procedure, public:: destruct=>TensOprndDestruct       !performs complete destruction back to an empty state
           final:: tens_oprnd_dtor                               !dtor
         end type tens_oprnd_t
  !Tensor instruction control fields:
@@ -194,7 +194,7 @@
         integer(INT_MPI), public:: role_comm=MPI_COMM_NULL  !role-specific MPI communicator
         integer(INT_MPI), public:: role_size=0              !size of the role-specific MPI communicator
         integer(INT_MPI), public:: role_rank=-1             !process rank within the role-specific MPI communicator
-        integer(INT_MPI), public:: driver_mpi_process=0     !MPI rank of the Driver process (normally process 0)
+        integer(INT_MPI), public:: driver_mpi_process=0     !MPI rank of the Driver process (normally process 0 from MPI_COMM_WORLD)
         integer(INT_MPI), allocatable, public:: managers(:) !ordered list of MPI processes serving as managers (ranks in MPI_COMM_WORLD)
  !TAVP address space:
         type(DistrSpace_t), public:: tavp_addr_space        !shared DDSS address space among processes of the same role

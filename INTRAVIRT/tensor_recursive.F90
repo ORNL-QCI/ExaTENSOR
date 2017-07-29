@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/07/11
+!REVISION: 2017/07/29
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -3730,41 +3730,38 @@
 !--------------------------------------------------------------------
         function TensRcrsvGetDescriptor(this,ierr) result(tens_descr)
 !Returns a tensor descriptor <tens_descr_t> object uniquely characterizing
-!tensor signature, shape, layout kind, data kind, and location.
+!the tensor signature, shape, layout kind, data type, and location.
 !Essentially, this function is an indirect CTOR for <tens_descr_t>.
 !tens_descr.info(:) format:
-! 1. hspace_idx(1:rank);
-! 2. subspace_idx(1:rank);
-! 3. dim_extent(1:rank);
-! 4. dim_group(1:rank);
-! 5. dim_group_restriction(1:rank);
+! 1. hspace_idx(1:rank): space id for each tensor dimension;
+! 2. subspace_idx(1:rank): subspace id for each tensor dimension;
+! 3. dim_extent(1:rank): extent for each tensor dimension;
+! 4. dim_group(1:rank): previous dimension for each (symmetric) tensor dimension (0:none);
+! 5. dim_group_restriction(1:rank): group restriction for each symmetric tensor dimension;
 ! 6. layout kind;
 ! 7. data type;
 ! 8. body size in bytes;
-! 9. location (global process id).
+! 9. location (DDSS process id).
 !TOTAL size = 5*rank + 1 + 1 + 1 + 1 = 5*rank + 4 [elements]
 !`Note: This function violates object encapsulation by
 ! directly accessing data members of the data members
 ! of the <tens_rcrsv_t> class. However, since it is a read-only
 ! access and all accessed data members are defined in the same
 ! module, it should not cause a problem.
-!`Problem: Currently .dim_group() has to be identical in order
-! for two identical tensors to produce identical descriptors.
-! Simply modifying the group number will change the descriptor.
-! Solution: Use dimension dependency instead of group number.
          implicit none
          type(tens_descr_t):: tens_descr             !out: tensor descriptor
          class(tens_rcrsv_t), intent(in):: this      !in: tensor
          integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc,num_dims,unresolved,i,n
+         integer(INTD):: errc,num_dims,unresolved,i,j,k,ng,gres
          logical:: shaped,hspaced,layed,located,symmetric
          class(DataDescr_t), pointer:: descr_p
+         integer(INTD):: grp_pos(0:MAX_TENSOR_RANK*2) !the factor of 2 is just used to make it big enough
          !real(8):: tms
 
          !tms=thread_wtime()
          if(this%is_set(errc,num_dims,shaped,unresolved,hspaced,layed,located,symmetric)) then
           if(errc.eq.TEREC_SUCCESS) then
-           if(unresolved.eq.0.and.shaped.and.layed.and.located) then
+           if(unresolved.eq.0.and.shaped.and.layed.and.located) then !fully defined tensor block
             tens_descr%rank=num_dims
             tens_descr%char_name=this%header%signature%char_name
             allocate(tens_descr%info(num_dims*5+4)) !see the format right above
@@ -3773,32 +3770,49 @@
              tens_descr%info(i+1:i+num_dims)=this%header%signature%hspace(1:num_dims)%space_id; i=i+num_dims
              tens_descr%info(i+1:i+num_dims)=this%header%signature%space_idx(1:num_dims); i=i+num_dims
              tens_descr%info(i+1:i+num_dims)=this%header%shape%dim_extent(1:num_dims); i=i+num_dims
-             if(symmetric) then
-              tens_descr%info(i+1:i+num_dims)=this%header%shape%dim_group(1:num_dims); i=i+num_dims
-              do n=1,num_dims
-               i=i+1; tens_descr%info(i)=this%header%shape%group_spec(this%header%shape%dim_group(n))
-              enddo
-             else
+             if(symmetric) then !dimension symmetry may be present
+              ng=this%header%num_groups(errc) !number of non-trivial symmetric dimension groups
+              if(errc.eq.TEREC_SUCCESS) then
+               if(ng.gt.0) then !dimension symmetry indeed present
+                if(ng.le.size(grp_pos)) then
+                 grp_pos(0:ng)=0
+                 do j=1,num_dims
+                  k=this%header%get_dim_group(j,gres,errc); if(errc.ne.TEREC_SUCCESS) exit
+                  tens_descr%info(i+j)=grp_pos(k); tens_descr%info(i+num_dims+j)=gres
+                  if(k.gt.0) grp_pos(k)=j
+                 enddo
+                 i=i+num_dims*2
+                else
+                 errc=TEREC_ERROR
+                endif
+               else !no dimension symmetry
+                tens_descr%info(i+1:i+num_dims)=0; i=i+num_dims
+                tens_descr%info(i+1:i+num_dims)=TEREC_IND_RESTR_NONE; i=i+num_dims
+               endif
+              endif
+             else !no dimension symmetry
               tens_descr%info(i+1:i+num_dims)=0; i=i+num_dims
               tens_descr%info(i+1:i+num_dims)=TEREC_IND_RESTR_NONE; i=i+num_dims
              endif
             endif
-            i=i+1; tens_descr%info(i)=this%body%layout%get_layout_kind()
-            i=i+1; tens_descr%info(i)=this%body%layout%get_data_type()
-            i=i+1; tens_descr%info(i)=this%body%layout%get_body_size()
-            descr_p=>this%body%layout%get_data_descr(errc)
             if(errc.eq.TEREC_SUCCESS) then
-             if(descr_p%is_set(errc,proc_rank=n)) then
-              if(errc.eq.0) then
-               i=i+1; tens_descr%info(i)=n
+             i=i+1; tens_descr%info(i)=this%body%layout%get_layout_kind()
+             i=i+1; tens_descr%info(i)=this%body%layout%get_data_type()
+             i=i+1; tens_descr%info(i)=this%body%layout%get_body_size()
+             descr_p=>this%body%layout%get_data_descr(errc)
+             if(errc.eq.TEREC_SUCCESS) then
+              if(descr_p%is_set(errc,proc_rank=j)) then
+               if(errc.eq.0) then
+                i=i+1; tens_descr%info(i)=j
+               else
+                errc=TEREC_OBJ_CORRUPTED
+               endif
               else
                errc=TEREC_OBJ_CORRUPTED
               endif
-             else
-              errc=TEREC_OBJ_CORRUPTED
              endif
+             descr_p=>NULL()
             endif
-            descr_p=>NULL()
            else
             errc=TEREC_INVALID_ARGS
            endif
