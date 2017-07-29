@@ -3727,8 +3727,8 @@
          if(present(ierr)) ierr=errc
          return
         end function TensRcrsvGetBody
-!--------------------------------------------------------------------
-        function TensRcrsvGetDescriptor(this,ierr) result(tens_descr)
+!----------------------------------------------------------------------------------
+        function TensRcrsvGetDescriptor(this,ierr,skip_location) result(tens_descr)
 !Returns a tensor descriptor <tens_descr_t> object uniquely characterizing
 !the tensor signature, shape, layout kind, data type, and location.
 !Essentially, this function is an indirect CTOR for <tens_descr_t>.
@@ -3741,7 +3741,7 @@
 ! 6. layout kind;
 ! 7. data type;
 ! 8. body size in bytes;
-! 9. location (DDSS process id).
+! 9. location (DDSS process id): Skipped when <skip_location>=TRUE.
 !TOTAL size = 5*rank + 1 + 1 + 1 + 1 = 5*rank + 4 [elements]
 !`Note: This function violates object encapsulation by
 ! directly accessing data members of the data members
@@ -3749,16 +3749,18 @@
 ! access and all accessed data members are defined in the same
 ! module, it should not cause a problem.
          implicit none
-         type(tens_descr_t):: tens_descr             !out: tensor descriptor
-         class(tens_rcrsv_t), intent(in):: this      !in: tensor
-         integer(INTD), intent(out), optional:: ierr !out: error code
+         type(tens_descr_t):: tens_descr               !out: tensor descriptor
+         class(tens_rcrsv_t), intent(in):: this        !in: tensor
+         integer(INTD), intent(out), optional:: ierr   !out: error code
+         logical, intent(in), optional:: skip_location !in: if TRUE, the tensor location will be skipped (default to FALSE)
          integer(INTD):: errc,num_dims,unresolved,i,j,k,ng,gres
-         logical:: shaped,hspaced,layed,located,symmetric
+         logical:: shaped,hspaced,layed,located,symmetric,skiploc
          class(DataDescr_t), pointer:: descr_p
          integer(INTD):: grp_pos(0:MAX_TENSOR_RANK*2) !the factor of 2 is just used to make it big enough
          !real(8):: tms
 
          !tms=thread_wtime()
+         skiploc=.FALSE.; if(present(skip_location)) skiploc=skip_location
          if(this%is_set(errc,num_dims,shaped,unresolved,hspaced,layed,located,symmetric)) then
           if(errc.eq.TEREC_SUCCESS) then
            if(unresolved.eq.0.and.shaped.and.layed.and.located) then !fully defined tensor block
@@ -3799,19 +3801,23 @@
              i=i+1; tens_descr%info(i)=this%body%layout%get_layout_kind()
              i=i+1; tens_descr%info(i)=this%body%layout%get_data_type()
              i=i+1; tens_descr%info(i)=this%body%layout%get_body_size()
-             descr_p=>this%body%layout%get_data_descr(errc)
-             if(errc.eq.TEREC_SUCCESS) then
-              if(descr_p%is_set(errc,proc_rank=j)) then
-               if(errc.eq.0) then
-                i=i+1; tens_descr%info(i)=j
+             if(.not.skiploc) then
+              descr_p=>this%body%layout%get_data_descr(errc)
+              if(errc.eq.TEREC_SUCCESS) then
+               if(descr_p%is_set(errc,proc_rank=j)) then
+                if(errc.eq.0) then
+                 i=i+1; tens_descr%info(i)=j
+                else
+                 errc=TEREC_OBJ_CORRUPTED
+                endif
                else
                 errc=TEREC_OBJ_CORRUPTED
                endif
-              else
-               errc=TEREC_OBJ_CORRUPTED
               endif
+              descr_p=>NULL()
+             else
+              i=i+1; tens_descr%info(i)=-1
              endif
-             descr_p=>NULL()
             endif
            else
             errc=TEREC_INVALID_ARGS
