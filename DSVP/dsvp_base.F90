@@ -1,6 +1,6 @@
 !Domain-specific virtual processor (DSVP): Abstract base module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/07/25
+!REVISION: 2017/07/31
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -194,6 +194,19 @@
           procedure, public:: terminate=>DSInstrTerminate               !terminates the normal instruction execution workflow, but leaves instruction defined (retired)
           procedure, public:: clean=>DSInstrClean                       !resets the domain-specific instruction to an empty state (after it has been retired)
         end type ds_instr_t
+ !Domain-specific microcode binding:
+        type, public:: ds_microcode_bind_t
+         procedure(ds_instr_self_i), nopass, pointer, public:: acquire_resource=>NULL() !acquires local resources for instruction operands
+         procedure(ds_instr_self_i), nopass, pointer, public:: prefetch_input=>NULL()   !starts prefetching input operands
+         procedure(ds_instr_sync_i), nopass, pointer, public:: sync_prefetch=>NULL()    !synchronizes the input prefetch (either test or wait)
+         procedure(ds_instr_self_i), nopass, pointer, public:: execute=>NULL()          !executes the domain-specific instruction
+         procedure(ds_instr_sync_i), nopass, pointer, public:: sync_execution=>NULL()   !synchronizes the execution (either test or wait)
+         procedure(ds_instr_self_i), nopass, pointer, public:: upload_output=>NULL()    !starts uploading the output operand
+         procedure(ds_instr_sync_i), nopass, pointer, public:: sync_upload=>NULL()      !synchronizes the output upload (either test or wait)
+         procedure(ds_instr_self_i), nopass, pointer, public:: release_resource=>NULL() !releases local resources occupied by instruction operands
+         contains
+          procedure, public:: reset=>DSMicrocodeBindReset !resets microcode binding to NULL
+        end type ds_microcode_bind_t
  !Domain-specific virtual processor (DSVP):
         type, abstract, public:: dsvp_t
          integer(INTD), private:: stat=DSVP_STAT_OFF          !current DSVP status: {DSVP_STAT_OFF, DSVP_STAT_ON, negative integers = errors}
@@ -258,22 +271,6 @@
           integer(INTD), intent(out), optional:: ierr !out: error code
           logical, intent(in), optional:: wait        !in: TRUE activates WAIT instead of TEST synchronization
          end function ds_oprnd_sync_i
-   !pack:
-         subroutine ds_oprnd_pack_i(this,packet,ierr)
-          import:: ds_oprnd_t,obj_pack_t,INTD
-          implicit none
-          class(ds_oprnd_t), intent(in):: this        !in: domain-specific operand
-          class(obj_pack_t), intent(inout):: packet   !out: packet
-          integer(INTD), intent(out), optional:: ierr !out: error code
-         end subroutine ds_oprnd_pack_i
-   !unpack:
-         subroutine ds_oprnd_unpack_i(this,packet,ierr)
-          import:: ds_oprnd_t,obj_pack_t,INTD
-          implicit none
-          class(ds_oprnd_t), intent(inout):: this     !out: domain-specific operand
-          class(obj_pack_t), intent(inout):: packet   !in: packet
-          integer(INTD), intent(out), optional:: ierr !out: error code
-         end subroutine ds_oprnd_unpack_i
   !ds_instr_ctrl_t:
    !pack:
          subroutine ds_instr_ctrl_pack_i(this,packet,ierr)
@@ -353,8 +350,6 @@
         public ds_oprnd_self_i
         public ds_oprnd_query_i
         public ds_oprnd_sync_i
-        public ds_oprnd_pack_i
-        public ds_oprnd_unpack_i
  !ds_instr_ctrl_t:
         public ds_instr_ctrl_pack_i
         public ds_instr_ctrl_unpack_i
@@ -382,6 +377,8 @@
         public ds_instr_self_i
         public ds_instr_sync_i
         public ds_instr_encode_i
+ !ds_microcode_bind_t:
+        private DSMicrocodeBindReset
  !dsvp_t:
         private DSVPStartTime
         private DSVPClean
@@ -1091,6 +1088,21 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine DSInstrClean
+![ds_microcode_bind_t]=======================
+        subroutine DSMicrocodeBindReset(this)
+         implicit none
+         class(ds_microcode_bind_t), intent(inout):: this !inout: microcode binding
+
+         this%acquire_resource=>NULL()
+         this%prefetch_input=>NULL()
+         this%sync_prefetch=>NULL()
+         this%execute=>NULL()
+         this%sync_execution=>NULL()
+         this%upload_output=>NULL()
+         this%sync_upload=>NULL()
+         this%release_resource=>NULL()
+         return
+        end subroutine DSMicrocodeBindReset
 ![dsvp_t]==================================
         subroutine DSVPStartTime(this,ierr)
 !Starts the time after initializing the DSVP.

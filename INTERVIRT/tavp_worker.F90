@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP "Worker" implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/07/29
+!REVISION: 2017/07/31
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -91,10 +91,9 @@
           procedure, public:: receive_retired_instructions=>TAVPWorkerReceiveRetiredInstructions !N/A (dummy)
           procedure, public:: decode_instruction=>TAVPWorkerDecodeInstruction                    !decoding procedure: Unpacks a raw byte packet (bytecode) and constructs a TAVP instruction
         end type tavp_worker_t
-!INTERFACES:
 !DATA:
  !TAVP instruction microcode bindings (set by the TAVP initialization):
-        type(microcode_bind_t), private:: microcode(0:TAVP_ISA_SIZE-1)
+        type(ds_microcode_bind_t), private:: microcode(0:TAVP_ISA_SIZE-1)
 !VISIBILITY:
  !non-member:
         private test_carma

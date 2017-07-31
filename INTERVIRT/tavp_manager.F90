@@ -1,6 +1,6 @@
-!ExaTENSOR: TAVP Manager
+!ExaTENSOR: TAVP "Manager" implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/07/25
+!REVISION: 2017/07/31
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -69,7 +69,9 @@
          procedure, private:: set_microcode=>TensInstrSetMicrocode !sets up instruction dynamic microcode bindings
          final:: tens_instr_dtor                                   !dtor
         end type tens_instr_t
-!INTERFACES:
+!DATA:
+ !TAVP instruction microcode bindings (set by the TAVP initialization):
+        type(ds_microcode_bind_t), private:: microcode(0:TAVP_ISA_SIZE-1)
 !VISIBILITY:
  !tens_owner_t:
         private TensOwnerCtor
