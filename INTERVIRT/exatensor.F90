@@ -1,7 +1,7 @@
 !ExaTENSOR: Massively Parallel Virtual Processor for Scale-Adaptive Hierarchical Tensor Algebra
 !This is the top level API module of ExaTENSOR (user-level API)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017/07/25
+!REVISION: 2017/08/01
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -86,8 +86,8 @@
  !ExaTENSOR runtime status:
        type(exatns_rt_status_t), protected:: exatns_rt_status
  !TAVP global composition:
-       integer(INTD), protected:: exa_num_workers=0  !number of worker processes
        integer(INTD), protected:: exa_num_managers=0 !number of manager processes
+       integer(INTD), protected:: exa_num_workers=0  !number of worker processes
        integer(INTD), protected:: exa_num_helpers=0  !number of helper processes
  !TAVP instance:
        class(dsvp_t), allocatable, private:: tavp
@@ -138,18 +138,18 @@
        function exatns_start(mpi_communicator) result(ierr) !called by all MPI processes
 !Starts the ExaTENSOR runtime within the given MPI communicator.
 !This function must be called by every MPI process from <mpi_communicator>,
-!however only the Master process 0 (driver) will return. The other MPI
-!processes will receive their active TAVP roles as managers, workers, helpers, etc.
+!however only the Master process 0 (Driver) will return. The other MPI processes
+!will receive their active TAVP roles as managers, workers, helpers, etc.
 !Actions performed:
 ! # Initializes MPI services;
 ! # Determines how many TAVPs of different kinds to spawn (log-TAVP, num-TAVP, dat-TAVP, etc.);
 ! # Establishes a hierarchy for num-TAVPs and maps the corresponding computing domains to log-TAVPs;
-! # Creates dedicated MPI communicators for log-TAVPs and for num-TAVPs;
+! # Creates dedicated MPI communicators for log-TAVPs and for num-TAVPs as well as an intercommunicator;
 ! # Each MPI process is assigned a single TAVP of a specific kind, starts its TAVP BIOS code (init);
-! # The Master MPI process 0 (driver) returns while all other MPI processes begin their active
+! # The Master MPI process 0 (Driver) returns while all other MPI processes begin their active
 !   life cycle as TAVPs until terminated by the Master MPI process 0 via a call to exatns_stop().
 !This is the only ExaTENSOR API function called by all MPI processes,
-!the rest are to be called by the Master MPI process 0 (driver) only.
+!the rest are to be called by the Master MPI process 0 (Driver) only.
         implicit none
         integer(INTD):: ierr                                      !out: error code
         integer(INT_MPI), intent(in), optional:: mpi_communicator !in: MPI communicator (defaults to MPI_COMM_WORLD)

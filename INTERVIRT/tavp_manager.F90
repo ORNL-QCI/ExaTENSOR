@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP "Manager" implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/07/31
+!REVISION: 2017/08/01
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -37,7 +37,7 @@
         type, private:: tens_owner_t
          class(tens_header_t), pointer, private:: tens_header=>NULL() !pointer to the tensor header
          integer(INTD), private:: owner_id=-1                         !non-negative tensor owner id
-         type(tens_status_t), private:: tens_status                   !tensor status
+         type(tens_status_t), private:: tens_status                   !current status of the tensor
          contains
           procedure, private:: TensOwnerCtor                          !ctor
           generic, public:: tens_owner_ctor=>TensOwnerCtor

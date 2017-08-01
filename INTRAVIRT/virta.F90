@@ -8,7 +8,7 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/07/31
+!REVISION: 2017/08/01
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -109,7 +109,7 @@
         type, public:: tens_status_t
          logical, public:: created=.FALSE. !TRUE if the tensor has been created (allocated physical memory), FALSE otherwise
          logical, public:: defined=.FALSE. !TRUE if the tensor value has been defined, FALSE otherwise
-         logical, public:: replica=.FALSE. !TRUE if the tensor is a replica (another instance of this same tensor exists), FALSE otherwise
+         logical, public:: replica=.FALSE. !TRUE if the tensor is a replica (another defined instance of this same tensor exists), FALSE otherwise
          logical, public:: is_used=.FALSE. !TRUE if the tensor is currently participating in a computation, FALSE otherwise
          logical, public:: updated=.FALSE. !TRUE if the tensor is currently being updated in a computation, FALSE otherwise
         end type tens_status_t

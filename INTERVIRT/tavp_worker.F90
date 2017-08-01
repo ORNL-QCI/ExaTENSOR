@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP "Worker" implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/07/31
+!REVISION: 2017/08/01
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -47,14 +47,21 @@
         type, private:: tens_entry_t
          class(tens_rcrsv_t), pointer, private:: tensor=>NULL()   !tensor (either allocated or associated)
          class(tens_resrc_t), pointer, private:: resource=>NULL() !resource (either allocated or associated)
-         logical, private:: tens_alloc=.FALSE.                    !TRUE if the tensor pointer is allocated
-         logical, private:: res_alloc=.FALSE.                     !TRUE if the resource pointer is allocated
+         type(tens_status_t), private:: tens_status               !current status of the tensor
+         logical, private:: tens_alloc=.FALSE.                    !TRUE if the tensor pointer is allocated, FALSE if associated only
+         logical, private:: res_alloc=.FALSE.                     !TRUE if the resource pointer is allocated, FALSE if associated only
          contains
           procedure, private:: TensEntryCtor                      !ctor
           generic, public:: tens_entry_ctor=>TensEntryCtor
           procedure, public:: is_set=>TensEntryIsSet              !returns TRUE if the tensor cache entry is set
           procedure, public:: get_tensor=>TensEntryGetTensor      !returns a pointer to the tensor
           procedure, public:: get_resource=>TensEntryGetResource  !returns a pointer to the resource
+          procedure, public:: get_status=>TensEntryGetStatus      !returns a pointer to the tensor status
+          procedure, private:: mark_created=>TensEntryMarkCreated !marks the tensor status as created (allocated local memory)
+          procedure, private:: mark_defined=>TensEntryMarkDefined !marks the tensor status as defined to a definite value
+          procedure, private:: mark_in_use=>TensEntryMarkInUse    !marks the tensor status as in use (in a local computation)
+          procedure, private:: mark_no_use=>TensEntryMarkNoUse    !marks the tensor status as free of use (in a local computation)
+          procedure, private:: mark_updated=>TensEntryMarkUpdated !marks the tensor status as in update (updated in a local computation)
           final:: tens_entry_dtor                                 !dtor
         end type tens_entry_t
  !Tensor cache:
@@ -121,6 +128,12 @@
         private TensEntryIsSet
         private TensEntryGetTensor
         private TensEntryGetResource
+        private TensEntryGetStatus
+        private TensEntryMarkCreated
+        private TensEntryMarkDefined
+        private TensEntryMarkInUse
+        private TensEntryMarkNoUse
+        private TensEntryMarkUpdated
         private tens_entry_dtor
  !tens_cache_t:
         private TensCacheLookup
@@ -1037,6 +1050,147 @@
          if(present(ierr)) ierr=errc
          return
         end function TensEntryGetResource
+!--------------------------------------------------------------
+        function TensEntryGetStatus(this,ierr) result(status_p)
+         implicit none
+         class(tens_status_t), pointer:: status_p       !out: pointer to the tensor status
+         class(tens_entry_t), intent(in), target:: this !in: tensor cache entry
+         integer(INTD), intent(out), optional:: ierr    !out: error code
+         integer(INTD):: errc
+
+         errc=0
+         status_p=>this%tens_status
+         if(.not.associated(status_p)) errc=-1
+         if(present(ierr)) ierr=errc
+         return
+        end function TensEntryGetStatus
+!-------------------------------------------------
+        subroutine TensEntryMarkCreated(this,ierr)
+         implicit none
+         class(tens_entry_t), intent(inout):: this   !inout: defined tensor cache entry
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         if(this%is_set(errc)) then
+          if(errc.eq.0) then
+           if(.not.this%tens_status%created) then
+            this%tens_status%created=.TRUE.
+           else
+            errc=-3
+           endif
+          else
+           errc=-2
+          endif
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensEntryMarkCreated
+!-------------------------------------------------
+        subroutine TensEntryMarkDefined(this,ierr)
+         implicit none
+         class(tens_entry_t), intent(inout):: this   !inout: defined tensor cache entry
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         if(this%is_set(errc)) then
+          if(errc.eq.0) then
+           if(this%tens_status%created.and.(.not.this%tens_status%defined)) then
+            this%tens_status%updated=.FALSE.
+            this%tens_status%defined=.TRUE.
+           else
+            errc=-3
+           endif
+          else
+           errc=-2
+          endif
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensEntryMarkDefined
+!-----------------------------------------------
+        subroutine TensEntryMarkInUse(this,ierr)
+         implicit none
+         class(tens_entry_t), intent(inout):: this   !inout: defined tensor cache entry
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         if(this%is_set(errc)) then
+          if(errc.eq.0) then
+           if(this%tens_status%created) then
+            if(this%tens_status%defined) then
+             this%tens_status%is_used=.TRUE.
+            else
+             errc=-4
+            endif
+           else
+            errc=-3
+           endif
+          else
+           errc=-2
+          endif
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensEntryMarkInUse
+!-----------------------------------------------
+        subroutine TensEntryMarkNoUse(this,ierr)
+         implicit none
+         class(tens_entry_t), intent(inout):: this   !inout: defined tensor cache entry
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         if(this%is_set(errc)) then
+          if(errc.eq.0) then
+           if(this%tens_status%created) then
+            if(this%tens_status%is_used) then
+             if(this%tens_status%updated) call this%mark_defined()
+             this%tens_status%is_used=.FALSE.
+            else
+             errc=-4
+            endif
+           else
+            errc=-3
+           endif
+          else
+           errc=-2
+          endif
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensEntryMarkNoUse
+!-------------------------------------------------
+        subroutine TensEntryMarkUpdated(this,ierr)
+         implicit none
+         class(tens_entry_t), intent(inout):: this   !inout: defined tensor cache entry
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         if(this%is_set(errc)) then
+          if(errc.eq.0) then
+           if(this%tens_status%created) then
+            this%tens_status%defined=.FALSE.
+            this%tens_status%is_used=.TRUE.
+            this%tens_status%updated=.TRUE.
+           else
+            errc=-3
+           endif
+          else
+           errc=-2
+          endif
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensEntryMarkUpdated
 !---------------------------------------
         subroutine tens_entry_dtor(this)
          implicit none
