@@ -1,7 +1,7 @@
 !ExaTENSOR: Massively Parallel Virtual Processor for Scale-Adaptive Hierarchical Tensor Algebra
 !This is the top level API module of ExaTENSOR (user-level API)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017/08/01
+!REVISION: 2017/08/02
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -33,7 +33,7 @@
        integer(INTD), private:: CONS_OUT=6 !output device
        integer(INTD), private:: DEBUG=1    !debugging level
        logical, private:: VERBOSE=.TRUE.   !verbosity for errors
- !Error codes:
+ !Error codes (user-level):
        public EXA_SUCCESS,&
              &EXA_ERROR,&
              &EXA_ERR_INVALID_ARGS,&
@@ -45,7 +45,7 @@
  !Subspaces:
        public seg_int_t,orthotope_t,symmetry_t,spher_symmetry_t,&
              &basis_func_supp_t,basis_func_gauss_t,basis_func_t,&
-             &subspace_basis_t,subspace_t,h_index_t,h_space_t,&
+             &subspace_basis_t,subspace_t,h_space_t,h_index_t,&
              &BASIS_ABSTRACT
  !Tensors:
        public hspace_reg_t,tens_signature_t,tens_shape_t,tens_header_t,&
@@ -56,14 +56,14 @@
  !ExaTENSOR runtime status:
        type, public:: exatns_rt_status_t
         integer(INTD), public:: state=DSVP_STAT_OFF !state (see parameters above)
-        integer(INTD), public:: error_code=-1       !specific error code (0 means no error)
+        integer(INTD), public:: error_code=0        !specific error code (0 means no error)
         integer(INTD), public:: num_procs=0         !number of MPI processes involved
        end type exatns_rt_status_t
  !Vector space status:
        type, public:: exatns_space_status_t
-        logical, public:: built=.FALSE.               !whether or not the hierarchical (tree) structure has been imposed
+        logical, public:: hierarchical=.FALSE.        !whether or not the hierarchical (tree) structure has been imposed
         integer(INTL), public:: full_dimension=0_INTL !full dimension of the vector space (number of basis vectors)
-        integer(INTD), public:: num_subspaces=0       !number of registered subspaces
+        integer(INTL), public:: num_subspaces=0       !number of registered subspaces
        end type exatns_space_status_t
 !INTERFACES:
        abstract interface
@@ -85,11 +85,11 @@
 !DATA:
  !ExaTENSOR runtime status:
        type(exatns_rt_status_t), protected:: exatns_rt_status
- !TAVP global composition:
+ !TAVP global composition (set by exatns_start):
        integer(INTD), protected:: exa_num_managers=0 !number of manager processes
        integer(INTD), protected:: exa_num_workers=0  !number of worker processes
        integer(INTD), protected:: exa_num_helpers=0  !number of helper processes
- !TAVP instance:
+ !TAVP instance (allocated one per MPI process):
        class(dsvp_t), allocatable, private:: tavp
 !VISIBILITY:
  !Control:

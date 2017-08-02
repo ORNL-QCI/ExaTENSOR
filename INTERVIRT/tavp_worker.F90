@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP "Worker" implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/08/01
+!REVISION: 2017/08/02
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -59,8 +59,8 @@
           procedure, public:: get_status=>TensEntryGetStatus      !returns a pointer to the tensor status
           procedure, private:: mark_created=>TensEntryMarkCreated !marks the tensor status as created (allocated local memory)
           procedure, private:: mark_defined=>TensEntryMarkDefined !marks the tensor status as defined to a definite value
-          procedure, private:: mark_in_use=>TensEntryMarkInUse    !marks the tensor status as in use (in a local computation)
-          procedure, private:: mark_no_use=>TensEntryMarkNoUse    !marks the tensor status as free of use (in a local computation)
+          procedure, private:: mark_in_use=>TensEntryMarkInUse    !marks the tensor status as in use (in a local computation, either read or update)
+          procedure, private:: mark_no_use=>TensEntryMarkNoUse    !marks the tensor status as free of use (no local computation)
           procedure, private:: mark_updated=>TensEntryMarkUpdated !marks the tensor status as in update (updated in a local computation)
           final:: tens_entry_dtor                                 !dtor
         end type tens_entry_t
@@ -1096,9 +1096,17 @@
 
          if(this%is_set(errc)) then
           if(errc.eq.0) then
-           if(this%tens_status%created.and.(.not.this%tens_status%defined)) then
-            this%tens_status%updated=.FALSE.
-            this%tens_status%defined=.TRUE.
+           if(this%tens_status%created) then
+            if(this%tens_status%updated) then
+             if(.not.(this%tens_status%defined.or.this%tens_status%is_used)) then
+              this%tens_status%updated=.FALSE.
+              this%tens_status%defined=.TRUE.
+             else
+              errc=-5
+             endif
+            else
+             errc=-4
+            endif
            else
             errc=-3
            endif
@@ -1148,8 +1156,7 @@
          if(this%is_set(errc)) then
           if(errc.eq.0) then
            if(this%tens_status%created) then
-            if(this%tens_status%is_used) then
-             if(this%tens_status%updated) call this%mark_defined()
+            if(this%tens_status%defined) then
              this%tens_status%is_used=.FALSE.
             else
              errc=-4
@@ -1176,9 +1183,12 @@
          if(this%is_set(errc)) then
           if(errc.eq.0) then
            if(this%tens_status%created) then
-            this%tens_status%defined=.FALSE.
-            this%tens_status%is_used=.TRUE.
-            this%tens_status%updated=.TRUE.
+            if(.not.(this%tens_status%is_used)) then
+             this%tens_status%defined=.FALSE.
+             this%tens_status%updated=.TRUE.
+            else
+             errc=-4
+            endif
            else
             errc=-3
            endif

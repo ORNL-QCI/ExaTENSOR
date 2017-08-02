@@ -8,7 +8,7 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/08/01
+!REVISION: 2017/08/02
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -60,7 +60,9 @@
         integer(INTD), parameter, public:: EXA_MANAGER=1            !manager (logic) process (TAVP)
         integer(INTD), parameter, public:: EXA_WORKER=2             !worker (numeric) process (TAVP)
         integer(INTD), parameter, public:: EXA_HELPER=3             !helper (auxiliary) process (TAVP)
+ !TAVP hierarchy configuration:
         integer(INTD), public:: EXA_MAX_WORK_GROUP_SIZE=64 !maximal size of a work group (max number of workers per manager)
+        integer(INTD), public:: EXA_MANAGER_BRANCH_FACT=2  !branching factor for the managing hierarchy
  !TAVP identification:
         integer(INTD), parameter, public:: TAVP_ANY_ID=-1              !any TAVP
  !TAVP instruction error codes:
@@ -70,9 +72,10 @@
         integer(INTD), parameter, public:: TAVP_ERR_ARG_UNDEFINED=-4   !instruction argument is undefined in the argument cache
         integer(INTD), parameter, public:: TAVP_ERR_ARG_DEFINED=-5     !instrcution argument is already defined in the argument cache
         integer(INTD), parameter, public:: TAVP_ERR_RSC_UNAVAILABLE=-6 !instruction is unable to obtain needed resources
-        integer(INTD), parameter, public:: TAVP_ERR_COM_FAILURE=-7     !instruction communication failed
-        integer(INTD), parameter, public:: TAVP_ERR_EXC_FAILURE=-8     !instruction execution (computation) failed
- !TAVP ISA size (the same for all TAVP specializations):
+        integer(INTD), parameter, public:: TAVP_ERR_RSC_FAILURE=-7     !instruction is unable to release resources cleanly
+        integer(INTD), parameter, public:: TAVP_ERR_COM_FAILURE=-8     !instruction communication failed
+        integer(INTD), parameter, public:: TAVP_ERR_EXC_FAILURE=-9     !instruction computation failed
+ !TAVP ISA max size (the same for all TAVP specializations):
         integer(INTD), parameter, public:: TAVP_ISA_SIZE=256 !max number of TAVP instructions [0:TAVP_ISA_SIZE-1]
  !Tensor algebra virtual processor (TAVP):
   !TAVP instruction code (opcode), must be non-negative (consult TAProL spec), limited by TAVP_ISA_SIZE:
@@ -81,36 +84,39 @@
    !General control [0-15]:
         integer(INTD), parameter, public:: TAVP_INSTR_STOP=0      !stop TAVP (finishes current instructions and shutdowns TAVP)
         integer(INTD), parameter, public:: TAVP_INSTR_PAUSE=1     !pause TAVP execution (finishes active instructions and pauses TAVP)
-        integer(INTD), parameter, public:: TAVP_INSTR_RESUME=2    !resume TAVP execution (resumes TAVP execution pipeline)
-   !Tensor operations [16-255]:
-        integer(INTD), parameter, public:: TAVP_INSTR_CREATE=16   !tensor creation
-        integer(INTD), parameter, public:: TAVP_INSTR_DESTROY=17  !tensor destruction
-        integer(INTD), parameter, public:: TAVP_INSTR_LOAD=18     !tensor loading from persistent storage
-        integer(INTD), parameter, public:: TAVP_INSTR_SAVE=19     !tensor saving in persistent storage
-        integer(INTD), parameter, public:: TAVP_INSTR_COMM=20     !tensor communication (get/put/accumulate)
-        integer(INTD), parameter, public:: TAVP_INSTR_INIT=21     !tensor initialization (assignement of a value)
-        integer(INTD), parameter, public:: TAVP_INSTR_NORM1=22    !tensor 1-norm
-        integer(INTD), parameter, public:: TAVP_INSTR_NORM2=23    !tensor 2-norm
-        integer(INTD), parameter, public:: TAVP_INSTR_MIN=24      !tensor min element
-        integer(INTD), parameter, public:: TAVP_INSTR_MAX=25      !tensor max element
-        integer(INTD), parameter, public:: TAVP_INSTR_FOLD=26     !tensor dimension folding
-        integer(INTD), parameter, public:: TAVP_INSTR_UNFOLD=27   !tensor dimension unfolding
-        integer(INTD), parameter, public:: TAVP_INSTR_SLICE=28    !tensor slicing (taking a slice of a tensor with an optional index permutation)
-        integer(INTD), parameter, public:: TAVP_INSTR_INSERT=29   !tensor insertion (inserting a tensor slice in a tensor with an optional index permutation)
-        integer(INTD), parameter, public:: TAVP_INSTR_PERMUTE=30  !tensor dimension permutation (in-place)
-        integer(INTD), parameter, public:: TAVP_INSTR_COPY=31     !tensor copy (copying a tensor into another tensor with an optional index permutation)
-        integer(INTD), parameter, public:: TAVP_INSTR_SCALE=32    !tensor scaling (multiplication by a number)
-        integer(INTD), parameter, public:: TAVP_INSTR_ADD=33      !tensor addition (with an optional index permutation)
-        integer(INTD), parameter, public:: TAVP_INSTR_TRACE=34    !tensor trace (tracing over some/all tensor indices)
-        integer(INTD), parameter, public:: TAVP_INSTR_PRODUCT=35  !tensor direct product (with an optional index permutation)
-        integer(INTD), parameter, public:: TAVP_INSTR_CONTRACT=36 !tensot contraction (also includes tensor product, tensor addition, and tensor scaling)
+        integer(INTD), parameter, public:: TAVP_INSTR_RESUME=2    !resume TAVP execution (resumes TAVP execution pipeline after a pause)
+   !Auxiliary definitions [16-63]:
+        integer(INTD), parameter, public:: TAVP_INSTR_SPACE_CREATE=16  !create a vector space
+        integer(INTD), parameter, public:: TAVP_INSTR_SPACE_DESTROY=17 !destroy a vector space
+   !Tensor operations [64-255]:
+        integer(INTD), parameter, public:: TAVP_INSTR_CREATE=64   !tensor creation
+        integer(INTD), parameter, public:: TAVP_INSTR_DESTROY=65  !tensor destruction
+        integer(INTD), parameter, public:: TAVP_INSTR_LOAD=66     !tensor loading from persistent storage
+        integer(INTD), parameter, public:: TAVP_INSTR_SAVE=67     !tensor saving in persistent storage
+        integer(INTD), parameter, public:: TAVP_INSTR_COMM=68     !tensor communication (get/put/accumulate)
+        integer(INTD), parameter, public:: TAVP_INSTR_INIT=69     !tensor initialization (assignement of a value)
+        integer(INTD), parameter, public:: TAVP_INSTR_NORM1=70    !tensor 1-norm
+        integer(INTD), parameter, public:: TAVP_INSTR_NORM2=71    !tensor 2-norm
+        integer(INTD), parameter, public:: TAVP_INSTR_MIN=72      !tensor min element
+        integer(INTD), parameter, public:: TAVP_INSTR_MAX=73      !tensor max element
+        integer(INTD), parameter, public:: TAVP_INSTR_FOLD=74     !tensor dimension folding
+        integer(INTD), parameter, public:: TAVP_INSTR_UNFOLD=75   !tensor dimension unfolding
+        integer(INTD), parameter, public:: TAVP_INSTR_SLICE=76    !tensor slicing (taking a slice of a tensor with an optional index permutation)
+        integer(INTD), parameter, public:: TAVP_INSTR_INSERT=77   !tensor insertion (inserting a tensor slice in a tensor with an optional index permutation)
+        integer(INTD), parameter, public:: TAVP_INSTR_PERMUTE=78  !tensor dimension permutation (in-place)
+        integer(INTD), parameter, public:: TAVP_INSTR_COPY=79     !tensor copy (copying a tensor into another tensor with an optional index permutation)
+        integer(INTD), parameter, public:: TAVP_INSTR_SCALE=80    !tensor scaling (multiplication by a number)
+        integer(INTD), parameter, public:: TAVP_INSTR_ADD=81      !tensor addition (with an optional index permutation)
+        integer(INTD), parameter, public:: TAVP_INSTR_TRACE=82    !tensor trace (tracing over some/all tensor indices)
+        integer(INTD), parameter, public:: TAVP_INSTR_PRODUCT=83  !tensor direct product (with an optional index permutation)
+        integer(INTD), parameter, public:: TAVP_INSTR_CONTRACT=84 !tensor contraction (also includes tensor product, tensor addition, and tensor scaling)
 !TYPES:
  !Tensor status:
         type, public:: tens_status_t
          logical, public:: created=.FALSE. !TRUE if the tensor has been created (allocated physical memory), FALSE otherwise
-         logical, public:: defined=.FALSE. !TRUE if the tensor value has been defined, FALSE otherwise
+         logical, public:: defined=.FALSE. !TRUE if the tensor value is currently defined, FALSE otherwise
          logical, public:: replica=.FALSE. !TRUE if the tensor is a replica (another defined instance of this same tensor exists), FALSE otherwise
-         logical, public:: is_used=.FALSE. !TRUE if the tensor is currently participating in a computation, FALSE otherwise
+         logical, public:: is_used=.FALSE. !TRUE if the tensor is currently participating in a computation as an input (read-only), FALSE otherwise
          logical, public:: updated=.FALSE. !TRUE if the tensor is currently being updated in a computation, FALSE otherwise
         end type tens_status_t
  !Tensor resource (local resource):
@@ -176,7 +182,7 @@
           final:: ctrl_tens_contr_dtor                          !dtor
         end type ctrl_tens_contr_t
 !DATA:
- !MPI process specialization (TAVP role):
+ !MPI process specialization (TAVP role, set by exatns_start):
         integer(INT_MPI), public:: process_role=EXA_NO_ROLE !MPI process role (see above)
         integer(INT_MPI), public:: role_comm=MPI_COMM_NULL  !role-specific MPI communicator
         integer(INT_MPI), public:: role_size=0              !size of the role-specific MPI communicator
