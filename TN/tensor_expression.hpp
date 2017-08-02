@@ -1,7 +1,7 @@
 /** C++ adapters for ExaTENSOR: Header
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/07/24
+!REVISION: 2017/08/02
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -651,6 +651,16 @@ public:
    //`Finish
   }
   return cost;
+ }
+
+ /** Determines a pseudo-optimal sequence of tensor contractions
+     for the given tensor network and numerically evaluates those
+     tensor contractions to produce the value of the output tensor. **/
+ int evaluate()
+ {
+  int error_code = 0; //success
+
+  return error_code;
  }
 
 };
