@@ -54,6 +54,9 @@ private:
 
 public:
 
+//Constants:
+ static const unsigned int NumWalkersDefault = 1024; //number of walkers for tensor contraction sequence optimization
+
 //Life cycle:
  /** Constructs an empty tensor network **/
  TensorNetwork();
@@ -109,19 +112,20 @@ public:
  /** Determines a pseudo-optimal sequence of tensor contractions
      for the given tensor network and numerically evaluates these
      tensor contractions to produce the value of the output tensor. **/
- int evaluate();
+ int evaluate(const unsigned int numWalkers = NumWalkersDefault);
  /** Determines a pseudo-optimal sequence of tensor contractions
      for the given tensor network and numerically evaluates these
      tensor contractions to produce the value of the output tensor
      for which an externally provided body is specified. **/
- int evaluate(const std::shared_ptr<T> body);
+ int evaluate(const std::shared_ptr<T> body,
+              const unsigned int numWalkers = NumWalkersDefault);
 
 private:
  /** Determines the pseudo-optimal tensor contraction sequence and returns
      it as a vector of pairs of tensor id's to contract. Note that each
      subsequent pair will have its tensor id's refer to the corresponding
      reduced tensor network. **/
- std::vector<std::pair<unsigned int, unsigned int>> getContractionSequence();
+ std::vector<std::pair<unsigned int, unsigned int>> getContractionSequence(const unsigned int numWalkers);
  /** Performs all tensor contractions, thus evaluating the value of the output tensor. **/
  int computeOutput(const std::vector<std::pair<unsigned int, unsigned int>> & contrSeq);
 

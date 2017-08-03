@@ -347,10 +347,10 @@ double TensorNetwork<T>::getContractionCost(const unsigned int tensId1, //in: id
     for the given tensor network and numerically evaluates these
     tensor contractions to produce the value of the output tensor. **/
 template <typename T>
-int TensorNetwork<T>::evaluate()
+int TensorNetwork<T>::evaluate(const unsigned int numWalkers)
 {
  int error_code = 0; //success
- std::vector<std::pair<unsigned int, unsigned int>> contrSeq = this->getContractionSequence();
+ std::vector<std::pair<unsigned int, unsigned int>> contrSeq = this->getContractionSequence(numWalkers);
  error_code = this->computeOutput(contrSeq);
  return error_code;
 }
@@ -360,11 +360,11 @@ int TensorNetwork<T>::evaluate()
     tensor contractions to produce the value of the output tensor
     for which an externally provided body is specified. **/
 template <typename T>
-int TensorNetwork<T>::evaluate(const std::shared_ptr<T> body)
+int TensorNetwork<T>::evaluate(const std::shared_ptr<T> body, const unsigned int numWalkers)
 {
  int error_code = 0; //success
  this->setOutputBody(body);
- std::vector<std::pair<unsigned int, unsigned int>> contrSeq = this->getContractionSequence();
+ std::vector<std::pair<unsigned int, unsigned int>> contrSeq = this->getContractionSequence(numWalkers);
  error_code = this->computeOutput(contrSeq);
  return error_code;
 }
@@ -374,7 +374,7 @@ int TensorNetwork<T>::evaluate(const std::shared_ptr<T> body)
     subsequent pair will have its tensor id's refer to the corresponding
     reduced tensor network. **/
 template <typename T>
-std::vector<std::pair<unsigned int, unsigned int>> TensorNetwork<T>::getContractionSequence()
+std::vector<std::pair<unsigned int, unsigned int>> TensorNetwork<T>::getContractionSequence(const unsigned int numWalkers)
 {
  std::vector<std::pair<unsigned int, unsigned int>> contrSeq;
  //`Finish
