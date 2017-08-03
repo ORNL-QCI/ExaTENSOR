@@ -245,16 +245,26 @@ LTHREAD = $(LTHREAD_$(TOOLKIT))
 #LINKING:
 LFLAGS = $(LTHREAD) $(MPI_LINK) $(LA_LINK) $(CUDA_LINK) $(LIB)
 
-OBJS = ./OBJ/tensor_expression.o
+OBJS = ./OBJ/tensor_leg.o
+#./OBJ/tensor_dense_adpt.o ./OBJ/tensor_conn.o ./OBJ/tensor_network.o
 
-$(NAME): $(OBJS)
+$(NAME): $(OBJS) *.hpp
 	ar cr lib$(NAME).a $(OBJS)
 	$(CPPCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(CFLAGS) main.cpp -o ./OBJ/main.o
 	$(CPPCOMP) ./OBJ/main.o $(OBJS) $(LFLAGS) -o test_$(NAME).x
 
-./OBJ/tensor_expression.o: tensor_expression.hpp tensor_expression.cpp
+./OBJ/tensor_leg.o: tensor_leg.hpp tensor_leg.cpp
 	mkdir -p ./OBJ
-	$(CPPCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(CFLAGS) tensor_expression.cpp -o ./OBJ/tensor_expression.o
+	$(CPPCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(CFLAGS) tensor_leg.cpp -o ./OBJ/tensor_leg.o
+
+./OBJ/tensor_dense_adpt.o: tensor_dense_adpt.hpp tensor_dense_adpt.cpp
+	$(CPPCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(CFLAGS) tensor_dense_adpt.cpp -o ./OBJ/tensor_dense_adpt.o
+
+./OBJ/tensor_conn.o: tensor_leg.hpp tensor_dense_adpt.hpp tensor_conn.hpp tensor_conn.cpp
+	$(CPPCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(CFLAGS) tensor_conn.cpp -o ./OBJ/tensor_conn.o
+
+./OBJ/tensor_network.o: tensor_leg.hpp tensor_dense_adpt.hpp tensor_conn.hpp tensor_network.hpp tensor_network.cpp
+	$(CPPCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(CFLAGS) tensor_network.cpp -o ./OBJ/tensor_network.o
 
 .PHONY: clean
 clean:
