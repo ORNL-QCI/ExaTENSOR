@@ -220,7 +220,7 @@ NO_AMD = -DNO_AMD
 NO_PHI = -DNO_PHI
 
 #C FLAGS:
-CFLAGS_DEV = -c -g -D_DEBUG
+CFLAGS_DEV = -c -g -O0 -D_DEBUG
 CFLAGS_OPT = -c -O3
 CFLAGS = $(CFLAGS_$(BUILD_TYPE)) $(NO_GPU) $(NO_AMD) $(NO_PHI) $(NO_BLAS) -D$(EXA_OS)
 
@@ -233,7 +233,7 @@ FFLAGS_CRAY_DEV = -c -g
 FFLAGS_CRAY_OPT = -c -O3
 FFLAGS_GNU_DEV = -c -fopenmp -fbacktrace -fcheck=bounds -fcheck=array-temps -fcheck=pointer -g -O0
 FFLAGS_GNU_OPT = -c -fopenmp -O3
-FFLAGS_PGI_DEV = -c -mp -Mcache_align -Mbounds -Mchkptr -Mstandard -g
+FFLAGS_PGI_DEV = -c -mp -Mcache_align -Mbounds -Mchkptr -Mstandard -g -O0
 FFLAGS_PGI_OPT = -c -mp -Mcache_align -Mstandard -O3
 FFLAGS_IBM_DEV = -c -qsmp=omp -g -qkeepparm
 FFLAGS_IBM_OPT = -c -qsmp=omp -O3
