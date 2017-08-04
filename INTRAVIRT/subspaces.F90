@@ -1,7 +1,7 @@
 !Infrastructure for a recursive adaptive vector space decomposition
 !and hierarchical vector space representation.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/07/10
+!REVISION: 2017/08/04
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -56,6 +56,7 @@
 
        module subspaces
         use dil_basic
+        use stsubs
         use gfc_base
         use gfc_list
         use gfc_vec_tree
@@ -193,8 +194,8 @@
  !Typed basis function:
         type, public:: basis_func_t
          integer(INTD), private:: basis_kind=BASIS_NONE                    !specific basis kind (mandatory)
-         class(basis_func_supp_t), pointer, private:: basis_func_p=>NULL() !pointer to a basis function of this kind (optional)
-         class(symmetry_t), pointer, private:: symm_p=>NULL()              !pointer to the symmetry of the basis function (optional)
+         class(basis_func_supp_t), pointer, private:: basis_func_p=>NULL() !pointer to a persistent basis function of this kind (optional)
+         class(symmetry_t), pointer, private:: symm_p=>NULL()              !pointer to a persistent symmetry of the basis function (optional)
          contains
           procedure, private:: BasisFuncCtor                         !sets up the basis function (ctor)
           generic, public:: basis_func_ctor=>BasisFuncCtor
@@ -1870,6 +1871,7 @@
          integer(INTD):: errc,ier,sd
          integer(INTL):: n
          type(list_iter_t):: basis_it
+         !type(subspace_basis_t), pointer:: dptr !debug
 
          if(this%subspace_id.ge.0) then
           errc=basis_it%init(this%bases)
@@ -1881,6 +1883,8 @@
              sd=basis%supp_dimsn()
              if(sd.gt.0.and.this%supp_dim.eq.0) this%supp_dim=sd
              if(sd.eq.this%supp_dim) then
+              !select type(basis); type is(subspace_basis_t); size_=size_of(basis); dptr=>basis; ptr_=c_loc(dptr); end select !debug
+              !call dump_bytes(ptr_,size_,'dump1') !debug
               errc=basis_it%append(basis)
               if(errc.eq.GFC_SUCCESS) then
                this%max_resolution=max(this%max_resolution,n)
@@ -2049,7 +2053,9 @@
                up=>vt_it%get_value(errc); if(errc.ne.GFC_SUCCESS) exit
                subsp=>NULL(); select type(up); class is(subspace_t); subsp=>up; end select
                if(.not.associated(subsp)) then; errc=1; exit; endif
+               !write(*,'("#DEBUG(h_space_t.ctor): Registering 1d subspace basis ...")') !debug
                call subsp%register_basis(basis,errc); if(errc.ne.0) exit
+               !write(*,'("#DEBUG(h_space_t.ctor): Registered.")'); stop !debug
                this%num_subspaces=this%num_subspaces+1_INTL
               enddo
  !Add the tree root (full vector space defined by the provided full basis):

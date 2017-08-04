@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Base
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017-06-15 (started 2016-02-17)
+!REVISION: 2017-08-04 (started 2016-02-17)
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -60,6 +60,7 @@
 #ifndef NO_OMP
         use omp_lib
 #endif
+        use stsubs !debug
         implicit none
         public
 !PARAMETERS:
@@ -293,6 +294,10 @@
         private IterPredicatedCount
         private IterScanProc
         private IterScanFunc
+!DATA:
+ !Debug:
+        type(C_PTR), public:: ptr_=C_NULL_PTR !GCC debug
+        integer, public:: size_=0             !GCC debug
 
        contains
 !IMPLEMENTATION:
@@ -338,6 +343,7 @@
               else
 #endif
                new_el=>NULL()
+               !call dump_bytes(ptr_,size_,'dump2') !debug
                allocate(new_el,SOURCE=obj,STAT=errcode,ERRMSG=errmesg)
                if(errcode.eq.0) then
                 this%value_p=>new_el

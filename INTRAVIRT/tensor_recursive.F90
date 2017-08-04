@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/07/29
+!REVISION: 2017/08/04
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -720,8 +720,9 @@
            if(errc.eq.0) then
             call hspace_basis_%finalize(errc)
             if(errc.eq.0) then
+             !write(CONS_OUT,'("#DEBUG(build_test_hspace): Building test H-space from a basis ... ")') !debug
              call hsp%h_space_ctor(hspace_basis_,errc)
-             !write(*,'(i9,"-dimensional full space -> ",i9," subspaces:")') hsp%get_space_dim(),hsp%get_num_subspaces() !debug
+             !write(CONS_OUT,'(i9,"-dimensional full space -> ",i9," subspaces:")') hsp%get_space_dim(),hsp%get_num_subspaces() !debug
              !call hsp%print_it() !debug
             endif
            endif
@@ -798,8 +799,9 @@
          integer(INTD), intent(out), optional:: ierr                 !out: error code
          class(h_space_t), pointer, intent(out), optional:: hspace_p !out: pointer to the just registered empty hierarchical vector space (for further construction)
          integer(INTD):: errc
-         type(h_space_t):: hspace_empty
+         type(h_space_t), target:: hspace_empty
          class(*), pointer:: up
+         !type(h_space_t), pointer:: hptr !debug
 
          errc=TEREC_SUCCESS
          if(.not.this%initialized) call this%init(errc)
@@ -808,12 +810,17 @@
           if(errc.eq.GFC_SUCCESS) then
            errc=this%name2id_it%search(GFC_DICT_ADD_IF_NOT_FOUND,cmp_strings,space_name,hspace_id)
            if(errc.eq.GFC_NOT_FOUND) then
+            !write(*,'("#DEBUG(hspace_register_t.register_space): Appending a local empty h_space_t ...")') !debug
+            !hptr=>hspace_empty; call dump_bytes(c_loc(hptr),size_of(hspace_empty),'dump0') !debug
             errc=this%hspaces_it%append(hspace_empty)
             if(errc.eq.GFC_SUCCESS) then
              if(present(hspace_p)) then
               hspace_p=>NULL()
               up=>this%hspaces_it%element_value(int(hspace_id,INTL),errc)
               if(errc.eq.GFC_SUCCESS) then
+               !select type(up); type is(h_space_t); hptr=>up; end select !debug
+               !call dump_bytes(c_loc(hptr),size_of(hspace_empty),'dump1') !debug
+               !hptr=>hspace_empty; call dump_bytes(c_loc(hptr),size_of(hspace_empty),'dump2') !debug
                select type(up); class is(h_space_t); hspace_p=>up; end select
                if(.not.associated(hspace_p)) errc=TEREC_ERROR
               endif
@@ -6626,7 +6633,10 @@
          class(*), pointer:: up
 
  !Build a hierarchical representation for a test vector space:
+         hspace=>NULL()
+         !write(*,'("#DEBUG(test_tens_rcrsv): Building test H-space ... ")') !debug
          hsid=build_test_hspace('TestSpace0',ierr,hspace); if(ierr.ne.TEREC_SUCCESS) then; ierr=1; return; endif
+         !write(*,'("#DEBUG(test_tens_rcrsv): H-space has been built.")') !debug
  !Create the full tensor (over the full space):
   !Get full space id and its max resolution:
          space_id=hspace%get_root_id(ierr); if(ierr.ne.0) then; ierr=3; return; endif

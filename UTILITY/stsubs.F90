@@ -359,24 +359,32 @@
         endif
         return
         end subroutine dumb_work
-!---------------------------------------
-        subroutine dump_bytes(cptr,csize)
+!--------------------------------------------------
+        subroutine dump_bytes(cptr,csize,file_name)
 !Dumps byte values for a given memory segment.
          implicit none
          type(C_PTR), intent(in):: cptr !in: base C pointer
          integer, intent(in):: csize    !in: size in bytes
+         character(*), intent(in), optional:: file_name !in: output file name (defaults to screen)
          integer(1), pointer:: iptr(:)
-         integer:: i
+         integer:: i,devo
 
-         write(*,'()'); write(*,*) '### Memory dump for address ',cptr
+         if(present(file_name)) then
+          devo=666
+          open(devo,file=file_name,FORM='FORMATTED',STATUS='UNKNOWN')
+         else
+          devo=6
+         endif
+         write(devo,'()'); write(devo,*) '### Memory dump for address ',cptr
          call c_f_pointer(cptr,iptr,shape=(/csize/))
          do i=1,csize
           if(iptr(i).ge.0) then
-           write(*,'("Offset ",i10,": ",i4)') i,int(iptr(i),4)
+           write(devo,'("Offset ",i10,": ",i4)') i-1,int(iptr(i),4)
           else
-           write(*,'("Offset ",i10,": ",i4)') i,(256+int(iptr(i),4))
+           write(devo,'("Offset ",i10,": ",i4)') i-1,(256+int(iptr(i),4))
           endif
          enddo
+         if(devo.ne.6) close(devo)
          return
         end subroutine dump_bytes
 !--------------------------------------
