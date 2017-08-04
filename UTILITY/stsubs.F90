@@ -1,6 +1,6 @@
 !Standard procedures often used by me.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISON: 2017/04/12
+!REVISON: 2017/08/04
 
 !Copyright (C) 2005-2017 Dmitry I. Lyakh (Liakh)
 
@@ -20,24 +20,27 @@
 !along with ExaTensor. If not, see <http://www.gnu.org/licenses/>.
 
 	module stsubs
-        implicit none
-        private
+	use, intrinsic:: ISO_C_BINDING
+	implicit none
+	private
 !Parameters:
-        logical, private:: VERBOSE=.false.                 !verbosity for errors
+	logical, private:: VERBOSE=.false.                 !verbosity for errors
 	real(8), parameter, public:: PI=3.14159265358979d0 !PI constant
 	real(8), parameter, public:: BOHR=0.529177249d0    !Bohrs to Angstroms conversion factor
 !Procedures:
+	public:: alphanumeric!checks if the character is alphanumeric
+	public:: alphanumeric_string !checks if the string is alphanumeric_
 	public:: array2string!converts a character*1 array into a string
+	public:: byte_chksum !returns the raw byte check sum for a given memory segment
 	public:: cap_ascii   !makes all English letters capital
 	public:: charnum     !converts a number given as a string to real*8 and integer numbers
 	public:: create_line !creates a table line in .txt format with ; separator
 	public:: dumb_work   !performs a dumb work on one or two arrays producing a third one
+	public:: dump_bytes  !dumps byte values for a given memory segment
 	public:: icharnum    !converts a number given as a string to the integer number
 	public:: ifcl        !calculates factorial
-	public:: is_it_number!checks if the character is an ASCII number
 	public:: is_it_letter!checks if the character is an ASCII letter
-	public:: alphanumeric!checks if the character is alphanumeric
-	public:: alphanumeric_string !checks if the string is alphanumeric_
+	public:: is_it_number!checks if the character is an ASCII number
 	public:: itrsign     !determines a sign of a given transposition
 	public:: longnumchar !converts a long integer number to the character representation
 	public:: markchf     !counts how many non-blank fields a string contains
@@ -73,6 +76,40 @@
 	public:: wr_vec_dp   !writes a vector of double precision elements to the screen
 
 	contains
+!----------------------------------------
+	logical function alphanumeric(ch)
+!Returns TRUE if the character is ASCII alphanumeric, FALSE otherwise.
+	 implicit none
+	 character(1), intent(in):: ch
+	 alphanumeric=.FALSE.
+	 if(is_it_letter(ch).gt.0) then
+	  alphanumeric=.TRUE.
+	 else
+	  if(is_it_number(ch).ge.0) alphanumeric=.TRUE.
+	 endif
+	 return
+	end function alphanumeric
+!------------------------------------------------
+	logical function alphanumeric_string(str)
+!Returns TRUE if the string only contains ASCII alphanumeric + underscore,
+!FALSE otherwise. An empty string is not considered alphanumeric_.
+	 implicit none
+	 character(*), intent(in):: str
+	 integer:: i,l
+	 alphanumeric_string=.TRUE.
+	 l=len(str)
+	 if(l.gt.0) then
+	  do i=1,l
+	   if(.not.alphanumeric(str(i:i))) then
+	    alphanumeric_string=.FALSE.
+	    exit
+	   endif
+	  enddo
+	 else
+	  alphanumeric_string=.FALSE.
+	 endif
+	 return
+	end function alphanumeric_string
 !------------------------------------------------
 	subroutine array2string(str,ar1,arl,ierr)
 !Converts a CHARACTER(1) array into a Fortran string.
@@ -89,6 +126,27 @@
 	endif
 	return
 	end subroutine array2string
+!----------------------------------------------------
+        function byte_chksum(cptr,csize) result(csum)
+!Returns the raw byte check sum for a given memory segment.
+         implicit none
+         integer(8):: csum              !out: check sum
+         type(C_PTR), intent(in):: cptr !in: base C pointer
+         integer, intent(in):: csize    !in: size in bytes
+         integer(1), pointer:: iptr(:)
+         integer:: i
+
+         csum=0_8
+         call c_f_pointer(cptr,iptr,shape=(/csize/))
+         do i=1,csize
+          if(iptr(i).ge.0) then
+           csum=csum+int(iptr(i),8)
+          else
+           csum=csum+(256_8+int(iptr(i),8))
+          endif
+         enddo
+         return
+        end function byte_chksum
 !--------------------------------
 	subroutine cap_ascii(str)
 !Capitalizes all small English letters in string <str>
@@ -301,6 +359,26 @@
         endif
         return
         end subroutine dumb_work
+!---------------------------------------
+        subroutine dump_bytes(cptr,csize)
+!Dumps byte values for a given memory segment.
+         implicit none
+         type(C_PTR), intent(in):: cptr !in: base C pointer
+         integer, intent(in):: csize    !in: size in bytes
+         integer(1), pointer:: iptr(:)
+         integer:: i
+
+         write(*,'()'); write(*,*) '### Memory dump for address ',cptr
+         call c_f_pointer(cptr,iptr,shape=(/csize/))
+         do i=1,csize
+          if(iptr(i).ge.0) then
+           write(*,'("Offset ",i10,": ",i4)') i,int(iptr(i),4)
+          else
+           write(*,'("Offset ",i10,": ",i4)') i,(256+int(iptr(i),4))
+          endif
+         enddo
+         return
+        end subroutine dump_bytes
 !--------------------------------------
 	integer function icharnum(L,OS)
 !Converts an integer number OS(1:L) given as a string into INTEGER.
@@ -349,21 +427,6 @@
 	 return
 	end function ifcl
 !----------------------------------------
-	integer function is_it_number(ch)
-!If character <ch> is a number, returns its value as an integer,
-!otherwise a negative integer is returned.
-	 implicit none
-	 character(1), intent(in):: ch
-	 integer:: i
-	 i=iachar(ch)
-	 if(i.ge.iachar('0').and.i.le.iachar('9')) then
-	  is_it_number=i-iachar('0')
-	 else
-	  is_it_number=-1
-	 endif
-	 return
-	end function is_it_number
-!----------------------------------------
 	integer function is_it_letter(ch)
 !If character <ch> is a letter, returns 1 for lower-case, 2 for upper-case,
 !otherwise returns 0.
@@ -381,39 +444,20 @@
 	 return
 	end function is_it_letter
 !----------------------------------------
-	logical function alphanumeric(ch)
-!Returns TRUE if the character is ASCII alphanumeric, FALSE otherwise.
+	integer function is_it_number(ch)
+!If character <ch> is a number, returns its value as an integer,
+!otherwise a negative integer is returned.
 	 implicit none
 	 character(1), intent(in):: ch
-	 alphanumeric=.FALSE.
-	 if(is_it_letter(ch).gt.0) then
-	  alphanumeric=.TRUE.
+	 integer:: i
+	 i=iachar(ch)
+	 if(i.ge.iachar('0').and.i.le.iachar('9')) then
+	  is_it_number=i-iachar('0')
 	 else
-	  if(is_it_number(ch).ge.0) alphanumeric=.TRUE.
+	  is_it_number=-1
 	 endif
 	 return
-	end function alphanumeric
-!------------------------------------------------
-	logical function alphanumeric_string(str)
-!Returns TRUE if the string only contains ASCII alphanumeric + underscore,
-!FALSE otherwise. An empty string is not considered alphanumeric_.
-	 implicit none
-	 character(*), intent(in):: str
-	 integer:: i,l
-	 alphanumeric_string=.TRUE.
-	 l=len(str)
-	 if(l.gt.0) then
-	  do i=1,l
-	   if(.not.alphanumeric(str(i:i))) then
-	    alphanumeric_string=.FALSE.
-	    exit
-	   endif
-	  enddo
-	 else
-	  alphanumeric_string=.FALSE.
-	 endif
-	 return
-	end function alphanumeric_string
+	end function is_it_number
 !--------------------------------
 	subroutine itrsign(N,ITR)
 !Reorders a given permutation into an ascending order and returns the permutation sign in ITR(0).
@@ -813,7 +857,8 @@
         integer function size_of(uarg) !Fortran 2008
 !Returns size in bytes for an arbitrary scalar type (-1 means an error).
         implicit none
-        class(*), intent(in):: uarg !in: scalar argument of any type/class
+        class(*), intent(in), target:: uarg !in: scalar argument of any type/class
+
         size_of=storage_size(uarg) !in bits
         if(mod(size_of,8).eq.0) then
          size_of=size_of/8 !in bytes
