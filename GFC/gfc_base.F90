@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Base
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017-08-04 (started 2016-02-17)
+!REVISION: 2017-08-05 (started 2016-02-17)
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -60,7 +60,7 @@
 #ifndef NO_OMP
         use omp_lib
 #endif
-        use stsubs !debug
+        use stsubs
         implicit none
         public
 !PARAMETERS:
@@ -312,7 +312,7 @@
 !as well as an element pointed to by a container iterator.
          implicit none
          class(gfc_cont_elem_t), intent(inout):: this  !inout: element of a container
-         class(*), target, intent(in):: obj            !in: value to be stored in this element
+         class(*), intent(in), target:: obj            !in: value to be stored in this element
          integer(INTD), intent(out), optional:: ierr   !out: error code (0:success)
          logical, intent(in), optional:: assoc_only    !in: if TRUE, <obj> will be stored by reference, otherwise by value (default)
 #ifdef NO_GNU
@@ -320,10 +320,7 @@
 #endif
          logical, intent(in), optional:: locked        !in: if TRUE, the container element will be assumed already locked (defaults to FALSE)
          integer(INTD):: errc
-         integer:: errcode
          logical:: assoc,lckd,lck
-         class(*), pointer:: new_el
-         character(256):: errmesg
 
          errc=GFC_SUCCESS
          if(present(assoc_only)) then; assoc=assoc_only; else; assoc=.FALSE.; endif
@@ -339,24 +336,11 @@
              else
 #ifdef NO_GNU
               if(present(copy_ctor_f)) then
-               this%value_p=>copy_ctor_f(obj,errc)
+               this%value_p=>copy_ctor_f(obj,errc); if(errc.ne.0) errc=GFC_MEM_ALLOC_FAILED
               else
 #endif
-               new_el=>NULL()
-               !call dump_bytes(ptr_,size_,'dump2') !debug
-               allocate(new_el,SOURCE=obj,STAT=errcode,ERRMSG=errmesg)
-               if(errcode.eq.0) then
-                this%value_p=>new_el
-               else
-                write(*,*)'#ERROR(GFC::base:ContElemConstruct): allocate() failed: '//errmesg
-                if(errmesg(1:39).eq.'Attempt to allocate an allocated object') then !debug
-                 write(*,*)'Object (pointer) association status = ',associated(this%value_p) !debug
-                 deallocate(this%value_p,STAT=errcode,ERRMSG=errmesg) !debug
-                 if(errcode.ne.0) write(*,*)'deallocate() failure: '//errmesg !debug
-                 call crash()
-                endif !debug
-                errc=GFC_MEM_ALLOC_FAILED
-               endif
+               this%value_p=>clone_object(obj,errc); if(errc.ne.0) errc=GFC_MEM_ALLOC_FAILED
+               if(errc.eq.GFC_MEM_ALLOC_FAILED) call crash() !debug
 #ifdef NO_GNU
               endif
 #endif

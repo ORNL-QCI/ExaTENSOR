@@ -1,6 +1,6 @@
 !Standard procedures often used by me.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISON: 2017/08/04
+!REVISON: 2017/08/05
 
 !Copyright (C) 2005-2017 Dmitry I. Lyakh (Liakh)
 
@@ -34,6 +34,8 @@
 	public:: byte_chksum !returns the raw byte check sum for a given memory segment
 	public:: cap_ascii   !makes all English letters capital
 	public:: charnum     !converts a number given as a string to real*8 and integer numbers
+	public:: clone_object!clones a Fortran object
+	public:: crash       !causes a crash
 	public:: create_line !creates a table line in .txt format with ; separator
 	public:: dumb_work   !performs a dumb work on one or two arrays producing a third one
 	public:: dump_bytes  !dumps byte values for a given memory segment
@@ -74,6 +76,11 @@
 	public:: wr_mat_dc   !writes a matrix of double complex elements to the screen
 	public:: wr_vec_sp   !writes a vector of single precision elements to the screen
 	public:: wr_vec_dp   !writes a vector of double precision elements to the screen
+!Data:
+ !Debug:
+#ifdef GCC_ALLOC_WORKAROUND
+        class(*), pointer, private:: gl_ptr_=>NULL()
+#endif
 
 	contains
 !----------------------------------------
@@ -264,6 +271,42 @@
 	endif
 	return
 	end subroutine charnum
+!-------------------------------------------------------
+        function clone_object(object,ierr) result(clone)
+!Clones a Fortran object: Deep copy for allocatable components,
+!pointer association for pointer components.
+         implicit none
+         class(*), pointer:: clone             !out: clone
+         class(*), intent(in), target:: object !in: object
+         integer, intent(out), optional:: ierr !out: error code
+         character(256):: errmesg
+         integer:: errc
+
+         clone=>NULL()
+#ifdef GCC_ALLOC_WORKAROUND
+         allocate(gl_ptr_,SOURCE=object,STAT=errc,ERRMSG=errmesg)
+         clone=>gl_ptr_; gl_ptr_=>NULL()
+#else
+         allocate(clone,SOURCE=object,STAT=errc,ERRMSG=errmesg)
+#endif
+         if(errc.ne.0) then
+          write(*,*)'#ERROR(stsubs:clone_object): sourced allocate() failed: '//errmesg
+          if(errmesg(1:39).eq.'Attempt to allocate an allocated object') then !debug
+           write(*,*)'If you see status = F below, you are likely experiencing a GCC runtime bug!'
+           write(*,*)'Object (pointer) association status = ',associated(clone)
+          endif
+          clone=>NULL()
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function clone_object
+!-------------------------
+        subroutine crash()
+         integer:: ax,dx
+         write(*,'("Initiating a crash ...")')
+         ax=1; dx=ax/0; write(*,*) dx
+         return
+        end subroutine crash
 !------------------------------------------------------------------
 	subroutine create_line(talen,tabln,mantl,ctrls,numar,symar)
 !The subroutine creates a table line in .txt format with some separator.

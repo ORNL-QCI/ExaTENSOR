@@ -276,7 +276,7 @@ lib$(NAME).a: $(OBJS)
 ./OBJ/timers.o: timers.F90
 	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) timers.F90 -o ./OBJ/timers.o
 
-./OBJ/gfc_base.o: gfc_base.F90 ./OBJ/dil_basic.o ./OBJ/timers.o
+./OBJ/gfc_base.o: gfc_base.F90 ./OBJ/dil_basic.o ./OBJ/stsubs.o ./OBJ/timers.o
 	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) gfc_base.F90 -o ./OBJ/gfc_base.o
 
 ./OBJ/stack.o: stack.F90 ./OBJ/dil_basic.o ./OBJ/timers.o
