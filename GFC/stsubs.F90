@@ -1,6 +1,6 @@
 !Standard procedures often used by me.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISON: 2017/08/05
+!REVISON: 2017/08/06
 
 !Copyright (C) 2005-2017 Dmitry I. Lyakh (Liakh)
 
@@ -418,7 +418,7 @@
          else
           devo=6
          endif
-         write(devo,'()'); write(devo,*) '### Memory dump for address ',cptr
+         write(devo,'()'); write(devo,*) '### Memory dump for address ' !,cptr
          call c_f_pointer(cptr,iptr,shape=(/csize/))
          do i=1,csize
           if(iptr(i).ge.0) then
