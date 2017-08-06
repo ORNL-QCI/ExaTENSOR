@@ -7,6 +7,22 @@ Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
 
 LICENSE: GNU Lesser General Public License v.3 (LGPLv3)
 
+ISSUES:
+ GFC heavily uses modern Fortran-2003 features which are
+ implemented by a number of Fortran compilers, including
+ GCC 5.3 and higher, Intel 17 and higher, IBM XL 15 and higher,
+ and PGI 17 and higher. Unfortunately, almost all above
+ compilers still have bugs in the implmentation of Fortran-2003
+ features. The only Fortran compiler that passes all tests as
+ of now is IBM XL 15.1 (and perhaps higher). In particular,
+ known issues:
+ 1. GNU 5.x and 6.x:
+    Problems with FINAL subroutines;
+    Occasional failures of sourced allocation;
+ 2. GNU 7.1: Introduced a new bug in the compiler (causes a crash);
+ 3. Intel 17: Strange crash in memory allocation;
+ 4. PGI 17.5 and lower: Cannot even compile the code.
+
 GENERAL INFORMATION:
  GFC provides a number of heterogeneous containers for higher-level
  algorithm expression in object-oriented Fortran (2003 and later).
