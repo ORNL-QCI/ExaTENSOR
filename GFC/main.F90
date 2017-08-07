@@ -27,10 +27,10 @@ program main
  use gfc_graph_test
  use multords_test
  implicit none
- logical, parameter:: TEST_VECTOR=.TRUE.
+ logical, parameter:: TEST_VECTOR=.FALSE.
  logical, parameter:: TEST_LIST=.FALSE.
- logical, parameter:: TEST_TREE=.TRUE.
- logical, parameter:: TEST_DICTIONARY=.TRUE.
+ logical, parameter:: TEST_TREE=.FALSE.
+ logical, parameter:: TEST_DICTIONARY=.FALSE.
  logical, parameter:: TEST_GRAPH=.TRUE.
  logical, parameter:: TEST_LEGACY=.FALSE.
  logical, parameter:: TEST_SORT=.FALSE.

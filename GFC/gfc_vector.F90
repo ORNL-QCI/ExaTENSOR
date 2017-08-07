@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Vector (non-contiguous)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017/06/15
+!REVISION: 2017/08/07
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -736,8 +736,13 @@
          integer(INTD):: errc
          class(gfc_cont_elem_t), pointer:: cep
 
-         val_p=>NULL(); cep=>this%element(offset,errc)
-         if(errc.eq.GFC_SUCCESS) val_p=>cep%get_value(errc)
+         val_p=>NULL(); cep=>NULL()
+         cep=>this%element(offset,errc)
+         if(errc.eq.GFC_SUCCESS.and.associated(cep)) then
+          val_p=>cep%get_value(errc)
+         else
+          if(errc.eq.GFC_SUCCESS) errc=GFC_ELEM_EMPTY
+         endif
          if(present(ierr)) ierr=errc
          return
         end function VectorIterElementValue
