@@ -6388,25 +6388,43 @@
         subroutine test_tensor_recursive(ierr)
          implicit none
          integer(INTD), intent(out):: ierr
+         logical, parameter:: FTEST_TENS_SIGNATURE=.FALSE.
+         logical, parameter:: FTEST_TENS_SHAPE=.FALSE.
+         logical, parameter:: FTEST_TENS_HEADER=.FALSE.
+         logical, parameter:: FTEST_TENS_SIMPLE_PART=.FALSE.
+         logical, parameter:: FTEST_TENS_RCRSV=.TRUE.
+         logical, parameter:: FTEST_TENS_CONTRACTION=.FALSE.
 
-         write(*,'("Testing class tens_signature_t ... ")',ADVANCE='NO')
-         call test_tens_signature(ierr)
-         if(ierr.eq.0) then; write(*,'("PASSED")'); else; write(*,'("FAILED: Error ",i11)') ierr; return; endif
-         write(*,'("Testing class tens_shape_t ... ")',ADVANCE='NO')
-         call test_tens_shape(ierr)
-         if(ierr.eq.0) then; write(*,'("PASSED")'); else; write(*,'("FAILED: Error ",i11)') ierr; return; endif
-         write(*,'("Testing class tens_header_t ... ")',ADVANCE='NO')
-         call test_tens_header(ierr)
-         if(ierr.eq.0) then; write(*,'("PASSED")'); else; write(*,'("FAILED: Error ",i11)') ierr; return; endif
-         write(*,'("Testing class tens_simple_part_t ... ")',ADVANCE='NO')
-         call test_tens_simple_part(ierr)
-         if(ierr.eq.0) then; write(*,'("PASSED")'); else; write(*,'("FAILED: Error ",i11)') ierr; return; endif
-         write(*,'("Testing class tens_rcrsv_t ... ")',ADVANCE='NO')
-         call test_tens_rcrsv(ierr)
-         if(ierr.eq.0) then; write(*,'("PASSED")'); else; write(*,'("FAILED: Error ",i11)') ierr; return; endif
-         write(*,'("Testing class tens_contraction_t ... ")',ADVANCE='NO')
-         call test_tens_contraction(ierr)
-         if(ierr.eq.0) then; write(*,'("PASSED")'); else; write(*,'("FAILED: Error ",i11)') ierr; return; endif
+         if(FTEST_TENS_SIGNATURE) then
+          write(*,'("Testing class tens_signature_t ... ")',ADVANCE='NO')
+          call test_tens_signature(ierr)
+          if(ierr.eq.0) then; write(*,'("PASSED")'); else; write(*,'("FAILED: Error ",i11)') ierr; return; endif
+         endif
+         if(FTEST_TENS_SHAPE) then
+          write(*,'("Testing class tens_shape_t ... ")',ADVANCE='NO')
+          call test_tens_shape(ierr)
+          if(ierr.eq.0) then; write(*,'("PASSED")'); else; write(*,'("FAILED: Error ",i11)') ierr; return; endif
+         endif
+         if(FTEST_TENS_HEADER) then
+          write(*,'("Testing class tens_header_t ... ")',ADVANCE='NO')
+          call test_tens_header(ierr)
+          if(ierr.eq.0) then; write(*,'("PASSED")'); else; write(*,'("FAILED: Error ",i11)') ierr; return; endif
+         endif
+         if(FTEST_TENS_SIMPLE_PART) then
+          write(*,'("Testing class tens_simple_part_t ... ")',ADVANCE='NO')
+          call test_tens_simple_part(ierr)
+          if(ierr.eq.0) then; write(*,'("PASSED")'); else; write(*,'("FAILED: Error ",i11)') ierr; return; endif
+         endif
+         if(FTEST_TENS_RCRSV) then
+          write(*,'("Testing class tens_rcrsv_t ... ")',ADVANCE='NO')
+          call test_tens_rcrsv(ierr)
+          if(ierr.eq.0) then; write(*,'("PASSED")'); else; write(*,'("FAILED: Error ",i11)') ierr; return; endif
+         endif
+         if(FTEST_TENS_CONTRACTION) then
+          write(*,'("Testing class tens_contraction_t ... ")',ADVANCE='NO')
+          call test_tens_contraction(ierr)
+          if(ierr.eq.0) then; write(*,'("PASSED")'); else; write(*,'("FAILED: Error ",i11)') ierr; return; endif
+         endif
          return
         end subroutine test_tensor_recursive
 !-------------------------------------------
