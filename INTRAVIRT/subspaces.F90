@@ -2013,11 +2013,11 @@
 !Each subspace can also be directly accessed by its id in the vector tree <this%subspaces>.
 !Storage complexity O(NlogN), where N is the original full space dimension.
          implicit none
-         class(h_space_t), intent(out):: this                   !out: hierarchical representation of the vector space
-         class(subspace_basis_t), intent(in):: full_basis       !in: full basis of the vector space, {Psi_i}
-         integer(INTD), intent(out), optional:: ierr            !out: error code
-         integer(INTD), intent(in), optional:: branch_fac       !in: aggregation tree branching factor (defaults to 2)
-         complex(8), intent(in), optional, target:: metric(:,:) !in: metric tensor: g_ij=<Psi_i|Psi_j>: Hermitian complex matrix
+         class(h_space_t), intent(out):: this                     !out: hierarchical representation of the vector space
+         class(subspace_basis_t), intent(in), target:: full_basis !in: full basis of the vector space, {Psi_i}
+         integer(INTD), intent(out), optional:: ierr              !out: error code
+         integer(INTD), intent(in), optional:: branch_fac         !in: aggregation tree branching factor (defaults to 2)
+         complex(8), intent(in), optional, target:: metric(:,:)   !in: metric tensor: g_ij=<Psi_i|Psi_j>: Hermitian complex matrix
          logical:: split
          integer(INTD):: i,l,m,brf,errc
          integer(INTL):: nbnd
