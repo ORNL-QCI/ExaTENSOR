@@ -1,6 +1,6 @@
 !Domain-specific virtual processor (DSVP): Abstract base module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/07/31
+!REVISION: 2017/08/09
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -496,24 +496,24 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine DSOprndMarkDelivered
-!--------------------------------------------------------
-        subroutine DSOprndMarkUndelivered(this,ierr,sync)
+!-----------------------------------------------------------
+        subroutine DSOprndMarkUndelivered(this,ierr,sync_it)
 !Marks the domain-specific operand as undelivered (locally unavailable).
 !The local resources are automatically released, but the operand stays defined.
 !It is allowed to call this procedure on an undelivered operand. However, trying to
 !mark undelivered an operand with a pending communication will cause an error,
-!unless the optional parameter <sync> is set to TRUE (will enforce synchronization).
+!unless the optional parameter <sync_it> is set to TRUE (will enforce synchronization).
          implicit none
          class(ds_oprnd_t), intent(inout):: this     !inout: domain-specific operand
          integer(INTD), intent(out), optional:: ierr !out: error code
-         logical, intent(in), optional:: sync        !in: if TRUE, a possible pending communication will be completed before resource release
+         logical, intent(in), optional:: sync_it     !in: if TRUE, a possible pending communication will be completed before resource release
          integer(INTD):: errc,ier
          logical:: compl_comm,dirty
 
          errc=DSVP_SUCCESS; dirty=.FALSE.
          if(this%is_active(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
-           compl_comm=.FALSE.; if(present(sync)) compl_comm=sync
+           compl_comm=.FALSE.; if(present(sync_it)) compl_comm=sync_it
            if(compl_comm) then
             compl_comm=this%sync(errc,wait=.TRUE.); dirty=(errc.ne.DSVP_SUCCESS)
             errc=DSVP_SUCCESS

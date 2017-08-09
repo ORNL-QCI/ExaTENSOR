@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/08/04
+!REVISION: 2017/08/09
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -6388,12 +6388,12 @@
         subroutine test_tensor_recursive(ierr)
          implicit none
          integer(INTD), intent(out):: ierr
-         logical, parameter:: FTEST_TENS_SIGNATURE=.FALSE.
-         logical, parameter:: FTEST_TENS_SHAPE=.FALSE.
-         logical, parameter:: FTEST_TENS_HEADER=.FALSE.
-         logical, parameter:: FTEST_TENS_SIMPLE_PART=.FALSE.
+         logical, parameter:: FTEST_TENS_SIGNATURE=.TRUE.
+         logical, parameter:: FTEST_TENS_SHAPE=.TRUE.
+         logical, parameter:: FTEST_TENS_HEADER=.TRUE.
+         logical, parameter:: FTEST_TENS_SIMPLE_PART=.TRUE.
          logical, parameter:: FTEST_TENS_RCRSV=.TRUE.
-         logical, parameter:: FTEST_TENS_CONTRACTION=.FALSE.
+         logical, parameter:: FTEST_TENS_CONTRACTION=.TRUE.
 
          if(FTEST_TENS_SIGNATURE) then
           write(*,'("Testing class tens_signature_t ... ")',ADVANCE='NO')

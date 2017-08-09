@@ -27,14 +27,14 @@ program main
  use gfc_graph_test
  use multords_test
  implicit none
- logical, parameter:: TEST_VECTOR=.FALSE.
- logical, parameter:: TEST_LIST=.FALSE.
- logical, parameter:: TEST_TREE=.FALSE.
- logical, parameter:: TEST_DICTIONARY=.FALSE.
+ logical, parameter:: TEST_VECTOR=.TRUE.
+ logical, parameter:: TEST_LIST=.TRUE.
+ logical, parameter:: TEST_TREE=.TRUE.
+ logical, parameter:: TEST_DICTIONARY=.TRUE.
  logical, parameter:: TEST_GRAPH=.TRUE.
  logical, parameter:: TEST_LEGACY=.FALSE.
- logical, parameter:: TEST_SORT=.FALSE.
- logical, parameter:: TEST_DYNAMIC=.FALSE.
+ logical, parameter:: TEST_SORT=.TRUE.
+ logical, parameter:: TEST_DYNAMIC=.TRUE.
  real(8):: perf
  integer(INTD):: dev_out,ierr
  real(8), external:: dil_test_infer_overhead
