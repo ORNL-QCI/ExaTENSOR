@@ -55,9 +55,9 @@ program main
  if(TEST_LIST) then
   !ierr=test_gfc_list(perf,dev_out)
   if(ierr.eq.0) then
-   write(*,*) 'GFC::list testing status: ',ierr,'(PASSED): Performance: ',perf
+   write(*,*) 'gfc::list testing status: ',ierr,'(PASSED): Performance: ',perf
   else
-   write(*,*) 'GFC::list testing status: ',ierr,'(FAILED): Performance: ',perf
+   write(*,*) 'gfc::list testing status: ',ierr,'(FAILED): Performance: ',perf
   endif
  endif
 ! Tree:

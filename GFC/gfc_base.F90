@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Base
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017-08-05 (started 2016-02-17)
+!REVISION: 2017-08-10 (started 2016-02-17)
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -182,6 +182,18 @@
 !ABSTRACT INTERFACES:
         abstract interface
  !Generics:
+  !GFC generic allocate for scalar objects:
+         function gfc_allocate_scalar_i(obj) result(ierr)
+          import:: INTD
+          integer(INTD):: ierr                     !out: error code
+          class(*), allocatable, intent(out):: obj !out: allocated object of some type
+         end function gfc_allocate_scalar_i
+  !GFC generic deallocate for scalar objects:
+         !function gfc_deallocate_scalar_i(obj) result(ierr)
+          !import:: INTD
+          !integer(INTD):: ierr                       !out: error code
+          !class(*), intent(inout), allocatable:: obj !inout: allocated object of some type
+         !end function gfc_deallocate_scalar_i
   !GFC generic predicate:
          function gfc_predicate_i(obj) result(pred)
           import:: INTD

@@ -251,7 +251,7 @@ LTHREAD = $(LTHREAD_$(TOOLKIT))
 LFLAGS = $(LTHREAD) $(MPI_LINK) $(LA_LINK) $(CUDA_LINK) $(LIB)
 
 OBJS =  ./OBJ/dil_basic.o ./OBJ/timers.o ./OBJ/stsubs.o ./OBJ/multords.o ./OBJ/combinatoric.o ./OBJ/stack.o ./OBJ/lists.o ./OBJ/dictionary.o \
-	./OBJ/gfc_base.o ./OBJ/gfc_vector.o ./OBJ/gfc_list.o ./OBJ/gfc_tree.o ./OBJ/gfc_stack.o ./OBJ/gfc_vec_tree.o \
+	./OBJ/gfc_base.o ./OBJ/gfc_bank.o ./OBJ/gfc_vector.o ./OBJ/gfc_list.o ./OBJ/gfc_tree.o ./OBJ/gfc_stack.o ./OBJ/gfc_vec_tree.o \
 	./OBJ/gfc_queue.o ./OBJ/gfc_pri_queue.o ./OBJ/gfc_dictionary.o ./OBJ/gfc_hash_map.o ./OBJ/gfc_graph.o
 
 $(NAME): lib$(NAME).a ./OBJ/main.o
@@ -276,20 +276,23 @@ lib$(NAME).a: $(OBJS)
 ./OBJ/timers.o: timers.F90
 	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) timers.F90 -o ./OBJ/timers.o
 
-./OBJ/gfc_base.o: gfc_base.F90 ./OBJ/dil_basic.o ./OBJ/stsubs.o ./OBJ/timers.o
-	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) gfc_base.F90 -o ./OBJ/gfc_base.o
-
 ./OBJ/stack.o: stack.F90 ./OBJ/dil_basic.o ./OBJ/timers.o
 	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) stack.F90 -o ./OBJ/stack.o
 
 ./OBJ/lists.o: lists.F90 ./OBJ/timers.o
 	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) lists.F90 -o ./OBJ/lists.o
 
-./OBJ/gfc_list.o: gfc_list.F90 ./OBJ/gfc_base.o ./OBJ/gfc_vector.o ./OBJ/timers.o
-	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) gfc_list.F90 -o ./OBJ/gfc_list.o
-
 ./OBJ/dictionary.o: dictionary.F90 ./OBJ/timers.o
 	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) dictionary.F90 -o ./OBJ/dictionary.o
+
+./OBJ/gfc_base.o: gfc_base.F90 ./OBJ/dil_basic.o ./OBJ/stsubs.o ./OBJ/timers.o
+	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) gfc_base.F90 -o ./OBJ/gfc_base.o
+
+./OBJ/gfc_bank.o: gfc_bank.F90 ./OBJ/gfc_base.o ./OBJ/timers.o
+	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) gfc_bank.F90 -o ./OBJ/gfc_bank.o
+
+./OBJ/gfc_list.o: gfc_list.F90 ./OBJ/gfc_base.o ./OBJ/gfc_vector.o ./OBJ/timers.o
+	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) gfc_list.F90 -o ./OBJ/gfc_list.o
 
 ./OBJ/gfc_tree.o: gfc_tree.F90 ./OBJ/gfc_base.o ./OBJ/timers.o
 	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) gfc_tree.F90 -o ./OBJ/gfc_tree.o

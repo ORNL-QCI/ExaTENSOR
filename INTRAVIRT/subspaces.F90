@@ -1,7 +1,7 @@
 !Infrastructure for a recursive adaptive vector space decomposition
 !and hierarchical vector space representation.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/08/04
+!REVISION: 2017/08/10
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -155,7 +155,7 @@
  !Spherical symmetry (orbital momentum):
         type, extends(symmetry_t), public:: spher_symmetry_t
          integer(INTD), private:: orb_moment=SYMMETRY_NONE   !total orbital momentum: [0,1,2,...)
-         integer(INTD), private:: orb_z_proj                 !Z-axis projection of the total orbital momentum: [-L...+L], if defined
+         integer(INTD), private:: orb_z_proj=0               !Z-axis projection of the total orbital momentum: [-L...+L]
          contains
           procedure, private:: SpherSymmetryCtor                            !constructor
           generic, public:: spher_symmetry_ctor=>SpherSymmetryCtor

@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Bi-directional linked list
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017-06-18 (started 2016-02-28)
+!REVISION: 2017-08-10 (started 2016-02-28)
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -47,53 +47,53 @@
         type, extends(gfc_cont_elem_t), public:: list_elem_t
          class(list_elem_t), pointer, private:: next_elem=>NULL()
          class(list_elem_t), pointer, private:: prev_elem=>NULL()
-        contains
-         procedure, private:: ListElemConstruct
-         generic, public:: list_elem_ctor=>ListElemConstruct !constructs the content of the list element
-         procedure, public:: is_first=>ListElemIsFirst       !returns GFC_TRUE if the element is the first in the list
-         procedure, public:: is_last=>ListElemIsLast         !returns GFC_TRUE if the element is the last in the list
+         contains
+          procedure, private:: ListElemConstruct
+          generic, public:: list_elem_ctor=>ListElemConstruct !constructs the content of the list element
+          procedure, public:: is_first=>ListElemIsFirst       !returns GFC_TRUE if the element is the first in the list
+          procedure, public:: is_last=>ListElemIsLast         !returns GFC_TRUE if the element is the last in the list
         end type list_elem_t
  !Iterator position in the linked list:
         type, public:: list_pos_t
          class(list_elem_t), pointer, private:: elem_p=>NULL() !pointer to a list element
          contains
-          procedure, public:: is_set=>ListPosIsSet !returns TRUE of the list position is set
+          procedure, public:: is_set=>ListPosIsSet !returns TRUE if the list position is set
           procedure, public:: clean=>ListPosClean  !resets the list position to NULL
         end type list_pos_t
  !Linked list:
         type, extends(gfc_container_t), public:: list_bi_t
          class(list_elem_t), pointer, private:: first_elem=>NULL() !first element of the linked list
          class(list_elem_t), pointer, private:: last_elem=>NULL()  !last element of the linked list
-        contains
-         procedure, public:: is_empty=>ListIsEmpty                 !returns GFC_TRUE if the list is empty, GFC_FALSE otherwise (or error code)
-         procedure, public:: is_sublist=>ListIsSublist             !returns TRUE if the list is a sublist of a larger list, FALSE otherwise
-         procedure, private:: ListDuplicateToList                  !duplicates a list into another list either by value or by reference
-         procedure, private:: ListDuplicateToVector                !duplicates a list into a vector either by value or by reference
-         generic, public:: duplicate=>ListDuplicateToList,ListDuplicateToVector
+         contains
+          procedure, public:: is_empty=>ListIsEmpty                !returns GFC_TRUE if the list is empty, GFC_FALSE otherwise (or error code)
+          procedure, public:: is_sublist=>ListIsSublist            !returns TRUE if the list is a sublist of a larger list, FALSE otherwise
+          procedure, private:: ListDuplicateToList                 !duplicates a list into another list either by value or by reference
+          procedure, private:: ListDuplicateToVector               !duplicates a list into a vector either by value or by reference
+          generic, public:: duplicate=>ListDuplicateToList,ListDuplicateToVector
         end type list_bi_t
  !List iterator:
         type, extends(gfc_iter_t), public:: list_iter_t
          class(list_elem_t), pointer, private:: current=>NULL() !current element of the linked list
          class(list_bi_t), pointer, private:: container=>NULL() !linked list associated with the iterator
-        contains
-         procedure, public:: init=>ListIterInit                   !initializes the iterator by associating it with a list and resetting to the beginning
+         contains
+          procedure, public:: init=>ListIterInit                   !initializes the iterator by associating it with a list and resetting to the beginning
           procedure, public:: reset=>ListIterReset                 !resets the iterator to the beginning of the list
-         procedure, public:: reset_back=>ListIterResetBack        !resets the iterator to the end of the list
-         procedure, public:: release=>ListIterRelease             !releases the iterator (dissociates it from the container)
-         procedure, public:: pointee=>ListIterPointee             !returns the container element currently pointed to by the iterator
-         procedure, public:: next=>ListIterNext                   !moves the iterator to the next list element
-         procedure, public:: previous=>ListIterPrevious           !moves the iterator to the previous list element
-         procedure, public:: append=>ListIterAppend               !inserts a new element either at the beginning or at the end of the container
-         procedure, public:: insert_elem=>ListIterInsertElem      !inserts a new element at the current position of the container
-         procedure, public:: insert_list=>ListIterInsertList      !inserts another linked list at the current position of the container
-!        generic, public:: insert=>insert_elem,insert_list        !generic (`Ambiguous)
-         procedure, public:: split=>ListIterSplit                 !splits the list into two parts at the current position
-         procedure, public:: delete=>ListIterDelete               !deletes the list element in the current position
-         procedure, public:: delete_sublist=>ListIterDeleteSublist!deletes all elements either prior or after the current iterator position
-         procedure, public:: delete_all=>ListIterDeleteAll        !deletes all list elements
-         procedure, public:: bookmark=>ListIterBookmark           !bookmarks the current iterator position
-         procedure, public:: jump=>ListIterJump                   !jumps to a previously bookmarked iterator position
-         procedure, public:: jump_=>ListIterJump_                 !PRIVATE: moves the iterator to a specified list element
+          procedure, public:: reset_back=>ListIterResetBack        !resets the iterator to the end of the list
+          procedure, public:: release=>ListIterRelease             !releases the iterator (dissociates it from the container)
+          procedure, public:: pointee=>ListIterPointee             !returns the container element currently pointed to by the iterator
+          procedure, public:: next=>ListIterNext                   !moves the iterator to the next list element
+          procedure, public:: previous=>ListIterPrevious           !moves the iterator to the previous list element
+          procedure, public:: append=>ListIterAppend               !inserts a new element either at the beginning or at the end of the container
+          procedure, public:: insert_elem=>ListIterInsertElem      !inserts a new element at the current position of the container
+          procedure, public:: insert_list=>ListIterInsertList      !inserts another linked list at the current position of the container
+!         generic, public:: insert=>insert_elem,insert_list        !generic (`Ambiguous)
+          procedure, public:: split=>ListIterSplit                 !splits the list into two parts at the current position
+          procedure, public:: delete=>ListIterDelete               !deletes the list element in the current position
+          procedure, public:: delete_sublist=>ListIterDeleteSublist!deletes all elements either prior or after the current iterator position
+          procedure, public:: delete_all=>ListIterDeleteAll        !deletes all list elements
+          procedure, public:: bookmark=>ListIterBookmark           !bookmarks the current iterator position
+          procedure, public:: jump=>ListIterJump                   !jumps to a previously bookmarked iterator position
+          procedure, public:: jump_=>ListIterJump_                 !PRIVATE: moves the iterator to a specified list element
         end type list_iter_t
 !INTERFACES:
 !VISIBILITY:
