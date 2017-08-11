@@ -1,6 +1,6 @@
 !Standard procedures often used by me.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISON: 2017/08/06
+!REVISON: 2017/08/11
 
 !Copyright (C) 2005-2017 Dmitry I. Lyakh (Liakh)
 
@@ -57,6 +57,9 @@
 	public:: not_a_number!checks whether a given string solely contains a decimal number
 	public:: numchar     !converts an integer number to character representation
 	public:: printl      !prints a line of characters
+	public:: rand_bool   !returns a random logical
+	public:: rand_int4   !returns a random integer4 from the given range
+	public:: rand_real8  !returns a random real8
 	public:: rand_str    !returns a random string
 	public:: rots        !rotates an array of points in a 3d-space
 	public:: size_of     !scalar data type size in bytes (Fortran 2008)
@@ -834,6 +837,41 @@
 	endif
 	return
 	end subroutine printl
+!----------------------------------------
+        function rand_bool() result(bool)
+!Returns a random logical.
+         implicit none
+         logical:: bool !out: random logical
+         real(8):: rn
+
+         bool=.FALSE.
+         call random_number(rn)
+         if(rn.ge.5d-1) bool=.TRUE.
+         return
+        end function rand_bool
+!---------------------------------------------------
+        function rand_int4(lower,upper) result(int4)
+!Returns a random integer4 from the given range.
+         implicit none
+         integer(4):: int4              !out: random number
+         integer(4), intent(in):: lower !in: lower bound
+         integer(4), intent(in):: upper !in: upper bound
+
+         int4=nint(rand_real8(real(lower,8),real(upper,8)),4)
+         return
+        end function rand_int4
+!-----------------------------------------------------
+        function rand_real8(lower,upper) result(real8)
+!Returns a random real8 from the given range.
+         implicit none
+         real(8):: real8             !out: random number
+         real(8), intent(in):: lower !in: lower bound
+         real(8), intent(in):: upper !in: upper bound
+
+         call random_number(real8)
+         real8=lower+real8*(upper-lower)
+         return
+        end function rand_real8
 !----------------------------------
 	subroutine rand_str(sl,str)
 !Generates a random string.

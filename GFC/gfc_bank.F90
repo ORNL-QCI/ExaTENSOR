@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Bank of preallocated reusable objects of a specific type
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017/08/10
+!REVISION: 2017/08/11
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -53,6 +53,7 @@
          integer(INTD), private:: free_left=0                                           !number of currently available entries left in the bank
          integer(INTD), private:: capacity=0                                            !total bank capacity
          procedure(gfc_allocate_scalar_i), nopass, pointer, private:: allocator=>NULL() !non-member generic allocator for each object
+         procedure(gfc_destruct_i), nopass, pointer, private:: constructor=>NULL()      !non-member generic constructor for each object
          procedure(gfc_destruct_i), nopass, pointer, private:: destructor=>NULL()       !non-member generic destructor for each object
          contains
           procedure, public:: init=>ObjectBankInit          !initializes the object bank
@@ -138,25 +139,29 @@
          this%offset=-1
          return
         end subroutine borrowed_object_dtor
-![object_bank_t]==============================================================
-        subroutine ObjectBankInit(this,capacity,allocator_f,ierr,destructor_f)
+![object_bank_t]===============================================================
+        subroutine ObjectBankInit(this,capacity,allocator_f,ierr,ctor_f,dtor_f)
 !Initializes a bank of reusable entries to some capacity.
          implicit none
-         class(object_bank_t), intent(inout):: this         !inout: bank of reusable objects
-         integer(INTD), intent(in):: capacity               !in: desired capacity of the bank
-         procedure(gfc_allocate_scalar_i):: allocator_f     !in: non-member generic allocator procedure
-         integer(INTD), intent(out), optional:: ierr        !out: error code
-         procedure(gfc_destruct_i), optional:: destructor_f !in: non-member generic destructor procedure
+         class(object_bank_t), intent(inout):: this     !inout: bank of reusable objects
+         integer(INTD), intent(in):: capacity           !in: desired capacity of the bank
+         procedure(gfc_allocate_scalar_i):: allocator_f !in: non-member generic allocator procedure
+         integer(INTD), intent(out), optional:: ierr    !out: error code
+         procedure(gfc_destruct_i), optional:: ctor_f   !in: non-member generic constructor procedure
+         procedure(gfc_destruct_i), optional:: dtor_f   !in: non-member generic destructor procedure
          integer(INTD):: errc,i
+         logical:: fc
 
          errc=GFC_SUCCESS
          if(capacity.gt.0) then
+          fc=.FALSE.; if(present(ctor_f)) fc=.TRUE.
           allocate(this%free_entries(0:capacity-1),STAT=errc)
           if(errc.eq.0) then
            allocate(this%entries(0:capacity-1),STAT=errc)
            if(errc.eq.0) then
             do i=0,capacity-1
              errc=allocator_f(this%entries(i)%object); if(errc.ne.0) exit
+             if(fc) errc=ctor_f(this%entries(i)%object); if(errc.ne.0) exit
             enddo
             if(errc.eq.0) then
              this%capacity=0
@@ -166,7 +171,8 @@
              enddo
              this%free_left=capacity
              this%allocator=>allocator_f
-             if(present(destructor_f)) this%destructor=>destructor_f
+             if(fc) this%constructor=>ctor_f
+             if(present(dtor_f)) this%destructor=>dtor_f
             else
              errc=GFC_MEM_ALLOC_FAILED
             endif
@@ -265,3 +271,36 @@
         end subroutine object_bank_dtor
 
        end module gfc_bank
+![TESTING]=============================================================
+       module gfc_bank_test
+        use gfc_base
+        use gfc_bank
+        use timers, only: thread_wtime
+        implicit none
+        private
+
+        type, private:: my_type
+         integer:: my_int
+         real:: my_real
+         character(9):: my_string='My string'
+        end type my_type
+
+        public test_gfc_bank
+
+       contains
+
+        function test_gfc_bank(perf,dev_out) result(ierr)
+         implicit none
+         integer(INTD):: ierr
+         real(8), intent(out):: perf
+         integer(INTD), intent(in), optional:: dev_out
+         integer(INTD):: jo
+         real(8):: tms,tm
+
+         if(present(dev_out)) then; jo=dev_out; else; jo=6; endif
+         perf=0d0; tms=thread_wtime()
+         tm=thread_wtime(tms)
+         return
+        end function test_gfc_bank
+
+       end module gfc_bank_test
