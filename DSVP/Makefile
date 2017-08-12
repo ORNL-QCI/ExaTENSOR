@@ -235,8 +235,8 @@ FFLAGS_IBM_OPT = -c -qsmp=omp -O3
 FFLAGS = $(FFLAGS_$(TOOLKIT)_$(BUILD_TYPE)) $(DF)$(NO_GPU) $(DF)$(NO_AMD) $(DF)$(NO_PHI) $(DF)$(NO_BLAS) $(DF)-D$(EXA_OS)
 
 #ExaTensor includes:
-MY_INC1 = -I../UTILITY -I../DDSS
-MY_INC2 = -I../UTILITY/OBJ -I../DDSS/OBJ
+MY_INC1 = -I../UTILITY -I../DDSS -I../GFC
+MY_INC2 = -I../UTILITY/OBJ -I../DDSS/OBJ -I../GFC/OBJ
 MY_INC = $(MY_INC1) $(MY_INC2)
 MY_LIB = ../DDSS/libddss.a ../UTILITY/libutility.a
 
@@ -256,7 +256,7 @@ OBJS = ./OBJ/dsvp_base.o
 $(NAME): $(OBJS) $(MY_LIB)
 	ar cr lib$(NAME).a $(OBJS) $(MY_LIB)
 
-./OBJ/dsvp_base.o: dsvp_base.F90 ../DDSS/OBJ/pack_prim.o ../UTILITY/OBJ/dil_basic.o ../UTILITY/OBJ/timers.o
+./OBJ/dsvp_base.o: dsvp_base.F90 ../GFC/OBJ/gfc_base.o ../GFC/OBJ/gfc_list.o ../DDSS/OBJ/pack_prim.o ../UTILITY/OBJ/dil_basic.o ../UTILITY/OBJ/timers.o
 	mkdir -p ./OBJ
 	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(FFLAGS) dsvp_base.F90 -o ./OBJ/dsvp_base.o
 

@@ -1,6 +1,6 @@
 !Domain-specific virtual processor (DSVP): Abstract base module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/08/09
+!REVISION: 2017/08/12
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -70,6 +70,8 @@
         use dil_basic
         use timers
         use pack_prim, only: obj_pack_t
+        use gfc_base
+        use gfc_list
         implicit none
         private
 !PARAMETERS:
@@ -194,8 +196,8 @@
           procedure, public:: terminate=>DSInstrTerminate               !terminates the normal instruction execution workflow, but leaves instruction defined (retired)
           procedure, public:: clean=>DSInstrClean                       !resets the domain-specific instruction to an empty state (after it has been retired)
         end type ds_instr_t
- !Domain-specific microcode binding:
-        type, public:: ds_microcode_bind_t
+ !Domain-specific microcode binding (for a DS instruction):
+        type, public:: ds_microcode_t
          procedure(ds_instr_self_i), nopass, pointer, public:: acquire_resource=>NULL() !acquires local resources for instruction operands
          procedure(ds_instr_self_i), nopass, pointer, public:: prefetch_input=>NULL()   !starts prefetching input operands
          procedure(ds_instr_sync_i), nopass, pointer, public:: sync_prefetch=>NULL()    !synchronizes the input prefetch (either test or wait)
@@ -205,8 +207,33 @@
          procedure(ds_instr_sync_i), nopass, pointer, public:: sync_upload=>NULL()      !synchronizes the output upload (either test or wait)
          procedure(ds_instr_self_i), nopass, pointer, public:: release_resource=>NULL() !releases local resources occupied by instruction operands
          contains
-          procedure, public:: reset=>DSMicrocodeBindReset !resets microcode binding to NULL
-        end type ds_microcode_bind_t
+          procedure, public:: reset=>DSMicrocodeReset !resets microcode binding to NULL
+        end type ds_microcode_t
+ !Domain-specific virtual unit port:
+        type, public:: ds_unit_port_t
+         logical, private:: locked=.FALSE.              !lock for updates
+         type(list_bi_t), private:: queue               !queue of incoming DS instructions stored by reference
+         type(list_iter_t), private:: queue_it          !queue iterator
+#if 0
+         contains
+          procedure, public:: accept=>DSUnitPortAccept  !accepts new DS instructions from other DS units
+          procedure, public:: free=>DSUnitPortFree      !release all DS instructions and resets everything
+          final:: ds_unit_port_dtor                     !dtor
+#endif
+        end type ds_unit_port_t
+ !Domain-specific virtual unit (DSVU):
+        type, abstract, public:: ds_unit_t
+         integer(INTD), private:: id=-1                       !unique DS unit ID
+         class(dsvp_t), pointer, private:: dsvp_p=>NULL()     !pointer to the DSVP the DS unit is part of
+         type(ds_unit_port_t), private:: port                 !DS unit port (for incoming DS instructions from other DS units)
+         type(list_bi_t), private:: queue                     !queue of currently processed DS instructions stored by reference
+         type(list_iter_t), private:: queue_it                !queue iterator
+#if 0
+         contains
+          procedure, public:: start=>DSUnitStart              !starts and lives the DS unit (the corresponding thread will run here until termination)
+          procedure, public:: load_port=>DSUnitLoadPort       !loads the DS unit port with new DS instructions (called by other DS units)
+#endif
+        end type ds_unit_t
  !Domain-specific virtual processor (DSVP):
         type, abstract, public:: dsvp_t
          integer(INTD), private:: stat=DSVP_STAT_OFF          !current DSVP status: {DSVP_STAT_OFF, DSVP_STAT_ON, negative integers = errors}
@@ -377,8 +404,8 @@
         public ds_instr_self_i
         public ds_instr_sync_i
         public ds_instr_encode_i
- !ds_microcode_bind_t:
-        private DSMicrocodeBindReset
+ !ds_microcode_t:
+        private DSMicrocodeReset
  !dsvp_t:
         private DSVPStartTime
         private DSVPClean
@@ -1088,10 +1115,10 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine DSInstrClean
-![ds_microcode_bind_t]=======================
-        subroutine DSMicrocodeBindReset(this)
+![ds_microcode_t]========================
+        subroutine DSMicrocodeReset(this)
          implicit none
-         class(ds_microcode_bind_t), intent(inout):: this !inout: microcode binding
+         class(ds_microcode_t), intent(inout):: this !inout: microcode binding
 
          this%acquire_resource=>NULL()
          this%prefetch_input=>NULL()
@@ -1102,7 +1129,7 @@
          this%sync_upload=>NULL()
          this%release_resource=>NULL()
          return
-        end subroutine DSMicrocodeBindReset
+        end subroutine DSMicrocodeReset
 ![dsvp_t]==================================
         subroutine DSVPStartTime(this,ierr)
 !Starts the time after initializing the DSVP.

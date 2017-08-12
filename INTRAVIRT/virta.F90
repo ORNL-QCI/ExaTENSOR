@@ -8,7 +8,7 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/08/02
+!REVISION: 2017/08/12
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -164,7 +164,7 @@
          complex(8), private:: alpha=(1d0,0d0)                  !alpha prefactor
          contains
           procedure, private:: CtrlTensAddCtor                  !ctor
-          generic, public:: ctrl_tens_add_ctor=>CtrlTensAddCtor,CtrlTensAddUnpack
+          generic, public:: ctrl_tens_add_ctor=>CtrlTensAddCtor
           procedure, public:: pack=>CtrlTensAddPack             !packs the instruction control field into a plain byte packet
           procedure, public:: unpack=>CtrlTensAddUnpack         !unpacks the instruction control field from a plain byte packet
           final:: ctrl_tens_add_dtor                            !dtor
