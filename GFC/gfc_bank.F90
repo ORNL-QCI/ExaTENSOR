@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Bank of preallocated reusable objects of a specific type
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017/08/11
+!REVISION: 2017/08/13
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -44,7 +44,7 @@
         end type borrowed_object_t
  !Object bank entry:
         type, private:: obj_bank_entry_t
-         class(*), allocatable, public:: object
+         class(*), allocatable, public:: object !stored object
         end type obj_bank_entry_t
  !Bank of reusable objects:
         type, public:: object_bank_t
@@ -61,6 +61,18 @@
           procedure, public:: give_back=>ObjectBankGiveBack !puts the borrowed object back in the bank
           final:: object_bank_dtor                          !dtor
         end type object_bank_t
+!VISIBILITY:
+ !borrowed_object_t:
+        private BorrowedObjectReset
+        private BorrowedObjectIsSet
+        private BorrowedObjectGetObject
+        private BorrowedObjectGetOffset
+        public borrowed_object_dtor
+ !object_bank_t:
+        private ObjectBankInit
+        private ObjectBankBorrow
+        private ObjectBankGiveBack
+        public object_bank_dtor
 
        contains
 !IMPLEMENTATION:
@@ -191,8 +203,9 @@
         end subroutine ObjectBankInit
 !----------------------------------------------------------------
         function ObjectBankBorrow(this,ierr) result(borrowed_obj)
+!Borrows an object from the bank. The object is stored inside <borrowed_object_t>.
          implicit none
-         type(borrowed_object_t):: borrowed_obj             !out: borrowed object
+         type(borrowed_object_t):: borrowed_obj             !out: borrowed object (contains the stored object)
          class(object_bank_t), intent(inout), target:: this !inout: bank of reusable objects
          integer(INTD), intent(out), optional:: ierr        !out: error code
          integer(INTD):: errc,i
@@ -203,9 +216,14 @@
           this%free_left=this%free_left-1
           i=this%free_entries(this%free_left)
           if(allocated(this%entries(i)%object)) then
-           uptr=>this%entries(i)%object
-           call borrowed_obj%reset(errc,uptr,i)
-           uptr=>NULL()
+           if(associated(this%constructor)) errc=this%constructor(this%entries(i)%object)
+           if(errc.eq.0) then
+            uptr=>this%entries(i)%object
+            call borrowed_obj%reset(errc,uptr,i)
+            uptr=>NULL()
+           else
+            errc=GFC_ACTION_FAILED
+           endif
           else
            errc=GFC_CORRUPTED_CONT
           endif
@@ -217,6 +235,7 @@
         end function ObjectBankBorrow
 !------------------------------------------------------------
         subroutine ObjectBankGiveBack(this,borrowed_obj,ierr)
+!Returns a borrowed object back to the bank.
          implicit none
          class(object_bank_t), intent(inout):: this            !inout: bank of reusable objects
          type(borrowed_object_t), intent(inout):: borrowed_obj !inout: defined borrowed object
@@ -289,17 +308,44 @@
 
        contains
 
+        function allocator(obj) result(ierr)
+         implicit none
+         integer(INTD):: ierr
+         class(*), allocatable, intent(out):: obj
+
+         allocate(my_type::obj,STAT=ierr)
+         return
+        end function allocator
+
         function test_gfc_bank(perf,dev_out) result(ierr)
          implicit none
          integer(INTD):: ierr
          real(8), intent(out):: perf
          integer(INTD), intent(in), optional:: dev_out
-         integer(INTD):: jo
+         integer(INTD), parameter:: BANK_SIZE=1048576
+         type(object_bank_t):: obank
+         type(borrowed_object_t):: bob(BANK_SIZE)
+         class(my_type), pointer:: my_ptr
+         class(*), pointer:: uptr
+         integer(INTD):: jo,i
          real(8):: tms,tm
 
-         if(present(dev_out)) then; jo=dev_out; else; jo=6; endif
-         perf=0d0; tms=thread_wtime()
-         tm=thread_wtime(tms)
+         ierr=0; perf=0d0
+         jo=6; if(present(dev_out)) jo=dev_out
+         tms=thread_wtime()
+         call obank%init(BANK_SIZE,allocator,ierr); if(ierr.ne.0) then; ierr=1; return; endif
+         do i=1,BANK_SIZE
+          bob(i)=obank%borrow(ierr); if(ierr.ne.0) then; ierr=2; return; endif
+          uptr=>bob(i)%get_object(ierr); if(ierr.ne.0) then; ierr=3; return; endif
+          my_ptr=>NULL(); select type(uptr); class is(my_type); my_ptr=>uptr; end select
+          if(.not.associated(my_ptr)) then; ierr=4; return; endif
+          my_ptr%my_int=i; my_ptr%my_real=dble(i)
+         enddo
+         do i=1,BANK_SIZE
+          call obank%give_back(bob(i),ierr); if(ierr.ne.0) then; ierr=5; return; endif
+         enddo
+         call object_bank_dtor(obank)
+         tm=thread_wtime(tms); perf=dble(BANK_SIZE)/tm
          return
         end function test_gfc_bank
 

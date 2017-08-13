@@ -25,8 +25,10 @@ program main
  use gfc_tree_test
  use gfc_dictionary_test
  use gfc_graph_test
+ use gfc_bank_test
  use multords_test
  implicit none
+ logical, parameter:: TEST_BANK=.TRUE.
  logical, parameter:: TEST_VECTOR=.TRUE.
  logical, parameter:: TEST_LIST=.TRUE.
  logical, parameter:: TEST_TREE=.TRUE.
@@ -42,13 +44,22 @@ program main
  dev_out=6 !output device (defaults to screen)
 
 !GFC containers:
+! Bank:
+ if(TEST_BANK) then
+  ierr=test_gfc_bank(perf,dev_out)
+  if(ierr.eq.0) then
+   write(*,*) 'gfc::bank testing status: ',ierr,'(PASSED): Performance: ',perf
+  else
+   write(*,*) 'gfc::bank testing status: ',ierr,'(FAILED)'
+  endif
+ endif
 ! Vector:
  if(TEST_VECTOR) then
   ierr=test_gfc_vector(perf,dev_out)
   if(ierr.eq.0) then
    write(*,*) 'gfc::vector testing status: ',ierr,'(PASSED): Performance: ',perf
   else
-   write(*,*) 'gfc::vector testing status: ',ierr,'(FAILED): Performance: ',perf
+   write(*,*) 'gfc::vector testing status: ',ierr,'(FAILED)'
   endif
  endif
 ! List:
@@ -57,7 +68,7 @@ program main
   if(ierr.eq.0) then
    write(*,*) 'gfc::list testing status: ',ierr,'(PASSED): Performance: ',perf
   else
-   write(*,*) 'gfc::list testing status: ',ierr,'(FAILED): Performance: ',perf
+   write(*,*) 'gfc::list testing status: ',ierr,'(FAILED)'
   endif
  endif
 ! Tree:
@@ -66,7 +77,7 @@ program main
   if(ierr.eq.0) then
    write(*,*) 'gfc::tree testing status: ',ierr,'(PASSED): Performance: ',perf
   else
-   write(*,*) 'gfc::tree testing status: ',ierr,'(FAILED): Performance: ',perf
+   write(*,*) 'gfc::tree testing status: ',ierr,'(FAILED)'
   endif
  endif
 ! Dictionary:
@@ -75,7 +86,7 @@ program main
   if(ierr.eq.0) then
    write(*,*) 'gfc::dictionary testing status: ',ierr,'(PASSED): Performance: ',perf
   else
-   write(*,*) 'gfc::dictionary testing status: ',ierr,'(FAILED): Performance: ',perf
+   write(*,*) 'gfc::dictionary testing status: ',ierr,'(FAILED)'
   endif
  endif
 ! Graph:
@@ -84,7 +95,7 @@ program main
   if(ierr.eq.0) then
    write(*,*) 'gfc::graph testing status: ',ierr,'(PASSED): Performance: ',perf
   else
-   write(*,*) 'gfc::graph testing status: ',ierr,'(FAILED): Performance: ',perf
+   write(*,*) 'gfc::graph testing status: ',ierr,'(FAILED)'
   endif
  endif
 
@@ -95,14 +106,14 @@ program main
   if(ierr.eq.0) then
    write(*,*) 'Legacy stack testing status: ',ierr,'(PASSED): Performance: ',perf
   else
-   write(*,*) 'Legacy stack testing status: ',ierr,'(FAILED): Performance: ',perf
+   write(*,*) 'Legacy stack testing status: ',ierr,'(FAILED)'
   endif
 ! Dictionary:
   ierr=dil_test_dictionary(perf,dev_out)
   if(ierr.eq.0) then
    write(*,*) 'Legacy dictionary testing status: ',ierr,'(PASSED): Performance: ',perf
   else
-   write(*,*) 'Legacy dictionary testing status: ',ierr,'(FAILED): Performance: ',perf
+   write(*,*) 'Legacy dictionary testing status: ',ierr,'(FAILED)'
   endif
  endif
 
@@ -112,7 +123,7 @@ program main
   if(ierr.eq.0) then
    write(*,*) 'Multi-index sort testing status: ',ierr,'(PASSED): Performance: ',perf
   else
-   write(*,*) 'Multi-index sort testing status: ',ierr,'(FAILED): Performance: ',perf
+   write(*,*) 'Multi-index sort testing status: ',ierr,'(FAILED)'
   endif
  endif
 
