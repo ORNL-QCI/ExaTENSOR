@@ -322,7 +322,7 @@
          integer(INTD):: ierr
          real(8), intent(out):: perf
          integer(INTD), intent(in), optional:: dev_out
-         integer(INTD), parameter:: BANK_SIZE=1048576
+         integer(INTD), parameter:: BANK_SIZE=1024
          type(object_bank_t):: obank
          type(borrowed_object_t):: bob(BANK_SIZE)
          class(my_type), pointer:: my_ptr
