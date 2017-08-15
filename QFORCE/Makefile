@@ -247,7 +247,7 @@ MY_LIB = ../INTERVIRT/libExaTensor.a ../INTRAVIRT/libintravirt.a ../DSVP/libdsvp
 
 #THREADS:
 LTHREAD_GNU   = -lgomp
-LTHREAD_PGI   = -lpthread
+LTHREAD_PGI   = -mp -lpthread
 LTHREAD_INTEL = -liomp5
 LTHREAD_CRAY  = -L.
 LTHREAD_IBM   = -lxlsmp

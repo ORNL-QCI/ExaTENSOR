@@ -242,7 +242,7 @@ MY_LIB = ../DDSS/libddss.a ../UTILITY/libutility.a
 
 #THREADS:
 LTHREAD_GNU   = -lgomp
-LTHREAD_PGI   = -lpthread
+LTHREAD_PGI   = -mp -lpthread
 LTHREAD_INTEL = -liomp5
 LTHREAD_CRAY  = -L.
 LTHREAD_IBM   = -lxlsmp
