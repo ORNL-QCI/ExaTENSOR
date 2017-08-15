@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP "Worker" implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/08/12
+!REVISION: 2017/08/15
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -43,37 +43,16 @@
         real(8), public:: EXA_FLOPS_HEAVY=1d12  !minimal number of Flops to consider the operation as heavy-cost
         real(8), public:: EXA_COST_TO_SIZE=1d2  !minimal cost (Flops) to size (Words) ratio to consider the operation arithmetically intensive
 !TYPES:
- !Tensor cache entry:
-        type, private:: tens_entry_t
-         class(tens_rcrsv_t), pointer, private:: tensor=>NULL()   !tensor (either allocated or associated)
+ !Tensor argument cache entry (TAVP-specific):
+        type, extends(tens_cache_entry_t), private:: tens_entry_wrk_t
          class(tens_resrc_t), pointer, private:: resource=>NULL() !resource (either allocated or associated)
-         type(tens_status_t), private:: tens_status               !current status of the tensor
-         logical, private:: tens_alloc=.FALSE.                    !TRUE if the tensor pointer is allocated, FALSE if associated only
          logical, private:: res_alloc=.FALSE.                     !TRUE if the resource pointer is allocated, FALSE if associated only
          contains
-          procedure, private:: TensEntryCtor                      !ctor
-          generic, public:: tens_entry_ctor=>TensEntryCtor
-          procedure, public:: is_set=>TensEntryIsSet              !returns TRUE if the tensor cache entry is set
-          procedure, public:: get_tensor=>TensEntryGetTensor      !returns a pointer to the tensor
-          procedure, public:: get_resource=>TensEntryGetResource  !returns a pointer to the resource
-          procedure, public:: get_status=>TensEntryGetStatus      !returns a pointer to the tensor status
-          procedure, private:: mark_created=>TensEntryMarkCreated !marks the tensor status as created (allocated local memory)
-          procedure, private:: mark_defined=>TensEntryMarkDefined !marks the tensor status as defined to a definite value
-          procedure, private:: mark_in_use=>TensEntryMarkInUse    !marks the tensor status as in use (in a local computation, either read or update)
-          procedure, private:: mark_no_use=>TensEntryMarkNoUse    !marks the tensor status as free of use (no local computation)
-          procedure, private:: mark_updated=>TensEntryMarkUpdated !marks the tensor status as in update (updated in a local computation)
-          final:: tens_entry_dtor                                 !dtor
-        end type tens_entry_t
- !Tensor cache:
-        type, private:: tens_cache_t
-         type(dictionary_t), private:: map                        !cache dictionary: <tens_descr_t --> tens_entry_t>
-         contains
-          procedure, public:: lookup=>TensCacheLookup             !looks up a given tensor in the cache
-          procedure, public:: store=>TensCacheStore               !stores a given tensor in the cache
-          procedure, public:: evict=>TensCacheEvict               !evicts a given tensor from the cache
-          procedure, public:: erase=>TensCacheErase               !erases everything from the cache (regardless of MPI communications)
-          final:: tens_cache_dtor                                 !dtor
-        end type tens_cache_t
+          procedure, private:: TensEntryWrkCtor                     !ctor
+          generic, public:: tens_entry_wrk_ctor=>TensEntryWrkCtor
+          procedure, public:: get_resource=>TensEntryWrkGetResource !returns a pointer to the resource
+          final:: tens_entry_wrk_dtor                               !dtor
+        end type tens_entry_wrk_t
  !Tensor instruction (realization of a tensor operation for a specific TAVP):
         type, extends(ds_instr_t), private:: tens_instr_t
          type(talsh_task_t), private:: talsh_task                   !TAL-SH task
@@ -86,9 +65,7 @@
         end type tens_instr_t
  !TAVP specialization "Worker":
         type, extends(dsvp_t), public:: tavp_worker_t
-         type(tens_cache_t), private:: tens_cache                   !tensor cache (both persistent and temporary tensors)
-         type(list_bi_t), private:: instr_queue                     !global tensor instruction queue
-         type(list_iter_t), private:: instr_it                      !global tensor instruction queue iterator (instruction pointer)
+         type(tens_cache_t), private:: tens_cache                   !tensor argument cache (for both persistent and temporary tensors)
          contains
           procedure, public:: start=>TAVPWorkerStart                                             !initializes TAVP to an active state
           procedure, public:: shutdown=>TAVPWorkerShutdown                                       !shuts down TAVP
@@ -123,24 +100,10 @@
         private execute_tensor_create
         private execute_tensor_destroy
         private execute_tensor_contract
- !tens_entry_t:
-        private TensEntryCtor
-        private TensEntryIsSet
-        private TensEntryGetTensor
-        private TensEntryGetResource
-        private TensEntryGetStatus
-        private TensEntryMarkCreated
-        private TensEntryMarkDefined
-        private TensEntryMarkInUse
-        private TensEntryMarkNoUse
-        private TensEntryMarkUpdated
-        private tens_entry_dtor
- !tens_cache_t:
-        private TensCacheLookup
-        private TensCacheStore
-        private TensCacheEvict
-        private TensCacheErase
-        public tens_cache_dtor
+ !tens_entry_wrk_t:
+        private TensEntryWrkCtor
+        private TensEntryWrkGetResource
+        public tens_entry_wrk_dtor
  !tens_instr_t:
         private TensInstrCtor
         private TensInstrEncode
@@ -963,16 +926,14 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine execute_tensor_contract
-![tens_entry_t]========================================================================
-        subroutine TensEntryCtor(this,ierr,tensor,resource,tensor_alloc,resource_alloc)
-!CTOR: If either <tensor> or <resource> are not present,
-!the corresponding components of <this> will be allocated,
-!otherwise pointer associated. However, <tensor_alloc> and
-!<resource_alloc> flags can be used to mark the corresponding
-!associated objects as allocated in case they will need to be
-!deallocated later from here (passed ownership).
+![tens_entry_wrk_t]=======================================================================
+        subroutine TensEntryWrkCtor(this,ierr,tensor,resource,tensor_alloc,resource_alloc)
+!CTOR: If either <tensor> or <resource> are not present, the corresponding components
+!of <this> will be allocated, otherwise pointer associated. However, <tensor_alloc> and
+!<resource_alloc> flags can be used to mark the corresponding associated objects as
+!allocated in case they will need to be deallocated later from here (passed ownership).
          implicit none
-         class(tens_entry_t), intent(out):: this                       !out: tensor cache entry
+         class(tens_entry_wrk_t), intent(out):: this                   !out: tensor cache entry
          integer(INTD), intent(out), optional:: ierr                   !out: error code
          class(tens_rcrsv_t), intent(in), pointer, optional:: tensor   !in: pointer to the tensor
          class(tens_resrc_t), intent(in), pointer, optional:: resource !in: pointer to the resource
@@ -1008,76 +969,20 @@
          if(errc.ne.0) call tens_entry_dtor(this)
          if(present(ierr)) ierr=errc
          return
-        end subroutine TensEntryCtor
-!-----------------------------------------------------
-        function TensEntryIsSet(this,ierr) result(ans)
-         implicit none
-         logical:: ans                               !out: answer
-         class(tens_entry_t), intent(in):: this      !in: tensor cache entry
-         integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc
-
-         errc=0
-         ans=associated(this%tensor)
-         if(present(ierr)) ierr=errc
-         return
-        end function TensEntryIsSet
-!--------------------------------------------------------------
-        function TensEntryGetTensor(this,ierr) result(tensor_p)
-         implicit none
-         class(tens_rcrsv_t), pointer:: tensor_p     !out: pointer to the tensor
-         class(tens_entry_t), intent(in):: this      !in: tensor cache entry
-         integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc
-
-         errc=0
-         tensor_p=>this%tensor
-         if(.not.associated(tensor_p)) errc=-1
-         if(present(ierr)) ierr=errc
-         return
-        end function TensEntryGetTensor
-!------------------------------------------------------------------
-        function TensEntryGetResource(this,ierr) result(resource_p)
+        end subroutine TensEntryWrkCtor
+!---------------------------------------------------------------------
+        function TensEntryWrkGetResource(this,ierr) result(resource_p)
          implicit none
          class(tens_resrc_t), pointer:: resource_p   !out: pointer to the resource
-         class(tens_entry_t), intent(in):: this      !in: tensor cache entry
+         class(tens_entry_wrk_t), intent(in):: this  !in: tensor cache entry
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
 
-         errc=0
-         resource_p=>this%resource
-         if(.not.associated(resource_p)) errc=-1
-         if(present(ierr)) ierr=errc
-         return
-        end function TensEntryGetResource
-!--------------------------------------------------------------
-        function TensEntryGetStatus(this,ierr) result(status_p)
-         implicit none
-         class(tens_status_t), pointer:: status_p       !out: pointer to the tensor status
-         class(tens_entry_t), intent(in), target:: this !in: tensor cache entry
-         integer(INTD), intent(out), optional:: ierr    !out: error code
-         integer(INTD):: errc
-
-         errc=0
-         status_p=>this%tens_status
-         if(.not.associated(status_p)) errc=-1
-         if(present(ierr)) ierr=errc
-         return
-        end function TensEntryGetStatus
-!-------------------------------------------------
-        subroutine TensEntryMarkCreated(this,ierr)
-         implicit none
-         class(tens_entry_t), intent(inout):: this   !inout: defined tensor cache entry
-         integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc
-
+         resource_p=>NULL()
          if(this%is_set(errc)) then
           if(errc.eq.0) then
-           if(.not.this%tens_status%created) then
-            this%tens_status%created=.TRUE.
-           else
-            errc=-3
-           endif
+           resource_p=>this%resource
+           if(.not.associated(resource_p)) errc=-3
           else
            errc=-2
           endif
@@ -1086,287 +991,23 @@
          endif
          if(present(ierr)) ierr=errc
          return
-        end subroutine TensEntryMarkCreated
-!-------------------------------------------------
-        subroutine TensEntryMarkDefined(this,ierr)
-         implicit none
-         class(tens_entry_t), intent(inout):: this   !inout: defined tensor cache entry
-         integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc
-
-         if(this%is_set(errc)) then
-          if(errc.eq.0) then
-           if(this%tens_status%created) then
-            if(this%tens_status%updated) then
-             if(.not.(this%tens_status%defined.or.this%tens_status%is_used)) then
-              this%tens_status%updated=.FALSE.
-              this%tens_status%defined=.TRUE.
-             else
-              errc=-5
-             endif
-            else
-             errc=-4
-            endif
-           else
-            errc=-3
-           endif
-          else
-           errc=-2
-          endif
-         else
-          errc=-1
-         endif
-         if(present(ierr)) ierr=errc
-         return
-        end subroutine TensEntryMarkDefined
-!-----------------------------------------------
-        subroutine TensEntryMarkInUse(this,ierr)
-         implicit none
-         class(tens_entry_t), intent(inout):: this   !inout: defined tensor cache entry
-         integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc
-
-         if(this%is_set(errc)) then
-          if(errc.eq.0) then
-           if(this%tens_status%created) then
-            if(this%tens_status%defined) then
-             this%tens_status%is_used=.TRUE.
-            else
-             errc=-4
-            endif
-           else
-            errc=-3
-           endif
-          else
-           errc=-2
-          endif
-         else
-          errc=-1
-         endif
-         if(present(ierr)) ierr=errc
-         return
-        end subroutine TensEntryMarkInUse
-!-----------------------------------------------
-        subroutine TensEntryMarkNoUse(this,ierr)
-         implicit none
-         class(tens_entry_t), intent(inout):: this   !inout: defined tensor cache entry
-         integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc
-
-         if(this%is_set(errc)) then
-          if(errc.eq.0) then
-           if(this%tens_status%created) then
-            if(this%tens_status%defined) then
-             this%tens_status%is_used=.FALSE.
-            else
-             errc=-4
-            endif
-           else
-            errc=-3
-           endif
-          else
-           errc=-2
-          endif
-         else
-          errc=-1
-         endif
-         if(present(ierr)) ierr=errc
-         return
-        end subroutine TensEntryMarkNoUse
-!-------------------------------------------------
-        subroutine TensEntryMarkUpdated(this,ierr)
-         implicit none
-         class(tens_entry_t), intent(inout):: this   !inout: defined tensor cache entry
-         integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc
-
-         if(this%is_set(errc)) then
-          if(errc.eq.0) then
-           if(this%tens_status%created) then
-            if(.not.(this%tens_status%is_used)) then
-             this%tens_status%defined=.FALSE.
-             this%tens_status%updated=.TRUE.
-            else
-             errc=-4
-            endif
-           else
-            errc=-3
-           endif
-          else
-           errc=-2
-          endif
-         else
-          errc=-1
-         endif
-         if(present(ierr)) ierr=errc
-         return
-        end subroutine TensEntryMarkUpdated
-!---------------------------------------
-        subroutine tens_entry_dtor(this)
-         implicit none
-         type(tens_entry_t):: this
-
-         if(associated(this%tensor).and.this%tens_alloc) deallocate(this%tensor)
-         if(associated(this%resource).and.this%res_alloc) deallocate(this%resource)
-         this%tensor=>NULL(); this%resource=>NULL()
-         this%tens_alloc=.FALSE.; this%res_alloc=.FALSE.
-         return
-        end subroutine tens_entry_dtor
-![tens_cache_t]========================================================
-        function TensCacheLookup(this,tensor,ierr) result(tens_entry_p)
-!Looks up a given tensor in the tensor cache. If found, returns a pointer
-!to the corresponding tensor cache entry. If not found, returns NULL.
-         implicit none
-         class(tens_entry_t), pointer:: tens_entry_p !out: pointer to the tensor cache entry or NULL
-         class(tens_cache_t), intent(in):: this      !in: tensor cache
-         class(tens_rcrsv_t), intent(in):: tensor    !in: tensor to look up (via its descriptor as the key)
-         integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc,res
-         class(*), pointer:: uptr
-         type(dictionary_iter_t):: dit
-         type(tens_descr_t):: tens_descr
-
-         tens_entry_p=>NULL()
-         errc=dit%init(this%map)
-         if(errc.eq.GFC_SUCCESS) then
-          uptr=>NULL()
-          tens_descr=tensor%get_descriptor(errc)
-          if(errc.eq.TEREC_SUCCESS) then
-           res=dit%search(GFC_DICT_FETCH_IF_FOUND,cmp_tens_descriptors,tens_descr,value_out=uptr)
-           if(res.eq.GFC_FOUND) then
-            select type(uptr); class is(tens_entry_t); tens_entry_p=>uptr; end select
-            if(.not.associated(tens_entry_p)) errc=-5 !trap
-           else
-            if(res.ne.GFC_NOT_FOUND) errc=-4
-           endif
-          else
-           errc=-3
-          endif
-          res=dit%release(); if(res.ne.GFC_SUCCESS.and.errc.eq.0) errc=-2
-         else
-          errc=-1
-         endif
-         if(present(ierr)) ierr=errc
-         return
-        end function TensCacheLookup
-!-------------------------------------------------------------------------------------
-        function TensCacheStore(this,tensor,ierr,resource,tens_entry_p) result(stored)
-!Stores a tensor (and optionally its associated resource) in the tensor cache,
-!unless the tensor is already present in the tensor cache. In any case, an optional
-!<tens_entry_p> will point to either existing or newly created tensor cache entry.
-!If the resource is absent, and empty resource will be allocated for the newly created
-!tensor cache entry. <stored> is TRUE on successful new storage, FALSE otherwise.
-!In any case, the <tensor> and <resource> components in the tensor cache entry
-!will be marked as ALLOCATED, that is, both should be ALLOCATED pointers!
-         implicit none
-         logical:: stored                                                   !out: TRUE on successful new store, FALSE otherwise
-         class(tens_cache_t), intent(inout):: this                          !inout: tensor cache
-         class(tens_rcrsv_t), pointer, intent(in):: tensor                  !in: tensor (must be allocated)
-         integer(INTD), intent(out), optional:: ierr                        !out: error code
-         class(tens_resrc_t), pointer, intent(in), optional:: resource      !in: resource associated with the tensor (must be allocated)
-         class(tens_entry_t), pointer, intent(out), optional:: tens_entry_p !out: tensor cache entry (new or existing)
-         integer(INTD):: errc,res
-         class(*), pointer:: uptr
-         type(dictionary_iter_t):: dit
-         type(tens_descr_t):: tens_descr
-         type(tens_entry_t):: tens_entry
-
-         stored=.FALSE.
-         errc=dit%init(this%map)
-         if(errc.eq.GFC_SUCCESS) then
-          if(associated(tensor)) then
-           tens_descr=tensor%get_descriptor(errc)
-           if(errc.eq.TEREC_SUCCESS) then
-            if(present(resource)) then
-             call tens_entry%tens_entry_ctor(errc,tensor,resource,tensor_alloc=.TRUE.,resource_alloc=.TRUE.)
-            else
-             call tens_entry%tens_entry_ctor(errc,tensor,tensor_alloc=.TRUE.)
-            endif
-            if(errc.eq.0) then
-             uptr=>NULL()
-             res=dit%search(GFC_DICT_ADD_IF_NOT_FOUND,cmp_tens_descriptors,tens_descr,tens_entry,GFC_BY_VAL,value_out=uptr)
-             if(res.eq.GFC_NOT_FOUND) then; stored=.TRUE.; else; if(res.ne.GFC_FOUND) errc=-7; endif
-             if(present(tens_entry_p).and.errc.eq.0) then
-              tens_entry_p=>NULL()
-              select type(uptr); class is(tens_entry_t); tens_entry_p=>uptr; end select
-              if(.not.associated(tens_entry_p)) errc=-6 !trap
-             endif
-            else
-             errc=-5
-            endif
-           else
-            errc=-4
-           endif
-          else
-           errc=-3
-          endif
-          res=dit%release(); if(res.ne.0.and.errc.eq.0) errc=-2
-         else
-          errc=-1
-         endif
-         if(present(ierr)) ierr=errc
-         return
-        end function TensCacheStore
-!----------------------------------------------------------------
-        function TensCacheEvict(this,tensor,ierr) result(evicted)
-!Evicts a specific tensor cache entry from the tensor cache.
-!If the corresponding tensor cache entry is not found,
-!no error is risen, but <evicted>=FALSE.
-         implicit none
-         logical:: evicted                           !TRUE if the tensor cache entry was found and evicted, FALSE otherwise
-         class(tens_cache_t), intent(inout):: this   !inout: tensor cache
-         class(tens_rcrsv_t), intent(in):: tensor    !in: tensor to find and evict from the cache
-         integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc,res
-         type(dictionary_iter_t):: dit
-         type(tens_descr_t):: tens_descr
-
-         evicted=.FALSE.
-         errc=dit%init(this%map)
-         if(errc.eq.GFC_SUCCESS) then
-          tens_descr=tensor%get_descriptor(errc)
-          if(errc.eq.TEREC_SUCCESS) then
-           res=dit%search(GFC_DICT_DELETE_IF_FOUND,cmp_tens_descriptors,tens_descr)
-           if(res.eq.GFC_FOUND) then; evicted=.TRUE.; else; if(res.ne.GFC_NOT_FOUND) errc=-4; endif
-          else
-           errc=-3
-          endif
-          res=dit%release(); if(res.ne.0.and.errc.eq.0) errc=-2
-         else
-          errc=-1
-         endif
-         if(present(ierr)) ierr=errc
-         return
-        end function TensCacheEvict
+        end function TensEntryWrkGetResource
 !-------------------------------------------
-        subroutine TensCacheErase(this,ierr)
-!Erases the tensor cache completely and unconditionally.
-!In particular, if some resource objects are still in use,
-!their deallocation will probably cause a crash.
+        subroutine tens_entry_wrk_dtor(this)
          implicit none
-         class(tens_cache_t), intent(inout):: this   !inout: tensor cache
-         integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc,res
-         type(dictionary_iter_t):: dit
+         type(tens_entry_wrk_t):: this
 
-         errc=dit%init(this%map)
-         if(errc.eq.GFC_SUCCESS) then
-          call dit%delete_all(errc); if(errc.ne.GFC_SUCCESS) errc=-3
-          res=dit%release(); if(res.ne.0.and.errc.eq.0) errc=-2
+         if(this%tens_status%is_used.eq.0) then
+          if(associated(this%tensor).and.this%tens_alloc) deallocate(this%tensor)
+          if(associated(this%resource).and.this%res_alloc) deallocate(this%resource)
+          this%tensor=>NULL(); this%resource=>NULL()
+          this%tens_alloc=.FALSE.; this%res_alloc=.FALSE.
+          this%tens_status=tens_status_none
          else
-          errc=-1
+          call quit(-1,'#FATAL(tavp_worker:tens_entry_wrk_t:dtor): Attempt to destroy an object that is still in use!')
          endif
-         if(present(ierr)) ierr=errc
          return
-        end subroutine TensCacheErase
-!---------------------------------------
-        subroutine tens_cache_dtor(this)
-         implicit none
-         type(tens_cache_t):: this
-
-         call this%erase()
-         return
-        end subroutine tens_cache_dtor
+        end subroutine tens_entry_wrk_dtor
 ![tens_instr_t]============================================
         subroutine TensInstrCtor(this,op_code,ierr,op_spec)
 !Constructs a tensor instruction from a given tensor operation.
