@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/08/09
+!REVISION: 2017/08/16
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -94,7 +94,7 @@
  !Registered hierarchical space:
         type, public:: hspace_reg_t
          integer(INTD), private:: space_id=-1                  !registered space id: [0..max]
-         class(h_space_t), pointer, private:: hspace_p=>NULL() !#pointer to a persistent hierarchical vector space definition
+         class(h_space_t), pointer, private:: hspace_p=>NULL() !non-owning pointer to a defined (persistent) hierarchical vector space object
          contains
           procedure, private:: HspaceRegCtor                    !ctor
           procedure, private:: HspaceRegCtorUnpack              !ctor by unpacking
@@ -219,7 +219,7 @@
         end type tens_layout_t
  !Concrete storage layout "Fortran-dimension-led":
         type, extends(tens_layout_t), public:: tens_layout_fdims_t
-         class(tens_header_t), pointer, private:: header=>NULL() !#pointer to the defining tensor header
+         class(tens_header_t), pointer, private:: header=>NULL() !non-owning pointer to the defining tensor header
          contains
           procedure, private:: TensLayoutFdimsCtor                          !ctor
           procedure, private:: TensLayoutFdimsCtorUnpack                    !ctor by unpacking
@@ -286,7 +286,7 @@
           procedure, public:: compare=>TensDescrCompare  !compares with another instance
           final:: tens_descr_dtor                        !dtor
         end type tens_descr_t
- !Tensor argument (reference to a recursive tensor):
+ !Tensor argument (reference to a recursive tensor):`Must not be cloned if .alloc=TRUE
         type, private:: tens_argument_t
          class(tens_rcrsv_t), pointer, private:: tens_p=>NULL() !pointer to a persistent tensor
          logical, private:: alloc=.FALSE.                       !TRUE if the tensor argument was allocated, FALSE if associated

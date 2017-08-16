@@ -8,7 +8,7 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/08/15
+!REVISION: 2017/08/16
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -139,8 +139,8 @@
         end type tens_resrc_t
  !Tensor operand:
         type, extends(ds_oprnd_t), public:: tens_oprnd_t
-         class(tens_rcrsv_t), pointer, private:: tensor=>NULL()   !pointer to a persistent recursive tensor
-         class(tens_resrc_t), pointer, private:: resource=>NULL() !pointer to a persistent local tensor resource
+         class(tens_rcrsv_t), pointer, private:: tensor=>NULL()   !non-owning pointer to a persistent recursive tensor
+         class(tens_resrc_t), pointer, private:: resource=>NULL() !non-owning pointer to a persistent local tensor resource
          type(talsh_tens_t), private:: talsh_tens                 !TAL-SH tensor object (for performing actual computations)
          contains
           procedure, private:: TensOprndCtor                    !ctor
@@ -185,11 +185,11 @@
         end type ctrl_tens_contr_t
  !Tensor argument cache entry:
         type, abstract, public:: tens_cache_entry_t
-         class(tens_rcrsv_t), pointer, private:: tensor=>NULL()  !tensor (either allocated or associated)
-         logical, private:: tens_alloc=.FALSE.                   !TRUE if the tensor pointer is allocated, FALSE if associated only
-         type(tens_status_t), private:: tens_status              !current status of the tensor
+         class(tens_rcrsv_t), pointer, private:: tensor=>NULL() !owning/non-owning pointer to a tensor (ctor/dtor of extended types will decide)
+         type(tens_status_t), private:: tens_status             !current status of the tensor
          contains
-          procedure, public:: is_set=>TensCacheEntryIsSet             !returns TRUE if the tensor cache entry is set
+          procedure(tens_cache_entry_ctor_i), public, deferred:: tens_cache_entry_ctor !default constructor of a tensor cache entry to be overriden by extended types
+          procedure, public:: is_set=>TensCacheEntryIsSet             !returns TRUE if the tensor cache entry is set (constructed)
           procedure, public:: get_tensor=>TensCacheEntryGetTensor     !returns a pointer to the tensor
           procedure, public:: get_status=>TensCacheEntryGetStatus     !returns a pointer to the tensor status object
           procedure, public:: mark_created=>TensCacheEntryMarkCreated !marks the tensor status as created (allocated local memory)
@@ -209,6 +209,16 @@
           procedure, public:: erase=>TensCacheErase               !erases everything from the cache (regardless of pending MPI communications!)
           final:: tens_cache_dtor                                 !dtor
         end type tens_cache_t
+!INTERFACES:
+        abstract interface
+ !tens_cache_entry_t:
+         subroutine tens_cache_entry_ctor_i(this,tensor,ierr)
+          import:: tens_cache_entry_t,tens_rcrsv_t,INTD
+          class(tens_cache_entry_t), intent(out):: this
+          class(tens_rcrsv_t), pointer, intent(inout):: tensor
+          integer(INTD), intent(out), optional:: ierr
+         end subroutine tens_cache_entry_ctor_i
+        end interface
 !DATA:
  !MPI process specialization (TAVP role, set by exatns_start):
         integer(INT_MPI), public:: process_role=EXA_NO_ROLE !MPI process role (see above)
@@ -1042,8 +1052,7 @@
          integer(INTD), intent(out), optional:: ierr  !out: error code
          integer(INTD):: errc
 
-         errc=0
-         ans=associated(this%tensor)
+         errc=0; ans=associated(this%tensor)
          if(present(ierr)) ierr=errc
          return
         end function TensCacheEntryIsSet
@@ -1055,8 +1064,7 @@
          integer(INTD), intent(out), optional:: ierr  !out: error code
          integer(INTD):: errc
 
-         errc=0
-         tensor_p=>this%tensor
+         errc=0; tensor_p=>this%tensor
          if(.not.associated(tensor_p)) errc=-1
          if(present(ierr)) ierr=errc
          return
@@ -1295,27 +1303,26 @@
          if(present(ierr)) ierr=errc
          return
         end function TensCacheLookup
-!-------------------------------------------------------------------------------------
-        function TensCacheStore(this,tensor,ierr,resource,tens_entry_p) result(stored)
-!Stores a tensor (and optionally its associated resource) in the tensor cache,
-!unless the tensor is already present in the tensor cache. In any case, an optional
-!<tens_entry_p> will point to either existing or newly created tensor cache entry.
-!If the resource is absent, an empty resource will be allocated in the newly created
-!tensor cache entry. <stored> is TRUE on successful new storage, FALSE otherwise.
-!In any case, the <tensor> and <resource> components in the tensor cache entry
-!will be marked as ALLOCATED, that is, both should be ALLOCATED pointers!
+!-----------------------------------------------------------------------------------------------------------------------------
+        function TensCacheStore(this,tensor,tens_cache_entry_alloc_f,tens_cache_entry_ctor_f,ierr,tens_entry_p) result(stored)
+!Given a tensor, checks whether it is present in the tensor cache. If yes, returns
+!a pointer to the corresponding tensor cache entry. If no, allocates a new extended
+!tensor cache entry, stores it in the tensor cache, constructs it to the default value,
+!and returns a pointer to it (optionally).
          implicit none
          logical:: stored                                                   !out: TRUE on successful new store, FALSE otherwise
          class(tens_cache_t), intent(inout):: this                          !inout: tensor cache
-         class(tens_rcrsv_t), pointer, intent(in):: tensor                  !in: tensor (must be allocated)
+         class(tens_rcrsv_t), pointer, intent(in):: tensor                  !in: pointer to a tensor
+         procedure(gfc_allocate_scalar_i):: tens_cache_entry_alloc_f        !in: allocator of an extended tens_cache_entry_t
+         procedure(tens_cache_entry_ctor_i):: tens_cache_entry_ctor_f       !in: default constructor for an extended tens_cache_entry_t
          integer(INTD), intent(out), optional:: ierr                        !out: error code
-         class(tens_resrc_t), pointer, intent(in), optional:: resource      !in: resource associated with the tensor (must be allocated)
-         class(tens_entry_t), pointer, intent(out), optional:: tens_entry_p !out: tensor cache entry (new or existing)
+         class(tens_cache_entry_t), pointer, intent(out), optional:: tens_entry_p !out: tensor cache entry (new or existing)
          integer(INTD):: errc,res
          class(*), pointer:: uptr
          type(dictionary_iter_t):: dit
          type(tens_descr_t), target:: tens_descr
-         type(tens_entry_t):: tens_entry
+         class(tens_cache_entry_t), allocatable, target:: tce
+         class(tens_cache_entry_t), pointer:: tcep
 
          stored=.FALSE.
          errc=dit%init(this%map)
@@ -1323,20 +1330,24 @@
           if(associated(tensor)) then
            tens_descr=tensor%get_descriptor(errc)
            if(errc.eq.TEREC_SUCCESS) then
-            if(present(resource)) then
-             call tens_entry%tens_entry_ctor(errc,tensor,resource,tensor_alloc=.TRUE.,resource_alloc=.TRUE.)
-            else
-             call tens_entry%tens_entry_ctor(errc,tensor,tensor_alloc=.TRUE.)
-            endif
-            if(errc.eq.0) then
+            errc=tens_cache_entry_alloc_f(tce) !allocates an empty instance of an extended tens_cache_entry_t
+            if(errc.eq.GFC_SUCCESS) then
              uptr=>NULL()
-             res=dit%search(GFC_DICT_ADD_IF_NOT_FOUND,cmp_tens_descriptors,tens_descr,tens_entry,GFC_BY_VAL,value_out=uptr)
-             if(res.eq.GFC_NOT_FOUND) then; stored=.TRUE.; else; if(res.ne.GFC_FOUND) errc=-7; endif
-             if(present(tens_entry_p).and.errc.eq.0) then
-              tens_entry_p=>NULL()
-              select type(uptr); class is(tens_entry_t); tens_entry_p=>uptr; end select
-              if(.not.associated(tens_entry_p)) errc=-6 !trap
+             res=dit%search(GFC_DICT_ADD_IF_NOT_FOUND,cmp_tens_descriptors,tens_descr,tce,GFC_BY_VAL,value_out=uptr)
+             tcep=>NULL(); select type(uptr); class is(tens_cache_entry_t); tcep=>uptr; end select
+             if(associated(tcep)) then
+              if(res.eq.GFC_NOT_FOUND) then
+               stored=.TRUE.
+               call tcep%tens_cache_entry_ctor_f(tensor,errc); if(errc.ne.0) errc=-8
+              else
+               if(res.ne.GFC_FOUND) errc=-7
+              endif
+              if(errc.eq.0.and.present(tens_entry_p)) tens_entry_p=>tcep
+              tcep=>NULL()
+             else
+              errc=-6
              endif
+             deallocate(tce)
             else
              errc=-5
             endif
@@ -1346,10 +1357,11 @@
           else
            errc=-3
           endif
-          res=dit%release(); if(res.ne.0.and.errc.eq.0) errc=-2
+          res=dit%release(); if(res.ne.GFC_SUCCESS.and.errc.eq.0) errc=-2
          else
           errc=-1
          endif
+         if(errc.ne.0.and.present(tens_entry_p)) tens_entry_p=>NULL()
          if(present(ierr)) ierr=errc
          return
         end function TensCacheStore

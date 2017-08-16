@@ -1,7 +1,7 @@
 !Infrastructure for a recursive adaptive vector space decomposition
 !and hierarchical vector space representation.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/08/10
+!REVISION: 2017/08/16
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -194,8 +194,8 @@
  !Typed basis function:
         type, public:: basis_func_t
          integer(INTD), private:: basis_kind=BASIS_NONE                    !specific basis kind (mandatory)
-         class(basis_func_supp_t), pointer, private:: basis_func_p=>NULL() !pointer to a persistent basis function of this kind (optional)
-         class(symmetry_t), pointer, private:: symm_p=>NULL()              !pointer to a persistent symmetry of the basis function (optional)
+         class(basis_func_supp_t), pointer, private:: basis_func_p=>NULL() !non-owning pointer to a persistent basis function of this basis kind (optional)
+         class(symmetry_t), pointer, private:: symm_p=>NULL()              !non-owning pointer to a persistent symmetry object of the basis function (optional)
          contains
           procedure, private:: BasisFuncCtor                         !sets up the basis function (ctor)
           generic, public:: basis_func_ctor=>BasisFuncCtor
@@ -255,7 +255,7 @@
          integer(INTL), private:: space_dim=0                 !dimension of the vector space
          integer(INTL), private:: num_subspaces=0             !number of subspaces defined in the vector space: [0..space_dim-1] are original basis functions, [space_dim..num_subspaces-1] are their aggregates
          type(vec_tree_t), private:: subspaces                !subspaces defined in the vector space: [0..space_dim-1] are original basis functions, [space_dim..num_subspaces-1] are their aggregates
-         complex(8), pointer, private:: metric_p(:,:)=>NULL() !pointer to the original metric tensor: g12=<bf1|bf2>
+         complex(8), pointer, private:: metric_p(:,:)=>NULL() !non-owning pointer to the original (persistent) metric tensor: g12=<bf1|bf2>
          real(8), allocatable, private:: overlap(:,:)         !subspace support overlap matrix (extent of support overlap between all subspaces)
          contains
           procedure, private:: HSpaceCtorSimple                         !constructs a simple hierarchical representation of a vector space (ctor)

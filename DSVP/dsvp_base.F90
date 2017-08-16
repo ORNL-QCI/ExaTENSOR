@@ -1,6 +1,6 @@
 !Domain-specific virtual processor (DSVP): Abstract base module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/08/12
+!REVISION: 2017/08/16
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -121,9 +121,9 @@
  !Domain-specific resource (normally local):
         type, abstract, public:: ds_resrc_t
          contains
-          procedure(ds_resrc_query_i), deferred, public:: is_empty  !returns TRUE if the resource is empty, FALSE otherwise
+          procedure(ds_resrc_query_i), deferred, public:: is_empty  !returns TRUE if the resource is empty (unacquired), FALSE otherwise
         end type ds_resrc_t
- !Domain-specific operand (will contain domain-specific data):
+ !Domain-specific operand (will contain domain-specific data to be processed by DSVP):
         type, abstract, public:: ds_oprnd_t
          integer(INTD), private:: stat=DS_OPRND_EMPTY       !current status of the domain-specific operand: {DS_OPRND_EMPTY,DS_OPRND_DEFINED,DS_OPRND_PRESENT}
          integer(INTD), private:: in_route=DS_OPRND_NO_COMM !communication status: {DS_OPRND_NO_COMM,DS_OPRND_FETCHING,DS_OPRND_UPLOADING}
@@ -146,8 +146,7 @@
         end type ds_oprnd_t
  !Wrapped reference to a domain-specific operand:
         type, private:: ds_oprnd_ref_t
-         class(ds_oprnd_t), pointer, private:: oprnd_ref=>NULL() !pointer (reference) to a domain-specific operand
-        !logical, private:: alloc=.FALSE.                        !TRUE if <oprnd_ref> is allocated, otherwise FALSE (simply associated or NULL)
+         class(ds_oprnd_t), pointer, private:: oprnd_ref=>NULL() !non-owning pointer (reference) to a domain-specific operand
         end type ds_oprnd_ref_t
  !Domain-specific instruction control field:
         type, abstract, public:: ds_instr_ctrl_t
@@ -159,7 +158,7 @@
         type, abstract, public:: ds_instr_t
          integer(INTD), private:: code=DS_INSTR_NOOP                !all valid instruction codes are non-negative (negative means no operation)
          integer(INTD), private:: num_oprnds=0                      !number of domain-specific operands: Numeration:[0,1,2,3,...]
-         integer(INTD), private:: stat=DS_INSTR_EMPTY               !status of the domain-specific instruction
+         integer(INTD), private:: stat=DS_INSTR_EMPTY               !status of the domain-specific instruction in the processing pipeline
          integer(INTD), private:: error_code                        !error code (success:DSVP_SUCCESS)
          class(ds_instr_ctrl_t), pointer, private:: control=>NULL() !instruction control field: set up by the DECODE procedure
          type(ds_oprnd_ref_t), allocatable, private:: operand(:)    !domain-specific operands (wrapped pointers): set up by the DECODE procedure
@@ -213,26 +212,26 @@
         type, public:: ds_unit_port_t
          logical, private:: locked=.FALSE.              !lock for updates
          type(list_bi_t), private:: queue               !queue of incoming DS instructions stored by reference
-         type(list_iter_t), private:: queue_it          !queue iterator
-#if 0
+         type(list_iter_t), private:: iqueue            !queue iterator
          contains
           procedure, public:: accept=>DSUnitPortAccept  !accepts new DS instructions from other DS units
-          procedure, public:: free=>DSUnitPortFree      !release all DS instructions and resets everything
+          procedure, public:: absorb=>DSUnitPortAbsorb  !absorbs new DS instructions from the DS unit port into the DS unit queue
+          procedure, public:: free=>DSUnitPortFree      !releases all DS instructions and resets everything
           final:: ds_unit_port_dtor                     !dtor
-#endif
         end type ds_unit_port_t
  !Domain-specific virtual unit (DSVU):
         type, abstract, public:: ds_unit_t
-         integer(INTD), private:: id=-1                       !unique DS unit ID
-         class(dsvp_t), pointer, private:: dsvp_p=>NULL()     !pointer to the DSVP the DS unit is part of
-         type(ds_unit_port_t), private:: port                 !DS unit port (for incoming DS instructions from other DS units)
-         type(list_bi_t), private:: queue                     !queue of currently processed DS instructions stored by reference
-         type(list_iter_t), private:: queue_it                !queue iterator
-#if 0
+         integer(INTD), private:: id=-1                     !unique ID of the DS unit: [0..max]
+         integer(INTD), private:: error_code=DSVP_SUCCESS   !error code
+         class(dsvp_t), pointer, private:: dsvp_p=>NULL()   !non-owning pointer to the DSVP the DS unit is part of
+         type(ds_unit_port_t), private:: port               !DS unit port (for incoming DS instructions from other DS units)
+         type(list_bi_t), private:: queue                   !queue of the currently processed DS instructions stored by reference
+         type(list_iter_t), private:: iqueue                !queue iterator
          contains
-          procedure, public:: start=>DSUnitStart              !starts and lives the DS unit (the corresponding thread will run here until termination)
-          procedure, public:: load_port=>DSUnitLoadPort       !loads the DS unit port with new DS instructions (called by other DS units)
-#endif
+          procedure(ds_unit_self_i), deferred, public:: start    !starts and lives the DS unit (the corresponding thread will run here until termination)
+          procedure(ds_unit_self_i), deferred, public:: shutdown !shuts down DS unit
+          procedure, public:: load_port=>DSUnitLoadPort          !loads the DS unit port with new DS instructions (called by other DS units)
+          procedure, public:: flush_port=>DSUnitFlushPort        !flushes the port content into the DS unit queue
         end type ds_unit_t
  !Domain-specific virtual processor (DSVP):
         type, abstract, public:: dsvp_t
@@ -246,7 +245,7 @@
          character(:), allocatable, private:: description     !symbolic description of the DSVP
          contains
           procedure(dsvp_self_i), deferred, public:: start                              !initializes DSVP to an active state and begins the life cycle
-          procedure(dsvp_self_i), deferred, public:: shutdown                           !shutdowns DSVP
+          procedure(dsvp_self_i), deferred, public:: shutdown                           !shuts down DSVP
           procedure(dsvp_comm_instr_i), deferred, public:: fetch_instructions           !fetches a block of domain-specific instructions from another DSVP
           procedure(dsvp_comm_instr_i), deferred, public:: return_retired_instructions  !returns back a block of retired instructions with their statuses
           procedure(dsvp_comm_instr_i), deferred, public:: send_instructions            !sends a block of domain-specific instructions to another DSVP for execution
@@ -337,6 +336,13 @@
           class(obj_pack_t), intent(inout):: instr_packet !out: instruction byte packet (bytecode)
           integer(INTD), intent(out), optional:: ierr     !out: error code
          end subroutine ds_instr_encode_i
+  !ds_unit_t:
+   !self:
+         subroutine ds_unit_self_i(this,ierr)
+          import:: ds_unit_t,INTD
+          class(ds_unit_t), intent(inout):: this      !inout: DS unit
+          integer(INTD), intent(out), optional:: ierr !out: error code
+         end subroutine ds_unit_self_i
   !dsvp_t:
    !self:
          subroutine dsvp_self_i(this,ierr)
@@ -406,6 +412,15 @@
         public ds_instr_encode_i
  !ds_microcode_t:
         private DSMicrocodeReset
+ !ds_unit_port_t:
+        private DSUnitPortAccept
+        private DSUnitPortAbsorb
+        private DSUnitPortFree
+        public ds_unit_port_dtor
+ !ds_unit_t:
+        private DSUnitLoadPort
+        private DSUnitFlushPort
+        public ds_unit_self_i
  !dsvp_t:
         private DSVPStartTime
         private DSVPClean
@@ -1130,6 +1145,76 @@
          this%release_resource=>NULL()
          return
         end subroutine DSMicrocodeReset
+![ds_unit_port_t]============================================
+        function DSUnitPortAccept(this,new_list) result(ierr)
+!Accepts new DS instructions from other DS units in the current DS unit port.
+!The new DS instructions are stored by reference in the <new_list> and
+!they will be moved into the port, thus leaving <new_list> empty at the end.
+         implicit none
+         integer(INTD):: ierr                        !out: error code
+         class(ds_unit_port_t), intent(inout):: this !inout: DS unit port
+         type(list_bi_t), intent(inout):: new_list   !inout: list of new DS instructions for DS unit (from other DS units): List items a stored by reference
+         type(list_iter_t):: ilist
+
+         ierr=DSVP_SUCCESS
+         !`Finish
+         return
+        end function DSUnitPortAccept
+!----------------------------------------------------------------
+        function DSUnitPortAbsorb(this,dsu_queue_it) result(ierr)
+!Absorbs new DS instructions from the DS unit port into the DS unit queue.
+         implicit none
+         integer(INTD):: ierr                            !out: error code
+         class(ds_unit_port_t), intent(inout):: this     !inout: DS unit port
+         type(list_iter_t), intent(inout):: dsu_queue_it !inout: DS unit queue iterator
+
+         ierr=DSVP_SUCCESS
+         !`Finish
+         return
+        end function DSUnitPortAbsorb
+!-------------------------------------------------
+        function DSUnitPortFree(this) result(ierr)
+!Deletes all DS instructions from the port and resets everything.
+         implicit none
+         integer(INTD):: ierr                        !out: error code
+         class(ds_unit_port_t), intent(inout):: this !inout: DS unit port
+
+         ierr=DSVP_SUCCESS
+         !`Finish
+         return
+        end function DSUnitPortFree
+!-----------------------------------------
+        subroutine ds_unit_port_dtor(this)
+         implicit none
+         type(ds_unit_port_t):: this
+         integer(INTD):: ierr
+
+         ierr=this%free()
+         return
+        end subroutine ds_unit_port_dtor
+![ds_unit_t]===============================================
+        function DSUnitLoadPort(this,new_list) result(ierr)
+!Called by other DS units in order to put new DS instructions
+!into the port of the current DS unit. <new_list> with new
+!DS instructions stored by reference will be emptied upon exit.
+         implicit none
+         integer(INTD):: ierr                      !out: error code
+         class(ds_unit_t), intent(inout):: this    !inout: DS unit
+         type(list_bi_t), intent(inout):: new_list !inout: list of new DS instructions for DS unit (from other DS units): List items a stored by reference
+
+         ierr=this%port%accept(new_list) !DS instructions (references) will be moved into the port
+         return
+        end function DSUnitLoadPort
+!--------------------------------------------------
+        function DSUnitFlushPort(this) result(ierr)
+!Flushes the content of the port into the DS unit queue.
+         implicit none
+         integer(INTD):: ierr                   !out: error code
+         class(ds_unit_t), intent(inout):: this !inout: DS unit
+
+         ierr=this%port%absorb(this%iqueue) !DS instructions (references) will be moved from the port into the DS unit queue
+         return
+        end function DSUnitFlushPort
 ![dsvp_t]==================================
         subroutine DSVPStartTime(this,ierr)
 !Starts the time after initializing the DSVP.

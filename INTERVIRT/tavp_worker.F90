@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP "Worker" implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/08/15
+!REVISION: 2017/08/16
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -45,13 +45,11 @@
 !TYPES:
  !Tensor argument cache entry (TAVP-specific):
         type, extends(tens_cache_entry_t), private:: tens_entry_wrk_t
-         class(tens_resrc_t), pointer, private:: resource=>NULL() !resource (either allocated or associated)
-         logical, private:: res_alloc=.FALSE.                     !TRUE if the resource pointer is allocated, FALSE if associated only
+         class(tens_resrc_t), pointer, private:: resource=>NULL()     !owning pointer to an allocated resource
          contains
-          procedure, private:: TensEntryWrkCtor                     !ctor
-          generic, public:: tens_entry_wrk_ctor=>TensEntryWrkCtor
-          procedure, public:: get_resource=>TensEntryWrkGetResource !returns a pointer to the resource
-          final:: tens_entry_wrk_dtor                               !dtor
+          procedure, public:: tens_cache_entry_ctor=>TensEntryWrkCtor !default ctor
+          procedure, public:: get_resource=>TensEntryWrkGetResource   !returns a pointer to the resource
+          final:: tens_entry_wrk_dtor                                 !dtor
         end type tens_entry_wrk_t
  !Tensor instruction (realization of a tensor operation for a specific TAVP):
         type, extends(ds_instr_t), private:: tens_instr_t
@@ -79,36 +77,40 @@
  !TAVP instruction microcode bindings (set by the TAVP initialization):
         type(ds_microcode_t), private:: microcode(0:TAVP_ISA_SIZE-1)
 !VISIBILITY:
- !non-member:
+ !non-member test/debug:
         private test_carma
+ !non-member control:
         private tavp_worker_set_host_buf_size
-        private acquire_resource_empty
+ !non-member TAVP microcode implementation:
+        private acquire_resource_dummy
         private acquire_resource_basic
-        private prefetch_input_empty
+        private prefetch_input_dummy
         private prefetch_input_basic
-        private sync_prefetch_empty
+        private sync_prefetch_dummy
         private sync_prefetch_basic
-        private upload_output_empty
+        private upload_output_dummy
         private upload_output_basic
-        private sync_upload_empty
+        private sync_upload_dummy
         private sync_upload_basic
-        private release_resource_empty
+        private release_resource_dummy
         private release_resource_basic
-        private sync_execution_empty
+        private sync_execution_dummy
         private sync_execution_basic
-        private execute_empty
+        private execute_dummy
         private execute_tensor_create
         private execute_tensor_destroy
         private execute_tensor_contract
+        private init_microcode
  !tens_entry_wrk_t:
         private TensEntryWrkCtor
         private TensEntryWrkGetResource
         public tens_entry_wrk_dtor
+        public tens_entry_wrk_alloc
  !tens_instr_t:
         private TensInstrCtor
         private TensInstrEncode
         private TensInstrSetMicrocode
-        private tens_instr_dtor
+        public tens_instr_dtor
  !tavp_worker_t:
         private TAVPWorkerStart
         private TAVPWorkerShutdown
@@ -122,6 +124,7 @@
        contains
 ![non-member]======================
         subroutine test_carma(ierr)
+!DEBUG: Brute-force implementation of a single distributed tensor contraction.
          implicit none
          integer(INTD), intent(out):: ierr
          integer(INTD), parameter:: TENS_RANK=4
@@ -513,9 +516,10 @@
          end function signa2flat
 
         end subroutine test_carma
-!-----------------------------------------------------------
+![Non-member:Control]=======================================
         subroutine tavp_worker_set_host_buf_size(bytes,ierr)
-!Changes the default size of the pinned Host buffer.
+!Changes the default size of the pinned Host memory buffer.
+!This procedure should be called before TAVP is initialized.
          implicit none
          integer(INTL), intent(in):: bytes           !in: size in bytes
          integer(INTD), intent(out), optional:: ierr !out: error code
@@ -530,8 +534,8 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine tavp_worker_set_host_buf_size
-!---------------------------------------------------
-        subroutine acquire_resource_empty(this,ierr)
+![Non-member:Microcode]=============================
+        subroutine acquire_resource_dummy(this,ierr)
 !Dummy procedure for acquiring no resource.
          implicit none
          class(ds_instr_t), intent(inout):: this     !inout: tensor instruction
@@ -541,7 +545,7 @@
          errc=0
          if(present(ierr)) ierr=errc
          return
-        end subroutine acquire_resource_empty
+        end subroutine acquire_resource_dummy
 !---------------------------------------------------
         subroutine acquire_resource_basic(this,ierr)
 !Acquires resource for each tensor instruction operand.
@@ -580,7 +584,7 @@
          return
         end subroutine acquire_resource_basic
 !-------------------------------------------------
-        subroutine prefetch_input_empty(this,ierr)
+        subroutine prefetch_input_dummy(this,ierr)
 !Dummy procedure for prefetching no input.
          implicit none
          class(ds_instr_t), intent(inout):: this     !inout: tensor instruction
@@ -590,7 +594,7 @@
          errc=0
          if(present(ierr)) ierr=errc
          return
-        end subroutine prefetch_input_empty
+        end subroutine prefetch_input_dummy
 !-------------------------------------------------
         subroutine prefetch_input_basic(this,ierr)
 !Starts prefetching input tensor operands.
@@ -619,7 +623,7 @@
          return
         end subroutine prefetch_input_basic
 !---------------------------------------------------------------
-        function sync_prefetch_empty(this,ierr,wait) result(res)
+        function sync_prefetch_dummy(this,ierr,wait) result(res)
 !Dummy procedure for syncing no input prefetch.
          implicit none
          logical:: res                               !out: TRUE if synchronized
@@ -631,7 +635,7 @@
          errc=0; res=.TRUE.
          if(present(ierr)) ierr=errc
          return
-        end function sync_prefetch_empty
+        end function sync_prefetch_dummy
 !---------------------------------------------------------------
         function sync_prefetch_basic(this,ierr,wait) result(res)
 !Synchronization on the input prefetch, either WAIT or TEST.
@@ -666,7 +670,7 @@
          return
         end function sync_prefetch_basic
 !------------------------------------------------
-        subroutine upload_output_empty(this,ierr)
+        subroutine upload_output_dummy(this,ierr)
 !Dummy procedure for uploading no output.
          implicit none
          class(ds_instr_t), intent(inout):: this     !inout: tensor instruction
@@ -676,7 +680,7 @@
          errc=0
          if(present(ierr)) ierr=errc
          return
-        end subroutine upload_output_empty
+        end subroutine upload_output_dummy
 !------------------------------------------------
         subroutine upload_output_basic(this,ierr)
 !Starts uploading the output tensor operand 0.
@@ -696,7 +700,7 @@
          return
         end subroutine upload_output_basic
 !-------------------------------------------------------------
-        function sync_upload_empty(this,ierr,wait) result(res)
+        function sync_upload_dummy(this,ierr,wait) result(res)
 !Dummy procedure for syncing no output upload.
          implicit none
          logical:: res                               !out: TRUE if synchronized
@@ -708,7 +712,7 @@
          errc=0; res=.TRUE.
          if(present(ierr)) ierr=errc
          return
-        end function sync_upload_empty
+        end function sync_upload_dummy
 !-------------------------------------------------------------
         function sync_upload_basic(this,ierr,wait) result(res)
 !Synchronization on the output upload.
@@ -733,7 +737,7 @@
          return
         end function sync_upload_basic
 !---------------------------------------------------
-        subroutine release_resource_empty(this,ierr)
+        subroutine release_resource_dummy(this,ierr)
 !Dummy procedure for releasing no resource.
          implicit none
          class(ds_instr_t), intent(inout):: this     !inout: tensor instruction
@@ -743,7 +747,7 @@
          errc=0
          if(present(ierr)) ierr=errc
          return
-        end subroutine release_resource_empty
+        end subroutine release_resource_dummy
 !---------------------------------------------------
         subroutine release_resource_basic(this,ierr)
 !Releases resources occupied by tensor instruction operands,
@@ -778,7 +782,7 @@
          return
         end subroutine release_resource_basic
 !----------------------------------------------------------------
-        function sync_execution_empty(this,ierr,wait) result(res)
+        function sync_execution_dummy(this,ierr,wait) result(res)
 !Dummy procedure for syncing no execution.
          implicit none
          logical:: res                               !out: TRUE if synchronized
@@ -790,7 +794,7 @@
          errc=0; res=.TRUE.
          if(present(ierr)) ierr=errc
          return
-        end function sync_execution_empty
+        end function sync_execution_dummy
 !----------------------------------------------------------------
         function sync_execution_basic(this,ierr,wait) result(res)
 !Synchronization on the tensor instruction execution.
@@ -819,7 +823,7 @@
          return
         end function sync_execution_basic
 !------------------------------------------
-        subroutine execute_empty(this,ierr)
+        subroutine execute_dummy(this,ierr)
 !Dummy procedure for executing nothing.
          implicit none
          class(ds_instr_t), intent(inout):: this     !inout: tensor instruction
@@ -829,7 +833,7 @@
          errc=0
          if(present(ierr)) ierr=errc
          return
-        end subroutine execute_empty
+        end subroutine execute_dummy
 !--------------------------------------------------
         subroutine execute_tensor_create(this,ierr)
 !Executes tensor creation. The tensor layout is assumed already defined.
@@ -926,54 +930,73 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine execute_tensor_contract
-![tens_entry_wrk_t]=======================================================================
-        subroutine TensEntryWrkCtor(this,ierr,tensor,resource,tensor_alloc,resource_alloc)
-!CTOR: If either <tensor> or <resource> are not present, the corresponding components
-!of <this> will be allocated, otherwise pointer associated. However, <tensor_alloc> and
-!<resource_alloc> flags can be used to mark the corresponding associated objects as
-!allocated in case they will need to be deallocated later from here (passed ownership).
+!---------------------------------------
+        subroutine init_microcode(ierr)
+!Initializes the global table of TAVP microcode bindings upon the start of the TAVP.
+!There are three kinds of microcode:
+! 1. DUMMY: Does nothing.
+! 2. BASIC: Default microcode.
+! 3. SPECIAL: Specialized microcode.
          implicit none
-         class(tens_entry_wrk_t), intent(out):: this                   !out: tensor cache entry
-         integer(INTD), intent(out), optional:: ierr                   !out: error code
-         class(tens_rcrsv_t), intent(in), pointer, optional:: tensor   !in: pointer to the tensor
-         class(tens_resrc_t), intent(in), pointer, optional:: resource !in: pointer to the resource
-         logical, intent(in), optional:: tensor_alloc                  !in: if TRUE, the associated tensor will be assumed ALLOCATED
-         logical, intent(in), optional:: resource_alloc                !in: if TRUE, the associated resource will be assumed ALLOCATED
+         integer(INTD), intent(out), optional:: ierr
          integer(INTD):: errc
 
          errc=0
-         if(present(tensor)) then
-          if(associated(tensor)) then
-           this%tensor=>tensor; this%tens_alloc=.FALSE.
-           if(present(tensor_alloc)) this%tens_alloc=tensor_alloc
-          else
-           errc=-1
-          endif
+ !TENSOR CREATE:
+         microcode(TAVP_INSTR_CREATE)%acquire_resource=>acquire_resource_basic
+         microcode(TAVP_INSTR_CREATE)%prefetch_input=>prefetch_input_dummy
+         microcode(TAVP_INSTR_CREATE)%sync_prefetch=>sync_prefetch_dummy
+         microcode(TAVP_INSTR_CREATE)%execute=>execute_tensor_create
+         microcode(TAVP_INSTR_CREATE)%sync_execution=>sync_execution_dummy
+         microcode(TAVP_INSTR_CREATE)%upload_output=>upload_output_dummy
+         microcode(TAVP_INSTR_CREATE)%sync_upload=>sync_upload_dummy
+         microcode(TAVP_INSTR_CREATE)%release_resource=>release_resource_dummy
+ !TENSOR DESTROY:
+         microcode(TAVP_INSTR_DESTROY)%acquire_resource=>acquire_resource_dummy
+         microcode(TAVP_INSTR_DESTROY)%prefetch_input=>prefetch_input_dummy
+         microcode(TAVP_INSTR_DESTROY)%sync_prefetch=>sync_prefetch_dummy
+         microcode(TAVP_INSTR_DESTROY)%execute=>execute_tensor_destroy
+         microcode(TAVP_INSTR_DESTROY)%sync_execution=>sync_execution_dummy
+         microcode(TAVP_INSTR_DESTROY)%upload_output=>upload_output_dummy
+         microcode(TAVP_INSTR_DESTROY)%sync_upload=>sync_upload_dummy
+         microcode(TAVP_INSTR_DESTROY)%release_resource=>release_resource_basic
+ !TENSOR CONTRACT:
+         microcode(TAVP_INSTR_CONTRACT)%acquire_resource=>acquire_resource_basic
+         microcode(TAVP_INSTR_CONTRACT)%prefetch_input=>prefetch_input_basic
+         microcode(TAVP_INSTR_CONTRACT)%sync_prefetch=>sync_prefetch_basic
+         microcode(TAVP_INSTR_CONTRACT)%execute=>execute_tensor_contract
+         microcode(TAVP_INSTR_CONTRACT)%sync_execution=>sync_execution_basic
+         microcode(TAVP_INSTR_CONTRACT)%upload_output=>upload_output_basic
+         microcode(TAVP_INSTR_CONTRACT)%sync_upload=>sync_upload_basic
+         microcode(TAVP_INSTR_CONTRACT)%release_resource=>release_resource_basic
+ !DONE
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine init_microcode
+![tens_entry_wrk_t]==================================
+        subroutine TensEntryWrkCtor(this,tensor,ierr)
+!Constructs a <tens_entry_wrk_t>.
+         implicit none
+         class(tens_entry_wrk_t), intent(out):: this          !out: specialized tensor cache entry
+         class(tens_rcrsv_t), pointer, intent(inout):: tensor !inout: pointer to an allocated tensor (ownership transfer may occur)
+         integer(INTD), intent(out), optional:: ierr          !out: error code
+         integer(INTD):: errc
+
+         errc=0
+         if(associated(tensor)) then
+          this%tensor=>tensor; tensor=>NULL() !transfer the ownership
+          allocate(this%resource,STAT=errc); if(errc.ne.0) errc=-2
          else
-          allocate(this%tensor,STAT=errc)
-          if(errc.eq.0) then; this%tens_alloc=.TRUE.; else; errc=-2; endif
+          errc=-1
          endif
-         if(errc.eq.0) then
-          if(present(resource)) then
-           if(associated(resource)) then
-            this%resource=>resource; this%res_alloc=.FALSE.
-            if(present(resource_alloc)) this%res_alloc=resource_alloc
-           else
-            errc=-3
-           endif
-          else
-           allocate(this%resource,STAT=errc)
-           if(errc.eq.0) then; this%res_alloc=.TRUE.; else; errc=-4; endif
-          endif
-         endif
-         if(errc.ne.0) call tens_entry_dtor(this)
          if(present(ierr)) ierr=errc
          return
         end subroutine TensEntryWrkCtor
 !---------------------------------------------------------------------
         function TensEntryWrkGetResource(this,ierr) result(resource_p)
+!Returns a pointer to the tensor cache entry resource.
          implicit none
-         class(tens_resrc_t), pointer:: resource_p   !out: pointer to the resource
+         class(tens_resrc_t), pointer:: resource_p   !out: pointer to the previously allocated resource
          class(tens_entry_wrk_t), intent(in):: this  !in: tensor cache entry
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
@@ -997,17 +1020,20 @@
          implicit none
          type(tens_entry_wrk_t):: this
 
-         if(this%tens_status%is_used.eq.0) then
-          if(associated(this%tensor).and.this%tens_alloc) deallocate(this%tensor)
-          if(associated(this%resource).and.this%res_alloc) deallocate(this%resource)
-          this%tensor=>NULL(); this%resource=>NULL()
-          this%tens_alloc=.FALSE.; this%res_alloc=.FALSE.
-          this%tens_status=tens_status_none
-         else
-          call quit(-1,'#FATAL(tavp_worker:tens_entry_wrk_t:dtor): Attempt to destroy an object that is still in use!')
-         endif
+         if(associated(this%resource)) deallocate(this%resource)
+         if(associated(this%tensor)) deallocate(this%tensor)
          return
         end subroutine tens_entry_wrk_dtor
+!-------------------------------------------------------------
+        function tens_entry_wrk_alloc(tens_entry) result(ierr)
+!Non-member allocator for tens_entry_wrk_t.
+         implicit none
+         integer(INTD):: ierr
+         class(*), allocatable, intent(out):: tens_entry
+
+         allocate(tens_entry_wrk_t::tens_entry,STAT=ierr)
+         return
+        end function tens_entry_wrk_alloc
 ![tens_instr_t]============================================
         subroutine TensInstrCtor(this,op_code,ierr,op_spec)
 !Constructs a tensor instruction from a given tensor operation.
@@ -1366,41 +1392,6 @@
           call tavp_addr_space%create(role_comm,TAVP_WORKER_NUM_WINS,'WorkAddressSpace',jerr)
           return
          end subroutine init_distributed_space
-
-         subroutine init_microcode(jerr)
-          implicit none
-          integer(INTD), intent(out):: jerr
-
-          jerr=0
- !TENSOR CREATE:
-          microcode(TAVP_INSTR_CREATE)%acquire_resource=>acquire_resource_basic
-          microcode(TAVP_INSTR_CREATE)%prefetch_input=>prefetch_input_empty
-          microcode(TAVP_INSTR_CREATE)%sync_prefetch=>sync_prefetch_empty
-          microcode(TAVP_INSTR_CREATE)%execute=>execute_tensor_create
-          microcode(TAVP_INSTR_CREATE)%sync_execution=>sync_execution_empty
-          microcode(TAVP_INSTR_CREATE)%upload_output=>upload_output_empty
-          microcode(TAVP_INSTR_CREATE)%sync_upload=>sync_upload_empty
-          microcode(TAVP_INSTR_CREATE)%release_resource=>release_resource_empty
- !TENSOR DESTROY:
-          microcode(TAVP_INSTR_DESTROY)%acquire_resource=>acquire_resource_empty
-          microcode(TAVP_INSTR_DESTROY)%prefetch_input=>prefetch_input_empty
-          microcode(TAVP_INSTR_DESTROY)%sync_prefetch=>sync_prefetch_empty
-          microcode(TAVP_INSTR_DESTROY)%execute=>execute_tensor_destroy
-          microcode(TAVP_INSTR_DESTROY)%sync_execution=>sync_execution_empty
-          microcode(TAVP_INSTR_DESTROY)%upload_output=>upload_output_empty
-          microcode(TAVP_INSTR_DESTROY)%sync_upload=>sync_upload_empty
-          microcode(TAVP_INSTR_DESTROY)%release_resource=>release_resource_basic
- !TENSOR CONTRACT:
-          microcode(TAVP_INSTR_CONTRACT)%acquire_resource=>acquire_resource_basic
-          microcode(TAVP_INSTR_CONTRACT)%prefetch_input=>prefetch_input_basic
-          microcode(TAVP_INSTR_CONTRACT)%sync_prefetch=>sync_prefetch_basic
-          microcode(TAVP_INSTR_CONTRACT)%execute=>execute_tensor_contract
-          microcode(TAVP_INSTR_CONTRACT)%sync_execution=>sync_execution_basic
-          microcode(TAVP_INSTR_CONTRACT)%upload_output=>upload_output_basic
-          microcode(TAVP_INSTR_CONTRACT)%sync_upload=>sync_upload_basic
-          microcode(TAVP_INSTR_CONTRACT)%release_resource=>release_resource_basic
-          return
-         end subroutine init_microcode
 
         end subroutine TAVPWorkerStart
 !-----------------------------------------------
