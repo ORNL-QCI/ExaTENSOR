@@ -1,7 +1,7 @@
 /** C++ adapters for ExaTENSOR: Tensor network
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/08/03
+!REVISION: 2017/08/17
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -288,7 +288,7 @@ void TensorNetwork<T>::contractTensors(unsigned int tensId1, //in: id of the 1st
  return;
 }
 
-/** Contracts two tensors in a given tensor network and returns the result as a new tensor network.
+/** Contracts two tensors in a tensor network and returns the result as a raw pointer to a new tensor network.
     Always the tensor with a smaller id will be replaced by a contracted product while the tensor
     with a larger id will be deleted from the tensor network, causing a shift in the tensor numeration
     that will affect all tensors with id > "tensId2". **/
@@ -300,6 +300,19 @@ void TensorNetwork<T>::contractTensors(const unsigned int tensId1, //in: id of t
  *resultNetwork = new TensorNetwork<T>(*this);
  (*resultNetwork)->contractTensors(tensId1,tensId2);
  return;
+}
+
+/** Contracts two tensors in a tensor network and returns the result as a smart pointer to a new tensor network.
+    Always the tensor with a smaller id will be replaced by a contracted product while the tensor
+    with a larger id will be deleted from the tensor network, causing a shift in the tensor numeration
+    that will affect all tensors with id > "tensId2". **/
+template <typename T>
+std::unique_ptr<TensorNetwork<T>> TensorNetwork<T>::contractTensorsOut(const unsigned int tensId1, //in: id of the 1st tensor in the tensor network: [1..max]
+                                                                       const unsigned int tensId2) //in: id of the 2nd tensor in the tensor network: [1..max]
+{
+ std::unique_ptr<TensorNetwork<T>> resultNetwork(new TensorNetwork<T>(*this));
+ resultNetwork->contractTensors(tensId1,tensId2);
+ return std::move(resultNetwork);
 }
 
 /** Returns the computational cost of the specified contraction of two tensors in a tensor network. **/
@@ -345,27 +358,39 @@ double TensorNetwork<T>::getContractionCost(const unsigned int tensId1, //in: id
 
 /** Determines a pseudo-optimal sequence of tensor contractions
     for the given tensor network and numerically evaluates these
-    tensor contractions to produce the value of the output tensor. **/
+    tensor contractions to produce the value of the output tensor.
+    If "contrSeq" already contains the previously determined
+    contraction sequence, it will be used immediately. **/
 template <typename T>
-int TensorNetwork<T>::evaluate(const unsigned int numWalkers)
+int TensorNetwork<T>::evaluate(ContractionSequence & contrSeq,
+                               const unsigned int numWalkers)
 {
  int error_code = 0; //success
- std::vector<std::pair<unsigned int, unsigned int>> contrSeq = this->getContractionSequence(numWalkers);
- error_code = this->computeOutput(contrSeq);
+ auto numTensors = this->getNumTensors(); //number of r.h.s. tensors in the tensor network
+ auto numContr = contrSeq.size(); //number of tensor contractions in the contraction sequence
+ if(numContr == 0){ //contraction sequence has not been determined yet
+  this->getContractionSequence(contrSeq,numWalkers);
+ }else{
+  if(numContr != (numTensors - 1)) error_code=-1; //invalid number of tensor contractions in the contraction sequence
+ }
+ if(error_code == 0) error_code = this->computeOutput(contrSeq);
  return error_code;
 }
 
 /** Determines a pseudo-optimal sequence of tensor contractions
     for the given tensor network and numerically evaluates these
     tensor contractions to produce the value of the output tensor
-    for which an externally provided body is specified. **/
+    for which an externally provided body is specified.
+    If "contrSeq" already contains the previously determined
+    contraction sequence, it will be used immediately. **/
 template <typename T>
-int TensorNetwork<T>::evaluate(const std::shared_ptr<T> body, const unsigned int numWalkers)
+int TensorNetwork<T>::evaluate(ContractionSequence & contrSeq,
+                               const std::shared_ptr<T> body,
+                               const unsigned int numWalkers)
 {
  int error_code = 0; //success
  this->setOutputBody(body);
- std::vector<std::pair<unsigned int, unsigned int>> contrSeq = this->getContractionSequence(numWalkers);
- error_code = this->computeOutput(contrSeq);
+ error_code = this->evaluate(contrSeq,numWalkers);
  return error_code;
 }
 
@@ -374,18 +399,43 @@ int TensorNetwork<T>::evaluate(const std::shared_ptr<T> body, const unsigned int
     subsequent pair will have its tensor id's refer to the corresponding
     reduced tensor network. **/
 template <typename T>
-std::vector<std::pair<unsigned int, unsigned int>> TensorNetwork<T>::getContractionSequence(const unsigned int numWalkers)
+void TensorNetwork<T>::getContractionSequence(ContractionSequence & contrSeq,
+                                              const unsigned int numWalkers)
 {
- std::vector<std::pair<unsigned int, unsigned int>> contrSeq;
- //`Finish
- return contrSeq;
+ using ContrPath = std::tuple<TensorNetwork<T>,ContractionSequence,double>;
+
+ std::cout << "#MSG(TensorNetwork<T>::getContractionSequence): Determining a pseudo-optimal tensor contraction sequence ... "; //debug
+
+ auto numContractions = this->getNumTensors() - 1;
+ assert(numContractions > 0); //at least one tensor contraction is expected (two or more r.h.s. tensors)
+ assert(contrSeq.size() == 0); //the contraction sequence must be empty on entrance
+
+ ContractionSequence contrSeqEmpty;
+ std::vector<ContrPath> input;
+ input.emplace_back(make_tuple(*this,contrSeqEmpty,0.0)); //initial configuration
+
+ auto cmpPaths = [](const ContrPath & left, const ContrPath & right){return (std::get<2>(left) < std::get<2>(right));};
+ std::priority_queue<ContrPath,std::vector<ContrPath>,decltype(cmpPaths)> priq(cmpPaths); //output: priority queue
+
+ for(decltype(numContractions) pass = 0; pass < numContractions; ++pass){
+  //Read an item from vector;
+  //Generate all pairwise contractions and push them into the priority queue;
+  //Once the prioriry queue is full, pop the top element before inserting a new element (if less);
+  //Extract the vector from the priority queue via move semantics and destroy the priority queue;
+  //Create a new priority queue.
+ }
+
+ std::cout << "Done" << std::endl; //debug
+ return;
 }
 
 /** Performs all tensor contractions, thus evaluating the value of the output tensor. **/
 template <typename T>
-int TensorNetwork<T>::computeOutput(const std::vector<std::pair<unsigned int, unsigned int>> & contrSeq)
+int TensorNetwork<T>::computeOutput(const ContractionSequence & contrSeq)
 {
  int error_code = 0; //success
+ std::cout << "#MSG(TensorNetwork<T>::computeOutput): Computing ... "; //debug
  //`Finish
+ std::cout << "Done" << std::endl; //debug
  return error_code;
 }

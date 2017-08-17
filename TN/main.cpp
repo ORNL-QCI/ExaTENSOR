@@ -40,6 +40,7 @@ int test_tensor_expression(){
  using TensorLeg = exatensor::TensorLeg;
  using TensorConn = exatensor::TensorConn<TensDataType>;
  using TensorNetwork = exatensor::TensorNetwork<TensDataType>;
+ using ContractionSequence = exatensor::ContractionSequence;
 
  //Tensor dimension extents:
  unsigned int rank = 4;
@@ -81,21 +82,21 @@ int test_tensor_expression(){
 
  //Create an empty tensor network:
  TensorNetwork tensnet0;
- //Legs of tensor 0:
+ //Append tensor 0:
  std::vector<TensorLeg> legs;
  legs.push_back(TensorLeg(1,3));
  legs.push_back(TensorLeg(1,0));
  legs.push_back(TensorLeg(2,1));
  legs.push_back(TensorLeg(2,2));
  tensnet0.appendTensor(tensor0,legs);
- //Legs of tensor 1:
+ //Append tensor 1:
  legs.clear();
  legs.push_back(TensorLeg(0,1));
  legs.push_back(TensorLeg(2,3));
  legs.push_back(TensorLeg(2,0));
  legs.push_back(TensorLeg(0,0));
  tensnet0.appendTensor(tensor1,legs);
- //Legs of tensor 2:
+ //Append tensor 2:
  legs.clear();
  legs.push_back(TensorLeg(1,2));
  legs.push_back(TensorLeg(0,2));
@@ -106,17 +107,18 @@ int test_tensor_expression(){
  //Print the tensor network:
  std::cout << std::endl;
  tensnet0.printIt();
-
  //Create another tensor and append it to the tensor network:
  Tensor tensor3(tensor2);
  std::vector<std::pair<unsigned int, unsigned int>> legPairs;
  legPairs.push_back(std::pair<unsigned int, unsigned int>(0,3));
  legPairs.push_back(std::pair<unsigned int, unsigned int>(3,0));
  tensnet0.appendTensor(tensor3,legPairs);
+ legPairs.clear();
  //Print the tensor network:
  std::cout << std::endl;
  tensnet0.printIt();
 
+/*
  //Contract tensors 1 and 2:
  double ai;
  std::cout << std::endl << "Contraction cost = " << tensnet0.getContractionCost(1,2,&ai);
@@ -125,6 +127,10 @@ int test_tensor_expression(){
  //Print the new tensor network:
  std::cout << std::endl;
  tensnet0.printIt();
+*/
+
+ ContractionSequence contrSeq;
+ int error_code = tensnet0.evaluate(contrSeq);
 
  //Done:
  return 0;

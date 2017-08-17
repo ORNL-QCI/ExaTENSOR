@@ -1,7 +1,7 @@
 /** C++ adapters for ExaTENSOR: Tensor network
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/08/03
+!REVISION: 2017/08/17
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -27,7 +27,9 @@
 #define _EXA_TENSOR_NETWORK_H
 
 #include <memory>
+#include <tuple>
 #include <vector>
+#include <queue>
 #include <assert.h>
 #include <iostream>
 
@@ -38,6 +40,9 @@
 #define _DEBUG_DIL
 
 namespace exatensor {
+
+//Types:
+ using ContractionSequence = std::vector<std::pair<unsigned int, unsigned int>>;
 
 /** Tensor network (contraction of multiple tensors):
  A tensor network consists of tensors numerated from 0.
@@ -50,6 +55,7 @@ class TensorNetwork{
 
 private:
 
+//Data members:
  std::vector<TensorConn<T>> Tensors; //interconnected tensors: [0;1..num_rhs_tensors]
 
 public:
@@ -92,42 +98,55 @@ public:
  /** Associates the output (lhs) tensor with its externally provided body. **/
  void setOutputBody(const std::shared_ptr<T> body);
 //Transforms:
- /** Contracts two tensors in a given tensor network. Always the tensor with a smaller id will be replaced
+ /** Contracts two tensors in a tensor network. Always the tensor with a smaller id will be replaced
      by a contracted product while the tensor with a larger id will be deleted from the tensor network,
      causing a shift in the tensor numeration that will affect all tensors with id > "tensId2". **/
  void contractTensors(unsigned int tensId1,  //in: id of the 1st tensor in the tensor network: [1..max]
                       unsigned int tensId2); //in: id of the 2nd tensor in the tensor network: [1..max]
- /** Contracts two tensors in a given tensor network and returns the result as a new tensor network.
+ /** Contracts two tensors in a tensor network and returns the result as a raw pointer to the new tensor network.
      Always the tensor with a smaller id will be replaced by a contracted product while the tensor
      with a larger id will be deleted from the tensor network, causing a shift in the tensor numeration
      that will affect all tensors with id > "tensId2". **/
  void contractTensors(const unsigned int tensId1, //in: id of the 1st tensor in the tensor network: [1..max]
                       const unsigned int tensId2, //in: id of the 2nd tensor in the tensor network: [1..max]
                       TensorNetwork<T> ** resultNetwork); //out: tensor network result (returns a pointer to it)
+ /** Contracts two tensors in a tensor network and returns the result as a smart pointer to the new tensor network.
+     Always the tensor with a smaller id will be replaced by a contracted product while the tensor
+     with a larger id will be deleted from the tensor network, causing a shift in the tensor numeration
+     that will affect all tensors with id > "tensId2". **/
+ std::unique_ptr<TensorNetwork<T>> contractTensorsOut(const unsigned int tensId1,  //in: id of the 1st tensor in the tensor network: [1..max]
+                                                      const unsigned int tensId2); //in: id of the 2nd tensor in the tensor network: [1..max]
  /** Returns the computational cost of the specified contraction of two tensors. **/
- double getContractionCost(const unsigned int tensId1,         //in: id of the 1st rhs tensor (>0)
-                           const unsigned int tensId2,         //in: id of the 2nd rhs tensor (>0)
+ double getContractionCost(const unsigned int tensId1,         //in: id of the 1st r.h.s. tensor (>0)
+                           const unsigned int tensId2,         //in: id of the 2nd r.h.s. tensor (>0)
                            double * arithmIntensity = nullptr, //out: arithmetic intensity
                            bool rescale = false);              //in: rescale the Flop cost due to arithmetic intensity
  /** Determines a pseudo-optimal sequence of tensor contractions
      for the given tensor network and numerically evaluates these
-     tensor contractions to produce the value of the output tensor. **/
- int evaluate(const unsigned int numWalkers = NumWalkersDefault);
+     tensor contractions to produce the value of the output tensor.
+     If "contrSeq" already contains the previously determined
+     contraction sequence, it will be used immediately. **/
+ int evaluate(ContractionSequence & contrSeq,                     //inout: tensor contraction sequence (either empty or previously determined)
+              const unsigned int numWalkers = NumWalkersDefault); //in: optimization depth
  /** Determines a pseudo-optimal sequence of tensor contractions
      for the given tensor network and numerically evaluates these
      tensor contractions to produce the value of the output tensor
-     for which an externally provided body is specified. **/
- int evaluate(const std::shared_ptr<T> body,
-              const unsigned int numWalkers = NumWalkersDefault);
+     for which an externally provided body is specified.
+     If "contrSeq" already contains the previously determined
+     contraction sequence, it will be used immediately. **/
+ int evaluate(ContractionSequence & contrSeq,                     //inout: tensor contraction sequence (either empty or previously determined)
+              const std::shared_ptr<T> body,                      //in: externally provided pointer to the output tensor body
+              const unsigned int numWalkers = NumWalkersDefault); //in: optimization depth
 
 private:
  /** Determines the pseudo-optimal tensor contraction sequence and returns
      it as a vector of pairs of tensor id's to contract. Note that each
      subsequent pair will have its tensor id's refer to the corresponding
-     reduced tensor network. **/
- std::vector<std::pair<unsigned int, unsigned int>> getContractionSequence(const unsigned int numWalkers);
+     reduced tensor network (tensor numeration changes after each contraction). **/
+ void getContractionSequence(ContractionSequence & contrSeq, //out: contraction sequence
+                             const unsigned int numWalkers); //in: optimization depth
  /** Performs all tensor contractions, thus evaluating the value of the output tensor. **/
- int computeOutput(const std::vector<std::pair<unsigned int, unsigned int>> & contrSeq);
+ int computeOutput(const ContractionSequence & contrSeq);
 
 };
 
