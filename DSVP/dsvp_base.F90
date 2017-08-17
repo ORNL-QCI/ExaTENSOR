@@ -1,6 +1,6 @@
 !Domain-specific virtual processor (DSVP): Abstract base module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/08/16
+!REVISION: 2017/08/17
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -21,12 +21,11 @@
 !along with ExaTensor. If not, see <http://www.gnu.org/licenses/>.
 
 !NOTES:
-! # A domain-specific virtual processor (DSVP) is an abstract processor
-!   of domain-specific instructions operating on domain-specific operands.
-!   It is an abstract class intended for a further specialization to a concrete
-!   domain-specific virtual processor via inheritance from the domain-specific operand
-!   class, domain-specific instruction class, and domain-specific virtual processor class,
-!   all provided by this module.
+! # A domain-specific virtual processor (DSVP) processes domain-specific instructions
+!   operating on domain-specific operands. Domain-specific operands encapsulate
+!   domain-specific data, making it processible by domain-specific instructions
+!   which encapsulate domain-specific operations. These abstract classes are intended
+!   for a further specialization to concrete domain-specific classes via inheritance.
 ! # The abstract domain-specific processor classes provide basic instruction processing
 !   primitives, relevant deferred interfaces, and other bookkeeping:
 !   a) Domain-specific operand class:
@@ -53,7 +52,7 @@
 !      * Send instructions for remote execution;
 !      * Receive retired instructions after remote execution;
 !      * Decode: Unpacks the instruction bytecode into a domain-specific instruction.
-! # A concrete domain-specific virtual processor derives from the abstract classes
+! # A concrete domain-specific virtual processor implementation derives from the abstract classes
 !   specified in this module. The derivative concrete classes have to provide implementation
 !   of all deferred type-bound procedures. The concrete domain-specific virtual processor class
 !   must define the microcode for each concrete domain-specific instruction and override
@@ -62,9 +61,9 @@
 !   setup microcode which will associate all dynamic bindings (dynamic methods) of the instruction object
 !   as well as unpack the instruction control field and instruction operands. After a domain-specific
 !   instruction has been succesfully decoded, it is ready for use in the domain-specific virtual processor
-!   pipeline implemented by the concrete domain-specific virtual processor class. The concrete
-!   domain-specific virtual processor is free to introduce additional virtual processing/storage elements,
-!   for example, a virtual cache hierarchy, virtual persistent storage, etc.
+!   pipeline implemented by a concrete domain-specific virtual processor class composed from the concrete
+!   domain-specific virtual unit (DSVU) classes: DSVP consists of one or more DSVU, for example,
+!   decoder DSVU, encoder DSVU, caching DSVU, CPU executing DSVU, GPU executing DSVU, etc.
 
        module dsvp_base
         use dil_basic
@@ -88,6 +87,7 @@
         integer(INTD), parameter, public:: DSVP_ERR_MEM_FREE_FAIL=-4   !failed memory deallocation
         integer(INTD), parameter, public:: DSVP_ERR_BROKEN_OBJ=-5      !broken object
         integer(INTD), parameter, public:: DSVP_ERR_UNABLE_COMPLETE=-6 !unable to complete
+        integer(INTD), parameter, public:: DSVP_ERR_RSC_EXCEEDED=-7    !resource exceeded
  !DSVP state (negative numbers are specific error codes):
         integer(INTD), parameter, public:: DSVP_STAT_OFF=0         !DSVP is off (either not initialized or turned off)
         integer(INTD), parameter, public:: DSVP_STAT_ON=1          !DSVP has been initialized and is active now
@@ -159,7 +159,7 @@
          integer(INTD), private:: code=DS_INSTR_NOOP                !all valid instruction codes are non-negative (negative means no operation)
          integer(INTD), private:: num_oprnds=0                      !number of domain-specific operands: Numeration:[0,1,2,3,...]
          integer(INTD), private:: stat=DS_INSTR_EMPTY               !status of the domain-specific instruction in the processing pipeline
-         integer(INTD), private:: error_code                        !error code (success:DSVP_SUCCESS)
+         integer(INTD), private:: error_code=DSVP_SUCCESS           !error code (success:DSVP_SUCCESS)
          class(ds_instr_ctrl_t), pointer, private:: control=>NULL() !instruction control field: set up by the DECODE procedure
          type(ds_oprnd_ref_t), allocatable, private:: operand(:)    !domain-specific operands (wrapped pointers): set up by the DECODE procedure
          !dynamic methods (dynamically bound by the DECODE procedure):
@@ -231,26 +231,38 @@
           procedure(ds_unit_self_i), deferred, public:: start    !starts and lives the DS unit (the corresponding thread will run here until termination)
           procedure(ds_unit_self_i), deferred, public:: shutdown !shuts down DS unit
           procedure, public:: load_port=>DSUnitLoadPort          !loads the DS unit port with new DS instructions (called by other DS units)
-          procedure, public:: flush_port=>DSUnitFlushPort        !flushes the port content into the DS unit queue
+          procedure, public:: flush_port=>DSUnitFlushPort        !flushes the port content into the DS unit queue (called by the current DS unit)
+          procedure, public:: get_id=>DSUnitGetId                !returns the DS unit id
+          procedure, private:: set_id=>DSUnitSetId               !sets the DS unit id (when the DSVU table is constructed)
         end type ds_unit_t
+ !Wrapped reference to a DSVU:
+        type, private:: ds_unit_ref_t
+         class(ds_unit_t), pointer, private:: unit_ref=>NULL() !non-owning pointer (reference) to a domain-specific unit
+        end type ds_unit_ref_t
+ !DSVP configuration:
+        type, abstract, public:: dsvp_conf_t
+        end type dsvp_conf_t
  !Domain-specific virtual processor (DSVP):
         type, abstract, public:: dsvp_t
-         integer(INTD), private:: stat=DSVP_STAT_OFF          !current DSVP status: {DSVP_STAT_OFF, DSVP_STAT_ON, negative integers = errors}
-         integer(INTD), private:: spec_kind=DSVP_NO_KIND      !specific kind of DSVP (to be specilized)
-         integer(INTL), private:: id=-1                       !DSVP unique ID
-         integer(INTL), private:: instr_received=0_INTL       !total number of received domain-specific instructions
-         integer(INTL), private:: instr_processed=0_INTL      !total number of processed (retired) instructions (both successful and failed)
-         integer(INTL), private:: instr_failed=0_INTL         !total number of retired failed instructions
-         real(8), private:: time_start                        !start time stamp (sec)
-         character(:), allocatable, private:: description     !symbolic description of the DSVP
+         integer(INTD), private:: stat=DSVP_STAT_OFF       !current DSVP status: {DSVP_STAT_OFF, DSVP_STAT_ON, negative integers = errors}
+         integer(INTD), private:: spec_kind=DSVP_NO_KIND   !specific kind of DSVP (to be specilized): Non-negative
+         integer(INTL), private:: id=-1                    !DSVP unique ID: [0..max]
+         integer(INTL), private:: instr_received=0_INTL    !total number of received domain-specific instructions
+         integer(INTL), private:: instr_processed=0_INTL   !total number of processed (retired) instructions (both successful and failed)
+         integer(INTL), private:: instr_failed=0_INTL      !total number of retired failed instructions
+         real(8), private:: time_start                     !start time stamp (sec): Set by .start()
+         character(:), allocatable, private:: description  !symbolic description of the DSVP: Set by .condfigure()
+         type(ds_unit_ref_t), allocatable, private:: virt_units(:) !DSVU table (enumerated references to DSVU the DSVP is composed of): Set by .configure()
+         integer(INTD), private:: num_units=0                      !number of set DSVU in the DSVU table: [0..num_units-1]: Set by .configure()
          contains
-          procedure(dsvp_self_i), deferred, public:: start                              !initializes DSVP to an active state and begins the life cycle
-          procedure(dsvp_self_i), deferred, public:: shutdown                           !shuts down DSVP
-          procedure(dsvp_comm_instr_i), deferred, public:: fetch_instructions           !fetches a block of domain-specific instructions from another DSVP
-          procedure(dsvp_comm_instr_i), deferred, public:: return_retired_instructions  !returns back a block of retired instructions with their statuses
-          procedure(dsvp_comm_instr_i), deferred, public:: send_instructions            !sends a block of domain-specific instructions to another DSVP for execution
-          procedure(dsvp_comm_instr_i), deferred, public:: receive_retired_instructions !receives back a block of retired instructions with their statuses
+          procedure(dsvp_ctor_i), deferred, public:: configure                   !configures DSVP units (builds DSVP): Allocates DSVU table, sets description, etc.
+          procedure(dsvp_self_i), deferred, public:: start                       !initializes DSVP to an active state and begins the life cycle
+          procedure(dsvp_self_i), deferred, public:: shutdown                    !shuts down DSVP
           procedure(dsvp_instr_decode_i), deferred, public:: decode_instruction  !decoding procedure: Unpacks the raw byte packet (instruction bytecode) and constructs a domain-specific instruction
+          procedure, public:: alloc_units=>DSVPAllocUnits                        !allocates the DSVU table
+          procedure, public:: free_units=>DSVPFreeUnits                          !frees the DSVU table
+          procedure, public:: set_unit=>DSVPSetUnit                              !sets up a DSVU entry in the DSVU table
+          procedure, public:: get_unit=>DSVPGetUnit                              !returns a pointer to the DSVU from the DSVU table
           procedure, public:: start_time=>DSVPStartTime                          !starts the time when DSVP is initialized
           procedure, public:: clean=>DSVPClean                                   !cleans the DSVP state after destruction
           procedure, public:: set_description=>DSVPSetDescription                !sets DSVP ID, kind, and symbolic description
@@ -344,6 +356,14 @@
           integer(INTD), intent(out), optional:: ierr !out: error code
          end subroutine ds_unit_self_i
   !dsvp_t:
+   !ctor:
+         subroutine dsvp_ctor_i(this,conf,ierr)
+          import:: dsvp_t,INTD
+          implicit none
+          class(dsvp_t), intent(out):: this           !out: configured (constructed) DSVP
+          class(dsvp_conf_t), intent(in):: conf       !in: DSVP configuration
+          integer(INTD), intent(out), optional:: ierr !out: error code
+         end subroutine dsvp_ctor_i
    !self:
          subroutine dsvp_self_i(this,ierr)
           import:: dsvp_t,INTD
@@ -420,8 +440,14 @@
  !ds_unit_t:
         private DSUnitLoadPort
         private DSUnitFlushPort
+        private DSUnitGetId
+        private DSUnitSetId
         public ds_unit_self_i
  !dsvp_t:
+        private DSVPAllocUnits
+        private DSVPFreeUnits
+        private DSVPSetUnit
+        private DSVPGetUnit
         private DSVPStartTime
         private DSVPClean
         private DSVPSetDescription
@@ -1215,7 +1241,127 @@
          ierr=this%port%absorb(this%iqueue) !DS instructions (references) will be moved from the port into the DS unit queue
          return
         end function DSUnitFlushPort
-![dsvp_t]==================================
+!------------------------------------------------------
+        function DSUnitGetId(this,ierr) result(unit_id)
+!Returns the DS unit id.
+         implicit none
+         integer(INTD):: unit_id                     !out: unit id
+         class(ds_unit_t), intent(in):: this         !in: DS unit
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=DSVP_SUCCESS; unit_id=this%id
+         if(unit_id.lt.0) errc=DSVP_ERR_INVALID_REQ
+         if(present(ierr)) ierr=errc
+         return
+        end function DSUnitGetId
+!------------------------------------------------
+        subroutine DSUnitSetId(this,unit_id,ierr)
+!Sets DS unit id.
+         implicit none
+         class(ds_unit_t), intent(inout):: this      !inout: DS unit
+         integer(INTD), intent(in):: unit_id         !in: DS unit id
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=DSVP_SUCCESS
+         if(unit_id.ge.0) then
+          this%id=unit_id
+         else
+          errc=DSVP_ERR_INVALID_ARGS
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine DSUnitSetId
+![dsvp_t]=============================================
+        subroutine DSVPAllocUnits(this,num_units,ierr)
+!Allocates the DSVU table in DSVP.
+         implicit none
+         class(dsvp_t), intent(inout):: this         !inout: DSVP
+         integer(INTD), intent(in):: num_units       !in: DSVU table size
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=DSVP_SUCCESS; this%num_units=0
+         if(.not.allocated(this%virt_units)) then
+          if(num_units.gt.0) then
+           allocate(this%virt_units(0:num_units-1),STAT=errc)
+           if(errc.ne.0) errc=DSVP_ERR_MEM_ALLOC_FAIL
+          else
+           errc=DSVP_ERR_INVALID_ARGS
+          endif
+         else
+          errc=DSVP_ERR_INVALID_REQ
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine DSVPAllocUnits
+!------------------------------------------
+        subroutine DSVPFreeUnits(this,ierr)
+!Frees the DSVU table.
+         implicit none
+         class(dsvp_t), intent(inout):: this         !inout: DSVP
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=DSVP_SUCCESS
+         if(allocated(this%virt_units)) then
+          deallocate(this%virt_units,STAT=errc)
+          if(errc.ne.0) errc=DSVP_ERR_MEM_FREE_FAIL
+         else
+          errc=DSVP_ERR_INVALID_REQ
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine DSVPFreeUnits
+!--------------------------------------------------
+        subroutine DSVPSetUnit(this,virt_unit,ierr)
+!Sets up a new DSVU entry in the DSVU table in a sequential order.
+         implicit none
+         class(dsvp_t), intent(inout):: this               !inout: DSVP
+         class(ds_unit_t), intent(in), pointer:: virt_unit !in: valid DSVU
+         integer(INTD), intent(out), optional:: ierr       !out: error code
+         integer(INTD):: errc
+
+         errc=DSVP_SUCCESS
+         if(associated(virt_unit)) then
+          if(this%num_units.le.ubound(this%virt_unit,1)) then
+           this%virt_unit(this%num_units)%unit_ref=>virt_unit
+           call this%virt_unit(this%num_units)%unit_ref%set_id(this%num_units,errc)
+           if(errc.eq.DSVP_SUCCESS) then
+            this%num_units=this%num_units+1
+           else
+            this%virt_unit(this%num_units)%unit_ref=>NULL()
+           endif
+          else
+           errc=DSVP_ERR_RSC_EXCEEDED
+          endif
+         else
+          errc=DSVP_ERR_INVALID_ARGS
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine DSVPSetUnit
+!-------------------------------------------------------------
+        function DSVPGetUnit(this,unit_id,ierr) result(dsvu_p)
+!Returns a pointer to the DSVU from the DSVU table.
+         implicit none
+         class(ds_unit_t), pointer:: dsvu_p          !out: pointer to DSVU
+         class(dsvp_t), intent(in):: this            !in: DSVP
+         integer(INTD), intent(in):: unit_id         !in: DSVU id in the DSVU table
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=DSVP_SUCCESS; dsvu_p=>NULL()
+         if(unit_id.ge.0.and.unit_id.lt.this%num_units) then
+          dsvu_p=>this%virt_units(unit_id)%unit_ref
+         else
+          errc=DSVP_ERR_INVALID_ARGS
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function DSVPGetUnit
+!------------------------------------------
         subroutine DSVPStartTime(this,ierr)
 !Starts the time after initializing the DSVP.
          implicit none
