@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP "Worker" implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/08/16
+!REVISION: 2017/08/18
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -58,20 +58,13 @@
           procedure, private:: TensInstrCtor                        !ctor: constructs a tensor instruction from the specification of a tensor operation
           generic, public:: tens_instr_ctor=>TensInstrCtor
           procedure, public:: encode=>TensInstrEncode               !encoding procedure: Packs the TAVP instruction into a raw byte packet (bytecode)
-          procedure, private:: set_microcode=>TensInstrSetMicrocode !sets up instruction dynamic microcode bindings
           final:: tens_instr_dtor                                   !dtor
         end type tens_instr_t
  !TAVP specialization "Worker":
         type, extends(dsvp_t), public:: tavp_worker_t
-         type(tens_cache_t), private:: tens_cache                   !tensor argument cache (for both persistent and temporary tensors)
+         type(tens_cache_t), private:: tens_cache        !tensor argument cache (for both persistent and temporary tensors)
          contains
-          procedure, public:: start=>TAVPWorkerStart                                             !initializes TAVP to an active state
-          procedure, public:: shutdown=>TAVPWorkerShutdown                                       !shuts down TAVP
-          procedure, public:: fetch_instructions=>TAVPWorkerFetchInstructions                    !fetches a block of tensor instructions from TAVP "Manager"
-          procedure, public:: return_retired_instructions=>TAVPWorkerReturnRetiredInstructions   !returns back a block of retired tensor instructions to TAVP "Manager"
-          procedure, public:: send_instructions=>TAVPWorkerSendInstructions                      !N/A (dummy)
-          procedure, public:: receive_retired_instructions=>TAVPWorkerReceiveRetiredInstructions !N/A (dummy)
-          procedure, public:: decode_instruction=>TAVPWorkerDecodeInstruction                    !decoding procedure: Unpacks a raw byte packet (bytecode) and constructs a TAVP instruction
+          procedure, public:: decode_instruction=>TAVPWorkerDecodeInstruction !decoding procedure: Unpacks a raw byte packet (bytecode) and constructs a TAVP instruction
         end type tavp_worker_t
 !DATA:
  !TAVP instruction microcode bindings (set by the TAVP initialization):
@@ -109,15 +102,8 @@
  !tens_instr_t:
         private TensInstrCtor
         private TensInstrEncode
-        private TensInstrSetMicrocode
         public tens_instr_dtor
  !tavp_worker_t:
-        private TAVPWorkerStart
-        private TAVPWorkerShutdown
-        private TAVPWorkerFetchInstructions
-        private TAVPWorkerReturnRetiredInstructions
-        private TAVPWorkerSendInstructions
-        private TAVPWorkerReceiveRetiredInstructions
         private TAVPWorkerDecodeInstruction
 
 !IMPLEMENTATION:
@@ -1061,7 +1047,7 @@
            end select
 !Activate the instruction:
            if(errc.eq.0) then
-            call this%activate(op_code,errc); if(errc.ne.0) errc=-3
+            call this%activate(op_code,microcode(op_code),errc); if(errc.ne.0) errc=-3
            else
             call this%set_status(DS_INSTR_RETIRED,errc,-1)
             call tens_instr_dtor(this)
@@ -1300,34 +1286,6 @@
          end subroutine encode_instr_contract
 
         end subroutine TensInstrEncode
-!--------------------------------------------------
-        subroutine TensInstrSetMicrocode(this,ierr)
-!Sets up instruction dynamic bindings to the corresponding TAVP microcode.
-         implicit none
-         class(tens_instr_t), intent(inout):: this   !inout: defined tensor instruction
-         integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc,op_code
-
-         op_code=this%get_code(errc)
-         if(errc.eq.DSVP_SUCCESS) then
-          if(op_code.ge.0.and.op_code.lt.TAVP_ISA_SIZE) then
-           this%acquire_resource=>microcode(op_code)%acquire_resource
-           this%prefetch_input=>microcode(op_code)%prefetch_input
-           this%sync_prefetch=>microcode(op_code)%sync_prefetch
-           this%execute=>microcode(op_code)%execute
-           this%sync_execution=>microcode(op_code)%sync_execution
-           this%upload_output=>microcode(op_code)%upload_output
-           this%sync_upload=>microcode(op_code)%sync_upload
-           this%release_resource=>microcode(op_code)%release_resource
-          else
-           errc=-2
-          endif
-         else
-          errc=-1
-         endif
-         if(present(ierr)) ierr=errc
-         return
-        end subroutine TensInstrSetMicrocode
 !---------------------------------------
         subroutine tens_instr_dtor(this)
          implicit none
@@ -1359,7 +1317,7 @@
            call init_microcode(errc)
            if(errc.eq.0) then
             !call test_carma(errc) !debug: initial brute-force distributed benchmark
-            call this%shutdown(errc) !`debug: remove
+            call this%shutdown(errc)
            else
             errc=-3
            endif
@@ -1452,58 +1410,6 @@
          end subroutine null_microcode
 
         end subroutine TAVPWorkerShutdown
-!----------------------------------------------------------------
-        subroutine TAVPWorkerFetchInstructions(this,dsvp_id,ierr)
-!Fetches a block of tensor instructions from TAVP "Manager".
-         implicit none
-         class(tavp_worker_t), intent(inout):: this  !inout: TAVP "Worker"
-         integer(INTD), intent(in):: dsvp_id         !in: ID of the sender TAVP (or TAVP_ANY_ID wildcard)
-         integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc
-
-         errc=0
-         if(present(ierr)) ierr=errc
-         return
-        end subroutine TAVPWorkerFetchInstructions
-!------------------------------------------------------------------------
-        subroutine TAVPWorkerReturnRetiredInstructions(this,dsvp_id,ierr)
-!Returns a block of retired tensor instructions back to TAVP "Manager".
-         implicit none
-         class(tavp_worker_t), intent(inout):: this  !inout: TAVP "Worker"
-         integer(INTD), intent(in):: dsvp_id         !in: ID of the receiver TAVP
-         integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc
-
-         errc=0
-         if(present(ierr)) ierr=errc
-         return
-        end subroutine TAVPWorkerReturnRetiredInstructions
-!---------------------------------------------------------------
-        subroutine TAVPWorkerSendInstructions(this,dsvp_id,ierr) !dummy
-!Sends a block of tensor instructions to another TAVP.
-         implicit none
-         class(tavp_worker_t), intent(inout):: this  !inout: TAVP "Worker"
-         integer(INTD), intent(in):: dsvp_id         !in: ID of the receiver TAVP
-         integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc
-
-         errc=0
-         if(present(ierr)) ierr=errc
-         return
-        end subroutine TAVPWorkerSendInstructions
-!-------------------------------------------------------------------------
-        subroutine TAVPWorkerReceiveRetiredInstructions(this,dsvp_id,ierr) !dummy
-!Receives a block of retired tensor instructions from another TAVP.
-         implicit none
-         class(tavp_worker_t), intent(inout):: this  !inout: TAVP "Worker"
-         integer(INTD), intent(in):: dsvp_id         !in: ID of the sender TAVP (or TAVP_ANY_ID wildcard)
-         integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc
-
-         errc=0
-         if(present(ierr)) ierr=errc
-         return
-        end subroutine TAVPWorkerReceiveRetiredInstructions
 !------------------------------------------------------------------------------
         subroutine TAVPWorkerDecodeInstruction(this,instr_packet,ds_instr,ierr)
 !Decodes a tensor instruction from the bytecode packet.
@@ -1531,7 +1437,7 @@
              errc=-5 !unknown instruction (or not implemented)
             end select
 !Activate the instruction:
-            call ds_instr%activate(op_code,ier); if(ier.ne.0.and.errc.eq.0) errc=-4
+            call ds_instr%activate(op_code,microcode(op_code),ier); if(ier.ne.0.and.errc.eq.0) errc=-4
            else
             errc=-3
            endif

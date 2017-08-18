@@ -1,7 +1,7 @@
 !ExaTENSOR: Massively Parallel Virtual Processor for Scale-Adaptive Hierarchical Tensor Algebra
 !This is the top level API module of ExaTENSOR (user-level API)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017/08/02
+!REVISION: 2017/08/18
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -143,9 +143,9 @@
 !Actions performed:
 ! # Initializes MPI services;
 ! # Determines how many TAVPs of different kinds to spawn (log-TAVP, num-TAVP, dat-TAVP, etc.);
-! # Establishes a hierarchy for num-TAVPs and maps the corresponding computing domains to log-TAVPs;
+! # Establishes a hierarchy for num-TAVPs and maps the corresponding computing blocks to log-TAVPs;
 ! # Creates dedicated MPI communicators for log-TAVPs and for num-TAVPs as well as an intercommunicator;
-! # Each MPI process is assigned a single TAVP of a specific kind, starts its TAVP BIOS code (init);
+! # Each MPI process is assigned a single TAVP of a specific kind, which is allocated and launched;
 ! # The Master MPI process 0 (Driver) returns while all other MPI processes begin their active
 !   life cycle as TAVPs until terminated by the Master MPI process 0 via a call to exatns_stop().
 !This is the only ExaTENSOR API function called by all MPI processes,

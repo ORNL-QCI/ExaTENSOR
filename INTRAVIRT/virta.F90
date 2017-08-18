@@ -8,7 +8,7 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/08/16
+!REVISION: 2017/08/18
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -38,6 +38,8 @@
         use subspaces                            !hierarchical vector space representation
         use tensor_recursive                     !recursive (hierarchical) tensors
         use dsvp_base                            !abstract domain-specific virtual processor (DSVP)
+        use gfc_base                             !GFC base
+        use gfc_dictionary                       !GFC dictionary
         implicit none
         public
 !PARAMETERS:
@@ -54,11 +56,12 @@
         integer(INTD), parameter, public:: EXA_ERR_MEM_FREE_FAIL=DSVP_ERR_MEM_FREE_FAIL     !memory deallocation failed
         integer(INTD), parameter, public:: EXA_ERR_BROKEN_OBJ=DSVP_ERR_BROKEN_OBJ           !broken object
         integer(INTD), parameter, public:: EXA_ERR_UNABLE_COMPLETE=DSVP_ERR_UNABLE_COMPLETE !unable to complete
+        integer(INTD), parameter, public:: EXA_ERR_RSC_EXCEEDED=DSVP_ERR_RSC_EXCEEDED       !resource exceeded
  !Tensor-algebra virtual processor (TAVP) kinds (roles):
         integer(INTD), parameter, public:: EXA_NO_ROLE=DSVP_NO_KIND !undefined role
         integer(INTD), parameter, public:: EXA_DRIVER=0             !domain-specific driver process (not a TAVP)
-        integer(INTD), parameter, public:: EXA_MANAGER=1            !manager (logic) process (TAVP)
-        integer(INTD), parameter, public:: EXA_WORKER=2             !worker (numeric) process (TAVP)
+        integer(INTD), parameter, public:: EXA_MANAGER=1            !manager (logical) process (TAVP)
+        integer(INTD), parameter, public:: EXA_WORKER=2             !worker (numerical) process (TAVP)
         integer(INTD), parameter, public:: EXA_HELPER=3             !helper (auxiliary) process (TAVP)
  !TAVP hierarchy configuration:
         integer(INTD), public:: EXA_MAX_WORK_GROUP_SIZE=64 !maximal size of a work group (max number of workers per manager)
@@ -119,7 +122,7 @@
          logical, public:: updated=.FALSE. !TRUE if the tensor is currently being updated in a computation, FALSE otherwise
          integer(INTD), public:: is_used=0 !number of read-only references which are currently using the tensor
         end type tens_status_t
-        type(tens_status_t), parameter:: tens_status_none
+        type(tens_status_t), parameter:: tens_status_none=tens_status_t() !tensor status null
         public tens_status_none
  !Tensor resource (local resource):
         type, extends(ds_resrc_t), public:: tens_resrc_t
@@ -212,12 +215,19 @@
 !INTERFACES:
         abstract interface
  !tens_cache_entry_t:
+  !default ctor:
          subroutine tens_cache_entry_ctor_i(this,tensor,ierr)
           import:: tens_cache_entry_t,tens_rcrsv_t,INTD
-          class(tens_cache_entry_t), intent(out):: this
-          class(tens_rcrsv_t), pointer, intent(inout):: tensor
-          integer(INTD), intent(out), optional:: ierr
+          class(tens_cache_entry_t), intent(inout):: this   !out: tensor cache entry constructed to a default value
+          class(tens_rcrsv_t), pointer, intent(in):: tensor !in: tensor
+          integer(INTD), intent(out), optional:: ierr       !out: error code
          end subroutine tens_cache_entry_ctor_i
+  !allocator:
+         function tens_cache_entry_alloc_i(tens_cache_entry) result(ierr)
+          import:: tens_cache_entry_t,INTD
+          integer(INTD):: ierr
+          class(tens_cache_entry_t), allocatable, intent(out):: tens_cache_entry
+         end function tens_cache_entry_alloc_i
         end interface
 !DATA:
  !MPI process specialization (TAVP role, set by exatns_start):
@@ -1247,7 +1257,7 @@
 
          if(this%is_set(errc)) then
           if(errc.eq.0) then
-           if(this%tens_status%created)) then
+           if(this%tens_status%created) then
             if((this%tens_status%is_used.eq.0).and.(.not.this%tens_status%updated)) then
              this%tens_status%defined=.FALSE.
              this%tens_status%created=.FALSE.
@@ -1303,8 +1313,8 @@
          if(present(ierr)) ierr=errc
          return
         end function TensCacheLookup
-!-----------------------------------------------------------------------------------------------------------------------------
-        function TensCacheStore(this,tensor,tens_cache_entry_alloc_f,tens_cache_entry_ctor_f,ierr,tens_entry_p) result(stored)
+!-----------------------------------------------------------------------------------------------------
+        function TensCacheStore(this,tensor,tens_cache_entry_alloc_f,ierr,tens_entry_p) result(stored)
 !Given a tensor, checks whether it is present in the tensor cache. If yes, returns
 !a pointer to the corresponding tensor cache entry. If no, allocates a new extended
 !tensor cache entry, stores it in the tensor cache, constructs it to the default value,
@@ -1313,8 +1323,7 @@
          logical:: stored                                                   !out: TRUE on successful new store, FALSE otherwise
          class(tens_cache_t), intent(inout):: this                          !inout: tensor cache
          class(tens_rcrsv_t), pointer, intent(in):: tensor                  !in: pointer to a tensor
-         procedure(gfc_allocate_scalar_i):: tens_cache_entry_alloc_f        !in: allocator of an extended tens_cache_entry_t
-         procedure(tens_cache_entry_ctor_i):: tens_cache_entry_ctor_f       !in: default constructor for an extended tens_cache_entry_t
+         procedure(tens_cache_entry_alloc_i):: tens_cache_entry_alloc_f     !in: non-member allocator of an extended(tens_cache_entry_t) class
          integer(INTD), intent(out), optional:: ierr                        !out: error code
          class(tens_cache_entry_t), pointer, intent(out), optional:: tens_entry_p !out: tensor cache entry (new or existing)
          integer(INTD):: errc,res
@@ -1330,15 +1339,15 @@
           if(associated(tensor)) then
            tens_descr=tensor%get_descriptor(errc)
            if(errc.eq.TEREC_SUCCESS) then
-            errc=tens_cache_entry_alloc_f(tce) !allocates an empty instance of an extended tens_cache_entry_t
-            if(errc.eq.GFC_SUCCESS) then
+            errc=tens_cache_entry_alloc_f(tce) !allocates an empty instance of an extended(tens_cache_entry_t)
+            if(errc.eq.0) then
              uptr=>NULL()
              res=dit%search(GFC_DICT_ADD_IF_NOT_FOUND,cmp_tens_descriptors,tens_descr,tce,GFC_BY_VAL,value_out=uptr)
              tcep=>NULL(); select type(uptr); class is(tens_cache_entry_t); tcep=>uptr; end select
              if(associated(tcep)) then
               if(res.eq.GFC_NOT_FOUND) then
                stored=.TRUE.
-               call tcep%tens_cache_entry_ctor_f(tensor,errc); if(errc.ne.0) errc=-8
+               call tcep%tens_cache_entry_ctor(tensor,errc); if(errc.ne.0) errc=-8
               else
                if(res.ne.GFC_FOUND) errc=-7
               endif
