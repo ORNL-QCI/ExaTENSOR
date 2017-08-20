@@ -1,7 +1,7 @@
 /** C++ adapters for ExaTENSOR: Tensor network
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/08/17
+!REVISION: 2017/08/20
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -295,7 +295,7 @@ void TensorNetwork<T>::contractTensors(unsigned int tensId1, //in: id of the 1st
 template <typename T>
 void TensorNetwork<T>::contractTensors(const unsigned int tensId1, //in: id of the 1st tensor in the tensor network: [1..max]
                                        const unsigned int tensId2, //in: id of the 2nd tensor in the tensor network: [1..max]
-                                       TensorNetwork<T> ** resultNetwork) //out: tensor network result (returns a pointer to it)
+                                       TensorNetwork<T> ** resultNetwork) const //out: tensor network result (returns a pointer to it)
 {
  *resultNetwork = new TensorNetwork<T>(*this);
  (*resultNetwork)->contractTensors(tensId1,tensId2);
@@ -307,8 +307,8 @@ void TensorNetwork<T>::contractTensors(const unsigned int tensId1, //in: id of t
     with a larger id will be deleted from the tensor network, causing a shift in the tensor numeration
     that will affect all tensors with id > "tensId2". **/
 template <typename T>
-std::unique_ptr<TensorNetwork<T>> TensorNetwork<T>::contractTensorsOut(const unsigned int tensId1, //in: id of the 1st tensor in the tensor network: [1..max]
-                                                                       const unsigned int tensId2) //in: id of the 2nd tensor in the tensor network: [1..max]
+std::unique_ptr<TensorNetwork<T>> TensorNetwork<T>::contractTensorsOut(const unsigned int tensId1,       //in: id of the 1st tensor in the tensor network: [1..max]
+                                                                       const unsigned int tensId2) const //in: id of the 2nd tensor in the tensor network: [1..max]
 {
  std::unique_ptr<TensorNetwork<T>> resultNetwork(new TensorNetwork<T>(*this));
  resultNetwork->contractTensors(tensId1,tensId2);
@@ -406,7 +406,7 @@ void TensorNetwork<T>::getContractionSequence(ContractionSequence & contrSeq,
 
  std::cout << "#MSG(TensorNetwork<T>::getContractionSequence): Determining a pseudo-optimal tensor contraction sequence ... "; //debug
 
- auto numContractions = this->getNumTensors() - 1;
+ auto numContractions = this->getNumTensors() - 1; //number of contractions is one less than the number of r.h.s. tensors
  assert(numContractions > 0); //at least one tensor contraction is expected (two or more r.h.s. tensors)
  assert(contrSeq.size() == 0); //the contraction sequence must be empty on entrance
 
@@ -418,11 +418,21 @@ void TensorNetwork<T>::getContractionSequence(ContractionSequence & contrSeq,
  std::priority_queue<ContrPath,std::vector<ContrPath>,decltype(cmpPaths)> priq(cmpPaths); //output: priority queue
 
  for(decltype(numContractions) pass = 0; pass < numContractions; ++pass){
-  //Read an item from vector;
-  //Generate all pairwise contractions and push them into the priority queue;
-  //Once the prioriry queue is full, pop the top element before inserting a new element (if less);
-  //Extract the vector from the priority queue via move semantics and destroy the priority queue;
-  //Create a new priority queue.
+  for(const auto & contrPath : input){
+   const auto & parentTensNet = std::get<0>(contrPath);
+   auto numTensors = parentTensNet.getNumTensors();
+   for(unsigned int i = 1; i < numTensors; ++i){ //r.h.s. tensors are numbered from 1
+    for(unsigned int j=i+1; j <= numTensors; ++j){
+     auto tensNet = parentTensNet.contractTensorsOut(i,j); //contract tensors i and j
+     //get the cost of the tensor contraction
+     //get the size of the priority queue
+     //if not full, push tensNet into priority queue
+     //if full, compare the cost with the top object: if top is more expensive, pop it, and push tensNet
+    }
+   }
+  }
+  //erase the vector
+  //move elements from the priority queue into the vector input
  }
 
  std::cout << "Done" << std::endl; //debug
