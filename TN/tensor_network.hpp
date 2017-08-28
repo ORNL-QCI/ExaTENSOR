@@ -1,7 +1,7 @@
 /** C++ adapters for ExaTENSOR: Tensor network
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/08/20
+!REVISION: 2017/08/28
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -42,7 +42,7 @@
 namespace exatensor {
 
 //Types:
- using ContractionSequence = std::vector<std::pair<unsigned int, unsigned int>>;
+using ContractionSequence = std::vector<std::pair<unsigned int, unsigned int>>;
 
 /** Tensor network (contraction of multiple tensors):
  A tensor network consists of tensors numerated from 0.
@@ -75,6 +75,8 @@ public:
  /** Returns the number of r.h.s. tensors in the tensor network.
      Note that the output (l.h.s.) tensor 0 is not counted here. **/
  unsigned int getNumTensors() const;
+ /** Returns a const reference to a specific tensor from the tensor network. **/
+ const TensorDenseAdpt<T> & getTensor(const unsigned int id) const;
  /** Prints. **/
  void printIt() const;
 
@@ -120,7 +122,7 @@ public:
  double getContractionCost(const unsigned int tensId1,         //in: id of the 1st r.h.s. tensor (>0)
                            const unsigned int tensId2,         //in: id of the 2nd r.h.s. tensor (>0)
                            double * arithmIntensity = nullptr, //out: arithmetic intensity
-                           bool rescale = false);              //in: rescale the Flop cost due to arithmetic intensity
+                           bool rescale = false) const;        //in: rescale the Flop cost due to arithmetic intensity
  /** Determines a pseudo-optimal sequence of tensor contractions
      for the given tensor network and numerically evaluates these
      tensor contractions to produce the value of the output tensor.
@@ -143,8 +145,8 @@ private:
      it as a vector of pairs of tensor id's to contract. Note that each
      subsequent pair will have its tensor id's refer to the corresponding
      reduced tensor network (tensor numeration changes after each contraction). **/
- void getContractionSequence(ContractionSequence & contrSeq, //out: contraction sequence
-                             const unsigned int numWalkers); //in: optimization depth
+ void getContractionSequence(ContractionSequence & contrSeq,       //out: contraction sequence
+                             const unsigned int numWalkers) const; //in: optimization depth
  /** Performs all tensor contractions, thus evaluating the value of the output tensor. **/
  int computeOutput(const ContractionSequence & contrSeq);
 

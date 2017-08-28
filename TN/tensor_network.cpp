@@ -1,7 +1,7 @@
 /** C++ adapters for ExaTENSOR: Tensor network
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/08/20
+!REVISION: 2017/08/28
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -52,6 +52,13 @@ template <typename T>
 unsigned int TensorNetwork<T>::getNumTensors() const
 {
  return (unsigned int)(Tensors.size()-1); //not counting the output tensor
+}
+
+/** Returns a const reference to a specific tensor from the tensor network. **/
+template <typename T>
+const TensorDenseAdpt<T> & TensorNetwork<T>::getTensor(const unsigned int id) const
+{
+ return Tensors.at(id).getTensor();
 }
 
 /** Prints. **/
@@ -320,7 +327,7 @@ template <typename T>
 double TensorNetwork<T>::getContractionCost(const unsigned int tensId1, //in: id of the 1st rhs tensor (>0)
                                             const unsigned int tensId2, //in: id of the 2nd rhs tensor (>0)
                                             double * arithmIntensity,   //out: arithmetic intensity
-                                            bool rescale)               //in: rescale the Flop cost due to arithmetic intensity
+                                            bool rescale) const         //in: rescale the Flop cost due to arithmetic intensity
 {
 #ifdef _DEBUG_DIL
  assert((tensId1 >= 1 && tensId1 <= this->getNumTensors()) && (tensId2 >= 1 && tensId2 <= this->getNumTensors()));
@@ -395,12 +402,12 @@ int TensorNetwork<T>::evaluate(ContractionSequence & contrSeq,
 }
 
 /** Determines the pseudo-optimal tensor contraction sequence and returns
-    it as a vector of pairs of tensor id's to contract. Note that each
-    subsequent pair will have its tensor id's refer to the corresponding
+    it as a vector of pairs of the r.h.s. tensor id's to contract. Note that
+    each subsequent pair will have its tensor id's refer to the corresponding
     reduced tensor network. **/
 template <typename T>
 void TensorNetwork<T>::getContractionSequence(ContractionSequence & contrSeq,
-                                              const unsigned int numWalkers)
+                                              const unsigned int numWalkers) const
 {
  using ContrPath = std::tuple<TensorNetwork<T>,ContractionSequence,double>;
 
@@ -411,31 +418,42 @@ void TensorNetwork<T>::getContractionSequence(ContractionSequence & contrSeq,
  assert(contrSeq.size() == 0); //the contraction sequence must be empty on entrance
 
  ContractionSequence contrSeqEmpty;
- std::vector<ContrPath> input;
- input.emplace_back(make_tuple(*this,contrSeqEmpty,0.0)); //initial configuration
+ std::vector<ContrPath> inputPaths;
+ inputPaths.emplace_back(make_tuple(*this,contrSeqEmpty,0.0)); //initial configuration
 
  auto cmpPaths = [](const ContrPath & left, const ContrPath & right){return (std::get<2>(left) < std::get<2>(right));};
  std::priority_queue<ContrPath,std::vector<ContrPath>,decltype(cmpPaths)> priq(cmpPaths); //output: priority queue
 
  for(decltype(numContractions) pass = 0; pass < numContractions; ++pass){
-  for(const auto & contrPath : input){
-   const auto & parentTensNet = std::get<0>(contrPath);
-   auto numTensors = parentTensNet.getNumTensors();
+  for(const auto & contrPath : inputPaths){
+   const auto & parentTensNet = std::get<0>(contrPath); //parental tensor network
+   const auto numTensors = parentTensNet.getNumTensors(); //number of r.h.s. tensors in the parental tensor network
+   const auto & parentContrSeq = std::get<1>(contrPath); //parental contraction sequence
    for(unsigned int i = 1; i < numTensors; ++i){ //r.h.s. tensors are numbered from 1
     for(unsigned int j=i+1; j <= numTensors; ++j){
+     double contrCost = parentTensNet.getContractionCost(i,j); //tensor contraction cost
      auto tensNet = parentTensNet.contractTensorsOut(i,j); //contract tensors i and j
-     //get the cost of the tensor contraction
-     //get the size of the priority queue
-     //if not full, push tensNet into priority queue
-     //if full, compare the cost with the top object: if top is more expensive, pop it, and push tensNet
+     auto cSeq = parentContrSeq; cSeq.emplace_back(std::pair<unsigned int, unsigned int>(i,j));
+     priq.emplace(std::make_tuple(*tensNet,cSeq,contrCost+std::get<2>(contrPath)));
+     if(priq.size() > numWalkers) priq.pop();
     }
    }
   }
-  //erase the vector
-  //move elements from the priority queue into the vector input
+  inputPaths.clear();
+  if(pass == numContractions - 1){
+   while(priq.size() > 1) priq.pop();
+   contrSeq = std::get<1>(priq.top());
+   priq.pop();
+  }else{
+   while(priq.size() > 0){
+    inputPaths.emplace_back(priq.top());
+    priq.pop();
+   }
+  }
  }
-
- std::cout << "Done" << std::endl; //debug
+ std::cout << "Done: "; //debug
+ for(const auto & cPair : contrSeq) std::cout << " {" << std::get<0>(cPair) << "," << std::get<1>(cPair) << "}"; //debug
+ std::cout << std::endl; //debug
  return;
 }
 

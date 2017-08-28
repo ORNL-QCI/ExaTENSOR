@@ -1,7 +1,7 @@
 /** C++ adapters for ExaTENSOR: Tensor connected to other tensors
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/08/03
+!REVISION: 2017/08/28
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -59,6 +59,8 @@ public:
  virtual ~TensorConn();
 
 //Accessors:
+ /** Returns a const reference to the tensor. **/
+ const TensorDenseAdpt<T> & getTensor() const;
  /** Returns the tensor rank. **/
  unsigned int getTensorRank() const;
  /** Returns the tensor volume (number of tensor elements). **/
@@ -73,6 +75,9 @@ public:
  void printIt() const;
 
 //Mutators:
+ /** Associates the tensor with an externally provided tensor body.
+     Will fail if the tensor body is already present (defined). **/
+ void setBody(const std::shared_ptr<T> body);
  /** Resets connection (leg). **/
  void resetConnection(const unsigned int legId, const TensorLeg & tensorLeg);
  /** Deletes the specified tensor dimension. **/

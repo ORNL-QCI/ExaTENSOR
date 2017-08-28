@@ -41,19 +41,16 @@ int test_tensor_expression(){
  using TensorConn = exatensor::TensorConn<TensDataType>;
  using TensorNetwork = exatensor::TensorNetwork<TensDataType>;
  using ContractionSequence = exatensor::ContractionSequence;
+ using PairUnsignedInt = std::pair<unsigned int, unsigned int>;
+
+ std::size_t dims[32];
 
  //Tensor dimension extents:
- unsigned int rank = 4;
- size_t dims[rank];
- for(unsigned int i=0; i<rank; ++i) dims[i]=TENS_DIM_EXT;
-
+ unsigned int rank = 4; for(unsigned int i = 0; i < rank; ++i) dims[i]=TENS_DIM_EXT;
  //Tensor volume:
- std::size_t vol = 1;
- for(unsigned int i=0; i<rank; ++i) vol*=dims[i];
-
+ std::size_t vol = 1; for(unsigned int i = 0; i < rank; ++i) vol*=dims[i];
  //Persistent tensor body:
- std::shared_ptr<TensDataType> body(new TensDataType[vol],[](TensDataType * p){delete[] p;});
-
+ std::shared_ptr<TensDataType> body(new TensDataType[vol], [](TensDataType * p){delete[] p;});
  //Tensor 0:
  Tensor tensor0(rank,dims);
 
@@ -129,8 +126,63 @@ int test_tensor_expression(){
  tensnet0.printIt();
 */
 
+ TensorNetwork tensnet1;
+
+ rank = 4; for(unsigned int i = 0; i < rank; ++i) dims[i]=TENS_DIM_EXT;
+ Tensor tens1(rank,dims); vol = tens1.getVolume();
+ std::shared_ptr<TensDataType> body1(new TensDataType[vol], [](TensDataType * p){delete[] p;});
+ tens1.setBody(body1);
+
+ rank = 4; for(unsigned int i = 0; i < rank; ++i) dims[i]=TENS_DIM_EXT;
+ Tensor tens2(rank,dims); vol = tens2.getVolume();
+ std::shared_ptr<TensDataType> body2(new TensDataType[vol], [](TensDataType * p){delete[] p;});
+ tens2.setBody(body2);
+
+ rank = 4; for(unsigned int i = 0; i < rank; ++i) dims[i]=TENS_DIM_EXT;
+ Tensor tens3(rank,dims); vol = tens3.getVolume();
+ std::shared_ptr<TensDataType> body3(new TensDataType[vol], [](TensDataType * p){delete[] p;});
+ tens3.setBody(body3);
+
+ rank = 5; for(unsigned int i = 0; i < rank; ++i) dims[i]=TENS_DIM_EXT;
+ Tensor tens4(rank,dims); vol = tens4.getVolume();
+ std::shared_ptr<TensDataType> body4(new TensDataType[vol], [](TensDataType * p){delete[] p;});
+ tens4.setBody(body4);
+
+ rank = 4; for(unsigned int i = 0; i < rank; ++i) dims[i]=TENS_DIM_EXT;
+ Tensor tens5(rank,dims); vol = tens5.getVolume();
+ std::shared_ptr<TensDataType> body5(new TensDataType[vol], [](TensDataType * p){delete[] p;});
+ tens5.setBody(body5);
+
+ rank = 5; for(unsigned int i = 0; i < rank; ++i) dims[i]=TENS_DIM_EXT;
+ Tensor tens6(rank,dims); vol = tens6.getVolume();
+ std::shared_ptr<TensDataType> body6(new TensDataType[vol], [](TensDataType * p){delete[] p;});
+ tens6.setBody(body6);
+
+ std::vector<PairUnsignedInt> connections;
+ tensnet1.appendTensor(tens1,connections);
+ connections.push_back(PairUnsignedInt(2,0)); connections.push_back(PairUnsignedInt(3,1));
+ tensnet1.appendTensor(tens2,connections);
+ connections.clear();
+ connections.push_back(PairUnsignedInt(1,0)); connections.push_back(PairUnsignedInt(2,1));
+ tensnet1.appendTensor(tens3,connections);
+ connections.clear();
+ connections.push_back(PairUnsignedInt(0,0)); connections.push_back(PairUnsignedInt(2,1)); connections.push_back(PairUnsignedInt(3,2));
+ tensnet1.appendTensor(tens4,connections);
+ connections.clear();
+ connections.push_back(PairUnsignedInt(2,0)); connections.push_back(PairUnsignedInt(0,1));
+ tensnet1.appendTensor(tens5,connections);
+ connections.clear();
+ connections.push_back(PairUnsignedInt(0,0)); connections.push_back(PairUnsignedInt(1,1));
+ tensnet1.appendTensor(tens6,connections);
+ connections.clear();
+
+ const Tensor & tens0 = tensnet1.getTensor(0);
+ vol = tens0.getVolume();
+ std::shared_ptr<TensDataType> body0(new TensDataType[vol], [](TensDataType * p){delete[] p;});
+ tensnet1.setOutputBody(body0);
+
  ContractionSequence contrSeq;
- int error_code = tensnet0.evaluate(contrSeq);
+ int error_code = tensnet1.evaluate(contrSeq);
 
  //Done:
  return 0;
