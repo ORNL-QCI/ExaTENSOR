@@ -1,6 +1,6 @@
-!ExaTENSOR: TAVP "Worker" implementation
+!ExaTENSOR: TAVP-Worker implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/08/18
+!REVISION: 2017/08/29
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -30,24 +30,64 @@
         private
 !PARAMETERS:
  !Basic:
-        integer(INTD), private:: CONS_OUT=6
-        integer(INTD), private:: DEBUG=0
-        logical, private:: VERBOSE=.TRUE.
- !Distributed memory space (for workers):
+        integer(INTD), private:: CONS_OUT=6 !default console output
+        integer(INTD), private:: DEBUG=0    !debugging mode
+        logical, private:: VERBOSE=.TRUE.   !verbosity for errors
+ !Distributed memory space:
         integer(INTD), parameter, private:: TAVP_WORKER_NUM_WINS=1 !number of MPI windows in the DDSS distributed space
  !On-node pinned Host memory buffer:
-        integer(INTL), protected:: tavp_worker_host_buf_size=1_INTL*(1024_INTL*1024_INTL*1024_INTL) !buffer size in bytes
-        integer(INTD), private:: tavp_worker_host_arg_max=0 !set later: max number of tensors in the pinned Host buffer (initialized by TAL-SH)
+        integer(INTL), protected:: tavp_worker_host_buf_size=1_INTL*(1024_INTL*1024_INTL*1024_INTL) !Host buffer size in bytes
+        integer(INTD), protected:: tavp_worker_host_arg_max=0 !is set later: max number of tensors in the pinned Host buffer (initialized by TAL-SH)
  !Elementary tensor instruction granularity classification:
-        real(8), public:: EXA_FLOPS_MEDIUM=1d10 !minimal number of Flops to consider the operation as medium-cost
-        real(8), public:: EXA_FLOPS_HEAVY=1d12  !minimal number of Flops to consider the operation as heavy-cost
-        real(8), public:: EXA_COST_TO_SIZE=1d2  !minimal cost (Flops) to size (Words) ratio to consider the operation arithmetically intensive
+        real(8), protected:: TAVP_WORKER_FLOPS_HEAVY=1d12  !minimal number of Flops to consider the operation as heavy-cost
+        real(8), protected:: TAVP_WORKER_FLOPS_MEDIUM=1d10 !minimal number of Flops to consider the operation as medium-cost
+        real(8), protected:: TAVP_WORKER_COST_TO_SIZE=1d2  !minimal cost (Flops) to size (Words) ratio to consider the operation arithmetically intensive
 !TYPES:
+ !Tensor resource (local resource):
+        type, extends(ds_resrc_t), private:: tens_resrc_t
+         type(C_PTR), private:: base_addr=C_NULL_PTR   !C pointer to a local buffer for tensor body storage
+         integer(C_SIZE_T), private:: bytes=0_C_SIZE_T !size of the tensor body storage buffer in bytes
+         logical, private:: pinned=.FALSE.             !whether or not the buffer is pinned
+         integer(C_INT), private:: dev_id=DEV_NULL     !flat device id where the buffer resides
+         integer(C_INT), private:: ref_count=0         !reference count (how many tensor operands are associated with this resource)
+         contains
+          procedure, public:: is_empty=>TensResrcIsEmpty               !returns TRUE of the tensor resource is empty (unallocated)
+          procedure, public:: allocate_buffer=>TensResrcAllocateBuffer !allocates a local buffer for tensor body storage
+          procedure, public:: free_buffer=>TensResrcFreeBuffer         !frees the local buffer
+          procedure, public:: get_mem_ptr=>TensResrcGetMemPtr          !returns a C pointer to the local memory buffer
+          procedure, public:: get_mem_size=>TensResrcGetMemSize        !returns the size of the memory buffer in bytes
+          procedure, private:: incr_ref_count=>TensResrcIncrRefCount   !increments the reference count
+          procedure, private:: decr_ref_count=>TensResrcDecrRefCount   !decrements the reference count
+          final:: tens_resrc_dtor                                      !dtor
+        end type tens_resrc_t
+#if 0
+ !Tensor operand (encapsulated tensor data processible by a specific TAVP):
+        type, extends(ds_oprnd_t), private:: tens_oprnd_t
+         class(tens_rcrsv_t), pointer, private:: tensor=>NULL()   !non-owning pointer to a persistent recursive tensor
+         class(tens_resrc_t), pointer, private:: resource=>NULL() !non-owning pointer to a persistent local tensor resource
+         type(talsh_tens_t), private:: talsh_tens                 !TAL-SH tensor object (for performing actual computations)
+         contains
+          procedure, private:: TensOprndCtor                    !ctor
+          generic, public:: tens_oprnd_ctor=>TensOprndCtor
+          procedure, public:: set_resource=>TensOprndSetResource!sets the resource component if it has not been set via constructor
+          procedure, public:: get_resource=>TensOprndGetResource!returns a pointer to the tensor resource
+          procedure, public:: get_tensor=>TensOprndGetTensor    !returns a pointer to the tensor
+          procedure, public:: set_talsh_tens=>TensOprndSetTalshTens !sets up the TAL-SH tensor object for further processing with TAL-SH
+          procedure, public:: is_remote=>TensOprndIsRemote      !returns TRUE if the tensor operand is remote
+          procedure, public:: acquire_rsc=>TensOprndAcquireRsc  !explicitly acquires local resources for the tensor operand
+          procedure, public:: prefetch=>TensOprndPrefetch       !starts prefetching the remote tensor operand (acquires local resources!)
+          procedure, public:: upload=>TensOprndUpload           !starts uploading the tensor operand to its remote location
+          procedure, public:: sync=>TensOprndSync               !synchronizes the currently pending communication on the tensor operand
+          procedure, public:: release=>TensOprndRelease         !destroys the present local copy of the tensor operand (releases local resources!), but the operand stays defined
+          procedure, public:: destruct=>TensOprndDestruct       !performs complete destruction back to an empty state
+          final:: tens_oprnd_dtor                               !dtor
+        end type tens_oprnd_t
  !Tensor argument cache entry (TAVP-specific):
         type, extends(tens_cache_entry_t), private:: tens_entry_wrk_t
-         class(tens_resrc_t), pointer, private:: resource=>NULL()     !owning pointer to an allocated resource
+         type(tens_resrc_t), private:: resource                       !tensor resource
          contains
-          procedure, public:: tens_cache_entry_ctor=>TensEntryWrkCtor !default ctor
+          procedure, private:: TensEntryWrkCtor
+          procedure, public:: tens_entry_wrk_ctor=>TensEntryWrkCtor   !ctor
           procedure, public:: get_resource=>TensEntryWrkGetResource   !returns a pointer to the resource
           final:: tens_entry_wrk_dtor                                 !dtor
         end type tens_entry_wrk_t
@@ -60,15 +100,29 @@
           procedure, public:: encode=>TensInstrEncode               !encoding procedure: Packs the TAVP instruction into a raw byte packet (bytecode)
           final:: tens_instr_dtor                                   !dtor
         end type tens_instr_t
- !TAVP specialization "Worker":
-        type, extends(dsvp_t), public:: tavp_worker_t
-         type(tens_cache_t), private:: tens_cache        !tensor argument cache (for both persistent and temporary tensors)
+ !TAVP-WRK decoder:
+        type, extends(ds_decoder_t), private:: tavp_wrk_decoder_t
+         type(tens_cache_t), private:: tens_cache                   !tensor argument cache
          contains
-          procedure, public:: decode_instruction=>TAVPWorkerDecodeInstruction !decoding procedure: Unpacks a raw byte packet (bytecode) and constructs a TAVP instruction
-        end type tavp_worker_t
-!DATA:
- !TAVP instruction microcode bindings (set by the TAVP initialization):
-        type(ds_microcode_t), private:: microcode(0:TAVP_ISA_SIZE-1)
+          procedure, public:: start=>TAVPWRKDecoderStart            !starts TAVP-WRK decoder
+          procedure, public:: shutdown=>TAVPWRKDecoderShutdown      !shuts down TAVP-WRK decoder
+          procedure, public:: decode=>TAVPWRKDecoderDecode          !decodes the DS bytecode into a DS instruction
+        end type tavp_wrk_decoder_t
+ !TAVP-WRK encoder:
+        type, extends(ds_encoder_t), private:: tavp_wrk_encoder_t
+         contains
+          procedure, public:: start=>TAVPWRKEncoderStart            !starts TAVP-WRK encoder
+          procedure, public:: shutdown=>TAVPWRKEncoderShutdown      !shuts down TAVP-WRK encoder
+          procedure, public:: encode=>TAVPWRKEncoderEncode          !encodes a DS instruction into the DS bytecode
+        end type tavp_wrk_encoder_t
+ !TAVP-WRK:
+        type, extends(dsvp_t), public:: tavp_wrk_t
+         type(tavp_wrk_decoder_t), private:: decoder      !DSVU: decodes incoming DS instructions from the manager
+         type(tavp_wrk_encoder_t), private:: retirer      !DSVU: retires processed DS instructions and sends them back to the manager
+         contains
+          procedure, public:: configure=>TAVPWRKConfigure !configures the TAVP-WRK DSVP
+        end type tavp_wrk_t
+#endif
 !VISIBILITY:
  !non-member test/debug:
         private test_carma
@@ -93,22 +147,55 @@
         private execute_tensor_create
         private execute_tensor_destroy
         private execute_tensor_contract
+#if 0
         private init_microcode
+#endif
+ !tens_resrc_t:
+        private TensResrcIsEmpty
+        private TensResrcAllocateBuffer
+        private TensResrcFreeBuffer
+        private TensResrcGetMemPtr
+        private TensResrcGetMemSize
+        private TensResrcIncrRefCount
+        private TensResrcDecrRefCount
+        public tens_resrc_dtor
+#if 0
+ !tens_oprnd_t:
+        private TensOprndCtor
+        private TensOprndSetResource
+        private TensOprndGetResource
+        private TensOprndGetTensor
+        private TensOprndSetTalshTens
+        private TensOprndIsRemote
+        private TensOprndAcquireRsc
+        private TensOprndPrefetch
+        private TensOprndUpload
+        private TensOprndSync
+        private TensOprndRelease
+        private TensOprndDestruct
+        public tens_oprnd_dtor
  !tens_entry_wrk_t:
         private TensEntryWrkCtor
         private TensEntryWrkGetResource
         public tens_entry_wrk_dtor
-        public tens_entry_wrk_alloc
  !tens_instr_t:
         private TensInstrCtor
         private TensInstrEncode
         public tens_instr_dtor
- !tavp_worker_t:
-        private TAVPWorkerDecodeInstruction
-
+ !tavp_wrk_decoder_t:
+        private TAVPWRKDecoderStart
+        private TAVPWRKDecoderShutdown
+        private TAVPWRKDecoderDecode
+ !tavp_wrk_encoder_t:
+        private TAVPWRKEncoderStart
+        private TAVPWRKEncoderShutdown
+        private TAVPWRKEncoderEncode
+ !tavp_wrk_t:
+        private TAVPWRKConfigure
+#endif
 !IMPLEMENTATION:
        contains
-![non-member]======================
+![non-member:Test/Debug]===========
         subroutine test_carma(ierr)
 !DEBUG: Brute-force implementation of a single distributed tensor contraction.
          implicit none
@@ -502,7 +589,7 @@
          end function signa2flat
 
         end subroutine test_carma
-![Non-member:Control]=======================================
+![non-member:Control]=======================================
         subroutine tavp_worker_set_host_buf_size(bytes,ierr)
 !Changes the default size of the pinned Host memory buffer.
 !This procedure should be called before TAVP is initialized.
@@ -520,7 +607,7 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine tavp_worker_set_host_buf_size
-![Non-member:Microcode]=============================
+![non-member:Microcode Implementation]==============
         subroutine acquire_resource_dummy(this,ierr)
 !Dummy procedure for acquiring no resource.
          implicit none
@@ -916,9 +1003,10 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine execute_tensor_contract
-!---------------------------------------
+#if 0
+!--------------------------------------
         subroutine init_microcode(ierr)
-!Initializes the global table of TAVP microcode bindings upon the start of the TAVP.
+!Initializes the global table of TAVP microcode bindings when configuring TAVP.
 !There are three kinds of microcode:
 ! 1. DUMMY: Does nothing.
 ! 2. BASIC: Default microcode.
@@ -959,6 +1047,698 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine init_microcode
+#endif
+!tens_resrc_t]=====================================
+        function TensResrcIsEmpty(this) result(ans)
+!Returns TRUE if the tensor resource is empty.
+         implicit none
+         logical:: ans                          !out: answer
+         class(tens_resrc_t), intent(in):: this !in: tensor resource
+
+         ans=(this%bytes.le.0_C_SIZE_T)
+         return
+        end function TensResrcIsEmpty
+!---------------------------------------------------------------------------
+        subroutine TensResrcAllocateBuffer(this,bytes,ierr,in_buffer,dev_id)
+!Allocates local memory either from a system or from a custom buffer.
+         implicit none
+         class(tens_resrc_t), intent(inout):: this    !inout: tensor resource
+         integer(INTL), intent(in):: bytes            !in: size in bytes
+         integer(INTD), intent(out), optional:: ierr  !out: error code
+         logical, intent(in), optional:: in_buffer    !in: if TRUE the memory will be allocated from a custom buffer, FALSE from the system
+         integer(INTD), intent(in), optional:: dev_id !in: flat device id (defaults to Host)
+         integer(INTD):: errc
+         integer(C_INT):: in_buf,dev
+         type(C_PTR):: addr
+
+         errc=0
+         if(this%is_empty()) then
+          if(bytes.gt.0_INTL) then
+           in_buf=NOPE; if(present(in_buffer)) then; if(in_buffer) in_buf=YEP; endif
+           dev=talsh_flat_dev_id(DEV_HOST,0); if(present(dev_id)) dev=dev_id
+           errc=mem_allocate(dev,int(bytes,C_SIZE_T),in_buf,addr)
+           if(errc.eq.0) then
+            this%base_addr=addr
+            this%bytes=bytes
+            this%pinned=(in_buf.ne.NOPE)
+            this%dev_id=dev
+           else
+            errc=-1
+           endif
+          else
+           errc=-2
+          endif
+         else
+          errc=-3
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensResrcAllocateBuffer
+!------------------------------------------------
+        subroutine TensResrcFreeBuffer(this,ierr)
+!Frees the tensor resource buffer.
+         implicit none
+         class(tens_resrc_t), intent(inout):: this    !inout: tensor resource
+         integer(INTD), intent(out), optional:: ierr  !out: error code
+         integer(INTD):: errc
+
+         errc=0
+         if(.not.this%is_empty()) then !free only allocated resources
+          if(this%ref_count.eq.0) then
+           errc=mem_free(this%dev_id,this%base_addr)
+           if(errc.eq.0) then
+            this%base_addr=C_NULL_PTR
+            this%bytes=0_C_SIZE_T
+            this%pinned=.FALSE.
+            this%dev_id=DEV_NULL
+           else
+            errc=-2
+           endif
+          else
+           errc=-1
+          endif
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensResrcFreeBuffer
+!-----------------------------------------------------------------
+        function TensResrcGetMemPtr(this,ierr,bytes) result(mem_p)
+!Returns a C pointer to the local memory buffer used by the resource.
+         implicit none
+         type(C_PTR):: mem_p                          !out: C pointer
+         class(tens_resrc_t), intent(in):: this       !in: tensor resource
+         integer(INTD), intent(out), optional:: ierr  !out: error code
+         integer(INTL), intent(out), optional:: bytes !out: number of bytes
+         integer(INTD):: errc
+
+         errc=0; mem_p=C_NULL_PTR
+         if(.not.this%is_empty()) then
+          mem_p=this%base_addr
+          if(present(bytes)) bytes=this%bytes
+         else
+          if(present(bytes)) bytes=0_INTL
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function TensResrcGetMemPtr
+!------------------------------------------------------------
+        function TensResrcGetMemSize(this,ierr) result(bytes)
+!Returns the size of the memory buffer in bytes.
+         implicit none
+         integer(INTL):: bytes                       !out: size in bytes
+         class(tens_resrc_t), intent(in):: this      !in: tensor resource
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         if(.not.this%is_empty()) then
+          bytes=this%bytes; errc=0
+         else
+          bytes=0_INTL; errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function TensResrcGetMemSize
+!---------------------------------------------
+        subroutine TensResrcIncrRefCount(this)
+!Increments the reference count.
+         implicit none
+         class(tens_resrc_t), intent(inout):: this !inout: tensor resource
+
+         this%ref_count=this%ref_count+1
+         return
+        end subroutine TensResrcIncrRefCount
+!---------------------------------------------
+        subroutine TensResrcDecrRefCount(this)
+!Decrements the reference count.
+         implicit none
+         class(tens_resrc_t), intent(inout):: this !inout: tensor resource
+
+         this%ref_count=this%ref_count-1
+         return
+        end subroutine TensResrcDecrRefCount
+!---------------------------------------
+        subroutine tens_resrc_dtor(this)
+         implicit none
+         type(tens_resrc_t):: this
+         integer(INTD):: errc
+
+         call this%free_buffer(errc)
+         if(errc.ne.0) call quit(errc,'#FATAL(TAVP-WRK:tens_resrc_dtor): Attempt to free a memory buffer which is still in use!')
+         return
+        end subroutine tens_resrc_dtor
+#if 0
+![tens_oprnd_t]=================================================
+        subroutine TensOprndCtor(this,tensor,ierr,tens_resource)
+!Constructs a tensor operand. The <tensor> must be set.
+!The associated tensor resource is optional and may still be empty.
+         implicit none
+         class(tens_oprnd_t), intent(inout):: this                            !inout: tensor operand
+         class(tens_rcrsv_t), target, intent(in):: tensor                     !in: tensor
+         integer(INTD), intent(out), optional:: ierr                          !out: error code
+         class(tens_resrc_t), target, intent(inout), optional:: tens_resource !in: local tensor resource, may still be empty
+         integer(INTD):: errc
+
+         errc=0
+         if(.not.this%is_active(errc)) then
+          if(errc.eq.DSVP_SUCCESS) then
+           if(tensor%is_set(errc)) then
+            if(errc.eq.TEREC_SUCCESS) then
+             this%tensor=>tensor
+             if(present(tens_resource)) then
+              call tens_resource%incr_ref_count()
+              this%resource=>tens_resource
+             endif
+             call this%mark_active(errc)
+             if(errc.ne.DSVP_SUCCESS) errc=-1
+            else
+             errc=-2
+            endif
+           else
+            errc=-3
+           endif
+          else
+           errc=-4
+          endif
+         else
+          errc=-5
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensOprndCtor
+!---------------------------------------------------------------
+        subroutine TensOprndSetResource(this,tens_resource,ierr)
+!Sets the resource component if it has not been set via constructor.
+         implicit none
+         class(tens_oprnd_t), intent(inout):: this                  !inout: active tensor operand
+         class(tens_resrc_t), target, intent(inout):: tens_resource !inout: tensor resource (may be empty)
+         integer(INTD), intent(out), optional:: ierr                !out: error code
+         integer(INTD):: errc
+
+         if(this%is_active(errc)) then
+          if(errc.eq.0) then
+           if(.not.associated(this%resource)) then
+            call tens_resource%incr_ref_count()
+            this%resource=>tens_resource
+           else
+            errc=-1
+           endif
+          else
+           errc=-2
+          endif
+         else
+          errc=-3
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensOprndSetResource
+!------------------------------------------------------------------
+        function TensOprndGetResource(this,ierr) result(resource_p)
+!Returns a pointer to the tensor resource.
+         implicit none
+         type(tens_resrc_t), pointer:: resource_p    !out: pointer to the tensor resource
+         class(tens_oprnd_t), intent(in):: this      !in: active tensor operand
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=0; resource_p=>this%resource
+         if(.not.associated(resource_p)) errc=-1
+         if(present(ierr)) ierr=errc
+         return
+        end function TensOprndGetResource
+!------------------------------------------------------------
+        function TensOprndGetTensor(this,ierr) result(tens_p)
+!Returns a pointer to the tensor.
+         implicit none
+         type(tens_rcrsv_t), pointer:: tens_p        !out: pointer to the tensor
+         class(tens_oprnd_t), intent(in):: this      !in: active tensor operand
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=0; tens_p=>this%tensor
+         if(.not.associated(tens_p)) errc=-1
+         if(present(ierr)) ierr=errc
+         return
+        end function TensOprndGetTensor
+!--------------------------------------------------
+        subroutine TensOprndSetTalshTens(this,ierr)
+!Sets up the TAL-SH tensor object for further processing with TAL-SH.
+!The local tensor body location is imported from the tensor resource.
+         implicit none
+         class(tens_oprnd_t), intent(inout):: this   !inout: active tensor operand
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc,nd,unres,lay,data_kind,dims(1:MAX_TENSOR_RANK)
+         integer(INTL):: dim_ext(1:MAX_TENSOR_RANK)
+         logical:: shpd,layd,locd
+         type(C_PTR):: mem_p
+         class(tens_rcrsv_t), pointer:: tens_p
+         class(tens_body_t), pointer:: body_p
+         class(tens_layout_t), pointer:: layout_p
+         class(tens_header_t), pointer:: header_p
+
+         if(this%is_active(errc)) then
+          if(errc.eq.0) then
+           if(talsh_tensor_is_empty(this%talsh_tens)) then
+            tens_p=>this%tensor
+            if(tens_p%is_set(errc,num_dims=nd,shaped=shpd,unresolved=unres,layed=layd,located=locd)) then
+             if((errc.eq.0).and.(unres.eq.0).and.shpd.and.layd) then
+              body_p=>tens_p%get_body(errc)
+              if(errc.eq.TEREC_SUCCESS) then
+               layout_p=>body_p%get_layout(errc)
+               if(errc.eq.TEREC_SUCCESS) then
+                lay=layout_p%get_layout_kind(errc)
+                if(errc.eq.TEREC_SUCCESS.and.lay.eq.TEREC_LAY_FDIMS) then
+                 data_kind=layout_p%get_data_type(errc)
+                 if(errc.eq.TEREC_SUCCESS) then
+                  if(.not.this%resource%is_empty()) then
+                   mem_p=this%resource%get_mem_ptr(errc)
+                   if(errc.eq.0) then
+                    header_p=>tens_p%get_header(errc)
+                    if(errc.eq.TEREC_SUCCESS) then
+                     call header_p%get_dims(dim_ext,nd,errc)
+                     if(errc.eq.TEREC_SUCCESS) then
+                      dims(1:nd)=dim_ext(1:nd)
+                      errc=talsh_tensor_construct(this%talsh_tens,data_kind,dims(1:nd),ext_mem=mem_p)
+                      if(errc.ne.TALSH_SUCCESS) errc=-14
+                     else
+                      errc=-13
+                     endif
+                    else
+                     errc=-12
+                    endif
+                    header_p=>NULL()
+                   else
+                    errc=-11
+                   endif
+                  else
+                   errc=-10
+                  endif
+                 else
+                  errc=-9
+                 endif
+                else
+                 errc=-8
+                endif
+               else
+                errc=-7
+               endif
+               layout_p=>NULL()
+              else
+               errc=-6
+              endif
+              body_p=>NULL()
+             else
+              errc=-5
+             endif
+            else
+             errc=-4
+            endif
+            tens_p=>NULL()
+           else
+            errc=-3
+           endif
+          else
+           errc=-2
+          endif
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensOprndSetTalshTens
+!--------------------------------------------------------
+        function TensOprndIsRemote(this,ierr) result(res)
+!Returns TRUE if the tensor operand is remote, FALSE otherwise.
+         implicit none
+         logical:: res                               !out: result
+         class(tens_oprnd_t), intent(in):: this      !in: tensor operand
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+         integer(INT_MPI):: host_proc_rank,mpi_comm,my_rank
+         class(tens_body_t), pointer:: body_p
+         class(tens_layout_t), pointer:: layout_p
+         class(DataDescr_t), pointer:: descr_p
+
+         errc=0
+         if(this%is_active()) then
+          body_p=>this%tensor%get_body(errc)
+          if(errc.eq.TEREC_SUCCESS.and.associated(body_p)) then
+           layout_p=>body_p%get_layout(errc)
+           if(errc.eq.TEREC_SUCCESS.and.associated(layout_p)) then
+            descr_p=>layout_p%get_data_descr(errc)
+            if(errc.eq.TEREC_SUCCESS.and.associated(descr_p)) then
+             if(descr_p%is_set(errc,host_proc_rank,mpi_comm)) then
+              if(errc.eq.0) then
+               call MPI_Comm_Rank(mpi_comm,my_rank,errc)
+               if(errc.eq.0) then
+                res=.not.(host_proc_rank.eq.my_rank)
+               else
+                errc=-1
+               endif
+              else
+               errc=-2
+              endif
+             else
+              errc=-3
+             endif
+            else
+             errc=-4
+            endif
+           else
+            errc=-5
+           endif
+          else
+           errc=-6
+          endif
+         else
+          errc=-7
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function TensOprndIsRemote
+!------------------------------------------------
+        subroutine TensOprndAcquireRsc(this,ierr)
+!Acquires local resources for the remote tensor operand.
+!If the resources have already been allocated, does nothing.
+!If the resource component is not set, an error will be returned.
+         implicit none
+         class(tens_oprnd_t), intent(inout):: this   !inout: tensor operand (with an associated resource component)
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+         integer(INTL):: buf_size
+         integer(INT_MPI):: host_proc_rank
+         class(tens_body_t), pointer:: body_p
+         class(tens_layout_t), pointer:: layout_p
+
+         errc=0
+         if(this%is_active()) then
+          if(associated(this%resource)) then
+           body_p=>this%tensor%get_body(errc)
+           if(errc.eq.TEREC_SUCCESS.and.associated(body_p)) then
+            layout_p=>body_p%get_layout(errc)
+            if(errc.eq.TEREC_SUCCESS.and.associated(layout_p)) then
+             if(layout_p%is_set(errc)) then
+              if(errc.eq.TEREC_SUCCESS) then
+               buf_size=layout_p%get_body_size(errc)
+               if(errc.eq.TEREC_SUCCESS.and.buf_size.gt.0_INTL) then
+                if(this%resource%is_empty()) then
+                 call this%resource%allocate_buffer(buf_size,errc); if(errc.ne.0) errc=-1
+                endif
+               else
+                errc=-2
+               endif
+              else
+               errc=-3
+              endif
+             else
+              errc=-4
+             endif
+            else
+             errc=-5
+            endif
+           else
+            errc=-6
+           endif
+          else
+           errc=-7
+          endif
+         else
+          errc=-8
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensOprndAcquireRsc
+!----------------------------------------------
+        subroutine TensOprndPrefetch(this,ierr)
+!Starts prefetching the (remote) tensor operand using the local tensor resource.
+!If the resource component has not been set, an error will be returned.
+!If the local resource has not been allocated, it will be allocated here.
+!If the tensor operand has been delivered before, does nothing.
+!If there is a pending communication on the tensor operand, returns an error.
+         implicit none
+         class(tens_oprnd_t), intent(inout):: this   !inout: tensor operand (with an associated resource component)
+         integer(INTD), intent(out), optional:: ierr !out: error code, may return TRY_LATER
+         integer(INTD):: errc
+         class(tens_body_t), pointer:: body_p
+         class(tens_layout_t), pointer:: layout_p
+         class(DataDescr_t), pointer:: descr_p
+         type(C_PTR):: cptr
+
+         if(.not.this%is_present(errc)) then
+          if(errc.eq.DSVP_SUCCESS) then
+           if(associated(this%resource)) then
+            body_p=>this%tensor%get_body(errc)
+            if(errc.eq.TEREC_SUCCESS.and.associated(body_p)) then
+             layout_p=>body_p%get_layout(errc)
+             if(errc.eq.TEREC_SUCCESS.and.associated(layout_p)) then
+              descr_p=>layout_p%get_data_descr(errc)
+              if(errc.eq.TEREC_SUCCESS.and.associated(descr_p)) then
+               if(descr_p%is_set(errc)) then
+                if(errc.eq.0) then
+                 if(this%resource%is_empty()) call this%acquire_rsc(errc)
+                 if(errc.eq.0) then
+                  if(this%get_comm_stat().eq.DS_OPRND_NO_COMM) then
+                   cptr=this%resource%base_addr
+                   call descr_p%get_data(cptr,errc,MPI_ASYNC_REQ)
+                   if(errc.ne.0.and.errc.ne.TRY_LATER) errc=-1
+                   if(errc.eq.0) then
+                    call this%set_comm_stat(DS_OPRND_FETCHING,errc); if(errc.ne.DSVP_SUCCESS) errc=-2
+                   endif
+                  else
+                   errc=-3
+                  endif
+                 else
+                  errc=-4
+                 endif
+                else
+                 errc=-5
+                endif
+               else
+                errc=-6
+               endif
+              else
+               errc=-7
+              endif
+             else
+              errc=-8
+             endif
+            else
+             errc=-9
+            endif
+           else
+            errc=-10
+           endif
+          else
+           errc=-11
+          endif
+         else
+          errc=-12
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensOprndPrefetch
+!--------------------------------------------
+        subroutine TensOprndUpload(this,ierr)
+!Starts uploading the (remote) tensor operand from the local tensor resource.
+!The tensor operand must be marked as delivered (present), even if it is local.
+!If there is a pending communication on the tensor operand, returns an error.
+         implicit none
+         class(tens_oprnd_t), intent(inout):: this   !inout: tensor operand
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+         class(tens_body_t), pointer:: body_p
+         class(tens_layout_t), pointer:: layout_p
+         class(DataDescr_t), pointer:: descr_p
+         type(C_PTR):: cptr
+
+         if(this%is_present(errc)) then !assumes that the local resource is allocated
+          if(errc.eq.DSVP_SUCCESS) then
+           body_p=>this%tensor%get_body(errc)
+           if(errc.eq.TEREC_SUCCESS.and.associated(body_p)) then
+            layout_p=>body_p%get_layout(errc)
+            if(errc.eq.TEREC_SUCCESS.and.associated(layout_p)) then
+             descr_p=>layout_p%get_data_descr(errc)
+             if(errc.eq.TEREC_SUCCESS.and.associated(descr_p)) then
+              if(descr_p%is_set(errc)) then
+               if(errc.eq.0) then
+                if(.not.this%resource%is_empty()) then !trap
+                 if(this%get_comm_stat().eq.DS_OPRND_NO_COMM) then
+                  cptr=this%resource%base_addr
+                  call descr_p%acc_data(cptr,errc,MPI_ASYNC_REQ)
+                  if(errc.ne.0.and.errc.ne.TRY_LATER) errc=-1
+                  if(errc.eq.0) then
+                   call this%set_comm_stat(DS_OPRND_UPLOADING,errc); if(errc.ne.DSVP_SUCCESS) errc=-2
+                  endif
+                 else
+                  errc=-3
+                 endif
+                else
+                 errc=-4
+                endif
+               else
+                errc=-5
+               endif
+              else
+               errc=-6
+              endif
+             else
+              errc=-7
+             endif
+            else
+             errc=-8
+            endif
+           else
+            errc=-9
+           endif
+          else
+           errc=-10
+          endif
+         else
+          errc=-11
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensOprndUpload
+!---------------------------------------------------------
+        function TensOprndSync(this,ierr,wait) result(res)
+!Synchronizes the pending prefetch/upload, either TEST or WAIT.
+!A successful synchronization on prefetch will mark the tensor operand
+!as delivered (present). A successful synchronization on upload will
+!not change the status of the tensor operand (which is present).
+         implicit none
+         logical:: res                               !out: TRUE on communication completion, FALSE otherwise
+         class(tens_oprnd_t), intent(inout):: this   !inout: tensor operand
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         logical, intent(in), optional:: wait        !in: TRUE activates WAIT instead of TEST synchronization (default)
+         integer(INTD):: errc,sts
+         class(tens_body_t), pointer:: body_p
+         class(tens_layout_t), pointer:: layout_p
+         class(DataDescr_t), pointer:: descr_p
+         logical:: tw
+
+         errc=0; res=.FALSE.
+         tw=.FALSE.; if(present(wait)) tw=wait
+         if(this%is_active()) then
+          body_p=>this%tensor%get_body(errc)
+          if(errc.eq.TEREC_SUCCESS.and.associated(body_p)) then
+           layout_p=>body_p%get_layout(errc)
+           if(errc.eq.TEREC_SUCCESS.and.associated(layout_p)) then
+            descr_p=>layout_p%get_data_descr(errc)
+            if(errc.eq.TEREC_SUCCESS.and.associated(descr_p)) then
+             if(descr_p%is_set(errc)) then
+              if(errc.eq.0) then
+               sts=this%get_comm_stat()
+               if(sts.ne.DS_OPRND_NO_COMM) then
+                if(tw) then
+                 call descr_p%wait_data(errc); if(errc.eq.0) then; res=.TRUE.; else; errc=-1; endif
+                else
+                 res=descr_p%test_data(errc); if(errc.ne.0) errc=-2
+                endif
+                if(sts.eq.DS_OPRND_FETCHING.and.res) then
+                 call this%mark_delivered(errc); if(errc.ne.0) errc=-3
+                endif
+               else
+                errc=-4
+               endif
+              else
+               errc=-5
+              endif
+             else
+              errc=-6
+             endif
+            else
+             errc=-7
+            endif
+           else
+            errc=-8
+           endif
+          else
+           errc=-9
+          endif
+         else
+          errc=-10
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function TensOprndSync
+!---------------------------------------------
+        subroutine TensOprndRelease(this,ierr)
+!Releases local tensor resources occupied by the tensor operand,
+!unless there are other active tensor operands sharing the same resource.
+!In the latter case, nothing will be done and no error raised.
+!Also, if the resource component is not set, nothing will be done either.
+         implicit none
+         class(tens_oprnd_t), intent(inout):: this   !inout: tensor operand
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+         logical:: delivered
+
+         errc=0
+         if(this%is_active(errc)) then
+          if(errc.eq.DSVP_SUCCESS) then
+           if(associated(this%resource)) then
+            if(this%get_comm_stat().ne.DS_OPRND_NO_COMM) then
+             delivered=this%sync(errc,wait=.TRUE.)
+             if(.not.delivered.or.errc.ne.DSVP_SUCCESS) errc=-1
+            endif
+            if(this%resource%ref_count.eq.1) then !only one (last) tensor operand is associated with this resource
+             call this%resource%free_buffer(errc); if(errc.ne.0) errc=-2
+            endif
+           endif
+          else
+           errc=-3
+          endif
+         else
+          if(errc.ne.DSVP_SUCCESS) errc=-4
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensOprndRelease
+!----------------------------------------------
+        subroutine TensOprndDestruct(this,ierr)
+!Destructs the tensor operand.
+         implicit none
+         class(tens_oprnd_t), intent(inout):: this   !inout: tensor operand
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc,ier
+         logical:: delivered
+
+         errc=0
+         if(this%is_active(errc)) then
+          if(errc.eq.DSVP_SUCCESS) then
+           if(this%get_comm_stat().ne.DS_OPRND_NO_COMM) then
+            delivered=this%sync(errc,wait=.TRUE.)
+            if(.not.delivered.or.errc.ne.DSVP_SUCCESS) errc=-1
+           endif
+           call this%mark_empty(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-2
+           if(.not.talsh_tensor_is_empty(this%talsh_tens)) then
+            ier=talsh_tensor_destruct(this%talsh_tens)
+            if(ier.ne.TALSH_SUCCESS.and.errc.eq.0) errc=-3
+           endif
+           if(associated(this%resource)) then
+            call this%resource%decr_ref_count()
+            this%resource=>NULL()
+           endif
+           this%tensor=>NULL()
+          else
+           errc=-4
+          endif
+         else
+          if(errc.ne.DSVP_SUCCESS) errc=-5
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensOprndDestruct
+!---------------------------------------
+        subroutine tens_oprnd_dtor(this)
+         implicit none
+         type(tens_oprnd_t):: this
+         integer(INTD):: errc
+
+         call this%destruct(errc)
+         if(errc.ne.0) call quit(errc,'#FATAL(TAVP-WRK:tens_oprnd_dtor): Destructor failed!')
+         return
+        end subroutine tens_oprnd_dtor
 ![tens_entry_wrk_t]==================================
         subroutine TensEntryWrkCtor(this,tensor,ierr)
 !Constructs a <tens_entry_wrk_t>.
@@ -1621,5 +2401,5 @@
           end subroutine decode_instr_contract
 
         end subroutine TAVPWorkerDecodeInstruction
-
+#endif
        end module tavp_worker

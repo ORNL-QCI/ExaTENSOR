@@ -1,6 +1,6 @@
 !Domain-specific virtual processor (DSVP): Abstract base module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/08/18
+!REVISION: 2017/08/29
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -65,7 +65,7 @@
         use dil_basic
         use timers
         use pack_prim, only: obj_pack_t
-        use gfc_base !contains OMP also
+        use gfc_base !contains OpenMP also
         use gfc_list
         implicit none
         private
@@ -239,6 +239,11 @@
          contains
           procedure(ds_decoder_decode_i), deferred, public:: decode !decoding procedure: Unpacks the raw byte packet (instruction bytecode) and constructs a domain-specific instruction
         end type ds_decoder_t
+ !Domain-specific encoder unit:
+        type, abstract, extends(ds_unit_t), public:: ds_encoder_t
+         contains
+          procedure(ds_encoder_encode_i), deferred, public:: encode !encoding procedure: Packs a domain-specific instruction into the raw byte packet (instruction bytecode)
+        end type ds_encoder_t
  !DSVP configuration (used in dsvp_t.configure()):
         type, abstract, public:: dsvp_conf_t
         end type dsvp_conf_t
@@ -251,13 +256,12 @@
          integer(INTL), private:: instr_processed=0_INTL   !total number of processed (retired) instructions (both successful and failed)
          integer(INTL), private:: instr_failed=0_INTL      !total number of retired failed instructions
          real(8), private:: time_start                     !start time stamp (sec): Set by .start()
-         character(:), allocatable, private:: description  !symbolic description of the DSVP: Set by .condfigure()
+         character(:), allocatable, private:: description  !symbolic description of the DSVP: Set by .configure()
          integer(INTD), private:: num_units=0                 !number of set DSVU in the DSVU table: [0..num_units-1]: Set by .configure()
          type(ds_unit_ref_t), allocatable, private:: units(:) !DSVU table (enumerated references to DSVU the DSVP is composed of): Set by .configure()
-         type(ds_microcode_t), allocatable, private:: microcode(:) !DS microcode bindings for each DS instruction code: [0..ISA_size-1]
+         type(ds_microcode_t), allocatable, private:: microcode(:) !DS microcode bindings for each DS instruction code: [0..ISA_size-1]: Set by .configure()
          contains
-          procedure(dsvp_ctor_i), deferred, public:: configure                   !configures DSVP: Allocates/configures DS units, allocates DSVU table, sets description, etc.
-          procedure(dsvp_instr_decode_i), deferred, public:: decode_instruction  !decoding procedure: Unpacks the raw byte packet (instruction bytecode) and constructs a domain-specific instruction
+          procedure(dsvp_ctor_i), deferred, public:: configure                   !configures DSVP: Allocates/configures DS units, allocates DSVU table, sets up microcode, sets description, etc.
           procedure, public:: start=>DSVPStart                                   !launches configured DSVP to its life cycle
           procedure, public:: shutdown=>DSVPShutdown                             !shuts down DSVP but keeps it configured
           procedure, public:: destroy=>DSVPDestroy                               !destroys DSVP completely
@@ -357,13 +361,21 @@
           integer(INTD), intent(out), optional:: ierr !out: error code
          end subroutine ds_unit_self_i
   !ds_decoder_t:
-         subroutine ds_decoder_decode_i(this,instr_packet,ds_instr,ierr)
+         subroutine ds_decoder_decode_i(this,ds_instr,instr_packet,ierr)
           import:: ds_decoder_t,ds_instr_t,obj_pack_t,INTD
-          class(ds_decoder_t), intent(inout):: this           !inout: DSVP
-          class(obj_pack_t), intent(inout):: instr_packet     !in: instruction byte packet (bytecode)
-          class(ds_instr_t), intent(inout), target:: ds_instr !out: decoded domain-specific instruction ready for DS pipeline
-          integer(INTD), intent(out), optional:: ierr         !out: error code
+          class(ds_decoder_t), intent(inout):: this               !inout: DS decoder unit
+          class(ds_instr_t), intent(inout), target:: ds_instr     !out: decoded domain-specific instruction ready for the DS pipeline
+          class(obj_pack_t), intent(inout), target:: instr_packet !in: instruction byte packet (bytecode)
+          integer(INTD), intent(out), optional:: ierr             !out: error code
          end subroutine ds_decoder_decode_i
+  !ds_encoder_t:
+         subroutine ds_encoder_encode_i(this,ds_instr,instr_packet,ierr)
+          import:: ds_encoder_t,ds_instr_t,obj_pack_t,INTD
+          class(ds_encoder_t), intent(inout):: this           !inout: DS encoder unit
+          class(ds_instr_t), intent(in), target:: ds_instr    !in: domain-specific instruction
+          class(obj_pack_t), intent(inout):: instr_packet     !out: instruction byte packet (bytecode)
+          integer(INTD), intent(out), optional:: ierr         !out: error code
+         end subroutine ds_encoder_encode_i
   !dsvp_t:
    !ctor:
          subroutine dsvp_ctor_i(this,conf,ierr)
@@ -439,6 +451,8 @@
         public ds_unit_self_i
  !ds_decoder_t:
         public ds_decoder_decode_i
+ !ds_encoder_t:
+        public ds_encoder_encode_i
  !dsvp_t:
         private DSVPStart
         private DSVPShutdown
@@ -457,7 +471,6 @@
         private DSVPSetStatus
         private DSVPStartTime
         public dsvp_ctor_i
-        public dsvp_instr_decode_i
 !IMPLEMENTATION:
        contains
 ![ds_oprnd_t]==========================================
@@ -1191,28 +1204,46 @@
 ![ds_unit_port_t]============================================
         function DSUnitPortAccept(this,new_list) result(ierr)
 !Accepts new DS instructions from other DS units in the current DS unit port.
-!The new DS instructions are stored by reference in the <new_list> and
+!The new DS instructions are assumed stored by reference in the <new_list> and
 !they will be moved into the port, thus leaving <new_list> empty at the end.
          implicit none
          integer(INTD):: ierr                        !out: error code
          class(ds_unit_port_t), intent(inout):: this !inout: DS unit port
-         type(list_bi_t), intent(inout):: new_list   !inout: list of new DS instructions for DS unit (from other DS units): List items are stored by reference
+         type(list_bi_t), intent(inout):: new_list   !inout: list of new DS instructions for the DS unit (from other DS units): List items are stored by reference
          type(list_iter_t):: ilist
+         integer(INTD):: errc
 
          ierr=DSVP_SUCCESS
-         !`Finish
+!$OMP CRITICAL (DSVU_PORT_LOCK)
+         errc=ilist%init(new_list)
+         if(errc.eq.GFC_SUCCESS) then
+          errc=ilist%move_list(this%iqueue); if(errc.ne.GFC_SUCCESS) ierr=DSVP_ERROR
+         else
+          ierr=DSVP_ERROR
+         endif
+         errc=ilist%release(); if(errc.ne.GFC_SUCCESS.and.ierr.eq.DSVP_SUCCESS) ierr=DSVP_ERROR
+!$OMP END CRITICAL (DSVU_PORT_LOCK)
          return
         end function DSUnitPortAccept
-!----------------------------------------------------------------
-        function DSUnitPortAbsorb(this,dsu_queue_it) result(ierr)
+!-----------------------------------------------------------------
+        function DSUnitPortAbsorb(this,dsvu_queue_it) result(ierr)
 !Absorbs new DS instructions from the DS unit port into the DS unit queue.
          implicit none
-         integer(INTD):: ierr                            !out: error code
-         class(ds_unit_port_t), intent(inout):: this     !inout: DS unit port
-         type(list_iter_t), intent(inout):: dsu_queue_it !inout: DS unit queue iterator
+         integer(INTD):: ierr                             !out: error code
+         class(ds_unit_port_t), intent(inout):: this      !inout: DS unit port
+         type(list_iter_t), intent(inout):: dsvu_queue_it !inout: DS unit queue iterator
+         integer(INTD):: errc
 
          ierr=DSVP_SUCCESS
-         !`Finish
+!$OMP CRITICAL (DSVU_PORT_LOCK)
+         errc=this%iqueue%reset()
+         if(errc.eq.GFC_SUCCESS) then
+          errc=this%iqueue%move_list(dsvu_queue_it)
+          if(errc.ne.GFC_SUCCESS) ierr=DSVP_ERROR
+         else
+          ierr=DSVP_ERROR
+         endif
+!$OMP END CRITICAL (DSVU_PORT_LOCK)
          return
         end function DSUnitPortAbsorb
 !-------------------------------------------------
@@ -1222,8 +1253,9 @@
          integer(INTD):: ierr                        !out: error code
          class(ds_unit_port_t), intent(inout):: this !inout: DS unit port
 
-         ierr=DSVP_SUCCESS
-         !`Finish
+!$OMP CRITICAL (DSVU_PORT_LOCK)
+         ierr=this%iqueue%delete_all()
+!$OMP END CRITICAL (DSVU_PORT_LOCK)
          return
         end function DSUnitPortFree
 !-----------------------------------------
@@ -1242,15 +1274,15 @@
 !DS instructions stored by reference will be emptied upon exit.
          implicit none
          integer(INTD):: ierr                      !out: error code
-         class(ds_unit_t), intent(inout):: this    !inout: DS unit
-         type(list_bi_t), intent(inout):: new_list !inout: list of new DS instructions for DS unit (from other DS units): List items are stored by reference
+         class(ds_unit_t), intent(inout):: this    !inout: DS unit whose port is being loaded
+         type(list_bi_t), intent(inout):: new_list !inout: list of new DS instructions for the DS unit (from other DS units): List items are stored by reference
 
          ierr=this%port%accept(new_list) !DS instructions (references) will be moved into the port
          return
         end function DSUnitLoadPort
 !--------------------------------------------------
         function DSUnitFlushPort(this) result(ierr)
-!Flushes the content of the port into the DS unit queue.
+!Flushes the content of the DS unit port into the DS unit queue.
          implicit none
          integer(INTD):: ierr                   !out: error code
          class(ds_unit_t), intent(inout):: this !inout: DS unit
@@ -1309,18 +1341,21 @@
           if(mthreads.ge.nthreads) then
 !$OMP PARALLEL DEFAULT(SHARED) NUM_THREADS(mthreads)
            if(omp_get_num_threads().ge.nthreads) then
+!$OMP MASTER
             call this%set_status(DSVP_STAT_ON,errc)
+!$OMP END MASTER
+!$OMP BARRIER
             if(errc.eq.DSVP_SUCCESS) then
              write(CONS_OUT,'("#MSG(dsvp_base:dsvp_t.start): Spawned ",i5," threads")') omp_get_num_threads() !debug
              tid=omp_get_thread_num()
              call this%units(tid)%unit_ref%start(errc)
             endif
-            call this%shutdown(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.DSVP_SUCCESS) errc=ier
            else
-            write(CONS_OUT,'("#FATAL(dsvp_base:dsvp_t.start): Unable to spawn ",i5," threads!")') mthreads
+            write(CONS_OUT,'("#FATAL(dsvp_base:dsvp_t.start): Unable to spawn ",i5," threads!")') nthreads
             errc=DSVP_ERR_RSC_EXCEEDED
            endif
 !$OMP END PARALLEL
+           call this%shutdown(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.DSVP_SUCCESS) errc=ier
           else
            write(CONS_OUT,'("#FATAL(dsvp_base:dsvp_t.start): Insufficient number of threads: ",i5," when need ",i5)')&
            &mthreads,nthreads
@@ -1334,7 +1369,7 @@
         end subroutine DSVPStart
 !-----------------------------------------
         subroutine DSVPShutdown(this,ierr)
-!Shuts down DSVP (shutsdown all DS units).
+!Shuts down DSVP.
          implicit none
          class(dsvp_t), intent(inout):: this         !inout: active DSVP becomes inactive but still configured
          integer(INTD), intent(out), optional:: ierr !out: error code
@@ -1348,7 +1383,7 @@
         end subroutine DSVPShutdown
 !----------------------------------------
         subroutine DSVPDestroy(this,ierr)
-!Destroys DSVP completely.
+!Destroys inactive DSVP completely.
          implicit none
          class(dsvp_t), intent(inout):: this         !inout: inactive DSVP
          integer(INTD), intent(out), optional:: ierr !out: error code
