@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Bi-directional linked list
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017-08-10 (started 2016-02-28)
+!REVISION: 2017-08-29 (started 2016-02-28)
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -86,7 +86,8 @@
           procedure, public:: append=>ListIterAppend               !inserts a new element either at the beginning or at the end of the container
           procedure, public:: insert_elem=>ListIterInsertElem      !inserts a new element at the current position of the container
           procedure, public:: insert_list=>ListIterInsertList      !inserts another linked list at the current position of the container
-!         generic, public:: insert=>insert_elem,insert_list        !generic (`Ambiguous)
+          procedure, public:: move_elem=>ListIterMoveElem          !moves a list element from one iterator to another
+          procedure, public:: move_list=>ListIterMoveList          !moves an entire list from one iterator to another
           procedure, public:: split=>ListIterSplit                 !splits the list into two parts at the current position
           procedure, public:: delete=>ListIterDelete               !deletes the list element in the current position
           procedure, public:: delete_sublist=>ListIterDeleteSublist!deletes all elements either prior or after the current iterator position
@@ -94,6 +95,7 @@
           procedure, public:: bookmark=>ListIterBookmark           !bookmarks the current iterator position
           procedure, public:: jump=>ListIterJump                   !jumps to a previously bookmarked iterator position
           procedure, public:: jump_=>ListIterJump_                 !PRIVATE: moves the iterator to a specified list element
+          procedure, private:: pop_=>ListIterPop_                  !PRIVATE: Pops up the element at the current iterator position without destroying it
         end type list_iter_t
 !INTERFACES:
 !VISIBILITY:
@@ -120,6 +122,8 @@
         private ListIterAppend
         private ListIterInsertElem
         private ListIterInsertList
+        private ListIterMoveElem
+        private ListIterMoveList
         private ListIterSplit
         private ListIterDelete
         private ListIterDeleteSublist
@@ -127,6 +131,7 @@
         private ListIterBookmark
         private ListIterJump
         private ListIterJump_
+        private ListIterPop_
 
        contains
 !IMPLEMENTATION:
@@ -831,6 +836,79 @@
          return
         end function ListIterInsertList
 !-------------------------------------------------------------------
+        function ListIterMoveElem(this,another,precede) result(ierr)
+!Moves a list element at the current iterator position into
+!another list iterator at its current position, either prior or after it.
+!Another iterator will shift to the just added element (prior or after).
+         implicit none
+         integer(INTD):: ierr                        !out: error code
+         class(list_iter_t), intent(inout):: this    !inout: source list iterator (from)
+         class(list_iter_t), intent(inout):: another !inout: destination list iterator (to)
+         logical, intent(in), optional:: precede     !in: if TRUE, the list element will be moved prior, otherwise after (default)
+         class(list_elem_t), pointer:: list_elem
+         logical:: before
+
+         before=.FALSE.; if(present(precede)) before=precede
+         ierr=this%get_status()
+         if(ierr.eq.GFC_IT_ACTIVE) then
+          ierr=another%get_status()
+          if(ierr.eq.GFC_IT_ACTIVE) then
+           list_elem=>this%pop_(ierr)
+           if(ierr.eq.GFC_SUCCESS) then
+            if(before) then
+             list_elem%prev_elem=>another%current%prev_elem
+             if(associated(list_elem%prev_elem)) list_elem%prev_elem%next_elem=>list_elem
+             list_elem%next_elem=>another%current
+             another%current%prev_elem=>list_elem
+             if(associated(another%current,another%container%first_elem)) another%container%first_elem=>list_elem
+            else
+             list_elem%next_elem=>another%current%next_elem
+             if(associated(list_elem%next_elem)) list_elem%next_elem%prev_elem=>list_elem
+             list_elem%prev_elem=>another%current
+             another%current%next_elem=>list_elem
+             if(associated(another%current,another%container%last_elem)) another%container%last_elem=>list_elem
+            endif
+            call another%jump_(list_elem); list_elem=>NULL()
+           endif
+          elseif(ierr.eq.GFC_IT_EMPTY) then !another iterator was empty
+           list_elem=>this%pop_(ierr)
+           if(ierr.eq.GFC_SUCCESS) then
+            another%container%first_elem=>list_elem
+            another%container%last_elem=>list_elem
+            call another%jump_(list_elem); list_elem=>NULL()
+           endif
+          else
+           ierr=GFC_INVALID_ARGS
+          endif
+         else
+          ierr=GFC_INVALID_REQUEST
+         endif
+         return
+        end function ListIterMoveElem
+!-----------------------------------------------------------
+        function ListIterMoveList(this,another) result(ierr)
+!Moves an entire list from one iterator to another by appending it
+!right after another list's current iterator position. Another
+!iterator will then move to the last appended element.
+         implicit none
+         integer(INTD):: ierr                        !out: error code
+         class(list_iter_t), intent(inout):: this    !inout: source list iterator (from)
+         class(list_iter_t), intent(inout):: another !inout: destination list iterator (to)
+
+         ierr=another%get_status()
+         if(ierr.eq.GFC_IT_ACTIVE.or.ierr.eq.GFC_IT_EMPTY) then
+          ierr=this%reset(); ierr=this%get_status()
+          do while(ierr.eq.GFC_IT_ACTIVE)
+           ierr=this%move_elem(another); if(ierr.ne.GFC_SUCCESS) exit
+           ierr=this%get_status()
+          enddo
+          if(ierr.eq.GFC_IT_EMPTY) ierr=GFC_SUCCESS
+         else
+          ierr=GFC_INVALID_ARGS
+         endif
+         return
+        end function ListIterMoveList
+!-------------------------------------------------------------------
         function ListIterSplit(this,new_list,keep_tail) result(ierr)
 !Splits the list into two parts at the current iterator position.
 !Depending on <keep_tail>, either the top or the bottom part will
@@ -1078,5 +1156,38 @@
          endif
          return
         end subroutine ListIterJump_
+!----------------------------------------------------
+        function ListIterPop_(this,ierr) result(elem)
+!Pops up the element at the current iterator position without destroying it.
+         implicit none
+         class(list_elem_t), pointer:: elem          !out: owning pointer to the current element (detached from the list)
+         class(list_iter_t), intent(inout):: this    !inout: list iterator
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         elem=>NULL(); errc=this%get_status()
+         if(errc.eq.GFC_IT_ACTIVE) then
+          errc=GFC_SUCCESS; elem=>this%current
+          if(associated(elem,this%container%first_elem)) then
+           if(.not.associated(elem,this%container%last_elem)) then
+            this%container%first_elem=>elem%next_elem
+            call this%jump_(elem%next_elem)
+           else
+            this%container%first_elem=>NULL(); this%container%last_elem=>NULL()
+            call this%jump_(NULL()); errc=this%reset()
+           endif
+          else
+           if(associated(elem,this%container%last_elem)) this%container%last_elem=>elem%prev_elem
+           call this%jump_(elem%prev_elem)
+          endif
+          if(associated(elem%prev_elem)) elem%prev_elem%next_elem=>elem%next_elem
+          if(associated(elem%next_elem)) elem%next_elem%prev_elem=>elem%prev_elem
+          elem%prev_elem=>NULL(); elem%next_elem=>NULL()
+         else
+          errc=GFC_INVALID_REQUEST
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function ListIterPop_
 
        end module gfc_list
