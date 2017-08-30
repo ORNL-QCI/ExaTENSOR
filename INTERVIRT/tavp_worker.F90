@@ -92,7 +92,6 @@
           procedure, public:: get_resource=>TensEntryWrkGetResource   !returns a pointer to the resource
           final:: tens_entry_wrk_dtor                                 !dtor
         end type tens_entry_wrk_t
-#if 0
  !Tensor instruction (realization of a tensor operation for a specific TAVP):
         type, extends(ds_instr_t), private:: tens_instr_t
          type(talsh_task_t), private:: talsh_task                   !TAL-SH task
@@ -102,6 +101,7 @@
           procedure, public:: encode=>TensInstrEncode               !encoding procedure: Packs the TAVP instruction into a raw byte packet (bytecode)
           final:: tens_instr_dtor                                   !dtor
         end type tens_instr_t
+#if 0
  !TAVP-WRK decoder:
         type, extends(ds_decoder_t), private:: tavp_wrk_decoder_t
          type(tens_cache_t), private:: tens_cache                   !tensor argument cache
@@ -125,12 +125,14 @@
           procedure, public:: configure=>TAVPWRKConfigure !configures the TAVP-WRK DSVP
         end type tavp_wrk_t
 #endif
+!MODULE DATA:
+ !TAVP-WRK microcode table:
+        type(ds_microcode_t), private:: microcode(0:TAVP_ISA_SIZE-1)
 !VISIBILITY:
  !non-member test/debug:
         private test_carma
  !non-member control:
         private tavp_worker_set_host_buf_size
-#if 0
  !non-member TAVP microcode implementation:
         private acquire_resource_dummy
         private acquire_resource_basic
@@ -151,7 +153,6 @@
         private execute_tensor_destroy
         private execute_tensor_contract
         private init_microcode
-#endif
  !tens_resrc_t:
         private TensResrcIsEmpty
         private TensResrcAllocateBuffer
@@ -180,11 +181,11 @@
         private TensEntryWrkGetResource
         public tens_entry_wrk_dtor
         public tens_entry_wrk_alloc
-#if 0
  !tens_instr_t:
         private TensInstrCtor
         private TensInstrEncode
         public tens_instr_dtor
+#if 0
  !tavp_wrk_decoder_t:
         private TAVPWRKDecoderStart
         private TAVPWRKDecoderShutdown
@@ -615,7 +616,6 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine tavp_worker_set_host_buf_size
-#if 0
 ![non-member:Microcode Implementation]==============
         subroutine acquire_resource_dummy(this,ierr)
 !Dummy procedure for acquiring no resource.
@@ -658,7 +658,7 @@
            endif
            n=n-1
           enddo
-          if(errc.ne.0.and.errc.ne.TRY_LATER) call this%release_resource(n) !n is error code here
+          if(errc.ne.0.and.errc.ne.TRY_LATER) call this%release_resource(ier)
          else
           errc=-1
          endif
@@ -695,7 +695,7 @@
             call oprnd%prefetch(ier)
             if(ier.ne.0.and.errc.eq.0) errc=-3
            else
-            if(errc.eq.0) errc=-2
+            errc=-2; exit
            endif
           enddo
          else
@@ -847,15 +847,17 @@
            oprnd=>this%get_operand(n,ier)
            if(ier.eq.DSVP_SUCCESS) then
             call oprnd%release(ier)
-            if(ier.ne.0.and.errc.eq.0) errc=-4
+            if(ier.ne.0.and.errc.eq.0) errc=-5
            else
-            if(errc.eq.0) errc=-3
+            if(errc.eq.0) errc=-4
            endif
           enddo
           select type(this)
           class is(tens_instr_t)
            ier=talsh_task_destruct(this%talsh_task)
-           if(ier.ne.TALSH_SUCCESS.and.errc.eq.0) errc=-2
+           if(ier.ne.TALSH_SUCCESS.and.errc.eq.0) errc=-3
+          class default
+           if(errc.eq.0) errc=-2
           end select
          else
           errc=-1
@@ -897,9 +899,11 @@
            res=(errc.eq.TALSH_SUCCESS.and.(sts.eq.TALSH_TASK_COMPLETED.or.sts.eq.TALSH_TASK_ERROR))
           else !TEST
            ans=talsh_task_complete(this%talsh_task,sts,errc)
-           res=(ans.eq.YEP.and.errc.eq.0)
+           res=(ans.eq.YEP.and.errc.eq.TALSH_SUCCESS)
           endif
-          if(sts.eq.TALSH_TASK_ERROR.and.errc.eq.0) errc=-1
+          if(sts.eq.TALSH_TASK_ERROR.and.errc.eq.0) errc=-2
+         class default
+          errc=-1
          end select
          if(present(ierr)) ierr=errc
          return
@@ -1812,7 +1816,6 @@
          allocate(tens_entry_wrk_t::tens_entry,STAT=ierr)
          return
         end function tens_entry_wrk_alloc
-#if 0
 ![tens_instr_t]============================================
         subroutine TensInstrCtor(this,op_code,ierr,op_spec)
 !Constructs a tensor instruction from a given tensor operation.
@@ -1820,7 +1823,7 @@
 !for a specific TAVP kind.
          implicit none
          class(tens_instr_t), intent(inout):: this        !out: tensor instruction (must be empty on entrance)
-         integer(INTD), intent(in):: op_code              !in: instruction code (see top)
+         integer(INTD), intent(in):: op_code              !in: instruction code (see top of this module)
          integer(INTD), intent(out), optional:: ierr      !out: error code
          class(*), intent(in), target, optional:: op_spec !in: formal operation specification
          integer(INTD):: errc
@@ -1836,15 +1839,15 @@
            case(TAVP_INSTR_CONTRACT)
             call construct_instr_contract(errc); if(errc.ne.0) errc=-5
            case default
-            errc=-4 !invalid operation (or not implemented)
+            errc=-4 !invalid instruction code (or not implemented)
            end select
 !Activate the instruction:
            if(errc.eq.0) then
             call this%activate(op_code,microcode(op_code),errc); if(errc.ne.0) errc=-3
            else
-            call this%set_status(DS_INSTR_RETIRED,errc,-1)
-            call tens_instr_dtor(this)
+            call this%set_status(DS_INSTR_RETIRED,errc,TAVP_ERR_GEN_FAILURE)
            endif
+           if(errc.ne.0) call tens_instr_dtor(this)
           else
            errc=-2
           endif
@@ -1864,8 +1867,7 @@
           class(tens_oprnd_t), pointer:: tens_oprnd
           class(tens_rcrsv_t), pointer:: tensor
 
-          jerr=0
-          tensor=>NULL()
+          jerr=0; tensor=>NULL()
           select type(op_spec); class is(tens_rcrsv_t); tensor=>op_spec; end select
           if(associated(tensor)) then
            if(tensor%is_set()) then
@@ -1878,10 +1880,10 @@
                oprnd=>tens_oprnd
                call this%set_operand(0,oprnd,jerr)
                if(jerr.ne.DSVP_SUCCESS) jerr=-6
+               oprnd=>NULL() !<oprnd> pointer was saved in the tensor instruction and will later be deallocated
               else
                jerr=-5
               endif
-              oprnd=>NULL() !<oprnd> pointer was saved in the tensor instruction and will later be deallocated
               tens_oprnd=>NULL()
              else
               jerr=-4
@@ -1912,8 +1914,7 @@
           class(tens_rcrsv_t), pointer:: tensor
           class(tens_oprnd_t), pointer:: tens_oprnd
 
-          jerr=0
-          tens_contr=>NULL()
+          jerr=0; tens_contr=>NULL()
           select type(op_spec); class is(tens_contraction_t); tens_contr=>op_spec; end select
           if(associated(tens_contr)) then
            if(tens_contr%is_set()) then
@@ -1924,7 +1925,7 @@
               call tens_contr_ctrl%ctrl_tens_contr_ctor(contr_ptrn,jerr,tens_contr%get_prefactor()) !contraction pattern is cloned by value
               if(jerr.eq.0) then
                instr_ctrl=>tens_contr_ctrl
-               call this%set_control(instr_ctrl,jerr)
+               call this%set_control(instr_ctrl,jerr) !ownership transfer for instr_ctrl=tens_contr_ctrl
                if(jerr.eq.DSVP_SUCCESS) then
                 call this%alloc_operands(3,jerr)
                 if(jerr.eq.DSVP_SUCCESS) then
@@ -1932,8 +1933,7 @@
                   tensor=>tens_contr%get_argument(jj,jerr); if(jerr.ne.TEREC_SUCCESS) exit
                   allocate(tens_oprnd,STAT=jerr); if(jerr.ne.0) exit
                   call tens_oprnd%tens_oprnd_ctor(tensor,jerr); if(jerr.ne.0) exit
-                  oprnd=>tens_oprnd
-                  call this%set_operand(jj,oprnd,jerr); if(jerr.ne.DSVP_SUCCESS) exit
+                  oprnd=>tens_oprnd; call this%set_operand(jj,oprnd,jerr); if(jerr.ne.DSVP_SUCCESS) exit !ownership transfer for oprnd=tens_oprnd
                   tensor=>NULL(); tens_oprnd=>NULL(); oprnd=>NULL() !<oprnd> pointer was saved in the tensor instruction and will later be deallocated
                  enddo
                 else
@@ -1949,10 +1949,10 @@
              else
               jerr=-4
              endif
-             contr_ptrn=>NULL()
             else
              jerr=-3
             endif
+            contr_ptrn=>NULL()
            else
             jerr=-2
            endif
@@ -2088,12 +2088,13 @@
          sts=this%get_status(errc)
          if((sts.eq.DS_INSTR_EMPTY.or.sts.eq.DS_INSTR_RETIRED).and.errc.eq.DSVP_SUCCESS) then
           call this%clean(errc)
-          if(errc.ne.0) call quit(errc,'#FATAL(tavp_worker:tens_instr_dtor): Tensor instruction destruction failed!')
+          if(errc.ne.0) call quit(errc,'#FATAL(TAVP-WRK:tens_instr_dtor): Tensor instruction destruction failed!')
          else
-          call quit(-1,'#FATAL(tavp_worker:tens_instr_dtor): Attempt to destroy an active TAVP instruction!')
+          call quit(-1,'#FATAL(TAVP-WRK:tens_instr_dtor): Attempt to destroy an active TAVP instruction!')
          endif
          return
         end subroutine tens_instr_dtor
+#if 0
 ![tavp_worker_t]=============================
         subroutine TAVPWorkerStart(this,ierr)
 !Initializes TAVP "Worker".

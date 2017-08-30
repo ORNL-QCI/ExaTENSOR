@@ -1,6 +1,6 @@
 !Domain-specific virtual processor (DSVP): Abstract base module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/08/29
+!REVISION: 2017/08/30
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -255,11 +255,11 @@
          integer(INTL), private:: instr_received=0_INTL    !total number of received domain-specific instructions
          integer(INTL), private:: instr_processed=0_INTL   !total number of processed (retired) instructions (both successful and failed)
          integer(INTL), private:: instr_failed=0_INTL      !total number of retired failed instructions
-         real(8), private:: time_start                     !start time stamp (sec): Set by .start()
-         character(:), allocatable, private:: description  !symbolic description of the DSVP: Set by .configure()
-         integer(INTD), private:: num_units=0                 !number of set DSVU in the DSVU table: [0..num_units-1]: Set by .configure()
-         type(ds_unit_ref_t), allocatable, private:: units(:) !DSVU table (enumerated references to DSVU the DSVP is composed of): Set by .configure()
-         type(ds_microcode_t), allocatable, private:: microcode(:) !DS microcode bindings for each DS instruction code: [0..ISA_size-1]: Set by .configure()
+         type(ds_microcode_t), pointer, private:: microcode(:) !pointer to DS microcode bindings for each DS instruction code: [0..ISA_size-1]: Set by .configure()
+         character(:), allocatable, private:: description      !symbolic description of the DSVP: Set by .configure()
+         type(ds_unit_ref_t), allocatable, private:: units(:)  !DSVU table (enumerated references to DSVU the DSVP is composed of): Set by .configure()
+         integer(INTD), private:: num_units=0                  !number of set DSVU in the DSVU table: [0..num_units-1]: Set by .configure()
+         real(8), private:: time_start                         !start time stamp (sec): Set by .start()
          contains
           procedure(dsvp_ctor_i), deferred, public:: configure                   !configures DSVP: Allocates/configures DS units, allocates DSVU table, sets up microcode, sets description, etc.
           procedure, public:: start=>DSVPStart                                   !launches configured DSVP to its life cycle
@@ -1393,12 +1393,9 @@
 
          errc=DSVP_SUCCESS
          if(this%get_status(errc).eq.DSVP_STAT_OFF) then
+          this%microcode=>NULL()
           if(allocated(this%description)) then
            deallocate(this%description,STAT=ier)
-           if(ier.ne.0.and.errc.eq.DSVP_SUCCESS) errc=DSVP_ERR_MEM_FREE_FAIL
-          endif
-          if(allocated(this%microcode)) then
-           deallocate(this%microcode,STAT=ier)
            if(ier.ne.0.and.errc.eq.DSVP_SUCCESS) errc=DSVP_ERR_MEM_FREE_FAIL
           endif
           if(allocated(this%units)) then
