@@ -180,6 +180,7 @@ int test_tensor_expression(){
  vol = tens0.getVolume();
  std::shared_ptr<TensDataType> body0(new TensDataType[vol], [](TensDataType * p){delete[] p;});
  tensnet1.setOutputBody(body0);
+ std::cout << std::endl << "Tensor network to be evaluated:" << std::endl; tensnet1.printIt();
 
  ContractionSequence contrSeq;
  int error_code = tensnet1.evaluate(contrSeq);

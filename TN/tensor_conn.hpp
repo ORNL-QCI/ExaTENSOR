@@ -1,7 +1,7 @@
 /** C++ adapters for ExaTENSOR: Tensor connected to other tensors
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/08/28
+!REVISION: 2017/08/30
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -76,8 +76,11 @@ public:
 
 //Mutators:
  /** Associates the tensor with an externally provided tensor body.
-     Will fail if the tensor body is already present (defined). **/
+     Will fail if the tensor body is already present (defined).
+     The new body may be null. **/
  void setBody(const std::shared_ptr<T> body);
+ /** Reassociates the tensor with another body. The new body may be null. **/
+ void resetBody(const std::shared_ptr<T> body);
  /** Resets connection (leg). **/
  void resetConnection(const unsigned int legId, const TensorLeg & tensorLeg);
  /** Deletes the specified tensor dimension. **/

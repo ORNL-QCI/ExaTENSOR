@@ -1,7 +1,7 @@
 /** C++ adapters for ExaTENSOR: Tensor network
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/08/28
+!REVISION: 2017/08/30
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -154,7 +154,7 @@ void TensorNetwork<T>::appendTensor(const TensorDenseAdpt<T> & tensor, //in: ten
   //delete and shift other output tensor dimensions:
   if(numLegs > 0){
    unsigned int numDeleted=0;
-   for(unsigned int i=0; i < outTensorRank; ++i){
+   for(unsigned int i = 0; i < outTensorRank; ++i){
     const auto j = i - numDeleted;
     const auto & ouLeg = outTensor.getTensorLeg(j); //leg of the output tensor
     const auto tnTensorId = ouLeg.getTensorId();
@@ -222,6 +222,17 @@ void TensorNetwork<T>::setOutputBody(const std::shared_ptr<T> body)
  return;
 }
 
+/** Resets the body of an arbitrary tensor. The new body may be null. **/
+template <typename T>
+void TensorNetwork<T>::resetTensorBody(const unsigned int tensId, const std::shared_ptr<T> body)
+{
+#ifdef _DEBUG_DIL
+ assert(tensId < Tensors.size());
+#endif
+ Tensors[tensId].resetBody(body);
+ return;
+}
+
 //Transforms:
 
 /** Contracts two tensors in a given tensor network. Always the tensor with a smaller id will be replaced
@@ -270,7 +281,7 @@ void TensorNetwork<T>::contractTensors(unsigned int tensId1, //in: id of the 1st
   }
  }
  rank2 = tensor2.getTensorRank(); //updated rank of the 2nd tensor
- //Append legs of the 2nd tensor to the 1st tensor:
+ //Append uncontracted legs of the 2nd tensor to the 1st tensor:
  for(unsigned int i = 0; i < rank2; ++i){
   const auto & leg = tensor2.getTensorLeg(i);
   const auto connTensId = leg.getTensorId();
