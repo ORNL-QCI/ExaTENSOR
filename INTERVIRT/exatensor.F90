@@ -1,7 +1,7 @@
 !ExaTENSOR: Massively Parallel Virtual Processor for Scale-Adaptive Hierarchical Tensor Algebra
 !This is the top level API module of ExaTENSOR (user-level API)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017/08/18
+!REVISION: 2017/08/29
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -223,11 +223,11 @@
         if(process_role.eq.EXA_DRIVER) then
          return !interpreter process returns immediately
         elseif(process_role.eq.EXA_MANAGER) then
-         !allocate(tavp_manager_t::tavp)
+         !allocate(tavp_mng_t::tavp)
          !call tavp%start(ierr) !will later call .shutdown()
         elseif(process_role.eq.EXA_WORKER) then
-         allocate(tavp_worker_t::tavp)
-         call tavp%start(ierr) !will later call .shutdown()
+         !allocate(tavp_wrk_t::tavp)
+         !call tavp%start(ierr) !will later call .shutdown()
         endif
 !Mark ExaTENSOR runtime is off:
         exatns_rt_status=exatns_rt_status_t(DSVP_STAT_OFF,ierr,0)

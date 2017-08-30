@@ -283,11 +283,12 @@
  !Abstract:
         abstract interface
   !ds_resrc_t:
-         function ds_resrc_query_i(this) result(ans)
-          import:: ds_resrc_t
+         function ds_resrc_query_i(this,ierr) result(ans)
+          import:: ds_resrc_t,INTD
           implicit none
           logical:: ans                               !out: answer
           class(ds_resrc_t), intent(in):: this        !in: domain-specific resource
+          integer(INTD), intent(out), optional:: ierr !out: error code
          end function ds_resrc_query_i
   !ds_oprnd_t:
    !self:

@@ -60,28 +60,28 @@
           procedure, private:: decr_ref_count=>TensResrcDecrRefCount   !decrements the reference count
           final:: tens_resrc_dtor                                      !dtor
         end type tens_resrc_t
-#if 0
  !Tensor operand (encapsulated tensor data processible by a specific TAVP):
         type, extends(ds_oprnd_t), private:: tens_oprnd_t
          class(tens_rcrsv_t), pointer, private:: tensor=>NULL()   !non-owning pointer to a persistent recursive tensor
          class(tens_resrc_t), pointer, private:: resource=>NULL() !non-owning pointer to a persistent local tensor resource
          type(talsh_tens_t), private:: talsh_tens                 !TAL-SH tensor object (for performing actual computations)
          contains
-          procedure, private:: TensOprndCtor                    !ctor
+          procedure, private:: TensOprndCtor                        !ctor
           generic, public:: tens_oprnd_ctor=>TensOprndCtor
-          procedure, public:: set_resource=>TensOprndSetResource!sets the resource component if it has not been set via constructor
-          procedure, public:: get_resource=>TensOprndGetResource!returns a pointer to the tensor resource
-          procedure, public:: get_tensor=>TensOprndGetTensor    !returns a pointer to the tensor
+          procedure, public:: set_resource=>TensOprndSetResource    !sets the resource component if it has not been set via the constructor
+          procedure, public:: get_resource=>TensOprndGetResource    !returns a pointer to the tensor resource
+          procedure, public:: get_tensor=>TensOprndGetTensor        !returns a pointer to the tensor
           procedure, public:: set_talsh_tens=>TensOprndSetTalshTens !sets up the TAL-SH tensor object for further processing with TAL-SH
-          procedure, public:: is_remote=>TensOprndIsRemote      !returns TRUE if the tensor operand is remote
-          procedure, public:: acquire_rsc=>TensOprndAcquireRsc  !explicitly acquires local resources for the tensor operand
-          procedure, public:: prefetch=>TensOprndPrefetch       !starts prefetching the remote tensor operand (acquires local resources!)
-          procedure, public:: upload=>TensOprndUpload           !starts uploading the tensor operand to its remote location
-          procedure, public:: sync=>TensOprndSync               !synchronizes the currently pending communication on the tensor operand
-          procedure, public:: release=>TensOprndRelease         !destroys the present local copy of the tensor operand (releases local resources!), but the operand stays defined
-          procedure, public:: destruct=>TensOprndDestruct       !performs complete destruction back to an empty state
-          final:: tens_oprnd_dtor                               !dtor
+          procedure, public:: is_remote=>TensOprndIsRemote          !returns TRUE if the tensor operand is remote
+          procedure, public:: acquire_rsc=>TensOprndAcquireRsc      !explicitly acquires local resources for the tensor operand
+          procedure, public:: prefetch=>TensOprndPrefetch           !starts prefetching the remote tensor operand (acquires local resources!)
+          procedure, public:: upload=>TensOprndUpload               !starts uploading the tensor operand to its remote location
+          procedure, public:: sync=>TensOprndSync                   !synchronizes the currently pending communication on the tensor operand
+          procedure, public:: release=>TensOprndRelease             !destroys the present local copy of the tensor operand (releases local resources!), but the operand stays defined
+          procedure, public:: destruct=>TensOprndDestruct           !performs complete destruction back to an empty state
+          final:: tens_oprnd_dtor                                   !dtor
         end type tens_oprnd_t
+#if 0
  !Tensor argument cache entry (TAVP-specific):
         type, extends(tens_cache_entry_t), private:: tens_entry_wrk_t
          type(tens_resrc_t), private:: resource                       !tensor resource
@@ -128,6 +128,7 @@
         private test_carma
  !non-member control:
         private tavp_worker_set_host_buf_size
+#if 0
  !non-member TAVP microcode implementation:
         private acquire_resource_dummy
         private acquire_resource_basic
@@ -147,7 +148,6 @@
         private execute_tensor_create
         private execute_tensor_destroy
         private execute_tensor_contract
-#if 0
         private init_microcode
 #endif
  !tens_resrc_t:
@@ -159,7 +159,6 @@
         private TensResrcIncrRefCount
         private TensResrcDecrRefCount
         public tens_resrc_dtor
-#if 0
  !tens_oprnd_t:
         private TensOprndCtor
         private TensOprndSetResource
@@ -174,6 +173,7 @@
         private TensOprndRelease
         private TensOprndDestruct
         public tens_oprnd_dtor
+#if 0
  !tens_entry_wrk_t:
         private TensEntryWrkCtor
         private TensEntryWrkGetResource
@@ -210,6 +210,7 @@
          integer(INTD):: num_procs,num_blocks,i,j,k,l,n,lid,rid
          integer(INTD):: dsg(1:TENS_RANK),lsg(1:TENS_RANK),rsg(1:TENS_RANK)
          integer(INTL):: tg
+         type(DistrSpace_t):: tavp_addr_space
          type(DataDescr_t):: dd,ld,rd
          type(DataDescr_t), allocatable:: ddes(:),ldes(:),rdes(:)
          type(DataDescr_t), allocatable:: ddesa(:),ldesa(:),rdesa(:) !root only
@@ -228,6 +229,8 @@
          if(ierr.ne.0) call quit(-1,'Bad CARMA!')
          if(mod(TOTAL_BLOCKS,num_procs).ne.0) call quit(-2,'Bad CARMA!')
          num_blocks=TOTAL_BLOCKS/num_procs !number of tensor blocks per process
+         call tavp_addr_space%create(role_comm,TAVP_WORKER_NUM_WINS,'WorkAddressSpace',ierr)
+         if(ierr.ne.0) call quit(-3,'Bad CARMA!')
 !Create <num_blocks> tensor blocks on each process:
  !Destination tensor:
          allocate(dtens(0:BLOCK_VOL*num_blocks-1)); allocate(ddes(0:num_blocks-1))
@@ -478,6 +481,8 @@
          enddo
          if(allocated(ddesa)) deallocate(ddesa)
          deallocate(ddes); deallocate(dtens)
+         call tavp_addr_space%destroy(ierr)
+         if(ierr.ne.0) call quit(-105,'Bad CARMA!')
          return
 
         contains
@@ -607,6 +612,7 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine tavp_worker_set_host_buf_size
+#if 0
 ![non-member:Microcode Implementation]==============
         subroutine acquire_resource_dummy(this,ierr)
 !Dummy procedure for acquiring no resource.
@@ -1003,7 +1009,6 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine execute_tensor_contract
-#if 0
 !--------------------------------------
         subroutine init_microcode(ierr)
 !Initializes the global table of TAVP microcode bindings when configuring TAVP.
@@ -1048,14 +1053,16 @@
          return
         end subroutine init_microcode
 #endif
-!tens_resrc_t]=====================================
-        function TensResrcIsEmpty(this) result(ans)
-!Returns TRUE if the tensor resource is empty.
+!tens_resrc_t]==========================================
+        function TensResrcIsEmpty(this,ierr) result(ans)
+!Returns TRUE if the tensor resource is empty (unacquired).
          implicit none
-         logical:: ans                          !out: answer
-         class(tens_resrc_t), intent(in):: this !in: tensor resource
+         logical:: ans                               !out: answer
+         class(tens_resrc_t), intent(in):: this      !in: tensor resource
+         integer(INTD), intent(out), optional:: ierr !out: error code
 
          ans=(this%bytes.le.0_C_SIZE_T)
+         if(present(ierr)) ierr=0
          return
         end function TensResrcIsEmpty
 !---------------------------------------------------------------------------
@@ -1071,8 +1078,7 @@
          integer(C_INT):: in_buf,dev
          type(C_PTR):: addr
 
-         errc=0
-         if(this%is_empty()) then
+         if(this%is_empty(errc)) then
           if(bytes.gt.0_INTL) then
            in_buf=NOPE; if(present(in_buffer)) then; if(in_buffer) in_buf=YEP; endif
            dev=talsh_flat_dev_id(DEV_HOST,0); if(present(dev_id)) dev=dev_id
@@ -1102,8 +1108,7 @@
          integer(INTD), intent(out), optional:: ierr  !out: error code
          integer(INTD):: errc
 
-         errc=0
-         if(.not.this%is_empty()) then !free only allocated resources
+         if(.not.this%is_empty(errc)) then !free only allocated resources
           if(this%ref_count.eq.0) then
            errc=mem_free(this%dev_id,this%base_addr)
            if(errc.eq.0) then
@@ -1131,8 +1136,8 @@
          integer(INTL), intent(out), optional:: bytes !out: number of bytes
          integer(INTD):: errc
 
-         errc=0; mem_p=C_NULL_PTR
-         if(.not.this%is_empty()) then
+         mem_p=C_NULL_PTR
+         if(.not.this%is_empty(errc)) then
           mem_p=this%base_addr
           if(present(bytes)) bytes=this%bytes
          else
@@ -1144,15 +1149,15 @@
         end function TensResrcGetMemPtr
 !------------------------------------------------------------
         function TensResrcGetMemSize(this,ierr) result(bytes)
-!Returns the size of the memory buffer in bytes.
+!Returns the size of the resource memory buffer in bytes.
          implicit none
          integer(INTL):: bytes                       !out: size in bytes
          class(tens_resrc_t), intent(in):: this      !in: tensor resource
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
 
-         if(.not.this%is_empty()) then
-          bytes=this%bytes; errc=0
+         if(.not.this%is_empty(errc)) then
+          bytes=this%bytes
          else
           bytes=0_INTL; errc=-1
          endif
@@ -1187,19 +1192,17 @@
          if(errc.ne.0) call quit(errc,'#FATAL(TAVP-WRK:tens_resrc_dtor): Attempt to free a memory buffer which is still in use!')
          return
         end subroutine tens_resrc_dtor
-#if 0
 ![tens_oprnd_t]=================================================
         subroutine TensOprndCtor(this,tensor,ierr,tens_resource)
 !Constructs a tensor operand. The <tensor> must be set.
 !The associated tensor resource is optional and may still be empty.
          implicit none
-         class(tens_oprnd_t), intent(inout):: this                            !inout: tensor operand
-         class(tens_rcrsv_t), target, intent(in):: tensor                     !in: tensor
+         class(tens_oprnd_t), intent(inout):: this                            !inout: undefined tensor operand
+         class(tens_rcrsv_t), target, intent(in):: tensor                     !in: defined tensor
          integer(INTD), intent(out), optional:: ierr                          !out: error code
-         class(tens_resrc_t), target, intent(inout), optional:: tens_resource !in: local tensor resource, may still be empty
+         class(tens_resrc_t), target, intent(inout), optional:: tens_resource !in: local tensor resource (may still be empty)
          integer(INTD):: errc
 
-         errc=0
          if(.not.this%is_active(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
            if(tensor%is_set(errc)) then
@@ -1228,15 +1231,15 @@
         end subroutine TensOprndCtor
 !---------------------------------------------------------------
         subroutine TensOprndSetResource(this,tens_resource,ierr)
-!Sets the resource component if it has not been set via constructor.
+!Sets the resource component if it has not been set via the constructor.
          implicit none
          class(tens_oprnd_t), intent(inout):: this                  !inout: active tensor operand
-         class(tens_resrc_t), target, intent(inout):: tens_resource !inout: tensor resource (may be empty)
+         class(tens_resrc_t), target, intent(inout):: tens_resource !inout: local tensor resource (may still be empty)
          integer(INTD), intent(out), optional:: ierr                !out: error code
          integer(INTD):: errc
 
          if(this%is_active(errc)) then
-          if(errc.eq.0) then
+          if(errc.eq.DSVP_SUCCESS) then
            if(.not.associated(this%resource)) then
             call tens_resource%incr_ref_count()
             this%resource=>tens_resource
@@ -1256,7 +1259,7 @@
         function TensOprndGetResource(this,ierr) result(resource_p)
 !Returns a pointer to the tensor resource.
          implicit none
-         type(tens_resrc_t), pointer:: resource_p    !out: pointer to the tensor resource
+         class(tens_resrc_t), pointer:: resource_p   !out: pointer to the tensor resource
          class(tens_oprnd_t), intent(in):: this      !in: active tensor operand
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
@@ -1270,7 +1273,7 @@
         function TensOprndGetTensor(this,ierr) result(tens_p)
 !Returns a pointer to the tensor.
          implicit none
-         type(tens_rcrsv_t), pointer:: tens_p        !out: pointer to the tensor
+         class(tens_rcrsv_t), pointer:: tens_p       !out: pointer to the tensor
          class(tens_oprnd_t), intent(in):: this      !in: active tensor operand
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
@@ -1297,7 +1300,7 @@
          class(tens_header_t), pointer:: header_p
 
          if(this%is_active(errc)) then
-          if(errc.eq.0) then
+          if(errc.eq.DSVP_SUCCESS) then
            if(talsh_tensor_is_empty(this%talsh_tens)) then
             tens_p=>this%tensor
             if(tens_p%is_set(errc,num_dims=nd,shaped=shpd,unresolved=unres,layed=layd,located=locd)) then
@@ -1371,7 +1374,7 @@
 !Returns TRUE if the tensor operand is remote, FALSE otherwise.
          implicit none
          logical:: res                               !out: result
-         class(tens_oprnd_t), intent(in):: this      !in: tensor operand
+         class(tens_oprnd_t), intent(in):: this      !in: active tensor operand
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
          integer(INT_MPI):: host_proc_rank,mpi_comm,my_rank
@@ -1379,8 +1382,7 @@
          class(tens_layout_t), pointer:: layout_p
          class(DataDescr_t), pointer:: descr_p
 
-         errc=0
-         if(this%is_active()) then
+         if(this%is_active(errc)) then
           body_p=>this%tensor%get_body(errc)
           if(errc.eq.TEREC_SUCCESS.and.associated(body_p)) then
            layout_p=>body_p%get_layout(errc)
@@ -1739,6 +1741,7 @@
          if(errc.ne.0) call quit(errc,'#FATAL(TAVP-WRK:tens_oprnd_dtor): Destructor failed!')
          return
         end subroutine tens_oprnd_dtor
+#if 0
 ![tens_entry_wrk_t]==================================
         subroutine TensEntryWrkCtor(this,tensor,ierr)
 !Constructs a <tens_entry_wrk_t>.
