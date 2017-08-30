@@ -119,15 +119,20 @@
         end type tavp_wrk_encoder_t
  !TAVP-WRK:
         type, extends(dsvp_t), public:: tavp_wrk_t
-         type(tavp_wrk_decoder_t), private:: decoder      !DSVU: decodes incoming DS instructions from the manager
-         type(tavp_wrk_encoder_t), private:: retirer      !DSVU: retires processed DS instructions and sends them back to the manager
+         type(tavp_wrk_decoder_t), private:: decoder           !DSVU: decodes incoming tensor instructions from the manager
+         type(tavp_wrk_encoder_t), private:: retirer           !DSVU: retires processed tensor instructions and sends them back to the manager
+        !type(tavp_wrk_resourcer_t), private:: resourcer       !DSVU: allocates local resources for tensor instructions
+        !type(tavp_wrk_communicator_t), private:: communicator !DSVU: fetches/uploads remote tensor operands
+        !type(tavp_wrk_dispatcher_t), private:: dispatcher     !DSVU: dispatches ready to be executed tensor instructions to compute devices
          contains
           procedure, public:: configure=>TAVPWRKConfigure !configures the TAVP-WRK DSVP
         end type tavp_wrk_t
 #endif
 !MODULE DATA:
- !TAVP-WRK microcode table:
+ !TAVP-WRK microcode table (static):
         type(ds_microcode_t), private:: microcode(0:TAVP_ISA_SIZE-1)
+ !TAVP-WRK distributed address space:
+        type(DistrSpace_t), private:: tavp_addr_space
 !VISIBILITY:
  !non-member test/debug:
         private test_carma
@@ -214,7 +219,6 @@
          integer(INTD):: num_procs,num_blocks,i,j,k,l,n,lid,rid
          integer(INTD):: dsg(1:TENS_RANK),lsg(1:TENS_RANK),rsg(1:TENS_RANK)
          integer(INTL):: tg
-         type(DistrSpace_t):: tavp_addr_space
          type(DataDescr_t):: dd,ld,rd
          type(DataDescr_t), allocatable:: ddes(:),ldes(:),rdes(:)
          type(DataDescr_t), allocatable:: ddesa(:),ldesa(:),rdesa(:) !root only
@@ -924,6 +928,7 @@
         subroutine execute_tensor_create(this,ierr)
 !Executes tensor creation. The tensor layout is assumed already defined.
 !The tensor body location is set here via the newly created DDSS descriptor.
+!The tensor body location comes from the local resource associated with tensor.
          implicit none
          class(ds_instr_t), intent(inout):: this     !inout: tensor instruction
          integer(INTD), intent(out), optional:: ierr !out: error code
@@ -943,7 +948,7 @@
           class is(tens_oprnd_t)
            resource=>oprnd%get_resource(errc)
            if(errc.eq.0) then
-            if(.not.resource%is_empty()) then
+            if(.not.resource%is_empty()) then !resource is supposed to be preallocated by .acquire_rsc()
              tensor=>oprnd%get_tensor(errc)
              if(errc.eq.0) then
               tens_body=>tensor%get_body(errc)
@@ -1001,6 +1006,7 @@
          integer(INTD):: errc
 
          errc=0
+         !`Implement
          if(present(ierr)) ierr=errc
          return
         end subroutine execute_tensor_destroy
@@ -1013,14 +1019,15 @@
          integer(INTD):: errc
 
          errc=0
+         !`Implement
          if(present(ierr)) ierr=errc
          return
         end subroutine execute_tensor_contract
 !--------------------------------------
         subroutine init_microcode(ierr)
-!Initializes the global table of TAVP microcode bindings when configuring TAVP.
-!There are three kinds of microcode:
-! 1. DUMMY: Does nothing.
+!Initializes the global TAVP microcode bindings table when configuring TAVP.
+!There are three kinds of microcode bindings (suffix):
+! 1. DUMMY: Do nothing.
 ! 2. BASIC: Default microcode.
 ! 3. SPECIAL: Specialized microcode.
          implicit none
@@ -1059,7 +1066,6 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine init_microcode
-#endif
 !tens_resrc_t]==========================================
         function TensResrcIsEmpty(this,ierr) result(ans)
 !Returns TRUE if the tensor resource is empty (unacquired).
