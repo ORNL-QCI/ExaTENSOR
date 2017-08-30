@@ -8,7 +8,7 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/08/29
+!REVISION: 2017/08/30
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -154,7 +154,7 @@
          class(tens_rcrsv_t), pointer, private:: tensor=>NULL() !either owning or non-owning pointer to a tensor (ctor/dtor of extended types will decide)
          type(tens_status_t), private:: tens_status             !current status of the tensor
          contains
-          procedure, private:: set_tensor=>TensCacheEntrySetTensor    !sets the pointer to a tensor
+          procedure, public:: set_tensor=>TensCacheEntrySetTensor     !sets the pointer to a tensor
           procedure, public:: is_set=>TensCacheEntryIsSet             !returns TRUE if the tensor cache entry is set (constructed)
           procedure, public:: get_tensor=>TensCacheEntryGetTensor     !returns a non-owning pointer to the tensor
           procedure, public:: get_status=>TensCacheEntryGetStatus     !returns the tensor status object
@@ -164,6 +164,7 @@
           procedure, public:: mark_no_use=>TensCacheEntryMarkNoUse    !decreases the read-only usage reference count
           procedure, public:: mark_updated=>TensCacheEntryMarkUpdated !marks the tensor status as in-update (currently being updated)
           procedure, public:: mark_empty=>TensCacheEntryMarkEmpty     !marks the tensor status as empty (destroyed)
+          procedure, public:: nullify_tensor=>TensCacheEntryNullifyTensor !either deallocates or simply dissociates tensor (depends on the extended dtor)
         end type tens_cache_entry_t
  !Tensor argument cache:
         type, public:: tens_cache_t
@@ -219,6 +220,7 @@
         private TensCacheEntryMarkNoUse
         private TensCacheEntryMarkUpdated
         private TensCacheEntryMarkEmpty
+        private TensCacheEntryNullifyTensor
  !tens_cache_t:
         private TensCacheLookup
         private TensCacheStore
@@ -545,6 +547,17 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensCacheEntryMarkEmpty
+!-----------------------------------------------------------
+        subroutine TensCacheEntryNullifyTensor(this,dealloc)
+!Either deallocates or simply dissociates tensor (depends on the extended dtor).
+         implicit none
+         class(tens_cache_entry_t), intent(inout):: this
+         logical, intent(in):: dealloc
+
+         if(associated(this%tensor).and.dealloc) deallocate(this%tensor)
+         this%tensor=>NULL()
+         return
+        end subroutine TensCacheEntryNullifyTensor
 ![tens_cache_t]========================================================
         function TensCacheLookup(this,tensor,ierr) result(tens_entry_p)
 !Looks up a given tensor in the tensor cache. If found, returns a pointer
@@ -587,12 +600,15 @@
 !Given a tensor, checks whether it is present in the tensor cache. If yes, returns
 !a pointer to the corresponding tensor cache entry. If no, allocates a new extended
 !tensor cache entry, stores it in the tensor cache and returns a pointer to it.
-!Note that the newly created extended tensor cache entry may need further construction.
+!The allocation is done via a user-provided non-member allocator of an extension of
+!tens_cache_entry_t supplied with a proper dtor. Note that the newly created extended
+!tensor cache entry may need further construction. Here only the <tensor> component of
+!an extended tens_cache_entry_t is set.
          implicit none
          logical:: stored                                                !out: TRUE on successful new store, FALSE otherwise
          class(tens_cache_t), intent(inout):: this                       !inout: tensor cache
          class(tens_rcrsv_t), pointer, intent(in):: tensor               !in: pointer to a tensor to be stored
-         procedure(tens_cache_entry_alloc_i):: tens_cache_entry_alloc_f  !in: non-member allocator of an extended(tens_cache_entry_t) class
+         procedure(tens_cache_entry_alloc_i):: tens_cache_entry_alloc_f  !in: non-member allocator of an extended(tens_cache_entry_t) class with a proper dtor
          integer(INTD), intent(out), optional:: ierr                     !out: error code
          class(tens_cache_entry_t), pointer, intent(out), optional:: tens_entry_p !out: tensor cache entry (newly created or existing)
          integer(INTD):: errc,res
@@ -608,7 +624,7 @@
           if(associated(tensor)) then
            tens_descr=tensor%get_descriptor(errc)
            if(errc.eq.TEREC_SUCCESS) then
-            errc=tens_cache_entry_alloc_f(tce) !allocates an empty instance of an extended(tens_cache_entry_t)
+            errc=tens_cache_entry_alloc_f(tce) !allocates an empty instance of an extended(tens_cache_entry_t) with a proper dtor
             if(errc.eq.0) then
              uptr=>NULL()
              res=dit%search(GFC_DICT_ADD_IF_NOT_FOUND,cmp_tens_descriptors,tens_descr,tce,GFC_BY_VAL,value_out=uptr)

@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/08/29
+!REVISION: 2017/08/30
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -58,7 +58,9 @@
           procedure, public:: get_mem_size=>TensResrcGetMemSize        !returns the size of the memory buffer in bytes
           procedure, private:: incr_ref_count=>TensResrcIncrRefCount   !increments the reference count
           procedure, private:: decr_ref_count=>TensResrcDecrRefCount   !decrements the reference count
-          final:: tens_resrc_dtor                                      !dtor
+#ifdef NO_GNU
+          final:: tens_resrc_dtor                                      !dtor `GCC bug
+#endif
         end type tens_resrc_t
  !Tensor operand (encapsulated tensor data processible by a specific TAVP):
         type, extends(ds_oprnd_t), private:: tens_oprnd_t
@@ -81,7 +83,6 @@
           procedure, public:: destruct=>TensOprndDestruct           !performs complete destruction back to an empty state
           final:: tens_oprnd_dtor                                   !dtor
         end type tens_oprnd_t
-#if 0
  !Tensor argument cache entry (TAVP-specific):
         type, extends(tens_cache_entry_t), private:: tens_entry_wrk_t
          type(tens_resrc_t), private:: resource                       !tensor resource
@@ -91,6 +92,7 @@
           procedure, public:: get_resource=>TensEntryWrkGetResource   !returns a pointer to the resource
           final:: tens_entry_wrk_dtor                                 !dtor
         end type tens_entry_wrk_t
+#if 0
  !Tensor instruction (realization of a tensor operation for a specific TAVP):
         type, extends(ds_instr_t), private:: tens_instr_t
          type(talsh_task_t), private:: talsh_task                   !TAL-SH task
@@ -173,11 +175,12 @@
         private TensOprndRelease
         private TensOprndDestruct
         public tens_oprnd_dtor
-#if 0
  !tens_entry_wrk_t:
         private TensEntryWrkCtor
         private TensEntryWrkGetResource
         public tens_entry_wrk_dtor
+        public tens_entry_wrk_alloc
+#if 0
  !tens_instr_t:
         private TensInstrCtor
         private TensInstrEncode
@@ -1432,8 +1435,7 @@
          class(tens_body_t), pointer:: body_p
          class(tens_layout_t), pointer:: layout_p
 
-         errc=0
-         if(this%is_active()) then
+         if(this%is_active(errc)) then
           if(associated(this%resource)) then
            body_p=>this%tensor%get_body(errc)
            if(errc.eq.TEREC_SUCCESS.and.associated(body_p)) then
@@ -1500,11 +1502,81 @@
                  if(this%resource%is_empty()) call this%acquire_rsc(errc)
                  if(errc.eq.0) then
                   if(this%get_comm_stat().eq.DS_OPRND_NO_COMM) then
-                   cptr=this%resource%base_addr
-                   call descr_p%get_data(cptr,errc,MPI_ASYNC_REQ)
+                   cptr=this%resource%get_mem_ptr(errc)
+                   if(errc.eq.0) then
+                    call descr_p%get_data(cptr,errc,MPI_ASYNC_REQ)
+                    if(errc.ne.0.and.errc.ne.TRY_LATER) errc=-1
+                    if(errc.eq.0) then
+                     call this%set_comm_stat(DS_OPRND_FETCHING,errc); if(errc.ne.DSVP_SUCCESS) errc=-2
+                    endif
+                   else
+                    errc=-3
+                   endif
+                  else
+                   errc=-4
+                  endif
+                 else
+                  errc=-5
+                 endif
+                else
+                 errc=-6
+                endif
+               else
+                errc=-7
+               endif
+              else
+               errc=-8
+              endif
+             else
+              errc=-9
+             endif
+            else
+             errc=-10
+            endif
+           else
+            errc=-11
+           endif
+          else
+           errc=-12
+          endif
+         else
+          errc=-13
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensOprndPrefetch
+!--------------------------------------------
+        subroutine TensOprndUpload(this,ierr)
+!Starts uploading the (remote) tensor operand from the local tensor resource.
+!The tensor operand must be marked as delivered (present), even if it is local.
+!If there is a pending communication on the tensor operand, returns an error.
+         implicit none
+         class(tens_oprnd_t), intent(inout):: this   !inout: tensor operand
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+         class(tens_body_t), pointer:: body_p
+         class(tens_layout_t), pointer:: layout_p
+         class(DataDescr_t), pointer:: descr_p
+         type(C_PTR):: cptr
+
+         if(this%is_present(errc)) then !assumes that the local resource is allocated
+          if(errc.eq.DSVP_SUCCESS) then
+           body_p=>this%tensor%get_body(errc)
+           if(errc.eq.TEREC_SUCCESS.and.associated(body_p)) then
+            layout_p=>body_p%get_layout(errc)
+            if(errc.eq.TEREC_SUCCESS.and.associated(layout_p)) then
+             descr_p=>layout_p%get_data_descr(errc)
+             if(errc.eq.TEREC_SUCCESS.and.associated(descr_p)) then
+              if(descr_p%is_set(errc)) then
+               if(errc.eq.0) then
+                if(.not.this%resource%is_empty()) then !trap
+                 if(this%get_comm_stat().eq.DS_OPRND_NO_COMM) then
+                  cptr=this%resource%get_mem_ptr(errc)
+                  if(errc.eq.0) then
+                   call descr_p%acc_data(cptr,errc,MPI_ASYNC_REQ)
                    if(errc.ne.0.and.errc.ne.TRY_LATER) errc=-1
                    if(errc.eq.0) then
-                    call this%set_comm_stat(DS_OPRND_FETCHING,errc); if(errc.ne.DSVP_SUCCESS) errc=-2
+                    call this%set_comm_stat(DS_OPRND_UPLOADING,errc); if(errc.ne.DSVP_SUCCESS) errc=-2
                    endif
                   else
                    errc=-3
@@ -1538,68 +1610,6 @@
          endif
          if(present(ierr)) ierr=errc
          return
-        end subroutine TensOprndPrefetch
-!--------------------------------------------
-        subroutine TensOprndUpload(this,ierr)
-!Starts uploading the (remote) tensor operand from the local tensor resource.
-!The tensor operand must be marked as delivered (present), even if it is local.
-!If there is a pending communication on the tensor operand, returns an error.
-         implicit none
-         class(tens_oprnd_t), intent(inout):: this   !inout: tensor operand
-         integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc
-         class(tens_body_t), pointer:: body_p
-         class(tens_layout_t), pointer:: layout_p
-         class(DataDescr_t), pointer:: descr_p
-         type(C_PTR):: cptr
-
-         if(this%is_present(errc)) then !assumes that the local resource is allocated
-          if(errc.eq.DSVP_SUCCESS) then
-           body_p=>this%tensor%get_body(errc)
-           if(errc.eq.TEREC_SUCCESS.and.associated(body_p)) then
-            layout_p=>body_p%get_layout(errc)
-            if(errc.eq.TEREC_SUCCESS.and.associated(layout_p)) then
-             descr_p=>layout_p%get_data_descr(errc)
-             if(errc.eq.TEREC_SUCCESS.and.associated(descr_p)) then
-              if(descr_p%is_set(errc)) then
-               if(errc.eq.0) then
-                if(.not.this%resource%is_empty()) then !trap
-                 if(this%get_comm_stat().eq.DS_OPRND_NO_COMM) then
-                  cptr=this%resource%base_addr
-                  call descr_p%acc_data(cptr,errc,MPI_ASYNC_REQ)
-                  if(errc.ne.0.and.errc.ne.TRY_LATER) errc=-1
-                  if(errc.eq.0) then
-                   call this%set_comm_stat(DS_OPRND_UPLOADING,errc); if(errc.ne.DSVP_SUCCESS) errc=-2
-                  endif
-                 else
-                  errc=-3
-                 endif
-                else
-                 errc=-4
-                endif
-               else
-                errc=-5
-               endif
-              else
-               errc=-6
-              endif
-             else
-              errc=-7
-             endif
-            else
-             errc=-8
-            endif
-           else
-            errc=-9
-           endif
-          else
-           errc=-10
-          endif
-         else
-          errc=-11
-         endif
-         if(present(ierr)) ierr=errc
-         return
         end subroutine TensOprndUpload
 !---------------------------------------------------------
         function TensOprndSync(this,ierr,wait) result(res)
@@ -1607,6 +1617,7 @@
 !A successful synchronization on prefetch will mark the tensor operand
 !as delivered (present). A successful synchronization on upload will
 !not change the status of the tensor operand (which is present).
+!`An attempt to synchronize a non-existing communication will cause an error.
          implicit none
          logical:: res                               !out: TRUE on communication completion, FALSE otherwise
          class(tens_oprnd_t), intent(inout):: this   !inout: tensor operand
@@ -1618,9 +1629,8 @@
          class(DataDescr_t), pointer:: descr_p
          logical:: tw
 
-         errc=0; res=.FALSE.
-         tw=.FALSE.; if(present(wait)) tw=wait
-         if(this%is_active()) then
+         res=.FALSE.; tw=.FALSE.; if(present(wait)) tw=wait
+         if(this%is_active(errc)) then
           body_p=>this%tensor%get_body(errc)
           if(errc.eq.TEREC_SUCCESS.and.associated(body_p)) then
            layout_p=>body_p%get_layout(errc)
@@ -1640,7 +1650,7 @@
                  call this%mark_delivered(errc); if(errc.ne.0) errc=-3
                 endif
                else
-                errc=-4
+                errc=-4 !`if there is no pending communication, it is an error?
                endif
               else
                errc=-5
@@ -1669,13 +1679,14 @@
 !unless there are other active tensor operands sharing the same resource.
 !In the latter case, nothing will be done and no error raised.
 !Also, if the resource component is not set, nothing will be done either.
+!Note that the resource object itself (either allocated or unallocated) is
+!still associated with this tensor operand, until it is destructed.
          implicit none
          class(tens_oprnd_t), intent(inout):: this   !inout: tensor operand
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
          logical:: delivered
 
-         errc=0
          if(this%is_active(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
            if(associated(this%resource)) then
@@ -1684,7 +1695,7 @@
              if(.not.delivered.or.errc.ne.DSVP_SUCCESS) errc=-1
             endif
             if(this%resource%ref_count.eq.1) then !only one (last) tensor operand is associated with this resource
-             call this%resource%free_buffer(errc); if(errc.ne.0) errc=-2
+             call this%resource%free_buffer(errc); if(errc.ne.0) errc=-2 !free the resource memory buffer
             endif
            endif
           else
@@ -1705,7 +1716,6 @@
          integer(INTD):: errc,ier
          logical:: delivered
 
-         errc=0
          if(this%is_active(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
            if(this%get_comm_stat().ne.DS_OPRND_NO_COMM) then
@@ -1741,20 +1751,19 @@
          if(errc.ne.0) call quit(errc,'#FATAL(TAVP-WRK:tens_oprnd_dtor): Destructor failed!')
          return
         end subroutine tens_oprnd_dtor
-#if 0
 ![tens_entry_wrk_t]==================================
         subroutine TensEntryWrkCtor(this,tensor,ierr)
-!Constructs a <tens_entry_wrk_t>.
+!Constructs a <tens_entry_wrk_t>. Note move semantics for <tensor>!
          implicit none
          class(tens_entry_wrk_t), intent(out):: this          !out: specialized tensor cache entry
-         class(tens_rcrsv_t), pointer, intent(inout):: tensor !inout: pointer to an allocated tensor (ownership transfer may occur)
+         class(tens_rcrsv_t), pointer, intent(inout):: tensor !inout: pointer to an allocated tensor (ownership transfer will occur here!)
          integer(INTD), intent(out), optional:: ierr          !out: error code
          integer(INTD):: errc
 
          errc=0
          if(associated(tensor)) then
-          this%tensor=>tensor; tensor=>NULL() !transfer the ownership
-          allocate(this%resource,STAT=errc); if(errc.ne.0) errc=-2
+          call this%set_tensor(tensor,errc); if(errc.ne.0) errc=-2
+          if(errc.eq.0) tensor=>NULL() !transfer the ownership
          else
           errc=-1
          endif
@@ -1765,16 +1774,16 @@
         function TensEntryWrkGetResource(this,ierr) result(resource_p)
 !Returns a pointer to the tensor cache entry resource.
          implicit none
-         class(tens_resrc_t), pointer:: resource_p   !out: pointer to the previously allocated resource
-         class(tens_entry_wrk_t), intent(in):: this  !in: tensor cache entry
-         integer(INTD), intent(out), optional:: ierr !out: error code
+         class(tens_resrc_t), pointer:: resource_p          !out: pointer to the tensor resource
+         class(tens_entry_wrk_t), intent(in), target:: this !in: specialized tensor cache entry
+         integer(INTD), intent(out), optional:: ierr        !out: error code
          integer(INTD):: errc
 
          resource_p=>NULL()
          if(this%is_set(errc)) then
           if(errc.eq.0) then
            resource_p=>this%resource
-           if(.not.associated(resource_p)) errc=-3
+           if(.not.associated(resource_p)) errc=-3 !trap
           else
            errc=-2
           endif
@@ -1788,9 +1797,9 @@
         subroutine tens_entry_wrk_dtor(this)
          implicit none
          type(tens_entry_wrk_t):: this
+         integer(INTD):: errc
 
-         if(associated(this%resource)) deallocate(this%resource)
-         if(associated(this%tensor)) deallocate(this%tensor)
+         call this%nullify_tensor(.TRUE.) !deallocate the tensor component (if it is set)
          return
         end subroutine tens_entry_wrk_dtor
 !-------------------------------------------------------------
@@ -1798,11 +1807,12 @@
 !Non-member allocator for tens_entry_wrk_t.
          implicit none
          integer(INTD):: ierr
-         class(*), allocatable, intent(out):: tens_entry
+         class(tens_cache_entry_t), allocatable, intent(out):: tens_entry
 
          allocate(tens_entry_wrk_t::tens_entry,STAT=ierr)
          return
         end function tens_entry_wrk_alloc
+#if 0
 ![tens_instr_t]============================================
         subroutine TensInstrCtor(this,op_code,ierr,op_spec)
 !Constructs a tensor instruction from a given tensor operation.
