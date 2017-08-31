@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/08/30
+!REVISION: 2017/08/31
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -101,11 +101,10 @@
           procedure, public:: encode=>TensInstrEncode               !encoding procedure: Packs the TAVP instruction into a raw byte packet (bytecode)
           final:: tens_instr_dtor                                   !dtor
         end type tens_instr_t
-#if 0
  !TAVP-WRK decoder:
         type, extends(ds_decoder_t), private:: tavp_wrk_decoder_t
-         type(tens_cache_t), private:: tens_cache                   !tensor argument cache
          contains
+          procedure, public:: configure=>TAVPWRKDecoderConfigure    !configures TAVP-WRK decoder
           procedure, public:: start=>TAVPWRKDecoderStart            !starts TAVP-WRK decoder
           procedure, public:: shutdown=>TAVPWRKDecoderShutdown      !shuts down TAVP-WRK decoder
           procedure, public:: decode=>TAVPWRKDecoderDecode          !decodes the DS bytecode into a DS instruction
@@ -113,25 +112,26 @@
  !TAVP-WRK encoder:
         type, extends(ds_encoder_t), private:: tavp_wrk_encoder_t
          contains
+          procedure, public:: configure=>TAVPWRKEncoderConfigure    !configures TAVP-WRK encoder
           procedure, public:: start=>TAVPWRKEncoderStart            !starts TAVP-WRK encoder
           procedure, public:: shutdown=>TAVPWRKEncoderShutdown      !shuts down TAVP-WRK encoder
           procedure, public:: encode=>TAVPWRKEncoderEncode          !encodes a DS instruction into the DS bytecode
         end type tavp_wrk_encoder_t
  !TAVP-WRK:
         type, extends(dsvp_t), public:: tavp_wrk_t
-         type(tavp_wrk_decoder_t), private:: decoder           !DSVU: decodes incoming tensor instructions from the manager
-         type(tavp_wrk_encoder_t), private:: retirer           !DSVU: retires processed tensor instructions and sends them back to the manager
-        !type(tavp_wrk_resourcer_t), private:: resourcer       !DSVU: allocates local resources for tensor instructions
-        !type(tavp_wrk_communicator_t), private:: communicator !DSVU: fetches/uploads remote tensor operands
-        !type(tavp_wrk_dispatcher_t), private:: dispatcher     !DSVU: dispatches ready to be executed tensor instructions to compute devices
+         type(tens_cache_t), private:: tens_cache                 !tensor argument cache
+         type(tavp_wrk_decoder_t), private:: decoder              !DSVU: decodes incoming tensor instructions from the manager
+         type(tavp_wrk_encoder_t), private:: retirer              !DSVU: retires processed tensor instructions and sends them back to the manager
+        !type(tavp_wrk_resourcer_t), private:: resourcer          !DSVU: allocates local resources for tensor instructions
+        !type(tavp_wrk_communicator_t), private:: communicator    !DSVU: fetches/uploads remote tensor operands
+        !type(tavp_wrk_dispatcher_t), private:: dispatcher        !DSVU: dispatches ready to be executed tensor instructions to compute devices
          contains
-          procedure, public:: configure=>TAVPWRKConfigure !configures the TAVP-WRK DSVP
+          procedure, public:: configure=>TAVPWRKConfigure         !configures the TAVP-WRK DSVP
         end type tavp_wrk_t
-#endif
 !MODULE DATA:
- !TAVP-WRK microcode table (static):
+ !TAVP-WRK microcode (static) table, set by dsvp.configure():
         type(ds_microcode_t), private:: microcode(0:TAVP_ISA_SIZE-1)
- !TAVP-WRK distributed address space:
+ !TAVP-WRK distributed address space, set by dsvp.configure():
         type(DistrSpace_t), private:: tavp_addr_space
 !VISIBILITY:
  !non-member test/debug:
@@ -190,18 +190,18 @@
         private TensInstrCtor
         private TensInstrEncode
         public tens_instr_dtor
-#if 0
  !tavp_wrk_decoder_t:
+        private TAVPWRKDecoderConfigure
         private TAVPWRKDecoderStart
         private TAVPWRKDecoderShutdown
         private TAVPWRKDecoderDecode
  !tavp_wrk_encoder_t:
+        private TAVPWRKEncoderConfigure
         private TAVPWRKEncoderStart
         private TAVPWRKEncoderShutdown
         private TAVPWRKEncoderEncode
  !tavp_wrk_t:
         private TAVPWRKConfigure
-#endif
 !IMPLEMENTATION:
        contains
 ![non-member:Test/Debug]===========
@@ -2100,144 +2100,88 @@
          endif
          return
         end subroutine tens_instr_dtor
-#if 0
-![tavp_worker_t]=============================
-        subroutine TAVPWorkerStart(this,ierr)
-!Initializes TAVP "Worker".
+![tavp_wrk_decoder_t]=====================================
+        subroutine TAVPWRKDecoderConfigure(this,conf,ierr)
+!Configures this DSVU.
          implicit none
-         class(tavp_worker_t), intent(inout):: this  !inout: TAVP "Worker"
-         integer(INTD), intent(out), optional:: ierr !out: error code
+         class(tavp_wrk_decoder_t), intent(inout):: this !out: configured DSVU (must not be configured on entrance)
+         class(dsv_conf_t), intent(in):: conf            !in: specific DSVU configuration
+         integer(INTD), intent(out), optional:: ierr     !out: error code
          integer(INTD):: errc
 
          errc=0
-         call init_talsh(errc)
-         if(errc.eq.0) then
-          call init_distributed_space(errc)
-          if(errc.eq.0) then
-           call init_microcode(errc)
-           if(errc.eq.0) then
-            !call test_carma(errc) !debug: initial brute-force distributed benchmark
-            call this%shutdown(errc)
-           else
-            errc=-3
-           endif
-          else
-           errc=-2
-           call quit(errc,'FATAL(TAVP-Worker:start): Failed to initialize the distributed address space service!')
-          endif
-         else
-          errc=-1
-          call quit(errc,'FATAL(TAVP-Worker:start): Failed to initialize the numerical tensor algebra service!')
-         endif
+         !`Implement
          if(present(ierr)) ierr=errc
          return
-
-        contains
-
-         subroutine init_talsh(jerr)
-          implicit none
-          integer(INTD), intent(out):: jerr
-          integer(INTD):: jj
-
-          jerr=talsh_init(tavp_worker_host_buf_size,tavp_worker_host_arg_max,(/(jj,jj=gpu_start,gpu_start+gpu_count-1)/))
-          return
-         end subroutine init_talsh
-
-         subroutine init_distributed_space(jerr)
-          implicit none
-          integer(INTD), intent(out):: jerr
-
-          call tavp_addr_space%create(role_comm,TAVP_WORKER_NUM_WINS,'WorkAddressSpace',jerr)
-          return
-         end subroutine init_distributed_space
-
-        end subroutine TAVPWorkerStart
-!-----------------------------------------------
-        subroutine TAVPWorkerShutdown(this,ierr)
-!Shuts down TAVP "Worker".
+        end subroutine TAVPWRKDecoderConfigure
+!------------------------------------------------
+        subroutine TAVPWRKDecoderStart(this,ierr)
+!Starts and lives this DSVU, calls .shutdown() at the end.
          implicit none
-         class(tavp_worker_t), intent(inout):: this  !inout: TAVP "Worker"
-         integer(INTD), intent(out), optional:: ierr !out: error code
+         class(tavp_wrk_decoder_t), intent(inout):: this !inout: TAVP-WRK decoder DSVU
+         integer(INTD), intent(out), optional:: ierr     !out: error code
+         integer(INTD):: errc,ier
+
+         errc=0
+         if(DEBUG.gt.0) write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Decoder started as DSVU # ",i2)') impir,this%get_id() !debug
+         !`Implement
+         call this%shutdown(ier); if(ier.ne.0.and.errc.eq.0) errc=-1
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TAVPWRKDecoderStart
+!---------------------------------------------------
+        subroutine TAVPWRKDecoderShutdown(this,ierr)
+!Stops DSVU (returns back a clean configured state).
+         implicit none
+         class(tavp_wrk_decoder_t), intent(inout):: this !inout: TAVP-WRK decoder DSVU
+         integer(INTD), intent(out), optional:: ierr     !out: error code
          integer(INTD):: errc
 
          errc=0
-         call null_microcode(errc)
-         if(errc.eq.0) then
-          call stop_distributed_space(errc)
-          if(errc.eq.0) then
-           call stop_talsh(errc)
-           if(errc.eq.0) then
-           else
-            errc=-1
-           endif
-          else
-           errc=-2
-          endif
-         else
-          errc=-3
-         endif
+         if(DEBUG.gt.0) write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Decoder stopped as DSVU # ",i2)') impir,this%get_id() !debug
+         !`Implement
          if(present(ierr)) ierr=errc
          return
-
-        contains
-
-         subroutine stop_talsh(jerr)
-          implicit none
-          integer(INTD), intent(out):: jerr
-
-          jerr=talsh_shutdown()
-          return
-         end subroutine stop_talsh
-
-         subroutine stop_distributed_space(jerr)
-          implicit none
-          integer(INTD), intent(out):: jerr
-
-          call tavp_addr_space%destroy(jerr)
-          return
-         end subroutine stop_distributed_space
-
-         subroutine null_microcode(jerr)
-          implicit none
-          integer(INTD), intent(out):: jerr
-          integer(INTD):: jj
-
-          jerr=0
-          do jj=0,TAVP_ISA_SIZE-1
-           call microcode(jj)%reset()
-          enddo
-          return
-         end subroutine null_microcode
-
-        end subroutine TAVPWorkerShutdown
-!------------------------------------------------------------------------------
-        subroutine TAVPWorkerDecodeInstruction(this,instr_packet,ds_instr,ierr)
-!Decodes a tensor instruction from the bytecode packet.
+        end subroutine TAVPWRKDecoderShutdown
+!-----------------------------------------------------------------------
+        subroutine TAVPWRKDecoderDecode(this,ds_instr,instr_packet,ierr)
+!Decodes a tensor instruction from a plain bytecode.
          implicit none
-         class(tavp_worker_t), intent(inout):: this          !inout: TAVP "Worker"
+         class(tavp_wrk_decoder_t), intent(inout):: this     !inout: TAVP-WRK decoder
+         class(ds_instr_t), intent(inout), target:: ds_instr !out: decoded tensor instruction
          class(obj_pack_t), intent(inout):: instr_packet     !in: instruction bytecode packet
-         class(ds_instr_t), intent(inout), target:: ds_instr !out: tensor instruction (must be empty on entrance)
          integer(INTD), intent(out), optional:: ierr         !out: error code
          integer(INTD):: errc,ier,op_code
+         class(dsvp_t), pointer:: dsvp
+         class(tens_cache_t), pointer:: arg_cache
 
          if(ds_instr%is_empty(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
+!Retrieve the TAVP argument cache:
+           arg_cache=>NULL(); dsvp=>this%get_dsvp() !host DSVP
+           select type(dsvp); class is(tavp_wrk_t); arg_cache=>dsvp%tens_cache; end select
+           if(associated(arg_cache)) then
 !Extract the instruction op_code:
-           call unpack_builtin(instr_packet,op_code,errc)
+            call unpack_builtin(instr_packet,op_code,errc)
 !Extract the instruction body:
-           if(errc.eq.0) then
-            select case(op_code)
-            case(TAVP_INSTR_NOOP)
-            case(TAVP_INSTR_STOP)
-            case(TAVP_INSTR_CREATE,TAVP_INSTR_DESTROY)
-             call decode_instr_create_destroy(errc); if(errc.ne.0) errc=-7
-            case(TAVP_INSTR_CONTRACT)
-             call decode_instr_contract(errc); if(errc.ne.0) errc=-6
-            case default
-             errc=-5 !unknown instruction (or not implemented)
-            end select
+            if(errc.eq.0) then
+             select case(op_code)
+             case(TAVP_INSTR_NOOP)
+             case(TAVP_INSTR_STOP)
+             case(TAVP_INSTR_CREATE,TAVP_INSTR_DESTROY)
+              call decode_instr_create_destroy(errc); if(errc.ne.0) errc=-8
+             case(TAVP_INSTR_CONTRACT)
+              call decode_instr_contract(errc); if(errc.ne.0) errc=-7
+             case default
+              errc=-6 !unknown instruction opcode (or not implemented)
+             end select
 !Activate the instruction:
-            call ds_instr%activate(op_code,microcode(op_code),ier); if(ier.ne.0.and.errc.eq.0) errc=-4
+             if(errc.eq.0) then !on failure the tensor instruction will be explicitly terminated
+              call ds_instr%activate(op_code,microcode(op_code),ier); if(ier.ne.0) errc=-5
+             endif
+            else
+             errc=-4
+            endif
            else
             errc=-3
            endif
@@ -2256,10 +2200,11 @@
            !CREATE/DESTROY a tensor
            integer(INTD), intent(out):: jerr
            class(tens_rcrsv_t), pointer:: tensor
-           class(tens_entry_t), pointer:: tens_entry
            class(tens_resrc_t), pointer:: tens_resource
            class(tens_oprnd_t), pointer:: tens_oprnd
            class(ds_oprnd_t), pointer:: oprnd
+           class(tens_cache_entry_t), pointer:: tens_entry
+           class(tens_entry_wrk_t), pointer:: tens_wrk_entry
            logical:: res
 
            jerr=0
@@ -2267,68 +2212,77 @@
            if(jerr.eq.0) then
             call tensor%tens_rcrsv_ctor(instr_packet,jerr)
             if(jerr.eq.TEREC_SUCCESS) then
-             tens_entry=>NULL()
-             tens_entry=>this%tens_cache%lookup(tensor,jerr)
+             tens_entry=>NULL(); tens_entry=>arg_cache%lookup(tensor,jerr)
              if(jerr.eq.0) then
               select case(op_code)
               case(TAVP_INSTR_CREATE) !CREATE a tensor
                if(.not.associated(tens_entry)) then
-                res=this%tens_cache%store(tensor,jerr,tens_entry_p=tens_entry)
+                res=arg_cache%store(tensor,tens_entry_wrk_alloc,jerr,tens_entry_p=tens_entry)
                 if(res.and.(jerr.eq.0).and.associated(tens_entry)) then
-                 tens_resource=>NULL()
-                 tens_resource=>tens_entry%get_resource()
+                 tens_wrk_entry=>NULL()
+                 select type(tens_entry); class is(tens_entry_wrk_t); tens_wrk_entry=>tens_entry; end select
+                 if(associated(tens_wrk_entry)) then
+                  tens_resource=>NULL(); tens_resource=>tens_wrk_entry%get_resource()
+                  call ds_instr%alloc_operands(1,jerr)
+                  if(jerr.eq.DSVP_SUCCESS) then
+                   tens_oprnd=>NULL(); allocate(tens_oprnd,STAT=jerr)
+                   if(jerr.eq.0) then
+                    call tens_oprnd%tens_oprnd_ctor(tensor,jerr,tens_resource) !tensor and tens_resource are stored in tensor cache
+                    if(jerr.eq.0) then
+                     oprnd=>tens_oprnd; call ds_instr%set_operand(0,oprnd,jerr)
+                     if(jerr.ne.DSVP_SUCCESS) then
+                      call ds_instr%terminate(TAVP_ERR_GEN_FAILURE,jerr)
+                      jerr=-16
+                     endif
+                    else
+                     call ds_instr%terminate(TAVP_ERR_GEN_FAILURE,jerr)
+                     jerr=-15
+                    endif
+                   else
+                    call ds_instr%terminate(TAVP_ERR_RSC_UNAVAILABLE,jerr)
+                    jerr=-14
+                   endif
+                  else
+                   call ds_instr%terminate(TAVP_ERR_RSC_UNAVAILABLE,jerr)
+                   jerr=-13
+                  endif
+                 else
+                  call ds_instr%terminate(TAVP_ERR_GEN_FAILURE,jerr)
+                  jerr=-12
+                 endif
+                else
+                 call ds_instr%terminate(TAVP_ERR_CHE_FAILURE,jerr)
+                 jerr=-11
+                endif
+               else
+                call ds_instr%terminate(TAVP_ERR_ARG_DEFINED,jerr)
+                jerr=-10
+               endif
+              case(TAVP_INSTR_DESTROY) !DESTROY a tensor
+               if(associated(tens_entry)) then
+                deallocate(tensor); tensor=>NULL() !deallocate the temporary tensor
+                tens_wrk_entry=>NULL()
+                select type(tens_entry); class is(tens_entry_wrk_t); tens_wrk_entry=>tens_entry; end select
+                if(associated(tens_wrk_entry)) then
+                 tensor=>tens_wrk_entry%get_tensor() !use the same tensor from the tensor cache
+                 tens_resource=>NULL(); tens_resource=>tens_wrk_entry%get_resource()
                  call ds_instr%alloc_operands(1,jerr)
                  if(jerr.eq.DSVP_SUCCESS) then
                   tens_oprnd=>NULL(); allocate(tens_oprnd,STAT=jerr)
                   if(jerr.eq.0) then
-                   call tens_oprnd%tens_oprnd_ctor(tensor,jerr,tens_resource) !tensor and tens_resource are stored in tensor cache
+                   call tens_oprnd%tens_oprnd_ctor(tensor,jerr,tens_resource) !tensor and tens_resource are from tensor cache
                    if(jerr.eq.0) then
-                    oprnd=>tens_oprnd
-                    call ds_instr%set_operand(0,oprnd,jerr)
+                    oprnd=>tens_oprnd; call ds_instr%set_operand(0,oprnd,jerr)
                     if(jerr.ne.DSVP_SUCCESS) then
                      call ds_instr%terminate(TAVP_ERR_GEN_FAILURE,jerr)
-                     jerr=-14
+                     jerr=-9
                     endif
                    else
-                    call ds_instr%terminate(TAVP_ERR_GEN_FAILURE,jerr)
-                    jerr=-13
-                   endif
-                  else
-                   call ds_instr%terminate(TAVP_ERR_RSC_UNAVAILABLE,jerr)
-                   jerr=-12
-                  endif
-                 else
-                  call ds_instr%terminate(TAVP_ERR_RSC_UNAVAILABLE,jerr)
-                  jerr=-11
-                 endif
-                else
-                 call ds_instr%terminate(TAVP_ERR_CHE_FAILURE,jerr)
-                 jerr=-10
-                endif
-               else
-                call ds_instr%terminate(TAVP_ERR_ARG_DEFINED,jerr)
-                jerr=-9
-               endif
-              case(TAVP_INSTR_DESTROY) !DESTROY a tensor
-               if(associated(tens_entry)) then
-                deallocate(tensor); tensor=>NULL() !deallocate the temporary tensor and use
-                tensor=>tens_entry%get_tensor()    !the same tensor from the tensor cache
-                tens_resource=>NULL()              !as well as its associated resource
-                tens_resource=>tens_entry%get_resource()
-                call ds_instr%alloc_operands(1,jerr)
-                if(jerr.eq.DSVP_SUCCESS) then
-                 tens_oprnd=>NULL(); allocate(tens_oprnd,STAT=jerr)
-                 if(jerr.eq.0) then
-                  call tens_oprnd%tens_oprnd_ctor(tensor,jerr,tens_resource) !tensor and tens_resource are from tensor cache
-                  if(jerr.eq.0) then
-                   oprnd=>tens_oprnd
-                   call ds_instr%set_operand(0,oprnd,jerr)
-                   if(jerr.ne.DSVP_SUCCESS) then
                     call ds_instr%terminate(TAVP_ERR_GEN_FAILURE,jerr)
                     jerr=-8
                    endif
                   else
-                   call ds_instr%terminate(TAVP_ERR_GEN_FAILURE,jerr)
+                   call ds_instr%terminate(TAVP_ERR_RSC_UNAVAILABLE,jerr)
                    jerr=-7
                   endif
                  else
@@ -2336,7 +2290,7 @@
                   jerr=-6
                  endif
                 else
-                 call ds_instr%terminate(TAVP_ERR_RSC_UNAVAILABLE,jerr)
+                 call ds_instr%terminate(TAVP_ERR_GEN_FAILURE,jerr)
                  jerr=-5
                 endif
                else
@@ -2366,9 +2320,10 @@
            class(ctrl_tens_contr_t), pointer:: tens_contr_ctrl
            class(tens_rcrsv_t), pointer:: tensor
            class(tens_resrc_t), pointer:: tens_resource
-           class(tens_entry_t), pointer:: tens_entry
            class(tens_oprnd_t), pointer:: tens_oprnd
            class(ds_oprnd_t), pointer:: oprnd
+           class(tens_cache_entry_t), pointer:: tens_entry
+           class(tens_entry_wrk_t), pointer:: tens_wrk_entry
            integer(INTD):: jj
 
            jerr=0
@@ -2376,29 +2331,28 @@
            if(jerr.eq.0) then
             call tens_contr_ctrl%unpack(instr_packet,jerr)
             if(jerr.eq.0) then
-             instr_ctrl=>tens_contr_ctrl
-             call ds_instr%set_control(instr_ctrl,jerr)
+             instr_ctrl=>tens_contr_ctrl; call ds_instr%set_control(instr_ctrl,jerr)
              if(jerr.eq.DSVP_SUCCESS) then
               call ds_instr%alloc_operands(3,jerr)
               if(jerr.eq.DSVP_SUCCESS) then
                do jj=0,2
                 tensor=>NULL(); allocate(tensor,STAT=jerr)
-                if(jerr.ne.0) then; call ds_instr%terminate(TAVP_ERR_RSC_UNAVAILABLE,jerr); jerr=-11; exit; endif
+                if(jerr.ne.0) then; call ds_instr%terminate(TAVP_ERR_RSC_UNAVAILABLE,jerr); jerr=-12; exit; endif
                 call tensor%tens_rcrsv_ctor(instr_packet,jerr)
-                if(jerr.ne.TEREC_SUCCESS) then; call ds_instr%terminate(TAVP_ERR_BTC_BAD,jerr); jerr=-10; exit; endif
-                tens_entry=>this%tens_cache%lookup(tensor,jerr)
-                if(jerr.ne.0) then; call ds_instr%terminate(TAVP_ERR_CHE_FAILURE,jerr); jerr=-9; exit; endif
-                if(.not.associated(tens_entry)) then; call ds_instr%terminate(TAVP_ERR_ARG_UNDEFINED,jerr); jerr=-8; exit; endif
-                deallocate(tensor); tensor=>NULL() !deallocate the temporary tensor and use
-                tensor=>tens_entry%get_tensor()    !the same tensor from the tensor cache
-                tens_resource=>NULL()              !as well as its associated resource
-                tens_resource=>tens_entry%get_resource()
+                if(jerr.ne.TEREC_SUCCESS) then; call ds_instr%terminate(TAVP_ERR_BTC_BAD,jerr); jerr=-11; exit; endif
+                tens_entry=>NULL(); tens_entry=>arg_cache%lookup(tensor,jerr)
+                if(jerr.ne.0) then; call ds_instr%terminate(TAVP_ERR_CHE_FAILURE,jerr); jerr=-10; exit; endif
+                if(.not.associated(tens_entry)) then; call ds_instr%terminate(TAVP_ERR_ARG_UNDEFINED,jerr); jerr=-9; exit; endif
+                deallocate(tensor); tensor=>NULL() !deallocate the temporary tensor
+                tens_wrk_entry=>NULL(); select type(tens_entry); class is(tens_entry_wrk_t); tens_wrk_entry=>tens_entry; end select
+                if(.not.associated(tens_wrk_entry)) then; call ds_instr%terminate(TAVP_ERR_GEN_FAILURE,jerr); jerr=-8; exit; endif
+                tensor=>tens_wrk_entry%get_tensor() !use the same tensor from the tensor cache
+                tens_resource=>NULL(); tens_resource=>tens_wrk_entry%get_resource()
                 tens_oprnd=>NULL(); allocate(tens_oprnd,STAT=jerr)
                 if(jerr.ne.0) then; call ds_instr%terminate(TAVP_ERR_RSC_UNAVAILABLE,jerr); jerr=-7; exit; endif
                 call tens_oprnd%tens_oprnd_ctor(tensor,jerr,tens_resource) !tensor and tens_resource are stored in tensor cache
                 if(jerr.ne.0) then; call ds_instr%terminate(TAVP_ERR_GEN_FAILURE,jerr); jerr=-6; exit; endif
-                oprnd=>tens_oprnd
-                call ds_instr%set_operand(jj,oprnd,jerr)
+                oprnd=>tens_oprnd; call ds_instr%set_operand(jj,oprnd,jerr)
                 if(jerr.ne.DSVP_SUCCESS) then; call ds_instr%terminate(TAVP_ERR_GEN_FAILURE,jerr); jerr=-5; exit; endif
                enddo
               else
@@ -2420,6 +2374,92 @@
            return
           end subroutine decode_instr_contract
 
-        end subroutine TAVPWorkerDecodeInstruction
-#endif
+        end subroutine TAVPWRKDecoderDecode
+![tavp_wrk_encoder_t]=====================================
+        subroutine TAVPWRKEncoderConfigure(this,conf,ierr)
+!Configures this DSVU.
+         implicit none
+         class(tavp_wrk_encoder_t), intent(inout):: this !out: configured DSVU (must not be configured on entrance)
+         class(dsv_conf_t), intent(in):: conf            !in: specific DSVU configuration
+         integer(INTD), intent(out), optional:: ierr     !out: error code
+         integer(INTD):: errc
+
+         errc=0
+         !`Implement
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TAVPWRKEncoderConfigure
+!------------------------------------------------
+        subroutine TAVPWRKEncoderStart(this,ierr)
+!Starts and lives this DSVU, calls .shutdown() at the end.
+         implicit none
+         class(tavp_wrk_encoder_t), intent(inout):: this !inout: TAVP-WRK encoder DSVU
+         integer(INTD), intent(out), optional:: ierr     !out: error code
+         integer(INTD):: errc,ier
+
+         errc=0
+         if(DEBUG.gt.0) write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Encoder started as DSVU # ",i2)') impir,this%get_id() !debug
+         !`Implement
+         call this%shutdown(ier); if(ier.ne.0.and.errc.eq.0) errc=-1
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TAVPWRKEncoderStart
+!---------------------------------------------------
+        subroutine TAVPWRKEncoderShutdown(this,ierr)
+!Stops DSVU (returns back a clean configured state).
+         implicit none
+         class(tavp_wrk_encoder_t), intent(inout):: this !inout: TAVP-WRK encoder DSVU
+         integer(INTD), intent(out), optional:: ierr     !out: error code
+         integer(INTD):: errc
+
+         errc=0
+         if(DEBUG.gt.0) write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Encoder stopped as DSVU # ",i2)') impir,this%get_id() !debug
+         !`Implement
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TAVPWRKEncoderShutdown
+!-----------------------------------------------------------------------
+        subroutine TAVPWRKEncoderEncode(this,ds_instr,instr_packet,ierr)
+!Encodes a tensor instruction into a plain bytecode.
+         implicit none
+         class(tavp_wrk_encoder_t), intent(inout):: this  !inout: encoder
+         class(ds_instr_t), intent(in), target:: ds_instr !in: defined tensor instruction
+         class(obj_pack_t), intent(inout):: instr_packet  !out: instruction bytecode packet
+         integer(INTD), intent(out), optional:: ierr      !out: error code
+         integer(INTD):: errc
+
+         if(ds_instr%is_active(errc)) then
+          if(errc.eq.DSVP_SUCCESS) then
+           call ds_instr%encode(instr_packet,errc); if(errc.ne.0) errc=-3
+          else
+           errc=-2
+          endif
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TAVPWRKEncoderEncode
+![tavp_wrk_t]======================================
+        subroutine TAVPWRKConfigure(this,conf,ierr)
+!Configures TAVP-WRK DSVP:
+! * Sets up DSVP microcode;
+! * Configures static DSVU;
+! * Allocates and configures dynamic DSVU;
+! * Sets up global DSVU table in DSVP;
+! * Sets up DSVP description and id;
+         implicit none
+         class(tavp_wrk_t), intent(inout):: this     !out: configured DSVP (must not be configured on entrance)
+         class(dsv_conf_t), intent(in):: conf        !in: specific DSVP configuration
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=0
+         !jerr=talsh_init(tavp_worker_host_buf_size,tavp_worker_host_arg_max,(/(jj,jj=gpu_start,gpu_start+gpu_count-1)/))
+         !call tavp_addr_space%create(role_comm,TAVP_WORKER_NUM_WINS,'AddressSpaceWRK',jerr)
+         !`Implement
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TAVPWRKConfigure
+
        end module tavp_worker

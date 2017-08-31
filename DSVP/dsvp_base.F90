@@ -1,6 +1,6 @@
 !Domain-specific virtual processor (DSVP): Abstract base module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/08/30
+!REVISION: 2017/08/31
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -203,6 +203,9 @@
          contains
           procedure, public:: reset=>DSMicrocodeReset !resets microcode binding to NULL
         end type ds_microcode_t
+ !DSVP/DSVU configuration:
+        type, abstract, public:: dsv_conf_t
+        end type dsv_conf_t
  !Domain-specific virtual unit port:
         type, public:: ds_unit_port_t
          logical, private:: locked=.FALSE.              !lock for updates
@@ -223,12 +226,14 @@
          type(list_bi_t), private:: queue                   !queue of the currently processed DS instructions stored by reference
          type(list_iter_t), private:: iqueue                !queue iterator
          contains
-          procedure(ds_unit_self_i), deferred, public:: start    !starts and lives the DS unit (the corresponding thread will run here until termination)
-          procedure(ds_unit_self_i), deferred, public:: shutdown !shuts down DS unit
-          procedure, public:: load_port=>DSUnitLoadPort          !loads the DS unit port with new DS instructions (called by other DS units)
-          procedure, public:: flush_port=>DSUnitFlushPort        !flushes the port content into the DS unit queue (called by the current DS unit)
-          procedure, public:: get_id=>DSUnitGetId                !returns the DS unit id
-          procedure, private:: set_id=>DSUnitSetId               !sets the DS unit id (when the DSVU table is constructed)
+          procedure(ds_unit_ctor_i), deferred, public:: configure !configures the DS unit
+          procedure(ds_unit_self_i), deferred, public:: start     !starts, lives and stops the DS unit (the corresponding thread will run here until termination)
+          procedure(ds_unit_self_i), deferred, public:: shutdown  !stops the DS unit (called from .start)
+          procedure, public:: load_port=>DSUnitLoadPort           !loads the DS unit port with new DS instructions (called by other DS units)
+          procedure, public:: flush_port=>DSUnitFlushPort         !flushes the port content into the DS unit queue (called by the current DS unit)
+          procedure, public:: get_dsvp=>DSUnitGetDSVP             !returns a pointer to the DSVP the DS unit is part of
+          procedure, public:: get_id=>DSUnitGetId                 !returns the DS unit id
+          procedure, private:: set_id=>DSUnitSetId                !sets the DS unit id (when the DSVU table is constructed)
         end type ds_unit_t
  !Wrapped reference to a DSVU:
         type, private:: ds_unit_ref_t
@@ -244,9 +249,6 @@
          contains
           procedure(ds_encoder_encode_i), deferred, public:: encode !encoding procedure: Packs a domain-specific instruction into the raw byte packet (instruction bytecode)
         end type ds_encoder_t
- !DSVP configuration (used in dsvp_t.configure()):
-        type, abstract, public:: dsvp_conf_t
-        end type dsvp_conf_t
  !Domain-specific virtual processor (DSVP):
         type, abstract, public:: dsvp_t
          integer(INTD), private:: stat=DSVP_STAT_OFF       !current DSVP status: {DSVP_STAT_OFF, DSVP_STAT_ON, negative integers = errors}
@@ -355,6 +357,14 @@
           integer(INTD), intent(out), optional:: ierr     !out: error code
          end subroutine ds_instr_encode_i
   !ds_unit_t:
+   !ctor:
+         subroutine ds_unit_ctor_i(this,conf,ierr)
+          import:: ds_unit_t,dsv_conf_t,INTD
+          implicit none
+          class(ds_unit_t), intent(inout):: this      !out: configured (constructed) DSVP
+          class(dsv_conf_t), intent(in):: conf        !in: DSVU configuration
+          integer(INTD), intent(out), optional:: ierr !out: error code
+         end subroutine ds_unit_ctor_i
    !self:
          subroutine ds_unit_self_i(this,ierr)
           import:: ds_unit_t,INTD
@@ -366,34 +376,26 @@
           import:: ds_decoder_t,ds_instr_t,obj_pack_t,INTD
           class(ds_decoder_t), intent(inout):: this               !inout: DS decoder unit
           class(ds_instr_t), intent(inout), target:: ds_instr     !out: decoded domain-specific instruction ready for the DS pipeline
-          class(obj_pack_t), intent(inout), target:: instr_packet !in: instruction byte packet (bytecode)
+          class(obj_pack_t), intent(inout):: instr_packet         !in: instruction byte packet (bytecode)
           integer(INTD), intent(out), optional:: ierr             !out: error code
          end subroutine ds_decoder_decode_i
   !ds_encoder_t:
          subroutine ds_encoder_encode_i(this,ds_instr,instr_packet,ierr)
           import:: ds_encoder_t,ds_instr_t,obj_pack_t,INTD
-          class(ds_encoder_t), intent(inout):: this           !inout: DS encoder unit
-          class(ds_instr_t), intent(in), target:: ds_instr    !in: domain-specific instruction
-          class(obj_pack_t), intent(inout):: instr_packet     !out: instruction byte packet (bytecode)
-          integer(INTD), intent(out), optional:: ierr         !out: error code
+          class(ds_encoder_t), intent(inout):: this               !inout: DS encoder unit
+          class(ds_instr_t), intent(in), target:: ds_instr        !in: domain-specific instruction
+          class(obj_pack_t), intent(inout):: instr_packet         !out: instruction byte packet (bytecode)
+          integer(INTD), intent(out), optional:: ierr             !out: error code
          end subroutine ds_encoder_encode_i
   !dsvp_t:
    !ctor:
          subroutine dsvp_ctor_i(this,conf,ierr)
-          import:: dsvp_t,dsvp_conf_t,INTD
+          import:: dsvp_t,dsv_conf_t,INTD
           implicit none
-          class(dsvp_t), intent(out):: this           !out: configured (constructed) DSVP
-          class(dsvp_conf_t), intent(in):: conf       !in: DSVP configuration
+          class(dsvp_t), intent(inout):: this         !out: configured (constructed) DSVP
+          class(dsv_conf_t), intent(in):: conf        !in: DSVP configuration
           integer(INTD), intent(out), optional:: ierr !out: error code
          end subroutine dsvp_ctor_i
-   !decode instruction:
-         subroutine dsvp_instr_decode_i(this,instr_packet,ds_instr,ierr)
-          import:: dsvp_t,ds_instr_t,obj_pack_t,INTD
-          class(dsvp_t), intent(inout):: this                 !inout: DSVP
-          class(obj_pack_t), intent(inout):: instr_packet     !in: instruction byte packet (bytecode)
-          class(ds_instr_t), intent(inout), target:: ds_instr !out: decoded domain-specific instruction ready for DS pipeline
-          integer(INTD), intent(out), optional:: ierr         !out: error code
-         end subroutine dsvp_instr_decode_i
         end interface
 !VISIBILITY:
  !ds_resrc_t:
@@ -447,8 +449,10 @@
  !ds_unit_t:
         private DSUnitLoadPort
         private DSUnitFlushPort
+        private DSUnitGetDSVP
         private DSUnitGetId
         private DSUnitSetId
+        public ds_unit_ctor_i
         public ds_unit_self_i
  !ds_decoder_t:
         public ds_decoder_decode_i
@@ -1291,6 +1295,20 @@
          ierr=this%port%absorb(this%iqueue) !DS instructions (references) will be moved from the port into the DS unit queue
          return
         end function DSUnitFlushPort
+!-----------------------------------------------------
+        function DSUnitGetDSVP(this,ierr) result(dsvp)
+!Returns a pointer to the DSVP the DS unit is part of.
+         implicit none
+         class(dsvp_t), pointer:: dsvp               !out: pointer to the DSVP
+         class(ds_unit_t), intent(in), target:: this !in: configured DS unit
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=DSVP_SUCCESS
+         dsvp=>this%dsvp_p; if(.not.associated(dsvp)) errc=DSVP_ERR_INVALID_REQ
+         if(present(ierr)) ierr=errc
+         return
+        end function DSUnitGetDSVP
 !------------------------------------------------------
         function DSUnitGetId(this,ierr) result(unit_id)
 !Returns the DS unit id.
@@ -1305,11 +1323,12 @@
          if(present(ierr)) ierr=errc
          return
         end function DSUnitGetId
-!------------------------------------------------
-        subroutine DSUnitSetId(this,unit_id,ierr)
+!-----------------------------------------------------
+        subroutine DSUnitSetId(this,dsvp,unit_id,ierr)
 !Sets DS unit id (>=0).
          implicit none
          class(ds_unit_t), intent(inout):: this      !inout: DS unit
+         class(dsvp_t), intent(in), target:: dsvp    !in: DSVP the DS unit is part of
          integer(INTD), intent(in):: unit_id         !in: DS unit id: >=0
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
@@ -1317,6 +1336,7 @@
          errc=DSVP_SUCCESS
          if(unit_id.ge.0) then
           this%id=unit_id
+          this%dsvp_p=>dsvp
          else
           errc=DSVP_ERR_INVALID_ARGS
          endif
@@ -1459,7 +1479,7 @@
         subroutine DSVPSetUnit(this,virt_unit,ierr)
 !Sets up a new DSVU entry in the DSVU table in a sequential order.
          implicit none
-         class(dsvp_t), intent(inout):: this               !inout: DSVP
+         class(dsvp_t), intent(inout), target:: this       !inout: DSVP
          class(ds_unit_t), intent(in), pointer:: virt_unit !in: valid DSVU
          integer(INTD), intent(out), optional:: ierr       !out: error code
          integer(INTD):: errc
@@ -1468,7 +1488,7 @@
          if(associated(virt_unit)) then
           if(this%num_units.le.ubound(this%units,1)) then
            this%units(this%num_units)%unit_ref=>virt_unit
-           call this%units(this%num_units)%unit_ref%set_id(this%num_units,errc)
+           call this%units(this%num_units)%unit_ref%set_id(this,this%num_units,errc)
            if(errc.eq.DSVP_SUCCESS) then
             this%num_units=this%num_units+1
            else
