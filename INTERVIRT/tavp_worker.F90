@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/08/31
+!REVISION: 2017/09/01
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -103,6 +103,8 @@
         end type tens_instr_t
  !TAVP-WRK decoder:
         type, extends(ds_decoder_t), private:: tavp_wrk_decoder_t
+         integer(INTD), private:: source_rank=-1                    !bytecode source rank
+         integer(INTD), private:: source_comm                       !bytecode source communicator
          contains
           procedure, public:: configure=>TAVPWRKDecoderConfigure    !configures TAVP-WRK decoder
           procedure, public:: start=>TAVPWRKDecoderStart            !starts TAVP-WRK decoder
@@ -111,6 +113,8 @@
         end type tavp_wrk_decoder_t
  !TAVP-WRK encoder:
         type, extends(ds_encoder_t), private:: tavp_wrk_encoder_t
+         integer(INTD), allocatable, private:: dest_rank(:)         !bytecode destination ranks
+         integer(INTD), private:: dest_comm                         !bytecode destination communicator
          contains
           procedure, public:: configure=>TAVPWRKEncoderConfigure    !configures TAVP-WRK encoder
           procedure, public:: start=>TAVPWRKEncoderStart            !starts TAVP-WRK encoder
