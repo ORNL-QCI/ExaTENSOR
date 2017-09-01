@@ -1,6 +1,6 @@
 !Domain-specific virtual processor (DSVP): Abstract base module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/08/31
+!REVISION: 2017/09/01
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -267,6 +267,7 @@
           procedure, public:: start=>DSVPStart                                   !launches configured DSVP to its life cycle
           procedure, public:: shutdown=>DSVPShutdown                             !shuts down DSVP but keeps it configured
           procedure, public:: destroy=>DSVPDestroy                               !destroys DSVP completely
+          procedure, public:: set_microcode=>DSVPSetMicrocode                    !sets the pointer to the domain-specific microcode
           procedure, public:: alloc_units=>DSVPAllocUnits                        !allocates the DSVU table
           procedure, public:: free_units=>DSVPFreeUnits                          !frees the DSVU table
           procedure, public:: set_unit=>DSVPSetUnit                              !sets up a DSVU entry in the DSVU table
@@ -276,6 +277,7 @@
           procedure, public:: incr_recv_instr_counter=>DSVPIncrRecvInstrCounter  !increments the receieved instruction counter
           procedure, public:: incr_rtrd_instr_counter=>DSVPIncrRtrdInstrCounter  !increments the processed (retired) instruction counter
           procedure, public:: incr_fail_instr_counter=>DSVPIncrFailInstrCounter  !increments the failed instruction counter
+          procedure, public:: is_configured=>DSVPIsConfigured                    !returns TRUE if the DSVP is configured, FALSE otherwise
           procedure, public:: time_active=>DSVPTimeActive                        !returns the time DSVP is active in seconds
           procedure, public:: get_status=>DSVPGetStatus                          !returns the current status of the DSVP
           procedure, private:: set_status=>DSVPSetStatus                         !sets the DSVP status
@@ -392,7 +394,7 @@
          subroutine dsvp_ctor_i(this,conf,ierr)
           import:: dsvp_t,dsv_conf_t,INTD
           implicit none
-          class(dsvp_t), intent(inout):: this         !out: configured (constructed) DSVP
+          class(dsvp_t), intent(inout), target:: this !out: configured (constructed) DSVP
           class(dsv_conf_t), intent(in):: conf        !in: DSVP configuration
           integer(INTD), intent(out), optional:: ierr !out: error code
          end subroutine dsvp_ctor_i
@@ -462,6 +464,7 @@
         private DSVPStart
         private DSVPShutdown
         private DSVPDestroy
+        private DSVPSetMicrocode
         private DSVPAllocUnits
         private DSVPFreeUnits
         private DSVPSetUnit
@@ -471,6 +474,7 @@
         private DSVPIncrRecvInstrCounter
         private DSVPIncrRtrdInstrCounter
         private DSVPIncrFailInstrCounter
+        private DSVPIsConfigured
         private DSVPTimeActive
         private DSVPGetStatus
         private DSVPSetStatus
@@ -1413,15 +1417,12 @@
 
          errc=DSVP_SUCCESS
          if(this%get_status(errc).eq.DSVP_STAT_OFF) then
-          this%microcode=>NULL()
           if(allocated(this%description)) then
            deallocate(this%description,STAT=ier)
            if(ier.ne.0.and.errc.eq.DSVP_SUCCESS) errc=DSVP_ERR_MEM_FREE_FAIL
           endif
-          if(allocated(this%units)) then
-           deallocate(this%units,STAT=ier)
-           if(ier.ne.0.and.errc.eq.DSVP_SUCCESS) errc=DSVP_ERR_MEM_FREE_FAIL
-          endif
+          this%microcode=>NULL()
+          call this%free_units(errc)
           this%num_units=0
           this%instr_received=0
           this%instr_processed=0
@@ -1434,6 +1435,18 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine DSVPDestroy
+!-------------------------------------------------------
+        subroutine DSVPSetMicrocode(this,microcode,ierr)
+!Sets the pointer to the domain-specific microcode.
+         implicit none
+         class(dsvp_t), intent(inout):: this                      !inout: DSVP
+         type(ds_microcode_t), intent(in), target:: microcode(0:) !in: domain-specific microcode
+         integer(INTD), intent(out), optional:: ierr              !out: error code
+
+         this%microcode(0:)=>microcode
+         if(present(ierr)) ierr=DSVP_SUCCESS
+         return
+        end subroutine DSVPSetMicrocode
 !-----------------------------------------------------
         subroutine DSVPAllocUnits(this,num_units,ierr)
 !Allocates the DSVU table in DSVP.
@@ -1663,6 +1676,20 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine DSVPIncrFailInstrCounter
+!-------------------------------------------------------
+        function DSVPIsConfigured(this,ierr) result(res)
+!Returns TRUE if the DSVP is configured, FALSE otherwise.
+         implicit none
+         logical:: res                               !out: result
+         class(dsvp_t), intent(in):: this            !in: DSVP
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=DSVP_SUCCESS
+         res=(this%num_units.gt.0.and.allocated(this%units).and.associated(this%microcode))
+         if(present(ierr)) ierr=errc
+         return
+        end function DSVPIsConfigured
 !----------------------------------------------------
         function DSVPTimeActive(this,ierr) result(tm)
 !Returns the time DSVP is active in seconds.

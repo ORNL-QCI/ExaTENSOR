@@ -103,24 +103,36 @@
         end type tens_instr_t
  !TAVP-WRK decoder:
         type, extends(ds_decoder_t), private:: tavp_wrk_decoder_t
-         integer(INTD), private:: source_rank=-1                    !bytecode source rank
          integer(INTD), private:: source_comm                       !bytecode source communicator
+         integer(INTD), private:: source_rank=-1                    !bytecode source process rank
+         type(pack_env_t), private:: bytecode                       !incoming bytecode
          contains
           procedure, public:: configure=>TAVPWRKDecoderConfigure    !configures TAVP-WRK decoder
           procedure, public:: start=>TAVPWRKDecoderStart            !starts TAVP-WRK decoder
           procedure, public:: shutdown=>TAVPWRKDecoderShutdown      !shuts down TAVP-WRK decoder
           procedure, public:: decode=>TAVPWRKDecoderDecode          !decodes the DS bytecode into a DS instruction
         end type tavp_wrk_decoder_t
+ !TAVP-WRK decoder configuration:
+        type, extends(dsv_conf_t), public:: tavp_wrk_decoder_conf_t
+         integer(INTD), public:: source_comm !MPI communicator of the source process
+         integer(INTD), public:: source_rank !source process rank from which the bytecode is coming
+        end type tavp_wrk_decoder_conf_t
  !TAVP-WRK encoder:
         type, extends(ds_encoder_t), private:: tavp_wrk_encoder_t
-         integer(INTD), allocatable, private:: dest_rank(:)         !bytecode destination ranks
-         integer(INTD), private:: dest_comm                         !bytecode destination communicator
+         integer(INTD), private:: dest_comm                         !bytecode destinations communicator
+         integer(INTD), allocatable, private:: dest_rank(:)         !bytecode destination processes ranks
+         type(pack_env_t), allocatable, private:: bytecode(:)       !outgoing bytecode
          contains
           procedure, public:: configure=>TAVPWRKEncoderConfigure    !configures TAVP-WRK encoder
           procedure, public:: start=>TAVPWRKEncoderStart            !starts TAVP-WRK encoder
           procedure, public:: shutdown=>TAVPWRKEncoderShutdown      !shuts down TAVP-WRK encoder
           procedure, public:: encode=>TAVPWRKEncoderEncode          !encodes a DS instruction into the DS bytecode
         end type tavp_wrk_encoder_t
+ !TAVP-WRK encoder configuration:
+        type, extends(dsv_conf_t), public:: tavp_wrk_encoder_conf_t
+         integer(INTD), public:: dest_comm                 !MPI communicator of the destination processes
+         integer(INTD), allocatable, public:: dest_rank(:) !destination processes ranks to which the bytecode is going
+        end type tavp_wrk_encoder_conf_t
  !TAVP-WRK:
         type, extends(dsvp_t), public:: tavp_wrk_t
          type(tens_cache_t), private:: tens_cache                 !tensor argument cache
@@ -132,9 +144,18 @@
          contains
           procedure, public:: configure=>TAVPWRKConfigure         !configures the TAVP-WRK DSVP
         end type tavp_wrk_t
+ !TAVP-WRK configuration:
+        type, extends(dsv_conf_t), public:: tavp_wrk_conf_t
+         character(:), allocatable, public:: description    !TAVP description
+         integer(INTD), public:: tavp_id                    !TAVP id
+         integer(INTD), public:: source_comm                !bytecode source MPI communicator
+         integer(INTD), public:: source_rank                !bytecode source process rank
+         integer(INTD), public:: dest_comm                  !bytecode destinations MPI communicator
+         integer(INTD), allocatable, public:: dest_rank(:)  !bytecode destination processes ranks
+        end type tavp_wrk_conf_t
 !MODULE DATA:
  !TAVP-WRK microcode (static) table, set by dsvp.configure():
-        type(ds_microcode_t), private:: microcode(0:TAVP_ISA_SIZE-1)
+        type(ds_microcode_t), target, private:: microcode(0:TAVP_ISA_SIZE-1)
  !TAVP-WRK distributed address space, set by dsvp.configure():
         type(DistrSpace_t), private:: tavp_addr_space
 !VISIBILITY:
@@ -2114,7 +2135,17 @@
          integer(INTD):: errc
 
          errc=0
-         !`Implement
+         select type(conf)
+         type is(tavp_wrk_decoder_conf_t)
+          if(conf%source_rank.ge.0) then
+           this%source_rank=conf%source_rank
+           this%source_comm=conf%source_comm
+          else
+           errc=-2
+          endif
+         class default
+          errc=-1
+         end select
          if(present(ierr)) ierr=errc
          return
         end subroutine TAVPWRKDecoderConfigure
@@ -2386,10 +2417,40 @@
          class(tavp_wrk_encoder_t), intent(inout):: this !out: configured DSVU (must not be configured on entrance)
          class(dsv_conf_t), intent(in):: conf            !in: specific DSVU configuration
          integer(INTD), intent(out), optional:: ierr     !out: error code
-         integer(INTD):: errc
+         integer(INTD):: errc,i,n
 
          errc=0
-         !`Implement
+         select type(conf)
+         type is(tavp_wrk_encoder_conf_t)
+          if(allocated(conf%dest_rank)) then
+           n=size(conf%dest_rank)
+           do i=lbound(conf%dest_rank,1),ubound(conf%dest_rank,1)
+            if(conf%dest_rank(i).lt.0) then; errc=-6; exit; endif !trap
+           enddo
+           if(errc.eq.0) then
+            if(allocated(this%dest_rank)) deallocate(this%dest_rank)
+            if(allocated(this%bytecode)) deallocate(this%bytecode)
+            allocate(this%dest_rank(0:n-1),STAT=errc)
+            if(errc.eq.0) then
+             allocate(this%bytecode(0:n-1),STAT=errc)
+             if(errc.eq.0) then
+              this%dest_rank(0:)=conf%dest_rank(:)
+              this%dest_comm=conf%dest_comm
+             else
+              errc=-5
+             endif
+            else
+             errc=-4
+            endif
+           else
+            errc=-3
+           endif
+          else
+           errc=-2
+          endif
+         class default
+          errc=-1
+         end select
          if(present(ierr)) ierr=errc
          return
         end subroutine TAVPWRKEncoderConfigure
@@ -2453,15 +2514,78 @@
 ! * Sets up global DSVU table in DSVP;
 ! * Sets up DSVP description and id;
          implicit none
-         class(tavp_wrk_t), intent(inout):: this     !out: configured DSVP (must not be configured on entrance)
-         class(dsv_conf_t), intent(in):: conf        !in: specific DSVP configuration
-         integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc
+         class(tavp_wrk_t), intent(inout), target:: this !out: configured DSVP (must not be configured on entrance)
+         class(dsv_conf_t), intent(in):: conf            !in: specific DSVP configuration
+         integer(INTD), intent(out), optional:: ierr     !out: error code
+         integer(INTD):: errc,num_units
+         type(tavp_wrk_decoder_conf_t):: decoder_conf
+         type(tavp_wrk_encoder_conf_t):: retirer_conf
+         class(tavp_wrk_decoder_t), pointer:: decoder_p
+         class(tavp_wrk_encoder_t), pointer:: retirer_p
 
-         errc=0
          !jerr=talsh_init(tavp_worker_host_buf_size,tavp_worker_host_arg_max,(/(jj,jj=gpu_start,gpu_start+gpu_count-1)/))
          !call tavp_addr_space%create(role_comm,TAVP_WORKER_NUM_WINS,'AddressSpaceWRK',jerr)
-         !`Implement
+         if(.not.this%is_configured(errc)) then
+          if(errc.eq.0) then
+           select type(conf)
+           type is(tavp_wrk_conf_t)
+            if(conf%tavp_id.ge.0.and.allocated(conf%description)) then
+             num_units=0 !increment by one after each unit configuration
+ !Configure static DSVU:
+  !Decoder:
+             decoder_conf=tavp_wrk_decoder_conf_t(conf%source_comm,conf%source_rank)
+             call this%decoder%configure(decoder_conf,errc)
+             if(errc.eq.0) then
+              num_units=num_units+1
+  !Retirer:
+              retirer_conf=tavp_wrk_encoder_conf_t(conf%dest_comm,conf%dest_rank)
+              call this%retirer%configure(retirer_conf,errc)
+              if(errc.eq.0) then
+               num_units=num_units+1
+ !Set up global DSVU table:
+               call this%alloc_units(num_units,errc)
+               if(errc.eq.DSVP_SUCCESS) then
+                decoder_p=>this%decoder; call this%set_unit(decoder_p,errc)
+                if(errc.eq.DSVP_SUCCESS) then
+                 retirer_p=>this%retirer; call this%set_unit(retirer_p,errc)
+                 if(errc.eq.DSVP_SUCCESS) then
+ !Set microcode:
+                  call init_microcode(errc)
+                  if(errc.eq.0) then
+                   call this%set_microcode(microcode)
+ !Set the DSVP id and description:
+                   call this%set_description(int(conf%tavp_id,INTL),conf%description,errc); if(errc.ne.DSVP_SUCCESS) errc=-11
+                  else
+                   errc=-10
+                  endif
+                 else
+                  errc=-9
+                 endif
+                else
+                 errc=-8
+                endif
+               else
+                errc=-7
+               endif
+              else
+               errc=-6
+              endif
+             else
+              errc=-5
+             endif
+            else
+             errc=-4
+            endif
+           class default
+            errc=-3
+           end select
+          else
+           errc=-2
+          endif
+         else
+          errc=-1
+         endif
+         if(errc.ne.0) call this%destroy()
          if(present(ierr)) ierr=errc
          return
         end subroutine TAVPWRKConfigure
