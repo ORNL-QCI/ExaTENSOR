@@ -1,6 +1,6 @@
-!ExaTENSOR: TAVP-Worker implementation
+!ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/09/01
+!REVISION: 2017/09/06
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -113,7 +113,7 @@
           procedure, public:: decode=>TAVPWRKDecoderDecode          !decodes the DS bytecode into a DS instruction
         end type tavp_wrk_decoder_t
  !TAVP-WRK decoder configuration:
-        type, extends(dsv_conf_t), public:: tavp_wrk_decoder_conf_t
+        type, extends(dsv_conf_t), private:: tavp_wrk_decoder_conf_t
          integer(INTD), public:: source_comm !MPI communicator of the source process
          integer(INTD), public:: source_rank !source process rank from which the bytecode is coming
         end type tavp_wrk_decoder_conf_t
@@ -129,7 +129,7 @@
           procedure, public:: encode=>TAVPWRKEncoderEncode          !encodes a DS instruction into the DS bytecode
         end type tavp_wrk_encoder_t
  !TAVP-WRK encoder configuration:
-        type, extends(dsv_conf_t), public:: tavp_wrk_encoder_conf_t
+        type, extends(dsv_conf_t), private:: tavp_wrk_encoder_conf_t
          integer(INTD), public:: dest_comm                 !MPI communicator of the destination processes
          integer(INTD), allocatable, public:: dest_rank(:) !destination processes ranks to which the bytecode is going
         end type tavp_wrk_encoder_conf_t
@@ -1235,7 +1235,7 @@
 !Constructs a tensor operand. The <tensor> must be set.
 !The associated tensor resource is optional and may still be empty.
          implicit none
-         class(tens_oprnd_t), intent(inout):: this                            !inout: undefined tensor operand
+         class(tens_oprnd_t), intent(inout):: this                            !inout: undefined tensor operand (on entrance)
          class(tens_rcrsv_t), target, intent(in):: tensor                     !in: defined tensor
          integer(INTD), intent(out), optional:: ierr                          !out: error code
          class(tens_resrc_t), target, intent(inout), optional:: tens_resource !in: local tensor resource (may still be empty)
@@ -1648,7 +1648,7 @@
         end subroutine TensOprndUpload
 !---------------------------------------------------------
         function TensOprndSync(this,ierr,wait) result(res)
-!Synchronizes the pending prefetch/upload, either TEST or WAIT.
+!Synchronizes a pending prefetch/upload, either TEST or WAIT.
 !A successful synchronization on prefetch will mark the tensor operand
 !as delivered (present). A successful synchronization on upload will
 !not change the status of the tensor operand (which is present).
@@ -1832,7 +1832,6 @@
         subroutine tens_entry_wrk_dtor(this)
          implicit none
          type(tens_entry_wrk_t):: this
-         integer(INTD):: errc
 
          call this%nullify_tensor(.TRUE.) !deallocate the tensor component (if it is set)
          return
@@ -2542,7 +2541,7 @@
               call this%retirer%configure(retirer_conf,errc)
               if(errc.eq.0) then
                num_units=num_units+1
- !Set up global DSVU table:
+ !Set up global DSVU table (references to all DSVU):
                call this%alloc_units(num_units,errc)
                if(errc.eq.DSVP_SUCCESS) then
                 decoder_p=>this%decoder; call this%set_unit(decoder_p,errc)

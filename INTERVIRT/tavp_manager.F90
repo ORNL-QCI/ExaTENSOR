@@ -1,6 +1,6 @@
-!ExaTENSOR: TAVP-Manager implementation
+!ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/08/29
+!REVISION: 2017/09/06
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -29,272 +29,81 @@
         private
 !PARAMETERS:
  !Basic:
-        integer(INTD), private:: CONS_OUT=6
-        integer(INTD), private:: DEBUG=0
-        logical, private:: VERBOSE=.TRUE.
+        integer(INTD), private:: CONS_OUT=6 !default output device
+        integer(INTD), private:: DEBUG=0    !debugging mode
+        logical, private:: VERBOSE=.TRUE.   !verbosity for errors
 !TYPES:
- !Tensor owner:
-        type, private:: tens_owner_t
-         class(tens_header_t), pointer, private:: tens_header=>NULL() !pointer to the tensor header
-         integer(INTD), private:: owner_id=-1                         !non-negative tensor owner id
-         type(tens_status_t), private:: tens_status                   !current status of the tensor
+ !Tensor argument cache entry (TAVP-specific):
+        type, extends(tens_cache_entry_t), private:: tens_entry_mng_t
+         integer(INTD), private:: owner_id=-1                      !tensor owner id (non-negative)
          contains
-          procedure, private:: TensOwnerCtor                          !ctor
-          generic, public:: tens_owner_ctor=>TensOwnerCtor
-          procedure, public:: is_set=>TensOwnerIsSet                  !returns TRUE if object is set
-          procedure, public:: get_tens_header=>TensOwnerGetTensHeader !returns a pointer to the tensor header
-          procedure, public:: get_owner_id=>TensOwnerGetOwnerId       !returns the tensor owner id
-          final:: tens_owner_dtor                                     !dtor
-        end type tens_owner_t
- !Tensor cache entry:
-        type, private:: tens_entry_t
-         class(tens_rcrsv_t), pointer, private:: tensor=>NULL() !composite tensor (consists of subtensors specified by their headers)
-         type(list_bi_t), private:: owner_list                  !list of the owners (tens_owner_t) of subtensors
-         type(tens_status_t), private:: tens_status             !tensor status
-         logical, private:: tens_alloc=.FALSE.                  !TRUE if the tensor was allocated, FALSE if associated
+          procedure, private:: TensEntryMngCtor                    !ctor
+          generic, public:: tens_entry_mng_ctor=>TensEntryMngCtor
+          procedure, public:: get_owner_id=>TensEntryMngGetOwnerId !returns the owner id
+          final:: tens_entry_mng_dtor
+        end type tens_entry_mng_t
+ !Tensor operand (encapsulated tensor data processible by a specific TAVP):
+        type, extends(ds_oprnd_t), private:: tens_oprnd_t
+         class(tens_rcrsv_t), pointer, private:: tensor=>NULL() !non-owning pointer to a persistent recursive tensor
+         integer(INTD), private:: owner_id=-1                   !tensor owner id (non-negative)
          contains
-          procedure, private:: TensEntryCtor                        !ctor
-          generic, public:: tens_entry_ctor=>TensEntryCtor
-          procedure, public:: is_set=>TensEntryIsSet                !returns TRUE if the tensor entry is set
-          procedure, public:: get_tensor=>TensEntryGetTensor        !returns a pointer to the tensor
-          procedure, public:: get_owner_list=>TensEntryGetOwnerList !returns a pointer to the subtensor owner list
-          final:: tens_entry_dtor
-        end type tens_entry_t
- !Tensor instruction (realization of a tensor operation for a specific TAVP):
-        type, extends(ds_instr_t), private:: tens_instr_t
-        contains
-         procedure, private:: TensInstrCtor                        !ctor: constructs a tensor instruction from the specification of a tensor operation
-         generic, public:: tens_instr_ctor=>TensInstrCtor
-         procedure, public:: encode=>TensInstrEncode               !encodes a tensor instruction into a bytecode packet
-         procedure, private:: set_microcode=>TensInstrSetMicrocode !sets up instruction dynamic microcode bindings
-         final:: tens_instr_dtor                                   !dtor
-        end type tens_instr_t
-!DATA:
- !TAVP instruction microcode bindings (set by the TAVP initialization):
-        type(ds_microcode_t), private:: microcode(0:TAVP_ISA_SIZE-1)
+          procedure, private:: TensOprndCtor                    !ctor
+          generic, public:: tens_oprnd_ctor=>TensOprndCtor
+          procedure, public:: get_tensor=>TensOprndGetTensor    !returns a pointer to the tensor
+          procedure, public:: get_owner_id=>TensOprndGetOwnerId !returns the tensor owner id
+          procedure, public:: set_owner_id=>TensOprndSetOwnerId !sets the tensor owner id
+          procedure, public:: is_remote=>TensOprndIsRemote      !returns TRUE if the tensor operand is remote
+          procedure, public:: acquire_rsc=>TensOprndAcquireRsc  !explicitly acquires local resources for the tensor operand
+          procedure, public:: prefetch=>TensOprndPrefetch       !starts prefetching the remote tensor operand (acquires local resources!)
+          procedure, public:: upload=>TensOprndUpload           !starts uploading the tensor operand to its remote location
+          procedure, public:: sync=>TensOprndSync               !synchronizes the currently pending communication on the tensor operand
+          procedure, public:: release=>TensOprndRelease         !destroys the present local copy of the tensor operand (releases local resources!), but the operand stays defined
+          procedure, public:: destruct=>TensOprndDestruct       !performs complete destruction back to an empty state
+          final:: tens_oprnd_dtor
+        end type tens_oprnd_t
+!MODULE DATA:
+ !TAVP-MNG microcode (static) table, set by dsvp.configure():
+        type(ds_microcode_t), target, private:: microcode(0:TAVP_ISA_SIZE-1)
 !VISIBILITY:
- !tens_owner_t:
-        private TensOwnerCtor
-        private TensOwnerIsSet
-        private TensOwnerGetTensHeader
-        private TensOwnerGetOwnerId
-        private tens_owner_dtor
- !tens_entry_t:
-        private TensEntryCtor
-        private TensEntryIsSet
-        private TensEntryGetTensor
-        private TensEntryGetOwnerList
-        private tens_entry_dtor
- !tens_instr_t:
-        private TensInstrCtor
-        private TensInstrEncode
-        private TensInstrSetMicrocode
-        private tens_instr_dtor
-
+ !tens_entry_mng_t:
+        private TensEntryMngCtor
+        private TensEntryMngGetOwnerId
+        public tens_entry_mng_dtor
+        private tens_entry_mng_alloc
+ !tens_oprnd_t:
+        private TensOprndCtor
+        private TensOprndGetTensor
+        private TensOprndGetOwnerId
+        private TensOprndSetOwnerId
+        private TensOprndIsRemote
+        private TensOprndAcquireRsc
+        private TensOprndPrefetch
+        private TensOprndUpload
+        private TensOprndSync
+        private TensOprndRelease
+        private TensOprndDestruct
+        public tens_oprnd_dtor
 !IMPLEMENTATION:
        contains
-![tens_owner_t]=================================================
-        subroutine TensOwnerCtor(this,tens_header,owner_id,ierr)
+![tens_entry_mng_t]========================================
+        subroutine TensEntryMngCtor(this,tensor,owner,ierr)
+!Constructs a <tens_entry_mng_t>. Note move semantics for <tensor>!
          implicit none
-         class(tens_owner_t), intent(out):: this
-         class(tens_header_t), intent(in), target:: tens_header
-         integer(INTD), intent(in):: owner_id
-         integer(INTD), intent(out), optional:: ierr
+         class(tens_entry_mng_t), intent(out):: this          !out: specialized tensor cache entry
+         class(tens_rcrsv_t), pointer, intent(inout):: tensor !inout: pointer to an allocated tensor (ownership transfer will occur here!)
+         integer(INTD), intent(in):: owner                    !in: tensor owner id
+         integer(INTD), intent(out), optional:: ierr          !out: error code
          integer(INTD):: errc
 
          errc=0
-         if(owner_id.ge.0) then
-          this%owner_id=owner_id
-          this%tens_header=>tens_header
-         else
-          errc=-1
-         endif
-         if(present(ierr)) ierr=errc
-         return
-        end subroutine TensOwnerCtor
-!-----------------------------------------------------
-        function TensOwnerIsSet(this,ierr) result(ans)
-         implicit none
-         logical:: ans
-         class(tens_owner_t), intent(in):: this
-         integer(INTD), intent(out), optional:: ierr
-         integer(INTD):: errc
-
-         errc=0
-         ans=(this%owner_id.ge.0)
-         if(present(ierr)) ierr=errc
-         return
-        end function TensOwnerIsSet
-!---------------------------------------------------------------------
-        function TensOwnerGetTensHeader(this,ierr) result(tens_header)
-         implicit none
-         class(tens_header_t), pointer:: tens_header
-         class(tens_owner_t), intent(in):: this
-         integer(INTD), intent(out), optional:: ierr
-         integer(INTD):: errc
-
-         errc=0
-         if(this%owner_id.ge.0) then
-          tens_header=>this%tens_header
-         else
-          tens_header=>NULL(); errc=-1
-         endif
-         if(present(ierr)) ierr=errc
-         return
-        end function TensOwnerGetTensHeader
-!---------------------------------------------------------------
-        function TensOwnerGetOwnerId(this,ierr) result(owner_id)
-         implicit none
-         integer(INTD):: owner_id
-         class(tens_owner_t), intent(in):: this
-         integer(INTD), intent(out), optional:: ierr
-         integer(INTD):: errc
-
-         errc=0; owner_id=this%owner_id
-         if(owner_id.lt.0) errc=-1
-         if(present(ierr)) ierr=errc
-         return
-        end function TensOwnerGetOwnerId
-!---------------------------------------
-        subroutine tens_owner_dtor(this)
-         implicit none
-         type(tens_owner_t):: this
-
-         this%tens_header=>NULL()
-         this%owner_id=-1
-         return
-        end subroutine tens_owner_dtor
-![tens_entry_t]===================================
-        subroutine TensEntryCtor(this,ierr,tensor)
-!Constructs a tensor cache entry. If <tensor> is present,
-!it will be assumed persistent and will be pointed to.
-!If <tensor> is absent, it will be allocated here.
-         implicit none
-         class(tens_entry_t), intent(out):: this                    !out: tensor cache entry
-         integer(INTD), intent(out), optional:: ierr                !out: error code
-         class(tens_rcrsv_t), intent(in), target, optional:: tensor !in: persistent tensor
-         integer(INTD):: errc
-
-         errc=0
-         if(present(tensor)) then
-          this%tensor=>tensor; this%tens_alloc=.FALSE.
-         else
-          allocate(this%tensor,STAT=errc)
-          if(errc.eq.0) then; this%tens_alloc=.TRUE.; else; errc=-1; endif
-         endif
-         if(present(ierr)) ierr=errc
-         return
-        end subroutine TensEntryCtor
-!-----------------------------------------------------
-        function TensEntryIsSet(this,ierr) result(ans)
-         implicit none
-         logical:: ans                               !out: answer
-         class(tens_entry_t), intent(in):: this      !in: tensor cache entry
-         integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc
-
-         errc=0
-         ans=associated(this%tensor)
-         if(present(ierr)) ierr=errc
-         return
-        end function TensEntryIsSet
-!------------------------------------------------------------
-        function TensEntryGetTensor(this,ierr) result(tensor)
-         implicit none
-         class(tens_rcrsv_t), pointer:: tensor       !out: pointer to the tensor
-         class(tens_entry_t), intent(in):: this      !in: tensor cache entry
-         integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc
-
-         if(this%is_set(errc)) then
-          if(errc.eq.0) then
-           tensor=>this%tensor
-          else
-           tensor=>NULL(); errc=-2
-          endif
-         else
-          tensor=>NULL(); errc=-1
-         endif
-         if(present(ierr)) ierr=errc
-         return
-        end function TensEntryGetTensor
-!-------------------------------------------------------------------
-        function TensEntryGetOwnerList(this,ierr) result(owner_list)
-         implicit none
-         class(list_bi_t), pointer:: owner_list         !out: pointer to the owner list
-         class(tens_entry_t), intent(in), target:: this !in: tensor cache entry
-         integer(INTD), intent(out), optional:: ierr    !out: error code
-         integer(INTD):: errc
-
-         owner_list=>NULL()
-         if(this%is_set(errc)) then
-          if(errc.eq.0) then
-           owner_list=>this%owner_list
-          else
-           errc=-2
-          endif
-         else
-          errc=-1
-         endif
-         if(present(ierr)) ierr=errc
-         return
-        end function TensEntryGetOwnerList
-!----------------------------------------------
-        subroutine tens_entry_dtor(this)
-         implicit none
-         type(tens_entry_t):: this
-         type(list_iter_t):: lit
-         integer(INTD):: errc
-
-         if(this%tens_alloc.and.associated(this%tensor)) deallocate(this%tensor)
-         this%tensor=>NULL(); this%tens_alloc=.FALSE.
-         errc=lit%init(this%owner_list); if(errc.eq.GFC_SUCCESS) errc=lit%delete_all()
-         errc=lit%release()
-         return
-        end subroutine tens_entry_dtor
-![tens_instr_t]============================================
-        subroutine TensInstrCtor(this,op_code,ierr,op_spec)
-!Constructs a tensor instruction from a given tensor operation.
-!The tensor instruction is a realization of the given tensor operation for TAVP.
-         implicit none
-         class(tens_instr_t), intent(inout):: this        !out: tensor instruction (must be empty on entrance)
-         integer(INTD), intent(in):: op_code              !in: instruction code (see top)
-         integer(INTD), intent(out), optional:: ierr      !out: error code
-         class(*), intent(in), target, optional:: op_spec !in: operation specification
-         integer(INTD):: errc
-
-         if(this%is_empty(errc)) then
-          if(errc.eq.DSVP_SUCCESS) then
-!Construct instruction fields:
-           select case(op_code)
-           case(TAVP_INSTR_NOOP)
-           case(TAVP_INSTR_STOP)
-
-           case(TAVP_INSTR_CREATE,TAVP_INSTR_DESTROY)
-
-           case(TAVP_INSTR_CONTRACT)
-
-           case default
-            errc=-5 !invalid operation (or not implemented)
-           end select
-!Activate the instruction:
+         if(associated(tensor)) then
+          if(owner.ge.0) then
+           call this%set_tensor(tensor,errc)
            if(errc.eq.0) then
-            call this%set_code(op_code,errc)
-            if(errc.eq.DSVP_SUCCESS) then
-             call this%set_status(DS_INSTR_NEW,errc)
-             if(errc.ne.DSVP_SUCCESS) then
-              call this%set_status(DS_INSTR_RETIRED)
-              call tens_instr_dtor(this)
-              errc=-4
-             endif
-            else
-             call this%set_status(DS_INSTR_RETIRED)
-             call tens_instr_dtor(this)
-             errc=-3
-            endif
+            tensor=>NULL() !transfer the ownership
+            this%owner_id=owner
            else
-            call this%set_status(DS_INSTR_RETIRED)
-            call tens_instr_dtor(this)
+            errc=-3
            endif
           else
            errc=-2
@@ -304,19 +113,67 @@
          endif
          if(present(ierr)) ierr=errc
          return
-        end subroutine TensInstrCtor
-!---------------------------------------------------------
-        subroutine TensInstrEncode(this,instr_packet,ierr)
-!Encodes a tensor instruction into a bytecode packet.
+        end subroutine TensEntryMngCtor
+!------------------------------------------------------------
+        function TensEntryMngGetOwnerId(this,ierr) result(id)
          implicit none
-         class(tens_instr_t), intent(in):: this          !in: tensor instruction (must be non-empty)
-         class(obj_pack_t), intent(inout):: instr_packet !out: instruction bytecode packet
-         integer(INTD), intent(out), optional:: ierr     !out: error code
+         integer(INTD):: id                          !out: tensor owner id
+         class(tens_entry_mng_t), intent(in):: this  !in: specialized tensor cache entry
+         integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
 
-         if(.not.this%is_empty(errc)) then
+         if(this%is_set(errc)) then
+          id=this%owner_id
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function TensEntryMngGetOwnerId
+!-------------------------------------------
+        subroutine tens_entry_mng_dtor(this)
+         implicit none
+         type(tens_entry_mng_t):: this !inout: specialized tensor cache entry
+
+         call this%nullify_tensor(.TRUE.) !deallocate the tensor component (if it is set)
+         this%owner_id=-1
+         return
+        end subroutine tens_entry_mng_dtor
+!-------------------------------------------------------------
+        function tens_entry_mng_alloc(tens_entry) result(ierr)
+!Non-member allocator for tens_entry_mng_t.
+         implicit none
+         integer(INTD):: ierr
+         class(tens_cache_entry_t), allocatable, intent(out):: tens_entry
+
+         allocate(tens_entry_mng_t::tens_entry,STAT=ierr)
+         return
+        end function tens_entry_mng_alloc
+![tens_oprnd_t]=========================================
+        subroutine TensOprndCtor(this,tensor,ierr,owner)
+!Constructs a tensor operand. The <tensor> must be set.
+!The owner id is optional.
+         implicit none
+         class(tens_oprnd_t), intent(inout):: this        !inout: undefined tensor operand (on entrance)
+         class(tens_rcrsv_t), target, intent(in):: tensor !in: defined tensor
+         integer(INTD), intent(out), optional:: ierr      !out: error code
+         integer(INTD), intent(in), optional:: owner      !in: tensor owner id (no restrictions)
+         integer(INTD):: errc
+
+         if(.not.this%is_active(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
-           !`Finish
+           if(tensor%is_set(errc)) then
+            if(errc.eq.TEREC_SUCCESS) then
+             this%tensor=>tensor
+             if(present(owner)) this%owner_id=owner
+             call this%mark_active(errc)
+             if(errc.ne.DSVP_SUCCESS) errc=-5
+            else
+             errc=-4
+            endif
+           else
+            errc=-3
+           endif
           else
            errc=-2
           endif
@@ -325,34 +182,173 @@
          endif
          if(present(ierr)) ierr=errc
          return
-        end subroutine TensInstrEncode
-!--------------------------------------------------
-        subroutine TensInstrSetMicrocode(this,ierr)
-!Sets up instruction dynamic bindings.
+        end subroutine TensOprndCtor
+!------------------------------------------------------------
+        function TensOprndGetTensor(this,ierr) result(tens_p)
+!Returns a pointer to the tensor.
          implicit none
-         class(tens_instr_t), intent(inout):: this   !inout: defined tensor instruction
+         class(tens_rcrsv_t), pointer:: tens_p       !out: pointer to the tensor
+         class(tens_oprnd_t), intent(in):: this      !in: active tensor operand
          integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc,op_code
+         integer(INTD):: errc
 
-         op_code=this%get_code(errc)
-         !`Finish
+         errc=0; tens_p=>this%tensor
+         if(.not.associated(tens_p)) errc=-1
          if(present(ierr)) ierr=errc
          return
-        end subroutine TensInstrSetMicrocode
-!---------------------------------------
-        subroutine tens_instr_dtor(this)
+        end function TensOprndGetTensor
+!---------------------------------------------------------
+        function TensOprndGetOwnerId(this,ierr) result(id)
+!Returns the tensor owner id.
          implicit none
-         type(tens_instr_t):: this
-         integer(INTD):: sts,errc
+         integer(INTD):: id                          !out: tensor owner id
+         class(tens_oprnd_t), intent(in):: this      !in: active tensor operand
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
 
-         sts=this%get_status(errc)
-         if((sts.eq.DS_INSTR_EMPTY.or.sts.eq.DS_INSTR_RETIRED).and.errc.eq.DSVP_SUCCESS) then
-          call this%clean(errc)
-          if(errc.ne.0) call quit(errc,'#ERROR(tavp_manager:tens_instr_dtor): Tensor instruction destruction failed!')
+         errc=0
+         if(associated(this%tensor)) then
+          id=this%owner_id
          else
-          call quit(-1,'#ERROR(tavp_manager:tens_instr_dtor): Attempt to destroy an active TAVP instruction!')
+          errc=-1
          endif
+         if(present(ierr)) ierr=errc
          return
-        end subroutine tens_instr_dtor
+        end function TensOprndGetOwnerId
+!------------------------------------------------------
+        subroutine TensOprndSetOwnerId(this,owner,ierr)
+!Sets the tensor owner id (must be non-negative).
+         implicit none
+         class(tens_oprnd_t), intent(inout):: this   !inout: active tensor operand
+         integer(INTD), intent(in):: owner           !in: tensor owner id (>=0)
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         if(this%is_active(errc)) then
+          if(errc.eq.DSVP_SUCCESS) then
+           if(owner.ge.0) then
+            this%owner_id=owner
+           else
+            errc=-3
+           endif
+          else
+           errc=-2
+          endif
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensOprndSetOwnerId
+!--------------------------------------------------------
+        function TensOprndIsRemote(this,ierr) result(res)
+!Returns TRUE if the tensor operand is remote, FALSE otherwise.
+         implicit none
+         logical:: res                               !out: result
+         class(tens_oprnd_t), intent(in):: this      !in: active tensor operand
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc,id
+
+         res=.TRUE. !assumed remote by default
+         if(this%is_active(errc)) then
+          if(errc.eq.DSVP_SUCCESS) then
+           id=this%get_owner_id(errc)
+           if(errc.eq.0) then
+            res=id.ne.role_rank !tensor is owner by a different TAVP-MNG processor
+           else
+            errc=-3
+           endif
+          else
+           errc=-2
+          endif
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function TensOprndIsRemote
+!------------------------------------------------
+        subroutine TensOprndAcquireRsc(this,ierr)
+!Acquires local resources for the remote tensor operand.
+         implicit none
+         class(tens_oprnd_t), intent(inout):: this   !inout: tensor operand
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=0
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensOprndAcquireRsc
+!----------------------------------------------
+        subroutine TensOprndPrefetch(this,ierr)
+!Starts prefetching the (remote) tensor operand.
+         implicit none
+         class(tens_oprnd_t), intent(inout):: this   !inout: tensor operand
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=0
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensOprndPrefetch
+!----------------------------------------------
+        subroutine TensOprndUpload(this,ierr)
+!Starts uploading the (remote) tensor operand.
+         implicit none
+         class(tens_oprnd_t), intent(inout):: this   !inout: tensor operand
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=0
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensOprndUpload
+!---------------------------------------------------------
+        function TensOprndSync(this,ierr,wait) result(res)
+!Synchronizes a pending prefetch/upload.
+         implicit none
+         logical:: res                               !out: TRUE on communication completion, FALSE otherwise
+         class(tens_oprnd_t), intent(inout):: this   !inout: tensor operand
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         logical, intent(in), optional:: wait        !in: TRUE activates WAIT instead of TEST synchronization (default)
+         integer(INTD):: errc
+
+         errc=0
+         if(present(ierr)) ierr=errc
+         return
+        end function TensOprndSync
+!---------------------------------------------
+        subroutine TensOprndRelease(this,ierr)
+!Releases local resources acquired for the remote tensor operand.
+         implicit none
+         class(tens_oprnd_t), intent(inout):: this   !inout: tensor operand
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=0
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensOprndRelease
+!----------------------------------------------
+        subroutine TensOprndDestruct(this,ierr)
+!Destructs the tensor operand.
+         implicit none
+         class(tens_oprnd_t), intent(inout):: this   !inout: tensor operand
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=0
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensOprndDestruct
+!---------------------------------------
+        subroutine tens_oprnd_dtor(this)
+         implicit none
+         type(tens_oprnd_t):: this
+         integer(INTD):: errc
+
+         call this%destruct(errc)
+         if(errc.ne.0) call quit(errc,'#FATAL(TAVP-MNG:tens_oprnd_dtor): Destructor failed!')
+        end subroutine tens_oprnd_dtor
 
        end module tavp_manager
