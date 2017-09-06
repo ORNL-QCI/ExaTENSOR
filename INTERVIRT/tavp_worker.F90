@@ -62,6 +62,15 @@
           final:: tens_resrc_dtor                                      !dtor `GCC bug
 #endif
         end type tens_resrc_t
+ !Tensor argument cache entry (TAVP-specific):
+        type, extends(tens_cache_entry_t), private:: tens_entry_wrk_t
+         type(tens_resrc_t), private:: resource                       !tensor resource
+         contains
+          procedure, private:: TensEntryWrkCtor                       !ctor
+          procedure, public:: tens_entry_wrk_ctor=>TensEntryWrkCtor
+          procedure, public:: get_resource=>TensEntryWrkGetResource   !returns a pointer to the resource
+          final:: tens_entry_wrk_dtor                                 !dtor
+        end type tens_entry_wrk_t
  !Tensor operand (encapsulated tensor data processible by a specific TAVP):
         type, extends(ds_oprnd_t), private:: tens_oprnd_t
          class(tens_rcrsv_t), pointer, private:: tensor=>NULL()   !non-owning pointer to a persistent recursive tensor
@@ -83,15 +92,6 @@
           procedure, public:: destruct=>TensOprndDestruct           !performs complete destruction back to an empty state
           final:: tens_oprnd_dtor                                   !dtor
         end type tens_oprnd_t
- !Tensor argument cache entry (TAVP-specific):
-        type, extends(tens_cache_entry_t), private:: tens_entry_wrk_t
-         type(tens_resrc_t), private:: resource                       !tensor resource
-         contains
-          procedure, private:: TensEntryWrkCtor
-          procedure, public:: tens_entry_wrk_ctor=>TensEntryWrkCtor   !ctor
-          procedure, public:: get_resource=>TensEntryWrkGetResource   !returns a pointer to the resource
-          final:: tens_entry_wrk_dtor                                 !dtor
-        end type tens_entry_wrk_t
  !Tensor instruction (realization of a tensor operation for a specific TAVP):
         type, extends(ds_instr_t), private:: tens_instr_t
          type(talsh_task_t), private:: talsh_task                   !TAL-SH task
@@ -192,6 +192,11 @@
         private TensResrcIncrRefCount
         private TensResrcDecrRefCount
         public tens_resrc_dtor
+ !tens_entry_wrk_t:
+        private TensEntryWrkCtor
+        private TensEntryWrkGetResource
+        public tens_entry_wrk_dtor
+        public tens_entry_wrk_alloc
  !tens_oprnd_t:
         private TensOprndCtor
         private TensOprndSetResource
@@ -206,11 +211,6 @@
         private TensOprndRelease
         private TensOprndDestruct
         public tens_oprnd_dtor
- !tens_entry_wrk_t:
-        private TensEntryWrkCtor
-        private TensEntryWrkGetResource
-        public tens_entry_wrk_dtor
-        public tens_entry_wrk_alloc
  !tens_instr_t:
         private TensInstrCtor
         private TensInstrEncode
@@ -1230,6 +1230,66 @@
          if(errc.ne.0) call quit(errc,'#FATAL(TAVP-WRK:tens_resrc_dtor): Attempt to free a memory buffer which is still in use!')
          return
         end subroutine tens_resrc_dtor
+![tens_entry_wrk_t]==================================
+        subroutine TensEntryWrkCtor(this,tensor,ierr)
+!Constructs a <tens_entry_wrk_t>. Note move semantics for <tensor>!
+         implicit none
+         class(tens_entry_wrk_t), intent(out):: this          !out: specialized tensor cache entry
+         class(tens_rcrsv_t), pointer, intent(inout):: tensor !inout: pointer to an allocated tensor (ownership transfer will occur here!)
+         integer(INTD), intent(out), optional:: ierr          !out: error code
+         integer(INTD):: errc
+
+         errc=0
+         if(associated(tensor)) then
+          call this%set_tensor(tensor,errc); if(errc.ne.0) errc=-2
+          if(errc.eq.0) tensor=>NULL() !transfer the ownership
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensEntryWrkCtor
+!---------------------------------------------------------------------
+        function TensEntryWrkGetResource(this,ierr) result(resource_p)
+!Returns a pointer to the tensor cache entry resource.
+         implicit none
+         class(tens_resrc_t), pointer:: resource_p          !out: pointer to the tensor resource
+         class(tens_entry_wrk_t), intent(in), target:: this !in: specialized tensor cache entry
+         integer(INTD), intent(out), optional:: ierr        !out: error code
+         integer(INTD):: errc
+
+         resource_p=>NULL()
+         if(this%is_set(errc)) then
+          if(errc.eq.0) then
+           resource_p=>this%resource
+           if(.not.associated(resource_p)) errc=-3 !trap
+          else
+           errc=-2
+          endif
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function TensEntryWrkGetResource
+!-------------------------------------------
+        subroutine tens_entry_wrk_dtor(this)
+         implicit none
+         type(tens_entry_wrk_t):: this
+
+         call this%nullify_tensor(.TRUE.) !deallocate the tensor component (if it is set)
+         return
+        end subroutine tens_entry_wrk_dtor
+!-------------------------------------------------------------
+        function tens_entry_wrk_alloc(tens_entry) result(ierr)
+!Non-member allocator for tens_entry_wrk_t.
+         implicit none
+         integer(INTD):: ierr
+         class(tens_cache_entry_t), allocatable, intent(out):: tens_entry
+
+         allocate(tens_entry_wrk_t::tens_entry,STAT=ierr)
+         return
+        end function tens_entry_wrk_alloc
 ![tens_oprnd_t]=================================================
         subroutine TensOprndCtor(this,tensor,ierr,tens_resource)
 !Constructs a tensor operand. The <tensor> must be set.
@@ -1794,66 +1854,6 @@
          if(errc.ne.0) call quit(errc,'#FATAL(TAVP-WRK:tens_oprnd_dtor): Destructor failed!')
          return
         end subroutine tens_oprnd_dtor
-![tens_entry_wrk_t]==================================
-        subroutine TensEntryWrkCtor(this,tensor,ierr)
-!Constructs a <tens_entry_wrk_t>. Note move semantics for <tensor>!
-         implicit none
-         class(tens_entry_wrk_t), intent(out):: this          !out: specialized tensor cache entry
-         class(tens_rcrsv_t), pointer, intent(inout):: tensor !inout: pointer to an allocated tensor (ownership transfer will occur here!)
-         integer(INTD), intent(out), optional:: ierr          !out: error code
-         integer(INTD):: errc
-
-         errc=0
-         if(associated(tensor)) then
-          call this%set_tensor(tensor,errc); if(errc.ne.0) errc=-2
-          if(errc.eq.0) tensor=>NULL() !transfer the ownership
-         else
-          errc=-1
-         endif
-         if(present(ierr)) ierr=errc
-         return
-        end subroutine TensEntryWrkCtor
-!---------------------------------------------------------------------
-        function TensEntryWrkGetResource(this,ierr) result(resource_p)
-!Returns a pointer to the tensor cache entry resource.
-         implicit none
-         class(tens_resrc_t), pointer:: resource_p          !out: pointer to the tensor resource
-         class(tens_entry_wrk_t), intent(in), target:: this !in: specialized tensor cache entry
-         integer(INTD), intent(out), optional:: ierr        !out: error code
-         integer(INTD):: errc
-
-         resource_p=>NULL()
-         if(this%is_set(errc)) then
-          if(errc.eq.0) then
-           resource_p=>this%resource
-           if(.not.associated(resource_p)) errc=-3 !trap
-          else
-           errc=-2
-          endif
-         else
-          errc=-1
-         endif
-         if(present(ierr)) ierr=errc
-         return
-        end function TensEntryWrkGetResource
-!-------------------------------------------
-        subroutine tens_entry_wrk_dtor(this)
-         implicit none
-         type(tens_entry_wrk_t):: this
-
-         call this%nullify_tensor(.TRUE.) !deallocate the tensor component (if it is set)
-         return
-        end subroutine tens_entry_wrk_dtor
-!-------------------------------------------------------------
-        function tens_entry_wrk_alloc(tens_entry) result(ierr)
-!Non-member allocator for tens_entry_wrk_t.
-         implicit none
-         integer(INTD):: ierr
-         class(tens_cache_entry_t), allocatable, intent(out):: tens_entry
-
-         allocate(tens_entry_wrk_t::tens_entry,STAT=ierr)
-         return
-        end function tens_entry_wrk_alloc
 ![tens_instr_t]============================================
         subroutine TensInstrCtor(this,op_code,ierr,op_spec)
 !Constructs a tensor instruction from a given tensor operation.
@@ -1877,7 +1877,7 @@
            case(TAVP_INSTR_CONTRACT)
             call construct_instr_contract(errc); if(errc.ne.0) errc=-5
            case default
-            errc=-4 !invalid instruction code (or not implemented)
+            errc=-4 !invalid instruction opcode (or not implemented)
            end select
 !Activate the instruction:
            if(errc.eq.0) then
@@ -2090,8 +2090,7 @@
           if(jerr.eq.DSVP_SUCCESS) then
            select type(tens_contr_ctrl)
            class is(ctrl_tens_contr_t)
-            call tens_contr_ctrl%pack(instr_packet,jerr)
-            if(jerr.ne.0) jerr=-8
+            call tens_contr_ctrl%pack(instr_packet,jerr); if(jerr.ne.0) jerr=-8
            class default
             jerr=-7
            end select
@@ -2126,7 +2125,7 @@
          sts=this%get_status(errc)
          if((sts.eq.DS_INSTR_EMPTY.or.sts.eq.DS_INSTR_RETIRED).and.errc.eq.DSVP_SUCCESS) then
           call this%clean(errc)
-          if(errc.ne.0) call quit(errc,'#FATAL(TAVP-WRK:tens_instr_dtor): Tensor instruction destruction failed!')
+          if(errc.ne.DSVP_SUCCESS) call quit(errc,'#FATAL(TAVP-WRK:tens_instr_dtor): Tensor instruction destruction failed!')
          else
           call quit(-1,'#FATAL(TAVP-WRK:tens_instr_dtor): Attempt to destroy an active TAVP instruction!')
          endif

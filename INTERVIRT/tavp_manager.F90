@@ -61,6 +61,14 @@
           procedure, public:: destruct=>TensOprndDestruct       !performs complete destruction back to an empty state
           final:: tens_oprnd_dtor
         end type tens_oprnd_t
+ !Tensor instruction (realization of a tensor operation for a specific TAVP):
+        type, extends(ds_instr_t), private:: tens_instr_t
+         contains
+          procedure, private:: TensInstrCtor               !ctor: constructs a tensor instruction from the specification of a tensor operation
+          generic, public:: tens_instr_ctor=>TensInstrCtor
+          procedure, public:: encode=>TensInstrEncode      !encoding procedure: Packs the TAVP instruction into a raw byte packet
+          final:: tens_instr_dtor                          !dtor
+        end type tens_instr_t
 !MODULE DATA:
  !TAVP-MNG microcode (static) table, set by dsvp.configure():
         type(ds_microcode_t), target, private:: microcode(0:TAVP_ISA_SIZE-1)
@@ -83,6 +91,10 @@
         private TensOprndRelease
         private TensOprndDestruct
         public tens_oprnd_dtor
+ !tens_instr_t:
+        private TensInstrCtor
+        private TensInstrEncode
+        public tens_instr_dtor
 !IMPLEMENTATION:
        contains
 ![tens_entry_mng_t]========================================
@@ -419,5 +431,282 @@
          call this%destruct(errc)
          if(errc.ne.0) call quit(errc,'#FATAL(TAVP-MNG:tens_oprnd_dtor): Destructor failed!')
         end subroutine tens_oprnd_dtor
+![tens_instr_t]============================================
+        subroutine TensInstrCtor(this,op_code,ierr,op_spec)
+!Constructs a tensor instruction from a given tensor operation.
+!The tensor instruction is a realization of a given tensor operation
+!for a specific TAVP kind.
+         implicit none
+         class(tens_instr_t), intent(inout):: this        !out: tensor instruction (must be empty on entrance)
+         integer(INTD), intent(in):: op_code              !in: instruction code (see top of this module)
+         integer(INTD), intent(out), optional:: ierr      !out: error code
+         class(*), intent(in), target, optional:: op_spec !in: formal operation specification
+         integer(INTD):: errc
+
+         if(this%is_empty(errc)) then
+          if(errc.eq.DSVP_SUCCESS) then
+!Construct the instruction:
+           select case(op_code)
+           case(TAVP_INSTR_NOOP)
+           case(TAVP_INSTR_STOP)
+           case(TAVP_INSTR_CREATE,TAVP_INSTR_DESTROY)
+            call construct_instr_create_destroy(errc); if(errc.ne.0) errc=-6
+           case(TAVP_INSTR_CONTRACT)
+            call construct_instr_contract(errc); if(errc.ne.0) errc=-5
+           case default
+            errc=-4 !invalid instruction opcode (or not implemented)
+           end select
+!Activate the instruction:
+           if(errc.eq.0) then
+            call this%activate(op_code,microcode(op_code),errc); if(errc.ne.0) errc=-3
+           else
+            call this%set_status(DS_INSTR_RETIRED,errc,TAVP_ERR_GEN_FAILURE)
+           endif
+           if(errc.ne.0) call tens_instr_dtor(this)
+          else
+           errc=-2
+          endif
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+
+        contains
+
+         subroutine construct_instr_create_destroy(jerr)
+          !CREATE/DESTROY a tensor:
+          !op_spec={tens_rcrsv_t}
+          integer(INTD), intent(out):: jerr
+          class(ds_oprnd_t), pointer:: oprnd
+          class(tens_oprnd_t), pointer:: tens_oprnd
+          class(tens_rcrsv_t), pointer:: tensor
+
+          jerr=0; tensor=>NULL()
+          select type(op_spec); class is(tens_rcrsv_t); tensor=>op_spec; end select
+          if(associated(tensor)) then
+           if(tensor%is_set()) then
+            call this%alloc_operands(1,jerr)
+            if(jerr.eq.DSVP_SUCCESS) then
+             allocate(tens_oprnd,STAT=jerr)
+             if(jerr.eq.0) then
+              call tens_oprnd%tens_oprnd_ctor(tensor,jerr) !`tensor owner is omitted here
+              if(jerr.eq.0) then
+               oprnd=>tens_oprnd
+               call this%set_operand(0,oprnd,jerr)
+               if(jerr.ne.DSVP_SUCCESS) jerr=-6
+               oprnd=>NULL() !<oprnd> pointer was saved in the tensor instruction and will later be deallocated
+              else
+               jerr=-5
+              endif
+              tens_oprnd=>NULL()
+             else
+              jerr=-4
+             endif
+            else
+             jerr=-3
+            endif
+           else
+            jerr=-2
+           endif
+           tensor=>NULL() !<tensor> pointed to an external object
+          else
+           jerr=-1
+          endif
+          return
+         end subroutine construct_instr_create_destroy
+
+         subroutine construct_instr_contract(jerr)
+          !CONTRACT two tensors into another tensor:
+          !op_spec={tens_contraction_t}
+          integer(INTD), intent(out):: jerr
+          integer(INTD):: jj
+          class(ds_oprnd_t), pointer:: oprnd
+          class(ds_instr_ctrl_t), pointer:: instr_ctrl
+          class(contr_ptrn_ext_t), pointer:: contr_ptrn
+          class(tens_contraction_t), pointer:: tens_contr
+          class(ctrl_tens_contr_t), pointer:: tens_contr_ctrl
+          class(tens_rcrsv_t), pointer:: tensor
+          class(tens_oprnd_t), pointer:: tens_oprnd
+
+          jerr=0; tens_contr=>NULL()
+          select type(op_spec); class is(tens_contraction_t); tens_contr=>op_spec; end select
+          if(associated(tens_contr)) then
+           if(tens_contr%is_set()) then
+            contr_ptrn=>tens_contr%get_ext_contr_ptrn(jerr)
+            if(jerr.eq.TEREC_SUCCESS) then
+             allocate(tens_contr_ctrl,STAT=jerr)
+             if(jerr.eq.0) then
+              call tens_contr_ctrl%ctrl_tens_contr_ctor(contr_ptrn,jerr,tens_contr%get_prefactor()) !contraction pattern is cloned by value
+              if(jerr.eq.0) then
+               instr_ctrl=>tens_contr_ctrl
+               call this%set_control(instr_ctrl,jerr) !ownership transfer for instr_ctrl=tens_contr_ctrl
+               if(jerr.eq.DSVP_SUCCESS) then
+                call this%alloc_operands(3,jerr)
+                if(jerr.eq.DSVP_SUCCESS) then
+                 do jj=0,2
+                  tensor=>tens_contr%get_argument(jj,jerr); if(jerr.ne.TEREC_SUCCESS) exit
+                  allocate(tens_oprnd,STAT=jerr); if(jerr.ne.0) exit
+                  call tens_oprnd%tens_oprnd_ctor(tensor,jerr); if(jerr.ne.0) exit !`tensor owner is omitted here
+                  oprnd=>tens_oprnd; call this%set_operand(jj,oprnd,jerr); if(jerr.ne.DSVP_SUCCESS) exit !ownership transfer for oprnd=tens_oprnd
+                  tensor=>NULL(); tens_oprnd=>NULL(); oprnd=>NULL() !<oprnd> pointer was saved in the tensor instruction and will later be deallocated
+                 enddo
+                else
+                 jerr=-7
+                endif
+               else
+                jerr=-6
+               endif
+              else
+               jerr=-5
+              endif
+              instr_ctrl=>NULL(); tens_contr_ctrl=>NULL() !<tens_contr_ctrl> pointer was saved in the tensor instruction and will later be deallocated
+             else
+              jerr=-4
+             endif
+            else
+             jerr=-3
+            endif
+            contr_ptrn=>NULL()
+           else
+            jerr=-2
+           endif
+           tens_contr=>NULL()
+          else
+           jerr=-1
+          endif
+          return
+         end subroutine construct_instr_contract
+
+        end subroutine TensInstrCtor
+!---------------------------------------------------------
+        subroutine TensInstrEncode(this,instr_packet,ierr)
+!Encodes a tensor instruction into the bytecode packet.
+         implicit none
+         class(tens_instr_t), intent(in):: this          !in: defined tensor instruction
+         class(obj_pack_t), intent(inout):: instr_packet !out: instruction bytecode packet
+         integer(INTD), intent(out), optional:: ierr     !out: error code
+         integer(INTD):: errc,op_code
+
+!Pack the instruction code (op_code):
+         if(.not.this%is_empty(errc)) then
+          op_code=this%get_code(errc)
+          if(errc.eq.DSVP_SUCCESS) then
+           call pack_builtin(instr_packet,op_code,errc)
+           if(errc.eq.0) then
+!Pack the instruction body:
+            select case(op_code)
+            case(TAVP_INSTR_NOOP)
+            case(TAVP_INSTR_STOP)
+            case(TAVP_INSTR_CREATE,TAVP_INSTR_DESTROY)
+             call encode_instr_create_destroy(errc); if(errc.ne.0) errc=-6
+            case(TAVP_INSTR_CONTRACT)
+             call encode_instr_contract(errc); if(errc.ne.0) errc=-5
+            case default
+             errc=-4
+            end select
+           else
+            errc=-3
+           endif
+          else
+           errc=-2
+          endif
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+
+        contains
+
+         subroutine encode_instr_create_destroy(jerr)
+          !CREATE/DESTROY a tensor:
+          !Packet format: {op_code|tensor}
+          integer(INTD), intent(out):: jerr
+          class(ds_oprnd_t), pointer:: oprnd
+          class(tens_rcrsv_t), pointer:: tensor
+
+          jerr=0
+          oprnd=>this%get_operand(0,jerr)
+          if(jerr.eq.DSVP_SUCCESS) then
+           select type(oprnd)
+           class is(tens_oprnd_t)
+            tensor=>oprnd%get_tensor(jerr)
+            if(jerr.eq.0) then
+             if(tensor%is_set()) then
+              call tensor%pack(instr_packet,jerr)
+              if(jerr.ne.0) jerr=-5
+             else
+              jerr=-4
+             endif
+             tensor=>NULL()
+            else
+             jerr=-3
+            endif
+           class default
+            jerr=-2
+           end select
+           oprnd=>NULL()
+          else
+           jerr=-1
+          endif
+          return
+         end subroutine encode_instr_create_destroy
+
+         subroutine encode_instr_contract(jerr)
+          !CONTRACT two tensors: tensor0+=tensor1*tensor2*scalar:
+          !Packed format: {op_code|ctrl_tens_contr_t|tensor0,tensor1,tensor2}
+          integer(INTD), intent(out):: jerr
+          integer(INTD):: jj
+          class(ds_oprnd_t), pointer:: oprnd
+          class(tens_rcrsv_t), pointer:: tensor
+          class(ds_instr_ctrl_t), pointer:: tens_contr_ctrl
+
+          jerr=0
+          tens_contr_ctrl=>this%get_control(jerr)
+          if(jerr.eq.DSVP_SUCCESS) then
+           select type(tens_contr_ctrl)
+           class is(ctrl_tens_contr_t)
+            call tens_contr_ctrl%pack(instr_packet,jerr); if(jerr.ne.0) jerr=-8
+           class default
+            jerr=-7
+           end select
+           if(jerr.eq.0) then
+            do jj=0,2
+             oprnd=>this%get_operand(jj,jerr); if(jerr.ne.DSVP_SUCCESS) then; jerr=-6; exit; endif
+             select type(oprnd)
+             class is(tens_oprnd_t)
+              tensor=>oprnd%get_tensor(jerr); if(jerr.ne.0) then; jerr=-5; exit; endif
+              if(.not.tensor%is_set()) then; jerr=-4; exit; endif !trap
+              call tensor%pack(instr_packet,jerr); if(jerr.ne.0) then; jerr=-3; exit; endif
+             class default
+              jerr=-2; exit
+             end select
+            enddo
+            tensor=>NULL(); oprnd=>NULL()
+           endif
+           tens_contr_ctrl=>NULL()
+          else
+           jerr=-1
+          endif
+          return
+         end subroutine encode_instr_contract
+
+        end subroutine TensInstrEncode
+!---------------------------------------
+        subroutine tens_instr_dtor(this)
+         implicit none
+         type(tens_instr_t):: this !inout: empty or retired tensor instruction
+         integer(INTD):: sts,errc
+
+         sts=this%get_status(errc)
+         if((sts.eq.DS_INSTR_EMPTY.or.sts.eq.DS_INSTR_RETIRED).and.errc.eq.DSVP_SUCCESS) then
+          call this%clean(errc)
+          if(errc.ne.DSVP_SUCCESS) call quit(errc,'#FATAL(TAVP-MNG:tens_instr_dtor): Tensor instruction destruction failed!')
+         else
+          call quit(-1,'#FATAL(TAVP-MNG:tens_instr_dtor): Attempt to destroy an active TAVP instruction!')
+         endif
+         return
+        end subroutine tens_instr_dtor
 
        end module tavp_manager
