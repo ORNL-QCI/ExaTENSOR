@@ -71,9 +71,6 @@
           procedure, public:: encode=>TensInstrEncode      !encoding procedure: Packs the TAVP instruction into a raw byte packet
           final:: tens_instr_dtor                          !dtor
         end type tens_instr_t
-!MODULE DATA:
- !TAVP-MNG microcode (static) table, set by dsvp.configure():
-        type(ds_microcode_t), target, private:: microcode(0:TAVP_ISA_SIZE-1)
 !VISIBILITY:
  !tens_entry_mng_t:
         private TensEntryMngCtor
@@ -141,7 +138,7 @@
            endif
            n=n-1
           enddo
-          if(errc.ne.0.and.errc.ne.TRY_LATER) call this%release_resource(ier)
+          !`if(errc.ne.0.and.errc.ne.TRY_LATER) call this%release_resource(ier)
          else
           errc=-1
          endif
@@ -428,49 +425,6 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine execute_tensor_contract
-!--------------------------------------
-        subroutine init_microcode(ierr)
-!Initializes the global TAVP microcode bindings table when configuring TAVP.
-!There are three kinds of microcode bindings (suffix):
-! 1. DUMMY: Do nothing.
-! 2. BASIC: Default microcode.
-! 3. SPECIAL: Specialized microcode.
-         implicit none
-         integer(INTD), intent(out), optional:: ierr
-         integer(INTD):: errc
-
-         errc=0
- !TENSOR CREATE:
-         microcode(TAVP_INSTR_CREATE)%acquire_resource=>acquire_resource_basic
-         microcode(TAVP_INSTR_CREATE)%prefetch_input=>prefetch_input_dummy
-         microcode(TAVP_INSTR_CREATE)%sync_prefetch=>sync_prefetch_dummy
-         microcode(TAVP_INSTR_CREATE)%execute=>execute_tensor_create
-         microcode(TAVP_INSTR_CREATE)%sync_execution=>sync_execution_basic
-         microcode(TAVP_INSTR_CREATE)%upload_output=>upload_output_dummy
-         microcode(TAVP_INSTR_CREATE)%sync_upload=>sync_upload_dummy
-         microcode(TAVP_INSTR_CREATE)%release_resource=>release_resource_dummy
- !TENSOR DESTROY:
-         microcode(TAVP_INSTR_DESTROY)%acquire_resource=>acquire_resource_dummy
-         microcode(TAVP_INSTR_DESTROY)%prefetch_input=>prefetch_input_dummy
-         microcode(TAVP_INSTR_DESTROY)%sync_prefetch=>sync_prefetch_dummy
-         microcode(TAVP_INSTR_DESTROY)%execute=>execute_tensor_destroy
-         microcode(TAVP_INSTR_DESTROY)%sync_execution=>sync_execution_basic
-         microcode(TAVP_INSTR_DESTROY)%upload_output=>upload_output_dummy
-         microcode(TAVP_INSTR_DESTROY)%sync_upload=>sync_upload_dummy
-         microcode(TAVP_INSTR_DESTROY)%release_resource=>release_resource_basic
- !TENSOR CONTRACT:
-         microcode(TAVP_INSTR_CONTRACT)%acquire_resource=>acquire_resource_basic
-         microcode(TAVP_INSTR_CONTRACT)%prefetch_input=>prefetch_input_basic
-         microcode(TAVP_INSTR_CONTRACT)%sync_prefetch=>sync_prefetch_basic
-         microcode(TAVP_INSTR_CONTRACT)%execute=>execute_tensor_contract
-         microcode(TAVP_INSTR_CONTRACT)%sync_execution=>sync_execution_basic
-         microcode(TAVP_INSTR_CONTRACT)%upload_output=>upload_output_basic
-         microcode(TAVP_INSTR_CONTRACT)%sync_upload=>sync_upload_basic
-         microcode(TAVP_INSTR_CONTRACT)%release_resource=>release_resource_basic
- !DONE
-         if(present(ierr)) ierr=errc
-         return
-        end subroutine init_microcode
 ![tens_entry_mng_t]========================================
         subroutine TensEntryMngCtor(this,tensor,owner,ierr)
 !Constructs a <tens_entry_mng_t>. Note move semantics for <tensor>!
@@ -832,7 +786,7 @@
            end select
 !Activate the instruction:
            if(errc.eq.0) then
-            call this%activate(op_code,microcode(op_code),errc); if(errc.ne.0) errc=-3
+            call this%activate(op_code,errc); if(errc.ne.0) errc=-3
            else
             call this%set_status(DS_INSTR_RETIRED,errc,TAVP_ERR_GEN_FAILURE)
            endif

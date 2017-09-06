@@ -1,6 +1,6 @@
 !Domain-specific virtual processor (DSVP): Abstract base module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/09/01
+!REVISION: 2017/09/06
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -158,15 +158,6 @@
          integer(INTD), private:: error_code=DSVP_SUCCESS           !error code (success:DSVP_SUCCESS)
          class(ds_instr_ctrl_t), pointer, private:: control=>NULL() !instruction control field: set up by the DECODE procedure
          type(ds_oprnd_ref_t), allocatable, private:: operand(:)    !domain-specific operands (wrapped pointers): set up by the DECODE procedure
-         !dynamic methods (dynamically bound by the DECODE procedure):
-         procedure(ds_instr_self_i), pass(this), pointer, public:: acquire_resource=>NULL() !acquires local resources for instruction operands: dynamic binding set by decode
-         procedure(ds_instr_self_i), pass(this), pointer, public:: prefetch_input=>NULL()   !starts prefetching input operands: dynamic binding set by decode
-         procedure(ds_instr_sync_i), pass(this), pointer, public:: sync_prefetch=>NULL()    !synchronizes the input prefetch (either test or wait): dynamic binding set by decode
-         procedure(ds_instr_self_i), pass(this), pointer, public:: execute=>NULL()          !executes the domain-specific instruction: dynamic binding set by decode
-         procedure(ds_instr_sync_i), pass(this), pointer, public:: sync_execution=>NULL()   !synchronizes the execution (either test or wait): dynamic binding set by decode
-         procedure(ds_instr_self_i), pass(this), pointer, public:: upload_output=>NULL()    !starts uploading the output: dynamic binding set by decode
-         procedure(ds_instr_sync_i), pass(this), pointer, public:: sync_upload=>NULL()      !synchronizes the output upload (either test or wait): dynamic binding set by decode
-         procedure(ds_instr_self_i), pass(this), pointer, public:: release_resource=>NULL() !releases local resources occupied by instruction operands: dynamic binding set by decode
          contains
           procedure(ds_instr_encode_i), deferred, public:: encode       !encoding procedure: Packs the domain-specific instruction into a raw byte packet (bytecode)
           procedure, public:: is_empty=>DSInstrIsEmpty                  !returns TRUE if the domain-specific instruction is empty
@@ -186,23 +177,9 @@
           procedure, public:: free_operand=>DSInstrFreeOperand          !frees a specific instruction operand
           procedure, public:: get_num_operands=>DSInstrGetNumOperands   !returns the number of operands in the domain-specific instruction
           procedure, public:: all_set=>DSInstrAllSet                    !returns TRUE if all operands and control are set
-          procedure, public:: activate=>DSInstrActivate                 !activates the domain-specific instruction in the final stage of decoding (sets up dynamic microcode bindings, opcode and status)
-          procedure, public:: terminate=>DSInstrTerminate               !terminates the normal instruction execution workflow, but leaves instruction defined (retired)
+          procedure, public:: activate=>DSInstrActivate                 !activates the domain-specific instruction in the final stage of decoding (sets up opcode and status)
           procedure, public:: clean=>DSInstrClean                       !resets the domain-specific instruction to an empty state (after it has been retired)
         end type ds_instr_t
- !Domain-specific microcode binding (for a DS instruction, see above):
-        type, public:: ds_microcode_t
-         procedure(ds_instr_self_i), nopass, pointer, public:: acquire_resource=>NULL() !acquires local resources for instruction operands
-         procedure(ds_instr_self_i), nopass, pointer, public:: prefetch_input=>NULL()   !starts prefetching input operands
-         procedure(ds_instr_sync_i), nopass, pointer, public:: sync_prefetch=>NULL()    !synchronizes the input prefetch (either test or wait)
-         procedure(ds_instr_self_i), nopass, pointer, public:: execute=>NULL()          !executes the domain-specific instruction
-         procedure(ds_instr_sync_i), nopass, pointer, public:: sync_execution=>NULL()   !synchronizes the execution (either test or wait)
-         procedure(ds_instr_self_i), nopass, pointer, public:: upload_output=>NULL()    !starts uploading the output operand
-         procedure(ds_instr_sync_i), nopass, pointer, public:: sync_upload=>NULL()      !synchronizes the output upload (either test or wait)
-         procedure(ds_instr_self_i), nopass, pointer, public:: release_resource=>NULL() !releases local resources occupied by instruction operands
-         contains
-          procedure, public:: reset=>DSMicrocodeReset !resets microcode binding to NULL
-        end type ds_microcode_t
  !DSVP/DSVU configuration:
         type, abstract, public:: dsv_conf_t
         end type dsv_conf_t
@@ -257,17 +234,15 @@
          integer(INTL), private:: instr_received=0_INTL    !total number of received domain-specific instructions
          integer(INTL), private:: instr_processed=0_INTL   !total number of processed (retired) instructions (both successful and failed)
          integer(INTL), private:: instr_failed=0_INTL      !total number of retired failed instructions
-         type(ds_microcode_t), pointer, private:: microcode(:) !pointer to DS microcode bindings for each DS instruction code: [0..ISA_size-1]: Set by .configure()
          character(:), allocatable, private:: description      !symbolic description of the DSVP: Set by .configure()
          type(ds_unit_ref_t), allocatable, private:: units(:)  !DSVU table (enumerated references to DSVU the DSVP is composed of): Set by .configure()
          integer(INTD), private:: num_units=0                  !number of set DSVU in the DSVU table: [0..num_units-1]: Set by .configure()
          real(8), private:: time_start                         !start time stamp (sec): Set by .start()
          contains
-          procedure(dsvp_ctor_i), deferred, public:: configure                   !configures DSVP: Allocates/configures DS units, allocates DSVU table, sets up microcode, sets description, etc.
+          procedure(dsvp_ctor_i), deferred, public:: configure                   !configures DSVP: Allocates/configures DS units, allocates global DSVU table, sets description, id, etc.
           procedure, public:: start=>DSVPStart                                   !launches configured DSVP to its life cycle
           procedure, public:: shutdown=>DSVPShutdown                             !shuts down DSVP but keeps it configured
           procedure, public:: destroy=>DSVPDestroy                               !destroys DSVP completely
-          procedure, public:: set_microcode=>DSVPSetMicrocode                    !sets the pointer to the domain-specific microcode
           procedure, public:: alloc_units=>DSVPAllocUnits                        !allocates the DSVU table
           procedure, public:: free_units=>DSVPFreeUnits                          !frees the DSVU table
           procedure, public:: set_unit=>DSVPSetUnit                              !sets up a DSVU entry in the DSVU table
@@ -335,22 +310,6 @@
           integer(INTD), intent(out), optional:: ierr  !out: error code
          end subroutine ds_instr_ctrl_unpack_i
   !ds_instr_t:
-   !self:
-         subroutine ds_instr_self_i(this,ierr)
-          import:: ds_instr_t,INTD
-          implicit none
-          class(ds_instr_t), intent(inout):: this     !inout: domain-specific instruction
-          integer(INTD), intent(out), optional:: ierr !out: error code
-         end subroutine ds_instr_self_i
-   !sync:
-         function ds_instr_sync_i(this,ierr,wait) result(res)
-          import:: ds_instr_t,INTD
-          implicit none
-          logical:: res                               !out: TRUE if synchronized
-          class(ds_instr_t), intent(inout):: this     !inout: domain-specific instruction
-          integer(INTD), intent(out), optional:: ierr !out: error code
-          logical, intent(in), optional:: wait        !in: WAIT versus TEST (defaults to WAIT)
-         end function ds_instr_sync_i
    !encode:
          subroutine ds_instr_encode_i(this,instr_packet,ierr)
           import:: ds_instr_t,obj_pack_t,INTD
@@ -436,13 +395,8 @@
         private DSInstrGetNumOperands
         private DSInstrAllSet
         private DSInstrActivate
-        private DSInstrTerminate
         private DSInstrClean
-        public ds_instr_self_i
-        public ds_instr_sync_i
         public ds_instr_encode_i
- !ds_microcode_t:
-        private DSMicrocodeReset
  !ds_unit_port_t:
         private DSUnitPortAccept
         private DSUnitPortAbsorb
@@ -464,7 +418,6 @@
         private DSVPStart
         private DSVPShutdown
         private DSVPDestroy
-        private DSVPSetMicrocode
         private DSVPAllocUnits
         private DSVPFreeUnits
         private DSVPSetUnit
@@ -1054,40 +1007,25 @@
            errc=DSVP_ERR_BROKEN_OBJ
           endif
          endif
-         if(.not.associated(this%acquire_resource)) return
-         if(.not.associated(this%prefetch_input)) return
-         if(.not.associated(this%sync_prefetch)) return
-         if(.not.associated(this%execute)) return
-         if(.not.associated(this%sync_execution)) return
-         if(.not.associated(this%upload_output)) return
-         if(.not.associated(this%sync_upload)) return
-         if(.not.associated(this%release_resource)) return
          if(errc.eq.DSVP_SUCCESS) res=.TRUE.
          if(present(ierr)) ierr=errc
          return
         end function DSInstrAllSet
-!---------------------------------------------------------------
-        subroutine DSInstrActivate(this,op_code,micro_bind,ierr)
+!----------------------------------------------------
+        subroutine DSInstrActivate(this,op_code,ierr)
 !Activates the domain-specific instruction after it has been constructed or decoded.
          implicit none
          class(ds_instr_t), intent(inout):: this        !inout: domain-specific instruction
          integer(INTD), intent(in):: op_code            !in: instruction code
-         class(ds_microcode_t), intent(in):: micro_bind !in: concrete microcode binding for the domain-specific instruction
          integer(INTD), intent(out), optional:: ierr    !out: error code
          integer(INTD):: errc
 
          call this%set_code(op_code,errc)
          if(errc.eq.DSVP_SUCCESS) then
           if(this%get_status().eq.DS_INSTR_EMPTY) then
-           call set_microcode(errc)
-           if(errc.eq.0) then
-            call this%set_status(DS_INSTR_NEW,errc,DSVP_SUCCESS)
-            if(errc.ne.DSVP_SUCCESS) then
-             call this%set_status(DS_INSTR_RETIRED,errc,DSVP_ERROR)
-             errc=-4
-            endif
-           else
-            call this%set_status(DS_INSTR_RETIRED,errc,DSVP_ERR_INVALID_ARGS)
+           call this%set_status(DS_INSTR_NEW,errc,DSVP_SUCCESS)
+           if(errc.ne.DSVP_SUCCESS) then
+            call this%set_status(DS_INSTR_RETIRED,errc,DSVP_ERROR)
             errc=-3
            endif
           else
@@ -1100,74 +1038,7 @@
          endif
          if(present(ierr)) ierr=errc
          return
-
-        contains
-
-         subroutine set_microcode(jerr)
-          implicit none
-          integer(INTD), intent(out):: jerr
-
-          jerr=0
-          this%acquire_resource=>micro_bind%acquire_resource
-          this%prefetch_input=>micro_bind%prefetch_input
-          this%sync_prefetch=>micro_bind%sync_prefetch
-          this%execute=>micro_bind%execute
-          this%sync_execution=>micro_bind%sync_execution
-          this%upload_output=>micro_bind%upload_output
-          this%sync_upload=>micro_bind%sync_upload
-          this%release_resource=>micro_bind%release_resource
-          return
-         end subroutine set_microcode
-
         end subroutine DSInstrActivate
-!--------------------------------------------------------
-        subroutine DSInstrTerminate(this,error_code,ierr)
-!Terminates the normal instruction execution workflow,
-!but leaves the instruction defined (active).
-!The instruction status will set to DS_INSTR_RETIRED with
-!a given <error_code>.
-         implicit none
-         class(ds_instr_t), intent(inout):: this     !inout: domain-specific instruction
-         integer(INTD), intent(in):: error_code      !in: instruction error code to set
-         integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc,ier,sts
-         logical:: nostat,res
-
-         if(this%is_active(errc)) then
-          sts=this%get_status(errc)
-          if(errc.eq.DSVP_SUCCESS) then
-           if(sts.ge.DS_INSTR_INPUT_WAIT) then
-            if(sts.ge.DS_INSTR_READY_TO_EXEC) then
-             if(sts.ge.DS_INSTR_OUTPUT_WAIT) then
-              if(sts.lt.DS_INSTR_RETIRED) then
-               res=this%sync_upload(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.DSVP_SUCCESS) errc=ier
-              endif
-             else
-              if(sts.ge.DS_INSTR_SCHEDULED) then
-               res=this%sync_execution(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.DSVP_SUCCESS) errc=ier
-              endif
-             endif
-            else
-             res=this%sync_prefetch(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.DSVP_SUCCESS) errc=ier
-            endif
-           endif
-           if(sts.ge.DS_INSTR_RSC_WAIT) then
-            call this%release_resource(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.DSVP_SUCCESS) errc=ier
-           endif
-          else !instruction status unknown
-           res=this%sync_prefetch(ier)
-           res=this%sync_execution(ier)
-           res=this%sync_upload(ier)
-           call this%release_resource(ier)
-          endif
-          call this%set_status(DS_INSTR_RETIRED,ier,error_code)
-          if(ier.ne.DSVP_SUCCESS.and.errc.eq.DSVP_SUCCESS) errc=ier
-         else
-          if(errc.eq.DSVP_SUCCESS) errc=DSVP_ERR_INVALID_REQ
-         endif
-         if(present(ierr)) ierr=errc
-         return
-        end subroutine DSInstrTerminate
 !-----------------------------------------------------
         subroutine DSInstrClean(this,ierr,dissoc_only)
 !Resets the domain-specific instruction to an empty state. By default,
@@ -1184,32 +1055,9 @@
          call this%dealloc_operands(ier,dis); if(ier.ne.DSVP_SUCCESS.and.errc.eq.DSVP_SUCCESS) errc=ier
          call this%free_control(ier,dis); if(ier.ne.DSVP_SUCCESS.and.errc.eq.DSVP_SUCCESS) errc=ier
          this%code=DS_INSTR_NOOP; this%stat=DS_INSTR_EMPTY
-         this%acquire_resource=>NULL()
-         this%prefetch_input=>NULL()
-         this%sync_prefetch=>NULL()
-         this%execute=>NULL()
-         this%sync_execution=>NULL()
-         this%upload_output=>NULL()
-         this%sync_upload=>NULL()
-         this%release_resource=>NULL()
          if(present(ierr)) ierr=errc
          return
         end subroutine DSInstrClean
-![ds_microcode_t]========================
-        subroutine DSMicrocodeReset(this)
-         implicit none
-         class(ds_microcode_t), intent(inout):: this !inout: microcode binding
-
-         this%acquire_resource=>NULL()
-         this%prefetch_input=>NULL()
-         this%sync_prefetch=>NULL()
-         this%execute=>NULL()
-         this%sync_execution=>NULL()
-         this%upload_output=>NULL()
-         this%sync_upload=>NULL()
-         this%release_resource=>NULL()
-         return
-        end subroutine DSMicrocodeReset
 ![ds_unit_port_t]============================================
         function DSUnitPortAccept(this,new_list) result(ierr)
 !Accepts new DS instructions from other DS units in the current DS unit port.
@@ -1421,7 +1269,6 @@
            deallocate(this%description,STAT=ier)
            if(ier.ne.0.and.errc.eq.DSVP_SUCCESS) errc=DSVP_ERR_MEM_FREE_FAIL
           endif
-          this%microcode=>NULL()
           call this%free_units(errc)
           this%num_units=0
           this%instr_received=0
@@ -1435,18 +1282,6 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine DSVPDestroy
-!-------------------------------------------------------
-        subroutine DSVPSetMicrocode(this,microcode,ierr)
-!Sets the pointer to the domain-specific microcode.
-         implicit none
-         class(dsvp_t), intent(inout):: this                      !inout: DSVP
-         type(ds_microcode_t), intent(in), target:: microcode(0:) !in: domain-specific microcode
-         integer(INTD), intent(out), optional:: ierr              !out: error code
-
-         this%microcode(0:)=>microcode
-         if(present(ierr)) ierr=DSVP_SUCCESS
-         return
-        end subroutine DSVPSetMicrocode
 !-----------------------------------------------------
         subroutine DSVPAllocUnits(this,num_units,ierr)
 !Allocates the DSVU table in DSVP.
@@ -1686,7 +1521,7 @@
          integer(INTD):: errc
 
          errc=DSVP_SUCCESS
-         res=(this%num_units.gt.0.and.allocated(this%units).and.associated(this%microcode))
+         res=(this%num_units.gt.0.and.allocated(this%units))
          if(present(ierr)) ierr=errc
          return
         end function DSVPIsConfigured

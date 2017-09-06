@@ -154,8 +154,6 @@
          integer(INTD), allocatable, public:: dest_rank(:)  !bytecode destination processes ranks
         end type tavp_wrk_conf_t
 !MODULE DATA:
- !TAVP-WRK microcode (static) table, set by dsvp.configure():
-        type(ds_microcode_t), target, private:: microcode(0:TAVP_ISA_SIZE-1)
  !TAVP-WRK distributed address space, set by dsvp.configure():
         type(DistrSpace_t), private:: tavp_addr_space
 !VISIBILITY:
@@ -182,7 +180,6 @@
         private execute_tensor_create
         private execute_tensor_destroy
         private execute_tensor_contract
-        private init_microcode
  !tens_resrc_t:
         private TensResrcIsEmpty
         private TensResrcAllocateBuffer
@@ -687,7 +684,7 @@
            endif
            n=n-1
           enddo
-          if(errc.ne.0.and.errc.ne.TRY_LATER) call this%release_resource(ier)
+          !`if(errc.ne.0.and.errc.ne.TRY_LATER) call this%release_resource(ier)
          else
           errc=-1
          endif
@@ -1048,49 +1045,6 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine execute_tensor_contract
-!--------------------------------------
-        subroutine init_microcode(ierr)
-!Initializes the global TAVP microcode bindings table when configuring TAVP.
-!There are three kinds of microcode bindings (suffix):
-! 1. DUMMY: Do nothing.
-! 2. BASIC: Default microcode.
-! 3. SPECIAL: Specialized microcode.
-         implicit none
-         integer(INTD), intent(out), optional:: ierr
-         integer(INTD):: errc
-
-         errc=0
- !TENSOR CREATE:
-         microcode(TAVP_INSTR_CREATE)%acquire_resource=>acquire_resource_basic
-         microcode(TAVP_INSTR_CREATE)%prefetch_input=>prefetch_input_dummy
-         microcode(TAVP_INSTR_CREATE)%sync_prefetch=>sync_prefetch_dummy
-         microcode(TAVP_INSTR_CREATE)%execute=>execute_tensor_create
-         microcode(TAVP_INSTR_CREATE)%sync_execution=>sync_execution_dummy
-         microcode(TAVP_INSTR_CREATE)%upload_output=>upload_output_dummy
-         microcode(TAVP_INSTR_CREATE)%sync_upload=>sync_upload_dummy
-         microcode(TAVP_INSTR_CREATE)%release_resource=>release_resource_dummy
- !TENSOR DESTROY:
-         microcode(TAVP_INSTR_DESTROY)%acquire_resource=>acquire_resource_dummy
-         microcode(TAVP_INSTR_DESTROY)%prefetch_input=>prefetch_input_dummy
-         microcode(TAVP_INSTR_DESTROY)%sync_prefetch=>sync_prefetch_dummy
-         microcode(TAVP_INSTR_DESTROY)%execute=>execute_tensor_destroy
-         microcode(TAVP_INSTR_DESTROY)%sync_execution=>sync_execution_dummy
-         microcode(TAVP_INSTR_DESTROY)%upload_output=>upload_output_dummy
-         microcode(TAVP_INSTR_DESTROY)%sync_upload=>sync_upload_dummy
-         microcode(TAVP_INSTR_DESTROY)%release_resource=>release_resource_basic
- !TENSOR CONTRACT:
-         microcode(TAVP_INSTR_CONTRACT)%acquire_resource=>acquire_resource_basic
-         microcode(TAVP_INSTR_CONTRACT)%prefetch_input=>prefetch_input_basic
-         microcode(TAVP_INSTR_CONTRACT)%sync_prefetch=>sync_prefetch_basic
-         microcode(TAVP_INSTR_CONTRACT)%execute=>execute_tensor_contract
-         microcode(TAVP_INSTR_CONTRACT)%sync_execution=>sync_execution_basic
-         microcode(TAVP_INSTR_CONTRACT)%upload_output=>upload_output_basic
-         microcode(TAVP_INSTR_CONTRACT)%sync_upload=>sync_upload_basic
-         microcode(TAVP_INSTR_CONTRACT)%release_resource=>release_resource_basic
- !DONE
-         if(present(ierr)) ierr=errc
-         return
-        end subroutine init_microcode
 !tens_resrc_t]==========================================
         function TensResrcIsEmpty(this,ierr) result(ans)
 !Returns TRUE if the tensor resource is empty (unacquired).
@@ -1881,7 +1835,7 @@
            end select
 !Activate the instruction:
            if(errc.eq.0) then
-            call this%activate(op_code,microcode(op_code),errc); if(errc.ne.0) errc=-3
+            call this%activate(op_code,errc); if(errc.ne.0) errc=-3
            else
             call this%set_status(DS_INSTR_RETIRED,errc,TAVP_ERR_GEN_FAILURE)
            endif
@@ -2217,8 +2171,8 @@
               errc=-6 !unknown instruction opcode (or not implemented)
              end select
 !Activate the instruction:
-             if(errc.eq.0) then !on failure the tensor instruction will be explicitly terminated
-              call ds_instr%activate(op_code,microcode(op_code),ier); if(ier.ne.0) errc=-5
+             if(errc.eq.0) then
+              call ds_instr%activate(op_code,ier); if(ier.ne.0) errc=-5
              endif
             else
              errc=-4
@@ -2272,31 +2226,31 @@
                     if(jerr.eq.0) then
                      oprnd=>tens_oprnd; call ds_instr%set_operand(0,oprnd,jerr)
                      if(jerr.ne.DSVP_SUCCESS) then
-                      call ds_instr%terminate(TAVP_ERR_GEN_FAILURE,jerr)
+                      call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_GEN_FAILURE)
                       jerr=-16
                      endif
                     else
-                     call ds_instr%terminate(TAVP_ERR_GEN_FAILURE,jerr)
+                     call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_GEN_FAILURE)
                      jerr=-15
                     endif
                    else
-                    call ds_instr%terminate(TAVP_ERR_RSC_UNAVAILABLE,jerr)
+                    call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_RSC_UNAVAILABLE)
                     jerr=-14
                    endif
                   else
-                   call ds_instr%terminate(TAVP_ERR_RSC_UNAVAILABLE,jerr)
+                   call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_RSC_UNAVAILABLE)
                    jerr=-13
                   endif
                  else
-                  call ds_instr%terminate(TAVP_ERR_GEN_FAILURE,jerr)
+                  call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_GEN_FAILURE)
                   jerr=-12
                  endif
                 else
-                 call ds_instr%terminate(TAVP_ERR_CHE_FAILURE,jerr)
+                 call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_CHE_FAILURE)
                  jerr=-11
                 endif
                else
-                call ds_instr%terminate(TAVP_ERR_ARG_DEFINED,jerr)
+                call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_ARG_DEFINED)
                 jerr=-10
                endif
               case(TAVP_INSTR_DESTROY) !DESTROY a tensor
@@ -2315,40 +2269,40 @@
                    if(jerr.eq.0) then
                     oprnd=>tens_oprnd; call ds_instr%set_operand(0,oprnd,jerr)
                     if(jerr.ne.DSVP_SUCCESS) then
-                     call ds_instr%terminate(TAVP_ERR_GEN_FAILURE,jerr)
+                     call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_GEN_FAILURE)
                      jerr=-9
                     endif
                    else
-                    call ds_instr%terminate(TAVP_ERR_GEN_FAILURE,jerr)
+                    call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_GEN_FAILURE)
                     jerr=-8
                    endif
                   else
-                   call ds_instr%terminate(TAVP_ERR_RSC_UNAVAILABLE,jerr)
+                   call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_RSC_UNAVAILABLE)
                    jerr=-7
                   endif
                  else
-                  call ds_instr%terminate(TAVP_ERR_RSC_UNAVAILABLE,jerr)
+                  call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_RSC_UNAVAILABLE)
                   jerr=-6
                  endif
                 else
-                 call ds_instr%terminate(TAVP_ERR_GEN_FAILURE,jerr)
+                 call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_GEN_FAILURE)
                  jerr=-5
                 endif
                else
-                call ds_instr%terminate(TAVP_ERR_ARG_UNDEFINED,jerr)
+                call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_ARG_UNDEFINED)
                 jerr=-4
                endif
               end select
              else
-              call ds_instr%terminate(TAVP_ERR_CHE_FAILURE,jerr)
+              call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_CHE_FAILURE)
               jerr=-3
              endif
             else
-             call ds_instr%terminate(TAVP_ERR_BTC_BAD,jerr)
+             call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_BTC_BAD)
              jerr=-2
             endif
            else
-            call ds_instr%terminate(TAVP_ERR_RSC_UNAVAILABLE,jerr)
+            call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_RSC_UNAVAILABLE)
             jerr=-1
            endif
            return
@@ -2378,38 +2332,54 @@
               if(jerr.eq.DSVP_SUCCESS) then
                do jj=0,2
                 tensor=>NULL(); allocate(tensor,STAT=jerr)
-                if(jerr.ne.0) then; call ds_instr%terminate(TAVP_ERR_RSC_UNAVAILABLE,jerr); jerr=-12; exit; endif
+                if(jerr.ne.0) then
+                 call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_RSC_UNAVAILABLE); jerr=-12; exit
+                endif
                 call tensor%tens_rcrsv_ctor(instr_packet,jerr)
-                if(jerr.ne.TEREC_SUCCESS) then; call ds_instr%terminate(TAVP_ERR_BTC_BAD,jerr); jerr=-11; exit; endif
+                if(jerr.ne.TEREC_SUCCESS) then
+                 call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_BTC_BAD); jerr=-11; exit
+                endif
                 tens_entry=>NULL(); tens_entry=>arg_cache%lookup(tensor,jerr)
-                if(jerr.ne.0) then; call ds_instr%terminate(TAVP_ERR_CHE_FAILURE,jerr); jerr=-10; exit; endif
-                if(.not.associated(tens_entry)) then; call ds_instr%terminate(TAVP_ERR_ARG_UNDEFINED,jerr); jerr=-9; exit; endif
+                if(jerr.ne.0) then
+                 call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_CHE_FAILURE); jerr=-10; exit
+                endif
+                if(.not.associated(tens_entry)) then
+                 call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_ARG_UNDEFINED); jerr=-9; exit
+                endif
                 deallocate(tensor); tensor=>NULL() !deallocate the temporary tensor
                 tens_wrk_entry=>NULL(); select type(tens_entry); class is(tens_entry_wrk_t); tens_wrk_entry=>tens_entry; end select
-                if(.not.associated(tens_wrk_entry)) then; call ds_instr%terminate(TAVP_ERR_GEN_FAILURE,jerr); jerr=-8; exit; endif
+                if(.not.associated(tens_wrk_entry)) then
+                 call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_GEN_FAILURE); jerr=-8; exit
+                endif
                 tensor=>tens_wrk_entry%get_tensor() !use the same tensor from the tensor cache
                 tens_resource=>NULL(); tens_resource=>tens_wrk_entry%get_resource()
                 tens_oprnd=>NULL(); allocate(tens_oprnd,STAT=jerr)
-                if(jerr.ne.0) then; call ds_instr%terminate(TAVP_ERR_RSC_UNAVAILABLE,jerr); jerr=-7; exit; endif
+                if(jerr.ne.0) then
+                 call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_RSC_UNAVAILABLE); jerr=-7; exit
+                endif
                 call tens_oprnd%tens_oprnd_ctor(tensor,jerr,tens_resource) !tensor and tens_resource are stored in tensor cache
-                if(jerr.ne.0) then; call ds_instr%terminate(TAVP_ERR_GEN_FAILURE,jerr); jerr=-6; exit; endif
+                if(jerr.ne.0) then
+                 call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_GEN_FAILURE); jerr=-6; exit
+                endif
                 oprnd=>tens_oprnd; call ds_instr%set_operand(jj,oprnd,jerr)
-                if(jerr.ne.DSVP_SUCCESS) then; call ds_instr%terminate(TAVP_ERR_GEN_FAILURE,jerr); jerr=-5; exit; endif
+                if(jerr.ne.DSVP_SUCCESS) then
+                 call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_GEN_FAILURE); jerr=-5; exit
+                endif
                enddo
               else
-               call ds_instr%terminate(TAVP_ERR_RSC_UNAVAILABLE,jerr)
+               call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_RSC_UNAVAILABLE)
                jerr=-4
               endif
              else
-              call ds_instr%terminate(TAVP_ERR_GEN_FAILURE,jerr)
+              call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_GEN_FAILURE)
               jerr=-3
              endif
             else
-             call ds_instr%terminate(TAVP_ERR_BTC_BAD,jerr)
+             call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_BTC_BAD)
              jerr=-2
             endif
            else
-            call ds_instr%terminate(TAVP_ERR_RSC_UNAVAILABLE,jerr)
+            call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_RSC_UNAVAILABLE)
             jerr=-1
            endif
            return
@@ -2514,7 +2484,6 @@
 ![tavp_wrk_t]======================================
         subroutine TAVPWRKConfigure(this,conf,ierr)
 !Configures TAVP-WRK DSVP:
-! * Sets up DSVP microcode;
 ! * Configures static DSVU;
 ! * Allocates and configures dynamic DSVU;
 ! * Sets up global DSVU table in DSVP;
@@ -2555,15 +2524,8 @@
                 if(errc.eq.DSVP_SUCCESS) then
                  retirer_p=>this%retirer; call this%set_unit(retirer_p,errc)
                  if(errc.eq.DSVP_SUCCESS) then
- !Set microcode:
-                  call init_microcode(errc)
-                  if(errc.eq.0) then
-                   call this%set_microcode(microcode)
  !Set the DSVP id and description:
-                   call this%set_description(int(conf%tavp_id,INTL),conf%description,errc); if(errc.ne.DSVP_SUCCESS) errc=-11
-                  else
-                   errc=-10
-                  endif
+                  call this%set_description(int(conf%tavp_id,INTL),conf%description,errc); if(errc.ne.DSVP_SUCCESS) errc=-10
                  else
                   errc=-9
                  endif
