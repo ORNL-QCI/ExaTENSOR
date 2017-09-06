@@ -1523,59 +1523,67 @@
          class(DataDescr_t), pointer:: descr_p
          type(C_PTR):: cptr
 
-         if(.not.this%is_present(errc)) then
+         if(this%is_active(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
-           if(associated(this%resource)) then
-            body_p=>this%tensor%get_body(errc)
-            if(errc.eq.TEREC_SUCCESS.and.associated(body_p)) then
-             layout_p=>body_p%get_layout(errc)
-             if(errc.eq.TEREC_SUCCESS.and.associated(layout_p)) then
-              descr_p=>layout_p%get_data_descr(errc)
-              if(errc.eq.TEREC_SUCCESS.and.associated(descr_p)) then
-               if(descr_p%is_set(errc)) then
-                if(errc.eq.0) then
-                 if(this%resource%is_empty()) call this%acquire_rsc(errc)
-                 if(errc.eq.0) then
-                  if(this%get_comm_stat().eq.DS_OPRND_NO_COMM) then
-                   cptr=this%resource%get_mem_ptr(errc)
+           if(.not.this%is_present(errc)) then
+            if(errc.eq.DSVP_SUCCESS) then
+             if(associated(this%resource)) then
+              body_p=>this%tensor%get_body(errc)
+              if(errc.eq.TEREC_SUCCESS.and.associated(body_p)) then
+               layout_p=>body_p%get_layout(errc)
+               if(errc.eq.TEREC_SUCCESS.and.associated(layout_p)) then
+                descr_p=>layout_p%get_data_descr(errc)
+                if(errc.eq.TEREC_SUCCESS.and.associated(descr_p)) then
+                 if(descr_p%is_set(errc)) then
+                  if(errc.eq.0) then
+                   if(this%resource%is_empty()) call this%acquire_rsc(errc)
                    if(errc.eq.0) then
-                    call descr_p%get_data(cptr,errc,MPI_ASYNC_REQ)
-                    if(errc.ne.0.and.errc.ne.TRY_LATER) errc=-1
-                    if(errc.eq.0) then
-                     call this%set_comm_stat(DS_OPRND_FETCHING,errc); if(errc.ne.DSVP_SUCCESS) errc=-2
+                    if(this%get_comm_stat().eq.DS_OPRND_NO_COMM) then
+                     cptr=this%resource%get_mem_ptr(errc)
+                     if(errc.eq.0) then
+                      call descr_p%get_data(cptr,errc,MPI_ASYNC_REQ)
+                      if(errc.ne.0.and.errc.ne.TRY_LATER) errc=-1
+                      if(errc.eq.0) then
+                       call this%set_comm_stat(DS_OPRND_FETCHING,errc); if(errc.ne.DSVP_SUCCESS) errc=-2
+                      endif
+                     else
+                      errc=-3
+                     endif
+                    else
+                     errc=-4
                     endif
                    else
-                    errc=-3
+                    errc=-5
                    endif
                   else
-                   errc=-4
+                   errc=-6
                   endif
                  else
-                  errc=-5
+                  errc=-7
                  endif
                 else
-                 errc=-6
+                 errc=-8
                 endif
                else
-                errc=-7
+                errc=-9
                endif
               else
-               errc=-8
+               errc=-10
               endif
              else
-              errc=-9
+              errc=-11
              endif
             else
-             errc=-10
+             errc=-12
             endif
            else
-            errc=-11
+            if(errc.ne.DSVP_SUCCESS) errc=-13
            endif
           else
-           errc=-12
+           errc=-14
           endif
          else
-          errc=-13
+          errc=-15
          endif
          if(present(ierr)) ierr=errc
          return
@@ -1682,7 +1690,7 @@
                  res=descr_p%test_data(errc); if(errc.ne.0) errc=-2
                 endif
                 if(sts.eq.DS_OPRND_FETCHING.and.res) then
-                 call this%mark_delivered(errc); if(errc.ne.0) errc=-3
+                 call this%mark_delivered(errc); if(errc.ne.DSVP_SUCCESS) errc=-3
                 endif
                else
                 errc=-4 !`if there is no pending communication, it is an error?
@@ -1727,7 +1735,7 @@
            if(associated(this%resource)) then
             if(this%get_comm_stat().ne.DS_OPRND_NO_COMM) then
              delivered=this%sync(errc,wait=.TRUE.)
-             if(.not.delivered.or.errc.ne.DSVP_SUCCESS) errc=-1
+             if((.not.delivered).or.(errc.ne.0)) errc=-1
             endif
             if(this%resource%ref_count.eq.1) then !only one (last) tensor operand is associated with this resource
              call this%resource%free_buffer(errc); if(errc.ne.0) errc=-2 !free the resource memory buffer

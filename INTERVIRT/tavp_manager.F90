@@ -249,12 +249,12 @@
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc,id
 
-         res=.TRUE. !assumed remote by default
+         res=.TRUE. !assume remote by default
          if(this%is_active(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
            id=this%get_owner_id(errc)
            if(errc.eq.0) then
-            res=id.ne.role_rank !tensor is owner by a different TAVP-MNG processor
+            res=id.ne.role_rank !tensor is owned by a different TAVP-MNG processor
            else
             errc=-3
            endif
@@ -276,6 +276,7 @@
          integer(INTD):: errc
 
          errc=0
+         !`No local resources are currently needed
          if(present(ierr)) ierr=errc
          return
         end subroutine TensOprndAcquireRsc
@@ -287,7 +288,27 @@
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
 
-         errc=0
+         if(this%is_active(errc)) then
+          if(errc.eq.DSVP_SUCCESS) then
+           if(.not.this%is_present(errc)) then
+            if(errc.eq.DSVP_SUCCESS) then
+             if(this%get_comm_stat().eq.DS_OPRND_NO_COMM) then
+              call this%set_comm_stat(DS_OPRND_FETCHING,errc); if(errc.ne.DSVP_SUCCESS) errc=-6
+             else
+              errc=-5
+             endif
+            else
+             errc=-4
+            endif
+           else
+            errc=-3
+           endif
+          else
+           errc=-2
+          endif
+         else
+          errc=-1
+         endif
          if(present(ierr)) ierr=errc
          return
         end subroutine TensOprndPrefetch
@@ -299,7 +320,19 @@
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
 
-         errc=0
+         if(this%is_present(errc)) then
+          if(errc.eq.DSVP_SUCCESS) then
+           if(this%get_comm_stat().eq.DS_OPRND_NO_COMM) then
+            call this%set_comm_stat(DS_OPRND_UPLOADING,errc); if(errc.ne.DSVP_SUCCESS) errc=-4
+           else
+            errc=-3
+           endif
+          else
+           errc=-2
+          endif
+         else
+          errc=-1
+         endif
          if(present(ierr)) ierr=errc
          return
         end subroutine TensOprndUpload
@@ -313,7 +346,17 @@
          logical, intent(in), optional:: wait        !in: TRUE activates WAIT instead of TEST synchronization (default)
          integer(INTD):: errc
 
-         errc=0
+         if(this%is_active(errc)) then
+          if(errc.eq.DSVP_SUCCESS) then
+           if(this%get_comm_stat().ne.DS_OPRND_NO_COMM) then
+            call this%mark_delivered(errc); if(errc.ne.DSVP_SUCCESS) errc=-3
+           endif
+          else
+           errc=-2
+          endif
+         else
+          errc=-1
+         endif
          if(present(ierr)) ierr=errc
          return
         end function TensOprndSync
@@ -324,8 +367,21 @@
          class(tens_oprnd_t), intent(inout):: this   !inout: tensor operand
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
+         logical:: delivered
 
-         errc=0
+         if(this%is_active(errc)) then
+          if(errc.eq.DSVP_SUCCESS) then
+           if(this%get_comm_stat().ne.DS_OPRND_NO_COMM) then
+            delivered=this%sync(errc,wait=.TRUE.)
+            if((.not.delivered).or.(errc.ne.0)) errc=-3
+           endif
+          else
+           errc=-2
+          endif
+         else
+          errc=-1
+         endif
+         !`No local resources are currently needed
          if(present(ierr)) ierr=errc
          return
         end subroutine TensOprndRelease
@@ -335,9 +391,22 @@
          implicit none
          class(tens_oprnd_t), intent(inout):: this   !inout: tensor operand
          integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc
+         integer(INTD):: errc,ier
+         logical:: delivered
 
-         errc=0
+         if(this%is_active(errc)) then
+          if(errc.eq.DSVP_SUCCESS) then
+           if(this%get_comm_stat().ne.DS_OPRND_NO_COMM) then
+            delivered=this%sync(errc,wait=.TRUE.)
+            if((.not.delivered).or.(errc.ne.0)) errc=-4
+           endif
+           call this%mark_empty(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-3
+          else
+           errc=-2
+          endif
+         else
+          errc=-1
+         endif
          if(present(ierr)) ierr=errc
          return
         end subroutine TensOprndDestruct
