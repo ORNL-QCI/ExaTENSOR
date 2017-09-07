@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/09/06
+!REVISION: 2017/09/07
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -121,7 +121,7 @@
         type, extends(ds_encoder_t), private:: tavp_wrk_encoder_t
          integer(INTD), private:: dest_comm                         !bytecode destinations communicator
          integer(INTD), allocatable, private:: dest_rank(:)         !bytecode destination processes ranks
-         type(pack_env_t), allocatable, private:: bytecode(:)       !outgoing bytecode
+         type(pack_env_t), allocatable, private:: bytecode(:)       !outgoing bytecode (multiple channels in general)
          contains
           procedure, public:: configure=>TAVPWRKEncoderConfigure    !configures TAVP-WRK encoder
           procedure, public:: start=>TAVPWRKEncoderStart            !starts TAVP-WRK encoder
@@ -135,8 +135,8 @@
         end type tavp_wrk_encoder_conf_t
  !TAVP-WRK resourcer:
         type, extends(ds_unit_t), private:: tavp_wrk_resourcer_t
-         integer(INTL), public:: host_ram_size=0_INTL             !size of the Host RAM memory in bytes to use
-         integer(INTL), public:: nvram_size=0_INTL                !size of the NVRAM memory (if any) in bytes
+         integer(INTL), public:: host_ram_size=0_INTL               !size of the usable Host RAM memory in bytes
+         integer(INTL), public:: nvram_size=0_INTL                  !size of the usable NVRAM memory (if any) in bytes
          contains
           procedure, public:: configure=>TAVPWRKResourcerConfigure              !configures TAVP-WRK resourcer
           procedure, public:: start=>TAVPWRKResourcerStart                      !starts TAVP-WRK resourcer
@@ -146,8 +146,8 @@
         end type tavp_wrk_resourcer_t
  !TAVP-WRK resourcer configuration:
         type, extends(dsv_conf_t), private:: tavp_wrk_resourcer_conf_t
-         integer(INTL), public:: host_ram_size=0_INTL             !size of the Host RAM memory in bytes to use
-         integer(INTL), public:: nvram_size=0_INTL                !size of the NVRAM memory (if any) in bytes
+         integer(INTL), public:: host_ram_size !size of the usable Host RAM memory in bytes
+         integer(INTL), public:: nvram_size    !size of the usable NVRAM memory (if any) in bytes
         end type tavp_wrk_resourcer_conf_t
  !TAVP-WRK:
         type, extends(dsvp_t), public:: tavp_wrk_t
@@ -164,10 +164,15 @@
         type, extends(dsv_conf_t), public:: tavp_wrk_conf_t
          character(:), allocatable, public:: description    !TAVP description
          integer(INTD), public:: tavp_id                    !TAVP id
-         integer(INTD), public:: source_comm                !bytecode source MPI communicator
-         integer(INTD), public:: source_rank                !bytecode source process rank
-         integer(INTD), public:: dest_comm                  !bytecode destinations MPI communicator
-         integer(INTD), allocatable, public:: dest_rank(:)  !bytecode destination processes ranks
+         integer(INTD), public:: source_comm                !MPI communicator of the bytecode source
+         integer(INTD), public:: source_rank                !MPI process rank of the bytecode source
+         integer(INTD), public:: dest_comm                  !MPI communicator of the bytecode destinations
+         integer(INTD), allocatable, public:: dest_rank(:)  !MPI process ranks of the bytecode destinations
+         integer(INTL), public:: host_ram_size              !size of the usable Host RAM memory in bytes
+         integer(INTL), public:: nvram_size                 !size of the usable NVRAM memory (if any) in bytes
+         integer(INTL), allocatable, public:: gpu_list(:)   !list of the accesible NVIDIA GPU devices
+         integer(INTL), allocatable, public:: amd_list(:)   !list of the accesible AMD GPU devices
+         integer(INTL), allocatable, public:: mic_list(:)   !list of the accesible Intel MIC devices
         end type tavp_wrk_conf_t
 !MODULE DATA:
  !TAVP-WRK distributed address space, set by dsvp.configure():
@@ -2331,7 +2336,12 @@
          errc=0
          select type(conf)
          type is(tavp_wrk_resourcer_conf_t)
-          !`Implement
+          if(conf%host_ram_size.ge.0.and.conf%nvram_size.ge.0) then
+           this%host_ram_size=conf%host_ram_size
+           this%nvram_size=conf%nvram_size
+          else
+           errc=-2
+          endif
          class default
           errc=-1
          end select
@@ -2450,8 +2460,7 @@
          integer(INTD):: errc,num_units
          type(tavp_wrk_decoder_conf_t):: decoder_conf
          type(tavp_wrk_encoder_conf_t):: retirer_conf
-         class(tavp_wrk_decoder_t), pointer:: decoder_p
-         class(tavp_wrk_encoder_t), pointer:: retirer_p
+         type(tavp_wrk_resourcer_conf_t):: resourcer_conf
 
          !jerr=talsh_init(tavp_worker_host_buf_size,tavp_worker_host_arg_max,(/(jj,jj=gpu_start,gpu_start+gpu_count-1)/))
          !call tavp_addr_space%create(role_comm,TAVP_WORKER_NUM_WINS,'AddressSpaceWRK',jerr)
@@ -2472,15 +2481,29 @@
               call this%retirer%configure(retirer_conf,errc)
               if(errc.eq.0) then
                num_units=num_units+1
+  !Resourcer:
+               resourcer_conf=tavp_wrk_resourcer_conf_t(conf%host_ram_size,conf%nvram_size)
+               call this%resourcer%configure(resourcer_conf,errc)
+               if(errc.eq.0) then
+                num_units=num_units+1
  !Set up global DSVU table (references to all DSVU):
-               call this%alloc_units(num_units,errc)
-               if(errc.eq.DSVP_SUCCESS) then
-                decoder_p=>this%decoder; call this%set_unit(decoder_p,errc)
+                call this%alloc_units(num_units,errc)
                 if(errc.eq.DSVP_SUCCESS) then
-                 retirer_p=>this%retirer; call this%set_unit(retirer_p,errc)
+                 call this%set_unit(this%decoder,errc)
                  if(errc.eq.DSVP_SUCCESS) then
+                  call this%set_unit(this%retirer,errc)
+                  if(errc.eq.DSVP_SUCCESS) then
+                   call this%set_unit(this%resourcer,errc)
+                   if(errc.eq.DSVP_SUCCESS) then
  !Set the DSVP id and description:
-                  call this%set_description(int(conf%tavp_id,INTL),conf%description,errc); if(errc.ne.DSVP_SUCCESS) errc=-10
+                    call this%set_description(int(conf%tavp_id,INTL),conf%description,errc)
+                    if(errc.ne.DSVP_SUCCESS) errc=-12
+                   else
+                    errc=-11
+                   endif
+                  else
+                   errc=-10
+                  endif
                  else
                   errc=-9
                  endif

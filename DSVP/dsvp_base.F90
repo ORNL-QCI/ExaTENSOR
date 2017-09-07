@@ -1,6 +1,6 @@
 !Domain-specific virtual processor (DSVP): Abstract base module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/09/06
+!REVISION: 2017/09/07
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -1327,26 +1327,22 @@
         subroutine DSVPSetUnit(this,virt_unit,ierr)
 !Sets up a new DSVU entry in the DSVU table in a sequential order.
          implicit none
-         class(dsvp_t), intent(inout), target:: this       !inout: DSVP
-         class(ds_unit_t), intent(in), pointer:: virt_unit !in: valid DSVU
-         integer(INTD), intent(out), optional:: ierr       !out: error code
+         class(dsvp_t), intent(inout), target:: this      !inout: DSVP
+         class(ds_unit_t), intent(in), target:: virt_unit !in: valid DSVU
+         integer(INTD), intent(out), optional:: ierr      !out: error code
          integer(INTD):: errc
 
          errc=DSVP_SUCCESS
-         if(associated(virt_unit)) then
-          if(this%num_units.le.ubound(this%units,1)) then
-           this%units(this%num_units)%unit_ref=>virt_unit
-           call this%units(this%num_units)%unit_ref%set_id(this,this%num_units,errc)
-           if(errc.eq.DSVP_SUCCESS) then
-            this%num_units=this%num_units+1
-           else
-            this%units(this%num_units)%unit_ref=>NULL()
-           endif
+         if(this%num_units.le.ubound(this%units,1)) then
+          this%units(this%num_units)%unit_ref=>virt_unit
+          call this%units(this%num_units)%unit_ref%set_id(this,this%num_units,errc)
+          if(errc.eq.DSVP_SUCCESS) then
+           this%num_units=this%num_units+1
           else
-           errc=DSVP_ERR_RSC_EXCEEDED
+           this%units(this%num_units)%unit_ref=>NULL()
           endif
          else
-          errc=DSVP_ERR_INVALID_ARGS
+          errc=DSVP_ERR_RSC_EXCEEDED
          endif
          if(present(ierr)) ierr=errc
          return
