@@ -39,6 +39,8 @@
 
 #include "tensor_conn.hpp"
 
+#include "talsh.h"
+
 #define _DEBUG_DIL
 
 namespace exatensor {

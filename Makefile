@@ -14,7 +14,7 @@ export BLASLIB ?= MKL
 #Nvidia GPU via CUDA: [CUDA|NOCUDA]:
 export GPU_CUDA ?= CUDA
 #Nvidia GPU architecture (two digits):
-export GPU_SM_ARCH ?= 35
+export GPU_SM_ARCH ?= 52
 #Operating system: [LINUX|NO_LINUX]:
 export EXA_OS ?= LINUX
 
@@ -153,7 +153,7 @@ else
 LA_LINK_MKL = -L$(PATH_BLAS_MKL) -lmkl_intel_lp64 -lmkl_core -lmkl_intel_thread -lpthread -lm -ldl
 endif
 LA_LINK_ACML = -L$(PATH_BLAS_ACML) -lacml_mp
-LA_LINK_ESSL = -L$(PATH_BLAS_ESSL) -lessl -L$(PATH_BLAS_ESSL_DEP) -lxlf90_r -lxlfmath
+LA_LINK_ESSL = -L$(PATH_BLAS_ESSL) -lesslsmp -L$(PATH_BLAS_ESSL_DEP) -lxlf90_r -lxlfmath
 ifeq ($(BLASLIB),NONE)
 LA_LINK_NOWRAP = -L.
 else

@@ -234,6 +234,10 @@ FFLAGS_IBM_DEV = -c -qsmp=omp -g -qkeepparm -qcheck -qsigtrap
 FFLAGS_IBM_OPT = -c -qsmp=omp -O3
 FFLAGS = $(FFLAGS_$(TOOLKIT)_$(BUILD_TYPE)) $(DF)$(NO_GPU) $(DF)$(NO_AMD) $(DF)$(NO_PHI) $(DF)$(NO_BLAS) $(DF)-D$(EXA_OS)
 
+#ExaTensor includes:
+MY_INC = -I../TALSH
+MY_LIB = ../TALSH/libtalsh.a
+
 #THREADS:
 LTHREAD_GNU   = -lgomp
 LTHREAD_PGI   = -mp -lpthread
@@ -248,23 +252,23 @@ LFLAGS = $(LTHREAD) $(MPI_LINK) $(LA_LINK) $(CUDA_LINK) $(LIB)
 OBJS = ./OBJ/tensor_leg.o
 #./OBJ/tensor_dense_adpt.o ./OBJ/tensor_conn.o ./OBJ/tensor_network.o
 
-$(NAME): $(OBJS) *.hpp
-	ar cr lib$(NAME).a $(OBJS)
-	$(CPPCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(CFLAGS) main.cpp -o ./OBJ/main.o
-	$(CPPCOMP) ./OBJ/main.o $(OBJS) $(LFLAGS) -o test_$(NAME).x
+$(NAME): $(OBJS) *.hpp $(MY_LIB)
+	ar cr lib$(NAME).a $(OBJS) $(MY_LIB)
+	$(CPPCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(CFLAGS) main.cpp -o ./OBJ/main.o
+	$(CPPCOMP) ./OBJ/main.o $(OBJS) $(LFLAGS) $(MY_LIB) -o test_$(NAME).x
 
 ./OBJ/tensor_leg.o: tensor_leg.hpp tensor_leg.cpp
 	mkdir -p ./OBJ
-	$(CPPCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(CFLAGS) tensor_leg.cpp -o ./OBJ/tensor_leg.o
+	$(CPPCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(CFLAGS) tensor_leg.cpp -o ./OBJ/tensor_leg.o
 
 ./OBJ/tensor_dense_adpt.o: tensor_dense_adpt.hpp tensor_dense_adpt.cpp
-	$(CPPCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(CFLAGS) tensor_dense_adpt.cpp -o ./OBJ/tensor_dense_adpt.o
+	$(CPPCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(CFLAGS) tensor_dense_adpt.cpp -o ./OBJ/tensor_dense_adpt.o
 
 ./OBJ/tensor_conn.o: tensor_leg.hpp tensor_dense_adpt.hpp tensor_conn.hpp tensor_conn.cpp
-	$(CPPCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(CFLAGS) tensor_conn.cpp -o ./OBJ/tensor_conn.o
+	$(CPPCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(CFLAGS) tensor_conn.cpp -o ./OBJ/tensor_conn.o
 
 ./OBJ/tensor_network.o: tensor_leg.hpp tensor_dense_adpt.hpp tensor_conn.hpp tensor_network.hpp tensor_network.cpp
-	$(CPPCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(CFLAGS) tensor_network.cpp -o ./OBJ/tensor_network.o
+	$(CPPCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(CFLAGS) tensor_network.cpp -o ./OBJ/tensor_network.o
 
 .PHONY: clean
 clean:
