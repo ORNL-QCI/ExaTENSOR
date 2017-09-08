@@ -393,7 +393,7 @@ int TensorNetwork<T>::evaluate(ContractionSequence & contrSeq,
  }else{
   if(numContr != (numTensors - 1)) error_code=-1; //invalid number of tensor contractions in the contraction sequence
  }
- if(error_code == 0) error_code = this->computeOutput(contrSeq);
+ if(error_code == 0) error_code = this->computeOutputLocal(contrSeq);
  return error_code;
 }
 
@@ -479,13 +479,25 @@ void TensorNetwork<T>::getContractionSequence(ContractionSequence & contrSeq,
  return;
 }
 
-/** Performs all tensor contractions, thus evaluating the value of the output tensor. **/
+/** Performs all tensor contractions, thus evaluating the value of the output tensor.
+    Single-node version based on TAL-SH. **/
 template <typename T>
-int TensorNetwork<T>::computeOutput(const ContractionSequence & contrSeq)
+int TensorNetwork<T>::computeOutputLocal(const ContractionSequence & contrSeq)
 {
  int error_code = 0; //success
- std::cout << "#MSG(TensorNetwork<T>::computeOutput): Computing ... "; //debug
- //`Implement
- std::cout << "Done" << std::endl; //debug
+ std::cout << "#MSG(TensorNetwork<T>::computeOutputLocal): Computing ... "; //debug
+ auto timeBeg = std::chrono::high_resolution_clock::now();
+ //`Implement:
+ //Extract the pair of contracted input tensors
+ //Call contractTensors() -> reduced tensor network;
+ //Extract the output tensor
+ //Construct TAL-SH aliases for those tensors which have bodies, otherwise create TAL-SH tensors and set new bodies
+ //Perform the tensor contraction
+ //Destruct input TAL-SH tensors
+ //Replace the old tensor network with the new (reduced) one
+ //Repeat
+ auto timeEnd = std::chrono::high_resolution_clock::now();
+ auto timeTot = std::chrono::duration_cast<std::chrono::duration<double>>(timeEnd-timeBeg);
+ std::cout << std::endl << "Done (" << timeTot.count() << " sec)" << std::endl; //debug
  return error_code;
 }

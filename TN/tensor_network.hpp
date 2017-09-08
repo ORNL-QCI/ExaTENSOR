@@ -155,8 +155,9 @@ private:
      reduced tensor network (tensor numeration changes after each contraction). **/
  void getContractionSequence(ContractionSequence & contrSeq,       //out: contraction sequence
                              const unsigned int numWalkers) const; //in: optimization depth
- /** Performs all tensor contractions, thus evaluating the value of the output tensor. **/
- int computeOutput(const ContractionSequence & contrSeq);
+ /** Performs all tensor contractions, thus evaluating the value of the output tensor.
+     Single-node version based on TAL-SH. **/
+ int computeOutputLocal(const ContractionSequence & contrSeq);
 
 };
 
