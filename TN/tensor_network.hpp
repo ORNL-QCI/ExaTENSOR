@@ -1,7 +1,7 @@
 /** C++ adapters for ExaTENSOR: Tensor network
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/08/30
+!REVISION: 2017/09/08
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -32,6 +32,8 @@
 #include <queue>
 #include <assert.h>
 #include <iostream>
+#include <ctime>
+#include <chrono>
 
 #include "type_deduct.hpp"
 
@@ -87,10 +89,12 @@ public:
  void appendTensor(const TensorDenseAdpt<T> & tensor,           //in: new tensor, either input (rhs) or output (lhs)
                    const std::vector<TensorLeg> & connections); //in: connections of the new tensor to other tensors via legs
  /** Appends a tensor to the tensor network by pairing some or all of its
-     dimensions with the uncontracted dimensions of the tensor network.
-     It is also fine to have none of the tensor legs be contracted with
-     the tensor network, in which case they will simply be appended to
-     the output tensor of the tensor network. **/
+     dimensions with the uncontracted (output) dimensions of the tensor network.
+     It is also fine to have none of the tensor legs be contracted with the tensor
+     network, in which case they will simply be appended to the output tensor of
+     the tensor network. In general, each newly appended tensor removes a number
+     of output legs from the tensor network, shifts the numeration of the rest,
+     and appends new output legs from itself to the tensor network. **/
  void appendTensor(const TensorDenseAdpt<T> & tensor, //in: tensor being appended to the tensor network
                    const std::vector<std::pair<unsigned int, unsigned int>> & legPairs); //in: leg pairing: pair<tensor network output leg id, tensor leg id>
  /** Appends another tensor network into the current tensor network

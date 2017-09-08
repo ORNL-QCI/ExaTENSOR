@@ -1,7 +1,7 @@
 /** C++ adapters for ExaTENSOR: Tensor network
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/08/30
+!REVISION: 2017/09/08
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -112,10 +112,12 @@ void TensorNetwork<T>::appendTensor(const TensorDenseAdpt<T> & tensor,          
 }
 
 /** Appends a tensor to the tensor network by pairing some or all of its
-    dimensions with the uncontracted dimensions of the tensor network.
-    It is also fine to have none of the tensor legs be contracted with
-    the tensor network, in which case they will simply be appended to
-    the output tensor of the tensor network. **/
+    dimensions with the uncontracted (output) dimensions of the tensor network.
+    It is also fine to have none of the tensor legs be contracted with the tensor
+    network, in which case they will simply be appended to the output tensor of
+    the tensor network. In general, each newly appended tensor removes a number
+    of output legs from the tensor network, shifts the numeration of the rest,
+    and appends new output legs from itself to the tensor network. **/
 template <typename T>
 void TensorNetwork<T>::appendTensor(const TensorDenseAdpt<T> & tensor, //in: tensor being appended to the tensor network
                                     const std::vector<std::pair<unsigned int, unsigned int>> & legPairs) //in: leg pairing: pair<tensor network output leg id, tensor leg id>
@@ -207,7 +209,7 @@ template <typename T>
 void TensorNetwork<T>::appendNetwork(const TensorNetwork<T> & tensornet, //in: another tensor network
                                      const std::vector<std::pair<unsigned int, unsigned int>> & legPairs) //in: leg pairing: pair<output leg id, output leg id>, may be empty
 {
- //`Finish
+ //`Implement
  return;
 }
 
@@ -424,36 +426,43 @@ void TensorNetwork<T>::getContractionSequence(ContractionSequence & contrSeq,
 
  std::cout << "#MSG(TensorNetwork<T>::getContractionSequence): Determining a pseudo-optimal tensor contraction sequence ... "; //debug
 
+ auto timeBeg = std::chrono::high_resolution_clock::now();
+
  auto numContractions = this->getNumTensors() - 1; //number of contractions is one less than the number of r.h.s. tensors
  assert(numContractions > 0); //at least one tensor contraction is expected (two or more r.h.s. tensors)
  assert(contrSeq.size() == 0); //the contraction sequence must be empty on entrance
 
  ContractionSequence contrSeqEmpty;
- std::vector<ContrPath> inputPaths;
- inputPaths.emplace_back(make_tuple(*this,contrSeqEmpty,0.0)); //initial configuration
+ std::vector<ContrPath> inputPaths; //input: vector
+ inputPaths.emplace_back(std::make_tuple(*this,contrSeqEmpty,0.0)); //initial configuration
 
  auto cmpPaths = [](const ContrPath & left, const ContrPath & right){return (std::get<2>(left) < std::get<2>(right));};
  std::priority_queue<ContrPath,std::vector<ContrPath>,decltype(cmpPaths)> priq(cmpPaths); //output: priority queue
 
  for(decltype(numContractions) pass = 0; pass < numContractions; ++pass){
+  unsigned int numPassCands = 0;
   for(const auto & contrPath : inputPaths){
    const auto & parentTensNet = std::get<0>(contrPath); //parental tensor network
    const auto numTensors = parentTensNet.getNumTensors(); //number of r.h.s. tensors in the parental tensor network
    const auto & parentContrSeq = std::get<1>(contrPath); //parental contraction sequence
    for(unsigned int i = 1; i < numTensors; ++i){ //r.h.s. tensors are numbered from 1
-    for(unsigned int j=i+1; j <= numTensors; ++j){
+    for(unsigned int j=i+1; j <= numTensors; ++j){ //r.h.s. tensors are numbered from 1
      double contrCost = parentTensNet.getContractionCost(i,j); //tensor contraction cost
-     auto tensNet = parentTensNet.contractTensorsOut(i,j); //contract tensors i and j
-     auto cSeq = parentContrSeq; cSeq.emplace_back(std::pair<unsigned int, unsigned int>(i,j));
-     priq.emplace(std::make_tuple(*tensNet,cSeq,contrCost+std::get<2>(contrPath)));
+     //std::cout << std::endl << "New candidate contracted pair of tensors is {" << i << "," << j << "} with cost " << contrCost; //debug
+     auto tensNet = parentTensNet.contractTensorsOut(i,j); //contract tensors i and j and return a pointer to a new tensor network
+     auto cSeq = parentContrSeq; cSeq.emplace_back(std::pair<unsigned int, unsigned int>(i,j)); //append a new pair of contracted tensor id's
+     priq.emplace(std::make_tuple(*tensNet,cSeq,contrCost+std::get<2>(contrPath))); //cloning tensor network and contraction sequence
      if(priq.size() > numWalkers) priq.pop();
+     numPassCands++;
     }
    }
   }
+  std::cout << std::endl << "Pass " << pass << ": Total number of candidates considered = " << numPassCands; //debug
   inputPaths.clear();
-  if(pass == numContractions - 1){
+  if(pass == numContractions - 1){ //last pass
    while(priq.size() > 1) priq.pop();
    contrSeq = std::get<1>(priq.top());
+   std::cout << std::endl << "Best tensor contraction sequence cost found = " << std::get<2>(priq.top()); //debug
    priq.pop();
   }else{
    while(priq.size() > 0){
@@ -462,7 +471,9 @@ void TensorNetwork<T>::getContractionSequence(ContractionSequence & contrSeq,
    }
   }
  }
- std::cout << "Done: "; //debug
+ auto timeEnd = std::chrono::high_resolution_clock::now();
+ auto timeTot = std::chrono::duration_cast<std::chrono::duration<double>>(timeEnd-timeBeg);
+ std::cout << std::endl << "Done (" << timeTot.count() << " sec):"; //debug
  for(const auto & cPair : contrSeq) std::cout << " {" << std::get<0>(cPair) << "," << std::get<1>(cPair) << "}"; //debug
  std::cout << std::endl; //debug
  return;
@@ -474,7 +485,7 @@ int TensorNetwork<T>::computeOutput(const ContractionSequence & contrSeq)
 {
  int error_code = 0; //success
  std::cout << "#MSG(TensorNetwork<T>::computeOutput): Computing ... "; //debug
- //`Finish
+ //`Implement
  std::cout << "Done" << std::endl; //debug
  return error_code;
 }
