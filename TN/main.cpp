@@ -182,8 +182,12 @@ int test_tensor_expression(){
  tensnet1.setOutputBody(body0);
  std::cout << std::endl << "Tensor network to be evaluated:" << std::endl; tensnet1.printIt();
 
+ int error_code;
+ std::size_t desiredHostBufferSize = 1*1024*1024*1024;
+ error_code = exatensor::start(desiredHostBufferSize);
  ContractionSequence contrSeq;
- int error_code = tensnet1.evaluate(contrSeq);
+ error_code = tensnet1.evaluate(contrSeq);
+ error_code = exatensor::stop();
 
  //Done:
  return 0;

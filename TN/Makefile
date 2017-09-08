@@ -10,7 +10,7 @@ export BUILD_TYPE ?= DEV
 #MPI Library: [MPICH|OPENMPI|NONE]:
 export MPILIB = NONE
 #BLAS: [ATLAS|MKL|ACML|NONE]:
-export BLASLIB = NONE
+export BLASLIB ?= NONE
 #Nvidia GPU via CUDA: [CUDA|NOCUDA]:
 export GPU_CUDA ?= NOCUDA
 #Operating system: [LINUX|NO_LINUX]:
@@ -133,17 +133,22 @@ MPI_LINK = $(MPI_LINK_$(WRAP))
 #LINEAR ALGEBRA FLAGS:
 LA_LINK_ATLAS = -L$(PATH_BLAS_ATLAS) -lblas -llapack
 ifeq ($(TOOLKIT),GNU)
-LA_LINK_MKL = -L$(PATH_BLAS_MKL) -lmkl_intel_lp64 -lmkl_core -lmkl_gnu_thread -lpthread -lm -ldl
+LA_LINK_MKL = -L$(PATH_BLAS_MKL) -lmkl_intel_lp64 -lmkl_gnu_thread -lmkl_core -lpthread -lm -ldl
 else
-LA_LINK_MKL = -L$(PATH_BLAS_MKL) -lmkl_intel_lp64 -lmkl_core -lmkl_intel_thread -lpthread -lm -ldl
+LA_LINK_MKL = -L$(PATH_BLAS_MKL) -lmkl_intel_lp64 -lmkl_intel_thread -lmkl_core -lpthread -lm -ldl -L$(PATH_BLAS_MKL_DEP) -liomp5
 endif
 LA_LINK_ACML = -L$(PATH_BLAS_ACML) -lacml_mp
+LA_LINK_ESSL = -L$(PATH_BLAS_ESSL) -lesslsmp -L$(PATH_BLAS_ESSL_DEP) -lxlf90_r -lxlfmath
 ifeq ($(BLASLIB),NONE)
 LA_LINK_NOWRAP = -L.
 else
 LA_LINK_NOWRAP = $(LA_LINK_$(BLASLIB))
 endif
+ifeq ($(BLASLIB),MKL)
+LA_LINK_WRAP = $(LA_LINK_MKL)
+else
 LA_LINK_WRAP = -L.
+endif
 LA_LINK = $(LA_LINK_$(WRAP))
 
 #CUDA INCLUDES:
@@ -247,7 +252,7 @@ LTHREAD_IBM   = -lxlsmp
 LTHREAD = $(LTHREAD_$(TOOLKIT))
 
 #LINKING:
-LFLAGS = $(LTHREAD) $(MPI_LINK) $(LA_LINK) $(CUDA_LINK) $(LIB)
+LFLAGS = $(MPI_LINK) $(LA_LINK) $(LTHREAD) $(CUDA_LINK) $(LIB)
 
 OBJS = ./OBJ/tensor_leg.o
 #./OBJ/tensor_dense_adpt.o ./OBJ/tensor_conn.o ./OBJ/tensor_network.o
@@ -255,7 +260,7 @@ OBJS = ./OBJ/tensor_leg.o
 $(NAME): $(OBJS) *.hpp $(MY_LIB)
 	ar cr lib$(NAME).a $(OBJS) $(MY_LIB)
 	$(CPPCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(CFLAGS) main.cpp -o ./OBJ/main.o
-	$(CPPCOMP) ./OBJ/main.o $(OBJS) $(LFLAGS) $(MY_LIB) -o test_$(NAME).x
+	$(FCOMP) ./OBJ/main.o $(OBJS) $(MY_LIB) $(LFLAGS) -o test_$(NAME).x
 
 ./OBJ/tensor_leg.o: tensor_leg.hpp tensor_leg.cpp
 	mkdir -p ./OBJ

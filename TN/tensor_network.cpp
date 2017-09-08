@@ -23,6 +23,24 @@
 
 **/
 
+//Global:
+
+/** Starts ExaTENSOR numerical runtime. **/
+int start(std::size_t hostMemBufferSize){
+ int errc, nGPU, listGPU[MAX_GPUS_PER_NODE];
+ for(int i = 0; i < nGPU; ++i) listGPU[i]=i;
+ errc = talshGetDeviceCount(DEV_NVIDIA_GPU,&nGPU); if(errc != TALSH_SUCCESS) return -1;
+ int hostArgMax;
+ errc = talshInit(&hostMemBufferSize,&hostArgMax,nGPU,listGPU,0,NULL,0,NULL);
+ if(errc != TALSH_SUCCESS) return -1;
+ return 0;
+}
+
+/** Stops ExaTENSOR numerical runtime. **/
+int stop(){
+ return talshShutdown();
+}
+
 //Life cycle:
 
 /** Constructs an empty tensor network **/
@@ -471,6 +489,7 @@ void TensorNetwork<T>::getContractionSequence(ContractionSequence & contrSeq,
    }
   }
  }
+
  auto timeEnd = std::chrono::high_resolution_clock::now();
  auto timeTot = std::chrono::duration_cast<std::chrono::duration<double>>(timeEnd-timeBeg);
  std::cout << std::endl << "Done (" << timeTot.count() << " sec):"; //debug
@@ -484,18 +503,46 @@ void TensorNetwork<T>::getContractionSequence(ContractionSequence & contrSeq,
 template <typename T>
 int TensorNetwork<T>::computeOutputLocal(const ContractionSequence & contrSeq)
 {
+ talsh_tens_t dtens,ltens,rtens;
+ talsh_task_t tsk;
+ int errc;
+
  int error_code = 0; //success
  std::cout << "#MSG(TensorNetwork<T>::computeOutputLocal): Computing ... "; //debug
  auto timeBeg = std::chrono::high_resolution_clock::now();
- //`Implement:
- //Extract the pair of contracted input tensors
- //Call contractTensors() -> reduced tensor network;
- //Extract the output tensor
- //Construct TAL-SH aliases for those tensors which have bodies, otherwise create TAL-SH tensors and set new bodies
- //Perform the tensor contraction
- //Destruct input TAL-SH tensors
- //Replace the old tensor network with the new (reduced) one
- //Repeat
+
+ auto numContractions = contrSeq.size();
+ std::unique_ptr<TensorNetwork<T>> tensNet(this);
+ for(decltype(numContractions) contrNum = 0; contrNum < numContractions; ++contrNum){
+  //Extract the pair of contracted input tensors:
+  auto lid = std::get<0>(contrSeq[contrNum]); //left input tensor id
+  auto rid = std::get<1>(contrSeq[contrNum]); //right input tensor id
+  assert(lid > 0 && lid < rid);
+  auto & leftTensor = tensNet->getTensor(lid); //left tensor
+  auto & rightTensor = tensNet->getTensor(rid); //right tensor
+  errc = talshTensorClean(&ltens); if(errc != TALSH_SUCCESS) return -1;
+  //errc = talshTensorConstruct(&ltens,R8,rank,dims,talshFlatDevId(DEV_HOST,0),void*ptr);
+  
+  decltype(lid) did; //destination tensor id
+  if(contrNum == numContractions - 1){ //last contraction
+   assert(lid == 1 && rid == 2);
+   did = 0; //output tensor
+  }else{
+   auto tmpTensNet = tensNet->contractTensorsOut(lid,rid);
+   if(contrNum == 0) auto pThis = tensNet.release();
+   tensNet = std::move(tmpTensNet);
+   did = lid;
+  }
+  auto & resultTensor = tensNet->getTensor(did); //destination tensor
+  errc = talshTensorClean(&dtens); if(errc != TALSH_SUCCESS) return -1;
+  
+  //Construct TAL-SH aliases for those tensors which have bodies, otherwise create TAL-SH tensors and set new bodies
+  //Perform the tensor contraction
+  errc = talshTensorDestruct(&dtens); if(errc != TALSH_SUCCESS) return -1;
+  errc = talshTensorDestruct(&rtens); if(errc != TALSH_SUCCESS) return -1;
+  errc = talshTensorDestruct(&ltens); if(errc != TALSH_SUCCESS) return -1;
+ }
+
  auto timeEnd = std::chrono::high_resolution_clock::now();
  auto timeTot = std::chrono::duration_cast<std::chrono::duration<double>>(timeEnd-timeBeg);
  std::cout << std::endl << "Done (" << timeTot.count() << " sec)" << std::endl; //debug

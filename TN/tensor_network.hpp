@@ -62,10 +62,10 @@ private:
 //Data members:
  std::vector<TensorConn<T>> Tensors; //interconnected tensors: [0;1..num_rhs_tensors]
 
-public:
-
 //Constants:
  static const unsigned int NumWalkersDefault = 1024; //number of walkers for tensor contraction sequence optimization
+
+public:
 
 //Life cycle:
  /** Constructs an empty tensor network **/
