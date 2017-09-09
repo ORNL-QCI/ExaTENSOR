@@ -1,7 +1,7 @@
 /** C++ adapters for ExaTENSOR: Tensor network
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/09/08
+!REVISION: 2017/09/09
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -505,7 +505,8 @@ int TensorNetwork<T>::computeOutputLocal(const ContractionSequence & contrSeq)
 {
  talsh_tens_t dtens,ltens,rtens;
  talsh_task_t tsk;
- int errc;
+ void * tBody;
+ int errc,tRank,tDims[MAX_TENSOR_RANK];
 
  int error_code = 0; //success
  std::cout << "#MSG(TensorNetwork<T>::computeOutputLocal): Computing ... "; //debug
@@ -518,11 +519,27 @@ int TensorNetwork<T>::computeOutputLocal(const ContractionSequence & contrSeq)
   auto lid = std::get<0>(contrSeq[contrNum]); //left input tensor id
   auto rid = std::get<1>(contrSeq[contrNum]); //right input tensor id
   assert(lid > 0 && lid < rid);
+  //Construct the left tensor:
   auto & leftTensor = tensNet->getTensor(lid); //left tensor
-  auto & rightTensor = tensNet->getTensor(rid); //right tensor
+  tRank = leftTensor.getRank();
+  auto pDims = leftTensor.getDimExtents();
+  for(int i = 0; i < tRank; ++i) tDims[i] = static_cast<int>(pDims[i]);
+  auto pBody = leftTensor.getBodyAccess();
+  tBody = static_cast<void*>(pBody.get());
   errc = talshTensorClean(&ltens); if(errc != TALSH_SUCCESS) return -1;
-  //errc = talshTensorConstruct(&ltens,R8,rank,dims,talshFlatDevId(DEV_HOST,0),void*ptr);
-  
+  errc = talshTensorConstruct(&ltens,TensorDataKind<T>::Type,tRank,tDims,talshFlatDevId(DEV_HOST,0),tBody);
+  if(errc != TALSH_SUCCESS) return -1;
+  //Construct the right tensor:
+  auto & rightTensor = tensNet->getTensor(rid); //right tensor
+  tRank = rightTensor.getRank();
+  pDims = rightTensor.getDimExtents();
+  for(int i = 0; i < tRank; ++i) tDims[i] = static_cast<int>(pDims[i]);
+  pBody = rightTensor.getBodyAccess();
+  tBody = static_cast<void*>(pBody.get());
+  errc = talshTensorClean(&rtens); if(errc != TALSH_SUCCESS) return -1;
+  errc = talshTensorConstruct(&rtens,TensorDataKind<T>::Type,tRank,tDims,talshFlatDevId(DEV_HOST,0),tBody);
+  if(errc != TALSH_SUCCESS) return -1;
+  //Construct the destination tensor:
   decltype(lid) did; //destination tensor id
   if(contrNum == numContractions - 1){ //last contraction
    assert(lid == 1 && rid == 2);
@@ -534,10 +551,26 @@ int TensorNetwork<T>::computeOutputLocal(const ContractionSequence & contrSeq)
    did = lid;
   }
   auto & resultTensor = tensNet->getTensor(did); //destination tensor
+  tRank = resultTensor.getRank();
+  pDims = resultTensor.getDimExtents();
+  for(int i = 0; i < tRank; ++i) tDims[i] = static_cast<int>(pDims[i]);
   errc = talshTensorClean(&dtens); if(errc != TALSH_SUCCESS) return -1;
+  pBody = resultTensor.getBodyAccess();
+  if(pBody){ //output tensor (already has an external body)
+   tBody = static_cast<void*>(pBody.get());
+   errc = talshTensorConstruct(&dtens,TensorDataKind<T>::Type,tRank,tDims,talshFlatDevId(DEV_HOST,0),tBody);
+   if(errc != TALSH_SUCCESS) return -1;
+  }else{ //intermediate tensor (body is owned by TAL-SH)
+   errc = talshTensorConstruct(&dtens,TensorDataKind<T>::Type,tRank,tDims,talshFlatDevId(DEV_HOST,0));
+   if(errc != TALSH_SUCCESS) return -1;
+   errc = talshTensorGetBodyAccess(&dtens,&tBody,TensorDataKind<T>::Type,0,DEV_HOST);
+   if(errc != TALSH_SUCCESS) return -1;
+   std::shared_ptr<T> sBody(static_cast<T*>(tBody));
+   tensNet->resetTensorBody(did,sBody);
+  }
+  //Perform the tensor contraction:
   
-  //Construct TAL-SH aliases for those tensors which have bodies, otherwise create TAL-SH tensors and set new bodies
-  //Perform the tensor contraction
+  //Destruct TAL-SH tensor aliases:
   errc = talshTensorDestruct(&dtens); if(errc != TALSH_SUCCESS) return -1;
   errc = talshTensorDestruct(&rtens); if(errc != TALSH_SUCCESS) return -1;
   errc = talshTensorDestruct(&ltens); if(errc != TALSH_SUCCESS) return -1;

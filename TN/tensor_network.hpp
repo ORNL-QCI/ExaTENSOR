@@ -1,7 +1,7 @@
 /** C++ adapters for ExaTENSOR: Tensor network
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/09/08
+!REVISION: 2017/09/09
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -35,6 +35,8 @@
 #include <ctime>
 #include <chrono>
 
+#include <complex>
+
 #include "type_deduct.hpp"
 
 #include "tensor_conn.hpp"
@@ -47,6 +49,32 @@ namespace exatensor {
 
 //Types:
 using ContractionSequence = std::vector<std::pair<unsigned int, unsigned int>>;
+
+//Traits:
+template <typename DTK>
+struct TensorDataKind{
+ static const int Type = 0;
+};
+
+template <>
+struct TensorDataKind<float>{
+ static const int Type = R4;
+};
+
+template <>
+struct TensorDataKind<double>{
+ static const int Type = R8;
+};
+
+template <>
+struct TensorDataKind<std::complex<float>>{
+ static const int Type = C4;
+};
+
+template <>
+struct TensorDataKind<std::complex<double>>{
+ static const int Type = C8;
+};
 
 /** Tensor network (contraction of multiple tensors):
  A tensor network consists of tensors numerated from 0.
