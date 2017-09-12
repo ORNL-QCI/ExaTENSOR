@@ -27,10 +27,9 @@
 
 /** Starts ExaTENSOR numerical runtime. **/
 int start(std::size_t hostMemBufferSize){
- int errc, nGPU, listGPU[MAX_GPUS_PER_NODE];
- for(int i = 0; i < nGPU; ++i) listGPU[i]=i;
+ int errc, hostArgMax, nGPU, listGPU[MAX_GPUS_PER_NODE];
  errc = talshGetDeviceCount(DEV_NVIDIA_GPU,&nGPU); if(errc != TALSH_SUCCESS) return -1;
- int hostArgMax;
+ for(int i = 0; i < nGPU; ++i) listGPU[i]=i;
  errc = talshInit(&hostMemBufferSize,&hostArgMax,nGPU,listGPU,0,NULL,0,NULL);
  if(errc != TALSH_SUCCESS) return -1;
  return 0;
@@ -503,32 +502,45 @@ void TensorNetwork<T>::getContractionSequence(ContractionSequence & contrSeq,
 template <typename T>
 int TensorNetwork<T>::computeOutputLocal(const ContractionSequence & contrSeq)
 {
- talsh_tens_t dtens,ltens,rtens;
+ talsh_tens_t * tens;
  talsh_task_t tsk;
- void * tBody;
- int errc,tRank,tDims[MAX_TENSOR_RANK];
+ int errc,tDims[MAX_TENSOR_RANK];
 
  int error_code = 0; //success
  std::cout << "#MSG(TensorNetwork<T>::computeOutputLocal): Computing ... "; //debug
  auto timeBeg = std::chrono::high_resolution_clock::now();
 
+ std::map<std::uintptr_t,std::pair<talsh_tens_t*,std::shared_ptr<T>>> tensMap; //body address --> TAL-SH tensor pointer
+
  auto numContractions = contrSeq.size();
+ assert(numContractions == (this->getNumTensors() - 1));
  std::unique_ptr<TensorNetwork<T>> tensNet(this);
  for(decltype(numContractions) contrNum = 0; contrNum < numContractions; ++contrNum){
+
   //Extract the pair of contracted input tensors:
   auto lid = std::get<0>(contrSeq[contrNum]); //left input tensor id
   auto rid = std::get<1>(contrSeq[contrNum]); //right input tensor id
-  assert(lid > 0 && lid < rid);
+  assert(lid > 0 && lid < rid); //r.h.s. tensor id is always > 0 (0 is the output tensor)
+
   //Construct the left tensor:
   auto & leftTensor = tensNet->getTensor(lid); //left tensor
-  tRank = leftTensor.getRank();
+  int tRank = leftTensor.getRank();
   auto pDims = leftTensor.getDimExtents();
   for(int i = 0; i < tRank; ++i) tDims[i] = static_cast<int>(pDims[i]);
   auto pBody = leftTensor.getBodyAccess();
-  tBody = static_cast<void*>(pBody.get());
-  errc = talshTensorClean(&ltens); if(errc != TALSH_SUCCESS) return -1;
-  errc = talshTensorConstruct(&ltens,TensorDataKind<T>::Type,tRank,tDims,talshFlatDevId(DEV_HOST,0),tBody);
-  if(errc != TALSH_SUCCESS) return -1;
+  void * tBody = static_cast<void*>(pBody.get());
+  assert(tBody != nullptr); //input tensor must have been defined
+  std::uintptr_t lbodyAddr = reinterpret_cast<std::uintptr_t>(tBody);
+  auto tensPos = tensMap.find(lbodyAddr);
+  if(tensPos != tensMap.end()){ //intermediate tensor
+   tens = (tensPos->second).first;
+  }else{ //external input tensor
+   errc = talshTensorCreate(&tens); if(errc != TALSH_SUCCESS) return -1;
+   errc = talshTensorConstruct(tens,TensorDataKind<T>::Type,tRank,tDims,talshFlatDevId(DEV_HOST,0),tBody);
+   if(errc != TALSH_SUCCESS) return -1;
+   tensMap.emplace(lbodyAddr,std::pair<talsh_tens_t*,std::shared_ptr<T>>(tens,std::shared_ptr<T>(nullptr,[](T * ptr){})));
+  }
+
   //Construct the right tensor:
   auto & rightTensor = tensNet->getTensor(rid); //right tensor
   tRank = rightTensor.getRank();
@@ -536,17 +548,30 @@ int TensorNetwork<T>::computeOutputLocal(const ContractionSequence & contrSeq)
   for(int i = 0; i < tRank; ++i) tDims[i] = static_cast<int>(pDims[i]);
   pBody = rightTensor.getBodyAccess();
   tBody = static_cast<void*>(pBody.get());
-  errc = talshTensorClean(&rtens); if(errc != TALSH_SUCCESS) return -1;
-  errc = talshTensorConstruct(&rtens,TensorDataKind<T>::Type,tRank,tDims,talshFlatDevId(DEV_HOST,0),tBody);
-  if(errc != TALSH_SUCCESS) return -1;
+  assert(tBody != nullptr); //input tensor must have been defined
+  std::uintptr_t rbodyAddr = reinterpret_cast<std::uintptr_t>(tBody);
+  tensPos = tensMap.find(rbodyAddr);
+  if(tensPos != tensMap.end()){ //intermediate tensor
+   tens = (tensPos->second).first;
+  }else{ //external input tensor
+   errc = talshTensorCreate(&tens); if(errc != TALSH_SUCCESS) return -1;
+   errc = talshTensorConstruct(tens,TensorDataKind<T>::Type,tRank,tDims,talshFlatDevId(DEV_HOST,0),tBody);
+   if(errc != TALSH_SUCCESS) return -1;
+   tensMap.emplace(rbodyAddr,std::pair<talsh_tens_t*,std::shared_ptr<T>>(tens,std::shared_ptr<T>(nullptr,[](T * ptr){})));
+  }
+
+  std::cout << std::endl << "Left body  = " << lbodyAddr << ": Ref count = " << tensMap[lbodyAddr].second.use_count(); //debug
+  std::cout << std::endl << "Right body = " << rbodyAddr << ": Ref count = " << tensMap[rbodyAddr].second.use_count(); //debug
+  //std::string tmp; std::cout << std::endl << "Press any key and enter to continue ..."; std::cin >> tmp; //debug
+
   //Construct the destination tensor:
   decltype(lid) did; //destination tensor id
   if(contrNum == numContractions - 1){ //last contraction
-   assert(lid == 1 && rid == 2);
+   assert(lid == 1 && rid == 2); // last contraction: 0+=1*2
    did = 0; //output tensor
   }else{
    auto tmpTensNet = tensNet->contractTensorsOut(lid,rid);
-   if(contrNum == 0) auto pThis = tensNet.release();
+   if(contrNum == 0) auto pThis = tensNet.release(); //release "this"
    tensNet = std::move(tmpTensNet);
    did = lid;
   }
@@ -554,26 +579,48 @@ int TensorNetwork<T>::computeOutputLocal(const ContractionSequence & contrSeq)
   tRank = resultTensor.getRank();
   pDims = resultTensor.getDimExtents();
   for(int i = 0; i < tRank; ++i) tDims[i] = static_cast<int>(pDims[i]);
-  errc = talshTensorClean(&dtens); if(errc != TALSH_SUCCESS) return -1;
+  errc = talshTensorCreate(&tens); if(errc != TALSH_SUCCESS) return -1;
+  std::shared_ptr<T> sBody(nullptr);
   pBody = resultTensor.getBodyAccess();
   if(pBody){ //output tensor (already has an external body)
    tBody = static_cast<void*>(pBody.get());
-   errc = talshTensorConstruct(&dtens,TensorDataKind<T>::Type,tRank,tDims,talshFlatDevId(DEV_HOST,0),tBody);
+   errc = talshTensorConstruct(tens,TensorDataKind<T>::Type,tRank,tDims,talshFlatDevId(DEV_HOST,0),tBody);
    if(errc != TALSH_SUCCESS) return -1;
   }else{ //intermediate tensor (body is owned by TAL-SH)
-   errc = talshTensorConstruct(&dtens,TensorDataKind<T>::Type,tRank,tDims,talshFlatDevId(DEV_HOST,0));
+   errc = talshTensorConstruct(tens,TensorDataKind<T>::Type,tRank,tDims,talshFlatDevId(DEV_HOST,0));
    if(errc != TALSH_SUCCESS) return -1;
-   errc = talshTensorGetBodyAccess(&dtens,&tBody,TensorDataKind<T>::Type,0,DEV_HOST);
+   errc = talshTensorGetBodyAccess(tens,&tBody,TensorDataKind<T>::Type,0,DEV_HOST);
    if(errc != TALSH_SUCCESS) return -1;
-   std::shared_ptr<T> sBody(static_cast<T*>(tBody));
+   sBody = std::shared_ptr<T>(static_cast<T*>(tBody),[](T * ptr){});
    tensNet->resetTensorBody(did,sBody);
   }
+  std::uintptr_t dbodyAddr = reinterpret_cast<std::uintptr_t>(tBody);
+  tensMap.emplace(dbodyAddr,std::pair<talsh_tens_t*,std::shared_ptr<T>>(tens,sBody));
+  std::cout << std::endl << "Intermediate body = " << dbodyAddr << ": Ref count = " << tensMap[dbodyAddr].second.use_count(); //debug
+
   //Perform the tensor contraction:
-  
-  //Destruct TAL-SH tensor aliases:
-  errc = talshTensorDestruct(&dtens); if(errc != TALSH_SUCCESS) return -1;
-  errc = talshTensorDestruct(&rtens); if(errc != TALSH_SUCCESS) return -1;
-  errc = talshTensorDestruct(&ltens); if(errc != TALSH_SUCCESS) return -1;
+
+  //Destruct processed TAL-SH tensor aliases:
+   //Right input tensor:
+  tens=nullptr; tens=(tensMap[rbodyAddr]).first;
+  assert(tens != nullptr);
+  errc = talshTensorDestroy(tens); if(errc != TALSH_SUCCESS) return -1;
+  tensMap.erase(rbodyAddr);
+   //Left input tensor:
+  tens=nullptr; tens=(tensMap[lbodyAddr]).first;
+  assert(tens != nullptr);
+  errc = talshTensorDestroy(tens); if(errc != TALSH_SUCCESS) return -1;
+  tensMap.erase(lbodyAddr);
+   //Output tensor:
+  if(contrNum == numContractions - 1){ //last tensor contraction
+   tens=nullptr; tens=(tensMap[dbodyAddr]).first;
+   assert(tens != nullptr);
+   errc = talshTensorDestroy(tens); if(errc != TALSH_SUCCESS) return -1;
+   tensMap.erase(dbodyAddr);
+  }
+
+  //std::cout << std::endl << "End of iteration " << contrNum << ". Press any key and enter to continue ..."; std::cin >> tmp; //debug
+
  }
 
  auto timeEnd = std::chrono::high_resolution_clock::now();

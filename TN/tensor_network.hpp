@@ -1,7 +1,7 @@
 /** C++ adapters for ExaTENSOR: Tensor network
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/09/09
+!REVISION: 2017/09/11
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -30,6 +30,9 @@
 #include <tuple>
 #include <vector>
 #include <queue>
+#include <map>
+#include <string>
+#include <cstdint>
 #include <assert.h>
 #include <iostream>
 #include <ctime>
