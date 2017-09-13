@@ -610,7 +610,7 @@ int TensorNetwork<T>::computeOutputLocal(const ContractionSequence & contrSeq)
   std::cout << std::endl << "Intermediate body = " << dbodyAddr << ": Ref count = " << tensMap[dbodyAddr].second.use_count(); //debug
 
   //Get the symbolic tensor contraction pattern:
-  get_contr_pattern_sym(lRank,rRank,contrPtrnDig,contrPtrnSym,&cpl,&errc); if(errc != TALSH_SUCCESS) return -1;
+  get_contr_pattern_sym(&lRank,&rRank,contrPtrnDig,contrPtrnSym,&cpl,&errc); if(errc != TALSH_SUCCESS) return -1;
 
   //Perform the tensor contraction:
   errc = talshTensorContract(contrPtrnSym,dtens,ltens,rtens); if(errc != TALSH_SUCCESS) return -1;
