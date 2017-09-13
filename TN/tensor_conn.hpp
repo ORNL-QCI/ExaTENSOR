@@ -1,7 +1,7 @@
 /** C++ adapters for ExaTENSOR: Tensor connected to other tensors
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/08/30
+!REVISION: 2017/09/13
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)

@@ -1,7 +1,7 @@
 /** C++ adapters for ExaTENSOR: Tensor network
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/09/09
+!REVISION: 2017/09/13
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -259,13 +259,15 @@ void TensorNetwork<T>::resetTensorBody(const unsigned int tensId, const std::sha
     causing a shift in the tensor numeration that will affect all tensors with id > "tensId2". **/
 template <typename T>
 void TensorNetwork<T>::contractTensors(unsigned int tensId1, //in: id of the 1st tensor in the tensor network: [1..max]
-                                       unsigned int tensId2) //in: id of the 2nd tensor in the tensor network: [1..max]
+                                       unsigned int tensId2, //in: id of the 2nd tensor in the tensor network: [1..max]
+                                       int * contrPattern)   //out: digital tensor contraction pattern
 {
 #ifdef _DEBUG_DIL
  assert((tensId1 >= 1 && tensId1 <= this->getNumTensors()) && (tensId2 >= 1 && tensId2 <= this->getNumTensors()));
  assert(tensId1 != tensId2);
 #endif
  if(tensId1 > tensId2){auto tmp = tensId1; tensId1 = tensId2; tensId2 = tmp;}
+ unsigned int cp = 0; unsigned int un = 0;
  //Remove contracted legs from the 1st tensor:
  auto & tensor1 = Tensors[tensId1]; //1st contracted tensor
  auto rank1 = tensor1.getTensorRank(); //rank of the 1st tensor
@@ -276,10 +278,11 @@ void TensorNetwork<T>::contractTensors(unsigned int tensId1, //in: id of the 1st
   const auto connTensId = leg.getTensorId();
   const auto connTensLegId = leg.getDimensionId();
   if(connTensId == tensId2){ //contracted dimension (remove)
-   tensor1.deleteDimension(legId);
-   ++j;
+   tensor1.deleteDimension(legId); ++j;
+   if(contrPattern != nullptr) contrPattern[cp++] = -(connTensLegId + 1);
   }else{
    Tensors[connTensId].resetConnection(connTensLegId,TensorLeg(tensId1,legId));
+   if(contrPattern != nullptr) contrPattern[cp++] = ++un;
   }
  }
  rank1 = tensor1.getTensorRank(); //updated rank of the 1st tensor
@@ -293,10 +296,11 @@ void TensorNetwork<T>::contractTensors(unsigned int tensId1, //in: id of the 1st
   const auto connTensId = leg.getTensorId();
   const auto connTensLegId = leg.getDimensionId();
   if(connTensId == tensId1){ //contracted dimension (remove)
-   tensor2.deleteDimension(legId);
-   ++j;
+   tensor2.deleteDimension(legId); ++j;
+   if(contrPattern != nullptr) contrPattern[cp++] = -(connTensLegId + 1);
   }else{
    Tensors[connTensId].resetConnection(connTensLegId,TensorLeg(tensId2,legId));
+   if(contrPattern != nullptr) contrPattern[cp++] = ++un;
   }
  }
  rank2 = tensor2.getTensorRank(); //updated rank of the 2nd tensor
@@ -332,10 +336,11 @@ void TensorNetwork<T>::contractTensors(unsigned int tensId1, //in: id of the 1st
 template <typename T>
 void TensorNetwork<T>::contractTensors(const unsigned int tensId1, //in: id of the 1st tensor in the tensor network: [1..max]
                                        const unsigned int tensId2, //in: id of the 2nd tensor in the tensor network: [1..max]
-                                       TensorNetwork<T> ** resultNetwork) const //out: tensor network result (returns a pointer to it)
+                                       TensorNetwork<T> ** resultNetwork, //out: tensor network result (returns a pointer to it)
+                                       int * contrPattern) const          //out: digital tensor contraction pattern
 {
  *resultNetwork = new TensorNetwork<T>(*this);
- (*resultNetwork)->contractTensors(tensId1,tensId2);
+ (*resultNetwork)->contractTensors(tensId1,tensId2,contrPattern);
  return;
 }
 
@@ -344,11 +349,12 @@ void TensorNetwork<T>::contractTensors(const unsigned int tensId1, //in: id of t
     with a larger id will be deleted from the tensor network, causing a shift in the tensor numeration
     that will affect all tensors with id > "tensId2". **/
 template <typename T>
-std::unique_ptr<TensorNetwork<T>> TensorNetwork<T>::contractTensorsOut(const unsigned int tensId1,       //in: id of the 1st tensor in the tensor network: [1..max]
-                                                                       const unsigned int tensId2) const //in: id of the 2nd tensor in the tensor network: [1..max]
+std::unique_ptr<TensorNetwork<T>> TensorNetwork<T>::contractTensorsOut(const unsigned int tensId1, //in: id of the 1st tensor in the tensor network: [1..max]
+                                                                       const unsigned int tensId2, //in: id of the 2nd tensor in the tensor network: [1..max]
+                                                                       int * contrPattern) const   //out: digital tensor contraction pattern
 {
  std::unique_ptr<TensorNetwork<T>> resultNetwork(new TensorNetwork<T>(*this));
- resultNetwork->contractTensors(tensId1,tensId2);
+ resultNetwork->contractTensors(tensId1,tensId2,contrPattern);
  return std::move(resultNetwork);
 }
 
@@ -502,15 +508,16 @@ void TensorNetwork<T>::getContractionSequence(ContractionSequence & contrSeq,
 template <typename T>
 int TensorNetwork<T>::computeOutputLocal(const ContractionSequence & contrSeq)
 {
- talsh_tens_t * tens;
  talsh_task_t tsk;
- int errc,tDims[MAX_TENSOR_RANK];
+ talsh_tens_t *tens, *dtens, *ltens, *rtens;
+ int errc,cpl,lRank,rRank,tDims[MAX_TENSOR_RANK],contrPtrnDig[MAX_TENSOR_RANK*2];
+ char * contrPtrnSym;
 
  int error_code = 0; //success
  std::cout << "#MSG(TensorNetwork<T>::computeOutputLocal): Computing ... "; //debug
  auto timeBeg = std::chrono::high_resolution_clock::now();
 
- std::map<std::uintptr_t,std::pair<talsh_tens_t*,std::shared_ptr<T>>> tensMap; //body address --> TAL-SH tensor pointer
+ std::map<std::uintptr_t,std::pair<talsh_tens_t*,std::shared_ptr<T>>> tensMap; //body address --> {TAL-SH tensor pointer, tensor body pointer}
 
  auto numContractions = contrSeq.size();
  assert(numContractions == (this->getNumTensors() - 1));
@@ -524,7 +531,7 @@ int TensorNetwork<T>::computeOutputLocal(const ContractionSequence & contrSeq)
 
   //Construct the left tensor:
   auto & leftTensor = tensNet->getTensor(lid); //left tensor
-  int tRank = leftTensor.getRank();
+  int tRank = leftTensor.getRank(); lRank=tRank;
   auto pDims = leftTensor.getDimExtents();
   for(int i = 0; i < tRank; ++i) tDims[i] = static_cast<int>(pDims[i]);
   auto pBody = leftTensor.getBodyAccess();
@@ -540,10 +547,11 @@ int TensorNetwork<T>::computeOutputLocal(const ContractionSequence & contrSeq)
    if(errc != TALSH_SUCCESS) return -1;
    tensMap.emplace(lbodyAddr,std::pair<talsh_tens_t*,std::shared_ptr<T>>(tens,std::shared_ptr<T>(nullptr,[](T * ptr){})));
   }
+  ltens = tens;
 
   //Construct the right tensor:
   auto & rightTensor = tensNet->getTensor(rid); //right tensor
-  tRank = rightTensor.getRank();
+  tRank = rightTensor.getRank(); rRank = tRank;
   pDims = rightTensor.getDimExtents();
   for(int i = 0; i < tRank; ++i) tDims[i] = static_cast<int>(pDims[i]);
   pBody = rightTensor.getBodyAccess();
@@ -559,6 +567,7 @@ int TensorNetwork<T>::computeOutputLocal(const ContractionSequence & contrSeq)
    if(errc != TALSH_SUCCESS) return -1;
    tensMap.emplace(rbodyAddr,std::pair<talsh_tens_t*,std::shared_ptr<T>>(tens,std::shared_ptr<T>(nullptr,[](T * ptr){})));
   }
+  rtens = tens;
 
   std::cout << std::endl << "Left body  = " << lbodyAddr << ": Ref count = " << tensMap[lbodyAddr].second.use_count(); //debug
   std::cout << std::endl << "Right body = " << rbodyAddr << ": Ref count = " << tensMap[rbodyAddr].second.use_count(); //debug
@@ -568,9 +577,10 @@ int TensorNetwork<T>::computeOutputLocal(const ContractionSequence & contrSeq)
   decltype(lid) did; //destination tensor id
   if(contrNum == numContractions - 1){ //last contraction
    assert(lid == 1 && rid == 2); // last contraction: 0+=1*2
+   auto tmpTensNet = tensNet->contractTensorsOut(lid,rid,contrPtrnDig);
    did = 0; //output tensor
   }else{
-   auto tmpTensNet = tensNet->contractTensorsOut(lid,rid);
+   auto tmpTensNet = tensNet->contractTensorsOut(lid,rid,contrPtrnDig);
    if(contrNum == 0) auto pThis = tensNet.release(); //release "this"
    tensNet = std::move(tmpTensNet);
    did = lid;
@@ -596,22 +606,27 @@ int TensorNetwork<T>::computeOutputLocal(const ContractionSequence & contrSeq)
   }
   std::uintptr_t dbodyAddr = reinterpret_cast<std::uintptr_t>(tBody);
   tensMap.emplace(dbodyAddr,std::pair<talsh_tens_t*,std::shared_ptr<T>>(tens,sBody));
+  dtens = tens;
   std::cout << std::endl << "Intermediate body = " << dbodyAddr << ": Ref count = " << tensMap[dbodyAddr].second.use_count(); //debug
 
+  //Get the symbolic tensor contraction pattern:
+  get_contr_pattern_sym(lRank,rRank,contrPtrnDig,contrPtrnSym,&cpl,&errc); if(errc != TALSH_SUCCESS) return -1;
+
   //Perform the tensor contraction:
+  errc = talshTensorContract(contrPtrnSym,dtens,ltens,rtens); if(errc != TALSH_SUCCESS) return -1;
 
   //Destruct processed TAL-SH tensor aliases:
-   //Right input tensor:
+  // Right input tensor:
   tens=nullptr; tens=(tensMap[rbodyAddr]).first;
   assert(tens != nullptr);
   errc = talshTensorDestroy(tens); if(errc != TALSH_SUCCESS) return -1;
   tensMap.erase(rbodyAddr);
-   //Left input tensor:
+  // Left input tensor:
   tens=nullptr; tens=(tensMap[lbodyAddr]).first;
   assert(tens != nullptr);
   errc = talshTensorDestroy(tens); if(errc != TALSH_SUCCESS) return -1;
   tensMap.erase(lbodyAddr);
-   //Output tensor:
+  // Output tensor:
   if(contrNum == numContractions - 1){ //last tensor contraction
    tens=nullptr; tens=(tensMap[dbodyAddr]).first;
    assert(tens != nullptr);

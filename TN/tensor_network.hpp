@@ -1,7 +1,7 @@
 /** C++ adapters for ExaTENSOR: Tensor network
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/09/11
+!REVISION: 2017/09/13
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -142,21 +142,24 @@ public:
  /** Contracts two tensors in a tensor network. Always the tensor with a smaller id will be replaced
      by a contracted product while the tensor with a larger id will be deleted from the tensor network,
      causing a shift in the tensor numeration that will affect all tensors with id > "tensId2". **/
- void contractTensors(unsigned int tensId1,  //in: id of the 1st tensor in the tensor network: [1..max]
-                      unsigned int tensId2); //in: id of the 2nd tensor in the tensor network: [1..max]
+ void contractTensors(unsigned int tensId1, //in: id of the 1st tensor in the tensor network: [1..max]
+                      unsigned int tensId2, //in: id of the 2nd tensor in the tensor network: [1..max]
+                      int * contrPattern = nullptr); //out: digital tensor contraction pattern
  /** Contracts two tensors in a tensor network and returns the result as a raw pointer to the new tensor network.
      Always the tensor with a smaller id will be replaced by a contracted product while the tensor
      with a larger id will be deleted from the tensor network, causing a shift in the tensor numeration
      that will affect all tensors with id > "tensId2". **/
  void contractTensors(const unsigned int tensId1, //in: id of the 1st tensor in the tensor network: [1..max]
                       const unsigned int tensId2, //in: id of the 2nd tensor in the tensor network: [1..max]
-                      TensorNetwork<T> ** resultNetwork) const; //out: tensor network result (returns a pointer to it)
+                      TensorNetwork<T> ** resultNetwork, //out: tensor network result (returns a pointer to it)
+                      int * contrPattern = nullptr) const; //out: digital tensor contraction pattern
  /** Contracts two tensors in a tensor network and returns the result as a smart pointer to the new tensor network.
      Always the tensor with a smaller id will be replaced by a contracted product while the tensor
      with a larger id will be deleted from the tensor network, causing a shift in the tensor numeration
      that will affect all tensors with id > "tensId2". **/
- std::unique_ptr<TensorNetwork<T>> contractTensorsOut(const unsigned int tensId1,        //in: id of the 1st tensor in the tensor network: [1..max]
-                                                      const unsigned int tensId2) const; //in: id of the 2nd tensor in the tensor network: [1..max]
+ std::unique_ptr<TensorNetwork<T>> contractTensorsOut(const unsigned int tensId1, //in: id of the 1st tensor in the tensor network: [1..max]
+                                                      const unsigned int tensId2, //in: id of the 2nd tensor in the tensor network: [1..max]
+                                                      int * contrPattern = nullptr) const; //out: digital tensor contraction pattern
  /** Returns the computational cost of the specified contraction of two tensors. **/
  double getContractionCost(const unsigned int tensId1,         //in: id of the 1st r.h.s. tensor (>0)
                            const unsigned int tensId2,         //in: id of the 2nd r.h.s. tensor (>0)
