@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/09/07
+!REVISION: 2017/09/14
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -135,8 +135,8 @@
         end type tavp_wrk_encoder_conf_t
  !TAVP-WRK resourcer:
         type, extends(ds_unit_t), private:: tavp_wrk_resourcer_t
-         integer(INTL), public:: host_ram_size=0_INTL               !size of the usable Host RAM memory in bytes
-         integer(INTL), public:: nvram_size=0_INTL                  !size of the usable NVRAM memory (if any) in bytes
+         integer(INTL), private:: host_ram_size=0_INTL           !size of the usable Host RAM memory in bytes
+         integer(INTL), private:: nvram_size=0_INTL              !size of the usable NVRAM memory (if any) in bytes
          contains
           procedure, public:: configure=>TAVPWRKResourcerConfigure              !configures TAVP-WRK resourcer
           procedure, public:: start=>TAVPWRKResourcerStart                      !starts TAVP-WRK resourcer
@@ -149,13 +149,31 @@
          integer(INTL), public:: host_ram_size !size of the usable Host RAM memory in bytes
          integer(INTL), public:: nvram_size    !size of the usable NVRAM memory (if any) in bytes
         end type tavp_wrk_resourcer_conf_t
+ !TAVP-WRK communicator:
+        type, extends(ds_unit_t), private:: tavp_wrk_communicator_t
+         integer(INTD), private:: num_mpi_windows=TAVP_WORKER_NUM_WINS         !number of dynamic MPI windows per global addressing space
+         class(DistrSpace_t), pointer, private:: addr_space=>NULL()            !non-owning pointer to the DSVP global address space
+         contains
+          procedure, public:: configure=>TAVPWRKCommunicatorConfigure          !configures TAVP-WRK communicator
+          procedure, public:: start=>TAVPWRKCommunicatorStart                  !starts TAVP-WRK communicator
+          procedure, public:: shutdown=>TAVPWRKCommunicatorShutdown            !shuts down TAVP-WRK communicator
+          procedure, public:: prefetch_input=>TAVPWRKCommunicatorPrefetchInput !starts prefetching input arguments
+          procedure, public:: sync_prefetch=>TAVPWRKCommunicatorSyncPrefetch   !synchronizes on the input prefetch
+          procedure, public:: upload_output=>TAVPWRKCommunicatorUploadOutput   !starts uploading the output argument
+          procedure, public:: sync_upload=>TAVPWRKCommunicatorSyncUpload       !synchronizes on the output upload
+        end type tavp_wrk_communicator_t
+ !TAVP-WRK communicator configuration:
+        type, extends(dsv_conf_t), private:: tavp_wrk_communicator_conf_t
+         integer(INTD), public:: num_mpi_windows                               !number of dynamic MPI windows per global addressing space
+        end type tavp_wrk_communicator_conf_t
  !TAVP-WRK:
         type, extends(dsvp_t), public:: tavp_wrk_t
          type(tens_cache_t), private:: tens_cache                 !tensor argument cache
+         type(DistrSpace_t), private:: addr_space                 !global (distributed) addressing space
          type(tavp_wrk_decoder_t), private:: decoder              !DSVU: decodes incoming tensor instructions from the manager
          type(tavp_wrk_encoder_t), private:: retirer              !DSVU: retires processed tensor instructions and sends them back to the manager
          type(tavp_wrk_resourcer_t), private:: resourcer          !DSVU: allocates local resources for tensor instructions
-        !type(tavp_wrk_communicator_t), private:: communicator    !DSVU: fetches/uploads remote tensor operands
+         type(tavp_wrk_communicator_t), private:: communicator    !DSVU: fetches/uploads remote tensor operands
         !type(tavp_wrk_dispatcher_t), private:: dispatcher        !DSVU: dispatches ready to be executed tensor instructions to compute devices
          contains
           procedure, public:: configure=>TAVPWRKConfigure         !configures the TAVP-WRK DSVP
@@ -170,27 +188,16 @@
          integer(INTD), allocatable, public:: dest_rank(:)  !MPI process ranks of the bytecode destinations
          integer(INTL), public:: host_ram_size              !size of the usable Host RAM memory in bytes
          integer(INTL), public:: nvram_size                 !size of the usable NVRAM memory (if any) in bytes
+         integer(INTD), public:: num_mpi_windows            !number of dynamic MPI windows per global addressing space
          integer(INTL), allocatable, public:: gpu_list(:)   !list of the accesible NVIDIA GPU devices
          integer(INTL), allocatable, public:: amd_list(:)   !list of the accesible AMD GPU devices
          integer(INTL), allocatable, public:: mic_list(:)   !list of the accesible Intel MIC devices
         end type tavp_wrk_conf_t
-!MODULE DATA:
- !TAVP-WRK distributed address space, set by dsvp.configure():
-        type(DistrSpace_t), private:: tavp_addr_space
 !VISIBILITY:
  !non-member test/debug:
         private test_carma
  !non-member control:
         private tavp_worker_set_host_buf_size
- !non-member TAVP microcode implementation:
-        private prefetch_input_basic
-        private sync_prefetch_basic
-        private upload_output_basic
-        private sync_upload_basic
-        private sync_execution_basic
-        private execute_tensor_create
-        private execute_tensor_destroy
-        private execute_tensor_contract
  !tens_resrc_t:
         private TensResrcIsEmpty
         private TensResrcAllocateBuffer
@@ -239,6 +246,14 @@
         private TAVPWRKResourcerShutdown
         private TAVPWRKResourcerAcquireResource
         private TAVPWRKResourcerReleaseResource
+ !tavp_wrk_communicator_t:
+        private TAVPWRKCommunicatorConfigure
+        private TAVPWRKCommunicatorStart
+        private TAVPWRKCommunicatorShutdown
+        private TAVPWRKCommunicatorPrefetchInput
+        private TAVPWRKCommunicatorSyncPrefetch
+        private TAVPWRKCommunicatorUploadOutput
+        private TAVPWRKCommunicatorSyncUpload
  !tavp_wrk_t:
         private TAVPWRKConfigure
 !IMPLEMENTATION:
@@ -258,6 +273,7 @@
          integer(INTD):: num_procs,num_blocks,i,j,k,l,n,lid,rid
          integer(INTD):: dsg(1:TENS_RANK),lsg(1:TENS_RANK),rsg(1:TENS_RANK)
          integer(INTL):: tg
+         type(DistrSpace_t):: tavp_addr_space
          type(DataDescr_t):: dd,ld,rd
          type(DataDescr_t), allocatable:: ddes(:),ldes(:),rdes(:)
          type(DataDescr_t), allocatable:: ddesa(:),ldesa(:),rdesa(:) !root only
@@ -659,108 +675,8 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine tavp_worker_set_host_buf_size
-![non-member:Microcode Implementation]============
-        subroutine prefetch_input_basic(this,ierr)
-!Starts prefetching input tensor operands.
-         implicit none
-         class(ds_instr_t), intent(inout):: this     !inout: tensor instruction
-         integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc,ier,n
-         class(ds_oprnd_t), pointer:: oprnd
-
-         n=this%get_num_operands(errc)
-         if(errc.eq.DSVP_SUCCESS) then
-          do while(n.gt.1) !operand 0 is output
-           n=n-1
-           oprnd=>this%get_operand(n,ier)
-           if(ier.eq.DSVP_SUCCESS) then
-            call oprnd%prefetch(ier)
-            if(ier.ne.0.and.errc.eq.0) errc=-3
-           else
-            errc=-2; exit
-           endif
-          enddo
-         else
-          errc=-1
-         endif
-         if(present(ierr)) ierr=errc
-         return
-        end subroutine prefetch_input_basic
-!---------------------------------------------------------------
-        function sync_prefetch_basic(this,ierr,wait) result(res)
-!Synchronization on the input prefetch, either WAIT or TEST.
-         implicit none
-         logical:: res                               !out: TRUE if synchronized (all input operands)
-         class(ds_instr_t), intent(inout):: this     !inout: tensor instruction
-         integer(INTD), intent(out), optional:: ierr !out: error code
-         logical, intent(in), optional:: wait        !in: WAIT or TEST (defaults to WAIT)
-         integer(INTD):: errc,ier,n
-         class(ds_oprnd_t), pointer:: oprnd
-         logical:: wt
-
-         errc=0; res=.FALSE.
-         wt=.TRUE.; if(present(wait)) wt=wait
-         n=this%get_num_operands(errc)
-         if(errc.eq.DSVP_SUCCESS) then
-          res=.TRUE.
-          do while(n.gt.1)
-           n=n-1
-           oprnd=>this%get_operand(n,ier)
-           if(ier.eq.DSVP_SUCCESS) then
-            res=res.and.oprnd%sync(ier,wt)
-            if(ier.ne.0.and.errc.eq.0) then; res=.FALSE.; errc=-3; endif
-           else
-            res=.FALSE.; if(errc.eq.0) errc=-2
-           endif
-          enddo
-         else
-          errc=-1
-         endif
-         if(present(ierr)) ierr=errc
-         return
-        end function sync_prefetch_basic
-!------------------------------------------------
-        subroutine upload_output_basic(this,ierr)
-!Starts uploading the output tensor operand 0.
-         implicit none
-         class(ds_instr_t), intent(inout):: this     !inout: tensor instruction
-         integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc
-         class(ds_oprnd_t), pointer:: oprnd
-
-         oprnd=>this%get_operand(0,errc) !output operand
-         if(errc.eq.DSVP_SUCCESS) then
-          call oprnd%upload(errc); if(errc.ne.0) errc=-2
-         else
-          errc=-1
-         endif
-         if(present(ierr)) ierr=errc
-         return
-        end subroutine upload_output_basic
-!-------------------------------------------------------------
-        function sync_upload_basic(this,ierr,wait) result(res)
-!Synchronization on the output upload.
-         implicit none
-         logical:: res                               !out: TRUE if synchronized
-         class(ds_instr_t), intent(inout):: this     !inout: tensor instruction
-         integer(INTD), intent(out), optional:: ierr !out: error code
-         logical, intent(in), optional:: wait        !in: WAIT or TEST (defaults to WAIT)
-         integer(INTD):: errc
-         class(ds_oprnd_t), pointer:: oprnd
-         logical:: wt
-
-         errc=0; res=.FALSE.
-         wt=.TRUE.; if(present(wait)) wt=wait
-         oprnd=>this%get_operand(0,errc)
-         if(errc.eq.DSVP_SUCCESS) then
-          res=oprnd%sync(errc,wt); if(errc.ne.0) then; res=.FALSE.; errc=-2; endif
-         else
-          errc=-1
-         endif
-         if(present(ierr)) ierr=errc
-         return
-        end function sync_upload_basic
-!----------------------------------------------------------------
+#if 0
+![non-member:Microcode Implementation]===========================
         function sync_execution_basic(this,ierr,wait) result(res)
 !Synchronization on the tensor instruction execution.
          implicit none
@@ -888,6 +804,7 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine execute_tensor_contract
+#endif
 !tens_resrc_t]==========================================
         function TensResrcIsEmpty(this,ierr) result(ans)
 !Returns TRUE if the tensor resource is empty (unacquired).
@@ -2446,6 +2363,181 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TAVPWRKResourcerReleaseResource
+![tavp_wrk_communicator_t]=====================================
+        subroutine TAVPWRKCommunicatorConfigure(this,conf,ierr)
+!Configures this DSVU.
+         implicit none
+         class(tavp_wrk_communicator_t), intent(inout):: this !out: configured DSVU (must not be configured on entrance)
+         class(dsv_conf_t), intent(in):: conf                 !in: specific DSVU configuration
+         integer(INTD), intent(out), optional:: ierr          !out: error code
+         integer(INTD):: errc
+
+         errc=0
+         select type(conf)
+         type is(tavp_wrk_communicator_conf_t)
+          if(conf%num_mpi_windows.gt.0) then
+           this%num_mpi_windows=conf%num_mpi_windows
+          else
+           errc=-2
+          endif
+         class default
+          errc=-1
+         end select
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TAVPWRKCommunicatorConfigure
+!-----------------------------------------------------
+        subroutine TAVPWRKCommunicatorStart(this,ierr)
+!Starts and lives this DSVU, calls .shutdown() at the end.
+         implicit none
+         class(tavp_wrk_communicator_t), intent(inout):: this !inout: TAVP-WRK communicator DSVU
+         integer(INTD), intent(out), optional:: ierr          !out: error code
+         integer(INTD):: errc,ier
+         class(dsvp_t), pointer:: tavp
+
+         errc=0
+         if(DEBUG.gt.0) write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Communicator started as DSVU # ",i2)') impir,this%get_id() !debug
+         tavp=>this%get_dsvp(errc)
+         if(errc.eq.DSVP_SUCCESS.and.associated(tavp)) then
+          select type(tavp)
+          class is(tavp_wrk_t)
+           call tavp%addr_space%create(role_comm,this%num_mpi_windows,'TAVPWRKAddressSpace',errc)
+           if(errc.eq.0) then
+            this%addr_space=>tavp%addr_space
+           else
+            errc=-4
+           endif
+          class default
+           errc=-3
+          end select
+          !`Implement
+         else
+          errc=-2
+         endif
+         call this%shutdown(ier); if(ier.ne.0.and.errc.eq.0) errc=-1
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TAVPWRKCommunicatorStart
+!--------------------------------------------------------
+        subroutine TAVPWRKCommunicatorShutdown(this,ierr)
+!Stops DSVU (returns back a clean configured state).
+         implicit none
+         class(tavp_wrk_communicator_t), intent(inout):: this !inout: TAVP-WRK communicator DSVU
+         integer(INTD), intent(out), optional:: ierr          !out: error code
+         integer(INTD):: errc
+
+         errc=0
+         if(DEBUG.gt.0) write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Communicator stopped as DSVU # ",i2)') impir,this%get_id() !debug
+         call this%addr_space%destroy(errc); if(errc.ne.0) errc=-1
+         this%addr_space=>NULL()
+         !`Implement
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TAVPWRKCommunicatorShutdown
+!------------------------------------------------------------------------
+        subroutine TAVPWRKCommunicatorPrefetchInput(this,tens_instr,ierr)
+!Starts prefetching input arguments for a given tensor instruction.
+         implicit none
+         class(tavp_wrk_communicator_t), intent(inout):: this !inout: TAVP-WRK communicator DSVU
+         class(tens_instr_t), intent(inout):: tens_instr      !inout: tensor instruction
+         integer(INTD), intent(out), optional:: ierr          !out: error code
+         integer(INTD):: errc,ier,n
+         class(ds_oprnd_t), pointer:: oprnd
+
+         n=tens_instr%get_num_operands(errc)
+         if(errc.eq.DSVP_SUCCESS) then
+          do while(n.gt.1) !operand 0 is output
+           n=n-1
+           oprnd=>tens_instr%get_operand(n,ier)
+           if(ier.eq.DSVP_SUCCESS) then
+            call oprnd%prefetch(ier)
+            if(ier.ne.0.and.errc.eq.0) errc=-3
+           else
+            errc=-2; exit
+           endif
+          enddo
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TAVPWRKCommunicatorPrefetchInput
+!--------------------------------------------------------------------------------------
+        function TAVPWRKCommunicatorSyncPrefetch(this,tens_instr,ierr,wait) result(res)
+!Synchronizes on the input arguments prefetch, either WAIT or TEST.
+         implicit none
+         logical:: res                                        !out: TRUE if synchronized (all input operands)
+         class(tavp_wrk_communicator_t), intent(inout):: this !inout: TAVP-WRK communicator DSVU
+         class(tens_instr_t), intent(inout):: tens_instr      !inout: tensor instruction
+         integer(INTD), intent(out), optional:: ierr          !out: error code
+         logical, intent(in), optional:: wait                 !in: WAIT or TEST (defaults to WAIT)
+         integer(INTD):: errc,ier,n
+         class(ds_oprnd_t), pointer:: oprnd
+         logical:: wt
+
+         errc=0; res=.FALSE.
+         wt=.TRUE.; if(present(wait)) wt=wait
+         n=tens_instr%get_num_operands(errc)
+         if(errc.eq.DSVP_SUCCESS) then
+          res=.TRUE.
+          do while(n.gt.1) !operand 0 is output
+           n=n-1
+           oprnd=>tens_instr%get_operand(n,ier)
+           if(ier.eq.DSVP_SUCCESS) then
+            res=res.and.oprnd%sync(ier,wt)
+            if(ier.ne.0.and.errc.eq.0) then; res=.FALSE.; errc=-3; endif
+           else
+            res=.FALSE.; if(errc.eq.0) errc=-2
+           endif
+          enddo
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function TAVPWRKCommunicatorSyncPrefetch
+!-----------------------------------------------------------------------
+        subroutine TAVPWRKCommunicatorUploadOutput(this,tens_instr,ierr)
+!Starts uploading the output argument for a given tensor instruction.
+         implicit none
+         class(tavp_wrk_communicator_t), intent(inout):: this !inout: TAVP-WRK communicator DSVU
+         class(tens_instr_t), intent(inout):: tens_instr      !inout: tensor instruction
+         integer(INTD), intent(out), optional:: ierr          !out: error code
+         integer(INTD):: errc
+         class(ds_oprnd_t), pointer:: oprnd
+
+         oprnd=>tens_instr%get_operand(0,errc) !output operand
+         if(errc.eq.DSVP_SUCCESS) then
+          call oprnd%upload(errc); if(errc.ne.0) errc=-2
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TAVPWRKCommunicatorUploadOutput
+!------------------------------------------------------------------------------------
+        function TAVPWRKCommunicatorSyncUpload(this,tens_instr,ierr,wait) result(res)
+!Synchronizes on the output upload, either TEST or WAIT.
+         logical:: res                                        !out: TRUE if synchronized
+         class(tavp_wrk_communicator_t), intent(inout):: this !inout: TAVP-WRK communicator DSVU
+         class(tens_instr_t), intent(inout):: tens_instr      !inout: tensor instruction
+         integer(INTD), intent(out), optional:: ierr          !out: error code
+         logical, intent(in), optional:: wait                 !in: WAIT or TEST (defaults to WAIT)
+         integer(INTD):: errc
+         class(ds_oprnd_t), pointer:: oprnd
+         logical:: wt
+
+         errc=0; res=.FALSE.
+         wt=.TRUE.; if(present(wait)) wt=wait
+         oprnd=>tens_instr%get_operand(0,errc)
+         if(errc.eq.DSVP_SUCCESS) then
+          res=oprnd%sync(errc,wt); if(errc.ne.0) then; res=.FALSE.; errc=-2; endif
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function TAVPWRKCommunicatorSyncUpload
 ![tavp_wrk_t]======================================
         subroutine TAVPWRKConfigure(this,conf,ierr)
 !Configures TAVP-WRK DSVP:
@@ -2461,9 +2553,9 @@
          type(tavp_wrk_decoder_conf_t):: decoder_conf
          type(tavp_wrk_encoder_conf_t):: retirer_conf
          type(tavp_wrk_resourcer_conf_t):: resourcer_conf
+         type(tavp_wrk_communicator_conf_t):: communicator_conf
 
          !jerr=talsh_init(tavp_worker_host_buf_size,tavp_worker_host_arg_max,(/(jj,jj=gpu_start,gpu_start+gpu_count-1)/))
-         !call tavp_addr_space%create(role_comm,TAVP_WORKER_NUM_WINS,'AddressSpaceWRK',jerr)
          if(.not.this%is_configured(errc)) then
           if(errc.eq.0) then
            select type(conf)
@@ -2486,18 +2578,31 @@
                call this%resourcer%configure(resourcer_conf,errc)
                if(errc.eq.0) then
                 num_units=num_units+1
+  !Communicator:
+                communicator_conf=tavp_wrk_communicator_conf_t(conf%num_mpi_windows)
+                call this%communicator%configure(communicator_conf,errc)
+                if(errc.eq.0) then
+                 num_units=num_units+1
  !Set up global DSVU table (references to all DSVU):
-                call this%alloc_units(num_units,errc)
-                if(errc.eq.DSVP_SUCCESS) then
-                 call this%set_unit(this%decoder,errc)
+                 call this%alloc_units(num_units,errc)
                  if(errc.eq.DSVP_SUCCESS) then
-                  call this%set_unit(this%retirer,errc)
+                  call this%set_unit(this%decoder,errc)
                   if(errc.eq.DSVP_SUCCESS) then
-                   call this%set_unit(this%resourcer,errc)
+                   call this%set_unit(this%retirer,errc)
                    if(errc.eq.DSVP_SUCCESS) then
+                    call this%set_unit(this%resourcer,errc)
+                    if(errc.eq.DSVP_SUCCESS) then
+                     call this%set_unit(this%communicator,errc)
+                     if(errc.eq.DSVP_SUCCESS) then
  !Set the DSVP id and description:
-                    call this%set_description(int(conf%tavp_id,INTL),conf%description,errc)
-                    if(errc.ne.DSVP_SUCCESS) errc=-12
+                      call this%set_description(int(conf%tavp_id,INTL),conf%description,errc)
+                      if(errc.ne.DSVP_SUCCESS) errc=-14
+                     else
+                      errc=-13
+                     endif
+                    else
+                     errc=-12
+                    endif
                    else
                     errc=-11
                    endif
