@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/09/14
+!REVISION: 2017/09/15
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -36,8 +36,8 @@
  !Distributed memory space:
         integer(INTD), parameter, private:: TAVP_WORKER_NUM_WINS=1 !number of MPI windows in the DDSS distributed space
  !On-node pinned Host memory buffer:
-        integer(INTL), protected:: tavp_worker_host_buf_size=1_INTL*(1024_INTL*1024_INTL*1024_INTL) !Host buffer size in bytes
-        integer(INTD), protected:: tavp_worker_host_arg_max=0 !is set later: max number of tensors in the pinned Host buffer (initialized by TAL-SH)
+        integer(INTL), parameter, private:: TAVP_WRK_HOST_BUF_SIZE=1_INTL*(1024_INTL*1024_INTL*1024_INTL) !default Host buffer size in bytes
+        integer(INTD), protected:: tavp_wrk_host_arg_max=0 !is set later: max number of tensors in the pinned Host buffer (initialized by TAL-SH)
  !Elementary tensor instruction granularity classification:
         real(8), protected:: TAVP_WORKER_FLOPS_HEAVY=1d12  !minimal number of Flops to consider the operation as heavy-cost
         real(8), protected:: TAVP_WORKER_FLOPS_MEDIUM=1d10 !minimal number of Flops to consider the operation as medium-cost
@@ -166,15 +166,40 @@
         type, extends(dsv_conf_t), private:: tavp_wrk_communicator_conf_t
          integer(INTD), public:: num_mpi_windows                               !number of dynamic MPI windows per global addressing space
         end type tavp_wrk_communicator_conf_t
+ !TAVP-WRK dispatcher instruction execution procedure:
+        type, private:: tavp_wrk_dispatch_proc_t
+         procedure(tavp_wrk_dispatch_proc_i), nopass, pointer, public:: instr_proc=>NULL() !procedure pointer to the instruction execution procedure
+        end type tavp_wrk_dispatch_proc_t
+ !TAVP-WRK dispatcher:
+        type, extends(ds_unit_t), private:: tavp_wrk_dispatcher_t
+         integer(INTL), private:: host_buf_size=TAVP_WRK_HOST_BUF_SIZE          !size of the pinned Host argument buffer
+         integer(INTD), allocatable, private:: gpu_list(:)                      !list of available NVIDIA GPU
+         integer(INTD), allocatable, private:: amd_list(:)                      !list of available AMD GPU
+         integer(INTD), allocatable, private:: mic_list(:)                      !list of available INTEL MIC
+         type(tavp_wrk_dispatch_proc_t), private:: microcode(0:TAVP_ISA_SIZE-1) !instruction execution microcode bindings
+         contains
+          procedure, public:: configure=>TAVPWRKDispatcherConfigure     !configures TAVP-WRK dispatcher
+          procedure, public:: start=>TAVPWRKDispatcherStart             !starts TAVP-WRK dispatcher
+          procedure, public:: shutdown=>TAVPWRKDispatcherShutdown       !shuts down TAVP-WRK dispatcher
+          procedure, public:: issue_instr=>TAVPWRKDispatcherIssueInstr  !issues a tensor instruction to a specific computing device
+          procedure, public:: sync_instr=>TAVPWRKDispatcherSyncInstr    !synchronizes on tensor instruction execution, either TEST or WAIT
+        end type tavp_wrk_dispatcher_t
+ !TAVP-WRK dispatcher configuration:
+        type, extends(dsv_conf_t), private:: tavp_wrk_dispatcher_conf_t
+         integer(INTL), public:: host_buf_size                          !size of the pinned Host argument buffer
+         integer(INTD), allocatable, public:: gpu_list(:)               !list of available NVIDIA GPU
+         integer(INTD), allocatable, public:: amd_list(:)               !list of available AMD GPU
+         integer(INTD), allocatable, public:: mic_list(:)               !list of available INTEL MIC
+        end type tavp_wrk_dispatcher_conf_t
  !TAVP-WRK:
         type, extends(dsvp_t), public:: tavp_wrk_t
          type(tens_cache_t), private:: tens_cache                 !tensor argument cache
-         type(DistrSpace_t), private:: addr_space                 !global (distributed) addressing space
+         type(DistrSpace_t), private:: addr_space                 !global (distributed) address space
          type(tavp_wrk_decoder_t), private:: decoder              !DSVU: decodes incoming tensor instructions from the manager
          type(tavp_wrk_encoder_t), private:: retirer              !DSVU: retires processed tensor instructions and sends them back to the manager
          type(tavp_wrk_resourcer_t), private:: resourcer          !DSVU: allocates local resources for tensor instructions
          type(tavp_wrk_communicator_t), private:: communicator    !DSVU: fetches/uploads remote tensor operands
-        !type(tavp_wrk_dispatcher_t), private:: dispatcher        !DSVU: dispatches ready to be executed tensor instructions to compute devices
+         type(tavp_wrk_dispatcher_t), private:: dispatcher        !DSVU: dispatches ready to be executed tensor instructions to compute devices
          contains
           procedure, public:: configure=>TAVPWRKConfigure         !configures the TAVP-WRK DSVP
         end type tavp_wrk_t
@@ -189,15 +214,25 @@
          integer(INTL), public:: host_ram_size              !size of the usable Host RAM memory in bytes
          integer(INTL), public:: nvram_size                 !size of the usable NVRAM memory (if any) in bytes
          integer(INTD), public:: num_mpi_windows            !number of dynamic MPI windows per global addressing space
-         integer(INTL), allocatable, public:: gpu_list(:)   !list of the accesible NVIDIA GPU devices
-         integer(INTL), allocatable, public:: amd_list(:)   !list of the accesible AMD GPU devices
-         integer(INTL), allocatable, public:: mic_list(:)   !list of the accesible Intel MIC devices
+         integer(INTL), public:: host_buf_size              !pinned Host argument buffer size in bytes
+         integer(INTD), allocatable, public:: gpu_list(:)   !list of the accesible NVIDIA GPU devices
+         integer(INTD), allocatable, public:: amd_list(:)   !list of the accesible AMD GPU devices
+         integer(INTD), allocatable, public:: mic_list(:)   !list of the accesible Intel MIC devices
         end type tavp_wrk_conf_t
+!INTERFACES:
+        abstract interface
+ !tavp_wrk_dispatcher_t:
+         subroutine tavp_wrk_dispatch_proc_i(this,tens_instr,ierr,dev_id)
+          import:: tavp_wrk_dispatcher_t,tens_instr_t,INTD
+          class(tavp_wrk_dispatcher_t), intent(inout):: this !inout: TAVP-WRK dispatcher DSVU
+          class(tens_instr_t), intent(inout):: tens_instr    !inout: tensor instruction
+          integer(INTD), intent(out), optional:: ierr        !out: error code
+          integer(INTD), intent(in), optional:: dev_id       !in: flat device id
+         end subroutine tavp_wrk_dispatch_proc_i
+        end interface
 !VISIBILITY:
  !non-member test/debug:
         private test_carma
- !non-member control:
-        private tavp_worker_set_host_buf_size
  !tens_resrc_t:
         private TensResrcIsEmpty
         private TensResrcAllocateBuffer
@@ -254,6 +289,16 @@
         private TAVPWRKCommunicatorSyncPrefetch
         private TAVPWRKCommunicatorUploadOutput
         private TAVPWRKCommunicatorSyncUpload
+ !tavp_wrk_dispatcher_t:
+        private TAVPWRKDispatcherConfigure
+        private TAVPWRKDispatcherStart
+        private TAVPWRKDispatcherShutdown
+        private TAVPWRKDispatcherIssueInstr
+        private TAVPWRKDispatcherSyncInstr
+        private TAVPWRKExecTensorCreate
+        private TAVPWRKExecTensorDestroy
+        private TAVPWRKExecTensorContract
+        private tavp_wrk_dispatch_proc_i
  !tavp_wrk_t:
         private TAVPWRKConfigure
 !IMPLEMENTATION:
@@ -657,154 +702,6 @@
          end function signa2flat
 
         end subroutine test_carma
-![non-member:Control]=======================================
-        subroutine tavp_worker_set_host_buf_size(bytes,ierr)
-!Changes the default size of the pinned Host memory buffer.
-!This procedure should be called before TAVP is initialized.
-         implicit none
-         integer(INTL), intent(in):: bytes           !in: size in bytes
-         integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc
-
-         errc=0
-         if(bytes.gt.0_INTL) then
-          tavp_worker_host_buf_size=bytes
-         else
-          errc=-1
-         endif
-         if(present(ierr)) ierr=errc
-         return
-        end subroutine tavp_worker_set_host_buf_size
-#if 0
-![non-member:Microcode Implementation]===========================
-        function sync_execution_basic(this,ierr,wait) result(res)
-!Synchronization on the tensor instruction execution.
-         implicit none
-         logical:: res                               !out: TRUE if synchronized
-         class(ds_instr_t), intent(inout):: this     !inout: tensor instruction
-         integer(INTD), intent(out), optional:: ierr !out: error code
-         logical, intent(in), optional:: wait        !in: WAIT or TEST (defaults to WAIT)
-         integer(INTD):: errc,sts,ans
-         logical:: wt
-
-         errc=0; res=.FALSE.
-         wt=.TRUE.; if(present(wait)) wt=wait
-         select type(this)
-         class is(tens_instr_t)
-          if(wt) then !WAIT
-           errc=talsh_task_wait(this%talsh_task,sts)
-           res=(errc.eq.TALSH_SUCCESS.and.(sts.eq.TALSH_TASK_COMPLETED.or.sts.eq.TALSH_TASK_ERROR))
-          else !TEST
-           ans=talsh_task_complete(this%talsh_task,sts,errc)
-           res=(ans.eq.YEP.and.errc.eq.TALSH_SUCCESS)
-          endif
-          if(sts.eq.TALSH_TASK_ERROR.and.errc.eq.0) errc=-2
-         class default
-          errc=-1
-         end select
-         if(present(ierr)) ierr=errc
-         return
-        end function sync_execution_basic
-!--------------------------------------------------
-        subroutine execute_tensor_create(this,ierr)
-!Executes tensor creation. The tensor layout is assumed already defined.
-!The tensor body location is set here via the newly created DDSS descriptor.
-!The tensor body location comes from the local resource associated with tensor.
-         implicit none
-         class(ds_instr_t), intent(inout):: this     !inout: tensor instruction
-         integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc,dtk
-         integer(INTL):: bytes,vol
-         class(ds_oprnd_t), pointer:: oprnd
-         class(tens_rcrsv_t), pointer:: tensor
-         class(tens_resrc_t), pointer:: resource
-         class(tens_body_t), pointer:: tens_body
-         class(tens_layout_t), pointer:: tens_layout
-         type(DataDescr_t):: descr
-         type(C_PTR):: mem_p
-
-         oprnd=>this%get_operand(0,errc)
-         if(errc.eq.DSVP_SUCCESS) then
-          select type(oprnd)
-          class is(tens_oprnd_t)
-           resource=>oprnd%get_resource(errc)
-           if(errc.eq.0) then
-            if(.not.resource%is_empty()) then !resource is supposed to be preallocated by .acquire_rsc()
-             tensor=>oprnd%get_tensor(errc)
-             if(errc.eq.0) then
-              tens_body=>tensor%get_body(errc)
-              if(errc.eq.TEREC_SUCCESS) then
-               tens_layout=>tens_body%get_layout(errc)
-               if(errc.eq.TEREC_SUCCESS) then
-                dtk=tens_layout%get_data_type(errc)
-                if(errc.eq.TEREC_SUCCESS) then
-                 mem_p=resource%get_mem_ptr(errc,bytes)
-                 if(errc.eq.0) then
-                  vol=tens_layout%get_volume() !bytes = vol * sizeof(data_kind)
-                  call tavp_addr_space%attach(mem_p,dtk,vol,descr,errc)
-                  if(errc.eq.0) then
-                   call tensor%set_location(descr,errc) !tensor has been located
-                   if(errc.ne.TEREC_SUCCESS) errc=-11
-                  else
-                   errc=-10
-                  endif
-                 else
-                  errc=-9
-                 endif
-                else
-                 errc=-8
-                endif
-               else
-                errc=-7
-               endif
-              else
-               errc=-6
-              endif
-             else
-              errc=-5
-             endif
-            else
-             errc=-4
-            endif
-           else
-            errc=-3
-           endif
-          class default
-           errc=-2
-          end select
-         else
-          errc=-1
-         endif
-         if(present(ierr)) ierr=errc
-         return
-        end subroutine execute_tensor_create
-!---------------------------------------------------
-        subroutine execute_tensor_destroy(this,ierr)
-!Executes tensor destruction.
-         implicit none
-         class(ds_instr_t), intent(inout):: this     !inout: tensor instruction
-         integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc
-
-         errc=0
-         !`Implement
-         if(present(ierr)) ierr=errc
-         return
-        end subroutine execute_tensor_destroy
-!----------------------------------------------------
-        subroutine execute_tensor_contract(this,ierr)
-!Executes a tensor contraction operation.
-         implicit none
-         class(ds_instr_t), intent(inout):: this     !inout: tensor instruction
-         integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc
-
-         errc=0
-         !`Implement
-         if(present(ierr)) ierr=errc
-         return
-        end subroutine execute_tensor_contract
-#endif
 !tens_resrc_t]==========================================
         function TensResrcIsEmpty(this,ierr) result(ans)
 !Returns TRUE if the tensor resource is empty (unacquired).
@@ -2538,6 +2435,258 @@
          if(present(ierr)) ierr=errc
          return
         end function TAVPWRKCommunicatorSyncUpload
+![tavp_wrk_dispatcher_t]=====================================
+        subroutine TAVPWRKDispatcherConfigure(this,conf,ierr)
+!Configures this DSVU.
+         implicit none
+         class(tavp_wrk_dispatcher_t), intent(inout):: this !out: configured DSVU (must not be configured on entrance)
+         class(dsv_conf_t), intent(in):: conf               !in: specific DSVU configuration
+         integer(INTD), intent(out), optional:: ierr        !out: error code
+         integer(INTD):: errc
+
+         errc=0
+         select type(conf)
+         type is(tavp_wrk_dispatcher_conf_t)
+          if(conf%host_buf_size.ge.0) then
+           this%host_buf_size=conf%host_buf_size
+           this%gpu_list=conf%gpu_list
+           this%amd_list=conf%amd_list
+           this%mic_list=conf%mic_list
+           call set_microcode()
+          else
+           errc=-2
+          endif
+         class default
+          errc=-1
+         end select
+         if(present(ierr)) ierr=errc
+         return
+
+         contains
+
+          subroutine set_microcode()
+           this%microcode(TAVP_INSTR_CREATE)%instr_proc=>TAVPWRKExecTensorCreate
+           this%microcode(TAVP_INSTR_DESTROY)%instr_proc=>TAVPWRKExecTensorDestroy
+           this%microcode(TAVP_INSTR_CONTRACT)%instr_proc=>TAVPWRKExecTensorContract
+           return
+          end subroutine set_microcode
+
+        end subroutine TAVPWRKDispatcherConfigure
+!---------------------------------------------------
+        subroutine TAVPWRKDispatcherStart(this,ierr)
+!Starts and lives this DSVU, calls .shutdown() at the end.
+         implicit none
+         class(tavp_wrk_dispatcher_t), intent(inout):: this !inout: TAVP-WRK dispatcher DSVU
+         integer(INTD), intent(out), optional:: ierr        !out: error code
+         integer(INTD):: errc,ier
+
+         errc=0
+         if(DEBUG.gt.0) write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Dispatcher started as DSVU # ",i2)') impir,this%get_id() !debug
+         errc=talsh_init(this%host_buf_size,tavp_wrk_host_arg_max,this%gpu_list,this%mic_list,this%amd_list)
+         if(errc.eq.TALSH_SUCCESS) then
+          !`Implement
+         else
+          errc=-2
+         endif
+         call this%shutdown(ier); if(ier.ne.0.and.errc.eq.0) errc=-1
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TAVPWRKDispatcherStart
+!------------------------------------------------------
+        subroutine TAVPWRKDispatcherShutdown(this,ierr)
+!Stops DSVU (returns back a clean configured state).
+         implicit none
+         class(tavp_wrk_dispatcher_t), intent(inout):: this !inout: TAVP-WRK dispatcher DSVU
+         integer(INTD), intent(out), optional:: ierr        !out: error code
+         integer(INTD):: errc
+
+         errc=0
+         if(DEBUG.gt.0) write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Dispatcher stopped as DSVU # ",i2)') impir,this%get_id() !debug
+         errc=talsh_shutdown(); if(errc.ne.TALSH_SUCCESS) errc=-1
+         !`Implement
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TAVPWRKDispatcherShutdown
+!--------------------------------------------------------------------------
+        subroutine TAVPWRKDispatcherIssueInstr(this,tens_instr,ierr,dev_id)
+!Issues the given tensor instruction to a specific compute device (or default).
+         implicit none
+         class(tavp_wrk_dispatcher_t), intent(inout):: this !inout: TAVP-WRK dispatcher DSVU
+         class(tens_instr_t), intent(inout):: tens_instr    !inout: defined tensor instruction to issue
+         integer(INTD), intent(out), optional:: ierr        !out: error code
+         integer(INTD), intent(in), optional:: dev_id       !in: flat device id to issue the tensor instruction to
+         integer(INTD):: errc,opcode
+         procedure(tavp_wrk_dispatch_proc_i), pointer:: iproc
+
+         if(tens_instr%is_active(errc)) then
+          if(errc.eq.DSVP_SUCCESS) then
+           opcode=tens_instr%get_code(errc)
+           if(errc.eq.DSVP_SUCCESS) then
+            iproc=>this%microcode(opcode)%instr_proc
+            if(associated(iproc)) then
+             if(present(dev_id)) then
+              call iproc(this,tens_instr,errc,dev_id)
+             else
+              call iproc(this,tens_instr,errc)
+             endif
+             if(errc.ne.0) errc=-5
+            else
+             errc=-4
+            endif
+           else
+            errc=-3
+           endif
+          else
+           errc=-2
+          endif
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TAVPWRKDispatcherIssueInstr
+!---------------------------------------------------------------------------------
+        function TAVPWRKDispatcherSyncInstr(this,tens_instr,ierr,wait) result(res)
+!Synchronization on tensor instruction execution, either TEST or WAIT.
+         implicit none
+         logical:: res                                      !out: TRUE if completed
+         class(tavp_wrk_dispatcher_t), intent(inout):: this !inout: TAVP-WRK dispatcher DSVU
+         class(tens_instr_t), intent(inout):: tens_instr    !inout: tensor instruction
+         integer(INTD), intent(out), optional:: ierr        !out: error code
+         logical, intent(in), optional:: wait               !in: WAIT or TEST (defaults to WAIT)
+         integer(INTD):: errc,sts,ans
+         logical:: wt
+
+         errc=0; res=.FALSE.
+         wt=.TRUE.; if(present(wait)) wt=wait
+         if(wt) then !WAIT
+          errc=talsh_task_wait(tens_instr%talsh_task,sts)
+          res=(errc.eq.TALSH_SUCCESS.and.(sts.eq.TALSH_TASK_COMPLETED.or.sts.eq.TALSH_TASK_ERROR))
+         else !TEST
+          ans=talsh_task_complete(tens_instr%talsh_task,sts,errc)
+          res=(ans.eq.YEP.and.errc.eq.TALSH_SUCCESS)
+         endif
+         if(sts.eq.TALSH_TASK_ERROR.and.errc.eq.0) errc=-1
+         if(present(ierr)) ierr=errc
+         return
+        end function TAVPWRKDispatcherSyncInstr
+!----------------------------------------------------------------------
+        subroutine TAVPWRKExecTensorCreate(this,tens_instr,ierr,dev_id)
+!Executes tensor creation. The tensor layout is assumed already defined.
+!The tensor body location is set here via the newly created DDSS descriptor.
+!The tensor body location comes from the local resource associated with tensor.
+         implicit none
+         class(tavp_wrk_dispatcher_t), intent(inout):: this !inout: TAVP-WRK dispatcher DSVU
+         class(tens_instr_t), intent(inout):: tens_instr    !inout: tensor instruction
+         integer(INTD), intent(out), optional:: ierr        !out: error code
+         integer(INTD), intent(in), optional:: dev_id       !in: flat device id
+         integer(INTD):: errc,dtk
+         integer(INTL):: bytes,vol
+         class(dsvp_t), pointer:: dsvp
+         class(tavp_wrk_t), pointer:: tavp
+         class(ds_oprnd_t), pointer:: oprnd
+         class(tens_rcrsv_t), pointer:: tensor
+         class(tens_resrc_t), pointer:: resource
+         class(tens_body_t), pointer:: tens_body
+         class(tens_layout_t), pointer:: tens_layout
+         type(DataDescr_t):: descr
+         type(C_PTR):: mem_p
+
+         oprnd=>tens_instr%get_operand(0,errc)
+         if(errc.eq.DSVP_SUCCESS) then
+          select type(oprnd)
+          class is(tens_oprnd_t)
+           resource=>oprnd%get_resource(errc)
+           if(errc.eq.0) then
+            if(.not.resource%is_empty()) then !resource is supposed to be preallocated by .acquire_rsc()
+             tensor=>oprnd%get_tensor(errc)
+             if(errc.eq.0) then
+              tens_body=>tensor%get_body(errc)
+              if(errc.eq.TEREC_SUCCESS) then
+               tens_layout=>tens_body%get_layout(errc)
+               if(errc.eq.TEREC_SUCCESS) then
+                vol=tens_layout%get_volume()
+                dtk=tens_layout%get_data_type(errc)
+                if(errc.eq.TEREC_SUCCESS) then
+                 mem_p=resource%get_mem_ptr(errc,bytes) !bytes = vol * sizeof(data_kind)
+                 if(errc.eq.0) then
+                  dsvp=>this%get_dsvp(errc)
+                  if(errc.eq.DSVP_SUCCESS.and.associated(dsvp)) then
+                   tavp=>NULL(); select type(dsvp); class is(tavp_wrk_t); tavp=>dsvp; end select
+                   if(associated(tavp)) then
+                    call tavp%addr_space%attach(mem_p,dtk,vol,descr,errc)
+                    if(errc.eq.0) then
+                     call tensor%set_location(descr,errc) !tensor has been located
+                     if(errc.ne.TEREC_SUCCESS) errc=-13
+                    else
+                     errc=-12
+                    endif
+                   else
+                    errc=-11
+                   endif
+                  else
+                   errc=-10
+                  endif
+                 else
+                  errc=-9
+                 endif
+                else
+                 errc=-8
+                endif
+               else
+                errc=-7
+               endif
+              else
+               errc=-6
+              endif
+             else
+              errc=-5
+             endif
+            else
+             errc=-4
+            endif
+           else
+            errc=-3
+           endif
+          class default
+           errc=-2
+          end select
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TAVPWRKExecTensorCreate
+!-----------------------------------------------------------------------
+        subroutine TAVPWRKExecTensorDestroy(this,tens_instr,ierr,dev_id)
+!Executes tensor destruction.
+         implicit none
+         class(tavp_wrk_dispatcher_t), intent(inout):: this !inout: TAVP-WRK dispatcher DSVU
+         class(tens_instr_t), intent(inout):: tens_instr    !inout: tensor instruction
+         integer(INTD), intent(out), optional:: ierr        !out: error code
+         integer(INTD), intent(in), optional:: dev_id       !in: flat device id
+         integer(INTD):: errc
+
+         errc=0
+         !`Implement
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TAVPWRKExecTensorDestroy
+!------------------------------------------------------------------------
+        subroutine TAVPWRKExecTensorContract(this,tens_instr,ierr,dev_id)
+!Executes tensor contraction.
+         implicit none
+         class(tavp_wrk_dispatcher_t), intent(inout):: this !inout: TAVP-WRK dispatcher DSVU
+         class(tens_instr_t), intent(inout):: tens_instr    !inout: tensor instruction
+         integer(INTD), intent(out), optional:: ierr        !out: error code
+         integer(INTD), intent(in), optional:: dev_id       !in: flat device id
+         integer(INTD):: errc
+
+         errc=0
+         !`Implement
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TAVPWRKExecTensorContract
 ![tavp_wrk_t]======================================
         subroutine TAVPWRKConfigure(this,conf,ierr)
 !Configures TAVP-WRK DSVP:
@@ -2554,8 +2703,8 @@
          type(tavp_wrk_encoder_conf_t):: retirer_conf
          type(tavp_wrk_resourcer_conf_t):: resourcer_conf
          type(tavp_wrk_communicator_conf_t):: communicator_conf
+         type(tavp_wrk_dispatcher_conf_t):: dispatcher_conf
 
-         !jerr=talsh_init(tavp_worker_host_buf_size,tavp_worker_host_arg_max,(/(jj,jj=gpu_start,gpu_start+gpu_count-1)/))
          if(.not.this%is_configured(errc)) then
           if(errc.eq.0) then
            select type(conf)
@@ -2583,20 +2732,33 @@
                 call this%communicator%configure(communicator_conf,errc)
                 if(errc.eq.0) then
                  num_units=num_units+1
+  !Dispatcher:
+                 dispatcher_conf=tavp_wrk_dispatcher_conf_t(conf%host_buf_size,conf%gpu_list,conf%amd_list,conf%mic_list)
+                 call this%dispatcher%configure(dispatcher_conf,errc)
+                 if(errc.eq.0) then
+                  num_units=num_units+1
  !Set up global DSVU table (references to all DSVU):
-                 call this%alloc_units(num_units,errc)
-                 if(errc.eq.DSVP_SUCCESS) then
-                  call this%set_unit(this%decoder,errc)
+                  call this%alloc_units(num_units,errc)
                   if(errc.eq.DSVP_SUCCESS) then
-                   call this%set_unit(this%retirer,errc)
+                   call this%set_unit(this%decoder,errc)
                    if(errc.eq.DSVP_SUCCESS) then
-                    call this%set_unit(this%resourcer,errc)
+                    call this%set_unit(this%retirer,errc)
                     if(errc.eq.DSVP_SUCCESS) then
-                     call this%set_unit(this%communicator,errc)
+                     call this%set_unit(this%resourcer,errc)
                      if(errc.eq.DSVP_SUCCESS) then
+                      call this%set_unit(this%communicator,errc)
+                      if(errc.eq.DSVP_SUCCESS) then
+                       call this%set_unit(this%dispatcher,errc)
+                       if(errc.eq.DSVP_SUCCESS) then
  !Set the DSVP id and description:
-                      call this%set_description(int(conf%tavp_id,INTL),conf%description,errc)
-                      if(errc.ne.DSVP_SUCCESS) errc=-14
+                        call this%set_description(int(conf%tavp_id,INTL),conf%description,errc)
+                        if(errc.ne.DSVP_SUCCESS) errc=-16
+                       else
+                        errc=-15
+                       endif
+                      else
+                       errc=-14
+                      endif
                      else
                       errc=-13
                      endif
