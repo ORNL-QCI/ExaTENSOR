@@ -5690,7 +5690,7 @@
 !an existing tensor contraction (plus symmetry adjustment).
          implicit none
          class(tens_contraction_t), intent(out):: this            !out: derived tensor contraction
-         type(tens_contraction_t), intent(in):: tens_contr        !in: parental tensor contraction
+         class(tens_contraction_t), intent(in):: tens_contr       !in: parental tensor contraction
          integer(INTD), intent(out), optional:: ierr              !out: error code
          type(tens_rcrsv_t), intent(in), target, optional:: dtens !in: new destination tensor argument
          type(tens_rcrsv_t), intent(in), target, optional:: ltens !in: new left tensor argument
