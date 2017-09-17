@@ -135,7 +135,7 @@ LA_LINK_ATLAS = -L$(PATH_BLAS_ATLAS) -lblas -llapack
 ifeq ($(TOOLKIT),GNU)
 LA_LINK_MKL = -L$(PATH_BLAS_MKL) -lmkl_intel_lp64 -lmkl_gnu_thread -lmkl_core -lpthread -lm -ldl
 else
-LA_LINK_MKL = -L$(PATH_BLAS_MKL) -lmkl_intel_lp64 -lmkl_intel_thread -lmkl_core -lpthread -lm -ldl -L$(PATH_BLAS_MKL_DEP) -liomp5
+LA_LINK_MKL = -L$(PATH_BLAS_MKL) -lmkl_intel_lp64 -lmkl_intel_thread -lmkl_core -lpthread -lm -ldl -L$(PATH_BLAS_MKL_DEP)
 endif
 LA_LINK_ACML = -L$(PATH_BLAS_ACML) -lacml_mp
 LA_LINK_ESSL = -L$(PATH_BLAS_ESSL) -lesslsmp -L$(PATH_BLAS_ESSL_DEP) -lxlf90_r -lxlfmath
