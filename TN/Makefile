@@ -97,7 +97,7 @@ INC = $(INC_$(WRAP))
 #COMPILER LIBS:
 LIB_GNU = -L. -lgfortran
 LIB_PGI = -L.
-LIB_INTEL = -L.
+LIB_INTEL = -L. -lifport
 LIB_CRAY = -L.
 LIB_IBM = -L.
 LIB_NOWRAP = $(LIB_$(TOOLKIT))
