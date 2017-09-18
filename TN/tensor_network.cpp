@@ -511,7 +511,7 @@ int TensorNetwork<T>::computeOutputLocal(const ContractionSequence & contrSeq)
  talsh_task_t tsk;
  talsh_tens_t *tens, *dtens, *ltens, *rtens;
  int errc,cpl,lRank,rRank,tDims[MAX_TENSOR_RANK],contrPtrnDig[MAX_TENSOR_RANK*2];
- char * contrPtrnSym;
+ char contrPtrnSym[512]; //should be large enough to contain an arbitrary binary tensor contraction specification
 
  int error_code = 0; //success
  std::cout << "#MSG(TensorNetwork<T>::computeOutputLocal): Computing ... "; //debug

@@ -95,7 +95,7 @@ INC_WRAP = -I.
 INC = $(INC_$(WRAP))
 
 #COMPILER LIBS:
-LIB_GNU = -L.
+LIB_GNU = -L. -lgfortran
 LIB_PGI = -L.
 LIB_INTEL = -L.
 LIB_CRAY = -L.
@@ -260,7 +260,7 @@ OBJS = ./OBJ/tensor_leg.o
 $(NAME): $(OBJS) *.hpp $(MY_LIB)
 	ar cr lib$(NAME).a $(OBJS) $(MY_LIB)
 	$(CPPCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(CFLAGS) main.cpp -o ./OBJ/main.o
-	$(FCOMP) ./OBJ/main.o $(OBJS) $(MY_LIB) $(LFLAGS) -o test_$(NAME).x
+	$(CPPCOMP) ./OBJ/main.o $(OBJS) $(MY_LIB) $(LFLAGS) -o test_$(NAME).x
 
 ./OBJ/tensor_leg.o: tensor_leg.hpp tensor_leg.cpp
 	mkdir -p ./OBJ
