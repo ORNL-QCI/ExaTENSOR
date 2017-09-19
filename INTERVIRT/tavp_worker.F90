@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/09/15
+!REVISION: 2017/09/19
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -110,7 +110,7 @@
           procedure, public:: configure=>TAVPWRKDecoderConfigure    !configures TAVP-WRK decoder
           procedure, public:: start=>TAVPWRKDecoderStart            !starts TAVP-WRK decoder
           procedure, public:: shutdown=>TAVPWRKDecoderShutdown      !shuts down TAVP-WRK decoder
-          procedure, public:: decode=>TAVPWRKDecoderDecode          !decodes the DS bytecode into a DS instruction
+          procedure, public:: decode=>TAVPWRKDecoderDecode          !decodes the DS bytecode into DS instructions
         end type tavp_wrk_decoder_t
  !TAVP-WRK decoder configuration:
         type, extends(dsv_conf_t), private:: tavp_wrk_decoder_conf_t

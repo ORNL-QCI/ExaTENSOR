@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/09/17
+!REVISION: 2017/09/19
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -71,6 +71,37 @@
           procedure, public:: encode=>TensInstrEncode      !encoding procedure: Packs the TAVP instruction into a raw byte packet
           final:: tens_instr_dtor                          !dtor
         end type tens_instr_t
+ !TAVP-MNG decoder:
+        type, extends(ds_decoder_t), private:: tavp_mng_decoder_t
+         integer(INTD), private:: source_comm                       !bytecode source communicator
+         integer(INTD), private:: source_rank=-1                    !bytecode source process rank
+         type(pack_env_t), private:: bytecode                       !incoming bytecode
+         contains
+          procedure, public:: configure=>TAVPMNGDecoderConfigure    !configures TAVP-MNG decoder
+          procedure, public:: start=>TAVPMNGDecoderStart            !starts TAVP-MNG decoder
+          procedure, public:: shutdown=>TAVPMNGDecoderShutdown      !shuts down TAVP-MNG decoder
+          procedure, public:: decode=>TAVPMNGDecoderDecode          !decodes the DS bytecode into DS instructions
+        end type tavp_mng_decoder_t
+ !TAVP-MNG decoder configuration:
+        type, extends(dsv_conf_t), private:: tavp_mng_decoder_conf_t
+         integer(INTD), public:: source_comm !MPI communicator of the source process
+         integer(INTD), public:: source_rank !source process rank from which the bytecode is coming
+        end type tavp_mng_decoder_conf_t
+ !TAVP-MNG:
+        type, extends(dsvp_t), public:: tavp_mng_t
+         type(tens_cache_t), private:: tens_cache                    !tensor argument cache
+         type(tavp_mng_decoder_t), private:: decoder                 !DSVU: decodes incoming tensor instructions from the manager
+#if 0
+         type(tavp_mng_encoder_t), allocatable, private:: encoder(:) !DSVU: encodes outgoing tensor instructions for lower-level manager TAVPs
+         type(tavp_mng_encoder_t), private:: retirer                 !DSVU: retires processed tensor instructions and sends them back to the manager
+         type(tavp_mng_locator_t), private:: locator                 !DSVU: locates metadata for remote tensor arguments
+         type(tavp_mng_decomposer_t), private:: decomposer           !DSVU: decomposes tensor arguments and tensor instructions into smaller pieces
+         type(tavp_mng_replicator_t), private:: replicator           !DSVU: replicates tensor blocks for communicaton avoiding
+         type(tavp_mng_dispatcher_t), private:: dispatcher           !DSVU: dispatches ready to be executed tensor instructions to compute devices
+#endif
+         contains
+          procedure, public:: configure=>TAVPMNGConfigure            !configures the TAVP-MNG DSVP
+        end type tavp_mng_t
 !VISIBILITY:
  !tens_entry_mng_t:
         private TensEntryMngCtor
@@ -94,6 +125,13 @@
         private TensInstrCtor
         private TensInstrEncode
         public tens_instr_dtor
+ !tavp_mng_decoder_t:
+        private TAVPMNGDecoderConfigure
+        private TAVPMNGDecoderStart
+        private TAVPMNGDecoderShutdown
+        private TAVPMNGDecoderDecode
+ !tavp_mng_t:
+        private TAVPMNGConfigure
 !IMPLEMENTATION:
        contains
 ![tens_entry_mng_t]========================================
@@ -705,5 +743,419 @@
          endif
          return
         end subroutine tens_instr_dtor
+![tavp_mng_decoder_t]=====================================
+        subroutine TAVPMNGDecoderConfigure(this,conf,ierr)
+!Configures this DSVU.
+         implicit none
+         class(tavp_mng_decoder_t), intent(inout):: this !out: configured DSVU (must not be configured on entrance)
+         class(dsv_conf_t), intent(in):: conf            !in: specific DSVU configuration
+         integer(INTD), intent(out), optional:: ierr     !out: error code
+         integer(INTD):: errc
+
+         errc=0
+         select type(conf)
+         type is(tavp_mng_decoder_conf_t)
+          if(conf%source_rank.ge.0) then
+           this%source_rank=conf%source_rank
+           this%source_comm=conf%source_comm
+          else
+           errc=-2
+          endif
+         class default
+          errc=-1
+         end select
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TAVPMNGDecoderConfigure
+!------------------------------------------------
+        subroutine TAVPMNGDecoderStart(this,ierr)
+!Starts and lives this DSVU, calls .shutdown() at the end.
+         implicit none
+         class(tavp_mng_decoder_t), intent(inout):: this !inout: TAVP-MNG decoder DSVU
+         integer(INTD), intent(out), optional:: ierr     !out: error code
+         integer(INTD):: errc,ier
+
+         errc=0
+         if(DEBUG.gt.0) write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decoder started as DSVU # ",i2)') impir,this%get_id() !debug
+         !`Implement
+         call this%shutdown(ier); if(ier.ne.0.and.errc.eq.0) errc=-1
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TAVPMNGDecoderStart
+!---------------------------------------------------
+        subroutine TAVPMNGDecoderShutdown(this,ierr)
+!Stops DSVU (returns back a clean configured state).
+         implicit none
+         class(tavp_mng_decoder_t), intent(inout):: this !inout: TAVP-MNG decoder DSVU
+         integer(INTD), intent(out), optional:: ierr     !out: error code
+         integer(INTD):: errc
+
+         errc=0
+         if(DEBUG.gt.0) write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decoder stopped as DSVU # ",i2)') impir,this%get_id() !debug
+         !`Implement
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TAVPMNGDecoderShutdown
+!-----------------------------------------------------------------------
+        subroutine TAVPMNGDecoderDecode(this,ds_instr,instr_packet,ierr)
+!Decodes a tensor instruction from a plain bytecode.
+         implicit none
+         class(tavp_mng_decoder_t), intent(inout):: this     !inout: TAVP-MNG decoder
+         class(ds_instr_t), intent(inout), target:: ds_instr !out: decoded tensor instruction
+         class(obj_pack_t), intent(inout):: instr_packet     !in: instruction bytecode packet
+         integer(INTD), intent(out), optional:: ierr         !out: error code
+         integer(INTD):: errc,ier,op_code
+         class(dsvp_t), pointer:: dsvp
+         class(tens_cache_t), pointer:: arg_cache
+
+         if(ds_instr%is_empty(errc)) then
+          if(errc.eq.DSVP_SUCCESS) then
+!Retrieve the TAVP argument cache:
+           arg_cache=>NULL(); dsvp=>this%get_dsvp() !host DSVP
+           select type(dsvp); class is(tavp_mng_t); arg_cache=>dsvp%tens_cache; end select
+           if(associated(arg_cache)) then
+!Extract the instruction op_code:
+            call unpack_builtin(instr_packet,op_code,errc)
+!Extract the instruction body:
+            if(errc.eq.0) then
+             select case(op_code)
+             case(TAVP_INSTR_NOOP)
+             case(TAVP_INSTR_STOP)
+             case(TAVP_INSTR_CREATE,TAVP_INSTR_DESTROY)
+              call decode_instr_create_destroy(errc); if(errc.ne.0) errc=-8
+             case(TAVP_INSTR_CONTRACT)
+              call decode_instr_contract(errc); if(errc.ne.0) errc=-7
+             case default
+              errc=-6 !unknown instruction opcode (or not implemented)
+             end select
+!Activate the instruction:
+             if(errc.eq.0) then
+              call ds_instr%activate(op_code,ier); if(ier.ne.0) errc=-5
+             endif
+            else
+             errc=-4
+            endif
+           else
+            errc=-3
+           endif
+          else
+           errc=-2
+          endif
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+
+         contains
+
+          subroutine decode_instr_create_destroy(jerr)
+           !CREATE/DESTROY a tensor
+           integer(INTD), intent(out):: jerr
+           class(tens_rcrsv_t), pointer:: tensor
+           class(tens_oprnd_t), pointer:: tens_oprnd
+           class(ds_oprnd_t), pointer:: oprnd
+           class(tens_cache_entry_t), pointer:: tens_entry
+           class(tens_entry_mng_t), pointer:: tens_mng_entry
+           logical:: res
+
+           jerr=0
+           tensor=>NULL(); allocate(tensor,STAT=jerr)
+           if(jerr.eq.0) then
+            call tensor%tens_rcrsv_ctor(instr_packet,jerr)
+            if(jerr.eq.TEREC_SUCCESS) then
+             tens_entry=>NULL(); tens_entry=>arg_cache%lookup(tensor,jerr)
+             if(jerr.eq.0) then
+              select case(op_code)
+              case(TAVP_INSTR_CREATE) !CREATE a tensor
+               if(.not.associated(tens_entry)) then
+                res=arg_cache%store(tensor,tens_entry_mng_alloc,jerr,tens_entry_p=tens_entry)
+                if(res.and.(jerr.eq.0).and.associated(tens_entry)) then
+                 tens_mng_entry=>NULL()
+                 select type(tens_entry); class is(tens_entry_mng_t); tens_mng_entry=>tens_entry; end select
+                 if(associated(tens_mng_entry)) then
+                  call ds_instr%alloc_operands(1,jerr)
+                  if(jerr.eq.DSVP_SUCCESS) then
+                   tens_oprnd=>NULL(); allocate(tens_oprnd,STAT=jerr)
+                   if(jerr.eq.0) then
+                    call tens_oprnd%tens_oprnd_ctor(tensor,jerr) !tensor is stored in a tensor cache
+                    if(jerr.eq.0) then
+                     oprnd=>tens_oprnd; call ds_instr%set_operand(0,oprnd,jerr)
+                     if(jerr.ne.DSVP_SUCCESS) then
+                      call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_GEN_FAILURE)
+                      jerr=-16
+                     endif
+                    else
+                     call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_GEN_FAILURE)
+                     jerr=-15
+                    endif
+                   else
+                    call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_RSC_UNAVAILABLE)
+                    jerr=-14
+                   endif
+                  else
+                   call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_RSC_UNAVAILABLE)
+                   jerr=-13
+                  endif
+                 else
+                  call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_GEN_FAILURE)
+                  jerr=-12
+                 endif
+                else
+                 call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_CHE_FAILURE)
+                 jerr=-11
+                endif
+               else
+                call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_ARG_DEFINED)
+                jerr=-10
+               endif
+              case(TAVP_INSTR_DESTROY) !DESTROY a tensor
+               if(associated(tens_entry)) then
+                deallocate(tensor); tensor=>NULL() !deallocate the temporary tensor
+                tens_mng_entry=>NULL()
+                select type(tens_entry); class is(tens_entry_mng_t); tens_mng_entry=>tens_entry; end select
+                if(associated(tens_mng_entry)) then
+                 tensor=>tens_mng_entry%get_tensor() !use the same tensor from the tensor cache
+                 call ds_instr%alloc_operands(1,jerr)
+                 if(jerr.eq.DSVP_SUCCESS) then
+                  tens_oprnd=>NULL(); allocate(tens_oprnd,STAT=jerr)
+                  if(jerr.eq.0) then
+                   call tens_oprnd%tens_oprnd_ctor(tensor,jerr) !tensor is from tensor cache
+                   if(jerr.eq.0) then
+                    oprnd=>tens_oprnd; call ds_instr%set_operand(0,oprnd,jerr)
+                    if(jerr.ne.DSVP_SUCCESS) then
+                     call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_GEN_FAILURE)
+                     jerr=-9
+                    endif
+                   else
+                    call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_GEN_FAILURE)
+                    jerr=-8
+                   endif
+                  else
+                   call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_RSC_UNAVAILABLE)
+                   jerr=-7
+                  endif
+                 else
+                  call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_RSC_UNAVAILABLE)
+                  jerr=-6
+                 endif
+                else
+                 call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_GEN_FAILURE)
+                 jerr=-5
+                endif
+               else
+                call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_ARG_UNDEFINED)
+                jerr=-4
+               endif
+              end select
+             else
+              call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_CHE_FAILURE)
+              jerr=-3
+             endif
+            else
+             call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_BTC_BAD)
+             jerr=-2
+            endif
+           else
+            call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_RSC_UNAVAILABLE)
+            jerr=-1
+           endif
+           return
+          end subroutine decode_instr_create_destroy
+
+          subroutine decode_instr_contract(jerr)
+           !CONTRACT two tensors
+           integer(INTD), intent(out):: jerr
+           class(ds_instr_ctrl_t), pointer:: instr_ctrl
+           class(ctrl_tens_contr_t), pointer:: tens_contr_ctrl
+           class(tens_rcrsv_t), pointer:: tensor
+           class(tens_oprnd_t), pointer:: tens_oprnd
+           class(ds_oprnd_t), pointer:: oprnd
+           class(tens_cache_entry_t), pointer:: tens_entry
+           class(tens_entry_mng_t), pointer:: tens_mng_entry
+           integer(INTD):: jj
+
+           jerr=0
+           tens_contr_ctrl=>NULL(); allocate(tens_contr_ctrl,STAT=jerr)
+           if(jerr.eq.0) then
+            call tens_contr_ctrl%unpack(instr_packet,jerr)
+            if(jerr.eq.0) then
+             instr_ctrl=>tens_contr_ctrl; call ds_instr%set_control(instr_ctrl,jerr)
+             if(jerr.eq.DSVP_SUCCESS) then
+              call ds_instr%alloc_operands(3,jerr)
+              if(jerr.eq.DSVP_SUCCESS) then
+               do jj=0,2
+                tensor=>NULL(); allocate(tensor,STAT=jerr)
+                if(jerr.ne.0) then
+                 call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_RSC_UNAVAILABLE); jerr=-12; exit
+                endif
+                call tensor%tens_rcrsv_ctor(instr_packet,jerr)
+                if(jerr.ne.TEREC_SUCCESS) then
+                 call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_BTC_BAD); jerr=-11; exit
+                endif
+                tens_entry=>NULL(); tens_entry=>arg_cache%lookup(tensor,jerr)
+                if(jerr.ne.0) then
+                 call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_CHE_FAILURE); jerr=-10; exit
+                endif
+                if(.not.associated(tens_entry)) then
+                 call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_ARG_UNDEFINED); jerr=-9; exit
+                endif
+                deallocate(tensor); tensor=>NULL() !deallocate the temporary tensor
+                tens_mng_entry=>NULL(); select type(tens_entry); class is(tens_entry_mng_t); tens_mng_entry=>tens_entry; end select
+                if(.not.associated(tens_mng_entry)) then
+                 call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_GEN_FAILURE); jerr=-8; exit
+                endif
+                tensor=>tens_mng_entry%get_tensor() !use the same tensor from the tensor cache
+                tens_oprnd=>NULL(); allocate(tens_oprnd,STAT=jerr)
+                if(jerr.ne.0) then
+                 call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_RSC_UNAVAILABLE); jerr=-7; exit
+                endif
+                call tens_oprnd%tens_oprnd_ctor(tensor,jerr) !tensor is stored in tensor cache
+                if(jerr.ne.0) then
+                 call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_GEN_FAILURE); jerr=-6; exit
+                endif
+                oprnd=>tens_oprnd; call ds_instr%set_operand(jj,oprnd,jerr)
+                if(jerr.ne.DSVP_SUCCESS) then
+                 call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_GEN_FAILURE); jerr=-5; exit
+                endif
+               enddo
+              else
+               call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_RSC_UNAVAILABLE)
+               jerr=-4
+              endif
+             else
+              call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_GEN_FAILURE)
+              jerr=-3
+             endif
+            else
+             call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_BTC_BAD)
+             jerr=-2
+            endif
+           else
+            call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_RSC_UNAVAILABLE)
+            jerr=-1
+           endif
+           return
+          end subroutine decode_instr_contract
+
+        end subroutine TAVPMNGDecoderDecode
+![tavp_mng_t]======================================
+        subroutine TAVPMNGConfigure(this,conf,ierr)
+!Configures TAVP-MNG DSVP:
+! * Configures static DSVU;
+! * Allocates and configures dynamic DSVU;
+! * Sets up global DSVU table in DSVP;
+! * Sets up DSVP description and id;
+         implicit none
+         class(tavp_mng_t), intent(inout), target:: this !out: configured DSVP (must not be configured on entrance)
+         class(dsv_conf_t), intent(in):: conf            !in: specific DSVP configuration
+         integer(INTD), intent(out), optional:: ierr     !out: error code
+         integer(INTD):: errc,num_units
+#if 0
+         type(tavp_mng_decoder_conf_t):: decoder_conf
+         type(tavp_mng_encoder_conf_t):: retirer_conf
+         type(tavp_mng_locator_conf_t):: locator_conf
+         type(tavp_mng_decomposer_conf_t):: decomposer_conf
+         type(tavp_mng_replicator_conf_t):: replicator_conf
+         type(tavp_mng_dispatcher_conf_t):: dispatcher_conf
+
+         if(.not.this%is_configured(errc)) then
+          if(errc.eq.0) then
+           select type(conf)
+           type is(tavp_mng_conf_t)
+            if(conf%tavp_id.ge.0.and.allocated(conf%description)) then
+             num_units=0 !increment by one after each unit configuration
+ !Configure static DSVU:
+  !Decoder:
+             decoder_conf=tavp_wrk_decoder_conf_t(conf%source_comm,conf%source_rank)
+             call this%decoder%configure(decoder_conf,errc)
+             if(errc.eq.0) then
+              num_units=num_units+1
+  !Retirer:
+              retirer_conf=tavp_wrk_encoder_conf_t(conf%dest_comm,conf%dest_rank)
+              call this%retirer%configure(retirer_conf,errc)
+              if(errc.eq.0) then
+               num_units=num_units+1
+  !Resourcer:
+               resourcer_conf=tavp_wrk_resourcer_conf_t(conf%host_ram_size,conf%nvram_size)
+               call this%resourcer%configure(resourcer_conf,errc)
+               if(errc.eq.0) then
+                num_units=num_units+1
+  !Communicator:
+                communicator_conf=tavp_wrk_communicator_conf_t(conf%num_mpi_windows)
+                call this%communicator%configure(communicator_conf,errc)
+                if(errc.eq.0) then
+                 num_units=num_units+1
+  !Dispatcher:
+                 dispatcher_conf=tavp_wrk_dispatcher_conf_t(conf%host_buf_size,conf%gpu_list,conf%amd_list,conf%mic_list)
+                 call this%dispatcher%configure(dispatcher_conf,errc)
+                 if(errc.eq.0) then
+                  num_units=num_units+1
+ !Set up global DSVU table (references to all DSVU):
+                  call this%alloc_units(num_units,errc)
+                  if(errc.eq.DSVP_SUCCESS) then
+                   call this%set_unit(this%decoder,errc)
+                   if(errc.eq.DSVP_SUCCESS) then
+                    call this%set_unit(this%retirer,errc)
+                    if(errc.eq.DSVP_SUCCESS) then
+                     call this%set_unit(this%resourcer,errc)
+                     if(errc.eq.DSVP_SUCCESS) then
+                      call this%set_unit(this%communicator,errc)
+                      if(errc.eq.DSVP_SUCCESS) then
+                       call this%set_unit(this%dispatcher,errc)
+                       if(errc.eq.DSVP_SUCCESS) then
+ !Set the DSVP id and description:
+                        call this%set_description(int(conf%tavp_id,INTL),conf%description,errc)
+                        if(errc.ne.DSVP_SUCCESS) errc=-16
+                       else
+                        errc=-15
+                       endif
+                      else
+                       errc=-14
+                      endif
+                     else
+                      errc=-13
+                     endif
+                    else
+                     errc=-12
+                    endif
+                   else
+                    errc=-11
+                   endif
+                  else
+                   errc=-10
+                  endif
+                 else
+                  errc=-9
+                 endif
+                else
+                 errc=-8
+                endif
+               else
+                errc=-7
+               endif
+              else
+               errc=-6
+              endif
+             else
+              errc=-5
+             endif
+            else
+             errc=-4
+            endif
+           class default
+            errc=-3
+           end select
+          else
+           errc=-2
+          endif
+         else
+          errc=-1
+         endif
+         if(errc.ne.0) call this%destroy()
+#endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TAVPMNGConfigure
 
        end module tavp_manager
