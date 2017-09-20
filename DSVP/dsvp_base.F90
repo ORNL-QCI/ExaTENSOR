@@ -1,6 +1,6 @@
 !Domain-specific virtual processor (DSVP): Abstract base module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/09/07
+!REVISION: 2017/09/20
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -698,33 +698,35 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine DSInstrSetCode
-!-------------------------------------------------------
-        function DSInstrGetStatus(this,ierr) result(sts)
+!----------------------------------------------------------------
+        function DSInstrGetStatus(this,ierr,err_code) result(sts)
 !Returns the instruction status.
          implicit none
-         integer(INTD):: sts                         !out: instruction status
-         class(ds_instr_t), intent(in):: this        !in: domain-specific instruction
-         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: sts                             !out: instruction status
+         class(ds_instr_t), intent(in):: this            !in: domain-specific instruction
+         integer(INTD), intent(out), optional:: ierr     !out: error code
+         integer(INTD), intent(out), optional:: err_code !out: instruction error code in case of an error
          integer(INTD):: errc
 
          errc=DSVP_SUCCESS
          sts=this%stat
+         if(present(err_code)) err_code=this%error_code
          if(present(ierr)) ierr=errc
          return
         end function DSInstrGetStatus
-!------------------------------------------------------------
-        subroutine DSInstrSetStatus(this,sts,ierr,error_code)
+!----------------------------------------------------------
+        subroutine DSInstrSetStatus(this,sts,ierr,err_code)
 !Sets the instruction status and (optionally) error code.
          implicit none
-         class(ds_instr_t), intent(inout):: this          !inout: domain-specific instruction
-         integer(INTD), intent(in):: sts                  !in: instruction status to be set
-         integer(INTD), intent(out), optional:: ierr      !out: error code
-         integer(INTD), intent(in), optional:: error_code !in: instruction error code to set
+         class(ds_instr_t), intent(inout):: this        !inout: domain-specific instruction
+         integer(INTD), intent(in):: sts                !in: instruction status to set
+         integer(INTD), intent(out), optional:: ierr    !out: error code
+         integer(INTD), intent(in), optional:: err_code !in: instruction error code to set
          integer(INTD):: errc
 
          errc=DSVP_SUCCESS
          this%stat=sts
-         if(present(error_code)) this%error_code=error_code
+         if(present(err_code)) this%error_code=err_code
          if(present(ierr)) ierr=errc
          return
         end subroutine DSInstrSetStatus
