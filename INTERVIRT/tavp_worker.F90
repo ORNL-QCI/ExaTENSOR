@@ -119,9 +119,9 @@
         end type tavp_wrk_decoder_conf_t
  !TAVP-WRK encoder:
         type, extends(ds_encoder_t), private:: tavp_wrk_encoder_t
-         integer(INTD), private:: dest_comm                         !bytecode destinations communicator
-         integer(INTD), allocatable, private:: dest_rank(:)         !bytecode destination processes ranks
-         type(pack_env_t), allocatable, private:: bytecode(:)       !outgoing bytecode (multiple channels in general)
+         integer(INTD), private:: dest_comm                         !bytecode destination communicator
+         integer(INTD), private:: dest_rank=-1                      !bytecode destination process rank
+         type(pack_env_t), private:: bytecode                       !outgoing bytecode
          contains
           procedure, public:: configure=>TAVPWRKEncoderConfigure    !configures TAVP-WRK encoder
           procedure, public:: start=>TAVPWRKEncoderStart            !starts TAVP-WRK encoder
@@ -130,8 +130,8 @@
         end type tavp_wrk_encoder_t
  !TAVP-WRK encoder configuration:
         type, extends(dsv_conf_t), private:: tavp_wrk_encoder_conf_t
-         integer(INTD), public:: dest_comm                 !MPI communicator of the destination processes
-         integer(INTD), allocatable, public:: dest_rank(:) !destination processes ranks to which the bytecode is going
+         integer(INTD), public:: dest_comm                          !MPI communicator of the destination process
+         integer(INTD), public:: dest_rank                          !destination process rank to which the bytecode is going
         end type tavp_wrk_encoder_conf_t
  !TAVP-WRK resourcer:
         type, extends(ds_unit_t), private:: tavp_wrk_resourcer_t
@@ -209,8 +209,8 @@
          integer(INTD), public:: tavp_id                    !TAVP id
          integer(INTD), public:: source_comm                !MPI communicator of the bytecode source
          integer(INTD), public:: source_rank                !MPI process rank of the bytecode source
-         integer(INTD), public:: dest_comm                  !MPI communicator of the bytecode destinations
-         integer(INTD), allocatable, public:: dest_rank(:)  !MPI process ranks of the bytecode destinations
+         integer(INTD), public:: dest_comm                  !MPI communicator of the bytecode destination
+         integer(INTD), public:: dest_rank                  !MPI process rank of the bytecode destination
          integer(INTL), public:: host_ram_size              !size of the usable Host RAM memory in bytes
          integer(INTL), public:: nvram_size                 !size of the usable NVRAM memory (if any) in bytes
          integer(INTD), public:: num_mpi_windows            !number of dynamic MPI windows per global addressing space
@@ -1649,7 +1649,7 @@
                case(TAVP_INSTR_CONTRACT)
                 call encode_instr_contract(errc); if(errc.ne.0) errc=-8
                case default
-                errc=-7
+                errc=-7 !invalid instruction opcode (or not implemented)
                end select
               else
                errc=-6
@@ -1857,7 +1857,7 @@
 !Activate the instruction:
                if(errc.eq.0) then
                 call ds_instr%activate(op_code,errc,stat,err_code)
-                if(errc.ne.0) then
+                if(errc.ne.DSVP_SUCCESS) then
                  call ds_instr%set_status(DS_INSTR_RETIRED,errc,TAVP_ERR_GEN_FAILURE)
                  errc=-7
                 endif
@@ -2092,29 +2092,9 @@
          errc=0
          select type(conf)
          type is(tavp_wrk_encoder_conf_t)
-          if(allocated(conf%dest_rank)) then
-           n=size(conf%dest_rank)
-           do i=lbound(conf%dest_rank,1),ubound(conf%dest_rank,1)
-            if(conf%dest_rank(i).lt.0) then; errc=-6; exit; endif !trap
-           enddo
-           if(errc.eq.0) then
-            if(allocated(this%dest_rank)) deallocate(this%dest_rank)
-            if(allocated(this%bytecode)) deallocate(this%bytecode)
-            allocate(this%dest_rank(0:n-1),STAT=errc)
-            if(errc.eq.0) then
-             allocate(this%bytecode(0:n-1),STAT=errc)
-             if(errc.eq.0) then
-              this%dest_rank(0:)=conf%dest_rank(:)
-              this%dest_comm=conf%dest_comm
-             else
-              errc=-5
-             endif
-            else
-             errc=-4
-            endif
-           else
-            errc=-3
-           endif
+          if(conf%dest_rank.ge.0) then
+           this%dest_rank=conf%dest_rank
+           this%dest_comm=conf%dest_comm
           else
            errc=-2
           endif

@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/09/19
+!REVISION: 2017/09/20
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -92,12 +92,12 @@
          type(tens_cache_t), private:: tens_cache                    !tensor argument cache
          type(tavp_mng_decoder_t), private:: decoder                 !DSVU: decodes incoming tensor instructions from the manager
 #if 0
-         type(tavp_mng_encoder_t), allocatable, private:: encoder(:) !DSVU: encodes outgoing tensor instructions for lower-level manager TAVPs
          type(tavp_mng_encoder_t), private:: retirer                 !DSVU: retires processed tensor instructions and sends them back to the manager
          type(tavp_mng_locator_t), private:: locator                 !DSVU: locates metadata for remote tensor arguments
-         type(tavp_mng_decomposer_t), private:: decomposer           !DSVU: decomposes tensor arguments and tensor instructions into smaller pieces
+         type(tavp_mng_decomposer_t), private:: decomposer           !DSVU: decomposes tensors and tensor instructions into smaller pieces
+         type(tavp_mng_dispatcher_t), private:: dispatcher           !DSVU: dispatches ready to be executed tensor instructions to the lower tree level
          type(tavp_mng_replicator_t), private:: replicator           !DSVU: replicates tensor blocks for communicaton avoiding
-         type(tavp_mng_dispatcher_t), private:: dispatcher           !DSVU: dispatches ready to be executed tensor instructions to compute devices
+         type(tavp_mng_collector_t), private:: collector             !DSVU: collects processed bytecode from the lower tree level and updates tables
 #endif
          contains
           procedure, public:: configure=>TAVPMNGConfigure            !configures the TAVP-MNG DSVP
@@ -140,7 +140,7 @@
          implicit none
          class(tens_entry_mng_t), intent(out):: this          !out: specialized tensor cache entry
          class(tens_rcrsv_t), pointer, intent(inout):: tensor !inout: pointer to an allocated tensor (ownership transfer will occur here!)
-         integer(INTD), intent(in):: owner                    !in: tensor owner id
+         integer(INTD), intent(in):: owner                    !in: tensor owner id (>=0)
          integer(INTD), intent(out), optional:: ierr          !out: error code
          integer(INTD):: errc
 
@@ -474,7 +474,7 @@
          integer(INTD), intent(in):: op_code              !in: instruction code (see top of this module)
          integer(INTD), intent(out), optional:: ierr      !out: error code
          class(*), intent(in), target, optional:: op_spec !in: formal operation specification
-         integer(INTD):: errc
+         integer(INTD):: errc,ier
 
          if(this%is_empty(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
@@ -492,10 +492,11 @@
 !Activate the instruction:
            if(errc.eq.0) then
             call this%activate(op_code,errc); if(errc.ne.0) errc=-3
-           else
-            call this%set_status(DS_INSTR_RETIRED,errc,TAVP_ERR_GEN_FAILURE)
            endif
-           if(errc.ne.0) call tens_instr_dtor(this)
+           if(errc.ne.0) then
+            call this%set_status(DS_INSTR_RETIRED,ier,TAVP_ERR_GEN_FAILURE)
+            call tens_instr_dtor(this) !`Bad: dtor() expects type(tens_instr_t), not class
+           endif
           else
            errc=-2
           endif
@@ -580,7 +581,7 @@
                  do jj=0,2
                   tensor=>tens_contr%get_argument(jj,jerr); if(jerr.ne.TEREC_SUCCESS) exit
                   allocate(tens_oprnd,STAT=jerr); if(jerr.ne.0) exit
-                  call tens_oprnd%tens_oprnd_ctor(tensor,jerr); if(jerr.ne.0) exit !`tensor owner is omitted here
+                  call tens_oprnd%tens_oprnd_ctor(tensor,jerr); if(jerr.ne.0) exit
                   oprnd=>tens_oprnd; call this%set_operand(jj,oprnd,jerr); if(jerr.ne.DSVP_SUCCESS) exit !ownership transfer for oprnd=tens_oprnd
                   oprnd=>NULL(); tens_oprnd=>NULL(); tensor=>NULL() !<oprnd> pointer was saved in the tensor instruction and will later be deallocated
                  enddo
@@ -616,30 +617,50 @@
         end subroutine TensInstrCtor
 !---------------------------------------------------------
         subroutine TensInstrEncode(this,instr_packet,ierr)
-!Encodes a tensor instruction into the bytecode packet.
+!Encodes a tensor instruction into the bytecode packet:
+! 1. Instruction code;
+! 2. Instruction status;
+! 3. Instruction error code;
+! 4. Instruction control field;
+! 5. Instruction operands.
          implicit none
          class(tens_instr_t), intent(in):: this          !in: defined tensor instruction
          class(obj_pack_t), intent(inout):: instr_packet !out: instruction bytecode packet
          integer(INTD), intent(out), optional:: ierr     !out: error code
-         integer(INTD):: errc,op_code
+         integer(INTD):: errc,op_code,stat,err_code
 
-!Pack the instruction code (op_code):
+!Pack the instruction attributes (op_code,status,error):
          if(.not.this%is_empty(errc)) then
           op_code=this%get_code(errc)
           if(errc.eq.DSVP_SUCCESS) then
            call pack_builtin(instr_packet,op_code,errc)
            if(errc.eq.0) then
+            stat=this%get_status(errc,err_code)
+            if(errc.eq.DSVP_SUCCESS) then
+             call pack_builtin(instr_packet,stat,errc)
+             if(errc.eq.0) then
+              call pack_builtin(instr_packet,err_code,errc)
+              if(errc.eq.0) then
 !Pack the instruction body:
-            select case(op_code)
-            case(TAVP_INSTR_NOOP)
-            case(TAVP_INSTR_STOP)
-            case(TAVP_INSTR_CREATE,TAVP_INSTR_DESTROY)
-             call encode_instr_create_destroy(errc); if(errc.ne.0) errc=-6
-            case(TAVP_INSTR_CONTRACT)
-             call encode_instr_contract(errc); if(errc.ne.0) errc=-5
-            case default
-             errc=-4 !invalid instruction opcode (or not implemented)
-            end select
+               select case(op_code)
+               case(TAVP_INSTR_NOOP)
+               case(TAVP_INSTR_STOP)
+               case(TAVP_INSTR_CREATE,TAVP_INSTR_DESTROY)
+                call encode_instr_create_destroy(errc); if(errc.ne.0) errc=-9
+               case(TAVP_INSTR_CONTRACT)
+                call encode_instr_contract(errc); if(errc.ne.0) errc=-8
+               case default
+                errc=-7 !invalid instruction opcode (or not implemented)
+               end select
+              else
+               errc=-6
+              endif
+             else
+              errc=-5
+             endif
+            else
+             errc=-4
+            endif
            else
             errc=-3
            endif
@@ -656,7 +677,7 @@
 
          subroutine encode_instr_create_destroy(jerr)
           !CREATE/DESTROY a tensor:
-          !Packet format: {op_code|tensor}
+          !Packet format: {op_code|status|error|tensor}
           integer(INTD), intent(out):: jerr
           class(ds_oprnd_t), pointer:: oprnd
           class(tens_rcrsv_t), pointer:: tensor
@@ -690,7 +711,7 @@
 
          subroutine encode_instr_contract(jerr)
           !CONTRACT two tensors: tensor0+=tensor1*tensor2*scalar:
-          !Packed format: {op_code|ctrl_tens_contr_t|tensor0,tensor1,tensor2}
+          !Packed format: {op_code|status|error|ctrl_tens_contr_t|tensor0,tensor1,tensor2}
           integer(INTD), intent(out):: jerr
           integer(INTD):: jj
           class(ds_oprnd_t), pointer:: oprnd
@@ -799,12 +820,13 @@
 !-----------------------------------------------------------------------
         subroutine TAVPMNGDecoderDecode(this,ds_instr,instr_packet,ierr)
 !Decodes a tensor instruction from a plain bytecode.
+!The bytecode format is specified in tens_instr_t.encode().
          implicit none
          class(tavp_mng_decoder_t), intent(inout):: this     !inout: TAVP-MNG decoder
          class(ds_instr_t), intent(inout), target:: ds_instr !out: decoded tensor instruction
          class(obj_pack_t), intent(inout):: instr_packet     !in: instruction bytecode packet
          integer(INTD), intent(out), optional:: ierr         !out: error code
-         integer(INTD):: errc,ier,op_code
+         integer(INTD):: errc,op_code,stat,err_code
          class(dsvp_t), pointer:: dsvp
          class(tens_cache_t), pointer:: arg_cache
 
@@ -814,23 +836,37 @@
            arg_cache=>NULL(); dsvp=>this%get_dsvp() !host DSVP
            select type(dsvp); class is(tavp_mng_t); arg_cache=>dsvp%tens_cache; end select
            if(associated(arg_cache)) then
-!Extract the instruction op_code:
+!Extract the instruction attributes (opcode,status,error):
             call unpack_builtin(instr_packet,op_code,errc)
-!Extract the instruction body:
             if(errc.eq.0) then
-             select case(op_code)
-             case(TAVP_INSTR_NOOP)
-             case(TAVP_INSTR_STOP)
-             case(TAVP_INSTR_CREATE,TAVP_INSTR_DESTROY)
-              call decode_instr_create_destroy(errc); if(errc.ne.0) errc=-8
-             case(TAVP_INSTR_CONTRACT)
-              call decode_instr_contract(errc); if(errc.ne.0) errc=-7
-             case default
-              errc=-6 !unknown instruction opcode (or not implemented)
-             end select
-!Activate the instruction:
+             call unpack_builtin(instr_packet,stat,errc)
              if(errc.eq.0) then
-              call ds_instr%activate(op_code,ier); if(ier.ne.0) errc=-5
+              call unpack_builtin(instr_packet,err_code,errc)
+!Extract the instruction body:
+              if(errc.eq.0) then
+               select case(op_code)
+               case(TAVP_INSTR_NOOP)
+               case(TAVP_INSTR_STOP)
+               case(TAVP_INSTR_CREATE,TAVP_INSTR_DESTROY)
+                call decode_instr_create_destroy(errc); if(errc.ne.0) errc=-10
+               case(TAVP_INSTR_CONTRACT)
+                call decode_instr_contract(errc); if(errc.ne.0) errc=-9
+               case default
+                errc=-8 !unknown instruction opcode (or not implemented)
+               end select
+!Activate the instruction:
+               if(errc.eq.0) then
+                call ds_instr%activate(op_code,errc,stat,err_code)
+                if(errc.ne.DSVP_SUCCESS) then
+                 call ds_instr%set_status(DS_INSTR_RETIRED,errc,TAVP_ERR_GEN_FAILURE)
+                 errc=-7
+                endif
+               endif
+              else
+               errc=-6
+              endif
+             else
+              errc=-5
              endif
             else
              errc=-4
@@ -1056,8 +1092,9 @@
          type(tavp_mng_encoder_conf_t):: retirer_conf
          type(tavp_mng_locator_conf_t):: locator_conf
          type(tavp_mng_decomposer_conf_t):: decomposer_conf
-         type(tavp_mng_replicator_conf_t):: replicator_conf
          type(tavp_mng_dispatcher_conf_t):: dispatcher_conf
+         type(tavp_mng_replicator_conf_t):: replicator_conf
+         type(tavp_mng_collector_conf_t):: collector_conf
 
          if(.not.this%is_configured(errc)) then
           if(errc.eq.0) then
