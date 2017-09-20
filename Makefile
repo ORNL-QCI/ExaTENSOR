@@ -78,15 +78,16 @@ $(NAME):
 	$(MAKE) -C ./QFORCE
 ifeq ($(TOOLKIT),CRAY)
 	cp ./INTERVIRT/OBJ/EXATENSOR.mod ./
+	cp -u ./[A-Z]*/OBJ/*.mod ./include/
 else
 	cp ./INTERVIRT/exatensor.mod ./
+	cp -u ./[A-Z]*/*.mod ./include/
 endif
-	cp -u ./*/*.mod ./include/
-	cp -u ./*/*.h ./include/
-	cp -u ./*/*.hpp ./include/
+	cp -u ./[A-Z]*/*.h ./include/
+	cp -u ./[A-Z]*/*.hpp ./include/
 	cp -u ./TN/*.cpp ./include/
-	cp -u ./*/*.a ./lib/
-	cp -u ./*/*.x ./bin/
+	cp -u ./[A-Z]*/*.a ./lib/
+	cp -u ./[A-Z]*/*.x ./bin/
 	cp ./INTERVIRT/libExaTensor.a ./
 	cp ./QFORCE/Qforce.x ./
 	echo "Finished successfully!"

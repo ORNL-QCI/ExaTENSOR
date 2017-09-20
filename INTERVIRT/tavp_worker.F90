@@ -1475,7 +1475,7 @@
          integer(INTD), intent(in):: op_code              !in: instruction code (see top of this module)
          integer(INTD), intent(out), optional:: ierr      !out: error code
          class(*), intent(in), target, optional:: op_spec !in: formal operation specification
-         integer(INTD):: errc
+         integer(INTD):: errc,ier
 
          if(this%is_empty(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
@@ -1493,10 +1493,11 @@
 !Activate the instruction:
            if(errc.eq.0) then
             call this%activate(op_code,errc); if(errc.ne.0) errc=-3
-           else
-            call this%set_status(DS_INSTR_RETIRED,errc,TAVP_ERR_GEN_FAILURE)
            endif
-           if(errc.ne.0) call tens_instr_dtor(this)
+           if(errc.ne.0) then
+            call this%set_status(DS_INSTR_RETIRED,ier,TAVP_ERR_GEN_FAILURE)
+            call tens_instr_dtor(this) !`Bad: dtor() expects type(tens_instr_t), not class
+           endif
           else
            errc=-2
           endif
@@ -1850,11 +1851,16 @@
                case(TAVP_INSTR_CONTRACT)
                 call decode_instr_contract(errc); if(errc.ne.0) errc=-9
                case default
+                call ds_instr%set_status(DS_INSTR_RETIRED,errc,TAVP_ERR_GEN_FAILURE)
                 errc=-8 !unknown instruction opcode (or not implemented)
                end select
 !Activate the instruction:
                if(errc.eq.0) then
-                call ds_instr%activate(op_code,errc,stat,err_code); if(errc.ne.0) errc=-7
+                call ds_instr%activate(op_code,errc,stat,err_code)
+                if(errc.ne.0) then
+                 call ds_instr%set_status(DS_INSTR_RETIRED,errc,TAVP_ERR_GEN_FAILURE)
+                 errc=-7
+                endif
                endif
               else
                errc=-6
