@@ -13,5 +13,6 @@
 *.x
 *.log
 *.out
-*.hpp
 *.h
+*.hpp
+*.cpp

@@ -77,16 +77,14 @@ $(NAME):
 	$(MAKE) -C ./TN
 	$(MAKE) -C ./QFORCE
 ifeq ($(TOOLKIT),CRAY)
-	cp -u ./*/OBJ/*.h ./include/
-	cp -u ./*/OBJ/*.hpp ./include/
-	cp -u ./*/OBJ/*.mod ./include/
 	cp ./INTERVIRT/OBJ/EXATENSOR.mod ./
 else
-	cp -u ./*/*.h ./include/
-	cp -u ./*/*.hpp ./include/
-	cp -u ./*/*.mod ./include/
 	cp ./INTERVIRT/exatensor.mod ./
 endif
+	cp -u ./*/*.mod ./include/
+	cp -u ./*/*.h ./include/
+	cp -u ./*/*.hpp ./include/
+	cp -u ./TN/*.cpp ./include/
 	cp -u ./*/*.a ./lib/
 	cp -u ./*/*.x ./bin/
 	cp ./INTERVIRT/libExaTensor.a ./

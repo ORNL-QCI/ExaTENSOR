@@ -1013,19 +1013,23 @@
          if(present(ierr)) ierr=errc
          return
         end function DSInstrAllSet
-!----------------------------------------------------
-        subroutine DSInstrActivate(this,op_code,ierr)
+!------------------------------------------------------------------
+        subroutine DSInstrActivate(this,op_code,ierr,stat,err_code)
 !Activates the domain-specific instruction after it has been constructed or decoded.
          implicit none
          class(ds_instr_t), intent(inout):: this        !inout: domain-specific instruction
          integer(INTD), intent(in):: op_code            !in: instruction code
          integer(INTD), intent(out), optional:: ierr    !out: error code
-         integer(INTD):: errc
+         integer(INTD), intent(in), optional:: stat     !in: instruction status to set
+         integer(INTD), intent(in), optional:: err_code !in: instruction error code to set
+         integer(INTD):: errc,sts,errcode
 
          call this%set_code(op_code,errc)
          if(errc.eq.DSVP_SUCCESS) then
           if(this%get_status().eq.DS_INSTR_EMPTY) then
-           call this%set_status(DS_INSTR_NEW,errc,DSVP_SUCCESS)
+           sts=DS_INSTR_NEW; if(present(stat)) sts=stat
+           errcode=DSVP_SUCCESS; if(present(err_code)) errcode=err_code
+           call this%set_status(sts,errc,errcode)
            if(errc.ne.DSVP_SUCCESS) then
             call this%set_status(DS_INSTR_RETIRED,errc,DSVP_ERROR)
             errc=-3
