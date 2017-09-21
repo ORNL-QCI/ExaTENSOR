@@ -207,6 +207,14 @@ CUDA_LINK_CUDA = $(CUDA_LINK_$(WRAP))
 CUDA_LINK_NOCUDA = -L.
 CUDA_LINK = $(CUDA_LINK_$(GPU_CUDA))
 
+#Platform independence:
+PIC_FLAG_GNU = -fPIC
+PIC_FLAG_PGI = -fpic
+PIC_FLAG_INTEL = -fpic
+PIC_FLAG_IBM = -qpic=large
+PIC_FLAG_CRAY = -hpic
+PIC_FLAG = $(PIC_FLAG_$(TOOLKIT))
+
 #CUDA FLAGS:
 ifeq ($(GPU_CUDA),CUDA)
 GPU_SM = sm_$(GPU_SM_ARCH)
@@ -216,7 +224,7 @@ CUDA_HOST_WRAP = -I.
 CUDA_HOST = $(CUDA_HOST_$(WRAP))
 CUDA_FLAGS_DEV = --compile -arch=$(GPU_SM) -g -G -lineinfo -DDEBUG_GPU -w
 CUDA_FLAGS_OPT = --compile -arch=$(GPU_SM) -O3 -lineinfo -w
-CUDA_FLAGS_CUDA = $(CUDA_HOST) $(CUDA_FLAGS_$(BUILD_TYPE)) -D_FORCE_INLINES
+CUDA_FLAGS_CUDA = $(CUDA_HOST) $(CUDA_FLAGS_$(BUILD_TYPE)) -D_FORCE_INLINES -Xcompiler $(PIC_FLAG)
 ifeq ($(FOOL_CUDA),NO)
 CUDA_FLAGS_PRE1 = $(CUDA_FLAGS_CUDA) -D$(EXA_OS)
 else
@@ -254,14 +262,6 @@ NO_GPU = -DNO_GPU
 endif
 NO_AMD = -DNO_AMD
 NO_PHI = -DNO_PHI
-
-#Platform independence:
-PIC_FLAG_GNU = -fPIC
-PIC_FLAG_PGI = -fpic
-PIC_FLAG_INTEL = -fpic
-PIC_FLAG_IBM = -qpic=large
-PIC_FLAG_CRAY = -hpic
-PIC_FLAG = $(PIC_FLAG_$(TOOLKIT))
 
 #C FLAGS:
 ifeq ($(TOOLKIT),PGI)
