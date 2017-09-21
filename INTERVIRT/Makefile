@@ -255,10 +255,18 @@ endif
 NO_AMD = -DNO_AMD
 NO_PHI = -DNO_PHI
 
+#Platform independence:
+PIC_FLAG_GNU = -fPIC
+PIC_FLAG_PGI = -fpic
+PIC_FLAG_INTEL = -fpic
+PIC_FLAG_IBM = -qpic=large
+PIC_FLAG_CRAY = -hpic
+PIC_FLAG = $(PIC_FLAG_$(TOOLKIT))
+
 #C FLAGS:
 CFLAGS_DEV = -c -g -O0 -D_DEBUG
 CFLAGS_OPT = -c -O3
-CFLAGS = $(CFLAGS_$(BUILD_TYPE)) $(NO_GPU) $(NO_AMD) $(NO_PHI) $(NO_BLAS) -D$(EXA_OS) -fPIC
+CFLAGS = $(CFLAGS_$(BUILD_TYPE)) $(NO_GPU) $(NO_AMD) $(NO_PHI) $(NO_BLAS) -D$(EXA_OS) $(PIC_FLAG)
 
 #FORTRAN FLAGS:
 FFLAGS_INTEL_DEV = -c -g -O0 -fpp -vec-threshold4 -qopenmp -mkl=parallel
@@ -273,7 +281,7 @@ FFLAGS_PGI_DEV = -c -mp -Mcache_align -Mbounds -Mchkptr -Mstandard -g -O0
 FFLAGS_PGI_OPT = -c -mp -Mcache_align -Mstandard -O3
 FFLAGS_IBM_DEV = -c -qsmp=omp -g -qkeepparm -qcheck -qsigtrap
 FFLAGS_IBM_OPT = -c -qsmp=omp -O3
-FFLAGS = $(FFLAGS_$(TOOLKIT)_$(BUILD_TYPE)) $(DF)$(NO_GPU) $(DF)$(NO_AMD) $(DF)$(NO_PHI) $(DF)$(NO_BLAS) $(DF)-D$(EXA_OS) -fPIC
+FFLAGS = $(FFLAGS_$(TOOLKIT)_$(BUILD_TYPE)) $(DF)$(NO_GPU) $(DF)$(NO_AMD) $(DF)$(NO_PHI) $(DF)$(NO_BLAS) $(DF)-D$(EXA_OS) $(PIC_FLAG)
 
 #ExaTensor includes:
 MY_INC1 = -I../UTILITY -I../GFC -I../DDSS -I../TALSH -I../DSVP -I../INTRAVIRT
