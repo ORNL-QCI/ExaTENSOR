@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/09/20
+!REVISION: 2017/09/21
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -117,22 +117,22 @@
          integer(INTD), public:: source_comm !MPI communicator of the source process
          integer(INTD), public:: source_rank !source process rank from which the bytecode is coming
         end type tavp_wrk_decoder_conf_t
- !TAVP-WRK encoder:
-        type, extends(ds_encoder_t), private:: tavp_wrk_encoder_t
-         integer(INTD), private:: dest_comm                         !bytecode destination communicator
-         integer(INTD), private:: dest_rank=-1                      !bytecode destination process rank
+ !TAVP-WRK retirer:
+        type, extends(ds_encoder_t), private:: tavp_wrk_retirer_t
+         integer(INTD), private:: retire_comm                       !retired bytecode destination communicator
+         integer(INTD), private:: retire_rank=-1                    !retired bytecode destination process rank
          type(pack_env_t), private:: bytecode                       !outgoing bytecode
          contains
-          procedure, public:: configure=>TAVPWRKEncoderConfigure    !configures TAVP-WRK encoder
-          procedure, public:: start=>TAVPWRKEncoderStart            !starts TAVP-WRK encoder
-          procedure, public:: shutdown=>TAVPWRKEncoderShutdown      !shuts down TAVP-WRK encoder
-          procedure, public:: encode=>TAVPWRKEncoderEncode          !encodes a DS instruction into the DS bytecode
-        end type tavp_wrk_encoder_t
- !TAVP-WRK encoder configuration:
-        type, extends(dsv_conf_t), private:: tavp_wrk_encoder_conf_t
-         integer(INTD), public:: dest_comm                          !MPI communicator of the destination process
-         integer(INTD), public:: dest_rank                          !destination process rank to which the bytecode is going
-        end type tavp_wrk_encoder_conf_t
+          procedure, public:: configure=>TAVPWRKRetirerConfigure    !configures TAVP-WRK retirer
+          procedure, public:: start=>TAVPWRKRetirerStart            !starts TAVP-WRK retirer
+          procedure, public:: shutdown=>TAVPWRKRetirerShutdown      !shuts down TAVP-WRK retirer
+          procedure, public:: encode=>TAVPWRKRetirerEncode          !encodes a DS instruction into the DS bytecode
+        end type tavp_wrk_retirer_t
+ !TAVP-WRK retirer configuration:
+        type, extends(dsv_conf_t), private:: tavp_wrk_retirer_conf_t
+         integer(INTD), public:: retire_comm                        !MPI communicator of the retired bytecode destination process
+         integer(INTD), public:: retire_rank                        !destination process rank to which the retired bytecode is going
+        end type tavp_wrk_retirer_conf_t
  !TAVP-WRK resourcer:
         type, extends(ds_unit_t), private:: tavp_wrk_resourcer_t
          integer(INTL), private:: host_ram_size=0_INTL           !size of the usable Host RAM memory in bytes
@@ -196,7 +196,7 @@
          type(tens_cache_t), private:: tens_cache                 !tensor argument cache
          type(DistrSpace_t), private:: addr_space                 !global (distributed) address space
          type(tavp_wrk_decoder_t), private:: decoder              !DSVU: decodes incoming tensor instructions from the manager
-         type(tavp_wrk_encoder_t), private:: retirer              !DSVU: retires processed tensor instructions and sends them back to the manager
+         type(tavp_wrk_retirer_t), private:: retirer              !DSVU: retires processed tensor instructions and sends them back to the manager
          type(tavp_wrk_resourcer_t), private:: resourcer          !DSVU: allocates local resources for tensor instructions
          type(tavp_wrk_communicator_t), private:: communicator    !DSVU: fetches/uploads remote tensor operands
          type(tavp_wrk_dispatcher_t), private:: dispatcher        !DSVU: dispatches ready to be executed tensor instructions to compute devices
@@ -209,8 +209,8 @@
          integer(INTD), public:: tavp_id                    !TAVP id
          integer(INTD), public:: source_comm                !MPI communicator of the bytecode source
          integer(INTD), public:: source_rank                !MPI process rank of the bytecode source
-         integer(INTD), public:: dest_comm                  !MPI communicator of the bytecode destination
-         integer(INTD), public:: dest_rank                  !MPI process rank of the bytecode destination
+         integer(INTD), public:: retire_comm                !MPI communicator of the retired bytecode destination
+         integer(INTD), public:: retire_rank                !MPI process rank of the retired bytecode destination
          integer(INTL), public:: host_ram_size              !size of the usable Host RAM memory in bytes
          integer(INTL), public:: nvram_size                 !size of the usable NVRAM memory (if any) in bytes
          integer(INTD), public:: num_mpi_windows            !number of dynamic MPI windows per global addressing space
@@ -270,11 +270,11 @@
         private TAVPWRKDecoderStart
         private TAVPWRKDecoderShutdown
         private TAVPWRKDecoderDecode
- !tavp_wrk_encoder_t:
-        private TAVPWRKEncoderConfigure
-        private TAVPWRKEncoderStart
-        private TAVPWRKEncoderShutdown
-        private TAVPWRKEncoderEncode
+ !tavp_wrk_retirer_t:
+        private TAVPWRKRetirerConfigure
+        private TAVPWRKRetirerStart
+        private TAVPWRKRetirerShutdown
+        private TAVPWRKRetirerEncode
  !tavp_wrk_resourcer_t:
         private TAVPWRKResourcerConfigure
         private TAVPWRKResourcerStart
@@ -2080,21 +2080,21 @@
           end subroutine decode_instr_contract
 
         end subroutine TAVPWRKDecoderDecode
-![tavp_wrk_encoder_t]=====================================
-        subroutine TAVPWRKEncoderConfigure(this,conf,ierr)
+![tavp_wrk_retirer_t]=====================================
+        subroutine TAVPWRKRetirerConfigure(this,conf,ierr)
 !Configures this DSVU.
          implicit none
-         class(tavp_wrk_encoder_t), intent(inout):: this !out: configured DSVU (must not be configured on entrance)
+         class(tavp_wrk_retirer_t), intent(inout):: this !out: configured DSVU (must not be configured on entrance)
          class(dsv_conf_t), intent(in):: conf            !in: specific DSVU configuration
          integer(INTD), intent(out), optional:: ierr     !out: error code
          integer(INTD):: errc,i,n
 
          errc=0
          select type(conf)
-         type is(tavp_wrk_encoder_conf_t)
-          if(conf%dest_rank.ge.0) then
-           this%dest_rank=conf%dest_rank
-           this%dest_comm=conf%dest_comm
+         type is(tavp_wrk_retirer_conf_t)
+          if(conf%retire_rank.ge.0) then
+           this%retire_rank=conf%retire_rank
+           this%retire_comm=conf%retire_comm
           else
            errc=-2
           endif
@@ -2103,41 +2103,41 @@
          end select
          if(present(ierr)) ierr=errc
          return
-        end subroutine TAVPWRKEncoderConfigure
+        end subroutine TAVPWRKRetirerConfigure
 !------------------------------------------------
-        subroutine TAVPWRKEncoderStart(this,ierr)
+        subroutine TAVPWRKRetirerStart(this,ierr)
 !Starts and lives this DSVU, calls .shutdown() at the end.
          implicit none
-         class(tavp_wrk_encoder_t), intent(inout):: this !inout: TAVP-WRK encoder DSVU
+         class(tavp_wrk_retirer_t), intent(inout):: this !inout: TAVP-WRK retirer DSVU
          integer(INTD), intent(out), optional:: ierr     !out: error code
          integer(INTD):: errc,ier
 
          errc=0
-         if(DEBUG.gt.0) write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Encoder started as DSVU # ",i2)') impir,this%get_id() !debug
+         if(DEBUG.gt.0) write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Retirer started as DSVU # ",i2)') impir,this%get_id() !debug
          !`Implement
          call this%shutdown(ier); if(ier.ne.0.and.errc.eq.0) errc=-1
          if(present(ierr)) ierr=errc
          return
-        end subroutine TAVPWRKEncoderStart
+        end subroutine TAVPWRKRetirerStart
 !---------------------------------------------------
-        subroutine TAVPWRKEncoderShutdown(this,ierr)
+        subroutine TAVPWRKRetirerShutdown(this,ierr)
 !Stops DSVU (returns back a clean configured state).
          implicit none
-         class(tavp_wrk_encoder_t), intent(inout):: this !inout: TAVP-WRK encoder DSVU
+         class(tavp_wrk_retirer_t), intent(inout):: this !inout: TAVP-WRK retirer DSVU
          integer(INTD), intent(out), optional:: ierr     !out: error code
          integer(INTD):: errc
 
          errc=0
-         if(DEBUG.gt.0) write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Encoder stopped as DSVU # ",i2)') impir,this%get_id() !debug
+         if(DEBUG.gt.0) write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Retirer stopped as DSVU # ",i2)') impir,this%get_id() !debug
          !`Implement
          if(present(ierr)) ierr=errc
          return
-        end subroutine TAVPWRKEncoderShutdown
+        end subroutine TAVPWRKRetirerShutdown
 !-----------------------------------------------------------------------
-        subroutine TAVPWRKEncoderEncode(this,ds_instr,instr_packet,ierr)
+        subroutine TAVPWRKRetirerEncode(this,ds_instr,instr_packet,ierr)
 !Encodes a tensor instruction into a plain bytecode.
          implicit none
-         class(tavp_wrk_encoder_t), intent(inout):: this  !inout: encoder
+         class(tavp_wrk_retirer_t), intent(inout):: this  !inout: retirer
          class(ds_instr_t), intent(in), target:: ds_instr !in: defined tensor instruction
          class(obj_pack_t), intent(inout):: instr_packet  !out: instruction bytecode packet
          integer(INTD), intent(out), optional:: ierr      !out: error code
@@ -2154,7 +2154,7 @@
          endif
          if(present(ierr)) ierr=errc
          return
-        end subroutine TAVPWRKEncoderEncode
+        end subroutine TAVPWRKRetirerEncode
 ![tavp_wrk_resourcer_t]=====================================
         subroutine TAVPWRKResourcerConfigure(this,conf,ierr)
 !Configures this DSVU.
@@ -2717,7 +2717,7 @@
          integer(INTD), intent(out), optional:: ierr     !out: error code
          integer(INTD):: errc,num_units
          type(tavp_wrk_decoder_conf_t):: decoder_conf
-         type(tavp_wrk_encoder_conf_t):: retirer_conf
+         type(tavp_wrk_retirer_conf_t):: retirer_conf
          type(tavp_wrk_resourcer_conf_t):: resourcer_conf
          type(tavp_wrk_communicator_conf_t):: communicator_conf
          type(tavp_wrk_dispatcher_conf_t):: dispatcher_conf
@@ -2735,7 +2735,7 @@
              if(errc.eq.0) then
               num_units=num_units+1
   !Retirer:
-              retirer_conf=tavp_wrk_encoder_conf_t(conf%dest_comm,conf%dest_rank)
+              retirer_conf=tavp_wrk_retirer_conf_t(conf%retire_comm,conf%retire_rank)
               call this%retirer%configure(retirer_conf,errc)
               if(errc.eq.0) then
                num_units=num_units+1

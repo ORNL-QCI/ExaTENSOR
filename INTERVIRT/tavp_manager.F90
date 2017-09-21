@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/09/20
+!REVISION: 2017/09/21
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -87,12 +87,28 @@
          integer(INTD), public:: source_comm !MPI communicator of the source process
          integer(INTD), public:: source_rank !source process rank from which the bytecode is coming
         end type tavp_mng_decoder_conf_t
+ !TAVP-MNG retirer:
+        type, extends(ds_encoder_t), private:: tavp_mng_retirer_t
+         integer(INTD), private:: retire_comm                       !retired bytecode destination communicator
+         integer(INTD), private:: retire_rank=-1                    !retired bytecode destination process rank
+         type(pack_env_t), private:: bytecode                       !outgoing bytecode
+         contains
+          procedure, public:: configure=>TAVPMNGRetirerConfigure    !configures TAVP-MNG retirer
+          procedure, public:: start=>TAVPMNGRetirerStart            !starts TAVP-MNG retirer
+          procedure, public:: shutdown=>TAVPMNGRetirerShutdown      !shuts down TAVP-MNG retirer
+          procedure, public:: encode=>TAVPMNGRetirerEncode          !encodes a DS instruction into the DS bytecode
+        end type tavp_mng_retirer_t
+ !TAVP-MNG retirer configuration:
+        type, extends(dsv_conf_t), private:: tavp_mng_retirer_conf_t
+         integer(INTD), public:: retire_comm                        !MPI communicator of the retired bytecode destination process
+         integer(INTD), public:: retire_rank                        !destination process rank to which the retired bytecode is going
+        end type tavp_mng_retirer_conf_t
  !TAVP-MNG:
         type, extends(dsvp_t), public:: tavp_mng_t
          type(tens_cache_t), private:: tens_cache                    !tensor argument cache
          type(tavp_mng_decoder_t), private:: decoder                 !DSVU: decodes incoming tensor instructions from the manager
+         type(tavp_mng_retirer_t), private:: retirer                 !DSVU: retires processed tensor instructions and sends them back to the manager
 #if 0
-         type(tavp_mng_encoder_t), private:: retirer                 !DSVU: retires processed tensor instructions and sends them back to the manager
          type(tavp_mng_locator_t), private:: locator                 !DSVU: locates metadata for remote tensor arguments
          type(tavp_mng_decomposer_t), private:: decomposer           !DSVU: decomposes tensors and tensor instructions into smaller pieces
          type(tavp_mng_dispatcher_t), private:: dispatcher           !DSVU: dispatches ready to be executed tensor instructions to the lower tree level
@@ -102,6 +118,19 @@
          contains
           procedure, public:: configure=>TAVPMNGConfigure            !configures the TAVP-MNG DSVP
         end type tavp_mng_t
+ !TAVP-MNG configuration:
+        type, extends(dsv_conf_t), public:: tavp_mng_conf_t
+         character(:), allocatable, public:: description       !TAVP description
+         integer(INTD), public:: tavp_id                       !TAVP id
+         integer(INTD), public:: source_comm                   !MPI communicator of the bytecode source (higher-level manager)
+         integer(INTD), public:: source_rank                   !MPI process rank of the bytecode source (higher-level manager)
+         integer(INTD), public:: retire_comm                   !MPI communicator of the retired bytecode destination (higher-level manager)
+         integer(INTD), public:: retire_rank                   !MPI process rank of the retired bytecode destination (higher-level manager)
+         integer(INTD), public:: dispatch_comm                 !MPI communicator of the processes to which the bytecode is further dispatched (lower-level)
+         integer(INTD), allocatable, public:: dispatch_rank(:) !MPI ranks of the processes to which the bytecode is further dispatched (lower-level)
+         integer(INTD), public:: collect_comm                  !MPI communicator of the processes from which the retired bytecode is collected (lower-level)
+         integer(INTD), allocatable, public:: collect_rank(:)  !MPI communicator of the processes from which the retired bytecode is collected (lower-level)
+        end type tavp_mng_conf_t
 !VISIBILITY:
  !tens_entry_mng_t:
         private TensEntryMngCtor
@@ -130,6 +159,11 @@
         private TAVPMNGDecoderStart
         private TAVPMNGDecoderShutdown
         private TAVPMNGDecoderDecode
+ !tavp_mng_retirer_t:
+        private TAVPMNGRetirerConfigure
+        private TAVPMNGRetirerStart
+        private TAVPMNGRetirerShutdown
+        private TAVPMNGRetirerEncode
  !tavp_mng_t:
         private TAVPMNGConfigure
 !IMPLEMENTATION:
@@ -1075,6 +1109,81 @@
           end subroutine decode_instr_contract
 
         end subroutine TAVPMNGDecoderDecode
+![tavp_mng_retirer_t]=====================================
+        subroutine TAVPMNGRetirerConfigure(this,conf,ierr)
+!Configures this DSVU.
+         implicit none
+         class(tavp_mng_retirer_t), intent(inout):: this !out: configured DSVU (must not be configured on entrance)
+         class(dsv_conf_t), intent(in):: conf            !in: specific DSVU configuration
+         integer(INTD), intent(out), optional:: ierr     !out: error code
+         integer(INTD):: errc,i,n
+
+         errc=0
+         select type(conf)
+         type is(tavp_mng_retirer_conf_t)
+          if(conf%retire_rank.ge.0) then
+           this%retire_rank=conf%retire_rank
+           this%retire_comm=conf%retire_comm
+          else
+           errc=-2
+          endif
+         class default
+          errc=-1
+         end select
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TAVPMNGRetirerConfigure
+!------------------------------------------------
+        subroutine TAVPMNGRetirerStart(this,ierr)
+!Starts and lives this DSVU, calls .shutdown() at the end.
+         implicit none
+         class(tavp_mng_retirer_t), intent(inout):: this !inout: TAVP-MNG retirer DSVU
+         integer(INTD), intent(out), optional:: ierr     !out: error code
+         integer(INTD):: errc,ier
+
+         errc=0
+         if(DEBUG.gt.0) write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Retirer started as DSVU # ",i2)') impir,this%get_id() !debug
+         !`Implement
+         call this%shutdown(ier); if(ier.ne.0.and.errc.eq.0) errc=-1
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TAVPMNGRetirerStart
+!---------------------------------------------------
+        subroutine TAVPMNGRetirerShutdown(this,ierr)
+!Stops DSVU (returns back a clean configured state).
+         implicit none
+         class(tavp_mng_retirer_t), intent(inout):: this !inout: TAVP-MNG retirer DSVU
+         integer(INTD), intent(out), optional:: ierr     !out: error code
+         integer(INTD):: errc
+
+         errc=0
+         if(DEBUG.gt.0) write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Retirer stopped as DSVU # ",i2)') impir,this%get_id() !debug
+         !`Implement
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TAVPMNGRetirerShutdown
+!-----------------------------------------------------------------------
+        subroutine TAVPMNGRetirerEncode(this,ds_instr,instr_packet,ierr)
+!Encodes a tensor instruction into a plain bytecode.
+         implicit none
+         class(tavp_mng_retirer_t), intent(inout):: this  !inout: retirer
+         class(ds_instr_t), intent(in), target:: ds_instr !in: defined tensor instruction
+         class(obj_pack_t), intent(inout):: instr_packet  !out: instruction bytecode packet
+         integer(INTD), intent(out), optional:: ierr      !out: error code
+         integer(INTD):: errc
+
+         if(ds_instr%is_active(errc)) then
+          if(errc.eq.DSVP_SUCCESS) then
+           call ds_instr%encode(instr_packet,errc); if(errc.ne.0) errc=-3
+          else
+           errc=-2
+          endif
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TAVPMNGRetirerEncode
 ![tavp_mng_t]======================================
         subroutine TAVPMNGConfigure(this,conf,ierr)
 !Configures TAVP-MNG DSVP:
@@ -1087,14 +1196,15 @@
          class(dsv_conf_t), intent(in):: conf            !in: specific DSVP configuration
          integer(INTD), intent(out), optional:: ierr     !out: error code
          integer(INTD):: errc,num_units
-#if 0
          type(tavp_mng_decoder_conf_t):: decoder_conf
-         type(tavp_mng_encoder_conf_t):: retirer_conf
+         type(tavp_mng_retirer_conf_t):: retirer_conf
+#if 0
          type(tavp_mng_locator_conf_t):: locator_conf
          type(tavp_mng_decomposer_conf_t):: decomposer_conf
          type(tavp_mng_dispatcher_conf_t):: dispatcher_conf
          type(tavp_mng_replicator_conf_t):: replicator_conf
          type(tavp_mng_collector_conf_t):: collector_conf
+#endif
 
          if(.not.this%is_configured(errc)) then
           if(errc.eq.0) then
@@ -1104,64 +1214,25 @@
              num_units=0 !increment by one after each unit configuration
  !Configure static DSVU:
   !Decoder:
-             decoder_conf=tavp_wrk_decoder_conf_t(conf%source_comm,conf%source_rank)
+             decoder_conf=tavp_mng_decoder_conf_t(conf%source_comm,conf%source_rank)
              call this%decoder%configure(decoder_conf,errc)
              if(errc.eq.0) then
               num_units=num_units+1
   !Retirer:
-              retirer_conf=tavp_wrk_encoder_conf_t(conf%dest_comm,conf%dest_rank)
+              retirer_conf=tavp_mng_retirer_conf_t(conf%retire_comm,conf%retire_rank)
               call this%retirer%configure(retirer_conf,errc)
               if(errc.eq.0) then
                num_units=num_units+1
-  !Resourcer:
-               resourcer_conf=tavp_wrk_resourcer_conf_t(conf%host_ram_size,conf%nvram_size)
-               call this%resourcer%configure(resourcer_conf,errc)
-               if(errc.eq.0) then
-                num_units=num_units+1
-  !Communicator:
-                communicator_conf=tavp_wrk_communicator_conf_t(conf%num_mpi_windows)
-                call this%communicator%configure(communicator_conf,errc)
-                if(errc.eq.0) then
-                 num_units=num_units+1
-  !Dispatcher:
-                 dispatcher_conf=tavp_wrk_dispatcher_conf_t(conf%host_buf_size,conf%gpu_list,conf%amd_list,conf%mic_list)
-                 call this%dispatcher%configure(dispatcher_conf,errc)
-                 if(errc.eq.0) then
-                  num_units=num_units+1
  !Set up global DSVU table (references to all DSVU):
-                  call this%alloc_units(num_units,errc)
-                  if(errc.eq.DSVP_SUCCESS) then
-                   call this%set_unit(this%decoder,errc)
-                   if(errc.eq.DSVP_SUCCESS) then
-                    call this%set_unit(this%retirer,errc)
-                    if(errc.eq.DSVP_SUCCESS) then
-                     call this%set_unit(this%resourcer,errc)
-                     if(errc.eq.DSVP_SUCCESS) then
-                      call this%set_unit(this%communicator,errc)
-                      if(errc.eq.DSVP_SUCCESS) then
-                       call this%set_unit(this%dispatcher,errc)
-                       if(errc.eq.DSVP_SUCCESS) then
+               call this%alloc_units(num_units,errc)
+               if(errc.eq.DSVP_SUCCESS) then
+                call this%set_unit(this%decoder,errc)
+                if(errc.eq.DSVP_SUCCESS) then
+                 call this%set_unit(this%retirer,errc)
+                 if(errc.eq.DSVP_SUCCESS) then
  !Set the DSVP id and description:
-                        call this%set_description(int(conf%tavp_id,INTL),conf%description,errc)
-                        if(errc.ne.DSVP_SUCCESS) errc=-16
-                       else
-                        errc=-15
-                       endif
-                      else
-                       errc=-14
-                      endif
-                     else
-                      errc=-13
-                     endif
-                    else
-                     errc=-12
-                    endif
-                   else
-                    errc=-11
-                   endif
-                  else
-                   errc=-10
-                  endif
+                  call this%set_description(int(conf%tavp_id,INTL),conf%description,errc)
+                  if(errc.ne.DSVP_SUCCESS) errc=-10
                  else
                   errc=-9
                  endif
@@ -1190,7 +1261,6 @@
           errc=-1
          endif
          if(errc.ne.0) call this%destroy()
-#endif
          if(present(ierr)) ierr=errc
          return
         end subroutine TAVPMNGConfigure
