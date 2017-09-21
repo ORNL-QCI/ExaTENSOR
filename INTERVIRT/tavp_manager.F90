@@ -103,13 +103,34 @@
          integer(INTD), public:: retire_comm                        !MPI communicator of the retired bytecode destination process
          integer(INTD), public:: retire_rank                        !destination process rank to which the retired bytecode is going
         end type tavp_mng_retirer_conf_t
+ !TAVP-MNG locator:
+        type, extends(ds_encoder_t), private:: tavp_mng_locator_t
+         integer(INTD), private:: ring_comm                         !MPI communicator of the locating ring (tree level)
+         integer(INTD), private:: ring_send=-1                      !MPI process rank in the locating ring to which instructions are sent
+         integer(INTD), private:: ring_recv=-1                      !MPI process rank in the locating ring from which instructions are received
+         type(pack_env_t), private:: bytecode                       !circulating bytecode
+         contains
+          procedure, public:: configure=>TAVPMNGLocatorConfigure    !configures TAVP-MNG locator
+          procedure, public:: start=>TAVPMNGLocatorStart            !start TAVP-MNG locator
+          procedure, public:: shutdown=>TAVPMNGLocatorShutdown      !shuts down TAVP-MNG locator
+          procedure, public:: encode=>TAVPMNGLocatorEncode          !encodes a DS instruction into the DS bytecode
+          procedure, public:: send=>TAVPMNGLocatorSend              !sends a packet of DS instructions to the next process in the locating ring
+          procedure, public:: receive=>TAVPMNGLocatorReceive        !receives a packet of DS instructions from the previous process in the locating ring
+          procedure, public:: locate=>TAVPMNGLocatorLocate          !scans DS instructions and fills in information for own tensors
+        end type tavp_mng_locator_t
+ !TAVP_MNG locator configuration:
+        type, extends(dsv_conf_t), private:: tavp_mng_locator_conf_t
+         integer(INTD), public:: ring_comm                           !MPI communicator of the locating ring (tree level)
+         integer(INTD), public:: ring_send                           !MPI process rank in the locating ring to which instructions are sent
+         integer(INTD), public:: ring_recv                           !MPI process rank in the locating ring from which instructions are received
+        end type tavp_mng_locator_conf_t
  !TAVP-MNG:
         type, extends(dsvp_t), public:: tavp_mng_t
          type(tens_cache_t), private:: tens_cache                    !tensor argument cache
          type(tavp_mng_decoder_t), private:: decoder                 !DSVU: decodes incoming tensor instructions from the manager
          type(tavp_mng_retirer_t), private:: retirer                 !DSVU: retires processed tensor instructions and sends them back to the manager
-#if 0
          type(tavp_mng_locator_t), private:: locator                 !DSVU: locates metadata for remote tensor arguments
+#if 0
          type(tavp_mng_decomposer_t), private:: decomposer           !DSVU: decomposes tensors and tensor instructions into smaller pieces
          type(tavp_mng_dispatcher_t), private:: dispatcher           !DSVU: dispatches ready to be executed tensor instructions to the lower tree level
          type(tavp_mng_replicator_t), private:: replicator           !DSVU: replicates tensor blocks for communicaton avoiding
@@ -126,6 +147,9 @@
          integer(INTD), public:: source_rank                   !MPI process rank of the bytecode source (higher-level manager)
          integer(INTD), public:: retire_comm                   !MPI communicator of the retired bytecode destination (higher-level manager)
          integer(INTD), public:: retire_rank                   !MPI process rank of the retired bytecode destination (higher-level manager)
+         integer(INTD), public:: ring_comm                     !MPI communicator of the locating ring (tree level)
+         integer(INTD), public:: ring_send_rank                !MPI process rank in the locating ring to which instructions are sent
+         integer(INTD), public:: ring_recv_rank                !MPI process rank in the locating ring from which instructions are received
          integer(INTD), public:: dispatch_comm                 !MPI communicator of the processes to which the bytecode is further dispatched (lower-level)
          integer(INTD), allocatable, public:: dispatch_rank(:) !MPI ranks of the processes to which the bytecode is further dispatched (lower-level)
          integer(INTD), public:: collect_comm                  !MPI communicator of the processes from which the retired bytecode is collected (lower-level)
@@ -164,6 +188,14 @@
         private TAVPMNGRetirerStart
         private TAVPMNGRetirerShutdown
         private TAVPMNGRetirerEncode
+ !tavp_mng_locator_t:
+        private TAVPMNGLocatorConfigure
+        private TAVPMNGLocatorStart
+        private TAVPMNGLocatorShutdown
+        private TAVPMNGLocatorEncode
+        private TAVPMNGLocatorSend
+        private TAVPMNGLocatorReceive
+        private TAVPMNGLocatorLocate
  !tavp_mng_t:
         private TAVPMNGConfigure
 !IMPLEMENTATION:
@@ -1184,6 +1216,121 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TAVPMNGRetirerEncode
+![tavp_mng_locator_t]=====================================
+        subroutine TAVPMNGLocatorConfigure(this,conf,ierr)
+!Configures this DSVU.
+         implicit none
+         class(tavp_mng_locator_t), intent(inout):: this !out: configured DSVU (must not be configured on entrance)
+         class(dsv_conf_t), intent(in):: conf            !in: specific DSVU configuration
+         integer(INTD), intent(out), optional:: ierr     !out: error code
+         integer(INTD):: errc,i,n
+
+         errc=0
+         select type(conf)
+         type is(tavp_mng_locator_conf_t)
+          if(conf%ring_send.ge.0.and.conf%ring_recv.ge.0) then
+           this%ring_comm=conf%ring_comm
+           this%ring_send=conf%ring_send
+           this%ring_recv=conf%ring_recv
+          else
+           errc=-2
+          endif
+         class default
+          errc=-1
+         end select
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TAVPMNGLocatorConfigure
+!------------------------------------------------
+        subroutine TAVPMNGLocatorStart(this,ierr)
+!Starts and lives this DSVU, calls .shutdown() at the end.
+         implicit none
+         class(tavp_mng_locator_t), intent(inout):: this !inout: TAVP-MNG locator DSVU
+         integer(INTD), intent(out), optional:: ierr     !out: error code
+         integer(INTD):: errc,ier
+
+         errc=0
+         if(DEBUG.gt.0) write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Locator started as DSVU # ",i2)') impir,this%get_id() !debug
+         !`Implement
+         call this%shutdown(ier); if(ier.ne.0.and.errc.eq.0) errc=-1
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TAVPMNGLocatorStart
+!---------------------------------------------------
+        subroutine TAVPMNGLocatorShutdown(this,ierr)
+!Stops DSVU (returns back a clean configured state).
+         implicit none
+         class(tavp_mng_locator_t), intent(inout):: this !inout: TAVP-MNG locator DSVU
+         integer(INTD), intent(out), optional:: ierr     !out: error code
+         integer(INTD):: errc
+
+         errc=0
+         if(DEBUG.gt.0) write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Locator stopped as DSVU # ",i2)') impir,this%get_id() !debug
+         !`Implement
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TAVPMNGLocatorShutdown
+!-----------------------------------------------------------------------
+        subroutine TAVPMNGLocatorEncode(this,ds_instr,instr_packet,ierr)
+!Encodes a tensor instruction into a plain bytecode.
+         implicit none
+         class(tavp_mng_locator_t), intent(inout):: this  !inout: TAVP-MNG locator DSVU
+         class(ds_instr_t), intent(in), target:: ds_instr !in: defined tensor instruction
+         class(obj_pack_t), intent(inout):: instr_packet  !out: instruction bytecode packet
+         integer(INTD), intent(out), optional:: ierr      !out: error code
+         integer(INTD):: errc
+
+         if(ds_instr%is_active(errc)) then
+          if(errc.eq.DSVP_SUCCESS) then
+           call ds_instr%encode(instr_packet,errc); if(errc.ne.0) errc=-3
+          else
+           errc=-2
+          endif
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TAVPMNGLocatorEncode
+!-----------------------------------------------
+        subroutine TAVPMNGLocatorSend(this,ierr)
+!Sends the current bytecode packet to the next locating process.
+         implicit none
+         class(tavp_mng_locator_t), intent(inout):: this !inout: TAVP-MNG locator DSVU
+         integer(INTD), intent(out), optional:: ierr     !out: error code
+         integer(INTD):: errc
+
+         errc=0
+         !`Implement
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TAVPMNGLocatorSend
+!--------------------------------------------------
+        subroutine TAVPMNGLocatorReceive(this,ierr)
+!Receives a bytecode packet from the previous locating process.
+         implicit none
+         class(tavp_mng_locator_t), intent(inout):: this !inout: TAVP-MNG locator DSVU
+         integer(INTD), intent(out), optional:: ierr     !out: error code
+         integer(INTD):: errc
+
+         errc=0
+         !`Implement
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TAVPMNGLocatorReceive
+!-------------------------------------------------
+        subroutine TAVPMNGLocatorLocate(this,ierr)
+!Scans DS instructions and fills in information for own tensors.
+         implicit none
+         class(tavp_mng_locator_t), intent(inout):: this !inout: TAVP-MNG locator DSVU
+         integer(INTD), intent(out), optional:: ierr     !out: error code
+         integer(INTD):: errc
+
+         errc=0
+         !`Implement
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TAVPMNGLocatorLocate
 ![tavp_mng_t]======================================
         subroutine TAVPMNGConfigure(this,conf,ierr)
 !Configures TAVP-MNG DSVP:
@@ -1198,8 +1345,8 @@
          integer(INTD):: errc,num_units
          type(tavp_mng_decoder_conf_t):: decoder_conf
          type(tavp_mng_retirer_conf_t):: retirer_conf
-#if 0
          type(tavp_mng_locator_conf_t):: locator_conf
+#if 0
          type(tavp_mng_decomposer_conf_t):: decomposer_conf
          type(tavp_mng_dispatcher_conf_t):: dispatcher_conf
          type(tavp_mng_replicator_conf_t):: replicator_conf
@@ -1223,16 +1370,29 @@
               call this%retirer%configure(retirer_conf,errc)
               if(errc.eq.0) then
                num_units=num_units+1
+  !Locator:
+               locator_conf=tavp_mng_locator_conf_t(conf%ring_comm,conf%ring_send_rank,conf%ring_recv_rank)
+               call this%locator%configure(locator_conf,errc)
+               if(errc.eq.0) then
+                num_units=num_units+1
  !Set up global DSVU table (references to all DSVU):
-               call this%alloc_units(num_units,errc)
-               if(errc.eq.DSVP_SUCCESS) then
-                call this%set_unit(this%decoder,errc)
+                call this%alloc_units(num_units,errc)
                 if(errc.eq.DSVP_SUCCESS) then
-                 call this%set_unit(this%retirer,errc)
+                 call this%set_unit(this%decoder,errc)
                  if(errc.eq.DSVP_SUCCESS) then
+                  call this%set_unit(this%retirer,errc)
+                  if(errc.eq.DSVP_SUCCESS) then
+                   call this%set_unit(this%locator,errc)
+                   if(errc.eq.DSVP_SUCCESS) then
  !Set the DSVP id and description:
-                  call this%set_description(int(conf%tavp_id,INTL),conf%description,errc)
-                  if(errc.ne.DSVP_SUCCESS) errc=-10
+                    call this%set_description(int(conf%tavp_id,INTL),conf%description,errc)
+                    if(errc.ne.DSVP_SUCCESS) errc=-12
+                   else
+                    errc=-11
+                   endif
+                  else
+                   errc=-10
+                  endif
                  else
                   errc=-9
                  endif
