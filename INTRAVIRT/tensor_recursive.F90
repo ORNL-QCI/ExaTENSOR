@@ -701,7 +701,7 @@
 !Builds a hierarchical vector space for testing/debugging.
          implicit none
          integer(INTD):: space_id                                   !out: registered space id
-         character(*), intent(in):: space_name                      !in: vector space name
+         character(*), target, intent(in):: space_name              !in: vector space name
          integer(INTD), intent(out), optional:: ierr                !out: error code
          class(h_space_t), pointer, intent(out), optional:: space_p !out: pointer to the hierarchical vector space
          class(h_space_t), pointer:: hsp
@@ -795,7 +795,7 @@
          implicit none
          integer(INTD):: hspace_id                                   !out: registered id of the hierarchical vector space: [0..max]
          class(hspace_register_t), intent(inout):: this              !inout: register of hierarchical vector spaces
-         character(*), intent(in), target:: space_name               !in: space name
+         character(*), target, intent(in):: space_name               !in: space name
          integer(INTD), intent(out), optional:: ierr                 !out: error code
          class(h_space_t), pointer, intent(out), optional:: hspace_p !out: pointer to the just registered empty hierarchical vector space (for further construction)
          integer(INTD):: errc
