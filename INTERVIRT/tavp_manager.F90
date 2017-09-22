@@ -74,11 +74,11 @@
  !TAVP-MNG decoder:
         type, extends(ds_decoder_t), private:: tavp_mng_decoder_t
          integer(INTD), private:: source_comm                       !bytecode source communicator
-         integer(INTD), private:: source_rank=-1                    !bytecode source process rank
+         integer(INTD), private:: source_rank=-1                    !bytecode source process rank (negative means ANY)
          type(pack_env_t), private:: bytecode                       !incoming bytecode
          contains
           procedure, public:: configure=>TAVPMNGDecoderConfigure    !configures TAVP-MNG decoder
-          procedure, public:: start=>TAVPMNGDecoderStart            !starts TAVP-MNG decoder
+          procedure, public:: start=>TAVPMNGDecoderStart            !starts and lives TAVP-MNG decoder
           procedure, public:: shutdown=>TAVPMNGDecoderShutdown      !shuts down TAVP-MNG decoder
           procedure, public:: decode=>TAVPMNGDecoderDecode          !decodes the DS bytecode into DS instructions
         end type tavp_mng_decoder_t
@@ -94,7 +94,7 @@
          type(pack_env_t), private:: bytecode                       !outgoing bytecode
          contains
           procedure, public:: configure=>TAVPMNGRetirerConfigure    !configures TAVP-MNG retirer
-          procedure, public:: start=>TAVPMNGRetirerStart            !starts TAVP-MNG retirer
+          procedure, public:: start=>TAVPMNGRetirerStart            !starts and lives TAVP-MNG retirer
           procedure, public:: shutdown=>TAVPMNGRetirerShutdown      !shuts down TAVP-MNG retirer
           procedure, public:: encode=>TAVPMNGRetirerEncode          !encodes a DS instruction into the DS bytecode
         end type tavp_mng_retirer_t
@@ -111,36 +111,88 @@
          type(pack_env_t), private:: bytecode                       !circulating bytecode
          contains
           procedure, public:: configure=>TAVPMNGLocatorConfigure    !configures TAVP-MNG locator
-          procedure, public:: start=>TAVPMNGLocatorStart            !start TAVP-MNG locator
+          procedure, public:: start=>TAVPMNGLocatorStart            !starts and lives TAVP-MNG locator
           procedure, public:: shutdown=>TAVPMNGLocatorShutdown      !shuts down TAVP-MNG locator
           procedure, public:: encode=>TAVPMNGLocatorEncode          !encodes a DS instruction into the DS bytecode
           procedure, public:: send=>TAVPMNGLocatorSend              !sends a packet of DS instructions to the next process in the locating ring
-          procedure, public:: receive=>TAVPMNGLocatorReceive        !receives a packet of DS instructions from the previous process in the locating ring
           procedure, public:: locate=>TAVPMNGLocatorLocate          !scans DS instructions and fills in information for own tensors
         end type tavp_mng_locator_t
- !TAVP_MNG locator configuration:
+ !TAVP-MNG locator configuration:
         type, extends(dsv_conf_t), private:: tavp_mng_locator_conf_t
          integer(INTD), public:: ring_comm                           !MPI communicator of the locating ring (tree level)
          integer(INTD), public:: ring_send                           !MPI process rank in the locating ring to which instructions are sent
          integer(INTD), public:: ring_recv                           !MPI process rank in the locating ring from which instructions are received
         end type tavp_mng_locator_conf_t
+ !TAVP-MNG decomposer:
+        type, extends(ds_unit_t), private:: tavp_mng_decomposer_t
+         contains
+          procedure, public:: configure=>TAVPMNGDecomposerConfigure  !configures TAVP-MNG decomposer
+          procedure, public:: start=>TAVPMNGDecomposerStart          !starts and lives TAVP-MNG decomposer
+          procedure, public:: shutdown=>TAVPMNGDecomposerShutdown    !shuts down TAVP-MNG decomposer
+          procedure, public:: decompose=>TAVPMNGDecomposerDecompose  !decomposes a tensor instruction into smaller pieces
+        end type tavp_mng_decomposer_t
+ !TAVP-MNG decomposer configuration:
+        type, extends(dsv_conf_t), private:: tavp_mng_decomposer_conf_t
+        end type tavp_mng_decomposer_conf_t
+ !TAVP-MNG dispatcher:
+        type, extends(ds_encoder_t), private:: tavp_mng_dispatcher_t
+         integer(INTD), private:: dispatch_comm                     !MPI communicator of the processes dispatched to
+         integer(INTD), allocatable, private:: dispatch_rank(:)     !MPI process ranks of the processes dispatched to
+         type(pack_env_t), allocatable, private:: bytecode(:)       !outgoing bytecode for each dispatched rank
+         contains
+          procedure, public:: configure=>TAVPMNGDispatcherConfigure !configures TAVP-MNG dispatcher
+          procedure, public:: start=>TAVPMNGDispatcherStart         !starts and lives TAVP-MNG dispatcher
+          procedure, public:: shutdown=>TAVPMNGDispatcherShutdown   !shuts down TAVP-MNG dispatcher
+          procedure, public:: encode=>TAVPMNGDispatcherEncode       !encodes a DS instruction into the DS bytecode
+          procedure, public:: dispatch=>TAVPMNGDispatcherDispatch   !dispatches a DS instruction to a specific lower-level TAVP
+          procedure, public:: issue=>TAVPMNGDispatcherIssue         !issues (sends) instruction bytecode to a lower-level TAVP
+        end type tavp_mng_dispatcher_t
+! TAVP-MNG dispatcher configuration:
+        type, extends(dsv_conf_t), private:: tavp_mng_dispatcher_conf_t
+         integer(INTD), public:: dispatch_comm                      !MPI communicator of the processes dispatched to
+         integer(INTD), allocatable, public:: dispatch_rank(:)      !MPI process ranks of the processes dispatched to
+        end type tavp_mng_dispatcher_conf_t
+ !TAVP-MNG replicator:
+        type, extends(ds_encoder_t), private:: tavp_mng_replicator_t
+         integer(INTD), private:: repl_comm                         !MPI communicator for tensor replication activity
+         type(pack_env_t), private:: bytecode                       !tensor instruction bytecode
+         contains
+          procedure, public:: configure=>TAVPMNGReplicatorConfigure !configures TAVP-MNG replicator
+          procedure, public:: start=>TAVPMNGReplicatorStart         !starts and lives TAVP-MNG replicator
+          procedure, public:: shutdown=>TAVPMNGReplicatorShutdown   !shuts down TAVP-MNG replicator
+          procedure, public:: encode=>TAVPMNGReplicatorEncode       !encodes a DS instruction into the DS bytecode
+          procedure, public:: replicate=>TAVPMNGReplicatorReplicate !replicates tensors
+        end type tavp_mng_replicator_t
+ !TAVP-MNG replicator configuration:
+        type, extends(dsv_conf_t), private:: tavp_mng_replicator_conf_t
+         integer(INTD), private:: repl_comm                         !MPI communicator for tensor replication activity
+        end type tavp_mng_replicator_conf_t
+ !TAVP-MNG collector:
+        type, extends(ds_unit_t), private:: tavp_mng_collector_t
+         contains
+          procedure, public:: configure=>TAVPMNGCollectorConfigure  !configures TAVP-MNG collector
+          procedure, public:: start=>TAVPMNGCollectorStart          !starts and lives TAVP-MNG collector
+          procedure, public:: shutdown=>TAVPMNGCollectorShutdown    !shutsdown TAVP-MNG collector
+          procedure, public:: collect=>TAVPMNGCollectorCollect      !collects processed tensor instructions from lower-level TAVPs
+        end type tavp_mng_collector_t
+ !TAVP-MNG collector configuration:
+        type, extends(dsv_conf_t), private:: tavp_mng_collector_conf_t
+        end type tavp_mng_collector_conf_t
  !TAVP-MNG:
         type, extends(dsvp_t), public:: tavp_mng_t
-         type(tens_cache_t), private:: tens_cache                    !tensor argument cache
-         type(tavp_mng_decoder_t), private:: udecoder                !DSVU: decodes incoming tensor instructions from the higher-level manager
-         type(tavp_mng_retirer_t), private:: retirer                 !DSVU: retires processed tensor instructions and sends them back to the manager
-         type(tavp_mng_locator_t), private:: locator                 !DSVU: locates metadata for remote tensor arguments
-         type(tavp_mng_decoder_t), private:: ldecoder                !DSVU: decodes tensor instructions from the locating ring
-#if 0
-         type(tavp_mng_decomposer_t), private:: decomposer           !DSVU: decomposes tensors and tensor instructions into smaller pieces
-         type(tavp_mng_dispatcher_t), private:: dispatcher           !DSVU: dispatches ready to be executed tensor instructions to the lower-level TAVPs
-         type(tavp_mng_replicator_t), private:: replicator           !DSVU: replicates tensor blocks for communicaton avoiding
-         type(tavp_mng_decoder_t), private:: rdecoder                !DSVU: decodes tensor create/destroy/copy instructions from the replication workflow
-         type(tavp_mng_collector_t), private:: collector             !DSVU: collects processed bytecode from the lower-level TAVPs and updates tables
-         type(tavp_mng_decoder_t), private:: ddecoder                !DSVU: decodes processed bytecode from the lower-level TAVPs for the collector
-#endif
+         type(tens_cache_t), private:: tens_cache                   !tensor argument cache
+         type(tavp_mng_decoder_t), private:: udecoder               !DSVU: decodes incoming tensor instructions from the higher-level manager
+         type(tavp_mng_retirer_t), private:: retirer                !DSVU: retires processed tensor instructions and sends them back to the manager
+         type(tavp_mng_locator_t), private:: locator                !DSVU: locates metadata for remote tensor arguments
+         type(tavp_mng_decoder_t), private:: ldecoder               !DSVU: decodes tensor instructions from the locating ring
+         type(tavp_mng_decomposer_t), private:: decomposer          !DSVU: decomposes tensors and tensor instructions into smaller pieces
+         type(tavp_mng_dispatcher_t), private:: dispatcher          !DSVU: dispatches ready to be executed tensor instructions to the lower-level TAVPs
+         type(tavp_mng_replicator_t), private:: replicator          !DSVU: replicates tensor blocks for communicaton avoiding
+         type(tavp_mng_decoder_t), private:: rdecoder               !DSVU: decodes tensor create/destroy/copy instructions from the replication workflow
+         type(tavp_mng_decoder_t), private:: cdecoder               !DSVU: decodes processed bytecode from the lower-level TAVPs for the collector
+         type(tavp_mng_collector_t), private:: collector            !DSVU: collects processed tensor instructions from the lower-level TAVPs and updates argument cache
          contains
-          procedure, public:: configure=>TAVPMNGConfigure            !configures the TAVP-MNG DSVP
+          procedure, public:: configure=>TAVPMNGConfigure           !configures the TAVP-MNG DSVP
         end type tavp_mng_t
  !TAVP-MNG configuration:
         type, extends(dsv_conf_t), public:: tavp_mng_conf_t
@@ -156,7 +208,6 @@
          integer(INTD), public:: dispatch_comm                 !MPI communicator of the processes to which the bytecode is further dispatched (lower-level)
          integer(INTD), allocatable, public:: dispatch_rank(:) !MPI ranks of the processes to which the bytecode is further dispatched (lower-level)
          integer(INTD), public:: collect_comm                  !MPI communicator of the processes from which the retired bytecode is collected (lower-level)
-         integer(INTD), allocatable, public:: collect_rank(:)  !MPI communicator of the processes from which the retired bytecode is collected (lower-level)
         end type tavp_mng_conf_t
 !VISIBILITY:
  !tens_entry_mng_t:
@@ -197,8 +248,30 @@
         private TAVPMNGLocatorShutdown
         private TAVPMNGLocatorEncode
         private TAVPMNGLocatorSend
-        private TAVPMNGLocatorReceive
         private TAVPMNGLocatorLocate
+ !tavp_mng_decomposer_t:
+        private TAVPMNGDecomposerConfigure
+        private TAVPMNGDecomposerStart
+        private TAVPMNGDecomposerShutdown
+        private TAVPMNGDecomposerDecompose
+ !tavp_mng_dispatcher_t:
+        private TAVPMNGDispatcherConfigure
+        private TAVPMNGDispatcherStart
+        private TAVPMNGDispatcherShutdown
+        private TAVPMNGDispatcherEncode
+        private TAVPMNGDispatcherDispatch
+        private TAVPMNGDispatcherIssue
+ !tavp_mng_replicator_t:
+        private TAVPMNGReplicatorConfigure
+        private TAVPMNGReplicatorStart
+        private TAVPMNGReplicatorShutdown
+        private TAVPMNGReplicatorEncode
+        private TAVPMNGReplicatorReplicate
+ !tavp_mng_collector_t:
+        private TAVPMNGCollectorConfigure
+        private TAVPMNGCollectorStart
+        private TAVPMNGCollectorShutdown
+        private TAVPMNGCollectorCollect
  !tavp_mng_t:
         private TAVPMNGConfigure
 !IMPLEMENTATION:
@@ -859,12 +932,8 @@
          errc=0
          select type(conf)
          type is(tavp_mng_decoder_conf_t)
-          if(conf%source_rank.ge.0) then
-           this%source_rank=conf%source_rank
-           this%source_comm=conf%source_comm
-          else
-           errc=-2
-          endif
+          this%source_comm=conf%source_comm
+          this%source_rank=conf%source_rank
          class default
           errc=-1
          end select
@@ -1172,7 +1241,7 @@
          class(tavp_mng_retirer_t), intent(inout):: this !out: configured DSVU (must not be configured on entrance)
          class(dsv_conf_t), intent(in):: conf            !in: specific DSVU configuration
          integer(INTD), intent(out), optional:: ierr     !out: error code
-         integer(INTD):: errc,i,n
+         integer(INTD):: errc
 
          errc=0
          select type(conf)
@@ -1230,7 +1299,7 @@
 
          if(ds_instr%is_active(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
-           call ds_instr%encode(instr_packet,errc); if(errc.ne.0) errc=-3
+           call ds_instr%encode(instr_packet,errc); if(errc.ne.PACK_SUCCESS) errc=-3
           else
            errc=-2
           endif
@@ -1247,7 +1316,7 @@
          class(tavp_mng_locator_t), intent(inout):: this !out: configured DSVU (must not be configured on entrance)
          class(dsv_conf_t), intent(in):: conf            !in: specific DSVU configuration
          integer(INTD), intent(out), optional:: ierr     !out: error code
-         integer(INTD):: errc,i,n
+         integer(INTD):: errc
 
          errc=0
          select type(conf)
@@ -1306,7 +1375,7 @@
 
          if(ds_instr%is_active(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
-           call ds_instr%encode(instr_packet,errc); if(errc.ne.0) errc=-3
+           call ds_instr%encode(instr_packet,errc); if(errc.ne.PACK_SUCCESS) errc=-3
           else
            errc=-2
           endif
@@ -1329,19 +1398,6 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TAVPMNGLocatorSend
-!--------------------------------------------------
-        subroutine TAVPMNGLocatorReceive(this,ierr)
-!Receives a bytecode packet from the previous locating process.
-         implicit none
-         class(tavp_mng_locator_t), intent(inout):: this !inout: TAVP-MNG locator DSVU
-         integer(INTD), intent(out), optional:: ierr     !out: error code
-         integer(INTD):: errc
-
-         errc=0
-         !`Implement
-         if(present(ierr)) ierr=errc
-         return
-        end subroutine TAVPMNGLocatorReceive
 !-------------------------------------------------
         subroutine TAVPMNGLocatorLocate(this,ierr)
 !Scans DS instructions and fills in information for own tensors.
@@ -1355,6 +1411,345 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TAVPMNGLocatorLocate
+![tavp_mng_decomposer_t]=====================================
+        subroutine TAVPMNGDecomposerConfigure(this,conf,ierr)
+!Configures this DSVU.
+         implicit none
+         class(tavp_mng_decomposer_t), intent(inout):: this !out: configured DSVU (must not be configured on entrance)
+         class(dsv_conf_t), intent(in):: conf               !in: specific DSVU configuration
+         integer(INTD), intent(out), optional:: ierr        !out: error code
+         integer(INTD):: errc
+
+         errc=0
+         select type(conf)
+         type is(tavp_mng_decomposer_conf_t)
+         class default
+          errc=-1
+         end select
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TAVPMNGDecomposerConfigure
+!---------------------------------------------------
+        subroutine TAVPMNGDecomposerStart(this,ierr)
+!Starts and lives this DSVU, calls .shutdown() at the end.
+         implicit none
+         class(tavp_mng_decomposer_t), intent(inout):: this !inout: TAVP-MNG decomposer DSVU
+         integer(INTD), intent(out), optional:: ierr        !out: error code
+         integer(INTD):: errc,ier
+
+         errc=0
+         if(DEBUG.gt.0) write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decomposer started as DSVU # ",i2)') impir,this%get_id() !debug
+         !`Implement
+         call this%shutdown(ier); if(ier.ne.0.and.errc.eq.0) errc=-1
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TAVPMNGDecomposerStart
+!------------------------------------------------------
+        subroutine TAVPMNGDecomposerShutdown(this,ierr)
+!Stops DSVU (returns back a clean configured state).
+         implicit none
+         class(tavp_mng_decomposer_t), intent(inout):: this !inout: TAVP-MNG decomposer DSVU
+         integer(INTD), intent(out), optional:: ierr        !out: error code
+         integer(INTD):: errc
+
+         errc=0
+         if(DEBUG.gt.0) write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decomposer stopped as DSVU # ",i2)') impir,this%get_id() !debug
+         !`Implement
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TAVPMNGDecomposerShutdown
+!-------------------------------------------------------
+        subroutine TAVPMNGDecomposerDecompose(this,ierr)
+!Scans DS instructions and fills in information for own tensors.
+         implicit none
+         class(tavp_mng_decomposer_t), intent(inout):: this !inout: TAVP-MNG decomposer DSVU
+         integer(INTD), intent(out), optional:: ierr        !out: error code
+         integer(INTD):: errc
+
+         errc=0
+         !`Implement
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TAVPMNGDecomposerDecompose
+![tavp_mng_dispatcher_t]=====================================
+        subroutine TAVPMNGDispatcherConfigure(this,conf,ierr)
+!Configures this DSVU.
+         implicit none
+         class(tavp_mng_dispatcher_t), intent(inout):: this !out: configured DSVU (must not be configured on entrance)
+         class(dsv_conf_t), intent(in):: conf               !in: specific DSVU configuration
+         integer(INTD), intent(out), optional:: ierr        !out: error code
+         integer(INTD):: errc,i
+
+         errc=0
+         select type(conf)
+         type is(tavp_mng_dispatcher_conf_t)
+          if(allocated(conf%dispatch_rank)) then
+           this%dispatch_comm=conf%dispatch_comm
+           this%dispatch_rank=conf%dispatch_rank
+           if(size(this%dispatch_rank).gt.0) then
+            do i=lbound(this%dispatch_rank,1),ubound(this%dispatch_rank,1)
+             if(this%dispatch_rank(i).lt.0) then; errc=-4; exit; endif
+            enddo
+            if(errc.ne.0) deallocate(this%dispatch_rank)
+           else
+            errc=-3
+           endif
+          else
+           errc=-2
+          endif
+         class default
+          errc=-1
+         end select
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TAVPMNGDispatcherConfigure
+!---------------------------------------------------
+        subroutine TAVPMNGDispatcherStart(this,ierr)
+!Starts and lives this DSVU, calls .shutdown() at the end.
+         implicit none
+         class(tavp_mng_dispatcher_t), intent(inout):: this !inout: TAVP-MNG dispatcher DSVU
+         integer(INTD), intent(out), optional:: ierr        !out: error code
+         integer(INTD):: errc,ier
+
+         errc=0
+         if(DEBUG.gt.0) write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Dispatcher started as DSVU # ",i2)') impir,this%get_id() !debug
+         !`Implement
+         call this%shutdown(ier); if(ier.ne.0.and.errc.eq.0) errc=-1
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TAVPMNGDispatcherStart
+!------------------------------------------------------
+        subroutine TAVPMNGDispatcherShutdown(this,ierr)
+!Stops DSVU (returns back a clean configured state).
+         implicit none
+         class(tavp_mng_dispatcher_t), intent(inout):: this !inout: TAVP-MNG dispacher DSVU
+         integer(INTD), intent(out), optional:: ierr        !out: error code
+         integer(INTD):: errc
+
+         errc=0
+         if(DEBUG.gt.0) write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Dispatcher stopped as DSVU # ",i2)') impir,this%get_id() !debug
+         !`Implement
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TAVPMNGDispatcherShutdown
+!--------------------------------------------------------------------------
+        subroutine TAVPMNGDispatcherEncode(this,ds_instr,instr_packet,ierr)
+!Encodes a tensor instruction into a plain bytecode.
+         implicit none
+         class(tavp_mng_dispatcher_t), intent(inout):: this  !inout: dispatcher
+         class(ds_instr_t), target, intent(in):: ds_instr    !in: defined tensor instruction
+         class(obj_pack_t), intent(inout):: instr_packet     !out: instruction bytecode packet
+         integer(INTD), intent(out), optional:: ierr         !out: error code
+         integer(INTD):: errc
+
+         if(ds_instr%is_active(errc)) then
+          if(errc.eq.DSVP_SUCCESS) then
+           call ds_instr%encode(instr_packet,errc); if(errc.ne.PACK_SUCCESS) errc=-3
+          else
+           errc=-2
+          endif
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TAVPMNGDispatcherEncode
+!-------------------------------------------------------------------------
+        subroutine TAVPMNGDispatcherDispatch(this,tens_instr,channel,ierr)
+!Dispatches a tensor instruction to a specific lower-level TAVP
+!and encodes it into its bytecode container.
+         implicit none
+         class(tavp_mng_dispatcher_t), intent(inout):: this   !inout: dispatcher
+         class(tens_instr_t), target, intent(in):: tens_instr !in: defined tensor instruction
+         integer(INTD), intent(in):: channel                  !in: offset in this.bytecode(:)
+         integer(INTD), intent(out), optional:: ierr          !out: error code
+         integer(INTD):: errc
+         type(obj_pack_t):: instr_packet
+
+         errc=0
+         if(channel.ge.lbound(this%dispatch_rank,1).and.channel.le.ubound(this%dispatch_rank,1)) then
+          call this%bytecode(channel)%acquire_packet(instr_packet,errc,preclean=.TRUE.)
+          if(errc.eq.PACK_SUCCESS) then
+           call this%encode(tens_instr,instr_packet,errc)
+           if(errc.eq.0) then
+            call this%bytecode(channel)%seal_packet(errc); if(errc.ne.PACK_SUCCESS) errc=-4
+           else
+            errc=-3
+           endif
+          else
+           errc=-2
+          endif
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TAVPMNGDispatcherDispatch
+!-----------------------------------------------------------
+        subroutine TAVPMNGDispatcherIssue(this,channel,ierr)
+!Issues the encoded bytecode to a specific dispatch channel.
+         implicit none
+         class(tavp_mng_dispatcher_t), intent(inout):: this !inout: dispatcher
+         integer(INTD), intent(in):: channel                !in: offset in this.bytecode(:)
+         integer(INTD), intent(out), optional:: ierr        !out: error code
+         integer(INTD):: errc
+
+         errc=0
+         if(channel.ge.lbound(this%dispatch_rank,1).and.channel.le.ubound(this%dispatch_rank,1)) then
+          !`Implement: Send the current bytecode(channel) to the recepient
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TAVPMNGDispatcherIssue
+![tavp_mng_replicator_t]=====================================
+        subroutine TAVPMNGReplicatorConfigure(this,conf,ierr)
+!Configures this DSVU.
+         implicit none
+         class(tavp_mng_replicator_t), intent(inout):: this !out: configured DSVU (must not be configured on entrance)
+         class(dsv_conf_t), intent(in):: conf               !in: specific DSVU configuration
+         integer(INTD), intent(out), optional:: ierr        !out: error code
+         integer(INTD):: errc
+
+         errc=0
+         select type(conf)
+         type is(tavp_mng_replicator_conf_t)
+          this%repl_comm=conf%repl_comm
+         class default
+          errc=-1
+         end select
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TAVPMNGReplicatorConfigure
+!---------------------------------------------------
+        subroutine TAVPMNGReplicatorStart(this,ierr)
+!Starts and lives this DSVU, calls .shutdown() at the end.
+         implicit none
+         class(tavp_mng_replicator_t), intent(inout):: this !inout: TAVP-MNG replicator DSVU
+         integer(INTD), intent(out), optional:: ierr        !out: error code
+         integer(INTD):: errc,ier
+
+         errc=0
+         if(DEBUG.gt.0) write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Replicator started as DSVU # ",i2)') impir,this%get_id() !debug
+         !`Implement
+         call this%shutdown(ier); if(ier.ne.0.and.errc.eq.0) errc=-1
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TAVPMNGReplicatorStart
+!------------------------------------------------------
+        subroutine TAVPMNGReplicatorShutdown(this,ierr)
+!Stops DSVU (returns back a clean configured state).
+         implicit none
+         class(tavp_mng_replicator_t), intent(inout):: this !inout: TAVP-MNG replicator DSVU
+         integer(INTD), intent(out), optional:: ierr        !out: error code
+         integer(INTD):: errc
+
+         errc=0
+         if(DEBUG.gt.0) write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Replicator stopped as DSVU # ",i2)') impir,this%get_id() !debug
+         !`Implement
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TAVPMNGReplicatorShutdown
+!--------------------------------------------------------------------------
+        subroutine TAVPMNGReplicatorEncode(this,ds_instr,instr_packet,ierr)
+!Encodes a tensor instruction into a plain bytecode.
+         implicit none
+         class(tavp_mng_replicator_t), intent(inout):: this  !inout: replicator DSVU
+         class(ds_instr_t), intent(in), target:: ds_instr    !in: defined tensor instruction
+         class(obj_pack_t), intent(inout):: instr_packet     !out: instruction bytecode packet
+         integer(INTD), intent(out), optional:: ierr         !out: error code
+         integer(INTD):: errc
+
+         if(ds_instr%is_active(errc)) then
+          if(errc.eq.DSVP_SUCCESS) then
+           call ds_instr%encode(instr_packet,errc); if(errc.ne.PACK_SUCCESS) errc=-3
+          else
+           errc=-2
+          endif
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TAVPMNGReplicatorEncode
+!--------------------------------------------------------------
+        subroutine TAVPMNGReplicatorReplicate(this,tensor,ierr)
+!Replicates tensors.
+         implicit none
+         class(tavp_mng_replicator_t), intent(inout):: this !inout: replicator DSVU
+         class(tens_rcrsv_t), intent(in):: tensor           !in: tensor
+         integer(INTD), intent(out), optional:: ierr        !out: error code
+         integer(INTD):: errc
+
+         if(tensor%is_set(errc)) then
+          !`Implement
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TAVPMNGReplicatorReplicate
+![tavp_mng_collector_t]=====================================
+        subroutine TAVPMNGCollectorConfigure(this,conf,ierr)
+!Configures this DSVU.
+         implicit none
+         class(tavp_mng_collector_t), intent(inout):: this !out: configured DSVU (must not be configured on entrance)
+         class(dsv_conf_t), intent(in):: conf              !in: specific DSVU configuration
+         integer(INTD), intent(out), optional:: ierr       !out: error code
+         integer(INTD):: errc
+
+         errc=0
+         select type(conf)
+         type is(tavp_mng_collector_conf_t)
+         class default
+          errc=-1
+         end select
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TAVPMNGCollectorConfigure
+!--------------------------------------------------
+        subroutine TAVPMNGCollectorStart(this,ierr)
+!Starts and lives this DSVU, calls .shutdown() at the end.
+         implicit none
+         class(tavp_mng_collector_t), intent(inout):: this !inout: TAVP-MNG collector DSVU
+         integer(INTD), intent(out), optional:: ierr       !out: error code
+         integer(INTD):: errc,ier
+
+         errc=0
+         if(DEBUG.gt.0) write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Collector started as DSVU # ",i2)') impir,this%get_id() !debug
+         !`Implement
+         call this%shutdown(ier); if(ier.ne.0.and.errc.eq.0) errc=-1
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TAVPMNGCollectorStart
+!-----------------------------------------------------
+        subroutine TAVPMNGCollectorShutdown(this,ierr)
+!Stops DSVU (returns back a clean configured state).
+         implicit none
+         class(tavp_mng_collector_t), intent(inout):: this !inout: TAVP-MNG collector DSVU
+         integer(INTD), intent(out), optional:: ierr       !out: error code
+         integer(INTD):: errc
+
+         errc=0
+         if(DEBUG.gt.0) write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Collector stopped as DSVU # ",i2)') impir,this%get_id() !debug
+         !`Implement
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TAVPMNGCollectorShutdown
+!----------------------------------------------------
+        subroutine TAVPMNGCollectorCollect(this,ierr)
+!Collects processed tensor instructions from lower-level TAVPs.
+         implicit none
+         class(tavp_mng_collector_t), intent(inout):: this !inout: TAVP-MNG collector DSVU
+         integer(INTD), intent(out), optional:: ierr       !out: error code
+         integer(INTD):: errc
+
+         errc=0
+         !`Implement
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TAVPMNGCollectorCollect
 ![tavp_mng_t]======================================
         subroutine TAVPMNGConfigure(this,conf,ierr)
 !Configures TAVP-MNG DSVP:
@@ -1370,12 +1765,10 @@
          type(tavp_mng_decoder_conf_t):: decoder_conf
          type(tavp_mng_retirer_conf_t):: retirer_conf
          type(tavp_mng_locator_conf_t):: locator_conf
-#if 0
          type(tavp_mng_decomposer_conf_t):: decomposer_conf
          type(tavp_mng_dispatcher_conf_t):: dispatcher_conf
          type(tavp_mng_replicator_conf_t):: replicator_conf
          type(tavp_mng_collector_conf_t):: collector_conf
-#endif
 
          if(.not.this%is_configured(errc)) then
           if(errc.eq.0) then
@@ -1404,20 +1797,98 @@
                 call this%ldecoder%configure(decoder_conf,errc)
                 if(errc.eq.0) then
                  num_units=num_units+1
+  !Decomposer:
+                 decomposer_conf=tavp_mng_decomposer_conf_t()
+                 call this%decomposer%configure(decomposer_conf,errc)
+                 if(errc.eq.0) then
+                  num_units=num_units+1
+  !Dispatcher:
+                  dispatcher_conf=tavp_mng_dispatcher_conf_t(conf%dispatch_comm,conf%dispatch_rank)
+                  call this%dispatcher%configure(dispatcher_conf,errc)
+                  if(errc.eq.0) then
+                   num_units=num_units+1
+  !Replicator:
+                   replicator_conf=tavp_mng_replicator_conf_t(role_comm)
+                   call this%replicator%configure(replicator_conf,errc)
+                   if(errc.eq.0) then
+                    num_units=num_units+1
+  !Replicating-decoder:
+                    decoder_conf=tavp_mng_decoder_conf_t(role_comm,-1)
+                    call this%rdecoder%configure(decoder_conf,errc)
+                    if(errc.eq.0) then
+                     num_units=num_units+1
+  !Collecting-decoder:
+                     decoder_conf=tavp_mng_decoder_conf_t(conf%collect_comm,-1)
+                     call this%cdecoder%configure(decoder_conf,errc)
+                     if(errc.eq.0) then
+                      num_units=num_units+1
+  !Collector:
+                      collector_conf=tavp_mng_collector_conf_t()
+                      call this%collector%configure(collector_conf,errc)
+                      if(errc.eq.0) then
+                       num_units=num_units+1
  !Set up global DSVU table (references to all DSVU):
-                 call this%alloc_units(num_units,errc)
-                 if(errc.eq.DSVP_SUCCESS) then
-                  call this%set_unit(this%udecoder,errc)
-                  if(errc.eq.DSVP_SUCCESS) then
-                   call this%set_unit(this%retirer,errc)
-                   if(errc.eq.DSVP_SUCCESS) then
-                    call this%set_unit(this%locator,errc)
-                    if(errc.eq.DSVP_SUCCESS) then
-                     call this%set_unit(this%ldecoder,errc)
-                     if(errc.eq.DSVP_SUCCESS) then
+                       call this%alloc_units(num_units,errc)
+                       if(errc.eq.DSVP_SUCCESS) then
+                        call this%set_unit(this%udecoder,errc)
+                        if(errc.eq.DSVP_SUCCESS) then
+                         call this%set_unit(this%retirer,errc)
+                         if(errc.eq.DSVP_SUCCESS) then
+                          call this%set_unit(this%locator,errc)
+                          if(errc.eq.DSVP_SUCCESS) then
+                           call this%set_unit(this%ldecoder,errc)
+                           if(errc.eq.DSVP_SUCCESS) then
+                            call this%set_unit(this%decomposer,errc)
+                            if(errc.eq.DSVP_SUCCESS) then
+                             call this%set_unit(this%dispatcher,errc)
+                             if(errc.eq.DSVP_SUCCESS) then
+                              call this%set_unit(this%replicator,errc)
+                              if(errc.eq.DSVP_SUCCESS) then
+                               call this%set_unit(this%rdecoder,errc)
+                               if(errc.eq.DSVP_SUCCESS) then
+                                call this%set_unit(this%cdecoder,errc)
+                                if(errc.eq.DSVP_SUCCESS) then
+                                 call this%set_unit(this%collector,errc)
+                                 if(errc.eq.DSVP_SUCCESS) then
  !Set the DSVP id and description:
-                      call this%set_description(int(conf%tavp_id,INTL),conf%description,errc)
-                      if(errc.ne.DSVP_SUCCESS) errc=-14
+                                  call this%set_description(int(conf%tavp_id,INTL),conf%description,errc)
+                                  if(errc.ne.DSVP_SUCCESS) errc=-26
+                                 else
+                                  errc=-25
+                                 endif
+                                else
+                                 errc=-24
+                                endif
+                               else
+                                errc=-23
+                               endif
+                              else
+                               errc=-22
+                              endif
+                             else
+                              errc=-21
+                             endif
+                            else
+                             errc=-20
+                            endif
+                           else
+                            errc=-19
+                           endif
+                          else
+                           errc=-18
+                          endif
+                         else
+                          errc=-17
+                         endif
+                        else
+                         errc=-16
+                        endif
+                       else
+                        errc=-15
+                       endif
+                      else
+                       errc=-14
+                      endif
                      else
                       errc=-13
                      endif

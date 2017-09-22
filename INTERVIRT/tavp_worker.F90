@@ -2165,7 +2165,7 @@
 
          if(ds_instr%is_active(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
-           call ds_instr%encode(instr_packet,errc); if(errc.ne.0) errc=-3
+           call ds_instr%encode(instr_packet,errc); if(errc.ne.PACK_SUCCESS) errc=-3
           else
            errc=-2
           endif
