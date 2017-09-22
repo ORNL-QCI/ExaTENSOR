@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/09/21
+!REVISION: 2017/09/22
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -1465,8 +1465,8 @@
          if(errc.ne.0) call quit(errc,'#FATAL(TAVP-WRK:tens_oprnd_dtor): Destructor failed!')
          return
         end subroutine tens_oprnd_dtor
-![tens_instr_t]============================================
-        subroutine TensInstrCtor(this,op_code,ierr,op_spec)
+![tens_instr_t]================================================
+        subroutine TensInstrCtor(this,op_code,ierr,op_spec,iid)
 !Constructs a tensor instruction from a given tensor operation.
 !The tensor instruction is a realization of a given tensor operation
 !for a specific TAVP kind.
@@ -1475,6 +1475,7 @@
          integer(INTD), intent(in):: op_code              !in: instruction code (see top of this module)
          integer(INTD), intent(out), optional:: ierr      !out: error code
          class(*), intent(in), target, optional:: op_spec !in: formal operation specification
+         integer(INTL), intent(in), optional:: iid        !in: instruction id (>=0)
          integer(INTD):: errc,ier
 
          if(this%is_empty(errc)) then
@@ -1484,20 +1485,21 @@
            case(TAVP_INSTR_NOOP)
            case(TAVP_INSTR_STOP)
            case(TAVP_INSTR_CREATE,TAVP_INSTR_DESTROY)
-            call construct_instr_create_destroy(errc); if(errc.ne.0) errc=-6
+            call construct_instr_create_destroy(errc); if(errc.ne.0) errc=-7
            case(TAVP_INSTR_CONTRACT)
-            call construct_instr_contract(errc); if(errc.ne.0) errc=-5
+            call construct_instr_contract(errc); if(errc.ne.0) errc=-6
            case default
-            errc=-4 !invalid instruction opcode (or not implemented)
+            errc=-5 !invalid instruction opcode (or not implemented)
            end select
 !Activate the instruction:
            if(errc.eq.0) then
-            call this%activate(op_code,errc); if(errc.ne.0) errc=-3
+            if(present(iid)) then
+             call this%activate(op_code,errc,iid=iid); if(errc.ne.0) errc=-4
+            else
+             call this%activate(op_code,errc); if(errc.ne.0) errc=-3
+            endif
            endif
-           if(errc.ne.0) then
-            call this%set_status(DS_INSTR_RETIRED,ier,TAVP_ERR_GEN_FAILURE)
-            call tens_instr_dtor(this) !`Bad: dtor() expects type(tens_instr_t), not class
-           endif
+           if(errc.ne.0) call this%set_status(DS_INSTR_RETIRED,ier,TAVP_ERR_GEN_FAILURE)
           else
            errc=-2
           endif
@@ -1617,40 +1619,52 @@
 !---------------------------------------------------------
         subroutine TensInstrEncode(this,instr_packet,ierr)
 !Encodes a tensor instruction into the bytecode packet:
+! 0. Instruction id;
 ! 1. Instruction code;
 ! 2. Instruction status;
 ! 3. Instruction error code;
-! 4. Instruction control field;
-! 5. Instruction operands.
+! 4. Instruction control field (optional);
+! 5. Instruction operands (optional).
          implicit none
          class(tens_instr_t), intent(in):: this          !in: defined tensor instruction
          class(obj_pack_t), intent(inout):: instr_packet !out: instruction bytecode packet
          integer(INTD), intent(out), optional:: ierr     !out: error code
          integer(INTD):: errc,op_code,stat,err_code
+         integer(INTL):: iid
 
-!Pack the instruction attributes (opcode,status,error):
+!Pack the instruction attributes (id,opcode,status,error):
          if(.not.this%is_empty(errc)) then
-          op_code=this%get_code(errc)
+          iid=this%get_id(errc)
           if(errc.eq.DSVP_SUCCESS) then
-           call pack_builtin(instr_packet,op_code,errc)
+           call pack_builtin(instr_packet,iid,errc)
            if(errc.eq.0) then
-            stat=this%get_status(errc,err_code)
+            op_code=this%get_code(errc)
             if(errc.eq.DSVP_SUCCESS) then
-             call pack_builtin(instr_packet,stat,errc)
+             call pack_builtin(instr_packet,op_code,errc)
              if(errc.eq.0) then
-              call pack_builtin(instr_packet,err_code,errc)
-              if(errc.eq.0) then
+              stat=this%get_status(errc,err_code)
+              if(errc.eq.DSVP_SUCCESS) then
+               call pack_builtin(instr_packet,stat,errc)
+               if(errc.eq.0) then
+                call pack_builtin(instr_packet,err_code,errc)
+                if(errc.eq.0) then
 !Pack the instruction body:
-               select case(op_code)
-               case(TAVP_INSTR_NOOP)
-               case(TAVP_INSTR_STOP)
-               case(TAVP_INSTR_CREATE,TAVP_INSTR_DESTROY)
-                call encode_instr_create_destroy(errc); if(errc.ne.0) errc=-9
-               case(TAVP_INSTR_CONTRACT)
-                call encode_instr_contract(errc); if(errc.ne.0) errc=-8
-               case default
-                errc=-7 !invalid instruction opcode (or not implemented)
-               end select
+                 select case(op_code)
+                 case(TAVP_INSTR_NOOP)
+                 case(TAVP_INSTR_STOP)
+                 case(TAVP_INSTR_CREATE,TAVP_INSTR_DESTROY)
+                  call encode_instr_create_destroy(errc); if(errc.ne.0) errc=-11
+                 case(TAVP_INSTR_CONTRACT)
+                  call encode_instr_contract(errc); if(errc.ne.0) errc=-10
+                 case default
+                  errc=-9 !invalid instruction opcode (or not implemented)
+                 end select
+                else
+                 errc=-8
+                endif
+               else
+                errc=-7
+               endif
               else
                errc=-6
               endif
@@ -1676,7 +1690,7 @@
 
          subroutine encode_instr_create_destroy(jerr)
           !CREATE/DESTROY a tensor:
-          !Packet format: {opcode|status|error|tensor}
+          !Packet format: {id|opcode|status|error|tensor}
           integer(INTD), intent(out):: jerr
           class(ds_oprnd_t), pointer:: oprnd
           class(tens_rcrsv_t), pointer:: tensor
@@ -1710,7 +1724,7 @@
 
          subroutine encode_instr_contract(jerr)
           !CONTRACT two tensors: tensor0+=tensor1*tensor2*scalar:
-          !Packed format: {opcode|status|error|ctrl_tens_contr_t|tensor0,tensor1,tensor2}
+          !Packed format: {id|opcode|status|error|ctrl_tens_contr_t|tensor0,tensor1,tensor2}
           integer(INTD), intent(out):: jerr
           integer(INTD):: jj
           class(ds_oprnd_t), pointer:: oprnd
@@ -1828,6 +1842,7 @@
          integer(INTD):: errc,op_code,stat,err_code
          class(dsvp_t), pointer:: dsvp
          class(tens_cache_t), pointer:: arg_cache
+         integer(INTL):: iid
 
          if(ds_instr%is_empty(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
@@ -1835,32 +1850,37 @@
            arg_cache=>NULL(); dsvp=>this%get_dsvp() !host DSVP
            select type(dsvp); class is(tavp_wrk_t); arg_cache=>dsvp%tens_cache; end select
            if(associated(arg_cache)) then
-!Extract the instruction attributes (opcode,status,error):
-            call unpack_builtin(instr_packet,op_code,errc)
+!Extract the instruction attributes (id,opcode,status,error):
+            call unpack_builtin(instr_packet,iid,errc)
             if(errc.eq.0) then
-             call unpack_builtin(instr_packet,stat,errc)
+             call unpack_builtin(instr_packet,op_code,errc)
              if(errc.eq.0) then
-              call unpack_builtin(instr_packet,err_code,errc)
-!Extract the instruction body:
+              call unpack_builtin(instr_packet,stat,errc)
               if(errc.eq.0) then
-               select case(op_code)
-               case(TAVP_INSTR_NOOP)
-               case(TAVP_INSTR_STOP)
-               case(TAVP_INSTR_CREATE,TAVP_INSTR_DESTROY)
-                call decode_instr_create_destroy(errc); if(errc.ne.0) errc=-10
-               case(TAVP_INSTR_CONTRACT)
-                call decode_instr_contract(errc); if(errc.ne.0) errc=-9
-               case default
-                call ds_instr%set_status(DS_INSTR_RETIRED,errc,TAVP_ERR_GEN_FAILURE)
-                errc=-8 !unknown instruction opcode (or not implemented)
-               end select
-!Activate the instruction:
+               call unpack_builtin(instr_packet,err_code,errc)
+!Extract the instruction body:
                if(errc.eq.0) then
-                call ds_instr%activate(op_code,errc,stat,err_code)
-                if(errc.ne.DSVP_SUCCESS) then
+                select case(op_code)
+                case(TAVP_INSTR_NOOP)
+                case(TAVP_INSTR_STOP)
+                case(TAVP_INSTR_CREATE,TAVP_INSTR_DESTROY)
+                 call decode_instr_create_destroy(errc); if(errc.ne.0) errc=-11
+                case(TAVP_INSTR_CONTRACT)
+                 call decode_instr_contract(errc); if(errc.ne.0) errc=-10
+                case default
                  call ds_instr%set_status(DS_INSTR_RETIRED,errc,TAVP_ERR_GEN_FAILURE)
-                 errc=-7
+                 errc=-9 !unknown instruction opcode (or not implemented)
+                end select
+!Activate the instruction:
+                if(errc.eq.0) then
+                 call ds_instr%activate(op_code,errc,stat,err_code,iid)
+                 if(errc.ne.DSVP_SUCCESS) then
+                  call ds_instr%set_status(DS_INSTR_RETIRED,errc,TAVP_ERR_GEN_FAILURE)
+                  errc=-8
+                 endif
                 endif
+               else
+                errc=-7
                endif
               else
                errc=-6

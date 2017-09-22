@@ -1,6 +1,6 @@
 !Domain-specific virtual processor (DSVP): Abstract base module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/09/20
+!REVISION: 2017/09/22
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -152,10 +152,11 @@
         end type ds_instr_ctrl_t
  !Domain-specific instruction (realization of a domain-specific operation for DSVP):
         type, abstract, public:: ds_instr_t
+         integer(INTL), private:: id=-1_INTL                        !instruction id (must be non-negative)
          integer(INTD), private:: code=DS_INSTR_NOOP                !all valid instruction codes are non-negative (negative means no operation)
-         integer(INTD), private:: num_oprnds=0                      !number of domain-specific operands: Numeration:[0,1,2,3,...]
          integer(INTD), private:: stat=DS_INSTR_EMPTY               !status of the domain-specific instruction in the processing pipeline
          integer(INTD), private:: error_code=DSVP_SUCCESS           !error code (success:DSVP_SUCCESS)
+         integer(INTD), private:: num_oprnds=0                      !number of domain-specific operands: Numeration:[0,1,2,3,...]
          class(ds_instr_ctrl_t), pointer, private:: control=>NULL() !instruction control field: set up by the DECODE procedure
          type(ds_oprnd_ref_t), allocatable, private:: operand(:)    !domain-specific operands (wrapped pointers): set up by the DECODE procedure
          contains
@@ -163,6 +164,8 @@
           procedure, public:: is_empty=>DSInstrIsEmpty                  !returns TRUE if the domain-specific instruction is empty
           procedure, public:: is_retired=>DSInstrIsRetired              !returns TRUE if the domain-specific instruction is retired
           procedure, public:: is_active=>DSInstrIsActive                !returns TRUE if the domain-specific instruction is active (defined)
+          procedure, public:: get_id=>DSInstrGetId                      !returns the instruction id
+          procedure, public:: set_id=>DSInstrSetId                      !sets the instruction id
           procedure, public:: get_code=>DSInstrGetCode                  !returns the instruction code
           procedure, public:: set_code=>DSInstrSetCode                  !sets the instruction code
           procedure, public:: get_status=>DSInstrGetStatus              !returns the current status of the domain-specific instruction and error code
@@ -380,6 +383,8 @@
         private DSInstrIsEmpty
         private DSInstrIsRetired
         private DSInstrIsActive
+        private DSInstrGetId
+        private DSInstrSetId
         private DSInstrGetCode
         private DSInstrSetCode
         private DSInstrGetStatus
@@ -668,6 +673,34 @@
          if(present(ierr)) ierr=errc
          return
         end function DSInstrIsActive
+!---------------------------------------------------
+        function DSInstrGetId(this,ierr) result(iid)
+!Returns the instruction id.
+         implicit none
+         integer(INTL):: iid                         !out: instruction id
+         class(ds_instr_t), intent(in):: this        !in: active domain-specific instruction
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         iid=-1_INTL
+         if(.not.this%is_empty(errc)) iid=this%id
+         if(present(ierr)) ierr=errc
+         return
+        end function DSInstrGetId
+!---------------------------------------------
+        subroutine DSInstrSetId(this,iid,ierr)
+!Sets the instruction id.
+         implicit none
+         class(ds_instr_t), intent(inout):: this     !inout: domain-specific instruction
+         integer(INTL), intent(in):: iid             !in: instruction id to set (valid id >= 0, negative means undefined)
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=DSVP_SUCCESS
+         this%id=max(iid,-1_INTL)
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine DSInstrSetId
 !------------------------------------------------------
         function DSInstrGetCode(this,ierr) result(code)
 !Returns the instruction code. All valid codes are non-negative.
@@ -1013,8 +1046,8 @@
          if(present(ierr)) ierr=errc
          return
         end function DSInstrAllSet
-!------------------------------------------------------------------
-        subroutine DSInstrActivate(this,op_code,ierr,stat,err_code)
+!----------------------------------------------------------------------
+        subroutine DSInstrActivate(this,op_code,ierr,stat,err_code,iid)
 !Activates the domain-specific instruction after it has been constructed or decoded.
          implicit none
          class(ds_instr_t), intent(inout):: this        !inout: domain-specific instruction
@@ -1022,6 +1055,7 @@
          integer(INTD), intent(out), optional:: ierr    !out: error code
          integer(INTD), intent(in), optional:: stat     !in: instruction status to set
          integer(INTD), intent(in), optional:: err_code !in: instruction error code to set
+         integer(INTL), intent(in), optional:: iid      !in: instruction id
          integer(INTD):: errc,sts,errcode
 
          call this%set_code(op_code,errc)
@@ -1030,7 +1064,9 @@
            sts=DS_INSTR_NEW; if(present(stat)) sts=stat
            errcode=DSVP_SUCCESS; if(present(err_code)) errcode=err_code
            call this%set_status(sts,errc,errcode)
-           if(errc.ne.DSVP_SUCCESS) then
+           if(errc.eq.DSVP_SUCCESS) then
+            if(present(iid)) this%id=iid
+           else
             call this%set_status(DS_INSTR_RETIRED,errc,DSVP_ERROR)
             errc=-3
            endif
