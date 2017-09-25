@@ -2,7 +2,7 @@
     Parameters, derived types, and function prototypes
     used at the lower level of TAL-SH (device specific):
     CP-TAL, NV-TAL, XP-TAL, AM-TAL, etc.
-REVISION: 2017/09/18
+REVISION: 2017/09/25
 
 Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -343,8 +343,8 @@ typedef struct{
 } cudaTask_t;
 //Note: Adding new CUDA events will require adjustment of NUM_EVENTS_PER_TASK.
 
-// Interface for a user-defined tensor block initialization routine:
-typedef void (*talsh_tens_init_i)(void * tens_body_p, int data_kind, int tens_rank, const int tens_dims[], int * ierr);
+// Interface for a user-defined tensor block initialization function:
+typedef int (*talsh_tens_init_i)(void * tens_body_p, const int data_kind, const talsh_tens_shape_t * tens_shape, const long long * tens_signature);
 
 // Device statistics:
 typedef struct{

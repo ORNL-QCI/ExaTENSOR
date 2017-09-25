@@ -40,10 +40,10 @@ public:
  virtual ~TensorDenseDefiner();
 
  /** User-provided tensor definition class (eturns an error code). **/
- virtual int defineTensor(void * bodyPtr,                                     //pointer to the tensor body
-                          const int dataKind,                                 //tensor element data kind: {R4,R8,C4,C8}
-                          const TensorShape & tensShape,                      //tensor shape
-                          const long long int * tensSignature = nullptr) = 0; //tensor signature (optional)
+ virtual int defineTensBody(void * bodyPtr,                                     //pointer to the tensor body
+                            const int dataKind,                                 //tensor element data kind: {R4,R8,C4,C8}
+                            const TensorShape * tensShape,                      //tensor shape
+                            const long long int * tensSignature = nullptr) = 0; //tensor signature (optional)
 
 }; //end class TensorDenseDefiner
 

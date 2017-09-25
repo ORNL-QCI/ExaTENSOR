@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level API.
-REVISION: 2017/05/18
+REVISION: 2017/09/25
 
 Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -900,7 +900,7 @@ int talshTensorConstruct(talsh_tens_t * tens_block,     //inout: empty tensor bl
    if(tens_block->ndev > 0){
     if(dev_kind == DEV_HOST){ //`Currently supported only on Host
      if(init_method != NULL){
-      init_method(tens_block->dev_rsc[0].gmem_p,data_kind,tens_rank,tens_dims,&errc);
+      errc=init_method(tens_block->dev_rsc[0].gmem_p,data_kind,tens_block->shape_p,NULL); //NULL = tens_signature[]
       if(errc) errc=NOT_CLEAN; //initialization failed, tensor block value is undefined, but one may continue
      }else{
       switch(data_kind){
