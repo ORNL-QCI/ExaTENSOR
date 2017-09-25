@@ -316,7 +316,7 @@ $(NAME): $(OBJS) *.hpp $(MY_LIB)
 ./OBJ/tensor_conn.o: tensor_leg.hpp tensor_dense_adpt.hpp tensor_conn.hpp tensor_conn.cpp
 	$(CPPCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(CFLAGS) tensor_conn.cpp -o ./OBJ/tensor_conn.o
 
-./OBJ/tensor_network.o: tensor_leg.hpp tensor_dense_adpt.hpp tensor_conn.hpp tensor_network.hpp tensor_network.cpp
+./OBJ/tensor_network.o: tensor_define.hpp tensor_leg.hpp tensor_dense_adpt.hpp tensor_conn.hpp tensor_network.hpp tensor_network.cpp
 	$(CPPCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(CFLAGS) tensor_network.cpp -o ./OBJ/tensor_network.o
 
 .PHONY: clean

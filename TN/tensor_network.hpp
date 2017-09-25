@@ -1,7 +1,7 @@
 /** C++ adapters for ExaTENSOR: Tensor network
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/09/13
+!REVISION: 2017/09/25
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -43,6 +43,8 @@
 #include "type_deduct.hpp"
 
 #include "tensor_conn.hpp"
+
+#include "tensor_define.hpp"
 
 #include "talsh.h"
 
