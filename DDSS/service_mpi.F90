@@ -1,6 +1,6 @@
 !This module provides general services for MPI parallel programs.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/06/15
+!REVISION: 2017/09/25
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -412,15 +412,20 @@
         if(present(ierr)) ierr=errc
         return
         end function dil_global_comm_size
-!-----------------------------------------------
-        subroutine dil_global_comm_barrier(ierr)
-!A barrier over the global (MPI) communicator.
+!--------------------------------------------------------
+        subroutine dil_global_comm_barrier(ierr,red_code)
+!A barrier over the global (MPI) communicator + all MPI processes
+!will perform ALLREDUCE on <red_code> which defaults to zero.
         implicit none
-        integer(INT_MPI), intent(out), optional:: ierr !out: error code (0:success)
-        integer(INT_MPI):: errc
+        integer(INT_MPI), intent(out), optional:: ierr       !out: error code (0:success)
+        integer(INT_MPI), intent(inout), optional:: red_code !inout: reduced code (defaults to zero on input)
+        integer(INT_MPI):: errc,rc
 
         if(process_up) then
+         rc=0; if(present(red_code)) rc=red_code
          call MPI_BARRIER(GLOBAL_MPI_COMM,errc)
+         call MPI_ALLREDUCE(MPI_IN_PLACE,rc,1,MPI_INTEGER,MPI_SUM,GLOBAL_MPI_COMM,errc)
+         if(present(red_code)) red_code=rc
         else
          errc=-1
         endif

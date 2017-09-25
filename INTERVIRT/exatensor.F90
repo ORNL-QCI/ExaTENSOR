@@ -1,7 +1,7 @@
 !ExaTENSOR: Massively Parallel Virtual Processor for Scale-Adaptive Hierarchical Tensor Algebra
 !This is the top level API module of ExaTENSOR (user-level API)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017/09/06
+!REVISION: 2017/09/25
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -22,10 +22,10 @@
 !along with ExaTensor. If not, see <http://www.gnu.org/licenses/>.
 
       module exatensor
-       use virta
        use tavp_driver
        use tavp_manager
        use tavp_worker
+       use virta
        implicit none
        private
 !PARAMETERS:
@@ -103,7 +103,7 @@
  !External methods/data:
        public exatns_method_register      !registers an external method (it has to adhere to a predefined interface)
        public exatns_method_unregister    !unregisters an external method
-       public exatns_data_register        !registers external data (for future references)
+       public exatns_data_register        !registers external (on-node) data (for future references)
        public exatns_data_unregister      !unregisters external data
  !Hierarchical vector space:
        public exatns_space_register       !registers a vector space
@@ -120,7 +120,7 @@
        public exatns_tensor_save          !saves a tensor to persistent storage
        public exatns_tensor_status        !returns the status of the tensor (e.g., empty, initialized, being updated, etc.)
  !Tensor operations:
-       public exatns_tensor_init          !initializes the tensor to a real/complex value or invokes an initialization method
+       public exatns_tensor_init          !initializes a tensor to a real/complex value or invokes an external initialization method
        public exatns_tensor_copy          !copies the content of one tensor into another tensor, allowing for permutation, slicing, or insertion
        public exatns_tensor_fold          !produces a new tensor by folding multiple tensor dimensions into a single one
        public exatns_tensor_unfold        !produces a new tensor by unfolding a tensor dimension into multiple dimensions
@@ -143,10 +143,10 @@
 !will receive their active TAVP roles as managers, workers, helpers, etc.
 !Actions performed:
 ! # Initializes MPI services;
-! # Determines how many TAVPs of different kinds to spawn (log-TAVP, num-TAVP, dat-TAVP, etc.);
-! # Establishes a hierarchy for num-TAVPs and maps the corresponding computing node domains to log-TAVPs;
-! # Creates dedicated MPI communicators for log-TAVPs and for num-TAVPs as well as an intercommunicator;
-! # Each MPI process is assigned a single TAVP of a specific kind, which is allocated and launched;
+! # Determines how many TAVPs of different kinds to spawn (TAVP-MNG, TAVP-WRK, TAVP-HLP, etc.);
+! # Establishes a global TAVP hierarchy and maps compute node domains to TAVP-MNG recursively;
+! # Creates dedicated MPI communicators for TAVP-MNG and for TAVP-WRK as well as an intercommunicator;
+! # Each MPI process is assigned a single TAVP of a specific kind which is allocated and launched;
 ! # The Master MPI process 0 (Driver) returns while all other MPI processes begin their active
 !   life cycle as TAVPs until terminated by the Master MPI process 0 via a call to exatns_stop().
 !This is the only ExaTENSOR API function called by all MPI processes,
@@ -156,6 +156,8 @@
         integer(INT_MPI), intent(in), optional:: mpi_communicator !in: MPI communicator (defaults to MPI_COMM_WORLD)
         integer(INT_MPI):: errc,num_procs,my_rank
         integer(INTD):: error_code
+        type(tavp_mng_conf_t):: tavp_mng_conf
+        type(tavp_wrk_conf_t):: tavp_wrk_conf
 
         ierr=EXA_SUCCESS
         if(exatns_rt_status%state.ne.DSVP_STAT_OFF) then; ierr=-1; return; endif
@@ -188,12 +190,11 @@
 !Determine the roles of MPI processes:
         write(jo,'("#MSG(exatensor): Determining the role of the process ... ")',ADVANCE='NO')
         call determine_process_role()
-        write(jo,'(" Done: Role = ",i4,": Role rank/size = ",i9,"/",i9)') process_role,role_rank,role_size
+        write(jo,'(" Done: Role = ",i2,": Role rank/size = ",i9,"/",i9)') process_role,role_rank,role_size
         write(jo,'("#MSG(exatensor): Creating role specific MPI communicators ... ")',ADVANCE='NO')
         call MPI_Comm_split(GLOBAL_MPI_COMM,process_role,role_rank,role_comm,errc)
-        !write(*,*) my_rank,process_role,role_rank,role_comm,MPI_COMM_NULL !debug
         if(errc.eq.0) then
-         write(jo,'("Done [",i11,"]")') role_comm
+         write(jo,'("Done: Comm = ",i11)') role_comm
         else
          write(jo,'("Failed")')
          call dil_process_finish(errc)
@@ -207,16 +208,13 @@
           write(jo,'("Done")')
          else
           write(jo,'("Failed")')
-          call dil_process_finish(errc)
-          ierr=-6; return
          endif
+        else
+         error_code=0
         endif
-!Sync all MPI processes:
-        call dil_global_comm_barrier(errc)
-        if(errc.ne.0) then
-         call dil_process_finish(errc)
-         ierr=-7; return
-        endif
+!Sync all MPI processes before configuring and launching TAVPs:
+        call dil_global_comm_barrier(errc,red_code=error_code)
+        if(error_code.ne.0) then; call dil_process_finish(errc); ierr=-6; return; endif
 !Mark ExaTENSOR runtime active:
         exatns_rt_status=exatns_rt_status_t(DSVP_STAT_ON,EXA_SUCCESS,num_procs)
 !Live TAVP life:
@@ -224,26 +222,30 @@
         if(process_role.eq.EXA_DRIVER) then
          return !interpreter process returns immediately
         elseif(process_role.eq.EXA_MANAGER) then
-         !allocate(tavp_mng_t::tavp)
-         !call tavp%start(ierr) !will later call .shutdown()
+         allocate(tavp_mng_t::tavp)
+         call tavp%configure(tavp_mng_conf,errc)
+         call tavp%start(ierr) !will later call .shutdown()
         elseif(process_role.eq.EXA_WORKER) then
-         !allocate(tavp_wrk_t::tavp)
-         !call tavp%start(ierr) !will later call .shutdown()
+         allocate(tavp_wrk_t::tavp)
+         call tavp%configure(tavp_wrk_conf,errc)
+         call tavp%start(ierr) !will later call .shutdown()
         endif
 !Mark ExaTENSOR runtime is off:
         exatns_rt_status=exatns_rt_status_t(DSVP_STAT_OFF,ierr,0)
-        if(allocated(tavp)) deallocate(tavp)
+        if(allocated(tavp)) then
+         call tavp%destroy(errc); deallocate(tavp)
+        endif
         if(allocated(managers)) deallocate(managers)
 !Sync everyone:
         write(jo,'()')
-        write(jo,'("###EXATENSOR FINISHED PROCESS ",i9,"/",i9,": Status = ",i4,": Syncing ... ")',ADVANCE='NO')&
+        write(jo,'("###EXATENSOR FINISHED PROCESS ",i9,"/",i9,": Status = ",i11,": Syncing ... ")',ADVANCE='NO')&
              &dil_global_process_id(),dil_global_comm_size(),ierr
         call dil_global_comm_barrier(errc)
-        if(errc.eq.0) then; write(jo,'("Ok")'); else; write(jo,'("Failed")'); ierr=-8; endif
+        if(errc.eq.0) then; write(jo,'("Ok")'); else; write(jo,'("Failed")'); ierr=-7; endif
 !Free role specific communicators:
-        call MPI_Comm_free(role_comm,errc); if(errc.ne.0.and.ierr.eq.0) ierr=-9
+        call MPI_Comm_free(role_comm,errc); if(errc.ne.0.and.ierr.eq.0) ierr=-8
 !Finish the (MPI) process:
-        call dil_process_finish(errc); if(errc.ne.0.and.ierr.eq.0) ierr=-10
+        call dil_process_finish(errc); if(errc.ne.0.and.ierr.eq.0) ierr=-9
         return
 
         contains
