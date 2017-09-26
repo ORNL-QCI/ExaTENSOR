@@ -710,7 +710,7 @@
 
          hsp=>NULL()
          space_id=hspace_register%register_space(space_name,errc,hsp)
-         if(errc.eq.TEREC_SUCCESS) then
+         if(errc.eq.TEREC_SUCCESS.and.associated(hsp)) then
           call hspace_basis_%subspace_basis_ctor(HSPACE_DIM_,errc)
           if(errc.eq.0) then
            do l=1_INTL,HSPACE_DIM_
@@ -727,6 +727,8 @@
             endif
            endif
           endif
+         else
+          if(errc.eq.TEREC_SUCCESS) errc=TEREC_ERROR
          endif
          if(present(space_p)) space_p=>hsp
          if(present(ierr)) ierr=errc
@@ -817,12 +819,14 @@
              if(present(hspace_p)) then
               hspace_p=>NULL()
               up=>this%hspaces_it%element_value(int(hspace_id,INTL),errc)
-              if(errc.eq.GFC_SUCCESS) then
+              if(errc.eq.GFC_SUCCESS.and.associated(up)) then
                !select type(up); type is(h_space_t); hptr=>up; end select !debug
                !call dump_bytes(c_loc(hptr),size_of(hspace_empty),'dump1') !debug
                !hptr=>hspace_empty; call dump_bytes(c_loc(hptr),size_of(hspace_empty),'dump2') !debug
-               select type(up); class is(h_space_t); hspace_p=>up; end select
+               select type(up); type is(h_space_t); hspace_p=>up; end select
                if(.not.associated(hspace_p)) errc=TEREC_ERROR
+              else
+               if(errc.eq.GFC_SUCCESS) errc=TEREC_ERROR
               endif
              endif
             endif
