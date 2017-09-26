@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/08/16
+!REVISION: 2017/09/26
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -5413,10 +5413,13 @@
 !Copy assignment.
          implicit none
          class(tens_contraction_t), intent(out):: this !out: copy
-         type(tens_contraction_t), intent(in):: src    !in: source
+         class(tens_contraction_t), intent(in):: src   !in: source
+         integer(INTD):: i
 
          this%num_args=src%num_args
-         this%tens_arg(0:src%num_args-1)=src%tens_arg(0:src%num_args-1)
+         do i=0,src%num_args-1
+          this%tens_arg(i)=src%tens_arg(i)
+         enddo
          this%contr_ptrn=src%contr_ptrn
          this%alpha=src%alpha
          return
