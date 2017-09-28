@@ -1,6 +1,6 @@
 !Hardware abstraction module
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/06/16
+!REVISION: 2017/09/28
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -83,10 +83,17 @@
          integer(INTL), private:: num_virt_nodes=0 !number of virtual (simple + aggregated) nodes in the system, M: [0:M-1] = [0:N-1] + [N:M-1]
          type(vec_tree_t), private:: virt_nodes    !virtual nodes: first <num_phys_nodes> are physical, rest are their aggregates (virtual)
          contains
-          procedure, private:: CompSystemCtorSimple                 !simple dichotomy ctor
-          generic, public:: comp_system_ctor=>CompSystemCtorSimple  !ctors
-          procedure, public:: print_it=>CompSystemPrintIt           !prints the node aggregation tree
-          final:: comp_system_dtor                                  !dtor
+          procedure, private:: CompSystemCtorSimple                         !simple dichotomy ctor
+          generic, public:: comp_system_ctor=>CompSystemCtorSimple          !ctors
+          procedure, public:: get_num_phys_procs=>CompSystemGetNumPhysProcs !returns the total number of physical processes in the system
+          procedure, public:: get_num_virt_procs=>CompSystemGetNumVirtProcs !returns the total number of virtual processes in the system
+          procedure, public:: get_root_id=>CompSystemGetRootId              !returns the physical id of the computer system root
+          procedure, public:: get_ancestor_id=>CompSystemGetAncestorId      !returns the physical id of an ancestor of a specific node
+          procedure, public:: get_sibling_id=>CompSystemGetSiblingId        !returns the physical id of a left/right sibling of a specific node
+          procedure, public:: get_children_ids=>CompSystemGetChildrenIds    !returns the physical ids of all children of a specific node in order
+          procedure, public:: get_hier_level=>CompSystemGetHierLevel        !returns the tree level of a specific node (distance from the root in hops)
+          procedure, public:: print_it=>CompSystemPrintIt                   !prints the node aggregation tree
+          final:: comp_system_dtor                                          !dtor
         end type comp_system_t
 !GLOBAL:
  !Computing system:
@@ -94,6 +101,14 @@
 !VISIBILITY:
  !comp_system_t:
         private CompSystemCtorSimple
+        private CompSystemGetNumPhysProcs
+        private CompSystemGetNumVirtProcs
+        private CompSystemGetRootId
+        private CompSystemGetAncestorId
+        private CompSystemGetSiblingId
+        private CompSystemGetChildrenIds
+        private CompSystemGetHierLevel
+        private CompSystemPrintIt
         public comp_system_dtor
 
        contains
@@ -265,6 +280,154 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine CompSystemCtorSimple
+!----------------------------------------------------------------
+        function CompSystemGetNumPhysProcs(this,ierr) result(num)
+         implicit none
+         integer(INTL):: num                         !out: number of physical processes in the system
+         class(comp_system_t), intent(in):: this     !in: hierarchical computer system
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=0
+         num=this%num_phys_nodes
+         if(present(ierr)) ierr=errc
+         return
+        end function CompSystemGetNumPhysProcs
+!----------------------------------------------------------------
+        function CompSystemGetNumVirtProcs(this,ierr) result(num)
+         implicit none
+         integer(INTL):: num                         !out: number of virtual processes in the system
+         class(comp_system_t), intent(in):: this     !in: hierarchical computer system
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=0
+         num=this%num_virt_nodes
+         if(present(ierr)) ierr=errc
+         return
+        end function CompSystemGetNumVirtProcs
+!---------------------------------------------------------
+        function CompSystemGetRootId(this,ierr) result(id)
+         implicit none
+         integer(INTL):: id                          !out: id of the system root (tree root)
+         class(comp_system_t), intent(in):: this     !in: hierarchical computer system
+         integer(INTD), intent(out), optional:: ierr
+         integer(INTD):: errc,i
+         type(vec_tree_iter_t):: vtit
+
+         id=-1_INTL; errc=vtit%init(this%virt_nodes)
+         if(errc.eq.GFC_SUCCESS) then
+          id=vtit%get_root_id(errc)
+          i=vtit%release(); if(i.ne.GFC_SUCCESS.and.errc.eq.GFC_SUCCESS) errc=i
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function CompSystemGetRootId
+!---------------------------------------------------------------------------------------
+        function CompSystemGetAncestorId(this,node_id,ancestor_distance,ierr) result(id)
+         implicit none
+         integer(INTL):: id                            !out: id of an ancestor of a specific node
+         class(comp_system_t), intent(in):: this       !in: hierarchical computer system
+         integer(INTL), intent(in):: node_id           !in: node id
+         integer(INTD), intent(in):: ancestor_distance !in: distance to the requested ancestor (1:parent,2,3,...)
+         integer(INTD), intent(out), optional:: ierr   !out: error code
+         integer(INTD):: errc,i
+         type(vec_tree_iter_t):: vtit
+
+         id=-1_INTL
+         if(ancestor_distance.gt.0) then
+          errc=vtit%init(this%virt_nodes)
+          if(errc.eq.GFC_SUCCESS) then
+           errc=vtit%move_to(node_id)
+           if(errc.eq.GFC_SUCCESS) then
+            errc=vtit%move_up(ancestor_distance)
+            if(errc.eq.GFC_SUCCESS) id=vtit%get_offset(errc)
+           endif
+           i=vtit%release(); if(i.ne.GFC_SUCCESS.and.errc.eq.GFC_SUCCESS) errc=i
+          endif
+         else
+          errc=1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function CompSystemGetAncestorId
+!-------------------------------------------------------------------------
+        function CompSystemGetSiblingId(this,node_id,side,ierr) result(id)
+         implicit none
+         integer(INTL):: id                          !out: id of the left/right sibling of a specific node
+         class(comp_system_t), intent(in):: this     !in: hierarchical computer system
+         integer(INTL), intent(in):: node_id         !in: node id
+         logical, intent(in):: side                  !in: left/right side selector: {LEFT_SIBLING,RIGHT_SIBLING}
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc,i
+         type(vec_tree_iter_t):: vtit
+
+         id=-1; errc=vtit%init(this%virt_nodes)
+         if(errc.eq.GFC_SUCCESS) then
+          errc=vtit%move_to(node_id)
+          if(errc.eq.GFC_SUCCESS) then
+           errc=vtit%move_to_sibling(to_previous=(.not.side))
+           if(errc.eq.GFC_SUCCESS) id=vtit%get_offset(errc)
+          endif
+          i=vtit%release(); if(i.ne.GFC_SUCCESS.and.errc.eq.GFC_SUCCESS) errc=i
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function CompSystemGetSiblingId
+!-----------------------------------------------------------------------------------------
+        function CompSystemGetChildrenIds(this,node_id,children,ierr) result(num_children)
+         implicit none
+         integer(INTL):: num_children                !out: number of children
+         class(comp_system_t), intent(in):: this     !in: hierarchical computer system
+         integer(INTL), intent(in):: node_id         !in: node id
+         integer(INTL), intent(inout):: children(1:) !out: children ids
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc,i
+         type(vec_tree_iter_t):: vtit
+
+         num_children=0
+         errc=vtit%init(this%virt_nodes)
+         if(errc.eq.GFC_SUCCESS) then
+          errc=vtit%move_to(node_id)
+          if(errc.eq.GFC_SUCCESS) then
+           num_children=vtit%get_num_children(errc)
+           if(errc.eq.GFC_SUCCESS) then
+            if(size(children).ge.num_children) then
+             i=0; errc=vtit%move_to_child()
+             do while(errc.eq.GFC_SUCCESS)
+              i=i+1; children(i)=vtit%get_offset(errc); if(errc.ne.GFC_SUCCESS) exit
+              errc=vtit%move_to_sibling()
+             enddo
+             if(errc.eq.GFC_NO_MOVE) errc=GFC_SUCCESS
+            else
+             errc=GFC_OVERFLOW
+            endif
+           endif
+          endif
+          i=vtit%release(); if(i.ne.GFC_SUCCESS.and.errc.eq.GFC_SUCCESS) errc=i
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function CompSystemGetChildrenIds
+!-----------------------------------------------------------------------
+        function CompSystemGetHierLevel(this,node_id,ierr) result(level)
+         implicit none
+         integer(INTD):: level                       !out: distance from the root (in hops)
+         class(comp_system_t), intent(in):: this     !in: hierarchical computer system
+         integer(INTL), intent(in):: node_id         !in: node id
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc,i
+         type(vec_tree_iter_t):: vtit
+
+         level=-1; errc=vtit%init(this%virt_nodes)
+         if(errc.eq.GFC_SUCCESS) then
+          errc=vtit%move_to(node_id)
+          if(errc.eq.GFC_SUCCESS) level=vtit%get_level(errc)
+          i=vtit%release(); if(i.ne.GFC_SUCCESS.and.errc.eq.GFC_SUCCESS) errc=i
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function CompSystemGetHierLevel
 !-----------------------------------------
         subroutine CompSystemPrintIt(this)
 !Prints the node aggregation tree imposed on the computing system.

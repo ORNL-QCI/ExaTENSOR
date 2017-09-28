@@ -1,7 +1,7 @@
 !Infrastructure for a recursive adaptive vector space decomposition
 !and hierarchical vector space representation.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/08/16
+!REVISION: 2017/09/28
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -2336,7 +2336,6 @@
          integer(INTD), intent(out), optional:: ierr   !out: error code
          integer(INTD):: errc,i
          type(vec_tree_iter_t):: vtit
-         class(*), pointer:: up
 
          ancestor_id=-1_INTL
          if(ancestor_distance.gt.0) then

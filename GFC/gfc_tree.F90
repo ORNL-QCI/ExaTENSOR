@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Tree
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017-06-15 (started 2016-02-17)
+!REVISION: 2017-09-28 (started 2016-02-17)
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -42,6 +42,9 @@
         integer(INTD), private:: CONS_OUT=6 !output device
         logical, private:: VERBOSE=.TRUE.   !verbositiy for errors
         integer(INTD), private:: DEBUG=0    !debugging level (0:none)
+ !Sibling selector:
+        logical, parameter, public:: LEFT_SIBLING=.FALSE.
+        logical, parameter, public:: RIGHT_SIBLING=.TRUE.
  !Tree iterator directions:
         integer(INTD), parameter, private:: TREE_IT_DOWN=1  !downward direction
         integer(INTD), parameter, private:: TREE_IT_RIGHT=2 !right direction
