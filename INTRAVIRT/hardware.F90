@@ -1,6 +1,6 @@
-!Hardware abstraction module
+!ExaTENSOR hardware abstraction module
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/09/28
+!REVISION: 2017/09/30
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -29,6 +29,7 @@
         use subspaces
         implicit none
         private
+        public LEFT_SIBLING,RIGHT_SIBLING
 !PARAMETERS:
  !Basic:
         integer(INTD), private:: CONS_OUT=6 !output device
@@ -90,6 +91,7 @@
           procedure, public:: get_root_id=>CompSystemGetRootId              !returns the physical id of the computer system root
           procedure, public:: get_ancestor_id=>CompSystemGetAncestorId      !returns the physical id of an ancestor of a specific node
           procedure, public:: get_sibling_id=>CompSystemGetSiblingId        !returns the physical id of a left/right sibling of a specific node
+          procedure, public:: get_num_children=>CompSystemGetNumChildren    !returns the number of children nodes for a specific node
           procedure, public:: get_children_ids=>CompSystemGetChildrenIds    !returns the physical ids of all children of a specific node in order
           procedure, public:: get_hier_level=>CompSystemGetHierLevel        !returns the tree level of a specific node (distance from the root in hops)
           procedure, public:: print_it=>CompSystemPrintIt                   !prints the node aggregation tree
@@ -106,6 +108,7 @@
         private CompSystemGetRootId
         private CompSystemGetAncestorId
         private CompSystemGetSiblingId
+        private CompSystemGetNumChildren
         private CompSystemGetChildrenIds
         private CompSystemGetHierLevel
         private CompSystemPrintIt
@@ -374,6 +377,26 @@
          if(present(ierr)) ierr=errc
          return
         end function CompSystemGetSiblingId
+!--------------------------------------------------------------------------------
+        function CompSystemGetNumChildren(this,node_id,ierr) result(num_children)
+         implicit none
+         integer(INTL):: num_children                !out: number of children
+         class(comp_system_t), intent(in):: this     !in: hierarchical computer system
+         integer(INTL), intent(in):: node_id         !in: node id
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc,i
+         type(vec_tree_iter_t):: vtit
+
+         num_children=0
+         errc=vtit%init(this%virt_nodes)
+         if(errc.eq.GFC_SUCCESS) then
+          errc=vtit%move_to(node_id)
+          if(errc.eq.GFC_SUCCESS) num_children=vtit%get_num_children(errc)
+          i=vtit%release(); if(i.ne.GFC_SUCCESS.and.errc.eq.GFC_SUCCESS) errc=i
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function CompSystemGetNumChildren
 !-----------------------------------------------------------------------------------------
         function CompSystemGetChildrenIds(this,node_id,children,ierr) result(num_children)
          implicit none

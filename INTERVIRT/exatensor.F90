@@ -1,7 +1,7 @@
 !ExaTENSOR: Massively Parallel Virtual Processor for Scale-Adaptive Hierarchical Tensor Algebra
 !This is the top level API module of ExaTENSOR (user-level API)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017/09/28
+!REVISION: 2017/09/30
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -86,10 +86,10 @@
  !ExaTENSOR runtime status:
        type(exatns_rt_status_t), protected:: exatns_rt_status
  !TAVP global composition (set by exatns_start):
-       integer(INTD), protected:: exa_num_drivers=1  !number of driving processes
-       integer(INTD), protected:: exa_num_managers=0 !number of manager processes
-       integer(INTD), protected:: exa_num_workers=0  !number of worker processes
-       integer(INTD), protected:: exa_num_helpers=0  !number of helper processes
+       integer(INTD), protected:: exa_num_drivers=0  !number of the driver processes
+       integer(INTD), protected:: exa_num_managers=0 !number of the manager processes
+       integer(INTD), protected:: exa_num_workers=0  !number of the worker processes
+       integer(INTD), protected:: exa_num_helpers=0  !number of the helper processes
  !TAVP instance (allocated one per MPI process):
        class(dsvp_t), allocatable, private:: tavp
 !VISIBILITY:
@@ -132,6 +132,8 @@
        public exatns_tensor_ternary_op    !custom ternary tensor operation via a user-defined (external) method: tensor0 = Func(tensor0,tensor1,tensor2,scalar)
        private exatns_tensor_init_scalar  !tensor initialization by a scalar
        private exatns_tensor_init_method  !tensor initialization by a user-defined method
+ !Internal:
+       private tavp_role_rank
 
       contains
 !IMPLEMENTATION:
@@ -185,9 +187,9 @@
          call dil_process_finish(errc)
          ierr=-4; return
         endif
-!Build the MPI process hierarchy and determine their roles:
+!Build the MPI process hierarchy and determine process roles:
         write(jo,'("#MSG(exatensor): Building process hierarchy and determining roles ... ")',ADVANCE='NO')
-        call determine_process_role()
+        call determine_process_role(errc) !builds NAT and determines process roles
         write(jo,'(" Done: Role = ",i2,": Role rank/size = ",i9,"/",i9)') process_role,role_rank,role_size
         write(jo,'("#MSG(exatensor): Creating role specific MPI communicators ... ")',ADVANCE='NO')
         call MPI_Comm_split(GLOBAL_MPI_COMM,process_role,role_rank,role_comm,errc)
@@ -209,10 +211,14 @@
          return !interpreter process returns immediately
         elseif(process_role.eq.EXA_MANAGER) then
          call prepare_tavp_mng(ierr)
-         !if(ierr.eq.0) call tavp%start(ierr) !will later call .shutdown()
+         if(ierr.eq.0) call tavp%start(ierr) !will later call .shutdown()
         elseif(process_role.eq.EXA_WORKER) then
          call prepare_tavp_wrk(ierr)
+         if(ierr.eq.0) call tavp%start(ierr) !will later call .shutdown()
+        elseif(process_role.eq.EXA_HELPER) then
+         !call prepare_tavp_hlp(ierr)
          !if(ierr.eq.0) call tavp%start(ierr) !will later call .shutdown()
+         call quit(-1,'#FATAL(exatensor): TAVP-HLP is not implemented yet!')
         endif
 !Mark ExaTENSOR runtime is off:
         exatns_rt_status=exatns_rt_status_t(DSVP_STAT_OFF,ierr,0)
@@ -240,23 +246,25 @@
           integer(INTD), intent(out):: jerr
           type(tavp_wrk_conf_t):: tavp_wrk_conf
           integer(INTD):: je
+          integer(INTL):: aid
 
           allocate(tavp_wrk_t::tavp,STAT=jerr)
           if(jerr.eq.0) then
            tavp_wrk_conf%tavp_id=my_rank
-           tavp_wrk_conf%source_comm=manager_comm
-           tavp_wrk_conf%source_rank=comp_system%get_ancestor_id(int(my_rank,INTL),1,je); if(je.ne.0.and.jerr.eq.0) jerr=je
+           aid=comp_system%get_ancestor_id(int(my_rank,INTL),1,je); if(je.ne.0.and.jerr.eq.0) jerr=je
+           tavp_wrk_conf%source_comm=mng_wrk_comm
+           tavp_wrk_conf%source_rank=tavp_role_rank(int(aid,INTD))
            tavp_wrk_conf%retire_comm=tavp_wrk_conf%source_comm
            tavp_wrk_conf%retire_rank=tavp_wrk_conf%source_rank
-           tavp_wrk_conf%host_ram_size=16_INTL*1024_INTL*1024_INTL*1024_INTL
-           tavp_wrk_conf%nvram_size=0_INTL
-           tavp_wrk_conf%num_mpi_windows=1
-           tavp_wrk_conf%host_buf_size=0_INTL
+           tavp_wrk_conf%host_ram_size=16_INTL*(1024_INTL*1024_INTL*1024_INTL) !`Make configurable
+           tavp_wrk_conf%nvram_size=0_INTL !`Make configurable
+           tavp_wrk_conf%num_mpi_windows=1 !`Make configurable
+           tavp_wrk_conf%host_buf_size=tavp_wrk_conf%host_ram_size !`Make configurable
            if(gpu_count.gt.0) then
             allocate(tavp_wrk_conf%gpu_list(gpu_count))
             tavp_wrk_conf%gpu_list(1:gpu_count)=(/(je,je=gpu_start,gpu_start+gpu_count-1)/)
            endif
-           call tavp%configure(tavp_wrk_conf,jerr)
+           if(jerr.eq.0) call tavp%configure(tavp_wrk_conf,jerr)
           endif
           return
          end subroutine prepare_tavp_wrk
@@ -265,35 +273,100 @@
           implicit none
           integer(INTD), intent(out):: jerr
           type(tavp_mng_conf_t):: tavp_mng_conf
+          integer(INTD):: je,jrl
+          integer(INTL):: aid,lid,rid,nch
+          integer(INTL), allocatable:: chid(:)
 
           allocate(tavp_mng_t::tavp,STAT=jerr)
           if(jerr.eq.0) then
-           call tavp%configure(tavp_mng_conf,jerr)
+           tavp_mng_conf%tavp_id=my_rank
+           aid=comp_system%get_ancestor_id(int(my_rank,INTL),1,je); if(je.ne.0.and.jerr.eq.0) jerr=je
+           if(aid.lt.0) then !root manager
+            tavp_mng_conf%source_comm=drv_mng_comm
+            tavp_mng_conf%source_rank=0 !`Assumes a single Driver process
+           else !intermediate manager
+            tavp_mng_conf%source_comm=manager_comm
+            tavp_mng_conf%source_rank=tavp_role_rank(int(aid,INTD))
+           endif
+           tavp_mng_conf%retire_comm=tavp_mng_conf%source_comm
+           tavp_mng_conf%retire_rank=tavp_mng_conf%source_rank
+           lid=comp_system%get_sibling_id(int(my_rank,INTL),LEFT_SIBLING,je); if(je.ne.0.and.jerr.eq.0) jerr=je
+           rid=comp_system%get_sibling_id(int(my_rank,INTL),RIGHT_SIBLING,je); if(je.ne.0.and.jerr.eq.0) jerr=je
+           tavp_mng_conf%ring_comm=manager_comm
+           tavp_mng_conf%ring_send_rank=tavp_role_rank(int(rid,INTD))
+           tavp_mng_conf%ring_recv_rank=tavp_role_rank(int(lid,INTD))
+           nch=comp_system%get_num_children(int(my_rank,INTL),je); if(je.ne.0.and.jerr.eq.0) jerr=je
+           if(nch.gt.0) then
+            if(allocated(tavp_mng_conf%dispatch_rank)) deallocate(tavp_mng_conf%dispatch_rank)
+            allocate(tavp_mng_conf%dispatch_rank(1:nch)); allocate(chid(1:nch))
+            nch=comp_system%get_children_ids(int(my_rank,INTL),chid,je); if(je.ne.0.and.jerr.eq.0) jerr=je
+            je=tavp_role_rank(int(chid(1),INTD),jrl)
+            if(jrl.eq.EXA_MANAGER) then
+             tavp_mng_conf%dispatch_comm=manager_comm
+            elseif(jrl.eq.EXA_WORKER) then
+             tavp_mng_conf%dispatch_comm=mng_wrk_comm
+            else
+             jerr=-2
+            endif
+            if(jerr.eq.0) then
+             do je=1,int(nch,INTD)
+              tavp_mng_conf%dispatch_rank(je)=tavp_role_rank(int(chid(je),INTD))
+             enddo
+             tavp_mng_conf%collect_comm=tavp_mng_conf%dispatch_comm
+             if(jerr.eq.0) call tavp%configure(tavp_mng_conf,jerr)
+            endif
+            deallocate(chid)
+           else
+            jerr=-1
+           endif
           endif
           return
          end subroutine prepare_tavp_mng
 
-#if 0
-!Build the Node Aggregation Tree (NAT) for compute nodes:
-        if(process_role.eq.EXA_MANAGER) then !managers only
-         write(jo,'("#MSG(exatensor): Building the Node Aggregation Tree (NAT) ... ")',ADVANCE='NO')
-         call comp_system%comp_system_ctor('hardware.exaconf',exa_num_workers,error_code)
-         if(error_code.eq.0) then
-          write(jo,'("Done")')
-         else
-          write(jo,'("Failed")')
-         endif
-        else
-         error_code=0
-        endif
-
-         subroutine determine_process_role() !all in
+         subroutine determine_process_role(jerr) !all in
           implicit none
+          integer(INTD), intent(out):: jerr
+          integer(INTD):: jn
 
+          jerr=0
+          write(jo,'("#MSG(exatensor): Building the Node Aggregation Tree (NAT) ... ")',ADVANCE='NO')
+ !Set the initial composition:
+          exa_num_drivers=1; driver_mpi_process=num_procs-1 !the last MPI process is the Driver process
+          exa_num_helpers=0
+          exa_num_managers=1
+          exa_num_workers=num_procs-(exa_num_drivers+exa_num_managers+exa_num_helpers)
+          jn=num_procs-exa_num_drivers
+ !Build NAT:
+          hloop: do
+ !Build the process hierarchy:
+           call comp_system%comp_system_ctor('hardware.exaconf',jn,jerr,&
+                                            &EXA_MANAGER_BRANCH_FACT,EXA_MAX_WORK_GROUP_SIZE)
+           if(jerr.ne.0) exit hloop
+ !Count NAT leaves (must match exa_num_workers+exa_num_helpers):
 
+ !Adjust composition if no match:
+
+          enddo hloop
+          if(jerr.eq.0) then
+           role_rank=tavp_role_rank(int(my_rank,INTD),process_role)
+           select case(process_role)
+           case(EXA_DRIVER)
+            role_size=exa_num_drivers
+           case(EXA_MANAGER)
+            role_size=exa_num_managers
+           case(EXA_WORKER)
+            role_size=exa_num_workers
+           case default
+            jerr=-1
+           end select
+           if(jerr.eq.0) then; write(jo,'("Done")'); else; write(jo,'("Failed")'); endif
+          else
+           write(jo,'("Failed")')
+          endif
+          return
          end subroutine determine_process_role
-#endif
 
+#if 0
          subroutine determine_process_role() !all in
           integer(INTD):: jj
           exa_num_managers=1
@@ -310,6 +383,7 @@
           endif
           return
          end subroutine determine_process_role
+#endif
 
        end function exatns_start
 !-----------------------------------------
@@ -740,5 +814,30 @@
         write(CONS_OUT,*)'FATAL(exatensor:tensor_ternary_op): Not implemented yet!' !`Implement
         return
        end function exatns_tensor_ternary_op
+!----------------------------------------------------------
+       function tavp_role_rank(global_rank,role) result(id)
+!MPI process role numeration:
+! EXA_WORKER: [0:exa_num_workers-1];
+! EXA_MANAGER: [exa_num_workers:exa_num_workers+exa_num_managers-1];
+! EXA_DRIVER: [exa_num_workers+exa_num_managers:total_number_of_mpi_processes-1].
+        implicit none
+        integer(INTD):: id                          !out: TAVP role-specific rank
+        integer(INTD), intent(in):: global_rank     !in: global MPI rank of the TAVP
+        integer(INTD), intent(out), optional:: role !out: TAVP role
+
+        if(global_rank.ge.exa_num_workers+exa_num_managers) then
+         if(present(role)) role=EXA_DRIVER
+         id=global_rank-(exa_num_workers+exa_num_managers)
+        else
+         if(global_rank.ge.exa_num_workers) then
+          if(present(role)) role=EXA_MANAGER
+          id=global_rank-exa_num_workers
+         else
+          if(present(role)) role=EXA_WORKER
+          id=global_rank
+         endif
+        endif
+        return
+       end function tavp_role_rank
 
       end module exatensor

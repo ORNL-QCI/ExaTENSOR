@@ -2,7 +2,7 @@
 !The elements are initially inserted in a vector with an option to be
 !later added in a tree, thus imposing a tree relationship on them.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017/05/11
+!REVISION: 2017/09/30
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -40,6 +40,7 @@
         use timers
         implicit none
         private
+        public LEFT_SIBLING,RIGHT_SIBLING
 !PARAMETERS:
  !Basic:
         integer(INTD), private:: CONS_OUT=6 !output device
