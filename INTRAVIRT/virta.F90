@@ -8,7 +8,7 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/09/30
+!REVISION: 2017/10/01
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -198,8 +198,6 @@
         integer(INT_MPI), public:: helper_comm=MPI_COMM_NULL  !MPI intracommunicator of the helper process subspace
         integer(INT_MPI), public:: drv_mng_comm=MPI_COMM_NULL !MPI intercommunicator for the driver and managers
         integer(INT_MPI), public:: mng_wrk_comm=MPI_COMM_NULL !MPI intercommunicator for managers and workers
-        integer(INT_MPI), public:: driver_mpi_process=0       !MPI rank of the Driver process (normally process 0 from MPI_COMM_WORLD)
-        integer(INT_MPI), allocatable, public:: managers(:)   !ordered list of MPI processes serving as managers (ranks in MPI_COMM_WORLD)
 !VISIBILITY:
  !non-member:
         public role_barrier

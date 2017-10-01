@@ -1,6 +1,6 @@
 !ExaTENSOR hardware abstraction module
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/09/30
+!REVISION: 2017/10/01
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -21,6 +21,17 @@
 !along with ExaTensor. If not, see <http://www.gnu.org/licenses/>.
 
        module hardware
+!This module provides an HPC platform abstraction.
+!An HPC platform is considered comprised of the so-called
+!physical nodes which are either full hardware nodes or
+!parts of a full hardware node, depending on the number of
+!MPI processes per hardware node. Physical nodes are numerated
+!from 1: [1:N]. Physical nodes are subsequently aggregated into
+!the Node Aggregation Tree (NAT). Each node of the NAT is a
+!virtual node, that is, a virtual node is either a single physical
+!node or an aggregate of those. Virtual nodes are numerated from 0.
+!The first N virtual nodes are associated with the original physical
+!nodes in order, the subsequent virtual nodes are aggregates (inner tree nodes).
         use dil_basic
         use stsubs
         use parse_prim
@@ -86,14 +97,16 @@
          contains
           procedure, private:: CompSystemCtorSimple                         !simple dichotomy ctor
           generic, public:: comp_system_ctor=>CompSystemCtorSimple          !ctors
-          procedure, public:: get_num_phys_procs=>CompSystemGetNumPhysProcs !returns the total number of physical processes in the system
-          procedure, public:: get_num_virt_procs=>CompSystemGetNumVirtProcs !returns the total number of virtual processes in the system
+          procedure, public:: get_num_phys_nodes=>CompSystemGetNumPhysNodes !returns the total number of physical nodes in the system
+          procedure, public:: get_num_virt_nodes=>CompSystemGetNumVirtNodes !returns the total number of virtual nodes in the system
+          procedure, public:: get_num_aggr_nodes=>CompSystemGetNumAggrNodes !returns the total number of aggregate virtual nodes (inner nodes of the tree)
           procedure, public:: get_root_id=>CompSystemGetRootId              !returns the physical id of the computer system root
           procedure, public:: get_ancestor_id=>CompSystemGetAncestorId      !returns the physical id of an ancestor of a specific node
           procedure, public:: get_sibling_id=>CompSystemGetSiblingId        !returns the physical id of a left/right sibling of a specific node
           procedure, public:: get_num_children=>CompSystemGetNumChildren    !returns the number of children nodes for a specific node
           procedure, public:: get_children_ids=>CompSystemGetChildrenIds    !returns the physical ids of all children of a specific node in order
           procedure, public:: get_hier_level=>CompSystemGetHierLevel        !returns the tree level of a specific node (distance from the root in hops)
+          procedure, public:: get_node_range=>CompSystemGetNodeRange        !returns the range of physical nodes associated with a given virtual node
           procedure, public:: print_it=>CompSystemPrintIt                   !prints the node aggregation tree
           final:: comp_system_dtor                                          !dtor
         end type comp_system_t
@@ -103,14 +116,16 @@
 !VISIBILITY:
  !comp_system_t:
         private CompSystemCtorSimple
-        private CompSystemGetNumPhysProcs
-        private CompSystemGetNumVirtProcs
+        private CompSystemGetNumPhysNodes
+        private CompSystemGetNumVirtNodes
+        private CompSystemGetNumAggrNodes
         private CompSystemGetRootId
         private CompSystemGetAncestorId
         private CompSystemGetSiblingId
         private CompSystemGetNumChildren
         private CompSystemGetChildrenIds
         private CompSystemGetHierLevel
+        private CompSystemGetNodeRange
         private CompSystemPrintIt
         public comp_system_dtor
 
@@ -284,9 +299,9 @@
          return
         end subroutine CompSystemCtorSimple
 !----------------------------------------------------------------
-        function CompSystemGetNumPhysProcs(this,ierr) result(num)
+        function CompSystemGetNumPhysNodes(this,ierr) result(num)
          implicit none
-         integer(INTL):: num                         !out: number of physical processes in the system
+         integer(INTL):: num                         !out: number of physical nodes in the system
          class(comp_system_t), intent(in):: this     !in: hierarchical computer system
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
@@ -295,11 +310,11 @@
          num=this%num_phys_nodes
          if(present(ierr)) ierr=errc
          return
-        end function CompSystemGetNumPhysProcs
+        end function CompSystemGetNumPhysNodes
 !----------------------------------------------------------------
-        function CompSystemGetNumVirtProcs(this,ierr) result(num)
+        function CompSystemGetNumVirtNodes(this,ierr) result(num)
          implicit none
-         integer(INTL):: num                         !out: number of virtual processes in the system
+         integer(INTL):: num                         !out: number of virtual nodes in the system
          class(comp_system_t), intent(in):: this     !in: hierarchical computer system
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
@@ -308,7 +323,20 @@
          num=this%num_virt_nodes
          if(present(ierr)) ierr=errc
          return
-        end function CompSystemGetNumVirtProcs
+        end function CompSystemGetNumVirtNodes
+!----------------------------------------------------------------
+        function CompSystemGetNumAggrNodes(this,ierr) result(num)
+         implicit none
+         integer(INTL):: num                         !out: number of virtual aggregated nodes in the system
+         class(comp_system_t), intent(in):: this     !in: hierarchical computer system
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=0
+         num=this%num_virt_nodes-this%num_phys_nodes
+         if(present(ierr)) ierr=errc
+         return
+        end function CompSystemGetNumAggrNodes
 !---------------------------------------------------------
         function CompSystemGetRootId(this,ierr) result(id)
          implicit none
@@ -344,7 +372,11 @@
            errc=vtit%move_to(node_id)
            if(errc.eq.GFC_SUCCESS) then
             errc=vtit%move_up(ancestor_distance)
-            if(errc.eq.GFC_SUCCESS) id=vtit%get_offset(errc)
+            if(errc.eq.GFC_SUCCESS) then
+             id=vtit%get_offset(errc)
+            else
+             if(errc.eq.GFC_NO_MOVE) errc=GFC_SUCCESS
+            endif
            endif
            i=vtit%release(); if(i.ne.GFC_SUCCESS.and.errc.eq.GFC_SUCCESS) errc=i
           endif
@@ -451,6 +483,38 @@
          if(present(ierr)) ierr=errc
          return
         end function CompSystemGetHierLevel
+!-----------------------------------------------------------------------
+        function CompSystemGetNodeRange(this,node_id,ierr) result(range)
+!Returns the range of physical nodes associated with a given virtual node.
+!A physical node here is essentially a computing MPI process. A virtual
+!node is a node of the Node Aggregation Tree (NAT). Note that physical
+!nodes are numbered from 1, but virtual nodes are numbered from 0.
+         implicit none
+         integer(INTD):: range(2)                    !out: integer range: [range(1):range(2)]
+         class(comp_system_t), intent(in):: this     !in: hierarchical computing system
+         integer(INTL), intent(in):: node_id         !in: virtual node id (>=0)
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc,i
+         type(vec_tree_iter_t):: vtit
+         class(*), pointer:: uptr
+         class(seg_int_t), pointer:: seg
+
+         errc=vtit%init(this%virt_nodes)
+         if(errc.eq.GFC_SUCCESS) then
+          uptr=>vtit%element_value(node_id,errc)
+          if(errc.eq.GFC_SUCCESS) then
+           seg=>NULL(); select type(uptr); class is(seg_int_t); seg=>uptr; end select
+           if(associated(seg)) then
+            range(1:2)=(/int(seg%lower_bound(),INTD)+1,int(seg%upper_bound(),INTD)/)
+           else
+            errc=-1
+           endif
+          endif
+          i=vtit%release(); if(i.ne.GFC_SUCCESS.and.errc.eq.GFC_SUCCESS) errc=i
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function CompSystemGetNodeRange
 !-----------------------------------------
         subroutine CompSystemPrintIt(this)
 !Prints the node aggregation tree imposed on the computing system.
