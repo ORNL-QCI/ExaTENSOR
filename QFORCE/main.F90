@@ -1,7 +1,7 @@
 !PROJECT Q-FORCE: Massively Parallel Quantum Many-Body Methodology on Heterogeneous HPC systems.
 !BASE: ExaTensor: Massively Parallel Tensor Algebra Virtual Processor for Heterogeneous HPC systems.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/07/10
+!REVISION: 2017/10/02
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -53,7 +53,7 @@
         type(subspace_basis_t):: basis
         class(h_space_t), pointer:: hspace
         type(tens_rcrsv_t):: dtens,ltens,rtens
-        integer:: ierr,i,my_rank,space_id
+        integer(INTD):: ierr,i,my_rank,space_id,my_role
         integer(INTL):: l
 
 !Application initializes MPI:
@@ -61,35 +61,39 @@
         call MPI_Comm_rank(MPI_COMM_WORLD,my_rank,ierr)
 !Application runs ExaTENSOR within MPI_COMM_WORLD:
         ierr=exatns_start(MPI_COMM_WORLD)
-        if(ierr.ne.EXA_SUCCESS) write(*,*) 'Process ',my_rank,' terminated with error ',ierr
+        if(ierr.eq.EXA_SUCCESS) then
+         ierr=exatns_proc_role(my_role)
+         if(my_role.eq.EXA_DRIVER) then
 !Create a basis for a vector space:
-        if(my_rank.eq.0) then
-         call basis%subspace_basis_ctor(TEST_SPACE_DIM,ierr)
-         if(ierr.ne.0) call quit(ierr,'subspace_basis_t.subspace_basis_ctor() failed!')
-         do l=1_INTL,TEST_SPACE_DIM !set basis functions
-          call basis_symmetry(l)%spher_symmetry_ctor(int((l-1)/5,INTD),0,ierr)
-          if(ierr.ne.0) call quit(ierr,'spher_symmetry_t.spher_symmetry_ctor() failed!')
-          call basis%set_basis_func(l,BASIS_ABSTRACT,ierr,symm=basis_symmetry(l))
-          if(ierr.ne.0) call quit(ierr,'subspace_basis_t.set_basis_func() failed!')
-         enddo
-         call basis%finalize(ierr)
-         if(ierr.ne.0) call quit(ierr,'subspace_basis_t.finalize() failed!')
+          call basis%subspace_basis_ctor(TEST_SPACE_DIM,ierr)
+          if(ierr.ne.0) call quit(ierr,'subspace_basis_t.subspace_basis_ctor() failed!')
+          do l=1_INTL,TEST_SPACE_DIM !set basis functions
+           call basis_symmetry(l)%spher_symmetry_ctor(int((l-1)/5,INTD),0,ierr)
+           if(ierr.ne.0) call quit(ierr,'spher_symmetry_t.spher_symmetry_ctor() failed!')
+           call basis%set_basis_func(l,BASIS_ABSTRACT,ierr,symm=basis_symmetry(l))
+           if(ierr.ne.0) call quit(ierr,'subspace_basis_t.set_basis_func() failed!')
+          enddo
+          call basis%finalize(ierr)
+          if(ierr.ne.0) call quit(ierr,'subspace_basis_t.finalize() failed!')
 !Register a vector space:
-         ierr=exatns_space_register('AO_space',basis,space_id)
-         if(ierr.ne.0) call quit(ierr,'exatns_space_register() failed!')
+          ierr=exatns_space_register('AO_space',basis,space_id)
+          if(ierr.ne.0) call quit(ierr,'exatns_space_register() failed!')
 !Create tensors:
-         ierr=exatns_tensor_create(dtens,R8,'dtens',(/(space_id,i=1,4)/))
-         ierr=exatns_tensor_create(ltens,R8,'ltens',(/(space_id,i=1,4)/))
-         ierr=exatns_tensor_create(rtens,R8,'rtens',(/(space_id,i=1,4)/))
+          ierr=exatns_tensor_create(dtens,R8,'dtens',(/(space_id,i=1,4)/))
+          ierr=exatns_tensor_create(ltens,R8,'ltens',(/(space_id,i=1,4)/))
+          ierr=exatns_tensor_create(rtens,R8,'rtens',(/(space_id,i=1,4)/))
 !Contract tensors:
-         ierr=exatns_tensor_contract(dtens,ltens,rtens,'D(a,b,c,d)+=L(d,i,b,j)*R(j,c,i,a)')
+          ierr=exatns_tensor_contract(dtens,ltens,rtens,'D(a,b,c,d)+=L(d,i,b,j)*R(j,c,i,a)')
 !Destroy tensors:
-         ierr=exatns_tensor_destroy(rtens)
-         ierr=exatns_tensor_destroy(ltens)
-         ierr=exatns_tensor_destroy(dtens)
+          ierr=exatns_tensor_destroy(rtens)
+          ierr=exatns_tensor_destroy(ltens)
+          ierr=exatns_tensor_destroy(dtens)
+!Stop ExaTENSOR runtime:
+          ierr=exatns_stop()
+         endif
+        else
+         write(*,*) 'Process ',my_rank,' terminated with error ',ierr
         endif
-!Master process stop ExaTENSOR:
-        if(my_rank.eq.0.and.ierr.eq.0) ierr=exatns_stop()
 !Application finalizes MPI:
         call MPI_Finalize(ierr)
        end program main

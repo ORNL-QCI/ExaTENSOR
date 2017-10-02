@@ -1,6 +1,6 @@
 !ExaTENSOR hardware abstraction module
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/10/01
+!REVISION: 2017/10/02
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -100,11 +100,12 @@
           procedure, public:: get_num_phys_nodes=>CompSystemGetNumPhysNodes !returns the total number of physical nodes in the system
           procedure, public:: get_num_virt_nodes=>CompSystemGetNumVirtNodes !returns the total number of virtual nodes in the system
           procedure, public:: get_num_aggr_nodes=>CompSystemGetNumAggrNodes !returns the total number of aggregate virtual nodes (inner nodes of the tree)
-          procedure, public:: get_root_id=>CompSystemGetRootId              !returns the physical id of the computer system root
-          procedure, public:: get_ancestor_id=>CompSystemGetAncestorId      !returns the physical id of an ancestor of a specific node
-          procedure, public:: get_sibling_id=>CompSystemGetSiblingId        !returns the physical id of a left/right sibling of a specific node
+          procedure, public:: get_root_id=>CompSystemGetRootId              !returns the id of the computer system root
+          procedure, public:: get_ancestor_id=>CompSystemGetAncestorId      !returns the id of an ancestor of a specific node
+          procedure, public:: get_sibling_id=>CompSystemGetSiblingId        !returns the id of a left/right sibling of a specific node
+          procedure, public:: get_cousin_id=>CompSystemGetCousinId          !returns the id of a left/right cousin of a specific node
           procedure, public:: get_num_children=>CompSystemGetNumChildren    !returns the number of children nodes for a specific node
-          procedure, public:: get_children_ids=>CompSystemGetChildrenIds    !returns the physical ids of all children of a specific node in order
+          procedure, public:: get_children_ids=>CompSystemGetChildrenIds    !returns the ids of all children of a specific node in order
           procedure, public:: get_hier_level=>CompSystemGetHierLevel        !returns the tree level of a specific node (distance from the root in hops)
           procedure, public:: get_node_range=>CompSystemGetNodeRange        !returns the range of physical nodes associated with a given virtual node
           procedure, public:: print_it=>CompSystemPrintIt                   !prints the node aggregation tree
@@ -122,6 +123,7 @@
         private CompSystemGetRootId
         private CompSystemGetAncestorId
         private CompSystemGetSiblingId
+        private CompSystemGetCousinId
         private CompSystemGetNumChildren
         private CompSystemGetChildrenIds
         private CompSystemGetHierLevel
@@ -402,13 +404,61 @@
           errc=vtit%move_to(node_id)
           if(errc.eq.GFC_SUCCESS) then
            errc=vtit%move_to_sibling(to_previous=(.not.side))
-           if(errc.eq.GFC_SUCCESS) id=vtit%get_offset(errc)
+           if(errc.eq.GFC_SUCCESS) then
+            id=vtit%get_offset(errc)
+           else
+            if(errc.eq.GFC_NO_MOVE) errc=GFC_SUCCESS
+           endif
           endif
           i=vtit%release(); if(i.ne.GFC_SUCCESS.and.errc.eq.GFC_SUCCESS) errc=i
          endif
          if(present(ierr)) ierr=errc
          return
         end function CompSystemGetSiblingId
+!-----------------------------------------------------------------------------
+        function CompSystemGetCousinId(this,node_id,side,ierr,ring) result(id)
+!Returns the id of the left/right cousin of a specific tree node.
+!The tree nodes equally distant from the tree root are cousins.
+!In case the tree node <node_id> is the only one at its tree level, <id>=-1.
+         implicit none
+         integer(INTL):: id                          !out: id of the left/right cousin of a specific node
+         class(comp_system_t), intent(in):: this     !in: hierarchical computer system
+         integer(INTL), intent(in):: node_id         !in: node id
+         logical, intent(in):: side                  !in: left/right side selector: {LEFT_SIBLING,RIGHT_SIBLING}
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         logical, intent(in), optional:: ring        !in: if TRUE, the ring topology will be assumed (defaults to FALSE)
+         integer(INTD):: errc,i
+         type(vec_tree_iter_t):: vtit
+
+         id=-1; errc=vtit%init(this%virt_nodes)
+         if(errc.eq.GFC_SUCCESS) then
+          errc=vtit%move_to(node_id)
+          if(errc.eq.GFC_SUCCESS) then
+           errc=vtit%move_to_cousin(to_previous=(.not.side))
+           if(errc.eq.GFC_SUCCESS) then
+            id=vtit%get_offset(errc)
+           else
+            if(errc.eq.GFC_NO_MOVE) then
+             errc=GFC_SUCCESS
+             if(present(ring)) then
+              if(ring) then
+               do while(errc.eq.GFC_SUCCESS)
+                errc=vtit%move_to_cousin(to_previous=side)
+               enddo
+               if(errc.eq.GFC_NO_MOVE) then
+                id=vtit%get_offset(errc)
+                if(errc.ne.GFC_SUCCESS.or.id.eq.node_id) id=-1
+               endif
+              endif
+             endif
+            endif
+           endif
+          endif
+          i=vtit%release(); if(i.ne.GFC_SUCCESS.and.errc.eq.GFC_SUCCESS) errc=i
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function CompSystemGetCousinId
 !--------------------------------------------------------------------------------
         function CompSystemGetNumChildren(this,node_id,ierr) result(num_children)
          implicit none

@@ -1,7 +1,7 @@
 !ExaTENSOR: Massively Parallel Virtual Processor for Scale-Adaptive Hierarchical Tensor Algebra
 !This is the top level API module of ExaTENSOR (user-level API)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017/10/01
+!REVISION: 2017/10/02
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -36,6 +36,7 @@
        use virta
        implicit none
        private
+       public EXA_NO_ROLE,EXA_DRIVER,EXA_MANAGER,EXA_WORKER,EXA_HELPER
 !PARAMETERS:
  !Basic:
        integer(INTD), private:: CONS_OUT=6 !output device
@@ -104,7 +105,8 @@
  !Control:
        public exatns_start                !starts the ExaTENSOR DSVP
        public exatns_stop                 !stops the ExaTENSOR DSVP
-       public exatns_status               !returns the status of the ExaTENSOR DSVP (plus statistics, if needed)
+       public exatns_proc_role            !returns the role of the current MPI process
+       public exatns_status               !returns the status of the ExaTENSOR runtime (plus statistics, if needed)
  !Parser/interpreter:
        public exatns_interpret            !interprets TAProL code (string of TAProL statements)
        public exatns_symbol_exists        !checks whether a specific identifier is registered (if yes, returns its attributes)
@@ -195,21 +197,21 @@
          ierr=-4; return
         endif
 !Build the MPI process hierarchy and determine process roles:
-        write(jo,'("#MSG(exatensor): Building process hierarchy and determining roles:")')
+        write(jo,'("#MSG(exatensor): Building the process hierarchy and determining roles:")')
         call determine_process_role(errc) !builds NAT and determines process roles
         if(errc.eq.0) then
-         write(jo,'("Done: Role = ",i2,": Role rank/size = ",i9,"/",i9)') process_role,role_rank,role_size
+         write(jo,'("#MSG(exatensor): Info: Role = ",i2,": Role rank/size = ",i9,"/",i9)') process_role,role_rank,role_size
          write(jo,'("#MSG(exatensor): Creating role specific MPI communicators ... ")',ADVANCE='NO')
          call MPI_Comm_split(GLOBAL_MPI_COMM,process_role,role_rank,role_comm,errc)
          if(errc.eq.0) then
           write(jo,'("Done: Comm = ",i11)') role_comm
          else
-          write(jo,'("Failed")')
+          write(jo,'("Failed: Error ",i11)') errc
           call dil_process_finish(errc)
           ierr=-5; return
          endif
         else
-         write(jo,'("Failed")')
+         write(jo,'("Failed: Error ",i11)') errc
          call dil_process_finish(errc)
          ierr=-6; return
         endif
@@ -223,15 +225,20 @@
         if(process_role.eq.EXA_DRIVER) then
          return !Driver process returns immediately
         elseif(process_role.eq.EXA_MANAGER) then
+         write(jo,'("#MSG(exatensor): Preparing the TAVP-MNG virtual processor ... ")',ADVANCE='NO')
          call prepare_tavp_mng(ierr)
+         if(ierr.eq.0) then; write(jo,'("Done")'); else; write(jo,'("Failed: Error ",i11)') ierr; endif
         elseif(process_role.eq.EXA_WORKER) then
+         write(jo,'("#MSG(exatensor): Preparing the TAVP-WRK virtual processor ... ")',ADVANCE='NO')
          call prepare_tavp_wrk(ierr)
+         if(ierr.eq.0) then; write(jo,'("Done")'); else; write(jo,'("Failed: Error ",i11)') ierr; endif
         elseif(process_role.eq.EXA_HELPER) then
+         write(jo,'("#MSG(exatensor): Preparing the TAVP-HLP virtual processor ... ")',ADVANCE='NO')
          !call prepare_tavp_hlp(ierr)
          call quit(-1,'#FATAL(exatensor): TAVP-HLP is not implemented yet!')
+         if(ierr.eq.0) then; write(jo,'("Done")'); else; write(jo,'("Failed: Error ",i11)') ierr; endif
         endif
-        write(*,*) 'Process ',my_rank,': Prepare status = ',ierr !debug
-        !if(ierr.eq.0) call tavp%start(ierr) !will later call .shutdown()
+        if(ierr.eq.0) call tavp%start(ierr) !will later call .shutdown()
 !Mark ExaTENSOR runtime is off:
         exatns_rt_status=exatns_rt_status_t(DSVP_STAT_OFF,ierr,0)
 !Destroy TAVP:
@@ -244,9 +251,9 @@
              &dil_global_process_id(),dil_global_comm_size(),ierr
         call dil_global_comm_barrier(errc)
         if(errc.eq.0) then; write(jo,'("Ok")'); else; write(jo,'("Failed")'); ierr=-8; endif
-!Free role specific communicators:
+!Free role specific MPI communicators:
         call MPI_Comm_free(role_comm,errc); if(errc.ne.0.and.ierr.eq.0) ierr=-9
-!Finish the (MPI) process:
+!Finish the MPI process:
         call dil_process_finish(errc); if(errc.ne.0.and.ierr.eq.0) ierr=-10
         return
 
@@ -258,31 +265,40 @@
           type(tavp_wrk_conf_t):: tavp_wrk_conf
           integer(INTD):: ji
           integer(INTL):: aid
+          character(128):: tavpname
 
           allocate(tavp_wrk_t::tavp,STAT=jerr)
           if(jerr.eq.0) then
-           tavp_wrk_conf%tavp_id=my_rank
-           aid=comp_system%get_ancestor_id(int(my_rank,INTL),1,jerr)
+           tavpname='TAVP-WRK#'
+           call numchar(role_rank,ji,tavpname(len_trim(tavpname)+1:))
+           allocate(tavp_wrk_conf%description,SOURCE=tavpname(1:len_trim(tavpname)),STAT=jerr)
            if(jerr.eq.0) then
-            tavp_wrk_conf%source_comm=mng_wrk_comm
-            tavp_wrk_conf%source_rank=tavp_role_rank(int(aid,INTD))
-            tavp_wrk_conf%retire_comm=tavp_wrk_conf%source_comm
-            tavp_wrk_conf%retire_rank=tavp_wrk_conf%source_rank
-            tavp_wrk_conf%host_ram_size=16_INTL*(1024_INTL*1024_INTL*1024_INTL) !`Make configurable
-            tavp_wrk_conf%nvram_size=0_INTL !`Make configurable
-            tavp_wrk_conf%num_mpi_windows=1 !`Make configurable
-            tavp_wrk_conf%host_buf_size=tavp_wrk_conf%host_ram_size !`Make configurable
-            if(gpu_count.gt.0) then
-             allocate(tavp_wrk_conf%gpu_list(gpu_count))
-             tavp_wrk_conf%gpu_list(1:gpu_count)=(/(ji,ji=gpu_start,gpu_start+gpu_count-1)/)
+            tavp_wrk_conf%tavp_id=my_rank
+            aid=comp_system%get_ancestor_id(int(my_rank,INTL),1,jerr)
+            if(jerr.eq.0) then
+             tavp_wrk_conf%source_comm=mng_wrk_comm
+             tavp_wrk_conf%source_rank=tavp_role_rank(int(aid,INTD))
+             tavp_wrk_conf%retire_comm=tavp_wrk_conf%source_comm
+             tavp_wrk_conf%retire_rank=tavp_wrk_conf%source_rank
+             tavp_wrk_conf%host_ram_size=16_INTL*(1024_INTL*1024_INTL*1024_INTL) !`Make configurable
+             tavp_wrk_conf%nvram_size=0_INTL !`Make configurable
+             tavp_wrk_conf%num_mpi_windows=1 !`Make configurable
+             tavp_wrk_conf%host_buf_size=tavp_wrk_conf%host_ram_size !`Make configurable
+             if(gpu_count.gt.0) then
+              allocate(tavp_wrk_conf%gpu_list(gpu_count))
+              tavp_wrk_conf%gpu_list(1:gpu_count)=(/(ji,ji=gpu_start,gpu_start+gpu_count-1)/)
+             endif
+             call tavp%configure(tavp_wrk_conf,jerr); if(jerr.ne.0) jerr=-4
+            else
+             jerr=-3
             endif
-            call tavp%configure(tavp_wrk_conf,jerr); if(jerr.ne.0) jerr=-3
            else
             jerr=-2
            endif
           else
            jerr=-1
           endif
+          !print *,'Process ',my_rank,'TAVP-WRK prepare status ',jerr !debug
           return
          end subroutine prepare_tavp_wrk
 
@@ -293,53 +309,63 @@
           integer(INTD):: ji,jrl
           integer(INTL):: aid,lid,rid,nch
           integer(INTL), allocatable:: chid(:)
+          character(128):: tavpname
 
           allocate(tavp_mng_t::tavp,STAT=jerr)
           if(jerr.eq.0) then
-           tavp_mng_conf%tavp_id=my_rank
-           aid=comp_system%get_ancestor_id(int(my_rank,INTL),1,jerr)
+           tavpname='TAVP-MNG#'
+           call numchar(role_rank,ji,tavpname(len_trim(tavpname)+1:))
+           allocate(tavp_mng_conf%description,SOURCE=tavpname(1:len_trim(tavpname)),STAT=jerr)
            if(jerr.eq.0) then
-            if(aid.lt.0) then !root manager
-             tavp_mng_conf%source_comm=drv_mng_comm
-             tavp_mng_conf%source_rank=0 !`Assumes a single Driver process
-            else !intermediate manager
-             tavp_mng_conf%source_comm=manager_comm
-             tavp_mng_conf%source_rank=tavp_role_rank(int(aid,INTD))
-            endif
-            tavp_mng_conf%retire_comm=tavp_mng_conf%source_comm
-            tavp_mng_conf%retire_rank=tavp_mng_conf%source_rank
-            lid=comp_system%get_sibling_id(int(my_rank,INTL),LEFT_SIBLING,jerr)
+            tavp_mng_conf%tavp_id=my_rank
+            aid=comp_system%get_ancestor_id(int(my_rank,INTL),1,jerr)
             if(jerr.eq.0) then
-             rid=comp_system%get_sibling_id(int(my_rank,INTL),RIGHT_SIBLING,jerr)
+             if(aid.lt.0) then !root manager
+              tavp_mng_conf%source_comm=drv_mng_comm
+              tavp_mng_conf%source_rank=0 !`Assumes a single Driver process
+             else !intermediate manager
+              tavp_mng_conf%source_comm=manager_comm
+              tavp_mng_conf%source_rank=tavp_role_rank(int(aid,INTD))
+             endif
+             tavp_mng_conf%retire_comm=tavp_mng_conf%source_comm
+             tavp_mng_conf%retire_rank=tavp_mng_conf%source_rank
+             lid=comp_system%get_cousin_id(int(my_rank,INTL),LEFT_SIBLING,jerr,ring=.TRUE.)
              if(jerr.eq.0) then
-              tavp_mng_conf%ring_comm=manager_comm
-              tavp_mng_conf%ring_send_rank=tavp_role_rank(int(rid,INTD))
-              tavp_mng_conf%ring_recv_rank=tavp_role_rank(int(lid,INTD))
-              nch=comp_system%get_num_children(int(my_rank,INTL),jerr)
-              if(jerr.eq.0.and.nch.gt.0) then
-               if(allocated(tavp_mng_conf%dispatch_rank)) deallocate(tavp_mng_conf%dispatch_rank)
-               allocate(tavp_mng_conf%dispatch_rank(1:nch)); allocate(chid(1:nch))
-               nch=comp_system%get_children_ids(int(my_rank,INTL),chid,jerr)
-               if(jerr.eq.0) then
-                ji=tavp_role_rank(int(chid(1),INTD),jrl)
-                if(jrl.eq.EXA_MANAGER) then
-                 tavp_mng_conf%dispatch_comm=manager_comm
-                elseif(jrl.eq.EXA_WORKER) then
-                 tavp_mng_conf%dispatch_comm=mng_wrk_comm
-                else
-                 jerr=-8
-                endif
+              if(lid.lt.0) lid=int(my_rank,INTL) !self-reference (root node)
+              rid=comp_system%get_cousin_id(int(my_rank,INTL),RIGHT_SIBLING,jerr,ring=.TRUE.)
+              if(jerr.eq.0) then
+               if(rid.lt.0) rid=int(my_rank,INTL) !self-reference (root node)
+               tavp_mng_conf%ring_comm=manager_comm
+               tavp_mng_conf%ring_send_rank=tavp_role_rank(int(rid,INTD))
+               tavp_mng_conf%ring_recv_rank=tavp_role_rank(int(lid,INTD))
+               nch=comp_system%get_num_children(int(my_rank,INTL),jerr)
+               if(jerr.eq.0.and.nch.gt.0) then
+                if(allocated(tavp_mng_conf%dispatch_rank)) deallocate(tavp_mng_conf%dispatch_rank)
+                allocate(tavp_mng_conf%dispatch_rank(1:nch)); allocate(chid(1:nch))
+                nch=comp_system%get_children_ids(int(my_rank,INTL),chid,jerr)
                 if(jerr.eq.0) then
-                 do ji=1,int(nch,INTD)
-                  tavp_mng_conf%dispatch_rank(ji)=tavp_role_rank(int(chid(ji),INTD))
-                 enddo
-                 tavp_mng_conf%collect_comm=tavp_mng_conf%dispatch_comm
-                 call tavp%configure(tavp_mng_conf,jerr); if(jerr.ne.0) jerr=-7
+                 ji=tavp_role_rank(int(chid(1),INTD),jrl)
+                 if(jrl.eq.EXA_MANAGER) then
+                  tavp_mng_conf%dispatch_comm=manager_comm
+                 elseif(jrl.eq.EXA_WORKER) then
+                  tavp_mng_conf%dispatch_comm=mng_wrk_comm
+                 else
+                  jerr=-9
+                 endif
+                 if(jerr.eq.0) then
+                  do ji=1,int(nch,INTD)
+                   tavp_mng_conf%dispatch_rank(ji)=tavp_role_rank(int(chid(ji),INTD))
+                  enddo
+                  tavp_mng_conf%collect_comm=tavp_mng_conf%dispatch_comm
+                  call tavp%configure(tavp_mng_conf,jerr); if(jerr.ne.0) jerr=-8
+                 endif
+                else
+                 jerr=-7
                 endif
+                deallocate(chid)
                else
                 jerr=-6
                endif
-               deallocate(chid)
               else
                jerr=-5
               endif
@@ -355,6 +381,7 @@
           else
            jerr=-1
           endif
+          !print *,'Process ',my_rank,'TAVP-MNG prepare status ',jerr !debug
           return
          end subroutine prepare_tavp_mng
 
@@ -417,20 +444,40 @@
         integer(INT_MPI):: errc
 
         ierr=EXA_SUCCESS
+!Send the stop signal to the root TAVP-MNG:
+        !`Implement
 !Mark ExaTENSOR runtime is off:
         exatns_rt_status=exatns_rt_status_t(DSVP_STAT_OFF,ierr,0)
 !Sync with others:
         write(jo,'()')
-        write(jo,'("###EXATENSOR FINISHED PROCESS ",i9,"/",i9,": Status = ",i4,": Syncing ... ")',ADVANCE='NO')&
+        write(jo,'("###EXATENSOR FINISHED PROCESS ",i9,"/",i9,": Status = ",i11,": Syncing ... ")',ADVANCE='NO')&
              &dil_global_process_id(),dil_global_comm_size(),ierr
         call dil_global_comm_barrier(errc)
         if(errc.eq.0) then; write(jo,'("Ok")'); else; write(jo,'("Failed")'); ierr=-1; endif
-!Free role specific communicator:
+!Free the role specific MPI communicator:
         call MPI_Comm_free(role_comm,errc); if(errc.ne.0.and.ierr.eq.0) ierr=-2
-!Finish the (MPI) process:
+!Finish the MPI process:
         call dil_process_finish(errc); if(errc.ne.0.and.ierr.eq.0) ierr=-3
         return
        end function exatns_stop
+!-------------------------------------------------------------
+       function exatns_proc_role(role,role_total) result(ierr)
+!Returns the role of the current MPI process.
+        implicit none
+        integer(INTD):: ierr                              !out: error code
+        integer(INTD), intent(out):: role                 !out: process role
+        integer(INTD), intent(out), optional:: role_total !out: total number of MPI processes of this role
+
+        ierr=EXA_SUCCESS; role=process_role
+        if(present(role_total)) then
+         if(role.ne.EXA_NO_ROLE) then
+          role_total=role_size
+         else
+          role_total=0
+         endif
+        endif
+        return
+       end function exatns_proc_role
 !----------------------------------------------
        function exatns_status(sts) result(ierr)
 !Returns the current status of the ExaTENSOR runtime.

@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/09/22
+!REVISION: 2017/10/02
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -1928,6 +1928,7 @@
          else
           errc=-1
          endif
+         !print *,'#DEBUG(TAVPMNGConfigure): Exit status ',errc !debug
          if(errc.ne.0) call this%destroy()
          if(present(ierr)) ierr=errc
          return

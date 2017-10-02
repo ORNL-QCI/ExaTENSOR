@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/09/22
+!REVISION: 2017/10/02
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -2486,9 +2486,12 @@
          type is(tavp_wrk_dispatcher_conf_t)
           if(conf%host_buf_size.ge.0) then
            this%host_buf_size=conf%host_buf_size
-           this%gpu_list=conf%gpu_list
-           this%amd_list=conf%amd_list
-           this%mic_list=conf%mic_list
+           if(allocated(this%gpu_list)) deallocate(this%gpu_list)
+           if(allocated(conf%gpu_list)) this%gpu_list=conf%gpu_list
+           if(allocated(this%amd_list)) deallocate(this%amd_list)
+           if(allocated(conf%amd_list)) this%amd_list=conf%amd_list
+           if(allocated(this%mic_list)) deallocate(this%mic_list)
+           if(allocated(conf%mic_list)) this%mic_list=conf%mic_list
            call set_microcode()
           else
            errc=-2
@@ -2835,6 +2838,7 @@
          else
           errc=-1
          endif
+         !print *,'#DEBUG(TAVPWRKConfigure): Exit status ',errc !debug
          if(errc.ne.0) call this%destroy()
          if(present(ierr)) ierr=errc
          return

@@ -1,6 +1,6 @@
 !Domain-specific virtual processor (DSVP): Abstract base module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/09/22
+!REVISION: 2017/10/02
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -1254,6 +1254,7 @@
            mthreads=omp_get_max_threads()
           endif
           if(mthreads.ge.nthreads) then
+#if 0
 !$OMP PARALLEL DEFAULT(SHARED) NUM_THREADS(mthreads)
            if(omp_get_num_threads().ge.nthreads) then
 !$OMP MASTER
@@ -1270,6 +1271,7 @@
             errc=DSVP_ERR_RSC_EXCEEDED
            endif
 !$OMP END PARALLEL
+#endif
            call this%shutdown(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.DSVP_SUCCESS) errc=ier
           else
            write(CONS_OUT,'("#FATAL(dsvp_base:dsvp_t.start): Insufficient number of threads: ",i5," when need ",i5)')&
@@ -1284,7 +1286,7 @@
         end subroutine DSVPStart
 !-----------------------------------------
         subroutine DSVPShutdown(this,ierr)
-!Shuts down DSVP.
+!Shuts down DSVP but leaves it configured.
          implicit none
          class(dsvp_t), intent(inout):: this         !inout: active DSVP becomes inactive but still configured
          integer(INTD), intent(out), optional:: ierr !out: error code
@@ -1412,7 +1414,7 @@
         subroutine DSVPSetDescription(this,id,descr,ierr,spec_kind)
 !Sets the DSVP ID, kind, and symbolic description.
          implicit none
-         class(dsvp_t), intent(inout):: this             !inout: active DSVP
+         class(dsvp_t), intent(inout):: this             !inout: inactive DSVP
          integer(INTL), intent(in):: id                  !in: unique ID: >=0
          character(*), intent(in):: descr                !in: symbolic description
          integer(INTD), intent(out), optional:: ierr     !out: error code
@@ -1421,7 +1423,7 @@
          integer:: ier
 
          errc=DSVP_SUCCESS
-         if(this%get_status(errc).ne.DSVP_STAT_OFF) then
+         if(this%get_status(errc).eq.DSVP_STAT_OFF) then
           if(allocated(this%description)) then
            deallocate(this%description,STAT=ier)
            if(ier.ne.0.and.errc.eq.DSVP_SUCCESS) errc=DSVP_ERR_MEM_FREE_FAIL
