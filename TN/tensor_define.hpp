@@ -1,7 +1,7 @@
 /** C++ adapters for ExaTENSOR: External tensor definition mechanism
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/09/25
+!REVISION: 2017/10/05
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -40,10 +40,10 @@ public:
  virtual ~TensorDenseDefiner();
 
  /** User-provided tensor definition class (eturns an error code). **/
- virtual int defineTensBody(void * bodyPtr,                                     //pointer to the tensor body
-                            const int dataKind,                                 //tensor element data kind: {R4,R8,C4,C8}
-                            const TensorShape * tensShape,                      //tensor shape
-                            const long long int * tensSignature = nullptr) = 0; //tensor signature (optional)
+ virtual int defineTensorBody(void * bodyPtr,                                     //pointer to the tensor body
+                              const int dataKind,                                 //tensor element data kind: {R4,R8,C4,C8}
+                              const TensorShape * tensShape,                      //tensor shape
+                              const long long int * tensSignature = nullptr) = 0; //tensor signature (optional)
 
 }; //end class TensorDenseDefiner
 
