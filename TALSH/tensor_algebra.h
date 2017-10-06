@@ -2,7 +2,7 @@
     Parameters, derived types, and function prototypes
     used at the lower level of TAL-SH (device specific):
     CP-TAL, NV-TAL, XP-TAL, AM-TAL, etc.
-REVISION: 2017/09/25
+REVISION: 2017/10/06
 
 Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -298,6 +298,12 @@ typedef struct{
  int * divs;    //tensor dimension dividers (either in regular RAM or pinned)
  int * grps;    //tensor dimension groups (either in regular RAM or pinned)
 } talsh_tens_shape_t;
+
+// Tensor signature:
+typedef struct{
+ int num_dim;               //tensor rank (number of dimensions): >=0; -1:empty
+ long long int * signature; //tensor signature: An array of long integers of size <num_dim>
+} talsh_tens_signature_t;
 
 // Device resource (occupied by a tensor block):
 typedef struct{
