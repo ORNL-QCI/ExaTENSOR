@@ -1,6 +1,6 @@
 !ExaTENSOR hardware abstraction module
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/10/02
+!REVISION: 2017/10/06
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -173,10 +173,10 @@
             if(match) then
              if(is_this_integer(str(offs(1):offs(1)+lens(1)-1),no_sign=.TRUE.)) then
               this%num_phys_nodes=icharnum(lens(1),str(offs(1):offs(1)+lens(1)-1))
-              if(this%num_phys_nodes.le.0) errc=-13
+              if(this%num_phys_nodes.le.0) errc=-21
               exit
              else
-              errc=-12; exit
+              errc=-20; exit
              endif
             endif
            endif
@@ -185,7 +185,7 @@
          enddo
          close(10)
 #endif
-         this%num_phys_nodes=num_procs; if(this%num_phys_nodes.le.0) errc=-13
+         this%num_phys_nodes=num_procs; if(this%num_phys_nodes.le.0) errc=-19
          !write(CONS_OUT,'(i8," physical nodes -> ")',ADVANCE='NO') this%num_phys_nodes
 !Build the hierarchical virtual computing system representation for <num_phys_nodes> nodes:
          this%num_virt_nodes=0_INTL
@@ -220,35 +220,33 @@
                    match=.FALSE.
                    do while(errc.eq.GFC_SUCCESS)
   !Process the current tree vertex;
-                    up=>vt_it%get_value(errc); if(errc.ne.GFC_SUCCESS) exit tloop
+                    up=>vt_it%get_value(errc); if(errc.ne.GFC_SUCCESS) then; errc=-18; exit tloop; endif
                     rp=>NULL(); select type(up); class is(seg_int_t); rp=>up; end select
-                    if(.not.associated(rp)) then; errc=-11; exit tloop; endif
-                    if(rp%length().lt.int(mas*brf,INTL)) then
-                     m=int(rp%length(),INTD)
-                    else
-                     m=brf
-                    endif
+                    if(.not.associated(rp)) then; errc=-17; exit tloop; endif
+                    m=min(int((rp%length()-1_INTL)/int(mas,INTL),INTD)+1,brf); if(m.le.1) m=int(rp%length(),INTD)
                     if(m.gt.1) then
-                     call rp%split(m,segs,errc); if(errc.ne.0) exit tloop
+                     call rp%split(m,segs,errc); if(errc.ne.0) then; errc=-16; exit tloop; endif
                      do l=1,m
                       !write(CONS_OUT,*)'adding new subrange: ',segs(l)%lower_bound(),segs(l)%upper_bound() !debug
                       if(segs(l)%length().gt.1_INTL) then !has to be an aggregate to be added as a new virtual node
-                       errc=vt_it%append(segs(l)); if(errc.ne.GFC_SUCCESS) exit tloop
-                       errc=vt_it%add_leaf(this%num_virt_nodes,no_move=.TRUE.); if(errc.ne.GFC_SUCCESS) exit tloop
+                       errc=vt_it%append(segs(l)); if(errc.ne.GFC_SUCCESS) then; errc=-15; exit tloop; endif
+                       errc=vt_it%add_leaf(this%num_virt_nodes,no_move=.TRUE.)
+                       if(errc.ne.GFC_SUCCESS) then; errc=-14; exit tloop; endif
                        this%num_virt_nodes=this%num_virt_nodes+1_INTL !each node aggregate is added as a virtual node
                        match=.TRUE.
                       else !individual node
-                       errc=vt_it%add_leaf(segs(l)%lower_bound(),no_move=.TRUE.); if(errc.ne.GFC_SUCCESS) exit tloop
+                       errc=vt_it%add_leaf(segs(l)%lower_bound(),no_move=.TRUE.)
+                       if(errc.ne.GFC_SUCCESS) then; errc=-13; exit tloop; endif
                       endif
                      enddo
                     endif
   !Move to the right cousin (within the current tree level):
                     errc=vt_it%move_to_cousin()
                    enddo
-                   if(errc.eq.GFC_NO_MOVE) then; errc=GFC_SUCCESS; else; exit tloop; endif
+                   if(errc.eq.GFC_NO_MOVE) then; errc=GFC_SUCCESS; else; errc=-12; exit tloop; endif
   !Move to the children level:
                    do while(errc.eq.GFC_SUCCESS); errc=vt_it%move_to_cousin(to_previous=.TRUE.); enddo
-                   if(errc.eq.GFC_NO_MOVE) then; errc=GFC_SUCCESS; else; exit tloop; endif
+                   if(errc.eq.GFC_NO_MOVE) then; errc=GFC_SUCCESS; else; errc=-11; exit tloop; endif
                    cloop: do
                     errc=vt_it%move_to_child(); if(errc.eq.GFC_SUCCESS) exit cloop
                     if(errc.eq.GFC_NO_MOVE) then
