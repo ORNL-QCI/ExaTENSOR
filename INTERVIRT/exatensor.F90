@@ -1,7 +1,7 @@
 !ExaTENSOR: Massively Parallel Virtual Processor for Scale-Adaptive Hierarchical Tensor Algebra
 !This is the top level API module of ExaTENSOR (user-level API)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017/10/06
+!REVISION: 2017/10/08
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -242,7 +242,7 @@
 !Live TAVP life:
         ierr=EXA_SUCCESS
         if(process_role.eq.EXA_DRIVER) then
-         return !Driver process returns immediately
+         return !Driver process returns immediately, it will later call exatns_stop()
         elseif(process_role.eq.EXA_MANAGER) then
          write(jo,'("#MSG(exatensor): Preparing the TAVP-MNG virtual processor ... ")',ADVANCE='NO')
          call prepare_tavp_mng(ierr)
@@ -296,12 +296,11 @@
 
           allocate(tavp_wrk_t::tavp,STAT=jerr)
           if(jerr.eq.0) then
-           tavpname='TAVP-WRK#'
-           call numchar(role_rank,ji,tavpname(len_trim(tavpname)+1:))
+           tavpname='TAVP-WRK#'; call numchar(role_rank,ji,tavpname(len_trim(tavpname)+1:))
            allocate(tavp_wrk_conf%description,SOURCE=tavpname(1:len_trim(tavpname)),STAT=jerr)
            if(jerr.eq.0) then
             tavp_wrk_conf%tavp_id=my_rank
-            aid=comp_system%get_ancestor_id(int(my_rank,INTL),1,jerr)
+            aid=comp_system%get_ancestor_id(int(my_rank,INTL),1,jerr) !parent TAVP
             if(jerr.eq.0) then
              tavp_wrk_conf%source_comm=mng_wrk_comm
              tavp_wrk_conf%source_rank=tavp_role_rank(int(aid,INTD))
@@ -325,7 +324,6 @@
           else
            jerr=-1
           endif
-          !print *,'Process ',my_rank,'TAVP-WRK prepare status ',jerr !debug
           return
          end subroutine prepare_tavp_wrk
 
@@ -333,23 +331,22 @@
           implicit none
           integer(INTD), intent(out):: jerr
           type(tavp_mng_conf_t):: tavp_mng_conf
-          integer(INTD):: ji,jrl
+          integer(INTD):: ji,jrl,jl,jr
           integer(INTL):: aid,lid,rid,nch
           integer(INTL), allocatable:: chid(:)
           character(128):: tavpname
 
           allocate(tavp_mng_t::tavp,STAT=jerr)
           if(jerr.eq.0) then
-           tavpname='TAVP-MNG#'
-           call numchar(role_rank,ji,tavpname(len_trim(tavpname)+1:))
+           tavpname='TAVP-MNG#'; call numchar(role_rank,ji,tavpname(len_trim(tavpname)+1:))
            allocate(tavp_mng_conf%description,SOURCE=tavpname(1:len_trim(tavpname)),STAT=jerr)
            if(jerr.eq.0) then
             tavp_mng_conf%tavp_id=my_rank
-            aid=comp_system%get_ancestor_id(int(my_rank,INTL),1,jerr)
+            aid=comp_system%get_ancestor_id(int(my_rank,INTL),1,jerr) !parent TAVP
             if(jerr.eq.0) then
-             if(aid.lt.0) then !root manager
+             if(aid.lt.0) then !root manager (no parent)
               tavp_mng_conf%source_comm=drv_mng_comm
-              tavp_mng_conf%source_rank=0 !`Assumes a single Driver process
+              tavp_mng_conf%source_rank=0 !assumes a single Driver process
              else !intermediate manager
               tavp_mng_conf%source_comm=manager_comm
               tavp_mng_conf%source_rank=tavp_role_rank(int(aid,INTD))
@@ -363,34 +360,39 @@
               if(jerr.eq.0) then
                if(rid.lt.0) rid=int(my_rank,INTL) !self-reference (root node)
                tavp_mng_conf%ring_comm=manager_comm
-               tavp_mng_conf%ring_send_rank=tavp_role_rank(int(rid,INTD))
-               tavp_mng_conf%ring_recv_rank=tavp_role_rank(int(lid,INTD))
-               nch=comp_system%get_num_children(int(my_rank,INTL),jerr)
-               if(jerr.eq.0.and.nch.gt.0) then
-                if(allocated(tavp_mng_conf%dispatch_rank)) deallocate(tavp_mng_conf%dispatch_rank)
-                allocate(tavp_mng_conf%dispatch_rank(1:nch)); allocate(chid(1:nch))
-                nch=comp_system%get_children_ids(int(my_rank,INTL),chid,jerr)
-                if(jerr.eq.0) then
-                 ji=tavp_role_rank(int(chid(1),INTD),jrl)
-                 if(jrl.eq.EXA_MANAGER) then
-                  tavp_mng_conf%dispatch_comm=manager_comm
-                 elseif(jrl.eq.EXA_WORKER) then
-                  tavp_mng_conf%dispatch_comm=mng_wrk_comm
-                 else
-                  jerr=-9
-                 endif
+               tavp_mng_conf%ring_send_rank=tavp_role_rank(int(rid,INTD),jr)
+               tavp_mng_conf%ring_recv_rank=tavp_role_rank(int(lid,INTD),jl)
+               if(jl.eq.process_role.and.jr.eq.process_role) then
+                nch=comp_system%get_num_children(int(my_rank,INTL),jerr)
+                if(jerr.eq.0.and.nch.gt.0) then
+                 if(allocated(tavp_mng_conf%dispatch_rank)) deallocate(tavp_mng_conf%dispatch_rank)
+                 allocate(tavp_mng_conf%dispatch_rank(1:nch)); allocate(chid(1:nch))
+                 nch=comp_system%get_children_ids(int(my_rank,INTL),chid,jerr)
                  if(jerr.eq.0) then
-                  do ji=1,int(nch,INTD)
-                   tavp_mng_conf%dispatch_rank(ji)=tavp_role_rank(int(chid(ji),INTD))
-                  enddo
-                  tavp_mng_conf%collect_comm=tavp_mng_conf%dispatch_comm
-                  call tavp%configure(tavp_mng_conf,jerr); if(jerr.ne.0) jerr=-8
+                  ji=tavp_role_rank(int(chid(1),INTD),jrl)
+                  if(jrl.eq.EXA_MANAGER) then
+                   tavp_mng_conf%dispatch_comm=manager_comm
+                  elseif(jrl.eq.EXA_WORKER) then
+                   tavp_mng_conf%dispatch_comm=mng_wrk_comm
+                  else
+                   jerr=-10
+                  endif
+                  if(jerr.eq.0) then
+                   do ji=1,int(nch,INTD)
+                    tavp_mng_conf%dispatch_rank(ji)=tavp_role_rank(int(chid(ji),INTD))
+                   enddo
+                   tavp_mng_conf%collect_comm=tavp_mng_conf%dispatch_comm
+                   call tavp%configure(tavp_mng_conf,jerr); if(jerr.ne.0) jerr=-9
+                  endif
+                 else
+                  jerr=-8
                  endif
+                 deallocate(chid)
                 else
                  jerr=-7
                 endif
-                deallocate(chid)
                else
+                write(jo,'("#FATAL(exatensor): Unbalanced Node Aggregation Trees are not supported yet!")')
                 jerr=-6
                endif
               else
@@ -408,7 +410,6 @@
           else
            jerr=-1
           endif
-          !print *,'Process ',my_rank,'TAVP-MNG prepare status ',jerr !debug
           return
          end subroutine prepare_tavp_mng
 

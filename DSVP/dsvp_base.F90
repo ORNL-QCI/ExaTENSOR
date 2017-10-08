@@ -1254,7 +1254,6 @@
            mthreads=omp_get_max_threads()
           endif
           if(mthreads.ge.nthreads) then
-#if 0
 !$OMP PARALLEL DEFAULT(SHARED) NUM_THREADS(mthreads)
            if(omp_get_num_threads().ge.nthreads) then
 !$OMP MASTER
@@ -1271,7 +1270,6 @@
             errc=DSVP_ERR_RSC_EXCEEDED
            endif
 !$OMP END PARALLEL
-#endif
            call this%shutdown(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.DSVP_SUCCESS) errc=ier
           else
            write(CONS_OUT,'("#FATAL(dsvp_base:dsvp_t.start): Insufficient number of threads: ",i5," when need ",i5)')&
