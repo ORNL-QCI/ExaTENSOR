@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/09/26
+!REVISION: 2017/10/10
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -5872,9 +5872,13 @@
            endif
  !Allocate tcg_num_buf(:), if not allocated:
            if(.not.jfn) then
-            allocate(tcg_num_buf(1:TEREC_TCG_BUF_SIZE*2),STAT=jerr) !twice memory for sorting
-            if(jerr.eq.0) then; jfn=.TRUE.; tcg_num_buf(:)=0; endif
-            if((.not.jfn).and.allocated(tcg_ind_buf)) then; deallocate(tcg_ind_buf); jfi=.FALSE.; endif
+            if(jfi) then
+             allocate(tcg_num_buf(1:TEREC_TCG_BUF_SIZE*2),STAT=jerr) !twice memory for sorting
+             if(jerr.eq.0) then; jfn=.TRUE.; tcg_num_buf(:)=0; endif
+             if(.not.jfn) then; deallocate(tcg_ind_buf); jfi=.FALSE.; endif
+            endif
+           else
+            if(.not.jfi) then; deallocate(tcg_num_buf); jfn=.FALSE.; endif
            endif
            jsts=jfi.and.jfn
            return
@@ -5890,12 +5894,14 @@
            jtrp=>this%get_argument(0,jerr)
            if(jerr.eq.TEREC_SUCCESS) then
             jerr=tens_split_f(jtrp,dsubs,dsl); if(dsl.le.0.and.jerr.eq.TEREC_SUCCESS) jerr=TEREC_ERROR
+            !write(CONS_OUT,'("#DEBUG(TensContractionSplit:generate_subtensors): Status ",i10,": D length ",i10)') jerr,dsl !debug
            endif
  !Left tensor argument:
            if(jerr.eq.TEREC_SUCCESS) then
             jtrp=>this%get_argument(1,jerr)
             if(jerr.eq.TEREC_SUCCESS) then
              jerr=tens_split_f(jtrp,lsubs,lsl); if(lsl.le.0.and.jerr.eq.TEREC_SUCCESS) jerr=TEREC_ERROR
+             !write(CONS_OUT,'("#DEBUG(TensContractionSplit:generate_subtensors): Status ",i10,": L length ",i10)') jerr,lsl !debug
             endif
            endif
  !Right tensor argument:
@@ -5903,6 +5909,7 @@
             jtrp=>this%get_argument(2,jerr)
             if(jerr.eq.TEREC_SUCCESS) then
              jerr=tens_split_f(jtrp,rsubs,rsl); if(rsl.le.0.and.jerr.eq.TEREC_SUCCESS) jerr=TEREC_ERROR
+             !write(CONS_OUT,'("#DEBUG(TensContractionSplit:generate_subtensors): Status ",i10,": R length ",i10)') jerr,rsl !debug
             endif
            endif
  !Init list iterators:
@@ -6060,7 +6067,7 @@
             enddo lloop
             if(jerr.eq.GFC_NO_MOVE) jerr=TEREC_SUCCESS
            endif
-           lfinish=tcgl !dfinish: end offset of the destination tensor descriptors
+           lfinish=tcgl !lfinish: end offset of the left tensor descriptors
            !call print_tcg_buffer(lstart,lfinish,lrank) !debug
  !Right subtensors:
            rstart=tcgl+1; rmsi=0_INTL !start offset of the tensor descriptors and maximum subspace id
@@ -6103,7 +6110,7 @@
             enddo rloop
             if(jerr.eq.GFC_NO_MOVE) jerr=TEREC_SUCCESS
            endif
-           rfinish=tcgl !dfinish: end offset of the destination tensor descriptors
+           rfinish=tcgl !rfinish: end offset of the right tensor descriptors
            !call print_tcg_buffer(rstart,rfinish,rrank) !debug
  !Destination subtensors:
            dstart=tcgl+1; dmsi=0_INTL !start offset of the tensor descriptors and maximum subspace id
@@ -6179,28 +6186,38 @@
            !write(CONS_OUT,'("D dimension order:",32(1x,i2))') ord(1:drank,0) !debug: position in D
            !write(CONS_OUT,'("L dimension order:",32(1x,i2))') ord(1:lrank,1) !debug: N2O for L
            !write(CONS_OUT,'("R dimension order:",32(1x,i2))') ord(1:rrank,2) !debug: N2O for R
+           !write(CONS_OUT,'("Current legnth of the TCG buffer = ",i9)') tcgl !debug
  !Sort tensor descriptors:
   !Use the rest of the TCG buffer as an external buffer:
            jub=(int(ubound(tcg_ind_buf,2),INTL)-tcgl)*int(size(tcg_ind_buf,1),INTL)
            ext_buf(1:jub)=>tcg_ind_buf(:,tcgl+1:) !`Does this introduce a temporary copy?
   !Sort left descriptors:
            if(lrank.gt.0) then
-            iv=>tcg_ind_buf(:,lstart:lfinish)
-            v=>tcg_num_buf(lstart:lfinish)
+            iv(1:,1:)=>tcg_ind_buf(:,lstart:lfinish)
+            v(1:)=>tcg_num_buf(lstart:lfinish)
+            !write(CONS_OUT,'("Sorting segment ",i10,1x,i10)') lstart,lfinish !debug
+            !do j1=1,lfinish-lstart+1; write(CONS_OUT,'(2x,i10,64(1x,i4))') v(j1),iv(1:lrank,j1); enddo !debug
+            !write(CONS_OUT,'("Calling multord_i8e() ...")') !debug
             call multord_i8e(lrank,lmsi,int(lfinish-lstart+1,INTL),ord(1:lrank,1),iv,v,ext_buf)
             !call print_tcg_buffer(lstart,lfinish,lrank) !debug
            endif
   !Sort right descriptors:
            if(rrank.gt.0) then
-            iv=>tcg_ind_buf(:,rstart:rfinish)
-            v=>tcg_num_buf(rstart:rfinish)
+            iv(1:,1:)=>tcg_ind_buf(:,rstart:rfinish)
+            v(1:)=>tcg_num_buf(rstart:rfinish)
+            !write(CONS_OUT,'("Sorting segment ",i10,1x,i10)') rstart,rfinish !debug
+            !do j1=1,rfinish-rstart+1; write(CONS_OUT,'(2x,i10,64(1x,i4))') v(j1),iv(1:rrank,j1); enddo !debug
+            !write(CONS_OUT,'("Calling multord_i8e() ...")') !debug
             call multord_i8e(rrank,rmsi,int(rfinish-rstart+1,INTL),ord(1:rrank,2),iv,v,ext_buf)
             !call print_tcg_buffer(rstart,rfinish,rrank) !debug
            endif
   !Sort destination descriptors:
            if(drank.gt.0) then
-            iv=>tcg_ind_buf(:,dstart:dfinish)
-            v=>tcg_num_buf(dstart:dfinish)
+            iv(1:,1:)=>tcg_ind_buf(:,dstart:dfinish)
+            v(1:)=>tcg_num_buf(dstart:dfinish)
+            !write(CONS_OUT,'("Sorting segment ",i10,1x,i10)') dstart,dfinish !debug
+            !do j1=1,dfinish-dstart+1; write(CONS_OUT,'(2x,i10,64(1x,i4))') v(j1),iv(1:drank,j1); enddo !debug
+            !write(CONS_OUT,'("Calling multord_i8e() ...")') !debug
             call multord_i8e(drank,dmsi,int(dfinish-dstart+1,INTL),(/(ji,ji=1,drank)/),iv,v,ext_buf)
             !call print_tcg_buffer(dstart,dfinish,drank) !debug
            endif
@@ -6316,7 +6333,7 @@
            do ji=ps,pf
             jrn=tcg_num_buf(ji)/lsl     !right subtensor number
             jln=tcg_num_buf(ji)-jrn*lsl !left subtensor number
-            !write(CONS_OUT,'("New subcontraction: ",i4," = ",i4," * ",i4)') jdn,jln,jrn !debug
+            !write(CONS_OUT,'("New subcontraction: ",i6," = ",i6," * ",i6)') jdn,jln,jrn !debug
  !Associate left tensor header:
             jup=>lvit%element_value(int(jln,INTL),jerr); if(jerr.ne.GFC_SUCCESS) exit
             ltrp=>NULL(); select type(jup); class is(tens_rcrsv_t); ltrp=>jup; end select

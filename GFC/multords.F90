@@ -1,6 +1,6 @@
 !Linear-scaling sorting subroutines operating with multi-index keys.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/05/10 (origin 2005 PhD work, used in Mol.Phys.2007)
+!REVISION: 2017/10/10 (origin 2005 PhD work, used in Mol.Phys.2007)
 
 !Copyright (C) 2005 Dmitry I. Lyakh (Liakh)
 
@@ -582,6 +582,10 @@
         logical:: mem_allocated,final_copy
 
         index_part(i,j)=mod(i/(INDEX_BASE**(j-1)),INDEX_BASE)
+
+        !write(CONS_OUT,'("#DEBUG(multord_i8e): Args(n,nl,mov,ip1): ",i3,1x,i10,1x,i10,64(1x,i3))') n,nl,mov,ip1(1:n) !debug
+        !write(CONS_OUT,'("#DEBUG(multord_i8e): Args(iv,v): ")') !debug
+        !do i=1,mov; write(CONS_OUT,'(2x,i10,3x,64(1x,i4))') v(i),iv(1:n,i); enddo !debug
 
         if(n.gt.0.and.nl.gt.0_8.and.mov.gt.1_8) then !at least one index with a non-zero limit, and two items
 !Determine index splitting:
