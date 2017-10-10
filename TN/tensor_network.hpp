@@ -1,7 +1,7 @@
 /** C++ adapters for ExaTENSOR: Tensor network
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/09/25
+!REVISION: 2017/10/10
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -136,8 +136,10 @@ public:
      by pairing the dimensions of the output tensors of both. **/
  void appendNetwork(const TensorNetwork<T> & tensornet, //in: another tensor network
                     const std::vector<std::pair<unsigned int, unsigned int>> & legPairs); //in: leg pairing: pair<output leg id, output leg id>, may be empty
- /** Associates the output (lhs) tensor with its externally provided body. **/
+ /** Associates the output (lhs) tensor with its externally provided body (cannot be null). **/
  void setOutputBody(const std::shared_ptr<T> body);
+ /** Allocates the output (lhs) tensor body. **/
+ void allocateOutputBody();
  /** Resets the body of an arbitrary tensor. The new body may be null. **/
  void resetTensorBody(const unsigned int tensId, const std::shared_ptr<T> body);
 //Transforms:

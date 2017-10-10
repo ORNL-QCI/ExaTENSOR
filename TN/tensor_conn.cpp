@@ -1,7 +1,7 @@
 /** C++ adapters for ExaTENSOR: Tensor connected to other tensors
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/08/30
+!REVISION: 2017/10/10
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -89,6 +89,13 @@ unsigned int TensorConn<T>::getNumLegs() const
  return Legs.size();
 }
 
+/** Returns true if the tensor has body. **/
+template <typename T>
+bool TensorConn<T>::hasBody() const
+{
+ return Tensor.hasBody();
+}
+
 /** Prints. **/
 template <typename T>
 void TensorConn<T>::printIt() const
@@ -119,6 +126,14 @@ template <typename T>
 void TensorConn<T>::resetBody(const std::shared_ptr<T> body)
 {
  Tensor.resetBody(body);
+ return;
+}
+
+/** Allocates tensor body. **/
+template <typename T>
+void TensorConn<T>::allocateBody()
+{
+ Tensor.allocateBody();
  return;
 }
 

@@ -1,7 +1,7 @@
 /** C++ adapters for ExaTENSOR: Tensor leg (connection)
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/08/03
+!REVISION: 2017/10/10
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -42,7 +42,7 @@ class TensorLeg{
 
 private:
 
- unsigned int TensorId; //connected tensor id: 0 is output tensor (lhs), >0 is input tensor (rhs)
+ unsigned int TensorId; //connected tensor id: 0 is the output tensor (lhs), >0 is an input tensor (rhs)
  unsigned int DimesnId; //connected tensor dimension: [0..rank-1], where "rank" is the rank of the connected tensor
 
 public:

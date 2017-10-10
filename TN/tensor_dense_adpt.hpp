@@ -1,7 +1,7 @@
 /** C++ adapters for ExaTENSOR: Wrapper for importing dense tensor blocks from clients
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/08/30
+!REVISION: 2017/10/10
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -74,6 +74,8 @@ public:
  std::size_t getVolume() const;
  /** Returns the tensor size in bytes. **/
  std::size_t getSize() const;
+ /** Returns true if the tensor has body. **/
+ bool hasBody() const;
  /** Prints. **/
  void printIt() const;
 
@@ -84,6 +86,8 @@ public:
  void setBody(const std::shared_ptr<T> body);
  /** Reassociates the tensor with another body. The new body may be null. **/
  void resetBody(const std::shared_ptr<T> body);
+ /** Allocates tensor body. **/
+ void allocateBody();
  /** Reshapes the tensor to a different shape. If the tensor has a body,
      it will be nullified until the new body is supplied.  **/
  void reshape(const unsigned int rank,        //in: new tensor rank
