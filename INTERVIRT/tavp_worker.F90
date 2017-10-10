@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/10/02
+!REVISION: 2017/10/10
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -31,7 +31,7 @@
 !PARAMETERS:
  !Basic:
         integer(INTD), private:: CONS_OUT=6 !default console output
-        integer(INTD), private:: DEBUG=0    !debugging mode
+        integer(INTD), private:: DEBUG=1    !debugging mode
         logical, private:: VERBOSE=.TRUE.   !verbosity for errors
  !Distributed memory space:
         integer(INTD), parameter, private:: TAVP_WORKER_NUM_WINS=1 !number of MPI windows in the DDSS distributed space
@@ -233,6 +233,7 @@
 !VISIBILITY:
  !non-member test/debug:
         private test_carma
+        public tavp_wrk_reset_output
  !tens_resrc_t:
         private TensResrcIsEmpty
         private TensResrcAllocateBuffer
@@ -702,6 +703,13 @@
          end function signa2flat
 
         end subroutine test_carma
+!---------------------------------------------
+        subroutine tavp_wrk_reset_output(devo)
+         implicit none
+         integer(INTD), intent(in):: devo
+         CONS_OUT=devo
+         return
+        end subroutine tavp_wrk_reset_output
 !tens_resrc_t]==========================================
         function TensResrcIsEmpty(this,ierr) result(ans)
 !Returns TRUE if the tensor resource is empty (unacquired).
@@ -2838,7 +2846,7 @@
          else
           errc=-1
          endif
-         !print *,'#DEBUG(TAVPWRKConfigure): Exit status ',errc !debug
+         !write(CONS_OUT,*) '#DEBUG(TAVPWRKConfigure): Exit status ',errc !debug
          if(errc.ne.0) call this%destroy()
          if(present(ierr)) ierr=errc
          return

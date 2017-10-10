@@ -1,6 +1,6 @@
 !Distributed data storage service (DDSS).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/06/28 (started 2015/03/18)
+!REVISION: 2017/10/10 (started 2015/03/18)
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -98,8 +98,8 @@
 !PARAMETERS:
  !Output:
         integer, private:: CONS_OUT=6     !default output for this module
-        logical, private:: VERBOSE=.true. !verbosity for errors
-        logical, private:: DEBUG=.true.   !debugging mode
+        logical, private:: VERBOSE=.TRUE. !verbosity for errors
+        logical, private:: DEBUG=.FALSE.  !debugging mode
  !Packing/unpacking:
         integer(INT_MPI), parameter, public:: ELEM_PACK_SIZE=max(8,max(C_SIZE_T,max(INT_ADDR,INT_COUNT))) !packing size for integers/logicals/reals/C_pointers/C_sizes
  !Data alignment:

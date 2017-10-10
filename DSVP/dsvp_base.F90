@@ -1,6 +1,6 @@
 !Domain-specific virtual processor (DSVP): Abstract base module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/10/02
+!REVISION: 2017/10/10
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -72,7 +72,7 @@
 !PARAMETERS:
  !Basic:
         integer(INTD), private:: CONS_OUT=6 !default output for this module
-        integer(INTD), private:: DEBUG=1    !debugging mode
+        integer(INTD), private:: DEBUG=0    !debugging mode
         logical, private:: VERBOSE=.TRUE.   !verbosity for errors
  !Error codes:
         integer(INTD), parameter, public:: DSVP_SUCCESS=SUCCESS        !success
@@ -1254,23 +1254,29 @@
            mthreads=omp_get_max_threads()
           endif
           if(mthreads.ge.nthreads) then
-!$OMP PARALLEL DEFAULT(SHARED) NUM_THREADS(mthreads)
-           if(omp_get_num_threads().ge.nthreads) then
+!$OMP PARALLEL DEFAULT(SHARED) PRIVATE(tid,ier) NUM_THREADS(nthreads)
+           if(omp_get_num_threads().eq.nthreads) then
 !$OMP MASTER
             call this%set_status(DSVP_STAT_ON,errc)
 !$OMP END MASTER
 !$OMP BARRIER
             if(errc.eq.DSVP_SUCCESS) then
-             write(CONS_OUT,'("#MSG(dsvp_base:dsvp_t.start): Spawned ",i5," threads")') omp_get_num_threads() !debug
+!$OMP MASTER
+             if(DEBUG.gt.0) write(CONS_OUT,'("#MSG(dsvp_base:dsvp_t.start): Spawned ",i5," threads")') nthreads !debug
+!$OMP END MASTER
              tid=omp_get_thread_num()
-             call this%units(tid)%unit_ref%start(errc)
+             call this%units(tid)%unit_ref%start(ier)
+!$OMP CRITICAL
+             if(errc.eq.DSVP_SUCCESS) errc=ier !only the first thread error is recorded
+!$OMP END CRITICAL
             endif
            else
             write(CONS_OUT,'("#FATAL(dsvp_base:dsvp_t.start): Unable to spawn ",i5," threads!")') nthreads
+!$OMP ATOMIC WRITE
             errc=DSVP_ERR_RSC_EXCEEDED
            endif
 !$OMP END PARALLEL
-           call this%shutdown(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.DSVP_SUCCESS) errc=ier
+           call this%shutdown(ier); if(errc.eq.DSVP_SUCCESS) errc=ier
           else
            write(CONS_OUT,'("#FATAL(dsvp_base:dsvp_t.start): Insufficient number of threads: ",i5," when need ",i5)')&
            &mthreads,nthreads

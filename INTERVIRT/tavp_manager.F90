@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/10/02
+!REVISION: 2017/10/10
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -30,7 +30,7 @@
 !PARAMETERS:
  !Basic:
         integer(INTD), private:: CONS_OUT=6 !default output device
-        integer(INTD), private:: DEBUG=0    !debugging mode
+        integer(INTD), private:: DEBUG=1    !debugging mode
         logical, private:: VERBOSE=.TRUE.   !verbosity for errors
 !TYPES:
  !Tensor argument cache entry (TAVP-specific):
@@ -210,6 +210,8 @@
          integer(INTD), public:: collect_comm                  !MPI communicator of the processes from which the retired bytecode is collected (lower-level)
         end type tavp_mng_conf_t
 !VISIBILITY:
+ !non-member:
+        public tavp_mng_reset_output
  !tens_entry_mng_t:
         private TensEntryMngCtor
         private TensEntryMngGetOwnerId
@@ -276,6 +278,13 @@
         private TAVPMNGConfigure
 !IMPLEMENTATION:
        contains
+![non-member]=================================
+        subroutine tavp_mng_reset_output(devo)
+         implicit none
+         integer(INTD), intent(in)::devo
+         CONS_OUT=devo
+         return
+        end subroutine tavp_mng_reset_output
 ![tens_entry_mng_t]========================================
         subroutine TensEntryMngCtor(this,tensor,owner,ierr)
 !Constructs a <tens_entry_mng_t>. Note move semantics for <tensor>!
@@ -1928,7 +1937,7 @@
          else
           errc=-1
          endif
-         !print *,'#DEBUG(TAVPMNGConfigure): Exit status ',errc !debug
+         !write(CONS_OUT,*) '#DEBUG(TAVPMNGConfigure): Exit status ',errc !debug
          if(errc.ne.0) call this%destroy()
          if(present(ierr)) ierr=errc
          return

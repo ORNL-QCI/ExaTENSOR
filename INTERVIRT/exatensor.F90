@@ -1,7 +1,7 @@
 !ExaTENSOR: Massively Parallel Virtual Processor for Scale-Adaptive Hierarchical Tensor Algebra
 !This is the top level API module of ExaTENSOR (user-level API)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017/10/08
+!REVISION: 2017/10/10
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -244,14 +244,17 @@
         if(process_role.eq.EXA_DRIVER) then
          return !Driver process returns immediately, it will later call exatns_stop()
         elseif(process_role.eq.EXA_MANAGER) then
+         call tavp_mng_reset_output(jo)
          write(jo,'("#MSG(exatensor): Preparing the TAVP-MNG virtual processor ... ")',ADVANCE='NO')
          call prepare_tavp_mng(ierr)
          if(ierr.eq.0) then; write(jo,'("Done")'); else; write(jo,'("Failed: Error ",i11)') ierr; endif
         elseif(process_role.eq.EXA_WORKER) then
+         call tavp_wrk_reset_output(jo)
          write(jo,'("#MSG(exatensor): Preparing the TAVP-WRK virtual processor ... ")',ADVANCE='NO')
          call prepare_tavp_wrk(ierr)
          if(ierr.eq.0) then; write(jo,'("Done")'); else; write(jo,'("Failed: Error ",i11)') ierr; endif
         elseif(process_role.eq.EXA_HELPER) then
+         !call tavp_hlp_reset_output(jo)
          write(jo,'("#MSG(exatensor): Preparing the TAVP-HLP virtual processor ... ")',ADVANCE='NO')
          !call prepare_tavp_hlp(ierr)
          call quit(-1,'#FATAL(exatensor): TAVP-HLP is not implemented yet!')
@@ -306,7 +309,7 @@
              tavp_wrk_conf%source_rank=tavp_role_rank(int(aid,INTD))
              tavp_wrk_conf%retire_comm=tavp_wrk_conf%source_comm
              tavp_wrk_conf%retire_rank=tavp_wrk_conf%source_rank
-             tavp_wrk_conf%host_ram_size=16_INTL*(1024_INTL*1024_INTL*1024_INTL) !`Make configurable
+             tavp_wrk_conf%host_ram_size=1_INTL*(1024_INTL*1024_INTL*1024_INTL) !`Make configurable
              tavp_wrk_conf%nvram_size=0_INTL !`Make configurable
              tavp_wrk_conf%num_mpi_windows=1 !`Make configurable
              tavp_wrk_conf%host_buf_size=tavp_wrk_conf%host_ram_size !`Make configurable
