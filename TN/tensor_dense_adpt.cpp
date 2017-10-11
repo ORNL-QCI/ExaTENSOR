@@ -180,11 +180,12 @@ template <typename T>
 void TensorDenseAdpt<T>::nullifyBody()
 {
  assert(Body);
- auto vol = this->getVolume();
+ const auto vol = this->getVolume();
  assert(vol > 0);
  const T zero = static_cast<T>(0.0);
-#pragma omp parallel for shared(Body,vol,zero) private(l) schedule(guided)
- for(decltype(vol) l = 0; l < vol; ++l) Body[l] = zero;
+ T * body = Body.get();
+ assert(body != nullptr);
+ for(std::size_t l = 0; l < vol; ++l) body[l] = zero;
  return;
 }
 
@@ -199,4 +200,17 @@ void TensorDenseAdpt<T>::reshape(const unsigned int rank,       //in: new tensor
  for(unsigned int i=0; i<rank; ++i) DimExtent[i]=dimExtent[i];
  Rank=rank;
  return;
+}
+
+/** Provides access to a specific element of the tensor. **/
+template <typename T>
+T & TensorDenseAdpt<T>::operator[](const std::initializer_list<int> mlndx) const
+{
+ std::size_t offset = 0;
+ if(Rank > 0){
+  auto mlndx_it = mlndx.begin() + (Rank - 1); //last index position (most senior)
+  offset = *mlndx_it; //last index
+  for(int pos = Rank - 2; pos >= 0; --pos) offset = offset * DimExtent[pos] + *(--mlndx_it);
+ }
+ return Body.get()[offset];
 }

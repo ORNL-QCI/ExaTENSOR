@@ -187,6 +187,8 @@ int test_tensor_expression(){
  error_code = exatensor::start(desiredHostBufferSize);
  ContractionSequence contrSeq;
  error_code = tensnet1.evaluate(contrSeq);
+ const Tensor & resTensor = tensnet1.getTensor(0);
+ std::cout << "Some element of the output tensor = " << resTensor[{1,0,3,2}] << std::endl;
  error_code = exatensor::stop();
 
  //Done:

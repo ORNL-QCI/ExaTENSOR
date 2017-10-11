@@ -30,6 +30,7 @@
 #include <vector>
 #include <assert.h>
 #include <iostream>
+#include <initializer_list>
 
 #include "type_deduct.hpp"
 
@@ -94,6 +95,8 @@ public:
      it will be nullified until the new body is supplied.  **/
  void reshape(const unsigned int rank,        //in: new tensor rank
               const std::size_t dimExtent[]); //in: new tensor dimension extents
+ /** Provides access to a specific element of the tensor. **/
+ T & operator[](const std::initializer_list<int> mlndx) const;
 
 };
 
