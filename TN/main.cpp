@@ -1,7 +1,7 @@
 /** C++ adapters for ExaTENSOR: Testing
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/08/03
+!REVISION: 2017/10/11
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -27,7 +27,7 @@
 #include <complex>
 #include <iostream>
 
-#include "tensor_network.hpp"
+#include "exatensor.hpp"
 
 int test_tensor_expression(){
 

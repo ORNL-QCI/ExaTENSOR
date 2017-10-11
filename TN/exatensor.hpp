@@ -30,6 +30,9 @@
 
 namespace exatensor {
 
+ int start(std::size_t hostMemBufferSize);
+ int stop();
+
 } //end namespace exatensor
 
 #endif //_EXA_TENSOR_H
