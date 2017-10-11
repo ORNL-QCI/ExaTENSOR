@@ -1,7 +1,7 @@
 /** C++ adapters for ExaTENSOR: Tensor connected to other tensors
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/10/10
+!REVISION: 2017/10/11
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -134,6 +134,14 @@ template <typename T>
 void TensorConn<T>::allocateBody()
 {
  Tensor.allocateBody();
+ return;
+}
+
+/** Sets tensor body to zero. **/
+template <typename T>
+void TensorConn<T>::nullifyBody()
+{
+ Tensor.nullifyBody();
  return;
 }
 

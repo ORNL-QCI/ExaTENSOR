@@ -1,7 +1,7 @@
 /** C++ adapters for ExaTENSOR: Wrapper for importing dense tensor blocks from clients
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/10/10
+!REVISION: 2017/10/11
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -172,6 +172,19 @@ void TensorDenseAdpt<T>::allocateBody()
  assert(vol > 0);
  Body.reset(new T[vol], [](T * ptr){delete[] ptr;});
  assert(Body);
+ return;
+}
+
+/** Sets tensor body to zero. **/
+template <typename T>
+void TensorDenseAdpt<T>::nullifyBody()
+{
+ assert(Body);
+ auto vol = this->getVolume();
+ assert(vol > 0);
+ const T zero = static_cast<T>(0.0);
+#pragma omp parallel for shared(Body,vol,zero) private(l) schedule(guided)
+ for(decltype(vol) l = 0; l < vol; ++l) Body[l] = zero;
  return;
 }
 

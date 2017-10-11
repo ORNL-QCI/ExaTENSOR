@@ -1,7 +1,7 @@
 /** C++ adapters for ExaTENSOR: Tensor connected to other tensors
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/10/10
+!REVISION: 2017/10/11
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -85,6 +85,8 @@ public:
  void resetBody(const std::shared_ptr<T> body);
  /** Allocates tensor body. **/
  void allocateBody();
+ /** Sets tensor body to zero. **/
+ void nullifyBody();
  /** Resets connection (leg). **/
  void resetConnection(const unsigned int legId, const TensorLeg & tensorLeg);
  /** Deletes the specified tensor dimension. **/

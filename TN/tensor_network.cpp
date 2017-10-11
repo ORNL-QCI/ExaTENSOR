@@ -224,7 +224,7 @@ void TensorNetwork<T>::setOutputBody(const std::shared_ptr<T> body)
  return;
 }
 
-/** Allocates the output (lhs) tensor body. **/
+/** Allocates the output (lhs) tensor body and sets it to zero. **/
 template <typename T>
 void TensorNetwork<T>::allocateOutputBody()
 {
@@ -232,6 +232,7 @@ void TensorNetwork<T>::allocateOutputBody()
  assert(Tensors.size() > 0);
 #endif
  Tensors[0].allocateBody();
+ Tensors[0].nullifyBody();
  return;
 }
 
