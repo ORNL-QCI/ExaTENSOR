@@ -1,7 +1,7 @@
 /** C++ adapters for ExaTENSOR: Tensor network
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/10/11
+!REVISION: 2017/10/12
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -52,6 +52,13 @@ template <typename T>
 unsigned int TensorNetwork<T>::getNumTensors() const
 {
  return (unsigned int)(Tensors.size()-1); //not counting the output tensor
+}
+
+/** Returns TRUE if the tensor network is empty, FALSE otherwise. **/
+template <typename T>
+bool TensorNetwork<T>::isEmpty() const
+{
+ return (Tensors.size() == 0);
 }
 
 /** Returns a const reference to a specific tensor from the tensor network. **/

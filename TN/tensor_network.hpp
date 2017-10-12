@@ -1,7 +1,7 @@
 /** C++ adapters for ExaTENSOR: Tensor network
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/10/11
+!REVISION: 2017/10/12
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -109,6 +109,8 @@ public:
  virtual ~TensorNetwork();
 
 //Accessors:
+ /** Returns TRUE if the tensor network is empty, FALSE otherwise. **/
+ bool isEmpty() const;
  /** Returns the number of r.h.s. tensors in the tensor network.
      Note that the output (l.h.s.) tensor 0 is not counted here. **/
  unsigned int getNumTensors() const;
