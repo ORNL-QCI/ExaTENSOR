@@ -1,7 +1,7 @@
 /** C++ adapters for ExaTENSOR: Testing
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/10/11
+!REVISION: 2017/10/12
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -189,6 +189,8 @@ int test_tensor_expression(){
  error_code = tensnet1.evaluate(contrSeq);
  const Tensor & resTensor = tensnet1.getTensor(0);
  std::cout << "Some element of the output tensor = " << resTensor[{1,0,3,2}] << std::endl;
+ resTensor[{1,0,3,2}] = std::complex<double>(-1.1,2.2);
+ std::cout << "Updated element of the output tensor = " << resTensor[{1,0,3,2}] << std::endl;
  error_code = exatensor::stop();
 
  //Done:

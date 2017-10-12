@@ -1,7 +1,7 @@
 /** C++ adapters for ExaTENSOR: Wrapper for importing dense tensor blocks from clients
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/10/11
+!REVISION: 2017/10/12
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -204,7 +204,7 @@ void TensorDenseAdpt<T>::reshape(const unsigned int rank,       //in: new tensor
 
 /** Provides access to a specific element of the tensor. **/
 template <typename T>
-T & TensorDenseAdpt<T>::operator[](const std::initializer_list<int> mlndx) const
+inline T & TensorDenseAdpt<T>::operator[](const std::initializer_list<int> mlndx) const
 {
  std::size_t offset = 0;
  if(Rank > 0){
