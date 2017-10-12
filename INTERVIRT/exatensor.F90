@@ -1,7 +1,7 @@
 !ExaTENSOR: Massively Parallel Virtual Processor for Scale-Adaptive Hierarchical Tensor Algebra
 !This is the top level API module of ExaTENSOR (user-level API)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017/10/10
+!REVISION: 2017/10/12
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -481,7 +481,7 @@
         integer(INT_MPI):: errc
 
         ierr=EXA_SUCCESS
-!Send the stop signal to the root TAVP-MNG:
+!Send the stop signal to the root TAVP-MNG and wait for completion:
         !`Implement
 !Mark ExaTENSOR runtime is off:
         exatns_rt_status=exatns_rt_status_t(DSVP_STAT_OFF,ierr,0)
@@ -625,7 +625,7 @@
             write(CONS_OUT,*) space_name
            endif
           else
-           ierr=EXA_ERR_UNABLE_COMPLETE
+           space_id=-1; ierr=EXA_ERR_UNABLE_COMPLETE
           endif
          else
           space_id=-1; ierr=EXA_ERR_UNABLE_COMPLETE
