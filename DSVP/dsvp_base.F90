@@ -1,6 +1,6 @@
 !Domain-specific virtual processor (DSVP): Abstract base module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/10/10
+!REVISION: 2017/10/13
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -821,8 +821,6 @@
            deallocate(this%control,STAT=ier); if(ier.ne.0) errc=DSVP_ERR_MEM_FREE_FAIL
           endif
           this%control=>NULL()
-         else
-          errc=DSVP_ERR_INVALID_REQ
          endif
          if(present(ierr)) ierr=errc
          return
@@ -881,8 +879,6 @@
           else
            errc=DSVP_ERR_BROKEN_OBJ
           endif
-         else
-          errc=DSVP_ERR_INVALID_REQ
          endif
          if(present(ierr)) ierr=errc
          return

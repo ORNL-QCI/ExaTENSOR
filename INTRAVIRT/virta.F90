@@ -8,7 +8,7 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/10/06
+!REVISION: 2017/10/13
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -40,6 +40,7 @@
         use dsvp_base          !abstract domain-specific virtual processor (DSVP)
         use gfc_base           !GFC base
         use gfc_dictionary     !GFC dictionary
+        use gfc_vector         !GFC vector
         implicit none
         public
 !PARAMETERS:
@@ -192,6 +193,8 @@
         integer(INT_MPI), public:: role_comm=MPI_COMM_NULL    !role-specific MPI communicator
         integer(INT_MPI), public:: role_size=0                !size of the role-specific MPI communicator
         integer(INT_MPI), public:: role_rank=-1               !process rank within the role-specific MPI communicator
+        integer(INT_MPI), public:: driver_gl_rank=-1          !driver process rank in the global MPI communicator
+        integer(INT_MPI), public:: top_manager_gl_rank=-1     !root manager process rank in the global MPI communicator
         integer(INT_MPI), public:: driver_comm=MPI_COMM_NULL  !MPI intracommunicator of the driver process subspace
         integer(INT_MPI), public:: manager_comm=MPI_COMM_NULL !MPI intracommunicator of the manager process subspace
         integer(INT_MPI), public:: worker_comm=MPI_COMM_NULL  !MPI intracommunicator of the worker process subspace

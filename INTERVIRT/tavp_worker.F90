@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/10/10
+!REVISION: 2017/10/13
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -93,7 +93,7 @@
           final:: tens_oprnd_dtor                                   !dtor
         end type tens_oprnd_t
  !Tensor instruction (realization of a tensor operation for a specific TAVP):
-        type, extends(ds_instr_t), private:: tens_instr_t
+        type, extends(ds_instr_t), public:: tens_instr_t
          type(talsh_task_t), private:: talsh_task                   !TAL-SH task
          contains
           procedure, private:: TensInstrCtor                        !ctor: constructs a tensor instruction from the specification of a tensor operation
@@ -1492,6 +1492,7 @@
            select case(op_code)
            case(TAVP_INSTR_NOOP)
            case(TAVP_INSTR_STOP)
+            call construct_instr_stop(errc); if(errc.ne.0) errc=-8
            case(TAVP_INSTR_CREATE,TAVP_INSTR_DESTROY)
             call construct_instr_create_destroy(errc); if(errc.ne.0) errc=-7
            case(TAVP_INSTR_CONTRACT)
@@ -1518,6 +1519,15 @@
          return
 
         contains
+
+         subroutine construct_instr_stop(jerr)
+          !STOP TAVP:
+          !No op_spec, no control, no operands
+          integer(INTD), intent(out):: jerr
+
+          jerr=0
+          return
+         end subroutine construct_instr_stop
 
          subroutine construct_instr_create_destroy(jerr)
           !CREATE/DESTROY a tensor:
@@ -1660,6 +1670,7 @@
                  select case(op_code)
                  case(TAVP_INSTR_NOOP)
                  case(TAVP_INSTR_STOP)
+                  call encode_instr_stop(errc); if(errc.ne.0) errc=-12
                  case(TAVP_INSTR_CREATE,TAVP_INSTR_DESTROY)
                   call encode_instr_create_destroy(errc); if(errc.ne.0) errc=-11
                  case(TAVP_INSTR_CONTRACT)
@@ -1695,6 +1706,15 @@
          return
 
         contains
+
+         subroutine encode_instr_stop(jerr)
+          !STOP TAVP:
+          !Packet format: {id|op_code|status|error}
+          integer(INTD), intent(out):: jerr
+
+          jerr=0
+          return
+         end subroutine encode_instr_stop
 
          subroutine encode_instr_create_destroy(jerr)
           !CREATE/DESTROY a tensor:

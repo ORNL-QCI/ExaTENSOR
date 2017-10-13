@@ -1,7 +1,7 @@
 !ExaTENSOR: Massively Parallel Virtual Processor for Scale-Adaptive Hierarchical Tensor Algebra
 !This is the top level API module of ExaTENSOR (user-level API)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017/10/12
+!REVISION: 2017/10/13
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -30,9 +30,8 @@
 ! MPI processes [0..W-1]: TAVP-WRK/TAVP-HLP: Numerical workload;
 ! MPI processes [W..W+M-1]: TAVP-MNG: Task creation and scheduling;
 ! MPI process (W+M) (last MPI process): Driving process (interpreter).
-       use tavp_driver
-       use tavp_manager
-       use tavp_worker
+       use tavp_manager, tens_instr_mng_t=>tens_instr_t
+       use tavp_worker, tens_instr_wrk_t=>tens_instr_t
        use virta
        implicit none
        private
@@ -101,6 +100,9 @@
        integer(INTD), protected:: exa_num_helpers=0  !number of the helper processes
  !TAVP instance (allocated one per MPI process):
        class(dsvp_t), allocatable, private:: tavp
+ !Tensor instruction log:
+       type(vector_t), private:: instructions
+       type(vector_iter_t), private:: instr_log
 !VISIBILITY:
  !Control:
        public exatns_start                !starts the ExaTENSOR DSVP
@@ -201,6 +203,8 @@
         call determine_process_role(errc) !builds NAT and determines process roles
         if(errc.eq.0) then
          write(jo,'("#MSG(exatensor): Info: Role = ",i2,": Role rank/size = ",i9,"/",i9)') process_role,role_rank,role_size
+         write(jo,'("#MSG(exatensor): Info: Global rank of the driver process = ",i9)') driver_gl_rank
+         write(jo,'("#MSG(exatensor): Info: Global rank of the top manager process = ",i9)') top_manager_gl_rank
          write(jo,'("#MSG(exatensor): Creating role specific MPI communicators ... ")',ADVANCE='NO')
          call MPI_Comm_split(GLOBAL_MPI_COMM,process_role,role_rank,role_comm,errc)
          if(errc.eq.0) then
@@ -242,6 +246,7 @@
 !Live TAVP life:
         ierr=EXA_SUCCESS
         if(process_role.eq.EXA_DRIVER) then
+         ierr=instr_log%init(instructions); if(ierr.ne.GFC_SUCCESS) ierr=-9
          return !Driver process returns immediately, it will later call exatns_stop()
         elseif(process_role.eq.EXA_MANAGER) then
          call tavp_mng_reset_output(jo)
@@ -272,19 +277,19 @@
         write(jo,'("###EXATENSOR FINISHED PROCESS ",i9,"/",i9,": Status = ",i11,": Syncing ... ")',ADVANCE='NO')&
              &dil_global_process_id(),dil_global_comm_size(),ierr
         call dil_global_comm_barrier(errc)
-        if(errc.eq.0) then; write(jo,'("Ok")'); else; write(jo,'("Failed")'); ierr=-9; endif
+        if(errc.eq.0) then; write(jo,'("Ok")'); else; write(jo,'("Failed")'); ierr=-10; endif
 !Free role specific MPI communicators:
         if(drv_mng_comm.ne.MPI_COMM_NULL) then
-         call MPI_Comm_free(drv_mng_comm,errc); if(errc.ne.0.and.ierr.eq.0) ierr=-10
+         call MPI_Comm_free(drv_mng_comm,errc); if(errc.ne.0.and.ierr.eq.0) ierr=-11
         endif
         if(mng_wrk_comm.ne.MPI_COMM_NULL) then
-         call MPI_Comm_free(mng_wrk_comm,errc); if(errc.ne.0.and.ierr.eq.0) ierr=-11
+         call MPI_Comm_free(mng_wrk_comm,errc); if(errc.ne.0.and.ierr.eq.0) ierr=-12
         endif
         if(role_comm.ne.MPI_COMM_NULL) then
-         call MPI_Comm_free(role_comm,errc); if(errc.ne.0.and.ierr.eq.0) ierr=-12
+         call MPI_Comm_free(role_comm,errc); if(errc.ne.0.and.ierr.eq.0) ierr=-13
         endif
 !Finish the MPI process:
-        call dil_process_finish(errc); if(errc.ne.0.and.ierr.eq.0) ierr=-13
+        call dil_process_finish(errc); if(errc.ne.0.and.ierr.eq.0) ierr=-14
         return
 
         contains
@@ -455,6 +460,8 @@
           enddo hloop
           if(jerr.eq.0) then
            role_rank=tavp_role_rank(int(my_rank,INTD),process_role)
+           driver_gl_rank=num_procs-1
+           top_manager_gl_rank=exa_num_workers
            select case(process_role)
            case(EXA_DRIVER)
             role_size=exa_num_drivers
@@ -479,30 +486,70 @@
         implicit none
         integer(INTD):: ierr !out: error code
         integer(INT_MPI):: errc
+        integer(INTL):: ip
+        class(*), pointer:: uptr
+        type(tens_instr_mng_t), pointer:: tens_instr
+        type(tens_instr_mng_t), target:: tens_instr_empty
+        type(comm_handle_t):: comm_hl
+        type(obj_pack_t):: instr_packet
+        type(pack_env_t):: bytecode
 
-        ierr=EXA_SUCCESS
+        ierr=EXA_SUCCESS; write(jo,'("#MSG(exatensor): New Instruction: ExaTENSOR STOP: IP = ")',ADVANCE='NO')
 !Send the stop signal to the root TAVP-MNG and wait for completion:
-        !`Implement
+        call bytecode%reserve_mem(ierr)
+        if(ierr.eq.0) then
+         ierr=instr_log%append(tens_instr_empty); if(ierr.ne.GFC_SUCCESS) ierr=-22
+         if(ierr.eq.0) then; ierr=instr_log%reset_back(); if(ierr.ne.GFC_SUCCESS) ierr=-21; endif
+         if(ierr.eq.0) then
+          ip=instr_log%get_offset(ierr); write(jo,'(i11)') ip
+          if(ierr.eq.0) then
+           uptr=>instr_log%element_value(ip,ierr)
+           if(ierr.eq.0) then
+            tens_instr=>NULL(); select type(uptr); type is(tens_instr_mng_t); tens_instr=>uptr; end select
+            if(.not.associated(tens_instr)) ierr=-20
+           else
+            ierr=-19
+           endif
+          else
+           ierr=-18
+          endif
+         endif
+         if(ierr.eq.0) then; call bytecode%acquire_packet(instr_packet,ierr); if(ierr.ne.0) ierr=-17; endif
+         if(ierr.eq.0) then; call tens_instr%tens_instr_ctor(TAVP_INSTR_STOP,ierr); if(ierr.ne.0) ierr=-16; endif
+         if(ierr.eq.0) then; call tens_instr%encode(instr_packet,ierr); if(ierr.ne.0) ierr=-15; endif
+         if(ierr.eq.0) then; call bytecode%seal_packet(ierr); if(ierr.ne.0) ierr=-14; endif
+         !if(ierr.eq.0) then; call bytecode%send(top_manager_gl_rank,comm_hl,ierr); if(ierr.ne.0) ierr=-13; endif
+         !if(ierr.eq.0) then; call comm_hl%wait(ierr); if(ierr.ne.0) ierr=-12; endif
+         call comm_hl%clean(errc); if(errc.ne.0.and.ierr.eq.0) ierr=-11
+         call bytecode%destroy(errc); if(errc.ne.0.and.ierr.eq.0) ierr=-10
+         call tens_instr%set_status(DS_INSTR_RETIRED,errc); if(errc.ne.DSVP_SUCCESS.and.ierr.eq.0) ierr=-9
+         if(ierr.eq.0) then
+          ierr=instr_log%delete_all(); if(ierr.ne.GFC_SUCCESS) ierr=-8
+          errc=instr_log%release(); if(errc.ne.GFC_SUCCESS.and.ierr.eq.0) ierr=-7
 !Mark ExaTENSOR runtime is off:
-        exatns_rt_status=exatns_rt_status_t(DSVP_STAT_OFF,ierr,0)
+          exatns_rt_status=exatns_rt_status_t(DSVP_STAT_OFF,ierr,0)
 !Sync with others:
-        write(jo,'()')
-        write(jo,'("###EXATENSOR FINISHED PROCESS ",i9,"/",i9,": Status = ",i11,": Syncing ... ")',ADVANCE='NO')&
-             &dil_global_process_id(),dil_global_comm_size(),ierr
-        call dil_global_comm_barrier(errc)
-        if(errc.eq.0) then; write(jo,'("Ok")'); else; write(jo,'("Failed")'); ierr=-1; endif
+          write(jo,'()')
+          write(jo,'("###EXATENSOR FINISHED PROCESS ",i9,"/",i9,": Status = ",i11,": Syncing ... ")',ADVANCE='NO')&
+               &dil_global_process_id(),dil_global_comm_size(),ierr
+          call dil_global_comm_barrier(errc)
+          if(errc.eq.0) then; write(jo,'("Ok")'); else; write(jo,'("Failed")'); ierr=-6; endif
 !Free the role specific MPI communicators:
-        if(drv_mng_comm.ne.MPI_COMM_NULL) then
-         call MPI_Comm_free(drv_mng_comm,errc); if(errc.ne.0.and.ierr.eq.0) ierr=-2
-        endif
-        if(mng_wrk_comm.ne.MPI_COMM_NULL) then
-         call MPI_Comm_free(mng_wrk_comm,errc); if(errc.ne.0.and.ierr.eq.0) ierr=-3
-        endif
-        if(role_comm.ne.MPI_COMM_NULL) then
-         call MPI_Comm_free(role_comm,errc); if(errc.ne.0.and.ierr.eq.0) ierr=-4
-        endif
+          if(drv_mng_comm.ne.MPI_COMM_NULL) then
+           call MPI_Comm_free(drv_mng_comm,errc); if(errc.ne.0.and.ierr.eq.0) ierr=-5
+          endif
+          if(mng_wrk_comm.ne.MPI_COMM_NULL) then
+           call MPI_Comm_free(mng_wrk_comm,errc); if(errc.ne.0.and.ierr.eq.0) ierr=-4
+          endif
+          if(role_comm.ne.MPI_COMM_NULL) then
+           call MPI_Comm_free(role_comm,errc); if(errc.ne.0.and.ierr.eq.0) ierr=-3
+          endif
 !Finish the MPI process:
-        call dil_process_finish(errc); if(errc.ne.0.and.ierr.eq.0) ierr=-5
+          call dil_process_finish(errc); if(errc.ne.0.and.ierr.eq.0) ierr=-2
+         endif
+        else
+         ierr=-1
+        endif
         return
        end function exatns_stop
 !-------------------------------------------------------------

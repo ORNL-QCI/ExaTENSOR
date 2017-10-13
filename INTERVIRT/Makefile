@@ -300,7 +300,7 @@ LTHREAD = $(LTHREAD_$(TOOLKIT))
 #LINKING:
 LFLAGS = $(LTHREAD) $(MPI_LINK) $(LA_LINK) $(CUDA_LINK) $(LIB)
 
-OBJS = ./OBJ/tavp_worker.o ./OBJ/tavp_manager.o ./OBJ/tavp_driver.o ./OBJ/exatensor.o
+OBJS = ./OBJ/tavp_worker.o ./OBJ/tavp_manager.o ./OBJ/exatensor.o
 
 $(NAME): $(OBJS) $(MY_LIB)
 	ar cr lib$(NAME).a $(OBJS) $(MY_LIB)
@@ -312,10 +312,7 @@ $(NAME): $(OBJS) $(MY_LIB)
 ./OBJ/tavp_manager.o: tavp_manager.F90 ../INTRAVIRT/OBJ/virta.o ../GFC/OBJ/gfc_base.o ../GFC/OBJ/gfc_list.o ../GFC/OBJ/gfc_dictionary.o
 	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(FFLAGS) tavp_manager.F90 -o ./OBJ/tavp_manager.o
 
-./OBJ/tavp_driver.o: tavp_driver.F90 ../INTRAVIRT/OBJ/virta.o
-	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(FFLAGS) tavp_driver.F90 -o ./OBJ/tavp_driver.o
-
-./OBJ/exatensor.o: exatensor.F90 ../INTRAVIRT/OBJ/virta.o ./OBJ/tavp_driver.o ./OBJ/tavp_manager.o ./OBJ/tavp_worker.o
+./OBJ/exatensor.o: exatensor.F90 ../INTRAVIRT/OBJ/virta.o ./OBJ/tavp_manager.o ./OBJ/tavp_worker.o
 	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(FFLAGS) exatensor.F90 -o ./OBJ/exatensor.o
 
 
