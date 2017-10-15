@@ -8,7 +8,7 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/10/13
+!REVISION: 2017/10/15
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -177,6 +177,24 @@
           procedure, public:: erase=>TensCacheErase               !erases everything from the cache (regardless of pending MPI communications!)
           final:: tens_cache_dtor                                 !dtor
         end type tens_cache_t
+ !External data register:
+        type, public:: data_register_t
+         type(dictionary_t), private:: ext_data                           !string --> talsh_tens_data_t
+         contains
+          procedure, public:: register_data=>DataRegisterRegisterData     !registers external local data
+          procedure, public:: unregister_data=>DataRegisterUnregisterData !unregisters previously registered data
+          procedure, public:: retrieve_data=>DataRegisterRetrieveData     !retrieves previously registered data
+          final:: data_register_dtor                                      !dtor
+        end type data_register_t
+ !External method register:
+        type, public:: method_register_t
+         type(dictionary_t), private:: ext_methods                              !string --> talsh_tens_definer_t
+         contains
+          procedure, public:: register_method=>MethodRegisterRegisterMethod     !registers an external tensor defining procedure
+          procedure, public:: unregister_method=>MethodRegisterUnregisterMethod !unregisters a previously registered tensor defining procedure
+          procedure, public:: retrieve_method=>MethodRegisterRetrieveMethod     !retrieves a previously registered tensor defining procedure
+          final:: method_register_dtor                                          !dtor
+        end type method_register_t
 !INTERFACES:
         abstract interface
  !tens_cache_entry_t:
@@ -186,7 +204,17 @@
           integer(INTD):: ierr
           class(tens_cache_entry_t), allocatable, intent(out):: tens_cache_entry
          end function tens_cache_entry_alloc_i
+ !External method (user-defined tensor operation):
+         function exatns_method_i(tens_args,scal_args) result(ierr)
+          import:: INTD,tens_rcrsv_t
+          implicit none
+          integer(INTD):: ierr                                !out: error code
+          class(tens_rcrsv_t), intent(inout):: tens_args(0:)  !inout: tensor arguments
+          complex(8), intent(inout), optional:: scal_args(0:) !inout: scalar arguments
+         end function exatns_method_i
         end interface
+        public tens_cache_entry_alloc_i
+        public exatns_method_i
 !DATA:
  !MPI process specialization (TAVP role, set by exatns_start):
         integer(INT_MPI), public:: process_role=EXA_NO_ROLE   !MPI process role (see above)
@@ -201,6 +229,10 @@
         integer(INT_MPI), public:: helper_comm=MPI_COMM_NULL  !MPI intracommunicator of the helper process subspace
         integer(INT_MPI), public:: drv_mng_comm=MPI_COMM_NULL !MPI intercommunicator for the driver and managers
         integer(INT_MPI), public:: mng_wrk_comm=MPI_COMM_NULL !MPI intercommunicator for managers and workers
+ !External data register:
+        type(data_register_t), private:: data_register !string --> talsh_tens_data_t
+ !External method register:
+        type(method_register_t), private:: method_register !string --> talsh_tens_definer_t
 !VISIBILITY:
  !non-member:
         public role_barrier
@@ -234,6 +266,16 @@
         private TensCacheEvict
         private TensCacheErase
         public tens_cache_dtor
+ !data_register_t:
+        private DataRegisterRegisterData
+        private DataRegisterUnregisterData
+        private DataRegisterRetrieveData
+        public data_register_dtor
+ !method_register_t:
+        private MethodRegisterRegisterMethod
+        private MethodRegisterUnregisterMethod
+        private MethodRegisterRetrieveMethod
+        public method_register_dtor
 
        contains
 !IMPLEMENTATION:
@@ -724,5 +766,197 @@
          call this%erase()
          return
         end subroutine tens_cache_dtor
+![data_register_t]---------------------------------------------------------
+        subroutine DataRegisterRegisterData(this,data_name,extrn_data,ierr)
+         implicit none
+         class(data_register_t), intent(inout):: this     !inout: data register
+         character(*), intent(in):: data_name             !in: data name
+         type(talsh_tens_data_t), intent(in):: extrn_data !in: external data
+         integer(INTD), intent(out), optional:: ierr      !out: error code
+         integer(INTD):: errc,ier
+         type(dictionary_iter_t):: dit
+
+         errc=dit%init(this%ext_data)
+         if(errc.eq.GFC_SUCCESS) then
+          errc=dit%search(GFC_DICT_ADD_IF_NOT_FOUND,cmp_strings,data_name,extrn_data)
+          if(errc.eq.GFC_NOT_FOUND) then
+           errc=0
+          else
+           if(errc.eq.GFC_FOUND) then; errc=-3; else; errc=-4; endif
+          endif
+          ier=dit%release(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-2
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine DataRegisterRegisterData
+!-----------------------------------------------------------------
+        subroutine DataRegisterUnregisterData(this,data_name,ierr)
+         implicit none
+         class(data_register_t), intent(inout):: this !inout: data register
+         character(*), intent(in):: data_name         !in: data name
+         integer(INTD), intent(out), optional:: ierr  !out: error code
+         integer(INTD):: errc,ier
+         type(dictionary_iter_t):: dit
+
+         errc=dit%init(this%ext_data)
+         if(errc.eq.GFC_SUCCESS) then
+          errc=dit%search(GFC_DICT_DELETE_IF_FOUND,cmp_strings,data_name)
+          if(errc.eq.GFC_FOUND) then
+           errc=0
+          else
+           if(errc.eq.GFC_NOT_FOUND) then; errc=-3; else; errc=-4; endif
+          endif
+          ier=dit%release(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-2
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine DataRegisterUnregisterData
+!--------------------------------------------------------------------------------
+        function DataRegisterRetrieveData(this,data_name,ierr) result(extrn_data)
+         implicit none
+         type(talsh_tens_data_t), pointer:: extrn_data !out: pointer to the data
+         class(data_register_t), intent(in):: this     !inout: data register
+         character(*), intent(in):: data_name          !in: data name
+         integer(INTD), intent(out), optional:: ierr   !out: error code
+         integer(INTD):: errc,ier
+         type(dictionary_iter_t):: dit
+         class(*), pointer:: uptr
+
+         extrn_data=>NULL()
+         errc=dit%init(this%ext_data)
+         if(errc.eq.GFC_SUCCESS) then
+          uptr=>NULL()
+          errc=dit%search(GFC_DICT_JUST_FIND,cmp_strings,data_name,value_out=uptr)
+          if(errc.eq.GFC_FOUND) then
+           if(associated(uptr)) then
+            select type(uptr); type is(talsh_tens_data_t); extrn_data=>uptr; end select
+            if(.not.associated(extrn_data)) errc=-6
+           else
+            errc=-5
+           endif
+          else
+           if(errc.eq.GFC_NOT_FOUND) then; errc=-3; else; errc=-4; endif
+          endif
+          ier=dit%release(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-2
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function DataRegisterRetrieveData
+!------------------------------------------
+        subroutine data_register_dtor(this)
+         implicit none
+         type(data_register_t):: this  !inout: data register
+         integer(INTD):: errc
+         type(dictionary_iter_t):: dit
+
+         errc=dit%init(this%ext_data)
+         if(errc.eq.GFC_SUCCESS) then
+          call dit%delete_all(errc)
+          errc=dit%release()
+         endif
+         return
+        end subroutine data_register_dtor
+![method_register_t]---------------------------------------------------------------
+        subroutine MethodRegisterRegisterMethod(this,method_name,extrn_method,ierr)
+         implicit none
+         class(method_register_t), intent(inout):: this         !inout: method register
+         character(*), intent(in):: method_name                 !in: method name
+         class(talsh_tens_definer_t), intent(in):: extrn_method !in: external tensor defining method
+         integer(INTD), intent(out), optional:: ierr            !out: error code
+         integer(INTD):: errc,ier
+         type(dictionary_iter_t):: dit
+
+         errc=dit%init(this%ext_methods)
+         if(errc.eq.GFC_SUCCESS) then
+          errc=dit%search(GFC_DICT_ADD_IF_NOT_FOUND,cmp_strings,method_name,extrn_method)
+          if(errc.eq.GFC_NOT_FOUND) then
+           errc=0
+          else
+           if(errc.eq.GFC_FOUND) then; errc=-3; else; errc=-4; endif
+          endif
+          ier=dit%release(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-2
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine MethodRegisterRegisterMethod
+!-----------------------------------------------------------------------
+        subroutine MethodRegisterUnregisterMethod(this,method_name,ierr)
+         implicit none
+         class(method_register_t), intent(inout):: this !inout: method register
+         character(*), intent(in):: method_name         !in: method name
+         integer(INTD), intent(out), optional:: ierr    !out: error code
+         integer(INTD):: errc,ier
+         type(dictionary_iter_t):: dit
+
+         errc=dit%init(this%ext_methods)
+         if(errc.eq.GFC_SUCCESS) then
+          errc=dit%search(GFC_DICT_DELETE_IF_FOUND,cmp_strings,method_name)
+          if(errc.eq.GFC_FOUND) then
+           errc=0
+          else
+           if(errc.eq.GFC_NOT_FOUND) then; errc=-3; else; errc=-4; endif
+          endif
+          ier=dit%release(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-2
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine MethodRegisterUnregisterMethod
+!----------------------------------------------------------------------------------------
+        function MethodRegisterRetrieveMethod(this,method_name,ierr) result(extrn_method)
+         implicit none
+         class(talsh_tens_definer_t), pointer:: extrn_method !out: pointer to the method
+         class(method_register_t), intent(in):: this         !inout: method register
+         character(*), intent(in):: method_name              !in: method name
+         integer(INTD), intent(out), optional:: ierr         !out: error code
+         integer(INTD):: errc,ier
+         type(dictionary_iter_t):: dit
+         class(*), pointer:: uptr
+
+         extrn_method=>NULL()
+         errc=dit%init(this%ext_methods)
+         if(errc.eq.GFC_SUCCESS) then
+          uptr=>NULL()
+          errc=dit%search(GFC_DICT_JUST_FIND,cmp_strings,method_name,value_out=uptr)
+          if(errc.eq.GFC_FOUND) then
+           if(associated(uptr)) then
+            select type(uptr); class is(talsh_tens_definer_t); extrn_method=>uptr; end select
+            if(.not.associated(extrn_method)) errc=-6
+           else
+            errc=-5
+           endif
+          else
+           if(errc.eq.GFC_NOT_FOUND) then; errc=-3; else; errc=-4; endif
+          endif
+          ier=dit%release(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-2
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function MethodRegisterRetrieveMethod
+!--------------------------------------------
+        subroutine method_register_dtor(this)
+         implicit none
+         type(method_register_t):: this  !inout: method register
+         integer(INTD):: errc
+         type(dictionary_iter_t):: dit
+
+         errc=dit%init(this%ext_methods)
+         if(errc.eq.GFC_SUCCESS) then
+          call dit%delete_all(errc)
+          errc=dit%release()
+         endif
+         return
+        end subroutine method_register_dtor
 
        end module virta

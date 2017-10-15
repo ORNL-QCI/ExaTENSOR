@@ -1,6 +1,6 @@
 !This module provides general services for MPI parallel programs.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/09/25
+!REVISION: 2017/10/15
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -39,7 +39,7 @@
 #endif
 !Parameters:
  !Internal:
-        logical, private:: DEBUG=.false.
+        logical, private:: DEBUG=.FALSE.
  !MPI kinds:
         integer(C_INT), parameter, public:: INT_MPI=MPI_INTEGER_KIND   !default MPI integer kind
         integer(C_INT), parameter, public:: INT_ADDR=MPI_ADDRESS_KIND  !default MPI address/size kind
@@ -246,12 +246,12 @@
         endif
         call numchar(impir,k0,str0)
         open(log_file,file='qforce.'//str0(1:k0)//'.log',form='FORMATTED',status='UNKNOWN',err=2000) !open a log file for each process
-        if(impir.ne.0) then
+       !if(impir.ne.0) then
          jo=log_file !redirect the standard output for slave processes to their log files
-        else
-         if(DEBUG)&
-         &write(jo,'("#DEBUG(service_mpi::dil_process_start): MPI slave output has been redirected to individual log files!")')
-        endif
+       !else
+        !if(DEBUG)&
+        !&write(jo,'("#DEBUG(service_mpi::dil_process_start): MPI slave output has been redirected to individual log files!")')
+       !endif
 !Greetings:
         write(jo,'("   *** ExaTENSOR v.17.02.28 by Dmitry I. Lyakh ***")')
 !Info:

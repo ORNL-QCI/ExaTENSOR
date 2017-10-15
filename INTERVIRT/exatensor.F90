@@ -1,7 +1,7 @@
 !ExaTENSOR: Massively Parallel Virtual Processor for Scale-Adaptive Hierarchical Tensor Algebra
 !This is the top level API module of ExaTENSOR (user-level API)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017/10/13
+!REVISION: 2017/10/15
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -74,17 +74,6 @@
         integer(INTL), public:: num_subspaces=0_INTL  !number of registered subspaces
        end type exatns_space_status_t
 !INTERFACES:
-       abstract interface
- !External method (user-defined tensor operation):
-        function exatns_method_i(tens_args,scal_args) result(ierr)
-         import:: INTD,tens_rcrsv_t
-         implicit none
-         integer(INTD):: ierr                                !out: error code
-         class(tens_rcrsv_t), intent(inout):: tens_args(0:)  !inout: tensor arguments
-         complex(8), intent(inout), optional:: scal_args(0:) !inout: scalar arguments
-        end function exatns_method_i
-       end interface
-       public exatns_method_i
  !Overloads:
        interface exatns_tensor_init
         module procedure exatns_tensor_init_scalar
@@ -104,6 +93,11 @@
        type(vector_t), private:: instructions
        type(vector_iter_t), private:: instr_log
 !VISIBILITY:
+ !External methods/data (before exatns_start):
+       public exatns_method_register      !registers an external method (it has to adhere to a predefined interface)
+       public exatns_method_unregister    !unregisters an external method
+       public exatns_data_register        !registers external (on-node) data (for future references)
+       public exatns_data_unregister      !unregisters external data
  !Control:
        public exatns_start                !starts the ExaTENSOR DSVP
        public exatns_stop                 !stops the ExaTENSOR DSVP
@@ -112,11 +106,6 @@
  !Parser/interpreter:
        public exatns_interpret            !interprets TAProL code (string of TAProL statements)
        public exatns_symbol_exists        !checks whether a specific identifier is registered (if yes, returns its attributes)
- !External methods/data:
-       public exatns_method_register      !registers an external method (it has to adhere to a predefined interface)
-       public exatns_method_unregister    !unregisters an external method
-       public exatns_data_register        !registers external (on-node) data (for future references)
-       public exatns_data_unregister      !unregisters external data
  !Hierarchical vector space:
        public exatns_space_register       !registers a vector space
        public exatns_space_unregister     !unregisters a vector space
@@ -149,6 +138,54 @@
 
       contains
 !IMPLEMENTATION:
+![ExaTENSOR External Method/Data API]---------------------------------------------
+       function exatns_method_register(method_name,method,method_tag) result(ierr) !called by all MPI processes
+!Registers an external method (tensor operation) with ExaTENSOR.
+        implicit none
+        integer(INTD):: ierr                    !out: error code
+        character(*), intent(in):: method_name  !in: symbolic method name
+        procedure(exatns_method_i):: method     !in: external method (tensor operation)
+        integer(INTD), intent(out):: method_tag !out: method tag (non-negative on success)
+
+        ierr=EXA_SUCCESS; method_tag=-1
+        write(CONS_OUT,*)'FATAL(exatensor:method_register): Not implemented yet!' !`Implement
+        return
+       end function exatns_method_register
+!-----------------------------------------------------------------
+       function exatns_method_unregister(method_name) result(ierr) !called by all MPI processes
+!Unregisters a registered external method (tensor operation).
+        implicit none
+        integer(INTD):: ierr                   !out: error code
+        character(*), intent(in):: method_name !in: method name
+
+        ierr=EXA_SUCCESS
+        write(CONS_OUT,*)'FATAL(exatensor:method_unregister): Not implemented yet!' !`Implement
+        return
+       end function exatns_method_unregister
+!-----------------------------------------------------------------------------
+       function exatns_data_register(data_name,data_ptr,data_tag) result(ierr) !called by all MPI processes
+!Registers an external data with ExaTENSOR.
+        implicit none
+        integer(INTD):: ierr                  !out: error code
+        character(*), intent(in):: data_name  !in: symbolic data name
+        type(C_PTR), intent(in):: data_ptr    !in: pointer to the external data (local)
+        integer(INTD), intent(out):: data_tag !out: data tag (non-negative on success)
+
+        ierr=EXA_SUCCESS; data_tag=-1
+        write(CONS_OUT,*)'FATAL(exatensor:data_register): Not implemented yet!' !`Implement
+        return
+       end function exatns_data_register
+!-------------------------------------------------------------
+       function exatns_data_unregister(data_name) result(ierr) !called by all MPI processes
+!Unregisters a registered external data.
+        implicit none
+        integer(INTD):: ierr                 !out: error code
+        character(*), intent(in):: data_name !in: data name
+
+        ierr=EXA_SUCCESS
+        write(CONS_OUT,*)'FATAL(exatensor:data_unregister): Not implemented yet!' !`Implement
+        return
+       end function exatns_data_unregister
 ![ExaTENSOR Control API]-----------------------------------
        function exatns_start(mpi_communicator) result(ierr) !called by all MPI processes
 !Starts the ExaTENSOR runtime within the given MPI communicator.
@@ -163,8 +200,6 @@
 ! # Each MPI process is assigned a single TAVP of a specific kind which is allocated and launched;
 ! # The Master MPI process 0 (Driver) returns while all other MPI processes begin their active
 !   life cycle as TAVPs until terminated by the Master MPI process 0 via a call to exatns_stop().
-!This is the only ExaTENSOR API function called by all MPI processes,
-!the rest are to be called by the Master MPI process 0 (Driver) only.
         implicit none
         integer(INTD):: ierr                                      !out: error code
         integer(INT_MPI), intent(in), optional:: mpi_communicator !in: MPI communicator (defaults to MPI_COMM_WORLD)
@@ -602,54 +637,6 @@
         write(CONS_OUT,*)'FATAL(exatensor:symbol_exists): Not implemented yet!' !`Implement
         return
        end function exatns_symbol_exists
-![ExaTENSOR External Method/Data API]---------------------------------------------
-       function exatns_method_register(method_name,method,method_tag) result(ierr)
-!Registers an external method (tensor operation) with ExaTENSOR.
-        implicit none
-        integer(INTD):: ierr                    !out: error code
-        character(*), intent(in):: method_name  !in: symbolic method name
-        procedure(exatns_method_i):: method     !in: external method (tensor operation)
-        integer(INTD), intent(out):: method_tag !out: method tag (non-negative on success)
-
-        ierr=EXA_SUCCESS; method_tag=-1
-        write(CONS_OUT,*)'FATAL(exatensor:method_register): Not implemented yet!' !`Implement
-        return
-       end function exatns_method_register
-!-----------------------------------------------------------------
-       function exatns_method_unregister(method_name) result(ierr)
-!Unregisters a registered external method (tensor operation).
-        implicit none
-        integer(INTD):: ierr                   !out: error code
-        character(*), intent(in):: method_name !in: method name
-
-        ierr=EXA_SUCCESS
-        write(CONS_OUT,*)'FATAL(exatensor:method_unregister): Not implemented yet!' !`Implement
-        return
-       end function exatns_method_unregister
-!-----------------------------------------------------------------------------
-       function exatns_data_register(data_name,data_ptr,data_tag) result(ierr)
-!Registers an external data with ExaTENSOR.
-        implicit none
-        integer(INTD):: ierr                  !out: error code
-        character(*), intent(in):: data_name  !in: symbolic data name
-        type(C_PTR), intent(in):: data_ptr    !in: pointer to the external data (local)
-        integer(INTD), intent(out):: data_tag !out: data tag (non-negative on success)
-
-        ierr=EXA_SUCCESS; data_tag=-1
-        write(CONS_OUT,*)'FATAL(exatensor:data_register): Not implemented yet!' !`Implement
-        return
-       end function exatns_data_register
-!-------------------------------------------------------------
-       function exatns_data_unregister(data_name) result(ierr)
-!Unregisters a registered external data.
-        implicit none
-        integer(INTD):: ierr                 !out: error code
-        character(*), intent(in):: data_name !in: data name
-
-        ierr=EXA_SUCCESS
-        write(CONS_OUT,*)'FATAL(exatensor:data_unregister): Not implemented yet!' !`Implement
-        return
-       end function exatns_data_unregister
 ![ExaTENSOR Hierarchical Vector Space API]-----------------------------------------
        function exatns_space_register(space_name,space_basis,space_id) result(ierr)
 !Registers a vector space based on the provided space basis.
@@ -667,9 +654,9 @@
           call hspace%h_space_ctor(space_basis,ierr)
           if(ierr.eq.0) then
            if(DEBUG.gt.0) then
-            write(CONS_OUT,'("#MSG(exatensor): Registered new vector space [id = ",i5,"; dim = ",i9,"]:")',ADVANCE='NO')&
+            write(jo,'("#MSG(exatensor): Registered new vector space [id = ",i4,"; dim = ",i9,"]:")',ADVANCE='NO')&
                  &space_id,hspace%get_space_dim()
-            write(CONS_OUT,*) space_name
+            write(jo,*) space_name
            endif
           else
            space_id=-1; ierr=EXA_ERR_UNABLE_COMPLETE

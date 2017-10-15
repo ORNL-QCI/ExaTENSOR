@@ -154,10 +154,12 @@ FOR DEVELOPERS ONLY:
 
 //DATA KINDS (keep consistent with tensor_algebra.F90):
 #define NO_TYPE 0 //null type
+#define R2 2      //half-precision float data kind (keep consistent with c_process.f90::tens_blck_pack/unpack)
 #define R4 4      //float data kind (keep consistent with c_process.f90::tens_blck_pack/unpack)
 #define R8 8      //double data kind (keep consistent with c_process.f90::tens_blck_pack/unpack)
-#define C4 12     //float complex data kind (keep consistent with c_process.f90::tens_blck_pack/unpack)
-#define C8 16     //double complex data kind (keep consistent with c_process.f90::tens_blck_pack/unpack)
+#define C2 12     //half-precision float complex data kind (keep consistent with c_process.f90::tens_blck_pack/unpack)
+#define C4 14     //float complex data kind (keep consistent with c_process.f90::tens_blck_pack/unpack)
+#define C8 18     //double complex data kind (keep consistent with c_process.f90::tens_blck_pack/unpack)
 
 //CUDA TASK STATUS (keep consistent with tensor_algebra.F90):
 #define CUDA_TASK_ERROR -1
