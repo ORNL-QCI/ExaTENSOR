@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/10/13
+!REVISION: 2017/10/16
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -975,11 +975,24 @@
          implicit none
          class(tavp_mng_decoder_t), intent(inout):: this !inout: TAVP-MNG decoder DSVU
          integer(INTD), intent(out), optional:: ierr     !out: error code
+         integer(INTL), parameter:: MAX_BYTECODE_SIZE=32_INTL*(1024_INTL*1024_INTL)
+         integer(INTD), parameter:: MAX_INSTRUCTIONS=65536
          integer(INTD):: errc,ier
+         logical:: active
+         type(list_iter_t):: iqueue
+         type(obj_pack_t):: instr_packet
 
          errc=0
          if(DEBUG.gt.0) write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decoder started as DSVU # ",i2)') impir,this%get_id() !debug
-         !`Implement
+         call this%bytecode%reserve_mem(ier,MAX_BYTECODE_SIZE,MAX_INSTRUCTIONS); if(ier.ne.0.and.errc.eq.0) errc=-1
+         if(errc.eq.0) then
+          call this%init_queue(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-1
+          active=(errc.eq.0)
+          wloop: do while(active)
+           
+          enddo wloop
+         endif
+         ier=this%get_error(); if(ier.eq.DSVP_SUCCESS) call this%set_error(errc)
          call this%shutdown(ier); if(ier.ne.0.and.errc.eq.0) errc=-1
          if(present(ierr)) ierr=errc
          return
@@ -990,11 +1003,13 @@
          implicit none
          class(tavp_mng_decoder_t), intent(inout):: this !inout: TAVP-MNG decoder DSVU
          integer(INTD), intent(out), optional:: ierr     !out: error code
-         integer(INTD):: errc
+         integer(INTD):: errc,ier
 
          errc=0
          if(DEBUG.gt.0) write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decoder stopped as DSVU # ",i2)') impir,this%get_id() !debug
-         !`Implement
+         call this%release_queue(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-1
+         call this%bytecode%destroy(ier); if(ier.ne.0.and.errc.eq.0) errc=-1
+         ier=this%get_error(); if(ier.eq.DSVP_SUCCESS) call this%set_error(errc)
          if(present(ierr)) ierr=errc
          return
         end subroutine TAVPMNGDecoderShutdown

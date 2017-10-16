@@ -1,6 +1,6 @@
 !Domain-specific virtual processor (DSVP): Abstract base module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/10/13
+!REVISION: 2017/10/16
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -204,11 +204,15 @@
          class(dsvp_t), pointer, private:: dsvp_p=>NULL()   !non-owning pointer to the DSVP the DS unit is part of
          type(ds_unit_port_t), private:: port               !DS unit port (for incoming DS instructions from other DS units)
          type(list_bi_t), private:: queue                   !queue of the currently processed DS instructions stored by reference
-         type(list_iter_t), private:: iqueue                !queue iterator
+         type(list_iter_t), public:: iqueue                 !queue iterator
          contains
           procedure(ds_unit_ctor_i), deferred, public:: configure !configures the DS unit
           procedure(ds_unit_self_i), deferred, public:: start     !starts, lives and stops the DS unit (the corresponding thread will run here until termination)
           procedure(ds_unit_self_i), deferred, public:: shutdown  !stops the DS unit (called from .start)
+          procedure, public:: init_queue=>DSUnitInitQueue         !initializes the DS unit queue iterator
+          procedure, public:: release_queue=>DSUnitReleaseQueue   !releases the DS unit queue iterator
+          procedure, public:: set_error=>DSUnitSetError           !sets the error code, including SUCCESS
+          procedure, public:: get_error=>DSUnitGetError           !returns the error code
           procedure, public:: load_port=>DSUnitLoadPort           !loads the DS unit port with new DS instructions (called by other DS units)
           procedure, public:: flush_port=>DSUnitFlushPort         !flushes the port content into the DS unit queue (called by the current DS unit)
           procedure, public:: get_dsvp=>DSUnitGetDSVP             !returns a pointer to the DSVP the DS unit is part of
@@ -408,6 +412,10 @@
         private DSUnitPortFree
         public ds_unit_port_dtor
  !ds_unit_t:
+        private DSUnitInitQueue
+        private DSUnitReleaseQueue
+        private DSUnitSetError
+        private DSUnitGetError
         private DSUnitLoadPort
         private DSUnitFlushPort
         private DSUnitGetDSVP
@@ -1162,7 +1170,63 @@
          ierr=this%free()
          return
         end subroutine ds_unit_port_dtor
-![ds_unit_t]===============================================
+![ds_unit_t]=================================
+        subroutine DSUnitInitQueue(this,ierr)
+!Initializes the DS unit queue.
+         implicit none
+         class(ds_unit_t), intent(inout):: this      !inout: DS unit
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         if(this%iqueue%get_status(errc).eq.GFC_IT_NULL) then
+          if(errc.eq.GFC_SUCCESS) then
+           errc=this%iqueue%init(this%queue); if(errc.ne.GFC_SUCCESS) errc=DSVP_ERROR
+          endif
+         else
+          if(errc.eq.GFC_SUCCESS) errc=DSVP_ERR_INVALID_REQ
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine DSUnitInitQueue
+!-----------------------------------------------
+        subroutine DSUnitReleaseQueue(this,ierr)
+!Releases the DS unit queue.
+         implicit none
+         class(ds_unit_t), intent(inout):: this      !inout: DS unit
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         if(this%iqueue%get_status(errc).ne.GFC_IT_NULL) then
+          if(errc.eq.GFC_SUCCESS) then
+           errc=this%iqueue%release(); if(errc.ne.GFC_SUCCESS) errc=DSVP_ERROR
+          endif
+         else
+          if(errc.eq.GFC_SUCCESS) errc=DSVP_ERR_INVALID_REQ
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine DSUnitReleaseQueue
+!-------------------------------------------------
+        subroutine DSUnitSetError(this,error_code)
+!Sets the error code in the DS unit.
+         implicit none
+         class(ds_unit_t), intent(inout):: this !in: DS unit
+         integer(INTD), intent(in):: error_code !in: error code to set
+
+         this%error_code=error_code
+         return
+        end subroutine DSUnitSetError
+!-------------------------------------------------------
+        function DSUnitGetError(this) result(error_code)
+!Returns the error code from the DS unit.
+         implicit none
+         integer(INTD):: error_code          !out: error code
+         class(ds_unit_t), intent(in):: this !in: DS unit
+
+         error_code=this%error_code
+         return
+        end function DSUnitGetError
+!----------------------------------------------------------
         function DSUnitLoadPort(this,new_list) result(ierr)
 !Called by other DS units in order to put new DS instructions
 !into the port of the current DS unit. <new_list> with new

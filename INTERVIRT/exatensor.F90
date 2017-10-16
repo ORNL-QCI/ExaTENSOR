@@ -1,7 +1,7 @@
 !ExaTENSOR: Massively Parallel Virtual Processor for Scale-Adaptive Hierarchical Tensor Algebra
 !This is the top level API module of ExaTENSOR (user-level API)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017/10/15
+!REVISION: 2017/10/16
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -140,50 +140,52 @@
 !IMPLEMENTATION:
 ![ExaTENSOR External Method/Data API]---------------------------------------------
        function exatns_method_register(method_name,method,method_tag) result(ierr) !called by all MPI processes
-!Registers an external method (tensor operation) with ExaTENSOR.
+!Registers an external tensor body initialization/update method with ExaTENSOR.
         implicit none
-        integer(INTD):: ierr                    !out: error code
-        character(*), intent(in):: method_name  !in: symbolic method name
-        procedure(exatns_method_i):: method     !in: external method (tensor operation)
-        integer(INTD), intent(out):: method_tag !out: method tag (non-negative on success)
+        integer(INTD):: ierr                              !out: error code
+        character(*), intent(in):: method_name            !in: symbolic method name
+        class(talsh_tens_definer_t), intent(in):: method  !in: external tensor body initialization/update method
+        integer(INTD), intent(out), optional:: method_tag !out: method tag
+        integer(INTD):: tag
 
-        ierr=EXA_SUCCESS; method_tag=-1
-        write(CONS_OUT,*)'FATAL(exatensor:method_register): Not implemented yet!' !`Implement
+        tag=-1
+        call method_register%register_method(method_name,method,ierr)
+        if(present(method_tag)) method_tag=tag
         return
        end function exatns_method_register
 !-----------------------------------------------------------------
        function exatns_method_unregister(method_name) result(ierr) !called by all MPI processes
-!Unregisters a registered external method (tensor operation).
+!Unregisters a registered external tensor body initialization/update method.
         implicit none
         integer(INTD):: ierr                   !out: error code
         character(*), intent(in):: method_name !in: method name
 
-        ierr=EXA_SUCCESS
-        write(CONS_OUT,*)'FATAL(exatensor:method_unregister): Not implemented yet!' !`Implement
+        call method_register%unregister_method(method_name,ierr)
         return
        end function exatns_method_unregister
-!-----------------------------------------------------------------------------
-       function exatns_data_register(data_name,data_ptr,data_tag) result(ierr) !called by all MPI processes
-!Registers an external data with ExaTENSOR.
+!------------------------------------------------------------------------------
+       function exatns_data_register(data_name,tens_data,data_tag) result(ierr) !called by all MPI processes
+!Registers an external local data with ExaTENSOR.
         implicit none
-        integer(INTD):: ierr                  !out: error code
-        character(*), intent(in):: data_name  !in: symbolic data name
-        type(C_PTR), intent(in):: data_ptr    !in: pointer to the external data (local)
-        integer(INTD), intent(out):: data_tag !out: data tag (non-negative on success)
+        integer(INTD):: ierr                            !out: error code
+        character(*), intent(in):: data_name            !in: symbolic data name
+        type(talsh_tens_data_t), intent(in):: tens_data !in: external tensor data (loca)
+        integer(INTD), intent(out), optional:: data_tag !out: data tag
+        integer(INTD):: tag
 
-        ierr=EXA_SUCCESS; data_tag=-1
-        write(CONS_OUT,*)'FATAL(exatensor:data_register): Not implemented yet!' !`Implement
+        tag=-1
+        call data_register%register_data(data_name,tens_data,ierr)
+        if(present(data_tag)) data_tag=tag
         return
        end function exatns_data_register
 !-------------------------------------------------------------
        function exatns_data_unregister(data_name) result(ierr) !called by all MPI processes
-!Unregisters a registered external data.
+!Unregisters previously registered external data.
         implicit none
         integer(INTD):: ierr                 !out: error code
         character(*), intent(in):: data_name !in: data name
 
-        ierr=EXA_SUCCESS
-        write(CONS_OUT,*)'FATAL(exatensor:data_unregister): Not implemented yet!' !`Implement
+        call data_register%unregister_data(data_name,ierr)
         return
        end function exatns_data_unregister
 ![ExaTENSOR Control API]-----------------------------------
@@ -529,7 +531,7 @@
         type(obj_pack_t):: instr_packet
         type(pack_env_t):: bytecode
 
-        ierr=EXA_SUCCESS; write(jo,'("#MSG(exatensor): New Instruction: ExaTENSOR STOP: IP = ")',ADVANCE='NO')
+        ierr=EXA_SUCCESS; write(jo,'("#MSG(exatensor): New Instruction: STOP ExaTENSOR: IP = ")',ADVANCE='NO')
 !Send the stop signal to the root TAVP-MNG and wait for completion:
         call bytecode%reserve_mem(ierr)
         if(ierr.eq.0) then
@@ -550,38 +552,36 @@
           endif
          endif
          if(ierr.eq.0) then; call bytecode%acquire_packet(instr_packet,ierr); if(ierr.ne.0) ierr=-17; endif
-         if(ierr.eq.0) then; call tens_instr%tens_instr_ctor(TAVP_INSTR_STOP,ierr); if(ierr.ne.0) ierr=-16; endif
+         if(ierr.eq.0) then; call tens_instr%tens_instr_ctor(TAVP_INSTR_STOP,ierr,iid=ip); if(ierr.ne.0) ierr=-16; endif
          if(ierr.eq.0) then; call tens_instr%encode(instr_packet,ierr); if(ierr.ne.0) ierr=-15; endif
          if(ierr.eq.0) then; call bytecode%seal_packet(ierr); if(ierr.ne.0) ierr=-14; endif
-         !if(ierr.eq.0) then; call bytecode%send(top_manager_gl_rank,comm_hl,ierr); if(ierr.ne.0) ierr=-13; endif
+         !if(ierr.eq.0) then; call bytecode%send(0,comm_hl,ierr,comm=drv_mng_comm); if(ierr.ne.0) ierr=-13; endif
          !if(ierr.eq.0) then; call comm_hl%wait(ierr); if(ierr.ne.0) ierr=-12; endif
          call comm_hl%clean(errc); if(errc.ne.0.and.ierr.eq.0) ierr=-11
          call bytecode%destroy(errc); if(errc.ne.0.and.ierr.eq.0) ierr=-10
          call tens_instr%set_status(DS_INSTR_RETIRED,errc); if(errc.ne.DSVP_SUCCESS.and.ierr.eq.0) ierr=-9
-         if(ierr.eq.0) then
-          ierr=instr_log%delete_all(); if(ierr.ne.GFC_SUCCESS) ierr=-8
-          errc=instr_log%release(); if(errc.ne.GFC_SUCCESS.and.ierr.eq.0) ierr=-7
+         errc=instr_log%delete_all(); if(errc.ne.GFC_SUCCESS.and.ierr.eq.0) ierr=-8
+         errc=instr_log%release(); if(errc.ne.GFC_SUCCESS.and.ierr.eq.0) ierr=-7
 !Mark ExaTENSOR runtime is off:
-          exatns_rt_status=exatns_rt_status_t(DSVP_STAT_OFF,ierr,0)
+         exatns_rt_status=exatns_rt_status_t(DSVP_STAT_OFF,ierr,0)
 !Sync with others:
-          write(jo,'()')
-          write(jo,'("###EXATENSOR FINISHED PROCESS ",i9,"/",i9,": Status = ",i11,": Syncing ... ")',ADVANCE='NO')&
-               &dil_global_process_id(),dil_global_comm_size(),ierr
-          call dil_global_comm_barrier(errc)
-          if(errc.eq.0) then; write(jo,'("Ok")'); else; write(jo,'("Failed")'); ierr=-6; endif
+         write(jo,'()')
+         write(jo,'("###EXATENSOR FINISHED PROCESS ",i9,"/",i9,": Status = ",i11,": Syncing ... ")',ADVANCE='NO')&
+              &dil_global_process_id(),dil_global_comm_size(),ierr
+         call dil_global_comm_barrier(errc)
+         if(errc.eq.0) then; write(jo,'("Ok")'); else; write(jo,'("Failed")'); ierr=-6; endif
 !Free the role specific MPI communicators:
-          if(drv_mng_comm.ne.MPI_COMM_NULL) then
-           call MPI_Comm_free(drv_mng_comm,errc); if(errc.ne.0.and.ierr.eq.0) ierr=-5
-          endif
-          if(mng_wrk_comm.ne.MPI_COMM_NULL) then
-           call MPI_Comm_free(mng_wrk_comm,errc); if(errc.ne.0.and.ierr.eq.0) ierr=-4
-          endif
-          if(role_comm.ne.MPI_COMM_NULL) then
-           call MPI_Comm_free(role_comm,errc); if(errc.ne.0.and.ierr.eq.0) ierr=-3
-          endif
-!Finish the MPI process:
-          call dil_process_finish(errc); if(errc.ne.0.and.ierr.eq.0) ierr=-2
+         if(drv_mng_comm.ne.MPI_COMM_NULL) then
+          call MPI_Comm_free(drv_mng_comm,errc); if(errc.ne.0.and.ierr.eq.0) ierr=-5
          endif
+         if(mng_wrk_comm.ne.MPI_COMM_NULL) then
+          call MPI_Comm_free(mng_wrk_comm,errc); if(errc.ne.0.and.ierr.eq.0) ierr=-4
+         endif
+         if(role_comm.ne.MPI_COMM_NULL) then
+          call MPI_Comm_free(role_comm,errc); if(errc.ne.0.and.ierr.eq.0) ierr=-3
+         endif
+!Finish the MPI process:
+         call dil_process_finish(errc); if(errc.ne.0.and.ierr.eq.0) ierr=-2
         else
          ierr=-1
         endif

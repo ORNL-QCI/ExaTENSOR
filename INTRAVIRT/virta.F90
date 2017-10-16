@@ -8,7 +8,7 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/10/15
+!REVISION: 2017/10/16
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -230,9 +230,9 @@
         integer(INT_MPI), public:: drv_mng_comm=MPI_COMM_NULL !MPI intercommunicator for the driver and managers
         integer(INT_MPI), public:: mng_wrk_comm=MPI_COMM_NULL !MPI intercommunicator for managers and workers
  !External data register:
-        type(data_register_t), private:: data_register !string --> talsh_tens_data_t
+        type(data_register_t), public:: data_register !string --> talsh_tens_data_t
  !External method register:
-        type(method_register_t), private:: method_register !string --> talsh_tens_definer_t
+        type(method_register_t), public:: method_register !string --> talsh_tens_definer_t
 !VISIBILITY:
  !non-member:
         public role_barrier
