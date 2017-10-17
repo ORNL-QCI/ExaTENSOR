@@ -1,6 +1,6 @@
 !This module provides general services for MPI parallel programs.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/10/15
+!REVISION: 2017/10/17
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -361,7 +361,7 @@
            call quit(ierr,'#ERROR(ExaTensor::service_mpi::dil_process_finish): Final MPI_BARRIER failure!',comm_imported)
           endif
          endif
-         call quit(exec_status,'###ExaTENSOR exited:',comm_imported)
+         call quit(exec_status,'###ExaTENSOR has exited:',comm_imported)
         else
          ierr=ierr+7
         endif

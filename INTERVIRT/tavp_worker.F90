@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/10/13
+!REVISION: 2017/10/17
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -114,8 +114,9 @@
         end type tavp_wrk_decoder_t
  !TAVP-WRK decoder configuration:
         type, extends(dsv_conf_t), private:: tavp_wrk_decoder_conf_t
-         integer(INTD), public:: source_comm !MPI communicator of the source process
-         integer(INTD), public:: source_rank !source process rank from which the bytecode is coming
+         integer(INTD), public:: source_comm                  !MPI communicator of the source process
+         integer(INTD), public:: source_rank                  !source process rank from which the bytecode is coming
+         class(ds_unit_t), pointer, public:: acceptor=>NULL() !non-owning pointer to the acceptor DS unit for which the decoding is done
         end type tavp_wrk_decoder_conf_t
  !TAVP-WRK retirer:
         type, extends(ds_encoder_t), private:: tavp_wrk_retirer_t
@@ -1491,11 +1492,11 @@
 !Construct the instruction:
            select case(op_code)
            case(TAVP_INSTR_NOOP)
-           case(TAVP_INSTR_STOP)
+           case(TAVP_INSTR_CTRL_STOP)
             call construct_instr_stop(errc); if(errc.ne.0) errc=-8
-           case(TAVP_INSTR_CREATE,TAVP_INSTR_DESTROY)
+           case(TAVP_INSTR_TENS_CREATE,TAVP_INSTR_TENS_DESTROY)
             call construct_instr_create_destroy(errc); if(errc.ne.0) errc=-7
-           case(TAVP_INSTR_CONTRACT)
+           case(TAVP_INSTR_TENS_CONTRACT)
             call construct_instr_contract(errc); if(errc.ne.0) errc=-6
            case default
             errc=-5 !invalid instruction opcode (or not implemented)
@@ -1669,11 +1670,11 @@
 !Pack the instruction body:
                  select case(op_code)
                  case(TAVP_INSTR_NOOP)
-                 case(TAVP_INSTR_STOP)
+                 case(TAVP_INSTR_CTRL_STOP)
                   call encode_instr_stop(errc); if(errc.ne.0) errc=-12
-                 case(TAVP_INSTR_CREATE,TAVP_INSTR_DESTROY)
+                 case(TAVP_INSTR_TENS_CREATE,TAVP_INSTR_TENS_DESTROY)
                   call encode_instr_create_destroy(errc); if(errc.ne.0) errc=-11
-                 case(TAVP_INSTR_CONTRACT)
+                 case(TAVP_INSTR_TENS_CONTRACT)
                   call encode_instr_contract(errc); if(errc.ne.0) errc=-10
                  case default
                   errc=-9 !invalid instruction opcode (or not implemented)
@@ -1817,9 +1818,10 @@
          errc=0
          select type(conf)
          type is(tavp_wrk_decoder_conf_t)
-          if(conf%source_rank.ge.0) then
+          if(conf%source_rank.ge.0.and.associated(conf%acceptor)) then
            this%source_rank=conf%source_rank
            this%source_comm=conf%source_comm
+           call this%set_acceptor(conf%acceptor,errc); if(errc.ne.DSVP_SUCCESS) errc=-3
           else
            errc=-2
           endif
@@ -1890,10 +1892,10 @@
                if(errc.eq.0) then
                 select case(op_code)
                 case(TAVP_INSTR_NOOP)
-                case(TAVP_INSTR_STOP)
-                case(TAVP_INSTR_CREATE,TAVP_INSTR_DESTROY)
+                case(TAVP_INSTR_CTRL_STOP)
+                case(TAVP_INSTR_TENS_CREATE,TAVP_INSTR_TENS_DESTROY)
                  call decode_instr_create_destroy(errc); if(errc.ne.0) errc=-11
-                case(TAVP_INSTR_CONTRACT)
+                case(TAVP_INSTR_TENS_CONTRACT)
                  call decode_instr_contract(errc); if(errc.ne.0) errc=-10
                 case default
                  call ds_instr%set_status(DS_INSTR_RETIRED,errc,TAVP_ERR_GEN_FAILURE)
@@ -1952,7 +1954,7 @@
              tens_entry=>NULL(); tens_entry=>arg_cache%lookup(tensor,jerr)
              if(jerr.eq.0) then
               select case(op_code)
-              case(TAVP_INSTR_CREATE) !CREATE a tensor
+              case(TAVP_INSTR_TENS_CREATE) !CREATE a tensor
                if(.not.associated(tens_entry)) then
                 res=arg_cache%store(tensor,tens_entry_wrk_alloc,jerr,tens_entry_p=tens_entry)
                 if(res.and.(jerr.eq.0).and.associated(tens_entry)) then
@@ -1995,7 +1997,7 @@
                 call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_ARG_DEFINED)
                 jerr=-10
                endif
-              case(TAVP_INSTR_DESTROY) !DESTROY a tensor
+              case(TAVP_INSTR_TENS_DESTROY) !DESTROY a tensor
                if(associated(tens_entry)) then
                 deallocate(tensor); tensor=>NULL() !deallocate the temporary tensor
                 tens_wrk_entry=>NULL()
@@ -2533,9 +2535,9 @@
          contains
 
           subroutine set_microcode()
-           this%microcode(TAVP_INSTR_CREATE)%instr_proc=>TAVPWRKExecTensorCreate
-           this%microcode(TAVP_INSTR_DESTROY)%instr_proc=>TAVPWRKExecTensorDestroy
-           this%microcode(TAVP_INSTR_CONTRACT)%instr_proc=>TAVPWRKExecTensorContract
+           this%microcode(TAVP_INSTR_TENS_CREATE)%instr_proc=>TAVPWRKExecTensorCreate
+           this%microcode(TAVP_INSTR_TENS_DESTROY)%instr_proc=>TAVPWRKExecTensorDestroy
+           this%microcode(TAVP_INSTR_TENS_CONTRACT)%instr_proc=>TAVPWRKExecTensorContract
            return
           end subroutine set_microcode
 
@@ -2767,6 +2769,7 @@
          class(dsv_conf_t), intent(in):: conf            !in: specific DSVP configuration
          integer(INTD), intent(out), optional:: ierr     !out: error code
          integer(INTD):: errc,num_units
+         class(ds_unit_t), pointer:: decode_acceptor
          type(tavp_wrk_decoder_conf_t):: decoder_conf
          type(tavp_wrk_retirer_conf_t):: retirer_conf
          type(tavp_wrk_resourcer_conf_t):: resourcer_conf
@@ -2781,7 +2784,8 @@
              num_units=0 !increment by one after each unit configuration
  !Configure static DSVU:
   !Decoder:
-             decoder_conf=tavp_wrk_decoder_conf_t(conf%source_comm,conf%source_rank)
+             decode_acceptor=>this%resourcer
+             decoder_conf=tavp_wrk_decoder_conf_t(conf%source_comm,conf%source_rank,decode_acceptor)
              call this%decoder%configure(decoder_conf,errc)
              if(errc.eq.0) then
               num_units=num_units+1

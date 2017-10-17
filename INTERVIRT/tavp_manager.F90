@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/10/16
+!REVISION: 2017/10/17
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -84,8 +84,9 @@
         end type tavp_mng_decoder_t
  !TAVP-MNG decoder configuration:
         type, extends(dsv_conf_t), private:: tavp_mng_decoder_conf_t
-         integer(INTD), public:: source_comm !MPI communicator of the source process
-         integer(INTD), public:: source_rank !source process rank from which the bytecode is coming
+         integer(INTD), public:: source_comm                        !MPI communicator of the source process
+         integer(INTD), public:: source_rank                        !source process rank from which the bytecode is coming
+         class(ds_unit_t), pointer, public:: acceptor=>NULL()       !non-owning pointer to the acceptor DS unit
         end type tavp_mng_decoder_conf_t
  !TAVP-MNG retirer:
         type, extends(ds_encoder_t), private:: tavp_mng_retirer_t
@@ -633,11 +634,11 @@
 !Construct the instruction:
            select case(op_code)
            case(TAVP_INSTR_NOOP)
-           case(TAVP_INSTR_STOP)
+           case(TAVP_INSTR_CTRL_STOP)
             call construct_instr_stop(errc); if(errc.ne.0) errc=-8
-           case(TAVP_INSTR_CREATE,TAVP_INSTR_DESTROY)
+           case(TAVP_INSTR_TENS_CREATE,TAVP_INSTR_TENS_DESTROY)
             call construct_instr_create_destroy(errc); if(errc.ne.0) errc=-7
-           case(TAVP_INSTR_CONTRACT)
+           case(TAVP_INSTR_TENS_CONTRACT)
             call construct_instr_contract(errc); if(errc.ne.0) errc=-6
            case default
             errc=-5 !invalid instruction opcode (or not implemented)
@@ -813,11 +814,11 @@
 !Pack the instruction body:
                  select case(op_code)
                  case(TAVP_INSTR_NOOP)
-                 case(TAVP_INSTR_STOP)
+                 case(TAVP_INSTR_CTRL_STOP)
                   call encode_instr_stop(errc); if(errc.ne.0) errc=-12
-                 case(TAVP_INSTR_CREATE,TAVP_INSTR_DESTROY)
+                 case(TAVP_INSTR_TENS_CREATE,TAVP_INSTR_TENS_DESTROY)
                   call encode_instr_create_destroy(errc); if(errc.ne.0) errc=-11
-                 case(TAVP_INSTR_CONTRACT)
+                 case(TAVP_INSTR_TENS_CONTRACT)
                   call encode_instr_contract(errc); if(errc.ne.0) errc=-10
                  case default
                   errc=-9 !invalid instruction opcode (or not implemented)
@@ -961,8 +962,13 @@
          errc=0
          select type(conf)
          type is(tavp_mng_decoder_conf_t)
-          this%source_comm=conf%source_comm
-          this%source_rank=conf%source_rank
+          if(associated(conf%acceptor)) then
+           this%source_comm=conf%source_comm
+           this%source_rank=conf%source_rank
+           call this%set_acceptor(conf%acceptor,errc); if(errc.ne.DSVP_SUCCESS) errc=-3
+          else
+           errc=-2
+          endif
          class default
           errc=-1
          end select
@@ -977,23 +983,69 @@
          integer(INTD), intent(out), optional:: ierr     !out: error code
          integer(INTL), parameter:: MAX_BYTECODE_SIZE=32_INTL*(1024_INTL*1024_INTL)
          integer(INTD), parameter:: MAX_INSTRUCTIONS=65536
-         integer(INTD):: errc,ier
-         logical:: active
+         integer(INTD):: errc,ier,num_packets,i,opcode
+         logical:: active,stopping,new
+         class(*), pointer:: uptr
+         class(ds_unit_t), pointer:: acceptor
          type(list_iter_t):: iqueue
          type(obj_pack_t):: instr_packet
+         type(comm_handle_t):: comm_hl
+         type(tens_instr_t), pointer:: tens_instr
+         type(tens_instr_t):: tens_instr_empty
 
          errc=0
          if(DEBUG.gt.0) write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decoder started as DSVU # ",i2)') impir,this%get_id() !debug
+         if(DEBUG.gt.0) write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decoder is listening to ",i11,1x,i6)')&
+         &impir,this%source_comm,this%source_rank
          call this%bytecode%reserve_mem(ier,MAX_BYTECODE_SIZE,MAX_INSTRUCTIONS); if(ier.ne.0.and.errc.eq.0) errc=-1
          if(errc.eq.0) then
           call this%init_queue(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-1
-          active=(errc.eq.0)
+          active=((errc.eq.0).and.(this%source_rank.ge.0)); stopping=(.not.active)
           wloop: do while(active)
-           
+           if(.not.stopping) then
+            call comm_hl%clean(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-1; exit wloop; endif
+            new=this%bytecode%receive(comm_hl,ier,proc_rank=this%source_rank,comm=this%source_comm)
+            if(ier.ne.0.and.errc.eq.0) then; errc=-1; exit wloop; endif
+            if(new) then
+             call comm_hl%wait(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-1; exit wloop; endif
+             num_packets=this%bytecode%get_num_packets(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-1; exit wloop; endif
+             if(DEBUG.gt.0) write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decoder received ",i9," new instructions")') impir,num_packets !debug
+             if(num_packets.gt.0) then
+              do i=1,num_packets
+               call this%bytecode%extract_packet(i,instr_packet,ier,preclean=.TRUE.)
+               if(ier.ne.0.and.errc.eq.0) then; errc=-1; exit wloop; endif
+               ier=this%iqueue%append(tens_instr_empty); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+               ier=this%iqueue%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+               uptr=>this%iqueue%get_value(ier); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+               tens_instr=>NULL(); select type(uptr); type is(tens_instr_t); tens_instr=>uptr; end select
+               if(.not.associated(tens_instr).and.errc.eq.0) then; errc=-1; exit wloop; endif
+               call this%decode(tens_instr,instr_packet,ier); if(ier.ne.0.and.errc.eq.0) then; errc=-1; exit wloop; endif
+               opcode=tens_instr%get_code(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+               if(opcode.eq.TAVP_INSTR_CTRL_STOP) then
+                stopping=.TRUE.; if(i.ne.num_packets.and.errc.eq.0) then; errc=-1; exit wloop; endif
+                exit
+               endif
+              enddo
+              acceptor=>this%get_acceptor(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+              if(associated(acceptor)) then
+               ier=acceptor%load_port(this%iqueue); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+               if(this%iqueue%get_status().ne.GFC_IT_EMPTY.and.errc.eq.0) then; errc=-1; exit wloop; endif !trap
+              else
+               if(errc.eq.0) then; errc=-1; exit wloop; endif
+              endif
+              call this%bytecode%clean(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-1; exit wloop; endif
+             else !empty bytecode
+              if(errc.eq.0) then; errc=-1; exit wloop; endif
+             endif
+            endif
+           else
+            if(this%iqueue%get_status().eq.GFC_IT_EMPTY) active=.FALSE.
+           endif
           enddo wloop
          endif
          ier=this%get_error(); if(ier.eq.DSVP_SUCCESS) call this%set_error(errc)
          call this%shutdown(ier); if(ier.ne.0.and.errc.eq.0) errc=-1
+         if(errc.ne.0.and.VERBOSE) write(CONS_OUT,'("#ERROR(TAVP_MNG)[",i6,"]: Error code = ",i11)') impir,errc
          if(present(ierr)) ierr=errc
          return
         end subroutine TAVPMNGDecoderStart
@@ -1007,7 +1059,7 @@
 
          errc=0
          if(DEBUG.gt.0) write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decoder stopped as DSVU # ",i2)') impir,this%get_id() !debug
-         call this%release_queue(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-1
+         call this%release_queue(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-2
          call this%bytecode%destroy(ier); if(ier.ne.0.and.errc.eq.0) errc=-1
          ier=this%get_error(); if(ier.eq.DSVP_SUCCESS) call this%set_error(errc)
          if(present(ierr)) ierr=errc
@@ -1045,10 +1097,10 @@
                if(errc.eq.0) then
                 select case(op_code)
                 case(TAVP_INSTR_NOOP)
-                case(TAVP_INSTR_STOP)
-                case(TAVP_INSTR_CREATE,TAVP_INSTR_DESTROY)
+                case(TAVP_INSTR_CTRL_STOP)
+                case(TAVP_INSTR_TENS_CREATE,TAVP_INSTR_TENS_DESTROY)
                  call decode_instr_create_destroy(errc); if(errc.ne.0) errc=-11
-                case(TAVP_INSTR_CONTRACT)
+                case(TAVP_INSTR_TENS_CONTRACT)
                  call decode_instr_contract(errc); if(errc.ne.0) errc=-10
                 case default
                  call ds_instr%set_status(DS_INSTR_RETIRED,errc,TAVP_ERR_GEN_FAILURE)
@@ -1106,7 +1158,7 @@
              tens_entry=>NULL(); tens_entry=>arg_cache%lookup(tensor,jerr)
              if(jerr.eq.0) then
               select case(op_code)
-              case(TAVP_INSTR_CREATE) !CREATE a tensor
+              case(TAVP_INSTR_TENS_CREATE) !CREATE a tensor
                if(.not.associated(tens_entry)) then
                 res=arg_cache%store(tensor,tens_entry_mng_alloc,jerr,tens_entry_p=tens_entry)
                 if(res.and.(jerr.eq.0).and.associated(tens_entry)) then
@@ -1148,7 +1200,7 @@
                 call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_ARG_DEFINED)
                 jerr=-10
                endif
-              case(TAVP_INSTR_DESTROY) !DESTROY a tensor
+              case(TAVP_INSTR_TENS_DESTROY) !DESTROY a tensor
                if(associated(tens_entry)) then
                 deallocate(tensor); tensor=>NULL() !deallocate the temporary tensor
                 tens_mng_entry=>NULL()
@@ -1806,6 +1858,7 @@
          class(dsv_conf_t), intent(in):: conf            !in: specific DSVP configuration
          integer(INTD), intent(out), optional:: ierr     !out: error code
          integer(INTD):: errc,num_units
+         class(ds_unit_t), pointer:: decode_acceptor
          type(tavp_mng_decoder_conf_t):: decoder_conf
          type(tavp_mng_retirer_conf_t):: retirer_conf
          type(tavp_mng_locator_conf_t):: locator_conf
@@ -1822,7 +1875,8 @@
              num_units=0 !increment by one after each unit configuration
  !Configure static DSVU:
   !Up-decoder:
-             decoder_conf=tavp_mng_decoder_conf_t(conf%source_comm,conf%source_rank)
+             decode_acceptor=>this%locator
+             decoder_conf=tavp_mng_decoder_conf_t(conf%source_comm,conf%source_rank,decode_acceptor)
              call this%udecoder%configure(decoder_conf,errc)
              if(errc.eq.0) then
               num_units=num_units+1
@@ -1837,7 +1891,8 @@
                if(errc.eq.0) then
                 num_units=num_units+1
   !Locating-decoder:
-                decoder_conf=tavp_mng_decoder_conf_t(conf%ring_comm,conf%ring_recv_rank)
+                decode_acceptor=>this%locator
+                decoder_conf=tavp_mng_decoder_conf_t(conf%ring_comm,conf%ring_recv_rank,decode_acceptor)
                 call this%ldecoder%configure(decoder_conf,errc)
                 if(errc.eq.0) then
                  num_units=num_units+1
@@ -1857,12 +1912,14 @@
                    if(errc.eq.0) then
                     num_units=num_units+1
   !Replicating-decoder:
-                    decoder_conf=tavp_mng_decoder_conf_t(role_comm,-1)
+                    decode_acceptor=>this%replicator
+                    decoder_conf=tavp_mng_decoder_conf_t(role_comm,-1,decode_acceptor)
                     call this%rdecoder%configure(decoder_conf,errc)
                     if(errc.eq.0) then
                      num_units=num_units+1
   !Collecting-decoder:
-                     decoder_conf=tavp_mng_decoder_conf_t(conf%collect_comm,-1)
+                     decode_acceptor=>this%collector
+                     decoder_conf=tavp_mng_decoder_conf_t(conf%collect_comm,-1,decode_acceptor)
                      call this%cdecoder%configure(decoder_conf,errc)
                      if(errc.eq.0) then
                       num_units=num_units+1

@@ -1,7 +1,7 @@
 !ExaTENSOR: Massively Parallel Virtual Processor for Scale-Adaptive Hierarchical Tensor Algebra
 !This is the top level API module of ExaTENSOR (user-level API)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017/10/16
+!REVISION: 2017/10/17
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -259,7 +259,7 @@
            call quit(-1,'#FATAL(exatensor): Unexpected process role during intercommunicator creation!')
           end select
           if(errc.eq.0) then
-           write(jo,'("Done")')
+           write(jo,'("Done: Comm = ",i11,1x,i11)') drv_mng_comm,mng_wrk_comm
           else
            write(jo,'("Failed: Error ",i11)') errc
            call dil_process_finish(errc)
@@ -437,7 +437,8 @@
                  jerr=-7
                 endif
                else
-                write(jo,'("#FATAL(exatensor): Unbalanced Node Aggregation Trees are not supported yet!")')
+                write(jo,'("#FATAL(exatensor): Unbalanced Node Aggregation Trees are not supported yet! ")',ADVANCE='NO')
+                write(jo,'("All nodes at the same tree level must be of the same kind! Adjust the number of MPI processes!")')
                 jerr=-6
                endif
               else
@@ -552,11 +553,11 @@
           endif
          endif
          if(ierr.eq.0) then; call bytecode%acquire_packet(instr_packet,ierr); if(ierr.ne.0) ierr=-17; endif
-         if(ierr.eq.0) then; call tens_instr%tens_instr_ctor(TAVP_INSTR_STOP,ierr,iid=ip); if(ierr.ne.0) ierr=-16; endif
+         if(ierr.eq.0) then; call tens_instr%tens_instr_ctor(TAVP_INSTR_CTRL_STOP,ierr,iid=ip); if(ierr.ne.0) ierr=-16; endif
          if(ierr.eq.0) then; call tens_instr%encode(instr_packet,ierr); if(ierr.ne.0) ierr=-15; endif
          if(ierr.eq.0) then; call bytecode%seal_packet(ierr); if(ierr.ne.0) ierr=-14; endif
-         !if(ierr.eq.0) then; call bytecode%send(0,comm_hl,ierr,comm=drv_mng_comm); if(ierr.ne.0) ierr=-13; endif
-         !if(ierr.eq.0) then; call comm_hl%wait(ierr); if(ierr.ne.0) ierr=-12; endif
+         if(ierr.eq.0) then; call bytecode%send(0,comm_hl,ierr,comm=drv_mng_comm); if(ierr.ne.0) ierr=-13; endif
+         if(ierr.eq.0) then; call comm_hl%wait(ierr); if(ierr.ne.0) ierr=-12; endif
          call comm_hl%clean(errc); if(errc.ne.0.and.ierr.eq.0) ierr=-11
          call bytecode%destroy(errc); if(errc.ne.0.and.ierr.eq.0) ierr=-10
          call tens_instr%set_status(DS_INSTR_RETIRED,errc); if(errc.ne.DSVP_SUCCESS.and.ierr.eq.0) ierr=-9

@@ -8,7 +8,7 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/10/16
+!REVISION: 2017/10/17
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -81,39 +81,40 @@
         integer(INTD), parameter, public:: TAVP_ERR_EXC_FAILURE=-9     !instruction computation failed
  !TAVP ISA max size (the same for all TAVP specializations):
         integer(INTD), parameter, public:: TAVP_ISA_SIZE=256 !max number of TAVP instructions [0:TAVP_ISA_SIZE-1]
- !Tensor algebra virtual processor (TAVP):
+ !Tensor algebra virtual processor (TAVP) ISA:
   !TAVP instruction code (opcode), must be non-negative (consult TAProL spec), limited by TAVP_ISA_SIZE:
    !NOOP:
         integer(INTD), parameter, public:: TAVP_INSTR_NOOP=DS_INSTR_NOOP !no operation (empty instruction): Negative opcode
    !General control [0-15]:
-        integer(INTD), parameter, public:: TAVP_INSTR_STOP=0      !stop TAVP (finishes current instructions and shutdowns TAVP)
-        integer(INTD), parameter, public:: TAVP_INSTR_PAUSE=1     !pause TAVP execution (finishes active instructions and pauses TAVP)
-        integer(INTD), parameter, public:: TAVP_INSTR_RESUME=2    !resume TAVP execution (resumes TAVP execution pipeline after a pause)
+        integer(INTD), parameter, public:: TAVP_INSTR_CTRL_STOP=0       !stop TAVP (finishes current instructions and shutdowns TAVP)
+        integer(INTD), parameter, public:: TAVP_INSTR_CTRL_PAUSE=1      !pause TAVP execution (finishes active instructions and pauses TAVP)
+        integer(INTD), parameter, public:: TAVP_INSTR_CTRL_RESUME=2     !resume TAVP execution (resumes TAVP execution pipeline after a pause)
    !Auxiliary definitions [16-63]:
-        integer(INTD), parameter, public:: TAVP_INSTR_SPACE_CREATE=16  !create a vector space
-        integer(INTD), parameter, public:: TAVP_INSTR_SPACE_DESTROY=17 !destroy a vector space
+        integer(INTD), parameter, public:: TAVP_INSTR_SPACE_CREATE=16   !create a (hierarchical) vector space
+        integer(INTD), parameter, public:: TAVP_INSTR_SPACE_DESTROY=17  !destroy a (hierarchical) vector space
    !Tensor operations [64-255]:
-        integer(INTD), parameter, public:: TAVP_INSTR_CREATE=64   !tensor creation
-        integer(INTD), parameter, public:: TAVP_INSTR_DESTROY=65  !tensor destruction
-        integer(INTD), parameter, public:: TAVP_INSTR_LOAD=66     !tensor loading from persistent storage
-        integer(INTD), parameter, public:: TAVP_INSTR_SAVE=67     !tensor saving in persistent storage
-        integer(INTD), parameter, public:: TAVP_INSTR_COMM=68     !tensor communication (get/put/accumulate)
-        integer(INTD), parameter, public:: TAVP_INSTR_INIT=69     !tensor initialization (assignement of a value)
-        integer(INTD), parameter, public:: TAVP_INSTR_NORM1=70    !tensor 1-norm
-        integer(INTD), parameter, public:: TAVP_INSTR_NORM2=71    !tensor 2-norm
-        integer(INTD), parameter, public:: TAVP_INSTR_MIN=72      !tensor min element
-        integer(INTD), parameter, public:: TAVP_INSTR_MAX=73      !tensor max element
-        integer(INTD), parameter, public:: TAVP_INSTR_FOLD=74     !tensor dimension folding
-        integer(INTD), parameter, public:: TAVP_INSTR_UNFOLD=75   !tensor dimension unfolding
-        integer(INTD), parameter, public:: TAVP_INSTR_SLICE=76    !tensor slicing (taking a slice of a tensor with an optional index permutation)
-        integer(INTD), parameter, public:: TAVP_INSTR_INSERT=77   !tensor insertion (inserting a tensor slice in a tensor with an optional index permutation)
-        integer(INTD), parameter, public:: TAVP_INSTR_PERMUTE=78  !tensor dimension permutation (in-place)
-        integer(INTD), parameter, public:: TAVP_INSTR_COPY=79     !tensor copy (copying a tensor into another tensor with an optional index permutation)
-        integer(INTD), parameter, public:: TAVP_INSTR_SCALE=80    !tensor scaling (multiplication by a number)
-        integer(INTD), parameter, public:: TAVP_INSTR_ADD=81      !tensor addition (with an optional index permutation)
-        integer(INTD), parameter, public:: TAVP_INSTR_TRACE=82    !tensor trace (tracing over some/all tensor indices)
-        integer(INTD), parameter, public:: TAVP_INSTR_PRODUCT=83  !tensor direct product (with an optional index permutation)
-        integer(INTD), parameter, public:: TAVP_INSTR_CONTRACT=84 !tensor contraction (also includes tensor product, tensor addition, and tensor scaling)
+        integer(INTD), parameter, public:: TAVP_INSTR_TENS_CREATE=64    !tensor creation
+        integer(INTD), parameter, public:: TAVP_INSTR_TENS_DESTROY=65   !tensor destruction
+        integer(INTD), parameter, public:: TAVP_INSTR_TENS_LOAD=66      !tensor loading from persistent storage
+        integer(INTD), parameter, public:: TAVP_INSTR_TENS_SAVE=67      !tensor saving in persistent storage
+        integer(INTD), parameter, public:: TAVP_INSTR_TENS_COMM=68      !tensor communication (get/put/accumulate)
+        integer(INTD), parameter, public:: TAVP_INSTR_TENS_INIT=69      !tensor initialization (assignement of a value)
+        integer(INTD), parameter, public:: TAVP_INSTR_TENS_NORM1=70     !tensor 1-norm
+        integer(INTD), parameter, public:: TAVP_INSTR_TENS_NORM2=71     !tensor 2-norm
+        integer(INTD), parameter, public:: TAVP_INSTR_TENS_MIN=72       !tensor min element
+        integer(INTD), parameter, public:: TAVP_INSTR_TENS_MAX=73       !tensor max element
+        integer(INTD), parameter, public:: TAVP_INSTR_TENS_FOLD=74      !tensor dimension folding
+        integer(INTD), parameter, public:: TAVP_INSTR_TENS_UNFOLD=75    !tensor dimension unfolding
+        integer(INTD), parameter, public:: TAVP_INSTR_TENS_SLICE=76     !tensor slicing (taking a slice of a tensor with an optional index permutation)
+        integer(INTD), parameter, public:: TAVP_INSTR_TENS_INSERT=77    !tensor insertion (inserting a tensor slice in a tensor with an optional index permutation)
+        integer(INTD), parameter, public:: TAVP_INSTR_TENS_PERMUTE=78   !tensor dimension permutation (in-place)
+        integer(INTD), parameter, public:: TAVP_INSTR_TENS_COPY=79      !tensor copy (copying a tensor into another tensor with an optional index permutation)
+        integer(INTD), parameter, public:: TAVP_INSTR_TENS_SCALE=80     !tensor scaling (multiplication by a number)
+        integer(INTD), parameter, public:: TAVP_INSTR_TENS_ADD=81       !tensor addition (with an optional index permutation)
+        integer(INTD), parameter, public:: TAVP_INSTR_TENS_TRACE=82     !tensor trace (tracing over some/all tensor indices)
+        integer(INTD), parameter, public:: TAVP_INSTR_TENS_PRODUCT=83   !tensor direct product (with an optional index permutation)
+        integer(INTD), parameter, public:: TAVP_INSTR_TENS_CONTRACT=84  !tensor contraction (also includes tensor product, tensor addition, and tensor scaling)
+        integer(INTD), parameter, public:: TAVP_INSTR_TENS_REPLICATE=85 !tensor replication
 !TYPES:
  !Tensor status:
         type, public:: tens_status_t

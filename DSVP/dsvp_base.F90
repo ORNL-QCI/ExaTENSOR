@@ -1,6 +1,6 @@
 !Domain-specific virtual processor (DSVP): Abstract base module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/10/16
+!REVISION: 2017/10/17
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -199,12 +199,12 @@
         end type ds_unit_port_t
  !Domain-specific virtual unit (DSVU):
         type, abstract, public:: ds_unit_t
-         integer(INTD), private:: id=-1                     !unique ID of the DS unit: [0..max]
-         integer(INTD), private:: error_code=DSVP_SUCCESS   !error code
-         class(dsvp_t), pointer, private:: dsvp_p=>NULL()   !non-owning pointer to the DSVP the DS unit is part of
-         type(ds_unit_port_t), private:: port               !DS unit port (for incoming DS instructions from other DS units)
-         type(list_bi_t), private:: queue                   !queue of the currently processed DS instructions stored by reference
-         type(list_iter_t), public:: iqueue                 !queue iterator
+         integer(INTD), private:: id=-1                   !unique ID of the DS unit: [0..max]
+         integer(INTD), private:: error_code=DSVP_SUCCESS !error code
+         class(dsvp_t), pointer, private:: dsvp_p=>NULL() !non-owning pointer to the DSVP the DS unit is part of
+         type(ds_unit_port_t), private:: port             !DS unit port (for incoming DS instructions from other DS units)
+         type(list_bi_t), private:: queue                 !queue of the currently processed DS instructions stored by reference
+         type(list_iter_t), public:: iqueue               !queue iterator
          contains
           procedure(ds_unit_ctor_i), deferred, public:: configure !configures the DS unit
           procedure(ds_unit_self_i), deferred, public:: start     !starts, lives and stops the DS unit (the corresponding thread will run here until termination)
@@ -225,8 +225,11 @@
         end type ds_unit_ref_t
  !Domain-specific decoder unit:
         type, abstract, extends(ds_unit_t), public:: ds_decoder_t
+         class(ds_unit_t), pointer, private:: acceptor_unit=>NULL() !non-owning pointer to the DS unit for which the decoding is done
          contains
           procedure(ds_decoder_decode_i), deferred, public:: decode !decoding procedure: Unpacks the raw byte packet (instruction bytecode) and constructs a domain-specific instruction
+          procedure, public:: set_acceptor=>DSDecoderSetAcceptor    !sets the acceptor DS unit for which the decoding is done
+          procedure, public:: get_acceptor=>DSDecoderGetAcceptor    !returns a pointer to the acceptor DS unit for which the decoding is done
         end type ds_decoder_t
  !Domain-specific encoder unit:
         type, abstract, extends(ds_unit_t), public:: ds_encoder_t
@@ -329,9 +332,9 @@
          subroutine ds_unit_ctor_i(this,conf,ierr)
           import:: ds_unit_t,dsv_conf_t,INTD
           implicit none
-          class(ds_unit_t), intent(inout):: this      !out: configured (constructed) DSVP
-          class(dsv_conf_t), intent(in):: conf        !in: DSVU configuration
-          integer(INTD), intent(out), optional:: ierr !out: error code
+          class(ds_unit_t), intent(inout):: this          !out: configured (constructed) DSVP
+          class(dsv_conf_t), intent(in):: conf            !in: DSVU configuration
+          integer(INTD), intent(out), optional:: ierr     !out: error code
          end subroutine ds_unit_ctor_i
    !self:
          subroutine ds_unit_self_i(this,ierr)
@@ -425,6 +428,8 @@
         public ds_unit_self_i
  !ds_decoder_t:
         public ds_decoder_decode_i
+        private DSDecoderSetAcceptor
+        private DSDecoderGetAcceptor
  !ds_encoder_t:
         public ds_encoder_encode_i
  !dsvp_t:
@@ -1110,21 +1115,19 @@
 !The new DS instructions are assumed stored by reference in the <new_list> and
 !they will be moved into the port, thus leaving <new_list> empty at the end.
          implicit none
-         integer(INTD):: ierr                        !out: error code
-         class(ds_unit_port_t), intent(inout):: this !inout: DS unit port
-         type(list_bi_t), intent(inout):: new_list   !inout: list of new DS instructions for the DS unit (from other DS units): List items are stored by reference
-         type(list_iter_t):: ilist
+         integer(INTD):: ierr                         !out: error code
+         class(ds_unit_port_t), intent(inout):: this  !inout: DS unit port
+         class(list_iter_t), intent(inout):: new_list !inout: list of new DS instructions for the DS unit (from other DS units): List items are stored by reference
          integer(INTD):: errc
 
          ierr=DSVP_SUCCESS
 !$OMP CRITICAL (DSVU_PORT_LOCK)
-         errc=ilist%init(new_list)
+         errc=new_list%reset()
          if(errc.eq.GFC_SUCCESS) then
-          errc=ilist%move_list(this%iqueue); if(errc.ne.GFC_SUCCESS) ierr=DSVP_ERROR
+          errc=new_list%move_list(this%iqueue); if(errc.ne.GFC_SUCCESS) ierr=DSVP_ERROR
          else
           ierr=DSVP_ERROR
          endif
-         errc=ilist%release(); if(errc.ne.GFC_SUCCESS.and.ierr.eq.DSVP_SUCCESS) ierr=DSVP_ERROR
 !$OMP END CRITICAL (DSVU_PORT_LOCK)
          return
         end function DSUnitPortAccept
@@ -1132,17 +1135,16 @@
         function DSUnitPortAbsorb(this,dsvu_queue_it) result(ierr)
 !Absorbs new DS instructions from the DS unit port into the DS unit queue.
          implicit none
-         integer(INTD):: ierr                             !out: error code
-         class(ds_unit_port_t), intent(inout):: this      !inout: DS unit port
-         type(list_iter_t), intent(inout):: dsvu_queue_it !inout: DS unit queue iterator
+         integer(INTD):: ierr                              !out: error code
+         class(ds_unit_port_t), intent(inout):: this       !inout: DS unit port
+         class(list_iter_t), intent(inout):: dsvu_queue_it !inout: DS unit queue iterator
          integer(INTD):: errc
 
          ierr=DSVP_SUCCESS
 !$OMP CRITICAL (DSVU_PORT_LOCK)
          errc=this%iqueue%reset()
          if(errc.eq.GFC_SUCCESS) then
-          errc=this%iqueue%move_list(dsvu_queue_it)
-          if(errc.ne.GFC_SUCCESS) ierr=DSVP_ERROR
+          errc=this%iqueue%move_list(dsvu_queue_it); if(errc.ne.GFC_SUCCESS) ierr=DSVP_ERROR
          else
           ierr=DSVP_ERROR
          endif
@@ -1232,9 +1234,9 @@
 !into the port of the current DS unit. <new_list> with new
 !DS instructions stored by reference will be emptied upon exit.
          implicit none
-         integer(INTD):: ierr                      !out: error code
-         class(ds_unit_t), intent(inout):: this    !inout: DS unit whose port is being loaded
-         type(list_bi_t), intent(inout):: new_list !inout: list of new DS instructions for the DS unit (from other DS units): List items are stored by reference
+         integer(INTD):: ierr                         !out: error code
+         class(ds_unit_t), intent(inout):: this       !inout: DS unit whose port is being loaded
+         class(list_iter_t), intent(inout):: new_list !inout: list of new DS instructions for the DS unit (from other DS units): List items are stored by reference
 
          ierr=this%port%accept(new_list) !DS instructions (references) will be moved into the port
          return
@@ -1297,6 +1299,34 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine DSUnitSetId
+![ds_decoder_t]============================================
+        subroutine DSDecoderSetAcceptor(this,acceptor,ierr)
+!Sets the acceptor DS unit for which the decoding is done.
+         implicit none
+         class(ds_decoder_t), intent(inout):: this       !inout: DS decoder unit
+         class(ds_unit_t), intent(in), target:: acceptor !in: acceptor DS unit
+         integer(INTD), intent(out), optional:: ierr     !out: error code
+         integer(INTD):: errc
+
+         errc=DSVP_SUCCESS
+         this%acceptor_unit=>acceptor
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine DSDecoderSetAcceptor
+!----------------------------------------------------------------
+        function DSDecoderGetAcceptor(this,ierr) result(acceptor)
+!Returns a pointer to the acceptor DS unit for which the decoding is done.
+         implicit none
+         class(ds_unit_t), pointer:: acceptor        !out: pointer to the acceptor DS unit
+         class(ds_decoder_t), intent(in):: this      !in: DS decoder unit
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=DSVP_SUCCESS
+         acceptor=>this%acceptor_unit
+         if(present(ierr)) ierr=errc
+         return
+        end function DSDecoderGetAcceptor
 ![dsvp_t]==============================
         subroutine DSVPStart(this,ierr)
 !Starts DSVP active life cycle (starts all DS units).
