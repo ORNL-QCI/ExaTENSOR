@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/10/17
+!REVISION: 2017/10/18
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -2763,7 +2763,7 @@
 ! * Configures static DSVU;
 ! * Allocates and configures dynamic DSVU;
 ! * Sets up global DSVU table in DSVP;
-! * Sets up DSVP description and id;
+! * Sets up DSVP description and global id;
          implicit none
          class(tavp_wrk_t), intent(inout), target:: this !out: configured DSVP (must not be configured on entrance)
          class(dsv_conf_t), intent(in):: conf            !in: specific DSVP configuration

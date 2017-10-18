@@ -1,6 +1,6 @@
 !Domain-specific virtual processor (DSVP): Abstract base module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/10/17
+!REVISION: 2017/10/18
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -192,6 +192,7 @@
          type(list_bi_t), private:: queue               !queue of incoming DS instructions stored by reference
          type(list_iter_t), private:: iqueue            !queue iterator
          contains
+          procedure, public:: init=>DSUnitPortInit      !initializes the DS unit port
           procedure, public:: accept=>DSUnitPortAccept  !accepts new DS instructions from other DS units
           procedure, public:: absorb=>DSUnitPortAbsorb  !absorbs new DS instructions from the DS unit port into the DS unit queue
           procedure, public:: free=>DSUnitPortFree      !releases all DS instructions and resets everything
@@ -410,6 +411,7 @@
         private DSInstrClean
         public ds_instr_encode_i
  !ds_unit_port_t:
+        private DSUnitPortInit
         private DSUnitPortAccept
         private DSUnitPortAbsorb
         private DSUnitPortFree
@@ -1109,7 +1111,24 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine DSInstrClean
-![ds_unit_port_t]============================================
+![ds_unit_port_t]=================================
+        function DSUnitPortInit(this) result(ierr)
+!Initializes a DS unit port.
+         implicit none
+         integer(INTD):: ierr                        !out: error code
+         class(ds_unit_port_t), intent(inout):: this !inout: DS unit port
+
+         ierr=DSVP_SUCCESS
+!$OMP CRITICAL (DSVU_PORT_LOCK)
+         if(this%iqueue%get_status().eq.GFC_IT_NULL) then
+          ierr=this%iqueue%init(this%queue)
+         else
+          ierr=DSVP_ERR_INVALID_REQ
+         endif
+!$OMP END CRITICAL (DSVU_PORT_LOCK)
+         return
+        end function DSUnitPortInit
+!------------------------------------------------------------
         function DSUnitPortAccept(this,new_list) result(ierr)
 !Accepts new DS instructions from other DS units in the current DS unit port.
 !The new DS instructions are assumed stored by reference in the <new_list> and
@@ -1157,9 +1176,11 @@
          implicit none
          integer(INTD):: ierr                        !out: error code
          class(ds_unit_port_t), intent(inout):: this !inout: DS unit port
+         integer(INTD):: errc
 
 !$OMP CRITICAL (DSVU_PORT_LOCK)
          ierr=this%iqueue%delete_all()
+         errc=this%iqueue%release(); if(ierr.eq.GFC_SUCCESS) ierr=errc
 !$OMP END CRITICAL (DSVU_PORT_LOCK)
          return
         end function DSUnitPortFree
@@ -1182,7 +1203,8 @@
 
          if(this%iqueue%get_status(errc).eq.GFC_IT_NULL) then
           if(errc.eq.GFC_SUCCESS) then
-           errc=this%iqueue%init(this%queue); if(errc.ne.GFC_SUCCESS) errc=DSVP_ERROR
+           errc=this%iqueue%init(this%queue)
+           if(errc.eq.GFC_SUCCESS) errc=this%port%init()
           endif
          else
           if(errc.eq.GFC_SUCCESS) errc=DSVP_ERR_INVALID_REQ
@@ -1196,11 +1218,12 @@
          implicit none
          class(ds_unit_t), intent(inout):: this      !inout: DS unit
          integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc
+         integer(INTD):: errc,ier
 
          if(this%iqueue%get_status(errc).ne.GFC_IT_NULL) then
           if(errc.eq.GFC_SUCCESS) then
-           errc=this%iqueue%release(); if(errc.ne.GFC_SUCCESS) errc=DSVP_ERROR
+           errc=this%port%free()
+           ier=this%iqueue%release(); if(errc.eq.DSVP_SUCCESS) errc=ier
           endif
          else
           if(errc.eq.GFC_SUCCESS) errc=DSVP_ERR_INVALID_REQ

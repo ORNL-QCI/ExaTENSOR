@@ -1,7 +1,7 @@
 !ExaTENSOR: Massively Parallel Virtual Processor for Scale-Adaptive Hierarchical Tensor Algebra
 !This is the top level API module of ExaTENSOR (user-level API)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017/10/17
+!REVISION: 2017/10/18
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -344,9 +344,9 @@
            tavpname='TAVP-WRK#'; call numchar(role_rank,ji,tavpname(len_trim(tavpname)+1:))
            allocate(tavp_wrk_conf%description,SOURCE=tavpname(1:len_trim(tavpname)),STAT=jerr)
            if(jerr.eq.0) then
-            tavp_wrk_conf%tavp_id=my_rank
+            tavp_wrk_conf%tavp_id=my_rank !global MPI rank
             aid=comp_system%get_ancestor_id(int(my_rank,INTL),1,jerr) !parent TAVP
-            if(jerr.eq.0) then
+            if(jerr.eq.0.and.aid.ge.0) then
              tavp_wrk_conf%source_comm=mng_wrk_comm
              tavp_wrk_conf%source_rank=tavp_role_rank(int(aid,INTD))
              tavp_wrk_conf%retire_comm=tavp_wrk_conf%source_comm
@@ -386,14 +386,14 @@
            tavpname='TAVP-MNG#'; call numchar(role_rank,ji,tavpname(len_trim(tavpname)+1:))
            allocate(tavp_mng_conf%description,SOURCE=tavpname(1:len_trim(tavpname)),STAT=jerr)
            if(jerr.eq.0) then
-            tavp_mng_conf%tavp_id=my_rank
+            tavp_mng_conf%tavp_id=my_rank !global MPI rank
             aid=comp_system%get_ancestor_id(int(my_rank,INTL),1,jerr) !parent TAVP
             if(jerr.eq.0) then
              if(aid.lt.0) then !root manager (no parent)
               tavp_mng_conf%source_comm=drv_mng_comm
               tavp_mng_conf%source_rank=0 !assumes a single Driver process
              else !intermediate manager
-              tavp_mng_conf%source_comm=manager_comm
+              tavp_mng_conf%source_comm=role_comm
               tavp_mng_conf%source_rank=tavp_role_rank(int(aid,INTD))
              endif
              tavp_mng_conf%retire_comm=tavp_mng_conf%source_comm
@@ -404,10 +404,10 @@
               rid=comp_system%get_cousin_id(int(my_rank,INTL),RIGHT_SIBLING,jerr,ring=.TRUE.)
               if(jerr.eq.0) then
                if(rid.lt.0) rid=int(my_rank,INTL) !self-reference (root node)
-               tavp_mng_conf%ring_comm=manager_comm
-               tavp_mng_conf%ring_send_rank=tavp_role_rank(int(rid,INTD),jr)
-               tavp_mng_conf%ring_recv_rank=tavp_role_rank(int(lid,INTD),jl)
-               if(jl.eq.process_role.and.jr.eq.process_role) then
+               tavp_mng_conf%ring_comm=role_comm
+               tavp_mng_conf%ring_send_rank=tavp_role_rank(int(rid,INTD),jr) !self-reference for the root manager
+               tavp_mng_conf%ring_recv_rank=tavp_role_rank(int(lid,INTD),jl) !self-reference for the root manager
+               if(jl.eq.process_role.and.jr.eq.process_role) then !tree nodes on the same level must be of the same kind
                 nch=comp_system%get_num_children(int(my_rank,INTL),jerr)
                 if(jerr.eq.0.and.nch.gt.0) then
                  if(allocated(tavp_mng_conf%dispatch_rank)) deallocate(tavp_mng_conf%dispatch_rank)
@@ -416,7 +416,7 @@
                  if(jerr.eq.0) then
                   ji=tavp_role_rank(int(chid(1),INTD),jrl)
                   if(jrl.eq.EXA_MANAGER) then
-                   tavp_mng_conf%dispatch_comm=manager_comm
+                   tavp_mng_conf%dispatch_comm=role_comm
                   elseif(jrl.eq.EXA_WORKER) then
                    tavp_mng_conf%dispatch_comm=mng_wrk_comm
                   else

@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/10/17
+!REVISION: 2017/10/18
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -972,6 +972,10 @@
          class default
           errc=-1
          end select
+         if(DEBUG.gt.1) then
+          write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decoder configured: ",i11,1x,i6)') impir,this%source_comm,this%source_rank
+          flush(CONS_OUT)
+         endif
          if(present(ierr)) ierr=errc
          return
         end subroutine TAVPMNGDecoderConfigure
@@ -994,48 +998,53 @@
          type(tens_instr_t):: tens_instr_empty
 
          errc=0
-         if(DEBUG.gt.0) write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decoder started as DSVU # ",i2)') impir,this%get_id() !debug
-         if(DEBUG.gt.0) write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decoder is listening to ",i11,1x,i6)')&
-         &impir,this%source_comm,this%source_rank
-         call this%bytecode%reserve_mem(ier,MAX_BYTECODE_SIZE,MAX_INSTRUCTIONS); if(ier.ne.0.and.errc.eq.0) errc=-1
+         if(DEBUG.gt.0) then
+          write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decoder started as DSVU # ",i2,": Listening to ",i11,1x,i6)')&
+          &impir,this%get_id(),this%source_comm,this%source_rank
+          flush(CONS_OUT)
+         endif
+         call this%bytecode%reserve_mem(ier,MAX_BYTECODE_SIZE,MAX_INSTRUCTIONS); if(ier.ne.0.and.errc.eq.0) errc=-21
          if(errc.eq.0) then
-          call this%init_queue(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-1
-          active=((errc.eq.0).and.(this%source_rank.ge.0)); stopping=(.not.active)
+          call this%init_queue(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-20
+          active=((errc.eq.0).and.(this%source_comm.ne.MPI_COMM_NULL)); stopping=(.not.active)
           wloop: do while(active)
            if(.not.stopping) then
-            call comm_hl%clean(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-1; exit wloop; endif
+            call comm_hl%clean(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-19; exit wloop; endif
             new=this%bytecode%receive(comm_hl,ier,proc_rank=this%source_rank,comm=this%source_comm)
-            if(ier.ne.0.and.errc.eq.0) then; errc=-1; exit wloop; endif
+            if(ier.ne.0.and.errc.eq.0) then; errc=-18; exit wloop; endif
             if(new) then
-             call comm_hl%wait(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-1; exit wloop; endif
-             num_packets=this%bytecode%get_num_packets(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-1; exit wloop; endif
-             if(DEBUG.gt.0) write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decoder received ",i9," new instructions")') impir,num_packets !debug
+             call comm_hl%wait(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-17; exit wloop; endif
+             num_packets=this%bytecode%get_num_packets(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-16; exit wloop; endif
+             if(DEBUG.gt.0) then
+              write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decoder received ",i9," new instructions")') impir,num_packets
+              flush(CONS_OUT)
+             endif
              if(num_packets.gt.0) then
               do i=1,num_packets
                call this%bytecode%extract_packet(i,instr_packet,ier,preclean=.TRUE.)
-               if(ier.ne.0.and.errc.eq.0) then; errc=-1; exit wloop; endif
-               ier=this%iqueue%append(tens_instr_empty); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
-               ier=this%iqueue%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
-               uptr=>this%iqueue%get_value(ier); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+               if(ier.ne.0.and.errc.eq.0) then; errc=-15; exit wloop; endif
+               ier=this%iqueue%append(tens_instr_empty); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-14; exit wloop; endif
+               ier=this%iqueue%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-13; exit wloop; endif
+               uptr=>this%iqueue%get_value(ier); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-12; exit wloop; endif
                tens_instr=>NULL(); select type(uptr); type is(tens_instr_t); tens_instr=>uptr; end select
-               if(.not.associated(tens_instr).and.errc.eq.0) then; errc=-1; exit wloop; endif
-               call this%decode(tens_instr,instr_packet,ier); if(ier.ne.0.and.errc.eq.0) then; errc=-1; exit wloop; endif
-               opcode=tens_instr%get_code(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+               if(.not.associated(tens_instr).and.errc.eq.0) then; errc=-11; exit wloop; endif
+               call this%decode(tens_instr,instr_packet,ier); if(ier.ne.0.and.errc.eq.0) then; errc=-10; exit wloop; endif
+               opcode=tens_instr%get_code(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-9; exit wloop; endif
                if(opcode.eq.TAVP_INSTR_CTRL_STOP) then
-                stopping=.TRUE.; if(i.ne.num_packets.and.errc.eq.0) then; errc=-1; exit wloop; endif
+                stopping=.TRUE.; if(i.ne.num_packets.and.errc.eq.0) then; errc=-8; exit wloop; endif
                 exit
                endif
               enddo
-              acceptor=>this%get_acceptor(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+              acceptor=>this%get_acceptor(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-7; exit wloop; endif
               if(associated(acceptor)) then
-               ier=acceptor%load_port(this%iqueue); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
-               if(this%iqueue%get_status().ne.GFC_IT_EMPTY.and.errc.eq.0) then; errc=-1; exit wloop; endif !trap
+               ier=acceptor%load_port(this%iqueue); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-6; exit wloop; endif
+               if(this%iqueue%get_status().ne.GFC_IT_EMPTY.and.errc.eq.0) then; errc=-5; exit wloop; endif !trap
               else
-               if(errc.eq.0) then; errc=-1; exit wloop; endif
+               if(errc.eq.0) then; errc=-4; exit wloop; endif
               endif
-              call this%bytecode%clean(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-1; exit wloop; endif
+              call this%bytecode%clean(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-3; exit wloop; endif
              else !empty bytecode
-              if(errc.eq.0) then; errc=-1; exit wloop; endif
+              if(errc.eq.0) then; errc=-2; exit wloop; endif
              endif
             endif
            else
@@ -1852,7 +1861,7 @@
 ! * Configures static DSVU;
 ! * Allocates and configures dynamic DSVU;
 ! * Sets up global DSVU table in DSVP;
-! * Sets up DSVP description and id;
+! * Sets up DSVP description and global id;
          implicit none
          class(tavp_mng_t), intent(inout), target:: this !out: configured DSVP (must not be configured on entrance)
          class(dsv_conf_t), intent(in):: conf            !in: specific DSVP configuration
@@ -1913,13 +1922,13 @@
                     num_units=num_units+1
   !Replicating-decoder:
                     decode_acceptor=>this%replicator
-                    decoder_conf=tavp_mng_decoder_conf_t(role_comm,-1,decode_acceptor)
+                    decoder_conf=tavp_mng_decoder_conf_t(role_comm,MPI_ANY_SOURCE,decode_acceptor)
                     call this%rdecoder%configure(decoder_conf,errc)
                     if(errc.eq.0) then
                      num_units=num_units+1
   !Collecting-decoder:
                      decode_acceptor=>this%collector
-                     decoder_conf=tavp_mng_decoder_conf_t(conf%collect_comm,-1,decode_acceptor)
+                     decoder_conf=tavp_mng_decoder_conf_t(conf%collect_comm,MPI_ANY_SOURCE,decode_acceptor)
                      call this%cdecoder%configure(decoder_conf,errc)
                      if(errc.eq.0) then
                       num_units=num_units+1
