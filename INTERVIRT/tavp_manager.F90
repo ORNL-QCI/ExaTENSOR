@@ -543,11 +543,13 @@
          logical, intent(in), optional:: wait        !in: TRUE activates WAIT instead of TEST synchronization (default)
          integer(INTD):: errc
 
+         res=.FALSE.
          if(this%is_active(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
            if(this%get_comm_stat().ne.DS_OPRND_NO_COMM) then
             call this%mark_delivered(errc); if(errc.ne.DSVP_SUCCESS) errc=-3
            endif
+           if(errc.eq.0) res=.TRUE.
           else
            errc=-2
           endif
