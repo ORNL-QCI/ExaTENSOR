@@ -263,9 +263,14 @@ PIC_FLAG_IBM = -qpic=large
 PIC_FLAG_CRAY = -hpic
 PIC_FLAG = $(PIC_FLAG_$(TOOLKIT))
 
-#C FLAGS:
+#C/C++ FLAGS:
+ifeq ($(TOOLKIT),CRAY)
+CFLAGS_DEV = -c -g -O0 -hstd=c++11 -D_DEBUG
+CFLAGS_OPT = -c -O3 -hstd=c++11
+else
 CFLAGS_DEV = -c -g -O0 -std=c++11 -D_DEBUG
 CFLAGS_OPT = -c -O3 -std=c++11
+endif
 CFLAGS = $(CFLAGS_$(BUILD_TYPE)) $(NO_GPU) $(NO_AMD) $(NO_PHI) $(NO_BLAS) -D$(EXA_OS) $(PIC_FLAG)
 
 #FORTRAN FLAGS:
