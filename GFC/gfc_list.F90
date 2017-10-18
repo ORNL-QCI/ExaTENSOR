@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Bi-directional linked list
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017-08-29 (started 2016-02-28)
+!REVISION: 2017-10-18 (started 2016-02-28)
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -1163,6 +1163,7 @@
          class(list_elem_t), pointer:: elem          !out: owning pointer to the current element (detached from the list)
          class(list_iter_t), intent(inout):: this    !inout: list iterator
          integer(INTD), intent(out), optional:: ierr !out: error code
+         class(list_elem_t), pointer:: list_elem_null=>NULL()
          integer(INTD):: errc
 
          elem=>NULL(); errc=this%get_status()
@@ -1174,7 +1175,7 @@
             call this%jump_(elem%next_elem)
            else
             this%container%first_elem=>NULL(); this%container%last_elem=>NULL()
-            call this%jump_(NULL()); errc=this%reset()
+            call this%jump_(list_elem_null); errc=this%reset()
            endif
           else
            if(associated(elem,this%container%last_elem)) this%container%last_elem=>elem%prev_elem
