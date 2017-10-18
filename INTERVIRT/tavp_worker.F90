@@ -1859,7 +1859,10 @@
          integer(INTD):: errc
 
          errc=0
-         if(DEBUG.gt.0) write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Decoder stopped as DSVU # ",i2)') impir,this%get_id() !debug
+         if(DEBUG.gt.0) then
+          write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Decoder stopped as DSVU # ",i2)') impir,this%get_id()
+          flush(CONS_OUT)
+         endif
          !`Implement
          if(present(ierr)) ierr=errc
          return
@@ -2182,7 +2185,10 @@
          integer(INTD):: errc
 
          errc=0
-         if(DEBUG.gt.0) write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Retirer stopped as DSVU # ",i2)') impir,this%get_id() !debug
+         if(DEBUG.gt.0) then
+          write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Retirer stopped as DSVU # ",i2)') impir,this%get_id()
+          flush(CONS_OUT)
+         endif
          !`Implement
          if(present(ierr)) ierr=errc
          return
@@ -2257,7 +2263,10 @@
          integer(INTD):: errc
 
          errc=0
-         if(DEBUG.gt.0) write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Resourcer stopped as DSVU # ",i2)') impir,this%get_id() !debug
+         if(DEBUG.gt.0) then
+          write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Resourcer stopped as DSVU # ",i2)') impir,this%get_id()
+          flush(CONS_OUT)
+         endif
          !`Implement
          if(present(ierr)) ierr=errc
          return
@@ -2395,7 +2404,10 @@
          integer(INTD):: errc
 
          errc=0
-         if(DEBUG.gt.0) write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Communicator stopped as DSVU # ",i2)') impir,this%get_id() !debug
+         if(DEBUG.gt.0) then
+          write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Communicator stopped as DSVU # ",i2)') impir,this%get_id()
+          flush(CONS_OUT)
+         endif
          call this%addr_space%destroy(errc); if(errc.ne.0) errc=-1
          this%addr_space=>NULL()
          !`Implement
@@ -2575,7 +2587,10 @@
          integer(INTD):: errc
 
          errc=0
-         if(DEBUG.gt.0) write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Dispatcher stopped as DSVU # ",i2)') impir,this%get_id() !debug
+         if(DEBUG.gt.0) then
+          write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Dispatcher stopped as DSVU # ",i2)') impir,this%get_id()
+          flush(CONS_OUT)
+         endif
          errc=talsh_shutdown(); if(errc.ne.TALSH_SUCCESS) errc=-1
          !`Implement
          if(present(ierr)) ierr=errc

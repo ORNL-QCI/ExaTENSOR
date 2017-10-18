@@ -1069,7 +1069,10 @@
          integer(INTD):: errc,ier
 
          errc=0
-         if(DEBUG.gt.0) write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decoder stopped as DSVU # ",i2)') impir,this%get_id() !debug
+         if(DEBUG.gt.0) then
+          write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decoder stopped as DSVU # ",i2)') impir,this%get_id()
+          flush(CONS_OUT)
+         endif
          call this%release_queue(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-2
          call this%bytecode%destroy(ier); if(ier.ne.0.and.errc.eq.0) errc=-1
          ier=this%get_error(); if(ier.eq.DSVP_SUCCESS) call this%set_error(errc)
@@ -1389,7 +1392,10 @@
          integer(INTD):: errc
 
          errc=0
-         if(DEBUG.gt.0) write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Retirer stopped as DSVU # ",i2)') impir,this%get_id() !debug
+         if(DEBUG.gt.0) then
+          write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Retirer stopped as DSVU # ",i2)') impir,this%get_id()
+          flush(CONS_OUT)
+         endif
          !`Implement
          if(present(ierr)) ierr=errc
          return
@@ -1465,7 +1471,10 @@
          integer(INTD):: errc
 
          errc=0
-         if(DEBUG.gt.0) write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Locator stopped as DSVU # ",i2)') impir,this%get_id() !debug
+         if(DEBUG.gt.0) then
+          write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Locator stopped as DSVU # ",i2)') impir,this%get_id()
+          flush(CONS_OUT)
+         endif
          !`Implement
          if(present(ierr)) ierr=errc
          return
@@ -1560,7 +1569,10 @@
          integer(INTD):: errc
 
          errc=0
-         if(DEBUG.gt.0) write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decomposer stopped as DSVU # ",i2)') impir,this%get_id() !debug
+         if(DEBUG.gt.0) then
+          write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decomposer stopped as DSVU # ",i2)') impir,this%get_id()
+          flush(CONS_OUT)
+         endif
          !`Implement
          if(present(ierr)) ierr=errc
          return
@@ -1634,7 +1646,10 @@
          integer(INTD):: errc
 
          errc=0
-         if(DEBUG.gt.0) write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Dispatcher stopped as DSVU # ",i2)') impir,this%get_id() !debug
+         if(DEBUG.gt.0) then
+          write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Dispatcher stopped as DSVU # ",i2)') impir,this%get_id()
+          flush(CONS_OUT)
+         endif
          !`Implement
          if(present(ierr)) ierr=errc
          return
@@ -1753,7 +1768,10 @@
          integer(INTD):: errc
 
          errc=0
-         if(DEBUG.gt.0) write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Replicator stopped as DSVU # ",i2)') impir,this%get_id() !debug
+         if(DEBUG.gt.0) then
+          write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Replicator stopped as DSVU # ",i2)') impir,this%get_id()
+          flush(CONS_OUT)
+         endif
          !`Implement
          if(present(ierr)) ierr=errc
          return
@@ -1839,7 +1857,10 @@
          integer(INTD):: errc
 
          errc=0
-         if(DEBUG.gt.0) write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Collector stopped as DSVU # ",i2)') impir,this%get_id() !debug
+         if(DEBUG.gt.0) then
+          write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Collector stopped as DSVU # ",i2)') impir,this%get_id()
+          flush(CONS_OUT)
+         endif
          !`Implement
          if(present(ierr)) ierr=errc
          return
