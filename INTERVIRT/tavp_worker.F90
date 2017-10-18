@@ -1840,7 +1840,11 @@
          integer(INTD):: errc,ier
 
          errc=0
-         if(DEBUG.gt.0) write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Decoder started as DSVU # ",i2)') impir,this%get_id() !debug
+         if(DEBUG.gt.0) then
+          write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Decoder started as DSVU # ",i2,": Listening to ",i11,1x,i6)')&
+          &impir,this%get_id(),this%source_comm,this%source_rank
+          flush(CONS_OUT)
+         endif
          !`Implement
          call this%shutdown(ier); if(ier.ne.0.and.errc.eq.0) errc=-1
          if(present(ierr)) ierr=errc
