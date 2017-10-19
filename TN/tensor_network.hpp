@@ -1,7 +1,7 @@
 /** C++ adapters for ExaTENSOR: Tensor network
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/10/12
+!REVISION: 2017/10/19
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -122,7 +122,8 @@ public:
 //Mutators:
  /** Explicitly appends a tensor to the tensor network, either input or
      output. The output (lhs) tensor must be appended first (tensor 0).
-     Each next appended tensor will be considered an input (rhs) tensor. **/
+     Each next appended tensor will be considered an input (rhs) tensor.
+     This method should only be used when the tensor network is fully specified. **/
  void appendTensor(const TensorDenseAdpt<T> & tensor,           //in: new tensor, either input (rhs) or output (lhs)
                    const std::vector<TensorLeg> & connections); //in: connections of the new tensor to other tensors via legs
  /** Appends a tensor to the tensor network by pairing some or all of its
@@ -134,8 +135,15 @@ public:
      and appends new output legs from itself to the tensor network. **/
  void appendTensor(const TensorDenseAdpt<T> & tensor, //in: tensor being appended to the tensor network
                    const std::vector<std::pair<unsigned int, unsigned int>> & legPairs); //in: leg pairing: pair<tensor network output leg id, tensor leg id>
- /** Appends another tensor network into the current tensor network
-     by pairing the dimensions of the output tensors of both. **/
+ /** Appends a rank-2N tensor to a non-empty tensor network by pairing the first
+     N legs of the tensor with the specific N output legs of the tensor network,
+     subsequently replacing them with the other N legs of the tensor (in order).
+     As a result, the number of the output legs of the tensor network won't change. **/
+ void appendTensor(const TensorDenseAdpt<T> & Tensor, //in: rank-2N tensor being appended to the tensor network
+                   const std::vector<unsigned int> & outLegs); //in: N output legs of the tensor network with which the first N legs of the tensor will be paired
+ /** Appends another tensor network into the current tensor network by pairing
+     the output legs of both. The remaining output legs of the two tensor networks
+     will be placed in order, first tensor network preceding the second one. **/
  void appendNetwork(const TensorNetwork<T> & tensornet, //in: another tensor network
                     const std::vector<std::pair<unsigned int, unsigned int>> & legPairs); //in: leg pairing: pair<output leg id, output leg id>, may be empty
  /** Associates the output (lhs) tensor with its externally provided body (cannot be null). **/
@@ -197,7 +205,7 @@ private:
                              const unsigned int numWalkers) const; //in: optimization depth
  /** Performs all tensor contractions, thus evaluating the value of the output tensor.
      Single-node version based on TAL-SH. **/
- int computeOutputLocal(const ContractionSequence & contrSeq);
+ int computeOutputLocal(const ContractionSequence & contrSeq); //in: contraction sequence
 
 };
 

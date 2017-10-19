@@ -1,7 +1,7 @@
 /** C++ adapters for ExaTENSOR: Tensor network
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/10/12
+!REVISION: 2017/10/19
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -84,7 +84,8 @@ void TensorNetwork<T>::printIt() const
 
 /** Explicitly appends a tensor to the tensor network, either input or
     output. The output (lhs) tensor must be appended first (tensor 0).
-    Each next appended tensor will be considered an input (rhs) tensor. **/
+    Each next appended tensor will be considered an input (rhs) tensor.
+    This method should only be used when the tensor network is fully specified. **/
 template <typename T>
 void TensorNetwork<T>::appendTensor(const TensorDenseAdpt<T> & tensor,          //in: new tensor, either input (rhs) or output (lhs)
                                     const std::vector<TensorLeg> & connections) //in: connections of the new tensor to other tensors via legs
@@ -210,8 +211,40 @@ void TensorNetwork<T>::appendTensor(const TensorDenseAdpt<T> & tensor, //in: ten
  return;
 }
 
-/** Appends another tensor network into the current tensor network
-    by pairing the dimensions of the output tensors of both. **/
+/** Appends a rank-2N tensor to a non-empty tensor network by pairing the first
+    N legs of the tensor with the specific N output legs of the tensor network,
+    subsequently replacing them with the other N legs of the tensor (in order).
+    As a result, the number of the output legs of the tensor network won't change. **/
+template <typename T>
+void TensorNetwork<T>::appendTensor(const TensorDenseAdpt<T> & tensor, //in: rank-2N tensor being appended to the tensor network
+                                    const std::vector<unsigned int> & outLegs) //in: N output legs of the tensor network with which the first N legs of the tensor will be paired
+{
+ assert(this->getNumTensors() > 0); //tensor network must be non-emtpty (at least one input tensor)
+ const auto tensRank = tensor.getRank(); //tensor rank
+ const auto numLegPairs = outLegs.size(); //number of legs to pair
+ auto & outTensor = Tensors[0]; //output tensor of the tensor network
+ const auto outTensorRank = outTensor.getTensorRank(); //output tensor rank
+ assert(numLegPairs <= outTensorRank && numLegPairs*2 == tensRank);
+ unsigned int braLegId = 0; //will cover bra tensor legs (first N tensor legs)
+ unsigned int ketLegId = numLegPairs; //will cover ket tensor legs (second N tensor legs)
+ unsigned int newTensorId = Tensors.size(); //id of the the newly added tensor in the tensor network
+ std::vector<TensorLeg> tensorLegs; //will be the legs of the newly appended tensor
+ for(auto outLegId: outLegs){ //outLeg: output tensor leg id to pair with
+  const auto oldOutLeg = outTensor.getTensorLeg(outLegId); //output tensor leg to pair with
+  const auto inpTensId = oldOutLeg.getTensorId(); //input tensor id the output leg was paired with
+  const auto inpTensLegId = oldOutLeg.getDimensionId(); //input tensor dimension id the output leg was paired with
+  Tensors[inpTensId].resetConnection(inpTensLegId,TensorLeg(newTensorId,braLegId++)); //re-pair the input tensor leg with the newly appended tensor
+  tensorLegs.emplace_back(TensorLeg(inpTensId,inpTensLegId)); //pair the newly appended tensor with the input tensor leg which was previously paired with the output tensor
+  outTensor.resetConnection(outLegId,TensorLeg(newTensorId,ketLegId++)); //re-pair output tensor leg with an uncontracted leg of the newly appended tensor
+ }
+ for(auto outLegId: outLegs) tensorLegs.emplace_back(TensorLeg(0,outLegId)); //append ket (output connected) legs to the newly appended tensor
+ Tensors.emplace_back(TensorConn<T>(tensor,tensorLegs)); //append the new tensor into the tensor network
+ return;
+}
+
+/** Appends another tensor network into the current tensor network by pairing
+    the output legs of both. The remaining output legs of the two tensor networks
+    will be placed in order, first tensor network preceding the second one. **/
 template <typename T>
 void TensorNetwork<T>::appendNetwork(const TensorNetwork<T> & tensornet, //in: another tensor network
                                      const std::vector<std::pair<unsigned int, unsigned int>> & legPairs) //in: leg pairing: pair<output leg id, output leg id>, may be empty
