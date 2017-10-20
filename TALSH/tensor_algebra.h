@@ -2,7 +2,7 @@
     Parameters, derived types, and function prototypes
     used at the lower level of TAL-SH (device specific):
     CP-TAL, NV-TAL, XP-TAL, AM-TAL, etc.
-REVISION: 2017/10/18
+REVISION: 2017/10/20
 
 Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -457,6 +457,7 @@ int cuda_get_device_count(int * dev_count);
  int cuda_task_error_code(const cudaTask_t *cuda_task);
  int cuda_task_dev_rsc_copy(const cudaTask_t *cuda_task, unsigned int arg_num, char which, talsh_dev_rsc_t *dev_rsc);
  int cuda_task_dev_rsc_move(cudaTask_t *cuda_task, unsigned int arg_num, char which, talsh_dev_rsc_t *dev_rsc);
+ int cuda_task_arg_has_resource(cudaTask_t *cuda_task, unsigned int arg_num, char which, int *ierr);
  int cuda_task_arg_destroy(cudaTask_t *cuda_task, int arg_num = -1);
  float cuda_task_time(const cudaTask_t *cuda_task, float *in_copy = NULL, float *out_copy = NULL, float *comp = NULL, float *mmul = NULL);
  float cuda_task_time_(const cudaTask_t *cuda_task, float *in_copy, float *out_copy, float *comp, float *mmul);
