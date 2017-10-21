@@ -1033,8 +1033,9 @@
                call this%decode(tens_instr,instr_packet,ier); if(ier.ne.0.and.errc.eq.0) then; errc=-10; exit wloop; endif
                opcode=tens_instr%get_code(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-9; exit wloop; endif
                if(opcode.eq.TAVP_INSTR_CTRL_STOP) then
-                stopping=.TRUE.; if(i.ne.num_packets.and.errc.eq.0) then; errc=-8; exit wloop; endif
-                exit
+                !`Remove the STOP instruction from the unit queue and place it into my own port
+                stopping=.TRUE.; if(i.ne.num_packets.and.errc.eq.0) then; errc=-8; exit wloop; endif !`delete
+                exit !`delete
                endif
               enddo
               acceptor=>this%get_acceptor(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-7; exit wloop; endif
@@ -1052,11 +1053,12 @@
            else
             if(this%iqueue%get_status().eq.GFC_IT_EMPTY) active=.FALSE.
            endif
+           !`Absorb instructions from the port and check for the STOP instruction (the only allowed one), set <stopping>, delete instruction
           enddo wloop
          endif
          ier=this%get_error(); if(ier.eq.DSVP_SUCCESS) call this%set_error(errc)
          call this%shutdown(ier); if(ier.ne.0.and.errc.eq.0) errc=-1
-         if(errc.ne.0.and.VERBOSE) write(CONS_OUT,'("#ERROR(TAVP_MNG)[",i6,"]: Error code = ",i11)') impir,errc
+         if(errc.ne.0.and.VERBOSE) write(CONS_OUT,'("#ERROR(TAVP_MNG)[",i6,"]: Decoder error ",i11)') impir,errc
          if(present(ierr)) ierr=errc
          return
         end subroutine TAVPMNGDecoderStart
