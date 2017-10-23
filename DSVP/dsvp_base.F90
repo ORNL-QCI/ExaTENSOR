@@ -1,6 +1,6 @@
 !Domain-specific virtual processor (DSVP): Abstract base module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/10/18
+!REVISION: 2017/10/23
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -192,11 +192,12 @@
          type(list_bi_t), private:: queue               !queue of incoming DS instructions stored by reference
          type(list_iter_t), private:: iqueue            !queue iterator
          contains
-          procedure, public:: init=>DSUnitPortInit      !initializes the DS unit port
-          procedure, public:: accept=>DSUnitPortAccept  !accepts new DS instructions from other DS units
-          procedure, public:: absorb=>DSUnitPortAbsorb  !absorbs new DS instructions from the DS unit port into the DS unit queue
-          procedure, public:: free=>DSUnitPortFree      !releases all DS instructions and resets everything
-          final:: ds_unit_port_dtor                     !dtor
+          procedure, public:: init=>DSUnitPortInit        !initializes the DS unit port
+          procedure, public:: is_empty=>DSUnitPortIsEmpty !returns TRUE if the DS unit port is empty, FALSE otherwise
+          procedure, public:: accept=>DSUnitPortAccept    !accepts new DS instructions from other DS units
+          procedure, public:: absorb=>DSUnitPortAbsorb    !absorbs new DS instructions from the DS unit port into the DS unit queue
+          procedure, public:: free=>DSUnitPortFree        !releases all DS instructions and resets everything
+          final:: ds_unit_port_dtor                       !dtor
         end type ds_unit_port_t
  !Domain-specific virtual unit (DSVU):
         type, abstract, public:: ds_unit_t
@@ -216,6 +217,7 @@
           procedure, public:: get_error=>DSUnitGetError           !returns the error code
           procedure, public:: load_port=>DSUnitLoadPort           !loads the DS unit port with new DS instructions (called by other DS units)
           procedure, public:: flush_port=>DSUnitFlushPort         !flushes the port content into the DS unit queue (called by the current DS unit)
+          procedure, public:: port_empty=>DSUnitPortEmpty         !returns TRUE if the DS unit port is empty, FALSE otherwise
           procedure, public:: get_dsvp=>DSUnitGetDSVP             !returns a pointer to the DSVP the DS unit is part of
           procedure, public:: get_id=>DSUnitGetId                 !returns the DS unit id
           procedure, private:: set_id=>DSUnitSetId                !sets the DS unit id (when the DSVU table is constructed)
@@ -412,6 +414,7 @@
         public ds_instr_encode_i
  !ds_unit_port_t:
         private DSUnitPortInit
+        private DSUnitPortIsEmpty
         private DSUnitPortAccept
         private DSUnitPortAbsorb
         private DSUnitPortFree
@@ -423,6 +426,7 @@
         private DSUnitGetError
         private DSUnitLoadPort
         private DSUnitFlushPort
+        private DSUnitPortEmpty
         private DSUnitGetDSVP
         private DSUnitGetId
         private DSUnitSetId
@@ -1128,6 +1132,19 @@
 !$OMP END CRITICAL (DSVU_PORT_LOCK)
          return
         end function DSUnitPortInit
+!--------------------------------------------------------
+        function DSUnitPortIsEmpty(this,ierr) result(res)
+!Returns TRUE if the DS unit port is empty, FALSE otherwise.
+         implicit none
+         logical:: res                               !out: result
+         class(ds_unit_port_t), intent(in):: this    !in: DS unit port
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         res=.not.(this%iqueue%get_status(errc).eq.GFC_IT_ACTIVE)
+         if(present(ierr)) ierr=errc
+         return
+        end function DSUnitPortIsEmpty
 !------------------------------------------------------------
         function DSUnitPortAccept(this,new_list) result(ierr)
 !Accepts new DS instructions from other DS units in the current DS unit port.
@@ -1144,6 +1161,7 @@
          errc=new_list%reset()
          if(errc.eq.GFC_SUCCESS) then
           errc=new_list%move_list(this%iqueue); if(errc.ne.GFC_SUCCESS) ierr=DSVP_ERROR
+          if(new_list%get_status().ne.GFC_IT_EMPTY) ierr=DSVP_ERROR !trap
          else
           ierr=DSVP_ERROR
          endif
@@ -1164,6 +1182,7 @@
          errc=this%iqueue%reset()
          if(errc.eq.GFC_SUCCESS) then
           errc=this%iqueue%move_list(dsvu_queue_it); if(errc.ne.GFC_SUCCESS) ierr=DSVP_ERROR
+          if(this%iqueue%get_status().ne.GFC_IT_EMPTY) ierr=DSVP_ERROR !trap
          else
           ierr=DSVP_ERROR
          endif
@@ -1274,6 +1293,19 @@
          ierr=this%port%absorb(this%iqueue) !DS instructions (references) will be moved from the port into the DS unit queue
          return
         end function DSUnitFlushPort
+!------------------------------------------------------
+        function DSUnitPortEmpty(this,ierr) result(res)
+!Returns TRUE if the DS unit port is empty, FALSE otherwise.
+         implicit none
+         logical:: res                               !out: result
+         class(ds_unit_t), intent(in):: this         !in: DS unit
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         res=this%port%is_empty(errc)
+         if(present(ierr)) ierr=errc
+         return
+        end function DSUnitPortEmpty
 !-----------------------------------------------------
         function DSUnitGetDSVP(this,ierr) result(dsvp)
 !Returns a pointer to the DSVP the DS unit is part of.

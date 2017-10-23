@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Bi-directional linked list
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017-10-18 (started 2016-02-28)
+!REVISION: 2017-10-23 (started 2016-02-28)
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -889,11 +889,12 @@
         function ListIterMoveList(this,another) result(ierr)
 !Moves an entire list from one iterator to another by appending it
 !right after another list's current iterator position. Another
-!iterator will then move to the last appended element.
+!iterator will then reposition to the last appended element.
          implicit none
          integer(INTD):: ierr                        !out: error code
          class(list_iter_t), intent(inout):: this    !inout: source list iterator (from)
          class(list_iter_t), intent(inout):: another !inout: destination list iterator (to)
+         integer(INTD):: errc
 
          ierr=another%get_status()
          if(ierr.eq.GFC_IT_ACTIVE.or.ierr.eq.GFC_IT_EMPTY) then
@@ -903,6 +904,7 @@
            ierr=this%get_status()
           enddo
           if(ierr.eq.GFC_IT_EMPTY) ierr=GFC_SUCCESS
+          errc=this%reset(); if(errc.ne.GFC_SUCCESS.and.ierr.eq.GFC_SUCCESS) ierr=errc
          else
           ierr=GFC_INVALID_ARGS
          endif
