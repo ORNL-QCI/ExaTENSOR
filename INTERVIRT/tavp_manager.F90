@@ -991,7 +991,7 @@
          integer(INTD), intent(out), optional:: ierr     !out: error code
          integer(INTL), parameter:: MAX_BYTECODE_SIZE=32_INTL*(1024_INTL*1024_INTL) !max size of an incoming bytecode packet (bytes)
          integer(INTD), parameter:: MAX_INSTRUCTIONS=65536                          !max number of tensor instructions in a bytecode packet
-         integer(INTD):: errc,ier,num_packets,i,opcode
+         integer(INTD):: errc,ier,num_packets,i,opcode,thid
          logical:: active,stopping,new
          class(*), pointer:: uptr
          class(ds_unit_t), pointer:: acceptor
@@ -1003,10 +1003,10 @@
          type(list_bi_t):: ctrlq
          type(list_iter_t):: lit
 
-         errc=0
+         errc=0; thid=omp_get_thread_num()
          if(DEBUG.gt.0) then
-          write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decoder started as DSVU # ",i2,": Listening to ",i11,1x,i6)')&
-          &impir,this%get_id(),this%source_comm,this%source_rank
+          write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decoder started as DSVU # ",i2," (thread ",i2,"): Listening to ",i11,1x,i6)')&
+          &impir,this%get_id(),thid,this%source_comm,this%source_rank
           flush(CONS_OUT)
          endif
 !Reserve a bytecode buffer:
@@ -1086,8 +1086,9 @@
           enddo wloop
          endif
          ier=this%get_error(); if(ier.eq.DSVP_SUCCESS) call this%set_error(errc)
+         if(errc.ne.0.and.VERBOSE) write(CONS_OUT,'("#ERROR(TAVP_MNG)[",i6,"]: Decoder error ",i11," by thread ",i2)')&
+         &impir,errc,thid
          call this%shutdown(ier); if(ier.ne.0.and.errc.eq.0) errc=-1
-         if(errc.ne.0.and.VERBOSE) write(CONS_OUT,'("#ERROR(TAVP_MNG)[",i6,"]: Decoder error ",i11)') impir,errc
          if(present(ierr)) ierr=errc
          return
         end subroutine TAVPMNGDecoderStart
@@ -1097,11 +1098,11 @@
          implicit none
          class(tavp_mng_decoder_t), intent(inout):: this !inout: TAVP-MNG decoder DSVU
          integer(INTD), intent(out), optional:: ierr     !out: error code
-         integer(INTD):: errc,ier
+         integer(INTD):: errc,ier,thid
 
-         errc=0
+         errc=0; thid=omp_get_thread_num()
          if(DEBUG.gt.0) then
-          write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decoder stopped as DSVU # ",i2)') impir,this%get_id()
+          write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decoder stopped as DSVU # ",i2," (thread ",i2,")")') impir,this%get_id(),thid !debug
           write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decoder DSVU # ",i2,": Port empty = ",l1)')&
           &impir,this%get_id(),this%port_empty() !debug
           flush(CONS_OUT)
@@ -1412,10 +1413,11 @@
          implicit none
          class(tavp_mng_retirer_t), intent(inout):: this !inout: TAVP-MNG retirer DSVU
          integer(INTD), intent(out), optional:: ierr     !out: error code
-         integer(INTD):: errc,ier
+         integer(INTD):: errc,ier,thid
 
-         errc=0
-         if(DEBUG.gt.0) write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Retirer started as DSVU # ",i2)') impir,this%get_id() !debug
+         errc=0; thid=omp_get_thread_num()
+         if(DEBUG.gt.0) write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Retirer started as DSVU # ",i2," (thread ",i2,")")')&
+         &impir,this%get_id(),thid !debug
          !`Implement
          call this%shutdown(ier); if(ier.ne.0.and.errc.eq.0) errc=-1
          if(present(ierr)) ierr=errc
@@ -1427,11 +1429,11 @@
          implicit none
          class(tavp_mng_retirer_t), intent(inout):: this !inout: TAVP-MNG retirer DSVU
          integer(INTD), intent(out), optional:: ierr     !out: error code
-         integer(INTD):: errc
+         integer(INTD):: errc,thid
 
-         errc=0
+         errc=0; thid=omp_get_thread_num()
          if(DEBUG.gt.0) then
-          write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Retirer stopped as DSVU # ",i2)') impir,this%get_id()
+          write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Retirer stopped as DSVU # ",i2," (thread ",i2,")")') impir,this%get_id(),thid !debug
           flush(CONS_OUT)
          endif
          !`Implement
@@ -1491,10 +1493,11 @@
          implicit none
          class(tavp_mng_locator_t), intent(inout):: this !inout: TAVP-MNG locator DSVU
          integer(INTD), intent(out), optional:: ierr     !out: error code
-         integer(INTD):: errc,ier
+         integer(INTD):: errc,ier,thid
 
-         errc=0
-         if(DEBUG.gt.0) write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Locator started as DSVU # ",i2)') impir,this%get_id() !debug
+         errc=0; thid=omp_get_thread_num()
+         if(DEBUG.gt.0) write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Locator started as DSVU # ",i2," (thread ",i2,")")')&
+         &impir,this%get_id(),thid !debug
          !`Implement
          call this%shutdown(ier); if(ier.ne.0.and.errc.eq.0) errc=-1
          if(present(ierr)) ierr=errc
@@ -1506,11 +1509,11 @@
          implicit none
          class(tavp_mng_locator_t), intent(inout):: this !inout: TAVP-MNG locator DSVU
          integer(INTD), intent(out), optional:: ierr     !out: error code
-         integer(INTD):: errc
+         integer(INTD):: errc,thid
 
-         errc=0
+         errc=0; thid=omp_get_thread_num()
          if(DEBUG.gt.0) then
-          write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Locator stopped as DSVU # ",i2)') impir,this%get_id()
+          write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Locator stopped as DSVU # ",i2," (thread ",i2,")")') impir,this%get_id(),thid !debug
           flush(CONS_OUT)
          endif
          !`Implement
@@ -1589,10 +1592,11 @@
          implicit none
          class(tavp_mng_decomposer_t), intent(inout):: this !inout: TAVP-MNG decomposer DSVU
          integer(INTD), intent(out), optional:: ierr        !out: error code
-         integer(INTD):: errc,ier
+         integer(INTD):: errc,ier,thid
 
-         errc=0
-         if(DEBUG.gt.0) write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decomposer started as DSVU # ",i2)') impir,this%get_id() !debug
+         errc=0; thid=omp_get_thread_num()
+         if(DEBUG.gt.0) write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decomposer started as DSVU # ",i2," (thread ",i2,")")')&
+         &impir,this%get_id(),thid !debug
          !`Implement
          call this%shutdown(ier); if(ier.ne.0.and.errc.eq.0) errc=-1
          if(present(ierr)) ierr=errc
@@ -1604,11 +1608,12 @@
          implicit none
          class(tavp_mng_decomposer_t), intent(inout):: this !inout: TAVP-MNG decomposer DSVU
          integer(INTD), intent(out), optional:: ierr        !out: error code
-         integer(INTD):: errc
+         integer(INTD):: errc,thid
 
-         errc=0
+         errc=0; thid=omp_get_thread_num()
          if(DEBUG.gt.0) then
-          write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decomposer stopped as DSVU # ",i2)') impir,this%get_id()
+          write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decomposer stopped as DSVU # ",i2," (thread ",i2,")")')&
+          &impir,this%get_id(),thid !debug
           flush(CONS_OUT)
          endif
          !`Implement
@@ -1666,10 +1671,11 @@
          implicit none
          class(tavp_mng_dispatcher_t), intent(inout):: this !inout: TAVP-MNG dispatcher DSVU
          integer(INTD), intent(out), optional:: ierr        !out: error code
-         integer(INTD):: errc,ier
+         integer(INTD):: errc,ier,thid
 
-         errc=0
-         if(DEBUG.gt.0) write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Dispatcher started as DSVU # ",i2)') impir,this%get_id() !debug
+         errc=0; thid=omp_get_thread_num()
+         if(DEBUG.gt.0) write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Dispatcher started as DSVU # ",i2," (thread ",i2,")")')&
+         &impir,this%get_id(),thid !debug
          !`Implement
          call this%shutdown(ier); if(ier.ne.0.and.errc.eq.0) errc=-1
          if(present(ierr)) ierr=errc
@@ -1681,11 +1687,12 @@
          implicit none
          class(tavp_mng_dispatcher_t), intent(inout):: this !inout: TAVP-MNG dispacher DSVU
          integer(INTD), intent(out), optional:: ierr        !out: error code
-         integer(INTD):: errc
+         integer(INTD):: errc,thid
 
-         errc=0
+         errc=0; thid=omp_get_thread_num()
          if(DEBUG.gt.0) then
-          write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Dispatcher stopped as DSVU # ",i2)') impir,this%get_id()
+          write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Dispatcher stopped as DSVU # ",i2," (thread ",i2,")")')&
+          &impir,this%get_id(),thid !debug
           flush(CONS_OUT)
          endif
          !`Implement
@@ -1788,10 +1795,11 @@
          implicit none
          class(tavp_mng_replicator_t), intent(inout):: this !inout: TAVP-MNG replicator DSVU
          integer(INTD), intent(out), optional:: ierr        !out: error code
-         integer(INTD):: errc,ier
+         integer(INTD):: errc,ier,thid
 
-         errc=0
-         if(DEBUG.gt.0) write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Replicator started as DSVU # ",i2)') impir,this%get_id() !debug
+         errc=0; thid=omp_get_thread_num()
+         if(DEBUG.gt.0) write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Replicator started as DSVU # ",i2," (thread ",i2,")")')&
+         &impir,this%get_id(),thid !debug
          !`Implement
          call this%shutdown(ier); if(ier.ne.0.and.errc.eq.0) errc=-1
          if(present(ierr)) ierr=errc
@@ -1803,11 +1811,12 @@
          implicit none
          class(tavp_mng_replicator_t), intent(inout):: this !inout: TAVP-MNG replicator DSVU
          integer(INTD), intent(out), optional:: ierr        !out: error code
-         integer(INTD):: errc
+         integer(INTD):: errc,thid
 
-         errc=0
+         errc=0; thid=omp_get_thread_num()
          if(DEBUG.gt.0) then
-          write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Replicator stopped as DSVU # ",i2)') impir,this%get_id()
+          write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Replicator stopped as DSVU # ",i2," (thread ",i2,")")')&
+          &impir,this%get_id(),thid !debug
           flush(CONS_OUT)
          endif
          !`Implement
@@ -1877,10 +1886,11 @@
          implicit none
          class(tavp_mng_collector_t), intent(inout):: this !inout: TAVP-MNG collector DSVU
          integer(INTD), intent(out), optional:: ierr       !out: error code
-         integer(INTD):: errc,ier
+         integer(INTD):: errc,ier,thid
 
-         errc=0
-         if(DEBUG.gt.0) write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Collector started as DSVU # ",i2)') impir,this%get_id() !debug
+         errc=0; thid=omp_get_thread_num()
+         if(DEBUG.gt.0) write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Collector started as DSVU # ",i2," (thread ",i2,")")')&
+         &impir,this%get_id(),thid !debug
          !`Implement
          call this%shutdown(ier); if(ier.ne.0.and.errc.eq.0) errc=-1
          if(present(ierr)) ierr=errc
@@ -1892,11 +1902,11 @@
          implicit none
          class(tavp_mng_collector_t), intent(inout):: this !inout: TAVP-MNG collector DSVU
          integer(INTD), intent(out), optional:: ierr       !out: error code
-         integer(INTD):: errc
+         integer(INTD):: errc,thid
 
-         errc=0
+         errc=0; thid=omp_get_thread_num()
          if(DEBUG.gt.0) then
-          write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Collector stopped as DSVU # ",i2)') impir,this%get_id()
+          write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Collector stopped as DSVU # ",i2," (thread ",i2,")")') impir,this%get_id(),thid !debug
           flush(CONS_OUT)
          endif
          !`Implement
