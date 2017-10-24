@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Vector (non-contiguous)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017/08/07
+!REVISION: 2017/10/24
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -706,10 +706,10 @@
         function VectorIterElement(this,offset,ierr) result(elem_p)
 !Returns a pointer to the specific vector element.
          implicit none
-         class(gfc_cont_elem_t), pointer:: elem_p    !out: pointer to the specific vector element
-         class(vector_iter_t), intent(in):: this     !in: vector iterator
-         integer(INTL), intent(in):: offset          !in: vector element offset
-         integer(INTD), intent(out), optional:: ierr !out: error code
+         class(gfc_cont_elem_t), pointer:: elem_p        !out: pointer to the specific vector element
+         class(vector_iter_t), intent(in), target:: this !in: vector iterator
+         integer(INTL), intent(in):: offset              !in: vector element offset
+         integer(INTD), intent(out), optional:: ierr     !out: error code
          integer(INTD):: q(4),errc
 
          elem_p=>NULL(); errc=this%get_status()

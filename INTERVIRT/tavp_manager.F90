@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/10/23
+!REVISION: 2017/10/24
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -32,6 +32,9 @@
         integer(INTD), private:: CONS_OUT=6 !default output device
         integer(INTD), private:: DEBUG=1    !debugging mode
         logical, private:: VERBOSE=.TRUE.   !verbosity for errors
+ !Bytecode:
+        integer(INTL), parameter, private:: MAX_BYTECODE_SIZE=32_INTL*(1024_INTL*1024_INTL) !max size of an incoming/outgoing bytecode envelope (bytes)
+        integer(INTD), parameter, private:: MAX_INSTRUCTIONS=65536                          !max number of tensor instructions in a bytecode envelope
 !TYPES:
  !Tensor argument cache entry (TAVP-specific):
         type, extends(tens_cache_entry_t), private:: tens_entry_mng_t
@@ -138,6 +141,7 @@
  !TAVP-MNG dispatcher:
         type, extends(ds_encoder_t), private:: tavp_mng_dispatcher_t
          integer(INTD), private:: dispatch_comm                     !MPI communicator of the processes dispatched to
+         integer(INTD), private:: num_ranks=0                       !number of MPI ranks to dispatch instructions to
          integer(INTD), allocatable, private:: dispatch_rank(:)     !MPI process ranks of the processes dispatched to
          type(pack_env_t), allocatable, private:: bytecode(:)       !outgoing bytecode for each dispatched rank
          contains
@@ -989,9 +993,7 @@
          implicit none
          class(tavp_mng_decoder_t), intent(inout):: this !inout: TAVP-MNG decoder DSVU
          integer(INTD), intent(out), optional:: ierr     !out: error code
-         integer(INTL), parameter:: MAX_BYTECODE_SIZE=32_INTL*(1024_INTL*1024_INTL) !max size of an incoming bytecode packet (bytes)
-         integer(INTD), parameter:: MAX_INSTRUCTIONS=65536                          !max number of tensor instructions in a bytecode packet
-         integer(INTD):: errc,ier,num_packets,i,opcode,thid
+         integer(INTD):: errc,ier,num_packets,i,j,opcode,sts,thid
          logical:: active,stopping,new
          class(*), pointer:: uptr
          class(ds_unit_t), pointer:: acceptor
@@ -1010,21 +1012,21 @@
           flush(CONS_OUT)
          endif
 !Reserve a bytecode buffer:
-         call this%bytecode%reserve_mem(ier,MAX_BYTECODE_SIZE,MAX_INSTRUCTIONS); if(ier.ne.0.and.errc.eq.0) errc=-33
+         call this%bytecode%reserve_mem(ier,MAX_BYTECODE_SIZE,MAX_INSTRUCTIONS); if(ier.ne.0.and.errc.eq.0) errc=-36
          if(errc.eq.0) then
 !Initialize queues:
-          call this%init_queue(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-32
-          active=((errc.eq.0).and.(this%source_comm.ne.MPI_COMM_NULL)); stopping=(.not.active)
+          call this%init_queue(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-35
 !Work loop:
+          active=((errc.eq.0).and.(this%source_comm.ne.MPI_COMM_NULL)); stopping=(.not.active)
           wloop: do while(active)
  !Receive new bytecode (if posted):
            if(.not.stopping) then
-            call comm_hl%clean(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-31; exit wloop; endif
+            call comm_hl%clean(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-34; exit wloop; endif
             new=this%bytecode%receive(comm_hl,ier,proc_rank=this%source_rank,comm=this%source_comm)
-            if(ier.ne.0.and.errc.eq.0) then; errc=-30; exit wloop; endif
+            if(ier.ne.0.and.errc.eq.0) then; errc=-33; exit wloop; endif
             if(new) then !new bytecode is available
-             call comm_hl%wait(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-29; exit wloop; endif
-             num_packets=this%bytecode%get_num_packets(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-28; exit wloop; endif
+             call comm_hl%wait(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-32; exit wloop; endif
+             num_packets=this%bytecode%get_num_packets(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-31; exit wloop; endif
              if(DEBUG.gt.0) then
               write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decoder received ",i9," new instructions")') impir,num_packets
               flush(CONS_OUT)
@@ -1032,42 +1034,44 @@
              if(num_packets.gt.0) then
               do i=1,num_packets
                call this%bytecode%extract_packet(i,instr_packet,ier,preclean=.TRUE.)
-               if(ier.ne.0.and.errc.eq.0) then; errc=-27; exit wloop; endif
-               ier=this%iqueue%append(tens_instr_empty); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-26; exit wloop; endif
-               ier=this%iqueue%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-25; exit wloop; endif
-               uptr=>this%iqueue%get_value(ier); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-24; exit wloop; endif
+               if(ier.ne.0.and.errc.eq.0) then; errc=-30; exit wloop; endif
+               ier=this%iqueue%append(tens_instr_empty); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-29; exit wloop; endif
+               ier=this%iqueue%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-28; exit wloop; endif
+               uptr=>this%iqueue%get_value(ier); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-27; exit wloop; endif
                tens_instr=>NULL(); select type(uptr); type is(tens_instr_t); tens_instr=>uptr; end select
-               if(.not.associated(tens_instr).and.errc.eq.0) then; errc=-23; exit wloop; endif
-               call this%decode(tens_instr,instr_packet,ier); if(ier.ne.0.and.errc.eq.0) then; errc=-22; exit wloop; endif
-               opcode=tens_instr%get_code(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-21; exit wloop; endif
+               if(.not.associated(tens_instr).and.errc.eq.0) then; errc=-26; exit wloop; endif
+               call this%decode(tens_instr,instr_packet,ier); if(ier.ne.0.and.errc.eq.0) then; errc=-25; exit wloop; endif
+               sts=tens_instr%get_status(ier,j)
+               if((ier.ne.DSVP_SUCCESS.or.j.ne.DSVP_SUCCESS).and.errc.eq.0) then; errc=-24; exit wloop; endif
+               opcode=tens_instr%get_code(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-23; exit wloop; endif
                if(opcode.eq.TAVP_INSTR_CTRL_STOP) then
-                if(i.ne.num_packets.and.errc.eq.0) then; errc=-20; exit wloop; endif
-                ier=lit%init(ctrlq); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-19; exit wloop; endif
-                ier=lit%append(tens_instr); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-18; exit wloop; endif
-                ier=this%load_port(lit); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-17; exit wloop; endif
-                ier=lit%release(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-16; exit wloop; endif
+                if(i.ne.num_packets.and.errc.eq.0) then; errc=-22; exit wloop; endif
+                ier=lit%init(ctrlq); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-21; exit wloop; endif
+                ier=lit%append(tens_instr); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-20; exit wloop; endif
+                ier=this%load_port(lit); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-19; exit wloop; endif
+                ier=lit%release(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-18; exit wloop; endif
                endif
               enddo
-              acceptor=>this%get_acceptor(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-15; exit wloop; endif
+              acceptor=>this%get_acceptor(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-17; exit wloop; endif
               if(associated(acceptor)) then
-               ier=acceptor%load_port(this%iqueue); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-14; exit wloop; endif
-               if(this%iqueue%get_status().ne.GFC_IT_EMPTY.and.errc.eq.0) then; errc=-13; exit wloop; endif !trap
+               ier=acceptor%load_port(this%iqueue); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-16; exit wloop; endif
+               if(this%iqueue%get_status().ne.GFC_IT_EMPTY.and.errc.eq.0) then; errc=-15; exit wloop; endif !trap
               else
-               if(errc.eq.0) then; errc=-12; exit wloop; endif
+               if(errc.eq.0) then; errc=-14; exit wloop; endif
               endif
              else !empty bytecode
-              if(errc.eq.0) then; errc=-11; exit wloop; endif
+              if(errc.eq.0) then; errc=-13; exit wloop; endif
              endif
-             call this%bytecode%clean(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-10; exit wloop; endif
+             call this%bytecode%clean(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-12; exit wloop; endif
             endif
            else
-            ier=this%iqueue%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-9; exit wloop; endif
+            ier=this%iqueue%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-11; exit wloop; endif
             if(this%iqueue%get_status().eq.GFC_IT_EMPTY) active=.FALSE.
-            if(.not.this%port_empty(ier).and.errc.eq.0) then; errc=-35; exit wloop; endif !trap
+            if(.not.this%port_empty(ier).and.errc.eq.0) then; errc=-10; exit wloop; endif !trap
            endif
  !Check the port for control instructions:
-           ier=this%flush_port(); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-8; exit wloop; endif
-           if(.not.this%port_empty(ier).and.errc.eq.0) then; errc=-34; exit wloop; endif !trap
+           ier=this%flush_port(); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-9; exit wloop; endif
+           if(.not.this%port_empty(ier).and.errc.eq.0) then; errc=-8; exit wloop; endif !trap
            ier=this%iqueue%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-7; exit wloop; endif
            ier=this%iqueue%get_status()
            do while(ier.eq.GFC_IT_ACTIVE)
@@ -1085,9 +1089,11 @@
            ier=this%iqueue%delete_all(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-2; exit wloop; endif
           enddo wloop
          endif
+!Record the error:
          ier=this%get_error(); if(ier.eq.DSVP_SUCCESS) call this%set_error(errc)
          if(errc.ne.0.and.VERBOSE) write(CONS_OUT,'("#ERROR(TAVP_MNG)[",i6,"]: Decoder error ",i11," by thread ",i2)')&
          &impir,errc,thid
+!Shutdown:
          call this%shutdown(ier); if(ier.ne.0.and.errc.eq.0) errc=-1
          if(present(ierr)) ierr=errc
          return
@@ -1102,9 +1108,9 @@
 
          errc=0; thid=omp_get_thread_num()
          if(DEBUG.gt.0) then
-          write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decoder stopped as DSVU # ",i2," (thread ",i2,")")') impir,this%get_id(),thid !debug
-          write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decoder DSVU # ",i2,": Port empty = ",l1)')&
-          &impir,this%get_id(),this%port_empty() !debug
+          write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decoder stopped as DSVU # ",i2," (thread ",i2,")")') impir,this%get_id(),thid
+          !write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decoder DSVU # ",i2,": Port empty = ",l1)')&
+          !&impir,this%get_id(),this%port_empty() !debug
           flush(CONS_OUT)
          endif
          call this%release_queue(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-2
@@ -1414,11 +1420,29 @@
          class(tavp_mng_retirer_t), intent(inout):: this !inout: TAVP-MNG retirer DSVU
          integer(INTD), intent(out), optional:: ierr     !out: error code
          integer(INTD):: errc,ier,thid
+         logical:: active,stopping
 
          errc=0; thid=omp_get_thread_num()
-         if(DEBUG.gt.0) write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Retirer started as DSVU # ",i2," (thread ",i2,")")')&
-         &impir,this%get_id(),thid !debug
-         !`Implement
+         if(DEBUG.gt.0) then
+          write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Retirer started as DSVU # ",i2," (thread ",i2,")")') impir,this%get_id(),thid
+          flush(CONS_OUT)
+         endif
+!Reserve a bytecode buffer:
+         call this%bytecode%reserve_mem(ier,MAX_BYTECODE_SIZE,MAX_INSTRUCTIONS); if(ier.ne.0.and.errc.eq.0) errc=-1
+         if(errc.eq.0) then
+!Initialize queues:
+          call this%init_queue(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-1
+!Work loop:
+          active=((errc.eq.0).and.(this%retire_comm.ne.MPI_COMM_NULL)); stopping=(.not.active)
+          wloop: do while(active)
+           !`Implement
+          enddo wloop
+         endif
+!Record the error:
+         ier=this%get_error(); if(ier.eq.DSVP_SUCCESS) call this%set_error(errc)
+         if(errc.ne.0.and.VERBOSE) write(CONS_OUT,'("#ERROR(TAVP_MNG)[",i6,"]: Retirer error ",i11," by thread ",i2)')&
+         &impir,errc,thid
+!Shutdown:
          call this%shutdown(ier); if(ier.ne.0.and.errc.eq.0) errc=-1
          if(present(ierr)) ierr=errc
          return
@@ -1429,14 +1453,16 @@
          implicit none
          class(tavp_mng_retirer_t), intent(inout):: this !inout: TAVP-MNG retirer DSVU
          integer(INTD), intent(out), optional:: ierr     !out: error code
-         integer(INTD):: errc,thid
+         integer(INTD):: errc,ier,thid
 
          errc=0; thid=omp_get_thread_num()
          if(DEBUG.gt.0) then
-          write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Retirer stopped as DSVU # ",i2," (thread ",i2,")")') impir,this%get_id(),thid !debug
+          write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Retirer stopped as DSVU # ",i2," (thread ",i2,")")') impir,this%get_id(),thid
           flush(CONS_OUT)
          endif
-         !`Implement
+         call this%release_queue(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-2
+         call this%bytecode%destroy(ier); if(ier.ne.0.and.errc.eq.0) errc=-1
+         ier=this%get_error(); if(ier.eq.DSVP_SUCCESS) call this%set_error(errc)
          if(present(ierr)) ierr=errc
          return
         end subroutine TAVPMNGRetirerShutdown
@@ -1494,11 +1520,29 @@
          class(tavp_mng_locator_t), intent(inout):: this !inout: TAVP-MNG locator DSVU
          integer(INTD), intent(out), optional:: ierr     !out: error code
          integer(INTD):: errc,ier,thid
+         logical:: active,stopping
 
          errc=0; thid=omp_get_thread_num()
-         if(DEBUG.gt.0) write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Locator started as DSVU # ",i2," (thread ",i2,")")')&
-         &impir,this%get_id(),thid !debug
-         !`Implement
+         if(DEBUG.gt.0) then
+          write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Locator started as DSVU # ",i2," (thread ",i2,")")') impir,this%get_id(),thid
+          flush(CONS_OUT)
+         endif
+!Reserve a bytecode buffer:
+         call this%bytecode%reserve_mem(ier,MAX_BYTECODE_SIZE,MAX_INSTRUCTIONS); if(ier.ne.0.and.errc.eq.0) errc=-1
+         if(errc.eq.0) then
+!Initialize queues:
+          call this%init_queue(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-1
+!Work loop:
+          active=((errc.eq.0).and.(this%ring_comm.ne.MPI_COMM_NULL)); stopping=(.not.active)
+          wloop: do while(active)
+           !`Implement
+          enddo wloop
+         endif
+!Record the error:
+         ier=this%get_error(); if(ier.eq.DSVP_SUCCESS) call this%set_error(errc)
+         if(errc.ne.0.and.VERBOSE) write(CONS_OUT,'("#ERROR(TAVP_MNG)[",i6,"]: Locator error ",i11," by thread ",i2)')&
+         &impir,errc,thid
+!Shutdown:
          call this%shutdown(ier); if(ier.ne.0.and.errc.eq.0) errc=-1
          if(present(ierr)) ierr=errc
          return
@@ -1509,14 +1553,16 @@
          implicit none
          class(tavp_mng_locator_t), intent(inout):: this !inout: TAVP-MNG locator DSVU
          integer(INTD), intent(out), optional:: ierr     !out: error code
-         integer(INTD):: errc,thid
+         integer(INTD):: errc,ier,thid
 
          errc=0; thid=omp_get_thread_num()
          if(DEBUG.gt.0) then
-          write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Locator stopped as DSVU # ",i2," (thread ",i2,")")') impir,this%get_id(),thid !debug
+          write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Locator stopped as DSVU # ",i2," (thread ",i2,")")') impir,this%get_id(),thid
           flush(CONS_OUT)
          endif
-         !`Implement
+         call this%release_queue(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-2
+         call this%bytecode%destroy(ier); if(ier.ne.0.and.errc.eq.0) errc=-1
+         ier=this%get_error(); if(ier.eq.DSVP_SUCCESS) call this%set_error(errc)
          if(present(ierr)) ierr=errc
          return
         end subroutine TAVPMNGLocatorShutdown
@@ -1593,11 +1639,25 @@
          class(tavp_mng_decomposer_t), intent(inout):: this !inout: TAVP-MNG decomposer DSVU
          integer(INTD), intent(out), optional:: ierr        !out: error code
          integer(INTD):: errc,ier,thid
+         logical:: active,stopping
 
          errc=0; thid=omp_get_thread_num()
-         if(DEBUG.gt.0) write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decomposer started as DSVU # ",i2," (thread ",i2,")")')&
-         &impir,this%get_id(),thid !debug
-         !`Implement
+         if(DEBUG.gt.0) then
+          write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decomposer started as DSVU # ",i2," (thread ",i2,")")') impir,this%get_id(),thid
+          flush(CONS_OUT)
+         endif
+!Initialize queues:
+         call this%init_queue(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-1
+!Work loop:
+         active=(errc.eq.0); stopping=(.not.active)
+         wloop: do while(active)
+          !`Implement
+         enddo wloop
+!Record the error:
+         ier=this%get_error(); if(ier.eq.DSVP_SUCCESS) call this%set_error(errc)
+         if(errc.ne.0.and.VERBOSE) write(CONS_OUT,'("#ERROR(TAVP_MNG)[",i6,"]: Decomposer error ",i11," by thread ",i2)')&
+         &impir,errc,thid
+!Shutdown:
          call this%shutdown(ier); if(ier.ne.0.and.errc.eq.0) errc=-1
          if(present(ierr)) ierr=errc
          return
@@ -1608,15 +1668,16 @@
          implicit none
          class(tavp_mng_decomposer_t), intent(inout):: this !inout: TAVP-MNG decomposer DSVU
          integer(INTD), intent(out), optional:: ierr        !out: error code
-         integer(INTD):: errc,thid
+         integer(INTD):: errc,ier,thid
 
          errc=0; thid=omp_get_thread_num()
          if(DEBUG.gt.0) then
           write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decomposer stopped as DSVU # ",i2," (thread ",i2,")")')&
-          &impir,this%get_id(),thid !debug
+          &impir,this%get_id(),thid
           flush(CONS_OUT)
          endif
-         !`Implement
+         call this%release_queue(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-1
+         ier=this%get_error(); if(ier.eq.DSVP_SUCCESS) call this%set_error(errc)
          if(present(ierr)) ierr=errc
          return
         end subroutine TAVPMNGDecomposerShutdown
@@ -1648,7 +1709,8 @@
           if(allocated(conf%dispatch_rank)) then
            this%dispatch_comm=conf%dispatch_comm
            this%dispatch_rank=conf%dispatch_rank
-           if(size(this%dispatch_rank).gt.0) then
+           this%num_ranks=size(this%dispatch_rank)
+           if(this%num_ranks.gt.0) then
             do i=lbound(this%dispatch_rank,1),ubound(this%dispatch_rank,1)
              if(this%dispatch_rank(i).lt.0) then; errc=-4; exit; endif
             enddo
@@ -1671,12 +1733,35 @@
          implicit none
          class(tavp_mng_dispatcher_t), intent(inout):: this !inout: TAVP-MNG dispatcher DSVU
          integer(INTD), intent(out), optional:: ierr        !out: error code
-         integer(INTD):: errc,ier,thid
+         integer(INTD):: errc,ier,thid,i
+         logical:: active,stopping
 
          errc=0; thid=omp_get_thread_num()
-         if(DEBUG.gt.0) write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Dispatcher started as DSVU # ",i2," (thread ",i2,")")')&
-         &impir,this%get_id(),thid !debug
-         !`Implement
+         if(DEBUG.gt.0) then
+          write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Dispatcher started as DSVU # ",i2," (thread ",i2,")")') impir,this%get_id(),thid
+          flush(CONS_OUT)
+         endif
+!Reserve bytecode buffers:
+         allocate(this%bytecode(this%num_ranks),STAT=ier); if(ier.ne.0.and.errc.eq.0) errc=-1
+         if(errc.eq.0) then
+          do i=1,this%num_ranks
+           call this%bytecode(i)%reserve_mem(ier,MAX_BYTECODE_SIZE,MAX_INSTRUCTIONS); if(ier.ne.0.and.errc.eq.0) errc=-1
+          enddo
+          if(errc.eq.0) then
+!Initialize queues:
+           call this%init_queue(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-1
+!Work loop:
+           active=((errc.eq.0).and.(this%dispatch_comm.ne.MPI_COMM_NULL)); stopping=(.not.active)
+           wloop: do while(active)
+            !`Implement
+           enddo wloop
+          endif
+         endif
+!Record the error:
+         ier=this%get_error(); if(ier.eq.DSVP_SUCCESS) call this%set_error(errc)
+         if(errc.ne.0.and.VERBOSE) write(CONS_OUT,'("#ERROR(TAVP_MNG)[",i6,"]: Dispatcher error ",i11," by thread ",i2)')&
+         &impir,errc,thid
+!Shutdown:
          call this%shutdown(ier); if(ier.ne.0.and.errc.eq.0) errc=-1
          if(present(ierr)) ierr=errc
          return
@@ -1687,15 +1772,21 @@
          implicit none
          class(tavp_mng_dispatcher_t), intent(inout):: this !inout: TAVP-MNG dispacher DSVU
          integer(INTD), intent(out), optional:: ierr        !out: error code
-         integer(INTD):: errc,thid
+         integer(INTD):: errc,ier,thid,i
 
          errc=0; thid=omp_get_thread_num()
          if(DEBUG.gt.0) then
           write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Dispatcher stopped as DSVU # ",i2," (thread ",i2,")")')&
-          &impir,this%get_id(),thid !debug
+          &impir,this%get_id(),thid
           flush(CONS_OUT)
          endif
-         !`Implement
+         call this%release_queue(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-2
+         if(allocated(this%bytecode)) then
+          do i=ubound(this%bytecode,1),lbound(this%bytecode,1),-1
+           call this%bytecode(i)%destroy(ier); if(ier.ne.0.and.errc.eq.0) errc=-1
+          enddo
+         endif
+         ier=this%get_error(); if(ier.eq.DSVP_SUCCESS) call this%set_error(errc)
          if(present(ierr)) ierr=errc
          return
         end subroutine TAVPMNGDispatcherShutdown
@@ -1796,11 +1887,29 @@
          class(tavp_mng_replicator_t), intent(inout):: this !inout: TAVP-MNG replicator DSVU
          integer(INTD), intent(out), optional:: ierr        !out: error code
          integer(INTD):: errc,ier,thid
+         logical:: active,stopping
 
          errc=0; thid=omp_get_thread_num()
-         if(DEBUG.gt.0) write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Replicator started as DSVU # ",i2," (thread ",i2,")")')&
-         &impir,this%get_id(),thid !debug
-         !`Implement
+         if(DEBUG.gt.0) then
+          write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Replicator started as DSVU # ",i2," (thread ",i2,")")') impir,this%get_id(),thid
+          flush(CONS_OUT)
+         endif
+!Reserve a bytecode buffer:
+         call this%bytecode%reserve_mem(ier,MAX_BYTECODE_SIZE,MAX_INSTRUCTIONS); if(ier.ne.0.and.errc.eq.0) errc=-1
+         if(errc.eq.0) then
+!Initialize queues:
+          call this%init_queue(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-1
+!Work loop:
+          active=((errc.eq.0).and.(this%repl_comm.ne.MPI_COMM_NULL)); stopping=(.not.active)
+          wloop: do while(active)
+           !`Implement
+          enddo wloop
+         endif
+!Record the error:
+         ier=this%get_error(); if(ier.eq.DSVP_SUCCESS) call this%set_error(errc)
+         if(errc.ne.0.and.VERBOSE) write(CONS_OUT,'("#ERROR(TAVP_MNG)[",i6,"]: Replicator error ",i11," by thread ",i2)')&
+         &impir,errc,thid
+!Shutdown:
          call this%shutdown(ier); if(ier.ne.0.and.errc.eq.0) errc=-1
          if(present(ierr)) ierr=errc
          return
@@ -1811,15 +1920,17 @@
          implicit none
          class(tavp_mng_replicator_t), intent(inout):: this !inout: TAVP-MNG replicator DSVU
          integer(INTD), intent(out), optional:: ierr        !out: error code
-         integer(INTD):: errc,thid
+         integer(INTD):: errc,ier,thid
 
          errc=0; thid=omp_get_thread_num()
          if(DEBUG.gt.0) then
           write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Replicator stopped as DSVU # ",i2," (thread ",i2,")")')&
-          &impir,this%get_id(),thid !debug
+          &impir,this%get_id(),thid
           flush(CONS_OUT)
          endif
-         !`Implement
+         call this%release_queue(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-2
+         call this%bytecode%destroy(ier); if(ier.ne.0.and.errc.eq.0) errc=-1
+         ier=this%get_error(); if(ier.eq.DSVP_SUCCESS) call this%set_error(errc)
          if(present(ierr)) ierr=errc
          return
         end subroutine TAVPMNGReplicatorShutdown
@@ -1887,11 +1998,25 @@
          class(tavp_mng_collector_t), intent(inout):: this !inout: TAVP-MNG collector DSVU
          integer(INTD), intent(out), optional:: ierr       !out: error code
          integer(INTD):: errc,ier,thid
+         logical:: active,stopping
 
          errc=0; thid=omp_get_thread_num()
-         if(DEBUG.gt.0) write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Collector started as DSVU # ",i2," (thread ",i2,")")')&
-         &impir,this%get_id(),thid !debug
-         !`Implement
+         if(DEBUG.gt.0) then
+          write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Collector started as DSVU # ",i2," (thread ",i2,")")') impir,this%get_id(),thid
+          flush(CONS_OUT)
+         endif
+!Initialize queues:
+         call this%init_queue(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-1
+!Work loop:
+         active=(errc.eq.0); stopping=(.not.active)
+         wloop: do while(active)
+          !`Implement
+         enddo wloop
+!Record the error:
+         ier=this%get_error(); if(ier.eq.DSVP_SUCCESS) call this%set_error(errc)
+         if(errc.ne.0.and.VERBOSE) write(CONS_OUT,'("#ERROR(TAVP_MNG)[",i6,"]: Collector error ",i11," by thread ",i2)')&
+         &impir,errc,thid
+!Shutdown:
          call this%shutdown(ier); if(ier.ne.0.and.errc.eq.0) errc=-1
          if(present(ierr)) ierr=errc
          return
@@ -1902,14 +2027,15 @@
          implicit none
          class(tavp_mng_collector_t), intent(inout):: this !inout: TAVP-MNG collector DSVU
          integer(INTD), intent(out), optional:: ierr       !out: error code
-         integer(INTD):: errc,thid
+         integer(INTD):: errc,ier,thid
 
          errc=0; thid=omp_get_thread_num()
          if(DEBUG.gt.0) then
-          write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Collector stopped as DSVU # ",i2," (thread ",i2,")")') impir,this%get_id(),thid !debug
+          write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Collector stopped as DSVU # ",i2," (thread ",i2,")")') impir,this%get_id(),thid
           flush(CONS_OUT)
          endif
-         !`Implement
+         call this%release_queue(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-1
+         ier=this%get_error(); if(ier.eq.DSVP_SUCCESS) call this%set_error(errc)
          if(present(ierr)) ierr=errc
          return
         end subroutine TAVPMNGCollectorShutdown
