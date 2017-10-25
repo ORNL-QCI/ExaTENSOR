@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/10/24
+!REVISION: 2017/10/25
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -34,7 +34,10 @@
         logical, private:: VERBOSE=.TRUE.   !verbosity for errors
  !Bytecode:
         integer(INTL), parameter, private:: MAX_BYTECODE_SIZE=32_INTL*(1024_INTL*1024_INTL) !max size of an incoming/outgoing bytecode envelope (bytes)
-        integer(INTD), parameter, private:: MAX_INSTRUCTIONS=65536                          !max number of tensor instructions in a bytecode envelope
+        integer(INTD), parameter, private:: MAX_BYTECODE_INSTR=65536                        !max number of tensor instructions in a bytecode envelope
+        integer(INTD), private:: MAX_LOCATE_INSTR=4096               !max number of tensor instructions per bytecode envelope in the locator cycle
+        integer(INTD), private:: MAX_DECOMPOSE_INSTR=512             !max number of input tensor instructions in the decomposition phase
+        integer(INTD), private:: MAX_ISSUE_INSTR=4096                !max number of tensor instructions per bytecode issued to the child nodes
 !TYPES:
  !Tensor argument cache entry (TAVP-specific):
         type, extends(tens_cache_entry_t), private:: tens_entry_mng_t
@@ -1012,7 +1015,7 @@
           flush(CONS_OUT)
          endif
 !Reserve a bytecode buffer:
-         call this%bytecode%reserve_mem(ier,MAX_BYTECODE_SIZE,MAX_INSTRUCTIONS); if(ier.ne.0.and.errc.eq.0) errc=-36
+         call this%bytecode%reserve_mem(ier,MAX_BYTECODE_SIZE,MAX_BYTECODE_INSTR); if(ier.ne.0.and.errc.eq.0) errc=-36
          if(errc.eq.0) then
 !Initialize queues:
           call this%init_queue(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-35
@@ -1428,7 +1431,7 @@
           flush(CONS_OUT)
          endif
 !Reserve a bytecode buffer:
-         call this%bytecode%reserve_mem(ier,MAX_BYTECODE_SIZE,MAX_INSTRUCTIONS); if(ier.ne.0.and.errc.eq.0) errc=-1
+         call this%bytecode%reserve_mem(ier,MAX_BYTECODE_SIZE,MAX_BYTECODE_INSTR); if(ier.ne.0.and.errc.eq.0) errc=-1
          if(errc.eq.0) then
 !Initialize queues:
           call this%init_queue(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-1
@@ -1520,6 +1523,8 @@
          class(tavp_mng_locator_t), intent(inout):: this !inout: TAVP-MNG locator DSVU
          integer(INTD), intent(out), optional:: ierr     !out: error code
          integer(INTD):: errc,ier,thid
+         type(list_bi_t):: loctd_list
+         type(list_iter_t):: loc_list
          logical:: active,stopping
 
          errc=0; thid=omp_get_thread_num()
@@ -1528,15 +1533,36 @@
           flush(CONS_OUT)
          endif
 !Reserve a bytecode buffer:
-         call this%bytecode%reserve_mem(ier,MAX_BYTECODE_SIZE,MAX_INSTRUCTIONS); if(ier.ne.0.and.errc.eq.0) errc=-1
+         call this%bytecode%reserve_mem(ier,MAX_BYTECODE_SIZE,MAX_BYTECODE_INSTR); if(ier.ne.0.and.errc.eq.0) errc=-1
          if(errc.eq.0) then
 !Initialize queues:
           call this%init_queue(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-1
+!Initialize the located instruction list:
+          if(errc.eq.0) then
+           ier=loc_list%init(loctd_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-1
 !Work loop:
-          active=((errc.eq.0).and.(this%ring_comm.ne.MPI_COMM_NULL)); stopping=(.not.active)
-          wloop: do while(active)
-           !`Implement
-          enddo wloop
+           active=((errc.eq.0).and.(this%ring_comm.ne.MPI_COMM_NULL)); stopping=(.not.active)
+           wloop: do while(active)
+ !Absorb new tensor instructions from the port into the queue:
+            ier=this%flush_port(); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+            if(.not.this%port_empty(ier).and.errc.eq.0) then; errc=-1; exit wloop; endif !trap
+            ier=this%iqueue%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+            ier=this%iqueue%get_status()
+ !Move the leading tensor instructions from the queue into the locating list:
+            if(ier.eq.GFC_IT_ACTIVE) then
+             ier=this%iqueue%move_list(loc_list,MAX_LOCATE_INSTR)
+             if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+
+            endif
+           enddo wloop
+          endif
+         endif
+!Free the located instruction list:
+         ier=loc_list%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-1
+         if(ier.eq.GFC_SUCCESS) then
+          ier=loc_list%get_status()
+          if(ier.ne.GFC_IT_EMPTY.and.errc.eq.0) errc=-1
+          ier=loc_list%release(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-1
          endif
 !Record the error:
          ier=this%get_error(); if(ier.eq.DSVP_SUCCESS) call this%set_error(errc)
@@ -1745,7 +1771,7 @@
          allocate(this%bytecode(this%num_ranks),STAT=ier); if(ier.ne.0.and.errc.eq.0) errc=-1
          if(errc.eq.0) then
           do i=1,this%num_ranks
-           call this%bytecode(i)%reserve_mem(ier,MAX_BYTECODE_SIZE,MAX_INSTRUCTIONS); if(ier.ne.0.and.errc.eq.0) errc=-1
+           call this%bytecode(i)%reserve_mem(ier,MAX_BYTECODE_SIZE,MAX_BYTECODE_INSTR); if(ier.ne.0.and.errc.eq.0) errc=-1
           enddo
           if(errc.eq.0) then
 !Initialize queues:
@@ -1895,7 +1921,7 @@
           flush(CONS_OUT)
          endif
 !Reserve a bytecode buffer:
-         call this%bytecode%reserve_mem(ier,MAX_BYTECODE_SIZE,MAX_INSTRUCTIONS); if(ier.ne.0.and.errc.eq.0) errc=-1
+         call this%bytecode%reserve_mem(ier,MAX_BYTECODE_SIZE,MAX_BYTECODE_INSTR); if(ier.ne.0.and.errc.eq.0) errc=-1
          if(errc.eq.0) then
 !Initialize queues:
           call this%init_queue(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-1
