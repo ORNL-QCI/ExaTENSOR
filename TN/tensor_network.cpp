@@ -1,7 +1,7 @@
 /** C++ adapters for ExaTENSOR: Tensor network
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/10/19
+!REVISION: 2017/10/25
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -66,6 +66,14 @@ template <typename T>
 const TensorDenseAdpt<T> & TensorNetwork<T>::getTensor(const unsigned int id) const
 {
  return Tensors.at(id).getTensor();
+}
+
+/** Returns a const reference to a specific tensor from the tensor network together with its connections. **/
+template <typename T>
+const TensorConn<T> & TensorNetwork<T>::getTensorConn(const unsigned int id) const
+{
+ assert(id <= this->getNumTensors()); //tensor id: [0;1..num_rhs_tensors]
+ return Tensors[id];
 }
 
 /** Prints. **/
@@ -249,7 +257,22 @@ template <typename T>
 void TensorNetwork<T>::appendNetwork(const TensorNetwork<T> & tensornet, //in: another tensor network
                                      const std::vector<std::pair<unsigned int, unsigned int>> & legPairs) //in: leg pairing: pair<output leg id, output leg id>, may be empty
 {
- //`Implement
+ assert(!(this->isEmpty()) && !(tensornet.isEmpty()));
+ const unsigned int numConnections = legPairs.size();
+ const auto numTensors1 = this->getNumTensors();
+ const auto numTensors2 = tensornet.getNumTensors();
+ const auto & outTensorConn1 = this->getTensorConn(0);
+ const auto & outTensorConn2 = tensornet.getTensorConn(0);
+ assert(numConnections <= outTensorConn1.getTensorRank() && numConnections <= outTensorConn2.getTensorRank());
+ //Contract output tensor legs and remove them from the 1st output tensor, update input tensor legs:
+ for(auto & legPair: legPairs){
+  const auto legId1 = legPair.first;
+  const auto legId2 = legPair.second;
+  const auto & outLeg1 = outTensorConn1.getTensorLeg(legId1);
+  const auto & outLeg2 = outTensorConn2.getTensorLeg(legId2);
+  
+ }
+ //Append the remaining tensor legs of the 2nd output tensor to the 1st output tensor:
  return;
 }
 

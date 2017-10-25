@@ -1,7 +1,7 @@
 /** C++ adapters for ExaTENSOR: Tensor network
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/10/19
+!REVISION: 2017/10/25
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -116,6 +116,8 @@ public:
  unsigned int getNumTensors() const;
  /** Returns a const reference to a specific tensor from the tensor network. **/
  const TensorDenseAdpt<T> & getTensor(const unsigned int id) const;
+ /** Returns a const reference to a specific tensor from the tensor network together with its connections. **/
+ const TensorConn<T> & getTensorConn(const unsigned int id) const;
  /** Prints. **/
  void printIt() const;
 
