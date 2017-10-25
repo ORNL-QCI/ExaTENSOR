@@ -14,7 +14,7 @@ export BLASLIB ?= ATLAS
 #Nvidia GPU via CUDA: [CUDA|NOCUDA]:
 export GPU_CUDA ?= NOCUDA
 #Nvidia GPU architecture (two digits):
-export GPU_SM_ARCH ?= 35
+export GPU_SM_ARCH ?= 30
 #Operating system: [LINUX|NO_LINUX]:
 export EXA_OS ?= LINUX
 
@@ -76,18 +76,31 @@ $(NAME):
 	$(MAKE) -C ./INTERVIRT
 	$(MAKE) -C ./TN
 	$(MAKE) -C ./QFORCE
+	rm -f ./include/*
+	rm -f ./lib/*
+	rm -f ./bin/*
 ifeq ($(TOOLKIT),CRAY)
 	cp ./INTERVIRT/OBJ/EXATENSOR.mod ./
-	cp -u ./[A-Z]*/OBJ/*.mod ./include/
+	cp ./INTERVIRT/OBJ/EXATENSOR.mod ./include/
+	cp ./INTRAVIRT/OBJ/TENSOR_RECURSIVE.mod ./include/
+	cp ./INTRAVIRT/OBJ/SUBSPACES.mod ./include/
+	cp ./TALSH/OBJ/TALSH.mod ./include/
+	cp ./TALSH/OBJ/TENSOR_ALGEBRA.mod ./include/
+	cp ./TALSH/OBJ/DIL_BASIC.mod ./include/
 else
 	cp ./INTERVIRT/exatensor.mod ./
-	cp -u ./[A-Z]*/*.mod ./include/
+	cp ./INTERVIRT/exatensor.mod ./include/
+	cp ./INTRAVIRT/tensor_recursive.mod ./include/
+	cp ./INTRAVIRT/subspaces.mod ./include/
+	cp ./TALSH/talsh.mod ./include/
+	cp ./TALSH/tensor_algebra.mod ./include/
+	cp ./TALSH/dil_basic.mod ./include/
 endif
-	cp -u ./[A-Z]*/*.h ./include/
-	cp -u ./[A-Z]*/*.hpp ./include/
-	cp -u ./TN/*.cpp ./include/
-	cp -u ./[A-Z]*/*.a ./lib/
-	cp -u ./[A-Z]*/*.x ./bin/
+	cp ./[A-Z]*/*.h ./include/
+	cp ./[A-Z]*/*.hpp ./include/
+	cp ./TN/*.cpp ./include/
+	cp ./[A-Z]*/*.a ./lib/
+	cp ./[A-Z]*/*.x ./bin/
 	cp ./INTERVIRT/libExaTensor.a ./
 	cp ./QFORCE/Qforce.x ./
 	echo "Finished successfully!"
