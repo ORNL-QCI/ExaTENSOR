@@ -41,7 +41,7 @@
 !TYPES:
  !Tensor argument cache entry (TAVP-specific):
         type, extends(tens_cache_entry_t), private:: tens_entry_mng_t
-         integer(INTD), private:: owner_id=-1                         !tensor owner id (non-negative TAVP-MNG id)
+         integer(INTD), private:: owner_id=-1                         !tensor owner id (non-negative TAVP-MNG id), negative means the tensor is remote
          contains
           procedure, private:: TensEntryMngCtor                       !ctor
           generic, public:: tens_entry_mng_ctor=>TensEntryMngCtor
@@ -377,7 +377,7 @@
            if(tensor%is_set(errc)) then
             if(errc.eq.TEREC_SUCCESS) then
              this%tensor=>tensor
-             if(present(owner)) this%owner_id=owner
+             this%owner_id=-1; if(present(owner)) this%owner_id=owner
              call this%mark_active(errc)
              if(errc.ne.DSVP_SUCCESS) errc=-5
             else
@@ -418,7 +418,7 @@
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
 
-         errc=0
+         errc=0; id=-1
          if(associated(this%tensor)) then
           id=this%owner_id
          else
@@ -611,6 +611,8 @@
             if((.not.delivered).or.(errc.ne.0)) errc=-4
            endif
            call this%mark_empty(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-3
+           this%tensor=>NULL()
+           this%owner_id=-1
           else
            errc=-2
           endif
@@ -1539,10 +1541,10 @@
          if(errc.eq.0) then
 !Initialize queues:
           call this%init_queue(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-1
-!Initialize the located instruction list:
+!Initialize the located instruction list iterator:
           if(errc.eq.0) then
            ier=this%loc_list%init(this%located_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-1
-!Initialize the deferred instruction list:
+!Initialize the deferred instruction list iterator:
            if(errc.eq.0) then
             ier=this%def_list%init(this%deferred_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-1
 !Work loop:
@@ -1554,10 +1556,14 @@
              ier=this%iqueue%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
              ier=this%iqueue%get_status()
  !Move the leading subset of tensor instructions from the queue into the locating list:
-             if(ier.eq.GFC_IT_ACTIVE) then
-              ier=this%iqueue%move_list(this%loc_list,MAX_LOCATE_INSTR)
+             if(ier.eq.GFC_IT_ACTIVE) then !queue is not empty
+              ier=this%iqueue%move_list(this%loc_list,MAX_LOCATE_INSTR) !at most MAX_LOCATE_INSTR tensor instructions will be moved to the located list
               if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
-              
+ !Perform a full rotation of the located tensors at the given NAT level:
+  !Encode the located list into bytecode:
+
+  !Clean the located list and evict the relevant remote tensors:
+
              endif
             enddo wloop
            endif

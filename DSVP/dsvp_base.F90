@@ -1,6 +1,6 @@
 !Domain-specific virtual processor (DSVP): Abstract base module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/10/23
+!REVISION: 2017/10/26
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -197,6 +197,8 @@
           procedure, public:: accept=>DSUnitPortAccept    !accepts new DS instructions from other DS units
           procedure, public:: absorb=>DSUnitPortAbsorb    !absorbs new DS instructions from the DS unit port into the DS unit queue
           procedure, public:: free=>DSUnitPortFree        !releases all DS instructions and resets everything
+          procedure, public:: lock=>DSUnitPortLock        !locks the DS unit port (other units will not be able to load it)
+          procedure, public:: unlock=>DSUnitPortUnlock    !unlocks the DS unit port
           final:: ds_unit_port_dtor                       !dtor
         end type ds_unit_port_t
  !Domain-specific virtual unit (DSVU):
@@ -218,6 +220,8 @@
           procedure, public:: load_port=>DSUnitLoadPort           !loads the DS unit port with new DS instructions (called by other DS units)
           procedure, public:: flush_port=>DSUnitFlushPort         !flushes the port content into the DS unit queue (called by the current DS unit)
           procedure, public:: port_empty=>DSUnitPortEmpty         !returns TRUE if the DS unit port is empty, FALSE otherwise
+          procedure, public:: lock_port=>DSUnitLockPort           !locks the DS unit port such that no other DS unit will be able to load it
+          procedure, public:: unlock_port=>DSUnitUnlockPort       !unlocks the DS unit port
           procedure, public:: get_dsvp=>DSUnitGetDSVP             !returns a pointer to the DSVP the DS unit is part of
           procedure, public:: get_id=>DSUnitGetId                 !returns the DS unit id
           procedure, private:: set_id=>DSUnitSetId                !sets the DS unit id (when the DSVU table is constructed)
@@ -418,6 +422,8 @@
         private DSUnitPortAccept
         private DSUnitPortAbsorb
         private DSUnitPortFree
+        private DSUnitPortLock
+        private DSUnitPortUnlock
         public ds_unit_port_dtor
  !ds_unit_t:
         private DSUnitInitQueue
@@ -427,6 +433,8 @@
         private DSUnitLoadPort
         private DSUnitFlushPort
         private DSUnitPortEmpty
+        private DSUnitLockPort
+        private DSUnitUnlockPort
         private DSUnitGetDSVP
         private DSUnitGetId
         private DSUnitSetId
@@ -1203,6 +1211,36 @@
 !$OMP END CRITICAL (DSVU_PORT_LOCK)
          return
         end function DSUnitPortFree
+!-------------------------------------------
+        subroutine DSUnitPortLock(this,ierr)
+!Locks the DS unit port such that no other DS unit will be able to load it.
+         implicit none
+         class(ds_unit_port_t), intent(inout):: this !inout: DS unit port
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=DSVP_SUCCESS
+!$OMP CRITICAL (DSVU_PORT_LOCK)
+         this%locked=.TRUE.
+!$OMP END CRITICAL (DSVU_PORT_LOCK)
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine DSUnitPortLock
+!---------------------------------------------
+        subroutine DSUnitPortUnlock(this,ierr)
+!Unlocks the DS unit port.
+         implicit none
+         class(ds_unit_port_t), intent(inout):: this !inout: DS unit port
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=DSVP_SUCCESS
+!$OMP CRITICAL (DSVU_PORT_LOCK)
+         this%locked=.FALSE.
+!$OMP END CRITICAL (DSVU_PORT_LOCK)
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine DSUnitPortUnlock
 !-----------------------------------------
         subroutine ds_unit_port_dtor(this)
          implicit none
@@ -1306,6 +1344,30 @@
          if(present(ierr)) ierr=errc
          return
         end function DSUnitPortEmpty
+!-------------------------------------------
+        subroutine DSUnitLockPort(this,ierr)
+!Locks the DS unit port such that no other DS unit will be able to load it.
+         implicit none
+         class(ds_unit_t), intent(inout):: this      !inout: DS unit
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         call this%port%lock(errc)
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine DSUnitLockPort
+!---------------------------------------------
+        subroutine DSUnitUnlockPort(this,ierr)
+!Unlocks the DS unit port.
+         implicit none
+         class(ds_unit_t), intent(inout):: this      !inout: DS unit
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         call this%port%unlock(errc)
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine DSUnitUnlockPort
 !-----------------------------------------------------
         function DSUnitGetDSVP(this,ierr) result(dsvp)
 !Returns a pointer to the DSVP the DS unit is part of.
