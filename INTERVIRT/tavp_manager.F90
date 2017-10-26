@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/10/25
+!REVISION: 2017/10/26
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -116,6 +116,10 @@
          integer(INTD), private:: ring_send=-1                      !MPI process rank in the locating ring to which instructions are sent
          integer(INTD), private:: ring_recv=-1                      !MPI process rank in the locating ring from which instructions are received
          type(pack_env_t), private:: bytecode                       !circulating bytecode
+         type(list_bi_t), private:: located_list                    !list of tensor instructions decoded by ldecoder
+         type(list_iter_t), private:: loc_list                      !iterator for <located_list>
+         type(list_bi_t), private:: deferred_list                   !list of deferred tensor instructions due to unsatisfied data dependencies
+         type(list_iter_t), private:: def_list                      !iterator for <deferred_list>
          contains
           procedure, public:: configure=>TAVPMNGLocatorConfigure    !configures TAVP-MNG locator
           procedure, public:: start=>TAVPMNGLocatorStart            !starts and lives TAVP-MNG locator
@@ -1523,8 +1527,6 @@
          class(tavp_mng_locator_t), intent(inout):: this !inout: TAVP-MNG locator DSVU
          integer(INTD), intent(out), optional:: ierr     !out: error code
          integer(INTD):: errc,ier,thid
-         type(list_bi_t):: loctd_list
-         type(list_iter_t):: loc_list
          logical:: active,stopping
 
          errc=0; thid=omp_get_thread_num()
@@ -1539,31 +1541,29 @@
           call this%init_queue(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-1
 !Initialize the located instruction list:
           if(errc.eq.0) then
-           ier=loc_list%init(loctd_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-1
+           ier=this%loc_list%init(this%located_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-1
+!Initialize the deferred instruction list:
+           if(errc.eq.0) then
+            ier=this%def_list%init(this%deferred_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-1
 !Work loop:
-           active=((errc.eq.0).and.(this%ring_comm.ne.MPI_COMM_NULL)); stopping=(.not.active)
-           wloop: do while(active)
+            active=((errc.eq.0).and.(this%ring_comm.ne.MPI_COMM_NULL)); stopping=(.not.active)
+            wloop: do while(active)
  !Absorb new tensor instructions from the port into the queue:
-            ier=this%flush_port(); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
-            if(.not.this%port_empty(ier).and.errc.eq.0) then; errc=-1; exit wloop; endif !trap
-            ier=this%iqueue%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
-            ier=this%iqueue%get_status()
- !Move the leading tensor instructions from the queue into the locating list:
-            if(ier.eq.GFC_IT_ACTIVE) then
-             ier=this%iqueue%move_list(loc_list,MAX_LOCATE_INSTR)
-             if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
-
-            endif
-           enddo wloop
+             ier=this%flush_port(); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+             if(.not.this%port_empty(ier).and.errc.eq.0) then; errc=-1; exit wloop; endif !trap
+             ier=this%iqueue%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+             ier=this%iqueue%get_status()
+ !Move the leading subset of tensor instructions from the queue into the locating list:
+             if(ier.eq.GFC_IT_ACTIVE) then
+              ier=this%iqueue%move_list(this%loc_list,MAX_LOCATE_INSTR)
+              if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+              
+             endif
+            enddo wloop
+           endif
           endif
          endif
-!Free the located instruction list:
-         ier=loc_list%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-1
-         if(ier.eq.GFC_SUCCESS) then
-          ier=loc_list%get_status()
-          if(ier.ne.GFC_IT_EMPTY.and.errc.eq.0) errc=-1
-          ier=loc_list%release(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-1
-         endif
+
 !Record the error:
          ier=this%get_error(); if(ier.eq.DSVP_SUCCESS) call this%set_error(errc)
          if(errc.ne.0.and.VERBOSE) write(CONS_OUT,'("#ERROR(TAVP_MNG)[",i6,"]: Locator error ",i11," by thread ",i2)')&
@@ -1585,6 +1585,18 @@
          if(DEBUG.gt.0) then
           write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Locator stopped as DSVU # ",i2," (thread ",i2,")")') impir,this%get_id(),thid
           flush(CONS_OUT)
+         endif
+         ier=this%def_list%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-10
+         if(ier.eq.GFC_SUCCESS) then
+          ier=this%def_list%get_status(); if(ier.ne.GFC_IT_EMPTY.and.errc.eq.0) errc=-9
+          ier=this%def_list%delete_all(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-8
+          ier=this%def_list%release(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-7
+         endif
+         ier=this%loc_list%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-6
+         if(ier.eq.GFC_SUCCESS) then
+          ier=this%loc_list%get_status(); if(ier.ne.GFC_IT_EMPTY.and.errc.eq.0) errc=-5
+          ier=this%loc_list%delete_all(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-4
+          ier=this%loc_list%release(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-3
          endif
          call this%release_queue(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-2
          call this%bytecode%destroy(ier); if(ier.ne.0.and.errc.eq.0) errc=-1
@@ -1616,7 +1628,7 @@
         end subroutine TAVPMNGLocatorEncode
 !-----------------------------------------------
         subroutine TAVPMNGLocatorSend(this,ierr)
-!Sends the current bytecode packet to the next locating process.
+!Sends the current bytecode envelope to the next locating process.
          implicit none
          class(tavp_mng_locator_t), intent(inout):: this !inout: TAVP-MNG locator DSVU
          integer(INTD), intent(out), optional:: ierr     !out: error code

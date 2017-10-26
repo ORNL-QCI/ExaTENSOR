@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Bi-directional linked list
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017-10-25 (started 2016-02-28)
+!REVISION: 2017-10-26 (started 2016-02-28)
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -70,6 +70,9 @@
           procedure, private:: ListDuplicateToList                 !duplicates a list into another list either by value or by reference
           procedure, private:: ListDuplicateToVector               !duplicates a list into a vector either by value or by reference
           generic, public:: duplicate=>ListDuplicateToList,ListDuplicateToVector
+          procedure, private:: ListBiAssign                        !copy assignment
+          generic, public:: assignment(=)=>ListBiAssign
+          final:: list_bi_dtor                                     !dtor
         end type list_bi_t
  !List iterator:
         type, extends(gfc_iter_t), public:: list_iter_t
@@ -113,6 +116,8 @@
         private ListIsSublist
         private ListDuplicateToList
         private ListDuplicateToVector
+        private ListBiAssign
+        public list_bi_dtor
  !list_iter_t:
         private ListIterInit
         private ListIterReset
@@ -388,6 +393,29 @@
          endif
          return
         end function ListDuplicateToVector
+!----------------------------------------
+        subroutine ListBiAssign(this,src)
+!Copy assignment.
+         implicit none
+         class(list_bi_t), intent(out):: this !out: list
+         class(list_bi_t), intent(in):: src   !in: source list
+         integer(INTD):: errc
+
+         errc=src%duplicate(this)
+         return
+        end subroutine ListBiAssign
+!------------------------------------
+        subroutine list_bi_dtor(this)
+         implicit none
+         type(list_bi_t):: this
+         type(list_iter_t):: lit
+         integer(INTD):: errc
+
+         errc=lit%init(this)
+         errc=lit%delete_all()
+         errc=lit%release()
+         return
+        end subroutine list_bi_dtor
 !----------------------------------------------------
         function ListIterInit(this,cont) result(ierr)
 !Initializes the iterator and resets it to the beginning of the container.
