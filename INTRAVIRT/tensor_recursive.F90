@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/10/26
+!REVISION: 2017/10/27
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -3878,8 +3878,8 @@
          if(present(ierr)) ierr=errc
          return
         end function TensRcrsvGetBody
-!----------------------------------------------------------------------------------
-        function TensRcrsvGetDescriptor(this,ierr,skip_location) result(tens_descr)
+!--------------------------------------------------------------------------------------------
+        function TensRcrsvGetDescriptor(this,ierr,skip_body,skip_location) result(tens_descr)
 !Returns a tensor descriptor <tens_descr_t> object uniquely characterizing
 !the tensor signature, shape, layout kind, data type, and location.
 !Essentially, this function is an indirect CTOR for <tens_descr_t>.
@@ -3903,18 +3903,20 @@
          type(tens_descr_t):: tens_descr               !out: tensor descriptor
          class(tens_rcrsv_t), intent(in):: this        !in: tensor
          integer(INTD), intent(out), optional:: ierr   !out: error code
-         logical, intent(in), optional:: skip_location !in: if TRUE, the tensor location will be skipped (default to FALSE)
+         logical, intent(in), optional:: skip_body     !in: if TRUE, the tensor body info (layout, location) will be omitted (defaults to FALSE)
+         logical, intent(in), optional:: skip_location !in: if TRUE, the tensor location will be omitted (defaults to FALSE)
          integer(INTD):: errc,num_dims,unresolved,i,j,k,ng,gres
-         logical:: shaped,hspaced,layed,located,symmetric,skiploc
+         logical:: shaped,hspaced,layed,located,symmetric,skiploc,skipbody
          class(DataDescr_t), pointer:: descr_p
          integer(INTD):: grp_pos(0:MAX_TENSOR_RANK*2) !the factor of 2 is just used to make it big enough
          !real(8):: tms
 
          !tms=thread_wtime()
          skiploc=.FALSE.; if(present(skip_location)) skiploc=skip_location
+         skipbody=.FALSE.; if(present(skip_body)) then; skipbody=skip_body; skiploc=((.not.skipbody).and.skiploc); endif
          if(this%is_set(errc,num_dims,shaped,unresolved,hspaced,layed,located,symmetric)) then
           if(errc.eq.TEREC_SUCCESS) then
-           if(unresolved.eq.0.and.shaped.and.layed.and.located) then !fully defined tensor block
+           if(unresolved.eq.0.and.shaped.and.(layed.or.skipbody).and.(located.or.skiploc)) then !sufficiently defined tensor
             tens_descr%rank=num_dims
             tens_descr%char_name=this%header%signature%char_name
             allocate(tens_descr%info(num_dims*5+4)) !see the format right above
@@ -3949,25 +3951,29 @@
              endif
             endif
             if(errc.eq.TEREC_SUCCESS) then
-             i=i+1; tens_descr%info(i)=this%body%layout%get_layout_kind()
-             i=i+1; tens_descr%info(i)=this%body%layout%get_data_type()
-             i=i+1; tens_descr%info(i)=this%body%layout%get_body_size()
-             if(.not.skiploc) then
-              descr_p=>this%body%layout%get_data_descr(errc)
-              if(errc.eq.TEREC_SUCCESS) then
-               if(descr_p%is_set(errc,proc_rank=j)) then
-                if(errc.eq.0) then
-                 i=i+1; tens_descr%info(i)=j
+             if(.not.skipbody) then
+              i=i+1; tens_descr%info(i)=this%body%layout%get_layout_kind()
+              i=i+1; tens_descr%info(i)=this%body%layout%get_data_type()
+              i=i+1; tens_descr%info(i)=this%body%layout%get_body_size()
+              if(.not.skiploc) then
+               descr_p=>this%body%layout%get_data_descr(errc)
+               if(errc.eq.TEREC_SUCCESS) then
+                if(descr_p%is_set(errc,proc_rank=j)) then
+                 if(errc.eq.0) then
+                  i=i+1; tens_descr%info(i)=j
+                 else
+                  errc=TEREC_OBJ_CORRUPTED
+                 endif
                 else
                  errc=TEREC_OBJ_CORRUPTED
                 endif
-               else
-                errc=TEREC_OBJ_CORRUPTED
                endif
+               descr_p=>NULL()
+              else
+               tens_descr%info(i+1:)=-1
               endif
-              descr_p=>NULL()
              else
-              i=i+1; tens_descr%info(i)=-1
+              tens_descr%info(i+1:)=-1
              endif
             endif
            else
