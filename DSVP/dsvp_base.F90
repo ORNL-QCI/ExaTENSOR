@@ -1,6 +1,6 @@
 !Domain-specific virtual processor (DSVP): Abstract base module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/10/26
+!REVISION: 2017/10/27
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -194,8 +194,8 @@
          contains
           procedure, public:: init=>DSUnitPortInit        !initializes the DS unit port
           procedure, public:: is_empty=>DSUnitPortIsEmpty !returns TRUE if the DS unit port is empty, FALSE otherwise
-          procedure, public:: accept=>DSUnitPortAccept    !accepts new DS instructions from other DS units
-          procedure, public:: absorb=>DSUnitPortAbsorb    !absorbs new DS instructions from the DS unit port into the DS unit queue
+          procedure, public:: accept=>DSUnitPortAccept    !accepts new DS instructions into the DS unit port
+          procedure, public:: absorb=>DSUnitPortAbsorb    !absorbs new DS instructions from the DS unit port into a provided DS unit queue
           procedure, public:: free=>DSUnitPortFree        !releases all DS instructions and resets everything
           procedure, public:: lock=>DSUnitPortLock        !locks the DS unit port (other units will not be able to load it)
           procedure, public:: unlock=>DSUnitPortUnlock    !unlocks the DS unit port
@@ -217,8 +217,9 @@
           procedure, public:: release_queue=>DSUnitReleaseQueue   !releases the DS unit queue iterator
           procedure, public:: set_error=>DSUnitSetError           !sets the error code, including SUCCESS
           procedure, public:: get_error=>DSUnitGetError           !returns the error code
-          procedure, public:: load_port=>DSUnitLoadPort           !loads the DS unit port with new DS instructions (called by other DS units)
-          procedure, public:: flush_port=>DSUnitFlushPort         !flushes the port content into the DS unit queue (called by the current DS unit)
+          procedure, public:: load_port=>DSUnitLoadPort           !loads the DS unit port with new DS instructions
+          procedure, public:: unload_port=>DSUnitUnloadPort       !absorbs the content of a DS unit port into an externally provided queue
+          procedure, public:: flush_port=>DSUnitFlushPort         !flushes the DS unit port content into the DS unit queue
           procedure, public:: port_empty=>DSUnitPortEmpty         !returns TRUE if the DS unit port is empty, FALSE otherwise
           procedure, public:: lock_port=>DSUnitLockPort           !locks the DS unit port such that no other DS unit will be able to load it
           procedure, public:: unlock_port=>DSUnitUnlockPort       !unlocks the DS unit port
@@ -431,6 +432,7 @@
         private DSUnitSetError
         private DSUnitGetError
         private DSUnitLoadPort
+        private DSUnitUnloadPort
         private DSUnitFlushPort
         private DSUnitPortEmpty
         private DSUnitLockPort
@@ -1155,13 +1157,12 @@
         end function DSUnitPortIsEmpty
 !------------------------------------------------------------
         function DSUnitPortAccept(this,new_list) result(ierr)
-!Accepts new DS instructions from other DS units in the current DS unit port.
-!The new DS instructions are assumed stored by reference in the <new_list> and
-!they will be moved into the port, thus leaving <new_list> empty at the end.
+!Accepts new DS instructions into the DS unit port. These new DS instructions will
+!be moved from <new_list> into the port, thus leaving <new_list> empty at the end.
          implicit none
          integer(INTD):: ierr                         !out: error code
          class(ds_unit_port_t), intent(inout):: this  !inout: DS unit port
-         class(list_iter_t), intent(inout):: new_list !inout: list of new DS instructions for the DS unit (from other DS units): List items are stored by reference
+         class(list_iter_t), intent(inout):: new_list !inout: list of new DS instructions for the DS unit port (will become empty on exit)
          integer(INTD):: errc
 
          ierr=DSVP_SUCCESS
@@ -1310,17 +1311,27 @@
         end function DSUnitGetError
 !----------------------------------------------------------
         function DSUnitLoadPort(this,new_list) result(ierr)
-!Called by other DS units in order to put new DS instructions
-!into the port of the current DS unit. <new_list> with new
-!DS instructions stored by reference will be emptied upon exit.
+!Loads the DS unit port with new DS instructions.
+!<new_list> containing new DS instructions will become empty on exit.
          implicit none
          integer(INTD):: ierr                         !out: error code
          class(ds_unit_t), intent(inout):: this       !inout: DS unit whose port is being loaded
-         class(list_iter_t), intent(inout):: new_list !inout: list of new DS instructions for the DS unit (from other DS units): List items are stored by reference
+         class(list_iter_t), intent(inout):: new_list !inout: list of new DS instructions for the DS unit that will be moved into its port
 
-         ierr=this%port%accept(new_list) !DS instructions (references) will be moved into the port
+         ierr=this%port%accept(new_list) !DS instructions will be moved into the port
          return
         end function DSUnitLoadPort
+!------------------------------------------------------------
+        function DSUnitUnloadPort(this,out_list) result(ierr)
+!Unloads the DS unit port by moving its content into an externally provided queue.
+         implicit none
+         integer(INTD):: ierr                         !out: error code
+         class(ds_unit_t), intent(inout):: this       !inout: DS unit (the content of its port will be emptied)
+         class(list_iter_t), intent(inout):: out_list !inout: list which the DS port content will be moved to
+
+         ierr=this%port%absorb(out_list)
+         return
+        end function DSUnitUnloadPort
 !--------------------------------------------------
         function DSUnitFlushPort(this) result(ierr)
 !Flushes the content of the DS unit port into the DS unit queue.
@@ -1328,7 +1339,7 @@
          integer(INTD):: ierr                   !out: error code
          class(ds_unit_t), intent(inout):: this !inout: DS unit
 
-         ierr=this%port%absorb(this%iqueue) !DS instructions (references) will be moved from the port into the DS unit queue
+         ierr=this%port%absorb(this%iqueue) !DS instructions will be moved from the port into the DS unit queue
          return
         end function DSUnitFlushPort
 !------------------------------------------------------
