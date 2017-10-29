@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/10/26
+!REVISION: 2017/10/29
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -79,6 +79,7 @@
         end type tens_instr_t
  !TAVP-MNG decoder:
         type, extends(ds_decoder_t), private:: tavp_mng_decoder_t
+         integer(INTD), public:: num_ports=1                        !number of ports: Port 0 <- self
          integer(INTD), private:: source_comm                       !bytecode source communicator
          integer(INTD), private:: source_rank=-1                    !bytecode source process rank (negative means ANY)
          type(pack_env_t), private:: bytecode                       !incoming bytecode
@@ -93,9 +94,11 @@
          integer(INTD), public:: source_comm                        !MPI communicator of the source process
          integer(INTD), public:: source_rank                        !source process rank from which the bytecode is coming
          class(ds_unit_t), pointer, public:: acceptor=>NULL()       !non-owning pointer to the acceptor DS unit
+         integer(INTD), public:: acceptor_port_id                   !associated acceptor unit port id
         end type tavp_mng_decoder_conf_t
  !TAVP-MNG retirer:
         type, extends(ds_encoder_t), private:: tavp_mng_retirer_t
+         integer(INTD), public:: num_ports=1                        !number of ports: Port 0 <- collector
          integer(INTD), private:: retire_comm                       !retired bytecode destination communicator
          integer(INTD), private:: retire_rank=-1                    !retired bytecode destination process rank
          type(pack_env_t), private:: bytecode                       !outgoing bytecode
@@ -112,6 +115,7 @@
         end type tavp_mng_retirer_conf_t
  !TAVP-MNG locator:
         type, extends(ds_encoder_t), private:: tavp_mng_locator_t
+         integer(INTD), public:: num_ports=2                        !number of ports: Port 0 <- udecoder; Port 1 <- ldecoder
          integer(INTD), private:: ring_comm                         !MPI communicator of the locating ring (tree level)
          integer(INTD), private:: ring_send=-1                      !MPI process rank in the locating ring to which instructions are sent
          integer(INTD), private:: ring_recv=-1                      !MPI process rank in the locating ring from which instructions are received
@@ -130,23 +134,25 @@
         end type tavp_mng_locator_t
  !TAVP-MNG locator configuration:
         type, extends(dsv_conf_t), private:: tavp_mng_locator_conf_t
-         integer(INTD), public:: ring_comm                           !MPI communicator of the locating ring (tree level)
-         integer(INTD), public:: ring_send                           !MPI process rank in the locating ring to which instructions are sent
-         integer(INTD), public:: ring_recv                           !MPI process rank in the locating ring from which instructions are received
+         integer(INTD), public:: ring_comm                          !MPI communicator of the locating ring (tree level)
+         integer(INTD), public:: ring_send                          !MPI process rank in the locating ring to which instructions are sent
+         integer(INTD), public:: ring_recv                          !MPI process rank in the locating ring from which instructions are received
         end type tavp_mng_locator_conf_t
  !TAVP-MNG decomposer:
         type, extends(ds_unit_t), private:: tavp_mng_decomposer_t
+         integer(INTD), public:: num_ports=1                        !number of ports: Port 0 <- locator
          contains
-          procedure, public:: configure=>TAVPMNGDecomposerConfigure  !configures TAVP-MNG decomposer
-          procedure, public:: start=>TAVPMNGDecomposerStart          !starts and lives TAVP-MNG decomposer
-          procedure, public:: shutdown=>TAVPMNGDecomposerShutdown    !shuts down TAVP-MNG decomposer
-          procedure, public:: decompose=>TAVPMNGDecomposerDecompose  !decomposes a tensor instruction into smaller pieces
+          procedure, public:: configure=>TAVPMNGDecomposerConfigure !configures TAVP-MNG decomposer
+          procedure, public:: start=>TAVPMNGDecomposerStart         !starts and lives TAVP-MNG decomposer
+          procedure, public:: shutdown=>TAVPMNGDecomposerShutdown   !shuts down TAVP-MNG decomposer
+          procedure, public:: decompose=>TAVPMNGDecomposerDecompose !decomposes a tensor instruction into smaller pieces
         end type tavp_mng_decomposer_t
  !TAVP-MNG decomposer configuration:
         type, extends(dsv_conf_t), private:: tavp_mng_decomposer_conf_t
         end type tavp_mng_decomposer_conf_t
  !TAVP-MNG dispatcher:
         type, extends(ds_encoder_t), private:: tavp_mng_dispatcher_t
+         integer(INTD), public:: num_ports=1                        !number of ports: Port 0 <- decomposer
          integer(INTD), private:: dispatch_comm                     !MPI communicator of the processes dispatched to
          integer(INTD), private:: num_ranks=0                       !number of MPI ranks to dispatch instructions to
          integer(INTD), allocatable, private:: dispatch_rank(:)     !MPI process ranks of the processes dispatched to
@@ -166,6 +172,7 @@
         end type tavp_mng_dispatcher_conf_t
  !TAVP-MNG replicator:
         type, extends(ds_encoder_t), private:: tavp_mng_replicator_t
+         integer(INTD), public:: num_ports=2                        !number of ports: Port 0 <- ???; Port 1 <- rdecoder
          integer(INTD), private:: repl_comm                         !MPI communicator for tensor replication activity
          type(pack_env_t), private:: bytecode                       !tensor instruction bytecode
          contains
@@ -181,6 +188,7 @@
         end type tavp_mng_replicator_conf_t
  !TAVP-MNG collector:
         type, extends(ds_unit_t), private:: tavp_mng_collector_t
+         integer(INTD), public:: num_ports=2                        !number of ports: Port 0 <- Decomposer; Port 1 <- cdecoder
          contains
           procedure, public:: configure=>TAVPMNGCollectorConfigure  !configures TAVP-MNG collector
           procedure, public:: start=>TAVPMNGCollectorStart          !starts and lives TAVP-MNG collector
@@ -982,7 +990,7 @@
           if(associated(conf%acceptor)) then
            this%source_comm=conf%source_comm
            this%source_rank=conf%source_rank
-           call this%set_acceptor(conf%acceptor,errc); if(errc.ne.DSVP_SUCCESS) errc=-3
+           call this%set_acceptor(conf%acceptor,conf%acceptor_port_id,errc); if(errc.ne.DSVP_SUCCESS) errc=-3
           else
            errc=-2
           endif
@@ -1002,7 +1010,7 @@
          implicit none
          class(tavp_mng_decoder_t), intent(inout):: this !inout: TAVP-MNG decoder DSVU
          integer(INTD), intent(out), optional:: ierr     !out: error code
-         integer(INTD):: errc,ier,num_packets,i,j,opcode,sts,thid
+         integer(INTD):: errc,ier,num_packets,i,j,opcode,sts,thid,port_id
          logical:: active,stopping,new
          class(*), pointer:: uptr
          class(ds_unit_t), pointer:: acceptor
@@ -1024,7 +1032,7 @@
          call this%bytecode%reserve_mem(ier,MAX_BYTECODE_SIZE,MAX_BYTECODE_INSTR); if(ier.ne.0.and.errc.eq.0) errc=-36
          if(errc.eq.0) then
 !Initialize queues:
-          call this%init_queue(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-35
+          call this%init_queue(this%num_ports,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-35
 !Work loop:
           active=((errc.eq.0).and.(this%source_comm.ne.MPI_COMM_NULL)); stopping=(.not.active)
           wloop: do while(active)
@@ -1057,13 +1065,13 @@
                 if(i.ne.num_packets.and.errc.eq.0) then; errc=-22; exit wloop; endif
                 ier=lit%init(ctrlq); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-21; exit wloop; endif
                 ier=lit%append(tens_instr); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-20; exit wloop; endif
-                ier=this%load_port(lit); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-19; exit wloop; endif
+                ier=this%load_port(0,lit); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-19; exit wloop; endif
                 ier=lit%release(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-18; exit wloop; endif
                endif
               enddo
-              acceptor=>this%get_acceptor(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-17; exit wloop; endif
+              ier=this%get_acceptor(acceptor,port_id); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-17; exit wloop; endif
               if(associated(acceptor)) then
-               ier=acceptor%load_port(this%iqueue); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-16; exit wloop; endif
+               ier=acceptor%load_port(port_id,this%iqueue); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-16; exit wloop; endif
                if(this%iqueue%get_status().ne.GFC_IT_EMPTY.and.errc.eq.0) then; errc=-15; exit wloop; endif !trap
               else
                if(errc.eq.0) then; errc=-14; exit wloop; endif
@@ -1076,11 +1084,11 @@
            else
             ier=this%iqueue%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-11; exit wloop; endif
             if(this%iqueue%get_status().eq.GFC_IT_EMPTY) active=.FALSE.
-            if(.not.this%port_empty(ier).and.errc.eq.0) then; errc=-10; exit wloop; endif !trap
+            if(.not.this%port_empty(0,ier).and.errc.eq.0) then; errc=-10; exit wloop; endif !trap
            endif
  !Check the port for control instructions:
-           ier=this%flush_port(); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-9; exit wloop; endif
-           if(.not.this%port_empty(ier).and.errc.eq.0) then; errc=-8; exit wloop; endif !trap
+           ier=this%flush_port(0); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-9; exit wloop; endif
+           if(.not.this%port_empty(0,ier).and.errc.eq.0) then; errc=-8; exit wloop; endif !trap
            ier=this%iqueue%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-7; exit wloop; endif
            ier=this%iqueue%get_status()
            do while(ier.eq.GFC_IT_ACTIVE)
@@ -1119,7 +1127,7 @@
          if(DEBUG.gt.0) then
           write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decoder stopped as DSVU # ",i2," (thread ",i2,")")') impir,this%get_id(),thid
           !write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decoder DSVU # ",i2,": Port empty = ",l1)')&
-          !&impir,this%get_id(),this%port_empty() !debug
+          !&impir,this%get_id(),this%port_empty(0) !debug
           flush(CONS_OUT)
          endif
          call this%release_queue(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-2
@@ -1440,7 +1448,7 @@
          call this%bytecode%reserve_mem(ier,MAX_BYTECODE_SIZE,MAX_BYTECODE_INSTR); if(ier.ne.0.and.errc.eq.0) errc=-1
          if(errc.eq.0) then
 !Initialize queues:
-          call this%init_queue(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-1
+          call this%init_queue(this%num_ports,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-1
 !Work loop:
           active=((errc.eq.0).and.(this%retire_comm.ne.MPI_COMM_NULL)); stopping=(.not.active)
           wloop: do while(active)
@@ -1540,7 +1548,7 @@
          call this%bytecode%reserve_mem(ier,MAX_BYTECODE_SIZE,MAX_BYTECODE_INSTR); if(ier.ne.0.and.errc.eq.0) errc=-1
          if(errc.eq.0) then
 !Initialize queues:
-          call this%init_queue(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-1
+          call this%init_queue(this%num_ports,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-1
 !Initialize the located instruction list iterator:
           if(errc.eq.0) then
            ier=this%loc_list%init(this%located_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-1
@@ -1550,9 +1558,9 @@
 !Work loop:
             active=((errc.eq.0).and.(this%ring_comm.ne.MPI_COMM_NULL)); stopping=(.not.active)
             wloop: do while(active)
- !Absorb new tensor instructions from the port into the queue:
-             ier=this%flush_port(); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
-             if(.not.this%port_empty(ier).and.errc.eq.0) then; errc=-1; exit wloop; endif !trap
+ !Absorb new tensor instructions from port 0 into the queue:
+             ier=this%flush_port(0); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+             if(.not.this%port_empty(0,ier).and.errc.eq.0) then; errc=-1; exit wloop; endif !trap
              ier=this%iqueue%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
              ier=this%iqueue%get_status()
  !Move the leading subset of tensor instructions from the queue into the locating list:
@@ -1691,7 +1699,7 @@
           flush(CONS_OUT)
          endif
 !Initialize queues:
-         call this%init_queue(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-1
+         call this%init_queue(this%num_ports,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-1
 !Work loop:
          active=(errc.eq.0); stopping=(.not.active)
          wloop: do while(active)
@@ -1793,7 +1801,7 @@
           enddo
           if(errc.eq.0) then
 !Initialize queues:
-           call this%init_queue(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-1
+           call this%init_queue(this%num_ports,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-1
 !Work loop:
            active=((errc.eq.0).and.(this%dispatch_comm.ne.MPI_COMM_NULL)); stopping=(.not.active)
            wloop: do while(active)
@@ -1942,7 +1950,7 @@
          call this%bytecode%reserve_mem(ier,MAX_BYTECODE_SIZE,MAX_BYTECODE_INSTR); if(ier.ne.0.and.errc.eq.0) errc=-1
          if(errc.eq.0) then
 !Initialize queues:
-          call this%init_queue(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-1
+          call this%init_queue(this%num_ports,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-1
 !Work loop:
           active=((errc.eq.0).and.(this%repl_comm.ne.MPI_COMM_NULL)); stopping=(.not.active)
           wloop: do while(active)
@@ -2050,7 +2058,7 @@
           flush(CONS_OUT)
          endif
 !Initialize queues:
-         call this%init_queue(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-1
+         call this%init_queue(this%num_ports,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-1
 !Work loop:
          active=(errc.eq.0); stopping=(.not.active)
          wloop: do while(active)
@@ -2126,7 +2134,7 @@
  !Configure static DSVU:
   !Up-decoder:
              decode_acceptor=>this%locator
-             decoder_conf=tavp_mng_decoder_conf_t(conf%source_comm,conf%source_rank,decode_acceptor)
+             decoder_conf=tavp_mng_decoder_conf_t(conf%source_comm,conf%source_rank,decode_acceptor,0)
              call this%udecoder%configure(decoder_conf,errc)
              if(errc.eq.0) then
               num_units=num_units+1
@@ -2142,7 +2150,7 @@
                 num_units=num_units+1
   !Locating-decoder:
                 decode_acceptor=>this%locator
-                decoder_conf=tavp_mng_decoder_conf_t(conf%ring_comm,conf%ring_recv_rank,decode_acceptor)
+                decoder_conf=tavp_mng_decoder_conf_t(conf%ring_comm,conf%ring_recv_rank,decode_acceptor,1)
                 call this%ldecoder%configure(decoder_conf,errc)
                 if(errc.eq.0) then
                  num_units=num_units+1
@@ -2163,13 +2171,13 @@
                     num_units=num_units+1
   !Replicating-decoder:
                     decode_acceptor=>this%replicator
-                    decoder_conf=tavp_mng_decoder_conf_t(role_comm,MPI_ANY_SOURCE,decode_acceptor)
+                    decoder_conf=tavp_mng_decoder_conf_t(role_comm,MPI_ANY_SOURCE,decode_acceptor,1)
                     call this%rdecoder%configure(decoder_conf,errc)
                     if(errc.eq.0) then
                      num_units=num_units+1
   !Collecting-decoder:
                      decode_acceptor=>this%collector
-                     decoder_conf=tavp_mng_decoder_conf_t(conf%collect_comm,MPI_ANY_SOURCE,decode_acceptor)
+                     decoder_conf=tavp_mng_decoder_conf_t(conf%collect_comm,MPI_ANY_SOURCE,decode_acceptor,1)
                      call this%cdecoder%configure(decoder_conf,errc)
                      if(errc.eq.0) then
                       num_units=num_units+1

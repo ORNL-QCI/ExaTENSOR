@@ -1,6 +1,6 @@
 !Domain-specific virtual processor (DSVP): Abstract base module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/10/27
+!REVISION: 2017/10/29
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -203,18 +203,18 @@
         end type ds_unit_port_t
  !Domain-specific virtual unit (DSVU):
         type, abstract, public:: ds_unit_t
-         integer(INTD), private:: id=-1                   !unique ID of the DS unit: [0..max]
-         integer(INTD), private:: error_code=DSVP_SUCCESS !error code
-         class(dsvp_t), pointer, private:: dsvp_p=>NULL() !non-owning pointer to the DSVP the DS unit is part of
-         type(ds_unit_port_t), private:: port             !DS unit port (for incoming DS instructions from other DS units)
-         type(list_bi_t), private:: queue                 !queue of the currently processed DS instructions stored by reference
-         type(list_iter_t), public:: iqueue               !queue iterator
+         integer(INTD), private:: id=-1                       !unique ID of the DS unit: [0..max]
+         integer(INTD), private:: error_code=DSVP_SUCCESS     !error code
+         class(dsvp_t), pointer, private:: dsvp_p=>NULL()     !non-owning pointer to the DSVP the DS unit is part of
+         type(ds_unit_port_t), allocatable, private:: port(:) !DS unit port (for incoming DS instructions from other DS units)
+         type(list_bi_t), private:: queue                     !queue of the currently processed DS instructions stored by reference
+         type(list_iter_t), public:: iqueue                   !queue iterator
          contains
           procedure(ds_unit_ctor_i), deferred, public:: configure !configures the DS unit
           procedure(ds_unit_self_i), deferred, public:: start     !starts, lives and stops the DS unit (the corresponding thread will run here until termination)
           procedure(ds_unit_self_i), deferred, public:: shutdown  !stops the DS unit (called from .start)
-          procedure, public:: init_queue=>DSUnitInitQueue         !initializes the DS unit queue iterator
-          procedure, public:: release_queue=>DSUnitReleaseQueue   !releases the DS unit queue iterator
+          procedure, public:: init_queue=>DSUnitInitQueue         !initializes the DS unit queue iterator and all ports
+          procedure, public:: release_queue=>DSUnitReleaseQueue   !releases the DS unit queue iterator and frees all ports
           procedure, public:: set_error=>DSUnitSetError           !sets the error code, including SUCCESS
           procedure, public:: get_error=>DSUnitGetError           !returns the error code
           procedure, public:: load_port=>DSUnitLoadPort           !loads the DS unit port with new DS instructions
@@ -234,6 +234,7 @@
  !Domain-specific decoder unit:
         type, abstract, extends(ds_unit_t), public:: ds_decoder_t
          class(ds_unit_t), pointer, private:: acceptor_unit=>NULL() !non-owning pointer to the DS unit for which the decoding is done
+         integer(INTD), private:: acceptor_port_id=-1               !associated acceptor port id
          contains
           procedure(ds_decoder_decode_i), deferred, public:: decode !decoding procedure: Unpacks the raw byte packet (instruction bytecode) and constructs a domain-specific instruction
           procedure, public:: set_acceptor=>DSDecoderSetAcceptor    !sets the acceptor DS unit for which the decoding is done
@@ -1251,18 +1252,32 @@
          ierr=this%free()
          return
         end subroutine ds_unit_port_dtor
-![ds_unit_t]=================================
-        subroutine DSUnitInitQueue(this,ierr)
-!Initializes the DS unit queue.
+![ds_unit_t]===========================================
+        subroutine DSUnitInitQueue(this,num_ports,ierr)
+!Initializes the DS unit queue and all ports.
          implicit none
          class(ds_unit_t), intent(inout):: this      !inout: DS unit
+         integer(INTD), intent(in):: num_ports       !in: number of ports to initialize
          integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc
+         integer(INTD):: errc,ier,i
 
          if(this%iqueue%get_status(errc).eq.GFC_IT_NULL) then
           if(errc.eq.GFC_SUCCESS) then
-           errc=this%iqueue%init(this%queue)
-           if(errc.eq.GFC_SUCCESS) errc=this%port%init()
+           if(num_ports.gt.0) then
+            errc=this%iqueue%init(this%queue)
+            if(errc.eq.GFC_SUCCESS) then
+             allocate(this%port(0:num_ports-1),STAT=errc)
+             if(errc.eq.0) then
+              do i=0,num_ports-1
+               ier=this%port(i)%init(); if(errc.eq.0) errc=ier
+              enddo
+             else
+              errc=DSVP_ERR_MEM_ALLOC_FAIL
+             endif
+            endif
+           else
+            errc=DSVP_ERR_INVALID_ARGS
+           endif
           endif
          else
           if(errc.eq.GFC_SUCCESS) errc=DSVP_ERR_INVALID_REQ
@@ -1272,15 +1287,21 @@
         end subroutine DSUnitInitQueue
 !-----------------------------------------------
         subroutine DSUnitReleaseQueue(this,ierr)
-!Releases the DS unit queue.
+!Releases the DS unit queue and frees all ports.
          implicit none
          class(ds_unit_t), intent(inout):: this      !inout: DS unit
          integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc,ier
+         integer(INTD):: errc,ier,i
 
          if(this%iqueue%get_status(errc).ne.GFC_IT_NULL) then
           if(errc.eq.GFC_SUCCESS) then
-           errc=this%port%free()
+           if(allocated(this%port)) then
+            do i=ubound(this%port,1),lbound(this%port,1),-1
+             ier=this%port(i)%free(); if(errc.eq.DSVP_SUCCESS) errc=ier
+            enddo
+           else
+            errc=DSVP_ERR_BROKEN_OBJ
+           endif
            ier=this%iqueue%release(); if(errc.eq.DSVP_SUCCESS) errc=ier
           endif
          else
@@ -1309,73 +1330,79 @@
          error_code=this%error_code
          return
         end function DSUnitGetError
-!----------------------------------------------------------
-        function DSUnitLoadPort(this,new_list) result(ierr)
-!Loads the DS unit port with new DS instructions.
+!------------------------------------------------------------------
+        function DSUnitLoadPort(this,port_id,new_list) result(ierr)
+!Loads a DS unit port with new DS instructions.
 !<new_list> containing new DS instructions will become empty on exit.
          implicit none
          integer(INTD):: ierr                         !out: error code
          class(ds_unit_t), intent(inout):: this       !inout: DS unit whose port is being loaded
+         integer(INTD), intent(in):: port_id          !in: port id
          class(list_iter_t), intent(inout):: new_list !inout: list of new DS instructions for the DS unit that will be moved into its port
 
-         ierr=this%port%accept(new_list) !DS instructions will be moved into the port
+         ierr=this%port(port_id)%accept(new_list) !DS instructions will be moved from the <new_list> into this port
          return
         end function DSUnitLoadPort
-!------------------------------------------------------------
-        function DSUnitUnloadPort(this,out_list) result(ierr)
-!Unloads the DS unit port by moving its content into an externally provided queue.
+!--------------------------------------------------------------------
+        function DSUnitUnloadPort(this,port_id,out_list) result(ierr)
+!Unloads the DS unit port by moving its content into an externally provided list.
          implicit none
          integer(INTD):: ierr                         !out: error code
          class(ds_unit_t), intent(inout):: this       !inout: DS unit (the content of its port will be emptied)
+         integer(INTD), intent(in):: port_id          !in: port id
          class(list_iter_t), intent(inout):: out_list !inout: list which the DS port content will be moved to
 
-         ierr=this%port%absorb(out_list)
+         ierr=this%port(port_id)%absorb(out_list) !DS instructions will be moved from this port into the <out_list>
          return
         end function DSUnitUnloadPort
-!--------------------------------------------------
-        function DSUnitFlushPort(this) result(ierr)
-!Flushes the content of the DS unit port into the DS unit queue.
+!----------------------------------------------------------
+        function DSUnitFlushPort(this,port_id) result(ierr)
+!Flushes the content of a DS unit port into the DS unit queue.
          implicit none
          integer(INTD):: ierr                   !out: error code
          class(ds_unit_t), intent(inout):: this !inout: DS unit
+         integer(INTD), intent(in):: port_id    !in: port id
 
-         ierr=this%port%absorb(this%iqueue) !DS instructions will be moved from the port into the DS unit queue
+         ierr=this%port(port_id)%absorb(this%iqueue) !DS instructions will be moved from this port into the DS unit queue
          return
         end function DSUnitFlushPort
-!------------------------------------------------------
-        function DSUnitPortEmpty(this,ierr) result(res)
-!Returns TRUE if the DS unit port is empty, FALSE otherwise.
+!--------------------------------------------------------------
+        function DSUnitPortEmpty(this,port_id,ierr) result(res)
+!Returns TRUE if the specified DS unit port is empty, FALSE otherwise.
          implicit none
          logical:: res                               !out: result
          class(ds_unit_t), intent(in):: this         !in: DS unit
+         integer(INTD), intent(in):: port_id         !in: port id
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
 
-         res=this%port%is_empty(errc)
+         res=this%port(port_id)%is_empty(errc)
          if(present(ierr)) ierr=errc
          return
         end function DSUnitPortEmpty
-!-------------------------------------------
-        subroutine DSUnitLockPort(this,ierr)
+!---------------------------------------------------
+        subroutine DSUnitLockPort(this,port_id,ierr)
 !Locks the DS unit port such that no other DS unit will be able to load it.
          implicit none
          class(ds_unit_t), intent(inout):: this      !inout: DS unit
+         integer(INTD), intent(in):: port_id         !in: port id
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
 
-         call this%port%lock(errc)
+         call this%port(port_id)%lock(errc)
          if(present(ierr)) ierr=errc
          return
         end subroutine DSUnitLockPort
-!---------------------------------------------
-        subroutine DSUnitUnlockPort(this,ierr)
+!-----------------------------------------------------
+        subroutine DSUnitUnlockPort(this,port_id,ierr)
 !Unlocks the DS unit port.
          implicit none
          class(ds_unit_t), intent(inout):: this      !inout: DS unit
+         integer(INTD), intent(in):: port_id         !in: port id
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
 
-         call this%port%unlock(errc)
+         call this%port(port_id)%unlock(errc)
          if(present(ierr)) ierr=errc
          return
         end subroutine DSUnitUnlockPort
@@ -1427,32 +1454,38 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine DSUnitSetId
-![ds_decoder_t]============================================
-        subroutine DSDecoderSetAcceptor(this,acceptor,ierr)
+![ds_decoder_t]====================================================
+        subroutine DSDecoderSetAcceptor(this,acceptor,port_id,ierr)
 !Sets the acceptor DS unit for which the decoding is done.
          implicit none
          class(ds_decoder_t), intent(inout):: this       !inout: DS decoder unit
          class(ds_unit_t), intent(in), target:: acceptor !in: acceptor DS unit
+         integer(INTD), intent(in):: port_id             !in: acceptor port id
          integer(INTD), intent(out), optional:: ierr     !out: error code
          integer(INTD):: errc
 
          errc=DSVP_SUCCESS
-         this%acceptor_unit=>acceptor
+         if(port_id.ge.0) then
+          this%acceptor_unit=>acceptor
+          this%acceptor_port_id=port_id
+         else
+          errc=DSVP_ERR_INVALID_REQ
+         endif
          if(present(ierr)) ierr=errc
          return
         end subroutine DSDecoderSetAcceptor
-!----------------------------------------------------------------
-        function DSDecoderGetAcceptor(this,ierr) result(acceptor)
+!------------------------------------------------------------------------
+        function DSDecoderGetAcceptor(this,acceptor,port_id) result(ierr)
 !Returns a pointer to the acceptor DS unit for which the decoding is done.
          implicit none
-         class(ds_unit_t), pointer:: acceptor        !out: pointer to the acceptor DS unit
-         class(ds_decoder_t), intent(in):: this      !in: DS decoder unit
-         integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc
+         integer(INTD):: ierr                              !out: error code
+         class(ds_decoder_t), intent(in):: this            !in: DS decoder unit
+         class(ds_unit_t), pointer, intent(out):: acceptor !out: pointer to the acceptor DS unit
+         integer(INTD), intent(out):: port_id
 
-         errc=DSVP_SUCCESS
+         ierr=DSVP_SUCCESS
          acceptor=>this%acceptor_unit
-         if(present(ierr)) ierr=errc
+         port_id=this%acceptor_port_id
          return
         end function DSDecoderGetAcceptor
 ![dsvp_t]==============================

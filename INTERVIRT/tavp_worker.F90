@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/10/21
+!REVISION: 2017/10/29
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -103,6 +103,7 @@
         end type tens_instr_t
  !TAVP-WRK decoder:
         type, extends(ds_decoder_t), private:: tavp_wrk_decoder_t
+         integer(INTD), public:: num_ports=1                        !number of ports: Port 0 <- self
          integer(INTD), private:: source_comm                       !bytecode source communicator
          integer(INTD), private:: source_rank=-1                    !bytecode source process rank
          type(pack_env_t), private:: bytecode                       !incoming bytecode
@@ -117,9 +118,11 @@
          integer(INTD), public:: source_comm                  !MPI communicator of the source process
          integer(INTD), public:: source_rank                  !source process rank from which the bytecode is coming
          class(ds_unit_t), pointer, public:: acceptor=>NULL() !non-owning pointer to the acceptor DS unit for which the decoding is done
+         integer(INTD), public:: acceptor_port_id             !associated acceptor port id
         end type tavp_wrk_decoder_conf_t
  !TAVP-WRK retirer:
         type, extends(ds_encoder_t), private:: tavp_wrk_retirer_t
+         integer(INTD), public:: num_ports=1                        !number of ports: Port 0 <- communicator
          integer(INTD), private:: retire_comm                       !retired bytecode destination communicator
          integer(INTD), private:: retire_rank=-1                    !retired bytecode destination process rank
          type(pack_env_t), private:: bytecode                       !outgoing bytecode
@@ -136,8 +139,9 @@
         end type tavp_wrk_retirer_conf_t
  !TAVP-WRK resourcer:
         type, extends(ds_unit_t), private:: tavp_wrk_resourcer_t
-         integer(INTL), private:: host_ram_size=0_INTL           !size of the usable Host RAM memory in bytes
-         integer(INTL), private:: nvram_size=0_INTL              !size of the usable NVRAM memory (if any) in bytes
+         integer(INTD), public:: num_ports=1                        !number of ports: Port 0 <- decoder
+         integer(INTL), private:: host_ram_size=0_INTL              !size of the usable Host RAM memory in bytes
+         integer(INTL), private:: nvram_size=0_INTL                 !size of the usable NVRAM memory (if any) in bytes
          contains
           procedure, public:: configure=>TAVPWRKResourcerConfigure              !configures TAVP-WRK resourcer
           procedure, public:: start=>TAVPWRKResourcerStart                      !starts TAVP-WRK resourcer
@@ -152,6 +156,7 @@
         end type tavp_wrk_resourcer_conf_t
  !TAVP-WRK communicator:
         type, extends(ds_unit_t), private:: tavp_wrk_communicator_t
+         integer(INTD), public:: num_ports=2                                   !number of ports: Port 0 <- resourcer; Port 1 <- dispatcher
          integer(INTD), private:: num_mpi_windows=TAVP_WRK_NUM_WINS            !number of dynamic MPI windows per global addressing space
          class(DistrSpace_t), pointer, private:: addr_space=>NULL()            !non-owning pointer to the DSVP global address space
          contains
@@ -173,6 +178,7 @@
         end type tavp_wrk_dispatch_proc_t
  !TAVP-WRK dispatcher:
         type, extends(ds_unit_t), private:: tavp_wrk_dispatcher_t
+         integer(INTD), public:: num_ports=1                                    !number of ports: Port 0 <- communicator
          integer(INTL), private:: host_buf_size=TAVP_WRK_HOST_BUF_SIZE          !size of the pinned Host argument buffer
          integer(INTD), allocatable, private:: gpu_list(:)                      !list of available NVIDIA GPU
          integer(INTD), allocatable, private:: amd_list(:)                      !list of available AMD GPU
@@ -1822,7 +1828,7 @@
           if(conf%source_rank.ge.0.and.associated(conf%acceptor)) then
            this%source_rank=conf%source_rank
            this%source_comm=conf%source_comm
-           call this%set_acceptor(conf%acceptor,errc); if(errc.ne.DSVP_SUCCESS) errc=-3
+           call this%set_acceptor(conf%acceptor,conf%acceptor_port_id,errc); if(errc.ne.DSVP_SUCCESS) errc=-3
           else
            errc=-2
           endif
@@ -2810,7 +2816,7 @@
  !Configure static DSVU:
   !Decoder:
              decode_acceptor=>this%resourcer
-             decoder_conf=tavp_wrk_decoder_conf_t(conf%source_comm,conf%source_rank,decode_acceptor)
+             decoder_conf=tavp_wrk_decoder_conf_t(conf%source_comm,conf%source_rank,decode_acceptor,0)
              call this%decoder%configure(decoder_conf,errc)
              if(errc.eq.0) then
               num_units=num_units+1
