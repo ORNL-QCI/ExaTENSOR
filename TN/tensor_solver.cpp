@@ -23,15 +23,6 @@
 
 **/
 
-#ifndef _EXA_TENSOR_SOLVER_H
-#define _EXA_TENSOR_SOLVER_H
-
-#include <vector>
-
-#include "tensor_network.hpp"
-
-namespace exatensor {
-
 /** Optimizes a given subset of tensors in a closed tensor network
     in order to maximize its scalar value. If tensorNorms is not empty,
     its length must match that of optimizedTensIds. In this case
@@ -41,11 +32,15 @@ namespace exatensor {
 template<typename T>
 int optimizeOverlapMax(TensorNetwork<T> tensNet,                         //inout: closed tensor network
                        const std::vector<unsigned int> optimizedTensIds, //in: IDs of the r.h.s. tensors to be optimized
-                       const std::vector<T> tensorNorms);                //in: imposed tensor norms
-
-//Template definition:
-#include "tensor_solver.cpp"
-
-} //end namespace exatensor
-
-#endif //_EXA_TENSOR_SOLVER_H
+                       const std::vector<T> tensorNorms)                 //in: imposed tensor norms
+{
+ int error_code = 0;
+ const unsigned int numTensorsTotal = tensNet.getNumTensors(); //total number of the r.h.s. tensors
+ assert(numTensorsTotal > 0);
+ const unsigned int numTensorsOpt = optimizedTensIds.size(); //number of tensors to be optimized
+ assert(tensorNorms.size() == numTensorsOpt || tensorNorms.size() == 0);
+ assert(numTensorsOpt <= numTensorsTotal);
+ if(numTensorsOpt == 0) return error_code; //no tensors to optimize => done
+ //`Implement
+ return error_code;
+}

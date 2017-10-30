@@ -304,7 +304,6 @@ LTHREAD = $(LTHREAD_$(TOOLKIT))
 LFLAGS = $(MPI_LINK) $(LA_LINK) $(LTHREAD) $(CUDA_LINK) $(LIB)
 
 OBJS = ./OBJ/tensor_leg.o ./OBJ/exatensor.o
-#./OBJ/tensor_dense_adpt.o ./OBJ/tensor_conn.o ./OBJ/tensor_network.o
 
 $(NAME): $(OBJS) *.hpp $(MY_LIB)
 	ar cr lib$(NAME).a $(OBJS) $(MY_LIB)
@@ -315,16 +314,7 @@ $(NAME): $(OBJS) *.hpp $(MY_LIB)
 	mkdir -p ./OBJ
 	$(CPPCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(CFLAGS) tensor_leg.cpp -o ./OBJ/tensor_leg.o
 
-./OBJ/tensor_dense_adpt.o: type_deduct.hpp tensor_dense_adpt.hpp tensor_dense_adpt.cpp
-	$(CPPCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(CFLAGS) tensor_dense_adpt.cpp -o ./OBJ/tensor_dense_adpt.o
-
-./OBJ/tensor_conn.o: type_deduct.hpp tensor_leg.hpp tensor_dense_adpt.hpp tensor_conn.hpp tensor_conn.cpp
-	$(CPPCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(CFLAGS) tensor_conn.cpp -o ./OBJ/tensor_conn.o
-
-./OBJ/tensor_network.o: type_deduct.hpp tensor_conn.hpp tensor_define.hpp tensor_network.hpp tensor_network.cpp
-	$(CPPCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(CFLAGS) tensor_network.cpp -o ./OBJ/tensor_network.o
-
-./OBJ/exatensor.o: tensor_network.hpp tensor_solver.hpp exatensor.hpp exatensor.cpp
+./OBJ/exatensor.o: tensor_solver.hpp exatensor.hpp exatensor.cpp
 	$(CPPCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(CFLAGS) exatensor.cpp -o ./OBJ/exatensor.o
 
 
