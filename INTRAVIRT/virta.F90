@@ -8,7 +8,7 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/10/18
+!REVISION: 2017/10/30
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -155,17 +155,21 @@
         type, abstract, public:: tens_cache_entry_t
          class(tens_rcrsv_t), pointer, private:: tensor=>NULL() !either owning or non-owning pointer to a tensor (ctor/dtor of extended types will decide)
          type(tens_status_t), private:: tens_status             !current status of the tensor
+         integer(INTD), private:: ref_count=0                   !reference count: Number of existing tensor operands associated with the tensor cache entry
          contains
-          procedure, public:: set_tensor=>TensCacheEntrySetTensor     !sets the pointer to a tensor
-          procedure, public:: is_set=>TensCacheEntryIsSet             !returns TRUE if the tensor cache entry is set (constructed)
-          procedure, public:: get_tensor=>TensCacheEntryGetTensor     !returns a non-owning pointer to the tensor
-          procedure, public:: get_status=>TensCacheEntryGetStatus     !returns the tensor status object
-          procedure, public:: mark_created=>TensCacheEntryMarkCreated !marks the tensor status as created (allocated memory)
-          procedure, public:: mark_defined=>TensCacheEntryMarkDefined !marks the tensor status as defined to some value
-          procedure, public:: mark_in_use=>TensCacheEntryMarkInUse    !marks the tensor status as in-use (read-only) and increases the reference count
-          procedure, public:: mark_no_use=>TensCacheEntryMarkNoUse    !decreases the read-only usage reference count
-          procedure, public:: mark_updated=>TensCacheEntryMarkUpdated !marks the tensor status as in-update (currently being updated)
-          procedure, public:: mark_empty=>TensCacheEntryMarkEmpty     !marks the tensor status as empty (destroyed)
+          procedure, public:: set_tensor=>TensCacheEntrySetTensor         !sets the pointer to a tensor
+          procedure, public:: is_set=>TensCacheEntryIsSet                 !returns TRUE if the tensor cache entry is set (constructed)
+          procedure, public:: get_tensor=>TensCacheEntryGetTensor         !returns a non-owning pointer to the tensor
+          procedure, public:: get_status=>TensCacheEntryGetStatus         !returns the tensor status object
+          procedure, public:: mark_created=>TensCacheEntryMarkCreated     !marks the tensor status as created (allocated memory)
+          procedure, public:: mark_defined=>TensCacheEntryMarkDefined     !marks the tensor status as defined to some value
+          procedure, public:: mark_in_use=>TensCacheEntryMarkInUse        !marks the tensor status as in-use (read-only) and increases the reference count
+          procedure, public:: mark_no_use=>TensCacheEntryMarkNoUse        !decreases the read-only usage reference count
+          procedure, public:: mark_updated=>TensCacheEntryMarkUpdated     !marks the tensor status as in-update (currently being updated)
+          procedure, public:: mark_empty=>TensCacheEntryMarkEmpty         !marks the tensor status as empty (destroyed)
+          procedure, public:: incr_ref_count=>TensCacheEntryIncrRefCount  !increments the reference count
+          procedure, public:: decr_ref_count=>TensCacheEntryDecrRefCount  !decrements the reference count
+          procedure, public:: get_ref_count=>TensCacheEntryGetRefCount    !returns the current reference count: Number of existing tensor operands associated with the tensor cache entry
           procedure, public:: nullify_tensor=>TensCacheEntryNullifyTensor !either deallocates or simply dissociates tensor (depends on the extended dtor)
         end type tens_cache_entry_t
  !Tensor argument cache:
@@ -256,6 +260,9 @@
         private TensCacheEntryMarkNoUse
         private TensCacheEntryMarkUpdated
         private TensCacheEntryMarkEmpty
+        private TensCacheEntryIncrRefCount
+        private TensCacheEntryDecrRefCount
+        private TensCacheEntryGetRefCount
         private TensCacheEntryNullifyTensor
  !tens_cache_t:
         private TensCacheLookup
@@ -593,6 +600,34 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensCacheEntryMarkEmpty
+!--------------------------------------------------
+        subroutine TensCacheEntryIncrRefCount(this)
+         implicit none
+         class(tens_cache_entry_t), intent(inout):: this !inout: defined tensor cache entry
+
+!$OMP ATOMIC UPDATE
+         this%ref_count=this%ref_count+1
+         return
+        end subroutine TensCacheEntryIncrRefCount
+!--------------------------------------------------
+        subroutine TensCacheEntryDecrRefCount(this)
+         implicit none
+         class(tens_cache_entry_t), intent(inout):: this !inout: defined tensor cache entry
+
+!$OMP ATOMIC UPDATE
+         this%ref_count=this%ref_count-1
+         return
+        end subroutine TensCacheEntryDecrRefCount
+!----------------------------------------------------------------
+        function TensCacheEntryGetRefCount(this) result(refcount)
+         implicit none
+         integer(INTD):: refcount                     !out: reference count
+         class(tens_cache_entry_t), intent(in):: this !in: defined tensor cache entry
+
+!$OMP ATOMIC READ
+         refcount=this%ref_count
+         return
+        end function TensCacheEntryGetRefCount
 !-----------------------------------------------------------
         subroutine TensCacheEntryNullifyTensor(this,dealloc)
 !Either deallocates or simply dissociates tensor (depends on the extended dtor).
@@ -619,11 +654,12 @@
          type(tens_descr_t), target:: tens_descr
 
          tens_entry_p=>NULL()
-         errc=dit%init(this%map)
-         if(errc.eq.GFC_SUCCESS) then
-          uptr=>NULL()
-          tens_descr=tensor%get_descriptor(errc)
-          if(errc.eq.TEREC_SUCCESS) then
+         tens_descr=tensor%get_descriptor(errc)
+         if(errc.eq.TEREC_SUCCESS) then
+!$OMP CRITICAL (TAVP_CACHE)
+          errc=dit%init(this%map)
+          if(errc.eq.GFC_SUCCESS) then
+           uptr=>NULL()
            res=dit%search(GFC_DICT_FETCH_IF_FOUND,cmp_tens_descriptors,tens_descr,value_out=uptr)
            if(res.eq.GFC_FOUND) then
             select type(uptr); class is(tens_cache_entry_t); tens_entry_p=>uptr; end select
@@ -631,10 +667,11 @@
            else
             if(res.ne.GFC_NOT_FOUND) errc=-4
            endif
+           res=dit%release(); if(res.ne.GFC_SUCCESS.and.errc.eq.0) errc=-3
           else
-           errc=-3
+           errc=-2
           endif
-          res=dit%release(); if(res.ne.GFC_SUCCESS.and.errc.eq.0) errc=-2
+!$OMP END CRITICAL (TAVP_CACHE)
          else
           errc=-1
          endif
@@ -665,11 +702,12 @@
          class(tens_cache_entry_t), pointer:: tcep
 
          stored=.FALSE.
-         errc=dit%init(this%map)
-         if(errc.eq.GFC_SUCCESS) then
-          if(associated(tensor)) then
-           tens_descr=tensor%get_descriptor(errc)
-           if(errc.eq.TEREC_SUCCESS) then
+         if(associated(tensor)) then
+          tens_descr=tensor%get_descriptor(errc)
+          if(errc.eq.TEREC_SUCCESS) then
+!$OMP CRITICAL (TAVP_CACHE)
+           errc=dit%init(this%map)
+           if(errc.eq.GFC_SUCCESS) then
             errc=tens_cache_entry_alloc_f(tce) !allocates an empty instance of an extended(tens_cache_entry_t) with a proper dtor
             if(errc.eq.0) then
              uptr=>NULL()
@@ -691,13 +729,14 @@
             else
              errc=-5
             endif
+            res=dit%release(); if(res.ne.GFC_SUCCESS.and.errc.eq.0) errc=-4
            else
-            errc=-4
+            errc=-3
            endif
+!$OMP END CRITICAL (TAVP_CACHE)
           else
-           errc=-3
+           errc=-2
           endif
-          res=dit%release(); if(res.ne.GFC_SUCCESS.and.errc.eq.0) errc=-2
          else
           errc=-1
          endif
@@ -720,16 +759,18 @@
          type(tens_descr_t), target:: tens_descr
 
          evicted=.FALSE.
-         errc=dit%init(this%map)
-         if(errc.eq.GFC_SUCCESS) then
-          tens_descr=tensor%get_descriptor(errc)
-          if(errc.eq.TEREC_SUCCESS) then
+         tens_descr=tensor%get_descriptor(errc)
+         if(errc.eq.TEREC_SUCCESS) then
+!$OMP CRITICAL (TAVP_CACHE)
+          errc=dit%init(this%map)
+          if(errc.eq.GFC_SUCCESS) then
            res=dit%search(GFC_DICT_DELETE_IF_FOUND,cmp_tens_descriptors,tens_descr)
            if(res.eq.GFC_FOUND) then; evicted=.TRUE.; else; if(res.ne.GFC_NOT_FOUND) errc=-4; endif
+           res=dit%release(); if(res.ne.GFC_SUCCESS.and.errc.eq.0) errc=-3
           else
-           errc=-3
+           errc=-2
           endif
-          res=dit%release(); if(res.ne.GFC_SUCCESS.and.errc.eq.0) errc=-2
+!$OMP END CRITICAL (TAVP_CACHE)
          else
           errc=-1
          endif
@@ -745,6 +786,7 @@
          integer(INTD):: errc,res
          type(dictionary_iter_t):: dit
 
+!$OMP CRITICAL (TAVP_CACHE)
          errc=dit%init(this%map)
          if(errc.eq.GFC_SUCCESS) then
           call dit%delete_all(errc); if(errc.ne.GFC_SUCCESS) errc=-3
@@ -752,6 +794,7 @@
          else
           errc=-1
          endif
+!$OMP END CRITICAL (TAVP_CACHE)
          if(present(ierr)) ierr=errc
          return
         end subroutine TensCacheErase
