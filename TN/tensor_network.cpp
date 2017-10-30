@@ -1,7 +1,7 @@
 /** C++ adapters for ExaTENSOR: Tensor network
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/10/25
+!REVISION: 2017/10/30
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -258,21 +258,74 @@ void TensorNetwork<T>::appendNetwork(const TensorNetwork<T> & tensornet, //in: a
                                      const std::vector<std::pair<unsigned int, unsigned int>> & legPairs) //in: leg pairing: pair<output leg id, output leg id>, may be empty
 {
  assert(!(this->isEmpty()) && !(tensornet.isEmpty()));
- const unsigned int numConnections = legPairs.size();
- const auto numTensors1 = this->getNumTensors();
- const auto numTensors2 = tensornet.getNumTensors();
- const auto & outTensorConn1 = this->getTensorConn(0);
- const auto & outTensorConn2 = tensornet.getTensorConn(0);
- assert(numConnections <= outTensorConn1.getTensorRank() && numConnections <= outTensorConn2.getTensorRank());
- //Contract output tensor legs and remove them from the 1st output tensor, update input tensor legs:
- for(auto & legPair: legPairs){
-  const auto legId1 = legPair.first;
-  const auto legId2 = legPair.second;
-  const auto & outLeg1 = outTensorConn1.getTensorLeg(legId1);
-  const auto & outLeg2 = outTensorConn2.getTensorLeg(legId2);
-  
+ const unsigned int numConnections = legPairs.size(); //number of connections between the two tensor networks
+ const auto numTensors1 = this->getNumTensors(); //number of the r.h.s. tensors in the 1st tensor network
+ const auto numTensors2 = tensornet.getNumTensors(); //number the r.h.s. tensors in the 2nd tensor network
+ auto & outTensorConn1 = Tensors[0]; //connected output tensor of the 1st tensor network (mutable reference)
+ const unsigned int numOutLegs1 = outTensorConn1.getNumLegs(); //original number of legs in the 1st output tensor
+ const auto & outTensorConn2 = tensornet.getTensorConn(0); //connected output tensor of the 2nd tensor network (immutable reference)
+ const unsigned int numOutLegs2 = outTensorConn2.getNumLegs(); //original number of legs in the 2st output tensor
+ assert(numConnections <= numOutLegs1 && numConnections <= numOutLegs2);
+ //Append new r.h.s. tensors into the 1st tensor network and shift tensor numeration (numeration starts from numTensors1+1):
+ assert(Tensors.size() == numTensors1 + 1);
+ for(unsigned int i = 1; i <= numTensors2; ++i){
+  Tensors.push_back(tensornet.getTensorConn(i)); //copy r.h.s. tensors from the 2nd tensor network into the 1st one
+  auto & tensConn = Tensors[numTensors1+i]; //newly appended tensor (mutable reference)
+  const auto numLegs = tensConn.getNumLegs(); //number of legs in the newly appended tensor
+  for(unsigned int j = 0; j < numLegs; ++j){ //loop over the legs of the newly appended tensor
+   auto leg = tensConn.getTensorLeg(j); //leg of the newly appended tensor (mutable copy)
+   const auto oldTensId = leg.getTensorId(); //id of the tensor the leg is connected with
+   if(oldTensId > 0){ //shift numeration for r.h.s. tensors only
+    leg.resetTensorId(numTensors1+oldTensId); //numeration is shifted by the number of r.h.s. tensors in the 1st tensor network
+    tensConn.resetConnection(j,leg); //update the leg of the newly appended tensor
+   }
+  }
  }
- //Append the remaining tensor legs of the 2nd output tensor to the 1st output tensor:
+ //Contract output tensor legs and remove them from the 1st output tensor, update input tensor legs:
+ unsigned int outLegActive[numOutLegs2+1] = {1}; //mark legs of the 2nd output tensor as active (one additional element for avoiding zero length)
+ for(auto & legPair: legPairs){ //match contracted output legs
+  const auto legId1 = legPair.first; //corresponding leg id in the 1st output tensor
+  const auto legId2 = legPair.second; //corresponding leg id in the 2nd output tensor
+  assert(legId1 < numOutLegs1 && legId2 < numOutLegs2);
+  outLegActive[legId2] = 0; //deactivate the contracted leg from the 2nd output tensor
+  auto outLeg1 = outTensorConn1.getTensorLeg(legId1); //corresponding leg of the 1st output tensor (mutable copy)
+  const auto & outLeg2 = outTensorConn2.getTensorLeg(legId2); //corresponding leg of the 2nd output tensor
+  const auto rhsTensId1 = outLeg1.getTensorId(); //id of the rhs tensor connected to outLeg1
+  const auto rhsTensLegId1 = outLeg1.getDimensionId(); //dimension of the rhs tensor connected to outLeg1
+  const auto rhsTensId2 = outLeg2.getTensorId(); //id of the rhs tensor connected to outLeg2
+  const auto rhsTensLegId2 = outLeg2.getDimensionId(); //dimension of the rhs tensor connected to outLeg2
+  Tensors[rhsTensId1].resetConnection(rhsTensLegId1,TensorLeg(numTensors1+rhsTensId2,rhsTensLegId2));
+  Tensors[numTensors1+rhsTensId2].resetConnection(rhsTensLegId2,TensorLeg(rhsTensId1,rhsTensLegId1));
+  outLeg1.resetTensorId(0); //special tag to delete this leg later
+  outTensorConn1.resetConnection(legId1,outLeg1); //replace the leg of the output tensor with a dead leg to later delete it
+ }
+ //Amputate dead legs from the 1st output tensor:
+ unsigned int numDeletedLegs = 0;
+ for(unsigned int i = 0; i < numOutLegs1; ++i){
+  const unsigned int j = i - numDeletedLegs; //new (shifted) id of the output tensor leg
+  const auto & outLeg = outTensorConn1.getTensorLeg(j);
+  const auto tensId = outLeg.getTensorId();
+  if(tensId == 0){ //dead leg (delete it)
+   outTensorConn1.deleteDimension(j);
+   numDeletedLegs++;
+  }else{ //live leg (update the connected r.h.s. tensor leg)
+   const auto tensLegId = outLeg.getDimensionId();
+   Tensors[tensId].resetConnection(tensLegId,TensorLeg(0,j)); //update connection of the r.h.s. tensor to the output tensor
+  }
+ }
+ //Append the remaining tensor legs from the 2nd output tensor to the 1st output tensor and update r.h.s. connections:
+ auto numOutLegs = outTensorConn1.getNumLegs(); //number of output legs left in the 1st output tensor
+ for(unsigned int i = 0; i < numOutLegs2; ++i){ //loop over the output legs of the 2nd output tensor
+  if(outLegActive[i] != 0){ //leg is still active (uncontracted)
+   auto newLeg = outTensorConn2.getTensorLeg(i); //uncontracted leg from the 2nd output tensor (mutable copy)
+   const auto rhsTensId2 = newLeg.getTensorId();
+   const auto rhsTensLegId2 = newLeg.getDimensionId();
+   newLeg.resetTensorId(numTensors1+rhsTensId2);
+   outTensorConn1.appendDimension(outTensorConn2.getDimExtent(i),newLeg);
+   Tensors[numTensors1+rhsTensId2].resetConnection(rhsTensLegId2,TensorLeg(0,numOutLegs++));
+  }
+ }
+ assert(numOutLegs == ((numOutLegs1 + numOutLegs2) - (numConnections * 2)));
  return;
 }
 

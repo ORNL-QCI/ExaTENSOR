@@ -1,7 +1,7 @@
 /** C++ adapters for ExaTENSOR: Tensor network
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/10/25
+!REVISION: 2017/10/30
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -154,6 +154,7 @@ public:
  void allocateOutputBody();
  /** Resets the body of an arbitrary tensor. The new body may be null. **/
  void resetTensorBody(const unsigned int tensId, const std::shared_ptr<T> body);
+
 //Transforms:
  /** Contracts two tensors in a tensor network. Always the tensor with a smaller id will be replaced
      by a contracted product while the tensor with a larger id will be deleted from the tensor network,
