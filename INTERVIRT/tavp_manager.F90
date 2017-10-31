@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/10/29
+!REVISION: 2017/10/31
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -50,12 +50,14 @@
         end type tens_entry_mng_t
  !Tensor operand (encapsulated tensor data processible by a specific TAVP):
         type, extends(ds_oprnd_t), private:: tens_oprnd_t
-         class(tens_rcrsv_t), pointer, private:: tensor=>NULL() !non-owning pointer to a persistent recursive tensor
-         integer(INTD), private:: owner_id=-1                   !tensor owner id
+         class(tens_rcrsv_t), pointer, private:: tensor=>NULL()          !non-owning pointer to a persistent recursive tensor
+         class(tens_entry_mng_t), pointer, private:: cache_entry=>NULL() !non-owning pointer to a tensor cache entry (optional)
+         integer(INTD), private:: owner_id=-1                            !non-negative tensor owner id (optional)
          contains
           procedure, private:: TensOprndCtor                    !ctor
           generic, public:: tens_oprnd_ctor=>TensOprndCtor
           procedure, public:: get_tensor=>TensOprndGetTensor    !returns a pointer to the tensor
+          procedure, public:: get_cache_entry=>TensOprndGetCacheEntry !returns a pointer to the tensor cache entry (may be NULL)
           procedure, public:: get_owner_id=>TensOprndGetOwnerId !returns the tensor owner id
           procedure, public:: set_owner_id=>TensOprndSetOwnerId !sets the tensor owner id
           procedure, public:: is_remote=>TensOprndIsRemote      !returns TRUE if the tensor operand is remote
@@ -240,6 +242,7 @@
  !tens_oprnd_t:
         private TensOprndCtor
         private TensOprndGetTensor
+        private TensOprndGetCacheEntry
         private TensOprndGetOwnerId
         private TensOprndSetOwnerId
         private TensOprndIsRemote
@@ -369,8 +372,8 @@
          allocate(tens_entry_mng_t::tens_entry,STAT=ierr)
          return
         end function tens_entry_mng_alloc
-![tens_oprnd_t]=========================================
-        subroutine TensOprndCtor(this,tensor,ierr,owner)
+![tens_oprnd_t]==========================================================
+        subroutine TensOprndCtor(this,tensor,ierr,tens_cache_entry,owner)
 !Constructs a tensor operand. The <tensor> must be set.
 !The owner id is optional.
          implicit none
@@ -378,6 +381,7 @@
          class(tens_rcrsv_t), target, intent(in):: tensor !in: defined tensor
          integer(INTD), intent(out), optional:: ierr      !out: error code
          integer(INTD), intent(in), optional:: owner      !in: tensor owner id (no restrictions)
+         class(tens_entry_mng_t), intent(inout), target, optional:: tens_cache_entry !in: tensor cache entry owning the tensor
          integer(INTD):: errc
 
          if(.not.this%is_active(errc)) then
@@ -386,6 +390,12 @@
             if(errc.eq.TEREC_SUCCESS) then
              this%tensor=>tensor
              this%owner_id=-1; if(present(owner)) this%owner_id=owner
+             if(present(tens_cache_entry)) then
+              this%cache_entry=>tens_cache_entry
+              call this%cache_entry%incr_ref_count()
+             else
+              this%cache_entry=>NULL()
+             endif
              call this%mark_active(errc)
              if(errc.ne.DSVP_SUCCESS) errc=-5
             else
@@ -417,6 +427,21 @@
          if(present(ierr)) ierr=errc
          return
         end function TensOprndGetTensor
+!-----------------------------------------------------------------------
+        function TensOprndGetCacheEntry(this,ierr) result(cache_entry_p)
+!Returns a pointer to the tensor cache entry (may be NULL).
+         implicit none
+         class(tens_entry_mng_t), pointer:: cache_entry_p !out: pointer to the tensor cache entry
+         class(tens_oprnd_t), intent(in):: this           !in: active tensor operand
+         integer(INTD), intent(out), optional:: ierr      !out: error code
+         integer(INTD):: errc
+
+         errc=0
+         cache_entry_p=>this%cache_entry
+         if(.not.associated(this%tensor)) errc=-1
+         if(present(ierr)) ierr=errc
+         return
+        end function TensOprndGetCacheEntry
 !---------------------------------------------------------
         function TensOprndGetOwnerId(this,ierr) result(id)
 !Returns the tensor owner id.
@@ -620,6 +645,10 @@
            endif
            call this%mark_empty(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-3
            this%tensor=>NULL()
+           if(associated(this%cache_entry)) then
+            call this%cache_entry%decr_ref_count()
+            this%cache_entry=>NULL()
+           endif
            this%owner_id=-1
           else
            errc=-2
@@ -638,6 +667,7 @@
 
          call this%destruct(errc)
          if(errc.ne.0) call quit(errc,'#FATAL(TAVP-MNG:tens_oprnd_dtor): Destructor failed!')
+         return
         end subroutine tens_oprnd_dtor
 ![tens_instr_t]================================================
         subroutine TensInstrCtor(this,op_code,ierr,op_spec,iid)

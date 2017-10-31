@@ -1,6 +1,6 @@
 !Domain-specific virtual processor (DSVP): Abstract base module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/10/29
+!REVISION: 2017/10/31
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -1330,17 +1330,17 @@
          error_code=this%error_code
          return
         end function DSUnitGetError
-!------------------------------------------------------------------
-        function DSUnitLoadPort(this,port_id,new_list) result(ierr)
+!-----------------------------------------------------------------
+        function DSUnitLoadPort(this,port_id,in_list) result(ierr)
 !Loads a DS unit port with new DS instructions.
-!<new_list> containing new DS instructions will become empty on exit.
+!<in_list> containing new DS instructions will become empty on exit.
          implicit none
-         integer(INTD):: ierr                         !out: error code
-         class(ds_unit_t), intent(inout):: this       !inout: DS unit whose port is being loaded
-         integer(INTD), intent(in):: port_id          !in: port id
-         class(list_iter_t), intent(inout):: new_list !inout: list of new DS instructions for the DS unit that will be moved into its port
+         integer(INTD):: ierr                        !out: error code
+         class(ds_unit_t), intent(inout):: this      !inout: DS unit whose port is being loaded
+         integer(INTD), intent(in):: port_id         !in: port id
+         class(list_iter_t), intent(inout):: in_list !inout: list of new DS instructions for the DS unit that will be moved into its port
 
-         ierr=this%port(port_id)%accept(new_list) !DS instructions will be moved from the <new_list> into this port
+         ierr=this%port(port_id)%accept(in_list) !DS instructions will be moved from the <in_list> into this port
          return
         end function DSUnitLoadPort
 !--------------------------------------------------------------------
