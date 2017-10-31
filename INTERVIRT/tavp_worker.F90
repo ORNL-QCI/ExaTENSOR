@@ -2011,7 +2011,7 @@
                   if(jerr.eq.DSVP_SUCCESS) then
                    tens_oprnd=>NULL(); allocate(tens_oprnd,STAT=jerr) !tensor operand will be owned by the tensor instruction
                    if(jerr.eq.0) then
-                    call tens_oprnd%tens_oprnd_ctor(tensor,jerr,tens_resource=tens_resource) !tensor and tens_resource are owned by the tensor cache
+                    call tens_oprnd%tens_oprnd_ctor(tensor,jerr,tens_wrk_entry,tens_resource) !tensor and tens_resource are owned by the tensor cache
                     if(jerr.eq.0) then
                      oprnd=>tens_oprnd; call ds_instr%set_operand(0,oprnd,jerr) !tensor operand ownership is moved to the tensor instruction
                      if(jerr.ne.DSVP_SUCCESS) then
@@ -2054,7 +2054,7 @@
                  if(jerr.eq.DSVP_SUCCESS) then
                   tens_oprnd=>NULL(); allocate(tens_oprnd,STAT=jerr) !tensor operand will be owned by the tensor instruction
                   if(jerr.eq.0) then
-                   call tens_oprnd%tens_oprnd_ctor(tensor,jerr,tens_resource=tens_resource) !tensor and tens_resource are owned by the tensor cache
+                   call tens_oprnd%tens_oprnd_ctor(tensor,jerr,tens_wrk_entry,tens_resource) !tensor and tens_resource are owned by the tensor cache
                    if(jerr.eq.0) then
                     oprnd=>tens_oprnd; call ds_instr%set_operand(0,oprnd,jerr) !tensor operand ownership is moved to the tensor instruction
                     if(jerr.ne.DSVP_SUCCESS) then
@@ -2151,7 +2151,7 @@
                 if(jerr.ne.0) then
                  call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_RSC_UNAVAILABLE); jerr=-7; exit
                 endif
-                call tens_oprnd%tens_oprnd_ctor(tensor,jerr,tens_resource=tens_resource) !tensor and tens_resource are owned by the tensor cache
+                call tens_oprnd%tens_oprnd_ctor(tensor,jerr,tens_wrk_entry,tens_resource) !tensor and tens_resource are owned by the tensor cache
                 if(jerr.ne.0) then
                  call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_GEN_FAILURE); jerr=-6; exit
                 endif

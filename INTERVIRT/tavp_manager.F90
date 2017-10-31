@@ -41,18 +41,19 @@
 !TYPES:
  !Tensor argument cache entry (TAVP-specific):
         type, extends(tens_cache_entry_t), private:: tens_entry_mng_t
-         integer(INTD), private:: owner_id=-1                         !tensor owner id (non-negative TAVP-MNG id), negative means the tensor is remote
+         integer(INTD), private:: owner_id=-1                         !tensor owner id (non-negative TAVP-MNG id), negative means the tensor is remote with an unknown location
          contains
           procedure, private:: TensEntryMngCtor                       !ctor
           generic, public:: tens_entry_mng_ctor=>TensEntryMngCtor
           procedure, public:: get_owner_id=>TensEntryMngGetOwnerId    !returns the owner id
+          procedure, public:: holds_remote=>TensEntryMngHoldsRemote   !returns TRUE if the stored tensor is remote, FALSE otherwise
           final:: tens_entry_mng_dtor
         end type tens_entry_mng_t
  !Tensor operand (encapsulated tensor data processible by a specific TAVP):
         type, extends(ds_oprnd_t), private:: tens_oprnd_t
          class(tens_rcrsv_t), pointer, private:: tensor=>NULL()          !non-owning pointer to a persistent recursive tensor
          class(tens_entry_mng_t), pointer, private:: cache_entry=>NULL() !non-owning pointer to a tensor cache entry (optional)
-         integer(INTD), private:: owner_id=-1                            !non-negative tensor owner id (optional)
+         integer(INTD), private:: owner_id=-1                            !non-negative tensor owner (TAVP-MNG) id (optional)
          contains
           procedure, private:: TensOprndCtor                    !ctor
           generic, public:: tens_oprnd_ctor=>TensOprndCtor
@@ -237,6 +238,7 @@
  !tens_entry_mng_t:
         private TensEntryMngCtor
         private TensEntryMngGetOwnerId
+        private TensEntryMngHoldsRemote
         public tens_entry_mng_dtor
         private tens_entry_mng_alloc
  !tens_oprnd_t:
@@ -353,6 +355,22 @@
          if(present(ierr)) ierr=errc
          return
         end function TensEntryMngGetOwnerId
+!--------------------------------------------------------------
+        function TensEntryMngHoldsRemote(this,ierr) result(res)
+!Returns TRUE if the stored tensor is remote, FALSE otherwise.
+!This information is inferred from the .owner_id field which
+!has to be set in order to provide a meaningful answer.
+         implicit none
+         logical:: res                               !out: answer
+         class(tens_entry_mng_t), intent(in):: this  !in: specialized tensor cache entry
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=0
+         res=(this%owner_id.ne.role_rank)
+         if(present(ierr)) ierr=errc
+         return
+        end function TensEntryMngHoldsRemote
 !-------------------------------------------
         subroutine tens_entry_mng_dtor(this)
          implicit none
@@ -741,7 +759,7 @@
             if(jerr.eq.DSVP_SUCCESS) then
              allocate(tens_oprnd,STAT=jerr)
              if(jerr.eq.0) then
-              call tens_oprnd%tens_oprnd_ctor(tensor,jerr) !`tensor owner is omitted here
+              call tens_oprnd%tens_oprnd_ctor(tensor,jerr) !`tensor owner id is omitted here
               if(jerr.eq.0) then
                oprnd=>tens_oprnd
                call this%set_operand(0,oprnd,jerr); if(jerr.ne.DSVP_SUCCESS) jerr=-6
@@ -1270,7 +1288,7 @@
                   if(jerr.eq.DSVP_SUCCESS) then
                    tens_oprnd=>NULL(); allocate(tens_oprnd,STAT=jerr) !tensor operand will be owned by the tensor instruction
                    if(jerr.eq.0) then
-                    call tens_oprnd%tens_oprnd_ctor(tensor,jerr) !tensor is owned by the tensor cache
+                    call tens_oprnd%tens_oprnd_ctor(tensor,jerr,tens_mng_entry) !tensor is owned by the tensor cache
                     if(jerr.eq.0) then
                      oprnd=>tens_oprnd; call ds_instr%set_operand(0,oprnd,jerr) !tensor operand ownership is moved to the tensor instruction
                      if(jerr.ne.DSVP_SUCCESS) then
@@ -1312,7 +1330,7 @@
                  if(jerr.eq.DSVP_SUCCESS) then
                   tens_oprnd=>NULL(); allocate(tens_oprnd,STAT=jerr) !tensor operand will be owned by the tensor instruction
                   if(jerr.eq.0) then
-                   call tens_oprnd%tens_oprnd_ctor(tensor,jerr) !tensor is owned by the tensor cache
+                   call tens_oprnd%tens_oprnd_ctor(tensor,jerr,tens_mng_entry) !tensor is owned by the tensor cache
                    if(jerr.eq.0) then
                     oprnd=>tens_oprnd; call ds_instr%set_operand(0,oprnd,jerr) !tensor operand ownership is moved to the tensor instruction
                     if(jerr.ne.DSVP_SUCCESS) then
@@ -1407,7 +1425,7 @@
                 if(jerr.ne.0) then
                  call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_RSC_UNAVAILABLE); jerr=-7; exit
                 endif
-                call tens_oprnd%tens_oprnd_ctor(tensor,jerr) !tensor is owned by the tensor cache
+                call tens_oprnd%tens_oprnd_ctor(tensor,jerr,tens_mng_entry) !tensor is owned by the tensor cache
                 if(jerr.ne.0) then
                  call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_GEN_FAILURE); jerr=-6; exit
                 endif
