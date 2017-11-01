@@ -302,6 +302,8 @@
         private TAVPMNGCollectorStart
         private TAVPMNGCollectorShutdown
         private TAVPMNGCollectorCollect
+ !auxiliary:
+        private wait_on_other_units
  !tavp_mng_t:
         private TAVPMNGConfigure
 !IMPLEMENTATION:
@@ -1622,22 +1624,30 @@
 !Work loop:
          active=((errc.eq.0).and.(this%ring_comm.ne.MPI_COMM_NULL)); stopping=(.not.active)
          wloop: do while(active)
- !Absorb new tensor instructions from port 0 into the queue:
+ !Absorb new tensor instructions from port 0 into the main queue:
           ier=this%flush_port(0); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-5; exit wloop; endif
           ier=this%iqueue%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-3; exit wloop; endif
           ier=this%iqueue%get_status()
- !Move the leading subset of tensor instructions from the queue into the locating list:
+ !Move the leading subset of tensor instructions from the main queue into the locating list:
           if(ier.eq.GFC_IT_ACTIVE) then !queue is not empty
            ier=this%iqueue%move_list(this%loc_list,MAX_LOCATE_INSTR) !at most MAX_LOCATE_INSTR tensor instructions will be moved to the located list
            if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-2; exit wloop; endif
- !Perform a full rotation of the located tensor instructions at the given NAT level:
-  !Encode the locating list into bytecode:
+ !Perform a full rotation of the tensor instructions being located at the given NAT level:
+  !Move a limited number of tensor instructions from the deferred list back into the locating list:
 
-  !Send the locating list bytecode to the next NAT node at the same tree level (ring):
+  !Encode tensor instructions from the locating list into bytecode (also deactivate control instructions):
 
-  !Clean the locating list and evict the relevant remote tensors with zero reference count:
+  !Send the bytecode to the next NAT node at the same tree level (ring):
+
+  !Clean the locating list and evict the relevant remote tensors with zero reference count from the tensor cache:
 
   !Absorb located tensor insructions from port 1:
+
+  !Check whether these tensor instructions belong to me (thus finish the rotation):
+
+ !Move partially located tensor instructions from the locating list to the deferred list:
+
+ !Move the remaining fully located tensor instructions from the locating list to the decomposer:
 
           endif
          enddo wloop

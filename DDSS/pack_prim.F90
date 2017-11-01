@@ -1,6 +1,6 @@
 !Basic object packing/unpacking primitives.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/07/16
+!REVISION: 2017/11/01
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -143,10 +143,11 @@
         end type obj_pack_t
  !Packet envelope (communicable):
         type, public:: pack_env_t
-         integer(INTL), private:: length=0_INTL !in-use length of the packet envelope (bytes)
-         integer(INTD), private:: num_packets=0 !number of packets in the packet envelope
+         integer(INTL), private:: length=0_INTL       !in-use length of the packet envelope (bytes)
+         integer(INTD), private:: num_packets=0       !number of packets in the packet envelope
+         integer(INTD), private:: tag=DEFAULT_MPI_TAG !optional tag
          class(obj_pack_t), pointer, private:: curr_packet=>NULL() !current packet (set when in-use)
-         logical, private:: busy=.FALSE.        !.TRUE. when there is an active packet being filled in (in-use flag)
+         logical, private:: busy=.FALSE.              !.TRUE. when there is an active packet being filled in (in-use flag)
          integer(INTL), pointer, contiguous, private:: pack_offset(:)=>NULL() !offset of each packet in the envelope (byte)
          integer(INTL), pointer, contiguous, private:: pack_len(:)=>NULL()    !length of each packet present in the envelope (bytes)
          integer(INTL), pointer, contiguous, private:: pack_tag(:)=>NULL()    !tag for each packet present in the envelope
@@ -157,6 +158,8 @@
           procedure, public:: get_length=>PackEnvGetLength          !get the current used length of the buffer (bytes)
           procedure, public:: get_max_packets=>PackEnvGetMaxPackets !get the max limit on the amount of packets in the envelope
           procedure, public:: get_num_packets=>PackEnvGetNumPackets !get the current number of packets in the envelope
+          procedure, public:: get_tag=>PackEnvGetTag                !get the packet envelope tag
+          procedure, public:: set_tag=>PackEnvSetTag                !set the packet envelope tag
           procedure, public:: is_busy=>PackEnvIsBusy                !check whether the packet envelope is currently in use
           procedure, public:: is_healthy=>PackEnvIsHealthy          !check whether the object is healthy (consistent)
           procedure, public:: reserve_mem=>PackEnvReserveMem        !reserve memory for the data buffer and/or layout tables
@@ -166,8 +169,8 @@
           procedure, public:: discard_packet=>PackEnvDiscardPacket  !discard a packet (either finished or unfinished)
           procedure, public:: seal_packet=>PackEnvSealPacket        !seal a packet (finalize)
           procedure, public:: extract_packet=>PackEnvExtractPacket  !extract a packet from the packet envelope
-          procedure, public:: send=>PackEnvSend                     !send a packet to another process
-          procedure, public:: receive=>PackEnvReceive               !receive a packet from another process
+          procedure, public:: send=>PackEnvSend                     !send the packet envelope to another process
+          procedure, public:: receive=>PackEnvReceive               !receive a packet envelope from another process
           procedure, private:: decode_mpi_msg=>PackEnvDecodeMPIMsg  !decodes the incoming MPI message back into the object
         end type pack_env_t
  !Data communication handle:
@@ -506,6 +509,34 @@
          if(present(ierr)) ierr=errc
          return
         end function PackEnvGetNumPackets
+!----------------------------------------------------
+        function PackEnvGetTag(this,ierr) result(tag)
+!Returns the packet envelope tag.
+         implicit none
+         integer(INTD):: tag                         !out: tag
+         class(pack_env_t), intent(in):: this        !in: packet envelope
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=PACK_SUCCESS
+         tag=this%tag
+         if(present(ierr)) ierr=errc
+         return
+        end function PackEnvGetTag
+!----------------------------------------------
+        subroutine PackEnvSetTag(this,tag,ierr)
+!Sets the packet envelope tag.
+         implicit none
+         class(pack_env_t), intent(inout):: this     !inout: packet envelope
+         integer(INTD), intent(in):: tag             !in: tag
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=PACK_SUCCESS
+         this%tag=tag
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine PackEnvSetTag
 !-----------------------------------------------------
         function PackEnvIsBusy(this,ierr) result(answ)
 !Returns .TRUE. if the envelope is blocked by an active packet.
@@ -657,6 +688,7 @@
          if(.not.this%busy) then
           this%length=0_INTL
           this%num_packets=0
+          this%tag=DEFAULT_MPI_TAG
           this%busy=.FALSE.
           if(associated(this%curr_packet)) then
            call this%curr_packet%clean()
@@ -903,7 +935,7 @@
 !envelope must not contain an unsealed (active) packet. The MPI message
 !will contain the packet envelope data buffer as a plain CHARACTER array
 !succeeded by the data layout tables appended to the tail. The last
-!two 8-byte fields are: Length of the data buffer and Number of packets.
+!three 8-byte fields are: Length of the data buffer, Number of packets, Tag.
 !The communication handle must not be active on entrance.
 !This is a NON-BLOCKING method!
          implicit none
@@ -1003,6 +1035,9 @@
  !Number of packets in the packet envelope:
             fptr(1:)=>this%buffer(jl+1:); cptr=c_loc(fptr)
             call c_f_pointer(cptr,j8p); j8p=int(this%num_packets,INTL); jl=jl+js
+ !Tag of the packet envelope:
+            fptr(1:)=>this%buffer(jl+1:); cptr=c_loc(fptr)
+            call c_f_pointer(cptr,j8p); j8p=int(this%tag,INTL); jl=jl+js
            else
             jl=0_INTL
            endif
@@ -1146,21 +1181,24 @@
 
          cap=this%get_capacity(errc)
          if(cap.ge.msg_len.and.errc.eq.PACK_SUCCESS) then
-          if(this%get_length(errc).eq.0.and.msg_len.ge.int(1+3*1*8+2*8,INTL)) then !buffer (min 1 byte) + three tables (min 1 byte each) + two int(8) words
+          if(this%get_length(errc).eq.0.and.msg_len.ge.int(1+3*1*8+3*8,INTL)) then !buffer (min 1 byte) + three tables (min 1 byte each) + three int(8) words
            if(errc.eq.PACK_SUCCESS) then
             sil=size_of(cap) !size of INTL integer
- !Number of packets in the packet envelope:
+ !Tag of the packet envelope:
             chp(1:)=>this%buffer(msg_len-sil+1:msg_len)
+            cptr=c_loc(chp); call c_f_pointer(cptr,i8p); this%tag=i8p
+ !Number of packets in the packet envelope:
+            chp(1:)=>this%buffer(msg_len-sil*2+1:msg_len-sil)
             cptr=c_loc(chp); call c_f_pointer(cptr,i8p); npkts=i8p
  !Length of the data buffer:
-            chp(1:)=>this%buffer(msg_len-sil*2+1:msg_len-sil)
+            chp(1:)=>this%buffer(msg_len-sil*3+1:msg_len-sil*2)
             cptr=c_loc(chp); call c_f_pointer(cptr,i8p); this%length=i8p
             i8p=>NULL()
             if(npkts.gt.this%get_max_packets()) call this%resize(errc,max_packets=npkts)
             if(errc.eq.PACK_SUCCESS) then
              this%num_packets=npkts
  !Packet tags:
-             offs=msg_len-sil*2-sil*npkts+1
+             offs=msg_len-sil*3-sil*npkts+1
              chp(1:)=>this%buffer(offs:)
              cptr=c_loc(chp); call c_f_pointer(cptr,j8p,(/npkts/))
              this%pack_tag(1:npkts)=j8p(1:npkts)

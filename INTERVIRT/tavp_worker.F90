@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/10/31
+!REVISION: 2017/11/01
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -202,6 +202,7 @@
         end type tavp_wrk_dispatcher_conf_t
  !TAVP-WRK:
         type, extends(dsvp_t), public:: tavp_wrk_t
+         integer(INTD), private:: num_uninitialized=-1            !number of uninitialized DS units
          type(tens_cache_t), private:: tens_cache                 !tensor argument cache
          type(DistrSpace_t), private:: addr_space                 !global (distributed) address space
          type(tavp_wrk_decoder_t), private:: decoder              !DSVU: decodes incoming tensor instructions from the manager
@@ -310,6 +311,8 @@
         private TAVPWRKExecTensorDestroy
         private TAVPWRKExecTensorContract
         private tavp_wrk_dispatch_proc_i
+ !auxiliary:
+        private wait_on_other_units
  !tavp_wrk_t:
         private TAVPWRKConfigure
 !IMPLEMENTATION:
@@ -1876,6 +1879,7 @@
          class(tavp_wrk_decoder_t), intent(inout):: this !inout: TAVP-WRK decoder DSVU
          integer(INTD), intent(out), optional:: ierr     !out: error code
          integer(INTD):: errc,ier
+         class(dsvp_t), pointer:: tavp
 
          errc=0
          if(DEBUG.gt.0) then
@@ -1883,6 +1887,9 @@
           &impir,this%get_id(),this%source_comm,this%source_rank
           flush(CONS_OUT)
          endif
+!Wait on other TAVP units:
+         tavp=>this%get_dsvp()
+         call wait_on_other_units(tavp,errc,ier); if(ier.ne.0.and.errc.eq.0) errc=-35
          !`Implement
          call this%shutdown(ier); if(ier.ne.0.and.errc.eq.0) errc=-1
          if(present(ierr)) ierr=errc
@@ -2211,9 +2218,13 @@
          class(tavp_wrk_retirer_t), intent(inout):: this !inout: TAVP-WRK retirer DSVU
          integer(INTD), intent(out), optional:: ierr     !out: error code
          integer(INTD):: errc,ier
+         class(dsvp_t), pointer:: tavp
 
          errc=0
          if(DEBUG.gt.0) write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Retirer started as DSVU # ",i2)') impir,this%get_id() !debug
+!Wait on other TAVP units:
+         tavp=>this%get_dsvp()
+         call wait_on_other_units(tavp,errc,ier); if(ier.ne.0.and.errc.eq.0) errc=-35
          !`Implement
          call this%shutdown(ier); if(ier.ne.0.and.errc.eq.0) errc=-1
          if(present(ierr)) ierr=errc
@@ -2289,9 +2300,13 @@
          class(tavp_wrk_resourcer_t), intent(inout):: this !inout: TAVP-WRK resourcer DSVU
          integer(INTD), intent(out), optional:: ierr       !out: error code
          integer(INTD):: errc,ier
+         class(dsvp_t), pointer:: tavp
 
          errc=0
          if(DEBUG.gt.0) write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Resourcer started as DSVU # ",i2)') impir,this%get_id() !debug
+!Wait on other TAVP units:
+         tavp=>this%get_dsvp()
+         call wait_on_other_units(tavp,errc,ier); if(ier.ne.0.and.errc.eq.0) errc=-35
          !`Implement
          call this%shutdown(ier); if(ier.ne.0.and.errc.eq.0) errc=-1
          if(present(ierr)) ierr=errc
@@ -2417,8 +2432,9 @@
 
          errc=0
          if(DEBUG.gt.0) write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Communicator started as DSVU # ",i2)') impir,this%get_id() !debug
-         tavp=>this%get_dsvp(errc)
-         if(errc.eq.DSVP_SUCCESS.and.associated(tavp)) then
+         tavp=>NULL(); tavp=>this%get_dsvp(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-1
+!Initialize the global memory space:
+         if(errc.eq.0) then
           select type(tavp)
           class is(tavp_wrk_t)
            call tavp%addr_space%create(role_comm,this%num_mpi_windows,'TAVPWRKAddressSpace',errc)
@@ -2430,10 +2446,10 @@
           class default
            errc=-3
           end select
-          !`Implement
-         else
-          errc=-2
          endif
+!Wait on other TAVP units:
+         call wait_on_other_units(tavp,errc,ier); if(ier.ne.0.and.errc.eq.0) errc=-35
+         !`Implement
          call this%shutdown(ier); if(ier.ne.0.and.errc.eq.0) errc=-1
          if(present(ierr)) ierr=errc
          return
@@ -2608,15 +2624,17 @@
          class(tavp_wrk_dispatcher_t), intent(inout):: this !inout: TAVP-WRK dispatcher DSVU
          integer(INTD), intent(out), optional:: ierr        !out: error code
          integer(INTD):: errc,ier
+         class(dsvp_t), pointer:: tavp
 
          errc=0
          if(DEBUG.gt.0) write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Dispatcher started as DSVU # ",i2)') impir,this%get_id() !debug
-         errc=talsh_init(this%host_buf_size,tavp_wrk_host_arg_max,this%gpu_list,this%mic_list,this%amd_list)
-         if(errc.eq.TALSH_SUCCESS) then
-          !`Implement
-         else
-          errc=-2
-         endif
+!Initialize TAL-SH:
+         ier=talsh_init(this%host_buf_size,tavp_wrk_host_arg_max,this%gpu_list,this%mic_list,this%amd_list)
+         if(ier.ne.TALSH_SUCCESS.and.errc.eq.0) errc=-1
+!Wait on other TAVP units:
+         tavp=>this%get_dsvp()
+         call wait_on_other_units(tavp,errc,ier); if(ier.ne.0.and.errc.eq.0) errc=-35
+         !`Implement
          call this%shutdown(ier); if(ier.ne.0.and.errc.eq.0) errc=-1
          if(present(ierr)) ierr=errc
          return
@@ -2819,6 +2837,43 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TAVPWRKExecTensorContract
+![auxiliary]-----------------------------------------------
+        subroutine wait_on_other_units(dsvp,err_in,err_out)
+!Waits on all TAVP units to get initialized.
+         implicit none
+         class(dsvp_t), intent(inout), target:: dsvp
+         integer(INTD), intent(in):: err_in
+         integer(INTD), intent(out):: err_out
+         integer(INTD), pointer, volatile:: units_left
+
+         err_out=0; units_left=>NULL()
+!$OMP CRITICAL
+         select type(tavp=>dsvp)
+         class is(tavp_wrk_t)
+          if(err_in.eq.0) then
+           if(tavp%num_uninitialized.lt.0) then
+            err_out=tavp%num_uninitialized
+           else
+            tavp%num_uninitialized=tavp%num_uninitialized-1
+            units_left=>tavp%num_uninitialized
+           endif
+          else
+           tavp%num_uninitialized=-1
+           err_out=err_in
+          endif
+         class default
+          call quit(-1,'FATAL(TAVP-WRK:wait_on_other_units): Invalid DSVP type!')
+         end select
+!$OMP END CRITICAL
+         if(err_out.eq.0) then
+          do
+!$OMP ATOMIC READ
+           err_out=units_left
+           if(err_out.le.0) exit
+          enddo
+         endif
+         return
+        end subroutine wait_on_other_units
 ![tavp_wrk_t]======================================
         subroutine TAVPWRKConfigure(this,conf,ierr)
 !Configures TAVP-WRK DSVP:
@@ -2886,7 +2941,11 @@
                        if(errc.eq.DSVP_SUCCESS) then
  !Set the DSVP id and description:
                         call this%set_description(int(conf%tavp_id,INTL),conf%description,errc)
-                        if(errc.ne.DSVP_SUCCESS) errc=-16
+                        if(errc.eq.DSVP_SUCCESS) then
+                         this%num_uninitialized=num_units
+                        else
+                         errc=-16
+                        endif
                        else
                         errc=-15
                        endif
