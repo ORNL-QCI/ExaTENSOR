@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/10/31
+!REVISION: 2017/11/01
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -205,6 +205,7 @@
         end type tavp_mng_collector_conf_t
  !TAVP-MNG:
         type, extends(dsvp_t), public:: tavp_mng_t
+         integer(INTD), private:: num_uninitialized=-1              !number of uninitialized DS units
          type(tens_cache_t), private:: tens_cache                   !tensor argument cache
          type(tavp_mng_decoder_t), private:: udecoder               !DSVU: decodes incoming tensor instructions from the higher-level manager
          type(tavp_mng_retirer_t), private:: retirer                !DSVU: retires processed tensor instructions and sends them back to the manager
@@ -1062,6 +1063,7 @@
          integer(INTD), intent(out), optional:: ierr     !out: error code
          integer(INTD):: errc,ier,num_packets,i,j,opcode,sts,thid,port_id
          logical:: active,stopping,new
+         class(dsvp_t), pointer:: dsvp
          class(*), pointer:: uptr
          class(ds_unit_t), pointer:: acceptor
          type(list_iter_t):: iqueue
@@ -1080,89 +1082,89 @@
          endif
 !Reserve a bytecode buffer:
          call this%bytecode%reserve_mem(ier,MAX_BYTECODE_SIZE,MAX_BYTECODE_INSTR); if(ier.ne.0.and.errc.eq.0) errc=-37
-         if(errc.eq.0) then
 !Initialize queues and ports:
-          call this%init_queue(this%num_ports,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-36
+         call this%init_queue(this%num_ports,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-36
+!Wait on other TAVP units:
+         dsvp=>this%get_dsvp()
+         call wait_on_other_units(dsvp,errc,ier); if(ier.ne.0.and.errc.eq.0) errc=-35
 !Work loop:
-          active=((errc.eq.0).and.(this%source_comm.ne.MPI_COMM_NULL)); stopping=(.not.active)
-          wloop: do while(active)
-           if(.not.stopping) then
+         active=((errc.eq.0).and.(this%source_comm.ne.MPI_COMM_NULL)); stopping=(.not.active)
+         wloop: do while(active)
+          if(.not.stopping) then
  !Receive new bytecode (if posted):
-            call comm_hl%clean(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-35; exit wloop; endif
-            new=this%bytecode%receive(comm_hl,ier,proc_rank=this%source_rank,comm=this%source_comm)
-            if(ier.ne.0.and.errc.eq.0) then; errc=-34; exit wloop; endif
-            if(new) then !new bytecode is available
-             call comm_hl%wait(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-33; exit wloop; endif
-             num_packets=this%bytecode%get_num_packets(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-32; exit wloop; endif
-             if(DEBUG.gt.0) then
-              write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decoder unit ",i2," received ",i9," new instructions")')&
-              &impir,this%get_id(),num_packets
-              flush(CONS_OUT)
-             endif
-             if(num_packets.gt.0) then
+           call comm_hl%clean(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-34; exit wloop; endif
+           new=this%bytecode%receive(comm_hl,ier,proc_rank=this%source_rank,comm=this%source_comm)
+           if(ier.ne.0.and.errc.eq.0) then; errc=-33; exit wloop; endif
+           if(new) then !new bytecode is available
+            call comm_hl%wait(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-32; exit wloop; endif
+            num_packets=this%bytecode%get_num_packets(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-31; exit wloop; endif
+            if(DEBUG.gt.0) then
+             write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decoder unit ",i2," received ",i9," new instructions")')&
+             &impir,this%get_id(),num_packets
+             flush(CONS_OUT)
+            endif
+            if(num_packets.gt.0) then
  !Decode new bytecode:
-              do i=1,num_packets
-               call this%bytecode%extract_packet(i,instr_packet,ier,preclean=.TRUE.)
-               if(ier.ne.0.and.errc.eq.0) then; errc=-31; exit wloop; endif
-               ier=this%iqueue%append(tens_instr_empty); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-30; exit wloop; endif
-               ier=this%iqueue%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-29; exit wloop; endif
-               uptr=>this%iqueue%get_value(ier); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-28; exit wloop; endif
-               tens_instr=>NULL(); select type(uptr); type is(tens_instr_t); tens_instr=>uptr; end select
-               if(.not.associated(tens_instr).and.errc.eq.0) then; errc=-27; exit wloop; endif
-               call this%decode(tens_instr,instr_packet,ier); if(ier.ne.0.and.errc.eq.0) then; errc=-26; exit wloop; endif
-               sts=tens_instr%get_status(ier,j); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-25; exit wloop; endif
-               opcode=tens_instr%get_code(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-24; exit wloop; endif
-               if(opcode.eq.TAVP_INSTR_CTRL_STOP) then !copy the CTRL_STOP instruction into own port 0
-                if(i.ne.num_packets.and.errc.eq.0) then; errc=-23; exit wloop; endif
-                ier=lit%init(ctrlq); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-22; exit wloop; endif
-                ier=lit%append(tens_instr); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-21; exit wloop; endif
-                ier=this%load_port(0,lit); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-20; exit wloop; endif
-                ier=lit%release(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-19; exit wloop; endif
-               endif
-              enddo
- !Pass decoded instructions to the acceptor unit:
-              ier=this%get_acceptor(acceptor,port_id); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-18; exit wloop; endif
-              if(associated(acceptor)) then
-               ier=acceptor%load_port(port_id,this%iqueue); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-17; exit wloop; endif
-               if(this%iqueue%get_status().ne.GFC_IT_EMPTY.and.errc.eq.0) then; errc=-16; exit wloop; endif !trap
-              else
-               if(errc.eq.0) then; errc=-15; exit wloop; endif
+             do i=1,num_packets
+              call this%bytecode%extract_packet(i,instr_packet,ier,preclean=.TRUE.)
+              if(ier.ne.0.and.errc.eq.0) then; errc=-30; exit wloop; endif
+              ier=this%iqueue%append(tens_instr_empty); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-29; exit wloop; endif
+              ier=this%iqueue%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-28; exit wloop; endif
+              uptr=>this%iqueue%get_value(ier); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-27; exit wloop; endif
+              tens_instr=>NULL(); select type(uptr); type is(tens_instr_t); tens_instr=>uptr; end select
+              if(.not.associated(tens_instr).and.errc.eq.0) then; errc=-26; exit wloop; endif
+              call this%decode(tens_instr,instr_packet,ier); if(ier.ne.0.and.errc.eq.0) then; errc=-25; exit wloop; endif
+              sts=tens_instr%get_status(ier,j); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-24; exit wloop; endif
+              opcode=tens_instr%get_code(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-23; exit wloop; endif
+              if(opcode.eq.TAVP_INSTR_CTRL_STOP) then !copy the CTRL_STOP instruction into own port 0
+               if(i.ne.num_packets.and.errc.eq.0) then; errc=-22; exit wloop; endif
+               ier=lit%init(ctrlq); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-21; exit wloop; endif
+               ier=lit%append(tens_instr); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-20; exit wloop; endif
+               ier=this%load_port(0,lit); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-19; exit wloop; endif
+               ier=lit%release(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-18; exit wloop; endif
               endif
-             else !empty bytecode
+             enddo
+ !Pass decoded instructions to the acceptor unit:
+             ier=this%get_acceptor(acceptor,port_id); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-17; exit wloop; endif
+             if(associated(acceptor)) then
+              ier=acceptor%load_port(port_id,this%iqueue); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-16; exit wloop; endif
+              if(this%iqueue%get_status().ne.GFC_IT_EMPTY.and.errc.eq.0) then; errc=-15; exit wloop; endif !trap
+             else
               if(errc.eq.0) then; errc=-14; exit wloop; endif
              endif
-             call this%bytecode%clean(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-13; exit wloop; endif
+            else !empty bytecode
+             if(errc.eq.0) then; errc=-13; exit wloop; endif
             endif
-           else !stopping
-            ier=this%iqueue%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-12; exit wloop; endif
-            if(this%iqueue%get_status().eq.GFC_IT_EMPTY) active=.FALSE.
-            if(.not.this%port_empty(0,ier).and.errc.eq.0) then; errc=-11; exit wloop; endif !trap
+            call this%bytecode%clean(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-12; exit wloop; endif
            endif
+          else !stopping
+           ier=this%iqueue%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-11; exit wloop; endif
+           if(this%iqueue%get_status().eq.GFC_IT_EMPTY) active=.FALSE.
+           if(.not.this%port_empty(0,ier).and.errc.eq.0) then; errc=-10; exit wloop; endif !trap
+          endif
  !Check own port for control instructions:
-           ier=this%flush_port(0); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-10; exit wloop; endif
-           if(.not.this%port_empty(0,ier).and.errc.eq.0) then; errc=-9; exit wloop; endif !trap
-           ier=this%iqueue%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-8; exit wloop; endif
-           ier=this%iqueue%get_status()
-           do while(ier.eq.GFC_IT_ACTIVE)
-            uptr=>NULL(); uptr=>this%iqueue%get_value(ier); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-7; exit wloop; endif
-            tens_instr=>NULL(); select type(uptr); type is(tens_instr_t); tens_instr=>uptr; end select
-            if(.not.associated(tens_instr).and.errc.eq.0) then; errc=-6; exit wloop; endif
-            opcode=tens_instr%get_code(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-5; exit wloop; endif
-            if(opcode.eq.TAVP_INSTR_CTRL_STOP) then
-             stopping=.TRUE.
-             call tens_instr%set_status(DS_INSTR_RETIRED,ier,DSVP_SUCCESS)
-             if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-4; exit wloop; endif
-            else
-             if(errc.eq.0) then; errc=-3; exit wloop; endif
-            endif
-            ier=this%iqueue%next(); ier=this%iqueue%get_status()
-           enddo
- !Clear the instruction queue:
-           if(ier.eq.GFC_IT_DONE) then
-            ier=this%iqueue%delete_all(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-2; exit wloop; endif
+          ier=this%flush_port(0); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-9; exit wloop; endif
+          ier=this%iqueue%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-8; exit wloop; endif
+          ier=this%iqueue%get_status()
+          do while(ier.eq.GFC_IT_ACTIVE)
+           uptr=>NULL(); uptr=>this%iqueue%get_value(ier); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-7; exit wloop; endif
+           tens_instr=>NULL(); select type(uptr); type is(tens_instr_t); tens_instr=>uptr; end select
+           if(.not.associated(tens_instr).and.errc.eq.0) then; errc=-6; exit wloop; endif
+           opcode=tens_instr%get_code(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-5; exit wloop; endif
+           if(opcode.eq.TAVP_INSTR_CTRL_STOP) then
+            stopping=.TRUE.
+            call tens_instr%set_status(DS_INSTR_RETIRED,ier,DSVP_SUCCESS)
+            if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-4; exit wloop; endif
+           else
+            if(errc.eq.0) then; errc=-3; exit wloop; endif
            endif
-          enddo wloop
-         endif
+           ier=this%iqueue%next(); ier=this%iqueue%get_status()
+          enddo
+ !Clear the instruction queue:
+          if(ier.eq.GFC_IT_DONE) then
+           ier=this%iqueue%delete_all(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-2; exit wloop; endif
+          endif
+         enddo wloop
 !Record the error:
          ier=this%get_error(); if(ier.eq.DSVP_SUCCESS) call this%set_error(errc)
          if(errc.ne.0.and.VERBOSE) write(CONS_OUT,'("#ERROR(TAVP_MNG)[",i6,"]: Decoder error ",i11," by thread ",i2)')&
@@ -1495,6 +1497,7 @@
          integer(INTD), intent(out), optional:: ierr     !out: error code
          integer(INTD):: errc,ier,thid
          logical:: active,stopping
+         class(dsvp_t), pointer:: dsvp
 
          errc=0; thid=omp_get_thread_num()
          if(DEBUG.gt.0) then
@@ -1503,15 +1506,16 @@
          endif
 !Reserve a bytecode buffer:
          call this%bytecode%reserve_mem(ier,MAX_BYTECODE_SIZE,MAX_BYTECODE_INSTR); if(ier.ne.0.and.errc.eq.0) errc=-1
-         if(errc.eq.0) then
 !Initialize queues and ports:
-          call this%init_queue(this%num_ports,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-1
+         call this%init_queue(this%num_ports,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-1
+!Wait on other TAVP units:
+         dsvp=>this%get_dsvp()
+         call wait_on_other_units(dsvp,errc,ier); if(ier.ne.0.and.errc.eq.0) errc=-35
 !Work loop:
-          active=((errc.eq.0).and.(this%retire_comm.ne.MPI_COMM_NULL)); stopping=(.not.active)
-          wloop: do while(active)
-           !`Implement
-          enddo wloop
-         endif
+         active=((errc.eq.0).and.(this%retire_comm.ne.MPI_COMM_NULL)); stopping=(.not.active)
+         wloop: do while(active)
+          !`Implement
+         enddo wloop
 !Record the error:
          ier=this%get_error(); if(ier.eq.DSVP_SUCCESS) call this%set_error(errc)
          if(errc.ne.0.and.VERBOSE) write(CONS_OUT,'("#ERROR(TAVP_MNG)[",i6,"]: Retirer error ",i11," by thread ",i2)')&
@@ -1595,6 +1599,7 @@
          integer(INTD), intent(out), optional:: ierr     !out: error code
          integer(INTD):: errc,ier,thid
          logical:: active,stopping
+         class(dsvp_t), pointer:: dsvp
 
          errc=0; thid=omp_get_thread_num()
          if(DEBUG.gt.0) then
@@ -1602,31 +1607,29 @@
           flush(CONS_OUT)
          endif
 !Reserve a bytecode buffer:
-         call this%bytecode%reserve_mem(ier,MAX_BYTECODE_SIZE,MAX_BYTECODE_INSTR); if(ier.ne.0.and.errc.eq.0) errc=-1
-         if(errc.eq.0) then
+         call this%bytecode%reserve_mem(ier,MAX_BYTECODE_SIZE,MAX_BYTECODE_INSTR); if(ier.ne.0.and.errc.eq.0) errc=-10
 !Initialize queues and ports:
-          call this%init_queue(this%num_ports,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-1
+         call this%init_queue(this%num_ports,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-9
 !Initialize the located instruction list iterator:
-          if(errc.eq.0) then
-           ier=this%loc_list%init(this%located_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-1
+         ier=this%loc_list%init(this%located_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-8
 !Initialize the deferred instruction list iterator:
-           if(errc.eq.0) then
-            ier=this%def_list%init(this%deferred_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-1
+         ier=this%def_list%init(this%deferred_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-7
 !Initialize the missing-operand instruction list iterator:
-            if(errc.eq.0) then
-             ier=this%mis_list%init(this%missing_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-1
+         ier=this%mis_list%init(this%missing_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-6
+!Wait on other TAVP units:
+         dsvp=>this%get_dsvp()
+         call wait_on_other_units(dsvp,errc,ier); if(ier.ne.0.and.errc.eq.0) errc=-35
 !Work loop:
-             active=((errc.eq.0).and.(this%ring_comm.ne.MPI_COMM_NULL)); stopping=(.not.active)
-             wloop: do while(active)
+         active=((errc.eq.0).and.(this%ring_comm.ne.MPI_COMM_NULL)); stopping=(.not.active)
+         wloop: do while(active)
  !Absorb new tensor instructions from port 0 into the queue:
-              ier=this%flush_port(0); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
-              if(.not.this%port_empty(0,ier).and.errc.eq.0) then; errc=-1; exit wloop; endif !trap
-              ier=this%iqueue%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
-              ier=this%iqueue%get_status()
+          ier=this%flush_port(0); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-5; exit wloop; endif
+          ier=this%iqueue%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-3; exit wloop; endif
+          ier=this%iqueue%get_status()
  !Move the leading subset of tensor instructions from the queue into the locating list:
-              if(ier.eq.GFC_IT_ACTIVE) then !queue is not empty
-               ier=this%iqueue%move_list(this%loc_list,MAX_LOCATE_INSTR) !at most MAX_LOCATE_INSTR tensor instructions will be moved to the located list
-               if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+          if(ier.eq.GFC_IT_ACTIVE) then !queue is not empty
+           ier=this%iqueue%move_list(this%loc_list,MAX_LOCATE_INSTR) !at most MAX_LOCATE_INSTR tensor instructions will be moved to the located list
+           if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-2; exit wloop; endif
  !Perform a full rotation of the located tensor instructions at the given NAT level:
   !Encode the locating list into bytecode:
 
@@ -1636,13 +1639,8 @@
 
   !Absorb located tensor insructions from port 1:
 
-              endif
-             enddo wloop
-            endif
-           endif
           endif
-         endif
-
+         enddo wloop
 !Record the error:
          ier=this%get_error(); if(ier.eq.DSVP_SUCCESS) call this%set_error(errc)
          if(errc.ne.0.and.VERBOSE) write(CONS_OUT,'("#ERROR(TAVP_MNG)[",i6,"]: Locator error ",i11," by thread ",i2)')&
@@ -1784,6 +1782,7 @@
          integer(INTD), intent(out), optional:: ierr        !out: error code
          integer(INTD):: errc,ier,thid
          logical:: active,stopping
+         class(dsvp_t), pointer:: dsvp
 
          errc=0; thid=omp_get_thread_num()
          if(DEBUG.gt.0) then
@@ -1792,6 +1791,9 @@
          endif
 !Initialize queues:
          call this%init_queue(this%num_ports,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-1
+!Wait on other TAVP units:
+         dsvp=>this%get_dsvp()
+         call wait_on_other_units(dsvp,errc,ier); if(ier.ne.0.and.errc.eq.0) errc=-35
 !Work loop:
          active=(errc.eq.0); stopping=(.not.active)
          wloop: do while(active)
@@ -1879,6 +1881,7 @@
          integer(INTD), intent(out), optional:: ierr        !out: error code
          integer(INTD):: errc,ier,thid,i
          logical:: active,stopping
+         class(dsvp_t), pointer:: dsvp
 
          errc=0; thid=omp_get_thread_num()
          if(DEBUG.gt.0) then
@@ -1887,20 +1890,21 @@
          endif
 !Reserve bytecode buffers:
          allocate(this%bytecode(this%num_ranks),STAT=ier); if(ier.ne.0.and.errc.eq.0) errc=-1
-         if(errc.eq.0) then
+         if(ier.eq.0) then
           do i=1,this%num_ranks
            call this%bytecode(i)%reserve_mem(ier,MAX_BYTECODE_SIZE,MAX_BYTECODE_INSTR); if(ier.ne.0.and.errc.eq.0) errc=-1
           enddo
-          if(errc.eq.0) then
-!Initialize queues:
-           call this%init_queue(this%num_ports,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-1
-!Work loop:
-           active=((errc.eq.0).and.(this%dispatch_comm.ne.MPI_COMM_NULL)); stopping=(.not.active)
-           wloop: do while(active)
-            !`Implement
-           enddo wloop
-          endif
          endif
+!Initialize queues:
+         call this%init_queue(this%num_ports,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-1
+!Wait on other TAVP units:
+         dsvp=>this%get_dsvp()
+         call wait_on_other_units(dsvp,errc,ier); if(ier.ne.0.and.errc.eq.0) errc=-35
+!Work loop:
+         active=((errc.eq.0).and.(this%dispatch_comm.ne.MPI_COMM_NULL)); stopping=(.not.active)
+         wloop: do while(active)
+          !`Implement
+         enddo wloop
 !Record the error:
          ier=this%get_error(); if(ier.eq.DSVP_SUCCESS) call this%set_error(errc)
          if(errc.ne.0.and.VERBOSE) write(CONS_OUT,'("#ERROR(TAVP_MNG)[",i6,"]: Dispatcher error ",i11," by thread ",i2)')&
@@ -2032,6 +2036,7 @@
          integer(INTD), intent(out), optional:: ierr        !out: error code
          integer(INTD):: errc,ier,thid
          logical:: active,stopping
+         class(dsvp_t), pointer:: dsvp
 
          errc=0; thid=omp_get_thread_num()
          if(DEBUG.gt.0) then
@@ -2040,15 +2045,16 @@
          endif
 !Reserve a bytecode buffer:
          call this%bytecode%reserve_mem(ier,MAX_BYTECODE_SIZE,MAX_BYTECODE_INSTR); if(ier.ne.0.and.errc.eq.0) errc=-1
-         if(errc.eq.0) then
 !Initialize queues:
-          call this%init_queue(this%num_ports,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-1
+         call this%init_queue(this%num_ports,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-1
+!Wait on other TAVP units:
+         dsvp=>this%get_dsvp()
+         call wait_on_other_units(dsvp,errc,ier); if(ier.ne.0.and.errc.eq.0) errc=-35
 !Work loop:
-          active=((errc.eq.0).and.(this%repl_comm.ne.MPI_COMM_NULL)); stopping=(.not.active)
-          wloop: do while(active)
-           !`Implement
-          enddo wloop
-         endif
+         active=((errc.eq.0).and.(this%repl_comm.ne.MPI_COMM_NULL)); stopping=(.not.active)
+         wloop: do while(active)
+          !`Implement
+         enddo wloop
 !Record the error:
          ier=this%get_error(); if(ier.eq.DSVP_SUCCESS) call this%set_error(errc)
          if(errc.ne.0.and.VERBOSE) write(CONS_OUT,'("#ERROR(TAVP_MNG)[",i6,"]: Replicator error ",i11," by thread ",i2)')&
@@ -2143,6 +2149,7 @@
          integer(INTD), intent(out), optional:: ierr       !out: error code
          integer(INTD):: errc,ier,thid
          logical:: active,stopping
+         class(dsvp_t), pointer:: dsvp
 
          errc=0; thid=omp_get_thread_num()
          if(DEBUG.gt.0) then
@@ -2151,6 +2158,9 @@
          endif
 !Initialize queues:
          call this%init_queue(this%num_ports,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-1
+!Wait on other TAVP units:
+         dsvp=>this%get_dsvp()
+         call wait_on_other_units(dsvp,errc,ier); if(ier.ne.0.and.errc.eq.0) errc=-35
 !Work loop:
          active=(errc.eq.0); stopping=(.not.active)
          wloop: do while(active)
@@ -2196,6 +2206,43 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TAVPMNGCollectorCollect
+![auxiliary]-----------------------------------------------
+        subroutine wait_on_other_units(dsvp,err_in,err_out)
+!Waits on all TAVP units to get initialized.
+         implicit none
+         class(dsvp_t), intent(inout), target:: dsvp
+         integer(INTD), intent(in):: err_in
+         integer(INTD), intent(out):: err_out
+         integer(INTD), pointer, volatile:: units_left
+
+         err_out=0; units_left=>NULL()
+!$OMP CRITICAL
+         select type(tavp=>dsvp)
+         class is(tavp_mng_t)
+          if(err_in.eq.0) then
+           if(tavp%num_uninitialized.lt.0) then
+            err_out=tavp%num_uninitialized
+           else
+            tavp%num_uninitialized=tavp%num_uninitialized-1
+            units_left=>tavp%num_uninitialized
+           endif
+          else
+           tavp%num_uninitialized=-1
+           err_out=err_in
+          endif
+         class default
+          call quit(-1,'FATAL(TAVP-MNG:wait_on_other_units): Invalid DSVP type!')
+         end select
+!$OMP END CRITICAL
+         if(err_out.eq.0) then
+          do
+!$OMP ATOMIC READ
+           err_out=units_left
+           if(err_out.le.0) exit
+          enddo
+         endif
+         return
+        end subroutine wait_on_other_units
 ![tavp_mng_t]======================================
         subroutine TAVPMNGConfigure(this,conf,ierr)
 !Configures TAVP-MNG DSVP:
@@ -2303,7 +2350,11 @@
                                  if(errc.eq.DSVP_SUCCESS) then
  !Set the DSVP id and description:
                                   call this%set_description(int(conf%tavp_id,INTL),conf%description,errc)
-                                  if(errc.ne.DSVP_SUCCESS) errc=-26
+                                  if(errc.eq.DSVP_SUCCESS) then
+                                   this%num_uninitialized=num_units
+                                  else
+                                   errc=-26
+                                  endif
                                  else
                                   errc=-25
                                  endif

@@ -1,6 +1,6 @@
 !Domain-specific virtual processor (DSVP): Abstract base module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/10/31
+!REVISION: 2017/11/01
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -1152,7 +1152,9 @@
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
 
+!$OMP CRITICAL (DSVU_PORT_LOCK)
          res=.not.(this%iqueue%get_status(errc).eq.GFC_IT_ACTIVE)
+!$OMP END CRITICAL (DSVU_PORT_LOCK)
          if(present(ierr)) ierr=errc
          return
         end function DSUnitPortIsEmpty
@@ -1222,9 +1224,8 @@
          integer(INTD):: errc
 
          errc=DSVP_SUCCESS
-!$OMP CRITICAL (DSVU_PORT_LOCK)
+!$OMP ATOMIC WRITE
          this%locked=.TRUE.
-!$OMP END CRITICAL (DSVU_PORT_LOCK)
          if(present(ierr)) ierr=errc
          return
         end subroutine DSUnitPortLock
@@ -1237,9 +1238,8 @@
          integer(INTD):: errc
 
          errc=DSVP_SUCCESS
-!$OMP CRITICAL (DSVU_PORT_LOCK)
+!$OMP ATOMIC WRITE
          this%locked=.FALSE.
-!$OMP END CRITICAL (DSVU_PORT_LOCK)
          if(present(ierr)) ierr=errc
          return
         end subroutine DSUnitPortUnlock
