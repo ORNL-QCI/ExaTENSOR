@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/11/01
+!REVISION: 2017/11/02
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -2902,7 +2902,8 @@
  !Configure static DSVU:
   !Decoder:
              decode_acceptor=>this%resourcer
-             decoder_conf=tavp_wrk_decoder_conf_t(conf%source_comm,conf%source_rank,decode_acceptor,0)
+             decoder_conf=tavp_wrk_decoder_conf_t(source_comm=conf%source_comm,source_rank=conf%source_rank,&
+                         &acceptor=decode_acceptor,acceptor_port_id=0)
              call this%decoder%configure(decoder_conf,errc)
              if(errc.eq.0) then
               num_units=num_units+1

@@ -8,7 +8,7 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/10/30
+!REVISION: 2017/11/02
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -654,9 +654,9 @@
          type(tens_descr_t), target:: tens_descr
 
          tens_entry_p=>NULL()
-         tens_descr=tensor%get_descriptor(errc)
+         tens_descr=tensor%get_descriptor(errc,skip_body=.TRUE.,skip_location=.TRUE.)
          if(errc.eq.TEREC_SUCCESS) then
-!$OMP CRITICAL (TAVP_CACHE)
+!!!$OMP CRITICAL (TAVP_CACHE)
           errc=dit%init(this%map)
           if(errc.eq.GFC_SUCCESS) then
            uptr=>NULL()
@@ -671,7 +671,7 @@
           else
            errc=-2
           endif
-!$OMP END CRITICAL (TAVP_CACHE)
+!!!$OMP END CRITICAL (TAVP_CACHE)
          else
           errc=-1
          endif
@@ -703,9 +703,9 @@
 
          stored=.FALSE.
          if(associated(tensor)) then
-          tens_descr=tensor%get_descriptor(errc)
+          tens_descr=tensor%get_descriptor(errc,skip_body=.TRUE.,skip_location=.TRUE.)
           if(errc.eq.TEREC_SUCCESS) then
-!$OMP CRITICAL (TAVP_CACHE)
+!!!$OMP CRITICAL (TAVP_CACHE)
            errc=dit%init(this%map)
            if(errc.eq.GFC_SUCCESS) then
             errc=tens_cache_entry_alloc_f(tce) !allocates an empty instance of an extended(tens_cache_entry_t) with a proper dtor
@@ -733,7 +733,7 @@
            else
             errc=-3
            endif
-!$OMP END CRITICAL (TAVP_CACHE)
+!!!$OMP END CRITICAL (TAVP_CACHE)
           else
            errc=-2
           endif
@@ -759,9 +759,9 @@
          type(tens_descr_t), target:: tens_descr
 
          evicted=.FALSE.
-         tens_descr=tensor%get_descriptor(errc)
+         tens_descr=tensor%get_descriptor(errc,skip_body=.TRUE.,skip_location=.TRUE.)
          if(errc.eq.TEREC_SUCCESS) then
-!$OMP CRITICAL (TAVP_CACHE)
+!!!$OMP CRITICAL (TAVP_CACHE)
           errc=dit%init(this%map)
           if(errc.eq.GFC_SUCCESS) then
            res=dit%search(GFC_DICT_DELETE_IF_FOUND,cmp_tens_descriptors,tens_descr)
@@ -770,7 +770,7 @@
           else
            errc=-2
           endif
-!$OMP END CRITICAL (TAVP_CACHE)
+!!!$OMP END CRITICAL (TAVP_CACHE)
          else
           errc=-1
          endif
@@ -786,7 +786,7 @@
          integer(INTD):: errc,res
          type(dictionary_iter_t):: dit
 
-!$OMP CRITICAL (TAVP_CACHE)
+!!!$OMP CRITICAL (TAVP_CACHE)
          errc=dit%init(this%map)
          if(errc.eq.GFC_SUCCESS) then
           call dit%delete_all(errc); if(errc.ne.GFC_SUCCESS) errc=-3
@@ -794,7 +794,7 @@
          else
           errc=-1
          endif
-!$OMP END CRITICAL (TAVP_CACHE)
+!!!$OMP END CRITICAL (TAVP_CACHE)
          if(present(ierr)) ierr=errc
          return
         end subroutine TensCacheErase

@@ -1,6 +1,6 @@
 !Domain-specific virtual processor (DSVP): Abstract base module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/11/01
+!REVISION: 2017/11/02
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -235,10 +235,13 @@
         type, abstract, extends(ds_unit_t), public:: ds_decoder_t
          class(ds_unit_t), pointer, private:: acceptor_unit=>NULL() !non-owning pointer to the DS unit for which the decoding is done
          integer(INTD), private:: acceptor_port_id=-1               !associated acceptor port id
+         real(8), private:: decode_time_min=-1d0                    !min time of instruction decoding (in sec)
+         real(8), private:: decode_time_max=-1d0                    !max time of instruction decoding (in sec)
          contains
           procedure(ds_decoder_decode_i), deferred, public:: decode !decoding procedure: Unpacks the raw byte packet (instruction bytecode) and constructs a domain-specific instruction
           procedure, public:: set_acceptor=>DSDecoderSetAcceptor    !sets the acceptor DS unit for which the decoding is done
           procedure, public:: get_acceptor=>DSDecoderGetAcceptor    !returns a pointer to the acceptor DS unit for which the decoding is done
+          procedure, public:: update_timing=>DSDecoderUpdateTiming  !updates the min/max timing for instruction decoding
         end type ds_decoder_t
  !Domain-specific encoder unit:
         type, abstract, extends(ds_unit_t), public:: ds_encoder_t
@@ -447,6 +450,7 @@
         public ds_decoder_decode_i
         private DSDecoderSetAcceptor
         private DSDecoderGetAcceptor
+        private DSDecoderUpdateTiming
  !ds_encoder_t:
         public ds_encoder_encode_i
  !dsvp_t:
@@ -1488,6 +1492,18 @@
          port_id=this%acceptor_port_id
          return
         end function DSDecoderGetAcceptor
+!------------------------------------------------------
+        subroutine DSDecoderUpdateTiming(this,new_time)
+!Updates min/max instruction decoding time.
+         implicit none
+         class(ds_decoder_t), intent(inout):: this !inout: DS decoder unit
+         real(8), intent(in):: new_time            !in: new instruction decoding time
+
+         if(this%decode_time_min.lt.0d0) this%decode_time_min=huge(0d0)
+         this%decode_time_min=min(this%decode_time_min,new_time)
+         this%decode_time_max=max(this%decode_time_max,new_time)
+         return
+        end subroutine DSDecoderUpdateTiming
 ![dsvp_t]==============================
         subroutine DSVPStart(this,ierr)
 !Starts DSVP active life cycle (starts all DS units).

@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/11/01
+!REVISION: 2017/11/02
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -206,7 +206,7 @@
  !TAVP-MNG:
         type, extends(dsvp_t), public:: tavp_mng_t
          integer(INTD), private:: num_uninitialized=-1              !number of uninitialized DS units
-         type(tens_cache_t), private:: tens_cache                   !tensor argument cache
+         type(tens_cache_t), private:: tens_cache                   !tensor argument cache (SHARED RESOURCE!)
          type(tavp_mng_decoder_t), private:: udecoder               !DSVU: decodes incoming tensor instructions from the higher-level manager
          type(tavp_mng_retirer_t), private:: retirer                !DSVU: retires processed tensor instructions and sends them back to the manager
          type(tavp_mng_locator_t), private:: locator                !DSVU: locates metadata for remote tensor arguments
@@ -1281,12 +1281,15 @@
            class(tens_cache_entry_t), pointer:: tens_entry
            class(tens_entry_mng_t), pointer:: tens_mng_entry
            logical:: res
+           real(8):: tm
 
            jerr=0
            tensor=>NULL(); allocate(tensor,STAT=jerr) !tensor will either be owned by a tensor cache entry or deallocated here
            if(jerr.eq.0) then
             call tensor%tens_rcrsv_ctor(instr_packet,jerr)
             if(jerr.eq.TEREC_SUCCESS) then
+!$OMP CRITICAL (TAVP_MNG_CACHE)
+             tm=thread_wtime()
              tens_entry=>NULL(); tens_entry=>arg_cache%lookup(tensor,jerr)
              if(jerr.eq.0) then
               select case(op_code)
@@ -1375,6 +1378,8 @@
               call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_CHE_FAILURE)
               jerr=-3
              endif
+             tm=thread_wtime(tm); call this%update_timing(tm)
+!$OMP END CRITICAL (TAVP_MNG_CACHE)
             else
              call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_BTC_BAD)
              jerr=-2
@@ -1398,6 +1403,7 @@
            class(tens_entry_mng_t), pointer:: tens_mng_entry
            integer(INTD):: jj
            logical:: res
+           real(8):: tm
 
            jerr=0
            tens_contr_ctrl=>NULL(); allocate(tens_contr_ctrl,STAT=jerr) !tensor contraction control will be owned by the tensor contraction
@@ -1408,6 +1414,8 @@
              if(jerr.eq.DSVP_SUCCESS) then
               call ds_instr%alloc_operands(3,jerr)
               if(jerr.eq.DSVP_SUCCESS) then
+!$OMP CRITICAL (TAVP_MNG_CACHE)
+               tm=thread_wtime()
                do jj=0,2 !loop over operands: 0:Destination, 1:LeftInput, 2:RightInput
                 tensor=>NULL(); allocate(tensor,STAT=jerr) !tensor will either be owned by a tensor cache entry or deallocated here
                 if(jerr.ne.0) then
@@ -1447,6 +1455,8 @@
                  call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_GEN_FAILURE); jerr=-5; exit
                 endif
                enddo
+               tm=thread_wtime(tm); call this%update_timing(tm)
+!$OMP END CRITICAL (TAVP_MNG_CACHE)
               else
                call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_RSC_UNAVAILABLE)
                jerr=-4
@@ -2283,7 +2293,8 @@
  !Configure static DSVU:
   !Up-decoder:
              decode_acceptor=>this%locator
-             decoder_conf=tavp_mng_decoder_conf_t(conf%source_comm,conf%source_rank,decode_acceptor,0)
+             decoder_conf=tavp_mng_decoder_conf_t(source_comm=conf%source_comm,source_rank=conf%source_rank,&
+                         &acceptor=decode_acceptor,acceptor_port_id=0)
              call this%udecoder%configure(decoder_conf,errc)
              if(errc.eq.0) then
               num_units=num_units+1
@@ -2299,7 +2310,8 @@
                 num_units=num_units+1
   !Locating-decoder:
                 decode_acceptor=>this%locator
-                decoder_conf=tavp_mng_decoder_conf_t(conf%ring_comm,conf%ring_recv_rank,decode_acceptor,1)
+                decoder_conf=tavp_mng_decoder_conf_t(source_comm=conf%ring_comm,source_rank=conf%ring_recv_rank,&
+                            &acceptor=decode_acceptor,acceptor_port_id=1)
                 call this%ldecoder%configure(decoder_conf,errc)
                 if(errc.eq.0) then
                  num_units=num_units+1
@@ -2320,13 +2332,15 @@
                     num_units=num_units+1
   !Replicating-decoder:
                     decode_acceptor=>this%replicator
-                    decoder_conf=tavp_mng_decoder_conf_t(role_comm,MPI_ANY_SOURCE,decode_acceptor,1)
+                    decoder_conf=tavp_mng_decoder_conf_t(source_comm=role_comm,source_rank=MPI_ANY_SOURCE,&
+                                &acceptor=decode_acceptor,acceptor_port_id=1)
                     call this%rdecoder%configure(decoder_conf,errc)
                     if(errc.eq.0) then
                      num_units=num_units+1
   !Collecting-decoder:
                      decode_acceptor=>this%collector
-                     decoder_conf=tavp_mng_decoder_conf_t(conf%collect_comm,MPI_ANY_SOURCE,decode_acceptor,1)
+                     decoder_conf=tavp_mng_decoder_conf_t(source_comm=conf%collect_comm,source_rank=MPI_ANY_SOURCE,&
+                                 &acceptor=decode_acceptor,acceptor_port_id=1)
                      call this%cdecoder%configure(decoder_conf,errc)
                      if(errc.eq.0) then
                       num_units=num_units+1

@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/10/27
+!REVISION: 2017/11/02
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -24,6 +24,13 @@
 !Acronyms:
 ! # SAT: Subspace Aggregation Tree.
 ! # MUD: Maximally Uniform Distribution.
+!NOTES:
+! # Tensor definition stages:
+!   a) Null: No tensor;
+!   b) Defined: Tensor signature is defined;
+!   c) Resolved: Tensor shape is fully defined (all dimensions resolved);
+!   d) Laid-Out: Tensor layout is defined;
+!   e) Mapped: Tensor body is physically mapped.
         use tensor_algebra !includes dil_basic
         use stsubs
         use timers
@@ -273,6 +280,7 @@
           procedure, public:: set_shape=>TensRcrsvSetShape           !sets the tensor shape (if it has not been set yet)
           procedure, public:: set_layout=>TensRcrsvSetLayout         !sets the tensor body storage layout
           procedure, public:: set_location=>TensRcrsvSetLocation     !sets the physical location of the tensor body data
+          procedure, public:: update=>TensRcrsvUpdate                !updates the tensor information (new resolution -> new layout -> new body)
           procedure, public:: reset_state=>TensRcrsvResetState       !resets the tensor body value state
           procedure, public:: get_state=>TensRcrsvGetState           !returns the tensor body value state
           procedure, public:: get_header=>TensRcrsvGetHeader         !returns a pointer to the tensor header
@@ -553,6 +561,7 @@
         private TensRcrsvSetShape
         private TensRcrsvSetLayout
         private TensRcrsvSetLocation
+        private TensRcrsvUpdate
         private TensRcrsvResetState
         private TensRcrsvGetState
         private TensRcrsvGetHeader
@@ -3812,6 +3821,36 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensRcrsvSetLocation
+!----------------------------------------------------
+        subroutine TensRcrsvUpdate(this,another,ierr)
+!Updates the tensor information (new resolution -> new layout -> new body).
+!<this> tensor must at least be defined (have its signature set).
+!<another> tensor must have the same signature, and possibly, shape.
+!Then, any additional information will be transferred from <another>
+!tensor to <this> tensor, thus updating it.
+         implicit none
+         class(tens_rcrsv_t), intent(inout):: this   !inout: tensor being updated
+         class(tens_rcrsv_t), intent(in):: another   !in: same tensor with more complete information (later stage of definition)
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc,this_nd,this_unres,an_nd,an_unres
+         logical:: this_shp,this_lay,this_loc,an_shp,an_lay,an_loc
+
+         if(this%is_set(errc,num_dims=this_nd,shaped=this_shp,unresolved=this_unres,layed=this_lay,located=this_loc)) then
+          if(errc.eq.TEREC_SUCCESS) then
+           if(another%is_set(errc,num_dims=an_nd,shaped=an_shp,unresolved=an_unres,layed=an_lay,located=an_loc)) then
+            if(errc.eq.TEREC_SUCCESS) then
+             
+            endif
+           else
+            errc=TEREC_INVALID_REQUEST
+           endif
+          endif
+         else
+          errc=TEREC_INVALID_REQUEST
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensRcrsvUpdate
 !-----------------------------------------------------------
         subroutine TensRcrsvResetState(this,ierr,body_state)
 !Resets the tensor body value state.
