@@ -227,6 +227,7 @@
           procedure(tens_layout_volume_i), deferred, public:: get_volume            !returns the physical volume of the tensor block (number of physically stored elements)
           procedure(tens_layout_map_i), deferred, public:: map                      !maps a specific element of the tensor block (layout specific)
           procedure(tens_layout_extract_i), deferred, public:: extract_simple_parts !creates a list of constituent simple (dense) parts of the tensor block
+          procedure(tens_layout_update_i), deferred, private:: update_header        !updates the tensor header the layout is associated with
         end type tens_layout_t
  !Concrete storage layout "Fortran-dimension-led":
         type, extends(tens_layout_t), public:: tens_layout_fdims_t
@@ -239,6 +240,7 @@
           procedure, public:: get_volume=>TensLayoutFdimsGetVolume          !returns the physical tensor volume (number of elements stored)
           procedure, public:: map=>TensLayoutFdimsMap                       !addresses a specific tensor element
           procedure, public:: extract_simple_parts=>TensLayoutFdimsExtract  !extracts simpe dense tensor parts (bricks) from the tensor block
+          procedure, private:: update_header=>TensLayoutFdimsUpdateHeader   !updates the tensor header the layout is associated with
           final:: tens_layout_fdims_dtor
         end type tens_layout_fdims_t
  !Tensor body:
@@ -248,7 +250,7 @@
          type(list_bi_t), private:: subtensors                !list of constituent tensors in terms of tensor headers
          class(tens_layout_t), allocatable, private:: layout  !tensor block storage layout (if physically stored as a whole)
          contains
-          procedure, private:: TensBodyCtorBase                     !basic ctor (layout + data type)
+          procedure, private:: TensBodyCtorBase                     !basic ctor
           procedure, private:: TensBodyCtorUnpack                   !ctor by unpacking
           generic, public:: tens_body_ctor=>TensBodyCtorBase,TensBodyCtorUnpack
           procedure, public:: pack=>TensBodyPack                    !packs the object into a packet
@@ -262,6 +264,7 @@
           procedure, public:: get_num_subtensors=>TensBodyGetNumSubtensors !returns the total number of constituent subtensors
           procedure, public:: get_subtensors=>TensBodyGetSubtensors !returns a pointer to the list of constituent subtensors (each subtensor is represented by a tensor header)
           procedure, public:: print_it=>TensBodyPrintIt             !prints the tensor body info
+          procedure, private:: update_header=>TensBodyUpdateHeader  !updates the tensor header the body is associated with
           final:: tens_body_dtor                                    !dtor
         end type tens_body_t
  !Recursive tensor:
@@ -271,8 +274,9 @@
          contains
           procedure, private:: TensRcrsvCtorSigna                    !ctor by tensor signature and optionally tensor shape
           procedure, private:: TensRcrsvCtorHead                     !ctor by tensor header
+          procedure, private:: TensRcrsvCtorClone                    !copy ctor
           procedure, private:: TensRcrsvCtorUnpack                   !ctor by unpacking
-          generic, public:: tens_rcrsv_ctor=>TensRcrsvCtorSigna,TensRcrsvCtorHead,TensRcrsvCtorUnpack
+          generic, public:: tens_rcrsv_ctor=>TensRcrsvCtorSigna,TensRcrsvCtorHead,TensRcrsvCtorClone,TensRcrsvCtorUnpack
           procedure, public:: pack=>TensRcrsvPack                    !packs the object into a packet
           procedure, public:: is_set=>TensRcrsvIsSet                 !returns TRUE if the tensor is set (signature defined) plus other info
           procedure, public:: add_subtensor=>TensRcrsvAddSubtensor   !registers a constituent subtensor by providing its tensor header
@@ -413,6 +417,14 @@
           type(list_bi_t), intent(inout):: parts      !out: list of the constituent simple (dense) blocks with their headers and offsets
           integer(INTD), intent(out), optional:: ierr !out: error code
          end subroutine tens_layout_extract_i
+  !tens_layout_t: .update_header():
+         subroutine tens_layout_update_i(this,header,ierr)
+          import:: INTD,tens_header_t,tens_layout_t
+          implicit none
+          class(tens_layout_t), intent(inout):: this        !inout: tensor block storage layout
+          class(tens_header_t), intent(in), target:: header !in: tensor header the layout is associated with
+          integer(INTD), intent(out), optional:: ierr       !out: error code
+         end subroutine tens_layout_update_i
   !tens_operation_t: .is_set():
          function tens_operation_query_i(this,ierr) result(ans)
           import:: INTD,tens_operation_t
@@ -534,6 +546,7 @@
         private TensLayoutFdimsGetVolume
         private TensLayoutFdimsMap
         private TensLayoutFdimsExtract
+        private TensLayoutFdimsUpdateHeader
         public tens_layout_fdims_dtor
  !tens_body_t:
         private TensBodyCtorBase
@@ -549,10 +562,12 @@
         private TensBodyGetNumSubtensors
         private TensBodyGetSubtensors
         private TensBodyPrintIt
+        private TensBodyUpdateHeader
         public tens_body_dtor
  !tens_rcrsv_t:
         private TensRcrsvCtorSigna
         private TensRcrsvCtorHead
+        private TensRcrsvCtorClone
         private TensRcrsvCtorUnpack
         private TensRcrsvPack
         private TensRcrsvIsSet
@@ -3099,7 +3114,21 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensLayoutFdimsExtract
-!---------------------------------------------
+!---------------------------------------------------------------
+        subroutine TensLayoutFdimsUpdateHeader(this,header,ierr)
+!Updates the tensor header the layout is associated with.
+         implicit none
+         class(tens_layout_fdims_t), intent(inout):: this  !inout: tensor body layout
+         class(tens_header_t), intent(in), target:: header !in: tensor header
+         integer(INTD), intent(out), optional:: ierr       !out: error code
+         integer(INTD):: errc
+
+         errc=TEREC_SUCCESS
+         this%header=>header
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensLayoutFdimsUpdateHeader
+!----------------------------------------------
         subroutine tens_layout_fdims_dtor(this)
          implicit none
          type(tens_layout_fdims_t):: this
@@ -3526,6 +3555,24 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensBodyPrintIt
+!--------------------------------------------------------
+        subroutine TensBodyUpdateHeader(this,header,ierr)
+!Updates the tensor header the body is associated with.
+         implicit none
+         class(tens_body_t), intent(inout):: this          !inout: tensor body
+         class(tens_header_t), intent(in), target:: header !in: tensor header the body is associated with
+         integer(INTD), intent(out), optional:: ierr       !out: error code
+         integer(INTD):: errc
+
+         errc=TEREC_SUCCESS
+         if(allocated(this%layout)) then
+          call this%layout%update_header(header,errc)
+         else
+          errc=TEREC_INVALID_REQUEST
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensBodyUpdateHeader
 !--------------------------------------
         subroutine tens_body_dtor(this)
          implicit none
@@ -3597,6 +3644,18 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensRcrsvCtorHead
+!-------------------------------------------------
+        subroutine TensRcrsvCtorClone(this,source)
+!Copy ctor.
+         implicit none
+         class(tens_rcrsv_t), intent(out):: this  !out: tensor
+         class(tens_rcrsv_t), intent(in):: source !in: source tensor
+
+         this%header=source%header
+         this%body=source%body
+         call this%body%update_header(this%header)
+         return
+        end subroutine TensRcrsvCtorClone
 !-------------------------------------------------------
         subroutine TensRcrsvCtorUnpack(this,packet,ierr)
 !Unpacks the object from a packet.
@@ -3839,7 +3898,31 @@
           if(errc.eq.TEREC_SUCCESS) then
            if(another%is_set(errc,num_dims=an_nd,shaped=an_shp,unresolved=an_unres,layed=an_lay,located=an_loc)) then
             if(errc.eq.TEREC_SUCCESS) then
-             
+             if(this%header%signature%compare(another%header%signature).eq.CMP_EQ) then
+ !Update shape:
+              if(an_shp) then
+               if(.not.this_shp) then !import shape from <another>
+                this%header%shape=another%header%shape
+               else
+                if(this%header%shape%compare(another%header%shape).ne.CMP_EQ) errc=TEREC_INVALID_REQUEST
+               endif
+              endif
+ !Update layout:
+              if(an_lay.and.errc.eq.TEREC_SUCCESS) then
+               if(.not.this_lay) then
+                this%body=another%body
+                call this%body%update_header(this%header,errc)
+               else
+                !`Insert layout equivalence check here: They must match
+ !Update location:
+                if(an_loc) then
+                 !`Finish
+                endif
+               endif
+              endif
+             else
+              errc=TEREC_INVALID_REQUEST
+             endif
             endif
            else
             errc=TEREC_INVALID_REQUEST
