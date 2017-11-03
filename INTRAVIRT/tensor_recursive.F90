@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/11/02
+!REVISION: 2017/11/03
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -3901,22 +3901,22 @@
              if(this%header%signature%compare(another%header%signature).eq.CMP_EQ) then
  !Update shape:
               if(an_shp) then
-               if(.not.this_shp) then !import shape from <another>
+               if(.not.this_shp) then !copy shape from <another>
                 this%header%shape=another%header%shape
                else
                 if(this%header%shape%compare(another%header%shape).ne.CMP_EQ) errc=TEREC_INVALID_REQUEST
                endif
               endif
- !Update layout:
+ !Update layout (copy the full body info):
               if(an_lay.and.errc.eq.TEREC_SUCCESS) then
                if(.not.this_lay) then
                 this%body=another%body
                 call this%body%update_header(this%header,errc)
                else
-                !`Insert layout equivalence check here: They must match
- !Update location:
-                if(an_loc) then
-                 !`Finish
+ !Update location (actually copy the full body info):
+                if(an_loc.and.(.not.this_loc)) then
+                 this%body=another%body
+                 call this%body%update_header(this%header,errc)
                 endif
                endif
               endif
