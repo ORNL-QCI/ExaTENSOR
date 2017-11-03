@@ -303,7 +303,7 @@ LTHREAD = $(LTHREAD_$(TOOLKIT))
 #LINKING:
 LFLAGS = $(MPI_LINK) $(LA_LINK) $(LTHREAD) $(CUDA_LINK) $(LIB)
 
-OBJS = ./OBJ/tensor_leg.o ./OBJ/exatensor.o
+OBJS = ./OBJ/tensor_leg.o ./OBJ/tensornet.o
 
 $(NAME): $(OBJS) *.hpp $(MY_LIB)
 	ar cr lib$(NAME).a $(OBJS) $(MY_LIB)
@@ -314,8 +314,8 @@ $(NAME): $(OBJS) *.hpp $(MY_LIB)
 	mkdir -p ./OBJ
 	$(CPPCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(CFLAGS) tensor_leg.cpp -o ./OBJ/tensor_leg.o
 
-./OBJ/exatensor.o: tensor_solver.hpp exatensor.hpp exatensor.cpp
-	$(CPPCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(CFLAGS) exatensor.cpp -o ./OBJ/exatensor.o
+./OBJ/tensornet.o: tensor_solver.hpp tensornet.hpp tensornet.cpp
+	$(CPPCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(MY_INC) $(CFLAGS) tensornet.cpp -o ./OBJ/tensornet.o
 
 
 .PHONY: clean
