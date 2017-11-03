@@ -23,8 +23,8 @@
 
 **/
 
-#ifndef _TENSORNET_H
-#define _TENSORNET_H
+#ifndef _EXA_TENSORNET_H
+#define _EXA_TENSORNET_H
 
 #include "tensor_solver.hpp"
 
@@ -35,4 +35,4 @@ namespace exatensor {
 
 } //end namespace exatensor
 
-#endif //_TENSORNET_H
+#endif //_EXA_TENSORNET_H
