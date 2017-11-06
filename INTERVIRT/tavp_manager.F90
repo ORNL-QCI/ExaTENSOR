@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/11/02
+!REVISION: 2017/11/06
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -1187,6 +1187,8 @@
          errc=0; thid=omp_get_thread_num()
          if(DEBUG.gt.0) then
           write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decoder stopped as DSVU # ",i2," (thread ",i2,")")') impir,this%get_id(),thid
+          write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decoder DSVU # ",i2," (thread ",i2,"): Time stats (sec): ")',ADVANCE='NO')&
+          &impir,this%get_id(),thid; call this%print_timing(CONS_OUT)
           !write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decoder DSVU # ",i2,": Port empty = ",l1)')&
           !&impir,this%get_id(),this%port_empty(0) !debug
           flush(CONS_OUT)
@@ -1210,7 +1212,9 @@
          class(dsvp_t), pointer:: dsvp
          class(tens_cache_t), pointer:: arg_cache
          integer(INTL):: iid
+         real(8):: tm
 
+         tm=thread_wtime()
          if(ds_instr%is_empty(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
 !Retrieve the TAVP argument cache:
@@ -1268,210 +1272,133 @@
           errc=-1
          endif
          if(present(ierr)) ierr=errc
+         tm=thread_wtime(tm); call this%update_timing(tm)
          return
 
          contains
 
-          subroutine decode_instr_tens_create_destroy(jerr)
-           !CREATE/DESTROY a tensor
+          subroutine decode_instr_operands(jerr)
+           !Decodes tensor instruction operands
            integer(INTD), intent(out):: jerr
            class(tens_rcrsv_t), pointer:: tensor
+           class(tens_rcrsv_t), pointer:: tensor_tmp
            class(tens_oprnd_t), pointer:: tens_oprnd
            class(ds_oprnd_t), pointer:: oprnd
            class(tens_cache_entry_t), pointer:: tens_entry
            class(tens_entry_mng_t), pointer:: tens_mng_entry
-           logical:: res
-           real(8):: tm
+           integer(INTD):: jj,jn
+           logical:: stored
 
-           jerr=0
-           tensor=>NULL(); allocate(tensor,STAT=jerr) !tensor will either be owned by a tensor cache entry or deallocated here
-           if(jerr.eq.0) then
-            call tensor%tens_rcrsv_ctor(instr_packet,jerr)
-            if(jerr.eq.TEREC_SUCCESS) then
+           jn=ds_instr%get_num_operands(jerr)
+           if(jerr.eq.DSVP_SUCCESS.and.jn.ge.0) then
+            tensor_tmp=>NULL()
 !$OMP CRITICAL (TAVP_MNG_CACHE)
-             tm=thread_wtime()
-             tens_entry=>NULL(); tens_entry=>arg_cache%lookup(tensor,jerr)
-             if(jerr.eq.0) then
-              select case(op_code)
-              case(TAVP_INSTR_TENS_CREATE) !CREATE a tensor
-               if(.not.associated(tens_entry)) then
-                res=arg_cache%store(tensor,tens_entry_mng_alloc,jerr,tens_entry_p=tens_entry) !tensor ownership is moved to the tensor cache entry
-                if(res.and.(jerr.eq.0).and.associated(tens_entry)) then
-                 tens_mng_entry=>NULL()
-                 select type(tens_entry); class is(tens_entry_mng_t); tens_mng_entry=>tens_entry; end select
-                 if(associated(tens_mng_entry)) then
-                  call ds_instr%alloc_operands(1,jerr)
-                  if(jerr.eq.DSVP_SUCCESS) then
-                   tens_oprnd=>NULL(); allocate(tens_oprnd,STAT=jerr) !tensor operand will be owned by the tensor instruction
-                   if(jerr.eq.0) then
-                    call tens_oprnd%tens_oprnd_ctor(tensor,jerr,tens_mng_entry) !tensor is owned by the tensor cache
-                    if(jerr.eq.0) then
-                     oprnd=>tens_oprnd; call ds_instr%set_operand(0,oprnd,jerr) !tensor operand ownership is moved to the tensor instruction
-                     if(jerr.ne.DSVP_SUCCESS) then
-                      call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_GEN_FAILURE)
-                      jerr=-16
-                     endif
-                    else
-                     call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_GEN_FAILURE)
-                     jerr=-15
-                    endif
-                   else
-                    call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_RSC_UNAVAILABLE)
-                    jerr=-14
-                   endif
-                  else
-                   call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_RSC_UNAVAILABLE)
-                   jerr=-13
-                  endif
-                 else
-                  call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_GEN_FAILURE)
-                  jerr=-12
-                 endif
-                else
-                 call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_CHE_FAILURE)
-                 jerr=-11
-                endif
-               else
-                call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_ARG_DEFINED)
-                jerr=-10
-               endif
-              case(TAVP_INSTR_TENS_DESTROY) !DESTROY a tensor
-               if(associated(tens_entry)) then
-                deallocate(tensor); tensor=>NULL() !deallocate the temporary tensor
-                tens_mng_entry=>NULL()
-                select type(tens_entry); class is(tens_entry_mng_t); tens_mng_entry=>tens_entry; end select
-                if(associated(tens_mng_entry)) then
-                 tensor=>tens_mng_entry%get_tensor() !use the tensor from the tensor cache
-                 call ds_instr%alloc_operands(1,jerr)
-                 if(jerr.eq.DSVP_SUCCESS) then
-                  tens_oprnd=>NULL(); allocate(tens_oprnd,STAT=jerr) !tensor operand will be owned by the tensor instruction
-                  if(jerr.eq.0) then
-                   call tens_oprnd%tens_oprnd_ctor(tensor,jerr,tens_mng_entry) !tensor is owned by the tensor cache
-                   if(jerr.eq.0) then
-                    oprnd=>tens_oprnd; call ds_instr%set_operand(0,oprnd,jerr) !tensor operand ownership is moved to the tensor instruction
-                    if(jerr.ne.DSVP_SUCCESS) then
-                     call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_GEN_FAILURE)
-                     jerr=-9
-                    endif
-                   else
-                    call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_GEN_FAILURE)
-                    jerr=-8
-                   endif
-                  else
-                   call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_RSC_UNAVAILABLE)
-                   jerr=-7
-                  endif
-                 else
-                  call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_RSC_UNAVAILABLE)
-                  jerr=-6
-                 endif
-                else
-                 call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_GEN_FAILURE)
-                 jerr=-5
-                endif
-               else
-                call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_ARG_UNDEFINED)
-                jerr=-4
-               endif
-              end select
-             else
-              call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_CHE_FAILURE)
-              jerr=-3
+            do jj=0,jn-1 !loop over tensor operands
+             allocate(tensor_tmp,STAT=jerr) !tensor will either be owned by a tensor cache entry or deallocated here
+             if(jerr.ne.0) then
+              tensor_tmp=>NULL()
+              call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_RSC_UNAVAILABLE); jerr=-1; exit
              endif
-             tm=thread_wtime(tm); call this%update_timing(tm)
+             call tensor_tmp%tens_rcrsv_ctor(instr_packet,jerr)
+             if(jerr.ne.TEREC_SUCCESS) then
+              call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_BTC_BAD); jerr=-2; exit
+             endif
+             tens_entry=>NULL(); tens_entry=>arg_cache%lookup(tensor_tmp,jerr)
+             if(jerr.ne.0) then
+              call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_CHE_FAILURE); jerr=-3; exit
+             endif
+             if(.not.associated(tens_entry)) then !tensor is absent in the tensor cache: Create an entry for it
+              stored=arg_cache%store(tensor_tmp,tens_entry_mng_alloc,jerr,tens_entry_p=tens_entry) !tensor ownership is moved to a tensor cache entry
+              if((.not.stored).or.(jerr.ne.0).or.(.not.associated(tens_entry))) then
+               call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_CHE_FAILURE); jerr=-4; exit
+              else
+               tensor_tmp=>NULL() !tensor ownership has been transferred to the tensor cache
+              endif
+             else
+              stored=.FALSE.
+             endif
+             tens_mng_entry=>NULL(); select type(tens_entry); class is(tens_entry_mng_t); tens_mng_entry=>tens_entry; end select
+             if(.not.associated(tens_mng_entry)) then
+              call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_CHE_FAILURE); jerr=-5; exit
+             endif
+             tensor=>tens_mng_entry%get_tensor() !use the tensor from the tensor cache
+             if(.not.stored) then !the tensor was already in the tensor cache before, update it by the information from the just decoded tensor
+              call tensor%update(tensor_tmp,jerr); deallocate(tensor_tmp); tensor_tmp=>NULL() !deallocate temporary tensor after importing its information
+              if(jerr.ne.TEREC_SUCCESS) then
+               call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_GEN_FAILURE); jerr=-6; exit
+              endif
+             endif
+             allocate(tens_oprnd,STAT=jerr) !tensor operand will be owned by the tensor instruction
+             if(jerr.ne.0) then
+              tens_oprnd=>NULL()
+              call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_RSC_UNAVAILABLE); jerr=-7; exit
+             endif
+             call tens_oprnd%tens_oprnd_ctor(tensor,jerr,tens_mng_entry) !tensor is owned by the tensor cache
+             if(jerr.ne.0) then
+              deallocate(tens_oprnd)
+              call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_GEN_FAILURE); jerr=-8; exit
+             endif
+             oprnd=>tens_oprnd; call ds_instr%set_operand(jj,oprnd,jerr) !tensor operand ownership is moved to the tensor instruction
+             if(jerr.ne.DSVP_SUCCESS) then
+              deallocate(tens_oprnd)
+              call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_GEN_FAILURE); jerr=-9; exit
+             endif
+             tens_oprnd=>NULL()
+            enddo
+            if(associated(tensor_tmp)) deallocate(tensor_tmp) !deallocate the temporary tensor (in case of error)
 !$OMP END CRITICAL (TAVP_MNG_CACHE)
-            else
-             call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_BTC_BAD)
-             jerr=-2
-            endif
            else
-            call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_RSC_UNAVAILABLE)
-            jerr=-1
+            call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_GEN_FAILURE); jerr=-10
+           endif
+           return
+          end subroutine decode_instr_operands
+
+          subroutine decode_instr_tens_create_destroy(jerr)
+           !CREATE/DESTROY a tensor
+           integer(INTD), intent(out):: jerr
+
+           call ds_instr%alloc_operands(1,jerr)
+           if(jerr.eq.DSVP_SUCCESS) then
+            call decode_instr_operands(jerr)
+           else
+            call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_RSC_UNAVAILABLE); jerr=-1
            endif
            return
           end subroutine decode_instr_tens_create_destroy
 
           subroutine decode_instr_tens_contract(jerr)
-           !CONTRACT two tensors
+           !CONTRACT two tensors and accumulate the result in the third tensor
            integer(INTD), intent(out):: jerr
            class(ds_instr_ctrl_t), pointer:: instr_ctrl
            class(ctrl_tens_contr_t), pointer:: tens_contr_ctrl
-           class(tens_rcrsv_t), pointer:: tensor
-           class(tens_oprnd_t), pointer:: tens_oprnd
-           class(ds_oprnd_t), pointer:: oprnd
-           class(tens_cache_entry_t), pointer:: tens_entry
-           class(tens_entry_mng_t), pointer:: tens_mng_entry
-           integer(INTD):: jj
-           logical:: res
-           real(8):: tm
 
-           jerr=0
-           tens_contr_ctrl=>NULL(); allocate(tens_contr_ctrl,STAT=jerr) !tensor contraction control will be owned by the tensor contraction
+           allocate(tens_contr_ctrl,STAT=jerr) !tensor contraction control will be owned by the tensor instruction
            if(jerr.eq.0) then
             call tens_contr_ctrl%unpack(instr_packet,jerr)
             if(jerr.eq.0) then
-             instr_ctrl=>tens_contr_ctrl; call ds_instr%set_control(instr_ctrl,jerr) !tensor contraction control ownership is moved to the tensor contraction
+             instr_ctrl=>tens_contr_ctrl; call ds_instr%set_control(instr_ctrl,jerr) !tensor contraction control ownership is moved to the tensor instruction
              if(jerr.eq.DSVP_SUCCESS) then
+              tens_contr_ctrl=>NULL()
               call ds_instr%alloc_operands(3,jerr)
               if(jerr.eq.DSVP_SUCCESS) then
-!$OMP CRITICAL (TAVP_MNG_CACHE)
-               tm=thread_wtime()
-               do jj=0,2 !loop over operands: 0:Destination, 1:LeftInput, 2:RightInput
-                tensor=>NULL(); allocate(tensor,STAT=jerr) !tensor will either be owned by a tensor cache entry or deallocated here
-                if(jerr.ne.0) then
-                 call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_RSC_UNAVAILABLE); jerr=-12; exit
-                endif
-                call tensor%tens_rcrsv_ctor(instr_packet,jerr)
-                if(jerr.ne.TEREC_SUCCESS) then
-                 call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_BTC_BAD); jerr=-11; exit
-                endif
-                tens_entry=>NULL(); tens_entry=>arg_cache%lookup(tensor,jerr)
-                if(jerr.ne.0) then
-                 call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_CHE_FAILURE); jerr=-10; exit
-                endif
-                if(associated(tens_entry)) then !tensor is already in the tensor cache (either local or remote tensor)
-                 deallocate(tensor); tensor=>NULL() !deallocate the temporary tensor
-                else !remote tensor, not present in the tensor cache: Create an entry for it
-                 res=arg_cache%store(tensor,tens_entry_mng_alloc,jerr,tens_entry_p=tens_entry) !tensor ownership is moved to the tensor cache entry
-                 if((.not.res).or.(jerr.ne.0).or.(.not.associated(tens_entry))) then
-                  call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_CHE_FAILURE); jerr=-9; exit
-                 endif
-                endif
-                tens_mng_entry=>NULL(); select type(tens_entry); class is(tens_entry_mng_t); tens_mng_entry=>tens_entry; end select
-                if(.not.associated(tens_mng_entry)) then
-                 call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_GEN_FAILURE); jerr=-8; exit
-                endif
-                tensor=>tens_mng_entry%get_tensor() !use the tensor from the tensor cache
-                tens_oprnd=>NULL(); allocate(tens_oprnd,STAT=jerr) !tensor operand will be owned by the tensor instruction
-                if(jerr.ne.0) then
-                 call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_RSC_UNAVAILABLE); jerr=-7; exit
-                endif
-                call tens_oprnd%tens_oprnd_ctor(tensor,jerr,tens_mng_entry) !tensor is owned by the tensor cache
-                if(jerr.ne.0) then
-                 call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_GEN_FAILURE); jerr=-6; exit
-                endif
-                oprnd=>tens_oprnd; call ds_instr%set_operand(jj,oprnd,jerr) !tensor operand ownership is moved to the tensor instruction
-                if(jerr.ne.DSVP_SUCCESS) then
-                 call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_GEN_FAILURE); jerr=-5; exit
-                endif
-               enddo
-               tm=thread_wtime(tm); call this%update_timing(tm)
-!$OMP END CRITICAL (TAVP_MNG_CACHE)
+               call decode_instr_operands(jerr)
               else
                call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_RSC_UNAVAILABLE)
-               jerr=-4
+               jerr=-1
               endif
              else
+              deallocate(tens_contr_ctrl)
               call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_GEN_FAILURE)
-              jerr=-3
+              jerr=-2
              endif
             else
+             deallocate(tens_contr_ctrl)
              call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_BTC_BAD)
-             jerr=-2
+             jerr=-3
             endif
            else
             call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_RSC_UNAVAILABLE)
-            jerr=-1
+            jerr=-4
            endif
            return
           end subroutine decode_instr_tens_contract

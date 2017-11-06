@@ -1,6 +1,6 @@
 !Domain-specific virtual processor (DSVP): Abstract base module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/11/02
+!REVISION: 2017/11/06
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -242,6 +242,7 @@
           procedure, public:: set_acceptor=>DSDecoderSetAcceptor    !sets the acceptor DS unit for which the decoding is done
           procedure, public:: get_acceptor=>DSDecoderGetAcceptor    !returns a pointer to the acceptor DS unit for which the decoding is done
           procedure, public:: update_timing=>DSDecoderUpdateTiming  !updates the min/max timing for instruction decoding
+          procedure, public:: print_timing=>DSDecoderPrintTiming    !prints the min/max timing for instruction decoding
         end type ds_decoder_t
  !Domain-specific encoder unit:
         type, abstract, extends(ds_unit_t), public:: ds_encoder_t
@@ -451,6 +452,7 @@
         private DSDecoderSetAcceptor
         private DSDecoderGetAcceptor
         private DSDecoderUpdateTiming
+        private DSDecoderPrintTiming
  !ds_encoder_t:
         public ds_encoder_encode_i
  !dsvp_t:
@@ -1504,6 +1506,18 @@
          this%decode_time_max=max(this%decode_time_max,new_time)
          return
         end subroutine DSDecoderUpdateTiming
+!---------------------------------------------------
+        subroutine DSDecoderPrintTiming(this,dev_id)
+!Prints the min/max instruction decoding time.
+         implicit none
+         class(ds_decoder_t), intent(in):: this       !in: DS decoder unit
+         integer(INTD), intent(in), optional:: dev_id !in: output device id
+         integer(INTD):: devo
+
+         devo=6; if(present(dev_id)) devo=dev_id
+         write(devo,'(2(1x,F12.9))') this%decode_time_min,this%decode_time_max
+         return
+        end subroutine DSDecoderPrintTiming
 ![dsvp_t]==============================
         subroutine DSVPStart(this,ierr)
 !Starts DSVP active life cycle (starts all DS units).
