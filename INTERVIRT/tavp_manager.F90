@@ -205,7 +205,6 @@
         end type tavp_mng_collector_conf_t
  !TAVP-MNG:
         type, extends(dsvp_t), public:: tavp_mng_t
-         integer(INTD), private:: num_uninitialized=-1              !number of uninitialized DS units
          type(tens_cache_t), private:: tens_cache                   !tensor argument cache (SHARED RESOURCE!)
          type(tavp_mng_decoder_t), private:: udecoder               !DSVU: decodes incoming tensor instructions from the higher-level manager
          type(tavp_mng_retirer_t), private:: retirer                !DSVU: retires processed tensor instructions and sends them back to the manager
@@ -302,8 +301,6 @@
         private TAVPMNGCollectorStart
         private TAVPMNGCollectorShutdown
         private TAVPMNGCollectorCollect
- !auxiliary:
-        private wait_on_other_units
  !tavp_mng_t:
         private TAVPMNGConfigure
 !IMPLEMENTATION:
@@ -1088,7 +1085,7 @@
          call this%init_queue(this%num_ports,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-36
 !Wait on other TAVP units:
          dsvp=>this%get_dsvp()
-         call wait_on_other_units(dsvp,errc,ier); if(ier.ne.0.and.errc.eq.0) errc=-35
+         call dsvp%sync_units(errc,ier); if(ier.ne.0.and.errc.eq.0) errc=-35
 !Work loop:
          active=((errc.eq.0).and.(this%source_comm.ne.MPI_COMM_NULL)); stopping=(.not.active)
          wloop: do while(active)
@@ -1299,7 +1296,7 @@
               tensor_tmp=>NULL()
               call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_RSC_UNAVAILABLE); jerr=-1; exit
              endif
-             call tensor_tmp%tens_rcrsv_ctor(instr_packet,jerr)
+             call tensor_tmp%tens_rcrsv_ctor(instr_packet,jerr) !unpack tensor information into a temporary tensor
              if(jerr.ne.TEREC_SUCCESS) then
               call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_BTC_BAD); jerr=-2; exit
              endif
@@ -1308,7 +1305,7 @@
               call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_CHE_FAILURE); jerr=-3; exit
              endif
              if(.not.associated(tens_entry)) then !tensor is absent in the tensor cache: Create an entry for it
-              stored=arg_cache%store(tensor_tmp,tens_entry_mng_alloc,jerr,tens_entry_p=tens_entry) !tensor ownership is moved to a tensor cache entry
+              stored=arg_cache%store(tensor_tmp,tens_entry_mng_alloc,jerr,tens_entry_p=tens_entry) !tensor ownership is moved to the tensor cache entry
               if((.not.stored).or.(jerr.ne.0).or.(.not.associated(tens_entry))) then
                call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_CHE_FAILURE); jerr=-4; exit
               else
@@ -1367,7 +1364,7 @@
           end subroutine decode_instr_tens_create_destroy
 
           subroutine decode_instr_tens_contract(jerr)
-           !CONTRACT two tensors and accumulate the result in the third tensor
+           !CONTRACT two tensors and accumulate the result into another tensor
            integer(INTD), intent(out):: jerr
            class(ds_instr_ctrl_t), pointer:: instr_ctrl
            class(ctrl_tens_contr_t), pointer:: tens_contr_ctrl
@@ -1383,22 +1380,18 @@
               if(jerr.eq.DSVP_SUCCESS) then
                call decode_instr_operands(jerr)
               else
-               call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_RSC_UNAVAILABLE)
-               jerr=-1
+               call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_RSC_UNAVAILABLE); jerr=-1
               endif
              else
               deallocate(tens_contr_ctrl)
-              call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_GEN_FAILURE)
-              jerr=-2
+              call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_GEN_FAILURE); jerr=-2
              endif
             else
              deallocate(tens_contr_ctrl)
-             call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_BTC_BAD)
-             jerr=-3
+             call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_BTC_BAD); jerr=-3
             endif
            else
-            call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_RSC_UNAVAILABLE)
-            jerr=-4
+            call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_RSC_UNAVAILABLE); jerr=-4
            endif
            return
           end subroutine decode_instr_tens_contract
@@ -1449,7 +1442,7 @@
          call this%init_queue(this%num_ports,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-1
 !Wait on other TAVP units:
          dsvp=>this%get_dsvp()
-         call wait_on_other_units(dsvp,errc,ier); if(ier.ne.0.and.errc.eq.0) errc=-35
+         call dsvp%sync_units(errc,ier); if(ier.ne.0.and.errc.eq.0) errc=-1
 !Work loop:
          active=((errc.eq.0).and.(this%retire_comm.ne.MPI_COMM_NULL)); stopping=(.not.active)
          wloop: do while(active)
@@ -1557,7 +1550,7 @@
          ier=this%mis_list%init(this%missing_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-6
 !Wait on other TAVP units:
          dsvp=>this%get_dsvp()
-         call wait_on_other_units(dsvp,errc,ier); if(ier.ne.0.and.errc.eq.0) errc=-35
+         call dsvp%sync_units(errc,ier); if(ier.ne.0.and.errc.eq.0) errc=-1
 !Work loop:
          active=((errc.eq.0).and.(this%ring_comm.ne.MPI_COMM_NULL)); stopping=(.not.active)
          wloop: do while(active)
@@ -1740,7 +1733,7 @@
          call this%init_queue(this%num_ports,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-1
 !Wait on other TAVP units:
          dsvp=>this%get_dsvp()
-         call wait_on_other_units(dsvp,errc,ier); if(ier.ne.0.and.errc.eq.0) errc=-35
+         call dsvp%sync_units(errc,ier); if(ier.ne.0.and.errc.eq.0) errc=-1
 !Work loop:
          active=(errc.eq.0); stopping=(.not.active)
          wloop: do while(active)
@@ -1846,7 +1839,7 @@
          call this%init_queue(this%num_ports,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-1
 !Wait on other TAVP units:
          dsvp=>this%get_dsvp()
-         call wait_on_other_units(dsvp,errc,ier); if(ier.ne.0.and.errc.eq.0) errc=-35
+         call dsvp%sync_units(errc,ier); if(ier.ne.0.and.errc.eq.0) errc=-1
 !Work loop:
          active=((errc.eq.0).and.(this%dispatch_comm.ne.MPI_COMM_NULL)); stopping=(.not.active)
          wloop: do while(active)
@@ -1996,7 +1989,7 @@
          call this%init_queue(this%num_ports,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-1
 !Wait on other TAVP units:
          dsvp=>this%get_dsvp()
-         call wait_on_other_units(dsvp,errc,ier); if(ier.ne.0.and.errc.eq.0) errc=-35
+         call dsvp%sync_units(errc,ier); if(ier.ne.0.and.errc.eq.0) errc=-1
 !Work loop:
          active=((errc.eq.0).and.(this%repl_comm.ne.MPI_COMM_NULL)); stopping=(.not.active)
          wloop: do while(active)
@@ -2107,7 +2100,7 @@
          call this%init_queue(this%num_ports,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-1
 !Wait on other TAVP units:
          dsvp=>this%get_dsvp()
-         call wait_on_other_units(dsvp,errc,ier); if(ier.ne.0.and.errc.eq.0) errc=-35
+         call dsvp%sync_units(errc,ier); if(ier.ne.0.and.errc.eq.0) errc=-1
 !Work loop:
          active=(errc.eq.0); stopping=(.not.active)
          wloop: do while(active)
@@ -2153,43 +2146,6 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TAVPMNGCollectorCollect
-![auxiliary]-----------------------------------------------
-        subroutine wait_on_other_units(dsvp,err_in,err_out)
-!Waits on all TAVP units to get initialized.
-         implicit none
-         class(dsvp_t), intent(inout), target:: dsvp
-         integer(INTD), intent(in):: err_in
-         integer(INTD), intent(out):: err_out
-         integer(INTD), pointer, volatile:: units_left
-
-         err_out=0; units_left=>NULL()
-!$OMP CRITICAL
-         select type(tavp=>dsvp)
-         class is(tavp_mng_t)
-          if(err_in.eq.0) then
-           if(tavp%num_uninitialized.lt.0) then
-            err_out=tavp%num_uninitialized
-           else
-            tavp%num_uninitialized=tavp%num_uninitialized-1
-            units_left=>tavp%num_uninitialized
-           endif
-          else
-           tavp%num_uninitialized=-1
-           err_out=err_in
-          endif
-         class default
-          call quit(-1,'FATAL(TAVP-MNG:wait_on_other_units): Invalid DSVP type!')
-         end select
-!$OMP END CRITICAL
-         if(err_out.eq.0) then
-          do
-!$OMP ATOMIC READ
-           err_out=units_left
-           if(err_out.le.0) exit
-          enddo
-         endif
-         return
-        end subroutine wait_on_other_units
 ![tavp_mng_t]======================================
         subroutine TAVPMNGConfigure(this,conf,ierr)
 !Configures TAVP-MNG DSVP:
@@ -2301,11 +2257,7 @@
                                  if(errc.eq.DSVP_SUCCESS) then
  !Set the DSVP id and description:
                                   call this%set_description(int(conf%tavp_id,INTL),conf%description,errc)
-                                  if(errc.eq.DSVP_SUCCESS) then
-                                   this%num_uninitialized=num_units
-                                  else
-                                   errc=-26
-                                  endif
+                                  if(errc.ne.DSVP_SUCCESS) errc=-26
                                  else
                                   errc=-25
                                  endif

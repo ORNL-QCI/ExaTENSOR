@@ -261,6 +261,7 @@
          type(ds_unit_ref_t), allocatable, private:: units(:)  !DSVU table (enumerated references to DSVU the DSVP is composed of): Set by .configure()
          integer(INTD), private:: num_units=0                  !number of set DSVU in the DSVU table: [0..num_units-1]: Set by .configure()
          real(8), private:: time_start                         !start time stamp (sec): Set by .start()
+         integer(INTD), private:: sync_count=0                 !INTERNAL USE ONLY (used for DS unit synchronization)
          contains
           procedure(dsvp_ctor_i), deferred, public:: configure                   !configures DSVP: Allocates/configures DS units, allocates global DSVU table, sets description, id, etc.
           procedure, public:: start=>DSVPStart                                   !launches configured DSVP to its life cycle
@@ -277,6 +278,7 @@
           procedure, public:: incr_fail_instr_counter=>DSVPIncrFailInstrCounter  !increments the failed instruction counter
           procedure, public:: is_configured=>DSVPIsConfigured                    !returns TRUE if the DSVP is configured, FALSE otherwise
           procedure, public:: time_active=>DSVPTimeActive                        !returns the time DSVP is active in seconds
+          procedure, public:: sync_units=>DSVPSyncUnits                          !synchronizes DS units
           procedure, public:: get_status=>DSVPGetStatus                          !returns the current status of the DSVP
           procedure, private:: set_status=>DSVPSetStatus                         !sets the DSVP status
           procedure, private:: start_time=>DSVPStartTime                         !starts the time when DSVP is initialized (status set to DSVP_STAT_ON)
@@ -470,6 +472,7 @@
         private DSVPIncrFailInstrCounter
         private DSVPIsConfigured
         private DSVPTimeActive
+        private DSVPSyncUnits
         private DSVPGetStatus
         private DSVPSetStatus
         private DSVPStartTime
@@ -1535,6 +1538,7 @@
            mthreads=omp_get_max_threads()
           endif
           if(mthreads.ge.nthreads) then
+           this%sync_count=this%num_units
 !$OMP PARALLEL DEFAULT(SHARED) PRIVATE(tid,ier) NUM_THREADS(nthreads)
            if(omp_get_num_threads().eq.nthreads) then
 !$OMP MASTER
@@ -1579,6 +1583,7 @@
 
          errc=DSVP_SUCCESS
          !`Finish
+         this%sync_count=0
          call this%set_status(DSVP_STAT_OFF,errc)
          if(present(ierr)) ierr=errc
          return
@@ -1868,6 +1873,39 @@
          if(present(ierr)) ierr=errc
          return
         end function DSVPTimeActive
+!----------------------------------------------------
+        subroutine DSVPSyncUnits(this,err_in,err_out)
+!Synchronizes DS units within DSVP.
+         implicit none
+         class(dsvp_t), intent(inout), target:: this   !inout: DSVP
+         integer(INTD), intent(in):: err_in            !in: incoming error
+         integer(INTD), intent(out):: err_out          !out: outgoing error (0:Success; -1:Failure)
+         integer(INTD), pointer, volatile:: units_left
+
+         err_out=0; units_left=>NULL()
+!$OMP CRITICAL
+         if(err_in.eq.0) then
+          if(this%sync_count.le.0) then
+           this%sync_count=-1
+           err_out=-1
+          else
+           this%sync_count=this%sync_count-1
+           units_left=>this%sync_count
+          endif
+         else
+          this%sync_count=-1
+          err_out=-1
+         endif
+!$OMP END CRITICAL
+         if(err_out.eq.0) then
+          do
+!$OMP ATOMIC READ
+           err_out=units_left
+           if(err_out.le.0) exit
+          enddo
+         endif
+         return
+        end subroutine DSVPSyncUnits
 !----------------------------------------------------
         function DSVPGetStatus(this,ierr) result(sts)
 !Returns the current status of the DSVP.
