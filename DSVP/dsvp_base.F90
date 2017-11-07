@@ -1,6 +1,6 @@
 !Domain-specific virtual processor (DSVP): Abstract base module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/11/06
+!REVISION: 2017/11/07
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -278,7 +278,7 @@
           procedure, public:: incr_fail_instr_counter=>DSVPIncrFailInstrCounter  !increments the failed instruction counter
           procedure, public:: is_configured=>DSVPIsConfigured                    !returns TRUE if the DSVP is configured, FALSE otherwise
           procedure, public:: time_active=>DSVPTimeActive                        !returns the time DSVP is active in seconds
-          procedure, public:: sync_units=>DSVPSyncUnits                          !synchronizes DS units
+          procedure, public:: sync_units=>DSVPSyncUnits                          !synchronizes DS units within DSVP
           procedure, public:: get_status=>DSVPGetStatus                          !returns the current status of the DSVP
           procedure, private:: set_status=>DSVPSetStatus                         !sets the DSVP status
           procedure, private:: start_time=>DSVPStartTime                         !starts the time when DSVP is initialized (status set to DSVP_STAT_ON)
@@ -1875,11 +1875,11 @@
         end function DSVPTimeActive
 !----------------------------------------------------
         subroutine DSVPSyncUnits(this,err_in,err_out)
-!Synchronizes DS units within DSVP.
+!Synchronizes DS units within DSVP with error control.
          implicit none
          class(dsvp_t), intent(inout), target:: this   !inout: DSVP
-         integer(INTD), intent(in):: err_in            !in: incoming error
-         integer(INTD), intent(out):: err_out          !out: outgoing error (0:Success; -1:Failure)
+         integer(INTD), intent(in):: err_in            !in: incoming error from each DS unit (0:Success)
+         integer(INTD), intent(out):: err_out          !out: global outgoing error (0:Success; -1:Failure)
          integer(INTD), pointer, volatile:: units_left
 
          err_out=0; units_left=>NULL()
@@ -1889,7 +1889,11 @@
            this%sync_count=-1
            err_out=-1
           else
-           this%sync_count=this%sync_count-1
+           if(this%sync_count.gt.1) then !not the last unit
+            this%sync_count=this%sync_count-1
+           else !the last unit
+            this%sync_count=this%num_units !reset to the original value
+           endif
            units_left=>this%sync_count
           endif
          else
@@ -1899,9 +1903,14 @@
 !$OMP END CRITICAL
          if(err_out.eq.0) then
           do
+!$OMP FLUSH
 !$OMP ATOMIC READ
            err_out=units_left
-           if(err_out.le.0) exit
+           if(err_out.eq.this%num_units) then !success
+            err_out=0; exit
+           elseif(err_out.lt.0) then !error occurred
+            exit
+           endif
           enddo
          endif
          return
