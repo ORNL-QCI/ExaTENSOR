@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/11/06
+!REVISION: 2017/11/07
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -88,7 +88,9 @@
           procedure, public:: set_resource=>TensOprndSetResource    !sets the resource component if it has not been set via the constructor
           procedure, public:: get_resource=>TensOprndGetResource    !returns a pointer to the tensor resource
           procedure, public:: set_talsh_tens=>TensOprndSetTalshTens !sets up the TAL-SH tensor object for further processing with TAL-SH
+          procedure, public:: is_located=>TensOprndIsLocated        !returns TRUE if the tensor operand has been located (its physical location is known)
           procedure, public:: is_remote=>TensOprndIsRemote          !returns TRUE if the tensor operand is remote
+          procedure, public:: is_valued=>TensOprndIsValued          !returns TRUE if the tensor operand is set to some value (neither undefined nor being updated)
           procedure, public:: acquire_rsc=>TensOprndAcquireRsc      !explicitly acquires local resources for the tensor operand
           procedure, public:: prefetch=>TensOprndPrefetch           !starts prefetching the remote tensor operand (acquires local resources!)
           procedure, public:: upload=>TensOprndUpload               !starts uploading the tensor operand to its remote location
@@ -267,7 +269,9 @@
         private TensOprndSetResource
         private TensOprndGetResource
         private TensOprndSetTalshTens
+        private TensOprndIsLocated
         private TensOprndIsRemote
+        private TensOprndIsValued
         private TensOprndAcquireRsc
         private TensOprndPrefetch
         private TensOprndUpload
@@ -1124,6 +1128,30 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensOprndSetTalshTens
+!---------------------------------------------------------
+        function TensOprndIsLocated(this,ierr) result(res)
+!Returns TRUE if the tensor operand has been located, FALSE otherwise.
+!By being located, it means its physical location is known.
+         implicit none
+         logical:: res                               !out: result
+         class(tens_oprnd_t), intent(in):: this      !in: active tensor operand
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+         logical:: laid,locd
+
+         res=.FALSE.
+         if(this%is_active(errc)) then
+          if(this%tensor%is_set(errc,layed=laid,located=locd)) then
+           if(errc.eq.TEREC_SUCCESS) res=laid.and.locd
+          else
+           errc=-2
+          endif
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function TensOprndIsLocated
 !--------------------------------------------------------
         function TensOprndIsRemote(this,ierr) result(res)
 !Returns TRUE if the tensor operand is remote, FALSE otherwise.
@@ -1173,6 +1201,35 @@
          if(present(ierr)) ierr=errc
          return
         end function TensOprndIsRemote
+!--------------------------------------------------------
+        function TensOprndIsValued(this,ierr) result(res)
+!Returns TRUE if the tensor operand is set to some value, FALSE otherwise.
+!By being set to some value, it means it is neither undefined nor being updated.
+         implicit none
+         logical:: res                               !out: result
+         class(tens_oprnd_t), intent(in):: this      !in: active tensor operand
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc,sts
+         logical:: laid,locd
+
+         res=.FALSE.
+         if(this%is_active(errc)) then
+          if(this%tensor%is_set(errc,layed=laid,located=locd)) then
+           if(errc.eq.TEREC_SUCCESS) then
+            res=laid.and.locd.and.(this%tensor%get_state(errc).eq.TEREC_BODY_DEF)
+            if(errc.ne.TEREC_SUCCESS) then; res=.FALSE.; errc=-4; endif
+           else
+            errc=-3
+           endif
+          else
+           errc=-2
+          endif
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function TensOprndIsValued
 !------------------------------------------------
         subroutine TensOprndAcquireRsc(this,ierr)
 !Acquires local resources for the remote tensor operand.

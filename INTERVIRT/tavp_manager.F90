@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/11/06
+!REVISION: 2017/11/07
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -35,7 +35,8 @@
  !Bytecode:
         integer(INTL), parameter, private:: MAX_BYTECODE_SIZE=32_INTL*(1024_INTL*1024_INTL) !max size of an incoming/outgoing bytecode envelope (bytes)
         integer(INTD), parameter, private:: MAX_BYTECODE_INSTR=65536                        !max number of tensor instructions in a bytecode envelope
-        integer(INTD), private:: MAX_LOCATE_INSTR=4096               !max number of tensor instructions per bytecode envelope in the locator cycle
+        integer(INTD), private:: MAX_LOCATE_NEW_INSTR=4096           !max number of new tensor instructions per bytecode envelope in the locating cycle
+        integer(INTD), private:: MAX_LOCATE_DEF_INSTR=1024           !max number of deferred tensor instructions per bytecode envelope in the locating cycle
         integer(INTD), private:: MAX_DECOMPOSE_INSTR=512             !max number of input tensor instructions in the decomposition phase
         integer(INTD), private:: MAX_ISSUE_INSTR=4096                !max number of tensor instructions per bytecode issued to the child nodes
 !TYPES:
@@ -61,24 +62,27 @@
           procedure, public:: get_cache_entry=>TensOprndGetCacheEntry !returns a pointer to the tensor cache entry (may be NULL)
           procedure, public:: get_owner_id=>TensOprndGetOwnerId !returns the tensor owner id
           procedure, public:: set_owner_id=>TensOprndSetOwnerId !sets the tensor owner id
+          procedure, public:: is_located=>TensOprndIsLocated    !returns TRUE if the tensor operand has been located (its structure is known)
           procedure, public:: is_remote=>TensOprndIsRemote      !returns TRUE if the tensor operand is remote
+          procedure, public:: is_valued=>TensOprndIsValued      !returns TRUE if the tensor operand is set to some value (neither undefined nor being updated)
           procedure, public:: acquire_rsc=>TensOprndAcquireRsc  !explicitly acquires local resources for the tensor operand
           procedure, public:: prefetch=>TensOprndPrefetch       !starts prefetching the remote tensor operand (acquires local resources!)
           procedure, public:: upload=>TensOprndUpload           !starts uploading the tensor operand to its remote location
           procedure, public:: sync=>TensOprndSync               !synchronizes the currently pending communication on the tensor operand
           procedure, public:: release=>TensOprndRelease         !destroys the present local copy of the tensor operand (releases local resources!), but the operand stays defined
           procedure, public:: destruct=>TensOprndDestruct       !performs complete destruction back to an empty state
-          final:: tens_oprnd_dtor
+          final:: tens_oprnd_dtor                               !dtor
         end type tens_oprnd_t
  !Tensor instruction (realization of a tensor operation for a specific TAVP):
         type, extends(ds_instr_t), public:: tens_instr_t
          integer(INTD), private:: num_out_oprnds=0                    !number of the output tensor instruction operands
          integer(INTD), private:: out_oprnds(0:MAX_TENSOR_OPERANDS-1) !tensor instruction operands which are considered output (to sync on them for completion)
          contains
-          procedure, private:: TensInstrCtor               !ctor: constructs a tensor instruction from the specification of a tensor operation
+          procedure, private:: TensInstrCtor                          !ctor: constructs a tensor instruction from the specification of a tensor operation
           generic, public:: tens_instr_ctor=>TensInstrCtor
-          procedure, public:: encode=>TensInstrEncode      !encoding procedure: Packs the TAVP instruction into a raw byte packet
-          final:: tens_instr_dtor                          !dtor
+          procedure, public:: encode=>TensInstrEncode                 !encoding procedure: Packs the TAVP instruction into a raw byte packet
+          procedure, public:: fully_located=>TensInstrFullyLocated    !returns TRUE if the tensor instruction operands have been fully located, FALSE otherwise
+          final:: tens_instr_dtor                                     !dtor
         end type tens_instr_t
  !TAVP-MNG decoder:
         type, extends(ds_decoder_t), private:: tavp_mng_decoder_t
@@ -135,7 +139,6 @@
           procedure, public:: shutdown=>TAVPMNGLocatorShutdown      !shuts down TAVP-MNG locator
           procedure, public:: encode=>TAVPMNGLocatorEncode          !encodes a DS instruction into the DS bytecode
           procedure, public:: send=>TAVPMNGLocatorSend              !sends a packet of DS instructions to the next process in the locating ring
-          procedure, public:: locate=>TAVPMNGLocatorLocate          !scans DS instructions and fills in information for own tensors
         end type tavp_mng_locator_t
  !TAVP-MNG locator configuration:
         type, extends(dsv_conf_t), private:: tavp_mng_locator_conf_t
@@ -249,7 +252,9 @@
         private TensOprndGetCacheEntry
         private TensOprndGetOwnerId
         private TensOprndSetOwnerId
+        private TensOprndIsLocated
         private TensOprndIsRemote
+        private TensOprndIsValued
         private TensOprndAcquireRsc
         private TensOprndPrefetch
         private TensOprndUpload
@@ -260,6 +265,7 @@
  !tens_instr_t:
         private TensInstrCtor
         private TensInstrEncode
+        private TensInstrFullyLocated
         public tens_instr_dtor
  !tavp_mng_decoder_t:
         private TAVPMNGDecoderConfigure
@@ -277,7 +283,6 @@
         private TAVPMNGLocatorShutdown
         private TAVPMNGLocatorEncode
         private TAVPMNGLocatorSend
-        private TAVPMNGLocatorLocate
  !tavp_mng_decomposer_t:
         private TAVPMNGDecomposerConfigure
         private TAVPMNGDecomposerStart
@@ -501,6 +506,42 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensOprndSetOwnerId
+!---------------------------------------------------------
+        function TensOprndIsLocated(this,ierr) result(res)
+!Returns TRUE if the tensor operand has been located, FALSE otherwise.
+!By being located, it means its structure is known.
+         implicit none
+         logical:: res                               !out: result
+         class(tens_oprnd_t), intent(in):: this      !in: active tensor operand
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+         class(tens_rcrsv_t), pointer:: tensor
+         class(tens_body_t), pointer:: tens_body
+
+         res=.FALSE.
+         if(this%is_active(errc)) then
+          if(errc.eq.DSVP_SUCCESS) then
+           tensor=>this%get_tensor(errc)
+           if(errc.eq.0) then
+            tens_body=>tensor%get_body(errc)
+            if(errc.eq.TEREC_SUCCESS) then
+             res=(tens_body%get_num_subtensors(errc).gt.0) !subtensors define the structure of the tensor
+             if(errc.ne.TEREC_SUCCESS) then; res=.FALSE.; errc=-5; endif
+            else
+             errc=-4
+            endif
+           else
+            errc=-3
+           endif
+          else
+           errc=-2
+          endif
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function TensOprndIsLocated
 !--------------------------------------------------------
         function TensOprndIsRemote(this,ierr) result(res)
 !Returns TRUE if the tensor operand is remote, FALSE otherwise.
@@ -528,6 +569,35 @@
          if(present(ierr)) ierr=errc
          return
         end function TensOprndIsRemote
+!--------------------------------------------------------
+        function TensOprndIsValued(this,ierr) result(res)
+!Returns TRUE if the tensor operand is set to some value, FALSE otherwise.
+!By being set to some value, it means it is neither undefined nor being updated.
+         implicit none
+         logical:: res                               !out: result
+         class(tens_oprnd_t), intent(in):: this      !in: active tensor operand
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc,sts
+         logical:: laid,locd
+
+         res=.FALSE.
+         if(this%is_active(errc)) then
+          if(this%tensor%is_set(errc,layed=laid,located=locd)) then
+           if(errc.eq.TEREC_SUCCESS) then
+            res=laid.and.locd.and.(this%tensor%get_state(errc).eq.TEREC_BODY_DEF)
+            if(errc.ne.TEREC_SUCCESS) then; res=.FALSE.; errc=-4; endif
+           else
+            errc=-3
+           endif
+          else
+           errc=-2
+          endif
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function TensOprndIsValued
 !------------------------------------------------
         subroutine TensOprndAcquireRsc(this,ierr)
 !Acquires local resources for the remote tensor operand.
@@ -1008,6 +1078,35 @@
          end subroutine encode_instr_tens_contract
 
         end subroutine TensInstrEncode
+!----------------------------------------------------------------
+        function TensInstrFullyLocated(this,ierr) result(located)
+!Returns TRUE if the tensor instruction has been fully located, FALSE otherwise.
+         implicit none
+         logical:: located                           !out: located or not
+         class(tens_instr_t), intent(in):: this      !in: tensor instruction
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc,n,i
+         class(ds_oprnd_t), pointer:: oprnd
+
+         located=.FALSE.
+         if(.not.this%is_empty(errc)) then
+          if(errc.eq.DSVP_SUCCESS) then
+           n=this%get_num_operands(errc)
+           if(errc.eq.DSVP_SUCCESS) then
+            located=.TRUE.
+            do i=0,n-1 !loop over tensor operands
+             oprnd=>this%get_operand(i,errc); if(errc.ne.DSVP_SUCCESS) then; located=.FALSE.; errc=-3; exit; endif
+             located=located.and.oprnd%is_located(errc); if(errc.ne.DSVP_SUCCESS) then; located=.FALSE.; errc=-2; exit; endif
+             if(.not.located) exit
+            enddo
+           endif
+          endif
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function TensInstrFullyLocated
 !---------------------------------------
         subroutine tens_instr_dtor(this)
          implicit none
@@ -1085,7 +1184,7 @@
          call this%init_queue(this%num_ports,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-36
 !Wait on other TAVP units:
          dsvp=>this%get_dsvp()
-         call dsvp%sync_units(errc,ier); if(ier.ne.0.and.errc.eq.0) errc=-35
+         call dsvp%sync_units(errc,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-35
 !Work loop:
          active=((errc.eq.0).and.(this%source_comm.ne.MPI_COMM_NULL)); stopping=(.not.active)
          wloop: do while(active)
@@ -1530,12 +1629,16 @@
          class(tavp_mng_locator_t), intent(inout):: this !inout: TAVP-MNG locator DSVU
          integer(INTD), intent(out), optional:: ierr     !out: error code
          integer(INTD):: errc,ier,thid
-         logical:: active,stopping
+         logical:: active,stopping,ring_exists,located,valued
+         class(*), pointer:: uptr
          class(dsvp_t), pointer:: dsvp
+         class(tavp_mng_t), pointer:: tavp
+         class(tens_instr_t), pointer:: tens_instr
 
          errc=0; thid=omp_get_thread_num()
          if(DEBUG.gt.0) then
-          write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Locator started as DSVU # ",i2," (thread ",i2,")")') impir,this%get_id(),thid
+          write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Locator started as DSVU # ",i2," (thread ",i2,"): Send/Recv = ",i6,"/",i6)')&
+          &impir,this%get_id(),thid,this%ring_send,this%ring_recv
           flush(CONS_OUT)
          endif
 !Reserve a bytecode buffer:
@@ -1548,23 +1651,38 @@
          ier=this%def_list%init(this%deferred_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-7
 !Initialize the missing-operand instruction list iterator:
          ier=this%mis_list%init(this%missing_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-6
+!Check ring topology:
+         if(this%ring_send.eq.role_rank.and.this%ring_recv.eq.role_rank) then !root TAVP-MNG (no ring)
+          ring_exists=.FALSE.
+         else !non-root TAVP-MNG (non-trivial ring)
+          ring_exists=.TRUE.
+          if(this%ring_send.eq.role_rank.or.this%ring_send.lt.0.or.&
+            &this%ring_recv.eq.role_rank.or.this%ring_recv.lt.0) errc=-1 !trap
+         endif
 !Wait on other TAVP units:
-         dsvp=>this%get_dsvp()
-         call dsvp%sync_units(errc,ier); if(ier.ne.0.and.errc.eq.0) errc=-1
+         dsvp=>this%get_dsvp(); select type(dsvp); class is(tavp_mng_t); tavp=>dsvp; end select
+         call tavp%sync_units(errc,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-1
 !Work loop:
          active=((errc.eq.0).and.(this%ring_comm.ne.MPI_COMM_NULL)); stopping=(.not.active)
          wloop: do while(active)
- !Absorb new tensor instructions from port 0 into the main queue:
+ !Absorb new tensor instructions from udecoder (port 0) into the main queue:
           ier=this%flush_port(0); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-5; exit wloop; endif
+ !Move the leading subset of new tensor instructions from the main queue into the locating list:
           ier=this%iqueue%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-3; exit wloop; endif
           ier=this%iqueue%get_status()
- !Move the leading subset of tensor instructions from the main queue into the locating list:
           if(ier.eq.GFC_IT_ACTIVE) then !queue is not empty
-           ier=this%iqueue%move_list(this%loc_list,MAX_LOCATE_INSTR) !at most MAX_LOCATE_INSTR tensor instructions will be moved to the located list
+           ier=this%iqueue%move_list(this%loc_list,MAX_LOCATE_NEW_INSTR) !at most MAX_LOCATE_NEW_INSTR tensor instructions will be moved to the locating list
            if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-2; exit wloop; endif
+          endif
+ !Move a limited number of tensor instructions from the deferred list back into the locating list:
+          ier=this%def_list%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-3; exit wloop; endif
+          ier=this%def_list%get_status()
+          if(ier.eq.GFC_IT_ACTIVE) then
+           ier=this%def_list%move_list(this%loc_list,MAX_LOCATE_DEF_INSTR) !at most MAX_LOCATE_DEF_INSTR tensor instructions will be moved to the locating list from the deferred list
+           if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-2; exit wloop; endif
+          endif
  !Perform a full rotation of the tensor instructions being located at the given NAT level:
-  !Move a limited number of tensor instructions from the deferred list back into the locating list:
-
+          if(ring_exists) then
   !Encode tensor instructions from the locating list into bytecode (also deactivate control instructions):
 
   !Send the bytecode to the next NAT node at the same tree level (ring):
@@ -1575,10 +1693,27 @@
 
   !Check whether these tensor instructions belong to me (thus finish the rotation):
 
+          endif
  !Move partially located tensor instructions from the locating list to the deferred list:
-
+          ier=this%def_list%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-3; exit wloop; endif
+          ier=this%loc_list%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-3; exit wloop; endif
+          ier=this%loc_list%get_status()
+          do while(ier.eq.GFC_IT_ACTIVE)
+           uptr=>this%loc_list%get_value(ier); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-3; exit wloop; endif
+           tens_instr=>NULL(); select type(uptr); class is(tens_instr_t); tens_instr=>uptr; end select
+           if(.not.associated(tens_instr)) then; errc=-1; exit wloop; endif
+           located=tens_instr%fully_located(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-1; exit wloop; endif
+           !`Test all tensor operands for being valued
+           if(.not.located) then
+            ier=this%loc_list%move_elem(this%def_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-3; exit wloop; endif
+           endif
+           ier=this%loc_list%next(); if(ier.eq.GFC_SUCCESS) ier=GFC_IT_ACTIVE
+          enddo
  !Move the remaining fully located tensor instructions from the locating list to the decomposer:
-
+          ier=this%loc_list%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-3; exit wloop; endif
+          ier=this%loc_list%get_status()
+          if(ier.eq.GFC_IT_ACTIVE) then
+           ier=tavp%decomposer%load_port(0,this%loc_list); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-19; exit wloop; endif
           endif
          enddo wloop
 !Record the error:
@@ -1660,7 +1795,7 @@
 
          if(ds_instr%is_active(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
-           call ds_instr%encode(instr_packet,errc); if(errc.ne.PACK_SUCCESS) errc=-3
+           call ds_instr%encode(instr_packet,errc); if(errc.ne.0) errc=-3
           else
            errc=-2
           endif
@@ -1683,19 +1818,6 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TAVPMNGLocatorSend
-!-------------------------------------------------
-        subroutine TAVPMNGLocatorLocate(this,ierr)
-!Scans DS instructions and fills in information for own tensors.
-         implicit none
-         class(tavp_mng_locator_t), intent(inout):: this !inout: TAVP-MNG locator DSVU
-         integer(INTD), intent(out), optional:: ierr     !out: error code
-         integer(INTD):: errc
-
-         errc=0
-         !`Implement
-         if(present(ierr)) ierr=errc
-         return
-        end subroutine TAVPMNGLocatorLocate
 ![tavp_mng_decomposer_t]=====================================
         subroutine TAVPMNGDecomposerConfigure(this,conf,ierr)
 !Configures this DSVU.
