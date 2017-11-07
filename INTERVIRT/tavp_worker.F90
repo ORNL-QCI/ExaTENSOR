@@ -1593,9 +1593,9 @@
            case(TAVP_INSTR_CTRL_STOP)
             call construct_instr_stop(errc); if(errc.ne.0) errc=-8
            case(TAVP_INSTR_TENS_CREATE,TAVP_INSTR_TENS_DESTROY)
-            call construct_instr_create_destroy(errc); if(errc.ne.0) errc=-7
+            call construct_instr_tens_create_destroy(errc); if(errc.ne.0) errc=-7
            case(TAVP_INSTR_TENS_CONTRACT)
-            call construct_instr_contract(errc); if(errc.ne.0) errc=-6
+            call construct_instr_tens_contract(errc); if(errc.ne.0) errc=-6
            case default
             errc=-5 !invalid instruction opcode (or not implemented)
            end select
@@ -1628,7 +1628,7 @@
           return
          end subroutine construct_instr_stop
 
-         subroutine construct_instr_create_destroy(jerr)
+         subroutine construct_instr_tens_create_destroy(jerr)
           !CREATE/DESTROY a tensor:
           !op_spec={tens_rcrsv_t}
           integer(INTD), intent(out):: jerr
@@ -1668,9 +1668,9 @@
            jerr=-1
           endif
           return
-         end subroutine construct_instr_create_destroy
+         end subroutine construct_instr_tens_create_destroy
 
-         subroutine construct_instr_contract(jerr)
+         subroutine construct_instr_tens_contract(jerr)
           !CONTRACT two tensors into another tensor:
           !op_spec={tens_contraction_t}
           integer(INTD), intent(out):: jerr
@@ -1730,7 +1730,7 @@
            jerr=-1
           endif
           return
-         end subroutine construct_instr_contract
+         end subroutine construct_instr_tens_contract
 
         end subroutine TensInstrCtor
 !---------------------------------------------------------

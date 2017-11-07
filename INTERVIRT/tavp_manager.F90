@@ -780,9 +780,9 @@
            case(TAVP_INSTR_CTRL_STOP)
             call construct_instr_stop(errc); if(errc.ne.0) errc=-8
            case(TAVP_INSTR_TENS_CREATE,TAVP_INSTR_TENS_DESTROY)
-            call construct_instr_create_destroy(errc); if(errc.ne.0) errc=-7
+            call construct_instr_tens_create_destroy(errc); if(errc.ne.0) errc=-7
            case(TAVP_INSTR_TENS_CONTRACT)
-            call construct_instr_contract(errc); if(errc.ne.0) errc=-6
+            call construct_instr_tens_contract(errc); if(errc.ne.0) errc=-6
            case default
             errc=-5 !invalid instruction opcode (or not implemented)
            end select
@@ -815,7 +815,7 @@
           return
          end subroutine construct_instr_stop
 
-         subroutine construct_instr_create_destroy(jerr)
+         subroutine construct_instr_tens_create_destroy(jerr)
           !CREATE/DESTROY a tensor:
           !op_spec={tens_rcrsv_t}
           integer(INTD), intent(out):: jerr
@@ -855,9 +855,9 @@
            jerr=-1
           endif
           return
-         end subroutine construct_instr_create_destroy
+         end subroutine construct_instr_tens_create_destroy
 
-         subroutine construct_instr_contract(jerr)
+         subroutine construct_instr_tens_contract(jerr)
           !CONTRACT two tensors into another tensor:
           !op_spec={tens_contraction_t}
           integer(INTD), intent(out):: jerr
@@ -919,7 +919,7 @@
            jerr=-1
           endif
           return
-         end subroutine construct_instr_contract
+         end subroutine construct_instr_tens_contract
 
         end subroutine TensInstrCtor
 !---------------------------------------------------------
@@ -1078,32 +1078,46 @@
          end subroutine encode_instr_tens_contract
 
         end subroutine TensInstrEncode
-!----------------------------------------------------------------
-        function TensInstrFullyLocated(this,ierr) result(located)
+!----------------------------------------------------------------------------
+        function TensInstrFullyLocated(this,ierr,input_ready) result(located)
 !Returns TRUE if the tensor instruction has been fully located, FALSE otherwise.
+!Being fully located means that each tensor operand has been located.
+!<input_ready> is set to TRUE when each input tensor operand is currently defined,
+!that is, it is neither undefined nor being updated. Note that <input_ready> is
+!generally independent of <located> (an input tensor operand can be ready,
+!yet not located), although it is uncommon.
          implicit none
-         logical:: located                           !out: located or not
-         class(tens_instr_t), intent(in):: this      !in: tensor instruction
-         integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc,n,i
+         logical:: located                            !out: located or not
+         class(tens_instr_t), intent(in):: this       !in: tensor instruction
+         integer(INTD), intent(out), optional:: ierr  !out: error code
+         logical, intent(out), optional:: input_ready !out: TRUE if all input tensors are ready (their values are defined)
+         integer(INTD):: errc,n,i,arg_ready(0:MAX_TENSOR_OPERANDS-1)
          class(ds_oprnd_t), pointer:: oprnd
+         logical:: ready
 
-         located=.FALSE.
+         located=.FALSE.; ready=.FALSE.
          if(.not.this%is_empty(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
            n=this%get_num_operands(errc)
            if(errc.eq.DSVP_SUCCESS) then
-            located=.TRUE.
+            arg_ready(0:n-1)=0; located=.TRUE.
             do i=0,n-1 !loop over tensor operands
-             oprnd=>this%get_operand(i,errc); if(errc.ne.DSVP_SUCCESS) then; located=.FALSE.; errc=-3; exit; endif
-             located=located.and.oprnd%is_located(errc); if(errc.ne.DSVP_SUCCESS) then; located=.FALSE.; errc=-2; exit; endif
+             oprnd=>this%get_operand(i,errc); if(errc.ne.DSVP_SUCCESS) then; located=.FALSE.; errc=-4; exit; endif
+             if(oprnd%is_valued(errc)) arg_ready(i)=1; if(errc.ne.0) then; located=.FALSE.; errc=-3; exit; endif
+             located=oprnd%is_located(errc); if(errc.ne.0) then; located=.FALSE.; errc=-2; exit; endif
              if(.not.located) exit
             enddo
+            if(errc.eq.0) then
+             ready=.TRUE.
+             arg_ready(this%out_oprnds(0:this%num_out_oprnds-1))=1 !ingore output operands
+             do i=0,n-1; ready=(arg_ready(i).eq.1); if(.not.ready) exit; enddo
+            endif
            endif
           endif
          else
           errc=-1
          endif
+         if(present(input_ready)) input_ready=ready
          if(present(ierr)) ierr=errc
          return
         end function TensInstrFullyLocated
@@ -1456,6 +1470,12 @@
            call ds_instr%alloc_operands(1,jerr)
            if(jerr.eq.DSVP_SUCCESS) then
             call decode_instr_operands(jerr)
+            if(jerr.eq.0) then !mark output operands
+             select type(ds_instr)
+             class is(tens_instr_t)
+              ds_instr%num_out_oprnds=1; ds_instr%out_oprnds(0:ds_instr%num_out_oprnds-1)=(/0/)
+             end select
+            endif
            else
             call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_RSC_UNAVAILABLE); jerr=-1
            endif
@@ -1478,6 +1498,12 @@
               call ds_instr%alloc_operands(3,jerr)
               if(jerr.eq.DSVP_SUCCESS) then
                call decode_instr_operands(jerr)
+               if(jerr.eq.0) then !mark output operands
+                select type(ds_instr)
+                class is(tens_instr_t)
+                 ds_instr%num_out_oprnds=1; ds_instr%out_oprnds(0:ds_instr%num_out_oprnds-1)=(/0/)
+                end select
+               endif
               else
                call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_RSC_UNAVAILABLE); jerr=-1
               endif
@@ -1702,12 +1728,13 @@
            uptr=>this%loc_list%get_value(ier); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-3; exit wloop; endif
            tens_instr=>NULL(); select type(uptr); class is(tens_instr_t); tens_instr=>uptr; end select
            if(.not.associated(tens_instr)) then; errc=-1; exit wloop; endif
-           located=tens_instr%fully_located(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-1; exit wloop; endif
-           !`Test all tensor operands for being valued
-           if(.not.located) then
+           located=tens_instr%fully_located(ier,valued); if(ier.ne.0.and.errc.eq.0) then; errc=-1; exit wloop; endif
+           if(.not.(located.and.valued)) then
             ier=this%loc_list%move_elem(this%def_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-3; exit wloop; endif
+           else
+            ier=this%loc_list%next()
            endif
-           ier=this%loc_list%next(); if(ier.eq.GFC_SUCCESS) ier=GFC_IT_ACTIVE
+           ier=this%loc_list%get_status()
           enddo
  !Move the remaining fully located tensor instructions from the locating list to the decomposer:
           ier=this%loc_list%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-3; exit wloop; endif
