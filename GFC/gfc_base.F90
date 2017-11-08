@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Base
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017-08-10 (started 2016-02-17)
+!REVISION: 2017-11-08 (started 2016-02-17)
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -424,19 +424,23 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine ContElemConstructRef
-!-----------------------------------------------------------
-        subroutine ContElemDestruct(this,ierr,dtor_f,locked)
+!---------------------------------------------------------------------
+        subroutine ContElemDestruct(this,ierr,dtor_f,locked,value_out)
 !Destructs the value of an element of a container (not the element itself).
 !On return, the element will be empty, unless an error occurs. An optional
 !explicit destructor, if provided, will only be invoked for allocated values.
 !Alternatively, the value may also have the final procedure defined.
 !The container element being destructed is allowed to be a boundary
-!element or an element pointed to by a container iterator.
+!element or an element pointed to by a container iterator. If <value_out>
+!is present, no real value destruction will be done, instead the value
+!of the container element will be moved into <value_out> (in this case
+!possible <dtor_f> will be ignored).
          implicit none
          class(gfc_cont_elem_t), intent(inout):: this !inout: element of a container
          integer(INTD), intent(out), optional:: ierr  !out: error code (0:success)
          procedure(gfc_destruct_i), optional:: dtor_f !in: explicit destructor for the value of this element (for allocated only)
          logical, intent(in), optional:: locked       !in: if TRUE, the container element will be assumed already locked (defaults to FALSE)
+         class(*), pointer, intent(out), optional:: value_out !out: pointer to the value of the destructed container element
          integer(INTD):: errc
          integer:: errcode
          logical:: lckd,lck
@@ -447,13 +451,17 @@
           if(.not.lck) lck=(this%in_use(errc,set_lock=.TRUE.,report_refs=.FALSE.).eq.GFC_FALSE)
           if(lck) then
            if(errc.eq.GFC_SUCCESS) then
-            if(this%alloc.eq.GFC_TRUE) then
-             if(present(dtor_f)) then
-              errc=dtor_f(this%value_p)
-              if(errc.ne.0) errc=GFC_MEM_FREE_FAILED
+            if(.not.present(value_out)) then
+             if(this%alloc.eq.GFC_TRUE) then
+              if(present(dtor_f)) then
+               errc=dtor_f(this%value_p)
+               if(errc.ne.0) errc=GFC_MEM_FREE_FAILED
+              endif
+              deallocate(this%value_p,STAT=errcode)
+              if(errcode.ne.0.and.errc.eq.GFC_SUCCESS) errc=GFC_MEM_FREE_FAILED
              endif
-             deallocate(this%value_p,STAT=errcode)
-             if(errcode.ne.0.and.errc.eq.GFC_SUCCESS) errc=GFC_MEM_FREE_FAILED
+            else
+             value_out=>this%value_p
             endif
             this%value_p=>NULL()
             this%alloc=GFC_FALSE

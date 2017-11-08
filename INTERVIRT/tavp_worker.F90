@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/11/07
+!REVISION: 2017/11/08
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -59,8 +59,8 @@
           procedure, public:: free_buffer=>TensResrcFreeBuffer         !frees the local buffer (at most one tensor operand can be associated with this resource at this time)
           procedure, public:: get_mem_ptr=>TensResrcGetMemPtr          !returns a C pointer to the local memory buffer
           procedure, public:: get_mem_size=>TensResrcGetMemSize        !returns the size of the memory buffer in bytes
-          procedure, private:: incr_ref_count=>TensResrcIncrRefCount   !increments the reference count
-          procedure, private:: decr_ref_count=>TensResrcDecrRefCount   !decrements the reference count
+          procedure, private:: incr_ref_count=>TensResrcIncrRefCount   !increments the reference count (number of tensor operands associated with the resource)
+          procedure, private:: decr_ref_count=>TensResrcDecrRefCount   !decrements the reference count (number of tensor operands associated with the resource)
 #ifdef NO_GNU
           final:: tens_resrc_dtor                                      !dtor `GCC bug
 #endif

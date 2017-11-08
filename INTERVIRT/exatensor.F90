@@ -782,10 +782,10 @@
         integer(INTD):: ierr                           !out: error code
         type(tens_rcrsv_t), intent(inout):: tensor     !in: tensor
         integer(INTL), intent(in):: subspace_mlndx(1:) !in: subspace multi-index identifying the requested tensor slice
-        type(talsh_tens_t), intent(inout):: tens_slice !out: requested tensor slice stored locally
+        type(talsh_tens_t), intent(inout):: tens_slice !out: requested tensor slice stored locally (TAL-SH tensor)
 
         ierr=EXA_SUCCESS
-        write(CONS_OUT,*)'FATAL(exatensor:tensor_destroy): Not implemented yet!' !`Implement
+        write(CONS_OUT,*)'FATAL(exatensor:tensor_get): Not implemented yet!' !`Implement
         return
        end function exatns_tensor_get
 !---------------------------------------------------------------

@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Bi-directional linked list
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017-10-26 (started 2016-02-28)
+!REVISION: 2017-11-08 (started 2016-02-28)
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -1056,16 +1056,19 @@
          endif
          return
         end function ListIterSplit
-!--------------------------------------------------------
-        function ListIterDelete(this,dtor_f) result(ierr)
+!------------------------------------------------------------------
+        function ListIterDelete(this,dtor_f,value_out) result(ierr)
 !Deletes the element in the current iterator position. The current
 !iterator position moves to the preious element, unless there is none.
 !In the latter case, it moves to the next element, unless there is none.
 !In the latter case, the iterator/container becomes empty.
+!If <value_out> is present, the list element value will not be deleted
+!but moved into <value_out>. In this case, <dtor_f> will be ignored.
          implicit none
-         integer(INTD):: ierr                         !out: error code (0:success)
-         class(list_iter_t), intent(inout):: this     !inout: iterator
-         procedure(gfc_destruct_i), optional:: dtor_f !in: element value destructor
+         integer(INTD):: ierr                                 !out: error code (0:success)
+         class(list_iter_t), intent(inout):: this             !inout: iterator
+         procedure(gfc_destruct_i), optional:: dtor_f         !in: element value destructor
+         class(*), pointer, intent(out), optional:: value_out !out: pointer to the saved value of the deleted list element
          class(list_elem_t), pointer:: lep
          integer(INTD):: errc
          integer(INTL):: nelems
@@ -1101,20 +1104,24 @@
              if(last) this%container%last_elem=>this%current
             endif
            endif
-           if(present(dtor_f)) then
-            call lep%destruct(errc,dtor_f)
+           if(present(value_out)) then
+            call lep%destruct(errc,value_out=value_out)
            else
-            call lep%destruct(errc)
+            if(present(dtor_f)) then
+             call lep%destruct(errc,dtor_f)
+            else
+             call lep%destruct(errc)
+            endif
            endif
-           if(errc.ne.0) then
+           if(errc.ne.GFC_SUCCESS) then
             if(VERBOSE) write(CONS_OUT,*)'GFC::list:ListIterDelete: element value destruction failed with error ',errc !debug
-            ierr=NOT_CLEAN
+            if(ierr.eq.GFC_SUCCESS) ierr=NOT_CLEAN
            endif
            deallocate(lep,STAT=errc,ERRMSG=errmesg)
            if(errc.ne.0) then
-            if(VERBOSE) write(CONS_OUT,*)'GFC::list:ListIterDelete: deallocate(lep) failed: ',errc,': '//&
-                         &errmesg(1:len_trim(errmesg)) !debug
-            ierr=NOT_CLEAN
+            if(VERBOSE) write(CONS_OUT,*)'GFC::list:ListIterDelete: deallocate() failed: ',errc,': '//&
+                        &errmesg(1:len_trim(errmesg)) !debug
+            if(ierr.eq.GFC_SUCCESS) ierr=NOT_CLEAN
            endif
           else
            ierr=GFC_CORRUPTED_CONT

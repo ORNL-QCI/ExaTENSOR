@@ -8,7 +8,7 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/11/02
+!REVISION: 2017/11/08
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -163,8 +163,8 @@
           procedure, public:: get_status=>TensCacheEntryGetStatus         !returns the tensor status object
           procedure, public:: mark_created=>TensCacheEntryMarkCreated     !marks the tensor status as created (allocated memory)
           procedure, public:: mark_defined=>TensCacheEntryMarkDefined     !marks the tensor status as defined to some value
-          procedure, public:: mark_in_use=>TensCacheEntryMarkInUse        !marks the tensor status as in-use (read-only) and increases the reference count
-          procedure, public:: mark_no_use=>TensCacheEntryMarkNoUse        !decreases the read-only usage reference count
+          procedure, public:: mark_in_use=>TensCacheEntryMarkInUse        !marks the tensor status as in-use (read-only) and increments the reference count
+          procedure, public:: mark_no_use=>TensCacheEntryMarkNoUse        !decrements the read-only usage reference count
           procedure, public:: mark_updated=>TensCacheEntryMarkUpdated     !marks the tensor status as in-update (currently being updated)
           procedure, public:: mark_empty=>TensCacheEntryMarkEmpty         !marks the tensor status as empty (destroyed)
           procedure, public:: incr_ref_count=>TensCacheEntryIncrRefCount  !increments the reference count

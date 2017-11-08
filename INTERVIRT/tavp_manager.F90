@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/11/07
+!REVISION: 2017/11/08
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -1654,12 +1654,14 @@
          implicit none
          class(tavp_mng_locator_t), intent(inout):: this !inout: TAVP-MNG locator DSVU
          integer(INTD), intent(out), optional:: ierr     !out: error code
-         integer(INTD):: errc,ier,thid
+         integer(INTD):: errc,ier,thid,opcode,rot_num
          logical:: active,stopping,ring_exists,located,valued
          class(*), pointer:: uptr
          class(dsvp_t), pointer:: dsvp
          class(tavp_mng_t), pointer:: tavp
          class(tens_instr_t), pointer:: tens_instr
+         type(list_bi_t):: control_list
+         type(list_iter_t):: ctrl_list
 
          errc=0; thid=omp_get_thread_num()
          if(DEBUG.gt.0) then
@@ -1677,6 +1679,8 @@
          ier=this%def_list%init(this%deferred_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-7
 !Initialize the missing-operand instruction list iterator:
          ier=this%mis_list%init(this%missing_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-6
+!Initialize the control list:
+         ier=ctrl_list%init(control_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-6
 !Check ring topology:
          if(this%ring_send.eq.role_rank.and.this%ring_recv.eq.role_rank) then !root TAVP-MNG (no ring)
           ring_exists=.FALSE.
@@ -1694,6 +1698,7 @@
  !Absorb new tensor instructions from udecoder (port 0) into the main queue:
           ier=this%flush_port(0); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-5; exit wloop; endif
  !Move the leading subset of new tensor instructions from the main queue into the locating list:
+          ier=this%loc_list%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-3; exit wloop; endif
           ier=this%iqueue%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-3; exit wloop; endif
           ier=this%iqueue%get_status()
           if(ier.eq.GFC_IT_ACTIVE) then !queue is not empty
@@ -1701,6 +1706,7 @@
            if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-2; exit wloop; endif
           endif
  !Move a limited number of tensor instructions from the deferred list back into the locating list:
+          ier=this%loc_list%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-3; exit wloop; endif
           ier=this%def_list%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-3; exit wloop; endif
           ier=this%def_list%get_status()
           if(ier.eq.GFC_IT_ACTIVE) then
@@ -1709,8 +1715,28 @@
           endif
  !Perform a full rotation of the tensor instructions being located at the given NAT level:
           if(ring_exists) then
+           rot_num=0
   !Encode tensor instructions from the locating list into bytecode (also deactivate control instructions):
-
+           ier=this%loc_list%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-3; exit wloop; endif
+           ier=this%loc_list%get_status()
+           if(ier.eq.GFC_IT_ACTIVE) then !add a dummy tensor instruction when no tensor instructions are found
+            ier=GFC_SUCCESS
+           else
+            !`Implement
+            ier=this%loc_list%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-3; exit wloop; endif
+           endif
+           eloop: do while(ier.eq.GFC_SUCCESS)
+            uptr=>this%loc_list%get_value(ier); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-3; exit wloop; endif
+            tens_instr=>NULL(); select type(uptr); class is(tens_instr_t); tens_instr=>uptr; end select
+            if(.not.associated(tens_instr)) then; errc=-1; exit wloop; endif
+            opcode=tens_instr%get_code(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+            if(opcode.eq.TAVP_INSTR_CTRL_STOP) then
+             ier=this%loc_list%move_elem(ctrl_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-3; exit wloop; endif
+             cycle eloop
+            endif
+            ier=this%loc_list%next()
+           enddo eloop
+           if(ier.ne.GFC_NO_MOVE.and.errc.eq.0) then; errc=-1; exit wloop; endif
   !Send the bytecode to the next NAT node at the same tree level (ring):
 
   !Clean the locating list and evict the relevant remote tensors with zero reference count from the tensor cache:
@@ -1743,6 +1769,9 @@
            ier=tavp%decomposer%load_port(0,this%loc_list); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-19; exit wloop; endif
           endif
          enddo wloop
+!Release the control list:
+         ier=ctrl_list%delete_all(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-1
+         ier=ctrl_list%release(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-1
 !Record the error:
          ier=this%get_error(); if(ier.eq.DSVP_SUCCESS) call this%set_error(errc)
          if(errc.ne.0.and.VERBOSE) write(CONS_OUT,'("#ERROR(TAVP_MNG)[",i6,"]: Locator error ",i11," by thread ",i2)')&
