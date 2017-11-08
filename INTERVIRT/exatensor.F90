@@ -1,7 +1,7 @@
 !ExaTENSOR: Massively Parallel Virtual Processor for Scale-Adaptive Hierarchical Tensor Algebra
 !This is the top level API module of ExaTENSOR (user-level API)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017/10/21
+!REVISION: 2017/11/08
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -117,6 +117,7 @@
  !Tensor:
        public exatns_tensor_create        !creates an empty tensor with an optional deferred initialization method
        public exatns_tensor_destroy       !destroys a tensor
+       public exatns_tensor_get           !returns a locally storable slice of a tensor
        public exatns_tensor_load          !loads a tensor from persistent storage (create + populate)
        public exatns_tensor_save          !saves a tensor to persistent storage
        public exatns_tensor_status        !returns the status of the tensor (e.g., empty, initialized, being updated, etc.)
@@ -774,6 +775,19 @@
         write(CONS_OUT,*)'FATAL(exatensor:tensor_destroy): Not implemented yet!' !`Implement
         return
        end function exatns_tensor_destroy
+!-------------------------------------------------------------------------------
+       function exatns_tensor_get(tensor,subspace_mlndx,tens_slice) result(ierr)
+!Returns a locally storable slice of a tensor.
+        implicit none
+        integer(INTD):: ierr                           !out: error code
+        type(tens_rcrsv_t), intent(inout):: tensor     !in: tensor
+        integer(INTL), intent(in):: subspace_mlndx(1:) !in: subspace multi-index identifying the requested tensor slice
+        type(talsh_tens_t), intent(inout):: tens_slice !out: requested tensor slice stored locally
+
+        ierr=EXA_SUCCESS
+        write(CONS_OUT,*)'FATAL(exatensor:tensor_destroy): Not implemented yet!' !`Implement
+        return
+       end function exatns_tensor_get
 !---------------------------------------------------------------
        function exatns_tensor_load(tensor,filename) result(ierr)
 !Loads a tensor from an external storage.
