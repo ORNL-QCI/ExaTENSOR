@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/11/08
+!REVISION: 2017/11/09
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -1590,8 +1590,8 @@
 !Construct the instruction:
            select case(op_code)
            case(TAVP_INSTR_NOOP)
-           case(TAVP_INSTR_CTRL_STOP)
-            call construct_instr_stop(errc); if(errc.ne.0) errc=-8
+           case(TAVP_INSTR_CTRL_STOP,TAVP_INSTR_CTRL_RESUME,TAVP_INSTR_CTRL_PAUSE)
+            call construct_instr_ctrl(errc); if(errc.ne.0) errc=-8
            case(TAVP_INSTR_TENS_CREATE,TAVP_INSTR_TENS_DESTROY)
             call construct_instr_tens_create_destroy(errc); if(errc.ne.0) errc=-7
            case(TAVP_INSTR_TENS_CONTRACT)
@@ -1619,14 +1619,14 @@
 
         contains
 
-         subroutine construct_instr_stop(jerr)
-          !STOP TAVP:
+         subroutine construct_instr_ctrl(jerr)
+          !TAVP CTRL instruction:
           !No op_spec, no control, no operands
           integer(INTD), intent(out):: jerr
 
           jerr=0
           return
-         end subroutine construct_instr_stop
+         end subroutine construct_instr_ctrl
 
          subroutine construct_instr_tens_create_destroy(jerr)
           !CREATE/DESTROY a tensor:
@@ -1768,8 +1768,8 @@
 !Pack the instruction body:
                  select case(op_code)
                  case(TAVP_INSTR_NOOP)
-                 case(TAVP_INSTR_CTRL_STOP)
-                  call encode_instr_stop(errc); if(errc.ne.0) errc=-12
+                 case(TAVP_INSTR_CTRL_STOP,TAVP_INSTR_CTRL_RESUME,TAVP_INSTR_CTRL_PAUSE)
+                  call encode_instr_ctrl(errc); if(errc.ne.0) errc=-12
                  case(TAVP_INSTR_TENS_CREATE,TAVP_INSTR_TENS_DESTROY)
                   call encode_instr_tens_create_destroy(errc); if(errc.ne.0) errc=-11
                  case(TAVP_INSTR_TENS_CONTRACT)
@@ -1806,14 +1806,14 @@
 
         contains
 
-         subroutine encode_instr_stop(jerr)
-          !STOP TAVP:
+         subroutine encode_instr_ctrl(jerr)
+          !TAVP CTRL instruction:
           !Packet format: {id|op_code|status|error}
           integer(INTD), intent(out):: jerr
 
           jerr=0
           return
-         end subroutine encode_instr_stop
+         end subroutine encode_instr_ctrl
 
          subroutine encode_instr_tens_create_destroy(jerr)
           !CREATE/DESTROY a tensor:
@@ -2016,7 +2016,7 @@
                if(errc.eq.0) then
                 select case(op_code)
                 case(TAVP_INSTR_NOOP)
-                case(TAVP_INSTR_CTRL_STOP)
+                case(TAVP_INSTR_CTRL_STOP,TAVP_INSTR_CTRL_RESUME,TAVP_INSTR_CTRL_PAUSE)
                 case(TAVP_INSTR_TENS_CREATE,TAVP_INSTR_TENS_DESTROY)
                  call decode_instr_tens_create_destroy(errc); if(errc.ne.0) errc=-11
                 case(TAVP_INSTR_TENS_CONTRACT)

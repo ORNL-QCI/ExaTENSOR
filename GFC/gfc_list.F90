@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Bi-directional linked list
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017-11-08 (started 2016-02-28)
+!REVISION: 2017-11-09 (started 2016-02-28)
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -949,32 +949,35 @@
          endif
          return
         end function ListIterMoveElem
-!---------------------------------------------------------------------
-        function ListIterMoveList(this,another,num_elems) result(ierr)
+!-------------------------------------------------------------------------------------
+        function ListIterMoveList(this,another,max_elems,num_elems_moved) result(ierr)
 !Moves the entire list or its part from one iterator to another by
 !appending the moved elements right after another list's current iterator
 !position. Another iterator will then reposition to the last appended element.
-!If <num_elems> is absent, all list elements will be moved from <this> to
-!<another> and <this> list will become empty at the end. If <num_elems>
+!If <max_elems> is absent, all list elements will be moved from <this> to
+!<another> and <this> list will become empty at the end. If <max_elems>
 !is present, only up to that number of list elements will be moved,
 !starting from the current iterator position of <this>. If the end
-!of list is reached before <num_elems> elements have been moved,
-!no further elements will be moved.
+!of <this> list is reached before <max_elems> elements have been moved,
+!no further elements will be moved. An optional <num_elems_moved> will
+!reflect the exact number of list elements moved.
          implicit none
          integer(INTD):: ierr                            !out: error code
          class(list_iter_t), intent(inout):: this        !inout: source list iterator (from)
          class(list_iter_t), intent(inout):: another     !inout: destination list iterator (to)
-         integer(INTD), intent(in), optional:: num_elems !in: upper limit on the number of moved elements
-         integer(INTD):: errc,nelems,n
+         integer(INTD), intent(in), optional:: max_elems !in: upper limit on the number of moved elements
+         integer(INTD), intent(out), optional:: num_elems_moved !out: number of list elements moved
+         integer(INTD):: errc,n,nelems,num_moved
 
-         ierr=another%get_status()
+         num_moved=0; ierr=another%get_status()
          if(ierr.eq.GFC_IT_ACTIVE.or.ierr.eq.GFC_IT_EMPTY) then
-          nelems=-1; if(present(num_elems)) nelems=num_elems
+          nelems=-1; if(present(max_elems)) nelems=max_elems
           if(nelems.ne.0) then
            if(nelems.lt.0) then !move all list elements
             ierr=this%reset(); ierr=this%get_status()
             do while(ierr.eq.GFC_IT_ACTIVE)
              ierr=this%move_elem(another); if(ierr.ne.GFC_SUCCESS) exit
+             num_moved=num_moved+1
              ierr=this%get_status()
             enddo
             if(ierr.eq.GFC_IT_EMPTY) ierr=GFC_SUCCESS
@@ -984,6 +987,7 @@
             do while(ierr.eq.GFC_IT_ACTIVE)
              if(this%on_last()) n=1
              ierr=this%move_elem(another); if(ierr.ne.GFC_SUCCESS) exit
+             num_moved=num_moved+1
              ierr=this%get_status(); n=n-1; if(n.eq.0) exit
             enddo
             if(ierr.eq.GFC_IT_EMPTY.or.ierr.eq.GFC_IT_ACTIVE) ierr=GFC_SUCCESS
@@ -992,6 +996,7 @@
          else
           ierr=GFC_INVALID_ARGS
          endif
+         if(present(num_elems_moved)) num_elems_moved=num_moved
          return
         end function ListIterMoveList
 !-------------------------------------------------------------------

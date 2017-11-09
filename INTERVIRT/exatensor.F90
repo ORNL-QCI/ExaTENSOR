@@ -1,7 +1,7 @@
 !ExaTENSOR: Massively Parallel Virtual Processor for Scale-Adaptive Hierarchical Tensor Algebra
 !This is the top level API module of ExaTENSOR (user-level API)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017/11/08
+!REVISION: 2017/11/09
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -553,8 +553,8 @@
            ierr=-18
           endif
          endif
-         if(ierr.eq.0) then; call bytecode%acquire_packet(instr_packet,ierr); if(ierr.ne.0) ierr=-17; endif
-         if(ierr.eq.0) then; call tens_instr%tens_instr_ctor(TAVP_INSTR_CTRL_STOP,ierr,iid=ip); if(ierr.ne.0) ierr=-16; endif
+         if(ierr.eq.0) then; call tens_instr%tens_instr_ctor(TAVP_INSTR_CTRL_STOP,ierr,iid=ip); if(ierr.ne.0) ierr=-17; endif
+         if(ierr.eq.0) then; call bytecode%acquire_packet(instr_packet,ierr); if(ierr.ne.0) ierr=-16; endif
          if(ierr.eq.0) then; call tens_instr%encode(instr_packet,ierr); if(ierr.ne.0) ierr=-15; endif
          if(ierr.eq.0) then; call bytecode%seal_packet(ierr); if(ierr.ne.0) ierr=-14; endif
          if(ierr.eq.0) then; call bytecode%send(0,comm_hl,ierr,comm=drv_mng_comm); if(ierr.ne.0) ierr=-13; endif
@@ -775,17 +775,27 @@
         write(CONS_OUT,*)'FATAL(exatensor:tensor_destroy): Not implemented yet!' !`Implement
         return
        end function exatns_tensor_destroy
-!-------------------------------------------------------------------------------
-       function exatns_tensor_get(tensor,subspace_mlndx,tens_slice) result(ierr)
+!---------------------------------------------------------------------------------
+       function exatns_tensor_get(tensor,subspace_mlndx,tensor_slice) result(ierr)
 !Returns a locally storable slice of a tensor.
         implicit none
-        integer(INTD):: ierr                           !out: error code
-        type(tens_rcrsv_t), intent(inout):: tensor     !in: tensor
-        integer(INTL), intent(in):: subspace_mlndx(1:) !in: subspace multi-index identifying the requested tensor slice
-        type(talsh_tens_t), intent(inout):: tens_slice !out: requested tensor slice stored locally (TAL-SH tensor)
+        integer(INTD):: ierr                             !out: error code
+        type(tens_rcrsv_t), intent(inout):: tensor       !in: (distributed) tensor
+        integer(INTL), intent(in):: subspace_mlndx(1:)   !in: subspace multi-index identifying the requested tensor slice
+        type(tens_rcrsv_t), intent(inout):: tensor_slice !out: requested tensor slice stored locally
+        integer(INTD):: tens_rank
 
         ierr=EXA_SUCCESS
-        write(CONS_OUT,*)'FATAL(exatensor:tensor_get): Not implemented yet!' !`Implement
+        tens_rank=tensor%get_rank(ierr)
+        if(ierr.eq.TEREC_SUCCESS) then
+         if(size(subspace_mlndx).eq.tens_rank) then
+          write(CONS_OUT,*)'FATAL(exatensor:tensor_get): Not implemented yet!' !`Implement
+         else
+          ierr=EXA_ERR_INVALID_ARGS
+         endif
+        else
+         ierr=EXA_ERR_INVALID_ARGS
+        endif
         return
        end function exatns_tensor_get
 !---------------------------------------------------------------

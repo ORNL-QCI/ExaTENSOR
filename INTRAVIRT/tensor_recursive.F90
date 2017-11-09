@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/11/07
+!REVISION: 2017/11/09
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -31,6 +31,10 @@
 !   c) Resolved: Tensor shape is fully defined (all dimensions resolved);
 !   d) Laid-Out: Tensor layout is defined;
 !   e) Mapped: Tensor body is physically mapped.
+! # Tensor body value definition stages:
+!   a) TEREC_BODY_UNDEF: Tensor body value is undefined;
+!   b) TEREC_BODY_DEF: Tensor body value is defined and can be used;
+!   c) TEREC_BODY_UPDATE: Tensor body value is currently being updated and cannot be used.
         use tensor_algebra !includes dil_basic
         use stsubs
         use timers
@@ -279,6 +283,10 @@
           generic, public:: tens_rcrsv_ctor=>TensRcrsvCtorSigna,TensRcrsvCtorHead,TensRcrsvCtorClone,TensRcrsvCtorUnpack
           procedure, public:: pack=>TensRcrsvPack                    !packs the object into a packet
           procedure, public:: is_set=>TensRcrsvIsSet                 !returns TRUE if the tensor is set (signature defined) plus other info
+          procedure, public:: get_name=>TensRcrsvGetName             !returns the alphanumeric_ tensor name
+          procedure, public:: get_rank=>TensRcrsvGetRank             !returns the rank of the tensor (number of dimensions)
+          procedure, public:: get_spec=>TensRcrsvGetSpec             !returns the tensor subspace multi-index (specification)
+          procedure, public:: get_dims=>TensRcrsvGetDims             !returns tensor dimension extents
           procedure, public:: add_subtensor=>TensRcrsvAddSubtensor   !registers a constituent subtensor by providing its tensor header
           procedure, public:: add_subtensors=>TensRcrsvAddSubtensors !registers constituent subtensors by providing a list of their tensor headers
           procedure, public:: set_shape=>TensRcrsvSetShape           !sets the tensor shape (if it has not been set yet)
@@ -571,6 +579,10 @@
         private TensRcrsvCtorUnpack
         private TensRcrsvPack
         private TensRcrsvIsSet
+        private TensRcrsvGetName
+        private TensRcrsvGetRank
+        private TensRcrsvGetSpec
+        private TensRcrsvGetDims
         private TensRcrsvAddSubtensor
         private TensRcrsvAddSubtensors
         private TensRcrsvSetShape
@@ -3722,6 +3734,66 @@
          if(present(ierr)) ierr=errc
          return
         end function TensRcrsvIsSet
+!----------------------------------------------------------------
+        subroutine TensRcrsvGetName(this,tens_name,name_len,ierr)
+!Returns the alphanumeric_ name of the tensor.
+         implicit none
+         class(tens_rcrsv_t), intent(in):: this      !in: tensor
+         character(*), intent(inout):: tens_name     !out: tensor name
+         integer(INTD), intent(out):: name_len       !out: length of the tensor name
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         call this%header%get_name(tens_name,name_len,errc)
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensRcrsvGetName
+!--------------------------------------------------------
+        function TensRcrsvGetRank(this,ierr) result(rank)
+!Returns the rank of the tensor (number of dimensions).
+         implicit none
+         integer(INTD):: rank                        !out: tensor rank
+         class(tens_rcrsv_t), intent(in):: this      !in: tensor
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         rank=this%header%get_rank(errc)
+         if(present(ierr)) ierr=errc
+         return
+        end function TensRcrsvGetRank
+!------------------------------------------------------------------------
+        subroutine TensRcrsvGetSpec(this,subspaces,num_dims,ierr,hspaces)
+!Returns the defining subspaces of the tensor (subspace multi-index).
+         implicit none
+         class(tens_rcrsv_t), intent(in):: this                    !in: tensor
+         integer(INTL), intent(inout):: subspaces(1:)              !out: defining subspaces (their IDs)
+         integer(INTD), intent(out):: num_dims                     !out: number of tensor dimensions
+         integer(INTD), intent(out), optional:: ierr               !out: error code
+         type(hspace_reg_t), intent(inout), optional:: hspaces(1:) !out: hierarchical vector space for each tensor dimension
+         integer(INTD):: errc
+
+         if(present(hspaces)) then
+          call this%header%get_spec(subspaces,num_dims,errc,hspaces)
+         else
+          call this%header%get_spec(subspaces,num_dims,errc)
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensRcrsvGetSpec
+!-----------------------------------------------------------
+        subroutine TensRcrsvGetDims(this,dims,num_dims,ierr)
+!Returns tensor dimension extents together with the tensor rank.
+         implicit none
+         class(tens_rcrsv_t), intent(in):: this      !in: tensor
+         integer(INTL), intent(inout):: dims(1:)     !out: tensor dimension extents
+         integer(INTD), intent(out):: num_dims       !out: number of tensor dimensions
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         call this%header%get_dims(dims,num_dims,errc)
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensRcrsvGetDims
 !------------------------------------------------------------
         subroutine TensRcrsvAddSubtensor(this,subtensor,ierr)
 !Registers a constituent subtensor by providing its tensor header.

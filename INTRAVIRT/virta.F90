@@ -8,7 +8,7 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/11/08
+!REVISION: 2017/11/09
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -79,16 +79,22 @@
         integer(INTD), parameter, public:: TAVP_ERR_RSC_FAILURE=-7     !instruction is unable to release resources cleanly
         integer(INTD), parameter, public:: TAVP_ERR_COM_FAILURE=-8     !instruction communication failed
         integer(INTD), parameter, public:: TAVP_ERR_EXC_FAILURE=-9     !instruction computation failed
- !TAVP ISA max size (the same for all TAVP specializations):
-        integer(INTD), parameter, public:: TAVP_ISA_SIZE=256 !max number of TAVP instructions [0:TAVP_ISA_SIZE-1]
  !Tensor algebra virtual processor (TAVP) ISA:
+  !General:
+        integer(INTD), parameter, public:: TAVP_ISA_SIZE=256       !max number of TAVP instruction codes [0:TAVP_ISA_SIZE-1]
+        integer(INTD), parameter, public:: TAVP_ISA_CTRL_FIRST=0   !first TAVP_INSTR_CTRL_XXX code
+        integer(INTD), parameter, public:: TAVP_ISA_CTRL_LAST=15   !last TAVP_INSTR_CTRL_XXX code
+        integer(INTD), parameter, public:: TAVP_ISA_SPACE_FIRST=16 !first TAVP_INSTR_SPACE_XXX code
+        integer(INTD), parameter, public:: TAVP_ISA_SPACE_LAST=63  !last TAVP_INSTR_SPACE_XXX code
+        integer(INTD), parameter, public:: TAVP_ISA_TENS_FIRST=64  !first TAVP_INSTR_TENS_XXX code
+        integer(INTD), parameter, public:: TAVP_ISA_TENS_LAST=255  !last TAVP_INSTR_TENS_XXX code
   !TAVP instruction code (opcode), must be non-negative (consult TAProL spec), limited by TAVP_ISA_SIZE:
    !NOOP:
         integer(INTD), parameter, public:: TAVP_INSTR_NOOP=DS_INSTR_NOOP !no operation (empty instruction): Negative opcode
    !General control [0-15]:
         integer(INTD), parameter, public:: TAVP_INSTR_CTRL_STOP=0       !stop TAVP (finishes current instructions and shutdowns TAVP)
-        integer(INTD), parameter, public:: TAVP_INSTR_CTRL_PAUSE=1      !pause TAVP execution (finishes active instructions and pauses TAVP)
-        integer(INTD), parameter, public:: TAVP_INSTR_CTRL_RESUME=2     !resume TAVP execution (resumes TAVP execution pipeline after a pause)
+        integer(INTD), parameter, public:: TAVP_INSTR_CTRL_RESUME=1     !resume TAVP execution (resumes TAVP execution pipeline after a pause, ignored if no pause has been posted)
+        integer(INTD), parameter, public:: TAVP_INSTR_CTRL_PAUSE=2      !pause TAVP execution (finishes active instructions and pauses TAVP)
    !Auxiliary definitions [16-63]:
         integer(INTD), parameter, public:: TAVP_INSTR_SPACE_CREATE=16   !create a (hierarchical) vector space
         integer(INTD), parameter, public:: TAVP_INSTR_SPACE_DESTROY=17  !destroy a (hierarchical) vector space

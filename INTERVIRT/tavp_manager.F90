@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/11/08
+!REVISION: 2017/11/09
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -138,7 +138,6 @@
           procedure, public:: start=>TAVPMNGLocatorStart            !starts and lives TAVP-MNG locator
           procedure, public:: shutdown=>TAVPMNGLocatorShutdown      !shuts down TAVP-MNG locator
           procedure, public:: encode=>TAVPMNGLocatorEncode          !encodes a DS instruction into the DS bytecode
-          procedure, public:: send=>TAVPMNGLocatorSend              !sends a packet of DS instructions to the next process in the locating ring
         end type tavp_mng_locator_t
  !TAVP-MNG locator configuration:
         type, extends(dsv_conf_t), private:: tavp_mng_locator_conf_t
@@ -282,7 +281,6 @@
         private TAVPMNGLocatorStart
         private TAVPMNGLocatorShutdown
         private TAVPMNGLocatorEncode
-        private TAVPMNGLocatorSend
  !tavp_mng_decomposer_t:
         private TAVPMNGDecomposerConfigure
         private TAVPMNGDecomposerStart
@@ -777,8 +775,8 @@
 !Construct the instruction:
            select case(op_code)
            case(TAVP_INSTR_NOOP)
-           case(TAVP_INSTR_CTRL_STOP)
-            call construct_instr_stop(errc); if(errc.ne.0) errc=-8
+           case(TAVP_INSTR_CTRL_STOP,TAVP_INSTR_CTRL_RESUME,TAVP_INSTR_CTRL_PAUSE)
+            call construct_instr_ctrl(errc); if(errc.ne.0) errc=-8
            case(TAVP_INSTR_TENS_CREATE,TAVP_INSTR_TENS_DESTROY)
             call construct_instr_tens_create_destroy(errc); if(errc.ne.0) errc=-7
            case(TAVP_INSTR_TENS_CONTRACT)
@@ -806,14 +804,14 @@
 
         contains
 
-         subroutine construct_instr_stop(jerr)
-          !STOP TAVP:
+         subroutine construct_instr_ctrl(jerr)
+          !TAVP CTRL instruction:
           !No op_spec, no control, no operands
           integer(INTD), intent(out):: jerr
 
           jerr=0
           return
-         end subroutine construct_instr_stop
+         end subroutine construct_instr_ctrl
 
          subroutine construct_instr_tens_create_destroy(jerr)
           !CREATE/DESTROY a tensor:
@@ -957,8 +955,8 @@
 !Pack the instruction body:
                  select case(op_code)
                  case(TAVP_INSTR_NOOP)
-                 case(TAVP_INSTR_CTRL_STOP)
-                  call encode_instr_stop(errc); if(errc.ne.0) errc=-12
+                 case(TAVP_INSTR_CTRL_STOP,TAVP_INSTR_CTRL_RESUME,TAVP_INSTR_CTRL_PAUSE)
+                  call encode_instr_ctrl(errc); if(errc.ne.0) errc=-12
                  case(TAVP_INSTR_TENS_CREATE,TAVP_INSTR_TENS_DESTROY)
                   call encode_instr_tens_create_destroy(errc); if(errc.ne.0) errc=-11
                  case(TAVP_INSTR_TENS_CONTRACT)
@@ -995,14 +993,14 @@
 
         contains
 
-         subroutine encode_instr_stop(jerr)
-          !STOP TAVP:
+         subroutine encode_instr_ctrl(jerr)
+          !TAVP CTRL instruction:
           !Packet format: {id|op_code|status|error}
           integer(INTD), intent(out):: jerr
 
           jerr=0
           return
-         end subroutine encode_instr_stop
+         end subroutine encode_instr_ctrl
 
          subroutine encode_instr_tens_create_destroy(jerr)
           !CREATE/DESTROY a tensor:
@@ -1343,7 +1341,7 @@
                if(errc.eq.0) then
                 select case(op_code)
                 case(TAVP_INSTR_NOOP)
-                case(TAVP_INSTR_CTRL_STOP)
+                case(TAVP_INSTR_CTRL_STOP,TAVP_INSTR_CTRL_RESUME,TAVP_INSTR_CTRL_PAUSE)
                 case(TAVP_INSTR_TENS_CREATE,TAVP_INSTR_TENS_DESTROY)
                  call decode_instr_tens_create_destroy(errc); if(errc.ne.0) errc=-11
                 case(TAVP_INSTR_TENS_CONTRACT)
@@ -1654,12 +1652,15 @@
          implicit none
          class(tavp_mng_locator_t), intent(inout):: this !inout: TAVP-MNG locator DSVU
          integer(INTD), intent(out), optional:: ierr     !out: error code
-         integer(INTD):: errc,ier,thid,opcode,rot_num
+         integer(INTD):: errc,ier,thid,opcode,rot_num,bytecode_tag
          logical:: active,stopping,ring_exists,located,valued
          class(*), pointer:: uptr
          class(dsvp_t), pointer:: dsvp
          class(tavp_mng_t), pointer:: tavp
+         class(tens_cache_t), pointer:: arg_cache
          class(tens_instr_t), pointer:: tens_instr
+         type(obj_pack_t):: instr_packet
+         type(comm_handle_t):: comm_hl
          type(list_bi_t):: control_list
          type(list_iter_t):: ctrl_list
 
@@ -1690,7 +1691,8 @@
             &this%ring_recv.eq.role_rank.or.this%ring_recv.lt.0) errc=-1 !trap
          endif
 !Wait on other TAVP units:
-         dsvp=>this%get_dsvp(); select type(dsvp); class is(tavp_mng_t); tavp=>dsvp; end select
+         tavp=>NULL(); dsvp=>this%get_dsvp(); select type(dsvp); class is(tavp_mng_t); tavp=>dsvp; end select
+         if(associated(tavp)) then; arg_cache=>tavp%tens_cache; else; arg_cache=>NULL(); if(errc.eq.0) errc=-1; endif
          call tavp%sync_units(errc,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-1
 !Work loop:
          active=((errc.eq.0).and.(this%ring_comm.ne.MPI_COMM_NULL)); stopping=(.not.active)
@@ -1715,37 +1717,62 @@
           endif
  !Perform a full rotation of the tensor instructions being located at the given NAT level:
           if(ring_exists) then
-           rot_num=0
+           rot_num=0 !rotation number
+           bytecode_tag=role_rank !TAVP's own bytecode tag
   !Encode tensor instructions from the locating list into bytecode (also deactivate control instructions):
+   !Check whether the locating list contains instructions:
            ier=this%loc_list%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-3; exit wloop; endif
            ier=this%loc_list%get_status()
-           if(ier.eq.GFC_IT_ACTIVE) then !add a dummy tensor instruction when no tensor instructions are found
+           if(ier.eq.GFC_IT_ACTIVE) then !locating list contains instructions
             ier=GFC_SUCCESS
-           else
+           else !no instructions: add a dummy instruction (TAVP_INSTR_CTRL_RESUME)
             !`Implement
             ier=this%loc_list%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-3; exit wloop; endif
            endif
-           eloop: do while(ier.eq.GFC_SUCCESS)
-            uptr=>this%loc_list%get_value(ier); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-3; exit wloop; endif
-            tens_instr=>NULL(); select type(uptr); class is(tens_instr_t); tens_instr=>uptr; end select
-            if(.not.associated(tens_instr)) then; errc=-1; exit wloop; endif
-            opcode=tens_instr%get_code(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
-            if(opcode.eq.TAVP_INSTR_CTRL_STOP) then
-             ier=this%loc_list%move_elem(ctrl_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-3; exit wloop; endif
-             cycle eloop
-            endif
-            ier=this%loc_list%next()
-           enddo eloop
-           if(ier.ne.GFC_NO_MOVE.and.errc.eq.0) then; errc=-1; exit wloop; endif
-  !Send the bytecode to the next NAT node at the same tree level (ring):
-
+           rloop: do !rotations
+   !Encode instructions from the locating list into bytecode:
+            eloop: do while(ier.eq.GFC_SUCCESS)
+             uptr=>this%loc_list%get_value(ier); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-3; exit wloop; endif
+             tens_instr=>NULL(); select type(uptr); class is(tens_instr_t); tens_instr=>uptr; end select
+             if(.not.associated(tens_instr).and.errc.eq.0) then; errc=-1; exit wloop; endif
+             opcode=tens_instr%get_code(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+             if(opcode.ge.TAVP_ISA_CTRL_FIRST.and.opcode.le.TAVP_ISA_CTRL_LAST) then !control instruction does not need locating
+              ier=this%loc_list%move_elem(ctrl_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-3; exit wloop; endif
+              cycle eloop
+             endif
+             call this%bytecode%acquire_packet(instr_packet,ier); if(ier.ne.0.and.errc.eq.0) then; errc=-1; exit wloop; endif
+             call this%encode(tens_instr,instr_packet,ier); if(ier.ne.0.and.errc.eq.0) then; errc=-1; exit wloop; endif
+             call this%bytecode%seal_packet(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-1; exit wloop; endif
+             ier=this%loc_list%next()
+            enddo eloop
+            if(ier.ne.GFC_NO_MOVE.and.errc.eq.0) then; errc=-1; exit wloop; endif
+  !Send the bytecode to the next (cousin) NAT node at the same tree level (ring):
+            call this%bytecode%set_tag(bytecode_tag,ier); if(ier.ne.0.and.errc.eq.0) then; errc=-1; exit wloop; endif
+            call this%bytecode%send(this%ring_send,comm_hl,ier,comm=this%ring_comm)
+            if(ier.ne.0.and.errc.eq.0) then; errc=-1; exit wloop; endif
   !Clean the locating list and evict the relevant remote tensors with zero reference count from the tensor cache:
-
-  !Absorb located tensor insructions from port 1:
-
+            ier=this%loc_list%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-3; exit wloop; endif
+            ier=this%loc_list%get_status()
+            dloop: do while(ier.eq.GFC_IT_ACTIVE)
+             uptr=>this%loc_list%get_value(ier); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-3; exit wloop; endif
+             tens_instr=>NULL(); select type(uptr); class is(tens_instr_t); tens_instr=>uptr; end select
+             if(.not.associated(tens_instr).and.errc.eq.0) then; errc=-1; exit wloop; endif
+             !`Check whether any of the tensor operands is remote and it is the last reference to the tensor cache entry: Evict it then
+             ier=this%loc_list%delete(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-3; exit wloop; endif
+             ier=this%loc_list%get_status()
+            enddo dloop
+            if(ier.ne.GFC_IT_EMPTY.and.errc.eq.0) then; errc=-1; exit wloop; endif
+  !Synchronize the bytecode send:
+            call comm_hl%wait(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-1; exit wloop; endif
+            call comm_hl%clean(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-1; exit wloop; endif
+            call this%bytecode%destroy(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-1; exit wloop; endif
+  !Absorb located tensor insructions from port 1 (delivered by ldecoder):
+            !`Get new bytecode tag => bytecode_tag
+            rot_num=rot_num+1 !rotation step (send/recv) completed
   !Check whether these tensor instructions belong to me (thus finish the rotation):
-
-          endif
+            if(bytecode_tag.eq.role_rank) exit
+           enddo rloop
+          endif !ring exists
  !Move partially located tensor instructions from the locating list to the deferred list:
           ier=this%def_list%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-3; exit wloop; endif
           ier=this%loc_list%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-3; exit wloop; endif
@@ -1762,7 +1789,14 @@
            endif
            ier=this%loc_list%get_status()
           enddo
- !Move the remaining fully located tensor instructions from the locating list to the decomposer:
+ !Append saved control instructions at the end of the locating list:
+          ier=this%loc_list%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-3; exit wloop; endif
+          ier=ctrl_list%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-3; exit wloop; endif
+          ier=ctrl_list%get_status()
+          if(ier.eq.GFC_IT_ACTIVE) then
+           ier=ctrl_list%move_list(this%loc_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-3; exit wloop; endif
+          endif
+ !Move located tensor instructions plus control instructions from the locating list to the decomposer:
           ier=this%loc_list%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-3; exit wloop; endif
           ier=this%loc_list%get_status()
           if(ier.eq.GFC_IT_ACTIVE) then
@@ -1861,19 +1895,6 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TAVPMNGLocatorEncode
-!-----------------------------------------------
-        subroutine TAVPMNGLocatorSend(this,ierr)
-!Sends the current bytecode envelope to the next locating process.
-         implicit none
-         class(tavp_mng_locator_t), intent(inout):: this !inout: TAVP-MNG locator DSVU
-         integer(INTD), intent(out), optional:: ierr     !out: error code
-         integer(INTD):: errc
-
-         errc=0
-         !`Implement
-         if(present(ierr)) ierr=errc
-         return
-        end subroutine TAVPMNGLocatorSend
 ![tavp_mng_decomposer_t]=====================================
         subroutine TAVPMNGDecomposerConfigure(this,conf,ierr)
 !Configures this DSVU.
