@@ -845,7 +845,11 @@
                oprnd=>tens_oprnd
                call this%set_operand(0,oprnd,jerr); if(jerr.ne.DSVP_SUCCESS) jerr=-6
                oprnd=>NULL() !<oprnd> pointer was saved in the tensor instruction and will later be deallocated
-               this%num_out_oprnds=1; this%out_oprnds(0:this%num_out_oprnds-1)=(/0/)
+               if(op_code.eq.TAVP_INSTR_TENS_CREATE) then
+                this%num_out_oprnds=1; this%out_oprnds(0:this%num_out_oprnds-1)=(/0/)
+               elseif(op_code.eq.TAVP_INSTR_TENS_DESTROY) then
+                this%num_out_oprnds=0
+               endif
               else
                jerr=-5
               endif
@@ -1532,7 +1536,11 @@
             if(jerr.eq.0) then !mark output operands
              select type(ds_instr)
              class is(tens_instr_t)
-              ds_instr%num_out_oprnds=1; ds_instr%out_oprnds(0:ds_instr%num_out_oprnds-1)=(/0/)
+              if(op_code.eq.TAVP_INSTR_TENS_CREATE) then
+               ds_instr%num_out_oprnds=1; ds_instr%out_oprnds(0:ds_instr%num_out_oprnds-1)=(/0/)
+              elseif(op_code.eq.TAVP_INSTR_TENS_DESTROY) then
+               ds_instr%num_out_oprnds=0
+              endif
              end select
             endif
            else
