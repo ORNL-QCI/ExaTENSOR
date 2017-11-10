@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/11/09
+!REVISION: 2017/11/10
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -35,9 +35,14 @@
  !Bytecode:
         integer(INTL), parameter, private:: MAX_BYTECODE_SIZE=32_INTL*(1024_INTL*1024_INTL) !max size of an incoming/outgoing bytecode envelope (bytes)
         integer(INTD), parameter, private:: MAX_BYTECODE_INSTR=65536                        !max number of tensor instructions in a bytecode envelope
+ !Locator:
         integer(INTD), private:: MAX_LOCATE_NEW_INSTR=4096           !max number of new tensor instructions per bytecode envelope in the locating cycle
         integer(INTD), private:: MAX_LOCATE_DEF_INSTR=1024           !max number of deferred tensor instructions per bytecode envelope in the locating cycle
+        integer(INTD), private:: MIN_LOCATE_INSTR=256                !min number of instructions in the locating cycle to start locating rotations
+        real(8), private:: MAX_LOCATE_WAIT_TIME=0.5D-3               !max wait time (sec) until performing a locating rotation even if there is no enough instructions
+ !Decomposer:
         integer(INTD), private:: MAX_DECOMPOSE_INSTR=512             !max number of input tensor instructions in the decomposition phase
+ !Dispatcher:
         integer(INTD), private:: MAX_ISSUE_INSTR=4096                !max number of tensor instructions per bytecode issued to the child nodes
 !TYPES:
  !Tensor argument cache entry (TAVP-specific):
@@ -1262,12 +1267,12 @@
               ier=this%iqueue%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-28; exit wloop; endif
               uptr=>this%iqueue%get_value(ier); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-27; exit wloop; endif
               tens_instr=>NULL(); select type(uptr); type is(tens_instr_t); tens_instr=>uptr; end select
-              if(.not.associated(tens_instr).and.errc.eq.0) then; errc=-26; exit wloop; endif
+              if(.not.associated(tens_instr).and.errc.eq.0) then; errc=-26; exit wloop; endif !trap
               call this%decode(tens_instr,instr_packet,ier); if(ier.ne.0.and.errc.eq.0) then; errc=-25; exit wloop; endif
               sts=tens_instr%get_status(ier,j); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-24; exit wloop; endif
               opcode=tens_instr%get_code(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-23; exit wloop; endif
               if(opcode.eq.TAVP_INSTR_CTRL_STOP) then !copy the CTRL_STOP instruction into own port 0
-               if(i.ne.num_packets.and.errc.eq.0) then; errc=-22; exit wloop; endif
+               if(i.ne.num_packets.and.errc.eq.0) then; errc=-22; exit wloop; endif !STOP must be the last instruction in the packet
                ier=lit%init(ctrlq); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-21; exit wloop; endif
                ier=lit%append(tens_instr); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-20; exit wloop; endif
                ier=this%load_port(0,lit); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-19; exit wloop; endif
@@ -1282,14 +1287,18 @@
              else
               if(errc.eq.0) then; errc=-14; exit wloop; endif
              endif
-            else !empty bytecode
-             if(errc.eq.0) then; errc=-13; exit wloop; endif
+            !else !empty bytecode
+             !if(errc.eq.0) then; errc=-13; exit wloop; endif
             endif
-            call this%bytecode%clean(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-12; exit wloop; endif
-           endif
+            call this%bytecode%clean(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-13; exit wloop; endif
+           endif !new bytecode
           else !stopping
-           ier=this%iqueue%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-11; exit wloop; endif
-           if(this%iqueue%get_status().eq.GFC_IT_EMPTY) active=.FALSE.
+           ier=this%iqueue%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-12; exit wloop; endif
+           if(this%iqueue%get_status().eq.GFC_IT_EMPTY) then
+            active=.FALSE.
+           else
+            if(errc.eq.0) then; errc=-11; exit wloop; endif
+           endif
            if(.not.this%port_empty(0,ier).and.errc.eq.0) then; errc=-10; exit wloop; endif !trap
           endif
  !Check own port for control instructions:
@@ -1299,18 +1308,20 @@
           do while(ier.eq.GFC_IT_ACTIVE)
            uptr=>NULL(); uptr=>this%iqueue%get_value(ier); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-7; exit wloop; endif
            tens_instr=>NULL(); select type(uptr); type is(tens_instr_t); tens_instr=>uptr; end select
-           if(.not.associated(tens_instr).and.errc.eq.0) then; errc=-6; exit wloop; endif
+           if(.not.associated(tens_instr).and.errc.eq.0) then; errc=-6; exit wloop; endif !trap
            opcode=tens_instr%get_code(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-5; exit wloop; endif
-           if(opcode.eq.TAVP_INSTR_CTRL_STOP) then
+           if(opcode.eq.TAVP_INSTR_CTRL_STOP) then !only STOP instruction is expected
             stopping=.TRUE.
-            call tens_instr%set_status(DS_INSTR_RETIRED,ier,DSVP_SUCCESS)
-            if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-4; exit wloop; endif
            else
-            if(errc.eq.0) then; errc=-3; exit wloop; endif
+            if(opcode.ne.TAVP_INSTR_CTRL_RESUME) then
+             if(errc.eq.0) then; errc=-3; exit wloop; endif
+            endif
            endif
-           ier=this%iqueue%next(); ier=this%iqueue%get_status()
+           call tens_instr%set_status(DS_INSTR_RETIRED,ier,DSVP_SUCCESS)
+           if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-4; exit wloop; endif
+           ier=this%iqueue%next(); ier=this%iqueue%get_status() !in general more control instructions can be expected
           enddo
- !Clear the instruction queue:
+ !Clear the instruction queue (control instructions only):
           if(ier.eq.GFC_IT_DONE) then
            ier=this%iqueue%delete_all(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-2; exit wloop; endif
           endif
@@ -1471,7 +1482,7 @@
              endif
              tensor=>tens_mng_entry%get_tensor() !use the tensor from the tensor cache
              if(.not.stored) then !the tensor was already in the tensor cache before, update it by the information from the just decoded tensor
-              call tensor%update(tensor_tmp,jerr); deallocate(tensor_tmp); tensor_tmp=>NULL() !deallocate temporary tensor after importing its information
+              call tensor%update(tensor_tmp,jerr); deallocate(tensor_tmp); tensor_tmp=>NULL() !deallocate temporary tensor after importing its information into the cache
               if(jerr.ne.TEREC_SUCCESS) then
                call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_GEN_FAILURE); jerr=-6; exit
               endif
@@ -1692,7 +1703,9 @@
          implicit none
          class(tavp_mng_locator_t), intent(inout):: this !inout: TAVP-MNG locator DSVU
          integer(INTD), intent(out), optional:: ierr     !out: error code
-         integer(INTD):: errc,ier,thid,opcode,rot_num,bytecode_tag,i,n
+         integer(INTD):: errc,ier,thid,opcode,rot_num,num_loc_instr,num_def_instr,i,n
+         integer(INTL):: bytecode_tag
+         integer:: loc_wait
          logical:: active,stopping,ring_exists,located,valued,evicted
          type(tens_entry_mng_ref_t):: cache_entries(1:MAX_TENSOR_OPERANDS)
          class(tens_entry_mng_t), pointer:: tens_cache_entry
@@ -1702,6 +1715,7 @@
          class(tavp_mng_t), pointer:: tavp
          class(tens_cache_t), pointer:: arg_cache
          class(tens_instr_t), pointer:: tens_instr
+         type(tens_instr_t):: tens_instr_dummy
          type(obj_pack_t):: instr_packet
          type(comm_handle_t):: comm_hl
          type(list_bi_t):: control_list
@@ -1709,22 +1723,25 @@
 
          errc=0; thid=omp_get_thread_num()
          if(DEBUG.gt.0) then
-          write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Locator started as DSVU # ",i2," (thread ",i2,"): Send/Recv = ",i6,"/",i6)')&
-          &impir,this%get_id(),thid,this%ring_send,this%ring_recv
+          write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Locator started as DSVU # ",i2," (thread ",i2,"): Recv/Send = ",i6,"/",i6)')&
+          &impir,this%get_id(),thid,this%ring_recv,this%ring_send
           flush(CONS_OUT)
          endif
 !Reserve a bytecode buffer:
-         call this%bytecode%reserve_mem(ier,MAX_BYTECODE_SIZE,MAX_BYTECODE_INSTR); if(ier.ne.0.and.errc.eq.0) errc=-10
+         call this%bytecode%reserve_mem(ier,MAX_BYTECODE_SIZE,MAX_BYTECODE_INSTR); if(ier.ne.0.and.errc.eq.0) errc=-1
 !Initialize queues and ports:
-         call this%init_queue(this%num_ports,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-9
+         call this%init_queue(this%num_ports,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-1
 !Initialize the located instruction list iterator:
-         ier=this%loc_list%init(this%located_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-8
+         ier=this%loc_list%init(this%located_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-1
 !Initialize the deferred instruction list iterator:
-         ier=this%def_list%init(this%deferred_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-7
-!Initialize the missing-operand instruction list iterator:
-         ier=this%mis_list%init(this%missing_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-6
+         ier=this%def_list%init(this%deferred_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-1
+!Initialize the missing-operand instruction list iterator:`Not used, everything goes into def_list
+         ier=this%mis_list%init(this%missing_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-1
 !Initialize the control list:
-         ier=ctrl_list%init(control_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-6
+         ier=ctrl_list%init(control_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-1
+!Set up a dummy instruction (RESUME):
+         call tens_instr_dummy%tens_instr_ctor(TAVP_INSTR_CTRL_RESUME,ier,iid=int(role_rank,INTL)) !special dummy instruction with id = role_rank
+         if(ier.ne.0.and.errc.eq.0) errc=-1
 !Check ring topology:
          if(this%ring_send.eq.role_rank.and.this%ring_recv.eq.role_rank) then !root TAVP-MNG (no ring)
           ring_exists=.FALSE.
@@ -1735,53 +1752,68 @@
          endif
 !Wait on other TAVP units:
          tavp=>NULL(); dsvp=>this%get_dsvp(); select type(dsvp); class is(tavp_mng_t); tavp=>dsvp; end select
-         if(associated(tavp)) then; arg_cache=>tavp%tens_cache; else; arg_cache=>NULL(); if(errc.eq.0) errc=-1; endif
-         call tavp%sync_units(errc,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-1
+         if(associated(tavp)) then
+          arg_cache=>tavp%tens_cache
+          call tavp%sync_units(errc,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-1
+         else
+          arg_cache=>NULL(); if(errc.eq.0) errc=-1
+         endif
 !Work loop:
+         num_loc_instr=0; num_def_instr=0
+         ier=timer_start(MAX_LOCATE_WAIT_TIME,loc_wait); if(ier.ne.TIMERS_SUCCESS.and.errc.eq.0) errc=-1
          active=((errc.eq.0).and.(this%ring_comm.ne.MPI_COMM_NULL)); stopping=(.not.active)
          wloop: do while(active)
- !Absorb new tensor instructions from udecoder (port 0) into the main queue:
+ !Absorb new tensor instructions from udecoder (port 0) to the end of the main queue:
+          ier=this%iqueue%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-3; exit wloop; endif
           ier=this%flush_port(0); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-5; exit wloop; endif
- !Move the leading subset of new tensor instructions from the main queue into the locating list:
+ !Insert the header dummmy instruction, which will tag the bytecode, into the locating list:
           ier=this%loc_list%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-3; exit wloop; endif
+          ier=this%loc_list%get_status()
+          if(ier.eq.GFC_IT_EMPTY) then
+           ier=this%loc_list%append(tens_instr_dummy); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-3; exit wloop; endif
+           ier=this%loc_list%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-3; exit wloop; endif
+          endif
+ !Move the leading subset of new tensor instructions from the main queue into the locating list:
           ier=this%iqueue%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-3; exit wloop; endif
           ier=this%iqueue%get_status()
-          if(ier.eq.GFC_IT_ACTIVE) then !queue is not empty
-           ier=this%iqueue%move_list(this%loc_list,MAX_LOCATE_NEW_INSTR) !at most MAX_LOCATE_NEW_INSTR tensor instructions will be moved to the locating list
+          if(ier.eq.GFC_IT_ACTIVE) then !main queue is not empty
+           ier=this%iqueue%move_list(this%loc_list,MAX_LOCATE_NEW_INSTR,n) !at most MAX_LOCATE_NEW_INSTR tensor instructions will be moved to the locating list
            if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-2; exit wloop; endif
+           num_loc_instr=num_loc_instr+n !increment the number of instructions waiting for location
           endif
  !Move a limited number of tensor instructions from the deferred list back into the locating list:
           ier=this%loc_list%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-3; exit wloop; endif
           ier=this%def_list%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-3; exit wloop; endif
           ier=this%def_list%get_status()
-          if(ier.eq.GFC_IT_ACTIVE) then
-           ier=this%def_list%move_list(this%loc_list,MAX_LOCATE_DEF_INSTR) !at most MAX_LOCATE_DEF_INSTR tensor instructions will be moved to the locating list from the deferred list
+          if(ier.eq.GFC_IT_ACTIVE.and.num_def_instr.lt.MAX_LOCATE_DEF_INSTR) then
+           ier=this%def_list%move_list(this%loc_list,MAX_LOCATE_DEF_INSTR,n) !at most MAX_LOCATE_DEF_INSTR tensor instructions will be moved to the locating list from the deferred list
            if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-2; exit wloop; endif
+           num_def_instr=num_def_instr+n !increment the number of instructions taken from the deferred instruction list
+           num_loc_instr=num_loc_instr+n !increment the number of instructions waiting for location
+          endif
+          if(time_is_off(loc_wait,ier,destroy=.TRUE.)) then
+           ier=timer_start(MAX_LOCATE_WAIT_TIME,loc_wait); if(ier.ne.TIMERS_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+          else !timer has not expired yet
+           if(num_loc_instr.lt.MIN_LOCATE_INSTR) cycle wloop !there is no enough instructions to initiate locating rotations
           endif
  !Perform a full rotation of the tensor instructions being located at the given NAT level:
           if(ring_exists) then
            rot_num=0 !rotation number
-           bytecode_tag=role_rank !TAVP's own bytecode tag
-  !Encode tensor instructions from the locating list into bytecode (also deactivate control instructions):
-   !Check whether the locating list contains instructions:
-           ier=this%loc_list%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-3; exit wloop; endif
-           ier=this%loc_list%get_status()
-           if(ier.eq.GFC_IT_ACTIVE) then !locating list contains instructions
-            ier=GFC_SUCCESS
-           else !no instructions: add a dummy instruction (TAVP_INSTR_CTRL_RESUME)
-            !`Implement
-            ier=this%loc_list%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-3; exit wloop; endif
-           endif
            rloop: do !rotations
-   !Encode instructions from the locating list into bytecode:
+  !Encode tensor instructions from the locating list into bytecode (also deactivate own control instructions):
+            ier=this%loc_list%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-3; exit wloop; endif
+            ier=this%loc_list%get_status()
+            if(ier.eq.GFC_IT_ACTIVE) then; ier=GFC_SUCCESS; else; if(errc.eq.0) then; errc=-3; exit wloop; endif; endif
             eloop: do while(ier.eq.GFC_SUCCESS)
              uptr=>this%loc_list%get_value(ier); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-3; exit wloop; endif
              tens_instr=>NULL(); select type(uptr); class is(tens_instr_t); tens_instr=>uptr; end select
-             if(.not.associated(tens_instr).and.errc.eq.0) then; errc=-1; exit wloop; endif
-             opcode=tens_instr%get_code(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
-             if(opcode.ge.TAVP_ISA_CTRL_FIRST.and.opcode.le.TAVP_ISA_CTRL_LAST) then !control instruction does not need locating
-              ier=this%loc_list%move_elem(ctrl_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-3; exit wloop; endif
-              cycle eloop
+             if(.not.associated(tens_instr).and.errc.eq.0) then; errc=-1; exit wloop; endif !trap
+             if(rot_num.eq.0) then !only deactivate own control instructions, except RESUME
+              opcode=tens_instr%get_code(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+              if(opcode.ge.TAVP_ISA_CTRL_FIRST.and.opcode.le.TAVP_ISA_CTRL_LAST.and.opcode.ne.TAVP_INSTR_CTRL_RESUME) then !control instructions do not need locating (but keep RESUME)
+               ier=this%loc_list%move_elem(ctrl_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-3; exit wloop; endif
+               cycle eloop
+              endif
              endif
              call this%bytecode%acquire_packet(instr_packet,ier); if(ier.ne.0.and.errc.eq.0) then; errc=-1; exit wloop; endif
              call this%encode(tens_instr,instr_packet,ier); if(ier.ne.0.and.errc.eq.0) then; errc=-1; exit wloop; endif
@@ -1790,7 +1822,7 @@
             enddo eloop
             if(ier.ne.GFC_NO_MOVE.and.errc.eq.0) then; errc=-1; exit wloop; endif
   !Send the bytecode to the next (cousin) NAT node at the same tree level (ring):
-            call this%bytecode%set_tag(bytecode_tag,ier); if(ier.ne.0.and.errc.eq.0) then; errc=-1; exit wloop; endif
+            call comm_hl%clean(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-1; exit wloop; endif
             call this%bytecode%send(this%ring_send,comm_hl,ier,comm=this%ring_comm)
             if(ier.ne.0.and.errc.eq.0) then; errc=-1; exit wloop; endif
   !Clean the locating list and evict the relevant remote tensors with zero reference count from the tensor cache:
@@ -1800,12 +1832,14 @@
    !Delete tensor instruction:
              uptr=>this%loc_list%get_value(ier); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-3; exit wloop; endif
              tens_instr=>NULL(); select type(uptr); class is(tens_instr_t); tens_instr=>uptr; end select
-             if(.not.associated(tens_instr).and.errc.eq.0) then; errc=-1; exit wloop; endif
+             if(.not.associated(tens_instr).and.errc.eq.0) then; errc=-1; exit wloop; endif !trap
              call tens_instr%get_cache_entries(cache_entries,n,ier); if(ier.ne.0.and.errc.eq.0) then; errc=-1; exit wloop; endif
+             call tens_instr%set_status(DS_INSTR_RETIRED,ier,DSVP_SUCCESS)
+             if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
              ier=this%loc_list%delete(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-3; exit wloop; endif
    !Evict remote tensor cache entries with zero reference count:
-             do i=1,n
 !$OMP CRITICAL (TAVP_MNG_CACHE)
+             do i=1,n
               tens_cache_entry=>cache_entries(i)%cache_entry
               if(tens_cache_entry%holds_remote().and.tens_cache_entry%get_ref_count().eq.0) then
                tensor=>tens_cache_entry%get_tensor(ier); if(ier.ne.0.and.errc.eq.0) errc=-1
@@ -1814,45 +1848,65 @@
                 if((.not.evicted).and.(errc.eq.0)) errc=-1 !trap
                endif
               endif
-!$OMP END CRITICAL (TAVP_MNG_CACHE)
              enddo
+!$OMP END CRITICAL (TAVP_MNG_CACHE)
              ier=this%loc_list%get_status()
             enddo dloop
             if(ier.ne.GFC_IT_EMPTY.and.errc.eq.0) then; errc=-1; exit wloop; endif
-  !Synchronize the bytecode send:
+  !Synchronize the bytecode send and clean bytecode buffer:
             call comm_hl%wait(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-1; exit wloop; endif
             call comm_hl%clean(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-1; exit wloop; endif
             call this%bytecode%destroy(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-1; exit wloop; endif
   !Absorb located tensor insructions from port 1 (delivered by ldecoder):
+   !Wait until port 1 is filled in by ldecoder:
             ier=this%loc_list%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-3; exit wloop; endif
             ier=this%loc_list%get_status(); if(ier.ne.GFC_IT_EMPTY.and.errc.eq.0) then; errc=-1; exit wloop; endif !trap
-            do while(ier.eq.GFC_IT_EMPTY) !wait until located tensor instructions are delivered from ldecoder
+            do while(ier.eq.GFC_IT_EMPTY) !wait until located tensor instructions are delivered by ldecoder
              ier=this%unload_port(1,this%loc_list); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-3; exit wloop; endif
              ier=this%loc_list%get_status()
             enddo
+   !Read the first dummy instruction with bytecode tag written in its id:
             ier=this%loc_list%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-3; exit wloop; endif
-            !`Get new bytecode tag => bytecode_tag
+            ier=this%loc_list%get_status()
+            if(ier.eq.GFC_IT_ACTIVE) then
+             uptr=>this%loc_list%get_value(ier); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-3; exit wloop; endif
+             tens_instr=>NULL(); select type(uptr); class is(tens_instr_t); tens_instr=>uptr; end select
+             if(.not.associated(tens_instr).and.errc.eq.0) then; errc=-1; exit wloop; endif !trap
+             opcode=tens_instr%get_code(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-3; exit wloop; endif
+             if(opcode.eq.TAVP_INSTR_CTRL_RESUME) then !dummy instruction is RESUME
+              bytecode_tag=tens_instr%get_id(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-3; exit wloop; endif
+              if(bytecode_tag.eq.role_rank) then !TAVP's own instructions are back => remove the header dummy instruction
+               call tens_instr%set_status(DS_INSTR_RETIRED,ier,DSVP_SUCCESS)
+               if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+               ier=this%loc_list%delete(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-3; exit wloop; endif
+              endif
+             else
+              if(errc.eq.0) then; errc=-1; exit wloop; endif
+             endif
+            else
+             if(errc.eq.0) then; errc=-1; exit wloop; endif
+            endif
             rot_num=rot_num+1 !rotation step (send/recv) completed
-  !Check whether these tensor instructions belong to me (thus finish the rotation):
-            if(bytecode_tag.eq.role_rank) exit
+  !Check whether the newly arrived tensor instructions belong to me (thus finish the rotation):
+            if(bytecode_tag.eq.role_rank) exit rloop
            enddo rloop
           endif !ring exists
  !Move partially located tensor instructions from the locating list to the deferred list:
           ier=this%def_list%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-3; exit wloop; endif
           ier=this%loc_list%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-3; exit wloop; endif
-          ier=this%loc_list%get_status()
-          do while(ier.eq.GFC_IT_ACTIVE)
+          ier=this%loc_list%get_status(); if(ier.eq.GFC_IT_ACTIVE) ier=GFC_SUCCESS
+          do while(ier.eq.GFC_SUCCESS)
            uptr=>this%loc_list%get_value(ier); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-3; exit wloop; endif
            tens_instr=>NULL(); select type(uptr); class is(tens_instr_t); tens_instr=>uptr; end select
-           if(.not.associated(tens_instr)) then; errc=-1; exit wloop; endif
+           if(.not.associated(tens_instr).and.errc.eq.0) then; errc=-1; exit wloop; endif !trap
            located=tens_instr%fully_located(ier,valued); if(ier.ne.0.and.errc.eq.0) then; errc=-1; exit wloop; endif
            if(.not.(located.and.valued)) then
             ier=this%loc_list%move_elem(this%def_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-3; exit wloop; endif
            else
             ier=this%loc_list%next()
            endif
-           ier=this%loc_list%get_status()
           enddo
+          if((ier.ne.GFC_NO_MOVE.and.ier.ne.GFC_IT_EMPTY).and.errc.eq.0) then; errc=-1; exit wloop; endif
  !Append saved control instructions at the end of the locating list:
           ier=this%loc_list%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-3; exit wloop; endif
           ier=ctrl_list%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-3; exit wloop; endif
@@ -1866,7 +1920,11 @@
           if(ier.eq.GFC_IT_ACTIVE) then
            ier=tavp%decomposer%load_port(0,this%loc_list); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-19; exit wloop; endif
           endif
+ !Reset locating instruction counters:
+          num_loc_instr=0; num_def_instr=0
          enddo wloop
+!Retire the special dummy instruction:
+         call tens_instr_dummy%set_status(DS_INSTR_RETIRED,ier,DSVP_SUCCESS); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-1
 !Release the control list:
          ier=ctrl_list%delete_all(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-1
          ier=ctrl_list%release(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-1
