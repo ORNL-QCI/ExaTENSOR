@@ -1087,46 +1087,56 @@
          end subroutine encode_instr_tens_contract
 
         end subroutine TensInstrEncode
-!----------------------------------------------------------------------------
-        function TensInstrFullyLocated(this,ierr,input_ready) result(located)
+!------------------------------------------------------------------------------------------
+        function TensInstrFullyLocated(this,ierr,input_located,input_ready) result(located)
 !Returns TRUE if the tensor instruction has been fully located, FALSE otherwise.
-!Being fully located means that each tensor operand has been located.
+!Being fully located means that each tensor operand has been located (its info available).
+!<input_located> is set to TRUE when all input tensor operands have been located.
 !<input_ready> is set to TRUE when each input tensor operand is currently defined,
 !that is, it is neither undefined nor being updated. Note that <input_ready> is
 !generally independent of <located> (an input tensor operand can be ready,
-!yet not located), although it is uncommon.
+!yet not located), although it is probably unlikely.
          implicit none
-         logical:: located                            !out: located or not
-         class(tens_instr_t), intent(in):: this       !in: tensor instruction
-         integer(INTD), intent(out), optional:: ierr  !out: error code
-         logical, intent(out), optional:: input_ready !out: TRUE if all input tensors are ready (their values are defined)
-         integer(INTD):: errc,n,i,arg_ready(0:MAX_TENSOR_OPERANDS-1)
+         logical:: located                              !out: fully located or not
+         class(tens_instr_t), intent(in):: this         !in: tensor instruction
+         integer(INTD), intent(out), optional:: ierr    !out: error code
+         logical, intent(out), optional:: input_located !out: TRUE if all input tensors have been located
+         logical, intent(out), optional:: input_ready   !out: TRUE if all input tensors are ready (their values are defined)
+         integer(INTD):: errc,n,i
+         integer(INTD):: arg_located(0:MAX_TENSOR_OPERANDS-1),arg_ready(0:MAX_TENSOR_OPERANDS-1)
          class(ds_oprnd_t), pointer:: oprnd
-         logical:: ready
+         logical:: ilocated,iready
 
-         located=.FALSE.; ready=.FALSE.
+         located=.FALSE.; ilocated=.FALSE.; iready=.FALSE.
          if(.not.this%is_empty(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
            n=this%get_num_operands(errc)
            if(errc.eq.DSVP_SUCCESS) then
-            arg_ready(0:n-1)=0; located=.TRUE.
+            arg_located(0:n-1)=0; arg_ready(0:n-1)=0
             do i=0,n-1 !loop over tensor operands
-             oprnd=>this%get_operand(i,errc); if(errc.ne.DSVP_SUCCESS) then; located=.FALSE.; errc=-4; exit; endif
-             if(oprnd%is_valued(errc)) arg_ready(i)=1; if(errc.ne.0) then; located=.FALSE.; errc=-3; exit; endif
-             located=oprnd%is_located(errc); if(errc.ne.0) then; located=.FALSE.; errc=-2; exit; endif
-             if(.not.located) exit
+             oprnd=>this%get_operand(i,errc); if(errc.ne.DSVP_SUCCESS) then; errc=-4; exit; endif
+             if(oprnd%is_located(errc)) arg_located(i)=1; if(errc.ne.0) then; errc=-3; exit; endif
+             if(oprnd%is_valued(errc)) arg_ready(i)=1; if(errc.ne.0) then; errc=-2; exit; endif
             enddo
             if(errc.eq.0) then
-             ready=.TRUE.
+             located=.TRUE.; ilocated=.TRUE.; iready=.TRUE.
+             do i=0,n-1
+              located=(arg_located(i).eq.1); if(.not.located) exit
+             enddo
+             arg_located(this%out_oprnds(0:this%num_out_oprnds-1))=1 !ingore output operands
              arg_ready(this%out_oprnds(0:this%num_out_oprnds-1))=1 !ingore output operands
-             do i=0,n-1; ready=(arg_ready(i).eq.1); if(.not.ready) exit; enddo
+             do i=0,n-1
+              ilocated=ilocated.and.(arg_located(i).eq.1)
+              iready=iready.and.(arg_ready(i).eq.1)
+             enddo
             endif
            endif
           endif
          else
           errc=-1
          endif
-         if(present(input_ready)) input_ready=ready
+         if(present(input_located)) input_located=ilocated
+         if(present(input_ready)) input_ready=iready
          if(present(ierr)) ierr=errc
          return
         end function TensInstrFullyLocated
@@ -1706,7 +1716,7 @@
          integer(INTD):: errc,ier,thid,opcode,rot_num,num_loc_instr,num_def_instr,i,n
          integer(INTL):: bytecode_tag
          integer:: loc_wait
-         logical:: active,stopping,ring_exists,located,valued,evicted
+         logical:: active,stopping,ring_exists,located,inp_located,inp_valued,evicted
          type(tens_entry_mng_ref_t):: cache_entries(1:MAX_TENSOR_OPERANDS)
          class(tens_entry_mng_t), pointer:: tens_cache_entry
          class(tens_rcrsv_t), pointer:: tensor
@@ -1899,8 +1909,8 @@
            uptr=>this%loc_list%get_value(ier); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-3; exit wloop; endif
            tens_instr=>NULL(); select type(uptr); class is(tens_instr_t); tens_instr=>uptr; end select
            if(.not.associated(tens_instr).and.errc.eq.0) then; errc=-1; exit wloop; endif !trap
-           located=tens_instr%fully_located(ier,valued); if(ier.ne.0.and.errc.eq.0) then; errc=-1; exit wloop; endif
-           if(.not.(located.and.valued)) then
+           located=tens_instr%fully_located(ier,inp_located,inp_valued); if(ier.ne.0.and.errc.eq.0) then; errc=-1; exit wloop; endif
+           if(.not.(inp_located.and.inp_valued)) then !input tensors must have been located and they must be defined
             ier=this%loc_list%move_elem(this%def_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-3; exit wloop; endif
            else
             ier=this%loc_list%next()
