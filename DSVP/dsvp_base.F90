@@ -1,6 +1,6 @@
 !Domain-specific virtual processor (DSVP): Abstract base module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/11/07
+!REVISION: 2017/11/10
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -258,6 +258,7 @@
          integer(INTL), private:: id=-1                    !DSVP unique ID: [0..max]
          integer(INTL), private:: instr_received=0_INTL    !total number of received domain-specific instructions
          integer(INTL), private:: instr_processed=0_INTL   !total number of processed (retired) instructions (both successful and failed)
+         integer(INTL), private:: instr_created=0_INTL     !total number of created instructions
          integer(INTL), private:: instr_failed=0_INTL      !total number of retired failed instructions
          character(:), allocatable, private:: description      !symbolic description of the DSVP: Set by .configure()
          type(ds_unit_ref_t), allocatable, private:: units(:)  !DSVU table (enumerated references to DSVU the DSVP is composed of): Set by .configure()
@@ -277,7 +278,12 @@
           procedure, public:: get_description=>DSVPGetDescription                !gets DSVP ID, kind, and symbolic description
           procedure, public:: incr_recv_instr_counter=>DSVPIncrRecvInstrCounter  !increments the receieved instruction counter
           procedure, public:: incr_rtrd_instr_counter=>DSVPIncrRtrdInstrCounter  !increments the processed (retired) instruction counter
+          procedure, public:: incr_crtd_instr_counter=>DSVPIncrCrtdInstrCounter  !increments the created instruction counter
           procedure, public:: incr_fail_instr_counter=>DSVPIncrFailInstrCounter  !increments the failed instruction counter
+          procedure, public:: get_recv_instr_counter=>DSVPGetRecvInstrCounter    !returns the value of the received instruction counter
+          procedure, public:: get_rtrd_instr_counter=>DSVPGetRtrdInstrCounter    !returns the value of the processed (retired) instruction counter
+          procedure, public:: get_crtd_instr_counter=>DSVPGetCrtdInstrCounter    !returns the value of the created instruction counter
+          procedure, public:: get_fail_instr_counter=>DSVPGetFailInstrCounter    !returns the value of the failed instruction counter
           procedure, public:: is_configured=>DSVPIsConfigured                    !returns TRUE if the DSVP is configured, FALSE otherwise
           procedure, public:: time_active=>DSVPTimeActive                        !returns the time DSVP is active in seconds
           procedure, public:: sync_units=>DSVPSyncUnits                          !synchronizes DS units within DSVP
@@ -471,7 +477,12 @@
         private DSVPGetDescription
         private DSVPIncrRecvInstrCounter
         private DSVPIncrRtrdInstrCounter
+        private DSVPIncrCrtdInstrCounter
         private DSVPIncrFailInstrCounter
+        private DSVPGetRecvInstrCounter
+        private DSVPGetRtrdInstrCounter
+        private DSVPGetCrtdInstrCounter
+        private DSVPGetFailInstrCounter
         private DSVPIsConfigured
         private DSVPTimeActive
         private DSVPSyncUnits
@@ -1609,6 +1620,7 @@
           this%num_units=0
           this%instr_received=0
           this%instr_processed=0
+          this%instr_created=0
           this%instr_failed=0
           this%spec_kind=DSVP_NO_KIND
           this%id=-1
@@ -1820,6 +1832,30 @@
          return
         end subroutine DSVPIncrRtrdInstrCounter
 !----------------------------------------------------------
+        subroutine DSVPIncrCrtdInstrCounter(this,ierr,incr)
+!Increments the created instruction counter.
+         implicit none
+         class(dsvp_t), intent(inout):: this         !inout: DSVP
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTL), intent(in), optional:: incr  !in: specific increment
+         integer:: errc
+
+         errc=DSVP_SUCCESS
+         if(this%get_status(errc).ne.DSVP_STAT_OFF) then
+          if(errc.eq.DSVP_SUCCESS) then
+           if(present(incr)) then
+            this%instr_created=this%instr_created+incr
+           else
+            this%instr_created=this%instr_created+1_INTL
+           endif
+          endif
+         else
+          errc=DSVP_ERR_INVALID_REQ
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine DSVPIncrCrtdInstrCounter
+!----------------------------------------------------------
         subroutine DSVPIncrFailInstrCounter(this,ierr,incr)
 !Increments the failed instruction counter.
          implicit none
@@ -1843,6 +1879,54 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine DSVPIncrFailInstrCounter
+!--------------------------------------------------------------
+        function DSVPGetRecvInstrCounter(this,ierr) result(cnt)
+!Returns the value of the received instruction counter.
+         implicit none
+         integer(INTL):: cnt                         !out: counter value
+         class(dsvp_t), intent(in):: this            !in: DSVP
+         integer(INTD), intent(out), optional:: ierr !out: error code
+
+         cnt=this%instr_received
+         if(present(ierr)) ierr=DSVP_SUCCESS
+         return
+        end function DSVPGetRecvInstrCounter
+!--------------------------------------------------------------
+        function DSVPGetRtrdInstrCounter(this,ierr) result(cnt)
+!Returns the value of the processed (retired) instruction counter.
+         implicit none
+         integer(INTL):: cnt                         !out: counter value
+         class(dsvp_t), intent(in):: this            !in: DSVP
+         integer(INTD), intent(out), optional:: ierr !out: error code
+
+         cnt=this%instr_processed
+         if(present(ierr)) ierr=DSVP_SUCCESS
+         return
+        end function DSVPGetRtrdInstrCounter
+!--------------------------------------------------------------
+        function DSVPGetCrtdInstrCounter(this,ierr) result(cnt)
+!Returns the value of the created instruction counter.
+         implicit none
+         integer(INTL):: cnt                         !out: counter value
+         class(dsvp_t), intent(in):: this            !in: DSVP
+         integer(INTD), intent(out), optional:: ierr !out: error code
+
+         cnt=this%instr_created
+         if(present(ierr)) ierr=DSVP_SUCCESS
+         return
+        end function DSVPGetCrtdInstrCounter
+!--------------------------------------------------------------
+        function DSVPGetFailInstrCounter(this,ierr) result(cnt)
+!Returns the value of the received instruction counter.
+         implicit none
+         integer(INTL):: cnt                         !out: counter value
+         class(dsvp_t), intent(in):: this            !in: DSVP
+         integer(INTD), intent(out), optional:: ierr !out: error code
+
+         cnt=this%instr_failed
+         if(present(ierr)) ierr=DSVP_SUCCESS
+         return
+        end function DSVPGetFailInstrCounter
 !-------------------------------------------------------
         function DSVPIsConfigured(this,ierr) result(res)
 !Returns TRUE if the DSVP is configured, FALSE otherwise.

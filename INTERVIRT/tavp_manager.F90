@@ -203,9 +203,15 @@
         type, extends(dsv_conf_t), private:: tavp_mng_replicator_conf_t
          integer(INTD), private:: repl_comm                         !MPI communicator for tensor replication activity
         end type tavp_mng_replicator_conf_t
+ !TAVP-MNG collector: Entry value of the dictionary of parent instructions:
+        type, private:: tavp_mng_collector_entry_t
+         integer(INTL), public:: children_count=0_INTL              !number of subinstructions created by this TAVP from the parent instruction
+         type(list_pos_t), public:: list_elem                       !bookmark of the parent instruction in the COLLECTOR's parent instruction list (main queue)
+        end type tavp_mng_collector_entry_t
  !TAVP-MNG collector:
         type, extends(ds_unit_t), private:: tavp_mng_collector_t
          integer(INTD), public:: num_ports=2                        !number of ports: Port 0 <- Decomposer; Port 1 <- cdecoder
+         type(dictionary_t), private:: parent_instr_map             !map: Parent Instruction ID --> tavp_mng_collector_entry_t
          contains
           procedure, public:: configure=>TAVPMNGCollectorConfigure  !configures TAVP-MNG collector
           procedure, public:: start=>TAVPMNGCollectorStart          !starts and lives TAVP-MNG collector
@@ -218,6 +224,7 @@
  !TAVP-MNG:
         type, extends(dsvp_t), public:: tavp_mng_t
          type(tens_cache_t), private:: tens_cache                   !tensor argument cache (SHARED RESOURCE!)
+         type(dictionary_t), private:: instr_map                    !map: Child Instruction ID --> Parent Instruction ID (SHARED RESOURCE!)
          type(tavp_mng_decoder_t), private:: udecoder               !DSVU: decodes incoming tensor instructions from the higher-level manager
          type(tavp_mng_retirer_t), private:: retirer                !DSVU: retires processed tensor instructions and sends them back to the manager
          type(tavp_mng_locator_t), private:: locator                !DSVU: locates metadata for remote tensor arguments
@@ -230,6 +237,7 @@
          type(tavp_mng_collector_t), private:: collector            !DSVU: collects processed tensor instructions from the lower-level TAVPs and updates argument cache
          contains
           procedure, public:: configure=>TAVPMNGConfigure           !configures the TAVP-MNG DSVP
+          procedure, public:: register_instr=>TAVPMNGRegisterInstr  !registers a new child instruction (subinstruction)
         end type tavp_mng_t
  !TAVP-MNG configuration:
         type, extends(dsv_conf_t), public:: tavp_mng_conf_t
@@ -317,6 +325,7 @@
         private TAVPMNGCollectorCollect
  !tavp_mng_t:
         private TAVPMNGConfigure
+        private TAVPMNGRegisterInstr
 !IMPLEMENTATION:
        contains
 ![non-member]=================================
@@ -2677,5 +2686,21 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TAVPMNGConfigure
+!--------------------------------------------------------------------
+        subroutine TAVPMNGRegisterInstr(this,child_id,parent_id,ierr)
+!Registers a new child instruction (subinstruction).
+         implicit none
+         class(tavp_mng_t), intent(inout):: this     !inout: TAVP-MNG
+         integer(INTL), intent(in):: child_id        !in: child instruction id
+         integer(INTL), intent(in):: parent_id       !in: associated parent instruction id
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=0
+         !`Check if TAVP is ON
+         !`Store the key-value pair in .instr_map
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TAVPMNGRegisterInstr
 
        end module tavp_manager
