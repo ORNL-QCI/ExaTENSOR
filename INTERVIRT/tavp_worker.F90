@@ -74,6 +74,10 @@
           procedure, public:: get_resource=>TensEntryWrkGetResource   !returns a pointer to the resource
           final:: tens_entry_wrk_dtor                                 !dtor
         end type tens_entry_wrk_t
+ !Reference to the tensor argument cache entry:
+        type, private:: tens_entry_wrk_ref_t
+         class(tens_entry_wrk_t), pointer, public:: cache_entry=>NULL() !non-owning pointer to a tensor cache entry
+        end type tens_entry_wrk_ref_t
  !Tensor operand (encapsulated tensor data processible by a specific TAVP):
         type, extends(ds_oprnd_t), private:: tens_oprnd_t
          class(tens_rcrsv_t), pointer, private:: tensor=>NULL()   !non-owning pointer to a persistent recursive tensor
@@ -106,6 +110,7 @@
           procedure, private:: TensInstrCtor                        !ctor: constructs a tensor instruction from the specification of a tensor operation
           generic, public:: tens_instr_ctor=>TensInstrCtor
           procedure, public:: encode=>TensInstrEncode               !encoding procedure: Packs the TAVP instruction into a raw byte packet (bytecode)
+          procedure, public:: get_cache_entries=>TensInstrGetCacheEntries !returns an array of references to tensor cache entries used by the tensor operands
           final:: tens_instr_dtor                                   !dtor
         end type tens_instr_t
  !TAVP-WRK decoder:
@@ -282,6 +287,7 @@
  !tens_instr_t:
         private TensInstrCtor
         private TensInstrEncode
+        private TensInstrGetCacheEntries
         public tens_instr_dtor
  !tavp_wrk_decoder_t:
         private TAVPWRKDecoderConfigure
@@ -1889,6 +1895,40 @@
          end subroutine encode_instr_tens_contract
 
         end subroutine TensInstrEncode
+!-------------------------------------------------------------------------------
+        subroutine TensInstrGetCacheEntries(this,cache_entries,num_entries,ierr)
+!Returns an array of references to tensor cache entries associated with the tensor operands.
+         implicit none
+         class(tens_instr_t), intent(in):: this                        !in: tensor instruction
+         type(tens_entry_wrk_ref_t), intent(inout):: cache_entries(1:) !out: references to tensor cache entries
+         integer(INTD), intent(out):: num_entries                      !out: number of tensor cache entries returned
+         integer(INTD), intent(out), optional:: ierr                   !out: error code
+         integer(INTD):: errc,i
+         class(ds_oprnd_t), pointer:: oprnd
+
+         num_entries=0
+         if(.not.this%is_empty(errc)) then
+          if(errc.eq.DSVP_SUCCESS) then
+           num_entries=this%get_num_operands(errc)
+           if(errc.eq.DSVP_SUCCESS) then
+            do i=0,num_entries-1
+             oprnd=>this%get_operand(i,errc); if(errc.ne.DSVP_SUCCESS) then; errc=-4; exit; endif
+             select type(oprnd)
+             class is(tens_oprnd_t)
+              cache_entries(1+i)%cache_entry=>oprnd%get_cache_entry(errc)
+              if(errc.ne.0) then; errc=-3; exit; endif
+             class default
+              errc=-2; exit
+             end select
+            enddo
+           endif
+          endif
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensInstrGetCacheEntries
 !---------------------------------------
         subroutine tens_instr_dtor(this)
          implicit none

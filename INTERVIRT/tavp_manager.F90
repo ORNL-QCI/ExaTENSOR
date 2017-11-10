@@ -50,6 +50,10 @@
           procedure, public:: holds_remote=>TensEntryMngHoldsRemote   !returns TRUE if the stored tensor is remote, FALSE otherwise
           final:: tens_entry_mng_dtor
         end type tens_entry_mng_t
+ !Reference to the tensor argument cache entry:
+        type, private:: tens_entry_mng_ref_t
+         class(tens_entry_mng_t), pointer, public:: cache_entry=>NULL() !non-owning pointer to a tensor cache entry
+        end type tens_entry_mng_ref_t
  !Tensor operand (encapsulated tensor data processible by a specific TAVP):
         type, extends(ds_oprnd_t), private:: tens_oprnd_t
          class(tens_rcrsv_t), pointer, private:: tensor=>NULL()          !non-owning pointer to a persistent recursive tensor
@@ -82,6 +86,7 @@
           generic, public:: tens_instr_ctor=>TensInstrCtor
           procedure, public:: encode=>TensInstrEncode                 !encoding procedure: Packs the TAVP instruction into a raw byte packet
           procedure, public:: fully_located=>TensInstrFullyLocated    !returns TRUE if the tensor instruction operands have been fully located, FALSE otherwise
+          procedure, public:: get_cache_entries=>TensInstrGetCacheEntries !returns an array of references to tensor cache entries used by the tensor operands
           final:: tens_instr_dtor                                     !dtor
         end type tens_instr_t
  !TAVP-MNG decoder:
@@ -265,6 +270,7 @@
         private TensInstrCtor
         private TensInstrEncode
         private TensInstrFullyLocated
+        private TensInstrGetCacheEntries
         public tens_instr_dtor
  !tavp_mng_decoder_t:
         private TAVPMNGDecoderConfigure
@@ -1119,6 +1125,40 @@
          if(present(ierr)) ierr=errc
          return
         end function TensInstrFullyLocated
+!-------------------------------------------------------------------------------
+        subroutine TensInstrGetCacheEntries(this,cache_entries,num_entries,ierr)
+!Returns an array of references to tensor cache entries associated with the tensor operands.
+         implicit none
+         class(tens_instr_t), intent(in):: this                        !in: tensor instruction
+         type(tens_entry_mng_ref_t), intent(inout):: cache_entries(1:) !out: references to tensor cache entries
+         integer(INTD), intent(out):: num_entries                      !out: number of tensor cache entries returned
+         integer(INTD), intent(out), optional:: ierr                   !out: error code
+         integer(INTD):: errc,i
+         class(ds_oprnd_t), pointer:: oprnd
+
+         num_entries=0
+         if(.not.this%is_empty(errc)) then
+          if(errc.eq.DSVP_SUCCESS) then
+           num_entries=this%get_num_operands(errc)
+           if(errc.eq.DSVP_SUCCESS) then
+            do i=0,num_entries-1
+             oprnd=>this%get_operand(i,errc); if(errc.ne.DSVP_SUCCESS) then; errc=-4; exit; endif
+             select type(oprnd)
+             class is(tens_oprnd_t)
+              cache_entries(1+i)%cache_entry=>oprnd%get_cache_entry(errc)
+              if(errc.ne.0) then; errc=-3; exit; endif
+             class default
+              errc=-2; exit
+             end select
+            enddo
+           endif
+          endif
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensInstrGetCacheEntries
 !---------------------------------------
         subroutine tens_instr_dtor(this)
          implicit none
@@ -1652,8 +1692,11 @@
          implicit none
          class(tavp_mng_locator_t), intent(inout):: this !inout: TAVP-MNG locator DSVU
          integer(INTD), intent(out), optional:: ierr     !out: error code
-         integer(INTD):: errc,ier,thid,opcode,rot_num,bytecode_tag
-         logical:: active,stopping,ring_exists,located,valued
+         integer(INTD):: errc,ier,thid,opcode,rot_num,bytecode_tag,i,n
+         logical:: active,stopping,ring_exists,located,valued,evicted
+         type(tens_entry_mng_ref_t):: cache_entries(1:MAX_TENSOR_OPERANDS)
+         class(tens_entry_mng_t), pointer:: tens_cache_entry
+         class(tens_rcrsv_t), pointer:: tensor
          class(*), pointer:: uptr
          class(dsvp_t), pointer:: dsvp
          class(tavp_mng_t), pointer:: tavp
@@ -1754,11 +1797,25 @@
             ier=this%loc_list%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-3; exit wloop; endif
             ier=this%loc_list%get_status()
             dloop: do while(ier.eq.GFC_IT_ACTIVE)
+   !Delete tensor instruction:
              uptr=>this%loc_list%get_value(ier); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-3; exit wloop; endif
              tens_instr=>NULL(); select type(uptr); class is(tens_instr_t); tens_instr=>uptr; end select
              if(.not.associated(tens_instr).and.errc.eq.0) then; errc=-1; exit wloop; endif
-             !`Check whether any of the tensor operands is remote and it is the last reference to the tensor cache entry: Evict it then
+             call tens_instr%get_cache_entries(cache_entries,n,ier); if(ier.ne.0.and.errc.eq.0) then; errc=-1; exit wloop; endif
              ier=this%loc_list%delete(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-3; exit wloop; endif
+   !Evict remote tensor cache entries with zero reference count:
+             do i=1,n
+!$OMP CRITICAL (TAVP_MNG_CACHE)
+              tens_cache_entry=>cache_entries(i)%cache_entry
+              if(tens_cache_entry%holds_remote().and.tens_cache_entry%get_ref_count().eq.0) then
+               tensor=>tens_cache_entry%get_tensor(ier); if(ier.ne.0.and.errc.eq.0) errc=-1
+               if(errc.eq.0) then
+                evicted=arg_cache%evict(tensor,ier); if(ier.ne.0.and.errc.eq.0) errc=-1
+                if((.not.evicted).and.(errc.eq.0)) errc=-1 !trap
+               endif
+              endif
+!$OMP END CRITICAL (TAVP_MNG_CACHE)
+             enddo
              ier=this%loc_list%get_status()
             enddo dloop
             if(ier.ne.GFC_IT_EMPTY.and.errc.eq.0) then; errc=-1; exit wloop; endif
@@ -1767,6 +1824,13 @@
             call comm_hl%clean(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-1; exit wloop; endif
             call this%bytecode%destroy(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-1; exit wloop; endif
   !Absorb located tensor insructions from port 1 (delivered by ldecoder):
+            ier=this%loc_list%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-3; exit wloop; endif
+            ier=this%loc_list%get_status(); if(ier.ne.GFC_IT_EMPTY.and.errc.eq.0) then; errc=-1; exit wloop; endif !trap
+            do while(ier.eq.GFC_IT_EMPTY) !wait until located tensor instructions are delivered from ldecoder
+             ier=this%unload_port(1,this%loc_list); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-3; exit wloop; endif
+             ier=this%loc_list%get_status()
+            enddo
+            ier=this%loc_list%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-3; exit wloop; endif
             !`Get new bytecode tag => bytecode_tag
             rot_num=rot_num+1 !rotation step (send/recv) completed
   !Check whether these tensor instructions belong to me (thus finish the rotation):
