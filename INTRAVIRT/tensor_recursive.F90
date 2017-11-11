@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/11/09
+!REVISION: 2017/11/11
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -454,6 +454,8 @@
 !VISIBILITY:
  !non-member:
         public valid_tensor_layout
+        public cmp_integers
+        public cmp_real
         public cmp_strings
         public cmp_tens_signatures
         public cmp_tens_headers
@@ -672,9 +674,86 @@
          res=(layout.ge.0.and.layout.lt.TEREC_NUM_LAYOUTS)
          return
         end function valid_tensor_layout
+!---------------------------------------------------
+        function cmp_integers(int1,int2) result(cmp)
+!Generic comparator for integers or arbitrary kinds.
+         implicit none
+         integer(INTD):: cmp                 !out: result of comparison: {CMP_EQ,CMP_LT,CMP_GT,CMP_ER}
+         class(*), intent(in), target:: int1 !in: integer 1
+         class(*), intent(in), target:: int2 !in: integer 2
+         integer(INTL):: i1,i2
+
+         cmp=CMP_ER
+         select type(int1)
+         type is(integer(1))
+          i1=int1; cmp=CMP_EQ
+         type is(integer(2))
+          i1=int1; cmp=CMP_EQ
+         type is(integer(4))
+          i1=int1; cmp=CMP_EQ
+         type is(integer(8))
+          i1=int1; cmp=CMP_EQ
+         end select
+         if(cmp.eq.CMP_EQ) then
+          cmp=CMP_ER
+          select type(int2)
+          type is(integer(1))
+           i2=int2; cmp=CMP_EQ
+          type is(integer(2))
+           i2=int2; cmp=CMP_EQ
+          type is(integer(4))
+           i2=int2; cmp=CMP_EQ
+          type is(integer(8))
+           i2=int2; cmp=CMP_EQ
+          end select
+          if(cmp.eq.CMP_EQ) then
+           if(i1.lt.i2) then
+            cmp=CMP_LT
+           elseif(i1.gt.i2) then
+            cmp=CMP_GT
+           endif
+          endif
+         endif
+         return
+        end function cmp_integers
+!-------------------------------------------------
+        function cmp_real(real1,real2) result(cmp)
+!Generic comparator for reals or arbitrary kinds with finite zero threshold.
+         implicit none
+         integer(INTD):: cmp                  !out: result of comparison: {CMP_EQ,CMP_LT,CMP_GT,CMP_ER}
+         class(*), intent(in), target:: real1 !in: real 1
+         class(*), intent(in), target:: real2 !in: real 2
+         real(8):: r1,r2,diff
+
+         cmp=CMP_ER
+         select type(real1)
+         type is(real(4))
+          r1=real1; cmp=CMP_EQ
+         type is(real(8))
+          r1=real1; cmp=CMP_EQ
+         end select
+         if(cmp.eq.CMP_EQ) then
+          cmp=CMP_ER
+          select type(real2)
+          type is(real(4))
+           r2=real2; cmp=CMP_EQ
+          type is(real(8))
+           r2=real2; cmp=CMP_EQ
+          end select
+          if(cmp.eq.CMP_EQ) then
+           diff=r1-r2
+           if(diff.lt.-DP_ZERO_THRESH) then
+            cmp=CMP_LT
+           elseif(diff.gt.DP_ZERO_THRESH) then
+            cmp=CMP_GT
+           endif
+          endif
+         endif
+         return
+        end function cmp_real
 !--------------------------------------------------
         function cmp_strings(str1,str2) result(cmp)
-!Comparator for strings.
+!Generic comparator for strings.
          implicit none
          integer(INTD):: cmp                 !out: result of comparison: {CMP_EQ,CMP_LT,CMP_GT,CMP_ER}
          class(*), intent(in), target:: str1 !in: string 1
@@ -6758,6 +6837,7 @@
          logical, parameter:: FTEST_TENS_SIMPLE_PART=.TRUE.
          logical, parameter:: FTEST_TENS_RCRSV=.TRUE.
          logical, parameter:: FTEST_TENS_CONTRACTION=.TRUE.
+         logical, parameter:: FTEST_CMP_INTEGERS=.TRUE.
 
          if(FTEST_TENS_SIGNATURE) then
           write(*,'("Testing class tens_signature_t ... ")',ADVANCE='NO')
@@ -6787,6 +6867,11 @@
          if(FTEST_TENS_CONTRACTION) then
           write(*,'("Testing class tens_contraction_t ... ")',ADVANCE='NO')
           call test_tens_contraction(ierr)
+          if(ierr.eq.0) then; write(*,'("PASSED")'); else; write(*,'("FAILED: Error ",i11)') ierr; return; endif
+         endif
+         if(FTEST_CMP_INTEGERS) then
+          write(*,'("Testing generic integer comparator ... ")',ADVANCE='NO')
+          call test_cmp_integers(ierr)
           if(ierr.eq.0) then; write(*,'("PASSED")'); else; write(*,'("FAILED: Error ",i11)') ierr; return; endif
          endif
          return
@@ -7243,5 +7328,41 @@
          ierr=vit%release(); if(ierr.ne.GFC_SUCCESS) then; ierr=102; return; endif
          return
         end subroutine test_tens_contraction
+!-----------------------------------------
+        subroutine test_cmp_integers(ierr)
+         implicit none
+         integer(INTD), intent(out):: ierr
+         integer(INTD), parameter:: num_times=1000000
+         integer(INTD):: i,j,m,n
+         integer(INTD), allocatable:: i1(:)
+         integer(INTL), allocatable:: i2(:)
+         real(8), allocatable:: rn(:)
+         real(8):: tm1,tm2
+
+         ierr=0
+         allocate(rn(num_times),i1(num_times),i2(num_times))
+         call random_number(rn); rn(:)=rn(:)*real(num_times,8)
+         do i=1,num_times; i1(i)=int(rn(i),INTD); enddo
+         call random_number(rn); rn(:)=rn(:)*real(num_times,8)
+         do i=1,num_times; i2(i)=int(rn(i),INTD); enddo
+ !Generic cross-kind comparison:
+         m=0; tm2=thread_wtime()
+         do i=1,num_times
+          j=cmp_integers(i1(i),i2(i))
+          if(j.eq.CMP_LT) then; m=m-1; elseif(j.eq.CMP_GT) then; m=m+1; endif
+         enddo
+         tm2=thread_wtime(tm2); write(*,'(1x,F7.4)',ADVANCE='NO') tm2
+ !Regular cross-kind comparison:
+         n=0; tm1=thread_wtime()
+         do i=1,num_times
+          if(i1(i).lt.i2(i)) then; n=n-1; elseif(i1(i).gt.i2(i)) then; n=n+1; endif
+         enddo
+         tm1=thread_wtime(tm1); write(*,'(1x,F7.4)',ADVANCE='NO') tm1
+ !Print slowdown:
+         write(*,'(1x,"Slowdown = ",F8.1,"X",1x)',ADVANCE='NO') tm2/tm1
+         if(m.ne.n) ierr=1
+         deallocate(rn,i1,i2)
+         return
+        end subroutine test_cmp_integers
 
        end module tensor_recursive_test

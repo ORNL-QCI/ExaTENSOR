@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/11/10
+!REVISION: 2017/11/11
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -212,11 +212,14 @@
         type, extends(ds_unit_t), private:: tavp_mng_collector_t
          integer(INTD), public:: num_ports=2                        !number of ports: Port 0 <- Decomposer; Port 1 <- cdecoder
          type(dictionary_t), private:: parent_instr_map             !map: Parent Instruction ID --> tavp_mng_collector_entry_t
+         type(dictionary_iter_t), private:: parent_instr            !iterator for <parent_instr_map>
          contains
           procedure, public:: configure=>TAVPMNGCollectorConfigure  !configures TAVP-MNG collector
           procedure, public:: start=>TAVPMNGCollectorStart          !starts and lives TAVP-MNG collector
           procedure, public:: shutdown=>TAVPMNGCollectorShutdown    !shutsdown TAVP-MNG collector
           procedure, public:: collect=>TAVPMNGCollectorCollect      !collects processed tensor instructions from lower-level TAVPs
+          procedure, public:: register_instr=>TAVPMNGCollectorRegisterInstr !registers a parent instruction in the <parent_instr_map> dictionary
+          procedure, public:: match_subinstr=>TAVPMNGCollectorMatchSubinstr !matches a subinstruction against its parent instruction
         end type tavp_mng_collector_t
  !TAVP-MNG collector configuration:
         type, extends(dsv_conf_t), private:: tavp_mng_collector_conf_t
@@ -323,6 +326,8 @@
         private TAVPMNGCollectorStart
         private TAVPMNGCollectorShutdown
         private TAVPMNGCollectorCollect
+        private TAVPMNGCollectorRegisterInstr
+        private TAVPMNGCollectorMatchSubinstr
  !tavp_mng_t:
         private TAVPMNGConfigure
         private TAVPMNGRegisterInstr
@@ -2446,6 +2451,8 @@
          endif
 !Initialize queues:
          call this%init_queue(this%num_ports,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-1
+!Initialize parent instruction map iterator:
+         ier=this%parent_instr%init(this%parent_instr_map); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-1
 !Wait on other TAVP units:
          dsvp=>this%get_dsvp()
          call dsvp%sync_units(errc,ier); if(ier.ne.0.and.errc.eq.0) errc=-1
@@ -2476,6 +2483,9 @@
           write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Collector stopped as DSVU # ",i2," (thread ",i2,")")') impir,this%get_id(),thid
           flush(CONS_OUT)
          endif
+!Release parent instruction map iterator:
+         ier=this%parent_instr%release(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-1
+!Release queues:
          call this%release_queue(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-1
          ier=this%get_error(); if(ier.eq.DSVP_SUCCESS) call this%set_error(errc)
          if(present(ierr)) ierr=errc
@@ -2494,6 +2504,86 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TAVPMNGCollectorCollect
+!----------------------------------------------------------------------------------------
+        subroutine TAVPMNGCollectorRegisterInstr(this,instr_id,child_count,list_pos,ierr)
+!Registers a parent instruction.
+         implicit none
+         class(tavp_mng_collector_t), intent(inout):: this !inout: TAVP-MNG collector DSVU
+         integer(INTL), intent(in):: instr_id              !in: instruction id
+         integer(INTD), intent(in):: child_count           !in: number of subinstructions spawned by this instruction (>=0)
+         type(list_pos_t), intent(in):: list_pos           !in: bookmarked position of the instruction in the main queue
+         integer(INTD), intent(out), optional:: ierr       !out: error code
+         integer(INTD):: errc
+
+         errc=0
+         if(child_count.ge.0) then
+          errc=this%parent_instr%search(GFC_DICT_ADD_IF_NOT_FOUND,cmp_integers,instr_id,&
+                                       &tavp_mng_collector_entry_t(child_count,list_pos))
+          if(errc.eq.GFC_NOT_FOUND) then; errc=0; else; errc=-2; endif
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TAVPMNGCollectorRegisterInstr
+!-------------------------------------------------------------------------------
+        subroutine TAVPMNGCollectorMatchSubinstr(this,subinstr_id,ierr,list_pos)
+!Matches subinstruction agains its parent instruction.
+         implicit none
+         class(tavp_mng_collector_t), intent(inout):: this  !inout: TAVP-MNG collector DSVU
+         integer(INTL), intent(in):: subinstr_id            !in: subinstruction id
+         integer(INTD), intent(out), optional:: ierr        !out: error code
+         type(list_pos_t), intent(out), optional:: list_pos !out: list position if no other children left
+         integer(INTD):: errc,ier
+         integer(INTL):: parent_instr_id
+         class(dsvp_t), pointer:: dsvp
+         class(tavp_mng_collector_entry_t), pointer:: col_entry
+         class(*), pointer:: uptr
+         type(dictionary_iter_t):: dit
+
+         dsvp=>this%get_dsvp(errc)
+         if(errc.eq.DSVP_SUCCESS) then
+          select type(dsvp)
+          class is(tavp_mng_t)
+!$OMP CRITICAL (TAVP_MNG_INSTR)
+           errc=dit%init(dsvp%instr_map)
+           if(errc.eq.GFC_SUCCESS) then
+            errc=dit%search(GFC_DICT_JUST_FIND,cmp_integers,subinstr_id,value_out=uptr)
+            if(errc.eq.GFC_FOUND) then
+             select type(uptr); type is(integer(INTL)); parent_instr_id=uptr; errc=0; class default; errc=-9; end select
+             if(errc.eq.0) then
+              errc=this%parent_instr%search(GFC_DICT_JUST_FIND,cmp_integers,parent_instr_id,value_out=uptr)
+              if(errc.eq.GFC_FOUND) then
+               select type(uptr); class is(tavp_mng_collector_entry_t); col_entry=>uptr; errc=0; class default; errc=-8; end select
+               if(errc.eq.0) then
+                if(col_entry%children_count.gt.0) then
+                 col_entry%children_count=col_entry%children_count-1
+                 if(col_entry%children_count.eq.0) list_pos=col_entry%list_elem
+                else
+                 errc=-7
+                endif
+               endif
+              else
+               errc=-6
+              endif
+             endif
+            else
+             errc=-5
+            endif
+            ier=dit%release(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-4
+           else
+            errc=-3
+           endif
+!$OMP END CRITICAL (TAVP_MNG_INSTR)
+          class default
+           errc=-2
+          end select
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TAVPMNGCollectorMatchSubinstr
 ![tavp_mng_t]======================================
         subroutine TAVPMNGConfigure(this,conf,ierr)
 !Configures TAVP-MNG DSVP:
@@ -2691,14 +2781,26 @@
 !Registers a new child instruction (subinstruction).
          implicit none
          class(tavp_mng_t), intent(inout):: this     !inout: TAVP-MNG
-         integer(INTL), intent(in):: child_id        !in: child instruction id
-         integer(INTL), intent(in):: parent_id       !in: associated parent instruction id
+         integer(INTL), intent(in):: child_id        !in: child instruction id (key)
+         integer(INTL), intent(in):: parent_id       !in: associated parent instruction id (value)
          integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc
+         integer(INTD):: errc,ier
+         type(dictionary_iter_t):: dit
 
-         errc=0
-         !`Check if TAVP is ON
-         !`Store the key-value pair in .instr_map
+         if(this%get_status(errc).ne.DSVP_STAT_OFF) then
+          if(errc.eq.DSVP_SUCCESS) then
+!$OMP CRITICAL (TAVP_MNG_INSTR)
+           errc=dit%init(this%instr_map)
+           if(errc.eq.GFC_SUCCESS) then
+            errc=dit%search(GFC_DICT_ADD_IF_NOT_FOUND,cmp_integers,child_id,parent_id)
+            if(errc.eq.GFC_NOT_FOUND) then; errc=0; else; errc=-3; endif
+            ier=dit%release(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-2
+           endif
+!$OMP END CRITICAL (TAVP_MNG_INSTR)
+          endif
+         else
+          errc=-1
+         endif
          if(present(ierr)) ierr=errc
          return
         end subroutine TAVPMNGRegisterInstr
