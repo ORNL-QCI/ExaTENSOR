@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/11/11
+!REVISION: 2017/11/13
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -41,9 +41,11 @@
         integer(INTD), private:: MIN_LOCATE_INSTR=256                !min number of instructions in the locating cycle to start locating rotations
         real(8), private:: MAX_LOCATE_WAIT_TIME=0.5D-3               !max wait time (sec) until performing a locating rotation even if there is no enough instructions
  !Decomposer:
-        integer(INTD), private:: MAX_DECOMPOSE_INSTR=512             !max number of input tensor instructions in the decomposition phase
+        integer(INTD), private:: MAX_DECOMPOSE_INSTR=512             !max number of active input tensor instructions in the decomposition phase
  !Dispatcher:
         integer(INTD), private:: MAX_ISSUE_INSTR=4096                !max number of tensor instructions per bytecode issued to the child nodes
+ !Collector:
+        integer(INTD), private:: MAX_COLLECT_INSTR=8192              !max number of active tensor instructions in the collection phase
 !TYPES:
  !Tensor argument cache entry (TAVP-specific):
         type, extends(tens_cache_entry_t), private:: tens_entry_mng_t
@@ -218,29 +220,32 @@
           procedure, public:: start=>TAVPMNGCollectorStart          !starts and lives TAVP-MNG collector
           procedure, public:: shutdown=>TAVPMNGCollectorShutdown    !shutsdown TAVP-MNG collector
           procedure, public:: collect=>TAVPMNGCollectorCollect      !collects processed tensor instructions from lower-level TAVPs
-          procedure, public:: register_instr=>TAVPMNGCollectorRegisterInstr !registers a parent instruction in the <parent_instr_map> dictionary
-          procedure, public:: match_subinstr=>TAVPMNGCollectorMatchSubinstr !matches a subinstruction against its parent instruction
+          procedure, public:: register_instr=>TAVPMNGCollectorRegisterInstr     !registers a parent instruction in the <parent_instr_map> dictionary
+          procedure, public:: unregister_instr=>TAVPMNGCollectorUnregisterInstr !unregisters a parent instruction in the <parent_instr_map> dictionary
+          procedure, public:: match_subinstr=>TAVPMNGCollectorMatchSubinstr     !matches a subinstruction against its parent instruction
         end type tavp_mng_collector_t
  !TAVP-MNG collector configuration:
         type, extends(dsv_conf_t), private:: tavp_mng_collector_conf_t
         end type tavp_mng_collector_conf_t
  !TAVP-MNG:
         type, extends(dsvp_t), public:: tavp_mng_t
-         type(tens_cache_t), private:: tens_cache                   !tensor argument cache (SHARED RESOURCE!)
-         type(dictionary_t), private:: instr_map                    !map: Child Instruction ID --> Parent Instruction ID (SHARED RESOURCE!)
-         type(tavp_mng_decoder_t), private:: udecoder               !DSVU: decodes incoming tensor instructions from the higher-level manager
-         type(tavp_mng_retirer_t), private:: retirer                !DSVU: retires processed tensor instructions and sends them back to the manager
-         type(tavp_mng_locator_t), private:: locator                !DSVU: locates metadata for remote tensor arguments
-         type(tavp_mng_decoder_t), private:: ldecoder               !DSVU: decodes tensor instructions from the locating ring
-         type(tavp_mng_decomposer_t), private:: decomposer          !DSVU: decomposes tensors and tensor instructions into smaller pieces
-         type(tavp_mng_dispatcher_t), private:: dispatcher          !DSVU: dispatches ready to be executed tensor instructions to the lower-level TAVPs
-         type(tavp_mng_replicator_t), private:: replicator          !DSVU: replicates tensor blocks for communicaton avoiding
-         type(tavp_mng_decoder_t), private:: rdecoder               !DSVU: decodes tensor create/destroy/copy instructions from the replication workflow
-         type(tavp_mng_decoder_t), private:: cdecoder               !DSVU: decodes processed bytecode from the lower-level TAVPs for the collector
-         type(tavp_mng_collector_t), private:: collector            !DSVU: collects processed tensor instructions from the lower-level TAVPs and updates argument cache
+         type(tens_cache_t), private:: tens_cache                  !tensor argument cache (SHARED RESOURCE!)
+         type(dictionary_t), private:: instr_map                   !map: Child Instruction ID --> Parent Instruction ID (SHARED RESOURCE!)
+         type(tavp_mng_decoder_t), private:: udecoder              !DSVU: decodes incoming tensor instructions from the higher-level manager
+         type(tavp_mng_retirer_t), private:: retirer               !DSVU: retires processed tensor instructions and sends them back to the manager
+         type(tavp_mng_locator_t), private:: locator               !DSVU: locates metadata for remote tensor arguments
+         type(tavp_mng_decoder_t), private:: ldecoder              !DSVU: decodes tensor instructions from the locating ring
+         type(tavp_mng_decomposer_t), private:: decomposer         !DSVU: decomposes tensors and tensor instructions into smaller pieces
+         type(tavp_mng_dispatcher_t), private:: dispatcher         !DSVU: dispatches ready to be executed tensor instructions to the lower-level TAVPs
+         type(tavp_mng_replicator_t), private:: replicator         !DSVU: replicates tensor blocks for communicaton avoiding
+         type(tavp_mng_decoder_t), private:: rdecoder              !DSVU: decodes tensor create/destroy/copy instructions from the replication workflow
+         type(tavp_mng_decoder_t), private:: cdecoder              !DSVU: decodes processed bytecode from the lower-level TAVPs for the collector
+         type(tavp_mng_collector_t), private:: collector           !DSVU: collects processed tensor instructions from the lower-level TAVPs and updates argument cache
          contains
-          procedure, public:: configure=>TAVPMNGConfigure           !configures the TAVP-MNG DSVP
-          procedure, public:: register_instr=>TAVPMNGRegisterInstr  !registers a new child instruction (subinstruction)
+          procedure, public:: configure=>TAVPMNGConfigure              !configures the TAVP-MNG DSVP
+          procedure, public:: register_instr=>TAVPMNGRegisterInstr     !registers a new child instruction (subinstruction)
+          procedure, public:: unregister_instr=>TAVPMNGUnregisterInstr !unregisteres a subinstruction
+          procedure, public:: map_instr=>TAVPMNGMapInstr               !returns the parent instruction ID for a subinstruction
         end type tavp_mng_t
  !TAVP-MNG configuration:
         type, extends(dsv_conf_t), public:: tavp_mng_conf_t
@@ -327,10 +332,13 @@
         private TAVPMNGCollectorShutdown
         private TAVPMNGCollectorCollect
         private TAVPMNGCollectorRegisterInstr
+        private TAVPMNGCollectorUnregisterInstr
         private TAVPMNGCollectorMatchSubinstr
  !tavp_mng_t:
         private TAVPMNGConfigure
         private TAVPMNGRegisterInstr
+        private TAVPMNGUnregisterInstr
+        private TAVPMNGMapInstr
 !IMPLEMENTATION:
        contains
 ![non-member]=================================
@@ -2484,7 +2492,7 @@
           flush(CONS_OUT)
          endif
 !Release parent instruction map iterator:
-         ier=this%parent_instr%release(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-1
+         ier=this%parent_instr%release(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-2
 !Release queues:
          call this%release_queue(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-1
          ier=this%get_error(); if(ier.eq.DSVP_SUCCESS) call this%set_error(errc)
@@ -2506,12 +2514,12 @@
         end subroutine TAVPMNGCollectorCollect
 !----------------------------------------------------------------------------------------
         subroutine TAVPMNGCollectorRegisterInstr(this,instr_id,child_count,list_pos,ierr)
-!Registers a parent instruction.
+!Registers a parent instruction with the collector.
          implicit none
          class(tavp_mng_collector_t), intent(inout):: this !inout: TAVP-MNG collector DSVU
          integer(INTL), intent(in):: instr_id              !in: instruction id
          integer(INTD), intent(in):: child_count           !in: number of subinstructions spawned by this instruction (>=0)
-         type(list_pos_t), intent(in):: list_pos           !in: bookmarked position of the instruction in the main queue
+         type(list_pos_t), intent(in):: list_pos           !in: bookmarked position of the instruction in collector's main queue
          integer(INTD), intent(out), optional:: ierr       !out: error code
          integer(INTD):: errc
 
@@ -2526,14 +2534,34 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TAVPMNGCollectorRegisterInstr
+!---------------------------------------------------------------------
+        subroutine TAVPMNGCollectorUnregisterInstr(this,instr_id,ierr)
+!Explicitly unregisters a parent instruction with the collector.
+         implicit none
+         class(tavp_mng_collector_t), intent(inout):: this !inout: TAVP-MNG collector DSVU
+         integer(INTL), intent(in):: instr_id              !in: instruction id
+         integer(INTD), intent(out), optional:: ierr       !out: error code
+         integer(INTD):: errc
+
+         errc=this%parent_instr%search(GFC_DICT_DELETE_IF_FOUND,cmp_integers,instr_id)
+         if(errc.eq.GFC_FOUND) then; errc=0; else; errc=-1; endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TAVPMNGCollectorUnregisterInstr
 !-------------------------------------------------------------------------------
         subroutine TAVPMNGCollectorMatchSubinstr(this,subinstr_id,ierr,list_pos)
-!Matches subinstruction agains its parent instruction.
+!Matches a subinstruction against its parent instruction in collector's dictionary and
+!decrements the number of active subinstructions associated with the parent instruction.
+!If that reference count becomes zero and an optional <list_pos> argument is present,
+!the entry will be destroyed and the bookmark to the parent instruction position in
+!collector's main queue will be returned in <list_pos>. If <list_pos> is absent,
+!the entry will not be destroyed, making it necessary to destroy it explicitly later.
+!If <list_pos> is present but the reference count is still positive, <list_pos> will return NULL.
          implicit none
          class(tavp_mng_collector_t), intent(inout):: this  !inout: TAVP-MNG collector DSVU
          integer(INTL), intent(in):: subinstr_id            !in: subinstruction id
          integer(INTD), intent(out), optional:: ierr        !out: error code
-         type(list_pos_t), intent(out), optional:: list_pos !out: list position if no other children left
+         type(list_pos_t), intent(out), optional:: list_pos !out: list position bookmark (instruction position in collector's main queue)
          integer(INTD):: errc,ier
          integer(INTL):: parent_instr_id
          class(dsvp_t), pointer:: dsvp
@@ -2543,6 +2571,7 @@
 
          dsvp=>this%get_dsvp(errc)
          if(errc.eq.DSVP_SUCCESS) then
+!Look up the parent instruction ID:
           select type(dsvp)
           class is(tavp_mng_t)
 !$OMP CRITICAL (TAVP_MNG_INSTR)
@@ -2550,34 +2579,55 @@
            if(errc.eq.GFC_SUCCESS) then
             errc=dit%search(GFC_DICT_JUST_FIND,cmp_integers,subinstr_id,value_out=uptr)
             if(errc.eq.GFC_FOUND) then
-             select type(uptr); type is(integer(INTL)); parent_instr_id=uptr; errc=0; class default; errc=-9; end select
-             if(errc.eq.0) then
-              errc=this%parent_instr%search(GFC_DICT_JUST_FIND,cmp_integers,parent_instr_id,value_out=uptr)
-              if(errc.eq.GFC_FOUND) then
-               select type(uptr); class is(tavp_mng_collector_entry_t); col_entry=>uptr; errc=0; class default; errc=-8; end select
-               if(errc.eq.0) then
-                if(col_entry%children_count.gt.0) then
-                 col_entry%children_count=col_entry%children_count-1
-                 if(col_entry%children_count.eq.0) list_pos=col_entry%list_elem
-                else
-                 errc=-7
-                endif
-               endif
-              else
-               errc=-6
-              endif
-             endif
+             errc=0
+             select type(uptr)
+             type is(integer(INTL))
+              parent_instr_id=uptr
+             class default
+              errc=-10
+             end select
             else
-             errc=-5
+             errc=-9
             endif
-            ier=dit%release(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-4
+            ier=dit%release(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-8
            else
-            errc=-3
+            errc=-7
            endif
 !$OMP END CRITICAL (TAVP_MNG_INSTR)
           class default
-           errc=-2
+           errc=-6
           end select
+!Find the corresponding entry in collector's dictionary:
+          if(errc.eq.0) then
+           errc=this%parent_instr%search(GFC_DICT_JUST_FIND,cmp_integers,parent_instr_id,value_out=uptr)
+           if(errc.eq.GFC_FOUND) then
+            errc=0
+            select type(uptr)
+            class is(tavp_mng_collector_entry_t)
+             col_entry=>uptr
+            class default
+             errc=-5
+            end select
+!Decrement the reference count:
+            if(errc.eq.0) then
+             if(col_entry%children_count.gt.0) then
+              col_entry%children_count=col_entry%children_count-1
+!Destroy the entry if the reference count is zero:
+              if(present(list_pos)) then
+               if(col_entry%children_count.eq.0) then
+                list_pos=col_entry%list_elem
+                errc=this%parent_instr%search(GFC_DICT_DELETE_IF_FOUND,cmp_integers,parent_instr_id)
+                if(errc.eq.GFC_FOUND) then; errc=0; else; errc=-4; endif
+               endif
+              endif
+             else
+              errc=-3
+             endif
+            endif
+           else
+            errc=-2
+           endif
+          endif
          else
           errc=-1
          endif
@@ -2804,5 +2854,72 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TAVPMNGRegisterInstr
+!------------------------------------------------------------
+        subroutine TAVPMNGUnregisterInstr(this,child_id,ierr)
+!Unregisters a child instruction (subinstruction).
+         implicit none
+         class(tavp_mng_t), intent(inout):: this     !inout: TAVP-MNG
+         integer(INTL), intent(in):: child_id        !in: child instruction id (key)
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc,ier
+         type(dictionary_iter_t):: dit
+
+         if(this%get_status(errc).ne.DSVP_STAT_OFF) then
+          if(errc.eq.DSVP_SUCCESS) then
+!$OMP CRITICAL (TAVP_MNG_INSTR)
+           errc=dit%init(this%instr_map)
+           if(errc.eq.GFC_SUCCESS) then
+            errc=dit%search(GFC_DICT_DELETE_IF_FOUND,cmp_integers,child_id)
+            if(errc.eq.GFC_FOUND) then; errc=0; else; errc=-3; endif
+            ier=dit%release(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-2
+           endif
+!$OMP END CRITICAL (TAVP_MNG_INSTR)
+          endif
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TAVPMNGUnregisterInstr
+!---------------------------------------------------------------
+        function TAVPMNGMapInstr(this,child_id,ierr) result(pid)
+!Returns the parent instruction ID for a subinstruction.
+         implicit none
+         integer(INTL):: pid                         !out: parent instruction id
+         class(tavp_mng_t), intent(in):: this        !in: TAVP-MNG
+         integer(INTL), intent(in):: child_id        !in: child instruction id (key)
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc,ier
+         type(dictionary_iter_t):: dit
+         class(*), pointer:: uptr
+
+         pid=-1_INTL
+         if(this%get_status(errc).ne.DSVP_STAT_OFF) then
+          if(errc.eq.DSVP_SUCCESS) then
+!$OMP CRITICAL (TAVP_MNG_INSTR)
+           errc=dit%init(this%instr_map)
+           if(errc.eq.GFC_SUCCESS) then
+            errc=dit%search(GFC_DICT_JUST_FIND,cmp_integers,child_id,value_out=uptr)
+            if(errc.eq.GFC_FOUND) then
+             errc=0
+             select type(uptr)
+             type is(integer(INTL))
+               pid=uptr
+             class default
+              errc=-4
+             end select
+            else
+             errc=-3
+            endif
+            ier=dit%release(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-2
+           endif
+!$OMP END CRITICAL (TAVP_MNG_INSTR)
+          endif
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function TAVPMNGMapInstr
 
        end module tavp_manager
