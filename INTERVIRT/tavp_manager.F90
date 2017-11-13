@@ -219,7 +219,6 @@
           procedure, public:: configure=>TAVPMNGCollectorConfigure  !configures TAVP-MNG collector
           procedure, public:: start=>TAVPMNGCollectorStart          !starts and lives TAVP-MNG collector
           procedure, public:: shutdown=>TAVPMNGCollectorShutdown    !shutsdown TAVP-MNG collector
-          procedure, public:: collect=>TAVPMNGCollectorCollect      !collects processed tensor instructions from lower-level TAVPs
           procedure, public:: register_instr=>TAVPMNGCollectorRegisterInstr     !registers a parent instruction in the <parent_instr_map> dictionary
           procedure, public:: unregister_instr=>TAVPMNGCollectorUnregisterInstr !unregisters a parent instruction in the <parent_instr_map> dictionary
           procedure, public:: match_subinstr=>TAVPMNGCollectorMatchSubinstr     !matches a subinstruction against its parent instruction
@@ -330,7 +329,6 @@
         private TAVPMNGCollectorConfigure
         private TAVPMNGCollectorStart
         private TAVPMNGCollectorShutdown
-        private TAVPMNGCollectorCollect
         private TAVPMNGCollectorRegisterInstr
         private TAVPMNGCollectorUnregisterInstr
         private TAVPMNGCollectorMatchSubinstr
@@ -2499,19 +2497,6 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TAVPMNGCollectorShutdown
-!----------------------------------------------------
-        subroutine TAVPMNGCollectorCollect(this,ierr)
-!Collects processed tensor instructions from lower-level TAVPs.
-         implicit none
-         class(tavp_mng_collector_t), intent(inout):: this !inout: TAVP-MNG collector DSVU
-         integer(INTD), intent(out), optional:: ierr       !out: error code
-         integer(INTD):: errc
-
-         errc=0
-         !`Implement
-         if(present(ierr)) ierr=errc
-         return
-        end subroutine TAVPMNGCollectorCollect
 !----------------------------------------------------------------------------------------
         subroutine TAVPMNGCollectorRegisterInstr(this,instr_id,child_count,list_pos,ierr)
 !Registers a parent instruction with the collector.
