@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/11/11
+!REVISION: 2017/11/14
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -33,8 +33,9 @@
 !   e) Mapped: Tensor body is physically mapped.
 ! # Tensor body value definition stages:
 !   a) TEREC_BODY_UNDEF: Tensor body value is undefined;
-!   b) TEREC_BODY_DEF: Tensor body value is defined and can be used;
-!   c) TEREC_BODY_UPDATE: Tensor body value is currently being updated and cannot be used.
+!   b) TEREC_BODY_UPDATE: Tensor body value is currently being updated and cannot be used;
+!   c) TEREC_BODY_DEF: Tensor body value is defined but not currently used;
+!   d) TEREC_BODY_USED: Tensor body is defined and currently being used in a tensor operation.
         use tensor_algebra !includes dil_basic
         use stsubs
         use timers
@@ -87,8 +88,9 @@
         integer(INTD), parameter, public:: TEREC_NUM_IND_RESTR=5  !total number of index restrictions (0..max)
  !Tensor body value state:
         integer(INTD), parameter, public:: TEREC_BODY_UNDEF=0     !tensor body value is undefined
-        integer(INTD), parameter, public:: TEREC_BODY_DEF=1       !tensor body value is defined and can be used
-        integer(INTD), parameter, public:: TEREC_BODY_UPDATE=2    !tensor body value is currently being updated
+        integer(INTD), parameter, public:: TEREC_BODY_UPDATE=1    !tensor body value is currently being updated
+        integer(INTD), parameter, public:: TEREC_BODY_DEF=2       !tensor body value is defined but currently not used
+        integer(INTD), parameter, public:: TEREC_BODY_USED=3      !tensor body value is defined and currently being used
 !TYPES:
  !Register of hierarchical spaces:
         type, private:: hspace_register_t
@@ -249,7 +251,7 @@
         end type tens_layout_fdims_t
  !Tensor body:
         type, public:: tens_body_t
-         integer(INTD), private:: state=TEREC_BODY_UNDEF      !tensor body value state: {TEREC_BODY_UNDEF,TEREC_BODY_DEF,TEREC_BODY_UPDATE}
+         integer(INTD), private:: state=TEREC_BODY_UNDEF      !tensor body value state: {TEREC_BODY_UNDEF,TEREC_BODY_UPDATE,TEREC_BODY_DEF,TEREC_BODY_USED}
          integer(INTD), private:: num_subtensors=0            !number of subtensors in the list
          type(list_bi_t), private:: subtensors                !list of constituent tensors in terms of tensor headers
          class(tens_layout_t), allocatable, private:: layout  !tensor block storage layout (if physically stored as a whole)
@@ -1055,7 +1057,7 @@
 
          errc=this%name2id_it%get_status()
          if(errc.ne.GFC_IT_NULL) then
-          call this%name2id_it%delete_all(errc)
+          errc=this%name2id_it%delete_all()
           errc=this%name2id_it%release()
          endif
          errc=this%hspaces_it%get_status()

@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Dictionary (ordered map), AVL BST
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017/06/15 (recycling my old dictionary implementation)
+!REVISION: 2017/11/14 (recycling my old dictionary implementation)
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -958,31 +958,31 @@
          if(present(ierr)) ierr=errc
          return
         end function DictionaryIterGetKey
-!-----------------------------------------------------------
-        subroutine DictionaryIterDeleteAll(this,ierr,dtor_f)
+!-----------------------------------------------------------------
+        function DictionaryIterDeleteAll(this,dtor_f) result(ierr)
 !Deletes all dictionary elements, leaving dictionary empty at the end.
 !Complexity: O(NLogN)
          implicit none
+         integer(INTD):: ierr                           !out: error code
          class(dictionary_iter_t), intent(inout):: this !inout: dictionary iterator
-         integer(INTD), intent(out), optional:: ierr    !out: error code
          procedure(gfc_destruct_i), optional:: dtor_f   !in: explicit destructor for the dictionary element value
-         integer(INTD):: errc,errcode
+         integer(INTD):: errc
          class(dict_elem_t), pointer:: dp
          integer:: ier
 
-         errc=this%get_status()
-         if(errc.eq.GFC_IT_ACTIVE) then
-          errc=this%reset()
-          if(errc.eq.GFC_SUCCESS) then
+         ierr=this%get_status()
+         if(ierr.eq.GFC_IT_ACTIVE) then
+          ierr=this%reset()
+          if(ierr.eq.GFC_SUCCESS) then
            dloop: do
-            do while(errc.eq.GFC_SUCCESS); errc=this%move_down(); enddo
-            if(errc.eq.GFC_NO_MOVE.and.associated(this%current)) then
+            do while(ierr.eq.GFC_SUCCESS); ierr=this%move_down(); enddo
+            if(ierr.eq.GFC_NO_MOVE.and.associated(this%current)) then
              if(present(dtor_f)) then
-              call this%current%destruct_keyval(errc,key_assoc=this%container%key_storage,dtor_f=dtor_f)
+              call this%current%destruct_keyval(ierr,key_assoc=this%container%key_storage,dtor_f=dtor_f)
              else
-              call this%current%destruct_keyval(errc,key_assoc=this%container%key_storage)
+              call this%current%destruct_keyval(ierr,key_assoc=this%container%key_storage)
              endif
-             if(errc.eq.GFC_SUCCESS) then
+             if(ierr.eq.GFC_SUCCESS) then
               if(associated(this%current,this%container%root)) then !last element (root)
                if(associated(this%current%parent)) then
                 if(associated(this%current,this%current%parent%child_lt)) then
@@ -990,14 +990,14 @@
                 elseif(associated(this%current,this%current%parent%child_gt)) then
                  this%current%parent%child_gt=>NULL()
                 else
-                 errc=GFC_CORRUPTED_CONT; exit dloop
+                 ierr=GFC_CORRUPTED_CONT; exit dloop
                 endif
                endif
                call this%current%decr_ref_()
                deallocate(this%current,STAT=ier)
-               if(ier.ne.0) errc=GFC_MEM_FREE_FAILED
-               this%current=>NULL(); errcode=this%set_status_(GFC_IT_EMPTY)
-               if(errc.eq.GFC_SUCCESS) errc=errcode
+               if(ier.ne.0) ierr=GFC_MEM_FREE_FAILED
+               this%current=>NULL(); errc=this%set_status_(GFC_IT_EMPTY)
+               if(ierr.eq.GFC_SUCCESS) ierr=errc
                exit dloop
               else
                dp=>this%current
@@ -1009,30 +1009,29 @@
                elseif(associated(this%current%child_gt,dp)) then
                 this%current%child_gt=>NULL()
                else
-                errc=GFC_CORRUPTED_CONT; exit dloop
+                ierr=GFC_CORRUPTED_CONT; exit dloop
                endif
                dp%parent=>NULL()
                deallocate(dp,STAT=ier)
-               if(ier.ne.0) then; errc=GFC_MEM_FREE_FAILED; exit dloop; endif
+               if(ier.ne.0) then; ierr=GFC_MEM_FREE_FAILED; exit dloop; endif
               endif
              else
               exit dloop
              endif
             else
-             errc=GFC_ERROR; exit dloop
+             ierr=GFC_ERROR; exit dloop
             endif
            enddo dloop
           else
-           errc=GFC_ERROR
+           ierr=GFC_ERROR
           endif
-         elseif(errc.eq.GFC_IT_EMPTY) then
-          errc=GFC_EMPTY_CONT
+         elseif(ierr.eq.GFC_IT_EMPTY) then
+          ierr=GFC_EMPTY_CONT
          else
-          errc=GFC_NULL_CONT
+          ierr=GFC_NULL_CONT
          endif
-         if(present(ierr)) ierr=errc
          return
-        end subroutine DictionaryIterDeleteAll
+        end function DictionaryIterDeleteAll
 !-----------------------------------------------------------------------------------------------------------------------
 #ifdef NO_GNU
         function DictionaryIterSearch(this,action,cmp_key_f,key,value_in,store_by,value_out,copy_ctor_val_f,dtor_val_f)& !`GCC bug
@@ -1900,7 +1899,7 @@
             write(jo,'("#ERROR(gfc::dictionary::test): Test failed: Error code ",i13)') ierr
             write(jo,'("Please contact the developer at QUANT4ME@GMAIL.COM")')
            endif
-           call dict_it%delete_all(jj); if(ierr.eq.GFC_SUCCESS.and.jj.ne.GFC_SUCCESS) ierr=10
+           jj=dict_it%delete_all(); if(ierr.eq.GFC_SUCCESS.and.jj.ne.GFC_SUCCESS) ierr=10
            if(jj.ne.GFC_SUCCESS) write(jo,'("#ERROR(gfc::dictionary::test): Dictionary destruction failed: Error code ",i13)') jj
            jj=dict_it%release(); if(ierr.eq.GFC_SUCCESS.and.jj.ne.GFC_SUCCESS) ierr=11
            if(jj.ne.GFC_SUCCESS) write(jo,'("#ERROR(gfc::dictionary::test): Dictionary iterator release failed: Error code ",i13)')&

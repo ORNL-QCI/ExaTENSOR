@@ -1,6 +1,6 @@
 !Domain-specific virtual processor (DSVP): Abstract base module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/11/10
+!REVISION: 2017/11/14
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -170,8 +170,8 @@
           procedure, public:: set_id=>DSInstrSetId                      !sets the instruction id
           procedure, public:: get_code=>DSInstrGetCode                  !returns the instruction code
           procedure, public:: set_code=>DSInstrSetCode                  !sets the instruction code
-          procedure, public:: get_status=>DSInstrGetStatus              !returns the current status of the domain-specific instruction and error code
-          procedure, public:: set_status=>DSInstrSetStatus              !sets the status of the domain-specific instruction and error code
+          procedure, public:: get_status=>DSInstrGetStatus              !returns the current status of the domain-specific instruction and optionally error code
+          procedure, public:: set_status=>DSInstrSetStatus              !sets the status of the domain-specific instruction and optionally error code
           procedure, public:: get_control=>DSInstrGetControl            !returns the pointer to the instruction control field
           procedure, public:: set_control=>DSInstrSetControl            !associates the control field pointer
           procedure, public:: free_control=>DSInstrFreeControl          !frees the control field pointer

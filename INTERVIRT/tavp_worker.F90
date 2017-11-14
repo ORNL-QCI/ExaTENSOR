@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/11/09
+!REVISION: 2017/11/14
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -1222,7 +1222,7 @@
          if(this%is_active(errc)) then
           if(this%tensor%is_set(errc,layed=laid,located=locd)) then
            if(errc.eq.TEREC_SUCCESS) then
-            res=laid.and.locd.and.(this%tensor%get_state(errc).eq.TEREC_BODY_DEF)
+            res=laid.and.locd.and.(this%tensor%get_state(errc).ge.TEREC_BODY_DEF)
             if(errc.ne.TEREC_SUCCESS) then; res=.FALSE.; errc=-4; endif
            else
             errc=-3

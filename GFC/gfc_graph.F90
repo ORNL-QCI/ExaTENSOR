@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Graph
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017/06/18
+!REVISION: 2017/11/14
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -630,7 +630,7 @@
 
          ierr=dit%init(this%vert_links)
          if(ierr.eq.GFC_SUCCESS) then
-          call dit%delete_all(ierr); if(ierr.eq.GFC_SUCCESS) this%num_links=0_INTL
+          ierr=dit%delete_all(); if(ierr.eq.GFC_SUCCESS) this%num_links=0_INTL
           i=dit%release(); if(i.ne.GFC_SUCCESS.and.ierr.eq.GFC_SUCCESS) ierr=i
          endif
          return
@@ -1143,7 +1143,7 @@
              call this%container%incr_num_links_()
              ierr=this%link_it%reset_back()
              if(ierr.eq.GFC_SUCCESS) then
-              ierr=this%link_it%bookmark(list_pos)
+              list_pos=this%link_it%bookmark(ierr)
               if(ierr.eq.GFC_SUCCESS) then
                gcp=>this%link_it%pointee(ierr); if(.not.associated(gcp)) ierr=GFC_ERROR
                if(ierr.eq.GFC_SUCCESS) then

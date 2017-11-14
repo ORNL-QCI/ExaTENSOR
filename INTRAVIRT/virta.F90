@@ -8,7 +8,7 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/11/09
+!REVISION: 2017/11/14
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -98,7 +98,7 @@
    !Auxiliary definitions [16-63]:
         integer(INTD), parameter, public:: TAVP_INSTR_SPACE_CREATE=16   !create a (hierarchical) vector space
         integer(INTD), parameter, public:: TAVP_INSTR_SPACE_DESTROY=17  !destroy a (hierarchical) vector space
-   !Tensor operations [64-255]:
+   !Tensor operations (decomposable) [64-255]:
         integer(INTD), parameter, public:: TAVP_INSTR_TENS_CREATE=64    !tensor creation
         integer(INTD), parameter, public:: TAVP_INSTR_TENS_DESTROY=65   !tensor destruction
         integer(INTD), parameter, public:: TAVP_INSTR_TENS_LOAD=66      !tensor loading from persistent storage
@@ -130,8 +130,8 @@
          logical, public:: updated=.FALSE. !TRUE if the tensor value is currently being updated, FALSE otherwise
          integer(INTD), public:: is_used=0 !number of read-only references which are currently using the tensor
         end type tens_status_t
-        type(tens_status_t), parameter:: tens_status_none=tens_status_t() !tensor status null
-        public tens_status_none
+        type(tens_status_t), parameter:: TENS_STATUS_NONE=tens_status_t() !tensor status null
+        public TENS_STATUS_NONE
  !Tensor instruction control fields:
 #if 0
   !Tensor addition/copy/slice/insert control field:
@@ -795,7 +795,7 @@
 !!!$OMP CRITICAL (TAVP_CACHE)
          errc=dit%init(this%map)
          if(errc.eq.GFC_SUCCESS) then
-          call dit%delete_all(errc); if(errc.ne.GFC_SUCCESS) errc=-3
+          errc=dit%delete_all(); if(errc.ne.GFC_SUCCESS) errc=-3
           res=dit%release(); if(res.ne.GFC_SUCCESS.and.errc.eq.0) errc=-2
          else
           errc=-1
@@ -903,7 +903,7 @@
 
          errc=dit%init(this%ext_data)
          if(errc.eq.GFC_SUCCESS) then
-          call dit%delete_all(errc)
+          errc=dit%delete_all()
           errc=dit%release()
          endif
          return
@@ -999,7 +999,7 @@
 
          errc=dit%init(this%ext_methods)
          if(errc.eq.GFC_SUCCESS) then
-          call dit%delete_all(errc)
+          errc=dit%delete_all()
           errc=dit%release()
          endif
          return

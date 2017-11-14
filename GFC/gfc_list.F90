@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Bi-directional linked list
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017-11-09 (started 2016-02-28)
+!REVISION: 2017-11-14 (started 2016-02-28)
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -60,6 +60,7 @@
           procedure, public:: is_set=>ListPosIsSet !returns TRUE if the list position is set
           procedure, public:: clean=>ListPosClean  !resets the list position to NULL
         end type list_pos_t
+        type(list_pos_t), parameter, public:: LIST_POS_NULL=list_pos_t()
  !Linked list:
         type, extends(gfc_container_t), public:: list_bi_t
          class(list_elem_t), pointer, private:: first_elem=>NULL() !first element of the linked list
@@ -1202,18 +1203,20 @@
          return
         end function ListIterDeleteAll
 !------------------------------------------------------------
-        function ListIterBookmark(this,bookmark) result(ierr)
+        function ListIterBookmark(this,ierr) result(bookmark)
 !Bookmarks the current iterator position.
          implicit none
-         integer(INTD):: ierr                        !out: error code
+         type(list_pos_t):: bookmark                 !out: bookmarked list position
          class(list_iter_t), intent(in):: this       !in: list iterator
-         class(list_pos_t), intent(out):: bookmark   !out: bookmarked list position
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
 
-         ierr=this%get_status()
-         if(ierr.eq.GFC_IT_ACTIVE) then
-          ierr=GFC_SUCCESS
+         errc=this%get_status()
+         if(errc.eq.GFC_IT_ACTIVE) then
+          errc=GFC_SUCCESS
           bookmark%elem_p=>this%current
          endif
+         if(present(ierr)) ierr=errc
          return
         end function ListIterBookmark
 !--------------------------------------------------------
