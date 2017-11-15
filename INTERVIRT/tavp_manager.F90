@@ -1867,6 +1867,7 @@
              if(rot_num.eq.0) then !only deactivate own control instructions, except RESUME
               opcode=tens_instr%get_code(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-49; exit wloop; endif
               if(opcode.ge.TAVP_ISA_CTRL_FIRST.and.opcode.le.TAVP_ISA_CTRL_LAST.and.opcode.ne.TAVP_INSTR_CTRL_RESUME) then !control instructions do not need locating (but keep RESUME)
+               if(opcode.eq.TAVP_INSTR_CTRL_STOP.or.opcode.eq.TAVP_INSTR_CTRL_PAUSE) stopping=.TRUE. !`PAUSE is treated as STOP as of now
                ier=this%loc_list%move_elem(ctrl_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-48; exit wloop; endif
                cycle eloop
               endif
@@ -1980,6 +1981,7 @@
           endif
  !Reset locating instruction counters:
           num_loc_instr=0; num_def_instr=0
+          if(stopping) active=.FALSE.
          enddo wloop
 !Retire the special dummy instruction:
          call tens_instr_dummy%set_status(DS_INSTR_RETIRED,ier,DSVP_SUCCESS); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-4
