@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/11/15
+!REVISION: 2017/11/16
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -41,7 +41,9 @@
         integer(INTD), private:: MIN_LOCATE_INSTR=256          !min number of instructions in the locating cycle to start locating rotations
         real(8), private:: MAX_LOCATE_WAIT_TIME=0.5D-3         !max wait time (sec) until performing a locating rotation even if there is no enough instructions
  !Decomposer:
-        integer(INTD), private:: MAX_DECOMPOSE_INSTR=512       !max number of active input tensor instructions in the decomposition phase
+        integer(INTD), private:: MAX_DECOMPOSE_PAR_INSTR=256   !max number of processed parent instructions in the decomposition phase
+        integer(INTD), private:: MAX_DECOMPOSE_CLD_INSTR=16384 !max number of created child instructions in the decomposition phase
+        real(8), private:: MAX_DECOMPOSE_PHASE_TIME=0.5d-3     !max time (sec) before passing instructions to dispatcher
  !Dispatcher:
         integer(INTD), private:: MAX_ISSUE_INSTR=4096          !max number of tensor instructions in the bytecode issued to a child node
  !Collector:
@@ -162,11 +164,15 @@
  !TAVP-MNG decomposer:
         type, extends(ds_unit_t), private:: tavp_mng_decomposer_t
          integer(INTD), public:: num_ports=1                        !number of ports: Port 0 <- locator
+         type(list_bi_t), private:: subinstruction_list             !list of newly created subinstructions
+         type(list_iter_t), private:: sub_list                      !iterator for <subinstruction_list>
+         type(list_bi_t), private:: collecting_list                 !list of processed parent instructions
+         type(list_iter_t), private:: col_list                      !iterator for <collecting_list>
          contains
           procedure, public:: configure=>TAVPMNGDecomposerConfigure !configures TAVP-MNG decomposer
           procedure, public:: start=>TAVPMNGDecomposerStart         !starts and lives TAVP-MNG decomposer
           procedure, public:: shutdown=>TAVPMNGDecomposerShutdown   !shuts down TAVP-MNG decomposer
-          procedure, public:: decompose=>TAVPMNGDecomposerDecompose !decomposes a tensor instruction into smaller pieces
+          procedure, public:: decompose=>TAVPMNGDecomposerDecompose !decomposes a tensor instruction into smaller pieces (subinstructions)
         end type tavp_mng_decomposer_t
  !TAVP-MNG decomposer configuration:
         type, extends(dsv_conf_t), private:: tavp_mng_decomposer_conf_t
@@ -1784,58 +1790,60 @@
           flush(CONS_OUT)
          endif
 !Reserve a bytecode buffer:
-         call this%bytecode%reserve_mem(ier,MAX_BYTECODE_SIZE,MAX_BYTECODE_INSTR); if(ier.ne.0.and.errc.eq.0) errc=-75
+         call this%bytecode%reserve_mem(ier,MAX_BYTECODE_SIZE,MAX_BYTECODE_INSTR); if(ier.ne.0.and.errc.eq.0) errc=-76
 !Initialize queues and ports:
-         call this%init_queue(this%num_ports,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-74
+         call this%init_queue(this%num_ports,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-75
 !Initialize the located instruction list iterator:
-         ier=this%loc_list%init(this%located_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-73
+         ier=this%loc_list%init(this%located_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-74
 !Initialize the deferred instruction list iterator:
-         ier=this%def_list%init(this%deferred_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-72
+         ier=this%def_list%init(this%deferred_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-73
 !Initialize the missing-operand instruction list iterator:`Not used, everything goes into def_list
-         ier=this%mis_list%init(this%missing_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-71
+         ier=this%mis_list%init(this%missing_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-72
 !Initialize the control list:
-         ier=ctrl_list%init(control_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-70
+         ier=ctrl_list%init(control_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-71
 !Set up a dummy instruction (RESUME):
          call tens_instr_dummy%tens_instr_ctor(TAVP_INSTR_CTRL_RESUME,ier,iid=int(role_rank,INTL)) !special dummy instruction with id = role_rank
-         if(ier.ne.0.and.errc.eq.0) errc=-69
+         if(ier.ne.0.and.errc.eq.0) errc=-70
 !Check ring topology:
          if(this%ring_send.eq.role_rank.and.this%ring_recv.eq.role_rank) then !root TAVP-MNG (no ring)
           ring_exists=.FALSE.
          else !non-root TAVP-MNG (non-trivial ring)
           ring_exists=.TRUE.
           if(this%ring_send.eq.role_rank.or.this%ring_send.lt.0.or.&
-            &this%ring_recv.eq.role_rank.or.this%ring_recv.lt.0) errc=-68 !trap
+            &this%ring_recv.eq.role_rank.or.this%ring_recv.lt.0) errc=-69 !trap
          endif
 !Wait on other TAVP units:
          tavp=>NULL(); dsvp=>this%get_dsvp(); select type(dsvp); class is(tavp_mng_t); tavp=>dsvp; end select
          if(associated(tavp)) then
           arg_cache=>tavp%tens_cache
-          call tavp%sync_units(errc,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-67
+          call tavp%sync_units(errc,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-68
          else
-          arg_cache=>NULL(); if(errc.eq.0) errc=-66
+          arg_cache=>NULL(); if(errc.eq.0) errc=-67
          endif
 !Work loop:
          num_loc_instr=0; num_def_instr=0
-         ier=timer_start(MAX_LOCATE_WAIT_TIME,loc_wait); if(ier.ne.TIMERS_SUCCESS.and.errc.eq.0) errc=-65
+         ier=timer_start(MAX_LOCATE_WAIT_TIME,loc_wait); if(ier.ne.TIMERS_SUCCESS.and.errc.eq.0) errc=-66
          active=((errc.eq.0).and.(this%ring_comm.ne.MPI_COMM_NULL)); stopping=(.not.active)
          wloop: do while(active)
  !Absorb new tensor instructions from udecoder (port 0) to the end of the main queue:
-          ier=this%iqueue%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-64; exit wloop; endif
-          ier=this%flush_port(0); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-63; exit wloop; endif
+          ier=this%iqueue%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-65; exit wloop; endif
+          ier=this%flush_port(0); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-64; exit wloop; endif
  !Insert the header dummmy instruction, which will tag the bytecode, into the locating list:
-          ier=this%loc_list%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-62; exit wloop; endif
+          ier=this%loc_list%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-63; exit wloop; endif
           ier=this%loc_list%get_status()
           if(ier.eq.GFC_IT_EMPTY) then
-           ier=this%loc_list%append(tens_instr_dummy); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-61; exit wloop; endif
-           ier=this%loc_list%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-60; exit wloop; endif
+           ier=this%loc_list%append(tens_instr_dummy); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-62; exit wloop; endif
+           ier=this%loc_list%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-61; exit wloop; endif
           endif
  !Move the leading subset of new tensor instructions from the main queue into the locating list:
-          ier=this%iqueue%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-59; exit wloop; endif
+          ier=this%iqueue%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-60; exit wloop; endif
           ier=this%iqueue%get_status()
           if(ier.eq.GFC_IT_ACTIVE) then !main queue is not empty
            ier=this%iqueue%move_list(this%loc_list,MAX_LOCATE_NEW_INSTR,n) !at most MAX_LOCATE_NEW_INSTR tensor instructions will be moved to the locating list
-           if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-58; exit wloop; endif
+           if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-59; exit wloop; endif
            num_loc_instr=num_loc_instr+n !increment the number of instructions waiting for location
+           call tavp%incr_recv_instr_counter(ier,int(n,INTL))
+           if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-58; exit wloop; endif
           endif
  !Move a limited number of tensor instructions from the deferred list back into the locating list:
           ier=this%loc_list%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-57; exit wloop; endif
@@ -2101,9 +2109,18 @@
          implicit none
          class(tavp_mng_decomposer_t), intent(inout):: this !inout: TAVP-MNG decomposer DSVU
          integer(INTD), intent(out), optional:: ierr        !out: error code
-         integer(INTD):: errc,ier,thid
-         logical:: active,stopping
+         integer(INTD):: errc,ier,thid,iec,sts,opcode,num_processed,num_created
+         integer(INTL):: pid,cid
+         integer:: dec_timer
+         logical:: active,stopping,expired
          class(dsvp_t), pointer:: dsvp
+         class(tavp_mng_t), pointer:: tavp
+         class(tens_cache_t), pointer:: arg_cache
+         class(tens_rcrsv_t), pointer:: tensor
+         class(tens_instr_t), pointer:: tens_instr
+         class(*), pointer:: uptr
+         type(list_bi_t):: control_list
+         type(list_iter_t):: ctrl_list
 
          errc=0; thid=omp_get_thread_num()
          if(DEBUG.gt.0) then
@@ -2112,19 +2129,80 @@
          endif
 !Initialize queues:
          call this%init_queue(this%num_ports,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-1
+!Initialize the subinstruction list iterator:
+         ier=this%sub_list%init(this%subinstruction_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-1
+!Initialize the collecting list iterator:
+         ier=this%col_list%init(this%collecting_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-1
+!Initialize the control list:
+         ier=ctrl_list%init(control_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-1
 !Wait on other TAVP units:
-         dsvp=>this%get_dsvp()
-         call dsvp%sync_units(errc,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-1
+         tavp=>NULL(); dsvp=>this%get_dsvp(); select type(dsvp); class is(tavp_mng_t); tavp=>dsvp; end select
+         if(associated(tavp)) then
+          arg_cache=>tavp%tens_cache
+          call tavp%sync_units(errc,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-1
+         else
+          arg_cache=>NULL(); if(errc.eq.0) errc=-1
+         endif
 !Work loop:
          active=(errc.eq.0); stopping=(.not.active)
          wloop: do while(active)
- !Get a new batch of parent instructions from locator (port 0):
- !Decompose the parent instructions, creating new child instructions:
-  !Decompose a parent instruction into (newly created) child instructions:
-  !Register newly created child instructions with TAVP-MNG:
- !Move processed parent instructions to collector (port 0):
- !Move newly created child instructions to dispatcher (port 0):
+ !Get a new batch of parent instructions from locator (port 0) into the main queue:
+          ier=this%iqueue%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+          ier=this%flush_port(0); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+ !Decompose parent instructions, creating new child instructions:
+          num_processed=0; num_created=0
+          ier=timer_start(MAX_DECOMPOSE_PHASE_TIME,dec_timer); if(ier.ne.0.and.errc.eq.0) then; errc=-1; exit wloop; endif
+          ier=this%iqueue%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+          ier=this%iqueue%get_status()
+          dloop: do while(ier.eq.GFC_IT_ACTIVE)
+  !Decompose a parent instruction into new child instructions:
+   !Extract a parent tensor instruction:
+           uptr=>this%iqueue%get_value(ier); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+           tens_instr=>NULL(); select type(uptr); class is(tens_instr_t); tens_instr=>uptr; end select
+           if((.not.associated(tens_instr)).and.errc.eq.0) then; errc=-1; exit wloop; endif !trap
+           pid=tens_instr%get_id(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+           sts=tens_instr%get_status(ier,iec); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+           opcode=tens_instr%get_code(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+           if(opcode.ge.TAVP_ISA_TENS_FIRST.and.opcode.le.TAVP_ISA_TENS_LAST) then
+   !Decompose the parent tensor instruction into child tensor instructions and merge them into the subinstruction list:
+            
+   !Register newly created child instructions with the TAVP-MNG instruction map:
+            
+   !Move processed parent instruction to the collecting list:
+            ier=this%iqueue%move_elem(this%col_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+            num_processed=num_processed+1
+           else
+   !Move control and other instructions into the control list:
+            if(opcode.eq.TAVP_INSTR_CTRL_STOP.or.opcode.eq.TAVP_INSTR_CTRL_PAUSE) stopping=.TRUE. !`PAUSE is treated as STOP as of now
+            ier=this%iqueue%move_elem(ctrl_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+           endif
+  !Pass a batch of new child instructions to dispatcher (port 0) and a batch of processed parent instructions to collector (port 0):
+           expired=time_is_off(dec_timer,ier,destroy=.TRUE.); if(ier.ne.0.and.errc.eq.0) then; errc=-1; exit wloop; endif
+           if(expired.or.num_created.ge.MAX_DECOMPOSE_CLD_INSTR.or.num_processed.ge.MAX_DECOMPOSE_PAR_INSTR) then
+            ier=this%sub_list%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+            ier=this%sub_list%get_status()
+            if(ier.eq.GFC_IT_ACTIVE) then
+             ier=tavp%dispatcher%load_port(0,this%sub_list); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+            endif
+            ier=this%col_list%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+            ier=this%col_list%get_status()
+            if(ier.eq.GFC_IT_ACTIVE) then
+             ier=tavp%collector%load_port(0,this%col_list); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+            endif
+            num_processed=0; num_created=0
+           endif
+  !Restart the timer if expired:
+           if(expired) then
+            ier=timer_start(MAX_DECOMPOSE_PHASE_TIME,dec_timer); if(ier.ne.0.and.errc.eq.0) then; errc=-1; exit wloop; endif
+           endif
+           ier=this%iqueue%get_status()
+          enddo dloop
+          if(ier.ne.GFC_IT_EMPTY.and.errc.eq.0) then; errc=-1; exit wloop; endif
+          
          enddo wloop
+!Release the control list:
+         ier=ctrl_list%delete_all(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-3
+         ier=ctrl_list%release(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-2
 !Record the error:
          ier=this%get_error(); if(ier.eq.DSVP_SUCCESS) call this%set_error(errc)
          if(errc.ne.0.and.VERBOSE) write(CONS_OUT,'("#ERROR(TAVP_MNG)[",i6,"]: Decomposer error ",i11," by thread ",i2)')&
@@ -2147,6 +2225,30 @@
           write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decomposer stopped as DSVU # ",i2," (thread ",i2,")")')&
           &impir,this%get_id(),thid
           flush(CONS_OUT)
+         endif
+!Deactivate the collecting list:
+         ier=this%col_list%reset()
+         if(ier.eq.GFC_SUCCESS) then
+          ier=this%col_list%get_status()
+          if(ier.ne.GFC_IT_EMPTY) then
+           if(errc.eq.0) errc=-7
+           ier=this%col_list%delete_all()
+          endif
+          ier=this%col_list%release(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-6
+         else
+          if(errc.eq.0) errc=-5
+         endif
+!Deactivate the subinstruction list:
+         ier=this%sub_list%reset()
+         if(ier.eq.GFC_SUCCESS) then
+          ier=this%sub_list%get_status()
+          if(ier.ne.GFC_IT_EMPTY) then
+           if(errc.eq.0) errc=-4
+           ier=this%sub_list%delete_all()
+          endif
+          ier=this%sub_list%release(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-3
+         else
+          if(errc.eq.0) errc=-2
          endif
 !Release queues:
          call this%release_queue(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-1
@@ -2210,6 +2312,13 @@
          integer(INTD):: errc,ier,thid,i
          logical:: active,stopping
          class(dsvp_t), pointer:: dsvp
+         class(tavp_mng_t), pointer:: tavp
+         class(tens_cache_t), pointer:: arg_cache
+         class(tens_rcrsv_t), pointer:: tensor
+         class(tens_instr_t), pointer:: tens_instr
+         class(*), pointer:: uptr
+         type(list_bi_t):: control_list
+         type(list_iter_t):: ctrl_list
 
          errc=0; thid=omp_get_thread_num()
          if(DEBUG.gt.0) then
@@ -2225,9 +2334,16 @@
          endif
 !Initialize queues:
          call this%init_queue(this%num_ports,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-1
+!Initialize the control list:
+         ier=ctrl_list%init(control_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-1
 !Wait on other TAVP units:
-         dsvp=>this%get_dsvp()
-         call dsvp%sync_units(errc,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-1
+         tavp=>NULL(); dsvp=>this%get_dsvp(); select type(dsvp); class is(tavp_mng_t); tavp=>dsvp; end select
+         if(associated(tavp)) then
+          arg_cache=>tavp%tens_cache
+          call tavp%sync_units(errc,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-1
+         else
+          arg_cache=>NULL(); if(errc.eq.0) errc=-1
+         endif
 !Work loop:
          active=((errc.eq.0).and.(this%dispatch_comm.ne.MPI_COMM_NULL)); stopping=(.not.active)
          wloop: do while(active)
@@ -2237,6 +2353,9 @@
  !Delete instructions from the main queue:
  !Synchronize the bytecode sends:
          enddo wloop
+!Release the control list:
+         ier=ctrl_list%delete_all(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-3
+         ier=ctrl_list%release(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-2
 !Record the error:
          ier=this%get_error(); if(ier.eq.DSVP_SUCCESS) call this%set_error(errc)
          if(errc.ne.0.and.VERBOSE) write(CONS_OUT,'("#ERROR(TAVP_MNG)[",i6,"]: Dispatcher error ",i11," by thread ",i2)')&
