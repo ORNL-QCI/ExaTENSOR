@@ -1,7 +1,7 @@
 !ExaTENSOR: Massively Parallel Virtual Processor for Scale-Adaptive Hierarchical Tensor Algebra
 !This is the top level API module of ExaTENSOR (user-level API)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017/11/09
+!REVISION: 2017/11/17
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -93,20 +93,22 @@
        type(vector_t), private:: instructions
        type(vector_iter_t), private:: instr_log
 !VISIBILITY:
- !External methods/data (before exatns_start):
-       public exatns_method_register      !registers an external method (it has to adhere to a predefined interface)
-       public exatns_method_unregister    !unregisters an external method
-       public exatns_data_register        !registers external (on-node) data (for future references)
-       public exatns_data_unregister      !unregisters external data
+ !External methods/data (called by All before exatns_start()):
+       public exatns_dim_strength_setup      !sets up the universal tensor dimension strength assessing function (guides recursive tensor dimension splitting)
+       public exatns_dim_strength_thresh_set !sets the tensor dimension strength threshold above which the dimension will split
+       public exatns_method_register         !registers an external method (it has to adhere to a predefined interface)
+       public exatns_method_unregister       !unregisters an external method
+       public exatns_data_register           !registers external (on-node) data (for future references)
+       public exatns_data_unregister         !unregisters external data
  !Control:
-       public exatns_start                !starts the ExaTENSOR DSVP
-       public exatns_stop                 !stops the ExaTENSOR DSVP
-       public exatns_proc_role            !returns the role of the current MPI process
-       public exatns_status               !returns the status of the ExaTENSOR runtime (plus statistics, if needed)
- !Parser/interpreter:
+       public exatns_start                !starts the ExaTENSOR DSVP (called by All)
+       public exatns_stop                 !stops the ExaTENSOR DSVP (Driver only)
+       public exatns_proc_role            !returns the role of the current MPI process (called by Any)
+       public exatns_status               !returns the status of the ExaTENSOR runtime plus statistics, if needed (Driver only)
+ !Parser/interpreter (Driver only):
        public exatns_interpret            !interprets TAProL code (string of TAProL statements)
        public exatns_symbol_exists        !checks whether a specific identifier is registered (if yes, returns its attributes)
- !Hierarchical vector space:
+ !Hierarchical vector space (either called by All or by Driver only):
        public exatns_space_register       !registers a vector space
        public exatns_space_unregister     !unregisters a vector space
        public exatns_space_status         !returns the status of the vector space
@@ -114,14 +116,14 @@
        public exatns_subspace_unregister  !unregisters a subspace in a vector space
        public exatns_index_register       !associates an index label with a specific space/subspace
        public exatns_index_unregister     !unregisters an index label
- !Tensor:
+ !Tensor (Driver only):
        public exatns_tensor_create        !creates an empty tensor with an optional deferred initialization method
        public exatns_tensor_destroy       !destroys a tensor
        public exatns_tensor_get           !returns a locally storable slice of a tensor
        public exatns_tensor_load          !loads a tensor from persistent storage (create + populate)
        public exatns_tensor_save          !saves a tensor to persistent storage
        public exatns_tensor_status        !returns the status of the tensor (e.g., empty, initialized, being updated, etc.)
- !Tensor operations:
+ !Tensor operations (Driver only):
        public exatns_tensor_init          !initializes a tensor to a real/complex value or invokes an external initialization method
        public exatns_tensor_copy          !copies the content of one tensor into another tensor, allowing for permutation, slicing, or insertion
        public exatns_tensor_fold          !produces a new tensor by folding multiple tensor dimensions into a single one
@@ -139,7 +141,29 @@
 
       contains
 !IMPLEMENTATION:
-![ExaTENSOR External Method/Data API]---------------------------------------------
+![ExaTENSOR External Method/Data API]---------------------------------
+       function exatns_dim_strength_setup(dim_strength_f) result(ierr)
+!Sets up the universal tensor dimension strength assessing function.
+        implicit none
+        integer(INTD):: ierr                                  !out: error code
+        procedure(tens_rcrsv_dim_strength_i):: dim_strength_f !in: external universal tensor dimension strength assessing function
+
+        ierr=EXA_SUCCESS
+        dim_strength_assess=>dim_strength_f
+        return
+       end function exatns_dim_strength_setup
+!---------------------------------------------------------------------------
+       function exatns_dim_strength_thresh_set(strength_thresh) result(ierr)
+!Sets the tensor dimension strength threshold above which the dimension will split.
+        implicit none
+        integer(INTD):: ierr                  !out: error code
+        real(8), intent(in):: strength_thresh !in: tensor dimension strength threshold above which the dimension will split
+
+        ierr=EXA_SUCCESS
+        dim_strength_thresh=strength_thresh
+        return
+       end function exatns_dim_strength_thresh_set
+!---------------------------------------------------------------------------------
        function exatns_method_register(method_name,method,method_tag) result(ierr) !called by all MPI processes
 !Registers an external tensor body initialization/update method with ExaTENSOR.
         implicit none
@@ -276,6 +300,8 @@
          call dil_process_finish(errc)
          ierr=-7; return
         endif
+!Set the default universal tensor dimension strength assessng function, if none preset:
+        if(.not.associated(dim_strength_assess)) dim_strength_assess=>dim_strength_default
 !Sync all MPI processes before configuring and launching TAVPs:
         call dil_global_comm_barrier(errc)
         if(errc.ne.0) then; call dil_process_finish(errc); ierr=-8; return; endif

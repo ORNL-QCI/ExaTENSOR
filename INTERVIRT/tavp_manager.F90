@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/11/16
+!REVISION: 2017/11/17
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -168,6 +168,8 @@
          type(list_iter_t), private:: sub_list                      !iterator for <subinstruction_list>
          type(list_bi_t), private:: collecting_list                 !list of processed parent instructions
          type(list_iter_t), private:: col_list                      !iterator for <collecting_list>
+         type(list_bi_t), private:: auxiliary_list                  !list of auxiliary instructions
+         type(list_iter_t), private:: aux_list                      !iterator for <auxiliary_list>
          contains
           procedure, public:: configure=>TAVPMNGDecomposerConfigure !configures TAVP-MNG decomposer
           procedure, public:: start=>TAVPMNGDecomposerStart         !starts and lives TAVP-MNG decomposer
@@ -2133,6 +2135,8 @@
          ier=this%sub_list%init(this%subinstruction_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-1
 !Initialize the collecting list iterator:
          ier=this%col_list%init(this%collecting_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-1
+!Initialize the auxiliary list iterator:
+         ier=this%aux_list%init(this%auxiliary_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-1
 !Initialize the control list:
          ier=ctrl_list%init(control_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-1
 !Wait on other TAVP units:
@@ -2164,17 +2168,20 @@
            sts=tens_instr%get_status(ier,iec); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
            opcode=tens_instr%get_code(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
            if(opcode.ge.TAVP_ISA_TENS_FIRST.and.opcode.le.TAVP_ISA_TENS_LAST) then
-   !Decompose the parent tensor instruction into child tensor instructions and merge them into the subinstruction list:
+   !Decompose the parent tensor instruction into child tensor instructions and append them into the subinstruction list:
             
    !Register newly created child instructions with the TAVP-MNG instruction map:
             
    !Move processed parent instruction to the collecting list:
             ier=this%iqueue%move_elem(this%col_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
             num_processed=num_processed+1
-           else
-   !Move control and other instructions into the control list:
+           elseif(opcode.ge.TAVP_ISA_CTRL_FIRST.and.opcode.le.TAVP_ISA_CTRL_LAST) then
+   !Move control instructions into the control list:
             if(opcode.eq.TAVP_INSTR_CTRL_STOP.or.opcode.eq.TAVP_INSTR_CTRL_PAUSE) stopping=.TRUE. !`PAUSE is treated as STOP as of now
             ier=this%iqueue%move_elem(ctrl_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+           else
+   !Move other instructions into the auxiliary list:
+            ier=this%iqueue%move_elem(this%aux_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
            endif
   !Pass a batch of new child instructions to dispatcher (port 0) and a batch of processed parent instructions to collector (port 0):
            expired=time_is_off(dec_timer,ier,destroy=.TRUE.); if(ier.ne.0.and.errc.eq.0) then; errc=-1; exit wloop; endif
@@ -2190,15 +2197,14 @@
              ier=tavp%collector%load_port(0,this%col_list); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
             endif
             num_processed=0; num_created=0
-           endif
   !Restart the timer if expired:
-           if(expired) then
-            ier=timer_start(MAX_DECOMPOSE_PHASE_TIME,dec_timer); if(ier.ne.0.and.errc.eq.0) then; errc=-1; exit wloop; endif
+            if(expired) then
+             ier=timer_start(MAX_DECOMPOSE_PHASE_TIME,dec_timer); if(ier.ne.0.and.errc.eq.0) then; errc=-1; exit wloop; endif
+            endif
            endif
            ier=this%iqueue%get_status()
           enddo dloop
           if(ier.ne.GFC_IT_EMPTY.and.errc.eq.0) then; errc=-1; exit wloop; endif
-          
          enddo wloop
 !Release the control list:
          ier=ctrl_list%delete_all(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-3
@@ -2225,6 +2231,18 @@
           write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decomposer stopped as DSVU # ",i2," (thread ",i2,")")')&
           &impir,this%get_id(),thid
           flush(CONS_OUT)
+         endif
+!Deactivate the auxiliary list:
+         ier=this%aux_list%reset()
+         if(ier.eq.GFC_SUCCESS) then
+          ier=this%aux_list%get_status()
+          if(ier.ne.GFC_IT_EMPTY) then
+           if(errc.eq.0) errc=-10
+           ier=this%aux_list%delete_all()
+          endif
+          ier=this%aux_list%release(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-9
+         else
+          if(errc.eq.0) errc=-8
          endif
 !Deactivate the collecting list:
          ier=this%col_list%reset()
@@ -2257,16 +2275,48 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TAVPMNGDecomposerShutdown
-!-------------------------------------------------------
-        subroutine TAVPMNGDecomposerDecompose(this,ierr)
-!Scans DS instructions and fills in information for own tensors.
+!------------------------------------------------------------------
+        subroutine TAVPMNGDecomposerDecompose(this,tens_instr,ierr)
+!Decomposes a parental tensor instruction into child instructions (subinstructions)
+!and appends those into the subinstruction list. The input tensor instruction operands
+!must already contain their subtensor composition lists. The output tensor instruction
+!operand(s) may either already contain or still lack the subtensor composition list.
+!In the latter case, additional TENSOR_CREATE instructions will be generated here and
+!placed into the subinstruction list, prepending the following generated subinstructions.
+!The TENSOR_CREATE instructions will create subtensors obtained from the parental
+!output tensor(s) by applying the currently set universal tensor dimension strength
+!assessing function and the corresponding threshold.
          implicit none
          class(tavp_mng_decomposer_t), intent(inout):: this !inout: TAVP-MNG decomposer DSVU
+         class(tens_instr_t), intent(in):: tens_instr       !in: parental tensor instruction
          integer(INTD), intent(out), optional:: ierr        !out: error code
-         integer(INTD):: errc
+         integer(INTD):: errc,opcode
 
-         errc=0
-         !`Implement
+         if(tens_instr%is_active(errc)) then
+          if(errc.eq.DSVP_SUCCESS) then
+           opcode=tens_instr%get_code(errc)
+           if(errc.eq.DSVP_SUCCESS) then
+            select case(opcode)
+            case(TAVP_INSTR_TENS_CREATE)
+             
+            case(TAVP_INSTR_TENS_DESTROY)
+             
+            case(TAVP_INSTR_TENS_CONTRACT)
+             
+            case default
+             write(CONS_OUT,'("#FATAL(TAVP-MNG:Decomposer:decompose)[",i6,"]: Tensor instruction code ",i3," is not implemented")')&
+             &impir,opcode
+             errc=-4
+            end select
+           else
+            errc=-3
+           endif
+          else
+           errc=-2
+          endif
+         else
+          errc=-1
+         endif
          if(present(ierr)) ierr=errc
          return
         end subroutine TAVPMNGDecomposerDecompose

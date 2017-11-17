@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/11/14
+!REVISION: 2017/11/17
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -291,6 +291,7 @@
           procedure, public:: get_dims=>TensRcrsvGetDims             !returns tensor dimension extents
           procedure, public:: add_subtensor=>TensRcrsvAddSubtensor   !registers a constituent subtensor by providing its tensor header
           procedure, public:: add_subtensors=>TensRcrsvAddSubtensors !registers constituent subtensors by providing a list of their tensor headers
+          procedure, public:: get_num_subtensors=>TensRcrsvGetNumSubtensors !returns the total number of constituent subtensors
           procedure, public:: set_shape=>TensRcrsvSetShape           !sets the tensor shape (if it has not been set yet)
           procedure, public:: set_layout=>TensRcrsvSetLayout         !sets the tensor body storage layout
           procedure, public:: set_location=>TensRcrsvSetLocation     !sets the physical location of the tensor body data
@@ -443,15 +444,28 @@
           class(tens_operation_t), intent(in):: this  !in: tensor operation
           integer(INTD), intent(out), optional:: ierr !out: error code
          end function tens_operation_query_i
-  !tens_rcrsv_t: split():
-         function tens_rcrsv_split_i(this,subtensors,num_subtensors) result(ierr)
+  !tens_rcrsv_t: split() [nopass]:
+         function tens_rcrsv_split_i(this,subtensors,num_subtensors,strength_thresh) result(ierr)
           import:: INTD,tens_rcrsv_t,vector_t
           implicit none
-          integer(INTD):: ierr                        !out: error code
-          class(tens_rcrsv_t), intent(in):: this      !in: parental tensor
-          type(vector_t), intent(inout):: subtensors  !inout: vector of subtensors (in general, can be non-empty on entrance)
-          integer(INTD), intent(out):: num_subtensors !out: number of subtensors generated from the parental tensor
+          integer(INTD):: ierr                            !out: error code
+          class(tens_rcrsv_t), intent(in):: this          !in: parental tensor
+          type(vector_t), intent(inout):: subtensors      !inout: vector of subtensors (in general, can be non-empty on entrance)
+          integer(INTD), intent(out):: num_subtensors     !out: number of subtensors generated from the parental tensor
+          real(8), intent(in), optional:: strength_thresh !in: dimension strength threshold for splitting
          end function tens_rcrsv_split_i
+  !tens_rcrsv_t: dim_strength() [nopass]:
+         function tens_rcrsv_dim_strength_i(this,dim_strength,ierr,strength_thresh,num_dims,split_dims) result(total_strength)
+          import:: INTD,tens_rcrsv_t
+          implicit none
+          real(8):: total_strength                                !out: total tensor dimension strength (per tensor): >=0
+          class(tens_rcrsv_t), intent(in):: this                  !in: tensor
+          real(8), intent(inout):: dim_strength(1:)               !out: individual tensor dimension strength: >=0
+          integer(INTD), intent(out), optional:: ierr             !out: error code
+          real(8), intent(in), optional:: strength_thresh         !in: given strength threshold
+          integer(INTD), intent(out), optional:: num_dims         !out: number of tensor dimensions which split under the given strength threshold
+          integer(INTD), intent(inout), optional:: split_dims(1:) !out: tensor dimensions which split under the given strength threshold (ordered by decreasing strength)
+         end function tens_rcrsv_dim_strength_i
         end interface
 !VISIBILITY:
  !non-member:
@@ -462,6 +476,7 @@
         public cmp_tens_signatures
         public cmp_tens_headers
         public cmp_tens_descriptors
+        public dim_strength_default
         public build_test_hspace
         public print_tens_header_f
         public print_tcg_buffer
@@ -589,6 +604,7 @@
         private TensRcrsvGetDims
         private TensRcrsvAddSubtensor
         private TensRcrsvAddSubtensors
+        private TensRcrsvGetNumSubtensors
         private TensRcrsvSetShape
         private TensRcrsvSetLayout
         private TensRcrsvSetLocation
@@ -602,6 +618,8 @@
         private TensRcrsvSplitVector
         private TensRcrsvPrintIt
         public tens_rcrsv_dtor
+        public tens_rcrsv_split_i
+        public tens_rcrsv_dim_strength_i
  !tens_descr_t:
         private TensDescrPrintIt
         private TensDescrCompare
@@ -828,6 +846,45 @@
          endif
          return
         end function cmp_tens_descriptors
+!-----------------------------------------------------------------------------------------------------------------------
+        function dim_strength_default(this,dim_strength,ierr,strength_thresh,num_dims,split_dims) result(total_strength)
+!Default universal tensor dimension strength assessing function: All tensor dimensions are always equally highly strong.
+         implicit none
+         real(8):: total_strength                                !out: total tensor dimension strength (per tensor): >=0
+         class(tens_rcrsv_t), intent(in):: this                  !in: tensor
+         real(8), intent(inout):: dim_strength(1:)               !out: individual tensor dimension strength: >=0
+         integer(INTD), intent(out), optional:: ierr             !out: error code
+         real(8), intent(in), optional:: strength_thresh         !in: given strength threshold (defaults to zero)
+         integer(INTD), intent(out), optional:: num_dims         !out: number of tensor dimensions which split under the given strength threshold
+         integer(INTD), intent(inout), optional:: split_dims(1:) !out: tensor dimensions which split under the given strength threshold (ordered by decreasing strength)
+         integer(INTD):: errc,ns,i,j
+         integer:: n,trn(0:MAX_TENSOR_RANK)
+         real(8):: thresh
+
+         total_strength=0d0; ns=0
+         if(this%is_set(errc,n)) then
+          if(errc.eq.TEREC_SUCCESS) then
+           if(n.gt.0) then
+            dim_strength(1:n)=huge(0d0) !default strength value
+            if(present(split_dims)) then
+             thresh=0d0; if(present(strength_thresh)) thresh=strength_thresh
+             trn(0:n)=(/+1,(i,i=1,n)/)
+             if(n.gt.1) call merge_sort_key(n,dim_strength,trn)
+             do i=1,n
+              j=trn(n-i+1)
+              if(dim_strength(j).lt.thresh) exit
+              ns=ns+1; split_dims(ns)=j
+             enddo
+            endif
+           endif
+          endif
+         else
+          errc=TEREC_INVALID_REQUEST
+         endif
+         if(present(num_dims)) num_dims=ns
+         if(present(ierr)) ierr=errc
+         return
+        end function dim_strength_default
 !---------------------------------------------------------------------------
         function build_test_hspace(space_name,ierr,space_p) result(space_id)
 !Builds a hierarchical vector space for testing/debugging.
@@ -3933,6 +3990,19 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensRcrsvAddSubtensors
+!---------------------------------------------------------------------------
+        function TensRcrsvGetNumSubtensors(this,ierr) result(num_subtensors)
+!Returns the total number of constituent subtensors.
+         implicit none
+         integer(INTD):: num_subtensors              !out: total number of constituent subtensors
+         class(tens_rcrsv_t), intent(in):: this      !in: tensor body
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         num_subtensors=this%body%get_num_subtensors(errc)
+         if(present(ierr)) ierr=errc
+         return
+        end function TensRcrsvGetNumSubtensors
 !------------------------------------------------------------------------------
         subroutine TensRcrsvSetShape(this,dim_extent,ierr,dim_group,group_spec)
 !Sets the tensor shape. If the shape is already set, it will try to set unresolved
@@ -7137,14 +7207,15 @@
          ierr=lit%release(); if(ierr.ne.0) then; ierr=17; return; endif
          return
         end subroutine test_tens_rcrsv
-!------------------------------------------------------------------------------
-        function tens_split_func(tensor,subtensors,num_subtensors) result(ierr)
+!----------------------------------------------------------------------------------------------
+        function tens_split_func(tensor,subtensors,num_subtensors,strength_thresh) result(ierr)
 !Testing only: Returns a list of subtensors for a given tensor.
          implicit none
-         integer(INTD):: ierr                        !out: error code
-         class(tens_rcrsv_t), intent(in):: tensor    !in: tensor
-         type(vector_t), intent(inout):: subtensors  !out: vector of subtensors
-         integer(INTD), intent(out):: num_subtensors !out: number of generated subtensors
+         integer(INTD):: ierr                            !out: error code
+         class(tens_rcrsv_t), intent(in):: tensor        !in: tensor
+         type(vector_t), intent(inout):: subtensors      !out: vector of subtensors
+         integer(INTD), intent(out):: num_subtensors     !out: number of generated subtensors
+         real(8), intent(in), optional:: strength_thresh !in: dimension strength threshold for splitting
          integer(INTD):: i,nd
          integer(INTL):: first,last
          type(vector_iter_t):: vit,rvit
