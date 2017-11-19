@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/11/17
+!REVISION: 2017/11/19
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -2290,18 +2290,46 @@
          class(tavp_mng_decomposer_t), intent(inout):: this !inout: TAVP-MNG decomposer DSVU
          class(tens_instr_t), intent(in):: tens_instr       !in: parental tensor instruction
          integer(INTD), intent(out), optional:: ierr        !out: error code
-         integer(INTD):: errc,opcode
+         integer(INTD):: errc,opcode,ns,split_dims(1:MAX_TENSOR_RANK)
+         class(ds_oprnd_t), pointer:: oprnd
+         class(tens_rcrsv_t), pointer:: tensor
+         type(vector_t):: subtensors
+         type(vector_iter_t):: vit
+         real(8):: dim_strength(1:MAX_TENSOR_RANK),total_strength
 
          if(tens_instr%is_active(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
            opcode=tens_instr%get_code(errc)
            if(errc.eq.DSVP_SUCCESS) then
             select case(opcode)
+ !TENSOR CREATE:
             case(TAVP_INSTR_TENS_CREATE)
-             
+             oprnd=>tens_instr%get_operand(0,errc)
+             if(errc.eq.DSVP_SUCCESS) then
+              select type(oprnd)
+              class is(tens_oprnd_t)
+               tensor=>oprnd%get_tensor(errc)
+               if(errc.eq.0) then
+                if(tensor%get_num_subtensors(errc).le.0) then !tensor is not expected to have structure yet
+                 total_strength=dim_strength_assess(tensor,dim_strength,errc,dim_strength_thresh,ns,split_dims)
+                 !call tensor%split()
+                else
+                 errc=-1
+                endif
+               else
+                errc=-7
+               endif
+              class default
+               errc=-6
+              end select
+             else
+              errc=-5
+             endif
             case(TAVP_INSTR_TENS_DESTROY)
+ !TENSOR DESTROY:
              
             case(TAVP_INSTR_TENS_CONTRACT)
+ !TENSOR CONTRACT:
              
             case default
              write(CONS_OUT,'("#FATAL(TAVP-MNG:Decomposer:decompose)[",i6,"]: Tensor instruction code ",i3," is not implemented")')&

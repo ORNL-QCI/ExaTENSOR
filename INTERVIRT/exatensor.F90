@@ -1,7 +1,7 @@
 !ExaTENSOR: Massively Parallel Virtual Processor for Scale-Adaptive Hierarchical Tensor Algebra
 !This is the top level API module of ExaTENSOR (user-level API)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017/11/17
+!REVISION: 2017/11/19
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -300,7 +300,7 @@
          call dil_process_finish(errc)
          ierr=-7; return
         endif
-!Set the default universal tensor dimension strength assessng function, if none preset:
+!Set the default universal tensor dimension strength assessing function, if none preset:
         if(.not.associated(dim_strength_assess)) dim_strength_assess=>dim_strength_default
 !Sync all MPI processes before configuring and launching TAVPs:
         call dil_global_comm_barrier(errc)

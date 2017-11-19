@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/11/17
+!REVISION: 2017/11/19
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -865,7 +865,8 @@
          if(this%is_set(errc,n)) then
           if(errc.eq.TEREC_SUCCESS) then
            if(n.gt.0) then
-            dim_strength(1:n)=huge(0d0) !default strength value
+            dim_strength(1:n)=huge(0d0) !default strength value (max)
+            total_strength=huge(0d0) !max strength
             if(present(split_dims)) then
              thresh=0d0; if(present(strength_thresh)) thresh=strength_thresh
              trn(0:n)=(/+1,(i,i=1,n)/)
