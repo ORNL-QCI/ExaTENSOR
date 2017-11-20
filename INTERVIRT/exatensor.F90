@@ -1,7 +1,7 @@
 !ExaTENSOR: Massively Parallel Virtual Processor for Scale-Adaptive Hierarchical Tensor Algebra
 !This is the top level API module of ExaTENSOR (user-level API)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017/11/19
+!REVISION: 2017/11/20
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -95,7 +95,7 @@
 !VISIBILITY:
  !External methods/data (called by All before exatns_start()):
        public exatns_dim_strength_setup      !sets up the universal tensor dimension strength assessing function (guides recursive tensor dimension splitting)
-       public exatns_dim_strength_thresh_set !sets the tensor dimension strength threshold above which the dimension will split
+       public exatns_dim_strength_thresh_set !sets the tensor dimension strength threshold above which the dimension will split (guides recursive tensor dimension splitting)
        public exatns_method_register         !registers an external method (it has to adhere to a predefined interface)
        public exatns_method_unregister       !unregisters an external method
        public exatns_data_register           !registers external (on-node) data (for future references)
@@ -149,7 +149,7 @@
         procedure(tens_rcrsv_dim_strength_i):: dim_strength_f !in: external universal tensor dimension strength assessing function
 
         ierr=EXA_SUCCESS
-        dim_strength_assess=>dim_strength_f
+        tens_dim_strength_assess=>dim_strength_f
         return
        end function exatns_dim_strength_setup
 !---------------------------------------------------------------------------
@@ -160,7 +160,7 @@
         real(8), intent(in):: strength_thresh !in: tensor dimension strength threshold above which the dimension will split
 
         ierr=EXA_SUCCESS
-        dim_strength_thresh=strength_thresh
+        tens_dim_strength_thresh=strength_thresh
         return
        end function exatns_dim_strength_thresh_set
 !---------------------------------------------------------------------------------
@@ -301,7 +301,7 @@
          ierr=-7; return
         endif
 !Set the default universal tensor dimension strength assessing function, if none preset:
-        if(.not.associated(dim_strength_assess)) dim_strength_assess=>dim_strength_default
+        if(.not.associated(tens_dim_strength_assess)) tens_dim_strength_assess=>tens_dim_strength_default
 !Sync all MPI processes before configuring and launching TAVPs:
         call dil_global_comm_barrier(errc)
         if(errc.ne.0) then; call dil_process_finish(errc); ierr=-8; return; endif

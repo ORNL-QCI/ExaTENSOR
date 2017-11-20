@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/11/19
+!REVISION: 2017/11/20
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -292,6 +292,7 @@
           procedure, public:: add_subtensor=>TensRcrsvAddSubtensor   !registers a constituent subtensor by providing its tensor header
           procedure, public:: add_subtensors=>TensRcrsvAddSubtensors !registers constituent subtensors by providing a list of their tensor headers
           procedure, public:: get_num_subtensors=>TensRcrsvGetNumSubtensors !returns the total number of constituent subtensors
+          procedure, public:: get_subtensors=>TensRcrsvGetSubtensors !returns a pointer to the list of constituent subtensors (each subtensor is represented by a tensor header)
           procedure, public:: set_shape=>TensRcrsvSetShape           !sets the tensor shape (if it has not been set yet)
           procedure, public:: set_layout=>TensRcrsvSetLayout         !sets the tensor body storage layout
           procedure, public:: set_location=>TensRcrsvSetLocation     !sets the physical location of the tensor body data
@@ -304,6 +305,7 @@
           procedure, private:: TensRcrsvSplitList                    !splits the tensor into subtensors (a list of subtensors by their headers)
           procedure, private:: TensRcrsvSplitVector                  !splits the tensor into subtensors (a vector of subtensors by their headers)
           generic, public:: split=>TensRcrsvSplitList,TensRcrsvSplitVector
+          procedure, public:: decompose=>TensRcrsvDecompose          !decomposes the tensor into subtensors defined by their tensor headers and registers them as constituent tensors
           procedure, public:: print_it=>TensRcrsvPrintIt             !prints the tensor info
 #ifdef NO_GNU
           final:: tens_rcrsv_dtor                                    !dtor `GCC/5.4.0 bug
@@ -476,7 +478,7 @@
         public cmp_tens_signatures
         public cmp_tens_headers
         public cmp_tens_descriptors
-        public dim_strength_default
+        public tens_dim_strength_default
         public build_test_hspace
         public print_tens_header_f
         public print_tcg_buffer
@@ -605,6 +607,7 @@
         private TensRcrsvAddSubtensor
         private TensRcrsvAddSubtensors
         private TensRcrsvGetNumSubtensors
+        private TensRcrsvGetSubtensors
         private TensRcrsvSetShape
         private TensRcrsvSetLayout
         private TensRcrsvSetLocation
@@ -616,6 +619,7 @@
         private TensRcrsvGetDescriptor
         private TensRcrsvSplitList
         private TensRcrsvSplitVector
+        private TensRcrsvDecompose
         private TensRcrsvPrintIt
         public tens_rcrsv_dtor
         public tens_rcrsv_split_i
@@ -846,9 +850,10 @@
          endif
          return
         end function cmp_tens_descriptors
-!-----------------------------------------------------------------------------------------------------------------------
-        function dim_strength_default(this,dim_strength,ierr,strength_thresh,num_dims,split_dims) result(total_strength)
-!Default universal tensor dimension strength assessing function: All tensor dimensions are always equally highly strong.
+!----------------------------------------------------------------------------------------------------------------------------
+        function tens_dim_strength_default(this,dim_strength,ierr,strength_thresh,num_dims,split_dims) result(total_strength)
+!Default universal tensor dimension strength assessing function: All tensor dimensions are always equally highly strong
+!and they all will split.
          implicit none
          real(8):: total_strength                                !out: total tensor dimension strength (per tensor): >=0
          class(tens_rcrsv_t), intent(in):: this                  !in: tensor
@@ -885,7 +890,7 @@
          if(present(num_dims)) num_dims=ns
          if(present(ierr)) ierr=errc
          return
-        end function dim_strength_default
+        end function tens_dim_strength_default
 !---------------------------------------------------------------------------
         function build_test_hspace(space_name,ierr,space_p) result(space_id)
 !Builds a hierarchical vector space for testing/debugging.
@@ -3642,7 +3647,7 @@
         end function TensBodyGetNumSubtensors
 !-------------------------------------------------------------------------
         function TensBodyGetSubtensors(this,ierr) result(subtensor_list_p)
-!Returns a pointer to the list of constituent subtensors (each subtensor is represented by a tensor header)
+!Returns a pointer to the list of constituent subtensors (each subtensor is represented by a tensor header).
          implicit none
          type(list_bi_t), pointer:: subtensor_list_p   !out: pointer to the subtensor list
          class(tens_body_t), intent(in), target:: this !in: tensor body
@@ -3996,7 +4001,7 @@
 !Returns the total number of constituent subtensors.
          implicit none
          integer(INTD):: num_subtensors              !out: total number of constituent subtensors
-         class(tens_rcrsv_t), intent(in):: this      !in: tensor body
+         class(tens_rcrsv_t), intent(in):: this      !in: tensor
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
 
@@ -4004,6 +4009,19 @@
          if(present(ierr)) ierr=errc
          return
         end function TensRcrsvGetNumSubtensors
+!--------------------------------------------------------------------------
+        function TensRcrsvGetSubtensors(this,ierr) result(subtensor_list_p)
+!Returns a pointer to the list of constituent subtensors (each subtensor is represented by a tensor header).
+         implicit none
+         type(list_bi_t), pointer:: subtensor_list_p    !out: pointer to the subtensor list
+         class(tens_rcrsv_t), intent(in), target:: this !in: tensor
+         integer(INTD), intent(out), optional:: ierr    !out: error code
+         integer(INTD):: errc
+
+         subtensor_list_p=>this%body%get_subtensors(errc)
+         if(present(ierr)) ierr=errc
+         return
+        end function TensRcrsvGetSubtensors
 !------------------------------------------------------------------------------
         subroutine TensRcrsvSetShape(this,dim_extent,ierr,dim_group,group_spec)
 !Sets the tensor shape. If the shape is already set, it will try to set unresolved
@@ -5015,6 +5033,32 @@
           end subroutine construct_subtensor_header
 
         end subroutine TensRcrsvSplitVector
+!----------------------------------------------------------
+        subroutine TensRcrsvDecompose(this,split_dims,ierr)
+!Decomposes the tensor into subtensors defined by their tensor headers
+!and registers them as constituent tensors. The tensor must not have
+!any internal body structure on entrance.
+         implicit none
+         class(tens_rcrsv_t), intent(inout):: this   !inout: tensor
+         integer(INTD), intent(in):: split_dims(1:)  !in: tensor dimensions to split
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+         logical:: laid
+
+         if(this%is_set(errc,layed=laid)) then
+          if(errc.eq.TEREC_SUCCESS) then
+           if(.not.(laid.or.this%get_num_subtensors().gt.0)) then
+            call this%split(split_dims,this%body%subtensors,errc,this%body%num_subtensors,headers_only=.TRUE.)
+           else
+            errc=TEREC_INVALID_REQUEST
+           endif
+          endif
+         else
+          errc=TEREC_INVALID_REQUEST
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensRcrsvDecompose
 !------------------------------------------------------------
         subroutine TensRcrsvPrintIt(this,ierr,dev_id,nspaces)
 !Prints the tensor info.
