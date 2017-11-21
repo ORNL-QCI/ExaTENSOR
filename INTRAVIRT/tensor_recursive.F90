@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/11/20
+!REVISION: 2017/11/21
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -4122,8 +4122,8 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensRcrsvSetLocation
-!----------------------------------------------------
-        subroutine TensRcrsvUpdate(this,another,ierr)
+!------------------------------------------------------------
+        subroutine TensRcrsvUpdate(this,another,ierr,updated)
 !Updates the tensor information (new resolution -> new layout -> new body).
 !<this> tensor must at least be defined (have its signature set).
 !<another> tensor must have the same signature, and possibly, shape.
@@ -4133,18 +4133,21 @@
          class(tens_rcrsv_t), intent(inout):: this   !inout: tensor being updated
          class(tens_rcrsv_t), intent(in):: another   !in: same tensor with more complete information (later stage of definition)
          integer(INTD), intent(out), optional:: ierr !out: error code
+         logical, intent(out), optional:: updated    !out: returns TRUE if the tensor has actually been updated
          integer(INTD):: errc,this_nd,this_unres,an_nd,an_unres
-         logical:: this_shp,this_lay,this_loc,an_shp,an_lay,an_loc
+         logical:: this_shp,this_lay,this_loc,an_shp,an_lay,an_loc,updat
 
+         updat=.FALSE.
          if(this%is_set(errc,num_dims=this_nd,shaped=this_shp,unresolved=this_unres,layed=this_lay,located=this_loc)) then
           if(errc.eq.TEREC_SUCCESS) then
            if(another%is_set(errc,num_dims=an_nd,shaped=an_shp,unresolved=an_unres,layed=an_lay,located=an_loc)) then
             if(errc.eq.TEREC_SUCCESS) then
              if(this%header%signature%compare(another%header%signature).eq.CMP_EQ) then
- !Update shape:
+ !Update shape (copy the shape):
               if(an_shp) then
-               if(.not.this_shp) then !copy shape from <another>
+               if(.not.this_shp) then
                 this%header%shape=another%header%shape
+                updat=.TRUE.
                else
                 if(this%header%shape%compare(another%header%shape).ne.CMP_EQ) errc=TEREC_INVALID_REQUEST
                endif
@@ -4154,11 +4157,13 @@
                if(.not.this_lay) then
                 this%body=another%body
                 call this%body%update_header(this%header,errc)
+                updat=.TRUE.
                else
  !Update location (actually copy the full body info):
                 if(an_loc.and.(.not.this_loc)) then
                  this%body=another%body
                  call this%body%update_header(this%header,errc)
+                 updat=.TRUE.
                 endif
                endif
               endif
@@ -4173,6 +4178,7 @@
          else
           errc=TEREC_INVALID_REQUEST
          endif
+         if(present(updated)) updated=updat
          if(present(ierr)) ierr=errc
          return
         end subroutine TensRcrsvUpdate

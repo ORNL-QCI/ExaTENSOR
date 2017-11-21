@@ -1,6 +1,6 @@
 !Domain-specific virtual processor (DSVP): Abstract base module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/11/14
+!REVISION: 2017/11/21
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -123,6 +123,7 @@
         type, abstract, public:: ds_oprnd_t
          integer(INTD), private:: stat=DS_OPRND_EMPTY       !current status of the domain-specific operand: {DS_OPRND_EMPTY,DS_OPRND_DEFINED,DS_OPRND_PRESENT}
          integer(INTD), private:: in_route=DS_OPRND_NO_COMM !communication status: {DS_OPRND_NO_COMM,DS_OPRND_FETCHING,DS_OPRND_UPLOADING}
+        !integer(INTD), private:: owner_id=-1               !id of the DSVP owning the DS operand data (expected to be nonnegative)
          contains
           procedure(ds_oprnd_query_i), deferred, public:: is_located !checks whether the domain-specific operand has been located
           procedure(ds_oprnd_query_i), deferred, public:: is_remote  !checks whether the domain-specific operand is local or remote
@@ -141,6 +142,8 @@
           procedure, public:: mark_undelivered=>DSOprndMarkUndelivered !marks the domain-specific operand locally unavailable (but defined), local resources are released
           procedure, public:: get_comm_stat=>DSOprndGetCommStat        !gets the communication status
           procedure, public:: set_comm_stat=>DSOprndSetCommStat        !sets the communication status
+         !procedure, public:: get_owner_id=>DSOprndGetOwnerId          !returns the owner id of the DS operand data
+         !procedure, public:: set_owner_id=>DSOprndSetOwnerId          !sets the owner id of the DS operand data
         end type ds_oprnd_t
  !Wrapped reference to a domain-specific operand:
         type, private:: ds_oprnd_ref_t
@@ -403,6 +406,8 @@
         private DSOprndMarkUndelivered
         private DsOprndGetCommStat
         private DSOprndSetCommStat
+       !private DSOprndGetOwnerId
+       !private DSOprndSetOwnerId
         public ds_oprnd_self_i
         public ds_oprnd_query_i
         public ds_oprnd_sync_i
@@ -672,6 +677,38 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine DSOprndSetCommStat
+!-------------------------------------------------------
+#if 0
+        function DSOprndGetOwnerId(this,ierr) result(id)
+!Returns the owner id of the DS operand data.
+         implicit none
+         integer(INTD):: id                          !out: owner id of the domain-specific operand data (negative means undefined)
+         class(ds_oprnd_t), intent(in):: this        !in: domain-specific operand
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=DSVP_SUCCESS; id=this%owner_id
+         if(present(ierr)) ierr=errc
+         return
+        end function DSOprndGetOwnerId
+!-------------------------------------------------
+        subroutine DSOprndSetOwnerId(this,id,ierr)
+!Sets the owner id of the DS operand data.
+         implicit none
+         class(ds_oprnd_t), intent(inout):: this     !in: domain-specific operand
+         integer(INTD), intent(in):: id              !in: owner id to set (negative means undefined)
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         if(this%is_active(errc)) then
+          if(errc.eq.DSVP_SUCCESS) this%owner_id=id
+         else
+          errc=DSVP_ERR_INVALID_REQ
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine DSOprndSetOwnerId
+#endif
 ![ds_instr_t]=========================================
         function DSInstrIsEmpty(this,ierr) result(res)
 !Returns TRUE if the domain-specific instruction is empty (undefined).

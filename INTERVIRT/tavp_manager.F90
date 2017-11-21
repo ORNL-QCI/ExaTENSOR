@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/11/20
+!REVISION: 2017/11/21
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -75,6 +75,7 @@
           generic, public:: tens_oprnd_ctor=>TensOprndCtor
           procedure, public:: get_tensor=>TensOprndGetTensor    !returns a pointer to the tensor
           procedure, public:: get_cache_entry=>TensOprndGetCacheEntry !returns a pointer to the tensor cache entry (may be NULL)
+          procedure, public:: set_cache_entry=>TensOprndSetCacheEntry !sets the associated tensor cache entry (may be NULL)
           procedure, public:: get_owner_id=>TensOprndGetOwnerId !returns the tensor owner id
           procedure, public:: set_owner_id=>TensOprndSetOwnerId !sets the tensor owner id
           procedure, public:: is_located=>TensOprndIsLocated    !returns TRUE if the tensor operand has been located (its structure is known)
@@ -309,6 +310,7 @@
         private TensOprndCtor
         private TensOprndGetTensor
         private TensOprndGetCacheEntry
+        private TensOprndSetCacheEntry
         private TensOprndGetOwnerId
         private TensOprndSetOwnerId
         private TensOprndIsLocated
@@ -531,6 +533,28 @@
          if(present(ierr)) ierr=errc
          return
         end function TensOprndGetCacheEntry
+!---------------------------------------------------------------
+        subroutine TensOprndSetCacheEntry(this,cache_entry,ierr)
+!Sets the associated tensor cache entry (may be NULL).
+         implicit none
+         class(tens_oprnd_t), intent(inout):: this                  !inout: active tensor operand
+         class(tens_entry_mng_t), intent(in), pointer:: cache_entry !in: pointer to a tensor cache entry
+         integer(INTD), intent(out), optional:: ierr                !out: error code
+         integer(INTD):: errc
+
+         if(this%is_active(errc)) then
+          if(errc.eq.DSVP_SUCCESS) then
+           this%cache_entry=>cache_entry
+           if(associated(this%cache_entry)) call this%cache_entry%incr_ref_count()
+          else
+           errc=-2
+          endif
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensOprndSetCacheEntry
 !---------------------------------------------------------
         function TensOprndGetOwnerId(this,ierr) result(id)
 !Returns the tensor owner id.
@@ -2356,24 +2380,23 @@
 
          if(tens_instr%is_active(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
-!Decompose structureless output tensor operands, if needed:
            dsvp=>this%get_dsvp(errc)
            if(errc.eq.DSVP_SUCCESS.and.associated(dsvp)) then
+!Decompose structureless output tensor operands, if needed:
             call decompose_output_tensors(errc)
-!Process the tensor instruction:
+!Decompose the tensor instruction:
             if(errc.eq.0) then
              opcode=tens_instr%get_code(errc)
              if(errc.eq.DSVP_SUCCESS) then
               select case(opcode)
  !TENSOR CREATE:
-              case(TAVP_INSTR_TENS_CREATE)
-               
-              case(TAVP_INSTR_TENS_DESTROY)
+              case(TAVP_INSTR_TENS_CREATE) !new TENSOR_CREATE subinstructions have already been appended into the creating list
  !TENSOR DESTROY:
-               
-              case(TAVP_INSTR_TENS_CONTRACT)
+              case(TAVP_INSTR_TENS_DESTROY) !new subinstructions will go into the subinstruction list
+               call decompose_instr_tens_destroy(errc)
  !TENSOR CONTRACT:
-               
+              case(TAVP_INSTR_TENS_CONTRACT) !new subinstructions will go into the subinstruction list
+               call decompose_instr_tens_contract(errc)
               case default
                write(CONS_OUT,&
                &'("#FATAL(TAVP-MNG:Decomposer:decompose)[",i6,"]: Tensor instruction code ",i3," is not implemented!")')&
@@ -2401,19 +2424,23 @@
         contains
 
          subroutine decompose_output_tensors(jerr)
-         !In case the output operand(s) do not have internal structure,
-         !this subroutine decomposes the output tensor(s) into subtensors,
-         !based on the universal tensor dimension strength assessor.
+         !In case the output operand(s) do not have internal structure yet,
+         !this subroutine will decompose them into subtensors, based on
+         !the universal tensor dimension strength assessing function.
+         !The newly created subtensors are cached in the tensor cache.
+         !For each new subtensor, a tensor instruction TENSOR_CREATE
+         !is constructed and appended into the creating list.
           implicit none
-          integer(INTD), intent(out):: jerr
+          integer(INTD), intent(out):: jerr !out: error code
           integer(INTD):: jj,ns,split_dims(1:MAX_TENSOR_RANK)
           integer(INTL):: iid
-          real(8):: dim_strength(1:MAX_TENSOR_RANK),total_strength
-          class(ds_oprnd_t), pointer:: oprnd
+          real(8):: total_strength,dim_strength(1:MAX_TENSOR_RANK)
+          class(ds_oprnd_t), pointer:: oprnd,tens_oprnd
           class(tens_header_t), pointer:: header
           class(tens_rcrsv_t), pointer:: tensor
           type(tens_rcrsv_t), pointer:: subtensor
           class(tens_cache_entry_t), pointer:: tens_entry
+          class(tens_entry_mng_t), pointer:: tens_entry_mng
           class(tens_instr_t), pointer:: subinstr
           type(tens_instr_t):: tens_instr_empty
           type(list_bi_t), pointer:: subtensors
@@ -2421,52 +2448,137 @@
           class(*), pointer:: uptr
           logical:: stored
 
-          jerr=0
-          tloop: do jj=0,tens_instr%num_out_oprnds-1
-           oprnd=>tens_instr%get_operand(tens_instr%out_oprnds(jj),jerr); if(jerr.ne.DSVP_SUCCESS) then; jerr=-1; exit tloop; endif
-           select type(oprnd)
-           class is(tens_oprnd_t)
-            tensor=>oprnd%get_tensor(jerr); if(jerr.ne.0) then; jerr=-1; exit tloop; endif
-            if(tensor%get_num_subtensors().le.0) then
-             total_strength=tens_dim_strength_assess(tensor,dim_strength,jerr,tens_dim_strength_thresh,ns,split_dims)
-             if(jerr.ne.0) then; jerr=-1; exit tloop; endif
-             call tensor%decompose(split_dims(1:ns),jerr); if(jerr.ne.TEREC_SUCCESS) then; jerr=-1; exit tloop; endif
-             subtensors=>tensor%get_subtensors(jerr); if(jerr.ne.TEREC_SUCCESS) then; jerr=-1; exit tloop; endif
-             jerr=lit%init(subtensors); if(jerr.ne.GFC_SUCCESS) then; jerr=-1; exit tloop; endif
-             cloop: do while(jerr.eq.GFC_SUCCESS)
-              uptr=>lit%get_value(jerr); if(jerr.ne.GFC_SUCCESS) then; jerr=-1; exit tloop; endif
-              header=>NULL(); select type(uptr); class is(tens_header_t); header=>uptr; end select
-              if(.not.associated(header)) then; jerr=-1; exit tloop; endif
-              allocate(subtensor,STAT=jerr); if(jerr.ne.0) then; jerr=-1; exit tloop; endif
-              call subtensor%tens_rcrsv_ctor(header,jerr); if(jerr.ne.TEREC_SUCCESS) then; jerr=-1; exit tloop; endif
+          jerr=this%crt_list%reset_back()
+          if(jerr.eq.GFC_SUCCESS) then
+           tloop: do jj=0,tens_instr%num_out_oprnds-1 !loop over the output tensor operands
+            oprnd=>tens_instr%get_operand(tens_instr%out_oprnds(jj),jerr)
+            if(jerr.ne.DSVP_SUCCESS) then; jerr=-24; exit tloop; endif
+            select type(oprnd)
+            class is(tens_oprnd_t)
+             tensor=>oprnd%get_tensor(jerr); if(jerr.ne.0) then; jerr=-23; exit tloop; endif
+             if(tensor%get_num_subtensors().le.0) then !tensor does not have an internal structure yet
+              total_strength=tens_dim_strength_assess(tensor,dim_strength,jerr,tens_dim_strength_thresh,ns,split_dims)
+              if(jerr.ne.0) then; jerr=-22; exit tloop; endif
 !$OMP CRITICAL (TAVP_MNG_CACHE)
-              stored=this%arg_cache%store(subtensor,tens_entry_mng_alloc,jerr,tens_entry_p=tens_entry) !tensor ownership is moved to the tensor cache entry
+              call tensor%decompose(split_dims(1:ns),jerr)
 !$OMP END CRITICAL (TAVP_MNG_CACHE)
-              if(jerr.eq.0.and.stored.and.associated(tens_entry)) then
-               jerr=this%crt_list%append(tens_instr_empty); if(jerr.ne.GFC_SUCCESS) then; jerr=-1; exit tloop; endif
-               jerr=this%crt_list%reset_back(); if(jerr.ne.GFC_SUCCESS) then; jerr=-1; exit tloop; endif
-               uptr=>this%crt_list%get_value(jerr); if(jerr.ne.GFC_SUCCESS) then; jerr=-1; exit tloop; endif
-               subinstr=>NULL(); select type(uptr); class is(tens_instr_t); subinstr=>uptr; end select
-               if(.not.associated(subinstr)) then; jerr=-1; exit tloop; endif
-               iid=dsvp%get_crtd_instr_counter()
-               call subinstr%tens_instr_ctor(TAVP_INSTR_TENS_CREATE,jerr,subtensor,iid)
-               if(jerr.ne.0) then; jerr=-1; exit tloop; endif
-               call dsvp%incr_crtd_instr_counter()
-               subtensor=>NULL() !tensor ownership has been transferred to the tensor cache
-              else
-               deallocate(subtensor); jerr=-1; exit tloop
-              endif
-              jerr=lit%next()
-             enddo cloop
-             if(jerr.ne.GFC_NO_MOVE) then; jerr=-1; exit tloop; endif
-             jerr=lit%release(); if(jerr.ne.GFC_SUCCESS) then; jerr=-1; exit tloop; endif
-            endif
-           class default
-            jerr=-1; exit tloop
-           end select
-          enddo tloop
+              if(jerr.ne.TEREC_SUCCESS) then; jerr=-21; exit tloop; endif
+              subtensors=>tensor%get_subtensors(jerr); if(jerr.ne.TEREC_SUCCESS) then; jerr=-20; exit tloop; endif
+              jerr=lit%init(subtensors); if(jerr.ne.GFC_SUCCESS) then; jerr=-19; exit tloop; endif
+              cloop: do while(jerr.eq.GFC_SUCCESS)
+               uptr=>lit%get_value(jerr); if(jerr.ne.GFC_SUCCESS) then; jerr=-18; exit tloop; endif
+               header=>NULL(); select type(uptr); class is(tens_header_t); header=>uptr; end select
+               if(.not.associated(header)) then; jerr=-17; exit tloop; endif
+               allocate(subtensor,STAT=jerr); if(jerr.ne.0) then; jerr=-16; exit tloop; endif
+               call subtensor%tens_rcrsv_ctor(header,jerr); if(jerr.ne.TEREC_SUCCESS) then; jerr=-15; exit tloop; endif
+!$OMP CRITICAL (TAVP_MNG_CACHE)
+               stored=this%arg_cache%store(subtensor,tens_entry_mng_alloc,jerr,tens_entry_p=tens_entry) !tensor ownership is moved to the tensor cache entry
+!$OMP END CRITICAL (TAVP_MNG_CACHE)
+               if(jerr.eq.0.and.stored.and.associated(tens_entry)) then
+                tens_entry_mng=>NULL(); select type(tens_entry); class is(tens_entry_mng_t); tens_entry_mng=>tens_entry; end select
+                if(.not.associated(tens_entry_mng)) then; jerr=-14; exit tloop; endif
+                jerr=this%crt_list%append(tens_instr_empty); if(jerr.ne.GFC_SUCCESS) then; jerr=-13; exit tloop; endif
+                jerr=this%crt_list%reset_back(); if(jerr.ne.GFC_SUCCESS) then; jerr=-12; exit tloop; endif
+                uptr=>this%crt_list%get_value(jerr); if(jerr.ne.GFC_SUCCESS) then; jerr=-11; exit tloop; endif
+                subinstr=>NULL(); select type(uptr); class is(tens_instr_t); subinstr=>uptr; end select
+                if(.not.associated(subinstr)) then; jerr=-10; exit tloop; endif
+                iid=dsvp%get_crtd_instr_counter()
+                call subinstr%tens_instr_ctor(TAVP_INSTR_TENS_CREATE,jerr,subtensor,iid)
+                if(jerr.ne.0) then; jerr=-9; exit tloop; endif
+                tens_oprnd=>subinstr%get_operand(0,jerr); if(jerr.ne.DSVP_SUCCESS) then; jerr=-8; exit tloop; endif
+                select type(tens_oprnd)
+                class is(tens_oprnd_t)
+                 call tens_oprnd%set_cache_entry(tens_entry_mng,jerr); if(jerr.ne.0) then; jerr=-7; exit tloop; endif
+                class default
+                 jerr=-6; exit tloop
+                end select
+                call dsvp%incr_crtd_instr_counter()
+                subtensor=>NULL() !tensor ownership has been transferred to the tensor cache
+               else
+                deallocate(subtensor); jerr=-5; exit tloop
+               endif
+               jerr=lit%next()
+              enddo cloop
+              if(jerr.ne.GFC_NO_MOVE) then; jerr=-4; exit tloop; endif
+              jerr=lit%release(); if(jerr.ne.GFC_SUCCESS) then; jerr=-3; exit tloop; endif
+             endif
+            class default
+             jerr=-2; exit tloop
+            end select
+           enddo tloop
+          else
+           jerr=-1
+          endif
           return
          end subroutine decompose_output_tensors
+
+         subroutine decompose_instr_tens_destroy(jerr)
+          implicit none
+          integer(INTD), intent(out):: jerr !out: error code
+          class(ds_oprnd_t), pointer:: oprnd
+          class(tens_header_t), pointer:: header
+          class(tens_rcrsv_t), pointer:: tensor
+          class(tens_instr_t), pointer:: subinstr
+          type(tens_instr_t):: tens_instr_empty
+          type(tens_rcrsv_t):: subtensor
+          type(list_bi_t), pointer:: subtensors
+          type(list_iter_t):: lit
+          class(*), pointer:: uptr
+
+          jerr=this%sub_list%reset_back()
+          if(jerr.eq.GFC_SUCCESS) then
+           oprnd=>tens_instr%get_operand(0,jerr)
+           if(jerr.eq.DSVP_SUCCESS) then
+            select type(oprnd)
+            class is(tens_oprnd_t)
+             tensor=>oprnd%get_tensor(jerr)
+             if(jerr.eq.0) then
+              if(tensor%get_num_subtensors().gt.0) then !tensor must have an internal structure
+               subtensors=>tensor%get_subtensors(jerr)
+               if(jerr.eq.TEREC_SUCCESS) then
+                jerr=lit%init(subtensors)
+                if(jerr.eq.GFC_SUCCESS) then
+                 cloop: do while(jerr.eq.GFC_SUCCESS)
+                  
+                  jerr=lit%next()
+                 enddo cloop
+                 jerr=lit%release()
+                else
+                 jerr=-1
+                endif
+               else
+                jerr=-1
+               endif
+              else
+               jerr=-1
+              endif
+             else
+              jerr=-1
+             endif
+            class default
+             jerr=-1
+            end select
+           else
+            jerr=-1
+           endif
+          else
+           jerr=-1
+          endif
+          return
+         end subroutine decompose_instr_tens_destroy
+
+         subroutine decompose_instr_tens_contract(jerr)
+          implicit none
+          integer(INTD), intent(out):: jerr !out: error code
+
+          jerr=this%sub_list%reset_back()
+          if(jerr.eq.GFC_SUCCESS) then
+           
+          else
+           jerr=-1
+          endif
+          return
+         end subroutine decompose_instr_tens_contract
 
         end subroutine TAVPMNGDecomposerDecompose
 ![tavp_mng_dispatcher_t]=====================================
