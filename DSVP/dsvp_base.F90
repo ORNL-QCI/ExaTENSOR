@@ -1,6 +1,6 @@
 !Domain-specific virtual processor (DSVP): Abstract base module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/11/21
+!REVISION: 2017/11/27
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -1223,37 +1223,52 @@
 !be moved from <new_list> into the port, thus leaving <new_list> empty at the end.
          implicit none
          integer(INTD):: ierr                         !out: error code
-         class(ds_unit_port_t), intent(inout):: this  !inout: DS unit port
-         class(list_iter_t), intent(inout):: new_list !inout: list of new DS instructions for the DS unit port (will become empty on exit)
+         class(ds_unit_port_t), intent(inout):: this  !inout: DS unit port (destination)
+         class(list_iter_t), intent(inout):: new_list !inout: list of new DS instructions for the DS unit port (source, will become empty on exit)
          integer(INTD):: errc
 
          ierr=DSVP_SUCCESS
 !$OMP CRITICAL (DSVU_PORT_LOCK)
          errc=new_list%reset()
          if(errc.eq.GFC_SUCCESS) then
-          errc=new_list%move_list(this%iqueue); if(errc.ne.GFC_SUCCESS) ierr=DSVP_ERROR
-          if(new_list%get_status().ne.GFC_IT_EMPTY) ierr=DSVP_ERROR !trap
+          errc=this%iqueue%reset_back()
+          if(errc.eq.GFC_SUCCESS) then
+           errc=new_list%move_list(this%iqueue); if(errc.ne.GFC_SUCCESS) ierr=DSVP_ERROR
+           if(ierr.eq.DSVP_SUCCESS.and.new_list%get_status().ne.GFC_IT_EMPTY) ierr=DSVP_ERROR !trap
+          else
+           ierr=DSVP_ERROR
+          endif
          else
           ierr=DSVP_ERROR
          endif
 !$OMP END CRITICAL (DSVU_PORT_LOCK)
          return
         end function DSUnitPortAccept
-!-----------------------------------------------------------------
-        function DSUnitPortAbsorb(this,dsvu_queue_it) result(ierr)
-!Absorbs new DS instructions from the DS unit port into the DS unit queue.
+!---------------------------------------------------------------------------
+        function DSUnitPortAbsorb(this,dsvu_queue_it,max_items) result(ierr)
+!Absorbs new DS instructions from the DS unit port into another queue.
          implicit none
          integer(INTD):: ierr                              !out: error code
-         class(ds_unit_port_t), intent(inout):: this       !inout: DS unit port
-         class(list_iter_t), intent(inout):: dsvu_queue_it !inout: DS unit queue iterator
+         class(ds_unit_port_t), intent(inout):: this       !inout: DS unit port (source)
+         class(list_iter_t), intent(inout):: dsvu_queue_it !inout: destination queue
+         integer(INTD), intent(in), optional:: max_items   !in: max number of items to move (upper limit)
          integer(INTD):: errc
 
          ierr=DSVP_SUCCESS
 !$OMP CRITICAL (DSVU_PORT_LOCK)
-         errc=this%iqueue%reset()
+         errc=dsvu_queue_it%reset_back()
          if(errc.eq.GFC_SUCCESS) then
-          errc=this%iqueue%move_list(dsvu_queue_it); if(errc.ne.GFC_SUCCESS) ierr=DSVP_ERROR
-          if(this%iqueue%get_status().ne.GFC_IT_EMPTY) ierr=DSVP_ERROR !trap
+          errc=this%iqueue%reset()
+          if(errc.eq.GFC_SUCCESS) then
+           if(present(max_items)) then
+            errc=this%iqueue%move_list(dsvu_queue_it,max_items); if(errc.ne.GFC_SUCCESS) ierr=DSVP_ERROR
+           else
+            errc=this%iqueue%move_list(dsvu_queue_it); if(errc.ne.GFC_SUCCESS) ierr=DSVP_ERROR
+           endif
+           if(ierr.eq.DSVP_SUCCESS.and.this%iqueue%get_status().ne.GFC_IT_EMPTY) ierr=DSVP_ERROR !trap
+          else
+           ierr=DSVP_ERROR
+          endif
          else
           ierr=DSVP_ERROR
          endif
@@ -1402,27 +1417,39 @@
          ierr=this%port(port_id)%accept(in_list) !DS instructions will be moved from the <in_list> into this port
          return
         end function DSUnitLoadPort
-!--------------------------------------------------------------------
-        function DSUnitUnloadPort(this,port_id,out_list) result(ierr)
-!Unloads the DS unit port by moving its content into an externally provided list.
+!------------------------------------------------------------------------------
+        function DSUnitUnloadPort(this,port_id,out_list,max_items) result(ierr)
+!Unloads the DS unit port by moving its content into an externally provided list,
+!specifically at the end of that list.
          implicit none
-         integer(INTD):: ierr                         !out: error code
-         class(ds_unit_t), intent(inout):: this       !inout: DS unit (the content of its port will be emptied)
-         integer(INTD), intent(in):: port_id          !in: port id
-         class(list_iter_t), intent(inout):: out_list !inout: list which the DS port content will be moved to
+         integer(INTD):: ierr                            !out: error code
+         class(ds_unit_t), intent(inout):: this          !inout: DS unit (the content of its port will be emptied)
+         integer(INTD), intent(in):: port_id             !in: port id
+         class(list_iter_t), intent(inout):: out_list    !inout: list which the DS port content will be moved to
+         integer(INTD), intent(in), optional:: max_items !in: upper limit on the number of items to move
 
-         ierr=this%port(port_id)%absorb(out_list) !DS instructions will be moved from this port into the <out_list>
+         if(present(max_items)) then
+          ierr=this%port(port_id)%absorb(out_list,max_items) !up to <max_items> DS instructions will be moved from this port into the <out_list>
+         else
+          ierr=this%port(port_id)%absorb(out_list) !all DS instructions will be moved from this port into the <out_list>
+         endif
          return
         end function DSUnitUnloadPort
-!----------------------------------------------------------
-        function DSUnitFlushPort(this,port_id) result(ierr)
-!Flushes the content of a DS unit port into the DS unit queue.
+!--------------------------------------------------------------------
+        function DSUnitFlushPort(this,port_id,max_items) result(ierr)
+!Flushes the content of a DS unit port into the DS unit queue (at the end),
+!up to <max_items> elements if <max_items> is present.
          implicit none
-         integer(INTD):: ierr                   !out: error code
-         class(ds_unit_t), intent(inout):: this !inout: DS unit
-         integer(INTD), intent(in):: port_id    !in: port id
+         integer(INTD):: ierr                            !out: error code
+         class(ds_unit_t), intent(inout):: this          !inout: DS unit
+         integer(INTD), intent(in):: port_id             !in: port id
+         integer(INTD), intent(in), optional:: max_items !in: upper limit on the number of items to flush
 
-         ierr=this%port(port_id)%absorb(this%iqueue) !DS instructions will be moved from this port into the DS unit queue
+         if(present(max_items)) then
+          ierr=this%port(port_id)%absorb(this%iqueue,max_items) !up to <max_items> DS instructions will be moved from this port into the DS unit queue
+         else
+          ierr=this%port(port_id)%absorb(this%iqueue) !all DS instructions will be moved from this port into the DS unit queue
+         endif
          return
         end function DSUnitFlushPort
 !--------------------------------------------------------------

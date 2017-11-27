@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/11/24
+!REVISION: 2017/11/27
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -21,6 +21,50 @@
 !along with ExaTensor. If not, see <http://www.gnu.org/licenses/>.
 
        module tavp_manager
+!NOTES:
+! # TAVP-MNG virtual processor processes the following classes of instructions:
+!   (A) CONTROL instructions: Each instruction stalls the TAVP-MNG pipeline and
+!       is executed sequentially (in-order) and individually. The STOP instruction
+!       may not be followed by any other instruction. The RESUME instruction either
+!       resumes the execution after a preceding PAUSE instruction or does nothing
+!       in case there was no preceding PAUSE instruction. Control instructions
+!       retire locally and are not returned to the upper level of hierarchy.
+!   (B) AUXILIARY instructions: Each instruction stalls the TAVP-MNG pipeline
+!       and is executed sequentially in-order, but not necessarily individually.
+!       That is, a contiguous batch of auxiliary instructions can be issued together.
+!       Auxiliary instructions normally carry definitions and other auxiliary operations
+!       for subsequent numerical tensor algebra instructions. Auxiliary instructions
+!       retire locally and are not returned to the upper level of hierarchy.
+!   (C) TENSOR instructions: Tensor instructions represent numerical tensor algebra
+!       computations and are executed asynchronously out-of-order, only obeying
+!       the data dependencies. In general, in order for a tensor instruction to get
+!       issued to the lower level of hierarchy all its input arguments must be defined,
+!       that is, they must neither be undefined nor be currently updated. The only
+!       exception is when multiple tensor instructions with a READ-after-UPDATE
+!       pattern are issued to the same TAVP such that the latter can track the
+!       data dependencies locally. The output tensor operands do not have to be
+!       defined, that is, they can be either undefined or currently updated, or they
+!       even may not exist. In case an output operand does not exist, it will be
+!       created on-the-fly and initialized to zero. In case, an output operand is
+!       undefined but is existing, it will be initialized to zero before update.
+!       A tensor instruction is considered completed when all its subinstructions
+!       have completed. A tensor instruction is considered completed successfully
+!       when all its subinstructions have completed successfully.
+! # TENSOR ARGUMENT CACHE:
+!   (A) All tensors from tensor instructions are owned by the tensor argument cache
+!       which is owned by the TAVP. Tensor argument cache is a shared resource among
+!       TAVP virtual units. Consequently, all operations on the tensor cache, including
+!       creation/deletion of cache entries as well as a read/update of the content of a
+!       cache entry (e.g., tensor meta-data update) must be protected by CRITICAL sections.
+!   (B) Each tensor argument cache entry has a reference count for the number of active
+!       tensor instruction operands currently associated with the cache entry.
+!   (C) Each tensor argument cache entry has an <owner_id> field referring to a TAVP
+!       which owns the tensor stored in that cache entry. A negative value of this
+!       field means that the owning TAVP is not (yet) known.
+!   (D) Tensor argument cache entries storing local tensors (owned by the current TAVP)
+!       are only deleted when the tensor is destroyed. Tensor argument cache entries
+!       storing subtensors of local tensors are only deleted when the tensor is destroyed.
+!       Other tensor argument cache entries are deleted once the reference count is zero.
         use virta
         use gfc_base
         use gfc_list
@@ -41,7 +85,7 @@
         integer(INTD), private:: MIN_LOCATE_INSTR=256          !min number of instructions in the locating cycle to start locating rotations
         real(8), private:: MAX_LOCATE_WAIT_TIME=0.5D-3         !max wait time (sec) until performing a locating rotation even if there is no enough instructions
  !Decomposer:
-        integer(INTD), private:: MAX_DECOMPOSE_PAR_INSTR=256   !max number of processed parent instructions in the decomposition phase
+        integer(INTD), private:: MAX_DECOMPOSE_PRN_INSTR=256   !max number of processed parent instructions in the decomposition phase
         integer(INTD), private:: MAX_DECOMPOSE_CLD_INSTR=16384 !max number of created child instructions in the decomposition phase
         real(8), private:: MAX_DECOMPOSE_PHASE_TIME=0.5d-3     !max time (sec) before passing instructions to dispatcher
  !Dispatcher:
@@ -108,7 +152,7 @@
          integer(INTD), private:: source_comm                       !bytecode source communicator
          integer(INTD), private:: source_rank=-1                    !bytecode source process rank (negative means ANY)
          type(pack_env_t), private:: bytecode                       !incoming bytecode buffer
-         class(tens_cache_t), pointer, private:: arg_cache=>NULL()  !tensor argument cache pointer
+         class(tens_cache_t), pointer, private:: arg_cache=>NULL()  !non-owning pointer to the tensor argument cache
          contains
           procedure, public:: configure=>TAVPMNGDecoderConfigure    !configures TAVP-MNG decoder
           procedure, public:: start=>TAVPMNGDecoderStart            !starts and lives TAVP-MNG decoder
@@ -128,7 +172,7 @@
          integer(INTD), private:: retire_comm                       !retired bytecode destination communicator
          integer(INTD), private:: retire_rank=-1                    !retired bytecode destination process rank
          type(pack_env_t), private:: bytecode                       !outgoing bytecode buffer
-         class(tens_cache_t), pointer, private:: arg_cache=>NULL()  !tensor argument cache pointer
+         class(tens_cache_t), pointer, private:: arg_cache=>NULL()  !non-owning pointer to the tensor argument cache
          contains
           procedure, public:: configure=>TAVPMNGRetirerConfigure    !configures TAVP-MNG retirer
           procedure, public:: start=>TAVPMNGRetirerStart            !starts and lives TAVP-MNG retirer
@@ -147,7 +191,7 @@
          integer(INTD), private:: ring_send=-1                      !MPI process rank in the locating ring to which instructions are sent
          integer(INTD), private:: ring_recv=-1                      !MPI process rank in the locating ring from which instructions are received
          type(pack_env_t), private:: bytecode                       !circulating bytecode buffer (location cycle)
-         class(tens_cache_t), pointer, private:: arg_cache=>NULL()  !tensor argument cache pointer
+         class(tens_cache_t), pointer, private:: arg_cache=>NULL()  !non-owning pointer to the tensor argument cache
          type(list_bi_t), private:: located_list                    !list of tensor instructions decoded by ldecoder
          type(list_iter_t), private:: loc_list                      !iterator for <located_list>
          type(list_bi_t), private:: deferred_list                   !list of deferred tensor instructions due to unsatisfied data dependencies
@@ -171,7 +215,7 @@
  !TAVP-MNG decomposer:
         type, extends(ds_unit_t), private:: tavp_mng_decomposer_t
          integer(INTD), public:: num_ports=1                        !number of ports: Port 0 <- locator
-         class(tens_cache_t), pointer, private:: arg_cache=>NULL()  !tensor argument cache pointer
+         class(tens_cache_t), pointer, private:: arg_cache=>NULL()  !non-owning pointer to the tensor argument cache
          type(list_bi_t), private:: subinstruction_list             !list of newly created tensor subinstructions
          type(list_iter_t), private:: sub_list                      !iterator for <subinstruction_list>
          type(list_bi_t), private:: collecting_list                 !list of processed parent tensor instructions
@@ -196,7 +240,7 @@
          integer(INTD), private:: num_ranks=0                       !number of MPI ranks to dispatch instructions to
          integer(INTD), allocatable, private:: dispatch_rank(:)     !MPI process ranks of the processes dispatched to
          type(pack_env_t), allocatable, private:: bytecode(:)       !outgoing bytecode buffer for each dispatched rank
-         class(tens_cache_t), pointer, private:: arg_cache=>NULL()  !tensor argument cache pointer
+         class(tens_cache_t), pointer, private:: arg_cache=>NULL()  !non-owning pointer to the tensor argument cache
          type(list_bi_t), private:: control_list                    !list of control instructions
          type(list_iter_t), private:: ctrl_list                     !iterator for <control_list>
          contains
@@ -217,7 +261,7 @@
          integer(INTD), public:: num_ports=2                        !number of ports: Port 0 <- ???; Port 1 <- rdecoder
          integer(INTD), private:: repl_comm                         !MPI communicator for tensor replication activity
          type(pack_env_t), private:: bytecode                       !tensor instruction bytecode buffer
-         class(tens_cache_t), pointer, private:: arg_cache=>NULL()  !tensor argument cache pointer
+         class(tens_cache_t), pointer, private:: arg_cache=>NULL()  !non-owning pointer to the tensor argument cache
          type(list_bi_t), private:: control_list                    !list of control instructions
          type(list_iter_t), private:: ctrl_list                     !iterator for <control_list>
          contains
@@ -239,7 +283,7 @@
  !TAVP-MNG collector:
         type, extends(ds_unit_t), private:: tavp_mng_collector_t
          integer(INTD), public:: num_ports=2                        !number of ports: Port 0 <- Decomposer; Port 1 <- cdecoder
-         class(tens_cache_t), pointer, private:: arg_cache=>NULL()  !tensor argument cache pointer
+         class(tens_cache_t), pointer, private:: arg_cache=>NULL()  !non-owning pointer to the tensor argument cache
          type(dictionary_t), private:: parent_instr_map             !map: Parent Instruction ID --> tavp_mng_collector_entry_t
          type(dictionary_iter_t), private:: parent_instr            !iterator for <parent_instr_map>
          type(list_bi_t), private:: matching_list                   !list of parent instructions being matched against their child instructions
@@ -1574,8 +1618,8 @@
 
            jn=ds_instr%get_num_operands(jerr)
            if(jerr.eq.DSVP_SUCCESS.and.jn.ge.0) then
-            tensor_tmp=>NULL()
 !$OMP CRITICAL (TAVP_MNG_CACHE)
+            tensor_tmp=>NULL()
             do jj=0,jn-1 !loop over tensor operands
              allocate(tensor_tmp,STAT=jerr) !tensor will either be owned by a tensor cache entry or deallocated here
              if(jerr.ne.0) then
@@ -1611,19 +1655,19 @@
              endif
              tensor=>tens_mng_entry%get_tensor() !use the tensor from the tensor cache
              if(.not.stored) then !the tensor was already in the tensor cache before, update it by the information from the just decoded tensor
-              call tensor%update(tensor_tmp,jerr,updated)
+              call tensor%update(tensor_tmp,jerr,updated) !tensor metadata update is done inside the tensor cache
               deallocate(tensor_tmp); tensor_tmp=>NULL() !deallocate temporary tensor after importing its information into the cache
               if(jerr.ne.TEREC_SUCCESS) then
                call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_GEN_FAILURE); jerr=-5; exit
               endif
              endif
-             if(updated) call tens_mng_entry%set_owner_id(jown) !update the tensor owner id if the tensor info was updated
+             if(updated) call tens_mng_entry%set_owner_id(jown) !update the tensor owner id if the tensor info was updated in the cache
              allocate(tens_oprnd,STAT=jerr) !tensor operand will be owned by the tensor instruction
              if(jerr.ne.0) then
               tens_oprnd=>NULL()
               call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_RSC_UNAVAILABLE); jerr=-4; exit
              endif
-             call tens_oprnd%tens_oprnd_ctor(tensor,jerr,tens_mng_entry) !tensor is owned by the tensor cache
+             call tens_oprnd%tens_oprnd_ctor(tensor,jerr,tens_mng_entry) !tensor is owned by the tensor cache (owner id will be imported from the tensor cache)
              if(jerr.ne.0) then
               deallocate(tens_oprnd)
               call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_GEN_FAILURE); jerr=-3; exit
@@ -1654,9 +1698,9 @@
              select type(ds_instr)
              class is(tens_instr_t)
               if(op_code.eq.TAVP_INSTR_TENS_CREATE) then
-               ds_instr%num_out_oprnds=1; ds_instr%out_oprnds(0:ds_instr%num_out_oprnds-1)=(/0/)
+               ds_instr%num_out_oprnds=1; ds_instr%out_oprnds(0:ds_instr%num_out_oprnds-1)=(/0/) !the single tensor operand of TENSOR_CREATE is an output operand
               elseif(op_code.eq.TAVP_INSTR_TENS_DESTROY) then
-               ds_instr%num_out_oprnds=0
+               ds_instr%num_out_oprnds=0 !TENSOR_DESTROY does not have output operands
               endif
              end select
             endif
@@ -1685,7 +1729,7 @@
                if(jerr.eq.0) then !mark output operands
                 select type(ds_instr)
                 class is(tens_instr_t)
-                 ds_instr%num_out_oprnds=1; ds_instr%out_oprnds(0:ds_instr%num_out_oprnds-1)=(/0/)
+                 ds_instr%num_out_oprnds=1; ds_instr%out_oprnds(0:ds_instr%num_out_oprnds-1)=(/0/) !tensor operand 0 is the output operand
                 end select
                endif
               else
@@ -2205,7 +2249,7 @@
          implicit none
          class(tavp_mng_decomposer_t), intent(inout):: this !inout: TAVP-MNG decomposer DSVU
          integer(INTD), intent(out), optional:: ierr        !out: error code
-         integer(INTD):: errc,ier,thid,iec,sts,opcode,num_processed,num_created
+         integer(INTD):: errc,ier,thid,iec,sts,opcode,num_processed,base_created
          integer(INTL):: pid,cid
          integer:: dec_timer
          logical:: active,stopping,expired
@@ -2241,61 +2285,61 @@
 !Work loop:
          active=(errc.eq.0); stopping=(.not.active)
          wloop: do while(active)
- !Get a new batch of parent instructions from locator (port 0) into the main queue:
+ !Get a new batch of (parent) instructions from locator (port 0) into the main queue:
           ier=this%iqueue%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
           ier=this%flush_port(0); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
- !Decompose parent instructions, creating new child instructions:
-          num_processed=0; num_created=0
+ !Decompose parent tensor instructions, creating new child subinstructions:
+          num_processed=0; base_created=tavp%get_crtd_instr_counter()
           ier=timer_start(MAX_DECOMPOSE_PHASE_TIME,dec_timer); if(ier.ne.0.and.errc.eq.0) then; errc=-1; exit wloop; endif
           ier=this%iqueue%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
           ier=this%iqueue%get_status()
           dloop: do while(ier.eq.GFC_IT_ACTIVE)
-  !Decompose a parent instruction into new child instructions:
-   !Extract a parent tensor instruction:
+  !Extract an instruction:
            uptr=>this%iqueue%get_value(ier); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
            tens_instr=>NULL(); select type(uptr); class is(tens_instr_t); tens_instr=>uptr; end select
            if((.not.associated(tens_instr)).and.errc.eq.0) then; errc=-1; exit wloop; endif !trap
            pid=tens_instr%get_id(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
            sts=tens_instr%get_status(ier,iec); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
            opcode=tens_instr%get_code(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
-           if(opcode.ge.TAVP_ISA_TENS_FIRST.and.opcode.le.TAVP_ISA_TENS_LAST) then
+  !Process the extracted instruction:
    !Decompose the parent tensor instruction into child tensor instructions and append them into the subinstruction list:
-            
-   !Register newly created child instructions with the TAVP-MNG instruction map:
-            
+           if(opcode.ge.TAVP_ISA_TENS_FIRST.and.opcode.le.TAVP_ISA_TENS_LAST) then
+            call this%decompose(tens_instr,ier); if(ier.ne.0.and.errc.eq.0) then; errc=-1; exit wloop; endif
    !Move processed parent instruction to the collecting list:
             ier=this%iqueue%move_elem(this%col_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
             num_processed=num_processed+1
-           elseif(opcode.ge.TAVP_ISA_CTRL_FIRST.and.opcode.le.TAVP_ISA_CTRL_LAST) then
    !Move control instructions into the control list:
+           elseif(opcode.ge.TAVP_ISA_CTRL_FIRST.and.opcode.le.TAVP_ISA_CTRL_LAST) then
             if(opcode.eq.TAVP_INSTR_CTRL_STOP.or.opcode.eq.TAVP_INSTR_CTRL_PAUSE) stopping=.TRUE. !`PAUSE is treated as STOP as of now
             ier=this%iqueue%move_elem(this%ctrl_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
-           else
    !Move other instructions into the auxiliary list:
+           else
             ier=this%iqueue%move_elem(this%aux_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
            endif
   !Pass a batch of new child instructions to dispatcher (port 0) and a batch of processed parent instructions to collector (port 0):
-           expired=time_is_off(dec_timer,ier,destroy=.TRUE.); if(ier.ne.0.and.errc.eq.0) then; errc=-1; exit wloop; endif
-           if(expired.or.num_created.ge.MAX_DECOMPOSE_CLD_INSTR.or.num_processed.ge.MAX_DECOMPOSE_PAR_INSTR) then
-            ier=this%sub_list%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
-            ier=this%sub_list%get_status()
-            if(ier.eq.GFC_IT_ACTIVE) then
-             ier=tavp%dispatcher%load_port(0,this%sub_list); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
-            endif
+           expired=time_is_off(dec_timer,ier,destroy=.TRUE.).or.stopping
+           if(ier.ne.0.and.errc.eq.0) then; errc=-1; exit wloop; endif
+           if(expired.or.tavp%get_crtd_instr_counter()-base_created.ge.MAX_DECOMPOSE_CLD_INSTR.or.&
+             &num_processed.ge.MAX_DECOMPOSE_PRN_INSTR) then
             ier=this%col_list%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
             ier=this%col_list%get_status()
             if(ier.eq.GFC_IT_ACTIVE) then
              ier=tavp%collector%load_port(0,this%col_list); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
             endif
-            num_processed=0; num_created=0
-  !Restart the timer if expired:
-            if(expired) then
-             ier=timer_start(MAX_DECOMPOSE_PHASE_TIME,dec_timer); if(ier.ne.0.and.errc.eq.0) then; errc=-1; exit wloop; endif
+            ier=this%sub_list%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+            ier=this%sub_list%get_status()
+            if(ier.eq.GFC_IT_ACTIVE) then
+             ier=tavp%dispatcher%load_port(0,this%sub_list); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
             endif
+            num_processed=0; base_created=tavp%get_crtd_instr_counter()
+  !Restart the timer:
+            if(.not.expired) ier=timer_destroy(dec_timer)
+            ier=timer_start(MAX_DECOMPOSE_PHASE_TIME,dec_timer); if(ier.ne.0.and.errc.eq.0) then; errc=-1; exit wloop; endif
            endif
            ier=this%iqueue%get_status()
           enddo dloop
           if(ier.ne.GFC_IT_EMPTY.and.errc.eq.0) then; errc=-1; exit wloop; endif
+          active=stopping
          enddo wloop
 !Record the error:
          ier=this%get_error(); if(ier.eq.DSVP_SUCCESS) call this%set_error(errc)
@@ -2383,9 +2427,13 @@
 !and appends them into the subinstruction list. The input tensor instruction operands
 !must already contain their subtensor composition lists. The output tensor instruction
 !operand(s) may either already contain or still lack their subtensor composition lists.
+!In the latter case, they will be generated here. All subinstructions generated from
+!the parental tensor instruction are registered with the TAVP-MNG instruction map.
+!The parental tensor instruction saves the number of its subinstructions in the
+!.error_code field which will be reset back to DSVP_SUCCESS by Collector.
          implicit none
          class(tavp_mng_decomposer_t), intent(inout):: this !inout: TAVP-MNG decomposer DSVU
-         class(tens_instr_t), intent(in):: tens_instr       !in: parental tensor instruction
+         class(tens_instr_t), intent(inout):: tens_instr    !in: parental tensor instruction (.error_code field will be set to the subinstruction count)
          integer(INTD), intent(out), optional:: ierr        !out: error code
          integer(INTD):: errc,opcode
          integer(INTL):: parent_id
@@ -2416,6 +2464,7 @@
                case(TAVP_INSTR_TENS_CONTRACT) !new subinstructions will go into the subinstruction list
                 call decompose_instr_tens_contract(errc)
                case default
+               !`Implement other tensor instructions
                 write(CONS_OUT,&
                 &'("#FATAL(TAVP-MNG:Decomposer:decompose)[",i6,"]: Tensor instruction code ",i3," is not implemented!")')&
                 &impir,opcode
@@ -2490,7 +2539,7 @@
          !subsequently appending them into the subinstruction list.
           implicit none
           integer(INTD), intent(out):: jerr !out: error code
-          integer(INTD):: jj
+          integer(INTD):: jj,num_subinstr
           integer(INTL):: iid
           class(ds_oprnd_t), pointer:: oprnd,tens_oprnd
           class(tens_header_t), pointer:: header
@@ -2518,41 +2567,47 @@
                if(jerr.eq.TEREC_SUCCESS) then
                 jerr=lit%init(subtensors)
                 if(jerr.eq.GFC_SUCCESS) then
+                 num_subinstr=0
                  cloop: do while(jerr.eq.GFC_SUCCESS)
-                  uptr=>lit%get_value(jerr); if(jerr.ne.GFC_SUCCESS) then; jerr=-23; exit cloop; endif
+                  uptr=>lit%get_value(jerr); if(jerr.ne.GFC_SUCCESS) then; jerr=-24; exit cloop; endif
                   header=>NULL(); select type(uptr); class is(tens_header_t); header=>uptr; end select
-                  if(.not.associated(header)) then; jerr=-22; exit cloop; endif
-                  allocate(subtensor,STAT=jerr); if(jerr.ne.0) then; jerr=-21; exit cloop; endif
+                  if(.not.associated(header)) then; jerr=-23; exit cloop; endif
+                  allocate(subtensor,STAT=jerr); if(jerr.ne.0) then; jerr=-22; exit cloop; endif
                   call subtensor%tens_rcrsv_ctor(header,jerr)
-                  if(jerr.ne.TEREC_SUCCESS) then; deallocate(subtensor); jerr=-20; exit cloop; endif
+                  if(jerr.ne.TEREC_SUCCESS) then; deallocate(subtensor); jerr=-21; exit cloop; endif
 !$OMP CRITICAL (TAVP_MNG_CACHE)
                   stored=this%arg_cache%store(subtensor,tens_entry_mng_alloc,jerr,tens_entry_p=tens_entry) !new subtensor: Ownership transferred to the tensor cache
 !$OMP END CRITICAL (TAVP_MNG_CACHE)
                   if((jerr.ne.0).or.(.not.(stored.and.associated(tens_entry)))) then
-                   deallocate(subtensor); jerr=-19; exit cloop
+                   deallocate(subtensor); jerr=-20; exit cloop
                   endif
                   tens_entry_mng=>NULL()
                   select type(tens_entry); class is(tens_entry_mng_t); tens_entry_mng=>tens_entry; end select
-                  jerr=this%sub_list%append(tens_instr_empty); if(jerr.ne.GFC_SUCCESS) then; jerr=-18; exit cloop; endif
-                  jerr=this%sub_list%reset_back(); if(jerr.ne.GFC_SUCCESS) then; jerr=-17; exit cloop; endif
-                  uptr=>this%sub_list%get_value(jerr); if(jerr.ne.GFC_SUCCESS) then; jerr=-16; exit cloop; endif
+                  jerr=this%sub_list%append(tens_instr_empty); if(jerr.ne.GFC_SUCCESS) then; jerr=-19; exit cloop; endif
+                  jerr=this%sub_list%reset_back(); if(jerr.ne.GFC_SUCCESS) then; jerr=-18; exit cloop; endif
+                  uptr=>this%sub_list%get_value(jerr); if(jerr.ne.GFC_SUCCESS) then; jerr=-17; exit cloop; endif
                   subinstr=>NULL(); select type(uptr); class is(tens_instr_t); subinstr=>uptr; end select
-                  if(.not.associated(subinstr)) then; jerr=-15; exit cloop; endif !trap
+                  if(.not.associated(subinstr)) then; jerr=-16; exit cloop; endif !trap
                   iid=dsvp%get_crtd_instr_counter()
                   call subinstr%tens_instr_ctor(TAVP_INSTR_TENS_CREATE,jerr,subtensor,iid)
-                  if(jerr.ne.0) then; jerr=-14; exit cloop; endif
-                  tens_oprnd=>subinstr%get_operand(0,jerr); if(jerr.ne.DSVP_SUCCESS) then; jerr=-13; exit cloop; endif
+                  if(jerr.ne.0) then; jerr=-15; exit cloop; endif
+                  tens_oprnd=>subinstr%get_operand(0,jerr); if(jerr.ne.DSVP_SUCCESS) then; jerr=-14; exit cloop; endif
                   select type(tens_oprnd)
                   class is(tens_oprnd_t)
-                   call tens_oprnd%set_cache_entry(tens_entry_mng,jerr); if(jerr.ne.0) then; jerr=-12; exit cloop; endif
+                   call tens_oprnd%set_cache_entry(tens_entry_mng,jerr); if(jerr.ne.0) then; jerr=-13; exit cloop; endif
                   class default
-                   jerr=-11; exit cloop
+                   jerr=-12; exit cloop
                   end select
-                  call tavp%register_instr(iid,tens_instr%get_id(),jerr); if(jerr.ne.0) then; jerr=-10; exit cloop; endif
-                  call dsvp%incr_crtd_instr_counter() !new subinstruction has been created
+                  call tavp%register_instr(iid,tens_instr%get_id(),jerr); if(jerr.ne.0) then; jerr=-11; exit cloop; endif
+                  call dsvp%incr_crtd_instr_counter(); num_subinstr=num_subinstr+1 !new subinstruction has been created
                   jerr=lit%next()
                  enddo cloop
-                 if(jerr.ne.GFC_NO_MOVE) jerr=-9
+                 if(jerr.eq.GFC_NO_MOVE) then
+                  call tens_instr%set_status(tens_instr%get_status(),jerr,num_subinstr) !.error_code field will store the number of subinstructions
+                  if(jerr.ne.DSVP_SUCCESS) jerr=-10
+                 else
+                  jerr=-9
+                 endif
                  jj=lit%release(); if(jj.ne.GFC_SUCCESS.and.jerr.eq.0) jerr=-8
                 else
                  jerr=-7
@@ -2583,7 +2638,7 @@
          !subsequently appending them into the subinstruction list.
           implicit none
           integer(INTD), intent(out):: jerr !out: error code
-          integer(INTD):: jj
+          integer(INTD):: jj,num_subinstr
           integer(INTL):: iid
           class(ds_oprnd_t), pointer:: oprnd,tens_oprnd
           class(tens_header_t), pointer:: header
@@ -2610,41 +2665,47 @@
                if(jerr.eq.TEREC_SUCCESS) then
                 jerr=lit%init(subtensors)
                 if(jerr.eq.GFC_SUCCESS) then
+                 num_subinstr=0
                  cloop: do while(jerr.eq.GFC_SUCCESS)
-                  uptr=>lit%get_value(jerr); if(jerr.ne.GFC_SUCCESS) then; jerr=-25; exit cloop; endif
+                  uptr=>lit%get_value(jerr); if(jerr.ne.GFC_SUCCESS) then; jerr=-26; exit cloop; endif
                   header=>NULL(); select type(uptr); class is(tens_header_t); header=>uptr; end select
-                  if(.not.associated(header)) then; jerr=-24; exit cloop; endif
-                  allocate(subtensor,STAT=jerr); if(jerr.ne.0) then; jerr=-23; exit cloop; endif
+                  if(.not.associated(header)) then; jerr=-25; exit cloop; endif
+                  allocate(subtensor,STAT=jerr); if(jerr.ne.0) then; jerr=-24; exit cloop; endif
                   call subtensor%tens_rcrsv_ctor(header,jerr)
-                  if(jerr.ne.TEREC_SUCCESS) then; deallocate(subtensor); jerr=-22; exit cloop; endif
+                  if(jerr.ne.TEREC_SUCCESS) then; deallocate(subtensor); jerr=-23; exit cloop; endif
 !$OMP CRITICAL (TAVP_MNG_CACHE)
                   tens_entry=>this%arg_cache%lookup(subtensor,jerr) !subtensor must be present in the tensor cache since its creation
 !$OMP END CRITICAL (TAVP_MNG_CACHE)
-                  if((jerr.ne.0).or.(.not.associated(tens_entry))) then; deallocate(subtensor); jerr=-21; exit cloop; endif !trap
-                  deallocate(subtensor); subtensor=>tens_entry%get_tensor(jerr); if(jerr.ne.0) then; jerr=-20; exit cloop; endif
+                  if((jerr.ne.0).or.(.not.associated(tens_entry))) then; deallocate(subtensor); jerr=-22; exit cloop; endif !trap
+                  deallocate(subtensor); subtensor=>tens_entry%get_tensor(jerr); if(jerr.ne.0) then; jerr=-21; exit cloop; endif
                   tens_entry_mng=>NULL()
                   select type(tens_entry); class is(tens_entry_mng_t); tens_entry_mng=>tens_entry; end select
-                  if(.not.associated(tens_entry_mng)) then; jerr=-19; exit cloop; endif !trap
-                  jerr=this%sub_list%append(tens_instr_empty); if(jerr.ne.GFC_SUCCESS) then; jerr=-18; exit cloop; endif
-                  jerr=this%sub_list%reset_back(); if(jerr.ne.GFC_SUCCESS) then; jerr=-17; exit cloop; endif
-                  uptr=>this%sub_list%get_value(jerr); if(jerr.ne.GFC_SUCCESS) then; jerr=-16; exit cloop; endif
+                  if(.not.associated(tens_entry_mng)) then; jerr=-20; exit cloop; endif !trap
+                  jerr=this%sub_list%append(tens_instr_empty); if(jerr.ne.GFC_SUCCESS) then; jerr=-19; exit cloop; endif
+                  jerr=this%sub_list%reset_back(); if(jerr.ne.GFC_SUCCESS) then; jerr=-18; exit cloop; endif
+                  uptr=>this%sub_list%get_value(jerr); if(jerr.ne.GFC_SUCCESS) then; jerr=-17; exit cloop; endif
                   subinstr=>NULL(); select type(uptr); class is(tens_instr_t); subinstr=>uptr; end select
-                  if(.not.associated(subinstr)) then; jerr=-15; exit cloop; endif !trap
+                  if(.not.associated(subinstr)) then; jerr=-16; exit cloop; endif !trap
                   iid=dsvp%get_crtd_instr_counter()
                   call subinstr%tens_instr_ctor(TAVP_INSTR_TENS_DESTROY,jerr,subtensor,iid)
-                  if(jerr.ne.0) then; jerr=-14; exit cloop; endif
-                  tens_oprnd=>subinstr%get_operand(0,jerr); if(jerr.ne.DSVP_SUCCESS) then; jerr=-13; exit cloop; endif
+                  if(jerr.ne.0) then; jerr=-15; exit cloop; endif
+                  tens_oprnd=>subinstr%get_operand(0,jerr); if(jerr.ne.DSVP_SUCCESS) then; jerr=-14; exit cloop; endif
                   select type(tens_oprnd)
                   class is(tens_oprnd_t)
-                   call tens_oprnd%set_cache_entry(tens_entry_mng,jerr); if(jerr.ne.0) then; jerr=-12; exit cloop; endif
+                   call tens_oprnd%set_cache_entry(tens_entry_mng,jerr); if(jerr.ne.0) then; jerr=-13; exit cloop; endif
                   class default
-                   jerr=-11; exit cloop
+                   jerr=-12; exit cloop
                   end select
-                  call tavp%register_instr(iid,tens_instr%get_id(),jerr); if(jerr.ne.0) then; jerr=-10; exit cloop; endif
-                  call dsvp%incr_crtd_instr_counter() !new subinstruction has been created
+                  call tavp%register_instr(iid,tens_instr%get_id(),jerr); if(jerr.ne.0) then; jerr=-11; exit cloop; endif
+                  call dsvp%incr_crtd_instr_counter(); num_subinstr=num_subinstr+1 !new subinstruction has been created
                   jerr=lit%next()
                  enddo cloop
-                 if(jerr.ne.GFC_NO_MOVE) jerr=-9
+                 if(jerr.eq.GFC_NO_MOVE) then
+                  call tens_instr%set_status(tens_instr%get_status(),jerr,num_subinstr) !.error_code field will store the number of subinstructions
+                  if(jerr.ne.DSVP_SUCCESS) jerr=-10
+                 else
+                  jerr=-9
+                 endif
                  jj=lit%release(); if(jj.ne.GFC_SUCCESS.and.jerr.eq.0) jerr=-8
                 else
                  jerr=-7
@@ -2675,6 +2736,8 @@
          !subsequently appending them into the subinstruction list.
           implicit none
           integer(INTD), intent(out):: jerr !out: error code
+          integer(INTD):: jj,num_subinstr
+          integer(INTL):: iid
 
           jerr=this%sub_list%reset_back()
           if(jerr.eq.GFC_SUCCESS) then
