@@ -3232,8 +3232,8 @@
 !Work loop:
          active=(errc.eq.0); stopping=(.not.active)
          wloop: do while(active)
- !Process a new batch of parent instructions:
-  !Get a new batch of parent instructions from decomposer (port 0) into the main queue:
+ !Process a new batch of parent tensor instructions (and possibly control instructions):
+  !Get a new batch of parent tensor instructions from decomposer (port 0) into the main queue:
           ier=this%iqueue%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-52; exit wloop; endif
           ier=this%flush_port(0); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-51; exit wloop; endif
   !Register parent tensor instructions and move them into the matching list, move other instructions elsewhere:
@@ -3241,7 +3241,7 @@
           ier=this%iqueue%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-49; exit wloop; endif
           ier=this%iqueue%get_status()
           ploop: do while(ier.eq.GFC_IT_ACTIVE)
-   !Extract a tensor instruction (.error_code field contains the number of child instructions):
+   !Extract a parent tensor instruction (.error_code field contains the number of child subinstructions):
            uptr=>this%iqueue%get_value(ier); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-48; exit wloop; endif
            tens_instr=>NULL(); select type(uptr); class is(tens_instr_t); tens_instr=>uptr; end select
            if((.not.associated(tens_instr)).and.errc.eq.0) then; errc=-47; exit wloop; endif !trap
@@ -3263,7 +3263,7 @@
             case(TAVP_INSTR_CTRL_STOP,TAVP_INSTR_CTRL_PAUSE)
              ier=this%ctrl_list%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-38; exit wloop; endif
              ier=this%iqueue%move_elem(this%ctrl_list)
-             stopping=.TRUE. !`PAUSE is treate as STOP as of now
+             stopping=.TRUE. !`PAUSE is treated as STOP as of now
             case(TAVP_INSTR_CTRL_RESUME)
              call tens_instr%set_status(DS_INSTR_RETIRED,ier,DSVP_SUCCESS)
              if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-37; exit wloop; endif
@@ -3283,8 +3283,7 @@
           ier=this%iqueue%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-32; exit wloop; endif
           if(this%iqueue%get_status().ne.GFC_IT_EMPTY.and.errc.eq.0) then; errc=-31; exit wloop; endif !trap
           ier=this%def_list%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-30; exit wloop; endif
-          ier=this%def_list%get_status()
-          if(ier.eq.GFC_IT_ACTIVE) then
+          if(this%def_list%get_status().eq.GFC_IT_ACTIVE) then
            ier=this%def_list%move_list(this%iqueue); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-29; exit wloop; endif
            ier=this%iqueue%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-28; exit wloop; endif
           endif
