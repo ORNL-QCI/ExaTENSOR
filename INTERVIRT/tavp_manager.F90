@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/11/30
+!REVISION: 2017/12/01
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -67,8 +67,10 @@
 !       Other tensor argument cache entries are deleted once the reference count is zero.
 !ISSUES:
 ! # Cloning <tens_instr_t> when calling container.append(tens_instr_t): Check clonability.
-! # Check proper CRITICAL wrapping for operations on tensor cache and its content (tensors, owner_id, etc).
+! # Check proper CRITICAL wrapping for operations on tensor cache and its content (tensor, status, owner_id, etc).
 ! # Check the RAII compliance of the tensor and subtensr lifecycle: Local/Remote Tensor/Subtensor.
+! # Check the tensor owner id update logic.
+! # Check the tensor status update logic.
         use virta
         use gfc_base
         use gfc_list
@@ -192,7 +194,7 @@
         end type tavp_mng_retirer_conf_t
  !TAVP-MNG locator:
         type, extends(ds_encoder_t), private:: tavp_mng_locator_t
-         integer(INTD), public:: num_ports=2                        !number of ports: Port 0 <- udecoder; Port 1 <- ldecoder
+         integer(INTD), public:: num_ports=3                        !number of ports: Port 0 <- udecoder; Port 1 <- ldecoder; Port 2 <- decomposer (last TAVP-MNG NAT level only)
          integer(INTD), private:: ring_comm                         !MPI communicator of the locating ring (tree level)
          integer(INTD), private:: ring_send=-1                      !MPI process rank in the locating ring to which instructions are sent
          integer(INTD), private:: ring_recv=-1                      !MPI process rank in the locating ring from which instructions are received
