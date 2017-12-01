@@ -330,6 +330,8 @@
           procedure, public:: register_instr=>TAVPMNGRegisterInstr     !registers a new child instruction (subinstruction)
           procedure, public:: unregister_instr=>TAVPMNGUnregisterInstr !unregisteres a subinstruction
           procedure, public:: map_instr=>TAVPMNGMapInstr               !returns the parent instruction ID for a subinstruction
+          procedure, public:: is_top=>TAVPMNGIsTop                     !returns TRUE if the TAVP-MNG is the root of the TAVP-MNG tree
+          procedure, public:: is_bottom=>TAVPMNGIsBottom               !returns TRUE if the TAVP-MNG is a leaf of the TAVP-MNG tree
         end type tavp_mng_t
  !TAVP-MNG configuration:
         type, extends(dsv_conf_t), public:: tavp_mng_conf_t
@@ -424,6 +426,8 @@
         private TAVPMNGRegisterInstr
         private TAVPMNGUnregisterInstr
         private TAVPMNGMapInstr
+        private TAVPMNGIsTop
+        private TAVPMNGIsBottom
 !IMPLEMENTATION:
        contains
 ![non-member]=================================
@@ -3897,5 +3901,49 @@
          if(present(ierr)) ierr=errc
          return
         end function TAVPMNGMapInstr
+!---------------------------------------------------
+        function TAVPMNGIsTop(this,ierr) result(res)
+!Returns TRUE if the TAVP-MNG is the root of the TAVP-MNG tree.
+         implicit none
+         logical:: res                               !out: result
+         class(tavp_mng_t), intent(in):: this        !in: active TAVP-MNG
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         res=.FALSE.
+         if(this%get_status(errc).eq.DSVP_STAT_ON) then
+          if(errc.eq.DSVP_SUCCESS) then
+           res=(this%retirer%retire_comm.ne.role_comm) !top TAVP-MNG retires instructions outside (to Driver)
+          else
+           errc=-2
+          endif
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function TAVPMNGIsTop
+!------------------------------------------------------
+        function TAVPMNGIsBottom(this,ierr) result(res)
+!Returns TRUE if the TAVP-MNG is a leaf of the TAVP-MNG tree.
+         implicit none
+         logical:: res                               !out: result
+         class(tavp_mng_t), intent(in):: this        !in: active TAVP-MNG
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         res=.FALSE.
+         if(this%get_status(errc).eq.DSVP_STAT_ON) then
+          if(errc.eq.DSVP_SUCCESS) then
+           res=(this%dispatcher%dispatch_comm.ne.role_comm) !leaf TAVP-MNG dispatches instructions outside (to Workers)
+          else
+           errc=-2
+          endif
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function TAVPMNGIsBottom
 
        end module tavp_manager
