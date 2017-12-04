@@ -247,7 +247,8 @@
          integer(INTD), public:: num_ports=1                        !number of ports: Port 0 <- decomposer
          integer(INTD), private:: dispatch_comm                     !MPI communicator of the processes dispatched to
          integer(INTD), private:: num_ranks=0                       !number of MPI ranks to dispatch instructions to
-         integer(INTD), allocatable, private:: dispatch_rank(:)     !MPI process ranks of the processes dispatched to
+         integer(INTD), allocatable, private:: dispatch_rank(:)     !MPI process ranks of the processes dispatched to (within their communicator)
+         real(8), allocatable, private:: dispatch_flops(:)          !Flop count for currently dispatched tensor instructions
          type(pack_env_t), allocatable, private:: bytecode(:)       !outgoing bytecode buffer for each dispatched rank
          class(tens_cache_t), pointer, private:: arg_cache=>NULL()  !non-owning pointer to the tensor argument cache
          type(list_bi_t), private:: control_list                    !list of control instructions
@@ -2931,7 +2932,7 @@
          class(tavp_mng_dispatcher_t), intent(inout):: this !inout: TAVP-MNG Dispatcher DSVU
          integer(INTD), intent(out), optional:: ierr        !out: error code
          integer(INTD):: errc,ier,thid,i
-         logical:: active,stopping
+         logical:: active,stopping,bottom_tavp
          class(dsvp_t), pointer:: dsvp
          class(tavp_mng_t), pointer:: tavp
          class(tens_rcrsv_t), pointer:: tensor
@@ -2944,11 +2945,20 @@
           flush(CONS_OUT)
          endif
 !Reserve bytecode buffers:
-         allocate(this%bytecode(this%num_ranks),STAT=ier); if(ier.ne.0.and.errc.eq.0) errc=-1
+         allocate(this%bytecode(this%num_ranks),STAT=ier)
          if(ier.eq.0) then
           do i=1,this%num_ranks
            call this%bytecode(i)%reserve_mem(ier,MAX_BYTECODE_SIZE,MAX_BYTECODE_INSTR); if(ier.ne.0.and.errc.eq.0) errc=-1
           enddo
+         else
+          if(errc.eq.0) errc=-1
+         endif
+!Allocate Flop counters:
+         allocate(this%dispatch_flops(this%num_ranks),STAT=ier)
+         if(ier.eq.0) then
+          this%dispatch_flops(:)=0d0
+         else
+          if(errc.eq.0) errc=-1
          endif
 !Initialize queues:
          call this%init_queue(this%num_ports,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-1
@@ -2962,14 +2972,18 @@
          else
           this%arg_cache=>NULL(); if(errc.eq.0) errc=-1
          endif
+!Check whether this TAVP-MNG is at the bottom of the TAVP-MNG hierarchy:
+         bottom_tavp=tavp%is_bottom(ier); if(ier.ne.0.and.errc.eq.0) errc=-1
 !Work loop:
          active=((errc.eq.0).and.(this%dispatch_comm.ne.MPI_COMM_NULL)); stopping=(.not.active)
          wloop: do while(active)
- !Receive newly created (child) instructions from Decomposer (port 0):
- !Dispatch the instructions into the bytecode buffers of child NAT nodes:
- !Issue (send) the bytecode to each child NAT node:
+ !Receive newly created child subinstructions from Decomposer port 0:
+          ier=this%iqueue%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+          ier=this%flush_port(0); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+ !Dispatch/encode the instructions into the bytecode buffers of the child TAVPs:
+ !Issue (send) the bytecode to each child TAVP:
  !Delete instructions from the main queue:
- !Synchronize the bytecode sends:
+ !Synchronize the bytecode sends to each TAVP:
          enddo wloop
 !Record the error:
          ier=this%get_error(); if(ier.eq.DSVP_SUCCESS) call this%set_error(errc)
@@ -3010,11 +3024,14 @@
          endif
 !Release queues:
          call this%release_queue(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-2
+!Deallocate Flop counters:
+         if(allocated(this%dispatch_flops)) deallocate(this%dispatch_flops)
 !Release bytecode buffers:
          if(allocated(this%bytecode)) then
           do i=ubound(this%bytecode,1),lbound(this%bytecode,1),-1
            call this%bytecode(i)%destroy(ier); if(ier.ne.0.and.errc.eq.0) errc=-1
           enddo
+          deallocate(this%bytecode)
          endif
 !Record an error, if any:
          ier=this%get_error(); if(ier.eq.DSVP_SUCCESS) call this%set_error(errc)
