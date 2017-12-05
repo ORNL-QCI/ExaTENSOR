@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Bi-directional linked list
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017-11-14 (started 2016-02-28)
+!REVISION: 2017-12-05 (started 2016-02-28)
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -1065,7 +1065,7 @@
 !------------------------------------------------------------------
         function ListIterDelete(this,dtor_f,value_out) result(ierr)
 !Deletes the element in the current iterator position. The current
-!iterator position moves to the preious element, unless there is none.
+!iterator position moves to the previous element, unless there is none.
 !In the latter case, it moves to the next element, unless there is none.
 !In the latter case, the iterator/container becomes empty.
 !If <value_out> is present, the list element value will not be deleted

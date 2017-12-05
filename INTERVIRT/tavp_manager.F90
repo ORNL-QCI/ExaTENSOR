@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/12/04
+!REVISION: 2017/12/05
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -146,12 +146,13 @@
          integer(INTD), private:: num_out_oprnds=0                    !number of the output tensor instruction operands
          integer(INTD), private:: out_oprnds(0:MAX_TENSOR_OPERANDS-1) !tensor instruction operands which are considered output (to sync on them for completion)
          contains
-          procedure, private:: TensInstrCtor                          !ctor: constructs a tensor instruction from the specification of a tensor operation
+          procedure, private:: TensInstrCtor                              !ctor: constructs a tensor instruction from the specification of a tensor operation
           generic, public:: tens_instr_ctor=>TensInstrCtor
-          procedure, public:: encode=>TensInstrEncode                 !encoding procedure: Packs the TAVP instruction into a raw byte packet
-          procedure, public:: fully_located=>TensInstrFullyLocated    !returns TRUE if the tensor instruction operands have been fully located, FALSE otherwise
+          procedure, public:: encode=>TensInstrEncode                     !encoding procedure: Packs the TAVP instruction into a raw byte packet
+          procedure, public:: fully_located=>TensInstrFullyLocated        !returns TRUE if the tensor instruction operands have been fully located, FALSE otherwise
           procedure, public:: get_cache_entries=>TensInstrGetCacheEntries !returns an array of references to tensor cache entries used by the tensor operands
-          final:: tens_instr_dtor                                     !dtor
+          procedure, public:: get_flops=>TensInstrGetFlops                !returns an estimate of the total number of Flops (mul/add) required
+          final:: tens_instr_dtor                                         !dtor
         end type tens_instr_t
  !TAVP-MNG decoder:
         type, extends(ds_decoder_t), private:: tavp_mng_decoder_t
@@ -247,19 +248,25 @@
          integer(INTD), public:: num_ports=1                        !number of ports: Port 0 <- decomposer
          integer(INTD), private:: dispatch_comm                     !MPI communicator of the processes dispatched to
          integer(INTD), private:: num_ranks=0                       !number of MPI ranks to dispatch instructions to
-         integer(INTD), allocatable, private:: dispatch_rank(:)     !MPI process ranks of the processes dispatched to (within their communicator)
-         real(8), allocatable, private:: dispatch_flops(:)          !Flop count for currently dispatched tensor instructions
-         type(pack_env_t), allocatable, private:: bytecode(:)       !outgoing bytecode buffer for each dispatched rank
+         integer(INTD), allocatable, private:: dispatch_rank(:)     !MPI ranks of the processes dispatched to (within their communicator)
+         integer(INTL), allocatable, private:: dispatch_count(:)    !current number of tensor instructions dispatched to each MPI rank
+         real(8), allocatable, private:: dispatch_flops(:)          !Flop count for currently dispatched tensor instructions for each MPI rank
+         type(pack_env_t), allocatable, private:: bytecode(:)       !outgoing bytecode buffer for each dispatched MPI rank
+         type(comm_handle_t), allocatable, private:: comm_hl(:)     !communication handle for each dispatched MPI rank
          class(tens_cache_t), pointer, private:: arg_cache=>NULL()  !non-owning pointer to the tensor argument cache
          type(list_bi_t), private:: control_list                    !list of control instructions
          type(list_iter_t), private:: ctrl_list                     !iterator for <control_list>
          contains
-          procedure, public:: configure=>TAVPMNGDispatcherConfigure !configures TAVP-MNG dispatcher
-          procedure, public:: start=>TAVPMNGDispatcherStart         !starts and lives TAVP-MNG dispatcher
-          procedure, public:: shutdown=>TAVPMNGDispatcherShutdown   !shuts down TAVP-MNG dispatcher
-          procedure, public:: encode=>TAVPMNGDispatcherEncode       !encodes a DS instruction into the DS bytecode
-          procedure, public:: dispatch=>TAVPMNGDispatcherDispatch   !dispatches a DS instruction to a specific lower-level TAVP
-          procedure, public:: issue=>TAVPMNGDispatcherIssue         !issues (sends) instruction bytecode to a lower-level TAVP
+          procedure, public:: configure=>TAVPMNGDispatcherConfigure  !configures TAVP-MNG dispatcher
+          procedure, public:: start=>TAVPMNGDispatcherStart          !starts and lives TAVP-MNG dispatcher
+          procedure, public:: shutdown=>TAVPMNGDispatcherShutdown    !shuts down TAVP-MNG dispatcher
+          procedure, public:: encode=>TAVPMNGDispatcherEncode        !encodes a DS instruction into the DS bytecode
+          procedure, public:: map_instr=>TAVPMNGDispatcherMapInstr   !maps a DS instruction to a specific lower-level TAVP
+          procedure, public:: dispatch=>TAVPMNGDispatcherDispatch    !dispatches a DS instruction to a specific lower-level TAVP bytecode buffer
+          procedure, public:: issue=>TAVPMNGDispatcherIssue          !issues (sends) instructions bytecode to a lower-level TAVP (async)
+          procedure, public:: sync_issue=>TAVPMNGDispatcherSyncIssue !synchronizes asynchronous instruction bytecode issue to lower-level TAVPs
+          procedure, public:: update_dispatch_count=>TAVPMNGUpdateDispatchCount !updates the current instruction dispatch count
+          procedure, public:: update_dispatch_flops=>TAVPMNGUpdateDispatchFlops !updates the current instruction dispatch Flop count
         end type tavp_mng_dispatcher_t
  !TAVP-MNG dispatcher configuration:
         type, extends(dsv_conf_t), private:: tavp_mng_dispatcher_conf_t
@@ -384,6 +391,7 @@
         private TensInstrEncode
         private TensInstrFullyLocated
         private TensInstrGetCacheEntries
+        private TensInstrGetFlops
         public tens_instr_dtor
  !tavp_mng_decoder_t:
         private TAVPMNGDecoderConfigure
@@ -410,8 +418,12 @@
         private TAVPMNGDispatcherStart
         private TAVPMNGDispatcherShutdown
         private TAVPMNGDispatcherEncode
+        private TAVPMNGDispatcherMapInstr
         private TAVPMNGDispatcherDispatch
         private TAVPMNGDispatcherIssue
+        private TAVPMNGDispatcherSyncIssue
+        private TAVPMNGUpdateDispatchCount
+        private TAVPMNGUpdateDispatchFlops
  !tavp_mng_replicator_t:
         private TAVPMNGReplicatorConfigure
         private TAVPMNGReplicatorStart
@@ -1339,6 +1351,66 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensInstrGetCacheEntries
+!-------------------------------------------------------------------------------------
+        function TensInstrGetFlops(this,ierr,arithm_intensity,tot_words) result(flops)
+!Returns an estimate of the Flop count as well as arithmetic intensity and total word count.
+         implicit none
+         real(8):: flops                                   !out: estimate of the total number of Flops
+         class(tens_instr_t), intent(in):: this            !in: active tensor instruction
+         integer(INTD), intent(out), optional:: ierr       !out: error code
+         real(8), intent(out), optional:: arithm_intensity !out: arithmetic intensity estimate (Flops/words ratio)
+         real(8), intent(out), optional:: tot_words        !out: total words estimate
+         integer(INTD):: errc,opcode,i,j,n
+         integer(INTL):: dims(1:MAX_TENSOR_RANK)
+         class(ds_oprnd_t), pointer:: tens_oprnd
+         class(tens_rcrsv_t), pointer:: tensor
+         real(8):: vol,tvol,words
+
+         flops=0d0; words=0d0
+         if(this%is_active(errc)) then
+          if(errc.eq.DSVP_SUCCESS) then
+           opcode=this%get_code(errc)
+           if(errc.eq.DSVP_SUCCESS) then
+            select case(opcode)
+            case(TAVP_INSTR_TENS_CONTRACT)
+             tvol=1d0
+             oloop: do i=0,2 !loop over tensor operands
+              tens_oprnd=>this%get_operand(i,errc); if(errc.ne.DSVP_SUCCESS) then; errc=-7; exit oloop; endif
+              select type(tens_oprnd)
+              class is(tens_oprnd_t)
+               tensor=>tens_oprnd%get_tensor(errc); if(errc.ne.0) then; errc=-6; exit oloop; endif
+               call tensor%get_dims(dims,n,errc); if(errc.ne.TEREC_SUCCESS) then; errc=-5; exit oloop; endif
+               vol=1d0; do j=1,n; vol=vol*dims(j); enddo
+               tvol=tvol*vol; words=words+vol
+              class default
+               errc=-4; exit oloop
+              end select
+             enddo oloop
+             if(errc.eq.0) flops=dsqrt(tvol)*2d0 !factor of 2 because of additions (along with multiplications)
+            case default
+             !`Implement Flop counting for other tensor instructions
+             flops=1d0 !default (meaningless) value
+            end select
+           else
+            errc=-3
+           endif
+          else
+           errc=-2
+          endif
+         else
+          errc=-1
+         endif
+         if(present(arithm_intensity)) then
+          if(errc.eq.0.and.words.gt.0d0) then
+           arithm_intensity=flops/words
+          else
+           arithm_intensity=-1d0
+          endif
+         endif
+         if(present(tot_words).and.errc.eq.0) tot_words=words
+         if(present(ierr)) ierr=errc
+         return
+        end function TensInstrGetFlops
 !---------------------------------------
         subroutine tens_instr_dtor(this)
          implicit none
@@ -2931,11 +3003,10 @@
          implicit none
          class(tavp_mng_dispatcher_t), intent(inout):: this !inout: TAVP-MNG Dispatcher DSVU
          integer(INTD), intent(out), optional:: ierr        !out: error code
-         integer(INTD):: errc,ier,thid,i
+         integer(INTD):: errc,ier,thid,i,opcode,sts,iec
          logical:: active,stopping,bottom_tavp
          class(dsvp_t), pointer:: dsvp
          class(tavp_mng_t), pointer:: tavp
-         class(tens_rcrsv_t), pointer:: tensor
          class(tens_instr_t), pointer:: tens_instr
          class(*), pointer:: uptr
 
@@ -2944,19 +3015,22 @@
           write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Dispatcher started as DSVU # ",i2," (thread ",i2,")")') impir,this%get_id(),thid
           flush(CONS_OUT)
          endif
-!Reserve bytecode buffers:
-         allocate(this%bytecode(this%num_ranks),STAT=ier)
+!Reserve bytecode buffers and communication handles:
+         allocate(this%bytecode(this%num_ranks),this%comm_hl(this%num_ranks),STAT=ier)
          if(ier.eq.0) then
           do i=1,this%num_ranks
            call this%bytecode(i)%reserve_mem(ier,MAX_BYTECODE_SIZE,MAX_BYTECODE_INSTR); if(ier.ne.0.and.errc.eq.0) errc=-1
           enddo
+          do i=1,this%num_ranks
+           call this%comm_hl(i)%clean(ier); if(ier.ne.0.and.errc.eq.0) errc=-1
+          enddo
          else
           if(errc.eq.0) errc=-1
          endif
-!Allocate Flop counters:
-         allocate(this%dispatch_flops(this%num_ranks),STAT=ier)
+!Allocate dispatched instruction counters:
+         allocate(this%dispatch_count(this%num_ranks),this%dispatch_flops(this%num_ranks),STAT=ier)
          if(ier.eq.0) then
-          this%dispatch_flops(:)=0d0
+          this%dispatch_count(:)=0; this%dispatch_flops(:)=0d0
          else
           if(errc.eq.0) errc=-1
          endif
@@ -2977,13 +3051,44 @@
 !Work loop:
          active=((errc.eq.0).and.(this%dispatch_comm.ne.MPI_COMM_NULL)); stopping=(.not.active)
          wloop: do while(active)
- !Receive newly created child subinstructions from Decomposer port 0:
+ !Receive newly created child subinstructions from Decomposer into port 0:
           ier=this%iqueue%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
           ier=this%flush_port(0); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
- !Dispatch/encode the instructions into the bytecode buffers of the child TAVPs:
- !Issue (send) the bytecode to each child TAVP:
- !Delete instructions from the main queue:
- !Synchronize the bytecode sends to each TAVP:
+          ier=this%iqueue%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+ !Dispatch/encode the instructions into the bytecode buffers to be issued to the child TAVPs:
+          ier=this%iqueue%get_status()
+          dloop: do while(ier.eq.GFC_IT_ACTIVE)
+  !Extract an instruction:
+           uptr=>this%iqueue%get_value(ier); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+           tens_instr=>NULL(); select type(uptr); class is(tens_instr_t); tens_instr=>uptr; end select
+           if((.not.associated(tens_instr)).and.errc.eq.0) then; errc=-1; exit wloop; endif !trap
+           sts=tens_instr%get_status(ier,iec); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+           if((sts.ne.DS_INSTR_ISSUED.or.iec.ne.DSVP_SUCCESS).and.errc.eq.0) then; errc=-1; exit wloop; endif !trap
+           call tens_instr%set_status(DS_INSTR_NEW,ier,iec) !reset the instruction status to NEW before sending to the lower level
+           if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+           opcode=tens_instr%get_code(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+           if(opcode.ge.TAVP_ISA_TENS_FIRST.and.opcode.le.TAVP_ISA_TENS_LAST) then
+  !Encode a tensor instruction and dispatch it to the appropriate channel:
+            
+           else
+  !Check on control instructions:
+            if(opcode.eq.TAVP_INSTR_CTRL_STOP.or.opcode.eq.TAVP_INSTR_CTRL_PAUSE) stopping=.TRUE. !`Currently STOP and PAUSE have the same effect
+  !Encode an auxiliary/control instruction and dispatch it to all channels:
+            do i=lbound(this%dispatch_rank,1),ubound(this%dispatch_rank,1)
+             call this%dispatch(tens_instr,i,ier); if(ier.ne.0.and.errc.eq.0) then; errc=-1; exit wloop; endif
+            enddo
+           endif
+  !Issue (send) the bytecode to the child TAVPs:
+           
+  !Delete the dispatched instruction from the main queue:
+           call tens_instr%set_status(DS_INSTR_RETIRED,ier,DSVP_SUCCESS)
+           if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+           ier=this%iqueue%delete(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+  !Synchronize the bytecode sends to each TAVP:
+           
+           ier=this%iqueue%get_status()
+          enddo dloop
+          if(ier.ne.GFC_IT_EMPTY.and.errc.eq.0) then; errc=-1; exit wloop; endif
          enddo wloop
 !Record the error:
          ier=this%get_error(); if(ier.eq.DSVP_SUCCESS) call this%set_error(errc)
@@ -3015,18 +3120,25 @@
          if(ier.eq.GFC_SUCCESS) then
           ier=this%ctrl_list%get_status()
           if(ier.ne.GFC_IT_EMPTY) then
-           if(errc.eq.0) errc=-5
+           if(errc.eq.0) errc=-6
            ier=this%ctrl_list%delete_all()
           endif
-          ier=this%ctrl_list%release(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-4
+          ier=this%ctrl_list%release(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-5
          else
-          if(errc.eq.0) errc=-3
+          if(errc.eq.0) errc=-4
          endif
 !Release queues:
-         call this%release_queue(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-2
-!Deallocate Flop counters:
+         call this%release_queue(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-3
+!Deallocate dispatched instruction counters:
          if(allocated(this%dispatch_flops)) deallocate(this%dispatch_flops)
-!Release bytecode buffers:
+         if(allocated(this%dispatch_count)) deallocate(this%dispatch_count)
+!Release bytecode buffers and communication handles:
+         if(allocated(this%comm_hl)) then
+          do i=ubound(this%comm_hl,1),lbound(this%comm_hl,1),-1
+           call this%comm_hl(i)%clean(ier); if(ier.ne.0.and.errc.eq.0) errc=-2
+          enddo
+          deallocate(this%comm_hl)
+         endif
          if(allocated(this%bytecode)) then
           do i=ubound(this%bytecode,1),lbound(this%bytecode,1),-1
            call this%bytecode(i)%destroy(ier); if(ier.ne.0.and.errc.eq.0) errc=-1
@@ -3060,14 +3172,49 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TAVPMNGDispatcherEncode
+!-------------------------------------------------------------------------------
+        function TAVPMNGDispatcherMapInstr(this,tens_instr,ierr) result(channel)
+!Maps a tensor instruction to a specific lower-level (child) TAVP based
+!on the tensor argument locality and load imbalance.
+         implicit none
+         integer(INTD):: channel                            !out: channel: TAVP id can be retrieved from this.dispatch_rank(channel)
+         class(tavp_mng_dispatcher_t), intent(inout):: this !inout: TAVP-MNG Dispatcher DSVU
+         class(tens_instr_t), intent(in):: tens_instr       !in: active tensor instruction
+         integer(INTD), intent(out), optional:: ierr        !out: error code
+         integer(INTD):: errc,id
+         class(ds_oprnd_t), pointer:: tens_oprnd
+
+         if(tens_instr%is_active(errc)) then
+          if(errc.eq.DSVP_SUCCESS) then
+           tens_oprnd=>tens_instr%get_operand(0,errc) !get the destination operand
+           if(errc.eq.DSVP_SUCCESS) then
+            select type(tens_oprnd)
+            class is(tens_oprnd_t)
+             id=tens_oprnd%get_owner_id(errc)
+             !`Finish
+            class default
+             errc=-4
+            end select
+           else
+            errc=-3
+           endif
+          else
+           errc=-2
+          endif
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function TAVPMNGDispatcherMapInstr
 !-------------------------------------------------------------------------
         subroutine TAVPMNGDispatcherDispatch(this,tens_instr,channel,ierr)
 !Dispatches a tensor instruction to a specific lower-level TAVP
-!and encodes it into its bytecode container.
+!and encodes it into its bytecode buffer.
          implicit none
          class(tavp_mng_dispatcher_t), intent(inout):: this   !inout: TAVP-MNG Dispatcher DSVU
          class(tens_instr_t), target, intent(in):: tens_instr !in: defined tensor instruction
-         integer(INTD), intent(in):: channel                  !in: offset in this.bytecode(:)
+         integer(INTD), intent(in):: channel                  !in: offset in this.bytecode(1:max)
          integer(INTD), intent(out), optional:: ierr          !out: error code
          integer(INTD):: errc
          type(obj_pack_t):: instr_packet
@@ -3078,7 +3225,14 @@
           if(errc.eq.PACK_SUCCESS) then
            call this%encode(tens_instr,instr_packet,errc)
            if(errc.eq.0) then
-            call this%bytecode(channel)%seal_packet(errc); if(errc.ne.PACK_SUCCESS) errc=-4
+            call this%bytecode(channel)%seal_packet(errc)
+            if(errc.eq.PACK_SUCCESS) then
+             call this%update_dispatch_count(channel,1_INTL) !update current instruction count for this channel
+             call this%update_dispatch_flops(channel,tens_instr%get_flops(errc)) !update current Flop count for this channel
+             if(errc.ne.0) errc=-5
+            else
+             errc=-4
+            endif
            else
             errc=-3
            endif
@@ -3096,19 +3250,101 @@
 !Issues the encoded bytecode to a specific dispatch channel.
          implicit none
          class(tavp_mng_dispatcher_t), intent(inout):: this !inout: TAVP-MNG Dispatcher DSVU
-         integer(INTD), intent(in):: channel                !in: offset in this.bytecode(:)
+         integer(INTD), intent(in):: channel                !in: offset in this.bytecode(1:max)
          integer(INTD), intent(out), optional:: ierr        !out: error code
          integer(INTD):: errc
 
          errc=0
          if(channel.ge.lbound(this%dispatch_rank,1).and.channel.le.ubound(this%dispatch_rank,1)) then
-          !`Implement: Send the current bytecode(channel) to the recepient
+          if(this%comm_hl(channel)%is_clean(errc)) then
+           if(errc.eq.0) then
+            call this%bytecode(channel)%send(this%dispatch_rank(channel),this%comm_hl(channel),errc,comm=this%dispatch_comm)
+            if(errc.ne.0) errc=-4
+           else
+            errc=-3
+           endif
+          else
+           errc=-2
+          endif
          else
           errc=-1
          endif
          if(present(ierr)) ierr=errc
          return
         end subroutine TAVPMNGDispatcherIssue
+!----------------------------------------------------------------------------
+        function TAVPMNGDispatcherSyncIssue(this,ierr,channel) result(synced)
+!Synchronizes asynchronous instruction bytecode issue for channel <channel>.
+!If <channel> is not provided, all active channels will be sychronized.
+!Upon success, the corresponding bytecode buffer(s) will be cleaned.
+         implicit none
+         logical:: synced                                   !out: TRUE if the channel(s) have been synchronized
+         class(tavp_mng_dispatcher_t), intent(inout):: this !inout: TAVP-MNG Dispatcher DSVU
+         integer(INTD), intent(out), optional:: ierr        !out: error code
+         integer(INTD), intent(in), optional:: channel      !in: specific dispatch channel to synchronize
+         integer(INTD):: errc,i
+
+         errc=0; synced=.FALSE.
+         if(present(channel)) then !sync a specific channel
+          if(channel.ge.lbound(this%dispatch_rank,1).and.channel.le.ubound(this%dispatch_rank,1)) then
+           call this%comm_hl(channel)%wait(errc); if(errc.ne.0) errc=-7
+           if(errc.eq.0) then; call this%comm_hl(channel)%clean(errc); if(errc.ne.0) errc=-6; endif
+           if(errc.eq.0) then; call this%bytecode(channel)%destroy(errc); if(errc.ne.0) errc=-5; endif
+          else
+           errc=-4
+          endif
+         else !sync all channels
+          do i=lbound(this%dispatch_rank,1),ubound(this%dispatch_rank,1)
+           call this%comm_hl(i)%wait(errc); if(errc.ne.0) errc=-3
+           if(errc.eq.0) then; call this%comm_hl(i)%clean(errc); if(errc.ne.0) errc=-2; endif
+           if(errc.eq.0) then; call this%bytecode(i)%destroy(errc); if(errc.ne.0) errc=-1; endif
+           if(errc.ne.0) exit
+          enddo
+         endif
+         if(errc.eq.0) synced=.TRUE.
+         if(present(ierr)) ierr=errc
+         return
+        end function TAVPMNGDispatcherSyncIssue
+!---------------------------------------------------------------------
+        subroutine TAVPMNGUpdateDispatchCount(this,channel,delta,ierr)
+!Updates the current instruction dispatch count.
+         implicit none
+         class(tavp_mng_dispatcher_t), intent(inout):: this !inout: TAVP-MNG dispatcher DSVU
+         integer(INTD), intent(in):: channel                !in: channel to update count for
+         integer(INTL), intent(in):: delta                  !in: delta to update
+         integer(INTD), intent(out), optional:: ierr        !out: error code
+         integer(INTD):: errc
+
+         errc=0
+         if(channel.ge.lbound(this%dispatch_rank,1).and.channel.le.ubound(this%dispatch_rank,1)) then
+!$OMP ATOMIC UPDATE
+          this%dispatch_count(channel)=this%dispatch_count(channel)+delta
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TAVPMNGUpdateDispatchCount
+!---------------------------------------------------------------------
+        subroutine TAVPMNGUpdateDispatchFlops(this,channel,delta,ierr)
+!Updates the current instruction dispatch Flop count.
+         implicit none
+         class(tavp_mng_dispatcher_t), intent(inout):: this !inout: TAVP-MNG dispatcher DSVU
+         integer(INTD), intent(in):: channel                !in: channel to update Flop count for
+         real(8), intent(in):: delta                        !in: delta to update
+         integer(INTD), intent(out), optional:: ierr        !out: error code
+         integer(INTD):: errc
+
+         errc=0
+         if(channel.ge.lbound(this%dispatch_rank,1).and.channel.le.ubound(this%dispatch_rank,1)) then
+!$OMP ATOMIC UPDATE
+          this%dispatch_flops(channel)=this%dispatch_flops(channel)+delta
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TAVPMNGUpdateDispatchFlops
 ![tavp_mng_replicator_t]=====================================
         subroutine TAVPMNGReplicatorConfigure(this,conf,ierr)
 !Configures this DSVU.
