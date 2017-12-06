@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/12/05
+!REVISION: 2017/12/06
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -2754,8 +2754,7 @@
           integer(INTL):: iid
           class(ds_oprnd_t), pointer:: oprnd,tens_oprnd
           class(tens_header_t), pointer:: header
-          class(tens_rcrsv_t), pointer:: tensor
-          type(tens_rcrsv_t), pointer:: subtensor
+          class(tens_rcrsv_t), pointer:: tensor,subtensor
           class(tens_cache_entry_t), pointer:: tens_entry
           class(tens_entry_mng_t), pointer:: tens_entry_mng
           class(tens_instr_t), pointer:: subinstr
@@ -2783,7 +2782,7 @@
                   uptr=>lit%get_value(jerr); if(jerr.ne.GFC_SUCCESS) then; jerr=-25; exit cloop; endif
                   header=>NULL(); select type(uptr); class is(tens_header_t); header=>uptr; end select
                   if(.not.associated(header)) then; jerr=-24; exit cloop; endif !trap
-                  allocate(subtensor,STAT=jerr); if(jerr.ne.0) then; jerr=-23; exit cloop; endif
+                  allocate(tens_rcrsv_t::subtensor,STAT=jerr); if(jerr.ne.0) then; jerr=-23; exit cloop; endif
                   call subtensor%tens_rcrsv_ctor(header,jerr)
                   if(jerr.ne.TEREC_SUCCESS) then; deallocate(subtensor); jerr=-22; exit cloop; endif
 !$OMP CRITICAL (TAVP_MNG_CACHE)
@@ -2855,8 +2854,7 @@
           integer(INTL):: iid
           class(ds_oprnd_t), pointer:: oprnd,tens_oprnd
           class(tens_header_t), pointer:: header
-          class(tens_rcrsv_t), pointer:: tensor
-          type(tens_rcrsv_t), pointer:: subtensor
+          class(tens_rcrsv_t), pointer:: tensor,subtensor
           class(tens_cache_entry_t), pointer:: tens_entry
           class(tens_entry_mng_t), pointer:: tens_entry_mng
           class(tens_instr_t), pointer:: subinstr
@@ -2883,7 +2881,7 @@
                   uptr=>lit%get_value(jerr); if(jerr.ne.GFC_SUCCESS) then; jerr=-27; exit cloop; endif
                   header=>NULL(); select type(uptr); class is(tens_header_t); header=>uptr; end select
                   if(.not.associated(header)) then; jerr=-26; exit cloop; endif !trap
-                  allocate(subtensor,STAT=jerr); if(jerr.ne.0) then; jerr=-25; exit cloop; endif
+                  allocate(tens_rcrsv_t::subtensor,STAT=jerr); if(jerr.ne.0) then; jerr=-25; exit cloop; endif
                   call subtensor%tens_rcrsv_ctor(header,jerr)
                   if(jerr.ne.TEREC_SUCCESS) then; deallocate(subtensor); jerr=-24; exit cloop; endif
 !$OMP CRITICAL (TAVP_MNG_CACHE)
