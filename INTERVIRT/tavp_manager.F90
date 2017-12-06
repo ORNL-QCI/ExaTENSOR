@@ -97,6 +97,7 @@
         real(8), private:: MAX_DECOMPOSE_PHASE_TIME=0.5d-3     !max time (sec) before passing instructions to Dispatcher
  !Dispatcher:
         integer(INTD), private:: MAX_ISSUE_INSTR=4096          !max number of tensor instructions in the bytecode issued to a child node
+        integer(INTD), private:: MIN_ISSUE_INSTR=512           !min number of tensor instructions being currently processed by a child node
  !Collector:
         integer(INTD), private:: MAX_COLLECT_INSTR=8192        !max number of active tensor (sub-)instructions in the collection phase
  !Retirer:
@@ -254,8 +255,6 @@
          type(pack_env_t), allocatable, private:: bytecode(:)       !outgoing bytecode buffer for each dispatched MPI rank
          type(comm_handle_t), allocatable, private:: comm_hl(:)     !communication handle for each dispatched MPI rank
          class(tens_cache_t), pointer, private:: arg_cache=>NULL()  !non-owning pointer to the tensor argument cache
-         type(list_bi_t), private:: control_list                    !list of control instructions
-         type(list_iter_t), private:: ctrl_list                     !iterator for <control_list>
          contains
           procedure, public:: configure=>TAVPMNGDispatcherConfigure  !configures TAVP-MNG dispatcher
           procedure, public:: start=>TAVPMNGDispatcherStart          !starts and lives TAVP-MNG dispatcher
@@ -3001,8 +3000,8 @@
          implicit none
          class(tavp_mng_dispatcher_t), intent(inout):: this !inout: TAVP-MNG Dispatcher DSVU
          integer(INTD), intent(out), optional:: ierr        !out: error code
-         integer(INTD):: errc,ier,thid,i,opcode,sts,iec
-         logical:: active,stopping,bottom_tavp
+         integer(INTD):: errc,ier,thid,i,n,opcode,sts,iec,channel
+         logical:: active,stopping,bottom_tavp,synced
          class(dsvp_t), pointer:: dsvp
          class(tavp_mng_t), pointer:: tavp
          class(tens_instr_t), pointer:: tens_instr
@@ -3017,76 +3016,86 @@
          allocate(this%bytecode(this%num_ranks),this%comm_hl(this%num_ranks),STAT=ier)
          if(ier.eq.0) then
           do i=1,this%num_ranks
-           call this%bytecode(i)%reserve_mem(ier,MAX_BYTECODE_SIZE,MAX_BYTECODE_INSTR); if(ier.ne.0.and.errc.eq.0) errc=-1
+           call this%bytecode(i)%reserve_mem(ier,MAX_BYTECODE_SIZE,MAX_BYTECODE_INSTR); if(ier.ne.0.and.errc.eq.0) errc=-29
           enddo
           do i=1,this%num_ranks
-           call this%comm_hl(i)%clean(ier); if(ier.ne.0.and.errc.eq.0) errc=-1
+           call this%comm_hl(i)%clean(ier); if(ier.ne.0.and.errc.eq.0) errc=-28
           enddo
          else
-          if(errc.eq.0) errc=-1
+          if(errc.eq.0) errc=-27
          endif
 !Allocate dispatched instruction counters:
          allocate(this%dispatch_count(this%num_ranks),this%dispatch_flops(this%num_ranks),STAT=ier)
          if(ier.eq.0) then
           this%dispatch_count(:)=0; this%dispatch_flops(:)=0d0
          else
-          if(errc.eq.0) errc=-1
+          if(errc.eq.0) errc=-26
          endif
 !Initialize queues:
-         call this%init_queue(this%num_ports,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-1
-!Initialize the control list:
-         ier=this%ctrl_list%init(this%control_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-1
+         call this%init_queue(this%num_ports,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-25
 !Set up tensor argument cache and wait on other TAVP units:
          tavp=>NULL(); dsvp=>this%get_dsvp(); select type(dsvp); class is(tavp_mng_t); tavp=>dsvp; end select
          if(associated(tavp)) then
           this%arg_cache=>tavp%tens_cache
-          call tavp%sync_units(errc,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-1
+          call tavp%sync_units(errc,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-24
          else
-          this%arg_cache=>NULL(); if(errc.eq.0) errc=-1
+          this%arg_cache=>NULL(); if(errc.eq.0) errc=-23
          endif
 !Check whether this TAVP-MNG is at the bottom of the TAVP-MNG hierarchy:
-         bottom_tavp=tavp%is_bottom(ier); if(ier.ne.0.and.errc.eq.0) errc=-1
+         bottom_tavp=tavp%is_bottom(ier); if(ier.ne.0.and.errc.eq.0) errc=-22
 !Work loop:
          active=((errc.eq.0).and.(this%dispatch_comm.ne.MPI_COMM_NULL)); stopping=(.not.active)
          wloop: do while(active)
  !Receive newly created child subinstructions from Decomposer into port 0:
-          ier=this%iqueue%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
-          ier=this%flush_port(0); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
-          ier=this%iqueue%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+          ier=this%iqueue%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-21; exit wloop; endif
+          ier=this%flush_port(0); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-20; exit wloop; endif
  !Dispatch/encode the instructions into the bytecode buffers to be issued to the child TAVPs:
+          ier=this%iqueue%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-19; exit wloop; endif
           ier=this%iqueue%get_status()
           dloop: do while(ier.eq.GFC_IT_ACTIVE)
   !Extract an instruction:
-           uptr=>this%iqueue%get_value(ier); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+           uptr=>this%iqueue%get_value(ier); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-18; exit wloop; endif
            tens_instr=>NULL(); select type(uptr); class is(tens_instr_t); tens_instr=>uptr; end select
-           if((.not.associated(tens_instr)).and.errc.eq.0) then; errc=-1; exit wloop; endif !trap
-           sts=tens_instr%get_status(ier,iec); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
-           if((sts.ne.DS_INSTR_ISSUED.or.iec.ne.DSVP_SUCCESS).and.errc.eq.0) then; errc=-1; exit wloop; endif !trap
+           if((.not.associated(tens_instr)).and.errc.eq.0) then; errc=-17; exit wloop; endif !trap
+           sts=tens_instr%get_status(ier,iec); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-16; exit wloop; endif
+           if((sts.ne.DS_INSTR_ISSUED.or.iec.ne.DSVP_SUCCESS).and.errc.eq.0) then; errc=-15; exit wloop; endif !trap
            call tens_instr%set_status(DS_INSTR_NEW,ier,iec) !reset the instruction status to NEW before sending to the lower level
-           if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
-           opcode=tens_instr%get_code(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+           if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-14; exit wloop; endif
+           opcode=tens_instr%get_code(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-13; exit wloop; endif
            if(opcode.ge.TAVP_ISA_TENS_FIRST.and.opcode.le.TAVP_ISA_TENS_LAST) then
   !Encode a tensor instruction and dispatch it to the appropriate channel:
-            
+            channel=this%map_instr(tens_instr,ier); if(ier.ne.0.and.errc.eq.0) then; errc=-12; exit wloop; endif
+            if((channel.lt.lbound(this%dispatch_rank,1).or.channel.gt.ubound(this%dispatch_rank,1)).and.&
+              &errc.eq.0) then; errc=-11; exit wloop; endif !trap
+            call this%dispatch(tens_instr,channel,ier); if(ier.ne.0.and.errc.eq.0) then; errc=-10; exit wloop; endif
            else
-  !Check on control instructions:
-            if(opcode.eq.TAVP_INSTR_CTRL_STOP.or.opcode.eq.TAVP_INSTR_CTRL_PAUSE) stopping=.TRUE. !`Currently STOP and PAUSE have the same effect
   !Encode an auxiliary/control instruction and dispatch it to all channels:
             do i=lbound(this%dispatch_rank,1),ubound(this%dispatch_rank,1)
-             call this%dispatch(tens_instr,i,ier); if(ier.ne.0.and.errc.eq.0) then; errc=-1; exit wloop; endif
+             call this%dispatch(tens_instr,i,ier); if(ier.ne.0.and.errc.eq.0) then; errc=-9; exit wloop; endif
             enddo
+  !Check on control instructions:
+            if(opcode.eq.TAVP_INSTR_CTRL_STOP.or.opcode.eq.TAVP_INSTR_CTRL_PAUSE) stopping=.TRUE. !`Currently STOP and PAUSE have the same effect
            endif
-  !Issue (send) the bytecode to the child TAVPs:
-           
   !Delete the dispatched instruction from the main queue:
            call tens_instr%set_status(DS_INSTR_RETIRED,ier,DSVP_SUCCESS)
-           if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
-           ier=this%iqueue%delete(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+           if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-8; exit wloop; endif
+           ier=this%iqueue%delete(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-7; exit wloop; endif
+  !Issue (send) the bytecode to the child TAVPs:
+           do i=1,this%num_ranks !loop over dispatch channels
+            n=this%bytecode(i)%get_num_packets(ier); if(ier.ne.PACK_SUCCESS.and.errc.eq.0) then; errc=-6; exit wloop; endif
+            if(n.gt.0) then
+             if(n.ge.MAX_ISSUE_INSTR.or.this%dispatch_count(i).le.MIN_ISSUE_INSTR.or.this%iqueue%get_status().eq.GFC_IT_EMPTY) then
+              call this%issue(i,ier); if(ier.ne.0.and.errc.eq.0) then; errc=-5; exit wloop; endif
+             endif
+            endif
+           enddo
   !Synchronize the bytecode sends to each TAVP:
-           
+           synced=this%sync_issue(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-4; exit wloop; endif
            ier=this%iqueue%get_status()
+           if(stopping.and.ier.eq.GFC_IT_ACTIVE.and.errc.eq.0) then; errc=-3; exit wloop; endif !trap
+           active=.not.stopping
           enddo dloop
-          if(ier.ne.GFC_IT_EMPTY.and.errc.eq.0) then; errc=-1; exit wloop; endif
+          if(ier.ne.GFC_IT_EMPTY.and.errc.eq.0) then; errc=-2; exit wloop; endif
          enddo wloop
 !Record the error:
          ier=this%get_error(); if(ier.eq.DSVP_SUCCESS) call this%set_error(errc)
@@ -3113,18 +3122,6 @@
          endif
 !Release the tensor argument cache pointer:
          this%arg_cache=>NULL()
-!Deactivate the control list:
-         ier=this%ctrl_list%reset()
-         if(ier.eq.GFC_SUCCESS) then
-          ier=this%ctrl_list%get_status()
-          if(ier.ne.GFC_IT_EMPTY) then
-           if(errc.eq.0) errc=-6
-           ier=this%ctrl_list%delete_all()
-          endif
-          ier=this%ctrl_list%release(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-5
-         else
-          if(errc.eq.0) errc=-4
-         endif
 !Release queues:
          call this%release_queue(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-3
 !Deallocate dispatched instruction counters:
@@ -3339,17 +3336,25 @@
          errc=0; synced=.FALSE.
          if(present(channel)) then !sync a specific channel
           if(channel.ge.lbound(this%dispatch_rank,1).and.channel.le.ubound(this%dispatch_rank,1)) then
-           call this%comm_hl(channel)%wait(errc); if(errc.ne.0) errc=-7
-           if(errc.eq.0) then; call this%comm_hl(channel)%clean(errc); if(errc.ne.0) errc=-6; endif
-           if(errc.eq.0) then; call this%bytecode(channel)%destroy(errc); if(errc.ne.0) errc=-5; endif
+           call this%comm_hl(channel)%wait(errc); if(errc.ne.0) errc=-9
+           if(errc.eq.0) then; call this%comm_hl(channel)%clean(errc); if(errc.ne.0) errc=-8; endif
+           if(errc.eq.0) then; call this%bytecode(channel)%destroy(errc); if(errc.ne.0) errc=-7; endif
           else
-           errc=-4
+           errc=-6
           endif
          else !sync all channels
           do i=lbound(this%dispatch_rank,1),ubound(this%dispatch_rank,1)
-           call this%comm_hl(i)%wait(errc); if(errc.ne.0) errc=-3
-           if(errc.eq.0) then; call this%comm_hl(i)%clean(errc); if(errc.ne.0) errc=-2; endif
-           if(errc.eq.0) then; call this%bytecode(i)%destroy(errc); if(errc.ne.0) errc=-1; endif
+           if(this%comm_hl(i)%is_active(errc)) then
+            if(errc.eq.PACK_SUCCESS) then
+             call this%comm_hl(i)%wait(errc); if(errc.ne.0) errc=-5
+             if(errc.eq.0) then; call this%comm_hl(i)%clean(errc); if(errc.ne.0) errc=-4; endif
+             if(errc.eq.0) then; call this%bytecode(i)%destroy(errc); if(errc.ne.0) errc=-3; endif
+            else
+             errc=-2
+            endif
+           else
+            if(errc.ne.PACK_SUCCESS) errc=-1
+           endif
            if(errc.ne.0) exit
           enddo
          endif
