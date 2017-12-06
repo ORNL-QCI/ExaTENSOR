@@ -104,7 +104,7 @@
 !TYPES:
  !Tensor argument cache entry (TAVP-specific):
         type, extends(tens_cache_entry_t), private:: tens_entry_mng_t
-         integer(INTD), private:: owner_id=-1                         !tensor owner id (non-negative TAVP-MNG id), negative means the tensor is remote with an unknown location
+         integer(INTD), private:: owner_id=-1                         !tensor owner id (non-negative TAVP id), negative means the tensor is remote with an unknown location
          contains
           procedure, private:: TensEntryMngCtor                       !ctor
           generic, public:: tens_entry_mng_ctor=>TensEntryMngCtor
@@ -121,7 +121,7 @@
         type, extends(ds_oprnd_t), private:: tens_oprnd_t
          class(tens_rcrsv_t), pointer, private:: tensor=>NULL()          !non-owning pointer to a persistent recursive tensor (normally stored in the tensor cache)
          class(tens_entry_mng_t), pointer, private:: cache_entry=>NULL() !non-owning pointer to a tensor cache entry where the tensor is stored (optional)
-         integer(INTD), private:: owner_id=-1                            !non-negative tensor owner (TAVP-MNG) id, normally a copy of the value from the tensor cache entry (optional)
+         integer(INTD), private:: owner_id=-1                            !non-negative tensor owner (TAVP) id, normally a copy of the value from the tensor cache entry (optional)
          contains
           procedure, private:: TensOprndCtor                    !ctor
           generic, public:: tens_oprnd_ctor=>TensOprndCtor
@@ -649,7 +649,7 @@
         function TensOprndGetOwnerId(this,ierr) result(id)
 !Returns the tensor owner id.
          implicit none
-         integer(INTD):: id                          !out: tensor owner id (negative value means self)
+         integer(INTD):: id                          !out: tensor owner id
          class(tens_oprnd_t), intent(in):: this      !in: active tensor operand
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
@@ -3172,27 +3172,41 @@
         end subroutine TAVPMNGDispatcherEncode
 !-------------------------------------------------------------------------------
         function TAVPMNGDispatcherMapInstr(this,tens_instr,ierr) result(channel)
-!Maps a tensor instruction to a specific lower-level (child) TAVP based
-!on the tensor argument locality and load imbalance.
+!Maps a tensor instruction to a specific lower-level (child) TAVP,
+!based on the tensor argument locality and load imbalance.
          implicit none
          integer(INTD):: channel                            !out: channel: TAVP id can be retrieved from this.dispatch_rank(channel)
          class(tavp_mng_dispatcher_t), intent(inout):: this !inout: TAVP-MNG Dispatcher DSVU
          class(tens_instr_t), intent(in):: tens_instr       !in: active tensor instruction
          integer(INTD), intent(out), optional:: ierr        !out: error code
-         integer(INTD):: errc,id
+         integer(INTD):: errc,i,num_args
          class(ds_oprnd_t), pointer:: tens_oprnd
+         integer(INTD):: owner_ids(0:MAX_TENSOR_OPERANDS-1)
 
+         channel=-1 !negative value means undefined
          if(tens_instr%is_active(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
-           tens_oprnd=>tens_instr%get_operand(0,errc) !get the destination operand
+           num_args=tens_instr%get_num_operands(errc)
            if(errc.eq.DSVP_SUCCESS) then
-            select type(tens_oprnd)
-            class is(tens_oprnd_t)
-             id=tens_oprnd%get_owner_id(errc)
-             !`Finish
-            class default
-             errc=-4
-            end select
+ !Determine which TAVP owns each tensor argument:
+            do i=0,num_args-1
+             tens_oprnd=>tens_instr%get_operand(i,errc)
+             if(errc.eq.DSVP_SUCCESS) then
+              select type(tens_oprnd)
+              class is(tens_oprnd_t)
+               owner_ids(i)=tens_oprnd%get_owner_id(errc)
+               if(errc.ne.0) then; errc=-7; exit; endif
+              class default
+               errc=-6; exit
+              end select
+             else
+              errc=-5; exit
+             endif
+            enddo
+ !Decide which dispatch channel to map the instruction to:
+            if(errc.eq.0.and.num_args.gt.0) then
+             channel=map_by_arg_order(errc); if(errc.ne.0) errc=-4
+            endif
            else
             errc=-3
            endif
@@ -3204,6 +3218,46 @@
          endif
          if(present(ierr)) ierr=errc
          return
+
+        contains
+
+         function map_by_arg_order(jerr) result(chnl)
+          implicit none
+          integer(INTD):: chnl
+          integer(INTD), intent(out):: jerr
+          integer(INTD):: ja,jj
+          logical:: jf
+
+          jerr=0; chnl=-1; jf=.FALSE.
+          aloop: do ja=0,num_args-1
+           do jj=lbound(this%dispatch_rank,1),ubound(this%dispatch_rank,1)
+            jf=owner_ids(ja).eq.this%dispatch_rank(jj)
+            if(jf) then; chnl=jj; exit aloop; endif
+           enddo
+          enddo aloop
+          if(.not.jf) chnl=map_by_random(jerr)
+          return
+         end function map_by_arg_order
+
+         function map_by_random(jerr) result(chnl)
+          implicit none
+          integer(INTD):: chnl
+          integer(INTD), intent(out):: jerr
+          integer(INTD):: js
+          real(8):: jdelta,jrnd
+
+          jerr=0; chnl=-1
+          js=size(this%dispatch_rank)
+          if(js.gt.0) then
+           jdelta=1d0/real(js,8)
+           call random_number(jrnd)
+           chnl=lbound(this%dispatch_rank,1)+min(int(jrnd/jdelta,INTD),js-1)
+          else
+           jerr=-1
+          endif
+          return
+         end function map_by_random
+
         end function TAVPMNGDispatcherMapInstr
 !-------------------------------------------------------------------------
         subroutine TAVPMNGDispatcherDispatch(this,tens_instr,channel,ierr)
