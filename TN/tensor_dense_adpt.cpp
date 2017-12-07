@@ -1,7 +1,7 @@
 /** C++ adapters for ExaTENSOR: Wrapper for importing dense tensor blocks from clients
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/10/12
+!REVISION: 2017/12/07
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -126,6 +126,19 @@ bool TensorDenseAdpt<T>::hasBody() const
  return (Body != nullptr);
 }
 
+/** Provides access to a specific element of the tensor (column-major). **/
+template <typename T>
+inline T & TensorDenseAdpt<T>::operator[](const std::initializer_list<int> mlndx) const
+{
+ std::size_t offset = 0;
+ if(Rank > 0){
+  auto mlndx_it = mlndx.begin() + (Rank - 1); //last index position (most senior)
+  offset = *mlndx_it; //last index
+  for(int pos = Rank - 2; pos >= 0; --pos) offset = offset * DimExtent[pos] + *(--mlndx_it);
+ }
+ return Body.get()[offset];
+}
+
 /** Prints. **/
 template <typename T>
 void TensorDenseAdpt<T>::printIt() const
@@ -200,17 +213,4 @@ void TensorDenseAdpt<T>::reshape(const unsigned int rank,       //in: new tensor
  for(unsigned int i=0; i<rank; ++i) DimExtent[i]=dimExtent[i];
  Rank=rank;
  return;
-}
-
-/** Provides access to a specific element of the tensor. **/
-template <typename T>
-inline T & TensorDenseAdpt<T>::operator[](const std::initializer_list<int> mlndx) const
-{
- std::size_t offset = 0;
- if(Rank > 0){
-  auto mlndx_it = mlndx.begin() + (Rank - 1); //last index position (most senior)
-  offset = *mlndx_it; //last index
-  for(int pos = Rank - 2; pos >= 0; --pos) offset = offset * DimExtent[pos] + *(--mlndx_it);
- }
- return Body.get()[offset];
 }

@@ -1,7 +1,7 @@
 /** C++ adapters for ExaTENSOR: Tensor network
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/10/30
+!REVISION: 2017/12/07
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -26,19 +26,18 @@
 #ifndef _EXA_TENSOR_NETWORK_H
 #define _EXA_TENSOR_NETWORK_H
 
+#include <cstdint>
+#include <assert.h>
+#include <iostream>
+#include <complex>
 #include <memory>
 #include <tuple>
 #include <vector>
 #include <queue>
 #include <map>
 #include <string>
-#include <cstdint>
-#include <assert.h>
-#include <iostream>
 #include <ctime>
 #include <chrono>
-
-#include <complex>
 
 #include "type_deduct.hpp"
 
@@ -111,6 +110,8 @@ public:
 //Accessors:
  /** Returns TRUE if the tensor network is empty, FALSE otherwise. **/
  bool isEmpty() const;
+ /** Returns TRUE if the tensor network is closed, FALSE otherwise. **/
+ bool isClosed() const;
  /** Returns the number of r.h.s. tensors in the tensor network.
      Note that the output (l.h.s.) tensor 0 is not counted here. **/
  unsigned int getNumTensors() const;

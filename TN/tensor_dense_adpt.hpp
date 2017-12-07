@@ -1,7 +1,7 @@
-/** C++ adapters for ExaTENSOR: Wrapper for importing dense tensor blocks from clients
+/** C++ adapters for ExaTENSOR: Tensor adapter
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/10/11
+!REVISION: 2017/12/07
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -26,10 +26,10 @@
 #ifndef _EXA_TENSOR_DENSE_ADPT_H
 #define _EXA_TENSOR_DENSE_ADPT_H
 
-#include <memory>
-#include <vector>
 #include <assert.h>
 #include <iostream>
+#include <memory>
+#include <string>
 #include <initializer_list>
 
 #include "type_deduct.hpp"
@@ -38,15 +38,16 @@
 
 namespace exatensor {
 
-/** Simple dense tensor wrapper with imported (external) body. **/
+/** Tensor wrapper with generally imported body. **/
 template <typename T>
 class TensorDenseAdpt{
 
 private:
 
- unsigned int Rank;                        //VAL: tensor rank (number of dimensions)
- std::unique_ptr<std::size_t[]> DimExtent; //VAL: tensor dimension extents
- std::shared_ptr<T> Body;                  //REF: pointer to the imported tensor body (tensor elements)
+ unsigned int Rank;                        //tensor rank (number of tensor dimensions)
+ std::unique_ptr<std::size_t[]> DimExtent; //tensor dimension extents
+ std::shared_ptr<T> Body;                  //generally shared pointer to the locally stored tensor body (tensor elements)
+ //std::string ExaTensorId;                //identifier of the tensor in the ExaTENSOR realm
 
 public:
 
@@ -69,7 +70,7 @@ public:
  std::size_t getDimExtent(const unsigned int dimension) const;
  /** Returns a pointer to the tensor dimension extents. **/
  const std::size_t * getDimExtents() const;
- /** Returns a shared pointer to the tensor body (NULL inside if there is no body). **/
+ /** Returns a shared pointer to the tensor body (NULL if there is no body). **/
  std::shared_ptr<T> getBodyAccess() const;
  /** Returns the tensor volume (total number of tensor elements). **/
  std::size_t getVolume() const;
@@ -77,6 +78,8 @@ public:
  std::size_t getSize() const;
  /** Returns true if the tensor has body. **/
  bool hasBody() const;
+ /** Provides access to a specific element of the tensor (column-major). **/
+ T & operator[](const std::initializer_list<int> mlndx) const;
  /** Prints. **/
  void printIt() const;
 
@@ -95,8 +98,6 @@ public:
      it will be nullified until the new body is supplied.  **/
  void reshape(const unsigned int rank,        //in: new tensor rank
               const std::size_t dimExtent[]); //in: new tensor dimension extents
- /** Provides access to a specific element of the tensor. **/
- T & operator[](const std::initializer_list<int> mlndx) const;
 
 };
 

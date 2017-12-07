@@ -1,7 +1,7 @@
 /** C++ adapters for ExaTENSOR: Tensor network solver
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/10/30
+!REVISION: 2017/12/07
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -41,7 +41,7 @@ namespace exatensor {
 template<typename T>
 int optimizeOverlapMax(TensorNetwork<T> tensNet,                         //inout: closed tensor network
                        const std::vector<unsigned int> optimizedTensIds, //in: IDs of the r.h.s. tensors to be optimized
-                       const std::vector<T> tensorNorms);                //in: imposed tensor norms
+                       const std::vector<double> tensorNorms);           //in: imposed tensor norms
 
 //Template definition:
 #include "tensor_solver.cpp"

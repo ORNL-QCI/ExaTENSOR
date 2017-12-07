@@ -1,7 +1,7 @@
 /** ExaTENSOR header for the tensor network infrastructure
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/11/03
+!REVISION: 2017/12/07
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -30,7 +30,7 @@ namespace exatensor {
 /** Starts ExaTENSOR numerical runtime. **/
 int start(std::size_t hostMemBufferSize){
  int errc, hostArgMax, nGPU, listGPU[MAX_GPUS_PER_NODE];
- errc = talshGetDeviceCount(DEV_NVIDIA_GPU,&nGPU); if(errc != TALSH_SUCCESS) return -1;
+ errc = talshGetDeviceCount(DEV_NVIDIA_GPU,&nGPU); if(errc != TALSH_SUCCESS) return -2;
  for(int i = 0; i < nGPU; ++i) listGPU[i]=i;
  errc = talshInit(&hostMemBufferSize,&hostArgMax,nGPU,listGPU,0,NULL,0,NULL);
  if(errc != TALSH_SUCCESS) return -1;

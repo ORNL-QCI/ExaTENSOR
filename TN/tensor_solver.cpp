@@ -1,7 +1,7 @@
 /** C++ adapters for ExaTENSOR: Tensor network solver
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/10/30
+!REVISION: 2017/12/07
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -32,14 +32,14 @@
 template<typename T>
 int optimizeOverlapMax(TensorNetwork<T> tensNet,                         //inout: closed tensor network
                        const std::vector<unsigned int> optimizedTensIds, //in: IDs of the r.h.s. tensors to be optimized
-                       const std::vector<T> tensorNorms)                 //in: imposed tensor norms
+                       const std::vector<double> tensorNorms)            //in: imposed tensor norms
 {
  int error_code = 0;
  const unsigned int numTensorsTotal = tensNet.getNumTensors(); //total number of the r.h.s. tensors
  assert(numTensorsTotal > 0);
  const unsigned int numTensorsOpt = optimizedTensIds.size(); //number of tensors to be optimized
- assert(tensorNorms.size() == numTensorsOpt || tensorNorms.size() == 0);
  assert(numTensorsOpt <= numTensorsTotal);
+ assert(tensorNorms.size() == numTensorsOpt || tensorNorms.size() == 0);
  if(numTensorsOpt == 0) return error_code; //no tensors to optimize => done
  //`Implement
  return error_code;

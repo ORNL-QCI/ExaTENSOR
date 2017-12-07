@@ -1,7 +1,7 @@
-/** C++ adapters for ExaTENSOR: Tensor leg (connection)
+/** C++ adapters for ExaTENSOR: Tensor leg (tensor connection to other tensors)
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/08/03
+!REVISION: 2017/12/07
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
