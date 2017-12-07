@@ -101,7 +101,8 @@
  !Collector:
         integer(INTD), private:: MAX_COLLECT_INSTR=8192        !max number of active tensor (sub-)instructions in the collection phase
  !Retirer:
-        integer(INTD), private:: MAX_RETIRE_INSTR=32768        !max number of tensor instructions in the retirement phase
+        integer(INTD), private:: MAX_RETIRE_INSTR=4096         !max number of tensor instructions in the retirement phase
+        real(8), private:: MAX_RETIRE_PHASE_TIME=0.1d-3        !max time (sec) before sending the retired instructions to the upper level
 !TYPES:
  !Tensor argument cache entry (TAVP-specific):
         type, extends(tens_cache_entry_t), private:: tens_entry_mng_t
@@ -1887,10 +1888,14 @@
          implicit none
          class(tavp_mng_retirer_t), intent(inout):: this !inout: TAVP-MNG Retirer DSVU
          integer(INTD), intent(out), optional:: ierr     !out: error code
-         integer(INTD):: errc,ier,thid
+         integer(INTD):: errc,ier,thid,opcode,sts,iec
          logical:: active,stopping
          class(dsvp_t), pointer:: dsvp
          class(tavp_mng_t), pointer:: tavp
+         class(tens_instr_t), pointer:: tens_instr
+         type(obj_pack_t):: instr_packet
+         type(comm_handle_t):: comm_hl
+         class(*), pointer:: uptr
 
          errc=0; thid=omp_get_thread_num()
          if(DEBUG.gt.0) then
@@ -1898,25 +1903,65 @@
           flush(CONS_OUT)
          endif
 !Reserve a bytecode buffer:
-         call this%bytecode%reserve_mem(ier,MAX_BYTECODE_SIZE,MAX_BYTECODE_INSTR); if(ier.ne.0.and.errc.eq.0) errc=-1
+         call this%bytecode%reserve_mem(ier,MAX_BYTECODE_SIZE,MAX_BYTECODE_INSTR); if(ier.ne.0.and.errc.eq.0) errc=-26
 !Initialize queues and ports:
-         call this%init_queue(this%num_ports,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-1
+         call this%init_queue(this%num_ports,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-25
 !Set up tensor argument cache and wait on other TAVP units:
          tavp=>NULL(); dsvp=>this%get_dsvp(); select type(dsvp); class is(tavp_mng_t); tavp=>dsvp; end select
          if(associated(tavp)) then
           this%arg_cache=>tavp%tens_cache
-          call tavp%sync_units(errc,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-1
+          call tavp%sync_units(errc,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-24
          else
-          this%arg_cache=>NULL(); if(errc.eq.0) errc=-1
+          this%arg_cache=>NULL(); if(errc.eq.0) errc=-23
          endif
 !Work loop:
          active=((errc.eq.0).and.(this%retire_comm.ne.MPI_COMM_NULL)); stopping=(.not.active)
          wloop: do while(active)
- !Get a new batch of retired instructions from Collector (port 0):
- !Encode the instructions into bytecode:
- !Send the bytecode to the parent NAT node:
- !Delete instructions from the main queue:
- !Synchronize the bytecode send:
+          active=.not.stopping
+ !Get a new batch of retired instructions (and control instructions) from Collector (port 0):
+          ier=this%iqueue%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-22; exit wloop; endif
+          ier=this%flush_port(0); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-21; exit wloop; endif
+ !Encode the retired instructions into bytecode and send them to the upper level:
+          ier=this%iqueue%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-20; exit wloop; endif
+          ier=this%iqueue%get_status(); if(stopping.and.ier.ne.GFC_IT_EMPTY.and.errc.eq.0) then; errc=-19; exit wloop; endif
+          rloop: do while(ier.eq.GFC_IT_ACTIVE)
+  !Extract an instruction:
+           uptr=>this%iqueue%get_value(ier); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-18; exit wloop; endif
+           tens_instr=>NULL(); select type(uptr); class is(tens_instr_t); tens_instr=>uptr; end select
+           if((.not.associated(tens_instr)).and.errc.eq.0) then; errc=-17; exit wloop; endif !trap
+           sts=tens_instr%get_status(ier,iec); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-16; exit wloop; endif
+           if(sts.ne.DS_INSTR_COMPLETED.and.errc.eq.0) then; errc=-15; exit wloop; endif !trap
+           call tens_instr%set_status(DS_INSTR_RETIRED,ier,iec)
+           if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-14; exit wloop; endif
+           opcode=tens_instr%get_code(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-13; exit wloop; endif
+  !Encode a retired tensor instruction into bytecode:
+           if(opcode.ge.TAVP_ISA_TENS_FIRST.and.opcode.le.TAVP_ISA_TENS_LAST) then
+            call this%bytecode%acquire_packet(instr_packet,ier,preclean=.TRUE.)
+            if(ier.ne.PACK_SUCCESS.and.errc.eq.0) then; errc=-12; exit wloop; endif
+            call this%encode(tens_instr,instr_packet,ier); if(ier.ne.0.and.errc.eq.0) then; errc=-11; exit wloop; endif
+            call this%bytecode%seal_packet(ier); if(ier.ne.PACK_SUCCESS.and.errc.eq.0) then; errc=-10; exit wloop; endif
+  !Check for control instructions:
+           elseif(opcode.ge.TAVP_ISA_CTRL_FIRST.and.opcode.le.TAVP_ISA_CTRL_LAST) then
+            if(opcode.eq.TAVP_INSTR_CTRL_STOP.or.opcode.eq.TAVP_INSTR_CTRL_PAUSE) stopping=.TRUE. !`STOP and PAUSE are treated in the same way
+  !Other instructions are not expected here:
+           else
+            if(errc.eq.0) then; errc=-9; exit wloop; endif
+           endif
+  !Delete the instruction from the main queue:
+           ier=this%iqueue%delete(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-8; exit wloop; endif
+  !Send the bytecode to the parent TAVP at the upper level:
+           if(this%bytecode%get_num_packets().ge.MAX_RETIRE_INSTR.or.this%iqueue%get_status().eq.GFC_IT_EMPTY) then
+            call comm_hl%clean(ier); if(ier.ne.PACK_SUCCESS.and.errc.eq.0) then; errc=-7; exit wloop; endif
+            call this%bytecode%send(this%retire_rank,comm_hl,ier,comm=this%retire_comm)
+            if(ier.ne.PACK_SUCCESS.and.errc.eq.0) then; errc=-6; exit wloop; endif
+  !Synchronize the bytecode send:
+            call comm_hl%wait(ier); if(ier.ne.PACK_SUCCESS.and.errc.eq.0) then; errc=-5; exit wloop; endif
+            call comm_hl%clean(ier); if(ier.ne.PACK_SUCCESS.and.errc.eq.0) then; errc=-4; exit wloop; endif
+            call this%bytecode%destroy(ier); if(ier.ne.PACK_SUCCESS.and.errc.eq.0) then; errc=-3; exit wloop; endif
+           endif
+           ier=this%iqueue%get_status()
+          enddo rloop
+          if(ier.ne.GFC_IT_EMPTY.and.errc.eq.0) then; errc=-2; exit wloop; endif
          enddo wloop
 !Record the error:
          ier=this%get_error(); if(ier.eq.DSVP_SUCCESS) call this%set_error(errc)
