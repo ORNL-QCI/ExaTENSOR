@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/11/21
+!REVISION: 2017/12/12
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -269,6 +269,9 @@
           procedure, public:: get_layout=>TensBodyGetLayout         !returns a pointer to the tensor body storage layout
           procedure, public:: get_num_subtensors=>TensBodyGetNumSubtensors !returns the total number of constituent subtensors
           procedure, public:: get_subtensors=>TensBodyGetSubtensors !returns a pointer to the list of constituent subtensors (each subtensor is represented by a tensor header)
+          procedure, private:: TensBodyExtractSubtensorsList        !extracts subtensor headers from the tensor and fills in a list of subtensors the tensor is composed of
+          procedure, private:: TensBodyExtractSubtensorsVector      !extracts subtensor headers from the tensor and fills in a vector of subtensors the tensor is composed of
+          generic, public:: extract_subtensors=>TensBodyExtractSubtensorsList,TensBodyExtractSubtensorsVector
           procedure, public:: print_it=>TensBodyPrintIt             !prints the tensor body info
           procedure, private:: update_header=>TensBodyUpdateHeader  !updates the tensor header the body is associated with
           final:: tens_body_dtor                                    !dtor
@@ -302,10 +305,13 @@
           procedure, public:: get_header=>TensRcrsvGetHeader         !returns a pointer to the tensor header
           procedure, public:: get_body=>TensRcrsvGetBody             !returns a pointer to the tensor body
           procedure, public:: get_descriptor=>TensRcrsvGetDescriptor !returns a tensor descriptor uniquely characterizing tensor signature, shape, layout, and location
-          procedure, private:: TensRcrsvSplitList                    !splits the tensor into subtensors (a list of subtensors by their headers)
-          procedure, private:: TensRcrsvSplitVector                  !splits the tensor into subtensors (a vector of subtensors by their headers)
+          procedure, private:: TensRcrsvSplitList                    !splits the tensor into subtensors (a list of either subtensors or just their headers)
+          procedure, private:: TensRcrsvSplitVector                  !splits the tensor into subtensors (a vector of either subtensors or just their headers)
           generic, public:: split=>TensRcrsvSplitList,TensRcrsvSplitVector
-          procedure, public:: decompose=>TensRcrsvDecompose          !decomposes the tensor into subtensors defined by their tensor headers and registers them as constituent tensors
+          procedure, public:: decompose=>TensRcrsvDecompose          !decomposes the tensor into subtensors defined by their tensor headers and registers them as constituent subtensors of the tensor
+          procedure, private:: TensRcrsvExtractSubtensorsList        !extracts subtensor headers from the tensor and fills in a list of subtensors the tensor is composed of
+          procedure, private:: TensRcrsvExtractSubtensorsVector      !extracts subtensor headers from the tensor and fills in a vector of subtensors the tensor is composed of
+          generic, public:: extract_subtensors=>TensRcrsvExtractSubtensorsList,TensRcrsvExtractSubtensorsVector
           procedure, public:: print_it=>TensRcrsvPrintIt             !prints the tensor info
 #ifdef NO_GNU
           final:: tens_rcrsv_dtor                                    !dtor `GCC/5.4.0 bug
@@ -400,7 +406,9 @@
           procedure, public:: get_ext_contr_ptrn=>TensContractionGetExtContrPtrn !returns a pointer to the extended tensor contraction pattern
           procedure, public:: get_contr_ptrn=>TensContractionGetContrPtrn  !returns the classical (basic) digital contraction pattern used by TAL-SH for example
           procedure, private:: import_replace=>TensContractionImportReplace!creates a new tensor contraction by replacing tensor arguments in an existing tensor contraction (plus symmetry adjustment)
-          procedure, public:: split=>TensContractionSplit                  !splits the tensor contraction into a list of subtensor contractions based on the pre-existing lists of argument subtensors
+          procedure, private:: TensContractionSplitFunc                    !splits the tensor contraction into a list of subtensor contractions based on the externally provided tensor splitting function
+          procedure, private:: TensContractionSplitIntern                  !splits the tensor contraction into a list of subtensor contractions based on the internal lists of constituent argument subtensors
+          generic, public:: split=>TensContractionSplitFunc,TensContractionSplitIntern
           procedure, public:: print_it=>TensContractionPrintIt             !prints the tensor contraction info
         end type tens_contraction_t
 !INTERFACES:
@@ -447,11 +455,11 @@
           integer(INTD), intent(out), optional:: ierr !out: error code
          end function tens_operation_query_i
   !tens_rcrsv_t: split() [nopass]:
-         function tens_rcrsv_split_i(this,subtensors,num_subtensors,strength_thresh) result(ierr)
+         function tens_rcrsv_split_i(tensor,subtensors,num_subtensors,strength_thresh) result(ierr)
           import:: INTD,tens_rcrsv_t,vector_t
           implicit none
           integer(INTD):: ierr                            !out: error code
-          class(tens_rcrsv_t), intent(in):: this          !in: parental tensor
+          class(tens_rcrsv_t), intent(in):: tensor        !in: parental tensor
           type(vector_t), intent(inout):: subtensors      !inout: vector of subtensors (in general, can be non-empty on entrance)
           integer(INTD), intent(out):: num_subtensors     !out: number of subtensors generated from the parental tensor
           real(8), intent(in), optional:: strength_thresh !in: dimension strength threshold for splitting
@@ -470,15 +478,17 @@
          end function tens_rcrsv_dim_strength_i
         end interface
 !VISIBILITY:
- !non-member:
-        public valid_tensor_layout
-        public cmp_integers
-        public cmp_real
-        public cmp_strings
-        public cmp_tens_signatures
-        public cmp_tens_headers
-        public cmp_tens_descriptors
-        public tens_dim_strength_default
+ !generic non-member:
+        public valid_tensor_layout             !checks validity of the tensor layout
+        public cmp_integers                    !generic integer comparator
+        public cmp_real                        !generic real number comparator
+        public cmp_strings                     !generic string comparator
+        public cmp_tens_signatures             !comparator for tensor signatures
+        public cmp_tens_headers                !comparator for tensor headers
+        public cmp_tens_descriptors            !comparator for tensor descriptors
+        public tens_dim_strength_default       !default universal tensor dimension strength estimator
+        public tens_rcrsv_split_internal       !internal tensor splitter for tensor operation splitting (guided by the existing internal tensor composition)
+ !testing/debugging:
         public build_test_hspace
         public print_tens_header_f
         public print_tcg_buffer
@@ -590,6 +600,8 @@
         private TensBodyGetLayout
         private TensBodyGetNumSubtensors
         private TensBodyGetSubtensors
+        private TensBodyExtractSubtensorsList
+        private TensBodyExtractSubtensorsVector
         private TensBodyPrintIt
         private TensBodyUpdateHeader
         public tens_body_dtor
@@ -620,6 +632,8 @@
         private TensRcrsvSplitList
         private TensRcrsvSplitVector
         private TensRcrsvDecompose
+        private TensRcrsvExtractSubtensorsList
+        private TensRcrsvExtractSubtensorsVector
         private TensRcrsvPrintIt
         public tens_rcrsv_dtor
         public tens_rcrsv_split_i
@@ -672,7 +686,8 @@
         private TensContractionGetExtContrPtrn
         private TensContractionGetContrPtrn
         private TensContractionImportReplace
-        private TensContractionSplit
+        private TensContractionSplitFunc
+        private TensContractionSplitIntern
         private TensContractionPrintIt
 !DATA:
  !Register of hierarchical vector spaces (only these spaces can be used in tensors):
@@ -891,6 +906,23 @@
          if(present(ierr)) ierr=errc
          return
         end function tens_dim_strength_default
+!--------------------------------------------------------------------------------------------------------
+        function tens_rcrsv_split_internal(tensor,subtensors,num_subtensors,strength_thresh) result(ierr)
+!Extracts constituent subtensors from a tensor and returns them in a vector.
+         implicit none
+         integer(INTD):: ierr                            !out: error code
+         class(tens_rcrsv_t), intent(in):: tensor        !in: parental tensor
+         type(vector_t), intent(inout):: subtensors      !inout: vector of subtensors (in general, can be non-empty on entrance)
+         integer(INTD), intent(out):: num_subtensors     !out: number of subtensors extracted from the parental tensor
+         real(8), intent(in), optional:: strength_thresh !in: dimension strength threshold for splitting (ignored here)
+
+         if(tensor%is_set()) then
+          call tensor%extract_subtensors(subtensors,ierr,num_subtensors)
+         else
+          ierr=TEREC_INVALID_REQUEST
+         endif
+         return
+        end function tens_rcrsv_split_internal
 !---------------------------------------------------------------------------
         function build_test_hspace(space_name,ierr,space_p) result(space_id)
 !Builds a hierarchical vector space for testing/debugging.
@@ -3663,6 +3695,116 @@
          if(present(ierr)) ierr=errc
          return
         end function TensBodyGetSubtensors
+!------------------------------------------------------------------------------------
+        subroutine TensBodyExtractSubtensorsList(this,subtensors,ierr,num_subtensors)
+!Extracts subtensor headers from the tensor and fills in a list of subtensors the tensor is composed of.
+!The output list of subtensors may be non-empty on entrance and subtensors will be appended at the end.
+         implicit none
+         class(tens_body_t), intent(in):: this                 !in: tensor body
+         type(list_bi_t), intent(inout):: subtensors           !inout: list of subtensors (can be non-empty)
+         integer(INTD), intent(out), optional:: ierr           !out: error code
+         integer(INTD), intent(out), optional:: num_subtensors !out: number of extracted subtensors
+         integer(INTD):: errc,ier,n
+         type(list_iter_t):: itin,itout
+         class(*), pointer:: uptr
+         type(tens_rcrsv_t):: tens_empty
+         class(tens_header_t), pointer:: tens_header
+         class(tens_rcrsv_t), pointer:: tensor
+
+         n=0; errc=itout%init(subtensors)
+         if(errc.eq.GFC_SUCCESS) then
+          errc=itout%reset_back()
+          if(errc.eq.GFC_SUCCESS) then
+           errc=itin%init(this%subtensors)
+           if(errc.eq.GFC_SUCCESS) then
+            if(itin%get_status().eq.GFC_IT_ACTIVE) then
+             do while(errc.eq.GFC_SUCCESS)
+              uptr=>itin%get_value(errc); if(errc.ne.GFC_SUCCESS) exit
+              tens_header=>NULL(); select type(uptr); class is(tens_header_t); tens_header=>uptr; end select
+              if(.not.associated(tens_header)) exit !trap
+              errc=itout%append(tens_empty); if(errc.ne.GFC_SUCCESS) exit
+              errc=itout%reset_back(); if(errc.ne.GFC_SUCCESS) exit
+              uptr=>itout%get_value(errc); if(errc.ne.GFC_SUCCESS) exit
+              tensor=>NULL(); select type(uptr); class is(tens_rcrsv_t); tensor=>uptr; end select
+              if(.not.associated(tensor)) exit !trap
+              call tensor%tens_rcrsv_ctor(tens_header,errc); if(errc.ne.TEREC_SUCCESS) then; errc=GFC_ERROR; exit; endif
+              n=n+1; errc=itin%next()
+             enddo
+             if(errc.eq.GFC_NO_MOVE) then; errc=TEREC_SUCCESS; else; errc=TEREC_ERROR; endif
+             if(n.ne.this%num_subtensors.and.errc.eq.TEREC_SUCCESS) errc=TEREC_OBJ_CORRUPTED
+            else
+             if(this%num_subtensors.ne.0) errc=TEREC_OBJ_CORRUPTED
+            endif
+            ier=itin%release(); if(ier.ne.GFC_SUCCESS.and.errc.eq.TEREC_SUCCESS) errc=TEREC_ERROR
+           else
+            errc=TEREC_ERROR
+           endif
+          else
+           errc=TEREC_ERROR
+          endif
+          ier=itout%release(); if(ier.ne.GFC_SUCCESS.and.errc.eq.TEREC_SUCCESS) errc=TEREC_ERROR
+         else
+          errc=TEREC_ERROR
+         endif
+         if(present(num_subtensors)) num_subtensors=n
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensBodyExtractSubtensorsList
+!--------------------------------------------------------------------------------------
+        subroutine TensBodyExtractSubtensorsVector(this,subtensors,ierr,num_subtensors)
+!Extracts subtensor headers from the tensor and fills in a vector of subtensors the tensor is composed of.
+!The output vector of subtensors may be non-empty on entrance and subtensors will be appended at the end.
+         implicit none
+         class(tens_body_t), intent(in):: this                 !in: tensor body
+         type(vector_t), intent(inout):: subtensors            !inout: vector of subtensors (can be non-empty)
+         integer(INTD), intent(out), optional:: ierr           !out: error code
+         integer(INTD), intent(out), optional:: num_subtensors !out: number of extracted subtensors
+         integer(INTD):: errc,ier,n
+         type(vector_iter_t):: itin,itout
+         class(*), pointer:: uptr
+         type(tens_rcrsv_t):: tens_empty
+         class(tens_header_t), pointer:: tens_header
+         class(tens_rcrsv_t), pointer:: tensor
+
+         n=0; errc=itout%init(subtensors)
+         if(errc.eq.GFC_SUCCESS) then
+          errc=itout%reset_back()
+          if(errc.eq.GFC_SUCCESS) then
+           errc=itin%init(this%subtensors)
+           if(errc.eq.GFC_SUCCESS) then
+            if(itin%get_status().eq.GFC_IT_ACTIVE) then
+             do while(errc.eq.GFC_SUCCESS)
+              uptr=>itin%get_value(errc); if(errc.ne.GFC_SUCCESS) exit
+              tens_header=>NULL(); select type(uptr); class is(tens_header_t); tens_header=>uptr; end select
+              if(.not.associated(tens_header)) exit !trap
+              errc=itout%append(tens_empty); if(errc.ne.GFC_SUCCESS) exit
+              errc=itout%reset_back(); if(errc.ne.GFC_SUCCESS) exit
+              uptr=>itout%get_value(errc); if(errc.ne.GFC_SUCCESS) exit
+              tensor=>NULL(); select type(uptr); class is(tens_rcrsv_t); tensor=>uptr; end select
+              if(.not.associated(tensor)) exit !trap
+              call tensor%tens_rcrsv_ctor(tens_header,errc); if(errc.ne.TEREC_SUCCESS) then; errc=GFC_ERROR; exit; endif
+              n=n+1; errc=itin%next()
+             enddo
+             if(errc.eq.GFC_NO_MOVE) then; errc=TEREC_SUCCESS; else; errc=TEREC_ERROR; endif
+             if(n.ne.this%num_subtensors.and.errc.eq.TEREC_SUCCESS) errc=TEREC_OBJ_CORRUPTED
+            else
+             if(this%num_subtensors.ne.0) errc=TEREC_OBJ_CORRUPTED
+            endif
+            ier=itin%release(); if(ier.ne.GFC_SUCCESS.and.errc.eq.TEREC_SUCCESS) errc=TEREC_ERROR
+           else
+            errc=TEREC_ERROR
+           endif
+          else
+           errc=TEREC_ERROR
+          endif
+          ier=itout%release(); if(ier.ne.GFC_SUCCESS.and.errc.eq.TEREC_SUCCESS) errc=TEREC_ERROR
+         else
+          errc=TEREC_ERROR
+         endif
+         if(present(num_subtensors)) num_subtensors=n
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensBodyExtractSubtensorsVector
 !-----------------------------------------------------------
         subroutine TensBodyPrintIt(this,ierr,dev_id,nspaces)
 !Prints the tensor body info.
@@ -4013,7 +4155,7 @@
         function TensRcrsvGetSubtensors(this,ierr) result(subtensor_list_p)
 !Returns a pointer to the list of constituent subtensors (each subtensor is represented by a tensor header).
          implicit none
-         type(list_bi_t), pointer:: subtensor_list_p    !out: pointer to the subtensor list
+         type(list_bi_t), pointer:: subtensor_list_p    !out: pointer to the subtensor list, each subtensor represented by its header
          class(tens_rcrsv_t), intent(in), target:: this !in: tensor
          integer(INTD), intent(out), optional:: ierr    !out: error code
          integer(INTD):: errc
@@ -5065,6 +5207,38 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensRcrsvDecompose
+!-------------------------------------------------------------------------------------
+        subroutine TensRcrsvExtractSubtensorsList(this,subtensors,ierr,num_subtensors)
+!Extracts subtensor headers from the tensor and fills in a list of subtensors the tensor is composed of.
+!The output list of subtensors may be non-empty on entrance and subtensors will be appended at the end.
+         implicit none
+         class(tens_rcrsv_t), intent(in):: this                !in: tensor
+         type(list_bi_t), intent(inout):: subtensors           !inout: list of subtensors (may be non-empty on entrance)
+         integer(INTD), intent(out), optional:: ierr           !out: error code
+         integer(INTD), intent(out), optional:: num_subtensors !out: number of extracted subtensors
+         integer(INTD):: errc,n
+
+         call this%body%extract_subtensors(subtensors,errc,n)
+         if(present(num_subtensors)) num_subtensors=n
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensRcrsvExtractSubtensorsList
+!---------------------------------------------------------------------------------------
+        subroutine TensRcrsvExtractSubtensorsVector(this,subtensors,ierr,num_subtensors)
+!Extracts subtensor headers from the tensor and fills in a vector of subtensors the tensor is composed of.
+!The output vector of subtensors may be non-empty on entrance and subtensors will be appended at the end.
+         implicit none
+         class(tens_rcrsv_t), intent(in):: this                !in: tensor
+         type(vector_t), intent(inout):: subtensors            !inout: vector of subtensors (may be non-empty on entrance)
+         integer(INTD), intent(out), optional:: ierr           !out: error code
+         integer(INTD), intent(out), optional:: num_subtensors !out: number of extracted subtensors
+         integer(INTD):: errc,n
+
+         call this%body%extract_subtensors(subtensors,errc,n)
+         if(present(num_subtensors)) num_subtensors=n
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensRcrsvExtractSubtensorsVector
 !------------------------------------------------------------
         subroutine TensRcrsvPrintIt(this,ierr,dev_id,nspaces)
 !Prints the tensor info.
@@ -6326,8 +6500,8 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensContractionImportReplace
-!--------------------------------------------------------------------------------
-        subroutine TensContractionSplit(this,tens_split_f,subops,ierr,num_subops)
+!------------------------------------------------------------------------------------
+        subroutine TensContractionSplitFunc(this,tens_split_f,subops,ierr,num_subops)
 !Splits a defined tensor contraction into a list of subcontractions. The splitting
 !is driven by the tensor argument decomposition into unique subtensors. More precisely,
 !each tensor argument is represented as a direct sum of its unique children subtensors.
@@ -6394,7 +6568,7 @@
          endif
          if(present(ierr)) ierr=errc
          tmf=thread_wtime(tm(0))
-         !write(CONS_OUT,'("#DEBUG(TensContractionSplit): Timings (msec): ",F8.3,":",6(1x,F8.3))')&
+         !write(CONS_OUT,'("#DEBUG(TensContractionSplitFunc): Timings (msec): ",F8.3,":",6(1x,F8.3))')&
               !&tmf*1d3,tm(1)*1d3,(tm(2)-tm(1))*1d3,(tm(3)-tm(2))*1d3,(tm(4)-tm(3))*1d3,(tm(5)-tm(4))*1d3,(tm(6)-tm(5))*1d3 !debug
          return
 
@@ -6436,14 +6610,14 @@
            jtrp=>this%get_argument(0,jerr)
            if(jerr.eq.TEREC_SUCCESS) then
             jerr=tens_split_f(jtrp,dsubs,dsl); if(dsl.le.0.and.jerr.eq.TEREC_SUCCESS) jerr=TEREC_ERROR
-            !write(CONS_OUT,'("#DEBUG(TensContractionSplit:generate_subtensors): Status ",i10,": D length ",i10)') jerr,dsl !debug
+            !write(CONS_OUT,'("#DEBUG(TensContractionSplitFunc:generate_subtensors): Status ",i10,": D length ",i10)') jerr,dsl !debug
            endif
  !Left tensor argument:
            if(jerr.eq.TEREC_SUCCESS) then
             jtrp=>this%get_argument(1,jerr)
             if(jerr.eq.TEREC_SUCCESS) then
              jerr=tens_split_f(jtrp,lsubs,lsl); if(lsl.le.0.and.jerr.eq.TEREC_SUCCESS) jerr=TEREC_ERROR
-             !write(CONS_OUT,'("#DEBUG(TensContractionSplit:generate_subtensors): Status ",i10,": L length ",i10)') jerr,lsl !debug
+             !write(CONS_OUT,'("#DEBUG(TensContractionSplitFunc:generate_subtensors): Status ",i10,": L length ",i10)') jerr,lsl !debug
             endif
            endif
  !Right tensor argument:
@@ -6451,7 +6625,7 @@
             jtrp=>this%get_argument(2,jerr)
             if(jerr.eq.TEREC_SUCCESS) then
              jerr=tens_split_f(jtrp,rsubs,rsl); if(rsl.le.0.and.jerr.eq.TEREC_SUCCESS) jerr=TEREC_ERROR
-             !write(CONS_OUT,'("#DEBUG(TensContractionSplit:generate_subtensors): Status ",i10,": R length ",i10)') jerr,rsl !debug
+             !write(CONS_OUT,'("#DEBUG(TensContractionSplitFunc:generate_subtensors): Status ",i10,": R length ",i10)') jerr,rsl !debug
             endif
            endif
  !Init list iterators:
@@ -6896,7 +7070,23 @@
            return
           end subroutine record_subcontractions
 
-        end subroutine TensContractionSplit
+        end subroutine TensContractionSplitFunc
+!-------------------------------------------------------------------------
+        subroutine TensContractionSplitIntern(this,subops,ierr,num_subops)
+!Same as TensContractionSplitFunc but the tensor composition is generated by the internal tensor structure.
+         implicit none
+         class(tens_contraction_t), intent(in):: this      !in: parental tensor contraction
+         type(list_bi_t), intent(inout):: subops           !inout: list of subtensor contractions
+         integer(INTD), intent(out), optional:: ierr       !out: error code
+         integer(INTD), intent(out), optional:: num_subops !out: number of subcontractions generated from the parental tensor contraction here
+         integer(INTD):: errc,n
+
+         n=0
+         call this%TensContractionSplitFunc(tens_rcrsv_split_internal,subops,errc,n)
+         if(present(num_subops)) num_subops=n
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensContractionSplitIntern
 !------------------------------------------------------------------
         subroutine TensContractionPrintIt(this,ierr,dev_id,nspaces)
 !Prints the tensor contraction info.
