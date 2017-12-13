@@ -1,7 +1,7 @@
 !Infrastructure for a recursive adaptive vector space decomposition
 !and hierarchical vector space representation.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/09/28
+!REVISION: 2017/12/13
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -2013,7 +2013,7 @@
 !Each subspace can also be directly accessed by its id in the vector tree <this%subspaces>.
 !Storage complexity O(NlogN), where N is the original full space dimension.
          implicit none
-         class(h_space_t), intent(out):: this                     !out: hierarchical representation of the vector space
+         class(h_space_t), intent(out), target:: this             !out: hierarchical representation of the vector space
          class(subspace_basis_t), intent(in), target:: full_basis !in: full basis of the vector space, {Psi_i}
          integer(INTD), intent(out), optional:: ierr              !out: error code
          integer(INTD), intent(in), optional:: branch_fac         !in: aggregation tree branching factor (defaults to 2)

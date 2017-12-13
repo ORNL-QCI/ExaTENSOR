@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/12/12
+!REVISION: 2017/12/13
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -6564,7 +6564,7 @@
           if(errc.eq.TEREC_SUCCESS) errc=TEREC_INVALID_ARGS
          endif
          if(present(num_subops)) then
-          if(errc.eq.TEREC_SUCCESS) then; num_subops=nsub; else; num_subops=-1; endif
+          if(errc.eq.TEREC_SUCCESS) then; num_subops=nsub; else; num_subops=0; endif
          endif
          if(present(ierr)) ierr=errc
          tmf=thread_wtime(tm(0))

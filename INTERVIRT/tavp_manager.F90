@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/12/06
+!REVISION: 2017/12/13
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -941,7 +941,8 @@
         subroutine TensInstrCtor(this,op_code,ierr,op_spec,iid)
 !Constructs a tensor instruction from a given tensor operation.
 !The tensor instruction is a realization of a given tensor operation
-!for a specific TAVP kind.
+!for a specific TAVP kind. Note that the tensor operands will not have
+!any information on tensor ownership. It should be set separately, if needed.
          implicit none
          class(tens_instr_t), intent(inout):: this        !out: tensor instruction (must be empty on entrance)
          integer(INTD), intent(in):: op_code              !in: instruction code (see top of this module)
@@ -1009,7 +1010,7 @@
             if(jerr.eq.DSVP_SUCCESS) then
              allocate(tens_oprnd,STAT=jerr)
              if(jerr.eq.0) then
-              call tens_oprnd%tens_oprnd_ctor(tensor,jerr) !`tensor owner id is omitted here
+              call tens_oprnd%tens_oprnd_ctor(tensor,jerr) !tensor owner id is omitted here
               if(jerr.eq.0) then
                oprnd=>tens_oprnd
                call this%set_operand(0,oprnd,jerr); if(jerr.ne.DSVP_SUCCESS) jerr=-6
@@ -1573,7 +1574,7 @@
            tens_instr=>NULL(); select type(uptr); type is(tens_instr_t); tens_instr=>uptr; end select
            if(.not.associated(tens_instr).and.errc.eq.0) then; errc=-6; exit wloop; endif !trap
            opcode=tens_instr%get_code(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-5; exit wloop; endif
-           if(opcode.eq.TAVP_INSTR_CTRL_STOP.or.opcode.eq.TAVP_INSTR_CTRL_PAUSE) then !only STOP instruction is expected `PAUSE is currently treated as STOP
+           if(opcode.eq.TAVP_INSTR_CTRL_STOP.or.opcode.eq.TAVP_INSTR_CTRL_PAUSE) then !only STOP instruction is expected `CONTROL STOP and PAUSE are treated the same currently
             stopping=.TRUE.
            else
             if(opcode.ne.TAVP_INSTR_CTRL_RESUME) then !`RESUME currently does nothing
@@ -1942,7 +1943,7 @@
             call this%bytecode%seal_packet(ier); if(ier.ne.PACK_SUCCESS.and.errc.eq.0) then; errc=-10; exit wloop; endif
   !Check for control instructions:
            elseif(opcode.ge.TAVP_ISA_CTRL_FIRST.and.opcode.le.TAVP_ISA_CTRL_LAST) then
-            if(opcode.eq.TAVP_INSTR_CTRL_STOP.or.opcode.eq.TAVP_INSTR_CTRL_PAUSE) stopping=.TRUE. !`STOP and PAUSE are treated in the same way
+            if(opcode.eq.TAVP_INSTR_CTRL_STOP.or.opcode.eq.TAVP_INSTR_CTRL_PAUSE) stopping=.TRUE. !`CONTROL STOP and PAUSE are treated the same currently
   !Other instructions are not expected here:
            else
             if(errc.eq.0) then; errc=-9; exit wloop; endif
@@ -2140,7 +2141,7 @@
              if(stalled) exit mloop
              call tens_instr%set_status(DS_INSTR_READY_TO_EXEC,ier)
              if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-64; exit wloop; endif
-             if(opcode.eq.TAVP_INSTR_CTRL_STOP.or.opcode.eq.TAVP_INSTR_CTRL_PAUSE) then !`STOP and PAUSE are treated the same currently
+             if(opcode.eq.TAVP_INSTR_CTRL_STOP.or.opcode.eq.TAVP_INSTR_CTRL_PAUSE) then !`CONTROL STOP and PAUSE are treated the same currently
               stopping=.TRUE.
               ier=this%ctrl_list%append(tens_instr); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-63; exit wloop; endif
               ier=tavp%ldecoder%load_port(0,this%ctrl_list) !send STOP instruction to lDecoder
@@ -2497,7 +2498,7 @@
              num_processed=num_processed+1
    !Move control instructions into the control list:
             elseif(opcode.ge.TAVP_ISA_CTRL_FIRST.and.opcode.le.TAVP_ISA_CTRL_LAST) then
-             if(opcode.eq.TAVP_INSTR_CTRL_STOP.or.opcode.eq.TAVP_INSTR_CTRL_PAUSE) stopping=.TRUE. !`PAUSE is treated as STOP as of now
+             if(opcode.eq.TAVP_INSTR_CTRL_STOP.or.opcode.eq.TAVP_INSTR_CTRL_PAUSE) stopping=.TRUE. !`CONTROL STOP and PAUSE are treated the same currently
              ier=this%iqueue%move_elem(this%ctrl_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-35; exit wloop; endif
    !Move other instructions into the auxiliary list:
             else
@@ -3119,7 +3120,7 @@
              call this%dispatch(tens_instr,i,ier); if(ier.ne.0.and.errc.eq.0) then; errc=-9; exit wloop; endif
             enddo
   !Check on control instructions:
-            if(opcode.eq.TAVP_INSTR_CTRL_STOP.or.opcode.eq.TAVP_INSTR_CTRL_PAUSE) stopping=.TRUE. !`Currently STOP and PAUSE have the same effect
+            if(opcode.eq.TAVP_INSTR_CTRL_STOP.or.opcode.eq.TAVP_INSTR_CTRL_PAUSE) stopping=.TRUE. !`CONTROL STOP and PAUSE are treated the same currently
            endif
   !Delete the dispatched instruction from the main queue:
            call tens_instr%set_status(DS_INSTR_RETIRED,ier,DSVP_SUCCESS)
@@ -3681,7 +3682,7 @@
             case(TAVP_INSTR_CTRL_STOP,TAVP_INSTR_CTRL_PAUSE)
              ier=this%ctrl_list%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-37; exit wloop; endif
              ier=this%iqueue%move_elem(this%ctrl_list)
-             stopping=.TRUE. !`PAUSE is treated as STOP as of now
+             stopping=.TRUE. !`CONTROL STOP and PAUSE are treated the same currently
             case(TAVP_INSTR_CTRL_RESUME)
              call tens_instr%set_status(DS_INSTR_RETIRED,ier,DSVP_SUCCESS)
              if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-36; exit wloop; endif
