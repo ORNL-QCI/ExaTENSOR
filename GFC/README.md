@@ -11,17 +11,10 @@ ISSUES:
  GFC heavily uses modern Fortran-2003 features which are
  implemented by a number of Fortran compilers, including
  GCC 5.3 and higher, Intel 17 and higher, IBM XL 15 and higher,
- and PGI 17 and higher. Unfortunately, almost all above
- compilers still have bugs in the implmentation of Fortran-2003
- features. The only Fortran compiler that passes all tests as
- of now is IBM XL 15.1 (and perhaps higher). In particular,
- known issues:
- 1. GNU 5.x and 6.x:
-    Problems with FINAL subroutines;
-    Occasional failures of sourced allocation;
- 2. GNU 7.1: Introduced a new bug in the compiler (causes a crash);
- 3. Intel 17: Strange crash in memory allocation;
- 4. PGI 17.5 and lower: Cannot even compile the code.
+ and PGI 17 and higher. Unfortunately almost all above
+ compilers may still have bugs in the implmentation of
+ Fortran-2003 features. The recommended compiler versions
+ are: Latest GFORTRAN (>7.2), Intel 18+, IBM XL 15+.
 
 GENERAL INFORMATION:
  GFC provides a number of heterogeneous containers for higher-level
@@ -31,12 +24,13 @@ GENERAL INFORMATION:
  legacy containers developed by me in the past prior to GFC.
  All GFC-based containers are prefixed with "gfc_".
  Provided (and to be provided) Fortran containers:
+ 0. Bank: gfc_bank (GFC): A pool of reusable objects of any type;
  1. Bi-directional Linked List: gfc_list (GFC), lists (legacy);
  2. Tree: gfc_tree (GFC);
  3. Dictionary (ordered map): gfc_dictionary (GFC), dictionary (legacy);
  4. Vector: gfc_vector (GFC);
  5. Vector tree: gfc_vec_tree (GFC): Vector with an imposed tree structure;
- 6. Graph: gfc_graph (GFC): Generic graph/hypergraph, a bit slow;
+ 6. Graph: gfc_graph (GFC): Generic graph/hypergraph (slow);
  7. Stack: gfc_stack (GFC, under development), stack (legacy);
  8. Queue: gfc_queue (GFC, under development);
  9. Priority queue: gfc_pri_queue (GFC, under development);
@@ -116,8 +110,8 @@ NOTES:
     dynamic type inferrence may decrease the efficiency when storing and
     operating on small objects. Thus, this implementation aims at providing a set
     of rather expensive higher-level abstractions for control logic and other
-    high-level operations for which ultimate numeric Flop/s efficiency is not
-    required. The use of GFC containers in the inner loop of compute intensive
+    high-level operations for which ultimate performance is not required.
+    The use of GFC containers in the inner loop of compute intensive
     kernels is highly discouraged (please resort to plain data, like arrays).
  2. Due to limitations of Fortran class inheritence, public methods
     with a trailing underscore shall NEVER be used by the end user!
@@ -125,4 +119,5 @@ NOTES:
     by reference will result in the loss of the allocated status of the stored
     pointer in case it was allocated. Consequently, the stored pointer cannot
     later be used for deallocating the corresponding target, although some
-    compilers ignore this.
+    compilers ignore this. In other words, storing by reference assumes no
+    ownership by GFC.

@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/12/13
+!REVISION: 2017/12/19
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -154,6 +154,7 @@
           procedure, public:: fully_located=>TensInstrFullyLocated        !returns TRUE if the tensor instruction operands have been fully located, FALSE otherwise
           procedure, public:: get_cache_entries=>TensInstrGetCacheEntries !returns an array of references to tensor cache entries used by the tensor operands
           procedure, public:: get_flops=>TensInstrGetFlops                !returns an estimate of the total number of Flops (mul/add) required
+          procedure, public:: get_operation=>TensInstrGetOperation        !returns back the encapsulated tensor operation
           final:: tens_instr_dtor                                         !dtor
         end type tens_instr_t
  !TAVP-MNG decoder:
@@ -392,6 +393,7 @@
         private TensInstrFullyLocated
         private TensInstrGetCacheEntries
         private TensInstrGetFlops
+        private TensInstrGetOperation
         public tens_instr_dtor
  !tavp_mng_decoder_t:
         private TAVPMNGDecoderConfigure
@@ -1412,6 +1414,48 @@
          if(present(ierr)) ierr=errc
          return
         end function TensInstrGetFlops
+!-----------------------------------------------------------------
+        subroutine TensInstrGetOperation(this,tens_operation,ierr)
+!Returns back the encapsulated tensor operation.
+         implicit none
+         class(tens_instr_t), intent(in):: this                !in: tensor instruction
+         class(tens_operation_t), intent(out):: tens_operation !out: corresponding tensor operation
+         integer(INTD), intent(out), optional:: ierr           !out: error code
+         integer(INTD):: errc,opcode
+
+         if(this%is_active(errc)) then
+          if(errc.eq.DSVP_SUCCESS) then
+           opcode=this%get_code(errc)
+           if(errc.eq.DSVP_SUCCESS) then
+            select case(opcode)
+            case(TAVP_INSTR_TENS_CONTRACT)
+             call tens_operation%clean(errc)
+             if(errc.eq.TEREC_SUCCESS) then
+              select type(tens_operation)
+              class is(tens_contraction_t)
+               !`Implement: Construct tens_contraction_t object
+              class default
+               errc=-1
+              end select
+             else
+              errc=-1
+             endif
+            case default
+             !`Implement other cases
+             errc=-1
+            end select
+           else
+            errc=-1
+           endif
+          else
+           errc=-1
+          endif
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensInstrGetOperation
 !---------------------------------------
         subroutine tens_instr_dtor(this)
          implicit none
@@ -2996,10 +3040,22 @@
           integer(INTD), intent(out):: jerr !out: error code
           integer(INTD):: jj,num_subinstr
           integer(INTL):: iid
+          type(tens_contraction_t):: tens_contr
+          type(list_bi_t):: subcontractions
 
           jerr=this%sub_list%reset_back()
           if(jerr.eq.GFC_SUCCESS) then
-           !`Implement
+           call tens_instr%get_operation(tens_contr,jerr)
+           if(jerr.eq.0) then
+            call tens_contr%split(subcontractions,jerr,num_subinstr)
+            if(jerr.eq.TEREC_SUCCESS) then
+             !`Finish: Create subinstructions from subcontractions and register/look up all subtensors
+            else
+             jerr=-1
+            endif
+           else
+            jerr=-1
+           endif
           else
            jerr=-1
           endif
