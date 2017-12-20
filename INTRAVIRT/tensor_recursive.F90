@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/12/13
+!REVISION: 2017/12/20
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -195,8 +195,8 @@
           procedure, public:: get_shape=>TensHeaderGetShape         !returns the pointer the the tensor shape
           procedure, public:: compare=>TensHeaderCompare            !compares the tensor header with another tensor header: {CMP_EQ,CMP_LT,CMP_GT,CMP_ER}
           procedure, public:: print_it=>TensHeaderPrintIt           !prints the tensor header
-#ifdef NO_GNU
-          final:: tens_header_dtor                                  !dtor `GCC/5.4.0 bug
+#if !(defined(__GNUC__) && __GNUC__ < 8)
+          final:: tens_header_dtor
 #endif
         end type tens_header_t
  !Simple (dense) tensor block (part):
@@ -313,8 +313,8 @@
           procedure, private:: TensRcrsvExtractSubtensorsVector      !extracts subtensor headers from the tensor and fills in a vector of subtensors the tensor is composed of
           generic, public:: extract_subtensors=>TensRcrsvExtractSubtensorsList,TensRcrsvExtractSubtensorsVector
           procedure, public:: print_it=>TensRcrsvPrintIt             !prints the tensor info
-#ifdef NO_GNU
-          final:: tens_rcrsv_dtor                                    !dtor `GCC/5.4.0 bug
+#if !(defined(__GNUC__) && __GNUC__ < 8)
+          final:: tens_rcrsv_dtor
 #endif
         end type tens_rcrsv_t
  !Tensor descriptor:

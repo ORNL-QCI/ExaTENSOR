@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Tree
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017-09-28 (started 2016-02-17)
+!REVISION: 2017-12-20 (started 2016-02-17)
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -151,8 +151,8 @@
        contains
 !IMPLEMENTATION:
 !---------------------------------------------------------------------------
-#ifdef NO_GNU
-        subroutine TreeVertexConstruct(this,obj,ierr,assoc_only,copy_ctor_f) !`GCC has a bug with this line
+#if !(defined(__GNUC__) && __GNUC__ < 9)
+        subroutine TreeVertexConstruct(this,obj,ierr,assoc_only,copy_ctor_f)
 #else
         subroutine TreeVertexConstruct(this,obj,ierr,assoc_only)
 #endif
@@ -162,12 +162,12 @@
          class(*), target, intent(in):: obj            !in: value to be stored
          integer(INTD), intent(out), optional:: ierr   !out: error code
          logical, intent(in), optional:: assoc_only    !in: if TRUE, the value will be assigned by reference, otherwise by value (allocated): Defaults to FALSE
-#ifdef NO_GNU
+#if !(defined(__GNUC__) && __GNUC__ < 9)
          procedure(gfc_copy_i), optional:: copy_ctor_f !in: generic copy constructor
 #endif
          integer(INTD):: errc
 
-#ifdef NO_GNU
+#if !(defined(__GNUC__) && __GNUC__ < 9)
          if(present(copy_ctor_f)) then
           if(present(assoc_only)) then
            call this%construct_base(obj,errc,assoc_only,copy_ctor_f)
@@ -181,7 +181,7 @@
           else
            call this%construct_base(obj,errc)
           endif
-#ifdef NO_GNU
+#if !(defined(__GNUC__) && __GNUC__ < 9)
          endif
 #endif
          if(present(ierr)) ierr=errc
@@ -827,8 +827,8 @@
          return
         end function TreeIterGetLevel
 !------------------------------------------------------------------------------------------
-#ifdef NO_GNU
-        function TreeIterAddLeaf(this,elem_val,assoc_only,no_move,copy_ctor_f) result(ierr) !`GCC/5.3.0 has a bug with this
+#if !(defined(__GNUC__) && __GNUC__ < 9)
+        function TreeIterAddLeaf(this,elem_val,assoc_only,no_move,copy_ctor_f) result(ierr)
 #else
         function TreeIterAddLeaf(this,elem_val,assoc_only,no_move) result(ierr)
 #endif
@@ -840,7 +840,7 @@
          class(*), target, intent(in):: elem_val    !in: value to store in the container
          logical, intent(in), optional:: assoc_only !in: TRUE: store by reference, FALSE: store by value (defaults to FALSE)
          logical, intent(in), optional:: no_move    !in: if TRUE, the iterator will not move to the newly added element (defaults to FALSE)
-#ifdef NO_GNU
+#if !(defined(__GNUC__) && __GNUC__ < 9)
          procedure(gfc_copy_i), optional:: copy_ctor_f !in: user-defined generic copy constructor
 #endif
          class(tree_vertex_t), pointer:: tvp
@@ -858,13 +858,13 @@
             tvp=>this%current%first_child%prev_sibling !last sibling among children
             allocate(tvp%next_sibling,STAT=errc)
             if(errc.eq.0) then
-#ifdef NO_GNU
+#if !(defined(__GNUC__) && __GNUC__ < 9)
              if(present(copy_ctor_f)) then
               call tvp%next_sibling%tree_vertex_ctor(elem_val,ierr,assoc_only=assoc,copy_ctor_f=copy_ctor_f)
              else
 #endif
               call tvp%next_sibling%tree_vertex_ctor(elem_val,ierr,assoc_only=assoc)
-#ifdef NO_GNU
+#if !(defined(__GNUC__) && __GNUC__ < 9)
              endif
 #endif
              if(ierr.eq.GFC_SUCCESS) then
@@ -880,13 +880,13 @@
            else
             allocate(this%current%first_child,STAT=errc)
             if(errc.eq.0) then
-#ifdef NO_GNU
+#if !(defined(__GNUC__) && __GNUC__ < 9)
              if(present(copy_ctor_f)) then
               call this%current%first_child%tree_vertex_ctor(elem_val,ierr,assoc_only=assoc,copy_ctor_f=copy_ctor_f)
              else
 #endif
               call this%current%first_child%tree_vertex_ctor(elem_val,ierr,assoc_only=assoc)
-#ifdef NO_GNU
+#if !(defined(__GNUC__) && __GNUC__ < 9)
              endif
 #endif
              if(ierr.eq.GFC_SUCCESS) then
@@ -921,13 +921,13 @@
            if(.not.(associated(this%container%root).or.associated(this%current))) then
             allocate(this%container%root,STAT=errc)
             if(errc.eq.0) then
-#ifdef NO_GNU
+#if !(defined(__GNUC__) && __GNUC__ < 9)
              if(present(copy_ctor_f)) then
               call this%container%root%tree_vertex_ctor(elem_val,ierr,assoc_only=assoc,copy_ctor_f=copy_ctor_f)
              else
 #endif
               call this%container%root%tree_vertex_ctor(elem_val,ierr,assoc_only=assoc)
-#ifdef NO_GNU
+#if !(defined(__GNUC__) && __GNUC__ < 9)
              endif
 #endif
              if(ierr.eq.GFC_SUCCESS) then

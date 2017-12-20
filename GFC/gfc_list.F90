@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Bi-directional linked list
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017-12-05 (started 2016-02-28)
+!REVISION: 2017-12-20 (started 2016-02-28)
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -146,8 +146,8 @@
        contains
 !IMPLEMENTATION:
 !-------------------------------------------------------------------------
-#ifdef NO_GNU
-        subroutine ListElemConstruct(this,obj,ierr,assoc_only,copy_ctor_f) !`GCC has a bug with this line
+#if !(defined(__GNUC__) && __GNUC__ < 9)
+        subroutine ListElemConstruct(this,obj,ierr,assoc_only,copy_ctor_f)
 #else
         subroutine ListElemConstruct(this,obj,ierr,assoc_only)
 #endif
@@ -157,12 +157,12 @@
          class(*), target, intent(in):: obj            !in: value to be stored
          integer(INTD), intent(out), optional:: ierr   !out: error code
          logical, intent(in), optional:: assoc_only    !in: if TRUE, the value will be assigned by reference, otherwise by value (allocated): Defaults to FALSE
-#ifdef NO_GNU
+#if !(defined(__GNUC__) && __GNUC__ < 9)
          procedure(gfc_copy_i), optional:: copy_ctor_f !in: generic copy constructor
 #endif
          integer(INTD):: errc
 
-#ifdef NO_GNU
+#if !(defined(__GNUC__) && __GNUC__ < 9)
          if(present(copy_ctor_f)) then
           if(present(assoc_only)) then
            call this%construct_base(obj,errc,assoc_only,copy_ctor_f)
@@ -176,7 +176,7 @@
           else
            call this%construct_base(obj,errc)
           endif
-#ifdef NO_GNU
+#if !(defined(__GNUC__) && __GNUC__ < 9)
          endif
 #endif
          if(present(ierr)) ierr=errc
@@ -274,8 +274,8 @@
          return
         end function ListIsSublist
 !----------------------------------------------------------------------------------
-#ifdef NO_GNU
-        function ListDuplicateToList(this,list,assoc_only,copy_ctor_f) result(ierr) !`GCC bug
+#if !(defined(__GNUC__) && __GNUC__ < 9)
+        function ListDuplicateToList(this,list,assoc_only,copy_ctor_f) result(ierr)
 #else
         function ListDuplicateToList(this,list,assoc_only) result(ierr)
 #endif
@@ -285,7 +285,7 @@
          class(list_bi_t), intent(in):: this           !in: input list (must be non-empty on input)
          class(list_bi_t), intent(inout):: list        !out: output duplicate list (must be empty on input)
          logical, intent(in), optional:: assoc_only    !in: if TRUE, the list will be duplicated by reference, otherwise by value (default)
-#ifdef NO_GNU
+#if !(defined(__GNUC__) && __GNUC__ < 9)
          procedure(gfc_copy_i), optional:: copy_ctor_f !in: optional copy constructor (may be needed when duplicating by value)
 #endif
          integer(INTD):: errc
@@ -302,7 +302,7 @@
             if(ierr.eq.GFC_SUCCESS) then
              assoc=.FALSE.; if(present(assoc_only)) assoc=assoc_only
              errc=GFC_SUCCESS
-#ifdef NO_GNU
+#if !(defined(__GNUC__) && __GNUC__ < 9)
              if(present(copy_ctor_f)) then
               do while(errc.eq.GFC_SUCCESS)
                up=>ilit%get_value(ierr); if(ierr.ne.GFC_SUCCESS) exit
@@ -316,7 +316,7 @@
                ierr=olit%append(up,.FALSE.,assoc)
                errc=ilit%next()
               enddo
-#ifdef NO_GNU
+#if !(defined(__GNUC__) && __GNUC__ < 9)
              endif
 #endif
              if(errc.eq.GFC_NO_MOVE) errc=GFC_SUCCESS
@@ -334,8 +334,8 @@
          return
         end function ListDuplicateToList
 !--------------------------------------------------------------------------------------
-#ifdef NO_GNU
-        function ListDuplicateToVector(this,vector,assoc_only,copy_ctor_f) result(ierr) !`GCC bug
+#if !(defined(__GNUC__) && __GNUC__ < 9)
+        function ListDuplicateToVector(this,vector,assoc_only,copy_ctor_f) result(ierr)
 #else
         function ListDuplicateToVector(this,vector,assoc_only) result(ierr)
 #endif
@@ -345,7 +345,7 @@
          class(list_bi_t), intent(in):: this           !in: input list (must be non-empty on input)
          class(vector_t), intent(inout):: vector       !out: output vector (must be empty on input)
          logical, intent(in), optional:: assoc_only    !in: if TRUE, the list will be duplicated by reference, otherwise by value (default)
-#ifdef NO_GNU
+#if !(defined(__GNUC__) && __GNUC__ < 9)
          procedure(gfc_copy_i), optional:: copy_ctor_f !in: optional copy constructor (may be needed when duplicating by value)
 #endif
          integer(INTD):: errc
@@ -363,7 +363,7 @@
             if(ierr.eq.GFC_SUCCESS) then
              assoc=.FALSE.; if(present(assoc_only)) assoc=assoc_only
              errc=GFC_SUCCESS
-#ifdef NO_GNU
+#if !(defined(__GNUC__) && __GNUC__ < 9)
              if(present(copy_ctor_f)) then
               do while(errc.eq.GFC_SUCCESS)
                up=>ilit%get_value(ierr); if(ierr.ne.GFC_SUCCESS) exit
@@ -377,7 +377,7 @@
                ierr=ovit%append(up,assoc)
                errc=ilit%next()
               enddo
-#ifdef NO_GNU
+#if !(defined(__GNUC__) && __GNUC__ < 9)
              endif
 #endif
              if(errc.eq.GFC_NO_MOVE) errc=GFC_SUCCESS
@@ -609,8 +609,8 @@
          return
         end function ListIterOnLast
 !----------------------------------------------------------------------------------------
-#ifdef NO_GNU
-        function ListIterAppend(this,elem_val,at_top,assoc_only,copy_ctor_f) result(ierr) !`GCC/5.3.0 has a bug with this
+#if !(defined(__GNUC__) && __GNUC__ < 9)
+        function ListIterAppend(this,elem_val,at_top,assoc_only,copy_ctor_f) result(ierr)
 #else
         function ListIterAppend(this,elem_val,at_top,assoc_only) result(ierr)
 #endif
@@ -623,7 +623,7 @@
          class(*), target, intent(in):: elem_val    !in: value to be stored
          logical, intent(in), optional:: at_top     !in: TRUE:append at the top, FALSE:append at the end (default)
          logical, intent(in), optional:: assoc_only !in: storage type: TRUE:by reference, FALSE:by value (default)
-#ifdef NO_GNU
+#if !(defined(__GNUC__) && __GNUC__ < 9)
          procedure(gfc_copy_i), optional:: copy_ctor_f !user-defined generic copy constructor (when storing by value only)
 #endif
          logical:: assoc,top
@@ -648,13 +648,13 @@
              if(errc.eq.0) lep=>this%container%last_elem%next_elem
             endif
             if(errc.eq.0) then
-#ifdef NO_GNU
+#if !(defined(__GNUC__) && __GNUC__ < 9)
              if(present(copy_ctor_f)) then
               call lep%list_elem_ctor(elem_val,ierr,assoc_only=assoc,copy_ctor_f=copy_ctor_f)
              else
 #endif
               call lep%list_elem_ctor(elem_val,ierr,assoc_only=assoc)
-#ifdef NO_GNU
+#if !(defined(__GNUC__) && __GNUC__ < 9)
              endif
 #endif
              if(ierr.eq.GFC_SUCCESS) then
@@ -703,13 +703,13 @@
                     &associated(this%container%first_elem).or.associated(this%container%last_elem))) then
             allocate(this%container%first_elem,STAT=errc)
             if(errc.eq.0) then
-#ifdef NO_GNU
+#if !(defined(__GNUC__) && __GNUC__ < 9)
              if(present(copy_ctor_f)) then
               call this%container%first_elem%list_elem_ctor(elem_val,ierr,assoc_only=assoc,copy_ctor_f=copy_ctor_f)
              else
 #endif
               call this%container%first_elem%list_elem_ctor(elem_val,ierr,assoc_only=assoc)
-#ifdef NO_GNU
+#if !(defined(__GNUC__) && __GNUC__ < 9)
              endif
 #endif
              if(ierr.eq.GFC_SUCCESS) then
@@ -738,8 +738,8 @@
          return
         end function ListIterAppend
 !-----------------------------------------------------------------------------------------------------
-#ifdef NO_GNU
-        function ListIterInsertElem(this,elem_val,precede,assoc_only,no_move,copy_ctor_f) result(ierr) !`GCC/5.3.0 has a bug with this
+#if !(defined(__GNUC__) && __GNUC__ < 9)
+        function ListIterInsertElem(this,elem_val,precede,assoc_only,no_move,copy_ctor_f) result(ierr)
 #else
         function ListIterInsertElem(this,elem_val,precede,assoc_only,no_move) result(ierr)
 #endif
@@ -753,7 +753,7 @@
          logical, intent(in), optional:: precede       !in: TRUE:insert before, FALSE:insert after (default)
          logical, intent(in), optional:: assoc_only    !in: storage type: TRUE:by reference, FALSE:by value (default)
          logical, intent(in), optional:: no_move       !in: if TRUE, the iterator position does not change, FALSE it does move to the newly added element (default)
-#ifdef NO_GNU
+#if !(defined(__GNUC__) && __GNUC__ < 9)
          procedure(gfc_copy_i), optional:: copy_ctor_f !user-defined generic copy constructor
 #endif
          logical:: assoc,before,move
@@ -771,13 +771,13 @@
             ierr=GFC_SUCCESS
             allocate(lep,STAT=errc)
             if(errc.eq.0) then
-#ifdef NO_GNU
+#if !(defined(__GNUC__) && __GNUC__ < 9)
              if(present(copy_ctor_f)) then
               call lep%list_elem_ctor(elem_val,ierr,assoc_only=assoc,copy_ctor_f=copy_ctor_f)
              else
 #endif
               call lep%list_elem_ctor(elem_val,ierr,assoc_only=assoc)
-#ifdef NO_GNU
+#if !(defined(__GNUC__) && __GNUC__ < 9)
              endif
 #endif
              if(ierr.eq.GFC_SUCCESS) then
@@ -818,13 +818,13 @@
             ierr=GFC_SUCCESS
             allocate(this%container%first_elem,STAT=errc)
             if(errc.eq.0) then
-#ifdef NO_GNU
+#if !(defined(__GNUC__) && __GNUC__ < 9)
              if(present(copy_ctor_f)) then
               call this%container%first_elem%list_elem_ctor(elem_val,ierr,assoc_only=assoc,copy_ctor_f=copy_ctor_f)
              else
 #endif
               call this%container%first_elem%list_elem_ctor(elem_val,ierr,assoc_only=assoc)
-#ifdef NO_GNU
+#if !(defined(__GNUC__) && __GNUC__ < 9)
              endif
 #endif
              if(ierr.eq.GFC_SUCCESS) then

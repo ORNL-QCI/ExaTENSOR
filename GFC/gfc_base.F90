@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Base
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017-11-08 (started 2016-02-17)
+!REVISION: 2017-12-20 (started 2016-02-17)
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -314,8 +314,8 @@
        contains
 !IMPLEMENTATION:
 !--------------------------------------------------------------------------------
-#ifdef NO_GNU
-        subroutine ContElemConstruct(this,obj,ierr,assoc_only,copy_ctor_f,locked) !`GCC/5.3.0 has a bug with this line
+#if !(defined(__GNUC__) && __GNUC__ < 9)
+        subroutine ContElemConstruct(this,obj,ierr,assoc_only,copy_ctor_f,locked)
 #else
         subroutine ContElemConstruct(this,obj,ierr,assoc_only,locked)
 #endif
@@ -327,7 +327,7 @@
          class(*), intent(in), target:: obj            !in: value to be stored in this element
          integer(INTD), intent(out), optional:: ierr   !out: error code (0:success)
          logical, intent(in), optional:: assoc_only    !in: if TRUE, <obj> will be stored by reference, otherwise by value (default)
-#ifdef NO_GNU
+#if !(defined(__GNUC__) && __GNUC__ < 9)
          procedure(gfc_copy_i), optional:: copy_ctor_f !in: user-defined generic copy constructor
 #endif
          logical, intent(in), optional:: locked        !in: if TRUE, the container element will be assumed already locked (defaults to FALSE)
@@ -346,14 +346,14 @@
               this%value_p=>obj
               this%alloc=GFC_FALSE
              else
-#ifdef NO_GNU
+#if !(defined(__GNUC__) && __GNUC__ < 9)
               if(present(copy_ctor_f)) then
                this%value_p=>copy_ctor_f(obj,errc); if(errc.ne.0) errc=GFC_MEM_ALLOC_FAILED
               else
 #endif
                this%value_p=>clone_object(obj,errc); if(errc.ne.0) errc=GFC_MEM_ALLOC_FAILED
                if(errc.eq.GFC_MEM_ALLOC_FAILED) call crash() !debug
-#ifdef NO_GNU
+#if !(defined(__GNUC__) && __GNUC__ < 9)
               endif
 #endif
               if(errc.eq.GFC_SUCCESS) then

@@ -11,10 +11,11 @@ ISSUES:
  GFC heavily uses modern Fortran-2003 features which are
  implemented by a number of Fortran compilers, including
  GCC 5.3 and higher, Intel 17 and higher, IBM XL 15 and higher,
- and PGI 17 and higher. Unfortunately almost all above
- compilers may still have bugs in the implmentation of
- Fortran-2003 features. The recommended compiler versions
- are: Latest GFORTRAN (>7.2), Intel 18+, IBM XL 15+.
+ PGI 17 and higher, and Cray. Unfortunately almost all above
+ compilers may still have bugs in the implementation of Fortran-2003
+ features. GCC/8.0.0 has fixed a number of critical bugs (special thanks
+ to Paul Thomas). Other compilers to try are: Intel 18+, IBM XL 15+,
+ PGI 17.10+, latest Cray compiler.
 
 GENERAL INFORMATION:
  GFC provides a number of heterogeneous containers for higher-level

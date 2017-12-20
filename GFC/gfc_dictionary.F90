@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Dictionary (ordered map), AVL BST
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017/11/14 (recycling my old dictionary implementation)
+!REVISION: 2017/12/20 (recycling my old dictionary implementation)
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -144,8 +144,8 @@
 !DEFINITIONS:
        contains
 ![dict_elem_t]=============================================================================================
-#ifdef NO_GNU
-        subroutine DictElemConstruct(this,key,val,ierr,assoc_key,assoc_val,key_copy_ctor_f,val_copy_ctor_f) !`GCC has a bug with this line
+#if !(defined(__GNUC__) && __GNUC__ < 9)
+        subroutine DictElemConstruct(this,key,val,ierr,assoc_key,assoc_val,key_copy_ctor_f,val_copy_ctor_f)
 #else
         subroutine DictElemConstruct(this,key,val,ierr,assoc_key,assoc_val)
 #endif
@@ -159,7 +159,7 @@
          integer(INTD), intent(out), optional:: ierr        !out: error code
          logical, intent(in), optional:: assoc_key          !in: if TRUE, <key> will be stored by reference, otherwise by value (default)
          logical, intent(in), optional:: assoc_val          !in: if TRUE, <val> will be stored by reference, otherwise by value (default)
-#ifdef NO_GNU
+#if !(defined(__GNUC__) && __GNUC__ < 9)
          procedure(gfc_copy_i), optional:: key_copy_ctor_f  !in: user-defined generic copy constructor for the key (by value)
          procedure(gfc_copy_i), optional:: val_copy_ctor_f  !in: user-defined generic copy constructor for the value (by value)
 #endif
@@ -172,27 +172,27 @@
          if(present(assoc_val)) then; assv=assoc_val; else; assv=.FALSE.; endif
          if(this%in_use(errc,set_lock=.TRUE.,report_refs=.FALSE.).eq.GFC_FALSE) then
           if(this%is_empty()) then
-#ifdef NO_GNU
+#if !(defined(__GNUC__) && __GNUC__ < 9)
            if(present(val_copy_ctor_f)) then
             call this%construct_base(val,errc,assoc_only=assv,copy_ctor_f=val_copy_ctor_f,locked=.TRUE.)
            else
 #endif
             call this%construct_base(val,errc,assoc_only=assv,locked=.TRUE.)
-#ifdef NO_GNU
+#if !(defined(__GNUC__) && __GNUC__ < 9)
            endif
 #endif
            if(errc.eq.GFC_SUCCESS) then !base constructor succeeded
             if(assk) then
              this%key=>key
             else
-#ifdef NO_GNU
+#if !(defined(__GNUC__) && __GNUC__ < 9)
              if(present(key_copy_ctor_f)) then
               this%key=>key_copy_ctor_f(key,errc)
              else
 #endif
               allocate(this%key,SOURCE=key,STAT=ier)
               if(ier.ne.0) errc=GFC_MEM_ALLOC_FAILED
-#ifdef NO_GNU
+#if !(defined(__GNUC__) && __GNUC__ < 9)
              endif
 #endif
             endif
@@ -1033,8 +1033,8 @@
          return
         end function DictionaryIterDeleteAll
 !-----------------------------------------------------------------------------------------------------------------------
-#ifdef NO_GNU
-        function DictionaryIterSearch(this,action,cmp_key_f,key,value_in,store_by,value_out,copy_ctor_val_f,dtor_val_f)& !`GCC bug
+#if !(defined(__GNUC__) && __GNUC__ < 9)
+        function DictionaryIterSearch(this,action,cmp_key_f,key,value_in,store_by,value_out,copy_ctor_val_f,dtor_val_f)&
         &result(dict_search)
 #else
         function DictionaryIterSearch(this,action,cmp_key_f,key,value_in,store_by,value_out,dtor_val_f)&
@@ -1052,7 +1052,7 @@
          class(*), intent(in), target, optional:: value_in      !in: an optional value to be stored with the key
          logical, intent(in), optional:: store_by               !in: storage type for newly added values: {GFC_BY_VAL,GFC_BY_REF}, defaults to GFC_BY_VAL
          class(*), pointer, intent(out), optional:: value_out   !out: when fetching, this will point to the value found by the key (NULL otherwise)
-#ifdef NO_GNU
+#if !(defined(__GNUC__) && __GNUC__ < 9)
          procedure(gfc_copy_i), optional:: copy_ctor_val_f      !in: explicit copy constructor for the element value, if needed
 #endif
          procedure(gfc_destruct_i), optional:: dtor_val_f       !in: explicit destructor for the dictionary element value, if needed
@@ -1353,24 +1353,24 @@
             endif
             if(present(value_in)) then
              if(present(store_by)) then
-#ifdef NO_GNU
+#if !(defined(__GNUC__) && __GNUC__ < 9)
               if(present(copy_ctor_val_f)) then
                call curr%dict_elem_ctor(key,value_in,j,assoc_key=dict%key_storage,assoc_val=store_by,&
                                        &val_copy_ctor_f=copy_ctor_val_f)
               else
 #endif
                call curr%dict_elem_ctor(key,value_in,j,assoc_key=dict%key_storage,assoc_val=store_by)
-#ifdef NO_GNU
+#if !(defined(__GNUC__) && __GNUC__ < 9)
               endif
 #endif
              else
-#ifdef NO_GNU
+#if !(defined(__GNUC__) && __GNUC__ < 9)
               if(present(copy_ctor_val_f)) then
                call curr%dict_elem_ctor(key,value_in,j,assoc_key=dict%key_storage,val_copy_ctor_f=copy_ctor_val_f)
               else
 #endif
                call curr%dict_elem_ctor(key,value_in,j,assoc_key=dict%key_storage)
-#ifdef NO_GNU
+#if !(defined(__GNUC__) && __GNUC__ < 9)
               endif
 #endif
              endif
@@ -1393,24 +1393,24 @@
             curr%parent=>NULL(); curr%child_lt=>NULL(); curr%child_gt=>NULL(); curr%balance_fac=0
             if(present(value_in)) then
              if(present(store_by)) then
-#ifdef NO_GNU
+#if !(defined(__GNUC__) && __GNUC__ < 9)
               if(present(copy_ctor_val_f)) then
                call curr%dict_elem_ctor(key,value_in,j,assoc_key=dict%key_storage,assoc_val=store_by,&
                                        &val_copy_ctor_f=copy_ctor_val_f)
               else
 #endif
                call curr%dict_elem_ctor(key,value_in,j,assoc_key=dict%key_storage,assoc_val=store_by)
-#ifdef NO_GNU
+#if !(defined(__GNUC__) && __GNUC__ < 9)
               endif
 #endif
              else
-#ifdef NO_GNU
+#if !(defined(__GNUC__) && __GNUC__ < 9)
               if(present(copy_ctor_val_f)) then
                call curr%dict_elem_ctor(key,value_in,j,assoc_key=dict%key_storage,val_copy_ctor_f=copy_ctor_val_f)
               else
 #endif
                call curr%dict_elem_ctor(key,value_in,j,assoc_key=dict%key_storage)
-#ifdef NO_GNU
+#if !(defined(__GNUC__) && __GNUC__ < 9)
               endif
 #endif
              endif

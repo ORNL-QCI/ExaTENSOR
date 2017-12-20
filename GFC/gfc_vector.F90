@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Vector (non-contiguous)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017/10/24
+!REVISION: 2017/12/20
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -182,8 +182,8 @@
          return
         end function quadruplet2flat
 ![vector_elem_t]============================================================
-#ifdef NO_GNU
-        subroutine VectorElemConstruct(this,obj,ierr,assoc_only,copy_ctor_f) !`GCC has a bug with this line
+#if !(defined(__GNUC__) && __GNUC__ < 9)
+        subroutine VectorElemConstruct(this,obj,ierr,assoc_only,copy_ctor_f)
 #else
         subroutine VectorElemConstruct(this,obj,ierr,assoc_only)
 #endif
@@ -193,12 +193,12 @@
          class(*), target, intent(in):: obj             !in: value to be stored
          integer(INTD), intent(out), optional:: ierr    !out: error code
          logical, intent(in), optional:: assoc_only     !in: if TRUE, the value will be assigned by reference, otherwise by value (allocated): Defaults to FALSE
-#ifdef NO_GNU
+#if !(defined(__GNUC__) && __GNUC__ < 9)
          procedure(gfc_copy_i), optional:: copy_ctor_f  !in: generic copy constructor
 #endif
          integer(INTD):: errc
 
-#ifdef NO_GNU
+#if !(defined(__GNUC__) && __GNUC__ < 9)
          if(present(copy_ctor_f)) then
           if(present(assoc_only)) then
            call this%construct_base(obj,errc,assoc_only,copy_ctor_f)
@@ -212,7 +212,7 @@
           else
            call this%construct_base(obj,errc)
           endif
-#ifdef NO_GNU
+#if !(defined(__GNUC__) && __GNUC__ < 9)
          endif
 #endif
          if(present(ierr)) ierr=errc
@@ -769,8 +769,8 @@
          return
         end function VectorIterMoveTo
 !-----------------------------------------------------------------------------------
-#ifdef NO_GNU
-        function VectorIterAppend(this,elem_val,assoc_only,copy_ctor_f) result(ierr) !`GCC has a bug with this
+#if !(defined(__GNUC__) && __GNUC__ < 9)
+        function VectorIterAppend(this,elem_val,assoc_only,copy_ctor_f) result(ierr)
 #else
         function VectorIterAppend(this,elem_val,assoc_only) result(ierr)
 #endif
@@ -781,7 +781,7 @@
          class(vector_iter_t), intent(inout):: this !inout: iterator
          class(*), target, intent(in):: elem_val    !in: value to be stored
          logical, intent(in), optional:: assoc_only !in: storage type: TRUE:by reference, FALSE:by value (default)
-#ifdef NO_GNU
+#if !(defined(__GNUC__) && __GNUC__ < 9)
          procedure(gfc_copy_i), optional:: copy_ctor_f !user-defined generic copy constructor (when storing by value only)
 #endif
          logical:: assoc
@@ -797,7 +797,7 @@
            ierr=this%container%adjust_structure_(offset)
            if(ierr.eq.GFC_SUCCESS) then
             call flat2quadruplet(offset,q)
-#ifdef NO_GNU
+#if !(defined(__GNUC__) && __GNUC__ < 9)
             if(present(copy_ctor_f)) then
              call this%container%vec_tile(q(4))%tile_batch(q(3))%batch_seg(q(2))%seg_elem(q(1))%&
                  &vector_elem_ctor(elem_val,ierr,assoc_only=assoc,copy_ctor_f=copy_ctor_f)
@@ -805,7 +805,7 @@
 #endif
              call this%container%vec_tile(q(4))%tile_batch(q(3))%batch_seg(q(2))%seg_elem(q(1))%&
                  &vector_elem_ctor(elem_val,ierr,assoc_only=assoc)
-#ifdef NO_GNU
+#if !(defined(__GNUC__) && __GNUC__ < 9)
             endif
 #endif
             if(ierr.eq.GFC_SUCCESS) then
@@ -825,7 +825,7 @@
             ierr=this%container%adjust_structure_(offset)
             if(ierr.eq.GFC_SUCCESS) then
              call flat2quadruplet(offset,q)
-#ifdef NO_GNU
+#if !(defined(__GNUC__) && __GNUC__ < 9)
              if(present(copy_ctor_f)) then
               call this%container%vec_tile(q(4))%tile_batch(q(3))%batch_seg(q(2))%seg_elem(q(1))%&
                   &vector_elem_ctor(elem_val,ierr,assoc_only=assoc,copy_ctor_f=copy_ctor_f)
@@ -833,7 +833,7 @@
 #endif
               call this%container%vec_tile(q(4))%tile_batch(q(3))%batch_seg(q(2))%seg_elem(q(1))%&
                   &vector_elem_ctor(elem_val,ierr,assoc_only=assoc)
-#ifdef NO_GNU
+#if !(defined(__GNUC__) && __GNUC__ < 9)
              endif
 #endif
              if(ierr.eq.GFC_SUCCESS) then
@@ -854,8 +854,8 @@
          return
         end function VectorIterAppend
 !-----------------------------------------------------------------------------------
-#ifdef NO_GNU
-        function VectorIterInsert(this,elem_val,assoc_only,copy_ctor_f) result(ierr) !`GCC has a bug with this
+#if !(defined(__GNUC__) && __GNUC__ < 9)
+        function VectorIterInsert(this,elem_val,assoc_only,copy_ctor_f) result(ierr)
 #else
         function VectorIterInsert(this,elem_val,assoc_only) result(ierr)
 #endif
@@ -866,7 +866,7 @@
          class(vector_iter_t), intent(inout):: this !inout: iterator
          class(*), target, intent(in):: elem_val    !in: value to be stored
          logical, intent(in), optional:: assoc_only !in: storage type: TRUE:by reference, FALSE:by value (default)
-#ifdef NO_GNU
+#if !(defined(__GNUC__) && __GNUC__ < 9)
          procedure(gfc_copy_i), optional:: copy_ctor_f !user-defined generic copy constructor (when storing by value only)
 #endif
          logical:: assoc
@@ -881,7 +881,7 @@
            ierr=this%container%adjust_structure_(offset)
            if(ierr.eq.GFC_SUCCESS) then
             call flat2quadruplet(offset,q)
-#ifdef NO_GNU
+#if !(defined(__GNUC__) && __GNUC__ < 9)
             if(present(copy_ctor_f)) then
              call this%container%vec_tile(q(4))%tile_batch(q(3))%batch_seg(q(2))%seg_elem(q(1))%&
                  &vector_elem_ctor(elem_val,ierr,assoc_only=assoc,copy_ctor_f=copy_ctor_f)
@@ -889,7 +889,7 @@
 #endif
              call this%container%vec_tile(q(4))%tile_batch(q(3))%batch_seg(q(2))%seg_elem(q(1))%&
                  &vector_elem_ctor(elem_val,ierr,assoc_only=assoc)
-#ifdef NO_GNU
+#if !(defined(__GNUC__) && __GNUC__ < 9)
             endif
 #endif
             if(ierr.eq.GFC_SUCCESS) then
@@ -910,7 +910,7 @@
             ierr=this%container%adjust_structure_(offset)
             if(ierr.eq.GFC_SUCCESS) then
              call flat2quadruplet(offset,q)
-#ifdef NO_GNU
+#if !(defined(__GNUC__) && __GNUC__ < 9)
              if(present(copy_ctor_f)) then
               call this%container%vec_tile(q(4))%tile_batch(q(3))%batch_seg(q(2))%seg_elem(q(1))%&
                   &vector_elem_ctor(elem_val,ierr,assoc_only=assoc,copy_ctor_f=copy_ctor_f)
@@ -918,7 +918,7 @@
 #endif
               call this%container%vec_tile(q(4))%tile_batch(q(3))%batch_seg(q(2))%seg_elem(q(1))%&
                   &vector_elem_ctor(elem_val,ierr,assoc_only=assoc)
-#ifdef NO_GNU
+#if !(defined(__GNUC__) && __GNUC__ < 9)
              endif
 #endif
              if(ierr.eq.GFC_SUCCESS) then

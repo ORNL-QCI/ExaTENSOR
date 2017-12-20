@@ -1,7 +1,7 @@
 !Infrastructure for a recursive adaptive vector space decomposition
 !and hierarchical vector space representation.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/12/13
+!REVISION: 2017/12/20
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -176,8 +176,8 @@
           generic, public:: basis_func_supp_ctor=>BasisFuncSuppCtorEmpty,BasisFuncSuppCtorReal
           procedure, public:: is_set=>BasisFuncSuppIsSet            !returns .TRUE. if the basis function support is set
           procedure, public:: supp_dimsn=>BasisFuncSuppDimsn        !returns the support dimension (>=0), 0 is trivial (no real support)
-#ifdef NO_GNU
-          final:: basis_func_supp_dtor                              !dtor `GCC/5.4.0 bug
+#if !(defined(__GNUC__) && __GNUC__ < 8)
+          final:: basis_func_supp_dtor
 #endif
         end type basis_func_supp_t
  !Gaussian basis function:

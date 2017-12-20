@@ -242,11 +242,6 @@ DF := -WF,
 else
 DF :=
 endif
-ifeq ($(TOOLKIT),GNU)
-NO_GNU :=
-else
-NO_GNU := -DNO_GNU
-endif
 ifeq ($(BLASLIB),NONE)
 NO_BLAS = -DNO_BLAS
 else
@@ -286,7 +281,7 @@ FFLAGS_PGI_DEV = -c -Mcache_align -Mbounds -Mchkptr -Mstandard -Mallocatable=03 
 FFLAGS_PGI_OPT = -c -Mcache_align -Mstandard -Mallocatable=03 -O3
 FFLAGS_IBM_DEV = -c -qsmp=omp -g9 -O0 -qkeepparm -qcheck -qsigtrap -qstackprotect=all
 FFLAGS_IBM_OPT = -c -qsmp=omp -O3
-FFLAGS = $(FFLAGS_$(TOOLKIT)_$(BUILD_TYPE)) $(DF)$(NO_GPU) $(DF)$(NO_AMD) $(DF)$(NO_PHI) $(DF)$(NO_BLAS) $(DF)-D$(EXA_OS) $(DF)$(NO_GNU) $(PIC_FLAG)
+FFLAGS = $(FFLAGS_$(TOOLKIT)_$(BUILD_TYPE)) $(DF)$(NO_GPU) $(DF)$(NO_AMD) $(DF)$(NO_PHI) $(DF)$(NO_BLAS) $(DF)-D$(EXA_OS) $(PIC_FLAG)
 
 #ExaTensor includes:
 MY_INC1 = -I../UTILITY -I../GFC -I../DDSS -I../TALSH -I../DSVP

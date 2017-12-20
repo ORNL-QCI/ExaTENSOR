@@ -2,7 +2,7 @@
 !The elements are initially inserted in a vector with an option to be
 !later added in a tree, thus imposing a tree relationship on them.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017/09/30
+!REVISION: 2017/12/20
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -703,10 +703,10 @@
          return
         end function VecTreeIterMoveToCousin
 !------------------------------------------------------------------------------------
-#ifdef NO_GNU
-        function VecTreeIterAppend(this,elem_val,assoc_only,copy_ctor_f) result(ierr) !`GCC bug
+#if !(defined(__GNUC__) && __GNUC__ < 9)
+        function VecTreeIterAppend(this,elem_val,assoc_only,copy_ctor_f) result(ierr)
 #else
-        function VecTreeIterAppend(this,elem_val,assoc_only) result(ierr) !`GCC bug
+        function VecTreeIterAppend(this,elem_val,assoc_only) result(ierr)
 #endif
 !Appends a new element to the end of the vector. The iterator position is kept unchanged,
 !unless the container is empty in which case it will be reset to the first element.
@@ -715,20 +715,20 @@
          class(vec_tree_iter_t), intent(inout):: this !inout: vector tree iterator
          class(*), target, intent(in):: elem_val      !in: value to be stored
          logical, intent(in), optional:: assoc_only   !in: storage type: TRUE:by reference, FALSE:by value (default)
-#ifdef NO_GNU
+#if !(defined(__GNUC__) && __GNUC__ < 9)
          procedure(gfc_copy_i), optional:: copy_ctor_f !user-defined generic copy constructor (when storing by value only)
 #endif
          type(tree_pos_t):: trpos
          logical:: assoc
 
          if(present(assoc_only)) then; assoc=assoc_only; else; assoc=.FALSE.; endif
-#ifdef NO_GNU
+#if !(defined(__GNUC__) && __GNUC__ < 9)
          if(present(copy_ctor_f)) then
           ierr=this%val_it%append(elem_val,assoc,copy_ctor_f)
          else
 #endif
           ierr=this%val_it%append(elem_val,assoc)
-#ifdef NO_GNU
+#if !(defined(__GNUC__) && __GNUC__ < 9)
          endif
 #endif
          if(ierr.eq.GFC_SUCCESS) ierr=this%pos_it%append(trpos)

@@ -134,11 +134,6 @@ DF := -WF,
 else
 DF :=
 endif
-ifeq ($(TOOLKIT),GNU)
-NO_GNU :=
-else
-NO_GNU := -DNO_GNU
-endif
 ifeq ($(TOOLKIT),PGI)
 NO_PGI :=
 else
@@ -174,7 +169,7 @@ FFLAGS_PGI_DEV = -c -mp -Mcache_align -Mbounds -Mchkptr -Mstandard -Mallocatable
 FFLAGS_PGI_OPT = -c -mp -Mcache_align -Mstandard -Mallocatable=03 -O3
 FFLAGS_IBM_DEV = -c -qsmp=omp -g9 -O0 -qkeepparm -qcheck -qsigtrap -qstackprotect=all
 FFLAGS_IBM_OPT = -c -qsmp=omp -O3
-FFLAGS = $(FFLAGS_$(TOOLKIT)_$(BUILD_TYPE)) $(DF)$(NO_GPU) $(DF)$(NO_AMD) $(DF)$(NO_PHI) $(DF)-D$(EXA_OS) $(DF)$(NO_GNU) $(DF)$(NO_PGI) $(PIC_FLAG)
+FFLAGS = $(FFLAGS_$(TOOLKIT)_$(BUILD_TYPE)) $(DF)$(NO_GPU) $(DF)$(NO_AMD) $(DF)$(NO_PHI) $(DF)-D$(EXA_OS) $(DF)$(NO_PGI) $(PIC_FLAG)
 
 #THREADS:
 LTHREAD_GNU   = -lgomp
