@@ -8,7 +8,7 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/12/04
+!REVISION: 2017/12/27
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -179,6 +179,7 @@
           procedure, public:: decr_ref_count=>TensCacheEntryDecrRefCount  !decrements the reference count
           procedure, public:: get_ref_count=>TensCacheEntryGetRefCount    !returns the current reference count: Number of existing tensor operands associated with the tensor cache entry
           procedure, public:: nullify_tensor=>TensCacheEntryNullifyTensor !either deallocates or simply dissociates tensor (depends on the extended dtor)
+          procedure, public:: destroy=>TensCacheEntryDestroy              !destroys the tensor cache entry
         end type tens_cache_entry_t
  !Tensor argument cache:
         type, public:: tens_cache_t
@@ -275,6 +276,7 @@
         private TensCacheEntryDecrRefCount
         private TensCacheEntryGetRefCount
         private TensCacheEntryNullifyTensor
+        private TensCacheEntryDestroy
  !tens_cache_t:
         private TensCacheLookup
         private TensCacheStore
@@ -643,13 +645,35 @@
         subroutine TensCacheEntryNullifyTensor(this,dealloc)
 !Either deallocates or simply dissociates tensor (depends on the extended dtor).
          implicit none
-         class(tens_cache_entry_t), intent(inout):: this
-         logical, intent(in):: dealloc
+         class(tens_cache_entry_t), intent(inout):: this !inout: tensor cache entry
+         logical, intent(in):: dealloc                   !in: if TRUE, the .tensor field will be deallocated (assumes ownership)
 
          if(associated(this%tensor).and.dealloc) deallocate(this%tensor)
          this%tensor=>NULL()
          return
         end subroutine TensCacheEntryNullifyTensor
+!----------------------------------------------------------
+        subroutine TensCacheEntryDestroy(this,dealloc,ierr)
+!Destroys the tensor cache entry.
+         implicit none
+         class(tens_cache_entry_t), intent(inout):: this !inout: tensor cache entry
+         logical, intent(in):: dealloc                   !in: if TRUE, the .tensor field will be deallocated (assumes ownership)
+         integer(INTD), intent(out), optional:: ierr     !out: error code
+         integer(INTD):: errc
+
+         if(this%ref_count.eq.0) then
+          call this%mark_empty(errc)
+          if(errc.eq.0) then
+           call this%nullify_tensor(dealloc)
+          else
+           errc=-2
+          endif
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensCacheEntryDestroy
 ![tens_cache_t]========================================================
         function TensCacheLookup(this,tensor,ierr) result(tens_entry_p)
 !Looks up a given tensor in the tensor cache. If found, returns a pointer

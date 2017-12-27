@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/12/19
+!REVISION: 2017/12/27
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -49,7 +49,8 @@
 !       undefined but is existing, it will be initialized to zero before update.
 !       A tensor instruction is considered completed when all its subinstructions
 !       have completed. A tensor instruction is considered completed successfully
-!       when all its subinstructions have completed successfully.
+!       when all its subinstructions have completed successfully, otherwise it is
+!       considered completed with error (some subinstructions completed with error).
 ! # TENSOR ARGUMENT CACHE:
 !   (A) All tensors from tensor instructions are owned by the tensor argument cache
 !       which is owned by the TAVP. Tensor argument cache is a shared resource among
@@ -539,7 +540,7 @@
          implicit none
          type(tens_entry_mng_t):: this !inout: specialized tensor cache entry
 
-         call this%nullify_tensor(.TRUE.) !deallocate the tensor component (if it is set)
+         call this%destroy(.TRUE.) !deallocate the tensor component (if it is set)
          this%owner_id=-1
          return
         end subroutine tens_entry_mng_dtor
@@ -556,13 +557,12 @@
 ![tens_oprnd_t]==========================================================
         subroutine TensOprndCtor(this,tensor,ierr,tens_cache_entry,owner)
 !Constructs a tensor operand. The <tensor> must be set.
-!The owner id is optional.
          implicit none
          class(tens_oprnd_t), intent(inout):: this        !inout: undefined tensor operand (on entrance)
          class(tens_rcrsv_t), target, intent(in):: tensor !in: defined tensor
          integer(INTD), intent(out), optional:: ierr      !out: error code
-         integer(INTD), intent(in), optional:: owner      !in: tensor owner id (no restrictions)
          class(tens_entry_mng_t), intent(inout), target, optional:: tens_cache_entry !in: tensor cache entry owning the tensor
+         integer(INTD), intent(in), optional:: owner      !in: tensor owner id (no restrictions), supercedes the value imported from the tensor cache entry (if present)
          integer(INTD):: errc
 
          if(.not.this%is_active(errc)) then
@@ -578,7 +578,7 @@
              else
               this%cache_entry=>NULL()
              endif
-             if(present(owner)) this%owner_id=owner
+             if(present(owner)) this%owner_id=owner !explicit owner id supercedes the one imported from the tensor cache entry
              call this%mark_active(errc)
              if(errc.ne.DSVP_SUCCESS) errc=-5
             else

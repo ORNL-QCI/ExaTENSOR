@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/12/20
+!REVISION: 2017/12/27
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -87,10 +87,10 @@
         integer(INTD), parameter, public:: TEREC_IND_RESTR_GE=4   !indices within the group are >= ordered i1 >= i2 >= i3
         integer(INTD), parameter, public:: TEREC_NUM_IND_RESTR=5  !total number of index restrictions (0..max)
  !Tensor body value state:
-        integer(INTD), parameter, public:: TEREC_BODY_UNDEF=0     !tensor body value is undefined
-        integer(INTD), parameter, public:: TEREC_BODY_UPDATE=1    !tensor body value is currently being updated
-        integer(INTD), parameter, public:: TEREC_BODY_DEF=2       !tensor body value is defined but currently not used
-        integer(INTD), parameter, public:: TEREC_BODY_USED=3      !tensor body value is defined and currently being used
+        integer(INTD), parameter, public:: TEREC_BODY_UNDEF=-2    !tensor body value is undefined
+        integer(INTD), parameter, public:: TEREC_BODY_UPDATE=-1   !tensor body value is currently being updated
+        integer(INTD), parameter, public:: TEREC_BODY_DEF=0       !tensor body value is defined but currently not used
+        integer(INTD), parameter, public:: TEREC_BODY_USED=1      !tensor body value is defined and currently being used (reference count)
 !TYPES:
  !Register of hierarchical spaces:
         type, private:: hspace_register_t
