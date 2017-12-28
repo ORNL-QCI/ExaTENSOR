@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/12/27
+!REVISION: 2017/12/28
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -34,8 +34,8 @@
 ! # Tensor body value definition stages:
 !   a) TEREC_BODY_UNDEF: Tensor body value is undefined;
 !   b) TEREC_BODY_UPDATE: Tensor body value is currently being updated and cannot be used;
-!   c) TEREC_BODY_DEF: Tensor body value is defined but not currently used;
-!   d) TEREC_BODY_USED: Tensor body is defined and currently being used in a tensor operation.
+!   c) TEREC_BODY_DEF: Tensor body value is defined but not currently used (reference count = 0);
+!   d) TEREC_BODY_USED: Tensor body is defined and is currently being used in a tensor operation (reference count > 0).
         use tensor_algebra !includes dil_basic
         use stsubs
         use timers
@@ -90,7 +90,7 @@
         integer(INTD), parameter, public:: TEREC_BODY_UNDEF=-2    !tensor body value is undefined
         integer(INTD), parameter, public:: TEREC_BODY_UPDATE=-1   !tensor body value is currently being updated
         integer(INTD), parameter, public:: TEREC_BODY_DEF=0       !tensor body value is defined but currently not used
-        integer(INTD), parameter, public:: TEREC_BODY_USED=1      !tensor body value is defined and currently being used (reference count)
+        integer(INTD), parameter, public:: TEREC_BODY_USED=1      !tensor body value is defined and is currently being used (any positive number is the reference count)
 !TYPES:
  !Register of hierarchical spaces:
         type, private:: hspace_register_t
@@ -264,8 +264,10 @@
           procedure, public:: add_subtensor=>TensBodyAddSubtensor   !registers a constituent subtensor by providing its tensor header
           procedure, public:: set_layout=>TensBodySetLayout         !sets the tensor body storage layout if physically stored as a whole
           procedure, public:: set_location=>TensBodySetLocation     !sets the tensor body data location if physically stored as a whole (via a DDSS data descriptor)
-          procedure, public:: reset_state=>TensBodyResetState       !resets the tensor body value state
-          procedure, public:: get_state=>TensBodyGetState           !returns the tensor body value state
+          procedure, public:: reset_state=>TensBodyResetState       !resets the state of the tensor body value
+          procedure, public:: incr_use_state=>TensBodyIncrUseState  !increments the reference count for a defined tensor body
+          procedure, public:: decr_use_state=>TensBodyDecrUseState  !decrements the reference count for a defined tensor body
+          procedure, public:: get_state=>TensBodyGetState           !returns the state of the tensor body value: Non-positive {TEREC_BODY_UNDEF,TEREC_BODY_UPDATE,TEREC_BODY_DEF} or positive number (reference count)
           procedure, public:: get_layout=>TensBodyGetLayout         !returns a pointer to the tensor body storage layout
           procedure, public:: get_num_subtensors=>TensBodyGetNumSubtensors !returns the total number of constituent subtensors
           procedure, public:: get_subtensors=>TensBodyGetSubtensors !returns a pointer to the list of constituent subtensors (each subtensor is represented by a tensor header)
@@ -300,8 +302,10 @@
           procedure, public:: set_layout=>TensRcrsvSetLayout         !sets the tensor body storage layout
           procedure, public:: set_location=>TensRcrsvSetLocation     !sets the physical location of the tensor body data
           procedure, public:: update=>TensRcrsvUpdate                !updates the tensor information (new resolution -> new layout -> new body)
-          procedure, public:: reset_state=>TensRcrsvResetState       !resets the tensor body value state
-          procedure, public:: get_state=>TensRcrsvGetState           !returns the tensor body value state
+          procedure, public:: reset_state=>TensRcrsvResetState       !resets the state of the tensor body value
+          procedure, public:: incr_use_state=>TensRcrsvIncrUseState  !increments the reference count for a defined tensor body
+          procedure, public:: decr_use_state=>TensRcrsvDecrUseState  !decrements the reference count for a defined tensor body
+          procedure, public:: get_state=>TensRcrsvGetState           !returns the state of the tensor body value: Non-positive {TEREC_BODY_UNDEF,TEREC_BODY_UPDATE,TEREC_BODY_DEF} or positive number (reference count)
           procedure, public:: get_header=>TensRcrsvGetHeader         !returns a pointer to the tensor header
           procedure, public:: get_body=>TensRcrsvGetBody             !returns a pointer to the tensor body
           procedure, public:: get_descriptor=>TensRcrsvGetDescriptor !returns a tensor descriptor uniquely characterizing tensor signature, shape, layout, and location
@@ -389,6 +393,36 @@
           procedure, public:: get_dim_symmetry=>ContrPtrnExtGetDimSymmetry !returns the symmetric restrictions for a specific tensor argument
           procedure, public:: print_it=>ContrPtrnExtPrintIt            !prints the extended tensor contraction
         end type contr_ptrn_ext_t
+ !Tensor transformation (includes initialization and prefactor scaling as specific cases):
+        type, extends(tens_operation_t), public:: tens_transformation_t
+         class(talsh_tens_definer_t), pointer, private:: definer=>NULL()  !non-owning pointer to the defining TAL-SH function object (TAL-SH tensor definer/transformer)
+         character(:), allocatable, private:: definer_name                !registered name of the defining/transforming TAL-SH function object
+         complex(8), private:: alpha                                      !numerical prefactor for simple scaling or initialization value for simple numerical initialization
+         logical, private:: undefined=.TRUE.                              !if TRUE, the tensor is assumed undefined before the operation
+         contains
+          procedure, public:: is_set=>TensTransformationIsSet             !returns TRUE if the tensor transformation is fully set
+          procedure, public:: args_full=>TensTransformationArgsFull       !returns TRUE if the tensor transformation argument has been set
+          procedure, private:: TensTransformationCtorValue                !ctor for a value based initialization
+          procedure, private:: TensTransformationCtorMethod               !ctor for a method based initialization or transformation
+          procedure, private:: TensTransformationCtorUnpack               !ctor by unpacking (requires an externally provided function to map the definer object by its unpacked name)
+          generic, public:: tens_transformation_ctor=>TensTransformationCtorValue,TensTransformationCtorMethod,TensTransformationCtorUnpack
+          procedure, public:: pack=>TensTransformationPack                !packs the object into a packet
+          final:: tens_transformation_dtor                                !dtor
+        end type tens_transformation_t
+ !Tensor addition (includes copy/slice/insert as specific cases):
+        type, extends(tens_operation_t), public:: tens_addition_t
+         type(permutation_t), private:: permut                            !tensor dimension permutation (O2N)
+         complex(8), private:: alpha=(1d0,0d0)                            !alpha prefactor
+         logical, private:: undefined=.TRUE.                              !if TRUE, the destination tensor is assumed undefined and it will be zeroed out before addition (specific case of COPY)
+         contains
+          procedure, public:: is_set=>TensAdditionIsSet                   !returns TRUE if the tensor addition is fully set
+          procedure, public:: args_full=>TensAdditionArgsFull             !returns TRUE if all tensor addition arguments have been set
+          procedure, private:: TensAdditionCtorAddCopy                    !ctor for addition, copy, slice, and insert
+          procedure, private:: TensAdditionCtorUnpack                     !ctor by unpacking
+          generic, public:: tens_addition_ctor=>TensAdditionCtorAddCopy,TensAdditionCtorUnpack
+          procedure, public:: pack=>TensAdditionPack                      !packs the object into a packet
+          final:: tens_addition_dtor                                      !dtor
+        end type tens_addition_t
  !Tensor contraction:
         type, extends(tens_operation_t), public:: tens_contraction_t
          type(contr_ptrn_ext_t), private:: contr_ptrn                     !extended tensor contraction pattern
@@ -596,6 +630,8 @@
         private TensBodySetLayout
         private TensBodySetLocation
         private TensBodyResetState
+        private TensBodyIncrUseState
+        private TensBodyDecrUseState
         private TensBodyGetState
         private TensBodyGetLayout
         private TensBodyGetNumSubtensors
@@ -625,6 +661,8 @@
         private TensRcrsvSetLocation
         private TensRcrsvUpdate
         private TensRcrsvResetState
+        private TensRcrsvIncrUseState
+        private TensRcrsvDecrUseState
         private TensRcrsvGetState
         private TensRcrsvGetHeader
         private TensRcrsvGetBody
@@ -674,6 +712,21 @@
         private ContrPtrnExtGetContrPtrn
         private ContrPtrnExtGetDimSymmetry
         private ContrPtrnExtPrintIt
+ !tens_transformation_t:
+        private TensTransformationIsSet
+        private TensTransformationArgsFull
+        private TensTransformationCtorValue
+        private TensTransformationCtorMethod
+        private TensTransformationCtorUnpack
+        private TensTransformationPack
+        public tens_transformation_dtor
+ !tens_addition_t:
+        private TensAdditionIsSet
+        private TensAdditionArgsFull
+        private TensAdditionCtorAddCopy
+        private TensAdditionCtorUnpack
+        private TensAdditionPack
+        public tens_addition_dtor
  !tens_contraction_t:
         private TensContractionAssign
         private TensContractionIsSet
@@ -3626,9 +3679,45 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensBodyResetState
+!-------------------------------------------------
+        subroutine TensBodyIncrUseState(this,ierr)
+!Increments the reference count for defined tensor bodies.
+         implicit none
+         class(tens_body_t), intent(inout):: this    !inout: defined tensor body
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=TEREC_SUCCESS
+         if(this%state.ge.0) then
+          this%state=this%state+1
+         else
+          errc=TEREC_INVALID_REQUEST
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensBodyIncrUseState
+!-------------------------------------------------
+        subroutine TensBodyDecrUseState(this,ierr)
+!Decrements the reference count for defined tensor bodies.
+         implicit none
+         class(tens_body_t), intent(inout):: this    !inout: defined tensor body with a non-zero reference count
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=TEREC_SUCCESS
+         if(this%state.gt.0) then
+          this%state=this%state-1
+         else
+          errc=TEREC_INVALID_REQUEST
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensBodyDecrUseState
 !--------------------------------------------------------------
         function TensBodyGetState(this,ierr) result(body_state)
-!Returns the tensor body value state.
+!Returns the state of the tensor body value:
+!Non-positive {TEREC_BODY_UNDEF,TEREC_BODY_UPDATE,TEREC_BODY_DEF} or
+!a positive number (TEREC_BODY_USED) equal to the current reference count.
          implicit none
          integer(INTD):: body_state                  !out: tensor body value state
          class(tens_body_t), intent(in):: this       !in: tensor body
@@ -4341,9 +4430,35 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensRcrsvResetState
+!--------------------------------------------------
+        subroutine TensRcrsvIncrUseState(this,ierr)
+!Increments the reference count for a defined tensor body.
+         implicit none
+         class(tens_rcrsv_t), intent(inout):: this   !inout: tensor with a defined body
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         call this%body%incr_use_state(errc)
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensRcrsvIncrUseState
+!--------------------------------------------------
+        subroutine TensRcrsvDecrUseState(this,ierr)
+!Decrements the reference count for a defined tensor body.
+         implicit none
+         class(tens_rcrsv_t), intent(inout):: this   !inout: tensor with a defined body
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         call this%body%decr_use_state(errc)
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensRcrsvDecrUseState
 !---------------------------------------------------------------
         function TensRcrsvGetState(this,ierr) result(body_state)
-!Returns the tensor body value state.
+!Returns the state of the tensor body value:
+!Non-positive {TEREC_BODY_UNDEF,TEREC_BODY_UPDATE,TEREC_BODY_DEF} or
+!a positive number (TEREC_BODY_USED) equal to the current reference count.
          implicit none
          integer(INTD):: body_state                  !out: tensor body value state
          class(tens_rcrsv_t), intent(in):: this      !in: tensor
