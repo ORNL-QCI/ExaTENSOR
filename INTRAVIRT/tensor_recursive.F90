@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/12/28
+!REVISION: 2018/01/01
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -331,11 +331,13 @@
           procedure, public:: compare=>TensDescrCompare  !compares with another instance
           final:: tens_descr_dtor                        !dtor
         end type tens_descr_t
- !Tensor argument (reference to a recursive tensor):`Must not be cloned if .alloc=TRUE
+ !Tensor argument (reference to a recursive tensor):
         type, private:: tens_argument_t
          class(tens_rcrsv_t), pointer, private:: tens_p=>NULL() !pointer to a persistent tensor
-         logical, private:: alloc=.FALSE.                       !TRUE if the tensor argument was allocated, FALSE if associated
+         logical, private:: alloc=.FALSE.                       !TRUE if the tensor argument was allocated, FALSE if merely associated
          contains
+          procedure, private:: TensArgumentAssign                          !copy assignment
+          generic, public:: assignment(=)=>TensArgumentAssign
           procedure, private:: set_tensor=>TensArgumentSetTensor           !sets up the tensor argument (ctor) by pointer association
           procedure, private:: allocate_tensor=>TensArgumentAllocateTensor !allocates an empty tensor for a subsequent definition
           procedure, private:: is_set=>TensArgumentIsSet                   !returns TRUE if the tensor argument is set, plus additional info
@@ -382,6 +384,7 @@
          integer(INTD), private:: lind_res(1:MAX_TENSOR_RANK) !permutational dependencies for the left tensor indices (y=lind_res(x): position x depends on position y on the left, -1 first position)
          integer(INTD), private:: rind_res(1:MAX_TENSOR_RANK) !permutational dependencies for the right tensor indices (y=rind_res(x): position x depends on position y on the left, -1 first position)
          contains
+          procedure, public:: clean=>ContrPtrnExtClean                 !cleans the tensor contraction pattern to an empty state
           procedure, public:: set_index_corr=>ContrPtrnExtSetIndexCorr !sets index correspondence pattern (contraction pattern): basic ctor
           procedure, public:: set_store_symm=>ContrPtrnExtSetStoreSymm !sets index permutational symmetry restrictions due to tensor storage: post-ctor
           procedure, public:: set_operl_symm=>ContrPtrnExtSetOperlSymm !sets index permutational symmetry restrictions due to tensor operation: post-ctor
@@ -397,36 +400,41 @@
         type, extends(tens_operation_t), public:: tens_transformation_t
          class(talsh_tens_definer_t), pointer, private:: definer=>NULL()  !non-owning pointer to the defining TAL-SH function object (TAL-SH tensor definer/transformer)
          character(:), allocatable, private:: definer_name                !registered name of the defining/transforming TAL-SH function object
-         complex(8), private:: alpha                                      !numerical prefactor for simple scaling or initialization value for simple numerical initialization
+         complex(8), private:: alpha=(0d0,0d0)                            !numerical prefactor for simple scaling or initialization value for simple numerical initialization
          logical, private:: undefined=.TRUE.                              !if TRUE, the tensor is assumed undefined before the operation
          contains
-          procedure, public:: is_set=>TensTransformationIsSet             !returns TRUE if the tensor transformation is fully set
-          procedure, public:: args_full=>TensTransformationArgsFull       !returns TRUE if the tensor transformation argument has been set
-          procedure, private:: TensTransformationCtorValue                !ctor for a value based initialization
-          procedure, private:: TensTransformationCtorMethod               !ctor for a method based initialization or transformation
-          procedure, private:: TensTransformationCtorUnpack               !ctor by unpacking (requires an externally provided function to map the definer object by its unpacked name)
-          generic, public:: tens_transformation_ctor=>TensTransformationCtorValue,TensTransformationCtorMethod,TensTransformationCtorUnpack
-          procedure, public:: pack=>TensTransformationPack                !packs the object into a packet
-          final:: tens_transformation_dtor                                !dtor
+          procedure, private:: TensTransformationAssign                     !copy assignment
+          generic, public:: assignment(=)=>TensTransformationAssign
+          procedure, public:: is_set=>TensTransformationIsSet               !returns TRUE if the tensor transformation is fully set
+          procedure, public:: args_full=>TensTransformationArgsFull         !returns TRUE if the tensor transformation argument has been set
+          procedure, public:: set_method=>TensTransformationSetMethod       !sets the transformation/initialization method
+          procedure, public:: get_method=>TensTransformationGetMethod       !returns the transformation/initialization method
+          procedure, public:: unpack=>TensTransformationUnpack              !unpacks the object from a packet
+          procedure, public:: pack=>TensTransformationPack                  !packs the object into a packet
+          final:: tens_transformation_dtor                                  !dtor
         end type tens_transformation_t
  !Tensor addition (includes copy/slice/insert as specific cases):
+#if 0
         type, extends(tens_operation_t), public:: tens_addition_t
-         type(permutation_t), private:: permut                            !tensor dimension permutation (O2N)
-         complex(8), private:: alpha=(1d0,0d0)                            !alpha prefactor
-         logical, private:: undefined=.TRUE.                              !if TRUE, the destination tensor is assumed undefined and it will be zeroed out before addition (specific case of COPY)
+         type(permutation_t), private:: permut                       !tensor dimension permutation (O2N)
+         complex(8), private:: alpha=(1d0,0d0)                       !alpha prefactor
+         logical, private:: undefined=.TRUE.                         !if TRUE, the destination tensor is assumed undefined and it will be zeroed out before addition (specific case of COPY)
          contains
-          procedure, public:: is_set=>TensAdditionIsSet                   !returns TRUE if the tensor addition is fully set
-          procedure, public:: args_full=>TensAdditionArgsFull             !returns TRUE if all tensor addition arguments have been set
-          procedure, private:: TensAdditionCtorAddCopy                    !ctor for addition, copy, slice, and insert
-          procedure, private:: TensAdditionCtorUnpack                     !ctor by unpacking
-          generic, public:: tens_addition_ctor=>TensAdditionCtorAddCopy,TensAdditionCtorUnpack
-          procedure, public:: pack=>TensAdditionPack                      !packs the object into a packet
-          final:: tens_addition_dtor                                      !dtor
+          procedure, private:: TensAdditionAssign                          !copy assignment
+          generic, public:: assignment(=)=>TensAdditionAssign
+          procedure, public:: is_set=>TensAdditionIsSet                    !returns TRUE if the tensor addition is fully set
+          procedure, public:: args_full=>TensAdditionArgsFull              !returns TRUE if all tensor addition arguments have been set
+          procedure, public:: set_add_ptrn=>TensAdditionSetAddPtrn         !sets the tensor addition pattern (all tensor arguments must have been set already)
+          procedure, public:: get_add_ptrn=>TensAdditionGetAddPtrn         !returns the tensor addition pattern (dimension permutation)
+          procedure, public:: unpack=>TensAdditionUnpack                   !unpacks the object from a packet
+          procedure, public:: pack=>TensAdditionPack                       !packs the object into a packet
+          final:: tens_addition_dtor                                       !dtor
         end type tens_addition_t
+#endif
  !Tensor contraction:
         type, extends(tens_operation_t), public:: tens_contraction_t
-         type(contr_ptrn_ext_t), private:: contr_ptrn                     !extended tensor contraction pattern
-         complex(8), private:: alpha=(1d0,0d0)                            !alpha prefactor
+         type(contr_ptrn_ext_t), private:: contr_ptrn                      !extended tensor contraction pattern
+         complex(8), private:: alpha=(1d0,0d0)                             !alpha prefactor
          contains
           procedure, private:: TensContractionAssign                       !copy assignment
           generic, public:: assignment(=)=>TensContractionAssign
@@ -444,6 +452,7 @@
           procedure, private:: TensContractionSplitIntern                  !splits the tensor contraction into a list of subtensor contractions based on the internal lists of constituent argument subtensors
           generic, public:: split=>TensContractionSplitFunc,TensContractionSplitIntern
           procedure, public:: print_it=>TensContractionPrintIt             !prints the tensor contraction info
+          final:: tens_contraction_dtor                                    !dtor
         end type tens_contraction_t
 !INTERFACES:
  !Abstract:
@@ -488,6 +497,14 @@
           class(tens_operation_t), intent(in):: this  !in: tensor operation
           integer(INTD), intent(out), optional:: ierr !out: error code
          end function tens_operation_query_i
+  !tens_transformation_t: <method_map> argument of .set_method() method [nopass]:
+         function tens_transformation_method_map_i(method_name,ierr) result(method)
+          import:: INTD,talsh_tens_definer_t
+          implicit none
+          class(talsh_tens_definer_t), pointer:: method !out: pointer to the TAL-SH tensor definer object
+          character(*), intent(in):: method_name        !in: character method name
+          integer(INTD), intent(out), optional:: ierr   !out: error code
+         end function tens_transformation_method_map_i
   !tens_rcrsv_t: split() [nopass]:
          function tens_rcrsv_split_i(tensor,subtensors,num_subtensors,strength_thresh) result(ierr)
           import:: INTD,tens_rcrsv_t,vector_t
@@ -681,11 +698,12 @@
         private TensDescrCompare
         public tens_descr_dtor
  !tens_argument_t:
+        private TensArgumentAssign
         private TensArgumentSetTensor
         private TensArgumentAllocateTensor
         private TensArgumentIsSet
         private TensArgumentFreeTensor
-        private tens_argument_dtor
+        public tens_argument_dtor
  !tens_operation_t:
         private TensOperationClean
         private TensOperationSetArgument
@@ -702,6 +720,7 @@
         private PermutationInvert
         public permutation_dtor
  !contr_ptrn_ext_t:
+        private ContrPtrnExtClean
         private ContrPtrnExtSetIndexCorr
         private ContrPtrnExtSetStoreSymm
         private ContrPtrnExtSetOperlSymm
@@ -713,20 +732,25 @@
         private ContrPtrnExtGetDimSymmetry
         private ContrPtrnExtPrintIt
  !tens_transformation_t:
+        private TensTransformationAssign
         private TensTransformationIsSet
         private TensTransformationArgsFull
-        private TensTransformationCtorValue
-        private TensTransformationCtorMethod
-        private TensTransformationCtorUnpack
+        private TensTransformationSetMethod
+        private TensTransformationGetMethod
+        private TensTransformationUnpack
         private TensTransformationPack
         public tens_transformation_dtor
  !tens_addition_t:
+#if 0
+        private TensAdditionAssign
         private TensAdditionIsSet
         private TensAdditionArgsFull
-        private TensAdditionCtorAddCopy
-        private TensAdditionCtorUnpack
+        private TensAdditionSetAddPtrn
+        private TensAdditionGetAddPtrn
+        private TensAdditionUnpack
         private TensAdditionPack
         public tens_addition_dtor
+#endif
  !tens_contraction_t:
         private TensContractionAssign
         private TensContractionIsSet
@@ -742,6 +766,7 @@
         private TensContractionSplitFunc
         private TensContractionSplitIntern
         private TensContractionPrintIt
+        public tens_contraction_dtor
 !DATA:
  !Register of hierarchical vector spaces (only these spaces can be used in tensors):
         type(hspace_register_t), public:: hspace_register
@@ -5458,7 +5483,24 @@
          this%rank=-1
          return
         end subroutine tens_descr_dtor
-![tens_argument_t]========================================
+![tens_argument_t]=============================
+        subroutine TensArgumentAssign(this,src)
+!Copy assignment.
+         implicit none
+         class(tens_argument_t), intent(out):: this !out: clone tensor argument
+         class(tens_argument_t), intent(in):: src   !in: source tensor argument
+
+         this%alloc=src%alloc
+         if(src%alloc) then
+          if(associated(src%tens_p)) then
+           allocate(this%tens_p,SOURCE=src%tens_p)
+          endif
+         else
+          this%tens_p=>src%tens_p
+         endif
+         return
+        end subroutine TensArgumentAssign
+!---------------------------------------------------------
         subroutine TensArgumentSetTensor(this,tensor,ierr)
 !Sets the tensor argument by pointer association.
          implicit none
@@ -5554,11 +5596,12 @@
         subroutine TensOperationClean(this,ierr)
 !Cleans the tensor operation.
          implicit none
-         class(tens_operation_t), intent(inout):: this !out: empty (clean)tensor operation
+         class(tens_operation_t), intent(inout):: this !out: empty (clean) tensor operation
          integer(INTD), intent(out), optional:: ierr   !out: error code
+         integer(INTD):: errc
 
-         this%num_args=0
-         if(present(ierr)) ierr=TEREC_SUCCESS
+         call this%free_arguments(errc); this%num_args=0
+         if(present(ierr)) ierr=errc
          return
         end subroutine TensOperationClean
 !------------------------------------------------------------
@@ -5829,7 +5872,19 @@
          this%length=0
          return
         end subroutine permutation_dtor
-![contr_ptrn_ext_t]=======================================================
+![contr_ptrn_ext_t]============================
+        subroutine ContrPtrnExtClean(this,ierr)
+!Cleans the tensor contraction pattern to an empty state.
+         implicit none
+         class(contr_ptrn_ext_t), intent(inout):: this !out: empty extended contraction pattern
+         integer(INTD), intent(out), optional:: ierr   !out: error code
+
+         this%ddim=-1; this%ldim=-1; this%rdim=-1
+         this%ind_restr_set=.FALSE.
+         if(present(ierr)) ierr=TEREC_SUCCESS
+         return
+        end subroutine ContrPtrnExtClean
+!-------------------------------------------------------------------------
         subroutine ContrPtrnExtSetIndexCorr(this,nd,nl,nr,contr_ptrn,ierr)
 !Sets tensor dimension correspondence in a tensor contraction (contraction pattern).
 !No strict validity check for <contr_ptrn>!
@@ -6243,6 +6298,191 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine ContrPtrnExtPrintIt
+![tens_transformation_t]=============================
+        subroutine TensTransformationAssign(this,src)
+!Copy assignment.
+         implicit none
+         class(tens_transformation_t), intent(out):: this !out: cloned tensor transformation
+         class(tens_transformation_t), intent(in):: src   !in: source tensor transformation
+         integer(INTD):: i
+
+         this%num_args=src%num_args
+         do i=0,src%num_args-1
+          this%tens_arg(i)=src%tens_arg(i)
+         enddo
+         this%definer=>src%definer
+         this%definer_name=src%definer_name
+         this%alpha=src%alpha
+         this%undefined=src%undefined
+         return
+        end subroutine TensTransformationAssign
+!--------------------------------------------------------------
+        function TensTransformationIsSet(this,ierr) result(ans)
+!Returns TRUE if the tensor transformation is fully set.
+         implicit none
+         logical:: ans                                   !out: answer
+         class(tens_transformation_t), intent(in):: this !in: tensor transformation
+         integer(INTD), intent(out), optional:: ierr     !out: error code
+         integer(INTD):: errc
+         class(tens_rcrsv_t), pointer:: trp
+
+         ans=.FALSE.
+         if(this%get_num_args(errc).eq.1) then !tensor transformation is an unary operation
+          if(errc.eq.TEREC_SUCCESS) then
+           trp=>this%get_argument(0,errc) !destination tensor
+           if(errc.eq.TEREC_SUCCESS) then
+            if(trp%is_set(errc)) then
+             if(errc.eq.TEREC_SUCCESS) then
+              if(allocated(this%definer_name)) then
+               if(len_trim(this%definer_name).gt.0) then
+                if(associated(this%definer)) then
+                 ans=.TRUE.
+                else
+                 errc=TEREC_OBJ_CORRUPTED
+                endif
+               else
+                errc=TEREC_OBJ_CORRUPTED
+               endif
+              else
+               ans=.TRUE.
+              endif
+             endif
+            endif
+           endif
+          endif
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function TensTransformationIsSet
+!-----------------------------------------------------------------
+        function TensTransformationArgsFull(this,ierr) result(ans)
+!Returns TRUE if all tensor transformation arguments have been set.
+         implicit none
+         logical:: ans                                   !out: answer
+         class(tens_transformation_t), intent(in):: this !in: tensor transformation
+         integer(INTD), intent(out), optional:: ierr     !out: error code
+         integer(INTD):: errc
+
+         ans=(this%get_num_args(errc).eq.1) !tensor transformation is an unary operation
+         ans=ans.and.(errc.eq.TEREC_SUCCESS)
+         if(present(ierr)) ierr=errc
+         return
+        end function TensTransformationArgsFull
+!----------------------------------------------------------------------------------------------------
+        subroutine TensTransformationSetMethod(this,ierr,scalar_value,defined,method_name,method_map)
+!Sets up the tensor initialization/transformation method:
+! a) Simple initialization to a value: <scalar_value>, <defined>=FALSE;
+! b) Simple scaling by a value: <scalar_value>, <defined>=TRUE;
+! c) User-defined initialization by an external method: <defined>=FALSE, <method_name>, <method_map>;
+! d) User-defined in-place transformation by an external method: <defined>=TRUE, <method_name>, <method_map>;
+         implicit none
+         class(tens_transformation_t), intent(inout):: this                 !inout: tensor transformation
+         integer(INTD), intent(out), optional:: ierr                        !out: error code
+         complex(8), intent(in), optional:: scalar_value                    !in: scalar value for simple initialization/scaling
+         logical, intent(in), optional:: defined                            !in: if TRUE, the tensor is assumed defined, otherwise undefined (default)
+         character(*), intent(in), optional:: method_name                   !in: name of the defining method
+         procedure(tens_transformation_method_map_i), optional:: method_map !in: if <method_name> is given, maps that name to the corresponding TAL-SH definer object
+         integer(INTD):: errc
+
+         if(this%args_full(errc)) then !all tensor arguments must have been set already
+          if(errc.eq.TEREC_SUCCESS) then
+           this%undefined=.TRUE.; if(present(defined)) this%undefined=(.not.defined)
+           if(present(method_name)) then
+            if(allocated(this%definer_name)) deallocate(this%definer_name)
+            allocate(this%definer_name,SOURCE=method_name)
+            this%definer=>NULL()
+            if(present(method_map)) this%definer=>method_map(method_name,errc)
+            if(present(scalar_value)) this%alpha=scalar_value
+           else
+            if(.not.present(method_map)) then
+             if(present(scalar_value)) then
+              this%alpha=scalar_value
+             else
+              if(this%undefined) then
+               this%alpha=(0d0,0d0) !default initalization value
+              else
+               this%alpha=(1d0,0d0) !default scaling value
+              endif
+             endif
+            else
+             errc=TEREC_INVALID_REQUEST
+            endif
+           endif
+          endif
+         else
+          errc=TEREC_INVALID_REQUEST
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensTransformationSetMethod
+!-----------------------------------------------------------------------------------------
+        subroutine TensTransformationGetMethod(this,defined,scalar_value,method_name,ierr)
+!Returns the tensor transformation method info.
+         implicit none
+         class(tens_transformation_t), intent(in):: this      !in: fully set tensor transformation
+         logical, intent(out):: defined                       !out: FALSE:initialization, TRUE:transformation
+         complex(8), intent(out):: scalar_value               !out: scalar value for simple initialization/transformation
+         character(:), intent(out), allocatable:: method_name !out: external initialization/transformation method name
+         integer(INTD), intent(out), optional:: ierr          !out: error code
+         integer(INTD):: errc
+
+         if(this%is_set(errc)) then
+          if(errc.eq.TEREC_SUCCESS) then
+           defined=(.not.this%undefined)
+           scalar_value=this%alpha
+           if(allocated(this%definer_name)) then
+            allocate(method_name,SOURCE=this%definer_name)
+           endif
+          endif
+         else
+          errc=TEREC_INVALID_REQUEST
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensTransformationGetMethod
+!------------------------------------------------------------
+        subroutine TensTransformationUnpack(this,packet,ierr)
+         implicit none
+         class(tens_transformation_t), intent(out):: this !out: tensor transformation
+         class(obj_pack_t), intent(inout):: packet        !in: packet
+         integer(INTD), intent(out), optional:: ierr      !out: error code
+         integer(INTD):: errc
+
+         errc=TEREC_SUCCESS
+
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensTransformationUnpack
+!----------------------------------------------------------
+        subroutine TensTransformationPack(this,packet,ierr)
+         implicit none
+         class(tens_transformation_t), intent(in):: this !in: tensor transformation (fully set)
+         class(obj_pack_t), intent(inout):: packet       !out: packet
+         integer(INTD), intent(out), optional:: ierr     !out: error code
+         integer(INTD):: errc
+
+         if(this%is_set(errc)) then
+          if(errc.eq.TEREC_SUCCESS) then
+
+          endif
+         else
+          errc=TEREC_INVALID_REQUEST
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensTransformationPack
+!------------------------------------------------
+        subroutine tens_transformation_dtor(this)
+         implicit none
+         type(tens_transformation_t):: this
+
+         this%definer=>NULL()
+         if(allocated(this%definer_name)) deallocate(this%definer_name)
+         this%alpha=(0d0,0d0)
+         this%undefined=.TRUE.
+         call this%free_arguments()
+         return
+        end subroutine tens_transformation_dtor
 ![tens_contraction_t]=============================
         subroutine TensContractionAssign(this,src)
 !Copy assignment.
@@ -6434,9 +6674,9 @@
         subroutine TensContractionUnpack(this,packet,ierr)
 !Unpacks the object from a packet.
          implicit none
-         class(tens_contraction_t), intent(inout):: this !in: tensor contraction
-         class(obj_pack_t), intent(inout):: packet       !inout: packet
-         integer(INTD), intent(out), optional:: ierr     !out: error code
+         class(tens_contraction_t), intent(out):: this !out: tensor contraction
+         class(obj_pack_t), intent(inout):: packet     !in: packet
+         integer(INTD), intent(out), optional:: ierr   !out: error code
          integer(INTD):: errc,i
          class(tens_rcrsv_t), pointer:: tens_p
 
@@ -7237,6 +7477,16 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensContractionPrintIt
+!---------------------------------------------
+        subroutine tens_contraction_dtor(this)
+         implicit none
+         type(tens_contraction_t):: this
+
+         this%alpha=(1d0,0d0)
+         call this%contr_ptrn%clean()
+         call this%free_arguments()
+         return
+        end subroutine tens_contraction_dtor
 
        end module tensor_recursive
 !==================================
