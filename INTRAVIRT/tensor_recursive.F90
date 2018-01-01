@@ -6440,30 +6440,89 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensTransformationGetMethod
-!------------------------------------------------------------
-        subroutine TensTransformationUnpack(this,packet,ierr)
+!-----------------------------------------------------------------------
+        subroutine TensTransformationUnpack(this,packet,ierr,method_map)
+!Unpacks the tensor transformation from a packet. Note than the method
+!based tensor transformation/initialization will generally require the
+!<method_map> argument to associate the corresponding TAL-SH function object.
          implicit none
          class(tens_transformation_t), intent(out):: this !out: tensor transformation
          class(obj_pack_t), intent(inout):: packet        !in: packet
          integer(INTD), intent(out), optional:: ierr      !out: error code
-         integer(INTD):: errc
+         procedure(tens_transformation_method_map_i), optional:: method_map !in: if <method_name> is unpacked, maps that name to the corresponding TAL-SH definer object
+         integer(INTD):: errc,i
+         logical:: method_flag
+         class(tens_rcrsv_t), pointer:: tens_p
 
-         errc=TEREC_SUCCESS
-
+         call unpack_builtin(packet,this%num_args,errc)
+         if(errc.eq.PACK_SUCCESS) then
+          do i=0,this%num_args-1
+           call this%allocate_argument(errc); if(errc.ne.TEREC_SUCCESS) exit
+           tens_p=>this%get_argument(i,errc); if(errc.ne.TEREC_SUCCESS) exit
+           call tens_p%tens_rcrsv_ctor(packet,errc); if(errc.ne.TEREC_SUCCESS) exit
+          enddo
+          if(errc.eq.TEREC_SUCCESS) then
+           call unpack_builtin(packet,method_flag,errc)
+           if(errc.eq.PACK_SUCCESS) then
+            if(method_flag) then
+             call unpack_builtin(packet,i,errc)
+             if(errc.eq.PACK_SUCCESS) then
+              if(i.gt.0) then
+               allocate(character(len=i)::this%definer_name)
+               call unpack_builtin(packet,this%definer_name,errc)
+              else
+               errc=TEREC_OBJ_CORRUPTED
+              endif
+             endif
+            endif
+            if(errc.eq.PACK_SUCCESS) call unpack_builtin(packet,this%alpha,errc)
+            if(errc.eq.PACK_SUCCESS) call unpack_builtin(packet,this%undefined,errc)
+            if(errc.eq.PACK_SUCCESS.and.method_flag) then
+             if(present(method_map)) then
+              this%definer=>method_map(this%definer_name,errc)
+             else
+              this%definer=>NULL()
+             endif
+            endif
+           endif
+          endif
+         endif
          if(present(ierr)) ierr=errc
          return
         end subroutine TensTransformationUnpack
 !----------------------------------------------------------
         subroutine TensTransformationPack(this,packet,ierr)
+!Packs the tensor transformation into a packet.
          implicit none
          class(tens_transformation_t), intent(in):: this !in: tensor transformation (fully set)
          class(obj_pack_t), intent(inout):: packet       !out: packet
          integer(INTD), intent(out), optional:: ierr     !out: error code
-         integer(INTD):: errc
+         integer(INTD):: errc,i
+         logical:: method_flag
+         class(tens_rcrsv_t), pointer:: tens_p
 
          if(this%is_set(errc)) then
           if(errc.eq.TEREC_SUCCESS) then
-
+           call pack_builtin(packet,this%num_args,errc)
+           if(errc.eq.PACK_SUCCESS) then
+            do i=0,this%num_args-1
+             tens_p=>this%get_argument(i,errc); if(errc.ne.TEREC_SUCCESS) exit
+             call tens_p%pack(packet,errc); if(errc.ne.TEREC_SUCCESS) exit
+            enddo
+            if(errc.eq.TEREC_SUCCESS) then
+             method_flag=allocated(this%definer_name)
+             if(method_flag) method_flag=(len_trim(this%definer_name).gt.0)
+             call pack_builtin(packet,method_flag,errc)
+             if(errc.eq.PACK_SUCCESS) then
+              if(method_flag) then
+               i=len(this%definer_name); call pack_builtin(packet,i,errc)
+               if(errc.eq.PACK_SUCCESS) call pack_builtin(packet,this%definer_name,errc)
+              endif
+              if(errc.eq.PACK_SUCCESS) call pack_builtin(packet,this%alpha,errc)
+              if(errc.eq.PACK_SUCCESS) call pack_builtin(packet,this%undefined,errc)
+             endif
+            endif
+           endif
           endif
          else
           errc=TEREC_INVALID_REQUEST
