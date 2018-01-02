@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/12/27
+!REVISION: 2018/01/02
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -1391,8 +1391,8 @@
              enddo oloop
              if(errc.eq.0) flops=dsqrt(tvol)*2d0 !factor of 2 because of additions (along with multiplications)
             case default
-             !`Implement Flop counting for other tensor instructions
-             flops=1d0 !default (meaningless) value
+             !`Implement Flop counting for other relevant tensor instructions
+             flops=1d0 !default (but meaningless) value
             end select
            else
             errc=-3
@@ -1416,11 +1416,11 @@
         end function TensInstrGetFlops
 !-----------------------------------------------------------------
         subroutine TensInstrGetOperation(this,tens_operation,ierr)
-!Returns back the encapsulated tensor operation.
+!Given a tensor instruction, returns back the encapsulated tensor operation.
          implicit none
-         class(tens_instr_t), intent(in):: this                !in: tensor instruction
-         class(tens_operation_t), intent(out):: tens_operation !out: corresponding tensor operation
-         integer(INTD), intent(out), optional:: ierr           !out: error code
+         class(tens_instr_t), intent(in):: this                                     !in: tensor instruction
+         class(tens_operation_t), allocatable, target, intent(out):: tens_operation !out: corresponding tensor operation
+         integer(INTD), intent(out), optional:: ierr                                !out: error code
          integer(INTD):: errc,opcode
 
          if(this%is_active(errc)) then
@@ -1429,19 +1429,13 @@
            if(errc.eq.DSVP_SUCCESS) then
             select case(opcode)
             case(TAVP_INSTR_TENS_CONTRACT)
-             call tens_operation%clean(errc)
-             if(errc.eq.TEREC_SUCCESS) then
-              select type(tens_operation)
-              class is(tens_contraction_t)
-               !`Implement: Construct tens_contraction_t object
-              class default
-               errc=-1
-              end select
-             else
-              errc=-1
-             endif
+             allocate(tens_contraction_t::tens_operation)
+             select type(tens_operation)
+             class is(tens_contraction_t)
+             !`Implement: Construct tens_contraction_t object: 1) Set operands; 2) Set contraction pattern/index restrictions
+             end select
             case default
-             !`Implement other cases
+             !`Implement other relevant cases
              errc=-1
             end select
            else
@@ -3040,19 +3034,24 @@
           integer(INTD), intent(out):: jerr !out: error code
           integer(INTD):: jj,num_subinstr
           integer(INTL):: iid
-          type(tens_contraction_t):: tens_contr
+          class(tens_operation_t), allocatable:: tens_contr
           type(list_bi_t):: subcontractions
 
           jerr=this%sub_list%reset_back()
           if(jerr.eq.GFC_SUCCESS) then
            call tens_instr%get_operation(tens_contr,jerr)
            if(jerr.eq.0) then
-            call tens_contr%split(subcontractions,jerr,num_subinstr)
-            if(jerr.eq.TEREC_SUCCESS) then
-             !`Finish: Create subinstructions from subcontractions and register/look up all subtensors
-            else
+            select type(tens_contr)
+            class is(tens_contraction_t)
+             call tens_contr%split(subcontractions,jerr,num_subinstr)
+             if(jerr.eq.TEREC_SUCCESS) then
+              !`Finish: Create subinstructions from subcontractions and register/look up all subtensors
+             else
+              jerr=-1
+             endif
+            class default
              jerr=-1
-            endif
+            end select
            else
             jerr=-1
            endif
