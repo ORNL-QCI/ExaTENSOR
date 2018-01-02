@@ -365,10 +365,13 @@
          integer(INTD), allocatable, private:: prm(:) !prm(1:length) is the permutation itself, prm(0) is the current sign of the permutation
          contains
           procedure, public:: reset=>PermutationReset          !resets (constructs) the permutation
+          procedure, public:: get_length=>PermutationGetLength !returns the length of the permutation
           procedure, public:: get_access=>PermutationGetAccess !returns a pointer to the permutation array, with or without the sign
           procedure, public:: get_sign=>PermutationGetSign     !returns the current sign of the permutation
           procedure, public:: set_sign=>PermutationSetSign     !sets a new sign to the permutation
           procedure, public:: invert=>PermutationInvert        !inverts the permutation (in-place)
+          procedure, public:: unpack=>PermutationUnpack        !unpacks the permutation from a packet
+          procedure, public:: pack=>PermutationPack            !packs the permutation into a packet
           final:: permutation_dtor                             !dtor
         end type permutation_t
  !Extended digital tensor contraction pattern:
@@ -414,7 +417,6 @@
           final:: tens_transformation_dtor                                  !dtor
         end type tens_transformation_t
  !Tensor addition (includes copy/slice/insert as specific cases):
-#if 0
         type, extends(tens_operation_t), public:: tens_addition_t
          type(permutation_t), private:: permut                       !tensor dimension permutation (O2N)
          complex(8), private:: alpha=(1d0,0d0)                       !alpha prefactor
@@ -430,7 +432,6 @@
           procedure, public:: pack=>TensAdditionPack                       !packs the object into a packet
           final:: tens_addition_dtor                                       !dtor
         end type tens_addition_t
-#endif
  !Tensor contraction:
         type, extends(tens_operation_t), public:: tens_contraction_t
          type(contr_ptrn_ext_t), private:: contr_ptrn                      !extended tensor contraction pattern
@@ -714,10 +715,13 @@
         private TensOperationFreeArguments
  !permutation_t:
         private PermutationReset
+        private PermutationGetLength
         private PermutationGetAccess
         private PermutationGetSign
         private PermutationSetSign
         private PermutationInvert
+        private PermutationUnpack
+        private PermutationPack
         public permutation_dtor
  !contr_ptrn_ext_t:
         private ContrPtrnExtClean
@@ -741,7 +745,6 @@
         private TensTransformationPack
         public tens_transformation_dtor
  !tens_addition_t:
-#if 0
         private TensAdditionAssign
         private TensAdditionIsSet
         private TensAdditionArgsFull
@@ -750,7 +753,6 @@
         private TensAdditionUnpack
         private TensAdditionPack
         public tens_addition_dtor
-#endif
  !tens_contraction_t:
         private TensContractionAssign
         private TensContractionIsSet
@@ -5714,16 +5716,17 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensOperationFreeArguments
-![permutation_t]=====================================
-        subroutine PermutationReset(this,length,ierr)
-!Resets the permutation (ctor).
+![permutation_t]=========================================
+        subroutine PermutationReset(this,perm,ierr,psign)
+!Resets (constructs) the permutation (ctor).
          implicit none
-         class(permutation_t), intent(inout):: this  !inout: permutation
-         integer(INTD), intent(in):: length          !in: new length of the permutation
+         class(permutation_t), intent(inout):: this  !out: permutation object
+         integer(INTD), intent(in):: perm(1:)        !in: permutation sequence
          integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc
+         integer(INTD), intent(in), optional:: psign !in: permutation sign
+         integer(INTD):: errc,length
 
-         errc=TEREC_SUCCESS
+         errc=TEREC_SUCCESS; length=size(perm)
          if(length.gt.0) then
           if(allocated(this%prm)) then
            if(size(this%prm).lt.1+length) then
@@ -5734,7 +5737,8 @@
            allocate(this%prm(0:length),STAT=errc)
           endif
           if(errc.eq.0) then
-           this%length=length; this%prm(0)=0
+           this%length=length; this%prm(0)=+1
+           if(present(psign)) this%prm(0)=psign !permutation sign
           else
            this%length=0; errc=TEREC_MEM_ALLOC_FAILED
           endif
@@ -5747,6 +5751,19 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine PermutationReset
+!--------------------------------------------------------------
+        function PermutationGetLength(this,ierr) result(length)
+!Returns the length of the permutation.
+         implicit none
+         integer(INTD):: length                      !out: length of the permutation
+         class(permutation_t), intent(in):: this     !in: permutation
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=TEREC_SUCCESS; length=this%length
+         if(present(ierr)) ierr=errc
+         return
+        end function PermutationGetLength
 !-------------------------------------------------------------------------------
         function PermutationGetAccess(this,length,ierr,with_sign) result(perm_p)
 !Returns a pointer to the permutation body, with or without the sign.
@@ -5863,6 +5880,39 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine PermutationInvert
+!-----------------------------------------------------
+        subroutine PermutationUnpack(this,packet,ierr)
+         implicit none
+         class(permutation_t), intent(out):: this    !out: permutation
+         class(obj_pack_t), intent(inout):: packet   !in: packet
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         call unpack_builtin(packet,this%length,errc)
+         if(errc.eq.PACK_SUCCESS) then
+          allocate(this%prm(0:this%length))
+          call unpack_builtin(packet,this%prm,1+this%length,errc)
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine PermutationUnpack
+!---------------------------------------------------
+        subroutine PermutationPack(this,packet,ierr)
+         implicit none
+         class(permutation_t), intent(in):: this     !in: permutation
+         class(obj_pack_t), intent(inout):: packet   !out: packet
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         call pack_builtin(packet,this%length,errc)
+         if(errc.eq.PACK_SUCCESS) then
+          if(allocated(this%prm)) then
+           call pack_builtin(packet,this%prm,1+this%length,errc)
+          endif
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine PermutationPack
 !----------------------------------------
         subroutine permutation_dtor(this)
          implicit none
@@ -6542,6 +6592,190 @@
          call this%free_arguments()
          return
         end subroutine tens_transformation_dtor
+![tens_addition_t]=============================
+        subroutine TensAdditionAssign(this,src)
+!Copy assignment.
+         implicit none
+         class(tens_addition_t), intent(out):: this !out: cloned tensor addition
+         class(tens_addition_t), intent(in):: src   !in: source tensor addition
+         integer(INTD):: i
+
+         this%num_args=src%num_args
+         do i=0,src%num_args-1
+          this%tens_arg(i)=src%tens_arg(i)
+         enddo
+         this%permut=src%permut
+         this%alpha=src%alpha
+         this%undefined=src%undefined
+         return
+        end subroutine TensAdditionAssign
+!--------------------------------------------------------
+        function TensAdditionIsSet(this,ierr) result(ans)
+!Returns TRUE if the tensor addition is fully set.
+         implicit none
+         logical:: ans                               !out: answer
+         class(tens_addition_t), intent(in):: this   !in: tensor addition
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc,n
+         class(tens_rcrsv_t), pointer:: trp
+
+         ans=.FALSE.
+         if(this%get_num_args(errc).eq.2) then !tensor addition has two arguments
+          if(errc.eq.TEREC_SUCCESS) then
+           trp=>this%get_argument(0,errc) !destination tensor
+           if(errc.eq.TEREC_SUCCESS) then
+            if(trp%is_set(errc,num_dims=n)) then
+             if(errc.eq.TEREC_SUCCESS.and.n.eq.this%permut%get_length()) then
+              trp=>this%get_argument(1,errc) !source tensor
+              if(errc.eq.TEREC_SUCCESS) then
+               if(trp%is_set(errc,num_dims=n)) then
+                if(errc.eq.TEREC_SUCCESS.and.n.eq.this%permut%get_length()) then
+                 ans=.TRUE.
+                endif
+               endif
+              endif
+             endif
+            endif
+           endif
+          endif
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function TensAdditionIsSet
+!-----------------------------------------------------------
+        function TensAdditionArgsFull(this,ierr) result(ans)
+!Returns TRUE if all tensor addition arguments have been set.
+         implicit none
+         logical:: ans                               !out: answer
+         class(tens_addition_t), intent(in):: this   !in: tensor addition
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         ans=(this%get_num_args(errc).eq.2) !tensor addition has two arguments
+         ans=ans.and.(errc.eq.TEREC_SUCCESS)
+         if(present(ierr)) ierr=errc
+         return
+        end function TensAdditionArgsFull
+!-----------------------------------------------------------------------------
+        subroutine TensAdditionSetAddPtrn(this,permutation,ierr,alpha,defined)
+!Sets the tensor addition pattern (all tensor arguments must have already been set):
+! a) Tensor copy/slice/insertion: <defined>=FALSE;
+! b) Tensor addition/additive_slice/additive_insertion: <defined>=TRUE;
+         implicit none
+         class(tens_addition_t), intent(inout):: this !inout: tensor addition/copy/slice/insert
+         integer(INTD), intent(in):: permutation(1:)  !in: digital permutation (no sign)
+         integer(INTD), intent(out), optional:: ierr  !out: error code
+         complex(8), intent(in), optional:: alpha     !in: numerical prefactor
+         logical, intent(in), optional:: defined      !in: if TRUE, the destination tensor is assumed defined, otherwise undefined (default)
+         integer(INTD):: errc
+
+         if(this%args_full(errc)) then
+          if(errc.eq.TEREC_SUCCESS) then
+           call this%permut%reset(permutation(1:),errc)
+           this%alpha=(1d0,0d0); if(present(alpha)) this%alpha=alpha
+           this%undefined=.TRUE.; if(present(defined)) this%undefined=(.not.defined)
+          endif
+         else
+          errc=TEREC_INVALID_REQUEST
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensAdditionSetAddPtrn
+!---------------------------------------------------------------------------------
+        subroutine TensAdditionGetAddPtrn(this,defined,prefactor,permutation,ierr)
+!Returns the tensor addition pattern specs.
+         implicit none
+         class(tens_addition_t), intent(in):: this                !in: tensor addition/copy/slice/insert
+         logical, intent(out):: defined                           !out: TRUE if the destination tensor is assumed defined, FALSE otherwise
+         complex(8), intent(out):: prefactor                      !out: numerical prefactor
+         integer(INTD), intent(out), allocatable:: permutation(:) !out: digital permutation (no sign)
+         integer(INTD), intent(out), optional:: ierr              !out: error code
+         integer(INTD):: errc,l
+         integer(INTD), pointer:: prm(:)
+
+         if(this%is_set(errc)) then
+          if(errc.eq.TEREC_SUCCESS) then
+           if(this%permut%get_length().gt.0) then
+            prm=>this%permut%get_access(l,errc,with_sign=.FALSE.)
+            allocate(permutation(1:l)); permutation(1:l)=prm(1:l)
+            nullify(prm)
+           endif
+           prefactor=this%alpha
+           defined=(.not.this%undefined)
+          endif
+         else
+          errc=TEREC_INVALID_REQUEST
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensAdditionGetAddPtrn
+!------------------------------------------------------
+        subroutine TensAdditionUnpack(this,packet,ierr)
+!Unpacks a tensor addition object from a packet.
+         implicit none
+         class(tens_addition_t), intent(out):: this  !out: tensor addition
+         class(obj_pack_t), intent(inout):: packet   !in: packet
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc,i
+         class(tens_rcrsv_t), pointer:: tens_p
+
+         call unpack_builtin(packet,this%num_args,errc)
+         if(errc.eq.PACK_SUCCESS) then
+          do i=0,this%num_args-1
+           call this%allocate_argument(errc); if(errc.ne.TEREC_SUCCESS) exit
+           tens_p=>this%get_argument(i,errc); if(errc.ne.TEREC_SUCCESS) exit
+           call tens_p%tens_rcrsv_ctor(packet,errc); if(errc.ne.TEREC_SUCCESS) exit
+          enddo
+          if(errc.eq.TEREC_SUCCESS) then
+           call this%permut%unpack(packet,errc)
+           if(errc.eq.TEREC_SUCCESS) call unpack_builtin(packet,this%alpha,errc)
+           if(errc.eq.PACK_SUCCESS) call unpack_builtin(packet,this%undefined,errc)
+          endif
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensAdditionUnpack
+!----------------------------------------------------
+        subroutine TensAdditionPack(this,packet,ierr)
+!Packs the tensor addition into a packet.
+         implicit none
+         class(tens_addition_t), intent(in):: this   !in: tensor addition
+         class(obj_pack_t), intent(inout):: packet   !out: packet
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc,i
+         class(tens_rcrsv_t), pointer:: tens_p
+
+         if(this%is_set(errc)) then
+          if(errc.eq.TEREC_SUCCESS) then
+           call pack_builtin(packet,this%num_args,errc)
+           if(errc.eq.PACK_SUCCESS) then
+            do i=0,this%num_args-1
+             tens_p=>this%get_argument(i,errc); if(errc.ne.TEREC_SUCCESS) exit
+             call tens_p%pack(packet,errc); if(errc.ne.TEREC_SUCCESS) exit
+            enddo
+            if(errc.eq.TEREC_SUCCESS) then
+             call this%permut%pack(packet,errc)
+             if(errc.eq.TEREC_SUCCESS) call pack_builtin(packet,this%alpha,errc)
+             if(errc.eq.PACK_SUCCESS) call pack_builtin(packet,this%undefined,errc)
+            endif
+           endif
+          endif
+         else
+          errc=TEREC_INVALID_REQUEST
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensAdditionPack
+!------------------------------------------
+        subroutine tens_addition_dtor(this)
+         implicit none
+         type(tens_addition_t):: this
+
+         this%alpha=(1d0,0d0)
+         this%undefined=.TRUE.
+         call this%free_arguments()
+         return
+        end subroutine tens_addition_dtor
 ![tens_contraction_t]=============================
         subroutine TensContractionAssign(this,src)
 !Copy assignment.
