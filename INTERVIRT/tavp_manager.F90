@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/01/02
+!REVISION: 2018/01/07
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -107,7 +107,7 @@
 !TYPES:
  !Tensor argument cache entry (TAVP-specific):
         type, extends(tens_cache_entry_t), private:: tens_entry_mng_t
-         integer(INTD), private:: owner_id=-1                         !tensor owner id (non-negative TAVP id), negative means the tensor is remote with an unknown location
+         integer(INTD), private:: owner_id=-1                         !tensor meta-data owner id (non-negative TAVP-MNG id), negative means the tensor is remote with an unknown location
          contains
           procedure, private:: TensEntryMngCtor                       !ctor
           generic, public:: tens_entry_mng_ctor=>TensEntryMngCtor
@@ -124,7 +124,7 @@
         type, extends(ds_oprnd_t), private:: tens_oprnd_t
          class(tens_rcrsv_t), pointer, private:: tensor=>NULL()          !non-owning pointer to a persistent recursive tensor (normally stored in the tensor cache)
          class(tens_entry_mng_t), pointer, private:: cache_entry=>NULL() !non-owning pointer to a tensor cache entry where the tensor is stored (optional)
-         integer(INTD), private:: owner_id=-1                            !non-negative tensor owner (TAVP) id, normally a copy of the value from the tensor cache entry (optional)
+         integer(INTD), private:: owner_id=-1                            !non-negative tensor meta-data owner id (TAVP-MNG id), normally a copy of the value from the tensor cache entry (optional)
          contains
           procedure, private:: TensOprndCtor                    !ctor
           generic, public:: tens_oprnd_ctor=>TensOprndCtor
@@ -151,10 +151,10 @@
          contains
           procedure, private:: TensInstrCtor                              !ctor: constructs a tensor instruction from the specification of a tensor operation
           generic, public:: tens_instr_ctor=>TensInstrCtor
-          procedure, public:: encode=>TensInstrEncode                     !encoding procedure: Packs the TAVP instruction into a raw byte packet
-          procedure, public:: fully_located=>TensInstrFullyLocated        !returns TRUE if the tensor instruction operands have been fully located, FALSE otherwise
+          procedure, public:: encode=>TensInstrEncode                     !encoding procedure: Packs the tensor instruction into a raw byte packet
+          procedure, public:: fully_located=>TensInstrFullyLocated        !returns TRUE if the tensor instruction operands have been fully located (their structure is known), FALSE otherwise
           procedure, public:: get_cache_entries=>TensInstrGetCacheEntries !returns an array of references to tensor cache entries used by the tensor operands
-          procedure, public:: get_flops=>TensInstrGetFlops                !returns an estimate of the total number of Flops (mul/add) required
+          procedure, public:: get_flops=>TensInstrGetFlops                !returns an estimate of the total number of required Flops (mul/add) and memory Words
           procedure, public:: get_operation=>TensInstrGetOperation        !returns back the encapsulated tensor operation
           final:: tens_instr_dtor                                         !dtor
         end type tens_instr_t
@@ -689,7 +689,7 @@
 !---------------------------------------------------------
         function TensOprndIsLocated(this,ierr) result(res)
 !Returns TRUE if the tensor operand has been located, FALSE otherwise.
-!By being located, it means its structure is known.
+!By being located, it means the tensor structure (subtensors) is known.
          implicit none
          logical:: res                               !out: result
          class(tens_oprnd_t), intent(in):: this      !in: active tensor operand
@@ -736,7 +736,7 @@
           if(errc.eq.DSVP_SUCCESS) then
            id=this%get_owner_id(errc)
            if(errc.eq.0) then
-            res=(id.ne.role_rank)
+            res=(id.ne.role_rank) !role_rank = TAVP-MNG id
            else
             errc=-3
            endif
@@ -753,18 +753,19 @@
         function TensOprndIsValued(this,ierr) result(res)
 !Returns TRUE if the tensor operand is set to some value, FALSE otherwise.
 !By being set to some value, it means it is neither undefined nor being updated.
+!Note that the tensor does not have to be physically mapped to be valued.
          implicit none
          logical:: res                               !out: result
          class(tens_oprnd_t), intent(in):: this      !in: active tensor operand
          integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc,sts
+         integer(INTD):: errc
          logical:: laid,locd
 
          res=.FALSE.
          if(this%is_active(errc)) then
           if(this%tensor%is_set(errc,layed=laid,located=locd)) then
            if(errc.eq.TEREC_SUCCESS) then
-            res=laid.and.locd.and.(this%tensor%get_state(errc).ge.TEREC_BODY_DEF)
+            res=(laid.and.(this%tensor%get_state(errc).ge.TEREC_BODY_DEF))
             if(errc.ne.TEREC_SUCCESS) then; res=.FALSE.; errc=-4; endif
            else
             errc=-3
@@ -1383,7 +1384,7 @@
               class is(tens_oprnd_t)
                tensor=>tens_oprnd%get_tensor(errc); if(errc.ne.0) then; errc=-6; exit oloop; endif
                call tensor%get_dims(dims,n,errc); if(errc.ne.TEREC_SUCCESS) then; errc=-5; exit oloop; endif
-               vol=1d0; do j=1,n; vol=vol*dims(j); enddo
+               vol=1d0; do j=1,n; vol=vol*real(dims(j),8); enddo
                tvol=tvol*vol; words=words+vol
               class default
                errc=-4; exit oloop
@@ -1419,7 +1420,7 @@
 !Given a tensor instruction, returns back the encapsulated tensor operation.
          implicit none
          class(tens_instr_t), intent(in):: this                                     !in: tensor instruction
-         class(tens_operation_t), allocatable, target, intent(out):: tens_operation !out: corresponding tensor operation
+         class(tens_operation_t), allocatable, target, intent(out):: tens_operation !out: corresponding (encapsulated) tensor operation
          integer(INTD), intent(out), optional:: ierr                                !out: error code
          integer(INTD):: errc,opcode
 
@@ -1433,6 +1434,7 @@
              select type(tens_operation)
              class is(tens_contraction_t)
              !`Implement: Construct tens_contraction_t object: 1) Set operands; 2) Set contraction pattern/index restrictions
+             
              end select
             case default
              !`Implement other relevant cases

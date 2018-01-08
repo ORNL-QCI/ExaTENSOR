@@ -3582,7 +3582,7 @@
           if(errc.eq.TEREC_SUCCESS.and.(.not.layd)) then
            select case(layout_kind)
            case(TEREC_LAY_RECUR) !all constituent subtensors are mapped sequentially to a contiguous chunk of local memory
-            stop !`Implement
+            write(*,'("FATAL(tensor_recursive:tens_body_t:set_layout): TEREC_LAY_RECUR not implemented!")'); stop !`Implement
            case(TEREC_LAY_FDIMS) !a single subtensor is mapped as "Fortran-dimension-led"
             if(this%num_subtensors.eq.1) then
              errc=lit%init(this%subtensors)
@@ -3621,31 +3621,31 @@
             endif
            case(TEREC_LAY_CDIMS)
             if(this%num_subtensors.eq.1) then
-             stop !`Implement
+             write(*,'("FATAL(tensor_recursive:tens_body_t:set_layout): TEREC_LAY_CDIMS not implemented!")'); stop !`Implement
             else
              errc=TEREC_INVALID_REQUEST
             endif
            case(TEREC_LAY_DSYMM)
             if(this%num_subtensors.eq.1) then
-             stop !`Implement
+             write(*,'("FATAL(tensor_recursive:tens_body_t:set_layout): TEREC_LAY_DSYMM not implemented!")'); stop !`Implement
             else
              errc=TEREC_INVALID_REQUEST
             endif
            case(TEREC_LAY_BRICK)
             if(this%num_subtensors.eq.1) then
-             stop !`Implement
+             write(*,'("FATAL(tensor_recursive:tens_body_t:set_layout): TEREC_LAY_BRICK not implemented!")'); stop !`Implement
             else
              errc=TEREC_INVALID_REQUEST
             endif
            case(TEREC_LAY_BSYMM)
             if(this%num_subtensors.eq.1) then
-             stop !`Implement
+             write(*,'("FATAL(tensor_recursive:tens_body_t:set_layout): TEREC_LAY_BSYMM not implemented!")'); stop !`Implement
             else
              errc=TEREC_INVALID_REQUEST
             endif
            case(TEREC_LAY_SPARS)
             if(this%num_subtensors.eq.1) then
-             stop !`Implement
+             write(*,'("FATAL(tensor_recursive:tens_body_t:set_layout): TEREC_LAY_SPARS not implemented!")'); stop !`Implement
             else
              errc=TEREC_INVALID_REQUEST
             endif
