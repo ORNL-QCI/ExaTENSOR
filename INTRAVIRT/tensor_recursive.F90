@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/01/07
+!REVISION: 2018/01/08
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -73,11 +73,11 @@
  !Storage layout for tensor blocks for locally stored tensors (must span a contiguous integer range!):
         integer(INTD), parameter, public:: TEREC_LAY_NONE=0    !none
         integer(INTD), parameter, public:: TEREC_LAY_RECUR=1   !storage layout is inferred from that of individual constituent tensors (recursive)
-        integer(INTD), parameter, public:: TEREC_LAY_FDIMS=2   !straightforward dimension led storage layout (Fortran style)
-        integer(INTD), parameter, public:: TEREC_LAY_CDIMS=3   !straightforward dimension led storage layout (C style)
-        integer(INTD), parameter, public:: TEREC_LAY_DSYMM=4   !dimension led storage layout with permutational symmetry
+        integer(INTD), parameter, public:: TEREC_LAY_FDIMS=2   !straightforward dimension-led storage layout (Fortran style)
+        integer(INTD), parameter, public:: TEREC_LAY_CDIMS=3   !straightforward dimension-led storage layout (C style)
+        integer(INTD), parameter, public:: TEREC_LAY_DSYMM=4   !dimension-led storage layout with permutational symmetries
         integer(INTD), parameter, public:: TEREC_LAY_BRICK=5   !bricked storage layout (all bricks of the same size, padding if needed)
-        integer(INTD), parameter, public:: TEREC_LAY_BSYMM=6   !bricked storage layour with permutational symmetry on the brick level (all bricks of the same size, padding if needed)
+        integer(INTD), parameter, public:: TEREC_LAY_BSYMM=6   !bricked storage layout with permutational symmetries on the brick level (all bricks of the same size, padding if needed)
         integer(INTD), parameter, public:: TEREC_LAY_SPARS=7   !sparse tensor storage layout
         integer(INTD), parameter, public:: TEREC_NUM_LAYOUTS=8 !total number of tensor layouts
  !Index restriction kinds (must span a contiguous integer range!):
@@ -91,7 +91,7 @@
         integer(INTD), parameter, public:: TEREC_BODY_UNDEF=-2    !tensor body value is undefined
         integer(INTD), parameter, public:: TEREC_BODY_UPDATE=-1   !tensor body value is currently being updated
         integer(INTD), parameter, public:: TEREC_BODY_DEF=0       !tensor body value is defined but currently not used
-        integer(INTD), parameter, public:: TEREC_BODY_USED=1      !tensor body value is defined and is currently being used (any positive number is the reference count)
+        integer(INTD), parameter, public:: TEREC_BODY_USED=1      !tensor body value is defined and is currently being used (any positive number is the reference count here)
 !TYPES:
  !Register of hierarchical spaces:
         type, private:: hspace_register_t
@@ -218,7 +218,8 @@
         end type tens_simple_part_t
  !Storage layout for locally stored blocks (abstract base):
         type, abstract, public:: tens_layout_t
-         integer(INTD), private:: layout=TEREC_LAY_NONE          !tensor block storage layout (see above), either simple or composite
+         class(tens_header_t), pointer, private:: header=>NULL() !non-owning pointer to the defining tensor header
+         integer(INTD), private:: layout=TEREC_LAY_NONE          !tensor block storage layout kind (see above), either simple or composite
          integer(INTD), private:: data_type=NO_TYPE              !data type of tensor elements: {R4,R8,C4,C8}
          class(DataDescr_t), allocatable, private:: data_descr   !DDSS data descriptor for physically stored tensor body (tensor elements)
          contains
@@ -231,14 +232,13 @@
           procedure, public:: get_body_ptr=>TensLayoutGetBodyPtr                    !returns a C pointer to the tensor body
           procedure, public:: get_body_size=>TensLayoutGetBodySize                  !returns the size of the stored tensor body in bytes
           procedure, public:: get_data_descr=>TensLayoutGetDataDescr                !returns a pointer to the DDSS data descriptor
+          procedure, private:: update_header=>TensLayoutUpdateHeader                !updates the tensor header the layout is associated with
           procedure(tens_layout_volume_i), deferred, public:: get_volume            !returns the physical volume of the tensor block (number of physically stored elements)
           procedure(tens_layout_map_i), deferred, public:: map                      !maps a specific element of the tensor block (layout specific)
           procedure(tens_layout_extract_i), deferred, public:: extract_simple_parts !creates a list of constituent simple (dense) parts of the tensor block
-          procedure(tens_layout_update_i), deferred, private:: update_header        !updates the tensor header the layout is associated with
         end type tens_layout_t
  !Concrete storage layout "Fortran-dimension-led":
         type, extends(tens_layout_t), public:: tens_layout_fdims_t
-         class(tens_header_t), pointer, private:: header=>NULL() !non-owning pointer to the defining tensor header
          contains
           procedure, private:: TensLayoutFdimsCtor                          !ctor
           procedure, private:: TensLayoutFdimsCtorUnpack                    !ctor by unpacking
@@ -247,8 +247,7 @@
           procedure, public:: get_volume=>TensLayoutFdimsGetVolume          !returns the physical tensor volume (number of elements stored)
           procedure, public:: map=>TensLayoutFdimsMap                       !addresses a specific tensor element
           procedure, public:: extract_simple_parts=>TensLayoutFdimsExtract  !extracts simpe dense tensor parts (bricks) from the tensor block
-          procedure, private:: update_header=>TensLayoutFdimsUpdateHeader   !updates the tensor header the layout is associated with
-          final:: tens_layout_fdims_dtor
+          final:: tens_layout_fdims_dtor                                    !dtor
         end type tens_layout_fdims_t
  !Tensor body:
         type, public:: tens_body_t
@@ -289,6 +288,7 @@
           procedure, private:: TensRcrsvCtorClone                    !copy ctor
           procedure, private:: TensRcrsvCtorUnpack                   !ctor by unpacking
           generic, public:: tens_rcrsv_ctor=>TensRcrsvCtorSigna,TensRcrsvCtorHead,TensRcrsvCtorClone,TensRcrsvCtorUnpack
+          generic, public:: assignment(=)=>TensRcrsvCtorClone        !copy assignment
           procedure, public:: pack=>TensRcrsvPack                    !packs the object into a packet
           procedure, public:: is_set=>TensRcrsvIsSet                 !returns TRUE if the tensor is set (signature defined) plus other info
           procedure, public:: get_name=>TensRcrsvGetName             !returns the alphanumeric_ tensor name
@@ -483,14 +483,6 @@
           type(list_bi_t), intent(inout):: parts      !out: list of the constituent simple (dense) blocks with their headers and offsets
           integer(INTD), intent(out), optional:: ierr !out: error code
          end subroutine tens_layout_extract_i
-  !tens_layout_t: .update_header():
-         subroutine tens_layout_update_i(this,header,ierr)
-          import:: INTD,tens_header_t,tens_layout_t
-          implicit none
-          class(tens_layout_t), intent(inout):: this        !inout: tensor block storage layout
-          class(tens_header_t), intent(in), target:: header !in: tensor header the layout is associated with
-          integer(INTD), intent(out), optional:: ierr       !out: error code
-         end subroutine tens_layout_update_i
   !tens_operation_t: .is_set(), .args_full():
          function tens_operation_query_i(this,ierr) result(ans)
           import:: INTD,tens_operation_t
@@ -631,6 +623,7 @@
         private TensLayoutGetBodyPtr
         private TensLayoutGetBodySize
         private TensLayoutGetDataDescr
+        private TensLayoutUpdateHeader
  !tens_layout_fdims_t:
         private TensLayoutFdimsCtor
         private TensLayoutFdimsCtorUnpack
@@ -638,7 +631,6 @@
         private TensLayoutFdimsGetVolume
         private TensLayoutFdimsMap
         private TensLayoutFdimsExtract
-        private TensLayoutFdimsUpdateHeader
         public tens_layout_fdims_dtor
  !tens_body_t:
         private TensBodyCtorBase
@@ -3228,9 +3220,24 @@
          if(present(ierr)) ierr=errc
          return
         end function TensLayoutGetDataDescr
+!----------------------------------------------------------
+        subroutine TensLayoutUpdateHeader(this,header,ierr)
+!Updates the tensor header the layout is associated with.
+         implicit none
+         class(tens_layout_t), intent(inout):: this        !inout: tensor body layout
+         class(tens_header_t), intent(in), target:: header !in: tensor header
+         integer(INTD), intent(out), optional:: ierr       !out: error code
+         integer(INTD):: errc
+
+         errc=TEREC_SUCCESS
+         this%header=>header
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensLayoutUpdateHeader
 ![tens_layout_fdims_t]=================================================
         subroutine TensLayoutFdimsCtor(this,tens_header,data_type,ierr)
-!Constructs the "Fortran dimension led" tensor body layout.
+!Constructs the "Fortran-dimension-led" tensor body layout.
+!The DDSS data descriptor will be set later.
          implicit none
          class(tens_layout_fdims_t), intent(out):: this         !out: tensor body layout
          class(tens_header_t), intent(in), target:: tens_header !in: tensor header (logical tensor spec for which the physical layout is constructed)
@@ -3244,9 +3251,9 @@
            if(shpd.and.unres.eq.0) then
             if(tens_valid_data_kind(data_type,ds).eq.YEP) then
              if(ds.gt.0) then
+              this%header=>tens_header
               this%layout=TEREC_LAY_FDIMS
               this%data_type=data_type
-              this%header=>tens_header
              else
               errc=TEREC_INVALID_ARGS
              endif
@@ -3293,6 +3300,7 @@
         end subroutine TensLayoutFdimsPack
 !----------------------------------------------------------
         function TensLayoutFdimsGetVolume(this) result(vol)
+!Returns the tensor volume (number of elements).
          implicit none
          integer(INTL):: vol                           !out: physical volume of the tensor body (number of stored tensor elements)
          class(tens_layout_fdims_t), intent(in):: this !in: tensor layout
@@ -3340,6 +3348,7 @@
         end function TensLayoutFdimsMap
 !-------------------------------------------------------------------
         subroutine TensLayoutFdimsExtract(this,num_parts,parts,ierr)
+!Extracts simple tensor parts (dense bricks) out of a given tensor block.
          implicit none
          class(tens_layout_fdims_t), intent(in):: this !in: tensor layout
          integer(INTL), intent(out):: num_parts        !out: number of simple parts extracted from the tensor layout
@@ -3383,29 +3392,15 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensLayoutFdimsExtract
-!---------------------------------------------------------------
-        subroutine TensLayoutFdimsUpdateHeader(this,header,ierr)
-!Updates the tensor header the layout is associated with.
-         implicit none
-         class(tens_layout_fdims_t), intent(inout):: this  !inout: tensor body layout
-         class(tens_header_t), intent(in), target:: header !in: tensor header
-         integer(INTD), intent(out), optional:: ierr       !out: error code
-         integer(INTD):: errc
-
-         errc=TEREC_SUCCESS
-         this%header=>header
-         if(present(ierr)) ierr=errc
-         return
-        end subroutine TensLayoutFdimsUpdateHeader
 !----------------------------------------------
         subroutine tens_layout_fdims_dtor(this)
          implicit none
          type(tens_layout_fdims_t):: this
 
          if(allocated(this%data_descr)) deallocate(this%data_descr)
-         this%header=>NULL()
          this%data_type=NO_TYPE
          this%layout=TEREC_LAY_NONE
+         this%header=>NULL()
          return
         end subroutine tens_layout_fdims_dtor
 ![tens_body_t]================================
@@ -7071,9 +7066,9 @@
          class(tens_contraction_t), intent(out):: this            !out: derived tensor contraction
          class(tens_contraction_t), intent(in):: tens_contr       !in: parental tensor contraction
          integer(INTD), intent(out), optional:: ierr              !out: error code
-         type(tens_rcrsv_t), intent(in), target, optional:: dtens !in: new destination tensor argument
-         type(tens_rcrsv_t), intent(in), target, optional:: ltens !in: new left tensor argument
-         type(tens_rcrsv_t), intent(in), target, optional:: rtens !in: new right tensor argument
+         type(tens_rcrsv_t), intent(in), target, optional:: dtens !in: new (persistent) destination tensor argument
+         type(tens_rcrsv_t), intent(in), target, optional:: ltens !in: new (persistent) left tensor argument
+         type(tens_rcrsv_t), intent(in), target, optional:: rtens !in: new (persistent) right tensor argument
          integer(INTD):: i,errc,nd,cmp
          integer(INTL):: sidx(1:MAX_TENSOR_RANK)
          type(tens_header_t), pointer:: thp
@@ -7162,10 +7157,12 @@
 !is driven by the tensor argument decomposition into unique subtensors. More precisely,
 !each tensor argument is represented as a direct sum of its unique children subtensors.
 !Then all possible non-zero combinations of those subtensors that match the tensor
-!contraction pattern will form the list of subcontractions.
+!contraction pattern will form the list of subcontractions. The subtensors are created
+!by the externally provided function <tens_split_f()> which must create them in
+!persistent storage and only return a vector of references back.
          implicit none
          class(tens_contraction_t), intent(in):: this      !in: parental tensor contraction
-         procedure(tens_rcrsv_split_i):: tens_split_f      !in: tensor splitting function (splits a tensor into a vector of unique subtensors)
+         procedure(tens_rcrsv_split_i):: tens_split_f      !in: tensor splitting function (splits a tensor into a vector of unique subtensors (by reference), subtensors are persistent)
          type(list_bi_t), intent(inout):: subops           !inout: list of subtensor contractions
          integer(INTD), intent(out), optional:: ierr       !out: error code
          integer(INTD), intent(out), optional:: num_subops !out: number of subcontractions generated from the parental tensor contraction here
