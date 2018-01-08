@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/01/01
+!REVISION: 2018/01/07
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -65,6 +65,7 @@
         integer(INTD), parameter, public:: TEREC_MEM_FREE_FAILED=-4
         integer(INTD), parameter, public:: TEREC_UNABLE_COMPLETE=-5
         integer(INTD), parameter, public:: TEREC_OBJ_CORRUPTED=-6
+        integer(INTD), parameter, public:: TEREC_OBJ_UNDEFINED=-7
  !Symbolic tensor name:
         integer(INTD), parameter, public:: TEREC_MAX_TENS_NAME_LEN=64 !max length of the tensor name (alphanumeric_ string)
  !Tensor contraction generator:
@@ -334,12 +335,12 @@
  !Tensor argument (reference to a recursive tensor):
         type, private:: tens_argument_t
          class(tens_rcrsv_t), pointer, private:: tens_p=>NULL() !pointer to a persistent tensor
-         logical, private:: alloc=.FALSE.                       !TRUE if the tensor argument was allocated, FALSE if merely associated
+         logical, private:: alloc=.FALSE.                       !TRUE if the tensor was allocated, FALSE if merely associated
          contains
           procedure, private:: TensArgumentAssign                          !copy assignment
           generic, public:: assignment(=)=>TensArgumentAssign
-          procedure, private:: set_tensor=>TensArgumentSetTensor           !sets up the tensor argument (ctor) by pointer association
-          procedure, private:: allocate_tensor=>TensArgumentAllocateTensor !allocates an empty tensor for a subsequent definition
+          procedure, private:: set_tensor=>TensArgumentSetTensor           !sets up the tensor argument by pointer (re-)association to a defined target (reset semantics)
+          procedure, private:: allocate_tensor=>TensArgumentAllocateTensor !allocates an empty tensor for a subsequent definition (reset semantics)
           procedure, private:: is_set=>TensArgumentIsSet                   !returns TRUE if the tensor argument is set, plus additional info
           procedure, private:: free_tensor=>TensArgumentFreeTensor         !frees the tensor (either by deallocation or by dissociation only)
           final:: tens_argument_dtor                                       !dtor
@@ -352,12 +353,12 @@
           procedure(tens_operation_query_i), deferred, public:: is_set    !returns TRUE if the tensor operation is fully set
           procedure(tens_operation_query_i), deferred, public:: args_full !returns TRUE if all required tensor arguments are set
           procedure, public:: clean=>TensOperationClean                   !cleans the tensor operation to an empty state
-          procedure, public:: set_argument=>TensOperationSetArgument      !sets up the next tensor argument by pointer association
-          procedure, public:: reset_argument=>TensOperationResetArgument  !resets an already set argument
-          procedure, public:: get_num_args=>TensOperationGetNumArgs       !returns the number of set arguments
-          procedure, public:: get_argument=>TensOperationGetArgument      !returns a pointer to the specific tensor argument (tens_rcrsv_t)
-          procedure, private:: allocate_argument=>TensOperationAllocateArgument !allocates the next tensor argument for a subsequent setup
-          procedure, private:: free_arguments=>TensOperationFreeArguments       !deallocates/dissociates all arguments
+          procedure, public:: set_argument=>TensOperationSetArgument      !sets up the next tensor argument by a pointer association to a persistent tensor target
+          procedure, public:: reset_argument=>TensOperationResetArgument  !resets an already set argument by a pointer association to a persistent tensor target
+          procedure, public:: get_num_args=>TensOperationGetNumArgs       !returns the number of set tensor arguments
+          procedure, public:: get_argument=>TensOperationGetArgument      !returns a pointer to a specific tensor argument (tens_rcrsv_t)
+          procedure, public:: allocate_argument=>TensOperationAllocateArgument !allocates the next (empty) tensor argument for a subsequent definition
+          procedure, public:: free_arguments=>TensOperationFreeArguments  !deallocates/dissociates all tensor arguments
         end type tens_operation_t
  !Tensor dimension permutation:
         type, public:: permutation_t
@@ -490,7 +491,7 @@
           class(tens_header_t), intent(in), target:: header !in: tensor header the layout is associated with
           integer(INTD), intent(out), optional:: ierr       !out: error code
          end subroutine tens_layout_update_i
-  !tens_operation_t: .is_set():
+  !tens_operation_t: .is_set(), .args_full():
          function tens_operation_query_i(this,ierr) result(ans)
           import:: INTD,tens_operation_t
           implicit none
@@ -5504,21 +5505,23 @@
         end subroutine TensArgumentAssign
 !---------------------------------------------------------
         subroutine TensArgumentSetTensor(this,tensor,ierr)
-!Sets the tensor argument by pointer association.
+!Sets the tensor argument by pointer (re-)association to a defined target.
+!If the tensor argument is already associated, it will be properly destroyed.
          implicit none
          class(tens_argument_t), intent(inout):: this     !inout: tensor argument
-         class(tens_rcrsv_t), intent(in), target:: tensor !in: tensor target (tens_rcrsv_t)
+         class(tens_rcrsv_t), intent(in), target:: tensor !in: defined tensor target (tens_rcrsv_t)
          integer(INTD), intent(out), optional:: ierr      !out: error code
          integer(INTD):: errc
 
-         if(.not.this%alloc) then
+         errc=TEREC_SUCCESS
+         if(associated(this%tens_p)) call this%free_tensor(errc)
+         if(errc.eq.TEREC_SUCCESS) then
+          this%alloc=.FALSE.
           if(tensor%is_set(errc)) then
            if(errc.eq.TEREC_SUCCESS) this%tens_p=>tensor
           else
            if(errc.eq.TEREC_SUCCESS) errc=TEREC_INVALID_ARGS
           endif
-         else
-          errc=TEREC_INVALID_REQUEST
          endif
          if(present(ierr)) ierr=errc
          return
@@ -5526,16 +5529,18 @@
 !-------------------------------------------------------
         subroutine TensArgumentAllocateTensor(this,ierr)
 !Allocates an empty tensor for a subsequent definition.
+!If the tensor argument is already associated, it will be properly destroyed.
          implicit none
          class(tens_argument_t), intent(inout):: this !inout: tensor argument
          integer(INTD), intent(out), optional:: ierr  !out: error code
          integer(INTD):: errc
 
-         if(.not.this%alloc) then
+         errc=TEREC_SUCCESS
+         if(associated(this%tens_p)) call this%free_tensor(errc)
+         if(errc.eq.TEREC_SUCCESS) then
+          this%alloc=.FALSE.
           allocate(this%tens_p,STAT=errc)
           if(errc.eq.0) then; this%alloc=.TRUE.; else; errc=TEREC_MEM_ALLOC_FAILED; endif
-         else
-          errc=TEREC_INVALID_REQUEST
          endif
          if(present(ierr)) ierr=errc
          return
@@ -5547,20 +5552,19 @@
          logical:: ans                                   !out: answer
          class(tens_argument_t), intent(in):: this       !in: tensor argument
          integer(INTD), intent(out), optional:: ierr     !out: error code
-         integer(INTD), intent(out), optional:: num_dims !out: tensor rank
-         class(tens_rcrsv_t), pointer, intent(inout), optional:: tens_p !out: pointer to the tensor
+         integer(INTD), intent(out), optional:: num_dims !out: tensor rank (number of dimensions)
+         class(tens_rcrsv_t), pointer, intent(out), optional:: tens_p !out: pointer to the tensor
          logical, intent(out), optional:: alloc          !out: allocation status of the tensor pointer (TRUE:allocated; FALSE:associated)
          integer(INTD):: errc
-         logical:: alcd
 
-         errc=TEREC_SUCCESS; ans=associated(this%tens_p); alcd=this%alloc
+         errc=TEREC_SUCCESS; ans=associated(this%tens_p)
          if(ans.and.present(num_dims)) then
           if(.not.this%tens_p%is_set(errc,num_dims=num_dims)) then
-           if(errc.eq.TEREC_SUCCESS) errc=TEREC_OBJ_CORRUPTED
+           if(errc.eq.TEREC_SUCCESS) errc=TEREC_OBJ_UNDEFINED
           endif
          endif
          if(present(tens_p)) tens_p=>this%tens_p
-         if(present(alloc)) alloc=alcd
+         if(present(alloc)) alloc=this%alloc
          if(present(ierr)) ierr=errc
          return
         end function TensArgumentIsSet
@@ -5576,12 +5580,10 @@
          if(associated(this%tens_p)) then
           if(this%alloc) then
            deallocate(this%tens_p,STAT=errc); if(errc.ne.0) errc=TEREC_MEM_FREE_FAILED
-           this%alloc=.FALSE.
           endif
           this%tens_p=>NULL()
-         else
-          errc=TEREC_INVALID_REQUEST
          endif
+         this%alloc=.FALSE.
          if(present(ierr)) ierr=errc
          return
         end subroutine TensArgumentFreeTensor
@@ -5608,10 +5610,10 @@
         end subroutine TensOperationClean
 !------------------------------------------------------------
         subroutine TensOperationSetArgument(this,tensor,ierr)
-!Sets the next tensor operation argument.
+!Sets the next argument of the tensor operation by pointer association to a persistent tensor.
          implicit none
          class(tens_operation_t), intent(inout):: this    !inout: tensor operation
-         class(tens_rcrsv_t), intent(in), target:: tensor !in: tensor to be set as an argument
+         class(tens_rcrsv_t), intent(in), target:: tensor !in: persistent tensor to be set as an argument
          integer(INTD), intent(out), optional:: ierr      !out: error code
          integer(INTD):: errc
 
@@ -5632,10 +5634,10 @@
         end subroutine TensOperationSetArgument
 !----------------------------------------------------------------------
         subroutine TensOperationResetArgument(this,tensor,arg_num,ierr)
-!Resets an already set tensor argument.
+!Resets an already set tensor argument by pointer association to a persistent tensor.
          implicit none
          class(tens_operation_t), intent(inout):: this    !inout: tensor operation
-         class(tens_rcrsv_t), intent(in), target:: tensor !in: tensor to be set as the new argument
+         class(tens_rcrsv_t), intent(in), target:: tensor !in: persistent tensor to be set as the new argument
          integer(INTD), intent(in):: arg_num              !in: argument number: [0..max]
          integer(INTD), intent(out), optional:: ierr      !out: error code
          integer(INTD):: errc
@@ -5684,17 +5686,23 @@
         end function TensOperationGetArgument
 !----------------------------------------------------------
         subroutine TensOperationAllocateArgument(this,ierr)
-!Allocates the next argument in a tensor operation.
+!Allocates the next (empty) tensor argument of a tensor operation.
          implicit none
          class(tens_operation_t), intent(inout):: this !inout: tensor operation
          integer(INTD), intent(out), optional:: ierr   !out: error code
          integer(INTD):: errc
 
-         errc=TEREC_SUCCESS
-         if(this%num_args.lt.MAX_TENSOR_OPERANDS) then
-          call this%tens_arg(this%num_args)%allocate_tensor(errc)
+         if(.not.this%args_full(errc)) then
+          if(errc.eq.TEREC_SUCCESS) then
+           if(this%num_args.lt.MAX_TENSOR_OPERANDS) then
+            call this%tens_arg(this%num_args)%allocate_tensor(errc)
+            if(errc.eq.TEREC_SUCCESS) this%num_args=this%num_args+1
+           else
+            errc=TEREC_INVALID_REQUEST
+           endif
+          endif
          else
-          errc=TEREC_UNABLE_COMPLETE
+          if(errc.eq.TEREC_SUCCESS) errc=TEREC_INVALID_REQUEST
          endif
          if(present(ierr)) ierr=errc
          return
@@ -6500,13 +6508,13 @@
          class(obj_pack_t), intent(inout):: packet        !in: packet
          integer(INTD), intent(out), optional:: ierr      !out: error code
          procedure(tens_transformation_method_map_i), optional:: method_map !in: if <method_name> is unpacked, maps that name to the corresponding TAL-SH definer object
-         integer(INTD):: errc,i
+         integer(INTD):: errc,i,n
          logical:: method_flag
          class(tens_rcrsv_t), pointer:: tens_p
 
-         call unpack_builtin(packet,this%num_args,errc)
+         call unpack_builtin(packet,n,errc)
          if(errc.eq.PACK_SUCCESS) then
-          do i=0,this%num_args-1
+          do i=0,n-1
            call this%allocate_argument(errc); if(errc.ne.TEREC_SUCCESS) exit
            tens_p=>this%get_argument(i,errc); if(errc.ne.TEREC_SUCCESS) exit
            call tens_p%tens_rcrsv_ctor(packet,errc); if(errc.ne.TEREC_SUCCESS) exit
@@ -6716,12 +6724,12 @@
          class(tens_addition_t), intent(out):: this  !out: tensor addition
          class(obj_pack_t), intent(inout):: packet   !in: packet
          integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc,i
+         integer(INTD):: errc,i,n
          class(tens_rcrsv_t), pointer:: tens_p
 
-         call unpack_builtin(packet,this%num_args,errc)
+         call unpack_builtin(packet,n,errc)
          if(errc.eq.PACK_SUCCESS) then
-          do i=0,this%num_args-1
+          do i=0,n-1
            call this%allocate_argument(errc); if(errc.ne.TEREC_SUCCESS) exit
            tens_p=>this%get_argument(i,errc); if(errc.ne.TEREC_SUCCESS) exit
            call tens_p%tens_rcrsv_ctor(packet,errc); if(errc.ne.TEREC_SUCCESS) exit
@@ -6951,7 +6959,7 @@
          implicit none
          class(tens_contraction_t), intent(inout):: this !inout: tensor contraction
          integer(INTD), intent(in):: tens_num            !in: specific tensor argument (0:D,1:L,2:R)
-         integer(INTD), intent(in):: restr_inds(1:)      !in: restricted tensor dimensions
+         integer(INTD), intent(in):: restr_inds(1:)      !in: restricted (symmetric) tensor dimensions
          integer(INTD), intent(out), optional:: ierr     !out: error code
          integer(INTD):: errc
 
@@ -6970,12 +6978,12 @@
          class(tens_contraction_t), intent(out):: this !out: tensor contraction
          class(obj_pack_t), intent(inout):: packet     !in: packet
          integer(INTD), intent(out), optional:: ierr   !out: error code
-         integer(INTD):: errc,i
+         integer(INTD):: errc,i,n
          class(tens_rcrsv_t), pointer:: tens_p
 
-         call unpack_builtin(packet,this%num_args,errc)
+         call unpack_builtin(packet,n,errc)
          if(errc.eq.PACK_SUCCESS) then
-          do i=0,this%num_args-1
+          do i=0,n-1
            call this%allocate_argument(errc); if(errc.ne.TEREC_SUCCESS) exit
            tens_p=>this%get_argument(i,errc); if(errc.ne.TEREC_SUCCESS) exit
            call tens_p%tens_rcrsv_ctor(packet,errc); if(errc.ne.TEREC_SUCCESS) exit
