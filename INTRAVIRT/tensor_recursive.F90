@@ -389,16 +389,17 @@
          integer(INTD), private:: rind_res(1:MAX_TENSOR_RANK) !permutational dependencies for the right tensor indices (y=rind_res(x): position x depends on position y on the left, -1 first position)
          contains
           procedure, public:: clean=>ContrPtrnExtClean                 !cleans the tensor contraction pattern to an empty state
+          procedure, public:: is_set=>ContrPtrnExtIsSet                !returns TRUE of the tensor contraction pattern is set
           procedure, public:: set_index_corr=>ContrPtrnExtSetIndexCorr !sets index correspondence pattern (contraction pattern): basic ctor
           procedure, public:: set_store_symm=>ContrPtrnExtSetStoreSymm !sets index permutational symmetry restrictions due to tensor storage: post-ctor
           procedure, public:: set_operl_symm=>ContrPtrnExtSetOperlSymm !sets index permutational symmetry restrictions due to tensor operation: post-ctor
           procedure, public:: break_dim_symm=>ContrPtrnExtBreakDimSymm !breaks the dimension symmetry for a specific tensor dimension
           procedure, public:: unpack=>ContrPtrnExtUnpack               !unpacks the object from a packet
-          procedure, public:: is_set=>ContrPtrnExtIsSet                !returns TRUE of the tensor contraction pattern is set
           procedure, public:: pack=>ContrPtrnExtPack                   !packs the object into a packet
           procedure, public:: get_contr_ptrn=>ContrPtrnExtGetContrPtrn !returns the classical (basic) digital contraction pattern used by TAL-SH for example
           procedure, public:: get_dim_symmetry=>ContrPtrnExtGetDimSymmetry !returns the symmetric restrictions for a specific tensor argument
           procedure, public:: print_it=>ContrPtrnExtPrintIt            !prints the extended tensor contraction
+          final:: contr_ptrn_ext_dtor                                  !dtor
         end type contr_ptrn_ext_t
  !Tensor transformation (includes initialization and prefactor scaling as specific cases):
         type, extends(tens_operation_t), public:: tens_transformation_t
@@ -411,7 +412,7 @@
           generic, public:: assignment(=)=>TensTransformationAssign
           procedure, public:: is_set=>TensTransformationIsSet               !returns TRUE if the tensor transformation is fully set
           procedure, public:: args_full=>TensTransformationArgsFull         !returns TRUE if the tensor transformation argument has been set
-          procedure, public:: set_method=>TensTransformationSetMethod       !sets the transformation/initialization method
+          procedure, public:: set_method=>TensTransformationSetMethod       !sets the transformation/initialization method (all tensor arguments must have been set already)
           procedure, public:: get_method=>TensTransformationGetMethod       !returns the transformation/initialization method
           procedure, public:: unpack=>TensTransformationUnpack              !unpacks the object from a packet
           procedure, public:: pack=>TensTransformationPack                  !packs the object into a packet
@@ -510,11 +511,11 @@
           real(8), intent(in), optional:: strength_thresh !in: dimension strength threshold for splitting
          end function tens_rcrsv_split_i
   !tens_rcrsv_t: dim_strength() [nopass]:
-         function tens_rcrsv_dim_strength_i(this,dim_strength,ierr,strength_thresh,num_dims,split_dims) result(total_strength)
+         function tens_rcrsv_dim_strength_i(tensor,dim_strength,ierr,strength_thresh,num_dims,split_dims) result(total_strength)
           import:: INTD,tens_rcrsv_t
           implicit none
           real(8):: total_strength                                !out: total tensor dimension strength (per tensor): >=0
-          class(tens_rcrsv_t), intent(in):: this                  !in: tensor
+          class(tens_rcrsv_t), intent(in):: tensor                !in: tensor
           real(8), intent(inout):: dim_strength(1:)               !out: individual tensor dimension strength: >=0
           integer(INTD), intent(out), optional:: ierr             !out: error code
           real(8), intent(in), optional:: strength_thresh         !in: given strength threshold
@@ -718,16 +719,17 @@
         public permutation_dtor
  !contr_ptrn_ext_t:
         private ContrPtrnExtClean
+        private ContrPtrnExtIsSet
         private ContrPtrnExtSetIndexCorr
         private ContrPtrnExtSetStoreSymm
         private ContrPtrnExtSetOperlSymm
         private ContrPtrnExtBreakDimSymm
         private ContrPtrnExtUnpack
-        private ContrPtrnExtIsSet
         private ContrPtrnExtPack
         private ContrPtrnExtGetContrPtrn
         private ContrPtrnExtGetDimSymmetry
         private ContrPtrnExtPrintIt
+        public contr_ptrn_ext_dtor
  !tens_transformation_t:
         private TensTransformationAssign
         private TensTransformationIsSet
@@ -3065,13 +3067,14 @@
          if(present(ierr)) ierr=errc
          return
         end function TensLayoutIsSet
-!--------------------------------------------------------
-        subroutine TensLayoutUnpackBase(this,packet,ierr)
+!----------------------------------------------------------------------
+        subroutine TensLayoutUnpackBase(this,packet,ierr,tens_header_p)
 !Unpacks the object from a packet.
          implicit none
-         class(tens_layout_t), intent(out):: this    !out: tensor body layout
-         class(obj_pack_t), intent(inout):: packet   !inout: packet
-         integer(INTD), intent(out), optional:: ierr !out: error code
+         class(tens_layout_t), intent(out):: this                            !out: tensor body layout
+         class(obj_pack_t), intent(inout):: packet                           !inout: packet
+         integer(INTD), intent(out), optional:: ierr                         !out: error code
+         class(tens_header_t), pointer, intent(in), optional:: tens_header_p !in: pointer to the tensor header the layout is associated with
          integer(INTD):: errc
          logical:: dda
 
@@ -3082,6 +3085,7 @@
           if(.not.allocated(this%data_descr)) allocate(this%data_descr)
           call this%data_descr%unpack(packet,errc)
          endif
+         nullify(this%header); if(present(tens_header_p).and.errc.eq.PACK_SUCCESS) this%header=>tens_header_p
          if(present(ierr)) ierr=errc
          return
         end subroutine TensLayoutUnpackBase
@@ -3280,8 +3284,11 @@
          class(tens_header_t), pointer, intent(in), optional:: tens_header_p !in: pointer to the corresponding tensor header
          integer(INTD):: errc
 
-         call this%unpack_base(packet,errc)
-         this%header=>NULL(); if(present(tens_header_p)) this%header=>tens_header_p
+         if(present(tens_header_p)) then
+          call this%unpack_base(packet,errc,tens_header_p)
+         else
+          call this%unpack_base(packet,errc)
+         endif
          if(present(ierr)) ierr=errc
          return
         end subroutine TensLayoutFdimsCtorUnpack
@@ -5491,7 +5498,8 @@
          this%alloc=src%alloc
          if(src%alloc) then
           if(associated(src%tens_p)) then
-           allocate(this%tens_p,SOURCE=src%tens_p)
+           allocate(this%tens_p,MOLD=src%tens_p)
+           this%tens_p=src%tens_p
           endif
          else
           this%tens_p=>src%tens_p
@@ -5521,21 +5529,32 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensArgumentSetTensor
-!-------------------------------------------------------
-        subroutine TensArgumentAllocateTensor(this,ierr)
-!Allocates an empty tensor for a subsequent definition.
+!--------------------------------------------------------------
+        subroutine TensArgumentAllocateTensor(this,ierr,tensor)
+!Allocates either an empty tensor (for a subsequent definition) or clones a defined tensor.
 !If the tensor argument is already associated, it will be properly destroyed.
          implicit none
-         class(tens_argument_t), intent(inout):: this !inout: tensor argument
-         integer(INTD), intent(out), optional:: ierr  !out: error code
+         class(tens_argument_t), intent(inout):: this       !inout: tensor argument
+         integer(INTD), intent(out), optional:: ierr        !out: error code
+         class(tens_rcrsv_t), intent(in), optional:: tensor !in: tensor to clone
          integer(INTD):: errc
 
          errc=TEREC_SUCCESS
          if(associated(this%tens_p)) call this%free_tensor(errc)
          if(errc.eq.TEREC_SUCCESS) then
           this%alloc=.FALSE.
-          allocate(this%tens_p,STAT=errc)
-          if(errc.eq.0) then; this%alloc=.TRUE.; else; errc=TEREC_MEM_ALLOC_FAILED; endif
+          if(present(tensor)) then
+           allocate(this%tens_p,MOLD=tensor,STAT=errc) !clone the dynamic type of <tensor>
+           if(errc.eq.0) then
+            this%tens_p=tensor !reconstruct the exact copy of the <tensor>
+            this%alloc=.TRUE.
+           else
+            errc=TEREC_MEM_ALLOC_FAILED
+           endif
+          else
+           allocate(this%tens_p,STAT=errc) !allocate an empty tens_rcrsv_t
+           if(errc.eq.0) then; this%alloc=.TRUE.; else; errc=TEREC_MEM_ALLOC_FAILED; endif
+          endif
          endif
          if(present(ierr)) ierr=errc
          return
@@ -5627,19 +5646,26 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensOperationSetArgument
-!----------------------------------------------------------------------
-        subroutine TensOperationResetArgument(this,tensor,arg_num,ierr)
-!Resets an already set tensor argument by pointer association to a persistent tensor.
+!----------------------------------------------------------------------------
+        subroutine TensOperationResetArgument(this,tensor,arg_num,ierr,clone)
+!Resets an already set tensor argument either by pointer association to a persistent tensor or by cloning.
          implicit none
          class(tens_operation_t), intent(inout):: this    !inout: tensor operation
          class(tens_rcrsv_t), intent(in), target:: tensor !in: persistent tensor to be set as the new argument
          integer(INTD), intent(in):: arg_num              !in: argument number: [0..max]
          integer(INTD), intent(out), optional:: ierr      !out: error code
+         logical, intent(in), optional:: clone            !in: TRUE:Cloning, FALSE:Association (defaults to FALSE)
          integer(INTD):: errc
+         logical:: assoc_only
 
          errc=TEREC_SUCCESS
+         assoc_only=.TRUE.; if(present(clone)) assoc_only=(.not.clone)
          if(arg_num.ge.0.and.arg_num.lt.this%num_args) then
-          call this%tens_arg(arg_num)%set_tensor(tensor,errc)
+          if(assoc_only) then
+           call this%tens_arg(arg_num)%set_tensor(tensor,errc)
+          else
+           call this%tens_arg(arg_num)%allocate_tensor(errc,tensor)
+          endif
          else
           errc=TEREC_INVALID_ARGS
          endif
@@ -5937,6 +5963,22 @@
          if(present(ierr)) ierr=TEREC_SUCCESS
          return
         end subroutine ContrPtrnExtClean
+!--------------------------------------------------------------
+        function ContrPtrnExtIsSet(this,ierr,restr) result(ans)
+!Returns TRUE if the extended tensor contraction pattern is set.
+         implicit none
+         logical:: ans                               !out: answer
+         class(contr_ptrn_ext_t), intent(in):: this  !in: extended tensor contraction pattern
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         logical, intent(out), optional:: restr      !out: TRUE of index permutational symmetries are present
+         integer(INTD):: errc
+
+         errc=TEREC_SUCCESS
+         ans=(this%ddim.ge.0.and.this%ldim.ge.0.and.this%rdim.ge.0)
+         if(present(restr)) restr=ans.and.this%ind_restr_set
+         if(present(ierr)) ierr=errc
+         return
+        end function ContrPtrnExtIsSet
 !-------------------------------------------------------------------------
         subroutine ContrPtrnExtSetIndexCorr(this,nd,nl,nr,contr_ptrn,ierr)
 !Sets tensor dimension correspondence in a tensor contraction (contraction pattern).
@@ -6194,22 +6236,6 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine ContrPtrnExtUnpack
-!--------------------------------------------------------------
-        function ContrPtrnExtIsSet(this,ierr,restr) result(ans)
-!Returns TRUE if the extended tensor contraction pattern is set.
-         implicit none
-         logical:: ans                               !out: answer
-         class(contr_ptrn_ext_t), intent(in):: this  !in: extended tensor contraction pattern
-         integer(INTD), intent(out), optional:: ierr !out: error code
-         logical, intent(out), optional:: restr      !out: TRUE of index permutational symmetries are present
-         integer(INTD):: errc
-
-         errc=TEREC_SUCCESS
-         ans=(this%ddim.ge.0.and.this%ldim.ge.0.and.this%rdim.ge.0)
-         if(present(restr)) restr=ans.and.this%ind_restr_set
-         if(present(ierr)) ierr=errc
-         return
-        end function ContrPtrnExtIsSet
 !----------------------------------------------------
         subroutine ContrPtrnExtPack(this,packet,ierr)
 !Packs the object into a packet.
@@ -6351,6 +6377,14 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine ContrPtrnExtPrintIt
+!-------------------------------------------
+        subroutine contr_ptrn_ext_dtor(this)
+         implicit none
+         type(contr_ptrn_ext_t):: this
+
+         call this%clean()
+         return
+        end subroutine contr_ptrn_ext_dtor
 ![tens_transformation_t]=============================
         subroutine TensTransformationAssign(this,src)
 !Copy assignment.
@@ -7058,17 +7092,18 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensContractionGetContrPtrn
-!--------------------------------------------------------------------------------------
-        subroutine TensContractionImportReplace(this,tens_contr,ierr,dtens,ltens,rtens)
-!Creates a new tensor contraction by replacing tensor arguments in
-!an existing tensor contraction (plus symmetry adjustment).
+!--------------------------------------------------------------------------------------------
+        subroutine TensContractionImportReplace(this,tens_contr,clone,ierr,dtens,ltens,rtens)
+!Creates a new tensor contraction by replacing tensor arguments in an existing tensor contraction (plus symmetry adjustment).
+!The argument <clone> regulates whether the tensors will be cloned or merely associated as tensor arguments.
          implicit none
          class(tens_contraction_t), intent(out):: this            !out: derived tensor contraction
          class(tens_contraction_t), intent(in):: tens_contr       !in: parental tensor contraction
+         logical, intent(in):: clone                              !in: TRUE:Cloning, FALSE:Association
          integer(INTD), intent(out), optional:: ierr              !out: error code
-         type(tens_rcrsv_t), intent(in), target, optional:: dtens !in: new (persistent) destination tensor argument
-         type(tens_rcrsv_t), intent(in), target, optional:: ltens !in: new (persistent) left tensor argument
-         type(tens_rcrsv_t), intent(in), target, optional:: rtens !in: new (persistent) right tensor argument
+         type(tens_rcrsv_t), intent(in), target, optional:: dtens !in: new destination tensor argument
+         type(tens_rcrsv_t), intent(in), target, optional:: ltens !in: new left tensor argument
+         type(tens_rcrsv_t), intent(in), target, optional:: rtens !in: new right tensor argument
          integer(INTD):: i,errc,nd,cmp
          integer(INTL):: sidx(1:MAX_TENSOR_RANK)
          type(tens_header_t), pointer:: thp
@@ -7080,7 +7115,7 @@
            this=tens_contr !clone the parental tensor contraction
  !Destination tensor replacement:
            if(present(dtens)) then
-            call this%reset_argument(dtens,0,errc)
+            call this%reset_argument(dtens,0,errc,clone)
             if(errc.eq.TEREC_SUCCESS) then
              thp=>dtens%get_header(errc)
              if(errc.eq.TEREC_SUCCESS) then
@@ -7102,7 +7137,7 @@
            endif
  !Left tensor replacement:
            if(present(ltens).and.errc.eq.TEREC_SUCCESS) then
-            call this%reset_argument(ltens,1,errc)
+            call this%reset_argument(ltens,1,errc,clone)
             if(errc.eq.TEREC_SUCCESS) then
              thp=>ltens%get_header(errc)
              if(errc.eq.TEREC_SUCCESS) then
@@ -7124,7 +7159,7 @@
            endif
  !Right tensor replacement:
            if(present(rtens).and.errc.eq.TEREC_SUCCESS) then
-            call this%reset_argument(rtens,2,errc)
+            call this%reset_argument(rtens,2,errc,clone)
             if(errc.eq.TEREC_SUCCESS) then
              thp=>rtens%get_header(errc)
              if(errc.eq.TEREC_SUCCESS) then
@@ -7155,11 +7190,12 @@
         subroutine TensContractionSplitFunc(this,tens_split_f,subops,ierr,num_subops)
 !Splits a defined tensor contraction into a list of subcontractions. The splitting
 !is driven by the tensor argument decomposition into unique subtensors. More precisely,
-!each tensor argument is represented as a direct sum of its unique children subtensors.
+!each tensor argument is represented as a direct sum of its unique child subtensors.
 !Then all possible non-zero combinations of those subtensors that match the tensor
-!contraction pattern will form the list of subcontractions. The subtensors are created
-!by the externally provided function <tens_split_f()> which must create them in
-!persistent storage and only return a vector of references back.
+!contraction pattern will form the list of subcontractions. The subtensors are generated
+!by the externally provided function <tens_split_f()> which is expected either to fill in
+!the vector of subtensors by storing them by value or to generate the subtensors in
+!a persistent storage and fill in the vector with references to those subtensors.
          implicit none
          class(tens_contraction_t), intent(in):: this      !in: parental tensor contraction
          procedure(tens_rcrsv_split_i):: tens_split_f      !in: tensor splitting function (splits a tensor into a vector of unique subtensors (by reference), subtensors are persistent)
@@ -7176,6 +7212,7 @@
          type(vector_t):: dsubs,lsubs,rsubs              !vector of subtensors for each tensor argument
          type(vector_iter_t):: dvit,lvit,rvit            !vector iterator for each tensor argument
          type(list_iter_t):: slit                        !list iterator for the list of subcontractions
+         logical:: clone_tensors
          real(8):: tm(0:6),tmf
 
          tm(0)=thread_wtime(); tm(1:)=tm(0)
@@ -7257,6 +7294,7 @@
            implicit none
            integer(INTD), intent(out):: jerr
            class(tens_rcrsv_t), pointer:: jtrp
+           class(gfc_cont_elem_t), pointer:: vec_elem
 
            jerr=TEREC_SUCCESS
  !Destination tensor argument:
@@ -7285,6 +7323,14 @@
            if(jerr.eq.TEREC_SUCCESS) jerr=dvit%init(dsubs)
            if(jerr.eq.TEREC_SUCCESS) jerr=lvit%init(lsubs)
            if(jerr.eq.TEREC_SUCCESS) jerr=rvit%init(rsubs)
+ !Determine whether subtensors are stored by value or by reference:
+           if(jerr.eq.TEREC_SUCCESS) then
+            vec_elem=>dvit%pointee(jerr)
+            if(jerr.eq.GFC_SUCCESS) then
+             clone_tensors=vec_elem%stored_by_value(jerr) !`I only check the destination subtensor container here, but the storage kind should match in all three
+            endif
+            nullify(vec_elem)
+           endif
            return
           end subroutine generate_subtensors
 
@@ -7717,7 +7763,7 @@
             jup=>slit%get_value(jerr); if(jerr.ne.GFC_SUCCESS) exit
             jtcp=>NULL(); select type(jup); class is(tens_contraction_t); jtcp=>jup; end select
             if(.not.associated(jtcp)) then; jerr=TEREC_ERROR; exit; endif !trap
-            call jtcp%import_replace(this,jerr,dtrp,ltrp,rtrp); if(jerr.ne.TEREC_SUCCESS) exit
+            call jtcp%import_replace(this,clone_tensors,jerr,dtrp,ltrp,rtrp); if(jerr.ne.TEREC_SUCCESS) exit
             nsub=nsub+1; jtcp=>NULL()
            enddo
            return
