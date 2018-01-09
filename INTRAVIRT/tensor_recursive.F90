@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/01/08
+!REVISION: 2018/01/09
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -27,10 +27,10 @@
 !NOTES:
 ! # Tensor definition stages:
 !   a) Null: No tensor;
-!   b) Defined: Tensor signature is defined;
+!   b) Defined: Tensor signature (and maybe some shape) is defined;
 !   c) Resolved: Tensor shape is fully defined (all dimensions resolved);
 !   d) Laid-Out: Tensor layout is defined;
-!   e) Mapped: Tensor body is physically mapped.
+!   e) Mapped: Tensor body is physically mapped to a contiguous chunk of memory.
 ! # Tensor body value definition stages:
 !   a) TEREC_BODY_UNDEF: Tensor body value is undefined;
 !   b) TEREC_BODY_UPDATE: Tensor body value is currently being updated and cannot be used;
@@ -297,6 +297,7 @@
           procedure, public:: get_dims=>TensRcrsvGetDims             !returns tensor dimension extents
           procedure, public:: add_subtensor=>TensRcrsvAddSubtensor   !registers a constituent subtensor by providing its tensor header
           procedure, public:: add_subtensors=>TensRcrsvAddSubtensors !registers constituent subtensors by providing a list of their tensor headers
+          procedure, public:: has_structure=>TensRcrsvHasStructure   !returns TRUE if the tensor structure (list of subtensors) is defined
           procedure, public:: get_num_subtensors=>TensRcrsvGetNumSubtensors !returns the total number of constituent subtensors
           procedure, public:: get_subtensors=>TensRcrsvGetSubtensors !returns a pointer to the list of constituent subtensors (each subtensor is represented by a tensor header)
           procedure, public:: set_shape=>TensRcrsvSetShape           !sets the tensor shape (if it has not been set yet)
@@ -354,10 +355,10 @@
           procedure(tens_operation_query_i), deferred, public:: args_full !returns TRUE if all required tensor arguments are set
           procedure, public:: clean=>TensOperationClean                   !cleans the tensor operation to an empty state
           procedure, public:: set_argument=>TensOperationSetArgument      !sets up the next tensor argument by a pointer association to a persistent tensor target
-          procedure, public:: reset_argument=>TensOperationResetArgument  !resets an already set argument by a pointer association to a persistent tensor target
+          procedure, public:: reset_argument=>TensOperationResetArgument  !resets an already set argument by either a pointer association to a persistent tensor target or tensor allocation
           procedure, public:: get_num_args=>TensOperationGetNumArgs       !returns the number of set tensor arguments
           procedure, public:: get_argument=>TensOperationGetArgument      !returns a pointer to a specific tensor argument (tens_rcrsv_t)
-          procedure, public:: allocate_argument=>TensOperationAllocateArgument !allocates the next (empty) tensor argument for a subsequent definition
+          procedure, public:: allocate_argument=>TensOperationAllocateArgument !allocates the next tensor argument, either empty (for a subsequent definition) or clones a defined one
           procedure, public:: free_arguments=>TensOperationFreeArguments  !deallocates/dissociates all tensor arguments
         end type tens_operation_t
  !Tensor dimension permutation:
@@ -443,7 +444,9 @@
           generic, public:: assignment(=)=>TensContractionAssign
           procedure, public:: is_set=>TensContractionIsSet                 !returns TRUE if the tensor contraction is fully set
           procedure, public:: args_full=>TensContractionArgsFull           !returns TRUE if all tensor contraction arguments have been set
-          procedure, public:: set_contr_ptrn=>TensContractionSetContrPtrn  !sets the tensor contraction pattern (all tensor arguments must have been set already)
+          procedure, private:: TensContractionSetContrPtrnBas              !sets the tensor contraction pattern using basic TAL-SH format (all tensor arguments must have been set already)
+          procedure, private:: TensContractionSetContrPtrnExt              !sets the tensor contraction pattern using extended format (all tensor arguments must have been set already)
+          generic, public:: set_contr_ptrn=>TensContractionSetContrPtrnBas,TensContractionSetContrPtrnExt
           procedure, public:: set_operl_symm=>TensContractionSetOperlSymm  !sets index permutational symmetry restrictions due to tensor operation (both contraction pattern and arguments must have been set already)
           procedure, public:: unpack=>TensContractionUnpack                !unpacks the object from a packet
           procedure, public:: pack=>TensContractionPack                    !packs the object into a packet
@@ -666,6 +669,7 @@
         private TensRcrsvGetDims
         private TensRcrsvAddSubtensor
         private TensRcrsvAddSubtensors
+        private TensRcrsvHasStructure
         private TensRcrsvGetNumSubtensors
         private TensRcrsvGetSubtensors
         private TensRcrsvSetShape
@@ -752,7 +756,8 @@
         private TensContractionAssign
         private TensContractionIsSet
         private TensContractionArgsFull
-        private TensContractionSetContrPtrn
+        private TensContractionSetContrPtrnBas
+        private TensContractionSetContrPtrnExt
         private TensContractionSetOperlSymm
         private TensContractionUnpack
         private TensContractionPack
@@ -4257,6 +4262,19 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensRcrsvAddSubtensors
+!------------------------------------------------------------
+        function TensRcrsvHasStructure(this,ierr) result(res)
+!Returns TRUE if the tensor has structure (subtensor list is defined).
+         implicit none
+         logical:: res                               !out: result
+         class(tens_rcrsv_t), intent(in):: this      !in: tensor
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         res=this%body%is_set(errc)
+         if(present(ierr)) ierr=errc
+         return
+        end function TensRcrsvHasStructure
 !---------------------------------------------------------------------------
         function TensRcrsvGetNumSubtensors(this,ierr) result(num_subtensors)
 !Returns the total number of constituent subtensors.
@@ -5705,18 +5723,23 @@
          if(present(ierr)) ierr=errc
          return
         end function TensOperationGetArgument
-!----------------------------------------------------------
-        subroutine TensOperationAllocateArgument(this,ierr)
-!Allocates the next (empty) tensor argument of a tensor operation.
+!-----------------------------------------------------------------
+        subroutine TensOperationAllocateArgument(this,ierr,tensor)
+!Allocates the next tensor argument of a tensor operation, either empty or cloned.
          implicit none
-         class(tens_operation_t), intent(inout):: this !inout: tensor operation
-         integer(INTD), intent(out), optional:: ierr   !out: error code
+         class(tens_operation_t), intent(inout):: this      !inout: tensor operation
+         integer(INTD), intent(out), optional:: ierr        !out: error code
+         class(tens_rcrsv_t), intent(in), optional:: tensor !in: tensor to clone
          integer(INTD):: errc
 
          if(.not.this%args_full(errc)) then
           if(errc.eq.TEREC_SUCCESS) then
            if(this%num_args.lt.MAX_TENSOR_OPERANDS) then
-            call this%tens_arg(this%num_args)%allocate_tensor(errc)
+            if(present(tensor)) then
+             call this%tens_arg(this%num_args)%allocate_tensor(errc,tensor)
+            else
+             call this%tens_arg(this%num_args)%allocate_tensor(errc)
+            endif
             if(errc.eq.TEREC_SUCCESS) this%num_args=this%num_args+1
            else
             errc=TEREC_INVALID_REQUEST
@@ -6883,8 +6906,8 @@
          if(present(ierr)) ierr=errc
          return
         end function TensContractionArgsFull
-!-------------------------------------------------------------------------
-        subroutine TensContractionSetContrPtrn(this,contr_ptrn,ierr,alpha)
+!----------------------------------------------------------------------------
+        subroutine TensContractionSetContrPtrnBas(this,contr_ptrn,ierr,alpha)
 !Sets the extended tensor contraction pattern (all tensor arguments must have been set already).
 !Additionally, if tensor arguments have permutational symmetries, they will be incorporated into
 !the extended tensor contraction pattern. Later on, additional permutational symmetries can be
@@ -6978,7 +7001,28 @@
          endif
          if(present(ierr)) ierr=errc
          return
-        end subroutine TensContractionSetContrPtrn
+        end subroutine TensContractionSetContrPtrnBas
+!----------------------------------------------------------------------------
+        subroutine TensContractionSetContrPtrnExt(this,contr_ptrn,ierr,alpha)
+!Sets the extended tensor contraction pattern (all tensor arguments must have been set already).
+         implicit none
+         class(tens_contraction_t), intent(inout):: this !inout: tensor contraction
+         type(contr_ptrn_ext_t), intent(in):: contr_ptrn !in: extended tensor contraction pattern
+         integer(INTD), intent(out), optional:: ierr     !out: error code
+         complex(8), intent(in), optional:: alpha        !in: complex tensor contraction perfactor (defaults to 1.0)
+         integer(INTD):: errc
+
+         if(this%args_full(errc)) then !all tensor arguments must have been set already
+          if(errc.eq.TEREC_SUCCESS) then
+           this%contr_ptrn=contr_ptrn
+           if(present(alpha)) this%alpha=alpha
+          endif
+         else
+          if(errc.eq.TEREC_SUCCESS) errc=TEREC_INVALID_REQUEST
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensContractionSetContrPtrnExt
 !----------------------------------------------------------------------------
         subroutine TensContractionSetOperlSymm(this,tens_num,restr_inds,ierr)
 !Sets index permutational symmetry restrictions due to tensor operation

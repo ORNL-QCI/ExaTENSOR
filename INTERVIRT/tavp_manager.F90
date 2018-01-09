@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/01/07
+!REVISION: 2018/01/09
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -1417,34 +1417,70 @@
         end function TensInstrGetFlops
 !-----------------------------------------------------------------
         subroutine TensInstrGetOperation(this,tens_operation,ierr)
-!Given a tensor instruction, returns back the encapsulated tensor operation.
+!Given a tensor instruction, returns back the encapsulated tensor operation
+!expressed in terms of the very same tensors (by pointer association).
          implicit none
          class(tens_instr_t), intent(in):: this                                     !in: tensor instruction
          class(tens_operation_t), allocatable, target, intent(out):: tens_operation !out: corresponding (encapsulated) tensor operation
          integer(INTD), intent(out), optional:: ierr                                !out: error code
-         integer(INTD):: errc,opcode
+         integer(INTD):: errc,opcode,numo,i
+         complex(8):: alpha
+         class(tens_rcrsv_t), pointer:: tensor
+         class(ds_oprnd_t), pointer:: oprnd
+         class(ds_instr_ctrl_t), pointer:: instr_ctrl
+         type(contr_ptrn_ext_t), pointer:: contr_ptrn
 
          if(this%is_active(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
-           opcode=this%get_code(errc)
+           numo=this%get_num_operands(errc)
            if(errc.eq.DSVP_SUCCESS) then
-            select case(opcode)
-            case(TAVP_INSTR_TENS_CONTRACT)
-             allocate(tens_contraction_t::tens_operation)
-             select type(tens_operation)
-             class is(tens_contraction_t)
-             !`Implement: Construct tens_contraction_t object: 1) Set operands; 2) Set contraction pattern/index restrictions
-             
+            opcode=this%get_code(errc)
+            if(errc.eq.DSVP_SUCCESS) then
+             select case(opcode)
+             case(TAVP_INSTR_TENS_CREATE) !no associated tensor operation
+             case(TAVP_INSTR_TENS_DESTROY) !no associated tensor operation
+             case(TAVP_INSTR_TENS_CONTRACT)
+              allocate(tens_contraction_t::tens_operation)
+              select type(tens_operation)
+              class is(tens_contraction_t)
+               do i=0,numo-1
+                oprnd=>this%get_operand(i,errc); if(errc.ne.DSVP_SUCCESS) exit
+                tensor=>NULL(); select type(oprnd); class is(tens_oprnd_t); tensor=>oprnd%get_tensor(errc); end select
+                if(.not.associated(tensor)) errc=-10; if(errc.ne.0) exit
+                call tens_operation%set_argument(tensor,errc); if(errc.ne.TEREC_SUCCESS) exit
+               enddo
+               if(errc.eq.0) then
+                instr_ctrl=>this%get_control(errc)
+                if(errc.eq.DSVP_SUCCESS) then
+                 select type(instr_ctrl)
+                 class is(ctrl_tens_contr_t)
+                  contr_ptrn=>instr_ctrl%get_contr_ptrn(errc,alpha)
+                  if(errc.eq.0) call tens_operation%set_contr_ptrn(contr_ptrn,errc,alpha)
+                  nullify(contr_ptrn); nullify(instr_ctrl)
+                 class default
+                  errc=-9
+                 end select
+                else
+                 errc=-8
+                endif
+               else
+                errc=-7
+               endif
+              class default
+               errc=-6
+              end select
+             case default
+              !`Implement for other relevant tensor instructions
+              errc=-5
              end select
-            case default
-             !`Implement other relevant cases
-             errc=-1
-            end select
+            else
+             errc=-4
+            endif
            else
-            errc=-1
+            errc=-3
            endif
           else
-           errc=-1
+           errc=-2
           endif
          else
           errc=-1

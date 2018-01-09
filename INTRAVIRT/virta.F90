@@ -8,7 +8,7 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/12/27
+!REVISION: 2018/01/09
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -153,11 +153,12 @@
          type(contr_ptrn_ext_t), private:: contr_ptrn           !extended tensor contraction pattern
          complex(8), private:: alpha=(1d0,0d0)                  !alpha prefactor
          contains
-          procedure, private:: CtrlTensContrCtor                !ctor
+          procedure, private:: CtrlTensContrCtor                        !ctor
           generic, public:: ctrl_tens_contr_ctor=>CtrlTensContrCtor
-          procedure, public:: pack=>CtrlTensContrPack           !packs the instruction control field into a plain byte packet
-          procedure, public:: unpack=>CtrlTensContrUnpack       !unpacks the instruction control field from a plain byte packet
-          final:: ctrl_tens_contr_dtor                          !dtor
+          procedure, public:: get_contr_ptrn=>CtrlTensContrGetContrPtrn !returns a pointer to the extended tensor contraction pattern and the prefactor (optionally)
+          procedure, public:: pack=>CtrlTensContrPack                   !packs the instruction control field into a plain byte packet
+          procedure, public:: unpack=>CtrlTensContrUnpack               !unpacks the instruction control field from a plain byte packet
+          final:: ctrl_tens_contr_dtor                                  !dtor
         end type ctrl_tens_contr_t
  !Tensor argument cache entry:
         type, abstract, public:: tens_cache_entry_t
@@ -258,6 +259,7 @@
 #endif
  !ctrl_tens_contr_t:
         private CtrlTensContrCtor
+        private CtrlTensContrGetContrPtrn
         private CtrlTensContrPack
         private CtrlTensContrUnpack
         public ctrl_tens_contr_dtor
@@ -330,6 +332,28 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine CtrlTensContrCtor
+!-----------------------------------------------------------------------
+        function CtrlTensContrGetContrPtrn(this,ierr,alpha) result(ptrn)
+!Returns a pointer to the extended tensor contraction pattern.
+         implicit none
+         type(contr_ptrn_ext_t), pointer:: ptrn              !out: extended tensor contraction pattern
+         class(ctrl_tens_contr_t), target, intent(in):: this !in: tensor contraction control field
+         integer(INTD), intent(out), optional:: ierr         !out: error code
+         complex(8), intent(out), optional:: alpha           !out: tensor contraction prefactor
+         integer(INTD):: errc
+
+         ptrn=>NULL()
+         if(this%contr_ptrn%is_set(errc)) then
+          if(errc.eq.TEREC_SUCCESS) then
+           ptrn=>this%contr_ptrn
+           if(present(alpha)) alpha=this%alpha
+          endif
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function CtrlTensContrGetContrPtrn
 !-----------------------------------------------------
         subroutine CtrlTensContrPack(this,packet,ierr)
 !Packer.
