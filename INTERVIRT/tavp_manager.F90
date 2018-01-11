@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/01/09
+!REVISION: 2018/01/11
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -2796,7 +2796,7 @@
                case(TAVP_INSTR_TENS_CONTRACT) !new subinstructions will go into the subinstruction list
                 call decompose_instr_tens_contract(errc)
                case default
-                !`Call decomposition for other tensor instructions
+                !`Call decomposition for other relevant tensor instructions
                 write(CONS_OUT,&
                 &'("#FATAL(TAVP-MNG:Decomposer:decompose)[",i6,"]: Tensor instruction code ",i3," is not implemented!")')&
                 &impir,opcode
@@ -3072,18 +3072,44 @@
           integer(INTD), intent(out):: jerr !out: error code
           integer(INTD):: jj,num_subinstr
           integer(INTL):: iid
+          class(tens_rcrsv_t), pointer:: tensor
           class(tens_operation_t), allocatable:: tens_contr
+          class(tens_contraction_t), pointer:: subcontr
+          class(tens_cache_entry_t), pointer:: tens_entry
+          class(tens_entry_mng_t), pointer:: tens_entry_mng
+          type(tens_instr_t):: tens_instr_empty
           type(list_bi_t):: subcontractions
+          type(list_iter_t):: subit
+          class(*), pointer:: uptr
 
           jerr=this%sub_list%reset_back()
           if(jerr.eq.GFC_SUCCESS) then
+ !Extract the underlying tensor operation (tensor contraction):
            call tens_instr%get_operation(tens_contr,jerr)
            if(jerr.eq.0) then
             select type(tens_contr)
             class is(tens_contraction_t)
-             call tens_contr%split(subcontractions,jerr,num_subinstr)
+ !Decompose the tensor operation into suboperations:
+             num_subinstr=0
+             call tens_contr%split(subcontractions,jerr,num_subinstr) !internal decomposition induced by the tensor structure
              if(jerr.eq.TEREC_SUCCESS) then
-              !`Finish: Create subinstructions from subcontractions and register/look up all subtensors
+ !Generate subinstructions from the suboperations:
+              jerr=subit%init(subcontractions)
+              if(jerr.eq.GFC_SUCCESS) then
+               jerr=subit%get_status()
+               do while(jerr.eq.GFC_IT_ACTIVE)
+                uptr=>subit%get_value(jerr); if(jerr.ne.GFC_SUCCESS) exit
+                subcontr=>NULL(); select type(uptr); class is(tens_contraction_t); subcontr=>uptr; end select
+                if(.not.associated(subcontr)) then; jerr=GFC_ERROR; exit; endif !trap
+                !`Finish
+                jerr=subit%delete(); if(jerr.ne.GFC_SUCCESS) exit
+                jerr=subit%get_status()
+               enddo
+               if(jerr.ne.GFC_IT_EMPTY) jerr=-1
+               jj=subit%release(); if(jj.ne.GFC_SUCCESS.and.jerr.eq.GFC_SUCCESS) jerr=-1
+              else
+               jerr=-1
+              endif
              else
               jerr=-1
              endif
@@ -3093,6 +3119,8 @@
            else
             jerr=-1
            endif
+ !Delete the tensor operation:
+           if(allocated(tens_contr)) deallocate(tens_contr)
           else
            jerr=-1
           endif

@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/01/09
+!REVISION: 2018/01/11
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -27,10 +27,11 @@
 !NOTES:
 ! # Tensor definition stages:
 !   a) Null: No tensor;
-!   b) Defined: Tensor signature (and maybe some shape) is defined;
+!   b) Defined: Tensor signature (and maybe some dimension extents) is defined;
 !   c) Resolved: Tensor shape is fully defined (all dimensions resolved);
-!   d) Laid-Out: Tensor layout is defined;
-!   e) Mapped: Tensor body is physically mapped to a contiguous chunk of memory.
+!   d) Structured: Tensor composition (structure) in terms of subtensors (subtensor headers) is defined;
+!   e) Laid-Out: Tensor layout is defined (normally means the tensor will be physically stored as a whole);
+!   f) Mapped: Tensor body is physically mapped to a contiguous chunk of memory.
 ! # Tensor body value definition stages:
 !   a) TEREC_BODY_UNDEF: Tensor body value is undefined;
 !   b) TEREC_BODY_UPDATE: Tensor body value is currently being updated and cannot be used;
@@ -237,7 +238,7 @@
           procedure(tens_layout_map_i), deferred, public:: map                      !maps a specific element of the tensor block (layout specific)
           procedure(tens_layout_extract_i), deferred, public:: extract_simple_parts !creates a list of constituent simple (dense) parts of the tensor block
         end type tens_layout_t
- !Concrete storage layout "Fortran-dimension-led":
+ !Concrete storage layout "Fortran-dimension-led" [NO COPY PER SE]:
         type, extends(tens_layout_t), public:: tens_layout_fdims_t
          contains
           procedure, private:: TensLayoutFdimsCtor                          !ctor
@@ -249,7 +250,7 @@
           procedure, public:: extract_simple_parts=>TensLayoutFdimsExtract  !extracts simpe dense tensor parts (bricks) from the tensor block
           final:: tens_layout_fdims_dtor                                    !dtor
         end type tens_layout_fdims_t
- !Tensor body:
+ !Tensor body [NO COPY PER SE]:
         type, public:: tens_body_t
          integer(INTD), private:: state=TEREC_BODY_UNDEF      !tensor body value state: {TEREC_BODY_UNDEF,TEREC_BODY_UPDATE,TEREC_BODY_DEF,TEREC_BODY_USED}
          integer(INTD), private:: num_subtensors=0            !number of subtensors in the list
@@ -343,6 +344,7 @@
           procedure, private:: set_tensor=>TensArgumentSetTensor           !sets up the tensor argument by pointer (re-)association to a defined target (reset semantics)
           procedure, private:: allocate_tensor=>TensArgumentAllocateTensor !allocates an empty tensor for a subsequent definition (reset semantics)
           procedure, private:: is_set=>TensArgumentIsSet                   !returns TRUE if the tensor argument is set, plus additional info
+          procedure, private:: give_tensor=>TensArgumentGiveTensor         !releases the ownership of the tensor to a mere pointer association
           procedure, private:: free_tensor=>TensArgumentFreeTensor         !frees the tensor (either by deallocation or by dissociation only)
           final:: tens_argument_dtor                                       !dtor
         end type tens_argument_t
@@ -359,6 +361,7 @@
           procedure, public:: get_num_args=>TensOperationGetNumArgs       !returns the number of set tensor arguments
           procedure, public:: get_argument=>TensOperationGetArgument      !returns a pointer to a specific tensor argument (tens_rcrsv_t)
           procedure, public:: allocate_argument=>TensOperationAllocateArgument !allocates the next tensor argument, either empty (for a subsequent definition) or clones a defined one
+          procedure, public:: donate_argument=>TensOperationDonateArgument !releases the ownership of a tensor in a tensor argument (if the tensor was allocated)
           procedure, public:: free_arguments=>TensOperationFreeArguments  !deallocates/dissociates all tensor arguments
         end type tens_operation_t
  !Tensor dimension permutation:
@@ -701,6 +704,7 @@
         private TensArgumentSetTensor
         private TensArgumentAllocateTensor
         private TensArgumentIsSet
+        private TensArgumentGiveTensor
         private TensArgumentFreeTensor
         public tens_argument_dtor
  !tens_operation_t:
@@ -710,6 +714,7 @@
         private TensOperationGetNumArgs
         private TensOperationGetArgument
         private TensOperationAllocateArgument
+        private TensOperationDonateArgument
         private TensOperationFreeArguments
  !permutation_t:
         private PermutationReset
@@ -5601,6 +5606,23 @@
          return
         end function TensArgumentIsSet
 !---------------------------------------------------
+        subroutine TensArgumentGiveTensor(this,ierr)
+!Releases the ownership of the tensor (if allocated) to a mere pointer association.
+         implicit none
+         class(tens_argument_t), intent(inout):: this !inout: defined tensor argument
+         integer(INTD), intent(out), optional:: ierr  !out: error code
+         integer(INTD):: errc
+
+         errc=TEREC_SUCCESS
+         if(associated(this%tens_p)) then
+          this%alloc=.FALSE.
+         else
+          errc=TEREC_INVALID_REQUEST
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensArgumentGiveTensor
+!---------------------------------------------------
         subroutine TensArgumentFreeTensor(this,ierr)
 !Frees the tensor (deallocation or dissociation).
          implicit none
@@ -5751,6 +5773,24 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensOperationAllocateArgument
+!----------------------------------------------------------------
+        subroutine TensOperationDonateArgument(this,arg_num,ierr)
+!Releases the ownership of a tensor in a tensor argument (if the tensor was allocated).
+         implicit none
+         class(tens_operation_t), intent(inout):: this !inout: tensor operation
+         integer(INTD), intent(in):: arg_num           !in: argument number: [0..max]
+         integer(INTD), intent(out), optional:: ierr   !out: error code
+         integer(INTD):: errc
+
+         errc=TEREC_SUCCESS
+         if(arg_num.ge.0.and.arg_num.lt.this%num_args) then
+          call this%tens_arg(arg_num)%give_tensor(errc)
+         else
+          errc=TEREC_INVALID_ARGS
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensOperationDonateArgument
 !-------------------------------------------------------
         subroutine TensOperationFreeArguments(this,ierr)
 !Frees all arguments in the tensor operation.
