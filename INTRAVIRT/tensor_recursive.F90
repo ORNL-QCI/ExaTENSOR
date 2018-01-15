@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/01/11
+!REVISION: 2018/01/15
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -344,7 +344,7 @@
           procedure, private:: set_tensor=>TensArgumentSetTensor           !sets up the tensor argument by pointer (re-)association to a defined target (reset semantics)
           procedure, private:: allocate_tensor=>TensArgumentAllocateTensor !allocates an empty tensor for a subsequent definition (reset semantics)
           procedure, private:: is_set=>TensArgumentIsSet                   !returns TRUE if the tensor argument is set, plus additional info
-          procedure, private:: give_tensor=>TensArgumentGiveTensor         !releases the ownership of the tensor to a mere pointer association
+          procedure, private:: give_tensor=>TensArgumentGiveTensor         !releases the ownership of an allocated tensor to a mere pointer association
           procedure, private:: free_tensor=>TensArgumentFreeTensor         !frees the tensor (either by deallocation or by dissociation only)
           final:: tens_argument_dtor                                       !dtor
         end type tens_argument_t
@@ -353,16 +353,16 @@
          integer(INTD), private:: num_args=0                                !number of tensor arguments
          type(tens_argument_t), private:: tens_arg(0:MAX_TENSOR_OPERANDS-1) !tensor arguments: [0..num_args-1], argument 0 is always the destination tensor
          contains
-          procedure(tens_operation_query_i), deferred, public:: is_set    !returns TRUE if the tensor operation is fully set
-          procedure(tens_operation_query_i), deferred, public:: args_full !returns TRUE if all required tensor arguments are set
-          procedure, public:: clean=>TensOperationClean                   !cleans the tensor operation to an empty state
-          procedure, public:: set_argument=>TensOperationSetArgument      !sets up the next tensor argument by a pointer association to a persistent tensor target
-          procedure, public:: reset_argument=>TensOperationResetArgument  !resets an already set argument by either a pointer association to a persistent tensor target or tensor allocation
-          procedure, public:: get_num_args=>TensOperationGetNumArgs       !returns the number of set tensor arguments
-          procedure, public:: get_argument=>TensOperationGetArgument      !returns a pointer to a specific tensor argument (tens_rcrsv_t)
+          procedure(tens_operation_query_i), deferred, public:: is_set     !returns TRUE if the tensor operation is fully set
+          procedure(tens_operation_query_i), deferred, public:: args_full  !returns TRUE if all required tensor arguments are set
+          procedure, public:: clean=>TensOperationClean                    !cleans the tensor operation to an empty state
+          procedure, public:: set_argument=>TensOperationSetArgument       !sets up the next tensor argument by a pointer association to a persistent tensor target
+          procedure, public:: reset_argument=>TensOperationResetArgument   !resets an already set argument by either a pointer association to a persistent tensor target or tensor allocation
+          procedure, public:: get_num_args=>TensOperationGetNumArgs        !returns the number of set tensor arguments
+          procedure, public:: get_argument=>TensOperationGetArgument       !returns a pointer to a specific tensor argument (tens_rcrsv_t)
           procedure, public:: allocate_argument=>TensOperationAllocateArgument !allocates the next tensor argument, either empty (for a subsequent definition) or clones a defined one
-          procedure, public:: donate_argument=>TensOperationDonateArgument !releases the ownership of a tensor in a tensor argument (if the tensor was allocated)
-          procedure, public:: free_arguments=>TensOperationFreeArguments  !deallocates/dissociates all tensor arguments
+          procedure, public:: donate_argument=>TensOperationDonateArgument !releases the ownership of a tensor in a tensor argument (in case the tensor was allocated)
+          procedure, public:: free_arguments=>TensOperationFreeArguments   !deallocates/dissociates all tensor arguments
         end type tens_operation_t
  !Tensor dimension permutation:
         type, public:: permutation_t
@@ -5605,18 +5605,21 @@
          if(present(ierr)) ierr=errc
          return
         end function TensArgumentIsSet
-!---------------------------------------------------
-        subroutine TensArgumentGiveTensor(this,ierr)
-!Releases the ownership of the tensor (if allocated) to a mere pointer association.
+!----------------------------------------------------------
+        subroutine TensArgumentGiveTensor(this,ierr,tensor)
+!Releases the ownership of the tensor (in case it was allocated) to a mere pointer association.
          implicit none
          class(tens_argument_t), intent(inout):: this !inout: defined tensor argument
          integer(INTD), intent(out), optional:: ierr  !out: error code
+         class(tens_rcrsv_t), intent(out), pointer, optional:: tensor !out: pointer to the released tensor
          integer(INTD):: errc
 
          errc=TEREC_SUCCESS
          if(associated(this%tens_p)) then
           this%alloc=.FALSE.
+          if(present(tensor)) tensor=>this%tens_p
          else
+          if(present(tensor)) tensor=>NULL()
           errc=TEREC_INVALID_REQUEST
          endif
          if(present(ierr)) ierr=errc
@@ -5773,19 +5776,25 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensOperationAllocateArgument
-!----------------------------------------------------------------
-        subroutine TensOperationDonateArgument(this,arg_num,ierr)
-!Releases the ownership of a tensor in a tensor argument (if the tensor was allocated).
+!-----------------------------------------------------------------------
+        subroutine TensOperationDonateArgument(this,arg_num,ierr,tensor)
+!Releases the ownership of a tensor in a tensor argument (in case the tensor was allocated).
          implicit none
          class(tens_operation_t), intent(inout):: this !inout: tensor operation
          integer(INTD), intent(in):: arg_num           !in: argument number: [0..max]
          integer(INTD), intent(out), optional:: ierr   !out: error code
+         class(tens_rcrsv_t), intent(out), pointer, optional:: tensor
          integer(INTD):: errc
 
          errc=TEREC_SUCCESS
          if(arg_num.ge.0.and.arg_num.lt.this%num_args) then
-          call this%tens_arg(arg_num)%give_tensor(errc)
+          if(present(tensor)) then
+           call this%tens_arg(arg_num)%give_tensor(errc,tensor)
+          else
+           call this%tens_arg(arg_num)%give_tensor(errc)
+          endif
          else
+          if(present(tensor)) tensor=>NULL()
           errc=TEREC_INVALID_ARGS
          endif
          if(present(ierr)) ierr=errc

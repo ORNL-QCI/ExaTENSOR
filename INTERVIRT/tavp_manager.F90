@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/01/11
+!REVISION: 2018/01/15
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -540,8 +540,8 @@
          implicit none
          type(tens_entry_mng_t):: this !inout: specialized tensor cache entry
 
-         call this%destroy(.TRUE.) !deallocate the tensor component (if it is set)
          this%owner_id=-1
+         call this%destroy(.TRUE.) !deallocate the tensor component (if it is set)
          return
         end subroutine tens_entry_mng_dtor
 !-------------------------------------------------------------

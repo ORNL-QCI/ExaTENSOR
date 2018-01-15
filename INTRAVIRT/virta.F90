@@ -8,7 +8,7 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/01/09
+!REVISION: 2018/01/15
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -163,19 +163,11 @@
  !Tensor argument cache entry:
         type, abstract, public:: tens_cache_entry_t
          class(tens_rcrsv_t), pointer, private:: tensor=>NULL() !either owning or non-owning pointer to a tensor (ctor/dtor of extended types will decide)
-         type(tens_status_t), private:: tens_status             !current status of the tensor
          integer(INTD), private:: ref_count=0                   !reference count: Number of existing tensor operands associated with the tensor cache entry
          contains
           procedure, public:: set_tensor=>TensCacheEntrySetTensor         !sets the pointer to a tensor
           procedure, public:: is_set=>TensCacheEntryIsSet                 !returns TRUE if the tensor cache entry is set (constructed)
           procedure, public:: get_tensor=>TensCacheEntryGetTensor         !returns a non-owning pointer to the tensor
-          procedure, public:: get_status=>TensCacheEntryGetStatus         !returns the tensor status object
-          procedure, public:: mark_created=>TensCacheEntryMarkCreated     !marks the tensor status as created (allocated memory)
-          procedure, public:: mark_defined=>TensCacheEntryMarkDefined     !marks the tensor status as defined to some value
-          procedure, public:: mark_in_use=>TensCacheEntryMarkInUse        !marks the tensor status as in-use (read-only) and increments the reference count
-          procedure, public:: mark_no_use=>TensCacheEntryMarkNoUse        !decrements the read-only usage reference count
-          procedure, public:: mark_updated=>TensCacheEntryMarkUpdated     !marks the tensor status as in-update (currently being updated)
-          procedure, public:: mark_empty=>TensCacheEntryMarkEmpty         !marks the tensor status as empty (destroyed)
           procedure, public:: incr_ref_count=>TensCacheEntryIncrRefCount  !increments the reference count
           procedure, public:: decr_ref_count=>TensCacheEntryDecrRefCount  !decrements the reference count
           procedure, public:: get_ref_count=>TensCacheEntryGetRefCount    !returns the current reference count: Number of existing tensor operands associated with the tensor cache entry
@@ -267,13 +259,6 @@
         private TensCacheEntrySetTensor
         private TensCacheEntryIsSet
         private TensCacheEntryGetTensor
-        private TensCacheEntryGetStatus
-        private TensCacheEntryMarkCreated
-        private TensCacheEntryMarkDefined
-        private TensCacheEntryMarkInUse
-        private TensCacheEntryMarkNoUse
-        private TensCacheEntryMarkUpdated
-        private TensCacheEntryMarkEmpty
         private TensCacheEntryIncrRefCount
         private TensCacheEntryDecrRefCount
         private TensCacheEntryGetRefCount
@@ -448,195 +433,6 @@
          if(present(ierr)) ierr=errc
          return
         end function TensCacheEntryGetTensor
-!--------------------------------------------------------------------
-        function TensCacheEntryGetStatus(this,ierr) result(tens_stat)
-         implicit none
-         type(tens_status_t):: tens_stat              !out: pointer to the tensor status
-         class(tens_cache_entry_t), intent(in):: this !in: tensor cache entry
-         integer(INTD), intent(out), optional:: ierr  !out: error code
-         integer(INTD):: errc
-
-         tens_stat=this%tens_status
-         if(.not.this%is_set(errc)) errc=-1
-         if(present(ierr)) ierr=errc
-         return
-        end function TensCacheEntryGetStatus
-!------------------------------------------------------
-        subroutine TensCacheEntryMarkCreated(this,ierr)
-!Marks the tensor as CREATED, but not yet DEFINED.
-         implicit none
-         class(tens_cache_entry_t), intent(inout):: this !inout: defined tensor cache entry
-         integer(INTD), intent(out), optional:: ierr     !out: error code
-         integer(INTD):: errc
-
-         if(this%is_set(errc)) then
-          if(errc.eq.0) then
-           if(.not.this%tens_status%created) then
-            this%tens_status%created=.TRUE.
-           else
-            errc=-3
-           endif
-          else
-           errc=-2
-          endif
-         else
-          errc=-1
-         endif
-         if(present(ierr)) ierr=errc
-         return
-        end subroutine TensCacheEntryMarkCreated
-!------------------------------------------------------
-        subroutine TensCacheEntryMarkDefined(this,ierr)
-!Marks the tensor as DEFINED to VALUE, as a result of an UPDATE.
-         implicit none
-         class(tens_cache_entry_t), intent(inout):: this !inout: defined tensor cache entry
-         integer(INTD), intent(out), optional:: ierr     !out: error code
-         integer(INTD):: errc
-
-         if(this%is_set(errc)) then
-          if(errc.eq.0) then
-           if(this%tens_status%created) then
-            if(this%tens_status%updated) then
-             if(.not.(this%tens_status%defined.or.this%tens_status%is_used.ne.0)) then
-              this%tens_status%updated=.FALSE.
-              this%tens_status%defined=.TRUE.
-             else
-              errc=-5
-             endif
-            else
-             errc=-4
-            endif
-           else
-            errc=-3
-           endif
-          else
-           errc=-2
-          endif
-         else
-          errc=-1
-         endif
-         if(present(ierr)) ierr=errc
-         return
-        end subroutine TensCacheEntryMarkDefined
-!----------------------------------------------------
-        subroutine TensCacheEntryMarkInUse(this,ierr)
-!Associates a reference to the tensor.
-         implicit none
-         class(tens_cache_entry_t), intent(inout):: this !inout: defined tensor cache entry
-         integer(INTD), intent(out), optional:: ierr     !out: error code
-         integer(INTD):: errc
-
-         if(this%is_set(errc)) then
-          if(errc.eq.0) then
-           if(this%tens_status%created) then
-            if(this%tens_status%defined) then
-             this%tens_status%is_used=this%tens_status%is_used+1
-            else
-             errc=-4
-            endif
-           else
-            errc=-3
-           endif
-          else
-           errc=-2
-          endif
-         else
-          errc=-1
-         endif
-         if(present(ierr)) ierr=errc
-         return
-        end subroutine TensCacheEntryMarkInUse
-!----------------------------------------------------
-        subroutine TensCacheEntryMarkNoUse(this,ierr)
-!Dissociates a reference from the tensor.
-         implicit none
-         class(tens_cache_entry_t), intent(inout):: this !inout: defined tensor cache entry
-         integer(INTD), intent(out), optional:: ierr     !out: error code
-         integer(INTD):: errc
-
-         if(this%is_set(errc)) then
-          if(errc.eq.0) then
-           if(this%tens_status%created) then
-            if(this%tens_status%defined) then
-             if(this%tens_status%is_used.gt.0) then
-              this%tens_status%is_used=this%tens_status%is_used-1
-             else
-              errc=-5
-             endif
-            else
-             errc=-4
-            endif
-           else
-            errc=-3
-           endif
-          else
-           errc=-2
-          endif
-         else
-          errc=-1
-         endif
-         if(present(ierr)) ierr=errc
-         return
-        end subroutine TensCacheEntryMarkNoUse
-!------------------------------------------------------
-        subroutine TensCacheEntryMarkUpdated(this,ierr)
-!Marks the tensor status as BEING UPDATED --> NOT DEFINED.
-!The tensor must not be IN USE at this time.
-         implicit none
-         class(tens_cache_entry_t), intent(inout):: this !inout: defined tensor cache entry
-         integer(INTD), intent(out), optional:: ierr     !out: error code
-         integer(INTD):: errc
-
-         if(this%is_set(errc)) then
-          if(errc.eq.0) then
-           if(this%tens_status%created) then
-            if(this%tens_status%is_used.eq.0) then
-             this%tens_status%defined=.FALSE.
-             this%tens_status%updated=.TRUE.
-            else
-             errc=-4
-            endif
-           else
-            errc=-3
-           endif
-          else
-           errc=-2
-          endif
-         else
-          errc=-1
-         endif
-         if(present(ierr)) ierr=errc
-         return
-        end subroutine TensCacheEntryMarkUpdated
-!----------------------------------------------------
-        subroutine TensCacheEntryMarkEmpty(this,ierr)
-!Marks the tensor status as EMPTY (destroyed).
-         implicit none
-         class(tens_cache_entry_t), intent(inout):: this !inout: defined tensor cache entry
-         integer(INTD), intent(out), optional:: ierr     !out: error code
-         integer(INTD):: errc
-
-         if(this%is_set(errc)) then
-          if(errc.eq.0) then
-           if(this%tens_status%created) then
-            if((this%tens_status%is_used.eq.0).and.(.not.this%tens_status%updated)) then
-             this%tens_status%defined=.FALSE.
-             this%tens_status%created=.FALSE.
-            else
-             errc=-4
-            endif
-           else
-            errc=-3
-           endif
-          else
-           errc=-2
-          endif
-         else
-          errc=-1
-         endif
-         if(present(ierr)) ierr=errc
-         return
-        end subroutine TensCacheEntryMarkEmpty
 !--------------------------------------------------
         subroutine TensCacheEntryIncrRefCount(this)
          implicit none
@@ -686,12 +482,7 @@
          integer(INTD):: errc
 
          if(this%ref_count.eq.0) then
-          call this%mark_empty(errc)
-          if(errc.eq.0) then
-           call this%nullify_tensor(dealloc)
-          else
-           errc=-2
-          endif
+          call this%nullify_tensor(dealloc)
          else
           errc=-1
          endif
