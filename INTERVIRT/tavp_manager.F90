@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/01/15
+!REVISION: 2018/01/17
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -944,8 +944,10 @@
         subroutine TensInstrCtor(this,op_code,ierr,op_spec,iid)
 !Constructs a tensor instruction from a given tensor operation.
 !The tensor instruction is a realization of a given tensor operation
-!for a specific TAVP kind. Note that the tensor operands will not have
-!any information on tensor ownership. It should be set separately, if needed.
+!for a specific TAVP kind. The tensors in the tensor operation
+!must be persistent (associated by aggregation)). Note that the
+!tensor operands will not have any information on tensor ownership,
+!it should be set separately, if needed.
          implicit none
          class(tens_instr_t), intent(inout):: this        !out: tensor instruction (must be empty on entrance)
          integer(INTD), intent(in):: op_code              !in: instruction code (see top of this module)
@@ -3070,17 +3072,21 @@
          !subsequently appending them into the subinstruction list.
           implicit none
           integer(INTD), intent(out):: jerr !out: error code
-          integer(INTD):: jj,num_subinstr
+          integer(INTD):: jj,jn,num_subinstr,num_subcontr
           integer(INTL):: iid
-          class(tens_rcrsv_t), pointer:: tensor
+          type(tens_entry_mng_ref_t):: cache_entries(0:2)
+          class(tens_rcrsv_t), pointer:: subtensor
           class(tens_operation_t), allocatable:: tens_contr
           class(tens_contraction_t), pointer:: subcontr
           class(tens_cache_entry_t), pointer:: tens_entry
           class(tens_entry_mng_t), pointer:: tens_entry_mng
+          class(ds_oprnd_t), pointer:: tens_oprnd
+          class(tens_instr_t), pointer:: subinstr
           type(tens_instr_t):: tens_instr_empty
           type(list_bi_t):: subcontractions
           type(list_iter_t):: subit
           class(*), pointer:: uptr
+          logical:: stored
 
           jerr=this%sub_list%reset_back()
           if(jerr.eq.GFC_SUCCESS) then
@@ -3090,34 +3096,85 @@
             select type(tens_contr)
             class is(tens_contraction_t)
  !Decompose the tensor operation into suboperations:
-             num_subinstr=0
-             call tens_contr%split(subcontractions,jerr,num_subinstr) !internal decomposition induced by the tensor structure
+             num_subinstr=0; num_subcontr=0
+             call tens_contr%split(subcontractions,jerr,num_subcontr) !internal decomposition induced by the tensor structure
              if(jerr.eq.TEREC_SUCCESS) then
  !Generate subinstructions from the suboperations:
               jerr=subit%init(subcontractions)
               if(jerr.eq.GFC_SUCCESS) then
                jerr=subit%get_status()
-               do while(jerr.eq.GFC_IT_ACTIVE)
-                uptr=>subit%get_value(jerr); if(jerr.ne.GFC_SUCCESS) exit
+               sloop: do while(jerr.eq.GFC_IT_ACTIVE)
+                uptr=>subit%get_value(jerr); if(jerr.ne.GFC_SUCCESS) then; jerr=-27; exit sloop; endif
                 subcontr=>NULL(); select type(uptr); class is(tens_contraction_t); subcontr=>uptr; end select
-                if(.not.associated(subcontr)) then; jerr=GFC_ERROR; exit; endif !trap
-                !`Finish
-                jerr=subit%delete(); if(jerr.ne.GFC_SUCCESS) exit
+                if(.not.associated(subcontr)) then; jerr=-26; exit sloop; endif !trap
+  !Store subtensors in the tensor cache if they are not there:
+                jn=subcontr%get_num_args(jerr); if(jerr.ne.TEREC_SUCCESS) then; jerr=-25; exit sloop; endif
+                do jj=0,jn-1
+                 subtensor=>subcontr%get_argument(jj,jerr); if(jerr.ne.TEREC_SUCCESS) then; jerr=-24; exit sloop; endif
+!$OMP CRITICAL (TAVP_MNG_CACHE)
+                 stored=this%arg_cache%store(subtensor,tens_entry_mng_alloc,jerr,tens_entry_p=tens_entry) !<stored> assumes tensor ownership be moved to the tensor cache
+!$OMP END CRITICAL (TAVP_MNG_CACHE)
+                 if(jerr.ne.0) then; jerr=-23; exit sloop; endif
+                 if(stored) then !release ownership of the subtensor since it has been moved to the tensor cache
+                  call subcontr%donate_argument(jj,jerr); if(jerr.ne.TEREC_SUCCESS) then; jerr=-22; exit sloop; endif
+                 else !subtensor already existed in the tensor cache: Use it
+                  subtensor=>tens_entry%get_tensor(jerr); if(jerr.ne.0) then; jerr=-21; exit sloop; endif
+                  call subcontr%reset_argument(subtensor,jj,jerr); if(jerr.ne.TEREC_SUCCESS) then; jerr=-20; exit sloop; endif
+                 endif
+                 select type(tens_entry)
+                 class is(tens_entry_mng_t)
+                  cache_entries(jj)%cache_entry=>tens_entry
+                 class default
+                  jerr=-19; exit sloop
+                 end select
+                 nullify(tens_entry)
+                enddo
+  !Construct the new subinstruction:
+                jerr=this%sub_list%append(tens_instr_empty); if(jerr.ne.GFC_SUCCESS) then; jerr=-18; exit sloop; endif
+                jerr=this%sub_list%reset_back(); if(jerr.ne.GFC_SUCCESS) then; jerr=-17; exit sloop; endif
+                uptr=>this%sub_list%get_value(jerr); if(jerr.ne.GFC_SUCCESS) then; jerr=-16; exit sloop; endif
+                subinstr=>NULL(); select type(uptr); class is(tens_instr_t); subinstr=>uptr; end select
+                if(.not.associated(subinstr)) then; jerr=-15; exit sloop; endif !trap
+                iid=dsvp%get_crtd_instr_counter()
+                call subinstr%tens_instr_ctor(TAVP_INSTR_TENS_CONTRACT,jerr,subcontr,iid)
+                if(jerr.ne.0) then; jerr=-14; exit sloop; endif
+  !Back-associate tensor operands with their corresponding tensor cache entries:
+                do jj=0,jn-1
+                 tens_oprnd=>subinstr%get_operand(jj,jerr); if(jerr.ne.DSVP_SUCCESS) then; jerr=-13; exit sloop; endif
+                 select type(tens_oprnd)
+                 class is(tens_oprnd_t)
+                  call tens_oprnd%set_cache_entry(cache_entries(jj)%cache_entry,jerr)
+                  if(jerr.ne.0) then; jerr=-12; exit sloop; endif
+                 class default
+                  jerr=-11; exit sloop
+                 end select
+                enddo
+  !Register the new subinstruction:
+                call subinstr%set_status(DS_INSTR_INPUT_WAIT,jerr,init_tag) !init_tag will depend on whether the TAVP-MNG is bottom or not
+                if(jerr.ne.DSVP_SUCCESS) then; jerr=-10; exit sloop; endif
+                call tavp%register_instr(iid,tens_instr%get_id(),jerr); if(jerr.ne.0) then; jerr=-9; exit sloop; endif
+                call dsvp%incr_crtd_instr_counter(); num_subinstr=num_subinstr+1 !new subinstruction has been created
+  !Delete the processed suboperation:
+                jerr=subit%delete(); if(jerr.ne.GFC_SUCCESS) then; jerr=-8; exit sloop; endif
                 jerr=subit%get_status()
-               enddo
-               if(jerr.ne.GFC_IT_EMPTY) jerr=-1
-               jj=subit%release(); if(jj.ne.GFC_SUCCESS.and.jerr.eq.GFC_SUCCESS) jerr=-1
+               enddo sloop
+               if(jerr.eq.GFC_IT_EMPTY) jerr=subit%get_status(); if(jerr.eq.GFC_IT_EMPTY) jerr=0
+               if(jerr.eq.0) then
+                call tens_instr%set_status(DS_INSTR_ISSUED,jerr,num_subinstr) !.error_code field will store the number of subinstructions
+                if(jerr.ne.DSVP_SUCCESS) jerr=-7
+               endif
+               jj=subit%release(); if(jj.ne.GFC_SUCCESS.and.jerr.eq.0) jerr=-6
               else
-               jerr=-1
+               jerr=-5
               endif
              else
-              jerr=-1
+              jerr=-4
              endif
             class default
-             jerr=-1
+             jerr=-3
             end select
            else
-            jerr=-1
+            jerr=-2
            endif
  !Delete the tensor operation:
            if(allocated(tens_contr)) deallocate(tens_contr)
