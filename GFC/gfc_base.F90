@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Base
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017-12-20 (started 2016-02-17)
+!REVISION: 2018-01-22 (started 2016-02-17)
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -116,11 +116,11 @@
          integer(INTD), private:: alloc=GFC_FALSE     !GFC_FALSE: value is stored by reference or null; GFC_TRUE: value is stored by value
 #ifndef NO_OMP
          integer(INTD), private:: ref_count=0 !reference count (incremented when the container boundary or an iterator point to the element)
-         integer(INTD), private:: lock=0      !update lock (for concurrent updates): Can be set by user to ensure an exclusive access
+         integer(INTD), private:: lock=0      !update lock (for concurrent updates): Can be set by a user to ensure an exclusive access
 #endif
          contains
           procedure, public:: construct_base=>ContElemConstruct !constructs a new container element, either by reference or by value
-          procedure, public:: construct_base_ref=>ContElemConstructRef !constructs a new container element by reference only from a pointer
+          procedure, public:: construct_base_ref=>ContElemConstructRef !constructs a new container element by reference, only from a pointer
           procedure, public:: destruct=>ContElemDestruct        !destructs an existing container element (releases memory occupied by its value)
           procedure, public:: get_value=>ContElemGetValue       !returns a pointer to the element value (unlimited polymorphic)
           procedure, public:: is_empty=>ContElemIsEmpty         !returns TRUE if the element of the container is empty, FALSE otherwise
@@ -134,7 +134,7 @@
           procedure, public:: compare=>ContElemCompare          !compares the value of the element with the value of another element
           procedure, public:: print_value=>ContElemPrintValue   !prints the value of the element with a user-defined print function
           procedure, public:: in_use=>ContElemInUse             !returns TRUE if the element of the container is currently in use, hence cannot be deleted
-          procedure, public:: release_lock=>ContElemReleaseLock !PRIVATE: releases the lock on the container element
+          procedure, public:: release_lock=>ContElemReleaseLock !releases the lock on the container element
           procedure, public:: incr_ref_=>ContElemIncrRef        !PRIVATE: increments the reference count for the container element
           procedure, public:: decr_ref_=>ContElemDecrRef        !PRIVATE: decrements the reference count for the container element
           procedure, public:: clean_=>ContElemClean             !PRIVATE: cleans the container element without releasing the resources
@@ -142,11 +142,20 @@
  !Base container:
         type, abstract, public:: gfc_container_t
          integer(INTL), private:: volume=0_INTL !volume of the container (total number of elements when quick counting is on), -1 means quick counting is off
+#ifndef NO_OMP
+         integer(omp_lock_kind), allocatable, private:: locked !container lock: Serializes container structure updates during OpenMP threading
+         logical, private:: initialized=.FALSE.                !container intialization status (only relevant to multi-threaded execution)
+#endif
          contains
-          procedure, non_overridable, public:: num_elems_=>ContNumElems !PRIVATE: returns the total number of elements in the container
-          procedure, non_overridable, public:: update_num_elems_=>ContUpdateNumElems !PRIVATE: updates the number of elements
+          procedure(gfc_cont_query_i), deferred, public:: is_empty                       !returns GFC_TRUE if the container is empty, GFC_FALSE otherwise (or error code)
+          procedure, public:: is_initialized=>ContIsInitialized                          !returns TRUE if the container is initialized, FALSE otherwise
+          procedure, non_overridable, public:: init_=>ContInit                           !PRIVATE: Initializes the container base
+          procedure, non_overridable, public:: lock_=>ContLock                           !PRIVATE: Locks the container
+          procedure, non_overridable, public:: unlock_=>ContUnlock                       !PRIVATE: Unlocks the container
+          procedure, non_overridable, public:: clean_=>ContClean                         !PRIVATE: Cleans the container base after all its elements have been destroyed
+          procedure, non_overridable, public:: num_elems_=>ContNumElems                  !PRIVATE: returns the total number of elements in the container
+          procedure, non_overridable, public:: update_num_elems_=>ContUpdateNumElems     !PRIVATE: updates the number of elements
           procedure, non_overridable, public:: quick_counting_off_=>ContQuickCountingOff !PRIVATE: turns off quick element counting
-          procedure(gfc_cont_query_i), deferred, public:: is_empty !returns GFC_TRUE if container is empty, GFC_FALSE otherwise (or error code)
         end type gfc_container_t
  !Base iterator:
         type, abstract, public:: gfc_iter_t
@@ -295,6 +304,16 @@
         private ContElemFunctor
         private ContElemCompare
         private ContElemPrintValue
+        private ContElemInUse
+        private ContElemReleaseLock
+        private ContElemIncrRef
+        private ContElemDecrRef
+        private ContElemClean
+        private ContIsInitialized
+        private ContInit
+        private ContLock
+        private ContUnlock
+        private ContClean
         private ContNumElems
         private ContUpdateNumElems
         private ContQuickCountingOff
@@ -757,12 +776,112 @@
          this%value_p=>NULL() !no deallocation!
          this%alloc=GFC_FALSE
 #ifndef NO_OMP
+!$OMP CRITICAL (GFC_LOCK)
          this%ref_count=0
          this%lock=0
+!$OMP END CRITICAL (GFC_LOCK)
 #endif
          if(present(ierr)) ierr=errc
          return
         end subroutine ContElemClean
+!--------------------------------------------------------
+        function ContIsInitialized(this,ierr) result(res)
+!Returns TRUE if the container is initialized, FALSE otherwise.
+         implicit none
+         logical:: res                               !out: result
+         class(gfc_container_t), intent(in):: this   !in: container
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=GFC_SUCCESS
+#ifndef NO_OMP
+!$OMP ATOMIC READ
+         res=this%initialized
+#else
+         res=.TRUE.
+#endif
+         if(present(ierr)) ierr=errc
+         return
+        end function ContIsInitialized
+!-------------------------------------
+        subroutine ContInit(this,ierr) !INTERNAL USE ONLY
+!Initializes the container base (required for parallel execution).
+         implicit none
+         class(gfc_container_t), intent(inout):: this !inout: container
+         integer(INTD), intent(out), optional:: ierr  !out: error code
+         integer(INTD):: errc
+
+         errc=GFC_SUCCESS
+#ifndef NO_OMP
+!$OMP CRITICAL (GFC_LOCK)
+         if(.not.this%initialized) then
+          if(.not.allocated(this%locked)) then
+           allocate(this%locked)
+           call omp_init_lock(this%locked)
+           this%initialized=.TRUE.
+          else
+           errc=GFC_CORRUPTED_CONT
+          endif
+         else
+          errc=GFC_INVALID_REQUEST
+         endif
+!$OMP END CRITICAL (GFC_LOCK)
+#endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine ContInit
+!-------------------------------------
+        subroutine ContLock(this,ierr) !INTERNAL USE ONLY
+!Acquires a lock for a subsequent container structure update.
+         implicit none
+         class(gfc_container_t), intent(inout):: this !inout: container
+         integer(INTD), intent(out), optional:: ierr  !out: error code
+         integer(INTD):: errc
+
+         errc=GFC_SUCCESS
+#ifndef NO_OMP
+         call omp_set_lock(this%locked)
+#endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine ContLock
+!---------------------------------------
+        subroutine ContUnlock(this,ierr) !INTERNAL USE ONLY
+!Acquires a lock for a subsequent container structure update.
+         implicit none
+         class(gfc_container_t), intent(inout):: this !inout: container
+         integer(INTD), intent(out), optional:: ierr  !out: error code
+         integer(INTD):: errc
+
+         errc=GFC_SUCCESS
+#ifndef NO_OMP
+         call omp_unset_lock(this%locked)
+#endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine ContUnlock
+!--------------------------------------
+        subroutine ContClean(this,ierr) !INTERNAL USE ONLY
+!Cleans the container base after all its elements have been destroyed.
+         implicit none
+         class(gfc_container_t), intent(inout):: this !inout: container
+         integer(INTD), intent(out), optional:: ierr  !out: error code
+         integer(INTD):: errc
+
+         errc=GFC_SUCCESS
+         this%volume=0_INTL
+#ifndef NO_OMP
+!$OMP CRITICAL (GFC_LOCK)
+         if(allocated(this%locked)) then
+          call omp_destroy_lock(this%locked)
+          deallocate(this%locked)
+         endif
+         this%initialized=.FALSE.
+!$OMP END CRITICAL (GFC_LOCK)
+#endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine ContClean
 !------------------------------------------------------
         function ContNumElems(this,ierr) result(nelems) !INTERNAL USE ONLY!
 !Returns the total number of elements stored in the container,
