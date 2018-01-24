@@ -8,7 +8,7 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/01/15
+!REVISION: 2018/01/23
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -97,7 +97,7 @@
         integer(INTD), parameter, public:: TAVP_INSTR_CTRL_STOP=0       !stop TAVP (finishes current instructions and shutdowns TAVP)
         integer(INTD), parameter, public:: TAVP_INSTR_CTRL_RESUME=1     !resume TAVP execution (resumes TAVP execution pipeline after a pause, ignored if no pause has been posted)
         integer(INTD), parameter, public:: TAVP_INSTR_CTRL_PAUSE=2      !pause TAVP execution (finishes active instructions and pauses TAVP)
-   !Auxiliary definitions [16-63]:
+   !Auxiliary space definitions [16-63]:
         integer(INTD), parameter, public:: TAVP_INSTR_SPACE_CREATE=16   !create a (hierarchical) vector space
         integer(INTD), parameter, public:: TAVP_INSTR_SPACE_DESTROY=17  !destroy a (hierarchical) vector space
    !Tensor operations (decomposable) [64-255]:
@@ -162,8 +162,9 @@
         end type ctrl_tens_contr_t
  !Tensor argument cache entry:
         type, abstract, public:: tens_cache_entry_t
-         class(tens_rcrsv_t), pointer, private:: tensor=>NULL() !either owning or non-owning pointer to a tensor (ctor/dtor of extended types will decide)
+         class(tens_rcrsv_t), pointer, private:: tensor=>NULL() !either owning or non-owning pointer to a tensor (ctor/dtor of an extended type will decide)
          integer(INTD), private:: ref_count=0                   !reference count: Number of existing tensor operands associated with the tensor cache entry
+         integer(INTD), private:: use_count=0                   !use count: Number of active pointers to the tensor cache entry explicitly returned by the cache
          contains
           procedure, public:: set_tensor=>TensCacheEntrySetTensor         !sets the pointer to a tensor
           procedure, public:: is_set=>TensCacheEntryIsSet                 !returns TRUE if the tensor cache entry is set (constructed)
@@ -171,18 +172,25 @@
           procedure, public:: incr_ref_count=>TensCacheEntryIncrRefCount  !increments the reference count
           procedure, public:: decr_ref_count=>TensCacheEntryDecrRefCount  !decrements the reference count
           procedure, public:: get_ref_count=>TensCacheEntryGetRefCount    !returns the current reference count: Number of existing tensor operands associated with the tensor cache entry
-          procedure, public:: nullify_tensor=>TensCacheEntryNullifyTensor !either deallocates or simply dissociates tensor (depends on the extended dtor)
+          procedure, public:: incr_use_count=>TensCacheEntryIncrUseCount  !increments the use count
+          procedure, public:: decr_use_count=>TensCacheEntryDecrUseCount  !decrements the use count
+          procedure, public:: get_use_count=>TensCacheEntryGetUseCount    !returns the current use count: Number of active pointers to the tensor cache entry explicitly returned by the cache
           procedure, public:: destroy=>TensCacheEntryDestroy              !destroys the tensor cache entry
         end type tens_cache_entry_t
  !Tensor argument cache:
         type, public:: tens_cache_t
-         type(dictionary_t), private:: map                        !cache dictionary: <tens_descr_t-->tens_cache_entry_t>
+         type(dictionary_t), private:: map                         !cache dictionary: <tens_descr_t-->tens_cache_entry_t>
+#ifndef NO_OMP
+         integer(omp_lock_kind), allocatable, private:: cache_lock !cache lock
+#endif
          contains
-          procedure, public:: lookup=>TensCacheLookup             !looks up a given tensor in the cache
-          procedure, public:: store=>TensCacheStore               !stores a given tensor in the cache
-          procedure, public:: evict=>TensCacheEvict               !evicts a given tensor from the cache
-          procedure, public:: erase=>TensCacheErase               !erases everything from the cache (regardless of pending MPI communications!)
-          final:: tens_cache_dtor                                 !dtor
+          procedure, private:: init_lock=>TensCacheInitLock        !initializes the cache lock for multithreading
+          procedure, public:: lookup=>TensCacheLookup              !looks up a given tensor in the cache
+          procedure, public:: store=>TensCacheStore                !stores a given tensor in the cache
+          procedure, public:: evict=>TensCacheEvict                !evicts a given tensor from the cache
+          procedure, public:: release_entry=>TensCacheReleaseEntry !releases a previously obtained pointer to a tensor cache entry
+          procedure, public:: erase=>TensCacheErase                !erases everything from the cache (regardless of pending MPI communications!)
+          final:: tens_cache_dtor                                  !dtor
         end type tens_cache_t
  !External data register:
         type, public:: data_register_t
@@ -222,7 +230,7 @@
         end interface
         public tens_cache_entry_alloc_i
         public exatns_method_i
-!DATA:
+!GLOBAL DATA:
  !MPI process specialization (TAVP role, set by exatns_start):
         integer(INT_MPI), public:: process_role=EXA_NO_ROLE   !MPI process role (see above)
         integer(INT_MPI), public:: role_comm=MPI_COMM_NULL    !role-specific MPI communicator
@@ -239,6 +247,9 @@
         type(data_register_t), public:: data_register     !string --> talsh_tens_data_t
  !External method register:
         type(method_register_t), public:: method_register !string --> talsh_tens_definer_t
+ !Cache entry eviction policy:
+        logical, private:: ignore_evict_flag !regulates whether or not to raise an error on failure to evict cache entries with a non-zero reference count
+!$OMP THREADPRIVATE (ignore_evict_flag)
 !VISIBILITY:
  !non-member:
         public role_barrier
@@ -262,12 +273,16 @@
         private TensCacheEntryIncrRefCount
         private TensCacheEntryDecrRefCount
         private TensCacheEntryGetRefCount
-        private TensCacheEntryNullifyTensor
+        private TensCacheEntryIncrUseCount
+        private TensCacheEntryDecrUseCount
+        private TensCacheEntryGetUseCount
         private TensCacheEntryDestroy
  !tens_cache_t:
+        private TensCacheInitLock
         private TensCacheLookup
         private TensCacheStore
         private TensCacheEvict
+        private TensCacheReleaseEntry
         private TensCacheErase
         public tens_cache_dtor
  !data_register_t:
@@ -410,6 +425,7 @@
         end subroutine TensCacheEntrySetTensor
 !----------------------------------------------------------
         function TensCacheEntryIsSet(this,ierr) result(ans)
+!Returns TRUE if the tensor is set, FALSE otherwise.
          implicit none
          logical:: ans                                !out: answer
          class(tens_cache_entry_t), intent(in):: this !in: tensor cache entry
@@ -454,48 +470,88 @@
 !----------------------------------------------------------------
         function TensCacheEntryGetRefCount(this) result(refcount)
          implicit none
-         integer(INTD):: refcount                     !out: reference count
+         integer(INTD):: refcount                     !out: reference count (number of active tensor operands associated with this tensor cache entry)
          class(tens_cache_entry_t), intent(in):: this !in: defined tensor cache entry
 
 !$OMP ATOMIC READ
          refcount=this%ref_count
          return
         end function TensCacheEntryGetRefCount
-!-----------------------------------------------------------
-        subroutine TensCacheEntryNullifyTensor(this,dealloc)
-!Either deallocates or simply dissociates tensor (depends on the extended dtor).
+!--------------------------------------------------
+        subroutine TensCacheEntryIncrUseCount(this)
          implicit none
-         class(tens_cache_entry_t), intent(inout):: this !inout: tensor cache entry
-         logical, intent(in):: dealloc                   !in: if TRUE, the .tensor field will be deallocated (assumes ownership)
+         class(tens_cache_entry_t), intent(inout):: this !inout: defined tensor cache entry
 
-         if(associated(this%tensor).and.dealloc) deallocate(this%tensor)
-         this%tensor=>NULL()
+!$OMP ATOMIC UPDATE
+         this%use_count=this%use_count+1
          return
-        end subroutine TensCacheEntryNullifyTensor
+        end subroutine TensCacheEntryIncrUseCount
+!--------------------------------------------------
+        subroutine TensCacheEntryDecrUseCount(this)
+         implicit none
+         class(tens_cache_entry_t), intent(inout):: this !inout: defined tensor cache entry
+
+!$OMP ATOMIC UPDATE
+         this%use_count=this%use_count-1
+         return
+        end subroutine TensCacheEntryDecrUseCount
+!----------------------------------------------------------------
+        function TensCacheEntryGetUseCount(this) result(usecount)
+         implicit none
+         integer(INTD):: usecount                     !out: use count (number of active pointers explicitly returned by cache associated with this tensor cache entry)
+         class(tens_cache_entry_t), intent(in):: this !in: defined tensor cache entry
+
+!$OMP ATOMIC READ
+         usecount=this%use_count
+         return
+        end function TensCacheEntryGetUseCount
 !----------------------------------------------------------
         subroutine TensCacheEntryDestroy(this,dealloc,ierr)
-!Destroys the tensor cache entry.
+!Destroys the tensor cache entry, but only if the reference count and use count are zero.
+!Note that the thread-private global <ignore_evict_flag> regulates whether or not
+!to raise an error on an eviction failure due to a non-zero reference count.
          implicit none
          class(tens_cache_entry_t), intent(inout):: this !inout: tensor cache entry
          logical, intent(in):: dealloc                   !in: if TRUE, the .tensor field will be deallocated (assumes ownership)
          integer(INTD), intent(out), optional:: ierr     !out: error code
          integer(INTD):: errc
 
-         if(this%ref_count.eq.0) then
-          call this%nullify_tensor(dealloc)
+         errc=0
+         if(this%ref_count.eq.0.and.this%use_count.eq.0) then
+          if(associated(this%tensor).and.dealloc) deallocate(this%tensor)
+          this%tensor=>NULL()
          else
-          errc=-1
+          if(.not.ignore_evict_flag) then
+           errc=-1
+           call quit(errc,'#FATAL(TAVP:tens_cache_entry_t.destroy): Attempt to destroy an active cache entry!')
+          endif
          endif
          if(present(ierr)) ierr=errc
          return
         end subroutine TensCacheEntryDestroy
-![tens_cache_t]========================================================
+![tens_cache_t]===========================
+        subroutine TensCacheInitLock(this)
+!Initializes the tensor cache lock for multithreading.
+         implicit none
+         class(tens_cache_t), intent(inout):: this !inout: tensor cache
+
+#ifndef NO_OMP
+!$OMP CRITICAL (TAVP_CACHE)
+         if(.not.allocated(this%cache_lock)) then
+          allocate(this%cache_lock)
+          call omp_init_lock(this%cache_lock)
+         endif
+!$OMP END CRITICAL (TAVP_CACHE)
+#endif
+         return
+        end subroutine TensCacheInitlock
+!----------------------------------------------------------------------
         function TensCacheLookup(this,tensor,ierr) result(tens_entry_p)
 !Looks up a given tensor in the tensor cache. If found, returns a pointer
 !to the corresponding tensor cache entry. If not found, returns NULL.
          implicit none
          class(tens_cache_entry_t), pointer:: tens_entry_p !out: pointer to the found tensor cache entry or NULL
-         class(tens_cache_t), intent(in):: this            !in: tensor cache
+         class(tens_cache_t), intent(inout):: this         !in: tensor cache
          class(tens_rcrsv_t), intent(in):: tensor          !in: tensor to look up (via its descriptor as the key)
          integer(INTD), intent(out), optional:: ierr       !out: error code
          integer(INTD):: errc,res
@@ -504,16 +560,23 @@
          type(tens_descr_t), target:: tens_descr
 
          tens_entry_p=>NULL()
-         tens_descr=tensor%get_descriptor(errc,skip_body=.TRUE.,skip_location=.TRUE.)
+         call this%init_lock()
+         tens_descr=tensor%get_descriptor(errc,skip_body=.TRUE.,skip_location=.TRUE.) !compute tensor descriptor while skipping body/location information
          if(errc.eq.TEREC_SUCCESS) then
-!!!$OMP CRITICAL (TAVP_CACHE)
+#ifndef NO_OMP
+          call omp_set_lock(this%cache_lock)
+#endif
           errc=dit%init(this%map)
           if(errc.eq.GFC_SUCCESS) then
            uptr=>NULL()
            res=dit%search(GFC_DICT_FETCH_IF_FOUND,cmp_tens_descriptors,tens_descr,value_out=uptr)
            if(res.eq.GFC_FOUND) then
-            select type(uptr); class is(tens_cache_entry_t); tens_entry_p=>uptr; end select
-            if(.not.associated(tens_entry_p)) errc=-5 !trap
+            select type(uptr)
+            class is(tens_cache_entry_t)
+             call uptr%incr_use_count()
+             tens_entry_p=>uptr
+            end select
+            uptr=>NULL()
            else
             if(res.ne.GFC_NOT_FOUND) errc=-4
            endif
@@ -521,7 +584,9 @@
           else
            errc=-2
           endif
-!!!$OMP END CRITICAL (TAVP_CACHE)
+#ifndef NO_OMP
+          call omp_unset_lock(this%cache_lock)
+#endif
          else
           errc=-1
          endif
@@ -552,25 +617,31 @@
          class(tens_cache_entry_t), pointer:: tcep
 
          stored=.FALSE.
+         call this%init_lock()
          if(associated(tensor)) then
           tens_descr=tensor%get_descriptor(errc,skip_body=.TRUE.,skip_location=.TRUE.)
           if(errc.eq.TEREC_SUCCESS) then
-!!!$OMP CRITICAL (TAVP_CACHE)
+#ifndef NO_OMP
+           call omp_set_lock(this%cache_lock)
+#endif
            errc=dit%init(this%map)
            if(errc.eq.GFC_SUCCESS) then
             errc=tens_cache_entry_alloc_f(tce) !allocates an empty instance of an extended(tens_cache_entry_t) with a proper dtor
             if(errc.eq.0) then
              uptr=>NULL()
              res=dit%search(GFC_DICT_ADD_IF_NOT_FOUND,cmp_tens_descriptors,tens_descr,tce,GFC_BY_VAL,value_out=uptr)
-             tcep=>NULL(); select type(uptr); class is(tens_cache_entry_t); tcep=>uptr; end select
+             tcep=>NULL(); select type(uptr); class is(tens_cache_entry_t); tcep=>uptr; end select; uptr=>NULL()
              if(associated(tcep)) then
               if(res.eq.GFC_NOT_FOUND) then
                stored=.TRUE.
-               call tcep%set_tensor(tensor,errc)
+               call tcep%set_tensor(tensor,errc); if(errc.ne.0) errc=-8
               else
                if(res.ne.GFC_FOUND) errc=-7
               endif
-              if(errc.eq.0.and.present(tens_entry_p)) tens_entry_p=>tcep
+              if(errc.eq.0.and.present(tens_entry_p)) then
+               call tcep%incr_use_count()
+               tens_entry_p=>tcep
+              endif
               tcep=>NULL()
              else
               errc=-6
@@ -583,7 +654,9 @@
            else
             errc=-3
            endif
-!!!$OMP END CRITICAL (TAVP_CACHE)
+#ifndef NO_OMP
+           call omp_unset_lock(this%cache_lock)
+#endif
           else
            errc=-2
           endif
@@ -594,8 +667,8 @@
          if(present(ierr)) ierr=errc
          return
         end function TensCacheStore
-!----------------------------------------------------------------
-        function TensCacheEvict(this,tensor,ierr) result(evicted)
+!----------------------------------------------------------------------
+        function TensCacheEvict(this,tensor,ierr,quiet) result(evicted)
 !Evicts a specific tensor cache entry from the tensor cache.
 !If the corresponding tensor cache entry is not found,
 !no error is risen, but <evicted>=FALSE.
@@ -604,14 +677,19 @@
          class(tens_cache_t), intent(inout):: this   !inout: tensor cache
          class(tens_rcrsv_t), intent(in):: tensor    !in: tensor to find and evict from the cache
          integer(INTD), intent(out), optional:: ierr !out: error code
+         logical, intent(in), optional:: quiet       !in: if TRUE, failure to evict cache entries with non-zero reference count will be ignored (defaults to FALSE)
          integer(INTD):: errc,res
          type(dictionary_iter_t):: dit
          type(tens_descr_t), target:: tens_descr
 
          evicted=.FALSE.
+         call this%init_lock()
          tens_descr=tensor%get_descriptor(errc,skip_body=.TRUE.,skip_location=.TRUE.)
          if(errc.eq.TEREC_SUCCESS) then
-!!!$OMP CRITICAL (TAVP_CACHE)
+#ifndef NO_OMP
+          call omp_set_lock(this%cache_lock)
+#endif
+          if(present(quiet)) then; ignore_evict_flag=quiet; else; ignore_evict_flag=.FALSE.; endif
           errc=dit%init(this%map)
           if(errc.eq.GFC_SUCCESS) then
            res=dit%search(GFC_DICT_DELETE_IF_FOUND,cmp_tens_descriptors,tens_descr)
@@ -620,23 +698,48 @@
           else
            errc=-2
           endif
-!!!$OMP END CRITICAL (TAVP_CACHE)
+          ignore_evict_flag=.FALSE.
+#ifndef NO_OMP
+          call omp_unset_lock(this%cache_lock)
+#endif
          else
           errc=-1
          endif
          if(present(ierr)) ierr=errc
          return
         end function TensCacheEvict
+!---------------------------------------------------------------
+        subroutine TensCacheReleaseEntry(this,tens_entry_p,ierr)
+!Releases an explicitly previously obtained pointer to a tensor cache entry.
+         implicit none
+         class(tens_cache_t), intent(in):: this                           !in: tensor cache
+         class(tens_cache_entry_t), pointer, intent(inout):: tens_entry_p !inout: pointer to a tensor cache entry (will sink here)
+         integer(INTD), intent(out), optional:: ierr                      !out: error code
+         integer(INTD):: errc
+
+         errc=0
+         if(associated(tens_entry_p)) then
+          call tens_entry_p%decr_use_count()
+          tens_entry_p=>NULL()
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensCacheReleaseEntry
 !-------------------------------------------
         subroutine TensCacheErase(this,ierr)
-!Erases the tensor cache completely and unconditionally.
+!Erases the tensor cache completely.
          implicit none
          class(tens_cache_t), intent(inout):: this   !inout: tensor cache
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc,res
          type(dictionary_iter_t):: dit
 
-!!!$OMP CRITICAL (TAVP_CACHE)
+         call this%init_lock()
+#ifndef NO_OMP
+         call omp_set_lock(this%cache_lock)
+#endif
          errc=dit%init(this%map)
          if(errc.eq.GFC_SUCCESS) then
           errc=dit%delete_all(); if(errc.ne.GFC_SUCCESS) errc=-3
@@ -644,16 +747,26 @@
          else
           errc=-1
          endif
-!!!$OMP END CRITICAL (TAVP_CACHE)
+#ifndef NO_OMP
+         call omp_unset_lock(this%cache_lock)
+#endif
          if(present(ierr)) ierr=errc
          return
         end subroutine TensCacheErase
 !---------------------------------------
         subroutine tens_cache_dtor(this)
          implicit none
-         type(tens_cache_t):: this
+         type(tens_cache_t):: this !inout: tensor cache
 
          call this%erase()
+#ifndef NO_OMP
+!$OMP CRITICAL (TAVP_CACHE)
+         if(allocated(this%cache_lock)) then
+          call omp_destroy_lock(this%cache_lock)
+          deallocate(this%cache_lock)
+         endif
+!$OMP END CRITICAL (TAVP_CACHE)
+#endif
          return
         end subroutine tens_cache_dtor
 ![data_register_t]---------------------------------------------------------
@@ -666,6 +779,7 @@
          integer(INTD):: errc,ier
          type(dictionary_iter_t):: dit
 
+!$OMP CRITICAL (TAVP_DATA_REG)
          errc=dit%init(this%ext_data)
          if(errc.eq.GFC_SUCCESS) then
           errc=dit%search(GFC_DICT_ADD_IF_NOT_FOUND,cmp_strings,data_name,extrn_data)
@@ -678,6 +792,7 @@
          else
           errc=-1
          endif
+!$OMP END CRITICAL (TAVP_DATA_REG)
          if(present(ierr)) ierr=errc
          return
         end subroutine DataRegisterRegisterData
@@ -690,6 +805,7 @@
          integer(INTD):: errc,ier
          type(dictionary_iter_t):: dit
 
+!$OMP CRITICAL (TAVP_DATA_REG)
          errc=dit%init(this%ext_data)
          if(errc.eq.GFC_SUCCESS) then
           errc=dit%search(GFC_DICT_DELETE_IF_FOUND,cmp_strings,data_name)
@@ -702,6 +818,7 @@
          else
           errc=-1
          endif
+!$OMP END CRITICAL (TAVP_DATA_REG)
          if(present(ierr)) ierr=errc
          return
         end subroutine DataRegisterUnregisterData
@@ -717,6 +834,7 @@
          class(*), pointer:: uptr
 
          extrn_data=>NULL()
+!$OMP CRITICAL (TAVP_DATA_REG)
          errc=dit%init(this%ext_data)
          if(errc.eq.GFC_SUCCESS) then
           uptr=>NULL()
@@ -735,6 +853,7 @@
          else
           errc=-1
          endif
+!$OMP END CRITICAL (TAVP_DATA_REG)
          if(present(ierr)) ierr=errc
          return
         end function DataRegisterRetrieveData
@@ -745,11 +864,13 @@
          integer(INTD):: errc
          type(dictionary_iter_t):: dit
 
+!$OMP CRITICAL (TAVP_DATA_REG)
          errc=dit%init(this%ext_data)
          if(errc.eq.GFC_SUCCESS) then
           errc=dit%delete_all()
           errc=dit%release()
          endif
+!$OMP END CRITICAL (TAVP_DATA_REG)
          return
         end subroutine data_register_dtor
 ![method_register_t]---------------------------------------------------------------
@@ -762,6 +883,7 @@
          integer(INTD):: errc,ier
          type(dictionary_iter_t):: dit
 
+!$OMP CRITICAL (TAVP_METHOD_REG)
          errc=dit%init(this%ext_methods)
          if(errc.eq.GFC_SUCCESS) then
           errc=dit%search(GFC_DICT_ADD_IF_NOT_FOUND,cmp_strings,method_name,extrn_method)
@@ -774,6 +896,7 @@
          else
           errc=-1
          endif
+!$OMP END CRITICAL (TAVP_METHOD_REG)
          if(present(ierr)) ierr=errc
          return
         end subroutine MethodRegisterRegisterMethod
@@ -786,6 +909,7 @@
          integer(INTD):: errc,ier
          type(dictionary_iter_t):: dit
 
+!$OMP CRITICAL (TAVP_METHOD_REG)
          errc=dit%init(this%ext_methods)
          if(errc.eq.GFC_SUCCESS) then
           errc=dit%search(GFC_DICT_DELETE_IF_FOUND,cmp_strings,method_name)
@@ -798,6 +922,7 @@
          else
           errc=-1
          endif
+!$OMP END CRITICAL (TAVP_METHOD_REG)
          if(present(ierr)) ierr=errc
          return
         end subroutine MethodRegisterUnregisterMethod
@@ -813,6 +938,7 @@
          class(*), pointer:: uptr
 
          extrn_method=>NULL()
+!$OMP CRITICAL (TAVP_METHOD_REG)
          errc=dit%init(this%ext_methods)
          if(errc.eq.GFC_SUCCESS) then
           uptr=>NULL()
@@ -831,6 +957,7 @@
          else
           errc=-1
          endif
+!$OMP END CRITICAL (TAVP_METHOD_REG)
          if(present(ierr)) ierr=errc
          return
         end function MethodRegisterRetrieveMethod
@@ -841,11 +968,13 @@
          integer(INTD):: errc
          type(dictionary_iter_t):: dit
 
+!$OMP CRITICAL (TAVP_METHOD_REG)
          errc=dit%init(this%ext_methods)
          if(errc.eq.GFC_SUCCESS) then
           errc=dit%delete_all()
           errc=dit%release()
          endif
+!$OMP END CRITICAL (TAVP_METHOD_REG)
          return
         end subroutine method_register_dtor
 

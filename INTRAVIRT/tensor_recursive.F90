@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/01/15
+!REVISION: 2018/01/23
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -774,17 +774,17 @@
         private TensContractionSplitIntern
         private TensContractionPrintIt
         public tens_contraction_dtor
-!DATA:
- !Register of hierarchical vector spaces (only these spaces can be used in tensors):
+!GLOBAL DATA:
+ !Global register of hierarchical vector spaces (only these spaces can be used in tensors):
         type(hspace_register_t), public:: hspace_register
- ![TESTING]: prerequisites for building a hierarchical space:
-        integer(INTL), parameter, public:: HSPACE_DIM_=20                    !vector space dimension
-        type(spher_symmetry_t), target, public:: hspace_symm_(1:HSPACE_DIM_) !symmetry of basis vectors
-        type(subspace_basis_t), target, public:: hspace_basis_               !vector space basis
  !Tensor contraction generator: subtensor buffer:
         integer(INTL), allocatable, target, private:: tcg_ind_buf(:,:) !subtensor index buffer (private to each OpenMP thread)
         integer(INTL), allocatable, target, private:: tcg_num_buf(:)   !subtensor number buffer (private to each OpenMP thread)
 !$OMP THREADPRIVATE(tcg_ind_buf,tcg_num_buf)
+ ![TESTING]: Prerequisites for building a hierarchical space:
+        integer(INTL), parameter, public:: HSPACE_DIM_=20                    !vector space dimension
+        type(spher_symmetry_t), target, public:: hspace_symm_(1:HSPACE_DIM_) !symmetry of basis vectors
+        type(subspace_basis_t), target, public:: hspace_basis_               !vector space basis
 
        contains
 !IMPLEMENTATION:
@@ -1081,7 +1081,7 @@
          write(CONS_OUT,'("END OF PRINTING")')
          return
         end subroutine print_tcg_buffer
-![hspace_register_t]=========================================================================
+![hspace_register_t]============================
         subroutine HspaceRegisterInit(this,ierr)
 !Initializes the register of hierarchical vector spaces.
          implicit none
@@ -1089,6 +1089,7 @@
          integer(INTD), intent(out), optional:: ierr    !out: error code
          integer(INTD):: errc
 
+!$OMP CRITICAL (TEREC_SPACE_REG)
          if(this%initialized) then
           errc=TEREC_INVALID_REQUEST
          else
@@ -1098,6 +1099,7 @@
            if(errc.eq.GFC_SUCCESS) this%initialized=.TRUE.
           endif
          endif
+!$OMP END CRITICAL (TEREC_SPACE_REG)
          if(errc.ne.TEREC_SUCCESS) call hspace_register_dtor(this)
          if(present(ierr)) ierr=errc
          return
@@ -1115,26 +1117,21 @@
          integer(INTD):: errc
          type(h_space_t), target:: hspace_empty
          class(*), pointer:: up
-         !type(h_space_t), pointer:: hptr !debug
 
          errc=TEREC_SUCCESS
          if(.not.this%initialized) call this%init(errc)
+!$OMP CRITICAL (TEREC_SPACE_REG)
          if(errc.eq.TEREC_SUCCESS) then
           hspace_id=this%hspaces_it%get_length(errc)
           if(errc.eq.GFC_SUCCESS) then
            errc=this%name2id_it%search(GFC_DICT_ADD_IF_NOT_FOUND,cmp_strings,space_name,hspace_id)
            if(errc.eq.GFC_NOT_FOUND) then
-            !write(*,'("#DEBUG(hspace_register_t.register_space): Appending a local empty h_space_t ...")') !debug
-            !hptr=>hspace_empty; call dump_bytes(c_loc(hptr),size_of(hspace_empty),'dump0') !debug
             errc=this%hspaces_it%append(hspace_empty)
             if(errc.eq.GFC_SUCCESS) then
              if(present(hspace_p)) then
               hspace_p=>NULL()
               up=>this%hspaces_it%element_value(int(hspace_id,INTL),errc)
               if(errc.eq.GFC_SUCCESS.and.associated(up)) then
-               !select type(up); type is(h_space_t); hptr=>up; end select !debug
-               !call dump_bytes(c_loc(hptr),size_of(hspace_empty),'dump1') !debug
-               !hptr=>hspace_empty; call dump_bytes(c_loc(hptr),size_of(hspace_empty),'dump2') !debug
                select type(up); type is(h_space_t); hspace_p=>up; end select
                if(.not.associated(hspace_p)) errc=TEREC_ERROR
               else
@@ -1151,6 +1148,7 @@
           if(present(hspace_p)) hspace_p=>NULL()
           hspace_id=-1
          endif
+!$OMP END CRITICAL (TEREC_SPACE_REG)
          if(present(ierr)) ierr=errc
          return
         end function HspaceRegisterRegisterSpace
@@ -1167,6 +1165,7 @@
 
          errc=TEREC_SUCCESS; hspace_id=-1
          if(.not.this%initialized) call this%init(errc)
+!$OMP CRITICAL (TEREC_SPACE_REG)
          if(errc.eq.TEREC_SUCCESS) then
           errc=this%name2id_it%search(GFC_DICT_JUST_FIND,cmp_strings,space_name,value_out=up)
           if(errc.eq.GFC_FOUND) then
@@ -1179,6 +1178,7 @@
            errc=TEREC_INVALID_ARGS
           endif
          endif
+!$OMP END CRITICAL (TEREC_SPACE_REG)
          if(present(ierr)) ierr=errc
          return
         end function HspaceRegisterGetSpaceId
@@ -1235,6 +1235,7 @@
          type(hspace_register_t):: this
          integer(INTD):: errc
 
+!$OMP CRITICAL (TEREC_SPACE_REG)
          errc=this%name2id_it%get_status()
          if(errc.ne.GFC_IT_NULL) then
           errc=this%name2id_it%delete_all()
@@ -1246,6 +1247,7 @@
           errc=this%hspaces_it%release()
          endif
          this%initialized=.FALSE.
+!$OMP END CRITICAL (TEREC_SPACE_REG)
          return
         end subroutine hspace_register_dtor
 ![hspace_reg_t]=====================================
