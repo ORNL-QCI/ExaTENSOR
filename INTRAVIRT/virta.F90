@@ -8,7 +8,7 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/01/23
+!REVISION: 2018/01/24
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -240,15 +240,15 @@
         integer(INT_MPI), public:: top_manager_gl_rank=-1     !root manager process rank in the global MPI communicator
         integer(INT_MPI), public:: drv_mng_comm=MPI_COMM_NULL !MPI intercommunicator for the driver and managers
         integer(INT_MPI), public:: mng_wrk_comm=MPI_COMM_NULL !MPI intercommunicator for managers and workers
- !External universal tensor dimension strength assessing function:
+ !External universal tensor dimension strength assessing:
         procedure(tens_rcrsv_dim_strength_i), pointer, public:: tens_dim_strength_assess=>NULL() !assesses the strength of tensor dimensions
-        real(8), public:: tens_dim_strength_thresh=0d0 !tensor dimension strength threshold above which the dimension will split
+        real(8), public:: tens_dim_strength_thresh=0d0 !tensor dimension strength threshold above which the dimension will split (fine tensor decomposition granularity control)
  !External data register:
         type(data_register_t), public:: data_register     !string --> talsh_tens_data_t
  !External method register:
         type(method_register_t), public:: method_register !string --> talsh_tens_definer_t
- !Cache entry eviction policy:
-        logical, private:: ignore_evict_flag !regulates whether or not to raise an error on failure to evict cache entries with a non-zero reference count
+ !Cache entry eviction policy (internal use only):
+        logical, private:: ignore_evict_flag !regulates whether or not to raise an error on failure to evict a cache entry with a non-zero reference/use count (affects tens_cache_entry_t.dtor)
 !$OMP THREADPRIVATE (ignore_evict_flag)
 !VISIBILITY:
  !non-member:

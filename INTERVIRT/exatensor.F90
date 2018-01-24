@@ -1,7 +1,7 @@
 !ExaTENSOR: Massively Parallel Virtual Processor for Scale-Adaptive Hierarchical Tensor Algebra
 !This is the top level API module of ExaTENSOR (user-level API)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017/11/20
+!REVISION: 2018/01/24
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -35,12 +35,18 @@
        use virta
        implicit none
        private
-       public EXA_NO_ROLE,EXA_DRIVER,EXA_MANAGER,EXA_WORKER,EXA_HELPER
+       public EXA_NO_ROLE,EXA_DRIVER,EXA_MANAGER,EXA_WORKER,EXA_HELPER !process roles
 !PARAMETERS:
  !Basic:
        integer(INTD), private:: CONS_OUT=6 !output device
        integer(INTD), private:: DEBUG=1    !debugging level
        logical, private:: VERBOSE=.TRUE.   !verbosity for errors
+ !Tensor data kinds:
+       integer(INTD), parameter, public:: EXA_DATA_KIND_NN=NO_TYPE !none
+       integer(INTD), parameter, public:: EXA_DATA_KIND_R4=R4      !single precision real
+       integer(INTD), parameter, public:: EXA_DATA_KIND_R8=R8      !double precision real
+       integer(INTD), parameter, public:: EXA_DATA_KIND_C4=C4      !single precision complex
+       integer(INTD), parameter, public:: EXA_DATA_KIND_C8=C8      !double precision complex
  !Error codes (user-level):
        public EXA_SUCCESS,&
              &EXA_ERROR,&
@@ -63,9 +69,10 @@
 !TYPES:
  !ExaTENSOR runtime status:
        type, public:: exatns_rt_status_t
-        integer(INTD), public:: state=DSVP_STAT_OFF !state (see parameters above)
+        integer(INTD), public:: state=DSVP_STAT_OFF !state (see dsvp.F90)
         integer(INTD), public:: error_code=0        !specific error code (0 means no error)
         integer(INTD), public:: num_procs=0         !number of MPI processes involved
+        integer(INTL), public:: num_instr=0_INTL    !number of instructions accepted from the Driver process
        end type exatns_rt_status_t
  !Vector space status:
        type, public:: exatns_space_status_t
@@ -79,9 +86,9 @@
         module procedure exatns_tensor_init_scalar
         module procedure exatns_tensor_init_method
        end interface exatns_tensor_init
-!DATA:
+!GLOBAL DATA:
  !ExaTENSOR runtime status:
-       type(exatns_rt_status_t), protected:: exatns_rt_status
+       type(exatns_rt_status_t), private:: exatns_rt_status
  !TAVP global composition (set by exatns_start):
        integer(INTD), protected:: exa_num_drivers=0  !number of the driver processes
        integer(INTD), protected:: exa_num_managers=0 !number of the manager processes
@@ -141,20 +148,23 @@
 
       contains
 !IMPLEMENTATION:
-![ExaTENSOR External Method/Data API]---------------------------------
-       function exatns_dim_strength_setup(dim_strength_f) result(ierr)
+![ExaTENSOR External Method/Data API]-------------------------------------------------
+       function exatns_dim_strength_setup(dim_strength_f,strength_thresh) result(ierr) !called by all MPI processes
 !Sets up the universal tensor dimension strength assessing function.
         implicit none
         integer(INTD):: ierr                                  !out: error code
-        procedure(tens_rcrsv_dim_strength_i):: dim_strength_f !in: external universal tensor dimension strength assessing function
+        procedure(tens_rcrsv_dim_strength_i):: dim_strength_f !in: external universal tensor dimension strength assessing function (see interface in tensor_recursive.F90)
+        real(8), intent(in), optional:: strength_thresh       !in: tensor dimension strength threshold above which the dimension will split
 
         ierr=EXA_SUCCESS
         tens_dim_strength_assess=>dim_strength_f
+        if(present(strength_thresh)) tens_dim_strength_thresh=strength_thresh
         return
        end function exatns_dim_strength_setup
 !---------------------------------------------------------------------------
-       function exatns_dim_strength_thresh_set(strength_thresh) result(ierr)
-!Sets the tensor dimension strength threshold above which the dimension will split.
+       function exatns_dim_strength_thresh_set(strength_thresh) result(ierr) !called by all MPI processes
+!Sets the tensor dimension strength threshold above which the dimension will split,
+!thus allowing for a fine tensor decomposition granularity control.
         implicit none
         integer(INTD):: ierr                  !out: error code
         real(8), intent(in):: strength_thresh !in: tensor dimension strength threshold above which the dimension will split
@@ -180,7 +190,7 @@
        end function exatns_method_register
 !-----------------------------------------------------------------
        function exatns_method_unregister(method_name) result(ierr) !called by all MPI processes
-!Unregisters a registered external tensor body initialization/update method.
+!Unregisters a previously registered external tensor body initialization/update method.
         implicit none
         integer(INTD):: ierr                   !out: error code
         character(*), intent(in):: method_name !in: method name
@@ -217,7 +227,7 @@
        function exatns_start(mpi_communicator) result(ierr) !called by all MPI processes
 !Starts the ExaTENSOR runtime within the given MPI communicator.
 !This function must be called by every MPI process from <mpi_communicator>,
-!however only the Master process 0 (Driver) will return. The other MPI processes
+!however only one MPI process (Driver) will return. The other MPI processes
 !will receive their active TAVP roles as managers, workers, helpers, etc.
 !Actions performed:
 ! # Initializes MPI services;
@@ -225,14 +235,16 @@
 ! # Establishes a global TAVP hierarchy and maps compute node domains to TAVP-MNG recursively;
 ! # Creates dedicated MPI communicators for TAVP-MNG and for TAVP-WRK as well as an intercommunicator;
 ! # Each MPI process is assigned a single TAVP of a specific kind which is allocated and launched;
-! # The Master MPI process 0 (Driver) returns while all other MPI processes begin their active
-!   life cycle as TAVPs until terminated by the Master MPI process 0 via a call to exatns_stop().
+! # One MPI process (Driver) returns while all other MPI processes begin their active
+!   life cycle as TAVPs until terminated by the Driver MPI process via a call to exatns_stop().
+! # The Driver MPI process schedules tensor operations and finally calls exatns_stop().
         implicit none
         integer(INTD):: ierr                                      !out: error code
         integer(INT_MPI), intent(in), optional:: mpi_communicator !in: MPI communicator (defaults to MPI_COMM_WORLD)
         integer(INT_MPI):: errc,num_procs,my_rank
 
         ierr=EXA_SUCCESS
+!Check whether the ExaTENSOR runtime is currently OFF:
         if(exatns_rt_status%state.ne.DSVP_STAT_OFF) then; ierr=-1; return; endif
 !Start the (MPI) process and init its distributed services:
         if(present(mpi_communicator)) then
@@ -260,12 +272,12 @@
          call dil_process_finish(errc)
          ierr=-4; return
         endif
-!Build the MPI process hierarchy and determine process roles:
+!Build the MPI process hierarchy and determine the roles of MPI processes:
         write(jo,'("#MSG(exatensor): Building the process hierarchy and determining roles:")')
         call determine_process_role(errc) !builds NAT and determines process roles
         if(errc.eq.0) then
          write(jo,'("#MSG(exatensor): Info: Role = ",i2,": Role rank/size = ",i9,"/",i9)') process_role,role_rank,role_size
-         write(jo,'("#MSG(exatensor): Info: Global rank of the driver process = ",i9)') driver_gl_rank
+         write(jo,'("#MSG(exatensor): Info: Global rank of the driver process = ",i9)') driver_gl_rank !this MPI process will return
          write(jo,'("#MSG(exatensor): Info: Global rank of the top manager process = ",i9)') top_manager_gl_rank
          write(jo,'("#MSG(exatensor): Creating role specific MPI communicators ... ")',ADVANCE='NO')
          call MPI_Comm_split(GLOBAL_MPI_COMM,process_role,role_rank,role_comm,errc)
@@ -300,13 +312,12 @@
          call dil_process_finish(errc)
          ierr=-7; return
         endif
-!Set the default universal tensor dimension strength assessing function, if none preset:
-        if(.not.associated(tens_dim_strength_assess)) tens_dim_strength_assess=>tens_dim_strength_default
+!Set the default universal tensor dimension strength assessing function, if none preset by a user earlier:
+        if(.not.associated(tens_dim_strength_assess)) errc=exatns_dim_strength_setup(tens_dim_strength_default,0d0)
 !Sync all MPI processes before configuring and launching TAVPs:
-        call dil_global_comm_barrier(errc)
-        if(errc.ne.0) then; call dil_process_finish(errc); ierr=-8; return; endif
-!Mark ExaTENSOR runtime active:
-        exatns_rt_status=exatns_rt_status_t(DSVP_STAT_ON,EXA_SUCCESS,num_procs)
+        call dil_global_comm_barrier(errc); if(errc.ne.0) then; call dil_process_finish(errc); ierr=-8; return; endif
+!Mark the ExaTENSOR runtime active:
+        exatns_rt_status=exatns_rt_status_t(DSVP_STAT_ON,EXA_SUCCESS,num_procs,0_INTL)
 !Live TAVP life:
         ierr=EXA_SUCCESS
         if(process_role.eq.EXA_DRIVER) then
@@ -330,8 +341,8 @@
          if(ierr.eq.0) then; write(jo,'("Done")'); else; write(jo,'("Failed: Error ",i11)') ierr; endif
         endif
         if(ierr.eq.0) call tavp%start(ierr) !will later call .shutdown()
-!Mark ExaTENSOR runtime is off:
-        exatns_rt_status=exatns_rt_status_t(DSVP_STAT_OFF,ierr,0)
+!Mark the ExaTENSOR runtime is off:
+        exatns_rt_status=exatns_rt_status_t(DSVP_STAT_OFF,ierr,0,exatns_rt_status%num_instr)
 !Destroy TAVP:
         if(allocated(tavp)) then
          call tavp%destroy(errc); deallocate(tavp)
@@ -486,7 +497,7 @@
           return
          end subroutine prepare_tavp_mng
 
-         subroutine determine_process_role(jerr) !all in
+         subroutine determine_process_role(jerr) !all MPI processes
           implicit none
           integer(INTD), intent(out):: jerr
           integer(INTD), parameter:: MAX_NAT_CONF_CYCLES=256
@@ -512,11 +523,11 @@
            endif
            !write(jo,'("#DEBUG(exatns_start:determine_process_role)[",i5,"]: Trial conf:",3(1x,i6))')&
                 !&my_rank,exa_num_drivers,exa_num_managers,exa_num_workers !debug
- !Build the process hierarchy:
+  !Build the process hierarchy:
            call comp_system%comp_system_ctor('hardware.exaconf',num_wrk_hlp,jerr,&
                                             &EXA_MANAGER_BRANCH_FACT,EXA_MAX_WORK_GROUP_SIZE)
            if(jerr.ne.0) then; jerr=-2; exit hloop; endif
- !Check the total number of managers:
+  !Check the total number of managers:
            if(comp_system%get_num_aggr_nodes().eq.exa_num_managers) exit hloop !match
            exa_num_managers=exa_num_managers+1
            exa_num_workers=num_procs-(exa_num_drivers+exa_num_managers+exa_num_helpers)
@@ -588,10 +599,11 @@
          call comm_hl%clean(errc); if(errc.ne.0.and.ierr.eq.0) ierr=-11
          call bytecode%destroy(errc); if(errc.ne.0.and.ierr.eq.0) ierr=-10
          call tens_instr%set_status(DS_INSTR_RETIRED,errc); if(errc.ne.DSVP_SUCCESS.and.ierr.eq.0) ierr=-9
+         tens_instr=>NULL()
          errc=instr_log%delete_all(); if(errc.ne.GFC_SUCCESS.and.ierr.eq.0) ierr=-8
          errc=instr_log%release(); if(errc.ne.GFC_SUCCESS.and.ierr.eq.0) ierr=-7
-!Mark ExaTENSOR runtime is off:
-         exatns_rt_status=exatns_rt_status_t(DSVP_STAT_OFF,ierr,0)
+!Mark the ExaTENSOR runtime is off:
+         exatns_rt_status=exatns_rt_status_t(DSVP_STAT_OFF,ierr,0,ip+1_INTL)
 !Sync with others:
          write(jo,'()')
          write(jo,'("###EXATENSOR FINISHED PROCESS ",i9,"/",i9,": Status = ",i11,": Syncing ... ")',ADVANCE='NO')&
@@ -645,10 +657,10 @@
        end function exatns_status
 ![ExaTENSOR Parser/Interpreter API]------------------
        function exatns_interpret(taprol) result(ierr)
-!Interprets TAProL code.
+!Interprets symbolic TAProL code.
         implicit none
         integer(INTD):: ierr              !out: error code
-        character(*), intent(in):: taprol !in: TAProL code (string of TAProL statements)
+        character(*), intent(in):: taprol !in: TAProL code (string of valid TAProL statements)
 
         ierr=EXA_SUCCESS
         write(CONS_OUT,*)'FATAL(exatensor:interpret): Not implemented yet!' !`Implement
@@ -665,15 +677,15 @@
         write(CONS_OUT,*)'FATAL(exatensor:symbol_exists): Not implemented yet!' !`Implement
         return
        end function exatns_symbol_exists
-![ExaTENSOR Hierarchical Vector Space API]-----------------------------------------
-       function exatns_space_register(space_name,space_basis,space_id) result(ierr)
+![ExaTENSOR Hierarchical Vector Space API]------------------------------------------------
+       function exatns_space_register(space_name,space_basis,space_id,hspace) result(ierr)
 !Registers a vector space based on the provided space basis.
         implicit none
         integer(INTD):: ierr                                      !out: error code
         character(*), intent(in):: space_name                     !in: vector space symbolic name
         class(subspace_basis_t), intent(in), target:: space_basis !in: vector space basis (fully defined)
         integer(INTD), intent(out):: space_id                     !out: vector space id (non-negative)
-        class(h_space_t), pointer:: hspace
+        class(h_space_t), pointer, intent(out):: hspace           !out: pointer to the registered vector space
 
         ierr=EXA_SUCCESS; space_id=-1
         if(space_basis%dimsn().gt.0.and.len(space_name).gt.0) then
@@ -705,7 +717,7 @@
         character(*), intent(in):: space_name !in: vector space symbolic name
 
         ierr=EXA_SUCCESS
-        write(CONS_OUT,*)'FATAL(exatensor:space_unregister): Not implemented yet!' !`Implement
+        write(CONS_OUT,*)'FATAL(exatensor:space_unregister): Not implemented yet!' !`Implement: Requires .unregister() method in tensor_recursive.F90
         return
        end function exatns_space_unregister
 !---------------------------------------------------------------
@@ -722,14 +734,17 @@
        end function exatns_space_status
 !------------------------------------------------------------------------------------------------------------------
        function exatns_subspace_register(subspace_name,space_name,basis_subrange,subspace_id,space_id) result(ierr)
-!Registers a subspace within a registered vector space.
+!Registers a subspace over a contiguous subrange of basis vectors within a registered vector space.
+!If the parental vector space is hierarchical, the newly created subspace will be embedded into the
+!closest aligned subspace containing it (so-called embedding subspace). The corresponding subtensors
+!will be defined over the embedding subspaces, using zero padding to emulate the requested subspaces.
         implicit none
         integer(INTD):: ierr                            !out: error code
         character(*), intent(in):: subspace_name        !in: subspace symbolic name
         character(*), intent(in):: space_name           !in: parental space symbolic name
-        class(seg_int_t), intent(in):: basis_subrange   !in: defining subrange of basis vectors
+        class(seg_int_t), intent(in):: basis_subrange   !in: defining subrange of basis vectors in the parental space
         integer(INTL), intent(out):: subspace_id        !out: subspace id within the parental vector space
-        integer(INTD), intent(out), optional:: space_id !out: vector space id
+        integer(INTD), intent(out), optional:: space_id !out: parental vector space id
         integer(INTD):: hspid
 
         ierr=EXA_SUCCESS; subspace_id=-1_INTL; hspid=-1
@@ -762,7 +777,7 @@
        end function exatns_index_register
 !---------------------------------------------------------------
        function exatns_index_unregister(index_name) result(ierr)
-!Unregisters a registers index.
+!Unregisters a registered index.
         implicit none
         integer(INTD):: ierr                  !out: error code
         character(*), intent(in):: index_name !in: index symbolic name
@@ -771,23 +786,85 @@
         write(CONS_OUT,*)'FATAL(exatensor:index_unregister): Not implemented yet!' !`Implement
         return
        end function exatns_index_unregister
-![ExaTENSOR Tensor API]-----------------------------------------------------------------------------------------------
-       function exatns_tensor_create(tensor,data_kind,tens_name,subspace,dim_extent,dim_group,group_spec) result(ierr)
+![ExaTENSOR Tensor API]--------------------------------------------------------------------------------------------------------
+       function exatns_tensor_create(tensor,tens_name,hspaces,subspaces,data_kind,dim_extent,dim_group,group_spec) result(ierr)
 !Creates a tensor.
         implicit none
         integer(INTD):: ierr                                 !out: error code
-        type(tens_rcrsv_t), intent(inout):: tensor           !out: tensor
-        integer(INTD), intent(in):: data_kind                !in: data kind of tensor elements: {R4,R8,C4,C8}
+        type(tens_rcrsv_t), intent(inout):: tensor           !out: tensor (must be empty on entrance)
         character(*), intent(in):: tens_name                 !in: symbolic tensor name
-        integer(INTD), intent(in):: subspace(1:)             !in: defining subspace registered id for each tensor dimension
-        integer(INTD), intent(in), optional:: dim_extent(1:) !in: dimension extent for each tensor dimension (0 means deferred)
+        integer(INTD), intent(in):: hspaces(1:)              !in: registered id of the defining vector space for each tensor dimension
+        integer(INTL), intent(in):: subspaces(1:)            !in: id of the defining subspace for each tensor dimension
+        integer(INTD), intent(in):: data_kind                !in: data kind of tensor elements: {R4,R8,C4,C8}
+        integer(INTL), intent(in), optional:: dim_extent(1:) !in: dimension extent for each tensor dimension (0 means deferred)
         integer(INTD), intent(in), optional:: dim_group(1:)  !in: symmetric group (>=0) for each tensor dimension (0 means default)
         integer(INTD), intent(in), optional:: group_spec(1:) !in: symmetric group specification for non-trivial symmetric groups (see tensor_recursive.F90)
-        integer(INTD):: trank
+        integer(INTD):: errc,trank
 
         ierr=EXA_SUCCESS
-        trank=size(subspace) !tensor rank
-        write(CONS_OUT,*)'FATAL(exatensor:tensor_create): Not implemented yet!' !`Implement
+        if(.not.tensor%is_set(errc)) then
+         if(errc.eq.TEREC_SUCCESS) then
+!Construct the tensor object:
+          trank=size(hspaces) !tensor rank (number of tensor dimensions)
+          if(size(subspaces).eq.trank) then
+           if(present(dim_extent)) then
+            if(size(dim_extent).eq.trank) then
+             if(present(dim_group)) then
+              if(size(dim_group).eq.trank) then
+               if(present(group_spec)) then
+                call tensor%tens_rcrsv_ctor(tens_name,subspaces,hspaces,errc,dim_extent,dim_group,group_spec)
+                if(errc.ne.TEREC_SUCCESS) ierr=EXA_ERR_UNABLE_COMPLETE
+               else
+                ierr=EXA_ERR_INVALID_ARGS
+               endif
+              else
+               ierr=EXA_ERR_INVALID_ARGS
+              endif
+             else
+              if(.not.present(group_spec)) then
+               call tensor%tens_rcrsv_ctor(tens_name,subspaces,hspaces,errc,dim_extent)
+               if(errc.ne.TEREC_SUCCESS) ierr=EXA_ERR_UNABLE_COMPLETE
+              else
+               ierr=EXA_ERR_INVALID_ARGS
+              endif
+             endif
+            else
+             ierr=EXA_ERR_INVALID_ARGS
+            endif
+           else
+            if(present(dim_group)) then
+             if(size(dim_group).eq.trank) then
+              if(present(group_spec)) then
+               call tensor%tens_rcrsv_ctor(tens_name,subspaces,hspaces,errc,dim_group=dim_group,group_spec=group_spec)
+               if(errc.ne.TEREC_SUCCESS) ierr=EXA_ERR_UNABLE_COMPLETE
+              else
+               ierr=EXA_ERR_INVALID_ARGS
+              endif
+             else
+              ierr=EXA_ERR_INVALID_ARGS
+             endif
+            else
+             if(.not.present(group_spec)) then
+              call tensor%tens_rcrsv_ctor(tens_name,subspaces,hspaces,errc)
+              if(errc.ne.TEREC_SUCCESS) ierr=EXA_ERR_UNABLE_COMPLETE
+             else
+              ierr=EXA_ERR_INVALID_ARGS
+             endif
+            endif
+           endif
+          else
+           ierr=EXA_ERR_INVALID_ARGS
+          endif
+!Construct the tensor instruction:
+
+!Issue the tensor instruction to TAVP:
+
+         else
+          ierr=EXA_ERR_UNABLE_COMPLETE
+         endif
+        else
+         ierr=EXA_ERR_INVALID_REQ
+        endif
         return
        end function exatns_tensor_create
 !---------------------------------------------------------
