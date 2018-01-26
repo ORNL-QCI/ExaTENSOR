@@ -8,7 +8,7 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/01/24
+!REVISION: 2018/01/26
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -155,7 +155,7 @@
          contains
           procedure, private:: CtrlTensContrCtor                        !ctor
           generic, public:: ctrl_tens_contr_ctor=>CtrlTensContrCtor
-          procedure, public:: get_contr_ptrn=>CtrlTensContrGetContrPtrn !returns a pointer to the extended tensor contraction pattern and the prefactor (optionally)
+          procedure, public:: get_contr_ptrn=>CtrlTensContrGetContrPtrn !returns a pointer to the extended tensor contraction pattern and, optionally, the prefactor and conjugation flags
           procedure, public:: pack=>CtrlTensContrPack                   !packs the instruction control field into a plain byte packet
           procedure, public:: unpack=>CtrlTensContrUnpack               !unpacks the instruction control field from a plain byte packet
           final:: ctrl_tens_contr_dtor                                  !dtor
@@ -332,21 +332,28 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine CtrlTensContrCtor
-!-----------------------------------------------------------------------
-        function CtrlTensContrGetContrPtrn(this,ierr,alpha) result(ptrn)
-!Returns a pointer to the extended tensor contraction pattern.
+!------------------------------------------------------------------------------
+        function CtrlTensContrGetContrPtrn(this,ierr,alpha,conjug) result(ptrn)
+!Returns a pointer to the extended tensor contraction pattern. Optionally,
+!the prefactor and tensor argument conjugation flags can be returned as well.
          implicit none
          type(contr_ptrn_ext_t), pointer:: ptrn              !out: extended tensor contraction pattern
          class(ctrl_tens_contr_t), target, intent(in):: this !in: tensor contraction control field
          integer(INTD), intent(out), optional:: ierr         !out: error code
          complex(8), intent(out), optional:: alpha           !out: tensor contraction prefactor
+         integer(INTD), intent(out), optional:: conjug       !out: tensor argument conjugation bits: {0:D,1:L,2:R}
          integer(INTD):: errc
 
          ptrn=>NULL()
          if(this%contr_ptrn%is_set(errc)) then
           if(errc.eq.TEREC_SUCCESS) then
            ptrn=>this%contr_ptrn
+           if(present(conjug)) then
+            conjug=this%contr_ptrn%get_conjugation(errc); if(errc.ne.TEREC_SUCCESS) errc=-3
+           endif
            if(present(alpha)) alpha=this%alpha
+          else
+           errc=-2
           endif
          else
           errc=-1

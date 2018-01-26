@@ -1,7 +1,7 @@
 !ExaTENSOR: Massively Parallel Virtual Processor for Scale-Adaptive Hierarchical Tensor Algebra
 !This is the top level API module of ExaTENSOR (user-level API)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2018/01/25
+!REVISION: 2018/01/26
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -780,9 +780,9 @@
         integer(INTL), intent(in), optional:: dim_extent(1:) !in: dimension extent for each tensor dimension (0 means deferred, to be set later)
         integer(INTD), intent(in), optional:: dim_group(1:)  !in: symmetric group (>=0) for each tensor dimension (0 means default)
         integer(INTD), intent(in), optional:: group_spec(1:) !in: symmetric group specification for non-trivial symmetric groups (see tensor_recursive.F90)
+        class(tens_instr_mng_t), pointer:: tens_instr
         integer(INTD):: trank
         integer(INTL):: ip
-        class(tens_instr_mng_t), pointer:: tens_instr
 
         ierr=EXA_SUCCESS; write(jo,'("#MSG(exatensor): New Instruction: CREATE TENSOR: IP = ")',ADVANCE='NO')
         if(.not.tensor%is_set(ierr)) then
@@ -853,6 +853,7 @@
            else
             ierr=-3
            endif
+           tens_instr=>NULL()
           endif
          else
           ierr=-2
@@ -868,8 +869,8 @@
         implicit none
         integer(INTD):: ierr                       !out: error code
         type(tens_rcrsv_t), intent(inout):: tensor !inout: tensor
-        integer(INTL):: ip
         class(tens_instr_mng_t), pointer:: tens_instr
+        integer(INTL):: ip
 
         ierr=EXA_SUCCESS; write(jo,'("#MSG(exatensor): New Instruction: DESTROY TENSOR: IP = ")',ADVANCE='NO')
         if(tensor%is_set(ierr)) then
@@ -881,13 +882,21 @@
            call tens_instr%tens_instr_ctor(TAVP_INSTR_TENS_DESTROY,ierr,tensor,iid=ip)
            if(ierr.eq.0) then
 !Issue the tensor instruction to TAVP:
-            call issue_new_instruction(tens_instr,ierr); if(ierr.ne.0) ierr=-5
+            call issue_new_instruction(tens_instr,ierr)
+            if(ierr.eq.0) then
+#if !(defined(__GNUC__) && __GNUC__ < 8)
+             call tens_rcrsv_dtor(tensor)
+#endif
+            else
+             ierr=-5
+            endif
            else
             ierr=-4
            endif
           else
            ierr=-3
           endif
+          tens_instr=>NULL()
          else
           ierr=-2
          endif
@@ -1047,20 +1056,84 @@
         write(CONS_OUT,*)'FATAL(exatensor:tensor_add): Not implemented yet!' !`Implement
         return
        end function exatns_tensor_add
-!-------------------------------------------------------------------------------------------------------
-       function exatns_tensor_contract(tensor0,tensor1,tensor2,pattern,factor,restrictions) result(ierr)
-!Operation: tensor0 += tensor1 * tensor2 * factor
+!----------------------------------------------------------------------------------------------------------
+       function exatns_tensor_contract(tensor0,tensor1,tensor2,pattern,prefactor,restrictions) result(ierr)
+!Operation: Tensor contraction: tensor0 += tensor1 * tensor2 * prefactor
         implicit none
         integer(INTD):: ierr
         type(tens_rcrsv_t), intent(inout):: tensor0       !inout: tensor
         type(tens_rcrsv_t), intent(inout):: tensor1       !in: tensor
         type(tens_rcrsv_t), intent(inout):: tensor2       !in: tensor
-        character(*), intent(in):: pattern                !in: symbolic contraction pattern
-        complex(8), intent(in), optional:: factor         !in: scalar factor
-        character(*), intent(in), optional:: restrictions !in: symbolic index restrictions
+        character(*), intent(in):: pattern                !in: symbolic tensor contraction pattern
+        complex(8), intent(in), optional:: prefactor      !in: scalar prefactor
+        character(*), intent(in), optional:: restrictions !in: symbolic specification of operational index restrictions
+        class(tens_instr_mng_t), pointer:: tens_instr
+        type(tens_contraction_t):: tens_contr
+        integer(INTD):: errc,cpl,conj_bits,contr_ptrn(1:MAX_TENSOR_RANK*2)
+        integer(INTL):: ip
+        logical:: check
 
-        ierr=EXA_SUCCESS
-        write(CONS_OUT,*)'FATAL(exatensor:tensor_contract): Not implemented yet!' !`Implement
+        ierr=EXA_SUCCESS; write(jo,'("#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP = ")',ADVANCE='NO')
+        check=tensor0%is_set(errc); if(errc.ne.TEREC_SUCCESS.and.ierr.eq.EXA_SUCCESS) ierr=-12
+        check=tensor1%is_set(errc).and.check; if(errc.ne.TEREC_SUCCESS.and.ierr.eq.EXA_SUCCESS) ierr=-11
+        check=tensor2%is_set(errc).and.check; if(errc.ne.TEREC_SUCCESS.and.ierr.eq.EXA_SUCCESS) ierr=-10
+        if(check.and.ierr.eq.EXA_SUCCESS) then
+!Convert the symbolic tensor contraction pattern into a digital one used by TAL-SH:
+         call get_contr_pattern(pattern,contr_ptrn,cpl,ierr,conj_bits) !conj_bits: tensor conjugation bits {0:D,1:L,2:R}
+         if(ierr.eq.0) then
+!Construct the tensor operation object:
+          call tens_contr%set_argument(tensor0,ierr)
+          if(ierr.eq.TEREC_SUCCESS) then
+           call tens_contr%set_argument(tensor1,ierr)
+           if(ierr.eq.TEREC_SUCCESS) then
+            call tens_contr%set_argument(tensor2,ierr)
+            if(ierr.eq.TEREC_SUCCESS) then
+             if(present(prefactor)) then
+              call tens_contr%set_contr_ptrn(contr_ptrn(1:cpl),ierr,prefactor,conjug=conj_bits)
+             else
+              call tens_contr%set_contr_ptrn(contr_ptrn(1:cpl),ierr,conjug=conj_bits)
+             endif
+             if(ierr.eq.TEREC_SUCCESS) then
+              if(present(restrictions)) then
+               !`Decode and set the operational index restrictions
+              endif
+             else
+              ierr=-9
+             endif
+            else
+             ierr=-8
+            endif
+           else
+            ierr=-7
+           endif
+          else
+           ierr=-6
+          endif
+         else
+          ierr=-5
+         endif
+!Construct the tensor instruction:
+         if(ierr.eq.EXA_SUCCESS) then
+          tens_instr=>add_new_instruction(ip,ierr)
+          if(ierr.eq.0) then
+           write(jo,'(i11)') ip !new instruction id number
+           call tens_instr%tens_instr_ctor(TAVP_INSTR_TENS_CONTRACT,ierr,tens_contr,iid=ip)
+           if(ierr.eq.0) then
+!Issue the tensor instruction to TAVP:
+            call issue_new_instruction(tens_instr,ierr); if(ierr.ne.0) ierr=-4
+           else
+            ierr=-3
+           endif
+          else
+           ierr=-2
+          endif
+          tens_instr=>NULL()
+         endif
+!Destroy the tensor operation object:
+         call tens_contraction_dtor(tens_contr)
+        else
+         if(ierr.eq.EXA_SUCCESS) ierr=-1
+        endif
         return
        end function exatns_tensor_contract
 !---------------------------------------------------------------------------------

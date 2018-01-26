@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/01/23
+!REVISION: 2018/01/26
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -384,6 +384,7 @@
          integer(INTD), private:: ddim=-1                     !destination tensor rank
          integer(INTD), private:: ldim=-1                     !left tensor rank
          integer(INTD), private:: rdim=-1                     !right tensor rank
+         integer(INTD), private:: conjug_bits=0               !tensor argument conjugation (three) bits: {0:D,1:L,2:R}
          logical, private:: ind_restr_set=.FALSE.             !TRUE if index permutational restrictions were set
          integer(INTD), private:: dind_pos(1:MAX_TENSOR_RANK) !corresponding positions for indices of the destination tensor
          integer(INTD), private:: lind_pos(1:MAX_TENSOR_RANK) !corresponding positions for indices of the left tensor
@@ -392,18 +393,20 @@
          integer(INTD), private:: lind_res(1:MAX_TENSOR_RANK) !permutational dependencies for the left tensor indices (y=lind_res(x): position x depends on position y on the left, -1 first position)
          integer(INTD), private:: rind_res(1:MAX_TENSOR_RANK) !permutational dependencies for the right tensor indices (y=rind_res(x): position x depends on position y on the left, -1 first position)
          contains
-          procedure, public:: clean=>ContrPtrnExtClean                 !cleans the tensor contraction pattern to an empty state
-          procedure, public:: is_set=>ContrPtrnExtIsSet                !returns TRUE of the tensor contraction pattern is set
-          procedure, public:: set_index_corr=>ContrPtrnExtSetIndexCorr !sets index correspondence pattern (contraction pattern): basic ctor
-          procedure, public:: set_store_symm=>ContrPtrnExtSetStoreSymm !sets index permutational symmetry restrictions due to tensor storage: post-ctor
-          procedure, public:: set_operl_symm=>ContrPtrnExtSetOperlSymm !sets index permutational symmetry restrictions due to tensor operation: post-ctor
-          procedure, public:: break_dim_symm=>ContrPtrnExtBreakDimSymm !breaks the dimension symmetry for a specific tensor dimension
-          procedure, public:: unpack=>ContrPtrnExtUnpack               !unpacks the object from a packet
-          procedure, public:: pack=>ContrPtrnExtPack                   !packs the object into a packet
-          procedure, public:: get_contr_ptrn=>ContrPtrnExtGetContrPtrn !returns the classical (basic) digital contraction pattern used by TAL-SH for example
-          procedure, public:: get_dim_symmetry=>ContrPtrnExtGetDimSymmetry !returns the symmetric restrictions for a specific tensor argument
-          procedure, public:: print_it=>ContrPtrnExtPrintIt            !prints the extended tensor contraction
-          final:: contr_ptrn_ext_dtor                                  !dtor
+          procedure, public:: clean=>ContrPtrnExtClean                    !cleans the tensor contraction pattern to an empty state
+          procedure, public:: is_set=>ContrPtrnExtIsSet                   !returns TRUE of the tensor contraction pattern is set
+          procedure, public:: set_index_corr=>ContrPtrnExtSetIndexCorr    !sets index correspondence pattern (contraction pattern): basic ctor
+          procedure, public:: set_store_symm=>ContrPtrnExtSetStoreSymm    !sets index permutational symmetry restrictions due to tensor storage: post-ctor
+          procedure, public:: set_operl_symm=>ContrPtrnExtSetOperlSymm    !sets index permutational symmetry restrictions due to tensor operation: post-ctor
+          procedure, public:: break_dim_symm=>ContrPtrnExtBreakDimSymm    !breaks the dimension symmetry for a specific tensor dimension
+          procedure, public:: set_conjugation=>ContrPtrnExtSetConjugation !sets tensor argument conjugation status
+          procedure, public:: unpack=>ContrPtrnExtUnpack                  !unpacks the object from a packet
+          procedure, public:: pack=>ContrPtrnExtPack                      !packs the object into a packet
+          procedure, public:: get_contr_ptrn=>ContrPtrnExtGetContrPtrn    !returns the classical (basic) digital contraction pattern used by TAL-SH for example
+          procedure, public:: get_dim_symmetry=>ContrPtrnExtGetDimSymmetry!returns the symmetric restrictions for a specific tensor argument
+          procedure, public:: get_conjugation=>ContrPtrnExtGetConjugation !returns tensor argument conjugation status
+          procedure, public:: print_it=>ContrPtrnExtPrintIt               !prints the extended tensor contraction
+          final:: contr_ptrn_ext_dtor                                     !dtor
         end type contr_ptrn_ext_t
  !Tensor transformation (includes initialization and prefactor scaling as specific cases):
         type, extends(tens_operation_t), public:: tens_transformation_t
@@ -455,7 +458,7 @@
           procedure, public:: pack=>TensContractionPack                    !packs the object into a packet
           procedure, public:: get_prefactor=>TensContractionGetPrefactor   !returns the scalar prefactor
           procedure, public:: get_ext_contr_ptrn=>TensContractionGetExtContrPtrn !returns a pointer to the extended tensor contraction pattern
-          procedure, public:: get_contr_ptrn=>TensContractionGetContrPtrn  !returns the classical (basic) digital contraction pattern used by TAL-SH for example
+          procedure, public:: get_contr_ptrn=>TensContractionGetContrPtrn  !returns the classical (basic) digital tensor contraction pattern used by TAL-SH
           procedure, private:: import_replace=>TensContractionImportReplace!creates a new tensor contraction by replacing tensor arguments in an existing tensor contraction (plus symmetry adjustment)
           procedure, private:: TensContractionSplitFunc                    !splits the tensor contraction into a list of subtensor contractions based on the externally provided tensor splitting function
           procedure, private:: TensContractionSplitIntern                  !splits the tensor contraction into a list of subtensor contractions based on the internal lists of constituent argument subtensors
@@ -733,10 +736,12 @@
         private ContrPtrnExtSetStoreSymm
         private ContrPtrnExtSetOperlSymm
         private ContrPtrnExtBreakDimSymm
+        private ContrPtrnExtSetConjugation
         private ContrPtrnExtUnpack
         private ContrPtrnExtPack
         private ContrPtrnExtGetContrPtrn
         private ContrPtrnExtGetDimSymmetry
+        private ContrPtrnExtGetConjugation
         private ContrPtrnExtPrintIt
         public contr_ptrn_ext_dtor
  !tens_transformation_t:
@@ -6033,7 +6038,7 @@
          integer(INTD), intent(out), optional:: ierr   !out: error code
 
          this%ddim=-1; this%ldim=-1; this%rdim=-1
-         this%ind_restr_set=.FALSE.
+         this%conjug_bits=0; this%ind_restr_set=.FALSE.
          if(present(ierr)) ierr=TEREC_SUCCESS
          return
         end subroutine ContrPtrnExtClean
@@ -6092,7 +6097,7 @@
            if(errc.eq.TEREC_SUCCESS) then
             this%ddim=nd; this%ldim=nl; this%rdim=nr
             this%dind_res(1:nd)=0; this%lind_res(1:nl)=0; this%rind_res(1:nr)=0 !clear restrictions
-            this%ind_restr_set=.FALSE.
+            this%conjug_bits=0; this%ind_restr_set=.FALSE.
            endif
           endif
          else
@@ -6288,6 +6293,45 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine ContrPtrnExtBreakDimSymm
+!----------------------------------------------------------------------
+        subroutine ContrPtrnExtSetConjugation(this,conjug,ierr,arg_num)
+!Sets the tensor argument conjugation flags. If the argument number is
+!provided, <conjug>={0|1} sets the conjugation status for that specific
+!tensor argument. If the argument number is not provided, <conjug> is
+!interpreted as three junior conjugation bits: {0:D,1:L,2:R}.
+         implicit none
+         class(contr_ptrn_ext_t), intent(inout):: this !inout: defined extended tensor contraction pattern
+         integer(INTD), intent(in):: conjug            !in: tensor argument conjugation flag(s)
+         integer(INTD), intent(out), optional:: ierr   !out: error code
+         integer(INTD), intent(in), optional:: arg_num !in: tensort argument number: {0,1,2}
+         integer(INTD):: errc
+
+         if(this%is_set(errc)) then
+          if(errc.eq.TEREC_SUCCESS) then
+           if(present(arg_num)) then
+            if(arg_num.ge.0.and.arg_num.le.2) then !tensor contraction has three arguments
+             if(conjug.eq.0) then
+              this%conjug_bits=ibclr(this%conjug_bits,arg_num)
+             else
+              this%conjug_bits=ibset(this%conjug_bits,arg_num)
+             endif
+            else
+             errc=TEREC_INVALID_ARGS
+            endif
+           else
+            if(conjug.ge.0.and.conjug.lt.8) then !only the first three bits count because a tensor contraction involves three arguments
+             this%conjug_bits=conjug
+            else
+             errc=TEREC_INVALID_ARGS
+            endif
+           endif
+          endif
+         else
+          if(errc.eq.TEREC_SUCCESS) errc=TEREC_INVALID_REQUEST
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine ContrPtrnExtSetConjugation
 !------------------------------------------------------
         subroutine ContrPtrnExtUnpack(this,packet,ierr)
 !Unpacks an object from a packet.
@@ -6300,6 +6344,7 @@
          call unpack_builtin(packet,this%ddim,errc)
          if(errc.eq.PACK_SUCCESS) call unpack_builtin(packet,this%ldim,errc)
          if(errc.eq.PACK_SUCCESS) call unpack_builtin(packet,this%rdim,errc)
+         if(errc.eq.PACK_SUCCESS) call unpack_builtin(packet,this%conjug_bits,errc)
          if(errc.eq.PACK_SUCCESS) call unpack_builtin(packet,this%ind_restr_set,errc)
          if(errc.eq.PACK_SUCCESS) call unpack_builtin(packet,this%dind_pos,this%ddim,errc)
          if(errc.eq.PACK_SUCCESS) call unpack_builtin(packet,this%lind_pos,this%ldim,errc)
@@ -6322,6 +6367,7 @@
          call pack_builtin(packet,this%ddim,errc)
          if(errc.eq.PACK_SUCCESS) call pack_builtin(packet,this%ldim,errc)
          if(errc.eq.PACK_SUCCESS) call pack_builtin(packet,this%rdim,errc)
+         if(errc.eq.PACK_SUCCESS) call pack_builtin(packet,this%conjug_bits,errc)
          if(errc.eq.PACK_SUCCESS) call pack_builtin(packet,this%ind_restr_set,errc)
          if(errc.eq.PACK_SUCCESS) call pack_builtin(packet,this%dind_pos,this%ddim,errc)
          if(errc.eq.PACK_SUCCESS) call pack_builtin(packet,this%lind_pos,this%ldim,errc)
@@ -6389,6 +6435,36 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine ContrPtrnExtGetDimSymmetry
+!----------------------------------------------------------------------------
+        function ContrPtrnExtGetConjugation(this,ierr,arg_num) result(conjug)
+!Returns the conjugation flag for each tensor argument. If the argument number
+!is not specified, returns all conjugation flags packed as bits {0:D,1:L,2:R}.
+         implicit none
+         integer(INTD):: conjug                        !out: conjugation flag {0,1}, or all flags as bits {0:D,1:L,2:R}
+         class(contr_ptrn_ext_t), intent(in):: this    !in: extended tensor contraction pattern
+         integer(INTD), intent(out), optional:: ierr   !out: error code
+         integer(INTD), intent(in), optional:: arg_num !in: tensor argument number {0,1,2}
+         integer(INTD):: errc
+
+         conjug=0
+         if(this%is_set(errc)) then
+          if(errc.eq.TEREC_SUCCESS) then
+           if(present(arg_num)) then
+            if(arg_num.ge.0.and.arg_num.le.2) then
+             if(btest(this%conjug_bits,arg_num)) conjug=1
+            else
+             errc=TEREC_INVALID_ARGS
+            endif
+           else
+            conjug=this%conjug_bits !return all flags as bits: {0:D,1:L,2:R}
+           endif
+          endif
+         else
+          if(errc.eq.TEREC_SUCCESS) errc=TEREC_INVALID_REQUEST
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function ContrPtrnExtGetConjugation
 !---------------------------------------------------------------
         subroutine ContrPtrnExtPrintIt(this,ierr,dev_id,nspaces)
 !Prints the extended tensor contraction.
@@ -6957,17 +7033,19 @@
          if(present(ierr)) ierr=errc
          return
         end function TensContractionArgsFull
-!----------------------------------------------------------------------------
-        subroutine TensContractionSetContrPtrnBas(this,contr_ptrn,ierr,alpha)
+!-----------------------------------------------------------------------------------
+        subroutine TensContractionSetContrPtrnBas(this,contr_ptrn,ierr,alpha,conjug)
 !Sets the extended tensor contraction pattern (all tensor arguments must have been set already).
 !Additionally, if tensor arguments have permutational symmetries, they will be incorporated into
 !the extended tensor contraction pattern. Later on, additional permutational symmetries can be
 !imposed onto non-symmetric indices. An optional tensor contraction prefactor <alpha> can be supplied.
+!Optional tensor argument conjugation bits can be supplied as well: {0:D,1:L,2:R}.
          implicit none
          class(tens_contraction_t), intent(inout):: this !inout: tensor contraction
          integer(INTD), intent(in):: contr_ptrn(1:*)     !in: basic digital tensor contraction pattern (see TAL-SH specs)
          integer(INTD), intent(out), optional:: ierr     !out: error code
          complex(8), intent(in), optional:: alpha        !in: complex tensor contraction perfactor (defaults to 1.0)
+         integer(INTD), intent(in), optional:: conjug    !in: tensor argument conjugation bits (for complex tensors): {0:D,1:L,2:R}
          integer(INTD):: errc,nd,nl,nr,m,i,l,grs,restr_dims(1:MAX_TENSOR_RANK)
          class(tens_rcrsv_t), pointer:: dtrp,ltrp,rtrp
          class(tens_header_t), pointer:: thp
@@ -7030,9 +7108,10 @@
                    endif
                   endif
                  endif
- !Tensor contraction prefactor:
+ !Tensor contraction prefactor and tensor conjugation bits:
                  if(errc.eq.TEREC_SUCCESS) then
                   if(present(alpha)) then; this%alpha=alpha; else; this%alpha=(1d0,0d0); endif
+                  if(present(conjug)) call this%contr_ptrn%set_conjugation(conjug,errc)
                  endif
                 else
                  if(errc.eq.TEREC_SUCCESS) errc=TEREC_INVALID_REQUEST
