@@ -1,7 +1,7 @@
 !ExaTENSOR: Massively Parallel Virtual Processor for Scale-Adaptive Hierarchical Tensor Algebra
 !This is the top level API module of ExaTENSOR (user-level API)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2018/01/24
+!REVISION: 2018/01/25
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -145,6 +145,8 @@
        private exatns_tensor_init_method  !tensor initialization by a user-defined method
  !Internal:
        private tavp_role_rank
+       private add_new_instruction
+       private issue_new_instruction
 
       contains
 !IMPLEMENTATION:
@@ -563,68 +565,47 @@
         integer(INTD):: ierr !out: error code
         integer(INT_MPI):: errc
         integer(INTL):: ip
-        class(*), pointer:: uptr
-        type(tens_instr_mng_t), pointer:: tens_instr
-        type(tens_instr_mng_t), target:: tens_instr_empty
-        type(comm_handle_t):: comm_hl
-        type(obj_pack_t):: instr_packet
-        type(pack_env_t):: bytecode
+        class(tens_instr_mng_t), pointer:: tens_instr
 
         ierr=EXA_SUCCESS; write(jo,'("#MSG(exatensor): New Instruction: STOP ExaTENSOR: IP = ")',ADVANCE='NO')
-!Send the stop signal to the root TAVP-MNG and wait for completion:
-        call bytecode%reserve_mem(ierr)
+!Send the STOP instruction to the root TAVP-MNG and wait for completion:
+        tens_instr=>add_new_instruction(ip,ierr)
         if(ierr.eq.0) then
-         ierr=instr_log%append(tens_instr_empty); if(ierr.ne.GFC_SUCCESS) ierr=-22
-         if(ierr.eq.0) then; ierr=instr_log%reset_back(); if(ierr.ne.GFC_SUCCESS) ierr=-21; endif
+         write(jo,'(i11)') ip !new instruction id number
+         call tens_instr%tens_instr_ctor(TAVP_INSTR_CTRL_STOP,ierr,iid=ip)
          if(ierr.eq.0) then
-          ip=instr_log%get_offset(ierr); write(jo,'(i11)') ip
-          if(ierr.eq.0) then
-           uptr=>instr_log%element_value(ip,ierr)
-           if(ierr.eq.0) then
-            tens_instr=>NULL(); select type(uptr); type is(tens_instr_mng_t); tens_instr=>uptr; end select
-            if(.not.associated(tens_instr)) ierr=-20
-           else
-            ierr=-19
-           endif
-          else
-           ierr=-18
-          endif
-         endif
-         if(ierr.eq.0) then; call tens_instr%tens_instr_ctor(TAVP_INSTR_CTRL_STOP,ierr,iid=ip); if(ierr.ne.0) ierr=-17; endif
-         if(ierr.eq.0) then; call bytecode%acquire_packet(instr_packet,ierr); if(ierr.ne.0) ierr=-16; endif
-         if(ierr.eq.0) then; call tens_instr%encode(instr_packet,ierr); if(ierr.ne.0) ierr=-15; endif
-         if(ierr.eq.0) then; call bytecode%seal_packet(ierr); if(ierr.ne.0) ierr=-14; endif
-         if(ierr.eq.0) then; call bytecode%send(0,comm_hl,ierr,comm=drv_mng_comm); if(ierr.ne.0) ierr=-13; endif
-         if(ierr.eq.0) then; call comm_hl%wait(ierr); if(ierr.ne.0) ierr=-12; endif
-         call comm_hl%clean(errc); if(errc.ne.0.and.ierr.eq.0) ierr=-11
-         call bytecode%destroy(errc); if(errc.ne.0.and.ierr.eq.0) ierr=-10
-         call tens_instr%set_status(DS_INSTR_RETIRED,errc); if(errc.ne.DSVP_SUCCESS.and.ierr.eq.0) ierr=-9
-         tens_instr=>NULL()
-         errc=instr_log%delete_all(); if(errc.ne.GFC_SUCCESS.and.ierr.eq.0) ierr=-8
-         errc=instr_log%release(); if(errc.ne.GFC_SUCCESS.and.ierr.eq.0) ierr=-7
+          call issue_new_instruction(tens_instr,ierr); if(ierr.ne.0) ierr=-11
+          call tens_instr%set_status(DS_INSTR_RETIRED,errc); if(errc.ne.DSVP_SUCCESS.and.ierr.eq.0) ierr=-10
+          tens_instr=>NULL()
+          errc=instr_log%delete_all(); if(errc.ne.GFC_SUCCESS.and.ierr.eq.0) ierr=-9
+          errc=instr_log%release(); if(errc.ne.GFC_SUCCESS.and.ierr.eq.0) ierr=-8
 !Mark the ExaTENSOR runtime is off:
-         exatns_rt_status=exatns_rt_status_t(DSVP_STAT_OFF,ierr,0,ip+1_INTL)
+          exatns_rt_status=exatns_rt_status_t(DSVP_STAT_OFF,ierr,0,ip+1_INTL)
 !Sync with others:
-         write(jo,'()')
-         write(jo,'("###EXATENSOR FINISHED PROCESS ",i9,"/",i9,": Status = ",i11,": Syncing ... ")',ADVANCE='NO')&
-              &dil_global_process_id(),dil_global_comm_size(),ierr
-         call dil_global_comm_barrier(errc)
-         if(errc.eq.0) then; write(jo,'("Ok")'); else; write(jo,'("Failed")'); ierr=-6; endif
-!Free the role specific MPI communicators:
-         if(drv_mng_comm.ne.MPI_COMM_NULL) then
-          call MPI_Comm_free(drv_mng_comm,errc); if(errc.ne.0.and.ierr.eq.0) ierr=-5
-         endif
-         if(mng_wrk_comm.ne.MPI_COMM_NULL) then
-          call MPI_Comm_free(mng_wrk_comm,errc); if(errc.ne.0.and.ierr.eq.0) ierr=-4
-         endif
-         if(role_comm.ne.MPI_COMM_NULL) then
-          call MPI_Comm_free(role_comm,errc); if(errc.ne.0.and.ierr.eq.0) ierr=-3
-         endif
+          write(jo,'()')
+          write(jo,'("###EXATENSOR FINISHED PROCESS ",i9,"/",i9,": Status = ",i11,": Syncing ... ")',ADVANCE='NO')&
+               &dil_global_process_id(),dil_global_comm_size(),ierr
+          call dil_global_comm_barrier(errc)
+          if(errc.eq.0) then; write(jo,'("Ok")'); else; write(jo,'("Failed")'); if(ierr.eq.0) ierr=-7; endif
+!Free the role-specific MPI communicators:
+          if(drv_mng_comm.ne.MPI_COMM_NULL) then
+           call MPI_Comm_free(drv_mng_comm,errc); if(errc.ne.0.and.ierr.eq.0) ierr=-6
+          endif
+          if(mng_wrk_comm.ne.MPI_COMM_NULL) then
+           call MPI_Comm_free(mng_wrk_comm,errc); if(errc.ne.0.and.ierr.eq.0) ierr=-5
+          endif
+          if(role_comm.ne.MPI_COMM_NULL) then
+           call MPI_Comm_free(role_comm,errc); if(errc.ne.0.and.ierr.eq.0) ierr=-4
+          endif
 !Finish the MPI process:
-         call dil_process_finish(errc); if(errc.ne.0.and.ierr.eq.0) ierr=-2
+          call dil_process_finish(errc); if(errc.ne.0.and.ierr.eq.0) ierr=-3
+         else
+          ierr=-2
+         endif
         else
          ierr=-1
         endif
+        if(ierr.ne.0) write(jo,'(" Failed!")')
         return
        end function exatns_stop
 !-------------------------------------------------------------
@@ -796,14 +777,16 @@
         integer(INTD), intent(in):: hspaces(1:)              !in: registered id of the defining vector space for each tensor dimension
         integer(INTL), intent(in):: subspaces(1:)            !in: id of the defining subspace for each tensor dimension
         integer(INTD), intent(in):: data_kind                !in: data kind of tensor elements: {R4,R8,C4,C8}
-        integer(INTL), intent(in), optional:: dim_extent(1:) !in: dimension extent for each tensor dimension (0 means deferred)
+        integer(INTL), intent(in), optional:: dim_extent(1:) !in: dimension extent for each tensor dimension (0 means deferred, to be set later)
         integer(INTD), intent(in), optional:: dim_group(1:)  !in: symmetric group (>=0) for each tensor dimension (0 means default)
         integer(INTD), intent(in), optional:: group_spec(1:) !in: symmetric group specification for non-trivial symmetric groups (see tensor_recursive.F90)
-        integer(INTD):: errc,trank
+        integer(INTD):: trank
+        integer(INTL):: ip
+        class(tens_instr_mng_t), pointer:: tens_instr
 
-        ierr=EXA_SUCCESS
-        if(.not.tensor%is_set(errc)) then
-         if(errc.eq.TEREC_SUCCESS) then
+        ierr=EXA_SUCCESS; write(jo,'("#MSG(exatensor): New Instruction: CREATE TENSOR: IP = ")',ADVANCE='NO')
+        if(.not.tensor%is_set(ierr)) then
+         if(ierr.eq.TEREC_SUCCESS) then
 !Construct the tensor object:
           trank=size(hspaces) !tensor rank (number of tensor dimensions)
           if(size(subspaces).eq.trank) then
@@ -812,58 +795,70 @@
              if(present(dim_group)) then
               if(size(dim_group).eq.trank) then
                if(present(group_spec)) then
-                call tensor%tens_rcrsv_ctor(tens_name,subspaces,hspaces,errc,dim_extent,dim_group,group_spec)
-                if(errc.ne.TEREC_SUCCESS) ierr=EXA_ERR_UNABLE_COMPLETE
+                call tensor%tens_rcrsv_ctor(tens_name,subspaces,hspaces,ierr,dim_extent,dim_group,group_spec)
+                if(ierr.ne.TEREC_SUCCESS) ierr=-17
                else
-                ierr=EXA_ERR_INVALID_ARGS
+                ierr=-16
                endif
               else
-               ierr=EXA_ERR_INVALID_ARGS
+               ierr=-15
               endif
              else
               if(.not.present(group_spec)) then
-               call tensor%tens_rcrsv_ctor(tens_name,subspaces,hspaces,errc,dim_extent)
-               if(errc.ne.TEREC_SUCCESS) ierr=EXA_ERR_UNABLE_COMPLETE
+               call tensor%tens_rcrsv_ctor(tens_name,subspaces,hspaces,ierr,dim_extent)
+               if(ierr.ne.TEREC_SUCCESS) ierr=-14
               else
-               ierr=EXA_ERR_INVALID_ARGS
+               ierr=-13
               endif
              endif
             else
-             ierr=EXA_ERR_INVALID_ARGS
+             ierr=-12
             endif
            else
             if(present(dim_group)) then
              if(size(dim_group).eq.trank) then
               if(present(group_spec)) then
-               call tensor%tens_rcrsv_ctor(tens_name,subspaces,hspaces,errc,dim_group=dim_group,group_spec=group_spec)
-               if(errc.ne.TEREC_SUCCESS) ierr=EXA_ERR_UNABLE_COMPLETE
+               call tensor%tens_rcrsv_ctor(tens_name,subspaces,hspaces,ierr,dim_group=dim_group,group_spec=group_spec)
+               if(ierr.ne.TEREC_SUCCESS) ierr=-11
               else
-               ierr=EXA_ERR_INVALID_ARGS
+               ierr=-10
               endif
              else
-              ierr=EXA_ERR_INVALID_ARGS
+              ierr=-9
              endif
             else
              if(.not.present(group_spec)) then
-              call tensor%tens_rcrsv_ctor(tens_name,subspaces,hspaces,errc)
-              if(errc.ne.TEREC_SUCCESS) ierr=EXA_ERR_UNABLE_COMPLETE
+              call tensor%tens_rcrsv_ctor(tens_name,subspaces,hspaces,ierr)
+              if(ierr.ne.TEREC_SUCCESS) ierr=-8
              else
-              ierr=EXA_ERR_INVALID_ARGS
+              ierr=-7
              endif
             endif
            endif
           else
-           ierr=EXA_ERR_INVALID_ARGS
+           ierr=-6
           endif
 !Construct the tensor instruction:
-
+          if(ierr.eq.0) then
+           tens_instr=>add_new_instruction(ip,ierr)
+           if(ierr.eq.0) then
+            write(jo,'(i11)') ip !new instruction id number
+            call tens_instr%tens_instr_ctor(TAVP_INSTR_TENS_CREATE,ierr,tensor,iid=ip)
+            if(ierr.eq.0) then
 !Issue the tensor instruction to TAVP:
-
+             call issue_new_instruction(tens_instr,ierr); if(ierr.ne.0) ierr=-5
+            else
+             ierr=-4
+            endif
+           else
+            ierr=-3
+           endif
+          endif
          else
-          ierr=EXA_ERR_UNABLE_COMPLETE
+          ierr=-2
          endif
         else
-         ierr=EXA_ERR_INVALID_REQ
+         ierr=-1
         endif
         return
        end function exatns_tensor_create
@@ -1115,5 +1110,89 @@
         endif
         return
        end function tavp_role_rank
+!-------------------------------------------------------------
+       function add_new_instruction(ip,ierr) result(new_instr)
+!Adds a new (empty) instruction into the instruction log.
+        implicit none
+        class(tens_instr_mng_t), pointer:: new_instr !out: pointer to the newly added (empty) instruction
+        integer(INTL), intent(out):: ip              !out: instruction id number
+        integer(INTD), intent(out), optional:: ierr  !out: error code
+        integer(INTD):: errc
+        class(*), pointer:: uptr
+        type(tens_instr_mng_t), target:: tens_instr_empty
+
+        ip=-1_INTL; new_instr=>NULL()
+        errc=instr_log%append(tens_instr_empty)
+        if(errc.eq.GFC_SUCCESS) then
+         errc=instr_log%reset_back()
+         if(errc.eq.GFC_SUCCESS) then
+          ip=instr_log%get_offset(errc)
+          if(errc.eq.GFC_SUCCESS.and.ip.ge.0) then
+           uptr=>instr_log%element_value(ip,errc)
+           if(errc.eq.GFC_SUCCESS) then
+            select type(uptr); class is(tens_instr_mng_t); new_instr=>uptr; end select
+            if(.not.associated(new_instr)) errc=-5 !trap
+            uptr=>NULL()
+           else
+            errc=-4
+           endif
+          else
+           errc=-3
+          endif
+         else
+          errc=-2
+         endif
+        else
+         errc=-1
+        endif
+        if(present(ierr)) ierr=errc
+        return
+       end function add_new_instruction
+!------------------------------------------------------
+       subroutine issue_new_instruction(new_instr,ierr)
+!Issues a new (defined) instruction to the root TAVP-MNG.
+        implicit none
+        class(tens_instr_mng_t), intent(in):: new_instr !in: new instruction
+        integer(INTD), intent(out), optional:: ierr     !out: error code
+        integer(INTD):: errc,ier
+        type(pack_env_t):: bytecode
+        type(obj_pack_t):: instr_packet
+        type(comm_handle_t):: comm_hl
+
+        call bytecode%reserve_mem(errc)
+        if(errc.eq.0) then
+         call bytecode%acquire_packet(instr_packet,errc)
+         if(errc.eq.0) then
+          call new_instr%encode(instr_packet,errc)
+          if(errc.eq.0) then
+           call bytecode%seal_packet(errc)
+           if(errc.eq.0) then
+            call bytecode%send(0,comm_hl,errc,comm=drv_mng_comm)
+            if(errc.eq.0) then
+             call comm_hl%wait(errc)
+             if(errc.eq.0) then
+              call comm_hl%clean(errc); if(errc.ne.0) errc=-8
+             else
+              errc=-7
+             endif
+            else
+             errc=-6
+            endif
+           else
+            errc=-5
+           endif
+          else
+           errc=-4
+          endif
+         else
+          errc=-3
+         endif
+         call bytecode%destroy(ier); if(ier.ne.0.and.errc.eq.0) errc=-2
+        else
+         errc=-1
+        endif
+        if(present(ierr)) ierr=errc
+        return
+       end subroutine issue_new_instruction
 
       end module exatensor
