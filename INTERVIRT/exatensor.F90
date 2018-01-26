@@ -868,9 +868,32 @@
         implicit none
         integer(INTD):: ierr                       !out: error code
         type(tens_rcrsv_t), intent(inout):: tensor !inout: tensor
+        integer(INTL):: ip
+        class(tens_instr_mng_t), pointer:: tens_instr
 
-        ierr=EXA_SUCCESS
-        write(CONS_OUT,*)'FATAL(exatensor:tensor_destroy): Not implemented yet!' !`Implement
+        ierr=EXA_SUCCESS; write(jo,'("#MSG(exatensor): New Instruction: DESTROY TENSOR: IP = ")',ADVANCE='NO')
+        if(tensor%is_set(ierr)) then
+         if(ierr.eq.TEREC_SUCCESS) then
+!Construct the tensor instruction:
+          tens_instr=>add_new_instruction(ip,ierr)
+          if(ierr.eq.0) then
+           write(jo,'(i11)') ip !new instruction id number
+           call tens_instr%tens_instr_ctor(TAVP_INSTR_TENS_DESTROY,ierr,tensor,iid=ip)
+           if(ierr.eq.0) then
+!Issue the tensor instruction to TAVP:
+            call issue_new_instruction(tens_instr,ierr); if(ierr.ne.0) ierr=-5
+           else
+            ierr=-4
+           endif
+          else
+           ierr=-3
+          endif
+         else
+          ierr=-2
+         endif
+        else
+         ierr=-1
+        endif
         return
        end function exatns_tensor_destroy
 !---------------------------------------------------------------------------------
