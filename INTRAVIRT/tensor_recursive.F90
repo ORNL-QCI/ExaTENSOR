@@ -377,6 +377,7 @@
           procedure, public:: invert=>PermutationInvert        !inverts the permutation (in-place)
           procedure, public:: unpack=>PermutationUnpack        !unpacks the permutation from a packet
           procedure, public:: pack=>PermutationPack            !packs the permutation into a packet
+          procedure, public:: print_it=>PermutationPrintIt     !prints
           final:: permutation_dtor                             !dtor
         end type permutation_t
  !Extended digital tensor contraction pattern:
@@ -728,6 +729,7 @@
         private PermutationInvert
         private PermutationUnpack
         private PermutationPack
+        private PermutationPrintIt
         public permutation_dtor
  !contr_ptrn_ext_t:
         private ContrPtrnExtClean
@@ -6021,6 +6023,25 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine PermutationPack
+!--------------------------------------------------------------
+        subroutine PermutationPrintIt(this,ierr,dev_id,nspaces)
+         implicit none
+         class(permutation_t), intent(in):: this
+         integer(INTD), intent(out), optional:: ierr
+         integer(INTD), intent(in), optional:: dev_id
+         integer(INTD), intent(in), optional:: nspaces
+         integer(INTD):: errc,j,devo,nsp
+
+         errc=TEREC_SUCCESS
+         devo=6; if(present(dev_id)) devo=dev_id
+         nsp=0; if(present(nspaces)) nsp=nspaces
+         do j=1,nsp; write(devo,'(" ")',ADVANCE='NO'); enddo
+         write(devo,'("(",i2,"){")',ADVANCE='NO') this%prm(0) !sign
+         write(devo,'(99(i2,","))') this%prm(1:this%length) !permutation
+         write(devo,'("}")')
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine PermutationPrintIt
 !----------------------------------------
         subroutine permutation_dtor(this)
          implicit none

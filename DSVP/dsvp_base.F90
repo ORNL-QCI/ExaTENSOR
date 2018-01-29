@@ -1,6 +1,6 @@
 !Domain-specific virtual processor (DSVP): Abstract base module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/12/04
+!REVISION: 2018/01/29
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -123,7 +123,6 @@
         type, abstract, public:: ds_oprnd_t
          integer(INTD), private:: stat=DS_OPRND_EMPTY       !current status of the domain-specific operand: {DS_OPRND_EMPTY,DS_OPRND_DEFINED,DS_OPRND_PRESENT}
          integer(INTD), private:: in_route=DS_OPRND_NO_COMM !communication status: {DS_OPRND_NO_COMM,DS_OPRND_FETCHING,DS_OPRND_UPLOADING}
-        !integer(INTD), private:: owner_id=-1               !id of the DSVP owning the DS operand data (expected to be nonnegative)
          contains
           procedure(ds_oprnd_query_i), deferred, public:: is_located !checks whether the domain-specific operand has been located
           procedure(ds_oprnd_query_i), deferred, public:: is_remote  !checks whether the domain-specific operand is local or remote
@@ -134,6 +133,7 @@
           procedure(ds_oprnd_sync_i), deferred, public:: sync        !synchronizes the currently pending communication on the domain-specific operand (either test or wait)
           procedure(ds_oprnd_self_i), deferred, public:: release     !destroys the present local copy of the domain-specific operand (releases local resources!), but the operand will stay defined
           procedure(ds_oprnd_self_i), deferred, public:: destruct    !performs complete destruction back to an empty (undefined) state
+          procedure(ds_oprnd_print_i), deferred, public:: print_it   !prints
           procedure, public:: is_active=>DSOprndIsActive               !returns TRUE if the domain-specific operand is active (defined and maybe present)
           procedure, public:: is_present=>DSOprndIsPresent             !returns TRUE if the domain-specific operand is locally available (present)
           procedure, public:: mark_active=>DSOprndMarkActive           !marks the domain-specific operand active (defined)
@@ -142,8 +142,6 @@
           procedure, public:: mark_undelivered=>DSOprndMarkUndelivered !marks the domain-specific operand locally unavailable (but defined), local resources are released
           procedure, public:: get_comm_stat=>DSOprndGetCommStat        !gets the communication status
           procedure, public:: set_comm_stat=>DSOprndSetCommStat        !sets the communication status
-         !procedure, public:: get_owner_id=>DSOprndGetOwnerId          !returns the owner id of the DS operand data
-         !procedure, public:: set_owner_id=>DSOprndSetOwnerId          !sets the owner id of the DS operand data
         end type ds_oprnd_t
  !Wrapped reference to a domain-specific operand:
         type, private:: ds_oprnd_ref_t
@@ -152,8 +150,9 @@
  !Domain-specific instruction control field:
         type, abstract, public:: ds_instr_ctrl_t
          contains
-          procedure(ds_instr_ctrl_pack_i), deferred, public:: pack     !packs the domain-specific instruction control into a plain byte packet
-          procedure(ds_instr_ctrl_unpack_i), deferred, public:: unpack !unpacks the domain-specific instruction control from a plain byte packet
+          procedure(ds_instr_ctrl_pack_i), deferred, public:: pack      !packs the domain-specific instruction control into a plain byte packet
+          procedure(ds_instr_ctrl_unpack_i), deferred, public:: unpack  !unpacks the domain-specific instruction control from a plain byte packet
+          procedure(ds_instr_ctrl_print_i), deferred, public:: print_it !prints
         end type ds_instr_ctrl_t
  !Domain-specific instruction (realization of a domain-specific operation for DSVP):
         type, abstract, public:: ds_instr_t
@@ -187,6 +186,7 @@
           procedure, public:: all_set=>DSInstrAllSet                    !returns TRUE if all operands and control are set
           procedure, public:: activate=>DSInstrActivate                 !activates the domain-specific instruction in the final stage of decoding (sets up opcode and status)
           procedure, public:: clean=>DSInstrClean                       !resets the domain-specific instruction to an empty state (after it has been retired)
+          procedure, public:: DSInstrPrintIt                            !prints the base part of the domain-specific instruction
         end type ds_instr_t
  !DSVP/DSVU configuration:
         type, abstract, public:: dsv_conf_t
@@ -330,6 +330,15 @@
           integer(INTD), intent(out), optional:: ierr !out: error code
           logical, intent(in), optional:: wait        !in: TRUE activates WAIT instead of TEST synchronization
          end function ds_oprnd_sync_i
+   !print:
+         subroutine ds_oprnd_print_i(this,ierr,dev_id,nspaces)
+          import:: ds_oprnd_t,INTD
+          implicit none
+          class(ds_oprnd_t), intent(in):: this          !in: domain-specific operand
+          integer(INTD), intent(out), optional:: ierr   !out: error code
+          integer(INTD), intent(in), optional:: dev_id  !in: printing device id (6:screen default)
+          integer(INTD), intent(in), optional:: nspaces !in: left alignment
+         end subroutine ds_oprnd_print_i
   !ds_instr_ctrl_t:
    !pack:
          subroutine ds_instr_ctrl_pack_i(this,packet,ierr)
@@ -345,6 +354,15 @@
           class(obj_pack_t), intent(inout):: packet    !in: packet
           integer(INTD), intent(out), optional:: ierr  !out: error code
          end subroutine ds_instr_ctrl_unpack_i
+   !print:
+         subroutine ds_instr_ctrl_print_i(this,ierr,dev_id,nspaces)
+          import:: ds_instr_ctrl_t,INTD
+          implicit none
+          class(ds_instr_ctrl_t), intent(in):: this     !in: domain-specific operand
+          integer(INTD), intent(out), optional:: ierr   !out: error code
+          integer(INTD), intent(in), optional:: dev_id  !in: printing device id (6:screen default)
+          integer(INTD), intent(in), optional:: nspaces !in: left alignment
+         end subroutine ds_instr_ctrl_print_i
   !ds_instr_t:
    !encode:
          subroutine ds_instr_encode_i(this,instr_packet,ierr)
@@ -406,14 +424,14 @@
         private DSOprndMarkUndelivered
         private DsOprndGetCommStat
         private DSOprndSetCommStat
-       !private DSOprndGetOwnerId
-       !private DSOprndSetOwnerId
         public ds_oprnd_self_i
         public ds_oprnd_query_i
         public ds_oprnd_sync_i
+        public ds_oprnd_print_i
  !ds_instr_ctrl_t:
         public ds_instr_ctrl_pack_i
         public ds_instr_ctrl_unpack_i
+        public ds_instr_ctrl_print_i
  !ds_instr_t:
         private DSInstrIsEmpty
         private DSInstrIsRetired
@@ -436,6 +454,7 @@
         private DSInstrAllSet
         private DSInstrActivate
         private DSInstrClean
+        public DSInstrPrintIt
         public ds_instr_encode_i
  !ds_unit_port_t:
         private DSUnitPortInit
@@ -677,38 +696,6 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine DSOprndSetCommStat
-!-------------------------------------------------------
-#if 0
-        function DSOprndGetOwnerId(this,ierr) result(id)
-!Returns the owner id of the DS operand data.
-         implicit none
-         integer(INTD):: id                          !out: owner id of the domain-specific operand data (negative means undefined)
-         class(ds_oprnd_t), intent(in):: this        !in: domain-specific operand
-         integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc
-
-         errc=DSVP_SUCCESS; id=this%owner_id
-         if(present(ierr)) ierr=errc
-         return
-        end function DSOprndGetOwnerId
-!-------------------------------------------------
-        subroutine DSOprndSetOwnerId(this,id,ierr)
-!Sets the owner id of the DS operand data.
-         implicit none
-         class(ds_oprnd_t), intent(inout):: this     !in: domain-specific operand
-         integer(INTD), intent(in):: id              !in: owner id to set (negative means undefined)
-         integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc
-
-         if(this%is_active(errc)) then
-          if(errc.eq.DSVP_SUCCESS) this%owner_id=id
-         else
-          errc=DSVP_ERR_INVALID_REQ
-         endif
-         if(present(ierr)) ierr=errc
-         return
-        end subroutine DSOprndSetOwnerId
-#endif
 ![ds_instr_t]=========================================
         function DSInstrIsEmpty(this,ierr) result(res)
 !Returns TRUE if the domain-specific instruction is empty (undefined).
@@ -1185,6 +1172,54 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine DSInstrClean
+!----------------------------------------------------------
+        subroutine DSInstrPrintIt(this,ierr,dev_id,nspaces)
+!Prints the base part of the domain-specific instruction.
+         implicit none
+         class(ds_instr_t), intent(in):: this          !in: domain-specific instruction to print
+         integer(INTD), intent(out), optional:: ierr   !out: error code
+         integer(INTD), intent(in), optional:: dev_id  !in: printing device id (6:screen default)
+         integer(INTD), intent(in), optional:: nspaces !in: left alignment
+         integer(INTD):: errc,i,j,n,devo,nsp
+         class(ds_instr_ctrl_t), pointer:: ctrl
+         class(ds_oprnd_t), pointer:: oprnd
+
+         errc=DSVP_SUCCESS
+         devo=6; if(present(dev_id)) devo=dev_id
+         nsp=0; if(present(nspaces)) nsp=nspaces
+ !Print the instruction control field:
+         ctrl=>this%get_control(errc)
+         if(errc.eq.DSVP_SUCCESS) then
+          do j=1,nsp; write(devo,'(" ")',ADVANCE='NO'); enddo
+          write(devo,'("Control{")')
+          call ctrl%print_it(errc,devo,nsp+1)
+          if(errc.eq.0) then
+           do j=1,nsp; write(devo,'(" ")',ADVANCE='NO'); enddo
+           write(devo,'("}")')
+ !Print instruction operands:
+           n=this%get_num_operands(errc)
+           if(errc.eq.DSVP_SUCCESS) then
+            do i=0,n-1
+             oprnd=>this%get_operand(i,errc); if(errc.ne.DSVP_SUCCESS) then; errc=-5; exit; endif
+             do j=1,nsp; write(devo,'(" ")',ADVANCE='NO'); enddo
+             write(devo,'("Operand ",i2,"{")') i
+             call oprnd%print_it(errc,devo,nsp+1); if(errc.ne.0) then; errc=-4; exit; endif
+             do j=1,nsp; write(devo,'(" ")',ADVANCE='NO'); enddo
+             write(devo,'("}")')
+            enddo
+           else
+            errc=-3
+           endif
+          else
+           errc=-2
+          endif
+         else
+          errc=-1
+         endif
+         if(errc.ne.DSVP_SUCCESS) write(devo,'("Printing failed: Error ",i11)') errc
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine DSInstrPrintIt
 ![ds_unit_port_t]=================================
         function DSUnitPortInit(this) result(ierr)
 !Initializes a DS unit port.

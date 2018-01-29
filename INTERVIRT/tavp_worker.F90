@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/01/28
+!REVISION: 2018/01/29
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -99,6 +99,7 @@
           procedure, public:: sync=>TensOprndSync                   !synchronizes the currently pending communication on the tensor operand
           procedure, public:: release=>TensOprndRelease             !destroys the present local copy of the tensor operand (releases local resources!), but the operand stays defined
           procedure, public:: destruct=>TensOprndDestruct           !performs complete destruction back to an empty state
+          procedure, public:: print_it=>TensOprndPrintIt            !prints
           final:: tens_oprnd_dtor                                   !dtor
         end type tens_oprnd_t
  !Tensor instruction (realization of a tensor operation for a specific TAVP):
@@ -283,6 +284,7 @@
         private TensOprndSync
         private TensOprndRelease
         private TensOprndDestruct
+        private TensOprndPrintIt
         public tens_oprnd_dtor
  !tens_instr_t:
         private TensInstrCtor
@@ -1570,6 +1572,27 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensOprndDestruct
+!------------------------------------------------------------
+        subroutine TensOprndPrintIt(this,ierr,dev_id,nspaces)
+         implicit none
+         class(tens_oprnd_t), intent(in):: this
+         integer(INTD), intent(out), optional:: ierr
+         integer(INTD), intent(in), optional:: dev_id
+         integer(INTD), intent(in), optional:: nspaces
+         integer(INTD):: errc,devo,nsp,j
+
+         errc=0
+         devo=6; if(present(dev_id)) devo=dev_id
+         nsp=0; if(present(nspaces)) nsp=nspaces
+         if(associated(this%tensor)) then
+          call this%tensor%print_it(errc,devo,nsp); if(errc.ne.TEREC_SUCCESS) errc=-1
+         else
+          do j=1,nsp; write(devo,'(" ")',ADVANCE='NO'); enddo
+          write(devo,'("No Tensor!")')
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensOprndPrintIt
 !---------------------------------------
         subroutine tens_oprnd_dtor(this)
          implicit none

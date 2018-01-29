@@ -148,18 +148,20 @@
           procedure, public:: map_method=>CtrlTensTransMapMethod    !maps the defining method name to the actual definer object
           procedure, public:: pack=>CtrlTensTransPack               !packs the instruction control field into a plain byte packet
           procedure, public:: unpack=>CtrlTensTransUnpack           !unpacks the instruction control field from a plain byte packet
+          procedure, public:: print_it=>CtrlTensTransPrintIt        !prints
           final:: ctrl_tens_trans_dtor                              !dtor
         end type ctrl_tens_trans_t
   !Tensor addition/copy/slice/insert control field:
         type, extends(ds_instr_ctrl_t), public:: ctrl_tens_add_t
-         type(permutation_t), private:: permutation             !tensor dimension permutation
-         complex(8), private:: alpha=(1d0,0d0)                  !alpha prefactor
+         type(permutation_t), private:: permutation                 !tensor dimension permutation
+         complex(8), private:: alpha=(1d0,0d0)                      !alpha prefactor
          contains
           procedure, private:: CtrlTensAddCtor                           !ctor
           generic, public:: ctrl_tens_add_ctor=>CtrlTensAddCtor
           procedure, public:: get_permutation=>CtrlTensAddGetPermutation !returns a non-owning pointer to the encapsulated permutation
           procedure, public:: pack=>CtrlTensAddPack                      !packs the instruction control field into a plain byte packet
           procedure, public:: unpack=>CtrlTensAddUnpack                  !unpacks the instruction control field from a plain byte packet
+          procedure, public:: print_it=>CtrlTensAddPrintIt               !prints
           final:: ctrl_tens_add_dtor                                     !dtor
         end type ctrl_tens_add_t
   !Tensor contraction control field:
@@ -172,6 +174,7 @@
           procedure, public:: get_contr_ptrn=>CtrlTensContrGetContrPtrn !returns a non-owning pointer to the extended tensor contraction pattern and, optionally, the prefactor and conjugation flags
           procedure, public:: pack=>CtrlTensContrPack                   !packs the instruction control field into a plain byte packet
           procedure, public:: unpack=>CtrlTensContrUnpack               !unpacks the instruction control field from a plain byte packet
+          procedure, public:: print_it=>CtrlTensContrPrintIt            !prints
           final:: ctrl_tens_contr_dtor                                  !dtor
         end type ctrl_tens_contr_t
  !Tensor argument cache entry:
@@ -272,18 +275,21 @@
         private CtrlTensTransMapMethod
         private CtrlTensTransPack
         private CtrlTensTransUnpack
+        private CtrlTensTransPrintIt
         public ctrl_tens_trans_dtor
  !ctrl_tens_add_t:
         private CtrlTensAddCtor
         private CtrlTensAddGetPermutation
         private CtrlTensAddPack
         private CtrlTensAddUnpack
+        private CtrlTensAddPrintIt
         public ctrl_tens_add_dtor
  !ctrl_tens_contr_t:
         private CtrlTensContrCtor
         private CtrlTensContrGetContrPtrn
         private CtrlTensContrPack
         private CtrlTensContrUnpack
+        private CtrlTensContrPrintIt
         public ctrl_tens_contr_dtor
  !tens_cache_entry_t:
         private TensCacheEntrySetTensor
@@ -397,13 +403,35 @@
          this%method_name=' '
          call unpack_builtin(packet,this%method_name,sl,errc)
          if(errc.eq.PACK_SUCCESS) then
-          call unpack_builtin(packet,this%alpha,errc); if(errc.ne.PACK_SUCCESS) errc=-1
+          if(sl.le.EXA_MAX_METHOD_NAME_LEN) then
+           call unpack_builtin(packet,this%alpha,errc); if(errc.ne.PACK_SUCCESS) errc=-1
+          else
+           errc=-2
+          endif
          else
-          errc=-2
+          errc=-3
          endif
          if(present(ierr)) ierr=errc
          return
         end subroutine CtrlTensTransUnpack
+!-----------------------------------------------------------------
+        subroutine CtrlTensTransPrintIt(this,ierr,dev_id,nspaces)
+         implicit none
+         class(ctrl_tens_trans_t), intent(in):: this
+         integer(INTD), intent(out), optional:: ierr
+         integer(INTD), intent(in), optional:: dev_id
+         integer(INTD), intent(in), optional:: nspaces
+         integer(INTD):: errc,devo,nsp,l
+
+         errc=0
+         devo=6; if(present(dev_id)) devo=dev_id
+         nsp=0; if(present(nspaces)) nsp=nspaces
+         l=len_trim(this%method_name)
+         if(l.gt.0) call printl(devo,'Method: '//this%method_name(1:l))
+         write(devo,'("Scalar: ",D24.14,1x,D24.14)') this%alpha
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine CtrlTensTransPrintIt
 !--------------------------------------------
         subroutine ctrl_tens_trans_dtor(this)
 !DTOR.
@@ -482,6 +510,28 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine CtrlTensAddUnpack
+!--------------------------------------------------------------
+        subroutine CtrlTensAddPrintIt(this,ierr,dev_id,nspaces)
+         implicit none
+         class(ctrl_tens_add_t), intent(in):: this
+         integer(INTD), intent(out), optional:: ierr
+         integer(INTD), intent(in), optional:: dev_id
+         integer(INTD), intent(in), optional:: nspaces
+         integer(INTD):: errc,devo,nsp
+
+         errc=0
+         devo=6; if(present(dev_id)) devo=dev_id
+         nsp=0; if(present(nspaces)) nsp=nspaces
+         write(devo,'("Permutation: ")',ADVANCE='NO')
+         call this%permutation%print_it(errc,devo,0)
+         if(errc.eq.TEREC_SUCCESS) then
+          write(devo,'("Scalar: ",D24.14,1x,D24.14)') this%alpha
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine CtrlTensAddPrintIt
 !------------------------------------------
         subroutine ctrl_tens_add_dtor(this)
          implicit none
@@ -585,6 +635,28 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine CtrlTensContrUnpack
+!----------------------------------------------------------------
+        subroutine CtrlTensContrPrintIt(this,ierr,dev_id,nspaces)
+         implicit none
+         class(ctrl_tens_contr_t), intent(in):: this
+         integer(INTD), intent(out), optional:: ierr
+         integer(INTD), intent(in), optional:: dev_id
+         integer(INTD), intent(in), optional:: nspaces
+         integer(INTD):: errc,devo,nsp
+
+         errc=0
+         devo=6; if(present(dev_id)) devo=dev_id
+         nsp=0; if(present(nspaces)) nsp=nspaces
+         write(devo,'("Pattern: ")',ADVANCE='NO')
+         call this%contr_ptrn%print_it(errc,devo,0)
+         if(errc.eq.TEREC_SUCCESS) then
+          write(devo,'("Scalar: ",D24.14,1x,D24.14)') this%alpha
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine CtrlTensContrPrintIt
 !--------------------------------------------
         subroutine ctrl_tens_contr_dtor(this)
          implicit none
