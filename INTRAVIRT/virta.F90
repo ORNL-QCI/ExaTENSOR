@@ -8,7 +8,7 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/01/28
+!REVISION: 2018/01/29
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -341,11 +341,11 @@
          character(*), intent(in), optional:: method_name !in: external (registered) method name
          integer(INTD):: errc
 
-         errc=0; this%method=' '
+         errc=0; this%method_name=' '
          if(present(alpha)) this%alpha=alpha
          if(present(method_name)) then
           if(len_trim(method_name).le.EXA_MAX_METHOD_NAME_LEN) then
-           this%method=method_name(1:len_trim(method_name))
+           this%method_name=method_name(1:len_trim(method_name))
           else
            errc=-1
           endif
@@ -357,15 +357,63 @@
         subroutine CtrlTensTransMapMethod(this,ierr)
 !Maps the method name to the actual definer object.
          implicit none
-         class(ctrl_tens_trans_t), intent(out):: this     !out: tensor transformation/initialization control field
-         integer(INTD), intent(out), optional:: ierr      !out: error code
+         class(ctrl_tens_trans_t), intent(inout):: this !inout: tensor transformation/initialization control field
+         integer(INTD), intent(out), optional:: ierr    !out: error code
          integer(INTD):: errc,l
 
-         errc=0; l=len_trim(this%method)
-
+         errc=0; l=len_trim(this%method_name)
+         this%definer=>method_register%retrieve_method(this%method_name(1:l),errc); if(errc.ne.0) errc=-1
          if(present(ierr)) ierr=errc
          return
         end subroutine CtrlTensTransMapMethod
+!-----------------------------------------------------
+        subroutine CtrlTensTransPack(this,packet,ierr)
+!Packer.
+         implicit none
+         class(ctrl_tens_trans_t), intent(in):: this !in: tensor transformation/initialization control field
+         class(obj_pack_t), intent(inout):: packet   !inout: packet
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         call pack_builtin(packet,this%method_name(1:len_trim(this%method_name)),errc)
+         if(errc.eq.PACK_SUCCESS) then
+          call pack_builtin(packet,this%alpha,errc); if(errc.ne.PACK_SUCCESS) errc=-1
+         else
+          errc=-2
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine CtrlTensTransPack
+!-------------------------------------------------------
+        subroutine CtrlTensTransUnpack(this,packet,ierr)
+!Unpacker.
+         implicit none
+         class(ctrl_tens_trans_t), intent(inout):: this !out: tensor transformation/initialization control field
+         class(obj_pack_t), intent(inout):: packet      !inout: packet
+         integer(INTD), intent(out), optional:: ierr    !out: error code
+         integer(INTD):: errc
+         integer(INTL):: sl
+
+         this%method_name=' '
+         call unpack_builtin(packet,this%method_name,sl,errc)
+         if(errc.eq.PACK_SUCCESS) then
+          call unpack_builtin(packet,this%alpha,errc); if(errc.ne.PACK_SUCCESS) errc=-1
+         else
+          errc=-2
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine CtrlTensTransUnpack
+!--------------------------------------------
+        subroutine ctrl_tens_trans_dtor(this)
+!DTOR.
+         implicit none
+         type(ctrl_tens_trans_t):: this
+
+         this%definer=>NULL()
+         this%method_name=' '
+         return
+        end subroutine ctrl_tens_trans_dtor
 ![ctrl_tens_add_t]============================================
         subroutine CtrlTensAddCtor(this,permutation,ierr,alpha)
 !CTOR.

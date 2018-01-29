@@ -1,6 +1,6 @@
 !Basic object packing/unpacking primitives.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/11/01
+!REVISION: 2018/01/29
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -2149,24 +2149,33 @@
            write(*,'("#FATAL(pack_prim::pack_string): Fortran character size is not equal to 1: ",i11)') obj_size
            stop
           endif
-         else
-          errc=PACK_NULL
+         else !empty string
+          sl=packet%space_left(errc)
+          if(errc.eq.PACK_SUCCESS) then
+           if(sl.ge.INTL) then
+            l=0_INTL
+            call pack_builtin(packet,l,errc)
+           else
+            errc=PACK_OVERFLOW
+           endif
+          endif
          endif
          if(present(ierr)) ierr=errc
          return
         end subroutine pack_string
-!------------------------------------------------
-        subroutine unpack_string(packet,obj,ierr)
+!-----------------------------------------------------
+        subroutine unpack_string(packet,obj,strl,ierr)
 !Unpacks object <obj> from packet <packet>. After unpacking, the internal
 !packet offset is automatically incremented to the next field.
          implicit none
          class(obj_pack_t), intent(inout):: packet       !inout: packet
          character(*), intent(inout):: obj               !out: builtin type object
+         integer(INTL), intent(out):: strl               !out: unpacked string length
          integer(INTD), intent(out), optional:: ierr     !out: error code
          integer(INTD):: obj_size,errc
          integer(INTL):: ppos,i,l,lo
 
-         errc=PACK_SUCCESS; lo=len(obj)
+         errc=PACK_SUCCESS; strl=0_INTL; lo=len(obj)
          if(lo.gt.0) then
           obj_size=size_of(obj(1:1)) !size of the object in bytes
           if(obj_size.eq.1) then
@@ -2179,14 +2188,15 @@
                if(errc.eq.PACK_SUCCESS) then
                 do i=1,l; obj(i:i)=packet%buffer(ppos+i-1_INTL); enddo
                 packet%offset=packet%offset+l
+                strl=l
                endif
               else
-               errc=PACK_OVERFLOW
+               if(errc.eq.PACK_SUCCESS) errc=PACK_ERROR
               endif
              else
               errc=PACK_OVERFLOW
              endif
-            else
+            elseif(l.lt.0) then
              errc=PACK_ERROR
             endif
            endif
@@ -2253,7 +2263,7 @@
          complex(8):: cc8
          character(128):: str=' '
          integer(INTD):: my_rank,comm_size,i,n
-         integer(INTL):: mtag
+         integer(INTL):: mtag,sl
          logical:: delivered
          type(pack_env_t):: envelope
          type(obj_pack_t):: packet
@@ -2389,9 +2399,9 @@
    !Unpack string (packet 10):
           call envelope%extract_packet(10,packet,errc,tag=mtag,preclean=.TRUE.)
           if(errc.ne.PACK_SUCCESS) then; ierr=73; return; endif
-          call unpack_builtin(packet,str,errc); if(errc.ne.PACK_SUCCESS) then; ierr=74; return; endif
+          call unpack_builtin(packet,str,sl,errc); if(errc.ne.PACK_SUCCESS) then; ierr=74; return; endif
           !write(*,'("#DEBUG[",i3,"]: str = ",A27)') my_rank,str(1:27) !debug
-          if(str(1:len(s27)).ne.s27) then; ierr=75; errc=1001; return; endif
+          if(sl.ne.27.or.str(1:sl).ne.s27) then; ierr=75; errc=1001; return; endif
           deallocate(comm_hl)
          endif
          call envelope%destroy(errc); if(errc.ne.PACK_SUCCESS) then; ierr=76; return; endif

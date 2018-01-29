@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/01/26
+!REVISION: 2018/01/29
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -1403,7 +1403,7 @@
          class(obj_pack_t), intent(inout):: packet       !in: packet
          integer(INTD), intent(out), optional:: ierr     !out: error code
          integer(INTD):: i,nd,errc,hidx(1:MAX_TENSOR_RANK)
-         integer(INTL):: sidx(1:MAX_TENSOR_RANK)
+         integer(INTL):: sidx(1:MAX_TENSOR_RANK),sl
          character(TEREC_MAX_TENS_NAME_LEN):: tname
          logical:: pcn,hsn
 
@@ -1424,7 +1424,7 @@
             endif
            endif
           endif
-          if(errc.eq.PACK_SUCCESS.and.pcn) call unpack_builtin(packet,tname,errc)
+          if(errc.eq.PACK_SUCCESS.and.pcn) call unpack_builtin(packet,tname,sl,errc)
           if(errc.eq.PACK_SUCCESS) then
            if(nd.gt.0) then
             if(pcn) then
@@ -6688,6 +6688,7 @@
          integer(INTD), intent(out), optional:: ierr      !out: error code
          procedure(tens_transformation_method_map_i), optional:: method_map !in: if <method_name> is unpacked, maps that name to the corresponding TAL-SH definer object
          integer(INTD):: errc,i,n
+         integer(INTL):: sl
          logical:: method_flag
          class(tens_rcrsv_t), pointer:: tens_p
 
@@ -6706,7 +6707,8 @@
              if(errc.eq.PACK_SUCCESS) then
               if(i.gt.0) then
                allocate(character(len=i)::this%definer_name)
-               call unpack_builtin(packet,this%definer_name,errc)
+               call unpack_builtin(packet,this%definer_name,sl,errc)
+               if(errc.eq.PACK_SUCCESS.and.sl.ne.int(i,INTL)) errc=TEREC_OBJ_CORRUPTED
               else
                errc=TEREC_OBJ_CORRUPTED
               endif
