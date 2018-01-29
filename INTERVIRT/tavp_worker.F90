@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/01/23
+!REVISION: 2018/01/28
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -105,11 +105,13 @@
         type, extends(ds_instr_t), public:: tens_instr_t
          type(talsh_task_t), private:: talsh_task                   !TAL-SH task
          contains
-          procedure, private:: TensInstrCtor                        !ctor: constructs a tensor instruction from the specification of a tensor operation
+          procedure, private:: TensInstrCtor                              !ctor: constructs a tensor instruction from the specification of a tensor operation
           generic, public:: tens_instr_ctor=>TensInstrCtor
-          procedure, public:: encode=>TensInstrEncode               !encoding procedure: Packs the TAVP instruction into a raw byte packet (bytecode)
+          procedure, public:: encode=>TensInstrEncode                     !encoding procedure: Packs the TAVP instruction into a raw byte packet (bytecode)
           procedure, public:: get_cache_entries=>TensInstrGetCacheEntries !returns an array of references to tensor cache entries used by the tensor operands
-          final:: tens_instr_dtor                                   !dtor
+          procedure, public:: get_flops=>TensInstrGetFlops                !returns an estimate of the total number of required Flops (mul/add) and memory Words
+          procedure, public:: get_operation=>TensInstrGetOperation        !returns back the encapsulated tensor operation
+          final:: tens_instr_dtor                                         !dtor
         end type tens_instr_t
  !TAVP-WRK decoder:
         type, extends(ds_decoder_t), private:: tavp_wrk_decoder_t
@@ -286,6 +288,8 @@
         private TensInstrCtor
         private TensInstrEncode
         private TensInstrGetCacheEntries
+        private TensInstrGetFlops
+        private TensInstrGetOperation
         public tens_instr_dtor
  !tavp_wrk_decoder_t:
         private TAVPWRKDecoderConfigure
@@ -1931,6 +1935,139 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensInstrGetCacheEntries
+!-------------------------------------------------------------------------------------
+        function TensInstrGetFlops(this,ierr,arithm_intensity,tot_words) result(flops)
+!Returns an estimate of the Flop count as well as arithmetic intensity and total word count.
+         implicit none
+         real(8):: flops                                   !out: estimate of the total number of Flops
+         class(tens_instr_t), intent(in):: this            !in: active tensor instruction
+         integer(INTD), intent(out), optional:: ierr       !out: error code
+         real(8), intent(out), optional:: arithm_intensity !out: arithmetic intensity estimate (Flops/words ratio)
+         real(8), intent(out), optional:: tot_words        !out: total words estimate
+         integer(INTD):: errc,opcode,i,j,n
+         integer(INTL):: dims(1:MAX_TENSOR_RANK)
+         class(ds_oprnd_t), pointer:: tens_oprnd
+         class(tens_rcrsv_t), pointer:: tensor
+         real(8):: vol,tvol,words
+
+         flops=0d0; words=0d0
+         if(this%is_active(errc)) then
+          if(errc.eq.DSVP_SUCCESS) then
+           opcode=this%get_code(errc)
+           if(errc.eq.DSVP_SUCCESS) then
+            select case(opcode)
+            case(TAVP_INSTR_TENS_CONTRACT)
+             tvol=1d0
+             oloop: do i=0,2 !loop over tensor operands
+              tens_oprnd=>this%get_operand(i,errc); if(errc.ne.DSVP_SUCCESS) then; errc=-7; exit oloop; endif
+              select type(tens_oprnd)
+              class is(tens_oprnd_t)
+               tensor=>tens_oprnd%get_tensor(errc); if(errc.ne.0) then; errc=-6; exit oloop; endif
+               call tensor%get_dims(dims,n,errc); if(errc.ne.TEREC_SUCCESS) then; errc=-5; exit oloop; endif
+               vol=1d0; do j=1,n; vol=vol*real(dims(j),8); enddo
+               tvol=tvol*vol; words=words+vol
+              class default
+               errc=-4; exit oloop
+              end select
+             enddo oloop
+             if(errc.eq.0) flops=dsqrt(tvol)*2d0 !factor of 2 because of additions (along with multiplications)
+            case default
+             !`Implement Flop counting for other relevant tensor instructions
+             flops=1d0 !default (but meaningless) value
+            end select
+           else
+            errc=-3
+           endif
+          else
+           errc=-2
+          endif
+         else
+          errc=-1
+         endif
+         if(present(arithm_intensity)) then
+          if(errc.eq.0.and.words.gt.0d0) then
+           arithm_intensity=flops/words
+          else
+           arithm_intensity=-1d0
+          endif
+         endif
+         if(present(tot_words).and.errc.eq.0) tot_words=words
+         if(present(ierr)) ierr=errc
+         return
+        end function TensInstrGetFlops
+!-----------------------------------------------------------------
+        subroutine TensInstrGetOperation(this,tens_operation,ierr)
+!Given a tensor instruction, returns back the encapsulated tensor operation
+!expressed in terms of the very same tensors (by pointer association).
+         implicit none
+         class(tens_instr_t), intent(in):: this                                     !in: tensor instruction
+         class(tens_operation_t), allocatable, target, intent(out):: tens_operation !out: corresponding (encapsulated) tensor operation
+         integer(INTD), intent(out), optional:: ierr                                !out: error code
+         integer(INTD):: errc,opcode,numo,i
+         complex(8):: alpha
+         class(tens_rcrsv_t), pointer:: tensor
+         class(ds_oprnd_t), pointer:: oprnd
+         class(ds_instr_ctrl_t), pointer:: instr_ctrl
+         type(contr_ptrn_ext_t), pointer:: contr_ptrn
+
+         if(this%is_active(errc)) then
+          if(errc.eq.DSVP_SUCCESS) then
+           numo=this%get_num_operands(errc)
+           if(errc.eq.DSVP_SUCCESS) then
+            opcode=this%get_code(errc)
+            if(errc.eq.DSVP_SUCCESS) then
+             select case(opcode)
+             case(TAVP_INSTR_TENS_CREATE) !no associated tensor operation
+             case(TAVP_INSTR_TENS_DESTROY) !no associated tensor operation
+             case(TAVP_INSTR_TENS_CONTRACT)
+              allocate(tens_contraction_t::tens_operation)
+              select type(tens_operation)
+              class is(tens_contraction_t)
+               do i=0,numo-1
+                oprnd=>this%get_operand(i,errc); if(errc.ne.DSVP_SUCCESS) exit
+                tensor=>NULL(); select type(oprnd); class is(tens_oprnd_t); tensor=>oprnd%get_tensor(errc); end select
+                if(.not.associated(tensor)) errc=-10; if(errc.ne.0) exit
+                call tens_operation%set_argument(tensor,errc); if(errc.ne.TEREC_SUCCESS) exit
+               enddo
+               if(errc.eq.0) then
+                instr_ctrl=>this%get_control(errc)
+                if(errc.eq.DSVP_SUCCESS) then
+                 select type(instr_ctrl)
+                 class is(ctrl_tens_contr_t)
+                  contr_ptrn=>instr_ctrl%get_contr_ptrn(errc,alpha)
+                  if(errc.eq.0) call tens_operation%set_contr_ptrn(contr_ptrn,errc,alpha)
+                  nullify(contr_ptrn); nullify(instr_ctrl)
+                 class default
+                  errc=-9
+                 end select
+                else
+                 errc=-8
+                endif
+               else
+                errc=-7
+               endif
+              class default
+               errc=-6
+              end select
+             case default
+              !`Implement for other relevant tensor instructions
+              errc=-5
+             end select
+            else
+             errc=-4
+            endif
+           else
+            errc=-3
+           endif
+          else
+           errc=-2
+          endif
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensInstrGetOperation
 !---------------------------------------
         subroutine tens_instr_dtor(this)
          implicit none

@@ -8,7 +8,7 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/01/26
+!REVISION: 2018/01/28
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -64,6 +64,8 @@
         integer(INTD), parameter, public:: EXA_MANAGER=1            !manager (logical) process (TAVP)
         integer(INTD), parameter, public:: EXA_WORKER=2             !worker (numerical) process (TAVP)
         integer(INTD), parameter, public:: EXA_HELPER=3             !helper (auxiliary) process (TAVP)
+ !External methods:
+        integer(INTD), parameter, public:: EXA_MAX_METHOD_NAME_LEN=64 !max length of an external method name
  !TAVP hierarchy configuration:
         integer(INTD), public:: EXA_MAX_WORK_GROUP_SIZE=2 !maximal size of a work group (max number of workers per manager)
         integer(INTD), public:: EXA_MANAGER_BRANCH_FACT=2 !branching factor for the managing hierarchy
@@ -135,19 +137,31 @@
         type(tens_status_t), parameter:: TENS_STATUS_NONE=tens_status_t() !tensor status null
         public TENS_STATUS_NONE
  !Tensor instruction control fields:
-#if 0
+  !Tensor transformation (initialization, scaling, etc.) control field:
+        type, extends(ds_instr_ctrl_t), public:: ctrl_tens_trans_t
+         class(talsh_tens_definer_t), pointer, private:: definer=>NULL() !non-owning pointer to the defining method (TAL-SH function object)
+         character(EXA_MAX_METHOD_NAME_LEN), private:: method_name       !name of the defining method
+         complex(8), private:: alpha=(0d0,0d0)                           !either an initialization scalar or an alpha prefactor
+         contains
+          procedure, private:: CtrlTensTransCtor                    !ctor
+          generic, public:: ctrl_tens_trans_ctor=>CtrlTensTransCtor
+          procedure, public:: map_method=>CtrlTensTransMapMethod    !maps the defining method name to the actual definer object
+          procedure, public:: pack=>CtrlTensTransPack               !packs the instruction control field into a plain byte packet
+          procedure, public:: unpack=>CtrlTensTransUnpack           !unpacks the instruction control field from a plain byte packet
+          final:: ctrl_tens_trans_dtor                              !dtor
+        end type ctrl_tens_trans_t
   !Tensor addition/copy/slice/insert control field:
         type, extends(ds_instr_ctrl_t), public:: ctrl_tens_add_t
-         type(permutation_t), private:: prmn                    !tensor dimension permutation
+         type(permutation_t), private:: permutation             !tensor dimension permutation
          complex(8), private:: alpha=(1d0,0d0)                  !alpha prefactor
          contains
-          procedure, private:: CtrlTensAddCtor                  !ctor
+          procedure, private:: CtrlTensAddCtor                           !ctor
           generic, public:: ctrl_tens_add_ctor=>CtrlTensAddCtor
-          procedure, public:: pack=>CtrlTensAddPack             !packs the instruction control field into a plain byte packet
-          procedure, public:: unpack=>CtrlTensAddUnpack         !unpacks the instruction control field from a plain byte packet
-          final:: ctrl_tens_add_dtor                            !dtor
+          procedure, public:: get_permutation=>CtrlTensAddGetPermutation !returns a non-owning pointer to the encapsulated permutation
+          procedure, public:: pack=>CtrlTensAddPack                      !packs the instruction control field into a plain byte packet
+          procedure, public:: unpack=>CtrlTensAddUnpack                  !unpacks the instruction control field from a plain byte packet
+          final:: ctrl_tens_add_dtor                                     !dtor
         end type ctrl_tens_add_t
-#endif
   !Tensor contraction control field:
         type, extends(ds_instr_ctrl_t), public:: ctrl_tens_contr_t
          type(contr_ptrn_ext_t), private:: contr_ptrn           !extended tensor contraction pattern
@@ -155,7 +169,7 @@
          contains
           procedure, private:: CtrlTensContrCtor                        !ctor
           generic, public:: ctrl_tens_contr_ctor=>CtrlTensContrCtor
-          procedure, public:: get_contr_ptrn=>CtrlTensContrGetContrPtrn !returns a pointer to the extended tensor contraction pattern and, optionally, the prefactor and conjugation flags
+          procedure, public:: get_contr_ptrn=>CtrlTensContrGetContrPtrn !returns a non-owning pointer to the extended tensor contraction pattern and, optionally, the prefactor and conjugation flags
           procedure, public:: pack=>CtrlTensContrPack                   !packs the instruction control field into a plain byte packet
           procedure, public:: unpack=>CtrlTensContrUnpack               !unpacks the instruction control field from a plain byte packet
           final:: ctrl_tens_contr_dtor                                  !dtor
@@ -253,13 +267,18 @@
 !VISIBILITY:
  !non-member:
         public role_barrier
-#if 0
+ !ctrl_tens_trans_t:
+        private CtrlTensTransCtor
+        private CtrlTensTransMapMethod
+        private CtrlTensTransPack
+        private CtrlTensTransUnpack
+        public ctrl_tens_trans_dtor
  !ctrl_tens_add_t:
         private CtrlTensAddCtor
+        private CtrlTensAddGetPermutation
         private CtrlTensAddPack
         private CtrlTensAddUnpack
         public ctrl_tens_add_dtor
-#endif
  !ctrl_tens_contr_t:
         private CtrlTensContrCtor
         private CtrlTensContrGetContrPtrn
@@ -309,6 +328,119 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine role_barrier
+![ctrl_tens_trans_t]=============================================
+        subroutine CtrlTensTransCtor(this,ierr,alpha,method_name)
+!CTOR: If neither <alpha> nor <method_name> is present, initialization
+!to zero is assumed. If either <alpha> or <method_name> is present,
+!then the initialization to a scalar or a user-defined transformation
+!is assumed, resepectively.
+         implicit none
+         class(ctrl_tens_trans_t), intent(out):: this     !out: tensor transformation/initialization control field
+         integer(INTD), intent(out), optional:: ierr      !out: error code
+         complex(8), intent(in), optional:: alpha         !in: scalar
+         character(*), intent(in), optional:: method_name !in: external (registered) method name
+         integer(INTD):: errc
+
+         errc=0; this%method=' '
+         if(present(alpha)) this%alpha=alpha
+         if(present(method_name)) then
+          if(len_trim(method_name).le.EXA_MAX_METHOD_NAME_LEN) then
+           this%method=method_name(1:len_trim(method_name))
+          else
+           errc=-1
+          endif
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine CtrlTensTransCtor
+!---------------------------------------------------
+        subroutine CtrlTensTransMapMethod(this,ierr)
+!Maps the method name to the actual definer object.
+         implicit none
+         class(ctrl_tens_trans_t), intent(out):: this     !out: tensor transformation/initialization control field
+         integer(INTD), intent(out), optional:: ierr      !out: error code
+         integer(INTD):: errc,l
+
+         errc=0; l=len_trim(this%method)
+
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine CtrlTensTransMapMethod
+![ctrl_tens_add_t]============================================
+        subroutine CtrlTensAddCtor(this,permutation,ierr,alpha)
+!CTOR.
+         implicit none
+         class(ctrl_tens_add_t), intent(out):: this    !out: tensor addition/copy control field
+         type(permutation_t), intent(in):: permutation !in: tensor dimension permutation
+         integer(INTD), intent(out), optional:: ierr   !out: error code
+         complex(8), intent(in), optional:: alpha      !in: scalar prefactor
+         integer(INTD):: errc
+
+         errc=0
+         this%permutation=permutation
+         if(present(alpha)) this%alpha=alpha
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine CtrlTensAddCtor
+!-------------------------------------------------------------------------
+        function CtrlTensAddGetPermutation(this,ierr,alpha) result(permut)
+!Returns a non-owning pointer to the encapsulated permutation.
+         implicit none
+         type(permutation_t), pointer:: permut             !out: pointer to the permutation
+         class(ctrl_tens_add_t), intent(in), target:: this !in: tensor addition/copy control field
+         integer(INTD), intent(out), optional:: ierr       !out: error code
+         complex(8), intent(out), optional:: alpha         !out: scalar prefactor
+         integer(INTD):: errc
+
+         errc=0
+         permut=>this%permutation
+         if(present(alpha)) alpha=this%alpha
+         if(present(ierr)) ierr=errc
+         return
+        end function CtrlTensAddGetPermutation
+!---------------------------------------------------
+        subroutine CtrlTensAddPack(this,packet,ierr)
+!Packer.
+         implicit none
+         class(ctrl_tens_add_t), intent(in):: this   !in: tensor addition/copy control field
+         class(obj_pack_t), intent(inout):: packet   !inout: packet
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         call this%permutation%pack(packet,errc)
+         if(errc.eq.TEREC_SUCCESS) then
+          call pack_builtin(packet,this%alpha,errc); if(errc.ne.PACK_SUCCESS) errc=-1
+         else
+          errc=-2
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine CtrlTensAddPack
+!-----------------------------------------------------
+        subroutine CtrlTensAddUnpack(this,packet,ierr)
+!Unpacker.
+         implicit none
+         class(ctrl_tens_add_t), intent(inout):: this !in: tensor addition/copy control field
+         class(obj_pack_t), intent(inout):: packet    !inout: packet
+         integer(INTD), intent(out), optional:: ierr  !out: error code
+         integer(INTD):: errc
+
+         call this%permutation%unpack(packet,errc)
+         if(errc.eq.TEREC_SUCCESS) then
+          call unpack_builtin(packet,this%alpha,errc); if(errc.ne.PACK_SUCCESS) errc=-1
+         else
+          errc=-2
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine CtrlTensAddUnpack
+!------------------------------------------
+        subroutine ctrl_tens_add_dtor(this)
+         implicit none
+         type(ctrl_tens_add_t):: this
+
+         return
+        end subroutine ctrl_tens_add_dtor
 ![ctrl_tens_contr_t]============================================
         subroutine CtrlTensContrCtor(this,contr_ptrn,ierr,alpha)
 !CTOR.
