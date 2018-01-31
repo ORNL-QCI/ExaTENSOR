@@ -177,7 +177,7 @@
           endif
  !Pause (like we are doing some computations now and the MPI message is progressing on the background, hopefully):
           tms=thread_wtime()
-          errc=timer_start(paus,tmr); do while(.not.time_is_off(tmr,errc)); enddo !DEBUG: Pause before FLUSH
+          errc=timer_start(tmr,paus); do while(.not.timer_expired(tmr,errc)); enddo !DEBUG: Pause before FLUSH
           tm=thread_wtime(tms); write(jo,*) 'Pause before FLUSH (sec) = ',tm !DEBUG
  !Now complete fetching (hopefully the MPI message is already here):
           tms=thread_wtime()
@@ -224,7 +224,7 @@
           endif
  !Pause (like we are doing some computations now and the MPI message is progressing on the background hopefully):
           tms=thread_wtime()
-          errc=timer_start(paus,tmr); do while(.not.time_is_off(tmr,errc)); enddo !DEBUG: Pause before FLUSH
+          errc=timer_start(tmr,paus); do while(.not.timer_expired(tmr,errc)); enddo !DEBUG: Pause before FLUSH
           tm=thread_wtime(tms); write(jo,*) 'Pause before FLUSH (sec) = ',tm !DEBUG
  !Now complete the accumulate (hopefully it is already completed):
           tms=thread_wtime()

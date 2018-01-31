@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/01/29
+!REVISION: 2018/01/31
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -93,9 +93,9 @@
         integer(INTD), private:: MIN_LOCATE_INSTR=256          !min number of instructions in the locating cycle to start locating rotations
         real(8), private:: MAX_LOCATE_WAIT_TIME=0.5d-3         !max wait time (sec) until performing a locating rotation even if there is no enough instructions
  !Decomposer:
-        integer(INTD), private:: MAX_DECOMPOSE_PRN_INSTR=256   !max number of processed parent instructions in the decomposition phase
-        integer(INTD), private:: MAX_DECOMPOSE_CLD_INSTR=16384 !max number of created child instructions in the decomposition phase
-        real(8), private:: MAX_DECOMPOSE_PHASE_TIME=0.5d-3     !max time (sec) before passing instructions to Dispatcher
+        integer(INTD), private:: MAX_DECOMPOSE_PRNT_INSTR=256   !max number of processed parent instructions in the decomposition phase
+        integer(INTD), private:: MAX_DECOMPOSE_CHLD_INSTR=16384 !max number of created child instructions in the decomposition phase
+        real(8), private:: MAX_DECOMPOSE_PHASE_TIME=0.5d-3      !max time (sec) before passing instructions to Dispatcher
  !Dispatcher:
         integer(INTD), private:: MAX_ISSUE_INSTR=4096          !max number of tensor instructions in the bytecode issued to a child node
         integer(INTD), private:: MIN_ISSUE_INSTR=512           !min number of tensor instructions being currently processed by a child node
@@ -2211,7 +2211,7 @@
          endif
 !Work loop:
          num_loc_instr=0; num_def_instr=0
-         ier=timer_start(MAX_LOCATE_WAIT_TIME,loc_wait); if(ier.ne.TIMERS_SUCCESS.and.errc.eq.0) errc=-80
+         ier=timer_start(loc_wait,MAX_LOCATE_WAIT_TIME); if(ier.ne.TIMERS_SUCCESS.and.errc.eq.0) errc=-80
          active=((errc.eq.0).and.(this%ring_comm.ne.MPI_COMM_NULL)); stopping=(.not.active); stalled=.FALSE.
          wloop: do while(active)
  !Append new instructions from uDecoder (port 0) at the end of the main queue:
@@ -2280,8 +2280,8 @@
           endif
  !Check whether the timer has expired or the locating list is long enough to start the locating rotation:
           if(num_loc_instr.gt.0) then
-           if(time_is_off(loc_wait,ier,destroy=.TRUE.)) then
-            ier=timer_start(MAX_LOCATE_WAIT_TIME,loc_wait)
+           if(timer_expired(loc_wait,ier,destroy=.TRUE.)) then
+            ier=timer_start(loc_wait,MAX_LOCATE_WAIT_TIME)
             if(ier.ne.TIMERS_SUCCESS.and.errc.eq.0) then; errc=-54; exit wloop; endif
            else !timer has not expired yet
             if(num_loc_instr.lt.MIN_LOCATE_INSTR.and.(.not.stalled)) cycle wloop !no enough tensor instructions to initiate locating rotations and no CTRL/AUX instructions found
@@ -2570,16 +2570,17 @@
          endif
 !Check whether this TAVP-MNG is at the bottom of TAVP-MNG hierarchy:
          bottom_tavp=tavp%is_bottom(ier); if(ier.ne.0.and.errc.eq.0) errc=-49
+!Acquire a timer:
+         ier=timer_start(dec_timer,MAX_DECOMPOSE_PHASE_TIME)
+         if(ier.ne.TIMERS_SUCCESS.and.errc.eq.0) errc=-48
 !Work loop:
          active=(errc.eq.0); stopping=(.not.active)
          wloop: do while(active)
  !Get a new batch of (parent) instructions from Locator (port 0) into the main queue:
-          ier=this%iqueue%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-48; exit wloop; endif
-          ier=this%flush_port(0); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-47; exit wloop; endif
+          ier=this%iqueue%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-47; exit wloop; endif
+          ier=this%flush_port(0); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-46; exit wloop; endif
  !Decompose parent tensor instructions, creating new child subinstructions (filter previously decomposed subinstructions):
           num_processed=0; base_created=tavp%get_crtd_instr_counter()
-          ier=timer_start(MAX_DECOMPOSE_PHASE_TIME,dec_timer)
-          if(ier.ne.TIMERS_SUCCESS.and.errc.eq.0) then; errc=-46; exit wloop; endif
           ier=this%iqueue%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-45; exit wloop; endif
           ier=this%iqueue%get_status()
           dloop: do while(ier.eq.GFC_IT_ACTIVE)
@@ -2612,10 +2613,10 @@
              ier=this%iqueue%move_elem(this%aux_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-34; exit wloop; endif
             endif
   !Pass a batch of new child instructions to Dispatcher/Locator (port 0) and a batch of processed parent instructions to Collector (port 0):
-            expired=time_is_off(dec_timer,ier,destroy=.TRUE.).or.stopping
+            expired=(timer_expired(dec_timer,ier).or.stopping)
             if(ier.ne.TIMERS_SUCCESS.and.errc.eq.0) then; errc=-33; exit wloop; endif
-            if(expired.or.tavp%get_crtd_instr_counter()-base_created.ge.MAX_DECOMPOSE_CLD_INSTR.or.&
-              &num_processed.ge.MAX_DECOMPOSE_PRN_INSTR) then
+            if(expired.or.tavp%get_crtd_instr_counter()-base_created.ge.MAX_DECOMPOSE_CHLD_INSTR.or.&
+              &num_processed.ge.MAX_DECOMPOSE_PRNT_INSTR) then
    !Clone control instructions for Collector:
              ier=this%col_list%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-32; exit wloop; endif
              ier=this%ctrl_list%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-31; exit wloop; endif
@@ -2681,9 +2682,10 @@
   !Clear local counters:
              num_processed=0; base_created=tavp%get_crtd_instr_counter()
   !Restart the timer:
-             if(.not.expired) ier=timer_destroy(dec_timer)
-             ier=timer_start(MAX_DECOMPOSE_PHASE_TIME,dec_timer)
-             if(ier.ne.TIMERS_SUCCESS.and.errc.eq.0) then; errc=-3; exit wloop; endif
+             if(expired) then
+              ier=timer_reset(dec_timer,MAX_DECOMPOSE_PHASE_TIME)
+              if(ier.ne.TIMERS_SUCCESS.and.errc.eq.0) then; errc=-3; exit wloop; endif
+             endif
             endif
            endif
            ier=this%iqueue%get_status()
@@ -2691,6 +2693,8 @@
           if(ier.ne.GFC_IT_EMPTY.and.errc.eq.0) then; errc=-2; exit wloop; endif
           active=.not.stopping
          enddo wloop
+!Destroy the timer:
+         ier=timer_destroy(dec_timer)
 !Record the error:
          ier=this%get_error(); if(ier.eq.DSVP_SUCCESS) call this%set_error(errc)
          if(errc.ne.0.and.VERBOSE) write(CONS_OUT,'("#ERROR(TAVP_MNG)[",i6,"]: Decomposer error ",i11," by thread ",i2)')&

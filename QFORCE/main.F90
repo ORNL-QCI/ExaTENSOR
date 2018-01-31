@@ -1,7 +1,7 @@
 !PROJECT Q-FORCE: Massively Parallel Quantum Many-Body Methodology on Heterogeneous HPC systems.
 !BASE: ExaTensor: Massively Parallel Tensor Algebra Virtual Processor for Heterogeneous HPC systems.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/01/24
+!REVISION: 2018/01/31
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -84,16 +84,17 @@
            if(ierr.ne.0) call quit(ierr,'h_space_t%get_root_id() failed!')
 !Create tensors:
            ierr=exatns_tensor_create(dtens,'dtens',(/(ao_space_id,i=1,4)/),(/(ao_space_root,i=1,4)/),EXA_DATA_KIND_R8)
-           ierr=exatns_tensor_create(ltens,'ltens',(/(ao_space_id,i=1,4)/),(/(ao_space_root,i=1,4)/),EXA_DATA_KIND_R8)
-           ierr=exatns_tensor_create(rtens,'rtens',(/(ao_space_id,i=1,4)/),(/(ao_space_root,i=1,4)/),EXA_DATA_KIND_R8)
+           !ierr=exatns_tensor_create(ltens,'ltens',(/(ao_space_id,i=1,4)/),(/(ao_space_root,i=1,4)/),EXA_DATA_KIND_R8)
+           !ierr=exatns_tensor_create(rtens,'rtens',(/(ao_space_id,i=1,4)/),(/(ao_space_root,i=1,4)/),EXA_DATA_KIND_R8)
 !Contract tensors:
-           ierr=exatns_tensor_contract(dtens,ltens,rtens,'D(a,b,c,d)+=L(d,i,b,j)*R(j,c,i,a)')
+           !ierr=exatns_tensor_contract(dtens,ltens,rtens,'D(a,b,c,d)+=L(d,i,b,j)*R(j,c,i,a)')
 !Destroy tensors:
-           ierr=exatns_tensor_destroy(rtens)
-           ierr=exatns_tensor_destroy(ltens)
-           ierr=exatns_tensor_destroy(dtens)
+           !ierr=exatns_tensor_destroy(rtens)
+           !ierr=exatns_tensor_destroy(ltens)
+           !ierr=exatns_tensor_destroy(dtens)
 !Stop ExaTENSOR runtime:
-           ierr=exatns_stop()
+           !ierr=exatns_stop()
+           pause
           endif
          else
           write(*,*) 'Process ',my_rank,' terminated with error ',ierr
