@@ -1756,36 +1756,40 @@
          tm=thread_wtime()
          if(ds_instr%is_empty(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
+           if(instr_packet%is_healthy(errc)) then
 !Retrieve the TAVP argument cache:
-           if(associated(this%arg_cache)) then
+            if(associated(this%arg_cache)) then
 !Extract the instruction attributes (id,opcode,status,error):
-            call unpack_builtin(instr_packet,iid,errc)
-            if(errc.eq.0) then
-             call unpack_builtin(instr_packet,op_code,errc)
+             call unpack_builtin(instr_packet,iid,errc)
              if(errc.eq.0) then
-              call unpack_builtin(instr_packet,stat,errc)
+              call unpack_builtin(instr_packet,op_code,errc)
               if(errc.eq.0) then
-               call unpack_builtin(instr_packet,err_code,errc)
-!Extract the instruction body:
+               call unpack_builtin(instr_packet,stat,errc)
                if(errc.eq.0) then
-                select case(op_code)
-                case(TAVP_INSTR_NOOP)
-                case(TAVP_INSTR_CTRL_STOP,TAVP_INSTR_CTRL_RESUME,TAVP_INSTR_CTRL_PAUSE)
-                case(TAVP_INSTR_TENS_CREATE,TAVP_INSTR_TENS_DESTROY)
-                 call decode_instr_tens_create_destroy(errc); if(errc.ne.0) errc=-11
-                case(TAVP_INSTR_TENS_CONTRACT)
-                 call decode_instr_tens_contract(errc); if(errc.ne.0) errc=-10
-                case default
-                 call ds_instr%set_status(DS_INSTR_RETIRED,errc,TAVP_ERR_GEN_FAILURE)
-                 errc=-9 !unknown instruction opcode (or not implemented)
-                end select
-!Activate the instruction:
+                call unpack_builtin(instr_packet,err_code,errc)
+!Extract the instruction body:
                 if(errc.eq.0) then
-                 call ds_instr%activate(op_code,errc,stat,err_code,iid)
-                 if(errc.ne.DSVP_SUCCESS) then
+                 select case(op_code)
+                 case(TAVP_INSTR_NOOP)
+                 case(TAVP_INSTR_CTRL_STOP,TAVP_INSTR_CTRL_RESUME,TAVP_INSTR_CTRL_PAUSE)
+                 case(TAVP_INSTR_TENS_CREATE,TAVP_INSTR_TENS_DESTROY)
+                  call decode_instr_tens_create_destroy(errc); if(errc.ne.0) errc=-12
+                 case(TAVP_INSTR_TENS_CONTRACT)
+                  call decode_instr_tens_contract(errc); if(errc.ne.0) errc=-11
+                 case default
                   call ds_instr%set_status(DS_INSTR_RETIRED,errc,TAVP_ERR_GEN_FAILURE)
-                  errc=-8
+                  errc=-10 !unknown instruction opcode (or not implemented)
+                 end select
+!Activate the instruction:
+                 if(errc.eq.0) then
+                  call ds_instr%activate(op_code,errc,stat,err_code,iid)
+                  if(errc.ne.DSVP_SUCCESS) then
+                   call ds_instr%set_status(DS_INSTR_RETIRED,errc,TAVP_ERR_GEN_FAILURE)
+                   errc=-9
+                  endif
                  endif
+                else
+                 errc=-8
                 endif
                else
                 errc=-7

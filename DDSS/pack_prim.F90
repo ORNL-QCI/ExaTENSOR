@@ -1,6 +1,6 @@
 !Basic object packing/unpacking primitives.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/01/29
+!REVISION: 2018/01/31
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -135,9 +135,10 @@
          contains
           procedure, private:: construct=>ObjPackConstruct     !packet constructor (internal)
           procedure, public:: clean=>ObjPackClean              !packet cleaner
+          procedure, public:: is_healthy=>ObjPackIsHealthy     !returns TRUE if the packet is healthy (consistent)
           procedure, public:: get_capacity=>ObjPackGetCapacity !returns the capacity of the packet buffer in bytes
           procedure, public:: get_length=>ObjPackGetLength     !returns the current length of the packet in bytes
-          procedure, public:: has_room=>ObjPackHasRoom         !.TRUE. means one can add data to the packet, .FALSE. otherwise
+          procedure, public:: has_room=>ObjPackHasRoom         !TRUE means one can add data to the packet, FALSE otherwise
           procedure, public:: space_left=>ObjPackSpaceLeft     !returns the amount of free space left in the packet buffer in bytes
           procedure, public:: reset=>ObjPackReset              !resets the unpacking offset to the beginning of the packet
         end type obj_pack_t
@@ -271,6 +272,33 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine ObjPackClean
+!-------------------------------------------------------
+        function ObjPackIsHealthy(this,ierr) result(res)
+!Returns TRUE if the packet is healthy (consistent).
+!Null packets are not considered healthy: <ierr> = PACK_NULL.
+         implicit none
+         logical:: res                               !out: result
+         class(obj_pack_t), intent(in):: this        !in: packet
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=PACK_SUCCESS; res=.FALSE.
+         if(associated(this%buffer)) then
+          if(this%get_capacity().ge.this%get_length()) then
+           if(this%offset.ge.0_INTL.and.this%offset.le.this%length) then
+            res=.TRUE.
+           else
+            errc=PACK_ERROR
+           endif
+          else
+           errc=PACK_ERROR
+          endif
+         else
+          errc=PACK_NULL
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function ObjPackIsHealthy
 !-----------------------------------------------------------
         function ObjPackGetCapacity(this,ierr) result(bytes)
 !Returns the packet capacity (max length) in bytes.
