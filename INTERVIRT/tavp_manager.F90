@@ -1808,6 +1808,11 @@
          else
           errc=-1
          endif
+         if(DEBUG.gt.0.and.errc.ne.0) then
+          write(CONS_OUT,'("#ERROR(TAVP-MNG:Decoder.decode)[",i6,":",i3,"]: Error ",i11)')&
+          &impir,omp_get_thread_num(),errc
+          flush(CONS_OUT)
+         endif
          if(present(ierr)) ierr=errc
          tm=thread_wtime(tm); call this%update_timing(tm)
          return
@@ -1841,6 +1846,11 @@
              endif
              call tensor_tmp%tens_rcrsv_ctor(instr_packet,jerr) !unpack tensor information into a temporary tensor
              if(jerr.ne.TEREC_SUCCESS) then
+              if(DEBUG.gt.0) then
+               write(CONS_OUT,'("#ERROR(TAVP-MNG:Decoder.decode.decode_instr_operands)[",i6,":",i3,"]: TensCtor Error ",i11)')&
+               &impir,omp_get_thread_num(),jerr
+               flush(CONS_OUT)
+              endif
               call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_BTC_BAD); jerr=-9; exit
              endif
              tens_entry=>NULL(); tens_entry=>this%arg_cache%lookup(tensor_tmp,jerr)
@@ -1902,6 +1912,11 @@
            else
             call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_GEN_FAILURE); jerr=-1
            endif
+           if(DEBUG.gt.0.and.jerr.ne.0) then
+            write(CONS_OUT,'("#ERROR(TAVP-MNG:Decoder.decode.decode_instr_operands)[",i6,":",i3,"]: Error ",i11)')&
+            &impir,omp_get_thread_num(),jerr
+            flush(CONS_OUT)
+           endif
            return
           end subroutine decode_instr_operands
 
@@ -1921,9 +1936,16 @@
                ds_instr%num_out_oprnds=0 !TENSOR_DESTROY does not have output operands
               endif
              end select
+            else
+             call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_GEN_FAILURE); jerr=-2
             endif
            else
             call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_RSC_UNAVAILABLE); jerr=-1
+           endif
+           if(DEBUG.gt.0.and.jerr.ne.0) then
+            write(CONS_OUT,'("#ERROR(TAVP-MNG:Decoder.decode.decode_instr_tens_create_destroy)[",i6,":",i3,"]: Error ",i11)')&
+            &impir,omp_get_thread_num(),jerr
+            flush(CONS_OUT)
            endif
            return
           end subroutine decode_instr_tens_create_destroy
@@ -1963,6 +1985,11 @@
             endif
            else
             call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_RSC_UNAVAILABLE); jerr=-1
+           endif
+           if(DEBUG.gt.0.and.jerr.ne.0) then
+            write(CONS_OUT,'("#ERROR(TAVP-MNG:Decoder.decode.decode_instr_tens_contract)[",i6,":",i3,"]: Error ",i11)')&
+            &impir,omp_get_thread_num(),jerr
+            flush(CONS_OUT)
            endif
            return
           end subroutine decode_instr_tens_contract

@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/01/29
+!REVISION: 2018/01/31
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -1431,9 +1431,11 @@
            if(nd.gt.0) then
             if(pcn) then
              if(hsn) then
-              call this%tens_signature_ctor(errc,sidx(1:nd),tname(1:len_trim(tname)),hidx(1:nd))
+              call this%tens_signature_ctor(errc,sidx(1:nd),tname(1:sl),hidx(1:nd))
+              !call this%tens_signature_ctor(errc,sidx(1:nd),tname(1:len_trim(tname)),hidx(1:nd))
              else
-              call this%tens_signature_ctor(errc,sidx(1:nd),tname(1:len_trim(tname)))
+              call this%tens_signature_ctor(errc,sidx(1:nd),tname(1:sl))
+              !call this%tens_signature_ctor(errc,sidx(1:nd),tname(1:len_trim(tname)))
              endif
             else
              if(hsn) then
@@ -1444,7 +1446,8 @@
             endif
            elseif(nd.eq.0) then
             if(pcn) then
-             call this%tens_signature_ctor(errc,tens_name=tname(1:len_trim(tname)))
+             call this%tens_signature_ctor(errc,tens_name=tname(1:sl))
+             !call this%tens_signature_ctor(errc,tens_name=tname(1:len_trim(tname)))
             else
              call this%tens_signature_ctor(errc)
             endif
