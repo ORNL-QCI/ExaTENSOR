@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/02/01
+!REVISION: 2018/02/02
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -146,7 +146,7 @@
         end type tens_signature_t
  !Tensor shape:
         type, public:: tens_shape_t
-         integer(INTL), allocatable, private:: dim_extent(:) !tensor dimension extents (resolution)
+         integer(INTL), allocatable, private:: dim_extent(:) !tensor dimension extents (resolution), 0 means deferred (still unresolved)
          integer(INTD), allocatable, private:: dim_group(:)  !tensor dimension groups (group 0 is default with no restrictions)
          integer(INTD), allocatable, private:: group_spec(:) !specification of the restriction kind for each index restriction group (not every defined group needs to be present in dim_group(:))
          integer(INTD), private:: num_dims=-1                !number of tensor dimensions (aka tensor order or tensor rank)
@@ -4602,14 +4602,14 @@
 !tens_descr.info(:) format:
 ! 1. hspace_idx(1:rank): space id for each tensor dimension;
 ! 2. subspace_idx(1:rank): subspace id for each tensor dimension;
-! 3. dim_extent(1:rank): extent for each tensor dimension;
-! 4. dim_group(1:rank): previous dimension for each (symmetric) tensor dimension (0:none);
+! 3. dim_extent(1:rank): extent for each tensor dimension (0 means deferred);
+! 4. dim_group(1:rank): previous dimension for each symmetric (dependent) tensor dimension (0:none);
 ! 5. dim_group_restriction(1:rank): group restriction for each symmetric tensor dimension;
-! 6. layout kind;
-! 7. data type;
-! 8. body size in bytes;
-! 9. location (DDSS process id): Skipped when <skip_location>=TRUE.
-!TOTAL size = 5*rank + 1 + 1 + 1 + 1 = 5*rank + 4 [elements]
+! 6. layout kind: Skipped when <skip_body>=TRUE;
+! 7. layout data type: Skipped when <skip_body>=TRUE;
+! 8. layout body size in bytes: Skipped when <skip_body>=TRUE;
+! 9. location (DDSS process id): Skipped when <skip_body>=TRUE or <skip_location>=TRUE.
+!TOTAL size = 5*rank + [1 + 1 + 1 + [1]] = 5*rank + 4 (elements)
 !`Note: This function violates object encapsulation by
 ! directly accessing data members of the data members
 ! of the <tens_rcrsv_t> class. However, since it is a read-only
@@ -4620,27 +4620,34 @@
          class(tens_rcrsv_t), intent(in):: this        !in: tensor
          integer(INTD), intent(out), optional:: ierr   !out: error code
          logical, intent(in), optional:: skip_body     !in: if TRUE, the tensor body info (layout, location) will be omitted (defaults to FALSE)
-         logical, intent(in), optional:: skip_location !in: if TRUE, the tensor location will be omitted (defaults to FALSE)
+         logical, intent(in), optional:: skip_location !in: if TRUE, the tensor location will be omitted (defaults to FALSE), ignored if <skip_body>=TRUE
          integer(INTD):: errc,num_dims,unresolved,i,j,k,ng,gres
          logical:: shaped,hspaced,layed,located,symmetric,skiploc,skipbody
          class(DataDescr_t), pointer:: descr_p
          integer(INTD):: grp_pos(0:MAX_TENSOR_RANK*2) !the factor of 2 is just used to make it big enough
-         !real(8):: tms
+         !real(8):: tm
 
-         !tms=thread_wtime()
-         skiploc=.FALSE.; if(present(skip_location)) skiploc=skip_location
-         skipbody=.FALSE.; if(present(skip_body)) then; skipbody=skip_body; skiploc=((.not.skipbody).and.skiploc); endif
+         !tm=thread_wtime()
+         skipbody=.FALSE.; skiploc=.FALSE.
+         if(present(skip_body)) then; skipbody=skip_body; skiploc=skipbody; endif
+         if(present(skip_location)) skiploc=(skip_location.or.skipbody)
          if(this%is_set(errc,num_dims,shaped,unresolved,hspaced,layed,located,symmetric)) then
           if(errc.eq.TEREC_SUCCESS) then
-           if(unresolved.eq.0.and.shaped.and.(layed.or.skipbody).and.(located.or.skiploc)) then !sufficiently defined tensor
+           if((layed.or.skipbody).and.(located.or.skiploc)) then
             tens_descr%rank=num_dims
             tens_descr%char_name=this%header%signature%char_name
             allocate(tens_descr%info(num_dims*5+4)) !see the format right above
+!Encode tensor header:
             i=0
             if(num_dims.gt.0) then
-             tens_descr%info(i+1:i+num_dims)=this%header%signature%hspace(1:num_dims)%space_id; i=i+num_dims
-             tens_descr%info(i+1:i+num_dims)=this%header%signature%space_idx(1:num_dims); i=i+num_dims
-             tens_descr%info(i+1:i+num_dims)=this%header%shape%dim_extent(1:num_dims); i=i+num_dims
+             tens_descr%info(i+1:i+num_dims)=this%header%signature%hspace(1:num_dims)%space_id
+             tens_descr%info(i+num_dims+1:i+num_dims*2)=this%header%signature%space_idx(1:num_dims)
+             if(shaped) then
+              tens_descr%info(i+num_dims*2+1:i+num_dims*3)=this%header%shape%dim_extent(1:num_dims)
+             else
+              tens_descr%info(i+num_dims*2+1:i+num_dims*3)=0_INTL !deferred shape
+             endif
+             i=i+num_dims*3
              if(symmetric) then !dimension symmetry may be present
               ng=this%header%num_groups(errc) !number of non-trivial symmetric dimension groups
               if(errc.eq.TEREC_SUCCESS) then
@@ -4657,15 +4664,18 @@
                  errc=TEREC_ERROR
                 endif
                else !no dimension symmetry
-                tens_descr%info(i+1:i+num_dims)=0; i=i+num_dims
-                tens_descr%info(i+1:i+num_dims)=TEREC_IND_RESTR_NONE; i=i+num_dims
+                tens_descr%info(i+1:i+num_dims)=0
+                tens_descr%info(i+num_dims+1:i+num_dims*2)=TEREC_IND_RESTR_NONE
+                i=i+num_dims*2
                endif
               endif
              else !no dimension symmetry
-              tens_descr%info(i+1:i+num_dims)=0; i=i+num_dims
-              tens_descr%info(i+1:i+num_dims)=TEREC_IND_RESTR_NONE; i=i+num_dims
+              tens_descr%info(i+1:i+num_dims)=0
+              tens_descr%info(i+num_dims+1:i+num_dims*2)=TEREC_IND_RESTR_NONE
+              i=i+num_dims*2
              endif
             endif
+!Encode tensor body, if needed:
             if(errc.eq.TEREC_SUCCESS) then
              if(.not.skipbody) then
               i=i+1; tens_descr%info(i)=this%body%layout%get_layout_kind()
@@ -4676,7 +4686,7 @@
                if(errc.eq.TEREC_SUCCESS) then
                 if(descr_p%is_set(errc,proc_rank=j)) then
                  if(errc.eq.0) then
-                  i=i+1; tens_descr%info(i)=j
+                  i=i+1; tens_descr%info(i)=j !MPI process owning the tensor body
                  else
                   errc=TEREC_OBJ_CORRUPTED
                  endif
@@ -4686,10 +4696,10 @@
                endif
                descr_p=>NULL()
               else
-               tens_descr%info(i+1:)=-1
+               tens_descr%info(i+1:)=-1_INTL
               endif
              else
-              tens_descr%info(i+1:)=-1
+              tens_descr%info(i+1:)=-1_INTL
              endif
             endif
            else
@@ -4700,7 +4710,7 @@
           if(errc.eq.TEREC_SUCCESS) errc=TEREC_INVALID_REQUEST
          endif
          if(present(ierr)) ierr=errc
-         !write(CONS_OUT,*)'#MSG: tens_rcrsv_t.get_descriptor() timing: ',thread_wtime(tms) !timing
+         !write(CONS_OUT,'("#MSG(tens_rcrsv_t.get_descriptor): Time = ",F9.6)') thread_wtime(tm) !timing
          return
         end function TensRcrsvGetDescriptor
 !-------------------------------------------------------------------------------------------------
