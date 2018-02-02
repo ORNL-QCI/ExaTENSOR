@@ -1,6 +1,6 @@
 !Domain-specific virtual processor (DSVP): Abstract base module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/01/29
+!REVISION: 2018/02/02
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -1485,7 +1485,7 @@
          class(ds_unit_t), intent(inout):: this           !inout: DS unit
          integer(INTD), intent(in):: port_id              !in: port id
          integer(INTD), intent(in), optional:: max_items  !in: upper limit on the number of items to flush
-         integer(INTD), intent(out), optional:: num_moved !out: actualy number of items flushed
+         integer(INTD), intent(out), optional:: num_moved !out: actual number of items flushed
          integer(INTD):: n
 
          n=0

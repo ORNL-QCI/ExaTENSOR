@@ -2252,7 +2252,12 @@
          wloop: do while(active)
  !Append new instructions from uDecoder (port 0) at the end of the main queue:
           ier=this%iqueue%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-79; exit wloop; endif
-          ier=this%flush_port(0); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-78; exit wloop; endif
+          ier=this%flush_port(0,num_moved=i); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-78; exit wloop; endif
+          if(DEBUG.gt.0.and.i.gt.0) then
+           write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Locator unit ",i2," received ",i9," new instructions")')&
+           &impir,this%get_id(),i
+           flush(CONS_OUT)
+          endif
  !Insert the header dummmy instruction, which will tag the bytecode, into the locating list:
           ier=this%loc_list%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-77; exit wloop; endif
           if(this%loc_list%get_status().eq.GFC_IT_EMPTY) then !if locating list is not empty, the dummy instruction is already there
@@ -2424,7 +2429,14 @@
            tens_instr=>NULL(); select type(uptr); class is(tens_instr_t); tens_instr=>uptr; end select
            if(.not.associated(tens_instr).and.errc.eq.0) then; errc=-13; exit wloop; endif !trap
            located=tens_instr%fully_located(ier,inp_located,inp_valued)
-           if(ier.ne.0.and.errc.eq.0) then; errc=-12; exit wloop; endif
+           if(ier.ne.0.and.errc.eq.0) then
+            if(DEBUG.gt.0) then
+             write(CONS_OUT,'("#ERROR(TAVP-MNG:Locator)[",i6,":",i3,"]: tens_instr.fully_located() error ",i11)')&
+             &impir,omp_get_thread_num(),ier
+             flush(CONS_OUT)
+            endif
+            errc=-12; exit wloop
+           endif
            if(.not.(inp_located.and.inp_valued)) then !input tensors must have been located and they must be defined
             ier=this%loc_list%move_elem(this%def_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-11; exit wloop; endif
            else !instruction is ready to be executed (issued to the next level)
