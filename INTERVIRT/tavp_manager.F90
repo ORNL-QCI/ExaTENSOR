@@ -1859,6 +1859,11 @@
              endif
              tens_entry=>NULL(); tens_entry=>this%arg_cache%lookup(tensor_tmp,jerr)
              if(jerr.ne.0) then
+              if(DEBUG.gt.0) then
+               write(CONS_OUT,'("#ERROR(TAVP-MNG:Decoder.decode.decode_instr_operands)[",i6,":",i3,"]: Cache Lookup Error ",i11)')&
+               &impir,omp_get_thread_num(),jerr
+               flush(CONS_OUT)
+              endif
               if(associated(tens_entry)) call this%arg_cache%release_entry(tens_entry)
               call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_CHE_FAILURE); jerr=-8; exit
              endif

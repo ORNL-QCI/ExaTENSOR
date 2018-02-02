@@ -1,7 +1,7 @@
 !ExaTENSOR: Massively Parallel Virtual Processor for Scale-Adaptive Hierarchical Tensor Algebra
 !This is the top level API module of ExaTENSOR (user-level API)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2018/01/31
+!REVISION: 2018/02/01
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -674,11 +674,11 @@
          if(ierr.eq.TEREC_SUCCESS.and.associated(hspace)) then
           call hspace%h_space_ctor(space_basis,ierr)
           if(ierr.eq.0) then
-           if(DEBUG.gt.0) then
-            write(jo,'("#MSG(exatensor): Registered new vector space [id = ",i4,"; dim = ",i9,"]:")',ADVANCE='NO')&
-                 &space_id,hspace%get_space_dim()
-            write(jo,*) space_name
-           endif
+           !if(DEBUG.gt.0) then
+            !write(jo,'("#MSG(exatensor): Registered new vector space {id = ",i4,"; dim = ",i9,"}:")',ADVANCE='NO')&
+                 !&space_id,hspace%get_space_dim()
+            !write(jo,*) space_name
+           !endif
           else
            space_id=-1; ierr=EXA_ERR_UNABLE_COMPLETE
           endif

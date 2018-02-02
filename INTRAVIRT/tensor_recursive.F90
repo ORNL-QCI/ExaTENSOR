@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/01/31
+!REVISION: 2018/02/01
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -1139,15 +1139,39 @@
               hspace_p=>NULL()
               up=>this%hspaces_it%element_value(int(hspace_id,INTL),errc)
               if(errc.eq.GFC_SUCCESS.and.associated(up)) then
-               select type(up); type is(h_space_t); hspace_p=>up; end select
+               select type(up); class is(h_space_t); hspace_p=>up; end select
                if(.not.associated(hspace_p)) errc=TEREC_ERROR
               else
-               if(errc.eq.GFC_SUCCESS) errc=TEREC_ERROR
+               if(errc.eq.GFC_SUCCESS) then
+                errc=TEREC_ERROR
+               else
+                if(DEBUG.gt.0) then
+                 write(CONS_OUT,'("#ERROR(hspace_register_t.register_space): vector_iter_t.element_value() error ",i11)') errc !debug
+                 flush(CONS_OUT)
+                endif
+               endif
               endif
+             endif
+            else
+             if(DEBUG.gt.0) then
+              write(CONS_OUT,'("#ERROR(hspace_register_t.register_space): vector_iter_t.append() error ",i11)') errc !debug
+              flush(CONS_OUT)
              endif
             endif
            else
-            if(errc.eq.GFC_FOUND) errc=TEREC_INVALID_REQUEST
+            if(errc.eq.GFC_FOUND) then !space already exists
+             errc=TEREC_INVALID_REQUEST
+            else
+             if(DEBUG.gt.0) then
+              write(CONS_OUT,'("#ERROR(hspace_register_t.register_space): dictionary_iter_t.search() error ",i11)') errc !debug
+              flush(CONS_OUT)
+             endif
+            endif
+           endif
+          else
+           if(DEBUG.gt.0) then
+            write(CONS_OUT,'("#ERROR(hspace_register_t.register_space): vector_iter_t.get_length() error ",i11)') errc !debug
+            flush(CONS_OUT)
            endif
           endif
          endif

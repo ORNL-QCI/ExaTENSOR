@@ -1,7 +1,7 @@
 !PROJECT Q-FORCE: Massively Parallel Quantum Many-Body Methodology on Heterogeneous HPC systems.
 !BASE: ExaTensor: Massively Parallel Tensor Algebra Virtual Processor for Heterogeneous HPC systems.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/01/31
+!REVISION: 2018/02/01
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -54,45 +54,76 @@
         class(h_space_t), pointer:: ao_space
         type(tens_rcrsv_t):: dtens,ltens,rtens
         integer(INT_MPI):: mpi_th_provided
-        integer(INTD):: ierr,i,my_rank,ao_space_id,my_role
+        integer(INTD):: ierr,i,my_rank,comm_size,ao_space_id,my_role
         integer(INTL):: l,ao_space_root
 
 !Application initializes MPI:
         call MPI_Init_Thread(MPI_THREAD_MULTIPLE,mpi_th_provided,ierr)
         if(mpi_th_provided.eq.MPI_THREAD_MULTIPLE) then
+         call MPI_Comm_size(MPI_COMM_WORLD,comm_size,ierr)
          call MPI_Comm_rank(MPI_COMM_WORLD,my_rank,ierr)
+!Application creates a basis for a vector space:
+         if(my_rank.eq.comm_size-1) then
+          write(jo,'("Creating a basis for a hierarchical vector space ... ")',ADVANCE='NO'); flush(jo)
+         endif
+         call basis%subspace_basis_ctor(TEST_SPACE_DIM,ierr)
+         if(ierr.ne.0) call quit(ierr,'subspace_basis_t.subspace_basis_ctor() failed!')
+         do l=1_INTL,TEST_SPACE_DIM !set basis functions
+          call basis_symmetry(l)%spher_symmetry_ctor(int((l-1)/5,INTD),0,ierr)
+          if(ierr.ne.0) call quit(ierr,'spher_symmetry_t.spher_symmetry_ctor() failed!')
+          call basis%set_basis_func(l,BASIS_ABSTRACT,ierr,symm=basis_symmetry(l))
+          if(ierr.ne.0) call quit(ierr,'subspace_basis_t.set_basis_func() failed!')
+         enddo
+         call basis%finalize(ierr)
+         if(ierr.ne.0) call quit(ierr,'subspace_basis_t.finalize() failed!')
+         if(my_rank.eq.comm_size-1) then; write(jo,'("Ok")'); flush(jo); endif
+!Application registers a vector space:
+         if(my_rank.eq.comm_size-1) then
+          write(jo,'("Registering the hierarchical vector space ... ")',ADVANCE='NO'); flush(jo)
+         endif
+         ierr=exatns_space_register('AO_space',basis,ao_space_id,ao_space)
+         if(ierr.ne.0) call quit(ierr,'exatns_space_register() failed!')
+         if(my_rank.eq.comm_size-1) then; write(jo,'("Ok")'); flush(jo); endif
 !Application runs ExaTENSOR within MPI_COMM_WORLD:
          ierr=exatns_start(MPI_COMM_WORLD)
          if(ierr.eq.EXA_SUCCESS) then
           ierr=exatns_proc_role(my_role)
           if(my_role.eq.EXA_DRIVER) then
-!Create a basis for a vector space:
-           call basis%subspace_basis_ctor(TEST_SPACE_DIM,ierr)
-           if(ierr.ne.0) call quit(ierr,'subspace_basis_t.subspace_basis_ctor() failed!')
-           do l=1_INTL,TEST_SPACE_DIM !set basis functions
-            call basis_symmetry(l)%spher_symmetry_ctor(int((l-1)/5,INTD),0,ierr)
-            if(ierr.ne.0) call quit(ierr,'spher_symmetry_t.spher_symmetry_ctor() failed!')
-            call basis%set_basis_func(l,BASIS_ABSTRACT,ierr,symm=basis_symmetry(l))
-            if(ierr.ne.0) call quit(ierr,'subspace_basis_t.set_basis_func() failed!')
-           enddo
-           call basis%finalize(ierr)
-           if(ierr.ne.0) call quit(ierr,'subspace_basis_t.finalize() failed!')
-!Register a vector space:
-           ierr=exatns_space_register('AO_space',basis,ao_space_id,ao_space)
-           if(ierr.ne.0) call quit(ierr,'exatns_space_register() failed!')
+!Driver drives tensor workload:
+ !Create tensors:
            ao_space_root=ao_space%get_root_id(ierr)
            if(ierr.ne.0) call quit(ierr,'h_space_t%get_root_id() failed!')
-!Create tensors:
+           write(jo,'("Creating tensor dtens over the hierarchical vector space ... ")',ADVANCE='NO'); flush(jo)
            ierr=exatns_tensor_create(dtens,'dtens',(/(ao_space_id,i=1,4)/),(/(ao_space_root,i=1,4)/),EXA_DATA_KIND_R8)
+           if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_create() failed!')
+           write(jo,'("Ok")'); flush(jo)
+           !write(jo,'("Creating tensor ltens over the hierarchical vector space ... ")',ADVANCE='NO'); flush(jo)
            !ierr=exatns_tensor_create(ltens,'ltens',(/(ao_space_id,i=1,4)/),(/(ao_space_root,i=1,4)/),EXA_DATA_KIND_R8)
+           !if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_create() failed!')
+           !write(jo,'("Ok")'); flush(jo)
+           !write(jo,'("Creating tensor rtens over the hierarchical vector space ... ")',ADVANCE='NO'); flush(jo)
            !ierr=exatns_tensor_create(rtens,'rtens',(/(ao_space_id,i=1,4)/),(/(ao_space_root,i=1,4)/),EXA_DATA_KIND_R8)
-!Contract tensors:
+           !if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_create() failed!')
+           !write(jo,'("Ok")'); flush(jo)
+ !Contract tensors:
+           !write(jo,'("Contracting tensors ... ")',ADVANCE='NO'); flush(jo)
            !ierr=exatns_tensor_contract(dtens,ltens,rtens,'D(a,b,c,d)+=L(d,i,b,j)*R(j,c,i,a)')
-!Destroy tensors:
+           !if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_contract() failed!')
+           !write(jo,'("Ok")'); flush(jo)
+ !Destroy tensors:
+           !write(jo,'("Destroying tensor rtens ... ")',ADVANCE='NO'); flush(jo)
            !ierr=exatns_tensor_destroy(rtens)
+           !if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_destroy() failed!')
+           !write(jo,'("Ok")'); flush(jo)
+           !write(jo,'("Destroying tensor ltens ... ")',ADVANCE='NO'); flush(jo)
            !ierr=exatns_tensor_destroy(ltens)
+           !if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_destroy() failed!')
+           !write(jo,'("Ok")'); flush(jo)
+           !write(jo,'("Destroying tensor dtens ... ")',ADVANCE='NO'); flush(jo)
            !ierr=exatns_tensor_destroy(dtens)
-!Stop ExaTENSOR runtime:
+           !if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_destroy() failed!')
+           !write(jo,'("Ok")'); flush(jo)
+ !Stop ExaTENSOR runtime:
            !ierr=exatns_stop()
            pause
           endif

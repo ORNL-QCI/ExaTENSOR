@@ -46,7 +46,7 @@
 !PARAMETERS:
  !Basic:
         integer(INTD), private:: CONS_OUT=6 !default output for this module
-        integer(INTD), private:: DEBUG=0    !debugging mode
+        integer(INTD), private:: DEBUG=1    !debugging mode
         logical, private:: VERBOSE=.TRUE.   !verbosity for errors
  !Runtime errors (ExaTENSOR aliases of basic DSVP errors):
         integer(INTD), parameter, public:: EXA_SUCCESS=DSVP_SUCCESS                         !success
@@ -847,6 +847,11 @@
           call omp_unset_lock(this%cache_lock)
 #endif
          else
+          if(DEBUG.gt.0) then
+           write(jo,'("#ERROR(VIRTA:tens_cache_t.lookup)[",i6,":",i3,"]: Unable to get tensor descriptor: Error ",i11)')&
+           &impir,omp_get_thread_num(),errc
+           flush(jo)
+          endif
           errc=-1
          endif
          if(present(ierr)) ierr=errc
