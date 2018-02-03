@@ -253,7 +253,7 @@
  !Tensor body [NO COPY PER SE]:
         type, public:: tens_body_t
          integer(INTD), private:: state=TEREC_BODY_UNDEF      !tensor body value state: {TEREC_BODY_UNDEF,TEREC_BODY_UPDATE,TEREC_BODY_DEF,TEREC_BODY_USED}
-         integer(INTD), private:: num_subtensors=0            !number of subtensors in the list
+         integer(INTD), private:: num_subtensors=0            !number of subtensors in the subtensor composition list
          type(list_bi_t), private:: subtensors                !list of constituent tensors in terms of tensor headers
          class(tens_layout_t), allocatable, private:: layout  !tensor block storage layout (if physically stored as a whole)
          contains
@@ -2396,7 +2396,7 @@
            write(dev,'(")")')
           endif
          else
-          write(dev,'("EMPTY TENSOR SHAPE")')
+          write(dev,'("Empty tensor shape")')
          endif
          if(present(ierr)) ierr=errc
          return
@@ -3837,8 +3837,8 @@
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
 
-         num_subtensors=this%num_subtensors
-         if(.not.this%is_set(errc)) errc=TEREC_INVALID_REQUEST
+         errc=TEREC_SUCCESS; num_subtensors=this%num_subtensors
+         !if(.not.this%is_set(errc)) errc=TEREC_INVALID_REQUEST
          if(present(ierr)) ierr=errc
          return
         end function TensBodyGetNumSubtensors
@@ -3998,7 +3998,7 @@
            write(dev,'(" Tensor body data kind   = ",i7)') tens_layout%data_type
           else
            do i=1,nspaces; write(dev,'(" ")',ADVANCE='NO'); enddo
-           write(dev,'(" Tensot body has no layout yet")')
+           write(dev,'(" Tensor body has no layout yet")')
           endif
           do i=1,nspaces; write(dev,'(" ")',ADVANCE='NO'); enddo
           write(dev,'("}")')
@@ -4011,7 +4011,7 @@
            write(dev,'(" Tensor body layout      = ",i7)') tens_layout%layout
            write(dev,'(" Tensor body data kind   = ",i7)') tens_layout%data_type
           else
-           write(dev,'(" Tensot body has no layout yet")')
+           write(dev,'(" Tensor body has no layout yet")')
           endif
           write(dev,'("}")')
          endif

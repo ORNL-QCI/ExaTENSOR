@@ -140,7 +140,8 @@
           procedure, public:: mark_empty=>DSOprndMarkEmpty             !marks the domain-specific operand inactive (empty), local resources are released
           procedure, public:: mark_delivered=>DSOprndMarkDelivered     !marks the domain-specific operand locally available (present)
           procedure, public:: mark_undelivered=>DSOprndMarkUndelivered !marks the domain-specific operand locally unavailable (but defined), local resources are released
-          procedure, public:: get_comm_stat=>DSOprndGetCommStat        !gets the communication status
+          procedure, public:: get_status=>DSOprndGetStatus             !returns the current status of the operand
+          procedure, public:: get_comm_stat=>DSOprndGetCommStat        !returns the communication status of the operand
           procedure, public:: set_comm_stat=>DSOprndSetCommStat        !sets the communication status
         end type ds_oprnd_t
  !Wrapped reference to a domain-specific operand:
@@ -422,6 +423,7 @@
         private DSOprndMarkEmpty
         private DSOprndMarkDelivered
         private DSOprndMarkUndelivered
+        private DSOprndGetStatus
         private DsOprndGetCommStat
         private DSOprndSetCommStat
         public ds_oprnd_self_i
@@ -654,6 +656,18 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine DSOprndMarkUndelivered
+!-------------------------------------------------------
+        function DSOprndGetStatus(this,ierr) result(sts)
+!Returns the current status of the domain-specific operand.
+         implicit none
+         integer(INTD):: sts                         !out: current status
+         class(ds_oprnd_t), intent(in):: this        !in: domain-specific operand
+         integer(INTD), intent(out), optional:: ierr !out: error code
+
+         sts=this%stat
+         if(present(ierr)) ierr=DSVP_SUCCESS
+         return
+        end function DSOprndGetStatus
 !---------------------------------------------------------
         function DSOprndGetCommStat(this,ierr) result(sts)
 !Gets the current communication status on the domain-specific operand.
@@ -662,7 +676,7 @@
          class(ds_oprnd_t), intent(in):: this        !in: domain-specific operand
          integer(INTD), intent(out), optional:: ierr !out: error code
 
-         sts=this%stat
+         sts=this%in_route
          if(present(ierr)) ierr=DSVP_SUCCESS
          return
         end function DSOprndGetCommStat
@@ -848,7 +862,7 @@
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
 
-         errc=DSVP_SUCCESS
+         errc=DSVP_SUCCESS; ctrl=>NULL()
          if(associated(this%control)) then
           ctrl=>this%control
          else

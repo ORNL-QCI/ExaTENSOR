@@ -8,7 +8,7 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/01/31
+!REVISION: 2018/02/02
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -81,8 +81,8 @@
         integer(INTD), parameter, public:: TAVP_ERR_RSC_FAILURE=-7     !instruction is unable to release resources cleanly
         integer(INTD), parameter, public:: TAVP_ERR_COM_FAILURE=-8     !instruction communication failed
         integer(INTD), parameter, public:: TAVP_ERR_EXC_FAILURE=-9     !instruction computation failed
-        integer(INTD), parameter, public:: TAVP_ERR_TAG_ONE=-101       !special tag 1 (for instruction markup)
-        integer(INTD), parameter, public:: TAVP_ERR_TAG_TWO=-102       !special tag 2 (for instruction markup)
+        integer(INTD), parameter, public:: TAVP_ERR_TAG_ONE=-101       !special tag 1 (for instruction markup, not an error)
+        integer(INTD), parameter, public:: TAVP_ERR_TAG_TWO=-102       !special tag 2 (for instruction markup, not an error)
  !Tensor algebra virtual processor (TAVP) ISA:
   !General:
         integer(INTD), parameter, public:: TAVP_ISA_SIZE=256       !max number of TAVP instruction codes [0:TAVP_ISA_SIZE-1]
