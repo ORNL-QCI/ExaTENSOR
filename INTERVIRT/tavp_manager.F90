@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/02/02
+!REVISION: 2018/02/03
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -917,21 +917,19 @@
           if(errc.eq.DSVP_SUCCESS) then
            if(this%get_comm_stat().ne.DS_OPRND_NO_COMM) then
             delivered=this%sync(errc,wait=.TRUE.)
-            if((.not.delivered).or.(errc.ne.0)) errc=-4
+            if((.not.delivered).or.(errc.ne.0)) errc=-3
            endif
-           call this%mark_empty(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-3
-           this%tensor=>NULL()
-           if(associated(this%cache_entry)) then
-            call this%cache_entry%decr_ref_count()
-            this%cache_entry=>NULL()
-           endif
-           this%owner_id=-1
+           call this%mark_empty(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-2
           else
-           errc=-2
+           errc=-1
           endif
-         else
-          errc=-1
          endif
+         this%tensor=>NULL()
+         if(associated(this%cache_entry)) then
+          call this%cache_entry%decr_ref_count()
+          this%cache_entry=>NULL()
+         endif
+         this%owner_id=-1
          if(present(ierr)) ierr=errc
          return
         end subroutine TensOprndDestruct
@@ -2533,8 +2531,7 @@
           ier=this%loc_list%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-4; exit wloop; endif
           if(this%loc_list%get_status().eq.GFC_IT_ACTIVE) then
            if(DEBUG.gt.0) then
-            ier=this%loc_list%scanp(action_f=tens_instr_print)
-            ier=this%loc_list%reset()
+            !ier=this%loc_list%scanp(action_f=tens_instr_print); ier=this%loc_list%reset() !print instructions
            endif
            ier=tavp%decomposer%load_port(0,this%loc_list); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-3; exit wloop; endif
           endif
@@ -3446,6 +3443,7 @@
           if(DEBUG.gt.0.and.i.gt.0) then
            write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Dispatcher unit ",i2," received ",i9," new instructions")')&
            &impir,this%get_id(),i
+           !ier=this%iqueue%reset(); ier=this%iqueue%scanp(action_f=tens_instr_print) !print instructions
            flush(CONS_OUT)
           endif
  !Dispatch/encode the instructions into the bytecode buffers to be issued to the child TAVPs:
@@ -3458,9 +3456,10 @@
            if((.not.associated(tens_instr)).and.errc.eq.0) then; errc=-17; exit wloop; endif !trap
            sts=tens_instr%get_status(ier,iec); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-16; exit wloop; endif
            if((sts.ne.DS_INSTR_INPUT_WAIT.or.iec.ne.DSVP_SUCCESS).and.errc.eq.0) then; errc=-15; exit wloop; endif !trap
-           call tens_instr%set_status(DS_INSTR_NEW,ier,iec) !reset the instruction status to NEW before sending to the lower level
+           call tens_instr%set_status(DS_INSTR_NEW,ier,iec) !reset the instruction status to NEW before dispatching to the lower level
            if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-14; exit wloop; endif
            opcode=tens_instr%get_code(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-13; exit wloop; endif
+           !if(DEBUG.gt.0) then; call tens_instr%print_it(dev_id=CONS_OUT); flush(CONS_OUT); endif
            if(opcode.ge.TAVP_ISA_TENS_FIRST.and.opcode.le.TAVP_ISA_TENS_LAST) then
   !Encode a tensor instruction and dispatch it to the appropriate channel:
             channel=this%map_instr(tens_instr,ier); if(ier.ne.0.and.errc.eq.0) then; errc=-12; exit wloop; endif
@@ -3478,6 +3477,7 @@
   !Delete the dispatched instruction from the main queue:
            call tens_instr%set_status(DS_INSTR_RETIRED,ier,DSVP_SUCCESS)
            if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-8; exit wloop; endif
+           !if(DEBUG.gt.0) then; call tens_instr%print_it(dev_id=CONS_OUT); flush(CONS_OUT); endif
            ier=this%iqueue%delete(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-7; exit wloop; endif
   !Issue (send) the bytecode to the child TAVPs:
            do i=1,this%num_ranks !loop over dispatch channels

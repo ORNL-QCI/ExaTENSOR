@@ -1,6 +1,6 @@
 !Domain-specific virtual processor (DSVP): Abstract base module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/02/02
+!REVISION: 2018/02/03
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -146,7 +146,7 @@
         end type ds_oprnd_t
  !Wrapped reference to a domain-specific operand:
         type, private:: ds_oprnd_ref_t
-         class(ds_oprnd_t), pointer, private:: oprnd_ref=>NULL() !non-owning pointer (reference) to a domain-specific operand
+         class(ds_oprnd_t), pointer, private:: oprnd_ref=>NULL() !either owning or non-owning pointer to a domain-specific operand
         end type ds_oprnd_ref_t
  !Domain-specific instruction control field:
         type, abstract, public:: ds_instr_ctrl_t
@@ -556,7 +556,7 @@
 !Marks the domain-specific operand active (defined).
 !Trying to mark an already active operand active again will result in an error.
          implicit none
-         class(ds_oprnd_t), intent(inout):: this     !inout: domain-specific operand
+         class(ds_oprnd_t), intent(inout):: this     !inout: empty domain-specific operand
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
 
@@ -572,10 +572,11 @@
 !---------------------------------------------
         subroutine DSOprndMarkEmpty(this,ierr)
 !Marks the domain-specific operand as empty (undefined).
-!The local resources will automatically be released.
-!It is allowed to call this procedure on an empty operand.
+!The local resources will automatically be released. It is allowed
+!to call this procedure on an empty operand. It is errorneous to
+!have the operand participate in an active communication.
          implicit none
-         class(ds_oprnd_t), intent(inout):: this     !inout: domain-specific operand
+         class(ds_oprnd_t), intent(inout):: this     !inout: domain-specific operand, no active communication
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc,ier
 
@@ -594,7 +595,7 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine DSOprndMarkEmpty
-!------------------------------------------------
+!-------------------------------------------------
         subroutine DSOprndMarkDelivered(this,ierr)
 !Marks the domain-specific operand as delivered (present, locally available).
 !Trying to mark an already delivered operand delivered again will cause an error.
@@ -1076,7 +1077,7 @@
          if(present(dissoc_only)) then; dis=dissoc_only; else; dis=.FALSE.; endif
          if(this%num_oprnds.gt.0) then
           if(op_num.ge.0.and.op_num.lt.this%num_oprnds) then
-           call this%operand(op_num)%oprnd_ref%mark_empty(errc) !will call destructor (release local resources)
+           call this%operand(op_num)%oprnd_ref%mark_undelivered(errc,sync_it=.TRUE.) !will complete pending communication and call destructor (release local resources)
            if(.not.dis) then
             deallocate(this%operand(op_num)%oprnd_ref,STAT=ier)
             if(ier.ne.0.and.errc.eq.DSVP_SUCCESS) errc=DSVP_ERR_MEM_FREE_FAIL
@@ -1182,7 +1183,7 @@
          errc=DSVP_SUCCESS; if(present(dissoc_only)) then; dis=dissoc_only; else; dis=.FALSE.; endif
          call this%dealloc_operands(ier,dis); if(ier.ne.DSVP_SUCCESS.and.errc.eq.DSVP_SUCCESS) errc=ier
          call this%free_control(ier,dis); if(ier.ne.DSVP_SUCCESS.and.errc.eq.DSVP_SUCCESS) errc=ier
-         this%code=DS_INSTR_NOOP; this%stat=DS_INSTR_EMPTY
+         this%id=-1_INTL; this%code=DS_INSTR_NOOP; this%stat=DS_INSTR_EMPTY; this%error_code=DSVP_SUCCESS
          if(present(ierr)) ierr=errc
          return
         end subroutine DSInstrClean
