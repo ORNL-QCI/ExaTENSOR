@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/02/03
+!REVISION: 2018/02/07
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -1574,7 +1574,8 @@
           call this%clean(errc)
           if(errc.ne.DSVP_SUCCESS) call quit(errc,'#FATAL(TAVP-MNG:tens_instr_dtor): Tensor instruction destruction failed!')
          else
-          if(DEBUG.gt.0) write(CONS_OUT,'("#FATAL(TAVP-MNG:tens_instr_dtor): TAVP instruction is still active: ",i5,1x,i5)')&
+          if(DEBUG.gt.0)&
+          &write(CONS_OUT,'("#FATAL(TAVP-MNG:tens_instr_dtor): TAVP instruction is still active: code = ",i5,", stat = ",i5)')&
           &this%get_code(),this%get_status()
           call quit(-1,'#FATAL(TAVP-MNG:tens_instr_dtor): Attempt to destroy an active TAVP instruction!')
          endif

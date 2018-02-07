@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Bi-directional linked list
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017-12-20 (started 2016-02-28)
+!REVISION: 2018-02-07 (started 2016-02-28)
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -911,6 +911,7 @@
          class(list_iter_t), intent(inout):: another !inout: destination list iterator (to)
          logical, intent(in), optional:: precede     !in: if TRUE, the list element will be moved prior, otherwise after (default)
          class(list_elem_t), pointer:: list_elem
+         integer(INTL):: nelems
          logical:: before
 
          before=.FALSE.; if(present(precede)) before=precede
@@ -926,7 +927,7 @@
              list_elem%next_elem=>another%current
              another%current%prev_elem=>list_elem
              if(associated(another%current,another%container%first_elem)) another%container%first_elem=>list_elem
-            else
+            else !after
              list_elem%next_elem=>another%current%next_elem
              if(associated(list_elem%next_elem)) list_elem%next_elem%prev_elem=>list_elem
              list_elem%prev_elem=>another%current
@@ -934,6 +935,9 @@
              if(associated(another%current,another%container%last_elem)) another%container%last_elem=>list_elem
             endif
             call another%jump_(list_elem); list_elem=>NULL()
+            if(another%container%num_elems_().ge.0) then !quick counting is on
+             nelems=another%container%update_num_elems_(1_INTL,ierr); if(ierr.ne.GFC_SUCCESS) ierr=GFC_CORRUPTED_CONT
+            endif
            endif
           elseif(ierr.eq.GFC_IT_EMPTY) then !another iterator was empty
            list_elem=>this%pop_(ierr)
@@ -941,6 +945,9 @@
             another%container%first_elem=>list_elem
             another%container%last_elem=>list_elem
             call another%jump_(list_elem); list_elem=>NULL()
+            if(another%container%num_elems_().ge.0) then !quick counting is on
+             nelems=another%container%update_num_elems_(1_INTL,ierr); if(ierr.ne.GFC_SUCCESS) ierr=GFC_CORRUPTED_CONT
+            endif
            endif
           else
            ierr=GFC_INVALID_ARGS
@@ -1269,6 +1276,7 @@
          logical, intent(in), optional:: to_prev     !in: if TRUE, <this> iterator will move to the previous element (defaults to FALSE)
          class(list_elem_t), pointer:: list_elem_null=>NULL()
          integer(INTD):: errc
+         integer(INTL):: nelems
          logical:: prev
 
          elem=>NULL(); errc=this%get_status()
@@ -1298,6 +1306,9 @@
           if(associated(elem%prev_elem)) elem%prev_elem%next_elem=>elem%next_elem
           if(associated(elem%next_elem)) elem%next_elem%prev_elem=>elem%prev_elem
           elem%prev_elem=>NULL(); elem%next_elem=>NULL()
+          if(errc.eq.GFC_SUCCESS.and.this%container%num_elems_().ge.0) then !quick counting is on
+           nelems=this%container%update_num_elems_(-1_INTL,errc); if(errc.ne.GFC_SUCCESS) errc=GFC_CORRUPTED_CONT
+          endif
          else
           errc=GFC_INVALID_REQUEST
          endif
