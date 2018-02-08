@@ -1,7 +1,7 @@
 !ExaTENSOR: Massively Parallel Virtual Processor for Scale-Adaptive Hierarchical Tensor Algebra
 !This is the top level API module of ExaTENSOR (user-level API)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2018/02/01
+!REVISION: 2018/02/07
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -1263,7 +1263,7 @@
           if(errc.eq.0) then
            call bytecode%seal_packet(errc)
            if(errc.eq.0) then
-            call bytecode%send(0,comm_hl,errc,comm=drv_mng_comm)
+            call bytecode%send(0,comm_hl,errc,tag=TAVP_DISPATCH_TAG,comm=drv_mng_comm)
             if(errc.eq.0) then
              call comm_hl%wait(errc)
              if(errc.eq.0) then

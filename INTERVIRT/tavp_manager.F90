@@ -87,23 +87,29 @@
         integer(INTL), parameter, private:: MAX_BYTECODE_SIZE=32_INTL*(1024_INTL*1024_INTL) !max size of an incoming/outgoing bytecode envelope (bytes)
         integer(INTD), parameter, private:: MAX_BYTECODE_INSTR=65536                        !max number of tensor instructions in a bytecode envelope
  !Locator:
-        integer(INTD), private:: MAX_LOCATE_NEW_INSTR=4096     !max number of new tensor instructions per bytecode envelope in the locating cycle
-        integer(INTD), private:: MAX_LOCATE_DEF_INSTR=1024     !max number of deferred tensor instructions per bytecode envelope in the locating cycle
-        integer(INTD), private:: MAX_LOCATE_SUB_INSTR=8192     !max number of subinstructions per bytecode envelope in the locating cycle (bottom TAVP-MNG NAT level only)
-        integer(INTD), private:: MIN_LOCATE_INSTR=256          !min number of instructions in the locating cycle to start locating rotations
-        real(8), private:: MAX_LOCATE_WAIT_TIME=0.5d-3         !max wait time (sec) until performing a locating rotation even if there is no enough instructions
+        integer(INTD), private:: MAX_LOCATE_NEW_INSTR=4096  !max number of new tensor instructions per bytecode envelope in the locating cycle
+        integer(INTD), private:: MAX_LOCATE_DEF_INSTR=1024  !max number of deferred tensor instructions per bytecode envelope in the locating cycle
+        integer(INTD), private:: MAX_LOCATE_SUB_INSTR=8192  !max number of subinstructions per bytecode envelope in the locating cycle (bottom TAVP-MNG NAT level only)
+        integer(INTD), private:: MIN_LOCATE_INSTR=256       !min number of instructions in the locating cycle to start locating rotations
+        real(8), private:: MAX_LOCATE_WAIT_TIME=0.5d-3      !max wait time (sec) until performing a locating rotation even if there is no enough instructions
  !Decomposer:
         integer(INTD), private:: MAX_DECOMPOSE_PRNT_INSTR=256   !max number of processed parent instructions in the decomposition phase
         integer(INTD), private:: MAX_DECOMPOSE_CHLD_INSTR=16384 !max number of created child instructions in the decomposition phase
         real(8), private:: MAX_DECOMPOSE_PHASE_TIME=0.5d-3      !max time (sec) before passing instructions to Dispatcher
  !Dispatcher:
-        integer(INTD), private:: MAX_ISSUE_INSTR=4096          !max number of tensor instructions in the bytecode issued to a child node
-        integer(INTD), private:: MIN_ISSUE_INSTR=512           !min number of tensor instructions being currently processed by a child node
+        integer(INTD), private:: MAX_ISSUE_INSTR=4096           !max number of tensor instructions in the bytecode issued to a child node
+        integer(INTD), private:: MIN_ISSUE_INSTR=512            !min number of tensor instructions being currently processed by a child node
  !Collector:
-        integer(INTD), private:: MAX_COLLECT_INSTR=8192        !max number of active tensor (sub-)instructions in the collection phase
+        integer(INTD), private:: MAX_COLLECT_INSTR=8192         !max number of active tensor (sub-)instructions in the collection phase
  !Retirer:
-        integer(INTD), private:: MAX_RETIRE_INSTR=4096         !max number of tensor instructions in the retirement phase
-        real(8), private:: MAX_RETIRE_PHASE_TIME=0.1d-3        !max time (sec) before sending the retired instructions to the upper level
+        integer(INTD), private:: MAX_RETIRE_INSTR=4096          !max number of tensor instructions in the retirement phase
+        real(8), private:: MAX_RETIRE_PHASE_TIME=0.1d-3         !max time (sec) before sending the retired instructions to the upper level
+ !MPI message tags:
+        integer(INT_MPI), parameter, public:: TAVP_DEFAULT_TAG=0  !default MPI message tag
+        integer(INT_MPI), parameter, public:: TAVP_DISPATCH_TAG=1 !MPI message containing dispatched instructions
+        integer(INT_MPI), parameter, public:: TAVP_COLLECT_TAG=2  !MPI message containing instructions being collected after execution
+        integer(INT_MPI), parameter, private:: TAVP_LOCATE_TAG=3  !MPI message containing instructions undergoing meta-data location
+        integer(INT_MPI), parameter, private:: TAVP_REPLICA_TAG=4 !MPI message containing instructions for data replication
 !TYPES:
  !Tensor argument cache entry (TAVP-specific):
         type, extends(tens_cache_entry_t), private:: tens_entry_mng_t
@@ -165,6 +171,7 @@
          integer(INTD), public:: num_ports=1                        !number of ports: Port 0 <- self
          integer(INTD), private:: source_comm                       !bytecode source communicator
          integer(INTD), private:: source_rank=-1                    !bytecode source process rank (negative means ANY)
+         integer(INT_MPI), private:: msg_tag=TAVP_DEFAULT_TAG       !target message tag
          type(pack_env_t), private:: bytecode                       !incoming bytecode buffer
          class(tens_cache_t), pointer, private:: arg_cache=>NULL()  !non-owning pointer to the tensor argument cache
          type(list_bi_t), private:: control_list                    !list of control instructions
@@ -179,6 +186,7 @@
         type, extends(dsv_conf_t), private:: tavp_mng_decoder_conf_t
          integer(INTD), public:: source_comm                        !MPI communicator of the source process
          integer(INTD), public:: source_rank                        !source process rank from which the bytecode is coming
+         integer(INT_MPI), public:: msg_tag                         !target message tag
          class(ds_unit_t), pointer, public:: acceptor=>NULL()       !non-owning pointer to the acceptor DS unit
          integer(INTD), public:: acceptor_port_id                   !associated acceptor unit port id
         end type tavp_mng_decoder_conf_t
@@ -1612,6 +1620,7 @@
           if(associated(conf%acceptor)) then
            this%source_comm=conf%source_comm
            this%source_rank=conf%source_rank
+           this%msg_tag=conf%msg_tag
            call this%set_acceptor(conf%acceptor,conf%acceptor_port_id,errc); if(errc.ne.DSVP_SUCCESS) errc=-3
           else
            errc=-2
@@ -1670,7 +1679,7 @@
           if(.not.stopping) then
  !Receive new bytecode (if posted):
            call comm_hl%clean(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-36; exit wloop; endif
-           new=this%bytecode%receive(comm_hl,ier,proc_rank=this%source_rank,comm=this%source_comm)
+           new=this%bytecode%receive(comm_hl,ier,proc_rank=this%source_rank,tag=this%msg_tag,comm=this%source_comm)
            if(ier.ne.0.and.errc.eq.0) then; errc=-35; exit wloop; endif
            if(new) then !new bytecode is available
             call comm_hl%wait(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-34; exit wloop; endif
@@ -2137,6 +2146,7 @@
           if(DEBUG.gt.0.and.i.gt.0) then
            write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Retirer unit ",i2," received ",i9," new instructions")')&
            &impir,this%get_id(),i
+           !ier=this%iqueue%reset(); ier=this%iqueue%scanp(action_f=tens_instr_print) !print all instructions
            flush(CONS_OUT)
           endif
  !Encode the retired instructions into bytecode and send them to the upper level:
@@ -2170,7 +2180,7 @@
   !Send the bytecode to the parent TAVP at the upper level:
            if(this%bytecode%get_num_packets().ge.MAX_RETIRE_INSTR.or.this%iqueue%get_status().eq.GFC_IT_EMPTY) then
             call comm_hl%clean(ier); if(ier.ne.PACK_SUCCESS.and.errc.eq.0) then; errc=-7; exit wloop; endif
-            call this%bytecode%send(this%retire_rank,comm_hl,ier,comm=this%retire_comm)
+            call this%bytecode%send(this%retire_rank,comm_hl,ier,tag=TAVP_COLLECT_TAG,comm=this%retire_comm)
             if(ier.ne.PACK_SUCCESS.and.errc.eq.0) then; errc=-6; exit wloop; endif
   !Synchronize the bytecode send:
             call comm_hl%wait(ier); if(ier.ne.PACK_SUCCESS.and.errc.eq.0) then; errc=-5; exit wloop; endif
@@ -2328,6 +2338,7 @@
           if(DEBUG.gt.0.and.i.gt.0) then
            write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Locator unit ",i2," received ",i9," new instructions")')&
            &impir,this%get_id(),i
+           !ier=this%iqueue%reset(); ier=this%iqueue%scanp(action_f=tens_instr_print) !print all instructions
            flush(CONS_OUT)
           endif
  !Insert the header dummmy instruction, which will tag the bytecode, into the locating list:
@@ -2426,7 +2437,7 @@
             if(ier.ne.GFC_NO_MOVE.and.errc.eq.0) then; errc=-44; exit wloop; endif
   !Send the bytecode to the next (cousin) NAT node at the same tree level (in a ring):
             call comm_hl%clean(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-43; exit wloop; endif
-            call this%bytecode%send(this%ring_send,comm_hl,ier,comm=this%ring_comm)
+            call this%bytecode%send(this%ring_send,comm_hl,ier,tag=TAVP_LOCATE_TAG,comm=this%ring_comm)
             if(ier.ne.0.and.errc.eq.0) then; errc=-42; exit wloop; endif
   !Clean the locating list and evict the relevant remote tensors with zero reference count from the tensor cache:
             ier=this%loc_list%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-41; exit wloop; endif
@@ -2705,6 +2716,7 @@
           if(DEBUG.gt.0.and.i.gt.0) then
            write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decomposer unit ",i2," received ",i9," new instructions")')&
            &impir,this%get_id(),i
+           !ier=this%iqueue%reset(); ier=this%iqueue%scanp(action_f=tens_instr_print) !print all instructions
            flush(CONS_OUT)
           endif
  !Decompose parent tensor instructions, creating new child subinstructions (filter previously decomposed subinstructions):
@@ -3444,7 +3456,7 @@
           if(DEBUG.gt.0.and.i.gt.0) then
            write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Dispatcher unit ",i2," received ",i9," new instructions")')&
            &impir,this%get_id(),i
-           !ier=this%iqueue%reset(); ier=this%iqueue%scanp(action_f=tens_instr_print) !print instructions
+           !ier=this%iqueue%reset(); ier=this%iqueue%scanp(action_f=tens_instr_print) !print all instructions
            flush(CONS_OUT)
           endif
  !Dispatch/encode the instructions into the bytecode buffers to be issued to the child TAVPs:
@@ -3707,7 +3719,8 @@
          if(channel.ge.lbound(this%dispatch_rank,1).and.channel.le.ubound(this%dispatch_rank,1)) then
           if(this%comm_hl(channel)%is_clean(errc)) then
            if(errc.eq.0) then
-            call this%bytecode(channel)%send(this%dispatch_rank(channel),this%comm_hl(channel),errc,comm=this%dispatch_comm)
+            call this%bytecode(channel)%send(this%dispatch_rank(channel),this%comm_hl(channel),errc,&
+                                            &tag=TAVP_DISPATCH_TAG,comm=this%dispatch_comm)
             if(errc.ne.0) errc=-4
            else
             errc=-3
@@ -4012,6 +4025,7 @@
           if(DEBUG.gt.0.and.i.gt.0) then
            write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Collector unit ",i2," received ",i9," new instructions")')&
            &impir,this%get_id(),i
+           !ier=this%iqueue%reset(); ier=this%iqueue%scanp(action_f=tens_instr_print) !print all instructions
            flush(CONS_OUT)
           endif
   !Register parent tensor instructions and move them into the matching list, move other instructions elsewhere:
@@ -4417,7 +4431,7 @@
   !Up-decoder:
              decode_acceptor=>this%locator
              decoder_conf=tavp_mng_decoder_conf_t(source_comm=conf%source_comm,source_rank=conf%source_rank,&
-                         &acceptor=decode_acceptor,acceptor_port_id=0)
+                         &msg_tag=TAVP_DISPATCH_TAG,acceptor=decode_acceptor,acceptor_port_id=0)
              call this%udecoder%configure(decoder_conf,errc)
              if(errc.eq.0) then
               num_units=num_units+1
@@ -4434,7 +4448,7 @@
   !Locating-decoder:
                 decode_acceptor=>this%locator
                 decoder_conf=tavp_mng_decoder_conf_t(source_comm=conf%ring_comm,source_rank=conf%ring_recv_rank,&
-                            &acceptor=decode_acceptor,acceptor_port_id=1)
+                            &msg_tag=TAVP_LOCATE_TAG,acceptor=decode_acceptor,acceptor_port_id=1)
                 call this%ldecoder%configure(decoder_conf,errc)
                 if(errc.eq.0) then
                  num_units=num_units+1
@@ -4456,14 +4470,14 @@
   !Replicating-decoder:
                     decode_acceptor=>this%replicator
                     decoder_conf=tavp_mng_decoder_conf_t(source_comm=role_comm,source_rank=MPI_ANY_SOURCE,&
-                                &acceptor=decode_acceptor,acceptor_port_id=1)
+                                &msg_tag=TAVP_REPLICA_TAG,acceptor=decode_acceptor,acceptor_port_id=1)
                     call this%rdecoder%configure(decoder_conf,errc)
                     if(errc.eq.0) then
                      num_units=num_units+1
   !Collecting-decoder:
                      decode_acceptor=>this%collector
                      decoder_conf=tavp_mng_decoder_conf_t(source_comm=conf%collect_comm,source_rank=MPI_ANY_SOURCE,&
-                                 &acceptor=decode_acceptor,acceptor_port_id=1)
+                                 &msg_tag=TAVP_COLLECT_TAG,acceptor=decode_acceptor,acceptor_port_id=1)
                      call this%cdecoder%configure(decoder_conf,errc)
                      if(errc.eq.0) then
                       num_units=num_units+1

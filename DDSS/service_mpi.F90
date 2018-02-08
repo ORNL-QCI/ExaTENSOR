@@ -1,6 +1,6 @@
 !This module provides general services for MPI parallel programs.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/10/17
+!REVISION: 2018/02/07
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -253,7 +253,7 @@
         !&write(jo,'("#DEBUG(service_mpi::dil_process_start): MPI slave output has been redirected to individual log files!")')
        !endif
 !Greetings:
-        write(jo,'("   *** ExaTENSOR v.17.02.28 by Dmitry I. Lyakh ***")')
+        write(jo,'("   *** ExaTENSOR v.18.02.05 by Dmitry I. Lyakh ***")')
 !Info:
         write(jo,'("MPI number of processes            : ",i10)') impis
         write(jo,'("Current process rank               : ",i10)') impir
