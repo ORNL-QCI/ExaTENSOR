@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/02/07
+!REVISION: 2018/02/08
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -1769,7 +1769,7 @@
          enddo wloop
 !Record the error:
          ier=this%get_error(); if(ier.eq.DSVP_SUCCESS) call this%set_error(errc)
-         if(errc.ne.0.and.VERBOSE) write(CONS_OUT,'("#ERROR(TAVP_MNG)[",i6,"]: Decoder error ",i11," by thread ",i2)')&
+         if(errc.ne.0.and.VERBOSE) write(CONS_OUT,'("#ERROR(TAVP-MNG)[",i6,"]: Decoder error ",i11," by thread ",i2)')&
          &impir,errc,thid
 !Shutdown:
          call this%shutdown(ier); if(ier.ne.0.and.errc.eq.0) errc=-1
@@ -2193,7 +2193,7 @@
          enddo wloop
 !Record the error:
          ier=this%get_error(); if(ier.eq.DSVP_SUCCESS) call this%set_error(errc)
-         if(errc.ne.0.and.VERBOSE) write(CONS_OUT,'("#ERROR(TAVP_MNG)[",i6,"]: Retirer error ",i11," by thread ",i2)')&
+         if(errc.ne.0.and.VERBOSE) write(CONS_OUT,'("#ERROR(TAVP-MNG)[",i6,"]: Retirer error ",i11," by thread ",i2)')&
          &impir,errc,thid
 !Shutdown:
          call this%shutdown(ier); if(ier.ne.0.and.errc.eq.0) errc=-1
@@ -2555,7 +2555,7 @@
          call tens_instr_dummy%set_status(DS_INSTR_RETIRED,ier,DSVP_SUCCESS); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-2
 !Record the error:
          ier=this%get_error(); if(ier.eq.DSVP_SUCCESS) call this%set_error(errc)
-         if(errc.ne.0.and.VERBOSE) write(CONS_OUT,'("#ERROR(TAVP_MNG)[",i6,"]: Locator error ",i11," by thread ",i2)')&
+         if(errc.ne.0.and.VERBOSE) write(CONS_OUT,'("#ERROR(TAVP-MNG)[",i6,"]: Locator error ",i11," by thread ",i2)')&
          &impir,errc,thid
 !Shutdown:
          call this%shutdown(ier); if(ier.ne.0.and.errc.eq.0) errc=-1
@@ -2837,7 +2837,7 @@
          ier=timer_destroy(dec_timer)
 !Record the error:
          ier=this%get_error(); if(ier.eq.DSVP_SUCCESS) call this%set_error(errc)
-         if(errc.ne.0.and.VERBOSE) write(CONS_OUT,'("#ERROR(TAVP_MNG)[",i6,"]: Decomposer error ",i11," by thread ",i2)')&
+         if(errc.ne.0.and.VERBOSE) write(CONS_OUT,'("#ERROR(TAVP-MNG)[",i6,"]: Decomposer error ",i11," by thread ",i2)')&
          &impir,errc,thid
 !Shutdown:
          call this%shutdown(ier); if(ier.ne.0.and.errc.eq.0) errc=-1
@@ -3413,10 +3413,11 @@
 
          errc=0; thid=omp_get_thread_num()
          if(DEBUG.gt.0) then
-          write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Dispatcher started as DSVU # ",i2," (thread ",i2,")")') impir,this%get_id(),thid
+          write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Dispatcher started as DSVU # ",i2," (thread ",i2,") with ",i3," channels")')&
+          &impir,this%get_id(),thid,this%num_ranks
           flush(CONS_OUT)
          endif
-!Reserve bytecode buffers and communication handles:
+!Reserve bytecode buffers and clean communication handles:
          allocate(this%bytecode(this%num_ranks),this%comm_hl(this%num_ranks),STAT=ier)
          if(ier.eq.0) then
           do i=1,this%num_ranks
@@ -3459,7 +3460,7 @@
            !ier=this%iqueue%reset(); ier=this%iqueue%scanp(action_f=tens_instr_print) !print all instructions
            flush(CONS_OUT)
           endif
- !Dispatch/encode the instructions into the bytecode buffers to be issued to the child TAVPs:
+ !Dispatch/encode the instructions into the bytecode buffers and issue bytecode to the child TAVPs:
           ier=this%iqueue%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-19; exit wloop; endif
           ier=this%iqueue%get_status()
           dloop: do while(ier.eq.GFC_IT_ACTIVE)
@@ -3476,8 +3477,9 @@
            if(opcode.ge.TAVP_ISA_TENS_FIRST.and.opcode.le.TAVP_ISA_TENS_LAST) then
   !Encode a tensor instruction and dispatch it to the appropriate channel:
             channel=this%map_instr(tens_instr,ier); if(ier.ne.0.and.errc.eq.0) then; errc=-12; exit wloop; endif
-            if((channel.lt.lbound(this%dispatch_rank,1).or.channel.gt.ubound(this%dispatch_rank,1)).and.&
-              &errc.eq.0) then; errc=-11; exit wloop; endif !trap
+            if((channel.lt.lbound(this%dispatch_rank,1).or.channel.gt.ubound(this%dispatch_rank,1)).and.errc.eq.0) then
+             errc=-11; exit wloop !trap
+            endif
             call this%dispatch(tens_instr,channel,ier); if(ier.ne.0.and.errc.eq.0) then; errc=-10; exit wloop; endif
            else
   !Encode an auxiliary/control instruction and dispatch it to all channels:
@@ -3511,7 +3513,7 @@
          enddo wloop
 !Record the error:
          ier=this%get_error(); if(ier.eq.DSVP_SUCCESS) call this%set_error(errc)
-         if(errc.ne.0.and.VERBOSE) write(CONS_OUT,'("#ERROR(TAVP_MNG)[",i6,"]: Dispatcher error ",i11," by thread ",i2)')&
+         if(errc.ne.0.and.VERBOSE) write(CONS_OUT,'("#ERROR(TAVP-MNG)[",i6,"]: Dispatcher error ",i11," by thread ",i2)')&
          &impir,errc,thid
 !Shutdown:
          call this%shutdown(ier); if(ier.ne.0.and.errc.eq.0) errc=-1
@@ -3640,7 +3642,7 @@
           jerr=0; chnl=-1; jf=.FALSE.
           aloop: do ja=0,num_args-1
            do jj=lbound(this%dispatch_rank,1),ubound(this%dispatch_rank,1)
-            jf=owner_ids(ja).eq.this%dispatch_rank(jj)
+            jf=owner_ids(ja).eq.this%dispatch_rank(jj) !`Wrong for bottom TAVP-MNG: owner_id is a TAVP-MNG id, but dispatch_rank() will point to TAVP-WRK id for bottom TAVP-MNG
             if(jf) then; chnl=jj; exit aloop; endif
            enddo
           enddo aloop
@@ -3688,8 +3690,8 @@
            if(errc.eq.0) then
             call this%bytecode(channel)%seal_packet(errc)
             if(errc.eq.PACK_SUCCESS) then
-             call this%update_dispatch_count(channel,1_INTL) !update current instruction count for this channel
-             call this%update_dispatch_flops(channel,tens_instr%get_flops(errc)) !update current Flop count for this channel
+             call this%update_dispatch_count(channel,1_INTL) !update current instruction count for this channel `Collector must decrement this counter
+             call this%update_dispatch_flops(channel,tens_instr%get_flops(errc)) !update current Flop count for this channel `Collector must decrement this counter
              if(errc.ne.0) errc=-5
             else
              errc=-4
@@ -3698,10 +3700,19 @@
             errc=-3
            endif
           else
+           if(DEBUG.gt.0) then
+            write(CONS_OUT,'("#ERROR(TAVP-MNG:Dispatcher.dispatch)[",i6,"]: Unable to acquire packet: Error ",i11)') impir,errc
+            flush(CONS_OUT)
+           endif
            errc=-2
           endif
          else
           errc=-1
+         endif
+         if(DEBUG.gt.0.and.errc.ne.0) then
+          write(CONS_OUT,'("#ERROR(TAVP-MNG:Dispatcher.dispatch)[",i6,"]: Dispatch to channel ",i2," failed: Error ",i11)')&
+          &impir,channel,errc
+          flush(CONS_OUT)
          endif
          if(present(ierr)) ierr=errc
          return
@@ -3731,6 +3742,16 @@
          else
           errc=-1
          endif
+         if(DEBUG.gt.0) then
+          if(errc.eq.0) then
+           write(CONS_OUT,'("#MSG(TAVP-MNG:Dispatcher.issue)[",i6,"]: Issued ",i6," instructions to channel ",i2,": Rank = ",i4)')&
+           &impir,this%bytecode(channel)%get_num_packets(),channel,this%dispatch_rank(channel)
+          else
+           write(CONS_OUT,'("#ERROR(TAVP-MNG:Dispatcher.issue)[",i6,"]: Unable to issue bytecode to channel ",i2,": Error ",i11)')&
+           &impir,channel,errc
+          endif
+          flush(CONS_OUT)
+         endif
          if(present(ierr)) ierr=errc
          return
         end subroutine TAVPMNGDispatcherIssue
@@ -3740,7 +3761,7 @@
 !If <channel> is not provided, all active channels will be sychronized.
 !Upon success, the corresponding bytecode buffer(s) will be cleaned.
          implicit none
-         logical:: synced                                   !out: TRUE if the channel(s) have been synchronized
+         logical:: synced                                   !out: TRUE if the channel(s) has(ve) been synchronized
          class(tavp_mng_dispatcher_t), intent(inout):: this !inout: TAVP-MNG Dispatcher DSVU
          integer(INTD), intent(out), optional:: ierr        !out: error code
          integer(INTD), intent(in), optional:: channel      !in: specific dispatch channel to synchronize
@@ -3751,7 +3772,7 @@
           if(channel.ge.lbound(this%dispatch_rank,1).and.channel.le.ubound(this%dispatch_rank,1)) then
            call this%comm_hl(channel)%wait(errc); if(errc.ne.0) errc=-9
            if(errc.eq.0) then; call this%comm_hl(channel)%clean(errc); if(errc.ne.0) errc=-8; endif
-           if(errc.eq.0) then; call this%bytecode(channel)%destroy(errc); if(errc.ne.0) errc=-7; endif
+           if(errc.eq.0) then; call this%bytecode(channel)%clean(errc); if(errc.ne.0) errc=-7; endif
           else
            errc=-6
           endif
@@ -3761,7 +3782,7 @@
             if(errc.eq.PACK_SUCCESS) then
              call this%comm_hl(i)%wait(errc); if(errc.ne.0) errc=-5
              if(errc.eq.0) then; call this%comm_hl(i)%clean(errc); if(errc.ne.0) errc=-4; endif
-             if(errc.eq.0) then; call this%bytecode(i)%destroy(errc); if(errc.ne.0) errc=-3; endif
+             if(errc.eq.0) then; call this%bytecode(i)%clean(errc); if(errc.ne.0) errc=-3; endif
             else
              errc=-2
             endif
@@ -3772,6 +3793,19 @@
           enddo
          endif
          if(errc.eq.0) synced=.TRUE.
+         if(DEBUG.gt.0) then
+          if(errc.eq.0) then
+           if(present(channel)) then
+            write(CONS_OUT,'("#MSG(TAVP-MNG:Dispatcher.sync_issue)[",i6,"]: Synced channel ",i2,": Rank = ",i4)')&
+            &impir,channel,this%dispatch_rank(channel)
+           else
+            write(CONS_OUT,'("#MSG(TAVP-MNG:Dispatcher.sync_issue)[",i6,"]: Synced all channels")') impir
+           endif
+          else
+           write(CONS_OUT,'("#ERROR(TAVP-MNG:Dispatcher.sync_issue)[",i6,"]: Sync error ",i11)') impir,errc
+          endif
+          flush(CONS_OUT)
+         endif
          if(present(ierr)) ierr=errc
          return
         end function TAVPMNGDispatcherSyncIssue
@@ -3871,7 +3905,7 @@
          enddo wloop
 !Record the error:
          ier=this%get_error(); if(ier.eq.DSVP_SUCCESS) call this%set_error(errc)
-         if(errc.ne.0.and.VERBOSE) write(CONS_OUT,'("#ERROR(TAVP_MNG)[",i6,"]: Replicator error ",i11," by thread ",i2)')&
+         if(errc.ne.0.and.VERBOSE) write(CONS_OUT,'("#ERROR(TAVP-MNG)[",i6,"]: Replicator error ",i11," by thread ",i2)')&
          &impir,errc,thid
 !Shutdown:
          call this%shutdown(ier); if(ier.ne.0.and.errc.eq.0) errc=-1
@@ -4151,7 +4185,7 @@
          enddo wloop
 !Record the error:
          ier=this%get_error(); if(ier.eq.DSVP_SUCCESS) call this%set_error(errc)
-         if(errc.ne.0.and.VERBOSE) write(CONS_OUT,'("#ERROR(TAVP_MNG)[",i6,"]: Collector error ",i11," by thread ",i2)')&
+         if(errc.ne.0.and.VERBOSE) write(CONS_OUT,'("#ERROR(TAVP-MNG)[",i6,"]: Collector error ",i11," by thread ",i2)')&
          &impir,errc,thid
 !Shutdown:
          call this%shutdown(ier); if(ier.ne.0.and.errc.eq.0) errc=-1
