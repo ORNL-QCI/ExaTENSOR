@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/02/08
+!REVISION: 2018/02/09
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -138,7 +138,8 @@
           procedure, public:: get_cache_entry=>TensOprndGetCacheEntry !returns a pointer to the tensor cache entry (may be NULL)
           procedure, public:: set_cache_entry=>TensOprndSetCacheEntry !sets the associated tensor cache entry (may be NULL)
           procedure, public:: get_owner_id=>TensOprndGetOwnerId !returns the tensor owner id
-          procedure, public:: set_owner_id=>TensOprndSetOwnerId !sets the tensor owner id
+          procedure, public:: set_owner_id=>TensOprndSetOwnerId !sets the tensor owner id (with or without cache update)
+          procedure, public:: sync_owner_id=>TensOprndSyncOwnerId !synchronizes the tensor owner id between public cache and private reference
           procedure, public:: is_located=>TensOprndIsLocated    !returns TRUE if the tensor operand has been located (its structure is known)
           procedure, public:: is_remote=>TensOprndIsRemote      !returns TRUE if the tensor operand is remote
           procedure, public:: is_valued=>TensOprndIsValued      !returns TRUE if the tensor operand is set to some value (neither undefined nor being updated)
@@ -154,12 +155,13 @@
  !Tensor instruction (realization of a tensor operation for a specific TAVP):
         type, extends(ds_instr_t), public:: tens_instr_t
          integer(INTD), private:: num_out_oprnds=0                    !number of the output tensor instruction operands
-         integer(INTD), private:: out_oprnds(0:MAX_TENSOR_OPERANDS-1) !tensor instruction operands which are considered output (to sync on them for completion)
+         integer(INTD), private:: out_oprnds(0:MAX_TENSOR_OPERANDS-1) !positions of the tensor instruction operands which are considered output
          contains
           procedure, private:: TensInstrCtor                              !ctor: constructs a tensor instruction from the specification of a tensor operation
           generic, public:: tens_instr_ctor=>TensInstrCtor
           procedure, public:: encode=>TensInstrEncode                     !encoding procedure: Packs the tensor instruction into a raw byte packet
           procedure, public:: fully_located=>TensInstrFullyLocated        !returns TRUE if the tensor instruction operands have been fully located (their structure is known), FALSE otherwise
+          procedure, public:: get_out_operands=>TensInstrGetOutOperands   !returns the list of the output operands by their positions
           procedure, public:: get_cache_entries=>TensInstrGetCacheEntries !returns an array of references to tensor cache entries used by the tensor operands
           procedure, public:: get_flops=>TensInstrGetFlops                !returns an estimate of the total number of required Flops (mul/add) and memory Words
           procedure, public:: get_operation=>TensInstrGetOperation        !returns back the encapsulated tensor operation
@@ -268,6 +270,7 @@
          type(pack_env_t), allocatable, private:: bytecode(:)       !outgoing bytecode buffer for each dispatched MPI rank
          type(comm_handle_t), allocatable, private:: comm_hl(:)     !communication handle for each dispatched MPI rank
          class(tens_cache_t), pointer, private:: arg_cache=>NULL()  !non-owning pointer to the tensor argument cache
+         logical, private:: tavp_is_bottom                          !TRUE if the unit belongs to the bottom TAVP-MNG, FALSE otherwise
          contains
           procedure, public:: configure=>TAVPMNGDispatcherConfigure  !configures TAVP-MNG dispatcher
           procedure, public:: start=>TAVPMNGDispatcherStart          !starts and lives TAVP-MNG dispatcher
@@ -388,6 +391,7 @@
         private TensOprndSetCacheEntry
         private TensOprndGetOwnerId
         private TensOprndSetOwnerId
+        private TensOprndSyncOwnerId
         private TensOprndIsLocated
         private TensOprndIsRemote
         private TensOprndIsValued
@@ -403,6 +407,7 @@
         private TensInstrCtor
         private TensInstrEncode
         private TensInstrFullyLocated
+        private TensInstrGetOutOperands
         private TensInstrGetCacheEntries
         private TensInstrGetFlops
         private TensInstrGetOperation
@@ -507,7 +512,9 @@
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
 
+         id=-1
          if(this%is_set(errc)) then
+!$OMP ATOMIC READ
           id=this%owner_id
          else
           errc=-1
@@ -525,6 +532,7 @@
          integer(INTD):: errc
 
          if(this%is_set(errc)) then
+!$OMP ATOMIC WRITE
           this%owner_id=id
          else
           errc=-1
@@ -541,10 +549,12 @@
          logical:: res                               !out: answer
          class(tens_entry_mng_t), intent(in):: this  !in: specialized tensor cache entry
          integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc
+         integer(INTD):: errc,id
 
          errc=0
-         res=(this%owner_id.ne.role_rank)
+!$OMP ATOMIC READ
+         id=this%owner_id
+         res=(id.ne.role_rank)
          if(present(ierr)) ierr=errc
          return
         end function TensEntryMngHoldsRemote
@@ -671,6 +681,7 @@
 
          errc=0; id=-1
          if(associated(this%tensor)) then
+         !if(this%owner_id.lt.0.and.associated(this%cache_entry)) this%owner_id=this%cache_entry%get_owner_id(errc) !sync owner_id
           id=this%owner_id
          else
           errc=-1
@@ -678,18 +689,29 @@
          if(present(ierr)) ierr=errc
          return
         end function TensOprndGetOwnerId
-!------------------------------------------------------
-        subroutine TensOprndSetOwnerId(this,owner,ierr)
-!Sets the tensor owner id.
+!-------------------------------------------------------------------
+        subroutine TensOprndSetOwnerId(this,owner,ierr,update_cache)
+!Sets the tensor owner id, with or without tensor cache update.
          implicit none
-         class(tens_oprnd_t), intent(inout):: this   !inout: active tensor operand
-         integer(INTD), intent(in):: owner           !in: tensor owner id (no restrictions)
-         integer(INTD), intent(out), optional:: ierr !out: error code
+         class(tens_oprnd_t), intent(inout):: this    !inout: active tensor operand
+         integer(INTD), intent(in):: owner            !in: tensor owner id (no restrictions)
+         integer(INTD), intent(out), optional:: ierr  !out: error code
+         logical, intent(in), optional:: update_cache !if TRUE, the owner id in the tensor cache will be updated as well (defaults to FALSE)
          integer(INTD):: errc
 
          if(this%is_active(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
            this%owner_id=owner
+           if(present(update_cache)) then
+            if(update_cache) then
+             if(associated(this%cache_entry)) then
+              call this%cache_entry%set_owner_id(owner,errc)
+              if(errc.ne.0) errc=-4
+             else
+              errc=-3
+             endif
+            endif
+           endif
           else
            errc=-2
           endif
@@ -699,6 +721,30 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensOprndSetOwnerId
+!-------------------------------------------------
+        subroutine TensOprndSyncOwnerId(this,ierr)
+!Synchronizes the tensor owner id between public cache and private reference,
+!that is, overwrites the private reference with the public cache value, if any.
+         implicit none
+         class(tens_oprnd_t), intent(inout):: this   !inout: active tensor operand
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         if(this%is_active(errc)) then
+          if(errc.eq.DSVP_SUCCESS) then
+           if(associated(this%cache_entry)) then
+            this%owner_id=this%cache_entry%get_owner_id(errc)
+            if(errc.ne.0) errc=-3
+           endif
+          else
+           errc=-2
+          endif
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensOprndSyncOwnerId
 !---------------------------------------------------------
         function TensOprndIsLocated(this,ierr) result(res)
 !Returns TRUE if the tensor operand has been located, FALSE otherwise.
@@ -956,7 +1002,8 @@
          do j=1,nsp; write(devo,'(" ")',ADVANCE='NO'); enddo
          write(devo,'("TENSOR OPERAND{")')
          do j=1,nsp+1; write(devo,'(" ")',ADVANCE='NO'); enddo
-         write(devo,'("Status = ",i2,"; Communication = ",i2)') this%get_status(),this%get_comm_stat()
+         write(devo,'("Status = ",i2,"; Communication = ",i2,"; Metadata owner = ",i6)')&
+         &this%get_status(),this%get_comm_stat(),this%get_owner_id()
          if(associated(this%tensor)) then
           call this%tensor%print_it(errc,devo,nsp+1); if(errc.ne.TEREC_SUCCESS) errc=-1
          else
@@ -1368,6 +1415,31 @@
          if(present(ierr)) ierr=errc
          return
         end function TensInstrFullyLocated
+!----------------------------------------------------------------------------
+        function TensInstrGetOutOperands(this,ierr,num_oprs) result(out_oprs)
+!Returns the list of the output tensor operands by their positions.
+         implicit none
+         integer(INTD), pointer:: out_oprs(:)            !out: positions of the output tensor instruction operands
+         class(tens_instr_t), intent(in), target:: this  !in: tensor instruction
+         integer(INTD), intent(out), optional:: ierr     !out: error code
+         integer(INTD), intent(out), optional:: num_oprs !out: number of the output tensor instruction operands
+         integer(INTD):: errc,n
+
+         out_oprs=>NULL(); n=0
+         if(.not.this%is_empty(errc)) then
+          if(errc.eq.DSVP_SUCCESS) then
+           n=this%num_out_oprnds
+           if(n.gt.0) out_oprs(0:)=>this%out_oprnds(0:n-1)
+          else
+           errc=-2
+          endif
+         else
+          errc=-1
+         endif
+         if(present(num_oprs)) num_oprs=n
+         if(present(ierr)) ierr=errc
+         return
+        end function TensInstrGetOutOperands
 !-------------------------------------------------------------------------------
         subroutine TensInstrGetCacheEntries(this,cache_entries,num_entries,ierr)
 !Returns an array of references to tensor cache entries associated with the tensor operands.
@@ -2952,7 +3024,7 @@
            if(errc.eq.DSVP_SUCCESS.and.associated(dsvp)) then
             tavp=>NULL(); select type(dsvp); class is(tavp_mng_t); tavp=>dsvp; end select
             init_tag=DSVP_SUCCESS; if(tavp%is_bottom()) init_tag=TAVP_ERR_TAG_ONE
-!Decompose structureless output tensor operands, if needed:
+!Decompose structureless output tensor operands (set their composition lists), if needed:
             call decompose_output_tensors(errc)
 !Decompose the tensor instruction:
             if(errc.eq.0) then
@@ -3004,7 +3076,7 @@
          !In case the output tensor(s) do not have internal structure yet,
          !this subroutine will decompose them into subtensors, based on
          !the universal tensor dimension strength assessing function.
-         !The newly created subtensors are cached in the tensor cache.
+         !The newly created subtensors will then be cached in the tensor cache.
          !`Different TAVPs may create the same output subtensors, causing duplication.
           implicit none
           integer(INTD), intent(out):: jerr !out: error code
@@ -3035,8 +3107,9 @@
             endif
 !$OMP END CRITICAL (TAVP_MNG_CACHE)
            class default
-            jerr=-1; exit tloop
+            jerr=-1
            end select
+           if(jerr.ne.0) exit tloop
           enddo tloop
           return
          end subroutine decompose_output_tensors
@@ -3448,6 +3521,7 @@
          endif
 !Check whether this TAVP-MNG is at the bottom of the TAVP-MNG hierarchy:
          bottom_tavp=tavp%is_bottom(ier); if(ier.ne.0.and.errc.eq.0) errc=-22
+         this%tavp_is_bottom=bottom_tavp
 !Work loop:
          active=((errc.eq.0).and.(this%dispatch_comm.ne.MPI_COMM_NULL)); stopping=(.not.active)
          wloop: do while(active)
@@ -3492,7 +3566,10 @@
   !Delete the dispatched instruction from the main queue:
            call tens_instr%set_status(DS_INSTR_RETIRED,ier,DSVP_SUCCESS)
            if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-8; exit wloop; endif
-           !if(DEBUG.gt.0) then; call tens_instr%print_it(dev_id=CONS_OUT); flush(CONS_OUT); endif
+           if(DEBUG.gt.0) then
+            write(CONS_OUT,'("#MSG(TAVP-MNG:Dispatcher): Deleting dispatched instruction:")')
+            call tens_instr%print_it(dev_id=CONS_OUT); flush(CONS_OUT)
+           endif
            ier=this%iqueue%delete(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-7; exit wloop; endif
   !Issue (send) the bytecode to the child TAVPs:
            do i=1,this%num_ranks !loop over dispatch channels
@@ -3679,20 +3756,62 @@
          class(tens_instr_t), target, intent(in):: tens_instr !in: defined tensor instruction
          integer(INTD), intent(in):: channel                  !in: offset in this.bytecode(1:max)
          integer(INTD), intent(out), optional:: ierr          !out: error code
-         integer(INTD):: errc
+         integer(INTD):: errc,opcode,i,n,home
          type(obj_pack_t):: instr_packet
+         integer(INTD), pointer:: out_oprs(:)
+         class(ds_oprnd_t), pointer:: oprnd
 
          errc=0
          if(channel.ge.lbound(this%dispatch_rank,1).and.channel.le.ubound(this%dispatch_rank,1)) then
+ !Encode and dispatch the tensor instruction to the corresponding bytecode channel:
           call this%bytecode(channel)%acquire_packet(instr_packet,errc,preclean=.TRUE.)
           if(errc.eq.PACK_SUCCESS) then
            call this%encode(tens_instr,instr_packet,errc)
            if(errc.eq.0) then
             call this%bytecode(channel)%seal_packet(errc)
             if(errc.eq.PACK_SUCCESS) then
+ !Update dispatch stats:
              call this%update_dispatch_count(channel,1_INTL) !update current instruction count for this channel `Collector must decrement this counter
              call this%update_dispatch_flops(channel,tens_instr%get_flops(errc)) !update current Flop count for this channel `Collector must decrement this counter
-             if(errc.ne.0) errc=-5
+ !Set the home for orphaned output tensor operands:
+             if(errc.eq.0) then
+              opcode=tens_instr%get_code(errc)
+              if(errc.eq.DSVP_SUCCESS) then
+               if(opcode.ge.TAVP_ISA_TENS_FIRST.and.opcode.le.TAVP_ISA_TENS_LAST) then !tensor instruction
+                out_oprs=>tens_instr%get_out_operands(errc,num_oprs=n)
+                if(errc.eq.0) then
+                 if(n.gt.0) then
+                  if(this%tavp_is_bottom) then
+                   home=role_rank !this TAVP-MNG id
+                  else
+                   home=this%dispatch_rank(channel) !child TAVP-MNG id
+                  endif
+                  do i=lbound(out_oprs,1),ubound(out_oprs,1)
+                   oprnd=>tens_instr%get_operand(out_oprs(i),errc); if(errc.ne.DSVP_SUCCESS) then; errc=-11; exit; endif
+                   select type(oprnd)
+                   class is(tens_oprnd_t)
+                    if(oprnd%get_owner_id(errc).lt.0) then !no owner
+                     if(errc.eq.0) then
+                      call oprnd%set_owner_id(home,errc,update_cache=.TRUE.); if(errc.ne.0) then; errc=-10; exit; endif
+                     else
+                      errc=-9; exit
+                     endif
+                    endif
+                   class default
+                    errc=-8; exit
+                   end select
+                  enddo
+                 endif
+                else
+                 errc=-7
+                endif
+               endif
+              else
+               errc=-6
+              endif
+             else
+              errc=-5
+             endif
             else
              errc=-4
             endif
