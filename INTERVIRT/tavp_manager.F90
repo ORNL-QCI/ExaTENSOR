@@ -2408,7 +2408,7 @@
           ier=this%iqueue%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-79; exit wloop; endif
           ier=this%flush_port(0,num_moved=i); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-78; exit wloop; endif
           if(DEBUG.gt.0.and.i.gt.0) then
-           write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Locator unit ",i2," received ",i9," new instructions")')&
+           write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Locator unit ",i2," received ",i9," new instructions from uDecoder")')&
            &impir,this%get_id(),i
            !ier=this%iqueue%reset(); ier=this%iqueue%scanp(action_f=tens_instr_print) !print all instructions
            flush(CONS_OUT)
@@ -2420,8 +2420,14 @@
            ier=this%loc_list%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-75; exit wloop; endif
           endif
  !Move the leading subset of subinstructions from port 2 (from Decomposer) into the locating list (bottom TAVP-MNG only):
-          ier=this%unload_port(2,this%loc_list,MAX_LOCATE_SUB_INSTR,n); num_loc_instr=num_loc_instr+n; n=0
+          ier=this%unload_port(2,this%loc_list,MAX_LOCATE_SUB_INSTR,n)
           if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-74; exit wloop; endif
+          if(DEBUG.gt.0.and.n.gt.0) then
+           write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Locator unit ",i2," received ",i9," instructions from bottom Decomposer")')&
+           &impir,this%get_id(),n
+           flush(CONS_OUT)
+          endif
+          num_loc_instr=num_loc_instr+n; n=0
           ier=this%loc_list%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-73; exit wloop; endif
  !Move the leading subset of new tensor instructions from the main queue into the locating list:
           ier=this%ctrl_list%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-72; exit wloop; endif
@@ -2462,6 +2468,11 @@
             endif
             if(this%iqueue%get_status().ne.GFC_IT_ACTIVE) exit mloop
            enddo mloop
+           if(DEBUG.gt.0.and.n.gt.0) then
+            write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Locator unit ",i2," processed ",i9," instructions from the main queue")')&
+            &impir,this%get_id(),n
+            flush(CONS_OUT)
+           endif
            call tavp%incr_recv_instr_counter(ier,int(n,INTL))
            if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-58; exit wloop; endif
           endif
@@ -2471,6 +2482,11 @@
           if(this%def_list%get_status().eq.GFC_IT_ACTIVE.and.num_def_instr.lt.MAX_LOCATE_DEF_INSTR) then
            ier=this%def_list%move_list(this%loc_list,MAX_LOCATE_DEF_INSTR,n) !at most MAX_LOCATE_DEF_INSTR tensor instructions will be moved to the locating list from the deferred list
            if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-55; exit wloop; endif
+           if(DEBUG.gt.0.and.n.gt.0) then
+            write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Locator unit ",i2," extracted ",i9," instructions from the deferred queue")')&
+            &impir,this%get_id(),n
+            flush(CONS_OUT)
+           endif
            num_def_instr=num_def_instr+n !increment the number of instructions taken from the deferred instruction list
            num_loc_instr=num_loc_instr+n !increment the number of instructions waiting for location
           endif
@@ -2511,6 +2527,11 @@
             call comm_hl%clean(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-43; exit wloop; endif
             call this%bytecode%send(this%ring_send,comm_hl,ier,tag=TAVP_LOCATE_TAG,comm=this%ring_comm)
             if(ier.ne.0.and.errc.eq.0) then; errc=-42; exit wloop; endif
+            if(DEBUG.gt.0) then
+             write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Locator unit ",i2,": Rotation ",i3,": Sent ",i9," instructions")')&
+             &impir,this%get_id(),rot_num+1,this%bytecode%get_num_packets()
+             flush(CONS_OUT)
+            endif
   !Clean the locating list and evict the relevant remote tensors with zero reference count from the tensor cache:
             ier=this%loc_list%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-41; exit wloop; endif
             ier=this%loc_list%get_status()
@@ -2542,13 +2563,24 @@
   !Synchronize the bytecode send and clean the bytecode buffer:
             call comm_hl%wait(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-31; exit wloop; endif
             call comm_hl%clean(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-30; exit wloop; endif
-            call this%bytecode%destroy(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-29; exit wloop; endif
+            call this%bytecode%clean(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-29; exit wloop; endif
+            if(DEBUG.gt.0) then
+             write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Locator unit ",i2,": Rotation ",i3,": Send synced")')&
+             &impir,this%get_id(),rot_num+1
+             flush(CONS_OUT)
+            endif
   !Absorb located tensor insructions from port 1 (delivered by lDecoder):
    !Wait until port 1 is filled in by lDecoder:
             ier=this%loc_list%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-28; exit wloop; endif
             ier=this%loc_list%get_status(); if(ier.ne.GFC_IT_EMPTY.and.errc.eq.0) then; errc=-27; exit wloop; endif !trap
             do while(ier.eq.GFC_IT_EMPTY) !wait until located tensor instructions are delivered by lDecoder
-             ier=this%unload_port(1,this%loc_list); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-26; exit wloop; endif
+             ier=this%unload_port(1,this%loc_list,num_moved=i)
+             if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-26; exit wloop; endif
+             if(DEBUG.gt.0.and.i.gt.0) then
+              write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Locator unit ",i2,": Rotation ",i3,": Received ",i6," instructions")')&
+              &impir,this%get_id(),rot_num+1,i
+              flush(CONS_OUT)
+             endif
              ier=this%loc_list%get_status()
             enddo
    !Read the first (dummy) instruction with the bytecode tag written in its id:
@@ -3566,7 +3598,7 @@
   !Delete the dispatched instruction from the main queue:
            call tens_instr%set_status(DS_INSTR_RETIRED,ier,DSVP_SUCCESS)
            if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-8; exit wloop; endif
-           if(DEBUG.gt.0) then
+           if(DEBUG.gt.1) then
             write(CONS_OUT,'("#MSG(TAVP-MNG:Dispatcher): Deleting dispatched instruction:")')
             call tens_instr%print_it(dev_id=CONS_OUT); flush(CONS_OUT)
            endif
