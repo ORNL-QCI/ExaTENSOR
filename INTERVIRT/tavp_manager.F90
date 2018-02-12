@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/02/09
+!REVISION: 2018/02/10
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -2423,7 +2423,7 @@
           ier=this%unload_port(2,this%loc_list,MAX_LOCATE_SUB_INSTR,n)
           if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-74; exit wloop; endif
           if(DEBUG.gt.0.and.n.gt.0) then
-           write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Locator unit ",i2," received ",i9," instructions from bottom Decomposer")')&
+           write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Locator unit ",i2," received ",i9," instructions from Decomposer (bottom)")')&
            &impir,this%get_id(),n
            flush(CONS_OUT)
           endif
@@ -2469,7 +2469,7 @@
             if(this%iqueue%get_status().ne.GFC_IT_ACTIVE) exit mloop
            enddo mloop
            if(DEBUG.gt.0.and.n.gt.0) then
-            write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Locator unit ",i2," processed ",i9," instructions from the main queue")')&
+            write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Locator unit ",i2," extracted ",i9," instructions from the main queue")')&
             &impir,this%get_id(),n
             flush(CONS_OUT)
            endif
@@ -2593,6 +2593,11 @@
              if(opcode.eq.TAVP_INSTR_CTRL_RESUME) then !dummy instruction is always (fake) RESUME
               rot_num=rot_num+1 !next rotation step (send/recv) has happened
               bytecode_tag=tens_instr%get_id(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-21; exit wloop; endif
+              if(DEBUG.gt.0) then
+               write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Locator unit ",i2,": Rotation ",i3,": Sender TAVP-MNG id = ",i4)')&
+               &impir,this%get_id(),rot_num,bytecode_tag
+               flush(CONS_OUT)
+              endif
               if(bytecode_tag.eq.role_rank) then !TAVP's own instructions are back => remove the header dummy instruction
                call tens_instr%set_status(DS_INSTR_RETIRED,ier,DSVP_SUCCESS)
                if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-20; exit wloop; endif
@@ -2607,8 +2612,8 @@
             endif
            enddo rloop
            if(DEBUG.gt.0) then
-            write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Locator unit ",i2,": Rotations completed")')&
-            &impir,this%get_id()
+            write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Locator unit ",i2,": ",i4,"-rotations cycle completed")')&
+            &impir,this%get_id(),rot_num
             flush(CONS_OUT)
            endif
           endif !ring exists
