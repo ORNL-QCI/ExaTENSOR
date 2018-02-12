@@ -2606,6 +2606,11 @@
              if(errc.eq.0) then; errc=-17; exit wloop; endif
             endif
            enddo rloop
+           if(DEBUG.gt.0) then
+            write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Locator unit ",i2,": Rotations completed")')&
+            &impir,this%get_id()
+            flush(CONS_OUT)
+           endif
           endif !ring exists
  !Move partially located tensor instructions from the locating list to the deferred list:
           ier=this%def_list%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-16; exit wloop; endif
