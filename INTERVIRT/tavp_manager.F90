@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/02/10
+!REVISION: 2018/02/12
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -2475,7 +2475,7 @@
            endif
            call tavp%incr_recv_instr_counter(ier,int(n,INTL))
            if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-58; exit wloop; endif
-          endif
+          endif !main queue is not empty
  !Move a limited number of tensor instructions from the deferred list back into the locating list:`Deferred instructions are appended at the end (out-of-order)
           ier=this%loc_list%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-57; exit wloop; endif
           ier=this%def_list%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-56; exit wloop; endif

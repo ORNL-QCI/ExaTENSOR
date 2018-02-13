@@ -1,7 +1,7 @@
 !PROJECT Q-FORCE: Massively Parallel Quantum Many-Body Methodology on Heterogeneous HPC systems.
 !BASE: ExaTensor: Massively Parallel Tensor Algebra Virtual Processor for Heterogeneous HPC systems.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/02/01
+!REVISION: 2018/02/12
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -87,14 +87,14 @@
 !Application runs ExaTENSOR within MPI_COMM_WORLD:
          ierr=exatns_start(MPI_COMM_WORLD)
          if(ierr.eq.EXA_SUCCESS) then
-          ierr=exatns_proc_role(my_role)
+          ierr=exatns_process_role(my_role)
           if(my_role.eq.EXA_DRIVER) then
 !Driver drives tensor workload:
  !Create tensors:
            ao_space_root=ao_space%get_root_id(ierr)
            if(ierr.ne.0) call quit(ierr,'h_space_t%get_root_id() failed!')
            write(jo,'("Creating tensor dtens over the hierarchical vector space ... ")',ADVANCE='NO'); flush(jo)
-           ierr=exatns_tensor_create(dtens,'dtens',(/(ao_space_id,i=1,4)/),(/(ao_space_root,i=1,4)/),EXA_DATA_KIND_R8)
+           ierr=exatns_tensor_create(dtens,'dtens',(/(ao_space_id,i=1,2)/),(/(ao_space_root,i=1,2)/),EXA_DATA_KIND_R8)
            if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_create() failed!')
            write(jo,'("Ok")'); flush(jo)
            !write(jo,'("Creating tensor ltens over the hierarchical vector space ... ")',ADVANCE='NO'); flush(jo)

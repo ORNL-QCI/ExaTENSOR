@@ -1,7 +1,7 @@
 !ExaTENSOR: Massively Parallel Virtual Processor for Scale-Adaptive Hierarchical Tensor Algebra
 !This is the top level API module of ExaTENSOR (user-level API)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2018/02/07
+!REVISION: 2018/02/12
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -110,7 +110,7 @@
  !Control:
        public exatns_start                !starts the ExaTENSOR DSVP (called by All)
        public exatns_stop                 !stops the ExaTENSOR DSVP (Driver only)
-       public exatns_proc_role            !returns the role of the current MPI process (called by Any)
+       public exatns_process_role         !returns the role of the current MPI process (called by Any)
        public exatns_status               !returns the status of the ExaTENSOR runtime plus statistics, if needed (Driver only)
  !Parser/interpreter (Driver only):
        public exatns_interpret            !interprets TAProL code (string of TAProL statements)
@@ -608,8 +608,8 @@
         if(ierr.ne.0) write(jo,'(" Failed!")')
         return
        end function exatns_stop
-!-------------------------------------------------------------
-       function exatns_proc_role(role,role_total) result(ierr)
+!----------------------------------------------------------------
+       function exatns_process_role(role,role_total) result(ierr)
 !Returns the role of the current MPI process.
         implicit none
         integer(INTD):: ierr                              !out: error code
@@ -625,7 +625,7 @@
          endif
         endif
         return
-       end function exatns_proc_role
+       end function exatns_process_role
 !----------------------------------------------
        function exatns_status(sts) result(ierr)
 !Returns the current status of the ExaTENSOR runtime.
