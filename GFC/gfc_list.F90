@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Bi-directional linked list
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2018-02-07 (started 2016-02-28)
+!REVISION: 2018-02-13 (started 2016-02-28)
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -93,7 +93,9 @@
           procedure, public:: insert_elem=>ListIterInsertElem      !inserts a new element at the current position of the container
           procedure, public:: insert_list=>ListIterInsertList      !inserts another linked list at the current position of the container
           procedure, public:: move_elem=>ListIterMoveElem          !moves a list element from one iterator to another
-          procedure, public:: move_list=>ListIterMoveList          !moves an entire list from one iterator to another
+          procedure, private:: ListIterMoveListBas                 !moves an entire list or its part from one iterator to another
+          procedure, private:: ListIterMoveListPrd                 !moves an entire list or its part from one iterator to another with a potential predicated early stop
+          generic, public:: move_list=>ListIterMoveListBas,ListIterMoveListPrd
           procedure, public:: split=>ListIterSplit                 !splits the list into two parts at the current position
           procedure, public:: delete=>ListIterDelete               !deletes the list element in the current position
           procedure, public:: delete_sublist=>ListIterDeleteSublist!deletes all elements either prior or after the current iterator position
@@ -133,7 +135,8 @@
         private ListIterInsertElem
         private ListIterInsertList
         private ListIterMoveElem
-        private ListIterMoveList
+        private ListIterMoveListBas
+        private ListIterMoveListPrd
         private ListIterSplit
         private ListIterDelete
         private ListIterDeleteSublist
@@ -902,9 +905,11 @@
         end function ListIterInsertList
 !-------------------------------------------------------------------
         function ListIterMoveElem(this,another,precede) result(ierr)
-!Moves a list element at the current iterator position into
-!another list iterator at its current position, either prior or after it.
+!Moves a list element at the current iterator position into another
+!list iterator at its current position, either prior or after it.
 !Another iterator will shift to the just added element (prior or after).
+!The current iterator will shift to the next element, and if none,
+!it will shift to the previous element, and if none, it will become empty.
          implicit none
          integer(INTD):: ierr                        !out: error code
          class(list_iter_t), intent(inout):: this    !inout: source list iterator (from)
@@ -957,8 +962,8 @@
          endif
          return
         end function ListIterMoveElem
-!-------------------------------------------------------------------------------------
-        function ListIterMoveList(this,another,max_elems,num_elems_moved) result(ierr)
+!----------------------------------------------------------------------------------------
+        function ListIterMoveListBas(this,another,max_elems,num_elems_moved) result(ierr)
 !Moves the entire list or its part from one iterator to another by
 !appending the moved elements right after another list's current iterator
 !position. Another iterator will then reposition to the last appended element.
@@ -975,7 +980,7 @@
          class(list_iter_t), intent(inout):: another     !inout: destination list iterator (to)
          integer(INTD), intent(in), optional:: max_elems !in: upper limit on the number of moved elements
          integer(INTD), intent(out), optional:: num_elems_moved !out: number of list elements moved
-         integer(INTD):: errc,n,nelems,num_moved
+         integer(INTD):: n,nelems,num_moved
 
          num_moved=0; ierr=another%get_status()
          if(ierr.eq.GFC_IT_ACTIVE.or.ierr.eq.GFC_IT_EMPTY) then
@@ -989,7 +994,6 @@
              ierr=this%get_status()
             enddo
             if(ierr.eq.GFC_IT_EMPTY) ierr=GFC_SUCCESS
-            errc=this%reset(); if(errc.ne.GFC_SUCCESS.and.ierr.eq.GFC_SUCCESS) ierr=errc
            else !move up to <nelems> list elements
             n=nelems; ierr=this%get_status()
             do while(ierr.eq.GFC_IT_ACTIVE)
@@ -998,7 +1002,7 @@
              num_moved=num_moved+1
              ierr=this%get_status(); n=n-1; if(n.eq.0) exit
             enddo
-            if(ierr.eq.GFC_IT_EMPTY.or.ierr.eq.GFC_IT_ACTIVE) ierr=GFC_SUCCESS
+            if(ierr.eq.GFC_IT_EMPTY.or.(ierr.eq.GFC_IT_ACTIVE.and.n.eq.0)) ierr=GFC_SUCCESS
            endif
           endif
          else
@@ -1006,7 +1010,65 @@
          endif
          if(present(num_elems_moved)) num_elems_moved=num_moved
          return
-        end function ListIterMoveList
+        end function ListIterMoveListBas
+!-------------------------------------------------------------------------------------------------------
+        function ListIterMoveListPrd(this,another,stop_predicate,max_elems,num_elems_moved) result(ierr)
+!Moves the entire list or its part from one iterator to another by appending
+!the moved elements right after another's current iterator position.
+!Another iterator will then reposition to the last appended element.
+!The provided stop predicate function will be evaluated for each move candidate,
+!and, if it is evaluated to GFC_TRUE, the entire moving process will terminate
+!after that list element is moved. If <max_elems> is absent, all list elements
+!will be moved from <this> to <another> and <this> list will become empty at the end,
+!unless the stop predicate function will terminate the moving process earlier.
+!If <max_elems> is present, only up to that number of list elements will be moved,
+!starting from the current iterator position of <this>. If the end of <this> list
+!is reached before <max_elems> elements have been moved, no further elements will be moved.
+!An optional <num_elems_moved> will reflect the exact number of list elements moved.
+         implicit none
+         integer(INTD):: ierr                                   !out: error code
+         class(list_iter_t), intent(inout):: this               !inout: source list iterator (from)
+         class(list_iter_t), intent(inout):: another            !inout: destination list iterator (to)
+         procedure(gfc_predicate_i):: stop_predicate            !in: stop predicate (terminates the moving process upon evaluation to GFC_TRUE)
+         integer(INTD), intent(in), optional:: max_elems        !in: upper limit on the number of moved elements
+         integer(INTD), intent(out), optional:: num_elems_moved !out: number of list elements moved
+         integer(INTD):: n,nelems,num_moved
+         class(*), pointer:: valp
+
+         num_moved=0; ierr=another%get_status()
+         if(ierr.eq.GFC_IT_ACTIVE.or.ierr.eq.GFC_IT_EMPTY) then
+          nelems=-1; if(present(max_elems)) nelems=max_elems
+          if(nelems.ne.0) then
+           if(nelems.lt.0) then !move all list elements
+            n=nelems; ierr=this%reset(); ierr=this%get_status()
+            do while(ierr.eq.GFC_IT_ACTIVE)
+             valp=>this%get_value(ierr); if(ierr.ne.GFC_SUCCESS) exit
+             ierr=stop_predicate(valp)
+             if(ierr.ne.GFC_FALSE) then; if(ierr.eq.GFC_TRUE) then; n=0; else; exit; endif; endif
+             ierr=this%move_elem(another); if(ierr.ne.GFC_SUCCESS) exit
+             num_moved=num_moved+1
+             ierr=this%get_status(); if(n.eq.0) exit
+            enddo
+           else !move up to <nelems> list elements from the current iterator position
+            n=nelems; ierr=this%get_status()
+            do while(ierr.eq.GFC_IT_ACTIVE)
+             if(this%on_last()) n=1
+             valp=>this%get_value(ierr); if(ierr.ne.GFC_SUCCESS) exit
+             ierr=stop_predicate(valp)
+             if(ierr.ne.GFC_FALSE) then; if(ierr.eq.GFC_TRUE) then; n=1; else; exit; endif; endif
+             ierr=this%move_elem(another); if(ierr.ne.GFC_SUCCESS) exit
+             num_moved=num_moved+1
+             ierr=this%get_status(); n=n-1; if(n.eq.0) exit
+            enddo
+           endif
+           if(ierr.eq.GFC_IT_EMPTY.or.(ierr.eq.GFC_IT_ACTIVE.and.n.eq.0)) ierr=GFC_SUCCESS
+          endif
+         else
+          ierr=GFC_INVALID_ARGS
+         endif
+         if(present(num_elems_moved)) num_elems_moved=num_moved
+         return
+        end function ListIterMoveListPrd
 !-------------------------------------------------------------------
         function ListIterSplit(this,new_list,keep_tail) result(ierr)
 !Splits the list into two parts at the current iterator position.

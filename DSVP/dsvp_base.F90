@@ -1,6 +1,6 @@
 !Domain-specific virtual processor (DSVP): Abstract base module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/02/03
+!REVISION: 2018/02/13
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -113,6 +113,8 @@
         integer(INTD), parameter, public:: DS_INSTR_COMPLETED=7     !instruction has completed execution (either successfully or with an error)
         integer(INTD), parameter, public:: DS_INSTR_OUTPUT_WAIT=8   !waiting for the (remote) output operands to be uploaded back
         integer(INTD), parameter, public:: DS_INSTR_RETIRED=9       !instruction retired (all temporary resources have been released)
+  !Special instruction status:
+        integer(INTD), parameter, public:: DS_INSTR_SPECIAL=100     !special status (for internal logic)
 !DERIVED TYPES:
  !Domain-specific resource (normally local):
         type, abstract, public:: ds_resrc_t
@@ -1294,29 +1296,38 @@
 !$OMP END CRITICAL (DSVU_PORT_LOCK)
          return
         end function DSUnitPortAccept
-!-------------------------------------------------------------------------------------
-        function DSUnitPortAbsorb(this,dsvu_queue_it,max_items,num_moved) result(ierr)
+!----------------------------------------------------------------------------------------------------
+        function DSUnitPortAbsorb(this,dsvu_queue_it,max_items,stop_predicate,num_moved) result(ierr)
 !Absorbs new DS instructions from the DS unit port into another queue.
          implicit none
-         integer(INTD):: ierr                              !out: error code
-         class(ds_unit_port_t), intent(inout):: this       !inout: DS unit port (source)
-         class(list_iter_t), intent(inout):: dsvu_queue_it !inout: destination queue
-         integer(INTD), intent(in), optional:: max_items   !in: max number of items to move (upper limit)
-         integer(INTD), intent(out), optional:: num_moved  !out: number of items actually moved
-         integer(INTD):: errc,n
+         integer(INTD):: ierr                                  !out: error code
+         class(ds_unit_port_t), intent(inout):: this           !inout: DS unit port (source)
+         class(list_iter_t), intent(inout):: dsvu_queue_it     !inout: destination queue
+         integer(INTD), intent(in), optional:: max_items       !in: max number of items to move (upper limit)
+         procedure(gfc_predicate_i), optional:: stop_predicate !in: stop predicate (stops the absorbtion if evaluated to GFC_TRUE)
+         integer(INTD), intent(out), optional:: num_moved      !out: number of items actually moved
+         integer(INTD):: n
 
          ierr=DSVP_SUCCESS; n=0
 !$OMP CRITICAL (DSVU_PORT_LOCK)
-         errc=dsvu_queue_it%reset_back()
-         if(errc.eq.GFC_SUCCESS) then
-          errc=this%iqueue%reset()
-          if(errc.eq.GFC_SUCCESS) then
+         ierr=dsvu_queue_it%reset_back()
+         if(ierr.eq.GFC_SUCCESS) then
+          ierr=this%iqueue%reset()
+          if(ierr.eq.GFC_SUCCESS) then
            if(present(max_items)) then
-            errc=this%iqueue%move_list(dsvu_queue_it,max_items,num_elems_moved=n); if(errc.ne.GFC_SUCCESS) ierr=DSVP_ERROR
+            if(present(stop_predicate)) then
+             ierr=this%iqueue%move_list(dsvu_queue_it,stop_predicate,max_elems=max_items,num_elems_moved=n)
+            else
+             ierr=this%iqueue%move_list(dsvu_queue_it,max_elems=max_items,num_elems_moved=n)
+            endif
            else
-            errc=this%iqueue%move_list(dsvu_queue_it,num_elems_moved=n); if(errc.ne.GFC_SUCCESS) ierr=DSVP_ERROR
+            if(present(stop_predicate)) then
+             ierr=this%iqueue%move_list(dsvu_queue_it,stop_predicate,num_elems_moved=n)
+            else
+             ierr=this%iqueue%move_list(dsvu_queue_it,num_elems_moved=n)
+            endif
            endif
-           if(ierr.eq.DSVP_SUCCESS.and.this%iqueue%get_status().ne.GFC_IT_EMPTY) ierr=DSVP_ERROR !trap
+           if(ierr.ne.GFC_SUCCESS) ierr=DSVP_ERROR
           else
            ierr=DSVP_ERROR
           endif
@@ -1469,24 +1480,33 @@
          ierr=this%port(port_id)%accept(in_list) !DS instructions will be moved from the <in_list> into this port
          return
         end function DSUnitLoadPort
-!----------------------------------------------------------------------------------------
-        function DSUnitUnloadPort(this,port_id,out_list,max_items,num_moved) result(ierr)
+!-------------------------------------------------------------------------------------------------------
+        function DSUnitUnloadPort(this,port_id,out_list,max_items,stop_predicate,num_moved) result(ierr)
 !Unloads the DS unit port by moving its content into an externally provided list,
 !specifically at the end of that list.
          implicit none
-         integer(INTD):: ierr                             !out: error code
-         class(ds_unit_t), intent(inout):: this           !inout: DS unit (the content of its port will be emptied)
-         integer(INTD), intent(in):: port_id              !in: port id
-         class(list_iter_t), intent(inout):: out_list     !inout: list which the DS port content will be moved to
-         integer(INTD), intent(in), optional:: max_items  !in: upper limit on the number of items to move
-         integer(INTD), intent(out), optional:: num_moved !out: actualy number of items moved
+         integer(INTD):: ierr                                  !out: error code
+         class(ds_unit_t), intent(inout):: this                !inout: DS unit (the content of its port will be emptied)
+         integer(INTD), intent(in):: port_id                   !in: port id
+         class(list_iter_t), intent(inout):: out_list          !inout: list which the DS port content will be moved to
+         integer(INTD), intent(in), optional:: max_items       !in: upper limit on the number of items to move
+         procedure(gfc_predicate_i), optional:: stop_predicate !in: stop predicate (stops the unload procedure if evaluated to GFC_TRUE)
+         integer(INTD), intent(out), optional:: num_moved      !out: actualy number of items moved
          integer(INTD):: n
 
          n=0
          if(present(max_items)) then
-          ierr=this%port(port_id)%absorb(out_list,max_items,n) !up to <max_items> DS instructions will be moved from this port into the <out_list>
+          if(present(stop_predicate)) then
+           ierr=this%port(port_id)%absorb(out_list,max_items,stop_predicate,num_moved=n) !up to <max_items> DS instructions will be moved from this port into the <out_list>
+          else
+           ierr=this%port(port_id)%absorb(out_list,max_items,num_moved=n) !up to <max_items> DS instructions will be moved from this port into the <out_list>
+          endif
          else
-          ierr=this%port(port_id)%absorb(out_list,num_moved=n) !all DS instructions will be moved from this port into the <out_list>
+          if(present(stop_predicate)) then
+           ierr=this%port(port_id)%absorb(out_list,stop_predicate=stop_predicate,num_moved=n) !all DS instructions will be moved from this port into the <out_list>
+          else
+           ierr=this%port(port_id)%absorb(out_list,num_moved=n) !all DS instructions will be moved from this port into the <out_list>
+          endif
          endif
          if(present(num_moved)) num_moved=n
          return
@@ -1505,7 +1525,7 @@
 
          n=0
          if(present(max_items)) then
-          ierr=this%port(port_id)%absorb(this%iqueue,max_items,n) !up to <max_items> DS instructions will be moved from this port into the DS unit queue
+          ierr=this%port(port_id)%absorb(this%iqueue,max_items,num_moved=n) !up to <max_items> DS instructions will be moved from this port into the DS unit queue
          else
           ierr=this%port(port_id)%absorb(this%iqueue,num_moved=n) !all DS instructions will be moved from this port into the DS unit queue
          endif
