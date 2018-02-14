@@ -1,6 +1,6 @@
 !Domain-specific virtual processor (DSVP): Abstract base module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/02/13
+!REVISION: 2018/02/14
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -1244,8 +1244,8 @@
          integer(INTD):: ierr                        !out: error code
          class(ds_unit_port_t), intent(inout):: this !inout: DS unit port
 
-         ierr=DSVP_SUCCESS
 !$OMP CRITICAL (DSVU_PORT_LOCK)
+         ierr=DSVP_SUCCESS
          if(this%iqueue%get_status().eq.GFC_IT_NULL) then
           ierr=this%iqueue%init(this%queue)
          else
@@ -1265,34 +1265,35 @@
 
 !$OMP CRITICAL (DSVU_PORT_LOCK)
          res=.not.(this%iqueue%get_status(errc).eq.GFC_IT_ACTIVE)
-!$OMP END CRITICAL (DSVU_PORT_LOCK)
          if(present(ierr)) ierr=errc
+!$OMP END CRITICAL (DSVU_PORT_LOCK)
          return
         end function DSUnitPortIsEmpty
-!------------------------------------------------------------
-        function DSUnitPortAccept(this,new_list) result(ierr)
+!----------------------------------------------------------------------
+        function DSUnitPortAccept(this,new_list,num_moved) result(ierr)
 !Accepts new DS instructions into the DS unit port. These new DS instructions will
 !be moved from <new_list> into the port, thus leaving <new_list> empty at the end.
          implicit none
-         integer(INTD):: ierr                         !out: error code
-         class(ds_unit_port_t), intent(inout):: this  !inout: DS unit port (destination)
-         class(list_iter_t), intent(inout):: new_list !inout: list of new DS instructions for the DS unit port (source, will become empty on exit)
-         integer(INTD):: errc
+         integer(INTD):: ierr                             !out: error code
+         class(ds_unit_port_t), intent(inout):: this      !inout: DS unit port (destination)
+         class(list_iter_t), intent(inout):: new_list     !inout: list of new DS instructions for the DS unit port (source, will become empty on exit)
+         integer(INTD), intent(out), optional:: num_moved !out: number of instructions actually moved
+         integer(INTD):: errc,n
 
-         ierr=DSVP_SUCCESS
 !$OMP CRITICAL (DSVU_PORT_LOCK)
+         ierr=DSVP_SUCCESS; n=0
          errc=new_list%reset()
          if(errc.eq.GFC_SUCCESS) then
           errc=this%iqueue%reset_back()
           if(errc.eq.GFC_SUCCESS) then
-           errc=new_list%move_list(this%iqueue); if(errc.ne.GFC_SUCCESS) ierr=DSVP_ERROR
-           if(ierr.eq.DSVP_SUCCESS.and.new_list%get_status().ne.GFC_IT_EMPTY) ierr=DSVP_ERROR !trap
+           errc=new_list%move_list(this%iqueue,num_elems_moved=n); if(errc.ne.GFC_SUCCESS) ierr=DSVP_ERROR
           else
            ierr=DSVP_ERROR
           endif
          else
           ierr=DSVP_ERROR
          endif
+         if(present(num_moved)) num_moved=n
 !$OMP END CRITICAL (DSVU_PORT_LOCK)
          return
         end function DSUnitPortAccept
@@ -1308,8 +1309,8 @@
          integer(INTD), intent(out), optional:: num_moved      !out: number of items actually moved
          integer(INTD):: n
 
-         ierr=DSVP_SUCCESS; n=0
 !$OMP CRITICAL (DSVU_PORT_LOCK)
+         ierr=DSVP_SUCCESS; n=0
          ierr=dsvu_queue_it%reset_back()
          if(ierr.eq.GFC_SUCCESS) then
           ierr=this%iqueue%reset()
@@ -1334,8 +1335,8 @@
          else
           ierr=DSVP_ERROR
          endif
-!$OMP END CRITICAL (DSVU_PORT_LOCK)
          if(present(num_moved)) num_moved=n
+!$OMP END CRITICAL (DSVU_PORT_LOCK)
          return
         end function DSUnitPortAbsorb
 !-------------------------------------------------
@@ -1467,8 +1468,8 @@
          error_code=this%error_code
          return
         end function DSUnitGetError
-!-----------------------------------------------------------------
-        function DSUnitLoadPort(this,port_id,in_list) result(ierr)
+!---------------------------------------------------------------------------
+        function DSUnitLoadPort(this,port_id,in_list,num_moved) result(ierr)
 !Loads a DS unit port with new DS instructions.
 !<in_list> containing new DS instructions will become empty on exit.
          implicit none
@@ -1476,8 +1477,11 @@
          class(ds_unit_t), intent(inout):: this      !inout: DS unit whose port is being loaded
          integer(INTD), intent(in):: port_id         !in: port id
          class(list_iter_t), intent(inout):: in_list !inout: list of new DS instructions for the DS unit that will be moved into its port
+         integer(INTD), intent(out), optional:: num_moved !out: number of loaded instrsuctions
+         integer(INTD):: n
 
-         ierr=this%port(port_id)%accept(in_list) !DS instructions will be moved from the <in_list> into this port
+         ierr=this%port(port_id)%accept(in_list,num_moved=n) !DS instructions will be moved from the <in_list> into this port
+         if(present(num_moved)) num_moved=n
          return
         end function DSUnitLoadPort
 !-------------------------------------------------------------------------------------------------------

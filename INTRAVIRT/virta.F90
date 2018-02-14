@@ -8,7 +8,7 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/02/02
+!REVISION: 2018/02/14
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -71,7 +71,7 @@
         integer(INTD), public:: EXA_MANAGER_BRANCH_FACT=2 !branching factor for the managing hierarchy
  !TAVP identification:
         integer(INTD), parameter, public:: TAVP_ANY_ID=-1              !any TAVP
- !TAVP instruction error codes:
+ !TAVP instruction error codes [-1:-100]:
         integer(INTD), parameter, public:: TAVP_ERR_GEN_FAILURE=-1     !unspecified generic failure
         integer(INTD), parameter, public:: TAVP_ERR_BTC_BAD=-2         !bad instruction bytecode
         integer(INTD), parameter, public:: TAVP_ERR_CHE_FAILURE=-3     !argument cache failure
@@ -81,6 +81,7 @@
         integer(INTD), parameter, public:: TAVP_ERR_RSC_FAILURE=-7     !instruction is unable to release resources cleanly
         integer(INTD), parameter, public:: TAVP_ERR_COM_FAILURE=-8     !instruction communication failed
         integer(INTD), parameter, public:: TAVP_ERR_EXC_FAILURE=-9     !instruction computation failed
+ !TAVP special instruction markup (via error code):
         integer(INTD), parameter, public:: TAVP_ERR_TAG_ONE=-101       !special tag 1 (for instruction markup, not an error)
         integer(INTD), parameter, public:: TAVP_ERR_TAG_TWO=-102       !special tag 2 (for instruction markup, not an error)
  !Tensor algebra virtual processor (TAVP) ISA:
