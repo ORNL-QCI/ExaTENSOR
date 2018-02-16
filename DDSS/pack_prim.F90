@@ -1,6 +1,6 @@
 !Basic object packing/unpacking primitives.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/01/31
+!REVISION: 2018/02/16
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -1082,19 +1082,29 @@
            integer(INT_MPI), intent(in):: jreq       !in: request handle
            integer(INTD), intent(out):: jerr         !out: error code
            integer(INT_MPI):: jcnt,jcs,jer
+           logical:: intercomm
 
            jerr=PACK_SUCCESS; jcnt=0
-           call MPI_Comm_Size(jc,jcs,jer)
-           if(jer.eq.MPI_SUCCESS.and.jr.ge.0.and.jr.lt.jcs) then
-            if(jl.le.int(huge(jcnt),INTL)) then
-             jcnt=int(jl,INT_MPI)
-             call MPI_Isend(jbuf,jcnt,MPI_CHARACTER,jr,jtag,jc,jreq,jer)
-             if(jer.ne.MPI_SUCCESS) jerr=PACK_MPI_ERR
+           call MPI_Comm_test_inter(jc,intercomm,jer)
+           if(jer.eq.MPI_SUCCESS) then
+            if(intercomm) then
+             call MPI_Comm_remote_size(jc,jcs,jer)
             else
-             jerr=PACK_OVERFLOW
+             call MPI_Comm_size(jc,jcs,jer)
+            endif
+            if(jer.eq.MPI_SUCCESS.and.jr.ge.0.and.jr.lt.jcs) then
+             if(jl.le.int(huge(jcnt),INTL)) then
+              jcnt=int(jl,INT_MPI)
+              call MPI_Isend(jbuf,jcnt,MPI_CHARACTER,jr,jtag,jc,jreq,jer)
+              if(jer.ne.MPI_SUCCESS) jerr=PACK_MPI_ERR
+             else
+              jerr=PACK_OVERFLOW
+             endif
+            else
+             jerr=PACK_INVALID_ARGS
             endif
            else
-            jerr=PACK_INVALID_ARGS
+            jerr=PACK_MPI_ERR
            endif
            return
           end subroutine send_mpi_message

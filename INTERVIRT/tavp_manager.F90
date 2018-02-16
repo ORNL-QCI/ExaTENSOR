@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/02/14
+!REVISION: 2018/02/16
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -358,8 +358,8 @@
           procedure, public:: register_instr=>TAVPMNGRegisterInstr     !registers a new child instruction (subinstruction)
           procedure, public:: unregister_instr=>TAVPMNGUnregisterInstr !unregisteres a subinstruction
           procedure, public:: map_instr=>TAVPMNGMapInstr               !returns the parent instruction ID for a subinstruction
-          procedure, public:: is_top=>TAVPMNGIsTop                     !returns TRUE if the TAVP-MNG is the root of the TAVP-MNG tree
-          procedure, public:: is_bottom=>TAVPMNGIsBottom               !returns TRUE if the TAVP-MNG is a leaf of the TAVP-MNG tree
+          procedure, public:: is_top=>TAVPMNGIsTop                     !returns TRUE if the TAVP-MNG is the root of the TAVP-MNG hierarchy
+          procedure, public:: is_bottom=>TAVPMNGIsBottom               !returns TRUE if the TAVP-MNG is a leaf (bottom) of the TAVP-MNG hierarchy
         end type tavp_mng_t
  !TAVP-MNG configuration:
         type, extends(dsv_conf_t), public:: tavp_mng_conf_t
@@ -2444,7 +2444,7 @@
           if(DEBUG.gt.0.and.i.gt.0) then
            write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Locator unit ",i2," appended ",i9,'//&
            &'" new instructions from uDecoder into main queue")') impir,this%get_id(),i
-           ier=this%iqueue%reset(); ier=this%iqueue%scanp(action_f=tens_instr_print) !print all instructions
+           !ier=this%iqueue%reset(); ier=this%iqueue%scanp(action_f=tens_instr_print) !print all instructions
            flush(CONS_OUT)
           endif
  !Move the leading subset of subinstructions from port 2 (from Decomposer) into the locating list (bottom TAVP-MNG only):
@@ -3123,7 +3123,7 @@
          class(tavp_mng_decomposer_t), intent(inout):: this !inout: TAVP-MNG Decomposer DSVU
          class(tens_instr_t), intent(inout):: tens_instr    !in: parental tensor instruction (.error_code field will be set to the subinstruction count)
          integer(INTD), intent(out), optional:: ierr        !out: error code
-         integer(INTD):: errc,opcode,init_tag
+         integer(INTD):: errc,opcode,init_stat,init_tag
          integer(INTL):: parent_id
          class(dsvp_t), pointer:: dsvp
          class(tavp_mng_t), pointer:: tavp
@@ -3133,7 +3133,11 @@
            dsvp=>this%get_dsvp(errc)
            if(errc.eq.DSVP_SUCCESS.and.associated(dsvp)) then
             tavp=>NULL(); select type(dsvp); class is(tavp_mng_t); tavp=>dsvp; end select
-            init_tag=DSVP_SUCCESS; if(tavp%is_bottom()) init_tag=TAVP_ERR_TAG_ONE
+            if(tavp%is_bottom()) then
+             init_stat=DS_INSTR_INPUT_WAIT; init_tag=TAVP_ERR_TAG_ONE
+            else
+             init_stat=DS_INSTR_READY_TO_EXEC; init_tag=DSVP_SUCCESS
+            endif
 !Decompose structureless output tensor operands (set their composition lists), if needed:
             call decompose_output_tensors(errc)
 !Decompose the tensor instruction:
@@ -3285,7 +3289,7 @@
                   class default
                    jerr=-13; exit cloop
                   end select
-                  call subinstr%set_status(DS_INSTR_INPUT_WAIT,jerr,init_tag) !instruction error code = init_tag will depend on whether the TAVP-MNG is bottom or not
+                  call subinstr%set_status(init_stat,jerr,init_tag) !instruction status and error code will depend on whether the TAVP-MNG is bottom or not
                   if(jerr.ne.DSVP_SUCCESS) then; jerr=-12; exit cloop; endif
                   call tavp%register_instr(iid,tens_instr%get_id(),jerr); if(jerr.ne.0) then; jerr=-11; exit cloop; endif
                   call this%arg_cache%release_entry(tens_entry)
@@ -3394,7 +3398,7 @@
                   class default
                    jerr=-13; exit cloop
                   end select
-                  call subinstr%set_status(DS_INSTR_INPUT_WAIT,jerr,init_tag) !instruction error code = init_tag will depend on whether the TAVP-MNG is bottom or not
+                  call subinstr%set_status(init_stat,jerr,init_tag) !instruction status and error code will depend on whether the TAVP-MNG is bottom or not
                   if(jerr.ne.DSVP_SUCCESS) then; jerr=-12; exit cloop; endif
                   call tavp%register_instr(iid,tens_instr%get_id(),jerr); if(jerr.ne.0) then; jerr=-11; exit cloop; endif
                   call this%arg_cache%release_entry(tens_entry)
@@ -3526,7 +3530,7 @@
                  end select
                 enddo
   !Register the new subinstruction:
-                call subinstr%set_status(DS_INSTR_INPUT_WAIT,jerr,init_tag) !instruction error code = init_tag will depend on whether the TAVP-MNG is bottom or not
+                call subinstr%set_status(init_stat,jerr,init_tag) !instruction status and error code will depend on whether the TAVP-MNG is bottom or not
                 if(jerr.ne.DSVP_SUCCESS) then; jerr=-10; exit sloop; endif
                 call tavp%register_instr(iid,tens_instr%get_id(),jerr); if(jerr.ne.0) then; jerr=-9; exit sloop; endif
                 call dsvp%incr_crtd_instr_counter(); num_subinstr=num_subinstr+1 !new subinstruction has been created
@@ -4008,6 +4012,8 @@
           else
            write(CONS_OUT,'("#ERROR(TAVP-MNG:Dispatcher.issue)[",i6,"]: Unable to issue bytecode to channel ",i2,": Error ",i11)')&
            &impir,channel,errc
+           write(CONS_OUT,'("#INFO(TAVP-MNG:Dispatcher.issue)[",i6,"]: Target rank = ",i6,", Target comm = ",i11)')&
+           &impir,this%dispatch_rank(channel),this%dispatch_comm
           endif
           flush(CONS_OUT)
          endif
@@ -5014,7 +5020,7 @@
          res=.FALSE.
          if(this%get_status(errc).eq.DSVP_STAT_ON) then
           if(errc.eq.DSVP_SUCCESS) then
-           res=(this%dispatcher%dispatch_comm.ne.role_comm) !leaf TAVP-MNG dispatches instructions outside (to Workers)
+           res=(this%dispatcher%dispatch_comm.ne.role_comm) !leaf (bottom) TAVP-MNG dispatches instructions outside (to Workers)
           else
            errc=-2
           endif
