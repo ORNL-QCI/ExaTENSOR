@@ -415,8 +415,8 @@
         private TensInstrGetOperation
         private TensInstrPrintIt
         public tens_instr_dtor
-        public tens_instr_locator_mark
-        public tens_instr_print
+        private tens_instr_locator_mark
+        private tens_instr_print
  !tavp_mng_decoder_t:
         private TAVPMNGDecoderConfigure
         private TAVPMNGDecoderStart
@@ -2161,6 +2161,8 @@
                 class is(tens_instr_t)
                  ds_instr%num_out_oprnds=1; ds_instr%out_oprnds(0:ds_instr%num_out_oprnds-1)=(/0/) !tensor operand 0 is the output operand
                 end select
+               else
+                call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_BTC_BAD); jerr=-5
                endif
               else
                call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_RSC_UNAVAILABLE); jerr=-4
