@@ -8,7 +8,7 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/02/14
+!REVISION: 2018/02/19
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -70,7 +70,13 @@
         integer(INTD), public:: EXA_MAX_WORK_GROUP_SIZE=2 !maximal size of a work group (max number of workers per manager)
         integer(INTD), public:: EXA_MANAGER_BRANCH_FACT=2 !branching factor for the managing hierarchy
  !TAVP identification:
-        integer(INTD), parameter, public:: TAVP_ANY_ID=-1              !any TAVP
+        integer(INTD), parameter, public:: TAVP_ANY_ID=-1         !any TAVP
+ !TAVP MPI message tags:
+        integer(INT_MPI), parameter, public:: TAVP_DEFAULT_TAG=0  !default MPI message tag
+        integer(INT_MPI), parameter, public:: TAVP_DISPATCH_TAG=1 !MPI message containing dispatched instructions
+        integer(INT_MPI), parameter, public:: TAVP_COLLECT_TAG=2  !MPI message containing instructions being collected after execution
+        integer(INT_MPI), parameter, public:: TAVP_LOCATE_TAG=3   !MPI message containing instructions undergoing meta-data location
+        integer(INT_MPI), parameter, public:: TAVP_REPLICA_TAG=4  !MPI message containing instructions for data replication
  !TAVP instruction error codes [-1:-100]:
         integer(INTD), parameter, public:: TAVP_ERR_GEN_FAILURE=-1     !unspecified generic failure
         integer(INTD), parameter, public:: TAVP_ERR_BTC_BAD=-2         !bad instruction bytecode

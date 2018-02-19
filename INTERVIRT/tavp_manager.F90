@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/02/16
+!REVISION: 2018/02/19
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -106,12 +106,6 @@
  !Retirer:
         integer(INTD), private:: MAX_RETIRE_INSTR=4096          !max number of tensor instructions in the retirement phase
         real(8), private:: MAX_RETIRE_PHASE_TIME=0.1d-3         !max time (sec) before sending the retired instructions to the upper level
- !MPI message tags:
-        integer(INT_MPI), parameter, public:: TAVP_DEFAULT_TAG=0  !default MPI message tag
-        integer(INT_MPI), parameter, public:: TAVP_DISPATCH_TAG=1 !MPI message containing dispatched instructions
-        integer(INT_MPI), parameter, public:: TAVP_COLLECT_TAG=2  !MPI message containing instructions being collected after execution
-        integer(INT_MPI), parameter, private:: TAVP_LOCATE_TAG=3  !MPI message containing instructions undergoing meta-data location
-        integer(INT_MPI), parameter, private:: TAVP_REPLICA_TAG=4 !MPI message containing instructions for data replication
 !TYPES:
  !Tensor argument cache entry (TAVP-specific):
         type, extends(tens_cache_entry_t), private:: tens_entry_mng_t
@@ -1746,13 +1740,12 @@
          implicit none
          class(tavp_mng_decoder_t), intent(inout):: this !inout: TAVP-MNG Decoder DSVU
          integer(INTD), intent(out), optional:: ierr     !out: error code
-         integer(INTD):: errc,ier,num_packets,i,j,opcode,sts,thid,port_id
+         integer(INTD):: errc,ier,thid,num_packets,opcode,sts,port_id,i,j
          logical:: active,stopping,new
          class(dsvp_t), pointer:: dsvp
          class(tavp_mng_t), pointer:: tavp
          class(*), pointer:: uptr
          class(ds_unit_t), pointer:: acceptor
-         type(list_iter_t):: iqueue
          type(obj_pack_t):: instr_packet
          type(comm_handle_t):: comm_hl
          type(tens_instr_t), pointer:: tens_instr
@@ -1820,7 +1813,7 @@
               endif
              enddo
  !Pass cloned control instructions to own port (uDecoder only):
-             ier=this%ctrl_list%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-20; exit wloop; endif
+             ier=this%ctrl_list%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-20; exit wloop; endif
              if(this%ctrl_list%get_status().eq.GFC_IT_ACTIVE) then
               ier=this%load_port(0,this%ctrl_list); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-19; exit wloop; endif
              endif
