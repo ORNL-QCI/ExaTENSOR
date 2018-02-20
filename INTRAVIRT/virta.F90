@@ -8,7 +8,7 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/02/19
+!REVISION: 2018/02/20
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -27,6 +27,19 @@
 
 !You should have received a copy of the GNU Lesser General Public License
 !along with ExaTensor. If not, see <http://www.gnu.org/licenses/>.
+
+!NOTES:
+! # Tensor Cache:
+!   (a) Tensor cache operations, namely, lookup(), store(), and evict() are serialized.
+!   (b) Returning a pointer to a tensor cache entry in lookup() and store() results in
+!       an increment of that entry's USE_COUNT, while releasing the obtained pointer via
+!       release_entry() decrements that entry's USE_COUNT.
+!   (c) Associating a tensor operand with a tensor cache entry increments that entry's
+!       REF_COUNT, while destroying that tensor operand decrements REF_COUNT.
+!   (d) Tensor cache entries with a non-zero USE_COUNT or REF_COUNT cannot be destroyed,
+!       unless the user explicitly requests that.
+!   (e) Updates of the value of a tensor cache entry, for example, tensor info updates,
+!       must be protected externally by user (e.g., via user-defined CRITICAL sections).
 
        module virta !VIRtual Tensor Algebra
         use tensor_algebra     !basic constants

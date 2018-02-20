@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/02/19
+!REVISION: 2018/02/20
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -19,6 +19,25 @@
 
 !You should have received a copy of the GNU Lesser General Public License
 !along with ExaTensor. If not, see <http://www.gnu.org/licenses/>.
+
+!NOTES:
+! # Tensor instruction processing pipeline: Local dependency policy:
+!   (1) Check that the input tensor operands are not currently updated locally;
+!   (2) Check that the output tensor operand(s) is not currently in use locally;
+!   (3) Upon first appearance of each distinct output tensor operand (ref_count=0),
+!       create and initialize to zero a local accumulator tensor of the same shape/layout.
+!   (4) Upon any appearance of each distinct output tensor operand, create and initialize
+!       to zero a new local temporary tensor of the same shape/layout. Then replace the
+!       original output tensor operand with the just created local temporary tensor operand.
+!       Name mangling for the output tensor:
+!        Accumulator: "TENSOR3" --> "TENSOR3#0"
+!        Temporary: "TENSOR3" --> "TENSOR3#1", "TENSOR3#2", "TENSOR3#3", etc.
+!   (5) Upon a local completion of a tensor operation, accumulate the temporary tensor
+!       into the accumulator tensor and destroy the temporary tensor.
+!   (6) If upon a local completion of a tensor operation the reference count is one,
+!       that is, this is the last instance of the output tensor operand at the moment,
+!       initiate the (local/remote) upload of the accumulator tensor into the persistent
+!       tensor storage location and destroy the accumulator tensor.
 
        module tavp_worker
         use virta
@@ -45,6 +64,9 @@
  !Bytecode:
         integer(INTL), parameter, private:: MAX_BYTECODE_SIZE=32_INTL*(1024_INTL*1024_INTL) !max size of an incoming/outgoing bytecode envelope (bytes)
         integer(INTD), parameter, private:: MAX_BYTECODE_INSTR=65536                        !max number of tensor instructions in a bytecode envelope
+ !Resourcer:
+        integer(INTD), private:: MAX_RESOURCE_INSTR=64  !max number of instructions during a single resource allocation phase
+        real(8), private:: MAX_RESOURCE_PHASE_TIME=1d-3 !max time spent in a single resource allocation phase
 !TYPES:
  !Tensor resource (local resource):
         type, extends(ds_resrc_t), private:: tens_resrc_t
@@ -162,6 +184,10 @@
          integer(INTL), private:: host_ram_size=0_INTL              !size of the usable Host RAM memory in bytes
          integer(INTL), private:: nvram_size=0_INTL                 !size of the usable NVRAM memory (if any) in bytes
          class(tens_cache_t), pointer, private:: arg_cache=>NULL()  !non-owning pointer to the tensor argument cache
+         type(list_bi_t), private:: staged_list                     !list of staged instructions ready for subsequent processing
+         type(list_iter_t), private:: stg_list                      !iterator for <staged_list>
+         type(list_bi_t), private:: deferred_list                   !list of deferred instructions
+         type(list_iter_t), private:: def_list                      !iterator for <deferred_list>
          contains
           procedure, public:: configure=>TAVPWRKResourcerConfigure              !configures TAVP-WRK resourcer
           procedure, public:: start=>TAVPWRKResourcerStart                      !starts TAVP-WRK resourcer
@@ -1289,31 +1315,31 @@
 
          if(this%is_active(errc)) then
           if(associated(this%resource)) then
-           body_p=>this%tensor%get_body(errc)
-           if(errc.eq.TEREC_SUCCESS.and.associated(body_p)) then
-            layout_p=>body_p%get_layout(errc)
-            if(errc.eq.TEREC_SUCCESS.and.associated(layout_p)) then
-             if(layout_p%is_set(errc)) then
-              if(errc.eq.TEREC_SUCCESS) then
-               buf_size=layout_p%get_body_size(errc)
-               if(errc.eq.TEREC_SUCCESS.and.buf_size.gt.0_INTL) then
-                if(this%resource%is_empty()) then
+           if(this%resource%is_empty()) then
+            body_p=>this%tensor%get_body(errc)
+            if(errc.eq.TEREC_SUCCESS.and.associated(body_p)) then
+             layout_p=>body_p%get_layout(errc)
+             if(errc.eq.TEREC_SUCCESS.and.associated(layout_p)) then
+              if(layout_p%is_set(errc)) then
+               if(errc.eq.TEREC_SUCCESS) then
+                buf_size=layout_p%get_body_size(errc)
+                if(errc.eq.TEREC_SUCCESS.and.buf_size.gt.0_INTL) then
                  call this%resource%allocate_buffer(buf_size,errc); if(errc.ne.0) errc=-1
+                else
+                 errc=-2
                 endif
                else
-                errc=-2
+                errc=-3
                endif
               else
-               errc=-3
+               errc=-4
               endif
              else
-              errc=-4
+              errc=-5
              endif
             else
-             errc=-5
+             errc=-6
             endif
-           else
-            errc=-6
            endif
           else
            errc=-7
@@ -2790,7 +2816,7 @@
          implicit none
          class(tavp_wrk_resourcer_t), intent(inout):: this !inout: TAVP-WRK resourcer DSVU
          integer(INTD), intent(out), optional:: ierr       !out: error code
-         integer(INTD):: errc,ier,thid
+         integer(INTD):: errc,ier,thid,n
          logical:: active,stopping
          class(dsvp_t), pointer:: dsvp
          class(tavp_wrk_t), pointer:: tavp
@@ -2803,6 +2829,10 @@
          endif
 !Initialize queues and ports:
          call this%init_queue(this%num_ports,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-1
+!Initialize the staged list:
+         ier=this%stg_list%init(this%staged_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-1
+!Initialize the deferred list:
+         ier=this%def_list%init(this%deferred_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-1
 !Set up tensor argument cache and wait on other TAVP units:
          tavp=>NULL(); dsvp=>this%get_dsvp(); select type(dsvp); class is(tavp_wrk_t); tavp=>dsvp; end select
          if(associated(tavp)) then
@@ -2814,6 +2844,15 @@
 !Work loop:
          active=(errc.eq.0); stopping=(.not.active)
          wloop: do while(active)
+ !Get new instructions from Decoder into the main queue:
+          ier=this%iqueue%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+          ier=this%flush_port(0,num_moved=n); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+          if(DEBUG.gt.0.and.n.gt.0) then
+           write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Resourcer unit ",i2," received ",i9," instructions from Decoder")')&
+           &impir,this%get_id(),n
+           !ier=this%iqueue%reset(); ier=this%iqueue%scanp(action_f=tens_instr_print); ier=this%iqueue%reset_back() !print all instructions
+           flush(CONS_OUT)
+          endif
 
          enddo wloop
 !Record the error:
@@ -2840,6 +2879,30 @@
          endif
 !Release the tensor argument cache pointer:
          this%arg_cache=>NULL()
+!Deactivate the deferred list:
+         ier=this%def_list%reset()
+         if(ier.eq.GFC_SUCCESS) then
+          ier=this%def_list%get_status()
+          if(ier.ne.GFC_IT_EMPTY) then
+           if(errc.eq.0) errc=-7
+           ier=this%def_list%delete_all()
+          endif
+          ier=this%def_list%release(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-6
+         else
+          if(errc.eq.0) errc=-5
+         endif
+!Deactivate the staged list:
+         ier=this%stg_list%reset()
+         if(ier.eq.GFC_SUCCESS) then
+          ier=this%stg_list%get_status()
+          if(ier.ne.GFC_IT_EMPTY) then
+           if(errc.eq.0) errc=-4
+           ier=this%stg_list%delete_all()
+          endif
+          ier=this%stg_list%release(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-3
+         else
+          if(errc.eq.0) errc=-2
+         endif
 !Release queues:
          call this%release_queue(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-1
 !Record an error, if any:
@@ -2852,7 +2915,8 @@
 !Acquires local resource for each tensor instruction operand.
 !If some resources cannot be acquired now, returns TRY_LATER.
 !In that case, the successfully acquired resources will be kept,
-!unless an error other than TRY_LATER occurred.
+!unless an error other than TRY_LATER occurred. If an operand
+!already has its resource previously acquired, it is kept so.
          implicit none
          class(tavp_wrk_resourcer_t), intent(inout):: this !inout: TAVP-WRK resourcer DSVU
          class(tens_instr_t), intent(inout):: tens_instr   !inout: tensor instruction
