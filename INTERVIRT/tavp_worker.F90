@@ -143,6 +143,9 @@
           procedure, public:: get_cache_entries=>TensInstrGetCacheEntries !returns an array of references to tensor cache entries used by the tensor operands
           procedure, public:: get_flops=>TensInstrGetFlops                !returns an estimate of the total number of required Flops (mul/add) and memory Words
           procedure, public:: get_operation=>TensInstrGetOperation        !returns back the encapsulated tensor operation
+          procedure, public:: substitute_output=>TensInstrSubstituteOutput   !substitutes the persistent output tensor with a temporary one
+          procedure, public:: restore_output=>TensInstrRestoreOutput         !restores back the original (persistent) output tensor
+          procedure, public:: output_substituted=>TensInstrOutputSubstituted !returns TRUE if the output tensor(s) is substituted with a temporary one
           procedure, public:: print_it=>TensInstrPrintIt                  !prints
           final:: tens_instr_dtor                                         !dtor
         end type tens_instr_t
@@ -197,11 +200,11 @@
          type(list_bi_t), private:: deferred_list                   !list of deferred instructions
          type(list_iter_t), private:: def_list                      !iterator for <deferred_list>
          contains
-          procedure, public:: configure=>TAVPWRKResourcerConfigure              !configures TAVP-WRK resourcer
-          procedure, public:: start=>TAVPWRKResourcerStart                      !starts TAVP-WRK resourcer
-          procedure, public:: shutdown=>TAVPWRKResourcerShutdown                !shuts down TAVP-WRK resourcer
-          procedure, public:: acquire_resource=>TAVPWRKResourcerAcquireResource !acquires local resources for a tensor instruction
-          procedure, public:: release_resource=>TAVPWRKResourcerReleaseResource !releases local resources from a tensor instruction
+          procedure, public:: configure=>TAVPWRKResourcerConfigure                !configures TAVP-WRK resourcer
+          procedure, public:: start=>TAVPWRKResourcerStart                        !starts TAVP-WRK resourcer
+          procedure, public:: shutdown=>TAVPWRKResourcerShutdown                  !shuts down TAVP-WRK resourcer
+          procedure, public:: acquire_resource=>TAVPWRKResourcerAcquireResource   !acquires local resources for a tensor instruction
+          procedure, public:: release_resource=>TAVPWRKResourcerReleaseResource   !releases local resources from a tensor instruction
         end type tavp_wrk_resourcer_t
  !TAVP-WRK resourcer configuration:
         type, extends(dsv_conf_t), private:: tavp_wrk_resourcer_conf_t
@@ -337,6 +340,9 @@
         private TensInstrGetCacheEntries
         private TensInstrGetFlops
         private TensInstrGetOperation
+        private TensInstrSubstituteOutput
+        private TensInstrRestoreOutput
+        private TensInstrOutputSubstituted
         private TensInstrPrintIt
         public tens_instr_dtor
         private tens_instr_print
@@ -2212,6 +2218,110 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensInstrGetOperation
+!------------------------------------------------------
+        subroutine TensInstrSubstituteOutput(this,ierr)
+!Substitutes the persistent output tensor in a tensor instruction with a temporary one.
+!Assumes that the output tensor is tensor #0. If this is the first local substitution
+!of the given persistent output tensor, an accumulator tensor will be created in the
+!tensor cache in addition to the temporary tensor. The persistent tensor still stays
+!in the tensor cache as its reference count will be incremented to preserve it there.
+         implicit none
+         class(tens_instr_t), intent(inout):: this   !in: active tensor instruction
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         if(this%is_active(errc)) then
+          
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensInstrSubstituteOutput
+!---------------------------------------------------
+        subroutine TensInstrRestoreOutput(this,ierr)
+!Restores the original (persistent) output tensor and destroys the used
+!temporary tensor if its reference count is zero.
+         implicit none
+         class(tens_instr_t), intent(inout):: this   !in: active tensor instruction
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         if(this%is_active(errc)) then
+          
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensInstrRestoreOutput
+!-----------------------------------------------------------------
+        function TensInstrOutputSubstituted(this,ierr) result(res)
+!Returns TRUE if the (persistent) output tensor operand (#0)
+!is substituted with a temporary tensor.
+         implicit none
+         logical:: res                               !out: result
+         class(tens_instr_t), intent(inout):: this   !in: active tensor instruction
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc,n,l,i,j,k
+         class(ds_oprnd_t), pointer:: oprnd
+         class(tens_rcrsv_t), pointer:: tensor
+         character(TEREC_MAX_TENS_NAME_LEN):: tname
+
+         res=.FALSE.
+         if(this%is_active(errc)) then
+          if(errc.eq.DSVP_SUCCESS) then
+           n=this%get_num_operands(errc)
+           if(errc.eq.DSVP_SUCCESS.and.n.gt.0) then
+            oprnd=>this%get_operand(0,errc)
+            if(errc.eq.DSVP_SUCCESS) then
+             select type(oprnd)
+             class is(tens_oprnd_t)
+              tensor=>oprnd%get_tensor(errc)
+              if(errc.eq.0) then
+               call tensor%get_name(tname,l,errc)
+               if(errc.eq.TEREC_SUCCESS) then
+                if(l.gt.0) then
+                 i=l; do while(i.gt.0); if(tname(i:i).eq.'#') exit; i=i-1; enddo
+                 if(i.gt.0) then
+                  if(i.lt.l) then
+                   k=l-i; j=icharnum(k,tname(i+1:l))
+                   if(k.eq.l-i) then
+                    if(j.ge.0) then; res=.TRUE.; else; errc=-11; endif
+                   else
+                    errc=-10
+                   endif
+                  else
+                   errc=-9
+                  endif
+                 endif
+                else
+                 errc=-8
+                endif
+               else
+                errc=-7
+               endif
+              else
+               errc=-6
+              endif
+             class default
+              errc=-5
+             end select
+            else
+             errc=-4
+            endif
+           else
+            errc=-3
+           endif
+          else
+           errc=-2
+          endif
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function TensInstrOutputSubstituted
 !------------------------------------------------------------
         subroutine TensInstrPrintIt(this,ierr,dev_id,nspaces)
          implicit none
@@ -2222,7 +2332,7 @@
          integer(INTD):: errc,devo,nsp,i,n
          class(ds_instr_ctrl_t), pointer:: ctrl
          class(ds_oprnd_t), pointer:: oprnd
- 
+
          errc=0
          devo=6; if(present(dev_id)) devo=dev_id
          nsp=0; if(present(nspaces)) nsp=nspaces
@@ -2976,8 +3086,8 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TAVPWRKResourcerShutdown
-!-----------------------------------------------------------------------
-        subroutine TAVPWRKResourcerAcquireResource(this,tens_instr,ierr)
+!-----------------------------------------------------------------------------------
+        subroutine TAVPWRKResourcerAcquireResource(this,tens_instr,ierr,omit_output)
 !Acquires local resource for each tensor instruction operand.
 !If some resources cannot be acquired now, returns TRY_LATER.
 !In that case, the successfully acquired resources will be kept,
@@ -2987,12 +3097,14 @@
          class(tavp_wrk_resourcer_t), intent(inout):: this !inout: TAVP-WRK resourcer DSVU
          class(tens_instr_t), intent(inout):: tens_instr   !inout: tensor instruction
          integer(INTD), intent(out), optional:: ierr       !out: error code
-         integer(INTD):: errc,ier,n
+         logical, intent(in), optional:: omit_output       !in: if TRUE, the output operand(s) will be ommitted (defaults to FALSE)
+         integer(INTD):: errc,ier,n,m
          class(ds_oprnd_t), pointer:: oprnd
 
+         m=0; if(present(omit_output)) then; if(omit_output) m=1; endif !`Assumes a single output operand #0
          n=tens_instr%get_num_operands(errc)
          if(errc.eq.DSVP_SUCCESS) then
-          do while(n.gt.0)
+          do while(n.gt.m)
            oprnd=>tens_instr%get_operand(n-1,ier)
            if(ier.eq.DSVP_SUCCESS) then
             call oprnd%acquire_rsc(ier)
