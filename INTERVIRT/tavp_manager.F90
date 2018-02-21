@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/02/19
+!REVISION: 2018/02/21
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -41,7 +41,7 @@
 !       issued to the lower level of hierarchy, all its input arguments must be defined,
 !       that is, they must neither be undefined nor be currently updated. The only
 !       exception is when multiple tensor instructions with a READ-after-UPDATE
-!       pattern are issued to the same TAVP such that the latter can track the
+!       dependency are issued to the same TAVP such that the latter can track the
 !       data dependencies locally. The output tensor operands do not have to be
 !       defined, that is, they can be either undefined or currently updated, or they
 !       even may not exist. In case an output operand does not exist, it will be
@@ -51,6 +51,13 @@
 !       have completed. A tensor instruction is considered completed successfully
 !       when all its subinstructions have completed successfully, otherwise it is
 !       considered completed with error (some subinstructions have completed with error).
+! # TENSOR INSTRUCTION FORMAT:
+!    0. Instruction id;
+!    1. Instruction code (opcode);
+!    2. Instruction status;
+!    3. Instruction error code;
+!    4. Instruction control field (optional);
+!    5. Instruction operands (optional): {Owner_ID,Tensor} for each operand.
 ! # TENSOR ARGUMENT CACHE:
 !   (A) All tensors from tensor instructions are owned by the tensor argument cache
 !       which is owned by the TAVP. Tensor argument cache is a shared resource among
@@ -60,7 +67,7 @@
 !   (B) Each tensor argument cache entry has a reference count for the number
 !       of active tensor instruction operands currently associated with the cache entry.
 !   (C) Each tensor argument cache entry has a use count for the number of active
-!       instances of tensor pointers pointing to the content (tensor) of the cache entry.
+!       instances of returned pointers pointing to the cache entry.
 !   (D) Each tensor argument cache entry has an <owner_id> field referring to a TAVP
 !       which owns the tensor metadata stored in that cache entry. A negative value
 !       of this field means that the owning TAVP is not (yet) known.
@@ -68,11 +75,16 @@
 !       are only deleted when the tensor is destroyed. Tensor argument cache entries
 !       storing subtensors of local tensors are only deleted when the tensor is destroyed.
 !       Other tensor argument cache entries are deleted once the reference/use count is zero.
+! # DATA/TASK DECOMPOSITION:
+!   (A) Each level of the TAVP-MNG hierarchy decomposes tasks (tensor instructions) into
+!       subtasks (tensor subinstructions) guided by the original data (tensor) decomposition
+!       created by the execution of the TENSOR_CREATE instruction. The decomposition is
+!       preceded by the intra-level metadata location cycle which obtains the information
+!       on the tensor composition. At the last level of the TAVP-MNG hierarchy the just
+!       decomposed tensor subinstructions undergo an additional (final) metadata location
+!       cycle before being issued to the TAVP-WRK level.
 !ISSUES:
 ! # Cloning <tens_instr_t> when calling container.append(tens_instr_t): Check clonability.
-! # Check proper CRITICAL wrapping for operations on tensor cache and its content (tensor, status, owner_id, etc).
-! # Check the RAII compliance of the tensor and subtensr lifecycle: Local/Remote Tensor/Subtensor.
-! # Check the tensor owner id update logic.
 ! # Check the tensor status update logic.
         use virta
         use gfc_base
@@ -139,6 +151,7 @@
           procedure, public:: is_located=>TensOprndIsLocated    !returns TRUE if the tensor operand has been located (its structure is known)
           procedure, public:: is_remote=>TensOprndIsRemote      !returns TRUE if the tensor operand is remote
           procedure, public:: is_valued=>TensOprndIsValued      !returns TRUE if the tensor operand is set to some value (neither undefined nor being updated)
+          procedure, public:: update_status=>TensOprndUpdateStatus !updates the tensor value status
           procedure, public:: acquire_rsc=>TensOprndAcquireRsc  !explicitly acquires local resources for the tensor operand
           procedure, public:: prefetch=>TensOprndPrefetch       !starts prefetching the remote tensor operand (acquires local resources!)
           procedure, public:: upload=>TensOprndUpload           !starts uploading the tensor operand to its remote location
@@ -391,6 +404,7 @@
         private TensOprndIsLocated
         private TensOprndIsRemote
         private TensOprndIsValued
+        private TensOprndUpdateStatus
         private TensOprndAcquireRsc
         private TensOprndPrefetch
         private TensOprndUpload
@@ -835,6 +849,46 @@
          if(present(ierr)) ierr=errc
          return
         end function TensOprndIsValued
+!------------------------------------------------------
+        subroutine TensOprndUpdateStatus(this,sts,ierr)
+!Updates the tensor value status.
+         implicit none
+         class(tens_oprnd_t), intent(inout):: this   !in: active tensor operand
+         integer(INTD), intent(in):: sts             !in: new status
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc,st
+
+         errc=0
+!$OMP CRITICAL (TAVP_MNG_CACHE)
+         if(associated(this%tensor)) then
+          st=this%tensor%get_state(errc) !current tensor value status
+          if(errc.eq.TEREC_SUCCESS) then
+           if(sts.ne.st) then
+            if(sts.eq.TEREC_BODY_UNDEF) then
+             if(st.ne.TEREC_BODY_DEF.and.st.ne.TEREC_BODY_UPDATE) errc=-8
+            elseif(sts.eq.TEREC_BODY_UPDATE) then
+             if(st.ne.TEREC_BODY_UNDEF.and.st.ne.TEREC_BODY_DEF) errc=-7
+            elseif(sts.eq.TEREC_BODY_DEF) then
+             if(st.ne.1.and.st.ne.TEREC_BODY_UPDATE) errc=-6 !positive status = use_count: Changes by one at a time
+            elseif(sts.gt.0) then !positive status = use count: Changes by one at a time
+             if(abs(sts-st).ne.1) errc=-5
+            else
+             errc=-4
+            endif
+            if(errc.eq.0) then
+             call this%tensor%reset_state(errc,sts); if(errc.ne.TEREC_SUCCESS) errc=-3
+            endif
+           endif
+          else
+           errc=-2
+          endif
+         else
+          errc=-1
+         endif
+!$OMP END CRITICAL (TAVP_MNG_CACHE)
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensOprndUpdateStatus
 !------------------------------------------------
         subroutine TensOprndAcquireRsc(this,ierr)
 !Acquires local resources for the remote tensor operand.

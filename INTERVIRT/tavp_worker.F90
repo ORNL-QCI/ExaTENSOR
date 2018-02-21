@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/02/20
+!REVISION: 2018/02/21
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -21,6 +21,13 @@
 !along with ExaTensor. If not, see <http://www.gnu.org/licenses/>.
 
 !NOTES:
+! # Tensor instruction format:
+!    0. Instruction id;
+!    1. Instruction code (opcode);
+!    2. Instruction status;
+!    3. Instruction error code;
+!    4. Instruction control field (optional);
+!    5. Instruction operands (optional): {Owner_ID,Tensor} for each operand.
 ! # Tensor instruction processing pipeline: Local dependency policy:
 !   (1) Check that the input tensor operands are not currently updated locally;
 !   (2) Check that the output tensor operand(s) is not currently in use locally;
@@ -28,14 +35,14 @@
 !       create and initialize to zero a local accumulator tensor of the same shape/layout.
 !   (4) Upon any appearance of each distinct output tensor operand, create and initialize
 !       to zero a new local temporary tensor of the same shape/layout. Then replace the
-!       original output tensor operand with the just created local temporary tensor operand.
-!       Name mangling for the output tensor:
+!       original output tensor operand with the just created local temporary tensor.
+!       Name mangling rules for the output tensor:
 !        Accumulator: "TENSOR3" --> "TENSOR3#0"
 !        Temporary: "TENSOR3" --> "TENSOR3#1", "TENSOR3#2", "TENSOR3#3", etc.
 !   (5) Upon a local completion of a tensor operation, accumulate the temporary tensor
 !       into the accumulator tensor and destroy the temporary tensor.
-!   (6) If upon a local completion of a tensor operation the reference count is one,
-!       that is, this is the last instance of the output tensor operand at the moment,
+!   (6) If upon a local completion of a tensor operation the output tensor reference count
+!       is one, that is, this is the last instance of the output tensor operand at the moment,
 !       initiate the (local/remote) upload of the accumulator tensor into the persistent
 !       tensor storage location and destroy the accumulator tensor.
 
@@ -116,6 +123,7 @@
           procedure, public:: is_remote=>TensOprndIsRemote          !returns TRUE if the tensor operand is remote
           procedure, public:: is_valued=>TensOprndIsValued          !returns TRUE if the tensor operand is set to some value (neither undefined nor being updated)
           procedure, public:: has_resource=>TensOprndHasResource    !returns TRUE if the tensor operand has been allocated an actual local resource
+          procedure, public:: update_status=>TensOprndUpdateStatus  !updates the tensor value status
           procedure, public:: acquire_rsc=>TensOprndAcquireRsc      !explicitly acquires local resources for the tensor operand
           procedure, public:: prefetch=>TensOprndPrefetch           !starts prefetching the remote tensor operand (acquires local resources!)
           procedure, public:: upload=>TensOprndUpload               !starts uploading the tensor operand to its remote location
@@ -252,9 +260,9 @@
          type(DistrSpace_t), private:: addr_space                 !global (distributed) address space
          type(tavp_wrk_decoder_t), private:: decoder              !DSVU: decodes incoming tensor instructions from the manager
          type(tavp_wrk_retirer_t), private:: retirer              !DSVU: retires processed tensor instructions and sends them back to the manager
-         type(tavp_wrk_resourcer_t), private:: resourcer          !DSVU: allocates local resources for tensor instructions
+         type(tavp_wrk_resourcer_t), private:: resourcer          !DSVU: allocates local resources for tensor instructions (only for defined tensor operands)
          type(tavp_wrk_communicator_t), private:: communicator    !DSVU: fetches/uploads remote tensor operands
-         type(tavp_wrk_dispatcher_t), private:: dispatcher        !DSVU: dispatches ready to be executed tensor instructions to compute devices
+         type(tavp_wrk_dispatcher_t), private:: dispatcher        !DSVU: dispatches and executes ready to be executed tensor instructions to compute devices (runs the microcode)
          contains
           procedure, public:: configure=>TAVPWRKConfigure         !configures the TAVP-WRK DSVP
         end type tavp_wrk_t
@@ -314,6 +322,7 @@
         private TensOprndIsRemote
         private TensOprndIsValued
         private TensOprndHasResource
+        private TensOprndUpdateStatus
         private TensOprndAcquireRsc
         private TensOprndPrefetch
         private TensOprndUpload
@@ -1299,6 +1308,46 @@
          if(present(ierr)) ierr=errc
          return
         end function TensOprndHasResource
+!------------------------------------------------------
+        subroutine TensOprndUpdateStatus(this,sts,ierr)
+!Updates the tensor value status.
+         implicit none
+         class(tens_oprnd_t), intent(inout):: this   !in: active tensor operand
+         integer(INTD), intent(in):: sts             !in: new status
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc,st
+
+         errc=0
+!$OMP CRITICAL (TAVP_WRK_CACHE)
+         if(associated(this%tensor)) then
+          st=this%tensor%get_state(errc) !current tensor value status
+          if(errc.eq.TEREC_SUCCESS) then
+           if(sts.ne.st) then
+            if(sts.eq.TEREC_BODY_UNDEF) then
+             if(st.ne.TEREC_BODY_DEF.and.st.ne.TEREC_BODY_UPDATE) errc=-8
+            elseif(sts.eq.TEREC_BODY_UPDATE) then
+             if(st.ne.TEREC_BODY_UNDEF.and.st.ne.TEREC_BODY_DEF) errc=-7
+            elseif(sts.eq.TEREC_BODY_DEF) then
+             if(st.ne.1.and.st.ne.TEREC_BODY_UPDATE) errc=-6 !positive status = use_count: Changes by one at a time
+            elseif(sts.gt.0) then !positive status = use count: Changes by one at a time
+             if(abs(sts-st).ne.1) errc=-5
+            else
+             errc=-4
+            endif
+            if(errc.eq.0) then
+             call this%tensor%reset_state(errc,sts); if(errc.ne.TEREC_SUCCESS) errc=-3
+            endif
+           endif
+          else
+           errc=-2
+          endif
+         else
+          errc=-1
+         endif
+!$OMP END CRITICAL (TAVP_WRK_CACHE)
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensOprndUpdateStatus
 !------------------------------------------------
         subroutine TensOprndAcquireRsc(this,ierr)
 !Acquires local resources for the remote tensor operand.
@@ -1662,8 +1711,8 @@
          if(errc.ne.0) call quit(errc,'#FATAL(TAVP-WRK:tens_oprnd_dtor): Destructor failed!')
          return
         end subroutine tens_oprnd_dtor
-![tens_instr_t]================================================
-        subroutine TensInstrCtor(this,op_code,ierr,op_spec,iid)
+![tens_instr_t]==============================================================
+        subroutine TensInstrCtor(this,op_code,ierr,op_spec,iid,stat,err_code)
 !Constructs a tensor instruction from a given tensor operation.
 !The tensor instruction is a realization of a given tensor operation
 !for a specific TAVP kind.
@@ -1673,6 +1722,8 @@
          integer(INTD), intent(out), optional:: ierr      !out: error code
          class(*), intent(in), target, optional:: op_spec !in: formal operation specification
          integer(INTL), intent(in), optional:: iid        !in: instruction id (>=0)
+         integer(INTD), intent(in), optional:: stat       !in: instruction status to set (defaults to DS_INSTR_NEW)
+         integer(INTD), intent(in), optional:: err_code   !in: instruction error code to set (defaults to DSVP_SUCCESS)
          integer(INTD):: errc,ier
 
          if(this%is_empty(errc)) then
@@ -1681,20 +1732,29 @@
            select case(op_code)
            case(TAVP_INSTR_NOOP)
            case(TAVP_INSTR_CTRL_STOP,TAVP_INSTR_CTRL_RESUME,TAVP_INSTR_CTRL_PAUSE)
-            call construct_instr_ctrl(errc); if(errc.ne.0) errc=-8
+            call construct_instr_ctrl(errc); if(errc.ne.0) errc=-10
            case(TAVP_INSTR_TENS_CREATE,TAVP_INSTR_TENS_DESTROY)
-            call construct_instr_tens_create_destroy(errc); if(errc.ne.0) errc=-7
+            call construct_instr_tens_create_destroy(errc); if(errc.ne.0) errc=-9
            case(TAVP_INSTR_TENS_CONTRACT)
-            call construct_instr_tens_contract(errc); if(errc.ne.0) errc=-6
+            call construct_instr_tens_contract(errc); if(errc.ne.0) errc=-8
            case default
-            errc=-5 !invalid instruction opcode (or not implemented)
+            errc=-7 !invalid instruction opcode (or not implemented)
            end select
 !Activate the instruction:
            if(errc.eq.0) then
-            if(present(iid)) then
-             call this%activate(op_code,errc,iid=iid); if(errc.ne.0) errc=-4
+            ier=DSVP_SUCCESS; if(present(err_code)) ier=err_code
+            if(present(stat)) then
+             if(present(iid)) then
+              call this%activate(op_code,errc,stat=stat,err_code=ier,iid=iid); if(errc.ne.0) errc=-6
+             else
+              call this%activate(op_code,errc,stat=stat,err_code=ier); if(errc.ne.0) errc=-5
+             endif
             else
-             call this%activate(op_code,errc); if(errc.ne.0) errc=-3
+             if(present(iid)) then
+              call this%activate(op_code,errc,err_code=ier,iid=iid); if(errc.ne.0) errc=-4
+             else
+              call this%activate(op_code,errc,err_code=ier); if(errc.ne.0) errc=-3
+             endif
             endif
            endif
            if(errc.ne.0) call this%set_status(DS_INSTR_RETIRED,ier,TAVP_ERR_GEN_FAILURE)
@@ -2820,6 +2880,7 @@
          logical:: active,stopping
          class(dsvp_t), pointer:: dsvp
          class(tavp_wrk_t), pointer:: tavp
+         type(tens_instr_t):: instr_fence
 
          errc=0; thid=omp_get_thread_num()
          if(DEBUG.gt.0) then
@@ -2833,6 +2894,9 @@
          ier=this%stg_list%init(this%staged_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-1
 !Initialize the deferred list:
          ier=this%def_list%init(this%deferred_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-1
+!Create a special FENCE instruction:
+         call instr_fence%tens_instr_ctor(TAVP_INSTR_CTRL_RESUME,ier,iid=0_INTL,stat=DS_INSTR_SPECIAL)
+         if(ier.ne.0.and.errc.eq.0) errc=-1
 !Set up tensor argument cache and wait on other TAVP units:
          tavp=>NULL(); dsvp=>this%get_dsvp(); select type(dsvp); class is(tavp_wrk_t); tavp=>dsvp; end select
          if(associated(tavp)) then
@@ -2855,6 +2919,8 @@
           endif
 
          enddo wloop
+!Retire the special FENCE instruction:
+         call instr_fence%set_status(DS_INSTR_RETIRED,ier,DSVP_SUCCESS); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-2
 !Record the error:
          ier=this%get_error(); if(ier.eq.DSVP_SUCCESS) call this%set_error(errc)
          if(errc.ne.0.and.VERBOSE) write(CONS_OUT,'("#ERROR(TAVP-WRK)[",i6,"]: Resourcer error ",i11," by thread ",i2)')&

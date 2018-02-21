@@ -8,7 +8,7 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/02/20
+!REVISION: 2018/02/21
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -209,6 +209,8 @@
           procedure, public:: incr_ref_count=>TensCacheEntryIncrRefCount  !increments the reference count
           procedure, public:: decr_ref_count=>TensCacheEntryDecrRefCount  !decrements the reference count
           procedure, public:: get_ref_count=>TensCacheEntryGetRefCount    !returns the current reference count: Number of existing tensor operands associated with the tensor cache entry
+          procedure, public:: stash=>TensCacheEntryIncrRefCount           !adds a stashed dependency on the tensor cache entry
+          procedure, public:: unstash=>TensCacheEntryDecrRefCount         !removes a stashed dependency on the tensor cache entry
           procedure, public:: incr_use_count=>TensCacheEntryIncrUseCount  !increments the use count
           procedure, public:: decr_use_count=>TensCacheEntryDecrUseCount  !decrements the use count
           procedure, public:: get_use_count=>TensCacheEntryGetUseCount    !returns the current use count: Number of active pointers to the tensor cache entry explicitly returned by the cache
