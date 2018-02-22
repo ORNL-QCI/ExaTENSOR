@@ -2228,15 +2228,82 @@
          implicit none
          class(tens_instr_t), intent(inout):: this   !in: active tensor instruction
          integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc
+         integer(INTD):: errc,n,rc
+         class(ds_oprnd_t), pointer:: oprnd
+         class(tens_entry_wrk_t), pointer:: cache_entry
+         class(tens_rcrsv_t), pointer:: tensor
 
          if(this%is_active(errc)) then
-          
+          if(errc.eq.DSVP_SUCCESS) then
+           n=this%get_num_operands(errc)
+           if(errc.eq.DSVP_SUCCESS.and.n.gt.0) then
+            oprnd=>this%get_operand(0,errc)
+            if(errc.eq.DSVP_SUCCESS) then
+             select type(oprnd)
+             class is(tens_oprnd_t)
+              cache_entry=>oprnd%get_cache_entry(errc)
+              if(errc.eq.0.and.associated(cache_entry)) then
+               tensor=>oprnd%get_tensor(errc)
+               if(errc.eq.0.and.associated(tensor)) then
+                rc=cache_entry%get_ref_count(); if(rc.le.0) errc=-1
+ !Register the accumulator tensor, if needed:
+                if(errc.eq.0.and.rc.eq.1) then !first tensor instruction with this output tensor operand: Register accumulator tensor
+                 call register_temp_tensor(0,errc); if(errc.ne.0) errc=-1
+                endif
+ !Register the temporary tensor:
+                if(errc.eq.0) then
+                 call register_temp_tensor(rc,errc); if(errc.ne.0) errc=-1
+ !Substitute the persistent output tensor with the temporary tensor:
+
+                endif
+               else
+                errc=-7
+               endif
+              else
+               errc=-6
+              endif
+             class default
+              errc=-5
+             end select
+            else
+             errc=-4
+            endif
+           else
+            errc=-3
+           endif
+          else
+           errc=-2
+          endif
          else
           errc=-1
          endif
          if(present(ierr)) ierr=errc
          return
+
+         contains
+
+          subroutine register_temp_tensor(copy_num,jerr)
+           integer(INTD), intent(in):: copy_num
+           integer(INTD), intent(out):: jerr
+           class(tens_rcrsv_t), pointer:: jtens
+           class(tens_header_t), pointer:: theader
+           class(tens_layout_t), pointer:: tlayout
+           character(TEREC_MAX_TENS_NAME_LEN):: tname
+
+           theader=>tensor%get_header(jerr)
+           if(jerr.eq.TEREC_SUCCESS) then
+            tlayout=>tensor%get_layout(jerr)
+            if(jerr.eq.TEREC_SUCCESS) then
+             
+            else
+             jerr=-2
+            endif
+           else
+            jerr=-1
+           endif
+           return
+          end subroutine register_temp_tensor
+
         end subroutine TensInstrSubstituteOutput
 !---------------------------------------------------
         subroutine TensInstrRestoreOutput(this,ierr)
@@ -2245,10 +2312,42 @@
          implicit none
          class(tens_instr_t), intent(inout):: this   !in: active tensor instruction
          integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc
+         integer(INTD):: errc,n
+         class(ds_oprnd_t), pointer:: oprnd
+         class(tens_entry_wrk_t), pointer:: cache_entry
+         class(tens_rcrsv_t), pointer:: tensor
 
          if(this%is_active(errc)) then
-          
+          if(errc.eq.DSVP_SUCCESS) then
+           n=this%get_num_operands(errc)
+           if(errc.eq.DSVP_SUCCESS.and.n.gt.0) then
+            oprnd=>this%get_operand(0,errc)
+            if(errc.eq.DSVP_SUCCESS) then
+             select type(oprnd)
+             class is(tens_oprnd_t)
+              cache_entry=>oprnd%get_cache_entry(errc)
+              if(errc.eq.0.and.associated(cache_entry)) then
+               tensor=>oprnd%get_tensor(errc)
+               if(errc.eq.0.and.associated(tensor)) then
+                !`Finish
+               else
+                errc=-7
+               endif
+              else
+               errc=-6
+              endif
+             class default
+              errc=-5
+             end select
+            else
+             errc=-4
+            endif
+           else
+            errc=-3
+           endif
+          else
+           errc=-2
+          endif
          else
           errc=-1
          endif

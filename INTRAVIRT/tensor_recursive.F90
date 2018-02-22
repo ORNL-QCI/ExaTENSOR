@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/02/02
+!REVISION: 2018/02/21
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -303,6 +303,7 @@
           procedure, public:: get_subtensors=>TensRcrsvGetSubtensors !returns a pointer to the list of constituent subtensors (each subtensor is represented by a tensor header)
           procedure, public:: set_shape=>TensRcrsvSetShape           !sets the tensor shape (if it has not been set yet)
           procedure, public:: set_layout=>TensRcrsvSetLayout         !sets the tensor body storage layout
+          procedure, public:: get_layout=>TensRcrsvGetLayout         !returns a pointer to the tensor body storage layout
           procedure, public:: set_location=>TensRcrsvSetLocation     !sets the physical location of the tensor body data
           procedure, public:: update=>TensRcrsvUpdate                !updates the tensor information (new resolution -> new layout -> new body)
           procedure, public:: reset_state=>TensRcrsvResetState       !resets the state of the tensor body value
@@ -681,6 +682,7 @@
         private TensRcrsvGetSubtensors
         private TensRcrsvSetShape
         private TensRcrsvSetLayout
+        private TensRcrsvGetLayout
         private TensRcrsvSetLocation
         private TensRcrsvUpdate
         private TensRcrsvResetState
@@ -4418,6 +4420,19 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensRcrsvSetLayout
+!--------------------------------------------------------------
+        function TensRcrsvGetLayout(this,ierr) result(layout_p)
+!Returns a pointer to the tensor body storage layout.
+         implicit none
+         class(tens_layout_t), pointer:: layout_p    !out: tensor body storage layout
+         class(tens_rcrsv_t), intent(in):: this      !in: tensor
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         layout_p=>this%body%get_layout(errc)
+         if(present(ierr)) ierr=errc
+         return
+        end function TensRcrsvGetLayout
 !------------------------------------------------------------
         subroutine TensRcrsvSetLocation(this,data_descr,ierr)
 !Sets the physical location of the tensor body data via a DDSS data descriptor.
