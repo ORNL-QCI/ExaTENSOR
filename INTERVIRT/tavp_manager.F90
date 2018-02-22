@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/02/21
+!REVISION: 2018/02/22
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -58,6 +58,14 @@
 !    3. Instruction error code;
 !    4. Instruction control field (optional);
 !    5. Instruction operands (optional): {Owner_ID,Tensor} for each operand.
+! # TENSOR INSTRUCTION NUMERATION:
+!   (A) The DRIVER MPI process constructs all instructions, gives them their IDs,
+!       and sends them to the root TAVP-MNG.
+!   (B) Each TAVP-MNG accepts instructions from the upper level, decomposes them
+!       into subinstructions, assigns the subinstructions their new IDs based on
+!       the local numeration, and sends the subinstructions to the next level.
+!   (C) Each TAVP-WRK accepts subinstructions from its corresponding TAVP-MNG
+!       and executes them on all computing units available on the node.
 ! # TENSOR ARGUMENT CACHE:
 !   (A) All tensors from tensor instructions are owned by the tensor argument cache
 !       which is owned by the TAVP. Tensor argument cache is a shared resource among
@@ -804,7 +812,7 @@
          res=.TRUE. !assume remote by default
          if(this%is_active(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
-           id=this%get_owner_id(errc)
+           id=this%get_owner_id(errc) !id = TAVP-MNG id which owns tensor meta-data
            if(errc.eq.0) then
             res=(id.ne.role_rank) !role_rank = TAVP-MNG id
            else
@@ -823,7 +831,8 @@
         function TensOprndIsValued(this,ierr) result(res)
 !Returns TRUE if the tensor operand is set to some value, FALSE otherwise.
 !By being set to some value, it means it is neither undefined nor being updated.
-!Note that the tensor does not have to be physically mapped to be valued.
+!Note that the tensor does neither have to be physically mapped nor possess
+!a defined physical layout in order to be valued.
          implicit none
          logical:: res                               !out: result
          class(tens_oprnd_t), intent(in):: this      !in: active tensor operand
@@ -835,7 +844,7 @@
          if(this%is_active(errc)) then
           if(this%tensor%is_set(errc,layed=laid,located=locd)) then
            if(errc.eq.TEREC_SUCCESS) then
-            res=(laid.and.(this%tensor%get_state(errc).ge.TEREC_BODY_DEF))
+            res=(this%tensor%get_state(errc).ge.TEREC_BODY_DEF)
             if(errc.ne.TEREC_SUCCESS) then; res=.FALSE.; errc=-4; endif
            else
             errc=-3

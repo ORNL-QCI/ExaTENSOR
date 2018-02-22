@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/02/21
+!REVISION: 2018/02/22
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -26,17 +26,18 @@
 ! # MUD: Maximally Uniform Distribution.
 !NOTES:
 ! # Tensor definition stages:
-!   a) Null: No tensor;
-!   b) Defined: Tensor signature (and maybe some dimension extents) is defined;
-!   c) Resolved: Tensor shape is fully defined (all dimensions resolved);
-!   d) Structured: Tensor composition (structure) in terms of subtensors (subtensor headers) is defined;
-!   e) Laid-Out: Tensor layout is defined (normally means the tensor will be physically stored as a whole);
-!   f) Mapped: Tensor body is physically mapped to a contiguous chunk of memory.
+!    a) Null: No tensor;
+!    b) Defined: Tensor signature (and maybe some dimension extents) is(are) defined;
+!    c) Resolved: Tensor shape is fully defined (all tensor dimensions are resolved);
+!    d) Structured: Tensor composition (structure) in terms of subtensors (subtensor headers) is defined;
+!    e) Laid-Out: Tensor layout is defined (means the tensor will be physically stored as a whole);
+!    f) Mapped: Tensor body is physically mapped to a contiguous chunk of memory.
+!   The tensor body is considered defined if the tensor is at least Structured.
 ! # Tensor body value definition stages:
-!   a) TEREC_BODY_UNDEF: Tensor body value is undefined;
-!   b) TEREC_BODY_UPDATE: Tensor body value is currently being updated and cannot be used;
-!   c) TEREC_BODY_DEF: Tensor body value is defined but not currently used (reference count = 0);
-!   d) TEREC_BODY_USED: Tensor body is defined and is currently being used in a tensor operation (reference count > 0).
+!    a) TEREC_BODY_UNDEF=-2: Tensor body value is undefined;
+!    b) TEREC_BODY_UPDATE=-1: Tensor body value is currently being updated and cannot be used;
+!    c) TEREC_BODY_DEF=0: Tensor body value is defined but not currently used (reference count = 0);
+!    d) TEREC_BODY_USED>0: Tensor body is defined and is currently being used in a tensor operation (reference count > 0).
         use tensor_algebra !includes dil_basic
         use stsubs
         use timers
@@ -142,6 +143,7 @@
           procedure, public:: relate=>TensSignatureRelate          !relates the tensor signature to another tensor signature: {CMP_EQ,CMP_CN,CMP_IN,CMP_OV,CMP_NC}
           procedure, public:: compare=>TensSignatureCompare        !compares the tensor signature with another tensor signature: {CMP_EQ,CMP_LT,CMP_GT,CMP_ER}
           procedure, public:: print_it=>TensSignaturePrintIt       !prints the tensor signature
+          procedure, public:: rename=>TensSignatureRename          !renames the tensor without restrictions (for internal use)
           final:: tens_signature_dtor                              !dtor
         end type tens_signature_t
  !Tensor shape:
@@ -197,6 +199,7 @@
           procedure, public:: get_shape=>TensHeaderGetShape         !returns the pointer the the tensor shape
           procedure, public:: compare=>TensHeaderCompare            !compares the tensor header with another tensor header: {CMP_EQ,CMP_LT,CMP_GT,CMP_ER}
           procedure, public:: print_it=>TensHeaderPrintIt           !prints the tensor header
+          procedure, public:: rename=>TensHeaderRename              !renames the tensor without restrictions (for internal use)
 #if !(defined(__GNUC__) && __GNUC__ < 8)
           final:: tens_header_dtor
 #endif
@@ -321,6 +324,7 @@
           procedure, private:: TensRcrsvExtractSubtensorsVector      !extracts subtensor headers from the tensor and fills in a vector of subtensors the tensor is composed of
           generic, public:: extract_subtensors=>TensRcrsvExtractSubtensorsList,TensRcrsvExtractSubtensorsVector
           procedure, public:: print_it=>TensRcrsvPrintIt             !prints the tensor info
+          procedure, public:: rename=>TensRcrsvRename                !renames the tensor without restrictions (for internal use)
 #if !(defined(__GNUC__) && __GNUC__ < 8)
           final:: tens_rcrsv_dtor
 #endif
@@ -569,6 +573,7 @@
         private TensSignatureCtorUnpack
         private TensSignaturePack
         private TensSignatureIsSet
+        private TensSignatureRename
         private TensSignatureGetName
         private TensSignatureGetRank
         private TensSignatureGetSpec
@@ -615,6 +620,7 @@
         private TensHeaderGetShape
         private TensHeaderCompare
         private TensHeaderPrintIt
+        private TensHeaderRename
         public tens_header_dtor
  !tens_simple_part_t:
         private TensSimplePartCtor
@@ -698,6 +704,7 @@
         private TensRcrsvExtractSubtensorsList
         private TensRcrsvExtractSubtensorsVector
         private TensRcrsvPrintIt
+        private TensRcrsvRename
         public tens_rcrsv_dtor
         public tens_rcrsv_split_i
         public tens_rcrsv_dim_strength_i
@@ -1783,6 +1790,33 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensSignaturePrintIt
+!----------------------------------------------------------
+        subroutine TensSignatureRename(this,tens_name,ierr)
+!Renames the tensor without restrictions.
+         implicit none
+         class(tens_signature_t), intent(inout):: this  !inout: tensor signature
+         character(*), intent(in), optional:: tens_name !in: new tensor name
+         integer(INTD), intent(out), optional:: ierr    !out: error code
+         integer(INTD):: errc,l
+
+         errc=TEREC_SUCCESS; l=len(tens_name)
+         if(l.gt.0) then
+          if(allocated(this%char_name)) then
+           if(len(this%char_name).ne.l) then
+            deallocate(this%char_name)
+            allocate(character(LEN=l)::this%char_name,STAT=errc)
+            if(errc.ne.0) errc=TEREC_MEM_ALLOC_FAILED
+           endif
+           if(errc.eq.TEREC_SUCCESS) this%char_name(1:l)=tens_name(1:l)
+          else
+           errc=TEREC_INVALID_REQUEST
+          endif
+         else
+          errc=TEREC_INVALID_ARGS
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensSignatureRename
 !-------------------------------------------
         subroutine tens_signature_dtor(this)
 !DTOR for tens_signature_t.
@@ -2920,6 +2954,19 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensHeaderPrintIt
+!-------------------------------------------------------
+        subroutine TensHeaderRename(this,tens_name,ierr)
+!Renames the tensor without restrictions.
+         implicit none
+         class(tens_header_t), intent(inout):: this  !inout: tensor header
+         character(*), intent(in):: tens_name        !in: new tenor name
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         call this%signature%rename(tens_name,errc)
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensHeaderRename
 !----------------------------------------
         subroutine tens_header_dtor(this)
 !DTOR for tens_header_t.
@@ -5489,6 +5536,19 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensRcrsvPrintIt
+!------------------------------------------------------
+        subroutine TensRcrsvRename(this,tens_name,ierr)
+!Renames the tensor without restrictions.
+         implicit none
+         class(tens_rcrsv_t), intent(inout):: this   !inout: tensor
+         character(*), intent(in):: tens_name        !in: new tenor name
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         call this%header%rename(tens_name,errc)
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensRcrsvRename
 !---------------------------------------
         subroutine tens_rcrsv_dtor(this)
          implicit none
