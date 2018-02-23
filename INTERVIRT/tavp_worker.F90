@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/02/22
+!REVISION: 2018/02/23
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -114,6 +114,7 @@
           procedure, private:: TensOprndCtor                        !ctor
           generic, public:: tens_oprnd_ctor=>TensOprndCtor
           procedure, public:: get_tensor=>TensOprndGetTensor        !returns a non-owning pointer to the tensor
+          procedure, public:: set_cache_entry=>TensOprndSetCacheEntry !sets the associated tensor cache entry (may be NULL)
           procedure, public:: get_cache_entry=>TensOprndGetCacheEntry !returns a non-owning pointer to the tensor cache entry (may be NULL)
           procedure, public:: set_resource=>TensOprndSetResource    !sets the resource component if it has not been set via the constructor
           procedure, public:: get_resource=>TensOprndGetResource    !returns a non-owning pointer to the tensor resource
@@ -130,7 +131,7 @@
           procedure, public:: release=>TensOprndRelease             !destroys the present local copy of the tensor operand (releases local resources!), but the operand stays defined
           procedure, public:: destruct=>TensOprndDestruct           !performs complete destruction back to an empty state
           procedure, public:: print_it=>TensOprndPrintIt            !prints
-          procedure, private:: reset_tensor=>TensOprndResetTensor   !resets the tensor in a tensor operand by providing another tensor cache entry
+          procedure, private:: reset_tensor=>TensOprndResetTensor   !resets the tensor in a tensor operand by providing another tensor cache entry (for internal use only)
           final:: tens_oprnd_dtor                                   !dtor
         end type tens_oprnd_t
  !Tensor instruction (realization of a tensor operation for a specific TAVP):
@@ -317,6 +318,7 @@
  !tens_oprnd_t:
         private TensOprndCtor
         private TensOprndGetTensor
+        private TensOprndSetCacheEntry
         private TensOprndGetCacheEntry
         private TensOprndSetResource
         private TensOprndGetResource
@@ -1051,6 +1053,48 @@
          if(present(ierr)) ierr=errc
          return
         end function TensOprndGetTensor
+!---------------------------------------------------------------
+        subroutine TensOprndSetCacheEntry(this,cache_entry,ierr)
+!Sets the associated tensor cache entry (may be NULL). If the cache entry
+!is not NULL, it must be the one containing the tensor set in the tensor operand.
+         implicit none
+         class(tens_oprnd_t), intent(inout):: this                  !inout: active tensor operand
+         class(tens_entry_wrk_t), intent(in), pointer:: cache_entry !in: pointer to a tensor cache entry (may be NULL)
+         integer(INTD), intent(out), optional:: ierr                !out: error code
+         integer(INTD):: errc
+         class(tens_rcrsv_t), pointer:: tensor
+
+         if(this%is_active(errc)) then
+          if(errc.eq.DSVP_SUCCESS) then
+           if(associated(this%cache_entry)) then
+            call this%cache_entry%decr_ref_count(); this%cache_entry=>NULL()
+           endif
+           if(associated(cache_entry)) then
+            tensor=>cache_entry%get_tensor(errc)
+            if(errc.eq.0) then
+             if(.not.associated(this%tensor)) then
+              call cache_entry%incr_ref_count()
+             else
+              if(associated(this%tensor,tensor)) then !cache entry corresponds to the same tensor
+               call cache_entry%incr_ref_count()
+              else
+               errc=-4
+              endif
+             endif
+            else
+             errc=-3
+            endif
+           endif
+           if(errc.eq.0) this%cache_entry=>cache_entry
+          else
+           errc=-2
+          endif
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensOprndSetCacheEntry
 !-----------------------------------------------------------------------
         function TensOprndGetCacheEntry(this,ierr) result(cache_entry_p)
 !Returns a pointer to the tensor cache entry (may be NULL).
@@ -1712,10 +1756,10 @@
         subroutine TensOprndResetTensor(this,cache_entry,ierr,decr_ref)
 !Resets the tensor in a tensor operand by providing another tensor cache entry.
          implicit none
-         class(tens_oprnd_t), intent(inout):: this                    !inout: tensor operand
-         class(tens_cache_entry_t), pointer, intent(in):: cache_entry !in: tensor cache entry containing the new tensor
-         integer(INTD), intent(out), optional:: ierr                  !out: error code
-         logical, intent(in), optional:: decr_ref                     !in: if FALSE, the old tensor cache entry will not get its reference count decremented (defaults to TRUE)
+         class(tens_oprnd_t), intent(inout):: this                  !inout: tensor operand
+         class(tens_entry_wrk_t), pointer, intent(in):: cache_entry !in: tensor cache entry containing the new tensor
+         integer(INTD), intent(out), optional:: ierr                !out: error code
+         logical, intent(in), optional:: decr_ref                   !in: if FALSE, the old tensor cache entry will not get its reference count decremented (defaults to TRUE)
          integer(INTD):: errc
          logical:: dref
          class(tens_entry_wrk_t), pointer:: tens_entry
@@ -1726,16 +1770,15 @@
          if(associated(cache_entry)) then
           tens_entry=>this%get_cache_entry(errc)
           if(errc.eq.0) then
-           if(dref) call tens_entry%decr_ref_count()
-!$OMP CRITICAL (TAVP_WRK_CACHE)
+           if((.not.dref).and.associated(tens_entry)) call tens_entry%incr_ref_count() !set_cache_entry() will then decrement its reference count
            tensor_new=>cache_entry%get_tensor(errc)
            if(errc.eq.0.and.associated(tensor_new)) then
-            call cache_entry%incr_ref_count()
             this%tensor=>tensor_new
+            call this%set_cache_entry(cache_entry,errc); if(errc.ne.0) errc=-4
            else
+            if((.not.dref).and.associated(tens_entry)) call tens_entry%decr_ref_count()
             errc=-3
            endif
-!$OMP END CRITICAL (TAVP_WRK_CACHE)
           else
            errc=-2
           endif
@@ -3166,9 +3209,9 @@
 !tensor cache in addition to the temporary tensor. The persistent tensor still stays
 !in the tensor cache as its reference count is not decremented here.
          implicit none
-         class(tavp_wrk_resourcer_t), intent(inout):: this !inout: TAVP-WRK Resourcer
-         class(tens_instr_t), intent(inout):: tens_instr   !inout: active tensor instruction
-         integer(INTD), intent(out), optional:: ierr       !out: error code
+         class(tavp_wrk_resourcer_t), intent(in):: this  !inout: TAVP-WRK Resourcer
+         class(tens_instr_t), intent(inout):: tens_instr !inout: active tensor instruction
+         integer(INTD), intent(out), optional:: ierr     !out: error code
          integer(INTD):: errc,n,rc
          class(ds_oprnd_t), pointer:: oprnd
          class(tens_entry_wrk_t), pointer:: cache_entry
@@ -3190,17 +3233,29 @@
                if(errc.eq.0.and.associated(tensor)) then
                 header=>tensor%get_header(errc)
                 if(errc.eq.TEREC_SUCCESS.and.associated(header)) then
-                 rc=cache_entry%get_ref_count(); if(rc.le.0) errc=-12
+                 rc=cache_entry%get_ref_count(); if(rc.le.0) errc=-13
  !Register the accumulator tensor, if needed:
                  if(errc.eq.0.and.rc.eq.1) then !first tensor instruction with this output tensor operand: Register accumulator tensor
-                  call register_temp_tensor(0,new_cache_entry,errc); if(errc.ne.0) errc=-11
+                  call register_temp_tensor(0,new_cache_entry,errc)
+                  if(errc.eq.0) then
+                   call this%arg_cache%release_entry(new_cache_entry); new_cache_entry=>NULL()
+                  else
+                   errc=-12
+                  endif
                  endif
  !Register the temporary tensor:
                  if(errc.eq.0) then
                   call register_temp_tensor(rc,new_cache_entry,errc)
- !Substitute the persistent output tensor with the temporary tensor:
-                  if(errc.eq.0.and.associated(new_cache_entry)) then
-                   call oprnd%reset_tensor(new_cache_entry,errc,decr_ref=.FALSE.); if(errc.ne.0) errc=-10
+ !Substitute the persistent output tensor with the temporary tensor (persistent tensor cache entry reference count unchanged):
+                  if(errc.eq.0) then
+                   cache_entry=>NULL()
+                   select type(new_cache_entry); class is(tens_entry_wrk_t); cache_entry=>new_cache_entry; end select
+                   if(associated(cache_entry)) then
+                    call oprnd%reset_tensor(cache_entry,errc,decr_ref=.FALSE.); if(errc.ne.0) errc=-11
+                   else
+                    errc=-10
+                   endif
+                   call this%arg_cache%release_entry(new_cache_entry); new_cache_entry=>NULL()
                   else
                    errc=-9
                   endif
@@ -3251,13 +3306,12 @@
             if(jerr.eq.TEREC_SUCCESS) then
              call temptens%get_name(tname,jl,jerr)
              if(jerr.eq.TEREC_SUCCESS.and.jl.le.TEREC_MAX_TENS_NAME_LEN) then
-              tname(jl+1:jl+1)='#'; jl=jl+1
-              call numchar(copy_num,jn,tname(jl+1:)); jl=jl+jn
+              tname(jl+1:jl+1)='#'; jl=jl+1; call numchar(copy_num,jn,tname(jl+1:)); jl=jl+jn !name mangling
               call temptens%rename(tname(1:jl),jerr)
               if(jerr.eq.TEREC_SUCCESS) then
                stored=this%arg_cache%store(temptens,tens_entry_wrk_alloc,jerr,tens_entry_p=tens_entry) !tensor ownership is moved to the tensor cache entry
                if(.not.(jerr.eq.0.and.stored.and.associated(tens_entry))) then
-                if(associated(tens_entry)) call this%arg_cache%release_entry(tens_entry)
+                if(associated(tens_entry)) call this%arg_cache%release_entry(tens_entry); tens_entry=>NULL()
                 jerr=-5
                endif
               else
@@ -3281,13 +3335,18 @@
 !Restores the original (persistent) output tensor in a tensor instruction
 !and destroys the temporary tensor.
          implicit none
-         class(tavp_wrk_resourcer_t), intent(inout):: this !inout: TAVP-WRK Resourcer
-         class(tens_instr_t), intent(inout):: tens_instr   !in: active tensor instruction
-         integer(INTD), intent(out), optional:: ierr       !out: error code
-         integer(INTD):: errc,n
+         class(tavp_wrk_resourcer_t), intent(in):: this  !inout: TAVP-WRK Resourcer
+         class(tens_instr_t), intent(inout):: tens_instr !in: active tensor instruction
+         integer(INTD), intent(out), optional:: ierr     !out: error code
+         integer(INTD):: errc,n,nl
          class(ds_oprnd_t), pointer:: oprnd
-         class(tens_entry_wrk_t), pointer:: cache_entry
+         class(tens_cache_entry_t), pointer:: tens_entry
+         class(tens_entry_wrk_t), pointer:: cache_entry_tmp
          class(tens_rcrsv_t), pointer:: tensor
+         class(tens_header_t), pointer:: header
+         type(tens_rcrsv_t):: tensor_old
+         character(TEREC_MAX_TENS_NAME_LEN+16):: tname
+         logical:: evicted
 
          if(tens_instr%is_active(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
@@ -3297,11 +3356,53 @@
             if(errc.eq.DSVP_SUCCESS) then
              select type(oprnd)
              class is(tens_oprnd_t)
-              cache_entry=>oprnd%get_cache_entry(errc)
-              if(errc.eq.0.and.associated(cache_entry)) then
+              cache_entry_tmp=>oprnd%get_cache_entry(errc)
+              if(errc.eq.0.and.associated(cache_entry_tmp)) then
                tensor=>oprnd%get_tensor(errc)
                if(errc.eq.0.and.associated(tensor)) then
-                !`Finish
+                header=>tensor%get_header(errc)
+                if(errc.eq.TEREC_SUCCESS.and.associated(header)) then
+                 call header%get_name(tname,nl,errc)
+                 if(errc.eq.TEREC_SUCCESS.and.nl.gt.2) then
+                  do while(nl.gt.0); if(tname(nl:nl).eq.'#') exit; nl=nl-1; enddo
+                  if(nl.gt.1) then
+                   nl=nl-1 !tname(1:nl) is now the unmangled name of the persistent tensor
+                   call tensor_old%tens_rcrsv_ctor(header,errc)
+                   if(errc.eq.TEREC_SUCCESS) then
+                    call tensor_old%rename(tname(1:nl),errc) !original name of the persistent tensor
+                    if(errc.eq.TEREC_SUCCESS) then
+                     tens_entry=>NULL(); tens_entry=>this%arg_cache%lookup(tensor_old,errc)
+                     if(errc.eq.0.and.associated(tens_entry)) then
+                      select type(tens_entry)
+                      class is(tens_entry_wrk_t)
+                       call oprnd%reset_tensor(tens_entry,errc); if(errc.ne.0) errc=-16
+                      class default
+                       errc=-15
+                      end select
+                      if(errc.eq.0) then
+                       if(cache_entry_tmp%get_ref_count().eq.0.and.cache_entry_tmp%get_use_count().eq.0) then
+                        evicted=this%arg_cache%evict(tensor,errc); if(errc.ne.0) errc=-14
+                       endif
+                      endif
+                      call this%arg_cache%release_entry(tens_entry); tens_entry=>NULL()
+                     else
+                      errc=-13
+                     endif
+                    else
+                     errc=-12
+                    endif
+                   else
+                    errc=-11
+                   endif
+                  else
+                   errc=-10
+                  endif
+                 else
+                  errc=-9
+                 endif
+                else
+                 errc=-8
+                endif
                else
                 errc=-7
                endif

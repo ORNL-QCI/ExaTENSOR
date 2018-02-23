@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/02/22
+!REVISION: 2018/02/23
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -656,7 +656,7 @@
         function TensOprndGetCacheEntry(this,ierr) result(cache_entry_p)
 !Returns a pointer to the tensor cache entry (may be NULL).
          implicit none
-         class(tens_entry_mng_t), pointer:: cache_entry_p !out: pointer to the tensor cache entry
+         class(tens_entry_mng_t), pointer:: cache_entry_p !out: pointer to the tensor cache entry (may be NULL)
          class(tens_oprnd_t), intent(in):: this           !in: active tensor operand
          integer(INTD), intent(out), optional:: ierr      !out: error code
          integer(INTD):: errc
@@ -669,17 +669,37 @@
         end function TensOprndGetCacheEntry
 !---------------------------------------------------------------
         subroutine TensOprndSetCacheEntry(this,cache_entry,ierr)
-!Sets the associated tensor cache entry (may be NULL).
+!Sets the associated tensor cache entry (may be NULL). If the cache entry
+!is not NULL, it must be the one containing the tensor set in the tensor operand.
          implicit none
          class(tens_oprnd_t), intent(inout):: this                  !inout: active tensor operand
-         class(tens_entry_mng_t), intent(in), pointer:: cache_entry !in: pointer to a tensor cache entry
+         class(tens_entry_mng_t), intent(in), pointer:: cache_entry !in: pointer to a tensor cache entry (may be NULL)
          integer(INTD), intent(out), optional:: ierr                !out: error code
          integer(INTD):: errc
+         class(tens_rcrsv_t), pointer:: tensor
 
          if(this%is_active(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
-           if(associated(cache_entry)) call cache_entry%incr_ref_count()
-           this%cache_entry=>cache_entry
+           if(associated(this%cache_entry)) then
+            call this%cache_entry%decr_ref_count(); this%cache_entry=>NULL()
+           endif
+           if(associated(cache_entry)) then
+            tensor=>cache_entry%get_tensor(errc)
+            if(errc.eq.0) then
+             if(.not.associated(this%tensor)) then
+              call cache_entry%incr_ref_count()
+             else
+              if(associated(this%tensor,tensor)) then !cache entry corresponds to the same tensor
+               call cache_entry%incr_ref_count()
+              else
+               errc=-4
+              endif
+             endif
+            else
+             errc=-3
+            endif
+           endif
+           if(errc.eq.0) this%cache_entry=>cache_entry
           else
            errc=-2
           endif
@@ -2641,7 +2661,7 @@
               &(tens_cache_entry%get_ref_count().eq.0.and.tens_cache_entry%get_use_count().eq.0)) then
                tensor=>tens_cache_entry%get_tensor(ier); if(ier.ne.0.and.errc.eq.0) errc=-35
                if(errc.eq.0) then
-                evicted=this%arg_cache%evict(tensor,ier,quiet=.TRUE.); if(ier.ne.0.and.errc.eq.0) errc=-34
+                evicted=this%arg_cache%evict(tensor,ier); if(ier.ne.0.and.errc.eq.0) errc=-34
                 tensor=>NULL()
                endif
               endif
@@ -3327,7 +3347,7 @@
                   call subtensor%tens_rcrsv_ctor(header,jerr)
                   if(jerr.ne.TEREC_SUCCESS) then; deallocate(subtensor); jerr=-22; exit cloop; endif
                   stored=this%arg_cache%store(subtensor,tens_entry_mng_alloc,jerr,tens_entry_p=tens_entry) !new subtensor: Ownership transferred to the tensor cache
-                  if((jerr.ne.0).or.(.not.(stored.and.associated(tens_entry)))) then
+                  if(.not.(jerr.eq.0.and.stored.and.associated(tens_entry))) then
                    deallocate(subtensor); jerr=-21; exit cloop
                   endif
                   tens_entry_mng=>NULL()
@@ -3350,7 +3370,7 @@
                   call subinstr%set_status(init_stat,jerr,init_tag) !instruction status and error code will depend on whether the TAVP-MNG is bottom or not
                   if(jerr.ne.DSVP_SUCCESS) then; jerr=-12; exit cloop; endif
                   call tavp%register_instr(iid,tens_instr%get_id(),jerr); if(jerr.ne.0) then; jerr=-11; exit cloop; endif
-                  call this%arg_cache%release_entry(tens_entry)
+                  call this%arg_cache%release_entry(tens_entry); tens_entry=>NULL()
                   call dsvp%incr_crtd_instr_counter(); num_subinstr=num_subinstr+1 !new subinstruction has been created
                   jerr=lit%next()
                  enddo cloop
@@ -3459,7 +3479,7 @@
                   call subinstr%set_status(init_stat,jerr,init_tag) !instruction status and error code will depend on whether the TAVP-MNG is bottom or not
                   if(jerr.ne.DSVP_SUCCESS) then; jerr=-12; exit cloop; endif
                   call tavp%register_instr(iid,tens_instr%get_id(),jerr); if(jerr.ne.0) then; jerr=-11; exit cloop; endif
-                  call this%arg_cache%release_entry(tens_entry)
+                  call this%arg_cache%release_entry(tens_entry); tens_entry=>NULL()
                   call dsvp%incr_crtd_instr_counter(); num_subinstr=num_subinstr+1 !new subinstruction has been created
                   jerr=lit%next()
                  enddo cloop
@@ -4473,7 +4493,7 @@
                &(tens_cache_entry%get_ref_count().eq.0.and.tens_cache_entry%get_use_count().eq.0)) then
               tensor=>tens_cache_entry%get_tensor(ier); if(ier.ne.0.and.errc.eq.0) errc=-13
               if(errc.eq.0) then
-               evicted=this%arg_cache%evict(tensor,ier,quiet=.TRUE.); if(ier.ne.0.and.errc.eq.0) errc=-12
+               evicted=this%arg_cache%evict(tensor,ier); if(ier.ne.0.and.errc.eq.0) errc=-12
                tensor=>NULL()
               endif
              endif
