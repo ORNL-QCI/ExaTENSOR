@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/02/23
+!REVISION: 2018/02/24
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -75,7 +75,8 @@
 !   (B) Each tensor argument cache entry has a reference count for the number
 !       of active tensor instruction operands currently associated with the cache entry.
 !   (C) Each tensor argument cache entry has a use count for the number of active
-!       instances of returned pointers pointing to the cache entry.
+!       instances of returned pointers pointing to the cache entry plus the number
+!       of current instances of the update/read of the tensor cache entry content.
 !   (D) Each tensor argument cache entry has an <owner_id> field referring to a TAVP
 !       which owns the tensor metadata stored in that cache entry. A negative value
 !       of this field means that the owning TAVP is not (yet) known.
@@ -83,6 +84,17 @@
 !       are only deleted when the tensor is destroyed. Tensor argument cache entries
 !       storing subtensors of local tensors are only deleted when the tensor is destroyed.
 !       Other tensor argument cache entries are deleted once the reference/use count is zero.
+!   (F) In practical implementation, the race protection is implemented as follows:
+!       (1) Creation/deletion/lookup of tensor cache entries is serialized via a cache-wide lock.
+!       (2) Any reference (pointer) to a tensor cache entry returned by the tensor cache is
+!           protected by a non-zero use count and must be explicitly released via .release_entry().
+!       (3) Any binding of a tensor operand to a tensor cache entry protects the latter via
+!           a non-zero reference count.
+!       (4) Any read/update of the content of a tensor cache entry must be protected
+!           by a user-defined named CRITICAL section.
+!       (5) Any read/update of the content of a tensor cache entry accessed indirectly
+!           via another object must be protected by a user-defined named CRITICAL section
+!           as well as a wrapping increment/decrement of the cache entry's use count.
 ! # DATA/TASK DECOMPOSITION:
 !   (A) Each level of the TAVP-MNG hierarchy decomposes tasks (tensor instructions) into
 !       subtasks (tensor subinstructions) guided by the original data (tensor) decomposition
@@ -91,6 +103,11 @@
 !       on the tensor composition. At the last level of the TAVP-MNG hierarchy the just
 !       decomposed tensor subinstructions undergo an additional (final) metadata location
 !       cycle before being issued to the TAVP-WRK level.
+! # METADATA LOCATION CYCLE:
+!   (A) The tensor metadata is distributed horizontally at each level of the TAVP-MNG hierarchy.
+!       During the metadata location cycle, each tensor instruction gets its tensor operand
+!       metadata located. If specific tensor metadata is present in multiple locations, the
+!       most complete and closest from the left instance will be used in the tensor instruction.
 !ISSUES:
 ! # Cloning <tens_instr_t> when calling container.append(tens_instr_t): Check clonability.
 ! # Check the tensor status update logic.
@@ -159,7 +176,8 @@
           procedure, public:: is_located=>TensOprndIsLocated    !returns TRUE if the tensor operand has been located (its structure is known)
           procedure, public:: is_remote=>TensOprndIsRemote      !returns TRUE if the tensor operand is remote
           procedure, public:: is_valued=>TensOprndIsValued      !returns TRUE if the tensor operand is set to some value (neither undefined nor being updated)
-          procedure, public:: update_status=>TensOprndUpdateStatus !updates the tensor value status
+          procedure, public:: update_tensor_status=>TensOprndUpdateTensorStatus !updates the tensor value status
+          procedure, public:: get_tensor_status=>TensOprndGetTensorStatus !returns the tensor value status
           procedure, public:: acquire_rsc=>TensOprndAcquireRsc  !explicitly acquires local resources for the tensor operand
           procedure, public:: prefetch=>TensOprndPrefetch       !starts prefetching the remote tensor operand (acquires local resources!)
           procedure, public:: upload=>TensOprndUpload           !starts uploading the tensor operand to its remote location
@@ -412,7 +430,8 @@
         private TensOprndIsLocated
         private TensOprndIsRemote
         private TensOprndIsValued
-        private TensOprndUpdateStatus
+        private TensOprndUpdateTensorStatus
+        private TensOprndGetTensorStatus
         private TensOprndAcquireRsc
         private TensOprndPrefetch
         private TensOprndUpload
@@ -506,6 +525,8 @@
          errc=0
          if(associated(tensor)) then
           if(owner.ge.0) then
+!$OMP CRITICAL (TAVP_MNG_CACHE)
+           call this%incr_use_count()
            call this%set_tensor(tensor,errc)
            if(errc.eq.0) then
             tensor=>NULL() !transfer the ownership
@@ -513,6 +534,8 @@
            else
             errc=-3
            endif
+           call this%decr_use_count()
+!$OMP END CRITICAL (TAVP_MNG_CACHE)
           else
            errc=-2
           endif
@@ -551,8 +574,10 @@
          integer(INTD):: errc
 
          if(this%is_set(errc)) then
+          call this%incr_use_count()
 !$OMP ATOMIC WRITE
           this%owner_id=id
+          call this%decr_use_count()
          else
           errc=-1
          endif
@@ -606,6 +631,7 @@
          class(tens_entry_mng_t), intent(inout), target, optional:: tens_cache_entry !in: tensor cache entry owning the tensor
          integer(INTD), intent(in), optional:: owner      !in: tensor owner id (no restrictions), supercedes the value imported from the tensor cache entry (if present)
          integer(INTD):: errc
+         class(tens_rcrsv_t), pointer:: tens
 
          if(.not.this%is_active(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
@@ -616,7 +642,13 @@
              if(present(tens_cache_entry)) then
               call tens_cache_entry%incr_ref_count()
               this%cache_entry=>tens_cache_entry
-              this%owner_id=this%cache_entry%get_owner_id(errc); if(errc.ne.0) errc=-6
+              this%owner_id=this%cache_entry%get_owner_id(errc)
+              if(errc.eq.0) then
+               tens=>this%cache_entry%get_tensor(errc)
+               if(.not.(errc.eq.0.and.associated(tens,this%tensor))) errc=-7 !trap
+              else
+               errc=-6
+              endif
              else
               this%cache_entry=>NULL()
              endif
@@ -648,7 +680,7 @@
          integer(INTD):: errc
 
          errc=0; tens_p=>this%tensor
-         if(.not.associated(tens_p)) errc=-1
+         if(.not.associated(this%tensor)) errc=-1
          if(present(ierr)) ierr=errc
          return
         end function TensOprndGetTensor
@@ -684,19 +716,15 @@
             call this%cache_entry%decr_ref_count(); this%cache_entry=>NULL()
            endif
            if(associated(cache_entry)) then
-            tensor=>cache_entry%get_tensor(errc)
-            if(errc.eq.0) then
-             if(.not.associated(this%tensor)) then
+            if(.not.associated(this%tensor)) then
+             call cache_entry%incr_ref_count()
+            else
+             tensor=>cache_entry%get_tensor(errc)
+             if(errc.eq.0.and.associated(this%tensor,tensor)) then !cache entry corresponds to the same tensor
               call cache_entry%incr_ref_count()
              else
-              if(associated(this%tensor,tensor)) then !cache entry corresponds to the same tensor
-               call cache_entry%incr_ref_count()
-              else
-               errc=-4
-              endif
+              errc=-3
              endif
-            else
-             errc=-3
             endif
            endif
            if(errc.eq.0) this%cache_entry=>cache_entry
@@ -720,7 +748,7 @@
 
          errc=0; id=-1
          if(associated(this%tensor)) then
-         !if(this%owner_id.lt.0.and.associated(this%cache_entry)) this%owner_id=this%cache_entry%get_owner_id(errc) !sync owner_id
+        !if(this%owner_id.lt.0.and.associated(this%cache_entry)) this%owner_id=this%cache_entry%get_owner_id(errc) !sync owner_id
           id=this%owner_id
          else
           errc=-1
@@ -743,12 +771,14 @@
            this%owner_id=owner
            if(present(update_cache)) then
             if(update_cache) then
+!$OMP CRITICAL (TAVP_MNG_CACHE)
              if(associated(this%cache_entry)) then
               call this%cache_entry%set_owner_id(owner,errc)
               if(errc.ne.0) errc=-4
              else
               errc=-3
              endif
+!$OMP END CRITICAL (TAVP_MNG_CACHE)
             endif
            endif
           else
@@ -799,6 +829,8 @@
          res=.FALSE.
          if(this%is_active(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
+!$OMP CRITICAL (TAVP_MNG_CACHE)
+           if(associated(this%cache_entry)) call this%cache_entry%incr_use_count()
            tensor=>this%get_tensor(errc)
            if(errc.eq.0) then
             tens_body=>tensor%get_body(errc)
@@ -811,6 +843,8 @@
            else
             errc=-3
            endif
+           if(associated(this%cache_entry)) call this%cache_entry%decr_use_count()
+!$OMP END CRITICAL (TAVP_MNG_CACHE)
           else
            errc=-2
           endif
@@ -862,6 +896,8 @@
 
          res=.FALSE.
          if(this%is_active(errc)) then
+!$OMP CRITICAL (TAVP_MNG_CACHE)
+          if(associated(this%cache_entry)) call this%cache_entry%incr_use_count()
           if(this%tensor%is_set(errc,layed=laid,located=locd)) then
            if(errc.eq.TEREC_SUCCESS) then
             res=(this%tensor%get_state(errc).ge.TEREC_BODY_DEF)
@@ -872,14 +908,16 @@
           else
            errc=-2
           endif
+          if(associated(this%cache_entry)) call this%cache_entry%decr_use_count()
+!$OMP END CRITICAL (TAVP_MNG_CACHE)
          else
           errc=-1
          endif
          if(present(ierr)) ierr=errc
          return
         end function TensOprndIsValued
-!------------------------------------------------------
-        subroutine TensOprndUpdateStatus(this,sts,ierr)
+!------------------------------------------------------------
+        subroutine TensOprndUpdateTensorStatus(this,sts,ierr)
 !Updates the tensor value status.
          implicit none
          class(tens_oprnd_t), intent(inout):: this   !in: active tensor operand
@@ -890,6 +928,7 @@
          errc=0
 !$OMP CRITICAL (TAVP_MNG_CACHE)
          if(associated(this%tensor)) then
+          if(associated(this%cache_entry)) call this%cache_entry%incr_use_count()
           st=this%tensor%get_state(errc) !current tensor value status
           if(errc.eq.TEREC_SUCCESS) then
            if(sts.ne.st) then
@@ -911,13 +950,36 @@
           else
            errc=-2
           endif
+          if(associated(this%cache_entry)) call this%cache_entry%decr_use_count()
          else
           errc=-1
          endif
 !$OMP END CRITICAL (TAVP_MNG_CACHE)
          if(present(ierr)) ierr=errc
          return
-        end subroutine TensOprndUpdateStatus
+        end subroutine TensOprndUpdateTensorStatus
+!---------------------------------------------------------------
+        function TensOprndGetTensorStatus(this,ierr) result(sts)
+!Returns the tensor value status.
+         implicit none
+         integer(INTD):: sts                         !out: tensor value status
+         class(tens_oprnd_t), intent(in):: this      !in: active tensor operand
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=0; sts=TEREC_BODY_UNDEF
+!$OMP CRITICAL (TAVP_MNG_CACHE)
+         if(associated(this%tensor)) then
+          if(associated(this%cache_entry)) call this%cache_entry%incr_use_count()
+          sts=this%tensor%get_state(errc); if(errc.ne.TEREC_SUCCESS) errc=-2
+          if(associated(this%cache_entry)) call this%cache_entry%decr_use_count()
+         else
+          errc=-1
+         endif
+!$OMP END CRITICAL (TAVP_MNG_CACHE)
+         if(present(ierr)) ierr=errc
+         return
+        end function TensOprndGetTensorStatus
 !------------------------------------------------
         subroutine TensOprndAcquireRsc(this,ierr)
 !Acquires local resources for the remote tensor operand.
@@ -3284,6 +3346,7 @@
            select type(oprnd)
            class is(tens_oprnd_t)
 !$OMP CRITICAL (TAVP_MNG_CACHE)
+            if(associated(oprnd%cache_entry)) call oprnd%cache_entry%incr_use_count()
             tensor=>oprnd%get_tensor(jerr)
             if(jerr.eq.0) then
              if(tensor%get_num_subtensors().le.0) then !tensor does not have an internal structure yet
@@ -3297,6 +3360,7 @@
             else
              jerr=-2
             endif
+            if(associated(oprnd%cache_entry)) call oprnd%cache_entry%decr_use_count()
 !$OMP END CRITICAL (TAVP_MNG_CACHE)
            class default
             jerr=-1

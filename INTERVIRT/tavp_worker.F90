@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/02/23
+!REVISION: 2018/02/24
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -952,8 +952,12 @@
 
          errc=0
          if(associated(tensor)) then
+!$OMP CRITICAL (TAVP_WRK_CACHE)
+          call this%incr_use_count()
           call this%set_tensor(tensor,errc); if(errc.ne.0) errc=-2
           if(errc.eq.0) tensor=>NULL() !transfer the ownership
+          call this%decr_use_count()
+!$OMP END CRITICAL (TAVP_WRK_CACHE)
          else
           errc=-1
          endif
@@ -1012,6 +1016,7 @@
          class(tens_entry_wrk_t), intent(inout), target, optional:: tens_cache_entry !in: tensor cache entry owning the tensor
          class(tens_resrc_t), intent(inout), target, optional:: tens_resource !in: local tensor resource (may still be empty)
          integer(INTD):: errc
+         class(tens_rcrsv_t), pointer:: tens
 
          if(.not.this%is_active(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
@@ -1021,6 +1026,8 @@
              if(present(tens_cache_entry)) then
               call tens_cache_entry%incr_ref_count()
               this%cache_entry=>tens_cache_entry
+              tens=>this%cache_entry%get_tensor(errc)
+              if(.not.(errc.eq.0.and.associated(tens,this%tensor))) errc=-6 !trap
              else
               this%cache_entry=>NULL()
              endif
@@ -1031,18 +1038,18 @@
               this%resource=>NULL()
              endif
              call this%mark_active(errc)
-             if(errc.ne.DSVP_SUCCESS) errc=-1
+             if(errc.ne.DSVP_SUCCESS) errc=-5
             else
-             errc=-2
+             errc=-4
             endif
            else
             errc=-3
            endif
           else
-           errc=-4
+           errc=-2
           endif
          else
-          errc=-5
+          errc=-1
          endif
          if(present(ierr)) ierr=errc
          return
@@ -1057,7 +1064,7 @@
          integer(INTD):: errc
 
          errc=0; tens_p=>this%tensor
-         if(.not.associated(tens_p)) errc=-1
+         if(.not.associated(this%tensor)) errc=-1
          if(present(ierr)) ierr=errc
          return
         end function TensOprndGetTensor
@@ -1078,19 +1085,15 @@
             call this%cache_entry%decr_ref_count(); this%cache_entry=>NULL()
            endif
            if(associated(cache_entry)) then
-            tensor=>cache_entry%get_tensor(errc)
-            if(errc.eq.0) then
-             if(.not.associated(this%tensor)) then
+            if(.not.associated(this%tensor)) then
+             call cache_entry%incr_ref_count()
+            else
+             tensor=>cache_entry%get_tensor(errc)
+             if(errc.eq.0.and.associated(this%tensor,tensor)) then !cache entry must correspond to the same tensor
               call cache_entry%incr_ref_count()
              else
-              if(associated(this%tensor,tensor)) then !cache entry must correspond to the same tensor
-               call cache_entry%incr_ref_count()
-              else
-               errc=-4
-              endif
+              errc=-3
              endif
-            else
-             errc=-3
             endif
            endif
            if(errc.eq.0) this%cache_entry=>cache_entry
@@ -1133,13 +1136,13 @@
             call tens_resource%incr_ref_count()
             this%resource=>tens_resource
            else
-            errc=-1
+            errc=-3
            endif
           else
            errc=-2
           endif
          else
-          errc=-3
+          errc=-1
          endif
          if(present(ierr)) ierr=errc
          return
@@ -1154,7 +1157,7 @@
          integer(INTD):: errc
 
          errc=0; resource_p=>this%resource
-         if(.not.associated(resource_p)) errc=-1
+         if(.not.associated(this%resource)) errc=-1
          if(present(ierr)) ierr=errc
          return
         end function TensOprndGetResource
@@ -1257,8 +1260,16 @@
 
          res=.FALSE.
          if(this%is_active(errc)) then
-          if(this%tensor%is_set(errc,layed=laid,located=locd)) then
-           if(errc.eq.TEREC_SUCCESS) res=laid.and.locd
+          if(errc.eq.DSVP_SUCCESS) then
+!$OMP CRITICAL (TAVP_WRK_CACHE)
+           if(associated(this%cache_entry)) call this%cache_entry%incr_use_count()
+           if(this%tensor%is_set(errc,layed=laid,located=locd)) then
+            if(errc.eq.TEREC_SUCCESS) res=(laid.and.locd)
+           else
+            errc=-3
+           endif
+           if(associated(this%cache_entry)) call this%cache_entry%decr_use_count()
+!$OMP END CRITICAL (TAVP_WRK_CACHE)
           else
            errc=-2
           endif
@@ -1282,37 +1293,45 @@
          class(DataDescr_t), pointer:: descr_p
 
          if(this%is_active(errc)) then
-          body_p=>this%tensor%get_body(errc)
-          if(errc.eq.TEREC_SUCCESS.and.associated(body_p)) then
-           layout_p=>body_p%get_layout(errc)
-           if(errc.eq.TEREC_SUCCESS.and.associated(layout_p)) then
-            descr_p=>layout_p%get_data_descr(errc)
-            if(errc.eq.TEREC_SUCCESS.and.associated(descr_p)) then
-             if(descr_p%is_set(errc,host_proc_rank,mpi_comm)) then
-              if(errc.eq.0) then
-               call MPI_Comm_Rank(mpi_comm,my_rank,errc)
+          if(errc.eq.DSVP_SUCCESS) then
+!$OMP CRITICAL (TAVP_WRK_CACHE)
+           if(associated(this%cache_entry)) call this%cache_entry%incr_use_count()
+           body_p=>this%tensor%get_body(errc)
+           if(errc.eq.TEREC_SUCCESS.and.associated(body_p)) then
+            layout_p=>body_p%get_layout(errc)
+            if(errc.eq.TEREC_SUCCESS.and.associated(layout_p)) then
+             descr_p=>layout_p%get_data_descr(errc)
+             if(errc.eq.TEREC_SUCCESS.and.associated(descr_p)) then
+              if(descr_p%is_set(errc,host_proc_rank,mpi_comm)) then
                if(errc.eq.0) then
-                res=.not.(host_proc_rank.eq.my_rank)
+                call MPI_Comm_Rank(mpi_comm,my_rank,errc)
+                if(errc.eq.0) then
+                 res=.not.(host_proc_rank.eq.my_rank)
+                else
+                 errc=-8
+                endif
                else
-                errc=-1
+                errc=-7
                endif
               else
-               errc=-2
+               errc=-6
               endif
              else
-              errc=-3
+              errc=-5
              endif
             else
              errc=-4
             endif
            else
-            errc=-5
+            errc=-3
            endif
+           if(associated(this%cache_entry)) call this%cache_entry%decr_use_count()
+!$OMP END CRITICAL (TAVP_WRK_CACHE)
           else
-           errc=-6
+           errc=-2
           endif
          else
-          errc=-7
+          errc=-1
          endif
          if(present(ierr)) ierr=errc
          return
@@ -1330,9 +1349,11 @@
 
          res=.FALSE.
          if(this%is_active(errc)) then
+!$OMP CRITICAL (TAVP_WRK_CACHE)
+          if(associated(this%cache_entry)) call this%cache_entry%incr_use_count()
           if(this%tensor%is_set(errc,layed=laid,located=locd)) then
            if(errc.eq.TEREC_SUCCESS) then
-            res=laid.and.locd.and.(this%tensor%get_state(errc).ge.TEREC_BODY_DEF)
+            res=(laid.and.locd.and.(this%tensor%get_state(errc).ge.TEREC_BODY_DEF))
             if(errc.ne.TEREC_SUCCESS) then; res=.FALSE.; errc=-4; endif
            else
             errc=-3
@@ -1340,6 +1361,8 @@
           else
            errc=-2
           endif
+          if(associated(this%cache_entry)) call this%cache_entry%decr_use_count()
+!$OMP END CRITICAL (TAVP_WRK_CACHE)
          else
           errc=-1
          endif
@@ -1357,9 +1380,12 @@
 
          res=.FALSE.
          if(this%is_active(errc)) then
-          if(associated(this%resource)) then
-           res=(.not.this%resource%is_empty(errc))
-           if(errc.ne.0) errc=-2
+          if(errc.eq.DSVP_SUCCESS) then
+           if(associated(this%resource)) then
+            res=(.not.this%resource%is_empty(errc)); if(errc.ne.0) errc=-3
+           endif
+          else
+           errc=-2
           endif
          else
           errc=-1
@@ -1379,6 +1405,7 @@
          errc=0
 !$OMP CRITICAL (TAVP_WRK_CACHE)
          if(associated(this%tensor)) then
+          if(associated(this%cache_entry)) call this%cache_entry%incr_use_count()
           st=this%tensor%get_state(errc) !current tensor value status
           if(errc.eq.TEREC_SUCCESS) then
            if(sts.ne.st) then
@@ -1400,6 +1427,7 @@
           else
            errc=-2
           endif
+          if(associated(this%cache_entry)) call this%cache_entry%decr_use_count()
          else
           errc=-1
          endif
@@ -1419,7 +1447,9 @@
          errc=0; sts=TEREC_BODY_UNDEF
 !$OMP CRITICAL (TAVP_WRK_CACHE)
          if(associated(this%tensor)) then
+          if(associated(this%cache_entry)) call this%cache_entry%incr_use_count()
           sts=this%tensor%get_state(errc); if(errc.ne.TEREC_SUCCESS) errc=-2
+          if(associated(this%cache_entry)) call this%cache_entry%decr_use_count()
          else
           errc=-1
          endif
@@ -2175,7 +2205,7 @@
          logical:: res                               !out: answer
          class(tens_instr_t), intent(in):: this      !in: active tensor instruction
          integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc,n,i
+         integer(INTD):: errc,n,i,sts
          class(ds_oprnd_t), pointer:: oprnd
 
          res=.TRUE.
@@ -2184,12 +2214,44 @@
            n=this%get_num_operands(errc)
            if(errc.eq.DSVP_SUCCESS) then
             if(n.gt.0) then
- !Check the output tensor operand:`Assumes output tensor operand #0
-             oprnd=>this%get_operand(0,errc)
+ !Check the output tensor operand:
+             oprnd=>this%get_operand(0,errc) !`Assumes output tensor operand #0
+             if(errc.eq.DSVP_SUCCESS) then
+              select type(oprnd)
+              class is(tens_oprnd_t)
+               sts=oprnd%get_tensor_status(errc)
+               if(errc.eq.0) then
+                if(sts.gt.TEREC_BODY_DEF) res=.FALSE. !output tensor must not be in-use
+               else
+                errc=-9
+               endif
+              class default
+               errc=-8
+              end select
+             else
+              errc=-7
+             endif
  !Check the input tensor operands:
-             do i=1,n-1
-
-             enddo
+             if(errc.eq.0.and.res) then
+              do i=1,n-1 !`Assumes output tensor operand #0
+               oprnd=>this%get_operand(i,errc)
+               if(errc.eq.DSVP_SUCCESS) then
+                select type(oprnd)
+                class is(tens_oprnd_t)
+                 sts=oprnd%get_tensor_status(errc)
+                 if(errc.eq.0) then
+                  if(sts.lt.TEREC_BODY_DEF) then; res=.FALSE.; exit; endif !input tensor must not be updated/undefined
+                 else
+                  errc=-6; exit
+                 endif
+                class default
+                 errc=-5; exit
+                end select
+               else
+                errc=-4; exit
+               endif
+              enddo
+             endif
             endif
            else
             errc=-3
