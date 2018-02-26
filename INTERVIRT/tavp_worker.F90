@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/02/24
+!REVISION: 2018/02/26
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -156,7 +156,7 @@
         end type tens_instr_t
  !TAVP-WRK decoder:
         type, extends(ds_decoder_t), private:: tavp_wrk_decoder_t
-         integer(INTD), public:: num_ports=1                        !number of ports: Port 0 <- self
+         integer(INTD), public:: num_ports=1                        !number of ports: Port 0 <- Self
          integer(INTD), private:: source_comm                       !bytecode source communicator
          integer(INTD), private:: source_rank=-1                    !bytecode source process rank
          type(pack_env_t), private:: bytecode                       !incoming bytecode buffer
@@ -178,7 +178,7 @@
         end type tavp_wrk_decoder_conf_t
  !TAVP-WRK retirer:
         type, extends(ds_encoder_t), private:: tavp_wrk_retirer_t
-         integer(INTD), public:: num_ports=1                        !number of ports: Port 0 <- communicator
+         integer(INTD), public:: num_ports=1                        !number of ports: Port 0 <- Communicator (Tens) + Dispatcher (Ctrl,Aux)
          integer(INTD), private:: retire_comm                       !retired bytecode destination communicator
          integer(INTD), private:: retire_rank=-1                    !retired bytecode destination process rank
          type(pack_env_t), private:: bytecode                       !outgoing bytecode
@@ -196,7 +196,7 @@
         end type tavp_wrk_retirer_conf_t
  !TAVP-WRK resourcer:
         type, extends(ds_unit_t), private:: tavp_wrk_resourcer_t
-         integer(INTD), public:: num_ports=1                        !number of ports: Port 0 <- decoder
+         integer(INTD), public:: num_ports=2                        !number of ports: Port 0 <- Decoder (Tens,Ctrl,Aux), Port 1 <- Communicator (Tens)
          integer(INTL), private:: host_ram_size=0_INTL              !size of the usable Host RAM memory in bytes
          integer(INTL), private:: nvram_size=0_INTL                 !size of the usable NVRAM memory (if any) in bytes
          class(tens_cache_t), pointer, private:: arg_cache=>NULL()  !non-owning pointer to the tensor argument cache
@@ -220,7 +220,7 @@
         end type tavp_wrk_resourcer_conf_t
  !TAVP-WRK communicator:
         type, extends(ds_unit_t), private:: tavp_wrk_communicator_t
-         integer(INTD), public:: num_ports=2                        !number of ports: Port 0 <- resourcer; Port 1 <- dispatcher
+         integer(INTD), public:: num_ports=2                        !number of ports: Port 0 <- Resourcer (Tens,Ctrl,Aux), Port 1 <- Dispatcher (Tens)
          integer(INTD), private:: num_mpi_windows=TAVP_WRK_NUM_WINS !number of dynamic MPI windows per global addressing space
          class(DistrSpace_t), pointer, private:: addr_space=>NULL() !non-owning pointer to the DSVP global address space
          class(tens_cache_t), pointer, private:: arg_cache=>NULL()  !non-owning pointer to the tensor argument cache
@@ -243,7 +243,7 @@
         end type tavp_wrk_dispatch_proc_t
  !TAVP-WRK dispatcher:
         type, extends(ds_unit_t), private:: tavp_wrk_dispatcher_t
-         integer(INTD), public:: num_ports=1                                    !number of ports: Port 0 <- communicator
+         integer(INTD), public:: num_ports=1                                    !number of ports: Port 0 <- Communicator (Tens,Ctrl,Aux)
          integer(INTL), private:: host_buf_size=TAVP_WRK_HOST_BUF_SIZE          !size of the pinned Host argument buffer
          integer(INTD), allocatable, private:: gpu_list(:)                      !list of available NVIDIA GPU
          integer(INTD), allocatable, private:: amd_list(:)                      !list of available AMD GPU
