@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/02/24
+!REVISION: 2018/02/26
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -1729,13 +1729,14 @@
                  class is(ctrl_tens_contr_t)
                   contr_ptrn=>instr_ctrl%get_contr_ptrn(errc,alpha)
                   if(errc.eq.0) call tens_operation%set_contr_ptrn(contr_ptrn,errc,alpha)
-                  nullify(contr_ptrn); nullify(instr_ctrl)
+                  nullify(contr_ptrn)
                  class default
                   errc=-9
                  end select
                 else
                  errc=-8
                 endif
+                nullify(instr_ctrl)
                else
                 errc=-7
                endif

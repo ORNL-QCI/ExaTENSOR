@@ -204,6 +204,8 @@
          type(list_iter_t), private:: stg_list                      !iterator for <staged_list>
          type(list_bi_t), private:: deferred_list                   !list of deferred instructions
          type(list_iter_t), private:: def_list                      !iterator for <deferred_list>
+         type(list_bi_t), private:: released_list                   !list of completed tensor instructions expecting resource release
+         type(list_iter_t), private:: rls_list                      !iterator for <released_list>
          contains
           procedure, public:: configure=>TAVPWRKResourcerConfigure                !configures TAVP-WRK resourcer
           procedure, public:: start=>TAVPWRKResourcerStart                        !starts TAVP-WRK resourcer
@@ -3163,12 +3165,14 @@
          implicit none
          class(tavp_wrk_resourcer_t), intent(inout):: this !inout: TAVP-WRK resourcer DSVU
          integer(INTD), intent(out), optional:: ierr       !out: error code
-         integer(INTD):: errc,ier,thid,n,num_staged
+         integer(INTD):: errc,ier,thid,n,num_staged,opcode,sts,errcode
          integer:: rsc_timer
          logical:: active,stopping,expired
          class(dsvp_t), pointer:: dsvp
          class(tavp_wrk_t), pointer:: tavp
          type(tens_instr_t):: instr_fence
+         class(tens_instr_t), pointer:: instr
+         class(*), pointer:: uptr
 
          errc=0; thid=omp_get_thread_num()
          if(DEBUG.gt.0) then
@@ -3182,6 +3186,8 @@
          ier=this%stg_list%init(this%staged_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-1
 !Initialize the deferred list:
          ier=this%def_list%init(this%deferred_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-1
+!Initialize the released list:
+         ier=this%rls_list%init(this%released_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-1
 !Create a special FENCE instruction:
          call instr_fence%tens_instr_ctor(TAVP_INSTR_CTRL_RESUME,ier,iid=0_INTL,stat=DS_INSTR_SPECIAL)
          if(ier.ne.0.and.errc.eq.0) errc=-1
@@ -3197,7 +3203,7 @@
          ier=timer_start(rsc_timer,MAX_RESOURCE_PHASE_TIME); if(ier.ne.TIMERS_SUCCESS.and.errc.eq.0) errc=-1
          active=(errc.eq.0); stopping=(.not.active); num_staged=0
          wloop: do while(active)
- !Get new instructions from Decoder into the main queue:
+ !Get new instructions from Decoder (port 0) into the main queue:
           ier=this%iqueue%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
           ier=this%flush_port(0,num_moved=n); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
           if(DEBUG.gt.0.and.n.gt.0) then
@@ -3206,11 +3212,17 @@
            !ier=this%iqueue%reset(); ier=this%iqueue%scanp(action_f=tens_instr_print); ier=this%iqueue%reset_back() !print all instructions
            flush(CONS_OUT)
           endif
- !Rename output tensor operands and acquire resources for input tensor operands:
+ !Rename output tensor operands, check data dependencies, and acquire resources for input tensor operands:
           ier=this%iqueue%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
           if(this%iqueue%get_status().eq.GFC_IT_ACTIVE) then
            ier=GFC_SUCCESS
            rloop: do while(ier.eq.GFC_SUCCESS)
+            uptr=>this%iqueue%get_value(ier); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+            instr=>NULL(); select type(uptr); class is(tens_instr_t); instr=>uptr; end select
+            if((.not.associated(instr)).and.errc.eq.0) then; errc=-1; exit wloop; endif !trap
+            opcode=instr%get_code(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+            sts=instr%get_status(ier,errcode); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+            if(sts.ne.DS_INSTR_NEW.and.errc.eq.0) then; errc=-1; exit wloop; endif !trap
 
             ier=this%iqueue%next()
            enddo rloop
@@ -3246,6 +3258,18 @@
          endif
 !Release the tensor argument cache pointer:
          this%arg_cache=>NULL()
+!Deactivate the released list:
+         ier=this%rls_list%reset()
+         if(ier.eq.GFC_SUCCESS) then
+          ier=this%rls_list%get_status()
+          if(ier.ne.GFC_IT_EMPTY) then
+           if(errc.eq.0) errc=-10
+           ier=this%rls_list%delete_all()
+          endif
+          ier=this%rls_list%release(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-9
+         else
+          if(errc.eq.0) errc=-8
+         endif
 !Deactivate the deferred list:
          ier=this%def_list%reset()
          if(ier.eq.GFC_SUCCESS) then
