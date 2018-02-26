@@ -2400,13 +2400,14 @@
                  class is(ctrl_tens_contr_t)
                   contr_ptrn=>instr_ctrl%get_contr_ptrn(errc,alpha)
                   if(errc.eq.0) call tens_operation%set_contr_ptrn(contr_ptrn,errc,alpha)
-                  nullify(contr_ptrn); nullify(instr_ctrl)
+                  nullify(contr_ptrn)
                  class default
                   errc=-9
                  end select
                 else
                  errc=-8
                 endif
+                nullify(instr_ctrl)
                else
                 errc=-7
                endif
