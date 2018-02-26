@@ -136,7 +136,7 @@
           procedure, public:: release=>TensOprndRelease             !destroys the present local copy of the tensor operand (releases local resources!), but the operand stays defined
           procedure, public:: destruct=>TensOprndDestruct           !performs complete destruction back to an empty state
           procedure, public:: print_it=>TensOprndPrintIt            !prints
-          procedure, private:: reset_tmp_tensor=>TensOprndResetTmpTensor !resets the tensor in a tensor operand by providing another tensor cache entry with a temporary tensor (for internal use only)
+          procedure, private:: reset_tmp_tensor=>TensOprndResetTmpTensor !resets the tensor in a tensor operand by providing another tensor cache entry with a temporary tensor (internal use only)
           final:: tens_oprnd_dtor                                   !dtor
         end type tens_oprnd_t
  !Tensor instruction (realization of a tensor operation for a specific TAVP):
@@ -146,10 +146,12 @@
           procedure, private:: TensInstrCtor                                 !ctor: constructs a tensor instruction from the specification of a tensor operation
           generic, public:: tens_instr_ctor=>TensInstrCtor
           procedure, public:: encode=>TensInstrEncode                        !encoding procedure: Packs the TAVP instruction into a raw byte packet (bytecode)
-          procedure, public:: dependency_free=>TensInstrDependencyFree       !returns TRUE if the tensor instruction is dependency-free
           procedure, public:: get_cache_entries=>TensInstrGetCacheEntries    !returns an array of references to tensor cache entries used by the tensor operands
           procedure, public:: get_flops=>TensInstrGetFlops                   !returns an estimate of the total number of required Flops (mul/add) and memory Words
           procedure, public:: get_operation=>TensInstrGetOperation           !returns back the encapsulated tensor operation
+          procedure, public:: mark_issue=>TensInstrMarkIssue                 !updates the tensor value status for all tensor operands due to the instruction issue
+          procedure, public:: mark_completion=>TensInstrMarkCompletion       !updates the tensor value status for all tensor operands due to the instruction completion
+          procedure, public:: dependency_free=>TensInstrDependencyFree       !returns TRUE if the tensor instruction is dependency-free
           procedure, public:: output_substituted=>TensInstrOutputSubstituted !returns TRUE if the output tensor(s) is(are) substituted with a temporary one(s)
           procedure, public:: print_it=>TensInstrPrintIt                     !prints
           final:: tens_instr_dtor                                            !dtor
@@ -349,10 +351,12 @@
  !tens_instr_t:
         private TensInstrCtor
         private TensInstrEncode
-        private TensInstrDependencyFree
         private TensInstrGetCacheEntries
         private TensInstrGetFlops
         private TensInstrGetOperation
+        private TensInstrMarkIssue
+        private TensInstrMarkCompletion
+        private TensInstrDependencyFree
         private TensInstrOutputSubstituted
         private TensInstrPrintIt
         public tens_instr_dtor
@@ -2200,73 +2204,6 @@
          end subroutine encode_instr_tens_contract
 
         end subroutine TensInstrEncode
-!--------------------------------------------------------------
-        function TensInstrDependencyFree(this,ierr) result(res)
-!Returns TRUE if the tensor instruction is dependency-free(locally).
-         implicit none
-         logical:: res                               !out: answer
-         class(tens_instr_t), intent(in):: this      !in: active tensor instruction
-         integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc,n,i,sts
-         class(ds_oprnd_t), pointer:: oprnd
-
-         res=.TRUE.
-         if(.not.this%is_empty(errc)) then
-          if(errc.eq.DSVP_SUCCESS) then
-           n=this%get_num_operands(errc)
-           if(errc.eq.DSVP_SUCCESS) then
-            if(n.gt.0) then
- !Check the output tensor operand:
-             oprnd=>this%get_operand(0,errc) !`Assumes output tensor operand #0
-             if(errc.eq.DSVP_SUCCESS) then
-              select type(oprnd)
-              class is(tens_oprnd_t)
-               sts=oprnd%get_tensor_status(errc)
-               if(errc.eq.0) then
-                if(sts.gt.TEREC_BODY_DEF) res=.FALSE. !output tensor must not be in-use
-               else
-                errc=-9
-               endif
-              class default
-               errc=-8
-              end select
-             else
-              errc=-7
-             endif
- !Check the input tensor operands:
-             if(errc.eq.0.and.res) then
-              do i=1,n-1 !`Assumes output tensor operand #0
-               oprnd=>this%get_operand(i,errc)
-               if(errc.eq.DSVP_SUCCESS) then
-                select type(oprnd)
-                class is(tens_oprnd_t)
-                 sts=oprnd%get_tensor_status(errc)
-                 if(errc.eq.0) then
-                  if(sts.lt.TEREC_BODY_DEF) then; res=.FALSE.; exit; endif !input tensor must not be updated/undefined
-                 else
-                  errc=-6; exit
-                 endif
-                class default
-                 errc=-5; exit
-                end select
-               else
-                errc=-4; exit
-               endif
-              enddo
-             endif
-            endif
-           else
-            errc=-3
-           endif
-          else
-           errc=-2
-          endif
-         else
-          errc=-1
-         endif
-         if(present(ierr)) ierr=errc
-         return
-        end function TensInstrDependencyFree
 !-------------------------------------------------------------------------------
         subroutine TensInstrGetCacheEntries(this,cache_entries,num_entries,ierr)
 !Returns an array of references to tensor cache entries associated with the tensor operands.
@@ -2435,6 +2372,195 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensInstrGetOperation
+!-----------------------------------------------
+        subroutine TensInstrMarkIssue(this,ierr)
+!Updates the tensor value status for each tensor operand as if the tensor instruction was issued:
+!Output tensor operand: {TEREC_BODY_UNDEF,TEREC_BODY_DEF} --> {TEREC_BODY_UPDATE};
+!Input tensor operands: {TEREC_BODY_DEF,TEREC_BODY_USED} --> {TEREC_BODY_USED}.
+         implicit none
+         class(tens_instr_t), intent(inout):: this   !in: active tensor instruction
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc,i,n,sts
+         class(ds_oprnd_t), pointer:: oprnd
+
+         if(.not.this%is_empty(errc)) then
+          if(errc.eq.DSVP_SUCCESS) then
+           n=this%get_num_operands(errc)
+           if(errc.eq.DSVP_SUCCESS) then
+            if(n.gt.0) then
+!$OMP CRITICAL (TAVP_WRK_CACHE)
+             do i=0,n-1
+              oprnd=>this%get_operand(i,errc)
+              if(errc.eq.DSVP_SUCCESS.and.associated(oprnd)) then
+               select type(oprnd)
+               class is(tens_oprnd_t)
+                sts=oprnd%get_tensor_status(errc); if(errc.ne.0) then; errc=-10; exit; endif
+                if(i.eq.0) then !output tensor operand `Assumes output operand #0
+                 if(sts.eq.TEREC_BODY_DEF.or.sts.eq.TEREC_BODY_UNDEF) then
+                  call oprnd%update_tensor_status(TEREC_BODY_UPDATE,errc); if(errc.ne.0) then; errc=-9; exit; endif
+                 else
+                  errc=-8; exit
+                 endif
+                else !input tensor operand
+                 if(sts.ge.TEREC_BODY_DEF) then
+                  sts=sts+1 !increase use (reference) count by one
+                  call oprnd%update_tensor_status(sts,errc); if(errc.ne.0) then; errc=-7; exit; endif
+                 else
+                  errc=-6; exit
+                 endif
+                endif
+               class default
+                errc=-5; exit
+               end select
+              else
+               errc=-4; exit
+              endif
+             enddo
+!$OMP END CRITICAL (TAVP_WRK_CACHE)
+            endif
+           else
+            errc=-3
+           endif
+          else
+           errc=-2
+          endif
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensInstrMarkIssue
+!-------------------------------------------------------------------
+        subroutine TensInstrMarkCompletion(this,error_occurred,ierr)
+!Updates the tensor value status for each tensor operand as if the tensor instruction was completed:
+!Output tensor operand: {TEREC_BODY_UPDATE} --> {TEREC_BODY_DEF,TEREC_BODY_UNDEF};
+!Input tensor operands: {TEREC_BODY_USED} --> {TEREC_BODY_USED,TEREC_BODY_DEF}.
+         implicit none
+         class(tens_instr_t), intent(inout):: this   !in: active tensor instruction
+         logical, intent(in):: error_occurred        !in: whether or not an error occurred during instruction execution
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc,i,n,sts
+         class(ds_oprnd_t), pointer:: oprnd
+
+         if(.not.this%is_empty(errc)) then
+          if(errc.eq.DSVP_SUCCESS) then
+           n=this%get_num_operands(errc)
+           if(errc.eq.DSVP_SUCCESS) then
+            if(n.gt.0) then
+!$OMP CRITICAL (TAVP_WRK_CACHE)
+             do i=0,n-1
+              oprnd=>this%get_operand(i,errc)
+              if(errc.eq.DSVP_SUCCESS.and.associated(oprnd)) then
+               select type(oprnd)
+               class is(tens_oprnd_t)
+                sts=oprnd%get_tensor_status(errc); if(errc.ne.0) then; errc=-10; exit; endif
+                if(i.eq.0) then !output tensor operand `Assumes output operand #0
+                 if(sts.eq.TEREC_BODY_UPDATE) then
+                  if(.not.error_occurred) then
+                   call oprnd%update_tensor_status(TEREC_BODY_DEF,errc)
+                  else
+                   call oprnd%update_tensor_status(TEREC_BODY_UNDEF,errc)
+                  endif
+                  if(errc.ne.0) then; errc=-9; exit; endif
+                 else
+                  errc=-8; exit
+                 endif
+                else !input tensor operand
+                 if(sts.gt.TEREC_BODY_DEF) then
+                  sts=sts-1 !decrease use (reference) count by one
+                  call oprnd%update_tensor_status(sts,errc); if(errc.ne.0) then; errc=-7; exit; endif
+                 else
+                  errc=-6; exit
+                 endif
+                endif
+               class default
+                errc=-5; exit
+               end select
+              else
+               errc=-4; exit
+              endif
+             enddo
+!$OMP END CRITICAL (TAVP_WRK_CACHE)
+            endif
+           else
+            errc=-3
+           endif
+          else
+           errc=-2
+          endif
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensInstrMarkCompletion
+!--------------------------------------------------------------
+        function TensInstrDependencyFree(this,ierr) result(res)
+!Returns TRUE if the tensor instruction is dependency-free(locally).
+         implicit none
+         logical:: res                               !out: answer
+         class(tens_instr_t), intent(in):: this      !in: active tensor instruction
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc,n,i,sts
+         class(ds_oprnd_t), pointer:: oprnd
+
+         res=.TRUE.
+         if(.not.this%is_empty(errc)) then
+          if(errc.eq.DSVP_SUCCESS) then
+           n=this%get_num_operands(errc)
+           if(errc.eq.DSVP_SUCCESS) then
+            if(n.gt.0) then
+ !Check the output tensor operand:
+             oprnd=>this%get_operand(0,errc) !`Assumes output tensor operand #0
+             if(errc.eq.DSVP_SUCCESS) then
+              select type(oprnd)
+              class is(tens_oprnd_t)
+               sts=oprnd%get_tensor_status(errc)
+               if(errc.eq.0) then
+                if(sts.gt.TEREC_BODY_DEF) res=.FALSE. !output tensor must not be in-use
+               else
+                errc=-9
+               endif
+              class default
+               errc=-8
+              end select
+             else
+              errc=-7
+             endif
+ !Check the input tensor operands:
+             if(errc.eq.0.and.res) then
+              do i=1,n-1 !`Assumes output tensor operand #0
+               oprnd=>this%get_operand(i,errc)
+               if(errc.eq.DSVP_SUCCESS) then
+                select type(oprnd)
+                class is(tens_oprnd_t)
+                 sts=oprnd%get_tensor_status(errc)
+                 if(errc.eq.0) then
+                  if(sts.lt.TEREC_BODY_DEF) then; res=.FALSE.; exit; endif !input tensor must not be updated/undefined
+                 else
+                  errc=-6; exit
+                 endif
+                class default
+                 errc=-5; exit
+                end select
+               else
+                errc=-4; exit
+               endif
+              enddo
+             endif
+            endif
+           else
+            errc=-3
+           endif
+          else
+           errc=-2
+          endif
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function TensInstrDependencyFree
 !-----------------------------------------------------------------
         function TensInstrOutputSubstituted(this,ierr) result(res)
 !Returns TRUE if the (persistent) output tensor operand (#0) is substituted with a temporary tensor.
@@ -3167,7 +3293,7 @@
          integer(INTD), intent(out), optional:: ierr       !out: error code
          integer(INTD):: errc,ier,thid,n,num_staged,opcode,sts,errcode
          integer:: rsc_timer
-         logical:: active,stopping,expired
+         logical:: active,stopping,auxiliary,expired
          class(dsvp_t), pointer:: dsvp
          class(tavp_wrk_t), pointer:: tavp
          type(tens_instr_t):: instr_fence
@@ -3215,20 +3341,53 @@
  !Rename output tensor operands, check data dependencies, and acquire resources for input tensor operands:
           ier=this%iqueue%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
           if(this%iqueue%get_status().eq.GFC_IT_ACTIVE) then
-           ier=GFC_SUCCESS
+           auxiliary=.FALSE.; ier=GFC_SUCCESS
            rloop: do while(ier.eq.GFC_SUCCESS)
+  !Extract an instruction:
             uptr=>this%iqueue%get_value(ier); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
             instr=>NULL(); select type(uptr); class is(tens_instr_t); instr=>uptr; end select
             if((.not.associated(instr)).and.errc.eq.0) then; errc=-1; exit wloop; endif !trap
             opcode=instr%get_code(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
             sts=instr%get_status(ier,errcode); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
             if(sts.ne.DS_INSTR_NEW.and.errc.eq.0) then; errc=-1; exit wloop; endif !trap
-
+            call instr%set_status(DS_INSTR_RSC_WAIT,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+  !Process the instruction according to its category:
+            if(opcode.ge.TAVP_ISA_TENS_FIRST.and.opcode.le.TAVP_ISA_TENS_LAST) then !tensor instruction
+             if(.not.(stopping.or.auxiliary)) then
+   !Check data dependencies:
+              
+   !Update data dependencies:
+              
+   !Acquire resources for input arguments (if available):
+              
+             else
+              if(errc.eq.0) then; errc=-1; exit wloop; endif
+             endif
+            elseif(opcode.ge.TAVP_ISA_CTRL_FIRST.and.opcode.le.TAVP_ISA_CTRL_LAST) then !control instruction
+             if(.not.stopping) then
+              if(opcode.eq.TAVP_INSTR_CTRL_STOP.or.opcode.eq.TAVP_INSTR_CTRL_PAUSE) stopping=.TRUE. !`CTRL STOP and PAUSE are treated the same
+              call instr%set_status(DS_INSTR_INPUT_WAIT,ier)
+              if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+              ier=this%iqueue%move_elem(this%stg_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+             else
+              if(errc.eq.0) then; errc=-1; exit wloop; endif
+             endif
+            else !auixiliary instruction
+             if(.not.stopping) then
+              auxiliary=.TRUE.
+              call instr%set_status(DS_INSTR_INPUT_WAIT,ier)
+              if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+              ier=this%iqueue%move_elem(this%stg_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+             else
+              if(errc.eq.0) then; errc=-1; exit wloop; endif
+             endif
+            endif
             ier=this%iqueue%next()
            enddo rloop
            if(ier.ne.GFC_NO_MOVE.and.errc.eq.0) then; errc=-1; exit wloop; endif
           endif
 
+          active=(.not.stopping)
          enddo wloop
 !Destroy the timer:
          ier=timer_destroy(rsc_timer); if(ier.ne.TIMERS_SUCCESS.and.errc.eq.0) errc=-3
