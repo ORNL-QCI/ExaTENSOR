@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/02/22
+!REVISION: 2018/02/27
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -33,11 +33,6 @@
 !    e) Laid-Out: Tensor layout is defined (means the tensor will be physically stored as a whole);
 !    f) Mapped: Tensor body is physically mapped to a contiguous chunk of memory.
 !   The tensor body is considered defined if the tensor is at least Structured.
-! # Tensor body value definition stages:
-!    a) TEREC_BODY_UNDEF=-2: Tensor body value is undefined;
-!    b) TEREC_BODY_UPDATE=-1: Tensor body value is currently being updated and cannot be used;
-!    c) TEREC_BODY_DEF=0: Tensor body value is defined but not currently used (reference count = 0);
-!    d) TEREC_BODY_USED>0: Tensor body is defined and is currently being used in a tensor operation (reference count > 0).
         use tensor_algebra !includes dil_basic
         use stsubs
         use timers
@@ -89,11 +84,6 @@
         integer(INTD), parameter, public:: TEREC_IND_RESTR_LE=3   !indices within the group are <= ordered: i1 <= i2 <= i3
         integer(INTD), parameter, public:: TEREC_IND_RESTR_GE=4   !indices within the group are >= ordered i1 >= i2 >= i3
         integer(INTD), parameter, public:: TEREC_NUM_IND_RESTR=5  !total number of index restrictions (0..max)
- !Tensor body value state:
-        integer(INTD), parameter, public:: TEREC_BODY_UNDEF=-2    !tensor body value is undefined
-        integer(INTD), parameter, public:: TEREC_BODY_UPDATE=-1   !tensor body value is currently being updated
-        integer(INTD), parameter, public:: TEREC_BODY_DEF=0       !tensor body value is defined but currently not used
-        integer(INTD), parameter, public:: TEREC_BODY_USED=1      !tensor body value is defined and is currently being used (any positive number is the reference count here)
 !TYPES:
  !Register of hierarchical spaces:
         type, private:: hspace_register_t
@@ -255,7 +245,6 @@
         end type tens_layout_fdims_t
  !Tensor body [NO COPY PER SE]:
         type, public:: tens_body_t
-         integer(INTD), private:: state=TEREC_BODY_UNDEF      !tensor body value state: {TEREC_BODY_UNDEF,TEREC_BODY_UPDATE,TEREC_BODY_DEF,TEREC_BODY_USED}
          integer(INTD), private:: num_subtensors=0            !number of subtensors in the subtensor composition list
          type(list_bi_t), private:: subtensors                !list of constituent tensors in terms of tensor headers
          class(tens_layout_t), allocatable, private:: layout  !tensor block storage layout (if physically stored as a whole)
@@ -268,10 +257,6 @@
           procedure, public:: add_subtensor=>TensBodyAddSubtensor   !registers a constituent subtensor by providing its tensor header
           procedure, public:: set_layout=>TensBodySetLayout         !sets the tensor body storage layout if physically stored as a whole
           procedure, public:: set_location=>TensBodySetLocation     !sets the tensor body data location if physically stored as a whole (via a DDSS data descriptor)
-          procedure, public:: reset_state=>TensBodyResetState       !resets the state of the tensor body value
-          procedure, public:: incr_use_state=>TensBodyIncrUseState  !increments the reference count for a defined tensor body
-          procedure, public:: decr_use_state=>TensBodyDecrUseState  !decrements the reference count for a defined tensor body
-          procedure, public:: get_state=>TensBodyGetState           !returns the state of the tensor body value: Non-positive {TEREC_BODY_UNDEF,TEREC_BODY_UPDATE,TEREC_BODY_DEF} or positive number (reference count)
           procedure, public:: get_layout=>TensBodyGetLayout         !returns a pointer to the tensor body storage layout
           procedure, public:: get_num_subtensors=>TensBodyGetNumSubtensors !returns the total number of constituent subtensors
           procedure, public:: get_subtensors=>TensBodyGetSubtensors !returns a pointer to the list of constituent subtensors (each subtensor is represented by a tensor header)
@@ -309,10 +294,6 @@
           procedure, public:: get_layout=>TensRcrsvGetLayout         !returns a pointer to the tensor body storage layout
           procedure, public:: set_location=>TensRcrsvSetLocation     !sets the physical location of the tensor body data
           procedure, public:: update=>TensRcrsvUpdate                !updates the tensor information (new resolution -> new layout -> new body)
-          procedure, public:: reset_state=>TensRcrsvResetState       !resets the state of the tensor body value
-          procedure, public:: incr_use_state=>TensRcrsvIncrUseState  !increments the reference count for a defined tensor body
-          procedure, public:: decr_use_state=>TensRcrsvDecrUseState  !decrements the reference count for a defined tensor body
-          procedure, public:: get_state=>TensRcrsvGetState           !returns the state of the tensor body value: Non-positive {TEREC_BODY_UNDEF,TEREC_BODY_UPDATE,TEREC_BODY_DEF} or positive number (reference count)
           procedure, public:: get_header=>TensRcrsvGetHeader         !returns a pointer to the tensor header
           procedure, public:: get_body=>TensRcrsvGetBody             !returns a pointer to the tensor body
           procedure, public:: get_descriptor=>TensRcrsvGetDescriptor !returns a tensor descriptor uniquely characterizing tensor signature, shape, layout, and location
@@ -658,10 +639,6 @@
         private TensBodyAddSubtensor
         private TensBodySetLayout
         private TensBodySetLocation
-        private TensBodyResetState
-        private TensBodyIncrUseState
-        private TensBodyDecrUseState
-        private TensBodyGetState
         private TensBodyGetLayout
         private TensBodyGetNumSubtensors
         private TensBodyGetSubtensors
@@ -691,10 +668,6 @@
         private TensRcrsvGetLayout
         private TensRcrsvSetLocation
         private TensRcrsvUpdate
-        private TensRcrsvResetState
-        private TensRcrsvIncrUseState
-        private TensRcrsvDecrUseState
-        private TensRcrsvGetState
         private TensRcrsvGetHeader
         private TensRcrsvGetBody
         private TensRcrsvGetDescriptor
@@ -3530,7 +3503,6 @@
          logical:: laid
 
          call unpack_builtin(packet,laid,errc)
-         if(errc.eq.PACK_SUCCESS) call unpack_builtin(packet,this%state,errc)
          if(errc.eq.PACK_SUCCESS) call unpack_builtin(packet,this%num_subtensors,errc)
          if(errc.eq.PACK_SUCCESS.and.laid) then
           call unpack_builtin(packet,lay,errc)
@@ -3585,7 +3557,6 @@
          logical:: laid
 
          laid=allocated(this%layout); call pack_builtin(packet,laid,errc)
-         if(errc.eq.PACK_SUCCESS) call pack_builtin(packet,this%state,errc)
          if(errc.eq.PACK_SUCCESS) call pack_builtin(packet,this%num_subtensors,errc)
          if(errc.eq.PACK_SUCCESS.and.laid) then
           call pack_builtin(packet,this%layout%layout,errc)
@@ -3762,21 +3733,19 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensBodySetLayout
-!----------------------------------------------------------------------
-        subroutine TensBodySetLocation(this,data_descr,ierr,body_state)
+!-----------------------------------------------------------
+        subroutine TensBodySetLocation(this,data_descr,ierr)
 !Sets the physical location of the tensor body via a DDSS data descriptor.
          implicit none
          class(tens_body_t), intent(inout):: this         !inout: tensor body
          class(DataDescr_t), intent(in):: data_descr      !in: DDSS data descriptor for tensor body (will be cloned)
          integer(INTD), intent(out), optional:: ierr      !out: error code
-         integer(INTD), intent(in), optional:: body_state !in: tensor body value state
          integer(INTD):: errc
          logical:: layd,locd
 
          if(this%is_set(errc,layd,locd)) then
           if(errc.eq.TEREC_SUCCESS.and.layd.and.(.not.locd)) then
            call this%layout%set_location(data_descr,errc)
-           if(errc.eq.TEREC_SUCCESS.and.present(body_state)) this%state=body_state
           else
            errc=TEREC_INVALID_REQUEST
           endif
@@ -3786,74 +3755,6 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensBodySetLocation
-!----------------------------------------------------------
-        subroutine TensBodyResetState(this,ierr,body_state)
-!Resets the tensor body value state.
-         implicit none
-         class(tens_body_t), intent(inout):: this         !inout: tensor body
-         integer(INTD), intent(out), optional:: ierr      !out: error code
-         integer(INTD), intent(in), optional:: body_state !in: new body state (none will reset to TEREC_BODY_UNDEF)
-         integer(INTD):: errc
-
-         errc=TEREC_SUCCESS
-         if(present(body_state)) then
-          this%state=body_state
-         else
-          this%state=TEREC_BODY_UNDEF
-         endif
-         if(present(ierr)) ierr=errc
-         return
-        end subroutine TensBodyResetState
-!-------------------------------------------------
-        subroutine TensBodyIncrUseState(this,ierr)
-!Increments the reference count for defined tensor bodies.
-         implicit none
-         class(tens_body_t), intent(inout):: this    !inout: defined tensor body
-         integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc
-
-         errc=TEREC_SUCCESS
-         if(this%state.ge.0) then
-          this%state=this%state+1
-         else
-          errc=TEREC_INVALID_REQUEST
-         endif
-         if(present(ierr)) ierr=errc
-         return
-        end subroutine TensBodyIncrUseState
-!-------------------------------------------------
-        subroutine TensBodyDecrUseState(this,ierr)
-!Decrements the reference count for defined tensor bodies.
-         implicit none
-         class(tens_body_t), intent(inout):: this    !inout: defined tensor body with a non-zero reference count
-         integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc
-
-         errc=TEREC_SUCCESS
-         if(this%state.gt.0) then
-          this%state=this%state-1
-         else
-          errc=TEREC_INVALID_REQUEST
-         endif
-         if(present(ierr)) ierr=errc
-         return
-        end subroutine TensBodyDecrUseState
-!--------------------------------------------------------------
-        function TensBodyGetState(this,ierr) result(body_state)
-!Returns the state of the tensor body value:
-!Non-positive {TEREC_BODY_UNDEF,TEREC_BODY_UPDATE,TEREC_BODY_DEF} or
-!a positive number (TEREC_BODY_USED) equal to the current reference count.
-         implicit none
-         integer(INTD):: body_state                  !out: tensor body value state
-         class(tens_body_t), intent(in):: this       !in: tensor body
-         integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc
-
-         errc=TEREC_SUCCESS
-         body_state=this%state
-         if(present(ierr)) ierr=errc
-         return
-        end function TensBodyGetState
 !-------------------------------------------------------------
         function TensBodyGetLayout(this,ierr) result(layout_p)
 !Returns a pointer to the tensor body storage layout.
@@ -4037,8 +3938,6 @@
           write(dev,'("TENSOR BODY{")')
           do i=1,nspaces; write(dev,'(" ")',ADVANCE='NO'); enddo
           write(dev,'(" Number of subtensors    = ",i7)') this%num_subtensors
-          do i=1,nspaces; write(dev,'(" ")',ADVANCE='NO'); enddo
-          write(dev,'(" Tensor body value state = ",i7)') this%state
           tens_layout=>this%get_layout()
           if(associated(tens_layout)) then
            do i=1,nspaces; write(dev,'(" ")',ADVANCE='NO'); enddo
@@ -4054,7 +3953,6 @@
          else
           write(dev,'("TENSOR BODY{")')
           write(dev,'(" Number of subtensors    = ",i7)') this%num_subtensors
-          write(dev,'(" Tensor body value state = ",i7)') this%state
           tens_layout=>this%get_layout()
           if(associated(tens_layout)) then
            write(dev,'(" Tensor body layout      = ",i7)') tens_layout%layout
@@ -4096,7 +3994,6 @@
          errc=lit%init(this%subtensors); if(errc.eq.GFC_SUCCESS) errc=lit%delete_all()
          errc=lit%release()
          this%num_subtensors=0
-         this%state=TEREC_BODY_UNDEF
          return
         end subroutine tens_body_dtor
 ![tens_rcrsv_t]=============================================================================================
@@ -4564,62 +4461,6 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensRcrsvUpdate
-!-----------------------------------------------------------
-        subroutine TensRcrsvResetState(this,ierr,body_state)
-!Resets the tensor body value state.
-         implicit none
-         class(tens_rcrsv_t), intent(inout):: this        !inout: tensor
-         integer(INTD), intent(out), optional:: ierr      !out: error code
-         integer(INTD), intent(in), optional:: body_state !in: tensor body value state
-         integer(INTD):: errc
-
-         if(present(body_state)) then
-          call this%body%reset_state(errc,body_state)
-         else
-          call this%body%reset_state(errc)
-         endif
-         if(present(ierr)) ierr=errc
-         return
-        end subroutine TensRcrsvResetState
-!--------------------------------------------------
-        subroutine TensRcrsvIncrUseState(this,ierr)
-!Increments the reference count for a defined tensor body.
-         implicit none
-         class(tens_rcrsv_t), intent(inout):: this   !inout: tensor with a defined body
-         integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc
-
-         call this%body%incr_use_state(errc)
-         if(present(ierr)) ierr=errc
-         return
-        end subroutine TensRcrsvIncrUseState
-!--------------------------------------------------
-        subroutine TensRcrsvDecrUseState(this,ierr)
-!Decrements the reference count for a defined tensor body.
-         implicit none
-         class(tens_rcrsv_t), intent(inout):: this   !inout: tensor with a defined body
-         integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc
-
-         call this%body%decr_use_state(errc)
-         if(present(ierr)) ierr=errc
-         return
-        end subroutine TensRcrsvDecrUseState
-!---------------------------------------------------------------
-        function TensRcrsvGetState(this,ierr) result(body_state)
-!Returns the state of the tensor body value:
-!Non-positive {TEREC_BODY_UNDEF,TEREC_BODY_UPDATE,TEREC_BODY_DEF} or
-!a positive number (TEREC_BODY_USED) equal to the current reference count.
-         implicit none
-         integer(INTD):: body_state                  !out: tensor body value state
-         class(tens_rcrsv_t), intent(in):: this      !in: tensor
-         integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc
-
-         body_state=this%body%get_state(errc)
-         if(present(ierr)) ierr=errc
-         return
-        end function TensRcrsvGetState
 !--------------------------------------------------------------
         function TensRcrsvGetHeader(this,ierr) result(header_p)
 !Returns a pointer to the tensor header.

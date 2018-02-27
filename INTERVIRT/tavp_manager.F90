@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/02/26
+!REVISION: 2018/02/27
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -40,24 +40,24 @@
 !       the data dependencies. In general, in order for a tensor instruction to get
 !       issued to the lower level of hierarchy, all its input arguments must be defined,
 !       that is, they must neither be undefined nor be currently updated. The only
-!       exception is when multiple tensor instructions with a READ-after-UPDATE
-!       dependency are issued to the same TAVP such that the latter can track the
-!       data dependencies locally. The output tensor operands do not have to be
-!       defined, that is, they can be either undefined or currently updated, or they
-!       even may not exist. In case an output operand does not exist, it will be
-!       created on-the-fly and initialized to zero. In case, an output operand is
-!       undefined but is existing, it will be initialized to zero before update.
-!       A tensor instruction is considered completed when all its subinstructions
-!       have completed. A tensor instruction is considered completed successfully
-!       when all its subinstructions have completed successfully, otherwise it is
-!       considered completed with error (some subinstructions have completed with error).
+!       exception is when multiple tensor instructions with data dependencies are issued
+!       to the same TAVP such that the latter can track the data dependencies locally.
+!       The output tensor operands do not have to be defined, that is, they can be either
+!       undefined or currently updated, or they even may not exist. In case an output
+!       operand does not exist, it will be created on-the-fly and initialized to zero.
+!       In case, an output operand is undefined but is existing, it will be initialized
+!       to zero before update. A tensor instruction is considered completed when all its
+!       subinstructions have completed. A tensor instruction is considered completed
+!       successfully when all its subinstructions have completed successfully, otherwise it
+!       is considered completed with error (some subinstructions have completed with error).
 ! # TENSOR INSTRUCTION FORMAT:
 !    0. Instruction id;
 !    1. Instruction code (opcode);
 !    2. Instruction status;
 !    3. Instruction error code;
 !    4. Instruction control field (optional);
-!    5. Instruction operands (optional): {Owner_ID,Tensor} for each operand.
+!    5. Instruction operands (optional):
+!        {Owner_id,Read_count,Write_count,Tensor} for each tensor operand.
 ! # TENSOR INSTRUCTION NUMERATION:
 !   (A) The DRIVER MPI process constructs all instructions, gives them their IDs,
 !       and sends them to the root TAVP-MNG.
@@ -107,10 +107,10 @@
 !   (A) The tensor metadata is distributed horizontally at each level of the TAVP-MNG hierarchy.
 !       During the metadata location cycle, each tensor instruction gets its tensor operand
 !       metadata located. If specific tensor metadata is present in multiple locations, the
-!       most complete and closest from the left instance will be used in the tensor instruction.
+!       most complete and closest from the left instance will be used by the tensor instruction.
 !ISSUES:
 ! # Cloning <tens_instr_t> when calling container.append(tens_instr_t): Check clonability.
-! # Check the tensor status update logic.
+
         use virta
         use gfc_base
         use gfc_list
@@ -165,19 +165,23 @@
          class(tens_entry_mng_t), pointer, private:: cache_entry=>NULL() !non-owning pointer to a tensor cache entry where the tensor is stored (optional)
          integer(INTD), private:: owner_id=-1                            !non-negative tensor meta-data owner id (TAVP-MNG id), normally a copy of the value from the tensor cache entry (optional)
          contains
-          procedure, private:: TensOprndCtor                    !ctor
+          procedure, private:: TensOprndCtor                             !ctor
           generic, public:: tens_oprnd_ctor=>TensOprndCtor
-          procedure, public:: get_tensor=>TensOprndGetTensor    !returns a pointer to the tensor
-          procedure, public:: get_cache_entry=>TensOprndGetCacheEntry !returns a pointer to the tensor cache entry (may be NULL)
-          procedure, public:: set_cache_entry=>TensOprndSetCacheEntry !sets the associated tensor cache entry (may be NULL)
-          procedure, public:: get_owner_id=>TensOprndGetOwnerId !returns the tensor owner id
-          procedure, public:: set_owner_id=>TensOprndSetOwnerId !sets the tensor owner id (with or without cache update)
-          procedure, public:: sync_owner_id=>TensOprndSyncOwnerId !synchronizes the tensor owner id between public cache and private reference
-          procedure, public:: is_located=>TensOprndIsLocated    !returns TRUE if the tensor operand has been located (its structure is known)
-          procedure, public:: is_remote=>TensOprndIsRemote      !returns TRUE if the tensor operand is remote
-          procedure, public:: is_valued=>TensOprndIsValued      !returns TRUE if the tensor operand is set to some value (neither undefined nor being updated)
-          procedure, public:: update_tensor_status=>TensOprndUpdateTensorStatus !updates the tensor value status
-          procedure, public:: get_tensor_status=>TensOprndGetTensorStatus !returns the tensor value status
+          procedure, public:: get_tensor=>TensOprndGetTensor             !returns a pointer to the tensor
+          procedure, public:: get_cache_entry=>TensOprndGetCacheEntry    !returns a pointer to the tensor cache entry (may be NULL)
+          procedure, public:: set_cache_entry=>TensOprndSetCacheEntry    !sets the associated tensor cache entry (may be NULL)
+          procedure, public:: get_owner_id=>TensOprndGetOwnerId          !returns the tensor owner id
+          procedure, public:: set_owner_id=>TensOprndSetOwnerId          !sets the tensor owner id (with or without cache update)
+          procedure, public:: sync_owner_id=>TensOprndSyncOwnerId        !synchronizes the tensor owner id between public cache and private reference
+          procedure, public:: register_read=>TensOprndRegisterRead       !registers a new read access on the tensor operand
+          procedure, public:: unregister_read=>TensOprndUnregisterRead   !unregisters a read access on the tensor operand
+          procedure, public:: get_read_count=>TensOprndGetReadCount      !returns the current read access count on the tensor operand
+          procedure, public:: register_write=>TensOprndRegisterWrite     !registers a new write access on the tensor operand
+          procedure, public:: unregister_write=>TensOprndUnregisterWrite !unregisters a write access on the tensor operand
+          procedure, public:: get_write_count=>TensOprndGetWriteCount    !returns the current read access count on the tensor operand
+          procedure, public:: is_located=>TensOprndIsLocated             !returns TRUE if the tensor operand has been located (its structure is known)
+          procedure, public:: is_remote=>TensOprndIsRemote               !returns TRUE if the tensor operand is remote
+          procedure, public:: is_valued=>TensOprndIsValued               !returns TRUE if the tensor operand is set to some value (neither undefined nor being updated)
           procedure, public:: acquire_rsc=>TensOprndAcquireRsc  !explicitly acquires local resources for the tensor operand
           procedure, public:: prefetch=>TensOprndPrefetch       !starts prefetching the remote tensor operand (acquires local resources!)
           procedure, public:: upload=>TensOprndUpload           !starts uploading the tensor operand to its remote location
@@ -196,7 +200,7 @@
           generic, public:: tens_instr_ctor=>TensInstrCtor
           procedure, public:: encode=>TensInstrEncode                     !encoding procedure: Packs the tensor instruction into a raw byte packet
           procedure, public:: fully_located=>TensInstrFullyLocated        !returns TRUE if the tensor instruction operands have been fully located (their structure is known), FALSE otherwise
-          procedure, public:: get_out_operands=>TensInstrGetOutOperands   !returns the list of the output operands by their positions
+          procedure, public:: get_output_operands=>TensInstrGetOutputOperands !returns the list of the output operands by their positions
           procedure, public:: get_cache_entries=>TensInstrGetCacheEntries !returns an array of references to tensor cache entries used by the tensor operands
           procedure, public:: get_flops=>TensInstrGetFlops                !returns an estimate of the total number of required Flops (mul/add) and memory Words
           procedure, public:: get_operation=>TensInstrGetOperation        !returns back the encapsulated tensor operation
@@ -427,11 +431,15 @@
         private TensOprndGetOwnerId
         private TensOprndSetOwnerId
         private TensOprndSyncOwnerId
+        private TensOprndRegisterRead
+        private TensOprndUnregisterRead
+        private TensOprndGetReadCount
+        private TensOprndRegisterWrite
+        private TensOprndUnregisterWrite
+        private TensOprndGetWriteCount
         private TensOprndIsLocated
         private TensOprndIsRemote
         private TensOprndIsValued
-        private TensOprndUpdateTensorStatus
-        private TensOprndGetTensorStatus
         private TensOprndAcquireRsc
         private TensOprndPrefetch
         private TensOprndUpload
@@ -444,7 +452,7 @@
         private TensInstrCtor
         private TensInstrEncode
         private TensInstrFullyLocated
-        private TensInstrGetOutOperands
+        private TensInstrGetOutputOperands
         private TensInstrGetCacheEntries
         private TensInstrGetFlops
         private TensInstrGetOperation
@@ -801,10 +809,12 @@
 
          if(this%is_active(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
+!$OMP CRITICAL (TAVP_MNG_CACHE)
            if(associated(this%cache_entry)) then
             this%owner_id=this%cache_entry%get_owner_id(errc)
             if(errc.ne.0) errc=-3
            endif
+!$OMP END CRITICAL (TAVP_MNG_CACHE)
           else
            errc=-2
           endif
@@ -814,6 +824,92 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensOprndSyncOwnerId
+!--------------------------------------------------
+        subroutine TensOprndRegisterRead(this,ierr)
+!Registers a read access on the tensor operand. In case the tensor
+!operand is not associated with a tensor cache entry, does nothing.
+         implicit none
+         class(tens_oprnd_t), intent(inout):: this   !inout: active tensor operand
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=0
+         if(associated(this%cache_entry)) call this%cache_entry%incr_read_count()
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensOprndRegisterRead
+!----------------------------------------------------
+        subroutine TensOprndUnregisterRead(this,ierr)
+!Unregisters a read access on the tensor operand. In case the tensor
+!operand is not associated with a tensor cache entry, does nothing.
+         implicit none
+         class(tens_oprnd_t), intent(inout):: this   !inout: active tensor operand
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=0
+         if(associated(this%cache_entry)) call this%cache_entry%decr_read_count()
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensOprndUnregisterRead
+!--------------------------------------------------------------
+        function TensOprndGetReadCount(this,ierr) result(count)
+!Returns the current read access count on the tensor operand. In case the tensor
+!operand is not associated with a tensor cache entry, returns zero.
+         implicit none
+         integer(INTD):: count                       !out: read count
+         class(tens_oprnd_t), intent(in):: this      !in: active tensor operand
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=0; count=0
+         if(associated(this%cache_entry)) count=this%cache_entry%get_read_count()
+         if(present(ierr)) ierr=errc
+         return
+        end function TensOprndGetReadCount
+!---------------------------------------------------
+        subroutine TensOprndRegisterWrite(this,ierr)
+!Registers a write access on the tensor operand. In case the tensor
+!operand is not associated with a tensor cache entry, does nothing.
+         implicit none
+         class(tens_oprnd_t), intent(inout):: this   !inout: active tensor operand
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=0
+         if(associated(this%cache_entry)) call this%cache_entry%incr_write_count()
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensOprndRegisterWrite
+!-----------------------------------------------------
+        subroutine TensOprndUnregisterWrite(this,ierr)
+!Unregisters a write access on the tensor operand. In case the tensor
+!operand is not associated with a tensor cache entry, does nothing.
+         implicit none
+         class(tens_oprnd_t), intent(inout):: this   !inout: active tensor operand
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=0
+         if(associated(this%cache_entry)) call this%cache_entry%decr_write_count()
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensOprndUnregisterWrite
+!---------------------------------------------------------------
+        function TensOprndGetWriteCount(this,ierr) result(count)
+!Returns the current write access count on the tensor operand. In case the tensor
+!operand is not associated with a tensor cache entry, returns zero.
+         implicit none
+         integer(INTD):: count                       !out: write count
+         class(tens_oprnd_t), intent(in):: this      !in: active tensor operand
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=0; count=0
+         if(associated(this%cache_entry)) count=this%cache_entry%get_write_count()
+         if(present(ierr)) ierr=errc
+         return
+        end function TensOprndGetWriteCount
 !---------------------------------------------------------
         function TensOprndIsLocated(this,ierr) result(res)
 !Returns TRUE if the tensor operand has been located, FALSE otherwise.
@@ -886,7 +982,7 @@
 !Returns TRUE if the tensor operand is set to some value, FALSE otherwise.
 !By being set to some value, it means it is neither undefined nor being updated.
 !Note that the tensor does neither have to be physically mapped nor possess
-!a defined physical layout in order to be valued.
+!a defined physical layout in order to be valued for TAVP-MNG.
          implicit none
          logical:: res                               !out: result
          class(tens_oprnd_t), intent(in):: this      !in: active tensor operand
@@ -900,8 +996,7 @@
           if(associated(this%cache_entry)) call this%cache_entry%incr_use_count()
           if(this%tensor%is_set(errc,layed=laid,located=locd)) then
            if(errc.eq.TEREC_SUCCESS) then
-            res=(this%tensor%get_state(errc).ge.TEREC_BODY_DEF)
-            if(errc.ne.TEREC_SUCCESS) then; res=.FALSE.; errc=-4; endif
+            res=(this%get_write_count().eq.0) !no one currently writes to this tensor => DEFINED
            else
             errc=-3
            endif
@@ -916,70 +1011,6 @@
          if(present(ierr)) ierr=errc
          return
         end function TensOprndIsValued
-!------------------------------------------------------------
-        subroutine TensOprndUpdateTensorStatus(this,sts,ierr)
-!Updates the tensor value status.
-         implicit none
-         class(tens_oprnd_t), intent(inout):: this   !in: active tensor operand
-         integer(INTD), intent(in):: sts             !in: new status
-         integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc,st
-
-         errc=0
-!$OMP CRITICAL (TAVP_MNG_CACHE)
-         if(associated(this%tensor)) then
-          if(associated(this%cache_entry)) call this%cache_entry%incr_use_count()
-          st=this%tensor%get_state(errc) !current tensor value status
-          if(errc.eq.TEREC_SUCCESS) then
-           if(sts.ne.st) then
-            if(sts.eq.TEREC_BODY_UNDEF) then
-             if(st.ne.TEREC_BODY_DEF.and.st.ne.TEREC_BODY_UPDATE) errc=-8
-            elseif(sts.eq.TEREC_BODY_UPDATE) then
-             if(st.ne.TEREC_BODY_UNDEF.and.st.ne.TEREC_BODY_DEF) errc=-7
-            elseif(sts.eq.TEREC_BODY_DEF) then
-             if(st.ne.1.and.st.ne.TEREC_BODY_UPDATE) errc=-6 !positive status = use_count: Changes by one at a time
-            elseif(sts.gt.0) then !positive status = use count: Changes by one at a time
-             if(abs(sts-st).ne.1) errc=-5
-            else
-             errc=-4
-            endif
-            if(errc.eq.0) then
-             call this%tensor%reset_state(errc,sts); if(errc.ne.TEREC_SUCCESS) errc=-3
-            endif
-           endif
-          else
-           errc=-2
-          endif
-          if(associated(this%cache_entry)) call this%cache_entry%decr_use_count()
-         else
-          errc=-1
-         endif
-!$OMP END CRITICAL (TAVP_MNG_CACHE)
-         if(present(ierr)) ierr=errc
-         return
-        end subroutine TensOprndUpdateTensorStatus
-!---------------------------------------------------------------
-        function TensOprndGetTensorStatus(this,ierr) result(sts)
-!Returns the tensor value status.
-         implicit none
-         integer(INTD):: sts                         !out: tensor value status
-         class(tens_oprnd_t), intent(in):: this      !in: active tensor operand
-         integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc
-
-         errc=0; sts=TEREC_BODY_UNDEF
-!$OMP CRITICAL (TAVP_MNG_CACHE)
-         if(associated(this%tensor)) then
-          if(associated(this%cache_entry)) call this%cache_entry%incr_use_count()
-          sts=this%tensor%get_state(errc); if(errc.ne.TEREC_SUCCESS) errc=-2
-          if(associated(this%cache_entry)) call this%cache_entry%decr_use_count()
-         else
-          errc=-1
-         endif
-!$OMP END CRITICAL (TAVP_MNG_CACHE)
-         if(present(ierr)) ierr=errc
-         return
-        end function TensOprndGetTensorStatus
 !------------------------------------------------
         subroutine TensOprndAcquireRsc(this,ierr)
 !Acquires local resources for the remote tensor operand.
@@ -1358,13 +1389,13 @@
         end subroutine TensInstrCtor
 !---------------------------------------------------------
         subroutine TensInstrEncode(this,instr_packet,ierr)
-!Encodes a tensor instruction into the bytecode packet:
+!Encodes a tensor instruction into a bytecode packet:
 ! 0. Instruction id;
 ! 1. Instruction code;
 ! 2. Instruction status;
 ! 3. Instruction error code;
 ! 4. Instruction control field (optional);
-! 5. Instruction operands (optional): {Owner_ID,Tensor} for each operand.
+! 5. Instruction operands (optional): {Owner_id,Read_count,Write_count,Tensor} for each tensor operand.
          implicit none
          class(tens_instr_t), intent(in):: this          !in: defined tensor instruction
          class(obj_pack_t), intent(inout):: instr_packet !out: instruction bytecode packet
@@ -1444,7 +1475,6 @@
           integer(INTD), intent(out):: jerr
           class(ds_oprnd_t), pointer:: oprnd
           class(tens_rcrsv_t), pointer:: tensor
-          integer(INTD):: jown
 
           jerr=0
           oprnd=>this%get_operand(0,jerr)
@@ -1454,7 +1484,9 @@
             tensor=>oprnd%get_tensor(jerr)
             if(jerr.eq.0) then
              if(tensor%is_set()) then
-              jown=oprnd%get_owner_id(); call pack_builtin(instr_packet,jown,jerr)
+              call pack_builtin(instr_packet,oprnd%get_owner_id(),jerr)
+              if(jerr.eq.0) call pack_builtin(instr_packet,oprnd%get_read_count(),jerr)
+              if(jerr.eq.0) call pack_builtin(instr_packet,oprnd%get_write_count(),jerr)
               if(jerr.eq.0) call tensor%pack(instr_packet,jerr)
               if(jerr.ne.0) jerr=-5
              else
@@ -1478,7 +1510,7 @@
           !CONTRACT two tensors: tensor0+=tensor1*tensor2*scalar:
           !Packed format: {id|op_code|status|error|ctrl_tens_contr_t|tensor_operand0,tensor_operand1,tensor_operand2}
           integer(INTD), intent(out):: jerr
-          integer(INTD):: jj,jown
+          integer(INTD):: jj
           class(ds_oprnd_t), pointer:: oprnd
           class(tens_rcrsv_t), pointer:: tensor
           class(ds_instr_ctrl_t), pointer:: tens_contr_ctrl
@@ -1499,7 +1531,9 @@
              class is(tens_oprnd_t)
               tensor=>oprnd%get_tensor(jerr); if(jerr.ne.0) then; jerr=-5; exit; endif
               if(.not.tensor%is_set()) then; jerr=-4; exit; endif !trap
-              jown=oprnd%get_owner_id(); call pack_builtin(instr_packet,jown,jerr)
+              call pack_builtin(instr_packet,oprnd%get_owner_id(),jerr)
+              if(jerr.eq.0) call pack_builtin(instr_packet,oprnd%get_read_count(),jerr)
+              if(jerr.eq.0) call pack_builtin(instr_packet,oprnd%get_write_count(),jerr)
               if(jerr.eq.0) call tensor%pack(instr_packet,jerr)
               if(jerr.ne.0) then; jerr=-3; exit; endif
              class default
@@ -1569,8 +1603,8 @@
          if(present(ierr)) ierr=errc
          return
         end function TensInstrFullyLocated
-!----------------------------------------------------------------------------
-        function TensInstrGetOutOperands(this,ierr,num_oprs) result(out_oprs)
+!-------------------------------------------------------------------------------
+        function TensInstrGetOutputOperands(this,ierr,num_oprs) result(out_oprs)
 !Returns the list of the output tensor operands by their positions.
          implicit none
          integer(INTD), pointer:: out_oprs(:)            !out: positions of the output tensor instruction operands
@@ -1593,7 +1627,7 @@
          if(present(num_oprs)) num_oprs=n
          if(present(ierr)) ierr=errc
          return
-        end function TensInstrGetOutOperands
+        end function TensInstrGetOutputOperands
 !-------------------------------------------------------------------------------
         subroutine TensInstrGetCacheEntries(this,cache_entries,num_entries,ierr)
 !Returns an array of references to tensor cache entries associated with the tensor operands.
@@ -2152,7 +2186,7 @@
            class(ds_oprnd_t), pointer:: oprnd
            class(tens_cache_entry_t), pointer:: tens_entry
            class(tens_entry_mng_t), pointer:: tens_mng_entry
-           integer(INTD):: jj,jn,jown
+           integer(INTD):: jj,jn,jown,jread,jwrite
            logical:: stored,updated
 
            jn=ds_instr%get_num_operands(jerr)
@@ -2165,9 +2199,11 @@
               call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_RSC_UNAVAILABLE); jerr=-11; exit
              endif
              call unpack_builtin(instr_packet,jown,jerr) !tensor owner id
-             if(jerr.ne.PACK_SUCCESS) then
-              call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_BTC_BAD); jerr=-10; exit
-             endif
+             if(jerr.ne.PACK_SUCCESS) then; call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_BTC_BAD); jerr=-10; exit; endif
+             call unpack_builtin(instr_packet,jread,jerr) !tensor read access count
+             if(jerr.ne.PACK_SUCCESS) then; call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_BTC_BAD); jerr=-10; exit; endif
+             call unpack_builtin(instr_packet,jwrite,jerr) !tensor write access count
+             if(jerr.ne.PACK_SUCCESS) then; call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_BTC_BAD); jerr=-10; exit; endif
              call tensor_tmp%tens_rcrsv_ctor(instr_packet,jerr) !unpack tensor information into a temporary tensor
              if(jerr.ne.TEREC_SUCCESS) then
               if(DEBUG.gt.0) then
@@ -2215,7 +2251,10 @@
                call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_GEN_FAILURE); jerr=-5; exit
               endif
              endif
-             if(updated) call tens_mng_entry%set_owner_id(jown) !update the tensor owner id if the tensor info was updated in the cache
+             if(updated) then
+              call tens_mng_entry%set_owner_id(jown) !update the tensor owner id if the tensor info was updated in the cache
+              call tens_mng_entry%reset_access_counters(jread,jwrite) !update the tensor access counters if the tensor info was updated in the cache
+             endif
              allocate(tens_oprnd,STAT=jerr) !tensor operand will be owned by the tensor instruction
              if(jerr.ne.0) then
               tens_oprnd=>NULL()
@@ -4065,7 +4104,7 @@
               opcode=tens_instr%get_code(errc)
               if(errc.eq.DSVP_SUCCESS) then
                if(opcode.ge.TAVP_ISA_TENS_FIRST.and.opcode.le.TAVP_ISA_TENS_LAST) then !tensor instruction
-                out_oprs=>tens_instr%get_out_operands(errc,num_oprs=n)
+                out_oprs=>tens_instr%get_output_operands(errc,num_oprs=n)
                 if(errc.eq.0) then
                  if(n.gt.0) then
                   if(this%tavp_is_bottom) then

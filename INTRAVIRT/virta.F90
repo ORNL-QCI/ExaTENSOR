@@ -8,7 +8,7 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/02/22
+!REVISION: 2018/02/27
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -33,7 +33,7 @@
 !   (a) Tensor cache operations, namely, lookup(), store(), and evict() are serialized.
 !   (b) Returning a pointer to a tensor cache entry in lookup() and store() results in
 !       an increment of that entry's USE_COUNT, while releasing the obtained pointer via
-!       release_entry() decrements that entry's USE_COUNT.
+!       the member procedure .release_entry() decrements that entry's USE_COUNT.
 !   (c) Associating a tensor operand with a tensor cache entry increments that entry's
 !       REF_COUNT, while destroying that tensor operand decrements REF_COUNT.
 !   (d) Tensor cache entries with a non-zero USE_COUNT or REF_COUNT cannot be destroyed,
@@ -200,19 +200,29 @@
  !Tensor argument cache entry:
         type, abstract, public:: tens_cache_entry_t
          class(tens_rcrsv_t), pointer, private:: tensor=>NULL() !either owning or non-owning pointer to a tensor (ctor/dtor of an extended type will decide)
-         integer(INTD), private:: ref_count=0                   !reference count: Number of existing tensor operands associated with the tensor cache entry
-         integer(INTD), private:: use_count=0                   !use count: Number of active pointers to the tensor cache entry explicitly returned by the cache
+         integer(INTD), private:: ref_count=0                   !reference count: Number of existing tensor operands associated with this tensor cache entry
+         integer(INTD), private:: use_count=0                   !use count: Number of active pointers to this tensor cache entry explicitly returned by the tensor cache
+         integer(INTD), private:: read_count=0                  !read count: Number of issued tensor instructions which refer to this tensor cache entry as input
+         integer(INTD), private:: write_count=0                 !write count: Number of issued tensor instructions which refer to this tensor cache entry as output
          contains
-          procedure, public:: set_tensor=>TensCacheEntrySetTensor         !sets the pointer to a tensor
           procedure, public:: is_set=>TensCacheEntryIsSet                 !returns TRUE if the tensor cache entry is set (constructed)
+          procedure, public:: set_tensor=>TensCacheEntrySetTensor         !sets the pointer to a tensor
           procedure, public:: get_tensor=>TensCacheEntryGetTensor         !returns a non-owning pointer to the tensor
           procedure, public:: incr_ref_count=>TensCacheEntryIncrRefCount  !increments the reference count
           procedure, public:: decr_ref_count=>TensCacheEntryDecrRefCount  !decrements the reference count
           procedure, public:: get_ref_count=>TensCacheEntryGetRefCount    !returns the current reference count: Number of existing tensor operands associated with the tensor cache entry
           procedure, public:: incr_use_count=>TensCacheEntryIncrUseCount  !increments the use count
           procedure, public:: decr_use_count=>TensCacheEntryDecrUseCount  !decrements the use count
-          procedure, public:: get_use_count=>TensCacheEntryGetUseCount    !returns the current use count: Number of active pointers to the tensor cache entry explicitly returned by the cache
-          procedure, public:: destroy=>TensCacheEntryDestroy              !destroys the tensor cache entry
+          procedure, public:: get_use_count=>TensCacheEntryGetUseCount    !returns the current use count: Number of active pointers to the tensor cache entry explicitly returned by the tensor cache
+          procedure, public:: incr_read_count=>TensCacheEntryIncrReadCount    !increments the read count
+          procedure, public:: decr_read_count=>TensCacheEntryDecrReadCount    !decrements the read count
+          procedure, public:: get_read_count=>TensCacheEntryGetReadCount      !returns the current read count: Number of issued tensor instructions referring to this tensor cache entry as input
+          procedure, public:: incr_write_count=>TensCacheEntryIncrWriteCount  !increments the write count
+          procedure, public:: decr_write_count=>TensCacheEntryDecrWriteCount  !decrements the write count
+          procedure, public:: get_write_count=>TensCacheEntryGetWriteCount    !returns the current write count: Number of issued tensor instructions referring to this tensor cache entry as output
+          procedure, public:: reset_access_counters=>TensCacheEntryResetAccessCounters !resets read/write access counters
+          procedure, public:: get_access_counters=>TensCacheEntryGetAccessCounters !returns the current values of read/write access counters
+          procedure, public:: destroy=>TensCacheEntryDestroy                  !destroys the tensor cache entry
         end type tens_cache_entry_t
  !Tensor argument cache:
         type, public:: tens_cache_t
@@ -312,8 +322,8 @@
         private CtrlTensContrPrintIt
         public ctrl_tens_contr_dtor
  !tens_cache_entry_t:
-        private TensCacheEntrySetTensor
         private TensCacheEntryIsSet
+        private TensCacheEntrySetTensor
         private TensCacheEntryGetTensor
         private TensCacheEntryIncrRefCount
         private TensCacheEntryDecrRefCount
@@ -321,6 +331,14 @@
         private TensCacheEntryIncrUseCount
         private TensCacheEntryDecrUseCount
         private TensCacheEntryGetUseCount
+        private TensCacheEntryIncrReadCount
+        private TensCacheEntryDecrReadCount
+        private TensCacheEntryGetReadCount
+        private TensCacheEntryIncrWriteCount
+        private TensCacheEntryDecrWriteCount
+        private TensCacheEntryGetWriteCount
+        private TensCacheEntryResetAccessCounters
+        private TensCacheEntryGetAccessCounters
         private TensCacheEntryDestroy
  !tens_cache_t:
         private TensCacheInitLock
@@ -684,7 +702,20 @@
 
          return
         end subroutine ctrl_tens_contr_dtor
-![tens_cache_entry_t]=======================================
+![tens_cache_entry_t]======================================
+        function TensCacheEntryIsSet(this,ierr) result(ans)
+!Returns TRUE if the tensor is set, FALSE otherwise.
+         implicit none
+         logical:: ans                                !out: answer
+         class(tens_cache_entry_t), intent(in):: this !in: tensor cache entry
+         integer(INTD), intent(out), optional:: ierr  !out: error code
+         integer(INTD):: errc
+
+         errc=0; ans=associated(this%tensor)
+         if(present(ierr)) ierr=errc
+         return
+        end function TensCacheEntryIsSet
+!-----------------------------------------------------------
         subroutine TensCacheEntrySetTensor(this,tensor,ierr)
 !Sets a pointer to the tensor.
          implicit none
@@ -702,19 +733,6 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensCacheEntrySetTensor
-!----------------------------------------------------------
-        function TensCacheEntryIsSet(this,ierr) result(ans)
-!Returns TRUE if the tensor is set, FALSE otherwise.
-         implicit none
-         logical:: ans                                !out: answer
-         class(tens_cache_entry_t), intent(in):: this !in: tensor cache entry
-         integer(INTD), intent(out), optional:: ierr  !out: error code
-         integer(INTD):: errc
-
-         errc=0; ans=associated(this%tensor)
-         if(present(ierr)) ierr=errc
-         return
-        end function TensCacheEntryIsSet
 !-------------------------------------------------------------------
         function TensCacheEntryGetTensor(this,ierr) result(tensor_p)
          implicit none
@@ -784,6 +802,93 @@
          usecount=this%use_count
          return
         end function TensCacheEntryGetUseCount
+!---------------------------------------------------
+        subroutine TensCacheEntryIncrReadCount(this)
+         implicit none
+         class(tens_cache_entry_t), intent(inout):: this !inout: defined tensor cache entry
+
+!$OMP ATOMIC UPDATE
+         this%read_count=this%read_count+1
+         return
+        end subroutine TensCacheEntryIncrReadCount
+!---------------------------------------------------
+        subroutine TensCacheEntryDecrReadCount(this)
+         implicit none
+         class(tens_cache_entry_t), intent(inout):: this !inout: defined tensor cache entry
+
+!$OMP ATOMIC UPDATE
+         this%read_count=this%read_count-1
+         return
+        end subroutine TensCacheEntryDecrReadCount
+!--------------------------------------------------------------
+        function TensCacheEntryGetReadCount(this) result(count)
+         implicit none
+         integer(INTD):: count                        !out: read count
+         class(tens_cache_entry_t), intent(in):: this !in: defined tensor cache entry
+
+!$OMP ATOMIC READ
+         count=this%read_count
+         return
+        end function TensCacheEntryGetReadCount
+!----------------------------------------------------
+        subroutine TensCacheEntryIncrWriteCount(this)
+         implicit none
+         class(tens_cache_entry_t), intent(inout):: this !inout: defined tensor cache entry
+
+!$OMP ATOMIC UPDATE
+         this%write_count=this%write_count+1
+         return
+        end subroutine TensCacheEntryIncrWriteCount
+!----------------------------------------------------
+        subroutine TensCacheEntryDecrWriteCount(this)
+         implicit none
+         class(tens_cache_entry_t), intent(inout):: this !inout: defined tensor cache entry
+
+!$OMP ATOMIC UPDATE
+         this%write_count=this%write_count-1
+         return
+        end subroutine TensCacheEntryDecrWriteCount
+!---------------------------------------------------------------
+        function TensCacheEntryGetWriteCount(this) result(count)
+         implicit none
+         integer(INTD):: count                        !out: write count
+         class(tens_cache_entry_t), intent(in):: this !in: defined tensor cache entry
+
+!$OMP ATOMIC READ
+         count=this%write_count
+         return
+        end function TensCacheEntryGetWriteCount
+!--------------------------------------------------------------------------------
+        subroutine TensCacheEntryResetAccessCounters(this,read_count,write_count)
+         implicit none
+         class(tens_cache_entry_t), intent(inout):: this   !inout: defined tensor cache entry
+         integer(INTD), intent(in), optional:: read_count  !in: new read access count (or none)
+         integer(INTD), intent(in), optional:: write_count !in: new write access count (or none)
+
+         if(present(read_count)) then
+!$OMP ATOMIC WRITE
+          this%read_count=read_count
+         endif
+         if(present(write_count)) then
+!$OMP ATOMIC WRITE
+          this%write_count=write_count
+         endif
+         return
+        end subroutine TensCacheEntryResetAccessCounters
+!------------------------------------------------------------------------------
+        subroutine TensCacheEntryGetAccessCounters(this,read_count,write_count)
+         implicit none
+         class(tens_cache_entry_t), intent(in):: this !inout: defined tensor cache entry
+         integer(INTD), intent(out):: read_count      !in: current read access count
+         integer(INTD), intent(out):: write_count     !in: current write access count
+
+         read_count=0; write_count=0
+!$OMP ATOMIC READ
+         read_count=this%read_count
+!$OMP ATOMIC READ
+         write_count=this%write_count
+         return
+        end subroutine TensCacheEntryGetAccessCounters
 !----------------------------------------------------------
         subroutine TensCacheEntryDestroy(this,dealloc,ierr)
 !Destroys the tensor cache entry, but only if the reference count and use count are zero.
