@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/02/27
+!REVISION: 2018/02/28
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -2406,15 +2406,17 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensInstrGetOperation
-!-----------------------------------------------
-        subroutine TensInstrMarkIssue(this,ierr)
+!------------------------------------------------------------
+        function TensInstrMarkIssue(this,ierr) result(passed)
 !Updates the tensor access counters for each tensor operand when the tensor instruction is issued.
          implicit none
+         logical:: passed                            !out: TRUE if there were no data dependency problem, FALSE otherwise
          class(tens_instr_t), intent(inout):: this   !inout: active tensor instruction
          integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc,i,n
+         integer(INTD):: errc,i,n,rd,wr
          class(ds_oprnd_t), pointer:: oprnd
 
+         passed=.TRUE.
          if(.not.this%is_empty(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
            n=this%get_num_operands(errc)
@@ -2426,9 +2428,12 @@
               if(errc.eq.DSVP_SUCCESS.and.associated(oprnd)) then
                select type(oprnd)
                class is(tens_oprnd_t)
+                rd=oprnd%get_read_count(); wr=oprnd%get_write_count()
                 if(i.eq.0) then !output tensor operand `Assumes output operand #0
+                 passed=(passed.and.(rd.eq.0))
                  call oprnd%register_write()
                 else !input tensor operand
+                 passed=(passed.and.(wr.eq.0))
                  call oprnd%register_read()
                 endif
                class default
@@ -2451,7 +2456,7 @@
          endif
          if(present(ierr)) ierr=errc
          return
-        end subroutine TensInstrMarkIssue
+        end function TensInstrMarkIssue
 !----------------------------------------------------
         subroutine TensInstrMarkCompletion(this,ierr)
 !Updates the tensor access counters for each tensor operand when the tensor instruction is completed.
@@ -2498,13 +2503,14 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensInstrMarkCompletion
-!--------------------------------------------------------------
-        function TensInstrDependencyFree(this,ierr) result(res)
+!----------------------------------------------------------------------
+        function TensInstrDependencyFree(this,ierr,blocked) result(res)
 !Returns TRUE if the tensor instruction is dependency-free (locally).
          implicit none
          logical:: res                               !out: answer
          class(tens_instr_t), intent(in):: this      !in: active tensor instruction
          integer(INTD), intent(out), optional:: ierr !out: error code
+         logical, intent(out), optional:: blocked    !out: TRUE if at least one of the tensor operands is READ/WRITE blocked
          integer(INTD):: errc,n,i
          class(ds_oprnd_t), pointer:: oprnd
 
