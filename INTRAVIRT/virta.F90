@@ -358,6 +358,7 @@
         private MethodRegisterUnregisterMethod
         private MethodRegisterRetrieveMethod
         public method_register_dtor
+        public method_map_f
 
        contains
 !IMPLEMENTATION:
@@ -406,7 +407,11 @@
          integer(INTD):: errc,l
 
          errc=0; l=len_trim(this%method_name)
-         this%definer=>method_register%retrieve_method(this%method_name(1:l),errc); if(errc.ne.0) errc=-1
+         if(l.gt.0) then
+          this%definer=>method_register%retrieve_method(this%method_name(1:l),errc); if(errc.ne.0) errc=-1
+         else
+          errc=-2
+         endif
          if(present(ierr)) ierr=errc
          return
         end subroutine CtrlTensTransMapMethod
@@ -1366,5 +1371,23 @@
 !$OMP END CRITICAL (TAVP_METHOD_REG)
          return
         end subroutine method_register_dtor
+!-------------------------------------------------------------
+        function method_map_f(method_name,ierr) result(method)
+!Non-member function mapping method names to method objects.
+         implicit none
+         class(talsh_tens_definer_t), pointer:: method
+         character(*), intent(in):: method_name
+         integer(INTD), intent(out), optional:: ierr
+         integer(INTD):: errc,l
+
+         method=>NULL(); l=len_trim(method_name)
+         if(l.gt.0) then
+          method=>method_register%retrieve_method(method_name(1:l),errc); if(errc.ne.0) errc=-1
+         else
+          errc=-2
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function method_map_f
 
        end module virta

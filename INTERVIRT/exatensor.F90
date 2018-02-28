@@ -1,7 +1,7 @@
 !ExaTENSOR: Massively Parallel Virtual Processor for Scale-Adaptive Hierarchical Tensor Algebra
 !This is the top level API module of ExaTENSOR (user-level API)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2018/02/12
+!REVISION: 2018/02/27
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -885,7 +885,7 @@
             call issue_new_instruction(tens_instr,ierr)
             if(ierr.eq.0) then
 #if !(defined(__GNUC__) && __GNUC__ < 8)
-             call tens_rcrsv_dtor(tensor)
+             call tens_rcrsv_dtor(tensor) !local tensor is no longer needed
 #endif
             else
              ierr=-5
@@ -972,9 +972,48 @@
         integer(INTD):: ierr                       !out: error code
         type(tens_rcrsv_t), intent(inout):: tensor !inout: tensor
         complex(8), intent(in), optional:: scalar  !in: scalar
+        class(tens_instr_mng_t), pointer:: tens_instr
+        type(tens_transformation_t):: tens_init
+        integer(INTL):: ip
+        complex(8):: scal
 
-        ierr=EXA_SUCCESS
-        write(CONS_OUT,*)'FATAL(exatensor:tensor_init_scalar): Not implemented yet!' !`Implement
+        ierr=EXA_SUCCESS; write(jo,'("#MSG(exatensor): New Instruction: INIT TENSOR (by scalar): IP = ")',ADVANCE='NO')
+        if(tensor%is_set(ierr)) then
+         if(ierr.eq.TEREC_SUCCESS) then
+!Construct the tensor transformation (initialization) object:
+          call tens_init%set_argument(tensor,ierr)
+          if(ierr.eq.TEREC_SUCCESS) then
+           scal=(0d0,0d0); if(present(scalar)) scal=scalar
+           call tens_init%set_method(ierr,scalar_value=scal,defined=.FALSE.) !simple initialization to a value
+           if(ierr.eq.TEREC_SUCCESS) then
+!Construct the tensor instruction:
+            tens_instr=>add_new_instruction(ip,ierr)
+            if(ierr.eq.0) then
+             write(jo,'(i11)') ip !new instruction id number
+             call tens_instr%tens_instr_ctor(TAVP_INSTR_TENS_INIT,ierr,tens_init,iid=ip)
+             if(ierr.eq.0) then
+!Issue the tensor instruction to TAVP:
+              call issue_new_instruction(tens_instr,ierr); if(ierr.ne.0) ierr=-7
+             else
+              ierr=-6
+             endif
+            else
+             ierr=-5
+            endif
+            tens_instr=>NULL()
+           else
+            ierr=-4
+           endif
+          else
+           ierr=-3
+          endif
+          call tens_transformation_dtor(tens_init)
+         else
+          ierr=-2
+         endif
+        else
+         ierr=-1
+        endif
         return
        end function exatns_tensor_init_scalar
 !--------------------------------------------------------------------
@@ -984,9 +1023,46 @@
         integer(INTD):: ierr                       !out: error code
         type(tens_rcrsv_t), intent(inout):: tensor !inout: tensor
         character(*), intent(in):: method          !in: registered method name
+        class(tens_instr_mng_t), pointer:: tens_instr
+        type(tens_transformation_t):: tens_init
+        integer(INTL):: ip
 
-        ierr=EXA_SUCCESS
-        write(CONS_OUT,*)'FATAL(exatensor:tensor_init_method): Not implemented yet!' !`Implement
+        ierr=EXA_SUCCESS; write(jo,'("#MSG(exatensor): New Instruction: INIT TENSOR (by method): IP = ")',ADVANCE='NO')
+        if(tensor%is_set(ierr)) then
+         if(ierr.eq.TEREC_SUCCESS) then
+!Construct the tensor transformation (initialization) object:
+          call tens_init%set_argument(tensor,ierr)
+          if(ierr.eq.TEREC_SUCCESS) then
+           call tens_init%set_method(ierr,defined=.FALSE.,method_name=method,method_map=method_map_f)
+           if(ierr.eq.TEREC_SUCCESS) then
+!Construct the tensor instruction:
+            tens_instr=>add_new_instruction(ip,ierr)
+            if(ierr.eq.0) then
+             write(jo,'(i11)') ip !new instruction id number
+             call tens_instr%tens_instr_ctor(TAVP_INSTR_TENS_INIT,ierr,tens_init,iid=ip)
+             if(ierr.eq.0) then
+!Issue the tensor instruction to TAVP:
+              call issue_new_instruction(tens_instr,ierr); if(ierr.ne.0) ierr=-7
+             else
+              ierr=-6
+             endif
+            else
+             ierr=-5
+            endif
+            tens_instr=>NULL()
+           else
+            ierr=-4
+           endif
+          else
+           ierr=-3
+          endif
+          call tens_transformation_dtor(tens_init)
+         else
+          ierr=-2
+         endif
+        else
+         ierr=-1
+        endif
         return
        end function exatns_tensor_init_method
 !----------------------------------------------------------------------------
