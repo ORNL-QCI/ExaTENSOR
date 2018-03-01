@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/02/28
+!REVISION: 2018/03/01
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -30,10 +30,10 @@
 !    4. Instruction control field (optional);
 !    5. Instruction operands (optional):
 !        {Owner_id,Read_count,Write_count,Tensor} for each tensor operand.
-! # Local tensor instruction dependency handling:
-!   (1) WRITE-after-WRITE: Concurrent accumulates, otherwise serial;
-!   (2) WRITE-after-READ: Concurrent until WRITE accumulation stage;
-!   (3) READ-after-WRITE: Serial (depends on WRITE accumulation);
+! # Data dependency case resolution:
+!   (1) WRITE-after-WRITE: Accumulates (+=) are concurrent, otherwise serialized;
+!   (2) WRITE-after-READ: Concurrent until the WRITE accumulation stage;
+!   (3) READ-after-WRITE: Serialized (depends on the WRITE accumulation).
 ! # Tensor instruction processing pipeline: Local dependency policy:
 !   (1) Check that the input tensor operands are not currently updated/undefined locally;
 !   (2) Check that the output tensor operand(s) is(are) not currently in use locally;
@@ -78,6 +78,10 @@
  !Resourcer:
         integer(INTD), private:: MAX_RESOURCE_INSTR=64  !max number of instructions during a single resource allocation phase
         real(8), private:: MAX_RESOURCE_PHASE_TIME=1d-3 !max time spent in a single resource allocation phase
+ !Communicator:
+        integer(INTD), private:: MAX_COMMUNICATOR_PREFETCHES=16 !max number of outstanding prefetches issued by Communicator
+        integer(INTD), private:: MAX_COMMUNICATOR_UPLOADS=8     !max number of outstanding uploads issued by Communicator
+        real(8), private:: MAX_COMMUNICATOR_PHASE_TIME=1d-3     !max time spent by Communicator in each subphase
 !TYPES:
  !Tensor resource (local resource):
         type, extends(ds_resrc_t), private:: tens_resrc_t
@@ -233,6 +237,14 @@
          integer(INTD), private:: num_mpi_windows=TAVP_WRK_NUM_WINS !number of dynamic MPI windows per global addressing space
          class(DistrSpace_t), pointer, private:: addr_space=>NULL() !non-owning pointer to the DSVP global address space
          class(tens_cache_t), pointer, private:: arg_cache=>NULL()  !non-owning pointer to the tensor argument cache
+         type(list_bi_t), private:: prefetch_list                   !list of tensor instructions undergoing input prefetch
+         type(list_iter_t), private:: fet_list                      !iterator for <prefetch_list>
+         type(list_bi_t), private:: upload_list                     !list of tensor instructions undergoing output upload
+         type(list_iter_t), private:: upl_list                      !iterator for <upload_list>
+         type(list_bi_t), private:: dispatch_list                   !list of tensor instructions ready to be dispatched
+         type(list_iter_t), private:: dsp_list                      !iterator for <dispatch_list>
+         type(list_bi_t), private:: retire_list                     !list of tensor instructions ready to be retired
+         type(list_iter_t), private:: ret_list                      !iterator for <retire_list>
          contains
           procedure, public:: configure=>TAVPWRKCommunicatorConfigure          !configures TAVP-WRK communicator
           procedure, public:: start=>TAVPWRKCommunicatorStart                  !starts TAVP-WRK communicator
@@ -3303,11 +3315,11 @@
          integer(INTD), intent(out), optional:: ierr       !out: error code
          integer(INTD):: errc,ier,thid,n,num_staged,opcode,sts,errcode
          integer:: rsc_timer
-         logical:: active,stopping,auxiliary,expired
-         class(dsvp_t), pointer:: dsvp
-         class(tavp_wrk_t), pointer:: tavp
+         logical:: active,stopping,auxiliary,dependent,blocked,passed,expired
          type(tens_instr_t):: instr_fence
          class(tens_instr_t), pointer:: instr
+         class(dsvp_t), pointer:: dsvp
+         class(tavp_wrk_t), pointer:: tavp
          class(*), pointer:: uptr
 
          errc=0; thid=omp_get_thread_num()
@@ -3348,55 +3360,96 @@
            !ier=this%iqueue%reset(); ier=this%iqueue%scanp(action_f=tens_instr_print); ier=this%iqueue%reset_back() !print all instructions
            flush(CONS_OUT)
           endif
-          cycle wloop !debug
  !Rename output tensor operands, check data dependencies, and acquire resources for input tensor operands:
           ier=this%iqueue%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
-          if(this%iqueue%get_status().eq.GFC_IT_ACTIVE) then
-           auxiliary=.FALSE.; ier=GFC_SUCCESS
-           rloop: do while(ier.eq.GFC_SUCCESS)
+          auxiliary=.FALSE.; ier=this%iqueue%get_status()
+          rloop: do while(ier.eq.GFC_IT_ACTIVE)
   !Extract an instruction:
-            uptr=>this%iqueue%get_value(ier); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
-            instr=>NULL(); select type(uptr); class is(tens_instr_t); instr=>uptr; end select
-            if((.not.associated(instr)).and.errc.eq.0) then; errc=-1; exit wloop; endif !trap
-            opcode=instr%get_code(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
-            sts=instr%get_status(ier,errcode); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
-            if(sts.ne.DS_INSTR_NEW.and.errc.eq.0) then; errc=-1; exit wloop; endif !trap
-            call instr%set_status(DS_INSTR_RSC_WAIT,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+           uptr=>this%iqueue%get_value(ier); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+           instr=>NULL(); select type(uptr); class is(tens_instr_t); instr=>uptr; end select
+           if((.not.associated(instr)).and.errc.eq.0) then; errc=-1; exit wloop; endif !trap
+           opcode=instr%get_code(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+           sts=instr%get_status(ier,errcode); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+           if(sts.ne.DS_INSTR_NEW.and.errc.eq.0) then; errc=-1; exit wloop; endif !trap
+           call instr%set_status(DS_INSTR_RSC_WAIT,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
   !Process the instruction according to its category:
-            if(opcode.ge.TAVP_ISA_TENS_FIRST.and.opcode.le.TAVP_ISA_TENS_LAST) then !tensor instruction
-             if(.not.(stopping.or.auxiliary)) then
-   !Check data dependencies:
-              
+           if(opcode.ge.TAVP_ISA_TENS_FIRST.and.opcode.le.TAVP_ISA_TENS_LAST) then !tensor instruction
+            if(.not.(stopping.or.auxiliary)) then
+   !Substitute (rename) the output tensor operand with a temporary tensor for numerical tensor operations:
+             if(opcode.ne.TAVP_INSTR_TENS_CREATE.and.opcode.ne.TAVP_INSTR_TENS_DESTROY) then
+              if(.not.instr%output_substituted(ier)) then
+               if(ier.eq.0) then
+                call this%substitute_output(instr,ier); if(ier.ne.0.and.errc.eq.0) then; errc=-1; exit wloop; endif
+               else
+                if(errc.eq.0) then; errc=-1; exit wloop; endif
+               endif
+              else
+               if(ier.ne.0.and.errc.eq.0) then; errc=-1; exit wloop; endif
+              endif
+             endif
+   !Check tensor instruction data dependencies:
+             dependent=.not.instr%dependency_free(ier,blocked); if(ier.ne.0.and.errc.eq.0) then; errc=-1; exit wloop; endif
    !Update data dependencies:
-              
-   !Acquire resources for input arguments (if available):
-              
-             else
-              if(errc.eq.0) then; errc=-1; exit wloop; endif
+             if(dependent) then !at least one tensor operand has a simple data dependency (read_count > 0 for WRITE or write_count > 0 for READ)
+              if(blocked) then !at least one tensor operand has blocking data dependency (read_count > 0 and write_count > 0)
+               call instr%set_status(DS_INSTR_NEW,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+               ier=this%iqueue%next(); if(ier.ne.GFC_SUCCESS.and.ier.ne.GFC_NO_MOVE.and.errc.eq.0) then; errc=-11; exit wloop; endif
+              else !no blocking data dependencies: issue into the deferred instruction list
+               passed=instr%mark_issue(ier); if((ier.ne.0.or.passed).and.errc.eq.0) then; errc=-1; exit wloop; endif
+               ier=this%iqueue%move_elem(this%def_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+              endif
+             else !no data dependencies
+              passed=instr%mark_issue(ier); if((.not.(ier.eq.0.and.passed)).and.errc.eq.0) then; errc=-1; exit wloop; endif
+   !Acquire resources for input tensor operands (if available):
+              call this%acquire_resource(instr,ier,omit_output=.TRUE.)
+              if(ier.eq.0) then !resources have been acquired: issue into the staged list
+               call instr%set_status(DS_INSTR_INPUT_WAIT,ier)
+               if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+               ier=this%iqueue%move_elem(this%stg_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+               num_staged=num_staged+1
+              elseif(ier.eq.TRY_LATER) then !required resources are not currently available: issue into the deferred list
+               ier=this%iqueue%move_elem(this%def_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+               ier=0
+              else
+               if(errc.eq.0) then; errc=-1; exit wloop; endif
+              endif
              endif
-            elseif(opcode.ge.TAVP_ISA_CTRL_FIRST.and.opcode.le.TAVP_ISA_CTRL_LAST) then !control instruction
-             if(.not.stopping) then
-              if(opcode.eq.TAVP_INSTR_CTRL_STOP.or.opcode.eq.TAVP_INSTR_CTRL_PAUSE) stopping=.TRUE. !`CTRL STOP and PAUSE are treated the same
-              call instr%set_status(DS_INSTR_INPUT_WAIT,ier)
-              if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
-              ier=this%iqueue%move_elem(this%stg_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
-             else
-              if(errc.eq.0) then; errc=-1; exit wloop; endif
-             endif
-            else !auixiliary instruction
-             if(.not.stopping) then
-              auxiliary=.TRUE.
-              call instr%set_status(DS_INSTR_INPUT_WAIT,ier)
-              if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
-              ier=this%iqueue%move_elem(this%stg_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
-             else
-              if(errc.eq.0) then; errc=-1; exit wloop; endif
-             endif
+            else
+             if(errc.eq.0) then; errc=-1; exit wloop; endif
             endif
-            ier=this%iqueue%next()
-           enddo rloop
-           if(ier.ne.GFC_NO_MOVE.and.errc.eq.0) then; errc=-1; exit wloop; endif
-          endif
+           elseif(opcode.ge.TAVP_ISA_CTRL_FIRST.and.opcode.le.TAVP_ISA_CTRL_LAST) then !control instruction: no dependencies
+            if(.not.stopping) then
+             if(opcode.eq.TAVP_INSTR_CTRL_STOP.or.opcode.eq.TAVP_INSTR_CTRL_PAUSE) stopping=.TRUE. !`CTRL STOP and PAUSE are treated the same
+             call instr%set_status(DS_INSTR_INPUT_WAIT,ier)
+             if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+             ier=this%iqueue%move_elem(this%stg_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+             num_staged=num_staged+1
+            else
+             if(errc.eq.0) then; errc=-1; exit wloop; endif
+            endif
+           else !auixiliary instruction: no dependencies
+            if(.not.stopping) then
+             auxiliary=.TRUE.
+             call instr%set_status(DS_INSTR_INPUT_WAIT,ier)
+             if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+             ier=this%iqueue%move_elem(this%stg_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+             num_staged=num_staged+1
+            else
+             if(errc.eq.0) then; errc=-1; exit wloop; endif
+            endif
+           endif
+  !Pass staged instructions to Communicator Port 0:
+           expired=timer_expired(rsc_timer,ier); if(ier.ne.TIMERS_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+           if(expired.or.stopping.or.num_staged.gt.MAX_RESOURCE_INSTR) then
+            ier=this%stg_list%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+            ier=tavp%communicator%load_port(0,this%stg_list)
+            if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+            if(expired) ier=timer_reset(rsc_timer,MAX_RESOURCE_PHASE_TIME)
+            num_staged=0
+           endif
+           ier=this%iqueue%get_status()
+          enddo rloop
+          if(ier.ne.GFC_IT_EMPTY.and.ier.ne.GFC_IT_DONE.and.errc.eq.0) then; errc=-1; exit wloop; endif !trap
 
           active=(.not.stopping)
          enddo wloop
@@ -3807,10 +3860,12 @@
          implicit none
          class(tavp_wrk_communicator_t), intent(inout):: this !inout: TAVP-WRK communicator DSVU
          integer(INTD), intent(out), optional:: ierr          !out: error code
-         integer(INTD):: errc,ier,thid
+         integer(INTD):: errc,ier,thid,n,num_prefetch,num_upload
+         integer:: com_timer
          logical:: active,stopping
          class(dsvp_t), pointer:: dsvp
          class(tavp_wrk_t), pointer:: tavp
+         class(*), pointer:: uptr
 
          errc=0; thid=omp_get_thread_num()
          if(DEBUG.gt.0) then
@@ -3820,6 +3875,14 @@
          endif
 !Initialize queues and ports:
          call this%init_queue(this%num_ports,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-1
+!Initialize the prefetch queue:
+         ier=this%fet_list%init(this%prefetch_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-1
+!Initialize the upload queue:
+         ier=this%upl_list%init(this%upload_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-1
+!Initialize the dispatch queue:
+         ier=this%dsp_list%init(this%dispatch_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-1
+!Initialize the retire queue:
+         ier=this%ret_list%init(this%retire_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-1
 !Initialize the global addressing space and set up tensor argument cache:
          tavp=>NULL(); dsvp=>this%get_dsvp(); select type(dsvp); class is(tavp_wrk_t); tavp=>dsvp; end select
          if(associated(tavp)) then
@@ -3827,6 +3890,8 @@
           if(ier.eq.0) then
            this%addr_space=>tavp%addr_space
            this%arg_cache=>tavp%tens_cache
+           write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Communicator unit ",i2," created a global addressing space successfully")')&
+           &impir,this%get_id()
           else
            if(errc.eq.0) errc=-1
           endif
@@ -3836,10 +3901,52 @@
           this%arg_cache=>NULL(); if(errc.eq.0) errc=-1
          endif
 !Work loop:
-         active=(errc.eq.0); stopping=(.not.active)
+         ier=timer_start(com_timer,MAX_COMMUNICATOR_PHASE_TIME); if(ier.ne.TIMERS_SUCCESS.and.errc.eq.0) errc=-1
+         active=(errc.eq.0); stopping=(.not.active); num_prefetch=0; num_upload=0
          wloop: do while(active)
-          exit wloop
+ !Get new instructions from Resourcer (port 0) into the prefetch queue:
+          ier=this%fet_list%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+          ier=this%unload_port(0,this%fet_list,num_moved=n); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-11; exit wloop; endif
+          if(DEBUG.gt.0.and.n.gt.0) then
+           write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Communicator unit ",i2," received ",i9," instructions from Resourcer")')&
+           &impir,this%get_id(),n
+          !ier=this%fet_list%reset(); ier=this%fet_list%scanp(action_f=tens_instr_print); ier=this%fet_list%reset_back() !print all instructions
+           flush(CONS_OUT)
+          endif
+ !Initiate input prefetch and test completion of previously issued prefetches:
+          ier=this%fet_list%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+          ier=this%fet_list%get_status()
+          do while(ier.eq.GFC_IT_ACTIVE)
+
+          enddo
+ !Pass ready instructions from prefetch queue to Dispatcher (port 0):
+          ier=this%dsp_list%reset()
+          if(this%dsp_list%get_status().eq.GFC_IT_ACTIVE) then
+           ier=tavp%dispatcher%load_port(0,this%dsp_list); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+          endif
+ !Get completed instructions from Dispatcher (port 1) into the upload queue:
+          ier=this%upl_list%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+          ier=this%unload_port(1,this%upl_list,num_moved=n); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-11; exit wloop; endif
+          if(DEBUG.gt.0.and.n.gt.0) then
+           write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Communicator unit ",i2," received ",i9," instructions from Dispatcher")')&
+           &impir,this%get_id(),n
+          !ier=this%upl_list%reset(); ier=this%upl_list%scanp(action_f=tens_instr_print); ier=this%upl_list%reset_back() !print all instructions
+           flush(CONS_OUT)
+          endif
+ !Initiate output upload and test completion of previously issued uploads:
+          ier=this%upl_list%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+          ier=this%upl_list%get_status()
+          do while(ier.eq.GFC_IT_ACTIVE)
+
+          enddo
+ !Pass completed instructions from upload queue to Resourcer (port 1) for resource release:
+          ier=this%ret_list%reset()
+          if(this%ret_list%get_status().eq.GFC_IT_ACTIVE) then
+           ier=tavp%resourcer%load_port(1,this%ret_list); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+          endif
          enddo wloop
+!Destroy the timer:
+         ier=timer_destroy(com_timer); if(ier.ne.TIMERS_SUCCESS.and.errc.eq.0) errc=-3
 !Record the error:
          ier=this%get_error(); if(ier.eq.DSVP_SUCCESS) call this%set_error(errc)
          if(errc.ne.0.and.VERBOSE) write(CONS_OUT,'("#ERROR(TAVP-WRK)[",i6,"]: Communicator error ",i11," by thread ",i2)')&
@@ -3866,8 +3973,58 @@
 !Release the tensor argument cache pointer:
          this%arg_cache=>NULL()
 !Destroy the global addressing space:
-         call this%addr_space%destroy(ier); if(ier.ne.0.and.errc.eq.0) errc=-1
+         call this%addr_space%destroy(ier); if(ier.ne.0.and.errc.eq.0) errc=-14
          this%addr_space=>NULL()
+         write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Communicator unit ",i2," destroyed global addressing space: Status ",i11)')&
+         &impir,this%get_id(),ier
+!Deactivate the retire list:
+         ier=this%ret_list%reset()
+         if(ier.eq.GFC_SUCCESS) then
+          ier=this%ret_list%get_status()
+          if(ier.ne.GFC_IT_EMPTY) then
+           if(errc.eq.0) errc=-13
+           ier=this%ret_list%delete_all()
+          endif
+          ier=this%ret_list%release(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-12
+         else
+          if(errc.eq.0) errc=-11
+         endif
+!Deactivate the dispatch list:
+         ier=this%dsp_list%reset()
+         if(ier.eq.GFC_SUCCESS) then
+          ier=this%dsp_list%get_status()
+          if(ier.ne.GFC_IT_EMPTY) then
+           if(errc.eq.0) errc=-10
+           ier=this%dsp_list%delete_all()
+          endif
+          ier=this%dsp_list%release(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-9
+         else
+          if(errc.eq.0) errc=-8
+         endif
+!Deactivate the upload list:
+         ier=this%upl_list%reset()
+         if(ier.eq.GFC_SUCCESS) then
+          ier=this%upl_list%get_status()
+          if(ier.ne.GFC_IT_EMPTY) then
+           if(errc.eq.0) errc=-7
+           ier=this%upl_list%delete_all()
+          endif
+          ier=this%upl_list%release(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-6
+         else
+          if(errc.eq.0) errc=-5
+         endif
+!Deactivate the prefetch list:
+         ier=this%fet_list%reset()
+         if(ier.eq.GFC_SUCCESS) then
+          ier=this%fet_list%get_status()
+          if(ier.ne.GFC_IT_EMPTY) then
+           if(errc.eq.0) errc=-4
+           ier=this%fet_list%delete_all()
+          endif
+          ier=this%fet_list%release(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-3
+         else
+          if(errc.eq.0) errc=-2
+         endif
 !Release queues:
          call this%release_queue(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-1
 !Record an error, if any:
