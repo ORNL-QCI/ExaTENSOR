@@ -2506,15 +2506,19 @@
 !----------------------------------------------------------------------
         function TensInstrDependencyFree(this,ierr,blocked) result(res)
 !Returns TRUE if the tensor instruction is dependency-free (locally).
+!Argument <blocked> is set to TRUE if at least one of the tensor operands
+!is READ/WRITE blocked, that is, there is at least one pending READ and
+!at least one pending WRITE registered on it simultaneously.
          implicit none
          logical:: res                               !out: answer
          class(tens_instr_t), intent(in):: this      !in: active tensor instruction
          integer(INTD), intent(out), optional:: ierr !out: error code
          logical, intent(out), optional:: blocked    !out: TRUE if at least one of the tensor operands is READ/WRITE blocked
-         integer(INTD):: errc,n,i
+         integer(INTD):: errc,n,i,rd,wr
          class(ds_oprnd_t), pointer:: oprnd
+         logical:: blk
 
-         res=.TRUE.
+         res=.TRUE.; blk=.FALSE.
          if(.not.this%is_empty(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
            n=this%get_num_operands(errc)
@@ -2525,7 +2529,9 @@
              if(errc.eq.DSVP_SUCCESS) then
               select type(oprnd)
               class is(tens_oprnd_t)
-               if(oprnd%get_read_count().gt.0) res=.FALSE. !output tensor must not be in-use
+               rd=oprnd%get_read_count(); wr=oprnd%get_write_count()
+               blk=(blk.or.(rd.gt.0.and.wr.gt.0))
+               res=(.not.(rd.gt.0)) !output tensor must not be in-use
               class default
                errc=-7
               end select
@@ -2539,7 +2545,10 @@
                if(errc.eq.DSVP_SUCCESS) then
                 select type(oprnd)
                 class is(tens_oprnd_t)
-                 if(oprnd%get_write_count().gt.0) then; res=.FALSE.; exit; endif !input tensor must not be currently updated
+                 rd=oprnd%get_read_count(); wr=oprnd%get_write_count()
+                 blk=(blk.or.(rd.gt.0.and.wr.gt.0))
+                 res=(.not.(wr.gt.0)) !input tensor must not be currently updated
+                 if(.not.res) exit
                 class default
                  errc=-5; exit
                 end select
@@ -2558,6 +2567,7 @@
          else
           errc=-1
          endif
+         if(present(blocked)) blocked=blk
          if(present(ierr)) ierr=errc
          return
         end function TensInstrDependencyFree
