@@ -10,10 +10,6 @@
 *.module_id
 *.hash
 *.a
-*.so
 *.x
 *.log
 *.out
-*.h
-*.hpp
-*.cpp
