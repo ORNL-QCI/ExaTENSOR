@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/02/27
+!REVISION: 2018/03/02
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -6580,7 +6580,11 @@
          return
         end function TensTransformationArgsFull
 !----------------------------------------------------------------------------------------------------
+#if !(defined(__GNUC__) && __GNUC__ < 8)
         subroutine TensTransformationSetMethod(this,ierr,scalar_value,defined,method_name,method_map)
+#else
+        subroutine TensTransformationSetMethod(this,ierr,scalar_value,defined,method_name)
+#endif
 !Sets up the tensor initialization/transformation method:
 ! a) Simple initialization to a value: <scalar_value>, <defined>=FALSE;
 ! b) Simple scaling by a value: <scalar_value>, <defined>=TRUE;
@@ -6592,7 +6596,9 @@
          complex(8), intent(in), optional:: scalar_value                    !in: scalar value for simple initialization/scaling
          logical, intent(in), optional:: defined                            !in: if TRUE, the tensor is assumed defined, otherwise undefined (default)
          character(*), intent(in), optional:: method_name                   !in: name of the defining method
+#if !(defined(__GNUC__) && __GNUC__ < 8)
          procedure(tens_transformation_method_map_i), optional:: method_map !in: if <method_name> is given, maps that name to the corresponding TAL-SH definer object
+#endif
          integer(INTD):: errc
 
          if(this%args_full(errc)) then !all tensor arguments must have been set already
@@ -6602,10 +6608,14 @@
             if(allocated(this%definer_name)) deallocate(this%definer_name)
             allocate(this%definer_name,SOURCE=method_name)
             this%definer=>NULL()
+#if !(defined(__GNUC__) && __GNUC__ < 8)
             if(present(method_map)) this%definer=>method_map(method_name,errc)
+#endif
             if(present(scalar_value)) this%alpha=scalar_value
            else
+#if !(defined(__GNUC__) && __GNUC__ < 8)
             if(.not.present(method_map)) then
+#endif
              if(present(scalar_value)) then
               this%alpha=scalar_value
              else
@@ -6615,9 +6625,11 @@
                this%alpha=(1d0,0d0) !default scaling value
               endif
              endif
+#if !(defined(__GNUC__) && __GNUC__ < 8)
             else
              errc=TEREC_INVALID_REQUEST
             endif
+#endif
            endif
           endif
          else
@@ -6652,7 +6664,11 @@
          return
         end subroutine TensTransformationGetMethod
 !-----------------------------------------------------------------------
+#if !(defined(__GNUC__) && __GNUC__ < 8)
         subroutine TensTransformationUnpack(this,packet,ierr,method_map)
+#else
+        subroutine TensTransformationUnpack(this,packet,ierr)
+#endif
 !Unpacks the tensor transformation from a packet. Note than the method
 !based tensor transformation/initialization will generally require the
 !<method_map> argument to associate the corresponding TAL-SH function object.
@@ -6660,7 +6676,9 @@
          class(tens_transformation_t), intent(out):: this !out: tensor transformation
          class(obj_pack_t), intent(inout):: packet        !in: packet
          integer(INTD), intent(out), optional:: ierr      !out: error code
+#if !(defined(__GNUC__) && __GNUC__ < 8)
          procedure(tens_transformation_method_map_i), optional:: method_map !in: if <method_name> is unpacked, maps that name to the corresponding TAL-SH definer object
+#endif
          integer(INTD):: errc,i,n
          integer(INTL):: sl
          logical:: method_flag
@@ -6691,11 +6709,15 @@
             if(errc.eq.PACK_SUCCESS) call unpack_builtin(packet,this%alpha,errc)
             if(errc.eq.PACK_SUCCESS) call unpack_builtin(packet,this%undefined,errc)
             if(errc.eq.PACK_SUCCESS.and.method_flag) then
+#if !(defined(__GNUC__) && __GNUC__ < 8)
              if(present(method_map)) then
               this%definer=>method_map(this%definer_name,errc)
              else
+#endif
               this%definer=>NULL()
+#if !(defined(__GNUC__) && __GNUC__ < 8)
              endif
+#endif
             endif
            endif
           endif
