@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Bi-directional linked list
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2018-02-13 (started 2016-02-28)
+!REVISION: 2018-03-05 (started 2016-02-28)
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -60,7 +60,7 @@
           procedure, public:: is_set=>ListPosIsSet !returns TRUE if the list position is set
           procedure, public:: clean=>ListPosClean  !resets the list position to NULL
         end type list_pos_t
-        type(list_pos_t), parameter, public:: LIST_POS_NULL=list_pos_t()
+        type(list_pos_t), parameter, public:: LIST_POS_NULL=list_pos_t(NULL())
  !Linked list:
         type, extends(gfc_container_t), public:: list_bi_t
          class(list_elem_t), pointer, private:: first_elem=>NULL() !first element of the linked list
