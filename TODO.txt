@@ -1,0 +1,2 @@
+2018-03-06: Check that MPI_Recv() receives the same message as MPI_Probe() discovers
+            in case they are coming from different sources.
