@@ -58,7 +58,7 @@
              &EXA_ERR_BROKEN_OBJ,&
              &EXA_ERR_UNABLE_COMPLETE
  !Subspaces:
-       public seg_int_t,orthotope_t,symmetry_t,spher_symmetry_t,&
+       public seg_int_t,orthotope_t,symmetry_t,color_symmetry_t,spher_symmetry_t,&
              &basis_func_supp_t,basis_func_gauss_t,basis_func_t,&
              &subspace_basis_t,subspace_t,h_space_t,h_index_t,&
              &BASIS_ABSTRACT
