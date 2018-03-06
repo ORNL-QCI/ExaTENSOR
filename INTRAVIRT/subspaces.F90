@@ -1,7 +1,7 @@
 !Infrastructure for a recursive adaptive vector space decomposition
 !and hierarchical vector space representation.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/12/20
+!REVISION: 2018/03/06
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -152,6 +152,16 @@
           procedure(symm_compare_i), deferred, public:: compare !compares two symmetries
           procedure(symm_combine_i), deferred, public:: combine !combines two symmetries
         end type symmetry_t
+ !Generic symmetry (color):
+        type, extends(symmetry_t), public:: color_symmetry_t
+         integer(INTD), private:: color=0                          !color (-inf;+inf)
+         contains
+          procedure, private:: ColorSymmetryCtor                   !ctor
+          generic, public:: color_symmetry_ctor=>ColorSymmetryCtor
+          procedure, public:: compare=>ColorSymmetryCompare        !compares two color symmetries
+          procedure, public:: combine=>ColorSymmetryCombine        !combines two color symmetries
+          final:: color_symmetry_dtor
+        end type color_symmetry_t
  !Spherical symmetry (orbital momentum):
         type, extends(symmetry_t), public:: spher_symmetry_t
          integer(INTD), private:: orb_moment=SYMMETRY_NONE   !total orbital momentum: [0,1,2,...)
@@ -337,6 +347,11 @@
         private OrthotopeOverlap
         private OrthotopeUnion
         public orthotope_dtor
+ !color_symmetry_t:
+        private ColorSymmetryCtor
+        private ColorSymmetryCompare
+        private ColorSymmetryCombine
+        public color_symmetry_dtor
  !spher_symmetry_t:
         private SpherSymmetryCtor
         private SpherSymmetryGetOrbMomentum
@@ -1194,6 +1209,68 @@
          this%num_dim=0
          return
         end subroutine orthotope_dtor
+![color_symmetry_t]==================================
+        subroutine ColorSymmetryCtor(this,color,ierr)
+!CTOR for color_symmetry_t.
+         implicit none
+         class(color_symmetry_t), intent(out):: this !out: generic symmetry object
+         integer(INTD), intent(in):: color           !in: color (generic symmetry number)
+         integer(INTD), intent(out), optional:: ierr !out: error code
+
+         this%color=color
+         if(present(ierr)) ierr=0
+         return
+        end subroutine ColorSymmetryCtor
+!-----------------------------------------------------------
+        function ColorSymmetryCompare(this,symm) result(cmp)
+!Compares two symmetries.
+         implicit none
+         integer(INTD):: cmp                        !out: comparison result (see module dil_basic)
+         class(color_symmetry_t), intent(in):: this !inout: generic symmetry object
+         class(symmetry_t), intent(in):: symm       !in: another generic symmetry object
+
+         select type(symm)
+         class is(color_symmetry_t)
+          if(this%color.lt.symm%color) then
+           cmp=CMP_LT
+          elseif(this%color.gt.symm%color) then
+           cmp=CMP_GT
+          else
+           cmp=CMP_EQ
+          endif
+         class default
+          cmp=CMP_ER
+         end select
+         return
+        end function ColorSymmetryCompare
+!------------------------------------------------------
+        subroutine ColorSymmetryCombine(this,symm,ierr)
+!Combines two symmetries.
+         implicit none
+         class(color_symmetry_t), intent(inout):: this !inout: generic symmetry object
+         class(symmetry_t), intent(in):: symm          !in: another generic symmetry object
+         integer(INTD), intent(out), optional:: ierr   !out: error code
+         integer(INTD):: errc
+
+         errc=0
+         select type(symm)
+         class is(color_symmetry_t)
+          this%color=this%color+symm%color
+         class default
+          errc=1
+         end select
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine ColorSymmetryCombine
+!-------------------------------------------
+        subroutine color_symmetry_dtor(this)
+!DTOR for color_symmetry_t.
+         implicit none
+         type(color_symmetry_t):: this
+
+         this%color=0
+         return
+        end subroutine color_symmetry_dtor
 ![spher_symmetry_t]==================================================
         subroutine SpherSymmetryCtor(this,orb_mom_tot,orb_mom_z,ierr)
 !CTOR for spher_symmetry_t.
