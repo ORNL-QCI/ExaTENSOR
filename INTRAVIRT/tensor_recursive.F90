@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/03/02
+!REVISION: 2018/03/07
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -320,6 +320,11 @@
           procedure, public:: compare=>TensDescrCompare  !compares with another instance
           final:: tens_descr_dtor                        !dtor
         end type tens_descr_t
+ !User-defined unary tensor method (initialization/transformation):
+        type, abstract, public:: tens_method_uni_t
+         contains
+          procedure(tens_method_uni_i), public, deferred:: apply !applies the user-defined unary tensor method to a tensor
+        end type tens_method_uni_t
  !Tensor argument (reference to a recursive tensor):
         type, private:: tens_argument_t
          class(tens_rcrsv_t), pointer, private:: tens_p=>NULL() !pointer to a persistent tensor
@@ -397,7 +402,7 @@
         end type contr_ptrn_ext_t
  !Tensor transformation (includes initialization and prefactor scaling as specific cases):
         type, extends(tens_operation_t), public:: tens_transformation_t
-         class(talsh_tens_definer_t), pointer, private:: definer=>NULL()  !non-owning pointer to the defining TAL-SH function object (TAL-SH tensor definer/transformer)
+         class(tens_method_uni_t), pointer, private:: definer=>NULL()     !non-owning pointer to the defining unary tensor method (initialization/transformation)
          character(:), allocatable, private:: definer_name                !registered name of the defining/transforming TAL-SH function object
          complex(8), private:: alpha=(0d0,0d0)                            !numerical prefactor for simple scaling or initialization value for simple numerical initialization
          logical, private:: undefined=.TRUE.                              !if TRUE, the tensor is assumed undefined before the operation
@@ -490,11 +495,11 @@
          end function tens_operation_query_i
   !tens_transformation_t: <method_map> argument of .set_method() method [nopass]:
          function tens_transformation_method_map_i(method_name,ierr) result(method)
-          import:: INTD,talsh_tens_definer_t
+          import:: INTD,tens_method_uni_t
           implicit none
-          class(talsh_tens_definer_t), pointer:: method !out: pointer to the TAL-SH tensor definer object
-          character(*), intent(in):: method_name        !in: character method name
-          integer(INTD), intent(out), optional:: ierr   !out: error code
+          class(tens_method_uni_t), pointer:: method  !out: pointer to an external unary tensor method
+          character(*), intent(in):: method_name      !in: character method name
+          integer(INTD), intent(out), optional:: ierr !out: error code
          end function tens_transformation_method_map_i
   !tens_rcrsv_t: split() [nopass]:
          function tens_rcrsv_split_i(tensor,subtensors,num_subtensors,strength_thresh) result(ierr)
@@ -518,6 +523,15 @@
           integer(INTD), intent(out), optional:: num_dims         !out: number of tensor dimensions which split under the given strength threshold
           integer(INTD), intent(inout), optional:: split_dims(1:) !out: tensor dimensions which split under the given strength threshold (ordered by decreasing strength)
          end function tens_rcrsv_dim_strength_i
+  !tens_method_unit_t: .apply() deferred: user-defined unary tensor method (initialization/transformation):
+         function tens_method_uni_i(this,tensor,scalar) result(ierr)
+          import:: INTD,tens_rcrsv_t,tens_method_uni_t
+          implicit none
+          integer(INTD):: ierr                                !out: error code (0:success)
+          class(tens_method_uni_t), intent(in):: this         !in: user-defined unary method object
+          class(tens_rcrsv_t), intent(inout), target:: tensor !inout: initialized/transformed tensor
+          complex(8), intent(inout), optional:: scalar        !inout: scalar
+         end function tens_method_uni_i
         end interface
 !VISIBILITY:
  !generic non-member:
@@ -6597,7 +6611,7 @@
          logical, intent(in), optional:: defined                            !in: if TRUE, the tensor is assumed defined, otherwise undefined (default)
          character(*), intent(in), optional:: method_name                   !in: name of the defining method
 #if !(defined(__GNUC__) && __GNUC__ < 8)
-         procedure(tens_transformation_method_map_i), optional:: method_map !in: if <method_name> is given, maps that name to the corresponding TAL-SH definer object
+         procedure(tens_transformation_method_map_i), optional:: method_map !in: if <method_name> is given, maps that name to the corresponding user-defined unary tensor method
 #endif
          integer(INTD):: errc
 
@@ -6677,7 +6691,7 @@
          class(obj_pack_t), intent(inout):: packet        !in: packet
          integer(INTD), intent(out), optional:: ierr      !out: error code
 #if !(defined(__GNUC__) && __GNUC__ < 8)
-         procedure(tens_transformation_method_map_i), optional:: method_map !in: if <method_name> is unpacked, maps that name to the corresponding TAL-SH definer object
+         procedure(tens_transformation_method_map_i), optional:: method_map !in: if <method_name> is unpacked, maps that name to the corresponding user-defined unary tensor method
 #endif
          integer(INTD):: errc,i,n
          integer(INTL):: sl

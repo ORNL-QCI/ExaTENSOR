@@ -8,7 +8,7 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/02/27
+!REVISION: 2018/03/07
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -159,9 +159,9 @@
  !Tensor instruction control fields:
   !Tensor transformation (initialization, scaling, etc.) control field:
         type, extends(ds_instr_ctrl_t), public:: ctrl_tens_trans_t
-         class(talsh_tens_definer_t), pointer, private:: definer=>NULL() !non-owning pointer to the defining method (TAL-SH function object)
-         character(EXA_MAX_METHOD_NAME_LEN), private:: method_name       !name of the defining method
-         complex(8), private:: alpha=(0d0,0d0)                           !either an initialization scalar or an alpha prefactor
+         class(tens_method_uni_t), pointer, private:: definer=>NULL() !non-owning pointer to the defining unary tensor method (initialization/transformation)
+         character(EXA_MAX_METHOD_NAME_LEN), private:: method_name    !name of the defining method
+         complex(8), private:: alpha=(0d0,0d0)                        !either an initialization scalar or an alpha prefactor
          contains
           procedure, private:: CtrlTensTransCtor                    !ctor
           generic, public:: ctrl_tens_trans_ctor=>CtrlTensTransCtor
@@ -250,7 +250,7 @@
         end type data_register_t
  !External method register:
         type, public:: method_register_t
-         type(dictionary_t), private:: ext_methods                              !string --> talsh_tens_definer_t
+         type(dictionary_t), private:: ext_methods                              !string --> tens_method_uni_t
          contains
           procedure, public:: register_method=>MethodRegisterRegisterMethod     !registers an external tensor defining procedure
           procedure, public:: unregister_method=>MethodRegisterUnregisterMethod !unregisters a previously registered tensor defining procedure
@@ -266,7 +266,15 @@
           integer(INTD):: ierr
           class(tens_cache_entry_t), allocatable, intent(out):: tens_cache_entry
          end function tens_cache_entry_alloc_i
- !External method (user-defined tensor operation):
+ !External (user-defined) unary method (tensor initialization/transformation):
+         function exatns_method_uni_i(tensor,scalar) result(ierr)
+          import:: INTD,tens_rcrsv_t
+          implicit none
+          integer(INTD):: ierr                         !out: error code
+          class(tens_rcrsv_t), intent(inout):: tensor  !inout: tensor argument
+          complex(8), intent(inout), optional:: scalar !inout: scalar argument
+         end function exatns_method_uni_i
+ !External n-ary method (user-defined tensor operation):
          function exatns_method_i(tens_args,scal_args) result(ierr)
           import:: INTD,tens_rcrsv_t
           implicit none
@@ -276,6 +284,7 @@
          end function exatns_method_i
         end interface
         public tens_cache_entry_alloc_i
+        public exatns_method_uni_i
         public exatns_method_i
 !GLOBAL DATA:
  !MPI process specialization (TAVP role, set by exatns_start):
@@ -293,7 +302,7 @@
  !External data register:
         type(data_register_t), public:: data_register     !string --> talsh_tens_data_t
  !External method register:
-        type(method_register_t), public:: method_register !string --> talsh_tens_definer_t
+        type(method_register_t), public:: method_register !string --> tens_method_uni_t
  !Cache entry eviction policy (internal use only):
         logical, private:: ignore_evict_flag !regulates whether or not to raise an error on failure to evict a cache entry with a non-zero reference/use count (affects tens_cache_entry_t.dtor)
 !$OMP THREADPRIVATE (ignore_evict_flag)
@@ -1270,10 +1279,10 @@
 ![method_register_t]---------------------------------------------------------------
         subroutine MethodRegisterRegisterMethod(this,method_name,extrn_method,ierr)
          implicit none
-         class(method_register_t), intent(inout):: this         !inout: method register
-         character(*), intent(in):: method_name                 !in: method name
-         class(talsh_tens_definer_t), intent(in):: extrn_method !in: external tensor defining method
-         integer(INTD), intent(out), optional:: ierr            !out: error code
+         class(method_register_t), intent(inout):: this      !inout: method register
+         character(*), intent(in):: method_name              !in: method name
+         class(tens_method_uni_t), intent(in):: extrn_method !in: external unary tensor method (initialization/transformation)
+         integer(INTD), intent(out), optional:: ierr         !out: error code
          integer(INTD):: errc,ier
          type(dictionary_iter_t):: dit
 
@@ -1323,10 +1332,10 @@
 !----------------------------------------------------------------------------------------
         function MethodRegisterRetrieveMethod(this,method_name,ierr) result(extrn_method)
          implicit none
-         class(talsh_tens_definer_t), pointer:: extrn_method !out: pointer to the method
-         class(method_register_t), intent(in):: this         !inout: method register
-         character(*), intent(in):: method_name              !in: method name
-         integer(INTD), intent(out), optional:: ierr         !out: error code
+         class(tens_method_uni_t), pointer:: extrn_method !out: pointer to the method
+         class(method_register_t), intent(in):: this      !inout: method register
+         character(*), intent(in):: method_name           !in: method name
+         integer(INTD), intent(out), optional:: ierr      !out: error code
          integer(INTD):: errc,ier
          type(dictionary_iter_t):: dit
          class(*), pointer:: uptr
@@ -1339,7 +1348,7 @@
           errc=dit%search(GFC_DICT_JUST_FIND,cmp_strings,method_name,value_out=uptr)
           if(errc.eq.GFC_FOUND) then
            if(associated(uptr)) then
-            select type(uptr); class is(talsh_tens_definer_t); extrn_method=>uptr; end select
+            select type(uptr); class is(tens_method_uni_t); extrn_method=>uptr; end select
             if(.not.associated(extrn_method)) errc=-6
            else
             errc=-5
@@ -1375,9 +1384,9 @@
         function method_map_f(method_name,ierr) result(method)
 !Non-member function mapping method names to method objects.
          implicit none
-         class(talsh_tens_definer_t), pointer:: method
-         character(*), intent(in):: method_name
-         integer(INTD), intent(out), optional:: ierr
+         class(tens_method_uni_t), pointer:: method  !out: pointer to a registered external unary tensor method
+         character(*), intent(in):: method_name      !in: method name
+         integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc,l
 
          method=>NULL(); l=len_trim(method_name)

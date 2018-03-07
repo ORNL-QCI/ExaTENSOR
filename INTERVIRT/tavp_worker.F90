@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/03/05
+!REVISION: 2018/03/07
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -98,7 +98,9 @@
           procedure, public:: get_mem_size=>TensResrcGetMemSize        !returns the size of the memory buffer in bytes
           procedure, private:: incr_ref_count=>TensResrcIncrRefCount   !increments the reference count (number of tensor operands associated with the resource)
           procedure, private:: decr_ref_count=>TensResrcDecrRefCount   !decrements the reference count (number of tensor operands associated with the resource)
+#if !(defined(__GNUC__) && __GNUC__ < 8)
           final:: tens_resrc_dtor
+#endif
         end type tens_resrc_t
  !Tensor argument cache entry (TAVP-specific):
         type, extends(tens_cache_entry_t), private:: tens_entry_wrk_t

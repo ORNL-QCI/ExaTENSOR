@@ -1,7 +1,7 @@
 !ExaTENSOR: Massively Parallel Virtual Processor for Scale-Adaptive Hierarchical Tensor Algebra
 !This is the top level API module of ExaTENSOR (user-level API)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2018/03/06
+!REVISION: 2018/03/07
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -37,6 +37,7 @@
        private
        public EXA_NO_ROLE,EXA_DRIVER,EXA_MANAGER,EXA_WORKER,EXA_HELPER !process roles
        public INTD,INTL,INT_MPI,jo,impir,impis !symbols from service_mpi
+       public tens_method_uni_t
 !PARAMETERS:
  !Basic:
        integer(INTD), private:: CONS_OUT=6 !output device
@@ -182,7 +183,7 @@
         implicit none
         integer(INTD):: ierr                              !out: error code
         character(*), intent(in):: method_name            !in: symbolic method name
-        class(talsh_tens_definer_t), intent(in):: method  !in: external tensor body initialization/update method
+        class(tens_method_uni_t), intent(in):: method     !in: external tensor body initialization/transformation method
         integer(INTD), intent(out), optional:: method_tag !out: method tag
         integer(INTD):: tag
 
@@ -1032,7 +1033,9 @@
 !Construct the tensor transformation (initialization) object:
           call tens_init%set_argument(tensor,ierr)
           if(ierr.eq.TEREC_SUCCESS) then
+#if !(defined(__GNUC__) && __GNUC__ < 8)
            call tens_init%set_method(ierr,defined=.FALSE.,method_name=method,method_map=method_map_f)
+#endif
            if(ierr.eq.TEREC_SUCCESS) then
 !Construct the tensor instruction:
             tens_instr=>add_new_instruction(ip,ierr)
