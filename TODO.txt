@@ -1,2 +1,9 @@
 2018-03-06: Check that MPI_Recv() receives the same message as MPI_Probe() discovers
             in case they are coming from different sources.
+2018-03-07: Implement tensor R/W status update (in the cache) at the TAVP-MNG level:
+            Dependency check and status update on instruction issue should be done during location cycle;
+            Status update on instruction retirement will probably require another rotation cycle, or
+            it may be implemented via remote MPI atomics.
+2018-03-07: At the bottom TAVP-MNG level, the owner id still refers to the metadata owner, which is TAVP-MNG,
+            however the dispatch is done to TAVP-WRK processes (TAVP-WRK id). It is also unclear how to
+            implement replication within a group of the TAVP-WRK processes belonging to the same TAVP-MNG process.
