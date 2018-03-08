@@ -130,6 +130,7 @@
           procedure, public:: get_name=>TensSignatureGetName       !returns the alphanumeric_ tensor name
           procedure, public:: get_rank=>TensSignatureGetRank       !returns the rank of the tensor (number of dimensions)
           procedure, public:: get_spec=>TensSignatureGetSpec       !returns the tensor subspace multi-index (specification)
+          procedure, public:: get_bases=>TensSignatureGetBases     !returns the base offset for each tensor dimension
           procedure, public:: relate=>TensSignatureRelate          !relates the tensor signature to another tensor signature: {CMP_EQ,CMP_CN,CMP_IN,CMP_OV,CMP_NC}
           procedure, public:: compare=>TensSignatureCompare        !compares the tensor signature with another tensor signature: {CMP_EQ,CMP_LT,CMP_GT,CMP_ER}
           procedure, public:: print_it=>TensSignaturePrintIt       !prints the tensor signature
@@ -575,6 +576,7 @@
         private TensSignatureGetName
         private TensSignatureGetRank
         private TensSignatureGetSpec
+        private TensSignatureGetBases
         private TensSignatureRelate
         private TensSignatureCompare
         private TensSignaturePrintIt
@@ -1632,6 +1634,36 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensSignatureGetSpec
+!-----------------------------------------------------------------
+        subroutine TensSignatureGetBases(this,bases,num_dims,ierr)
+!Returns base offset for each tensor dimension. Basis function numeration
+!is induced by the subspaces module, it is 1 now: [1:N].
+         implicit none
+         class(tens_signature_t), intent(in):: this  !in: tensor signature
+         integer(INTL), intent(inout):: bases(1:)    !out: dimension bases
+         integer(INTD), intent(out):: num_dims       !out: number of tensor dimensions
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc,i
+         integer(INTL):: sid
+         class(subspace_t), pointer:: subspace
+         type(seg_int_t):: range
+
+         errc=TEREC_SUCCESS; num_dims=this%num_dims
+         do i=1,this%num_dims
+          sid=this%space_idx(i)
+          if(associated(this%hspace(i)%hspace_p)) then
+           subspace=>this%hspace(i)%hspace_p%get_subspace(sid,errc)
+           if(errc.ne.0) then; errc=TEREC_ERROR; exit; endif
+           range=subspace%get_basis_subrange(errc)
+           if(errc.ne.0) then; errc=TEREC_ERROR; exit; endif
+           bases(i)=range%lower_bound()+1_INTL
+          else
+           bases(i)=sid
+          endif
+         enddo
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensSignatureGetBases
 !------------------------------------------------------------------
         function TensSignatureRelate(this,another) result(relation)
 !Relates the tensor signature to another tensor signature.
@@ -4221,8 +4253,10 @@
          integer(INTD), intent(out), optional:: ierr        !out: error code
          integer(INTL), intent(in), optional:: start_offset !in: start offset for numeration (defaults to 0)
          integer(INTD):: errc
+         integer(INTL):: stof
 
          errc=TEREC_SUCCESS
+         stof=0; if(present(start_offset)) stof=start_offset
          !``Finish
          if(present(ierr)) ierr=errc
          return
@@ -4428,23 +4462,22 @@
          if(present(ierr)) ierr=errc
          return
         end function TensRcrsvGetDataType
-!-------------------------------------------------------
-        subroutine TensRcrsvGetBodyPtr(this,body_p,ierr)
+!-------------------------------------------------------------
+        function TensRcrsvGetBodyPtr(this,ierr) result(body_p)
 !Returns a C pointer to the local tensor body storage.
          implicit none
+         type(C_PTR):: body_p                        !out: C pointer
          class(tens_rcrsv_t), intent(in):: this      !in: tensor
-         type(C_PTR), intent(out):: body_p           !out: C pointer
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
          class(tens_layout_t), pointer:: layout
 
-         body_p=C_NULL_PTR; layout=>this%get_layout(errc)
-         if(errc.eq.TEREC_SUCCESS) then
-          !``Finish
-         endif
+         body_p=C_NULL_PTR
+         layout=>this%get_layout(errc)
+         if(errc.eq.TEREC_SUCCESS) body_p=layout%get_body_ptr(errc)
          if(present(ierr)) ierr=errc
          return
-        end subroutine TensRcrsvGetBodyPtr
+        end function TensRcrsvGetBodyPtr
 !------------------------------------------------------------
         subroutine TensRcrsvSetLocation(this,data_descr,ierr)
 !Sets the physical location of the tensor body data via a DDSS data descriptor.
