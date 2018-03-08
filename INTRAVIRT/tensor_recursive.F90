@@ -293,6 +293,8 @@
           procedure, public:: set_shape=>TensRcrsvSetShape           !sets the tensor shape (if it has not been set yet)
           procedure, public:: set_layout=>TensRcrsvSetLayout         !sets the tensor body storage layout
           procedure, public:: get_layout=>TensRcrsvGetLayout         !returns a pointer to the tensor body storage layout
+          procedure, public:: get_data_type=>TensRcrsvGetDataType    !returns the data type of the tensor body elements {R4,R8,C4,C8}
+          procedure, public:: get_body_ptr=>TensRcrsvGetBodyPtr      !returns a C pointer to the local tensor body storage (if set)
           procedure, public:: set_location=>TensRcrsvSetLocation     !sets the physical location of the tensor body data
           procedure, public:: update=>TensRcrsvUpdate                !updates the tensor information (new resolution -> new layout -> new body)
           procedure, public:: get_header=>TensRcrsvGetHeader         !returns a pointer to the tensor header
@@ -682,6 +684,8 @@
         private TensRcrsvSetShape
         private TensRcrsvSetLayout
         private TensRcrsvGetLayout
+        private TensRcrsvGetDataType
+        private TensRcrsvGetBodyPtr
         private TensRcrsvSetLocation
         private TensRcrsvUpdate
         private TensRcrsvGetHeader
@@ -4409,6 +4413,38 @@
          if(present(ierr)) ierr=errc
          return
         end function TensRcrsvGetLayout
+!-----------------------------------------------------------------
+        function TensRcrsvGetDataType(this,ierr) result(data_type)
+!Returns the data type of the tensor elements.
+         implicit none
+         integer(INTD):: data_type                   !out: data type
+         class(tens_rcrsv_t), intent(in):: this      !in: tensor
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+         class(tens_layout_t), pointer:: layout
+
+         data_type=NO_TYPE; layout=>this%get_layout(errc)
+         if(errc.eq.TEREC_SUCCESS) data_type=layout%get_data_type(errc)
+         if(present(ierr)) ierr=errc
+         return
+        end function TensRcrsvGetDataType
+!-------------------------------------------------------
+        subroutine TensRcrsvGetBodyPtr(this,body_p,ierr)
+!Returns a C pointer to the local tensor body storage.
+         implicit none
+         class(tens_rcrsv_t), intent(in):: this      !in: tensor
+         type(C_PTR), intent(out):: body_p           !out: C pointer
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+         class(tens_layout_t), pointer:: layout
+
+         body_p=C_NULL_PTR; layout=>this%get_layout(errc)
+         if(errc.eq.TEREC_SUCCESS) then
+          !``Finish
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensRcrsvGetBodyPtr
 !------------------------------------------------------------
         subroutine TensRcrsvSetLocation(this,data_descr,ierr)
 !Sets the physical location of the tensor body data via a DDSS data descriptor.
