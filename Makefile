@@ -118,6 +118,8 @@ endif
 	ld -shared -o libexatensor.so ./lib/*.o
 	rm -rf ./lib/*.o
 	cp ./TALSH/libtalsh.so ./
+	cp ./libtalsh.so ./lib/
+	cp ./libexatensor.so ./lib/
 	echo "Finished successfully!"
 
 .PHONY: clean
