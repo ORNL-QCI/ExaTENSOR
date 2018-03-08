@@ -120,6 +120,7 @@ endif
 	cp ./TALSH/libtalsh.so ./
 	cp ./libtalsh.so ./lib/
 	cp ./libexatensor.so ./lib/
+	cp ./libexatensor.a ./lib/
 	echo "Finished successfully!"
 
 .PHONY: clean
