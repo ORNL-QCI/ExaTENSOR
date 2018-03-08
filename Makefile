@@ -117,7 +117,7 @@ endif
 	ar cr libexatensor.a ./lib/*.o
 	ld -shared -o libexatensor.so ./lib/*.o
 	rm -rf ./lib/*.o
-	mv ./TALSH/libtalsh.so ./
+	cp ./TALSH/libtalsh.so ./
 	echo "Finished successfully!"
 
 .PHONY: clean
