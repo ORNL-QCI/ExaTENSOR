@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/03/07
+!REVISION: 2018/03/08
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -284,6 +284,7 @@
           procedure, public:: get_rank=>TensRcrsvGetRank             !returns the rank of the tensor (number of dimensions)
           procedure, public:: get_spec=>TensRcrsvGetSpec             !returns the tensor subspace multi-index (specification)
           procedure, public:: get_dims=>TensRcrsvGetDims             !returns tensor dimension extents
+          procedure, public:: get_bases=>TensRcrsvGetBases           !returns the base offset for each tensor dimension
           procedure, public:: add_subtensor=>TensRcrsvAddSubtensor   !registers a constituent subtensor by providing its tensor header
           procedure, public:: add_subtensors=>TensRcrsvAddSubtensors !registers constituent subtensors by providing a list of their tensor headers
           procedure, public:: has_structure=>TensRcrsvHasStructure   !returns TRUE if the tensor structure (list of subtensors) is defined
@@ -523,14 +524,14 @@
           integer(INTD), intent(out), optional:: num_dims         !out: number of tensor dimensions which split under the given strength threshold
           integer(INTD), intent(inout), optional:: split_dims(1:) !out: tensor dimensions which split under the given strength threshold (ordered by decreasing strength)
          end function tens_rcrsv_dim_strength_i
-  !tens_method_unit_t: .apply() deferred: user-defined unary tensor method (initialization/transformation):
+  !tens_method_uni_t: .apply() deferred: user-defined unary tensor method (initialization/transformation):
          function tens_method_uni_i(this,tensor,scalar) result(ierr)
           import:: INTD,tens_rcrsv_t,tens_method_uni_t
           implicit none
-          integer(INTD):: ierr                                !out: error code (0:success)
-          class(tens_method_uni_t), intent(in):: this         !in: user-defined unary method object
-          class(tens_rcrsv_t), intent(inout), target:: tensor !inout: initialized/transformed tensor
-          complex(8), intent(inout), optional:: scalar        !inout: scalar
+          integer(INTD):: ierr                         !out: error code (0:success)
+          class(tens_method_uni_t), intent(in):: this  !in: user-defined unary method object
+          class(tens_rcrsv_t), intent(inout):: tensor  !inout: initialized/transformed tensor
+          complex(8), intent(inout), optional:: scalar !inout: scalar
          end function tens_method_uni_i
         end interface
 !VISIBILITY:
@@ -672,6 +673,7 @@
         private TensRcrsvGetRank
         private TensRcrsvGetSpec
         private TensRcrsvGetDims
+        private TensRcrsvGetBases
         private TensRcrsvAddSubtensor
         private TensRcrsvAddSubtensors
         private TensRcrsvHasStructure
@@ -4205,6 +4207,22 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensRcrsvGetDims
+!--------------------------------------------------------------------------
+        subroutine TensRcrsvGetBases(this,bases,num_dims,ierr,start_offset)
+!Returns the base offset for each tensor dimension.
+         implicit none
+         class(tens_rcrsv_t), intent(in):: this             !in: tensor
+         integer(INTL), intent(inout):: bases(1:)           !out: tensor dimension bases
+         integer(INTD), intent(out):: num_dims              !out: number of tensor dimensions
+         integer(INTD), intent(out), optional:: ierr        !out: error code
+         integer(INTL), intent(in), optional:: start_offset !in: start offset for numeration (defaults to 0)
+         integer(INTD):: errc
+
+         errc=TEREC_SUCCESS
+         !``Finish
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensRcrsvGetBases
 !------------------------------------------------------------
         subroutine TensRcrsvAddSubtensor(this,subtensor,ierr)
 !Registers a constituent subtensor by providing its tensor header.

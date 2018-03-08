@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/03/07
+!REVISION: 2018/03/08
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -76,8 +76,8 @@
         integer(INTL), parameter, private:: MAX_BYTECODE_SIZE=32_INTL*(1024_INTL*1024_INTL) !max size of an incoming/outgoing bytecode envelope (bytes)
         integer(INTD), parameter, private:: MAX_BYTECODE_INSTR=65536                        !max number of tensor instructions in a bytecode envelope
  !Resourcer:
-        integer(INTD), private:: MAX_RESOURCE_INSTR=64  !max number of instructions during a single resource allocation phase
-        real(8), private:: MAX_RESOURCE_PHASE_TIME=1d-3 !max time spent in a single resource allocation phase
+        integer(INTD), private:: MAX_RESOURCER_INSTR=64  !max number of instructions during a single new resource allocation phase
+        real(8), private:: MAX_RESOURCER_PHASE_TIME=1d-3 !max time spent in a single new resource allocation phase
  !Communicator:
         integer(INTD), private:: MAX_COMMUNICATOR_PREFETCHES=16 !max number of outstanding prefetches issued by Communicator
         integer(INTD), private:: MAX_COMMUNICATOR_UPLOADS=8     !max number of outstanding uploads issued by Communicator
@@ -237,7 +237,7 @@
         type, extends(ds_unit_t), private:: tavp_wrk_communicator_t
          integer(INTD), public:: num_ports=2                        !number of ports: Port 0 <- Resourcer (Tens,Ctrl,Aux), Port 1 <- Dispatcher (Tens)
          integer(INTD), private:: num_mpi_windows=TAVP_WRK_NUM_WINS !number of dynamic MPI windows per global addressing space
-         class(DistrSpace_t), pointer, private:: addr_space=>NULL() !non-owning pointer to the DSVP global address space
+         class(DistrSpace_t), pointer, private:: addr_space=>NULL() !non-owning pointer to the global address space
          class(tens_cache_t), pointer, private:: arg_cache=>NULL()  !non-owning pointer to the tensor argument cache
          type(list_bi_t), private:: prefetch_list                   !list of tensor instructions undergoing input prefetch
          type(list_iter_t), private:: fet_list                      !iterator for <prefetch_list>
@@ -3336,7 +3336,7 @@
          ier=this%stg_list%init(this%staged_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-68
 !Initialize the deferred list:
          ier=this%def_list%init(this%deferred_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-67
-!Initialize the released list:
+!Initialize the release list:
          ier=this%rls_list%init(this%release_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-66
 !Create a special FENCE instruction:
          call instr_fence%tens_instr_ctor(TAVP_INSTR_CTRL_RESUME,ier,iid=0_INTL,stat=DS_INSTR_SPECIAL)
@@ -3350,7 +3350,7 @@
           this%arg_cache=>NULL(); if(errc.eq.0) errc=-63
          endif
 !Work loop:
-         ier=timer_start(rsc_timer,MAX_RESOURCE_PHASE_TIME); if(ier.ne.TIMERS_SUCCESS.and.errc.eq.0) errc=-62
+         ier=timer_start(rsc_timer,MAX_RESOURCER_PHASE_TIME); if(ier.ne.TIMERS_SUCCESS.and.errc.eq.0) errc=-62
          active=(errc.eq.0); stopping=(.not.active); num_staged=0
          wloop: do while(active)
  !Process the deferred queue (check data dependencies and try acquiring resources for input tensor operands again):
@@ -3486,13 +3486,13 @@
            endif
   !Pass staged instructions to Communicator Port 0:
            expired=timer_expired(rsc_timer,ier); if(ier.ne.TIMERS_SUCCESS.and.errc.eq.0) then; errc=-18; exit wloop; endif
-           if(expired.or.stopping.or.num_staged.gt.MAX_RESOURCE_INSTR) then
+           if(expired.or.stopping.or.num_staged.gt.MAX_RESOURCER_INSTR) then
             ier=this%stg_list%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-17; exit wloop; endif
             if(this%stg_list%get_status().eq.GFC_IT_ACTIVE) then
              ier=tavp%communicator%load_port(0,this%stg_list)
              if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-16; exit wloop; endif
             endif
-            if(expired) ier=timer_reset(rsc_timer,MAX_RESOURCE_PHASE_TIME)
+            if(expired) ier=timer_reset(rsc_timer,MAX_RESOURCER_PHASE_TIME)
             num_staged=0
            endif
            ier=this%iqueue%get_status()
@@ -3562,7 +3562,7 @@
          endif
 !Release the tensor argument cache pointer:
          this%arg_cache=>NULL()
-!Deactivate the released list:
+!Deactivate the release list:
          ier=this%rls_list%reset()
          if(ier.eq.GFC_SUCCESS) then
           ier=this%rls_list%get_status()
@@ -3953,8 +3953,8 @@
 
          errc=0; thid=omp_get_thread_num()
          if(DEBUG.gt.0) then
-          write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Communicator started as DSVU # ",i2," (thread ",i2,"): Num_Wins = ",i4)')&
-          &impir,this%get_id(),thid,this%num_mpi_windows
+          write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Communicator started as DSVU # ",i2," (thread ",i2,'//&
+          '"): Number of MPI windows = ",i6)') impir,this%get_id(),thid,this%num_mpi_windows
           flush(CONS_OUT)
          endif
 !Initialize queues and ports:
@@ -3974,7 +3974,7 @@
           if(ier.eq.0) then
            this%addr_space=>tavp%addr_space
            this%arg_cache=>tavp%tens_cache
-           write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Communicator unit ",i2," created a global addressing space successfully")')&
+           write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Communicator unit ",i2," created a global addressing space successfully!")')&
            &impir,this%get_id()
           else
            if(errc.eq.0) errc=-1
