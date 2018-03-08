@@ -287,7 +287,7 @@ FFLAGS = $(FFLAGS_$(TOOLKIT)_$(BUILD_TYPE)) $(DF)$(NO_GPU) $(DF)$(NO_AMD) $(DF)$
 MY_INC1 = -I../UTILITY -I../GFC -I../DDSS -I../TALSH -I../DSVP -I../INTRAVIRT -I../INTERVIRT
 MY_INC2 = -I../UTILITY/OBJ -I../GFC/OBJ -I../DDSS/OBJ -I../TALSH/OBJ -I../DSVP/OBJ -I../INTRAVIRT/OBJ -I../INTERVIRT/OBJ
 MY_INC = $(MY_INC1) $(MY_INC2)
-MY_LIB = ../INTERVIRT/libExaTensor.a ../INTRAVIRT/libintravirt.a ../DSVP/libdsvp.a ../TALSH/libtalsh.a ../DDSS/libddss.a ../GFC/libgfc.a ../UTILITY/libutility.a
+MY_LIB = ../INTERVIRT/libintervirt.a ../INTRAVIRT/libintravirt.a ../DSVP/libdsvp.a ../TALSH/libtalsh.a ../DDSS/libddss.a ../GFC/libgfc.a ../UTILITY/libutility.a
 
 #THREADS:
 LTHREAD_GNU   = -lgomp

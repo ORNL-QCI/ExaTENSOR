@@ -1,4 +1,4 @@
-NAME = ExaTensor
+NAME = intervirt
 
 #ADJUST THE FOLLOWING ACCORDINGLY:
 #Cross-compiling wrappers: [WRAP|NOWRAP]:

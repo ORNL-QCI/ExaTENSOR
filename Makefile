@@ -6,15 +6,15 @@ export WRAP ?= NOWRAP
 #Compiler: [GNU|PGI|INTEL|CRAY|IBM]:
 export TOOLKIT ?= GNU
 #Optimization: [DEV|OPT]:
-export BUILD_TYPE ?= OPT
+export BUILD_TYPE ?= DEV
 #MPI Library: [MPICH|OPENMPI]:
 export MPILIB ?= MPICH
 #BLAS: [ATLAS|MKL|ACML|ESSL|NONE]:
-export BLASLIB ?= ATLAS
+export BLASLIB ?= MKL
 #Nvidia GPU via CUDA: [CUDA|NOCUDA]:
 export GPU_CUDA ?= NOCUDA
 #Nvidia GPU architecture (two digits):
-export GPU_SM_ARCH ?= 30
+export GPU_SM_ARCH ?= 50
 #Operating system: [LINUX|NO_LINUX]:
 export EXA_OS ?= LINUX
 
@@ -30,13 +30,13 @@ export FOOL_CUDA ?= NO
 
 #MPI library (whichever you have, set one):
 # Set this if you have MPICH or its derivative:
-export PATH_MPICH ?= /usr/local/mpi/mpich/3.2
+export PATH_MPICH ?= /usr/local/mpi/mpich/3.2.1
 #  Only reset these if MPI files are spread in the system directories:
  export PATH_MPICH_INC ?= $(PATH_MPICH)/include
  export PATH_MPICH_LIB ?= $(PATH_MPICH)/lib
  export PATH_MPICH_BIN ?= $(PATH_MPICH)/bin
 # Set this if you have OPENMPI or its derivative:
-export PATH_OPENMPI ?= /usr/local/mpi/openmpi/2.0.1
+export PATH_OPENMPI ?= /usr/local/mpi/openmpi/3.0.0
 #  Only reset these if MPI files are spread in the system directories:
  export PATH_OPENMPI_INC ?= $(PATH_OPENMPI)/include
  export PATH_OPENMPI_LIB ?= $(PATH_OPENMPI)/lib
@@ -76,6 +76,7 @@ $(NAME):
 	$(MAKE) -C ./INTERVIRT
 	$(MAKE) -C ./TN
 	$(MAKE) -C ./QFORCE
+#Gather headers and module static libraries:
 	rm -f ./include/*
 	rm -f ./lib/*
 	rm -f ./bin/*
@@ -87,6 +88,7 @@ ifeq ($(TOOLKIT),CRAY)
 	cp ./TALSH/OBJ/TALSH.mod ./include/
 	cp ./TALSH/OBJ/TENSOR_ALGEBRA.mod ./include/
 	cp ./TALSH/OBJ/DIL_BASIC.mod ./include/
+	cp ./TALSH/OBJ/TALSH.mod ./
 else
 	cp ./INTERVIRT/exatensor.mod ./
 	cp ./INTERVIRT/exatensor.mod ./include/
@@ -95,16 +97,29 @@ else
 	cp ./TALSH/talsh.mod ./include/
 	cp ./TALSH/tensor_algebra.mod ./include/
 	cp ./TALSH/dil_basic.mod ./include/
+	cp ./TALSH/talsh.mod ./
 endif
 	cp ./[A-Z]*/*.h ./include/
 	cp ./[A-Z]*/*.hpp ./include/
 	cp ./TN/*.cpp ./include/
 	cp ./[A-Z]*/*.a ./lib/
 	cp ./[A-Z]*/*.x ./bin/
-	cp ./INTERVIRT/libExaTensor.a ./
 	cp ./QFORCE/Qforce.x ./
+#Create static and shared libraries:
+	ar x ./lib/libintervirt.a
+	ar x ./lib/libintravirt.a
+	ar x ./lib/libdsvp.a
+	ar x ./lib/libddss.a
+	ar x ./lib/libtalsh.a
+	ar x ./lib/libgfc.a
+	ar x ./lib/libutility.a
+	mv ./*.o ./lib/
+	ar cr libexatensor.a ./lib/*.o
+	ld -shared -o libexatensor.so ./lib/*.o
+	rm -rf ./lib/*.o
+	mv ./TALSH/libtalsh.so ./
 	echo "Finished successfully!"
 
 .PHONY: clean
 clean:
-	rm -f ./*.x ./*.a ./*.mod ./*/*.x ./*/*.a ./*/*.mod ./*/OBJ/* ./bin/* ./lib/* ./include/*
+	rm -f ./*.x ./*.a ./*.so ./*.mod ./*/*.x ./*/*.a ./*/*.so ./*/*.mod ./*/OBJ/* ./bin/* ./lib/* ./include/*
