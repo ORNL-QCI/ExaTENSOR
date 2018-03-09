@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/03/08
+!REVISION: 2018/03/09
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -181,6 +181,7 @@
           procedure, public:: get_rank=>TensHeaderGetRank           !returns the rank of the tensor (number of dimensions)
           procedure, public:: get_spec=>TensHeaderGetSpec           !returns the tensor subspace multi-index (specification)
           procedure, public:: get_dims=>TensHeaderGetDims           !returns tensor dimension extents
+          procedure, public:: get_bases=>TensHeaderGetBases         !returns the base offset for each tensor dimension
           procedure, public:: num_groups=>TensHeaderNumGroups       !returns the total number of non-trivial index groups defined in the tensor shape
           procedure, public:: get_dim_group=>TensHeaderGetDimGroup  !returns the restriction group for a specific tensor dimension (0: no restrictions)
           procedure, public:: get_groups=>TensHeaderGetGroups       !returns dimension groups and group restrictions
@@ -611,6 +612,7 @@
         private TensHeaderGetRank
         private TensHeaderGetSpec
         private TensHeaderGetDims
+        private TensHeaderGetBases
         private TensHeaderNumGroups
         private TensHeaderGetDimGroup
         private TensHeaderGetGroups
@@ -1637,7 +1639,7 @@
 !-----------------------------------------------------------------
         subroutine TensSignatureGetBases(this,bases,num_dims,ierr)
 !Returns base offset for each tensor dimension. Basis function numeration
-!is induced by the subspaces module, it is 1 now: [1:N].
+!is induced by the subspaces implementation: It is 1 now: [1:N].
          implicit none
          class(tens_signature_t), intent(in):: this  !in: tensor signature
          integer(INTL), intent(inout):: bases(1:)    !out: dimension bases
@@ -2829,6 +2831,21 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensHeaderGetDims
+!--------------------------------------------------------------
+        subroutine TensHeaderGetBases(this,bases,num_dims,ierr)
+!Returns base offset for each tensor dimension. Basis function numeration
+!is induced by the subspaces implementation: It is 1 now: [1:N].
+         implicit none
+         class(tens_header_t), intent(in):: this     !in: tensor header
+         integer(INTL), intent(inout):: bases(1:)    !out: dimension bases
+         integer(INTD), intent(out):: num_dims       !out: number of tensor dimensions
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         call this%signature%get_bases(bases,num_dims,errc)
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensHeaderGetBases
 !-----------------------------------------------------------------
         function TensHeaderNumGroups(this,ierr) result(num_groups)
 !Returns the total number of non-trivial index groups defined in the tensor header shape.
@@ -4243,21 +4260,18 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensRcrsvGetDims
-!--------------------------------------------------------------------------
-        subroutine TensRcrsvGetBases(this,bases,num_dims,ierr,start_offset)
-!Returns the base offset for each tensor dimension.
+!-------------------------------------------------------------
+        subroutine TensRcrsvGetBases(this,bases,num_dims,ierr)
+!Returns the base offset for each tensor dimension. Default numeration is
+!induced by the subspaces implementation: It is 1 now: [1:N].
          implicit none
-         class(tens_rcrsv_t), intent(in):: this             !in: tensor
-         integer(INTL), intent(inout):: bases(1:)           !out: tensor dimension bases
-         integer(INTD), intent(out):: num_dims              !out: number of tensor dimensions
-         integer(INTD), intent(out), optional:: ierr        !out: error code
-         integer(INTL), intent(in), optional:: start_offset !in: start offset for numeration (defaults to 0)
+         class(tens_rcrsv_t), intent(in):: this      !in: tensor
+         integer(INTL), intent(inout):: bases(1:)    !out: tensor dimension bases
+         integer(INTD), intent(out):: num_dims       !out: number of tensor dimensions
+         integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
-         integer(INTL):: stof
 
-         errc=TEREC_SUCCESS
-         stof=0; if(present(start_offset)) stof=start_offset
-         !``Finish
+         call this%header%get_bases(bases,num_dims,errc)
          if(present(ierr)) ierr=errc
          return
         end subroutine TensRcrsvGetBases
@@ -4472,9 +4486,15 @@
          integer(INTD):: errc
          class(tens_layout_t), pointer:: layout
 
-         body_p=C_NULL_PTR
+         body_p=C_NULL_PTR; layout=>NULL()
          layout=>this%get_layout(errc)
-         if(errc.eq.TEREC_SUCCESS) body_p=layout%get_body_ptr(errc)
+         if(errc.eq.TEREC_SUCCESS) then
+          if(associated(layout)) then
+           body_p=layout%get_body_ptr(errc)
+          else
+           errc=TEREC_INVALID_REQUEST
+          endif
+         endif
          if(present(ierr)) ierr=errc
          return
         end function TensRcrsvGetBodyPtr
