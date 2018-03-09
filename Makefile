@@ -74,7 +74,9 @@ $(NAME):
 	$(MAKE) -C ./DSVP
 	$(MAKE) -C ./INTRAVIRT
 	$(MAKE) -C ./INTERVIRT
+ifeq ($(EXA_OS),LINUX)
 	$(MAKE) -C ./TN
+endif
 	$(MAKE) -C ./QFORCE
 #Gather headers and module static libraries:
 	rm -f ./include/*
@@ -115,12 +117,14 @@ endif
 	ar x ./lib/libutility.a
 	mv ./*.o ./lib/
 	ar cr libexatensor.a ./lib/*.o
+ifeq ($(EXA_OS),LINUX)
 	ld -shared -o libexatensor.so ./lib/*.o
-	rm -rf ./lib/*.o
 	cp ./TALSH/libtalsh.so ./
 	cp ./libtalsh.so ./lib/
 	cp ./libexatensor.so ./lib/
+endif
 	cp ./libexatensor.a ./lib/
+	rm -rf ./lib/*.o
 	echo "Finished successfully!"
 
 .PHONY: clean
