@@ -1,7 +1,7 @@
 !Infrastructure for a recursive adaptive vector space decomposition
 !and hierarchical vector space representation.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/03/06
+!REVISION: 2018/03/09
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -278,6 +278,7 @@
           procedure, public:: get_subspace_level=>HSpaceGetSubspaceLevel!returns the distance from the root for the specific subspace
           procedure, public:: get_subspace=>HSpaceGetSubspace           !returns a pointer to the requested subspace of the hierarchical vector space
           procedure, public:: get_aggr_tree=>HSpaceGetAggrTree          !returns a pointer to the subspace aggregation tree (->subspaces)
+          procedure, public:: get_level_composition=>HSpaceGetLevelComposition !returns an ordered list of subspace ids forming a given level of the subspace aggregation tree (direct sum decomposition)
           procedure, public:: compare_subspaces=>HSpaceCompareSubspaces !compares two subspaces from the hierarchical vector space: {CMP_EQ,CMP_LT,CMP_GT,CMP_ER}
           procedure, public:: relate_subspaces=>HSpaceRelateSubspaces   !relates two subspaces from the hierarchical vector space: {CMP_EQ,CMP_CN,CMP_IN,CMP_OV,CMP_NC}
           procedure, public:: compare_subranges=>HSpaceCompareSubranges !compares basis subranges of two subspaces from the hierarchical vector space: {CMP_EQ,CMP_LT,CMP_GT,CMP_OV,CMP_ER}
@@ -405,6 +406,7 @@
         private HSpaceGetSubspaceLevel
         private HSpaceGetSubspace
         private HSpaceGetAggrTree
+        private HSpaceGetLevelComposition
         private HSpaceCompareSubspaces
         private HSpaceRelateSubspaces
         private HSpaceCompareSubranges
@@ -2515,6 +2517,81 @@
          if(present(ierr)) ierr=errc
          return
         end function HSpaceGetAggrTree
+!------------------------------------------------------------------------------------
+        subroutine HSpaceGetLevelComposition(this,level,subspaces,num_subspaces,ierr)
+!Returns an ordered list of subspaces (their ids) forming a given level of the subspace
+!aggregation tree (direct sum decomposition of the complete space at the given level).
+!If the <subspaces> array is already allocated, its length must be large enough.
+         implicit none
+         class(h_space_t), intent(in):: this                      !in: hierarchical vector space
+         integer(INTD), intent(in):: level                        !in: subspace aggregation tree level (0 = root)
+         integer(INTL), intent(inout), allocatable:: subspaces(:) !out: an ordered list of subspaces (their ids) forming the given tree level
+         integer(INTL), intent(out):: num_subspaces               !out: number of subspaces in the list
+         integer(INTD), intent(out), optional:: ierr              !out: error code
+         integer(INTD):: errc,ier
+         integer(INTL):: ln
+         class(vec_tree_t), pointer:: aggr_tree
+         type(vec_tree_iter_t):: tree
+         class(*), pointer:: subspace
+
+         errc=0; num_subspaces=0
+         if(level.ge.0) then
+ !Get the subspace aggregation tree:
+          aggr_tree=>this%get_aggr_tree(errc)
+          if(errc.eq.0) then
+           errc=tree%init(aggr_tree)
+           if(errc.eq.GFC_SUCCESS) then
+ !Check the allocation status of the output array and allocate it if needed:
+            ln=0; if(allocated(subspaces)) ln=size(subspaces)
+            if(ln.le.0) then
+ !Count the number of subspaces at the given tree level:
+             errc=tree%find_first_of_level(level)
+             if(errc.eq.GFC_SUCCESS) then
+              ln=0
+              do while(errc.eq.GFC_SUCCESS); ln=ln+1; errc=tree%move_to_cousin(); enddo
+              if(errc.eq.GFC_NO_MOVE) then
+               allocate(subspaces(1:ln),STAT=errc); if(errc.ne.0) errc=-1
+              else
+               errc=-1
+              endif
+             else
+              errc=-1
+             endif
+            endif
+ !Form the list of subspaces (their ids):
+            if(errc.eq.0) then
+             errc=tree%find_first_of_level(level)
+             if(errc.eq.GFC_SUCCESS) then
+              do while(errc.eq.GFC_SUCCESS)
+               subspace=>tree%get_value(errc); if(errc.ne.GFC_SUCCESS) then; errc=-1; exit; endif
+               select type(subspace)
+               class is(subspace_t)
+                num_subspaces=num_subspaces+1
+                subspaces(num_subspaces)=subspace%get_id(errc)
+                if(errc.ne.0) then; errc=-1; exit; endif
+               class default
+                errc=-1; exit
+               end select
+               errc=tree%move_to_cousin()
+              enddo
+              if(errc.ne.GFC_NO_MOVE) errc=-1
+             else
+              errc=-1
+             endif
+            endif
+            ier=tree%release(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-1
+           else
+            errc=-1
+           endif
+          else
+           errc=-1
+          endif
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine HSpaceGetLevelComposition
 !---------------------------------------------------------------------
         function HSpaceCompareSubspaces(this,id1,id2,ierr) result(cmp)
 !Compares two subspaces from the hierarchical vector space.

@@ -2,7 +2,7 @@
 !The elements are initially inserted in a vector with an option to be
 !later added in a tree, thus imposing a tree relationship on them.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017/12/20
+!REVISION: 2018/03/09
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -94,6 +94,7 @@
           procedure, public:: move_to_parent=>VecTreeIterMoveToParent   !moves the iterator to the parent of the current element in the tree
           procedure, public:: move_up=>VecTreeIterMoveUp                !moves the iterator towrards the tree root a specific number of hops
           procedure, public:: move_to_cousin=>VecTreeIterMoveToCousin   !moves the iterator to the next/previous cousin of the current element in the tree (same tree level)
+          procedure, public:: find_first_of_level=>VecTreeIterFindFirstOfLevel !moves the iterator to the first element at a given tree level
           procedure, public:: append=>VecTreeIterAppend                 !appends a new element at the end of the container
           procedure, public:: add_leaf=>VecTreeIterAddLeaf              !appends a new child element to the tree vertex currently pointed to
           procedure, public:: delete_all=>VecTreeIterDeleteAll          !deletes all container elements
@@ -130,6 +131,7 @@
         private VecTreeIterMoveToParent
         private VecTreeIterMoveUp
         private VecTreeIterMoveToCousin
+        private VecTreeIterFindFirstOfLevel
         private VecTreeIterAppend
         private VecTreeIterAddLeaf
         private VecTreeIterDeleteAll
@@ -702,6 +704,38 @@
          call this%update_status_()
          return
         end function VecTreeIterMoveToCousin
+!--------------------------------------------------------------------
+        function VecTreeIterFindFirstOfLevel(this,level) result(ierr)
+!Moves the iterator to the first element at a given tree level.
+!If no such element exists, returns GFC_NO_MOVE and resets the iterator
+!status to GFC_IT_DONE.
+         implicit none
+         integer(INTD):: ierr                         !out: error code
+         class(vec_tree_iter_t), intent(inout):: this !inout: vector tree iterator
+         integer(INTD), intent(in):: level            !in: tree level (0:root)
+         class(*), pointer:: up
+         integer(INTL):: offset
+         integer(INTD):: errc
+
+         ierr=this%tree_it%find_first_of_level(level)
+         if(ierr.eq.GFC_SUCCESS) then
+          up=>this%tree_it%get_value(ierr)
+          if(ierr.eq.GFC_SUCCESS.and.associated(up)) then
+           select type(up); type is(integer(INTL)); offset=up; class default; ierr=GFC_ERROR; end select
+           if(ierr.eq.GFC_SUCCESS) then
+            ierr=this%val_it%move_to(offset)
+            if(ierr.eq.GFC_SUCCESS) ierr=this%pos_it%move_to(offset)
+           endif
+          else
+           ierr=GFC_CORRUPTED_CONT
+          endif
+         elseif(ierr.eq.GFC_NO_MOVE) then
+          errc=this%val_it%set_status_(GFC_IT_DONE)
+          errc=this%pos_it%set_status_(GFC_IT_DONE)
+         endif
+         call this%update_status_()
+         return
+        end function VecTreeIterFindFirstOfLevel
 !------------------------------------------------------------------------------------
 #if !(defined(__GNUC__) && __GNUC__ < 9)
         function VecTreeIterAppend(this,elem_val,assoc_only,copy_ctor_f) result(ierr)

@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Tree
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2017-12-20 (started 2016-02-17)
+!REVISION: 2018-03-09 (started 2016-02-17)
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -91,6 +91,7 @@
           procedure, public:: move_to_parent=>TreeIterMoveToParent  !moves the iterator to the parent, if any
           procedure, public:: move_up=>TreeIterMoveUp               !moves the iterator towards the root a specific number of hops
           procedure, public:: move_to_cousin=>TreeIterMoveToCousin  !moves the iterator to the next/previous cousin (within the tree level)
+          procedure, public:: find_first_of_level=>TreeIterFindFirstOfLevel !moves the iterator to the first element at a given tree level
           procedure, public:: get_num_children=>TreeIterGetNumChildren !returns the total number of children at the current iterator position
           procedure, public:: get_num_siblings=>TreeIterGetNumSiblings !returns the total number of siblings at the current iterator position
           procedure, public:: on_first_sibling=>TreeIterOnFirstSibling !returns GFC_TRUE if positioned on the first sibling
@@ -132,6 +133,7 @@
         private TreeIterMoveToParent
         private TreeIterMoveUp
         private TreeIterMoveToCousin
+        private TreeIterFindFirstOfLevel
         private TreeIterGetNumChildren
         private TreeIterGetNumSiblings
         private TreeIterOnFirstSibling
@@ -642,6 +644,60 @@
          endif
          return
         end function TreeIterMoveToCousin
+!-----------------------------------------------------------------
+        function TreeIterFindFirstOfLevel(this,level) result(ierr)
+!Moves the iterator to the first element at a given tree level.
+!If no such element exists, returns GFC_NO_MOVE and reset the
+!iterator status to GFC_IT_DONE.
+         implicit none
+         integer(INTD):: ierr                     !out: error code
+         class(tree_iter_t), intent(inout):: this !inout: tree iterator
+         integer(INTD), intent(in):: level        !in: tree level
+         integer(INTD):: n
+
+         ierr=this%reset()
+         if(ierr.eq.GFC_SUCCESS) then
+          ierr=this%get_status()
+          if(ierr.eq.GFC_IT_ACTIVE) then
+           ierr=GFC_SUCCESS
+           if(level.gt.0) then
+            n=0
+            cloop: do
+             ierr=this%move_to_child()
+             if(ierr.eq.GFC_SUCCESS) then
+              n=n+1; if(n.eq.level) exit cloop
+             elseif(ierr.eq.GFC_NO_MOVE) then
+              sloop: do
+               ierr=this%move_to_sibling()
+               if(ierr.eq.GFC_SUCCESS) then
+                exit sloop
+               elseif(ierr.eq.GFC_NO_MOVE) then
+                if(n.eq.0) then
+                 ierr=GFC_NO_MOVE
+                 n=this%set_status_(GFC_IT_DONE)
+                 exit cloop
+                endif
+                ierr=this%move_to_parent()
+                if(ierr.eq.GFC_SUCCESS) then
+                 n=n-1
+                else !error
+                 exit cloop
+                endif
+               else !error
+                exit cloop
+               endif
+              enddo sloop
+             else !error
+              exit cloop
+             endif
+            enddo cloop
+           elseif(level.lt.0) then
+            ierr=GFC_INVALID_ARGS
+           endif
+          endif
+         endif
+         return
+        end function TreeIterFindFirstOfLevel
 !----------------------------------------------------------------
         function TreeIterGetNumChildren(this,ierr) result(nchild)
 !Returns the total number of children at the current iterator position.
