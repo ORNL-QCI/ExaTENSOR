@@ -2550,12 +2550,12 @@
               ln=0
               do while(errc.eq.GFC_SUCCESS); ln=ln+1; errc=tree%move_to_cousin(); enddo
               if(errc.eq.GFC_NO_MOVE) then
-               allocate(subspaces(1:ln),STAT=errc); if(errc.ne.0) errc=-1
+               allocate(subspaces(1:ln),STAT=errc); if(errc.ne.0) errc=-12
               else
-               errc=-1
+               errc=-11
               endif
              else
-              errc=-1
+              errc=-10
              endif
             endif
  !Form the list of subspaces (their ids):
@@ -2563,28 +2563,28 @@
              errc=tree%find_first_of_level(level)
              if(errc.eq.GFC_SUCCESS) then
               do while(errc.eq.GFC_SUCCESS)
-               subspace=>tree%get_value(errc); if(errc.ne.GFC_SUCCESS) then; errc=-1; exit; endif
+               subspace=>tree%get_value(errc); if(errc.ne.GFC_SUCCESS) then; errc=-9; exit; endif
                select type(subspace)
                class is(subspace_t)
                 num_subspaces=num_subspaces+1
                 subspaces(num_subspaces)=subspace%get_id(errc)
-                if(errc.ne.0) then; errc=-1; exit; endif
+                if(errc.ne.0) then; errc=-8; exit; endif
                class default
-                errc=-1; exit
+                errc=-7; exit
                end select
                errc=tree%move_to_cousin()
               enddo
-              if(errc.ne.GFC_NO_MOVE) errc=-1
+              if(errc.eq.GFC_NO_MOVE) then; errc=0; else; errc=-6; endif
              else
-              errc=-1
+              errc=-5
              endif
             endif
-            ier=tree%release(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-1
+            ier=tree%release(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-4
            else
-            errc=-1
+            errc=-3
            endif
           else
-           errc=-1
+           errc=-2
           endif
          else
           errc=-1

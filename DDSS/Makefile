@@ -171,7 +171,7 @@ CUDA_LINK = $(CUDA_LINK_$(GPU_CUDA))
 ifeq ($(GPU_CUDA),CUDA)
 GPU_SM = sm_$(GPU_SM_ARCH)
 GPU_ARCH = $(GPU_SM_ARCH)0
-CUDA_HOST_NOWRAP = --compiler-bindir /usr/bin
+CUDA_HOST_NOWRAP = -I.
 CUDA_HOST_WRAP = -I.
 CUDA_HOST = $(CUDA_HOST_$(WRAP))
 CUDA_FLAGS_DEV = --compile -arch=$(GPU_SM) -g -G -lineinfo -DDEBUG_GPU
@@ -268,7 +268,7 @@ lib$(NAME).a: $(OBJS)
 
 ./OBJ/c2fortran.o: c2fortran.cu
 ifeq ($(GPU_CUDA),CUDA)
-	$(CUDA_COMP) $(INC) $(MPI_INC) $(CUDA_INC) $(CUDA_FLAGS) c2fortran.cu -o ./OBJ/c2fortran.o
+	$(CUDA_COMP) -ccbin /usr/bin/g++ $(INC) $(MPI_INC) $(CUDA_INC) $(CUDA_FLAGS) c2fortran.cu -o ./OBJ/c2fortran.o
 else
 	cp c2fortran.cu c2fortran.c
 	$(CCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(CFLAGS) c2fortran.c -o ./OBJ/c2fortran.o
