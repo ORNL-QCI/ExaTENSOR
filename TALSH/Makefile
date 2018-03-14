@@ -320,8 +320,8 @@ ifeq ($(WITH_CUTT),YES)
 	rm -rf ./tmp_obj__
 else
 	ar cr lib$(NAME).a $(OBJS)
-ifeq ($(TOOLKIT),GNU)
-	$(FCOMP) -shared -o lib$(NAME).so $(OBJS)
+ifeq ($(EXA_OS),LINUX)
+	ld -shared -o lib$(NAME).so $(OBJS)
 endif
 endif
 

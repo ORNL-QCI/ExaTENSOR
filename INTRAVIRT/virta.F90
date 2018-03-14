@@ -8,7 +8,7 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/03/07
+!REVISION: 2018/03/14
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -117,7 +117,7 @@
         integer(INTD), parameter, public:: TAVP_INSTR_NOOP=DS_INSTR_NOOP !no operation (empty instruction): Negative opcode
    !General control [0-15]:
         integer(INTD), parameter, public:: TAVP_INSTR_CTRL_RESUME=0     !resume TAVP execution (resumes TAVP execution pipeline after a pause, ignored if no pause has been posted)
-        integer(INTD), parameter, public:: TAVP_INSTR_CTRL_STOP=1       !stop TAVP (finishes current instructions and shutdowns TAVP)
+        integer(INTD), parameter, public:: TAVP_INSTR_CTRL_STOP=1       !stop TAVP (finishes current instructions and shuts down TAVP)
         integer(INTD), parameter, public:: TAVP_INSTR_CTRL_PAUSE=2      !pause TAVP execution (finishes active instructions and pauses TAVP)
    !Auxiliary space definitions [16-63]:
         integer(INTD), parameter, public:: TAVP_INSTR_SPACE_CREATE=16   !create a (hierarchical) vector space
@@ -127,24 +127,22 @@
         integer(INTD), parameter, public:: TAVP_INSTR_TENS_DESTROY=65   !tensor destruction
         integer(INTD), parameter, public:: TAVP_INSTR_TENS_LOAD=66      !tensor loading from persistent storage
         integer(INTD), parameter, public:: TAVP_INSTR_TENS_SAVE=67      !tensor saving in persistent storage
-        integer(INTD), parameter, public:: TAVP_INSTR_TENS_COMM=68      !tensor communication (get/put/accumulate)
-        integer(INTD), parameter, public:: TAVP_INSTR_TENS_INIT=69      !tensor initialization (assignement of a value)
-        integer(INTD), parameter, public:: TAVP_INSTR_TENS_NORM1=70     !tensor 1-norm
-        integer(INTD), parameter, public:: TAVP_INSTR_TENS_NORM2=71     !tensor 2-norm
-        integer(INTD), parameter, public:: TAVP_INSTR_TENS_MIN=72       !tensor min element
-        integer(INTD), parameter, public:: TAVP_INSTR_TENS_MAX=73       !tensor max element
-        integer(INTD), parameter, public:: TAVP_INSTR_TENS_FOLD=74      !tensor dimension folding
-        integer(INTD), parameter, public:: TAVP_INSTR_TENS_UNFOLD=75    !tensor dimension unfolding
-        integer(INTD), parameter, public:: TAVP_INSTR_TENS_SLICE=76     !tensor slicing (taking a slice of a tensor with an optional index permutation)
-        integer(INTD), parameter, public:: TAVP_INSTR_TENS_INSERT=77    !tensor insertion (inserting a tensor slice in a tensor with an optional index permutation)
+        integer(INTD), parameter, public:: TAVP_INSTR_TENS_INIT=68      !tensor initialization (assignement of a value)
+        integer(INTD), parameter, public:: TAVP_INSTR_TENS_NORM1=69     !tensor 1-norm
+        integer(INTD), parameter, public:: TAVP_INSTR_TENS_NORM2=70     !tensor 2-norm
+        integer(INTD), parameter, public:: TAVP_INSTR_TENS_MIN=71       !tensor min element
+        integer(INTD), parameter, public:: TAVP_INSTR_TENS_MAX=72       !tensor max element
+        integer(INTD), parameter, public:: TAVP_INSTR_TENS_FOLD=73      !tensor dimension folding
+        integer(INTD), parameter, public:: TAVP_INSTR_TENS_UNFOLD=74    !tensor dimension unfolding
+        integer(INTD), parameter, public:: TAVP_INSTR_TENS_SLICE=75     !tensor slicing (taking a slice of a tensor with an optional index permutation)
+        integer(INTD), parameter, public:: TAVP_INSTR_TENS_INSERT=76    !tensor insertion (inserting a tensor slice in a tensor with an optional index permutation)
+        integer(INTD), parameter, public:: TAVP_INSTR_TENS_COPY=77      !tensor copy (copying a tensor into another tensor with an optional index permutation)
         integer(INTD), parameter, public:: TAVP_INSTR_TENS_PERMUTE=78   !tensor dimension permutation (in-place)
-        integer(INTD), parameter, public:: TAVP_INSTR_TENS_COPY=79      !tensor copy (copying a tensor into another tensor with an optional index permutation)
-        integer(INTD), parameter, public:: TAVP_INSTR_TENS_SCALE=80     !tensor scaling (multiplication by a number)
-        integer(INTD), parameter, public:: TAVP_INSTR_TENS_ADD=81       !tensor addition (with an optional index permutation)
-        integer(INTD), parameter, public:: TAVP_INSTR_TENS_TRACE=82     !tensor trace (tracing over some/all tensor indices)
-        integer(INTD), parameter, public:: TAVP_INSTR_TENS_PRODUCT=83   !tensor direct product (with an optional index permutation)
-        integer(INTD), parameter, public:: TAVP_INSTR_TENS_CONTRACT=84  !tensor contraction (also includes tensor product, tensor addition, and tensor scaling)
-        integer(INTD), parameter, public:: TAVP_INSTR_TENS_REPLICATE=85 !tensor replication
+        integer(INTD), parameter, public:: TAVP_INSTR_TENS_SCALE=79     !tensor scaling (multiplication by a number)
+        integer(INTD), parameter, public:: TAVP_INSTR_TENS_ADD=80       !tensor addition (with an optional index permutation)
+        integer(INTD), parameter, public:: TAVP_INSTR_TENS_TRACE=81     !tensor trace (tracing over some/all tensor indices)
+        integer(INTD), parameter, public:: TAVP_INSTR_TENS_CONTRACT=82  !tensor contraction (also includes tensor product, tensor addition, and tensor scaling)
+        integer(INTD), parameter, public:: TAVP_INSTR_TENS_REPLICATE=83 !tensor replication
 !TYPES:
  !Tensor status:
         type, public:: tens_status_t

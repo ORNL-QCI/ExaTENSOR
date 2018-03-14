@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/03/07
+!REVISION: 2018/03/14
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -22,6 +22,14 @@
 
        module tavp_manager
 !NOTES:
+! # TENSOR INSTRUCTION FORMAT:
+!    0. Instruction id;
+!    1. Instruction code (opcode);
+!    2. Instruction status;
+!    3. Instruction error code;
+!    4. Instruction control field (optional);
+!    5. Instruction operands (optional):
+!       {Owner_id,Read_count,Write_count,Tensor} for each tensor operand.
 ! # TAVP-MNG virtual processor processes the following classes of instructions:
 !   (A) CONTROL instructions: Each instruction stalls the TAVP-MNG pipeline and
 !       is executed sequentially (in-order) and individually. The STOP instruction
@@ -50,14 +58,6 @@
 !       subinstructions have completed. A tensor instruction is considered completed
 !       successfully when all its subinstructions have completed successfully, otherwise it
 !       is considered completed with error (some subinstructions have completed with error).
-! # TENSOR INSTRUCTION FORMAT:
-!    0. Instruction id;
-!    1. Instruction code (opcode);
-!    2. Instruction status;
-!    3. Instruction error code;
-!    4. Instruction control field (optional);
-!    5. Instruction operands (optional):
-!        {Owner_id,Read_count,Write_count,Tensor} for each tensor operand.
 ! # TENSOR INSTRUCTION NUMERATION:
 !   (A) The DRIVER MPI process constructs all instructions, gives them their IDs,
 !       and sends them to the root TAVP-MNG.

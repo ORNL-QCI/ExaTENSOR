@@ -62,13 +62,13 @@ Tensor::Tensor(const std::initializer_list<int> dims,               //tensor dim
                const std::initializer_list<std::size_t> signature): //tensor signature (identifier): signature[0:rank-1]
  signature_(signature)
 {
+ assert(TensorData<T>::supported);
  int errc = talshTensorClean(&tensor_);
  assert(errc == TALSH_SUCCESS);
  const int rank = static_cast<int>(dims.size());
  errc = talshTensorConstruct(&tensor_,TensorData<T>::kind,rank,dims.begin(),talshFlatDevId(DEV_HOST,0),NULL,-1,NULL,
                              realPart(init_val),imagPart(init_val));
  assert(errc == TALSH_SUCCESS && signature_.size() == dims.size());
- this->print(); //debug
 }
 
 
@@ -79,6 +79,7 @@ Tensor::Tensor(const std::initializer_list<int> dims,               //tensor dim
                const std::initializer_list<std::size_t> signature): //tensor signature (identifier): signature[0:rank-1]
  signature_(signature)
 {
+ assert(TensorData<T>::supported);
  int errc = talshTensorClean(&tensor_);
  assert(errc == TALSH_SUCCESS);
  const int rank = static_cast<int>(dims.size());
