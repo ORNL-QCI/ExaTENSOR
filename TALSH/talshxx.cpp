@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level C++ API implementation.
-REVISION: 2018/03/14
+REVISION: 2018/03/16
 
 Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -62,7 +62,7 @@ Tensor::Tensor(const std::initializer_list<int> dims,               //tensor dim
                const std::initializer_list<std::size_t> signature): //tensor signature (identifier): signature[0:rank-1]
  signature_(signature)
 {
- assert(TensorData<T>::supported);
+ static_assert(TensorData<T>::supported,"Tensor data type is not supported!");
  int errc = talshTensorClean(&tensor_);
  assert(errc == TALSH_SUCCESS);
  const int rank = static_cast<int>(dims.size());
@@ -79,7 +79,7 @@ Tensor::Tensor(const std::initializer_list<int> dims,               //tensor dim
                const std::initializer_list<std::size_t> signature): //tensor signature (identifier): signature[0:rank-1]
  signature_(signature)
 {
- assert(TensorData<T>::supported);
+ static_assert(TensorData<T>::supported,"Tensor data type is not supported!");
  int errc = talshTensorClean(&tensor_);
  assert(errc == TALSH_SUCCESS);
  const int rank = static_cast<int>(dims.size());

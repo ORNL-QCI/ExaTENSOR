@@ -39,28 +39,28 @@ static const std::size_t DEFAULT_HOST_BUFFER_SIZE = TALSH_NO_HOST_BUFFER;
 
 template <typename T>
 struct TensorData{
- static const int kind = NO_TYPE;
- static const bool supported = false;
+ static constexpr int kind = NO_TYPE;
+ static constexpr bool supported = false;
 };
 template <>
 struct TensorData<float>{
- static const int kind = R4;
- static const bool supported = true;
+ static constexpr int kind = R4;
+ static constexpr bool supported = true;
 };
 template <>
 struct TensorData<double>{
- static const int kind = R8;
- static const bool supported = true;
+ static constexpr int kind = R8;
+ static constexpr bool supported = true;
 };
 template <>
 struct TensorData<std::complex<float>>{
- static const int kind = C4;
- static const bool supported = true;
+ static constexpr int kind = C4;
+ static constexpr bool supported = true;
 };
 template <>
 struct TensorData<std::complex<double>>{
- static const int kind = C8;
- static const bool supported = true;
+ static constexpr int kind = C8;
+ static constexpr bool supported = true;
 };
 
 //Helper functions:
