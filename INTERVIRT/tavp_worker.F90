@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/03/14
+!REVISION: 2018/03/19
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -152,11 +152,15 @@
         end type tens_oprnd_t
  !Tensor instruction (realization of a tensor operation for a specific TAVP):
         type, extends(ds_instr_t), public:: tens_instr_t
-         type(talsh_task_t), private:: talsh_task                            !TAL-SH task
+         integer(INTD), private:: num_out_oprnds=0                    !number of the output tensor instruction operands
+         integer(INTD), private:: out_oprnds(0:MAX_TENSOR_OPERANDS-1) !positions of the tensor instruction operands which are considered output
+         type(talsh_task_t), private:: talsh_task                     !TAL-SH task
          contains
           procedure, private:: TensInstrCtor                                 !ctor: constructs a tensor instruction from the specification of a tensor operation
           generic, public:: tens_instr_ctor=>TensInstrCtor
           procedure, public:: encode=>TensInstrEncode                        !encoding procedure: Packs the TAVP instruction into a raw byte packet (bytecode)
+          procedure, public:: operand_is_output=>TensInstrOperandIsOutput    !returns TRUE if the specific tensor instruction operand is output, FALSE otherwise
+          procedure, public:: get_output_operands=>TensInstrGetOutputOperands!returns the list of the output operands by their positions
           procedure, public:: get_cache_entries=>TensInstrGetCacheEntries    !returns an array of references to tensor cache entries used by the tensor operands
           procedure, public:: get_flops=>TensInstrGetFlops                   !returns an estimate of the total number of required Flops (mul/add) and memory Words
           procedure, public:: get_operation=>TensInstrGetOperation           !returns back the encapsulated tensor operation
@@ -374,6 +378,8 @@
  !tens_instr_t:
         private TensInstrCtor
         private TensInstrEncode
+        private TensInstrOperandIsOutput
+        private TensInstrGetOutputOperands
         private TensInstrGetCacheEntries
         private TensInstrGetFlops
         private TensInstrGetOperation
@@ -2002,7 +2008,15 @@
               if(jerr.eq.0) then
                oprnd=>tens_oprnd
                call this%set_operand(0,oprnd,jerr)
-               if(jerr.ne.DSVP_SUCCESS) jerr=-6
+               if(jerr.eq.DSVP_SUCCESS) then
+                if(op_code.eq.TAVP_INSTR_TENS_CREATE) then
+                 this%num_out_oprnds=1; this%out_oprnds(0:this%num_out_oprnds-1)=(/0/)
+                elseif(op_code.eq.TAVP_INSTR_TENS_DESTROY) then
+                 this%num_out_oprnds=0
+                endif
+               else
+                jerr=-6
+               endif
                oprnd=>NULL() !<oprnd> pointer was saved in the tensor instruction and will later be deallocated
               else
                jerr=-5
@@ -2057,18 +2071,20 @@
                   allocate(tens_oprnd,STAT=jerr); if(jerr.ne.0) exit
                   call tens_oprnd%tens_oprnd_ctor(tensor,jerr); if(jerr.ne.0) exit
                   oprnd=>tens_oprnd; call this%set_operand(jj,oprnd,jerr); if(jerr.ne.DSVP_SUCCESS) exit !ownership transfer for oprnd=tens_oprnd
-                  tensor=>NULL(); tens_oprnd=>NULL(); oprnd=>NULL() !<oprnd> pointer was saved in the tensor instruction and will later be deallocated
+                  oprnd=>NULL(); tens_oprnd=>NULL(); tensor=>NULL() !<oprnd> pointer was saved in the tensor instruction and will later be deallocated
                  enddo
+                 this%num_out_oprnds=1; this%out_oprnds(0:this%num_out_oprnds-1)=(/0/)
                 else
                  jerr=-7
                 endif
                else
                 jerr=-6
                endif
+               instr_ctrl=>NULL()
               else
                jerr=-5
               endif
-              instr_ctrl=>NULL(); tens_contr_ctrl=>NULL() !<tens_contr_ctrl> pointer was saved in the tensor instruction and will later be deallocated
+              tens_contr_ctrl=>NULL() !<tens_contr_ctrl> pointer was saved in the tensor instruction and will later be deallocated
              else
               jerr=-4
              endif
@@ -2252,6 +2268,57 @@
          end subroutine encode_instr_tens_contract
 
         end subroutine TensInstrEncode
+!----------------------------------------------------------------------
+        function TensInstrOperandIsOutput(this,op_num,ierr) result(ans)
+!Returns TRUE if the specific tensor instruction operand is output, FALSE otherwise.
+         implicit none
+         logical:: ans                               !out: answer
+         class(tens_instr_t), intent(in):: this      !in: active tensor instruction
+         integer(INTD), intent(in):: op_num          !in: operand number: [0..max]
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc,n,i
+
+         ans=.FALSE.
+         n=this%get_num_operands(errc)
+         if(errc.eq.DSVP_SUCCESS) then
+          if(op_num.ge.0.and.op_num.lt.n) then
+           do i=0,this%num_out_oprnds-1
+            if(this%out_oprnds(i).eq.op_num) then; ans=.TRUE.; exit; endif
+           enddo
+          else
+           errc=-2
+          endif
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function TensInstrOperandIsOutput
+!-------------------------------------------------------------------------------
+        function TensInstrGetOutputOperands(this,ierr,num_oprs) result(out_oprs)
+!Returns the list of the output tensor operands by their positions.
+         implicit none
+         integer(INTD), pointer:: out_oprs(:)            !out: positions of the output tensor instruction operands
+         class(tens_instr_t), intent(in), target:: this  !in: tensor instruction
+         integer(INTD), intent(out), optional:: ierr     !out: error code
+         integer(INTD), intent(out), optional:: num_oprs !out: number of the output tensor instruction operands
+         integer(INTD):: errc,n
+ 
+         out_oprs=>NULL(); n=0
+         if(.not.this%is_empty(errc)) then
+          if(errc.eq.DSVP_SUCCESS) then
+           n=this%num_out_oprnds
+           if(n.gt.0) out_oprs(0:)=>this%out_oprnds(0:n-1)
+          else
+           errc=-2
+          endif
+         else
+          errc=-1
+         endif
+         if(present(num_oprs)) num_oprs=n
+         if(present(ierr)) ierr=errc
+         return
+        end function TensInstrGetOutputOperands
 !-------------------------------------------------------------------------------
         subroutine TensInstrGetCacheEntries(this,cache_entries,num_entries,ierr)
 !Returns an array of references to tensor cache entries associated with the tensor operands.
@@ -2443,13 +2510,14 @@
                select type(oprnd)
                class is(tens_oprnd_t)
                 rd=oprnd%get_read_count(); wr=oprnd%get_write_count()
-                if(i.eq.0) then !output tensor operand `Assumes output operand #0
+                if(this%operand_is_output(i,errc)) then !output tensor operand
                  passed=(passed.and.(rd.eq.0))
                  call oprnd%register_write()
                 else !input tensor operand
                  passed=(passed.and.(wr.eq.0))
                  call oprnd%register_read()
                 endif
+                if(errc.ne.0) then; errc=-6; exit; endif
                class default
                 errc=-5; exit
                end select
@@ -2491,11 +2559,12 @@
               if(errc.eq.DSVP_SUCCESS.and.associated(oprnd)) then
                select type(oprnd)
                class is(tens_oprnd_t)
-                if(i.eq.0) then !output tensor operand `Assumes output operand #0
+                if(this%operand_is_output(i,errc)) then !output tensor operand
                  call oprnd%unregister_write()
                 else !input tensor operand
                  call oprnd%unregister_read()
                 endif
+                if(errc.ne.0) then; errc=-6; exit; endif
                class default
                 errc=-5; exit
                end select
@@ -2538,39 +2607,26 @@
            n=this%get_num_operands(errc)
            if(errc.eq.DSVP_SUCCESS) then
             if(n.gt.0) then
- !Check the output tensor operand:
-             oprnd=>this%get_operand(0,errc) !`Assumes output tensor operand #0
-             if(errc.eq.DSVP_SUCCESS) then
-              select type(oprnd)
-              class is(tens_oprnd_t)
-               rd=oprnd%get_read_count(); wr=oprnd%get_write_count()
-               blk=(blk.or.(rd.gt.0.and.wr.gt.0))
-               res=(.not.(rd.gt.0)) !output tensor must not be in-use
-              class default
-               errc=-7
-              end select
-             else
-              errc=-6
-             endif
- !Check the input tensor operands:
-             if(errc.eq.0.and.res) then
-              do i=1,n-1 !`Assumes output tensor operand #0
-               oprnd=>this%get_operand(i,errc)
-               if(errc.eq.DSVP_SUCCESS) then
-                select type(oprnd)
-                class is(tens_oprnd_t)
-                 rd=oprnd%get_read_count(); wr=oprnd%get_write_count()
-                 blk=(blk.or.(rd.gt.0.and.wr.gt.0))
-                 res=(.not.(wr.gt.0)) !input tensor must not be currently updated
-                 if(.not.res) exit
-                class default
-                 errc=-5; exit
-                end select
-               else
-                errc=-4; exit
-               endif
-              enddo
-             endif
+             do i=0,n-1
+              oprnd=>this%get_operand(i,errc)
+              if(errc.eq.DSVP_SUCCESS) then
+               select type(oprnd)
+               class is(tens_oprnd_t)
+                rd=oprnd%get_read_count(); wr=oprnd%get_write_count()
+                blk=(blk.or.(rd.gt.0.and.wr.gt.0))
+                if(this%operand_is_output(i,errc)) then
+                 res=(res.and.(.not.(rd.gt.0))) !output tensor operand must not be in-use
+                else
+                 res=(res.and.(.not.(wr.gt.0))) !input tensor operand must not be currently updated
+                endif
+                if(errc.ne.0) then; errc=-6; exit; endif
+               class default
+                errc=-5; exit
+               end select
+              else
+               errc=-4; exit
+              endif
+             enddo
             endif
            else
             errc=-3
@@ -3116,7 +3172,16 @@
            call ds_instr%alloc_operands(1,jerr)
            if(jerr.eq.DSVP_SUCCESS) then
             call decode_instr_operands(jerr)
-            if(jerr.ne.0) then
+            if(jerr.eq.0) then
+             select type(ds_instr)
+             class is(tens_instr_t)
+              if(op_code.eq.TAVP_INSTR_TENS_CREATE) then
+               ds_instr%num_out_oprnds=1; ds_instr%out_oprnds(0:ds_instr%num_out_oprnds-1)=(/0/) !the single tensor operand of TENSOR_CREATE is an output operand
+              elseif(op_code.eq.TAVP_INSTR_TENS_DESTROY) then
+               ds_instr%num_out_oprnds=0 !TENSOR_DESTROY does not have output operands
+              endif
+             end select
+            else
              call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_GEN_FAILURE); jerr=-2
             endif
            else
@@ -3146,7 +3211,12 @@
               call ds_instr%alloc_operands(3,jerr)
               if(jerr.eq.DSVP_SUCCESS) then
                call decode_instr_operands(jerr)
-               if(jerr.ne.0) then
+               if(jerr.eq.0) then
+                select type(ds_instr)
+                class is(tens_instr_t)
+                 ds_instr%num_out_oprnds=1; ds_instr%out_oprnds(0:ds_instr%num_out_oprnds-1)=(/0/) !tensor operand 0 is the output operand
+                end select
+               else
                 call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_BTC_BAD); jerr=-5
                endif
               else
@@ -3619,20 +3689,22 @@
 !If some resources cannot be acquired now, returns TRY_LATER.
 !In that case, the successfully acquired resources will be kept,
 !unless an error other than TRY_LATER occurred. If an operand
-!already has its resource previously acquired, it is kept so.
+!already has its resource previously acquired, it will be kept so.
          implicit none
          class(tavp_wrk_resourcer_t), intent(inout):: this !inout: TAVP-WRK resourcer DSVU
          class(tens_instr_t), intent(inout):: tens_instr   !inout: tensor instruction
          integer(INTD), intent(out), optional:: ierr       !out: error code
          logical, intent(in), optional:: omit_output       !in: if TRUE, the output operand(s) will be ommitted (defaults to FALSE)
-         integer(INTD):: errc,ier,n,m
+         integer(INTD):: errc,ier,n
          class(ds_oprnd_t), pointer:: oprnd
+         logical:: no_output
 
-         m=0; if(present(omit_output)) then; if(omit_output) m=1; endif !`Assumes a single output operand #0
+         no_output=.FALSE.; if(present(omit_output)) no_output=omit_output
          n=tens_instr%get_num_operands(errc)
          if(errc.eq.DSVP_SUCCESS) then
-          do while(n.gt.m)
+          do while(n.gt.0)
            n=n-1
+           if(tens_instr%operand_is_output(n).and.no_output) cycle
            oprnd=>tens_instr%get_operand(n,ier)
            if(ier.eq.DSVP_SUCCESS) then
             call oprnd%acquire_rsc(ier)
@@ -3687,16 +3759,17 @@
         end subroutine TAVPWRKResourcerReleaseResource
 !------------------------------------------------------------------------
         subroutine TAVPWRKResourcerSubstituteOutput(this,tens_instr,ierr)
-!Substitutes the persistent output tensor in a tensor instruction with a temporary one.
-!Assumes that the output tensor is tensor #0. If this is the first local substitution
+!Substitutes the persistent output tensor in a tensor instruction with a temporary one
+!(assumes a single output tensor for now). If this is the first local substitution
 !of the given persistent output tensor, an accumulator tensor will be created in the
 !tensor cache in addition to the temporary tensor. The persistent tensor still stays
-!in the tensor cache as its reference count is not decremented here.
+!in the tensor cache as its reference count is not decremented by this procedure.
          implicit none
          class(tavp_wrk_resourcer_t), intent(in):: this  !inout: TAVP-WRK Resourcer
          class(tens_instr_t), intent(inout):: tens_instr !inout: active tensor instruction
          integer(INTD), intent(out), optional:: ierr     !out: error code
-         integer(INTD):: errc,n,rc
+         integer(INTD):: errc,n,nou,wr
+         integer(INTD), pointer:: out_oprs(:)
          class(ds_oprnd_t), pointer:: oprnd
          class(tens_entry_wrk_t), pointer:: cache_entry
          class(tens_cache_entry_t), pointer:: new_cache_entry
@@ -3707,45 +3780,50 @@
           if(errc.eq.DSVP_SUCCESS) then
            n=tens_instr%get_num_operands(errc)
            if(errc.eq.DSVP_SUCCESS.and.n.gt.0) then
-            oprnd=>tens_instr%get_operand(0,errc) !`Assumes output operand #0
-            if(errc.eq.DSVP_SUCCESS) then
-             select type(oprnd)
-             class is(tens_oprnd_t)
-              cache_entry=>oprnd%get_cache_entry(errc)
-              if(errc.eq.0.and.associated(cache_entry)) then
-               tensor=>oprnd%get_tensor(errc)
-               if(errc.eq.0.and.associated(tensor)) then
-                header=>tensor%get_header(errc)
-                if(errc.eq.TEREC_SUCCESS.and.associated(header)) then
-                 rc=cache_entry%get_ref_count(); if(rc.le.0) errc=-13
+            out_oprs=>tens_instr%get_output_operands(errc,nou)
+            if(errc.eq.0.and.nou.eq.1.and.lbound(out_oprs,1).eq.0) then
+             oprnd=>tens_instr%get_operand(out_oprs(0),errc) !output tensor operand
+             if(errc.eq.DSVP_SUCCESS) then
+              select type(oprnd)
+              class is(tens_oprnd_t)
+               cache_entry=>oprnd%get_cache_entry(errc)
+               if(errc.eq.0.and.associated(cache_entry)) then
+                tensor=>oprnd%get_tensor(errc)
+                if(errc.eq.0.and.associated(tensor)) then
+                 header=>tensor%get_header(errc)
+                 if(errc.eq.TEREC_SUCCESS.and.associated(header)) then
  !Mark the persistent output tensor as being written to (before substitution):
-                 if(errc.eq.0) call cache_entry%incr_write_count()
+                  call cache_entry%incr_write_count()
  !Register the accumulator tensor, if needed:
-                 if(errc.eq.0.and.rc.eq.1) then !first tensor instruction with this output tensor operand: Register accumulator tensor
-                  call register_temp_tensor(0,new_cache_entry,errc)
-                  if(errc.eq.0) then
-                   call this%arg_cache%release_entry(new_cache_entry); new_cache_entry=>NULL()
-                  else
-                   errc=-12
+                  wr=cache_entry%get_write_count()
+                  if(wr.eq.1) then !first tensor instruction with this output tensor operand: Register accumulator tensor
+                   call register_temp_tensor(0,new_cache_entry,errc)
+                   if(errc.eq.0) then
+                    call this%arg_cache%release_entry(new_cache_entry); new_cache_entry=>NULL()
+                   else
+                    errc=-13
+                   endif
                   endif
-                 endif
  !Register the temporary tensor:
-                 if(errc.eq.0) then
-                  call register_temp_tensor(rc,new_cache_entry,errc)
- !Substitute the persistent output tensor with the temporary tensor (persistent tensor cache entry reference count unchanged):
                   if(errc.eq.0) then
-                   cache_entry=>NULL()
-                   select type(new_cache_entry); class is(tens_entry_wrk_t); cache_entry=>new_cache_entry; end select
-                   if(associated(cache_entry)) then
-                    call oprnd%reset_tmp_tensor(cache_entry,.TRUE.,errc); if(errc.ne.0) errc=-11
+                   call register_temp_tensor(wr,new_cache_entry,errc) !`The WRITE_COUNT of the persistent tensor must not be decremented, otherwise the same temporary tensor may be created twice
+ !Substitute the persistent output tensor with the temporary tensor (persistent tensor cache entry reference count unchanged):
+                   if(errc.eq.0) then
                     cache_entry=>NULL()
+                    select type(new_cache_entry); class is(tens_entry_wrk_t); cache_entry=>new_cache_entry; end select
+                    if(associated(cache_entry)) then
+                     call oprnd%reset_tmp_tensor(cache_entry,.TRUE.,errc); if(errc.ne.0) errc=-12
+                     cache_entry=>NULL()
+                    else
+                     errc=-11
+                    endif
+                    call this%arg_cache%release_entry(new_cache_entry); new_cache_entry=>NULL()
                    else
                     errc=-10
                    endif
-                   call this%arg_cache%release_entry(new_cache_entry); new_cache_entry=>NULL()
-                  else
-                   errc=-9
                   endif
+                 else
+                  errc=-9
                  endif
                 else
                  errc=-8
@@ -3753,12 +3831,12 @@
                else
                 errc=-7
                endif
-              else
+              class default
                errc=-6
-              endif
-             class default
+              end select
+             else
               errc=-5
-             end select
+             endif
             else
              errc=-4
             endif

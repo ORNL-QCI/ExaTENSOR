@@ -1295,13 +1295,17 @@
               call tens_oprnd%tens_oprnd_ctor(tensor,jerr) !tensor owner id is omitted here
               if(jerr.eq.0) then
                oprnd=>tens_oprnd
-               call this%set_operand(0,oprnd,jerr); if(jerr.ne.DSVP_SUCCESS) jerr=-6
-               oprnd=>NULL() !<oprnd> pointer was saved in the tensor instruction and will later be deallocated
-               if(op_code.eq.TAVP_INSTR_TENS_CREATE) then
-                this%num_out_oprnds=1; this%out_oprnds(0:this%num_out_oprnds-1)=(/0/)
-               elseif(op_code.eq.TAVP_INSTR_TENS_DESTROY) then
-                this%num_out_oprnds=0
+               call this%set_operand(0,oprnd,jerr)
+               if(jerr.eq.DSVP_SUCCESS) then
+                if(op_code.eq.TAVP_INSTR_TENS_CREATE) then
+                 this%num_out_oprnds=1; this%out_oprnds(0:this%num_out_oprnds-1)=(/0/)
+                elseif(op_code.eq.TAVP_INSTR_TENS_DESTROY) then
+                 this%num_out_oprnds=0
+                endif
+               else
+                jerr=-6
                endif
+               oprnd=>NULL() !<oprnd> pointer was saved in the tensor instruction and will later be deallocated
               else
                jerr=-5
               endif
