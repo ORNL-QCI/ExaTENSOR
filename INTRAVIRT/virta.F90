@@ -203,6 +203,7 @@
          integer(INTD), private:: read_count=0                  !read count: Number of issued tensor instructions which refer to this tensor cache entry as input
          integer(INTD), private:: write_count=0                 !write count: Number of issued tensor instructions which refer to this tensor cache entry as output
          integer(INTD), private:: temp_count=0                  !temporary count: Number of temporary tensors stemmed from this tensor cache entry (output rename)
+         logical, private:: persistent=.FALSE.                  !persistency flag (persistent cache entries can only be evicted via an explicit TENS_DESTROY)
          contains
           procedure, public:: is_set=>TensCacheEntryIsSet                 !returns TRUE if the tensor cache entry is set (constructed)
           procedure, public:: set_tensor=>TensCacheEntrySetTensor         !sets the pointer to a tensor
@@ -223,6 +224,8 @@
           procedure, public:: get_access_counters=>TensCacheEntryGetAccessCounters !returns the current values of read/write access counters
           procedure, public:: incr_temp_count=>TensCacheEntryIncrTempCount    !increments the temporary count (cannot be decremented)
           procedure, public:: get_temp_count=>TensCacheEntryGetTempCount      !returns the current temporary count
+          procedure, public:: set_persistency=>TensCacheEntrySetPersistency   !sets/resets the persistency status
+          procedure, public:: is_persistent=>TensCacheEntryIsPersistent       !returns TRUE if the tensor cache entry is persistent, FALSE otherwise
           procedure, public:: destroy=>TensCacheEntryDestroy                  !destroys the tensor cache entry
         end type tens_cache_entry_t
  !Tensor argument cache:
@@ -351,6 +354,8 @@
         private TensCacheEntryGetAccessCounters
         private TensCacheEntryIncrTempCount
         private TensCacheEntryGetTempCount
+        private TensCacheEntrySetPersistency
+        private TensCacheEntryIsPersistent
         private TensCacheEntryDestroy
  !tens_cache_t:
         private TensCacheInitLock
@@ -895,7 +900,7 @@
 !------------------------------------------------------------------------------
         subroutine TensCacheEntryGetAccessCounters(this,read_count,write_count)
          implicit none
-         class(tens_cache_entry_t), intent(in):: this !inout: defined tensor cache entry
+         class(tens_cache_entry_t), intent(in):: this !in: defined tensor cache entry
          integer(INTD), intent(out):: read_count      !in: current read access count
          integer(INTD), intent(out):: write_count     !in: current write access count
 
@@ -925,6 +930,26 @@
          count=this%temp_count
          return
         end function TensCacheEntryGetTempCount
+!----------------------------------------------------------------
+        subroutine TensCacheEntrySetPersistency(this,persistency)
+         implicit none
+         class(tens_cache_entry_t), intent(inout):: this !inout: defined tensor cache entry
+         logical, intent(in):: persistency               !in: new persistency status
+
+!$OMP ATOMIC WRITE
+         this%persistent=persistency
+         return
+        end subroutine TensCacheEntrySetPersistency
+!------------------------------------------------------------
+        function TensCacheEntryIsPersistent(this) result(res)
+         implicit none
+         logical:: res                                !out: result
+         class(tens_cache_entry_t), intent(in):: this !in: defined tensor cache entry
+
+!$OMP ATOMIC READ
+         res=this%persistent
+         return
+        end function TensCacheEntryIsPersistent
 !----------------------------------------------------------
         subroutine TensCacheEntryDestroy(this,dealloc,ierr)
 !Destroys the tensor cache entry, but only if the reference count and use count are zero.
