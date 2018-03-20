@@ -8,7 +8,7 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/03/14
+!REVISION: 2018/03/20
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -202,6 +202,7 @@
          integer(INTD), private:: use_count=0                   !use count: Number of active pointers to this tensor cache entry explicitly returned by the tensor cache
          integer(INTD), private:: read_count=0                  !read count: Number of issued tensor instructions which refer to this tensor cache entry as input
          integer(INTD), private:: write_count=0                 !write count: Number of issued tensor instructions which refer to this tensor cache entry as output
+         integer(INTD), private:: temp_count=0                  !temporary count: Number of temporary tensors stemmed from this tensor cache entry (output rename)
          contains
           procedure, public:: is_set=>TensCacheEntryIsSet                 !returns TRUE if the tensor cache entry is set (constructed)
           procedure, public:: set_tensor=>TensCacheEntrySetTensor         !sets the pointer to a tensor
@@ -220,6 +221,8 @@
           procedure, public:: get_write_count=>TensCacheEntryGetWriteCount    !returns the current write count: Number of issued tensor instructions referring to this tensor cache entry as output
           procedure, public:: reset_access_counters=>TensCacheEntryResetAccessCounters !resets read/write access counters
           procedure, public:: get_access_counters=>TensCacheEntryGetAccessCounters !returns the current values of read/write access counters
+          procedure, public:: incr_temp_count=>TensCacheEntryIncrTempCount    !increments the temporary count (cannot be decremented)
+          procedure, public:: get_temp_count=>TensCacheEntryGetTempCount      !returns the current temporary count
           procedure, public:: destroy=>TensCacheEntryDestroy                  !destroys the tensor cache entry
         end type tens_cache_entry_t
  !Tensor argument cache:
@@ -346,6 +349,8 @@
         private TensCacheEntryGetWriteCount
         private TensCacheEntryResetAccessCounters
         private TensCacheEntryGetAccessCounters
+        private TensCacheEntryIncrTempCount
+        private TensCacheEntryGetTempCount
         private TensCacheEntryDestroy
  !tens_cache_t:
         private TensCacheInitLock
@@ -901,6 +906,25 @@
          write_count=this%write_count
          return
         end subroutine TensCacheEntryGetAccessCounters
+!---------------------------------------------------
+        subroutine TensCacheEntryIncrTempCount(this)
+         implicit none
+         class(tens_cache_entry_t), intent(inout):: this !inout: defined tensor cache entry
+
+!$OMP ATOMIC UPDATE
+         this%temp_count=this%temp_count+1
+         return
+        end subroutine TensCacheEntryIncrTempCount
+!--------------------------------------------------------------
+        function TensCacheEntryGetTempCount(this) result(count)
+         implicit none
+         integer(INTD):: count                        !out: temporary count
+         class(tens_cache_entry_t), intent(in):: this !in: defined tensor cache entry
+
+!$OMP ATOMIC READ
+         count=this%temp_count
+         return
+        end function TensCacheEntryGetTempCount
 !----------------------------------------------------------
         subroutine TensCacheEntryDestroy(this,dealloc,ierr)
 !Destroys the tensor cache entry, but only if the reference count and use count are zero.
