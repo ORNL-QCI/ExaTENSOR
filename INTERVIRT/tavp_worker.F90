@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/03/20
+!REVISION: 2018/03/26
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -161,6 +161,7 @@
           procedure, public:: encode=>TensInstrEncode                        !encoding procedure: Packs the TAVP instruction into a raw byte packet (bytecode)
           procedure, public:: operand_is_output=>TensInstrOperandIsOutput    !returns TRUE if the specific tensor instruction operand is output, FALSE otherwise
           procedure, public:: get_output_operands=>TensInstrGetOutputOperands!returns the list of the output operands by their positions
+          procedure, public:: lay_output_operands=>TensInstrLayOutputOperands!sets up storage layout for non-existing output tensor operands
           procedure, public:: get_cache_entries=>TensInstrGetCacheEntries    !returns an array of references to tensor cache entries used by the tensor operands
           procedure, public:: get_flops=>TensInstrGetFlops                   !returns an estimate of the total number of required Flops (mul/add) and memory Words
           procedure, public:: get_operation=>TensInstrGetOperation           !returns back the encapsulated tensor operation
@@ -381,6 +382,7 @@
         private TensInstrEncode
         private TensInstrOperandIsOutput
         private TensInstrGetOutputOperands
+        private TensInstrLayOutputOperands
         private TensInstrGetCacheEntries
         private TensInstrGetFlops
         private TensInstrGetOperation
@@ -1518,7 +1520,7 @@
         end function TensOprndHasResource
 !------------------------------------------------
         subroutine TensOprndAcquireRsc(this,ierr)
-!Acquires local resources for the remote tensor operand.
+!Acquires local resources for a tensor operand.
 !If the resources have already been allocated, does nothing.
 !If the resource component is not set, an error will be returned.
          implicit none
@@ -2301,11 +2303,11 @@
 !Returns the list of the output tensor operands by their positions.
          implicit none
          integer(INTD), pointer:: out_oprs(:)            !out: positions of the output tensor instruction operands
-         class(tens_instr_t), intent(in), target:: this  !in: tensor instruction
+         class(tens_instr_t), intent(in), target:: this  !in: active tensor instruction
          integer(INTD), intent(out), optional:: ierr     !out: error code
          integer(INTD), intent(out), optional:: num_oprs !out: number of the output tensor instruction operands
          integer(INTD):: errc,n
- 
+
          out_oprs=>NULL(); n=0
          if(.not.this%is_empty(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
@@ -2321,6 +2323,55 @@
          if(present(ierr)) ierr=errc
          return
         end function TensInstrGetOutputOperands
+!-------------------------------------------------------
+        subroutine TensInstrLayOutputOperands(this,ierr)
+!Sets up the storage layout for non-existing output tensor operands.
+!`Requires tensor data kind in the TENSOR_CREATE instruction (control field?).
+         implicit none
+         class(tens_instr_t), intent(inout):: this   !inout: active tensor instruction
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc,i,j,opcode
+         class(ds_oprnd_t), pointer:: oprnd
+         class(tens_rcrsv_t), pointer:: tensor
+
+         if(this%is_active(errc)) then
+          if(errc.eq.DSVP_SUCCESS) then
+           opcode=this%get_code(errc)
+           if(errc.eq.DSVP_SUCCESS) then
+            if(opcode.ge.TAVP_ISA_TENS_FIRST.and.opcode.le.TAVP_ISA_TENS_LAST) then
+!$OMP CRITICAL (TAVP_WRK_CACHE)
+             do i=0,this%num_out_oprnds-1
+              j=this%out_oprnds(i) !position of the output operand #i
+              oprnd=>this%get_operand(j,errc); if(errc.ne.DSVP_SUCCESS) then; errc=-8; exit; endif
+              select type(oprnd)
+              class is(tens_oprnd_t)
+               tensor=>oprnd%get_tensor(errc); if(errc.ne.0) then; errc=-7; exit; endif
+               select case(opcode)
+               case(TAVP_INSTR_TENS_CREATE)
+                call tensor%set_layout(TEREC_LAY_FDIMS,EXA_DATA_KIND_R8,errc); if(errc.ne.TEREC_SUCCESS) then; errc=-6; exit; endif
+               case default
+                call quit(-1,'#FATAL(TAVP-WRK:tens_instr_t.lay_output_operands): Not implemented yet!') !`Implement layout inferrence for other tensor instructions
+               end select
+              class default
+               errc=-5; exit
+              end select
+             enddo
+!$OMP END CRITICAL (TAVP_WRK_CACHE)
+            else
+             errc=-4
+            endif
+           else
+            errc=-3
+           endif
+          else
+           errc=-2
+          endif
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensInstrLayOutputOperands
 !-------------------------------------------------------------------------------
         subroutine TensInstrGetCacheEntries(this,cache_entries,num_entries,ierr)
 !Returns an array of references to tensor cache entries associated with the tensor operands.
@@ -3753,6 +3804,9 @@
              if(ier.eq.TRY_LATER) then
               errc=ier
              else
+              write(CONS_OUT,'("#ERROR(TAVP-WRK:Resourcer.acquire_resource)[",i6,"]: Severe failure for operand # ",i2,'//&
+              &'": Error ",i11)') impir,n,ier
+              flush(CONS_OUT)
               errc=-3; exit
              endif
             endif

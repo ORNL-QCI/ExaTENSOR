@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/03/14
+!REVISION: 2018/03/26
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -33,9 +33,8 @@
 ! # TAVP-MNG virtual processor processes the following classes of instructions:
 !   (A) CONTROL instructions: Each instruction stalls the TAVP-MNG pipeline and
 !       is executed sequentially (in-order) and individually. The STOP instruction
-!       may not be followed by any other instruction. The RESUME instruction either
-!       resumes the execution after a preceding PAUSE instruction or does nothing
-!       in case there was no preceding PAUSE instruction. Control instructions
+!       may not be followed by any other instruction. The RESUME instruction does
+!       nothing and is normally used for control markup. Control instructions
 !       retire locally and are not returned to the upper level of hierarchy.
 !   (B) AUXILIARY instructions: Each instruction stalls the TAVP-MNG pipeline
 !       and is executed sequentially in-order, but not necessarily individually.
@@ -60,7 +59,7 @@
 !       is considered completed with error (some subinstructions have completed with error).
 ! # TENSOR INSTRUCTION NUMERATION:
 !   (A) The DRIVER MPI process constructs all instructions, gives them their IDs,
-!       and sends them to the root TAVP-MNG.
+!       sends them to the root TAVP-MNG, and receives them back retired.
 !   (B) Each TAVP-MNG accepts instructions from the upper level, decomposes them
 !       into subinstructions, assigns the subinstructions their new IDs based on
 !       the local numeration, and sends the subinstructions to the next level.
@@ -75,8 +74,7 @@
 !   (B) Each tensor argument cache entry has a reference count for the number
 !       of active tensor instruction operands currently associated with the cache entry.
 !   (C) Each tensor argument cache entry has a use count for the number of active
-!       instances of returned pointers pointing to the cache entry plus the number
-!       of current instances of the update/read of the tensor cache entry content.
+!       instances of returned pointers pointing to the cache entry.
 !   (D) Each tensor argument cache entry has an <owner_id> field referring to a TAVP
 !       which owns the tensor metadata stored in that cache entry. A negative value
 !       of this field means that the owning TAVP is not (yet) known.
@@ -84,14 +82,15 @@
 !       are only deleted when the tensor is destroyed. Tensor argument cache entries
 !       storing subtensors of local tensors are only deleted when the tensor is destroyed.
 !       Other tensor argument cache entries are deleted once the reference/use count is zero.
+!       The protection of the local tensors/subtensors is done via the persistency flag.
 !   (F) In practical implementation, the race protection is implemented as follows:
 !       (1) Creation/deletion/lookup of tensor cache entries is serialized via a cache-wide lock.
-!       (2) Any reference (pointer) to a tensor cache entry returned by the tensor cache is
-!           protected by a non-zero use count and must be explicitly released via .release_entry().
+!       (2) Any pointer to a tensor cache entry returned by the tensor cache is protected by
+!           an incremented use count and must be explicitly released via .release_entry().
 !       (3) Any binding of a tensor operand to a tensor cache entry protects the latter via
-!           a non-zero reference count.
-!       (4) Any read/update of the content of a tensor cache entry must be protected
-!           by a user-defined named CRITICAL section.
+!           an incremented reference count.
+!       (4) Any direct or indirect read/update of the content of a tensor cache entry
+!           must be protected by a user-defined named CRITICAL section.
 !       (5) Any read/update of the content of a tensor cache entry accessed indirectly
 !           via another object must be protected by a user-defined named CRITICAL section
 !           as well as a wrapping increment/decrement of the cache entry's use count.

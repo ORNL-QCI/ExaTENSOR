@@ -7,3 +7,10 @@
 2018-03-07: At the bottom TAVP-MNG level, the owner id still refers to the metadata owner, which is TAVP-MNG,
             however the dispatch is done to TAVP-WRK processes (TAVP-WRK id). It is also unclear how to
             implement replication within a group of the TAVP-WRK processes belonging to the same TAVP-MNG process.
+            Perhaps argument renaming and replication under modified names provides an acceptable solution:
+            T12(a,b,i,j) --> T12$0, T12$1, T12$2, etc. Note that later the output tensor name substitution
+            may additionally mangle the name: T12 --> T12#0 (accumulator); T12#1, T12#2, etc. (temporary).
+            Thus, combined will give: T12 (original) --> T12$1 (replica) --> T12$1#3 (temporary replica).
+2018-03-26: TAL-SH coherence control may not work properly when the same tensor is concurrently participating
+            in multiple tensor operations as an input.
+2018-03-26: Tensor data kind is absent in the TENSOR_CREATE instruction => It needs CONTROL field.

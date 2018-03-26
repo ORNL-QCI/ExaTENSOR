@@ -8,7 +8,7 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/03/20
+!REVISION: 2018/03/26
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -77,6 +77,12 @@
         integer(INTD), parameter, public:: EXA_MANAGER=1            !manager (logical) process (TAVP)
         integer(INTD), parameter, public:: EXA_WORKER=2             !worker (numerical) process (TAVP)
         integer(INTD), parameter, public:: EXA_HELPER=3             !helper (auxiliary) process (TAVP)
+ !Tensor data kinds:
+        integer(INTD), parameter, public:: EXA_DATA_KIND_NN=NO_TYPE !none
+        integer(INTD), parameter, public:: EXA_DATA_KIND_R4=R4      !single precision real
+        integer(INTD), parameter, public:: EXA_DATA_KIND_R8=R8      !double precision real
+        integer(INTD), parameter, public:: EXA_DATA_KIND_C4=C4      !single precision complex
+        integer(INTD), parameter, public:: EXA_DATA_KIND_C8=C8      !double precision complex
  !External methods:
         integer(INTD), parameter, public:: EXA_MAX_METHOD_NAME_LEN=64 !max length of an external method name
  !TAVP hierarchy configuration:
@@ -962,7 +968,7 @@
          integer(INTD):: errc
 
          errc=0
-         if(this%ref_count.eq.0.and.this%use_count.eq.0) then
+         if(this%ref_count.eq.0.and.this%use_count.eq.0.and.(.not.this%persistent)) then
           if(associated(this%tensor).and.dealloc) deallocate(this%tensor)
           this%tensor=>NULL()
          else

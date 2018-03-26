@@ -1,7 +1,7 @@
 !ExaTENSOR: Massively Parallel Virtual Processor for Scale-Adaptive Hierarchical Tensor Algebra
 !This is the top level API module of ExaTENSOR (user-level API)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2018/03/08
+!REVISION: 2018/03/26
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -36,6 +36,7 @@
        implicit none
        private
        public EXA_NO_ROLE,EXA_DRIVER,EXA_MANAGER,EXA_WORKER,EXA_HELPER !process roles
+       public EXA_DATA_KIND_NN,EXA_DATA_KIND_R4,EXA_DATA_KIND_R8,EXA_DATA_KIND_C4,EXA_DATA_KIND_C8 !tensor data kinds
        public MAX_TENSOR_RANK !symbols from tensor_algebra
        public INTD,INTL,INT_MPI,jo,impir,impis !symbols from service_mpi
 !PARAMETERS:
@@ -43,12 +44,6 @@
        integer(INTD), private:: CONS_OUT=6 !output device
        integer(INTD), private:: DEBUG=1    !debugging level
        logical, private:: VERBOSE=.TRUE.   !verbosity for errors
- !Tensor data kinds:
-       integer(INTD), parameter, public:: EXA_DATA_KIND_NN=NO_TYPE !none
-       integer(INTD), parameter, public:: EXA_DATA_KIND_R4=R4      !single precision real
-       integer(INTD), parameter, public:: EXA_DATA_KIND_R8=R8      !double precision real
-       integer(INTD), parameter, public:: EXA_DATA_KIND_C4=C4      !single precision complex
-       integer(INTD), parameter, public:: EXA_DATA_KIND_C8=C8      !double precision complex
  !Error codes (user-level):
        public EXA_SUCCESS,&
              &EXA_ERROR,&
