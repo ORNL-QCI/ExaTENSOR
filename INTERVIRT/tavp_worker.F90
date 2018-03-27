@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/03/26
+!REVISION: 2018/03/27
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -2326,13 +2326,13 @@
 !-------------------------------------------------------
         subroutine TensInstrLayOutputOperands(this,ierr)
 !Sets up the storage layout for non-existing output tensor operands.
-!`Requires tensor data kind in the TENSOR_CREATE instruction (control field?).
          implicit none
          class(tens_instr_t), intent(inout):: this   !inout: active tensor instruction
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc,i,j,opcode
          class(ds_oprnd_t), pointer:: oprnd
          class(tens_rcrsv_t), pointer:: tensor
+         class(tens_header_t), pointer:: header
          logical:: laid
 
          if(this%is_active(errc)) then
@@ -2343,15 +2343,55 @@
 !$OMP CRITICAL (TAVP_WRK_CACHE)
              do i=0,this%num_out_oprnds-1
               j=this%out_oprnds(i) !position of the output operand #i
-              oprnd=>this%get_operand(j,errc); if(errc.ne.DSVP_SUCCESS) then; errc=-9; exit; endif
+              oprnd=>this%get_operand(j,errc); if(errc.ne.DSVP_SUCCESS) then; errc=-11; exit; endif
               select type(oprnd)
               class is(tens_oprnd_t)
-               tensor=>oprnd%get_tensor(errc); if(errc.ne.0) then; errc=-8; exit; endif
+               tensor=>oprnd%get_tensor(errc); if(errc.ne.0) then; errc=-10; exit; endif
                if(tensor%is_set(errc,layed=laid)) then
                 if(.not.laid) then
                  select case(opcode)
                  case(TAVP_INSTR_TENS_CREATE)
-                  call tensor%set_layout(TEREC_LAY_FDIMS,errc); if(errc.ne.TEREC_SUCCESS) then; errc=-7; exit; endif
+ !Set tensor structure (composition), if not set:
+                  if(.not.tensor%has_structure(errc)) then
+                   if(errc.eq.TEREC_SUCCESS) then
+                    header=>tensor%get_header(errc)
+                    if(errc.eq.TEREC_SUCCESS) call tensor%add_subtensor(header,errc)
+                   endif
+                  endif
+                  if(errc.eq.TEREC_SUCCESS) then
+ !Resolve the tensor shape, if not fully resolved:
+                   errc=tens_dim_resolve(tensor)
+ !Set the tensor storage layout:
+                   if(errc.eq.TEREC_SUCCESS) then
+                    call tensor%set_layout(TEREC_LAY_FDIMS,errc)
+                    if(errc.eq.TEREC_SUCCESS) then
+                     if(DEBUG.gt.0) then
+                      write(CONS_OUT,'("#DEBUG(TAVP-WRK:tens_instr_t.lay_output_operands)[",i6,'//&
+                      &'"]: Tensor storage layout successfully created for tensor:")') impir
+                      call tensor%print_it(dev_id=CONS_OUT)
+                      flush(CONS_OUT)
+                     endif
+                    else
+                     if(DEBUG.gt.0) then
+                      write(CONS_OUT,'("#ERROR(TAVP-WRK:tens_instr_t.lay_output_operands)[",i6,'//&
+                      &'"]: Unable to set tensor storage layout: Error ",i11)') impir,errc
+                      call tensor%print_it(dev_id=CONS_OUT)
+                      flush(CONS_OUT)
+                     endif
+                     errc=-9; exit
+                    endif
+                   else
+                    if(DEBUG.gt.0) then
+                     write(CONS_OUT,'("#ERROR(TAVP-WRK:tens_instr_t.lay_output_operands)[",i6,'//&
+                     &'"]: Unable to resolve tensor dimensions: Error ",i11)') impir,errc
+                     call tensor%print_it(dev_id=CONS_OUT)
+                     flush(CONS_OUT)
+                    endif
+                    errc=-8; exit
+                   endif
+                  else
+                   errc=-7; exit
+                  endif
                  case default
                   call quit(-1,'#FATAL(TAVP-WRK:tens_instr_t.lay_output_operands): Not implemented yet!') !`Implement output tensor layout inferrence for other tensor instructions
                  end select

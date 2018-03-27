@@ -1,7 +1,7 @@
 !ExaTENSOR: Massively Parallel Virtual Processor for Scale-Adaptive Hierarchical Tensor Algebra
 !This is the top level API module of ExaTENSOR (user-level API)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2018/03/26
+!REVISION: 2018/03/27
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -98,7 +98,8 @@
        type(vector_iter_t), private:: instr_log
 !VISIBILITY:
  !External methods/data (called by All before exatns_start()):
-       public exatns_dim_strength_setup      !sets up the universal tensor dimension strength assessing function (guides recursive tensor dimension splitting)
+       public exatns_dim_resolution_setup    !sets up the universal tensor dimension resolution function which determines the actual shape of tensor blocks
+       public exatns_dim_strength_setup      !sets up the universal tensor dimension strength assessing function and threshold (guides recursive tensor dimension splitting)
        public exatns_dim_strength_thresh_set !sets the tensor dimension strength threshold above which the dimension will split (guides recursive tensor dimension splitting)
        public exatns_method_register         !registers an external method (it has to adhere to a predefined interface)
        public exatns_method_unregister       !unregisters an external method
@@ -147,7 +148,18 @@
 
       contains
 !IMPLEMENTATION:
-![ExaTENSOR External Method/Data API]-------------------------------------------------
+![ExaTENSOR External Method/Data API]-------------------------------------
+       function exatns_dim_resolution_setup(dim_resolution_f) result(ierr) !called by all MPI processes
+!Sets up the universal tensor dimension resolution function which determines the actual shape of tensor blocks.
+        implicit none
+        integer(INTD):: ierr                                   !out: error code
+        procedure(tens_rcrsv_dim_resolve_i):: dim_resolution_f !in: tensor dimension extent resolution function
+
+        ierr=EXA_SUCCESS
+        tens_dim_resolve=>dim_resolution_f
+        return
+       end function exatns_dim_resolution_setup
+!-------------------------------------------------------------------------------------
        function exatns_dim_strength_setup(dim_strength_f,strength_thresh) result(ierr) !called by all MPI processes
 !Sets up the universal tensor dimension strength assessing function.
         implicit none
@@ -311,8 +323,9 @@
          call dil_process_finish(errc)
          ierr=-7; return
         endif
-!Set the default universal tensor dimension strength assessing function, if none preset by a user earlier:
-        if(.not.associated(tens_dim_strength_assess)) errc=exatns_dim_strength_setup(tens_dim_strength_default,0d0)
+!Set the default universal tensor dimension strength assessing and shape resolution functions, if none preset by a user earlier:
+        if(.not.associated(tens_dim_resolve)) errc=exatns_dim_resolution_setup(tens_rcrsv_dim_resolve_default)
+        if(.not.associated(tens_dim_strength_assess)) errc=exatns_dim_strength_setup(tens_rcrsv_dim_strength_default,0d0)
 !Sync all MPI processes before configuring and launching TAVPs:
         call dil_global_comm_barrier(errc); if(errc.ne.0) then; call dil_process_finish(errc); ierr=-8; return; endif
 !Mark the ExaTENSOR runtime active:
@@ -781,7 +794,8 @@
         integer(INTD):: trank
         integer(INTL):: ip
 
-        ierr=EXA_SUCCESS; write(jo,'("#MSG(exatensor): New Instruction: CREATE TENSOR: IP = ")',ADVANCE='NO')
+        ierr=EXA_SUCCESS
+        if(VERBOSE) write(jo,'("#MSG(exatensor): New Instruction: CREATE TENSOR: IP = ")',ADVANCE='NO')
         if(.not.tensor%is_set(ierr)) then
          if(ierr.eq.TEREC_SUCCESS) then
 !Construct the tensor object:
@@ -843,7 +857,7 @@
           if(ierr.eq.0) then
            tens_instr=>add_new_instruction(ip,ierr)
            if(ierr.eq.0) then
-            write(jo,'(i11)') ip !new instruction id number
+            if(VERBOSE) write(jo,'(i11)') ip !new instruction id number
             call tens_instr%tens_instr_ctor(TAVP_INSTR_TENS_CREATE,ierr,tensor,iid=ip)
             if(ierr.eq.0) then
 !Issue the tensor instruction to TAVP:
@@ -873,13 +887,14 @@
         class(tens_instr_mng_t), pointer:: tens_instr
         integer(INTL):: ip
 
-        ierr=EXA_SUCCESS; write(jo,'("#MSG(exatensor): New Instruction: DESTROY TENSOR: IP = ")',ADVANCE='NO')
+        ierr=EXA_SUCCESS
+        if(VERBOSE) write(jo,'("#MSG(exatensor): New Instruction: DESTROY TENSOR: IP = ")',ADVANCE='NO')
         if(tensor%is_set(ierr)) then
          if(ierr.eq.TEREC_SUCCESS) then
 !Construct the tensor instruction:
           tens_instr=>add_new_instruction(ip,ierr)
           if(ierr.eq.0) then
-           write(jo,'(i11)') ip !new instruction id number
+           if(VERBOSE) write(jo,'(i11)') ip !new instruction id number
            call tens_instr%tens_instr_ctor(TAVP_INSTR_TENS_DESTROY,ierr,tensor,iid=ip)
            if(ierr.eq.0) then
 !Issue the tensor instruction to TAVP:
@@ -976,7 +991,8 @@
         integer(INTL):: ip
         complex(8):: scal
 
-        ierr=EXA_SUCCESS; write(jo,'("#MSG(exatensor): New Instruction: INIT TENSOR (by scalar): IP = ")',ADVANCE='NO')
+        ierr=EXA_SUCCESS
+        if(VERBOSE) write(jo,'("#MSG(exatensor): New Instruction: INIT TENSOR (by scalar): IP = ")',ADVANCE='NO')
         if(tensor%is_set(ierr)) then
          if(ierr.eq.TEREC_SUCCESS) then
 !Construct the tensor transformation (initialization) object:
@@ -988,7 +1004,7 @@
 !Construct the tensor instruction:
             tens_instr=>add_new_instruction(ip,ierr)
             if(ierr.eq.0) then
-             write(jo,'(i11)') ip !new instruction id number
+             if(VERBOSE) write(jo,'(i11)') ip !new instruction id number
              call tens_instr%tens_instr_ctor(TAVP_INSTR_TENS_INIT,ierr,tens_init,iid=ip)
              if(ierr.eq.0) then
 !Issue the tensor instruction to TAVP:
@@ -1026,7 +1042,8 @@
         type(tens_transformation_t):: tens_init
         integer(INTL):: ip
 
-        ierr=EXA_SUCCESS; write(jo,'("#MSG(exatensor): New Instruction: INIT TENSOR (by method): IP = ")',ADVANCE='NO')
+        ierr=EXA_SUCCESS
+        if(VERBOSE) write(jo,'("#MSG(exatensor): New Instruction: INIT TENSOR (by method): IP = ")',ADVANCE='NO')
         if(tensor%is_set(ierr)) then
          if(ierr.eq.TEREC_SUCCESS) then
 !Construct the tensor transformation (initialization) object:
@@ -1039,7 +1056,7 @@
 !Construct the tensor instruction:
             tens_instr=>add_new_instruction(ip,ierr)
             if(ierr.eq.0) then
-             write(jo,'(i11)') ip !new instruction id number
+             if(VERBOSE) write(jo,'(i11)') ip !new instruction id number
              call tens_instr%tens_instr_ctor(TAVP_INSTR_TENS_INIT,ierr,tens_init,iid=ip)
              if(ierr.eq.0) then
 !Issue the tensor instruction to TAVP:
@@ -1150,7 +1167,8 @@
         integer(INTL):: ip
         logical:: check
 
-        ierr=EXA_SUCCESS; write(jo,'("#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP = ")',ADVANCE='NO')
+        ierr=EXA_SUCCESS
+        if(VERBOSE) write(jo,'("#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP = ")',ADVANCE='NO')
         check=tensor0%is_set(errc); if(errc.ne.TEREC_SUCCESS.and.ierr.eq.EXA_SUCCESS) ierr=-12
         check=tensor1%is_set(errc).and.check; if(errc.ne.TEREC_SUCCESS.and.ierr.eq.EXA_SUCCESS) ierr=-11
         check=tensor2%is_set(errc).and.check; if(errc.ne.TEREC_SUCCESS.and.ierr.eq.EXA_SUCCESS) ierr=-10
@@ -1193,7 +1211,7 @@
          if(ierr.eq.EXA_SUCCESS) then
           tens_instr=>add_new_instruction(ip,ierr)
           if(ierr.eq.0) then
-           write(jo,'(i11)') ip !new instruction id number
+           if(VERBOSE) write(jo,'(i11)') ip !new instruction id number
            call tens_instr%tens_instr_ctor(TAVP_INSTR_TENS_CONTRACT,ierr,tens_contr,iid=ip)
            if(ierr.eq.0) then
 !Issue the tensor instruction to TAVP:

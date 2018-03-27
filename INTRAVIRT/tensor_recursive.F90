@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/03/26
+!REVISION: 2018/03/27
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -27,14 +27,17 @@
 !NOTES:
 ! # Tensor definition stages:
 !    a) Null: No tensor;
-!    b) Defined: Tensor signature, and maybe some dimension extents, are defined;
-!    c) Resolved: Tensor shape is fully defined (all tensor dimensions are resolved);
-!    d) Structured: Tensor composition (structure) in terms of subtensors (subtensor headers) is defined;
-!    e) Laid-Out: Tensor layout is defined (means the tensor will be physically stored as a whole);
-!    f) Mapped: Tensor body is physically mapped to a contiguous chunk of memory.
+!    b) Defined: Tensor signature is defined;
+!    c) Shaped: Some or all tensor dimension extents are defined or explicitly marked unresolved (extent = 0);
+!    d) Resolved: Tensor shape is fully defined (all tensor dimensions are resolved with positive extents);
+!    e) Structured: Tensor composition (structure) in terms of subtensors (subtensor headers) is defined;
+!    f) Laid-Out: Tensor layout is defined (means the tensor will be physically stored as a whole);
+!    g) Mapped: Tensor body is physically mapped to a contiguous chunk of memory.
+!   In order to become Structured, the tensor only needs to be Defined, but not necessarily Shaped or Resolved.
 !   The tensor body is considered defined (set) if the tensor is at least Structured.
-!   If the tensor is Laid-Out, all its constituent subtensors will be sequentially stored
-!   in a contiguous chunk of virtual memory allocated during Mapping.
+!   A tensor can become Laid-Out only after it has become Resolved.
+!   If a tensor is Laid-Out, all its constituent subtensors will be sequentially stored
+!   in a contiguous chunk of virtual memory allocated during Mapping (becoming Mapped).
         use tensor_algebra !includes dil_basic
         use stsubs
         use timers
@@ -87,7 +90,7 @@
         integer(INTD), parameter, public:: TEREC_IND_RESTR_GE=4   !indices within the group are >= ordered i1 >= i2 >= i3
         integer(INTD), parameter, public:: TEREC_NUM_IND_RESTR=5  !total number of index restrictions (0..max)
 !TYPES:
- !Register of hierarchical spaces:
+ !Register of hierarchical vector spaces:
         type, private:: hspace_register_t
          logical, private:: initialized=.FALSE.        !initialization status
          type(dictionary_t), private:: name2id         !symbolic name -> id map
@@ -97,13 +100,13 @@
          contains
           procedure, private:: init=>HspaceRegisterInit                   !initializes the register
           procedure, public:: register_space=>HspaceRegisterRegisterSpace !registers a new hierarchical vector space
-          procedure, public:: get_space_id=>HspaceRegisterGetSpaceId      !returns the registered id of the space by its name
+          procedure, public:: get_space_id=>HspaceRegisterGetSpaceId      !returns the registered id of the space by its symbolic name
           procedure, private:: HspaceRegisterGetSpaceByName               !returns a pointer to the hierarchical space by its name
           procedure, private:: HspaceRegisterGetSpaceById                 !returns a pointer to the hierarchical space by its id
-          generic, public:: get_space=>HspaceRegisterGetSpaceByName,HspaceRegisterGetSpaceById !returns a pointer to the hierarchical space
+          generic, public:: get_space=>HspaceRegisterGetSpaceByName,HspaceRegisterGetSpaceById !returns a pointer to the hierarchical vector space
           final:: hspace_register_dtor                                    !dtor
         end type hspace_register_t
- !Registered hierarchical space:
+ !Registered hierarchical vector space:
         type, public:: hspace_reg_t
          integer(INTD), private:: space_id=-1                  !registered space id: [0..max]
          class(h_space_t), pointer, private:: hspace_p=>NULL() !non-owning pointer to a defined (persistent) hierarchical vector space object
@@ -512,16 +515,13 @@
           character(*), intent(in):: method_name      !in: character method name
           integer(INTD), intent(out), optional:: ierr !out: error code
          end function tens_transformation_method_map_i
-  !tens_rcrsv_t: split() [nopass]:
-         function tens_rcrsv_split_i(tensor,subtensors,num_subtensors,strength_thresh) result(ierr)
-          import:: INTD,tens_rcrsv_t,vector_t
+  !tens_rcrsv_t: dim_resolve() [nopass]:
+         function tens_rcrsv_dim_resolve_i(tensor) result(ierr)
+          import:: INTD,tens_rcrsv_t
           implicit none
-          integer(INTD):: ierr                            !out: error code
-          class(tens_rcrsv_t), intent(in):: tensor        !in: parental tensor
-          type(vector_t), intent(inout):: subtensors      !inout: vector of subtensors (in general, can be non-empty on entrance)
-          integer(INTD), intent(out):: num_subtensors     !out: number of subtensors generated from the parental tensor
-          real(8), intent(in), optional:: strength_thresh !in: dimension strength threshold for splitting
-         end function tens_rcrsv_split_i
+          integer(INTD):: ierr                        !out: error code
+          class(tens_rcrsv_t), intent(inout):: tensor !inout: tensor (defined on entrance, fully resolved on return)
+         end function tens_rcrsv_dim_resolve_i
   !tens_rcrsv_t: dim_strength() [nopass]:
          function tens_rcrsv_dim_strength_i(tensor,dim_strength,ierr,strength_thresh,num_dims,split_dims) result(total_strength)
           import:: INTD,tens_rcrsv_t
@@ -534,6 +534,16 @@
           integer(INTD), intent(out), optional:: num_dims         !out: number of tensor dimensions which split under the given strength threshold
           integer(INTD), intent(inout), optional:: split_dims(1:) !out: tensor dimensions which split under the given strength threshold (ordered by decreasing strength)
          end function tens_rcrsv_dim_strength_i
+  !tens_rcrsv_t: split() [nopass]:
+         function tens_rcrsv_dim_split_i(tensor,subtensors,num_subtensors,strength_thresh) result(ierr)
+          import:: INTD,tens_rcrsv_t,vector_t
+          implicit none
+          integer(INTD):: ierr                            !out: error code
+          class(tens_rcrsv_t), intent(in):: tensor        !in: parental tensor
+          type(vector_t), intent(inout):: subtensors      !inout: vector of subtensors (in general, can be non-empty on entrance)
+          integer(INTD), intent(out):: num_subtensors     !out: number of subtensors generated from the parental tensor
+          real(8), intent(in), optional:: strength_thresh !in: dimension strength threshold for splitting
+         end function tens_rcrsv_dim_split_i
   !tens_method_uni_t: .apply() deferred: user-defined unary tensor method (initialization/transformation):
          function tens_method_uni_i(this,tensor,scalar) result(ierr)
           import:: INTD,tens_rcrsv_t,tens_method_uni_t
@@ -553,8 +563,9 @@
         public cmp_tens_signatures             !comparator for tensor signatures
         public cmp_tens_headers                !comparator for tensor headers
         public cmp_tens_descriptors            !comparator for tensor descriptors
-        public tens_dim_strength_default       !default universal tensor dimension strength estimator
-        public tens_rcrsv_split_internal       !internal tensor splitter for tensor operation splitting (guided by the existing internal tensor composition)
+        public tens_rcrsv_dim_resolve_default  !default universal tensor dimension extent resolver (sets default tensor dimension resolution)
+        public tens_rcrsv_dim_strength_default !default universal tensor dimension strength estimator
+        public tens_rcrsv_dim_split_default    !internal tensor splitter for tensor operation splitting (guided by the existing internal tensor composition)
  !testing/debugging:
         public build_test_hspace
         public print_tens_header_f
@@ -712,8 +723,9 @@
         private TensRcrsvPrintIt
         private TensRcrsvRename
         public tens_rcrsv_dtor
-        public tens_rcrsv_split_i
+        public tens_rcrsv_dim_resolve_i
         public tens_rcrsv_dim_strength_i
+        public tens_rcrsv_dim_split_i
  !tens_descr_t:
         private TensDescrPrintIt
         private TensDescrCompare
@@ -972,8 +984,61 @@
          endif
          return
         end function cmp_tens_descriptors
-!----------------------------------------------------------------------------------------------------------------------------
-        function tens_dim_strength_default(this,dim_strength,ierr,strength_thresh,num_dims,split_dims) result(total_strength)
+!-------------------------------------------------------------------
+        function tens_rcrsv_dim_resolve_default(tensor) result(ierr)
+!Default universal tensor dimension extent resolution function:
+!All tensor dimensions are resolved fully by their max extents.
+         implicit none
+         integer(INTD):: ierr                        !out: error code
+         class(tens_rcrsv_t), intent(inout):: tensor !inout: tensor (defined on entrance, resolved on exit)
+         integer(INTL):: subspaces(1:MAX_TENSOR_RANK),dim_ext(1:MAX_TENSOR_RANK)
+         type(hspace_reg_t):: hspaces(1:MAX_TENSOR_RANK)
+         class(h_space_t), pointer:: hspace
+         class(subspace_t), pointer:: subspace
+         integer(INTD):: num_dims,unresolved,i
+         logical:: shaped,hspaced
+
+         if(tensor%is_set(ierr,num_dims,shaped,unresolved,hspaced)) then
+          if(ierr.eq.TEREC_SUCCESS) then
+           if(num_dims.gt.0.and.unresolved.gt.0) then
+            if(hspaced) then
+             if(.not.shaped) then
+              dim_ext(1:num_dims)=0 !set all dimensions as unresolved for now
+              call tensor%set_shape(dim_ext(1:num_dims),ierr)
+             endif
+             if(ierr.eq.TEREC_SUCCESS) then
+              call tensor%get_spec(subspaces,num_dims,ierr,hspaces)
+              if(ierr.eq.TEREC_SUCCESS) then
+               call tensor%get_dims(dim_ext,i,ierr)
+               if(ierr.eq.TEREC_SUCCESS) then
+                if(i.eq.num_dims) then
+                 do i=1,num_dims
+                  if(dim_ext(i).eq.0) then !unresolved dimension
+                   hspace=>hspaces(i)%get_space(ierr); if(ierr.ne.TEREC_SUCCESS) exit
+                   subspace=>hspace%get_subspace(subspaces(i),ierr); if(ierr.ne.0) then; ierr=TEREC_UNABLE_COMPLETE; exit; endif
+                   dim_ext(i)=subspace%get_max_resolution(ierr); if(ierr.ne.0) then; ierr=TEREC_UNABLE_COMPLETE; exit; endif
+                   if(dim_ext(i).le.0) then; ierr=TEREC_ERROR; exit; endif
+                  endif
+                 enddo
+                 if(ierr.eq.TEREC_SUCCESS) call tensor%set_shape(dim_ext(1:num_dims),ierr)
+                else
+                 ierr=TEREC_ERROR
+                endif
+               endif
+              endif
+             endif
+            else
+             ierr=TEREC_INVALID_REQUEST !not a hierarchical tensor: Must be Resolved from the beginning
+            endif
+           endif
+          endif
+         else
+          if(ierr.eq.TEREC_SUCCESS) ierr=TEREC_INVALID_REQUEST
+         endif
+         return
+        end function tens_rcrsv_dim_resolve_default
+!----------------------------------------------------------------------------------------------------------------------------------
+        function tens_rcrsv_dim_strength_default(this,dim_strength,ierr,strength_thresh,num_dims,split_dims) result(total_strength)
 !Default universal tensor dimension strength assessing function: All tensor dimensions are always equally highly strong
 !and they all will split.
          implicit none
@@ -1012,9 +1077,9 @@
          if(present(num_dims)) num_dims=ns
          if(present(ierr)) ierr=errc
          return
-        end function tens_dim_strength_default
-!--------------------------------------------------------------------------------------------------------
-        function tens_rcrsv_split_internal(tensor,subtensors,num_subtensors,strength_thresh) result(ierr)
+        end function tens_rcrsv_dim_strength_default
+!-----------------------------------------------------------------------------------------------------------
+        function tens_rcrsv_dim_split_default(tensor,subtensors,num_subtensors,strength_thresh) result(ierr)
 !Extracts constituent subtensors from a tensor and returns them in a vector.
          implicit none
          integer(INTD):: ierr                            !out: error code
@@ -1029,7 +1094,7 @@
           ierr=TEREC_INVALID_REQUEST
          endif
          return
-        end function tens_rcrsv_split_internal
+        end function tens_rcrsv_dim_split_default
 !---------------------------------------------------------------------------
         function build_test_hspace(space_name,ierr,space_p) result(space_id)
 !Builds a hierarchical vector space for testing/debugging.
@@ -3750,20 +3815,18 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensBodyAddSubtensor
-!--------------------------------------------------------------------
-        subroutine TensBodySetLayout(this,layout_kind,ierr,data_type)
+!--------------------------------------------------------------------------------
+        subroutine TensBodySetLayout(this,layout_kind,tens_header,ierr,data_type)
 !Sets tensor body storage layout. If <data_type> is omitted, the value
 !from the tensor body will be used (if set, otherwise error).
          implicit none
-         class(tens_body_t), intent(inout):: this        !inout: tensor body
-         integer(INTD), intent(in):: layout_kind         !in: layout kind: {TEREC_LAY_XX}
-         integer(INTD), intent(out), optional:: ierr     !out: error code
-         integer(INTD), intent(in), optional:: data_type !in: numeric data type: {R4,R8,C4,C8}
+         class(tens_body_t), intent(inout):: this               !inout: tensor body
+         integer(INTD), intent(in):: layout_kind                !in: layout kind: {TEREC_LAY_XX}
+         class(tens_header_t), intent(in), target:: tens_header !in: associated tensor header
+         integer(INTD), intent(out), optional:: ierr            !out: error code
+         integer(INTD), intent(in), optional:: data_type        !in: numeric data type: {R4,R8,C4,C8}
          integer(INTD):: errc,ier,dt
          logical:: layd,locd
-         type(list_iter_t):: lit
-         class(tens_header_t), pointer:: thp
-         class(*), pointer:: up
 
          if(this%is_set(errc,layd,locd)) then
           if(errc.eq.TEREC_SUCCESS.and.(.not.layd)) then
@@ -3775,32 +3838,16 @@
              write(*,'("FATAL(tensor_recursive:tens_body_t:set_layout): TEREC_LAY_RECUR not implemented!")'); stop !`Implement
             case(TEREC_LAY_FDIMS) !a single subtensor is mapped as "Fortran-dimension-led"
              if(this%num_subtensors.eq.1) then
-              errc=lit%init(this%subtensors)
-              if(errc.eq.GFC_SUCCESS) then
-               up=>lit%get_value(errc)
-               if(errc.eq.GFC_SUCCESS) then
-                thp=>NULL(); select type(up); class is(tens_header_t); thp=>up; end select
-                if(associated(thp)) then
-                 allocate(tens_layout_fdims_t::this%layout,STAT=errc)
-                 if(errc.eq.0) then
-                  select type(layout=>this%layout)
-                  class is(tens_layout_fdims_t)
-                   call layout%tens_layout_fdims_ctor(thp,this%data_type,errc)
-                  class default
-                   errc=TEREC_ERROR
-                  end select
-                 else
-                  errc=TEREC_MEM_ALLOC_FAILED
-                 endif
-                else
-                 errc=TEREC_UNABLE_COMPLETE
-                endif
-               else
-                errc=TEREC_UNABLE_COMPLETE
-               endif
-               ier=lit%release(); if(ier.ne.GFC_SUCCESS.and.errc.eq.TEREC_SUCCESS) errc=TEREC_ERROR
+              allocate(tens_layout_fdims_t::this%layout,STAT=errc)
+              if(errc.eq.0) then
+               select type(layout=>this%layout)
+               class is(tens_layout_fdims_t)
+                call layout%tens_layout_fdims_ctor(tens_header,this%data_type,errc)
+               class default
+                errc=TEREC_ERROR
+               end select
               else
-               errc=TEREC_UNABLE_COMPLETE
+               errc=TEREC_MEM_ALLOC_FAILED
               endif
              else
               errc=TEREC_INVALID_REQUEST
@@ -4059,12 +4106,14 @@
           write(dev,'("TENSOR BODY{")')
           do i=1,nspaces; write(dev,'(" ")',ADVANCE='NO'); enddo
           write(dev,'(" Number of subtensors    = ",i7)') this%num_subtensors
+          do i=1,nspaces; write(dev,'(" ")',ADVANCE='NO'); enddo
+          write(dev,'(" Tensor body data kind   = ",i7)') this%data_type
           tens_layout=>this%get_layout()
           if(associated(tens_layout)) then
            do i=1,nspaces; write(dev,'(" ")',ADVANCE='NO'); enddo
-           write(dev,'(" Tensor body layout      = ",i7)') tens_layout%layout
+           write(dev,'(" Tensor body layout kind = ",i7)') tens_layout%layout
            do i=1,nspaces; write(dev,'(" ")',ADVANCE='NO'); enddo
-           write(dev,'(" Tensor body data kind   = ",i7)') tens_layout%data_type
+           write(dev,'(" Layout data kind        = ",i7)') tens_layout%data_type
           else
            do i=1,nspaces; write(dev,'(" ")',ADVANCE='NO'); enddo
            write(dev,'(" Tensor body has no layout yet")')
@@ -4074,10 +4123,11 @@
          else
           write(dev,'("TENSOR BODY{")')
           write(dev,'(" Number of subtensors    = ",i7)') this%num_subtensors
+          write(dev,'(" Tensor body data kind   = ",i7)') this%data_type
           tens_layout=>this%get_layout()
           if(associated(tens_layout)) then
-           write(dev,'(" Tensor body layout      = ",i7)') tens_layout%layout
-           write(dev,'(" Tensor body data kind   = ",i7)') tens_layout%data_type
+           write(dev,'(" Tensor body layout kind = ",i7)') tens_layout%layout
+           write(dev,'(" Layout data kind        = ",i7)') tens_layout%data_type
           else
            write(dev,'(" Tensor body has no layout yet")')
           endif
@@ -4480,10 +4530,10 @@
 !Sets the tensor body storage layout. If the <data_type> is ommitted,
 !it will be imported from the tensor body (if set, otherwise error).
          implicit none
-         class(tens_rcrsv_t), intent(inout):: this       !inout: tensor
-         integer(INTD), intent(in):: layout_kind         !in: tensor body storage layout kind: {TEREC_LAY_XX}
-         integer(INTD), intent(out), optional:: ierr     !out: error code
-         integer(INTD), intent(in), optional:: data_type !in: tensor body data type: {R4,R8,C4,C8}
+         class(tens_rcrsv_t), intent(inout), target:: this !inout: tensor
+         integer(INTD), intent(in):: layout_kind           !in: tensor body storage layout kind: {TEREC_LAY_XX}
+         integer(INTD), intent(out), optional:: ierr       !out: error code
+         integer(INTD), intent(in), optional:: data_type   !in: tensor body data type: {R4,R8,C4,C8}
          integer(INTD):: errc,unres
          logical:: shpd,layd,dt
 
@@ -4491,9 +4541,9 @@
           if(errc.eq.TEREC_SUCCESS) then
            if(shpd.and.unres.eq.0.and.(.not.layd)) then
             if(present(data_type)) then
-             call this%body%set_layout(layout_kind,errc,data_type)
+             call this%body%set_layout(layout_kind,this%header,errc,data_type)
             else
-             call this%body%set_layout(layout_kind,errc)
+             call this%body%set_layout(layout_kind,this%header,errc)
             endif
            else
             errc=TEREC_INVALID_REQUEST
@@ -7562,7 +7612,7 @@
 !a persistent storage and fill in the vector with references to those subtensors.
          implicit none
          class(tens_contraction_t), intent(in):: this      !in: parental tensor contraction
-         procedure(tens_rcrsv_split_i):: tens_split_f      !in: tensor splitting function (splits a tensor into a vector of unique subtensors (by reference), subtensors are persistent)
+         procedure(tens_rcrsv_dim_split_i):: tens_split_f  !in: tensor splitting function (splits a tensor into a vector of unique subtensors (by reference), subtensors are persistent)
          type(list_bi_t), intent(inout):: subops           !inout: list of subtensor contractions
          integer(INTD), intent(out), optional:: ierr       !out: error code
          integer(INTD), intent(out), optional:: num_subops !out: number of subcontractions generated from the parental tensor contraction here
@@ -8145,7 +8195,7 @@
          integer(INTD):: errc,n
 
          n=0
-         call this%TensContractionSplitFunc(tens_rcrsv_split_internal,subops,errc,n)
+         call this%TensContractionSplitFunc(tens_rcrsv_dim_split_default,subops,errc,n)
          if(present(num_subops)) num_subops=n
          if(present(ierr)) ierr=errc
          return

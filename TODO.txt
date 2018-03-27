@@ -13,4 +13,5 @@
             Thus, combined will give: T12 (original) --> T12$1 (replica) --> T12$1#3 (temporary replica).
 2018-03-26: TAL-SH coherence control may not work properly when the same tensor is concurrently participating
             in multiple tensor operations as an input.
-2018-03-26: Tensor data kind is absent in the TENSOR_CREATE instruction => It needs CONTROL field.
+2018-03-27: Subspace decomposition algorithm with alignment does not work properly: Example with alignment 5:
+            [50] -> [[20]+[30]] -> [[[10]+[10]]+[[25]+[5]]]

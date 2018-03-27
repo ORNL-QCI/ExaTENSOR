@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/03/26
+!REVISION: 2018/03/27
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -3418,7 +3418,7 @@
          !subsequently appending them into the subinstruction list.
           implicit none
           integer(INTD), intent(out):: jerr !out: error code
-          integer(INTD):: jj,num_subinstr
+          integer(INTD):: jj,num_subinstr,data_type
           integer(INTL):: iid
           class(ds_oprnd_t), pointer:: oprnd,tens_oprnd
           class(tens_header_t), pointer:: header
@@ -3440,6 +3440,12 @@
             class is(tens_oprnd_t)
              tensor=>oprnd%get_tensor(jerr)
              if(jerr.eq.0) then
+              !if(DEBUG.gt.0) then
+               !write(CONS_OUT,'("#DEBUG(TAVP-MNG:Decomposer.decompose)[",i6,"]: Decomposing TENS_CREATE for tensor:")') impir
+               !call tensor%print_it(dev_id=CONS_OUT)
+               !flush(CONS_OUT)
+              !endif
+              data_type=tensor%get_data_type() !parental tensor data type, if any, will propagate into subtensors
               if(tensor%get_num_subtensors().gt.0) then !tensor must have an internal structure
                subtensors=>tensor%get_subtensors(jerr) !list of subtensors in terms of tensor headers
                if(jerr.eq.TEREC_SUCCESS) then
@@ -3447,12 +3453,21 @@
                 if(jerr.eq.GFC_SUCCESS) then
                  num_subinstr=0; tens_entry=>NULL()
                  cloop: do while(jerr.eq.GFC_SUCCESS)
-                  uptr=>lit%get_value(jerr); if(jerr.ne.GFC_SUCCESS) then; jerr=-25; exit cloop; endif
+                  uptr=>lit%get_value(jerr); if(jerr.ne.GFC_SUCCESS) then; jerr=-26; exit cloop; endif
                   header=>NULL(); select type(uptr); class is(tens_header_t); header=>uptr; end select
-                  if(.not.associated(header)) then; jerr=-24; exit cloop; endif !trap
-                  allocate(tens_rcrsv_t::subtensor,STAT=jerr); if(jerr.ne.0) then; jerr=-23; exit cloop; endif
+                  if(.not.associated(header)) then; jerr=-25; exit cloop; endif !trap
+                  allocate(tens_rcrsv_t::subtensor,STAT=jerr); if(jerr.ne.0) then; jerr=-24; exit cloop; endif
                   call subtensor%tens_rcrsv_ctor(header,jerr)
-                  if(jerr.ne.TEREC_SUCCESS) then; deallocate(subtensor); jerr=-22; exit cloop; endif
+                  if(jerr.ne.TEREC_SUCCESS) then; deallocate(subtensor); jerr=-23; exit cloop; endif
+                  if(data_type.ne.EXA_DATA_KIND_NN) then
+                   call subtensor%set_data_type(data_type,jerr)
+                   if(jerr.ne.TEREC_SUCCESS) then; deallocate(subtensor); jerr=-22; exit cloop; endif
+                  endif
+                  !if(DEBUG.gt.0) then
+                   !write(CONS_OUT,'("#DEBUG(TAVP-MNG:Decomposer.decompose)[",i6,"]: TENS_CREATE created a subtensor:")') impir
+                   !call subtensor%print_it(dev_id=CONS_OUT)
+                   !flush(CONS_OUT)
+                  !endif
                   stored=this%arg_cache%store(subtensor,tens_entry_mng_alloc,jerr,tens_entry_p=tens_entry) !new subtensor: Ownership transferred to the tensor cache
                   if(.not.(jerr.eq.0.and.stored.and.associated(tens_entry))) then
                    deallocate(subtensor); jerr=-21; exit cloop
