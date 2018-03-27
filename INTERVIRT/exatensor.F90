@@ -773,7 +773,7 @@
         character(*), intent(in):: tens_name                 !in: symbolic tensor name
         integer(INTD), intent(in):: hspaces(1:)              !in: registered id of the defining vector space for each tensor dimension
         integer(INTL), intent(in):: subspaces(1:)            !in: id of the defining subspace for each tensor dimension
-        integer(INTD), intent(in):: data_kind                !in: data kind of tensor elements: {R4,R8,C4,C8}
+        integer(INTD), intent(in):: data_kind                !in: data kind of tensor elements: {EXA_DATA_KIND_XX: XX = R4,R8,C4,C8}
         integer(INTL), intent(in), optional:: dim_extent(1:) !in: dimension extent for each tensor dimension (0 means deferred, to be set later)
         integer(INTD), intent(in), optional:: dim_group(1:)  !in: symmetric group (>=0) for each tensor dimension (0 means default)
         integer(INTD), intent(in), optional:: group_spec(1:) !in: symmetric group specification for non-trivial symmetric groups (see tensor_recursive.F90)
@@ -793,44 +793,48 @@
               if(size(dim_group).eq.trank) then
                if(present(group_spec)) then
                 call tensor%tens_rcrsv_ctor(tens_name,subspaces,hspaces,ierr,dim_extent,dim_group,group_spec)
-                if(ierr.ne.TEREC_SUCCESS) ierr=-17
+                if(ierr.ne.TEREC_SUCCESS) ierr=-18
                else
-                ierr=-16
+                ierr=-17
                endif
               else
-               ierr=-15
+               ierr=-16
               endif
              else
               if(.not.present(group_spec)) then
                call tensor%tens_rcrsv_ctor(tens_name,subspaces,hspaces,ierr,dim_extent)
-               if(ierr.ne.TEREC_SUCCESS) ierr=-14
+               if(ierr.ne.TEREC_SUCCESS) ierr=-15
               else
-               ierr=-13
+               ierr=-14
               endif
              endif
             else
-             ierr=-12
+             ierr=-13
             endif
            else
             if(present(dim_group)) then
              if(size(dim_group).eq.trank) then
               if(present(group_spec)) then
                call tensor%tens_rcrsv_ctor(tens_name,subspaces,hspaces,ierr,dim_group=dim_group,group_spec=group_spec)
-               if(ierr.ne.TEREC_SUCCESS) ierr=-11
+               if(ierr.ne.TEREC_SUCCESS) ierr=-12
               else
-               ierr=-10
+               ierr=-11
               endif
              else
-              ierr=-9
+              ierr=-10
              endif
             else
              if(.not.present(group_spec)) then
               call tensor%tens_rcrsv_ctor(tens_name,subspaces,hspaces,ierr)
-              if(ierr.ne.TEREC_SUCCESS) ierr=-8
+              if(ierr.ne.TEREC_SUCCESS) ierr=-9
              else
-              ierr=-7
+              ierr=-8
              endif
             endif
+           endif
+!Set numeric data kind:
+           if(ierr.eq.EXA_SUCCESS) then
+            call tensor%set_data_type(data_kind,ierr); if(ierr.ne.TEREC_SUCCESS) ierr=-7
            endif
           else
            ierr=-6

@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/03/09
+!REVISION: 2018/03/26
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -27,12 +27,14 @@
 !NOTES:
 ! # Tensor definition stages:
 !    a) Null: No tensor;
-!    b) Defined: Tensor signature (and maybe some dimension extents) is(are) defined;
+!    b) Defined: Tensor signature, and maybe some dimension extents, are defined;
 !    c) Resolved: Tensor shape is fully defined (all tensor dimensions are resolved);
 !    d) Structured: Tensor composition (structure) in terms of subtensors (subtensor headers) is defined;
 !    e) Laid-Out: Tensor layout is defined (means the tensor will be physically stored as a whole);
 !    f) Mapped: Tensor body is physically mapped to a contiguous chunk of memory.
-!   The tensor body is considered defined if the tensor is at least Structured.
+!   The tensor body is considered defined (set) if the tensor is at least Structured.
+!   If the tensor is Laid-Out, all its constituent subtensors will be sequentially stored
+!   in a contiguous chunk of virtual memory allocated during Mapping.
         use tensor_algebra !includes dil_basic
         use stsubs
         use timers
@@ -250,12 +252,15 @@
          integer(INTD), private:: num_subtensors=0            !number of subtensors in the subtensor composition list
          type(list_bi_t), private:: subtensors                !list of constituent tensors in terms of tensor headers
          class(tens_layout_t), allocatable, private:: layout  !tensor block storage layout (if physically stored as a whole)
+         integer(INTD), private:: data_type=NO_TYPE           !tensor body data type: {R4,R8,C4,C8}
          contains
           procedure, private:: TensBodyCtorBase                     !basic ctor
           procedure, private:: TensBodyCtorUnpack                   !ctor by unpacking
           generic, public:: tens_body_ctor=>TensBodyCtorBase,TensBodyCtorUnpack
           procedure, public:: pack=>TensBodyPack                    !packs the object into a packet
           procedure, public:: is_set=>TensBodyIsSet                 !returns TRUE if the tensor body is set (plus additional info)
+          procedure, public:: set_data_type=>TensBodySetDataType    !resets the tensor body numeric data type (must match the layout data type, if already set)
+          procedure, public:: get_data_type=>TensBodyGetDataType    !returns the tensor body numeric data type
           procedure, public:: add_subtensor=>TensBodyAddSubtensor   !registers a constituent subtensor by providing its tensor header
           procedure, public:: set_layout=>TensBodySetLayout         !sets the tensor body storage layout if physically stored as a whole
           procedure, public:: set_location=>TensBodySetLocation     !sets the tensor body data location if physically stored as a whole (via a DDSS data descriptor)
@@ -289,12 +294,13 @@
           procedure, public:: get_bases=>TensRcrsvGetBases           !returns the base offset for each tensor dimension
           procedure, public:: add_subtensor=>TensRcrsvAddSubtensor   !registers a constituent subtensor by providing its tensor header
           procedure, public:: add_subtensors=>TensRcrsvAddSubtensors !registers constituent subtensors by providing a list of their tensor headers
-          procedure, public:: has_structure=>TensRcrsvHasStructure   !returns TRUE if the tensor structure (list of subtensors) is defined
+          procedure, public:: has_structure=>TensRcrsvHasStructure   !returns TRUE if the tensor structure (list of one or more subtensors) is defined
           procedure, public:: get_num_subtensors=>TensRcrsvGetNumSubtensors !returns the total number of constituent subtensors
           procedure, public:: get_subtensors=>TensRcrsvGetSubtensors !returns a pointer to the list of constituent subtensors (each subtensor is represented by a tensor header)
           procedure, public:: set_shape=>TensRcrsvSetShape           !sets the tensor shape (if it has not been set yet)
           procedure, public:: set_layout=>TensRcrsvSetLayout         !sets the tensor body storage layout
           procedure, public:: get_layout=>TensRcrsvGetLayout         !returns a pointer to the tensor body storage layout
+          procedure, public:: set_data_type=>TensRcrsvSetDataType    !resets the tensor body data type, unless the tensor has already been laid-out with some data type
           procedure, public:: get_data_type=>TensRcrsvGetDataType    !returns the data type of the tensor body elements {R4,R8,C4,C8}
           procedure, public:: get_body_ptr=>TensRcrsvGetBodyPtr      !returns a C pointer to the local tensor body storage (if set)
           procedure, public:: set_location=>TensRcrsvSetLocation     !sets the physical location of the tensor body data
@@ -657,6 +663,8 @@
         private TensBodyCtorUnpack
         private TensBodyPack
         private TensBodyIsSet
+        private TensBodySetDataType
+        private TensBodyGetDataType
         private TensBodyAddSubtensor
         private TensBodySetLayout
         private TensBodySetLocation
@@ -688,6 +696,7 @@
         private TensRcrsvSetShape
         private TensRcrsvSetLayout
         private TensRcrsvGetLayout
+        private TensRcrsvSetDataType
         private TensRcrsvGetDataType
         private TensRcrsvGetBodyPtr
         private TensRcrsvSetLocation
@@ -3377,7 +3386,7 @@
         end subroutine TensLayoutUpdateHeader
 ![tens_layout_fdims_t]=================================================
         subroutine TensLayoutFdimsCtor(this,tens_header,data_type,ierr)
-!Constructs the "Fortran-dimension-led" tensor body layout.
+!Constructs the "Fortran-dimension-led" tensor body storage layout.
 !The DDSS data descriptor will be set later.
          implicit none
          class(tens_layout_fdims_t), intent(out):: this         !out: tensor body layout
@@ -3547,13 +3556,15 @@
          this%header=>NULL()
          return
         end subroutine tens_layout_fdims_dtor
-![tens_body_t]================================
-        subroutine TensBodyCtorBase(this,ierr)
+![tens_body_t]==========================================
+        subroutine TensBodyCtorBase(this,ierr,data_type)
 !Default ctor.
          implicit none
-         class(tens_body_t), intent(out):: this      !out: tensor body
-         integer(INTD), intent(out), optional:: ierr !out: error code
+         class(tens_body_t), intent(out):: this          !out: tensor body
+         integer(INTD), intent(out), optional:: ierr     !out: error code
+         integer(INTD), intent(in), optional:: data_type !in: tensor body numeric data type: {R4,R8,C4,C8}
 
+         if(present(data_type)) this%data_type=data_type
          if(present(ierr)) ierr=TEREC_SUCCESS
          return
         end subroutine TensBodyCtorBase
@@ -3572,6 +3583,7 @@
          logical:: laid
 
          call unpack_builtin(packet,laid,errc)
+         if(errc.eq.PACK_SUCCESS) call unpack_builtin(packet,this%data_type,errc)
          if(errc.eq.PACK_SUCCESS) call unpack_builtin(packet,this%num_subtensors,errc)
          if(errc.eq.PACK_SUCCESS.and.laid) then
           call unpack_builtin(packet,lay,errc)
@@ -3626,6 +3638,7 @@
          logical:: laid
 
          laid=allocated(this%layout); call pack_builtin(packet,laid,errc)
+         if(errc.eq.PACK_SUCCESS) call pack_builtin(packet,this%data_type,errc)
          if(errc.eq.PACK_SUCCESS) call pack_builtin(packet,this%num_subtensors,errc)
          if(errc.eq.PACK_SUCCESS.and.laid) then
           call pack_builtin(packet,this%layout%layout,errc)
@@ -3661,7 +3674,7 @@
          logical:: res                               !out: result
          class(tens_body_t), intent(in):: this       !in: tensor body
          integer(INTD), intent(out), optional:: ierr !out: error code
-         logical, intent(out), optional:: layed      !out: TRUE if the tensor physical layout has been set
+         logical, intent(out), optional:: layed      !out: TRUE if the tensor storage layout has been set
          logical, intent(out), optional:: located    !out: TRUE if the tensor body has been physically mapped
          integer(INTD):: errc
          logical:: layd,locd
@@ -3676,6 +3689,42 @@
          if(present(ierr)) ierr=errc
          return
         end function TensBodyIsSet
+!----------------------------------------------------------
+        subroutine TensBodySetDataType(this,data_type,ierr)
+!Resets the tensor body numeric data type. If the tensor layout
+!has already been allocated, the new data type cannot differ from it.
+         implicit none
+         class(tens_body_t), intent(inout):: this    !inout: tensor body
+         integer(INTD), intent(in):: data_type       !in: data type
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc,dts
+
+         errc=TEREC_SUCCESS
+         if(tens_valid_data_kind(data_type,dts).eq.YEP) then
+          if(allocated(this%layout)) then !check consistency
+           if(this%layout%get_data_type(errc).ne.data_type) then
+            if(errc.eq.TEREC_SUCCESS) errc=TEREC_INVALID_REQUEST
+           endif
+          endif
+          if(errc.eq.TEREC_SUCCESS) this%data_type=data_type
+         else
+          errc=TEREC_INVALID_ARGS
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensBodySetDataType
+!----------------------------------------------------------------
+        function TensBodyGetDataType(this,ierr) result(data_type)
+!Returns the tensor body numeric data type.
+         implicit none
+         integer(INTD):: data_type                   !out: data type
+         class(tens_body_t), intent(in):: this       !in: tensor body
+         integer(INTD), intent(out), optional:: ierr !out: error code
+
+         data_type=this%data_type
+         if(present(ierr)) ierr=TEREC_SUCCESS
+         return
+        end function TensBodyGetDataType
 !-----------------------------------------------------------
         subroutine TensBodyAddSubtensor(this,subtensor,ierr)
 !Registers a constituent subtensor by providing its tensor header.
@@ -3702,14 +3751,15 @@
          return
         end subroutine TensBodyAddSubtensor
 !--------------------------------------------------------------------
-        subroutine TensBodySetLayout(this,layout_kind,data_type,ierr)
-!Sets tensor body storage layout.
+        subroutine TensBodySetLayout(this,layout_kind,ierr,data_type)
+!Sets tensor body storage layout. If <data_type> is omitted, the value
+!from the tensor body will be used (if set, otherwise error).
          implicit none
-         class(tens_body_t), intent(inout):: this    !inout: tensor body
-         integer(INTD), intent(in):: layout_kind     !in: layout kind
-         integer(INTD), intent(in):: data_type       !in: numeric data type: {R4,R8,C4,C8}
-         integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc
+         class(tens_body_t), intent(inout):: this        !inout: tensor body
+         integer(INTD), intent(in):: layout_kind         !in: layout kind: {TEREC_LAY_XX}
+         integer(INTD), intent(out), optional:: ierr     !out: error code
+         integer(INTD), intent(in), optional:: data_type !in: numeric data type: {R4,R8,C4,C8}
+         integer(INTD):: errc,ier,dt
          logical:: layd,locd
          type(list_iter_t):: lit
          class(tens_header_t), pointer:: thp
@@ -3717,24 +3767,25 @@
 
          if(this%is_set(errc,layd,locd)) then
           if(errc.eq.TEREC_SUCCESS.and.(.not.layd)) then
-           select case(layout_kind)
-           case(TEREC_LAY_RECUR) !all constituent subtensors are mapped sequentially to a contiguous chunk of local memory
-            write(*,'("FATAL(tensor_recursive:tens_body_t:set_layout): TEREC_LAY_RECUR not implemented!")'); stop !`Implement
-           case(TEREC_LAY_FDIMS) !a single subtensor is mapped as "Fortran-dimension-led"
-            if(this%num_subtensors.eq.1) then
-             errc=lit%init(this%subtensors)
-             if(errc.eq.GFC_SUCCESS) then
-              up=>lit%get_value(errc)
+           dt=this%data_type; if(present(data_type)) dt=data_type
+           if((this%data_type.eq.NO_TYPE.and.dt.ne.NO_TYPE).or.(this%data_type.ne.NO_TYPE.and.this%data_type.eq.dt)) then
+            this%data_type=dt
+            select case(layout_kind)
+            case(TEREC_LAY_RECUR) !all constituent subtensors are mapped sequentially to a contiguous chunk of local memory
+             write(*,'("FATAL(tensor_recursive:tens_body_t:set_layout): TEREC_LAY_RECUR not implemented!")'); stop !`Implement
+            case(TEREC_LAY_FDIMS) !a single subtensor is mapped as "Fortran-dimension-led"
+             if(this%num_subtensors.eq.1) then
+              errc=lit%init(this%subtensors)
               if(errc.eq.GFC_SUCCESS) then
-               thp=>NULL(); select type(up); class is(tens_header_t); thp=>up; end select
-               if(associated(thp)) then
-                errc=lit%release()
-                if(errc.eq.GFC_SUCCESS) then
+               up=>lit%get_value(errc)
+               if(errc.eq.GFC_SUCCESS) then
+                thp=>NULL(); select type(up); class is(tens_header_t); thp=>up; end select
+                if(associated(thp)) then
                  allocate(tens_layout_fdims_t::this%layout,STAT=errc)
                  if(errc.eq.0) then
                   select type(layout=>this%layout)
                   class is(tens_layout_fdims_t)
-                   call layout%tens_layout_fdims_ctor(thp,data_type,errc)
+                   call layout%tens_layout_fdims_ctor(thp,this%data_type,errc)
                   class default
                    errc=TEREC_ERROR
                   end select
@@ -3742,57 +3793,58 @@
                   errc=TEREC_MEM_ALLOC_FAILED
                  endif
                 else
-                 errc=TEREC_ERROR
+                 errc=TEREC_UNABLE_COMPLETE
                 endif
                else
                 errc=TEREC_UNABLE_COMPLETE
                endif
+               ier=lit%release(); if(ier.ne.GFC_SUCCESS.and.errc.eq.TEREC_SUCCESS) errc=TEREC_ERROR
               else
                errc=TEREC_UNABLE_COMPLETE
               endif
              else
-              errc=TEREC_UNABLE_COMPLETE
+              errc=TEREC_INVALID_REQUEST
              endif
-            else
-             errc=TEREC_INVALID_REQUEST
-            endif
-           case(TEREC_LAY_CDIMS)
-            if(this%num_subtensors.eq.1) then
-             write(*,'("FATAL(tensor_recursive:tens_body_t:set_layout): TEREC_LAY_CDIMS not implemented!")'); stop !`Implement
-            else
-             errc=TEREC_INVALID_REQUEST
-            endif
-           case(TEREC_LAY_DSYMM)
-            if(this%num_subtensors.eq.1) then
-             write(*,'("FATAL(tensor_recursive:tens_body_t:set_layout): TEREC_LAY_DSYMM not implemented!")'); stop !`Implement
-            else
-             errc=TEREC_INVALID_REQUEST
-            endif
-           case(TEREC_LAY_BRICK)
-            if(this%num_subtensors.eq.1) then
-             write(*,'("FATAL(tensor_recursive:tens_body_t:set_layout): TEREC_LAY_BRICK not implemented!")'); stop !`Implement
-            else
-             errc=TEREC_INVALID_REQUEST
-            endif
-           case(TEREC_LAY_BSYMM)
-            if(this%num_subtensors.eq.1) then
-             write(*,'("FATAL(tensor_recursive:tens_body_t:set_layout): TEREC_LAY_BSYMM not implemented!")'); stop !`Implement
-            else
-             errc=TEREC_INVALID_REQUEST
-            endif
-           case(TEREC_LAY_SPARS)
-            if(this%num_subtensors.eq.1) then
-             write(*,'("FATAL(tensor_recursive:tens_body_t:set_layout): TEREC_LAY_SPARS not implemented!")'); stop !`Implement
-            else
-             errc=TEREC_INVALID_REQUEST
-            endif
-           case(TEREC_LAY_NONE) !destroy existing layout
-            if(allocated(this%layout)) then
-             deallocate(this%layout,STAT=errc); if(errc.ne.0) errc=TEREC_MEM_FREE_FAILED
-            endif
-           case default
-            errc=TEREC_INVALID_ARGS
-           end select
+            case(TEREC_LAY_CDIMS)
+             if(this%num_subtensors.eq.1) then
+              write(*,'("FATAL(tensor_recursive:tens_body_t:set_layout): TEREC_LAY_CDIMS not implemented!")'); stop !`Implement
+             else
+              errc=TEREC_INVALID_REQUEST
+             endif
+            case(TEREC_LAY_DSYMM)
+             if(this%num_subtensors.eq.1) then
+              write(*,'("FATAL(tensor_recursive:tens_body_t:set_layout): TEREC_LAY_DSYMM not implemented!")'); stop !`Implement
+             else
+              errc=TEREC_INVALID_REQUEST
+             endif
+            case(TEREC_LAY_BRICK)
+             if(this%num_subtensors.eq.1) then
+              write(*,'("FATAL(tensor_recursive:tens_body_t:set_layout): TEREC_LAY_BRICK not implemented!")'); stop !`Implement
+             else
+              errc=TEREC_INVALID_REQUEST
+             endif
+            case(TEREC_LAY_BSYMM)
+             if(this%num_subtensors.eq.1) then
+              write(*,'("FATAL(tensor_recursive:tens_body_t:set_layout): TEREC_LAY_BSYMM not implemented!")'); stop !`Implement
+             else
+              errc=TEREC_INVALID_REQUEST
+             endif
+            case(TEREC_LAY_SPARS)
+             if(this%num_subtensors.eq.1) then
+              write(*,'("FATAL(tensor_recursive:tens_body_t:set_layout): TEREC_LAY_SPARS not implemented!")'); stop !`Implement
+             else
+              errc=TEREC_INVALID_REQUEST
+             endif
+            case(TEREC_LAY_NONE) !destroy existing layout
+             if(allocated(this%layout)) then
+              deallocate(this%layout,STAT=errc); if(errc.ne.0) errc=TEREC_MEM_FREE_FAILED
+             endif
+            case default
+             errc=TEREC_INVALID_ARGS
+            end select
+           else
+            errc=TEREC_INVALID_REQUEST
+           endif
           else
            errc=TEREC_INVALID_REQUEST
           endif
@@ -4424,20 +4476,25 @@
          return
         end subroutine TensRcrsvSetShape
 !---------------------------------------------------------------------
-        subroutine TensRcrsvSetLayout(this,layout_kind,data_type,ierr)
-!Sets the tensor body storage layout.
+        subroutine TensRcrsvSetLayout(this,layout_kind,ierr,data_type)
+!Sets the tensor body storage layout. If the <data_type> is ommitted,
+!it will be imported from the tensor body (if set, otherwise error).
          implicit none
-         class(tens_rcrsv_t), intent(inout):: this   !inout: tensor
-         integer(INTD), intent(in):: layout_kind     !in: tensor body storage layout kind
-         integer(INTD), intent(in):: data_type       !in: tensor body data type: {R4,R8,C4,C8}
-         integer(INTD), intent(out), optional:: ierr !out: error code
+         class(tens_rcrsv_t), intent(inout):: this       !inout: tensor
+         integer(INTD), intent(in):: layout_kind         !in: tensor body storage layout kind: {TEREC_LAY_XX}
+         integer(INTD), intent(out), optional:: ierr     !out: error code
+         integer(INTD), intent(in), optional:: data_type !in: tensor body data type: {R4,R8,C4,C8}
          integer(INTD):: errc,unres
-         logical:: shpd,layd
+         logical:: shpd,layd,dt
 
          if(this%is_set(errc,shaped=shpd,unresolved=unres,layed=layd)) then
           if(errc.eq.TEREC_SUCCESS) then
            if(shpd.and.unres.eq.0.and.(.not.layd)) then
-            call this%body%set_layout(layout_kind,data_type,errc)
+            if(present(data_type)) then
+             call this%body%set_layout(layout_kind,errc,data_type)
+            else
+             call this%body%set_layout(layout_kind,errc)
+            endif
            else
             errc=TEREC_INVALID_REQUEST
            endif
@@ -4461,6 +4518,19 @@
          if(present(ierr)) ierr=errc
          return
         end function TensRcrsvGetLayout
+!-----------------------------------------------------------
+        subroutine TensRcrsvSetDataType(this,data_type,ierr)
+!Resets the tensor body data type, unless the tensor has already been laid-out with some data type.
+         implicit none
+         class(tens_rcrsv_t), intent(inout):: this   !inout: tensor
+         integer(INTD), intent(in):: data_type       !in: data type
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         call this%body%set_data_type(data_type,errc)
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensRcrsvSetDataType
 !-----------------------------------------------------------------
         function TensRcrsvGetDataType(this,ierr) result(data_type)
 !Returns the data type of the tensor elements.
@@ -4469,10 +4539,8 @@
          class(tens_rcrsv_t), intent(in):: this      !in: tensor
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
-         class(tens_layout_t), pointer:: layout
 
-         data_type=NO_TYPE; layout=>this%get_layout(errc)
-         if(errc.eq.TEREC_SUCCESS) data_type=layout%get_data_type(errc)
+         data_type=this%body%get_data_type(errc)
          if(present(ierr)) ierr=errc
          return
         end function TensRcrsvGetDataType
@@ -4635,10 +4703,13 @@
 ! 9. location (DDSS process id): Skipped when <skip_body>=TRUE or <skip_location>=TRUE.
 !TOTAL size = 5*rank + [1 + 1 + 1 + [1]] = 5*rank + 4 (elements)
 !`Note: This function violates object encapsulation by
-! directly accessing data members of the data members
-! of the <tens_rcrsv_t> class. However, since it is a read-only
-! access and all accessed data members are defined in the same
-! module, it should not cause a problem.
+!       directly accessing data members of the data members
+!       of the <tens_rcrsv_t> class. However, since it is a read-only
+!       access and all accessed data members are defined in the same
+!       module, it should not cause a problem.
+!`Note: This function currently only accounts for the data type specified in the tensor body layout,
+!       but not the one from the tensor body itself. Thus, the data type will not be accounted for
+!       at all for tensors without layout.
          implicit none
          type(tens_descr_t):: tens_descr               !out: tensor descriptor
          class(tens_rcrsv_t), intent(in):: this        !in: tensor
@@ -8436,7 +8507,7 @@
  !Check the tensor descriptor:
          thp=>tensor%get_header(ierr); if(ierr.ne.0) then; ierr=8; return; endif
          call tensor%add_subtensor(thp,ierr); thp=>NULL(); if(ierr.ne.0) then; ierr=9; return; endif
-         call tensor%set_layout(TEREC_LAY_FDIMS,R8,ierr); if(ierr.ne.0) then; ierr=10; return; endif
+         call tensor%set_layout(TEREC_LAY_FDIMS,ierr,R8); if(ierr.ne.0) then; ierr=10; return; endif
          call tensor%set_location(data_descr_rnd_,ierr); if(ierr.ne.0) then; ierr=11; return; endif
          tdescr=tensor%get_descriptor(ierr); if(ierr.ne.0) then; ierr=12; return; endif
          !call tdescr%print_it() !debug
