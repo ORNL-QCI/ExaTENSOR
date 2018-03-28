@@ -8,7 +8,7 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/03/27
+!REVISION: 2018/03/28
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -122,9 +122,8 @@
    !NOOP:
         integer(INTD), parameter, public:: TAVP_INSTR_NOOP=DS_INSTR_NOOP !no operation (empty instruction): Negative opcode
    !General control [0-15]:
-        integer(INTD), parameter, public:: TAVP_INSTR_CTRL_RESUME=0     !resume TAVP execution (resumes TAVP execution pipeline after a pause, ignored if no pause has been posted)
+        integer(INTD), parameter, public:: TAVP_INSTR_CTRL_RESUME=0     !resume TAVP execution (used for special purposes)
         integer(INTD), parameter, public:: TAVP_INSTR_CTRL_STOP=1       !stop TAVP (finishes current instructions and shuts down TAVP)
-        integer(INTD), parameter, public:: TAVP_INSTR_CTRL_PAUSE=2      !pause TAVP execution (finishes active instructions and pauses TAVP)
    !Auxiliary space definitions [16-63]:
         integer(INTD), parameter, public:: TAVP_INSTR_SPACE_CREATE=16   !create a (hierarchical) vector space
         integer(INTD), parameter, public:: TAVP_INSTR_SPACE_DESTROY=17  !destroy a (hierarchical) vector space

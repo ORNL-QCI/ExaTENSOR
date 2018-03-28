@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/03/27
+!REVISION: 2018/03/28
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -1945,7 +1945,7 @@
 !Construct the instruction:
            select case(op_code)
            case(TAVP_INSTR_NOOP)
-           case(TAVP_INSTR_CTRL_STOP,TAVP_INSTR_CTRL_RESUME,TAVP_INSTR_CTRL_PAUSE)
+           case(TAVP_INSTR_CTRL_RESUME,TAVP_INSTR_CTRL_STOP)
             call construct_instr_ctrl(errc); if(errc.ne.0) errc=-10
            case(TAVP_INSTR_TENS_CREATE,TAVP_INSTR_TENS_DESTROY)
             call construct_instr_tens_create_destroy(errc); if(errc.ne.0) errc=-9
@@ -2144,7 +2144,7 @@
 !Pack the instruction body:
                  select case(op_code)
                  case(TAVP_INSTR_NOOP)
-                 case(TAVP_INSTR_CTRL_STOP,TAVP_INSTR_CTRL_RESUME,TAVP_INSTR_CTRL_PAUSE)
+                 case(TAVP_INSTR_CTRL_RESUME,TAVP_INSTR_CTRL_STOP)
                   call encode_instr_ctrl(errc); if(errc.ne.0) errc=-12
                  case(TAVP_INSTR_TENS_CREATE,TAVP_INSTR_TENS_DESTROY)
                   call encode_instr_tens_create_destroy(errc); if(errc.ne.0) errc=-11
@@ -3011,8 +3011,7 @@
               opcode=tens_instr%get_code(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-23; exit wloop; endif
   !Clone CONTROL instructions for own port:
               if(opcode.ge.TAVP_ISA_CTRL_FIRST.and.opcode.le.TAVP_ISA_CTRL_LAST) then !copy control instructions to own port
-               if((opcode.eq.TAVP_INSTR_CTRL_STOP.or.opcode.eq.TAVP_INSTR_CTRL_PAUSE).and.& !`CONTROL STOP and PAUSE are treated the same currently
-                 &i.ne.num_packets.and.errc.eq.0) then; errc=-22; exit wloop; endif !STOP must be the last instruction in the packet
+               if(opcode.eq.TAVP_INSTR_CTRL_STOP.and.i.ne.num_packets.and.errc.eq.0) then; errc=-22; exit wloop; endif !STOP must be the last instruction in the packet
                ier=this%ctrl_list%append(tens_instr); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-21; exit wloop; endif
               endif
              enddo
@@ -3053,7 +3052,7 @@
            tens_instr=>NULL(); select type(uptr); type is(tens_instr_t); tens_instr=>uptr; end select
            if(.not.associated(tens_instr).and.errc.eq.0) then; errc=-6; exit wloop; endif !trap
            opcode=tens_instr%get_code(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-5; exit wloop; endif
-           if(opcode.eq.TAVP_INSTR_CTRL_STOP.or.opcode.eq.TAVP_INSTR_CTRL_PAUSE) then !only STOP instruction is expected `CONTROL STOP and PAUSE are treated the same currently
+           if(opcode.eq.TAVP_INSTR_CTRL_STOP) then !only STOP instruction is expected
             stopping=.TRUE.
            else
             if(opcode.ne.TAVP_INSTR_CTRL_RESUME) then !`RESUME currently does nothing
@@ -3147,7 +3146,7 @@
                 if(errc.eq.0) then
                  select case(op_code)
                  case(TAVP_INSTR_NOOP)
-                 case(TAVP_INSTR_CTRL_STOP,TAVP_INSTR_CTRL_PAUSE,TAVP_INSTR_CTRL_RESUME)
+                 case(TAVP_INSTR_CTRL_RESUME,TAVP_INSTR_CTRL_STOP)
                  case(TAVP_INSTR_TENS_CREATE,TAVP_INSTR_TENS_DESTROY)
                   call decode_instr_tens_create_destroy(errc); if(errc.ne.0) errc=-12
                  case(TAVP_INSTR_TENS_CONTRACT)
@@ -3675,7 +3674,7 @@
            elseif(opcode.ge.TAVP_ISA_CTRL_FIRST.and.opcode.le.TAVP_ISA_CTRL_LAST) then !control instruction: no dependencies
             if(.not.stopping) then
              auxiliary=.TRUE.
-             if(opcode.eq.TAVP_INSTR_CTRL_STOP.or.opcode.eq.TAVP_INSTR_CTRL_PAUSE) stopping=.TRUE. !`CTRL STOP and PAUSE are treated the same
+             if(opcode.eq.TAVP_INSTR_CTRL_STOP) stopping=.TRUE.
              call instr%set_status(DS_INSTR_INPUT_WAIT,ier)
              if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-28; exit wloop; endif
              ier=this%iqueue%move_elem(this%stg_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-27; exit wloop; endif
