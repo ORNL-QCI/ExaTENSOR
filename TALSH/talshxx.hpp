@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level C++ API header.
-REVISION: 2018/03/26
+REVISION: 2018/03/28
 
 Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -35,7 +35,7 @@ namespace talsh{
 
 static const std::size_t DEFAULT_HOST_BUFFER_SIZE = TALSH_NO_HOST_BUFFER;
 
-//Tensor data kind:
+//Tensor data kind (static type VS numeric constant conversions):
 
 template <typename T>
 struct TensorData{
@@ -63,6 +63,12 @@ struct TensorData<std::complex<double>>{
  static constexpr bool supported = true;
 };
 
+template <int talsh_data_kind> struct TensorDataType{using value = void;};
+template <> struct TensorDataType<R4>{using value = float;};
+template <> struct TensorDataType<R8>{using value = double;};
+template <> struct TensorDataType<C4>{using value = std::complex<float>;};
+template <> struct TensorDataType<C8>{using value = std::complex<double>;};
+
 //Helper functions:
 
 double realPart(float number){return static_cast<double>(number);}
@@ -73,11 +79,6 @@ double imagPart(float number){return 0.0f;}
 double imagPart(double number){return 0.0;}
 double imagPart(std::complex<float> number){return static_cast<double>(number.imag());}
 double imagPart(std::complex<double> number){return number.imag();}
-
-//Namespace API:
-
-void initialize(std::size_t * host_buffer_size = nullptr); //in: desired host buffer size; out: actual host buffer size
-void shutdown();
 
 //Classes:
 
@@ -103,15 +104,40 @@ public:
 
  ~Tensor();
 
+ Tensor & operator++(); //increments tensor use count
+ Tensor & operator--(); //decrements tensor use count
+
+ bool sync(const int device_kind = DEV_HOST, //in: device kind
+           const int device_id = 0,          //in: specific device of the given kind which the synchronization is done for
+           void * dev_mem = nullptr);        //in: optional pointer to that device's client memory where the tensor data should go
+
  void print();
 
 private:
 
- std::initializer_list<std::size_t> signature_;
- talsh_tens_t tensor_;
- talsh_task_t write_task_;
- int used_;
+ std::initializer_list<std::size_t> signature_; //tensor signature (unique integer multi-index identifier)
+ talsh_tens_t tensor_;                          //TAL-SH tensor block
+ talsh_task_t write_task_;                      //TAL-SH task for the current asynchronous operation updating the tensor
+ int used_;                                     //number of TAL-SH operations that are currently using the tensor
 };
+
+//Namespace API:
+
+void initialize(std::size_t * host_buffer_size = nullptr); //in: desired host buffer size; out: actual host buffer size
+void shutdown();
+
+template <typename T>
+void gemm(Tensor & result, //out: result tensor
+          Tensor & left,   //in: left tensor
+          Tensor & right,  //in: right tensor
+          const T factor); //in: alpha factor
+
+/*
+template <typename T>
+Tensor gemm(Tensor & left,   //in: left tensor
+            Tensor & right,  //in: right tensor
+            const T factor); //in: alpha factor
+*/
 
 } //namespace talsh
 

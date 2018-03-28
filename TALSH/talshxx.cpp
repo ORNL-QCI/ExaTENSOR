@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level C++ API implementation.
-REVISION: 2018/03/26
+REVISION: 2018/03/28
 
 Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -27,33 +27,6 @@ along with ExaTensor. If not, see <http://www.gnu.org/licenses/>.
 #include <assert.h>
 
 namespace talsh{
-
-
-void initialize(std::size_t * host_buffer_size)
-{
- int num_gpu, gpu_list[MAX_GPUS_PER_NODE];
- int errc = talshGetDeviceCount(DEV_NVIDIA_GPU,&num_gpu);
- assert(errc == TALSH_SUCCESS && num_gpu >= 0);
- if(num_gpu > 0){for(int i = 0; i < num_gpu; ++i) gpu_list[i]=i;};
-
- int host_arg_max;
- if(host_buffer_size == nullptr){
-  std::size_t buf_size = DEFAULT_HOST_BUFFER_SIZE;
-  errc = talshInit(&buf_size,&host_arg_max,num_gpu,gpu_list,0,NULL,0,NULL);
- }else{
-  errc = talshInit(host_buffer_size,&host_arg_max,num_gpu,gpu_list,0,NULL,0,NULL);
- }
- assert(errc == TALSH_SUCCESS);
- return;
-}
-
-
-void shutdown()
-{
- int errc = talshShutdown();
- assert(errc == TALSH_SUCCESS);
- return;
-}
 
 
 template <typename T>
@@ -107,6 +80,43 @@ Tensor::~Tensor()
 }
 
 
+/** Use counter increment. **/
+Tensor & Tensor::operator++()
+{
+ ++used_;
+ return *this;
+}
+
+
+/** Use counter decrement. **/
+Tensor & Tensor::operator--()
+{
+ assert(used_ > 0);
+ --used_;
+ return *this;
+}
+
+
+/** Synchronizes the tensor presence on a given device.
+    Returns TRUE on success, FALSE if an active write task
+    on this tensor has failed to complete successfully. **/
+bool Tensor::sync(const int device_kind, const int device_id, void * dev_mem)
+{
+ bool res = true;
+ if(talshTaskIsEmpty(&write_task_) != YEP){
+  int stats;
+  int errc = talshTaskWait(&write_task_,&stats);
+  assert(errc == TALSH_SUCCESS);
+  res = (stats == TALSH_TASK_COMPLETED);
+ }
+ if(res){
+  int errc = talshTensorPlace(&tensor_,device_id,device_kind,dev_mem);
+  assert(errc == TALSH_SUCCESS);
+ }
+ return res;
+}
+
+
 void Tensor::print()
 {
  std::cout << "TAL-SH Tensor {";
@@ -117,5 +127,44 @@ void Tensor::print()
  talshTensorPrintInfo(&tensor_);
  return;
 }
+
+
+void initialize(std::size_t * host_buffer_size)
+{
+ int num_gpu, gpu_list[MAX_GPUS_PER_NODE];
+ int errc = talshGetDeviceCount(DEV_NVIDIA_GPU,&num_gpu);
+ assert(errc == TALSH_SUCCESS && num_gpu >= 0);
+ if(num_gpu > 0){for(int i = 0; i < num_gpu; ++i) gpu_list[i]=i;};
+
+ int host_arg_max;
+ if(host_buffer_size == nullptr){
+  std::size_t buf_size = DEFAULT_HOST_BUFFER_SIZE;
+  errc = talshInit(&buf_size,&host_arg_max,num_gpu,gpu_list,0,NULL,0,NULL);
+ }else{
+  errc = talshInit(host_buffer_size,&host_arg_max,num_gpu,gpu_list,0,NULL,0,NULL);
+ }
+ assert(errc == TALSH_SUCCESS);
+ return;
+}
+
+
+void shutdown()
+{
+ int errc = talshShutdown();
+ assert(errc == TALSH_SUCCESS);
+ return;
+}
+
+
+template <typename T>
+void gemm(Tensor & result, Tensor & left, Tensor & right, const T factor)
+{
+ //Construct a matrix-multiplication pattern:
+ 
+ //Contract tensors:
+ //result.contraction(pattern,left,right,factor);
+ return;
+}
+
 
 } //namespace talsh
