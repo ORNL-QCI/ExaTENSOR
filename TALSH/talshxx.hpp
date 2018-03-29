@@ -142,11 +142,12 @@ public:
 private:
 
  talsh_tens_t * get_talsh_tensor_ptr();
+ bool complete_write_task();
 
  std::initializer_list<std::size_t> signature_; //tensor signature (unique integer multi-index identifier)
  talsh_tens_t tensor_;                          //TAL-SH tensor block
  TensorTask * write_task_;                      //non-owning pointer to the task handle for the current asynchronous operation updating the tensor, if any
- int used_;                                     //number of (asynchronous) TAL-SH operations that are currently using the tensor
+ int used_;                                     //number of unfinished (asynchronous) TAL-SH operations that are currently using the tensor
 };
 
 //Namespace API:

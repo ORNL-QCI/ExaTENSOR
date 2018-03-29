@@ -76,7 +76,7 @@ Tensor::Tensor(const std::initializer_list<std::size_t> signature, //tensor sign
 
 Tensor::~Tensor()
 {
- assert(used_ == 0);
+ assert(used_ == 0 && write_task_ == nullptr);
  int errc = talshTensorDestruct(&tensor_);
  assert(errc == TALSH_SUCCESS);
 }
@@ -104,16 +104,7 @@ Tensor & Tensor::operator--()
     on this tensor has failed to complete successfully. **/
 bool Tensor::sync(const int device_kind, const int device_id, void * dev_mem)
 {
- bool res = true;
- if(write_task_ != nullptr){
-  talsh_task_t * talsh_task = write_task_->get_talsh_task_ptr();
-  if(talshTaskIsEmpty(talsh_task) != YEP){
-   int stats;
-   int errc = talshTaskWait(talsh_task,&stats);
-   assert(errc == TALSH_SUCCESS);
-   res = (stats == TALSH_TASK_COMPLETED);
-  }
- }
+ bool res = this->complete_write_task();
  if(res){
   int errc = talshTensorPlace(&tensor_,device_id,device_kind,dev_mem);
   assert(errc == TALSH_SUCCESS);
@@ -132,14 +123,16 @@ void Tensor::contraction(TensorTask & task_handle,    //out: task handle associa
                          const int device_id,         //in: execution device id
                          const T factor)              //in: alpha factor
 {
+ this->complete_write_task();
  const char * contr_ptrn = pattern.c_str();
  talsh_tens_t * dtens = this->get_talsh_tensor_ptr();
  talsh_tens_t * ltens = left.get_talsh_tensor_ptr();
  talsh_tens_t * rtens = right.get_talsh_tensor_ptr();
  talsh_task_t * task_hl = task_handle.get_talsh_task_ptr();
- ++left; ++right; ++(*this);
+ //++left; ++right; ++(*this);
  int errc = talshTensorContract(contr_ptrn,dtens,ltens,rtens,realPart(factor),imagPart(factor),device_id,device_kind,COPY_MTT,task_hl);
- assert(errc == TALSH_SUCCESS && errc == TRY_LATER);
+ //if(errc != TALSH_SUCCESS) std::cout << "#ERROR(talsh::Tensor::contraction): talshTensorContract error " << errc << std::endl; //debug
+ assert(errc == TALSH_SUCCESS || errc == TRY_LATER || errc == DEVICE_UNABLE);
  if(errc == TALSH_SUCCESS) write_task_ = &task_handle;
  return;
 }
@@ -161,6 +154,18 @@ void Tensor::print() const
 talsh_tens_t * Tensor::get_talsh_tensor_ptr()
 {
  return &tensor_;
+}
+
+
+/** Completes the current write task on the tensor, if any. **/
+bool Tensor::complete_write_task()
+{
+ bool res = true;
+ if(write_task_ != nullptr){
+  res = write_task_->wait();
+  write_task_ = nullptr;
+ }
+ return res;
 }
 
 

@@ -37,13 +37,43 @@ TensorTask::TensorTask()
 
 TensorTask::~TensorTask()
 {
- if(talshTaskIsEmpty(&talsh_task_) != YEP){
-  int stats;
-  int errc = talshTaskWait(&talsh_task_,&stats);
-  assert(errc == TALSH_SUCCESS);
- }
+ assert(this->wait());
  int errc = talshTaskDestruct(&talsh_task_);
  assert(errc == TALSH_SUCCESS);
+}
+
+
+void TensorTask::clean()
+{
+ assert(this->wait());
+ int errc = talshTaskClean(&talsh_task_);
+ assert(errc == TALSH_SUCCESS);
+ return;
+}
+
+
+bool TensorTask::wait()
+{
+ int stats = TALSH_TASK_COMPLETED;
+ if(talshTaskIsEmpty(&talsh_task_) != YEP){
+  int errc;
+  if(talshTaskComplete(&talsh_task_,&stats,&errc) != YEP){
+   errc = talshTaskWait(&talsh_task_,&stats);
+   assert(errc == TALSH_SUCCESS);
+  }
+ }
+ return (stats == TALSH_TASK_COMPLETED);
+}
+
+
+bool TensorTask::test(int * status)
+{
+ bool res = true;
+ if(talshTaskIsEmpty(&talsh_task_) != YEP){
+  int errc;
+  res = (talshTaskComplete(&talsh_task_,status,&errc) == YEP);
+ }
+ return res;
 }
 
 

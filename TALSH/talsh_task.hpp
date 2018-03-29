@@ -41,6 +41,12 @@ public:
 
  ~TensorTask();
 
+ void clean();
+
+ bool wait();
+
+ bool test(int * status);
+
 private:
 
  talsh_task_t * get_talsh_task_ptr();
