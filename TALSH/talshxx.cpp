@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level C++ API implementation.
-REVISION: 2018/03/28
+REVISION: 2018/03/29
 
 Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -24,7 +24,11 @@ along with ExaTensor. If not, see <http://www.gnu.org/licenses/>.
 #include <iostream>
 #include <complex>
 #include <initializer_list>
+#include <string>
 #include <assert.h>
+
+#include "talsh.h"
+#include "talsh_task.hpp"
 
 namespace talsh{
 
@@ -42,8 +46,7 @@ Tensor::Tensor(const std::initializer_list<std::size_t> signature, //tensor sign
  errc = talshTensorConstruct(&tensor_,TensorData<T>::kind,rank,dims.begin(),talshFlatDevId(DEV_HOST,0),NULL,-1,NULL,
                              realPart(init_val),imagPart(init_val));
  assert(errc == TALSH_SUCCESS && signature.size() == dims.size());
- errc = talshTaskClean(&write_task_);
- assert(errc == TALSH_SUCCESS);
+ write_task_ = nullptr;
 }
 
 
@@ -67,8 +70,7 @@ Tensor::Tensor(const std::initializer_list<std::size_t> signature, //tensor sign
                               realPart(*init_val),imagPart(*init_val));
  }
  assert(errc == TALSH_SUCCESS && signature.size() == dims.size());
- errc = talshTaskClean(&write_task_);
- assert(errc == TALSH_SUCCESS);
+ write_task_ = nullptr;
 }
 
 
@@ -103,11 +105,14 @@ Tensor & Tensor::operator--()
 bool Tensor::sync(const int device_kind, const int device_id, void * dev_mem)
 {
  bool res = true;
- if(talshTaskIsEmpty(&write_task_) != YEP){
-  int stats;
-  int errc = talshTaskWait(&write_task_,&stats);
-  assert(errc == TALSH_SUCCESS);
-  res = (stats == TALSH_TASK_COMPLETED);
+ if(write_task_ != nullptr){
+  talsh_task_t * talsh_task = write_task_->get_talsh_task_ptr();
+  if(talshTaskIsEmpty(talsh_task) != YEP){
+   int stats;
+   int errc = talshTaskWait(talsh_task,&stats);
+   assert(errc == TALSH_SUCCESS);
+   res = (stats == TALSH_TASK_COMPLETED);
+  }
  }
  if(res){
   int errc = talshTensorPlace(&tensor_,device_id,device_kind,dev_mem);
@@ -117,7 +122,31 @@ bool Tensor::sync(const int device_kind, const int device_id, void * dev_mem)
 }
 
 
-void Tensor::print()
+/** Performs a tensor contraction of two tensors and accumulates the result into the current tensor. **/
+template <typename T>
+void Tensor::contraction(TensorTask & task_handle,    //out: task handle associated with this operation
+                         const std::string & pattern, //in: contraction pattern string
+                         Tensor & left,               //in: left tensor
+                         Tensor & right,              //in: right tensor
+                         const int device_kind,       //in: execution device kind
+                         const int device_id,         //in: execution device id
+                         const T factor)              //in: alpha factor
+{
+ const char * contr_ptrn = pattern.c_str();
+ talsh_tens_t * dtens = this->get_talsh_tensor_ptr();
+ talsh_tens_t * ltens = left.get_talsh_tensor_ptr();
+ talsh_tens_t * rtens = right.get_talsh_tensor_ptr();
+ talsh_task_t * task_hl = task_handle.get_talsh_task_ptr();
+ ++left; ++right; ++(*this);
+ int errc = talshTensorContract(contr_ptrn,dtens,ltens,rtens,realPart(factor),imagPart(factor),device_id,device_kind,COPY_MTT,task_hl);
+ assert(errc == TALSH_SUCCESS && errc == TRY_LATER);
+ if(errc == TALSH_SUCCESS) write_task_ = &task_handle;
+ return;
+}
+
+
+/** Prints the tensor. **/
+void Tensor::print() const
 {
  std::cout << "TAL-SH Tensor {";
  std::size_t rank = signature_.size();
@@ -129,6 +158,13 @@ void Tensor::print()
 }
 
 
+talsh_tens_t * Tensor::get_talsh_tensor_ptr()
+{
+ return &tensor_;
+}
+
+
+/** Initializes TAL-SH runtime. **/
 void initialize(std::size_t * host_buffer_size)
 {
  int num_gpu, gpu_list[MAX_GPUS_PER_NODE];
@@ -148,6 +184,7 @@ void initialize(std::size_t * host_buffer_size)
 }
 
 
+/** Shutsdown TAL-SH runtime. **/
 void shutdown()
 {
  int errc = talshShutdown();
@@ -156,6 +193,7 @@ void shutdown()
 }
 
 
+/** Performs a matrix-matrix multiplication on tensors. **/
 template <typename T>
 void gemm(Tensor & result, Tensor & left, Tensor & right, const T factor)
 {

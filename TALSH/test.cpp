@@ -27,6 +27,7 @@
 #include "talsh.h"
 
 #ifdef __cplusplus
+#include <string>
 #include "talshxx.hpp"
 #endif
 
@@ -191,6 +192,10 @@ void test_talsh_cxx(int * ierr)
   //Create right tensor:
   talsh::Tensor rtens({0,0,0,0},{VDIM,VDIM,ODIM,ODIM},2.0);
   rtens.print(); //debug
+  //Perform tensor contraction:
+  TensorTask task_hl;
+  dtens.contraction(task_hl,std::string("D(a,b,c,d)+=L(d,i,c,j)*R(j,b,i,a)"),ltens,rtens,DEV_HOST,0,0.5);
+  bool done = dtens.sync();
  }
  //Shutdown:
  talsh::shutdown();
