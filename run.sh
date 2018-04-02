@@ -35,7 +35,7 @@ export MPICH_MAX_THREAD_SAFETY=multiple             #CRAY: Required for MPI asyn
 export MPICH_GNI_ASYNC_PROGRESS_TIMEOUT=0           #CRAY:
 export MPICH_GNI_MALLOC_FALLBACK=enabled            #CRAY:
 export MPICH_RMA_OVER_DMAPP=1                       #CRAY: DMAPP backend for CRAY-MPICH
-export _DMAPPI_NDREG_ENTRIES=16384                  #CRAY: Max number of entries in UDREG memory registration cache
+#export _DMAPPI_NDREG_ENTRIES=16384                 #CRAY: Max number of entries in UDREG memory registration cache
 #export MPICH_ALLOC_MEM_HUGE_PAGES=1
 #export MPICH_ALLOC_MEM_HUGEPG_SZ=2M
 #export MPICH_ENV_DISPLAY=1
@@ -45,9 +45,8 @@ export _DMAPPI_NDREG_ENTRIES=16384                  #CRAY: Max number of entries
 rm *.tmp *.log *.out *.x
 cp $QF_PATH/Qforce.x ./
 #aprun -n $QF_NUM_PROCS -N $QF_PROCS_PER_NODE -d $QF_CORES_PER_PROC -cc 0,2,4,6,8,10,12,14,1,3,5,7,9,11,13 -r1 ./Qforce.x #> qforce.log
-#mpiexec -n $QF_NUM_PROCS -npernode $QF_PROCS_PER_NODE ./Qforce.x #> qforce.log
-/usr/local/mpi/mpich/3.2/bin/mpiexec -n $QF_NUM_PROCS ./Qforce.x #> qforce.log
-#/usr/local/openmpi1.10.1/bin/mpiexec -n $QF_NUM_PROCS ./Qforce.x > qforce.log
+#/usr/local/mpi/openmpi/3.0.0/bin/mpiexec -n $QF_NUM_PROCS -npernode $QF_PROCS_PER_NODE -oversubscribe ./Qforce.x #> qforce.log
+/usr/local/mpi/mpich/3.2.1/bin/mpiexec -n $QF_NUM_PROCS ./Qforce.x #> qforce.log
 #nvprof --log-file nv_profile.log --print-gpu-trace ./Qforce.x # &> qforce.log &
 #nvprof --log-file nv_profile.log --print-gpu-trace --metrics branch_efficiency,gld_efficiency,gst_efficiency ./Qforce.x # &> qforce.log &
 #gprof ./Qforce.x gmon.out > profile.log

@@ -3,7 +3,7 @@ QFORCE resolution list (D.I.L.):
 UNSOLVED:
  2014/07/07: Add a scalar scaling factor to <tensor_block_contract> and <gpu_tensor_block_contract>.
  2014/07/07: Check GPU_UP before switching GPUs.
- 2014/05/12: Add "Deallocation free capability" to the dictionary (reuse of entries memory). 
+ 2014/05/12: Add "Deallocation free capability" to the dictionary (reuse of entries memory).
  2013/11/24: When more than one process is launched per node, GPUs must be reassigned
              such that only C-processes get them (global and local roots do not require GPU).
              Or, alternatively, GR and LRs should start using GPUs.

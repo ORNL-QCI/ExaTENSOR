@@ -1,7 +1,7 @@
 !PROJECT Q-FORCE: Massively Parallel Quantum Many-Body Methodology on Heterogeneous HPC systems.
 !BASE: ExaTensor: Massively Parallel Tensor Algebra Virtual Processor for Heterogeneous HPC systems.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/03/27
+!REVISION: 2018/03/29
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -125,7 +125,7 @@
            !write(jo,'("Ok")'); flush(jo)
  !Stop ExaTENSOR runtime:
            !ierr=exatns_stop()
-           pause
+           do while(.TRUE.); enddo !debug
           endif
          else
           write(*,*) 'Process ',my_rank,' terminated with error ',ierr

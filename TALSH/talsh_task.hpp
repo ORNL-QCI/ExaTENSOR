@@ -24,9 +24,13 @@ along with ExaTensor. If not, see <http://www.gnu.org/licenses/>.
 #ifndef _TALSH_TASK_HPP
 #define _TALSH_TASK_HPP
 
+#include <tuple>
+
 #include "talsh.h" //TAL-SH C header
 
 namespace talsh{
+
+class Tensor;
 
 /** Tensor task. **/
 class TensorTask{
@@ -51,7 +55,9 @@ private:
 
  talsh_task_t * get_talsh_task_ptr();
 
- talsh_task_t talsh_task_;
+ talsh_task_t talsh_task_;                    //TAL-SH task handle
+ unsigned int num_tensors_;                   //number of participating tensors
+ Tensor * used_tensors_[MAX_TENSOR_OPERANDS]; //non-owning pointers to the tensors participating in this task
 
  friend class Tensor;
 

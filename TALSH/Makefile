@@ -375,7 +375,7 @@ endif
 ./OBJ/talsh_task.o: talsh_task.cpp talsh.h ./OBJ/talshc.o
 	$(CPPCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(CPPFLAGS) talsh_task.cpp -o ./OBJ/talsh_task.o
 
-./OBJ/test.o: test.cpp talshxx.hpp talshxx.cpp talsh.h tensor_algebra.h lib$(NAME).a
+./OBJ/test.o: test.cpp talshxx.cpp talshxx.hpp talsh_task.hpp talsh.h tensor_algebra.h lib$(NAME).a
 	$(CPPCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(CPPFLAGS) test.cpp -o ./OBJ/test.o
 
 ./OBJ/main.o: main.F90 ./OBJ/test.o ./OBJ/talshf.o lib$(NAME).a

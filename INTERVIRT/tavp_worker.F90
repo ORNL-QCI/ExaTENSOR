@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/03/28
+!REVISION: 2018/04/02
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -98,6 +98,7 @@
           procedure, public:: get_mem_size=>TensResrcGetMemSize        !returns the size of the memory buffer in bytes
           procedure, private:: incr_ref_count=>TensResrcIncrRefCount   !increments the reference count (number of tensor operands associated with the resource)
           procedure, private:: decr_ref_count=>TensResrcDecrRefCount   !decrements the reference count (number of tensor operands associated with the resource)
+          procedure, private:: get_ref_count=>TensResrcGetRefCount     !returns the current reference count
 #if !(defined(__GNUC__) && __GNUC__ < 8)
           final:: tens_resrc_dtor
 #endif
@@ -344,6 +345,7 @@
         private TensResrcGetMemSize
         private TensResrcIncrRefCount
         private TensResrcDecrRefCount
+        private TensResrcGetRefCount
         public tens_resrc_dtor
  !tens_entry_wrk_t:
         private TensEntryWrkCtor
@@ -957,6 +959,7 @@
          implicit none
          class(tens_resrc_t), intent(inout):: this !inout: tensor resource
 
+!$OMP ATOMIC UPDATE
          this%ref_count=this%ref_count+1
          return
         end subroutine TensResrcIncrRefCount
@@ -966,9 +969,21 @@
          implicit none
          class(tens_resrc_t), intent(inout):: this !inout: tensor resource
 
+!$OMP ATOMIC UPDATE
          this%ref_count=this%ref_count-1
          return
         end subroutine TensResrcDecrRefCount
+!------------------------------------------------------
+        function TensResrcGetRefCount(this) result(cnt)
+!Returns the current reference count.
+         implicit none
+         integer(INTD):: cnt                    !out: reference count
+         class(tens_resrc_t), intent(in):: this !in: tensor resource
+
+!$OMP ATOMIC READ
+         cnt=this%ref_count
+         return
+        end function TensResrcGetRefCount
 !---------------------------------------
         subroutine tens_resrc_dtor(this)
          implicit none
@@ -1790,7 +1805,7 @@
          class(tens_oprnd_t), intent(inout):: this   !inout: tensor operand
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
-         logical:: delivered
+         logical:: delivered,persistent
 
          if(this%is_active(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
@@ -1799,7 +1814,8 @@
              delivered=this%sync(errc,wait=.TRUE.)
              if((.not.delivered).or.(errc.ne.0)) errc=-1
             endif
-            if(this%resource%ref_count.eq.1) then !only one (last) tensor operand is associated with this resource
+            persistent=.FALSE.; if(associated(this%cache_entry)) persistent=this%cache_entry%is_persistent()
+            if((.not.persistent).and.(this%resource%get_ref_count().eq.1)) then !only one (last) tensor operand is associated with this resource
              call this%resource%free_buffer(errc); if(errc.ne.0) errc=-2 !free the resource memory buffer
             endif
            endif
@@ -2365,7 +2381,7 @@
                    if(errc.eq.TEREC_SUCCESS) then
                     call tensor%set_layout(TEREC_LAY_FDIMS,errc)
                     if(errc.eq.TEREC_SUCCESS) then
-                     if(DEBUG.gt.0) then
+                     if(DEBUG.gt.1) then
                       write(CONS_OUT,'("#DEBUG(TAVP-WRK:tens_instr_t.lay_output_operands)[",i6,'//&
                       &'"]: Tensor storage layout successfully created for tensor:")') impir
                       call tensor%print_it(dev_id=CONS_OUT)

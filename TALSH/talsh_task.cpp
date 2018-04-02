@@ -28,7 +28,8 @@ along with ExaTensor. If not, see <http://www.gnu.org/licenses/>.
 namespace talsh{
 
 
-TensorTask::TensorTask()
+TensorTask::TensorTask():
+ num_tensors_(0)
 {
  int errc = talshTaskClean(&talsh_task_);
  assert(errc == TALSH_SUCCESS);
