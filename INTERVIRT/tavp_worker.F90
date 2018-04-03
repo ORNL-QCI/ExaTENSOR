@@ -123,8 +123,9 @@
          class(tens_resrc_t), pointer, private:: resource=>NULL() !non-owning pointer to a persistent local tensor resource (normally stored in the tensor cache)
          type(talsh_tens_t), private:: talsh_tens                 !TAL-SH tensor object (for performing actual computations)
          contains
-          procedure, private:: TensOprndCtor                             !ctor
-          generic, public:: tens_oprnd_ctor=>TensOprndCtor
+          procedure, private:: TensOprndCtorFull                         !ctor
+          procedure, private:: TensOprndCtorCache                        !ctor by cache entry only
+          generic, public:: tens_oprnd_ctor=>TensOprndCtorFull,TensOprndCtorCache
           procedure, public:: get_tensor=>TensOprndGetTensor             !returns a non-owning pointer to the tensor
           procedure, public:: set_cache_entry=>TensOprndSetCacheEntry    !sets the associated tensor cache entry (may be NULL)
           procedure, public:: get_cache_entry=>TensOprndGetCacheEntry    !returns a non-owning pointer to the tensor cache entry (may be NULL)
@@ -353,7 +354,8 @@
         public tens_entry_wrk_dtor
         public tens_entry_wrk_alloc
  !tens_oprnd_t:
-        private TensOprndCtor
+        private TensOprndCtorFull
+        private TensOprndCtorCache
         private TensOprndGetTensor
         private TensOprndSetCacheEntry
         private TensOprndGetCacheEntry
@@ -1059,8 +1061,8 @@
          allocate(tens_entry_wrk_t::tens_entry,STAT=ierr)
          return
         end function tens_entry_wrk_alloc
-![tens_oprnd_t]==================================================================
-        subroutine TensOprndCtor(this,tensor,ierr,tens_cache_entry,tens_resource)
+![tens_oprnd_t]======================================================================
+        subroutine TensOprndCtorFull(this,tensor,ierr,tens_cache_entry,tens_resource)
 !Constructs a tensor operand. The <tensor> must be set.
 !The associated tensor resource is optional and may still be empty.
          implicit none
@@ -1091,8 +1093,7 @@
              else
               this%resource=>NULL()
              endif
-             call this%mark_active(errc)
-             if(errc.ne.DSVP_SUCCESS) errc=-5
+             call this%mark_active(errc); if(errc.ne.DSVP_SUCCESS) errc=-5
             else
              errc=-4
             endif
@@ -1107,7 +1108,45 @@
          endif
          if(present(ierr)) ierr=errc
          return
-        end subroutine TensOprndCtor
+        end subroutine TensOprndCtorFull
+!----------------------------------------------------------------
+        subroutine TensOprndCtorCache(this,tens_cache_entry,ierr)
+!Constructs a tensor operand by providing an active tensor cache entry.
+         implicit none
+         class(tens_oprnd_t), intent(inout):: this                         !inout: undefined tensor operand (on entrance)
+         class(tens_entry_wrk_t), intent(inout), target:: tens_cache_entry !in: tensor cache entry owning the tensor
+         integer(INTD), intent(out), optional:: ierr                       !out: error code
+         integer(INTD):: errc
+
+         if(.not.this%is_active(errc)) then
+          if(errc.eq.DSVP_SUCCESS) then
+           if(tens_cache_entry%is_set(errc)) then
+            if(errc.eq.0) then
+             call tens_cache_entry%incr_ref_count()
+             this%cache_entry=>tens_cache_entry
+             this%tensor=>this%cache_entry%get_tensor(errc)
+             if(errc.eq.0) then
+              this%resource=>this%cache_entry%get_resource() !may be absent
+              if(associated(this%resource)) call this%resource%incr_ref_count()
+              call this%mark_active(errc); if(errc.ne.DSVP_SUCCESS) errc=-6
+             else
+              errc=-5
+             endif
+            else
+             errc=-4
+            endif
+           else
+            errc=-3
+           endif
+          else
+           errc=-2
+          endif
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensOprndCtorCache
 !------------------------------------------------------------
         function TensOprndGetTensor(this,ierr) result(tens_p)
 !Returns a pointer to the tensor.
@@ -3880,18 +3919,24 @@
          logical, intent(in), optional:: omit_output       !in: if TRUE, the output operand(s) will be ommitted (defaults to FALSE)
          integer(INTD):: errc,ier,n
          class(ds_oprnd_t), pointer:: oprnd
-         logical:: no_output
+         class(tens_rcrsv_t), pointer:: tensor
+         logical:: no_output,op_output
 
          no_output=.FALSE.; if(present(omit_output)) no_output=omit_output
          n=tens_instr%get_num_operands(errc)
          if(errc.eq.DSVP_SUCCESS) then
           do while(n.gt.0)
-           n=n-1
-           if(tens_instr%operand_is_output(n).and.no_output) cycle
+           n=n-1; op_output=tens_instr%operand_is_output(n)
+           if(op_output.and.no_output) cycle
            oprnd=>tens_instr%get_operand(n,ier)
            if(ier.eq.DSVP_SUCCESS) then
             call oprnd%acquire_rsc(ier)
-            if(ier.ne.0) then
+            if(ier.eq.0) then
+             if(op_output) then !output operand may need resource for an accumulator tensor as well
+              !tensor=>oprnd%get_tensor(ier)
+              !`Finish
+             endif
+            else
              if(ier.eq.TRY_LATER) then
               errc=ier
              else
