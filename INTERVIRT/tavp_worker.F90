@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/04/02
+!REVISION: 2018/04/03
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -1559,6 +1559,11 @@
                 buf_size=layout_p%get_body_size(errc)
                 if(errc.eq.TEREC_SUCCESS.and.buf_size.gt.0_INTL) then
                  call this%resource%allocate_buffer(buf_size,errc); if(errc.ne.0) errc=-1
+                 if(errc.eq.0.and.DEBUG.gt.0) then
+                  write(CONS_OUT,'("#DEBUG(TAVP-WRK:tens_oprnd_t:acquire_rsc)[",i6,"]: Memory acquired: Size (B) = ",i13)')&
+                  &impir,buf_size
+                  flush(CONS_OUT)
+                 endif
                 else
                  errc=-2
                 endif
@@ -3539,6 +3544,7 @@
          class(dsvp_t), pointer:: dsvp
          class(tavp_wrk_t), pointer:: tavp
          class(*), pointer:: uptr
+         real(8):: ctm
 
          errc=0; thid=omp_get_thread_num()
          if(DEBUG.gt.0) then
@@ -3710,12 +3716,19 @@
             endif
            endif
   !Pass staged instructions to Communicator Port 0:
-           expired=timer_expired(rsc_timer,ier); if(ier.ne.TIMERS_SUCCESS.and.errc.eq.0) then; errc=-22; exit wloop; endif
+           expired=timer_expired(rsc_timer,ier,curr_time=ctm)
+           if(ier.ne.TIMERS_SUCCESS.and.errc.eq.0) then; errc=-22; exit wloop; endif
+           write(CONS_OUT,*) 'Timer: ',expired,ctm; flush(CONS_OUT) !debug
            if(expired.or.auxiliary.or.stopping.or.num_staged.gt.MAX_RESOURCER_INSTR) then
             ier=this%stg_list%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-21; exit wloop; endif
             if(this%stg_list%get_status().eq.GFC_IT_ACTIVE) then
-             ier=tavp%communicator%load_port(0,this%stg_list)
+             ier=tavp%communicator%load_port(0,this%stg_list,num_moved=n)
              if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-20; exit wloop; endif
+             if(DEBUG.gt.0.and.n.gt.0) then
+              write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Resourcer unit ",i2," passed ",i9," instructions to Communicator")')&
+              &impir,this%get_id(),n
+              flush(CONS_OUT)
+             endif
             endif
             if(expired) ier=timer_reset(rsc_timer,MAX_RESOURCER_PHASE_TIME)
             num_staged=0
