@@ -384,4 +384,4 @@ endif
 
 .PHONY: clean
 clean:
-	rm -f *.x *.a ./OBJ/* *.mod *.modmic *.ptx *.log
+	rm -f *.x *.a *.so ./OBJ/* *.mod *.modmic *.ptx *.log
