@@ -1,5 +1,5 @@
 /** ExaTensor::TAL-SH: Device-unified user-level C++ API implementation.
-REVISION: 2018/03/29
+REVISION: 2018/04/04
 
 Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -128,6 +128,7 @@ void Tensor::contraction(TensorTask & task_handle,    //out: task handle associa
  talsh_tens_t * dtens = this->get_talsh_tensor_ptr();
  talsh_tens_t * ltens = left.get_talsh_tensor_ptr();
  talsh_tens_t * rtens = right.get_talsh_tensor_ptr();
+ assert(task_handle.is_empty());
  talsh_task_t * task_hl = task_handle.get_talsh_task_ptr();
  //++left; ++right; ++(*this);
  int errc = talshTensorContract(contr_ptrn,dtens,ltens,rtens,realPart(factor),imagPart(factor),device_id,device_kind,COPY_MTT,task_hl);
