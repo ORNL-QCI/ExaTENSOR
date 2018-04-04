@@ -55,6 +55,9 @@ export PATH_BLAS_ACML ?= /opt/acml/5.3.1/gfortran64_fma4_mp/lib
 export PATH_BLAS_ESSL ?= /sw/summitdev/essl/5.5.0/lib64
 export PATH_BLAS_ESSL_DEP ?= /sw/summitdev/xl/20161123/xlf/15.1.5/lib
 
+#IBM XL C++ (only set this if you use IBM XL):
+export PATH_IBM_XL_CPP = /sw/summit/xl/20180319-beta/xlC/13.1.7/lib
+
 # CUDA (only if you build with CUDA):
 export PATH_CUDA ?= /usr/local/cuda
 #  Only reset these if CUDA files are spread in the system directories:
