@@ -8,7 +8,7 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/03/28
+!REVISION: 2018/04/04
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -319,6 +319,10 @@
 !VISIBILITY:
  !non-member:
         public role_barrier
+        public tensor_name_mangle_temporary
+        public tensor_name_unmangle_temporary
+        public tensor_name_mangle_replica
+        public tensor_name_unmangle_replica
  !ctrl_tens_trans_t:
         private CtrlTensTransCtor
         private CtrlTensTransMapMethod
@@ -396,6 +400,139 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine role_barrier
+!---------------------------------------------------------------------------------------------
+        subroutine tensor_name_mangle_temporary(orig_name,new_name,new_name_len,ierr,instance)
+!Mangles the tensor name to make it a name of a temporary tensor, if <instance> is present.
+!If <instance> is absent, removes the temporary suffix from the tensor name.
+!Trying to remove a non-existing temporary suffix or append more than one temporary suffix results in error.
+!Mangling examples: Tens23 <--> Tens23#3, Tamp12$5 <--> Tamp12$5#2
+         implicit none
+         character(*), intent(in):: orig_name           !in: original tensor name
+         character(*), intent(inout):: new_name         !out: new tensor name
+         integer(INTD), intent(out):: new_name_len      !out: new tensor name length (must be long enough)
+         integer(INTD), intent(out), optional:: ierr    !out: error code
+         integer(INTD), intent(in), optional:: instance !in: temporary instance number (0:accumulator tensor; 1,2,3,..:temporary tensor)
+         integer(INTD):: errc,l,i
+
+         errc=0; new_name_len=0; l=len_trim(orig_name)
+         if(l.gt.0) then
+          if(present(instance)) then !persistent --> temporary name mangling
+           if(instance.ge.0) then
+            i=index(orig_name(1:l),'#')
+            if(i.le.0.or.i.gt.l) then
+             new_name(1:l+1)=orig_name(1:l)//'#'
+             call numchar(instance,i,new_name(l+2:)); new_name_len=l+1+i
+            else
+             errc=-4
+            endif
+           else
+            errc=-3
+           endif
+          else !temporary --> persistent name mangling
+           i=l; do while(orig_name(i:i).ne.'#'); i=i-1; if(i.eq.0) exit; enddo
+           if(i.gt.1) then
+            new_name_len=i-1; new_name(1:new_name_len)=orig_name(1:new_name_len)
+           else
+            errc=-2
+           endif
+          endif
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine tensor_name_mangle_temporary
+!--------------------------------------------------------------------------------------
+        subroutine tensor_name_unmangle_temporary(orig_name,new_name,new_name_len,ierr)
+         implicit none
+         character(*), intent(in):: orig_name           !in: original tensor name
+         character(*), intent(inout):: new_name         !out: new tensor name
+         integer(INTD), intent(out):: new_name_len      !out: new tensor name length (must be long enough)
+         integer(INTD), intent(out), optional:: ierr    !out: error code
+
+         if(present(ierr)) then
+          call tensor_name_mangle_temporary(orig_name,new_name,new_name_len,ierr)
+         else
+          call tensor_name_mangle_temporary(orig_name,new_name,new_name_len)
+         endif
+         return
+        end subroutine tensor_name_unmangle_temporary
+!-------------------------------------------------------------------------------------------
+        subroutine tensor_name_mangle_replica(orig_name,new_name,new_name_len,ierr,instance)
+!Mangles the tensor name to make it a name of a tensor replica, if <instance> is present.
+!If <instance> is absent, removes the replica suffix from the tensor name.
+!Trying to remove a non-existing replica suffix or append more than one replica suffix results in error.
+!Mangling examples: Tens49 <--> Tens49$5, Tens49#1 <--> Tens49$5#1
+         implicit none
+         character(*), intent(in):: orig_name           !in: original tensor name
+         character(*), intent(inout):: new_name         !out: new tensor name
+         integer(INTD), intent(out):: new_name_len      !out: new tensor name length (must be long enough)
+         integer(INTD), intent(out), optional:: ierr    !out: error code
+         integer(INTD), intent(in), optional:: instance !in: replica instance number (>0)
+         integer(INTD):: errc,l,i,k
+
+         errc=0; new_name_len=0; l=len_trim(orig_name)
+         if(l.gt.0) then
+          if(present(instance)) then !non-replica --> replica name mangling
+           if(instance.ge.0) then
+            i=index(orig_name(1:l),'$')
+            if(i.le.0.or.i.gt.l) then
+             i=index(orig_name(1:l),'#')
+             if(i.ge.1.and.i.le.l) then !has the temporary suffix
+              if(i.gt.1.and.i.lt.l) then
+               new_name(1:i)=orig_name(1:i-1)//'$'
+               call numchar(instance,k,new_name(i+1:)); k=i+k
+               new_name(k+1:k+(l-i+1))=orig_name(i:l); new_name_len=k+(l-i+1)
+              else
+               errc=-6
+              endif
+             else !does not have the temporary suffix
+              new_name(1:l+1)=orig_name(1:l)//'$'
+              call numchar(instance,i,new_name(l+2:)); new_name_len=l+1+i
+             endif
+            else
+             errc=-5
+            endif
+           else
+            errc=-4
+           endif
+          else !replica --> non-replica name mangling
+           i=l; do while(orig_name(i:i).ne.'$'); i=i-1; if(i.eq.0) exit; enddo
+           if(i.gt.1) then
+            new_name_len=i-1; new_name(1:new_name_len)=orig_name(1:new_name_len)
+            i=i+1; do while(i.le.l); if(is_it_number(orig_name(i:i)).lt.0) exit; i=i+1; enddo
+            if(i.le.l) then !we still need to keep the temporary part
+             if(orig_name(i:i).eq.'#'.and.i.lt.l) then
+              new_name(new_name_len+1:new_name_len+(l-i+1))=orig_name(i:l); new_name_len=new_name_len+(l-i+1)
+             else
+              errc=-3
+             endif
+            endif
+           else
+            errc=-2
+           endif
+          endif
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine tensor_name_mangle_replica
+!------------------------------------------------------------------------------------
+        subroutine tensor_name_unmangle_replica(orig_name,new_name,new_name_len,ierr)
+         implicit none
+         character(*), intent(in):: orig_name           !in: original tensor name
+         character(*), intent(inout):: new_name         !out: new tensor name
+         integer(INTD), intent(out):: new_name_len      !out: new tensor name length (must be long enough)
+         integer(INTD), intent(out), optional:: ierr    !out: error code
+
+         if(present(ierr)) then
+          call tensor_name_mangle_replica(orig_name,new_name,new_name_len,ierr)
+         else
+          call tensor_name_mangle_replica(orig_name,new_name,new_name_len)
+         endif
+         return
+        end subroutine tensor_name_unmangle_replica
 ![ctrl_tens_trans_t]=============================================
         subroutine CtrlTensTransCtor(this,ierr,alpha,method_name)
 !CTOR: If neither <alpha> nor <method_name> is present, initialization

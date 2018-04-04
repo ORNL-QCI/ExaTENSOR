@@ -107,10 +107,12 @@
         type, extends(tens_cache_entry_t), private:: tens_entry_wrk_t
          type(tens_resrc_t), private:: resource                       !tensor resource
          contains
-          procedure, private:: TensEntryWrkCtor                       !ctor
+          procedure, private:: TensEntryWrkCtor                             !ctor
           procedure, public:: tens_entry_wrk_ctor=>TensEntryWrkCtor
-          procedure, public:: get_resource=>TensEntryWrkGetResource   !returns a non-owning pointer to the resource
-          final:: tens_entry_wrk_dtor                                 !dtor
+          procedure, public:: get_resource=>TensEntryWrkGetResource         !returns a non-owning pointer to the resource
+          procedure, public:: acquire_resource=>TensEntryWrkAcquireResource !acquires resource for the tensor cache entry
+          procedure, public:: release_resource=>TensEntryWrkReleaseResource !releases resource for the tensor cache entry
+          final:: tens_entry_wrk_dtor                                       !dtor
         end type tens_entry_wrk_t
  !Reference to the tensor argument cache entry:
         type, private:: tens_entry_wrk_ref_t
@@ -351,6 +353,8 @@
  !tens_entry_wrk_t:
         private TensEntryWrkCtor
         private TensEntryWrkGetResource
+        private TensEntryWrkAcquireResource
+        private TensEntryWrkReleaseResource
         public tens_entry_wrk_dtor
         public tens_entry_wrk_alloc
  !tens_oprnd_t:
@@ -1043,6 +1047,30 @@
          if(present(ierr)) ierr=errc
          return
         end function TensEntryWrkGetResource
+!--------------------------------------------------------
+        subroutine TensEntryWrkAcquireResource(this,ierr)
+!Acquires resource for the tensor cache entry if it has not been acquired yet.
+         implicit none
+         class(tens_entry_wrk_t), intent(inout):: this !inout: tensor cache entry
+         integer(INTD), intent(out), optional:: ierr   !out: error code
+         integer(INTD):: errc
+
+         errc=0
+         !`Finish
+         return
+        end subroutine TensEntryWrkAcquireResource
+!--------------------------------------------------------
+        subroutine TensEntryWrkReleaseResource(this,ierr)
+!Releases resource for the tensor cache entry if it has not been released yet.
+         implicit none
+         class(tens_entry_wrk_t), intent(inout):: this !inout: tensor cache entry
+         integer(INTD), intent(out), optional:: ierr   !out: error code
+         integer(INTD):: errc
+
+         errc=0
+         !`Finish
+         return
+        end subroutine TensEntryWrkReleaseResource
 !-------------------------------------------
         subroutine tens_entry_wrk_dtor(this)
          implicit none
@@ -2834,7 +2862,7 @@
         end function TensInstrIsSubstitutable
 !-----------------------------------------------------------------
         function TensInstrOutputSubstituted(this,ierr) result(res)
-!Returns TRUE if the (persistent) output tensor operand (#0) is substituted with a temporary tensor.
+!Returns TRUE if the (persistent) output tensor operand is substituted with a temporary tensor.
          implicit none
          logical:: res                               !out: result
          class(tens_instr_t), intent(in):: this      !in: active tensor instruction
@@ -2849,27 +2877,31 @@
           if(errc.eq.DSVP_SUCCESS) then
            n=this%get_num_operands(errc)
            if(errc.eq.DSVP_SUCCESS.and.n.gt.0) then
-            oprnd=>this%get_operand(0,errc)
-            if(errc.eq.DSVP_SUCCESS) then
-             select type(oprnd)
-             class is(tens_oprnd_t)
-              tensor=>oprnd%get_tensor(errc)
-              if(errc.eq.0) then
-               call tensor%get_name(tname,l,errc)
-               if(errc.eq.TEREC_SUCCESS) then
-                if(l.gt.0) then
-                 i=l; do while(i.gt.0); if(tname(i:i).eq.'#') exit; i=i-1; enddo
-                 if(i.gt.0) then
-                  if(i.lt.l) then
-                   k=l-i; j=icharnum(k,tname(i+1:l))
-                   if(k.eq.l-i) then
-                    if(j.ge.0) then; res=.TRUE.; else; errc=-11; endif
+            if(this%num_out_oprnds.eq.1) then
+             oprnd=>this%get_operand(this%out_oprnds(0),errc) !`checks only the first output operand
+             if(errc.eq.DSVP_SUCCESS) then
+              select type(oprnd)
+              class is(tens_oprnd_t)
+               tensor=>oprnd%get_tensor(errc)
+               if(errc.eq.0) then
+                call tensor%get_name(tname,l,errc)
+                if(errc.eq.TEREC_SUCCESS) then
+                 if(l.gt.0) then
+                  i=l; do while(i.gt.0); if(tname(i:i).eq.'#') exit; i=i-1; enddo
+                  if(i.gt.0) then
+                   if(i.lt.l) then
+                    k=l-i; j=icharnum(k,tname(i+1:l))
+                    if(k.eq.l-i) then
+                     if(j.ge.0) then; res=.TRUE.; else; errc=-12; endif
+                    else
+                     errc=-11
+                    endif
                    else
                     errc=-10
                    endif
-                  else
-                   errc=-9
                   endif
+                 else
+                  errc=-9
                  endif
                 else
                  errc=-8
@@ -2877,14 +2909,14 @@
                else
                 errc=-7
                endif
-              else
+              class default
                errc=-6
-              endif
-             class default
+              end select
+             else
               errc=-5
-             end select
+             endif
             else
-             errc=-4
+             if(this%num_out_oprnds.gt.1) errc=-4 !`cannot deal with more than one output tensor operand
             endif
            else
             errc=-3
@@ -3917,15 +3949,19 @@
          class(tens_instr_t), intent(inout):: tens_instr   !inout: tensor instruction
          integer(INTD), intent(out), optional:: ierr       !out: error code
          logical, intent(in), optional:: omit_output       !in: if TRUE, the output operand(s) will be ommitted (defaults to FALSE)
-         integer(INTD):: errc,ier,n
+         integer(INTD):: errc,ier,n,l,k
          class(ds_oprnd_t), pointer:: oprnd
          class(tens_rcrsv_t), pointer:: tensor
-         logical:: no_output,op_output
+         class(tens_header_t), pointer:: header
+         class(tens_cache_entry_t), pointer:: tens_entry
+         type(tens_rcrsv_t):: tens
+         logical:: no_output,op_output,subst
+         character(TEREC_MAX_TENS_NAME_LEN+2):: tname,oname,aname
 
          no_output=.FALSE.; if(present(omit_output)) no_output=omit_output
          n=tens_instr%get_num_operands(errc)
          if(errc.eq.DSVP_SUCCESS) then
-          do while(n.gt.0)
+          aloop: do while(n.gt.0)
            n=n-1; op_output=tens_instr%operand_is_output(n)
            if(op_output.and.no_output) cycle
            oprnd=>tens_instr%get_operand(n,ier)
@@ -3933,8 +3969,42 @@
             call oprnd%acquire_rsc(ier)
             if(ier.eq.0) then
              if(op_output) then !output operand may need resource for an accumulator tensor as well
-              !tensor=>oprnd%get_tensor(ier)
-              !`Finish
+              subst=tens_instr%output_substituted(ier); if(ier.ne.0) then; errc=-17; exit aloop; endif !`assumes only one output tensor operand
+              if(subst) then !if output operand is substituted, its accumulator tensor needs resources
+               select type(oprnd)
+               class is(tens_oprnd_t)
+                tensor=>oprnd%get_tensor(ier); if(ier.ne.0) then; errc=-16; exit aloop; endif
+                header=>tensor%get_header(ier); if(ier.ne.TEREC_SUCCESS) then; errc=-15; exit aloop; endif
+                call tens%tens_rcrsv_ctor(header,ier); if(ier.ne.TEREC_SUCCESS) then; errc=-14; exit aloop; endif
+                call tens%get_name(tname,l,ier); if(ier.ne.TEREC_SUCCESS) then; errc=-13; exit aloop; endif
+                call tensor_name_unmangle_temporary(tname(1:l),oname,k,ier); if(ier.ne.0) then; errc=-12; exit aloop; endif
+                call tensor_name_mangle_temporary(oname(1:k),aname,l,ier,0); if(ier.ne.0) then; errc=-11; exit aloop; endif
+                call tens%rename(aname(1:l),ier); if(ier.ne.TEREC_SUCCESS) then; errc=-10; exit aloop; endif
+                tens_entry=>this%arg_cache%lookup(tens,ier); if(ier.ne.0) then; errc=-9; exit aloop; endif
+                if(associated(tens_entry)) then
+                 select type(tens_entry)
+                 class is(tens_entry_wrk_t)
+                  call tens_entry%acquire_resource(ier)
+                  if(ier.ne.0) then
+                   if(ier.eq.TRY_LATER) then
+                    errc=ier
+                   else
+                    write(CONS_OUT,'("#ERROR(TAVP-WRK:Resourcer.acquire_resource)[",i6,"]: Severe failure for operand # ",i2,'//&
+                    &'": Error ",i11)') impir,n,ier
+                    errc=-8; exit aloop
+                   endif
+                  endif
+                 class default
+                  errc=-7; exit aloop
+                 end select
+                 call this%arg_cache%release_entry(tens_entry,ier); if(ier.ne.0) then; errc=-6; exit aloop; endif
+                else
+                 errc=-5; exit aloop
+                endif
+               class default
+                errc=-4; exit aloop
+               end select
+              endif
              endif
             else
              if(ier.eq.TRY_LATER) then
@@ -3943,13 +4013,13 @@
               write(CONS_OUT,'("#ERROR(TAVP-WRK:Resourcer.acquire_resource)[",i6,"]: Severe failure for operand # ",i2,'//&
               &'": Error ",i11)') impir,n,ier
               flush(CONS_OUT)
-              errc=-3; exit
+              errc=-3; exit aloop
              endif
             endif
            else
-            errc=-2; exit
+            errc=-2; exit aloop
            endif
-          enddo
+          enddo aloop
           if(errc.ne.0.and.errc.ne.TRY_LATER) call this%release_resource(tens_instr,ier)
          else
           errc=-1
