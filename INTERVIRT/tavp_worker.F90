@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/04/03
+!REVISION: 2018/04/04
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -1432,7 +1432,7 @@
 !By being located, it means its physical location is known.
          implicit none
          logical:: res                               !out: result
-         class(tens_oprnd_t), intent(in):: this      !in: active tensor operand
+         class(tens_oprnd_t), intent(inout):: this   !in: active tensor operand
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
          logical:: laid,locd
@@ -1463,7 +1463,7 @@
 !Returns TRUE if the tensor operand is remote, FALSE otherwise.
          implicit none
          logical:: res                               !out: result
-         class(tens_oprnd_t), intent(in):: this      !in: active tensor operand
+         class(tens_oprnd_t), intent(inout):: this   !in: active tensor operand
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
          integer(INT_MPI):: host_proc_rank,mpi_comm,my_rank
@@ -1522,7 +1522,7 @@
 !In order to valued for TAVP-WRK, the tensor has to be laid out and located.
          implicit none
          logical:: res                               !out: result
-         class(tens_oprnd_t), intent(in):: this      !in: active tensor operand
+         class(tens_oprnd_t), intent(inout):: this   !in: active tensor operand
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
          logical:: laid,locd
@@ -3996,9 +3996,9 @@
 !tensor cache in addition to the temporary tensor. The persistent tensor still stays
 !in the tensor cache as its reference count is not decremented by this procedure.
          implicit none
-         class(tavp_wrk_resourcer_t), intent(in):: this  !inout: TAVP-WRK Resourcer
-         class(tens_instr_t), intent(inout):: tens_instr !inout: active tensor instruction
-         integer(INTD), intent(out), optional:: ierr     !out: error code
+         class(tavp_wrk_resourcer_t), intent(inout):: this !inout: TAVP-WRK Resourcer
+         class(tens_instr_t), intent(inout):: tens_instr   !inout: active tensor instruction
+         integer(INTD), intent(out), optional:: ierr       !out: error code
          integer(INTD):: errc,n,nou,tc
          integer(INTD), pointer:: out_oprs(:)
          class(ds_oprnd_t), pointer:: oprnd
@@ -4137,9 +4137,9 @@
 !Restores the original (persistent) output tensor in a tensor instruction
 !and destroys the temporary tensor (assumes a single output tensor for now).
          implicit none
-         class(tavp_wrk_resourcer_t), intent(in):: this  !inout: TAVP-WRK Resourcer
-         class(tens_instr_t), intent(inout):: tens_instr !in: active tensor instruction
-         integer(INTD), intent(out), optional:: ierr     !out: error code
+         class(tavp_wrk_resourcer_t), intent(inout):: this !inout: TAVP-WRK Resourcer
+         class(tens_instr_t), intent(inout):: tens_instr   !in: active tensor instruction
+         integer(INTD), intent(out), optional:: ierr       !out: error code
          integer(INTD):: errc,n,nou,nl,onl
          integer(INTD), pointer:: out_oprs(:)
          class(ds_oprnd_t), pointer:: oprnd
