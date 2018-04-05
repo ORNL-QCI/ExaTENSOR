@@ -1,6 +1,6 @@
 !Basic object packing/unpacking primitives.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/02/16
+!REVISION: 2018/04/05
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -600,7 +600,7 @@
           if(this%get_capacity().lt.this%get_length()) errc=PACK_ERROR
           if(this%get_max_packets().lt.this%get_num_packets()) errc=PACK_ERROR
           if((this%busy.and.(.not.associated(this%curr_packet))).or.&
-             ((.not.this%busy).and.associated(this%curr_packet))) errc=PACK_ERROR
+            &((.not.this%busy).and.associated(this%curr_packet))) errc=PACK_ERROR
           if(errc.eq.PACK_SUCCESS) answ=.TRUE.
          else
           errc=PACK_NULL
@@ -2166,10 +2166,11 @@
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: obj_size,errc
          integer(INTL):: sl,l,i
+         character(1):: ch
 
          errc=PACK_SUCCESS; l=len(obj)
          if(l.gt.0) then
-          obj_size=size_of(obj(1:1))
+          ch=obj(1:1); obj_size=storage_size(ch)/8 !size_of(ch) `Cray compiler bug !size of the object in bytes
           if(obj_size.eq.1) then
            sl=packet%space_left(errc)
            if(errc.eq.PACK_SUCCESS) then
@@ -2212,10 +2213,11 @@
          integer(INTD), intent(out), optional:: ierr     !out: error code
          integer(INTD):: obj_size,errc
          integer(INTL):: ppos,i,l,lo
+         character(1):: ch
 
          errc=PACK_SUCCESS; strl=0_INTL; lo=len(obj)
          if(lo.gt.0) then
-          obj_size=size_of(obj(1:1)) !size of the object in bytes
+          ch=obj(1:1); obj_size=storage_size(ch)/8 !size_of(ch) `Cray compiler bug !size of the object in bytes
           if(obj_size.eq.1) then
            call unpack_builtin(packet,l,errc)
            if(errc.eq.PACK_SUCCESS) then
