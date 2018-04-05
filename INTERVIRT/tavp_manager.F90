@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/03/28
+!REVISION: 2018/04/05
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -915,7 +915,7 @@
 !By being located, it means the tensor structure (subtensor composition) is known.
          implicit none
          logical:: res                               !out: result
-         class(tens_oprnd_t), intent(in):: this      !in: active tensor operand
+         class(tens_oprnd_t), intent(inout):: this   !in: active tensor operand
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
          class(tens_rcrsv_t), pointer:: tensor
@@ -954,7 +954,7 @@
 !Returns TRUE if the tensor operand is remote, FALSE otherwise.
          implicit none
          logical:: res                               !out: result
-         class(tens_oprnd_t), intent(in):: this      !in: active tensor operand
+         class(tens_oprnd_t), intent(inout):: this   !in: active tensor operand
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc,id
 
@@ -984,7 +984,7 @@
 !a defined physical layout in order to be valued for TAVP-MNG.
          implicit none
          logical:: res                               !out: result
-         class(tens_oprnd_t), intent(in):: this      !in: active tensor operand
+         class(tens_oprnd_t), intent(inout):: this   !in: active tensor operand
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
          logical:: laid,locd

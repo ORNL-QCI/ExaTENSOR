@@ -1,6 +1,6 @@
 !Domain-specific virtual processor (DSVP): Abstract base module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/02/14
+!REVISION: 2018/04/05
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -321,7 +321,7 @@
           import:: ds_oprnd_t,INTD
           implicit none
           logical:: res                               !out: result
-          class(ds_oprnd_t), intent(in):: this        !in: domain-specific operand
+          class(ds_oprnd_t), intent(inout):: this     !in: domain-specific operand
           integer(INTD), intent(out), optional:: ierr !out: error code
          end function ds_oprnd_query_i
    !sync:
