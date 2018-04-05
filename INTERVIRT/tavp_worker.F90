@@ -884,7 +884,7 @@
             this%pinned=(in_buf.ne.NOPE)
             this%dev_id=dev
            else
-            errc=-1
+            errc=-1 !`Here TRY_LATER should be distinguished from fatal errors
            endif
           else
            errc=-2
@@ -1054,9 +1054,41 @@
          class(tens_entry_wrk_t), intent(inout):: this !inout: tensor cache entry
          integer(INTD), intent(out), optional:: ierr   !out: error code
          integer(INTD):: errc
+         integer(INTL):: buf_size
+         class(tens_rcrsv_t), pointer:: tensor
+         class(tens_body_t), pointer:: body
+         class(tens_layout_t), pointer:: layout
 
-         errc=0
-         !`Finish
+         if(this%resource%is_empty(errc)) then
+          if(errc.eq.0) then
+           tensor=>this%get_tensor(errc)
+           if(errc.eq.0.and.associated(tensor)) then
+            body=>tensor%get_body(errc)
+            if(errc.eq.TEREC_SUCCESS.and.associated(body)) then
+             layout=>body%get_layout(errc)
+             if(errc.eq.TEREC_SUCCESS.and.associated(layout)) then
+              buf_size=0; buf_size=layout%get_body_size(errc)
+              if(errc.eq.TEREC_SUCCESS.and.buf_size.gt.0) then
+               call this%resource%allocate_buffer(buf_size,errc); if(errc.ne.0) errc=-7
+              else
+               errc=-6
+              endif
+             else
+              errc=-5
+             endif
+            else
+             errc=-4
+            endif
+           else
+            errc=-3
+           endif
+          else
+           errc=-2
+          endif
+         else
+          if(errc.ne.0) errc=-1
+         endif
+         if(present(ierr)) ierr=errc
          return
         end subroutine TensEntryWrkAcquireResource
 !--------------------------------------------------------
@@ -1067,8 +1099,18 @@
          integer(INTD), intent(out), optional:: ierr   !out: error code
          integer(INTD):: errc
 
-         errc=0
-         !`Finish
+         if(.not.this%resource%is_empty(errc)) then
+          if(errc.eq.0) then
+           if((.not.this%is_persistent()).and.(this%resource%get_ref_count().eq.0)) then
+            call this%resource%free_buffer(errc); if(errc.ne.0) errc=-3
+           endif
+          else
+           errc=-2
+          endif
+         else
+          if(errc.ne.0) errc=-1
+         endif
+         if(present(ierr)) ierr=errc
          return
         end subroutine TensEntryWrkReleaseResource
 !-------------------------------------------
@@ -4037,15 +4079,17 @@
          integer(INTD), intent(out), optional:: ierr       !out: error code
          integer(INTD):: errc,ier,n
          class(ds_oprnd_t), pointer:: oprnd
+         logical:: op_output
 
          n=tens_instr%get_num_operands(errc)
          if(errc.eq.DSVP_SUCCESS) then
           do while(n.gt.0)
-           n=n-1
-           oprnd=>tens_instr%get_operand(n,ier)
+           n=n-1; oprnd=>tens_instr%get_operand(n,ier)
            if(ier.eq.DSVP_SUCCESS) then
-            call oprnd%release(ier)
-            if(ier.ne.0.and.errc.eq.0) errc=-4
+            call oprnd%release(ier); if(ier.ne.0.and.errc.eq.0) errc=-4
+            if(tens_instr%operand_is_output(n)) then !the associated accumulator tensor may need to be released as well
+             !`Finish
+            endif
            else
             if(errc.eq.0) errc=-3
            endif
