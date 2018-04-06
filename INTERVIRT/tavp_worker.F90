@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/04/05
+!REVISION: 2018/04/06
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -233,8 +233,8 @@
           procedure, public:: configure=>TAVPWRKResourcerConfigure                !configures TAVP-WRK resourcer
           procedure, public:: start=>TAVPWRKResourcerStart                        !starts TAVP-WRK resourcer
           procedure, public:: shutdown=>TAVPWRKResourcerShutdown                  !shuts down TAVP-WRK resourcer
-          procedure, public:: acquire_resource=>TAVPWRKResourcerAcquireResource   !acquires local resources for a tensor instruction
-          procedure, public:: release_resource=>TAVPWRKResourcerReleaseResource   !releases local resources from a tensor instruction
+          procedure, public:: acquire_resources=>TAVPWRKResourcerAcquireResources !acquires local resources for a tensor instruction
+          procedure, public:: release_resources=>TAVPWRKResourcerReleaseResources !releases local resources from a tensor instruction
           procedure, public:: substitute_output=>TAVPWRKResourcerSubstituteOutput !substitutes the persistent output tensor with a temporary one
           procedure, public:: restore_output=>TAVPWRKResourcerRestoreOutput       !restores back the original (persistent) output tensor
         end type tavp_wrk_resourcer_t
@@ -416,8 +416,8 @@
         private TAVPWRKResourcerConfigure
         private TAVPWRKResourcerStart
         private TAVPWRKResourcerShutdown
-        private TAVPWRKResourcerAcquireResource
-        private TAVPWRKResourcerReleaseResource
+        private TAVPWRKResourcerAcquireResources
+        private TAVPWRKResourcerReleaseResources
         private TAVPWRKResourcerSubstituteOutput
         private TAVPWRKResourcerRestoreOutput
  !tavp_wrk_communicator_t:
@@ -3705,7 +3705,7 @@
             dependent=.not.instr%dependency_free(ier,blocked); if(ier.ne.0.and.errc.eq.0) then; errc=-66; exit wloop; endif
             if(.not.dependent) then
    !Acquire resources for tensor operands (if available):
-             call this%acquire_resource(instr,ier,omit_output=.FALSE.)
+             call this%acquire_resources(instr,ier,omit_output=.FALSE.)
              if(ier.eq.0) then !resources have been acquired: issue into the staged list
               call instr%set_status(DS_INSTR_INPUT_WAIT,ier)
               if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-65; exit wloop; endif
@@ -3790,7 +3790,7 @@
               else !no data dependencies
                passed=instr%mark_issue(ier); if((.not.(ier.eq.0.and.passed)).and.errc.eq.0) then; errc=-37; exit wloop; endif
    !Acquire resources for tensor operands (if available):
-               call this%acquire_resource(instr,ier,omit_output=.FALSE.)
+               call this%acquire_resources(instr,ier,omit_output=.FALSE.)
                if(ier.eq.0) then !resources have been acquired: issue into the staged list
                 call instr%set_status(DS_INSTR_INPUT_WAIT,ier)
                 if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-36; exit wloop; endif
@@ -3883,7 +3883,7 @@
             sts=instr%get_status(ier,errcode); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-13; exit wloop; endif
             if(sts.ne.DS_INSTR_RETIRED.and.errc.eq.0) then; errc=-12; exit wloop; endif !trap
             if(opcode.ge.TAVP_ISA_TENS_FIRST.and.opcode.le.TAVP_ISA_TENS_LAST) then !tensor instruction
-             call this%release_resource(instr,ier); if(ier.ne.0.and.errc.eq.0) then; errc=-11; exit wloop; endif
+             call this%release_resources(instr,ier); if(ier.ne.0.and.errc.eq.0) then; errc=-11; exit wloop; endif
              if(instr%output_substituted(ier)) then
               if(ier.eq.0) then
                call this%restore_output(instr,ier); if(ier.ne.0.and.errc.eq.0) then; errc=-10; exit wloop; endif
@@ -3979,8 +3979,8 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TAVPWRKResourcerShutdown
-!-----------------------------------------------------------------------------------
-        subroutine TAVPWRKResourcerAcquireResource(this,tens_instr,ierr,omit_output)
+!------------------------------------------------------------------------------------
+        subroutine TAVPWRKResourcerAcquireResources(this,tens_instr,ierr,omit_output)
 !Acquires local resource for each tensor instruction operand.
 !If some resources cannot be acquired now, returns TRY_LATER.
 !In that case, the successfully acquired resources will be kept,
@@ -4031,7 +4031,7 @@
                    if(ier.eq.TRY_LATER) then
                     errc=ier
                    else
-                    write(CONS_OUT,'("#ERROR(TAVP-WRK:Resourcer.acquire_resource)[",i6,"]: Severe failure for operand # ",i2,'//&
+                    write(CONS_OUT,'("#ERROR(TAVP-WRK:Resourcer.acquire_resources)[",i6,"]: Severe failure for operand # ",i2,'//&
                     &'": Error ",i11)') impir,n,ier
                     errc=-8; exit aloop
                    endif
@@ -4052,7 +4052,7 @@
              if(ier.eq.TRY_LATER) then
               errc=ier
              else
-              write(CONS_OUT,'("#ERROR(TAVP-WRK:Resourcer.acquire_resource)[",i6,"]: Severe failure for operand # ",i2,'//&
+              write(CONS_OUT,'("#ERROR(TAVP-WRK:Resourcer.acquire_resources)[",i6,"]: Severe failure for operand # ",i2,'//&
               &'": Error ",i11)') impir,n,ier
               flush(CONS_OUT)
               errc=-3; exit aloop
@@ -4062,15 +4062,15 @@
             errc=-2; exit aloop
            endif
           enddo aloop
-          if(errc.ne.0.and.errc.ne.TRY_LATER) call this%release_resource(tens_instr,ier)
+          if(errc.ne.0.and.errc.ne.TRY_LATER) call this%release_resources(tens_instr,ier)
          else
           errc=-1
          endif
          if(present(ierr)) ierr=errc
          return
-        end subroutine TAVPWRKResourcerAcquireResource
-!-----------------------------------------------------------------------
-        subroutine TAVPWRKResourcerReleaseResource(this,tens_instr,ierr)
+        end subroutine TAVPWRKResourcerAcquireResources
+!------------------------------------------------------------------------
+        subroutine TAVPWRKResourcerReleaseResources(this,tens_instr,ierr)
 !Releases local resources occupied by the tensor instruction operands,
 !but the operands stay defined.
          implicit none
@@ -4101,7 +4101,7 @@
          endif
          if(present(ierr)) ierr=errc
          return
-        end subroutine TAVPWRKResourcerReleaseResource
+        end subroutine TAVPWRKResourcerReleaseResources
 !------------------------------------------------------------------------
         subroutine TAVPWRKResourcerSubstituteOutput(this,tens_instr,ierr)
 !Substitutes the persistent output tensor in a tensor instruction with a temporary one
