@@ -79,6 +79,7 @@
         integer(INTD), private:: MAX_RESOURCER_INSTR=64  !max number of instructions during a single new resource allocation phase
         real(8), private:: MAX_RESOURCER_PHASE_TIME=1d-3 !max time spent in a single new resource allocation phase
  !Communicator:
+        logical, private:: COMMUNICATOR_BLOCKING=.TRUE.         !switches between blocking and non-blocking communications
         integer(INTD), private:: MAX_COMMUNICATOR_PREFETCHES=16 !max number of outstanding prefetches issued by Communicator
         integer(INTD), private:: MAX_COMMUNICATOR_UPLOADS=8     !max number of outstanding uploads issued by Communicator
         real(8), private:: MAX_COMMUNICATOR_PHASE_TIME=1d-3     !max time spent by Communicator in each subphase
@@ -4481,11 +4482,12 @@
          implicit none
          class(tavp_wrk_communicator_t), intent(inout):: this !inout: TAVP-WRK communicator DSVU
          integer(INTD), intent(out), optional:: ierr          !out: error code
-         integer(INTD):: errc,ier,thid,n,num_prefetch,num_upload
+         integer(INTD):: errc,ier,thid,n,num_fetch,num_upload,opcode,sts,errcode
          integer:: com_timer
          logical:: active,stopping
          class(dsvp_t), pointer:: dsvp
          class(tavp_wrk_t), pointer:: tavp
+         class(tens_instr_t), pointer:: tens_instr
          class(*), pointer:: uptr
 
          errc=0; thid=omp_get_thread_num()
@@ -4523,7 +4525,7 @@
          endif
 !Work loop:
          ier=timer_start(com_timer,MAX_COMMUNICATOR_PHASE_TIME); if(ier.ne.TIMERS_SUCCESS.and.errc.eq.0) errc=-1
-         active=(errc.eq.0); stopping=(.not.active); num_prefetch=0; num_upload=0
+         active=(errc.eq.0); stopping=(.not.active); num_fetch=0; num_upload=0 !number of outstanding prefetches and uploads
          wloop: do while(active)
  !Get new instructions from Resourcer (port 0) into the prefetch queue:
           ier=this%fet_list%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
@@ -4531,16 +4533,41 @@
           if(DEBUG.gt.0.and.n.gt.0) then
            write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Communicator unit ",i2," received ",i9," instructions from Resourcer")')&
            &impir,this%get_id(),n
-          !ier=this%fet_list%reset(); ier=this%fet_list%scanp(action_f=tens_instr_print); ier=this%fet_list%reset_back() !print all instructions
+           !ier=this%fet_list%reset(); ier=this%fet_list%scanp(action_f=tens_instr_print); ier=this%fet_list%reset_back() !print all instructions
            flush(CONS_OUT)
           endif
- !Initiate input prefetch and test completion of previously issued prefetches:
+ !Initiate input prefetch:
+          ier=this%iqueue%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+          ier=this%dsp_list%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
           ier=this%fet_list%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
-          ier=this%fet_list%get_status()
-          do while(ier.eq.GFC_IT_ACTIVE)
+          do while(this%fet_list%get_status().eq.GFC_IT_ACTIVE.and.num_fetch.lt.MAX_COMMUNICATOR_PREFETCHES)
+           uptr=>this%fet_list%get_value(ier); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+           tens_instr=>NULL(); select type(uptr); class is(tens_instr_t); tens_instr=>uptr; end select
+           if((.not.associated(tens_instr)).and.errc.eq.0) then; errc=-1; exit wloop; endif !trap
+           opcode=tens_instr%get_code(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+           if(opcode.ge.TAVP_ISA_TENS_FIRST.and.opcode.le.TAVP_ISA_TENS_LAST) then
+            sts=tens_instr%get_status(ier,errcode); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+            if(sts.ne.DS_INSTR_INPUT_WAIT.and.errc.eq.0) then; errc=-1; exit wloop; endif !trap
+            call this%prefetch_input(tens_instr,ier); if(ier.ne.0.and.errc.eq.0) then; errc=-1; exit wloop; endif
+            ier=this%fet_list%move_elem(this%iqueue); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+            ier=this%iqueue%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+            num_fetch=num_fetch+1
+           else
+            if(opcode.eq.TAVP_INSTR_CTRL_STOP) stopping=.TRUE.
+            ier=this%fet_list%move_elem(this%dsp_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+           endif
+          enddo
+ !Test outstanding communication completion (both fetch and upload):
+          ier=this%iqueue%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+          do while(this%iqueue%get_status().eq.GFC_IT_ACTIVE)
+           uptr=>this%iqueue%get_value(ier); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+           tens_instr=>NULL(); select type(uptr); class is(tens_instr_t); tens_instr=>uptr; end select
+           if((.not.associated(tens_instr)).and.errc.eq.0) then; errc=-1; exit wloop; endif !trap
+           opcode=tens_instr%get_code(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+           sts=tens_instr%get_status(ier,errcode); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
 
           enddo
- !Pass ready instructions from prefetch queue to Dispatcher (port 0):
+ !Pass ready instructions to Dispatcher (fetched) and Resourcer (uploaded):
           ier=this%dsp_list%reset()
           if(this%dsp_list%get_status().eq.GFC_IT_ACTIVE) then
            ier=tavp%dispatcher%load_port(0,this%dsp_list); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
