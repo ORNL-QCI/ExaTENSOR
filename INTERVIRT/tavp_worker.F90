@@ -67,7 +67,6 @@
         integer(INTD), parameter, private:: TAVP_WRK_NUM_WINS=1 !number of MPI windows in the DDSS distributed space
  !On-node pinned Host memory buffer:
         integer(INTL), parameter, private:: TAVP_WRK_HOST_BUF_SIZE=1_INTL*(1024_INTL*1024_INTL*1024_INTL) !default Host buffer size in bytes
-        integer(INTD), protected:: tavp_wrk_host_arg_max=0 !is set later: max number of tensors in the pinned Host buffer (initialized by TAL-SH)
  !Elementary tensor instruction granularity classification:
         real(8), protected:: TAVP_WRK_FLOPS_HEAVY=1d12  !minimal number of Flops to consider the operation as heavy-cost
         real(8), protected:: TAVP_WRK_FLOPS_MEDIUM=1d10 !minimal number of Flops to consider the operation as medium-cost
@@ -83,6 +82,8 @@
         integer(INTD), private:: MAX_COMMUNICATOR_PREFETCHES=16 !max number of outstanding prefetches issued by Communicator
         integer(INTD), private:: MAX_COMMUNICATOR_UPLOADS=8     !max number of outstanding uploads issued by Communicator
         real(8), private:: MAX_COMMUNICATOR_PHASE_TIME=1d-3     !max time spent by Communicator in each subphase
+ !Dispatcher:
+        integer(INTD), private:: MAX_DISPATCHER_INTAKE=64       !max number of instructions taken from the port at a time
 !TYPES:
  !Tensor resource (local resource):
         type, extends(ds_resrc_t), private:: tens_resrc_t
@@ -283,11 +284,16 @@
         type, extends(ds_unit_t), private:: tavp_wrk_dispatcher_t
          integer(INTD), public:: num_ports=1                                    !number of ports: Port 0 <- Communicator (Tens,Ctrl,Aux)
          integer(INTL), private:: host_buf_size=TAVP_WRK_HOST_BUF_SIZE          !size of the pinned Host argument buffer
+         integer(INTD), private:: host_arg_max=0                                !max number of tensor arguments in the pinned Host argument buffer
          integer(INTD), allocatable, private:: gpu_list(:)                      !list of available NVIDIA GPU
          integer(INTD), allocatable, private:: amd_list(:)                      !list of available AMD GPU
          integer(INTD), allocatable, private:: mic_list(:)                      !list of available INTEL MIC
          type(tavp_wrk_dispatch_proc_t), private:: microcode(0:TAVP_ISA_SIZE-1) !instruction execution microcode bindings
          class(tens_cache_t), pointer, private:: arg_cache=>NULL()              !non-owning pointer to the tensor argument cache
+         type(list_bi_t), private:: issued_list                                 !list of issued tensor instructions
+         type(list_iter_t), private:: iss_list                                  !iterator for <issued_list>
+         type(list_bi_t), private:: completed_list                              !list of (locally) completed tensor instructions
+         type(list_iter_t), private:: cml_list                                  !iterator for <completed_list>
          contains
           procedure, public:: configure=>TAVPWRKDispatcherConfigure     !configures TAVP-WRK dispatcher
           procedure, public:: start=>TAVPWRKDispatcherStart             !starts TAVP-WRK dispatcher
@@ -445,6 +451,7 @@
         private TAVPWRKDispatcherSyncInstr
         private TAVPWRKExecTensorCreate
         private TAVPWRKExecTensorDestroy
+        private TAVPWRKExecTensorInit
         private TAVPWRKExecTensorContract
         private tavp_wrk_dispatch_proc_i
  !tavp_wrk_t:
@@ -5042,6 +5049,7 @@
           subroutine set_microcode() !implementation of each tensor operation
            this%microcode(TAVP_INSTR_TENS_CREATE)%instr_proc=>TAVPWRKExecTensorCreate
            this%microcode(TAVP_INSTR_TENS_DESTROY)%instr_proc=>TAVPWRKExecTensorDestroy
+           this%microcode(TAVP_INSTR_TENS_INIT)%instr_proc=>TAVPWRKExecTensorInit
            this%microcode(TAVP_INSTR_TENS_CONTRACT)%instr_proc=>TAVPWRKExecTensorContract
            return
           end subroutine set_microcode
@@ -5053,10 +5061,12 @@
          implicit none
          class(tavp_wrk_dispatcher_t), intent(inout):: this !inout: TAVP-WRK dispatcher DSVU
          integer(INTD), intent(out), optional:: ierr        !out: error code
-         integer(INTD):: errc,ier,thid
-         logical:: active,stopping
+         integer(INTD):: errc,ier,thid,n,sts,opcode,errcode,num_outstanding
+         logical:: active,stopping,completed
          class(dsvp_t), pointer:: dsvp
          class(tavp_wrk_t), pointer:: tavp
+         class(tens_instr_t), pointer:: tens_instr
+         class(*), pointer:: uptr
 
          errc=0; thid=omp_get_thread_num()
          if(DEBUG.gt.0) then
@@ -5066,10 +5076,14 @@
          endif
 !Initialize queues and ports:
          call this%init_queue(this%num_ports,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-1
+!Initialize the issued instruction queue:
+         ier=this%iss_list%init(this%issued_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-1
+!Initialize the completed instruction queue:
+         ier=this%cml_list%init(this%completed_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-1
 !Initialize the numerical computing runtime (TAL-SH) and set up tensor argument cache:
          tavp=>NULL(); dsvp=>this%get_dsvp(); select type(dsvp); class is(tavp_wrk_t); tavp=>dsvp; end select
          if(associated(tavp)) then
-          ier=talsh_init(this%host_buf_size,tavp_wrk_host_arg_max,this%gpu_list,this%mic_list,this%amd_list)
+          ier=talsh_init(this%host_buf_size,this%host_arg_max,this%gpu_list,this%mic_list,this%amd_list)
           if(ier.eq.TALSH_SUCCESS) then
            this%arg_cache=>tavp%tens_cache
           else
@@ -5081,9 +5095,75 @@
           this%arg_cache=>NULL(); if(errc.eq.0) errc=-1
          endif
 !Work loop:
-         active=(errc.eq.0); stopping=(.not.active)
+         active=(errc.eq.0); stopping=(.not.active); num_outstanding=0
          wloop: do while(active)
-          exit wloop
+ !Get new instructions from Communicator (port 0) into the main queue:
+          ier=this%iqueue%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+          ier=this%flush_port(0,max_items=MAX_DISPATCHER_INTAKE,num_moved=n)
+          if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+          if(DEBUG.gt.0.and.n.gt.0) then
+           write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Dispatcher unit ",i2," received ",i9," instructions from Communicator")')&
+           &impir,this%get_id(),n
+           !ier=this%iqueue%reset(); ier=this%iqueue%scanp(action_f=tens_instr_print); ier=this%iqueue%reset_back() !print all instructions
+           flush(CONS_OUT)
+          endif
+ !Issue instructions:
+          ier=this%iss_list%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+          ier=this%cml_list%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+          ier=this%iqueue%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+          do while(this%iqueue%get_status().eq.GFC_IT_ACTIVE)
+           if(stopping.and.errc.eq.0) then; errc=-1; exit wloop; endif !no other instruction can follow STOP
+           uptr=>this%iqueue%get_value(ier); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+           tens_instr=>NULL(); select type(uptr); class is(tens_instr_t); tens_instr=>uptr; end select
+           if((.not.associated(tens_instr)).and.errc.eq.0) then; errc=-1; exit wloop; endif !trap
+           sts=tens_instr%get_status(ier,errcode); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+           if(sts.ne.DS_INSTR_READY_TO_EXEC.and.errc.eq.0) then; errc=-1; exit wloop; endif !trap
+           opcode=tens_instr%get_code(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+           if(opcode.ge.TAVP_ISA_TENS_FIRST.and.opcode.le.TAVP_ISA_TENS_LAST) then !tensor instruction
+            call tens_instr%set_status(DS_INSTR_ISSUED,ier,errcode)
+            if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+            select case(opcode)
+            case(TAVP_INSTR_TENS_CREATE,TAVP_INSTR_TENS_DESTROY)
+             call this%issue_instr(tens_instr,ier); if(ier.ne.0.and.errc.eq.0) then; errc=-1; exit wloop; endif
+             num_outstanding=num_outstanding+1
+            case default
+             call this%issue_instr(tens_instr,ier); if(ier.ne.0.and.errc.eq.0) then; errc=-1; exit wloop; endif
+             num_outstanding=num_outstanding+1
+            end select
+            ier=this%iqueue%move_elem(this%iss_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+           else !auxiliary or control instruction
+            if(opcode.eq.TAVP_INSTR_CTRL_STOP) stopping=.TRUE.
+            !`Process ctrl/aux instructions here
+            call tens_instr%set_status(DS_INSTR_COMPLETED,ier,errcode)
+            if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+            ier=this%iqueue%move_elem(this%cml_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+           endif
+          enddo
+ !Test/wait for completion of the issued instructions:
+          ier=this%iss_list%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+          ier=this%cml_list%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+          do while(this%iss_list%get_status().eq.GFC_IT_ACTIVE)
+           uptr=>this%iss_list%get_value(ier); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+           tens_instr=>NULL(); select type(uptr); class is(tens_instr_t); tens_instr=>uptr; end select
+           if((.not.associated(tens_instr)).and.errc.eq.0) then; errc=-1; exit wloop; endif !trap
+           sts=tens_instr%get_status(ier,errcode); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+           completed=this%sync_instr(tens_instr,ier); if(ier.ne.0.and.errc.eq.0) then; errc=-1; exit wloop; endif
+           if(completed) then
+            num_outstanding=num_outstanding-1
+            call tens_instr%set_status(DS_INSTR_COMPLETED,ier,errcode)
+            if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+            ier=this%iss_list%move_elem(this%cml_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+           else
+            ier=this%iss_list%next()
+           endif
+          enddo
+ !Pass completed instructions back to Communicator (port 1):
+          ier=this%cml_list%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-1; exit wloop; endif
+          if(this%cml_list%get_status().eq.GFC_IT_ACTIVE) then
+           !`Pass
+          endif
+ !Exit condition:
+          active=.not.(stopping.and.num_outstanding.eq.0)
          enddo wloop
 !Record the error:
          ier=this%get_error(); if(ier.eq.DSVP_SUCCESS) call this%set_error(errc)
@@ -5111,7 +5191,31 @@
 !Release the tensor argument cache pointer:
          this%arg_cache=>NULL()
 !Shutdown the numerical computing runtime (TAL-SH):
-         ier=talsh_shutdown(); if(ier.ne.TALSH_SUCCESS.and.errc.eq.0) errc=-1
+         ier=talsh_shutdown(); if(ier.ne.TALSH_SUCCESS.and.errc.eq.0) errc=-8
+!Deactivate the completed list:
+         ier=this%cml_list%reset()
+         if(ier.eq.GFC_SUCCESS) then
+          ier=this%cml_list%get_status()
+          if(ier.ne.GFC_IT_EMPTY) then
+           if(errc.eq.0) errc=-7
+           ier=this%cml_list%delete_all()
+          endif
+          ier=this%cml_list%release(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-6
+         else
+          if(errc.eq.0) errc=-5
+         endif
+!Deactivate the issued list:
+         ier=this%iss_list%reset()
+         if(ier.eq.GFC_SUCCESS) then
+          ier=this%iss_list%get_status()
+          if(ier.ne.GFC_IT_EMPTY) then
+           if(errc.eq.0) errc=-4
+           ier=this%iss_list%delete_all()
+          endif
+          ier=this%iss_list%release(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-3
+         else
+          if(errc.eq.0) errc=-2
+         endif
 !Release queues:
          call this%release_queue(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-1
 !Record an error, if any:
@@ -5124,7 +5228,7 @@
 !Issues the given tensor instruction to a specific compute device (or default).
          implicit none
          class(tavp_wrk_dispatcher_t), intent(inout):: this !inout: TAVP-WRK dispatcher DSVU
-         class(tens_instr_t), intent(inout):: tens_instr    !inout: defined tensor instruction to issue
+         class(tens_instr_t), intent(inout):: tens_instr    !inout: defined tensor instruction ready to be issued
          integer(INTD), intent(out), optional:: ierr        !out: error code
          integer(INTD), intent(in), optional:: dev_id       !in: flat device id to issue the tensor instruction to
          integer(INTD):: errc,opcode
@@ -5161,7 +5265,7 @@
         function TAVPWRKDispatcherSyncInstr(this,tens_instr,ierr,wait) result(res)
 !Synchronization on tensor instruction execution, either TEST or WAIT.
          implicit none
-         logical:: res                                      !out: TRUE if completed
+         logical:: res                                      !out: TRUE if tensor instruction has completed
          class(tavp_wrk_dispatcher_t), intent(inout):: this !inout: TAVP-WRK dispatcher DSVU
          class(tens_instr_t), intent(inout):: tens_instr    !inout: tensor instruction
          integer(INTD), intent(out), optional:: ierr        !out: error code
@@ -5170,15 +5274,21 @@
          logical:: wt
 
          errc=0; res=.FALSE.
-         wt=.TRUE.; if(present(wait)) wt=wait
-         if(wt) then !WAIT
-          errc=talsh_task_wait(tens_instr%talsh_task,sts)
-          res=(errc.eq.TALSH_SUCCESS.and.(sts.eq.TALSH_TASK_COMPLETED.or.sts.eq.TALSH_TASK_ERROR))
-         else !TEST
-          ans=talsh_task_complete(tens_instr%talsh_task,sts,errc)
-          res=(ans.eq.YEP.and.errc.eq.TALSH_SUCCESS)
+         if(talsh_task_status(tens_instr%talsh_task).eq.TALSH_TASK_EMPTY) then
+          res=.TRUE.
+         else
+          wt=.TRUE.; if(present(wait)) wt=wait
+          if(wt) then !WAIT
+           errc=talsh_task_wait(tens_instr%talsh_task,sts)
+           res=(errc.eq.TALSH_SUCCESS.and.(sts.eq.TALSH_TASK_COMPLETED.or.sts.eq.TALSH_TASK_ERROR))
+           if(errc.ne.TALSH_SUCCESS) errc=-3
+          else !TEST
+           ans=talsh_task_complete(tens_instr%talsh_task,sts,errc)
+           res=(ans.eq.YEP.and.errc.eq.TALSH_SUCCESS)
+           if(errc.ne.TALSH_SUCCESS) errc=-2
+          endif
+          if(sts.eq.TALSH_TASK_ERROR.and.errc.eq.0) errc=-1
          endif
-         if(sts.eq.TALSH_TASK_ERROR.and.errc.eq.0) errc=-1
          if(present(ierr)) ierr=errc
          return
         end function TAVPWRKDispatcherSyncInstr
@@ -5186,7 +5296,7 @@
         subroutine TAVPWRKExecTensorCreate(this,tens_instr,ierr,dev_id)
 !Executes tensor creation. The tensor layout is assumed already defined.
 !The tensor body location is set here via the newly created DDSS descriptor.
-!The tensor body location comes from the local resource associated with tensor.
+!The tensor body location comes from the local resource associated with the tensor.
          implicit none
          class(tavp_wrk_dispatcher_t), intent(inout):: this !inout: TAVP-WRK dispatcher DSVU
          class(tens_instr_t), intent(inout):: tens_instr    !inout: tensor instruction
@@ -5204,13 +5314,14 @@
          type(DataDescr_t):: descr
          type(C_PTR):: mem_p
 
+!$OMP FLUSH
          oprnd=>tens_instr%get_operand(0,errc)
          if(errc.eq.DSVP_SUCCESS) then
           select type(oprnd)
           class is(tens_oprnd_t)
            resource=>oprnd%get_resource(errc)
            if(errc.eq.0) then
-            if(.not.resource%is_empty()) then !resource is supposed to be preallocated by .acquire_rsc()
+            if(.not.resource%is_empty()) then !resource is supposed to be preallocated by Resourcer
              tensor=>oprnd%get_tensor(errc)
              if(errc.eq.0) then
               tens_body=>tensor%get_body(errc)
@@ -5228,8 +5339,19 @@
                    if(associated(tavp)) then
                     call tavp%addr_space%attach(mem_p,dtk,vol,descr,errc)
                     if(errc.eq.0) then
+!$OMP CRITICAL (TAVP_WRK_CACHE)
                      call tensor%set_location(descr,errc) !tensor has been located
-                     if(errc.ne.TEREC_SUCCESS) errc=-13
+!$OMP END CRITICAL (TAVP_WRK_CACHE)
+                     if(errc.eq.TEREC_SUCCESS) then
+                      if(DEBUG.gt.0) then
+                       write(CONS_OUT,'("#DEBUG(TAVP-WRK:TENSOR_CREATE)[",i6,"]: Tensor created: Size (bytes) = ",i13,":")')&
+                       &impir,bytes
+                       call tensor%print_it(dev_id=CONS_OUT)
+                       flush(CONS_OUT)
+                      endif
+                     else
+                      errc=-13
+                     endif
                     else
                      errc=-12
                     endif
@@ -5284,6 +5406,21 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TAVPWRKExecTensorDestroy
+!--------------------------------------------------------------------
+        subroutine TAVPWRKExecTensorInit(this,tens_instr,ierr,dev_id)
+!Executes tensor initialization.
+         implicit none
+         class(tavp_wrk_dispatcher_t), intent(inout):: this !inout: TAVP-WRK dispatcher DSVU
+         class(tens_instr_t), intent(inout):: tens_instr    !inout: tensor instruction
+         integer(INTD), intent(out), optional:: ierr        !out: error code
+         integer(INTD), intent(in), optional:: dev_id       !in: flat device id
+         integer(INTD):: errc
+
+         errc=0
+         !`Implement
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TAVPWRKExecTensorInit
 !------------------------------------------------------------------------
         subroutine TAVPWRKExecTensorContract(this,tens_instr,ierr,dev_id)
 !Executes tensor contraction.
