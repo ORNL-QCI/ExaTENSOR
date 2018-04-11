@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/04/10
+!REVISION: 2018/04/11
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -155,6 +155,8 @@
           procedure, public:: release=>TensOprndRelease             !destroys the present local copy of the tensor operand (releases local resources!), but the operand stays defined
           procedure, public:: destruct=>TensOprndDestruct           !performs complete destruction back to an empty state
           procedure, public:: upload_local=>TensOprndUploadLocal    !performs a local accumulation of the tensor into another cached tensor
+          procedure, public:: lock=>TensOprndLock                   !sets the lock for accessing/updating the tensor operand content
+          procedure, public:: unlock=>TensOprndUnlock               !releases the access lock
           procedure, public:: print_it=>TensOprndPrintIt            !prints
           procedure, private:: reset_tmp_tensor=>TensOprndResetTmpTensor !resets the tensor in a tensor operand by providing another tensor cache entry with a temporary tensor (internal use only)
           final:: tens_oprnd_dtor                                   !dtor
@@ -396,6 +398,8 @@
         private TensOprndRelease
         private TensOprndDestruct
         private TensOprndUploadLocal
+        private TensOprndLock
+        private TensOprndUnlock
         private TensOprndPrintIt
         private TensOprndResetTmpTensor
         public tens_oprnd_dtor
@@ -2183,6 +2187,24 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensOprndUploadLocal
+!-------------------------------------
+        subroutine TensOprndLock(this)
+!Sets the lock for accessing/updating the tensor operand content.
+         implicit none
+         class(tens_oprnd_t), intent(inout):: this !inout: tensor operand
+ 
+         if(associated(this%cache_entry)) call this%cache_entry%lock()
+         return
+        end subroutine TensOprndLock
+!---------------------------------------
+        subroutine TensOprndUnlock(this)
+!Releases the access lock.
+         implicit none
+         class(tens_oprnd_t), intent(inout):: this !inout: tensor operand
+
+         if(associated(this%cache_entry)) call this%cache_entry%unlock()
+         return
+        end subroutine TensOprndUnlock
 !------------------------------------------------------------
         subroutine TensOprndPrintIt(this,ierr,dev_id,nspaces)
          implicit none

@@ -8,7 +8,7 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/04/04
+!REVISION: 2018/04/11
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -209,9 +209,12 @@
          integer(INTD), private:: write_count=0                 !write count: Number of issued tensor instructions which refer to this tensor cache entry as output
          integer(INTD), private:: temp_count=0                  !temporary count: Number of temporary tensors stemmed from this tensor cache entry (output rename)
          logical, private:: persistent=.FALSE.                  !persistency flag (persistent cache entries can only be evicted via an explicit TENS_DESTROY)
+#ifndef NO_OMP
+         integer(omp_lock_kind), private:: entry_lock           !tensor cache entry lock
+#endif
          contains
           procedure, public:: is_set=>TensCacheEntryIsSet                 !returns TRUE if the tensor cache entry is set (constructed)
-          procedure, public:: set_tensor=>TensCacheEntrySetTensor         !sets the pointer to a tensor
+          procedure, public:: set_tensor=>TensCacheEntrySetTensor         !sets the pointer to a tensor, either owning or non-owning (basic ctor)
           procedure, public:: get_tensor=>TensCacheEntryGetTensor         !returns a non-owning pointer to the tensor
           procedure, public:: incr_ref_count=>TensCacheEntryIncrRefCount  !increments the reference count
           procedure, public:: decr_ref_count=>TensCacheEntryDecrRefCount  !decrements the reference count
@@ -232,6 +235,10 @@
           procedure, public:: set_persistency=>TensCacheEntrySetPersistency   !sets/resets the persistency status
           procedure, public:: is_persistent=>TensCacheEntryIsPersistent       !returns TRUE if the tensor cache entry is persistent, FALSE otherwise
           procedure, public:: destroy=>TensCacheEntryDestroy                  !destroys the tensor cache entry
+          procedure, public:: init_lock=>TensCacheEntryInitLock               !initializes the tensor cache entry access lock
+          procedure, public:: destroy_lock=>TensCacheEntryDestroyLock         !destroys the tensor cache entry access lock
+          procedure, public:: lock=>TensCacheEntryLock                        !locks the tensor cache entry for an exclusive use/update
+          procedure, public:: unlock=>TensCacheEntryUnlock                    !unlocks the tensor cache entry
         end type tens_cache_entry_t
  !Tensor argument cache:
         type, public:: tens_cache_t
@@ -367,6 +374,10 @@
         private TensCacheEntrySetPersistency
         private TensCacheEntryIsPersistent
         private TensCacheEntryDestroy
+        private TensCacheEntryInitLock
+        private TensCacheEntryDestroyLock
+        private TensCacheEntryLock
+        private TensCacheEntryUnlock
  !tens_cache_t:
         private TensCacheInitLock
         private TensCacheLookup
@@ -882,16 +893,22 @@
         end function TensCacheEntryIsSet
 !-----------------------------------------------------------
         subroutine TensCacheEntrySetTensor(this,tensor,ierr)
-!Sets a pointer to the tensor.
+!Sets a pointer to the tensor, either owning or non-owning. The ownership
+!assumption is ultimately determined by dtor's <dealloc> argument.
+!If the <tensor> pointer is owning and the ownership transfer is implied,
+!dtor should have its argument <dealloc>=TRUE at destruction.
          implicit none
          class(tens_cache_entry_t), intent(inout):: this   !inout: empty tensor cache entry
-         class(tens_rcrsv_t), intent(in), pointer:: tensor !in: associated pointer to a tensor
+         class(tens_rcrsv_t), intent(in), pointer:: tensor !in: associated pointer to a tensor, either owning or non-owning
          integer(INTD), intent(out), optional:: ierr       !out: error code
          integer(INTD):: errc
 
          errc=0
          if((.not.associated(this%tensor)).and.associated(tensor)) then
           this%tensor=>tensor
+#ifndef NO_OMP
+          call this%init_lock()
+#endif
          else
           errc=-1
          endif
@@ -1095,9 +1112,8 @@
         end function TensCacheEntryIsPersistent
 !----------------------------------------------------------
         subroutine TensCacheEntryDestroy(this,dealloc,ierr)
-!Destroys the tensor cache entry, but only if the reference count and use count are zero.
-!Note that the thread-private global <ignore_evict_flag> regulates whether or not
-!to raise an error on an eviction failure due to a non-zero reference count.
+!Destroys the tensor cache entry, but only if the reference count and use count
+!are both zero and the tensor cache entry is not persistent.
          implicit none
          class(tens_cache_entry_t), intent(inout):: this !inout: tensor cache entry
          logical, intent(in):: dealloc                   !in: if TRUE, the .tensor field will be deallocated (assumes ownership)
@@ -1106,17 +1122,55 @@
 
          errc=0
          if(this%ref_count.eq.0.and.this%use_count.eq.0.and.(.not.this%persistent)) then
-          if(associated(this%tensor).and.dealloc) deallocate(this%tensor)
+#ifndef NO_OMP
+          call this%destroy_lock()
+#endif
+          if(associated(this%tensor).and.dealloc) deallocate(this%tensor) !<dealloc>=TRUE assumes tensor ownership
           this%tensor=>NULL()
          else
-          if(.not.ignore_evict_flag) then
-           errc=-1
-           call quit(errc,'#FATAL(TAVP:tens_cache_entry_t.destroy): Attempt to destroy an active cache entry!')
-          endif
+          errc=-1
+          if(.not.ignore_evict_flag)&
+          &call quit(errc,'#FATAL(TAVP:tens_cache_entry_t.destroy): Attempt to destroy an active cache entry!')
          endif
          if(present(ierr)) ierr=errc
          return
         end subroutine TensCacheEntryDestroy
+!----------------------------------------------
+        subroutine TensCacheEntryInitLock(this)
+         implicit none
+         class(tens_cache_entry_t), intent(inout):: this
+#ifndef NO_OMP
+         call omp_init_lock(this%entry_lock)
+#endif
+         return
+        end subroutine TensCacheEntryInitLock
+!-------------------------------------------------
+        subroutine TensCacheEntryDestroyLock(this)
+         implicit none
+         class(tens_cache_entry_t), intent(inout):: this
+#ifndef NO_OMP
+         call omp_destroy_lock(this%entry_lock)
+#endif
+         return
+        end subroutine TensCacheEntryDestroyLock
+!------------------------------------------
+        subroutine TensCacheEntryLock(this)
+         implicit none
+         class(tens_cache_entry_t), intent(inout):: this
+#ifndef NO_OMP
+         call omp_set_lock(this%entry_lock)
+#endif
+         return
+        end subroutine TensCacheEntryLock
+!--------------------------------------------
+        subroutine TensCacheEntryUnlock(this)
+         implicit none
+         class(tens_cache_entry_t), intent(inout):: this
+#ifndef NO_OMP
+         call omp_unset_lock(this%entry_lock)
+#endif
+         return
+        end subroutine TensCacheEntryUnlock
 ![tens_cache_t]===========================
         subroutine TensCacheInitLock(this)
 !Initializes the tensor cache lock for multithreading.
