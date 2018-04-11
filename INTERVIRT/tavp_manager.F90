@@ -75,25 +75,14 @@
 !       of active tensor instruction operands currently associated with the cache entry.
 !   (C) Each tensor argument cache entry has a use count for the number of active
 !       instances of returned pointers pointing to the cache entry.
-!   (D) Each tensor argument cache entry has an <owner_id> field referring to a TAVP
+!   (D) Each tensor argument cache entry has an <owner_id> field referring to a TAVP-MNG
 !       which owns the tensor metadata stored in that cache entry. A negative value
-!       of this field means that the owning TAVP is not (yet) known.
+!       of this field means that the owning TAVP-MNG is not (yet) known.
 !   (E) Tensor argument cache entries storing local tensors (owned by the current TAVP)
 !       are only deleted when the tensor is destroyed. Tensor argument cache entries
 !       storing subtensors of local tensors are only deleted when the tensor is destroyed.
 !       Other tensor argument cache entries are deleted once the reference/use count is zero.
 !       The protection of the local tensors/subtensors is done via the persistency flag.
-!   (F) In practical implementation, the race protection is implemented as follows:
-!       (1) Creation/deletion/lookup of tensor cache entries is serialized via a cache-wide lock.
-!       (2) Any pointer to a tensor cache entry returned by the tensor cache is protected by
-!           an incremented use count and must be explicitly released via .release_entry().
-!       (3) Any binding of a tensor operand to a tensor cache entry protects the latter via
-!           an incremented reference count.
-!       (4) Any direct or indirect read/update of the content of a tensor cache entry
-!           must be protected by a user-defined named CRITICAL section.
-!       (5) Any read/update of the content of a tensor cache entry accessed indirectly
-!           via another object must be protected by a user-defined named CRITICAL section
-!           as well as a wrapping increment/decrement of the cache entry's use count.
 ! # DATA/TASK DECOMPOSITION:
 !   (A) Each level of the TAVP-MNG hierarchy decomposes tasks (tensor instructions) into
 !       subtasks (tensor subinstructions) guided by the original data (tensor) decomposition
@@ -664,8 +653,7 @@
               this%cache_entry=>NULL()
              endif
              if(present(owner)) this%owner_id=owner !explicit owner id supercedes the one imported from the tensor cache entry
-             call this%mark_active(errc)
-             if(errc.ne.DSVP_SUCCESS) errc=-5
+             call this%mark_active(errc); if(errc.ne.DSVP_SUCCESS) errc=-5
             else
              errc=-4
             endif
@@ -704,8 +692,7 @@
          integer(INTD), intent(out), optional:: ierr      !out: error code
          integer(INTD):: errc
 
-         errc=0
-         cache_entry_p=>this%cache_entry
+         errc=0; cache_entry_p=>this%cache_entry
          if(.not.associated(this%tensor)) errc=-1
          if(present(ierr)) ierr=errc
          return
@@ -716,7 +703,7 @@
 !is not NULL, it must be the one containing the tensor set in the tensor operand.
          implicit none
          class(tens_oprnd_t), intent(inout):: this                  !inout: active tensor operand
-         class(tens_entry_mng_t), intent(in), pointer:: cache_entry !in: pointer to a tensor cache entry (may be NULL)
+         class(tens_entry_mng_t), intent(in), pointer:: cache_entry !in: pointer to a tensor cache entry containing the same tensor (may be NULL)
          integer(INTD), intent(out), optional:: ierr                !out: error code
          integer(INTD):: errc
          class(tens_rcrsv_t), pointer:: tensor
@@ -727,15 +714,11 @@
             call this%cache_entry%decr_ref_count(); this%cache_entry=>NULL()
            endif
            if(associated(cache_entry)) then
-            if(.not.associated(this%tensor)) then
+            tensor=>cache_entry%get_tensor(errc)
+            if(errc.eq.0.and.associated(this%tensor,tensor)) then !cache entry corresponds to the same tensor
              call cache_entry%incr_ref_count()
             else
-             tensor=>cache_entry%get_tensor(errc)
-             if(errc.eq.0.and.associated(this%tensor,tensor)) then !cache entry corresponds to the same tensor
-              call cache_entry%incr_ref_count()
-             else
-              errc=-3
-             endif
+             errc=-3
             endif
            endif
            if(errc.eq.0) this%cache_entry=>cache_entry

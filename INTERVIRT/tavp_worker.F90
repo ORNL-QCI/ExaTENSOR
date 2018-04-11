@@ -22,7 +22,7 @@
 
        module tavp_worker
 !NOTES:
-! # Tensor instruction format:
+! # TENSOR INSTRUCTION FORMAT:
 !    0. Instruction id;
 !    1. Instruction code (opcode);
 !    2. Instruction status;
@@ -30,11 +30,7 @@
 !    4. Instruction control field (optional);
 !    5. Instruction operands (optional):
 !       {Owner_id,Read_count,Write_count,Tensor} for each tensor operand.
-! # Data dependency case resolution:
-!   (1) WRITE-after-WRITE: Accumulates (+=) are concurrent, otherwise serialized;
-!   (2) WRITE-after-READ: Concurrent until the WRITE accumulation stage;
-!   (3) READ-after-WRITE: Serialized (depends on the WRITE accumulation).
-! # Tensor instruction processing pipeline: Local dependency policy:
+! # TENSOR INSTRUCTION ISSUE:
 !   (1) Check that the input tensor operands are not currently updated/undefined locally;
 !   (2) Check that the output tensor operand(s) is(are) not currently in use locally;
 !   (3) Upon first appearance of each distinct output tensor operand (ref_count=1),
@@ -50,6 +46,18 @@
 !   (5) Upon completion of the last local tensor instruction writing to a specific output
 !       tensor, inject a TENSOR_ADD instruction in order to upload the local accumulator
 !       tensor into the corresponding persistent (local or remote) output tensor.
+!    Example:
+!     D3 += L1 * R1 -> D3#0 = 0, D3#1 = 0, D3#1 += L1 * R1, D3#0 += D3#1, ~D3#1;
+!     D3 += L2 * R2 ->           D3#2 = 0, D3#2 += L2 * R2, D3#0 += D3#2, ~D3#2, D3 += D3#0, ~D3#0;
+! # TENSOR INSTRUCTION DEPENDENCY:
+!   (1) A tensor instruction has a data dependency if any of the following applies:
+!       (a) Its input operand has currently a non-zero WRITE count;
+!       (b) Its output operand has currently a non-zero READ count;
+!       Such a tensor instruction will be issued in the deferred queue until the data dependency
+!       is gone. Yet, it will affect the READ/WRITE counters of its tensor operands.
+!   (2) A tensor instruction has a blocking data dependency if at least one of its
+!       operands has both READ and WRITE counters positive. Such a tensor instruction
+!       will not be issued and will not affect the READ/WRITE counters.
 
         use virta
         use gfc_base
@@ -123,14 +131,14 @@
         end type tens_entry_wrk_ref_t
  !Tensor operand (encapsulated tensor data processible by a specific TAVP):
         type, extends(ds_oprnd_t), private:: tens_oprnd_t
-         class(tens_entry_wrk_t), pointer, private:: cache_entry=>NULL() !non-owning pointer to a tensor cache entry where the tensor is stored (optional)
+         class(tens_entry_wrk_t), pointer, private:: cache_entry=>NULL() !non-owning pointer to a tensor cache entry where the tensor and tensor resource are stored (optional)
          class(tens_rcrsv_t), pointer, private:: tensor=>NULL()   !non-owning pointer to a persistent recursive tensor (normally stored in the tensor cache)
          class(tens_resrc_t), pointer, private:: resource=>NULL() !non-owning pointer to a persistent local tensor resource (normally stored in the tensor cache)
          type(talsh_tens_t), private:: talsh_tens                 !TAL-SH tensor object (for performing actual computations)
          contains
-          procedure, private:: TensOprndCtorFull                         !ctor
+          procedure, private:: TensOprndCtorTensor                       !ctor by tensor only
           procedure, private:: TensOprndCtorCache                        !ctor by cache entry only
-          generic, public:: tens_oprnd_ctor=>TensOprndCtorFull,TensOprndCtorCache
+          generic, public:: tens_oprnd_ctor=>TensOprndCtorTensor,TensOprndCtorCache
           procedure, public:: get_tensor=>TensOprndGetTensor             !returns a non-owning pointer to the tensor
           procedure, public:: set_cache_entry=>TensOprndSetCacheEntry    !sets the associated tensor cache entry (may be NULL)
           procedure, public:: get_cache_entry=>TensOprndGetCacheEntry    !returns a non-owning pointer to the tensor cache entry (may be NULL)
@@ -372,7 +380,7 @@
         public tens_entry_wrk_dtor
         public tens_entry_wrk_alloc
  !tens_oprnd_t:
-        private TensOprndCtorFull
+        private TensOprndCtorTensor
         private TensOprndCtorCache
         private TensOprndGetTensor
         private TensOprndSetCacheEntry
@@ -1023,7 +1031,8 @@
         end subroutine tens_resrc_dtor
 ![tens_entry_wrk_t]==================================
         subroutine TensEntryWrkCtor(this,tensor,ierr)
-!Constructs a <tens_entry_wrk_t>. Note move semantics for <tensor>!
+!Constructs a <tens_entry_wrk_t>. Note move semantics for <tensor>
+!due to the transfer of the tensor ownership to the tensor cache entry!
          implicit none
          class(tens_entry_wrk_t), intent(out):: this          !out: specialized tensor cache entry
          class(tens_rcrsv_t), pointer, intent(inout):: tensor !inout: pointer to an allocated tensor (ownership transfer will occur here!)
@@ -1057,7 +1066,6 @@
          if(this%is_set(errc)) then
           if(errc.eq.0) then
            resource_p=>this%resource
-           if(.not.associated(resource_p)) errc=-3 !trap
           else
            errc=-2
           endif
@@ -1069,12 +1077,12 @@
         end function TensEntryWrkGetResource
 !---------------------------------------------------------------
         subroutine TensEntryWrkSetTensorLayout(this,ierr,tensor)
-!Sets the tensor layout, either a default one or imported from another tensor.
-!If the tensor stored in the tensor cache entry already has layout, nothing will be done.
+!Sets the tensor layout, either the default one or imported from another tensor.
+!If the tensor stored in the tensor cache entry already has a layout, nothing will be done.
          implicit none
          class(tens_entry_wrk_t), intent(inout):: this      !inout: tensor cache entry
          integer(INTD), intent(out), optional:: ierr        !out: error code
-         class(tens_rcrsv_t), intent(in), optional:: tensor !in: prototype tensor whose layout to import
+         class(tens_rcrsv_t), intent(in), optional:: tensor !in: prototype tensor whose layout to be imported
          integer(INTD):: errc
          class(tens_rcrsv_t), pointer:: tens
          class(tens_header_t), pointer:: header
@@ -1088,7 +1096,7 @@
             if(.not.laid) then
              if(present(tensor)) then !import layout from an existing tensor
               call quit(-1,'#FATAL(TAVP-WRK:tens_entry_wrk_t.set_tensor_layout): Tensor layout import is not implemented!') !`Implement layout import
-             else
+             else !set the default layout
  !Set tensor composition, if not set:
               if(.not.tens%has_structure(errc)) then
                if(errc.eq.TEREC_SUCCESS) then
@@ -1194,7 +1202,7 @@
 !$OMP CRITICAL (TAVP_WRK_CACHE)
          if(.not.this%resource%is_empty(errc)) then
           if(errc.eq.0) then
-           if((.not.this%is_persistent()).and.(this%resource%get_ref_count().eq.0)) then
+           if((.not.this%is_persistent()).and.(this%get_ref_count().le.1)) then !at most one tensor operand can still be associated with this temporary cache entry
             call this%resource%free_buffer(errc); if(errc.ne.0) errc=-3
            endif
           else
@@ -1211,7 +1219,12 @@
         subroutine tens_entry_wrk_dtor(this)
          implicit none
          type(tens_entry_wrk_t):: this
+         integer(INTD):: errc
 
+         call this%release_resource(errc) !release tensor cache entry resource
+         if(errc.ne.0) then
+          call quit(errc,'#FATAL(tens_entry_wrk_t.dtor): Unable to release tensor cache entry resource!')
+         endif
          call this%destroy(.TRUE.) !deallocate the tensor component (if it is set)
          return
         end subroutine tens_entry_wrk_dtor
@@ -1225,32 +1238,22 @@
          allocate(tens_entry_wrk_t::tens_entry,STAT=ierr)
          return
         end function tens_entry_wrk_alloc
-![tens_oprnd_t]======================================================================
-        subroutine TensOprndCtorFull(this,tensor,ierr,tens_cache_entry,tens_resource)
-!Constructs a tensor operand. The <tensor> must be set.
+![tens_oprnd_t]=======================================================
+        subroutine TensOprndCtorTensor(this,tensor,ierr,tens_resource)
+!Constructs a tensor operand. The <tensor> must be set (defined).
 !The associated tensor resource is optional and may still be empty.
          implicit none
-         class(tens_oprnd_t), intent(inout):: this                            !inout: undefined tensor operand (on entrance)
-         class(tens_rcrsv_t), target, intent(in):: tensor                     !in: defined tensor
+         class(tens_oprnd_t), intent(inout):: this                            !inout: empty tensor operand (on entrance)
+         class(tens_rcrsv_t), intent(in), target:: tensor                     !in: defined tensor
          integer(INTD), intent(out), optional:: ierr                          !out: error code
-         class(tens_entry_wrk_t), intent(inout), target, optional:: tens_cache_entry !in: tensor cache entry owning the tensor
          class(tens_resrc_t), intent(inout), target, optional:: tens_resource !in: local tensor resource (may still be empty)
          integer(INTD):: errc
-         class(tens_rcrsv_t), pointer:: tens
 
          if(.not.this%is_active(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
            if(tensor%is_set(errc)) then
             if(errc.eq.TEREC_SUCCESS) then
              this%tensor=>tensor
-             if(present(tens_cache_entry)) then
-              call tens_cache_entry%incr_ref_count()
-              this%cache_entry=>tens_cache_entry
-              tens=>this%cache_entry%get_tensor(errc)
-              if(.not.(errc.eq.0.and.associated(tens,this%tensor))) errc=-6 !trap
-             else
-              this%cache_entry=>NULL()
-             endif
              if(present(tens_resource)) then
               call tens_resource%incr_ref_count()
               this%resource=>tens_resource
@@ -1272,13 +1275,13 @@
          endif
          if(present(ierr)) ierr=errc
          return
-        end subroutine TensOprndCtorFull
+        end subroutine TensOprndCtorTensor
 !----------------------------------------------------------------
         subroutine TensOprndCtorCache(this,tens_cache_entry,ierr)
 !Constructs a tensor operand by providing an active tensor cache entry.
          implicit none
-         class(tens_oprnd_t), intent(inout):: this                         !inout: undefined tensor operand (on entrance)
-         class(tens_entry_wrk_t), intent(inout), target:: tens_cache_entry !in: tensor cache entry owning the tensor
+         class(tens_oprnd_t), intent(inout):: this                         !inout: empty tensor operand (on entrance)
+         class(tens_entry_wrk_t), intent(inout), target:: tens_cache_entry !in: tensor cache entry owning the tensor (and its resource)
          integer(INTD), intent(out), optional:: ierr                       !out: error code
          integer(INTD):: errc
 
@@ -1290,7 +1293,7 @@
              this%cache_entry=>tens_cache_entry
              this%tensor=>this%cache_entry%get_tensor(errc)
              if(errc.eq.0) then
-              this%resource=>this%cache_entry%get_resource() !may be absent
+              this%resource=>this%cache_entry%get_resource() !may be empty resource
               if(associated(this%resource)) call this%resource%incr_ref_count()
               call this%mark_active(errc); if(errc.ne.DSVP_SUCCESS) errc=-6
              else
@@ -1331,7 +1334,7 @@
 !is not NULL, it must be the one containing the tensor set in the tensor operand.
          implicit none
          class(tens_oprnd_t), intent(inout):: this                  !inout: active tensor operand
-         class(tens_entry_wrk_t), intent(in), pointer:: cache_entry !in: pointer to a tensor cache entry (may be NULL)
+         class(tens_entry_wrk_t), intent(in), pointer:: cache_entry !in: pointer to a tensor cache entry containing the same tensor (may be NULL)
          integer(INTD), intent(out), optional:: ierr                !out: error code
          integer(INTD):: errc
          class(tens_rcrsv_t), pointer:: tensor
@@ -1342,15 +1345,11 @@
             call this%cache_entry%decr_ref_count(); this%cache_entry=>NULL()
            endif
            if(associated(cache_entry)) then
-            if(.not.associated(this%tensor)) then
+            tensor=>cache_entry%get_tensor(errc)
+            if(errc.eq.0.and.associated(this%tensor,tensor)) then !cache entry must correspond to the same tensor
              call cache_entry%incr_ref_count()
             else
-             tensor=>cache_entry%get_tensor(errc)
-             if(errc.eq.0.and.associated(this%tensor,tensor)) then !cache entry must correspond to the same tensor
-              call cache_entry%incr_ref_count()
-             else
-              errc=-3
-             endif
+             errc=-3
             endif
            endif
            if(errc.eq.0) this%cache_entry=>cache_entry
@@ -1372,9 +1371,8 @@
          integer(INTD), intent(out), optional:: ierr      !out: error code
          integer(INTD):: errc
 
-         errc=0
-         cache_entry_p=>this%cache_entry
-         if(.not.associated(this%tensor)) errc=-1
+         errc=0; cache_entry_p=>this%cache_entry
+         if(.not.associated(this%tensor)) errc=-1 !trap
          if(present(ierr)) ierr=errc
          return
         end function TensOprndGetCacheEntry
@@ -1383,7 +1381,7 @@
 !Sets the resource component if it has not been set via the constructor.
          implicit none
          class(tens_oprnd_t), intent(inout):: this                  !inout: active tensor operand
-         class(tens_resrc_t), target, intent(inout):: tens_resource !inout: local tensor resource (may still be empty)
+         class(tens_resrc_t), intent(inout), target:: tens_resource !inout: local tensor resource (may still be empty)
          integer(INTD), intent(out), optional:: ierr                !out: error code
          integer(INTD):: errc
 
@@ -1406,7 +1404,7 @@
         end subroutine TensOprndSetResource
 !------------------------------------------------------------------
         function TensOprndGetResource(this,ierr) result(resource_p)
-!Returns a pointer to the tensor resource.
+!Returns a pointer to the tensor resource (may be NULL).
          implicit none
          class(tens_resrc_t), pointer:: resource_p   !out: pointer to the tensor resource
          class(tens_oprnd_t), intent(in):: this      !in: active tensor operand
@@ -1414,7 +1412,7 @@
          integer(INTD):: errc
 
          errc=0; resource_p=>this%resource
-         if(.not.associated(this%resource)) errc=-1
+         if(.not.associated(this%tensor)) errc=-1 !trap
          if(present(ierr)) ierr=errc
          return
         end function TensOprndGetResource
@@ -1506,12 +1504,12 @@
         end subroutine TensOprndSetTalshTens
 !------------------------------------------------------------
         subroutine TensOprndSetTensorLayout(this,ierr,tensor)
-!Sets the tensor layout, if not already set, either by default
+!Sets the tensor layout, if not already set, either the default one
 !or by importing it from an existing tensor.
          implicit none
          class(tens_oprnd_t), intent(inout):: this          !inout: tensor operand
          integer(INTD), intent(out), optional:: ierr        !out: error code
-         class(tens_rcrsv_t), intent(in), optional:: tensor !in: tensor whose layout to import
+         class(tens_rcrsv_t), intent(in), optional:: tensor !in: tensor whose layout to be imported
          integer(INTD):: errc
 
          errc=0
@@ -1630,7 +1628,11 @@
 !$OMP CRITICAL (TAVP_WRK_CACHE)
            if(associated(this%cache_entry)) call this%cache_entry%incr_use_count()
            if(this%tensor%is_set(errc,layed=laid,located=locd)) then
-            if(errc.eq.TEREC_SUCCESS) res=(laid.and.locd)
+            if(errc.eq.TEREC_SUCCESS) then
+             res=(laid.and.locd)
+            else
+             errc=-4
+            endif
            else
             errc=-3
            endif
@@ -3522,7 +3524,6 @@
            integer(INTD), intent(out):: jerr
            class(tens_rcrsv_t), pointer:: tensor
            class(tens_rcrsv_t), pointer:: tensor_tmp
-           class(tens_resrc_t), pointer:: tens_resource
            class(tens_oprnd_t), pointer:: tens_oprnd
            class(ds_oprnd_t), pointer:: oprnd
            class(tens_cache_entry_t), pointer:: tens_entry
@@ -3580,14 +3581,13 @@
                call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_GEN_FAILURE); jerr=-5; exit
               endif
              endif
-             tens_resource=>NULL(); tens_resource=>tens_wrk_entry%get_resource()
              allocate(tens_oprnd,STAT=jerr) !tensor operand will be owned by the tensor instruction
              if(jerr.ne.0) then
               tens_oprnd=>NULL()
               if(associated(tens_entry)) call this%arg_cache%release_entry(tens_entry)
               call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_RSC_UNAVAILABLE); jerr=-4; exit
              endif
-             call tens_oprnd%tens_oprnd_ctor(tensor,jerr,tens_wrk_entry,tens_resource) !tensor and tensor resource are owned by the tensor cache
+             call tens_oprnd%tens_oprnd_ctor(tens_wrk_entry,jerr) !tensor and tensor resource are owned by the tensor cache
              if(jerr.ne.0) then
               deallocate(tens_oprnd); tens_oprnd=>NULL()
               if(associated(tens_entry)) call this%arg_cache%release_entry(tens_entry)

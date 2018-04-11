@@ -30,16 +30,32 @@
 
 !NOTES:
 ! # Tensor Cache:
-!   (a) Tensor cache operations, namely, lookup(), store(), and evict() are serialized.
+!   (a) Tensor cache operations, namely, lookup(), store(), and evict() are serialized
+!       by a cache-wide lock.
 !   (b) Returning a pointer to a tensor cache entry in lookup() and store() results in
-!       an increment of that entry's USE_COUNT, while releasing the obtained pointer via
-!       the member procedure .release_entry() decrements that entry's USE_COUNT.
+!       an increment of that entry's USE_COUNT whereas releasing the obtained pointer
+!       via the member procedure .release_entry() decrements that entry's USE_COUNT.
 !   (c) Associating a tensor operand with a tensor cache entry increments that entry's
-!       REF_COUNT, while destroying that tensor operand decrements REF_COUNT.
-!   (d) Tensor cache entries with a non-zero USE_COUNT or REF_COUNT cannot be destroyed,
-!       unless the user explicitly requests that.
-!   (e) Updates of the value of a tensor cache entry, for example, tensor info updates,
-!       must be protected externally by user (e.g., via user-defined CRITICAL sections).
+!       REF_COUNT whereas destroying that tensor operand decrements the REF_COUNT.
+!   (d) Persistent tensor cache entries as well as tensor cache entries with a non-zero
+!       USE_COUNT or REF_COUNT cannot be evicted/destroyed.
+!   (e) Accessing/updating the content of a tensor cache entry via the tensor cache entry
+!       itself must be protected by the lock provided by the tensor cache entry:
+!       1. Get cache entry pointer;
+!       2. Lock cache entry (thread-exclusive access guaranteed);
+!       3. Access/update the content of the cache entry by the thread;
+!       4. Unlock cache entry;
+!       5. Release the cache entry pointer.
+!   (f) Accessing/updating the content of a tensor cache entry indirectly via
+!       accessing/updating the pointer components of the tensor operand associated
+!       with the tensor cache entry must be protected by the lock provided by the tensor
+!       operand which delegates locking/unlocking to the associated tensor cache entry:
+!       1. Lock tensor operand (locks the associated tensor cache entry for thread-exclusive access);
+!       2. Access/update the content of the tensor operand;
+!       3. Unlock tensor operand.
+!   (g) An issue of a tensor instruction increments READ/WRITE counters of the tensor
+!       cache entries associated with the INPUT/OUTPUT tensor operands, respectively.
+!       The completion of the tensor instruction decrements those counters.
 
        module virta !VIRtual Tensor Algebra
         use tensor_algebra     !basic constants
