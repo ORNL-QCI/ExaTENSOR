@@ -166,7 +166,7 @@
           procedure, public:: lock=>TensOprndLock                   !sets the lock for accessing/updating the tensor operand content
           procedure, public:: unlock=>TensOprndUnlock               !releases the access lock
           procedure, public:: print_it=>TensOprndPrintIt            !prints
-          procedure, private:: reset_tmp_tensor=>TensOprndResetTmpTensor !resets the tensor in a tensor operand by providing another tensor cache entry with a temporary tensor (internal use only)
+          procedure, private:: reset_tmp_tensor=>TensOprndResetTmpTensor !resets the tensor in a tensor operand by providing another tensor cache entry (internal use only)
           final:: tens_oprnd_dtor                                   !dtor
         end type tens_oprnd_t
  !Tensor instruction (realization of a tensor operation for a specific TAVP):
@@ -1349,11 +1349,13 @@
             tensor=>cache_entry%get_tensor(errc)
             if(errc.eq.0.and.associated(this%tensor,tensor)) then !cache entry must correspond to the same tensor
              call cache_entry%incr_ref_count()
+             this%cache_entry=>cache_entry
             else
              errc=-3
             endif
+           else
+            this%cache_entry=>NULL()
            endif
-           if(errc.eq.0) this%cache_entry=>cache_entry
           else
            errc=-2
           endif
@@ -2195,7 +2197,7 @@
 !Sets the lock for accessing/updating the tensor operand content.
          implicit none
          class(tens_oprnd_t), intent(inout):: this !inout: tensor operand
- 
+
          if(associated(this%cache_entry)) call this%cache_entry%lock()
          return
         end subroutine TensOprndLock
@@ -2210,6 +2212,7 @@
         end subroutine TensOprndUnlock
 !------------------------------------------------------------
         subroutine TensOprndPrintIt(this,ierr,dev_id,nspaces)
+!Prints tensor operand.
          implicit none
          class(tens_oprnd_t), intent(in):: this
          integer(INTD), intent(out), optional:: ierr
@@ -2235,10 +2238,10 @@
 !with a temporary tensor (<forward> = TRUE) or vice versa (<forward> = FALSE).
 !The reference count of the persistent tensor cache entry is kept unchanged.
          implicit none
-         class(tens_oprnd_t), intent(inout):: this                  !inout: active tensor operand
-         class(tens_entry_wrk_t), pointer, intent(in):: cache_entry !in: tensor cache entry containing the new tensor
-         logical, intent(in):: forward                              !in: TRUE: persistent --> temporary; FALSE: temporary --> persistent
-         integer(INTD), intent(out), optional:: ierr                !out: error code
+         class(tens_oprnd_t), intent(inout):: this                     !inout: active tensor operand
+         class(tens_entry_wrk_t), pointer, intent(inout):: cache_entry !in: defined tensor cache entry containing the new tensor
+         logical, intent(in):: forward                                 !in: TRUE: persistent --> temporary; FALSE: temporary --> persistent
+         integer(INTD), intent(out), optional:: ierr                   !out: error code
          integer(INTD):: errc
          class(tens_entry_wrk_t), pointer:: tens_entry
          class(tens_rcrsv_t), pointer:: tensor_new
