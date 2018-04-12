@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/04/11
+!REVISION: 2018/04/12
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -1253,6 +1253,7 @@
           if(errc.eq.DSVP_SUCCESS) then
            if(tensor%is_set(errc)) then
             if(errc.eq.TEREC_SUCCESS) then
+             this%cache_entry=>NULL()
              this%tensor=>tensor
              if(present(tens_resource)) then
               call tens_resource%incr_ref_count()
@@ -1278,7 +1279,7 @@
         end subroutine TensOprndCtorTensor
 !----------------------------------------------------------------
         subroutine TensOprndCtorCache(this,tens_cache_entry,ierr)
-!Constructs a tensor operand by providing an active tensor cache entry.
+!Constructs a tensor operand by importing the content of a tensor cache entry.
          implicit none
          class(tens_oprnd_t), intent(inout):: this                         !inout: empty tensor operand (on entrance)
          class(tens_entry_wrk_t), intent(inout), target:: tens_cache_entry !in: tensor cache entry owning the tensor (and its resource)
