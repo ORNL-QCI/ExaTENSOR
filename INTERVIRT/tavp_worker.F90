@@ -1764,12 +1764,12 @@
         end function TensOprndHasResource
 !------------------------------------------------
         subroutine TensOprndAcquireRsc(this,ierr)
-!Acquires local resources for a tensor operand.
-!If the resources have already been allocated, does nothing.
+!Acquires local resource for a tensor operand.
+!If the resource has already been acquired, does nothing.
 !If the resource component is not set, an error will be returned.
          implicit none
-         class(tens_oprnd_t), intent(inout):: this   !inout: tensor operand (with an associated resource component)
-         integer(INTD), intent(out), optional:: ierr !out: error code
+         class(tens_oprnd_t), intent(inout):: this   !inout: active tensor operand with an associated resource component
+         integer(INTD), intent(out), optional:: ierr !out: error code, may return TRY_LATER
          integer(INTD):: errc
          integer(INTL):: buf_size
          integer(INT_MPI):: host_proc_rank
@@ -1787,7 +1787,7 @@
                if(errc.eq.TEREC_SUCCESS) then
                 buf_size=layout_p%get_body_size(errc)
                 if(errc.eq.TEREC_SUCCESS.and.buf_size.gt.0_INTL) then
-                 call this%resource%allocate_buffer(buf_size,errc); if(errc.ne.0) errc=-1
+                 call this%resource%allocate_buffer(buf_size,errc); if(errc.ne.0) errc=-1 !`may return TRY_LATER
                  if(errc.eq.0.and.DEBUG.gt.0) then
                   write(CONS_OUT,'("#DEBUG(TAVP-WRK:tens_oprnd_t:acquire_rsc)[",i6,"]: Memory acquired: Size (B) = ",i13)')&
                   &impir,buf_size
@@ -1826,7 +1826,7 @@
 !If the tensor operand has been delivered before, does nothing.
 !If there is a pending communication on the tensor operand, returns an error.
          implicit none
-         class(tens_oprnd_t), intent(inout):: this   !inout: tensor operand (with an associated resource component)
+         class(tens_oprnd_t), intent(inout):: this   !inout: active tensor operand with an associated resource component
          integer(INTD), intent(out), optional:: ierr !out: error code, may return TRY_LATER
          integer(INTD):: errc
          class(tens_body_t), pointer:: body_p
@@ -1847,7 +1847,7 @@
                 if(errc.eq.TEREC_SUCCESS.and.associated(descr_p)) then
                  if(descr_p%is_set(errc)) then
                   if(errc.eq.0) then
-                   if(this%resource%is_empty()) call this%acquire_rsc(errc)
+                   if(this%resource%is_empty()) call this%acquire_rsc(errc) !`may return TRY_LATER
                    if(errc.eq.0) then
                     if(this%get_comm_stat().eq.DS_OPRND_NO_COMM) then
                      cptr=this%resource%get_mem_ptr(errc)
@@ -1905,7 +1905,7 @@
 !The tensor operand must be marked as delivered (present), even if it is local.
 !If there is a pending communication on the tensor operand, returns an error.
          implicit none
-         class(tens_oprnd_t), intent(inout):: this   !inout: tensor operand
+         class(tens_oprnd_t), intent(inout):: this   !inout: active tensor operand with an associated resource component
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
          class(tens_body_t), pointer:: body_p
@@ -1974,16 +1974,16 @@
 !`An attempt to synchronize a non-existing communication will cause an error.
          implicit none
          logical:: res                               !out: TRUE on communication completion, FALSE otherwise
-         class(tens_oprnd_t), intent(inout):: this   !inout: tensor operand
+         class(tens_oprnd_t), intent(inout):: this   !inout: active tensor operand with an associated resource component
          integer(INTD), intent(out), optional:: ierr !out: error code
-         logical, intent(in), optional:: wait        !in: TRUE activates WAIT instead of TEST synchronization (default)
+         logical, intent(in), optional:: wait        !in: FALSE activates TEST instead of WAIT synchronization (default)
          integer(INTD):: errc,sts
          class(tens_body_t), pointer:: body_p
          class(tens_layout_t), pointer:: layout_p
          class(DataDescr_t), pointer:: descr_p
          logical:: tw
 
-         res=.FALSE.; tw=.FALSE.; if(present(wait)) tw=wait
+         res=.FALSE.; tw=.TRUE.; if(present(wait)) tw=wait
          if(this%is_active(errc)) then
           body_p=>this%tensor%get_body(errc)
           if(errc.eq.TEREC_SUCCESS.and.associated(body_p)) then
@@ -2029,14 +2029,14 @@
         end function TensOprndSync
 !---------------------------------------------
         subroutine TensOprndRelease(this,ierr)
-!Releases local tensor resources occupied by the tensor operand,
+!Releases local tensor resource occupied by the tensor operand,
 !unless there are other active tensor operands sharing the same resource.
 !In the latter case, nothing will be done and no error raised.
 !Also, if the resource component is not set, nothing will be done either.
 !Note that the resource object itself (either allocated or unallocated) is
 !still associated with this tensor operand, until it is destructed.
          implicit none
-         class(tens_oprnd_t), intent(inout):: this   !inout: tensor operand
+         class(tens_oprnd_t), intent(inout):: this   !inout: tensor operand (can be empty)
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
          logical:: delivered,persistent
