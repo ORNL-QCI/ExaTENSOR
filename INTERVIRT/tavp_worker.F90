@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/04/12
+!REVISION: 2018/04/14
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -2293,7 +2293,7 @@
 !for a specific TAVP kind.
          implicit none
          class(tens_instr_t), intent(inout):: this        !out: tensor instruction (must be empty on entrance)
-         integer(INTD), intent(in):: op_code              !in: instruction code (see top of this module)
+         integer(INTD), intent(in):: op_code              !in: instruction code
          integer(INTD), intent(out), optional:: ierr      !out: error code
          class(*), intent(in), target, optional:: op_spec !in: formal operation specification
          integer(INTL), intent(in), optional:: iid        !in: instruction id (>=0)
@@ -2757,16 +2757,20 @@
            num_entries=this%get_num_operands(errc)
            if(errc.eq.DSVP_SUCCESS) then
             do i=0,num_entries-1
-             oprnd=>this%get_operand(i,errc); if(errc.ne.DSVP_SUCCESS) then; errc=-4; exit; endif
+             oprnd=>this%get_operand(i,errc); if(errc.ne.DSVP_SUCCESS) then; errc=-6; exit; endif
              select type(oprnd)
              class is(tens_oprnd_t)
               cache_entries(1+i)%cache_entry=>oprnd%get_cache_entry(errc)
-              if(errc.ne.0) then; errc=-3; exit; endif
+              if(errc.ne.0) then; errc=-5; exit; endif
              class default
-              errc=-2; exit
+              errc=-4; exit
              end select
             enddo
+           else
+            errc=-3
            endif
+          else
+           errc=-2
           endif
          else
           errc=-1
@@ -2781,8 +2785,8 @@
          real(8):: flops                                   !out: estimate of the total number of Flops
          class(tens_instr_t), intent(in):: this            !in: active tensor instruction
          integer(INTD), intent(out), optional:: ierr       !out: error code
-         real(8), intent(out), optional:: arithm_intensity !out: arithmetic intensity estimate (Flops/words ratio)
-         real(8), intent(out), optional:: tot_words        !out: total words estimate
+         real(8), intent(out), optional:: arithm_intensity !out: arithmetic intensity estimate (Flops/Words ratio)
+         real(8), intent(out), optional:: tot_words        !out: total Words estimate
          integer(INTD):: errc,opcode,i,j,n
          integer(INTL):: dims(1:MAX_TENSOR_RANK)
          class(ds_oprnd_t), pointer:: tens_oprnd
@@ -2865,7 +2869,7 @@
                do i=0,numo-1
                 oprnd=>this%get_operand(i,errc); if(errc.ne.DSVP_SUCCESS) exit
                 tensor=>NULL(); select type(oprnd); class is(tens_oprnd_t); tensor=>oprnd%get_tensor(errc); end select
-                if(.not.associated(tensor)) errc=-10; if(errc.ne.0) exit
+                if(.not.associated(tensor)) errc=-12; if(errc.ne.0) exit
                 call tens_operation%set_argument(tensor,errc); if(errc.ne.TEREC_SUCCESS) exit
                enddo
                if(errc.eq.0) then
@@ -2874,7 +2878,11 @@
                  select type(instr_ctrl)
                  class is(ctrl_tens_contr_t)
                   contr_ptrn=>instr_ctrl%get_contr_ptrn(errc,alpha)
-                  if(errc.eq.0) call tens_operation%set_contr_ptrn(contr_ptrn,errc,alpha)
+                  if(errc.eq.0) then
+                   call tens_operation%set_contr_ptrn(contr_ptrn,errc,alpha); if(errc.ne.TEREC_SUCCESS) errc=-11
+                  else
+                   errc=-10
+                  endif
                   nullify(contr_ptrn)
                  class default
                   errc=-9
@@ -3067,7 +3075,7 @@
 !Returns TRUE if the tensor instruction enables output substitution (rename).
          implicit none
          logical:: res                               !out: result
-         class(tens_instr_t), intent(in):: this      !active tensor instruction
+         class(tens_instr_t), intent(in):: this      !in: active tensor instruction
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc,opcode
 
@@ -3096,6 +3104,7 @@
 !-----------------------------------------------------------------
         function TensInstrOutputSubstituted(this,ierr) result(res)
 !Returns TRUE if the (persistent) output tensor operand is substituted with a temporary tensor.
+!The name of a temporary tensor has "#X" suffix where X is a positive integer.
          implicit none
          logical:: res                               !out: result
          class(tens_instr_t), intent(in):: this      !in: active tensor instruction
@@ -3211,16 +3220,16 @@
           call this%clean(errc)
           if(errc.ne.DSVP_SUCCESS) call quit(errc,'#FATAL(TAVP-WRK:tens_instr_dtor): Tensor instruction destruction failed!')
          else
-          if(DEBUG.gt.0)&
+          if(errc.eq.DSVP_SUCCESS.and.DEBUG.gt.0)&
           &write(CONS_OUT,'("#FATAL(TAVP-WRK:tens_instr_dtor): TAVP instruction is still active: code = ",i5,", stat = ",i5)')&
-          &this%get_code(),this%get_status()
+          &this%get_code(),sts
           call quit(-1,'#FATAL(TAVP-WRK:tens_instr_dtor): Attempt to destroy an active TAVP instruction!')
          endif
          return
         end subroutine tens_instr_dtor
 !---------------------------------------------------------
         function tens_instr_print(tens_instr) result(ierr)
-!GFC printer for tens_instr_t.
+!GFC non-member printer for tens_instr_t.
          implicit none
          integer(INTD):: ierr
          class(*), intent(inout), target:: tens_instr
