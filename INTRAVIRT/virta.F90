@@ -8,7 +8,7 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/04/11
+!REVISION: 2018/04/15
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -342,6 +342,8 @@
 !VISIBILITY:
  !non-member:
         public role_barrier
+        public tensor_name_is_temporary
+        public tensor_name_is_replica
         public tensor_name_mangle_temporary
         public tensor_name_unmangle_temporary
         public tensor_name_mangle_replica
@@ -427,6 +429,54 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine role_barrier
+!----------------------------------------------------------------------
+        function tensor_name_is_temporary(tensor_name,ierr) result(res)
+!Returns TRUE if the given tensor name is a name of a temporary tensor.
+         implicit none
+         logical:: res                               !out: answer
+         character(*), intent(in):: tensor_name      !in: tensor name
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc,i,j
+
+         errc=0
+         i=index(tensor_name,'$',BACK=.TRUE.)
+         j=index(tensor_name,'#',BACK=.TRUE.)
+         if(j.gt.0) then
+          if(j.gt.i) then
+           res=.TRUE.
+          else
+           res=.FALSE.; errc=-1
+          endif
+         else
+          res=.FALSE.
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function tensor_name_is_temporary
+!--------------------------------------------------------------------
+        function tensor_name_is_replica(tensor_name,ierr) result(res)
+!Returns TRUE if the given tensor name is a name of a replica tensor.
+         implicit none
+         logical:: res                               !out: answer
+         character(*), intent(in):: tensor_name      !in: tensor name
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc,i,j
+
+         errc=0
+         i=index(tensor_name,'#',BACK=.TRUE.)
+         j=index(tensor_name,'$',BACK=.TRUE.)
+         if(j.gt.0) then
+          if(i.le.0.or.j.lt.i) then
+           res=.TRUE.
+          else
+           res=.FALSE.; errc=-1
+          endif
+         else
+          res=.FALSE.
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function tensor_name_is_replica
 !---------------------------------------------------------------------------------------------
         subroutine tensor_name_mangle_temporary(orig_name,new_name,new_name_len,ierr,instance)
 !Mangles the tensor name to make it a name of a temporary tensor, if <instance> is present.
