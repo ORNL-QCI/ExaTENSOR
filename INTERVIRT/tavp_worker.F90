@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/04/15
+!REVISION: 2018/04/16
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -281,7 +281,7 @@
           procedure, public:: shutdown=>TAVPWRKCommunicatorShutdown            !shuts down TAVP-WRK communicator
           procedure, public:: prefetch_input=>TAVPWRKCommunicatorPrefetchInput !starts prefetching input arguments
           procedure, public:: sync_prefetch=>TAVPWRKCommunicatorSyncPrefetch   !synchronizes on the input prefetch
-          procedure, public:: upload_output=>TAVPWRKCommunicatorUploadOutput   !starts uploading the output argument
+          procedure, public:: upload_output=>TAVPWRKCommunicatorUploadOutput   !starts uploading output arguments
           procedure, public:: sync_upload=>TAVPWRKCommunicatorSyncUpload       !synchronizes on the output upload
         end type tavp_wrk_communicator_t
  !TAVP-WRK communicator configuration:
@@ -4718,7 +4718,7 @@
          errc=0; thid=omp_get_thread_num()
          if(DEBUG.gt.0) then
           write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Communicator started as DSVU # ",i2," (thread ",i2,'//&
-          '"): Number of MPI windows = ",i6)') impir,this%get_id(),thid,this%num_mpi_windows
+          '"): Number of dynamic MPI windows = ",i6)') impir,this%get_id(),thid,this%num_mpi_windows
           flush(CONS_OUT)
          endif
 !Initialize queues and ports:
@@ -5027,7 +5027,7 @@
         end function TAVPWRKCommunicatorSyncPrefetch
 !-----------------------------------------------------------------------
         subroutine TAVPWRKCommunicatorUploadOutput(this,tens_instr,ierr)
-!Starts uploading the output argument for a given tensor instruction.
+!Starts uploading output arguments for a given tensor instruction.
          implicit none
          class(tavp_wrk_communicator_t), intent(inout):: this !inout: TAVP-WRK communicator DSVU
          class(tens_instr_t), intent(inout):: tens_instr      !inout: tensor instruction
@@ -5081,8 +5081,8 @@
         end subroutine TAVPWRKCommunicatorUploadOutput
 !------------------------------------------------------------------------------------
         function TAVPWRKCommunicatorSyncUpload(this,tens_instr,ierr,wait) result(res)
-!Synchronizes on the output upload, either TEST or WAIT.
-         logical:: res                                        !out: TRUE if synchronized
+!Synchronizes on the output arguments upload, either TEST or WAIT.
+         logical:: res                                        !out: TRUE if synchronized (all output arguments)
          class(tavp_wrk_communicator_t), intent(inout):: this !inout: TAVP-WRK communicator DSVU
          class(tens_instr_t), intent(inout):: tens_instr      !inout: tensor instruction
          integer(INTD), intent(out), optional:: ierr          !out: error code
@@ -5094,14 +5094,14 @@
 
          res=.FALSE.
          wt=.TRUE.; if(present(wait)) wt=wait
-         if(tens_instr%output_substituted(errc)) then
+         if(tens_instr%output_substituted(errc)) then !substituted (temporary) output operands
           if(errc.eq.0) then
            !`Still need to sync the upload of the accumulator tensor into the persistent tensor
            res=.TRUE.
           else
            errc=-5
           endif
-         else
+         else !persistent output operands
           if(errc.eq.0) then
            out_oprs(0:)=>tens_instr%get_output_operands(errc,n)
            if(errc.eq.0) then
