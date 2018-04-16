@@ -26,6 +26,7 @@ along with ExaTensor. If not, see <http://www.gnu.org/licenses/>.
 
 #include <complex>
 #include <initializer_list>
+#include <vector>
 #include <string>
 #include <memory>
 
@@ -173,10 +174,10 @@ private:
  //Implementation:
  struct Impl{
 
-  std::initializer_list<std::size_t> signature_; //tensor signature (unique integer multi-index identifier)
-  talsh_tens_t tensor_;                          //TAL-SH tensor block
-  TensorTask * write_task_;                      //non-owning pointer to the task handle for the current asynchronous operation updating the tensor, if any
-  int used_;                                     //number of unfinished (asynchronous) TAL-SH operations that are currently using the tensor
+  std::vector<std::size_t> signature_; //tensor signature (unique integer multi-index identifier)
+  talsh_tens_t tensor_;                //TAL-SH tensor block
+  TensorTask * write_task_;            //non-owning pointer to the task handle for the current asynchronous operation updating the tensor, if any
+  int used_;                           //number of unfinished (asynchronous) TAL-SH operations that are currently using the tensor
 
   template <typename T>
   Impl(const std::initializer_list<std::size_t> signature, //tensor signature (identifier): signature[0:rank-1]

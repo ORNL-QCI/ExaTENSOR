@@ -24,6 +24,7 @@ along with ExaTensor. If not, see <http://www.gnu.org/licenses/>.
 #include <iostream>
 #include <complex>
 #include <initializer_list>
+#include <vector>
 #include <string>
 #include <memory>
 #include <assert.h>
@@ -219,8 +220,8 @@ void Tensor::print() const
 {
  std::cout << "TAL-SH Tensor {";
  std::size_t rank = (pimpl_->signature_).size();
- for(std::size_t i = 0; i < rank - 1; ++i) std::cout << (pimpl_->signature_).begin()[i] << ",";
- if(rank > 0) std::cout << (pimpl_->signature_).begin()[rank-1];
+ for(std::size_t i = 0; i < rank - 1; ++i) std::cout << (pimpl_->signature_).at(i) << ",";
+ if(rank > 0) std::cout << (pimpl_->signature_).at(rank-1);
  std::cout << "} [use=" << pimpl_->used_ << "]:" << std::endl;
  talshTensorPrintInfo(&(pimpl_->tensor_));
  return;
