@@ -160,10 +160,11 @@
         integer(INTD), parameter, public:: TAVP_INSTR_TENS_COPY=77      !tensor copy (copying a tensor into another tensor with an optional index permutation)
         integer(INTD), parameter, public:: TAVP_INSTR_TENS_PERMUTE=78   !tensor dimension permutation (in-place)
         integer(INTD), parameter, public:: TAVP_INSTR_TENS_SCALE=79     !tensor scaling (multiplication by a real/complex number)
-        integer(INTD), parameter, public:: TAVP_INSTR_TENS_ACCUMULATE=80!tensor accumulation (accumulates one tensor into another one = tensor addition without any permutation)
-        integer(INTD), parameter, public:: TAVP_INSTR_TENS_ADD=81       !tensor addition (with an optional index permutation)
-        integer(INTD), parameter, public:: TAVP_INSTR_TENS_TRACE=82     !tensor trace (produces a lower-rank tensor by tracing over some/all tensor indices)
-        integer(INTD), parameter, public:: TAVP_INSTR_TENS_CONTRACT=83  !tensor contraction (also includes tensor product, tensor addition, and tensor scaling as special cases)
+        integer(INTD), parameter, public:: TAVP_INSTR_TENS_ADD=80       !tensor addition (with an optional index permutation)
+        integer(INTD), parameter, public:: TAVP_INSTR_TENS_TRACE=81     !tensor trace (produces a lower-rank tensor by tracing over some/all tensor indices)
+        integer(INTD), parameter, public:: TAVP_INSTR_TENS_CONTRACT=82  !tensor contraction (also includes tensor product, tensor addition, and tensor scaling as special cases)
+   !Special tensor operations (TAVP-WRK only):
+        integer(INTD), parameter, public:: TAVP_INSTR_TENS_ACCUMULATE=255 !tensor accumulation (accumulates one tensor into another one with no index permutation)
 !TYPES:
  !Tensor status:
         type, public:: tens_status_t
