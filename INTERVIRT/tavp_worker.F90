@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/04/16
+!REVISION: 2018/04/17
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -48,7 +48,7 @@
 !       tensor into the corresponding persistent (local or remote) output tensor.
 !    Example:
 !     D3 += L1 * R1 -> D3#0 = 0, D3#1 = 0, D3#1 += L1 * R1, D3#0 += D3#1, ~D3#1;
-!     D3 += L2 * R2 ->           D3#2 = 0, D3#2 += L2 * R2, D3#0 += D3#2, ~D3#2, D3 += D3#0, ~D3#0;
+!     D3 += L2 * R2 ->           D3#2 = 0, D3#2 += L2 * R2,                D3#0 += D3#2, ~D3#2, D3 += D3#0, ~D3#0;
 ! # TENSOR INSTRUCTION DEPENDENCY:
 !   (1) A tensor instruction has a data dependency if any of the following applies:
 !       (a) Its input operand has currently a non-zero WRITE count;
