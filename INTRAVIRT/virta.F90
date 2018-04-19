@@ -8,7 +8,7 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/04/18
+!REVISION: 2018/04/19
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -223,6 +223,7 @@
          integer(INTD), private:: ref_count=0                   !reference count: Number of existing tensor operands associated with this tensor cache entry
          integer(INTD), private:: use_count=0                   !use count: Number of active pointers to this tensor cache entry explicitly returned by the tensor cache
          integer(INTD), private:: read_write_count=0            !read/write count: Number of issued tensor instructions which refer to this tensor cache entry as input (positive) or output (negative)
+         integer(INTD), private:: read_write_def_count=0        !deferred read/write count: Number of deferred tensor instructions which refer to this tensor cache entry as input (positive) or output (negative)
          integer(INTD), private:: temp_count=0                  !temporary count: Number of temporary tensors stemmed from this tensor cache entry (used for output rename)
          logical, private:: persistent=.FALSE.                  !persistency flag (persistent cache entries can only be evicted via an explicit TENS_DESTROY)
 #ifndef NO_OMP
@@ -244,8 +245,9 @@
           procedure, public:: incr_write_count=>TensCacheEntryIncrWriteCount  !increments the write count
           procedure, public:: decr_write_count=>TensCacheEntryDecrWriteCount  !decrements the write count
           procedure, public:: get_write_count=>TensCacheEntryGetWriteCount    !returns the current write count: Number of issued tensor instructions referring to this tensor cache entry as output
-          procedure, public:: reset_rw_counter=>TensCacheEntryResetRwCounter  !resets the read/write access counter
           procedure, public:: get_rw_counter=>TensCacheEntryGetRwCounter      !returns the current value of the read/write access counter
+          procedure, public:: reset_rw_counter=>TensCacheEntryResetRwCounter  !resets the read/write access counter
+          procedure, public:: reset_rw_counters=>TensCacheEntryResetRwCounters!resets the read/write access counter by providing both new read and write counters separately
           procedure, public:: incr_temp_count=>TensCacheEntryIncrTempCount    !increments the temporary count (cannot be decremented)
           procedure, public:: get_temp_count=>TensCacheEntryGetTempCount      !returns the current temporary count
           procedure, public:: set_persistency=>TensCacheEntrySetPersistency   !sets/resets the persistency status
@@ -385,8 +387,9 @@
         private TensCacheEntryIncrWriteCount
         private TensCacheEntryDecrWriteCount
         private TensCacheEntryGetWriteCount
-        private TensCacheEntryResetRwCounter
         private TensCacheEntryGetRwCounter
+        private TensCacheEntryResetRwCounter
+        private TensCacheEntryResetRwCounters
         private TensCacheEntryIncrTempCount
         private TensCacheEntryGetTempCount
         private TensCacheEntrySetPersistency
@@ -1050,113 +1053,216 @@
          usecount=this%use_count
          return
         end function TensCacheEntryGetUseCount
-!--------------------------------------------------------
-        subroutine TensCacheEntryIncrReadCount(this,ierr)
+!--------------------------------------------------------------
+        subroutine TensCacheEntryIncrReadCount(this,ierr,defer)
          implicit none
          class(tens_cache_entry_t), intent(inout):: this !inout: defined tensor cache entry
          integer(INTD), intent(out), optional:: ierr     !out: error code
+         logical, intent(in), optional:: defer           !in: deferred or actual read count
          integer(INTD):: errc
+         logical:: actual
 
+         actual=.TRUE.; if(present(defer)) actual=(.not.defer)
+         if(actual) then
 !$OMP ATOMIC CAPTURE
-         errc=this%read_write_count
-         this%read_write_count=this%read_write_count+1
+          errc=this%read_write_count
+          this%read_write_count=this%read_write_count+1
 !$OMP END ATOMIC
+         else
+!$OMP ATOMIC CAPTURE
+          errc=this%read_write_def_count
+          this%read_write_def_count=this%read_write_def_count+1
+!$OMP END ATOMIC
+         endif
          if(errc.ge.0) then; errc=0; else; errc=-1; endif
          if(present(ierr)) ierr=errc
          return
         end subroutine TensCacheEntryIncrReadCount
-!--------------------------------------------------------
-        subroutine TensCacheEntryDecrReadCount(this,ierr)
+!--------------------------------------------------------------
+        subroutine TensCacheEntryDecrReadCount(this,ierr,defer)
          implicit none
          class(tens_cache_entry_t), intent(inout):: this !inout: defined tensor cache entry
          integer(INTD), intent(out), optional:: ierr     !out: error code
+         logical, intent(in), optional:: defer           !in: deferred or actual read count
          integer(INTD):: errc
+         logical:: actual
 
+         actual=.TRUE.; if(present(defer)) actual=(.not.defer)
+         if(actual) then
 !$OMP ATOMIC CAPTURE
-         errc=this%read_write_count
-         this%read_write_count=this%read_write_count-1
+          errc=this%read_write_count
+          this%read_write_count=this%read_write_count-1
 !$OMP END ATOMIC
+         else
+!$OMP ATOMIC CAPTURE
+          errc=this%read_write_def_count
+          this%read_write_def_count=this%read_write_def_count-1
+!$OMP END ATOMIC
+         endif
          if(errc.gt.0) then; errc=0; else; errc=-1; endif
          if(present(ierr)) ierr=errc
          return
         end subroutine TensCacheEntryDecrReadCount
-!--------------------------------------------------------------
-        function TensCacheEntryGetReadCount(this) result(count)
+!--------------------------------------------------------------------
+        function TensCacheEntryGetReadCount(this,defer) result(count)
          implicit none
          integer(INTD):: count                        !out: read count
          class(tens_cache_entry_t), intent(in):: this !in: defined tensor cache entry
+         logical, intent(in), optional:: defer        !in: deferred or actual read count
+         logical:: actual
 
+         actual=.TRUE.; if(present(defer)) actual=(.not.defer)
+         if(actual) then
 !$OMP ATOMIC READ
-         count=this%read_write_count
+          count=this%read_write_count
+         else
+!$OMP ATOMIC READ
+          count=this%read_write_def_count
+         endif
          count=max(count,0)
          return
         end function TensCacheEntryGetReadCount
-!---------------------------------------------------------
-        subroutine TensCacheEntryIncrWriteCount(this,ierr)
+!---------------------------------------------------------------
+        subroutine TensCacheEntryIncrWriteCount(this,ierr,defer)
          implicit none
          class(tens_cache_entry_t), intent(inout):: this !inout: defined tensor cache entry
          integer(INTD), intent(out), optional:: ierr     !out: error code
+         logical, intent(in), optional:: defer           !in: deferred or actual write count
          integer(INTD):: errc
+         logical:: actual
 
+         actual=.TRUE.; if(present(defer)) actual=(.not.defer)
+         if(actual) then
 !$OMP ATOMIC CAPTURE
-         errc=this%read_write_count
-         this%read_write_count=this%read_write_count-1
+          errc=this%read_write_count
+          this%read_write_count=this%read_write_count-1
 !$OMP END ATOMIC
+         else
+!$OMP ATOMIC CAPTURE
+          errc=this%read_write_def_count
+          this%read_write_def_count=this%read_write_def_count-1
+!$OMP END ATOMIC
+         endif
          if(errc.le.0) then; errc=0; else; errc=-1; endif
          if(present(ierr)) ierr=errc
          return
         end subroutine TensCacheEntryIncrWriteCount
-!---------------------------------------------------------
-        subroutine TensCacheEntryDecrWriteCount(this,ierr)
+!---------------------------------------------------------------
+        subroutine TensCacheEntryDecrWriteCount(this,ierr,defer)
          implicit none
          class(tens_cache_entry_t), intent(inout):: this !inout: defined tensor cache entry
          integer(INTD), intent(out), optional:: ierr     !out: error code
+         logical, intent(in), optional:: defer           !in: deferred or actual write count
          integer(INTD):: errc
+         logical:: actual
 
+         actual=.TRUE.; if(present(defer)) actual=(.not.defer)
+         if(actual) then
 !$OMP ATOMIC CAPTURE
-         errc=this%read_write_count
-         this%read_write_count=this%read_write_count+1
+          errc=this%read_write_count
+          this%read_write_count=this%read_write_count+1
 !$OMP END ATOMIC
+         else
+!$OMP ATOMIC CAPTURE
+          errc=this%read_write_def_count
+          this%read_write_def_count=this%read_write_def_count+1
+!$OMP END ATOMIC
+         endif
          if(errc.lt.0) then; errc=0; else; errc=-1; endif
          if(present(ierr)) ierr=errc
          return
         end subroutine TensCacheEntryDecrWriteCount
-!---------------------------------------------------------------
-        function TensCacheEntryGetWriteCount(this) result(count)
+!---------------------------------------------------------------------
+        function TensCacheEntryGetWriteCount(this,defer) result(count)
          implicit none
          integer(INTD):: count                        !out: write count
          class(tens_cache_entry_t), intent(in):: this !in: defined tensor cache entry
+         logical, intent(in), optional:: defer        !in: deferred or actual write count
+         logical:: actual
 
+         actual=.TRUE.; if(present(defer)) actual=(.not.defer)
+         if(actual) then
 !$OMP ATOMIC READ
-         count=this%read_write_count
+          count=this%read_write_count
+         else
+!$OMP ATOMIC READ
+          count=this%read_write_def_count
+         endif
          count=max(-count,0)
          return
         end function TensCacheEntryGetWriteCount
-!---------------------------------------------------------------------
-        subroutine TensCacheEntryResetRwCounter(this,read_write_count)
-         implicit none
-         class(tens_cache_entry_t), intent(inout):: this        !inout: defined tensor cache entry
-         integer(INTD), intent(in), optional:: read_write_count !in: new read/write access count (or none)
-
-         if(present(read_write_count)) then
-!$OMP ATOMIC WRITE
-          this%read_write_count=read_write_count
-         else
-!$OMP ATOMIC WRITE
-          this%read_write_count=0
-         endif
-         return
-        end subroutine TensCacheEntryResetRwCounter
-!-------------------------------------------------------------------------
-        function TensCacheEntryGetRwCounter(this) result(read_write_count)
+!-------------------------------------------------------------------------------
+        function TensCacheEntryGetRwCounter(this,defer) result(read_write_count)
          implicit none
          integer(INTD):: read_write_count              !out: current read/write access count
          class(tens_cache_entry_t), intent(in):: this  !in: defined tensor cache entry
+         logical, intent(in), optional:: defer         !in: deferred or actual read/write count
+         logical:: actual
 
+         actual=.TRUE.; if(present(defer)) actual=(.not.defer)
+         if(actual) then
 !$OMP ATOMIC READ
-         read_write_count=this%read_write_count
+          read_write_count=this%read_write_count
+         else
+!$OMP ATOMIC READ
+          read_write_count=this%read_write_def_count
+         endif
          return
         end function TensCacheEntryGetRwCounter
+!---------------------------------------------------------------------------
+        subroutine TensCacheEntryResetRwCounter(this,read_write_count,defer)
+         implicit none
+         class(tens_cache_entry_t), intent(inout):: this        !inout: defined tensor cache entry
+         integer(INTD), intent(in), optional:: read_write_count !in: new read/write access count (or none)
+         logical, intent(in), optional:: defer                  !in: deferred or actual read/write count
+         logical:: actual
+
+         actual=.TRUE.; if(present(defer)) actual=(.not.defer)
+         if(actual) then
+          if(present(read_write_count)) then
+!$OMP ATOMIC WRITE
+           this%read_write_count=read_write_count
+          else
+!$OMP ATOMIC WRITE
+           this%read_write_count=0
+          endif
+         else
+          if(present(read_write_count)) then
+!$OMP ATOMIC WRITE
+           this%read_write_def_count=read_write_count
+          else
+!$OMP ATOMIC WRITE
+           this%read_write_def_count=0
+          endif
+         endif
+         return
+        end subroutine TensCacheEntryResetRwCounter
+!---------------------------------------------------------------------------------------
+        subroutine TensCacheEntryResetRwCounters(this,read_count,write_count,ierr,defer)
+         implicit none
+         class(tens_cache_entry_t), intent(inout):: this !inout: defined tensor cache entry
+         integer(INTD), intent(in):: read_count          !in: new read count
+         integer(INTD), intent(in):: write_count         !in: new write count
+         integer(INTD), intent(out), optional:: ierr     !out: error code
+         logical, intent(in), optional:: defer           !in: deferred or actual read/write count
+         integer(INTD):: errc
+         logical:: actual
+
+         if(.not.(read_count.gt.0.and.write_count.gt.0)) then !race
+          actual=.TRUE.; if(present(defer)) actual=(.not.defer)
+          if(actual) then
+!$OMP ATOMIC WRITE
+           this%read_write_count=read_count-write_count
+          else
+!$OMP ATOMIC WRITE
+           this%read_write_def_count=read_count-write_count
+          endif
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensCacheEntryResetRwCounters
 !---------------------------------------------------
         subroutine TensCacheEntryIncrTempCount(this)
          implicit none

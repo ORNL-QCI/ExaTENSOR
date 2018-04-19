@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/04/12
+!REVISION: 2018/04/19
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -2288,7 +2288,7 @@
              endif
              if(updated) then
               call tens_mng_entry%set_owner_id(jown) !update the tensor owner id if the tensor info was updated in the cache
-              call tens_mng_entry%reset_access_counters(jread,jwrite) !update the tensor access counters if the tensor info was updated in the cache
+              call tens_mng_entry%reset_rw_counters(jread,jwrite) !update the tensor access counters if the tensor info was updated in the cache
              endif
              allocate(tens_oprnd,STAT=jerr) !tensor operand will be owned by the tensor instruction
              if(jerr.ne.0) then

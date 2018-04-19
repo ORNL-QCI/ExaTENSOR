@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/04/17
+!REVISION: 2018/04/19
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -190,8 +190,8 @@
           procedure, public:: get_cache_entries=>TensInstrGetCacheEntries    !returns an array of references to tensor cache entries used by the tensor operands
           procedure, public:: get_flops=>TensInstrGetFlops                   !returns an estimate of the total number of required Flops (mul/add) and memory Words
           procedure, public:: get_operation=>TensInstrGetOperation           !returns back the encapsulated tensor operation
-          procedure, public:: mark_issue=>TensInstrMarkIssue                 !updates the tensor access counters for all tensor instruction operands due to the instruction issue
-          procedure, public:: mark_completion=>TensInstrMarkCompletion       !updates the tensor access counters for all tensor instruction operands due to the instruction completion
+          procedure, public:: mark_issued=>TensInstrMarkIssued               !updates the tensor access counters for all tensor instruction operands due to the instruction issue
+          procedure, public:: mark_completed=>TensInstrMarkCompleted         !updates the tensor access counters for all tensor instruction operands due to the instruction completion
           procedure, public:: dependency_free=>TensInstrDependencyFree       !returns TRUE if the tensor instruction is data dependency free
           procedure, public:: is_substitutable=>TensInstrIsSubstitutable     !returns TRUE if the tensor instruction allows output substitution (rename)
           procedure, public:: output_substituted=>TensInstrOutputSubstituted !returns TRUE if the output tensor(s) is(are) substituted with a temporary one(s)
@@ -429,8 +429,8 @@
         private TensInstrGetCacheEntries
         private TensInstrGetFlops
         private TensInstrGetOperation
-        private TensInstrMarkIssue
-        private TensInstrMarkCompletion
+        private TensInstrMarkIssued
+        private TensInstrMarkCompleted
         private TensInstrDependencyFree
         private TensInstrIsSubstitutable
         private TensInstrOutputSubstituted
@@ -1536,89 +1536,101 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensOprndSetTensorLayout
-!--------------------------------------------------
-        subroutine TensOprndRegisterRead(this,ierr)
+!--------------------------------------------------------
+        subroutine TensOprndRegisterRead(this,ierr,defer)
 !Registers a read access on the tensor operand. In case the tensor
 !operand is not associated with a tensor cache entry, does nothing.
          implicit none
          class(tens_oprnd_t), intent(inout):: this   !inout: active tensor operand
          integer(INTD), intent(out), optional:: ierr !out: error code
+         logical, intent(in), optional:: defer       !in: TRUE: deferred read, FALSE: actual read
          integer(INTD):: errc
+         logical:: df
 
-         errc=0
-         if(associated(this%cache_entry)) call this%cache_entry%incr_read_count()
+         errc=0; df=.FALSE.; if(present(defer)) df=defer
+         if(associated(this%cache_entry)) call this%cache_entry%incr_read_count(errc,defer=df)
          if(present(ierr)) ierr=errc
          return
         end subroutine TensOprndRegisterRead
-!----------------------------------------------------
-        subroutine TensOprndUnregisterRead(this,ierr)
+!----------------------------------------------------------
+        subroutine TensOprndUnregisterRead(this,ierr,defer)
 !Unregisters a read access on the tensor operand. In case the tensor
 !operand is not associated with a tensor cache entry, does nothing.
          implicit none
          class(tens_oprnd_t), intent(inout):: this   !inout: active tensor operand
          integer(INTD), intent(out), optional:: ierr !out: error code
+         logical, intent(in), optional:: defer       !in: TRUE: deferred read, FALSE: actual read
          integer(INTD):: errc
+         logical:: df
 
-         errc=0
-         if(associated(this%cache_entry)) call this%cache_entry%decr_read_count()
+         errc=0; df=.FALSE.; if(present(defer)) df=defer
+         if(associated(this%cache_entry)) call this%cache_entry%decr_read_count(errc,defer=df)
          if(present(ierr)) ierr=errc
          return
         end subroutine TensOprndUnregisterRead
-!--------------------------------------------------------------
-        function TensOprndGetReadCount(this,ierr) result(count)
+!--------------------------------------------------------------------
+        function TensOprndGetReadCount(this,ierr,defer) result(count)
 !Returns the current read access count on the tensor operand. In case the tensor
 !operand is not associated with a tensor cache entry, returns zero.
          implicit none
          integer(INTD):: count                       !out: read count
          class(tens_oprnd_t), intent(in):: this      !in: active tensor operand
          integer(INTD), intent(out), optional:: ierr !out: error code
+         logical, intent(in), optional:: defer       !in: TRUE: deferred read, FALSE: actual read
          integer(INTD):: errc
+         logical:: df
 
-         errc=0; count=0
-         if(associated(this%cache_entry)) count=this%cache_entry%get_read_count()
+         errc=0; count=0; df=.FALSE.; if(present(defer)) df=defer
+         if(associated(this%cache_entry)) count=this%cache_entry%get_read_count(defer=df)
          if(present(ierr)) ierr=errc
          return
         end function TensOprndGetReadCount
-!---------------------------------------------------
-        subroutine TensOprndRegisterWrite(this,ierr)
+!---------------------------------------------------------
+        subroutine TensOprndRegisterWrite(this,ierr,defer)
 !Registers a write access on the tensor operand. In case the tensor
 !operand is not associated with a tensor cache entry, does nothing.
          implicit none
          class(tens_oprnd_t), intent(inout):: this   !inout: active tensor operand
          integer(INTD), intent(out), optional:: ierr !out: error code
+         logical, intent(in), optional:: defer       !in: TRUE: deferred read, FALSE: actual read
          integer(INTD):: errc
+         logical:: df
 
-         errc=0
-         if(associated(this%cache_entry)) call this%cache_entry%incr_write_count()
+         errc=0; df=.FALSE.; if(present(defer)) df=defer
+         if(associated(this%cache_entry)) call this%cache_entry%incr_write_count(errc,defer=df)
          if(present(ierr)) ierr=errc
          return
         end subroutine TensOprndRegisterWrite
-!-----------------------------------------------------
-        subroutine TensOprndUnregisterWrite(this,ierr)
+!-----------------------------------------------------------
+        subroutine TensOprndUnregisterWrite(this,ierr,defer)
 !Unregisters a write access on the tensor operand. In case the tensor
 !operand is not associated with a tensor cache entry, does nothing.
          implicit none
          class(tens_oprnd_t), intent(inout):: this   !inout: active tensor operand
          integer(INTD), intent(out), optional:: ierr !out: error code
+         logical, intent(in), optional:: defer       !in: TRUE: deferred read, FALSE: actual read
          integer(INTD):: errc
+         logical:: df
 
-         errc=0
-         if(associated(this%cache_entry)) call this%cache_entry%decr_write_count()
+         errc=0; df=.FALSE.; if(present(defer)) df=defer
+         if(associated(this%cache_entry)) call this%cache_entry%decr_write_count(errc,defer=df)
          if(present(ierr)) ierr=errc
          return
         end subroutine TensOprndUnregisterWrite
-!---------------------------------------------------------------
-        function TensOprndGetWriteCount(this,ierr) result(count)
+!---------------------------------------------------------------------
+        function TensOprndGetWriteCount(this,ierr,defer) result(count)
 !Returns the current write access count on the tensor operand. In case the tensor
 !operand is not associated with a tensor cache entry, returns zero.
          implicit none
          integer(INTD):: count                       !out: write count
          class(tens_oprnd_t), intent(in):: this      !in: active tensor operand
          integer(INTD), intent(out), optional:: ierr !out: error code
+         logical, intent(in), optional:: defer       !in: TRUE: deferred read, FALSE: actual read
          integer(INTD):: errc
+         logical:: df
 
-         errc=0; count=0
-         if(associated(this%cache_entry)) count=this%cache_entry%get_write_count()
+         errc=0; count=0; df=.FALSE.; if(present(defer)) df=defer
+         if(associated(this%cache_entry)) count=this%cache_entry%get_write_count(defer=df)
          if(present(ierr)) ierr=errc
          return
         end function TensOprndGetWriteCount
@@ -3076,8 +3088,8 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensInstrGetOperation
-!------------------------------------------------------------
-        function TensInstrMarkIssue(this,ierr) result(passed)
+!-------------------------------------------------------------
+        function TensInstrMarkIssued(this,ierr) result(passed)
 !Updates the tensor access counters for each tensor operand when the tensor instruction is issued.
          implicit none
          logical:: passed                            !out: TRUE if there was no data dependency, FALSE otherwise
@@ -3127,9 +3139,9 @@
          endif
          if(present(ierr)) ierr=errc
          return
-        end function TensInstrMarkIssue
-!----------------------------------------------------
-        subroutine TensInstrMarkCompletion(this,ierr)
+        end function TensInstrMarkIssued
+!---------------------------------------------------
+        subroutine TensInstrMarkCompleted(this,ierr)
 !Updates the tensor access counters for each tensor operand when the tensor instruction is completed.
          implicit none
          class(tens_instr_t), intent(inout):: this   !inout: active tensor instruction
@@ -3174,7 +3186,7 @@
          endif
          if(present(ierr)) ierr=errc
          return
-        end subroutine TensInstrMarkCompletion
+        end subroutine TensInstrMarkCompleted
 !----------------------------------------------------------------------
         function TensInstrDependencyFree(this,ierr,blocked) result(res)
 !Returns TRUE if the tensor instruction is dependency-free (locally).
@@ -4117,11 +4129,11 @@
                 ier=this%iqueue%next()
                 if(ier.ne.GFC_SUCCESS.and.ier.ne.GFC_NO_MOVE.and.errc.eq.0) then; errc=-40; exit wloop; endif
                else !no blocking data dependencies: issue into the deferred instruction list
-                passed=instr%mark_issue(ier); if((ier.ne.0.or.passed).and.errc.eq.0) then; errc=-39; exit wloop; endif
+                passed=instr%mark_issued(ier); if((ier.ne.0.or.passed).and.errc.eq.0) then; errc=-39; exit wloop; endif
                 ier=this%iqueue%move_elem(this%def_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-38; exit wloop; endif
                endif
               else !no data dependencies
-               passed=instr%mark_issue(ier); if((.not.(ier.eq.0.and.passed)).and.errc.eq.0) then; errc=-37; exit wloop; endif
+               passed=instr%mark_issued(ier); if((.not.(ier.eq.0.and.passed)).and.errc.eq.0) then; errc=-37; exit wloop; endif
    !Acquire resources for tensor operands (if available):
                call this%acquire_resources(instr,ier,omit_output=.FALSE.)
                if(ier.eq.0) then !resources have been acquired: issue into the staged list
