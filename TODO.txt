@@ -19,4 +19,6 @@
             member procedure in tens_resrc_t should somehow separate cases of TRY_LATER:
             mem_allocate() -> tens_resrc_t.allocate_buffer() -> tens_oprnd_t.acquire_rsc() & tens_entry_wrk_t.acquire_resource() ->
             -> tavp_wrk_resourcer_t.acquire_resource().
-2018-04-09: It is not clear when to destroy an accumulator tensor.
+2018-04-09: It is not clear when to upload and when to destroy a local accumulator tensor: TMP_COUNT never decreases.
+2018-04-24: TAVP_INSTR_CTRL_STOP should not be reordered with other instructions in TAVP-WRK:
+            It must reach each DSVU the last.
