@@ -1,6 +1,6 @@
 !Domain-specific virtual processor (DSVP): Abstract base module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/04/05
+!REVISION: 2018/04/24
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -1064,13 +1064,15 @@
         end subroutine DSInstrSetOperand
 !------------------------------------------------------------------
         subroutine DSInstrFreeOperand(this,op_num,ierr,dissoc_only)
-!Frees a specific instruction operand. By default the operand poiter will be
-!deallocated, unless <dissoc_only>=TRUE, which will only dissociate it.
+!Frees a specific instruction operand. By default the operand pointer will
+!be deallocated, unless <dissoc_only>=TRUE, which will only dissociate it.
+!In the latter case, the operand will not be fully destructed, namely, it
+!will stay defined but resourceless, and the instruction will no longer own it.
          implicit none
          class(ds_instr_t), intent(inout):: this     !inout: domain-specific instruction
          integer(INTD), intent(in):: op_num          !in: operand number (0,1,3,...)
          integer(INTD), intent(out), optional:: ierr !out: error code
-         logical, intent(in), optional:: dissoc_only !in: if TRUE, no pointer deallocation will be performed
+         logical, intent(in), optional:: dissoc_only !in: if TRUE, no operand deallocation will be performed
          integer(INTD):: errc
          integer:: ier
          logical:: dis
@@ -1079,12 +1081,12 @@
          if(present(dissoc_only)) then; dis=dissoc_only; else; dis=.FALSE.; endif
          if(this%num_oprnds.gt.0) then
           if(op_num.ge.0.and.op_num.lt.this%num_oprnds) then
-           call this%operand(op_num)%oprnd_ref%mark_undelivered(errc,sync_it=.TRUE.) !will complete pending communication and call destructor (release local resources)
+           call this%operand(op_num)%oprnd_ref%mark_undelivered(errc,sync_it=.TRUE.) !complete a pending communication and call resource release
            if(.not.dis) then
-            deallocate(this%operand(op_num)%oprnd_ref,STAT=ier)
+            deallocate(this%operand(op_num)%oprnd_ref,STAT=ier) !deallocate() will call the subtype dtor
             if(ier.ne.0.and.errc.eq.DSVP_SUCCESS) errc=DSVP_ERR_MEM_FREE_FAIL
            endif
-           this%operand(op_num)%oprnd_ref=>NULL()
+           this%operand(op_num)%oprnd_ref=>NULL() !dissociation without deallocation will not call the subtype dtor (operand will stay defined, but resourceless)
           else
            errc=DSVP_ERR_INVALID_ARGS
           endif
