@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/03/27
+!REVISION: 2018/04/25
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -3723,7 +3723,7 @@
            select type(up); class is(tens_header_t); thp=>up; end select
            if(.not.associated(thp)) then; errc=GFC_ERROR; exit; endif
            call thp%pack(packet,errc); if(errc.ne.PACK_SUCCESS) then; errc=GFC_ERROR; exit; endif
-           errc=lit%scanp(return_each=.TRUE.,skip_current=.TRUE.)
+           errc=lit%next()
           enddo
           if(errc.eq.GFC_NO_MOVE) errc=GFC_SUCCESS
           i=lit%release(); if(i.ne.GFC_SUCCESS.and.errc.eq.GFC_SUCCESS) errc=i
