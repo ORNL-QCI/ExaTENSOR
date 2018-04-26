@@ -1,6 +1,6 @@
 !Domain-specific virtual processor (DSVP): Abstract base module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/04/24
+!REVISION: 2018/04/26
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -586,8 +586,9 @@
          if(this%is_active(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
            if(this%in_route.eq.DS_OPRND_NO_COMM) then
-            if(this%is_present(ier)) call this%mark_undelivered(errc) !will release local resources
-            if(errc.eq.DSVP_SUCCESS) errc=ier
+            if(this%is_present(ier)) then
+             call this%mark_undelivered(errc); if(errc.eq.DSVP_SUCCESS) errc=ier !will release local resources
+            endif
             this%stat=DS_OPRND_EMPTY
            else
             errc=DSVP_ERR_INVALID_REQ
@@ -640,13 +641,13 @@
          if(this%is_active(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
            compl_comm=.FALSE.; if(present(sync_it)) compl_comm=sync_it
-           if(compl_comm) then
-            compl_comm=this%sync(errc,wait=.TRUE.); dirty=(errc.ne.DSVP_SUCCESS)
-            errc=DSVP_SUCCESS
+           if(compl_comm.and.this%in_route.ne.DS_OPRND_NO_COMM) then
+            compl_comm=this%sync(errc,wait=.TRUE.); dirty=(errc.ne.DSVP_SUCCESS); errc=DSVP_SUCCESS
            endif
-           if((this%in_route.eq.DS_OPRND_NO_COMM).or.dirty) then !no pending communication check
-            if(this%is_present(ier)) call this%release(errc) !will release local resources
-            if(errc.eq.DSVP_SUCCESS) errc=ier
+           if(this%in_route.eq.DS_OPRND_NO_COMM.or.dirty) then !no pending communication check
+            if(this%is_present(ier)) then
+             call this%release(errc); if(errc.eq.DSVP_SUCCESS) errc=ier !will release local resources
+            endif
             this%stat=DS_OPRND_DEFINED !status will be changed regardless the success of resource release
            else
             errc=DSVP_ERR_INVALID_REQ

@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/04/19
+!REVISION: 2018/04/26
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -4611,7 +4611,13 @@
            ier=this%iqueue%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-27; exit wloop; endif
           endif
   !Append a new batch of subinstructions from cDecoder (port 1) into the main queue:`Do I need MAX_COLLECT_INSTR here?
-          ier=this%flush_port(1); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-26; exit wloop; endif
+          ier=this%flush_port(1,num_moved=i); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-26; exit wloop; endif
+          if(DEBUG.gt.0.and.i.gt.0) then
+           write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Collector unit ",i2," received ",i9," subinstructions from lower level")')&
+           &impir,this%get_id(),i
+           !ier=this%iqueue%reset(); ier=this%iqueue%scanp(action_f=tens_instr_print) !print all instructions
+           flush(CONS_OUT)
+          endif
   !Match subinstructions with their respective parent instructions and possibly retire the latter to the retired list:
           ier=this%iqueue%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-25; exit wloop; endif
           ier=this%iqueue%get_status()
@@ -4623,7 +4629,7 @@
            cid=tens_instr%get_id(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-22; exit wloop; endif
            sts=tens_instr%get_status(ier,iec); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-21; exit wloop; endif
    !Map the child tensor instruction to its parent instruction and decrement the reference count:
-           call list_pos%clean() !list position will refer to the matching list
+           call list_pos%clean() !list position will refer to the position in the matching list
            matched=this%match_subinstr(cid,ier,iec,list_pos) !list position is only set when the reference count is zero
            if(ier.ne.0.and.errc.eq.0) then; errc=-20; exit wloop; endif
            if(matched) then
@@ -4773,12 +4779,12 @@
         end subroutine TAVPMNGCollectorShutdown
 !----------------------------------------------------------------------------------------
         subroutine TAVPMNGCollectorRegisterInstr(this,instr_id,child_count,list_pos,ierr)
-!Registers a parent instruction with the collector.
+!Registers a parent instruction with the Collector.
          implicit none
-         class(tavp_mng_collector_t), intent(inout):: this !inout: TAVP-MNG Collector DSVU
+         class(tavp_mng_collector_t), intent(inout):: this !inout: TAVP-MNG Collector
          integer(INTL), intent(in):: instr_id              !in: instruction id
          integer(INTD), intent(in):: child_count           !in: number of subinstructions spawned by this instruction (>=0)
-         type(list_pos_t), intent(in):: list_pos           !in: bookmarked position of the instruction in Collector's main queue
+         type(list_pos_t), intent(in):: list_pos           !in: bookmarked position of the instruction in Collector's matching list
          integer(INTD), intent(out), optional:: ierr       !out: error code
          integer(INTD):: errc
 
@@ -4797,7 +4803,7 @@
         subroutine TAVPMNGCollectorUnregisterInstr(this,instr_id,ierr)
 !Explicitly unregisters a parent instruction with the Collector.
          implicit none
-         class(tavp_mng_collector_t), intent(inout):: this !inout: TAVP-MNG Collector DSVU
+         class(tavp_mng_collector_t), intent(inout):: this !inout: TAVP-MNG Collector
          integer(INTL), intent(in):: instr_id              !in: instruction id
          integer(INTD), intent(out), optional:: ierr       !out: error code
          integer(INTD):: errc
@@ -4819,11 +4825,11 @@
 !An optional subinstruction error code will propagate to the parent instruction.
          implicit none
          logical:: matched                                  !out: matched or not
-         class(tavp_mng_collector_t), intent(inout):: this  !inout: TAVP-MNG Collector DSVU
+         class(tavp_mng_collector_t), intent(inout):: this  !inout: TAVP-MNG Collector
          integer(INTL), intent(in):: subinstr_id            !in: subinstruction id
          integer(INTD), intent(out), optional:: ierr        !out: error code
          integer(INTD), intent(in), optional:: subinstr_err !in: subinstruction error code
-         type(list_pos_t), intent(out), optional:: list_pos !out: list position bookmark (instruction position in Collector's main queue)
+         type(list_pos_t), intent(out), optional:: list_pos !out: list position bookmark (instruction position in Collector's matching list)
          integer(INTD):: errc,ier,sts
          integer(INTL):: parent_instr_id
          class(dsvp_t), pointer:: dsvp
@@ -4928,6 +4934,7 @@
          else
           errc=-1
          endif
+         if(errc.ne.0) write(CONS_OUT,'("#ERROR(TAVP-MNG:Collector.match_subinstr): Error ",i11)') errc !debug
          if(present(ierr)) ierr=errc
          return
         end function TAVPMNGCollectorMatchSubinstr

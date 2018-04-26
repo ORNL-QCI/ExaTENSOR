@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/04/25
+!REVISION: 2018/04/26
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -2076,11 +2076,12 @@
         end subroutine TensOprndUpload
 !---------------------------------------------------------
         function TensOprndSync(this,ierr,wait) result(res)
-!Synchronizes a pending prefetch/upload, either TEST or WAIT.
+!Synchronizes a pending prefetch/upload, either TEST or WAIT (default).
 !A successful synchronization on prefetch will mark the tensor operand
 !as delivered (present). A successful synchronization on upload will
 !not change the status of the tensor operand (which is present).
-!`An attempt to synchronize a non-existing communication will cause an error.
+!An attempt to synchronize a non-existing communication will simply
+!be ignored with no error.
          implicit none
          logical:: res                               !out: TRUE on communication completion, FALSE otherwise
          class(tens_oprnd_t), intent(inout):: this   !inout: active tensor operand with an associated resource component
@@ -2094,44 +2095,48 @@
 
          res=.FALSE.; tw=.TRUE.; if(present(wait)) tw=wait
          if(this%is_active(errc)) then
-          body_p=>this%tensor%get_body(errc)
-          if(errc.eq.TEREC_SUCCESS.and.associated(body_p)) then
-           layout_p=>body_p%get_layout(errc)
-           if(errc.eq.TEREC_SUCCESS.and.associated(layout_p)) then
-            descr_p=>layout_p%get_data_descr(errc)
-            if(errc.eq.TEREC_SUCCESS.and.associated(descr_p)) then
-             if(descr_p%is_set(errc)) then
-              if(errc.eq.0) then
-               sts=this%get_comm_stat()
-               if(sts.ne.DS_OPRND_NO_COMM) then
-                if(tw) then
-                 call descr_p%wait_data(errc); if(errc.eq.0) then; res=.TRUE.; else; errc=-1; endif
+          if(errc.eq.DSVP_SUCCESS) then
+           sts=this%get_comm_stat()
+           if(sts.ne.DS_OPRND_NO_COMM) then
+            body_p=>this%tensor%get_body(errc)
+            if(errc.eq.TEREC_SUCCESS.and.associated(body_p)) then
+             layout_p=>body_p%get_layout(errc)
+             if(errc.eq.TEREC_SUCCESS.and.associated(layout_p)) then
+              descr_p=>layout_p%get_data_descr(errc)
+              if(errc.eq.TEREC_SUCCESS.and.associated(descr_p)) then
+               if(descr_p%is_set(errc)) then
+                if(errc.eq.0) then
+                 if(tw) then
+                  call descr_p%wait_data(errc); if(errc.eq.0) then; res=.TRUE.; else; errc=-10; endif
+                 else
+                  res=descr_p%test_data(errc); if(errc.ne.0) then; res=.FALSE.; errc=-9; endif
+                 endif
+                 if(sts.eq.DS_OPRND_FETCHING.and.res) then
+                  call this%mark_delivered(errc); if(errc.ne.DSVP_SUCCESS) errc=-8
+                 endif
                 else
-                 res=descr_p%test_data(errc); if(errc.ne.0) errc=-2
-                endif
-                if(sts.eq.DS_OPRND_FETCHING.and.res) then
-                 call this%mark_delivered(errc); if(errc.ne.DSVP_SUCCESS) errc=-3
+                 errc=-7
                 endif
                else
-                errc=-4 !`if there is no pending communication, it is an error?
+                errc=-6
                endif
               else
                errc=-5
               endif
              else
-              errc=-6
+              errc=-4
              endif
             else
-             errc=-7
+             errc=-3
             endif
            else
-            errc=-8
+            res=.TRUE.
            endif
           else
-           errc=-9
+           errc=-2
           endif
          else
-          errc=-10
+          errc=-1
          endif
          if(present(ierr)) ierr=errc
          return
