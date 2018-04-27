@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/04/26
+!REVISION: 2018/04/27
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -4884,6 +4884,7 @@
          class(tens_rcrsv_t), pointer:: tensor
          type(tens_rcrsv_t):: tensor_pers
          class(tens_cache_entry_t), pointer:: tens_entry
+         class(tens_entry_wrk_t), pointer:: pers_entry
          character(TEREC_MAX_TENS_NAME_LEN):: tname
          type(tens_entry_wrk_ref_t):: cache_entries(1:MAX_TENSOR_OPERANDS)
          class(*), pointer:: uptr
@@ -4930,10 +4931,10 @@
                        write(CONS_OUT,*) tname(1:l)
                        flush(CONS_OUT)
                       endif
-                      errc=-16
+                      errc=-15
                      endif
                     else
-                     errc=-15
+                     errc=-14
                     endif
                    endif
                   enddo
@@ -4942,10 +4943,10 @@
                    flush(CONS_OUT)
                   endif
                  else
-                  errc=-14
+                  errc=-13
                  endif
                 else
-                 errc=-13
+                 errc=-12
                 endif
                else !authentic tensor instruction
  !Restore the persistent output tensor in a previously renamed tensor instruction:
@@ -4958,18 +4959,10 @@
                    if(errc.eq.0) then
                     tens_entry=>NULL(); tens_entry=>this%arg_cache%lookup(tensor_pers,errc) !lookup the persistent output tensor in the cache
                     if(errc.eq.0.and.associated(tens_entry)) then
-                     select type(tens_entry)
-                     class is(tens_entry_wrk_t)
-                      call oprnd%tmp_reset_tensor(tens_entry,.FALSE.,errc) !(temporary --> persistent) rename
-                      if(errc.eq.0) then
-                       call tens_entry%decr_write_count()
-                      else
-                       errc=-12; exit
-                      endif
-                     class default
-                      errc=-11; exit
-                     end select
-                     call this%arg_cache%release_entry(tens_entry); tens_entry=>NULL()
+                     pers_entry=>NULL(); select type(tens_entry); class is(tens_entry_wrk_t); pers_entry=>tens_entry; end select
+                     call oprnd%tmp_reset_tensor(pers_entry,.FALSE.,errc) !(temporary --> persistent) rename
+                     if(errc.eq.0) then; call pers_entry%decr_write_count(); else; errc=-11; exit; endif
+                     call this%arg_cache%release_entry(tens_entry); tens_entry=>NULL(); pers_entry=>NULL()
                      if(DEBUG.gt.0.and.errc.eq.0) then
                       call tensor_pers%get_name(tname,l,errc)
                       write(CONS_OUT,'("#MSG(TAVP-WRK:Resourcer)[",i6,"]: Output tensor renamed back to")',ADVANCE='NO') impir
