@@ -1467,9 +1467,13 @@
              tcep=>NULL(); select type(uptr); class is(tens_cache_entry_t); tcep=>uptr; end select; uptr=>NULL()
              if(associated(tcep)) then
               if(res.eq.GFC_NOT_FOUND) then
-               stored=.TRUE.
                call tcep%init_lock()
                call tcep%set_tensor(tensor,errc); if(errc.ne.0) errc=-9
+               if(DEBUG.gt.0.and.errc.eq.0) then
+                write(jo,'("#MSG(TensorCache)[",i6,"]: Cache entry created for tensor ")') impir
+                call tensor%print_it(dev_id=jo); flush(jo)
+               endif
+               stored=.TRUE.
               else
                if(res.eq.GFC_FOUND) then; errc=-8; else; errc=-7; endif
               endif
@@ -1528,7 +1532,15 @@
           errc=dit%init(this%map)
           if(errc.eq.GFC_SUCCESS) then
            res=dit%search(GFC_DICT_DELETE_IF_FOUND,cmp_tens_descriptors,tens_descr)
-           if(res.eq.GFC_FOUND) then; evicted=.TRUE.; else; if(res.ne.GFC_NOT_FOUND) errc=-4; endif
+           if(res.eq.GFC_FOUND) then
+            if(DEBUG.gt.0.and.errc.eq.0) then
+             write(jo,'("#MSG(TensorCache)[",i6,"]: Cache entry evicted for tensor ")') impir
+             call tensor%print_it(dev_id=jo); flush(jo)
+            endif
+            evicted=.TRUE.
+           else
+            if(res.eq.GFC_NOT_FOUND) then; errc=-5; else; errc=-4; endif
+           endif
            res=dit%release(); if(res.ne.GFC_SUCCESS.and.errc.eq.0) errc=-3
           else
            errc=-2
