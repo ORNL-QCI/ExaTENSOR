@@ -5182,15 +5182,20 @@
 !$OMP CRITICAL (TAVP_MNG_INSTR)
            errc=dit%init(this%instr_map)
            if(errc.eq.GFC_SUCCESS) then
+            uptr=>NULL()
             errc=dit%search(GFC_DICT_JUST_FIND,cmp_integers,child_id,value_out=uptr)
             if(errc.eq.GFC_FOUND) then
-             errc=0
-             select type(uptr)
-             type is(integer(INTL))
-              pid=uptr
-             class default
+             if(associated(uptr)) then
+              errc=0
+              select type(uptr)
+              type is(integer(INTL))
+               pid=uptr
+              class default
+               errc=-5
+              end select
+             else
               errc=-4
-             end select
+             endif
             else
              errc=-3
             endif

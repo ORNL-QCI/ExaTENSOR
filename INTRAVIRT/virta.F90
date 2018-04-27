@@ -8,7 +8,7 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/04/19
+!REVISION: 2018/04/27
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -975,9 +975,6 @@
          errc=0
          if((.not.associated(this%tensor)).and.associated(tensor)) then
           this%tensor=>tensor
-#ifndef NO_OMP
-          call this%init_lock()
-#endif
          else
           errc=-1
          endif
@@ -1314,11 +1311,9 @@
 
          errc=0
          if(this%ref_count.eq.0.and.this%use_count.eq.0.and.(.not.this%persistent)) then
-#ifndef NO_OMP
-          call this%destroy_lock()
-#endif
           if(associated(this%tensor).and.dealloc) deallocate(this%tensor) !<dealloc>=TRUE assumes tensor ownership
           this%tensor=>NULL()
+          call this%destroy_lock()
          else
           errc=-1
           if(.not.ignore_evict_flag)&
@@ -1473,9 +1468,10 @@
              if(associated(tcep)) then
               if(res.eq.GFC_NOT_FOUND) then
                stored=.TRUE.
-               call tcep%set_tensor(tensor,errc); if(errc.ne.0) errc=-8
+               call tcep%init_lock()
+               call tcep%set_tensor(tensor,errc); if(errc.ne.0) errc=-9
               else
-               if(res.ne.GFC_FOUND) errc=-7
+               if(res.eq.GFC_FOUND) then; errc=-8; else; errc=-7; endif
               endif
               if(errc.eq.0.and.present(tens_entry_p)) then
                call tcep%incr_use_count()
