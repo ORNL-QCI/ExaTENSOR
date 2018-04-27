@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/04/26
+!REVISION: 2018/04/27
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -384,7 +384,7 @@
          contains
           procedure, public:: configure=>TAVPMNGConfigure              !configures the TAVP-MNG DSVP
           procedure, public:: register_instr=>TAVPMNGRegisterInstr     !registers a new child instruction (subinstruction)
-          procedure, public:: unregister_instr=>TAVPMNGUnregisterInstr !unregisteres a subinstruction
+          procedure, public:: unregister_instr=>TAVPMNGUnregisterInstr !unregisters a subinstruction
           procedure, public:: map_instr=>TAVPMNGMapInstr               !returns the parent instruction ID for a subinstruction
           procedure, public:: is_top=>TAVPMNGIsTop                     !returns TRUE if the TAVP-MNG is the root of the TAVP-MNG hierarchy
           procedure, public:: is_bottom=>TAVPMNGIsBottom               !returns TRUE if the TAVP-MNG is a leaf (bottom) of the TAVP-MNG hierarchy
@@ -4573,7 +4573,7 @@
            opcode=tens_instr%get_code(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-43; exit wloop; endif
    !Register decomposable parent tensor instructions and move them into the matching list:
            if(opcode.ge.TAVP_ISA_TENS_FIRST.and.opcode.le.TAVP_ISA_TENS_LAST) then
-            call tens_instr%set_status(sts,ier,DSVP_SUCCESS) !.error_code field was used as child count, reset it back to DSVP_SUCCESS
+            call tens_instr%set_status(sts,ier,DSVP_SUCCESS) !.error_code field was used as children count, reset it back to DSVP_SUCCESS
             if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-42; exit wloop; endif
             if(cnt.le.0.and.errc.eq.0) then; errc=-41; exit wloop; endif !trap
             ier=this%iqueue%move_elem(this%mat_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-40; exit wloop; endif
@@ -4666,7 +4666,7 @@
            ier=this%iqueue%get_status()
           enddo mloop
           if(ier.ne.GFC_IT_EMPTY.and.errc.eq.0) then; errc=-9; exit wloop; endif
- !Check whether the unit should stop:
+ !Check whether the Collector should stop:
           ier=this%mat_list%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-8; exit wloop; endif
           ier=this%def_list%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-7; exit wloop; endif
           if(this%mat_list%get_status().eq.GFC_IT_EMPTY.and.this%def_list%get_status().eq.GFC_IT_EMPTY) then
@@ -4782,9 +4782,9 @@
 !Registers a parent instruction with the Collector.
          implicit none
          class(tavp_mng_collector_t), intent(inout):: this !inout: TAVP-MNG Collector
-         integer(INTL), intent(in):: instr_id              !in: instruction id
-         integer(INTD), intent(in):: child_count           !in: number of subinstructions spawned by this instruction (>=0)
-         type(list_pos_t), intent(in):: list_pos           !in: bookmarked position of the instruction in Collector's matching list
+         integer(INTL), intent(in):: instr_id              !in: parent instruction id
+         integer(INTD), intent(in):: child_count           !in: number of subinstructions spawned by this parent instruction (>=0)
+         type(list_pos_t), intent(in):: list_pos           !in: bookmarked position of the parent instruction in Collector's matching list
          integer(INTD), intent(out), optional:: ierr       !out: error code
          integer(INTD):: errc
 
@@ -4804,7 +4804,7 @@
 !Explicitly unregisters a parent instruction with the Collector.
          implicit none
          class(tavp_mng_collector_t), intent(inout):: this !inout: TAVP-MNG Collector
-         integer(INTL), intent(in):: instr_id              !in: instruction id
+         integer(INTL), intent(in):: instr_id              !in: parent instruction id
          integer(INTD), intent(out), optional:: ierr       !out: error code
          integer(INTD):: errc
 
@@ -4829,44 +4829,23 @@
          integer(INTL), intent(in):: subinstr_id            !in: subinstruction id
          integer(INTD), intent(out), optional:: ierr        !out: error code
          integer(INTD), intent(in), optional:: subinstr_err !in: subinstruction error code
-         type(list_pos_t), intent(out), optional:: list_pos !out: list position bookmark (instruction position in Collector's matching list)
+         type(list_pos_t), intent(out), optional:: list_pos !out: list position bookmark (parent instruction position in Collector's matching list)
          integer(INTD):: errc,ier,sts
          integer(INTL):: parent_instr_id
          class(dsvp_t), pointer:: dsvp
          class(tavp_mng_collector_entry_t), pointer:: col_entry
          class(*), pointer:: uptr
          class(tens_instr_t), pointer:: tens_instr
-         type(dictionary_iter_t):: dit
          type(list_iter_t):: lit
 
-         matched=.FALSE.
-         dsvp=>this%get_dsvp(errc)
+         matched=.FALSE.; dsvp=>this%get_dsvp(errc)
          if(errc.eq.DSVP_SUCCESS) then
 !Look up the parent instruction ID:
           select type(dsvp)
           class is(tavp_mng_t)
-!$OMP CRITICAL (TAVP_MNG_INSTR)
-           errc=dit%init(dsvp%instr_map)
-           if(errc.eq.GFC_SUCCESS) then
-            errc=dit%search(GFC_DICT_JUST_FIND,cmp_integers,subinstr_id,value_out=uptr)
-            if(errc.eq.GFC_FOUND) then
-             errc=0
-             select type(uptr)
-             type is(integer(INTL))
-              parent_instr_id=uptr
-             class default
-              errc=-17
-             end select
-            else
-             errc=-16
-            endif
-            ier=dit%release(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-15
-           else
-            errc=-14
-           endif
-!$OMP END CRITICAL (TAVP_MNG_INSTR)
+           parent_instr_id=dsvp%map_instr(subinstr_id,errc); if(errc.ne.0) errc=-15
           class default
-           errc=-13
+           errc=-14
           end select
 !Find the corresponding entry in Collector's dictionary:
           if(errc.eq.0) then
@@ -4877,7 +4856,7 @@
             class is(tavp_mng_collector_entry_t)
              col_entry=>uptr
             class default
-             errc=-12
+             errc=-13
             end select
 !Decrement the reference count:
             if(errc.eq.0) then
@@ -4896,39 +4875,39 @@
                    sts=tens_instr%get_status(errc,ier)
                    if(errc.eq.DSVP_SUCCESS) then
                     if(ier.eq.DSVP_SUCCESS) then
-                     call tens_instr%set_status(sts,errc,subinstr_err); if(errc.ne.DSVP_SUCCESS) errc=-11
+                     call tens_instr%set_status(sts,errc,subinstr_err); if(errc.ne.DSVP_SUCCESS) errc=-12
                     endif
                    else
-                    errc=-10
+                    errc=-11
                    endif
                   else
-                   errc=-9
+                   errc=-10
                   endif
                  else
-                  errc=-8
+                  errc=-9
                  endif
                 else
-                 errc=-7
+                 errc=-8
                 endif
-                ier=lit%release(); if(ier.ne.GFC_SUCCESS.and.errc.eq.GFC_SUCCESS) errc=-6
+                ier=lit%release(); if(ier.ne.GFC_SUCCESS.and.errc.eq.GFC_SUCCESS) errc=-7
                else
-                errc=-5
+                errc=-6
                endif
               endif
-!Destroy the entry if the reference count is zero (only when <list_pos> is present):
+!Destroy the entry if the reference count is zero (only when <list_pos> is present!):
               if(present(list_pos).and.errc.eq.0) then
                if(col_entry%children_count.eq.0) then
                 list_pos=col_entry%list_elem
                 errc=this%parent_instr%search(GFC_DICT_DELETE_IF_FOUND,cmp_integers,parent_instr_id)
-                if(errc.eq.GFC_FOUND) then; errc=0; else; errc=-4; endif
+                if(errc.eq.GFC_FOUND) then; errc=0; else; errc=-5; endif
                endif
               endif
              else
-              errc=-3
+              errc=-4
              endif
             endif
            else
-            if(errc.ne.GFC_NOT_FOUND) errc=-2
+            if(errc.eq.GFC_NOT_FOUND) then; errc=-3; else; errc=-2; endif
            endif
           endif
          else
@@ -5208,7 +5187,7 @@
              errc=0
              select type(uptr)
              type is(integer(INTL))
-               pid=uptr
+              pid=uptr
              class default
               errc=-4
              end select
@@ -5222,6 +5201,7 @@
          else
           errc=-1
          endif
+         if(errc.ne.0) write(CONS_OUT,'("#ERROR(TAVP-MNG.map_instr): Error ",i11)') errc !debug
          if(present(ierr)) ierr=errc
          return
         end function TAVPMNGMapInstr
