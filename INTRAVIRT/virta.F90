@@ -1329,11 +1329,11 @@
          class(tens_cache_entry_t), intent(inout):: this
 #ifndef NO_OMP
          if(.not.this%lock_initialized) then
-          if(DEBUG.gt.0) then
+          if(DEBUG.gt.1) then
            write(jo,'("New cache entry lock: ",i11," --> ")',ADVANCE='NO') this%entry_lock; flush(jo)
           endif
           call omp_init_lock(this%entry_lock); this%lock_initialized=.TRUE.
-          if(DEBUG.gt.0) then; write(jo,'(i11)') this%entry_lock; flush(jo); endif
+          if(DEBUG.gt.1) then; write(jo,'(i11)') this%entry_lock; flush(jo); endif
          endif
 #endif
          return
@@ -1344,11 +1344,11 @@
          class(tens_cache_entry_t), intent(inout):: this
 #ifndef NO_OMP
          if(this%lock_initialized) then
-          if(DEBUG.gt.0) then
+          if(DEBUG.gt.1) then
            write(jo,'("Destroying cache entry lock ",i11," ... ")',ADVANCE='NO') this%entry_lock; flush(jo)
           endif
           call omp_destroy_lock(this%entry_lock); this%lock_initialized=.FALSE.
-          if(DEBUG.gt.0) then; write(jo,'("Done")'); flush(jo); endif
+          if(DEBUG.gt.1) then; write(jo,'("Done")'); flush(jo); endif
          endif
 #endif
          return
@@ -1482,7 +1482,7 @@
               if(res.eq.GFC_NOT_FOUND) then
                call tcep%init_lock()
                call tcep%set_tensor(tensor,errc); if(errc.ne.0) errc=-9
-               if(DEBUG.gt.0.and.errc.eq.0) then
+               if(DEBUG.gt.1.and.errc.eq.0) then
                 write(jo,'("#MSG(TensorCache)[",i6,"]: Cache entry created for tensor ")') impir
                 call tensor%print_it(dev_id=jo); flush(jo)
                endif
@@ -1544,13 +1544,13 @@
           if(present(quiet)) then; ignore_evict_flag=quiet; else; ignore_evict_flag=.FALSE.; endif
           errc=dit%init(this%map)
           if(errc.eq.GFC_SUCCESS) then
-           if(DEBUG.gt.0) then
+           if(DEBUG.gt.1) then
             write(jo,'("#MSG(TensorCache)[",i6,"]: Evicting cache entry for tensor ")') impir
             call tensor%print_it(dev_id=jo); flush(jo)
            endif
            res=dit%search(GFC_DICT_DELETE_IF_FOUND,cmp_tens_descriptors,tens_descr)
            if(res.eq.GFC_FOUND) then
-            if(DEBUG.gt.0) write(jo,'("Tensor evicted")')
+            if(DEBUG.gt.1) write(jo,'("Tensor evicted")')
             tensor=>NULL(); evicted=.TRUE.
            else
             if(res.eq.GFC_NOT_FOUND) then; errc=-5; else; errc=-4; endif
@@ -1699,7 +1699,7 @@
          errc=dit%init(this%ext_data)
          if(errc.eq.GFC_SUCCESS) then
           uptr=>NULL()
-          errc=dit%search(GFC_DICT_JUST_FIND,cmp_strings,data_name,value_out=uptr)
+          errc=dit%search(GFC_DICT_FETCH_IF_FOUND,cmp_strings,data_name,value_out=uptr)
           if(errc.eq.GFC_FOUND) then
            if(associated(uptr)) then
             select type(uptr); type is(talsh_tens_data_t); extrn_data=>uptr; end select
@@ -1803,7 +1803,7 @@
          errc=dit%init(this%ext_methods)
          if(errc.eq.GFC_SUCCESS) then
           uptr=>NULL()
-          errc=dit%search(GFC_DICT_JUST_FIND,cmp_strings,method_name,value_out=uptr)
+          errc=dit%search(GFC_DICT_FETCH_IF_FOUND,cmp_strings,method_name,value_out=uptr)
           if(errc.eq.GFC_FOUND) then
            if(associated(uptr)) then
             select type(uptr); class is(tens_method_uni_t); extrn_method=>uptr; end select

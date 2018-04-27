@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/04/25
+!REVISION: 2018/04/27
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -1278,7 +1278,7 @@
          if(.not.this%initialized) call this%init(errc)
 !$OMP CRITICAL (TEREC_SPACE_REG)
          if(errc.eq.TEREC_SUCCESS) then
-          errc=this%name2id_it%search(GFC_DICT_JUST_FIND,cmp_strings,space_name,value_out=up)
+          errc=this%name2id_it%search(GFC_DICT_FETCH_IF_FOUND,cmp_strings,space_name,value_out=up)
           if(errc.eq.GFC_FOUND) then
            !if(associated(up)) then
             select type(up); type is(integer); hspace_id=int(up,INTD); class default; errc=TEREC_ERROR; end select
