@@ -2799,7 +2799,6 @@
                tensor=>tens_cache_entry%get_tensor(ier); if(ier.ne.0.and.errc.eq.0) errc=-35
                if(errc.eq.0) then
                 evicted=this%arg_cache%evict(tensor,ier); if(ier.ne.0.and.errc.eq.0) errc=-34
-                tensor=>NULL()
                endif
               endif
              enddo
@@ -4654,7 +4653,6 @@
               tensor=>tens_cache_entry%get_tensor(ier); if(ier.ne.0.and.errc.eq.0) errc=-13
               if(errc.eq.0) then
                evicted=this%arg_cache%evict(tensor,ier); if(ier.ne.0.and.errc.eq.0) errc=-12
-               tensor=>NULL()
               endif
              endif
             enddo

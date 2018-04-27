@@ -4915,17 +4915,16 @@
                      &(.not.cache_entries(i)%cache_entry%is_persistent())) then
                     tensor=>cache_entries(i)%cache_entry%get_tensor(errc)
                     if(errc.eq.0) then
+                     if(DEBUG.gt.0) call tensor%get_name(tname,l,errc)
                      evicted=this%arg_cache%evict(tensor,errc)
                      if(errc.eq.0) then
                       if(DEBUG.gt.0) then
-                       call tensor%get_name(tname,l,errc)
                        write(CONS_OUT,'("#MSG(TAVP-WRK:Resourcer)[",i6,"]: Evicted temporary tensor")',ADVANCE='NO') impir
                        write(CONS_OUT,*) tname(1:l)
                        flush(CONS_OUT)
                       endif
                      else
                       if(DEBUG.gt.0) then
-                       call tensor%get_name(tname,l,errc)
                        write(CONS_OUT,'("#ERROR(TAVP-WRK:Resourcer.restore_output)[",i6,"]: Eviction failed for tensor")',&
                             &ADVANCE='NO') impir
                        write(CONS_OUT,*) tname(1:l)

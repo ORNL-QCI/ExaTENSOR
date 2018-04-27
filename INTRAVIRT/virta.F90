@@ -1512,11 +1512,11 @@
 !If the corresponding tensor cache entry is not found,
 !no error is risen, but <evicted>=FALSE.
          implicit none
-         logical:: evicted                           !out: TRUE if the tensor cache entry has been found and evicted, FALSE otherwise
-         class(tens_cache_t), intent(inout):: this   !inout: tensor cache
-         class(tens_rcrsv_t), intent(in):: tensor    !in: tensor to find and evict from the cache
-         integer(INTD), intent(out), optional:: ierr !out: error code
-         logical, intent(in), optional:: quiet       !in: if TRUE, failure to evict cache entries with non-zero reference count will be ignored (defaults to FALSE)
+         logical:: evicted                                    !out: TRUE if the tensor cache entry has been found and evicted, FALSE otherwise
+         class(tens_cache_t), intent(inout):: this            !inout: tensor cache
+         class(tens_rcrsv_t), pointer, intent(inout):: tensor !inout: tensor to find and evict from the cache (will become NULL upon eviction)
+         integer(INTD), intent(out), optional:: ierr          !out: error code
+         logical, intent(in), optional:: quiet                !in: if TRUE, failure to evict cache entries with non-zero reference count will be ignored (defaults to FALSE)
          integer(INTD):: errc,res
          type(dictionary_iter_t):: dit
          type(tens_descr_t), target:: tens_descr
@@ -1531,13 +1531,14 @@
           if(present(quiet)) then; ignore_evict_flag=quiet; else; ignore_evict_flag=.FALSE.; endif
           errc=dit%init(this%map)
           if(errc.eq.GFC_SUCCESS) then
+           if(DEBUG.gt.0) then
+            write(jo,'("#MSG(TensorCache)[",i6,"]: Evicting cache entry for tensor ")') impir
+            call tensor%print_it(dev_id=jo); flush(jo)
+           endif
            res=dit%search(GFC_DICT_DELETE_IF_FOUND,cmp_tens_descriptors,tens_descr)
            if(res.eq.GFC_FOUND) then
-            if(DEBUG.gt.0.and.errc.eq.0) then
-             write(jo,'("#MSG(TensorCache)[",i6,"]: Cache entry evicted for tensor ")') impir
-             call tensor%print_it(dev_id=jo); flush(jo)
-            endif
-            evicted=.TRUE.
+            if(DEBUG.gt.0) write(jo,'("Tensor evicted")')
+            tensor=>NULL(); evicted=.TRUE.
            else
             if(res.eq.GFC_NOT_FOUND) then; errc=-5; else; errc=-4; endif
            endif
