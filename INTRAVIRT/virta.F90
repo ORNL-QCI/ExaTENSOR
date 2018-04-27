@@ -227,7 +227,8 @@
          integer(INTD), private:: temp_count=0                  !temporary count: Number of temporary tensors stemmed from this tensor cache entry (used for output rename)
          logical, private:: persistent=.FALSE.                  !persistency flag (persistent cache entries can only be evicted via an explicit TENS_DESTROY)
 #ifndef NO_OMP
-         integer(omp_lock_kind), private:: entry_lock           !tensor cache entry lock
+         integer(omp_lock_kind), private:: entry_lock=-1        !tensor cache entry lock
+         logical, private:: lock_initialized=.FALSE.            !lock initialization status
 #endif
          contains
           procedure, public:: is_set=>TensCacheEntryIsSet                 !returns TRUE if the tensor cache entry is set (constructed)
@@ -1327,7 +1328,13 @@
          implicit none
          class(tens_cache_entry_t), intent(inout):: this
 #ifndef NO_OMP
-         call omp_init_lock(this%entry_lock)
+         if(.not.this%lock_initialized) then
+          if(DEBUG.gt.0) then
+           write(jo,'("New cache entry lock: ",i11," --> ")',ADVANCE='NO') this%entry_lock; flush(jo)
+          endif
+          call omp_init_lock(this%entry_lock); this%lock_initialized=.TRUE.
+          if(DEBUG.gt.0) then; write(jo,'(i11)') this%entry_lock; flush(jo); endif
+         endif
 #endif
          return
         end subroutine TensCacheEntryInitLock
@@ -1336,7 +1343,13 @@
          implicit none
          class(tens_cache_entry_t), intent(inout):: this
 #ifndef NO_OMP
-         call omp_destroy_lock(this%entry_lock)
+         if(this%lock_initialized) then
+          if(DEBUG.gt.0) then
+           write(jo,'("Destroying cache entry lock ",i11," ... ")',ADVANCE='NO') this%entry_lock; flush(jo)
+          endif
+          call omp_destroy_lock(this%entry_lock); this%lock_initialized=.FALSE.
+          if(DEBUG.gt.0) then; write(jo,'("Done")'); flush(jo); endif
+         endif
 #endif
          return
         end subroutine TensCacheEntryDestroyLock
