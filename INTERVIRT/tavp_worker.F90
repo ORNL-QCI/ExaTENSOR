@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/04/27
+!REVISION: 2018/04/28
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -1161,7 +1161,7 @@
               endif
  !Resolve tensor dimensions, if not resolved:
               if(errc.eq.0) then
-               errc=tens_dim_resolve(tens)
+               errc=tens_dim_extent_resolve(tens)
  !Set physical layout:
                if(errc.eq.TEREC_SUCCESS) then
                 call tens%set_layout(TEREC_LAY_FDIMS,errc)
@@ -4125,7 +4125,7 @@
            if(ier.ne.PACK_SUCCESS.and.errc.eq.0) then; errc=-13; exit wloop; endif
            call comm_hl%wait(ier); if(ier.ne.PACK_SUCCESS.and.errc.eq.0) then; errc=-12; exit wloop; endif
            call comm_hl%clean(ier); if(ier.ne.PACK_SUCCESS.and.errc.eq.0) then; errc=-11; exit wloop; endif
-           call this%bytecode%destroy(ier); if(ier.ne.PACK_SUCCESS.and.errc.eq.0) then; errc=-10; exit wloop; endif
+           call this%bytecode%clean(ier); if(ier.ne.PACK_SUCCESS.and.errc.eq.0) then; errc=-10; exit wloop; endif
           endif
           if(DEBUG.gt.0.and.num_processed.gt.0) then
            write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Retirer unit ",i2," retired ",i6," instructions")')&

@@ -1,7 +1,7 @@
 !PROJECT Q-FORCE: Massively Parallel Quantum Many-Body Methodology on Heterogeneous HPC systems.
 !BASE: ExaTensor: Massively Parallel Tensor Algebra Virtual Processor for Heterogeneous HPC systems.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/03/29
+!REVISION: 2018/04/28
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -56,6 +56,7 @@
         integer(INT_MPI):: mpi_th_provided
         integer(INTD):: ierr,i,my_rank,comm_size,ao_space_id,my_role
         integer(INTL):: l,ao_space_root
+        real(8):: tms,tmf
 
 !Application initializes MPI:
         call MPI_Init_Thread(MPI_THREAD_MULTIPLE,mpi_th_provided,ierr)
@@ -64,7 +65,7 @@
          call MPI_Comm_rank(MPI_COMM_WORLD,my_rank,ierr)
 !Application creates a basis for a vector space:
          if(my_rank.eq.comm_size-1) then
-          write(jo,'("Creating a basis for a hierarchical vector space ... ")',ADVANCE='NO'); flush(jo)
+          write(*,'("Creating a basis for a hierarchical vector space ... ")',ADVANCE='NO'); flush(6)
          endif
          call basis%subspace_basis_ctor(TEST_SPACE_DIM,ierr)
          if(ierr.ne.0) call quit(ierr,'subspace_basis_t.subspace_basis_ctor() failed!')
@@ -76,14 +77,14 @@
          enddo
          call basis%finalize(ierr)
          if(ierr.ne.0) call quit(ierr,'subspace_basis_t.finalize() failed!')
-         if(my_rank.eq.comm_size-1) then; write(jo,'("Ok")'); flush(jo); endif
+         if(my_rank.eq.comm_size-1) then; write(*,'("Ok")'); flush(6); endif
 !Application registers a vector space:
          if(my_rank.eq.comm_size-1) then
-          write(jo,'("Registering the hierarchical vector space ... ")',ADVANCE='NO'); flush(jo)
+          write(*,'("Registering the hierarchical vector space ... ")',ADVANCE='NO'); flush(6)
          endif
          ierr=exatns_space_register('AO_space',basis,ao_space_id,ao_space)
          if(ierr.ne.0) call quit(ierr,'exatns_space_register() failed!')
-         if(my_rank.eq.comm_size-1) then; write(jo,'("Ok")'); flush(jo); endif
+         if(my_rank.eq.comm_size-1) then; write(*,'("Ok")'); flush(6); endif
 !Application runs ExaTENSOR within MPI_COMM_WORLD:
          ierr=exatns_start(MPI_COMM_WORLD)
          if(ierr.eq.EXA_SUCCESS) then
@@ -93,36 +94,39 @@
  !Create tensors:
            ao_space_root=ao_space%get_root_id(ierr)
            if(ierr.ne.0) call quit(ierr,'h_space_t%get_root_id() failed!')
-           write(jo,'("Creating tensor dtens over the hierarchical vector space ... ")',ADVANCE='NO'); flush(jo)
+           write(*,'("Creating tensor dtens over the hierarchical vector space ... ")',ADVANCE='NO'); flush(6)
+           tms=MPI_Wtime()
            ierr=exatns_tensor_create(dtens,'dtens',(/(ao_space_id,i=1,2)/),(/(ao_space_root,i=1,2)/),EXA_DATA_KIND_R8)
            if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_create() failed!')
-           write(jo,'("Ok")'); flush(jo)
-           !write(jo,'("Creating tensor ltens over the hierarchical vector space ... ")',ADVANCE='NO'); flush(jo)
+           ierr=exatns_sync(); if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_sync() failed!')
+           tmf=MPI_Wtime()
+           write(*,'("Ok: ",F16.4," sec")') tmf-tms; flush(6)
+           !write(*,'("Creating tensor ltens over the hierarchical vector space ... ")',ADVANCE='NO'); flush(6)
            !ierr=exatns_tensor_create(ltens,'ltens',(/(ao_space_id,i=1,4)/),(/(ao_space_root,i=1,4)/),EXA_DATA_KIND_R8)
            !if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_create() failed!')
-           !write(jo,'("Ok")'); flush(jo)
-           !write(jo,'("Creating tensor rtens over the hierarchical vector space ... ")',ADVANCE='NO'); flush(jo)
+           !write(*,'("Ok")'); flush(6)
+           !write(*,'("Creating tensor rtens over the hierarchical vector space ... ")',ADVANCE='NO'); flush(6)
            !ierr=exatns_tensor_create(rtens,'rtens',(/(ao_space_id,i=1,4)/),(/(ao_space_root,i=1,4)/),EXA_DATA_KIND_R8)
            !if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_create() failed!')
-           !write(jo,'("Ok")'); flush(jo)
+           !write(*,'("Ok")'); flush(6)
  !Contract tensors:
-           !write(jo,'("Contracting tensors ... ")',ADVANCE='NO'); flush(jo)
+           !write(*,'("Contracting tensors ... ")',ADVANCE='NO'); flush(6)
            !ierr=exatns_tensor_contract(dtens,ltens,rtens,'D(a,b,c,d)+=L(d,i,b,j)*R(j,c,i,a)')
            !if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_contract() failed!')
-           !write(jo,'("Ok")'); flush(jo)
+           !write(*,'("Ok")'); flush(6)
  !Destroy tensors:
-           !write(jo,'("Destroying tensor rtens ... ")',ADVANCE='NO'); flush(jo)
+           !write(*,'("Destroying tensor rtens ... ")',ADVANCE='NO'); flush(6)
            !ierr=exatns_tensor_destroy(rtens)
            !if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_destroy() failed!')
-           !write(jo,'("Ok")'); flush(jo)
-           !write(jo,'("Destroying tensor ltens ... ")',ADVANCE='NO'); flush(jo)
+           !write(*,'("Ok")'); flush(6)
+           !write(*,'("Destroying tensor ltens ... ")',ADVANCE='NO'); flush(6)
            !ierr=exatns_tensor_destroy(ltens)
            !if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_destroy() failed!')
-           !write(jo,'("Ok")'); flush(jo)
-           !write(jo,'("Destroying tensor dtens ... ")',ADVANCE='NO'); flush(jo)
+           !write(*,'("Ok")'); flush(6)
+           !write(*,'("Destroying tensor dtens ... ")',ADVANCE='NO'); flush(6)
            !ierr=exatns_tensor_destroy(dtens)
            !if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_destroy() failed!')
-           !write(jo,'("Ok")'); flush(jo)
+           !write(*,'("Ok")'); flush(6)
  !Stop ExaTENSOR runtime:
            !ierr=exatns_stop()
            do while(.TRUE.); enddo !debug
@@ -131,7 +135,7 @@
           write(*,*) 'Process ',my_rank,' terminated with error ',ierr
          endif
         else
-         write(*,*) 'Your MPI library does not support MPI_THREAD_MULTIPLE!'
+         write(*,*) 'Your MPI library does not support MPI_THREAD_MULTIPLE! Change it!'
         endif
 !Application finalizes MPI:
         call MPI_Finalize(ierr)

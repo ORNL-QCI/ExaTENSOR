@@ -1,7 +1,7 @@
 !ExaTENSOR: Massively Parallel Virtual Processor for Scale-Adaptive Hierarchical Tensor Algebra
 !This is the top level API module of ExaTENSOR (user-level API)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2018/03/27
+!REVISION: 2018/04/28
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -24,12 +24,13 @@
       module exatensor
 !ExaTENSOR implements a domain-specific virtual processor specialized
 !for numerical tensor algebra workloads. The entire HPC system is
-!recursively virtualized as a hierarchical virtual processor.
+!recursively virtualized as a hierarchical virtual tensor processor.
 !This hierarchical virtual processor is then mapped onto the original
 !set of MPI processes where each MPI process receieves a specific role:
 ! MPI processes [0..W-1]: TAVP-WRK/TAVP-HLP: Numerical workload;
 ! MPI processes [W..W+M-1]: TAVP-MNG: Task creation and scheduling;
 ! MPI process (W+M) (last MPI process): Driving process (interpreter).
+!Thus, there are W data processors, M metadata processors, and 1 driver.
        use tavp_manager, tens_instr_mng_t=>tens_instr_t
        use tavp_worker, tens_instr_wrk_t=>tens_instr_t
        use virta
@@ -87,18 +88,23 @@
  !ExaTENSOR runtime status:
        type(exatns_rt_status_t), private:: exatns_rt_status
  !TAVP global composition (set by exatns_start):
-       integer(INTD), protected:: exa_num_drivers=0  !number of the driver processes
+       integer(INTD), protected:: exa_num_drivers=0  !number of the driver processes (1)
        integer(INTD), protected:: exa_num_managers=0 !number of the manager processes
        integer(INTD), protected:: exa_num_workers=0  !number of the worker processes
        integer(INTD), protected:: exa_num_helpers=0  !number of the helper processes
  !TAVP instance (allocated one per MPI process):
        class(dsvp_t), allocatable, private:: tavp
- !Tensor instruction log:
+ !Tensor instruction log (recorded instructions by Driver):
        type(vector_t), private:: instructions
        type(vector_iter_t), private:: instr_log
+       integer(INTL), protected:: num_tens_instr_issued=0 !number of tensor instructions issued by the Driver (excludes control and auxiliary instructions)
+       integer(INTL), protected:: num_tens_instr_synced=0 !number of tensor instructions synchronized on completion (excludes control and auxiliary instructions)
+ !Reusable bytecode buffers (for Driver):
+       type(pack_env_t), private:: bytecode_out !outgoing bytecode buffer
+       type(pack_env_t), private:: bytecode_in  !incoming bytecode buffer
 !VISIBILITY:
  !External methods/data (called by All before exatns_start()):
-       public exatns_dim_resolution_setup    !sets up the universal tensor dimension resolution function which determines the actual shape of tensor blocks
+       public exatns_dim_resolution_setup    !sets up the universal tensor dimension extent resolution function which determines the actual shape of tensor blocks
        public exatns_dim_strength_setup      !sets up the universal tensor dimension strength assessing function and threshold (guides recursive tensor dimension splitting)
        public exatns_dim_strength_thresh_set !sets the tensor dimension strength threshold above which the dimension will split (guides recursive tensor dimension splitting)
        public exatns_method_register         !registers an external method (it has to adhere to a predefined interface)
@@ -108,12 +114,13 @@
  !Control:
        public exatns_start                !starts the ExaTENSOR DSVP (called by All)
        public exatns_stop                 !stops the ExaTENSOR DSVP (Driver only)
+       public exatns_sync                 !synchronizes the ExaTENSOR DSVP such that all previously issued tensor instructions will be completed (Driver only)
        public exatns_process_role         !returns the role of the current MPI process (called by Any)
        public exatns_status               !returns the status of the ExaTENSOR runtime plus statistics, if needed (Driver only)
  !Parser/interpreter (Driver only):
        public exatns_interpret            !interprets TAProL code (string of TAProL statements)
        public exatns_symbol_exists        !checks whether a specific identifier is registered (if yes, returns its attributes)
- !Hierarchical vector space (either called by All or by Driver only):
+ !Hierarchical vector space (either called by All before start or then by Driver only):
        public exatns_space_register       !registers a vector space
        public exatns_space_unregister     !unregisters a vector space
        public exatns_space_status         !returns the status of the vector space
@@ -156,7 +163,7 @@
         procedure(tens_rcrsv_dim_resolve_i):: dim_resolution_f !in: tensor dimension extent resolution function
 
         ierr=EXA_SUCCESS
-        tens_dim_resolve=>dim_resolution_f
+        tens_dim_extent_resolve=>dim_resolution_f
         return
        end function exatns_dim_resolution_setup
 !-------------------------------------------------------------------------------------
@@ -307,7 +314,7 @@
            call quit(-1,'#FATAL(exatensor): Unexpected process role during intercommunicator creation!')
           end select
           if(errc.eq.0) then
-           write(jo,'("Done: Comm = ",i11,1x,i11)') drv_mng_comm,mng_wrk_comm
+           write(jo,'("Done: (Drv,Mng) = ",i11,", (Mng,Wrk) = ",i11)') drv_mng_comm,mng_wrk_comm
           else
            write(jo,'("Failed: Error ",i11)') errc
            call dil_process_finish(errc)
@@ -324,7 +331,7 @@
          ierr=-7; return
         endif
 !Set the default universal tensor dimension strength assessing and shape resolution functions, if none preset by a user earlier:
-        if(.not.associated(tens_dim_resolve)) errc=exatns_dim_resolution_setup(tens_rcrsv_dim_resolve_default)
+        if(.not.associated(tens_dim_extent_resolve)) errc=exatns_dim_resolution_setup(tens_rcrsv_dim_resolve_default)
         if(.not.associated(tens_dim_strength_assess)) errc=exatns_dim_strength_setup(tens_rcrsv_dim_strength_default,0d0)
 !Sync all MPI processes before configuring and launching TAVPs:
         call dil_global_comm_barrier(errc); if(errc.ne.0) then; call dil_process_finish(errc); ierr=-8; return; endif
@@ -334,6 +341,8 @@
         ierr=EXA_SUCCESS
         if(process_role.eq.EXA_DRIVER) then
          ierr=instr_log%init(instructions); if(ierr.ne.GFC_SUCCESS) ierr=-9
+         call bytecode_out%reserve_mem(ierr); if(ierr.ne.0) ierr=-10
+         call bytecode_in%reserve_mem(ierr); if(ierr.ne.0) ierr=-11
          return !Driver process returns immediately, it will later call exatns_stop()
         elseif(process_role.eq.EXA_MANAGER) then
          call tavp_mng_reset_output(jo)
@@ -364,19 +373,19 @@
         write(jo,'("###EXATENSOR FINISHED PROCESS ",i9,"/",i9,": Status = ",i11,": Syncing ... ")',ADVANCE='NO')&
              &dil_global_process_id(),dil_global_comm_size(),ierr
         call dil_global_comm_barrier(errc)
-        if(errc.eq.0) then; write(jo,'("Ok")'); else; write(jo,'("Failed")'); ierr=-10; endif
+        if(errc.eq.0) then; write(jo,'("Ok")'); else; write(jo,'("Failed")'); ierr=-12; endif
 !Free role specific MPI communicators:
         if(drv_mng_comm.ne.MPI_COMM_NULL) then
-         call MPI_Comm_free(drv_mng_comm,errc); if(errc.ne.0.and.ierr.eq.0) ierr=-11
+         call MPI_Comm_free(drv_mng_comm,errc); if(errc.ne.0.and.ierr.eq.0) ierr=-13
         endif
         if(mng_wrk_comm.ne.MPI_COMM_NULL) then
-         call MPI_Comm_free(mng_wrk_comm,errc); if(errc.ne.0.and.ierr.eq.0) ierr=-12
+         call MPI_Comm_free(mng_wrk_comm,errc); if(errc.ne.0.and.ierr.eq.0) ierr=-14
         endif
         if(role_comm.ne.MPI_COMM_NULL) then
-         call MPI_Comm_free(role_comm,errc); if(errc.ne.0.and.ierr.eq.0) ierr=-13
+         call MPI_Comm_free(role_comm,errc); if(errc.ne.0.and.ierr.eq.0) ierr=-15
         endif
 !Finish the MPI process:
-        call dil_process_finish(errc); if(errc.ne.0.and.ierr.eq.0) ierr=-14
+        call dil_process_finish(errc); if(errc.ne.0.and.ierr.eq.0) ierr=-16
         return
 
         contains
@@ -584,14 +593,17 @@
          write(jo,'(i11)') ip !new instruction id number
          call tens_instr%tens_instr_ctor(TAVP_INSTR_CTRL_STOP,ierr,iid=ip)
          if(ierr.eq.0) then
-          call issue_new_instruction(tens_instr,ierr); if(ierr.ne.0) ierr=-11
-          call tens_instr%set_status(DS_INSTR_RETIRED,errc); if(errc.ne.DSVP_SUCCESS.and.ierr.eq.0) ierr=-10
+          call issue_new_instruction(tens_instr,ierr); if(ierr.ne.0) ierr=-14
+          call tens_instr%set_status(DS_INSTR_RETIRED,errc); if(errc.ne.DSVP_SUCCESS.and.ierr.eq.0) ierr=-13
           tens_instr=>NULL()
-          errc=instr_log%delete_all(); if(errc.ne.GFC_SUCCESS.and.ierr.eq.0) ierr=-9
-          errc=instr_log%release(); if(errc.ne.GFC_SUCCESS.and.ierr.eq.0) ierr=-8
+          errc=exatns_sync(); if(errc.ne.EXA_SUCCESS.and.ierr.eq.0) ierr=-12
+          errc=instr_log%delete_all(); if(errc.ne.GFC_SUCCESS.and.ierr.eq.0) ierr=-11
+          errc=instr_log%release(); if(errc.ne.GFC_SUCCESS.and.ierr.eq.0) ierr=-10
+          call bytecode_in%destroy(errc); if(errc.ne.0.and.ierr.eq.0) ierr=-9
+          call bytecode_out%destroy(errc); if(errc.ne.0.and.ierr.eq.0) ierr=-8
 !Mark the ExaTENSOR runtime is off:
           exatns_rt_status=exatns_rt_status_t(DSVP_STAT_OFF,ierr,0,ip+1_INTL)
-!Sync with others:
+!Sync with others globally:
           write(jo,'()')
           write(jo,'("###EXATENSOR FINISHED PROCESS ",i9,"/",i9,": Status = ",i11,": Syncing ... ")',ADVANCE='NO')&
                &dil_global_process_id(),dil_global_comm_size(),ierr
@@ -618,6 +630,30 @@
         if(ierr.ne.0) write(jo,'(" Failed!")')
         return
        end function exatns_stop
+!-----------------------------------------
+       function exatns_sync() result(ierr) !Driver only
+!Synchronizes the ExaTENSOR DSVP such that all previously issued tensor instructions will be completed.
+        implicit none
+        integer(INTD):: ierr !out: error code
+        type(comm_handle_t):: comm_hl
+        logical:: new
+
+        ierr=EXA_SUCCESS; call comm_hl%clean(ierr)
+        if(ierr.eq.0) then
+         wloop: do while(num_tens_instr_synced.lt.num_tens_instr_issued)
+          new=bytecode_in%receive(comm_hl,ierr,0,TAVP_COLLECT_TAG,drv_mng_comm) !receive bytecode from the root TAVP-MNG
+          if(new) then
+           call comm_hl%wait(ierr); if(ierr.ne.0) then; ierr=EXA_ERR_UNABLE_COMPLETE; exit wloop; endif
+           num_tens_instr_synced=num_tens_instr_synced+bytecode_in%get_num_packets()
+          endif
+          call comm_hl%clean(ierr); if(ierr.ne.0) then; ierr=EXA_ERR_UNABLE_COMPLETE; exit wloop; endif
+         enddo wloop
+         call bytecode_in%clean(ierr); if(ierr.ne.0) ierr=EXA_ERR_MEM_FREE_FAIL
+        else
+         ierr=EXA_ERR_UNABLE_COMPLETE
+        endif
+        return
+       end function exatns_sync
 !----------------------------------------------------------------
        function exatns_process_role(role,role_total) result(ierr)
 !Returns the role of the current MPI process.
@@ -1283,7 +1319,7 @@
 ! EXA_MANAGER: [exa_num_workers:exa_num_workers+exa_num_managers-1];
 ! EXA_DRIVER: [exa_num_workers+exa_num_managers:total_number_of_mpi_processes-1].
         implicit none
-        integer(INTD):: id                          !out: TAVP role-specific rank
+        integer(INTD):: id                          !out: TAVP role-specific rank (within role intracommunicator)
         integer(INTD), intent(in):: global_rank     !in: global MPI rank of the TAVP
         integer(INTD), intent(out), optional:: role !out: TAVP role
 
@@ -1345,27 +1381,23 @@
         implicit none
         class(tens_instr_mng_t), intent(in):: new_instr !in: new instruction
         integer(INTD), intent(out), optional:: ierr     !out: error code
-        integer(INTD):: errc,ier
-        type(pack_env_t):: bytecode
+        integer(INTD):: errc,ier,opcode
         type(obj_pack_t):: instr_packet
         type(comm_handle_t):: comm_hl
 
-        call bytecode%reserve_mem(errc)
+        call bytecode_out%acquire_packet(instr_packet,errc)
         if(errc.eq.0) then
-         call bytecode%acquire_packet(instr_packet,errc)
+         opcode=new_instr%get_code()
+         call new_instr%encode(instr_packet,errc)
          if(errc.eq.0) then
-          call new_instr%encode(instr_packet,errc)
+          call bytecode_out%seal_packet(errc)
           if(errc.eq.0) then
-           call bytecode%seal_packet(errc)
+           call bytecode_out%send(0,comm_hl,errc,tag=TAVP_DISPATCH_TAG,comm=drv_mng_comm) !send to root TAVP-MNG
            if(errc.eq.0) then
-            call bytecode%send(0,comm_hl,errc,tag=TAVP_DISPATCH_TAG,comm=drv_mng_comm)
+            call comm_hl%wait(errc)
             if(errc.eq.0) then
-             call comm_hl%wait(errc)
-             if(errc.eq.0) then
-              call comm_hl%clean(errc); if(errc.ne.0) errc=-8
-             else
-              errc=-7
-             endif
+             if(opcode.ge.TAVP_ISA_TENS_FIRST.and.opcode.le.TAVP_ISA_TENS_LAST) num_tens_instr_issued=num_tens_instr_issued+1
+             call comm_hl%clean(errc); if(errc.ne.0) errc=-7
             else
              errc=-6
             endif
@@ -1378,10 +1410,10 @@
          else
           errc=-3
          endif
-         call bytecode%destroy(ier); if(ier.ne.0.and.errc.eq.0) errc=-2
         else
-         errc=-1
+         errc=-2
         endif
+        call bytecode_out%clean(ier); if(ier.ne.0.and.errc.eq.0) errc=-1
         if(present(ierr)) ierr=errc
         return
        end subroutine issue_new_instruction

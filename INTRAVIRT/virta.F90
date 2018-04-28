@@ -8,7 +8,7 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/04/27
+!REVISION: 2018/04/28
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -332,7 +332,7 @@
         integer(INT_MPI), public:: drv_mng_comm=MPI_COMM_NULL !MPI intercommunicator for the driver and managers
         integer(INT_MPI), public:: mng_wrk_comm=MPI_COMM_NULL !MPI intercommunicator for managers and workers
  !External universal tensor dimension strength assessing and shape resolution:
-        procedure(tens_rcrsv_dim_resolve_i), pointer, public:: tens_dim_resolve=>NULL()          !resolves tensor dimension extents (determines actual shape of tensor blocks)
+        procedure(tens_rcrsv_dim_resolve_i), pointer, public:: tens_dim_extent_resolve=>NULL() !resolves tensor dimension extents (determines actual shape of tensor blocks)
         procedure(tens_rcrsv_dim_strength_i), pointer, public:: tens_dim_strength_assess=>NULL() !assesses the strength of tensor dimensions
         real(8), public:: tens_dim_strength_thresh=0d0 !tensor dimension strength threshold above which the dimension will split (fine tensor decomposition granularity control)
  !External data register:
