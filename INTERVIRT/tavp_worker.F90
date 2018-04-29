@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/04/28
+!REVISION: 2018/04/29
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -3708,7 +3708,7 @@
            if(opcode.eq.TAVP_INSTR_CTRL_STOP) then !only STOP instruction is expected
             stopping=.TRUE.
            else
-            if(opcode.ne.TAVP_INSTR_CTRL_RESUME) then !`RESUME currently does nothing
+            if(opcode.ne.TAVP_INSTR_CTRL_RESUME) then
              if(errc.eq.0) then; errc=-4; exit wloop; endif
             endif
            endif

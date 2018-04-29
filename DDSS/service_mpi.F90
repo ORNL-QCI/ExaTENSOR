@@ -1,6 +1,6 @@
 !This module provides general services for MPI parallel programs.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/02/07
+!REVISION: 2018/04/29
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -302,9 +302,10 @@
          call quit(ierr,'#ERROR(ExaTensor::service_mpi::dil_process_start): Intermediate MPI_BARRIER failure!',comm_imported)
          return
         endif
+        flush(jo)
 !Clear the process status if no error:
         exec_status=ierr
-        if(ierr.eq.0) process_up=.true.
+        if(ierr.eq.0) process_up=.TRUE.
         return
 !------------------------------------------------------------------------------------------------------------------
 2000    call quit(-1,'#ERROR(ExaTensor::service_mpi::dil_process_start): unable to open a log file!',comm_imported)

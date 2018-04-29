@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/04/28
+!REVISION: 2018/04/29
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -124,6 +124,7 @@
         integer(INTD), private:: MAX_DECOMPOSE_CHLD_INSTR=16384 !max number of created child instructions in the decomposition phase
         real(8), private:: MAX_DECOMPOSE_PHASE_TIME=0.5d-3      !max time (sec) before passing instructions to Dispatcher
  !Dispatcher:
+        logical, private:: DISPATCH_RANDOM=.TRUE.               !if TRUE the round-robin dispatch will be replaced by the random dispatch
         integer(INTD), private:: MAX_ISSUE_INSTR=4096           !max number of tensor instructions in the bytecode issued to a child node
         integer(INTD), private:: MIN_ISSUE_INSTR=512            !min number of tensor instructions being currently processed by a child node
  !Collector:
@@ -162,6 +163,7 @@
           procedure, public:: get_owner_id=>TensOprndGetOwnerId          !returns the tensor owner id
           procedure, public:: set_owner_id=>TensOprndSetOwnerId          !sets the tensor owner id (with or without cache update)
           procedure, public:: sync_owner_id=>TensOprndSyncOwnerId        !synchronizes the tensor owner id between public cache and private reference
+          procedure, public:: get_data_descriptor=>TensOprndGetDataDescriptor !returns a pointer to the tensor data descriptor or NULL if not available yet
           procedure, public:: register_read=>TensOprndRegisterRead       !registers a new read access on the tensor operand
           procedure, public:: unregister_read=>TensOprndUnregisterRead   !unregisters a read access on the tensor operand
           procedure, public:: get_read_count=>TensOprndGetReadCount      !returns the current read access count on the tensor operand
@@ -300,6 +302,7 @@
          type(pack_env_t), allocatable, private:: bytecode(:)       !outgoing bytecode buffer for each dispatched MPI rank
          type(comm_handle_t), allocatable, private:: comm_hl(:)     !communication handle for each dispatched MPI rank
          class(tens_cache_t), pointer, private:: arg_cache=>NULL()  !non-owning pointer to the tensor argument cache
+         integer(INTD), private:: next_channel=1                    !next channel to dispatch to in the round-robin dispatch
          logical, private:: tavp_is_bottom                          !TRUE if the unit belongs to the bottom TAVP-MNG, FALSE otherwise
          contains
           procedure, public:: configure=>TAVPMNGDispatcherConfigure  !configures TAVP-MNG dispatcher
@@ -423,6 +426,7 @@
         private TensOprndGetOwnerId
         private TensOprndSetOwnerId
         private TensOprndSyncOwnerId
+        private TensOprndGetDataDescriptor
         private TensOprndRegisterRead
         private TensOprndUnregisterRead
         private TensOprndGetReadCount
@@ -838,6 +842,43 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensOprndSyncOwnerId
+!-------------------------------------------------------------------
+        function TensOprndGetDataDescriptor(this,ierr) result(descr)
+!Returns a pointer to the tensor data descriptor or NULL if not available yet (not an error).
+         implicit none
+         class(DataDescr_t), pointer:: descr         !out: pointer to the tensor data descriptor
+         class(tens_oprnd_t), intent(in):: this      !in: active tensor operand
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+         class(tens_rcrsv_t), pointer:: tensor
+         class(tens_layout_t), pointer:: layout
+         logical:: locd
+
+         descr=>NULL()
+         tensor=>this%get_tensor(errc)
+         if(errc.eq.0) then
+          if(tensor%is_set(errc,located=locd)) then
+           if(errc.eq.TEREC_SUCCESS) then
+            if(locd) then
+             layout=>tensor%get_layout(errc)
+             if(errc.eq.TEREC_SUCCESS) then
+              descr=>layout%get_data_descr(errc); if(errc.ne.TEREC_SUCCESS) errc=-5
+             else
+              errc=-4
+             endif
+            endif
+           else
+            errc=-3
+           endif
+          else
+           errc=-2
+          endif
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function TensOprndGetDataDescriptor
 !--------------------------------------------------
         subroutine TensOprndRegisterRead(this,ierr)
 !Registers a read access on the tensor operand. In case the tensor
@@ -2067,7 +2108,7 @@
            if(opcode.eq.TAVP_INSTR_CTRL_STOP) then !only STOP instruction is expected
             stopping=.TRUE.
            else
-            if(opcode.ne.TAVP_INSTR_CTRL_RESUME) then !`RESUME currently does nothing
+            if(opcode.ne.TAVP_INSTR_CTRL_RESUME) then
              if(errc.eq.0) then; errc=-4; exit wloop; endif
             endif
            endif
@@ -3868,8 +3909,8 @@
 
          errc=0; thid=omp_get_thread_num()
          if(DEBUG.gt.0) then
-          write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Dispatcher started as DSVU # ",i2," (thread ",i2,") with ",i3," channels")')&
-          &impir,this%get_id(),thid,this%num_ranks
+          write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Dispatcher started as DSVU # ",i2," (thread ",i2,'//&
+          &'") with ",i4," channels over communicator ",i11)') impir,this%get_id(),thid,this%num_ranks,this%dispatch_comm
           flush(CONS_OUT)
          endif
 !Reserve bytecode buffers and clean communication handles:
@@ -3891,6 +3932,8 @@
          else
           if(errc.eq.0) errc=-26
          endif
+!Reset the next channel for the round-robin dispatch:
+         this%next_channel=1 !channels: [1:this%num_ranks]
 !Initialize queues:
          call this%init_queue(this%num_ports,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-25
 !Set up tensor argument cache and wait on other TAVP units:
@@ -4052,6 +4095,7 @@
          integer(INTD):: errc,i,num_args
          class(ds_oprnd_t), pointer:: tens_oprnd
          integer(INTD):: owner_ids(0:MAX_TENSOR_OPERANDS-1)
+         class(DataDescr_t), pointer:: descr
 
          channel=-1 !negative value means undefined
          if(tens_instr%is_active(errc)) then
@@ -4064,8 +4108,24 @@
              if(errc.eq.DSVP_SUCCESS) then
               select type(tens_oprnd)
               class is(tens_oprnd_t)
-               owner_ids(i)=tens_oprnd%get_owner_id(errc)
-               if(errc.ne.0) then; errc=-7; exit; endif
+               if(this%tavp_is_bottom) then
+                descr=>tens_oprnd%get_data_descriptor(errc)
+                if(errc.eq.0) then
+                 if(associated(descr)) then
+                  if(descr%is_set(errc,proc_rank=owner_ids(i))) then
+                   if(errc.ne.0) then; errc=-10; exit; endif
+                  else
+                   owner_ids(i)=-1 !data descriptor is not set yet
+                  endif
+                 else
+                  owner_ids(i)=-1 !data descriptor is not set yet
+                 endif
+                else
+                 errc=-8; exit
+                endif
+               else
+                owner_ids(i)=tens_oprnd%get_owner_id(errc); if(errc.ne.0) then; errc=-7; exit; endif
+               endif
               class default
                errc=-6; exit
               end select
@@ -4092,27 +4152,44 @@
         contains
 
          function map_by_arg_order(jerr) result(chnl)
+          !Selects the dispatch channel by argument locality with argument
+          !priority following the ascending argument order: 0,1,2,...
           implicit none
-          integer(INTD):: chnl
-          integer(INTD), intent(out):: jerr
+          integer(INTD):: chnl              !out: dispatch channel
+          integer(INTD), intent(out):: jerr !out: error code
           integer(INTD):: ja,jj
           logical:: jf
 
-          jerr=0; chnl=-1; jf=.FALSE.
+          jerr=0; chnl=-1
           aloop: do ja=0,num_args-1
            do jj=lbound(this%dispatch_rank,1),ubound(this%dispatch_rank,1)
-            jf=owner_ids(ja).eq.this%dispatch_rank(jj) !`Wrong for bottom TAVP-MNG: owner_id is a TAVP-MNG id, but dispatch_rank() will point to TAVP-WRK id for bottom TAVP-MNG
-            if(jf) then; chnl=jj; exit aloop; endif
+            if(owner_ids(ja).eq.this%dispatch_rank(jj)) then; chnl=jj; exit aloop; endif
            enddo
           enddo aloop
-          if(.not.jf) chnl=map_by_random(jerr)
+          if(chnl.lt.0) then
+           if(DISPATCH_RANDOM) then
+            chnl=map_by_random(jerr)
+           else
+            chnl=map_by_round(jerr)
+           endif
+          endif
           return
          end function map_by_arg_order
 
+         function map_by_round(jerr) result(chnl)
+          implicit none
+          integer(INTD):: chnl              !out: dispatch channel
+          integer(INTD), intent(out):: jerr !out: error code
+
+          jerr=0; chnl=this%next_channel
+          this%next_channel=1+mod(this%next_channel,this%num_ranks)
+          return
+         end function map_by_round
+
          function map_by_random(jerr) result(chnl)
           implicit none
-          integer(INTD):: chnl
-          integer(INTD), intent(out):: jerr
+          integer(INTD):: chnl              !out: dispatch channel
+          integer(INTD), intent(out):: jerr !out: error code
           integer(INTD):: js
           real(8):: jdelta,jrnd
 
