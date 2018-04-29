@@ -8,7 +8,7 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/04/28
+!REVISION: 2018/04/29
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -140,6 +140,7 @@
    !General control [0-15]:
         integer(INTD), parameter, public:: TAVP_INSTR_CTRL_RESUME=0     !resume TAVP execution (used for special purposes or has no effect)
         integer(INTD), parameter, public:: TAVP_INSTR_CTRL_STOP=1       !stop TAVP (finishes current instructions and shuts down TAVP)
+        integer(INTD), parameter, public:: TAVP_INSTR_CTRL_DUMP_CACHE=2 !dumps the cache of each TAVP into the log file
    !Auxiliary space definitions [16-63]:
         integer(INTD), parameter, public:: TAVP_INSTR_SPACE_CREATE=16   !create a (hierarchical) vector space
         integer(INTD), parameter, public:: TAVP_INSTR_SPACE_DESTROY=17  !destroy a (hierarchical) vector space
@@ -351,6 +352,9 @@
         public tensor_name_unmangle_temporary
         public tensor_name_mangle_replica
         public tensor_name_unmangle_replica
+        public opcode_control
+        public opcode_auxiliary
+        public opcode_tensor
  !ctrl_tens_trans_t:
         private CtrlTensTransCtor
         private CtrlTensTransMapMethod
@@ -614,6 +618,57 @@
          endif
          return
         end subroutine tensor_name_unmangle_replica
+!-------------------------------------------------------
+        function opcode_control(opcode,ierr) result(ans)
+         implicit none
+         logical:: ans                               !out: answer
+         integer(INTD), intent(in):: opcode          !in: opcode
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=0
+         if(opcode.ge.0.and.opcode.lt.TAVP_ISA_SIZE) then
+          ans=(opcode.ge.TAVP_ISA_CTRL_FIRST.and.opcode.le.TAVP_ISA_CTRL_LAST)
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function opcode_control
+!---------------------------------------------------------
+        function opcode_auxiliary(opcode,ierr) result(ans)
+         implicit none
+         logical:: ans                               !out: answer
+         integer(INTD), intent(in):: opcode          !in: opcode
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=0
+         if(opcode.ge.0.and.opcode.lt.TAVP_ISA_SIZE) then
+          ans=(opcode.ge.TAVP_ISA_SPACE_FIRST.and.opcode.le.TAVP_ISA_SPACE_LAST)
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function opcode_auxiliary
+!------------------------------------------------------
+        function opcode_tensor(opcode,ierr) result(ans)
+         implicit none
+         logical:: ans                               !out: answer
+         integer(INTD), intent(in):: opcode          !in: opcode
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=0
+         if(opcode.ge.0.and.opcode.lt.TAVP_ISA_SIZE) then
+          ans=(opcode.ge.TAVP_ISA_TENS_FIRST.and.opcode.le.TAVP_ISA_TENS_LAST)
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function opcode_tensor
 ![ctrl_tens_trans_t]=============================================
         subroutine CtrlTensTransCtor(this,ierr,alpha,method_name)
 !CTOR: If neither <alpha> nor <method_name> is present, initialization
