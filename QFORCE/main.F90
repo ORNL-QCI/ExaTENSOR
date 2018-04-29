@@ -1,7 +1,7 @@
 !PROJECT Q-FORCE: Massively Parallel Quantum Many-Body Methodology on Heterogeneous HPC systems.
 !BASE: ExaTensor: Massively Parallel Tensor Algebra Virtual Processor for Heterogeneous HPC systems.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/04/28
+!REVISION: 2018/04/29
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -92,8 +92,7 @@
           if(my_role.eq.EXA_DRIVER) then
 !Driver drives tensor workload:
  !Create tensors:
-           ao_space_root=ao_space%get_root_id(ierr)
-           if(ierr.ne.0) call quit(ierr,'h_space_t%get_root_id() failed!')
+           ao_space_root=ao_space%get_root_id(ierr); if(ierr.ne.0) call quit(ierr,'h_space_t%get_root_id() failed!')
            write(*,'("Creating tensor dtens over the hierarchical vector space ... ")',ADVANCE='NO'); flush(6)
            tms=MPI_Wtime()
            ierr=exatns_tensor_create(dtens,'dtens',(/(ao_space_id,i=1,2)/),(/(ao_space_root,i=1,2)/),EXA_DATA_KIND_R8)
@@ -101,19 +100,28 @@
            ierr=exatns_sync(); if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_sync() failed!')
            tmf=MPI_Wtime()
            write(*,'("Ok: ",F16.4," sec")') tmf-tms; flush(6)
-           !write(*,'("Creating tensor ltens over the hierarchical vector space ... ")',ADVANCE='NO'); flush(6)
-           !ierr=exatns_tensor_create(ltens,'ltens',(/(ao_space_id,i=1,4)/),(/(ao_space_root,i=1,4)/),EXA_DATA_KIND_R8)
-           !if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_create() failed!')
-           !write(*,'("Ok")'); flush(6)
-           !write(*,'("Creating tensor rtens over the hierarchical vector space ... ")',ADVANCE='NO'); flush(6)
-           !ierr=exatns_tensor_create(rtens,'rtens',(/(ao_space_id,i=1,4)/),(/(ao_space_root,i=1,4)/),EXA_DATA_KIND_R8)
-           !if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_create() failed!')
-           !write(*,'("Ok")'); flush(6)
+           write(*,'("Creating tensor ltens over the hierarchical vector space ... ")',ADVANCE='NO'); flush(6)
+           tms=MPI_Wtime()
+           ierr=exatns_tensor_create(ltens,'ltens',(/(ao_space_id,i=1,2)/),(/(ao_space_root,i=1,2)/),EXA_DATA_KIND_R8)
+           if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_create() failed!')
+           ierr=exatns_sync(); if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_sync() failed!')
+           tmf=MPI_Wtime()
+           write(*,'("Ok: ",F16.4," sec")') tmf-tms; flush(6)
+           write(*,'("Creating tensor rtens over the hierarchical vector space ... ")',ADVANCE='NO'); flush(6)
+           tms=MPI_Wtime()
+           ierr=exatns_tensor_create(rtens,'rtens',(/(ao_space_id,i=1,2)/),(/(ao_space_root,i=1,2)/),EXA_DATA_KIND_R8)
+           if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_create() failed!')
+           ierr=exatns_sync(); if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_sync() failed!')
+           tmf=MPI_Wtime()
+           write(*,'("Ok: ",F16.4," sec")') tmf-tms; flush(6)
  !Contract tensors:
-           !write(*,'("Contracting tensors ... ")',ADVANCE='NO'); flush(6)
-           !ierr=exatns_tensor_contract(dtens,ltens,rtens,'D(a,b,c,d)+=L(d,i,b,j)*R(j,c,i,a)')
-           !if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_contract() failed!')
-           !write(*,'("Ok")'); flush(6)
+           write(*,'("Contracting tensors ... ")',ADVANCE='NO'); flush(6)
+           tms=MPI_Wtime()
+           ierr=exatns_tensor_contract(dtens,ltens,rtens,'D(a,b)+=L(c,a)*R(c,b)')
+           if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_tensor_contract() failed!')
+           ierr=exatns_sync(); if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_sync() failed!')
+           tmf=MPI_Wtime()
+           write(*,'("Ok: ",F16.4," sec")') tmf-tms; flush(6)
  !Destroy tensors:
            !write(*,'("Destroying tensor rtens ... ")',ADVANCE='NO'); flush(6)
            !ierr=exatns_tensor_destroy(rtens)
