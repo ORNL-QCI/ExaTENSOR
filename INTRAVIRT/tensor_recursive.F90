@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/04/27
+!REVISION: 2018/04/30
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -2209,7 +2209,7 @@
           unresolved=0
           if(res) then
            do i=1,this%num_dims
-            if(this%dim_extent(i).eq.0_INTL) unresolved=unresolved+1 !unresolved tensor dimension
+            if(this%dim_extent(i).le.0_INTL) unresolved=unresolved+1 !unresolved tensor dimension
            enddo
           endif
          endif
@@ -2413,9 +2413,10 @@
          class(tens_shape_t), intent(in):: this      !in: tensor shape
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
+         logical:: defined
 
          errc=TEREC_SUCCESS; num_groups=0
-         if(.not.this%is_set(num_groups=num_groups)) errc=TEREC_INVALID_REQUEST
+         defined=this%is_set(errc,num_groups=num_groups)
          if(present(ierr)) ierr=errc
          return
         end function TensShapeNumGroups
@@ -4010,10 +4011,10 @@
               uptr=>itout%get_value(errc); if(errc.ne.GFC_SUCCESS) exit
               tensor=>NULL(); select type(uptr); class is(tens_rcrsv_t); tensor=>uptr; end select
               if(.not.associated(tensor)) exit !trap
-              call tensor%tens_rcrsv_ctor(tens_header,errc); if(errc.ne.TEREC_SUCCESS) then; errc=GFC_ERROR; exit; endif
+              call tensor%tens_rcrsv_ctor(tens_header,errc); if(errc.ne.TEREC_SUCCESS) then; errc=TEREC_ERROR; exit; endif
               n=n+1; errc=itin%next()
              enddo
-             if(errc.eq.GFC_NO_MOVE) then; errc=TEREC_SUCCESS; else; errc=TEREC_ERROR; endif
+             if(errc.eq.GFC_NO_MOVE) then; errc=TEREC_SUCCESS; else; errc=TEREC_ERROR; endif !`GFC_NO_MOVE must differ from TEREC error codes!
              if(n.ne.this%num_subtensors.and.errc.eq.TEREC_SUCCESS) errc=TEREC_OBJ_CORRUPTED
             else
              if(this%num_subtensors.ne.0) errc=TEREC_OBJ_CORRUPTED
@@ -4043,17 +4044,18 @@
          integer(INTD), intent(out), optional:: ierr           !out: error code
          integer(INTD), intent(out), optional:: num_subtensors !out: number of extracted subtensors
          integer(INTD):: errc,ier,n
-         type(vector_iter_t):: itin,itout
+         type(list_iter_t):: itin
+         type(vector_iter_t):: itout
          class(*), pointer:: uptr
          type(tens_rcrsv_t):: tens_empty
          class(tens_header_t), pointer:: tens_header
          class(tens_rcrsv_t), pointer:: tensor
 
-         n=0; errc=itout%init(subtensors)
+         n=0; errc=itout%init(subtensors) !vector
          if(errc.eq.GFC_SUCCESS) then
           errc=itout%reset_back()
           if(errc.eq.GFC_SUCCESS) then
-           errc=itin%init(this%subtensors)
+           errc=itin%init(this%subtensors) !list
            if(errc.eq.GFC_SUCCESS) then
             if(itin%get_status().eq.GFC_IT_ACTIVE) then
              do while(errc.eq.GFC_SUCCESS)
@@ -4065,10 +4067,10 @@
               uptr=>itout%get_value(errc); if(errc.ne.GFC_SUCCESS) exit
               tensor=>NULL(); select type(uptr); class is(tens_rcrsv_t); tensor=>uptr; end select
               if(.not.associated(tensor)) exit !trap
-              call tensor%tens_rcrsv_ctor(tens_header,errc); if(errc.ne.TEREC_SUCCESS) then; errc=GFC_ERROR; exit; endif
+              call tensor%tens_rcrsv_ctor(tens_header,errc); if(errc.ne.TEREC_SUCCESS) then; errc=TEREC_ERROR; exit; endif
               n=n+1; errc=itin%next()
              enddo
-             if(errc.eq.GFC_NO_MOVE) then; errc=TEREC_SUCCESS; else; errc=TEREC_ERROR; endif
+             if(errc.eq.GFC_NO_MOVE) then; errc=TEREC_SUCCESS; else; errc=TEREC_ERROR; endif !`GFC_NO_MOVE must differ from TEREC error codes!
              if(n.ne.this%num_subtensors.and.errc.eq.TEREC_SUCCESS) errc=TEREC_OBJ_CORRUPTED
             else
              if(this%num_subtensors.ne.0) errc=TEREC_OBJ_CORRUPTED
@@ -6277,6 +6279,12 @@
 !-------------------------------------------------------------------------
         subroutine ContrPtrnExtSetIndexCorr(this,nd,nl,nr,contr_ptrn,ierr)
 !Sets tensor dimension correspondence in a tensor contraction (contraction pattern).
+!Essentially, it converts the basic TAL-SH tensor contraction pattern into
+!an extended tensor contraction pattern. In an extended tensor contraction
+!pattern each tensor dimension is assigned a number whose absolute value
+!designates a position in another tensor: If the sign is negative, in the
+!left of the remaining two tensors, if the sign is positive, in the right
+!of the remaining two tensors.
 !No strict validity check for <contr_ptrn>!
          implicit none
          class(contr_ptrn_ext_t), intent(inout):: this   !out: extended contraction pattern spec

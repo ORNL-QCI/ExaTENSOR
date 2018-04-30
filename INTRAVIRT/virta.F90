@@ -1536,14 +1536,14 @@
              if(associated(tcep)) then
               if(res.eq.GFC_NOT_FOUND) then
                call tcep%init_lock()
-               call tcep%set_tensor(tensor,errc); if(errc.ne.0) errc=-9
+               call tcep%set_tensor(tensor,errc); if(errc.ne.0) errc=-8
                if(DEBUG.gt.1.and.errc.eq.0) then
                 write(jo,'("#MSG(TensorCache)[",i6,"]: Cache entry created for tensor ")') impir
                 call tensor%print_it(dev_id=jo); flush(jo)
                endif
                stored=.TRUE.
               else
-               if(res.eq.GFC_FOUND) then; errc=-8; else; errc=-7; endif
+               if(res.ne.GFC_FOUND) errc=-7
               endif
               if(errc.eq.0.and.present(tens_entry_p)) then
                call tcep%incr_use_count()

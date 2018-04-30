@@ -1,7 +1,7 @@
 !ExaTENSOR: Massively Parallel Virtual Processor for Scale-Adaptive Hierarchical Tensor Algebra
 !This is the top level API module of ExaTENSOR (user-level API)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2018/04/28
+!REVISION: 2018/04/30
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -586,11 +586,12 @@
         integer(INTL):: ip
         class(tens_instr_mng_t), pointer:: tens_instr
 
-        ierr=EXA_SUCCESS; write(jo,'("#MSG(exatensor): New Instruction: STOP ExaTENSOR: IP = ")',ADVANCE='NO')
+        ierr=EXA_SUCCESS
+        write(jo,'("#MSG(exatensor): New Instruction: STOP ExaTENSOR: IP = ")',ADVANCE='NO'); flush(jo)
 !Send the STOP instruction to the root TAVP-MNG and wait for completion:
         tens_instr=>add_new_instruction(ip,ierr)
         if(ierr.eq.0) then
-         write(jo,'(i11)') ip !new instruction id number
+         write(jo,'(i11)') ip; flush(jo) !new instruction id number
          call tens_instr%tens_instr_ctor(TAVP_INSTR_CTRL_STOP,ierr,iid=ip)
          if(ierr.eq.0) then
           call issue_new_instruction(tens_instr,ierr); if(ierr.ne.0) ierr=-14
@@ -607,8 +608,9 @@
           write(jo,'()')
           write(jo,'("###EXATENSOR FINISHED PROCESS ",i9,"/",i9,": Status = ",i11,": Syncing ... ")',ADVANCE='NO')&
                &dil_global_process_id(),dil_global_comm_size(),ierr
+          flush(jo)
           call dil_global_comm_barrier(errc)
-          if(errc.eq.0) then; write(jo,'("Ok")'); else; write(jo,'("Failed")'); if(ierr.eq.0) ierr=-7; endif
+          if(errc.eq.0) then; write(jo,'("Ok")'); else; write(jo,'("Failed")'); if(ierr.eq.0) ierr=-7; endif; flush(jo)
 !Free the role-specific MPI communicators:
           if(drv_mng_comm.ne.MPI_COMM_NULL) then
            call MPI_Comm_free(drv_mng_comm,errc); if(errc.ne.0.and.ierr.eq.0) ierr=-6
@@ -831,7 +833,7 @@
         integer(INTL):: ip
 
         ierr=EXA_SUCCESS
-        if(VERBOSE) write(jo,'("#MSG(exatensor): New Instruction: CREATE TENSOR: IP = ")',ADVANCE='NO')
+        write(jo,'("#MSG(exatensor): New Instruction: CREATE TENSOR: IP = ")',ADVANCE='NO'); flush(jo)
         if(.not.tensor%is_set(ierr)) then
          if(ierr.eq.TEREC_SUCCESS) then
 !Construct the tensor object:
@@ -893,7 +895,7 @@
           if(ierr.eq.0) then
            tens_instr=>add_new_instruction(ip,ierr)
            if(ierr.eq.0) then
-            if(VERBOSE) write(jo,'(i11)') ip !new instruction id number
+            write(jo,'(i11)') ip; flush(jo) !new instruction id number
             call tens_instr%tens_instr_ctor(TAVP_INSTR_TENS_CREATE,ierr,tensor,iid=ip)
             if(ierr.eq.0) then
 !Issue the tensor instruction to TAVP:
@@ -924,13 +926,13 @@
         integer(INTL):: ip
 
         ierr=EXA_SUCCESS
-        if(VERBOSE) write(jo,'("#MSG(exatensor): New Instruction: DESTROY TENSOR: IP = ")',ADVANCE='NO')
+        write(jo,'("#MSG(exatensor): New Instruction: DESTROY TENSOR: IP = ")',ADVANCE='NO'); flush(jo)
         if(tensor%is_set(ierr)) then
          if(ierr.eq.TEREC_SUCCESS) then
 !Construct the tensor instruction:
           tens_instr=>add_new_instruction(ip,ierr)
           if(ierr.eq.0) then
-           if(VERBOSE) write(jo,'(i11)') ip !new instruction id number
+           write(jo,'(i11)') ip; flush(jo) !new instruction id number
            call tens_instr%tens_instr_ctor(TAVP_INSTR_TENS_DESTROY,ierr,tensor,iid=ip)
            if(ierr.eq.0) then
 !Issue the tensor instruction to TAVP:
@@ -1028,7 +1030,7 @@
         complex(8):: scal
 
         ierr=EXA_SUCCESS
-        if(VERBOSE) write(jo,'("#MSG(exatensor): New Instruction: INIT TENSOR (by scalar): IP = ")',ADVANCE='NO')
+        write(jo,'("#MSG(exatensor): New Instruction: INIT TENSOR (by scalar): IP = ")',ADVANCE='NO'); flush(jo)
         if(tensor%is_set(ierr)) then
          if(ierr.eq.TEREC_SUCCESS) then
 !Construct the tensor transformation (initialization) object:
@@ -1040,7 +1042,7 @@
 !Construct the tensor instruction:
             tens_instr=>add_new_instruction(ip,ierr)
             if(ierr.eq.0) then
-             if(VERBOSE) write(jo,'(i11)') ip !new instruction id number
+             write(jo,'(i11)') ip; flush(jo) !new instruction id number
              call tens_instr%tens_instr_ctor(TAVP_INSTR_TENS_INIT,ierr,tens_init,iid=ip)
              if(ierr.eq.0) then
 !Issue the tensor instruction to TAVP:
@@ -1079,7 +1081,7 @@
         integer(INTL):: ip
 
         ierr=EXA_SUCCESS
-        if(VERBOSE) write(jo,'("#MSG(exatensor): New Instruction: INIT TENSOR (by method): IP = ")',ADVANCE='NO')
+        write(jo,'("#MSG(exatensor): New Instruction: INIT TENSOR (by method): IP = ")',ADVANCE='NO'); flush(jo)
         if(tensor%is_set(ierr)) then
          if(ierr.eq.TEREC_SUCCESS) then
 !Construct the tensor transformation (initialization) object:
@@ -1092,7 +1094,7 @@
 !Construct the tensor instruction:
             tens_instr=>add_new_instruction(ip,ierr)
             if(ierr.eq.0) then
-             if(VERBOSE) write(jo,'(i11)') ip !new instruction id number
+             write(jo,'(i11)') ip; flush(jo) !new instruction id number
              call tens_instr%tens_instr_ctor(TAVP_INSTR_TENS_INIT,ierr,tens_init,iid=ip)
              if(ierr.eq.0) then
 !Issue the tensor instruction to TAVP:
@@ -1204,7 +1206,7 @@
         logical:: check
 
         ierr=EXA_SUCCESS
-        if(VERBOSE) write(jo,'("#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP = ")',ADVANCE='NO')
+        write(jo,'("#MSG(exatensor): New Instruction: CONTRACT TENSORS: IP = ")',ADVANCE='NO'); flush(jo)
         check=tensor0%is_set(errc); if(errc.ne.TEREC_SUCCESS.and.ierr.eq.EXA_SUCCESS) ierr=-12
         check=tensor1%is_set(errc).and.check; if(errc.ne.TEREC_SUCCESS.and.ierr.eq.EXA_SUCCESS) ierr=-11
         check=tensor2%is_set(errc).and.check; if(errc.ne.TEREC_SUCCESS.and.ierr.eq.EXA_SUCCESS) ierr=-10
@@ -1229,6 +1231,8 @@
                !`Decode and set the operational index restrictions
               endif
              else
+              if(VERBOSE) write(jo,'("#ERROR(exatns_tensor_contract): Contraction pattern setting error ",i11,'//&
+                          &'" for pattern:",32(1x,i2))') ierr,contr_ptrn(1:cpl)
               ierr=-9
              endif
             else
@@ -1247,7 +1251,7 @@
          if(ierr.eq.EXA_SUCCESS) then
           tens_instr=>add_new_instruction(ip,ierr)
           if(ierr.eq.0) then
-           if(VERBOSE) write(jo,'(i11)') ip !new instruction id number
+           write(jo,'(i11)') ip; flush(jo) !new instruction id number
            call tens_instr%tens_instr_ctor(TAVP_INSTR_TENS_CONTRACT,ierr,tens_contr,iid=ip)
            if(ierr.eq.0) then
 !Issue the tensor instruction to TAVP:

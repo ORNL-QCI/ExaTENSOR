@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/04/29
+!REVISION: 2018/04/30
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -282,6 +282,8 @@
          type(list_iter_t), private:: aux_list                      !iterator for <auxiliary_list>
          type(list_bi_t), private:: control_list                    !list of control instructions
          type(list_iter_t), private:: ctrl_list                     !iterator for <control_list>
+         logical, private:: tavp_is_top                             !TRUE if the unit belongs to the top (root) TAVP-MNG, FALSE otherwise
+         logical, private:: tavp_is_bottom                          !TRUE if the unit belongs to a bottom TAVP-MNG, FALSE otherwise
          contains
           procedure, public:: configure=>TAVPMNGDecomposerConfigure !configures TAVP-MNG decomposer
           procedure, public:: start=>TAVPMNGDecomposerStart         !starts and lives TAVP-MNG decomposer
@@ -303,7 +305,7 @@
          type(comm_handle_t), allocatable, private:: comm_hl(:)     !communication handle for each dispatched MPI rank
          class(tens_cache_t), pointer, private:: arg_cache=>NULL()  !non-owning pointer to the tensor argument cache
          integer(INTD), private:: next_channel=1                    !next channel to dispatch to in the round-robin dispatch
-         logical, private:: tavp_is_bottom                          !TRUE if the unit belongs to the bottom TAVP-MNG, FALSE otherwise
+         logical, private:: tavp_is_bottom                          !TRUE if the unit belongs to a bottom TAVP-MNG, FALSE otherwise
          contains
           procedure, public:: configure=>TAVPMNGDispatcherConfigure  !configures TAVP-MNG dispatcher
           procedure, public:: start=>TAVPMNGDispatcherStart          !starts and lives TAVP-MNG dispatcher
@@ -2648,7 +2650,7 @@
          integer(INTD):: errc,ier,thid,opcode,rot_num,num_loc_instr,num_def_instr,i,n,num_sent,num_recv
          integer(INTL):: bytecode_tag
          integer:: loc_wait
-         logical:: active,stopping,ring_exists,located,inp_located,inp_valued,evicted,stalled
+         logical:: active,stopping,ring_exists,located,inp_located,inp_valued,evicted,stalled,last
          type(tens_entry_mng_ref_t):: cache_entries(1:MAX_TENSOR_OPERANDS)
          class(tens_entry_mng_t), pointer:: tens_cache_entry
          class(tens_rcrsv_t), pointer:: tensor
@@ -2914,8 +2916,7 @@
  !Move partially located tensor instructions from the locating list to the deferred list:
           ier=this%def_list%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-16; exit wloop; endif
           ier=this%loc_list%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-15; exit wloop; endif
-          ier=this%loc_list%get_status(); if(ier.eq.GFC_IT_ACTIVE) ier=GFC_SUCCESS
-          do while(ier.eq.GFC_SUCCESS)
+          do while(this%loc_list%get_status().eq.GFC_IT_ACTIVE)
            uptr=>this%loc_list%get_value(ier); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-14; exit wloop; endif
            tens_instr=>NULL(); select type(uptr); class is(tens_instr_t); tens_instr=>uptr; end select
            if(.not.associated(tens_instr).and.errc.eq.0) then; errc=-13; exit wloop; endif !trap
@@ -2929,14 +2930,17 @@
             errc=-12; exit wloop
            endif
            if(.not.(inp_located.and.inp_valued)) then !input tensors must have been located and they must be defined
+            last=this%loc_list%on_last()
             ier=this%loc_list%move_elem(this%def_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-11; exit wloop; endif
+            if(last) ier=this%loc_list%next() !to make iterator DONE
            else !instruction is ready to be executed (issued to the next level)
             call tens_instr%set_status(DS_INSTR_READY_TO_EXEC,ier)
             if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-10; exit wloop; endif
             ier=this%loc_list%next()
            endif
           enddo
-          if((ier.ne.GFC_NO_MOVE.and.ier.ne.GFC_IT_EMPTY).and.errc.eq.0) then; errc=-9; exit wloop; endif
+          ier=this%loc_list%get_status()
+          if((ier.ne.GFC_IT_EMPTY.and.ier.ne.GFC_IT_DONE).and.errc.eq.0) then; errc=-9; exit wloop; endif
  !Append saved control instructions at the end of the locating list:
           ier=this%def_list%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-8; exit wloop; endif
           if(this%def_list%get_status().eq.GFC_IT_EMPTY) then !cannot proceed until all located tensor instructions have been issued
@@ -3078,7 +3082,7 @@
          integer(INTD), intent(out), optional:: ierr        !out: error code
          integer(INTD):: errc,ier,thid,iec,sts,opcode,num_processed,base_created,i,n
          integer:: dec_timer
-         logical:: active,stopping,expired,bottom_tavp,last_instr
+         logical:: active,stopping,expired,last_instr
          class(dsvp_t), pointer:: dsvp
          class(tavp_mng_t), pointer:: tavp
          class(tens_rcrsv_t), pointer:: tensor
@@ -3091,27 +3095,28 @@
           flush(CONS_OUT)
          endif
 !Initialize queues:
-         call this%init_queue(this%num_ports,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-58
+         call this%init_queue(this%num_ports,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-59
 !Initialize the subinstruction list iterator:
-         ier=this%sub_list%init(this%subinstruction_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-57
+         ier=this%sub_list%init(this%subinstruction_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-58
 !Initialize the returning list iterator:
-         ier=this%ret_list%init(this%returning_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-56
+         ier=this%ret_list%init(this%returning_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-57
 !Initialize the collecting list iterator:
-         ier=this%col_list%init(this%collecting_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-55
+         ier=this%col_list%init(this%collecting_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-56
 !Initialize the auxiliary list iterator:
-         ier=this%aux_list%init(this%auxiliary_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-54
+         ier=this%aux_list%init(this%auxiliary_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-55
 !Initialize the control list iterator:
-         ier=this%ctrl_list%init(this%control_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-53
+         ier=this%ctrl_list%init(this%control_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-54
 !Set up tensor argument cache and wait on other TAVP units:
          tavp=>NULL(); dsvp=>this%get_dsvp(); select type(dsvp); class is(tavp_mng_t); tavp=>dsvp; end select
          if(associated(tavp)) then
           this%arg_cache=>tavp%tens_cache
-          call tavp%sync_units(errc,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-52
+          call tavp%sync_units(errc,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-53
          else
-          this%arg_cache=>NULL(); if(errc.eq.0) errc=-51
+          this%arg_cache=>NULL(); if(errc.eq.0) errc=-52
          endif
 !Check whether this TAVP-MNG is at the bottom of TAVP-MNG hierarchy:
-         bottom_tavp=tavp%is_bottom(ier); if(ier.ne.0.and.errc.eq.0) errc=-50
+         this%tavp_is_top=tavp%is_top(ier); if(ier.ne.0.and.errc.eq.0) errc=-51
+         this%tavp_is_bottom=tavp%is_bottom(ier); if(ier.ne.0.and.errc.eq.0) errc=-50
 !Acquire a timer:
          ier=timer_start(dec_timer,MAX_DECOMPOSE_PHASE_TIME); if(ier.ne.TIMERS_SUCCESS.and.errc.eq.0) errc=-49
 !Work loop:
@@ -3205,7 +3210,7 @@
               flush(CONS_OUT)
              endif
             endif
-            if(bottom_tavp) then !bottom TAVP-MNG: Previous tensor subinstructions --> Dispatcher port 0; New tensor subinstructions --> Locator port 2
+            if(this%tavp_is_bottom) then !bottom TAVP-MNG: Previous tensor subinstructions --> Dispatcher port 0; New tensor subinstructions --> Locator port 2
    !Pass previously decomposed child subinstructions to Dispatcher port 0 and new child subinstructions to Locator port 2 (bottom TAVP-MNG only):
     !Append auxiliary instructions to the end of the returning list:
              ier=this%ret_list%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-21; exit wloop; endif
@@ -3464,26 +3469,39 @@
           jerr=0
           tloop: do jj=0,tens_instr%num_out_oprnds-1 !loop over the output tensor operands
            oprnd=>tens_instr%get_operand(tens_instr%out_oprnds(jj),jerr)
-           if(jerr.ne.DSVP_SUCCESS) then; jerr=-5; exit tloop; endif
+           if(jerr.ne.DSVP_SUCCESS) then; jerr=-8; exit tloop; endif
            select type(oprnd)
            class is(tens_oprnd_t)
-!$OMP CRITICAL (TAVP_MNG_CACHE)
-            if(associated(oprnd%cache_entry)) call oprnd%cache_entry%incr_use_count()
-            tensor=>oprnd%get_tensor(jerr)
-            if(jerr.eq.0) then
-             if(tensor%get_num_subtensors().le.0) then !tensor does not have an internal structure yet
-              total_strength=tens_dim_strength_assess(tensor,dim_strength,jerr,tens_dim_strength_thresh,ns,split_dims)
+            if(this%tavp_is_top) then !root TAVP-MNG owns all incoming output tensors
+             if(oprnd%get_owner_id(jerr).lt.0) then
               if(jerr.eq.0) then
-               call tensor%decompose(split_dims(1:ns),jerr); if(jerr.ne.TEREC_SUCCESS) jerr=-4
+               call oprnd%set_owner_id(role_rank,jerr,update_cache=.TRUE.); if(jerr.ne.0) jerr=-7
               else
-               jerr=-3
+               jerr=-6
               endif
+             else
+              if(jerr.ne.0) jerr=-5
              endif
-            else
-             jerr=-2
             endif
-            if(associated(oprnd%cache_entry)) call oprnd%cache_entry%decr_use_count()
+            if(jerr.eq.0) then
+!$OMP CRITICAL (TAVP_MNG_CACHE)
+             if(associated(oprnd%cache_entry)) call oprnd%cache_entry%incr_use_count()
+             tensor=>oprnd%get_tensor(jerr)
+             if(jerr.eq.0) then
+              if(tensor%get_num_subtensors().le.0) then !tensor does not have an internal structure yet
+               total_strength=tens_dim_strength_assess(tensor,dim_strength,jerr,tens_dim_strength_thresh,ns,split_dims)
+               if(jerr.eq.0) then
+                call tensor%decompose(split_dims(1:ns),jerr); if(jerr.ne.TEREC_SUCCESS) jerr=-4
+               else
+                jerr=-3
+               endif
+              endif
+             else
+              jerr=-2
+             endif
+             if(associated(oprnd%cache_entry)) call oprnd%cache_entry%decr_use_count()
 !$OMP END CRITICAL (TAVP_MNG_CACHE)
+            endif
            class default
             jerr=-1
            end select
@@ -3853,7 +3871,9 @@
             &impir,this%get_id(),num_subinstr
            else
             write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Decomposer unit ",i2,'//&
-            &'" failed to create TENS_CONTRACT subinstructions: Error ",i11)') impir,this%get_id(),jerr
+            &'" failed to create TENS_CONTRACT subinstructions with error ",i11," for parent tensor instruction:")')&
+            &impir,this%get_id(),jerr
+            call tens_instr%print_it(dev_id=CONS_OUT)
            endif
            flush(CONS_OUT)
           endif
@@ -3901,7 +3921,7 @@
          class(tavp_mng_dispatcher_t), intent(inout):: this !inout: TAVP-MNG Dispatcher DSVU
          integer(INTD), intent(out), optional:: ierr        !out: error code
          integer(INTD):: errc,ier,thid,i,n,opcode,sts,iec,channel
-         logical:: active,stopping,bottom_tavp,synced
+         logical:: active,stopping,synced
          class(dsvp_t), pointer:: dsvp
          class(tavp_mng_t), pointer:: tavp
          class(tens_instr_t), pointer:: tens_instr
@@ -3945,8 +3965,7 @@
           this%arg_cache=>NULL(); if(errc.eq.0) errc=-23
          endif
 !Check whether this TAVP-MNG is at the bottom of the TAVP-MNG hierarchy:
-         bottom_tavp=tavp%is_bottom(ier); if(ier.ne.0.and.errc.eq.0) errc=-22
-         this%tavp_is_bottom=bottom_tavp
+         this%tavp_is_bottom=tavp%is_bottom(ier); if(ier.ne.0.and.errc.eq.0) errc=-22
 !Work loop:
          active=((errc.eq.0).and.(this%dispatch_comm.ne.MPI_COMM_NULL)); stopping=(.not.active)
          wloop: do while(active)
