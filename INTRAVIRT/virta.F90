@@ -1048,9 +1048,9 @@
          integer(INTD):: errc
 
          errc=0
-         call this%lock() !`Not needed
+         call this%lock() !`Not needed because the lock will have to be used at the upper level
          tensor_p=>this%tensor
-         call this%unlock() !`Not needed
+         call this%unlock() !`Not needed because the lock will have to be used at the upper level
          if(.not.associated(tensor_p)) errc=-1
          if(present(ierr)) ierr=errc
          return

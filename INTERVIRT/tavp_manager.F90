@@ -533,7 +533,9 @@
          errc=0
          if(associated(tensor)) then
           if(owner.ge.0) then
-!$OMP CRITICAL (TAVP_MNG_CACHE)
+!!!$OMP CRITICAL (TAVP_MNG_CACHE)
+           call this%init_lock()
+           call this%lock()
            call this%incr_use_count()
            call this%set_tensor(tensor,errc)
            if(errc.eq.0) then
@@ -543,7 +545,8 @@
             errc=-3
            endif
            call this%decr_use_count()
-!$OMP END CRITICAL (TAVP_MNG_CACHE)
+           call this%unlock()
+!!!$OMP END CRITICAL (TAVP_MNG_CACHE)
           else
            errc=-2
           endif
@@ -563,12 +566,13 @@
          integer(INTD):: errc
 
          id=-1
+         call this%lock()
          if(this%is_set(errc)) then
-!$OMP ATOMIC READ
-          id=this%owner_id
+          if(errc.eq.0) id=this%owner_id
          else
           errc=-1
          endif
+         call this%unlock()
          if(present(ierr)) ierr=errc
          return
         end function TensEntryMngGetOwnerId
@@ -581,14 +585,17 @@
          integer(INTD), intent(out), optional:: ierr   !out: error code
          integer(INTD):: errc
 
+         call this%lock()
          if(this%is_set(errc)) then
-          call this%incr_use_count()
-!$OMP ATOMIC WRITE
-          this%owner_id=id
-          call this%decr_use_count()
+          if(errc.eq.0) then
+           call this%incr_use_count()
+           this%owner_id=id
+           call this%decr_use_count()
+          endif
          else
           errc=-1
          endif
+         call this%unlock()
          if(present(ierr)) ierr=errc
          return
         end subroutine TensEntryMngSetOwnerId
@@ -612,6 +619,7 @@
         end function TensEntryMngHoldsRemote
 !-------------------------------------------
         subroutine tens_entry_mng_dtor(this)
+!Tensor cache entry dtor is only expected to be called during eviction from cache.
          implicit none
          type(tens_entry_mng_t):: this !inout: specialized tensor cache entry
 
@@ -677,9 +685,10 @@
 
          if(.not.this%is_active(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
+           call tens_cache_entry%incr_ref_count()
            if(tens_cache_entry%is_set(errc)) then
             if(errc.eq.0) then
-             call tens_cache_entry%incr_ref_count()
+             call tens_cache_entry%lock()
              this%cache_entry=>tens_cache_entry
              this%tensor=>this%cache_entry%get_tensor(errc)
              if(errc.eq.0) then
@@ -688,12 +697,14 @@
              else
               errc=-5
              endif
+             call tens_cache_entry%unlock()
             else
              errc=-4
             endif
            else
             errc=-3
            endif
+           if(errc.ne.0) call tens_cache_entry%decr_ref_count()
           else
            errc=-2
           endif
@@ -708,12 +719,15 @@
 !Returns a pointer to the tensor.
          implicit none
          class(tens_rcrsv_t), pointer:: tens_p       !out: pointer to the tensor
-         class(tens_oprnd_t), intent(in):: this      !in: active tensor operand
+         class(tens_oprnd_t), intent(inout):: this   !in: active tensor operand
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
 
-         errc=0; tens_p=>this%tensor
-         if(.not.associated(this%tensor)) errc=-1
+         errc=0
+         call this%lock()
+         tens_p=>this%tensor
+         call this%unlock()
+         if(.not.associated(tens_p)) errc=-1
          if(present(ierr)) ierr=errc
          return
         end function TensOprndGetTensor
@@ -722,19 +736,22 @@
 !Returns a pointer to the tensor cache entry (may be NULL).
          implicit none
          class(tens_entry_mng_t), pointer:: cache_entry_p !out: pointer to the tensor cache entry (may be NULL)
-         class(tens_oprnd_t), intent(in):: this           !in: active tensor operand
+         class(tens_oprnd_t), intent(inout):: this        !in: active tensor operand
          integer(INTD), intent(out), optional:: ierr      !out: error code
          integer(INTD):: errc
 
-         errc=0; cache_entry_p=>this%cache_entry
+         errc=0
+         call this%lock()
+         cache_entry_p=>this%cache_entry
          if(.not.associated(this%tensor)) errc=-1
+         call this%unlock()
          if(present(ierr)) ierr=errc
          return
         end function TensOprndGetCacheEntry
 !---------------------------------------------------------------
         subroutine TensOprndSetCacheEntry(this,cache_entry,ierr)
 !Sets the associated tensor cache entry (may be NULL). If the cache entry
-!is not NULL, it must be the one containing the tensor set in the tensor operand.
+!is not NULL, it must be the one containing the tensor already set in the tensor operand.
          implicit none
          class(tens_oprnd_t), intent(inout):: this                  !inout: active tensor operand
          class(tens_entry_mng_t), intent(in), pointer:: cache_entry !in: pointer to a tensor cache entry containing the same tensor (may be NULL)
@@ -745,17 +762,22 @@
          if(this%is_active(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
            if(associated(this%cache_entry)) then
-            call this%cache_entry%decr_ref_count(); this%cache_entry=>NULL()
+            call this%cache_entry%decr_ref_count()
+            this%cache_entry=>NULL()
            endif
            if(associated(cache_entry)) then
+            call cache_entry%lock()
             tensor=>cache_entry%get_tensor(errc)
             if(errc.eq.0.and.associated(this%tensor,tensor)) then !cache entry corresponds to the same tensor
              call cache_entry%incr_ref_count()
+             this%cache_entry=>cache_entry
             else
              errc=-3
             endif
+            call cache_entry%unlock()
+           else
+            this%cache_entry=>NULL()
            endif
-           if(errc.eq.0) this%cache_entry=>cache_entry
           else
            errc=-2
           endif
@@ -770,17 +792,19 @@
 !Returns the tensor owner id.
          implicit none
          integer(INTD):: id                          !out: tensor owner id
-         class(tens_oprnd_t), intent(in):: this      !in: active tensor operand
+         class(tens_oprnd_t), intent(inout):: this   !in: active tensor operand
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
 
          errc=0; id=-1
+         call this%lock()
          if(associated(this%tensor)) then
-        !if(this%owner_id.lt.0.and.associated(this%cache_entry)) this%owner_id=this%cache_entry%get_owner_id(errc) !sync owner_id
+          !if(this%owner_id.lt.0.and.associated(this%cache_entry)) this%owner_id=this%cache_entry%get_owner_id(errc) !sync owner_id
           id=this%owner_id
          else
           errc=-1
          endif
+         call this%unlock()
          if(present(ierr)) ierr=errc
          return
         end function TensOprndGetOwnerId
@@ -794,19 +818,19 @@
          logical, intent(in), optional:: update_cache !if TRUE, the owner id in the tensor cache will be updated as well (defaults to FALSE)
          integer(INTD):: errc
 
+         call this%lock()
          if(this%is_active(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
            this%owner_id=owner
            if(present(update_cache)) then
             if(update_cache) then
-!$OMP CRITICAL (TAVP_MNG_CACHE)
+!!!$OMP CRITICAL (TAVP_MNG_CACHE)
              if(associated(this%cache_entry)) then
-              call this%cache_entry%set_owner_id(owner,errc)
-              if(errc.ne.0) errc=-4
+              call this%cache_entry%set_owner_id(owner,errc); if(errc.ne.0) errc=-4
              else
               errc=-3
              endif
-!$OMP END CRITICAL (TAVP_MNG_CACHE)
+!!!$OMP END CRITICAL (TAVP_MNG_CACHE)
             endif
            endif
           else
@@ -815,6 +839,7 @@
          else
           errc=-1
          endif
+         call this%unlock()
          if(present(ierr)) ierr=errc
          return
         end subroutine TensOprndSetOwnerId
@@ -827,20 +852,21 @@
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
 
+         call this%lock()
          if(this%is_active(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
-!$OMP CRITICAL (TAVP_MNG_CACHE)
+!!!$OMP CRITICAL (TAVP_MNG_CACHE)
            if(associated(this%cache_entry)) then
-            this%owner_id=this%cache_entry%get_owner_id(errc)
-            if(errc.ne.0) errc=-3
+            this%owner_id=this%cache_entry%get_owner_id(errc); if(errc.ne.0) errc=-3
            endif
-!$OMP END CRITICAL (TAVP_MNG_CACHE)
+!!!$OMP END CRITICAL (TAVP_MNG_CACHE)
           else
            errc=-2
           endif
          else
           errc=-1
          endif
+         call this%unlock()
          if(present(ierr)) ierr=errc
          return
         end subroutine TensOprndSyncOwnerId
@@ -849,7 +875,7 @@
 !Returns a pointer to the tensor data descriptor or NULL if not available yet (not an error).
          implicit none
          class(DataDescr_t), pointer:: descr         !out: pointer to the tensor data descriptor
-         class(tens_oprnd_t), intent(in):: this      !in: active tensor operand
+         class(tens_oprnd_t), intent(inout):: this   !in: active tensor operand
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
          class(tens_rcrsv_t), pointer:: tensor
@@ -857,6 +883,7 @@
          logical:: locd
 
          descr=>NULL()
+         call this%lock()
          tensor=>this%get_tensor(errc)
          if(errc.eq.0) then
           if(tensor%is_set(errc,located=locd)) then
@@ -878,6 +905,7 @@
          else
           errc=-1
          endif
+         call this%unlock()
          if(present(ierr)) ierr=errc
          return
         end function TensOprndGetDataDescriptor
@@ -980,9 +1008,10 @@
          class(tens_body_t), pointer:: tens_body
 
          res=.FALSE.
+         call this%lock()
          if(this%is_active(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
-!$OMP CRITICAL (TAVP_MNG_CACHE)
+!!!$OMP CRITICAL (TAVP_MNG_CACHE)
            if(associated(this%cache_entry)) call this%cache_entry%incr_use_count()
            tensor=>this%get_tensor(errc)
            if(errc.eq.0) then
@@ -997,13 +1026,14 @@
             errc=-3
            endif
            if(associated(this%cache_entry)) call this%cache_entry%decr_use_count()
-!$OMP END CRITICAL (TAVP_MNG_CACHE)
+!!!$OMP END CRITICAL (TAVP_MNG_CACHE)
           else
            errc=-2
           endif
          else
           errc=-1
          endif
+         call this%unlock()
          if(present(ierr)) ierr=errc
          return
         end function TensOprndIsLocated
@@ -1017,6 +1047,7 @@
          integer(INTD):: errc,id
 
          res=.TRUE. !assume remote by default
+         call this%lock()
          if(this%is_active(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
            id=this%get_owner_id(errc) !id = TAVP-MNG id which owns tensor meta-data
@@ -1031,6 +1062,7 @@
          else
           errc=-1
          endif
+         call this%unlock()
          if(present(ierr)) ierr=errc
          return
         end function TensOprndIsRemote
@@ -1048,23 +1080,29 @@
          logical:: laid,locd
 
          res=.FALSE.
+         call this%lock()
          if(this%is_active(errc)) then
-!$OMP CRITICAL (TAVP_MNG_CACHE)
-          if(associated(this%cache_entry)) call this%cache_entry%incr_use_count()
-          if(this%tensor%is_set(errc,layed=laid,located=locd)) then
-           if(errc.eq.TEREC_SUCCESS) then
-            res=(this%get_write_count().eq.0) !no one currently writes to this tensor => DEFINED
+          if(errc.eq.DSVP_SUCCESS) then
+!!!$OMP CRITICAL (TAVP_MNG_CACHE)
+           if(associated(this%cache_entry)) call this%cache_entry%incr_use_count()
+           if(this%tensor%is_set(errc,layed=laid,located=locd)) then
+            if(errc.eq.TEREC_SUCCESS) then
+             res=(this%get_write_count().eq.0) !no one currently writes to this tensor => DEFINED
+            else
+             errc=-4
+            endif
            else
             errc=-3
            endif
+           if(associated(this%cache_entry)) call this%cache_entry%decr_use_count()
+!!!$OMP END CRITICAL (TAVP_MNG_CACHE)
           else
            errc=-2
           endif
-          if(associated(this%cache_entry)) call this%cache_entry%decr_use_count()
-!$OMP END CRITICAL (TAVP_MNG_CACHE)
          else
           errc=-1
          endif
+         call this%unlock()
          if(present(ierr)) ierr=errc
          return
         end function TensOprndIsValued
@@ -1247,11 +1285,12 @@
          errc=0
          devo=6; if(present(dev_id)) devo=dev_id
          nsp=0; if(present(nspaces)) nsp=nspaces
+         !call this%lock()
          do j=1,nsp; write(devo,'(" ")',ADVANCE='NO'); enddo
          write(devo,'("TENSOR OPERAND{")')
          do j=1,nsp+1; write(devo,'(" ")',ADVANCE='NO'); enddo
          write(devo,'("Status = ",i2,"; Communication = ",i2,"; Metadata owner = ",i6)')&
-         &this%get_status(),this%get_comm_stat(),this%get_owner_id()
+         &this%get_status(),this%get_comm_stat(),this%owner_id
          if(associated(this%tensor)) then
           call this%tensor%print_it(errc,devo,nsp+1); if(errc.ne.TEREC_SUCCESS) errc=-1
          else
@@ -1260,6 +1299,7 @@
          endif
          do j=1,nsp; write(devo,'(" ")',ADVANCE='NO'); enddo
          write(devo,'("}")')
+         !call this%unlock()
          flush(devo)
          if(present(ierr)) ierr=errc
          return
