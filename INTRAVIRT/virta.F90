@@ -8,7 +8,7 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/04/29
+!REVISION: 2018/05/01
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -228,7 +228,7 @@
          integer(INTD), private:: temp_count=0                  !temporary count: Number of temporary tensors stemmed from this tensor cache entry (used for output rename)
          logical, private:: persistent=.FALSE.                  !persistency flag (persistent cache entries can only be evicted via an explicit TENS_DESTROY)
 #ifndef NO_OMP
-         integer(omp_lock_kind), private:: entry_lock=-1        !tensor cache entry lock
+         integer(omp_nest_lock_kind), private:: entry_lock=-1   !tensor cache entry lock
          logical, private:: lock_initialized=.FALSE.            !lock initialization status
 #endif
          contains
@@ -1387,7 +1387,7 @@
           if(DEBUG.gt.1) then
            write(jo,'("New cache entry lock: ",i11," --> ")',ADVANCE='NO') this%entry_lock; flush(jo)
           endif
-          call omp_init_lock(this%entry_lock); this%lock_initialized=.TRUE.
+          call omp_init_nest_lock(this%entry_lock); this%lock_initialized=.TRUE.
           if(DEBUG.gt.1) then; write(jo,'(i11)') this%entry_lock; flush(jo); endif
          endif
 #endif
@@ -1402,7 +1402,7 @@
           if(DEBUG.gt.1) then
            write(jo,'("Destroying cache entry lock ",i11," ... ")',ADVANCE='NO') this%entry_lock; flush(jo)
           endif
-          call omp_destroy_lock(this%entry_lock); this%lock_initialized=.FALSE.
+          call omp_destroy_nest_lock(this%entry_lock); this%lock_initialized=.FALSE.
           if(DEBUG.gt.1) then; write(jo,'("Done")'); flush(jo); endif
          endif
 #endif
@@ -1413,7 +1413,7 @@
          implicit none
          class(tens_cache_entry_t), intent(inout):: this
 #ifndef NO_OMP
-         call omp_set_lock(this%entry_lock)
+         call omp_set_nest_lock(this%entry_lock)
 #endif
          return
         end subroutine TensCacheEntryLock
@@ -1422,7 +1422,7 @@
          implicit none
          class(tens_cache_entry_t), intent(inout):: this
 #ifndef NO_OMP
-         call omp_unset_lock(this%entry_lock)
+         call omp_unset_nest_lock(this%entry_lock)
 #endif
          return
         end subroutine TensCacheEntryUnlock
