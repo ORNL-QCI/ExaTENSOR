@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/04/30
+!REVISION: 2018/05/01
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -557,9 +557,9 @@
         function TensEntryMngGetOwnerId(this,ierr) result(id)
 !Returns the tensor owner id.
          implicit none
-         integer(INTD):: id                          !out: tensor owner id
-         class(tens_entry_mng_t), intent(in):: this  !in: specialized tensor cache entry
-         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: id                            !out: tensor owner id
+         class(tens_entry_mng_t), intent(inout):: this !in: specialized tensor cache entry
+         integer(INTD), intent(out), optional:: ierr   !out: error code
          integer(INTD):: errc
 
          id=-1

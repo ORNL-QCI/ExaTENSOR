@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/04/29
+!REVISION: 2018/05/01
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -1080,9 +1080,9 @@
         function TensEntryWrkGetResource(this,ierr) result(resource_p)
 !Returns a pointer to the tensor cache entry resource.
          implicit none
-         class(tens_resrc_t), pointer:: resource_p          !out: pointer to the tensor resource
-         class(tens_entry_wrk_t), intent(in), target:: this !in: specialized tensor cache entry
-         integer(INTD), intent(out), optional:: ierr        !out: error code
+         class(tens_resrc_t), pointer:: resource_p             !out: pointer to the tensor resource
+         class(tens_entry_wrk_t), intent(inout), target:: this !in: specialized tensor cache entry
+         integer(INTD), intent(out), optional:: ierr           !out: error code
          integer(INTD):: errc
 
          resource_p=>NULL()

@@ -340,9 +340,6 @@
         type(data_register_t), public:: data_register     !string --> talsh_tens_data_t
  !External method register:
         type(method_register_t), public:: method_register !string --> tens_method_uni_t
- !Cache entry eviction policy (internal use only):
-        logical, private:: ignore_evict_flag !regulates whether or not to raise an error on failure to evict a cache entry with a non-zero reference/use count (affects tens_cache_entry_t.dtor)
-!$OMP THREADPRIVATE (ignore_evict_flag)
 !VISIBILITY:
  !non-member:
         public role_barrier
@@ -1007,12 +1004,15 @@
         function TensCacheEntryIsSet(this,ierr) result(ans)
 !Returns TRUE if the tensor is set, FALSE otherwise.
          implicit none
-         logical:: ans                                !out: answer
-         class(tens_cache_entry_t), intent(in):: this !in: tensor cache entry
-         integer(INTD), intent(out), optional:: ierr  !out: error code
+         logical:: ans                                   !out: answer
+         class(tens_cache_entry_t), intent(inout):: this !in: tensor cache entry
+         integer(INTD), intent(out), optional:: ierr     !out: error code
          integer(INTD):: errc
 
-         errc=0; ans=associated(this%tensor)
+         errc=0
+         call this%lock()
+         ans=associated(this%tensor)
+         call this%unlock()
          if(present(ierr)) ierr=errc
          return
         end function TensCacheEntryIsSet
@@ -1029,23 +1029,28 @@
          integer(INTD):: errc
 
          errc=0
+         call this%lock()
          if((.not.associated(this%tensor)).and.associated(tensor)) then
           this%tensor=>tensor
          else
           errc=-1
          endif
+         call this%unlock()
          if(present(ierr)) ierr=errc
          return
         end subroutine TensCacheEntrySetTensor
 !-------------------------------------------------------------------
         function TensCacheEntryGetTensor(this,ierr) result(tensor_p)
          implicit none
-         class(tens_rcrsv_t), pointer:: tensor_p      !out: pointer to the tensor
-         class(tens_cache_entry_t), intent(in):: this !in: tensor cache entry
-         integer(INTD), intent(out), optional:: ierr  !out: error code
+         class(tens_rcrsv_t), pointer:: tensor_p         !out: pointer to the tensor
+         class(tens_cache_entry_t), intent(inout):: this !in: tensor cache entry
+         integer(INTD), intent(out), optional:: ierr     !out: error code
          integer(INTD):: errc
 
-         errc=0; tensor_p=>this%tensor
+         errc=0
+         call this%lock() !`Not needed
+         tensor_p=>this%tensor
+         call this%unlock() !`Not needed
          if(.not.associated(tensor_p)) errc=-1
          if(present(ierr)) ierr=errc
          return
@@ -1359,6 +1364,8 @@
         subroutine TensCacheEntryDestroy(this,dealloc,ierr)
 !Destroys the tensor cache entry, but only if the reference count and use count
 !are both zero and the tensor cache entry is not persistent.
+!Since destruction is only performed during eviction of the tensor cache entry,
+!it is already race protected by the tensor cache lock.
          implicit none
          class(tens_cache_entry_t), intent(inout):: this !inout: tensor cache entry
          logical, intent(in):: dealloc                   !in: if TRUE, the .tensor field will be deallocated (assumes ownership)
@@ -1370,10 +1377,6 @@
           if(associated(this%tensor).and.dealloc) deallocate(this%tensor) !<dealloc>=TRUE assumes tensor ownership
           this%tensor=>NULL()
           call this%destroy_lock()
-         else
-          errc=-1
-          if(.not.ignore_evict_flag)&
-          &call quit(errc,'#FATAL(TAVP:tens_cache_entry_t.destroy): Attempt to destroy an active cache entry!')
          endif
          if(present(ierr)) ierr=errc
          return
@@ -1470,6 +1473,7 @@
            if(res.eq.GFC_FOUND) then
             select type(uptr)
             class is(tens_cache_entry_t)
+             !call uptr%lock() !can cause a deadlock
              call uptr%incr_use_count()
              tens_entry_p=>uptr
             end select
@@ -1546,6 +1550,7 @@
                if(res.ne.GFC_FOUND) errc=-7
               endif
               if(errc.eq.0.and.present(tens_entry_p)) then
+               !call tcep%lock() !can cause a deadlock
                call tcep%incr_use_count()
                tens_entry_p=>tcep
               endif
@@ -1574,8 +1579,8 @@
          if(present(ierr)) ierr=errc
          return
         end function TensCacheStore
-!----------------------------------------------------------------------
-        function TensCacheEvict(this,tensor,ierr,quiet) result(evicted)
+!----------------------------------------------------------------
+        function TensCacheEvict(this,tensor,ierr) result(evicted)
 !Evicts a specific tensor cache entry from the tensor cache.
 !If the corresponding tensor cache entry is not found,
 !no error is risen, but <evicted>=FALSE.
@@ -1584,7 +1589,6 @@
          class(tens_cache_t), intent(inout):: this            !inout: tensor cache
          class(tens_rcrsv_t), pointer, intent(inout):: tensor !inout: tensor to find and evict from the cache (will become NULL upon eviction)
          integer(INTD), intent(out), optional:: ierr          !out: error code
-         logical, intent(in), optional:: quiet                !in: if TRUE, failure to evict cache entries with non-zero reference count will be ignored (defaults to FALSE)
          integer(INTD):: errc,res
          type(dictionary_iter_t):: dit
          type(tens_descr_t), target:: tens_descr
@@ -1596,7 +1600,6 @@
 #ifndef NO_OMP
           call omp_set_lock(this%cache_lock)
 #endif
-          if(present(quiet)) then; ignore_evict_flag=quiet; else; ignore_evict_flag=.FALSE.; endif
           errc=dit%init(this%map)
           if(errc.eq.GFC_SUCCESS) then
            if(DEBUG.gt.1) then
@@ -1608,13 +1611,12 @@
             if(DEBUG.gt.1) write(jo,'("Tensor evicted")')
             tensor=>NULL(); evicted=.TRUE.
            else
-            if(res.eq.GFC_NOT_FOUND) then; errc=-5; else; errc=-4; endif
+            if(res.ne.GFC_NOT_FOUND) errc=-4
            endif
            res=dit%release(); if(res.ne.GFC_SUCCESS.and.errc.eq.0) errc=-3
           else
            errc=-2
           endif
-          ignore_evict_flag=.FALSE.
 #ifndef NO_OMP
           call omp_unset_lock(this%cache_lock)
 #endif
@@ -1636,6 +1638,7 @@
          errc=0
          if(associated(tens_entry_p)) then
           call tens_entry_p%decr_use_count()
+          !call tens_entry_p%unlock() !can cause a deadlock
           tens_entry_p=>NULL()
          else
           errc=-1
