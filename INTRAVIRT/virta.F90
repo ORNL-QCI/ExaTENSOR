@@ -8,7 +8,7 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/05/01
+!REVISION: 2018/05/02
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -1048,9 +1048,9 @@
          integer(INTD):: errc
 
          errc=0
-         call this%lock() !`Not needed because the lock will have to be used at the upper level
+         !call this%lock() !not needed because the lock will be set at the upper level
          tensor_p=>this%tensor
-         call this%unlock() !`Not needed because the lock will have to be used at the upper level
+         !call this%unlock() !not needed because the lock will be unset at the upper level
          if(.not.associated(tensor_p)) errc=-1
          if(present(ierr)) ierr=errc
          return
@@ -1367,7 +1367,7 @@
 !Since destruction is only performed during eviction of the tensor cache entry,
 !it is already race protected by the tensor cache lock.
          implicit none
-         class(tens_cache_entry_t), intent(inout):: this !inout: tensor cache entry
+         class(tens_cache_entry_t), intent(inout):: this !inout: tensor cache entry (not referred to)
          logical, intent(in):: dealloc                   !in: if TRUE, the .tensor field will be deallocated (assumes ownership)
          integer(INTD), intent(out), optional:: ierr     !out: error code
          integer(INTD):: errc
