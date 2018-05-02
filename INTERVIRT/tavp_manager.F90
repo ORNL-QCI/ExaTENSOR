@@ -746,8 +746,7 @@
          if(this%is_active(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
            if(associated(this%cache_entry)) then
-            call this%cache_entry%decr_ref_count()
-            this%cache_entry=>NULL()
+            call this%cache_entry%decr_ref_count(); this%cache_entry=>NULL()
            endif
            if(associated(cache_entry)) then
             call cache_entry%lock()
@@ -1620,6 +1619,7 @@
             jerr=-7
            end select
            if(jerr.eq.0) then
+            tensor=>NULL()
             do jj=0,2 !loop over the tensor instruction operands: 0:Destination, 1:LeftInput, 2:RightInput
              oprnd=>this%get_operand(jj,jerr); if(jerr.ne.DSVP_SUCCESS) then; jerr=-6; exit; endif
              select type(oprnd)
@@ -1638,7 +1638,11 @@
               jerr=-2; exit
              end select
             enddo
-            tensor=>NULL(); oprnd=>NULL()
+            if(associated(tensor)) then !in case of error
+             select type(oprnd); class is(tens_oprnd_t); call oprnd%unlock(); end select
+             tensor=>NULL()
+            endif
+            oprnd=>NULL()
            endif
            tens_contr_ctrl=>NULL()
           else
@@ -1790,10 +1794,10 @@
                call tens_oprnd%lock()
                tensor=>tens_oprnd%get_tensor(errc); if(errc.ne.0) then; errc=-6; exit oloop; endif
                call tensor%get_dims(dims,n,errc); if(errc.ne.TEREC_SUCCESS) then; errc=-5; exit oloop; endif
-               vol=1d0; do j=1,n; vol=vol*real(dims(j),8); enddo
-               tvol=tvol*vol; words=words+vol
                tensor=>NULL()
                call tens_oprnd%unlock()
+               vol=1d0; do j=1,n; vol=vol*real(dims(j),8); enddo
+               tvol=tvol*vol; words=words+vol
               class default
                errc=-4; exit oloop
               end select

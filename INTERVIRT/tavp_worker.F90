@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/05/01
+!REVISION: 2018/05/02
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -150,10 +150,10 @@
           procedure, private:: TensOprndCtorCache                        !ctor by cache entry only
           generic, public:: tens_oprnd_ctor=>TensOprndCtorTensor,TensOprndCtorCache
           procedure, public:: get_tensor=>TensOprndGetTensor             !returns a non-owning pointer to the tensor
-          procedure, public:: set_cache_entry=>TensOprndSetCacheEntry    !sets the associated tensor cache entry (may be NULL)
           procedure, public:: get_cache_entry=>TensOprndGetCacheEntry    !returns a non-owning pointer to the tensor cache entry (may be NULL)
-          procedure, public:: set_resource=>TensOprndSetResource         !sets the resource component if it has not been set via the constructor
+          procedure, public:: set_cache_entry=>TensOprndSetCacheEntry    !sets the associated tensor cache entry (may be NULL)
           procedure, public:: get_resource=>TensOprndGetResource         !returns a non-owning pointer to the tensor resource
+          procedure, public:: set_resource=>TensOprndSetResource         !sets the resource component if it has not been set via the constructor
           procedure, public:: set_talsh_tens=>TensOprndSetTalshTens      !sets up the TAL-SH tensor object for further processing with TAL-SH
           procedure, public:: set_tensor_layout=>TensOprndSetTensorLayout!sets the tensor layout, if not already set
           procedure, public:: register_read=>TensOprndRegisterRead       !registers a new read access on the tensor operand
@@ -400,10 +400,10 @@
         private TensOprndCtorTensor
         private TensOprndCtorCache
         private TensOprndGetTensor
-        private TensOprndSetCacheEntry
         private TensOprndGetCacheEntry
-        private TensOprndSetResource
+        private TensOprndSetCacheEntry
         private TensOprndGetResource
+        private TensOprndSetResource
         private TensOprndSetTalshTens
         private TensOprndSetTensorLayout
         private TensOprndRegisterRead
@@ -1063,13 +1063,14 @@
 
          errc=0
          if(associated(tensor)) then
-!$OMP CRITICAL (TAVP_WRK_CACHE)
-          call this%incr_use_count()
-          call this%set_tensor(tensor,errc); if(errc.ne.0) errc=-2
-          if(errc.eq.0) tensor=>NULL() !transfer the ownership
+!!!$OMP CRITICAL (TAVP_WRK_CACHE)
+          call this%init_lock()
+          call this%lock()
+          call this%set_tensor(tensor,errc)
+          if(errc.eq.0) then; tensor=>NULL(); else; errc=-2; endif !transfer the ownership
           call this%release_block()
-          call this%decr_use_count()
-!$OMP END CRITICAL (TAVP_WRK_CACHE)
+          call this%unlock()
+!!!$OMP END CRITICAL (TAVP_WRK_CACHE)
          else
           errc=-1
          endif
@@ -1105,6 +1106,7 @@
          logical:: res                              !out: answer
          class(tens_entry_wrk_t), intent(in):: this !in: active tensor cache entry
 
+!$OMP ATOMIC READ
          res=this%blocked
          return
         end function TensEntryWrkISBlocked
@@ -1113,6 +1115,7 @@
          implicit none
          class(tens_entry_wrk_t), intent(inout):: this !inout: active tensor cache entry
 
+!$OMP ATOMIC WRITE
          this%blocked=.TRUE.
          return
         end subroutine TensEntryWrkSetBlock
@@ -1121,6 +1124,7 @@
          implicit none
          class(tens_entry_wrk_t), intent(inout):: this !inout: active tensor cache entry
 
+!$OMP ATOMIC WRITE
          this%blocked=.FALSE.
          return
         end subroutine TensEntryWrkReleaseBlock
@@ -1129,7 +1133,7 @@
 !Sets the tensor layout, either the default one or imported from another tensor.
 !If the tensor stored in the tensor cache entry already has a layout, nothing will be done.
          implicit none
-         class(tens_entry_wrk_t), intent(inout):: this      !inout: tensor cache entry
+         class(tens_entry_wrk_t), intent(inout):: this      !inout: active tensor cache entry
          integer(INTD), intent(out), optional:: ierr        !out: error code
          class(tens_rcrsv_t), intent(in), optional:: tensor !in: prototype tensor whose layout to be imported
          integer(INTD):: errc
@@ -1137,7 +1141,8 @@
          class(tens_header_t), pointer:: header
          logical:: laid
 
-!$OMP CRITICAL (TAVP_WRK_CACHE)
+!!!$OMP CRITICAL (TAVP_WRK_CACHE)
+         call this%lock()
          tens=>this%get_tensor(errc)
          if(errc.eq.0.and.associated(tens)) then
           if(tens%is_set(errc,layed=laid)) then
@@ -1190,7 +1195,8 @@
          else
           errc=-1
          endif
-!$OMP END CRITICAL (TAVP_WRK_CACHE)
+         call this%unlock()
+!!!$OMP END CRITICAL (TAVP_WRK_CACHE)
          if(present(ierr)) ierr=errc
          return
         end subroutine TensEntryWrkSetTensorLayout
@@ -1198,7 +1204,7 @@
         subroutine TensEntryWrkAcquireResource(this,ierr)
 !Acquires resource for the tensor cache entry if it has not been acquired yet.
          implicit none
-         class(tens_entry_wrk_t), intent(inout):: this !inout: tensor cache entry
+         class(tens_entry_wrk_t), intent(inout):: this !inout: active tensor cache entry
          integer(INTD), intent(out), optional:: ierr   !out: error code
          integer(INTD):: errc
          integer(INTL):: buf_size
@@ -1206,7 +1212,8 @@
          class(tens_body_t), pointer:: body
          class(tens_layout_t), pointer:: layout
 
-!$OMP CRITICAL (TAVP_WRK_CACHE)
+!!!$OMP CRITICAL (TAVP_WRK_CACHE)
+         call this%lock()
          if(this%resource%is_empty(errc)) then
           if(errc.eq.0) then
            tensor=>this%get_tensor(errc)
@@ -1236,7 +1243,8 @@
          else
           if(errc.ne.0) errc=-1
          endif
-!$OMP END CRITICAL (TAVP_WRK_CACHE)
+         call this%unlock()
+!!!$OMP END CRITICAL (TAVP_WRK_CACHE)
          if(present(ierr)) ierr=errc
          return
         end subroutine TensEntryWrkAcquireResource
@@ -1244,12 +1252,13 @@
         subroutine TensEntryWrkReleaseResource(this,ierr,error_if_active)
 !Releases resource for the tensor cache entry if it has not been released yet.
          implicit none
-         class(tens_entry_wrk_t), intent(inout):: this   !inout: tensor cache entry
+         class(tens_entry_wrk_t), intent(inout):: this   !inout: active tensor cache entry
          integer(INTD), intent(out), optional:: ierr     !out: error code
          logical, intent(in), optional:: error_if_active !in: if TRUE, an error will be reported if the tensor cache entry is still referenced
          integer(INTD):: errc
 
-!$OMP CRITICAL (TAVP_WRK_CACHE)
+!!!$OMP CRITICAL (TAVP_WRK_CACHE)
+         call this%lock()
          if(.not.this%resource%is_empty(errc)) then
           if(errc.eq.0) then
            if((.not.this%is_persistent()).and.(this%get_use_count().eq.0).and.(this%get_ref_count().le.1)) then !at most one tensor operand can still be associated with this temporary cache entry
@@ -1257,8 +1266,8 @@
            else !active tensor cache entry
             if(present(error_if_active)) then
              if(error_if_active) then
-              write(CONS_OUT,'("#DEBUG(TAVP-WRK:tens_entry_wrk_t.release_resource)[",i6,'//&
-                   &'"]: Unwanted attempt to release resource for an active tensor cache entry!")') impir
+              write(CONS_OUT,'("#ERROR(TAVP-WRK:tens_entry_wrk_t.release_resource)[",i6,'//&
+                   &'"]: Unwanted attempt to release resource for a multi-referenced tensor cache entry!")') impir
               errc=-3
              endif
             endif
@@ -1269,7 +1278,8 @@
          else
           if(errc.ne.0) errc=-1
          endif
-!$OMP END CRITICAL (TAVP_WRK_CACHE)
+         call this%unlock()
+!!!$OMP END CRITICAL (TAVP_WRK_CACHE)
          if(present(ierr)) ierr=errc
          return
         end subroutine TensEntryWrkReleaseResource
@@ -1281,10 +1291,10 @@
 
          call this%release_resource(errc,error_if_active=.TRUE.) !release tensor cache entry resource
          if(errc.ne.0) then
-          call quit(errc,'#FATAL(tens_entry_wrk_t.dtor): Unable to release tensor cache entry resource!')
+          call quit(errc,'#FATAL(tens_entry_wrk_t.dtor): Unable to properly release tensor cache entry resource!')
          endif
-         call this%destroy(.TRUE.) !deallocate the tensor component (if it is set)
          this%blocked=.FALSE.
+         call this%destroy(.TRUE.) !deallocate the tensor component (if it is set)
          return
         end subroutine tens_entry_wrk_dtor
 !-------------------------------------------------------------
@@ -1347,9 +1357,10 @@
 
          if(.not.this%is_active(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
+           call tens_cache_entry%incr_ref_count()
+           call tens_cache_entry%lock()
            if(tens_cache_entry%is_set(errc)) then
             if(errc.eq.0) then
-             call tens_cache_entry%incr_ref_count()
              this%cache_entry=>tens_cache_entry
              this%tensor=>this%cache_entry%get_tensor(errc)
              if(errc.eq.0) then
@@ -1365,6 +1376,8 @@
            else
             errc=-3
            endif
+           call tens_cache_entry%unlock()
+           if(errc.ne.0) call tens_cache_entry%decr_ref_count()
           else
            errc=-2
           endif
@@ -1384,10 +1397,23 @@
          integer(INTD):: errc
 
          errc=0; tens_p=>this%tensor
-         if(.not.associated(this%tensor)) errc=-1
+         if(.not.associated(tens_p)) errc=-1
          if(present(ierr)) ierr=errc
          return
         end function TensOprndGetTensor
+!-----------------------------------------------------------------------
+        function TensOprndGetCacheEntry(this,ierr) result(cache_entry_p)
+!Returns a pointer to the tensor cache entry (may be NULL).
+         implicit none
+         class(tens_entry_wrk_t), pointer:: cache_entry_p !out: pointer to the tensor cache entry (may be NULL)
+         class(tens_oprnd_t), intent(in):: this           !in: active tensor operand
+         integer(INTD), intent(out), optional:: ierr      !out: error code
+         integer(INTD):: errc
+
+         errc=0; cache_entry_p=>this%cache_entry
+         if(present(ierr)) ierr=errc
+         return
+        end function TensOprndGetCacheEntry
 !---------------------------------------------------------------
         subroutine TensOprndSetCacheEntry(this,cache_entry,ierr)
 !Sets the associated tensor cache entry (may be NULL). If the cache entry
@@ -1405,6 +1431,7 @@
             call this%cache_entry%decr_ref_count(); this%cache_entry=>NULL()
            endif
            if(associated(cache_entry)) then
+            call cache_entry%lock()
             tensor=>cache_entry%get_tensor(errc)
             if(errc.eq.0.and.associated(this%tensor,tensor)) then !cache entry must correspond to the same tensor
              call cache_entry%incr_ref_count()
@@ -1412,6 +1439,7 @@
             else
              errc=-3
             endif
+            call cache_entry%unlock()
            else
             this%cache_entry=>NULL()
            endif
@@ -1424,20 +1452,19 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensOprndSetCacheEntry
-!-----------------------------------------------------------------------
-        function TensOprndGetCacheEntry(this,ierr) result(cache_entry_p)
-!Returns a pointer to the tensor cache entry (may be NULL).
+!------------------------------------------------------------------
+        function TensOprndGetResource(this,ierr) result(resource_p)
+!Returns a pointer to the tensor resource (may be NULL).
          implicit none
-         class(tens_entry_wrk_t), pointer:: cache_entry_p !out: pointer to the tensor cache entry
-         class(tens_oprnd_t), intent(in):: this           !in: active tensor operand
-         integer(INTD), intent(out), optional:: ierr      !out: error code
+         class(tens_resrc_t), pointer:: resource_p   !out: pointer to the tensor resource
+         class(tens_oprnd_t), intent(in):: this      !in: active tensor operand
+         integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
 
-         errc=0; cache_entry_p=>this%cache_entry
-         if(.not.associated(this%tensor)) errc=-1 !trap
+         errc=0; resource_p=>this%resource
          if(present(ierr)) ierr=errc
          return
-        end function TensOprndGetCacheEntry
+        end function TensOprndGetResource
 !---------------------------------------------------------------
         subroutine TensOprndSetResource(this,tens_resource,ierr)
 !Sets the resource component if it has not been set via the constructor.
@@ -1449,12 +1476,14 @@
 
          if(this%is_active(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
+           call this%lock()
            if(.not.associated(this%resource)) then
             call tens_resource%incr_ref_count()
             this%resource=>tens_resource
            else
             errc=-3
            endif
+           call this%unlock()
           else
            errc=-2
           endif
@@ -1464,20 +1493,6 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensOprndSetResource
-!------------------------------------------------------------------
-        function TensOprndGetResource(this,ierr) result(resource_p)
-!Returns a pointer to the tensor resource (may be NULL).
-         implicit none
-         class(tens_resrc_t), pointer:: resource_p   !out: pointer to the tensor resource
-         class(tens_oprnd_t), intent(in):: this      !in: active tensor operand
-         integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc
-
-         errc=0; resource_p=>this%resource
-         if(.not.associated(this%tensor)) errc=-1 !trap
-         if(present(ierr)) ierr=errc
-         return
-        end function TensOprndGetResource
 !--------------------------------------------------
         subroutine TensOprndSetTalshTens(this,ierr)
 !Sets up the TAL-SH tensor object for further processing with TAL-SH.
@@ -1496,6 +1511,7 @@
 
          if(this%is_active(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
+           call this%lock()
            if(talsh_tensor_is_empty(this%talsh_tens)) then
             tens_p=>this%tensor
             if(tens_p%is_set(errc,num_dims=nd,shaped=shpd,unresolved=unres,layed=layd,located=locd)) then
@@ -1555,6 +1571,7 @@
            else
             errc=-3
            endif
+           call this%unlock()
           else
            errc=-2
           endif
@@ -1576,11 +1593,13 @@
 
          errc=0
          if(associated(this%cache_entry)) then
+          call this%lock()
           if(present(tensor)) then
            call this%cache_entry%set_tensor_layout(errc,tensor)
           else
            call this%cache_entry%set_tensor_layout(errc)
           endif
+          call this%unlock()
          else
           call quit(-1,'#FATAL(TAVP-WRK:tens_oprnd_t.set_tensor_layout): Direct tensor layout setup is not implemented!') !`Implement direct tensor layout setup
          endif
@@ -1690,7 +1709,7 @@
 !Returns TRUE if the tensor operand is temporary (this also includes accumulators).
          implicit none
          logical:: res                               !out: answer
-         class(tens_oprnd_t), intent(in):: this      !in: active tensor operand
+         class(tens_oprnd_t), intent(inout):: this   !in: active tensor operand
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc,l
          character(TEREC_MAX_TENS_NAME_LEN):: tname
@@ -1698,14 +1717,16 @@
          res=.FALSE.
          if(this%is_active(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
-!$OMP CRITICAL (TAVP_WRK_CACHE)
+!!!$OMP CRITICAL (TAVP_WRK_CACHE)
+           call this%lock()
            call this%tensor%get_name(tname,l,errc)
            if(errc.eq.TEREC_SUCCESS.and.l.gt.0) then
             res=tensor_name_is_temporary(tname(1:l),errc); if(errc.ne.0) errc=-4
            else
             errc=-3
            endif
-!$OMP END CRITICAL (TAVP_WRK_CACHE)
+           call this%unlock()
+!!!$OMP END CRITICAL (TAVP_WRK_CACHE)
           else
            errc=-2
           endif
@@ -1729,8 +1750,8 @@
          res=.FALSE.
          if(this%is_active(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
-!$OMP CRITICAL (TAVP_WRK_CACHE)
-           if(associated(this%cache_entry)) call this%cache_entry%incr_use_count()
+!!!$OMP CRITICAL (TAVP_WRK_CACHE)
+           call this%lock()
            if(this%tensor%is_set(errc,layed=laid,located=locd)) then
             if(errc.eq.TEREC_SUCCESS) then
              res=(laid.and.locd)
@@ -1740,8 +1761,8 @@
            else
             errc=-3
            endif
-           if(associated(this%cache_entry)) call this%cache_entry%decr_use_count()
-!$OMP END CRITICAL (TAVP_WRK_CACHE)
+           call this%unlock()
+!!!$OMP END CRITICAL (TAVP_WRK_CACHE)
           else
            errc=-2
           endif
@@ -1769,8 +1790,8 @@
          res=.FALSE.
          if(this%is_active(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
-!$OMP CRITICAL (TAVP_WRK_CACHE)
-           if(associated(this%cache_entry)) call this%cache_entry%incr_use_count()
+!!!$OMP CRITICAL (TAVP_WRK_CACHE)
+           call this%lock()
            body_p=>this%tensor%get_body(errc)
            if(errc.eq.TEREC_SUCCESS.and.associated(body_p)) then
             layout_p=>body_p%get_layout(errc)
@@ -1800,8 +1821,8 @@
            else
             errc=-3
            endif
-           if(associated(this%cache_entry)) call this%cache_entry%decr_use_count()
-!$OMP END CRITICAL (TAVP_WRK_CACHE)
+           call this%unlock()
+!!!$OMP END CRITICAL (TAVP_WRK_CACHE)
           else
            errc=-2
           endif
@@ -1826,19 +1847,23 @@
 
          res=.FALSE.
          if(this%is_active(errc)) then
-!$OMP CRITICAL (TAVP_WRK_CACHE)
-          if(associated(this%cache_entry)) call this%cache_entry%incr_use_count()
-          if(this%tensor%is_set(errc,layed=laid,located=locd)) then
-           if(errc.eq.TEREC_SUCCESS) then
-            res=(laid.and.locd.and.(this%get_write_count().eq.0)) !tensor is laid out, located, and no one is currently writing into it => DEFINED
+          if(errc.eq.DSVP_SUCCESS) then
+!!!$OMP CRITICAL (TAVP_WRK_CACHE)
+           call this%lock()
+           if(this%tensor%is_set(errc,layed=laid,located=locd)) then
+            if(errc.eq.TEREC_SUCCESS) then
+             res=(laid.and.locd.and.(this%get_write_count().eq.0)) !tensor is laid out, located, and no one is currently writing into it => DEFINED
+            else
+             errc=-4
+            endif
            else
             errc=-3
            endif
+           call this%unlock()
+!!!$OMP END CRITICAL (TAVP_WRK_CACHE)
           else
            errc=-2
           endif
-          if(associated(this%cache_entry)) call this%cache_entry%decr_use_count()
-!$OMP END CRITICAL (TAVP_WRK_CACHE)
          else
           errc=-1
          endif
@@ -1850,18 +1875,20 @@
 !Returns TRUE if the tensor operand has been allocated an actual local resource.
          implicit none
          logical:: res                               !out: result
-         class(tens_oprnd_t), intent(in):: this      !in: active tensor operand
+         class(tens_oprnd_t), intent(inout):: this   !in: active tensor operand
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
 
          res=.FALSE.
          if(this%is_active(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
-!$OMP CRITICAL (TAVP_WRK_CACHE)
+!!!$OMP CRITICAL (TAVP_WRK_CACHE)
+           call this%lock()
            if(associated(this%resource)) then
             res=(.not.this%resource%is_empty(errc)); if(errc.ne.0) errc=-3
            endif
-!$OMP END CRITICAL (TAVP_WRK_CACHE)
+           call this%unlock()
+!!!$OMP END CRITICAL (TAVP_WRK_CACHE)
           else
            errc=-2
           endif
@@ -1886,6 +1913,7 @@
          class(tens_layout_t), pointer:: layout_p
 
          if(this%is_active(errc)) then
+          call this%lock()
           if(associated(this%resource)) then
            if(this%resource%is_empty()) then
             body_p=>this%tensor%get_body(errc)
@@ -1921,6 +1949,7 @@
           else
            errc=-7
           endif
+          call this%unlock()
          else
           errc=-8
          endif
@@ -1935,7 +1964,7 @@
 !If the tensor operand has been delivered before, does nothing.
 !If there is a pending communication on the tensor operand, returns an error.
          implicit none
-         class(tens_oprnd_t), intent(inout):: this   !inout: active tensor operand with an associated resource component
+         class(tens_oprnd_t), intent(inout):: this   !inout: active tensor operand
          integer(INTD), intent(out), optional:: ierr !out: error code, may return TRY_LATER
          integer(INTD):: errc
          class(tens_body_t), pointer:: body_p
@@ -1945,6 +1974,7 @@
 
          if(this%is_active(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
+           !call this%lock()
            if(.not.this%is_present(errc)) then
             if(errc.eq.DSVP_SUCCESS) then
              if(associated(this%resource)) then
@@ -1999,6 +2029,7 @@
            else
             if(errc.ne.DSVP_SUCCESS) errc=-13
            endif
+           !call this%unlock()
           else
            errc=-14
           endif
@@ -2024,6 +2055,7 @@
 
          if(this%is_present(errc)) then !assumes that the local resource is allocated
           if(errc.eq.DSVP_SUCCESS) then
+           !call this%lock()
            body_p=>this%tensor%get_body(errc)
            if(errc.eq.TEREC_SUCCESS.and.associated(body_p)) then
             layout_p=>body_p%get_layout(errc)
@@ -2065,6 +2097,7 @@
            else
             errc=-10
            endif
+           !call this%unlock()
           else
            errc=-11
           endif
@@ -2096,6 +2129,7 @@
          res=.FALSE.; tw=.TRUE.; if(present(wait)) tw=wait
          if(this%is_active(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
+           !call this%lock()
            sts=this%get_comm_stat()
            if(sts.ne.DS_OPRND_NO_COMM) then
             body_p=>this%tensor%get_body(errc)
@@ -2132,6 +2166,7 @@
            else
             res=.TRUE.
            endif
+           !call this%unlock()
           else
            errc=-2
           endif
@@ -2157,6 +2192,7 @@
 
          if(this%is_active(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
+           call this%lock()
            if(associated(this%resource)) then
             if(this%get_comm_stat().ne.DS_OPRND_NO_COMM) then
              delivered=this%sync(errc,wait=.TRUE.)
@@ -2167,6 +2203,7 @@
              call this%resource%free_buffer(errc); if(errc.ne.0) errc=-2 !free the resource memory buffer
             endif
            endif
+           call this%unlock()
           else
            errc=-3
           endif
@@ -2189,7 +2226,7 @@
           if(errc.eq.DSVP_SUCCESS) then
            if(this%get_comm_stat().ne.DS_OPRND_NO_COMM) then
             delivered=this%sync(errc,wait=.TRUE.)
-            if(.not.delivered.or.errc.ne.DSVP_SUCCESS) errc=-1
+            if(.not.delivered.or.errc.ne.0) errc=-1
            endif
            call this%mark_empty(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-2
            if(.not.talsh_tensor_is_empty(this%talsh_tens)) then
@@ -2360,6 +2397,7 @@
 
          errc=0
          if(associated(cache_entry)) then
+          call cache_entry%lock()
           tens_entry=>this%get_cache_entry(errc)
           if(errc.eq.0.and.associated(tens_entry)) then
            if(forward) then
@@ -2382,6 +2420,7 @@
           else
            errc=-2
           endif
+          call cache_entry%unlock()
          else
           errc=-1
          endif
@@ -2395,13 +2434,14 @@
 !or temporary, or accumulator.
          implicit none
          type(tens_rcrsv_t):: persistent             !out: persistent tensor (bodyless)
-         class(tens_oprnd_t), intent(in):: this      !in: tensor operand
+         class(tens_oprnd_t), intent(inout):: this   !in: tensor operand
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc,l,k
          class(tens_rcrsv_t), pointer:: tensor
          class(tens_header_t), pointer:: header
          character(TEREC_MAX_TENS_NAME_LEN+8):: tname,oname
 
+         call this%lock()
          tensor=>this%get_tensor(errc)
          if(errc.eq.0) then
           header=>tensor%get_header(errc)
@@ -2430,6 +2470,7 @@
          else
           errc=-1
          endif
+         call this%unlock()
          if(present(ierr)) ierr=errc
          return
         end function TensOprndTmpGetPersistent
@@ -2440,13 +2481,14 @@
 !or temporary, or accumulator.
          implicit none
          type(tens_rcrsv_t):: accumulator            !out: accumulator tensor (bodyless)
-         class(tens_oprnd_t), intent(in):: this      !in: tensor operand
+         class(tens_oprnd_t), intent(inout):: this   !in: tensor operand
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc,l,k
          class(tens_rcrsv_t), pointer:: tensor
          class(tens_header_t), pointer:: header
          character(TEREC_MAX_TENS_NAME_LEN+8):: tname,oname
 
+         call this%lock()
          tensor=>this%get_tensor(errc)
          if(errc.eq.0) then
           header=>tensor%get_header(errc)
@@ -2487,6 +2529,7 @@
          else
           errc=-1
          endif
+         call this%unlock()
          if(present(ierr)) ierr=errc
          return
         end function TensOprndTmpGetAccumulator
@@ -2497,7 +2540,14 @@
          integer(INTD):: errc
 
          call this%destruct(errc)
-         if(errc.ne.0) call quit(errc,'#FATAL(TAVP-WRK:tens_oprnd_dtor): Destructor failed!')
+         if(errc.ne.0) then
+          if(DEBUG.gt.0) then
+           write(CONS_OUT,'("#ERROR(TAVP-WRK:tens_oprnd_dtor): Destruction error ",i11)') errc
+           call this%print_it(dev_id=CONS_OUT)
+           flush(CONS_OUT)
+          endif
+          call quit(errc,'#FATAL(TAVP-WRK:tens_oprnd_dtor): Destructor failed!')
+         endif
          return
         end subroutine tens_oprnd_dtor
 ![tens_instr_t]==============================================================
@@ -2818,6 +2868,7 @@
           if(jerr.eq.DSVP_SUCCESS) then
            select type(oprnd)
            class is(tens_oprnd_t)
+            call oprnd%lock()
             tensor=>oprnd%get_tensor(jerr)
             if(jerr.eq.0) then
              if(tensor%is_set()) then
@@ -2833,6 +2884,7 @@
             else
              jerr=-3
             endif
+            call oprnd%unlock()
            class default
             jerr=-2
            end select
@@ -2863,10 +2915,12 @@
             jerr=-7
            end select
            if(jerr.eq.0) then
+            tensor=>NULL()
             do jj=0,2 !loop over the tensor instruction operands: 0:Destination, 1:LeftInput, 2:RightInput
              oprnd=>this%get_operand(jj,jerr); if(jerr.ne.DSVP_SUCCESS) then; jerr=-6; exit; endif
              select type(oprnd)
              class is(tens_oprnd_t)
+              call oprnd%lock()
               tensor=>oprnd%get_tensor(jerr); if(jerr.ne.0) then; jerr=-5; exit; endif
               if(.not.tensor%is_set()) then; jerr=-4; exit; endif !trap
               call pack_builtin(instr_packet,-1,jerr) !owner id
@@ -2874,11 +2928,17 @@
               if(jerr.eq.0) call pack_builtin(instr_packet,oprnd%get_write_count(),jerr)
               if(jerr.eq.0) call tensor%pack(instr_packet,jerr)
               if(jerr.ne.0) then; jerr=-3; exit; endif
+              tensor=>NULL()
+              call oprnd%unlock()
              class default
               jerr=-2; exit
              end select
             enddo
-            tensor=>NULL(); oprnd=>NULL()
+            if(associated(tensor)) then !in case of error
+             select type(oprnd); class is(tens_oprnd_t); call oprnd%unlock(); end select
+             tensor=>NULL()
+            endif
+            oprnd=>NULL()
            endif
            tens_contr_ctrl=>NULL()
           else
@@ -2952,7 +3012,7 @@
          return
         end function TensInstrGetOutputOperands
 !-------------------------------------------------------
-        subroutine TensInstrLayOutputOperands(this,ierr)
+        subroutine TensInstrLayOutputOperands(this,ierr) !`No race protection
 !Sets up the storage layout for non-existing output tensor operands.
          implicit none
          class(tens_instr_t), intent(inout):: this   !inout: active tensor instruction
@@ -3079,8 +3139,11 @@
               tens_oprnd=>this%get_operand(i,errc); if(errc.ne.DSVP_SUCCESS) then; errc=-7; exit oloop; endif
               select type(tens_oprnd)
               class is(tens_oprnd_t)
+               call tens_oprnd%lock()
                tensor=>tens_oprnd%get_tensor(errc); if(errc.ne.0) then; errc=-6; exit oloop; endif
                call tensor%get_dims(dims,n,errc); if(errc.ne.TEREC_SUCCESS) then; errc=-5; exit oloop; endif
+               tensor=>NULL()
+               call tens_oprnd%unlock()
                vol=1d0; do j=1,n; vol=vol*real(dims(j),8); enddo
                tvol=tvol*vol; words=words+vol
               class default
@@ -3378,6 +3441,7 @@
                 dr=oprnd%get_read_count(defer=.TRUE.); dw=oprnd%get_write_count(defer=.TRUE.)
                 cache_entry=>oprnd%get_cache_entry(errc)
                 if(errc.eq.0.and.associated(cache_entry)) then
+                 call cache_entry%lock()
                  if(dr.eq.0.and.dw.eq.0) call cache_entry%release_block()
                  if(this%operand_is_output(i,errc)) then !output tensor operand
                   if(dw.gt.0.or.dr.gt.0) call cache_entry%set_block()
@@ -3388,6 +3452,7 @@
                   if(cache_entry%is_blocked()) then; res=.FALSE.; blk=.TRUE.; exit; endif
                   if(wr.gt.0) res=.FALSE.
                  endif
+                 call cache_entry%unlock()
                  if(errc.ne.0) then; errc=-7; exit; endif
                 else
                  errc=-6; exit
@@ -3882,7 +3947,6 @@
              if(jerr.ne.TEREC_SUCCESS) then; call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_BTC_BAD); jerr=-9; exit; endif
              tens_entry=>NULL(); tens_entry=>this%arg_cache%lookup(tensor_tmp,jerr)
              if(jerr.ne.0) then
-              if(associated(tens_entry)) call this%arg_cache%release_entry(tens_entry)
               call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_CHE_FAILURE); jerr=-8; exit
              endif
              if(.not.associated(tens_entry)) then !tensor is absent in the tensor cache: Create an entry for it
@@ -3896,43 +3960,46 @@
              else
               stored=.FALSE.
              endif
+             call tens_entry%lock()
              updated=stored
              tens_wrk_entry=>NULL(); select type(tens_entry); class is(tens_entry_wrk_t); tens_wrk_entry=>tens_entry; end select
              if(.not.associated(tens_wrk_entry)) then !trap
-              if(associated(tens_entry)) call this%arg_cache%release_entry(tens_entry)
+              if(associated(tens_entry)) then; call tens_entry%unlock(); call this%arg_cache%release_entry(tens_entry); endif
               call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_CHE_FAILURE); jerr=-6; exit
              endif
              tensor=>tens_wrk_entry%get_tensor() !use the tensor from the tensor cache
              if(.not.stored) then !the tensor was already in the tensor cache before, update it by the information from the just decoded tensor
-!$OMP CRITICAL (TAVP_WRK_CACHE)
+!!!$OMP CRITICAL (TAVP_WRK_CACHE)
               call tensor%update(tensor_tmp,jerr,updated) !tensor metadata update is done inside the tensor cache
-!$OMP END CRITICAL (TAVP_WRK_CACHE)
+!!!$OMP END CRITICAL (TAVP_WRK_CACHE)
               deallocate(tensor_tmp); tensor_tmp=>NULL() !deallocate temporary tensor after importing its information into the cache
               if(jerr.ne.TEREC_SUCCESS) then
-               if(associated(tens_entry)) call this%arg_cache%release_entry(tens_entry)
+               if(associated(tens_entry)) then; call tens_entry%unlock(); call this%arg_cache%release_entry(tens_entry); endif
                call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_GEN_FAILURE); jerr=-5; exit
               endif
              endif
              allocate(tens_oprnd,STAT=jerr) !tensor operand will be owned by the tensor instruction
              if(jerr.ne.0) then
               tens_oprnd=>NULL()
-              if(associated(tens_entry)) call this%arg_cache%release_entry(tens_entry)
+              if(associated(tens_entry)) then; call tens_entry%unlock(); call this%arg_cache%release_entry(tens_entry); endif
               call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_RSC_UNAVAILABLE); jerr=-4; exit
              endif
              call tens_oprnd%tens_oprnd_ctor(tens_wrk_entry,jerr) !tensor and tensor resource are owned by the tensor cache
              if(jerr.ne.0) then
               deallocate(tens_oprnd); tens_oprnd=>NULL()
-              if(associated(tens_entry)) call this%arg_cache%release_entry(tens_entry)
+              if(associated(tens_entry)) then; call tens_entry%unlock(); call this%arg_cache%release_entry(tens_entry); endif
               call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_GEN_FAILURE); jerr=-3; exit
              endif
              oprnd=>tens_oprnd; call ds_instr%set_operand(jj,oprnd,jerr) !tensor operand ownership is moved to the tensor instruction
              if(jerr.ne.DSVP_SUCCESS) then
               deallocate(tens_oprnd); tens_oprnd=>NULL()
-              if(associated(tens_entry)) call this%arg_cache%release_entry(tens_entry)
+              if(associated(tens_entry)) then; call tens_entry%unlock(); call this%arg_cache%release_entry(tens_entry); endif
               call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_GEN_FAILURE); jerr=-2; exit
              endif
              tens_oprnd=>NULL()
-             if(associated(tens_entry)) call this%arg_cache%release_entry(tens_entry); tens_entry=>NULL()
+             if(associated(tens_entry)) then
+              call tens_entry%unlock(); call this%arg_cache%release_entry(tens_entry); tens_entry=>NULL()
+             endif
             enddo !loop over tensor operands
             if(associated(tensor_tmp)) deallocate(tensor_tmp) !deallocate the temporary tensor (in case of error)
            else
@@ -4145,8 +4212,7 @@
             tensor=>cache_entries(i)%cache_entry%get_tensor(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-4; exit wloop; endif
             if(cache_entries(i)%cache_entry%get_ref_count().eq.0.and.cache_entries(i)%cache_entry%get_use_count().eq.0.and.&
               &(.not.cache_entries(i)%cache_entry%is_persistent())) then
-             evicted=this%arg_cache%evict(tensor,ier)
-             if((.not.(ier.eq.0.and.evicted)).and.errc.eq.0) then; errc=-3; exit wloop; endif
+             evicted=this%arg_cache%evict(tensor,ier); if(ier.ne.0.and.errc.eq.0) then; errc=-3; exit wloop; endif
             endif
            enddo
            num_processed=num_processed-1
@@ -4616,6 +4682,7 @@
                 class is(tens_oprnd_t)
                  cache_entry=>oprnd%get_cache_entry(errc)
                  if(errc.eq.0.and.associated(cache_entry)) then
+                  call cache_entry%lock()
                   tensor=>oprnd%get_tensor(errc)
                   if(errc.eq.0.and.associated(tensor)) then
                    header=>tensor%get_header(errc)
@@ -4668,6 +4735,7 @@
                   else
                    errc=-9
                   endif
+                  call cache_entry%unlock()
                  else
                   errc=-8
                  endif
