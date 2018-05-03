@@ -8,7 +8,7 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/05/02
+!REVISION: 2018/05/03
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -259,6 +259,7 @@
           procedure, public:: destroy_lock=>TensCacheEntryDestroyLock         !destroys the tensor cache entry access lock
           procedure, public:: lock=>TensCacheEntryLock                        !locks the tensor cache entry for an exclusive use/update
           procedure, public:: unlock=>TensCacheEntryUnlock                    !unlocks the tensor cache entry
+          procedure, public:: is_locable=>TensCacheEntryIsLocable             !returns TRUE if the tensor cache entry can be locked/unlocked
         end type tens_cache_entry_t
  !Tensor argument cache:
         type, public:: tens_cache_t
@@ -401,6 +402,7 @@
         private TensCacheEntryDestroyLock
         private TensCacheEntryLock
         private TensCacheEntryUnlock
+        private TensCacheEntryIsLocable
  !tens_cache_t:
         private TensCacheInitLock
         private TensCacheLookup
@@ -1429,6 +1431,19 @@
 #endif
          return
         end subroutine TensCacheEntryUnlock
+!-------------------------------------------------------------
+        function TensCacheEntryIsLocable(this) result(locable)
+         implicit none
+         logical:: locable
+         class(tens_cache_entry_t), intent(in):: this
+#ifndef NO_OMP
+!$OMP ATOMIC READ
+         locable=this%lock_initialized
+#else
+         locable=.FALSE.
+#endif
+         return
+        end function TensCacheEntryIsLocable
 ![tens_cache_t]===========================
         subroutine TensCacheInitLock(this)
 !Initializes the tensor cache lock for multithreading.

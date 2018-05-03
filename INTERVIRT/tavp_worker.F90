@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/05/02
+!REVISION: 2018/05/03
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -1258,7 +1258,7 @@
          integer(INTD):: errc
 
 !!!$OMP CRITICAL (TAVP_WRK_CACHE)
-         call this%lock()
+         if(this%is_locable()) call this%lock() !some tensor cache entries being destructed do not have locks
          if(.not.this%resource%is_empty(errc)) then
           if(errc.eq.0) then
            if((.not.this%is_persistent()).and.(this%get_use_count().eq.0).and.(this%get_ref_count().le.1)) then !at most one tensor operand can still be associated with this temporary cache entry
@@ -1278,7 +1278,7 @@
          else
           if(errc.ne.0) errc=-1
          endif
-         call this%unlock()
+         if(this%is_locable()) call this%unlock() !some tensor cache entries being destructed do not have locks
 !!!$OMP END CRITICAL (TAVP_WRK_CACHE)
          if(present(ierr)) ierr=errc
          return
@@ -3272,12 +3272,12 @@
            n=this%get_num_operands(errc)
            if(errc.eq.DSVP_SUCCESS) then
             if(n.gt.0) then
-!$OMP CRITICAL (TAVP_WRK_CACHE)
              do i=0,n-1
               oprnd=>this%get_operand(i,errc)
               if(errc.eq.DSVP_SUCCESS.and.associated(oprnd)) then
                select type(oprnd)
                class is(tens_oprnd_t)
+                call oprnd%lock()
                 rd=oprnd%get_read_count(); wr=oprnd%get_write_count()
                 dr=oprnd%get_read_count(defer=.TRUE.); dw=oprnd%get_write_count(defer=.TRUE.)
                 if(this%operand_is_output(i,errc)) then !output tensor operand
@@ -3293,6 +3293,7 @@
                   call oprnd%register_read() !register actual read
                  endif
                 endif
+                call oprnd%unlock()
                 if(errc.ne.0) then; errc=-6; exit; endif
                class default
                 errc=-5; exit
@@ -3301,7 +3302,6 @@
                errc=-4; exit
               endif
              enddo
-!$OMP END CRITICAL (TAVP_WRK_CACHE)
             endif
            else
             errc=-3
@@ -3329,17 +3329,18 @@
            n=this%get_num_operands(errc)
            if(errc.eq.DSVP_SUCCESS) then
             if(n.gt.0) then
-!$OMP CRITICAL (TAVP_WRK_CACHE)
              do i=0,n-1
               oprnd=>this%get_operand(i,errc)
               if(errc.eq.DSVP_SUCCESS.and.associated(oprnd)) then
                select type(oprnd)
                class is(tens_oprnd_t)
+                call oprnd%lock()
                 if(this%operand_is_output(i,errc)) then !output tensor operand
                  call oprnd%register_write(defer=.TRUE.) !register deferred write
                 else !input tensor operand
                  call oprnd%register_read(defer=.TRUE.) !register deferred read
                 endif
+                call oprnd%unlock()
                 if(errc.ne.0) then; errc=-6; exit; endif
                class default
                 errc=-5; exit
@@ -3348,7 +3349,6 @@
                errc=-4; exit
               endif
              enddo
-!$OMP END CRITICAL (TAVP_WRK_CACHE)
             endif
            else
             errc=-3
@@ -3376,17 +3376,18 @@
            n=this%get_num_operands(errc)
            if(errc.eq.DSVP_SUCCESS) then
             if(n.gt.0) then
-!$OMP CRITICAL (TAVP_WRK_CACHE)
              do i=0,n-1
               oprnd=>this%get_operand(i,errc)
               if(errc.eq.DSVP_SUCCESS.and.associated(oprnd)) then
                select type(oprnd)
                class is(tens_oprnd_t)
+                call oprnd%lock()
                 if(this%operand_is_output(i,errc)) then !output tensor operand
                  call oprnd%unregister_write()
                 else !input tensor operand
                  call oprnd%unregister_read()
                 endif
+                call oprnd%unlock()
                 if(errc.ne.0) then; errc=-6; exit; endif
                class default
                 errc=-5; exit
@@ -3395,7 +3396,6 @@
                errc=-4; exit
               endif
              enddo
-!$OMP END CRITICAL (TAVP_WRK_CACHE)
             endif
            else
             errc=-3
@@ -3431,25 +3431,24 @@
            n=this%get_num_operands(errc)
            if(errc.eq.DSVP_SUCCESS) then
             if(n.gt.0) then
-!$OMP CRITICAL (TAVP_WRK_CACHE)
              do i=0,n-1
               oprnd=>this%get_operand(i,errc)
               if(errc.eq.DSVP_SUCCESS.and.associated(oprnd)) then
                select type(oprnd)
                class is(tens_oprnd_t)
-                rd=oprnd%get_read_count(); wr=oprnd%get_write_count()
-                dr=oprnd%get_read_count(defer=.TRUE.); dw=oprnd%get_write_count(defer=.TRUE.)
                 cache_entry=>oprnd%get_cache_entry(errc)
                 if(errc.eq.0.and.associated(cache_entry)) then
                  call cache_entry%lock()
+                 rd=oprnd%get_read_count(); wr=oprnd%get_write_count()
+                 dr=oprnd%get_read_count(defer=.TRUE.); dw=oprnd%get_write_count(defer=.TRUE.)
                  if(dr.eq.0.and.dw.eq.0) call cache_entry%release_block()
                  if(this%operand_is_output(i,errc)) then !output tensor operand
                   if(dw.gt.0.or.dr.gt.0) call cache_entry%set_block()
-                  if(cache_entry%is_blocked()) then; res=.FALSE.; blk=.TRUE.; exit; endif
+                  if(cache_entry%is_blocked()) then; res=.FALSE.; blk=.TRUE.; call cache_entry%unlock(); exit; endif
                   if(wr.gt.0.or.rd.gt.0) res=.FALSE.
                  else !input tensor operand
                   if(dw.gt.0) call cache_entry%set_block()
-                  if(cache_entry%is_blocked()) then; res=.FALSE.; blk=.TRUE.; exit; endif
+                  if(cache_entry%is_blocked()) then; res=.FALSE.; blk=.TRUE.; call cache_entry%unlock(); exit; endif
                   if(wr.gt.0) res=.FALSE.
                  endif
                  call cache_entry%unlock()
@@ -3464,7 +3463,6 @@
                errc=-4; exit
               endif
              enddo
-!$OMP END CRITICAL (TAVP_WRK_CACHE)
             endif
            else
             errc=-3
@@ -4698,6 +4696,7 @@
                      call lookup_acc_tensor(acc_cache_entry,errc); if(errc.ne.0) errc=-16
                     endif
                     if(errc.eq.0) then
+                     !call acc_cache_entry%lock()
  !Register the new temporary tensor:
                      call register_temp_tensor(tc,tmp_cache_entry,errc) !register a temporary tensor (its layout will be set later)
  !Substitute the persistent output tensor with a temporary tensor (persistent tensor cache entry reference count is unchanged):
@@ -4727,6 +4726,7 @@
                      else
                       errc=-11
                      endif
+                     !call acc_cache_entry%unlock()
                      call this%arg_cache%release_entry(acc_cache_entry); acc_cache_entry=>NULL()
                     endif
                    else
@@ -4984,7 +4984,7 @@
                     tensor=>cache_entries(i)%cache_entry%get_tensor(errc)
                     if(errc.eq.0) then
                      if(DEBUG.gt.0) call tensor%get_name(tname,l,errc)
-                     evicted=this%arg_cache%evict(tensor,errc)
+                     evicted=this%arg_cache%evict(tensor,errc) !eviction may not actually happen if the cache entry has just got associated
                      if(errc.eq.0) then
                       if(DEBUG.gt.0) then
                        write(CONS_OUT,'("#MSG(TAVP-WRK:Resourcer)[",i6,"]: Evicted temporary tensor")',ADVANCE='NO') impir
@@ -5026,8 +5026,10 @@
                    if(errc.eq.0) then
                     tens_entry=>NULL(); tens_entry=>this%arg_cache%lookup(tensor_pers,errc) !lookup the persistent output tensor in the cache
                     if(errc.eq.0.and.associated(tens_entry)) then
+                     call tens_entry%lock()
                      pers_entry=>NULL(); select type(tens_entry); class is(tens_entry_wrk_t); pers_entry=>tens_entry; end select
                      call oprnd%tmp_reset_tensor(pers_entry,.FALSE.,errc) !(temporary --> persistent) rename
+                     call tens_entry%unlock()
                      if(errc.eq.0) then; call pers_entry%decr_write_count(); else; errc=-11; exit; endif
                      call this%arg_cache%release_entry(tens_entry); tens_entry=>NULL(); pers_entry=>NULL()
                      if(DEBUG.gt.0.and.errc.eq.0) then
@@ -5977,6 +5979,7 @@
          if(errc.eq.DSVP_SUCCESS) then
           select type(oprnd)
           class is(tens_oprnd_t)
+           call oprnd%lock()
            resource=>oprnd%get_resource(errc)
            if(errc.eq.0) then
             if(.not.resource%is_empty()) then !resource is supposed to be preallocated by Resourcer
@@ -5999,14 +6002,14 @@
                     if(errc.eq.0) then
                      cache_entry=>oprnd%get_cache_entry(errc)
                      if(errc.eq.0) then
-!$OMP CRITICAL (TAVP_WRK_CACHE)
+!!!$OMP CRITICAL (TAVP_WRK_CACHE)
                       call tensor%set_location(descr,errc) !tensor has been located
                       if(errc.eq.0) then
                        call cache_entry%set_persistency(.TRUE.) !TENS_CREATE creates persistent tensors
                       else
                        errc=-15
                       endif
-!$OMP END CRITICAL (TAVP_WRK_CACHE)
+!!!$OMP END CRITICAL (TAVP_WRK_CACHE)
                       cache_entry=>NULL()
                      else
                       errc=-14
@@ -6068,6 +6071,7 @@
            else
             errc=-3
            endif
+           call oprnd%unlock()
           class default
            errc=-2
           end select
