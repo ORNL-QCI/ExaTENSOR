@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/05/03
+!REVISION: 2018/05/04
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -1367,6 +1367,11 @@
               this%resource=>this%cache_entry%get_resource() !may be empty resource
               if(associated(this%resource)) call this%resource%incr_ref_count()
               call this%mark_active(errc); if(errc.ne.DSVP_SUCCESS) errc=-6
+              if(DEBUG.gt.0.and.errc.eq.0) then
+               write(CONS_OUT,'("MSG(TAVP-WRK)[",i6,"]: Tensor operand associated with a cache entry(",i4,"):")')&
+               &impir,this%cache_entry%get_ref_count()
+               call this%tensor%print_it(dev_id=CONS_OUT); flush(CONS_OUT)
+              endif
              else
               errc=-5
              endif
@@ -3943,20 +3948,12 @@
              if(jerr.ne.PACK_SUCCESS) then; call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_BTC_BAD); jerr=-10; exit; endif
              call tensor_tmp%tens_rcrsv_ctor(instr_packet,jerr) !unpack tensor information into a temporary tensor
              if(jerr.ne.TEREC_SUCCESS) then; call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_BTC_BAD); jerr=-9; exit; endif
-             tens_entry=>NULL(); tens_entry=>this%arg_cache%lookup(tensor_tmp,jerr)
-             if(jerr.ne.0) then
-              call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_CHE_FAILURE); jerr=-8; exit
-             endif
-             if(.not.associated(tens_entry)) then !tensor is absent in the tensor cache: Create an entry for it
-              stored=this%arg_cache%store(tensor_tmp,tens_entry_wrk_alloc,jerr,tens_entry_p=tens_entry) !tensor ownership is moved to the tensor cache entry
-              if((.not.stored).or.(jerr.ne.0).or.(.not.associated(tens_entry))) then
-               if(associated(tens_entry)) call this%arg_cache%release_entry(tens_entry)
-               call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_CHE_FAILURE); jerr=-7; exit
-              else
-               tensor_tmp=>NULL() !tensor ownership has been transferred to the tensor cache
-              endif
+             tens_entry=>NULL()
+             stored=this%arg_cache%store(tensor_tmp,tens_entry_wrk_alloc,jerr,tens_entry_p=tens_entry) !tensor ownership is moved to the tensor cache entry
+             if(associated(tens_entry)) then
+              if(stored) tensor_tmp=>NULL() !tensor ownership has been transferred to the tensor cache
              else
-              stored=.FALSE.
+              call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_CHE_FAILURE); jerr=-7; exit
              endif
              call tens_entry%lock()
              updated=stored

@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/05/02
+!REVISION: 2018/05/04
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -685,6 +685,11 @@
              if(errc.eq.0) then
               this%owner_id=this%cache_entry%get_owner_id()
               call this%mark_active(errc); if(errc.ne.DSVP_SUCCESS) errc=-6
+              if(DEBUG.gt.0.and.errc.eq.0) then
+               write(CONS_OUT,'("MSG(TAVP-MNG)[",i6,"]: Tensor operand associated with a cache entry (",i4,"):")')&
+               &impir,this%cache_entry%get_ref_count()
+               call this%tensor%print_it(dev_id=CONS_OUT); flush(CONS_OUT)
+              endif
              else
               errc=-5
              endif
@@ -2318,25 +2323,12 @@
               endif
               call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_BTC_BAD); jerr=-9; exit
              endif
-             tens_entry=>NULL(); tens_entry=>this%arg_cache%lookup(tensor_tmp,jerr)
-             if(jerr.ne.0) then
-              if(DEBUG.gt.0) then
-               write(CONS_OUT,'("#ERROR(TAVP-MNG:Decoder.decode.decode_instr_operands)[",i6,":",i3,"]: Cache Lookup Error ",i11)')&
-               &impir,omp_get_thread_num(),jerr
-               flush(CONS_OUT)
-              endif
-              call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_CHE_FAILURE); jerr=-8; exit
-             endif
-             if(.not.associated(tens_entry)) then !tensor is absent in the tensor cache: Create an entry for it
-              stored=this%arg_cache%store(tensor_tmp,tens_entry_mng_alloc,jerr,tens_entry_p=tens_entry) !tensor ownership is moved to the tensor cache entry
-              if((.not.stored).or.(jerr.ne.0).or.(.not.associated(tens_entry))) then
-               if(associated(tens_entry)) call this%arg_cache%release_entry(tens_entry)
-               call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_CHE_FAILURE); jerr=-7; exit
-              else
-               tensor_tmp=>NULL() !tensor ownership has been transferred to the tensor cache
-              endif
+             tens_entry=>NULL()
+             stored=this%arg_cache%store(tensor_tmp,tens_entry_mng_alloc,jerr,tens_entry_p=tens_entry) !tensor ownership is moved to the tensor cache entry
+             if(associated(tens_entry)) then
+              if(stored) tensor_tmp=>NULL() !tensor ownership has been transferred to the tensor cache
              else
-              stored=.FALSE.
+              call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_CHE_FAILURE); jerr=-7; exit
              endif
              call tens_entry%lock()
              updated=stored
@@ -2853,9 +2845,9 @@
             call this%bytecode%send(this%ring_send,comm_hl,ier,tag=TAVP_LOCATE_TAG,comm=this%ring_comm)
             if(ier.ne.0.and.errc.eq.0) then; errc=-42; exit wloop; endif
             num_sent=this%bytecode%get_num_packets()
-            if(DEBUG.gt.0.and.num_sent.gt.1) then !one instruction is always the special markup instruction
+            if(DEBUG.gt.0.and.num_sent.gt.0) then !one instruction is always the special markup instruction
              write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Locator unit ",i2,": Rotation ",i3,": Sent ",i9," instructions")')&
-             &impir,this%get_id(),rot_num+1,num_sent
+             &impir,this%get_id(),rot_num+1,num_sent-1
              flush(CONS_OUT)
             endif
   !Clean the locating list and evict the relevant remote tensors with zero reference count from the tensor cache:
@@ -2901,9 +2893,9 @@
             do while(ier.eq.GFC_IT_EMPTY) !wait until located tensor instructions are delivered by lDecoder
              ier=this%unload_port(1,this%loc_list,stop_predicate=tens_instr_locator_mark,num_moved=num_recv)
              if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-26; exit wloop; endif
-             if(DEBUG.gt.0.and.num_recv.gt.1) then
+             if(DEBUG.gt.0.and.num_recv.gt.0) then
               write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Locator unit ",i2,": Rotation ",i3,": Received ",i6," instructions")')&
-              &impir,this%get_id(),rot_num+1,num_recv
+              &impir,this%get_id(),rot_num+1,num_recv-1
               flush(CONS_OUT)
              endif
              ier=this%loc_list%get_status()
@@ -2918,7 +2910,7 @@
              if(opcode.eq.TAVP_INSTR_CTRL_RESUME.and.tens_instr%get_status().eq.DS_INSTR_SPECIAL) then !dummy instruction is always (fake) CTRL_RESUME with status DS_INSTR_SPECIAL
               rot_num=rot_num+1 !next rotation step (send/recv) has happened
               bytecode_tag=tens_instr%get_id(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-21; exit wloop; endif
-              if(DEBUG.gt.0.and.num_recv.gt.1) then
+              if(DEBUG.gt.0.and.num_recv.gt.0) then
                write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Locator unit ",i2,": Rotation ",i3,": Sender TAVP-MNG id = ",i4)')&
                &impir,this%get_id(),rot_num,bytecode_tag
                flush(CONS_OUT)
@@ -2936,7 +2928,7 @@
              if(errc.eq.0) then; errc=-17; exit wloop; endif
             endif
            enddo rloop
-           if(DEBUG.gt.1) then
+           if(DEBUG.gt.0) then
             write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Locator unit ",i2,": ",i4,"-rotations cycle completed")')&
             &impir,this%get_id(),rot_num
             flush(CONS_OUT)
@@ -3740,8 +3732,8 @@
                   call dsvp%incr_crtd_instr_counter(); num_subinstr=num_subinstr+1 !new subinstruction has been created
                   jerr=lit%next()
                  enddo cloop
-                 if(associated(tens_entry)) then
-                  call tens_entry%unlock(); call this%arg_cache%release_entry(tens_entry); tens_entry=>NULL() !in case of error
+                 if(associated(tens_entry)) then !in case of error
+                  call tens_entry%unlock(); call this%arg_cache%release_entry(tens_entry); tens_entry=>NULL()
                  endif
                  if(jerr.eq.GFC_NO_MOVE) then
                   call tens_instr%set_status(DS_INSTR_ISSUED,jerr,num_subinstr) !.error_code of the parent instruction will store the number of subinstructions (in Collector)
