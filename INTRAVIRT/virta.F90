@@ -8,7 +8,7 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/05/04
+!REVISION: 2018/05/05
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -269,7 +269,9 @@
          integer(omp_lock_kind), allocatable, private:: cache_lock !cache lock
 #endif
          contains
-          procedure, private:: init_lock=>TensCacheInitLock        !initializes the cache lock for multithreading
+          procedure, private:: init_lock=>TensCacheInitLock        !initializes the tensor cache lock for multithreading
+          procedure, private:: lock=>TensCacheLock                 !locks the tensor cache
+          procedure, private:: unlock=>TensCacheUnlock             !unlocks the tensor cache
           procedure, public:: lookup=>TensCacheLookup              !looks up a given tensor in the cache
           procedure, public:: store=>TensCacheStore                !stores a given tensor in the cache
           procedure, public:: evict=>TensCacheEvict                !evicts a given tensor from the cache
@@ -407,6 +409,8 @@
         private TensCacheEntryIsLocable
  !tens_cache_t:
         private TensCacheInitLock
+        private TensCacheLock
+        private TensCacheUnlock
         private TensCacheLookup
         private TensCacheStore
         private TensCacheEvict
@@ -763,7 +767,7 @@
          integer(INTD), intent(in), optional:: dev_id
          integer(INTD), intent(in), optional:: nspaces
          integer(INTD):: errc,devo,nsp,l
-
+!$OMP FLUSH
          errc=0
          devo=6; if(present(dev_id)) devo=dev_id
          nsp=0; if(present(nspaces)) nsp=nspaces
@@ -859,7 +863,7 @@
          integer(INTD), intent(in), optional:: dev_id
          integer(INTD), intent(in), optional:: nspaces
          integer(INTD):: errc,devo,nsp
-
+!$OMP FLUSH
          errc=0
          devo=6; if(present(dev_id)) devo=dev_id
          nsp=0; if(present(nspaces)) nsp=nspaces
@@ -984,7 +988,7 @@
          integer(INTD), intent(in), optional:: dev_id
          integer(INTD), intent(in), optional:: nspaces
          integer(INTD):: errc,devo,nsp
-
+!$OMP FLUSH
          errc=0
          devo=6; if(present(dev_id)) devo=dev_id
          nsp=0; if(present(nspaces)) nsp=nspaces
@@ -1368,11 +1372,11 @@
 !----------------------------------------------------------
         subroutine TensCacheEntryDestroy(this,dealloc,ierr)
 !Destroys the tensor cache entry, but only if the reference count and use count
-!are both zero and the tensor cache entry is not persistent.
+!are both zero and the tensor cache entry is not persistent, otherwise raises error.
 !Since destruction is only performed during eviction of the tensor cache entry,
 !it is already race protected by the tensor cache lock.
          implicit none
-         class(tens_cache_entry_t), intent(inout):: this !inout: tensor cache entry (not referred to)
+         class(tens_cache_entry_t), intent(inout):: this !inout: temporary tensor cache entry with no references to it
          logical, intent(in):: dealloc                   !in: if TRUE, the .tensor field will be deallocated (assumes ownership)
          integer(INTD), intent(out), optional:: ierr     !out: error code
          integer(INTD):: errc
@@ -1398,12 +1402,14 @@
          implicit none
          class(tens_cache_entry_t), intent(inout):: this
 #ifndef NO_OMP
+!$OMP FLUSH(this)
          if(.not.this%lock_initialized) then
           if(DEBUG.gt.1) then
-           write(jo,'("New cache entry lock: ",i11," --> ")',ADVANCE='NO') this%entry_lock; flush(jo)
+           write(jo,'("New cache entry lock: ",i18," --> ")',ADVANCE='NO') this%entry_lock; flush(jo)
           endif
           call omp_init_nest_lock(this%entry_lock); this%lock_initialized=.TRUE.
-          if(DEBUG.gt.1) then; write(jo,'(i11)') this%entry_lock; flush(jo); endif
+          if(DEBUG.gt.1) then; write(jo,'(i18)') this%entry_lock; flush(jo); endif
+!$OMP FLUSH(this)
          endif
 #endif
          return
@@ -1413,12 +1419,14 @@
          implicit none
          class(tens_cache_entry_t), intent(inout):: this
 #ifndef NO_OMP
+!$OMP FLUSH(this)
          if(this%lock_initialized) then
           if(DEBUG.gt.1) then
-           write(jo,'("Destroying cache entry lock ",i11," ... ")',ADVANCE='NO') this%entry_lock; flush(jo)
+           write(jo,'("Destroying cache entry lock ",i18," ... ")',ADVANCE='NO') this%entry_lock; flush(jo)
           endif
           call omp_destroy_nest_lock(this%entry_lock); this%lock_initialized=.FALSE.
           if(DEBUG.gt.1) then; write(jo,'("Done")'); flush(jo); endif
+!$OMP FLUSH(this)
          endif
 #endif
          return
@@ -1428,6 +1436,7 @@
          implicit none
          class(tens_cache_entry_t), intent(inout):: this
 #ifndef NO_OMP
+!$OMP FLUSH
          if(this%lock_initialized) then
           call omp_set_nest_lock(this%entry_lock)
          else
@@ -1443,6 +1452,7 @@
          implicit none
          class(tens_cache_entry_t), intent(inout):: this
 #ifndef NO_OMP
+!$OMP FLUSH
          if(this%lock_initialized) then
           call omp_unset_nest_lock(this%entry_lock)
          else
@@ -1459,6 +1469,7 @@
          logical:: locable
          class(tens_cache_entry_t), intent(in):: this
 #ifndef NO_OMP
+!$OMP FLUSH(this)
 !$OMP ATOMIC READ
          locable=this%lock_initialized
 #else
@@ -1471,7 +1482,6 @@
 !Initializes the tensor cache lock for multithreading.
          implicit none
          class(tens_cache_t), intent(inout):: this !inout: tensor cache
-
 #ifndef NO_OMP
 !$OMP CRITICAL (TAVP_CACHE)
          if(.not.allocated(this%cache_lock)) then
@@ -1481,7 +1491,29 @@
 !$OMP END CRITICAL (TAVP_CACHE)
 #endif
          return
-        end subroutine TensCacheInitlock
+        end subroutine TensCacheInitLock
+!-------------------------------------
+        subroutine TensCacheLock(this)
+!Locks the tensor cache.
+         implicit none
+         class(tens_cache_t), intent(inout):: this !inout: tensor cache
+#ifndef NO_OMP
+!$OMP FLUSH
+          call omp_set_lock(this%cache_lock)
+#endif
+         return
+        end subroutine TensCacheLock
+!---------------------------------------
+        subroutine TensCacheUnlock(this)
+!Unlocks the tensor cache.
+         implicit none
+         class(tens_cache_t), intent(inout):: this !inout: tensor cache
+#ifndef NO_OMP
+!$OMP FLUSH
+          call omp_unset_lock(this%cache_lock)
+#endif
+         return
+        end subroutine TensCacheUnlock
 !----------------------------------------------------------------------
         function TensCacheLookup(this,tensor,ierr) result(tens_entry_p)
 !Looks up a given tensor in the tensor cache. If found, returns a pointer
@@ -1500,9 +1532,7 @@
          call this%init_lock()
          tens_descr=tensor%get_descriptor(errc,skip_body=.TRUE.,skip_location=.TRUE.) !compute tensor descriptor while skipping body/location information
          if(errc.eq.TEREC_SUCCESS) then
-#ifndef NO_OMP
-          call omp_set_lock(this%cache_lock)
-#endif
+          call this%lock()
           errc=dit%init(this%map)
           if(errc.eq.GFC_SUCCESS) then
            uptr=>NULL()
@@ -1522,9 +1552,7 @@
           else
            errc=-2
           endif
-#ifndef NO_OMP
-          call omp_unset_lock(this%cache_lock)
-#endif
+          call this%unlock()
          else
           if(DEBUG.gt.0) then
            write(jo,'("#ERROR(VIRTA:tens_cache_t.lookup)[",i6,":",i3,"]: Unable to get tensor descriptor: Error ",i11)')&
@@ -1568,9 +1596,7 @@
           endif
           tens_descr=tensor%get_descriptor(errc,skip_body=.TRUE.,skip_location=.TRUE.)
           if(errc.eq.TEREC_SUCCESS) then
-#ifndef NO_OMP
-           call omp_set_lock(this%cache_lock)
-#endif
+           call this%lock()
            errc=dit%init(this%map)
            if(errc.eq.GFC_SUCCESS) then
             errc=tens_cache_entry_alloc_f(tce) !allocates an empty instance of an extended(tens_cache_entry_t) with a proper dtor
@@ -1608,9 +1634,7 @@
            else
             errc=-3
            endif
-#ifndef NO_OMP
-           call omp_unset_lock(this%cache_lock)
-#endif
+           call this%unlock()
           else
            errc=-2
           endif
@@ -1621,21 +1645,24 @@
          if(present(ierr)) ierr=errc
          return
         end function TensCacheStore
-!----------------------------------------------------------------
-        function TensCacheEvict(this,tensor,ierr) result(evicted)
+!-------------------------------------------------------------------------
+        function TensCacheEvict(this,tensor,ierr,decr_use) result(evicted)
 !Evicts a specific tensor cache entry from the tensor cache.
-!If the corresponding tensor cache entry is not found,
+!If the corresponding tensor cache entry is not found or still in use,
 !no error is risen, but <evicted>=FALSE.
          implicit none
          logical:: evicted                                    !out: TRUE if the tensor cache entry has been found and evicted, FALSE otherwise
          class(tens_cache_t), intent(inout):: this            !inout: tensor cache
          class(tens_rcrsv_t), pointer, intent(inout):: tensor !inout: tensor to find and evict from the cache (will become NULL upon eviction)
          integer(INTD), intent(out), optional:: ierr          !out: error code
+         logical, intent(in), optional:: decr_use             !in: if TRUE, the tensor cache entry USE counter will be decremented before eviction
          integer(INTD):: errc,res
          type(dictionary_iter_t):: dit
          type(tens_descr_t), target:: tens_descr
+         class(*), pointer:: uptr
+         logical:: decr,ready_to_die
 
-         evicted=.FALSE.
+         evicted=.FALSE.; decr=.FALSE.; if(present(decr_use)) decr=decr_use
          call this%init_lock()
          if(DEBUG.gt.1) then
           write(jo,'("#MSG(TensorCache)[",i6,"]: Evicting cache entry for tensor")') impir; flush(jo)
@@ -1643,15 +1670,34 @@
          endif
          tens_descr=tensor%get_descriptor(errc,skip_body=.TRUE.,skip_location=.TRUE.)
          if(errc.eq.TEREC_SUCCESS) then
-#ifndef NO_OMP
-          call omp_set_lock(this%cache_lock)
-#endif
+          call this%lock()
           errc=dit%init(this%map)
           if(errc.eq.GFC_SUCCESS) then
-           res=dit%search(GFC_DICT_DELETE_IF_FOUND,cmp_tens_descriptors,tens_descr)
+ !Look up the tensor cache entry first:
+           res=dit%search(GFC_DICT_FETCH_IF_FOUND,cmp_tens_descriptors,tens_descr,value_out=uptr)
            if(res.eq.GFC_FOUND) then
-            if(DEBUG.gt.1) then; write(jo,'("Tensor cache entry evicted")'); flush(jo); endif
-            tensor=>NULL(); evicted=.TRUE.; this%num_entries=this%num_entries-1
+            select type(uptr)
+            class is(tens_cache_entry_t)
+             if(decr) call uptr%decr_use_count()
+             ready_to_die=(uptr%get_ref_count().eq.0.and.uptr%get_use_count().eq.0.and.(.not.uptr%is_persistent()))
+            class default
+             errc=-6
+            end select
+            uptr=>NULL()
+ !Delete the tensor cache entry if exists and not in use:
+            if(errc.eq.0) then
+             if(ready_to_die) then
+              res=dit%search(GFC_DICT_DELETE_IF_FOUND,cmp_tens_descriptors,tens_descr)
+              if(res.eq.GFC_FOUND) then
+               if(DEBUG.gt.1) then; write(jo,'("Tensor cache entry evicted")'); flush(jo); endif
+               tensor=>NULL(); evicted=.TRUE.; this%num_entries=this%num_entries-1
+              else
+               errc=-5
+              endif
+             else
+              if(DEBUG.gt.1) then; write(jo,'("Tensor cache entry is still in use")'); flush(jo); endif
+             endif
+            endif
            else
             if(res.eq.GFC_NOT_FOUND) then
              if(DEBUG.gt.1) then; write(jo,'("Tensor cache entry does not exist")'); flush(jo); endif
@@ -1663,9 +1709,7 @@
           else
            errc=-2
           endif
-#ifndef NO_OMP
-          call omp_unset_lock(this%cache_lock)
-#endif
+          call this%unlock()
          else
           errc=-1
          endif
@@ -1702,9 +1746,7 @@
          type(dictionary_iter_t):: dit
 
          call this%init_lock()
-#ifndef NO_OMP
-         call omp_set_lock(this%cache_lock)
-#endif
+         call this%lock()
          errc=dit%init(this%map)
          if(errc.eq.GFC_SUCCESS) then
           errc=dit%delete_all(); if(errc.ne.GFC_SUCCESS) errc=-3
@@ -1713,9 +1755,7 @@
          else
           errc=-1
          endif
-#ifndef NO_OMP
-         call omp_unset_lock(this%cache_lock)
-#endif
+         call this%unlock()
          if(present(ierr)) ierr=errc
          return
         end subroutine TensCacheErase
@@ -1727,13 +1767,9 @@
          class(tens_cache_t), intent(inout):: this !in: tensor cache
 
          call this%init_lock()
-#ifndef NO_OMP
-         call omp_set_lock(this%cache_lock)
-#endif
+         call this%lock()
          num=this%num_entries
-#ifndef NO_OMP
-         call omp_unset_lock(this%cache_lock)
-#endif
+         call this%unlock()
          return
         end function TensCacheGetNumEntries
 !---------------------------------------
