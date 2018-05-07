@@ -8,7 +8,7 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/05/05
+!REVISION: 2018/05/07
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -75,7 +75,7 @@
 !PARAMETERS:
  !Basic:
         integer(INTD), private:: CONS_OUT=6 !default output for this module
-        integer(INTD), private:: DEBUG=2    !debugging mode
+        integer(INTD), private:: DEBUG=1    !debugging mode
         logical, private:: VERBOSE=.TRUE.   !verbosity for errors
  !Runtime errors (ExaTENSOR aliases of basic DSVP errors):
         integer(INTD), parameter, public:: EXA_SUCCESS=DSVP_SUCCESS                         !success
@@ -259,7 +259,7 @@
           procedure, public:: destroy_lock=>TensCacheEntryDestroyLock         !destroys the tensor cache entry access lock
           procedure, public:: lock=>TensCacheEntryLock                        !locks the tensor cache entry for an exclusive use/update
           procedure, public:: unlock=>TensCacheEntryUnlock                    !unlocks the tensor cache entry
-          procedure, public:: is_locable=>TensCacheEntryIsLocable             !returns TRUE if the tensor cache entry can be locked/unlocked
+          procedure, public:: is_lockable=>TensCacheEntryIsLockable           !returns TRUE if the tensor cache entry can be locked/unlocked
         end type tens_cache_entry_t
  !Tensor argument cache:
         type, public:: tens_cache_t
@@ -406,7 +406,7 @@
         private TensCacheEntryDestroyLock
         private TensCacheEntryLock
         private TensCacheEntryUnlock
-        private TensCacheEntryIsLocable
+        private TensCacheEntryIsLockable
  !tens_cache_t:
         private TensCacheInitLock
         private TensCacheLock
@@ -1407,7 +1407,9 @@
           if(DEBUG.gt.1) then
            write(jo,'("New cache entry lock: ",i18," --> ")',ADVANCE='NO') this%entry_lock; flush(jo)
           endif
-          call omp_init_nest_lock(this%entry_lock); this%lock_initialized=.TRUE.
+          call omp_init_nest_lock(this%entry_lock)
+!$OMP ATOMIC WRITE
+          this%lock_initialized=.TRUE.
           if(DEBUG.gt.1) then; write(jo,'(i18)') this%entry_lock; flush(jo); endif
 !$OMP FLUSH(this)
          endif
@@ -1424,7 +1426,9 @@
           if(DEBUG.gt.1) then
            write(jo,'("Destroying cache entry lock ",i18," ... ")',ADVANCE='NO') this%entry_lock; flush(jo)
           endif
-          call omp_destroy_nest_lock(this%entry_lock); this%lock_initialized=.FALSE.
+          call omp_destroy_nest_lock(this%entry_lock)
+!$OMP ATOMIC WRITE
+          this%lock_initialized=.FALSE.
           if(DEBUG.gt.1) then; write(jo,'("Done")'); flush(jo); endif
 !$OMP FLUSH(this)
          endif
@@ -1436,9 +1440,9 @@
          implicit none
          class(tens_cache_entry_t), intent(inout):: this
 #ifndef NO_OMP
-!$OMP FLUSH
          if(this%lock_initialized) then
           call omp_set_nest_lock(this%entry_lock)
+!$OMP FLUSH
          else
           write(jo,'("#FATAL(VIRTA:tens_cache_entry_t.lock): Attempt to set an uninitialized lock for tensor:")')
           if(associated(this%tensor)) call this%tensor%print_it(dev_id=jo); flush(jo)
@@ -1452,8 +1456,8 @@
          implicit none
          class(tens_cache_entry_t), intent(inout):: this
 #ifndef NO_OMP
-!$OMP FLUSH
          if(this%lock_initialized) then
+!$OMP FLUSH
           call omp_unset_nest_lock(this%entry_lock)
          else
           write(jo,'("#FATAL(VIRTA:tens_cache_entry_t.unlock): Attempt to unset an uninitialized lock for tensor:")')
@@ -1463,20 +1467,20 @@
 #endif
          return
         end subroutine TensCacheEntryUnlock
-!-------------------------------------------------------------
-        function TensCacheEntryIsLocable(this) result(locable)
+!---------------------------------------------------------------
+        function TensCacheEntryIsLockable(this) result(lockable)
          implicit none
-         logical:: locable
+         logical:: lockable
          class(tens_cache_entry_t), intent(in):: this
 #ifndef NO_OMP
 !$OMP FLUSH(this)
 !$OMP ATOMIC READ
-         locable=this%lock_initialized
+         lockable=this%lock_initialized
 #else
-         locable=.FALSE.
+         lockable=.FALSE.
 #endif
          return
-        end function TensCacheEntryIsLocable
+        end function TensCacheEntryIsLockable
 ![tens_cache_t]===========================
         subroutine TensCacheInitLock(this)
 !Initializes the tensor cache lock for multithreading.
@@ -1498,8 +1502,8 @@
          implicit none
          class(tens_cache_t), intent(inout):: this !inout: tensor cache
 #ifndef NO_OMP
+         call omp_set_lock(this%cache_lock)
 !$OMP FLUSH
-          call omp_set_lock(this%cache_lock)
 #endif
          return
         end subroutine TensCacheLock

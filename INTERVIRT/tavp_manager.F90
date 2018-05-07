@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/05/05
+!REVISION: 2018/05/07
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -163,6 +163,7 @@
           procedure, public:: get_owner_id=>TensOprndGetOwnerId          !returns the tensor owner id
           procedure, public:: set_owner_id=>TensOprndSetOwnerId          !sets the tensor owner id (with or without cache update)
           procedure, public:: sync_owner_id=>TensOprndSyncOwnerId        !synchronizes the tensor owner id between public cache and private reference
+          procedure, public:: reset_persistency=>TensOprndResetPersistency !resets the persistency status of the underlying tensor cache entry
           procedure, public:: get_data_descriptor=>TensOprndGetDataDescriptor !returns a pointer to the tensor data descriptor or NULL if not available yet
           procedure, public:: register_read=>TensOprndRegisterRead       !registers a new read access on the tensor operand
           procedure, public:: unregister_read=>TensOprndUnregisterRead   !unregisters a read access on the tensor operand
@@ -428,6 +429,7 @@
         private TensOprndGetOwnerId
         private TensOprndSetOwnerId
         private TensOprndSyncOwnerId
+        private TensOprndResetPersistency
         private TensOprndGetDataDescriptor
         private TensOprndRegisterRead
         private TensOprndUnregisterRead
@@ -686,7 +688,7 @@
              if(errc.eq.0) then
               this%owner_id=this%cache_entry%get_owner_id()
               call this%mark_active(errc); if(errc.ne.DSVP_SUCCESS) errc=-6
-              if(DEBUG.gt.0.and.errc.eq.0) then
+              if(DEBUG.gt.1.and.errc.eq.0) then
                write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Tensor operand associated with a cache entry (",i4,"):")')&
                &impir,this%cache_entry%get_ref_count()
                call this%tensor%print_it(dev_id=CONS_OUT); flush(CONS_OUT)
@@ -730,7 +732,7 @@
 !Returns a pointer to the tensor cache entry (may be NULL).
          implicit none
          class(tens_entry_mng_t), pointer:: cache_entry_p !out: pointer to the tensor cache entry (may be NULL)
-         class(tens_oprnd_t), intent(inout):: this        !in: active tensor operand
+         class(tens_oprnd_t), intent(in):: this           !in: active tensor operand
          integer(INTD), intent(out), optional:: ierr      !out: error code
          integer(INTD):: errc
 
@@ -851,6 +853,26 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensOprndSyncOwnerId
+!------------------------------------------------------------------
+        subroutine TensOprndResetPersistency(this,persistency,ierr)
+!Resets the persistency status of the underlying tensor cache entry.
+         implicit none
+         class(tens_oprnd_t), intent(inout):: this   !inout: tensor operand
+         logical, intent(in):: persistency           !in: new persistency status
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         errc=0
+         call this%lock()
+         if(associated(this%cache_entry)) then
+          call this%cache_entry%set_persistency(persistency)
+         else
+          errc=-1
+         endif
+         call this%unlock()
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensOprndResetPersistency
 !-------------------------------------------------------------------
         function TensOprndGetDataDescriptor(this,ierr) result(descr)
 !Returns a pointer to the tensor data descriptor or NULL if not available yet (not an error).
@@ -1292,7 +1314,7 @@
            call this%print_it(dev_id=CONS_OUT)
            flush(CONS_OUT)
           endif
-          call quit(errc,'#FATAL(TAVP-MNG:tens_oprnd_dtor): Destructor failed!')
+          call quit(errc,'#FATAL(TAVP-MNG:tens_oprnd_dtor): Tensor operand destructor failed!')
          endif
          return
         end subroutine tens_oprnd_dtor
@@ -1627,14 +1649,18 @@
              select type(oprnd)
              class is(tens_oprnd_t)
               call oprnd%lock()
-              tensor=>oprnd%get_tensor(jerr); if(jerr.ne.0) then; jerr=-5; exit; endif
-              if(.not.tensor%is_set()) then; jerr=-4; exit; endif !trap
-              call pack_builtin(instr_packet,oprnd%get_owner_id(),jerr)
-              if(jerr.eq.0) call pack_builtin(instr_packet,oprnd%get_read_count(),jerr)
-              if(jerr.eq.0) call pack_builtin(instr_packet,oprnd%get_write_count(),jerr)
-              if(jerr.eq.0) call tensor%pack(instr_packet,jerr)
-              if(jerr.ne.0) then; jerr=-3; exit; endif
-              tensor=>NULL()
+              tensor=>oprnd%get_tensor(jerr)
+              if(jerr.eq.0) then
+               if(.not.tensor%is_set()) then; jerr=-5; exit; endif !trap
+               call pack_builtin(instr_packet,oprnd%get_owner_id(),jerr)
+               if(jerr.eq.0) call pack_builtin(instr_packet,oprnd%get_read_count(),jerr)
+               if(jerr.eq.0) call pack_builtin(instr_packet,oprnd%get_write_count(),jerr)
+               if(jerr.eq.0) call tensor%pack(instr_packet,jerr)
+               if(jerr.ne.0) then; jerr=-4; exit; endif
+               tensor=>NULL()
+              else
+               tensor=>NULL(); call oprnd%unlock(); jerr=-3; exit
+              endif
               call oprnd%unlock()
              class default
               jerr=-2; exit
@@ -1838,7 +1864,7 @@
                 class is(tens_oprnd_t)
                  call oprnd%lock()
                  tensor=>oprnd%get_tensor(errc)
-                 if(associated(tensor)) then
+                 if(errc.eq.0.and.associated(tensor)) then
                   call tens_operation%set_argument(tensor,errc); if(errc.ne.TEREC_SUCCESS) errc=-13
                   tensor=>NULL()
                  else
@@ -1993,10 +2019,10 @@
           call this%clean(errc)
           if(errc.ne.DSVP_SUCCESS) call quit(errc,'#FATAL(TAVP-MNG:tens_instr_dtor): Tensor instruction destruction failed!')
          else
-          if(DEBUG.gt.0)&
+          if(errc.eq.DSVP_SUCCESS.and.DEBUG.gt.0)&
           &write(CONS_OUT,'("#FATAL(TAVP-MNG:tens_instr_dtor): TAVP instruction is still active: code = ",i5,", stat = ",i5)')&
-          &this%get_code(),this%get_status()
-          call quit(-1,'#FATAL(TAVP-MNG:tens_instr_dtor): Attempt to destroy an active TAVP instruction!')
+          &this%get_code(),sts
+          call quit(-1,'#FATAL(TAVP-MNG:tens_instr_dtor): Tensor instruction destructor failed!')
          endif
          return
         end subroutine tens_instr_dtor
@@ -2906,9 +2932,7 @@
               !if(tens_cache_entry%holds_remote().and.&
                 !&(tens_cache_entry%get_ref_count().eq.0.and.tens_cache_entry%get_use_count().eq.0)) then
                tensor=>tens_cache_entry%get_tensor(ier); if(ier.ne.0.and.errc.eq.0) errc=-35
-               if(errc.eq.0) then
-                evicted=this%arg_cache%evict(tensor,ier,decr_use=.TRUE.); if(ier.ne.0.and.errc.eq.0) errc=-34
-               endif
+               evicted=this%arg_cache%evict(tensor,ier,decr_use=.TRUE.); if(ier.ne.0.and.errc.eq.0) errc=-34
               !endif
               cache_entries(i)%cache_entry=>NULL()
              enddo
@@ -2968,11 +2992,17 @@
             endif
            enddo rloop
            if(DEBUG.gt.0) then
-            write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Locator unit ",i2,": ",i4,"-rotations cycle completed")')&
-            &impir,this%get_id(),rot_num
+            write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Locator unit ",i2,": ",i4,"-rotation cycle completed; Cache volume = ",i12)')&
+            &impir,this%get_id(),rot_num,this%arg_cache%get_num_entries()
             flush(CONS_OUT)
            endif
-          endif !ring exists
+          else !ring does not exist (single TAVP-MNG level)
+           if(DEBUG.gt.0) then
+            write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Locator unit ",i2,": No rotations; Cache volume = ",i12)')&
+            &impir,this%get_id(),this%arg_cache%get_num_entries()
+            flush(CONS_OUT)
+           endif
+          endif
  !Move partially located tensor instructions from the locating list to the deferred list:
           ier=this%def_list%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-16; exit wloop; endif
           ier=this%loc_list%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-15; exit wloop; endif
@@ -3597,6 +3627,7 @@
             select type(oprnd)
             class is(tens_oprnd_t)
              call oprnd%lock()
+             call oprnd%reset_persistency(.TRUE.) !mark the parental tensor cache entry as persistent in the tensor cache
              tensor=>oprnd%get_tensor(jerr) !parental tensor
              if(jerr.eq.0) then
               !if(DEBUG.gt.0) then
@@ -3632,6 +3663,7 @@
                    deallocate(subtensor); jerr=-21; exit cloop
                   endif
                   call tens_entry%lock()
+                  call tens_entry%set_persistency(.TRUE.) !mark subtensor as persistent in the tensor cache
                   tens_entry_mng=>NULL()
                   select type(tens_entry); class is(tens_entry_mng_t); tens_entry_mng=>tens_entry; end select
                   jerr=this%sub_list%append(tens_instr_empty); if(jerr.ne.GFC_SUCCESS) then; jerr=-20; exit cloop; endif
@@ -4848,9 +4880,7 @@
              !if(tens_cache_entry%holds_remote().and.&
                !&(tens_cache_entry%get_ref_count().eq.0.and.tens_cache_entry%get_use_count().eq.0)) then
               tensor=>tens_cache_entry%get_tensor(ier); if(ier.ne.0.and.errc.eq.0) errc=-12
-              if(errc.eq.0) then
-               evicted=this%arg_cache%evict(tensor,ier,decr_use=.TRUE.); if(ier.ne.0.and.errc.eq.0) errc=-11
-              endif
+              evicted=this%arg_cache%evict(tensor,ier,decr_use=.TRUE.); if(ier.ne.0.and.errc.eq.0) errc=-11
              !endif
              cache_entries(i)%cache_entry=>NULL()
             enddo
