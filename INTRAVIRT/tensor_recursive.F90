@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/04/30
+!REVISION: 2018/05/09
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -260,6 +260,7 @@
           procedure, private:: TensBodyCtorBase                     !basic ctor
           procedure, private:: TensBodyCtorUnpack                   !ctor by unpacking
           generic, public:: tens_body_ctor=>TensBodyCtorBase,TensBodyCtorUnpack
+          procedure, private:: tens_body_copy=>TensBodyCtorCopy     !copy ctor
           procedure, public:: pack=>TensBodyPack                    !packs the object into a packet
           procedure, public:: is_set=>TensBodyIsSet                 !returns TRUE if the tensor body is set (plus additional info)
           procedure, public:: set_data_type=>TensBodySetDataType    !resets the tensor body numeric data type (must match the layout data type, if already set)
@@ -284,10 +285,10 @@
          contains
           procedure, private:: TensRcrsvCtorSigna                    !ctor by tensor signature and optionally tensor shape
           procedure, private:: TensRcrsvCtorHead                     !ctor by tensor header
-          procedure, private:: TensRcrsvCtorClone                    !copy ctor
+          procedure, private:: TensRcrsvCtorCopy                     !copy ctor
           procedure, private:: TensRcrsvCtorUnpack                   !ctor by unpacking
-          generic, public:: tens_rcrsv_ctor=>TensRcrsvCtorSigna,TensRcrsvCtorHead,TensRcrsvCtorClone,TensRcrsvCtorUnpack
-          generic, public:: assignment(=)=>TensRcrsvCtorClone        !copy assignment
+          generic, public:: tens_rcrsv_ctor=>TensRcrsvCtorSigna,TensRcrsvCtorHead,TensRcrsvCtorCopy,TensRcrsvCtorUnpack
+          generic, public:: assignment(=)=>TensRcrsvCtorCopy         !copy assignment
           procedure, public:: pack=>TensRcrsvPack                    !packs the object into a packet
           procedure, public:: is_set=>TensRcrsvIsSet                 !returns TRUE if the tensor is set (signature defined) plus other info
           procedure, public:: get_name=>TensRcrsvGetName             !returns the alphanumeric_ tensor name
@@ -320,6 +321,7 @@
           generic, public:: extract_subtensors=>TensRcrsvExtractSubtensorsList,TensRcrsvExtractSubtensorsVector
           procedure, public:: print_it=>TensRcrsvPrintIt             !prints the tensor info
           procedure, public:: rename=>TensRcrsvRename                !renames the tensor without restrictions (for internal use)
+          procedure, private:: import_body=>TensRcrsvImportBody      !imports tensor body from another tensor
 #if !(defined(__GNUC__) && __GNUC__ < 8)
           final:: tens_rcrsv_dtor
 #endif
@@ -671,6 +673,7 @@
         public tens_layout_fdims_dtor
  !tens_body_t:
         private TensBodyCtorBase
+        private TensBodyCtorCopy
         private TensBodyCtorUnpack
         private TensBodyPack
         private TensBodyIsSet
@@ -690,7 +693,7 @@
  !tens_rcrsv_t:
         private TensRcrsvCtorSigna
         private TensRcrsvCtorHead
-        private TensRcrsvCtorClone
+        private TensRcrsvCtorCopy
         private TensRcrsvCtorUnpack
         private TensRcrsvPack
         private TensRcrsvIsSet
@@ -722,6 +725,7 @@
         private TensRcrsvExtractSubtensorsVector
         private TensRcrsvPrintIt
         private TensRcrsvRename
+        private TensRcrsvImportBody
         public tens_rcrsv_dtor
         public tens_rcrsv_dim_resolve_i
         public tens_rcrsv_dim_strength_i
@@ -2191,7 +2195,7 @@
         end subroutine TensShapeSetGroups
 !------------------------------------------------------------------------------------
         function TensShapeIsSet(this,ierr,num_dims,num_groups,unresolved) result(res)
-!Returns TRUE if the tensor shape is set, plus additional info.
+!Returns TRUE if the tensor shape is set (even if unresolved), plus additional info.
          implicit none
          logical:: res                                     !out: result
          class(tens_shape_t), intent(in):: this            !in: tensor shape
@@ -3634,6 +3638,28 @@
          if(present(ierr)) ierr=TEREC_SUCCESS
          return
         end subroutine TensBodyCtorBase
+!------------------------------------------------------------
+        subroutine TensBodyCtorCopy(this,another,header,ierr)
+!Copy ctor.
+         implicit none
+         class(tens_body_t), intent(out):: this            !out: tensor body
+         class(tens_body_t), intent(in):: another          !in: source tensor body
+         class(tens_header_t), intent(in), target:: header !in: defining tensor header
+         integer(INTD), intent(out), optional:: ierr       !out: error code
+         integer(INTD):: errc
+
+         errc=another%subtensors%duplicate(this%subtensors)
+         if(errc.eq.GFC_SUCCESS) then
+          this%layout=another%layout
+          this%num_subtensors=another%num_subtensors
+          this%data_type=another%data_type
+          call this%update_header(header,errc)
+         else
+          errc=TEREC_ERROR
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensBodyCtorCopy
 !--------------------------------------------------------------------
         subroutine TensBodyCtorUnpack(this,packet,ierr,tens_header_p)
 !Unpacks the object from a packet.
@@ -4141,6 +4167,7 @@
 !--------------------------------------------------------
         subroutine TensBodyUpdateHeader(this,header,ierr)
 !Updates the tensor header the body is associated with.
+!If the tensor body layout is not set, does nothing.
          implicit none
          class(tens_body_t), intent(inout):: this          !inout: tensor body
          class(tens_header_t), intent(in), target:: header !in: tensor header the body is associated with
@@ -4148,11 +4175,7 @@
          integer(INTD):: errc
 
          errc=TEREC_SUCCESS
-         if(allocated(this%layout)) then
-          call this%layout%update_header(header,errc)
-         else
-          errc=TEREC_INVALID_REQUEST
-         endif
+         if(allocated(this%layout)) call this%layout%update_header(header,errc)
          if(present(ierr)) ierr=errc
          return
         end subroutine TensBodyUpdateHeader
@@ -4166,7 +4189,7 @@
          if(allocated(this%layout)) deallocate(this%layout)
          errc=lit%init(this%subtensors); if(errc.eq.GFC_SUCCESS) errc=lit%delete_all()
          errc=lit%release()
-         this%num_subtensors=0
+         this%num_subtensors=0; this%data_type=NO_TYPE
          return
         end subroutine tens_body_dtor
 ![tens_rcrsv_t]=============================================================================================
@@ -4226,8 +4249,8 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensRcrsvCtorHead
-!-------------------------------------------------
-        subroutine TensRcrsvCtorClone(this,source)
+!------------------------------------------------
+        subroutine TensRcrsvCtorCopy(this,source)
 !Copy ctor.
          implicit none
          class(tens_rcrsv_t), intent(out):: this  !out: tensor
@@ -4237,7 +4260,7 @@
          this%body=source%body
          call this%body%update_header(this%header)
          return
-        end subroutine TensRcrsvCtorClone
+        end subroutine TensRcrsvCtorCopy
 !-------------------------------------------------------
         subroutine TensRcrsvCtorUnpack(this,packet,ierr)
 !Unpacks the object from a packet.
@@ -4646,15 +4669,16 @@
         subroutine TensRcrsvUpdate(this,another,ierr,updated)
 !Updates the tensor information (new resolution -> new layout -> new body).
 !<this> tensor must at least be defined (have its signature set).
-!<another> tensor must have the same signature, and possibly, shape.
-!Then, any additional information will be transferred from <another>
-!tensor to <this> tensor, thus updating it.
+!<another> tensor must have the same signature, and, if both have
+!fully defined shapes, the same shape as well. Then, any additional
+!information will be transferred from <another> tensor to <this> tensor,
+!thus updating it.
          implicit none
          class(tens_rcrsv_t), intent(inout):: this   !inout: tensor being updated
          class(tens_rcrsv_t), intent(in):: another   !in: same tensor with more complete information (later stage of definition)
          integer(INTD), intent(out), optional:: ierr !out: error code
          logical, intent(out), optional:: updated    !out: returns TRUE if the tensor has actually been updated
-         integer(INTD):: errc,this_nd,this_unres,an_nd,an_unres
+         integer(INTD):: errc,this_nd,this_unres,an_nd,an_unres,i,m,n
          logical:: this_shp,this_lay,this_loc,an_shp,an_lay,an_loc,updat
 
          updat=.FALSE.
@@ -4663,27 +4687,33 @@
            if(another%is_set(errc,num_dims=an_nd,shaped=an_shp,unresolved=an_unres,layed=an_lay,located=an_loc)) then
             if(errc.eq.TEREC_SUCCESS) then
              if(this%header%signature%compare(another%header%signature).eq.CMP_EQ) then
- !Update shape (copy the shape):
+ !Update shape (import defined tensor dimensions):
               if(an_shp) then
                if(.not.this_shp) then
                 this%header%shape=another%header%shape
                 updat=.TRUE.
                else
-                if(this%header%shape%compare(another%header%shape).ne.CMP_EQ) errc=TEREC_INVALID_REQUEST
+                do i=1,this_nd
+                 m=this%header%shape%dim_extent(i)
+                 n=another%header%shape%dim_extent(i)
+                 if(m.le.0) then
+                  if(n.gt.0) then; this%header%shape%dim_extent(i)=n; updat=.TRUE.; endif
+                 else
+                  if(n.gt.0.and.n.ne.m) errc=TEREC_INVALID_REQUEST !defined dimensions must be the same
+                 endif
+                enddo
                endif
               endif
  !Update layout (copy the full body info):
               if(an_lay.and.errc.eq.TEREC_SUCCESS) then
                if(.not.this_lay) then
-                this%body=another%body
-                call this%body%update_header(this%header,errc)
-                updat=.TRUE.
+                call this%import_body(another,errc)
+                if(errc.eq.TEREC_SUCCESS) updat=.TRUE.
                else
- !Update location (actually copy the full body info):
+ !Update location (`actually copy the full body info):
                 if(an_loc.and.(.not.this_loc)) then
-                 this%body=another%body
-                 call this%body%update_header(this%header,errc)
-                 updat=.TRUE.
+                 call this%import_body(another,errc)
+                 if(errc.eq.TEREC_SUCCESS) updat=.TRUE.
                 endif
                endif
               endif
@@ -4738,102 +4768,114 @@
          if(present(ierr)) ierr=errc
          return
         end function TensRcrsvGetBody
-!--------------------------------------------------------------------------------------------
-        function TensRcrsvGetDescriptor(this,ierr,skip_body,skip_location) result(tens_descr)
-!Returns a tensor descriptor <tens_descr_t> object uniquely characterizing
-!the tensor signature, shape, layout kind, data type, and location.
+!-------------------------------------------------------------------------------------------------------------
+        function TensRcrsvGetDescriptor(this,ierr,skip_location,only_header,only_signature) result(tens_descr)
+!Returns a tensor descriptor <tens_descr_t> object uniquely characterizing the
+!tensor signature, shape, layout, data type, and location, or only some of this information.
 !Essentially, this function is an indirect CTOR for <tens_descr_t>.
-!tens_descr.info(:) format:
+!tens_descr.info(:) array format (complete):
 ! 1. hspace_idx(1:rank): space id for each tensor dimension;
 ! 2. subspace_idx(1:rank): subspace id for each tensor dimension;
 ! 3. dim_extent(1:rank): extent for each tensor dimension (0 means deferred);
 ! 4. dim_group(1:rank): previous dimension for each symmetric (dependent) tensor dimension (0:none);
 ! 5. dim_group_restriction(1:rank): group restriction for each symmetric tensor dimension;
-! 6. layout kind: Skipped when <skip_body>=TRUE;
-! 7. layout data type: Skipped when <skip_body>=TRUE;
-! 8. layout body size in bytes: Skipped when <skip_body>=TRUE;
-! 9. location (DDSS process id): Skipped when <skip_body>=TRUE or <skip_location>=TRUE.
-!TOTAL size = 5*rank + [1 + 1 + 1 + [1]] = 5*rank + 4 (elements)
-!`Note: This function violates object encapsulation by
-!       directly accessing data members of the data members
-!       of the <tens_rcrsv_t> class. However, since it is a read-only
-!       access and all accessed data members are defined in the same
-!       module, it should not cause a problem.
+! 6. layout kind: Skipped when <only_header>=TRUE or <only_signature>=TRUE;
+! 7. layout body data type: Skipped when <only_header>=TRUE or <only_signature>=TRUE;
+! 8. layout body size in bytes: Skipped when <only_header>=TRUE or <only_signature>=TRUE;
+! 9. location (DDSS process id): Skipped when <skip_location>=TRUE or <only_header>=TRUE or <only_signature>=TRUE;
+!TOTAL size = 2*rank + [3*rank + [1 + 1 + 1 + [1]]] = 5*rank + 4 (elements) at most.
+!`Note: This function violates object encapsulation by directly accessing data members
+!       of the data members of the <tens_rcrsv_t> class. However, since it is a read-only
+!       access and all accessed data members are defined in the same module, it should not cause a problem.
 !`Note: This function currently only accounts for the data type specified in the tensor body layout,
 !       but not the one from the tensor body itself. Thus, the data type will not be accounted for
 !       at all for tensors without layout.
          implicit none
-         type(tens_descr_t):: tens_descr               !out: tensor descriptor
-         class(tens_rcrsv_t), intent(in):: this        !in: tensor
-         integer(INTD), intent(out), optional:: ierr   !out: error code
-         logical, intent(in), optional:: skip_body     !in: if TRUE, the tensor body info (layout, location) will be omitted (defaults to FALSE)
-         logical, intent(in), optional:: skip_location !in: if TRUE, the tensor location will be omitted (defaults to FALSE), ignored if <skip_body>=TRUE
+         type(tens_descr_t):: tens_descr                !out: tensor descriptor
+         class(tens_rcrsv_t), intent(in):: this         !in: tensor
+         integer(INTD), intent(out), optional:: ierr    !out: error code
+         logical, intent(in), optional:: skip_location  !in: if TRUE, the tensor location will be omitted (defaults to FALSE), ignored if <only_signature>=TRUE or <only_header>=TRUE
+         logical, intent(in), optional:: only_header    !in: if TRUE, the tensor body info (layout and location) will be omitted (defaults to FALSE), ignored if <only_signature>=TRUE
+         logical, intent(in), optional:: only_signature !in: if TRUE, the tensor shape and body info (layout and location) will be omitted (defaults to FALSE)
          integer(INTD):: errc,num_dims,unresolved,i,j,k,ng,gres
-         logical:: shaped,hspaced,layed,located,symmetric,skiploc,skipbody
+         logical:: shaped,hspaced,layed,located,symmetric,skipshape,skipbody,skiploc
          class(DataDescr_t), pointer:: descr_p
          integer(INTD):: grp_pos(0:MAX_TENSOR_RANK*2) !the factor of 2 is just used to make it big enough
          !real(8):: tm
 
          !tm=thread_wtime()
-         skipbody=.FALSE.; skiploc=.FALSE.
-         if(present(skip_body)) then; skipbody=skip_body; skiploc=skipbody; endif
-         if(present(skip_location)) skiploc=(skip_location.or.skipbody)
+         skipshape=.FALSE.; skipbody=.FALSE.; skiploc=.FALSE.
+         if(present(skip_location)) skiploc=skip_location
+         if(present(only_header)) then
+          skipbody=only_header; skiploc=(skiploc.or.skipbody)
+         endif
+         if(present(only_signature)) then
+          skipshape=only_signature; skipbody=(skipbody.or.skipshape); skiploc=(skiploc.or.skipbody)
+         endif
          if(this%is_set(errc,num_dims,shaped,unresolved,hspaced,layed,located,symmetric)) then
           if(errc.eq.TEREC_SUCCESS) then
-           if((layed.or.skipbody).and.(located.or.skiploc)) then
+           if((shaped.or.skipshape).and.(layed.or.skipbody).and.(located.or.skiploc)) then
             tens_descr%rank=num_dims
             tens_descr%char_name=this%header%signature%char_name
             allocate(tens_descr%info(num_dims*5+4)) !see the format right above
-!Encode tensor header:
             i=0
+!Encode tensor header:
             if(num_dims.gt.0) then
+ !Encode tensor signature:
              tens_descr%info(i+1:i+num_dims)=this%header%signature%hspace(1:num_dims)%space_id
              tens_descr%info(i+num_dims+1:i+num_dims*2)=this%header%signature%space_idx(1:num_dims)
-             if(shaped) then
-              tens_descr%info(i+num_dims*2+1:i+num_dims*3)=this%header%shape%dim_extent(1:num_dims)
-             else
-              tens_descr%info(i+num_dims*2+1:i+num_dims*3)=0_INTL !deferred shape
-             endif
-             i=i+num_dims*3
-             if(symmetric) then !dimension symmetry may be present
-              ng=this%header%num_groups(errc) !number of non-trivial symmetric dimension groups
-              if(errc.eq.TEREC_SUCCESS) then
-               if(ng.gt.0) then !dimension symmetry indeed present
-                if(ng.le.size(grp_pos)) then
-                 grp_pos(0:ng)=0
-                 do j=1,num_dims
-                  k=this%header%get_dim_group(j,gres,errc); if(errc.ne.TEREC_SUCCESS) exit
-                  tens_descr%info(i+j)=grp_pos(k); tens_descr%info(i+num_dims+j)=gres
-                  if(k.gt.0) grp_pos(k)=j
-                 enddo
+             i=i+num_dims*2
+ !Encode tensor shape, if needed:
+             if(.not.skipshape) then
+              tens_descr%info(i+1:i+num_dims)=this%header%shape%dim_extent(1:num_dims)
+              i=i+num_dims
+              if(symmetric) then !dimension symmetry may be present
+               ng=this%header%num_groups(errc) !number of non-trivial symmetric dimension groups
+               if(errc.eq.TEREC_SUCCESS) then
+                if(ng.gt.0) then !dimension symmetry indeed present
+                 if(ng.le.size(grp_pos)) then !trap
+                  grp_pos(0:ng)=0
+                  do j=1,num_dims
+                   k=this%header%get_dim_group(j,gres,errc); if(errc.ne.TEREC_SUCCESS) exit
+                   tens_descr%info(i+j)=grp_pos(k); tens_descr%info(i+num_dims+j)=gres
+                   if(k.gt.0) grp_pos(k)=j
+                  enddo
+                  i=i+num_dims*2
+                 else
+                  errc=TEREC_ERROR
+                 endif
+                else !no dimension symmetry
+                 tens_descr%info(i+1:i+num_dims)=0
+                 tens_descr%info(i+num_dims+1:i+num_dims*2)=TEREC_IND_RESTR_NONE
                  i=i+num_dims*2
-                else
-                 errc=TEREC_ERROR
                 endif
-               else !no dimension symmetry
-                tens_descr%info(i+1:i+num_dims)=0
-                tens_descr%info(i+num_dims+1:i+num_dims*2)=TEREC_IND_RESTR_NONE
-                i=i+num_dims*2
                endif
+              else !no dimension symmetry
+               tens_descr%info(i+1:i+num_dims)=0
+               tens_descr%info(i+num_dims+1:i+num_dims*2)=TEREC_IND_RESTR_NONE
+               i=i+num_dims*2
               endif
-             else !no dimension symmetry
+             else
               tens_descr%info(i+1:i+num_dims)=0
-              tens_descr%info(i+num_dims+1:i+num_dims*2)=TEREC_IND_RESTR_NONE
-              i=i+num_dims*2
+              tens_descr%info(i+num_dims+1:i+num_dims*2)=0
+              tens_descr%info(i+num_dims*2+1:i+num_dims*3)=TEREC_IND_RESTR_NONE
+              i=i+num_dims*3
              endif
             endif
 !Encode tensor body, if needed:
             if(errc.eq.TEREC_SUCCESS) then
+ !Encode tensor layout, if needed:
              if(.not.skipbody) then
               i=i+1; tens_descr%info(i)=this%body%layout%get_layout_kind()
               i=i+1; tens_descr%info(i)=this%body%layout%get_data_type()
               i=i+1; tens_descr%info(i)=this%body%layout%get_body_size()
+ !Encode tensor body location, if needed:
               if(.not.skiploc) then
                descr_p=>this%body%layout%get_data_descr(errc)
                if(errc.eq.TEREC_SUCCESS) then
                 if(descr_p%is_set(errc,proc_rank=j)) then
                  if(errc.eq.0) then
-                  i=i+1; tens_descr%info(i)=j !MPI process owning the tensor body
+                  i=i+1; tens_descr%info(i)=j !rank of the MPI process owning the tensor body (within its specific DDSS communicator)
                  else
                   errc=TEREC_OBJ_CORRUPTED
                  endif
@@ -4857,7 +4899,7 @@
           if(errc.eq.TEREC_SUCCESS) errc=TEREC_INVALID_REQUEST
          endif
          if(present(ierr)) ierr=errc
-         !write(CONS_OUT,'("#MSG(tens_rcrsv_t.get_descriptor): Time = ",F9.6)') thread_wtime(tm) !timing
+         !write(CONS_OUT,'("#MSG(tens_rcrsv_t.get_descriptor): Time = ",F9.6)') thread_wtime(tm); flush(CONS_OUT) !timing
          return
         end function TensRcrsvGetDescriptor
 !-------------------------------------------------------------------------------------------------
@@ -5634,6 +5676,19 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensRcrsvRename
+!--------------------------------------------------------
+        subroutine TensRcrsvImportBody(this,another,ierr)
+!Imports tensor body from another tensor.
+         implicit none
+         class(tens_rcrsv_t), intent(inout):: this   !inout: tensor
+         class(tens_rcrsv_t), intent(in):: another   !in: source tensor whose body is being imported
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         call this%body%tens_body_copy(another%body,this%header,errc)
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensRcrsvImportBody
 !---------------------------------------
         subroutine tens_rcrsv_dtor(this)
          implicit none

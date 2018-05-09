@@ -8,7 +8,7 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/05/07
+!REVISION: 2018/05/08
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -1534,7 +1534,7 @@
 
          tens_entry_p=>NULL()
          call this%init_lock()
-         tens_descr=tensor%get_descriptor(errc,skip_body=.TRUE.,skip_location=.TRUE.) !compute tensor descriptor while skipping body/location information
+         tens_descr=tensor%get_descriptor(errc,only_signature=.TRUE.) !compute tensor descriptor by tensor signature only
          if(errc.eq.TEREC_SUCCESS) then
           call this%lock()
           errc=dit%init(this%map)
@@ -1598,7 +1598,7 @@
            write(jo,'("#MSG(TensorCache)[",i6,"]: Creating cache entry for tensor")') impir; flush(jo)
            call tensor%print_it(dev_id=jo); flush(jo)
           endif
-          tens_descr=tensor%get_descriptor(errc,skip_body=.TRUE.,skip_location=.TRUE.)
+          tens_descr=tensor%get_descriptor(errc,only_signature=.TRUE.) !compute tensor descriptor by tensor signature only
           if(errc.eq.TEREC_SUCCESS) then
            call this%lock()
            errc=dit%init(this%map)
@@ -1672,7 +1672,7 @@
           write(jo,'("#MSG(TensorCache)[",i6,"]: Evicting cache entry for tensor")') impir; flush(jo)
           call tensor%print_it(dev_id=jo); flush(jo)
          endif
-         tens_descr=tensor%get_descriptor(errc,skip_body=.TRUE.,skip_location=.TRUE.)
+         tens_descr=tensor%get_descriptor(errc,only_signature=.TRUE.) !compute tensor descriptor by tensor signature only
          if(errc.eq.TEREC_SUCCESS) then
           call this%lock()
           errc=dit%init(this%map)

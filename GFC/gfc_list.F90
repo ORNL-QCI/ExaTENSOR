@@ -1,6 +1,6 @@
 !Generic Fortran Containers (GFC): Bi-directional linked list
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2018-03-05 (started 2016-02-28)
+!REVISION: 2018-05-09 (started 2016-02-28)
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -285,7 +285,7 @@
 !Duplicates a list into another list either by value or by reference.
          implicit none
          integer(INTD):: ierr                          !out: error code
-         class(list_bi_t), intent(in):: this           !in: input list (must be non-empty on input)
+         class(list_bi_t), intent(in):: this           !in: input list (may be empty)
          class(list_bi_t), intent(inout):: list        !out: output duplicate list (must be empty on input)
          logical, intent(in), optional:: assoc_only    !in: if TRUE, the list will be duplicated by reference, otherwise by value (default)
 #if !(defined(__GNUC__) && __GNUC__ < 9)
@@ -297,8 +297,8 @@
          logical:: assoc
 
          ierr=GFC_SUCCESS
-         if(this%is_empty().eq.GFC_FALSE) then
-          if(list%is_empty().eq.GFC_TRUE) then
+         if(list%is_empty().eq.GFC_TRUE) then
+          if(this%is_empty().eq.GFC_FALSE) then
            ierr=ilit%init(this)
            if(ierr.eq.GFC_SUCCESS) then
             ierr=olit%init(list)
@@ -328,11 +328,9 @@
             endif
             errc=ilit%release(); if(errc.ne.GFC_SUCCESS.and.ierr.eq.GFC_SUCCESS) ierr=errc
            endif
-          else
-           ierr=GFC_INVALID_ARGS
           endif
          else
-          ierr=GFC_EMPTY_CONT
+          ierr=GFC_INVALID_ARGS
          endif
          return
         end function ListDuplicateToList
@@ -358,8 +356,8 @@
          logical:: assoc
 
          ierr=GFC_SUCCESS
-         if(this%is_empty().eq.GFC_FALSE) then
-          if(vector%is_empty().eq.GFC_TRUE) then
+         if(vector%is_empty().eq.GFC_TRUE) then
+          if(this%is_empty().eq.GFC_FALSE) then
            ierr=ilit%init(this)
            if(ierr.eq.GFC_SUCCESS) then
             ierr=ovit%init(vector)
@@ -389,11 +387,9 @@
             endif
             errc=ilit%release(); if(errc.ne.GFC_SUCCESS.and.ierr.eq.GFC_SUCCESS) ierr=errc
            endif
-          else
-           ierr=GFC_INVALID_ARGS
           endif
          else
-          ierr=GFC_EMPTY_CONT
+          ierr=GFC_INVALID_ARGS
          endif
          return
         end function ListDuplicateToVector
@@ -401,11 +397,26 @@
         subroutine ListBiAssign(this,src)
 !Copy assignment.
          implicit none
-         class(list_bi_t), intent(out):: this !out: list
-         class(list_bi_t), intent(in):: src   !in: source list
+         class(list_bi_t), intent(inout), target:: this !out: destination list
+         class(list_bi_t), intent(in), target:: src     !in: source list
          integer(INTD):: errc
+         class(list_bi_t), pointer:: ds,sr
+         type(list_iter_t):: lit
 
-         errc=src%duplicate(this)
+         ds=>this; sr=>src
+         if(.not.associated(ds,sr)) then
+          errc=lit%init(this)
+          if(errc.eq.GFC_SUCCESS) then
+           errc=lit%delete_all()
+           if(errc.eq.GFC_SUCCESS) then
+            errc=lit%release()
+            if(errc.eq.GFC_SUCCESS) errc=src%duplicate(this)
+           endif
+          endif
+          if(errc.ne.GFC_SUCCESS) then
+           if(VERBOSE) write(CONS_OUT,'("#ERROR(list_bi_t.assignment(=)): Duplication failed with error ",i11)') errc
+          endif
+         endif
          return
         end subroutine ListBiAssign
 !------------------------------------
