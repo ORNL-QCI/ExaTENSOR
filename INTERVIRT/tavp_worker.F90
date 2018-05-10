@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/05/07
+!REVISION: 2018/05/10
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -1064,14 +1064,12 @@
 
          errc=0
          if(associated(tensor)) then
-!!!$OMP CRITICAL (TAVP_WRK_CACHE)
           call this%init_lock()
           call this%lock()
           call this%set_tensor(tensor,errc)
           if(errc.eq.0) then; tensor=>NULL(); else; errc=-2; endif !transfer the ownership
           call this%release_block()
           call this%unlock()
-!!!$OMP END CRITICAL (TAVP_WRK_CACHE)
          else
           errc=-1
          endif
@@ -1139,15 +1137,14 @@
 !Sets the tensor layout, either the default one or imported from another tensor.
 !If the tensor stored in the tensor cache entry already has a layout, nothing will be done.
          implicit none
-         class(tens_entry_wrk_t), intent(inout):: this      !inout: active tensor cache entry
+         class(tens_entry_wrk_t), intent(inout):: this      !inout: active tensor cache entry (layout acceptor)
          integer(INTD), intent(out), optional:: ierr        !out: error code
          class(tens_rcrsv_t), intent(in), optional:: tensor !in: prototype tensor whose layout to be imported
          integer(INTD):: errc
          class(tens_rcrsv_t), pointer:: tens
          class(tens_header_t), pointer:: header
-         logical:: laid
+         logical:: laid,inp_laid
 
-!!!$OMP CRITICAL (TAVP_WRK_CACHE)
          call this%lock()
          tens=>this%get_tensor(errc)
          if(errc.eq.0.and.associated(tens)) then
@@ -1155,7 +1152,15 @@
            if(errc.eq.TEREC_SUCCESS) then
             if(.not.laid) then
              if(present(tensor)) then !import layout from an existing tensor
-              call quit(-1,'#FATAL(TAVP-WRK:tens_entry_wrk_t.set_tensor_layout): Tensor layout import is not implemented!') !`Implement tensor layout import
+              if(tensor%is_set(errc,layed=inp_laid)) then
+               if(errc.eq.TEREC_SUCCESS.and.inp_laid) then
+                !`Finish
+               else
+                errc=-10
+               endif
+              else
+               errc=-9
+              endif
              else !set the default layout
  !Set tensor composition, if not set:
               if(.not.tens%has_structure(errc)) then
@@ -1202,7 +1207,6 @@
           errc=-1
          endif
          call this%unlock()
-!!!$OMP END CRITICAL (TAVP_WRK_CACHE)
          if(present(ierr)) ierr=errc
          return
         end subroutine TensEntryWrkSetTensorLayout
@@ -1218,7 +1222,6 @@
          class(tens_body_t), pointer:: body
          class(tens_layout_t), pointer:: layout
 
-!!!$OMP CRITICAL (TAVP_WRK_CACHE)
          call this%lock()
          if(this%resource%is_empty(errc)) then
           if(errc.eq.0) then
@@ -1250,7 +1253,6 @@
           if(errc.ne.0) errc=-1
          endif
          call this%unlock()
-!!!$OMP END CRITICAL (TAVP_WRK_CACHE)
          if(present(ierr)) ierr=errc
          return
         end subroutine TensEntryWrkAcquireResource
@@ -1264,7 +1266,6 @@
          integer(INTD):: errc
          logical:: lockable
 
-!!!$OMP CRITICAL (TAVP_WRK_CACHE)
          lockable=this%is_lockable()
          if(lockable) call this%lock() !some tensor cache entries being destructed do not have locks (temporary allocated in tens_cache_t.store())
          if(.not.this%resource%is_empty(errc)) then
@@ -1287,7 +1288,6 @@
           if(errc.ne.0) errc=-1
          endif
          if(lockable) call this%unlock() !some tensor cache entries being destructed do not have locks
-!!!$OMP END CRITICAL (TAVP_WRK_CACHE)
          if(present(ierr)) ierr=errc
          return
         end subroutine TensEntryWrkReleaseResource
@@ -1614,7 +1614,8 @@
           endif
           call this%unlock()
          else
-          call quit(-1,'#FATAL(TAVP-WRK:tens_oprnd_t.set_tensor_layout): Direct tensor layout setup is not implemented!') !`Implement direct tensor layout setup
+          errc=-1
+          call quit(errc,'#FATAL(TAVP-WRK:tens_oprnd_t.set_tensor_layout): Direct tensor layout setup is not implemented!')
          endif
          if(present(ierr)) ierr=errc
          return
@@ -1754,7 +1755,6 @@
          res=.FALSE.
          if(this%is_active(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
-!!!$OMP CRITICAL (TAVP_WRK_CACHE)
            call this%lock()
            call this%tensor%get_name(tname,l,errc)
            if(errc.eq.TEREC_SUCCESS.and.l.gt.0) then
@@ -1763,7 +1763,6 @@
             errc=-3
            endif
            call this%unlock()
-!!!$OMP END CRITICAL (TAVP_WRK_CACHE)
           else
            errc=-2
           endif
@@ -1787,7 +1786,6 @@
          res=.FALSE.
          if(this%is_active(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
-!!!$OMP CRITICAL (TAVP_WRK_CACHE)
            call this%lock()
            if(this%tensor%is_set(errc,layed=laid,located=locd)) then
             if(errc.eq.TEREC_SUCCESS) then
@@ -1799,7 +1797,6 @@
             errc=-3
            endif
            call this%unlock()
-!!!$OMP END CRITICAL (TAVP_WRK_CACHE)
           else
            errc=-2
           endif
@@ -1827,7 +1824,6 @@
          res=.FALSE.
          if(this%is_active(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
-!!!$OMP CRITICAL (TAVP_WRK_CACHE)
            call this%lock()
            body_p=>this%tensor%get_body(errc)
            if(errc.eq.TEREC_SUCCESS.and.associated(body_p)) then
@@ -1859,7 +1855,6 @@
             errc=-3
            endif
            call this%unlock()
-!!!$OMP END CRITICAL (TAVP_WRK_CACHE)
           else
            errc=-2
           endif
@@ -1885,7 +1880,6 @@
          res=.FALSE.
          if(this%is_active(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
-!!!$OMP CRITICAL (TAVP_WRK_CACHE)
            call this%lock()
            if(this%tensor%is_set(errc,layed=laid,located=locd)) then
             if(errc.eq.TEREC_SUCCESS) then
@@ -1897,7 +1891,6 @@
             errc=-3
            endif
            call this%unlock()
-!!!$OMP END CRITICAL (TAVP_WRK_CACHE)
           else
            errc=-2
           endif
@@ -1919,13 +1912,11 @@
          res=.FALSE.
          if(this%is_active(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
-!!!$OMP CRITICAL (TAVP_WRK_CACHE)
            call this%lock()
            if(associated(this%resource)) then
             res=(.not.this%resource%is_empty(errc)); if(errc.ne.0) then; res=.FALSE.; errc=-3; endif
            endif
            call this%unlock()
-!!!$OMP END CRITICAL (TAVP_WRK_CACHE)
           else
            errc=-2
           endif
@@ -2428,7 +2419,7 @@
          return
         end subroutine TensOprndPrintIt
 !------------------------------------------------------------------------
-        subroutine TensOprndTmpResetTensor(this,cache_entry,forward,ierr)
+        subroutine TensOprndTmpResetTensor(this,cache_entry,forward,ierr) !`Double lock (temporary + persistent tensors)
 !Resets the tensor in a tensor operand by providing another tensor cache entry
 !with a temporary tensor (<forward> = TRUE) or vice versa (<forward> = FALSE).
 !The reference count of the persistent tensor cache entry is kept unchanged!
@@ -3068,7 +3059,7 @@
          return
         end function TensInstrGetOutputOperands
 !-------------------------------------------------------
-        subroutine TensInstrLayOutputOperands(this,ierr) !`No race protection (multilock is needed)
+        subroutine TensInstrLayOutputOperands(this,ierr) !`Double lock used (deadlock potential)
 !Sets up the storage layout for non-existing output tensor operands.
          implicit none
          class(tens_instr_t), intent(inout):: this   !inout: active tensor instruction
@@ -3084,7 +3075,7 @@
            if(errc.eq.DSVP_SUCCESS) then
             if(opcode.ge.TAVP_ISA_TENS_FIRST.and.opcode.le.TAVP_ISA_TENS_LAST) then
              select case(opcode)
-             case(TAVP_INSTR_TENS_DESTROY)
+             case(TAVP_INSTR_TENS_DESTROY) !no output operands
              case(TAVP_INSTR_TENS_CREATE,TAVP_INSTR_TENS_INIT)
               oprnd=>this%get_operand(0,errc)
               if(errc.eq.DSVP_SUCCESS) then
@@ -3093,13 +3084,15 @@
               else
                errc=-9
               endif
+              oprnd=>NULL(); tens_oprnd=>NULL()
              case(TAVP_INSTR_TENS_COPY,TAVP_INSTR_TENS_ADD,TAVP_INSTR_TENS_ACCUMULATE)
               oprnd=>this%get_operand(1,errc)
               if(errc.eq.DSVP_SUCCESS) then
                tens_oprnd=>NULL(); select type(oprnd); class is(tens_oprnd_t); tens_oprnd=>oprnd; end select
-               tensor=>tens_oprnd%get_tensor(errc)
+               call tens_oprnd%lock()
+               tensor=>tens_oprnd%get_tensor(errc) !input tensor has a layout
                if(errc.eq.0) then
-                oprnd=>this%get_operand(0,errc)
+                oprnd=>this%get_operand(0,errc) !output tensor will import the layout of the input tensor
                 if(errc.eq.DSVP_SUCCESS) then
                  tens_oprnd=>NULL(); select type(oprnd); class is(tens_oprnd_t); tens_oprnd=>oprnd; end select
                  call tens_oprnd%set_tensor_layout(errc,tensor); if(errc.ne.0) errc=-8
@@ -3109,10 +3102,16 @@
                else
                 errc=-6
                endif
+               call tens_oprnd%unlock()
               else
                errc=-5
               endif
+              oprnd=>NULL(); tens_oprnd=>NULL()
              case default
+              if(DEBUG.gt.0) then
+               write(CONS_OUT,'("#FATAL(TAVP-WRK:tens_instr_t.lay_output_operands): Unable to lay out the output operand in:")')
+               call this%print_it(dev_id=CONS_OUT); flush(CONS_OUT)
+              endif
               call quit(-1,'#FATAL(TAVP-WRK:tens_instr_t.lay_output_operands): Tensor layout inferrence is not implemented yet!') !`Implement output tensor layout inferrence for other tensor instructions
              end select
             else
@@ -4039,9 +4038,7 @@
              endif
              tensor=>tens_wrk_entry%get_tensor() !use the tensor from the tensor cache
              if(.not.stored) then !the tensor was already in the tensor cache before, update it by the information from the just decoded tensor
-!!!$OMP CRITICAL (TAVP_WRK_CACHE)
               call tensor%update(tensor_tmp,jerr,updated) !tensor metadata update is done inside the tensor cache
-!!!$OMP END CRITICAL (TAVP_WRK_CACHE)
               deallocate(tensor_tmp); tensor_tmp=>NULL() !deallocate temporary tensor after importing its information into the cache
               if(jerr.ne.TEREC_SUCCESS) then
                if(associated(tens_entry)) then; call tens_entry%unlock(); call this%arg_cache%release_entry(tens_entry); endif
@@ -4717,7 +4714,7 @@
          return
         end subroutine TAVPWRKResourcerShutdown
 !-------------------------------------------------------------
-        subroutine TAVPWRKResourcerSubstituteOutput(this,ierr)
+        subroutine TAVPWRKResourcerSubstituteOutput(this,ierr) !`Requires double lock (persistent + accumulator tensors)
 !Substitutes the persistent output tensor(s) in a tensor instruction at the current position
 !in this%iqueue with a temporary one(s). If this is the first local substitution of a given
 !persistent output tensor, an accumulator tensor will be created in the tensor cache
@@ -4755,7 +4752,7 @@
                  cache_entry=>oprnd%get_cache_entry(errc)
                  if(errc.eq.0.and.associated(cache_entry)) then
                   call cache_entry%lock()
-                  tensor=>oprnd%get_tensor(errc)
+                  tensor=>oprnd%get_tensor(errc) !original (persistent) output tensor
                   if(errc.eq.0.and.associated(tensor)) then
                    header=>tensor%get_header(errc)
                    if(errc.eq.TEREC_SUCCESS.and.associated(header)) then
@@ -4764,7 +4761,7 @@
  !Register the accumulator tensor, if needed (on first occurrence):
                     call cache_entry%incr_temp_count() !new temporary tensor to be created (this counter is never decremented unless reset)
                     tc=cache_entry%get_temp_count()
-                    if(tc.eq.1) then !first tensor instruction with this output tensor operand: Register accumulator tensor
+                    if(tc.eq.1) then !first tensor instruction with this output tensor operand: Register accumulator tensor (temporary #0)
                      call register_temp_tensor(0,acc_cache_entry,errc); if(errc.ne.0) errc=-17 !register accumulator tensor in the cache
                     else
                      call lookup_acc_tensor(acc_cache_entry,errc); if(errc.ne.0) errc=-16
@@ -4862,9 +4859,18 @@
                call temptens%rename(tname(1:jl),jerr)
                if(jerr.eq.TEREC_SUCCESS) then
                 stored=this%arg_cache%store(temptens,tens_entry_wrk_alloc,jerr,tens_entry_p=tens_entry) !tensor ownership is moved to the tensor cache entry
-                if(.not.(jerr.eq.0.and.stored.and.associated(tens_entry))) then
-                 if(associated(tens_entry)) call this%arg_cache%release_entry(tens_entry); tens_entry=>NULL()
+                if(jerr.eq.0.and.stored.and.associated(tens_entry)) then
+                 select type(tens_entry)
+                 class is(tens_entry_wrk_t)
+                  call tens_entry%set_tensor_layout(jerr,tensor); if(jerr.ne.0) jerr=-8 !import temporary tensor layout from the persistent tensor
+                 class default
+                  jerr=-7
+                 end select
+                else
                  jerr=-6
+                endif
+                if(jerr.ne.0.and.associated(tens_entry)) then
+                 call this%arg_cache%release_entry(tens_entry); tens_entry=>NULL()
                 endif
                 if(DEBUG.gt.0.and.jerr.eq.0) then
                  write(CONS_OUT,'("#MSG(TAVP-WRK:Resourcer)[",i6,"]: Output tensor renamed to")',ADVANCE='NO') impir
@@ -6075,14 +6081,12 @@
                     if(errc.eq.0) then
                      cache_entry=>oprnd%get_cache_entry(errc)
                      if(errc.eq.0) then
-!!!$OMP CRITICAL (TAVP_WRK_CACHE)
                       call tensor%set_location(descr,errc) !tensor has been located
                       if(errc.eq.0) then
                        call cache_entry%set_persistency(.TRUE.) !TENS_CREATE creates persistent tensors
                       else
                        errc=-15
                       endif
-!!!$OMP END CRITICAL (TAVP_WRK_CACHE)
                       cache_entry=>NULL()
                      else
                       errc=-14

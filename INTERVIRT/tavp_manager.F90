@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/05/08
+!REVISION: 2018/05/10
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -534,7 +534,6 @@
 
          errc=0
          if(associated(tensor)) then
-!!!$OMP CRITICAL (TAVP_MNG_CACHE)
           call this%init_lock()
           call this%lock()
           call this%set_tensor(tensor,errc)
@@ -545,7 +544,6 @@
            errc=-2
           endif
           call this%unlock()
-!!!$OMP END CRITICAL (TAVP_MNG_CACHE)
          else
           errc=-1
          endif
@@ -1013,7 +1011,6 @@
          res=.FALSE.
          if(this%is_active(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
-!!!$OMP CRITICAL (TAVP_MNG_CACHE)
            call this%lock()
            tensor=>this%get_tensor(errc)
            if(errc.eq.0) then
@@ -1028,7 +1025,6 @@
             errc=-3
            endif
            call this%unlock()
-!!!$OMP END CRITICAL (TAVP_MNG_CACHE)
           else
            errc=-2
           endif
@@ -1081,7 +1077,6 @@
          res=.FALSE.
          if(this%is_active(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
-!!!$OMP CRITICAL (TAVP_MNG_CACHE)
            call this%lock()
            if(this%tensor%is_set(errc,layed=laid,located=locd)) then
             if(errc.eq.TEREC_SUCCESS) then
@@ -1093,7 +1088,6 @@
             errc=-3
            endif
            call this%unlock()
-!!!$OMP END CRITICAL (TAVP_MNG_CACHE)
           else
            errc=-2
           endif
@@ -2402,9 +2396,7 @@
              endif
              tensor=>tens_mng_entry%get_tensor() !use the tensor from the tensor cache
              if(.not.stored) then !the tensor was already in the tensor cache before, update it by the information from the just decoded tensor
-!!!$OMP CRITICAL (TAVP_MNG_CACHE)
               call tensor%update(tensor_tmp,jerr,updated) !tensor metadata update is done inside the tensor cache
-!!!$OMP END CRITICAL (TAVP_MNG_CACHE)
               deallocate(tensor_tmp); tensor_tmp=>NULL() !deallocate temporary tensor after importing its information into the cache
               if(jerr.ne.TEREC_SUCCESS) then
                if(DEBUG.gt.0) then
@@ -3580,7 +3572,6 @@
              endif
             endif
             if(jerr.eq.0) then
-!!!$OMP CRITICAL (TAVP_MNG_CACHE)
              tensor=>oprnd%get_tensor(jerr)
              if(jerr.eq.0) then
               if(tensor%get_num_subtensors().le.0) then !tensor does not have an internal structure yet
@@ -3595,7 +3586,6 @@
               jerr=-2
              endif
              tensor=>NULL()
-!!!$OMP END CRITICAL (TAVP_MNG_CACHE)
             endif
             call oprnd%unlock()
            class default

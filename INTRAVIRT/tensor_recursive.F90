@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/05/09
+!REVISION: 2018/05/10
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -127,20 +127,21 @@
          integer(INTL), allocatable, private:: space_idx(:)   !subspace id for each tensor dimension
          type(hspace_reg_t), allocatable, private:: hspace(:) !hierarchical vector space id for each tensor dimension (optional)
          contains
-          procedure, private:: TensSignatureCtor                   !ctor
-          procedure, private:: TensSignatureCtorUnpack             !ctor by unpacking
+          procedure, private:: TensSignatureCtor                    !ctor
+          procedure, private:: TensSignatureCtorUnpack              !ctor by unpacking
           generic, public:: tens_signature_ctor=>TensSignatureCtor,TensSignatureCtorUnpack
-          procedure, public:: pack=>TensSignaturePack              !packs the object into a packet
-          procedure, public:: is_set=>TensSignatureIsSet           !returns .TRUE. if the tensor signature is set
-          procedure, public:: get_name=>TensSignatureGetName       !returns the alphanumeric_ tensor name
-          procedure, public:: get_rank=>TensSignatureGetRank       !returns the rank of the tensor (number of dimensions)
-          procedure, public:: get_spec=>TensSignatureGetSpec       !returns the tensor subspace multi-index (specification)
-          procedure, public:: get_bases=>TensSignatureGetBases     !returns the base offset for each tensor dimension
-          procedure, public:: relate=>TensSignatureRelate          !relates the tensor signature to another tensor signature: {CMP_EQ,CMP_CN,CMP_IN,CMP_OV,CMP_NC}
-          procedure, public:: compare=>TensSignatureCompare        !compares the tensor signature with another tensor signature: {CMP_EQ,CMP_LT,CMP_GT,CMP_ER}
-          procedure, public:: print_it=>TensSignaturePrintIt       !prints the tensor signature
-          procedure, public:: rename=>TensSignatureRename          !renames the tensor without restrictions (for internal use)
-          final:: tens_signature_dtor                              !dtor
+          procedure, public:: pack=>TensSignaturePack               !packs the object into a packet
+          procedure, public:: is_set=>TensSignatureIsSet            !returns .TRUE. if the tensor signature is set
+          procedure, public:: get_name=>TensSignatureGetName        !returns the alphanumeric_ tensor name
+          procedure, public:: get_rank=>TensSignatureGetRank        !returns the rank of the tensor (number of dimensions)
+          procedure, public:: get_spec=>TensSignatureGetSpec        !returns the tensor subspace multi-index (specification)
+          procedure, public:: get_bases=>TensSignatureGetBases      !returns the base offset for each tensor dimension
+          procedure, public:: relate=>TensSignatureRelate           !relates the tensor signature to another tensor signature: {CMP_EQ,CMP_CN,CMP_IN,CMP_OV,CMP_NC}
+          procedure, public:: compare=>TensSignatureCompare         !compares the tensor signature with another tensor signature: {CMP_EQ,CMP_LT,CMP_GT,CMP_ER}
+          procedure, public:: compare_spec=>TensSignatureCompareSpec!compares the space/subspace multi-indices only: {CMP_EQ,CMP_LT,CMP_GT,CMP_ER}
+          procedure, public:: print_it=>TensSignaturePrintIt        !prints the tensor signature
+          procedure, public:: rename=>TensSignatureRename           !renames the tensor without restrictions (for internal use)
+          final:: tens_signature_dtor                               !dtor
         end type tens_signature_t
  !Tensor shape:
         type, public:: tens_shape_t
@@ -312,6 +313,7 @@
           procedure, public:: get_header=>TensRcrsvGetHeader         !returns a pointer to the tensor header
           procedure, public:: get_body=>TensRcrsvGetBody             !returns a pointer to the tensor body
           procedure, public:: get_descriptor=>TensRcrsvGetDescriptor !returns a tensor descriptor uniquely characterizing tensor signature, shape, layout, and location
+          procedure, public:: conforms_to=>TensRcrsvConformsTo       !returns TRUE if the tensor subspace multi-index is equal to the one from another tensor
           procedure, private:: TensRcrsvSplitList                    !splits the tensor into subtensors (a list of either subtensors or just their headers)
           procedure, private:: TensRcrsvSplitVector                  !splits the tensor into subtensors (a vector of either subtensors or just their headers)
           generic, public:: split=>TensRcrsvSplitList,TensRcrsvSplitVector
@@ -599,6 +601,7 @@
         private TensSignatureGetBases
         private TensSignatureRelate
         private TensSignatureCompare
+        private TensSignatureCompareSpec
         private TensSignaturePrintIt
         public tens_signature_dtor
  !tens_shape_t:
@@ -718,6 +721,7 @@
         private TensRcrsvGetHeader
         private TensRcrsvGetBody
         private TensRcrsvGetDescriptor
+        private TensRcrsvConformsTo
         private TensRcrsvSplitList
         private TensRcrsvSplitVector
         private TensRcrsvDecompose
@@ -1868,6 +1872,19 @@
          endif
          return
         end function TensSignatureCompare
+!------------------------------------------------------------------
+        function TensSignatureCompareSpec(this,another) result(cmp)
+!Compares the space/subspace multi-indices only: {CMP_EQ,CMP_LT,CMP_GT,CMP_ER}.
+         implicit none
+         integer(INTD):: cmp                           !out: comparison result: {CMP_EQ,CMP_LT,CMP_GT,CMP_ER}
+         class(tens_signature_t), intent(in):: this    !in: tensor signature 1
+         class(tens_signature_t), intent(in):: another !in: tensor signature 2
+         integer(INTD):: errc
+
+         cmp=CMP_ER
+         !`Finish
+         return
+        end function TensSignatureCompareSpec
 !----------------------------------------------------------------
         subroutine TensSignaturePrintIt(this,ierr,dev_id,nspaces)
 !Prints the tensor signature.
@@ -4902,6 +4919,48 @@
          !write(CONS_OUT,'("#MSG(tens_rcrsv_t.get_descriptor): Time = ",F9.6)') thread_wtime(tm); flush(CONS_OUT) !timing
          return
         end function TensRcrsvGetDescriptor
+!------------------------------------------------------------------
+        function TensRcrsvConformsTo(this,another,ierr) result(res)
+!Returns TRUE if the tensor space/subspace multi-indices are equal to those from another tensor.
+         implicit none
+         logical:: res                               !out: answer
+         class(tens_rcrsv_t), intent(in):: this      !in: tensor
+         class(tens_rcrsv_t), intent(in):: another   !in: another tensor
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc,cmp
+         class(tens_header_t), pointer:: h0,h1
+         class(tens_signature_t), pointer:: s0,s1
+
+         res=.FALSE.
+         if(this%is_set(errc)) then
+          if(another%is_set(errc)) then
+           h0=>this%get_header(errc)
+           if(errc.eq.TEREC_SUCCESS) then
+            h1=>another%get_header(errc)
+            if(errc.eq.TEREC_SUCCESS) then
+             s0=>h0%get_signature(errc)
+             if(errc.eq.TEREC_SUCCESS) then
+              s1=>h1%get_signature(errc)
+              if(errc.eq.TEREC_SUCCESS) then
+               cmp=s0%compare_spec(s1)
+               if(cmp.eq.CMP_EQ) then
+                res=.TRUE.
+               else
+                if(cmp.eq.CMP_ER) errc=TEREC_ERROR
+               endif
+              endif
+             endif
+            endif
+           endif
+          else
+           if(errc.eq.TEREC_SUCCESS) errc=TEREC_INVALID_ARGS
+          endif
+         else
+          if(errc.eq.TEREC_SUCCESS) errc=TEREC_INVALID_ARGS
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function TensRcrsvConformsTo
 !-------------------------------------------------------------------------------------------------
         subroutine TensRcrsvSplitList(this,split_dims,subtensors,ierr,num_subtensors,headers_only)
 !Splits the given tensor into subtensors and appends those to a list of subtensors, either as
