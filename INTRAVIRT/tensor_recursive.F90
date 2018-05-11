@@ -3667,10 +3667,14 @@
 
          errc=another%subtensors%duplicate(this%subtensors)
          if(errc.eq.GFC_SUCCESS) then
-          this%layout=another%layout
-          this%num_subtensors=another%num_subtensors
-          this%data_type=another%data_type
-          call this%update_header(header,errc)
+          allocate(this%layout,SOURCE=another%layout,STAT=errc)
+          if(errc.eq.0) then
+           this%num_subtensors=another%num_subtensors
+           this%data_type=another%data_type
+           call this%update_header(header,errc)
+          else
+           errc=TEREC_MEM_ALLOC_FAILED
+          endif
          else
           errc=TEREC_ERROR
          endif

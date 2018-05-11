@@ -1,7 +1,7 @@
 /** C++ adapters for ExaTENSOR: Tensor connected to other tensors
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/10/11
+!REVISION: 2018/05/11
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -166,7 +166,7 @@ void TensorConn<T>::deleteDimension(const unsigned int dimesn)
 #endif
  auto newTensRank = oldTensRank - 1;
  const std::size_t * oldDims = Tensor.getDimExtents();
- std:size_t newDims[newTensRank];
+ std::size_t newDims[newTensRank];
  unsigned int j=0;
  for(unsigned int i = 0; i < oldTensRank; ++i){
   if(i != dimesn) newDims[j++] = oldDims[i];
@@ -184,7 +184,7 @@ void TensorConn<T>::appendDimension(const std::size_t dimExtent, //in: new dimen
  auto oldTensRank = Tensor.getRank();
  auto newTensRank = oldTensRank + 1;
  const std::size_t * oldDims = Tensor.getDimExtents();
- std:size_t newDims[newTensRank];
+ std::size_t newDims[newTensRank];
  for(unsigned int i = 0; i < oldTensRank; ++i) newDims[i] = oldDims[i];
  newDims[newTensRank-1]=dimExtent;
  Tensor.reshape(newTensRank,newDims);
