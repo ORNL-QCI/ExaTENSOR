@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/05/10
+!REVISION: 2018/05/11
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -1154,7 +1154,7 @@
              if(present(tensor)) then !import layout from an existing tensor
               if(tensor%is_set(errc,layed=inp_laid)) then
                if(errc.eq.TEREC_SUCCESS.and.inp_laid) then
-                !`Finish
+                call tens%import_body(tensor,errc,omit_location=.TRUE.); if(errc.ne.TEREC_SUCCESS) errc=-11
                else
                 errc=-10
                endif
@@ -1614,8 +1614,7 @@
           endif
           call this%unlock()
          else
-          errc=-1
-          call quit(errc,'#FATAL(TAVP-WRK:tens_oprnd_t.set_tensor_layout): Direct tensor layout setup is not implemented!')
+          call quit(-1,'#FATAL(TAVP-WRK:tens_oprnd_t.set_tensor_layout): Direct tensor layout setup is not implemented!') !`Implement
          endif
          if(present(ierr)) ierr=errc
          return
@@ -3066,8 +3065,9 @@
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc,i,opcode
          class(ds_oprnd_t), pointer:: oprnd
-         class(tens_oprnd_t), pointer:: tens_oprnd
+         class(tens_oprnd_t), pointer:: tens_oprnd0,tens_oprnd1
          class(tens_rcrsv_t), pointer:: tensor
+         logical:: laid
 
          if(this%is_active(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
@@ -3079,40 +3079,67 @@
              case(TAVP_INSTR_TENS_CREATE,TAVP_INSTR_TENS_INIT)
               oprnd=>this%get_operand(0,errc)
               if(errc.eq.DSVP_SUCCESS) then
-               tens_oprnd=>NULL(); select type(oprnd); class is(tens_oprnd_t); tens_oprnd=>oprnd; end select
-               call tens_oprnd%set_tensor_layout(errc); if(errc.ne.0) errc=-10
+               tens_oprnd0=>NULL(); select type(oprnd); class is(tens_oprnd_t); tens_oprnd0=>oprnd; end select
+               call tens_oprnd0%set_tensor_layout(errc); if(errc.ne.0) errc=-15
               else
-               errc=-9
+               errc=-14
               endif
-              oprnd=>NULL(); tens_oprnd=>NULL()
+              oprnd=>NULL(); tens_oprnd0=>NULL()
              case(TAVP_INSTR_TENS_COPY,TAVP_INSTR_TENS_ADD,TAVP_INSTR_TENS_ACCUMULATE)
               oprnd=>this%get_operand(1,errc)
               if(errc.eq.DSVP_SUCCESS) then
-               tens_oprnd=>NULL(); select type(oprnd); class is(tens_oprnd_t); tens_oprnd=>oprnd; end select
-               call tens_oprnd%lock()
-               tensor=>tens_oprnd%get_tensor(errc) !input tensor has a layout
+               tens_oprnd1=>NULL(); select type(oprnd); class is(tens_oprnd_t); tens_oprnd1=>oprnd; end select
+               call tens_oprnd1%lock()
+               tensor=>tens_oprnd1%get_tensor(errc) !input tensor has a layout
                if(errc.eq.0) then
                 oprnd=>this%get_operand(0,errc) !output tensor will import the layout of the input tensor
                 if(errc.eq.DSVP_SUCCESS) then
-                 tens_oprnd=>NULL(); select type(oprnd); class is(tens_oprnd_t); tens_oprnd=>oprnd; end select
-                 call tens_oprnd%set_tensor_layout(errc,tensor); if(errc.ne.0) errc=-8
+                 tens_oprnd0=>NULL(); select type(oprnd); class is(tens_oprnd_t); tens_oprnd0=>oprnd; end select
+                 call tens_oprnd0%set_tensor_layout(errc,tensor); if(errc.ne.0) errc=-13
+                else
+                 errc=-12
+                endif
+               else
+                errc=-11
+               endif
+               call tens_oprnd1%unlock()
+              else
+               errc=-10
+              endif
+              oprnd=>NULL(); tens_oprnd0=>NULL(); tens_oprnd1=>NULL()
+             case(TAVP_INSTR_TENS_CONTRACT)
+              oprnd=>this%get_operand(0,errc)
+              if(errc.eq.DSVP_SUCCESS) then
+               tens_oprnd0=>NULL(); select type(oprnd); class is(tens_oprnd_t); tens_oprnd0=>oprnd; end select
+               call tens_oprnd0%lock()
+               tensor=>tens_oprnd0%get_tensor(errc)
+               if(errc.eq.0) then
+                if(tensor%is_set(errc,layed=laid)) then
+                 if(errc.eq.TEREC_SUCCESS) then
+                  if(.not.laid) then
+                   call tens_oprnd0%set_tensor_layout(errc); if(errc.ne.0) errc=-9
+                  endif
+                 else
+                  errc=-8
+                 endif
                 else
                  errc=-7
                 endif
                else
                 errc=-6
                endif
-               call tens_oprnd%unlock()
+               call tens_oprnd0%unlock()
               else
                errc=-5
               endif
-              oprnd=>NULL(); tens_oprnd=>NULL()
-             case default
-              if(DEBUG.gt.0) then
-               write(CONS_OUT,'("#FATAL(TAVP-WRK:tens_instr_t.lay_output_operands): Unable to lay out the output operand in:")')
+              oprnd=>NULL(); tens_oprnd0=>NULL()
+             case default !other tensor instructions
+              if(VERBOSE) then
+               write(CONS_OUT,'("#FATAL(TAVP-WRK:tens_instr_t.lay_output_operands): Unable to lay out an output operand in:")')
                call this%print_it(dev_id=CONS_OUT); flush(CONS_OUT)
               endif
-              call quit(-1,'#FATAL(TAVP-WRK:tens_instr_t.lay_output_operands): Tensor layout inferrence is not implemented yet!') !`Implement output tensor layout inferrence for other tensor instructions
+              call quit(-1,'#FATAL(TAVP-WRK:tens_instr_t.lay_output_operands): Tensor layout inferrence is not implemented'//&
+                       &' for this tensor instruction!') !`Implement output tensor layout inferrence for other tensor instructions
              end select
             else
              errc=-4

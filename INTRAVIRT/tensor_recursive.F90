@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/05/10
+!REVISION: 2018/05/11
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -303,17 +303,18 @@
           procedure, public:: get_num_subtensors=>TensRcrsvGetNumSubtensors !returns the total number of constituent subtensors
           procedure, public:: get_subtensors=>TensRcrsvGetSubtensors !returns a pointer to the list of constituent subtensors (each subtensor is represented by a tensor header)
           procedure, public:: set_shape=>TensRcrsvSetShape           !sets the tensor shape (if it has not been set yet)
-          procedure, public:: set_layout=>TensRcrsvSetLayout         !sets the tensor body storage layout
+          procedure, public:: set_layout=>TensRcrsvSetLayout         !sets up the tensor body storage layout
           procedure, public:: get_layout=>TensRcrsvGetLayout         !returns a pointer to the tensor body storage layout
           procedure, public:: set_data_type=>TensRcrsvSetDataType    !resets the tensor body data type, unless the tensor has already been laid-out with some data type
           procedure, public:: get_data_type=>TensRcrsvGetDataType    !returns the data type of the tensor body elements {R4,R8,C4,C8}
           procedure, public:: get_body_ptr=>TensRcrsvGetBodyPtr      !returns a C pointer to the local tensor body storage (if set)
           procedure, public:: set_location=>TensRcrsvSetLocation     !sets the physical location of the tensor body data
+          procedure, public:: import_body=>TensRcrsvImportBody       !imports tensor body from another tensor (with or without location)
           procedure, public:: update=>TensRcrsvUpdate                !updates the tensor information (new resolution -> new layout -> new body)
           procedure, public:: get_header=>TensRcrsvGetHeader         !returns a pointer to the tensor header
           procedure, public:: get_body=>TensRcrsvGetBody             !returns a pointer to the tensor body
           procedure, public:: get_descriptor=>TensRcrsvGetDescriptor !returns a tensor descriptor uniquely characterizing tensor signature, shape, layout, and location
-          procedure, public:: conforms_to=>TensRcrsvConformsTo       !returns TRUE if the tensor subspace multi-index is equal to the one from another tensor
+          procedure, public:: conforms_to=>TensRcrsvConformsTo       !returns TRUE if the tensor space/subspace multi-indices are equal to those from another tensor
           procedure, private:: TensRcrsvSplitList                    !splits the tensor into subtensors (a list of either subtensors or just their headers)
           procedure, private:: TensRcrsvSplitVector                  !splits the tensor into subtensors (a vector of either subtensors or just their headers)
           generic, public:: split=>TensRcrsvSplitList,TensRcrsvSplitVector
@@ -323,7 +324,6 @@
           generic, public:: extract_subtensors=>TensRcrsvExtractSubtensorsList,TensRcrsvExtractSubtensorsVector
           procedure, public:: print_it=>TensRcrsvPrintIt             !prints the tensor info
           procedure, public:: rename=>TensRcrsvRename                !renames the tensor without restrictions (for internal use)
-          procedure, private:: import_body=>TensRcrsvImportBody      !imports tensor body from another tensor
 #if !(defined(__GNUC__) && __GNUC__ < 8)
           final:: tens_rcrsv_dtor
 #endif
@@ -717,6 +717,7 @@
         private TensRcrsvGetDataType
         private TensRcrsvGetBodyPtr
         private TensRcrsvSetLocation
+        private TensRcrsvImportBody
         private TensRcrsvUpdate
         private TensRcrsvGetHeader
         private TensRcrsvGetBody
@@ -729,7 +730,6 @@
         private TensRcrsvExtractSubtensorsVector
         private TensRcrsvPrintIt
         private TensRcrsvRename
-        private TensRcrsvImportBody
         public tens_rcrsv_dtor
         public tens_rcrsv_dim_resolve_i
         public tens_rcrsv_dim_strength_i
@@ -4272,10 +4272,15 @@
          implicit none
          class(tens_rcrsv_t), intent(out):: this  !out: tensor
          class(tens_rcrsv_t), intent(in):: source !in: source tensor
+         integer(INTD):: errc
 
          this%header=source%header
-         this%body=source%body
-         call this%body%update_header(this%header)
+         call this%body%tens_body_copy(source%body,this%header,errc)
+         if(errc.ne.TEREC_SUCCESS) then
+          write(CONS_OUT,'("#FATAL(tens_rcrsv_t.copy_ctor): Tensor body copy constructor failed with error ",i11)') errc
+          flush(CONS_OUT)
+          call crash() !debug
+         endif
          return
         end subroutine TensRcrsvCtorCopy
 !-------------------------------------------------------
@@ -4682,6 +4687,27 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensRcrsvSetLocation
+!----------------------------------------------------------------------
+        subroutine TensRcrsvImportBody(this,another,ierr,omit_location)
+!Imports tensor body from another tensor.
+         implicit none
+         class(tens_rcrsv_t), intent(inout):: this     !inout: tensor
+         class(tens_rcrsv_t), intent(in):: another     !in: source tensor whose body is being imported
+         integer(INTD), intent(out), optional:: ierr   !out: error code
+         logical, intent(in), optional:: omit_location !in: if TRUE, the DDSS descriptor will be skipped (defaults to FALSE)
+         integer(INTD):: errc
+
+         call this%body%tens_body_copy(another%body,this%header,errc)
+         if(errc.eq.TEREC_SUCCESS.and.present(omit_location)) then
+          if(omit_location) then
+           if(allocated(this%body%layout)) then
+            if(allocated(this%body%layout%data_descr)) deallocate(this%body%layout%data_descr)
+           endif
+          endif
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensRcrsvImportBody
 !------------------------------------------------------------
         subroutine TensRcrsvUpdate(this,another,ierr,updated)
 !Updates the tensor information (new resolution -> new layout -> new body).
@@ -5735,19 +5761,6 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensRcrsvRename
-!--------------------------------------------------------
-        subroutine TensRcrsvImportBody(this,another,ierr)
-!Imports tensor body from another tensor.
-         implicit none
-         class(tens_rcrsv_t), intent(inout):: this   !inout: tensor
-         class(tens_rcrsv_t), intent(in):: another   !in: source tensor whose body is being imported
-         integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc
-
-         call this%body%tens_body_copy(another%body,this%header,errc)
-         if(present(ierr)) ierr=errc
-         return
-        end subroutine TensRcrsvImportBody
 !---------------------------------------
         subroutine tens_rcrsv_dtor(this)
          implicit none
