@@ -3667,7 +3667,7 @@
 
          errc=another%subtensors%duplicate(this%subtensors)
          if(errc.eq.GFC_SUCCESS) then
-          allocate(this%layout,SOURCE=another%layout,STAT=errc)
+          if(allocated(another%layout)) allocate(this%layout,SOURCE=another%layout,STAT=errc)
           if(errc.eq.0) then
            this%num_subtensors=another%num_subtensors
            this%data_type=another%data_type
@@ -5904,9 +5904,11 @@
          if(errc.eq.TEREC_SUCCESS) then
           this%alloc=.FALSE.
           if(present(tensor)) then
-           allocate(this%tens_p,MOLD=tensor,STAT=errc) !clone the dynamic type of <tensor>
+           !allocate(this%tens_p,MOLD=tensor,STAT=errc) !clone the dynamic type of <tensor>
+           allocate(this%tens_p,STAT=errc) !allocate an empty tens_rcrsv_t
            if(errc.eq.0) then
-            this%tens_p=tensor !reconstruct the exact copy of the <tensor>
+            !this%tens_p=tensor !reconstruct the exact copy of the <tensor>
+            call this%tens_p%tens_rcrsv_ctor(tensor) !clone the tensor
             this%alloc=.TRUE.
            else
             errc=TEREC_MEM_ALLOC_FAILED

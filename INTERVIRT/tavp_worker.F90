@@ -4039,16 +4039,16 @@
              allocate(tensor_tmp,STAT=jerr) !tensor will either be owned by a tensor cache entry or deallocated here
              if(jerr.ne.0) then
               tensor_tmp=>NULL()
-              call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_RSC_UNAVAILABLE); jerr=-11; exit
+              call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_RSC_UNAVAILABLE); jerr=-12; exit
              endif
              call unpack_builtin(instr_packet,jown,jerr) !tensor owner id (not used in TAVP-WRK)
-             if(jerr.ne.PACK_SUCCESS) then; call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_BTC_BAD); jerr=-10; exit; endif
+             if(jerr.ne.PACK_SUCCESS) then; call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_BTC_BAD); jerr=-11; exit; endif
              call unpack_builtin(instr_packet,jread,jerr) !tensor read access count (ignored in TAVP-WRK)
              if(jerr.ne.PACK_SUCCESS) then; call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_BTC_BAD); jerr=-10; exit; endif
              call unpack_builtin(instr_packet,jwrite,jerr) !tensor write access count (ignored in TAVP-WRK)
-             if(jerr.ne.PACK_SUCCESS) then; call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_BTC_BAD); jerr=-10; exit; endif
+             if(jerr.ne.PACK_SUCCESS) then; call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_BTC_BAD); jerr=-9; exit; endif
              call tensor_tmp%tens_rcrsv_ctor(instr_packet,jerr) !unpack tensor information into a temporary tensor
-             if(jerr.ne.TEREC_SUCCESS) then; call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_BTC_BAD); jerr=-9; exit; endif
+             if(jerr.ne.TEREC_SUCCESS) then; call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_BTC_BAD); jerr=-8; exit; endif
              tens_entry=>NULL()
              stored=this%arg_cache%store(tensor_tmp,tens_entry_wrk_alloc,jerr,tens_entry_p=tens_entry) !tensor ownership is moved to the tensor cache entry
              if(associated(tens_entry)) then

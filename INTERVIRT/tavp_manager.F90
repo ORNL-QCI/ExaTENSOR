@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/05/10
+!REVISION: 2018/05/11
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -2363,14 +2363,14 @@
              allocate(tensor_tmp,STAT=jerr) !tensor will either be owned by a tensor cache entry or deallocated here
              if(jerr.ne.0) then
               tensor_tmp=>NULL()
-              call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_RSC_UNAVAILABLE); jerr=-11; exit
+              call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_RSC_UNAVAILABLE); jerr=-12; exit
              endif
              call unpack_builtin(instr_packet,jown,jerr) !tensor owner id
-             if(jerr.ne.PACK_SUCCESS) then; call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_BTC_BAD); jerr=-10; exit; endif
+             if(jerr.ne.PACK_SUCCESS) then; call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_BTC_BAD); jerr=-11; exit; endif
              call unpack_builtin(instr_packet,jread,jerr) !tensor read access count
              if(jerr.ne.PACK_SUCCESS) then; call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_BTC_BAD); jerr=-10; exit; endif
              call unpack_builtin(instr_packet,jwrite,jerr) !tensor write access count
-             if(jerr.ne.PACK_SUCCESS) then; call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_BTC_BAD); jerr=-10; exit; endif
+             if(jerr.ne.PACK_SUCCESS) then; call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_BTC_BAD); jerr=-9; exit; endif
              call tensor_tmp%tens_rcrsv_ctor(instr_packet,jerr) !unpack tensor information into a temporary tensor
              if(jerr.ne.TEREC_SUCCESS) then
               if(DEBUG.gt.0) then
@@ -2378,7 +2378,7 @@
                &impir,omp_get_thread_num(),jerr
                flush(CONS_OUT)
               endif
-              call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_BTC_BAD); jerr=-9; exit
+              call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_BTC_BAD); jerr=-8; exit
              endif
              tens_entry=>NULL()
              stored=this%arg_cache%store(tensor_tmp,tens_entry_mng_alloc,jerr,tens_entry_p=tens_entry) !tensor ownership is moved to the tensor cache entry
