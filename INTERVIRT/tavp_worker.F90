@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/05/11
+!REVISION: 2018/05/14
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -4542,7 +4542,12 @@
                 if(ier.ne.GFC_SUCCESS.and.ier.ne.GFC_NO_MOVE.and.errc.eq.0) then; errc=-42; exit wloop; endif
                else !no blocking data dependencies: issue into the deferred instruction list
                 call instr%mark_deferred(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-41; exit wloop; endif
-                ier=this%iqueue%move_elem(this%def_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-40; exit wloop; endif
+                ier=this%iqueue%move_elem(this%def_list)
+                if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then
+                 write(CONS_OUT,'("#ERROR(TAVP-WRK:Resourcer): Unable to move a dependent instruction into deferred queue: '//&
+                      &'Error ",i11)') ier
+                 errc=-40; exit wloop
+                endif
                endif
               else !no data dependencies
    !Acquire resources for tensor operands (if available):
@@ -4894,14 +4899,15 @@
                   jerr=-7
                  end select
                 else
+                 deallocate(temptens)
                  jerr=-6
                 endif
                 if(jerr.ne.0.and.associated(tens_entry)) then
                  call this%arg_cache%release_entry(tens_entry); tens_entry=>NULL()
                 endif
                 if(DEBUG.gt.0.and.jerr.eq.0) then
-                 write(CONS_OUT,'("#MSG(TAVP-WRK:Resourcer)[",i6,"]: Output tensor renamed to")',ADVANCE='NO') impir
-                 write(CONS_OUT,*) tname(1:jl)
+                 write(CONS_OUT,'("#MSG(TAVP-WRK:Resourcer)[",i6,"]: Output tensor renamed:")',ADVANCE='NO') impir
+                 write(CONS_OUT,*) pname(1:jn)//' --> '//tname(1:jl)
                  flush(CONS_OUT)
                 endif
                else
@@ -4928,25 +4934,20 @@
            integer(INTD), intent(out):: jerr                            !out: error code
            integer(INTD):: jl,jn
            character(TEREC_MAX_TENS_NAME_LEN+8):: pname,tname
-           class(tens_rcrsv_t), pointer:: temptens
+           type(tens_rcrsv_t):: temptens
 
            tens_entry=>NULL()
-           allocate(tens_rcrsv_t::temptens,STAT=jerr)
-           if(jerr.eq.0) then
-            call temptens%tens_rcrsv_ctor(header,jerr)
-            if(jerr.eq.TEREC_SUCCESS) then
-             call temptens%get_name(pname,jn,jerr)
-             if(jerr.eq.TEREC_SUCCESS.and.jn.gt.0.and.jn.le.TEREC_MAX_TENS_NAME_LEN) then
-              call tensor_name_mangle_temporary(pname(1:jn),tname,jl,jerr,0)
-              if(jerr.eq.0) then
-               call temptens%rename(tname(1:jl),jerr)
-               if(jerr.eq.TEREC_SUCCESS) then
-                tens_entry=>this%arg_cache%lookup(temptens,jerr)
-                if(.not.(jerr.eq.0.and.associated(tens_entry))) then
-                 if(associated(tens_entry)) call this%arg_cache%release_entry(tens_entry); tens_entry=>NULL()
-                 jerr=-6
-                endif
-               else
+           call temptens%tens_rcrsv_ctor(header,jerr)
+           if(jerr.eq.TEREC_SUCCESS) then
+            call temptens%get_name(pname,jn,jerr)
+            if(jerr.eq.TEREC_SUCCESS.and.jn.gt.0.and.jn.le.TEREC_MAX_TENS_NAME_LEN) then
+             call tensor_name_mangle_temporary(pname(1:jn),tname,jl,jerr,0)
+             if(jerr.eq.0) then
+              call temptens%rename(tname(1:jl),jerr)
+              if(jerr.eq.TEREC_SUCCESS) then
+               tens_entry=>this%arg_cache%lookup(temptens,jerr)
+               if(.not.(jerr.eq.0.and.associated(tens_entry))) then
+                if(associated(tens_entry)) call this%arg_cache%release_entry(tens_entry); tens_entry=>NULL()
                 jerr=-5
                endif
               else
@@ -4961,16 +4962,18 @@
            else
             jerr=-1
            endif
+           !call temptens%tens_rcrsv_dtor()
            return
           end subroutine lookup_acc_tensor
 
           subroutine create_inject_accumulation(entry_acc,entry_tmp,jerr)
            implicit none
-           class(tens_entry_wrk_t), intent(inout):: entry_acc !in: tensor cache entry with the accumulator tensor
-           class(tens_entry_wrk_t), intent(inout):: entry_tmp !in: tensor cache entry with the temporary tensor
+           class(tens_entry_wrk_t), intent(inout), pointer:: entry_acc !in: pointer to the tensor cache entry with the accumulator tensor
+           class(tens_entry_wrk_t), intent(inout), pointer:: entry_tmp !in: pointer to the tensor cache entry with the temporary tensor
            integer(INTD), intent(out):: jerr                  !out: error code
            integer(INTD):: arank,trank,perm(1:MAX_TENSOR_RANK),jj
            class(tens_rcrsv_t), pointer:: acc,tmp
+           class(ds_oprnd_t), pointer:: tens_oprnd
            type(tens_addition_t):: accumulation
            type(tens_instr_t):: acc_instr
            class(*), pointer:: instr
@@ -4999,7 +5002,33 @@
                      class is(tens_instr_t)
                       call instr%tens_instr_ctor(TAVP_INSTR_TENS_ACCUMULATE,jerr,accumulation,iid=0_INTL,stat=DS_INSTR_NEW)
                       if(jerr.eq.0) then
-                       jerr=this%iqueue%previous(); if(jerr.ne.GFC_SUCCESS) jerr=-13 !move back to the current instruction
+                       tens_oprnd=>instr%get_operand(1,jerr)
+                       if(jerr.eq.DSVP_SUCCESS) then
+                        select type(tens_oprnd)
+                        class is(tens_oprnd_t)
+                         call tens_oprnd%set_cache_entry(entry_tmp,jerr); if(jerr.ne.0) jerr=-19
+                        class default
+                         jerr=-18
+                        end select
+                        if(jerr.eq.0) then
+                         tens_oprnd=>instr%get_operand(0,jerr)
+                         if(jerr.eq.DSVP_SUCCESS) then
+                          select type(tens_oprnd)
+                          class is(tens_oprnd_t)
+                           call tens_oprnd%set_cache_entry(entry_acc,jerr); if(jerr.ne.0) jerr=-17
+                          class default
+                           jerr=-16
+                          end select
+                          if(jerr.eq.0) then
+                           jerr=this%iqueue%previous(); if(jerr.ne.GFC_SUCCESS) jerr=-15 !move back to the current instruction
+                          endif
+                         else
+                          jerr=-14
+                         endif
+                        endif
+                       else
+                        jerr=-13
+                       endif
                       else
                        jerr=-12
                       endif

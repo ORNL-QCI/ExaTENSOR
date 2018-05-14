@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/05/11
+!REVISION: 2018/05/14
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -2905,7 +2905,7 @@
             call this%bytecode%send(this%ring_send,comm_hl,ier,tag=TAVP_LOCATE_TAG,comm=this%ring_comm)
             if(ier.ne.0.and.errc.eq.0) then; errc=-42; exit wloop; endif
             num_sent=this%bytecode%get_num_packets()
-            if(DEBUG.gt.0.and.num_sent.gt.0) then !one instruction is always the special markup instruction
+            if(DEBUG.gt.1.and.num_sent.gt.0) then !one instruction is always the special markup instruction
              write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Locator unit ",i2,": Rotation ",i3,": Sent ",i9," instructions")')&
              &impir,this%get_id(),rot_num+1,num_sent-1
              flush(CONS_OUT)
@@ -2941,7 +2941,7 @@
             call comm_hl%wait(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-31; exit wloop; endif
             call comm_hl%clean(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-30; exit wloop; endif
             call this%bytecode%clean(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-29; exit wloop; endif
-            if(DEBUG.gt.0.and.num_sent.gt.1) then
+            if(DEBUG.gt.1.and.num_sent.gt.1) then
              write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Locator unit ",i2,": Rotation ",i3,": Send synced")')&
              &impir,this%get_id(),rot_num+1
              flush(CONS_OUT)
@@ -2953,7 +2953,7 @@
             do while(ier.eq.GFC_IT_EMPTY) !wait until located tensor instructions are delivered by lDecoder
              ier=this%unload_port(1,this%loc_list,stop_predicate=tens_instr_locator_mark,num_moved=num_recv)
              if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-26; exit wloop; endif
-             if(DEBUG.gt.0.and.num_recv.gt.0) then
+             if(DEBUG.gt.1.and.num_recv.gt.0) then
               write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Locator unit ",i2,": Rotation ",i3,": Received ",i6," instructions")')&
               &impir,this%get_id(),rot_num+1,num_recv-1
               flush(CONS_OUT)
@@ -2970,7 +2970,7 @@
              if(opcode.eq.TAVP_INSTR_CTRL_RESUME.and.tens_instr%get_status().eq.DS_INSTR_SPECIAL) then !dummy instruction is always (fake) CTRL_RESUME with status DS_INSTR_SPECIAL
               rot_num=rot_num+1 !next rotation step (send/recv) has happened
               bytecode_tag=tens_instr%get_id(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-21; exit wloop; endif
-              if(DEBUG.gt.0.and.num_recv.gt.0) then
+              if(DEBUG.gt.1.and.num_recv.gt.0) then
                write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Locator unit ",i2,": Rotation ",i3,": Sender TAVP-MNG id = ",i4)')&
                &impir,this%get_id(),rot_num,bytecode_tag
                flush(CONS_OUT)
@@ -2988,13 +2988,13 @@
              if(errc.eq.0) then; errc=-17; exit wloop; endif
             endif
            enddo rloop
-           if(DEBUG.gt.0) then
+           if(DEBUG.gt.1) then
             write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Locator unit ",i2,": ",i4,"-rotation cycle completed; Cache volume = ",i12)')&
             &impir,this%get_id(),rot_num,this%arg_cache%get_num_entries()
             flush(CONS_OUT)
            endif
           else !ring does not exist (single TAVP-MNG level)
-           if(DEBUG.gt.0) then
+           if(DEBUG.gt.1) then
             write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Locator unit ",i2,": No rotations; Cache volume = ",i12)')&
             &impir,this%get_id(),this%arg_cache%get_num_entries()
             flush(CONS_OUT)
