@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/05/14
+!REVISION: 2018/05/15
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -2397,6 +2397,10 @@
              tensor=>tens_mng_entry%get_tensor() !use the tensor from the tensor cache
              if(.not.stored) then !the tensor was already in the tensor cache before, update it by the information from the just decoded tensor
               call tensor%update(tensor_tmp,jerr,updated) !tensor metadata update is done inside the tensor cache
+              if(DEBUG.gt.0.and.updated) then
+               write(CONS_OUT,'("#DEBUG(TAVP-MNG:Decoder): Tensor info update in the tensor cache:")')
+               call tensor_tmp%print_it(dev_id=CONS_OUT); flush(CONS_OUT)
+              endif
               deallocate(tensor_tmp); tensor_tmp=>NULL() !deallocate temporary tensor after importing its information into the cache
               if(jerr.ne.TEREC_SUCCESS) then
                if(DEBUG.gt.0) then
@@ -2790,7 +2794,7 @@
           if(DEBUG.gt.0.and.i.gt.0) then
            write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Locator unit ",i2," appended ",i9,'//&
            &'" new instructions from uDecoder into main queue")') impir,this%get_id(),i
-           !ier=this%iqueue%reset(); ier=this%iqueue%scanp(action_f=tens_instr_print) !print all instructions
+           !ier=this%iqueue%reset(); ier=this%iqueue%scanp(action_f=tens_instr_print); ier=this%iqueue%reset() !print all instructions
            flush(CONS_OUT)
           endif
  !Move the leading subset of subinstructions from port 2 (from Decomposer) into the locating list (bottom TAVP-MNG only):
@@ -3028,6 +3032,20 @@
           enddo
           ier=this%loc_list%get_status()
           if((ier.ne.GFC_IT_EMPTY.and.ier.ne.GFC_IT_DONE).and.errc.eq.0) then; errc=-9; exit wloop; endif
+ !Print located and deferred tensor instructions (debug):
+          if(DEBUG.gt.0.and.errc.eq.0) then
+           ier=this%loc_list%reset()
+           if(this%loc_list%get_status().eq.GFC_IT_ACTIVE) then
+            write(CONS_OUT,'("#DEBUG(TAVP-MNG:Locator): Queue of located tensor instructions:")')
+            ier=this%loc_list%scanp(action_f=tens_instr_print); ier=this%loc_list%reset() !print all instructions
+           endif
+           ier=this%def_list%reset()
+           if(this%def_list%get_status().eq.GFC_IT_ACTIVE) then
+            write(CONS_OUT,'("#DEBUG(TAVP-MNG:Locator): Queue of deferred tensor instructions:")')
+            ier=this%def_list%scanp(action_f=tens_instr_print); ier=this%def_list%reset() !print all instructions
+           endif
+           flush(CONS_OUT)
+          endif
  !Append saved control instructions at the end of the locating list:
           ier=this%def_list%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-8; exit wloop; endif
           if(this%def_list%get_status().eq.GFC_IT_EMPTY) then !cannot proceed until all located tensor instructions have been issued

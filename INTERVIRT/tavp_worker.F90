@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/05/14
+!REVISION: 2018/05/15
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -1829,23 +1829,19 @@
             layout_p=>body_p%get_layout(errc)
             if(errc.eq.TEREC_SUCCESS.and.associated(layout_p)) then
              descr_p=>layout_p%get_data_descr(errc)
-             if(errc.eq.TEREC_SUCCESS.and.associated(descr_p)) then
+             if(associated(descr_p)) then
               if(descr_p%is_set(errc,host_proc_rank,mpi_comm)) then
                if(errc.eq.0) then
                 call MPI_Comm_Rank(mpi_comm,my_rank,errc)
                 if(errc.eq.0) then
                  res=.not.(host_proc_rank.eq.my_rank)
                 else
-                 errc=-8
+                 errc=-6
                 endif
                else
-                errc=-7
+                errc=-5
                endif
-              !else
-               !errc=-6
               endif
-             else
-              errc=-5
              endif
             else
              errc=-4
@@ -1992,7 +1988,7 @@
 !Starts prefetching the (remote) tensor operand using the local tensor resource.
 !If the resource component has not been set, an error will be returned.
 !If the local resource has not been allocated, it will be allocated here.
-!If the tensor operand has been delivered before, does nothing.
+!If the tensor operand is local or has been delivered before, does nothing.
 !If there is a pending communication on the tensor operand, returns an error.
          implicit none
          class(tens_oprnd_t), intent(inout):: this   !inout: active tensor operand
@@ -2005,67 +2001,75 @@
 
          if(this%is_active(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
-           call this%lock()
-           if(.not.this%is_present(errc)) then
-            if(errc.eq.DSVP_SUCCESS) then
-             if(associated(this%resource)) then
-              body_p=>this%tensor%get_body(errc)
-              if(errc.eq.TEREC_SUCCESS.and.associated(body_p)) then
-               layout_p=>body_p%get_layout(errc)
-               if(errc.eq.TEREC_SUCCESS.and.associated(layout_p)) then
-                descr_p=>layout_p%get_data_descr(errc)
-                if(errc.eq.TEREC_SUCCESS.and.associated(descr_p)) then
-                 if(descr_p%is_set(errc)) then
-                  if(errc.eq.0) then
-                   if(this%resource%is_empty()) call this%acquire_rsc(errc) !`may return TRY_LATER
-                   if(errc.eq.0) then
-                    if(this%get_comm_stat().eq.DS_OPRND_NO_COMM) then
-                     cptr=this%resource%get_mem_ptr(errc)
+           if(this%is_remote(errc)) then
+            if(errc.eq.0) then
+             call this%lock()
+             if(.not.this%is_present(errc)) then
+              if(errc.eq.DSVP_SUCCESS) then
+               if(associated(this%resource)) then
+                body_p=>this%tensor%get_body(errc)
+                if(errc.eq.TEREC_SUCCESS.and.associated(body_p)) then
+                 layout_p=>body_p%get_layout(errc)
+                 if(errc.eq.TEREC_SUCCESS.and.associated(layout_p)) then
+                  descr_p=>layout_p%get_data_descr(errc)
+                  if(errc.eq.TEREC_SUCCESS.and.associated(descr_p)) then
+                   if(descr_p%is_set(errc)) then
+                    if(errc.eq.0) then
+                     if(this%resource%is_empty()) call this%acquire_rsc(errc) !`may return TRY_LATER
                      if(errc.eq.0) then
-                      call descr_p%get_data(cptr,errc,MPI_ASYNC_REQ)
-                      if(errc.ne.0.and.errc.ne.TRY_LATER) errc=-1
-                      if(errc.eq.0) then
-                       call this%set_comm_stat(DS_OPRND_FETCHING,errc); if(errc.ne.DSVP_SUCCESS) errc=-2
+                      if(this%get_comm_stat().eq.DS_OPRND_NO_COMM) then
+                       cptr=this%resource%get_mem_ptr(errc)
+                       if(errc.eq.0) then
+                        call descr_p%get_data(cptr,errc,MPI_ASYNC_REQ)
+                        if(errc.ne.0.and.errc.ne.TRY_LATER) errc=-17
+                        if(errc.eq.0) then
+                         call this%set_comm_stat(DS_OPRND_FETCHING,errc); if(errc.ne.DSVP_SUCCESS) errc=-16
+                        endif
+                       else
+                        errc=-15
+                       endif
+                      else
+                       errc=-14
                       endif
                      else
-                      errc=-3
+                      errc=-13
                      endif
                     else
-                     errc=-4
+                     errc=-12
                     endif
                    else
-                    errc=-5
+                    errc=-11
                    endif
                   else
-                   errc=-6
+                   errc=-10
                   endif
                  else
-                  errc=-7
+                  errc=-9
                  endif
                 else
                  errc=-8
                 endif
                else
-                errc=-9
+                errc=-7
                endif
               else
-               errc=-10
+               errc=-6
               endif
              else
-              errc=-11
+              if(errc.ne.DSVP_SUCCESS) errc=-5
              endif
+             call this%unlock()
             else
-             errc=-12
+             errc=-4
             endif
            else
-            if(errc.ne.DSVP_SUCCESS) errc=-13
+            if(errc.ne.0) errc=-3
            endif
-           call this%unlock()
           else
-           errc=-14
+           errc=-2
           endif
          else
-          errc=-15
+          errc=-1
          endif
          if(present(ierr)) ierr=errc
          return
@@ -2172,33 +2176,34 @@
                if(descr_p%is_set(errc)) then
                 if(errc.eq.0) then
                  if(tw) then
-                  call descr_p%wait_data(errc); if(errc.eq.0) then; res=.TRUE.; else; errc=-11; endif
+                  call descr_p%wait_data(errc); if(errc.eq.0) then; res=.TRUE.; else; errc=-12; endif
                  else
-                  res=descr_p%test_data(errc); if(errc.ne.0) then; res=.FALSE.; errc=-10; endif
+                  res=descr_p%test_data(errc); if(errc.ne.0) then; res=.FALSE.; errc=-11; endif
                  endif
                  if(res) then
                   if(sts.eq.DS_OPRND_FETCHING) then
-                   call this%mark_delivered(errc); if(errc.ne.DSVP_SUCCESS) errc=-9
+                   call this%mark_delivered(errc); if(errc.ne.DSVP_SUCCESS) errc=-10
                   endif
-                  call this%set_comm_stat(DS_OPRND_NO_COMM,errc); if(errc.ne.DSVP_SUCCESS) errc=-8
+                  call this%set_comm_stat(DS_OPRND_NO_COMM,errc); if(errc.ne.DSVP_SUCCESS) errc=-9
                  endif
                 else
-                 errc=-7
+                 errc=-8
                 endif
                else
-                errc=-6
+                errc=-7
                endif
               else
-               errc=-5
+               errc=-6
               endif
              else
-              errc=-4
+              errc=-5
              endif
             else
-             errc=-3
+             errc=-4
             endif
            else
-            res=.TRUE.
+            call this%mark_delivered(errc); if(errc.ne.DSVP_SUCCESS) errc=-3
+            if(errc.eq.0) res=.TRUE.
            endif
            !call this%unlock()
           else
