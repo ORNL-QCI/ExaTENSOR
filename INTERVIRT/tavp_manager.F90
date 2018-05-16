@@ -2396,10 +2396,17 @@
              endif
              tensor=>tens_mng_entry%get_tensor() !use the tensor from the tensor cache
              if(.not.stored) then !the tensor was already in the tensor cache before, update it by the information from the just decoded tensor
-              call tensor%update(tensor_tmp,jerr,updated) !tensor metadata update is done inside the tensor cache
-              if(DEBUG.gt.0.and.updated) then
+              if(DEBUG.gt.0) then
                write(CONS_OUT,'("#DEBUG(TAVP-MNG:Decoder): Tensor info update in the tensor cache:")')
-               call tensor_tmp%print_it(dev_id=CONS_OUT); flush(CONS_OUT)
+               call tensor%print_it(dev_id=CONS_OUT)
+               !call tensor_tmp%print_it(dev_id=CONS_OUT)
+               flush(CONS_OUT)
+              endif
+              call tensor%update(tensor_tmp,jerr,updated) !tensor metadata update is done inside the tensor cache
+              if(DEBUG.gt.0.and.jerr.eq.TEREC_SUCCESS) then
+               call tensor%print_it(dev_id=CONS_OUT)
+               write(CONS_OUT,'("Update status = ",l1)') updated
+               flush(CONS_OUT)
               endif
               deallocate(tensor_tmp); tensor_tmp=>NULL() !deallocate temporary tensor after importing its information into the cache
               if(jerr.ne.TEREC_SUCCESS) then
