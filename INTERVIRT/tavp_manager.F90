@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/05/15
+!REVISION: 2018/05/16
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -142,6 +142,7 @@
           procedure, public:: get_owner_id=>TensEntryMngGetOwnerId    !returns the tensor owner id
           procedure, public:: set_owner_id=>TensEntryMngSetOwnerId    !set the tensor owner id
           procedure, public:: holds_remote=>TensEntryMngHoldsRemote   !returns TRUE if the stored tensor is remote, FALSE otherwise
+          procedure, public:: print_it=>TensEntryMngPrintIt           !prints
           final:: tens_entry_mng_dtor
         end type tens_entry_mng_t
  !Reference to the tensor argument cache entry:
@@ -418,6 +419,7 @@
         private TensEntryMngGetOwnerId
         private TensEntryMngSetOwnerId
         private TensEntryMngHoldsRemote
+        private TensEntryMngPrintIt
         public tens_entry_mng_dtor
         private tens_entry_mng_alloc
  !tens_oprnd_t:
@@ -608,6 +610,35 @@
          if(present(ierr)) ierr=errc
          return
         end function TensEntryMngHoldsRemote
+!---------------------------------------------------------------
+        subroutine TensEntryMngPrintIt(this,ierr,dev_id,nspaces)
+!Prints the tensor cache entry.
+         implicit none
+         class(tens_entry_mng_t), intent(inout):: this !in: tensor cache entry
+         integer(INTD), intent(out), optional:: ierr   !out: errror code
+         integer(INTD), intent(in), optional:: dev_id  !in: output device id
+         integer(INTD), intent(in), optional:: nspaces !in: left alignment
+         integer(INTD):: errc,devo,nsp,j
+         class(tens_rcrsv_t), pointer:: tensor
+
+         errc=0
+         devo=6; if(present(dev_id)) devo=dev_id
+         nsp=0; if(present(nspaces)) nsp=nspaces
+         !call this%lock()
+         do j=1,nsp; write(devo,'(" ")',ADVANCE='NO'); enddo
+         write(devo,'("TENSOR CACHE ENTRY{")')
+ !Tensor:
+         tensor=>this%get_tensor(errc)
+         if(errc.eq.0) call tensor%print_it(errc,devo,nsp+1)
+ !Metadata owner id:
+         do j=1,nsp+1; write(devo,'(" ")',ADVANCE='NO'); enddo
+         write(devo,'("Metadata owner TAVP-MNG id = ",i6)') this%owner_id
+         do j=1,nsp; write(devo,'(" ")',ADVANCE='NO'); enddo
+         write(devo,'("}")')
+         !call this%unlock()
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensEntryMngPrintIt
 !-------------------------------------------
         subroutine tens_entry_mng_dtor(this)
 !Tensor cache entry dtor is only expected to be called during cache entry eviction,
@@ -1335,7 +1366,7 @@
 !Construct the instruction:
            select case(op_code)
            case(TAVP_INSTR_NOOP)
-           case(TAVP_INSTR_CTRL_RESUME,TAVP_INSTR_CTRL_STOP)
+           case(TAVP_INSTR_CTRL_RESUME,TAVP_INSTR_CTRL_STOP,TAVP_INSTR_CTRL_DUMP_CACHE)
             call construct_instr_ctrl(errc); if(errc.ne.0) errc=-10
            case(TAVP_INSTR_TENS_CREATE,TAVP_INSTR_TENS_DESTROY)
             call construct_instr_tens_create_destroy(errc); if(errc.ne.0) errc=-9
@@ -1532,7 +1563,7 @@
 !Pack the instruction body:
                  select case(op_code)
                  case(TAVP_INSTR_NOOP)
-                 case(TAVP_INSTR_CTRL_RESUME,TAVP_INSTR_CTRL_STOP)
+                 case(TAVP_INSTR_CTRL_RESUME,TAVP_INSTR_CTRL_STOP,TAVP_INSTR_CTRL_DUMP_CACHE)
                   call encode_instr_ctrl(errc); if(errc.ne.0) errc=-12
                  case(TAVP_INSTR_TENS_CREATE,TAVP_INSTR_TENS_DESTROY)
                   call encode_instr_tens_create_destroy(errc); if(errc.ne.0) errc=-11
@@ -2196,13 +2227,7 @@
            tens_instr=>NULL(); select type(uptr); type is(tens_instr_t); tens_instr=>uptr; end select
            if(.not.associated(tens_instr).and.errc.eq.0) then; errc=-6; exit wloop; endif !trap
            opcode=tens_instr%get_code(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-5; exit wloop; endif
-           if(opcode.eq.TAVP_INSTR_CTRL_STOP) then !only STOP instruction is expected
-            stopping=.TRUE.
-           else
-            if(opcode.ne.TAVP_INSTR_CTRL_RESUME) then
-             if(errc.eq.0) then; errc=-4; exit wloop; endif
-            endif
-           endif
+           if(opcode.eq.TAVP_INSTR_CTRL_STOP) stopping=.TRUE. !only STOP instruction is expected
            call tens_instr%set_status(DS_INSTR_RETIRED,ier,DSVP_SUCCESS)
            if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-3; exit wloop; endif
            ier=this%iqueue%next(); ier=this%iqueue%get_status() !in general more control instructions can be expected
@@ -2292,7 +2317,7 @@
                 if(errc.eq.0) then
                  select case(op_code)
                  case(TAVP_INSTR_NOOP)
-                 case(TAVP_INSTR_CTRL_RESUME,TAVP_INSTR_CTRL_STOP)
+                 case(TAVP_INSTR_CTRL_RESUME,TAVP_INSTR_CTRL_STOP,TAVP_INSTR_CTRL_DUMP_CACHE)
                  case(TAVP_INSTR_TENS_CREATE,TAVP_INSTR_TENS_DESTROY)
                   call decode_instr_tens_create_destroy(errc); if(errc.ne.0) errc=-12
                  case(TAVP_INSTR_TENS_CONTRACT)
@@ -4828,7 +4853,7 @@
              ier=this%ctrl_list%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-39; exit wloop; endif
              ier=this%iqueue%move_elem(this%ctrl_list)
              stopping=.TRUE.
-            case(TAVP_INSTR_CTRL_RESUME)
+            case(TAVP_INSTR_CTRL_RESUME,TAVP_INSTR_CTRL_DUMP_CACHE)
              call tens_instr%set_status(DS_INSTR_RETIRED,ier,DSVP_SUCCESS)
              if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-38; exit wloop; endif
              ier=this%iqueue%delete(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-37; exit wloop; endif

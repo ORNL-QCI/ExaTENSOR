@@ -1,7 +1,7 @@
 !ExaTENSOR: Massively Parallel Virtual Processor for Scale-Adaptive Hierarchical Tensor Algebra
 !This is the top level API module of ExaTENSOR (user-level API)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2018/05/15
+!REVISION: 2018/05/16
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -117,6 +117,7 @@
        public exatns_sync                 !synchronizes the ExaTENSOR DSVP such that all previously issued tensor instructions will be completed (Driver only)
        public exatns_process_role         !returns the role of the current MPI process (called by Any)
        public exatns_status               !returns the status of the ExaTENSOR runtime plus statistics, if needed (Driver only)
+       public exatns_dump_cache           !dumps the tensor cache content for each TAVP into its log file (debug only)
  !Parser/interpreter (Driver only):
        public exatns_interpret            !interprets TAProL code (string of TAProL statements)
        public exatns_symbol_exists        !checks whether a specific identifier is registered (if yes, returns its attributes)
@@ -596,7 +597,6 @@
          if(ierr.eq.0) then
           call issue_new_instruction(tens_instr,ierr); if(ierr.ne.0) ierr=-14
           call tens_instr%set_status(DS_INSTR_RETIRED,errc); if(errc.ne.DSVP_SUCCESS.and.ierr.eq.0) ierr=-13
-          tens_instr=>NULL()
           errc=exatns_sync(); if(errc.ne.EXA_SUCCESS.and.ierr.eq.0) ierr=-12
           errc=instr_log%delete_all(); if(errc.ne.GFC_SUCCESS.and.ierr.eq.0) ierr=-11
           errc=instr_log%release(); if(errc.ne.GFC_SUCCESS.and.ierr.eq.0) ierr=-10
@@ -626,6 +626,7 @@
          else
           ierr=-2
          endif
+         tens_instr=>NULL()
         else
          ierr=-1
         endif
@@ -684,6 +685,33 @@
         ierr=EXA_SUCCESS; sts=exatns_rt_status
         return
        end function exatns_status
+!-----------------------------------------------
+       function exatns_dump_cache() result(ierr) !DEBUG only
+!Dumps the tensor cache content for each TAVP into its log file.
+        implicit none
+        integer(INTD):: ierr !out: error code
+        integer(INTD):: errc
+        integer(INTL):: ip
+        class(tens_instr_mng_t), pointer:: tens_instr
+
+        ierr=EXA_SUCCESS
+        write(jo,'("#MSG(exatensor): New Instruction: Dump Tensor Cache: IP = ")',ADVANCE='NO'); flush(jo)
+        tens_instr=>add_new_instruction(ip,ierr)
+        if(ierr.eq.0) then
+         write(jo,'(i11)') ip; flush(jo) !new instruction id number
+         call tens_instr%tens_instr_ctor(TAVP_INSTR_CTRL_DUMP_CACHE,ierr,iid=ip)
+         if(ierr.eq.0) then
+          call issue_new_instruction(tens_instr,ierr); if(ierr.ne.0) ierr=-4
+          call tens_instr%set_status(DS_INSTR_RETIRED,errc); if(errc.ne.DSVP_SUCCESS.and.ierr.eq.0) ierr=-3
+         else
+          ierr=-2
+         endif
+         tens_instr=>NULL()
+        else
+         ierr=-1
+        endif
+        return
+       end function exatns_dump_cache
 ![ExaTENSOR Parser/Interpreter API]------------------
        function exatns_interpret(taprol) result(ierr)
 !Interprets symbolic TAProL code.

@@ -8,7 +8,7 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/05/08
+!REVISION: 2018/05/16
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -232,6 +232,7 @@
          logical, private:: lock_initialized=.FALSE.            !lock initialization status
 #endif
          contains
+          procedure(tens_cache_entry_print_i), deferred:: print_it        !prints
           procedure, public:: is_set=>TensCacheEntryIsSet                 !returns TRUE if the tensor cache entry is set (constructed)
           procedure, public:: set_tensor=>TensCacheEntrySetTensor         !sets the pointer to a tensor, either owning or non-owning (basic ctor)
           procedure, public:: get_tensor=>TensCacheEntryGetTensor         !returns a non-owning pointer to the tensor
@@ -278,6 +279,7 @@
           procedure, public:: release_entry=>TensCacheReleaseEntry !releases a previously obtained pointer to a tensor cache entry
           procedure, public:: erase=>TensCacheErase                !erases everything from the cache (regardless of pending MPI communications!)
           procedure, public:: get_num_entries=>TensCacheGetNumEntries !returns the current number of active entries in the tensor cache
+          procedure, public:: print_it=>TensCachePrintIt           !prints the content of the tensor cache
           final:: tens_cache_dtor                                  !dtor
         end type tens_cache_t
  !External data register:
@@ -307,6 +309,14 @@
           integer(INTD):: ierr
           class(tens_cache_entry_t), allocatable, intent(out):: tens_cache_entry
          end function tens_cache_entry_alloc_i
+  !Printing:
+         subroutine tens_cache_entry_print_i(this,ierr,dev_id,nspaces)
+          import:: tens_cache_entry_t,INTD
+          class(tens_cache_entry_t), intent(inout):: this !in: tensor cache entry
+          integer(INTD), intent(out), optional:: ierr     !out: error code
+          integer(INTD), intent(in), optional:: dev_id    !in: output device id
+          integer(INTD), intent(in), optional:: nspaces   !in: left alignment
+         end subroutine tens_cache_entry_print_i
  !External (user-defined) unary method (tensor initialization/transformation):
          function exatns_method_uni_i(tensor,scalar) result(ierr)
           import:: INTD,tens_rcrsv_t
@@ -325,6 +335,7 @@
          end function exatns_method_i
         end interface
         public tens_cache_entry_alloc_i
+        public tens_cache_entry_print_i
         public exatns_method_uni_i
         public exatns_method_i
 !GLOBAL DATA:
@@ -407,6 +418,7 @@
         private TensCacheEntryLock
         private TensCacheEntryUnlock
         private TensCacheEntryIsLockable
+        public tens_cache_entry_print_f
  !tens_cache_t:
         private TensCacheInitLock
         private TensCacheLock
@@ -417,6 +429,7 @@
         private TensCacheReleaseEntry
         private TensCacheErase
         private TensCacheGetNumEntries
+        private TensCachePrintIt
         public tens_cache_dtor
  !data_register_t:
         private DataRegisterRegisterData
@@ -1481,6 +1494,20 @@
 #endif
          return
         end function TensCacheEntryIsLockable
+!----------------------------------------------------------
+        function tens_cache_entry_print_f(obj) result(ierr)
+!Non-member printing for tens_cache_entry_t compatible with GFC.
+         implicit none
+         integer(INTD):: ierr                  !out: error code
+         class(*), intent(inout), target:: obj !in: tensor cache entry
+
+         ierr=0
+         select type(obj)
+         class is(tens_cache_entry_t)
+          call obj%print_it(ierr,dev_id=jo)
+         end select
+         return
+        end function tens_cache_entry_print_f
 ![tens_cache_t]===========================
         subroutine TensCacheInitLock(this)
 !Initializes the tensor cache lock for multithreading.
@@ -1776,6 +1803,26 @@
          call this%unlock()
          return
         end function TensCacheGetNumEntries
+!---------------------------------------------
+        subroutine TensCachePrintIt(this,ierr)
+!Prints the content of the tensor cache.
+         implicit none
+         class(tens_cache_t), intent(inout):: this   !in: tensor cache
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+         type(dictionary_iter_t):: dit
+
+         call this%init_lock()
+         call this%lock()
+         errc=dit%init(this%map)
+         if(errc.eq.GFC_SUCCESS) then
+          errc=dit%scanp(action_f=tens_cache_entry_print_f)
+          errc=dit%release()
+         endif
+         call this%unlock()
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensCachePrintIt
 !---------------------------------------
         subroutine tens_cache_dtor(this)
          implicit none
