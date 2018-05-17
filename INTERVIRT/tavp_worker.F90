@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/05/16
+!REVISION: 2018/05/17
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -5933,8 +5933,13 @@
             end select
             ier=this%iqueue%move_elem(this%iss_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-14; exit wloop; endif
            else !auxiliary or control instruction
-            if(opcode.eq.TAVP_INSTR_CTRL_STOP) stopping=.TRUE.
-            !`Process ctrl/aux instructions here
+            if(opcode.eq.TAVP_INSTR_CTRL_STOP) then
+             stopping=.TRUE.
+            elseif(opcode.eq.TAVP_INSTR_CTRL_DUMP_CACHE) then
+             write(jo,'("#DEBUG(TAVP-WRK): TENSOR CACHE DUMP:")')
+             call this%arg_cache%print_it()
+             flush(jo)
+            endif
             call tens_instr%set_status(DS_INSTR_COMPLETED,ier,errcode)
             if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-13; exit wloop; endif
             ier=this%iqueue%move_elem(this%cml_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-12; exit wloop; endif

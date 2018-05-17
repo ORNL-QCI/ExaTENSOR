@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/05/16
+!REVISION: 2018/05/17
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -2421,14 +2421,14 @@
              endif
              tensor=>tens_mng_entry%get_tensor() !use the tensor from the tensor cache
              if(.not.stored) then !the tensor was already in the tensor cache before, update it by the information from the just decoded tensor
-              if(DEBUG.gt.0) then
+              if(DEBUG.gt.1) then
                write(CONS_OUT,'("#DEBUG(TAVP-MNG:Decoder): Tensor info update in the tensor cache:")')
                call tensor%print_it(dev_id=CONS_OUT)
                !call tensor_tmp%print_it(dev_id=CONS_OUT)
                flush(CONS_OUT)
               endif
               call tensor%update(tensor_tmp,jerr,updated) !tensor metadata update is done inside the tensor cache
-              if(DEBUG.gt.0.and.jerr.eq.TEREC_SUCCESS) then
+              if(DEBUG.gt.1.and.jerr.eq.TEREC_SUCCESS) then
                call tensor%print_it(dev_id=CONS_OUT)
                write(CONS_OUT,'("Update status = ",l1)') updated
                flush(CONS_OUT)
@@ -3065,7 +3065,7 @@
           ier=this%loc_list%get_status()
           if((ier.ne.GFC_IT_EMPTY.and.ier.ne.GFC_IT_DONE).and.errc.eq.0) then; errc=-9; exit wloop; endif
  !Print located and deferred tensor instructions (debug):
-          if(DEBUG.gt.0.and.errc.eq.0) then
+          if(DEBUG.gt.1.and.errc.eq.0) then
            ier=this%loc_list%reset()
            if(this%loc_list%get_status().eq.GFC_IT_ACTIVE) then
             write(CONS_OUT,'("#DEBUG(TAVP-MNG:Locator): Queue of located tensor instructions:")')
@@ -4160,7 +4160,13 @@
              call this%dispatch(tens_instr,i,ier); if(ier.ne.0.and.errc.eq.0) then; errc=-9; exit wloop; endif
             enddo
   !Check on control instructions:
-            if(opcode.eq.TAVP_INSTR_CTRL_STOP) stopping=.TRUE.
+            if(opcode.eq.TAVP_INSTR_CTRL_STOP) then
+             stopping=.TRUE.
+            elseif(opcode.eq.TAVP_INSTR_CTRL_DUMP_CACHE) then
+             write(jo,'("#DEBUG(TAVP-MNG): TENSOR CACHE DUMP:")')
+             call this%arg_cache%print_it()
+             flush(jo)
+            endif
            endif
   !Delete the dispatched instruction from the main queue:
            call tens_instr%set_status(DS_INSTR_RETIRED,ier,DSVP_SUCCESS)
