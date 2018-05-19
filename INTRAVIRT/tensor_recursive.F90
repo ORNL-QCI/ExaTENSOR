@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/05/18
+!REVISION: 2018/05/19
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -26,7 +26,7 @@
 ! # MUD: Maximally Uniform Distribution.
 !NOTES:
 ! # Tensor definition stages:
-!    a) Null: No tensor;
+!    a) Null: Empty tensor;
 !    b) Defined: Tensor signature is defined;
 !    c) Shaped: Some or all tensor dimension extents are defined or explicitly marked unresolved (extent = 0);
 !    d) Resolved: Tensor shape is fully defined (all tensor dimensions are resolved with positive extents);
@@ -35,9 +35,15 @@
 !    g) Mapped: Tensor body is physically mapped to a contiguous chunk of memory.
 !   In order to become Structured, the tensor only needs to be Defined, but not necessarily Shaped or Resolved.
 !   The tensor body is considered defined (set) if the tensor is at least Structured.
-!   A tensor can become Laid-Out only after it has become Resolved.
+!   A tensor can become Laid-Out only after it has become Structured and Resolved.
+!   A tensor can become Mapped only after it has been Laid-Out.
 !   If a tensor is Laid-Out, all its constituent subtensors will be sequentially stored
 !   in a contiguous chunk of virtual memory allocated during Mapping (becoming Mapped).
+!   State machine:
+!   Empty --> Defined --> Shaped --> Resolved --> Laid-Out --> Mapped
+!                |                                    ^
+!                ------------> Structured ------------|
+
         use tensor_algebra !includes dil_basic
         use stsubs
         use timers
@@ -300,7 +306,7 @@
           procedure, public:: get_bases=>TensRcrsvGetBases           !returns the base offset for each tensor dimension
           procedure, public:: add_subtensor=>TensRcrsvAddSubtensor   !registers a constituent subtensor by providing its tensor header
           procedure, public:: add_subtensors=>TensRcrsvAddSubtensors !registers constituent subtensors by providing a list of their tensor headers
-          procedure, public:: has_structure=>TensRcrsvHasStructure   !returns TRUE if the tensor structure (list of one or more subtensors) is defined
+          procedure, public:: has_structure=>TensRcrsvHasStructure   !returns TRUE if the tensor structure (list of one or more constituent subtensors) is defined
           procedure, public:: get_num_subtensors=>TensRcrsvGetNumSubtensors !returns the total number of constituent subtensors
           procedure, public:: get_subtensors=>TensRcrsvGetSubtensors !returns a pointer to the list of constituent subtensors (each subtensor is represented by a tensor header)
           procedure, public:: set_shape=>TensRcrsvSetShape           !sets the tensor shape (if it has not been set yet)
@@ -312,7 +318,7 @@
           procedure, public:: get_data_descr=>TensRcrsvGetDataDescr  !returns a pointer to the tensor body data descriptor
           procedure, public:: set_location=>TensRcrsvSetLocation     !sets the physical location of the tensor body data
           procedure, public:: import_body=>TensRcrsvImportBody       !imports tensor body from another tensor (with or without location)
-          procedure, public:: update=>TensRcrsvUpdate                !updates the tensor information (new resolution -> new layout -> new body)
+          procedure, public:: update=>TensRcrsvUpdate                !updates the tensor information (new resolution, composition, new layout, new storage)
           procedure, public:: get_header=>TensRcrsvGetHeader         !returns a pointer to the tensor header
           procedure, public:: get_body=>TensRcrsvGetBody             !returns a pointer to the tensor body
           procedure, public:: get_descriptor=>TensRcrsvGetDescriptor !returns a tensor descriptor uniquely characterizing tensor signature, shape, layout, and location
@@ -4764,18 +4770,21 @@
         end subroutine TensRcrsvImportBody
 !------------------------------------------------------------
         subroutine TensRcrsvUpdate(this,another,ierr,updated)
-!Updates the tensor information (new resolution -> new layout -> new body).
+!Updates the tensor information (new resolution, composition, new layout, new storage).
 !<this> tensor must at least be defined (have its signature set).
 !<another> tensor must have the same signature, and, if both have
 !fully defined shapes, the same shape as well. Then, any additional
 !information will be transferred from <another> tensor to <this> tensor,
-!thus updating it.
+!thus updating it. If <another> tensor has a more advanced stage of its body
+!definition, then <this> tensor will fully import the body of <another>,
+!thus discarding any existing state of its own body.
          implicit none
          class(tens_rcrsv_t), intent(inout):: this   !inout: tensor being updated
-         class(tens_rcrsv_t), intent(in):: another   !in: same tensor with more complete information (later stage of definition)
+         class(tens_rcrsv_t), intent(in):: another   !in: same tensor with potentially more complete information (later stage of definition)
          integer(INTD), intent(out), optional:: ierr !out: error code
          logical, intent(out), optional:: updated    !out: returns TRUE if the tensor has actually been updated
-         integer(INTD):: errc,this_nd,this_unres,an_nd,an_unres,i,m,n
+         integer(INTD):: errc,this_nd,this_unres,an_nd,an_unres,i
+         integer(INTL):: m,n
          logical:: this_shp,this_lay,this_loc,an_shp,an_lay,an_loc,updat
 
          updat=.FALSE.
@@ -4787,8 +4796,7 @@
  !Update shape (import defined tensor dimensions):
               if(an_shp) then
                if(.not.this_shp) then
-                this%header%shape=another%header%shape
-                updat=.TRUE.
+                this%header%shape=another%header%shape; updat=.TRUE.
                else
                 do i=1,this_nd
                  m=this%header%shape%dim_extent(i)
@@ -4796,21 +4804,32 @@
                  if(m.le.0) then
                   if(n.gt.0) then; this%header%shape%dim_extent(i)=n; updat=.TRUE.; endif
                  else
-                  if(n.gt.0.and.n.ne.m) errc=TEREC_INVALID_REQUEST !defined dimensions must be the same
+                  if(n.gt.0.and.n.ne.m) then; errc=TEREC_INVALID_REQUEST; exit; endif !defined dimensions must be the same
                  endif
                 enddo
                endif
               endif
- !Update layout (copy the full body info):
-              if(an_lay.and.errc.eq.TEREC_SUCCESS) then
-               if(.not.this_lay) then
-                call this%import_body(another,errc)
-                if(errc.eq.TEREC_SUCCESS) updat=.TRUE.
-               else
- !Update location (`actually copy the full body info):
-                if(an_loc.and.(.not.this_loc)) then
-                 call this%import_body(another,errc)
-                 if(errc.eq.TEREC_SUCCESS) updat=.TRUE.
+ !Update structure (copy the full body info):
+              if(errc.eq.TEREC_SUCCESS) then
+               if(another%body%is_set(errc)) then
+                if(errc.eq.TEREC_SUCCESS) then
+                 if(.not.this%body%is_set(errc)) then
+                  if(errc.eq.TEREC_SUCCESS) then
+                   call this%import_body(another,errc); if(errc.eq.TEREC_SUCCESS) updat=.TRUE.
+                  endif
+                 else
+ !Update layout (actually copy the full body info):
+                  if(an_lay.and.errc.eq.TEREC_SUCCESS) then
+                   if(.not.this_lay) then
+                    call this%import_body(another,errc); if(errc.eq.TEREC_SUCCESS) updat=.TRUE.
+                   else
+ !Update location (actually copy the full body info):
+                    if(an_loc.and.(.not.this_loc)) then
+                     call this%import_body(another,errc); if(errc.eq.TEREC_SUCCESS) updat=.TRUE.
+                    endif
+                   endif
+                  endif
+                 endif
                 endif
                endif
               endif
