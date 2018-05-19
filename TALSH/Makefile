@@ -292,7 +292,7 @@ FFLAGS_INTEL_OPT = -c -O3 -fpp -vec-threshold4 -qopenmp -mkl=parallel
 #FFLAGS_INTEL_OPT = -c -O3 -fpp -vec-threshold4 -openmp
 FFLAGS_CRAY_DEV = -c -g
 FFLAGS_CRAY_OPT = -c -O3
-FFLAGS_GNU_DEV = -c -fopenmp -fbacktrace -fcheck=bounds -fcheck=array-temps -fcheck=pointer -g -O0
+FFLAGS_GNU_DEV = -c -fopenmp -fbacktrace -fcheck=bounds -fcheck=array-temps -fcheck=pointer -g -Og
 FFLAGS_GNU_OPT = -c -fopenmp -O3
 FFLAGS_PGI_DEV = -c -mp -Mcache_align -Mbounds -Mchkptr -Mstandard -Mallocatable=03 -g -O0
 FFLAGS_PGI_OPT = -c -mp -Mcache_align -Mstandard -Mallocatable=03 -O3

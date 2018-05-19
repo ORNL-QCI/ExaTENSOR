@@ -1,6 +1,6 @@
 !ExaTENSOR: Recursive (hierarchical) tensors
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/05/11
+!REVISION: 2018/05/18
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -251,7 +251,7 @@
           procedure, public:: extract_simple_parts=>TensLayoutFdimsExtract  !extracts simpe dense tensor parts (bricks) from the tensor block
           final:: tens_layout_fdims_dtor                                    !dtor
         end type tens_layout_fdims_t
- !Tensor body [NO COPY PER SE]:
+ !Tensor body:
         type, public:: tens_body_t
          integer(INTD), private:: num_subtensors=0            !number of subtensors in the subtensor composition list
          type(list_bi_t), private:: subtensors                !list of constituent tensors in terms of tensor headers
@@ -272,6 +272,7 @@
           procedure, public:: get_layout=>TensBodyGetLayout         !returns a pointer to the tensor body storage layout
           procedure, public:: get_num_subtensors=>TensBodyGetNumSubtensors !returns the total number of constituent subtensors
           procedure, public:: get_subtensors=>TensBodyGetSubtensors !returns a pointer to the list of constituent subtensors (each subtensor is represented by a tensor header)
+          procedure, public:: get_data_descr=>TensBodyGetDataDescr  !returns a pointer to the data descriptor
           procedure, private:: TensBodyExtractSubtensorsList        !extracts subtensor headers from the tensor and fills in a list of subtensors the tensor is composed of
           procedure, private:: TensBodyExtractSubtensorsVector      !extracts subtensor headers from the tensor and fills in a vector of subtensors the tensor is composed of
           generic, public:: extract_subtensors=>TensBodyExtractSubtensorsList,TensBodyExtractSubtensorsVector
@@ -308,6 +309,7 @@
           procedure, public:: set_data_type=>TensRcrsvSetDataType    !resets the tensor body data type, unless the tensor has already been laid-out with some data type
           procedure, public:: get_data_type=>TensRcrsvGetDataType    !returns the data type of the tensor body elements {R4,R8,C4,C8}
           procedure, public:: get_body_ptr=>TensRcrsvGetBodyPtr      !returns a C pointer to the local tensor body storage (if set)
+          procedure, public:: get_data_descr=>TensRcrsvGetDataDescr  !returns a pointer to the tensor body data descriptor
           procedure, public:: set_location=>TensRcrsvSetLocation     !sets the physical location of the tensor body data
           procedure, public:: import_body=>TensRcrsvImportBody       !imports tensor body from another tensor (with or without location)
           procedure, public:: update=>TensRcrsvUpdate                !updates the tensor information (new resolution -> new layout -> new body)
@@ -688,6 +690,7 @@
         private TensBodyGetLayout
         private TensBodyGetNumSubtensors
         private TensBodyGetSubtensors
+        private TensBodyGetDataDescr
         private TensBodyExtractSubtensorsList
         private TensBodyExtractSubtensorsVector
         private TensBodyPrintIt
@@ -716,6 +719,7 @@
         private TensRcrsvSetDataType
         private TensRcrsvGetDataType
         private TensRcrsvGetBodyPtr
+        private TensRcrsvGetDataDescr
         private TensRcrsvSetLocation
         private TensRcrsvImportBody
         private TensRcrsvUpdate
@@ -4026,6 +4030,24 @@
          if(present(ierr)) ierr=errc
          return
         end function TensBodyGetSubtensors
+!-------------------------------------------------------------
+        function TensBodyGetDataDescr(this,ierr) result(descr)
+!Returns a pointer to the data descriptor.
+         implicit none
+         class(DataDescr_t), pointer:: descr           !out: pointer to the data descriptor
+         class(tens_body_t), intent(in), target:: this !in: tensor body
+         integer(INTD), intent(out), optional:: ierr   !out: error code
+         integer(INTD):: errc
+
+         errc=TEREC_SUCCESS; descr=>NULL()
+         if(allocated(this%layout)) then
+          descr=>this%layout%get_data_descr(errc)
+         else
+          errc=TEREC_INVALID_REQUEST
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function TensBodyGetDataDescr
 !------------------------------------------------------------------------------------
         subroutine TensBodyExtractSubtensorsList(this,subtensors,ierr,num_subtensors)
 !Extracts subtensor headers from the tensor and fills in a list of subtensors the tensor is composed of.
@@ -4145,8 +4167,9 @@
          integer(INTD), intent(out), optional:: ierr   !out: error code
          integer(INTD), intent(in), optional:: dev_id  !in: output device id (6:screen)
          integer(INTD), intent(in), optional:: nspaces !out: left alignment
-         integer(INTD):: errc,dev,i
+         integer(INTD):: errc,dev,i,rank,comm
          class(tens_layout_t), pointer:: tens_layout
+         class(DataDescr_t), pointer:: descr
 
          errc=TEREC_SUCCESS
          if(present(dev_id)) then; dev=dev_id; else; dev=6; endif
@@ -4163,6 +4186,20 @@
            write(dev,'(" Tensor body layout kind = ",i7)') tens_layout%layout
            do i=1,nspaces; write(dev,'(" ")',ADVANCE='NO'); enddo
            write(dev,'(" Layout data kind        = ",i7)') tens_layout%data_type
+           descr=>tens_layout%get_data_descr()
+           if(associated(descr)) then
+            if(descr%is_set(errc,rank,comm)) then
+             do i=1,nspaces; write(dev,'(" ")',ADVANCE='NO'); enddo
+             write(dev,'(" Data descriptor: Comm = ",i11,"; Rank = ",i7,"; Size (B) = ",i12)')&
+             &comm,rank,descr%data_size()
+            else
+             do i=1,nspaces; write(dev,'(" ")',ADVANCE='NO'); enddo
+             write(dev,'(" Data descriptor empty")')
+            endif
+           else
+            do i=1,nspaces; write(dev,'(" ")',ADVANCE='NO'); enddo
+            write(dev,'(" Data descriptor empty")')
+           endif
           else
            do i=1,nspaces; write(dev,'(" ")',ADVANCE='NO'); enddo
            write(dev,'(" Tensor body has no layout yet")')
@@ -4667,6 +4704,19 @@
          if(present(ierr)) ierr=errc
          return
         end function TensRcrsvGetBodyPtr
+!--------------------------------------------------------------
+        function TensRcrsvGetDataDescr(this,ierr) result(descr)
+!Returns a pointer to the tensor body data descriptor.
+         implicit none
+         class(DataDescr_t), pointer:: descr         !out: pointer to the data descriptor
+         class(tens_rcrsv_t), intent(in):: this      !in: tensor
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         descr=>this%body%get_data_descr(errc)
+         if(present(ierr)) ierr=errc
+         return
+        end function TensRcrsvGetDataDescr
 !------------------------------------------------------------
         subroutine TensRcrsvSetLocation(this,data_descr,ierr)
 !Sets the physical location of the tensor body data via a DDSS data descriptor.

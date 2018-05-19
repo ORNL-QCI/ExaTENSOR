@@ -1,7 +1,7 @@
 !PROJECT Q-FORCE: Massively Parallel Quantum Many-Body Methodology on Heterogeneous HPC systems.
 !BASE: ExaTensor: Massively Parallel Tensor Algebra Virtual Processor for Heterogeneous HPC systems.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/05/16
+!REVISION: 2018/05/18
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -101,6 +101,12 @@
            ierr=exatns_sync(); if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_sync() failed!')
            tmf=MPI_Wtime()
            write(6,'("Ok: ",F16.4," sec")') tmf-tms; flush(6)
+ !Dump cache (debug):
+           ierr=exatns_dump_cache()
+           if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_dump_cache() failed!')
+           write(6,'("Tensor cache dumped")')
+           ierr=exatns_stop()
+
            write(6,'("Creating tensor ltens over a hierarchical vector space ... ")',ADVANCE='NO'); flush(6)
            tms=MPI_Wtime()
            ierr=exatns_tensor_create(ltens,'ltens',(/(ao_space_id,i=1,2)/),(/(ao_space_root,i=1,2)/),EXA_DATA_KIND_R8)
@@ -115,12 +121,6 @@
            ierr=exatns_sync(); if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_sync() failed!')
            tmf=MPI_Wtime()
            write(6,'("Ok: ",F16.4," sec")') tmf-tms; flush(6)
- !Dump cache (debug):
-           ierr=exatns_dump_cache()
-           if(ierr.ne.EXA_SUCCESS) call quit(ierr,'exatns_dump_cache() failed!')
-           write(6,'("Tensor cache dumped")')
- !Pause:
-           call wait_delay(3.0) !pause in seconds
  !Contract tensors:
            write(6,'("Contracting tensors ... ")',ADVANCE='NO'); flush(6)
            tms=MPI_Wtime()

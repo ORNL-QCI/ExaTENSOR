@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/05/17
+!REVISION: 2018/05/18
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -633,6 +633,10 @@
  !Metadata owner id:
          do j=1,nsp+1; write(devo,'(" ")',ADVANCE='NO'); enddo
          write(devo,'("Metadata owner TAVP-MNG id = ",i6)') this%owner_id
+ !Counters:
+         do j=1,nsp+1; write(devo,'(" ")',ADVANCE='NO'); enddo
+         write(devo,'("Persist = ",l1,". Counters: Ref = ",i5,"; Use = ",i2,"; RW = ",i2,1x,i2)')&
+         &this%is_persistent(),this%get_ref_count(),this%get_use_count(),this%get_rw_counter(),this%get_rw_counter(defer=.TRUE.)
          do j=1,nsp; write(devo,'(" ")',ADVANCE='NO'); enddo
          write(devo,'("}")')
          !call this%unlock()
@@ -4799,32 +4803,32 @@
           flush(CONS_OUT)
          endif
 !Initialize queues:
-         call this%init_queue(this%num_ports,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-61
+         call this%init_queue(this%num_ports,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-62
 !Initialize the matching list iterator:
-         ier=this%mat_list%init(this%matching_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-60
+         ier=this%mat_list%init(this%matching_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-61
 !Initialize the deferred list iterator:
-         ier=this%def_list%init(this%deferred_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-59
+         ier=this%def_list%init(this%deferred_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-60
 !Initialize the retired list iterator:
-         ier=this%ret_list%init(this%retired_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-58
+         ier=this%ret_list%init(this%retired_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-59
 !Initialize the control list:
-         ier=this%ctrl_list%init(this%control_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-57
+         ier=this%ctrl_list%init(this%control_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-58
 !Initialize parent instruction map iterator:
-         ier=this%parent_instr%init(this%parent_instr_map); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-56
+         ier=this%parent_instr%init(this%parent_instr_map); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-57
 !Set up tensor argument cache and wait on other TAVP units:
          tavp=>NULL(); dsvp=>this%get_dsvp(); select type(dsvp); class is(tavp_mng_t); tavp=>dsvp; end select
          if(associated(tavp)) then
           this%arg_cache=>tavp%tens_cache
-          call tavp%sync_units(errc,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-55
+          call tavp%sync_units(errc,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-56
          else
-          this%arg_cache=>NULL(); if(errc.eq.0) errc=-54
+          this%arg_cache=>NULL(); if(errc.eq.0) errc=-55
          endif
 !Work loop:
          active=(errc.eq.0); stopping=(.not.active)
          wloop: do while(active)
  !Process a new batch of parent tensor instructions (and possibly control instructions):
   !Get a new batch of parent tensor instructions from Decomposer (port 0) into the main queue:
-          ier=this%iqueue%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-53; exit wloop; endif
-          ier=this%flush_port(0,num_moved=i); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-52; exit wloop; endif
+          ier=this%iqueue%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-54; exit wloop; endif
+          ier=this%flush_port(0,num_moved=i); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-53; exit wloop; endif
           if(DEBUG.gt.0.and.i.gt.0) then
            write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Collector unit ",i2," received ",i9," parent instructions from Decomposer")')&
            &impir,this%get_id(),i
@@ -4832,30 +4836,32 @@
            flush(CONS_OUT)
           endif
   !Register parent tensor instructions and move them into the matching list, move other instructions elsewhere:
-          ier=this%mat_list%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-51; exit wloop; endif
-          ier=this%iqueue%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-50; exit wloop; endif
+          ier=this%mat_list%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-52; exit wloop; endif
+          ier=this%iqueue%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-51; exit wloop; endif
           ier=this%iqueue%get_status()
           ploop: do while(ier.eq.GFC_IT_ACTIVE)
    !Extract a parent tensor instruction (.error_code field contains the number of child subinstructions):
-           uptr=>this%iqueue%get_value(ier); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-49; exit wloop; endif
+           uptr=>this%iqueue%get_value(ier); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-50; exit wloop; endif
            tens_instr=>NULL(); select type(uptr); class is(tens_instr_t); tens_instr=>uptr; end select
-           if((.not.associated(tens_instr)).and.errc.eq.0) then; errc=-48; exit wloop; endif !trap
-           pid=tens_instr%get_id(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-47; exit wloop; endif
-           sts=tens_instr%get_status(ier,cnt); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-46; exit wloop; endif
-           opcode=tens_instr%get_code(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-45; exit wloop; endif
+           if((.not.associated(tens_instr)).and.errc.eq.0) then; errc=-49; exit wloop; endif !trap
+           pid=tens_instr%get_id(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-48; exit wloop; endif
+           sts=tens_instr%get_status(ier,cnt); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-47; exit wloop; endif
+           opcode=tens_instr%get_code(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-46; exit wloop; endif
    !Register decomposable parent tensor instructions and move them into the matching list:
            if(opcode.ge.TAVP_ISA_TENS_FIRST.and.opcode.le.TAVP_ISA_TENS_LAST) then
             call tens_instr%set_status(sts,ier,DSVP_SUCCESS) !.error_code field was used as children count, reset it back to DSVP_SUCCESS
-            if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-44; exit wloop; endif
-            if(cnt.le.0.and.errc.eq.0) then; errc=-43; exit wloop; endif !trap
-            ier=this%iqueue%move_elem(this%mat_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-42; exit wloop; endif
-            ier=this%mat_list%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-41; exit wloop; endif
+            if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-45; exit wloop; endif
+            if(cnt.le.0.and.errc.eq.0) then; errc=-44; exit wloop; endif !trap
+            ier=this%iqueue%move_elem(this%mat_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-43; exit wloop; endif
+            ier=this%mat_list%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-42; exit wloop; endif
             call this%register_instr(pid,cnt,this%mat_list%bookmark(),ier)
-            if(ier.ne.0.and.errc.eq.0) then; errc=-40; exit wloop; endif
+            if(ier.ne.0.and.errc.eq.0) then; errc=-41; exit wloop; endif
    !Move control instructions into the control list (or delete them):
            elseif(opcode.ge.TAVP_ISA_CTRL_FIRST.and.opcode.le.TAVP_ISA_CTRL_LAST) then
             select case(opcode)
             case(TAVP_INSTR_CTRL_STOP)
+             call tens_instr%set_status(DS_INSTR_COMPLETED,ier)
+             if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-40; exit wloop; endif
              ier=this%ctrl_list%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-39; exit wloop; endif
              ier=this%iqueue%move_elem(this%ctrl_list)
              stopping=.TRUE.

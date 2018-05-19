@@ -1,6 +1,6 @@
 !Distributed data storage service (DDSS).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2017/10/10 (started 2015/03/18)
+!REVISION: 2018/05/18 (started 2015/03/18)
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -1383,6 +1383,7 @@
 
          ans=(this%RankMPI.ge.0)
          if(ans.and.present(proc_rank)) proc_rank=this%RankMPI
+         if(ans.and.present(mpi_comm)) mpi_comm=this%WinMPI%CommMPI
          if(present(ierr)) ierr=0
          return
         end function DataDescrIsSet

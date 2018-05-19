@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/05/17
+!REVISION: 2018/05/18
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -1313,6 +1313,10 @@
  !Tensor:
          tensor=>this%get_tensor(errc)
          if(errc.eq.0) call tensor%print_it(errc,devo,nsp+1)
+ !Counters:
+         do j=1,nsp+1; write(devo,'(" ")',ADVANCE='NO'); enddo
+         write(devo,'("Persist = ",l1,". Counters: Ref = ",i5,"; Use = ",i2,"; RW = ",i2,1x,i2)')&
+         &this%is_persistent(),this%get_ref_count(),this%get_use_count(),this%get_rw_counter(),this%get_rw_counter(defer=.TRUE.)
          do j=1,nsp; write(devo,'(" ")',ADVANCE='NO'); enddo
          write(devo,'("}")')
          !call this%unlock()

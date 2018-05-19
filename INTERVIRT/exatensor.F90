@@ -1,7 +1,7 @@
 !ExaTENSOR: Massively Parallel Virtual Processor for Scale-Adaptive Hierarchical Tensor Algebra
 !This is the top level API module of ExaTENSOR (user-level API)
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com, liakhdi@ornl.gov
-!REVISION: 2018/05/16
+!REVISION: 2018/05/18
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -639,6 +639,10 @@
         implicit none
         integer(INTD):: ierr !out: error code
         type(comm_handle_t):: comm_hl
+        type(obj_pack_t):: instr_packet
+        integer(INTD):: n,i,sts,err_code
+        integer(INTL):: iid
+        class(*), pointer:: instr
         logical:: new
 
         ierr=EXA_SUCCESS; call comm_hl%clean(ierr)
@@ -647,7 +651,37 @@
           new=bytecode_in%receive(comm_hl,ierr,0,TAVP_COLLECT_TAG,drv_mng_comm) !receive bytecode from the root TAVP-MNG
           if(new) then
            call comm_hl%wait(ierr); if(ierr.ne.0) then; ierr=EXA_ERR_UNABLE_COMPLETE; exit wloop; endif
-           num_tens_instr_synced=num_tens_instr_synced+bytecode_in%get_num_packets()
+           n=bytecode_in%get_num_packets()
+           num_tens_instr_synced=num_tens_instr_synced+n
+           do i=1,n
+            call bytecode_in%extract_packet(i,instr_packet,ierr,preclean=.TRUE.)
+            if(ierr.eq.PACK_SUCCESS) then
+             call unpack_builtin(instr_packet,iid,ierr)
+             if(ierr.eq.PACK_SUCCESS) then
+              instr=>instr_log%element_value(iid,ierr)
+              if(ierr.eq.GFC_SUCCESS.and.associated(instr)) then
+               select type(instr)
+               class is(tens_instr_mng_t)
+                sts=instr%get_status(ierr,err_code)
+                if(ierr.eq.DSVP_SUCCESS) then
+                 call instr%set_status(DS_INSTR_RETIRED,ierr,err_code)
+                 if(ierr.ne.DSVP_SUCCESS) then; ierr=EXA_ERR_UNABLE_COMPLETE; exit wloop; endif
+                else
+                 ierr=EXA_ERR_UNABLE_COMPLETE; exit wloop
+                endif
+               class default
+                ierr=EXA_ERR_UNABLE_COMPLETE; exit wloop
+               end select
+              else
+               ierr=EXA_ERR_UNABLE_COMPLETE; exit wloop
+              endif
+             else
+              ierr=EXA_ERR_UNABLE_COMPLETE; exit wloop
+             endif
+            else
+             ierr=EXA_ERR_UNABLE_COMPLETE; exit wloop
+            endif
+           enddo
           endif
           call comm_hl%clean(ierr); if(ierr.ne.0) then; ierr=EXA_ERR_UNABLE_COMPLETE; exit wloop; endif
          enddo wloop
@@ -695,7 +729,7 @@
         class(tens_instr_mng_t), pointer:: tens_instr
 
         ierr=EXA_SUCCESS
-        write(jo,'("#MSG(exatensor): New Instruction: Dump Tensor Cache: IP = ")',ADVANCE='NO'); flush(jo)
+        write(jo,'("#MSG(exatensor): New Instruction: DUMP TENSOR CACHE: IP = ")',ADVANCE='NO'); flush(jo)
         tens_instr=>add_new_instruction(ip,ierr)
         if(ierr.eq.0) then
          write(jo,'(i11)') ip; flush(jo) !new instruction id number
