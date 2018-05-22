@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/05/21
+!REVISION: 2018/05/22
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -4563,7 +4563,7 @@
            ier=this%def_list%get_status()
           enddo dloop
           if(ier.ne.GFC_IT_EMPTY.and.ier.ne.GFC_IT_DONE.and.errc.eq.0) then; errc=-64; exit wloop; endif !trap
-          ier=this%def_list%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-63; exit wloop; endif
+          ier=this%def_list%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-63; exit wloop; endif
  !Get new instructions from Decoder (port 0) into the main queue:
           ier=this%iqueue%reset_back(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-62; exit wloop; endif
           ier=this%flush_port(0,num_moved=n); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-61; exit wloop; endif
