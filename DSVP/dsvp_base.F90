@@ -1,6 +1,6 @@
 !Domain-specific virtual processor (DSVP): Abstract base module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/04/26
+!REVISION: 2018/05/21
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -142,9 +142,9 @@
           procedure, public:: mark_empty=>DSOprndMarkEmpty             !marks the domain-specific operand inactive (empty), local resources are released
           procedure, public:: mark_delivered=>DSOprndMarkDelivered     !marks the domain-specific operand locally available (present)
           procedure, public:: mark_undelivered=>DSOprndMarkUndelivered !marks the domain-specific operand locally unavailable (but defined), local resources are released
-          procedure, public:: get_status=>DSOprndGetStatus             !returns the current status of the operand
-          procedure, public:: get_comm_stat=>DSOprndGetCommStat        !returns the communication status of the operand
-          procedure, public:: set_comm_stat=>DSOprndSetCommStat        !sets the communication status
+          procedure, public:: get_status=>DSOprndGetStatus             !returns the current status of the domain-specific operand
+          procedure, public:: get_comm_stat=>DSOprndGetCommStat        !returns the communication status of the domain-specific operand
+          procedure, public:: set_comm_stat=>DSOprndSetCommStat        !sets the communication status for the domain-specific operand
         end type ds_oprnd_t
  !Wrapped reference to a domain-specific operand:
         type, private:: ds_oprnd_ref_t

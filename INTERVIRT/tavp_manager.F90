@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/05/19
+!REVISION: 2018/05/21
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -620,11 +620,11 @@
          integer(INTD), intent(in), optional:: nspaces !in: left alignment
          integer(INTD):: errc,devo,nsp,j
          class(tens_rcrsv_t), pointer:: tensor
-
+!$OMP FLUSH
          errc=0
          devo=6; if(present(dev_id)) devo=dev_id
          nsp=0; if(present(nspaces)) nsp=nspaces
-         !call this%lock()
+         call this%lock()
          do j=1,nsp; write(devo,'(" ")',ADVANCE='NO'); enddo
          write(devo,'("TENSOR CACHE ENTRY{")')
  !Tensor:
@@ -639,8 +639,8 @@
          &this%is_persistent(),this%get_ref_count(),this%get_use_count(),this%get_rw_counter(),this%get_rw_counter(defer=.TRUE.)
          do j=1,nsp; write(devo,'(" ")',ADVANCE='NO'); enddo
          write(devo,'("}")')
+         call this%unlock()
          flush(devo)
-         !call this%unlock()
          if(present(ierr)) ierr=errc
          return
         end subroutine TensEntryMngPrintIt
@@ -1303,10 +1303,10 @@
 !------------------------------------------------------------
         subroutine TensOprndPrintIt(this,ierr,dev_id,nspaces)
          implicit none
-         class(tens_oprnd_t), intent(in):: this
-         integer(INTD), intent(out), optional:: ierr
-         integer(INTD), intent(in), optional:: dev_id
-         integer(INTD), intent(in), optional:: nspaces
+         class(tens_oprnd_t), intent(in):: this        !in: tensor operand
+         integer(INTD), intent(out), optional:: ierr   !out: error code
+         integer(INTD), intent(in), optional:: dev_id  !in: output device id
+         integer(INTD), intent(in), optional:: nspaces !in: left alignment
          integer(INTD):: errc,devo,nsp,j
 !$OMP FLUSH
          errc=0
