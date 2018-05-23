@@ -1,6 +1,6 @@
 !Domain-specific virtual processor (DSVP): Abstract base module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/05/21
+!REVISION: 2018/05/23
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -24,7 +24,7 @@
 ! # A domain-specific virtual processor (DSVP) processes domain-specific instructions
 !   operating on domain-specific operands. Domain-specific operands encapsulate
 !   domain-specific data, making it processible by domain-specific instructions
-!   which encapsulate domain-specific operations. These abstract classes are intended
+!   which thus encapsulate domain-specific operations. These abstract classes are intended
 !   for a further specialization to concrete domain-specific classes via inheritance.
 ! # The abstract domain-specific processor classes provide basic instruction processing
 !   primitives, relevant deferred interfaces, and other bookkeeping:
@@ -35,31 +35,29 @@
 !      * Sync operand prefetching/uploading;
 !      * Release local resources.
 !   b) Domain-specific instruction:
-!      * Acquire resource: Acquires local resources for instruction operands;
-!      * Prefetch input: Starts prefetching (remote) input operands;
+!      * Acquire resources: Acquires local resources for all instruction operands;
+!      * Prefetch input: Starts prefetching of the remote input operands;
 !      * Sync prefetch: Synchronizes input prefetch;
 !      * Execute: Starts execution of the domain-specific instruction;
-!      * Sync execution: Synchronizes instruction execution (completion or error);
-!      * Upload output: Starts uploading (remote) output operands;
+!      * Sync execution: Synchronizes instruction execution (to completion or error);
+!      * Upload output: Starts uploading of the remote output operands;
 !      * Sync upload: Synchronizes output upload;
-!      * Release resource: Releases local resources occupied by instruction operands;
-!      * Encode: Encodes a domain-specific instruction into the bytecode packet.
+!      * Release resources: Releases local resources occupied by the instruction operands;
+!      * Encode: Encodes a domain-specific instruction into a bytecode packet.
 !   c) Domain-specific virtual processor:
 !      * Start;
 !      * Shutdown;
 !      * Decode: Unpacks the instruction bytecode into a domain-specific instruction.
 ! # A concrete domain-specific virtual processor implementation derives from the abstract classes
-!   specified in this module. The derivative concrete classes have to provide implementation
-!   of all deferred type-bound procedures. The concrete domain-specific virtual processor class
+!   specified in this module. The concrete subclasses have to provide implementation
+!   of all deferred type-bound procedures. The concrete domain-specific virtual processor subclass
 !   must define the microcode for each concrete domain-specific instruction and override
-!   the .decode() method. The .decode() method is supposed to unpack the instruction code
+!   the .decode() method. The .decode() method is supposed to unpack the instruction opcode
 !   from a raw bytecode packet (incoming instruction) and, based on that code, execute the instruction
-!   setup microcode which will associate all dynamic bindings (dynamic methods) of the instruction object
-!   as well as unpack the instruction control field and instruction operands. After a domain-specific
-!   instruction has been succesfully decoded, it is ready for use in the domain-specific virtual processor
-!   pipeline implemented by a concrete domain-specific virtual processor class composed from the concrete
-!   domain-specific virtual unit (DSVU) classes: DSVP consists of one or more DSVU, for example,
-!   decoder DSVU, encoder DSVU, caching DSVU, CPU executing DSVU, GPU executing DSVU, etc.
+!   processing pipeline. After a domain-specific instruction has been succesfully decoded, it is ready
+!   for use in the domain-specific virtual processor pipeline implemented by a concrete domain-specific
+!   virtual processor subclass composed of the concrete domain-specific virtual unit (DSVU) subclasses:
+!   DSVP consists of one or more DSVU, for example, decoder DSVU, encoder DSVU, executing DSVU, etc.
 
        module dsvp_base
         use dil_basic
@@ -89,11 +87,11 @@
         integer(INTD), parameter, public:: DSVP_STAT_ON=1           !DSVP has been initialized and is active now
         integer(INTD), parameter, public:: DSVP_STAT_ERR=-1         !DSVP encountered an error (generic)
  !DSVP specific kind (valid specific DSVP kinds must be non-negative):
-        integer(INTD), parameter, public:: DSVP_NO_KIND=-1          !no specficic kind
+        integer(INTD), parameter, public:: DSVP_NO_KIND=-1          !no specific kind
  !Domain-specific operand:
   !Operand status:
         integer(INTD), parameter, public:: DS_OPRND_EMPTY=0         !empty operand
-        integer(INTD), parameter, public:: DS_OPRND_DEFINED=1       !defined operand, but the data has not been delivered yet
+        integer(INTD), parameter, public:: DS_OPRND_DEFINED=1       !defined operand, but the data has not necessarily been delivered yet
         integer(INTD), parameter, public:: DS_OPRND_PRESENT=2       !defined operand with the data locally present (delivered)
   !Data communication status:
         integer(INTD), parameter, public:: DS_OPRND_NO_COMM=0       !no pending communication on the domain-specific operand
@@ -106,20 +104,21 @@
         integer(INTD), parameter, public:: DS_INSTR_EMPTY=0         !empty instruction
         integer(INTD), parameter, public:: DS_INSTR_NEW=1           !new (freshly decoded) instruction
         integer(INTD), parameter, public:: DS_INSTR_RSC_WAIT=2      !waiting for resource allocation required by instruction operands (local resources are acquired)
-        integer(INTD), parameter, public:: DS_INSTR_INPUT_WAIT=3    !waiting for the (remote) input operands to be delivered
+        integer(INTD), parameter, public:: DS_INSTR_INPUT_WAIT=3    !waiting for the remote input operands to be delivered
         integer(INTD), parameter, public:: DS_INSTR_READY_TO_EXEC=4 !instruction is ready for execution
-        integer(INTD), parameter, public:: DS_INSTR_SCHEDULED=5     !instruction has been scheduled to a specific computing unit (specific queue)
+        integer(INTD), parameter, public:: DS_INSTR_SCHEDULED=5     !instruction has been scheduled on a specific computing unit (specific queue)
         integer(INTD), parameter, public:: DS_INSTR_ISSUED=6        !instruction has been issued for execution on a specific computing unit
         integer(INTD), parameter, public:: DS_INSTR_COMPLETED=7     !instruction has completed execution (either successfully or with an error)
-        integer(INTD), parameter, public:: DS_INSTR_OUTPUT_WAIT=8   !waiting for the (remote) output operands to be uploaded back
-        integer(INTD), parameter, public:: DS_INSTR_RETIRED=9       !instruction retired (all temporary resources have been released)
+        integer(INTD), parameter, public:: DS_INSTR_UPLOADED=8      !instruction has completed remote output upload
+        integer(INTD), parameter, public:: DS_INSTR_RELEASED=9      !instruction has released temporary local resources
+        integer(INTD), parameter, public:: DS_INSTR_RETIRED=10      !instruction retired
   !Special instruction status:
         integer(INTD), parameter, public:: DS_INSTR_SPECIAL=100     !special status (for internal logic)
 !DERIVED TYPES:
  !Domain-specific resource (normally local):
         type, abstract, public:: ds_resrc_t
          contains
-          procedure(ds_resrc_query_i), deferred, public:: is_empty  !returns TRUE if the resource is empty (unacquired), FALSE otherwise
+          procedure(ds_resrc_query_i), deferred, public:: is_empty  !returns TRUE if the domain-specific resource is empty (unacquired), FALSE otherwise
         end type ds_resrc_t
  !Domain-specific operand (will contain domain-specific data to be processed by DSVP):
         type, abstract, public:: ds_oprnd_t
@@ -129,12 +128,12 @@
           procedure(ds_oprnd_query_i), deferred, public:: is_located !checks whether the domain-specific operand has been located
           procedure(ds_oprnd_query_i), deferred, public:: is_remote  !checks whether the domain-specific operand is local or remote
           procedure(ds_oprnd_query_i), deferred, public:: is_valued  !checks whether the domain-specific operand is set to some value (neither undefined nor being updated)
-          procedure(ds_oprnd_self_i), deferred, public:: acquire_rsc !explicitly acquires local resources for the domain-specific operand
-          procedure(ds_oprnd_self_i), deferred, public:: prefetch    !starts prefetching a remote domain-specific operand (acquires local resources!)
+          procedure(ds_oprnd_self_i), deferred, public:: acquire_rsc !explicitly acquires local resource for the domain-specific operand
+          procedure(ds_oprnd_self_i), deferred, public:: prefetch    !starts prefetching a remote domain-specific operand (acquires local resource!)
           procedure(ds_oprnd_self_i), deferred, public:: upload      !starts uploading the domain-specific operand to its remote location
           procedure(ds_oprnd_sync_i), deferred, public:: sync        !synchronizes the currently pending communication on the domain-specific operand (either test or wait)
-          procedure(ds_oprnd_self_i), deferred, public:: release     !destroys the present local copy of the domain-specific operand (releases local resources!), but the operand will stay defined
-          procedure(ds_oprnd_self_i), deferred, public:: destruct    !performs complete destruction back to an empty (undefined) state
+          procedure(ds_oprnd_self_i), deferred, public:: release     !releases local resource, thus destroying the temporary local copy, but the operand stays defined
+          procedure(ds_oprnd_self_i), deferred, public:: destruct    !performs a complete destruction back to an empty (undefined) state
           procedure(ds_oprnd_print_i), deferred, public:: print_it   !prints
           procedure, public:: is_active=>DSOprndIsActive               !returns TRUE if the domain-specific operand is active (defined and maybe present)
           procedure, public:: is_present=>DSOprndIsPresent             !returns TRUE if the domain-specific operand is locally available (present)
@@ -168,6 +167,7 @@
          type(ds_oprnd_ref_t), allocatable, private:: operand(:)    !domain-specific operands (wrapped pointers): set up by the DECODE procedure
          contains
           procedure(ds_instr_encode_i), deferred, public:: encode       !encoding procedure: Packs the domain-specific instruction into a raw byte packet (bytecode)
+          procedure(ds_instr_print_i), deferred, public:: print_it      !prints
           procedure, public:: is_empty=>DSInstrIsEmpty                  !returns TRUE if the domain-specific instruction is empty
           procedure, public:: is_retired=>DSInstrIsRetired              !returns TRUE if the domain-specific instruction is retired
           procedure, public:: is_active=>DSInstrIsActive                !returns TRUE if the domain-specific instruction is active (defined)
@@ -186,7 +186,7 @@
           procedure, public:: set_operand=>DSInstrSetOperand            !associates a specific operand of the domain-specific instruction with its target
           procedure, public:: free_operand=>DSInstrFreeOperand          !frees a specific instruction operand
           procedure, public:: get_num_operands=>DSInstrGetNumOperands   !returns the number of operands in the domain-specific instruction
-          procedure, public:: all_set=>DSInstrAllSet                    !returns TRUE if all operands and control are set
+          procedure, public:: all_set=>DSInstrAllSet                    !returns TRUE if all instruction operands and control are set
           procedure, public:: activate=>DSInstrActivate                 !activates the domain-specific instruction in the final stage of decoding (sets up opcode and status)
           procedure, public:: clean=>DSInstrClean                       !resets the domain-specific instruction to an empty state (after it has been retired)
           procedure, public:: DSInstrPrintIt                            !prints the base part of the domain-specific instruction
@@ -374,6 +374,14 @@
           class(obj_pack_t), intent(inout):: instr_packet !out: instruction byte packet (bytecode)
           integer(INTD), intent(out), optional:: ierr     !out: error code
          end subroutine ds_instr_encode_i
+   !print_it:
+         subroutine ds_instr_print_i(this,ierr,dev_id,nspaces)
+          import:: ds_instr_t,INTD
+          class(ds_instr_t), intent(in):: this          !in: domain-specific instruction to be printed
+          integer(INTD), intent(out), optional:: ierr   !out: error code
+          integer(INTD), intent(in), optional:: dev_id  !in: output device id
+          integer(INTD), intent(in), optional:: nspaces !in: left alignment
+         end subroutine ds_instr_print_i
   !ds_unit_t:
    !ctor:
          subroutine ds_unit_ctor_i(this,conf,ierr)
@@ -460,6 +468,7 @@
         private DSInstrClean
         public DSInstrPrintIt
         public ds_instr_encode_i
+        public ds_instr_print_i
  !ds_unit_port_t:
         private DSUnitPortInit
         private DSUnitPortIsEmpty

@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/05/22
+!REVISION: 2018/05/23
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -4740,28 +4740,33 @@
            if((.not.associated(instr)).and.errc.eq.0) then; errc=-16; exit wloop; endif !trap
            opcode=instr%get_code(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-15; exit wloop; endif
            sts=instr%get_status(ier,errcode); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-14; exit wloop; endif
-           if(sts.ne.DS_INSTR_RETIRED.and.errc.eq.0) then; errc=-13; exit wloop; endif !trap
+           if(sts.ne.DS_INSTR_UPLOADED.and.errc.eq.0) then; errc=-13; exit wloop; endif !trap
            if(opcode.ge.TAVP_ISA_TENS_FIRST.and.opcode.le.TAVP_ISA_TENS_LAST) then !tensor instruction
             call instr%mark_completed(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-12; exit wloop; endif
             call this%release_resources(instr,ier); if(ier.ne.0.and.errc.eq.0) then; errc=-11; exit wloop; endif
+            call instr%set_status(DS_INSTR_RETIRED,ier,errcode)
+            if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-10; exit wloop; endif
             if(instr%output_substituted(ier)) then
              if(ier.eq.0) then
               instr=>NULL() !if the current instruction is TENS_ACCUMULATE, it will be deleted from the queue in .restore_output()
-              moved_fwd=this%restore_output(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-10; exit wloop; endif !local TENS_ACCUMULATE instructions will be deleted here
+              moved_fwd=this%restore_output(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-9; exit wloop; endif !local TENS_ACCUMULATE instructions will be deleted here
              else
-              if(errc.eq.0) then; errc=-9; exit wloop; endif
+              if(errc.eq.0) then; errc=-8; exit wloop; endif
              endif
             else
-             if(ier.ne.0.and.errc.eq.0) then; errc=-8; exit wloop; endif
+             if(ier.ne.0.and.errc.eq.0) then; errc=-7; exit wloop; endif
             endif
+           else !ctrl/aux instructions
+            call instr%set_status(DS_INSTR_RETIRED,ier,errcode)
+            if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-6; exit wloop; endif
            endif
            if(.not.moved_fwd) ier=this%rls_list%next()
           enddo rloop
   !Pass tensor instructions after resource release to Retirer (port 0):
-          ier=this%rls_list%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-6; exit wloop; endif
+          ier=this%rls_list%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-5; exit wloop; endif
           if(this%rls_list%get_status().eq.GFC_IT_ACTIVE) then
            ier=tavp%retirer%load_port(0,this%rls_list,num_moved=n)
-           if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-5; exit wloop; endif
+           if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-4; exit wloop; endif
            if(DEBUG.gt.0.and.n.gt.0) then
             write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Resourcer unit ",i2," passed ",i6," instructions to Retirer")')&
             &impir,this%get_id(),n
@@ -5555,13 +5560,13 @@
              ier=this%upl_list%move_elem(this%iqueue); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-25; exit wloop; endif
              num_upload=num_upload+1
             else
-             call tens_instr%set_status(DS_INSTR_RETIRED,ier,errcode)
+             call tens_instr%set_status(DS_INSTR_UPLOADED,ier,errcode)
              if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-24; exit wloop; endif
              ier=this%upl_list%move_elem(this%ret_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-23; exit wloop; endif
             endif
            else !aux/ctrl instruction
             if(opcode.eq.TAVP_INSTR_CTRL_STOP) really_stopping=.TRUE. !STOP instruction is back from Dispatcher => no instruction will follow
-            call tens_instr%set_status(DS_INSTR_RETIRED,ier,errcode)
+            call tens_instr%set_status(DS_INSTR_UPLOADED,ier,errcode)
             if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-22; exit wloop; endif
             ier=this%upl_list%move_elem(this%ret_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-21; exit wloop; endif
            endif
@@ -5576,7 +5581,7 @@
            if((.not.associated(tens_instr)).and.errc.eq.0) then; errc=-16; exit wloop; endif !trap
            opcode=tens_instr%get_code(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-15; exit wloop; endif
            sts=tens_instr%get_status(ier,errcode); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-14; exit wloop; endif
-           if(sts.eq.DS_INSTR_INPUT_WAIT) then !fetched
+           if(sts.eq.DS_INSTR_INPUT_WAIT) then !fetch
             delivered=this%sync_prefetch(tens_instr,ier,wait=COMMUNICATOR_BLOCKING)
             if(ier.ne.0.and.errc.eq.0) then; errc=-13; exit wloop; endif
             if(delivered) then
@@ -5587,12 +5592,12 @@
             else
              ier=this%iqueue%next()
             endif
-           elseif(sts.eq.DS_INSTR_OUTPUT_WAIT) then !uploaded
+           elseif(sts.eq.DS_INSTR_COMPLETED) then !upload
             delivered=this%sync_upload(tens_instr,ier,wait=COMMUNICATOR_BLOCKING)
             if(ier.ne.0.and.errc.eq.0) then; errc=-10; exit wloop; endif
             if(delivered) then
              num_upload=num_upload-1
-             call tens_instr%set_status(DS_INSTR_RETIRED,ier,errcode)
+             call tens_instr%set_status(DS_INSTR_UPLOADED,ier,errcode)
              if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-9; exit wloop; endif
              ier=this%iqueue%move_elem(this%ret_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-8; exit wloop; endif
             else
