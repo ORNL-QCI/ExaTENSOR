@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/05/22
+!REVISION: 2018/05/24
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -5161,7 +5161,7 @@
            errc=-14
           end select
 !Find the corresponding entry in Collector's dictionary:
-          if(errc.eq.0) then
+          if(errc.eq.0.and.parent_instr_id.ge.0) then
            errc=this%parent_instr%search(GFC_DICT_FETCH_IF_FOUND,cmp_integers,parent_instr_id,value_out=uptr)
            if(errc.eq.GFC_FOUND) then
             errc=0; matched=.TRUE.
@@ -5479,9 +5479,10 @@
         end subroutine TAVPMNGUnregisterInstr
 !---------------------------------------------------------------
         function TAVPMNGMapInstr(this,child_id,ierr) result(pid)
-!Returns the parent instruction ID for a subinstruction.
+!Returns the parent instruction ID (>=0) for a subinstruction.
+!If the parent instruction is not found, returns -1.
          implicit none
-         integer(INTL):: pid                         !out: parent instruction id
+         integer(INTL):: pid                         !out: parent instruction id (>=0 or -1 if not found)
          class(tavp_mng_t), intent(in):: this        !in: TAVP-MNG
          integer(INTL), intent(in):: child_id        !in: child instruction id (key)
          integer(INTD), intent(out), optional:: ierr !out: error code
@@ -5510,7 +5511,7 @@
               errc=-4
              endif
             else
-             errc=-3
+             if(errc.ne.GFC_NOT_FOUND) errc=-3
             endif
             ier=dit%release(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-2
            endif
