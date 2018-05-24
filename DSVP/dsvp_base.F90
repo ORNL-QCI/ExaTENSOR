@@ -1,6 +1,6 @@
 !Domain-specific virtual processor (DSVP): Abstract base module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/05/23
+!REVISION: 2018/05/24
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -122,28 +122,21 @@
         end type ds_resrc_t
  !Domain-specific operand (will contain domain-specific data to be processed by DSVP):
         type, abstract, public:: ds_oprnd_t
-         integer(INTD), private:: stat=DS_OPRND_EMPTY       !current status of the domain-specific operand: {DS_OPRND_EMPTY,DS_OPRND_DEFINED,DS_OPRND_PRESENT}
-         integer(INTD), private:: in_route=DS_OPRND_NO_COMM !communication status: {DS_OPRND_NO_COMM,DS_OPRND_FETCHING,DS_OPRND_UPLOADING}
+         integer(INTD), private:: stat=DS_OPRND_EMPTY !status of the domain-specific operand: {DS_OPRND_EMPTY,DS_OPRND_DEFINED,DS_OPRND_PRESENT}
          contains
-          procedure(ds_oprnd_query_i), deferred, public:: is_located !checks whether the domain-specific operand has been located
-          procedure(ds_oprnd_query_i), deferred, public:: is_remote  !checks whether the domain-specific operand is local or remote
-          procedure(ds_oprnd_query_i), deferred, public:: is_valued  !checks whether the domain-specific operand is set to some value (neither undefined nor being updated)
-          procedure(ds_oprnd_self_i), deferred, public:: acquire_rsc !explicitly acquires local resource for the domain-specific operand
-          procedure(ds_oprnd_self_i), deferred, public:: prefetch    !starts prefetching a remote domain-specific operand (acquires local resource!)
-          procedure(ds_oprnd_self_i), deferred, public:: upload      !starts uploading the domain-specific operand to its remote location
-          procedure(ds_oprnd_sync_i), deferred, public:: sync        !synchronizes the currently pending communication on the domain-specific operand (either test or wait)
-          procedure(ds_oprnd_self_i), deferred, public:: release     !releases local resource, thus destroying the temporary local copy, but the operand stays defined
-          procedure(ds_oprnd_self_i), deferred, public:: destruct    !performs a complete destruction back to an empty (undefined) state
-          procedure(ds_oprnd_print_i), deferred, public:: print_it   !prints
+          procedure(ds_oprnd_query_i), deferred, public:: is_located   !checks whether the domain-specific operand has been located (its location is known), plus additional attributes
+          procedure(ds_oprnd_self_i), deferred, public:: acquire_rsc   !explicitly acquires local resource for the domain-specific operand
+          procedure(ds_oprnd_self_i), deferred, public:: prefetch      !starts prefetching a remote domain-specific operand (acquires local resource!)
+          procedure(ds_oprnd_self_i), deferred, public:: upload        !starts uploading the domain-specific operand to its remote location
+          procedure(ds_oprnd_sync_i), deferred, public:: sync          !synchronizes the currently pending communication on the domain-specific operand (either test or wait)
+          procedure(ds_oprnd_self_i), deferred, public:: release_rsc   !releases local resource, thus destroying the temporary local copy, but the operand stays defined
+          procedure(ds_oprnd_self_i), deferred, public:: destruct      !performs a complete destruction back to an empty (undefined) state
+          procedure(ds_oprnd_stat_i), deferred, public:: get_comm_stat !returns the current communication status: {DS_OPRND_NO_COMM,DS_OPRND_FETCHING,DS_OPRND_UPLOADING}
+          procedure(ds_oprnd_print_i), deferred, public:: print_it     !prints
           procedure, public:: is_active=>DSOprndIsActive               !returns TRUE if the domain-specific operand is active (defined and maybe present)
-          procedure, public:: is_present=>DSOprndIsPresent             !returns TRUE if the domain-specific operand is locally available (present)
-          procedure, public:: mark_active=>DSOprndMarkActive           !marks the domain-specific operand active (defined)
-          procedure, public:: mark_empty=>DSOprndMarkEmpty             !marks the domain-specific operand inactive (empty), local resources are released
-          procedure, public:: mark_delivered=>DSOprndMarkDelivered     !marks the domain-specific operand locally available (present)
-          procedure, public:: mark_undelivered=>DSOprndMarkUndelivered !marks the domain-specific operand locally unavailable (but defined), local resources are released
+          procedure, public:: is_present=>DSOprndIsPresent             !returns TRUE if the domain-specific operand data is locally available (present)
           procedure, public:: get_status=>DSOprndGetStatus             !returns the current status of the domain-specific operand
-          procedure, public:: get_comm_stat=>DSOprndGetCommStat        !returns the communication status of the domain-specific operand
-          procedure, public:: set_comm_stat=>DSOprndSetCommStat        !sets the communication status for the domain-specific operand
+          procedure, public:: set_status=>DSOprndSetStatus             !sets the current status of the domain-specific operand
         end type ds_oprnd_t
  !Wrapped reference to a domain-specific operand:
         type, private:: ds_oprnd_ref_t
@@ -309,6 +302,16 @@
           integer(INTD), intent(out), optional:: ierr !out: error code
          end function ds_resrc_query_i
   !ds_oprnd_t:
+   !query:
+         function ds_oprnd_query_i(this,ierr,remote,valued) result(res)
+          import:: ds_oprnd_t,INTD
+          implicit none
+          logical:: res                               !out: result
+          class(ds_oprnd_t), intent(inout):: this     !in: domain-specific operand
+          integer(INTD), intent(out), optional:: ierr !out: error code
+          logical, intent(out), optional:: remote     !out: TRUE if operand is remote
+          logical, intent(out), optional:: valued     !out: TRUE if operand is valued (neither undefined nor being updated)
+         end function ds_oprnd_query_i
    !self:
          subroutine ds_oprnd_self_i(this,ierr)
           import:: ds_oprnd_t,INTD
@@ -316,23 +319,23 @@
           class(ds_oprnd_t), intent(inout):: this     !inout: domain-specific operand
           integer(INTD), intent(out), optional:: ierr !out: error code
          end subroutine ds_oprnd_self_i
-   !query:
-         function ds_oprnd_query_i(this,ierr) result(res)
-          import:: ds_oprnd_t,INTD
-          implicit none
-          logical:: res                               !out: result
-          class(ds_oprnd_t), intent(inout):: this     !in: domain-specific operand
-          integer(INTD), intent(out), optional:: ierr !out: error code
-         end function ds_oprnd_query_i
    !sync:
          function ds_oprnd_sync_i(this,ierr,wait) result(res)
           import:: ds_oprnd_t,INTD
           implicit none
           logical:: res                               !out: result
-          class(ds_oprnd_t), intent(inout):: this     !in: domain-specific operand
+          class(ds_oprnd_t), intent(inout):: this     !inout: domain-specific operand
           integer(INTD), intent(out), optional:: ierr !out: error code
           logical, intent(in), optional:: wait        !in: TRUE activates WAIT instead of TEST synchronization
          end function ds_oprnd_sync_i
+   !get_comm_stat:
+         function ds_oprnd_stat_i(this,ierr) result(stat)
+          import:: ds_oprnd_t,INTD
+          implicit none
+          integer(INTD):: stat                        !out: communication status
+          class(ds_oprnd_t), intent(inout):: this     !in: domain-specific operand
+          integer(INTD), intent(out), optional:: ierr !out: error code
+         end function ds_oprnd_stat_i
    !print:
          subroutine ds_oprnd_print_i(this,ierr,dev_id,nspaces)
           import:: ds_oprnd_t,INTD
@@ -429,16 +432,12 @@
  !ds_oprnd_t:
         private DSOprndIsActive
         private DSOprndIsPresent
-        private DSOprndMarkActive
-        private DSOprndMarkEmpty
-        private DSOprndMarkDelivered
-        private DSOprndMarkUndelivered
         private DSOprndGetStatus
-        private DsOprndGetCommStat
-        private DSOprndSetCommStat
-        public ds_oprnd_self_i
+        private DSOprndSetStatus
         public ds_oprnd_query_i
+        public ds_oprnd_self_i
         public ds_oprnd_sync_i
+        public ds_oprnd_stat_i
         public ds_oprnd_print_i
  !ds_instr_ctrl_t:
         public ds_instr_ctrl_pack_i
@@ -536,139 +535,36 @@
          logical:: res                               !out: answer
          class(ds_oprnd_t), intent(in):: this        !in: domain-specific operand
          integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc
+         integer(INTD):: errc,sts
 
          errc=DSVP_SUCCESS
-         res=(this%stat.gt.DS_OPRND_EMPTY)
+!$OMP ATOMIC READ
+         sts=this%stat
+         res=(sts.gt.DS_OPRND_EMPTY)
          if(present(ierr)) ierr=errc
          return
         end function DSOprndIsActive
 !-------------------------------------------------------
         function DSOprndIsPresent(this,ierr) result(res)
 !Returns TRUE if the domain-specific operand is locally available (present).
-!The input domain-specific operand must have already been defined.
+!The domain-specific operand is expected to be active (defined).
          implicit none
          logical:: res                               !out: answer
          class(ds_oprnd_t), intent(in):: this        !in: defined domain-specific operand
          integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc
+         integer(INTD):: errc,sts
 
          errc=DSVP_SUCCESS; res=.FALSE.
-         if(this%is_active(errc)) then
-          if(errc.eq.DSVP_SUCCESS) res=(this%stat.gt.DS_OPRND_DEFINED)
+!$OMP ATOMIC READ
+         sts=this%stat
+         if(sts.gt.DS_OPRND_EMPTY) then
+          res=(sts.gt.DS_OPRND_DEFINED)
          else
           errc=DSVP_ERR_INVALID_REQ
          endif
          if(present(ierr)) ierr=errc
          return
         end function DSOprndIsPresent
-!----------------------------------------------
-        subroutine DSOprndMarkActive(this,ierr)
-!Marks the domain-specific operand active (defined).
-!Trying to mark an already active operand active again will result in an error.
-         implicit none
-         class(ds_oprnd_t), intent(inout):: this     !inout: empty domain-specific operand
-         integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc
-
-         errc=DSVP_SUCCESS
-         if(.not.this%is_active(errc)) then
-          if(errc.eq.DSVP_SUCCESS) this%stat=DS_OPRND_DEFINED
-         else
-          errc=DSVP_ERR_INVALID_REQ
-         endif
-         if(present(ierr)) ierr=errc
-         return
-        end subroutine DSOprndMarkActive
-!---------------------------------------------
-        subroutine DSOprndMarkEmpty(this,ierr)
-!Marks the domain-specific operand as empty (undefined).
-!The local resources will automatically be released. It is allowed
-!to call this procedure on an empty operand. It is errorneous to
-!have the operand participate in an active communication.
-         implicit none
-         class(ds_oprnd_t), intent(inout):: this     !inout: domain-specific operand, no active communication
-         integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc,ier
-
-         errc=DSVP_SUCCESS
-         if(this%is_active(errc)) then
-          if(errc.eq.DSVP_SUCCESS) then
-           if(this%in_route.eq.DS_OPRND_NO_COMM) then
-            if(this%is_present(ier)) then
-             call this%mark_undelivered(errc); if(errc.eq.DSVP_SUCCESS) errc=ier !will release local resources
-            endif
-            this%stat=DS_OPRND_EMPTY
-           else
-            errc=DSVP_ERR_INVALID_REQ
-           endif
-          endif
-         endif
-         if(present(ierr)) ierr=errc
-         return
-        end subroutine DSOprndMarkEmpty
-!-------------------------------------------------
-        subroutine DSOprndMarkDelivered(this,ierr)
-!Marks the domain-specific operand as delivered (present, locally available).
-!Trying to mark an already delivered operand delivered again will cause an error.
-         implicit none
-         class(ds_oprnd_t), intent(inout):: this     !inout: domain-specific operand
-         integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc
-
-         errc=DSVP_SUCCESS
-         if(this%is_active(errc)) then
-          if(errc.eq.DSVP_SUCCESS) then
-           if(.not.this%is_present(errc)) then
-            call this%set_comm_stat(DS_OPRND_NO_COMM,errc)
-            if(errc.eq.DSVP_SUCCESS) this%stat=DS_OPRND_PRESENT
-           else
-            errc=DSVP_ERR_INVALID_REQ
-           endif
-          endif
-         else
-          errc=DSVP_ERR_INVALID_REQ
-         endif
-         if(present(ierr)) ierr=errc
-         return
-        end subroutine DSOprndMarkDelivered
-!-----------------------------------------------------------
-        subroutine DSOprndMarkUndelivered(this,ierr,sync_it)
-!Marks the domain-specific operand as undelivered (locally unavailable).
-!The local resources are automatically released, but the operand stays defined.
-!It is allowed to call this procedure on an undelivered operand. However, trying to
-!mark undelivered an operand with a pending communication will cause an error,
-!unless the optional parameter <sync_it> is set to TRUE (will enforce synchronization).
-         implicit none
-         class(ds_oprnd_t), intent(inout):: this     !inout: domain-specific operand
-         integer(INTD), intent(out), optional:: ierr !out: error code
-         logical, intent(in), optional:: sync_it     !in: if TRUE, a possible pending communication will be completed before resource release
-         integer(INTD):: errc,ier
-         logical:: compl_comm,dirty
-
-         errc=DSVP_SUCCESS; dirty=.FALSE.
-         if(this%is_active(errc)) then
-          if(errc.eq.DSVP_SUCCESS) then
-           compl_comm=.FALSE.; if(present(sync_it)) compl_comm=sync_it
-           if(compl_comm.and.this%in_route.ne.DS_OPRND_NO_COMM) then
-            compl_comm=this%sync(errc,wait=.TRUE.); dirty=(errc.ne.DSVP_SUCCESS); errc=DSVP_SUCCESS
-           endif
-           if(this%in_route.eq.DS_OPRND_NO_COMM.or.dirty) then !no pending communication check
-            if(this%is_present(ier)) then
-             call this%release(errc); if(errc.eq.DSVP_SUCCESS) errc=ier !will release local resources
-            endif
-            this%stat=DS_OPRND_DEFINED !status will be changed regardless the success of resource release
-           else
-            errc=DSVP_ERR_INVALID_REQ
-           endif
-          endif
-         else
-          if(errc.eq.DSVP_SUCCESS) errc=DSVP_ERR_INVALID_REQ
-         endif
-         if(dirty) errc=NOT_CLEAN
-         if(present(ierr)) ierr=errc
-         return
-        end subroutine DSOprndMarkUndelivered
 !-------------------------------------------------------
         function DSOprndGetStatus(this,ierr) result(sts)
 !Returns the current status of the domain-specific operand.
@@ -677,52 +573,35 @@
          class(ds_oprnd_t), intent(in):: this        !in: domain-specific operand
          integer(INTD), intent(out), optional:: ierr !out: error code
 
+!$OMP ATOMIC READ
          sts=this%stat
          if(present(ierr)) ierr=DSVP_SUCCESS
          return
         end function DSOprndGetStatus
-!---------------------------------------------------------
-        function DSOprndGetCommStat(this,ierr) result(sts)
-!Gets the current communication status on the domain-specific operand.
-         implicit none
-         integer(INTD):: sts                         !out: current communication status
-         class(ds_oprnd_t), intent(in):: this        !in: domain-specific operand
-         integer(INTD), intent(out), optional:: ierr !out: error code
-
-         sts=this%in_route
-         if(present(ierr)) ierr=DSVP_SUCCESS
-         return
-        end function DSOprndGetCommStat
-!---------------------------------------------------
-        subroutine DSOprndSetCommStat(this,sts,ierr)
-!Sets the communication status on the domain-specific operand.
+!-------------------------------------------------
+        subroutine DSOprndSetStatus(this,sts,ierr)
+!Sets the status of the domain-specific operand.
          implicit none
          class(ds_oprnd_t), intent(inout):: this     !inout: domain-specific operand
-         integer(INTD), intent(in):: sts             !in: communication status to be set
+         integer(INTD), intent(in):: sts             !in: new status
          integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc
+         integer(INTD):: errc,old_sts
 
-         if(this%is_active(errc)) then
-          if(errc.eq.DSVP_SUCCESS) then
-           select case(sts)
-           case(DS_OPRND_NO_COMM)
-            this%in_route=sts
-           case(DS_OPRND_FETCHING,DS_OPRND_UPLOADING)
-            if(this%in_route.eq.DS_OPRND_NO_COMM) then
-             this%in_route=sts
-            else
-             errc=DSVP_ERR_INVALID_REQ
-            endif
-           case default
-            errc=DSVP_ERR_INVALID_ARGS
-           end select
+         errc=DSVP_SUCCESS
+         if(sts.eq.DS_OPRND_EMPTY.or.sts.eq.DS_OPRND_DEFINED.or.sts.eq.DS_OPRND_PRESENT) then
+!$OMP ATOMIC READ
+          old_sts=this%stat
+!$OMP ATOMIC WRITE
+          this%stat=sts
+          if(sts.lt.old_sts) then
+           if(sts.lt.DS_OPRND_DEFINED) call this%release_rsc(errc)
           endif
          else
-          errc=DSVP_ERR_INVALID_REQ
+          errc=DSVP_ERR_INVALID_ARGS
          endif
          if(present(ierr)) ierr=errc
          return
-        end subroutine DSOprndSetCommStat
+        end subroutine DSOprndSetStatus
 ![ds_instr_t]=========================================
         function DSInstrIsEmpty(this,ierr) result(res)
 !Returns TRUE if the domain-specific instruction is empty (undefined).
@@ -1085,18 +964,21 @@
          logical, intent(in), optional:: dissoc_only !in: if TRUE, no operand deallocation will be performed
          integer(INTD):: errc
          integer:: ier
-         logical:: dis
+         logical:: dis,synced
 
          errc=DSVP_SUCCESS
          if(present(dissoc_only)) then; dis=dissoc_only; else; dis=.FALSE.; endif
          if(this%num_oprnds.gt.0) then
           if(op_num.ge.0.and.op_num.lt.this%num_oprnds) then
-           call this%operand(op_num)%oprnd_ref%mark_undelivered(errc,sync_it=.TRUE.) !complete a pending communication and call resource release
+           synced=this%operand(op_num)%oprnd_ref%sync(errc,wait=.TRUE.) !complete a possible communication
+           if(errc.ne.0) errc=DSVP_ERR_UNABLE_COMPLETE
+           call this%operand(op_num)%oprnd_ref%release_rsc(ier) !release local resource, if any
+           if(ier.ne.0.and.errc.eq.DSVP_SUCCESS) errc=DSVP_ERR_UNABLE_COMPLETE
            if(.not.dis) then
             deallocate(this%operand(op_num)%oprnd_ref,STAT=ier) !deallocate() will call the subtype dtor
             if(ier.ne.0.and.errc.eq.DSVP_SUCCESS) errc=DSVP_ERR_MEM_FREE_FAIL
            endif
-           this%operand(op_num)%oprnd_ref=>NULL() !dissociation without deallocation will not call the subtype dtor (operand will stay defined, but resourceless)
+           this%operand(op_num)%oprnd_ref=>NULL() !dissociation without deallocation will not call the subtype dtor
           else
            errc=DSVP_ERR_INVALID_ARGS
           endif
