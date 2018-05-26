@@ -1,6 +1,6 @@
 !Domain-specific virtual processor (DSVP): Abstract base module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/05/24
+!REVISION: 2018/05/25
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -124,14 +124,14 @@
         type, abstract, public:: ds_oprnd_t
          integer(INTD), private:: stat=DS_OPRND_EMPTY !status of the domain-specific operand: {DS_OPRND_EMPTY,DS_OPRND_DEFINED,DS_OPRND_PRESENT}
          contains
-          procedure(ds_oprnd_query_i), deferred, public:: is_located   !checks whether the domain-specific operand has been located (its location is known), plus additional attributes
+          procedure(ds_oprnd_locd_i), deferred, public:: is_located    !checks whether the domain-specific operand has been located (its location is known), plus additional attributes
+          procedure(ds_oprnd_stat_i), deferred, public:: get_comm_stat !returns the current communication status: {DS_OPRND_NO_COMM,DS_OPRND_FETCHING,DS_OPRND_UPLOADING}
           procedure(ds_oprnd_self_i), deferred, public:: acquire_rsc   !explicitly acquires local resource for the domain-specific operand
           procedure(ds_oprnd_self_i), deferred, public:: prefetch      !starts prefetching a remote domain-specific operand (acquires local resource!)
           procedure(ds_oprnd_self_i), deferred, public:: upload        !starts uploading the domain-specific operand to its remote location
           procedure(ds_oprnd_sync_i), deferred, public:: sync          !synchronizes the currently pending communication on the domain-specific operand (either test or wait)
           procedure(ds_oprnd_self_i), deferred, public:: release_rsc   !releases local resource, thus destroying the temporary local copy, but the operand stays defined
           procedure(ds_oprnd_self_i), deferred, public:: destruct      !performs a complete destruction back to an empty (undefined) state
-          procedure(ds_oprnd_stat_i), deferred, public:: get_comm_stat !returns the current communication status: {DS_OPRND_NO_COMM,DS_OPRND_FETCHING,DS_OPRND_UPLOADING}
           procedure(ds_oprnd_print_i), deferred, public:: print_it     !prints
           procedure, public:: is_active=>DSOprndIsActive               !returns TRUE if the domain-specific operand is active (defined and maybe present)
           procedure, public:: is_present=>DSOprndIsPresent             !returns TRUE if the domain-specific operand data is locally available (present)
@@ -303,7 +303,7 @@
          end function ds_resrc_query_i
   !ds_oprnd_t:
    !query:
-         function ds_oprnd_query_i(this,ierr,remote,valued) result(res)
+         function ds_oprnd_locd_i(this,ierr,remote,valued) result(res)
           import:: ds_oprnd_t,INTD
           implicit none
           logical:: res                               !out: result
@@ -311,7 +311,15 @@
           integer(INTD), intent(out), optional:: ierr !out: error code
           logical, intent(out), optional:: remote     !out: TRUE if operand is remote
           logical, intent(out), optional:: valued     !out: TRUE if operand is valued (neither undefined nor being updated)
-         end function ds_oprnd_query_i
+         end function ds_oprnd_locd_i
+   !get_comm_stat:
+         function ds_oprnd_stat_i(this,ierr) result(stat)
+          import:: ds_oprnd_t,INTD
+          implicit none
+          integer(INTD):: stat                        !out: communication status
+          class(ds_oprnd_t), intent(inout):: this     !in: domain-specific operand
+          integer(INTD), intent(out), optional:: ierr !out: error code
+         end function ds_oprnd_stat_i
    !self:
          subroutine ds_oprnd_self_i(this,ierr)
           import:: ds_oprnd_t,INTD
@@ -328,19 +336,11 @@
           integer(INTD), intent(out), optional:: ierr !out: error code
           logical, intent(in), optional:: wait        !in: TRUE activates WAIT instead of TEST synchronization
          end function ds_oprnd_sync_i
-   !get_comm_stat:
-         function ds_oprnd_stat_i(this,ierr) result(stat)
-          import:: ds_oprnd_t,INTD
-          implicit none
-          integer(INTD):: stat                        !out: communication status
-          class(ds_oprnd_t), intent(inout):: this     !in: domain-specific operand
-          integer(INTD), intent(out), optional:: ierr !out: error code
-         end function ds_oprnd_stat_i
    !print:
          subroutine ds_oprnd_print_i(this,ierr,dev_id,nspaces)
           import:: ds_oprnd_t,INTD
           implicit none
-          class(ds_oprnd_t), intent(in):: this          !in: domain-specific operand
+          class(ds_oprnd_t), intent(inout):: this       !in: domain-specific operand
           integer(INTD), intent(out), optional:: ierr   !out: error code
           integer(INTD), intent(in), optional:: dev_id  !in: printing device id (6:screen default)
           integer(INTD), intent(in), optional:: nspaces !in: left alignment
@@ -434,10 +434,10 @@
         private DSOprndIsPresent
         private DSOprndGetStatus
         private DSOprndSetStatus
-        public ds_oprnd_query_i
+        public ds_oprnd_locd_i
+        public ds_oprnd_stat_i
         public ds_oprnd_self_i
         public ds_oprnd_sync_i
-        public ds_oprnd_stat_i
         public ds_oprnd_print_i
  !ds_instr_ctrl_t:
         public ds_instr_ctrl_pack_i

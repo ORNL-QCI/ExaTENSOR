@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/05/24
+!REVISION: 2018/05/25
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -173,13 +173,12 @@
           procedure, public:: unregister_write=>TensOprndUnregisterWrite !unregisters a write access on the tensor operand
           procedure, public:: get_write_count=>TensOprndGetWriteCount    !returns the current read access count on the tensor operand
           procedure, public:: is_located=>TensOprndIsLocated             !returns TRUE if the tensor operand has been located (its structure is known)
-          procedure, public:: is_remote=>TensOprndIsRemote               !returns TRUE if the tensor operand is remote
-          procedure, public:: is_valued=>TensOprndIsValued               !returns TRUE if the tensor operand is set to some value (neither undefined nor being updated)
-          procedure, public:: acquire_rsc=>TensOprndAcquireRsc  !explicitly acquires local resources for the tensor operand
-          procedure, public:: prefetch=>TensOprndPrefetch       !starts prefetching the remote tensor operand (acquires local resources!)
+          procedure, public:: get_comm_stat=>TensOprndGetCommStat        !returns the current communication status on the tensor operand data
+          procedure, public:: acquire_rsc=>TensOprndAcquireRsc  !acquires local resource for the tensor operand
+          procedure, public:: prefetch=>TensOprndPrefetch       !starts prefetching the remote tensor operand (may acquire local resource!)
           procedure, public:: upload=>TensOprndUpload           !starts uploading the tensor operand to its remote location
-          procedure, public:: sync=>TensOprndSync               !synchronizes the currently pending communication on the tensor operand
-          procedure, public:: release=>TensOprndRelease         !destroys the present local copy of the tensor operand (releases local resources!), but the operand stays defined
+          procedure, public:: sync=>TensOprndSync               !synchronizes the currently pending communication on the tensor operand data
+          procedure, public:: release_rsc=>TensOprndReleaseRsc  !releases local resource but the operand stays defined
           procedure, public:: destruct=>TensOprndDestruct       !performs complete destruction back to an empty state
           procedure, public:: lock=>TensOprndLock               !sets the lock for accessing/updating the tensor operand content
           procedure, public:: unlock=>TensOprndUnlock           !releases the access lock
@@ -440,13 +439,12 @@
         private TensOprndUnregisterWrite
         private TensOprndGetWriteCount
         private TensOprndIsLocated
-        private TensOprndIsRemote
-        private TensOprndIsValued
+        private TensOprndGetCommStat
         private TensOprndAcquireRsc
         private TensOprndPrefetch
         private TensOprndUpload
         private TensOprndSync
-        private TensOprndRelease
+        private TensOprndReleaseRsc
         private TensOprndDestruct
         private TensOprndLock
         private TensOprndUnlock
@@ -686,7 +684,7 @@
              else
               this%owner_id=-1
              endif
-             call this%mark_active(errc); if(errc.ne.DSVP_SUCCESS) errc=-5
+             call this%set_status(DS_OPRND_DEFINED,errc); if(errc.ne.DSVP_SUCCESS) errc=-5
             else
              errc=-4
             endif
@@ -721,7 +719,7 @@
              this%tensor=>this%cache_entry%get_tensor(errc)
              if(errc.eq.0) then
               this%owner_id=this%cache_entry%get_owner_id()
-              call this%mark_active(errc); if(errc.ne.DSVP_SUCCESS) errc=-6
+              call this%set_status(DS_OPRND_DEFINED,errc); if(errc.ne.DSVP_SUCCESS) errc=-6
               if(DEBUG.gt.1.and.errc.eq.0) then
                write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Tensor operand associated with a cache entry (",i4,"):")')&
                &impir,this%cache_entry%get_ref_count()
@@ -1032,81 +1030,17 @@
          if(present(ierr)) ierr=errc
          return
         end function TensOprndGetWriteCount
-!---------------------------------------------------------
-        function TensOprndIsLocated(this,ierr) result(res)
-!Returns TRUE if the tensor operand has been located, FALSE otherwise.
-!By being located, it means the tensor structure (subtensor composition) is known.
+!-----------------------------------------------------------------------
+        function TensOprndIsLocated(this,ierr,remote,valued) result(res)
+!Returns TRUE if the tensor operand has been located, FALSE otherwise,
+!plus some additional attributes. By being located, it means that the
+!tensor structure (its subtensor composition) is known.
          implicit none
          logical:: res                               !out: result
          class(tens_oprnd_t), intent(inout):: this   !in: active tensor operand
          integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc
-         class(tens_rcrsv_t), pointer:: tensor
-         class(tens_body_t), pointer:: tens_body
-
-         res=.FALSE.
-         if(this%is_active(errc)) then
-          if(errc.eq.DSVP_SUCCESS) then
-           call this%lock()
-           tensor=>this%get_tensor(errc)
-           if(errc.eq.0) then
-            tens_body=>tensor%get_body(errc)
-            if(errc.eq.TEREC_SUCCESS) then
-             res=(tens_body%get_num_subtensors(errc).gt.0) !subtensors define the structure of the tensor (which is being located)
-             if(errc.ne.TEREC_SUCCESS) then; res=.FALSE.; errc=-5; endif
-            else
-             errc=-4
-            endif
-           else
-            errc=-3
-           endif
-           call this%unlock()
-          else
-           errc=-2
-          endif
-         else
-          errc=-1
-         endif
-         if(present(ierr)) ierr=errc
-         return
-        end function TensOprndIsLocated
-!--------------------------------------------------------
-        function TensOprndIsRemote(this,ierr) result(res)
-!Returns TRUE if the tensor operand is remote, FALSE otherwise.
-         implicit none
-         logical:: res                               !out: result
-         class(tens_oprnd_t), intent(inout):: this   !in: active tensor operand
-         integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc,id
-
-         res=.TRUE. !assume remote by default
-         if(this%is_active(errc)) then
-          if(errc.eq.DSVP_SUCCESS) then
-           id=this%get_owner_id(errc) !id = TAVP-MNG id which owns this tensor meta-data
-           if(errc.eq.0) then
-            res=(id.ne.role_rank) !role_rank is the TAVP-MNG id
-           else
-            errc=-3
-           endif
-          else
-           errc=-2
-          endif
-         else
-          errc=-1
-         endif
-         if(present(ierr)) ierr=errc
-         return
-        end function TensOprndIsRemote
-!--------------------------------------------------------
-        function TensOprndIsValued(this,ierr) result(res)
-!Returns TRUE if the tensor operand is set to some value, FALSE otherwise.
-!By being set to some value, it means it is neither undefined nor being updated.
-!Note that the tensor does neither have to be physically mapped nor possess
-!a defined physical layout in order to be valued for TAVP-MNG.
-         implicit none
-         logical:: res                               !out: result
-         class(tens_oprnd_t), intent(inout):: this   !in: active tensor operand
-         integer(INTD), intent(out), optional:: ierr !out: error code
+         logical, intent(out), optional:: remote     !out: TRUE if the operand is remote
+         logical, intent(out), optional:: valued     !out: TRUE if the operand is valued (neither undefined nor being updated)
          integer(INTD):: errc
          logical:: laid,locd
 
@@ -1114,11 +1048,26 @@
          if(this%is_active(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
            call this%lock()
-           if(this%tensor%is_set(errc,layed=laid,located=locd)) then
+           if(associated(this%tensor)) then
+            res=(this%tensor%get_num_subtensors(errc).gt.0) !subtensors define the structure of the tensor (which is being located)
             if(errc.eq.TEREC_SUCCESS) then
-             res=(this%get_write_count().eq.0) !no one is currently writing to this tensor => DEFINED
+             if(present(valued)) then
+              if(this%tensor%is_set(errc,layed=laid,located=locd)) then
+               if(errc.eq.TEREC_SUCCESS) then
+                valued=(this%get_write_count().eq.0) !no one is currently writing to this tensor => DEFINED
+               else
+                errc=-7
+               endif
+              else
+               errc=-6
+              endif
+             endif
+             if(present(remote).and.errc.eq.0) then
+              remote=(this%get_owner_id(errc).ne.role_rank)
+              if(errc.ne.0) errc=-5
+             endif
             else
-             errc=-4
+             res=.FALSE.; errc=-4
             endif
            else
             errc=-3
@@ -1130,19 +1079,44 @@
          else
           errc=-1
          endif
+         if(errc.ne.0) then
+          if(present(remote)) remote=.TRUE.
+          if(present(valued)) valued=.FALSE.
+         endif
          if(present(ierr)) ierr=errc
          return
-        end function TensOprndIsValued
+        end function TensOprndIsLocated
+!------------------------------------------------------------
+        function TensOprndGetCommStat(this,ierr) result(stat)
+!Returns the current communication status on the tensor operand data.
+         implicit none
+         integer(INTD):: stat                        !out: communication status: {DS_OPRND_NO_COMM,DS_OPRND_FETCHING,DS_OPRND_UPLOADING}
+         class(tens_oprnd_t), intent(inout):: this   !in: active tensor operand
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         stat=DS_OPRND_NO_COMM !TAVP-MNG does not perform tensor body data communications
+         if(this%is_active(errc)) then
+          if(errc.ne.DSVP_SUCCESS) errc=-2
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function TensOprndGetCommStat
 !------------------------------------------------
         subroutine TensOprndAcquireRsc(this,ierr)
 !Acquires local resources for the remote tensor operand.
          implicit none
-         class(tens_oprnd_t), intent(inout):: this   !inout: tensor operand
+         class(tens_oprnd_t), intent(inout):: this   !inout: active tensor operand
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
 
-         errc=0
-         !No local resources are currently needed
+         if(this%is_active(errc)) then
+          if(errc.ne.DSVP_SUCCESS) errc=-2 !No local resources are currently needed
+         else
+          errc=-1
+         endif
          if(present(ierr)) ierr=errc
          return
         end subroutine TensOprndAcquireRsc
@@ -1150,28 +1124,12 @@
         subroutine TensOprndPrefetch(this,ierr)
 !Starts prefetching the (remote) tensor operand.
          implicit none
-         class(tens_oprnd_t), intent(inout):: this   !inout: tensor operand
+         class(tens_oprnd_t), intent(inout):: this   !inout: active tensor operand
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
 
          if(this%is_active(errc)) then
-          if(errc.eq.DSVP_SUCCESS) then
-           if(.not.this%is_present(errc)) then
-            if(errc.eq.DSVP_SUCCESS) then
-             if(this%get_comm_stat().eq.DS_OPRND_NO_COMM) then
-              call this%set_comm_stat(DS_OPRND_FETCHING,errc); if(errc.ne.DSVP_SUCCESS) errc=-6
-             else
-              errc=-5
-             endif
-            else
-             errc=-4
-            endif
-           else
-            errc=-3
-           endif
-          else
-           errc=-2
-          endif
+          if(errc.ne.DSVP_SUCCESS) errc=-2 !No tensor body data prefetch is needed
          else
           errc=-1
          endif
@@ -1182,20 +1140,12 @@
         subroutine TensOprndUpload(this,ierr)
 !Starts uploading the (remote) tensor operand.
          implicit none
-         class(tens_oprnd_t), intent(inout):: this   !inout: tensor operand
+         class(tens_oprnd_t), intent(inout):: this   !inout: active tensor operand
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
 
-         if(this%is_present(errc)) then
-          if(errc.eq.DSVP_SUCCESS) then
-           if(this%get_comm_stat().eq.DS_OPRND_NO_COMM) then
-            call this%set_comm_stat(DS_OPRND_UPLOADING,errc); if(errc.ne.DSVP_SUCCESS) errc=-4
-           else
-            errc=-3
-           endif
-          else
-           errc=-2
-          endif
+         if(this%is_active(errc)) then
+          if(errc.ne.DSVP_SUCCESS) errc=-2 !No tensor body data upload is needed
          else
           errc=-1
          endif
@@ -1207,7 +1157,7 @@
 !Synchronizes a pending prefetch/upload.
          implicit none
          logical:: res                               !out: TRUE on communication completion, FALSE otherwise
-         class(tens_oprnd_t), intent(inout):: this   !inout: tensor operand
+         class(tens_oprnd_t), intent(inout):: this   !inout: active tensor operand
          integer(INTD), intent(out), optional:: ierr !out: error code
          logical, intent(in), optional:: wait        !in: TRUE activates WAIT instead of TEST synchronization (default)
          integer(INTD):: errc
@@ -1215,10 +1165,12 @@
          res=.FALSE.
          if(this%is_active(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
-           if(this%get_comm_stat().ne.DS_OPRND_NO_COMM) then
-            call this%mark_delivered(errc); if(errc.ne.DSVP_SUCCESS) errc=-3
+           call this%set_status(DS_OPRND_PRESENT,errc)
+           if(errc.eq.DSVP_SUCCESS) then
+            res=.TRUE.
+           else
+            errc=-3
            endif
-           if(errc.eq.0) res=.TRUE.
           else
            errc=-2
           endif
@@ -1228,57 +1180,47 @@
          if(present(ierr)) ierr=errc
          return
         end function TensOprndSync
-!---------------------------------------------
-        subroutine TensOprndRelease(this,ierr)
+!------------------------------------------------
+        subroutine TensOprndReleaseRsc(this,ierr)
 !Releases local resources acquired for the remote tensor operand.
          implicit none
-         class(tens_oprnd_t), intent(inout):: this   !inout: tensor operand
+         class(tens_oprnd_t), intent(inout):: this   !inout: active tensor operand
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
-         logical:: delivered
 
          if(this%is_active(errc)) then
-          if(errc.eq.DSVP_SUCCESS) then
-           if(this%get_comm_stat().ne.DS_OPRND_NO_COMM) then
-            delivered=this%sync(errc,wait=.TRUE.)
-            if((.not.delivered).or.(errc.ne.0)) errc=-3
-           endif
-          else
-           errc=-2
-          endif
+          if(errc.ne.DSVP_SUCCESS) errc=-2 !No local resources are currently needed
          else
           errc=-1
          endif
-         !No local resources are currently needed
          if(present(ierr)) ierr=errc
          return
-        end subroutine TensOprndRelease
+        end subroutine TensOprndReleaseRsc
 !----------------------------------------------
         subroutine TensOprndDestruct(this,ierr)
 !Destructs the tensor operand.
          implicit none
          class(tens_oprnd_t), intent(inout):: this   !inout: tensor operand
          integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc,ier
-         logical:: delivered
+         integer(INTD):: errc
 
          if(this%is_active(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
-           if(this%get_comm_stat().ne.DS_OPRND_NO_COMM) then
-            delivered=this%sync(errc,wait=.TRUE.)
-            if((.not.delivered).or.(errc.ne.0)) errc=-3
+           call this%set_status(DS_OPRND_EMPTY,errc) !will call resource release underneath
+           if(errc.eq.DSVP_SUCCESS) then
+            this%tensor=>NULL()
+            if(associated(this%cache_entry)) then
+             call this%cache_entry%decr_ref_count()
+             this%cache_entry=>NULL()
+            endif
+            this%owner_id=-1
+           else
+            errc=-2
            endif
-           call this%mark_empty(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-2
           else
            errc=-1
           endif
          endif
-         this%tensor=>NULL()
-         if(associated(this%cache_entry)) then
-          call this%cache_entry%decr_ref_count()
-          this%cache_entry=>NULL()
-         endif
-         this%owner_id=-1
          if(present(ierr)) ierr=errc
          return
         end subroutine TensOprndDestruct
@@ -1303,7 +1245,7 @@
 !------------------------------------------------------------
         subroutine TensOprndPrintIt(this,ierr,dev_id,nspaces)
          implicit none
-         class(tens_oprnd_t), intent(in):: this        !in: tensor operand
+         class(tens_oprnd_t), intent(inout):: this     !in: tensor operand
          integer(INTD), intent(out), optional:: ierr   !out: error code
          integer(INTD), intent(in), optional:: dev_id  !in: output device id
          integer(INTD), intent(in), optional:: nspaces !in: left alignment
@@ -1312,7 +1254,7 @@
          errc=0
          devo=6; if(present(dev_id)) devo=dev_id
          nsp=0; if(present(nspaces)) nsp=nspaces
-         !call this%lock()
+         call this%lock()
          do j=1,nsp; write(devo,'(" ")',ADVANCE='NO'); enddo
          write(devo,'("TENSOR OPERAND{")')
          do j=1,nsp+1; write(devo,'(" ")',ADVANCE='NO'); enddo
@@ -1326,7 +1268,7 @@
          endif
          do j=1,nsp; write(devo,'(" ")',ADVANCE='NO'); enddo
          write(devo,'("}")')
-         !call this%unlock()
+         call this%unlock()
          flush(devo)
          if(present(ierr)) ierr=errc
          return
@@ -1339,7 +1281,7 @@
 
          call this%destruct(errc)
          if(errc.ne.0) then
-          if(DEBUG.gt.0) then
+          if(VERBOSE) then
            write(CONS_OUT,'("#ERROR(TAVP-MNG:tens_oprnd_dtor): Destruction error ",i11)') errc
            call this%print_it(dev_id=CONS_OUT)
            flush(CONS_OUT)
@@ -1729,7 +1671,7 @@
          integer(INTD):: errc,n,i
          integer(INTD):: arg_located(0:MAX_TENSOR_OPERANDS-1),arg_ready(0:MAX_TENSOR_OPERANDS-1)
          class(ds_oprnd_t), pointer:: oprnd
-         logical:: ilocated,iready
+         logical:: ilocated,iready,vald
 
          located=.FALSE.; ilocated=.FALSE.; iready=.FALSE.
          if(.not.this%is_empty(errc)) then
@@ -1738,9 +1680,9 @@
            if(errc.eq.DSVP_SUCCESS) then
             arg_located(0:n-1)=0; arg_ready(0:n-1)=0
             do i=0,n-1 !loop over tensor operands
-             oprnd=>this%get_operand(i,errc); if(errc.ne.DSVP_SUCCESS) then; errc=-4; exit; endif
-             if(oprnd%is_located(errc)) arg_located(i)=1; if(errc.ne.0) then; errc=-3; exit; endif
-             if(oprnd%is_valued(errc)) arg_ready(i)=1; if(errc.ne.0) then; errc=-2; exit; endif
+             oprnd=>this%get_operand(i,errc); if(errc.ne.DSVP_SUCCESS) then; errc=-3; exit; endif
+             if(oprnd%is_located(errc,valued=vald)) arg_located(i)=1; if(errc.ne.0) then; errc=-2; exit; endif
+             if(vald) arg_ready(i)=1
             enddo
             if(errc.eq.0) then
              located=.TRUE.; ilocated=.TRUE.; iready=.TRUE.
