@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/05/25
+!REVISION: 2018/05/28
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -1664,7 +1664,7 @@
           if(associated(this%cache_entry)) then
            call this%cache_entry%set_talsh_tens(errc)
            if(errc.eq.0) then
-            this%talsh_tens=>this%cache_entry%talsh_tens
+            this%talsh_tens=>this%cache_entry%talsh_tens !`should be this%cache_entry%get_talsh_tens()
            else
             errc=-2
            endif
@@ -1902,7 +1902,7 @@
              res=(laid.and.locd)
              if(present(valued)) valued=(res.and.(this%get_write_count().eq.0))
              if(present(remote)) then
-              descr=>this%tensor%get_data_descriptor(errc)
+              descr=>this%tensor%get_data_descr(errc)
               if(associated(descr)) then
                if(descr%is_set(errc,host_proc_rank,mpi_comm)) then
                 if(errc.eq.0) then
@@ -1938,15 +1938,40 @@
         function TensOprndGetCommStat(this,ierr) result(stat)
 !Returns the current communication status on the tensor operand body data.
          implicit none
-         integer(INTD):: stat                        !out: communication status
+         integer(INTD):: stat                        !out: communication status: {DS_OPRND_NO_COMM,DS_OPRND_FETCHING,DS_OPRND_UPLOADING}
          class(tens_oprnd_t), intent(inout):: this   !in: active tensor operand
          integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc
+         integer(INTD):: errc,sts
+         class(tens_rcrsv_t), pointer:: tensor
          class(DataDescr_t), pointer:: descr
 
+         stat=DS_OPRND_NO_COMM
          if(this%is_active(errc)) then
           if(errc.eq.DSVP_SUCCESS) then
-           !`Finish
+           call this%lock()
+           tensor=>this%get_tensor(errc)
+           if(errc.eq.0) then
+            descr=>tensor%get_data_descr(errc)
+            if(errc.eq.TEREC_SUCCESS) then
+             sts=descr%get_status(errc)
+             if(errc.eq.0) then
+              if(sts.eq.DDSS_COMM_READ) then
+               stat=DS_OPRND_FETCHING
+              elseif(sts.eq.DDSS_COMM_WRITE) then
+               stat=DS_OPRND_UPLOADING
+              else
+               if(sts.ne.DDSS_COMM_NONE) errc=-6
+              endif
+             else
+              errc=-5
+             endif
+            else
+             errc=-4
+            endif
+           else
+            errc=-3
+           endif
+           call this%unlock()
           else
            errc=-2
           endif
@@ -2068,7 +2093,7 @@
                          errc=-17
                         endif
                         if(errc.eq.0) then
-                         call this%set_comm_stat(DS_OPRND_FETCHING,errc); if(errc.ne.DSVP_SUCCESS) errc=-16
+                         !call this%set_comm_stat(DS_OPRND_FETCHING,errc); if(errc.ne.DSVP_SUCCESS) errc=-16
                         endif
                        else
                         errc=-15
@@ -2152,7 +2177,7 @@
                    call descr_p%acc_data(cptr,errc,MPI_ASYNC_REQ)
                    if(errc.ne.0.and.errc.ne.TRY_LATER) errc=-1
                    if(errc.eq.0) then
-                    call this%set_comm_stat(DS_OPRND_UPLOADING,errc); if(errc.ne.DSVP_SUCCESS) errc=-2
+                    !call this%set_comm_stat(DS_OPRND_UPLOADING,errc); if(errc.ne.DSVP_SUCCESS) errc=-2
                    endif
                   else
                    errc=-3
@@ -2230,7 +2255,7 @@
                   if(sts.eq.DS_OPRND_FETCHING) then
                    call this%set_status(DS_OPRND_PRESENT,errc); if(errc.ne.DSVP_SUCCESS) errc=-10
                   endif
-                  call this%set_comm_stat(DS_OPRND_NO_COMM,errc); if(errc.ne.DSVP_SUCCESS) errc=-9
+                  !call this%set_comm_stat(DS_OPRND_NO_COMM,errc); if(errc.ne.DSVP_SUCCESS) errc=-9
                  endif
                 else
                  errc=-8
@@ -2446,7 +2471,7 @@
         subroutine TensOprndPrintIt(this,ierr,dev_id,nspaces)
 !Prints tensor operand.
          implicit none
-         class(tens_oprnd_t), intent(in):: this        !in: tensor operand
+         class(tens_oprnd_t), intent(inout):: this     !in: tensor operand
          integer(INTD), intent(out), optional:: ierr   !out: error code
          integer(INTD), intent(in), optional:: dev_id  !in: output device id
          integer(INTD), intent(in), optional:: nspaces !in: left alignment
@@ -5365,7 +5390,7 @@
           rloop: do while(n.gt.0)
            n=n-1; oprnd=>tens_instr%get_operand(n,ier)
            if(ier.eq.DSVP_SUCCESS) then
-            call oprnd%release(ier)
+            call oprnd%release_rsc(ier)
             if(ier.ne.0) then
              select type(oprnd)
              class is(tens_oprnd_t)

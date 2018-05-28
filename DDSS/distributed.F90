@@ -1,6 +1,6 @@
 !Distributed data storage service (DDSS).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/05/18 (started 2015/03/18)
+!REVISION: 2018/05/28 (started 2015/03/18)
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -124,6 +124,10 @@
         integer(INT_MPI), parameter, public:: MPI_ASYNC_NOT=0  !blocking data transfer request (default)
         integer(INT_MPI), parameter, public:: MPI_ASYNC_NRM=1  !non-blocking data transfer request without a request handle
         integer(INT_MPI), parameter, public:: MPI_ASYNC_REQ=2  !non-blocking data transfer request with a request handle
+  !Data transfer communication status:
+        integer(INT_MPI), parameter, public:: DDSS_COMM_NONE=0   !no outstanding communication
+        integer(INT_MPI), parameter, public:: DDSS_COMM_READ=+1  !outstanding read communication
+        integer(INT_MPI), parameter, public:: DDSS_COMM_WRITE=-1 !outstanding write communication
   !Data request status:
         integer(INT_MPI), parameter, public:: MPI_STAT_ONESIDED_ERR=-1  !one-sided communication error occurred
         integer(INT_MPI), parameter, public:: MPI_STAT_NONE=0           !data request has not been processed by MPI yet
@@ -213,7 +217,7 @@
          integer(INT_ADDR), private:: Offset      !offset in the MPI window (in displacement units)
          integer(INT_COUNT), private:: DataVol    !data volume (number of typed elements)
          integer(INT_MPI), private:: DataType     !data type of each element: {R4,R8,C4,C8,...}, see <dil_basic.F90>
-         integer(8), private:: TransID            !data transfer request ID (sequential data transfer number within this process)
+         integer(8), private:: TransID            !absolute value = data transfer request ID (or zero if none); sign = data transfer direction {READ_SIGN,WRITE_SIGN}
          integer(INT_MPI), private:: StatMPI      !status of the data transfer request (see MPI_STAT_XXX parameters above)
          integer(INT_MPI), private:: ReqHandle    !MPI request handle (for MPI communications with a request handle)
          contains
@@ -224,6 +228,7 @@
           procedure, public:: data_volume=>DataDescrDataVol     !returns the data volume associated with the data descriptor
           procedure, public:: data_size=>DataDescrDataSize      !returns the data size in bytes
           procedure, public:: get_data_ptr=>DataDescrGetDataPtr !returns a C pointer to the local data buffer
+          procedure, public:: get_status=>DataDescrGetStatus    !returns the current communication status of the data descriptor
           procedure, public:: flush_data=>DataDescrFlushData    !completes an outstanding data transfer request
           procedure, public:: sync_data=>DataDescrSyncData      !synchronizes the private and public data views (in case the data was modified locally)
           procedure, public:: test_data=>DataDescrTestData      !tests whether the data has been transferred to/from the origin (request based)
@@ -337,6 +342,7 @@
         private DataDescrDataVol
         private DataDescrDataSize
         private DataDescrGetDataPtr
+        private DataDescrGetStatus
         private DataDescrFlushData
         private DataDescrSyncData
         private DataDescrTestData
@@ -641,14 +647,15 @@
         if(present(ierr)) ierr=errc
         return
         end subroutine RankWinListDel
-!-------------------------------------------------------
-        subroutine RankWinListNewTrans(this,dd,rwe,ierr)
+!-----------------------------------------------------------
+        subroutine RankWinListNewTrans(this,dd,rwe,dir,ierr)
 !This subroutine increments the global transfer ID and communicated data size
 !and assigns the current transfer ID to the given data descriptor.
         implicit none
         class(RankWinList_t), intent(inout):: this       !inout: (rank,window) list
         class(DataDescr_t), intent(inout):: dd           !inout: valid data descriptor
         integer(INT_MPI), intent(in):: rwe               !in: the corresponding (rank,window) entry
+        integer(INT_MPI), intent(in):: dir               !in: data transfer direction: {READ_SIGN,WRITE_SIGN}
         integer(INT_MPI), intent(inout), optional:: ierr !out: error code (0:success)
         integer(8), parameter:: int8=0_8
         integer(INT_MPI):: n,errc
@@ -656,19 +663,23 @@
         errc=0
         if(this%TransCount.lt.huge(int8)) then
          if(rwe.ge.1.and.rwe.le.MAX_ONESIDED_REQS) then
-          this%TransCount=this%TransCount+1
-          n=data_type_size(dd%DataType)
-          this%TransSize=this%TransSize+real(n,8)*real(dd%DataVol,8)
-          dd%TransID=this%TransCount !global transaction ID
-          this%RankWins(rwe)%RefCount=this%RankWins(rwe)%RefCount+1
-          if(DEBUG) write(jo,'("#DEBUG(distributed::RankWinList.NewTrans)[",i7,"]: New transfer: ",i7,1x,i13,1x,i5,1x,i13)')&
-                    &impir,this%RankWins(rwe)%Rank,this%RankWins(rwe)%Window,this%RankWins(rwe)%RefCount,dd%TransID
+          if(abs(dir).eq.1) then
+           this%TransCount=this%TransCount+1
+           n=data_type_size(dd%DataType)
+           this%TransSize=this%TransSize+real(n,8)*real(dd%DataVol,8)
+           dd%TransID=this%TransCount*int(dir,8) !global transaction ID * data transfer sign
+           this%RankWins(rwe)%RefCount=this%RankWins(rwe)%RefCount+1
+           if(DEBUG) write(jo,'("#DEBUG(distributed::RankWinList.NewTrans)[",i7,"]: New transfer: ",i7,1x,i13,1x,i5,1x,i13)')&
+                     &impir,this%RankWins(rwe)%Rank,this%RankWins(rwe)%Window,this%RankWins(rwe)%RefCount,dd%TransID
+          else
+           errc=1
+          endif
          else
-          errc=1
+          errc=2
          endif
         else
          if(VERBOSE) write(CONS_OUT,'("#FATAL(distributed::RankWinList.NewTrans): Max int8 MPI message count exceeded!")')
-         errc=2
+         errc=3
          call quit(-1,'#FATAL: Unable to continue: Distributed Data Service failed!')
         endif
         if(present(ierr)) ierr=errc
@@ -1461,6 +1472,30 @@
          if(present(ierr)) ierr=errc
          return
         end function DataDescrGetDataPtr
+!---------------------------------------------------------
+        function DataDescrGetStatus(this,ierr) result(sts)
+!Returns the current communication status of the data descriptor.
+         implicit none
+         integer(INT_MPI):: sts                         !out: communication status: {DDSS_COMM_NONE,DDSS_COMM_READ,DDSS_COMM_WRITE}
+         class(DataDescr_t), intent(in):: this          !in: data descriptor
+         integer(INT_MPI), intent(out), optional:: ierr !out: error code (0:success)
+         integer(INT_MPI):: errc
+
+         errc=0; sts=DDSS_COMM_NONE
+         if(this%StatMPI.eq.MPI_STAT_PROGRESS_NRM.or.this%StatMPI.eq.MPI_STAT_PROGRESS_REQ) then
+          if(this%TransID.gt.0) then
+           sts=DDSS_COMM_READ
+          elseif(this%TransID.lt.0) then
+           sts=DDSS_COMM_WRITE
+          else
+           errc=-2
+          endif
+         elseif(this%StatMPI.eq.MPI_STAT_ONESIDED_ERR) then
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function DataDescrGetStatus
 !-----------------------------------------------------
         subroutine DataDescrFlushData(this,ierr,local)
 !Completes an MPI one-sided communication specified by a given data descriptor.
@@ -1487,7 +1522,7 @@
            rw_entry=>RankWinRefs%RankWins(rwe)
            if(rw_entry%RefCount.gt.1) then !not the last reference to this (rank,window)
             if(lcl) then !complete at origin only
-             if(this%TransID.gt.rw_entry%LastSync) then
+             if(abs(this%TransID).gt.rw_entry%LastSync) then
               if(DEBUG) write(jo,'("#DEBUG[",i7,"]: WIN_FLUSH_LOCAL: ",i7,1x,i11)') impir,rw_entry%Rank,rw_entry%Window !debug
               call MPI_WIN_FLUSH_LOCAL(rw_entry%Rank,rw_entry%Window,errc) !complete at the origin only
              endif
@@ -1498,7 +1533,7 @@
               this%StatMPI=MPI_STAT_ONESIDED_ERR; errc=1
              endif
             else !complete at both origin and target
-             if(this%TransID.gt.rw_entry%LastSync) then
+             if(abs(this%TransID).gt.rw_entry%LastSync) then
               if(DEBUG) write(jo,'("#DEBUG[",i7,"]: WIN_FLUSH: ",i7,1x,i11)') impir,rw_entry%Rank,rw_entry%Window !debug
               call MPI_WIN_FLUSH(rw_entry%Rank,rw_entry%Window,errc) !complete both at the origin and target
              endif
@@ -1510,7 +1545,7 @@
              endif
             endif
            else !the last reference to this (rank,window)
-            if(this%TransID.gt.rw_entry%LastSync) then
+            if(abs(this%TransID).gt.rw_entry%LastSync) then
              if(DEBUG) write(jo,'("#DEBUG[",i7,"]: WIN_UNLOCK(.flush): ",i7,1x,i11)') impir,rw_entry%Rank,rw_entry%Window !debug
              call MPI_WIN_UNLOCK(rw_entry%Rank,rw_entry%Window,errc) !complete both at origin and target
             endif
@@ -1581,7 +1616,7 @@
           if(rwe.gt.0.and.errc.eq.0) then
            rw_entry=>RankWinRefs%RankWins(rwe)
            if(rw_entry%RefCount.gt.0) then
-            if(this%TransID.gt.rw_entry%LastSync) then
+            if(abs(this%TransID).gt.rw_entry%LastSync) then
              if(DEBUG) write(jo,'("#DEBUG[",i7,"]: MPI_TEST: ",i7,1x,i11)') impir,this%RankMPI,this%WinMPI%Window !debug
              call MPI_TEST(this%ReqHandle,compl,mpi_stat,errc)
              if(errc.eq.0) then
@@ -1643,7 +1678,7 @@
           if(rwe.gt.0.and.errc.eq.0) then
            rw_entry=>RankWinRefs%RankWins(rwe)
            if(rw_entry%RefCount.gt.0) then
-            if(this%TransID.gt.rw_entry%LastSync) then
+            if(abs(this%TransID).gt.rw_entry%LastSync) then
              if(DEBUG) write(jo,'("#DEBUG[",i7,"]: MPI_WAIT: ",i7,1x,i11)') impir,this%RankMPI,this%WinMPI%Window !debug
              call MPI_WAIT(this%ReqHandle,mpi_stat,errc)
              if(errc.eq.0) then
@@ -1733,36 +1768,40 @@
                  errc=6
                 end select
                 if(errc.eq.0) then
-                 call RankWinRefs%new_transfer(this,rwe) !register a new transfer (will also set this%TransID field)
-                 if(asnc.eq.MPI_ASYNC_NOT) then
-                  call this%flush_data(errc); if(errc.ne.0) errc=7
+                 call RankWinRefs%new_transfer(this,rwe,READ_SIGN,errc) !register a new transfer (will also set this%TransID field)
+                 if(errc.eq.0) then
+                  if(asnc.eq.MPI_ASYNC_NOT) then
+                   call this%flush_data(errc); if(errc.ne.0) errc=7
+                  endif
+                 else
+                  errc=8
                  endif
                 endif
                else
-                errc=8
+                errc=9
                endif
               else
-               errc=9
+               errc=10
               endif
              elseif(this%DataVol.eq.0) then
               this%StatMPI=MPI_STAT_COMPLETED
              else
-              errc=10
+              errc=11
              endif
             else
-             if(errc.ne.TRY_LATER) errc=11
+             if(errc.ne.TRY_LATER) errc=12
             endif
            else
-            errc=12
+            errc=13
            endif
           else
-           errc=13
+           errc=14
           endif
          else
-          errc=14
+          errc=15
          endif
         else
-         errc=15
+         errc=16
         endif
         if(present(ierr)) ierr=errc
         return
@@ -1982,36 +2021,40 @@
                  errc=6
                 end select
                 if(errc.eq.0) then
-                 call RankWinRefs%new_transfer(this,rwe) !register a new transfer (will also set this%TransID field)
-                 if(asnc.eq.MPI_ASYNC_NOT) then
-                  call this%flush_data(errc); if(errc.ne.0) errc=7
+                 call RankWinRefs%new_transfer(this,rwe,WRITE_SIGN,errc) !register a new transfer (will also set this%TransID field)
+                 if(errc.eq.0) then
+                  if(asnc.eq.MPI_ASYNC_NOT) then
+                   call this%flush_data(errc); if(errc.ne.0) errc=7
+                  endif
+                 else
+                  errc=8
                  endif
                 endif
                else
-                errc=8
+                errc=9
                endif
               else
-               errc=9
+               errc=10
               endif
              elseif(this%DataVol.eq.0) then
               this%StatMPI=MPI_STAT_COMPLETED
              else
-              errc=10
+              errc=11
              endif
             else
-             if(errc.ne.TRY_LATER) errc=11
+             if(errc.ne.TRY_LATER) errc=12
             endif
            else
-            errc=12
+            errc=13
            endif
           else
-           errc=13
+           errc=14
           endif
          else
-          errc=14
+          errc=15
          endif
         else
-         errc=15
+         errc=16
         endif
         if(present(ierr)) ierr=errc
         return
