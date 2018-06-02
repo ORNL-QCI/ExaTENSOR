@@ -6275,7 +6275,6 @@
                       else
                        errc=-15
                       endif
-                      cache_entry=>NULL()
                      else
                       errc=-14
                      endif
@@ -6307,6 +6306,7 @@
                        flush(CONS_OUT)
                       endif
                      endif
+                     cache_entry=>NULL()
                     else
                      errc=-12
                     endif
