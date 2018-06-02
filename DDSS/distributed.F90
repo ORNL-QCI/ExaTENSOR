@@ -1,6 +1,6 @@
 !Distributed data storage service (DDSS).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/05/28 (started 2015/03/18)
+!REVISION: 2018/06/01 (started 2015/03/18)
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -228,7 +228,7 @@
           procedure, public:: data_volume=>DataDescrDataVol     !returns the data volume associated with the data descriptor
           procedure, public:: data_size=>DataDescrDataSize      !returns the data size in bytes
           procedure, public:: get_data_ptr=>DataDescrGetDataPtr !returns a C pointer to the local data buffer
-          procedure, public:: get_status=>DataDescrGetStatus    !returns the current communication status of the data descriptor
+          procedure, public:: get_comm_stat=>DataDescrGetCommStat !returns the current communication status of the data descriptor
           procedure, public:: flush_data=>DataDescrFlushData    !completes an outstanding data transfer request
           procedure, public:: sync_data=>DataDescrSyncData      !synchronizes the private and public data views (in case the data was modified locally)
           procedure, public:: test_data=>DataDescrTestData      !tests whether the data has been transferred to/from the origin (request based)
@@ -342,7 +342,7 @@
         private DataDescrDataVol
         private DataDescrDataSize
         private DataDescrGetDataPtr
-        private DataDescrGetStatus
+        private DataDescrGetCommStat
         private DataDescrFlushData
         private DataDescrSyncData
         private DataDescrTestData
@@ -1472,8 +1472,8 @@
          if(present(ierr)) ierr=errc
          return
         end function DataDescrGetDataPtr
-!---------------------------------------------------------
-        function DataDescrGetStatus(this,ierr) result(sts)
+!-----------------------------------------------------------
+        function DataDescrGetCommStat(this,ierr) result(sts)
 !Returns the current communication status of the data descriptor.
          implicit none
          integer(INT_MPI):: sts                         !out: communication status: {DDSS_COMM_NONE,DDSS_COMM_READ,DDSS_COMM_WRITE}
@@ -1495,7 +1495,7 @@
          endif
          if(present(ierr)) ierr=errc
          return
-        end function DataDescrGetStatus
+        end function DataDescrGetCommStat
 !-----------------------------------------------------
         subroutine DataDescrFlushData(this,ierr,local)
 !Completes an MPI one-sided communication specified by a given data descriptor.

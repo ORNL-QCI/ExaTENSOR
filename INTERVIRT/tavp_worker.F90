@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/05/28
+!REVISION: 2018/06/01
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -168,6 +168,8 @@
           procedure, public:: get_write_count=>TensOprndGetWriteCount    !returns the current read access count on the tensor operand
           procedure, public:: has_resource=>TensOprndHasResource         !returns TRUE if the tensor operand has been allocated an actual local resource
           procedure, public:: is_temporary=>TensOprndIsTemporary         !returns TRUE if the tensor operand is temporary (this also includes accumulators)
+          procedure, public:: is_present=>TensOprndIsPresent             !returns TRUE if the tensor operand is present (its data has been delivered, if remote)
+          procedure, public:: is_active=>TensOprndIsActive               !returns TRUE if the tensor operand is active (defined)
           procedure, public:: is_located=>TensOprndIsLocated             !returns TRUE if the tensor operand has been located (its physical layout and global location are known)
           procedure, public:: get_comm_stat=>TensOprndGetCommStat        !returns the current communication status on the tensor operand body data
           procedure, public:: acquire_rsc=>TensOprndAcquireRsc      !explicitly acquires local resource for the tensor operand
@@ -420,6 +422,8 @@
         private TensOprndGetWriteCount
         private TensOprndHasResource
         private TensOprndIsTemporary
+        private TensOprndIsPresent
+        private TensOprndIsActive
         private TensOprndIsLocated
         private TensOprndGetCommStat
         private TensOprndAcquireRsc
@@ -1297,7 +1301,13 @@
          if(.not.this%resource%is_empty(errc)) then
           if(errc.eq.0) then
            if((.not.this%is_persistent()).and.(this%get_use_count().eq.0).and.(this%get_ref_count().le.1)) then !at most one tensor operand can still be associated with this temporary cache entry
-            call this%resource%free_buffer(errc); if(errc.ne.0) errc=-4
+            if(.not.talsh_tensor_is_empty(this%talsh_tens)) then
+             errc=talsh_tensor_destruct(this%talsh_tens); if(errc.ne.TALSH_SUCCESS) errc=-5
+            endif
+            if(errc.eq.0) then
+             call this%set_up_to_date(.FALSE.)
+             call this%resource%free_buffer(errc); if(errc.ne.0) errc=-4
+            endif
            else !active tensor cache entry
             if(present(error_if_active)) then
              if(error_if_active) then
@@ -1471,7 +1481,7 @@
          integer(INTD):: errc
 
          if(.not.this%is_active(errc)) then
-          if(errc.eq.DSVP_SUCCESS) then
+          if(errc.eq.0) then
            if(tensor%is_set(errc)) then
             if(errc.eq.TEREC_SUCCESS) then
              this%cache_entry=>NULL()
@@ -1482,7 +1492,6 @@
              else
               this%resource=>NULL()
              endif
-             call this%set_status(DS_OPRND_DEFINED,errc); if(errc.ne.DSVP_SUCCESS) errc=-5
             else
              errc=-4
             endif
@@ -1508,7 +1517,7 @@
          integer(INTD):: errc
 
          if(.not.this%is_active(errc)) then
-          if(errc.eq.DSVP_SUCCESS) then
+          if(errc.eq.0) then
            call tens_cache_entry%lock()
            call tens_cache_entry%incr_ref_count()
            if(tens_cache_entry%is_set(errc)) then
@@ -1518,7 +1527,6 @@
              if(errc.eq.0) then
               this%resource=>this%cache_entry%get_resource() !may be empty resource
               if(associated(this%resource)) call this%resource%incr_ref_count()
-              call this%set_status(DS_OPRND_DEFINED,errc); if(errc.ne.DSVP_SUCCESS) errc=-6
               if(DEBUG.gt.1.and.errc.eq.0) then
                write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Tensor operand associated with a cache entry(",i4,"):")')&
                &impir,this%cache_entry%get_ref_count()
@@ -1552,7 +1560,7 @@
          class(tens_oprnd_t), intent(in):: this      !in: active tensor operand
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
-
+!$OMP FLUSH
          errc=0; tens_p=>this%tensor
          if(.not.associated(tens_p)) errc=-1
          if(present(ierr)) ierr=errc
@@ -1566,7 +1574,7 @@
          class(tens_oprnd_t), intent(in):: this           !in: active tensor operand
          integer(INTD), intent(out), optional:: ierr      !out: error code
          integer(INTD):: errc
-
+!$OMP FLUSH
          errc=0; cache_entry_p=>this%cache_entry
          if(present(ierr)) ierr=errc
          return
@@ -1583,7 +1591,7 @@
          class(tens_rcrsv_t), pointer:: tensor
 
          if(this%is_active(errc)) then
-          if(errc.eq.DSVP_SUCCESS) then
+          if(errc.eq.0) then
            if(associated(this%cache_entry)) then
             call this%cache_entry%decr_ref_count(); this%cache_entry=>NULL()
            endif
@@ -1617,7 +1625,7 @@
          class(tens_oprnd_t), intent(in):: this      !in: active tensor operand
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
-
+!$OMP FLUSH
          errc=0; resource_p=>this%resource
          if(present(ierr)) ierr=errc
          return
@@ -1632,7 +1640,7 @@
          integer(INTD):: errc
 
          if(this%is_active(errc)) then
-          if(errc.eq.DSVP_SUCCESS) then
+          if(errc.eq.0) then
            call this%lock()
            if(.not.associated(this%resource)) then
             call tens_resource%incr_ref_count()
@@ -1658,7 +1666,7 @@
          class(tens_oprnd_t), intent(inout), target:: this !inout: active tensor operand
          integer(INTD), intent(out), optional:: ierr       !out: error code
          integer(INTD):: errc
-
+!$OMP FLUSH
          errc=0
          if(.not.associated(this%talsh_tens)) then
           if(associated(this%cache_entry)) then
@@ -1833,7 +1841,7 @@
 
          res=.FALSE.
          if(this%is_active(errc)) then
-          if(errc.eq.DSVP_SUCCESS) then
+          if(errc.eq.0) then
            call this%lock()
            if(associated(this%resource)) then
             res=(.not.this%resource%is_empty(errc)); if(errc.ne.0) then; res=.FALSE.; errc=-3; endif
@@ -1860,7 +1868,7 @@
 
          res=.FALSE.
          if(this%is_active(errc)) then
-          if(errc.eq.DSVP_SUCCESS) then
+          if(errc.eq.0) then
            call this%lock()
            call this%tensor%get_name(tname,l,errc)
            if(errc.eq.TEREC_SUCCESS.and.l.gt.0) then
@@ -1878,6 +1886,38 @@
          if(present(ierr)) ierr=errc
          return
         end function TensOprndIsTemporary
+!---------------------------------------------------------
+        function TensOprndIsPresent(this,ierr) result(ans)
+!Returns TRUE if the tensor operand is present (its data has been delivered, if remote).
+         implicit none
+         logical:: ans                               !out: answer
+         class(tens_oprnd_t), intent(inout):: this   !in: tensor operand
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+!$OMP FLUSH
+         errc=0; ans=.FALSE.
+         if(associated(this%cache_entry)) then
+          call this%lock()
+          ans=this%cache_entry%is_up_to_date()
+          call this%unlock()
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end function TensOprndIsPresent
+!--------------------------------------------------------
+        function TensOprndIsActive(this,ierr) result(ans)
+!Returns TRUE if the tensor operand is active (defined).
+         implicit none
+         logical:: ans                               !out: answer
+         class(tens_oprnd_t), intent(inout):: this   !in: tensor operand
+         integer(INTD), intent(out), optional:: ierr !out: error code
+!$OMP FLUSH
+         ans=associated(this%tensor)
+         if(present(ierr)) ierr=0
+         return
+        end function TensOprndIsActive
 !-----------------------------------------------------------------------
         function TensOprndIsLocated(this,ierr,remote,valued) result(res)
 !Returns TRUE if the tensor operand has been located, FALSE otherwise, plus some
@@ -1895,7 +1935,7 @@
 
          res=.FALSE.
          if(this%is_active(errc)) then
-          if(errc.eq.DSVP_SUCCESS) then
+          if(errc.eq.0) then
            call this%lock()
            if(this%tensor%is_set(errc,layed=laid,located=locd)) then
             if(errc.eq.TEREC_SUCCESS) then
@@ -1947,13 +1987,13 @@
 
          stat=DS_OPRND_NO_COMM
          if(this%is_active(errc)) then
-          if(errc.eq.DSVP_SUCCESS) then
+          if(errc.eq.0) then
            call this%lock()
            tensor=>this%get_tensor(errc)
            if(errc.eq.0) then
             descr=>tensor%get_data_descr(errc)
             if(errc.eq.TEREC_SUCCESS) then
-             sts=descr%get_status(errc)
+             sts=descr%get_comm_stat(errc)
              if(errc.eq.0) then
               if(sts.eq.DDSS_COMM_READ) then
                stat=DS_OPRND_FETCHING
@@ -1992,21 +2032,21 @@
          integer(INTD):: errc
          integer(INTL):: buf_size
          integer(INT_MPI):: host_proc_rank
-         class(tens_body_t), pointer:: body_p
-         class(tens_layout_t), pointer:: layout_p
+         class(tens_body_t), pointer:: body
+         class(tens_layout_t), pointer:: layout
 
          if(this%is_active(errc)) then
-          if(errc.eq.DSVP_SUCCESS) then
+          if(errc.eq.0) then
            call this%lock()
            if(associated(this%resource)) then
             if(this%resource%is_empty()) then
-             body_p=>this%tensor%get_body(errc)
-             if(errc.eq.TEREC_SUCCESS.and.associated(body_p)) then
-              layout_p=>body_p%get_layout(errc)
-              if(errc.eq.TEREC_SUCCESS.and.associated(layout_p)) then
-               if(layout_p%is_set(errc)) then
+             body=>this%tensor%get_body(errc)
+             if(errc.eq.TEREC_SUCCESS.and.associated(body)) then
+              layout=>body%get_layout(errc)
+              if(errc.eq.TEREC_SUCCESS.and.associated(layout)) then
+               if(layout%is_set(errc)) then
                 if(errc.eq.TEREC_SUCCESS) then
-                 buf_size=layout_p%get_body_size(errc)
+                 buf_size=layout%get_body_size(errc)
                  if(errc.eq.TEREC_SUCCESS.and.buf_size.gt.0_INTL) then
                   call this%resource%allocate_buffer(buf_size,errc); if(errc.ne.0) errc=-1 !`may return TRY_LATER
                   if(errc.eq.0.and.DEBUG.gt.0) then
@@ -2045,94 +2085,82 @@
         end subroutine TensOprndAcquireRsc
 !----------------------------------------------
         subroutine TensOprndPrefetch(this,ierr)
-!Starts prefetching the (remote) tensor operand using the local tensor resource.
-!If the resource component has not been set, an error will be returned.
-!If the local resource has not been allocated, it will be allocated here.
-!If the tensor operand is local or has been delivered before, does nothing.
-!If there is a pending communication on the tensor operand, returns an error.
+!Starts prefetching a remote tensor operand using a local resource.
+!If the tensor operand is local or has been already delivered before, does nothing.
+!If the tensor operand is already being prefetched, does nothing.
+!If the tensor operand is currently being uploaded, returns an error.
+!If the resource component has not been set yet, returns an error.
+!If the resource has not been allocated yet, it will be allocated here.
          implicit none
          class(tens_oprnd_t), intent(inout):: this   !inout: active tensor operand
          integer(INTD), intent(out), optional:: ierr !out: error code, may return TRY_LATER
-         integer(INTD):: errc
-         class(tens_body_t), pointer:: body_p
-         class(tens_layout_t), pointer:: layout_p
-         class(DataDescr_t), pointer:: descr_p
+         integer(INTD):: errc,comm_stat
+         class(DataDescr_t), pointer:: descr
          type(C_PTR):: cptr
-         logical:: locd,remot
+         logical:: remot
 
          if(this%is_active(errc)) then
-          if(errc.eq.DSVP_SUCCESS) then
-           locd=this%is_located(errc,remote=remot)
-           if(errc.eq.0) then
-            if(remot) then
-             call this%lock()
-             if(.not.this%is_present(errc)) then
-              if(errc.eq.DSVP_SUCCESS) then
-               if(associated(this%resource)) then
-                body_p=>this%tensor%get_body(errc)
-                if(errc.eq.TEREC_SUCCESS.and.associated(body_p)) then
-                 layout_p=>body_p%get_layout(errc)
-                 if(errc.eq.TEREC_SUCCESS.and.associated(layout_p)) then
-                  descr_p=>layout_p%get_data_descr(errc)
-                  if(errc.eq.TEREC_SUCCESS.and.associated(descr_p)) then
-                   if(descr_p%is_set(errc)) then
+          if(errc.eq.0) then
+           call this%lock()
+           if(this%is_located(errc,remote=remot)) then
+            if(errc.eq.0) then
+             if(remot) then
+              if(.not.this%is_present(errc)) then
+               if(errc.eq.0) then
+                if(associated(this%resource)) then
+                 descr=>this%tensor%get_data_descr(errc)
+                 if(errc.eq.TEREC_SUCCESS.and.associated(descr)) then
+                  if(descr%is_set(errc)) then
+                   if(errc.eq.0) then
+                    if(this%resource%is_empty()) call this%acquire_rsc(errc) !`may return TRY_LATER
                     if(errc.eq.0) then
-                     if(this%resource%is_empty()) call this%acquire_rsc(errc) !`may return TRY_LATER
-                     if(errc.eq.0) then
-                      if(this%get_comm_stat().eq.DS_OPRND_NO_COMM) then
-                       cptr=this%resource%get_mem_ptr(errc)
-                       if(errc.eq.0) then
-                        call descr_p%get_data(cptr,errc,MPI_ASYNC_REQ)
-                        if(errc.ne.0.and.errc.ne.TRY_LATER) then
-                         if(VERBOSE) then
-                          write(CONS_OUT,'("#ERROR(TAVP-WRK:tens_oprnd_t.prefetch): DataDescr_t.get_data() error ",i11)') errc
-                          call this%print_it(dev_id=CONS_OUT)
-                          call descr_p%print_it(dev_out=CONS_OUT)
-                          flush(CONS_OUT)
-                         endif
-                         errc=-17
+                     comm_stat=this%get_comm_stat(errc)
+                     if(errc.eq.0.and.comm_stat.eq.DS_OPRND_NO_COMM) then
+                      cptr=this%resource%get_mem_ptr(errc)
+                      if(errc.eq.0) then
+                       call descr%get_data(cptr,errc,MPI_ASYNC_REQ)
+                       if(errc.ne.0.and.errc.ne.TRY_LATER) then
+                        if(VERBOSE) then
+                         write(CONS_OUT,'("#ERROR(TAVP-WRK:tens_oprnd_t.prefetch): DataDescr_t.get_data() error ",i11)') errc
+                         call this%print_it(dev_id=CONS_OUT)
+                         call descr%print_it(dev_out=CONS_OUT)
+                         flush(CONS_OUT)
                         endif
-                        if(errc.eq.0) then
-                         !call this%set_comm_stat(DS_OPRND_FETCHING,errc); if(errc.ne.DSVP_SUCCESS) errc=-16
-                        endif
-                       else
-                        errc=-15
+                        errc=-13
                        endif
                       else
-                       errc=-14
+                       errc=-12
                       endif
                      else
-                      errc=-13
+                      if(errc.ne.0.or.comm_stat.ne.DS_OPRND_FETCHING) errc=-11
                      endif
                     else
-                     errc=-12
+                     errc=-10
                     endif
                    else
-                    errc=-11
+                    errc=-9
                    endif
                   else
-                   errc=-10
+                   errc=-8
                   endif
                  else
-                  errc=-9
+                  errc=-7
                  endif
                 else
-                 errc=-8
+                 errc=-6
                 endif
                else
-                errc=-7
+                errc=-5
                endif
-              else
-               errc=-6
               endif
-             else
-              if(errc.ne.DSVP_SUCCESS) errc=-5
              endif
-             call this%unlock()
+            else
+             errc=-4
             endif
            else
-            errc=-4
+            errc=-3
            endif
+           call this%unlock()
           else
            errc=-2
           endif
@@ -2147,68 +2175,65 @@
         end subroutine TensOprndPrefetch
 !--------------------------------------------
         subroutine TensOprndUpload(this,ierr)
-!Starts uploading the (remote) tensor operand from the local tensor resource.
-!The tensor operand must be marked as delivered (present), even if it is local.
-!If there is a pending communication on the tensor operand, returns an error.
+!Starts uploading a remote tensor operand from a local resource.
+!The tensor operand must be present, even if it is local.
+!If the tensor operand is currently being fetched or uploaded, returns an error.
          implicit none
          class(tens_oprnd_t), intent(inout):: this   !inout: active tensor operand with an associated resource component
          integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc
-         class(tens_body_t), pointer:: body_p
-         class(tens_layout_t), pointer:: layout_p
-         class(DataDescr_t), pointer:: descr_p
+         integer(INTD):: errc,comm_stat
+         class(DataDescr_t), pointer:: descr
          type(C_PTR):: cptr
 
-         if(this%is_present(errc)) then !assumes that the local resource is allocated
-          if(errc.eq.DSVP_SUCCESS) then
+         if(this%is_present(errc)) then !implies that the local resource is allocated
+          if(errc.eq.0) then
            call this%lock()
-           body_p=>this%tensor%get_body(errc)
-           if(errc.eq.TEREC_SUCCESS.and.associated(body_p)) then
-            layout_p=>body_p%get_layout(errc)
-            if(errc.eq.TEREC_SUCCESS.and.associated(layout_p)) then
-             descr_p=>layout_p%get_data_descr(errc)
-             if(errc.eq.TEREC_SUCCESS.and.associated(descr_p)) then
-              if(descr_p%is_set(errc)) then
-               if(errc.eq.0) then
-                if(.not.this%resource%is_empty()) then !trap
-                 if(this%get_comm_stat().eq.DS_OPRND_NO_COMM) then
-                  cptr=this%resource%get_mem_ptr(errc)
-                  if(errc.eq.0) then
-                   call descr_p%acc_data(cptr,errc,MPI_ASYNC_REQ)
-                   if(errc.ne.0.and.errc.ne.TRY_LATER) errc=-1
-                   if(errc.eq.0) then
-                    !call this%set_comm_stat(DS_OPRND_UPLOADING,errc); if(errc.ne.DSVP_SUCCESS) errc=-2
-                   endif
-                  else
-                   errc=-3
+           descr=>this%tensor%get_data_descr(errc)
+           if(errc.eq.TEREC_SUCCESS.and.associated(descr)) then
+            if(descr%is_set(errc)) then
+             if(errc.eq.0) then
+              if(.not.this%resource%is_empty()) then !trap
+               comm_stat=this%get_comm_stat()
+               if(comm_stat.eq.DS_OPRND_NO_COMM) then
+                cptr=this%resource%get_mem_ptr(errc)
+                if(errc.eq.0) then
+                 call descr%acc_data(cptr,errc,MPI_ASYNC_REQ)
+                 if(errc.ne.0.and.errc.ne.TRY_LATER) then
+                  if(VERBOSE) then
+                   write(CONS_OUT,'("#ERROR(TAVP-WRK:tens_oprnd_t.upload): DataDescr_t.acc_data() error ",i11)') errc
+                   call this%print_it(dev_id=CONS_OUT)
+                   call descr%print_it(dev_out=CONS_OUT)
+                   flush(CONS_OUT)
                   endif
-                 else
-                  errc=-4
+                  errc=-9
                  endif
                 else
-                 errc=-5
+                 errc=-8
                 endif
                else
-                errc=-6
+                errc=-7
                endif
               else
-               errc=-7
+               errc=-6
               endif
              else
-              errc=-8
+              errc=-5
              endif
             else
-             errc=-9
+             errc=-4
             endif
            else
-            errc=-10
+            errc=-3
            endif
            call this%unlock()
           else
-           errc=-11
+           errc=-2
           endif
          else
-          errc=-12
+          errc=-1
+         endif
+         if(errc.ne.0.and.VERBOSE) then
+          write(CONS_OUT,'("#ERROR(TAVP-WRK:tens_oprnd_t.upload): Error ",i11)') errc; flush(CONS_OUT)
          endif
          if(present(ierr)) ierr=errc
          return
@@ -2227,61 +2252,48 @@
          integer(INTD), intent(out), optional:: ierr !out: error code
          logical, intent(in), optional:: wait        !in: FALSE activates TEST instead of WAIT synchronization (default)
          integer(INTD):: errc,sts
-         class(tens_body_t), pointer:: body_p
-         class(tens_layout_t), pointer:: layout_p
-         class(DataDescr_t), pointer:: descr_p
+         class(DataDescr_t), pointer:: descr
          logical:: tw
 
          res=.FALSE.; tw=.TRUE.; if(present(wait)) tw=wait
          if(this%is_active(errc)) then
-          if(errc.eq.DSVP_SUCCESS) then
-           !call this%lock()
+          if(errc.eq.0) then
+           call this%lock()
            sts=this%get_comm_stat()
            if(sts.ne.DS_OPRND_NO_COMM) then
-            body_p=>this%tensor%get_body(errc)
-            if(errc.eq.TEREC_SUCCESS.and.associated(body_p)) then
-             layout_p=>body_p%get_layout(errc)
-             if(errc.eq.TEREC_SUCCESS.and.associated(layout_p)) then
-              descr_p=>layout_p%get_data_descr(errc)
-              if(errc.eq.TEREC_SUCCESS.and.associated(descr_p)) then
-               if(descr_p%is_set(errc)) then
-                if(errc.eq.0) then
-                 if(tw) then
-                  call descr_p%wait_data(errc); if(errc.eq.0) then; res=.TRUE.; else; errc=-12; endif
-                 else
-                  res=descr_p%test_data(errc); if(errc.ne.0) then; res=.FALSE.; errc=-11; endif
-                 endif
-                 if(res) then
-                  if(sts.eq.DS_OPRND_FETCHING) then
-                   call this%set_status(DS_OPRND_PRESENT,errc); if(errc.ne.DSVP_SUCCESS) errc=-10
-                  endif
-                  !call this%set_comm_stat(DS_OPRND_NO_COMM,errc); if(errc.ne.DSVP_SUCCESS) errc=-9
-                 endif
-                else
-                 errc=-8
-                endif
+            descr=>this%tensor%get_data_descr(errc)
+            if(errc.eq.TEREC_SUCCESS.and.associated(descr)) then
+             if(descr%is_set(errc)) then
+              if(errc.eq.0) then
+               if(tw) then
+                call descr%wait_data(errc); if(errc.eq.0) then; res=.TRUE.; else; errc=-7; endif
                else
-                errc=-7
+                res=descr%test_data(errc); if(errc.ne.0) then; res=.FALSE.; errc=-6; endif
+               endif
+               if(res.and.sts.eq.DS_OPRND_FETCHING) then
+                call this%cache_entry%set_up_to_date(.TRUE.)
                endif
               else
-               errc=-6
+               errc=-5
               endif
              else
-              errc=-5
+              errc=-4
              endif
             else
-             errc=-4
+             errc=-3
             endif
            else
-            call this%set_status(DS_OPRND_PRESENT,errc); if(errc.ne.DSVP_SUCCESS) errc=-3
-            if(errc.eq.0) res=.TRUE.
+            res=.TRUE.
            endif
-           !call this%unlock()
+           call this%unlock()
           else
            errc=-2
           endif
          else
           errc=-1
+         endif
+         if(errc.ne.0.and.VERBOSE) then
+          write(CONS_OUT,'("#ERROR(TAVP-WRK:tens_oprnd_t.sync): Error ",i11)') errc; flush(CONS_OUT)
          endif
          if(present(ierr)) ierr=errc
          return
@@ -2298,27 +2310,32 @@
          class(tens_oprnd_t), intent(inout):: this   !inout: tensor operand (can be empty)
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
-         logical:: delivered,persistent
+         logical:: delivered
 
          if(this%is_active(errc)) then
-          if(errc.eq.DSVP_SUCCESS) then
+          if(errc.eq.0) then
            call this%lock()
            if(associated(this%resource)) then
             if(this%get_comm_stat().ne.DS_OPRND_NO_COMM) then
              delivered=this%sync(errc,wait=.TRUE.)
-             if((.not.delivered).or.(errc.ne.0)) errc=-1
+             if((.not.delivered).or.(errc.ne.0)) errc=-5
             endif
-            persistent=.FALSE.; if(associated(this%cache_entry)) persistent=this%cache_entry%is_persistent()
-            if((.not.persistent).and.(this%resource%get_ref_count().eq.1)) then !only one (last) tensor operand is associated with this resource
-             call this%resource%free_buffer(errc); if(errc.ne.0) errc=-2 !free the resource memory buffer
+            if(errc.eq.0) then
+             if(associated(this%cache_entry)) then
+              call this%cache_entry%release_resource(errc,error_if_active=.FALSE.); if(errc.ne.0) errc=-4
+             else
+              if(this%resource%get_ref_count().eq.1) then !only one (last) tensor operand is associated with this resource
+               call this%resource%free_buffer(errc); if(errc.ne.0) errc=-3 !free the resource memory buffer
+              endif
+             endif
             endif
            endif
            call this%unlock()
           else
-           errc=-3
+           errc=-2
           endif
          else
-          if(errc.ne.DSVP_SUCCESS) errc=-4
+          if(errc.ne.0) errc=-1
          endif
          if(present(ierr)) ierr=errc
          return
@@ -2333,14 +2350,13 @@
          logical:: delivered
 
          if(this%is_active(errc)) then
-          if(errc.eq.DSVP_SUCCESS) then
+          if(errc.eq.0) then
            if(this%get_comm_stat().ne.DS_OPRND_NO_COMM) then
             delivered=this%sync(errc,wait=.TRUE.)
             if((.not.delivered).or.(errc.ne.0)) errc=-4
            endif
            this%talsh_tens=>NULL()
-           call this%set_status(DS_OPRND_EMPTY,ier) !will release local resource underneath
-           if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) errc=-3
+           call this%release_rsc(ier); if(ier.ne.0.and.errc.eq.0) errc=-3
            if(associated(this%resource)) then
             call this%resource%decr_ref_count()
             this%resource=>NULL()
@@ -2480,21 +2496,24 @@
          errc=0
          devo=6; if(present(dev_id)) devo=dev_id
          nsp=0; if(present(nspaces)) nsp=nspaces
-         !call this%lock()
+         call this%lock()
+         do j=1,nsp; write(devo,'(" ")',ADVANCE='NO'); enddo
+         write(devo,'("TENSOR OPERAND{")')
+         do j=1,nsp+1; write(devo,'(" ")',ADVANCE='NO'); enddo
+         write(devo,'("Active = ",l1,"; Present = ",l1,"; Communication = ",i2)')&
+         &this%is_active(),this%is_present(),this%get_comm_stat()
          if(associated(this%tensor)) then
-          call this%tensor%print_it(errc,devo,nsp)
-          if(errc.eq.TEREC_SUCCESS) then
-           if(associated(this%resource)) then
-            call this%resource%print_it(errc,devo,nsp); if(errc.ne.0) errc=-2
-           endif
-          else
-           errc=-1
-          endif
+          call this%tensor%print_it(errc,devo,nsp+1); if(errc.ne.TEREC_SUCCESS) errc=-2
          else
-          do j=1,nsp; write(devo,'(" ")',ADVANCE='NO'); enddo
-          write(devo,'("Empty tensor operand")')
+          do j=1,nsp+1; write(devo,'(" ")',ADVANCE='NO'); enddo
+          write(devo,'("No Tensor!")')
          endif
-         !call this%unlock()
+         if(associated(this%resource)) then
+          call this%resource%print_it(errc,devo,nsp+1); if(errc.ne.0) errc=-1
+         endif
+         do j=1,nsp; write(devo,'(" ")',ADVANCE='NO'); enddo
+         write(devo,'("}")')
+         call this%unlock()
          flush(devo)
          if(present(ierr)) ierr=errc
          return
@@ -6280,6 +6299,7 @@
                         errc=-13
                        end select
                       endif
+                      call cache_entry%set_up_to_date(.TRUE.) !tensor operand is now considered present
                       if(DEBUG.gt.0) then
                        write(CONS_OUT,'("#DEBUG(TAVP-WRK:TENSOR_CREATE)[",i6,"]: Tensor created: Size (Bytes) = ",i13,":")')&
                        &impir,bytes

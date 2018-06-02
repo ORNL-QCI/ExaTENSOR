@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/05/25
+!REVISION: 2018/06/01
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -172,6 +172,7 @@
           procedure, public:: register_write=>TensOprndRegisterWrite     !registers a new write access on the tensor operand
           procedure, public:: unregister_write=>TensOprndUnregisterWrite !unregisters a write access on the tensor operand
           procedure, public:: get_write_count=>TensOprndGetWriteCount    !returns the current read access count on the tensor operand
+          procedure, public:: is_active=>TensOprndIsActive               !returns TRUE if the tensor operand is active (defined)
           procedure, public:: is_located=>TensOprndIsLocated             !returns TRUE if the tensor operand has been located (its structure is known)
           procedure, public:: get_comm_stat=>TensOprndGetCommStat        !returns the current communication status on the tensor operand data
           procedure, public:: acquire_rsc=>TensOprndAcquireRsc  !acquires local resource for the tensor operand
@@ -438,6 +439,7 @@
         private TensOprndRegisterWrite
         private TensOprndUnregisterWrite
         private TensOprndGetWriteCount
+        private TensOprndIsActive
         private TensOprndIsLocated
         private TensOprndGetCommStat
         private TensOprndAcquireRsc
@@ -674,7 +676,7 @@
          integer(INTD):: errc
 
          if(.not.this%is_active(errc)) then
-          if(errc.eq.DSVP_SUCCESS) then
+          if(errc.eq.0) then
            if(tensor%is_set(errc)) then
             if(errc.eq.TEREC_SUCCESS) then
              this%cache_entry=>NULL()
@@ -684,7 +686,6 @@
              else
               this%owner_id=-1
              endif
-             call this%set_status(DS_OPRND_DEFINED,errc); if(errc.ne.DSVP_SUCCESS) errc=-5
             else
              errc=-4
             endif
@@ -710,7 +711,7 @@
          integer(INTD):: errc
 
          if(.not.this%is_active(errc)) then
-          if(errc.eq.DSVP_SUCCESS) then
+          if(errc.eq.0) then
            call tens_cache_entry%lock()
            call tens_cache_entry%incr_ref_count()
            if(tens_cache_entry%is_set(errc)) then
@@ -719,7 +720,6 @@
              this%tensor=>this%cache_entry%get_tensor(errc)
              if(errc.eq.0) then
               this%owner_id=this%cache_entry%get_owner_id()
-              call this%set_status(DS_OPRND_DEFINED,errc); if(errc.ne.DSVP_SUCCESS) errc=-6
               if(DEBUG.gt.1.and.errc.eq.0) then
                write(CONS_OUT,'("#MSG(TAVP-MNG)[",i6,"]: Tensor operand associated with a cache entry (",i4,"):")')&
                &impir,this%cache_entry%get_ref_count()
@@ -753,7 +753,7 @@
          class(tens_oprnd_t), intent(inout):: this   !in: active tensor operand
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
-
+!$OMP FLUSH
          errc=0; tens_p=>this%tensor
          if(.not.associated(tens_p)) errc=-1
          if(present(ierr)) ierr=errc
@@ -767,7 +767,7 @@
          class(tens_oprnd_t), intent(in):: this           !in: active tensor operand
          integer(INTD), intent(out), optional:: ierr      !out: error code
          integer(INTD):: errc
-
+!$OMP FLUSH
          errc=0; cache_entry_p=>this%cache_entry
          if(present(ierr)) ierr=errc
          return
@@ -784,7 +784,7 @@
          class(tens_rcrsv_t), pointer:: tensor
 
          if(this%is_active(errc)) then
-          if(errc.eq.DSVP_SUCCESS) then
+          if(errc.eq.0) then
            if(associated(this%cache_entry)) then
             call this%cache_entry%decr_ref_count(); this%cache_entry=>NULL()
            endif
@@ -842,7 +842,7 @@
          integer(INTD):: errc
 
          if(this%is_active(errc)) then
-          if(errc.eq.DSVP_SUCCESS) then
+          if(errc.eq.0) then
            this%owner_id=owner
            if(present(update_cache)) then
             if(update_cache) then
@@ -872,7 +872,7 @@
          integer(INTD):: errc
 
          if(this%is_active(errc)) then
-          if(errc.eq.DSVP_SUCCESS) then
+          if(errc.eq.0) then
            if(associated(this%cache_entry)) then
             this%owner_id=this%cache_entry%get_owner_id(errc); if(errc.ne.0) errc=-3
            endif
@@ -1030,6 +1030,18 @@
          if(present(ierr)) ierr=errc
          return
         end function TensOprndGetWriteCount
+!--------------------------------------------------------
+        function TensOprndIsActive(this,ierr) result(ans)
+!Returns TRUE if the tensor operand is active (defined).
+         implicit none
+         logical:: ans                               !out: answer
+         class(tens_oprnd_t), intent(inout):: this   !in: tensor operand
+         integer(INTD), intent(out), optional:: ierr !out: error code
+!$OMP FLUSH
+         ans=associated(this%tensor)
+         if(present(ierr)) ierr=0
+         return
+        end function TensOprndIsActive
 !-----------------------------------------------------------------------
         function TensOprndIsLocated(this,ierr,remote,valued) result(res)
 !Returns TRUE if the tensor operand has been located, FALSE otherwise,
@@ -1046,7 +1058,7 @@
 
          res=.FALSE.
          if(this%is_active(errc)) then
-          if(errc.eq.DSVP_SUCCESS) then
+          if(errc.eq.0) then
            call this%lock()
            if(associated(this%tensor)) then
             res=(this%tensor%get_num_subtensors(errc).gt.0) !subtensors define the structure of the tensor (which is being located)
@@ -1097,7 +1109,7 @@
 
          stat=DS_OPRND_NO_COMM !TAVP-MNG does not perform tensor body data communications
          if(this%is_active(errc)) then
-          if(errc.ne.DSVP_SUCCESS) errc=-2
+          if(errc.ne.0) errc=-2
          else
           errc=-1
          endif
@@ -1113,7 +1125,7 @@
          integer(INTD):: errc
 
          if(this%is_active(errc)) then
-          if(errc.ne.DSVP_SUCCESS) errc=-2 !No local resources are currently needed
+          if(errc.ne.0) errc=-2 !No local resources are currently needed
          else
           errc=-1
          endif
@@ -1129,7 +1141,7 @@
          integer(INTD):: errc
 
          if(this%is_active(errc)) then
-          if(errc.ne.DSVP_SUCCESS) errc=-2 !No tensor body data prefetch is needed
+          if(errc.ne.0) errc=-2 !No tensor body data prefetch is needed
          else
           errc=-1
          endif
@@ -1145,7 +1157,7 @@
          integer(INTD):: errc
 
          if(this%is_active(errc)) then
-          if(errc.ne.DSVP_SUCCESS) errc=-2 !No tensor body data upload is needed
+          if(errc.ne.0) errc=-2 !No tensor body data upload is needed
          else
           errc=-1
          endif
@@ -1164,13 +1176,8 @@
 
          res=.FALSE.
          if(this%is_active(errc)) then
-          if(errc.eq.DSVP_SUCCESS) then
-           call this%set_status(DS_OPRND_PRESENT,errc)
-           if(errc.eq.DSVP_SUCCESS) then
-            res=.TRUE.
-           else
-            errc=-3
-           endif
+          if(errc.eq.0) then
+           res=.TRUE.
           else
            errc=-2
           endif
@@ -1189,7 +1196,7 @@
          integer(INTD):: errc
 
          if(this%is_active(errc)) then
-          if(errc.ne.DSVP_SUCCESS) errc=-2 !No local resources are currently needed
+          if(errc.ne.0) errc=-2 !No local resources are currently needed
          else
           errc=-1
          endif
@@ -1203,17 +1210,17 @@
          class(tens_oprnd_t), intent(inout):: this   !inout: tensor operand
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
-
+!$OMP FLUSH
          if(this%is_active(errc)) then
-          if(errc.eq.DSVP_SUCCESS) then
-           call this%set_status(DS_OPRND_EMPTY,errc) !will call resource release underneath
-           if(errc.eq.DSVP_SUCCESS) then
-            this%tensor=>NULL()
+          if(errc.eq.0) then
+           call this%release_rsc(errc)
+           if(errc.eq.0) then
+            this%owner_id=-1
             if(associated(this%cache_entry)) then
              call this%cache_entry%decr_ref_count()
              this%cache_entry=>NULL()
             endif
-            this%owner_id=-1
+            this%tensor=>NULL()
            else
             errc=-2
            endif
@@ -1258,8 +1265,8 @@
          do j=1,nsp; write(devo,'(" ")',ADVANCE='NO'); enddo
          write(devo,'("TENSOR OPERAND{")')
          do j=1,nsp+1; write(devo,'(" ")',ADVANCE='NO'); enddo
-         write(devo,'("Status = ",i2,"; Communication = ",i2,"; Metadata owner = ",i6)')&
-         &this%get_status(),this%get_comm_stat(),this%owner_id
+         write(devo,'("Active = ",l1,"; Communication = ",i2,"; Metadata owner = ",i6)')&
+         &this%is_active(),this%get_comm_stat(),this%owner_id
          if(associated(this%tensor)) then
           call this%tensor%print_it(errc,devo,nsp+1); if(errc.ne.TEREC_SUCCESS) errc=-1
          else

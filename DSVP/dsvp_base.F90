@@ -1,6 +1,6 @@
 !Domain-specific virtual processor (DSVP): Abstract base module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/05/25
+!REVISION: 2018/06/01
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -89,10 +89,6 @@
  !DSVP specific kind (valid specific DSVP kinds must be non-negative):
         integer(INTD), parameter, public:: DSVP_NO_KIND=-1          !no specific kind
  !Domain-specific operand:
-  !Operand status:
-        integer(INTD), parameter, public:: DS_OPRND_EMPTY=0         !empty operand
-        integer(INTD), parameter, public:: DS_OPRND_DEFINED=1       !defined operand, but the data has not necessarily been delivered yet
-        integer(INTD), parameter, public:: DS_OPRND_PRESENT=2       !defined operand with the data locally present (delivered)
   !Data communication status:
         integer(INTD), parameter, public:: DS_OPRND_NO_COMM=0       !no pending communication on the domain-specific operand
         integer(INTD), parameter, public:: DS_OPRND_FETCHING=1      !domain-specific operand is being fetched
@@ -122,10 +118,10 @@
         end type ds_resrc_t
  !Domain-specific operand (will contain domain-specific data to be processed by DSVP):
         type, abstract, public:: ds_oprnd_t
-         integer(INTD), private:: stat=DS_OPRND_EMPTY !status of the domain-specific operand: {DS_OPRND_EMPTY,DS_OPRND_DEFINED,DS_OPRND_PRESENT}
          contains
+          procedure(ds_oprnd_query_i), deferred, public:: is_active    !returns TRUE if the domain-specific operand is active (defined)
           procedure(ds_oprnd_locd_i), deferred, public:: is_located    !checks whether the domain-specific operand has been located (its location is known), plus additional attributes
-          procedure(ds_oprnd_stat_i), deferred, public:: get_comm_stat !returns the current communication status: {DS_OPRND_NO_COMM,DS_OPRND_FETCHING,DS_OPRND_UPLOADING}
+          procedure(ds_oprnd_comm_i), deferred, public:: get_comm_stat !returns the current communication status: {DS_OPRND_NO_COMM,DS_OPRND_FETCHING,DS_OPRND_UPLOADING}
           procedure(ds_oprnd_self_i), deferred, public:: acquire_rsc   !explicitly acquires local resource for the domain-specific operand
           procedure(ds_oprnd_self_i), deferred, public:: prefetch      !starts prefetching a remote domain-specific operand (acquires local resource!)
           procedure(ds_oprnd_self_i), deferred, public:: upload        !starts uploading the domain-specific operand to its remote location
@@ -133,10 +129,6 @@
           procedure(ds_oprnd_self_i), deferred, public:: release_rsc   !releases local resource, thus destroying the temporary local copy, but the operand stays defined
           procedure(ds_oprnd_self_i), deferred, public:: destruct      !performs a complete destruction back to an empty (undefined) state
           procedure(ds_oprnd_print_i), deferred, public:: print_it     !prints
-          procedure, public:: is_active=>DSOprndIsActive               !returns TRUE if the domain-specific operand is active (defined and maybe present)
-          procedure, public:: is_present=>DSOprndIsPresent             !returns TRUE if the domain-specific operand data is locally available (present)
-          procedure, public:: get_status=>DSOprndGetStatus             !returns the current status of the domain-specific operand
-          procedure, public:: set_status=>DSOprndSetStatus             !sets the current status of the domain-specific operand
         end type ds_oprnd_t
  !Wrapped reference to a domain-specific operand:
         type, private:: ds_oprnd_ref_t
@@ -302,7 +294,15 @@
           integer(INTD), intent(out), optional:: ierr !out: error code
          end function ds_resrc_query_i
   !ds_oprnd_t:
-   !query:
+   !is_active:
+         function ds_oprnd_query_i(this,ierr) result(ans)
+          import:: ds_oprnd_t,INTD
+          implicit none
+          logical:: ans                               !out: answer
+          class(ds_oprnd_t), intent(inout):: this     !in: domain-specific operand
+          integer(INTD), intent(out), optional:: ierr !out: error code
+         end function ds_oprnd_query_i
+   !is_located:
          function ds_oprnd_locd_i(this,ierr,remote,valued) result(res)
           import:: ds_oprnd_t,INTD
           implicit none
@@ -313,13 +313,13 @@
           logical, intent(out), optional:: valued     !out: TRUE if operand is valued (neither undefined nor being updated)
          end function ds_oprnd_locd_i
    !get_comm_stat:
-         function ds_oprnd_stat_i(this,ierr) result(stat)
+         function ds_oprnd_comm_i(this,ierr) result(stat)
           import:: ds_oprnd_t,INTD
           implicit none
           integer(INTD):: stat                        !out: communication status
           class(ds_oprnd_t), intent(inout):: this     !in: domain-specific operand
           integer(INTD), intent(out), optional:: ierr !out: error code
-         end function ds_oprnd_stat_i
+         end function ds_oprnd_comm_i
    !self:
          subroutine ds_oprnd_self_i(this,ierr)
           import:: ds_oprnd_t,INTD
@@ -430,12 +430,9 @@
  !ds_resrc_t:
         public ds_resrc_query_i
  !ds_oprnd_t:
-        private DSOprndIsActive
-        private DSOprndIsPresent
-        private DSOprndGetStatus
-        private DSOprndSetStatus
+        public ds_oprnd_query_i
         public ds_oprnd_locd_i
-        public ds_oprnd_stat_i
+        public ds_oprnd_comm_i
         public ds_oprnd_self_i
         public ds_oprnd_sync_i
         public ds_oprnd_print_i
@@ -528,80 +525,7 @@
         public dsvp_ctor_i
 !IMPLEMENTATION:
        contains
-![ds_oprnd_t]==========================================
-        function DSOprndIsActive(this,ierr) result(res)
-!Returns TRUE if the domain-specific operand is active (defined).
-         implicit none
-         logical:: res                               !out: answer
-         class(ds_oprnd_t), intent(in):: this        !in: domain-specific operand
-         integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc,sts
-
-         errc=DSVP_SUCCESS
-!$OMP ATOMIC READ
-         sts=this%stat
-         res=(sts.gt.DS_OPRND_EMPTY)
-         if(present(ierr)) ierr=errc
-         return
-        end function DSOprndIsActive
-!-------------------------------------------------------
-        function DSOprndIsPresent(this,ierr) result(res)
-!Returns TRUE if the domain-specific operand is locally available (present).
-!The domain-specific operand is expected to be active (defined).
-         implicit none
-         logical:: res                               !out: answer
-         class(ds_oprnd_t), intent(in):: this        !in: defined domain-specific operand
-         integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc,sts
-
-         errc=DSVP_SUCCESS; res=.FALSE.
-!$OMP ATOMIC READ
-         sts=this%stat
-         if(sts.gt.DS_OPRND_EMPTY) then
-          res=(sts.gt.DS_OPRND_DEFINED)
-         else
-          errc=DSVP_ERR_INVALID_REQ
-         endif
-         if(present(ierr)) ierr=errc
-         return
-        end function DSOprndIsPresent
-!-------------------------------------------------------
-        function DSOprndGetStatus(this,ierr) result(sts)
-!Returns the current status of the domain-specific operand.
-         implicit none
-         integer(INTD):: sts                         !out: current status
-         class(ds_oprnd_t), intent(in):: this        !in: domain-specific operand
-         integer(INTD), intent(out), optional:: ierr !out: error code
-
-!$OMP ATOMIC READ
-         sts=this%stat
-         if(present(ierr)) ierr=DSVP_SUCCESS
-         return
-        end function DSOprndGetStatus
-!-------------------------------------------------
-        subroutine DSOprndSetStatus(this,sts,ierr)
-!Sets the status of the domain-specific operand.
-         implicit none
-         class(ds_oprnd_t), intent(inout):: this     !inout: domain-specific operand
-         integer(INTD), intent(in):: sts             !in: new status
-         integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc,old_sts
-
-         errc=DSVP_SUCCESS
-         if(sts.eq.DS_OPRND_EMPTY.or.sts.eq.DS_OPRND_DEFINED.or.sts.eq.DS_OPRND_PRESENT) then
-!$OMP ATOMIC READ
-          old_sts=this%stat
-!$OMP ATOMIC WRITE
-          this%stat=sts
-          if(sts.lt.old_sts) then
-           if(sts.lt.DS_OPRND_DEFINED) call this%release_rsc(errc)
-          endif
-         else
-          errc=DSVP_ERR_INVALID_ARGS
-         endif
-         if(present(ierr)) ierr=errc
-         return
-        end subroutine DSOprndSetStatus
+![ds_oprnd_t]=========================================
 ![ds_instr_t]=========================================
         function DSInstrIsEmpty(this,ierr) result(res)
 !Returns TRUE if the domain-specific instruction is empty (undefined).

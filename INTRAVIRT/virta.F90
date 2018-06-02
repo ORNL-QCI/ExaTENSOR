@@ -8,7 +8,7 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/05/16
+!REVISION: 2018/06/01
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -226,6 +226,7 @@
          integer(INTD), private:: read_write_count=0            !read/write count: Number of issued tensor instructions which refer to this tensor cache entry as input (positive) or output (negative)
          integer(INTD), private:: read_write_def_count=0        !deferred read/write count: Number of deferred tensor instructions which refer to this tensor cache entry as input (positive) or output (negative)
          integer(INTD), private:: temp_count=0                  !temporary count: Number of temporary tensors stemmed from this tensor cache entry (used for output rename)
+         logical, private:: up_to_date=.FALSE.                  !up-to-date flag
          logical, private:: persistent=.FALSE.                  !persistency flag (persistent cache entries can only be evicted via an explicit TENS_DESTROY)
 #ifndef NO_OMP
          integer(omp_nest_lock_kind), private:: entry_lock=-1   !tensor cache entry lock
@@ -253,6 +254,8 @@
           procedure, public:: reset_rw_counters=>TensCacheEntryResetRwCounters!resets the read/write access counter by providing both new read and write counters separately
           procedure, public:: incr_temp_count=>TensCacheEntryIncrTempCount    !increments the temporary count (cannot be decremented)
           procedure, public:: get_temp_count=>TensCacheEntryGetTempCount      !returns the current temporary count
+          procedure, public:: set_up_to_date=>TensCacheEntrySetUpToDate       !sets/resets the up-to-date status
+          procedure, public:: is_up_to_date=>TensCacheEntryIsUpToDate         !returns whether or not the cache entry data is up-to-date
           procedure, public:: set_persistency=>TensCacheEntrySetPersistency   !sets/resets the persistency status
           procedure, public:: is_persistent=>TensCacheEntryIsPersistent       !returns TRUE if the tensor cache entry is persistent, FALSE otherwise
           procedure, public:: destroy=>TensCacheEntryDestroy                  !destroys the tensor cache entry
@@ -410,6 +413,8 @@
         private TensCacheEntryResetRwCounters
         private TensCacheEntryIncrTempCount
         private TensCacheEntryGetTempCount
+        private TensCacheEntrySetUpToDate
+        private TensCacheEntryIsUpToDate
         private TensCacheEntrySetPersistency
         private TensCacheEntryIsPersistent
         private TensCacheEntryDestroy
@@ -1362,6 +1367,27 @@
          count=this%temp_count
          return
         end function TensCacheEntryGetTempCount
+!-----------------------------------------------------------------
+        subroutine TensCacheEntrySetUpToDate(this,up_to_date_stat)
+         implicit none
+         class(tens_cache_entry_t), intent(inout):: this !inout: defined tensor cache entry
+         logical, intent(in):: up_to_date_stat           !in: new up-to-date status
+
+!$OMP ATOMIC WRITE
+         this%up_to_date=up_to_date_stat
+!$OMP FLUSH (this)
+         return
+        end subroutine TensCacheEntrySetUpToDate
+!----------------------------------------------------------
+        function TensCacheEntryIsUpToDate(this) result(res)
+         implicit none
+         logical:: res                                !out: result
+         class(tens_cache_entry_t), intent(in):: this !in: defined tensor cache entry
+!$OMP FLUSH (this)
+!$OMP ATOMIC READ
+         res=this%up_to_date
+         return
+        end function TensCacheEntryIsUpToDate
 !----------------------------------------------------------------
         subroutine TensCacheEntrySetPersistency(this,persistency)
          implicit none
@@ -1370,6 +1396,7 @@
 
 !$OMP ATOMIC WRITE
          this%persistent=persistency
+!$OMP FLUSH (this)
          return
         end subroutine TensCacheEntrySetPersistency
 !------------------------------------------------------------
@@ -1377,7 +1404,7 @@
          implicit none
          logical:: res                                !out: result
          class(tens_cache_entry_t), intent(in):: this !in: defined tensor cache entry
-
+!$OMP FLUSH (this)
 !$OMP ATOMIC READ
          res=this%persistent
          return
@@ -1393,12 +1420,14 @@
          logical, intent(in):: dealloc                   !in: if TRUE, the .tensor field will be deallocated (assumes ownership)
          integer(INTD), intent(out), optional:: ierr     !out: error code
          integer(INTD):: errc
-
+!$OMP FLUSH
          errc=0
          if(this%ref_count.eq.0.and.this%use_count.eq.0.and.(.not.this%persistent)) then
           if(associated(this%tensor).and.dealloc) deallocate(this%tensor) !<dealloc>=TRUE assumes tensor ownership
           this%tensor=>NULL()
           call this%destroy_lock()
+          this%ref_count=0; this%use_count=0; this%read_write_count=0; this%read_write_def_count=0; this%temp_count=0
+          this%up_to_date=.FALSE.; this%persistent=.FALSE.
          else
           errc=-1
           write(jo,'("#ERROR(TensorCache:tens_cache_entry_t.destroy): Attempt to destroy an active tensor cache entry!")')
@@ -1407,6 +1436,7 @@
           call crash() !debug
           call quit(errc,'#ERROR(TensorCache:tens_cache_entry_t.destroy): Attempt to destroy an active tensor cache entry!')
          endif
+!$OMP FLUSH
          if(present(ierr)) ierr=errc
          return
         end subroutine TensCacheEntryDestroy
@@ -1486,7 +1516,7 @@
          logical:: lockable
          class(tens_cache_entry_t), intent(in):: this
 #ifndef NO_OMP
-!$OMP FLUSH(this)
+!$OMP FLUSH (this)
 !$OMP ATOMIC READ
          lockable=this%lock_initialized
 #else
