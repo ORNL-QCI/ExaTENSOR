@@ -1,6 +1,6 @@
 !Distributed data storage service (DDSS).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/06/01 (started 2015/03/18)
+!REVISION: 2018/06/02 (started 2015/03/18)
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -217,8 +217,8 @@
          integer(INT_ADDR), private:: Offset      !offset in the MPI window (in displacement units)
          integer(INT_COUNT), private:: DataVol    !data volume (number of typed elements)
          integer(INT_MPI), private:: DataType     !data type of each element: {R4,R8,C4,C8,...}, see <dil_basic.F90>
-         integer(8), private:: TransID            !absolute value = data transfer request ID (or zero if none); sign = data transfer direction {READ_SIGN,WRITE_SIGN}
-         integer(INT_MPI), private:: StatMPI      !status of the data transfer request (see MPI_STAT_XXX parameters above)
+         integer(8), private:: TransID=0_8        !absolute value = data transfer request ID (or zero if none); sign = data transfer direction {READ_SIGN,WRITE_SIGN}
+         integer(INT_MPI), private:: StatMPI=MPI_STAT_NONE !status of the data transfer request (see MPI_STAT_XXX parameters above)
          integer(INT_MPI), private:: ReqHandle    !MPI request handle (for MPI communications with a request handle)
          contains
           procedure, private:: clean=>DataDescrClean            !clean a data descriptor
@@ -2337,18 +2337,16 @@
         subroutine DataDescrUnpackNew(this,packet,ierr)
 !Unpacks an object from a packet.
          implicit none
-         class(DataDescr_t), intent(inout):: this       !out: data descriptor
+         class(DataDescr_t), intent(out):: this         !out: data descriptor
          class(obj_pack_t), intent(inout):: packet      !inout: packet
          integer(INT_MPI), intent(out), optional:: ierr !out: error code
          integer(INT_MPI):: errc
 
-         if(.not.this%is_set(errc)) then
-          if(errc.eq.0) call unpack_builtin(packet,this%RankMPI,errc)
-          if(errc.eq.PACK_SUCCESS) call this%WinMPI%unpack(packet,errc)
-          if(errc.eq.PACK_SUCCESS) call unpack_builtin(packet,this%Offset,errc)
-          if(errc.eq.PACK_SUCCESS) call unpack_builtin(packet,this%DataVol,errc)
-          if(errc.eq.PACK_SUCCESS) call unpack_builtin(packet,this%DataType,errc)
-         endif
+         call unpack_builtin(packet,this%RankMPI,errc)
+         if(errc.eq.PACK_SUCCESS) call this%WinMPI%unpack(packet,errc)
+         if(errc.eq.PACK_SUCCESS) call unpack_builtin(packet,this%Offset,errc)
+         if(errc.eq.PACK_SUCCESS) call unpack_builtin(packet,this%DataVol,errc)
+         if(errc.eq.PACK_SUCCESS) call unpack_builtin(packet,this%DataType,errc)
          if(present(ierr)) ierr=errc
          return
         end subroutine DataDescrUnpackNew
