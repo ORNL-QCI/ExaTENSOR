@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/06/01
+!REVISION: 2018/06/06
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -136,6 +136,7 @@
           procedure, public:: acquire_resource=>TensEntryWrkAcquireResource    !acquires resource for the tensor cache entry, if not already acquired
           procedure, public:: release_resource=>TensEntryWrkReleaseResource    !releases resource for the tensor cache entry
           procedure, public:: set_talsh_tens=>TensEntryWrkSetTalshTens         !sets up the TAL-SH tensor object
+          procedure, public:: get_talsh_tens=>TensEntryWrkGetTalshTens         !returns a pointer to the TAL-SH tensor
           procedure, public:: print_it=>TensEntryWrkPrintIt                    !prints
           final:: tens_entry_wrk_dtor                                          !dtor
         end type tens_entry_wrk_t
@@ -401,6 +402,7 @@
         private TensEntryWrkAcquireResource
         private TensEntryWrkReleaseResource
         private TensEntryWrkSetTalshTens
+        private TensEntryWrkGetTalshTens
         private TensEntryWrkPrintIt
         public tens_entry_wrk_dtor
         public tens_entry_wrk_alloc
@@ -1410,6 +1412,20 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensEntryWrkSetTalshTens
+!------------------------------------------------------------------
+        function TensEntryWrkGetTalshTens(this,ierr) result(tens_p)
+!Returns a pointer to the TAL-SH tensor.
+         implicit none
+         type(talsh_tens_t), pointer:: tens_p               !out: pointer to the TAL-SH tensor
+         class(tens_entry_wrk_t), intent(in), target:: this !in: tensor cache entry
+         integer(INTD), intent(out), optional:: ierr        !out: error code
+         integer(INTD):: errc
+!$OMP FLUSH
+         errc=0
+         tens_p=>this%talsh_tens
+         if(present(ierr)) ierr=errc
+         return
+        end function TensEntryWrkGetTalshTens
 !---------------------------------------------------------------
         subroutine TensEntryWrkPrintIt(this,ierr,dev_id,nspaces)
 !Prints the tensor cache entry.
@@ -1669,16 +1685,18 @@
 !$OMP FLUSH
          errc=0
          if(.not.associated(this%talsh_tens)) then
+          call this%lock()
           if(associated(this%cache_entry)) then
            call this%cache_entry%set_talsh_tens(errc)
            if(errc.eq.0) then
-            this%talsh_tens=>this%cache_entry%talsh_tens !`should be this%cache_entry%get_talsh_tens()
+            this%talsh_tens=>this%cache_entry%get_talsh_tens()
            else
             errc=-2
            endif
           else
            errc=-1
           endif
+          call this%unlock()
          endif
          if(present(ierr)) ierr=errc
          return
@@ -5531,9 +5549,16 @@
            if(opcode.ge.TAVP_ISA_TENS_FIRST.and.opcode.le.TAVP_ISA_TENS_LAST) then !tensor instruction
             if(opcode.ne.TAVP_INSTR_TENS_CREATE.and.opcode.ne.TAVP_INSTR_TENS_DESTROY.and.opcode.ne.TAVP_INSTR_TENS_ACCUMULATE) then
              call this%prefetch_input(tens_instr,ier)
-             if(ier.ne.0.and.errc.eq.0) then
+             if(ier.eq.0) then
+              if(DEBUG.gt.0) then
+               write(CONS_OUT,'("#DEBUG(TAVP-WRK:Communicator): Initiated input prefetch for tensor instruction:")')
+               call tens_instr%print_it(dev_id=CONS_OUT)
+               flush(CONS_OUT)
+              endif
+             else
               if(VERBOSE) then
-               write(CONS_OUT,'("#ERROR(TAVP-WRK:Communicator): Failed to initiate input prefetch: Error ",i11)') ier;
+               write(CONS_OUT,'("#ERROR(TAVP-WRK:Communicator): Failed to initiate input prefetch: Error ",i11)') ier
+               call tens_instr%print_it(dev_id=CONS_OUT)
                flush(CONS_OUT)
               endif
               errc=-43; exit wloop
@@ -5575,7 +5600,21 @@
            opcode=tens_instr%get_code(ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-27; exit wloop; endif
            if(opcode.ge.TAVP_ISA_TENS_FIRST.and.opcode.le.TAVP_ISA_TENS_LAST) then !tensor instruction
             if(tens_instr%get_num_out_operands().gt.0.and.opcode.ne.TAVP_INSTR_TENS_CREATE) then !TENS_CREATE does not require remote upload
-             call this%upload_output(tens_instr,ier); if(ier.ne.0.and.errc.eq.0) then; errc=-26; exit wloop; endif
+             call this%upload_output(tens_instr,ier)
+             if(ier.eq.0) then
+              if(DEBUG.gt.0) then
+               write(CONS_OUT,'("#DEBUG(TAVP-WRK:Communicator): Initiated output upload for tensor instruction:")')
+               call tens_instr%print_it(dev_id=CONS_OUT)
+               flush(CONS_OUT)
+              endif
+             else
+              if(VERBOSE) then
+               write(CONS_OUT,'("#ERROR(TAVP-WRK:Communicator): Failed to initiate output upload: Error ",i11)') ier
+               call tens_instr%print_it(dev_id=CONS_OUT)
+               flush(CONS_OUT)
+              endif
+              errc=-26; exit wloop
+             endif
              ier=this%upl_list%move_elem(this%iqueue); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-25; exit wloop; endif
              num_upload=num_upload+1
             else
@@ -5604,6 +5643,11 @@
             delivered=this%sync_prefetch(tens_instr,ier,wait=COMMUNICATOR_BLOCKING)
             if(ier.ne.0.and.errc.eq.0) then; errc=-13; exit wloop; endif
             if(delivered) then
+             if(DEBUG.gt.0) then
+              write(CONS_OUT,'("#DEBUG(TAVP-WRK:Communicator): Synced input prefetch for tensor instruction:")')
+              call tens_instr%print_it(dev_id=CONS_OUT)
+              flush(CONS_OUT)
+             endif
              num_fetch=num_fetch-1
              call tens_instr%set_status(DS_INSTR_READY_TO_EXEC,ier,errcode)
              if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-12; exit wloop; endif
@@ -5615,6 +5659,11 @@
             delivered=this%sync_upload(tens_instr,ier,wait=COMMUNICATOR_BLOCKING)
             if(ier.ne.0.and.errc.eq.0) then; errc=-10; exit wloop; endif
             if(delivered) then
+             if(DEBUG.gt.0) then
+              write(CONS_OUT,'("#DEBUG(TAVP-WRK:Communicator): Synced output upload for tensor instruction:")')
+              call tens_instr%print_it(dev_id=CONS_OUT)
+              flush(CONS_OUT)
+             endif
              num_upload=num_upload-1
              call tens_instr%set_status(DS_INSTR_UPLOADED,ier,errcode)
              if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-9; exit wloop; endif
@@ -5629,7 +5678,13 @@
  !Pass ready instructions to Dispatcher (port 0) for execution:
           ier=this%dsp_list%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-6; exit wloop; endif
           if(this%dsp_list%get_status().eq.GFC_IT_ACTIVE) then
-           ier=tavp%dispatcher%load_port(0,this%dsp_list); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-5; exit wloop; endif
+           ier=tavp%dispatcher%load_port(0,this%dsp_list,num_moved=n)
+           if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-5; exit wloop; endif
+           if(DEBUG.gt.0.and.n.gt.0) then
+            write(CONS_OUT,'("#MSG(TAVP-WRK)[",i6,"]: Communicator unit ",i2," passed ",i6," instructions to Dispatcher")')&
+            &impir,this%get_id(),n
+            flush(CONS_OUT)
+           endif
           endif
  !Pass completed instructions to Resourcer (port 1) for resource release:
           ier=this%ret_list%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-4; exit wloop; endif
@@ -6033,6 +6088,11 @@
              call this%issue_instr(tens_instr,ier); if(ier.ne.0.and.errc.eq.0) then; errc=-15; exit wloop; endif
              num_outstanding=num_outstanding+1
             end select
+            if(DEBUG.gt.0) then
+             write(CONS_OUT,'("#DEBUG(TAVP-WRK:Dispatcher): Issued tensor instruction:")')
+             call tens_instr%print_it(dev_id=CONS_OUT)
+             flush(CONS_OUT)
+            endif
             ier=this%iqueue%move_elem(this%iss_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-14; exit wloop; endif
            else !auxiliary or control instruction
             if(opcode.eq.TAVP_INSTR_CTRL_STOP) then
@@ -6060,6 +6120,11 @@
             num_outstanding=num_outstanding-1
             call tens_instr%set_status(DS_INSTR_COMPLETED,ier)
             if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-5; exit wloop; endif
+            if(DEBUG.gt.0) then
+             write(CONS_OUT,'("#DEBUG(TAVP-WRK:Dispatcher): Completed tensor instruction:")')
+             call tens_instr%print_it(dev_id=CONS_OUT)
+             flush(CONS_OUT)
+            endif
             ier=this%iss_list%move_elem(this%cml_list); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-4; exit wloop; endif
            else
             ier=this%iss_list%next()

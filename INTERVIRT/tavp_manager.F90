@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/06/01
+!REVISION: 2018/06/05
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -2128,8 +2128,8 @@
   !Extract an instruction:
               call this%bytecode%extract_packet(i,instr_packet,ier,preclean=.TRUE.)
               if(ier.ne.0.and.errc.eq.0) then
-               write(CONS_OUT,'("#ERROR(TAVP-MNG:Decoder)[",i6,":",i2,"]: Instruction packet extraction error ",i11)')&
-               &impir,this%get_id(),ier
+               write(CONS_OUT,'("#ERROR(TAVP-MNG:Decoder)[",i6,":",i2,"]: Instruction packet extraction error ",i11,'//&
+               &'": ",i11,1x,i11)') impir,this%get_id(),ier,i,num_packets
                flush(CONS_OUT)
                errc=-30; exit wloop
               endif
