@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/06/06
+!REVISION: 2018/06/12
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -1164,18 +1164,19 @@
          call this%unlock()
          return
         end subroutine TensEntryWrkReleaseBlock
-!---------------------------------------------------------------
-        subroutine TensEntryWrkSetTensorLayout(this,ierr,tensor)
+!-----------------------------------------------------------------------------
+        subroutine TensEntryWrkSetTensorLayout(this,ierr,tensor,with_location)
 !Sets the tensor layout, either the default one or imported from another tensor.
 !If the tensor stored in the tensor cache entry already has a layout, nothing will be done.
          implicit none
          class(tens_entry_wrk_t), intent(inout):: this      !inout: active tensor cache entry (layout acceptor)
          integer(INTD), intent(out), optional:: ierr        !out: error code
          class(tens_rcrsv_t), intent(in), optional:: tensor !in: prototype tensor whose layout to be imported
+         logical, intent(in), optional:: with_location      !in: if TRUE, the tensor location will be imported as well, default to FALSE
          integer(INTD):: errc
          class(tens_rcrsv_t), pointer:: tens
          class(tens_header_t), pointer:: header
-         logical:: laid,inp_laid
+         logical:: laid,inp_laid,omit_loc
 
          call this%lock()
          tens=>this%get_tensor(errc)
@@ -1186,12 +1187,13 @@
              if(present(tensor)) then !import layout from an existing tensor
               if(tensor%is_set(errc,layed=inp_laid)) then
                if(errc.eq.TEREC_SUCCESS.and.inp_laid) then
-                call tens%import_body(tensor,errc,omit_location=.TRUE.); if(errc.ne.TEREC_SUCCESS) errc=-11
+                omit_loc=.TRUE.; if(present(with_location)) omit_loc=(.not.with_location)
+                call tens%import_body(tensor,errc,omit_location=omit_loc); if(errc.ne.TEREC_SUCCESS) errc=-12
                else
-                errc=-10
+                errc=-11
                endif
               else
-               errc=-9
+               errc=-10
               endif
              else !set the default layout
  !Set tensor composition, if not set:
@@ -1199,7 +1201,9 @@
                if(errc.eq.TEREC_SUCCESS) then
                 header=>tens%get_header(errc)
                 if(errc.eq.TEREC_SUCCESS) then
-                 call tens%add_subtensor(header,errc); if(errc.ne.TEREC_SUCCESS) errc=-8
+                 call tens%add_subtensor(header,errc); if(errc.ne.TEREC_SUCCESS) errc=-9
+                else
+                 errc=-8
                 endif
                else
                 errc=-7
@@ -1710,18 +1714,75 @@
          integer(INTD), intent(out), optional:: ierr        !out: error code
          class(tens_rcrsv_t), intent(in), optional:: tensor !in: tensor whose layout to be imported
          integer(INTD):: errc
+         class(tens_rcrsv_t), pointer:: tens
+         class(tens_header_t), pointer:: header
+         logical:: laid,inp_laid
 
          errc=0
          if(associated(this%cache_entry)) then
           call this%lock()
           if(present(tensor)) then
            call this%cache_entry%set_tensor_layout(errc,tensor) !import layout from an existing tensor
+           if(errc.ne.0) errc=-14
           else
            call this%cache_entry%set_tensor_layout(errc) !set the default layout
+           if(errc.ne.0) errc=-13
           endif
           call this%unlock()
          else
-          call quit(-1,'#FATAL(TAVP-WRK:tens_oprnd_t.set_tensor_layout): Direct tensor layout setup is not implemented!') !`Implement
+!$OMP FLUSH
+          tens=>this%get_tensor(errc)
+          if(errc.eq.0.and.associated(tens)) then
+           if(tens%is_set(errc,layed=laid)) then
+            if(errc.eq.TEREC_SUCCESS) then
+             if(.not.laid) then
+              if(present(tensor)) then
+               if(tensor%is_set(errc,layed=inp_laid)) then
+                if(errc.eq.TEREC_SUCCESS.and.inp_laid) then
+                 call tens%import_body(tensor,errc,omit_location=.TRUE.); if(errc.ne.TEREC_SUCCESS) errc=-12
+                else
+                 errc=-11
+                endif
+               else
+                errc=-10
+               endif
+              else
+ !Set tensor composition, if not set:
+               if(.not.tens%has_structure(errc)) then
+                if(errc.eq.TEREC_SUCCESS) then
+                 header=>tens%get_header(errc)
+                 if(errc.eq.TEREC_SUCCESS.and.associated(header)) then
+                  call tens%add_subtensor(header,errc); if(errc.ne.TEREC_SUCCESS) errc=-9
+                 else
+                  errc=-8
+                 endif
+                else
+                 errc=-7
+                endif
+               else
+                if(errc.ne.TEREC_SUCCESS) errc=-6
+               endif
+ !Resolve tensor dimensions, if not resolved:
+               if(errc.eq.0) then
+                errc=tens_dim_extent_resolve(tens)
+ !Set physical layout:
+                if(errc.eq.TEREC_SUCCESS) then
+                 call tens%set_layout(TEREC_LAY_FDIMS,errc); if(errc.ne.TEREC_SUCCESS) errc=-5
+                else
+                 errc=-4
+                endif
+               endif
+              endif
+             endif
+            else
+             errc=-3
+            endif
+           else
+            errc=-2
+           endif
+          else
+           errc=-1
+          endif
          endif
          if(present(ierr)) ierr=errc
          return
@@ -5032,7 +5093,11 @@
                 if(jerr.eq.0.and.stored.and.associated(tens_entry)) then
                  select type(tens_entry)
                  class is(tens_entry_wrk_t)
-                  call tens_entry%set_tensor_layout(jerr,tensor); if(jerr.ne.0) jerr=-8 !import temporary tensor layout from the persistent tensor
+                  if(copy_num.eq.0) then !accumulator tensors import data descriptors as well
+                   call tens_entry%set_tensor_layout(jerr,tensor,with_location=.TRUE.); if(jerr.ne.0) jerr=-9 !import temporary tensor layout from the persistent tensor
+                  else !temporary tensors do not import data descriptors
+                   call tens_entry%set_tensor_layout(jerr,tensor,with_location=.FALSE.); if(jerr.ne.0) jerr=-8 !import temporary tensor layout from the persistent tensor
+                  endif
                  class default
                   jerr=-7
                  end select
@@ -5108,7 +5173,7 @@
            implicit none
            class(tens_entry_wrk_t), intent(inout), pointer:: entry_acc !in: pointer to the tensor cache entry with the accumulator tensor
            class(tens_entry_wrk_t), intent(inout), pointer:: entry_tmp !in: pointer to the tensor cache entry with the temporary tensor
-           integer(INTD), intent(out):: jerr                  !out: error code
+           integer(INTD), intent(out):: jerr                           !out: error code
            integer(INTD):: arank,trank,perm(1:MAX_TENSOR_RANK),jj
            class(tens_rcrsv_t), pointer:: acc,tmp
            class(ds_oprnd_t), pointer:: tens_oprnd
