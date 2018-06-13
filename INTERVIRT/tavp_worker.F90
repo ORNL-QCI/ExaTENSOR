@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/06/12
+!REVISION: 2018/06/13
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -4637,6 +4637,11 @@
              if(ier.eq.0) then !resources have been acquired: issue into the staged list
               call instr%set_status(DS_INSTR_INPUT_WAIT,ier)
               if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-69; exit wloop; endif
+              if(DEBUG.gt.0) then
+               write(CONS_OUT,'("#DEBUG(TAVP-WRK:Resourcer): Resources acquired for tensor instruction:")')
+               call instr%print_it(dev_id=CONS_OUT)
+               flush(CONS_OUT)
+              endif
    !Mark the tensor instruction issued (from the deferred queue):
               passed=instr%mark_issued(ier,from_deferred=.TRUE.)
               if((.not.(ier.eq.0.and.passed)).and.errc.eq.0) then; errc=-68; exit wloop; endif
@@ -4741,6 +4746,11 @@
                if(ier.eq.0) then !resources have been acquired: issue into the staged list
                 call instr%set_status(DS_INSTR_INPUT_WAIT,ier)
                 if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-39; exit wloop; endif
+                if(DEBUG.gt.0) then
+                 write(CONS_OUT,'("#DEBUG(TAVP-WRK:Resourcer): Resources acquired for tensor instruction:")')
+                 call instr%print_it(dev_id=CONS_OUT)
+                 flush(CONS_OUT)
+                endif
                 passed=instr%mark_issued(ier); if((.not.(ier.eq.0.and.passed)).and.errc.eq.0) then; errc=-38; exit wloop; endif
                 if(DEBUG.gt.0) then
                  write(CONS_OUT,'("#DEBUG(TAVP-WRK:Resourcer): Tensor instruction issued from main queue:")')
@@ -4787,7 +4797,7 @@
              if(errc.eq.0) then; errc=-27; exit wloop; endif
             endif
            endif
-  !Pass periodically staged instructions to Communicator Port 0:
+  !Periodically pass staged instructions to Communicator Port 0:
            expired=timer_expired(rsc_timer,ier); if(ier.ne.TIMERS_SUCCESS.and.errc.eq.0) then; errc=-26; exit wloop; endif
            if(expired.or.auxiliary.or.num_staged.gt.MAX_RESOURCER_INSTR) then
             ier=this%stg_list%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-25; exit wloop; endif
@@ -4844,9 +4854,14 @@
             call this%release_resources(instr,ier); if(ier.ne.0.and.errc.eq.0) then; errc=-11; exit wloop; endif
             call instr%set_status(DS_INSTR_RETIRED,ier,errcode)
             if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-10; exit wloop; endif
+            if(DEBUG.gt.0) then
+             write(CONS_OUT,'("#DEBUG(TAVP-WRK:Resourcer): Resources released for tensor instruction:")')
+             call instr%print_it(dev_id=CONS_OUT)
+             flush(CONS_OUT)
+            endif
             if(instr%output_substituted(ier)) then
              if(ier.eq.0) then
-              instr=>NULL() !if the current instruction is TENS_ACCUMULATE, it will be deleted from the queue in .restore_output()
+              instr=>NULL() !if the current instruction is TENS_ACCUMULATE, it will be deleted from the queue in .restore_output() right below
               moved_fwd=this%restore_output(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-9; exit wloop; endif !local TENS_ACCUMULATE instructions will be deleted here
              else
               if(errc.eq.0) then; errc=-8; exit wloop; endif
