@@ -167,7 +167,7 @@ MPI_LINK_WRAP = -L.
 MPI_LINK = $(MPI_LINK_$(WRAP))
 
 #LINEAR ALGEBRA FLAGS:
-LA_LINK_ATLAS = -L$(PATH_BLAS_ATLAS) -lblas -llapack
+LA_LINK_ATLAS = -L$(PATH_BLAS_ATLAS) -lblas
 ifeq ($(TOOLKIT),GNU)
 LA_LINK_MKL = -L$(PATH_BLAS_MKL) -lmkl_intel_lp64 -lmkl_gnu_thread -lmkl_core -lpthread -lm -ldl
 else
