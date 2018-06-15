@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/06/13
+!REVISION: 2018/06/14
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -1973,7 +1973,7 @@
          class(tens_oprnd_t), intent(inout):: this   !in: tensor operand
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
-!$OMP FLUSH
+
          errc=0; ans=.FALSE.
          if(associated(this%cache_entry)) then
           call this%lock()
@@ -4446,6 +4446,11 @@
              if(ier.ne.PACK_SUCCESS.and.errc.eq.0) then; errc=-17; exit wloop; endif
              call this%encode(tens_instr,instr_packet,ier); if(ier.ne.0.and.errc.eq.0) then; errc=-16; exit wloop; endif
              call this%bytecode%seal_packet(ier); if(ier.ne.PACK_SUCCESS.and.errc.eq.0) then; errc=-15; exit wloop; endif
+             if(DEBUG.gt.0) then
+              write(CONS_OUT,'("#DEBUG(TAVP-WRK:Retirer): Retired tensor instruction:")')
+              call tens_instr%print_it(dev_id=CONS_OUT)
+              flush(CONS_OUT)
+             endif
             else
              if(opcode.eq.TAVP_INSTR_CTRL_STOP) stopping=.TRUE.
             endif
@@ -5869,7 +5874,8 @@
         end subroutine TAVPWRKCommunicatorShutdown
 !------------------------------------------------------------------------
         subroutine TAVPWRKCommunicatorPrefetchInput(this,tens_instr,ierr)
-!Starts prefetching input arguments for a given tensor instruction.
+!Starts prefetching input arguments for a given tensor instruction
+!in case any of them is not present locally.
          implicit none
          class(tavp_wrk_communicator_t), intent(inout):: this !inout: TAVP-WRK Communicator
          class(tens_instr_t), intent(inout):: tens_instr      !inout: active tensor instruction
@@ -5896,7 +5902,7 @@
         end subroutine TAVPWRKCommunicatorPrefetchInput
 !--------------------------------------------------------------------------------------
         function TAVPWRKCommunicatorSyncPrefetch(this,tens_instr,ierr,wait) result(res)
-!Synchronizes on the input arguments prefetch, either WAIT or TEST.
+!Synchronizes prefetch of input arguments, either WAIT or TEST.
          implicit none
          logical:: res                                        !out: TRUE if synchronized (all input operands)
          class(tavp_wrk_communicator_t), intent(inout):: this !inout: TAVP-WRK Communicator
@@ -5931,9 +5937,9 @@
 !-----------------------------------------------------------------------
         subroutine TAVPWRKCommunicatorUploadOutput(this,tens_instr,ierr)
 !Starts uploading output arguments for a given tensor instruction.
-!If the original persistent output tensor is substituted with a temporary one,
+!If the original persistent output tensors are substituted with temporary ones,
 !the persistent upload will be deferred until the corresponding locally
-!injected ACCUMULATE will show up here.
+!injected ACCUMULATE instruction will show up here.
          implicit none
          class(tavp_wrk_communicator_t), intent(inout):: this !inout: TAVP-WRK Communicator
          class(tens_instr_t), intent(inout):: tens_instr      !inout: active tensor instruction
@@ -6443,7 +6449,7 @@
                         errc=-13
                        end select
                       endif
-                      call cache_entry%set_up_to_date(.TRUE.) !tensor operand is now considered present
+                      call cache_entry%set_up_to_date(.TRUE.) !local tensors are considered present from the beginning
                       if(DEBUG.gt.0) then
                        write(CONS_OUT,'("#DEBUG(TAVP-WRK:TENSOR_CREATE)[",i6,"]: Tensor created: Size (Bytes) = ",i13,":")')&
                        &impir,bytes
