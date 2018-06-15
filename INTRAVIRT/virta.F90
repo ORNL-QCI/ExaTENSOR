@@ -8,7 +8,7 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/06/01
+!REVISION: 2018/06/15
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -37,25 +37,33 @@
 !       via the member procedure .release_entry() decrements that entry's USE_COUNT.
 !   (c) Associating a tensor operand with a tensor cache entry increments that entry's
 !       REF_COUNT whereas destroying that tensor operand decrements the REF_COUNT.
-!   (d) Persistent tensor cache entries as well as tensor cache entries with a non-zero
+!   (d) Tensor cache entries created by the TENS_CREATE instruction are marked persistent.
+!       Persistent tensor cache entries as well as tensor cache entries with a non-zero
 !       USE_COUNT or REF_COUNT cannot be evicted/destroyed.
-!   (e) Accessing/updating the content of a tensor cache entry via the tensor cache entry
+!   (e) Tensor cache entries created by the TENS_CREATE instruction are marked up-to-date
+!       upon creation. Temporary tensor cache entries are marked up-to-date only upon the
+!       completion of the first prefetch of their data.
+!   (f) Accessing/updating the content of a tensor cache entry via the tensor cache entry
 !       itself must be protected by the lock provided by the tensor cache entry:
 !       1. Get cache entry pointer;
 !       2. Lock cache entry (thread-exclusive access guaranteed);
 !       3. Access/update the content of the cache entry by the thread;
 !       4. Unlock cache entry;
 !       5. Release the cache entry pointer.
-!   (f) Accessing/updating the content of a tensor cache entry indirectly via
+!   (g) Accessing/updating the content of a tensor cache entry indirectly via
 !       accessing/updating the pointer components of the tensor operand associated
 !       with the tensor cache entry must be protected by the lock provided by the tensor
 !       operand which delegates locking/unlocking to the associated tensor cache entry:
 !       1. Lock tensor operand (locks the associated tensor cache entry for thread-exclusive access);
 !       2. Access/update the content of the tensor operand;
-!       3. Unlock tensor operand.
-!   (g) An issue of a tensor instruction increments READ/WRITE counters of the tensor
+!       3. Unlock tensor operand (unlocks the associated tensor cache entry).
+!   (h) An issue of a tensor instruction increments READ/WRITE counters of the tensor
 !       cache entries associated with the INPUT/OUTPUT tensor operands, respectively.
 !       The completion of the tensor instruction decrements those counters.
+!       A deferrence of a tensor instruction increments deferred READ/WRITE counters
+!       of the tensor cache entries associated with the INPUT/OUTPUT tensor operands,
+!       respectively. The subsequent actual issue of the tensor instruction decrements
+!       those counters.
 
        module virta !VIRtual Tensor Algebra
         use tensor_algebra     !basic constants
@@ -461,13 +469,14 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine role_barrier
-!----------------------------------------------------------------------
-        function tensor_name_is_temporary(tensor_name,ierr) result(res)
+!-------------------------------------------------------------------------
+        function tensor_name_is_temporary(tensor_name,ierr,id) result(res)
 !Returns TRUE if the given tensor name is a name of a temporary tensor.
          implicit none
          logical:: res                               !out: answer
          character(*), intent(in):: tensor_name      !in: tensor name
          integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD), intent(out), optional:: id   !out: temporary tensor id
          integer(INTD):: errc,i,j
 
          errc=0
@@ -476,6 +485,14 @@
          if(j.gt.0) then
           if(j.gt.i) then
            res=.TRUE.
+           if(present(id)) then
+            i=len(tensor_name)-j
+            if(i.gt.0) then
+             id=icharnum(i,tensor_name(j+1:)); if(i.le.0) errc=-3
+            else
+             errc=-2
+            endif
+           endif
           else
            res=.FALSE.; errc=-1
           endif
@@ -650,7 +667,7 @@
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
 
-         errc=0
+         errc=0; ans=.FALSE.
          if(opcode.ge.0.and.opcode.lt.TAVP_ISA_SIZE) then
           ans=(opcode.ge.TAVP_ISA_CTRL_FIRST.and.opcode.le.TAVP_ISA_CTRL_LAST)
          else
@@ -667,7 +684,7 @@
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
 
-         errc=0
+         errc=0; ans=.FALSE.
          if(opcode.ge.0.and.opcode.lt.TAVP_ISA_SIZE) then
           ans=(opcode.ge.TAVP_ISA_SPACE_FIRST.and.opcode.le.TAVP_ISA_SPACE_LAST)
          else
@@ -684,7 +701,7 @@
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
 
-         errc=0
+         errc=0; ans=.FALSE.
          if(opcode.ge.0.and.opcode.lt.TAVP_ISA_SIZE) then
           ans=(opcode.ge.TAVP_ISA_TENS_FIRST.and.opcode.le.TAVP_ISA_TENS_LAST)
          else

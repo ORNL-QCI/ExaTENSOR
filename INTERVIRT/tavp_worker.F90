@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/06/14
+!REVISION: 2018/06/15
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -112,6 +112,7 @@
           procedure, public:: free_buffer=>TensResrcFreeBuffer         !frees the local buffer (at most one tensor operand can be associated with this resource at this time)
           procedure, public:: get_mem_ptr=>TensResrcGetMemPtr          !returns a C pointer to the local memory buffer
           procedure, public:: get_mem_size=>TensResrcGetMemSize        !returns the size of the memory buffer in bytes
+          procedure, public:: zero_buffer=>TensResrcZeroBuffer         !zeroes out the memory buffer
           procedure, public:: print_it=>TensResrcPrintIt               !prints
           procedure, private:: incr_ref_count=>TensResrcIncrRefCount   !increments the reference count (number of tensor operands associated with the resource)
           procedure, private:: decr_ref_count=>TensResrcDecrRefCount   !decrements the reference count (number of tensor operands associated with the resource)
@@ -387,6 +388,7 @@
         private TensResrcFreeBuffer
         private TensResrcGetMemPtr
         private TensResrcGetMemSize
+        private TensResrcZeroBuffer
         private TensResrcPrintIt
         private TensResrcIncrRefCount
         private TensResrcDecrRefCount
@@ -1021,6 +1023,39 @@
          if(present(ierr)) ierr=errc
          return
         end function TensResrcGetMemSize
+!------------------------------------------------
+        subroutine TensResrcZeroBuffer(this,ierr)
+!Zeroes out the memory buffer. If resource is empty, does nothing.
+         implicit none
+         class(tens_resrc_t), intent(inout):: this   !inout: tensor resource
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+         integer(INTL):: bytes
+         type(C_PTR):: addr
+         integer(1), pointer:: i1(:)
+
+         if(.not.this%is_empty(errc)) then
+          if(errc.eq.0) then
+           addr=this%get_mem_ptr(errc)
+           if(errc.eq.0) then
+            bytes=this%get_mem_size(errc)
+            if(errc.eq.0.and.bytes.gt.0) then
+             call c_f_pointer(addr,i1,(/bytes/))
+             i1(:)=0 !IEEE 754: All bits are 0 => floating-point +0
+             i1=>NULL()
+            else
+             errc=-3
+            endif
+           else
+            errc=-2
+           endif
+          else
+           errc=-1
+          endif
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensResrcZeroBuffer
 !------------------------------------------------------------
         subroutine TensResrcPrintIt(this,ierr,dev_id,nspaces)
 !Prints.
@@ -1935,14 +1970,15 @@
          if(present(ierr)) ierr=errc
          return
         end function TensOprndHasResource
-!-----------------------------------------------------------
-        function TensOprndIsTemporary(this,ierr) result(res)
+!-----------------------------------------------------------------------
+        function TensOprndIsTemporary(this,ierr,accumulator) result(res)
 !Returns TRUE if the tensor operand is temporary (this also includes accumulators).
          implicit none
-         logical:: res                               !out: answer
-         class(tens_oprnd_t), intent(inout):: this   !in: active tensor operand
-         integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc,l
+         logical:: res                                !out: answer
+         class(tens_oprnd_t), intent(inout):: this    !in: active tensor operand
+         integer(INTD), intent(out), optional:: ierr  !out: error code
+         logical, intent(out), optional:: accumulator !out: TRUE if the temporary tensor is an accumulator
+         integer(INTD):: errc,l,n
          character(TEREC_MAX_TENS_NAME_LEN):: tname
 
          res=.FALSE.
@@ -1951,7 +1987,12 @@
            call this%lock()
            call this%tensor%get_name(tname,l,errc)
            if(errc.eq.TEREC_SUCCESS.and.l.gt.0) then
-            res=tensor_name_is_temporary(tname(1:l),errc); if(errc.ne.0) errc=-4
+            res=tensor_name_is_temporary(tname(1:l),errc,id=n)
+            if(errc.eq.0) then
+             if(present(accumulator)) accumulator=(res.and.(n.eq.0)) !accumulator tensor has id = 0
+            else
+             errc=-4
+            endif
            else
             errc=-3
            endif
@@ -2027,7 +2068,7 @@
                 if(errc.eq.0) then
                  call MPI_Comm_Rank(mpi_comm,my_rank,errc)
                  if(errc.eq.0) then
-                  remote=(.not.(host_proc_rank.eq.my_rank))
+                  remote=(host_proc_rank.ne.my_rank)
                  else
                   errc=-6
                  endif
@@ -2201,7 +2242,6 @@
                        if(errc.ne.0.and.errc.ne.TRY_LATER) then
                         if(VERBOSE) then
                          write(CONS_OUT,'("#ERROR(TAVP-WRK:tens_oprnd_t.prefetch): DataDescr_t.get_data() error ",i11)') errc
-                         call this%print_it(dev_id=CONS_OUT)
                          call descr%print_it(dev_out=CONS_OUT)
                          flush(CONS_OUT)
                         endif
@@ -2247,15 +2287,20 @@
           errc=-1
          endif
          if(errc.ne.0.and.VERBOSE) then
-          write(CONS_OUT,'("#ERROR(TAVP-WRK:tens_oprnd_t.prefetch): Error ",i11)') errc; flush(CONS_OUT)
+          write(CONS_OUT,'("#ERROR(TAVP-WRK:tens_oprnd_t.prefetch): Error ",i11)') errc
+          call this%print_it(dev_id=CONS_OUT)
+          flush(CONS_OUT)
          endif
          if(present(ierr)) ierr=errc
          return
         end subroutine TensOprndPrefetch
 !--------------------------------------------
         subroutine TensOprndUpload(this,ierr)
-!Starts uploading a remote tensor operand from a local resource.
-!The tensor operand must be present, even if it is local.
+!Starts uploading a remote tensor operand from a local resource,
+!provided that the tensor operand is either a remote persistent tensor
+!or a local accumulator tensor, otherwise does nothing. When the tensor
+!operand is a local accumulator tensor, its DDSS descriptor will actually
+!point to its associated persistent tensor (either remote or local).
 !If the tensor operand is currently being fetched or uploaded, returns an error.
          implicit none
          class(tens_oprnd_t), intent(inout):: this   !inout: active tensor operand with an associated resource component
@@ -2263,43 +2308,61 @@
          integer(INTD):: errc,comm_stat
          class(DataDescr_t), pointer:: descr
          type(C_PTR):: cptr
+         logical:: temporary,accumulator,located,remote
 
-         if(this%is_present(errc)) then !implies that the local resource is allocated
+         if(this%is_active(errc)) then
           if(errc.eq.0) then
            call this%lock()
-           descr=>this%tensor%get_data_descr(errc)
-           if(errc.eq.TEREC_SUCCESS.and.associated(descr)) then
-            if(descr%is_set(errc)) then
-             if(errc.eq.0) then
-              if(.not.this%resource%is_empty()) then !trap
-               comm_stat=this%get_comm_stat()
-               if(comm_stat.eq.DS_OPRND_NO_COMM) then
-                cptr=this%resource%get_mem_ptr(errc)
-                if(errc.eq.0) then
-                 call descr%acc_data(cptr,errc,MPI_ASYNC_REQ)
-                 if(errc.ne.0.and.errc.ne.TRY_LATER) then
-                  if(VERBOSE) then
-                   write(CONS_OUT,'("#ERROR(TAVP-WRK:tens_oprnd_t.upload): DataDescr_t.acc_data() error ",i11)') errc
-                   call this%print_it(dev_id=CONS_OUT)
-                   call descr%print_it(dev_out=CONS_OUT)
-                   flush(CONS_OUT)
+           temporary=this%is_temporary(errc,accumulator=accumulator)
+           if(errc.eq.0) then
+            if(.not.(temporary.and.(.not.accumulator))) then !non-accumulator temporary tensors do not carry DDSS descriptors and do not require upload
+             located=this%is_located(errc,remote=remote)
+             if(errc.eq.0.and.located) then
+              if(remote.or.accumulator) then !`accumulator tensor operands should only be uploaded periodically, not every single time
+               descr=>this%tensor%get_data_descr(errc)
+               if(errc.eq.TEREC_SUCCESS.and.associated(descr)) then
+                if(descr%is_set(errc)) then
+                 if(errc.eq.0) then
+                  if(this%is_present(errc)) then !also implies that the local resource is allocated: trap
+                   if(errc.eq.0) then
+                    comm_stat=this%get_comm_stat()
+                    if(comm_stat.eq.DS_OPRND_NO_COMM) then
+                     cptr=this%resource%get_mem_ptr(errc)
+                     if(errc.eq.0) then
+                      call descr%acc_data(cptr,errc,MPI_ASYNC_REQ)
+                      if(errc.ne.0.and.errc.ne.TRY_LATER) then
+                       if(VERBOSE) then
+                        write(CONS_OUT,'("#ERROR(TAVP-WRK:tens_oprnd_t.upload): DataDescr_t.acc_data() error ",i11)') errc
+                        call descr%print_it(dev_out=CONS_OUT)
+                        flush(CONS_OUT)
+                       endif
+                       errc=-12
+                      endif
+                     else
+                      errc=-11
+                     endif
+                    else
+                     errc=-10
+                    endif
+                   else
+                    errc=-9
+                   endif
+                  else
+                   errc=-8
                   endif
-                  errc=-9
+                 else
+                  errc=-7
                  endif
                 else
-                 errc=-8
+                 errc=-6
                 endif
                else
-                errc=-7
+                errc=-5
                endif
-              else
-               errc=-6
               endif
              else
-              errc=-5
+              errc=-4
              endif
-            else
-             errc=-4
             endif
            else
             errc=-3
@@ -2312,7 +2375,9 @@
           errc=-1
          endif
          if(errc.ne.0.and.VERBOSE) then
-          write(CONS_OUT,'("#ERROR(TAVP-WRK:tens_oprnd_t.upload): Error ",i11)') errc; flush(CONS_OUT)
+          write(CONS_OUT,'("#ERROR(TAVP-WRK:tens_oprnd_t.upload): Error ",i11)') errc
+          call this%print_it(dev_id=CONS_OUT)
+          flush(CONS_OUT)
          endif
          if(present(ierr)) ierr=errc
          return
@@ -2324,7 +2389,7 @@
 !as delivered (present). A successful synchronization on upload will
 !not change the status of the tensor operand (which is present).
 !An attempt to synchronize a non-existing communication will simply
-!be ignored with no error.
+!be ignored with a positive result and no error.
          implicit none
          logical:: res                               !out: TRUE on communication completion, FALSE otherwise
          class(tens_oprnd_t), intent(inout):: this   !inout: active tensor operand with an associated resource component
@@ -2345,12 +2410,18 @@
              if(descr%is_set(errc)) then
               if(errc.eq.0) then
                if(tw) then
-                call descr%wait_data(errc); if(errc.eq.0) then; res=.TRUE.; else; errc=-7; endif
+                call descr%wait_data(errc); if(errc.eq.0) then; res=.TRUE.; else; errc=-9; endif
                else
-                res=descr%test_data(errc); if(errc.ne.0) then; res=.FALSE.; errc=-6; endif
+                res=descr%test_data(errc); if(errc.ne.0) then; res=.FALSE.; errc=-8; endif
                endif
-               if(res.and.sts.eq.DS_OPRND_FETCHING) then
-                call this%cache_entry%set_up_to_date(.TRUE.)
+               if(res) then
+                if(sts.eq.DS_OPRND_FETCHING) then
+                 call this%cache_entry%set_up_to_date(.TRUE.) !marks the remote tensor present (locally)
+                elseif(sts.eq.DS_OPRND_UPLOADING) then
+                 call this%resource%zero_buffer(errc); if(errc.ne.0) errc=-7 !local buffer has been accumulated, thus must be reset to zero
+                else
+                 errc=-6 !trap
+                endif
                endif
               else
                errc=-5
@@ -5875,7 +5946,7 @@
 !------------------------------------------------------------------------
         subroutine TAVPWRKCommunicatorPrefetchInput(this,tens_instr,ierr)
 !Starts prefetching input arguments for a given tensor instruction
-!in case any of them is not present locally.
+!in case any of them is not present locally (not up to date).
          implicit none
          class(tavp_wrk_communicator_t), intent(inout):: this !inout: TAVP-WRK Communicator
          class(tens_instr_t), intent(inout):: tens_instr      !inout: active tensor instruction
@@ -5923,7 +5994,7 @@
            oprnd=>tens_instr%get_operand(n,ier)
            if(ier.eq.DSVP_SUCCESS) then
             res=res.and.oprnd%sync(ier,wt)
-            if(ier.ne.0.and.errc.eq.0) then; res=.FALSE.; errc=-3; endif
+            if(ier.ne.0) then; res=.FALSE.; if(errc.eq.0) errc=-3; endif
            else
             res=.FALSE.; if(errc.eq.0) errc=-2
            endif
@@ -5936,8 +6007,8 @@
         end function TAVPWRKCommunicatorSyncPrefetch
 !-----------------------------------------------------------------------
         subroutine TAVPWRKCommunicatorUploadOutput(this,tens_instr,ierr)
-!Starts uploading output arguments for a given tensor instruction.
-!If the original persistent output tensors are substituted with temporary ones,
+!Starts uploading output tensor operands for a given tensor instruction.
+!If the original persistent output tensors were substituted with temporary ones,
 !the persistent upload will be deferred until the corresponding locally
 !injected ACCUMULATE instruction will show up here.
          implicit none
@@ -5950,43 +6021,23 @@
 
          opcode=tens_instr%get_code(errc)
          if(errc.eq.DSVP_SUCCESS) then
-          if(opcode.ne.TAVP_INSTR_TENS_CREATE.and.opcode.ne.TAVP_INSTR_TENS_DESTROY) then
-           out_oprs(0:)=>tens_instr%get_output_operands(errc,n)
-           if(errc.eq.0) then
-            if(tens_instr%output_substituted(errc)) then
- !Upload for substituted output tensors:
-             if(errc.eq.0) then
-              if(opcode.eq.TAVP_INSTR_TENS_ACCUMULATE) then !only the explicit locally injected ACCUMULATE will generate remote uploads
-               oprnd=>tens_instr%get_operand(0,ier) !accumulator tensor
-               if(ier.eq.DSVP_SUCCESS) then
-                call oprnd%upload(ier); if(ier.ne.0.and.errc.eq.0) errc=-9 !accumulator tensor imports DDSS descriptor from its persistent tensor
-               else
-                errc=-8
-               endif
+          if(opcode.ge.TAVP_ISA_TENS_FIRST.and.opcode.le.TAVP_ISA_TENS_LAST) then
+           if(opcode.ne.TAVP_INSTR_TENS_CREATE.and.opcode.ne.TAVP_INSTR_TENS_DESTROY) then
+            out_oprs(0:)=>tens_instr%get_output_operands(errc,n)
+            if(errc.eq.0) then
+             do i=0,n-1
+              oprnd=>tens_instr%get_operand(out_oprs(i),ier)
+              if(ier.eq.DSVP_SUCCESS.and.associated(oprnd)) then
+               call oprnd%upload(ier); if(ier.ne.0.and.errc.eq.0) errc=-4
+              else
+               errc=-3; exit
               endif
-             else
-              errc=-7
-             endif
+              oprnd=>NULL()
+             enddo
             else
- !Upload for persistent tensors:
-             if(errc.eq.0) then
-              do i=0,n-1
-               oprnd=>tens_instr%get_operand(out_oprs(i),ier)
-               if(ier.eq.DSVP_SUCCESS) then
-                call oprnd%upload(ier); if(ier.ne.0.and.errc.eq.0) errc=-6
-               else
-                errc=-5; exit
-               endif
-              enddo
-             else
-              errc=-4
-             endif
+             errc=-2
             endif
-           else
-            errc=-3
            endif
-          else
-           errc=-2
           endif
          else
           errc=-1
@@ -5996,7 +6047,7 @@
         end subroutine TAVPWRKCommunicatorUploadOutput
 !------------------------------------------------------------------------------------
         function TAVPWRKCommunicatorSyncUpload(this,tens_instr,ierr,wait) result(res)
-!Synchronizes on the output arguments upload, either TEST or WAIT.
+!Synchronizes upload of the output arguments, either TEST or WAIT.
          logical:: res                                        !out: TRUE if synchronized (all output arguments)
          class(tavp_wrk_communicator_t), intent(inout):: this !inout: TAVP-WRK Communicator
          class(tens_instr_t), intent(inout):: tens_instr      !inout: active tensor instruction
@@ -6007,50 +6058,31 @@
          class(ds_oprnd_t), pointer:: oprnd
          logical:: wt
 
-         errc=0; res=.FALSE.
+         errc=0; res=.TRUE.
          wt=.TRUE.; if(present(wait)) wt=wait
          opcode=tens_instr%get_code(errc)
          if(errc.eq.DSVP_SUCCESS) then
-          if(opcode.ne.TAVP_INSTR_TENS_CREATE.and.opcode.ne.TAVP_INSTR_TENS_DESTROY) then
-           if(tens_instr%output_substituted(errc)) then !substituted (temporary) output operands
+          if(opcode.ge.TAVP_ISA_TENS_FIRST.and.opcode.le.TAVP_ISA_TENS_LAST) then
+           if(opcode.ne.TAVP_INSTR_TENS_CREATE.and.opcode.ne.TAVP_INSTR_TENS_DESTROY) then
+            out_oprs(0:)=>tens_instr%get_output_operands(errc,n)
             if(errc.eq.0) then
-             if(opcode.eq.TAVP_INSTR_TENS_ACCUMULATE) then
-              oprnd=>tens_instr%get_operand(0,ier)
-              if(ier.eq.DSVP_SUCCESS) then
+             do i=0,n-1
+              oprnd=>tens_instr%get_operand(out_oprs(i),ier)
+              if(ier.eq.DSVP_SUCCESS.and.associated(oprnd)) then
                res=res.and.oprnd%sync(ier,wt)
-               if(ier.ne.0.and.errc.eq.0) then; res=.FALSE.; errc=-9; endif
+               if(ier.ne.0) then; res=.FALSE.; if(errc.eq.0) errc=-4; endif
               else
-               errc=-8
+               res=.FALSE.; errc=-3; exit
               endif
-             endif
+              oprnd=>NULL()
+             enddo
             else
-             errc=-7
-            endif
-           else !persistent output operands
-            if(errc.eq.0) then
-             out_oprs(0:)=>tens_instr%get_output_operands(errc,n)
-             if(errc.eq.0) then
-              do i=0,n-1
-               oprnd=>tens_instr%get_operand(out_oprs(i),ier)
-               if(ier.eq.DSVP_SUCCESS) then
-                res=res.and.oprnd%sync(ier,wt)
-                if(ier.ne.0.and.errc.eq.0) then; res=.FALSE.; errc=-6; endif
-               else
-                res=.FALSE.; if(errc.eq.0) errc=-5
-               endif
-              enddo
-             else
-              errc=-4
-             endif
-            else
-             errc=-3
+             res=.FALSE.; errc=-2
             endif
            endif
-          else
-           errc=-2
           endif
          else
-          errc=-1
+          res=.FALSE.; errc=-1
          endif
          if(present(ierr)) ierr=errc
          return
@@ -6507,7 +6539,7 @@
          integer(INTD), intent(out), optional:: ierr        !out: error code
          integer(INTD), intent(in), optional:: dev_id       !in: flat device id
          integer(INTD):: errc
-
+!$OMP FLUSH
          errc=0
          !`Implement
          if(present(ierr)) ierr=errc
@@ -6522,7 +6554,7 @@
          integer(INTD), intent(out), optional:: ierr        !out: error code
          integer(INTD), intent(in), optional:: dev_id       !in: flat device id
          integer(INTD):: errc
-
+!$OMP FLUSH
          errc=0
          !`Implement
          if(present(ierr)) ierr=errc
@@ -6537,7 +6569,7 @@
          integer(INTD), intent(out), optional:: ierr        !out: error code
          integer(INTD), intent(in), optional:: dev_id       !in: flat device id
          integer(INTD):: errc
-
+!$OMP FLUSH
          errc=0
          !`Implement
          if(present(ierr)) ierr=errc
@@ -6553,8 +6585,9 @@
          integer(INTD), intent(in), optional:: dev_id       !in: flat device id
          integer(INTD):: errc
          class(ds_oprnd_t), pointer:: acc,tmp
+         class(tens_cache_entry_t), pointer:: cache_entry
          class(DataDescr_t), pointer:: descr
-
+!$OMP FLUSH
          acc=>tens_instr%get_operand(0,errc) !local accumulator tensor
          if(errc.eq.DSVP_SUCCESS) then
           tmp=>tens_instr%get_operand(1,errc) !local temporary tensor
@@ -6563,6 +6596,17 @@
            !if persistent tensor is not located, register it in the global space (like in TENS_CREATE), then
            !export the DDSS descriptor to the accumulator tensor (so it can later be uploaded)
            !`Accumulate the local tmp into the local acc tensor via TAL-SH (asynchronously), need to set up talsh_tens
+           select type(acc)
+           class is(tens_oprnd_t)
+            call acc%lock()
+            cache_entry=>acc%get_cache_entry(errc)
+            if(errc.eq.0) then
+             call cache_entry%set_up_to_date(.TRUE.) !mark the accumulator tensor as present
+            else
+             errc=-3
+            endif
+            call acc%unlock()
+           end select
           else
            errc=-2
           endif

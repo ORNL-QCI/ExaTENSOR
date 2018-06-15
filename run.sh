@@ -2,7 +2,7 @@
 #if multiple MPI processes reside on the same node. In this case
 #the environment variable QF_PROCS_PER_NODE must be set appropriately!
 
-export QF_PATH=/home/dima/Projects/QFORCE           #full path to ExaTensor (QForce)
+export QF_PATH=/home/div/src/ExaTensor              #full path to ExaTensor
 export QF_NUM_PROCS=8                               #number of MPI processes
 export QF_PROCS_PER_NODE=8                          #number of MPI processes per node
 export QF_CORES_PER_PROC=1                          #number of cores per MPI process
@@ -12,7 +12,7 @@ export QF_MICS_PER_PROCESS=0                        #number of Intel Xeon Phi's 
 export QF_AMDS_PER_PROCESS=0                        #number of AMD GPU's per process (optional)
 export MKL_NUM_THREADS=$OMP_NUM_THREADS             #number of Intel MKL threads per process (optional)
 export OMP_MAX_ACTIVE_LEVELS=3                      #max number of OpenMP nesting levels (at least 3)
-export OMP_THREAD_LIMIT=1024                        #max total number of OpenMP threads per process
+export OMP_THREAD_LIMIT=256                         #max total number of OpenMP threads per process
 export OMP_DYNAMIC=FALSE                            #no OpenMP dynamic threading
 export OMP_NESTED=TRUE                              #OpenMP nested parallelism is mandatory
 export OMP_WAIT_POLICY=PASSIVE                      #idle thread behavior (optional)
@@ -30,7 +30,7 @@ export OFFLOAD_REPORT=2                             #optional (MIC only)
 
 #CRAY specific:
 export CRAY_OMP_CHECK_AFFINITY=TRUE                 #CRAY: Shows thread placement
-export MPICH_NEMESIS_ASYNC_PROGRESS="SC"            #CRAY: Activates MPI asynchronous progress thread
+export MPICH_NEMESIS_ASYNC_PROGRESS="SC"            #CRAY: Activates MPI asynchronous progress thread {"SC","MC"}
 export MPICH_MAX_THREAD_SAFETY=multiple             #CRAY: Required for MPI asynchronous progress
 export MPICH_GNI_ASYNC_PROGRESS_TIMEOUT=0           #CRAY:
 export MPICH_GNI_MALLOC_FALLBACK=enabled            #CRAY:
@@ -45,8 +45,10 @@ export MPICH_RMA_OVER_DMAPP=1                       #CRAY: DMAPP backend for CRA
 rm *.tmp *.log *.out *.x
 cp $QF_PATH/Qforce.x ./
 #aprun -n $QF_NUM_PROCS -N $QF_PROCS_PER_NODE -d $QF_CORES_PER_PROC -cc 0,2,4,6,8,10,12,14,1,3,5,7,9,11,13 -r1 ./Qforce.x #> qforce.log
-#/usr/local/mpi/openmpi/3.0.0/bin/mpiexec -n $QF_NUM_PROCS -npernode $QF_PROCS_PER_NODE -oversubscribe ./Qforce.x #> qforce.log
-/usr/local/mpi/mpich/3.2.1/bin/mpiexec -n $QF_NUM_PROCS ./Qforce.x #> qforce.log
-#nvprof --log-file nv_profile.log --print-gpu-trace ./Qforce.x # &> qforce.log &
-#nvprof --log-file nv_profile.log --print-gpu-trace --metrics branch_efficiency,gld_efficiency,gst_efficiency ./Qforce.x # &> qforce.log &
+#mpiexec -n $QF_NUM_PROCS -npernode $QF_PROCS_PER_NODE ./Qforce.x #> qforce.log
+#/usr/local/mpi/mpich-3.2/bin/mpiexec -n $QF_NUM_PROCS ./Qforce.x #>& qforce.log
+/usr/local/mpi/openmpi-3.1.0/bin/mpiexec -n $QF_NUM_PROCS -npernode $QF_NUM_PROCS -oversubscribe ./Qforce.x #>& qforce.log
+#/usr/local/mpi/openmpi-3.1.0/bin/mpiexec -n $QF_NUM_PROCS -npernode $QF_NUM_PROCS -oversubscribe valgrind ./Qforce.x >& valgrind.log
+#nvprof --log-file nv_profile.log --print-gpu-trace ./Qforce.x #&> qforce.log &
+#nvprof --log-file nv_profile.log --print-gpu-trace --metrics branch_efficiency,gld_efficiency,gst_efficiency ./Qforce.x #&> qforce.log &
 #gprof ./Qforce.x gmon.out > profile.log
