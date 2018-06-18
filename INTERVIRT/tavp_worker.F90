@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/06/15
+!REVISION: 2018/06/18
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -136,8 +136,8 @@
           procedure, public:: set_tensor_layout=>TensEntryWrkSetTensorLayout   !sets the tensor layout, if not already set
           procedure, public:: acquire_resource=>TensEntryWrkAcquireResource    !acquires resource for the tensor cache entry, if not already acquired
           procedure, public:: release_resource=>TensEntryWrkReleaseResource    !releases resource for the tensor cache entry
-          procedure, public:: set_talsh_tens=>TensEntryWrkSetTalshTens         !sets up the TAL-SH tensor object
-          procedure, public:: get_talsh_tens=>TensEntryWrkGetTalshTens         !returns a pointer to the TAL-SH tensor
+          procedure, public:: set_talsh_tensor=>TensEntryWrkSetTalshTensor     !sets up the TAL-SH tensor object
+          procedure, public:: get_talsh_tensor=>TensEntryWrkGetTalshTensor     !returns a pointer to the TAL-SH tensor
           procedure, public:: print_it=>TensEntryWrkPrintIt                    !prints
           final:: tens_entry_wrk_dtor                                          !dtor
         end type tens_entry_wrk_t
@@ -160,7 +160,7 @@
           procedure, public:: set_cache_entry=>TensOprndSetCacheEntry    !sets the associated tensor cache entry (may be NULL)
           procedure, public:: get_resource=>TensOprndGetResource         !returns a non-owning pointer to the tensor resource
           procedure, public:: set_resource=>TensOprndSetResource         !sets the resource component if it has not been set via the constructor
-          procedure, public:: set_talsh_tens=>TensOprndSetTalshTens      !sets up the TAL-SH tensor object for further processing with TAL-SH
+          procedure, public:: set_talsh_tensor=>TensOprndSetTalshTensor  !sets up the TAL-SH tensor object for further processing with TAL-SH
           procedure, public:: set_tensor_layout=>TensOprndSetTensorLayout!sets the tensor layout, if not already set
           procedure, public:: register_read=>TensOprndRegisterRead       !registers a new read access on the tensor operand
           procedure, public:: unregister_read=>TensOprndUnregisterRead   !unregisters a read access on the tensor operand
@@ -210,6 +210,7 @@
           procedure, public:: dependency_free=>TensInstrDependencyFree       !returns TRUE if the tensor instruction is data dependency free
           procedure, public:: is_substitutable=>TensInstrIsSubstitutable     !returns TRUE if the tensor instruction allows output substitution (rename)
           procedure, public:: output_substituted=>TensInstrOutputSubstituted !returns TRUE if the output tensor(s) is(are) substituted with a temporary one(s)
+          procedure, public:: set_talsh_tensors=>TensInstrSetTalshTensors    !sets up the missing TAL-SH tensors for all tensor operands
           procedure, public:: print_it=>TensInstrPrintIt                     !prints
           procedure, private:: extract_cache_entries=>TensInstrExtractCacheEntries !returns an array of references to tensor cache entries used by the tensor operands for subsequent eviction
           final:: tens_instr_dtor                                            !dtor
@@ -403,8 +404,8 @@
         private TensEntryWrkSetTensorLayout
         private TensEntryWrkAcquireResource
         private TensEntryWrkReleaseResource
-        private TensEntryWrkSetTalshTens
-        private TensEntryWrkGetTalshTens
+        private TensEntryWrkSetTalshTensor
+        private TensEntryWrkGetTalshTensor
         private TensEntryWrkPrintIt
         public tens_entry_wrk_dtor
         public tens_entry_wrk_alloc
@@ -416,7 +417,7 @@
         private TensOprndSetCacheEntry
         private TensOprndGetResource
         private TensOprndSetResource
-        private TensOprndSetTalshTens
+        private TensOprndSetTalshTensor
         private TensOprndSetTensorLayout
         private TensOprndRegisterRead
         private TensOprndUnregisterRead
@@ -459,6 +460,7 @@
         private TensInstrDependencyFree
         private TensInstrIsSubstitutable
         private TensInstrOutputSubstituted
+        private TensInstrSetTalshTensors
         private TensInstrPrintIt
         private TensInstrExtractCacheEntries
         public tens_instr_dtor
@@ -1330,10 +1332,14 @@
 !------------------------------------------------------------------------
         subroutine TensEntryWrkReleaseResource(this,ierr,error_if_active)
 !Releases resource for the tensor cache entry if it has not been released yet.
+!If <error_if_active> is TRUE, an attempt to release resource for a persistent
+!tensor cache entry or a tensor cache entry currently in use or a tensor cache
+!entry currently associated with more than one tensor operand will result in error.
+!It will be ignored otherwise.
          implicit none
          class(tens_entry_wrk_t), intent(inout):: this   !inout: active tensor cache entry
          integer(INTD), intent(out), optional:: ierr     !out: error code
-         logical, intent(in), optional:: error_if_active !in: if TRUE, an error will be reported if the tensor cache entry is still referenced
+         logical, intent(in), optional:: error_if_active !in: if TRUE, an error will be reported if the tensor cache entry is persistent and/or still in use
          integer(INTD):: errc
          logical:: lockable
 
@@ -1343,33 +1349,37 @@
           if(errc.eq.0) then
            if((.not.this%is_persistent()).and.(this%get_use_count().eq.0).and.(this%get_ref_count().le.1)) then !at most one tensor operand can still be associated with this temporary cache entry
             if(.not.talsh_tensor_is_empty(this%talsh_tens)) then
-             errc=talsh_tensor_destruct(this%talsh_tens); if(errc.ne.TALSH_SUCCESS) errc=-5
+             errc=talsh_tensor_destruct(this%talsh_tens); if(errc.ne.TALSH_SUCCESS) errc=-6
             endif
             if(errc.eq.0) then
              call this%set_up_to_date(.FALSE.)
-             call this%resource%free_buffer(errc); if(errc.ne.0) errc=-4
+             call this%resource%free_buffer(errc); if(errc.ne.0) errc=-5
             endif
            else !active tensor cache entry
             if(present(error_if_active)) then
              if(error_if_active) then
               write(CONS_OUT,'("#ERROR(TAVP-WRK:tens_entry_wrk_t.release_resource)[",i6,'//&
-                   &'"]: Unwanted attempt to release resource for a multi-referenced tensor cache entry!")') impir
-              errc=-3
+                   &'"]: Unwanted attempt to release resource for an active tensor cache entry!")') impir
+              errc=-4
              endif
             endif
            endif
           else
-           errc=-2
+           errc=-3
           endif
          else
-          if(errc.ne.0) errc=-1
+          if(errc.eq.0) then
+           if(.not.talsh_tensor_is_empty(this%talsh_tens)) errc=-2 !trap: TAL-SH tensor is associated while the resource is empty
+          else
+           errc=-1
+          endif
          endif
          if(lockable) call this%unlock() !some tensor cache entries being destructed do not have locks
          if(present(ierr)) ierr=errc
          return
         end subroutine TensEntryWrkReleaseResource
-!-----------------------------------------------------
-        subroutine TensEntryWrkSetTalshTens(this,ierr)
+!-------------------------------------------------------
+        subroutine TensEntryWrkSetTalshTensor(this,ierr)
 !Sets up the TAL-SH tensor object for further processing with TAL-SH.
 !The local tensor body location is imported from the tensor resource.
          implicit none
@@ -1450,9 +1460,9 @@
          call this%unlock()
          if(present(ierr)) ierr=errc
          return
-        end subroutine TensEntryWrkSetTalshTens
-!------------------------------------------------------------------
-        function TensEntryWrkGetTalshTens(this,ierr) result(tens_p)
+        end subroutine TensEntryWrkSetTalshTensor
+!--------------------------------------------------------------------
+        function TensEntryWrkGetTalshTensor(this,ierr) result(tens_p)
 !Returns a pointer to the TAL-SH tensor.
          implicit none
          type(talsh_tens_t), pointer:: tens_p               !out: pointer to the TAL-SH tensor
@@ -1464,7 +1474,7 @@
          tens_p=>this%talsh_tens
          if(present(ierr)) ierr=errc
          return
-        end function TensEntryWrkGetTalshTens
+        end function TensEntryWrkGetTalshTensor
 !---------------------------------------------------------------
         subroutine TensEntryWrkPrintIt(this,ierr,dev_id,nspaces)
 !Prints the tensor cache entry.
@@ -1502,12 +1512,7 @@
          type(tens_entry_wrk_t):: this
          integer(INTD):: errc
 
-         if(.not.talsh_tensor_is_empty(this%talsh_tens)) then
-          errc=talsh_tensor_destruct(this%talsh_tens)
-          if(errc.ne.TALSH_SUCCESS)&
-          &call quit(errc,'#FATAL(tens_entry_wrk_t.dtor): Unable to properly destruct TAL-SH tensor object!')
-         endif
-         call this%release_resource(errc,error_if_active=.TRUE.) !release tensor cache entry resource
+         call this%release_resource(errc,error_if_active=.TRUE.) !release tensor cache entry resource and TAL-SH tensor adapter
          if(errc.ne.0)&
          &call quit(errc,'#FATAL(tens_entry_wrk_t.dtor): Unable to properly release tensor cache entry resource!')
          this%blocked=.FALSE.
@@ -1713,33 +1718,33 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensOprndSetResource
-!--------------------------------------------------
-        subroutine TensOprndSetTalshTens(this,ierr)
+!----------------------------------------------------
+        subroutine TensOprndSetTalshTensor(this,ierr)
 !Sets up the TAL-SH tensor object for further processing with TAL-SH.
 !The local tensor body location is imported from the tensor resource.
          implicit none
-         class(tens_oprnd_t), intent(inout), target:: this !inout: active tensor operand
-         integer(INTD), intent(out), optional:: ierr       !out: error code
+         class(tens_oprnd_t), intent(inout):: this   !inout: active tensor operand
+         integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
-!$OMP FLUSH
+
          errc=0
+         call this%lock()
          if(.not.associated(this%talsh_tens)) then
-          call this%lock()
           if(associated(this%cache_entry)) then
-           call this%cache_entry%set_talsh_tens(errc)
+           call this%cache_entry%set_talsh_tensor(errc)
            if(errc.eq.0) then
-            this%talsh_tens=>this%cache_entry%get_talsh_tens()
+            this%talsh_tens=>this%cache_entry%get_talsh_tensor()
            else
             errc=-2
            endif
           else
            errc=-1
           endif
-          call this%unlock()
          endif
+         call this%unlock()
          if(present(ierr)) ierr=errc
          return
-        end subroutine TensOprndSetTalshTens
+        end subroutine TensOprndSetTalshTensor
 !------------------------------------------------------------
         subroutine TensOprndSetTensorLayout(this,ierr,tensor)
 !Sets the tensor layout, if not already set, either the default one
@@ -3859,6 +3864,40 @@
          if(present(ierr)) ierr=errc
          return
         end function TensInstrOutputSubstituted
+!-----------------------------------------------------
+        subroutine TensInstrSetTalshTensors(this,ierr)
+!Sets up the missing TAL-SH tensors for all tensor operands.
+         implicit none
+         class(tens_instr_t), intent(inout):: this   !inout: active tensor instruction
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc,n,i
+         class(ds_oprnd_t), pointer:: oprnd
+
+         if(this%is_active(errc)) then
+          if(errc.eq.DSVP_SUCCESS) then
+           n=this%get_num_operands(errc)
+           if(errc.eq.DSVP_SUCCESS) then
+            do i=0,n-1
+             oprnd=>this%get_operand(i,errc); if(errc.ne.DSVP_SUCCESS) then; errc=-6; exit; endif
+             select type(oprnd)
+             class is(tens_oprnd_t)
+              call oprnd%set_talsh_tensor(errc); if(errc.ne.0) then; errc=-5; exit; endif
+             class default
+              errc=-4; exit
+             end select
+            enddo
+           else
+            errc=-3
+           endif
+          else
+           errc=-2
+          endif
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensInstrSetTalshTensors
 !------------------------------------------------------------
         subroutine TensInstrPrintIt(this,ierr,dev_id,nspaces)
          implicit none
@@ -4287,6 +4326,10 @@
               call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_RSC_UNAVAILABLE); jerr=-12; exit
              endif
              call unpack_builtin(instr_packet,jown,jerr) !tensor owner id (not used in TAVP-WRK)
+             if(jerr.ne.PACK_SUCCESS.and.VERBOSE) then !debug
+              write(CONS_OUT,'("#ERROR(TAVP-WRK:Decoder.decode.decode_instr_operands): Unpacking failed with error ",i11)') jerr
+              flush(CONS_OUT)
+             endif
              if(jerr.ne.PACK_SUCCESS) then; call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_BTC_BAD); jerr=-11; exit; endif
              call unpack_builtin(instr_packet,jread,jerr) !tensor read access count (ignored in TAVP-WRK)
              if(jerr.ne.PACK_SUCCESS) then; call ds_instr%set_status(DS_INSTR_RETIRED,jerr,TAVP_ERR_BTC_BAD); jerr=-10; exit; endif
@@ -4915,7 +4958,7 @@
            !ier=this%rls_list%reset(); ier=this%rls_list%scanp(action_f=tens_instr_print); ier=this%rls_list%reset_back() !print all instructions
            flush(CONS_OUT)
           endif
-  !Release resources and rename output tensor operand for retired instructions:
+  !Release resources and rename output tensor operands for retired instructions:
           ier=this%rls_list%reset(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then; errc=-18; exit wloop; endif
           rloop: do while(this%rls_list%get_status().eq.GFC_IT_ACTIVE)
            moved_fwd=.FALSE.

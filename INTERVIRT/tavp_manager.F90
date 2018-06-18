@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/06/05
+!REVISION: 2018/06/18
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -5429,7 +5429,7 @@
 !---------------------------------------------------------------
         function TAVPMNGMapInstr(this,child_id,ierr) result(pid)
 !Returns the parent instruction ID (>=0) for a subinstruction.
-!If the parent instruction is not found, returns -1.
+!If the parent instruction is not found, returns -1 (but no error).
          implicit none
          integer(INTL):: pid                         !out: parent instruction id (>=0 or -1 if not found)
          class(tavp_mng_t), intent(in):: this        !in: TAVP-MNG
@@ -5454,17 +5454,19 @@
               type is(integer(INTL))
                pid=uptr
               class default
-               errc=-5
+               errc=-6
               end select
              else
-              errc=-4
+              errc=-5
              endif
             else
-             if(errc.ne.GFC_NOT_FOUND) errc=-3
+             if(errc.eq.GFC_NOT_FOUND) then; errc=0; else; errc=-4; endif
             endif
-            ier=dit%release(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-2
+            ier=dit%release(); if(ier.ne.GFC_SUCCESS.and.errc.eq.0) errc=-3
            endif
 !$OMP END CRITICAL (TAVP_MNG_INSTR)
+          else
+           errc=-2
           endif
          else
           errc=-1
