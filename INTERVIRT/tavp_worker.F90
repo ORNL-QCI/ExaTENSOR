@@ -925,8 +925,8 @@
          if(present(ierr)) ierr=0
          return
         end function TensResrcIsEmpty
-!---------------------------------------------------------------------------
-        subroutine TensResrcAllocateBuffer(this,bytes,ierr,in_buffer,dev_id)
+!---------------------------------------------------------------------------------------
+        subroutine TensResrcAllocateBuffer(this,bytes,ierr,in_buffer,dev_id,set_to_zero)
 !Allocates local memory either from a system or from a custom buffer.
 !If the resource has already been allocated before, an error will be returned.
          implicit none
@@ -935,6 +935,7 @@
          integer(INTD), intent(out), optional:: ierr  !out: error code
          logical, intent(in), optional:: in_buffer    !in: if TRUE the memory will be allocated from a custom buffer, FALSE from the system
          integer(INTD), intent(in), optional:: dev_id !in: flat device id (defaults to Host)
+         logical, intent(in), optional:: set_to_zero  !in: if TRUE, the resource memory will be initialized to zero
          integer(INTD):: errc
          integer(C_INT):: in_buf,dev
          type(C_PTR):: addr
@@ -949,14 +950,19 @@
             this%bytes=bytes
             this%pinned=(in_buf.ne.NOPE)
             this%dev_id=dev
+            if(present(set_to_zero)) then
+             if(set_to_zero) then
+              call this%zero_buffer(errc); if(errc.ne.0) errc=-4
+             endif
+            endif
            else
-            errc=-1 !`Here TRY_LATER should be distinguished from fatal errors
+            errc=-3 !`Here TRY_LATER should be distinguished from fatal errors
            endif
           else
            errc=-2
           endif
          else
-          errc=-3
+          errc=-1
          endif
          if(present(ierr)) ierr=errc
          return
@@ -1035,6 +1041,7 @@
          integer(INTL):: bytes
          type(C_PTR):: addr
          integer(1), pointer:: i1(:)
+         integer(4), pointer:: i4(:)
 
          if(.not.this%is_empty(errc)) then
           if(errc.eq.0) then
@@ -1042,18 +1049,26 @@
            if(errc.eq.0) then
             bytes=this%get_mem_size(errc)
             if(errc.eq.0.and.bytes.gt.0) then
-             call c_f_pointer(addr,i1,(/bytes/))
-             i1(:)=0 !IEEE 754: All bits are 0 => floating-point +0
-             i1=>NULL()
+             if(mod(bytes,4_INTL).eq.0_INTL) then
+              call c_f_pointer(addr,i4,(/(bytes/4_INTL)/))
+              i4(:)=0 !`IEEE 754: All bits are 0 => floating-point +0
+              i4=>NULL()
+             else
+              call c_f_pointer(addr,i1,(/bytes/))
+              i1(:)=0 !`IEEE 754: All bits are 0 => floating-point +0
+              i1=>NULL()
+             endif
             else
-             errc=-3
+             errc=-4
             endif
            else
-            errc=-2
+            errc=-3
            endif
           else
-           errc=-1
+           errc=-2
           endif
+         else
+          if(errc.ne.0) errc=-1
          endif
          if(present(ierr)) ierr=errc
          return
@@ -2146,19 +2161,21 @@
          if(present(ierr)) ierr=errc
          return
         end function TensOprndGetCommStat
-!------------------------------------------------
-        subroutine TensOprndAcquireRsc(this,ierr)
+!---------------------------------------------------------
+        subroutine TensOprndAcquireRsc(this,ierr,init_rsc)
 !Acquires local resource for a tensor operand.
 !If the resource has already been acquired, does nothing.
 !If the resource component is not set, an error will be returned.
          implicit none
          class(tens_oprnd_t), intent(inout):: this   !inout: active tensor operand with an associated resource component
          integer(INTD), intent(out), optional:: ierr !out: error code, may return TRY_LATER
+         logical, intent(in), optional:: init_rsc    !in: if TRUE, the memory resource will be explicitly initialized to zero
          integer(INTD):: errc
          integer(INTL):: buf_size
          integer(INT_MPI):: host_proc_rank
          class(tens_body_t), pointer:: body
          class(tens_layout_t), pointer:: layout
+         logical:: init_zero
 
          if(this%is_active(errc)) then
           if(errc.eq.0) then
@@ -2173,37 +2190,43 @@
                 if(errc.eq.TEREC_SUCCESS) then
                  buf_size=layout%get_body_size(errc)
                  if(errc.eq.TEREC_SUCCESS.and.buf_size.gt.0_INTL) then
-                  call this%resource%allocate_buffer(buf_size,errc); if(errc.ne.0) errc=-1 !`may return TRY_LATER
-                  if(errc.eq.0.and.DEBUG.gt.0) then
-                   write(CONS_OUT,'("#DEBUG(TAVP-WRK:tens_oprnd_t:acquire_rsc)[",i6,"]: Memory acquired: Size (Bytes) = ",i13)')&
-                   &impir,buf_size
-                   flush(CONS_OUT)
+                  init_zero=.FALSE.; if(present(init_rsc)) init_zero=init_rsc
+                  call this%resource%allocate_buffer(buf_size,errc,set_to_zero=init_zero) !`may return TRY_LATER
+                  if(errc.eq.0) then
+                   if(associated(this%cache_entry).and.init_zero) call this%cache_entry%set_up_to_date(.TRUE.)
+                   if(DEBUG.gt.0) then
+                    write(CONS_OUT,'("#DEBUG(TAVP-WRK:tens_oprnd_t:acquire_rsc)[",i6,"]: Memory acquired: Size (Bytes) = ",i13)')&
+                    &impir,buf_size
+                    flush(CONS_OUT)
+                   endif
+                  else
+                   if(errc.ne.TRY_LATER) errc=-9
                   endif
                  else
-                  errc=-2
+                  errc=-8
                  endif
                 else
-                 errc=-3
+                 errc=-7
                 endif
                else
-                errc=-4
+                errc=-6
                endif
               else
                errc=-5
               endif
              else
-              errc=-6
+              errc=-4
              endif
             endif
            else
-            errc=-7
+            errc=-3
            endif
            call this%unlock()
           else
-           errc=-8
+           errc=-2
           endif
          else
-          errc=-9
+          errc=-1
          endif
          if(present(ierr)) ierr=errc
          return
@@ -5558,11 +5581,12 @@
          class(tens_instr_t), intent(inout):: tens_instr   !inout: active tensor instruction
          integer(INTD), intent(out), optional:: ierr       !out: error code
          logical, intent(in), optional:: omit_output       !in: if TRUE, the output operand(s) will be ommitted (defaults to FALSE)
-         integer(INTD):: errc,ier,n,l,i
+         integer(INTD):: errc,ier,n,l
          class(ds_oprnd_t), pointer:: oprnd
          class(tens_rcrsv_t), pointer:: tensor
+         class(tens_cache_entry_t), pointer:: cache_entry
          character(TEREC_MAX_TENS_NAME_LEN+8):: tname
-         logical:: no_output,op_output
+         logical:: no_output,op_output,temp
 
          no_output=.FALSE.; if(present(omit_output)) no_output=omit_output
          n=tens_instr%get_num_operands(errc)
@@ -5572,31 +5596,36 @@
            if(op_output.and.no_output) cycle aloop
            oprnd=>tens_instr%get_operand(n,ier)
            if(ier.eq.DSVP_SUCCESS) then
-            call oprnd%acquire_rsc(ier)
-            if(ier.eq.0) then
-             if(DEBUG.gt.0) then
-              select type(oprnd)
-              class is(tens_oprnd_t)
-               tensor=>oprnd%get_tensor(ier); call tensor%get_name(tname,l,ier)
-               write(CONS_OUT,'("#MSG(TAVP-WRK:Resourcer.acquire_resources)[",i6,"]: Acquired resource for tensor")',ADVANCE='NO')&
-               &impir; write(CONS_OUT,*) tname(1:l)
-               flush(CONS_OUT)
-              end select
-             endif
-            else
-             if(ier.eq.TRY_LATER) then
-              errc=ier
+            select type(oprnd)
+            class is(tens_oprnd_t)
+             temp=oprnd%is_temporary(ier)
+             if(ier.eq.0) then
+              call oprnd%acquire_rsc(ier,init_rsc=(op_output.and.temp))
+              if(ier.eq.0) then
+               if(DEBUG.gt.0) then
+                tensor=>oprnd%get_tensor(ier); call tensor%get_name(tname,l,ier)
+                write(CONS_OUT,'("#MSG(TAVP-WRK:Resourcer.acquire_resources)[",i6,"]: Acquired resource for tensor")',ADVANCE='NO')&
+                &impir; write(CONS_OUT,*) tname(1:l)
+                write(CONS_OUT,'("Presence = ",l1)') oprnd%is_present() !debug
+                flush(CONS_OUT)
+               endif
+              else
+               if(ier.eq.TRY_LATER) then
+                errc=ier
+               else
+                tensor=>oprnd%get_tensor(); call tensor%get_name(tname,l)
+                write(CONS_OUT,'("#ERROR(TAVP-WRK:Resourcer.acquire_resources)[",i6,"]: Resource acquisition error ",i11,'//&
+                &'" for tensor")',ADVANCE='NO') impir,ier; write(CONS_OUT,*) tname(1:l)
+                flush(CONS_OUT)
+                errc=-5; exit aloop
+               endif
+              endif
              else
-              select type(oprnd)
-              class is(tens_oprnd_t)
-               tensor=>oprnd%get_tensor(i); call tensor%get_name(tname,l,i)
-               write(CONS_OUT,'("#ERROR(TAVP-WRK:Resourcer.acquire_resources)[",i6,"]: Resource acquisition error ",i11,'//&
-               &'" for tensor")',ADVANCE='NO') impir,ier; write(CONS_OUT,*) tname(1:l)
-               flush(CONS_OUT)
-              end select
-              errc=-3; exit aloop
+              errc=-4; exit aloop
              endif
-            endif
+            class default
+             errc=-3; exit aloop
+            end select
            else
             errc=-2; exit aloop
            endif

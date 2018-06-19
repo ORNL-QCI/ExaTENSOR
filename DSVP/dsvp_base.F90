@@ -1,6 +1,6 @@
 !Domain-specific virtual processor (DSVP): Abstract base module.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/06/01
+!REVISION: 2018/06/18
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -122,7 +122,7 @@
           procedure(ds_oprnd_query_i), deferred, public:: is_active    !returns TRUE if the domain-specific operand is active (defined)
           procedure(ds_oprnd_locd_i), deferred, public:: is_located    !checks whether the domain-specific operand has been located (its location is known), plus additional attributes
           procedure(ds_oprnd_comm_i), deferred, public:: get_comm_stat !returns the current communication status: {DS_OPRND_NO_COMM,DS_OPRND_FETCHING,DS_OPRND_UPLOADING}
-          procedure(ds_oprnd_self_i), deferred, public:: acquire_rsc   !explicitly acquires local resource for the domain-specific operand
+          procedure(ds_oprnd_acqr_i), deferred, public:: acquire_rsc   !explicitly acquires local resource for the domain-specific operand
           procedure(ds_oprnd_self_i), deferred, public:: prefetch      !starts prefetching a remote domain-specific operand (acquires local resource!)
           procedure(ds_oprnd_self_i), deferred, public:: upload        !starts uploading the domain-specific operand to its remote location
           procedure(ds_oprnd_sync_i), deferred, public:: sync          !synchronizes the currently pending communication on the domain-specific operand (either test or wait)
@@ -320,6 +320,14 @@
           class(ds_oprnd_t), intent(inout):: this     !in: domain-specific operand
           integer(INTD), intent(out), optional:: ierr !out: error code
          end function ds_oprnd_comm_i
+   !acquire_rsc:
+         subroutine ds_oprnd_acqr_i(this,ierr,init_rsc)
+          import:: ds_oprnd_t,INTD
+          implicit none
+          class(ds_oprnd_t), intent(inout):: this     !inout: domain-specific operand
+          integer(INTD), intent(out), optional:: ierr !out: error code
+          logical, intent(in), optional:: init_rsc    !in: optional resource initialization flag
+         end subroutine ds_oprnd_acqr_i
    !self:
          subroutine ds_oprnd_self_i(this,ierr)
           import:: ds_oprnd_t,INTD
@@ -433,6 +441,7 @@
         public ds_oprnd_query_i
         public ds_oprnd_locd_i
         public ds_oprnd_comm_i
+        public ds_oprnd_acqr_i
         public ds_oprnd_self_i
         public ds_oprnd_sync_i
         public ds_oprnd_print_i

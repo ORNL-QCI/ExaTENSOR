@@ -1116,12 +1116,13 @@
          if(present(ierr)) ierr=errc
          return
         end function TensOprndGetCommStat
-!------------------------------------------------
-        subroutine TensOprndAcquireRsc(this,ierr)
+!---------------------------------------------------------
+        subroutine TensOprndAcquireRsc(this,ierr,init_rsc)
 !Acquires local resources for the remote tensor operand.
          implicit none
          class(tens_oprnd_t), intent(inout):: this   !inout: active tensor operand
          integer(INTD), intent(out), optional:: ierr !out: error code
+         logical, intent(in), optional:: init_rsc    !in: if TRUE, the acquired resource will be initialized (not used)
          integer(INTD):: errc
 
          if(this%is_active(errc)) then
