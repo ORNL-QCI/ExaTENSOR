@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/06/18
+!REVISION: 2018/06/19
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -1512,8 +1512,9 @@
          if(errc.eq.0) call tensor%print_it(errc,devo,nsp+1)
  !Counters:
          do j=1,nsp+1; write(devo,'(" ")',ADVANCE='NO'); enddo
-         write(devo,'("Persist = ",l1,". Counters: Ref = ",i5,"; Use = ",i2,"; RW = ",i2,1x,i2)')&
-         &this%is_persistent(),this%get_ref_count(),this%get_use_count(),this%get_rw_counter(),this%get_rw_counter(defer=.TRUE.)
+         write(devo,'("Persist = ",l1,". Counters: Ref = ",i5,"; Use = ",i2,"; RW/DRW = ",i3,1x,i3,"; Block = ",l1)')&
+         &this%is_persistent(),this%get_ref_count(),this%get_use_count(),this%get_rw_counter(),this%get_rw_counter(defer=.TRUE.),&
+         &this%is_blocked()
          do j=1,nsp; write(devo,'(" ")',ADVANCE='NO'); enddo
          write(devo,'("}")')
          call this%unlock()
@@ -1676,12 +1677,16 @@
             if(errc.eq.0.and.associated(this%tensor,tensor)) then !cache entry must correspond to the same tensor
              call cache_entry%incr_ref_count()
              this%cache_entry=>cache_entry
+             this%resource=>this%cache_entry%get_resource() !may be empty resource
+             if(associated(this%resource)) call this%resource%incr_ref_count()
             else
              errc=-3
             endif
             call cache_entry%unlock()
            else
             this%cache_entry=>NULL()
+            this%resource=>NULL()
+            this%talsh_tens=>NULL()
            endif
           else
            errc=-2
@@ -2678,8 +2683,14 @@
          do j=1,nsp; write(devo,'(" ")',ADVANCE='NO'); enddo
          write(devo,'("TENSOR OPERAND{")')
          do j=1,nsp+1; write(devo,'(" ")',ADVANCE='NO'); enddo
-         write(devo,'("Active = ",l1,"; Present = ",l1,"; Communication = ",i2)')&
-         &this%is_active(),this%is_present(),this%get_comm_stat()
+         if(associated(this%cache_entry)) then
+          write(devo,'("Active = ",l1,"; Present = ",l1,"; Communication = ",i2,"; RW/DRW = ",i3,1x,i3,"; Block = ",l1)')&
+          &this%is_active(),this%is_present(),this%get_comm_stat(),&
+          &this%cache_entry%get_rw_counter(),this%cache_entry%get_rw_counter(defer=.TRUE.),this%cache_entry%is_blocked()
+         else
+          write(devo,'("Active = ",l1,"; Present = ",l1,"; Communication = ",i2)')&
+          &this%is_active(),this%is_present(),this%get_comm_stat()
+         endif
          if(associated(this%tensor)) then
           call this%tensor%print_it(errc,devo,nsp+1); if(errc.ne.TEREC_SUCCESS) errc=-2
          else
@@ -3931,10 +3942,11 @@
          integer(INTD):: errc,devo,nsp,i,n
          class(ds_instr_ctrl_t), pointer:: ctrl
          class(ds_oprnd_t), pointer:: oprnd
-!$OMP FLUSH
+
          errc=0
          devo=6; if(present(dev_id)) devo=dev_id
          nsp=0; if(present(nspaces)) nsp=nspaces
+!$OMP CRITICAL (TAVP_PRINT)
          do i=1,nsp; write(devo,'(" ")',ADVANCE='NO'); enddo
          write(devo,'("TENSOR INSTRUCTION{")')
          do i=1,nsp+1; write(devo,'(" ")',ADVANCE='NO'); enddo
@@ -3955,6 +3967,7 @@
          do i=1,nsp; write(devo,'(" ")',ADVANCE='NO'); enddo
          write(devo,'("}")')
          flush(devo)
+!$OMP END CRITICAL (TAVP_PRINT)
          if(present(ierr)) ierr=errc
          return
         end subroutine TensInstrPrintIt

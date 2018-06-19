@@ -1,6 +1,6 @@
 !Basic object packing/unpacking primitives.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/06/05
+!REVISION: 2018/06/19
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -943,10 +943,19 @@
              bg=this%pack_offset(pkt_num); ln=this%pack_len(pkt_num)
              buf_p=>this%buffer(bg:bg+ln-1_INTL)
              call pkt%construct(buf_p,errc,ln)
-             if(errc.ne.PACK_SUCCESS) call pkt%clean()
+             if(errc.ne.PACK_SUCCESS) then
+              if(VERBOSE) then
+               write(CONS_OUT,'("#ERROR(pack_env_t.extract_packet): Packet constructor error ",i11)') errc
+               flush(CONS_OUT)
+              endif
+              call pkt%clean()
+             endif
             else
-             if(VERBOSE) write(CONS_OUT,'("#ERROR(pack_env_t.extract_packet): Invalid packet number: ",i9,1x,i9)')&
-                         &pkt_num,this%get_num_packets()
+             if(VERBOSE) then
+              write(CONS_OUT,'("#ERROR(pack_env_t.extract_packet): Invalid packet number: ",i9,1x,i9)')&
+              &pkt_num,this%get_num_packets()
+              flush(CONS_OUT)
+             endif
              errc=PACK_INVALID_ARGS
             endif
            endif

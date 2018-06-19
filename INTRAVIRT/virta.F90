@@ -8,7 +8,7 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/06/15
+!REVISION: 2018/06/19
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -234,7 +234,7 @@
          integer(INTD), private:: read_write_count=0            !read/write count: Number of issued tensor instructions which refer to this tensor cache entry as input (positive) or output (negative)
          integer(INTD), private:: read_write_def_count=0        !deferred read/write count: Number of deferred tensor instructions which refer to this tensor cache entry as input (positive) or output (negative)
          integer(INTD), private:: temp_count=0                  !temporary count: Number of temporary tensors stemmed from this tensor cache entry (used for output rename)
-         logical, private:: up_to_date=.FALSE.                  !up-to-date flag
+         logical, private:: up_to_date=.FALSE.                  !up-to-date flag (TRUE means the tensor is defined, that is, neither undefined nor being updated)
          logical, private:: persistent=.FALSE.                  !persistency flag (persistent cache entries can only be evicted via an explicit TENS_DESTROY)
 #ifndef NO_OMP
          integer(omp_nest_lock_kind), private:: entry_lock=-1   !tensor cache entry lock

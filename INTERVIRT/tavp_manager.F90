@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Manager (TAVP-MNG) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/06/18
+!REVISION: 2018/06/19
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -635,7 +635,7 @@
          write(devo,'("Metadata owner TAVP-MNG id = ",i6)') this%owner_id
  !Counters:
          do j=1,nsp+1; write(devo,'(" ")',ADVANCE='NO'); enddo
-         write(devo,'("Persist = ",l1,". Counters: Ref = ",i5,"; Use = ",i2,"; RW = ",i2,1x,i2)')&
+         write(devo,'("Persist = ",l1,". Counters: Ref = ",i5,"; Use = ",i2,"; RW/DRW = ",i3,1x,i3)')&
          &this%is_persistent(),this%get_ref_count(),this%get_use_count(),this%get_rw_counter(),this%get_rw_counter(defer=.TRUE.)
          do j=1,nsp; write(devo,'(" ")',ADVANCE='NO'); enddo
          write(devo,'("}")')
@@ -794,12 +794,13 @@
             if(errc.eq.0.and.associated(this%tensor,tensor)) then !cache entry corresponds to the same tensor
              call cache_entry%incr_ref_count()
              this%cache_entry=>cache_entry
+             this%owner_id=this%cache_entry%get_owner_id()
             else
              errc=-3
             endif
             call cache_entry%unlock()
            else
-            this%cache_entry=>NULL()
+            this%cache_entry=>NULL() !`owner_id is kept unchanged in the tensor operand
            endif
           else
            errc=-2
@@ -1908,10 +1909,11 @@
          integer(INTD):: errc,devo,nsp,i,n
          class(ds_instr_ctrl_t), pointer:: ctrl
          class(ds_oprnd_t), pointer:: oprnd
-!$OMP FLUSH
+
          errc=0
          devo=6; if(present(dev_id)) devo=dev_id
          nsp=0; if(present(nspaces)) nsp=nspaces
+!$OMP CRITICAL (TAVP_PRINT)
          do i=1,nsp; write(devo,'(" ")',ADVANCE='NO'); enddo
          write(devo,'("TENSOR INSTRUCTION{")')
          do i=1,nsp+1; write(devo,'(" ")',ADVANCE='NO'); enddo
@@ -1932,6 +1934,7 @@
          do i=1,nsp; write(devo,'(" ")',ADVANCE='NO'); enddo
          write(devo,'("}")')
          flush(devo)
+!$OMP END CRITICAL (TAVP_PRINT)
          if(present(ierr)) ierr=errc
          return
         end subroutine TensInstrPrintIt
