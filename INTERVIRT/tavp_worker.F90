@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/06/19
+!REVISION: 2018/06/21
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -3602,7 +3602,7 @@
 !Updates the tensor access counters for each tensor operand when the tensor instruction is issued.
 !If <from_deferred>=TRUE, the tensor instruction is being issued from the deferred queue.
          implicit none
-         logical:: passed                              !out: TRUE if there was no data dependency, FALSE otherwise
+         logical:: passed                              !out: TRUE if there was no data dependency, FALSE otherwise (not issued)
          class(tens_instr_t), intent(inout):: this     !inout: active tensor instruction
          integer(INTD), intent(out), optional:: ierr   !out: error code
          logical, intent(in), optional:: from_deferred !in: if TRUE, the tensor instruction is being issued from the deferred queue
@@ -3665,7 +3665,7 @@
          implicit none
          class(tens_instr_t), intent(inout):: this   !inout: active tensor instruction
          integer(INTD), intent(out), optional:: ierr !out: error code
-         integer(INTD):: errc,i,n
+         integer(INTD):: errc,i,n,dr,dw
          class(ds_oprnd_t), pointer:: oprnd
 
          if(this%is_active(errc)) then
@@ -3679,10 +3679,19 @@
                select type(oprnd)
                class is(tens_oprnd_t)
                 call oprnd%lock()
+                dr=oprnd%get_read_count(defer=.TRUE.); dw=oprnd%get_write_count(defer=.TRUE.)
                 if(this%operand_is_output(i,errc)) then !output tensor operand
-                 call oprnd%register_write(defer=.TRUE.) !register deferred write
+                 if(dr.eq.0.and.dw.eq.0) then
+                  call oprnd%register_write(defer=.TRUE.) !register deferred write
+                 else
+                  errc=-8
+                 endif
                 else !input tensor operand
-                 call oprnd%register_read(defer=.TRUE.) !register deferred read
+                 if(dw.eq.0) then
+                  call oprnd%register_read(defer=.TRUE.) !register deferred read
+                 else
+                  errc=-7
+                 endif
                 endif
                 call oprnd%unlock()
                 if(errc.ne.0) then; errc=-6; exit; endif
@@ -4793,7 +4802,7 @@
               call instr%set_status(DS_INSTR_INPUT_WAIT,ier)
               if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-69; exit wloop; endif
               if(DEBUG.gt.0) then
-               write(CONS_OUT,'("#DEBUG(TAVP-WRK:Resourcer): Resources acquired for tensor instruction:")')
+               write(CONS_OUT,'("#DEBUG(TAVP-WRK:Resourcer): Resources acquired for tensor instruction (deferred):")')
                call instr%print_it(dev_id=CONS_OUT)
                flush(CONS_OUT)
               endif
@@ -4813,6 +4822,12 @@
               if(errc.eq.0) then; errc=-66; exit wloop; endif
              endif
             else
+             if(DEBUG.gt.0) then
+              write(CONS_OUT,'("#DEBUG(TAVP-WRK:Resourcer): Tensor instruction kept in deferred queue due to dependency: '//&
+              &'Blocked = ",l1)') blocked
+              call instr%print_it(dev_id=CONS_OUT)
+              flush(CONS_OUT)
+             endif
              ier=this%def_list%next()
             endif
            else
@@ -4876,18 +4891,22 @@
               dependent=.not.instr%dependency_free(ier,blocked); if(ier.ne.0.and.errc.eq.0) then; errc=-44; exit wloop; endif
    !Update data dependencies:
               if(dependent) then !at least one tensor operand has a simple data dependency (read_count > 0 for WRITE or write_count > 0 for READ)
-               if(DEBUG.gt.0) then
-                write(CONS_OUT,'("#DEBUG(TAVP-WRK:Resourcer): Tensor instruction deferred due to data dependency '//&
-                &'(blocked = ",l1,")")') blocked
-                call instr%print_it(dev_id=CONS_OUT)
-                flush(CONS_OUT)
-               endif
                if(blocked) then !at least one tensor operand has blocking data dependency (read_count > 0 and write_count > 0)
                 call instr%set_status(DS_INSTR_NEW,ier); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-43; exit wloop; endif
+                if(DEBUG.gt.1) then
+                 write(CONS_OUT,'("#DEBUG(TAVP-WRK:Resourcer): Tensor instruction blocked due to data dependency:")')
+                 call instr%print_it(dev_id=CONS_OUT)
+                 flush(CONS_OUT)
+                endif
                 ier=this%iqueue%next()
                 if(ier.ne.GFC_SUCCESS.and.ier.ne.GFC_NO_MOVE.and.errc.eq.0) then; errc=-42; exit wloop; endif
                else !no blocking data dependencies: issue into the deferred instruction list
                 call instr%mark_deferred(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-41; exit wloop; endif
+                if(DEBUG.gt.0) then
+                 write(CONS_OUT,'("#DEBUG(TAVP-WRK:Resourcer): Tensor instruction deferred due to data dependency:")')
+                 call instr%print_it(dev_id=CONS_OUT)
+                 flush(CONS_OUT)
+                endif
                 ier=this%iqueue%move_elem(this%def_list)
                 if(ier.ne.GFC_SUCCESS.and.errc.eq.0) then
                  write(CONS_OUT,'("#ERROR(TAVP-WRK:Resourcer): Unable to move a dependent instruction into deferred queue: '//&
@@ -4917,7 +4936,7 @@
                elseif(ier.eq.TRY_LATER) then !required resources are not currently available: issue into the deferred list
                 call instr%mark_deferred(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-36; exit wloop; endif
                 if(DEBUG.gt.0) then
-                 write(CONS_OUT,'("#DEBUG(TAVP-WRK:Resourcer): Tensor instruction deferred due to lack of resources")')
+                 write(CONS_OUT,'("#DEBUG(TAVP-WRK:Resourcer): Tensor instruction deferred due to lack of resources:")')
                  call instr%print_it(dev_id=CONS_OUT)
                  flush(CONS_OUT)
                 endif
@@ -5006,7 +5025,15 @@
            if(sts.ne.DS_INSTR_UPLOADED.and.errc.eq.0) then; errc=-13; exit wloop; endif !trap
            if(opcode.ge.TAVP_ISA_TENS_FIRST.and.opcode.le.TAVP_ISA_TENS_LAST) then !tensor instruction
             call instr%mark_completed(ier); if(ier.ne.0.and.errc.eq.0) then; errc=-12; exit wloop; endif
-            call this%release_resources(instr,ier); if(ier.ne.0.and.errc.eq.0) then; errc=-11; exit wloop; endif
+            call this%release_resources(instr,ier)
+            if(ier.ne.0.and.errc.eq.0) then
+             if(VERBOSE) then
+              write(CONS_OUT,'("#ERROR(TAVP-WRK:Resourcer): Failed to release resources for tensor instruction:")')
+              call instr%print_it(dev_id=CONS_OUT)
+              flush(CONS_OUT)
+             endif
+             errc=-11; exit wloop
+            endif
             call instr%set_status(DS_INSTR_RETIRED,ier,errcode)
             if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-10; exit wloop; endif
             if(DEBUG.gt.0) then
@@ -5882,7 +5909,14 @@
            sts=tens_instr%get_status(ier,errcode); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-14; exit wloop; endif
            if(sts.eq.DS_INSTR_INPUT_WAIT) then !fetch
             delivered=this%sync_prefetch(tens_instr,ier,wait=COMMUNICATOR_BLOCKING)
-            if(ier.ne.0.and.errc.eq.0) then; errc=-13; exit wloop; endif
+            if(ier.ne.0.and.errc.eq.0) then
+             if(VERBOSE) then
+              write(CONS_OUT,'("#ERROR(TAVP-WRK:Communicator): Failed to sync input prefetch for tensor instruction:")')
+              call tens_instr%print_it(dev_id=CONS_OUT)
+              flush(CONS_OUT)
+             endif
+             errc=-13; exit wloop
+            endif
             if(delivered) then
              if(DEBUG.gt.0) then
               write(CONS_OUT,'("#DEBUG(TAVP-WRK:Communicator): Synced input prefetch for tensor instruction:")')
@@ -5898,7 +5932,14 @@
             endif
            elseif(sts.eq.DS_INSTR_COMPLETED) then !upload
             delivered=this%sync_upload(tens_instr,ier,wait=COMMUNICATOR_BLOCKING)
-            if(ier.ne.0.and.errc.eq.0) then; errc=-10; exit wloop; endif
+            if(ier.ne.0.and.errc.eq.0) then
+             if(VERBOSE) then
+              write(CONS_OUT,'("#ERROR(TAVP-WRK:Communicator): Failed to sync output upload for tensor instruction:")')
+              call tens_instr%print_it(dev_id=CONS_OUT)
+              flush(CONS_OUT)
+             endif
+             errc=-10; exit wloop
+            endif
             if(delivered) then
              if(DEBUG.gt.0) then
               write(CONS_OUT,'("#DEBUG(TAVP-WRK:Communicator): Synced output upload for tensor instruction:")')
@@ -6318,7 +6359,15 @@
            tens_instr=>NULL(); select type(uptr); class is(tens_instr_t); tens_instr=>uptr; end select
            if((.not.associated(tens_instr)).and.errc.eq.0) then; errc=-8; exit wloop; endif !trap
            sts=tens_instr%get_status(ier,errcode); if(ier.ne.DSVP_SUCCESS.and.errc.eq.0) then; errc=-7; exit wloop; endif
-           completed=this%sync_instr(tens_instr,ier); if(ier.ne.0.and.errc.eq.0) then; errc=-6; exit wloop; endif
+           completed=this%sync_instr(tens_instr,ier)
+           if(ier.ne.0.and.errc.eq.0) then
+            if(VERBOSE) then
+             write(CONS_OUT,'("#ERROR(TAVP-WRK:Dispatcher): Failed to complete tensor instruction:")')
+             call tens_instr%print_it(dev_id=CONS_OUT)
+             flush(CONS_OUT)
+            endif
+            errc=-6; exit wloop
+           endif
            if(completed) then
             num_outstanding=num_outstanding-1
             call tens_instr%set_status(DS_INSTR_COMPLETED,ier)

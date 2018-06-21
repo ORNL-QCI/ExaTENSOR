@@ -9,6 +9,9 @@ grep "Tensor instruction issued from main queue" ./qforce.*.log | wc
 echo "Issued to Communicator after deferrence:"
 grep "Tensor instruction issued from deferred queue" ./qforce.*.log | wc
 
+echo "Unissued from deferred queue due to persisting dependency:"
+grep "Tensor instruction kept in deferred queue due to dependency:" ./qforce.*.log | wc
+
 echo "Input prefetch initiated:"
 grep "Initiated input prefetch for tensor instruction" ./qforce.*.log | wc
 
