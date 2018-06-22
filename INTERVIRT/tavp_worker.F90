@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/06/21
+!REVISION: 2018/06/22
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -138,6 +138,7 @@
           procedure, public:: release_resource=>TensEntryWrkReleaseResource    !releases resource for the tensor cache entry
           procedure, public:: set_talsh_tensor=>TensEntryWrkSetTalshTensor     !sets up the TAL-SH tensor object
           procedure, public:: get_talsh_tensor=>TensEntryWrkGetTalshTensor     !returns a pointer to the TAL-SH tensor
+          procedure, public:: release_talsh_tensor=>TensEntryWrkReleaseTalshTensor !releases the TAL-SH tensor object
           procedure, public:: print_it=>TensEntryWrkPrintIt                    !prints
           final:: tens_entry_wrk_dtor                                          !dtor
         end type tens_entry_wrk_t
@@ -162,6 +163,8 @@
           procedure, public:: set_resource=>TensOprndSetResource         !sets the resource component if it has not been set via the constructor
           procedure, public:: set_talsh_tensor=>TensOprndSetTalshTensor  !sets up the TAL-SH tensor object for further processing with TAL-SH
           procedure, public:: set_tensor_layout=>TensOprndSetTensorLayout!sets the tensor layout, if not already set
+          procedure, public:: set_block=>TensOprndSetBlock               !sets a block on the underlying tensor cache entry
+          procedure, public:: release_block=>TensOprndReleaseBlock       !releases the block from the underlying tensor cache entry
           procedure, public:: register_read=>TensOprndRegisterRead       !registers a new read access on the tensor operand
           procedure, public:: unregister_read=>TensOprndUnregisterRead   !unregisters a read access on the tensor operand
           procedure, public:: get_read_count=>TensOprndGetReadCount      !returns the current read access count on the tensor operand
@@ -204,9 +207,10 @@
           procedure, public:: lay_output_operands=>TensInstrLayOutputOperands!sets up storage layout for non-existing output tensor operands
           procedure, public:: get_flops=>TensInstrGetFlops                   !returns an estimate of the total number of required Flops (mul/add) and memory Words
           procedure, public:: get_operation=>TensInstrGetOperation           !returns back the encapsulated tensor operation
-          procedure, public:: mark_issued=>TensInstrMarkIssued               !updates the tensor access counters for all tensor instruction operands due to the instruction issue
-          procedure, public:: mark_deferred=>TensInstrMarkDeferred           !updates the tensor access counters for all tensor instruction operands due to the instruction deferrence
-          procedure, public:: mark_completed=>TensInstrMarkCompleted         !updates the tensor access counters for all tensor instruction operands due to the instruction completion
+          procedure, public:: mark_issued=>TensInstrMarkIssued               !updates the tensor access counters for all tensor instruction operands due to instruction issue
+          procedure, public:: mark_deferred=>TensInstrMarkDeferred           !updates the tensor access counters for all tensor instruction operands due to instruction deferrence
+          procedure, public:: mark_blocked=>TensInstrMarkBlocked             !updates the tensor access counters for all tensor instruction operands due to instruction blocking (postponing)
+          procedure, public:: mark_completed=>TensInstrMarkCompleted         !updates the tensor access counters for all tensor instruction operands due to instruction completion
           procedure, public:: dependency_free=>TensInstrDependencyFree       !returns TRUE if the tensor instruction is data dependency free
           procedure, public:: is_substitutable=>TensInstrIsSubstitutable     !returns TRUE if the tensor instruction allows output substitution (rename)
           procedure, public:: output_substituted=>TensInstrOutputSubstituted !returns TRUE if the output tensor(s) is(are) substituted with a temporary one(s)
@@ -406,6 +410,7 @@
         private TensEntryWrkReleaseResource
         private TensEntryWrkSetTalshTensor
         private TensEntryWrkGetTalshTensor
+        private TensEntryWrkReleaseTalshTensor
         private TensEntryWrkPrintIt
         public tens_entry_wrk_dtor
         public tens_entry_wrk_alloc
@@ -419,6 +424,8 @@
         private TensOprndSetResource
         private TensOprndSetTalshTensor
         private TensOprndSetTensorLayout
+        private TensOprndSetBlock
+        private TensOprndReleaseBlock
         private TensOprndRegisterRead
         private TensOprndUnregisterRead
         private TensOprndGetReadCount
@@ -456,6 +463,7 @@
         private TensInstrGetOperation
         private TensInstrMarkIssued
         private TensInstrMarkDeferred
+        private TensInstrMarkBlocked
         private TensInstrMarkCompleted
         private TensInstrDependencyFree
         private TensInstrIsSubstitutable
@@ -1363,18 +1371,21 @@
          if(.not.this%resource%is_empty(errc)) then
           if(errc.eq.0) then
            if((.not.this%is_persistent()).and.(this%get_use_count().eq.0).and.(this%get_ref_count().le.1)) then !at most one tensor operand can still be associated with this temporary cache entry
-            if(.not.talsh_tensor_is_empty(this%talsh_tens)) then
-             errc=talsh_tensor_destruct(this%talsh_tens); if(errc.ne.TALSH_SUCCESS) errc=-6
-            endif
+            call this%release_talsh_tensor(errc)
             if(errc.eq.0) then
              call this%set_up_to_date(.FALSE.)
-             call this%resource%free_buffer(errc); if(errc.ne.0) errc=-5
+             call this%resource%free_buffer(errc); if(errc.ne.0) errc=-6
+            else
+             errc=-5
             endif
            else !active tensor cache entry
             if(present(error_if_active)) then
              if(error_if_active) then
               write(CONS_OUT,'("#ERROR(TAVP-WRK:tens_entry_wrk_t.release_resource)[",i6,'//&
-                   &'"]: Unwanted attempt to release resource for an active tensor cache entry!")') impir
+              &'"]: Unwanted attempt to release resource for an active tensor cache entry: ",i3,1x,i3,1x,l1)')&
+              &impir,this%get_ref_count(),this%get_use_count(),this%is_persistent()
+              call this%print_it(dev_id=CONS_OUT)
+              flush(CONS_OUT)
               errc=-4
              endif
             endif
@@ -1490,6 +1501,23 @@
          if(present(ierr)) ierr=errc
          return
         end function TensEntryWrkGetTalshTensor
+!-----------------------------------------------------------
+        subroutine TensEntryWrkReleaseTalshTensor(this,ierr)
+!Releases the TAL-SH tensor object.
+         implicit none
+         class(tens_entry_wrk_t), intent(inout):: this !inout: tensor cache entry
+         integer(INTD), intent(out), optional:: ierr   !out: error code
+         integer(INTD):: errc
+
+         errc=0
+         call this%lock()
+         if(.not.talsh_tensor_is_empty(this%talsh_tens)) then
+          errc=talsh_tensor_destruct(this%talsh_tens); if(errc.ne.TALSH_SUCCESS) errc=-1
+         endif
+         call this%unlock()
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensEntryWrkReleaseTalshTensor
 !---------------------------------------------------------------
         subroutine TensEntryWrkPrintIt(this,ierr,dev_id,nspaces)
 !Prints the tensor cache entry.
@@ -1847,6 +1875,46 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensOprndSetTensorLayout
+!----------------------------------------------
+        subroutine TensOprndSetBlock(this,ierr)
+!Sets a block on the underlying tensor cache entry.
+         implicit none
+         class(tens_oprnd_t), intent(inout):: this   !inout: active tensor operand
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         if(this%is_active(errc)) then
+          if(associated(this%cache_entry)) then
+           call this%cache_entry%set_block()
+          else
+           errc=-2
+          endif
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensOprndSetBlock
+!--------------------------------------------------
+        subroutine TensOprndReleaseBlock(this,ierr)
+!Releases the block from the underlying tensor cache entry.
+         implicit none
+         class(tens_oprnd_t), intent(inout):: this   !inout: active tensor operand
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc
+
+         if(this%is_active(errc)) then
+          if(associated(this%cache_entry)) then
+           call this%cache_entry%release_block()
+          else
+           errc=-2
+          endif
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensOprndReleaseBlock
 !--------------------------------------------------------
         subroutine TensOprndRegisterRead(this,ierr,defer)
 !Registers a read access on the tensor operand. In case the tensor
@@ -3600,12 +3668,13 @@
 !---------------------------------------------------------------------------
         function TensInstrMarkIssued(this,ierr,from_deferred) result(passed)
 !Updates the tensor access counters for each tensor operand when the tensor instruction is issued.
-!If <from_deferred>=TRUE, the tensor instruction is being issued from the deferred queue.
+!If <from_deferred>=TRUE, the tensor instruction is being issued from the deferred queue as opposed
+!to the main queue.
          implicit none
          logical:: passed                              !out: TRUE if there was no data dependency, FALSE otherwise (not issued)
          class(tens_instr_t), intent(inout):: this     !inout: active tensor instruction
          integer(INTD), intent(out), optional:: ierr   !out: error code
-         logical, intent(in), optional:: from_deferred !in: if TRUE, the tensor instruction is being issued from the deferred queue
+         logical, intent(in), optional:: from_deferred !in: if TRUE, the tensor instruction is being issued from the deferred queue (defaults to FALSE)
          integer(INTD):: errc,i,n,rd,wr,dr,dw
          class(ds_oprnd_t), pointer:: oprnd
          logical:: df
@@ -3625,20 +3694,34 @@
                 rd=oprnd%get_read_count(); wr=oprnd%get_write_count()
                 dr=oprnd%get_read_count(defer=.TRUE.); dw=oprnd%get_write_count(defer=.TRUE.)
                 if(this%operand_is_output(i,errc)) then !output tensor operand
-                 passed=(passed.and.(wr.eq.0.and.rd.eq.0).and.(dr.eq.0.and.((dw.eq.0.and.(.not.df)).or.(dw.eq.1.and.df))))
-                 if(passed) then
-                  if(df) then; call oprnd%unregister_write(errc,defer=.TRUE.); if(errc.ne.0) errc=-8; endif !unregister deferred write
-                  call oprnd%register_write() !register actual write
+                 if(errc.eq.0) then
+                  passed=(passed.and.(wr.eq.0.and.rd.eq.0).and.(dr.eq.0.and.((dw.eq.0.and.(.not.df)).or.(dw.eq.1.and.df))))
+                  if(passed) then
+                   if(df) then; call oprnd%unregister_write(errc,defer=.TRUE.); if(errc.ne.0) errc=-10; endif !unregister deferred write
+                   call oprnd%register_write() !register actual write
+                  endif
+                 else
+                  errc=-9
                  endif
                 else !input tensor operand
-                 passed=(passed.and.(wr.eq.0).and.(dw.eq.0))
-                 if(passed) then
-                  if(df) then; call oprnd%unregister_read(errc,defer=.TRUE.); if(errc.ne.0) errc=-7; endif !unregister deferred read
-                  call oprnd%register_read() !register actual read
+                 if(errc.eq.0) then
+                  passed=(passed.and.(wr.eq.0).and.(dw.eq.0))
+                  if(passed) then
+                   if(df) then
+                    if(dr.gt.0) then
+                     call oprnd%unregister_read(errc,defer=.TRUE.); if(errc.ne.0) errc=-8 !unregister deferred read
+                    else
+                     errc=-7
+                    endif
+                   endif
+                   call oprnd%register_read() !register actual read
+                  endif
+                 else
+                  errc=-6
                  endif
                 endif
                 call oprnd%unlock()
-                if(errc.ne.0) then; errc=-6; exit; endif
+                if(errc.ne.0) exit
                class default
                 errc=-5; exit
                end select
@@ -3681,20 +3764,28 @@
                 call oprnd%lock()
                 dr=oprnd%get_read_count(defer=.TRUE.); dw=oprnd%get_write_count(defer=.TRUE.)
                 if(this%operand_is_output(i,errc)) then !output tensor operand
-                 if(dr.eq.0.and.dw.eq.0) then
-                  call oprnd%register_write(defer=.TRUE.) !register deferred write
+                 if(errc.eq.0) then
+                  if(dr.eq.0.and.dw.eq.0) then
+                   call oprnd%register_write(defer=.TRUE.) !register deferred write
+                  else
+                   errc=-9
+                  endif
                  else
                   errc=-8
                  endif
                 else !input tensor operand
-                 if(dw.eq.0) then
-                  call oprnd%register_read(defer=.TRUE.) !register deferred read
+                 if(errc.eq.0) then
+                  if(dw.eq.0) then
+                   call oprnd%register_read(defer=.TRUE.) !register deferred read
+                  else
+                   errc=-7
+                  endif
                  else
-                  errc=-7
+                  errc=-6
                  endif
                 endif
                 call oprnd%unlock()
-                if(errc.ne.0) then; errc=-6; exit; endif
+                if(errc.ne.0) exit
                class default
                 errc=-5; exit
                end select
@@ -3715,6 +3806,46 @@
          if(present(ierr)) ierr=errc
          return
         end subroutine TensInstrMarkDeferred
+!-------------------------------------------------
+        subroutine TensInstrMarkBlocked(this,ierr)
+!Updates the tensor access counters for each tensor operand when the tensor instruction is blocked (postponed).
+         implicit none
+         class(tens_instr_t), intent(inout):: this   !inout: active tensor instruction
+         integer(INTD), intent(out), optional:: ierr !out: error code
+         integer(INTD):: errc,i,n
+         class(ds_oprnd_t), pointer:: oprnd
+
+         if(this%is_active(errc)) then
+          if(errc.eq.DSVP_SUCCESS) then
+           n=this%get_num_operands(errc)
+           if(errc.eq.DSVP_SUCCESS) then
+            if(n.gt.0) then
+             do i=0,n-1
+              oprnd=>this%get_operand(i,errc)
+              if(errc.eq.DSVP_SUCCESS.and.associated(oprnd)) then
+               select type(oprnd)
+               class is(tens_oprnd_t)
+                call oprnd%set_block(errc); if(errc.ne.0) then; errc=-6; exit; endif
+               class default
+                errc=-5; exit
+               end select
+              else
+               errc=-4; exit
+              endif
+             enddo
+            endif
+           else
+            errc=-3
+           endif
+          else
+           errc=-2
+          endif
+         else
+          errc=-1
+         endif
+         if(present(ierr)) ierr=errc
+         return
+        end subroutine TensInstrMarkBlocked
 !---------------------------------------------------
         subroutine TensInstrMarkCompleted(this,ierr)
 !Updates the tensor access counters for each tensor operand when the tensor instruction is completed.
@@ -3736,12 +3867,12 @@
                class is(tens_oprnd_t)
                 call oprnd%lock()
                 if(this%operand_is_output(i,errc)) then !output tensor operand
-                 call oprnd%unregister_write()
+                 if(errc.eq.0) then; call oprnd%unregister_write(); else; errc=-7; endif
                 else !input tensor operand
-                 call oprnd%unregister_read()
+                 if(errc.eq.0) then; call oprnd%unregister_read(); else; errc=-6; endif
                 endif
                 call oprnd%unlock()
-                if(errc.ne.0) then; errc=-6; exit; endif
+                if(errc.ne.0) exit
                class default
                 errc=-5; exit
                end select

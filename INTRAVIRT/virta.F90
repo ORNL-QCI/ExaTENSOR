@@ -8,7 +8,7 @@
 !However, different specializations always have different microcodes, even for the same instruction codes.
 
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/06/19
+!REVISION: 2018/06/22
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -266,6 +266,7 @@
           procedure, public:: is_up_to_date=>TensCacheEntryIsUpToDate         !returns whether or not the cache entry data is up-to-date
           procedure, public:: set_persistency=>TensCacheEntrySetPersistency   !sets/resets the persistency status
           procedure, public:: is_persistent=>TensCacheEntryIsPersistent       !returns TRUE if the tensor cache entry is persistent, FALSE otherwise
+          procedure, public:: reset_all_counters=>TensCacheEntryResetAllCounters !resets all counters
           procedure, public:: destroy=>TensCacheEntryDestroy                  !destroys the tensor cache entry
           procedure, public:: init_lock=>TensCacheEntryInitLock               !initializes the tensor cache entry access lock
           procedure, public:: destroy_lock=>TensCacheEntryDestroyLock         !destroys the tensor cache entry access lock
@@ -425,6 +426,7 @@
         private TensCacheEntryIsUpToDate
         private TensCacheEntrySetPersistency
         private TensCacheEntryIsPersistent
+        private TensCacheEntryResetAllCounters
         private TensCacheEntryDestroy
         private TensCacheEntryInitLock
         private TensCacheEntryDestroyLock
@@ -1426,6 +1428,21 @@
          res=this%persistent
          return
         end function TensCacheEntryIsPersistent
+!------------------------------------------------------
+        subroutine TensCacheEntryResetAllCounters(this)
+!Resets all counters.
+         implicit none
+         class(tens_cache_entry_t), intent(inout):: this !inout: tensor cache entry
+
+         this%ref_count=0
+         this%use_count=0
+         this%read_write_count=0
+         this%read_write_def_count=0
+         this%temp_count=0
+         this%up_to_date=.FALSE.
+         this%persistent=.FALSE.
+         return
+        end subroutine TensCacheEntryResetAllCounters
 !----------------------------------------------------------
         subroutine TensCacheEntryDestroy(this,dealloc,ierr)
 !Destroys the tensor cache entry, but only if the reference count and use count
@@ -1442,15 +1459,14 @@
          if(this%ref_count.eq.0.and.this%use_count.eq.0.and.(.not.this%persistent)) then
           if(associated(this%tensor).and.dealloc) deallocate(this%tensor) !<dealloc>=TRUE assumes tensor ownership
           this%tensor=>NULL()
+          call this%reset_all_counters()
           call this%destroy_lock()
-          this%ref_count=0; this%use_count=0; this%read_write_count=0; this%read_write_def_count=0; this%temp_count=0
-          this%up_to_date=.FALSE.; this%persistent=.FALSE.
          else
           errc=-1
           write(jo,'("#ERROR(TensorCache:tens_cache_entry_t.destroy): Attempt to destroy an active tensor cache entry!")')
           write(jo,'("RefCount = ",i11,", UseCount = ",i11,", Persistency = ",l1)') this%ref_count,this%use_count,this%persistent
           call this%tensor%print_it(dev_id=jo); flush(jo)
-          call crash() !debug
+          !call crash() !debug
           call quit(errc,'#ERROR(TensorCache:tens_cache_entry_t.destroy): Attempt to destroy an active tensor cache entry!')
          endif
 !$OMP FLUSH
