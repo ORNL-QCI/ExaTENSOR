@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/06/22
+!REVISION: 2018/06/24
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -1376,20 +1376,22 @@
             call this%release_talsh_tensor(errc)
             if(errc.eq.0) then
              call this%set_up_to_date(.FALSE.)
-             call this%resource%free_buffer(errc); if(errc.ne.0) errc=-6
+             call this%resource%free_buffer(errc)
+             if(errc.ne.0) then
+              if(VERBOSE) then
+               write(CONS_OUT,'("#ERROR(TAVP-WRK:tens_entry_wrk_t.release_resource): Failed to free memory buffer: '//&
+               &'Error ",i11,": Cache entry refcount = ",i9,"; Resource refcount = ",i9)') errc,this%get_ref_count(),&
+               &this%resource%get_ref_count()
+               flush(CONS_OUT)
+              endif
+              errc=-6
+             endif
             else
              errc=-5
             endif
            else !active tensor cache entry
             if(present(error_if_active)) then
-             if(error_if_active) then
-              write(CONS_OUT,'("#ERROR(TAVP-WRK:tens_entry_wrk_t.release_resource)[",i6,'//&
-              &'"]: Unwanted attempt to release resource for an active tensor cache entry: ",i3,1x,i3,1x,l1)')&
-              &impir,this%get_ref_count(),this%get_use_count(),this%is_persistent()
-              call this%print_it(dev_id=CONS_OUT)
-              flush(CONS_OUT)
-              errc=-4
-             endif
+             if(error_if_active) errc=-4
             endif
            endif
           else
@@ -1401,6 +1403,13 @@
           else
            errc=-1
           endif
+         endif
+         if(errc.ne.0.and.VERBOSE) then
+          write(CONS_OUT,'("#ERROR(TAVP-WRK:tens_entry_wrk_t.release_resource)[",i6,'//&
+          &'"]: Resource release error ",i3," for tensor cache entry below: ",i3,1x,i3,1x,l1)')&
+          &impir,errc,this%get_ref_count(),this%get_use_count(),this%is_persistent()
+          call this%print_it(dev_id=CONS_OUT)
+          flush(CONS_OUT)
          endif
          if(lockable) call this%unlock() !some tensor cache entries being destructed do not have locks
          if(present(ierr)) ierr=errc
@@ -1695,11 +1704,19 @@
          integer(INTD), intent(out), optional:: ierr                !out: error code
          integer(INTD):: errc
          class(tens_rcrsv_t), pointer:: tensor
+         class(tens_resrc_t), pointer:: resource
 
          if(this%is_active(errc)) then
           if(errc.eq.0) then
            if(associated(this%cache_entry)) then
-            call this%cache_entry%decr_ref_count(); this%cache_entry=>NULL()
+            call this%cache_entry%lock()
+            resource=>this%cache_entry%get_resource() !`error check
+            if(associated(resource)) call resource%decr_ref_count()
+            call this%cache_entry%decr_ref_count()
+            call this%cache_entry%unlock()
+            this%cache_entry=>NULL()
+            this%resource=>NULL()
+            this%talsh_tens=>NULL()
            endif
            if(associated(cache_entry)) then
             call cache_entry%lock()
@@ -2964,7 +2981,7 @@
 
          call this%destruct(errc)
          if(errc.ne.0) then
-          if(DEBUG.gt.0) then
+          if(VERBOSE) then
            write(CONS_OUT,'("#ERROR(TAVP-WRK:tens_oprnd_dtor): Destruction error ",i11)') errc
            call this%print_it(dev_id=CONS_OUT)
            flush(CONS_OUT)
@@ -5841,8 +5858,7 @@
                if(DEBUG.gt.0) then
                 tensor=>oprnd%get_tensor(ier); call tensor%get_name(tname,l,ier)
                 write(CONS_OUT,'("#MSG(TAVP-WRK:Resourcer.acquire_resources)[",i6,"]: Acquired resource for tensor")',ADVANCE='NO')&
-                &impir; write(CONS_OUT,*) tname(1:l)
-                write(CONS_OUT,'("Presence = ",l1)') oprnd%is_present() !debug
+                &impir; write(CONS_OUT,*) tname(1:l); write(CONS_OUT,'("Presence = ",l1)') oprnd%is_present() !debug
                 flush(CONS_OUT)
                endif
               else
@@ -5881,7 +5897,7 @@
          class(tavp_wrk_resourcer_t), intent(inout):: this !inout: TAVP-WRK Resourcer
          class(tens_instr_t), intent(inout):: tens_instr   !inout: active tensor instruction
          integer(INTD), intent(out), optional:: ierr       !out: error code
-         integer(INTD):: errc,ier,n,l,i
+         integer(INTD):: errc,ier,n,l
          class(ds_oprnd_t), pointer:: oprnd
          class(tens_rcrsv_t), pointer:: tensor
          character(TEREC_MAX_TENS_NAME_LEN+8):: tname
@@ -5893,13 +5909,15 @@
            if(ier.eq.DSVP_SUCCESS) then
             call oprnd%release_rsc(ier)
             if(ier.ne.0) then
-             select type(oprnd)
-             class is(tens_oprnd_t)
-              tensor=>oprnd%get_tensor(i); call tensor%get_name(tname,l,i)
-              write(CONS_OUT,'("#ERROR(TAVP-WRK:Resourcer.release_resources)[",i6,"]: Resource release error ",i11," for tensor")',&
-              &ADVANCE='NO') impir,ier; write(CONS_OUT,*) tname(1:l)
-              flush(CONS_OUT)
-             end select
+             if(VERBOSE) then
+              select type(oprnd)
+              class is(tens_oprnd_t)
+               tensor=>oprnd%get_tensor(); call tensor%get_name(tname,l)
+               write(CONS_OUT,'("#ERROR(TAVP-WRK:Resourcer.release_resources)[",i6,"]: Resource release error ",i11," for tensor")'&
+               &,ADVANCE='NO') impir,ier; write(CONS_OUT,*) tname(1:l)
+               flush(CONS_OUT)
+              end select
+             endif
              errc=-4; exit rloop
             endif
            else
