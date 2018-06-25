@@ -1,16 +1,19 @@
 #TAVP Instruction Execution Analysis script
 
+echo "Deferred due to data dependency:"
+grep "Tensor instruction deferred due to data dependency" ./qforce.*.log | wc
+
+echo "Deferred due to lack of resources:"
+grep "Tensor instruction deferred due to lack of resources" ./qforce.*.log | wc
+
 echo "Resources acquired:"
 grep "Resources acquired for tensor instruction" ./qforce.*.log | wc
 
-echo "Issued to Communicator:"
+echo "Issued to Communicator directly:"
 grep "Tensor instruction issued from main queue" ./qforce.*.log | wc
 
 echo "Issued to Communicator after deferrence:"
 grep "Tensor instruction issued from deferred queue" ./qforce.*.log | wc
-
-echo "Unissued from deferred queue due to persisting dependency:"
-grep "Tensor instruction kept in deferred queue due to dependency:" ./qforce.*.log | wc
 
 echo "Input prefetch initiated:"
 grep "Initiated input prefetch for tensor instruction" ./qforce.*.log | wc
@@ -18,7 +21,7 @@ grep "Initiated input prefetch for tensor instruction" ./qforce.*.log | wc
 echo "Input prefetch synced:"
 grep "Synced input prefetch for tensor instruction" ./qforce.*.log | wc
 
-echo "Issued for execution:"
+echo "Issued for execution by Dispatcher:"
 grep "Issued tensor instruction" ./qforce.*.log | wc
 
 echo "Completed execution:"
