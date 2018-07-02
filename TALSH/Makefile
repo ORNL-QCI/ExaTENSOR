@@ -324,6 +324,7 @@ ifeq ($(WITH_CUTT),YES)
 	ar x $(PATH_CUTT)/lib/libcutt.a
 	mv *.o ./tmp_obj__
 	ar cr lib$(NAME).a $(OBJS) ./tmp_obj__/*.o
+	g++ -shared -o lib$(NAME).so $(OBJS) ./tmp_obj__/*.o
 	rm -rf ./tmp_obj__
 else
 	ar cr lib$(NAME).a $(OBJS)

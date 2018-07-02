@@ -10,9 +10,9 @@ export BUILD_TYPE ?= DEV
 #MPI Library: [MPICH|OPENMPI]:
 export MPILIB ?= MPICH
 #BLAS: [ATLAS|MKL|ACML|ESSL|NONE]:
-export BLASLIB ?= MKL
+export BLASLIB ?= ATLAS
 #Nvidia GPU via CUDA: [CUDA|NOCUDA]:
-export GPU_CUDA ?= CUDA
+export GPU_CUDA ?= NOCUDA
 #Nvidia GPU architecture (two digits):
 export GPU_SM_ARCH ?= 50
 #Operating system: [LINUX|NO_LINUX]:
@@ -36,7 +36,7 @@ export PATH_MPICH ?= /usr/local/mpi/mpich/3.2.1
  export PATH_MPICH_LIB ?= $(PATH_MPICH)/lib
  export PATH_MPICH_BIN ?= $(PATH_MPICH)/bin
 # Set this if you have OPENMPI or its derivative:
-export PATH_OPENMPI ?= /usr/local/mpi/openmpi/3.0.0
+export PATH_OPENMPI ?= /usr/local/mpi/openmpi/3.1.0
 #  Only reset these if MPI files are spread in the system directories:
  export PATH_OPENMPI_INC ?= $(PATH_OPENMPI)/include
  export PATH_OPENMPI_LIB ?= $(PATH_OPENMPI)/lib
@@ -65,7 +65,7 @@ export PATH_CUDA ?= /usr/local/cuda
  export PATH_CUDA_LIB ?= $(PATH_CUDA)/lib64
  export PATH_CUDA_BIN ?= $(PATH_CUDA)/bin
 # cuTT path (if you use cuTT library):
-export PATH_CUTT ?= /home/div/src/cutt
+export PATH_CUTT ?= /home/dima/src/cutt
 
 #YOU ARE DONE!
 
@@ -121,7 +121,11 @@ endif
 	mv ./*.o ./lib/
 	ar cr libexatensor.a ./lib/*.o
 ifeq ($(EXA_OS),LINUX)
+ifeq ($(TOOLKIT),GNU)
+	g++ -shared -o libexatensor.so ./lib/*.o
+else
 	ld -shared -o libexatensor.so ./lib/*.o
+endif
 	cp ./TALSH/libtalsh.so ./
 	cp ./libtalsh.so ./lib/
 	cp ./libexatensor.so ./lib/
