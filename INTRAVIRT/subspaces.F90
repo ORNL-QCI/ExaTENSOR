@@ -1,7 +1,7 @@
 !Infrastructure for a recursive adaptive vector space decomposition
 !and hierarchical vector space representation.
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/03/09
+!REVISION: 2018/07/09
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -2294,10 +2294,10 @@
 
          subroutine construct_subspace_basis(parbas,sgs,bas,jerr)
           implicit none
-          class(subspace_basis_t), intent(in):: parbas !in: parental basis
-          type(seg_int_t), intent(in):: sgs            !in: defining integer semi-interval (subrange of basis functions)
-          type(subspace_basis_t), intent(inout):: bas  !out: subspace basis being constructed based on the <sgs> subrange
-          integer(INTD), intent(out):: jerr            !out: error code
+          class(subspace_basis_t), intent(in), target:: parbas !in: parental basis
+          type(seg_int_t), intent(in):: sgs                    !in: defining integer semi-interval (subrange of basis functions)
+          type(subspace_basis_t), intent(inout):: bas          !out: subspace basis being constructed based on the <sgs> subrange
+          integer(INTD), intent(out):: jerr                    !out: error code
           integer(INTD):: jbfk
           integer(INTL):: jdim,jl,ju,jj
           class(basis_func_t), pointer:: jbfp
@@ -2310,7 +2310,7 @@
            call bas%subspace_basis_ctor(jdim,jerr)
            if(jerr.eq.0) then
             do jj=jl,ju
-             jbfp=>full_basis%get_basis_func(jj,jerr); if(jerr.ne.0) exit
+             jbfp=>parbas%get_basis_func(jj,jerr); if(jerr.ne.0) exit
              jbfk=jbfp%get_basis_func(jerr,jbfsp,jsmp); if(jerr.ne.0) exit
              if(associated(jbfsp)) then
               if(associated(jsmp)) then
