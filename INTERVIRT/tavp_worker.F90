@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/06/25
+!REVISION: 2018/07/11
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -50,6 +50,11 @@
 !     D3 += L1 * R1 -> D3#0 = 0, D3#1 = 0, D3#1 += L1 * R1, D3#0 += D3#1, ~D3#1;
 !     D3 += L2 * R2 ->           D3#2 = 0, D3#2 += L2 * R2,                D3#0 += D3#2, ~D3#2, D3 += D3#0, ~D3#0;
 ! # TENSOR INSTRUCTION DEPENDENCY:
+!   (0) The current tensor instruction pipeline is two levels deep for dependent instructions:
+!       One instruction is currently being executed, another (dependent) one is deferred and
+!       will proceed to execution immediately after clearing the dependency, that is, once
+!       the currently executed instruction it depends on completes. Any subsequent dependent
+!       tensor instruction is not issued until the pipeline further shifts.
 !   (1) A tensor instruction has a data dependency if either of the following applies:
 !       (a) Its input operand has currently a non-zero WRITE count;
 !       (b) Its output operand has currently a non-zero READ or WRITE count;
@@ -5561,7 +5566,7 @@
                  select type(tens_entry)
                  class is(tens_entry_wrk_t)
                   if(copy_num.eq.0) then !accumulator tensors import data descriptors as well
-                   call tens_entry%set_tensor_layout(jerr,tensor,with_location=.TRUE.); if(jerr.ne.0) jerr=-9 !import temporary tensor layout from the persistent tensor
+                   call tens_entry%set_tensor_layout(jerr,tensor,with_location=.TRUE.); if(jerr.ne.0) jerr=-9 !import temporary tensor layout and location from the persistent tensor
                   else !temporary tensors do not import data descriptors
                    call tens_entry%set_tensor_layout(jerr,tensor,with_location=.FALSE.); if(jerr.ne.0) jerr=-8 !import temporary tensor layout from the persistent tensor
                   endif
