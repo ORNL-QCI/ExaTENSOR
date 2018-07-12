@@ -1,6 +1,6 @@
 !ExaTENSOR: TAVP-Worker (TAVP-WRK) implementation
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/07/11
+!REVISION: 2018/07/12
 
 !Copyright (C) 2014-2017 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2017 Oak Ridge National Laboratory (UT-Battelle)
@@ -952,7 +952,7 @@
          integer(INTD), intent(out), optional:: ierr  !out: error code
          logical, intent(in), optional:: in_buffer    !in: if TRUE the memory will be allocated from a custom buffer, FALSE from the system
          integer(INTD), intent(in), optional:: dev_id !in: flat device id (defaults to Host)
-         logical, intent(in), optional:: set_to_zero  !in: if TRUE, the resource memory will be initialized to zero
+         logical, intent(in), optional:: set_to_zero  !in: if TRUE, the resource memory will be brute-force initialized to zero
          integer(INTD):: errc
          integer(C_INT):: in_buf,dev
          type(C_PTR):: addr
@@ -1051,11 +1051,12 @@
 !------------------------------------------------
         subroutine TensResrcZeroBuffer(this,ierr)
 !Zeroes out the memory buffer. If resource is empty, does nothing.
+!`The memory buffer is set to zero by one thread: Bad for NUMA.
          implicit none
          class(tens_resrc_t), intent(inout):: this   !inout: tensor resource
          integer(INTD), intent(out), optional:: ierr !out: error code
          integer(INTD):: errc
-         integer(INTL):: bytes
+         integer(INTL):: bytes,ext
          type(C_PTR):: addr
          integer(1), pointer:: i1(:)
          integer(4), pointer:: i4(:)
@@ -1063,11 +1064,12 @@
          if(.not.this%is_empty(errc)) then
           if(errc.eq.0) then
            addr=this%get_mem_ptr(errc)
-           if(errc.eq.0) then
+           if(errc.eq.0.and.c_associated(addr)) then
             bytes=this%get_mem_size(errc)
             if(errc.eq.0.and.bytes.gt.0) then
              if(mod(bytes,4_INTL).eq.0_INTL) then
-              call c_f_pointer(addr,i4,(/(bytes/4_INTL)/))
+              ext=bytes/4_INTL
+              call c_f_pointer(addr,i4,(/ext/))
               i4(:)=0 !`IEEE 754: All bits are 0 => floating-point +0
               i4=>NULL()
              else
@@ -1318,6 +1320,7 @@
 !--------------------------------------------------------
         subroutine TensEntryWrkAcquireResource(this,ierr)
 !Acquires resource for the tensor cache entry if it has not been acquired yet.
+!`The memory is acquired from the regular Host memory pool.
          implicit none
          class(tens_entry_wrk_t), intent(inout):: this !inout: active tensor cache entry
          integer(INTD), intent(out), optional:: ierr   !out: error code
@@ -2288,12 +2291,12 @@
 !---------------------------------------------------------
         subroutine TensOprndAcquireRsc(this,ierr,init_rsc)
 !Acquires local resource for a tensor operand.
-!If the resource has already been acquired, does nothing.
+!If the resource has already been acquired, does nothing (<init_rsc> is ignored).
 !If the resource component is not set, an error will be returned.
          implicit none
          class(tens_oprnd_t), intent(inout):: this   !inout: active tensor operand with an associated resource component
          integer(INTD), intent(out), optional:: ierr !out: error code, may return TRY_LATER
-         logical, intent(in), optional:: init_rsc    !in: if TRUE, the memory resource will be explicitly initialized to zero
+         logical, intent(in), optional:: init_rsc    !in: if TRUE, the memory resource will be explicitly initialized to zero upon allocation
          integer(INTD):: errc
          integer(INTL):: buf_size
          integer(INT_MPI):: host_proc_rank
@@ -2539,7 +2542,8 @@
 !Synchronizes a pending prefetch/upload, either TEST or WAIT (default).
 !A successful synchronization on prefetch will mark the tensor operand
 !as delivered (present). A successful synchronization on upload will
-!not change the status of the tensor operand (which is present).
+!not change the status of the tensor operand (which is present), but it
+!will reset the tensor body to zero in case it is a local accumulator.
 !An attempt to synchronize a non-existing communication will simply
 !be ignored with a positive result and no error.
          implicit none
@@ -5915,7 +5919,7 @@
             class is(tens_oprnd_t)
              temp=oprnd%is_temporary(ier)
              if(ier.eq.0) then
-              call oprnd%acquire_rsc(ier,init_rsc=(op_output.and.temp))
+              call oprnd%acquire_rsc(ier,init_rsc=(op_output.and.temp)) !initialization to zero is only done for temporary output operands
               if(ier.eq.0) then
                if(DEBUG.gt.0) then
                 tensor=>oprnd%get_tensor(ier); call tensor%get_name(tname,l,ier)
