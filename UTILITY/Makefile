@@ -115,8 +115,8 @@ LIB_CRAY = -L.
 LIB_IBM = -L.
 LIB_NOWRAP = $(LIB_$(TOOLKIT))
 LIB_WRAP = -L.
-ifeq ($(TOOLKIT),PGI)
- LIB = $(LIB_$(WRAP)) -lstdc++
+ifeq ($(TOOLKIT),IBM)
+ LIB = $(LIB_$(WRAP)) -L$(PATH_IBM_XL_CPP) -libmc++ -lstdc++
 else
  LIB = $(LIB_$(WRAP)) -lstdc++
 endif
@@ -183,9 +183,19 @@ PIC_FLAG_CRAY = -hpic
 PIC_FLAG = $(PIC_FLAG_$(TOOLKIT))
 
 #C FLAGS:
+ifeq ($(TOOLKIT),PGI)
+CFLAGS_DEV = -c -g -O0 -D_DEBUG -silent -w
+CFLAGS_OPT = -c -O3 -silent -w -Mnovect
+else
 CFLAGS_DEV = -c -g -O0 -D_DEBUG
 CFLAGS_OPT = -c -O3
+endif
 CFLAGS = $(CFLAGS_$(BUILD_TYPE)) $(NO_GPU) $(NO_AMD) $(NO_PHI) $(NO_BLAS) -D$(EXA_OS) $(PIC_FLAG)
+ifeq ($(TOOLKIT),CRAY)
+CPPFLAGS = $(CFLAGS) -h std=c++11
+else
+CPPFLAGS = $(CFLAGS) -std=c++11
+endif
 
 #FORTRAN FLAGS:
 FFLAGS_INTEL_DEV = -c -g -O0 -fpp -vec-threshold4 -qopenmp -mkl=parallel
@@ -213,7 +223,7 @@ LTHREAD = $(LTHREAD_$(TOOLKIT))
 #LINKING:
 LFLAGS = $(LTHREAD) $(MPI_LINK) $(LA_LINK) $(LIB)
 
-OBJS = ./OBJ/dil_basic.o ./OBJ/stsubs.o ./OBJ/timers.o ./OBJ/combinatoric.o ./OBJ/parse_prim.o
+OBJS = ./OBJ/dil_basic.o ./OBJ/stsubs.o ./OBJ/timer.o ./OBJ/timers.o ./OBJ/combinatoric.o ./OBJ/parse_prim.o
 
 $(NAME): $(OBJS)
 	ar cr lib$(NAME).a $(OBJS)
@@ -225,7 +235,10 @@ $(NAME): $(OBJS)
 ./OBJ/stsubs.o: stsubs.F90
 	$(FCOMP) $(INC) $(MPI_INC) $(FFLAGS) stsubs.F90 -o ./OBJ/stsubs.o
 
-./OBJ/timers.o: timers.F90
+./OBJ/timer.o: timer.cpp timer.h
+	$(CPPCOMP) $(INC) $(MPI_INC) $(CPPFLAGS) timer.cpp -o ./OBJ/timer.o
+
+./OBJ/timers.o: timers.F90 ./OBJ/timer.o
 	$(FCOMP) $(INC) $(MPI_INC) $(FFLAGS) timers.F90 -o ./OBJ/timers.o
 
 ./OBJ/combinatoric.o: combinatoric.F90

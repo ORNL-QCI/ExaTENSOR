@@ -1,6 +1,6 @@
 !Timing services (threadsafe).
 !AUTHOR: Dmitry I. Lyakh (Liakh): quant4me@gmail.com
-!REVISION: 2018/04/03
+!REVISION: 2018/07/13
 
 !Copyright (C) 2014-2016 Dmitry I. Lyakh (Liakh)
 !Copyright (C) 2014-2016 Oak Ridge National Laboratory (UT-Battelle)
@@ -67,12 +67,27 @@
         public timer_tick_sec
         public thread_wtime
         public accu_time
+        public time_sys_sec
+        public time_high_sec
+
 !EXTERNAL INTERFACES:
         interface
+
          function accu_time() bind(C,name='accu_time')
           use, intrinsic:: ISO_C_BINDING, only: C_DOUBLE
           real(C_DOUBLE):: accu_time
          end function accu_time
+
+         function time_sys_sec() bind(C,name='time_sys_sec')
+          use, intrinsic:: ISO_C_BINDING, only: C_DOUBLE
+          real(C_DOUBLE):: time_sys_sec
+         end function time_sys_sec
+
+         function time_high_sec() bind(C,name='time_high_sec')
+          use, intrinsic:: ISO_C_BINDING, only: C_DOUBLE
+          real(C_DOUBLE):: time_high_sec
+         end function time_high_sec
+
         end interface
 
        contains

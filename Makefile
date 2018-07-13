@@ -14,7 +14,7 @@ export BLASLIB ?= ATLAS
 #Nvidia GPU via CUDA: [CUDA|NOCUDA]:
 export GPU_CUDA ?= NOCUDA
 #Nvidia GPU architecture (two digits):
-export GPU_SM_ARCH ?= 50
+export GPU_SM_ARCH ?= 35
 #Operating system: [LINUX|NO_LINUX]:
 export EXA_OS ?= LINUX
 
@@ -104,9 +104,9 @@ else
 	cp ./TALSH/dil_basic.mod ./include/
 	cp ./TALSH/talsh.mod ./
 endif
-	cp ./[A-Z]*/*.h ./include/
-	cp ./[A-Z]*/*.hpp ./include/
-	cp ./TN/*.cpp ./include/
+	cp -u ./[A-Z]*/*.h ./include/
+	cp -u ./[A-Z]*/*.hpp ./include/
+	cp -u ./TN/*.cpp ./include/
 	cp ./[A-Z]*/*.a ./lib/
 	cp ./[A-Z]*/*.x ./bin/
 	cp ./QFORCE/Qforce.x ./

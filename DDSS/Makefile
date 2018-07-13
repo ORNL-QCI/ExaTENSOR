@@ -119,8 +119,8 @@ LIB_CRAY = -L.
 LIB_IBM = -L.
 LIB_NOWRAP = $(LIB_$(TOOLKIT))
 LIB_WRAP = -L.
-ifeq ($(TOOLKIT),PGI)
- LIB = $(LIB_$(WRAP)) -lstdc++
+ifeq ($(TOOLKIT),IBM)
+ LIB = $(LIB_$(WRAP)) -L$(PATH_IBM_XL_CPP) -libmc++ -lstdc++
 else
  LIB = $(LIB_$(WRAP)) -lstdc++
 endif
@@ -220,9 +220,19 @@ NO_AMD = -DNO_AMD
 NO_PHI = -DNO_PHI
 
 #C FLAGS:
+ifeq ($(TOOLKIT),PGI)
+CFLAGS_DEV = -c -g -O0 -D_DEBUG -silent -w
+CFLAGS_OPT = -c -O3 -silent -w -Mnovect
+else
 CFLAGS_DEV = -c -g -O0 -D_DEBUG
 CFLAGS_OPT = -c -O3
-CFLAGS = $(CFLAGS_$(BUILD_TYPE)) $(NO_GPU) $(NO_AMD) $(NO_PHI) -D$(EXA_OS) $(PIC_FLAG)
+endif
+CFLAGS = $(CFLAGS_$(BUILD_TYPE)) $(NO_GPU) $(NO_AMD) $(NO_PHI) $(NO_BLAS) -D$(EXA_OS) $(PIC_FLAG)
+ifeq ($(TOOLKIT),CRAY)
+CPPFLAGS = $(CFLAGS) -h std=c++11
+else
+CPPFLAGS = $(CFLAGS) -std=c++11
+endif
 
 #FORTRAN FLAGS:
 FFLAGS_INTEL_DEV = -c -g -O0 -fpp -vec-threshold4 -qopenmp -mkl=parallel
@@ -250,7 +260,7 @@ LTHREAD = $(LTHREAD_$(TOOLKIT))
 #LINKING:
 LFLAGS = $(LTHREAD) $(MPI_LINK) $(CUDA_LINK) $(LIB)
 
-OBJS =  ./OBJ/dil_basic.o ./OBJ/sys_service.o ./OBJ/c2fortran.o ./OBJ/c2f_ifc.o ./OBJ/stsubs.o ./OBJ/timers.o \
+OBJS =  ./OBJ/dil_basic.o ./OBJ/sys_service.o ./OBJ/c2fortran.o ./OBJ/c2f_ifc.o ./OBJ/stsubs.o ./OBJ/timer.o ./OBJ/timers.o \
 	./OBJ/mpi_fort.o ./OBJ/service_mpi.o ./OBJ/distributed.o ./OBJ/pack_prim.o ./OBJ/test_pack_prim.o
 
 $(NAME): lib$(NAME).a ./OBJ/main.o ./OBJ/test_pack_prim.o
@@ -282,7 +292,10 @@ endif
 ./OBJ/stsubs.o: stsubs.F90
 	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) stsubs.F90 -o ./OBJ/stsubs.o
 
-./OBJ/timers.o: timers.F90
+./OBJ/timer.o: timer.cpp timer.h
+	$(CPPCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(CPPFLAGS) timer.cpp -o ./OBJ/timer.o
+
+./OBJ/timers.o: timers.F90 ./OBJ/timer.o
 	$(FCOMP) $(INC) $(MPI_INC) $(CUDA_INC) $(FFLAGS) timers.F90 -o ./OBJ/timers.o
 
 ./OBJ/mpi_fort.o: mpi_fort.c
